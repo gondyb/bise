@@ -396,3 +396,60 @@ Deviation notes:
   notifications, and interrupts priority at model-safe boundaries.
 - The interrupt scenario demonstrates the mid-turn interrupt plus the
   late-completion rejection, not the idle no-op.
+
+## 2026-09-25 — vibe_sdk parity for run_typescript + search_tool_functions
+
+The model-facing surface of the two direct tools is now EXACTLY the
+vibe_sdk surface, and the live loop drives it end to end.
+
+Exact copies (byte-verified against vibe_sdk/harness/core sources):
+- tool-desc-run-typescript.txt (3619 chars, RUN_TYPESCRIPT_DESCRIPTION)
+- tool-desc-search.txt (1087 chars, SEARCH_TOOL_FUNCTIONS_DESCRIPTION)
+- prompt-tool-use.txt (tool_use_prompt) + prompt-current-time.txt
+  (current_time_prompt) — the live system prompt is identity guidance
+  + these two sections (repl-live live_cfg, IO-loaded; scenarios keep
+  the short pure prompt so thresholds stay hermetic)
+- per-tool parameter schemas in core/api.bend (generated from the
+  schemars output, tool_fn_json dispatches by name): run_typescript
+  {"code": string} required/deny_unknown_fields; search_tool_functions
+  the full SearchRequest schema (mode/query/functions/functionNames/
+  connectors, maxItems 10, minLength 1, defaults). The live path loads
+  the full descriptions (X.catalog()); scenarios keep catalog_short.
+
+Search execution now parses the structured SearchRequest (runtime/
+tools.bend): best_match = word-scored ranking (score = number of query
+words matched, ties keep catalog order), names only, cap 20, connectors
+filter, moreCandidatesAvailable when >20; details = declarations for
+exact names (functions ++ functionNames); all_connector_capabilities =
+connector inventories. The flat 'best_match: query' syntax stays for
+the scripted suite (J.parse falls back to it when args are not JSON).
+
+Two wire bugs found and fixed during live e2e:
+- Call ids: provider replies number calls per completion (1, 2, ...),
+  so sequential turns repeated ids on the wire (both calls echoed as
+  call_1, provider 400 invalid_args). apply.completion.tools now
+  renumbers calls to their action ids (ToolAct, PTools and history all
+  agree; take_call matching unchanged).
+- node_program leaked into model context (history call echo and result
+  text said node_program while the model called run_typescript).
+  The internal rename stays for routing; result_name (core/session)
+  and wire_name (runtime/remote) translate it back on every
+  model-visible surface.
+
+MCP index lines now carry the tool input schema (tool_line appends
+" | input: <json>"), so details mode returns real declarations like
+vibe_sdk — the model called github_app.list_issues with correct
+owner/repo args on the first try after the change.
+
+bend-jsrt (V8): supports the vibe format — `async function main()`
+detected on the transpiled source (function main followed by '('),
+Promise resolved through perform_microtask_checkpoint; errors print
+{"error": "..."} and exit 43 (node_split parses the message so the
+model reads it and retries); legacy `return`-body format still works.
+BEND_WIRE_DUMP=<path> dumps the last provider request (debug).
+
+Verified: bend PROOF.bend green (39 laws); harness-demo 13 scenarios
+byte-identical to the baseline; live e2e: best_match → details →
+run_typescript → github_app.list_issues with correct args, error
+feedback loop (missing owner → fixed → missing repo → fixed), and a
+multi-tool Promise.allSettled program, all over the real GLM provider.

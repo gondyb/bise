@@ -13,6 +13,7 @@ import ./types.bend as T
 import ./estimate.bend as E
 import ./compaction.bend as C
 import ./program.bend as P
+import ./api.bend as Api
 
 # ---- dispatch result (internal) ----
 type DRes is Data:
@@ -73,6 +74,19 @@ def tool_acts(+calls: List<&2, T.Call>, +base: U32) -> List<&2, T.Act>:
     case Con{c, rest}:
       Con{T.ToolAct{base, c}, tool_acts(rest, U32.add(base, 1))}
 
+# provider replies number calls per completion (1, 2, ...), so sequential
+# turns would repeat ids on the wire; the Core renumbers calls to their
+# action ids — ToolAct, PTools and history all agree, and the wire pairs
+# each tool result with exactly one call
+def renumber(+calls: List<&2, T.Call>, +base: U32) -> List<&2, T.Call>:
+  match calls:
+    case Nil{}:
+      Nil{}
+    case Con{+c, rest}:
+      match c:
+        case T.Call{_, +name, +args}:
+          Con{T.Call{base, name, args}, renumber(rest, U32.add(base, 1))}
+
 def tool_start_obs(+calls: List<&2, T.Call>) -> List<&2, T.Obs>:
   match calls:
     case Nil{}:
@@ -82,13 +96,26 @@ def tool_start_obs(+calls: List<&2, T.Call>) -> List<&2, T.Obs>:
         case T.Call{cid, _, _}:
           Con{T.ToolStarted{cid}, tool_start_obs(rest)}
 
+# node_program is the runtime's internal name for the live V8 engine
+# (run_typescript renamed on the way in); the model called run_typescript,
+# so every model-visible surface says run_typescript
+def result_name.pick(is_np: Bool, +name: String) -> String:
+  match is_np:
+    case True{}:
+      "run_typescript"
+    case False{}:
+      name
+
+def result_name(+name: String) -> String:
+  result_name.pick(String.eq(name, "node_program"), name)
+
 def tool_result_msg(+name: String, +out: String, ok: Bool) -> T.Msg:
   match ok:
     case True{}:
-      T.tool_res(String.append("tool ", String.append(name,
+      T.tool_res(String.append("tool ", String.append(result_name(name),
         String.append(" ok: ", out))))
     case False{}:
-      T.tool_res(String.append("tool ", String.append(name,
+      T.tool_res(String.append("tool ", String.append(result_name(name),
         String.append(" failed: ", out))))
 
 # one tool call taken out of the waiting list, with the remainder
@@ -103,7 +130,7 @@ def call_name(c: T.Call) -> String:
       name
 
 def call_is_prog(c: T.Call) -> Bool:
-  String.eq(call_name(c), "run_program")
+  String.eq(call_name(c), "run_typescript")
 
 def contains_run_program(calls: List<&2, T.Call>) -> Bool:
   match calls:
@@ -386,12 +413,12 @@ def apply.completion.tools(+text: String, +calls: List<&2, T.Call>,
   match s:
     case T.Sess{+cfg, +history, +inputs, +actions, +turn, _, +queued, +notifs}:
       T.Accepted{Con{T.Assistant{text}, tool_start_obs(calls)},
-        tool_acts(calls, U32.add(actions, 1)),
+        tool_acts(renumber(calls, U32.add(actions, 1)), U32.add(actions, 1)),
         T.Sess{cfg, List.append(&2, T.Msg, history,
-            Con{T.asst(text, calls), Nil{}}),
+            Con{T.asst(text, renumber(calls, U32.add(actions, 1))), Nil{}}),
           Nat.add(inputs, 1n),
           U32.add(actions, U32.from_nat(Nat.add(calls_count(calls), 1n))),
-          turn, Some{T.PTools{calls}}, queued, notifs}}
+          turn, Some{T.PTools{renumber(calls, U32.add(actions, 1))}}, queued, notifs}}
 
 # a program that failed to parse, or finished with no calls: the assistant
 # message and the failed result commit together, then the turn continues
@@ -402,7 +429,7 @@ def apply.prog.fail.body(+id: U32, +text: String, +c: T.Call, +why: String,
       +s2 : T.Session = T.Sess{cfg,
         List.append(&2, T.Msg, List.append(&2, T.Msg, history,
           Con{T.asst(text, Con{c, Nil{}}), Nil{}}),
-          Con{tool_result_msg("run_program", why, False{}), Nil{}}),
+          Con{tool_result_msg("run_typescript", why, False{}), Nil{}}),
         Nat.add(inputs, 1n), actions, turn, None{}, queued, notifs}
       d = dispatch(s2)
       dispatch_result(d,
@@ -424,7 +451,7 @@ def apply.prog.done.body(+id: U32, +text: String, +c: T.Call, +out: String,
       +s2 : T.Session = T.Sess{cfg,
         List.append(&2, T.Msg, List.append(&2, T.Msg, history,
           Con{T.asst(text, Con{c, Nil{}}), Nil{}}),
-          Con{tool_result_msg("run_program", out, True{}), Nil{}}),
+          Con{tool_result_msg("run_typescript", out, True{}), Nil{}}),
         Nat.add(inputs, 1n), actions, turn, None{}, queued, notifs}
       d = dispatch(s2)
       dispatch_result(d,
@@ -484,7 +511,7 @@ def apply.prog.start.parsed(p: Maybe<&2, List<&2, T.Stmt>>, +text: String,
 def apply.prog.start(+text: String, +c: T.Call, +s: T.Session) -> T.Res:
   match c:
     case T.Call{_, _, +args}:
-      apply.prog.start.parsed(P.parse(args), text, c, s)
+      apply.prog.start.parsed(P.parse(Api.call_code(args)), text, c, s)
 
 # a tool result arrived for a program in flight: replay with the record
 def apply.prog.resume.pfail(+call: U32, +run: U32, +why: String,
@@ -493,7 +520,7 @@ def apply.prog.resume.pfail(+call: U32, +run: U32, +why: String,
     case T.Sess{+cfg, +history, +inputs, +actions, +turn, _, +queued, +notifs}:
       +s2 : T.Session = T.Sess{cfg,
         List.append(&2, T.Msg, history,
-          Con{tool_result_msg("run_program", why, False{}), Nil{}}),
+          Con{tool_result_msg("run_typescript", why, False{}), Nil{}}),
         Nat.add(inputs, 1n), actions, turn, None{}, queued, notifs}
       d = dispatch(s2)
       dispatch_result(d,
@@ -526,7 +553,7 @@ def apply.prog.resume(pr: P.PR, +call: U32, +out: String,
         case T.Sess{+cfg, +history, +inputs, +actions, +turn, _, +queued, +notifs}:
           +s2 : T.Session = T.Sess{cfg,
             List.append(&2, T.Msg, history,
-              Con{tool_result_msg("run_program", out2, True{}), Nil{}}),
+              Con{tool_result_msg("run_typescript", out2, True{}), Nil{}}),
             Nat.add(inputs, 1n), actions, turn, None{}, queued, notifs}
           d = dispatch(s2)
           dispatch_result(d,
@@ -558,7 +585,7 @@ def apply.prog.mismatch(matched: Bool, +call: U32, +run: U32,
         case T.Sess{+cfg, +history, +inputs, +actions, +turn, _, +queued, +notifs}:
           +s2 : T.Session = T.Sess{cfg,
             List.append(&2, T.Msg, history,
-              Con{tool_result_msg("run_program", "a program call failed",
+              Con{tool_result_msg("run_typescript", "a program call failed",
                 False{}), Nil{}}),
             Nat.add(inputs, 1n), actions, turn, None{}, queued, notifs}
           d = dispatch(s2)
@@ -594,7 +621,7 @@ def apply.completion.multi.pick(has_prog: Bool,
     +calls: List<&2, T.Call>, +text: String, +s: T.Session) -> T.Res:
   match has_prog:
     case True{}:
-      T.Rejected{"run_program must be the only call"}
+      T.Rejected{"run_typescript must be the only call"}
     case False{}:
       apply.completion.tools(text, calls, s)
 

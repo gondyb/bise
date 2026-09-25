@@ -14,7 +14,7 @@
 # Commands (one per line):
 #   say <text>        start a turn. "say tools ..." makes the model call
 #                     search_tool_functions; "say prog: <program>"
-#                     makes it call run_program (D1).
+#                     makes it call run_typescript (D1).
 #   steer <text>      steering input (at idle the Core starts a turn with it)
 #   notify <text>     a notification
 #   compact           manual between-turn compaction
@@ -55,7 +55,7 @@ def repl_help() -> List<&2, String>:
 def script_for.prog(is_prog: Bool, +text: String) -> List<&2, M.Reply>:
   match is_prog:
     case True{}:
-      Con{M.ROk{"", Con{T.Call{1, "run_program",
+      Con{M.ROk{"", Con{T.Call{1, "run_typescript",
           String.trim(String.drop(text, 5n))}, Nil{}}},
         Con{M.ROk{"Program complete.", Nil{}}, Nil{}}}
     case False{}:
@@ -319,8 +319,29 @@ def repl_port() -> IO(U32):
       "BEND_REPL_PORT")
     IO.pure(U32, repl_port.pick(env))
 
-def live_cfg(+threshold: Nat) -> T.Cfg:
-  T.Cfg{threshold, 20000n, 3n, R.sys_prompt(), X.catalog()}
+# the live system prompt = identity + the exact vibe_sdk sections
+# (tool_use_prompt + current_time_prompt), loaded from prompt-*.txt
+def prompt_read(+path: String) -> IO(String):
+  do IO<String>:
+    m : Maybe<&2, String> <- P.read_file(path)
+    IO.pure(String, X.desc_or(m, ""))
+
+def prompt_join(+tu: String, +ct: String) -> String:
+  String.append(
+    "You are a precise assistant running on the Bend Unified Harness. Discover additional tools with `search_tool_functions`, and call them using `run_typescript`.",
+    String.append("\n\n", String.append(tu, String.append("\n\n", ct))))
+
+def live_prompt() -> IO(String):
+  do IO<String>:
+    +tu : String <- prompt_read("prompt-tool-use.txt")
+    +ct : String <- prompt_read("prompt-current-time.txt")
+    IO.pure(String, prompt_join(tu, ct))
+
+def live_cfg(+threshold: Nat) -> IO(T.Cfg):
+  do IO<T.Cfg>:
+    +p : String <- live_prompt()
+    +cat : List<&2, T.ToolDef> <- X.catalog()
+    IO.pure(T.Cfg, T.Cfg{threshold, 20000n, 3n, p, cat})
 
 def ld_sess(ld: P.Load) -> T.Session:
   match ld:
@@ -343,7 +364,8 @@ def main() -> IO(Unit):
       String.append(U32.show(p),
         String.append(" (real model, FS tools, bash) — compaction threshold: ",
           String.append(Nat.show(threshold), " tokens (BEND_THRESHOLD to change)")))))
-    +ld : P.Load <- P.load(T.new_session(live_cfg(threshold)))
+    +cfg : T.Cfg <- live_cfg(threshold)
+    +ld : P.Load <- P.load(T.new_session(cfg))
     kr : Result<&1, &1, U32 & String, String> <- IO.get_env("MISTRAL_API_KEY")
     +key : String <- IO.pure(String, R.env_or(kr, ""))
     u : Unit <- Mcp.bootstrap(key)

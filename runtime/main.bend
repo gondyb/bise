@@ -119,7 +119,7 @@ def trans.tool(+rt: Rt, +rest: List<&2, T.Act>, +call: T.Call) -> Trans:
       trans.tool.is_sleep(rt, rest, id, args, call,
         String.eq(name, "self.sleep"), rt_live(rt))
 
-# live only: run_program flows to the runtime as node_program, so the
+# live only: run_typescript flows to the runtime as node_program, so the
 # V8 engine (bend-jsrt) executes it instead of the in-house interpreter;
 # scripted sessions keep the Core's law-checked interpreter
 def rename_call.go(hit: Bool, +id: U32, +name: String, +args: String)
@@ -135,7 +135,7 @@ def rename_call(live: Bool, +c: T.Call) -> T.Call:
     case True{}:
       match c:
         case T.Call{+id, +name, +args}:
-          rename_call.go(String.eq(name, "run_program"), id, name, args)
+          rename_call.go(String.eq(name, "run_typescript"), id, name, args)
     case False{}:
       c
 
@@ -442,6 +442,22 @@ def api_err(e: Http.Err) -> String:
     case Http.ErrBad{}:
       "bad response"
 
+# BEND_WIRE_DUMP=<path>: write the last provider request body (debug)
+def dump_wire.write(+path: String, +body: String) -> IO(Unit):
+  do IO<Unit>:
+    u : Unit <- P.write_file(path, body)
+    IO.pure(Unit, Unit{})
+
+def dump_wire.skip(empty: Bool, +path: String, +body: String) -> IO(Unit):
+  match empty:
+    case True{}:
+      IO.pure(Unit, Unit{})
+    case False{}:
+      dump_wire.write(path, body)
+
+def dump_wire(+path: String, +body: String) -> IO(Unit):
+  dump_wire.skip(String.is_empty(path), path, body)
+
 def model_call.err(e: Http.Err) -> IO(Rem.RemoteRes):
   do IO<Rem.RemoteRes>:
     IO.pure(Rem.RemoteRes,
@@ -468,8 +484,10 @@ def model_call.go(+request: String, +key: String) -> IO(Rem.RemoteRes):
   do IO<Rem.RemoteRes>:
     mr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_MODEL")
     +model : String <- IO.pure(String, env_or(mr, "zai-glm-5-3"))
-    body : String <- IO.pure(String,
+    +body : String <- IO.pure(String,
       Enc.utf8.encode(Api.api_body(model, Api.parse_wire(request))))
+    dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
+    dump_dbg : Unit <- dump_wire(env_or(dr, ""), body)
     hdrs : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
       Http.set(Http.set(Http.empty(), "Authorization",
           String.append("Bearer ", key)),
@@ -570,7 +588,7 @@ def exec_mcp(+name: String, +args: String, live: Bool) -> IO(ExecRes):
     case False{}:
       IO.pure(ExecRes, exec_mcp.scripted(name))
 
-# ---- bend-jsrt: run_program in a V8 isolate (the Vibe SDK core pattern) ----
+# ---- bend-jsrt: run_typescript in a V8 isolate (the Vibe SDK core pattern) ----
 # The model writes real TypeScript/JavaScript; rust/jsrt (deno_core v8 +
 # deno_ast) runs it in a FRESH isolate per round with heap limits and a
 # watchdog. Tool calls print a request and exit 42; the runtime executes
@@ -641,6 +659,18 @@ def node_req.res(r: Maybe<&2, Jv.Val>) -> NR:
 def node_req(+body: String) -> NR:
   node_req.res(Jv.parse(String.trim(body)))
 
+# exit 43: the engine printed {"error": "..."} — hand the message back
+# to the model so it can read the error and retry
+def node_err.res(r: Maybe<&2, Jv.Val>) -> String:
+  match r:
+    case Some{+v}:
+      node_req.tool(Jv.get(v, "error"))
+    case None{}:
+      "program failed"
+
+def node_err(+body: String) -> String:
+  node_err.res(Jv.parse(String.trim(body)))
+
 def node_split.zero(z: Bool, +code: U32, +body: String) -> NR:
   match z:
     case True{}:
@@ -649,12 +679,19 @@ def node_split.zero(z: Bool, +code: U32, +body: String) -> NR:
       NRErr{String.append("program error (exit ",
         String.append(U32.show(code), ")"))}
 
+def node_split.pick43(is43: Bool, +code: U32, +body: String) -> NR:
+  match is43:
+    case True{}:
+      NRErr{node_err(body)}
+    case False{}:
+      node_split.zero(U32.is_eq(code, 0), code, body)
+
 def node_split.pick42(is42: Bool, +code: U32, +body: String) -> NR:
   match is42:
     case True{}:
       node_req(body)
     case False{}:
-      node_split.zero(U32.is_eq(code, 0), code, body)
+      node_split.pick43(U32.is_eq(code, 43), code, body)
 
 def node_split.pick(+code: U32, +body: String) -> NR:
   node_split.pick42(U32.is_eq(code, 42), code, body)
@@ -737,7 +774,7 @@ def exec_program.call.node(is_node: Bool, +name: String, +args: String,
   match is_node:
     case True{}:
       IO.pure(ExecRes, Ex{False{},
-        "run_program inside a program is not supported"})
+        "run_typescript inside a program is not supported"})
     case False{}:
       exec_mcp(name, args, live)
 
@@ -824,7 +861,7 @@ def exec_pick.call(is_bash: Bool, is_search: Bool, +call: T.Call,
 def exec_tool.node_args(+call: T.Call, +live: Bool) -> IO(ExecRes):
   match call:
     case T.Call{_, _, +args}:
-      exec_program(50n, EpRun{}, args, Nil{}, live)
+      exec_program(50n, EpRun{}, Api.call_code(args), Nil{}, live)
 
 def exec_tool.is_node(is_node: Bool, +call: T.Call, +live: Bool)
     -> IO(ExecRes):
@@ -843,7 +880,7 @@ def call_id(c: T.Call) -> U32:
     case T.Call{id, _, _}:
       id
 
-# live completions: run_program becomes node_program so the V8 engine
+# live completions: run_typescript becomes node_program so the V8 engine
 # executes it (the Core's law-checked interpreter stays for scripted runs)
 def rename_cmd.ok(+action: U32, +text: String, calls: List<&2, T.Call>)
     -> T.Cmd:
@@ -911,7 +948,7 @@ def sys_prompt() -> String:
   "You are a precise assistant running on the Bend Unified Harness."
 
 def cfg(threshold: Nat, max_nulls: Nat) -> T.Cfg:
-  T.Cfg{threshold, 40n, max_nulls, sys_prompt(), X.catalog()}
+  T.Cfg{threshold, 40n, max_nulls, sys_prompt(), X.catalog_short()}
 
 def say(text: String) -> T.Cmd:
   T.UserMsg{T.Queue{}, text}
@@ -951,7 +988,7 @@ def s_program() -> IO(Unit):
   scenario("programmatic tool calling (D1)",
     cfg(600n, 3n),
     Con{say("Orchestrate: search the catalog and look up a tool's details, then report."), Nil{}},
-    Con{call(1, "run_program",
+    Con{call(1, "run_typescript",
         "const s = search_tool_functions(best_match: catalog); const d = search_tool_functions(details: bash); return s;"),
       Con{reply("The program searched the catalog and looked up the details."), Nil{}}})
 
@@ -959,7 +996,7 @@ def s_program_fail() -> IO(Unit):
   scenario("a failing program call fails the program",
     cfg(600n, 3n),
     Con{say("Run a program that calls a missing tool."), Nil{}},
-    Con{call(1, "run_program", "const s = no_such_tool(oops); return s;"),
+    Con{call(1, "run_typescript", "const s = no_such_tool(oops); return s;"),
       Con{reply("The program failed on the missing tool as expected."), Nil{}}})
 
 def s_steering() -> IO(Unit):
@@ -972,7 +1009,7 @@ def s_steering() -> IO(Unit):
 
 def s_auto_compaction() -> IO(Unit):
   scenario("automatic in-turn compaction (ADR 0011)",
-    cfg(335n, 3n),
+    cfg(304n, 3n),
     Con{say("First: let us talk about the history of the harbour, the cranes, and the ferries that cross every morning."),
       Con{say("Second: the warehouses along the quay stored grain, timber, and later container freight for decades."),
         Con{say("Third: the fishermen mended nets on the pier and told the same stories every single evening there."),
@@ -985,7 +1022,7 @@ def s_auto_compaction() -> IO(Unit):
 
 def s_retry() -> IO(Unit):
   scenario("malformed summary retry, then success (ADR 0011)",
-    cfg(320n, 3n),
+    cfg(289n, 3n),
     Con{say("First: the observatory on the hill opened its dome at dusk and tracked the moving planets all night."),
       Con{say("Second: the astronomers logged each transit in leather notebooks, arguing gently about the numbers."),
         Con{say("Third: now compact the observatory conversation."), Nil{}}}},

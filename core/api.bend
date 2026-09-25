@@ -236,10 +236,143 @@ def arg_schema() -> J.Json:
         Nil{}})),
       Con{J.kv("required", J.arr(Con{J.str("arg"), Nil{}})), Nil{}}}})
 
+# ---- per-tool parameter schemas (exact vibe_sdk schemas) ----
+# run_typescript: {"code": string} (deny_unknown_fields)
+# search_tool_functions: the SearchRequest schema (mode/query/
+# functions/functionNames/connectors)
+
+def code_schema() -> J.Json:
+  J.obj(
+    Con{J.kv("type",
+        J.str("object")),
+      Con{J.kv("additionalProperties",
+          J.JBool{False{}}),
+        Con{J.kv("properties",
+            J.obj(
+              Con{J.kv("code",
+                  J.obj(
+                    Con{J.kv("type",
+                        J.str("string")),
+                      Nil{}})),
+                Nil{}})),
+          Con{J.kv("required",
+              J.arr(
+                Con{
+                  J.str("code"),
+                  Nil{}})),
+            Nil{}}}}})
+
+def search_schema() -> J.Json:
+  J.obj(
+    Con{J.kv("type",
+        J.str("object")),
+      Con{J.kv("additionalProperties",
+          J.JBool{False{}}),
+        Con{J.kv("properties",
+            J.obj(
+              Con{J.kv("mode",
+                  J.obj(
+                    Con{J.kv("type",
+                        J.str("string")),
+                      Con{J.kv("enum",
+                          J.arr(
+                            Con{
+                              J.str("best_match"),
+                              Con{
+                                J.str("details"),
+                                Con{
+                                  J.str("all_connector_capabilities"),
+                                  Nil{}}}})),
+                        Con{J.kv("description",
+                            J.str("best_match returns ranked names; details returns declarations for exact functions; all_connector_capabilities lists exact connector inventories.")),
+                          Con{J.kv("default",
+                              J.str("best_match")),
+                            Nil{}}}}})),
+                Con{J.kv("query",
+                    J.obj(
+                      Con{J.kv("type",
+                          J.str("string")),
+                        Con{J.kv("description",
+                            J.str("Rewrite the needed operation into short tool keywords, e.g. \"list issues\"; do not pass the full user request.")),
+                          Nil{}}})),
+                  Con{J.kv("functions",
+                      J.obj(
+                        Con{J.kv("type",
+                            J.str("array")),
+                          Con{J.kv("items",
+                              J.obj(
+                                Con{J.kv("type",
+                                    J.str("string")),
+                                  Con{J.kv("minLength",
+                                      J.JNum{1n}),
+                                    Nil{}}})),
+                            Con{J.kv("description",
+                                J.str("Exact {connector}.{function} names for details; required in details mode.")),
+                              Con{J.kv("maxItems",
+                                  J.JNum{10n}),
+                                Con{J.kv("default",
+                                    J.arr(
+                                      Nil{})),
+                                  Nil{}}}}}})),
+                    Con{J.kv("functionNames",
+                        J.obj(
+                          Con{J.kv("type",
+                              J.str("array")),
+                            Con{J.kv("items",
+                                J.obj(
+                                  Con{J.kv("type",
+                                      J.str("string")),
+                                    Con{J.kv("minLength",
+                                        J.JNum{1n}),
+                                      Nil{}}})),
+                              Con{J.kv("description",
+                                  J.str("Deprecated alias for functions.")),
+                                Con{J.kv("maxItems",
+                                    J.JNum{10n}),
+                                  Nil{}}}}})),
+                      Con{J.kv("connectors",
+                          J.obj(
+                            Con{J.kv("type",
+                                J.str("array")),
+                              Con{J.kv("items",
+                                  J.obj(
+                                    Con{J.kv("type",
+                                        J.str("string")),
+                                      Con{J.kv("minLength",
+                                          J.JNum{1n}),
+                                        Nil{}}})),
+                                Con{J.kv("description",
+                                    J.str("Exact connector names for best_match/all_connector_capabilities; unused in details.")),
+                                  Con{J.kv("maxItems",
+                                      J.JNum{10n}),
+                                    Con{J.kv("default",
+                                        J.arr(
+                                          Nil{})),
+                                      Nil{}}}}}})),
+                        Nil{}}}}}})),
+          Nil{}}}})
+
+def tool_schema.rt(is_rt: Bool, +name: String) -> J.Json:
+  match is_rt:
+    case True{}:
+      code_schema()
+    case False{}:
+      arg_schema()
+
+def tool_schema.search(is_search: Bool, +name: String) -> J.Json:
+  match is_search:
+    case True{}:
+      search_schema()
+    case False{}:
+      tool_schema.rt(String.eq(name, "run_typescript"), name)
+
+def tool_schema(+name: String) -> J.Json:
+  tool_schema.search(String.eq(name, "search_tool_functions"), name)
+
 def tool_fn_json(+name: String, +desc: String) -> J.Json:
   J.obj(Con{J.kv("name", J.str(name)),
     Con{J.kv("description", J.str(desc)),
-      Con{J.kv("parameters", arg_schema()), Nil{}}}})
+      Con{J.kv("parameters", tool_schema(name)), Nil{}}}})
 
 def tool_json(t: WTool) -> J.Json:
   match t:
@@ -261,8 +394,18 @@ def tools_json(ts: List<&2, WTool>) -> J.Json:
     case Con{+t, rest}:
       tools_json.link(tools_json(rest), t)
 
-def args_json(+args: String) -> String:
-  J.stringify(J.obj(Con{J.kv("arg", J.str(args)), Nil{}}))
+def args_json.structured(is_structured: Bool, +args: String) -> String:
+  match is_structured:
+    case True{}:
+      args
+    case False{}:
+      J.stringify(J.obj(Con{J.kv("arg", J.str(args)), Nil{}}))
+
+def args_json(+name: String, +args: String) -> String:
+  args_json.structured(
+    Bool.or(String.eq(name, "run_typescript"),
+      String.eq(name, "search_tool_functions")),
+    args)
 
 def call_json(c: WCall) -> J.Json:
   match c:
@@ -271,7 +414,7 @@ def call_json(c: WCall) -> J.Json:
         Con{J.kv("type", J.str("function")),
           Con{J.kv("function",
             J.obj(Con{J.kv("name", J.str(name)),
-              Con{J.kv("arguments", J.str(args_json(args))), Nil{}}})),
+              Con{J.kv("arguments", J.str(args_json(name, args))), Nil{}}})),
             Nil{}}}})
 
 def calls_json.link(rest_j: J.Json, +c: WCall) -> J.Json:
@@ -474,6 +617,18 @@ def arg_of.parsed(r: Result<&2, &2, String, J.Json>, +raw: String) -> String:
 
 def arg_of(+raw: String) -> String:
   arg_of.parsed(J.parse(raw), raw)
+
+# extract "code" from structured JSON tool arguments (run_typescript);
+# pass through if the args are not JSON or have no code field
+def call_code.res(r: Result<&2, &2, String, J.Json>, +raw: String) -> String:
+  match r:
+    case Done{+j}:
+      J.get_str_or(j, "code", raw)
+    case Fail{_}:
+      raw
+
+def call_code(+args: String) -> String:
+  call_code.res(J.parse(args), args)
 
 def tc_line(idx: Nat, tc: J.Json) -> String:
   +fn = fn_of(tc)

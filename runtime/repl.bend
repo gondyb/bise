@@ -9,7 +9,7 @@
 # Commands (one per line):
 #   say <text>        start a turn. "say tools ..." makes the model call
 #                     search_tool_functions; "say prog: <program>"
-#                     makes it call run_program (D1).
+#                     makes it call run_typescript (D1).
 #   steer <text>      steering input (at idle the Core starts a turn with it)
 #   notify <text>     a notification
 #   compact           manual between-turn compaction
@@ -48,7 +48,7 @@ def repl_help() -> List<&2, String>:
 def script_for.prog(is_prog: Bool, +text: String) -> List<&2, M.Reply>:
   match is_prog:
     case True{}:
-      Con{M.ROk{"", Con{T.Call{1, "run_program",
+      Con{M.ROk{"", Con{T.Call{1, "run_typescript",
           String.trim(String.drop(text, 5n))}, Nil{}}},
         Con{M.ROk{"Program complete.", Nil{}}, Nil{}}}
     case False{}:

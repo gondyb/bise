@@ -60,6 +60,7 @@ const PRELUDE: &str = r#"
 const __RESULTS = __RESULTS_PLACEHOLDER__;
 let __i = 0;
 function __tool(name, args) {
+  if (name.startsWith('tools.')) name = name.slice(6);
   if (__i < __RESULTS.length) {
     const r = __RESULTS[__i]; __i++;
     try { return JSON.parse(r); } catch (e) { return r; }
@@ -99,11 +100,66 @@ const __out = (function () {
   with (new Proxy({}, __gh)) {
 "#;
 
-const EPILOGUE: &str = r#"
+// legacy format: the program is a function body that ends with `return`
+const EPILOGUE_RETURN: &str = r#"
   }
 })();
 __done(typeof __out === 'string' ? __out : JSON.stringify(__out === undefined ? '' : __out));
 "#;
+
+// vibe format: the program defines `async function main()`; its resolved
+// value is the result (the Promise drains through the microtask checkpoint)
+const EPILOGUE_MAIN: &str = r#"
+  Promise.resolve(main()).then(
+    (v) => __done(typeof v === 'string' ? v : JSON.stringify(v === undefined ? '' : v)),
+    (e) => __fail(JSON.stringify(String((e && e.message) || e)))
+  );
+  }
+})();
+"#;
+
+// does the (transpiled) program declare a `main` function?
+// `function main` followed (after spaces) by `(` or `<` — covers
+// `function main`, `async function main`, generic forms included
+fn declares_main(js: &str) -> bool {
+    let bytes = js.as_bytes();
+    let mut i = 0;
+    while let Some(at) = js[i..].find("function main") {
+        let start = i + at + "function main".len();
+        let mut j = start;
+        while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
+            j += 1;
+        }
+        if j < bytes.len() && (bytes[j] == b'(' || bytes[j] == b'<') {
+            return true;
+        }
+        i = start;
+    }
+    false
+}
+
+fn json_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+// the program failed: print a machine-readable error (exit 43) so the
+// host can hand the message back to the model, which can read and retry
+fn fail(message: &str) -> ! {
+    println!("{{\"error\": \"{}\"}}", json_escape(message));
+    std::process::exit(43);
+}
 
 fn to_rust_string(scope: &mut v8::PinScope, value: v8::Local<v8::Value>) -> String {
     value
@@ -137,6 +193,12 @@ unsafe extern "C" fn native_call(
             println!("{result}");
             std::process::exit(0);
         }
+        "__fail" => {
+            let message = to_rust_string(&mut scope, args.get(0));
+            // the payload is already JSON-encoded by the epilogue
+            println!("{{\"error\": {message}}}");
+            std::process::exit(43);
+        }
         _ => {
             let line = to_rust_string(&mut scope, args.get(0));
             eprintln!("[program] {line}");
@@ -162,8 +224,7 @@ fn run(program: &str, results: &str) -> ! {
     let js = match transpile(program) {
         Ok(js) => js,
         Err(error) => {
-            eprintln!("SyntaxError: {error}");
-            std::process::exit(1);
+            fail(&format!("SyntaxError: {error}"));
         }
     };
     let results_lit = if results.trim().is_empty() {
@@ -171,11 +232,16 @@ fn run(program: &str, results: &str) -> ! {
     } else {
         results.trim().to_string()
     };
+    let epilogue = if declares_main(&js) {
+        EPILOGUE_MAIN
+    } else {
+        EPILOGUE_RETURN
+    };
     let source = format!(
         "{}{}{}",
         PRELUDE.replace("__RESULTS_PLACEHOLDER__", &results_lit),
         js,
-        EPILOGUE
+        epilogue
     );
 
     INITIALIZE_V8.call_once(|| {
@@ -203,20 +269,25 @@ fn run(program: &str, results: &str) -> ! {
 
     set_global(tc, &context, "__request_tool");
     set_global(tc, &context, "__done");
+    set_global(tc, &context, "__fail");
     set_global(tc, &context, "__log");
 
     let code = match v8::String::new(tc, &source) {
         Some(code) => code,
         None => {
-            eprintln!("Error: could not allocate the program source");
-            std::process::exit(1);
+            fail("could not allocate the program source");
         }
     };
     let script = match v8::Script::compile(tc, code, None) {
         Some(script) => script,
         None => {
-            eprintln!("SyntaxError: could not compile the program");
-            std::process::exit(1);
+            let message = tc
+                .exception()
+                .and_then(|e| e.to_string(tc))
+                .map(|s| s.to_rust_string_lossy(tc))
+                .unwrap_or_else(|| "could not compile the program".to_string());
+            tc.reset();
+            fail(&message);
         }
     };
     if script.run(tc).is_none() {
@@ -228,16 +299,17 @@ fn run(program: &str, results: &str) -> ! {
         let deadline = tc.is_execution_terminating();
         let _ = stop_tx.send(());
         if deadline {
-            eprintln!("Error: program exceeded the {ROUND_TIMEOUT:?} deadline");
+            fail(&format!("program exceeded the {ROUND_TIMEOUT:?} deadline"));
         } else {
-            eprintln!("ExecutionError: {message}");
+            fail(&format!("ExecutionError: {message}"));
         }
-        std::process::exit(1);
     }
+    // the vibe format resolves `async function main()` through the
+    // microtask queue — drain it (__done/__fail exit from inside)
+    tc.perform_microtask_checkpoint();
     let _ = stop_tx.send(());
     // __done exits before this point on success
-    eprintln!("Error: the program ended without returning");
-    std::process::exit(1);
+    fail("the program ended without returning");
 }
 
 fn main() {

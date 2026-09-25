@@ -1,0 +1,3 @@
+## Current time
+
+For requests that depend on now, use `run_typescript` to read `new Date().toISOString()` before time-sensitive search, calendar, schedule, or service calls. Treat that timestamp as the source of truth for "now". Use a user timezone supplied in context for user-facing times; otherwise use UTC or ask for the timezone only when local time materially affects the result.

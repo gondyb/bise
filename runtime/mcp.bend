@@ -163,11 +163,21 @@ def flat(s: String) -> String:
       String.append(
         flat.chr(Bool.or(U32.is_eq(c, 10), U32.is_eq(c, 13)), c), flat(t))
 
+# the input schema rides in the index line so details mode returns real
+# declarations (vibe_sdk shows input_schema in details, not just the text)
+def tool_line.schema(m: Maybe<&2, Jv.Val>) -> String:
+  match m:
+    case None{}:
+      ""
+    case Some{+v}:
+      String.append(" | input: ", flat(Jv.encode(v)))
+
 def tool_line(+cid: String, +cname: String, +t: Jv.Val) -> String:
   String.append(cid, String.append(" ", String.append(cname,
     String.append(" ", String.append(flat(jstr(t, "name", "?")),
       String.append(" : ", String.append("#",
-        flat(jstr(t, "description", "")))))))))
+        String.append(flat(jstr(t, "description", "")),
+          tool_line.schema(Jv.get(t, "inputSchema"))))))))))
 
 def tool_lines(+cid: String, +cname: String, ts: List<&2, Jv.Val>) -> String:
   match ts:
@@ -349,9 +359,9 @@ def find_line(+content: String, +v: String) -> Maybe<&2, McpTool>:
 def merged_tools(m: Maybe<&2, String>) -> List<&2, T.ToolDef>:
   match m:
     case None{}:
-      X.catalog()
+      X.catalog_short()
     case Some{+content}:
-      List.append(&2, T.ToolDef, X.catalog(), index_of(content))
+      List.append(&2, T.ToolDef, X.catalog_short(), index_of(content))
 
 def merged_search.pick(live: Bool, +args: String,
     m: Maybe<&2, String>) -> MR:
@@ -359,7 +369,7 @@ def merged_search.pick(live: Bool, +args: String,
     case True{}:
       MR{True{}, X.search_reply(args, merged_tools(m))}
     case False{}:
-      MR{True{}, X.search_reply(args, X.catalog())}
+      MR{True{}, X.search_reply(args, X.catalog_short())}
 
 def merged_search.live(+args: String) -> IO(MR):
   do IO<MR>:
