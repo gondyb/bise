@@ -1,0 +1,10 @@
+{
+  "name": "bend-harness-repl-ui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Terminal UI on top of the Bend Unified Harness REPL server (TCP).",
+  "scripts": {
+    "start": "node --experimental-strip-types repl.ts"
+  },
+  "type": "module"
+}

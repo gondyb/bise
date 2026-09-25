@@ -1,0 +1,216 @@
+# runtime/remote.bend — the wire protocol between the Bend Runtime and the
+# HTTP bridge (live/bridge.ts).
+#
+# Bend has no TLS, so the Runtime cannot speak HTTPS itself. The bridge is
+# a local process that does the real provider call (api.mistral.ai) and
+# talks this tiny line protocol with the Runtime over plain TCP. The Core
+# never sees any of this: it still just emits AgentCall actions and
+# receives completion commands.
+#
+# Request (one per connection, newline-separated):
+#   MODEL default
+#   TOOL <name> : <description>          (the Core's tool catalog)
+#   MSG <role> : <text>
+#     CALL <id> <name> : <args>         (tool calls of an assistant message)
+#   END
+#
+# Reply (the bridge closes after it):
+#   OK <text flattened>                  (assistant text, may be empty)
+#   CALL <id> <name> : <args>           (0..n tool calls)
+#   END
+# or
+#   ERROR <message>
+#   END
+#
+# All text on the wire is single-line: file contents and model replies are
+# flattened before they enter history.
+import Base
+import ../core/types.bend as T
+import ../core/compaction.bend as C
+
+# ---- the parsed reply ----
+
+type RemoteRes is Data:
+  RROk{text: String, calls: List<&2, T.Call>}
+  RRErr{why: String}
+
+
+def newline_char.get(m: Maybe<&2, Char>) -> Char:
+  match m:
+    case Some{c}:
+      c
+    case None{}:
+      Char.from_u32(32)
+
+def newline_char() -> Char:
+  newline_char.get(String.get("\n", 0n))
+
+def flatten(+s: String) -> String:
+  String.join(String.split(s, newline_char()), " ")
+
+# ---- serialization ----
+
+def role_str(role: T.Role) -> String:
+  match role:
+    case T.RUser{}:
+      "user"
+    case T.RAsst{}:
+      "assistant"
+    case T.RSys{}:
+      "system"
+    case T.RTool{}:
+      "tool"
+
+def ser_call(+c: T.Call) -> String:
+  match c:
+    case T.Call{+id, +name, +args}:
+      String.append("\n  CALL ", String.append(U32.show(id),
+        String.append(" ", String.append(name,
+          String.append(" : ", flatten(args))))))
+
+def ser_calls(calls: List<&2, T.Call>) -> String:
+  match calls:
+    case Nil{}:
+      ""
+    case Con{c, rest}:
+      String.append(ser_call(c), String.append("\n", ser_calls(rest)))
+
+def ser_msg(m: T.Msg) -> String:
+  match m:
+    case T.Msg{+role, +text, +calls, _}:
+      String.append("MSG ", String.append(role_str(role),
+        String.append(" : ", String.append(flatten(text),
+          ser_calls(calls)))))
+
+def ser_msgs(ms: List<&2, T.Msg>) -> String:
+  match ms:
+    case Nil{}:
+      ""
+    case Con{m, rest}:
+      String.append(ser_msg(m), String.append("\n", ser_msgs(rest)))
+
+def ser_tool(t: T.ToolDef) -> String:
+  match t:
+    case T.ToolDef{+name, +desc}:
+      String.append("TOOL ", String.append(name,
+        String.append(" : ", flatten(desc))))
+
+def ser_tools(ts: List<&2, T.ToolDef>) -> String:
+  match ts:
+    case Nil{}:
+      ""
+    case Con{t, rest}:
+      String.append(ser_tool(t), String.append("\n", ser_tools(rest)))
+
+# the complete request for one provider call
+# the complete request for one provider call
+def build_request(cfg: T.Cfg, input: List<&2, T.Msg>) -> String:
+  match cfg:
+    case T.Cfg{_, _, _, _, +tools}:
+      String.append("MODEL default\n",
+        String.append(ser_tools(tools),
+          String.append("\n", String.append(ser_msgs(input),
+            String.append("\n", "END\n")))))
+
+# a compaction call offers NO tools: the model cannot answer with a
+# tool call, which would make the summary malformed by definition
+def build_request.bare(cfg: T.Cfg, input: List<&2, T.Msg>) -> String:
+  match cfg:
+    case T.Cfg{_, _, _, _, _}:
+      String.append("MODEL default\n",
+        String.append(ser_msgs(input),
+          String.append("\n", "END\n")))
+
+
+# ---- reply parsing ----
+
+def u32_or(m: Maybe<&2, U32>) -> U32:
+  match m:
+    case Some{x}:
+      x
+    case None{}:
+      0
+
+def parse_call.b(sp2: Maybe<&2, Nat>, +id_str: String, +rest: String)
+    -> T.Call:
+  match sp2:
+    case None{}:
+      T.Call{u32_or(U32.read(id_str)), rest, ""}
+    case Some{+q}:
+      # the separator is " : " (space, colon, space) after the name
+      T.Call{u32_or(U32.read(id_str)), String.take(rest, q),
+        String.drop(rest, Nat.add(Nat.add(q, 2n), 1n))}
+
+def parse_call.a(sp: Maybe<&2, Nat>, +line: String) -> T.Call:
+  match sp:
+    case None{}:
+      T.Call{0, "bad", ""}
+    case Some{+p}:
+      +id_str = String.take(line, p)
+      +rest = String.drop(line, Nat.add(p, 1n))
+      parse_call.b(C.find(rest, " ", 0n), id_str, rest)
+
+def parse_call(+line: String) -> T.Call:
+  # "CALL <id> <name> : <args>"
+  parse_call.a(C.find(line, " ", 0n), line)
+
+# bottom-up parse: the tail is parsed first, then the current line is
+# combined into it (the List.filter trick), so every helper is a leaf
+
+def comb.err(is_err: Bool, +h: String, +tail: RemoteRes) -> RemoteRes:
+  match is_err:
+    case True{}:
+      RRErr{String.drop(h, 6n)}
+    case False{}:
+      tail
+
+def comb.call(is_call: Bool, +h: String, +tail: RemoteRes) -> RemoteRes:
+  match is_call:
+    case True{}:
+      match tail:
+        case RROk{+text, +calls}:
+          RROk{text, Con{parse_call(String.drop(h, 5n)), calls}}
+        case RRErr{+why}:
+          RRErr{why}
+    case False{}:
+      comb.err(String.starts_with(h, "ERROR "), h, tail)
+
+def comb.ok(is_ok: Bool, +h: String, +tail: RemoteRes) -> RemoteRes:
+  match is_ok:
+    case True{}:
+      match tail:
+        case RROk{_, +calls}:
+          RROk{String.drop(h, 3n), calls}
+        case RRErr{+why}:
+          RRErr{why}
+    case False{}:
+      comb.call(String.starts_with(h, "CALL "), h, tail)
+
+def combine(+h: String, tail: RemoteRes) -> RemoteRes:
+  comb.ok(String.starts_with(h, "OK "), h, tail)
+
+def parse_go.step(is_end: Bool, +h: String, tail: RemoteRes) -> RemoteRes:
+  match is_end:
+    case True{}:
+      # the END line: the empty success the lines above combine into
+      RROk{"", Nil{}}
+    case False{}:
+      combine(h, tail)
+
+def parse_go(lines: List<&2, String>) -> RemoteRes:
+  match lines:
+    case Nil{}:
+      RRErr{"truncated reply"}
+    case +h <> rest:
+      parse_go.step(String.eq(h, "END"), h, parse_go(rest))
+
+def parse_reply(reply: String) -> RemoteRes:
+  parse_go(String.split(reply, newline_char()))
+
+# the reply becomes exactly the completion command the Core expects
+def remote_cmd(res: RemoteRes, +action: U32) -> T.Cmd:
+  match res:
+    case RROk{+text, +calls}:
+      T.CompletionOk{action, text, calls}
+    case RRErr{+why}:
+      T.CompletionFail{action, why}

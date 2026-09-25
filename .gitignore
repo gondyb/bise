@@ -1,0 +1,19 @@
+# Build artifacts (Bend native binaries)
+harness-demo
+repl
+repl-live
+repl-scripted
+
+# Rust build output
+target/
+
+# Logs
+logs/
+
+# Dependencies
+node_modules/
+
+# OS / editor
+.DS_Store
+*.pyc
+__pycache__/

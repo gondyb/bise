@@ -1,0 +1,13 @@
+[package]
+name = "bend-jsrt"
+version = "0.1.0"
+edition = "2021"
+
+# A standalone project on purpose: deno_core/deno_ast resolve in their own
+# lockfile, away from the TUI's ratatui pin (unicode-width conflict).
+
+[dependencies]
+deno_core = { version = "=0.409.0", default-features = false, features = ["reactor-tokio"] }
+deno_ast = { version = "=0.53.3", features = ["transpiling"] }
+
+[workspace]

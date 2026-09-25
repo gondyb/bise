@@ -1,0 +1,21 @@
+{
+  "name": "bend-harness-tui",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Terminal UI for the Bend Unified Harness (Ink/React, Vibe-CLI style).",
+  "scripts": {
+    "start": "tsx app.tsx"
+  },
+  "dependencies": {
+    "ink": "^5.1.0",
+    "marked": "^18.0.14",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
