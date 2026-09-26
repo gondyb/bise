@@ -1260,11 +1260,10 @@ fn draw(app: &mut App, frame: &mut Frame) {
                 Span::styled(" interrupt", Style::default().fg(DIM)),
             ])
         } else {
+            // idle: a static standby dot — the spinner only moves
+            // while a turn runs; between turns nothing animates
             Line::from(vec![
-                Span::styled(
-                    format!("  {}", spinner_frame(app.tick / 2)),
-                    Style::default().fg(BRAND),
-                ),
+                Span::styled("  ● ", Style::default().fg(BRAND)),
                 Span::styled(
                     format!(
                         " bend-harness · {}",

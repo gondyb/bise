@@ -503,6 +503,7 @@ def main() -> IO(Unit):
     kr : Result<&1, &1, U32 & String, String> <- IO.get_env("MISTRAL_API_KEY")
     +key : String <- IO.pure(String, R.env_or(kr, ""))
     u : Unit <- Mcp.bootstrap(key)
+    u3 : Unit <- R.bash_cleanup(U32.show(p))
     f : Flow <- serve(l, ld_greet(ld), ld_sess(ld))
     # Stop (a /reload) lands here: main returns, the process exits 0,
     # and the parent respawns the latest code on the same session.

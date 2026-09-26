@@ -848,8 +848,7 @@ def bg_kill_cmd(+bg: String, +id: String) -> String:
 # clear message, never hang the tool
 def bg_setup_guard(+bg: String) -> String:
   String.append("  if [ ! -d ", String.append(bg,
-    String.append(" ]; then echo \"background: the bg dir vanished during setup: ",
-      String.append(bg, "\"; exit 1; fi"))))
+    String.append(" ]; then mkdir -p ", String.append(bg, "; fi"))))
 
 def bg_rc_guard(+bg: String) -> String:
   String.append("  if [ ! -d ", String.append(bg,
@@ -883,7 +882,7 @@ def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
   bg_wrap.seg(command,
   bg_wrap.seg("XQ7NDEOF",
   bg_wrap.seg(String.append("( ( ", String.append(command,
-      " ) > $BG/$i.out 2>&1 <&9 & echo $! > $BG/$i.pid; wait $!; echo $? > $BG/$i.rc ) >/dev/null 2>&1 &")),
+      " ) > $BG/$i.out 2>&1 <&9 & echo $! > $BG/$i.pid; wait $!; echo $? > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in ) >/dev/null 2>&1 &")),
   bg_wrap.seg("while [ ! -s $BG/$i.pid ]; do",
   bg_wrap.seg(bg_setup_guard(bg),
   bg_wrap.seg("  sleep 0.05",
@@ -959,6 +958,17 @@ def bash_exec(command: String) -> IO(ExecRes):
     w : Unit <- P.write_file(path, script)
     out : String <- Snap.run(Con{"/bin/sh", Con{path, Nil{}}})
     IO.pure(ExecRes, exec_of(out))
+
+# boot cleanup: the wrappers of a previous process on this port cannot be
+# running (the parent waits for the old REPL to die before respawning), so
+# stale /tmp/bend-sh-<port>-*.sh files are safe to remove - the wrapper
+# leak (one file per bash call) would otherwise grow without bound.
+def bash_cleanup(+port: String) -> IO(Unit):
+  do IO<Unit>:
+    out : String <- Snap.run(Con{"/bin/sh", Con{"-c",
+      Con{String.append("rm -f /tmp/bend-sh-",
+        String.append(port, "-*.sh")), Nil{}}}})
+    IO.pure(Unit, Unit{})
 
 def exec_mr(m: Mcp.MR) -> ExecRes:
   match m:

@@ -167,7 +167,8 @@ def start_msg.cut(sp: Maybe<&2, Nat>, req: WReq, cur: Maybe<&2, WMsg>,
       match req:
         case WReq{+tools, +msgs, _}:
           WReq{tools, push_msg(cur, msgs),
-            Some{WMsg{String.take(rest, p), String.drop(rest, Nat.add(p, 3n)),
+            Some{WMsg{String.take(rest, p),
+              unescape_nl(String.drop(rest, Nat.add(p, 3n))),
               Nil{}}}}
     case None{}:
       req

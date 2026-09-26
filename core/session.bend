@@ -113,10 +113,10 @@ def tool_result_msg(+name: String, +out: String, ok: Bool) -> T.Msg:
   match ok:
     case True{}:
       T.tool_res(String.append("tool ", String.append(result_name(name),
-        String.append(" ok: ", out))))
+        String.append(" ok: ", Api.escape_nl(out)))))
     case False{}:
       T.tool_res(String.append("tool ", String.append(result_name(name),
-        String.append(" failed: ", out))))
+        String.append(" failed: ", Api.escape_nl(out)))))
 
 # one tool call taken out of the waiting list, with the remainder
 type Taken is Data:
