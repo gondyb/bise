@@ -160,6 +160,18 @@ class BendSession:
     def steer(self, text, timeout=DEFAULT_TIMEOUT):
         return self.send("steer " + text, timeout)
 
+    def steer_midturn(self, text):
+        """Steer the RUNNING turn through the file side-channel.
+
+        The harness reads the socket only between turns; the runtime
+        drains /tmp/bend-steer-<port>.txt at every model/tool safe
+        boundary and commits the text into the running turn (ADR 0005).
+        Use this while a turn is in flight (say() in another thread).
+        """
+        path = "/tmp/bend-steer-%d.txt" % self.port
+        with open(path, "a") as f:
+            f.write(text + "\n")
+
     def notify(self, text, timeout=DEFAULT_TIMEOUT):
         return self.send("notify " + text, timeout)
 

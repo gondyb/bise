@@ -1589,25 +1589,170 @@ def rename_cmd(cmd: T.Cmd) -> T.Cmd:
     case _:
       cmd
 
+# ---- mid-turn steering side-channel (ADR 0005, live) ----
+# The REPL is single-threaded: the socket is only read BETWEEN turns, so
+# a "steer" line sent during a turn waits in the kernel buffer until the
+# turn ends — the Core's mid-turn steering was never exercised live (an
+# idle steer even starts a NEW turn, the exact opposite of ADR 0005).
+# Codex-style fix: the client appends steering lines to a per-process
+# file, and the Runtime drains it at the two safe boundaries — right
+# before a model result or a tool result is applied. There the Core is
+# mid-turn, so apply routes Steer to steer_session; the completion is
+# then applied on a session that already holds the steering, and
+# dispatch injects it into the next model input.
+
+def steer_path_of(+port: String) -> String:
+  String.append("/tmp/bend-steer-", String.append(port, ".txt"))
+
+def steer_path() -> IO(String):
+  do IO<String>:
+    pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
+    +p : String <- IO.pure(String, env_or(pr, "0"))
+    IO.pure(String, steer_path_of(p))
+
+# the feed lines for one drained steering line's apply result; mid-turn
+# Steer is always Accepted (apply.user.busy), so the Rejected arm is
+# the defensive one
+def drain_steer.emit_of(res: T.Res) -> List<&2, String>:
+  match res:
+    case T.Rejected{+reason}:
+      Con{String.append("  obs: steering_rejected: ", reason), Nil{}}
+    case T.Accepted{+obs, _, _}:
+      obs_lines(obs)
+
+def drain_steer.next_of(+sess: T.Session, res: T.Res) -> T.Session:
+  match res:
+    case T.Rejected{_}:
+      sess
+    case T.Accepted{_, _, +next}:
+      next
+
+# the drained content becomes steering lines; blank lines never steer
+def drain_steer.push(empty: Bool, +l: String, +rest: List<&2, String>)
+    -> List<&2, String>:
+  match empty:
+    case True{}:
+      rest
+    case False{}:
+      Con{l, rest}
+
+def drain_steer.skip_go(lines: List<&2, String>) -> List<&2, String>:
+  match lines:
+    case Nil{}:
+      Nil{}
+    case Con{+l, rest}:
+      drain_steer.push(String.is_empty(l), l, drain_steer.skip_go(rest))
+
+# apply the drained lines one by one. Mid-turn Steer produces no acts
+# (apply.user.busy), so the continuation work in `after` is untouched.
+# Structural recursion on the shrinking line list; out and rt are
+# merely threaded.
+# apply the drained lines one by one. Mid-turn Steer produces no acts
+# (apply.user.busy), so the continuation work in `after` is untouched.
+# Structural recursion on the shrinking line list; out and the session
+# fields are merely threaded.
+def drain_steer.one(steers: List<&2, String>, out: Out, +sess: T.Session,
+    +script: List<&2, M.Reply>, +cmds: List<&2, T.Cmd>, live: Bool)
+    -> IO(Out & Rt):
+  match steers:
+    case Nil{}:
+      do IO<Out & Rt>:
+        IO.pure(Out & Rt, (out, Rt{sess, script, cmds, live}))
+    case Con{+l, +rest}:
+      do IO<Out & Rt>:
+        +res : T.Res <- IO.pure(T.Res,
+          S.apply(sess, T.UserMsg{T.Steer{}, l}))
+        out2 : Out <- emit(out, drain_steer.emit_of(res))
+        drain_steer.one(rest, out2, drain_steer.next_of(sess, res),
+          script, cmds, live)
+
+# destructure the runtime state once, then fold the steering lines in
+def drain_steer.step(out: Out, +rt: Rt, +steers: List<&2, String>)
+    -> IO(Out & Rt):
+  match rt:
+    case Rt{+sess, +script, +cmds, +live}:
+      drain_steer.one(steers, out, sess, script, cmds, live)
+
+# read-then-truncate: content that arrives after the read stays in the
+# file for the NEXT boundary, never lost, never double-applied
+def drain_steer.some(empty: Bool, +path: String, out: Out, +rt: Rt,
+    +c: String) -> IO(Out & Rt):
+  match empty:
+    case True{}:
+      do IO<Out & Rt>:
+        IO.pure(Out & Rt, (out, rt))
+    case False{}:
+      do IO<Out & Rt>:
+        u : Unit <- P.write_file(path, "")
+        drain_steer.step(out, rt, drain_steer.skip_go(String.split(c, K.nl())))
+
+def drain_steer.pick(m: Maybe<&2, String>, +path: String, out: Out, +rt: Rt)
+    -> IO(Out & Rt):
+  match m:
+    case None{}:
+      do IO<Out & Rt>:
+        IO.pure(Out & Rt, (out, rt))
+    case Some{+c}:
+      drain_steer.some(String.is_empty(c), path, out, rt, c)
+
+def drain_steer.file(+path: String, out: Out, +rt: Rt) -> IO(Out & Rt):
+  do IO<Out & Rt>:
+    m : Maybe<&2, String> <- P.read_file(path)
+    drain_steer.pick(m, path, out, rt)
+
+# the entry point: scripted runs (live=False) never touch the file, so
+# the scenarios and harness-demo stay hermetic
+def drain_steer(out: Out, +rt: Rt) -> IO(Out & Rt):
+  match rt:
+    case Rt{_, _, _, +live}:
+      match live:
+        case True{}:
+          do IO<Out & Rt>:
+            path : String <- steer_path()
+            drain_steer.file(path, out, rt)
+        case False{}:
+          do IO<Out & Rt>:
+            IO.pure(Out & Rt, (out, rt))
+
 # consumes the exec pair once and hands (handle, cmd) to the loop's
 # continuation; the closure passed by run captures its +params and
 # self-references run, so no mutual recursion is needed
+def exec_done.drained(pd: Out & Rt, k: Nat, +cmd: T.Cmd,
+    next: Nat -> Out -> Rt -> T.Cmd -> IO(RtEnd)) -> IO(RtEnd):
+  match pd:
+    case (out5, +rt3):
+      next(k)(out5)(rt3)(cmd)
+
 def exec_done(pr: Out & ExecRes, k: Nat, +call: T.Call,
     +after: List<&2, T.Act>, +rt2: Rt, +live: Bool,
-    next: Nat -> Out -> T.Cmd -> IO(RtEnd)) -> IO(RtEnd):
+    next: Nat -> Out -> Rt -> T.Cmd -> IO(RtEnd)) -> IO(RtEnd):
   match pr:
     case (out3, +r):
       do IO<RtEnd>:
         out4 : Out <- emit_res_ann(out3, call_id(call), r, live)
         +cmd : T.Cmd <- IO.pure(T.Cmd, exec_cmd(r, call_id(call)))
-        next(k)(out4)(cmd)
+        pd : Out & Rt <- drain_steer(out4, rt2)
+        exec_done.drained(pd, k, cmd, next)
+
+# the same boundary for a model result: the completion is applied on the
+# drained state, so steering that arrived during the call is already in
+# the turn and lands in the next model input
+def model_done(pd: Out & Rt, k: Nat, +res: Rem.RemoteRes, +action: U32,
+    +after: List<&2, T.Act>,
+    next: Nat -> Out -> Rt -> T.Cmd -> IO(RtEnd)) -> IO(RtEnd):
+  match pd:
+    case (out3, +rt3):
+      do IO<RtEnd>:
+        +cmd : T.Cmd <- IO.pure(T.Cmd, rename_cmd(Rem.remote_cmd(res, action)))
+        next(k)(out3)(rt3)(cmd)
 
 # The IO loop. The pure transition is computed as an argument and matched
 # as a parameter, so `run` is a single self-recursive def; every hop burns
 # one unit of fuel, so the Runtime terminates like the Core. The loop
 # returns the final session and output handle, so callers (the scenarios,
 # the REPL) can continue from where it stopped.
-# @unsafe: the EExec branch recurses through the exec_done continuation
+# @unsafe: the EExec branch recurses through the exec_done continuation,
+# and the EModel branch through model_done (both carry the drained state)
 @unsafe
 def run(fuel: Nat, out: Out, +rt: Rt, +job: Job, tr: Trans) -> IO(RtEnd):
   match fuel:
@@ -1639,13 +1784,17 @@ def run(fuel: Nat, out: Out, +rt: Rt, +job: Job, tr: Trans) -> IO(RtEnd):
                         IO.sleep(ms)
                         run(k, out2, rt2, job2, transition(rt2, job2))
                     case EModel{+action, +request, +after}:
-                      # the real provider call (the hub HTTP client)
+                      # the real provider call (the hub HTTP client);
+                      # the side channel is drained before the result is
+                      # applied, so steering sent during the call enters
+                      # the turn at this safe boundary
                       do IO<RtEnd>:
                         res : Rem.RemoteRes <- model_call(request)
-                        +cmd : T.Cmd <- IO.pure(T.Cmd,
-                          rename_cmd(Rem.remote_cmd(res, action)))
-                        run(k, out, rt2, JCmd{cmd, after},
-                          transition(rt2, JCmd{cmd, after}))
+                        pd : Out & Rt <- drain_steer(out, rt2)
+                        model_done(pd, k, res, action, after,
+                          k2 => o3 => +r3 => +c =>
+                            run(k2, o3, r3, JCmd{c, after},
+                              transition(r3, JCmd{c, after})))
                     case EExec{+call, +after, +live}:
                       # the real tool: bash, the merged search, or a
                       # remote MCP call resolved by name. The annotations
@@ -1655,8 +1804,9 @@ def run(fuel: Nat, out: Out, +rt: Rt, +job: Job, tr: Trans) -> IO(RtEnd):
                         out2 : Out <- emit_call_ann(out, call, live)
                         pr : Out & ExecRes <- exec_tool(out2, call, live)
                         exec_done(pr, k, call, after, rt2, live,
-                          k2 => o4 => +c => run(k2, o4, rt2, JCmd{c, after},
-                            transition(rt2, JCmd{c, after})))
+                          k2 => o4 => +r3 => +c =>
+                            run(k2, o4, r3, JCmd{c, after},
+                              transition(r3, JCmd{c, after})))
 
 # ---- scenarios (ADR 0006: the Core tested through the Step Protocol) ----
 

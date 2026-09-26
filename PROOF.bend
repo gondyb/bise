@@ -470,3 +470,18 @@ def Laws.mcp_alias_dedupes():
 def Laws.mcp_bootstrap_url_parity():
   {==}
 
+
+def Laws.steer_path_is_per_port():
+  {==}
+
+def Laws.steer_channel_skips_blank_lines():
+  {==}
+
+def Laws.drain_emits_steering_received():
+  {==}
+
+def Laws.drain_steering_is_act_free():
+  {==}
+
+def Laws.drain_next_of_rejected_keeps_session(s):
+  {==}

@@ -297,6 +297,48 @@ law steering_arrival_order:
   {S.injected_user_texts(S.sess_history(steer_order(law_cfg())))
     == Con{"one", Con{"two", Nil{}}} : List<&2, String>}
 
+# ---- mid-turn steering side-channel (ADR 0005, live) ----
+# The client appends steering lines to /tmp/bend-steer-<port>.txt; the
+# Runtime drains the file at every model/tool safe boundary (the socket
+# is only read between turns). The pure pieces are pinned here.
+
+# LAW: the side-channel path is per-process (the REPL port), so two
+# parallel terminals never read each other's steering.
+law steer_path_is_per_port:
+  {Rt.steer_path_of("7702") == "/tmp/bend-steer-7702.txt" : String}
+
+# LAW: blank lines in the side-channel never steer.
+law steer_channel_skips_blank_lines:
+  {Rt.drain_steer.skip_go(Con{"a", Con{"", Con{"b", Nil{}}}})
+    == Con{"a", Con{"b", Nil{}}} : List<&2, String>}
+
+# LAW: a drained mid-turn steer emits exactly the wire line the client
+# shows (steering_received) — never a turn_started: draining must not
+# start a new turn, it steers the running one.
+law drain_emits_steering_received:
+  {Rt.drain_steer.emit_of(
+      S.apply(steer_flow.started(law_cfg()), T.UserMsg{T.Steer{}, "penguins"}))
+    == Con{"  obs: steering_received: penguins", Nil{}} : List<&2, String>}
+
+def drain_flow.acts(res: T.Res) -> List<&2, T.Act>:
+  match res:
+    case T.Accepted{_, acts, _}:
+      acts
+    case T.Rejected{_}:
+      Nil{}
+
+# LAW: mid-turn steering produces no acts: the drained line never
+# reroutes the running turn's continuation (the drain may drop acts
+# safely).
+law drain_steering_is_act_free:
+  {drain_flow.acts(S.apply(steer_flow.started(law_cfg()),
+      T.UserMsg{T.Steer{}, "penguins"})) == Nil{} : List<&2, T.Act>}
+
+# LAW: a rejected apply keeps the session (the drain's defensive arm).
+law drain_next_of_rejected_keeps_session:
+  for +s: T.Session
+  {Rt.drain_steer.next_of(s, T.Rejected{"nope"}) == s : T.Session}
+
 # ---- /reload (the self-improvement loop: restart on the same session) ----
 
 # LAW: /reload maps onto the reload protocol word, sent verbatim.

@@ -1106,6 +1106,35 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         out.push(Ev::Info(
             "texte simple : say implicite (interprété par le harness)".into(),
         ));
+    } else if (first == "steer" || first == "/steer") && app.pending {
+        // mid-turn steering goes through the FILE side-channel: the
+        // harness reads the socket only between turns, but the runtime
+        // drains /tmp/bend-steer-<port>.txt at every model/tool safe
+        // boundary and commits the text into the running turn (ADR 0005)
+        let msg = v
+            .strip_prefix("steer ")
+            .or_else(|| v.strip_prefix("/steer "))
+            .map(|s| s.trim())
+            .unwrap_or(typed);
+        if msg.is_empty() {
+            out.push(Ev::Info("steering vide".into()));
+        } else {
+            let path = format!("/tmp/bend-steer-{}.txt", app.port);
+            let mut line = String::with_capacity(msg.len() + 1);
+            line.push_str(msg);
+            line.push('\n');
+            let ok = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .and_then(|mut f| f.write_all(line.as_bytes()))
+                .is_ok();
+            out.push(Ev::Info(if ok {
+                format!("steering mis en attente : {}", msg)
+            } else {
+                "steering non écrit (side-channel inaccessible)".to_string()
+            }));
+        }
     } else {
         // everything else — plain text, /commands, raw protocol words —
         // goes to the harness verbatim; it interprets
@@ -1276,8 +1305,8 @@ fn draw(app: &mut App, frame: &mut Frame) {
                     Style::default().fg(DIM),
                 ),
                 Span::styled(" · ", Style::default().fg(DIM)),
-                Span::styled("esc", Style::default().fg(TEXT)),
-                Span::styled(" interrupt", Style::default().fg(DIM)),
+                Span::styled("/ commandes", Style::default().fg(TEXT)),
+                Span::styled(" · End : bas · Ctrl+C : quitter", Style::default().fg(DIM)),
             ])
         };
         frame.render_widget(Paragraph::new(status), chunks[1]);
