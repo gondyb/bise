@@ -19,6 +19,10 @@
 #   notify <text>     a notification
 #   compact           manual between-turn compaction
 #   interrupt         interrupt (an accepted no-op while idle)
+#   reload            restart the process with the latest code: only
+#                     accepted between turns (reload_allowed); the parent
+#                     recompiles, respawns on the same port and restores
+#                     the checkpointed session (BEND_CONTINUE=1)
 #   quit              close the connection; the session survives
 #
 # The whole loop follows the echo-server pattern from the demos: the
@@ -28,6 +32,7 @@ import Base
 import ../core/types.bend as T
 import ../core/compaction.bend as C
 import ../core/commands.bend as Cm
+import ../core/session.bend as S
 import ./persist.bend as P
 import ./mcp.bend as Mcp
 import ./model.bend as M
@@ -40,6 +45,14 @@ type Plan is Data:
   PRun{cmds: List<&2, T.Cmd>, script: List<&2, M.Reply>}
   PHelp{}
   PQuit{}
+  PReload{}
+
+# what the loops return: keep serving, or stop. The reload path
+# unwinds to main so the process exits 0 — the parent then recompiles
+# the latest source and respawns on the SAME session (--continue)
+type Flow is Data:
+  Go{sess: T.Session}
+  Stop{}
 
 def repl_help() -> List<&2, String>:
   Con{"bend-harness REPL. Commands:",
@@ -48,8 +61,9 @@ def repl_help() -> List<&2, String>:
    Con{"  notify <text>    a notification",
    Con{"  compact          manual compaction",
    Con{"  interrupt        interrupt",
+   Con{"  reload           restart with the latest code (between turns only)",
    Con{"  quit             close (the session survives)",
-   Nil{}}}}}}}}
+   Nil{}}}}}}}}}
 
 # the scripted model's plan for a turn
 def script_for.prog(is_prog: Bool, +text: String) -> List<&2, M.Reply>:
@@ -90,19 +104,26 @@ def op_of.found(sp: Maybe<&2, Nat>, +line: String) -> CmdLine:
 def op_of(+line: String) -> CmdLine:
   op_of.found(C.find(line, " ", 0n), line)
 
-def plan_quit(eq: Bool) -> Plan:
+def plan_reload(eq: Bool, +op: String) -> Plan:
+  match eq:
+    case True{}:
+      PReload{}
+    case False{}:
+      PHelp{}
+
+def plan_quit(eq: Bool, +op: String) -> Plan:
   match eq:
     case True{}:
       PQuit{}
     case False{}:
-      PHelp{}
+      plan_reload(String.eq(op, "reload"), op)
 
 def plan_interrupt(eq: Bool, +op: String) -> Plan:
   match eq:
     case True{}:
       PRun{Con{T.Interrupt{}, Nil{}}, Nil{}}
     case False{}:
-      plan_quit(String.eq(op, "quit"))
+      plan_quit(String.eq(op, "quit"), op)
 
 def plan_compact(eq: Bool, +op: String) -> Plan:
   match eq:
@@ -143,30 +164,32 @@ def plan_of(cl: CmdLine) -> Plan:
 # Each helper takes the loop continuation as a curried closure (the
 # echo-server pattern: closures cannot match, so extraction happens in
 # ordinary defs, and the closure only re-enters the loop with the new
-# socket and session).
+# socket and session). Everything returns Flow: Go keeps serving,
+# Stop unwinds to main (the reload path — the process exits 0 and the
+# parent respawns the latest code on the same session).
 
 def repl_out(out: R.Out, +sess: T.Session,
-    next: Socket -> T.Session -> IO(T.Session)) -> IO(T.Session):
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match out:
     case R.OStd{}:
-      IO.pure(T.Session, sess)
+      IO.pure(Flow, Go{sess})
     case R.ONet{s2}:
       next(s2)(sess)
 
-def repl_end(e: R.RtEnd, next: Socket -> T.Session -> IO(T.Session))
-    -> IO(T.Session):
+def repl_end(e: R.RtEnd, next: Socket -> T.Session -> IO(Flow))
+    -> IO(Flow):
   match e:
     case R.REnd{sess2, out2}:
       repl_out(out2, sess2, next)
 
 def repl_end_save.then(+sess2: T.Session, out2: R.Out,
-    next: Socket -> T.Session -> IO(T.Session)) -> IO(T.Session):
-  do IO<T.Session>:
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  do IO<Flow>:
     P.save(sess2)
     repl_out(out2, sess2, next)
 
-def repl_end_save(e: R.RtEnd, next: Socket -> T.Session -> IO(T.Session))
-    -> IO(T.Session):
+def repl_end_save(e: R.RtEnd, next: Socket -> T.Session -> IO(Flow))
+    -> IO(Flow):
   match e:
     case R.REnd{sess2, out2}:
       repl_end_save.then(sess2, out2, next)
@@ -183,12 +206,12 @@ def turn_active(s: T.Session) -> Bool:
           True{}
 
 def repl_end_stalled.stalled(active: Bool, e: R.RtEnd,
-    next: Socket -> T.Session -> IO(T.Session)) -> IO(T.Session):
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match active:
     case True{}:
       match e:
         case R.REnd{+sess2, out2}:
-          do IO<T.Session>:
+          do IO<Flow>:
             out3 : R.Out <- R.emit(out2,
               Con{"  obs: turn_stalled: execution budget exhausted",
                 Con{"--- idle", Nil{}}})
@@ -198,24 +221,71 @@ def repl_end_stalled.stalled(active: Bool, e: R.RtEnd,
       repl_end_save(e, next)
 
 def repl_end_stalled(e: R.RtEnd,
-    next: Socket -> T.Session -> IO(T.Session)) -> IO(T.Session):
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match e:
     case R.REnd{+sess2, _}:
       repl_end_stalled.stalled(turn_active(sess2), e, next)
 
+# ---- /reload: gated between turns, then a clean exit ----
+
+# refused: turn/pending/queued/notifs would be lost — the checkpoint
+# only serializes turn boundaries (ADR 0002); say so, keep serving
+def repl_reload.busy(s: Socket, +sess: T.Session,
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  do IO<Flow>:
+    out2 : R.Out <- R.emit(R.ONet{s},
+      Con{"  obs: reload refused: not between turns — finish or interrupt the pending turn first",
+        Con{"--- idle", Nil{}}})
+    repl_out(out2, sess, next)
+
+# accepted: ack, checkpoint, close — Stop unwinds so the process exits
+# 0; the parent recompiles the latest source and respawns with
+# BEND_CONTINUE=1 (same port, same session file). Background command
+# slots live in BEND_BG_ROOT on disk: they keep running across the
+# reload and stay reachable from the new process.
+def repl_reload.halt(out: R.Out, +sess: T.Session) -> IO(Flow):
+  match out:
+    case R.OStd{}:
+      do IO<Flow>:
+        P.save(sess)
+        IO.pure(Flow, Stop{})
+    case R.ONet{s2}:
+      do IO<Flow>:
+        Socket.close(s2)
+        P.save(sess)
+        IO.pure(Flow, Stop{})
+
+def repl_reload(s: Socket, ok: Bool, +sess: T.Session,
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  match ok:
+    case True{}:
+      do IO<Flow>:
+        out2 : R.Out <- R.emit(R.ONet{s},
+          Con{"  obs: reload: restarting the harness with the latest code",
+            Con{"  obs: reload: the session is preserved — background commands keep running",
+              Con{"--- idle", Nil{}}}})
+        repl_reload.halt(out2, sess)
+    case False{}:
+      repl_reload.busy(s, sess, next)
+
 def repl_plan(s: Socket, plan: Plan, +sess: T.Session,
-    next: Socket -> T.Session -> IO(T.Session)) -> IO(T.Session):
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match plan:
     case PQuit{}:
-      do IO<T.Session>:
+      do IO<Flow>:
         Socket.close(s)
-        IO.pure(T.Session, sess)
+        IO.pure(Flow, Go{sess})
     case PHelp{}:
-      do IO<T.Session>:
+      do IO<Flow>:
         out2 : R.Out <- R.emit(R.ONet{s}, repl_help())
         repl_out(out2, sess, next)
+    case PReload{}:
+      do IO<Flow>:
+        +ok : Bool <- IO.pure(Bool, S.reload_allowed(sess))
+        f : Flow <- repl_reload(s, ok, sess, next)
+        IO.pure(Flow, f)
     case PRun{+cmds, +script}:
-      do IO<T.Session>:
+      do IO<Flow>:
         # 1M hops: effectively unbounded for a terminal session (the
         # old 100 died mid-turn around ~20 model rounds, silently)
         e : R.RtEnd <- R.run(1000000n, R.ONet{s},
@@ -224,46 +294,46 @@ def repl_plan(s: Socket, plan: Plan, +sess: T.Session,
         repl_end_stalled(e, next)
 
 def repl_interpret(s: Socket, i: Cm.Interpretation, +sess: T.Session,
-    next: Socket -> T.Session -> IO(T.Session)) -> IO(T.Session):
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match i:
     case Cm.Send{+line}:
       repl_plan(s, plan_of(op_of(line)), sess, next)
     case Cm.Note{+warning}:
       # a local warning: no protocol effect, the session is untouched;
       # the idle marker keeps the client contract (batch + idle)
-      do IO<T.Session>:
+      do IO<Flow>:
         out2 : R.Out <- R.emit(R.ONet{s},
           Con{String.append("  obs: ", warning), Con{"--- idle", Nil{}}})
         repl_out(out2, sess, next)
 
 def repl_cmd(s: Socket, +line: String, +sess: T.Session,
-    next: Socket -> T.Session -> IO(T.Session)) -> IO(T.Session):
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   repl_interpret(s, Cm.interpret(line), sess, next)
 
 def repl_data(closed: Bool, s: Socket, +data: String, +sess: T.Session,
-    next: Socket -> T.Session -> IO(T.Session)) -> IO(T.Session):
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match closed:
     case True{}:
-      do IO<T.Session>:
+      do IO<Flow>:
         Socket.close(s)
-        IO.pure(T.Session, sess)
+        IO.pure(Flow, Go{sess})
     case False{}:
       repl_cmd(s, String.trim(data), sess, next)
 
 def repl_after(rm: Socket & Result<&1, &1, U32 & String, String>,
-    +sess: T.Session, next: Socket -> T.Session -> IO(T.Session))
-    -> IO(T.Session):
+    +sess: T.Session, next: Socket -> T.Session -> IO(Flow))
+    -> IO(Flow):
   match rm:
     case (s, Fail{_}):
-      do IO<T.Session>:
+      do IO<Flow>:
         Socket.close(s)
-        IO.pure(T.Session, sess)
+        IO.pure(Flow, Go{sess})
     case (s, Done{+data}):
       repl_data(String.is_empty(data), s, data, sess, next)
 
 @unsafe
-def repl_conn(sock: Socket, sess: T.Session) -> IO(T.Session):
-  do IO<T.Session>:
+def repl_conn(sock: Socket, sess: T.Session) -> IO(Flow):
+  do IO<Flow>:
     rm : Socket & Result<&1, &1, U32 & String, String> <- TCP.recv(sock, 4096)
     repl_after(rm, sess, s2 => sess2 => repl_conn(s2, sess2))
 
@@ -284,32 +354,46 @@ def greet_out(greet: Maybe<&2, Nat>, s: Socket) -> IO(R.Out):
     case None{}:
       IO.pure(R.Out, R.ONet{s})
 
-def greet_conn(out: R.Out, +sess: T.Session) -> IO(T.Session):
+def greet_conn(out: R.Out, +sess: T.Session) -> IO(Flow):
   match out:
     case R.OStd{}:
-      IO.pure(T.Session, sess)
+      IO.pure(Flow, Go{sess})
     case R.ONet{s2}:
       repl_conn(s2, sess)
 
 
 
-def serve_after(am: Listener & Result<&1, &1, U32 & String, Socket>,
-    +greet: Maybe<&2, Nat>, +sess: T.Session,
-    next: Listener -> Maybe<&2, Nat> -> T.Session -> IO(Unit))
-    -> IO(Unit):
-  match am:
-    case (l2, Fail{_}):
-      IO.print("accept failed")
-    case (l2, Done{s}):
-      do IO<Unit>:
-        out2 : R.Out <- greet_out(greet, s)
-        +sess2 : T.Session <- greet_conn(out2, sess)
+# the connection loop ended: Go keeps serving (checkpoint + accept the
+# next client), Stop unwinds to main (the reload exit)
+def serve_after.cont(f: Flow, l2: Listener,
+    next: Listener -> Maybe<&2, Nat> -> T.Session -> IO(Flow))
+    -> IO(Flow):
+  match f:
+    case Go{+sess2}:
+      do IO<Flow>:
         P.save(sess2)
         next(l2)(None{})(sess2)
+    case Stop{}:
+      IO.pure(Flow, Stop{})
+
+def serve_after(am: Listener & Result<&1, &1, U32 & String, Socket>,
+    +greet: Maybe<&2, Nat>, +sess: T.Session,
+    next: Listener -> Maybe<&2, Nat> -> T.Session -> IO(Flow))
+    -> IO(Flow):
+  match am:
+    case (l2, Fail{_}):
+      do IO<Flow>:
+        u : Unit <- IO.print("accept failed")
+        IO.pure(Flow, Stop{})
+    case (l2, Done{s}):
+      do IO<Flow>:
+        out2 : R.Out <- greet_out(greet, s)
+        f : Flow <- greet_conn(out2, sess)
+        serve_after.cont(f, l2, next)
 
 @unsafe
-def serve(l: Listener, greet: Maybe<&2, Nat>, sess: T.Session) -> IO(Unit):
-  do IO<Unit>:
+def serve(l: Listener, greet: Maybe<&2, Nat>, sess: T.Session) -> IO(Flow):
+  do IO<Flow>:
     am : Listener & Result<&1, &1, U32 & String, Socket> <- TCP.accept(l)
     serve_after(am, greet, sess, l2 => g2 => s2 => serve(l2, g2, s2))
 
@@ -387,6 +471,22 @@ def ld_greet(ld: P.Load) -> Maybe<&2, Nat>:
     case P.LD{_, +greet}:
       greet
 
+def flow_note.body(stopped: Bool) -> IO(Unit):
+  match stopped:
+    case True{}:
+      do IO<Unit>:
+        u2 : Unit <- IO.print("reload-exit")
+        IO.pure(Unit, Unit{})
+    case False{}:
+      IO.pure(Unit, Unit{})
+
+def flow_note(f: Flow) -> IO(Unit):
+  match f:
+    case Go{_}:
+      flow_note.body(False{})
+    case Stop{}:
+      flow_note.body(True{})
+
 def main() -> IO(Unit):
   do IO<Unit>:
     env : Result<&1, &1, U32 & String, String> <- IO.get_env(
@@ -403,4 +503,9 @@ def main() -> IO(Unit):
     kr : Result<&1, &1, U32 & String, String> <- IO.get_env("MISTRAL_API_KEY")
     +key : String <- IO.pure(String, R.env_or(kr, ""))
     u : Unit <- Mcp.bootstrap(key)
-    serve(l, ld_greet(ld), ld_sess(ld))
+    f : Flow <- serve(l, ld_greet(ld), ld_sess(ld))
+    # Stop (a /reload) lands here: main returns, the process exits 0,
+    # and the parent respawns the latest code on the same session.
+    # The marker line lets the parent tell a reload from a crash.
+    u2 : Unit <- flow_note(f)
+    IO.pure(Unit, Unit{})

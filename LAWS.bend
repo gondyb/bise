@@ -219,6 +219,45 @@ law unknown_slash_refused:
     == Cm.Note{"unknown command: /frobnicate — try /help"}
     : Cm.Interpretation}
 
+# ---- /reload (the self-improvement loop: restart on the same session) ----
+
+# LAW: /reload maps onto the reload protocol word, sent verbatim.
+law slash_reload_maps:
+  {Cm.interpret("/reload") == Cm.Send{"reload"} : Cm.Interpretation}
+
+# LAW: the raw word "reload" passes through untouched.
+law reload_raw_word:
+  {Cm.interpret("reload") == Cm.Send{"reload"} : Cm.Interpretation}
+
+# LAW: a fresh session is between turns: the reload is allowed.
+law reload_allowed_when_fresh:
+  for +cfg: T.Cfg
+  {S.reload_allowed(T.new_session(cfg)) == True{} : Bool}
+
+# LAW: a running turn blocks the reload — the checkpoint only
+# serializes turn boundaries (ADR 0002).
+law reload_refused_while_turn:
+  for +cfg: T.Cfg
+  for +text: String
+  {S.reload_allowed(S.start_turn(text, T.new_session(cfg)))
+    == False{} : Bool}
+
+# LAW: a queued message at idle blocks the reload: it is not
+# serialized, it would be lost.
+law reload_refused_with_queue:
+  for +cfg: T.Cfg
+  for +text: String
+  {S.reload_allowed(S.queue_msg(T.new_session(cfg), text))
+    == False{} : Bool}
+
+# LAW: a held notification at idle blocks the reload: it is not
+# serialized, it would be lost.
+law reload_refused_with_notif:
+  for +cfg: T.Cfg
+  for +text: String
+  {S.reload_allowed(S.hold_notif(T.new_session(cfg), text))
+    == False{} : Bool}
+
 # ---- the provider API mapping (core/api.bend, formerly the Rust bridge) ----
 
 # LAW: the wire request parses into exactly the tools and messages it

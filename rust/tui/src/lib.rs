@@ -1,41 +1,76 @@
 //! bend-tui — Ratatui terminal UI for the Bend Unified Harness.
 //!
-//! Rust port of repl-tui (Ink). Same wire protocol, same layout spirit as
-//! the Vibe CLI / OpenCode: header with model and connection state, a
-//! per-turn event feed (tool lines merge start -> finish), animated
-//! thinking indicator, raw-mode input box with history, status bar.
+//! Rust port of repl-tui (Ink). Same wire protocol; the presentation is
+//! modeled on the REAL OpenCode TUI (packages/tui in the opencode repo):
+//! no header bar — the screen is the conversation. User messages are
+//! blocks with a colored left bar and a panel background; assistant
+//! markdown renders in the OpenCode markdown colors; tool calls are
+//! OpenCode inline tools (braille spinner while running, muted ✓ once
+//! done, red ✗ on failure); the prompt is an OpenCode prompt (left
+//! border, element background, agent/model meta row); commands filter
+//! in an OpenCode autocomplete popup (split border, primary selection).
+//! The status row carries the spinner + esc-to-interrupt hints.
 //!
 //! When stdin/stdout is not a TTY (piped), it falls back to line mode so
 //! the UI stays scriptable — the same convention as the Ink version.
 
 use crossterm::event::{
-    poll, read, EnableMouseCapture, DisableMouseCapture, Event, KeyCode,
-    KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+    poll, read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
+    KeyModifiers, MouseButton, MouseEventKind,
 };
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
+use ratatui::symbols::border;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{
-    Block, BorderType, Borders, Clear, Paragraph, Scrollbar,
-    ScrollbarOrientation, ScrollbarState,
+    Block, Borders, Clear, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
 };
 use ratatui::Frame;
 use std::io::{self, BufRead, IsTerminal, Read, Write};
-use unicode_width::UnicodeWidthChar;
 use std::net::TcpStream;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Duration;
+use unicode_width::UnicodeWidthChar;
 
-const BRAND: Color = Color::Cyan;
-const DIM: Color = Color::Gray;
-// tool calls sit one step below DIM: DarkGray (ANSI 90) recedes on dark
-// terminals, where Gray (ANSI 37) still glows; status marks stay colored
-const TOOL: Color = Color::DarkGray;
-const YOU: Color = Color::Magenta;
-const OK: Color = Color::Green;
-const WARN: Color = Color::Yellow;
-const ERR: Color = Color::Red;
+// ---- the OpenCode theme (opencode.json, dark) ----
+// primary #fab283 (the OpenCode orange) is the agent color: user blocks,
+// prompt border, spinners, back-to-bottom. Markdown follows the
+// markdown* keys; tools follow the inline-tool rules (muted once
+// complete, error red).
+const BRAND: Color = Color::Rgb(0xfa, 0xb2, 0x83); // primary
+const ACCENT: Color = Color::Rgb(0x9d, 0x7c, 0xd8); // markdownHeading
+const HEAD: Color = Color::Rgb(0xe5, 0xc0, 0x7b); // markdownEmph / syntaxType
+const INFO: Color = Color::Rgb(0x56, 0xb6, 0xc2); // info / markdownListEnumeration
+const TEXT: Color = Color::Rgb(0xee, 0xee, 0xee); // text
+const DIM: Color = Color::Rgb(0x80, 0x80, 0x80); // textMuted
+                                                 // complete tools sit at textMuted (OpenCode: fg textMuted when complete)
+const TOOL: Color = Color::Rgb(0x80, 0x80, 0x80);
+const OK: Color = Color::Rgb(0x7f, 0xd8, 0x8f); // success / markdownCode
+const WARN: Color = Color::Rgb(0xf5, 0xa7, 0x42); // warning / markdownStrong
+const ERR: Color = Color::Rgb(0xe0, 0x6c, 0x75); // error
+const PANEL: Color = Color::Rgb(0x14, 0x14, 0x14); // backgroundPanel
+const ELEMENT: Color = Color::Rgb(0x1e, 0x1e, 0x1e); // backgroundElement
+const BORDER_ACTIVE: Color = Color::Rgb(0x60, 0x60, 0x60); // borderActive
+
+// the OpenCode prompt/autocomplete borders: only a colored vertical bar
+const SPLIT: border::Set = border::Set {
+    top_left: "",
+    top_right: "",
+    bottom_left: "",
+    bottom_right: "",
+    vertical_left: "┃",
+    vertical_right: "┃",
+    horizontal_top: " ",
+    horizontal_bottom: " ",
+};
+
+// the OpenCode spinner (component/spinner.tsx): braille dots
+const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+fn spinner_frame(tick: u32) -> &'static str {
+    SPINNER[(tick as usize) % SPINNER.len()]
+}
 
 // ---- feed events ----
 
@@ -65,10 +100,22 @@ enum Ev {
     Assistant(String),
     Tool(ToolData),
     // a sub-call made inside a run_typescript program
-    Sub { name: String, ok: bool, preview: String },
+    Sub {
+        name: String,
+        ok: bool,
+        preview: String,
+    },
     // runtime annotations, merged into the matching Tool by id
-    ToolInfo { id: u32, name: String, args: String },
-    ToolResult { id: u32, ok: bool, preview: String },
+    ToolInfo {
+        id: u32,
+        name: String,
+        args: String,
+    },
+    ToolResult {
+        id: u32,
+        ok: bool,
+        preview: String,
+    },
     Turn,
     TurnDone(String),
     Compact(String),
@@ -130,7 +177,11 @@ fn parse_line(line: &str) -> Option<Ev> {
     }
     if let Some(t) = o.strip_prefix("assistant: ") {
         // tool-call-only replies carry no text
-        return if t.is_empty() { None } else { Some(Ev::Assistant(t.to_string())) };
+        return if t.is_empty() {
+            None
+        } else {
+            Some(Ev::Assistant(t.to_string()))
+        };
     }
     if o == "assistant:" {
         return None;
@@ -319,7 +370,7 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
 }
 
 // the rows of one event: the block separator, then the wrapped lines
-fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize) -> Vec<Line<'static>> {
+fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> Vec<Line<'static>> {
     let ev = &events[i];
     let mut rows: Vec<Line<'static>> = Vec::new();
     if !ev_visible(ev, debug) {
@@ -336,7 +387,7 @@ fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize) -> Vec<Line<'s
     if (message && prev_tool_block) || (tool_block && prev_message) {
         rows.push(Line::from(""));
     }
-    for l in ev_lines(ev) {
+    for l in ev_lines_t(ev, tick) {
         rows.extend(wrap_line(l, width));
     }
     rows
@@ -429,7 +480,6 @@ fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>>, ev: Ev) 
     true
 }
 
-
 // ---- markdown rendering (user + assistant messages) ----
 // The wire carries newlines escaped as a literal backslash-n; the TUI
 // unescapes and renders a pragmatic markdown subset: fenced code
@@ -450,7 +500,9 @@ fn unescape_md(s: &str) -> String {
     out
 }
 
-// inline styles: **bold**, *italic*, `code` (no nesting inside)
+// inline styles in the OpenCode markdown colors: **strong** is
+// markdownStrong (orange), *emph* is markdownEmph (yellow), `code` is
+// markdownCode (green)
 fn inline_spans(s: &str, base: Style) -> Vec<Span<'static>> {
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut plain = String::new();
@@ -458,7 +510,6 @@ fn inline_spans(s: &str, base: Style) -> Vec<Span<'static>> {
     let mut i = 0;
     while i < cs.len() {
         let c = cs[i];
-        // `code`
         if c == '`' {
             if let Some(j) = (i + 1..cs.len()).find(|k| cs[*k] == '`') {
                 if !plain.is_empty() {
@@ -466,35 +517,36 @@ fn inline_spans(s: &str, base: Style) -> Vec<Span<'static>> {
                 }
                 spans.push(Span::styled(
                     cs[i + 1..j].iter().collect::<String>(),
-                    Style::default().fg(Color::Green),
+                    Style::default().fg(OK).add_modifier(Modifier::BOLD),
                 ));
                 i = j + 1;
                 continue;
             }
         }
-        // **bold** or *italic*
         if c == '*' {
             if i + 1 < cs.len() && cs[i + 1] == '*' {
-                if let Some(j) = (i + 3..cs.len()).find(|k| cs[*k] == '*' && cs.get(k + 1) == Some(&'*')) {
+                if let Some(j) =
+                    (i + 3..cs.len()).find(|k| cs[*k] == '*' && cs.get(k + 1) == Some(&'*'))
+                {
                     if !plain.is_empty() {
                         spans.push(Span::styled(std::mem::take(&mut plain), base));
                     }
                     spans.push(Span::styled(
                         cs[i + 2..j].iter().collect::<String>(),
-                        base.add_modifier(Modifier::BOLD),
+                        base.add_modifier(Modifier::BOLD).fg(WARN),
                     ));
                     i = j + 2;
                     continue;
                 }
-            } else if let Some(j) = (i + 2..cs.len())
-                .find(|k| cs[*k] == '*' && cs.get(k - 1) != Some(&'*') && cs.get(k + 1) != Some(&'*'))
-            {
+            } else if let Some(j) = (i + 2..cs.len()).find(|k| {
+                cs[*k] == '*' && cs.get(k - 1) != Some(&'*') && cs.get(k + 1) != Some(&'*')
+            }) {
                 if !plain.is_empty() {
                     spans.push(Span::styled(std::mem::take(&mut plain), base));
                 }
                 spans.push(Span::styled(
                     cs[i + 1..j].iter().collect::<String>(),
-                    base.add_modifier(Modifier::ITALIC),
+                    base.add_modifier(Modifier::ITALIC).fg(HEAD),
                 ));
                 i = j + 1;
                 continue;
@@ -515,13 +567,14 @@ fn md_to_lines(text: &str) -> Vec<Line<'static>> {
     for raw in text.split('\n') {
         let line = raw.trim_end();
         if line.starts_with("```") {
+            out.push(Line::from(Span::styled("  ", Style::default().bg(ELEMENT))));
             in_code = !in_code;
             continue;
         }
         if in_code {
             out.push(Line::from(Span::styled(
                 format!("  {}", line),
-                Style::default().fg(Color::Green),
+                Style::default().fg(TEXT).bg(ELEMENT),
             )));
             continue;
         }
@@ -531,28 +584,44 @@ fn md_to_lines(text: &str) -> Vec<Line<'static>> {
         }
         let indent = line.len() - line.trim_start().len();
         let t = line.trim_start();
-        let base = Style::default().fg(Color::White);
+        let base = Style::default().fg(TEXT);
         if t.starts_with('#') {
             let level = t.chars().take_while(|c| *c == '#').count();
             let head = t[level..].trim_start();
             out.push(Line::from(Span::styled(
                 head.to_string(),
-                base.add_modifier(Modifier::BOLD).fg(BRAND),
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             )));
             continue;
         }
+        // OpenCode markdownListEnumeration: "N. item" in the info color
+        let dot = t
+            .char_indices()
+            .find(|(i, c)| *i > 0 && *c == '.' && t[i + 1..].starts_with(' '));
+        if let Some((i, _)) = dot {
+            if t[..i].chars().all(|c| c.is_ascii_digit()) {
+                out.push(Line::from_iter(
+                    std::iter::once(Span::styled(
+                        format!("  {} ", &t[..i + 1]),
+                        Style::default().fg(INFO),
+                    ))
+                    .chain(inline_spans(t[i + 1..].trim_start(), base)),
+                ));
+                continue;
+            }
+        }
         if indent == 0 && (t.starts_with("- ") || t.starts_with("* ")) {
-            out.push(Line::from_iter(std::iter::once(Span::styled(
-                "  - ",
-                Style::default().fg(DIM),
-            )).chain(inline_spans(&t[2..], base))));
+            out.push(Line::from_iter(
+                std::iter::once(Span::styled("  - ", Style::default().fg(BRAND)))
+                    .chain(inline_spans(&t[2..], base)),
+            ));
             continue;
         }
         if indent == 0 && t.starts_with("> ") {
-            out.push(Line::from_iter(std::iter::once(Span::styled(
-                "  | ",
-                Style::default().fg(DIM),
-            )).chain(inline_spans(&t[2..], Style::default().fg(DIM)))));
+            out.push(Line::from_iter(
+                std::iter::once(Span::styled("  | ", Style::default().fg(HEAD)))
+                    .chain(inline_spans(&t[2..], Style::default().fg(HEAD))),
+            ));
             continue;
         }
         out.push(Line::from(inline_spans(line, base)));
@@ -587,7 +656,10 @@ fn truncate_chars(s: &str, max: usize) -> String {
 fn json_str_field(s: &str, field: &str) -> Option<String> {
     let pat = format!("\"{}\"", field);
     let i = s.find(&pat)?;
-    let rest = s[i + pat.len()..].trim_start().strip_prefix(':')?.trim_start();
+    let rest = s[i + pat.len()..]
+        .trim_start()
+        .strip_prefix(':')?
+        .trim_start();
     let rest = rest.strip_prefix('"')?;
     let mut out = String::new();
     let mut ch = rest.chars();
@@ -644,73 +716,108 @@ fn args_preview(name: &str, args: &str) -> String {
     truncate_chars(args.trim(), 80)
 }
 
-// one event renders as one or many lines (markdown expands messages)
-fn ev_lines(ev: &Ev) -> Vec<Line<'static>> {
+// one event renders as one or many lines (markdown expands messages).
+// The shape follows the OpenCode message parts: user messages are blocks
+// with a colored left bar and panel background; assistant text is
+// markdown in the OpenCode colors; tools are inline tools.
+fn ev_lines_t(ev: &Ev, tick: u32) -> Vec<Line<'static>> {
+    // the feed twin: identical shape, but the tool spinner animates
     match ev {
-        Ev::You(t) => {
-            let mut ls = md_to_lines(t);
-            if let Some(first) = ls.first_mut() {
-                let mut spans = vec![Span::styled(
-                    "> ",
-                    Style::default().fg(YOU).add_modifier(Modifier::BOLD),
-                )];
-                spans.append(&mut first.spans);
-                *first = Line::from(spans);
-            }
-            ls
-        }
-        Ev::Assistant(t) => {
-            let mut ls = md_to_lines(&unescape_md(t));
-            if let Some(first) = ls.first_mut() {
-                let mut spans = vec![Span::styled(
-                    "  assistant ",
-                    Style::default().fg(BRAND).add_modifier(Modifier::BOLD),
-                )];
-                spans.append(&mut first.spans);
-                *first = Line::from(spans);
-            }
-            for l in ls.iter_mut().skip(1) {
-                let mut spans = vec![Span::raw("             ")];
-                spans.append(&mut l.spans);
-                *l = Line::from(spans);
-            }
-            ls
-        }
-        Ev::Compacted(t) => vec![Line::from(vec![
-            Span::styled("  résumé ", Style::default().fg(OK).add_modifier(Modifier::BOLD)),
-            Span::styled(unescape_md(t), Style::default().fg(DIM)),
-        ])],
-        Ev::Idle => vec![Line::from(Span::styled(
-            "  inactif — session préservée",
-            Style::default().fg(DIM),
-        ))],
-        Ev::Tool(td) => tool_lines(td),
-        Ev::Sub { name, ok, preview } => {
-            let mut ls = vec![Line::from(vec![
-                Span::styled("    ↳ ", Style::default().fg(TOOL)),
-                Span::styled(name.clone(), Style::default().fg(TOOL)),
-                Span::styled(
-                    if *ok { " ok " } else { " ECHEC " },
-                    Style::default().fg(if *ok { OK } else { ERR }),
-                ),
-                Span::styled(truncate_chars(preview.trim(), 100), Style::default().fg(TOOL)),
-            ])];
-            if ls.first().map(|l| l.width()).unwrap_or(0) == 0 {
-                ls.clear();
-            }
-            ls
-        }
-        _ => vec![ev_line(ev)],
+        Ev::Tool(td) => tool_lines(td, tick),
+        other => ev_lines(other),
     }
 }
 
-// the tool line: mark + name + elapsed + args preview, then the
-// result preview (errors in red — the first thing an engineer looks for)
-fn tool_lines(td: &ToolData) -> Vec<Line<'static>> {
-    let name = td
-        .name
-        .clone()
-        .unwrap_or_else(|| format!("#{}", td.id));
+fn ev_lines(ev: &Ev) -> Vec<Line<'static>> {
+    match ev {
+        Ev::You(t) => user_block_lines(t),
+        Ev::Assistant(t) => md_to_lines(&unescape_md(t)),
+        Ev::Tool(td) => tool_lines(td, 0),
+        Ev::Idle => vec![Line::from("")],
+        Ev::Sub { name, ok, preview } => vec![Line::from(vec![
+            Span::styled("    ↳ ", Style::default().fg(DIM)),
+            Span::styled(name.clone(), Style::default().fg(DIM)),
+            Span::styled(
+                if *ok { " ok " } else { " échec " },
+                Style::default().fg(if *ok { DIM } else { ERR }),
+            ),
+            Span::styled(
+                truncate_chars(preview.trim(), 100),
+                Style::default().fg(DIM),
+            ),
+        ])],
+        Ev::Turn => vec![Line::from(Span::styled(
+            "── tour ".to_string() + &"─".repeat(30),
+            Style::default().fg(DIM),
+        ))],
+        Ev::TurnDone(t) => vec![Line::from(vec![
+            Span::styled(" └ ", Style::default().fg(DIM)),
+            Span::styled(
+                t.clone(),
+                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+            ),
+        ])],
+        Ev::Compact(t) => vec![Line::from(vec![
+            Span::styled(
+                "  compaction ",
+                Style::default().fg(WARN).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(t.clone(), Style::default().fg(WARN)),
+        ])],
+        Ev::Compacted(t) => vec![Line::from(vec![
+            Span::styled(
+                "  résumé ",
+                Style::default().fg(OK).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                unescape_md(t),
+                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+            ),
+        ])],
+        Ev::Warn(t) => vec![Line::from(vec![
+            Span::styled("  ! ", Style::default().fg(WARN)),
+            Span::styled(t.clone(), Style::default().fg(WARN)),
+        ])],
+        Ev::Err(t) => vec![Line::from(vec![
+            Span::styled("  ✗ ", Style::default().fg(ERR)),
+            Span::styled(t.clone(), Style::default().fg(ERR)),
+        ])],
+        Ev::Info(t) => vec![Line::from(Span::styled(
+            format!("  {}", t),
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        ))],
+        Ev::ToolInfo { .. } | Ev::ToolResult { .. } => vec![],
+        Ev::Raw(t) => vec![Line::from(Span::styled(
+            format!("  {}", t),
+            Style::default().fg(DIM),
+        ))],
+    }
+}
+
+// the OpenCode user message block: colored left bar (┃ primary), panel
+// background, one blank line above and below
+fn user_block_lines(text: &str) -> Vec<Line<'static>> {
+    let mut rows = vec![Line::from("")];
+    for l in wrap_line(
+        Line::from(Span::styled(
+            text.to_string(),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        )),
+        4000,
+    ) {
+        let mut spans = vec![Span::styled(" ┃ ", Style::default().fg(BRAND))];
+        spans.extend(l.spans);
+        rows.push(Line::from(spans));
+    }
+    rows.push(Line::from(Span::styled("   ", Style::default().bg(PANEL))));
+    rows
+}
+
+// the tool line, OpenCode inline-tool style: 2-col icon, name, args
+// preview; result preview on the next line. Running: braille spinner +
+// text. Complete: ✓ + textMuted. Failed: ✗ + error red.
+fn tool_lines(td: &ToolData, tick: u32) -> Vec<Line<'static>> {
+    let name = td.name.clone().unwrap_or_else(|| format!("#{}", td.id));
     let args = td
         .args
         .as_deref()
@@ -719,53 +826,57 @@ fn tool_lines(td: &ToolData) -> Vec<Line<'static>> {
     let elapsed = fmt_elapsed(td.started);
     let mut ls = Vec::new();
     match td.state {
-        ToolState::Run => {
-            let mut spans = vec![
-                Span::styled("  ● ", Style::default().fg(WARN)),
-                Span::styled(name.clone(), Style::default().fg(TOOL)),
-                Span::styled(format!(" {}", elapsed), Style::default().fg(TOOL)),
-            ];
-            if !args.is_empty() {
-                spans.push(Span::styled(" — ", Style::default().fg(TOOL)));
-                spans.push(Span::styled(args, Style::default().fg(TOOL)));
-            }
-            ls.push(Line::from(spans));
-        }
-        ToolState::Ok => {
-            let mut spans = vec![
-                Span::styled("  ✓ ", Style::default().fg(OK)),
-                Span::styled(name.clone(), Style::default().fg(TOOL)),
-                Span::styled(
-                    format!(" ok {}", td.elapsed.clone().unwrap_or_default()),
-                    Style::default().fg(OK),
-                ),
-            ];
-            if !args.is_empty() {
-                spans.push(Span::styled(" — ", Style::default().fg(TOOL)));
-                spans.push(Span::styled(args, Style::default().fg(TOOL)));
-            }
-            ls.push(Line::from(spans));
-        }
-        ToolState::Fail => {
-            let mut spans = vec![
-                Span::styled("  ✗ ", Style::default().fg(ERR)),
-                Span::styled(name.clone(), Style::default().fg(TOOL)),
-                Span::styled(
-                    format!(" ECHEC {}", td.elapsed.clone().unwrap_or_default()),
-                    Style::default().fg(ERR),
-                ),
-            ];
-            if !args.is_empty() {
-                spans.push(Span::styled(" — ", Style::default().fg(TOOL)));
-                spans.push(Span::styled(args, Style::default().fg(TOOL)));
-            }
-            ls.push(Line::from(spans));
-        }
+        ToolState::Run => ls.push(Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(spinner_frame(tick / 2), Style::default().fg(BRAND)),
+            Span::styled(format!(" {}", name), Style::default().fg(TEXT)),
+            Span::styled(format!(" {}", elapsed), Style::default().fg(DIM)),
+            Span::styled(
+                if args.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {}", args)
+                },
+                Style::default().fg(DIM),
+            ),
+        ])),
+        ToolState::Ok => ls.push(Line::from(vec![
+            Span::styled("  ✓ ", Style::default().fg(DIM)),
+            Span::styled(name.clone(), Style::default().fg(TOOL)),
+            Span::styled(
+                format!(" ok {}", td.elapsed.clone().unwrap_or_default()),
+                Style::default().fg(TOOL),
+            ),
+            Span::styled(
+                if args.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — {}", args)
+                },
+                Style::default().fg(TOOL),
+            ),
+        ])),
+        ToolState::Fail => ls.push(Line::from(vec![
+            Span::styled("  ✗ ", Style::default().fg(ERR)),
+            Span::styled(name.clone(), Style::default().fg(ERR)),
+            Span::styled(
+                format!(" échec {}", td.elapsed.clone().unwrap_or_default()),
+                Style::default().fg(ERR),
+            ),
+            Span::styled(
+                if args.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — {}", args)
+                },
+                Style::default().fg(ERR),
+            ),
+        ])),
     }
     if let Some((ok, preview)) = &td.result {
         if !preview.trim().is_empty() {
             ls.push(Line::from(vec![
-                Span::styled("    → ", Style::default().fg(TOOL)),
+                Span::styled("    ↳ ", Style::default().fg(TOOL)),
                 Span::styled(
                     truncate_chars(preview.trim(), 110),
                     Style::default().fg(if *ok { TOOL } else { ERR }),
@@ -774,49 +885,6 @@ fn tool_lines(td: &ToolData) -> Vec<Line<'static>> {
         }
     }
     ls
-}
-
-fn ev_line(ev: &Ev) -> Line<'static> {
-    match ev {
-        Ev::Idle => Line::from(""),
-        // handled by ev_lines / merged in push_event; safe fallbacks
-        Ev::Tool(_) | Ev::Sub { .. } => Line::from(""),
-        Ev::ToolInfo { .. } | Ev::ToolResult { .. } => Line::from(""),
-        Ev::You(t) => Line::from(Span::styled(
-            t.clone(),
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-        )),
-        Ev::Assistant(t) => Line::from(Span::styled(
-            t.clone(),
-            Style::default().fg(Color::White),
-        )),
-        Ev::Turn => Line::from(Span::styled(
-            "── tour ".to_string() + &"─".repeat(30),
-            Style::default().fg(DIM),
-        )),
-        Ev::TurnDone(t) => Line::from(vec![
-            Span::styled(" └ ", Style::default().fg(DIM)),
-            Span::styled(t.clone(), Style::default().fg(DIM).add_modifier(Modifier::ITALIC)),
-        ]),
-        Ev::Compact(t) => Line::from(vec![
-            Span::styled("  compaction ", Style::default().fg(WARN).add_modifier(Modifier::BOLD)),
-            Span::styled(t.clone(), Style::default().fg(WARN)),
-        ]),
-        Ev::Compacted(t) => Line::from(vec![
-            Span::styled("  résumé accepté : ", Style::default().fg(OK)),
-            Span::styled(t.clone(), Style::default().fg(DIM).add_modifier(Modifier::ITALIC)),
-        ]),
-        Ev::Warn(t) => Line::from(vec![
-            Span::styled("  ! ", Style::default().fg(WARN)),
-            Span::styled(t.clone(), Style::default().fg(WARN)),
-        ]),
-        Ev::Err(t) => Line::from(vec![
-            Span::styled("  x ", Style::default().fg(ERR)),
-            Span::styled(t.clone(), Style::default().fg(ERR)),
-        ]),
-        Ev::Info(t) => Line::from(Span::styled(format!("  {}", t), Style::default().fg(DIM).add_modifier(Modifier::ITALIC))),
-        Ev::Raw(t) => Line::from(Span::styled(format!("  {}", t), Style::default().fg(DIM))),
-    }
 }
 
 // ---- app state ----
@@ -927,21 +995,61 @@ struct Cmd {
 }
 
 const COMMANDS: &[Cmd] = &[
-    Cmd { name: "/compact", desc: "compacter la conversation (résumé)", args: false },
-    Cmd { name: "/interrupt", desc: "interrompre le tour en cours", args: false },
-    Cmd { name: "/steer", desc: "diriger le modèle pendant le tour", args: true },
-    Cmd { name: "/notify", desc: "injecter une notification au modèle", args: true },
-    Cmd { name: "/status", desc: "modèle, connexion, seuil de compaction", args: false },
-    Cmd { name: "/clear", desc: "vider l'affichage local", args: false },
-    Cmd { name: "/help", desc: "liste des commandes", args: false },
-    Cmd { name: "/quit", desc: "quitter le client (la session survit)", args: false },
+    Cmd {
+        name: "/compact",
+        desc: "compacter la conversation (résumé)",
+        args: false,
+    },
+    Cmd {
+        name: "/interrupt",
+        desc: "interrompre le tour en cours",
+        args: false,
+    },
+    Cmd {
+        name: "/reload",
+        desc: "relancer le harness avec le dernier code (session conservée)",
+        args: false,
+    },
+    Cmd {
+        name: "/steer",
+        desc: "diriger le modèle pendant le tour",
+        args: true,
+    },
+    Cmd {
+        name: "/notify",
+        desc: "injecter une notification au modèle",
+        args: true,
+    },
+    Cmd {
+        name: "/status",
+        desc: "modèle, connexion, seuil de compaction",
+        args: false,
+    },
+    Cmd {
+        name: "/clear",
+        desc: "vider l'affichage local",
+        args: false,
+    },
+    Cmd {
+        name: "/help",
+        desc: "liste des commandes",
+        args: false,
+    },
+    Cmd {
+        name: "/quit",
+        desc: "quitter le client (la session survit)",
+        args: false,
+    },
 ];
 
 fn popup_matches(input: &str) -> Vec<&'static Cmd> {
     if !input.starts_with('/') || input.contains(' ') {
         return Vec::new();
     }
-    COMMANDS.iter().filter(|c| c.name.starts_with(input)).collect()
+    COMMANDS
+        .iter()
+        .filter(|c| c.name.starts_with(input))
+        .collect()
 }
 
 // byte offset of the n-th char (char-boundary-safe cursor helpers)
@@ -983,7 +1091,11 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     } else if first == "/status" {
         out.push(Ev::Info(format!(
             "modèle {} · {}:{} · seuil de compaction 800000 · session persistante",
-            if app.is_live { "zai-glm-5-3" } else { "scripté" },
+            if app.is_live {
+                "zai-glm-5-3"
+            } else {
+                "scripté"
+            },
             app.host,
             app.port
         )));
@@ -991,7 +1103,9 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         for c in COMMANDS {
             out.push(Ev::Info(format!("{:<11} — {}", c.name, c.desc)));
         }
-        out.push(Ev::Info("texte simple : say implicite (interprété par le harness)".into()));
+        out.push(Ev::Info(
+            "texte simple : say implicite (interprété par le harness)".into(),
+        ));
     } else {
         // everything else — plain text, /commands, raw protocol words —
         // goes to the harness verbatim; it interprets
@@ -1006,49 +1120,31 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
 
 fn draw(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
+    // OpenCode layout: no header. Feed grows to fill, then one status row,
+    // then the prompt block, then one hint row.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
-            Constraint::Min(5),
+            Constraint::Min(3),
             Constraint::Length(1),
             Constraint::Length(3),
             Constraint::Length(1),
         ])
         .split(area);
 
-    // header
-    let conn_style = if app.connected { Style::default().fg(OK) } else { Style::default().fg(ERR) };
-    let conn_text = if app.connected { "connecté" } else if app.is_live { "déconnecté" } else { "déconnecté" };
-    let header = Paragraph::new(Line::from(vec![
-        Span::styled("BEND HARNESS", Style::default().fg(BRAND).add_modifier(Modifier::BOLD)),
-        Span::raw("  "),
-        Span::styled(
-            format!("{} · live · seuil 800k · {}:{}", if app.is_live { "zai-glm-5-3" } else { "scripté" }, app.host, app.port),
-            Style::default().fg(DIM),
-        ),
-        Span::raw("  "),
-        Span::styled(conn_text, conn_style),
-    ]))
-    .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(if app.connected { BRAND } else { DIM })));
-    frame.render_widget(header, chunks[0]);
-
-    // feed: cached wrapped rows, only the VISIBLE slice rendered (the
-    // codex transcript approach — a Paragraph over the whole history
-    // re-wraps everything each frame and lags long sessions).
-    // The paragraph column is one char narrower than the feed area so
-    // the scrollbar never covers text.
-    let area_w = (chunks[1].width as usize).saturating_sub(1).max(1);
-    let area_h = chunks[1].height as usize;
+    // ---- feed: cached wrapped rows, only the VISIBLE slice rendered ----
+    // (a Paragraph over the whole history re-wraps everything each frame
+    // and lags long sessions). The column is one char narrower so the
+    // scrollbar never covers text.
+    let area_w = (chunks[0].width as usize).saturating_sub(1).max(1);
+    let area_h = chunks[0].height as usize;
     let text_area = Rect {
-        x: chunks[1].x,
-        y: chunks[1].y,
-        width: chunks[1].width.saturating_sub(1).max(1),
-        height: chunks[1].height,
+        x: chunks[0].x,
+        y: chunks[0].y,
+        width: chunks[0].width.saturating_sub(1).max(1),
+        height: chunks[0].height,
     };
 
-    // refresh the cache: rebuild on width change, mutation, or for
-    // running tools whose elapsed ticks every frame
     let n = app.events.len();
     if app.cache.len() < n {
         app.cache.resize_with(n, || None);
@@ -1056,13 +1152,12 @@ fn draw(app: &mut App, frame: &mut Frame) {
     let mut starts: Vec<usize> = Vec::with_capacity(n);
     let mut total_rows = 0usize;
     for i in 0..n {
-        let live = matches!(&app.events[i],
-            Ev::Tool(td) if matches!(td.state, ToolState::Run));
+        let live = matches!(&app.events[i], Ev::Tool(td) if matches!(td.state, ToolState::Run));
         let stale = app.cache[i]
             .as_ref()
             .map_or(true, |c| c.width != area_w as u16 || live);
         if stale {
-            let rows = build_rows(&app.events, i, app.debug, area_w);
+            let rows = build_rows(&app.events, i, app.debug, area_w, app.tick);
             app.cache[i] = Some(EventRows {
                 width: area_w as u16,
                 rows,
@@ -1079,7 +1174,6 @@ fn draw(app: &mut App, frame: &mut Frame) {
     let top = app.top.min(max_top);
     let tail_visible = top + area_h >= total_rows;
 
-    // the visible slice: the events covering rows [top, top+area_h)
     let mut vis: Vec<Line> = Vec::with_capacity(area_h + 2);
     if total_rows > 0 {
         let mut i0 = 0usize;
@@ -1112,33 +1206,30 @@ fn draw(app: &mut App, frame: &mut Frame) {
     }
     frame.render_widget(Paragraph::new(Text::from(vis)), text_area);
 
-    // scrollbar on the right edge of the feed
     if total_rows > area_h {
         let mut state = ScrollbarState::new(total_rows)
             .position(top)
             .viewport_content_length(area_h);
         frame.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight),
-            chunks[1].inner(ratatui::layout::Margin {
-                vertical: 0,
-                horizontal: 0,
-            }),
+            chunks[0],
             &mut state,
         );
     }
-    // published for the input loop (paging, bottom detection)
     app.area_w = area_w;
     app.area_h = area_h;
     app.max_top = max_top;
     app.tail_visible = tail_visible;
 
-    // the indicator row doubles as the codex-style back-to-bottom bar:
-    // when the tail is scrolled out of view it offers the way back and
-    // reports activity that arrived while pinned (clickable)
+    // ---- the status row (the OpenCode prompt status row): back to
+    // bottom when pinned, else spinner + cwd while idle
     if !app.tail_visible {
-        app.bottom_bar_rect = Some(chunks[2]);
+        app.bottom_bar_rect = Some(chunks[1]);
         let mut spans = vec![
-            Span::styled("  ↓ Bas ", Style::default().fg(BRAND).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "  ↓ Bas ",
+                Style::default().fg(BRAND).add_modifier(Modifier::BOLD),
+            ),
             Span::styled("(End)", Style::default().fg(DIM)),
         ];
         if app.unseen > 0 {
@@ -1147,31 +1238,55 @@ fn draw(app: &mut App, frame: &mut Frame) {
                 Style::default().fg(WARN),
             ));
         }
-        frame.render_widget(Paragraph::new(Line::from(spans)), chunks[2]);
+        frame.render_widget(Paragraph::new(Line::from(spans)), chunks[1]);
     } else {
         app.bottom_bar_rect = None;
-        let think = if app.pending && app.connected {
-            let dots = match (app.tick / 3) % 4 {
-                0 => ".",
-                1 => "..",
-                2 => "...",
-                _ => "  ",
-            };
-            Line::from(Span::styled(
-                format!("  {} réfléchit{}", if app.is_live { "zai-glm-5-3" } else { "réponse" }, dots),
-                Style::default().fg(BRAND),
-            ))
+        let status = if app.pending && app.connected {
+            Line::from(vec![
+                Span::styled(
+                    format!("  {}", spinner_frame(app.tick / 2)),
+                    Style::default().fg(BRAND),
+                ),
+                Span::styled(
+                    if app.is_live {
+                        " zai-glm-5-3 · génération…"
+                    } else {
+                        " réponse…"
+                    },
+                    Style::default().fg(DIM),
+                ),
+                Span::styled(" · ", Style::default().fg(DIM)),
+                Span::styled("esc", Style::default().fg(TEXT)),
+                Span::styled(" interrupt", Style::default().fg(DIM)),
+            ])
         } else {
-            Line::from("")
+            Line::from(vec![
+                Span::styled(
+                    format!("  {}", spinner_frame(app.tick / 2)),
+                    Style::default().fg(BRAND),
+                ),
+                Span::styled(
+                    format!(
+                        " bend-harness · {}",
+                        if app.is_live {
+                            "zai-glm-5-3"
+                        } else {
+                            "scripté"
+                        }
+                    ),
+                    Style::default().fg(DIM),
+                ),
+                Span::styled(" · ", Style::default().fg(DIM)),
+                Span::styled("esc", Style::default().fg(TEXT)),
+                Span::styled(" interrupt", Style::default().fg(DIM)),
+            ])
         };
-        frame.render_widget(Paragraph::new(think), chunks[2]);
+        frame.render_widget(Paragraph::new(status), chunks[1]);
     }
 
-    // input box with a visible cursor at app.cursor (char index).
-    // long inputs scroll horizontally: the window slides to keep the
-    // cursor visible instead of clipping the right edge
+    // ---- the prompt: OpenCode prompt (left border ┃, element bg, meta row)
     let chars: Vec<char> = app.input.chars().collect();
-    let inner = ((chunks[3].width as usize).saturating_sub(4)).max(1); // borders + "> "
+    let inner = ((chunks[2].width as usize).saturating_sub(4)).max(1);
     let total = chars.len();
     let view = if total <= inner {
         0
@@ -1179,28 +1294,66 @@ fn draw(app: &mut App, frame: &mut Frame) {
         (app.cursor + 1).saturating_sub(inner).min(total - inner)
     };
     let before: String = chars[view..app.cursor.min(total)].iter().collect();
-    let at: String = chars.get(app.cursor).map(|c| c.to_string()).unwrap_or_default();
+    let at: String = chars
+        .get(app.cursor)
+        .map(|c| c.to_string())
+        .unwrap_or_default();
     let after: String = chars[(app.cursor + 1).min(total)..].iter().collect();
-    let input = Paragraph::new(Line::from(vec![
-        Span::styled("> ", Style::default().fg(BRAND).add_modifier(Modifier::BOLD)),
-        Span::raw(before),
+    let mut input_lines = vec![Line::from(vec![
+        Span::styled(before, Style::default().fg(TEXT)),
         Span::styled(
             if at.is_empty() { " ".to_string() } else { at },
-            Style::default().add_modifier(Modifier::REVERSED).fg(BRAND),
+            Style::default().fg(TEXT).add_modifier(Modifier::REVERSED),
         ),
-        Span::raw(after),
-    ]))
-    .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(BRAND)));
-    frame.render_widget(input, chunks[3]);
+        Span::styled(after, Style::default().fg(TEXT)),
+    ])];
+    if total == 0 {
+        input_lines.push(Line::from(Span::styled(
+            "Ask anything…",
+            Style::default().fg(DIM),
+        )));
+    }
+    let meta = Line::from(vec![
+        Span::styled("Bend", Style::default().fg(BRAND)),
+        Span::styled(" · ", Style::default().fg(DIM)),
+        Span::styled(
+            if app.is_live {
+                "zai-glm-5-3"
+            } else {
+                "scripté"
+            },
+            Style::default().fg(TEXT),
+        ),
+        Span::styled(" · ", Style::default().fg(DIM)),
+        Span::styled(
+            if app.connected {
+                "connecté"
+            } else {
+                "déconnecté"
+            },
+            Style::default().fg(if app.connected { DIM } else { ERR }),
+        ),
+    ]);
+    input_lines.push(meta);
+    let prompt = Paragraph::new(input_lines).block(
+        Block::default()
+            .borders(Borders::LEFT)
+            .border_set(SPLIT)
+            .border_style(Style::default().fg(BRAND))
+            .style(Style::default().bg(ELEMENT))
+            .padding(Padding::new(2, 2, 1, 1)),
+    );
+    frame.render_widget(prompt, chunks[2]);
 
-    // slash-command popup (filtered, codex-style) above the input box
+    // ---- slash-command popup (OpenCode autocomplete: split border,
+    // backgroundMenu, primary selection)
     let matches = popup_matches(&app.input);
     if !matches.is_empty() {
         let n = matches.len().min(8) as u16;
-        let w = 56u16.min(chunks[3].width);
+        let w = 56u16.min(chunks[2].width);
         let area = Rect {
-            x: chunks[3].x,
-            y: chunks[3].y.saturating_sub(n + 2),
+            x: chunks[2].x,
+            y: chunks[2].y.saturating_sub(n + 2),
             width: w,
             height: n + 2,
         };
@@ -1211,61 +1364,75 @@ fn draw(app: &mut App, frame: &mut Frame) {
             .enumerate()
             .map(|(i, c)| {
                 let sel = i == app.popup_sel.min(matches.len() - 1);
-                let style = if sel {
-                    Style::default().fg(BRAND).add_modifier(Modifier::BOLD)
+                let (name_style, desc_style) = if sel {
+                    (
+                        Style::default()
+                            .bg(BRAND)
+                            .fg(TEXT)
+                            .add_modifier(Modifier::BOLD),
+                        Style::default().bg(BRAND).fg(TEXT),
+                    )
                 } else {
-                    Style::default().fg(BRAND)
+                    (Style::default().fg(TEXT), Style::default().fg(DIM))
                 };
                 Line::from(vec![
-                    Span::styled(format!(" {:<10}", c.name), style),
-                    Span::styled(c.desc, Style::default().fg(DIM)),
+                    Span::styled(format!(" {} ", c.name), name_style),
+                    Span::styled(c.desc, desc_style),
                 ])
             })
             .collect();
         frame.render_widget(
             Paragraph::new(lines).block(
                 Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(BRAND)),
+                    .borders(Borders::LEFT | Borders::RIGHT)
+                    .border_set(SPLIT)
+                    .border_style(Style::default().fg(BORDER_ACTIVE))
+                    .style(Style::default().bg(ELEMENT)),
             ),
             area,
         );
     }
 
-    // status bar: the Enter hint follows the turn state (codex semantics)
-    let status = if app.pending {
-        Line::from(vec![
-            Span::styled(
-                "Entrée : diriger le tour · Tab : mettre en file · / : commandes · Pg↑↓ : défiler · End : bas · Échap : interrompre",
-                Style::default().fg(DIM),
-            ),
-        ])
+    // ---- hint row (the OpenCode prompt right hint row)
+    let hint = if app.pending {
+        "Entrée : diriger · Tab : mettre en file · / : commandes · Pg↑↓ : défiler · End : bas"
     } else {
-        Line::from(vec![
-            Span::styled(
-                "Entrée : envoyer · / : commandes · Pg↑↓/molette : défiler · End : bas · Ctrl+C : quitter",
-                Style::default().fg(DIM),
-            ),
-        ])
+        "Entrée : envoyer · / : commandes · Pg↑↓/molette : défiler · End : bas · Ctrl+C : quitter"
     };
-    frame.render_widget(Paragraph::new(status), chunks[4]);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(DIM)))),
+        chunks[3],
+    );
 }
 
 fn run_tui(app: &mut App) -> io::Result<()> {
     let mut terminal = ratatui::init();
     let _ = crossterm::execute!(io::stdout(), EnableMouseCapture);
     loop {
-        while let Ok(line) = app.rx.try_recv() {
-            if line == "--- idle" {
-                app.pending = false;
-            }
-            if let Some(ev) = parse_line(&line) {
-                // the view is top-anchored: a pinned view never moves,
-                // a following view re-sticks in draw
-                let appended = push_event(&mut app.events, &mut app.cache, ev);
-                if appended && !app.follow {
-                    app.unseen += 1;
+        loop {
+            match app.rx.try_recv() {
+                Ok(line) => {
+                    if line == "--- idle" {
+                        app.pending = false;
+                    }
+                    if let Some(ev) = parse_line(&line) {
+                        // the view is top-anchored: a pinned view never moves,
+                        // a following view re-sticks in draw
+                        let appended = push_event(&mut app.events, &mut app.cache, ev);
+                        if appended && !app.follow {
+                            app.unseen += 1;
+                        }
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    // the REPL process is gone: a /reload exits it (the
+                    // parent respawns and reconnects), a crash does not.
+                    // Either way this UI is dead — stop, let the parent
+                    // decide.
+                    app.connected = false;
+                    app.should_quit = true;
+                    break;
                 }
             }
         }
@@ -1416,8 +1583,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     }
                     (KeyCode::Up, _) => {
                         if popup_open {
-                            app.popup_sel =
-                                (app.popup_sel + matches.len() - 1) % matches.len();
+                            app.popup_sel = (app.popup_sel + matches.len() - 1) % matches.len();
                         } else {
                             let next = match app.hist_idx {
                                 None if !app.history.is_empty() => Some(0),
@@ -1481,16 +1647,11 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     (KeyCode::Char('w'), KeyModifiers::CONTROL) => {
                         let e = byte_at_char(&app.input, app.cursor);
                         let head = app.input[..e].trim_end();
-                        let b = head
-                            .rfind(char::is_whitespace)
-                            .map(|i| i + 1)
-                            .unwrap_or(0);
+                        let b = head.rfind(char::is_whitespace).map(|i| i + 1).unwrap_or(0);
                         app.input.replace_range(b..e, "");
                         app.cursor = app.input[..b].chars().count();
                     }
-                    (KeyCode::Char(c), m)
-                        if m.is_empty() || m == KeyModifiers::SHIFT =>
-                    {
+                    (KeyCode::Char(c), m) if m.is_empty() || m == KeyModifiers::SHIFT => {
                         let b = byte_at_char(&app.input, app.cursor);
                         app.input.insert(b, c);
                         app.cursor += 1;
@@ -1581,7 +1742,6 @@ fn run_line_mode(app: &mut App) -> io::Result<()> {
 /// Connect to the REPL and run the UI (interactive ratatui when stdin and
 /// stdout are TTYs, line mode otherwise). `is_live` only affects the header.
 pub fn run(host: String, port: u16, is_live: bool, debug: bool) -> io::Result<()> {
-
     let stream = TcpStream::connect((host.as_str(), port));
     let connected = true;
     let stream = match stream {
@@ -1590,7 +1750,11 @@ pub fn run(host: String, port: u16, is_live: bool, debug: bool) -> io::Result<()
             eprintln!("connexion impossible : {}", e);
             eprintln!(
                 "lance d'abord le harness :  {}",
-                if is_live { "bend runtime/repl-live.bend (et le bridge)" } else { "bend runtime/repl.bend" }
+                if is_live {
+                    "bend runtime/repl-live.bend (et le bridge)"
+                } else {
+                    "bend runtime/repl.bend"
+                }
             );
             return Ok(());
         }

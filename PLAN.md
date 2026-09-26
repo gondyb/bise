@@ -802,3 +802,53 @@ codes still fail. Verified end-to-end with dbg binaries: sync ~0.04s
 and slot cleaned; handoff at 2s with real pid; .rc holds the true code
 (0, 143 after kill); stdin via fifo reaches the reader; listing = ls.
 Suite byte-identical to baseline; PROOF green.
+
+## 2026-09-26 — /reload: the self-improvement loop
+
+Run the harness on its own next version without losing the session:
+
+  /reload  (typed in the TUI, between turns)
+
+Server side (Bend): /reload maps to the raw word "reload" in
+core/commands.bend. Both REPLs grew a Flow return for their loops
+(Go keeps serving, Stop unwinds to main): the connection loop, the
+accept loop and main now return Flow instead of looping forever. On
+reload the plan is gated by S.reload_allowed (core/session.bend):
+turn, pending, queued and notifications must all be empty — exactly
+the state the checkpoint serializes (ADR 0002), so the restart cannot
+lose session state. Accepted: ack lines, checkpoint, socket close,
+"reload-exit" marker on stdout (the log), process exits 0. Refused
+(a stalled turn, a queued message, a held notification): a note, and
+the session keeps serving. Gating is between turns structurally too:
+the REPL only reads commands when no turn is running.
+
+Parent side (rust/harness): the run loop became spawn -> wait banner
+-> TUI, and when the TUI returns, the child state decides: exited
+with the reload-exit marker and code 0 -> recompile the checked-out
+source (runtime/repl-live.bend / runtime/repl.bend) into the REPL
+binary, set BEND_CONTINUE=1, respawn on the same port, reconnect the
+TUI (the fresh process restores the checkpoint and greets with the
+message count). Compile failure: keep the previous binary, warn on
+stderr, respawn anyway — the session survives a broken edit. Any
+other child death: report and die with it. Child alive: the user
+quit the TUI; die together (the old invariant). Reloads are capped
+at 10 in a row.
+
+TUI (rust/tui): the event drain treats a channel Disconnected as a
+stop (the old UI stayed "connected" over a dead socket); /reload
+joins the slash popup. Background command slots live on disk keyed
+by port: detached processes survive the reload and stay reachable
+from the new process.
+
+Laws (86): slash_reload_maps, reload_raw_word,
+reload_allowed_when_fresh, reload_refused_while_turn,
+reload_refused_with_queue, reload_refused_with_notif.
+
+Verified: nc on repl-scripted (acks, clean exit 0, reload-exit
+marker, checkpoint, then BEND_CONTINUE restore with "session
+restored: 2 messages" and a working turn); full pty loop through
+bend-harness --scripted (reload -> recompile -> respawn ->
+reconnect -> turn on the restored session, exit 0); the live path
+too (reload -> recompile of repl-live -> respawn with MCP bootstrap
+banner -> reconnect). Suite byte-identical; PROOF green; rust 0
+warnings.

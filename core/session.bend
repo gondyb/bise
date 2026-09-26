@@ -222,6 +222,49 @@ def start_turn(+text: String, +s: T.Session) -> T.Session:
         Nat.add(inputs, 1n), actions,
         Some{T.Turn{0n, Nil{}, Nil{}}}, None{}, queued, notifs}
 
+# ---- the between-turns gate (/reload) ----
+# Checkpoints are only coherent at turn boundaries: turn, pending,
+# queued and notifications are all empty there (ADR 0002 — they are
+# not serialized). A reload may only run in exactly that state, so the
+# restarted process restores a checkpoint that loses nothing.
+
+def no_turn(turn: Maybe<&2, T.Turn>) -> Bool:
+  match turn:
+    case None{}:
+      True{}
+    case Some{_}:
+      False{}
+
+def no_pending(pending: Maybe<&2, T.Pending>) -> Bool:
+  match pending:
+    case None{}:
+      True{}
+    case Some{_}:
+      False{}
+
+def empty_queued(queued: List<&2, String>) -> Bool:
+  match queued:
+    case Nil{}:
+      True{}
+    case Con{_, _}:
+      False{}
+
+def empty_notifs(notifs: List<&2, String>) -> Bool:
+  match notifs:
+    case Nil{}:
+      True{}
+    case Con{_, _}:
+      False{}
+
+# between two turns in the strict sense: everything the checkpoint does
+# NOT serialize is empty, so a reload cannot lose session state
+def reload_allowed(+s: T.Session) -> Bool:
+  match s:
+    case T.Sess{_, _, _, _, +turn, +pending, +queued, +notifs}:
+      Bool.and(no_turn(turn),
+        Bool.and(no_pending(pending),
+          Bool.and(empty_queued(queued), empty_notifs(notifs))))
+
 # ---- compaction start (shared by automatic preflight and manual command) ----
 
 def start_compaction.too_large(auto: Bool, turn: Maybe<&2, T.Turn>,

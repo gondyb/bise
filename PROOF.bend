@@ -258,3 +258,41 @@ def Laws.attempt_tls_fails():
 
 def Laws.exec_of_exit_still_fails():
   {==}
+
+def Laws.slash_reload_maps():
+  {==}
+
+def Laws.reload_raw_word():
+  {==}
+
+def Laws.reload_allowed_when_fresh(cfg):
+  match cfg:
+    case T.Cfg{_, _, _, _, _}:
+      {==}
+
+def Laws.reload_refused_while_turn(cfg, text):
+  match cfg:
+    case T.Cfg{_, _, _, _, _}:
+      match text:
+        case "":
+          {==}
+        case _:
+          {==}
+
+def Laws.reload_refused_with_queue(cfg, text):
+  match cfg:
+    case T.Cfg{_, _, _, _, _}:
+      match text:
+        case "":
+          {==}
+        case _:
+          {==}
+
+def Laws.reload_refused_with_notif(cfg, text):
+  match cfg:
+    case T.Cfg{_, _, _, _, _}:
+      match text:
+        case "":
+          {==}
+        case _:
+          {==}
