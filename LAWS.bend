@@ -14,6 +14,7 @@ import ./core/obs.bend as O
 import ./runtime/remote.bend as Rm
 import ./runtime/tools.bend as Xt
 import ./runtime/main.bend as Rt
+import ./runtime/mcp.bend as Mc
 import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
 
 # LAW: a checkpoint restores to exactly the session it exported.
@@ -735,6 +736,40 @@ law node_err_extracts_message:
     == "missing required parameter: owner" : String}
 
 
+
+# ---- MCP connector parity (vibe connector_registry) ----
+
+# LAW: the published alias is a clean identifier (vibe_sdk requires a
+# TypeScript identifier for tools.<alias>.<function>): everything
+# outside [a-zA-Z0-9_-] flattens to "_", edges strip, "" is "unnamed".
+law mcp_alias_normalizes:
+  {Bool.and(String.eq(Mc.normalize_name("github app!"), "github_app"),
+     Bool.and(String.eq(Mc.normalize_name("--x.y--"), "x_y"),
+       Bool.and(String.eq(Mc.normalize_name("ok-name_1"), "ok-name_1"),
+         String.eq(Mc.normalize_name(""), "unnamed")))) == True{} : Bool}
+
+# LAW: colliding normalized aliases get _2, _3... (vibe dedupe).
+law mcp_alias_dedupes:
+  {Bool.and(
+     String.eq(Mc.dedupe("github", Nil{}), "github"),
+     Bool.and(
+       String.eq(Mc.dedupe("github", Con{"github", Nil{}}), "github_2"),
+       String.eq(Mc.dedupe("github",
+         Con{"github", Con{"github_2", Nil{}}}), "github_3")))
+    == True{} : Bool}
+
+# LAW: the bootstrap hits the same endpoint as the vibe CLI, with the
+# same params: the web_search builtin is exposed as an MCP tool and
+# auth-actionable connectors are included (ready ones index only).
+law mcp_bootstrap_url_parity:
+  {Bool.and(
+     String.contains(Mc.bootstrap_url(),
+       "/v1/connectors/bootstrap?supports_mcp=true"),
+     Bool.and(
+       String.contains(Mc.bootstrap_url(),
+         "include_auth_actionable_connectors=true"),
+       String.contains(Mc.bootstrap_url(), "builtin_connectors=web_search")))
+    == True{} : Bool}
 
 # ---- bash background handoff (runtime/main.bend) ----
 # A command that outlives the sync window must never block the turn: it

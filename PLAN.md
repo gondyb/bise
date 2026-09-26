@@ -1068,3 +1068,34 @@ law-pinned (141 laws):
 
 Battery: 22 checks green (added: multi-line intact, real 199 fails,
 ulimit cap, no script leak). Demo byte-identical; PROOF green.
+
+## 2026-09-27 — MCP connector parity with the vibe CLI
+
+The bootstrap now hits the same endpoint with the same params as the
+vibe CLI's ConnectorRegistry: supports_mcp=true&
+include_auth_actionable_connectors=true&builtin_connectors=web_search
+(extracted into bootstrap_url, law-pinned). The web_search builtin
+rides along as an MCP-callable connector (5 tools: web_search,
+open_url, news_search, weather_search, finance_search).
+
+Published aliases are now clean identifiers (vibe's _normalize_name):
+anything outside [a-zA-Z0-9_-] flattens to "_", the edges strip, ""
+becomes "unnamed" — vibe_sdk requires a TypeScript identifier for
+tools.<alias>.<function>. Colliding normalized aliases dedupe with
+_2, _3 suffixes (vibe's disambiguation), computed against the aliases
+BEFORE the current connector (the first version consed the current
+alias into its own seen list: every alias got _2; caught live).
+
+The flow, end to end, verified live: bootstrap at startup writes the
+index (only ready connectors index their tools); search_tool_functions
+(best_match) ranks over the merged catalog+index (360 tools), details
+returns the input schema; run_typescript calls <connector>.<tool> and
+the runtime resolves the connector id from the index and drives the
+MCP session on /v1/connectors-gateway/<cid>/mcp (initialize,
+notifications/initialized, tools/call). Nothing enters the context
+window except what the agent explicitly searches for and reads.
+
+Laws (144): mcp_alias_normalizes, mcp_alias_dedupes,
+mcp_bootstrap_url_parity. Live check: 14 connectors / 360 tools
+indexed; best_match found web_search.web_search; details returned the
+schema; github_app.get_me returned gvergnaud.

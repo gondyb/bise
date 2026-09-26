@@ -461,3 +461,12 @@ def Laws.bg_wrapper_multiline_command_intact():
 
 def Laws.bg_sentinel_derives_from_command():
   {==}
+def Laws.mcp_alias_normalizes():
+  {==}
+
+def Laws.mcp_alias_dedupes():
+  {==}
+
+def Laws.mcp_bootstrap_url_parity():
+  {==}
+
