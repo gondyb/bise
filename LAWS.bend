@@ -219,6 +219,83 @@ law unknown_slash_refused:
     == Cm.Note{"unknown command: /frobnicate — try /help"}
     : Cm.Interpretation}
 
+# ---- steering commits into the durable history (vibe_sdk parity) ----
+# vibe_sdk: defer_steer holds the message; state.context.extend(steering)
+# commits it at the next agent call, and finish_turn commits it when a
+# turn dies first. The Bend core now does both.
+
+# a concrete cfg: the flows go through dispatch, whose fits comparison
+# needs a concrete threshold to normalize
+def law_cfg() -> T.Cfg:
+  T.Cfg{600n, 20000n, 3n, "system prompt", Nil{}}
+
+# the law flows: say hi (turn + first AgentCall pending), steer, then
+# complete the call with a tool round -> the dispatch commits the steer
+def steer_flow.started(+cfg: T.Cfg) -> T.Session:
+  S.res_next(S.apply(T.new_session(cfg), T.UserMsg{T.Queue{}, "hi"}),
+    T.new_session(cfg))
+
+def steer_flow.steered(+cfg: T.Cfg) -> T.Session:
+  S.res_next(S.apply(steer_flow.started(cfg),
+      T.UserMsg{T.Steer{}, "penguins"}), steer_flow.started(cfg))
+
+def steer_flow.called(+cfg: T.Cfg) -> T.Session:
+  S.res_next(S.apply(steer_flow.steered(cfg),
+      T.CompletionOk{0, "thinking", Con{T.Call{1, "bash", "ls"}, Nil{}}}),
+    steer_flow.steered(cfg))
+
+def steer_flow(+cfg: T.Cfg) -> T.Session:
+  # the completion renumbers the calls (base = the consumed action ids),
+  # so Call{1,...} waits as call id 2
+  S.res_next(S.apply(steer_flow.called(cfg), T.ToolOk{2, "out"}),
+    steer_flow.called(cfg))
+
+# LAW: a steered user message enters the durable history at the next
+# model-safe boundary -- every later model call and the checkpoint
+# carry it.
+law steering_lands_in_history:
+  {S.history_has_user(S.sess_history(steer_flow(law_cfg())), "penguins")
+    == True{} : Bool}
+
+# LAW: a turn that dies before its next model call (an interrupt) still
+# commits the steering: the client already showed the message, the next
+# turn's model input must carry it.
+law steering_survives_interrupt:
+  {S.history_has_user(
+      S.sess_history(S.res_next(
+        S.apply(steer_flow.steered(law_cfg()), T.Interrupt{}),
+        steer_flow.steered(law_cfg()))), "penguins") == True{} : Bool}
+
+# LAW: a failed turn commits its pending steering the same way.
+law steering_survives_fail:
+  {S.history_has_user(
+      S.sess_history(S.res_next(
+        S.apply(steer_flow.steered(law_cfg()), T.FailTurn{"boom"}),
+        steer_flow.steered(law_cfg()))), "penguins") == True{} : Bool}
+
+# arrival order: two steers, committed in the order they arrived
+def steer_order.one(+cfg: T.Cfg) -> T.Session:
+  S.res_next(S.apply(steer_flow.started(cfg),
+      T.UserMsg{T.Steer{}, "one"}), steer_flow.started(cfg))
+
+def steer_order.two(+cfg: T.Cfg) -> T.Session:
+  S.res_next(S.apply(steer_order.one(cfg),
+      T.UserMsg{T.Steer{}, "two"}), steer_order.one(cfg))
+
+def steer_order.called(+cfg: T.Cfg) -> T.Session:
+  S.res_next(S.apply(steer_order.two(cfg),
+      T.CompletionOk{0, "thinking", Con{T.Call{1, "bash", "ls"}, Nil{}}}),
+    steer_order.two(cfg))
+
+def steer_order(+cfg: T.Cfg) -> T.Session:
+  S.res_next(S.apply(steer_order.called(cfg), T.ToolOk{2, "out"}),
+    steer_order.called(cfg))
+
+# LAW: several steers commit in arrival order, not reversed.
+law steering_arrival_order:
+  {S.injected_user_texts(S.sess_history(steer_order(law_cfg())))
+    == Con{"one", Con{"two", Nil{}}} : List<&2, String>}
+
 # ---- /reload (the self-improvement loop: restart on the same session) ----
 
 # LAW: /reload maps onto the reload protocol word, sent verbatim.

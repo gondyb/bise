@@ -19,7 +19,7 @@ import ./api.bend as Api
 type DRes is Data:
   DR{obs: List<&2, T.Obs>, acts: List<&2, T.Act>,
      pending: Maybe<&2, T.Pending>, turn: Maybe<&2, T.Turn>,
-     notifs: List<&2, String>}
+     notifs: List<&2, String>, history: List<&2, T.Msg>}
 
 # ---- small pure helpers ----
 
@@ -156,6 +156,8 @@ def take_call(waiting: List<&2, T.Call>, +id: U32) -> Maybe<&2, Taken>:
         case T.Call{cid, _, _}:
           take_call.put(U32.is_eq(cid, id), c, rest, take_call(rest, id))
 
+# arrival order (vibe_sdk pushes to a Vec): the list is oldest-first,
+# so delivery injects the steering in the order it arrived
 def add_steer(turn: Maybe<&2, T.Turn>, +text: String) -> Maybe<&2, T.Turn>:
   match turn:
     case None{}:
@@ -163,7 +165,8 @@ def add_steer(turn: Maybe<&2, T.Turn>, +text: String) -> Maybe<&2, T.Turn>:
     case Some{t}:
       match t:
         case T.Turn{nulls, steer, notifs}:
-          Some{T.Turn{nulls, Con{text, steer}, notifs}}
+          Some{T.Turn{nulls,
+            List.append(&2, String, steer, Con{text, Nil{}}), notifs}}
 
 def add_notif(turn: Maybe<&2, T.Turn>, +text: String) -> Maybe<&2, T.Turn>:
   match turn:
@@ -172,7 +175,8 @@ def add_notif(turn: Maybe<&2, T.Turn>, +text: String) -> Maybe<&2, T.Turn>:
     case Some{t}:
       match t:
         case T.Turn{nulls, steer, notifs}:
-          Some{T.Turn{nulls, steer, Con{text, notifs}}}
+          Some{T.Turn{nulls, steer,
+            List.append(&2, String, notifs, Con{text, Nil{}})}}
 
 # ---- session field updates ----
 
@@ -265,67 +269,160 @@ def reload_allowed(+s: T.Session) -> Bool:
         Bool.and(no_pending(pending),
           Bool.and(empty_queued(queued), empty_notifs(notifs))))
 
+# ---- law helpers: what the durable history holds ----
+
+def sess_history(+s: T.Session) -> List<&2, T.Msg>:
+  match s:
+    case T.Sess{_, +history, _, _, _, _, _, _}:
+      history
+
+# does the history hold this injected user message?
+def history_has_user(msgs: List<&2, T.Msg>, +text: String) -> Bool:
+  match msgs:
+    case Nil{}:
+      False{}
+    case Con{+m, +rest}:
+      match m:
+        case T.Msg{T.RUser{}, +t, _, True{}}:
+          Bool.or(String.eq(t, text), history_has_user(rest, text))
+        case _:
+          history_has_user(rest, text)
+
+# the injected user texts, in history (arrival) order
+def injected_user_texts(msgs: List<&2, T.Msg>) -> List<&2, String>:
+  match msgs:
+    case Nil{}:
+      Nil{}
+    case Con{+m, +rest}:
+      match m:
+        case T.Msg{T.RUser{}, +t, _, True{}}:
+          Con{t, injected_user_texts(rest)}
+        case _:
+          injected_user_texts(rest)
+
+# the next session of an apply result (the fallback is only for
+# totality; the law flows take the Accepted path)
+def res_next(r: T.Res, +fallback: T.Session) -> T.Session:
+  match r:
+    case T.Accepted{_, _, +next}:
+      next
+    case T.Rejected{_}:
+      fallback
+
+# ---- turn death: commit what the turn was still holding ----
+# vibe_sdk finish_turn: steering accepted for the turn is a real user
+# message the client already shows. A turn that ends before its next
+# model call -- an interruption, a failure, or the iteration cap --
+# would otherwise drop it with the turn. Committing it here keeps
+# model context consistent with the history the user sees, so the next
+# turn's model call carries it. No Steered observation: the model
+# never received it.
+
+def finish_history(turn: Maybe<&2, T.Turn>, +history: List<&2, T.Msg>)
+    -> List<&2, T.Msg>:
+  match turn:
+    case None{}:
+      history
+    case Some{t}:
+      match t:
+        case T.Turn{_, +steer, +tnotifs}:
+          List.append(&2, T.Msg,
+            List.append(&2, T.Msg, history, inject_users(steer)),
+            inject_users(tnotifs))
+
+def finish_turn(+s: T.Session) -> T.Session:
+  match s:
+    case T.Sess{+cfg, +history, +inputs, +actions, +turn, +pending, +queued,
+        +notifs}:
+      T.Sess{cfg, finish_history(turn, history), inputs, actions,
+        None{}, None{}, queued, notifs}
+
+# a null-iteration retry keeps the active turn (vibe_sdk): the pending
+# steering and notifications survive into the retried turn
+def retry_turn(+s: T.Session, +nulls: Nat) -> Maybe<&2, T.Turn>:
+  match s:
+    case T.Sess{_, _, _, _, +turn, _, _, _}:
+      match turn:
+        case None{}:
+          Some{T.Turn{nulls, Nil{}, Nil{}}}
+        case Some{t}:
+          match t:
+            case T.Turn{_, +steer, +tnotifs}:
+              Some{T.Turn{nulls, steer, tnotifs}}
+
 # ---- compaction start (shared by automatic preflight and manual command) ----
 
 def start_compaction.too_large(auto: Bool, turn: Maybe<&2, T.Turn>,
-    +steer: List<&2, String>, +notifs: List<&2, String>) -> DRes:
+    +steer: List<&2, String>, +notifs: List<&2, String>,
+    +history: List<&2, T.Msg>) -> DRes:
   match auto:
     case True{}:
-      # in-turn: the active turn fails
+      # in-turn: the active turn fails; what it was still holding is
+      # committed (finish_turn), not dropped with the turn
       DR{Con{T.CompactionFailed{"compaction_request_too_large"},
           Con{T.TurnDone{"failed: compaction_request_too_large"},
             List.append(&2, T.Obs, steer_obs(steer), notif_obs(notifs))}},
-        Nil{}, None{}, None{}, Nil{}}
+        Nil{}, None{}, None{}, Nil{}, finish_history(turn, history)}
     case False{}:
       # manual between-turn compaction returns idle
       DR{Con{T.CompactionFailed{"compaction_request_too_large"},
           List.append(&2, T.Obs, steer_obs(steer), notif_obs(notifs))},
-        Nil{}, None{}, turn, Nil{}}
+        Nil{}, None{}, turn, Nil{}, history}
 
 def start_compaction.project(+auto: Bool, +extra: String, +actions: U32,
     turn: Maybe<&2, T.Turn>, +steer: List<&2, String>,
-    +notifs: List<&2, String>, p: C.PRes) -> DRes:
+    +notifs: List<&2, String>, p: C.PRes,
+    +history: List<&2, T.Msg>) -> DRes:
   match p:
     case C.POk{+input}:
-      # ADR 0011: the first request uses the compaction id as its action id
+      # ADR 0011: the first request uses the compaction id as its action id.
+      # The turn rides along: steering it holds is NOT consumed by the
+      # compaction (vibe_sdk keeps it pending) -- it is committed at the
+      # first agent call after the compaction completes
       DR{Con{T.CompactionStarted{actions, auto},
           List.append(&2, T.Obs, steer_obs(steer), notif_obs(notifs))},
         Con{T.CompactionCall{actions, input}, Nil{}},
         Some{T.PComp{actions, 1n, actions, extra, auto}},
-        turn, Nil{}}
+        turn, Nil{}, history}
     case C.PBig{}:
-      start_compaction.too_large(auto, turn, steer, notifs)
+      start_compaction.too_large(auto, turn, steer, notifs, history)
 
 def start_compaction(auto: Bool, +extra: String, +cfg: T.Cfg,
     +history: List<&2, T.Msg>, +actions: U32, turn: Maybe<&2, T.Turn>,
     +steer: List<&2, String>, +notifs: List<&2, String>) -> DRes:
   start_compaction.project(auto, extra, actions, turn, steer, notifs,
-    C.project(cfg, history, extra))
+    C.project(cfg, history, extra), history)
 
 # ---- dispatch: the seam before every agent completion ----
 # Steering and notifications enter model context here (model-safe
 # boundary), then ADR 0011 preflight budgets the complete input.
 
 def dispatch.pick(fits: Bool, +cfg: T.Cfg, +history: List<&2, T.Msg>,
-    +actions: U32, +nulls: Nat, +steer: List<&2, String>,
-    +notifs: List<&2, String>) -> DRes:
+    +history2: List<&2, T.Msg>, +actions: U32, +nulls: Nat,
+    +steer: List<&2, String>, +notifs: List<&2, String>) -> DRes:
   match fits:
     case True{}:
+      # the injected users are COMMITTED into the durable history
+      # (vibe_sdk: state.context.extend(steering)) -- they survive
+      # into every later model call and the checkpoint
       DR{List.append(&2, T.Obs, steer_obs(steer), notif_obs(notifs)),
-        Con{T.AgentCall{actions, model_input(cfg, history)}, Nil{}},
+        Con{T.AgentCall{actions, model_input(cfg, history2)}, Nil{}},
         Some{T.PAgent{actions}},
-        Some{T.Turn{nulls, Nil{}, Nil{}}}, Nil{}}
+        Some{T.Turn{nulls, Nil{}, Nil{}}}, Nil{}, history2}
     case False{}:
-      # oversized input starts compaction before the agent Action
+      # oversized input starts compaction before the agent Action. The
+      # steering is NOT consumed (vibe_sdk keeps it pending): the
+      # compaction request projects the un-injected history, and the
+      # turn carries the steering for the first agent call after it
       start_compaction(True{}, "", cfg, history, actions,
-        Some{T.Turn{nulls, Nil{}, Nil{}}}, steer, notifs)
+        Some{T.Turn{nulls, steer, notifs}}, Nil{}, Nil{})
 
 def dispatch.thresh(+threshold: Nat, +cfg: T.Cfg, +history: List<&2, T.Msg>,
     +actions: U32, turn: Maybe<&2, T.Turn>, +sess_notifs: List<&2, String>)
     -> DRes:
   match turn:
     case None{}:
-      DR{Nil{}, Nil{}, None{}, None{}, Nil{}}
+      DR{Nil{}, Nil{}, None{}, None{}, Nil{}, history}
     case Some{t}:
       match t:
         case T.Turn{+nulls, +steer, +tnotifs}:
@@ -334,7 +431,7 @@ def dispatch.thresh(+threshold: Nat, +cfg: T.Cfg, +history: List<&2, T.Msg>,
             List.append(&2, T.Msg, history, inject_users(steer)),
             inject_users(all_notifs))
           dispatch.pick(Nat.is_lt(E.input_tokens(cfg, history2), threshold),
-            cfg, history2, actions, nulls, steer, all_notifs)
+            cfg, history, history2, actions, nulls, steer, all_notifs)
 
 def dispatch.turn(+cfg: T.Cfg, +history: List<&2, T.Msg>, +actions: U32,
     turn: Maybe<&2, T.Turn>, +sess_notifs: List<&2, String>) -> DRes:
@@ -351,9 +448,11 @@ def dispatch(+s: T.Session) -> DRes:
 # is consumed, so the next action id moves on by one
 def dispatch_result(+d: DRes, +pre: List<&2, T.Obs>, +s: T.Session) -> T.Res:
   match d:
-    case DR{obs, acts, pending, turn, notifs}:
+    case DR{obs, acts, pending, turn, notifs, history}:
       match s:
-        case T.Sess{+cfg, +history, +inputs, +actions, _, _, +queued, _}:
+        case T.Sess{+cfg, +hist, +inputs, +actions, _, _, +queued, _}:
+          # the DR's history replaces the session's: the dispatch may
+          # have committed injected steering and notifications
           T.Accepted{List.append(&2, T.Obs, pre, obs), acts,
             T.Sess{cfg, history, inputs, U32.add(actions, 1), turn, pending,
               queued, notifs}}
@@ -363,9 +462,10 @@ def dispatch_result(+d: DRes, +pre: List<&2, T.Obs>, +s: T.Session) -> T.Res:
 def apply.completion.too_large(auto: Bool, +code: String, +s: T.Session) -> T.Res:
   match auto:
     case True{}:
+      # the turn dies: commit what it was still holding
       T.Accepted{Con{T.CompactionFailed{code},
           Con{T.TurnDone{String.append("failed: ", code)}, Nil{}}},
-        Nil{}, bump_inputs(set_turn(set_pending(s, None{}), None{}))}
+        Nil{}, bump_inputs(finish_turn(s))}
     case False{}:
       T.Accepted{Con{T.CompactionFailed{code}, Nil{}}, Nil{},
         bump_inputs(set_pending(s, None{}))}
@@ -678,12 +778,14 @@ def apply.completion.multi(+calls: List<&2, T.Call>, +text: String,
 def apply.completion.null2(over: Bool, +nulls: Nat, +s: T.Session) -> T.Res:
   match over:
     case True{}:
+      # the iteration cap kills the turn: commit what it still held
       T.Accepted{Con{T.NullIteration{},
           Con{T.TurnDone{"failed: null iteration limit"}, Nil{}}},
-        Nil{}, bump_inputs(set_turn(set_pending(s, None{}), None{}))}
+        Nil{}, bump_inputs(finish_turn(s))}
     case False{}:
-      # retry within the limit
-      +s1 = bump_inputs(set_turn(s, Some{T.Turn{Nat.add(nulls, 1n), Nil{}, Nil{}}}))
+      # retry within the limit: the active turn survives with its
+      # pending steering and notifications (vibe_sdk keeps the turn)
+      +s1 = bump_inputs(set_turn(s, retry_turn(s, Nat.add(nulls, 1n))))
       d = dispatch(s1)
       dispatch_result(d, Con{T.NullIteration{}, Nil{}}, s1)
 
@@ -700,18 +802,23 @@ def apply.completion.empty(+s: T.Session) -> T.Res:
                 Bool.not(Nat.is_le(Nat.add(nulls, 1n), cfg_max_nulls(cfg))),
                 nulls, s)
 
+def apply.completion.plain2.finish(+s2: T.Session, +text: String) -> T.Res:
+  # finish_turn committed any steering that arrived while the call was
+  # in flight (vibe_sdk finish_turn); the assistant message lands on top
+  match s2:
+    case T.Sess{+cfg, +hist2, +inputs, +actions, _, _, +queued, +notifs}:
+      T.Accepted{Con{T.Assistant{text},
+          Con{T.TurnDone{"completed"}, Nil{}}},
+        Nil{},
+        T.Sess{cfg, List.append(&2, T.Msg, hist2,
+          Con{T.asst(text, Nil{}), Nil{}}),
+          Nat.add(inputs, 1n), actions, None{}, None{}, queued, notifs}}
+
 def apply.completion.plain2(empty: Bool, +text: String, +s: T.Session) -> T.Res:
   match empty:
     case False{}:
       # a final completion: commit and end the turn
-      match s:
-        case T.Sess{+cfg, +history, +inputs, +actions, _, _, +queued, +notifs}:
-          T.Accepted{Con{T.Assistant{text},
-              Con{T.TurnDone{"completed"}, Nil{}}},
-            Nil{},
-            T.Sess{cfg, List.append(&2, T.Msg, history,
-              Con{T.asst(text, Nil{}), Nil{}}),
-              Nat.add(inputs, 1n), actions, None{}, None{}, queued, notifs}}
+      apply.completion.plain2.finish(finish_turn(s), text)
     case True{}:
       # ADR 0015: an empty candidate commits nothing and emits no action
       apply.completion.empty(s)
@@ -765,7 +872,7 @@ def apply.completion_fail.agent(matched: Bool, +error: String,
       # ordinary provider failure fails the active turn
       T.Accepted{Con{T.CandidateDiscarded{error},
           Con{T.TurnDone{String.append("failed: ", error)}, Nil{}}},
-        Nil{}, bump_inputs(set_turn(set_pending(s, None{}), None{}))}
+        Nil{}, bump_inputs(finish_turn(s))}
 
 def apply.completion_fail.comp(matched: Bool, +error: String, +auto: Bool,
     +s: T.Session) -> T.Res:
@@ -964,9 +1071,10 @@ def apply.interrupt(+s: T.Session) -> T.Res:
     case T.Sess{_, _, _, _, +turn, _, _, _}:
       match turn:
         case Some{t}:
+          # the turn dies: what it was still holding is committed
           T.Accepted{Con{T.CandidateDiscarded{"interrupt"},
               Con{T.TurnDone{"interrupted"}, Nil{}}},
-            Nil{}, bump_inputs(set_turn(set_pending(s, None{}), None{}))}
+            Nil{}, bump_inputs(finish_turn(s))}
         case None{}:
           # interrupting an inactive session is an accepted idempotent no-op
           T.Accepted{Nil{}, Nil{}, bump_inputs(s)}
@@ -976,8 +1084,9 @@ def apply.fail(+error: String, +s: T.Session) -> T.Res:
     case T.Sess{_, _, _, _, +turn, _, _, _}:
       match turn:
         case Some{t}:
+          # the turn dies: what it was still holding is committed
           T.Accepted{Con{T.TurnDone{String.append("failed: ", error)}, Nil{}},
-            Nil{}, bump_inputs(set_turn(set_pending(s, None{}), None{}))}
+            Nil{}, bump_inputs(finish_turn(s))}
         case None{}:
           T.Rejected{"no active turn"}
 

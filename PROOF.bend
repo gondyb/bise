@@ -428,3 +428,15 @@ def Laws.bg_wrapper_runner_frees_slot():
 
 def Laws.bg_wrapper_pid_wait_breaks_on_rc():
   {==}
+def Laws.steering_lands_in_history():
+  {==}
+
+def Laws.steering_survives_interrupt():
+  {==}
+
+def Laws.steering_survives_fail():
+  {==}
+
+def Laws.steering_arrival_order():
+  {==}
+

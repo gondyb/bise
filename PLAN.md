@@ -979,3 +979,50 @@ evidence (out/rc) must be read with IO.sleep waits (a bash_exec wait
 recycles the freed slot and destroys it) and immediately after the
 freeing event, before any other bash_exec. 18/18 twice; PROOF green
 (131 laws); demo byte-identical; the "stuff" dbg tests still pass.
+
+## 2026-09-26 — Steering commits into the history (vibe_sdk parity)
+
+The user was right: steering did not really work. The Core HELD the
+steered text in the turn and projected it into the next model call's
+input, but NEVER committed it into the durable history — after that one
+call the message vanished from every later projection, from the
+checkpoint, and from what compaction could preserve. vibe_sdk commits
+it (state.context.extend(steering)) and also at finish_turn.
+
+Fixed, law-pinned (134 laws):
+- dispatch now commits the injected steering and notifications into
+  the session history at the model-safe boundary (DRes carries the
+  history; dispatch_result applies it).
+- finish_turn (vibe_sdk finish_turn): a turn that dies before its next
+  model call — interrupt, provider failure, iteration cap, failed
+  compaction, or a final completion — commits what the turn was still
+  holding. No Steered observation: the model never received it.
+- arrival order: add_steer/add_notif append (vibe_sdk pushes to a
+  Vec); multiple steers inject in the order they arrived, not
+  reversed.
+- an in-turn auto-compaction no longer consumes the steering into the
+  compaction request: the turn carries it (vibe_sdk keeps it pending)
+  and the first agent call after the compaction commits it.
+- a null-iteration retry keeps the active turn's pending steering.
+
+Laws: steering_lands_in_history (a full say/steer/completion/tool
+chain), steering_survives_interrupt, steering_survives_fail,
+steering_arrival_order — via apply chains over a concrete cfg (a
+symbolic threshold blocks the dispatch's fits comparison and the chain
+cannot normalize).
+
+Architectural note: the live REPL reads commands only between turns,
+so a mid-turn Enter-steer is applied right after the turn ends and
+starts the next turn (the Core's mid-turn defer path is exercised by
+scenarios that batch commands, and by the laws). The commit fix
+matters there too: everything the turn held lands in the history.
+
+## 2026-09-26 — Toolchain incident: bend 2.0.29 breaks the hub packages
+
+Mid-session the compiler was updated to 2.0.29 (bend update, another
+agent): it rejects numeric dotted def names (resolve.3 in the hub DNS
+package) and its Base removed Nat.read.fit (the hub JSON package calls
+it). Every build broke. Restored the coherent 2.0.27 toolchain
+(binary + bend2 Base + effs from the v2.0.27 release tarball; the hub
+cache left pristine). PIN: build with bend 2.0.27 until the hub
+packages are republished for 2.0.29. (2.0.29 kept at /tmp/bend-2.0.29.bak.)
