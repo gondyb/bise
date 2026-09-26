@@ -258,6 +258,109 @@ law reload_refused_with_notif:
   {S.reload_allowed(S.hold_notif(T.new_session(cfg), text))
     == False{} : Bool}
 
+# ---- self.reload / self.compact: the agent files requests mid-turn ----
+# Callable as tools (top-level or inside a run_typescript program),
+# answered with an ack, executed at the turn boundary by the REPL.
+
+# LAW: self.reload answers with the reload ack — visible to the model.
+law self_reload_acks:
+  {Rt.self_exec("self.reload") == Rt.Ex{True{}, Rt.RELOAD_ACK()}
+    : Rt.ExecRes}
+
+# LAW: self.compact answers with the compact ack.
+law self_compact_acks:
+  {Rt.self_exec("self.compact") == Rt.Ex{True{}, Rt.COMPACT_ACK()}
+    : Rt.ExecRes}
+
+# LAW: the routing recognizes exactly the two self.* tools; self.sleep
+# stays a timer and the ordinary tools stay themselves.
+law self_tool_routing_table:
+  {Bool.and(Rt.is_self_tool("self.reload"),
+     Bool.and(Rt.is_self_tool("self.compact"),
+       Bool.and(Bool.not(Rt.is_self_tool("self.sleep")),
+         Bool.not(Rt.is_self_tool("bash"))))) == True{} : Bool}
+
+# LAW: the acks carry their scan markers — what deferred_of finds is
+# exactly what the model read.
+law self_acks_carry_markers:
+  {Bool.and(String.contains(Rt.RELOAD_ACK(), "reload: scheduled"),
+     String.contains(Rt.COMPACT_ACK(), "compact: scheduled"))
+    == True{} : Bool}
+
+# LAW: the deferred scan reads the turn that just ended — the tool
+# results after the last user message.
+law deferred_reads_reload_request:
+  {Rt.deferred_of(Con{T.user("hi"), Con{T.tool_res(Rt.RELOAD_ACK()), Nil{}}})
+    == Rt.Def{False{}, True{}} : Rt.Def}
+
+law deferred_reads_compact_request:
+  {Rt.deferred_of(Con{T.user("hi"), Con{T.tool_res(Rt.COMPACT_ACK()), Nil{}}})
+    == Rt.Def{True{}, False{}} : Rt.Def}
+
+law deferred_reads_both_requests:
+  {Rt.deferred_of(Con{T.user("hi"),
+      Con{T.tool_res(Rt.RELOAD_ACK()),
+        Con{T.tool_res(Rt.COMPACT_ACK()), Nil{}}}})
+    == Rt.Def{True{}, True{}} : Rt.Def}
+
+# LAW: a request older than the last user message is spent — an old
+# request can never fire twice.
+law deferred_resets_at_user:
+  {Rt.deferred_of(Con{T.tool_res(Rt.RELOAD_ACK()),
+      Con{T.user("new turn"), Con{T.asst("hi", Nil{}), Nil{}}}})
+    == Rt.Def{False{}, False{}} : Rt.Def}
+
+# LAW: no history, no requests.
+law deferred_empty_history:
+  {Rt.deferred_of(Nil{}) == Rt.Def{False{}, False{}} : Rt.Def}
+
+# LAW: no requests, no suffix on the program result.
+law def_acks_suffix_empty_when_none:
+  {Rt.def_acks.suffix(Rt.Def{False{}, False{}}) == "" : String}
+
+# LAW: a reload filed inside a program rides its result — even when
+# the program returns something else.
+law def_acks_suffix_carries_reload:
+  {String.contains(Rt.def_acks.suffix(Rt.Def{False{}, True{}}),
+     "reload: scheduled") == True{} : Bool}
+
+# LAW: both requests filed in one program both ride the result.
+law def_acks_suffix_carries_both:
+  {Bool.and(
+     String.contains(Rt.def_acks.suffix(Rt.Def{True{}, True{}}),
+       "compact: scheduled"),
+     String.contains(Rt.def_acks.suffix(Rt.Def{True{}, True{}}),
+       "reload: scheduled")) == True{} : Bool}
+
+# LAW: the live catalog carries the two tools after the four parity
+# tools; catalog_short (the scripted scenarios) stays untouched.
+law live_catalog_has_six_tools:
+  {Xt.catalog_len(Xt.catalog_live("s", "r", "b")) == 6n : Nat}
+
+law parity_catalog_keeps_four:
+  {Xt.catalog_len(Xt.catalog_pure("s", "r", "b")) == 4n : Nat}
+
+law live_catalog_self_names:
+  {Bool.and(String.eq(Xt.tool_name_at(4n, Xt.catalog_live("s", "r", "b")),
+      "self.reload"),
+     String.eq(Xt.tool_name_at(5n, Xt.catalog_live("s", "r", "b")),
+      "self.compact")) == True{} : Bool}
+
+# LAW: the descriptions say what the tools do and when they act.
+law self_reload_desc_says_when:
+  {Bool.and(
+     String.contains(Xt.tool_desc_at(4n, Xt.catalog_live("s", "r", "b")),
+       "Restart the harness process with the latest code"),
+     String.contains(Xt.tool_desc_at(4n, Xt.catalog_live("s", "r", "b")),
+       "end of the current turn")) == True{} : Bool}
+
+law self_compact_desc_says_when:
+  {Bool.and(
+     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b")),
+       "Compact the conversation history"),
+     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b")),
+       "end of the current turn")) == True{} : Bool}
+
 # ---- the provider API mapping (core/api.bend, formerly the Rust bridge) ----
 
 # LAW: the wire request parses into exactly the tools and messages it

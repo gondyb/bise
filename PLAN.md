@@ -903,3 +903,49 @@ normalizing; "ab" checks in 2s) and the hash is fuel-first recursion
 
 Gates: PROOF 111 laws green in ~2s; suite byte-identical; battery
 18/18 twice in a row, zero orphaned processes; rust 0 warnings.
+
+## 2026-09-26 — self.reload() / self.compact(): the agent drives its own harness
+
+The sandbox now exposes the harness commands as callable tools — a
+free identifier in run_typescript, exactly like self.sleep:
+
+  const r = self.reload(); return r;   // restart on the latest code
+  self.compact(); ...                  // compact the conversation
+
+Both only make sense BETWEEN turns, so the tool result is an ACK the
+model reads ("reload: scheduled - ..."), and the request executes at
+the turn boundary: the REPL scans the finished turn's tool results
+(deferred_of, pure, law-pinned; a user message resets the segment, so
+an old request can never fire twice), then compact first (the
+checkpoint carries the compacted session into the restarted process),
+then reload through the exact /reload path (gate, acks, reload-exit
+marker, parent recompile + respawn).
+
+The live catalog carries both tools after the four parity tools, with
+descriptions that say what they do and WHEN they act ("end of the
+current turn"). catalog_short keeps the scripted scenarios
+byte-identical.
+
+Two execution paths, one protocol: a top-level tool call puts the ack
+straight in the tool result (history). From inside a V8 program the
+ack is the subtool's result, invisible to the scan — so exec_program
+threads a Def accumulator through its loop and SUFFIXES the acks to
+the program's final value: the model reads its own requests back, and
+the markers reach the history whatever the program returns. In the
+scripted in-house interpreter (test-only) the Core owns the program
+state; there the request surfaces when the program returns the ack
+(`return r;`), which the natural usage does.
+
+Laws (128): the acks verbatim, the routing table (self.sleep stays a
+timer), the markers riding the acks, the deferred scan (reads the
+finished turn, resets at user messages, both requests, empty history),
+the catalog (6 live tools, parity 4, names at 4/5, descriptions say
+what and when), and the ack suffix (empty when none, carries reload,
+carries both).
+
+Verified end to end on repl-scripted over nc: self.compact() in a
+sandbox program -> turn -> compaction_started/done; self.reload() ->
+turn -> reload acks -> exit 0 with the reload-exit marker (the parent
+then recompiles and respawns). The V8 live path verified through
+exec_program directly: a program that files self.reload() and returns
+a constant still yields a result suffixed with the ack.

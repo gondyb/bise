@@ -371,3 +371,54 @@ def Laws.bg_script_hash_distinguishes():
 
 def Laws.bash_script_path_per_command():
   {==}
+def Laws.self_reload_acks():
+  {==}
+
+def Laws.self_compact_acks():
+  {==}
+
+def Laws.self_tool_routing_table():
+  {==}
+
+def Laws.self_acks_carry_markers():
+  {==}
+
+def Laws.deferred_reads_reload_request():
+  {==}
+
+def Laws.deferred_reads_compact_request():
+  {==}
+
+def Laws.deferred_reads_both_requests():
+  {==}
+
+def Laws.deferred_resets_at_user():
+  {==}
+
+def Laws.deferred_empty_history():
+  {==}
+
+def Laws.live_catalog_has_six_tools():
+  {==}
+
+def Laws.parity_catalog_keeps_four():
+  {==}
+
+def Laws.live_catalog_self_names():
+  {==}
+
+def Laws.self_reload_desc_says_when():
+  {==}
+
+def Laws.self_compact_desc_says_when():
+  {==}
+
+def Laws.def_acks_suffix_empty_when_none():
+  {==}
+
+def Laws.def_acks_suffix_carries_reload():
+  {==}
+
+def Laws.def_acks_suffix_carries_both():
+  {==}
+
