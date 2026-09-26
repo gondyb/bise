@@ -12,6 +12,9 @@ import ./core/commands.bend as Cm
 import ./core/api.bend as Api
 import ./core/obs.bend as O
 import ./runtime/remote.bend as Rm
+import ./runtime/tools.bend as Xt
+import ./runtime/main.bend as Rt
+import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
 
 # LAW: a checkpoint restores to exactly the session it exported.
 law checkpoint_roundtrip:
@@ -286,3 +289,313 @@ law api_bare_body_omits_tools:
 law checkpoint_text_roundtrip:
   {K.from_text(K.to_text(K.export(T.Sess{T.Cfg{400n, 40n, 3n, "You are precise.", Con{T.ToolDef{"echo", "Returns text."}, Nil{}}}, Con{T.user("bonjour"), Con{T.asst("réponse", Con{T.Call{1, "echo", "hi"}, Nil{}}), Con{T.tool_res("hi"), Con{T.injected_user("résumé"), Nil{}}}}}, 3n, 7, None{}, None{}, Nil{}, Nil{}})))
     == Some{K.export(T.Sess{T.Cfg{400n, 40n, 3n, "You are precise.", Con{T.ToolDef{"echo", "Returns text."}, Nil{}}}, Con{T.user("bonjour"), Con{T.asst("réponse", Con{T.Call{1, "echo", "hi"}, Nil{}}), Con{T.tool_res("hi"), Con{T.injected_user("résumé"), Nil{}}}}}, 3n, 7, None{}, None{}, Nil{}, Nil{}})} : Maybe<&2, K.Checkpoint>}
+
+
+# ---- call-id renumbering (core/session.bend) ----
+# The wire pairs tool results with calls by id; provider replies number
+# calls per completion, so sequential turns once echoed two "call_1" and
+# the provider answered 400 invalid_args.
+
+# LAW: calls renumber to sequential ids from the base, name and args
+# untouched — ToolAct, PTools and history all agree on ids.
+law renumber_is_sequential:
+  {S.renumber(Con{T.Call{5, "echo", "hi"}, Con{T.Call{9, "bash", "ls"}, Nil{}}}, 42)
+    == Con{T.Call{42, "echo", "hi"}, Con{T.Call{43, "bash", "ls"}, Nil{}}}
+    : List<&2, T.Call>}
+
+# LAW: renumbering drops and duplicates nothing.
+law renumber_keeps_length:
+  for +c1: T.Call
+  for +c2: T.Call
+  for +base: U32
+  {S.calls_count(S.renumber(Con{c1, Con{c2, Nil{}}}, base)) == 2n : Nat}
+
+# ---- the node_program rename never reaches the model ----
+# The runtime renames run_typescript to node_program for routing; every
+# model-visible surface translates it back (a leak once left the model
+# reading a tool it never called).
+
+# LAW: the wire echo of a past call says run_typescript.
+law wire_echo_renames_node_program:
+  {Rm.ser_call(T.Call{7, "node_program", "{\"code\": \"x\"}"})
+    == "\n  CALL 7 run_typescript : {\"code\": \"x\"}" : String}
+
+# LAW: ordinary names pass through the wire echo untouched.
+law wire_echo_keeps_names:
+  {Rm.ser_call(T.Call{7, "bash", "ls -la"}) == "\n  CALL 7 bash : ls -la"
+    : String}
+
+# LAW: tool results are attributed to the name the model called.
+law result_text_renames_node_program:
+  {S.tool_result_msg("node_program", "out", True{})
+    == T.tool_res("tool run_typescript ok: out") : T.Msg}
+
+law result_text_keeps_names:
+  {S.tool_result_msg("bash", "out", False{})
+    == T.tool_res("tool bash failed: out") : T.Msg}
+
+# ---- structured tool arguments (core/api.bend) ----
+# The schemas promise the model exact fields; args must pass through
+# un-wrapped for the structured tools and wrapped for the flat ones.
+
+# LAW: run_typescript args pass through as the JSON the model wrote.
+law args_json_passes_structured:
+  {Api.args_json("run_typescript", "{\"code\": \"x\"}") == "{\"code\": \"x\"}"
+    : String}
+
+# LAW: search args pass through too.
+law args_json_passes_search:
+  {Api.args_json("search_tool_functions", "{\"mode\": \"details\"}")
+    == "{\"mode\": \"details\"}" : String}
+
+# LAW: ordinary tools keep the flat {"arg": ...} wrapper.
+law args_json_wraps_plain:
+  {Api.args_json("bash", "ls -la") == "{\"arg\":\"ls -la\"}" : String}
+
+# LAW: call_code extracts the code field from run_typescript args.
+law call_code_extracts:
+  {Api.call_code("{\"code\": \"async function main() { return 1; }\"}")
+    == "async function main() { return 1; }" : String}
+
+# LAW: args with no code field pass through — the engine fails
+# readably instead of the runtime guessing.
+law call_code_passthrough:
+  {Api.call_code("just text") == "just text" : String}
+
+# ---- the structured search (runtime/tools.bend) ----
+# best_match returns ranked names without declarations, details returns
+# declarations and NEVER a silent empty, the flat syntax stays for the
+# scripted suite.
+
+# LAW: best_match returns the exact function NAME, not its declaration.
+law best_match_names_only:
+  {Xt.search_reply("{\"mode\": \"best_match\", \"query\": \"echo thing\"}",
+      Con{T.ToolDef{"echo.thing", "a loud description"}, Nil{}})
+    == "echo.thing" : String}
+
+# LAW: a two-word match ranks above a one-word match.
+law best_match_ranks_words:
+  {Xt.search_reply("{\"mode\": \"best_match\", \"query\": \"echo thing\"}",
+      Con{T.ToolDef{"other.thing", "d"},
+        Con{T.ToolDef{"echo.thing", "d"}, Nil{}}})
+    == "echo.thing\nother.thing" : String}
+
+# LAW: best_match caps at 20 names and flags that more exist (the
+# a21.zz tool must NOT appear).
+law best_match_caps_and_flags:
+  {Bool.and(
+      String.contains(
+        Xt.search_reply("{\"mode\": \"best_match\", \"query\": \"zz\"}",
+          Con{T.ToolDef{"a1.zz", "d"},
+      Con{T.ToolDef{"a2.zz", "d"},
+      Con{T.ToolDef{"a3.zz", "d"},
+      Con{T.ToolDef{"a4.zz", "d"},
+      Con{T.ToolDef{"a5.zz", "d"},
+      Con{T.ToolDef{"a6.zz", "d"},
+      Con{T.ToolDef{"a7.zz", "d"},
+      Con{T.ToolDef{"a8.zz", "d"},
+      Con{T.ToolDef{"a9.zz", "d"},
+      Con{T.ToolDef{"a10.zz", "d"},
+      Con{T.ToolDef{"a11.zz", "d"},
+      Con{T.ToolDef{"a12.zz", "d"},
+      Con{T.ToolDef{"a13.zz", "d"},
+      Con{T.ToolDef{"a14.zz", "d"},
+      Con{T.ToolDef{"a15.zz", "d"},
+      Con{T.ToolDef{"a16.zz", "d"},
+      Con{T.ToolDef{"a17.zz", "d"},
+      Con{T.ToolDef{"a18.zz", "d"},
+      Con{T.ToolDef{"a19.zz", "d"},
+      Con{T.ToolDef{"a20.zz", "d"},
+      Con{T.ToolDef{"a21.zz", "d"},
+      Nil{}}}}}}}}}}}}}}}}}}}}}}),
+        "moreCandidatesAvailable: true"),
+      Bool.not(String.contains(
+        Xt.search_reply("{\"mode\": \"best_match\", \"query\": \"zz\"}",
+          Con{T.ToolDef{"a1.zz", "d"},
+      Con{T.ToolDef{"a2.zz", "d"},
+      Con{T.ToolDef{"a3.zz", "d"},
+      Con{T.ToolDef{"a4.zz", "d"},
+      Con{T.ToolDef{"a5.zz", "d"},
+      Con{T.ToolDef{"a6.zz", "d"},
+      Con{T.ToolDef{"a7.zz", "d"},
+      Con{T.ToolDef{"a8.zz", "d"},
+      Con{T.ToolDef{"a9.zz", "d"},
+      Con{T.ToolDef{"a10.zz", "d"},
+      Con{T.ToolDef{"a11.zz", "d"},
+      Con{T.ToolDef{"a12.zz", "d"},
+      Con{T.ToolDef{"a13.zz", "d"},
+      Con{T.ToolDef{"a14.zz", "d"},
+      Con{T.ToolDef{"a15.zz", "d"},
+      Con{T.ToolDef{"a16.zz", "d"},
+      Con{T.ToolDef{"a17.zz", "d"},
+      Con{T.ToolDef{"a18.zz", "d"},
+      Con{T.ToolDef{"a19.zz", "d"},
+      Con{T.ToolDef{"a20.zz", "d"},
+      Con{T.ToolDef{"a21.zz", "d"},
+      Nil{}}}}}}}}}}}}}}}}}}}}}}),
+        "a21.zz")))
+    == True{} : Bool}
+
+# LAW: details on a missing name never comes back silently empty — the
+# empty message and the missing list (a silent "" once left the model
+# retrying blind).
+law details_missing_is_loud:
+  {Xt.search_reply("{\"mode\": \"details\", \"functions\": [\"no.such\"]}",
+      Con{T.ToolDef{"echo.thing", "desc"}, Nil{}})
+    == "No exact tool function details loaded. Call best_match/all_connector_capabilities first, then request exact returned function names.\n# Missing Exact Names\n- No exact tool function found for: no.such"
+    : String}
+
+# LAW: details with a found and a missing name shows both parts.
+law details_show_found_and_missing:
+  {Xt.search_reply(
+      "{\"mode\": \"details\", \"functions\": [\"echo.thing\", \"no.such\"]}",
+      Con{T.ToolDef{"echo.thing", "desc"}, Nil{}})
+    == "echo.thing: desc\n\n# Missing Exact Names\n- No exact tool function found for: no.such"
+    : String}
+
+# LAW: the deprecated functionNames alias resolves like functions.
+law details_alias_resolves:
+  {Xt.search_reply("{\"mode\": \"details\", \"functionNames\": [\"echo.thing\"]}",
+      Con{T.ToolDef{"echo.thing", "desc"}, Nil{}})
+    == "echo.thing: desc\n" : String}
+
+# LAW: the flat scripted syntax still resolves (the suite's hermetic
+# path — non-JSON args fall back).
+law flat_details_still_works:
+  {Xt.search_reply("details: echo.thing",
+      Con{T.ToolDef{"echo.thing", "desc"}, Nil{}})
+    == "echo.thing: desc\n" : String}
+
+# LAW: a connectors filter restricts best_match to that connector.
+law best_match_connectors_filter:
+  {Xt.search_reply(
+      "{\"mode\": \"best_match\", \"query\": \"thing\", \"connectors\": [\"echo\"]}",
+      Con{T.ToolDef{"other.thing", "d"},
+        Con{T.ToolDef{"echo.thing", "d"}, Nil{}}})
+    == "echo.thing" : String}
+
+# ---- the TUI feed annotations (runtime/main.bend) ----
+# One line each, single-line, capped — every client parses these.
+
+# LAW: the tool annotation carries the id and the model-facing name.
+law tool_ann_format:
+  {Rt.call_ann(T.Call{12, "bash", "ls -la"}) == "tool #12 bash : ls -la"
+    : String}
+
+# LAW: node_program is translated on the feed too.
+law tool_ann_renames_node_program:
+  {Rt.call_ann(T.Call{3, "node_program", "{\"code\": \"x\"}"})
+    == "tool #3 run_typescript : {\"code\": \"x\"}" : String}
+
+# LAW: results annotate with the outcome and a preview.
+law tool_res_ann_ok:
+  {Rt.res_ann(12, Rt.Ex{True{}, "hello"}) == "tool_result #12 ok : hello"
+    : String}
+
+law tool_res_ann_fail:
+  {Rt.res_ann(12, Rt.Ex{False{}, "boom"}) == "tool_result #12 fail : boom"
+    : String}
+
+# LAW: program sub-calls annotate with name and outcome.
+law subtool_ann_format:
+  {Rt.sub_ann("github_app.get_me", Rt.Ex{True{}, "{}"})
+    == "subtool github_app.get_me ok : {}" : String}
+
+# LAW: annotations stay single-line — one wire line each.
+law ann_flat_single_line:
+  {Bool.not(String.contains(Rt.ann_flat("a\nb"), "\n")) == True{} : Bool}
+
+# LAW: annotations cap at 200 chars (a 210-char payload trims to 200).
+law ann_flat_caps_at_200:
+  {String.length(Rt.ann_flat("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")) == 200n : Nat}
+
+# LAW: an engine error payload hands its message back — the model
+# reads exit-43 errors and retries.
+law node_err_extracts_message:
+  {Rt.node_err("{\"error\": \"missing required parameter: owner\"}")
+    == "missing required parameter: owner" : String}
+
+
+# ---- the bash watchdog (runtime/main.bend) ----
+# A quick command once cost the FULL timeout: the watchdog's sleeper
+# held the result pipe open after the command finished (its sleep
+# inherited stdout). The script below is pinned byte-for-byte — the
+# sleeper's output redirect and the children-first kills are load
+# bearing and must never regress silently.
+
+# LAW: the watchdog script, byte for byte (command embedded, deadline
+# in seconds, sleeper output discarded, children killed before parents).
+law bash_watchdog_script:
+  {Rt.bash_watchdog("whoami", 120)
+    == "( whoami ) & c=$!; ( sleep 120; pkill -9 -P $c 2>/dev/null; kill -9 $c 2>/dev/null ) >/dev/null 2>&1 & w=$!; wait $c; s=$?; pkill -9 -P $w 2>/dev/null; kill -9 $w 2>/dev/null; wait $w 2>/dev/null; exit $s"
+    : String}
+
+# LAW: the timeout env falls back to 120 and clamps into [0, 3600].
+law bash_timeout_defaults:
+  {Rt.bash_timeout.read(None{}, 120) == 120 : U32}
+
+law bash_timeout_clamps_high:
+  {Rt.bash_timeout.clamp(4000) == 3600 : U32}
+
+law bash_timeout_keeps_low:
+  {Rt.bash_timeout.clamp(60) == 60 : U32}
+
+# LAW: a watchdog kill (137) explains itself to the model.
+law bash_timeout_exit_is_readable:
+  {Rt.exec_of.pick.zero(False{}, 137, "partial")
+    == Rt.Ex{False{},
+      "exit 137: command exceeded the bash timeout and was killed. Partial output: partial"}
+    : Rt.ExecRes}
+
+# ---- the tool output cap (runtime/main.bend) ----
+
+# LAW: outputs that fit pass through untouched.
+law cap_out_keeps_small:
+  {Rt.cap_out("hello") == "hello" : String}
+
+# LAW: the cap limit is 20000.
+law cap_out_limit_is_20000:
+  {Rt.cap_out_limit() == 20000n : Nat}
+
+# LAW: outputs that fit pass through untouched.
+law cap_out_at_keeps_small:
+  {Rt.cap_out_at(5n, "12345") == "12345" : String}
+
+# LAW: an oversized output is cut at the limit with the marker.
+law cap_out_at_truncates:
+  {Rt.cap_out_at(5n, "12345678")
+    == "12345  [output truncated at 20000 chars]" : String}
+
+# ---- the provider retry classification (runtime/main.bend) ----
+
+# LAW: transient statuses retry; client errors and success do not.
+law retryable_status_table:
+  {Bool.and(
+      Bool.and(Rt.retryable_status(500), Rt.retryable_status(503)),
+      Bool.and(Rt.retryable_status(429),
+        Bool.and(Bool.not(Rt.retryable_status(200)),
+          Bool.not(Rt.retryable_status(404)))))
+    == True{} : Bool}
+
+# LAW: connection loss, DNS and timeout retry; TLS and URL errors do
+# not (retrying a TLS failure or a bad URL only wastes the turn).
+law retryable_err_table:
+  {Bool.and(
+      Bool.and(Rt.retryable_err(Http.ErrConnect{1, "refused"}),
+        Rt.retryable_err(Http.ErrDns{})),
+      Bool.and(Rt.retryable_err(Http.ErrTimeout{}),
+        Bool.and(Bool.not(Rt.retryable_err(Http.ErrTls{1, "handshake"})),
+          Bool.not(Rt.retryable_err(Http.ErrUrl{}))))
+    )
+    == True{} : Bool}
+
+# LAW: a transient network failure classifies as a retry with the
+# failure text carried for the final error if retries run out.
+law attempt_timeout_retries:
+  {Rt.attempt_fail2(Http.ErrTimeout{})
+    == Rt.ARetry{1500, Rt.api_err(Http.ErrTimeout{})} : Rt.Attempt}
+
+# LAW: a TLS failure classifies as final — no retry.
+law attempt_tls_fails:
+  {Rt.attempt_fail2(Http.ErrTls{1, "handshake"})
+    == Rt.AFail{Http.ErrTls{1, "handshake"}} : Rt.Attempt}

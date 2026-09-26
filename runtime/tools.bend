@@ -154,14 +154,23 @@ def is_nil_strs(ws: List<&2, String>) -> Bool:
     case Con{_, _}:
       False{}
 
-# tools of the given connectors (name starts with "<connector>.")
+# does any connector match the tool name?
+def conn_hit(conns: List<&2, String>, +td: T.ToolDef) -> Bool:
+  match conns:
+    case Nil{}:
+      False{}
+    case Con{+c, rest}:
+      Bool.or(String.starts_with(tool_name(td), String.append(c, ".")),
+        conn_hit(rest, td))
+
+# tools of the given connectors: an EMPTY connector list keeps
+# everything (no filter); a non-empty list keeps only matches
 def conn_keep(conns: List<&2, String>, +td: T.ToolDef) -> Bool:
   match conns:
     case Nil{}:
       True{}
-    case Con{+c, rest}:
-      Bool.or(String.starts_with(tool_name(td), String.append(c, ".")),
-        conn_keep(rest, td))
+    case Con{_, _}:
+      conn_hit(conns, td)
 
 def tools_of(tools: List<&2, T.ToolDef>, +conns: List<&2, String>,
     +acc: List<&2, T.ToolDef>) -> List<&2, T.ToolDef>:

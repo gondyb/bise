@@ -44,7 +44,8 @@ type Job is Data:
 
 type Effect is Data:
   EPrints{lines: List<&2, String>}
-  ESleep{ms: U32}
+  # the id and seconds ride along so the loop can annotate the feed
+  ESleep{ms: U32, id: U32, secs: U32}
   # a real provider call: the hub HTTP client, in this process
   EModel{action: U32, request: String, after: List<&2, T.Act>}
   # a real tool execution (bash, the merged search, remote MCP calls).
@@ -80,7 +81,7 @@ def trans.tool.bounds(+rt: Rt, +rest: List<&2, T.Act>, +id: U32, +secs: U32,
     valid: Bool) -> Trans:
   match valid:
     case True{}:
-      Tr{ESleep{U32.mul(secs, 1000)}, rt,
+      Tr{ESleep{U32.mul(secs, 1000), id, secs}, rt,
         JCmd{T.ToolOk{id,
           String.append("slept ", String.append(U32.show(secs), "s"))}, rest}}
     case False{}:
@@ -392,17 +393,104 @@ def emit(out: Out, lines: List<&2, String>) -> IO(Out):
 type ExecRes is Data:
   Ex{ok: Bool, out: String}
 
+# a giant output (a catted binary, a full log) must never flow into the
+# history and blow up the next provider request. The limit is
+# parameterized so the law can prove the logic at a small scale (a
+# 20001-char literal would overflow the proof checker's stack).
+def cap_out_limit() -> Nat:
+  20000n
+
+def cap_out_at.pick(fits: Bool, +out: String, +n: Nat) -> String:
+  match fits:
+    case True{}:
+      out
+    case False{}:
+      String.append(String.take(out, n),
+        "  [output truncated at 20000 chars]")
+
+def cap_out_at(+n: Nat, +out: String) -> String:
+  cap_out_at.pick(Nat.is_le(String.length(out), n), out, n)
+
+def cap_out(+out: String) -> String:
+  cap_out_at(cap_out_limit(), out)
+
 def exec_cmd.pick(ok: Bool, +out: String, +id: U32) -> T.Cmd:
   match ok:
     case True{}:
-      T.ToolOk{id, out}
+      T.ToolOk{id, cap_out(out)}
     case False{}:
-      T.ToolFail{id, out}
+      T.ToolFail{id, cap_out(out)}
 
 def exec_cmd(r: ExecRes, +id: U32) -> T.Cmd:
   match r:
     case Ex{+ok, +out}:
       exec_cmd.pick(ok, out, id)
+
+# ---- feed annotations for the TUI (live only) ----
+# The Core's obs carry ids and outcomes; the runtime adds what the
+# engineer actually needs: the tool name, the args, and a result
+# preview. One line each, flattened and capped:
+#   tool #<id> <name> : <args>
+#   tool_result #<id> <ok|fail> : <out>
+#   subtool <name> <ok|fail> : <out>          (inside run_typescript)
+
+def ann_flat(+s: String) -> String:
+  String.take(Api.flatten(s), 200n)
+
+def ok_label(ok: Bool) -> String:
+  match ok:
+    case True{}:
+      "ok"
+    case False{}:
+      "fail"
+
+def call_ann(+call: T.Call) -> String:
+  match call:
+    case T.Call{+id, +name, +args}:
+      String.append("tool #", String.append(U32.show(id),
+        String.append(" ", String.append(Rem.wire_name(name),
+          String.append(" : ", ann_flat(args))))))
+
+def res_ann(+id: U32, +r: ExecRes) -> String:
+  match r:
+    case Ex{+ok, +out}:
+      String.append("tool_result #", String.append(U32.show(id),
+        String.append(" ", String.append(ok_label(ok),
+          String.append(" : ", ann_flat(out))))))
+
+def sleep_ann(+id: U32, +secs: U32) -> String:
+  String.append("tool #", String.append(U32.show(id),
+    String.append(" self.sleep : ",
+      String.append(U32.show(secs), "s"))))
+
+def sleep_res_ann(+id: U32, +secs: U32) -> String:
+  String.append("tool_result #", String.append(U32.show(id),
+    String.append(" ok : slept ",
+      String.append(U32.show(secs), "s"))))
+
+def emit_call_ann(out: Out, +call: T.Call, live: Bool) -> IO(Out):
+  match live:
+    case True{}:
+      emit(out, Con{call_ann(call), Nil{}})
+    case False{}:
+      IO.pure(Out, out)
+
+def emit_res_ann(out: Out, +id: U32, +r: ExecRes, live: Bool) -> IO(Out):
+  match live:
+    case True{}:
+      emit(out, Con{res_ann(id, r), Nil{}})
+    case False{}:
+      IO.pure(Out, out)
+
+# the sleep result is known upfront: both lines go out together
+def emit_sleep_anns(out: Out, +id: U32, +secs: U32, live: Bool) -> IO(Out):
+  match live:
+    case True{}:
+      do IO<Out>:
+        out2 : Out <- emit(out, Con{sleep_ann(id, secs), Nil{}})
+        emit(out2, Con{sleep_res_ann(id, secs), Nil{}})
+    case False{}:
+      IO.pure(Out, out)
 
 # ---- the live provider call, fully in Bend (hub HTTP client) ----
 # The wire request (MODEL/TOOL/MSG/CALL lines) becomes the
@@ -480,21 +568,113 @@ def model_call.ok(r: Result<&2, &2, Http.Err, Http.Res>) -> IO(Rem.RemoteRes):
     case Done{+res}:
       model_call.res(res)
 
+# transient failures get another chance: connection loss, DNS, timeouts
+# and server-side statuses (5xx, 429) retry with a pause; everything else
+# (4xx auth/validation) fails the candidate immediately. The outcome is
+# classified PURELY into an Attempt; the retry goes through a
+# continuation closure that self-references the loop (the exec_done
+# idiom — mutual recursion between defs is not expressible).
+type Attempt is Data:
+  AOk{res: Http.Res}
+  AFail{e: Http.Err}
+  ARetry{after_ms: U32, why: String}
+
+def retryable_err(e: Http.Err) -> Bool:
+  match e:
+    case Http.ErrConnect{_, _}:
+      True{}
+    case Http.ErrDns{}:
+      True{}
+    case Http.ErrTimeout{}:
+      True{}
+    case _:
+      False{}
+
+def retryable_status(+s: U32) -> Bool:
+  Bool.or(U32.is_le(500, s), U32.is_eq(s, 429))
+
+def attempt_res.status_of(+res: Http.Res) -> U32:
+  match res:
+    case Http.Res{+status, _, _}:
+      status
+
+def attempt_ok(retryable: Bool, +res: Http.Res) -> Attempt:
+  match retryable:
+    case True{}:
+      ARetry{1500, String.append("provider ",
+        String.append(U32.show(attempt_res.status_of(res)), " (transient)"))}
+    case False{}:
+      AOk{res}
+
+def attempt_res(+res: Http.Res) -> Attempt:
+  attempt_ok(retryable_status(attempt_res.status_of(res)), res)
+
+def attempt_fail(retryable: Bool, +e: Http.Err) -> Attempt:
+  match retryable:
+    case True{}:
+      ARetry{1500, api_err(e)}
+    case False{}:
+      AFail{e}
+
+def attempt_fail2(+e: Http.Err) -> Attempt:
+  attempt_fail(retryable_err(e), e)
+
+def model_call.attempt_result(r: Result<&2, &2, Http.Err, Http.Res>)
+    -> Attempt:
+  match r:
+    case Done{+res}:
+      attempt_res(res)
+    case Fail{+e}:
+      attempt_fail2(e)
+
+def model_call.step.retry(can: Bool, +k: Nat, +after_ms: U32, +why: String,
+    next: Nat -> IO(Rem.RemoteRes)) -> IO(Rem.RemoteRes):
+  match can:
+    case True{}:
+      do IO<Rem.RemoteRes>:
+        IO.sleep(after_ms)
+        next(k)
+    case False{}:
+      IO.pure(Rem.RemoteRes, Rem.RRErr{why})
+
+def model_call.step(a: Attempt, +k: Nat,
+    next: Nat -> IO(Rem.RemoteRes)) -> IO(Rem.RemoteRes):
+  match a:
+    case AOk{+res}:
+      model_call.res(res)
+    case AFail{+e}:
+      model_call.err(e)
+    case ARetry{+after_ms, +why}:
+      model_call.step.retry(Nat.is_lt(0n, k), k, after_ms, why, next)
+
+@unsafe
+def model_call.try(fuel: Nat, +request: String, +key: String)
+    -> IO(Rem.RemoteRes):
+  match fuel:
+    case 0n:
+      IO.pure(Rem.RemoteRes,
+        Rem.RRErr{"provider unreachable: retries exhausted"})
+    case 1n+k:
+      do IO<Rem.RemoteRes>:
+        mr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_MODEL")
+        +model : String <- IO.pure(String, env_or(mr, "zai-glm-5-3"))
+        +body : String <- IO.pure(String,
+          Enc.utf8.encode(Api.api_body(model, Api.parse_wire(request))))
+        dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
+        dump_dbg : Unit <- dump_wire(env_or(dr, ""), body)
+        hdrs : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
+          Http.set(Http.set(Http.empty(), "Authorization",
+              String.append("Bearer ", key)),
+            "Content-Type", "application/json"))
+        r : Result<&2, &2, Http.Err, Http.Res> <- Http.fetch.with("POST",
+          "https://api.mistral.ai/v1/chat/completions", hdrs, body, 120000)
+        +a : Attempt <- IO.pure(Attempt, model_call.attempt_result(r))
+        model_call.step(a, k,
+          k2 => model_call.try(k2, request, key))
+
+# three attempts total: the first try plus two retries
 def model_call.go(+request: String, +key: String) -> IO(Rem.RemoteRes):
-  do IO<Rem.RemoteRes>:
-    mr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_MODEL")
-    +model : String <- IO.pure(String, env_or(mr, "zai-glm-5-3"))
-    +body : String <- IO.pure(String,
-      Enc.utf8.encode(Api.api_body(model, Api.parse_wire(request))))
-    dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
-    dump_dbg : Unit <- dump_wire(env_or(dr, ""), body)
-    hdrs : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
-      Http.set(Http.set(Http.empty(), "Authorization",
-          String.append("Bearer ", key)),
-        "Content-Type", "application/json"))
-    r : Result<&2, &2, Http.Err, Http.Res> <- Http.fetch.with("POST",
-      "https://api.mistral.ai/v1/chat/completions", hdrs, body, 120000)
-    model_call.ok(r)
+  model_call.try(3n, request, key)
 
 def model_call.key(empty: Bool, +request: String, +key: String)
     -> IO(Rem.RemoteRes):
@@ -516,13 +696,21 @@ def model_call(+request: String) -> IO(Rem.RemoteRes):
 # line, then stdout and stderr. Commands are flattened first (the wire
 # already flattens call args — double safety).
 
+def exec_of.fail_msg(timed_out: Bool, +code: U32, +output: String) -> ExecRes:
+  match timed_out:
+    case True{}:
+      Ex{False{}, String.append("exit 137: command exceeded the bash timeout and was killed. Partial output: ",
+        output)}
+    case False{}:
+      Ex{False{}, String.append("exit ",
+        String.append(U32.show(code), String.append(": ", output)))}
+
 def exec_of.pick.zero(is_zero: Bool, +code: U32, +output: String) -> ExecRes:
   match is_zero:
     case True{}:
       Ex{True{}, output}
     case False{}:
-      Ex{False{}, String.append("exit ",
-        String.append(U32.show(code), String.append(": ", output)))}
+      exec_of.fail_msg(U32.is_eq(code, 137), code, output)
 
 def exec_of.pick(+code: U32, +output: String) -> ExecRes:
   exec_of.pick.zero(U32.is_eq(code, 0), code, output)
@@ -547,11 +735,54 @@ def exec_of.split(sp: Maybe<&2, Nat>, +out: String) -> ExecRes:
 def exec_of(+out: String) -> ExecRes:
   exec_of.split(C.find(out, "\n", 0n), out)
 
+# the watchdog wraps the command: a subshell runs it while a sleeper
+# kills it after the deadline — a blocking command (a server, a bare
+# `cat`) can never hang the turn (the runtime cannot interrupt an exec).
+# The sleeper's output is redirected to /dev/null: its sleep must never
+# hold the RESULT pipe open after the command finishes (that exact bug
+# made every quick command cost the full timeout), and its children are
+# killed so no orphan lingers.
+def bash_watchdog(+command: String, +secs: U32) -> String:
+  String.append("( ", String.append(command,
+    String.append(" ) & c=$!; ( sleep ", String.append(U32.show(secs),
+      String.append("; pkill -9 -P $c 2>/dev/null; kill -9 $c 2>/dev/null ) >/dev/null 2>&1 & w=$!; wait $c; s=$?; pkill -9 -P $w 2>/dev/null; kill -9 $w 2>/dev/null; wait $w 2>/dev/null; exit $s", "")))))
+
+def bash_timeout.read(m: Maybe<&2, U32>, +dflt: U32) -> U32:
+  match m:
+    case Some{+secs}:
+      secs
+    case None{}:
+      dflt
+
+def bash_timeout.or(r: Result<&1, &1, U32 & String, String>, +dflt: U32) -> U32:
+  match r:
+    case Done{+v}:
+      bash_timeout.read(U32.read(v), dflt)
+    case Fail{_}:
+      dflt
+
+def bash_timeout.clamp2(over: Bool, +secs: U32) -> U32:
+  match over:
+    case True{}:
+      3600
+    case False{}:
+      secs
+
+def bash_timeout.clamp(+secs: U32) -> U32:
+  bash_timeout.clamp2(U32.is_lt(3600, secs), secs)
+
+def bash_timeout() -> IO(U32):
+  do IO<U32>:
+    r : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_BASH_TIMEOUT")
+    +raw : U32 <- IO.pure(U32, bash_timeout.or(r, 120))
+    IO.pure(U32, bash_timeout.clamp(raw))
+
 @unsafe
 def bash_exec(command: String) -> IO(ExecRes):
   do IO<ExecRes>:
+    +secs : U32 <- bash_timeout()
     out : String <- Snap.run(Con{"/bin/sh", Con{"-c",
-      Con{Api.flatten(command), Nil{}}}})
+      Con{bash_watchdog(Api.flatten(command), secs), Nil{}}}})
     IO.pure(ExecRes, exec_of(out))
 
 def exec_mr(m: Mcp.MR) -> ExecRes:
@@ -796,44 +1027,86 @@ def exec_program.call.bash(is_bash: Bool, +name: String, +args: String,
       exec_program.call.search(String.eq(name, "search_tool_functions"),
         name, args, live)
 
-def exec_program.call(+name: String, +args: String, +live: Bool)
-    -> IO(ExecRes):
-  exec_program.call.bash(String.eq(name, "bash"), name, args, live)
+# the sub-call line renders in the TUI feed (live only): one line per
+# tool the program called, with the outcome. Out is Type-kind: every
+# emit writes the same connection, so the emitter param is shared and
+# the returned handle is discarded here.
+def sub_ann(+name: String, +r: ExecRes) -> String:
+  match r:
+    case Ex{+ok, +out}:
+      String.append("subtool ", String.append(name,
+        String.append(" ", String.append(ok_label(ok),
+          String.append(" : ", ann_flat(out))))))
 
-def exec_program.nr(nr: NR, +prog: String, +results: List<&2, String>,
-    +live: Bool) -> IO(EpNext):
+def emit_sub(out: Out, +name: String, +r: ExecRes, live: Bool) -> IO(Out):
+  match live:
+    case True{}:
+      emit(out, Con{sub_ann(name, r), Nil{}})
+    case False{}:
+      IO.pure(Out, out)
+
+def exec_program.call(out: Out, +name: String, +args: String, +live: Bool)
+    -> IO(Out & ExecRes):
+  do IO<Out & ExecRes>:
+    +r : ExecRes <- exec_program.call.bash(String.eq(name, "bash"),
+      name, args, live)
+    out2 : Out <- emit_sub(out, name, r, live)
+    IO.pure(Out & ExecRes, (out2, r))
+
+# consume the call pair once: the handle rides beside the next step
+def exec_program.nr.done(pr: Out & ExecRes,
+    +results: List<&2, String>) -> Out & EpNext:
+  match pr:
+    case (out2, r):
+      (out2, exec_program.decide(r, results))
+
+def exec_program.nr(out: Out, nr: NR, +prog: String,
+    +results: List<&2, String>, +live: Bool) -> IO(Out & EpNext):
   match nr:
-    case NRDone{+out}:
-      IO.pure(EpNext, EpDone{out})
+    case NRDone{+o}:
+      IO.pure(Out & EpNext, (out, EpDone{o}))
     case NRErr{+why}:
-      IO.pure(EpNext, EpFail{why})
+      IO.pure(Out & EpNext, (out, EpFail{why}))
     case NRReq{+name, +args}:
-      do IO<EpNext>:
-        r : ExecRes <- exec_program.call(name, args, live)
-        IO.pure(EpNext, exec_program.decide(r, results))
+      do IO<Out & EpNext>:
+        pr : Out & ExecRes <- exec_program.call(out, name, args, live)
+        IO.pure(Out & EpNext, exec_program.nr.done(pr, results))
 
-def exec_program(fuel: Nat, act: EpAct, +prog: String,
-    +results: List<&2, String>, +live: Bool) -> IO(ExecRes):
+def exec_program.step(pr: Out & EpNext, k: Nat, +prog: String,
+    +results: List<&2, String>, +live: Bool,
+    next: Nat -> Out -> EpNext -> IO(Out & ExecRes))
+    -> IO(Out & ExecRes):
+  match pr:
+    case (out2, nx):
+      next(k)(out2)(nx)
+
+# @unsafe: the loop recurses through the step continuation closure
+@unsafe
+def exec_program(fuel: Nat, out: Out, act: EpAct, +prog: String,
+    +results: List<&2, String>, +live: Bool) -> IO(Out & ExecRes):
   match fuel:
     case 0n:
-      IO.pure(ExecRes, Ex{False{}, "program step budget exhausted"})
+      IO.pure(Out & ExecRes,
+        (out, Ex{False{}, "program step budget exhausted"}))
     case 1n+k:
       match act:
         case EpRun{}:
-          do IO<ExecRes>:
+          do IO<Out & ExecRes>:
             pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
             +port : String <- IO.pure(String, env_or(pr, "0"))
             nr : NR <- node_run(prog, results, port)
-            nx : EpNext <- exec_program.nr(nr, prog, results, live)
-            exec_program(k, EpNext{nx}, prog, results, live)
+            por : Out & EpNext <- exec_program.nr(out, nr, prog, results, live)
+            exec_program.step(por, k, prog, results, live,
+              k2 => o2 => nx => exec_program(k2, o2, EpNext{nx},
+                prog, results, live))
         case EpNext{+nx}:
           match nx:
-            case EpDone{+out}:
-              IO.pure(ExecRes, Ex{True{}, out})
+            case EpDone{+o}:
+              IO.pure(Out & ExecRes, (out, Ex{True{}, o}))
             case EpFail{+why}:
-              IO.pure(ExecRes, Ex{False{}, why})
+              IO.pure(Out & ExecRes, (out, Ex{False{}, why}))
             case EpRe{+rs}:
-              exec_program(k, EpRun{}, prog, rs, live)
+              exec_program(k, out, EpRun{}, prog, rs, live)
 
 def exec_pick(is_bash: Bool, is_search: Bool, +name: String,
     +args: String, +live: Bool) -> IO(ExecRes):
@@ -858,22 +1131,30 @@ def exec_pick.call(is_bash: Bool, is_search: Bool, +call: T.Call,
     case T.Call{_, +name, +args}:
       exec_pick(is_bash, is_search, name, args, live)
 
-def exec_tool.node_args(+call: T.Call, +live: Bool) -> IO(ExecRes):
+def exec_tool.node_args(out: Out, +call: T.Call, +live: Bool)
+    -> IO(Out & ExecRes):
   match call:
     case T.Call{_, _, +args}:
-      exec_program(50n, EpRun{}, Api.call_code(args), Nil{}, live)
+      exec_program(1000n, out, EpRun{}, Api.call_code(args), Nil{}, live)
 
-def exec_tool.is_node(is_node: Bool, +call: T.Call, +live: Bool)
-    -> IO(ExecRes):
+def exec_tool.plain(out: Out, +call: T.Call, +live: Bool)
+    -> IO(Out & ExecRes):
+  do IO<Out & ExecRes>:
+    r : ExecRes <- exec_pick.call(String.eq(call_name(call), "bash"),
+      String.eq(call_name(call), "search_tool_functions"), call, live)
+    IO.pure(Out & ExecRes, (out, r))
+
+def exec_tool.is_node(out: Out, is_node: Bool, +call: T.Call, +live: Bool)
+    -> IO(Out & ExecRes):
   match is_node:
     case True{}:
-      exec_tool.node_args(call, live)
+      exec_tool.node_args(out, call, live)
     case False{}:
-      exec_pick.call(String.eq(call_name(call), "bash"),
-        String.eq(call_name(call), "search_tool_functions"), call, live)
+      exec_tool.plain(out, call, live)
 
-def exec_tool(+call: T.Call, +live: Bool) -> IO(ExecRes):
-  exec_tool.is_node(String.eq(call_name(call), "node_program"), call, live)
+def exec_tool(out: Out, +call: T.Call, +live: Bool) -> IO(Out & ExecRes):
+  exec_tool.is_node(out, String.eq(call_name(call), "node_program"),
+    call, live)
 
 def call_id(c: T.Call) -> U32:
   match c:
@@ -893,11 +1174,26 @@ def rename_cmd(cmd: T.Cmd) -> T.Cmd:
     case _:
       cmd
 
+# consumes the exec pair once and hands (handle, cmd) to the loop's
+# continuation; the closure passed by run captures its +params and
+# self-references run, so no mutual recursion is needed
+def exec_done(pr: Out & ExecRes, k: Nat, +call: T.Call,
+    +after: List<&2, T.Act>, +rt2: Rt, +live: Bool,
+    next: Nat -> Out -> T.Cmd -> IO(RtEnd)) -> IO(RtEnd):
+  match pr:
+    case (out3, +r):
+      do IO<RtEnd>:
+        out4 : Out <- emit_res_ann(out3, call_id(call), r, live)
+        +cmd : T.Cmd <- IO.pure(T.Cmd, exec_cmd(r, call_id(call)))
+        next(k)(out4)(cmd)
+
 # The IO loop. The pure transition is computed as an argument and matched
 # as a parameter, so `run` is a single self-recursive def; every hop burns
 # one unit of fuel, so the Runtime terminates like the Core. The loop
 # returns the final session and output handle, so callers (the scenarios,
 # the REPL) can continue from where it stopped.
+# @unsafe: the EExec branch recurses through the exec_done continuation
+@unsafe
 def run(fuel: Nat, out: Out, +rt: Rt, +job: Job, tr: Trans) -> IO(RtEnd):
   match fuel:
     case 0n:
@@ -920,10 +1216,13 @@ def run(fuel: Nat, out: Out, +rt: Rt, +job: Job, tr: Trans) -> IO(RtEnd):
                       do IO<RtEnd>:
                         out2 : Out <- emit(out, lines)
                         run(k, out2, rt2, job2, transition(rt2, job2))
-                    case ESleep{ms}:
+                    case ESleep{+ms, +id, +secs}:
+                      # the sleep timer, annotated for the live feed
                       do IO<RtEnd>:
+                        out2 : Out <- emit_sleep_anns(out, id, secs,
+                          rt_live(rt))
                         IO.sleep(ms)
-                        run(k, out, rt2, job2, transition(rt2, job2))
+                        run(k, out2, rt2, job2, transition(rt2, job2))
                     case EModel{+action, +request, +after}:
                       # the real provider call (the hub HTTP client)
                       do IO<RtEnd>:
@@ -934,13 +1233,15 @@ def run(fuel: Nat, out: Out, +rt: Rt, +job: Job, tr: Trans) -> IO(RtEnd):
                           transition(rt2, JCmd{cmd, after}))
                     case EExec{+call, +after, +live}:
                       # the real tool: bash, the merged search, or a
-                      # remote MCP call resolved by name
+                      # remote MCP call resolved by name. The annotations
+                      # carry name/args/result to the TUI (live only);
+                      # program sub-calls annotate inside exec_program.
                       do IO<RtEnd>:
-                        r : ExecRes <- exec_tool(call, live)
-                        +cmd : T.Cmd <- IO.pure(T.Cmd,
-                          exec_cmd(r, call_id(call)))
-                        run(k, out, rt2, JCmd{cmd, after},
-                          transition(rt2, JCmd{cmd, after}))
+                        out2 : Out <- emit_call_ann(out, call, live)
+                        pr : Out & ExecRes <- exec_tool(out2, call, live)
+                        exec_done(pr, k, call, after, rt2, live,
+                          k2 => o4 => +c => run(k2, o4, rt2, JCmd{c, after},
+                            transition(rt2, JCmd{c, after})))
 
 # ---- scenarios (ADR 0006: the Core tested through the Step Protocol) ----
 

@@ -131,3 +131,127 @@ def Laws.api_bare_body_omits_tools():
 
 def Laws.checkpoint_text_roundtrip():
   {==}
+
+def Laws.renumber_is_sequential():
+  {==}
+
+def Laws.renumber_keeps_length(c1, c2, base):
+  match c1:
+    case T.Call{i1, n1, a1}:
+      match c2:
+        case T.Call{i2, n2, a2}:
+          {==}
+
+def Laws.wire_echo_renames_node_program():
+  {==}
+
+def Laws.wire_echo_keeps_names():
+  {==}
+
+def Laws.result_text_renames_node_program():
+  {==}
+
+def Laws.result_text_keeps_names():
+  {==}
+
+def Laws.args_json_passes_structured():
+  {==}
+
+def Laws.args_json_passes_search():
+  {==}
+
+def Laws.args_json_wraps_plain():
+  {==}
+
+def Laws.call_code_extracts():
+  {==}
+
+def Laws.call_code_passthrough():
+  {==}
+
+def Laws.best_match_names_only():
+  {==}
+
+def Laws.best_match_ranks_words():
+  {==}
+
+def Laws.best_match_caps_and_flags():
+  {==}
+
+def Laws.details_missing_is_loud():
+  {==}
+
+def Laws.details_show_found_and_missing():
+  {==}
+
+def Laws.details_alias_resolves():
+  {==}
+
+def Laws.flat_details_still_works():
+  {==}
+
+def Laws.best_match_connectors_filter():
+  {==}
+
+def Laws.tool_ann_format():
+  {==}
+
+def Laws.tool_ann_renames_node_program():
+  {==}
+
+def Laws.tool_res_ann_ok():
+  {==}
+
+def Laws.tool_res_ann_fail():
+  {==}
+
+def Laws.subtool_ann_format():
+  {==}
+
+def Laws.ann_flat_single_line():
+  {==}
+
+def Laws.ann_flat_caps_at_200():
+  {==}
+
+def Laws.node_err_extracts_message():
+  {==}
+
+def Laws.bash_watchdog_script():
+  {==}
+
+def Laws.bash_timeout_defaults():
+  {==}
+
+def Laws.bash_timeout_clamps_high():
+  {==}
+
+def Laws.bash_timeout_keeps_low():
+  {==}
+
+def Laws.bash_timeout_exit_is_readable():
+  {==}
+
+def Laws.cap_out_keeps_small():
+  {==}
+
+def Laws.cap_out_limit_is_20000():
+  {==}
+
+def Laws.cap_out_at_keeps_small():
+  {==}
+
+def Laws.cap_out_at_truncates():
+  {==}
+
+def Laws.retryable_status_table():
+  {==}
+
+def Laws.retryable_err_table():
+  {==}
+
+def Laws.attempt_timeout_retries():
+  {==}
+
+def Laws.attempt_tls_fails():
+  {==}

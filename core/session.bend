@@ -412,7 +412,10 @@ def apply.completion.tools(+text: String, +calls: List<&2, T.Call>,
   # for every call id before the next dispatch
   match s:
     case T.Sess{+cfg, +history, +inputs, +actions, +turn, _, +queued, +notifs}:
-      T.Accepted{Con{T.Assistant{text}, tool_start_obs(calls)},
+      # the started obs carries the same action ids as the ToolActs (and
+      # as the finished obs), so every consumer can pair by id
+      T.Accepted{Con{T.Assistant{text},
+          tool_start_obs(renumber(calls, U32.add(actions, 1)))},
         tool_acts(renumber(calls, U32.add(actions, 1)), U32.add(actions, 1)),
         T.Sess{cfg, List.append(&2, T.Msg, history,
             Con{T.asst(text, renumber(calls, U32.add(actions, 1))), Nil{}}),

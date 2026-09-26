@@ -171,6 +171,38 @@ def repl_end_save(e: R.RtEnd, next: Socket -> T.Session -> IO(T.Session))
     case R.REnd{sess2, out2}:
       repl_end_save.then(sess2, out2, next)
 
+# a stalled session (fuel exhausted mid-turn) must say so, never die
+# silently: the turn is still pending and the user must know
+def turn_active(s: T.Session) -> Bool:
+  match s:
+    case T.Sess{_, _, _, _, +turn, _, _, _}:
+      match turn:
+        case None{}:
+          False{}
+        case Some{_}:
+          True{}
+
+def repl_end_stalled.stalled(active: Bool, e: R.RtEnd,
+    next: Socket -> T.Session -> IO(T.Session)) -> IO(T.Session):
+  match active:
+    case True{}:
+      match e:
+        case R.REnd{+sess2, out2}:
+          do IO<T.Session>:
+            out3 : R.Out <- R.emit(out2,
+              Con{"  obs: turn_stalled: execution budget exhausted",
+                Con{"--- idle", Nil{}}})
+            P.save(sess2)
+            repl_out(out3, sess2, next)
+    case False{}:
+      repl_end_save(e, next)
+
+def repl_end_stalled(e: R.RtEnd,
+    next: Socket -> T.Session -> IO(T.Session)) -> IO(T.Session):
+  match e:
+    case R.REnd{+sess2, _}:
+      repl_end_stalled.stalled(turn_active(sess2), e, next)
+
 def repl_plan(s: Socket, plan: Plan, +sess: T.Session,
     next: Socket -> T.Session -> IO(T.Session)) -> IO(T.Session):
   match plan:
@@ -184,10 +216,12 @@ def repl_plan(s: Socket, plan: Plan, +sess: T.Session,
         repl_out(out2, sess, next)
     case PRun{+cmds, +script}:
       do IO<T.Session>:
-        e : R.RtEnd <- R.run(100n, R.ONet{s},
+        # 1M hops: effectively unbounded for a terminal session (the
+        # old 100 died mid-turn around ~20 model rounds, silently)
+        e : R.RtEnd <- R.run(1000000n, R.ONet{s},
           R.Rt{sess, script, cmds, True{}}, R.JIdle{},
           R.transition(R.Rt{sess, script, cmds, True{}}, R.JIdle{}))
-        repl_end_save(e, next)
+        repl_end_stalled(e, next)
 
 def repl_interpret(s: Socket, i: Cm.Interpretation, +sess: T.Session,
     next: Socket -> T.Session -> IO(T.Session)) -> IO(T.Session):

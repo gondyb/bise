@@ -10,17 +10,18 @@
 
 use crossterm::event::{
     poll, read, EnableMouseCapture, DisableMouseCapture, Event, KeyCode,
-    KeyEventKind, KeyModifiers, MouseEventKind,
+    KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{
     Block, BorderType, Borders, Clear, Paragraph, Scrollbar,
-    ScrollbarOrientation, ScrollbarState, Wrap,
+    ScrollbarOrientation, ScrollbarState,
 };
 use ratatui::Frame;
 use std::io::{self, BufRead, IsTerminal, Read, Write};
+use unicode_width::UnicodeWidthChar;
 use std::net::TcpStream;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
@@ -28,6 +29,9 @@ use std::time::Duration;
 
 const BRAND: Color = Color::Cyan;
 const DIM: Color = Color::Gray;
+// tool calls sit one step below DIM: DarkGray (ANSI 90) recedes on dark
+// terminals, where Gray (ANSI 37) still glows; status marks stay colored
+const TOOL: Color = Color::DarkGray;
 const YOU: Color = Color::Magenta;
 const OK: Color = Color::Green;
 const WARN: Color = Color::Yellow;
@@ -42,11 +46,29 @@ enum ToolState {
     Fail,
 }
 
+// one tool call: enriched by the runtime annotations (name/args/result)
+#[derive(Clone)]
+struct ToolData {
+    id: u32,
+    name: Option<String>,
+    args: Option<String>,
+    state: ToolState,
+    result: Option<(bool, String)>,
+    started: std::time::Instant,
+    // frozen at finish; None while running (elapsed ticks live)
+    elapsed: Option<String>,
+}
+
 #[derive(Clone)]
 enum Ev {
     You(String),
     Assistant(String),
-    Tool { n: String, state: ToolState },
+    Tool(ToolData),
+    // a sub-call made inside a run_typescript program
+    Sub { name: String, ok: bool, preview: String },
+    // runtime annotations, merged into the matching Tool by id
+    ToolInfo { id: u32, name: String, args: String },
+    ToolResult { id: u32, ok: bool, preview: String },
     Turn,
     TurnDone(String),
     Compact(String),
@@ -65,6 +87,38 @@ fn parse_line(line: &str) -> Option<Ev> {
     if line == "--- idle" {
         return Some(Ev::Idle);
     }
+    // runtime annotations: tool #<id> <name> : <args>
+    if let Some(r) = line.strip_prefix("tool #") {
+        let (id_s, rest) = r.split_once(' ')?;
+        let id: u32 = id_s.parse().ok()?;
+        let (name, args) = rest.split_once(" : ").unwrap_or((rest, ""));
+        return Some(Ev::ToolInfo {
+            id,
+            name: name.trim().to_string(),
+            args: args.to_string(),
+        });
+    }
+    // tool_result #<id> <ok|fail> : <preview>
+    if let Some(r) = line.strip_prefix("tool_result #") {
+        let (id_s, rest) = r.split_once(' ')?;
+        let id: u32 = id_s.parse().ok()?;
+        let (st, preview) = rest.split_once(" : ").unwrap_or((rest, ""));
+        return Some(Ev::ToolResult {
+            id,
+            ok: st.trim() == "ok",
+            preview: preview.to_string(),
+        });
+    }
+    // subtool <name> <ok|fail> : <preview>
+    if let Some(r) = line.strip_prefix("subtool ") {
+        let (name, rest) = r.split_once(' ')?;
+        let (st, preview) = rest.split_once(" : ").unwrap_or((rest, ""));
+        return Some(Ev::Sub {
+            name: name.to_string(),
+            ok: st.trim() == "ok",
+            preview: preview.to_string(),
+        });
+    }
     if let Some(r) = line.strip_prefix("core rejected: ") {
         return Some(Ev::Err(r.to_string()));
     }
@@ -82,15 +136,34 @@ fn parse_line(line: &str) -> Option<Ev> {
         return None;
     }
     if let Some(n) = o.strip_prefix("tool_started #") {
-        return Some(Ev::Tool { n: n.to_string(), state: ToolState::Run });
+        let id: u32 = n.parse().ok()?;
+        return Some(Ev::Tool(ToolData {
+            id,
+            name: None,
+            args: None,
+            state: ToolState::Run,
+            result: None,
+            started: std::time::Instant::now(),
+            elapsed: None,
+        }));
     }
     if let Some(rest) = o.strip_prefix("tool_finished #") {
-        let (n, tail) = rest.split_once(' ')?;
+        let (id_s, tail) = rest.split_once(' ')?;
+        let id: u32 = id_s.parse().ok()?;
         let state = match tail {
             "ok" => ToolState::Ok,
             _ => ToolState::Fail,
         };
-        return Some(Ev::Tool { n: n.to_string(), state });
+        let started = std::time::Instant::now();
+        return Some(Ev::Tool(ToolData {
+            id,
+            name: None,
+            args: None,
+            state,
+            result: None,
+            started,
+            elapsed: Some(fmt_elapsed(started)),
+        }));
     }
     if o.starts_with("tool_result_committed") {
         return None;
@@ -126,19 +199,147 @@ fn parse_line(line: &str) -> Option<Ev> {
         return Some(Ev::Compacted(t.to_string()));
     }
     if o == "null_iteration" {
-        return Some(Ev::Warn("itération nulle comptée".into()));
+        return Some(Ev::Warn(
+            "réponse vide du modèle — nouvelle tentative".into(),
+        ));
     }
     if let Some(t) = o.strip_prefix("turn_done: ") {
-        let label = if t == "completed" {
-            "tour terminé".to_string()
-        } else if let Some(why) = t.strip_prefix("failed") {
-            format!("tour échoué :{}", why)
-        } else {
-            "tour interrompu".to_string()
-        };
-        return Some(Ev::TurnDone(label));
+        // a completed turn needs no annotation; a failure or an
+        // interrupt must never disappear — the turn just stops
+        if t == "completed" {
+            return Some(Ev::TurnDone("tour terminé".to_string()));
+        }
+        if let Some(why) = t.strip_prefix("failed: ") {
+            return Some(Ev::Err(format!("tour échoué : {}", why)));
+        }
+        if t == "interrupted" {
+            return Some(Ev::Warn("tour interrompu".into()));
+        }
+        return Some(Ev::Err(format!("tour arrêté : {}", t)));
+    }
+    // the runtime ran out of execution budget mid-turn (never silent)
+    if let Some(t) = o.strip_prefix("turn_stalled: ") {
+        return Some(Ev::Err(format!("tour interrompu : {}", t)));
     }
     Some(Ev::Raw(o.to_string()))
+}
+
+// ---- the codex-style layout cache ----
+// Events render to wrapped rows ONCE (per width / per mutation); every
+// frame only the visible slice is cloned into the paragraph. A running
+// tool re-renders each frame because its elapsed ticks live.
+
+struct EventRows {
+    width: u16,
+    rows: Vec<Line<'static>>,
+}
+
+fn line_from(cells: Vec<(char, Style)>) -> Line<'static> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut cur_style: Option<Style> = None;
+    let mut buf = String::new();
+    for (c, st) in cells {
+        match cur_style {
+            Some(s) if s == st => buf.push(c),
+            _ => {
+                if !buf.is_empty() {
+                    spans.push(Span::styled(std::mem::take(&mut buf), cur_style.unwrap()));
+                }
+                cur_style = Some(st);
+                buf.push(c);
+            }
+        }
+    }
+    if !buf.is_empty() {
+        spans.push(Span::styled(buf, cur_style.unwrap()));
+    }
+    Line::from(spans)
+}
+
+// span-aware greedy word wrap; words wider than the row hard-split
+fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
+    let width = width.max(1);
+    let mut cells: Vec<(char, Style)> = Vec::new();
+    for sp in line.spans {
+        for c in sp.content.chars() {
+            cells.push((c, sp.style));
+        }
+    }
+    if cells.is_empty() {
+        return vec![Line::from("")];
+    }
+    let mut rows: Vec<Line<'static>> = Vec::new();
+    let mut row: Vec<(char, Style)> = Vec::new();
+    let mut row_w = 0usize;
+    let mut i = 0usize;
+    while i < cells.len() {
+        // the next word (non-space run)
+        let mut word: Vec<(char, Style)> = Vec::new();
+        let mut word_w = 0usize;
+        while i < cells.len() && cells[i].0 != ' ' {
+            word_w += cells[i].0.width().unwrap_or(1).max(1);
+            word.push(cells[i]);
+            i += 1;
+        }
+        // wrap before the word if it does not fit
+        if row_w > 0 && row_w + word_w > width {
+            rows.push(line_from(std::mem::take(&mut row)));
+            row_w = 0;
+        }
+        // hard-split words wider than a full row
+        if row_w == 0 && word_w > width {
+            let mut chunk: Vec<(char, Style)> = Vec::new();
+            let mut cw = 0usize;
+            for (c, st) in word {
+                let cc = c.width().unwrap_or(1).max(1);
+                if cw + cc > width {
+                    rows.push(line_from(std::mem::take(&mut chunk)));
+                    cw = 0;
+                }
+                chunk.push((c, st));
+                cw += cc;
+            }
+            row = chunk;
+            row_w = cw;
+        } else {
+            row.extend(word);
+            row_w += word_w;
+        }
+        // the spaces that follow the word stay on the row
+        while i < cells.len() && cells[i].0 == ' ' {
+            row.push(cells[i]);
+            row_w += 1;
+            i += 1;
+        }
+    }
+    if !row.is_empty() || rows.is_empty() {
+        rows.push(line_from(row));
+    }
+    rows
+}
+
+// the rows of one event: the block separator, then the wrapped lines
+fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize) -> Vec<Line<'static>> {
+    let ev = &events[i];
+    let mut rows: Vec<Line<'static>> = Vec::new();
+    if !ev_visible(ev, debug) {
+        return rows;
+    }
+    // the previous VISIBLE event decides the separator: a debug-only
+    // annotation between two blocks must not swallow the blank line
+    let prev = events[..i].iter().rev().find(|e| ev_visible(e, debug));
+    let message = matches!(ev, Ev::You(_) | Ev::Assistant(_));
+    let tool_block = matches!(ev, Ev::Tool(_) | Ev::Sub { .. });
+    let prev_message = prev.map_or(false, |p| matches!(p, Ev::You(_) | Ev::Assistant(_)));
+    let prev_tool_block = prev.map_or(false, |p| matches!(p, Ev::Tool(_) | Ev::Sub { .. }));
+    // messages and tool blocks breathe: a blank line at every transition
+    if (message && prev_tool_block) || (tool_block && prev_message) {
+        rows.push(Line::from(""));
+    }
+    for l in ev_lines(ev) {
+        rows.extend(wrap_line(l, width));
+    }
+    rows
 }
 
 // structural annotations (turn separators, idle markers) are debug-only;
@@ -147,28 +348,85 @@ fn ev_visible(ev: &Ev, debug: bool) -> bool {
     if debug {
         return true;
     }
-    !matches!(ev, Ev::Turn | Ev::TurnDone(_) | Ev::Idle | Ev::Raw(_))
+    !matches!(
+        ev,
+        Ev::Turn
+            | Ev::TurnDone(_)
+            | Ev::Idle
+            | Ev::Raw(_)
+            | Ev::ToolInfo { .. }
+            | Ev::ToolResult { .. }
+    )
 }
 
-fn push_event(events: &mut Vec<Ev>, ev: Ev) {
-    // a tool finishing rewrites its running line
-    if let Ev::Tool { n, state } = &ev {
-        if !matches!(state, ToolState::Run) {
-            for e in events.iter_mut().rev() {
-                if let Ev::Tool { n: n2, state: s2 } = e {
-                    if n2 == n && matches!(s2, ToolState::Run) {
-                        *s2 = match state {
-                            ToolState::Ok => ToolState::Ok,
-                            ToolState::Fail => ToolState::Fail,
-                            ToolState::Run => ToolState::Run,
-                        };
-                        return;
+fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>>, ev: Ev) -> bool {
+    // annotations enrich the matching tool event instead of stacking
+    match &ev {
+        Ev::ToolInfo { id, name, args } => {
+            for (i, e) in events.iter_mut().enumerate().rev() {
+                if let Ev::Tool(td) = e {
+                    if td.id == *id {
+                        td.name = Some(name.clone());
+                        td.args = Some(args.clone());
+                        cache[i] = None;
+                        return false;
+                    }
+                }
+            }
+            return false;
+        }
+        Ev::ToolResult { id, ok, preview } => {
+            for (i, e) in events.iter_mut().enumerate().rev() {
+                if let Ev::Tool(td) = e {
+                    if td.id == *id {
+                        td.result = Some((*ok, preview.clone()));
+                        cache[i] = None;
+                        return false;
+                    }
+                }
+            }
+            return false;
+        }
+        Ev::Tool(td) if !matches!(td.state, ToolState::Run) => {
+            // a tool finishing rewrites its running line
+            for (i, e) in events.iter_mut().enumerate().rev() {
+                if let Ev::Tool(td2) = e {
+                    if td2.id == td.id && matches!(td2.state, ToolState::Run) {
+                        td2.state = td.state.clone();
+                        td2.elapsed = Some(fmt_elapsed(td2.started));
+                        if td2.result.is_none() {
+                            td2.result = td.result.clone();
+                        }
+                        cache[i] = None;
+                        return false;
+                    }
+                }
+            }
+            events.push(ev);
+            cache.push(None);
+            return true;
+        }
+        // the turn ended: a tool still shown as running was abandoned
+        // (interrupt or failed turn) — freeze it so the elapsed stops
+        Ev::TurnDone(_) | Ev::Idle => {
+            for (i, e) in events.iter_mut().enumerate() {
+                if let Ev::Tool(td) = e {
+                    if matches!(td.state, ToolState::Run) {
+                        td.state = ToolState::Fail;
+                        td.elapsed = Some(fmt_elapsed(td.started));
+                        if td.result.is_none() {
+                            td.result = Some((false, "interrompu".to_string()));
+                        }
+                        cache[i] = None;
                     }
                 }
             }
         }
+        _ => {}
     }
     events.push(ev);
+    cache.push(None);
+    true
 }
 
 
@@ -302,6 +560,90 @@ fn md_to_lines(text: &str) -> Vec<Line<'static>> {
     out
 }
 
+// ---- tool-call rendering helpers ----
+
+fn fmt_elapsed(started: std::time::Instant) -> String {
+    let s = started.elapsed().as_secs_f64();
+    if s < 10.0 {
+        format!("{:.1}s", s)
+    } else if s < 60.0 {
+        format!("{:.0}s", s)
+    } else {
+        format!("{:.0}m{:02.0}s", (s / 60.0).floor(), s % 60.0)
+    }
+}
+
+fn truncate_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let head: String = s.chars().take(max).collect();
+        format!("{}…", head)
+    }
+}
+
+// naive "field":"value" extractor for JSON-ish args (no parser needed:
+// the runtime caps the payload and the shape is known)
+fn json_str_field(s: &str, field: &str) -> Option<String> {
+    let pat = format!("\"{}\"", field);
+    let i = s.find(&pat)?;
+    let rest = s[i + pat.len()..].trim_start().strip_prefix(':')?.trim_start();
+    let rest = rest.strip_prefix('"')?;
+    let mut out = String::new();
+    let mut ch = rest.chars();
+    while let Some(c) = ch.next() {
+        match c {
+            '\\' => match ch.next() {
+                Some('n') => out.push('\n'),
+                Some('t') => out.push('\t'),
+                Some('r') => out.push('\r'),
+                Some('"') => out.push('"'),
+                Some('\\') => out.push('\\'),
+                Some('/') => out.push('/'),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                // truncated payload: keep the partial value
+                None => out.push('\\'),
+            },
+            '"' => return Some(out),
+            _ => out.push(c),
+        }
+    }
+    // the runtime caps the wire payload: a cut string is still useful
+    Some(out)
+}
+
+// the args preview: what the engineer reads at a glance
+//   run_typescript        the first line of main() (the signature)
+//   search_tool_functions mode and the query
+//   bash / mcp            the raw args
+fn args_preview(name: &str, args: &str) -> String {
+    if name == "run_typescript" {
+        if let Some(code) = json_str_field(args, "code") {
+            let first = code
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+                .unwrap_or("");
+            let mut p = truncate_chars(first, 64);
+            if code.lines().filter(|l| !l.trim().is_empty()).count() > 1 {
+                p.push_str(" …");
+            }
+            return p;
+        }
+    }
+    if name == "search_tool_functions" {
+        let mode = json_str_field(args, "mode").unwrap_or_else(|| "best_match".into());
+        if let Some(q) = json_str_field(args, "query") {
+            return format!("{} \"{}\"", mode, truncate_chars(&q, 48));
+        }
+        return mode;
+    }
+    truncate_chars(args.trim(), 80)
+}
+
 // one event renders as one or many lines (markdown expands messages)
 fn ev_lines(ev: &Ev) -> Vec<Line<'static>> {
     match ev {
@@ -342,13 +684,104 @@ fn ev_lines(ev: &Ev) -> Vec<Line<'static>> {
             "  inactif — session préservée",
             Style::default().fg(DIM),
         ))],
+        Ev::Tool(td) => tool_lines(td),
+        Ev::Sub { name, ok, preview } => {
+            let mut ls = vec![Line::from(vec![
+                Span::styled("    ↳ ", Style::default().fg(TOOL)),
+                Span::styled(name.clone(), Style::default().fg(TOOL)),
+                Span::styled(
+                    if *ok { " ok " } else { " ECHEC " },
+                    Style::default().fg(if *ok { OK } else { ERR }),
+                ),
+                Span::styled(truncate_chars(preview.trim(), 100), Style::default().fg(TOOL)),
+            ])];
+            if ls.first().map(|l| l.width()).unwrap_or(0) == 0 {
+                ls.clear();
+            }
+            ls
+        }
         _ => vec![ev_line(ev)],
     }
+}
+
+// the tool line: mark + name + elapsed + args preview, then the
+// result preview (errors in red — the first thing an engineer looks for)
+fn tool_lines(td: &ToolData) -> Vec<Line<'static>> {
+    let name = td
+        .name
+        .clone()
+        .unwrap_or_else(|| format!("#{}", td.id));
+    let args = td
+        .args
+        .as_deref()
+        .map(|a| args_preview(&name, a))
+        .unwrap_or_default();
+    let elapsed = fmt_elapsed(td.started);
+    let mut ls = Vec::new();
+    match td.state {
+        ToolState::Run => {
+            let mut spans = vec![
+                Span::styled("  ● ", Style::default().fg(WARN)),
+                Span::styled(name.clone(), Style::default().fg(TOOL)),
+                Span::styled(format!(" {}", elapsed), Style::default().fg(TOOL)),
+            ];
+            if !args.is_empty() {
+                spans.push(Span::styled(" — ", Style::default().fg(TOOL)));
+                spans.push(Span::styled(args, Style::default().fg(TOOL)));
+            }
+            ls.push(Line::from(spans));
+        }
+        ToolState::Ok => {
+            let mut spans = vec![
+                Span::styled("  ✓ ", Style::default().fg(OK)),
+                Span::styled(name.clone(), Style::default().fg(TOOL)),
+                Span::styled(
+                    format!(" ok {}", td.elapsed.clone().unwrap_or_default()),
+                    Style::default().fg(OK),
+                ),
+            ];
+            if !args.is_empty() {
+                spans.push(Span::styled(" — ", Style::default().fg(TOOL)));
+                spans.push(Span::styled(args, Style::default().fg(TOOL)));
+            }
+            ls.push(Line::from(spans));
+        }
+        ToolState::Fail => {
+            let mut spans = vec![
+                Span::styled("  ✗ ", Style::default().fg(ERR)),
+                Span::styled(name.clone(), Style::default().fg(TOOL)),
+                Span::styled(
+                    format!(" ECHEC {}", td.elapsed.clone().unwrap_or_default()),
+                    Style::default().fg(ERR),
+                ),
+            ];
+            if !args.is_empty() {
+                spans.push(Span::styled(" — ", Style::default().fg(TOOL)));
+                spans.push(Span::styled(args, Style::default().fg(TOOL)));
+            }
+            ls.push(Line::from(spans));
+        }
+    }
+    if let Some((ok, preview)) = &td.result {
+        if !preview.trim().is_empty() {
+            ls.push(Line::from(vec![
+                Span::styled("    → ", Style::default().fg(TOOL)),
+                Span::styled(
+                    truncate_chars(preview.trim(), 110),
+                    Style::default().fg(if *ok { TOOL } else { ERR }),
+                ),
+            ]));
+        }
+    }
+    ls
 }
 
 fn ev_line(ev: &Ev) -> Line<'static> {
     match ev {
         Ev::Idle => Line::from(""),
+        // handled by ev_lines / merged in push_event; safe fallbacks
+        Ev::Tool(_) | Ev::Sub { .. } => Line::from(""),
+        Ev::ToolInfo { .. } | Ev::ToolResult { .. } => Line::from(""),
         Ev::You(t) => Line::from(Span::styled(
             t.clone(),
             Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
@@ -357,17 +790,6 @@ fn ev_line(ev: &Ev) -> Line<'static> {
             t.clone(),
             Style::default().fg(Color::White),
         )),
-        Ev::Tool { n, state } => {
-            let (label, color) = match state {
-                ToolState::Run => ("…", WARN),
-                ToolState::Ok => ("ok", OK),
-                ToolState::Fail => ("ECHEC", ERR),
-            };
-            Line::from(vec![
-                Span::styled(format!("    outil #{} ", n), Style::default().fg(DIM)),
-                Span::styled(label, Style::default().fg(color)),
-            ])
-        }
         Ev::Turn => Line::from(Span::styled(
             "── tour ".to_string() + &"─".repeat(30),
             Style::default().fg(DIM),
@@ -402,8 +824,22 @@ fn ev_line(ev: &Ev) -> Line<'static> {
 struct App {
     connected: bool,
     debug: bool,
-    // feed scrollback: rows from the bottom (0 = follow the newest line)
-    scroll: usize,
+    // line mode holds running tools until they finish so the printed
+    // line carries the merged annotations (name, args, result)
+    line_tools: std::collections::HashMap<u32, ToolData>,
+    // feed scrollback: top is an offset from the FIRST row, follow means
+    // stick to the bottom (any scroll up turns it off, End/enter turn it
+    // back on). Top-anchored, so new content never moves a pinned view.
+    follow: bool,
+    top: usize,
+    max_top: usize,
+    // activity that arrived while pinned (shown by the back-to-bottom bar)
+    unseen: usize,
+    tail_visible: bool,
+    bottom_bar_rect: Option<ratatui::layout::Rect>,
+    // wrapped rows per event, keyed by event index (the codex layout
+    // cache: rebuild on mutation, width change, or live-elapsed tools)
+    cache: Vec<Option<EventRows>>,
     area_w: usize,
     area_h: usize,
     events: Vec<Ev>,
@@ -427,6 +863,57 @@ impl App {
         self.pending = true;
         if let Some(s) = self.stream.as_mut() {
             let _ = s.write_all(format!("{}\n", line).as_bytes());
+        }
+    }
+
+    // line mode: one printed line per finished tool, carrying the merged
+    // annotations; sub-calls print live as they complete
+    fn feed_line(&mut self, line: &str) {
+        if line == "--- idle" {
+            self.pending = false;
+        }
+        let Some(ev) = parse_line(line) else { return };
+        match ev {
+            Ev::Tool(td) if matches!(td.state, ToolState::Run) => {
+                self.line_tools.insert(td.id, td);
+            }
+            Ev::ToolInfo { id, name, args } => {
+                if let Some(td) = self.line_tools.get_mut(&id) {
+                    td.name = Some(name);
+                    td.args = Some(args);
+                }
+            }
+            Ev::ToolResult { id, ok, preview } => {
+                if let Some(td) = self.line_tools.get_mut(&id) {
+                    td.result = Some((ok, preview));
+                }
+            }
+            Ev::Tool(td) => {
+                if let Some(mut held) = self.line_tools.remove(&td.id) {
+                    held.state = td.state;
+                    if held.elapsed.is_none() {
+                        held.elapsed = Some(fmt_elapsed(held.started));
+                    }
+                    print_ev_of(&Ev::Tool(held), self.debug);
+                } else {
+                    print_ev_of(&Ev::Tool(td), self.debug);
+                }
+            }
+            ev2 @ (Ev::TurnDone(_) | Ev::Idle) => {
+                // abandoned running tools get one final line
+                let mut held: Vec<ToolData> = self.line_tools.drain().map(|(_, td)| td).collect();
+                held.sort_by_key(|td| td.id);
+                for mut td in held {
+                    td.state = ToolState::Fail;
+                    td.elapsed = Some(fmt_elapsed(td.started));
+                    if td.result.is_none() {
+                        td.result = Some((false, "interrompu".to_string()));
+                    }
+                    print_ev_of(&Ev::Tool(td), self.debug);
+                }
+                print_ev_of(&ev2, self.debug);
+            }
+            other => print_ev_of(&other, self.debug),
         }
     }
 }
@@ -483,6 +970,10 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         app.should_quit = true;
     } else if first == "/clear" {
         app.events.clear();
+        app.cache.clear();
+        app.top = 0;
+        app.follow = true;
+        app.unseen = 0;
         out.push(Ev::Info("affichage vidé".into()));
     } else if first == "/status" {
         out.push(Ev::Info(format!(
@@ -503,28 +994,9 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     }
 
     for ev in &out {
-        push_event(&mut app.events, ev.clone());
+        push_event(&mut app.events, &mut app.cache, ev.clone());
     }
     out
-}
-
-// wrapped-row accounting for the scrollback
-fn line_rows(l: &Line, inner_w: usize) -> usize {
-    let w = l.width();
-    if w == 0 {
-        1
-    } else {
-        ((w as usize) + inner_w - 1) / inner_w
-    }
-    .max(1)
-}
-
-fn ev_rows(ev: &Ev, inner_w: usize) -> usize {
-    let mut n = 0;
-    for l in ev_lines(ev) {
-        n += line_rows(&l, inner_w);
-    }
-    n
 }
 
 fn draw(app: &mut App, frame: &mut Frame) {
@@ -556,7 +1028,9 @@ fn draw(app: &mut App, frame: &mut Frame) {
     .block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(if app.connected { BRAND } else { DIM })));
     frame.render_widget(header, chunks[0]);
 
-    // feed: all visible lines, wrapped-row scrollback + scrollbar.
+    // feed: cached wrapped rows, only the VISIBLE slice rendered (the
+    // codex transcript approach — a Paragraph over the whole history
+    // re-wraps everything each frame and lags long sessions).
     // The paragraph column is one char narrower than the feed area so
     // the scrollbar never covers text.
     let area_w = (chunks[1].width as usize).saturating_sub(1).max(1);
@@ -567,30 +1041,76 @@ fn draw(app: &mut App, frame: &mut Frame) {
         width: chunks[1].width.saturating_sub(1).max(1),
         height: chunks[1].height,
     };
-    let mut lines: Vec<Line> = Vec::new();
-    for ev in app.events.iter() {
-        if !ev_visible(ev, app.debug) {
-            continue;
-        }
-        lines.extend(ev_lines(ev));
+
+    // refresh the cache: rebuild on width change, mutation, or for
+    // running tools whose elapsed ticks every frame
+    let n = app.events.len();
+    if app.cache.len() < n {
+        app.cache.resize_with(n, || None);
     }
+    let mut starts: Vec<usize> = Vec::with_capacity(n);
     let mut total_rows = 0usize;
-    for l in lines.iter() {
-        total_rows += line_rows(l, area_w);
+    for i in 0..n {
+        let live = matches!(&app.events[i],
+            Ev::Tool(td) if matches!(td.state, ToolState::Run));
+        let stale = app.cache[i]
+            .as_ref()
+            .map_or(true, |c| c.width != area_w as u16 || live);
+        if stale {
+            let rows = build_rows(&app.events, i, app.debug, area_w);
+            app.cache[i] = Some(EventRows {
+                width: area_w as u16,
+                rows,
+            });
+        }
+        starts.push(total_rows);
+        total_rows += app.cache[i].as_ref().map(|c| c.rows.len()).unwrap_or(0);
     }
-    let max_scroll = total_rows.saturating_sub(area_h);
-    let scroll = app.scroll.min(max_scroll);
-    // 0 = follow the bottom; otherwise the window ends scroll rows earlier
-    let start_row = max_scroll - scroll;
-    let feed = Paragraph::new(Text::from(lines))
-        .wrap(Wrap { trim: false })
-        .scroll((start_row as u16, 0));
-    frame.render_widget(feed, text_area);
+
+    let max_top = total_rows.saturating_sub(area_h);
+    if app.follow {
+        app.top = max_top;
+    }
+    let top = app.top.min(max_top);
+    let tail_visible = top + area_h >= total_rows;
+
+    // the visible slice: the events covering rows [top, top+area_h)
+    let mut vis: Vec<Line> = Vec::with_capacity(area_h + 2);
+    if total_rows > 0 {
+        let mut i0 = 0usize;
+        for (i, st) in starts.iter().enumerate() {
+            if *st <= top {
+                i0 = i;
+            } else {
+                break;
+            }
+        }
+        let mut skip = top - starts[i0];
+        for i in i0..n {
+            let empty = &Vec::new();
+            let rows = app.cache[i].as_ref().map(|c| &c.rows).unwrap_or(empty);
+            if skip >= rows.len() {
+                skip -= rows.len();
+                continue;
+            }
+            for r in rows.iter().skip(skip) {
+                if vis.len() >= area_h {
+                    break;
+                }
+                vis.push(r.clone());
+            }
+            skip = 0;
+            if vis.len() >= area_h {
+                break;
+            }
+        }
+    }
+    frame.render_widget(Paragraph::new(Text::from(vis)), text_area);
 
     // scrollbar on the right edge of the feed
     if total_rows > area_h {
         let mut state = ScrollbarState::new(total_rows)
-            .position(start_row)
+            .position(top)
             .viewport_content_length(area_h);
         frame.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight),
@@ -601,26 +1121,46 @@ fn draw(app: &mut App, frame: &mut Frame) {
             &mut state,
         );
     }
-    // published for the input loop (paging, keep-in-place on new rows)
+    // published for the input loop (paging, bottom detection)
     app.area_w = area_w;
     app.area_h = area_h;
+    app.max_top = max_top;
+    app.tail_visible = tail_visible;
 
-    // thinking indicator
-    let think = if app.pending && app.connected {
-        let dots = match (app.tick / 3) % 4 {
-            0 => ".",
-            1 => "..",
-            2 => "...",
-            _ => "  ",
-        };
-        Line::from(Span::styled(
-            format!("  {} réfléchit{}", if app.is_live { "zai-glm-5-3" } else { "réponse" }, dots),
-            Style::default().fg(BRAND),
-        ))
+    // the indicator row doubles as the codex-style back-to-bottom bar:
+    // when the tail is scrolled out of view it offers the way back and
+    // reports activity that arrived while pinned (clickable)
+    if !app.tail_visible {
+        app.bottom_bar_rect = Some(chunks[2]);
+        let mut spans = vec![
+            Span::styled("  ↓ Bas ", Style::default().fg(BRAND).add_modifier(Modifier::BOLD)),
+            Span::styled("(End)", Style::default().fg(DIM)),
+        ];
+        if app.unseen > 0 {
+            spans.push(Span::styled(
+                format!("  ·  {} nouvelles lignes", app.unseen),
+                Style::default().fg(WARN),
+            ));
+        }
+        frame.render_widget(Paragraph::new(Line::from(spans)), chunks[2]);
     } else {
-        Line::from("")
-    };
-    frame.render_widget(Paragraph::new(think), chunks[2]);
+        app.bottom_bar_rect = None;
+        let think = if app.pending && app.connected {
+            let dots = match (app.tick / 3) % 4 {
+                0 => ".",
+                1 => "..",
+                2 => "...",
+                _ => "  ",
+            };
+            Line::from(Span::styled(
+                format!("  {} réfléchit{}", if app.is_live { "zai-glm-5-3" } else { "réponse" }, dots),
+                Style::default().fg(BRAND),
+            ))
+        } else {
+            Line::from("")
+        };
+        frame.render_widget(Paragraph::new(think), chunks[2]);
+    }
 
     // input box with a visible cursor at app.cursor (char index).
     // long inputs scroll horizontally: the window slides to keep the
@@ -707,12 +1247,12 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                 app.pending = false;
             }
             if let Some(ev) = parse_line(&line) {
-                // scrolled up: pin the view — grow the offset by the
-                // rows the new event adds at the bottom
-                if app.scroll > 0 && ev_visible(&ev, app.debug) {
-                    app.scroll += ev_rows(&ev, app.area_w);
+                // the view is top-anchored: a pinned view never moves,
+                // a following view re-sticks in draw
+                let appended = push_event(&mut app.events, &mut app.cache, ev);
+                if appended && !app.follow {
+                    app.unseen += 1;
                 }
-                push_event(&mut app.events, ev);
             }
         }
         if app.should_quit {
@@ -724,10 +1264,28 @@ fn run_tui(app: &mut App) -> io::Result<()> {
             if let Event::Mouse(m) = ev {
                 match m.kind {
                     MouseEventKind::ScrollUp => {
-                        app.scroll += 3;
+                        app.follow = false;
+                        app.top = app.top.saturating_sub(3);
                     }
                     MouseEventKind::ScrollDown => {
-                        app.scroll = app.scroll.saturating_sub(3);
+                        app.top += 3;
+                        if app.top >= app.max_top {
+                            app.follow = true;
+                            app.unseen = 0;
+                        }
+                    }
+                    // click the back-to-bottom bar to return to the tail
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        if let Some(r) = app.bottom_bar_rect {
+                            let inside = m.column >= r.x
+                                && m.column < r.x + r.width
+                                && m.row >= r.y
+                                && m.row < r.y + r.height;
+                            if inside {
+                                app.follow = true;
+                                app.unseen = 0;
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -757,6 +1315,10 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     // ctrl+l: clear the local feed
                     (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
                         app.events.clear();
+                        app.cache.clear();
+                        app.top = 0;
+                        app.follow = true;
+                        app.unseen = 0;
                     }
                     // esc: close popup, else interrupt the running turn
                     (KeyCode::Esc, _) => {
@@ -770,15 +1332,21 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     // scrollback: PgUp/PgDn page, End follows the bottom
                     (KeyCode::PageUp, _) => {
                         let page = (app.area_h / 2).max(1);
-                        app.scroll += page;
+                        app.follow = false;
+                        app.top = app.top.saturating_sub(page);
                     }
                     (KeyCode::PageDown, _) => {
                         let page = (app.area_h / 2).max(1);
-                        app.scroll = app.scroll.saturating_sub(page);
+                        app.top += page;
+                        if app.top >= app.max_top {
+                            app.follow = true;
+                            app.unseen = 0;
+                        }
                     }
                     (KeyCode::End, _) => {
-                        if app.scroll > 0 {
-                            app.scroll = 0;
+                        if !app.follow {
+                            app.follow = true;
+                            app.unseen = 0;
                         } else {
                             app.cursor = app.input.chars().count();
                         }
@@ -806,7 +1374,8 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                             let v = app.input.trim().to_string();
                             app.input.clear();
                             app.cursor = 0;
-                            app.scroll = 0;
+                            app.follow = true;
+                            app.unseen = 0;
                             if !v.is_empty() {
                                 handle_input(app, &v);
                             }
@@ -919,12 +1488,6 @@ fn print_ev_of(ev: &Ev, debug: bool) {
     }
 }
 
-fn print_ev(line: &str, debug: bool) {
-    if let Some(ev) = parse_line(line) {
-        print_ev_of(&ev, debug);
-    }
-}
-
 // waits for the turn to finish ("--- idle") or the channel to close,
 // printing every event as it arrives; gives up after `max`
 fn wait_idle(app: &mut App, max: Duration) {
@@ -932,10 +1495,7 @@ fn wait_idle(app: &mut App, max: Duration) {
     loop {
         match app.rx.recv_timeout(Duration::from_millis(200)) {
             Ok(line) => {
-                if line == "--- idle" {
-                    app.pending = false;
-                }
-                print_ev(&line, app.debug);
+                app.feed_line(&line);
                 if line == "--- idle" {
                     return;
                 }
@@ -959,10 +1519,7 @@ fn run_line_mode(app: &mut App) -> io::Result<()> {
         // show anything the harness sent since the last command
         // (the --continue greeting arrives at connect)
         while let Ok(l) = app.rx.try_recv() {
-            if l == "--- idle" {
-                app.pending = false;
-            }
-            print_ev(&l, app.debug);
+            app.feed_line(&l);
         }
         let line = line?;
         let v = line.trim().to_string();
@@ -981,10 +1538,7 @@ fn run_line_mode(app: &mut App) -> io::Result<()> {
             wait_idle(app, Duration::from_secs(120));
         } else {
             while let Ok(line) = app.rx.try_recv() {
-                if line == "--- idle" {
-                    app.pending = false;
-                }
-                print_ev(&line, app.debug);
+                app.feed_line(&line);
             }
         }
     }
@@ -1036,7 +1590,14 @@ pub fn run(host: String, port: u16, is_live: bool, debug: bool) -> io::Result<()
     let mut app = App {
         connected,
         debug,
-        scroll: 0,
+        line_tools: std::collections::HashMap::new(),
+        follow: true,
+        top: 0,
+        max_top: 0,
+        unseen: 0,
+        tail_visible: true,
+        bottom_bar_rect: None,
+        cache: Vec::new(),
         area_w: 80,
         area_h: 24,
         events: Vec::new(),

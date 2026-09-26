@@ -453,3 +453,294 @@ byte-identical to the baseline; live e2e: best_match → details →
 run_typescript → github_app.list_issues with correct args, error
 feedback loop (missing owner → fixed → missing repo → fixed), and a
 multi-tool Promise.allSettled program, all over the real GLM provider.
+
+## 2026-09-25 — the tool-calling feed, rebuilt for a human engineer
+
+The old feed showed `outil #2 …` -> `outil #2 ok`: an id and an
+outcome, nothing else. What an engineer actually needs, in order:
+what tool with what args (wrong args are the #1 failure cause), the
+error message on failure, how long a call took (a hung bash is the
+most common live debugging case), and what a run_typescript program
+actually did (its sub-calls were invisible — one program of 6 tool
+calls collapsed into a single line).
+
+Runtime annotations (live only; scripted runs and scenarios stay
+byte-identical). The EExec loop emits around each tool execution:
+  tool #<id> <name> : <args>              (flattened, capped 200)
+  tool_result #<id> <ok|fail> : <out>    (flattened, capped 200)
+exec_program emits one line per sub-call:
+  subtool <name> <ok|fail> : <out>
+ESleep carries (ms, id, secs) now so self.sleep annotates too.
+
+The Out handle threads through the exec chain. Bend lessons paid for:
+Type-kind values are ALSO use-once (no duplication, + is illegal on
+Type), do-binds and pairs must be consumed exactly once, and mutual
+recursion is impossible — exec_done / exec_program.step consume the
+(Out & X) pair once and continue through a closure that
+self-references the loop def (the serve-loop idiom); run and
+exec_program are @unsafe for exactly that reason.
+
+Core fix found by the e2e: tool_started carried the provider's
+per-completion index while tool_finished carried the action id — they
+only coincide on the first completion of a fresh session, so the TUI
+could not pair events by id. tool_start_obs now renders the
+renumbered calls; started/finished/annotation ids all agree. (This
+changes the scenario feed: started ids are now action ids.)
+
+TUI (ratatui): ToolData{id, name, args, state, result, started}
+merged by id; render is  mark + name + elapsed + args preview, with
+a result line (errors red):
+  ● bash 3.2s — ls -la                 (running, elapsed ticks live)
+  ✓ bash ok 0.3s — ls -la
+    → 3 files
+  ✗ bash ECHEC 1.2s — rm /protected
+    → exit 1: permission denied
+  ↳ github_app.list_issues ok {"issues":[]…     (program sub-calls)
+Elapsed is measured client-side (Instant at event arrival), so no
+clock effect is needed in Bend. Args previews are per-tool:
+run_typescript shows the first line of main(), search shows
+`mode "query"`, bash/mcp show the raw args (a naive JSON string
+extractor tolerates the 200-char wire truncation). Line mode holds
+running tools in a map and prints one merged line at completion.
+
+Verified live (GLM, full discovery turn): search/bash/run_typescript
+lines with names, args, elapsed, result previews; parallel calls;
+sub-call lines under each program; a failed program attempt showing
+the error in red. PROOF green (39 laws), 13 scenarios (started ids
+re-baselined), rust build 0 warnings.
+
+## 2026-09-25 — scrollback rebuilt: top-anchored + follow flag
+
+The bottom-relative offset (rows from the bottom, 0 = follow) needed an
+increment for every incoming event to keep a scrolled-up view pinned —
+fragile accounting that drifted (tool enrichments add rows to existing
+events, widths change, events merge). Replaced with the simple model:
+
+- App: follow: bool, top: usize (offset from the FIRST row), max_top
+  published by draw for the input handlers
+- follow=true: draw pins top to max_top every frame (sticks to bottom)
+- any scroll up (PgUp, wheel): follow=false — and since the view is
+  TOP-anchored, new content appended below cannot move it, zero
+  accounting needed
+- PgDn/wheel down reaching max_top, End, sending a message, /clear or
+  Ctrl+L: follow=true again
+- scrollbar position = top
+
+Also fixed (found by the pty test): the elapsed on FINISHED tools kept
+ticking forever (an `echo` line read "ok 8.0s" growing to "ok 14s").
+ToolData now freezes the elapsed at the finish merge; only the running
+● line ticks live.
+
+Verified with a pyte pty test on a live 6-tool turn: follow shows the
+newest lines; after PgUp the view is byte-identical across 6 more
+seconds of incoming content; End and PgDn-past-bottom return to the
+bottom and re-follow; frozen elapseds. PROOF green (39 laws), 13
+scenarios, rust 0 warnings.
+
+## 2026-09-25 — feed hierarchy: gray tool blocks, blank separators
+
+Tool calls now read as machinery between prose blocks: everything on a
+tool line is DIM gray (name, args, elapsed, result preview) except the
+status mark and label (● yellow / ✓ green + "ok", ✗ red + "ECHEC") and
+error previews, which stay colored so failures stay scannable. Sub-call
+lines are gray too. A blank line is inserted at every transition from a
+tool block (Tool/Sub events) to a message (You/Assistant) in the draw
+loop — the scrollback counts those rows automatically since they are
+part of the rendered lines. Verified with a pyte pty run: white prose /
+gray tool block / blank line / next message.
+
+## 2026-09-25 — elapsed freeze verified; abandoned tools at turn end
+
+Reported: finished tool timings kept incrementing. Verified on the
+current binary with pyte pty runs: finished tools freeze (byte-
+identical feeds 9s apart, including sub-call lines and previews). The
+report traced to a stale bend-harness process started before the
+freeze landed — a running process embeds the old code; restart
+./run.sh to pick it up.
+
+Two hardening fixes while re-checking:
+- push_event: at turn end (TurnDone/Idle) any tool still shown as
+  running was abandoned (interrupt or failed turn) — frozen as
+  ✗ ECHEC with result "interrompu", so no line can ever tick forever.
+- line mode (feed_line): abandoned held tools print one final
+  "interrompu" line at turn end, and finished tools freeze their
+  elapsed at print time.
+
+Known semantics (not a display bug): Esc cannot cancel a blocking
+tool exec mid-flight — the harness interrupt takes effect at the next
+model-safe boundary, so during e.g. `sleep 30` the ● line keeps
+ticking because the tool genuinely still runs; it freezes when the
+turn actually ends.
+
+## 2026-09-25 — 27 new laws pin the recent surface (and caught a live bug)
+
+The laws covered the Core, the wire and compaction, but none of the
+logic added for vibe_sdk parity. 27 laws now pin it — each one guards
+a bug we actually shipped or a wire contract a client parses:
+
+- call-id renumbering: sequential ids from the base, name/args
+  untouched, length preserved (the duplicate call_1 wire 400)
+- the node_program rename: wire echo, result text and the feed
+  annotation all say run_typescript; other names pass through (the
+  context leak)
+- structured args: run_typescript/search args pass through un-wrapped,
+  ordinary tools keep the flat wrapper, call_code extracts the code
+  field (the root cause of the 400 invalid_args)
+- structured search: best_match returns NAMES without declarations,
+  two-word matches outrank one-word, cap 20 with
+  moreCandidatesAvailable, connectors filter; details never comes back
+  silently empty (missing message + section), functionNames alias, and
+  the flat fallback for the scripted suite
+- TUI annotations: tool/tool_result/subtool formats byte-for-byte,
+  single-line, capped at 200; engine error payloads extract their
+  message (exit-43 feedback loop)
+
+The connectors law failed on first run and exposed a real bug the live
+runs never surfaced: conn_keep conflated "no connectors given" (keep
+everything) with "no connector matched" (drop) — its Nil base case
+returned True for both, making the connectors filter a no-op that kept
+every tool. Fixed by splitting conn_hit (any-match, False base) from
+conn_keep (empty list = no filter). The law paid for itself before it
+was even merged.
+
+Gate: bend PROOF.bend — 66 laws green. Suite byte-identical, all
+binaries rebuilt.
+
+## 2026-09-25 — scrollback rebuilt on the codex transcript architecture
+
+The old feed rendered EVERY event through markdown + ratatui word wrap
+every 80ms frame and scrolled a Paragraph over the full history —
+O(total) per frame, so long sessions lagged and scrolling felt broken.
+Research: pulled openai/codex and studied transcript_view/ (layout
+cache, Position::Reading anchor, tail_visible, the "Back to bottom"
+follow control) plus the ratatui maintainer's guidance (store lines,
+render only the visible range).
+
+New rendering pipeline (rust/tui):
+- EventRows cache: each event renders to wrapped rows ONCE (span-aware
+  word wrap with unicode widths, hard-split for over-wide words);
+  invalidated on mutation (enrichment, finish merges), width change,
+  or for running tools (their elapsed ticks each frame). The block
+  separator is part of the event's rows.
+- Every frame: O(n) over cache row-counts for starts/total, then only
+  the visible slice [top, top+h) is cloned into the Paragraph — no
+  Paragraph wrap, no Paragraph scroll. O(visible) rendering.
+- Back-to-bottom bar (codex follow control): the indicator row shows
+  "↓ Bas (End) · N nouvelles lignes" whenever the tail is out of
+  view; clicking it (mouse hit rect) returns to the bottom; the
+  unseen counter tracks appended events while pinned and clears on
+  every re-follow (End, PgDn to bottom, send, click, /clear, Ctrl+L).
+- wrap width = feed area - 1 (scrollbar column), same as before.
+
+Verified with pyte pty runs on live turns: pinned top row identical
+across streaming content; the bar appears while pinned and reports
+new activity; a click on the bar jumps back to the tail and clears
+the bar and counter; line mode unaffected. 0 warnings.
+
+## 2026-09-25 — the silent mid-turn stop: run fuel was 100 hops
+
+Reported: the agent often stops mid-turn with no explanation. Root
+cause: repl_plan gave the whole turn R.run(100n, ...) — every loop hop
+(model call, obs emit, tool exec, commit) burns one unit, so ~5 hops
+per round ≈ 20 model rounds. Longer agentic turns exhausted the fuel
+mid-turn: run returned REnd silently, the REPL saved the session and
+went idle — the turn stayed pending, nothing was shown. Compounding
+it, the TUI hid EVERY turn_done in non-debug, so even legitimate
+failures (null iteration limit after 3 empty model completions,
+provider errors after their discard warning) ended invisibly.
+
+Fixes:
+- repl-live: fuel 100n -> 1000000n (effectively unbounded for a
+  terminal session); if a session ever does return with the turn still
+  active, repl_end_stalled emits "obs: turn_stalled: execution budget
+  exhausted" before saving — never silent again
+- exec_program fuel 50n -> 1000n (50 ≈ 12 program sub-calls before
+  "program step budget exhausted")
+- TUI: turn_done completed stays hidden, but "failed: X" renders as a
+  red "tour échoué : X" line, "interrupted" as a warning; the
+  turn_stalled obs parses as an error; null_iteration reads "réponse
+  vide du modèle — nouvelle tentative" instead of "itération nulle
+  comptée"
+
+Verified live: a 25-command sequential bash turn (would have died
+around command 20 on the old budget) completes fully with the final
+summary. PROOF green (66 laws), suite byte-identical, all binaries
+rebuilt, 0 warnings.
+
+## 2026-09-25 — agent-loop robustness audit
+
+Audited every seam of the loop for failure modes. Three real gaps found
+and fixed; the rest verified already-safe:
+
+FIXED — bash watchdog (runtime/main.bend): snap has NO timeout
+(waitpid without deadline), so a blocking command (a bare `cat`, a
+server, sleep 1000) hung the whole turn irrecoverably — and a killed
+subshell leaves orphan children holding the stdout pipe. The command
+now runs under a watchdog subshell: `( cmd ) & c=$!; ( sleep N;
+pkill -9 -P $c; kill -9 $c ) & w=$!; ...; exit $s` — children killed
+first (releases the pipe), BEND_BASH_TIMEOUT env (default 120s, max
+3600), exit 137 mapped to "command exceeded the bash timeout and was
+killed. Partial output: ...". (A set -m process-group kill was tried
+and rejected: job-control notifications pollute every output.)
+
+FIXED — tool output cap: results entered history unbounded; a catted
+binary blew up the next provider request. cap_out at exec_cmd (the
+single choke point into the Core): 20000 chars + "[output truncated at
+20000 chars]". Covers bash, MCP, run_typescript, search.
+
+FIXED — provider retries: any transient failure (connect/DNS/timeout,
+5xx, 429) killed the whole turn instantly. model_call now classifies
+each attempt purely into AOk/AFail/ARetry and retries twice with a
+1.5s pause (the retry goes through a continuation closure
+self-referencing model_call.try — mutual recursion is not expressible;
+the exec_done idiom). 4xx fails immediately, as before.
+
+VERIFIED-SAFE (no change): malformed 200 JSON degrades to an empty
+completion (null-iteration retry, now visible); jsrt
+crash/missing-binary maps to readable exit codes; MCP timeout 20s;
+client disconnect mid-turn keeps the turn alive (emit errors
+swallowed); session save is best effort; "core rejected" lines are
+visible; the fuel is 1M hops with a loud stall warning.
+
+Live verification: sleep-1000 killed at 3s (exit 137, message read and
+relayed by the model, no orphan processes); 60000-char output
+truncated at 20000 (model reported truncation and the cut);
+normal commands clean; PROOF green (66 laws), suite byte-identical.
+
+Testing footnote: pkill -f uses ERE — "a\|b" matches nothing (literal
+backslash-pipe); use "a|b". A stale repl-live survived several test
+rounds on a busy port because of this, sending tests to the wrong
+binary.
+
+## 2026-09-25 — every quick bash command cost the full 120s timeout
+
+Reported: simple bash commands took ~2 minutes. Reproduced with a
+stopwatch: tool_started at 1.9s, tool_result at 122.0s — exactly
+BEND_BASH_TIMEOUT. Root cause: the watchdog's own sleeper. The sleeper
+subshell `( sleep N; ... )` inherited the RESULT pipe; when a quick
+command finished, the script killed the sleeper subshell, but its
+child `sleep 120` became an orphan still holding the pipe open —
+snap reads to EOF, so every command waited out the full deadline.
+
+Fix (runtime/main.bend, bash_watchdog):
+- the sleeper's output is redirected to /dev/null — it can never hold
+  the result pipe
+- after the command: `pkill -9 -P $w` then `kill -9 $w` — no orphan
+  sleep lingers at all
+
+Bend to the max — 13 new laws (66 -> 79), each pinning a surface that
+broke or nearly broke:
+- bash_watchdog_script: the watchdog byte-for-byte, sleeper redirect
+  and children-first kills included — the 2-minute regression can
+  never come back silently
+- bash_timeout defaults/clamps; exit 137 maps to the readable message
+- cap_out: limit 20000 pinned, logic proven at small scale via the
+  parameterized cap_out_at (a 20001-char literal overflows the proof
+  checker's stack — deep string recursion)
+- retryable_status/retryable_err tables; attempt classification
+  (timeout -> ARetry with why, TLS -> AFail)
+
+Verified live with timings: quick command 0.05s (was 120s); blocking
+sleep-1000 killed at 3.09s with the readable message; 50000-char
+output capped. PROOF green (79 laws), suite byte-identical, all
+binaries rebuilt.
