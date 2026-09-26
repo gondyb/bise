@@ -33,11 +33,19 @@ def rt_desc() -> IO(String):
     m : Maybe<&2, String> <- P.read_file("tool-desc-run-typescript.txt")
     IO.pure(String, rt_desc.read(m))
 
+def bash_desc.read(m: Maybe<&2, String>) -> String:
+  desc_or(m, "Run a real shell command and return its output. Args: the command.")
+
+def bash_desc() -> IO(String):
+  do IO<String>:
+    m : Maybe<&2, String> <- P.read_file("tool-desc-bash.txt")
+    IO.pure(String, bash_desc.read(m))
+
 # pure: build the catalog from given descriptions
-def catalog_pure(+sd: String, +rd: String) -> List<&2, T.ToolDef>:
+def catalog_pure(+sd: String, +rd: String, +bd: String) -> List<&2, T.ToolDef>:
   Con{T.ToolDef{"search_tool_functions", sd},
    Con{T.ToolDef{"self.sleep", "Sleep for a bounded number of seconds (0 < s < 60), then report."},
-    Con{T.ToolDef{"bash", "Run a real shell command and return its output. Args: the command."},
+    Con{T.ToolDef{"bash", bd},
      Con{T.ToolDef{"run_typescript", rd},
       Nil{}}}}}
 
@@ -45,14 +53,16 @@ def catalog() -> IO(List<&2, T.ToolDef>):
   do IO<List<&2, T.ToolDef>>:
     +sd : String <- search_desc()
     +rd : String <- rt_desc()
-    IO.pure(List<&2, T.ToolDef>, catalog_pure(sd, rd))
+    +bd : String <- bash_desc()
+    IO.pure(List<&2, T.ToolDef>, catalog_pure(sd, rd, bd))
 
 # short fallback for pure contexts (laws, scenarios that don't need
 # the full vibe_sdk description text)
 def catalog_short() -> List<&2, T.ToolDef>:
   catalog_pure(
     "Discover callable tool functions for run_typescript. Use mode=best_match first with a capability query; it returns ranked exact function names. If a returned name fits, call mode=details with that exact name before using it.",
-    "Executes TypeScript code in a sandbox environment. The sandbox expects an async function main() containing all your code. Tool functions are available under tools.<group>.<function>; no imports needed. The result of main() is the tool output.")
+    "Executes TypeScript code in a sandbox environment. The sandbox expects an async function main() containing all your code. Tool functions are available under tools.<group>.<function>; no imports needed. The result of main() is the tool output.",
+    "Run a real shell command and return its output. Args: the command.")
 
 # ---- the unified search: the vibe_sdk SearchRequest schema ----
 # The live model sends {"mode": ..., "query": ...} (the exact vibe_sdk

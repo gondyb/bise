@@ -516,36 +516,40 @@ law node_err_extracts_message:
     == "missing required parameter: owner" : String}
 
 
-# ---- the bash watchdog (runtime/main.bend) ----
-# A quick command once cost the FULL timeout: the watchdog's sleeper
-# held the result pipe open after the command finished (its sleep
-# inherited stdout). The script below is pinned byte-for-byte — the
-# sleeper's output redirect and the children-first kills are load
-# bearing and must never regress silently.
 
-# LAW: the watchdog script, byte for byte (command embedded, deadline
-# in seconds, sleeper output discarded, children killed before parents).
-law bash_watchdog_script:
-  {Rt.bash_watchdog("whoami", 120)
-    == "( whoami ) & c=$!; ( sleep 120; pkill -9 -P $c 2>/dev/null; kill -9 $c 2>/dev/null ) >/dev/null 2>&1 & w=$!; wait $c; s=$?; pkill -9 -P $w 2>/dev/null; kill -9 $w 2>/dev/null; wait $w 2>/dev/null; exit $s"
+# ---- bash background handoff (runtime/main.bend) ----
+# A command that outlives the sync window must never block the turn: it
+# detaches under a per-id directory the agent drives with ordinary bash.
+# The wrapper is pinned byte for byte — output to a FILE (never a pipe,
+# so no orphan can hold the read), the fifo held RDWR (no EOF), the
+# reaper writing .rc, the exit-199 contract, the slot cleanup.
+
+# LAW: the wrapper script, byte for byte.
+law bg_wrapper_script:
+  {Rt.bg_wrap("whoami", "/tmp/bend-bg-0", 30)
+    == "BG=/tmp/bend-bg-0\nmkdir -p $BG\ni=0\nwhile [ -e $BG/$i.pid ]; do i=$((i+1)); done\nmkfifo $BG/$i.in 2>/dev/null\nexec 9<>$BG/$i.in\ncat > $BG/$i.cmd <<'XQ7NDEOF'\nwhoami\nXQ7NDEOF\n( ( whoami ) > $BG/$i.out 2>&1 <&9 & echo $! > $BG/$i.pid; wait $!; echo $? > $BG/$i.rc ) >/dev/null 2>&1 &\nwhile [ ! -s $BG/$i.pid ]; do sleep 0.05; done\nc=$(cat $BG/$i.pid)\ne=0\nwhile kill -0 $c 2>/dev/null; do\n  sleep 0.1\n  e=$((e+1))\n  if [ $e -ge 300 ]; then\n    echo \"background: still running after 30s - id $i (dir $BG)\"\n    echo \"  output: tail -n 50 $BG/$i.out\"\n    echo \"  stdin (if it reads): printf '%s\\n' 'text' > $BG/$i.in\"\n    echo \"  status: kill -0 $(cat $BG/$i.pid) && echo RUNNING || cat $BG/$i.rc 2>/dev/null\"\n    echo \"  kill: kill $(cat $BG/$i.pid)\"\n    exit 199\n  fi\ndone\nwhile [ ! -e $BG/$i.rc ]; do sleep 0.05; done\ns=$(cat $BG/$i.rc)\ncat $BG/$i.out\nrm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc\nexit $s"
     : String}
 
-# LAW: the timeout env falls back to 120 and clamps into [0, 3600].
-law bash_timeout_defaults:
-  {Rt.bash_timeout.read(None{}, 120) == 120 : U32}
+# LAW: the sync window defaults to 30 seconds and clamps into [0, 3600].
+law bg_after_defaults:
+  {Rt.bg_after.read(None{}, 30) == 30 : U32}
 
-law bash_timeout_clamps_high:
-  {Rt.bash_timeout.clamp(4000) == 3600 : U32}
+law bg_after_clamps_high:
+  {Rt.bg_after.clamp(4000) == 3600 : U32}
 
-law bash_timeout_keeps_low:
-  {Rt.bash_timeout.clamp(60) == 60 : U32}
+law bg_after_keeps_low:
+  {Rt.bg_after.clamp(5) == 5 : U32}
 
-# LAW: a watchdog kill (137) explains itself to the model.
-law bash_timeout_exit_is_readable:
-  {Rt.exec_of.pick.zero(False{}, 137, "partial")
-    == Rt.Ex{False{},
-      "exit 137: command exceeded the bash timeout and was killed. Partial output: partial"}
-    : Rt.ExecRes}
+# LAW: the exit-199 handoff maps to a SUCCESSFUL result carrying the
+# driving contract — the turn continues and the agent decides.
+law exec_of_background_maps_ok:
+  {Rt.exec_of.pick.zero(False{}, 199, "background: still running")
+    == Rt.Ex{True{}, "background: still running"} : Rt.ExecRes}
+
+# LAW: ordinary failures still report their exit code.
+law exec_of_exit_still_fails:
+  {Rt.exec_of.pick.zero(False{}, 1, "boom")
+    == Rt.Ex{False{}, "exit 1: boom"} : Rt.ExecRes}
 
 # ---- the tool output cap (runtime/main.bend) ----
 

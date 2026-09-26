@@ -696,21 +696,24 @@ def model_call(+request: String) -> IO(Rem.RemoteRes):
 # line, then stdout and stderr. Commands are flattened first (the wire
 # already flattens call args — double safety).
 
-def exec_of.fail_msg(timed_out: Bool, +code: U32, +output: String) -> ExecRes:
-  match timed_out:
+def exec_of.pick.fail(+code: U32, +output: String) -> ExecRes:
+  Ex{False{}, String.append("exit ",
+    String.append(U32.show(code), String.append(": ", output)))}
+
+def exec_of.pick.bg(is_bg: Bool, +code: U32, +output: String) -> ExecRes:
+  match is_bg:
     case True{}:
-      Ex{False{}, String.append("exit 137: command exceeded the bash timeout and was killed. Partial output: ",
-        output)}
+      # the background handoff: the contract printed by the wrapper
+      Ex{True{}, output}
     case False{}:
-      Ex{False{}, String.append("exit ",
-        String.append(U32.show(code), String.append(": ", output)))}
+      exec_of.pick.fail(code, output)
 
 def exec_of.pick.zero(is_zero: Bool, +code: U32, +output: String) -> ExecRes:
   match is_zero:
     case True{}:
       Ex{True{}, output}
     case False{}:
-      exec_of.fail_msg(U32.is_eq(code, 137), code, output)
+      exec_of.pick.bg(U32.is_eq(code, 199), code, output)
 
 def exec_of.pick(+code: U32, +output: String) -> ExecRes:
   exec_of.pick.zero(U32.is_eq(code, 0), code, output)
@@ -735,54 +738,130 @@ def exec_of.split(sp: Maybe<&2, Nat>, +out: String) -> ExecRes:
 def exec_of(+out: String) -> ExecRes:
   exec_of.split(C.find(out, "\n", 0n), out)
 
-# the watchdog wraps the command: a subshell runs it while a sleeper
-# kills it after the deadline — a blocking command (a server, a bare
-# `cat`) can never hang the turn (the runtime cannot interrupt an exec).
-# The sleeper's output is redirected to /dev/null: its sleep must never
-# hold the RESULT pipe open after the command finishes (that exact bug
-# made every quick command cost the full timeout), and its children are
-# killed so no orphan lingers.
-def bash_watchdog(+command: String, +secs: U32) -> String:
-  String.append("( ", String.append(command,
-    String.append(" ) & c=$!; ( sleep ", String.append(U32.show(secs),
-      String.append("; pkill -9 -P $c 2>/dev/null; kill -9 $c 2>/dev/null ) >/dev/null 2>&1 & w=$!; wait $c; s=$?; pkill -9 -P $w 2>/dev/null; kill -9 $w 2>/dev/null; wait $w 2>/dev/null; exit $s", "")))))
+# ---- bash: a sync window, then a background handoff ----
+# A command that outlives the sync window never blocks the turn: it keeps
+# running detached under a per-id directory that the agent drives with
+# ORDINARY bash — tail the .out, write the .in fifo, read the .rc, kill
+# the .pid. The command's output is a FILE, never a pipe, so no orphan
+# child can ever hold the tool's read open (the bug class that once made
+# every command cost the full timeout is structurally gone).
+#
+# Wrapper shape (bg_wrap below):
+#   - id: the first free slot (no .pid) in the session's bg dir
+#   - stdin: a fifo held RDWR (never EOF, never blocks at open) — the
+#     agent feeds it with printf > <id>.in whenever the command reads
+#   - a detached RUNNER subshell is the command's real parent (a sibling
+#     cannot wait: 127); it records the pid, waits, and writes the exit
+#     code to <id>.rc — the wrapper polls the pid and reads the rc
+#   - within BEND_BG_AFTER seconds (default 30): the tool returns the
+#     output and the exit code, and cleans the slot
+#   - past the window: the wrapper prints the driving contract and
+#     exits 199, which exec_of maps to a SUCCESSFUL result — the agent
+#     keeps thinking and interacts through further bash calls
 
-def bash_timeout.read(m: Maybe<&2, U32>, +dflt: U32) -> U32:
+def bg_after.read(m: Maybe<&2, U32>, +dflt: U32) -> U32:
   match m:
     case Some{+secs}:
       secs
     case None{}:
       dflt
 
-def bash_timeout.or(r: Result<&1, &1, U32 & String, String>, +dflt: U32) -> U32:
+def bg_after.or(r: Result<&1, &1, U32 & String, String>, +dflt: U32) -> U32:
   match r:
     case Done{+v}:
-      bash_timeout.read(U32.read(v), dflt)
+      bg_after.read(U32.read(v), dflt)
     case Fail{_}:
       dflt
 
-def bash_timeout.clamp2(over: Bool, +secs: U32) -> U32:
+def bg_after.clamp2(over: Bool, +secs: U32) -> U32:
   match over:
     case True{}:
       3600
     case False{}:
       secs
 
-def bash_timeout.clamp(+secs: U32) -> U32:
-  bash_timeout.clamp2(U32.is_lt(3600, secs), secs)
+def bg_after.clamp(+secs: U32) -> U32:
+  bg_after.clamp2(U32.is_lt(3600, secs), secs)
 
-def bash_timeout() -> IO(U32):
+def bg_after() -> IO(U32):
   do IO<U32>:
-    r : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_BASH_TIMEOUT")
-    +raw : U32 <- IO.pure(U32, bash_timeout.or(r, 120))
-    IO.pure(U32, bash_timeout.clamp(raw))
+    r : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_BG_AFTER")
+    +raw : U32 <- IO.pure(U32, bg_after.or(r, 30))
+    IO.pure(U32, bg_after.clamp(raw))
+
+def bg_root.or(r: Result<&1, &1, U32 & String, String>, +dflt: String) -> String:
+  match r:
+    case Done{+v}:
+      v
+    case Fail{_}:
+      dflt
+
+def bg_dir() -> IO(String):
+  do IO<String>:
+    root : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_BG_ROOT")
+    pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
+    +r : String <- IO.pure(String, bg_root.or(root, "/tmp"))
+    +p : String <- IO.pure(String, env_or(pr, "0"))
+    IO.pure(String,
+      String.append(r, String.append("/bend-bg-", p)))
+
+def bg_wrap.seg(+a: String, +b: String) -> String:
+  String.append(a, String.append("\n", b))
+
+def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
+  +niter = U32.mul(after, 10)
+  +secs = U32.show(after)
+  bg_wrap.seg(String.append("BG=", bg),
+  bg_wrap.seg("mkdir -p $BG",
+  bg_wrap.seg("i=0",
+  bg_wrap.seg("while [ -e $BG/$i.pid ]; do i=$((i+1)); done",
+  bg_wrap.seg("mkfifo $BG/$i.in 2>/dev/null",
+  bg_wrap.seg("exec 9<>$BG/$i.in",
+  bg_wrap.seg("cat > $BG/$i.cmd <<'XQ7NDEOF'",
+  bg_wrap.seg(command,
+  bg_wrap.seg("XQ7NDEOF",
+  bg_wrap.seg(String.append("( ( ", String.append(command,
+      " ) > $BG/$i.out 2>&1 <&9 & echo $! > $BG/$i.pid; wait $!; echo $? > $BG/$i.rc ) >/dev/null 2>&1 &")),
+  bg_wrap.seg("while [ ! -s $BG/$i.pid ]; do sleep 0.05; done",
+  bg_wrap.seg("c=$(cat $BG/$i.pid)",
+  bg_wrap.seg("e=0",
+  bg_wrap.seg("while kill -0 $c 2>/dev/null; do",
+  bg_wrap.seg("  sleep 0.1",
+  bg_wrap.seg("  e=$((e+1))",
+  bg_wrap.seg(String.append("  if [ $e -ge ",
+    String.append(U32.show(niter), " ]; then")),
+  bg_wrap.seg(String.append("    echo \"background: still running after ", String.append(secs, "s - id $i (dir $BG)\"")),
+  bg_wrap.seg("    echo \"  output: tail -n 50 $BG/$i.out\"",
+  bg_wrap.seg("    echo \"  stdin (if it reads): printf '%s\\n' 'text' > $BG/$i.in\"",
+  bg_wrap.seg("    echo \"  status: kill -0 $(cat $BG/$i.pid) && echo RUNNING || cat $BG/$i.rc 2>/dev/null\"",
+  bg_wrap.seg("    echo \"  kill: kill $(cat $BG/$i.pid)\"",
+  bg_wrap.seg("    exit 199",
+  bg_wrap.seg("  fi",
+  bg_wrap.seg("done",
+  bg_wrap.seg("while [ ! -e $BG/$i.rc ]; do sleep 0.05; done",
+  bg_wrap.seg("s=$(cat $BG/$i.rc)",
+  bg_wrap.seg("cat $BG/$i.out",
+  bg_wrap.seg("rm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc",
+  "exit $s")))))))))))))))))))))))))))))
+
+# snap's wire joins argv with newlines, so a multi-line -c script is
+# impossible; the wrapper goes to a file (the node_run pattern) and sh
+# runs the file
+def bash_script_path(+port: String) -> String:
+  String.append("/tmp/bend-sh-", String.append(port, ".sh"))
 
 @unsafe
 def bash_exec(command: String) -> IO(ExecRes):
   do IO<ExecRes>:
-    +secs : U32 <- bash_timeout()
-    out : String <- Snap.run(Con{"/bin/sh", Con{"-c",
-      Con{bash_watchdog(Api.flatten(command), secs), Nil{}}}})
+    +secs : U32 <- bg_after()
+    +bg : String <- bg_dir()
+    pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
+    +port : String <- IO.pure(String, env_or(pr, "0"))
+    +script : String <- IO.pure(String,
+      bg_wrap(Api.flatten(command), bg, secs))
+    w : Unit <- P.write_file(bash_script_path(port), script)
+    out : String <- Snap.run(Con{"/bin/sh",
+      Con{bash_script_path(port), Nil{}}})
     IO.pure(ExecRes, exec_of(out))
 
 def exec_mr(m: Mcp.MR) -> ExecRes:

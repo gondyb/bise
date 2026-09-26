@@ -217,19 +217,19 @@ def Laws.ann_flat_caps_at_200():
 def Laws.node_err_extracts_message():
   {==}
 
-def Laws.bash_watchdog_script():
+def Laws.bg_wrapper_script():
   {==}
 
-def Laws.bash_timeout_defaults():
+def Laws.bg_after_defaults():
   {==}
 
-def Laws.bash_timeout_clamps_high():
+def Laws.bg_after_clamps_high():
   {==}
 
-def Laws.bash_timeout_keeps_low():
+def Laws.bg_after_keeps_low():
   {==}
 
-def Laws.bash_timeout_exit_is_readable():
+def Laws.exec_of_background_maps_ok():
   {==}
 
 def Laws.cap_out_keeps_small():
@@ -254,4 +254,7 @@ def Laws.attempt_timeout_retries():
   {==}
 
 def Laws.attempt_tls_fails():
+  {==}
+
+def Laws.exec_of_exit_still_fails():
   {==}

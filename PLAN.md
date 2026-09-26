@@ -765,3 +765,40 @@ Live pty verification on a slow 8s bash turn: Enter mid-turn delivered
 the steering into the same answer ("penguins" in the final message);
 Tab mid-turn queued and ran right after the turn ended; idle hints
 restored after.
+
+## 2026-09-26 — Background bash: 30s sync window, file-based contract
+
+Bash commands no longer block the turn forever. Each call runs under a
+generated wrapper (runtime/main.bend, bg_wrap) written to
+/tmp/bend-sh-<port>.sh — snap joins argv with newlines, so a multi-line
+`sh -c` script must be passed as a file, not as one -c argument.
+
+Wrapper contract, per call, in $BEND_BG_ROOT/bend-bg-<port>/<id>:
+- .in  — fifo opened RDWR by the wrapper (`exec 9<>`): never EOF, never
+  blocks the opener; the agent feeds it with printf '%s\n' 'text' > <id>.in
+- .out — output file (NOT a pipe: the orphan-holding-pipe class of bug,
+  the 120s hangs, is structurally impossible)
+- .pid — the command's real pid, written by a detached RUNNER subshell
+  `( ( CMD ) >out 2>&1 <&9 & echo $! >pid; wait $!; echo $? >rc ) &`
+  (a sibling cannot wait — that produced exit 127)
+- .rc  — real exit code written by the runner when the command ends
+
+Sync window: the wrapper polls kill -0 every 0.1s up to BEND_BG_AFTER
+(default 30s, clamped [0,3600]). Done in time: output + exit code
+returned, slot cleaned. Otherwise: exit 199 + a printed contract with
+concrete paths, real pid, ready-to-copy commands. exec_of maps 199 to
+Ex{True, contract} — the turn continues, the process lives until the
+agent decides (tail the output, feed stdin, kill, or leave it).
+
+No new tools: the agent drives everything with plain bash against the
+contract paths; the bash tool description (tool-desc-bash.txt) documents
+the protocol. Zero tool: fast sync returns directly; the watchdog/kill
+137 timeout is gone — a command that runs for hours is a background
+slot, not a killed turn.
+
+Laws (80): bg_wrapper_script byte-for-byte against bg_wrap, defaults
+and clamps of bg_after, exec_of_background_maps_ok, and normal exit
+codes still fail. Verified end-to-end with dbg binaries: sync ~0.04s
+and slot cleaned; handoff at 2s with real pid; .rc holds the true code
+(0, 143 after kill); stdin via fifo reaches the reader; listing = ls.
+Suite byte-identical to baseline; PROOF green.
