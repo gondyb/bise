@@ -175,26 +175,14 @@ def repl_end(e: R.RtEnd, next: Socket -> T.Session -> IO(Flow))
     case R.REnd{sess2, out2}:
       repl_out(out2, sess2, next)
 
-def repl_end_save.then(+sess2: T.Session, out2: R.Out,
-    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
-  do IO<Flow>:
-    P.save(sess2)
-    repl_out(out2, sess2, next)
-
-def repl_end_save(e: R.RtEnd, next: Socket -> T.Session -> IO(Flow))
-    -> IO(Flow):
-  match e:
-    case R.REnd{sess2, out2}:
-      repl_end_save.then(sess2, out2, next)
-
-# ---- /reload: gated between turns, then a clean exit ----
+# ---- /reload and the deferred self.reload: gated, then a clean exit ----
 
 # refused: turn/pending/queued/notifs would be lost — the checkpoint
 # only serializes turn boundaries (ADR 0002); say so, keep serving
-def repl_reload.busy(s: Socket, +sess: T.Session,
+def repl_reload.busy(out: R.Out, +sess: T.Session,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   do IO<Flow>:
-    out2 : R.Out <- R.emit(R.ONet{s},
+    out2 : R.Out <- R.emit(out,
       Con{"  obs: reload refused: not between turns — finish or interrupt the pending turn first",
         Con{"--- idle", Nil{}}})
     repl_out(out2, sess, next)
@@ -216,18 +204,105 @@ def repl_reload.halt(out: R.Out, +sess: T.Session) -> IO(Flow):
         P.save(sess)
         IO.pure(Flow, Stop{})
 
-def repl_reload(s: Socket, ok: Bool, +sess: T.Session,
+def repl_reload(out: R.Out, ok: Bool, +sess: T.Session,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match ok:
     case True{}:
       do IO<Flow>:
-        out2 : R.Out <- R.emit(R.ONet{s},
+        out2 : R.Out <- R.emit(out,
           Con{"  obs: reload: restarting the harness with the latest code",
             Con{"  obs: reload: the session is preserved — background commands keep running",
               Con{"--- idle", Nil{}}}})
         repl_reload.halt(out2, sess)
     case False{}:
-      repl_reload.busy(s, sess, next)
+      repl_reload.busy(out, sess, next)
+
+# ---- deferred self.reload / self.compact (the agent's own requests) ----
+# A tool result acked "compact: scheduled" / "reload: scheduled" is a
+# request the agent filed mid-turn. It executes HERE, at the turn
+# boundary: compact first (the checkpoint then carries the compacted
+# session into the restarted process), then reload through the same
+# gated path as the /reload command. The request set is computed ONCE
+# — the compaction turn itself is never re-scanned, so a failing
+# compaction cannot loop.
+
+def repl_deferred.reload(+sess: T.Session, out: R.Out,
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  do IO<Flow>:
+    +ok : Bool <- IO.pure(Bool, S.reload_allowed(sess))
+    f : Flow <- repl_reload(out, ok, sess, next)
+    IO.pure(Flow, f)
+
+def repl_deferred.compact.after.pick(reload: Bool, +sess3: T.Session,
+    out3: R.Out, next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  match reload:
+    case True{}:
+      do IO<Flow>:
+        u : Unit <- P.save(sess3)
+        f : Flow <- repl_deferred.reload(sess3, out3, next)
+        IO.pure(Flow, f)
+    case False{}:
+      do IO<Flow>:
+        u : Unit <- P.save(sess3)
+        f : Flow <- repl_out(out3, sess3, next)
+        IO.pure(Flow, f)
+
+def repl_deferred.compact.after(reload: Bool, e: R.RtEnd,
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  match e:
+    case R.REnd{sess3, out3}:
+      repl_deferred.compact.after.pick(reload, sess3, out3, next)
+
+def repl_deferred.compact(reload: Bool, +sess2: T.Session, out2: R.Out,
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  do IO<Flow>:
+    e : R.RtEnd <- R.run(100n, out2,
+      R.Rt{sess2,
+        Con{M.ROk{"<summary>The REPL conversation so far, compacted on request.</summary>", Nil{}},
+          Nil{}},
+        Con{T.Compact{""}, Nil{}}, False{}}, R.JIdle{},
+      R.transition(R.Rt{sess2,
+        Con{M.ROk{"<summary>The REPL conversation so far, compacted on request.</summary>", Nil{}},
+          Nil{}},
+        Con{T.Compact{""}, Nil{}}, False{}}, R.JIdle{}))
+    repl_deferred.compact.after(reload, e, next)
+
+def repl_deferred.reload.only(reload: Bool, +sess2: T.Session, out2: R.Out,
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  match reload:
+    case True{}:
+      repl_deferred.reload(sess2, out2, next)
+    case False{}:
+      repl_out(out2, sess2, next)
+
+def repl_deferred.compact.only(compact: Bool, reload: Bool, +sess2: T.Session,
+    out2: R.Out, next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  match compact:
+    case True{}:
+      repl_deferred.compact(reload, sess2, out2, next)
+    case False{}:
+      repl_deferred.reload.only(reload, sess2, out2, next)
+
+def repl_deferred(d: R.Def, +sess2: T.Session, out2: R.Out,
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  match d:
+    case R.Def{+compact, +reload}:
+      repl_deferred.compact.only(compact, reload, sess2, out2, next)
+
+def repl_end_save.then(+sess2: T.Session, out2: R.Out,
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  do IO<Flow>:
+    P.save(sess2)
+    # the turn asked for nothing: keep serving; else run its requests
+    +d : R.Def <- IO.pure(R.Def, R.deferred_of(P.history_of(sess2)))
+    f : Flow <- repl_deferred(d, sess2, out2, next)
+    IO.pure(Flow, f)
+
+def repl_end_save(e: R.RtEnd, next: Socket -> T.Session -> IO(Flow))
+    -> IO(Flow):
+  match e:
+    case R.REnd{sess2, out2}:
+      repl_end_save.then(sess2, out2, next)
 
 def repl_plan(s: Socket, plan: Plan, +sess: T.Session,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
@@ -243,7 +318,7 @@ def repl_plan(s: Socket, plan: Plan, +sess: T.Session,
     case PReload{}:
       do IO<Flow>:
         +ok : Bool <- IO.pure(Bool, S.reload_allowed(sess))
-        f : Flow <- repl_reload(s, ok, sess, next)
+        f : Flow <- repl_reload(R.ONet{s}, ok, sess, next)
         IO.pure(Flow, f)
     case PRun{+cmds, +script}:
       do IO<Flow>:

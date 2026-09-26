@@ -1004,6 +1004,134 @@ def exec_mcp(+name: String, +args: String, live: Bool) -> IO(ExecRes):
     case False{}:
       IO.pure(ExecRes, exec_mcp.scripted(name))
 
+# ---- self.* harness tools: requests the agent files mid-turn ----
+# self.reload and self.compact are callable like any tool (top-level,
+# or from inside a run_typescript program: free identifiers become
+# tool requests). Both only make sense BETWEEN turns, so the tool
+# result is an ACK; the deferred scan below finds it in the history
+# at the end of the turn and the REPL executes the request (compact
+# first, then reload — the checkpoint then carries the compacted
+# session into the restarted process).
+
+def RELOAD_ACK() -> String:
+  "reload: scheduled - the harness will restart with the latest code when this turn ends; the session and background commands are preserved"
+
+def COMPACT_ACK() -> String:
+  "compact: scheduled - the conversation will be compacted when this turn ends"
+
+# is this name one of the self.* harness tools? (self.sleep stays a
+# timer — it is live mid-turn and needs no deferral)
+def is_self_tool.reload(+name: String) -> Bool:
+  String.eq(name, "self.reload")
+
+def is_self_tool(+name: String) -> Bool:
+  Bool.or(is_self_tool.reload(name), String.eq(name, "self.compact"))
+
+# the ack itself; routing guarantees only these two names arrive here
+def self_exec.reload(is_reload: Bool) -> ExecRes:
+  match is_reload:
+    case True{}:
+      Ex{True{}, RELOAD_ACK()}
+    case False{}:
+      Ex{True{}, COMPACT_ACK()}
+
+def self_exec(+name: String) -> ExecRes:
+  self_exec.reload(is_self_tool.reload(name))
+
+# ---- the deferred-request scan (pure) ----
+# What the JUST-FINISHED turn asked for. The scan walks the history
+# forward, resetting at every user message: only tool results after
+# the LAST user message count, so an old request can never fire twice
+# and a stalled turn's request (skipped by the REPL) does not linger.
+
+type Def is Data:
+  Def{compact: Bool, reload: Bool}
+
+def def_none() -> Def:
+  Def{False{}, False{}}
+
+def def_merge(+d: Def, +compact: Bool, +reload: Bool) -> Def:
+  match d:
+    case Def{+c, +r}:
+      Def{Bool.or(c, compact), Bool.or(r, reload)}
+
+def def_note(+d: Def, +text: String) -> Def:
+  def_merge(d, String.contains(text, "compact: scheduled"),
+    String.contains(text, "reload: scheduled"))
+
+# a user message starts a new segment: requests before it are spent
+def def_step.reset(is_user: Bool, +d: Def, +text: String) -> Def:
+  match is_user:
+    case True{}:
+      def_none()
+    case False{}:
+      def_note(d, text)
+
+def def_step.role_is_user(role: T.Role) -> Bool:
+  match role:
+    case T.RUser{}:
+      True{}
+    case _:
+      False{}
+
+def def_step.msg(+d: Def, +m: T.Msg) -> Def:
+  match m:
+    case T.Msg{+role, +text, _, _}:
+      def_step.reset(def_step.role_is_user(role), d, text)
+
+def def_scan(msgs: List<&2, T.Msg>, +d: Def) -> Def:
+  match msgs:
+    case Nil{}:
+      d
+    case Con{+m, +rest}:
+      def_scan(rest, def_step.msg(d, m))
+
+def deferred_of(+history: List<&2, T.Msg>) -> Def:
+  def_scan(history, def_none())
+
+# the acks a request set carries (the program's result is suffixed
+# with them, so the model reads its own requests back and the
+# turn-boundary scan finds them)
+def def_acks.reload_only(reload: Bool) -> String:
+  match reload:
+    case True{}:
+      RELOAD_ACK()
+    case False{}:
+      ""
+
+def def_acks.with_reload(reload: Bool, +acc: String) -> String:
+  match reload:
+    case True{}:
+      String.append(acc, String.append("\n", RELOAD_ACK()))
+    case False{}:
+      acc
+
+def def_acks.pick(compact: Bool, reload: Bool) -> String:
+  match compact:
+    case True{}:
+      def_acks.with_reload(reload, COMPACT_ACK())
+    case False{}:
+      def_acks.reload_only(reload)
+
+def def_acks(d: Def) -> String:
+  match d:
+    case Def{+compact, +reload}:
+      def_acks.pick(compact, reload)
+
+def def_acks.suffix.has(has: Bool, +d: Def) -> String:
+  match has:
+    case True{}:
+      String.append("\n", def_acks(d))
+    case False{}:
+      ""
+
+def def_acks.suffix(d: Def) -> String:
+  match d:
+    case Def{False{}, False{}}:
+      ""
+    case _:
+      def_acks.suffix.has(True{}, d)
+
 # ---- bend-jsrt: run_typescript in a V8 isolate (the Vibe SDK core pattern) ----
 # The model writes real TypeScript/JavaScript; rust/jsrt (deno_core v8 +
 # deno_ast) runs it in a FRESH isolate per round with heap limits and a
@@ -1194,14 +1322,22 @@ def exec_program.call.node(is_node: Bool, +name: String, +args: String,
     case False{}:
       exec_mcp(name, args, live)
 
+def exec_program.call.self(is_self: Bool, +name: String, +args: String,
+    +live: Bool) -> IO(ExecRes):
+  match is_self:
+    case True{}:
+      IO.pure(ExecRes, self_exec(name))
+    case False{}:
+      exec_program.call.node(String.eq(name, "node_program"), name, args,
+        live)
+
 def exec_program.call.search(is_search: Bool, +name: String, +args: String,
     +live: Bool) -> IO(ExecRes):
   match is_search:
     case True{}:
       exec_search(args, live)
     case False{}:
-      exec_program.call.node(String.eq(name, "node_program"), name, args,
-        live)
+      exec_program.call.self(is_self_tool(name), name, args, live)
 
 def exec_program.call.bash(is_bash: Bool, +name: String, +args: String,
     +live: Bool) -> IO(ExecRes):
@@ -1230,49 +1366,72 @@ def emit_sub(out: Out, +name: String, +r: ExecRes, live: Bool) -> IO(Out):
     case False{}:
       IO.pure(Out, out)
 
-def exec_program.call(out: Out, +name: String, +args: String, +live: Bool)
-    -> IO(Out & ExecRes):
-  do IO<Out & ExecRes>:
+# a self.* request filed from inside the program joins the program's
+# request set (it will ride the program's result)
+def exec_program.call.self_req(is_self: Bool, +name: String, +d: Def)
+    -> Def:
+  match is_self:
+    case True{}:
+      def_merge(d, String.eq(name, "self.compact"),
+        String.eq(name, "self.reload"))
+    case False{}:
+      d
+
+def exec_program.call(out: Out, +name: String, +args: String, +live: Bool,
+    +d: Def) -> IO(Out & (Def & ExecRes)):
+  do IO<Out & (Def & ExecRes)>:
     +r : ExecRes <- exec_program.call.bash(String.eq(name, "bash"),
       name, args, live)
+    +d2 : Def <- IO.pure(Def,
+      exec_program.call.self_req(is_self_tool(name), name, d))
     out2 : Out <- emit_sub(out, name, r, live)
-    IO.pure(Out & ExecRes, (out2, r))
+    IO.pure(Out & (Def & ExecRes), (out2, (d2, r)))
 
 # consume the call pair once: the handle rides beside the next step
-def exec_program.nr.done(pr: Out & ExecRes,
-    +results: List<&2, String>) -> Out & EpNext:
+def exec_program.nr.done(pr: Out & (Def & ExecRes),
+    +results: List<&2, String>) -> Out & (Def & EpNext):
   match pr:
-    case (out2, r):
-      (out2, exec_program.decide(r, results))
+    case (out2, (d2, r)):
+      (out2, (d2, exec_program.decide(r, results)))
 
 def exec_program.nr(out: Out, nr: NR, +prog: String,
-    +results: List<&2, String>, +live: Bool) -> IO(Out & EpNext):
+    +results: List<&2, String>, +live: Bool, +d: Def)
+    -> IO(Out & (Def & EpNext)):
   match nr:
     case NRDone{+o}:
-      IO.pure(Out & EpNext, (out, EpDone{o}))
+      IO.pure(Out & (Def & EpNext), (out, (d, EpDone{o})))
     case NRErr{+why}:
-      IO.pure(Out & EpNext, (out, EpFail{why}))
+      IO.pure(Out & (Def & EpNext), (out, (d, EpFail{why})))
     case NRReq{+name, +args}:
-      do IO<Out & EpNext>:
-        pr : Out & ExecRes <- exec_program.call(out, name, args, live)
-        IO.pure(Out & EpNext, exec_program.nr.done(pr, results))
+      do IO<Out & (Def & EpNext)>:
+        pr : Out & (Def & ExecRes) <- exec_program.call(out, name, args,
+          live, d)
+        IO.pure(Out & (Def & EpNext), exec_program.nr.done(pr, results))
 
-def exec_program.step(pr: Out & EpNext, k: Nat, +prog: String,
+def exec_program.step(pr: Out & (Def & EpNext), k: Nat, +prog: String,
     +results: List<&2, String>, +live: Bool,
-    next: Nat -> Out -> EpNext -> IO(Out & ExecRes))
+    next: Nat -> Out -> Def -> EpNext -> IO(Out & ExecRes))
     -> IO(Out & ExecRes):
   match pr:
-    case (out2, nx):
-      next(k)(out2)(nx)
+    case (out2, (d2, nx)):
+      next(k)(out2)(d2)(nx)
 
-# @unsafe: the loop recurses through the step continuation closure
+# the program's final value carries the requests it filed: the model
+# reads its own acks back in the tool result, and the turn-boundary
+# scan finds the markers in the history
+def exec_program.done(d: Def, +o: String) -> ExecRes:
+  Ex{True{}, String.append(o, def_acks.suffix(d))}
+
+def exec_program.fail(d: Def, +why: String) -> ExecRes:
+  Ex{False{}, String.append(why, def_acks.suffix(d))}
+
 @unsafe
-def exec_program(fuel: Nat, out: Out, act: EpAct, +prog: String,
+def exec_program.go(fuel: Nat, out: Out, d: Def, act: EpAct, +prog: String,
     +results: List<&2, String>, +live: Bool) -> IO(Out & ExecRes):
   match fuel:
     case 0n:
       IO.pure(Out & ExecRes,
-        (out, Ex{False{}, "program step budget exhausted"}))
+        (out, exec_program.fail(d, "program step budget exhausted")))
     case 1n+k:
       match act:
         case EpRun{}:
@@ -1280,30 +1439,47 @@ def exec_program(fuel: Nat, out: Out, act: EpAct, +prog: String,
             pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
             +port : String <- IO.pure(String, env_or(pr, "0"))
             nr : NR <- node_run(prog, results, port)
-            por : Out & EpNext <- exec_program.nr(out, nr, prog, results, live)
+            por : Out & (Def & EpNext) <- exec_program.nr(out, nr, prog,
+              results, live, d)
             exec_program.step(por, k, prog, results, live,
-              k2 => o2 => nx => exec_program(k2, o2, EpNext{nx},
-                prog, results, live))
+              k2 => o2 => d2 => nx => exec_program.go(k2, o2, d2,
+                EpNext{nx}, prog, results, live))
         case EpNext{+nx}:
           match nx:
             case EpDone{+o}:
-              IO.pure(Out & ExecRes, (out, Ex{True{}, o}))
+              IO.pure(Out & ExecRes, (out, exec_program.done(d, o)))
             case EpFail{+why}:
-              IO.pure(Out & ExecRes, (out, Ex{False{}, why}))
+              IO.pure(Out & ExecRes, (out, exec_program.fail(d, why)))
             case EpRe{+rs}:
-              exec_program(k, out, EpRun{}, prog, rs, live)
+              exec_program.go(k, out, d, EpRun{}, prog, rs, live)
 
-def exec_pick(is_bash: Bool, is_search: Bool, +name: String,
+# @unsafe: the loop recurses through the step continuation closure
+@unsafe
+def exec_program(fuel: Nat, pr0: Out & (Def & EpAct), +prog: String,
+    +results: List<&2, String>, +live: Bool) -> IO(Out & ExecRes):
+  match pr0:
+    case (out, (d, act)):
+      exec_program.go(fuel, out, d, act, prog, results, live)
+
+def exec_pick.not_bash(is_search: Bool, is_self: Bool, +name: String,
+    +args: String, +live: Bool) -> IO(ExecRes):
+  match is_search:
+    case True{}:
+      exec_search(args, live)
+    case False{}:
+      match is_self:
+        case True{}:
+          IO.pure(ExecRes, self_exec(name))
+        case False{}:
+          exec_mcp(name, args, live)
+
+def exec_pick(is_bash: Bool, is_search: Bool, is_self: Bool, +name: String,
     +args: String, +live: Bool) -> IO(ExecRes):
   match is_bash:
     case True{}:
       bash_exec(args)
     case False{}:
-      match is_search:
-        case True{}:
-          exec_search(args, live)
-        case False{}:
-          exec_mcp(name, args, live)
+      exec_pick.not_bash(is_search, is_self, name, args, live)
 
 def call_name(c: T.Call) -> String:
   match c:
@@ -1314,13 +1490,14 @@ def exec_pick.call(is_bash: Bool, is_search: Bool, +call: T.Call,
     +live: Bool) -> IO(ExecRes):
   match call:
     case T.Call{_, +name, +args}:
-      exec_pick(is_bash, is_search, name, args, live)
+      exec_pick(is_bash, is_search, is_self_tool(name), name, args, live)
 
 def exec_tool.node_args(out: Out, +call: T.Call, +live: Bool)
     -> IO(Out & ExecRes):
   match call:
     case T.Call{_, _, +args}:
-      exec_program(1000n, out, EpRun{}, Api.call_code(args), Nil{}, live)
+      exec_program(1000n, (out, (def_none(), EpRun{})),
+        Api.call_code(args), Nil{}, live)
 
 def exec_tool.plain(out: Out, +call: T.Call, +live: Bool)
     -> IO(Out & ExecRes):

@@ -49,12 +49,69 @@ def catalog_pure(+sd: String, +rd: String, +bd: String) -> List<&2, T.ToolDef>:
      Con{T.ToolDef{"run_typescript", rd},
       Nil{}}}}}
 
+# ---- self.* harness tools (live catalog only) ----
+# The agent drives its own harness from inside a turn: request a
+# compaction of the conversation, or a restart of the process on the
+# latest code. Both take no arguments; both only take effect at the
+# END of the current turn (see deferred_of in runtime/main.bend), so
+# the model can keep working and read the ack as the tool result.
+def self_tool_defs() -> List<&2, T.ToolDef>:
+  Con{T.ToolDef{"self.reload",
+    "Restart the harness process with the latest code. Use it after editing the harness source: the session, the model context and background commands are preserved; the restart happens at the end of the current turn. Takes no arguments."},
+   Con{T.ToolDef{"self.compact",
+    "Compact the conversation history into a summary. Use it when the context grows large: protected recent user messages are preserved, the compaction runs at the end of the current turn. Takes no arguments."},
+    Nil{}}}
+
+# pure helpers the laws pin: catalog size and positional extraction
+def catalog_len(tools: List<&2, T.ToolDef>) -> Nat:
+  match tools:
+    case Nil{}:
+      0n
+    case Con{_, +rest}:
+      Nat.add(catalog_len(rest), 1n)
+
+def tool_name_at(n: Nat, tools: List<&2, T.ToolDef>) -> String:
+  match n:
+    case 0n:
+      match tools:
+        case Nil{}:
+          ""
+        case Con{T.ToolDef{+name, _}, _}:
+          name
+    case 1n+k:
+      match tools:
+        case Nil{}:
+          ""
+        case Con{_, +rest}:
+          tool_name_at(k, rest)
+
+def tool_desc_at(n: Nat, tools: List<&2, T.ToolDef>) -> String:
+  match n:
+    case 0n:
+      match tools:
+        case Nil{}:
+          ""
+        case Con{T.ToolDef{_, +desc}, _}:
+          desc
+    case 1n+k:
+      match tools:
+        case Nil{}:
+          ""
+        case Con{_, +rest}:
+          tool_desc_at(k, rest)
+
+# the live catalog: the four vibe-parity tools plus the self.* harness
+# tools (catalog_short keeps the scripted scenarios byte-identical)
+def catalog_live(+sd: String, +rd: String, +bd: String)
+    -> List<&2, T.ToolDef>:
+  List.append(&2, T.ToolDef, catalog_pure(sd, rd, bd), self_tool_defs())
+
 def catalog() -> IO(List<&2, T.ToolDef>):
   do IO<List<&2, T.ToolDef>>:
     +sd : String <- search_desc()
     +rd : String <- rt_desc()
     +bd : String <- bash_desc()
-    IO.pure(List<&2, T.ToolDef>, catalog_pure(sd, rd, bd))
+    IO.pure(List<&2, T.ToolDef>, catalog_live(sd, rd, bd))
 
 # short fallback for pure contexts (laws, scenarios that don't need
 # the full vibe_sdk description text)
