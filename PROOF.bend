@@ -296,3 +296,78 @@ def Laws.reload_refused_with_notif(cfg, text):
           {==}
         case _:
           {==}
+
+def Laws.bg_dir_default_root():
+  {==}
+
+def Laws.bg_dir_custom_root():
+  {==}
+
+def Laws.bg_slot_paths():
+  {==}
+
+def Laws.bg_poll_ten_per_second():
+  {==}
+
+def Laws.bg_headline_names_window_id_dir():
+  {==}
+
+def Laws.bg_tail_cmd_concrete():
+  {==}
+
+def Laws.bg_stdin_cmd_concrete():
+  {==}
+
+def Laws.bg_status_cmd_concrete():
+  {==}
+
+def Laws.bg_kill_cmd_concrete():
+  {==}
+
+def Laws.bg_wrapper_fifo_rdrw():
+  {==}
+
+def Laws.bg_wrapper_runner_waits_and_records():
+  {==}
+
+def Laws.bg_wrapper_output_is_a_file():
+  {==}
+
+def Laws.bg_wrapper_never_kills():
+  {==}
+
+def Laws.bg_wrapper_cleans_slot():
+  {==}
+
+def Laws.bg_wrapper_handoff_sentinel():
+  {==}
+
+def Laws.exec_of_success_is_ok():
+  {==}
+
+def Laws.exec_of_failure_carries_code():
+  {==}
+
+def Laws.exec_of_garbage_fails_closed():
+  {==}
+
+def Laws.exec_of_no_newline_fails_closed():
+  {==}
+
+def Laws.bg_setup_guard_names_the_dir():
+  {==}
+
+def Laws.bg_rc_guard_names_the_dir():
+  {==}
+
+def Laws.bg_wrapper_has_both_guards():
+  {==}
+
+def Laws.bg_script_hash_deterministic():
+  {==}
+
+def Laws.bg_script_hash_distinguishes():
+  {==}
+
+def Laws.bash_script_path_per_command():
+  {==}

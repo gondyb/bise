@@ -852,3 +852,54 @@ reconnect -> turn on the restored session, exit 0); the live path
 too (reload -> recompile of repl-live -> respawn with MCP bootstrap
 banner -> reconnect). Suite byte-identical; PROOF green; rust 0
 warnings.
+
+## 2026-09-26 — The background battery: 25 laws + an 18-check e2e suite
+
+The battery found and fixed three real bugs before they could bite an
+agent; every contract line is now a pinned, law-checked pure def.
+
+Laws (111 total). The contract generation moved from inline strings in
+bg_wrap to pure defs — bg_dir_of, bg_slot, bg_headline, bg_tail_cmd,
+bg_stdin_cmd, bg_status_cmd, bg_kill_cmd, bg_poll_iters, plus the two
+vanished-dir guards and bg_script_hash. LAWS now pin, byte for byte
+and line by line: the wrapper script; the per-port bg dir; the five
+slot files; ten probes per window second; every contract line as a
+COMPLETE command on a CONCRETE path; the fifo held RDWR; the detached
+runner writing the TRUE exit code; output as a file, never a pipe;
+the wrapper NEVER killing (only kill -0 probes); the slot cleanup; the
+199 sentinel; both vanished-dir guards; exec_of on success, failure
+with code, garbage status, missing newline.
+
+test-bg.bend (new, top level) runs REAL commands through bash_exec
+under BEND_BG_ROOT=/tmp/bgtest BEND_BG_AFTER=2 (rm -rf the root
+first — a command may never clean the bg dir itself, s14 proves why):
+sync output/exit-0/exit-code/stderr, slot cleanup, handoff-as-ok, the
+concrete contract (headline/tail/stdin exact, status/kill with the
+REAL pid), live pid, kill -> rc 143, the fifo feeding a reader, tail
+empty-then-filled, two parallel slots both killed, ls listing, and
+rm -rf of the bg dir failing fast instead of hanging.
+
+Bugs the battery caught and fixed:
+1. rm -rf of the bg dir hung the tool forever (both waits were
+   unbounded). Both waits now carry a dir guard: fast failure with
+   the dir name, never a hang.
+2. The wrapper script lived at a FIXED path (/tmp/bend-sh-<port>.sh):
+   an orphaned wrapper (a process that died mid-command, sleeping in
+   its poll loop) would wake up reading the NEXT command's bytes and
+   execute garbage. The file is now named by a hash of its own
+   content (positional weighted sum, fuel-first so the checker can
+   normalize it): different commands never share a file, and rewrites
+   of the same command are byte-identical, which an orphan survives.
+3. sh-mode echo INTERPRETS backslash escapes: the contract's stdin
+   line arrived split in two with its \n eaten — an agent copying it
+   would have deadlocked a fifo reader (printf without a newline; read
+   waits for one). The contract now prints with printf '%s\n' "..."
+   whose %s argument is verbatim.
+
+Checker notes: laws on bg_script_hash must use SHORT literals (a
+6-char string overflows the checker's machine stack while
+normalizing; "ab" checks in 2s) and the hash is fuel-first recursion
+(idiom of escape_nl.go) — without fuel the checker diverges.
+
+Gates: PROOF 111 laws green in ~2s; suite byte-identical; battery
+18/18 twice in a row, zero orphaned processes; rust 0 warnings.

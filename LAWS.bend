@@ -566,10 +566,10 @@ law node_err_extracts_message:
 # LAW: the wrapper script, byte for byte.
 law bg_wrapper_script:
   {Rt.bg_wrap("whoami", "/tmp/bend-bg-0", 30)
-    == "BG=/tmp/bend-bg-0\nmkdir -p $BG\ni=0\nwhile [ -e $BG/$i.pid ]; do i=$((i+1)); done\nmkfifo $BG/$i.in 2>/dev/null\nexec 9<>$BG/$i.in\ncat > $BG/$i.cmd <<'XQ7NDEOF'\nwhoami\nXQ7NDEOF\n( ( whoami ) > $BG/$i.out 2>&1 <&9 & echo $! > $BG/$i.pid; wait $!; echo $? > $BG/$i.rc ) >/dev/null 2>&1 &\nwhile [ ! -s $BG/$i.pid ]; do sleep 0.05; done\nc=$(cat $BG/$i.pid)\ne=0\nwhile kill -0 $c 2>/dev/null; do\n  sleep 0.1\n  e=$((e+1))\n  if [ $e -ge 300 ]; then\n    echo \"background: still running after 30s - id $i (dir $BG)\"\n    echo \"  output: tail -n 50 $BG/$i.out\"\n    echo \"  stdin (if it reads): printf '%s\\n' 'text' > $BG/$i.in\"\n    echo \"  status: kill -0 $(cat $BG/$i.pid) && echo RUNNING || cat $BG/$i.rc 2>/dev/null\"\n    echo \"  kill: kill $(cat $BG/$i.pid)\"\n    exit 199\n  fi\ndone\nwhile [ ! -e $BG/$i.rc ]; do sleep 0.05; done\ns=$(cat $BG/$i.rc)\ncat $BG/$i.out\nrm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc\nexit $s"
+    == "BG=/tmp/bend-bg-0\nmkdir -p $BG\ni=0\nwhile [ -e $BG/$i.pid ]; do i=$((i+1)); done\nmkfifo $BG/$i.in 2>/dev/null\nexec 9<>$BG/$i.in\ncat > $BG/$i.cmd <<'XQ7NDEOF'\nwhoami\nXQ7NDEOF\n( ( whoami ) > $BG/$i.out 2>&1 <&9 & echo $! > $BG/$i.pid; wait $!; echo $? > $BG/$i.rc ) >/dev/null 2>&1 &\nwhile [ ! -s $BG/$i.pid ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished during setup: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\nc=$(cat $BG/$i.pid)\ne=0\nwhile kill -0 $c 2>/dev/null; do\n  sleep 0.1\n  e=$((e+1))\n  if [ $e -ge 300 ]; then\n    printf '%s\\n' \"background: still running after 30s - id $i (dir /tmp/bend-bg-0)\"\n    printf '%s\\n' \"  output: tail -n 50 /tmp/bend-bg-0/$i.out\"\n    printf '%s\\n' \"  stdin (if it reads): printf '%s\\n' 'text' > /tmp/bend-bg-0/$i.in\"\n    printf '%s\\n' \"  status: kill -0 $(cat /tmp/bend-bg-0/$i.pid) && echo RUNNING || cat /tmp/bend-bg-0/$i.rc 2>/dev/null\"\n    printf '%s\\n' \"  kill: kill $(cat /tmp/bend-bg-0/$i.pid)\"\n    exit 199\n  fi\ndone\nwhile [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\ns=$(cat $BG/$i.rc)\ncat $BG/$i.out\nrm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc\nexit $s"
     : String}
 
-# LAW: the sync window defaults to 30 seconds and clamps into [0, 3600].
+# LAW: the sync window defaults# LAW: the sync window defaults to 30 seconds and clamps into [0, 3600].
 law bg_after_defaults:
   {Rt.bg_after.read(None{}, 30) == 30 : U32}
 
@@ -589,6 +589,158 @@ law exec_of_background_maps_ok:
 law exec_of_exit_still_fails:
   {Rt.exec_of.pick.zero(False{}, 1, "boom")
     == Rt.Ex{False{}, "exit 1: boom"} : Rt.ExecRes}
+
+
+# ---- the background battery: solidity and agent ergonomics ----
+
+# LAW: the bg dir is per-REPL, keyed by port — parallel terminals
+# never share slots, and a /reload (same port) finds its slots again.
+law bg_dir_default_root:
+  {Rt.bg_dir_of("/tmp", "7702") == "/tmp/bend-bg-7702" : String}
+
+law bg_dir_custom_root:
+  {Rt.bg_dir_of("/var/bg", "3") == "/var/bg/bend-bg-3" : String}
+
+# LAW: one slot = five files in one dir under one id.
+law bg_slot_paths:
+  {Bool.and(String.eq(Rt.bg_slot("/d", "4", ".out"), "/d/4.out"),
+     Bool.and(String.eq(Rt.bg_slot("/d", "4", ".in"), "/d/4.in"),
+       Bool.and(String.eq(Rt.bg_slot("/d", "4", ".pid"), "/d/4.pid"),
+         Bool.and(String.eq(Rt.bg_slot("/d", "4", ".rc"), "/d/4.rc"),
+           String.eq(Rt.bg_slot("/d", "4", ".cmd"), "/d/4.cmd")))))
+    == True{} : Bool}
+
+# LAW: the poll loop probes ten times per second of sync window.
+law bg_poll_ten_per_second:
+  {Rt.bg_poll_iters(30) == 300 : U32}
+
+# LAW: the headline names the window, the slot id and the dir — the
+# agent can ls the dir right away.
+law bg_headline_names_window_id_dir:
+  {Rt.bg_headline("/tmp/bend-bg-0", "3", 30)
+    == "background: still running after 30s - id 3 (dir /tmp/bend-bg-0)"
+    : String}
+
+# LAW: each contract line is a COMPLETE command on a CONCRETE path —
+# the agent copy-pastes, it never resolves a variable.
+law bg_tail_cmd_concrete:
+  {Rt.bg_tail_cmd("/tmp/bend-bg-0", "3")
+    == "  output: tail -n 50 /tmp/bend-bg-0/3.out" : String}
+
+law bg_stdin_cmd_concrete:
+  {Rt.bg_stdin_cmd("/tmp/bend-bg-0", "3")
+    == "  stdin (if it reads): printf '%s\\n' 'text' > /tmp/bend-bg-0/3.in"
+    : String}
+
+law bg_status_cmd_concrete:
+  {Rt.bg_status_cmd("/tmp/bend-bg-0", "3")
+    == "  status: kill -0 $(cat /tmp/bend-bg-0/3.pid) && echo RUNNING || cat /tmp/bend-bg-0/3.rc 2>/dev/null"
+    : String}
+
+law bg_kill_cmd_concrete:
+  {Rt.bg_kill_cmd("/tmp/bend-bg-0", "3")
+    == "  kill: kill $(cat /tmp/bend-bg-0/3.pid)" : String}
+
+# ---- wrapper invariants (structure, not bytes) ----
+
+# LAW: the fifo is held RDWR by the wrapper — never EOF for the
+# reader, never blocks at open.
+law bg_wrapper_fifo_rdrw:
+  {String.contains(Rt.bg_wrap("x", "/d", 5), "exec 9<>$BG/$i.in")
+    == True{} : Bool}
+
+# LAW: a detached runner is the command's real parent and records the
+# TRUE exit code (a sibling cannot wait — that produced 127).
+law bg_wrapper_runner_waits_and_records:
+  {String.contains(Rt.bg_wrap("x", "/d", 5), "wait $!; echo $? > $BG/$i.rc")
+    == True{} : Bool}
+
+# LAW: output goes to a FILE, never a pipe — the orphan-holding-pipe
+# bug class (minute-long hangs) is structurally gone.
+law bg_wrapper_output_is_a_file:
+  {Bool.and(String.contains(Rt.bg_wrap("x", "/d", 5), "> $BG/$i.out 2>&1"),
+     Bool.not(String.contains(Rt.bg_wrap("x", "/d", 5), " | ")))
+    == True{} : Bool}
+
+# LAW: the wrapper NEVER kills the command — its only kill is the -0
+# liveness probe; ending a background command is the agent's decision.
+law bg_wrapper_never_kills:
+  {Bool.and(Bool.not(String.contains(Rt.bg_wrap("x", "/d", 5), "kill $c")),
+     Bool.not(String.contains(Rt.bg_wrap("x", "/d", 5), "kill -9")))
+    == True{} : Bool}
+
+# LAW: a command that finishes inside the window leaves no trace —
+# every slot file is removed.
+law bg_wrapper_cleans_slot:
+  {String.contains(Rt.bg_wrap("x", "/d", 5),
+     "rm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc")
+    == True{} : Bool}
+
+# LAW: the handoff exits on the 199 sentinel, and nothing else in the
+# wrapper uses that code.
+law bg_wrapper_handoff_sentinel:
+  {String.contains(Rt.bg_wrap("x", "/d", 5), "exit 199") == True{} : Bool}
+
+# LAW: both waits carry a vanished-dir guard — an agent that cleans
+# its bg dir with rm -rf gets a FAST failure with the dir name, never
+# a hung tool.
+law bg_setup_guard_names_the_dir:
+  {String.contains(Rt.bg_setup_guard("/tmp/bend-bg-0"),
+     "if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished during setup: /tmp/bend-bg-0\"; exit 1; fi")
+    == True{} : Bool}
+
+law bg_rc_guard_names_the_dir:
+  {String.contains(Rt.bg_rc_guard("/tmp/bend-bg-0"),
+     "if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; exit 1; fi")
+    == True{} : Bool}
+
+# LAW: the wrapper embeds both guards (the waits are all bounded by
+# the dir check).
+law bg_wrapper_has_both_guards:
+  {Bool.and(String.contains(Rt.bg_wrap("x", "/d", 5), Rt.bg_setup_guard("/d")),
+     String.contains(Rt.bg_wrap("x", "/d", 5), Rt.bg_rc_guard("/d")))
+    == True{} : Bool}
+
+# LAW: the wrapper filename derives from the script's own content:
+# re-running the same command rewrites IDENTICAL bytes (an orphaned
+# wrapper just continues its own script), and the hash is pinned so
+# the naming cannot silently degrade.
+law bg_script_hash_deterministic:
+  {Rt.bg_script_hash("ab") == 684n : Nat}
+
+# LAW: different scripts hash apart — two commands never share a
+# wrapper file, so an orphan can never re-read another command's
+# bytes when it wakes from a poll sleep.
+law bg_script_hash_distinguishes:
+  {Bool.not(String.eq(
+      Nat.show(Rt.bg_script_hash("ab")),
+      Nat.show(Rt.bg_script_hash("cd"))))
+    == True{} : Bool}
+
+law bash_script_path_per_command:
+  {Bool.and(String.eq(Rt.bash_script_path("7702", "a b"),
+      Rt.bash_script_path("7702", "a b")),
+     Bool.not(String.eq(Rt.bash_script_path("7702", "a b"),
+       Rt.bash_script_path("7702", "a c")))) == True{} : Bool}
+
+# ---- exec_of: the tool result the model actually reads ----
+
+# LAW: exit 0 is a success carrying the output.
+law exec_of_success_is_ok:
+  {Rt.exec_of("0\nhello") == Rt.Ex{True{}, "hello"} : Rt.ExecRes}
+
+# LAW: an ordinary failure reports its code and output.
+law exec_of_failure_carries_code:
+  {Rt.exec_of("3\nbad") == Rt.Ex{False{}, "exit 3: bad"} : Rt.ExecRes}
+
+# LAW: a garbage status line fails closed as exit 1 (never a success).
+law exec_of_garbage_fails_closed:
+  {Rt.exec_of("not-a-code\nx") == Rt.Ex{False{}, "exit 1: x"} : Rt.ExecRes}
+
+# LAW: a result with no status line at all fails closed too.
+law exec_of_no_newline_fails_closed:
+  {Rt.exec_of("plain") == Rt.Ex{False{}, "exit 1: "} : Rt.ExecRes}
+
 
 # ---- the tool output cap (runtime/main.bend) ----
 

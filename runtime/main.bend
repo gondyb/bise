@@ -796,21 +796,83 @@ def bg_root.or(r: Result<&1, &1, U32 & String, String>, +dflt: String) -> String
     case Fail{_}:
       dflt
 
+# the session's bg dir, pure: <root>/bend-bg-<port>. One dir per REPL
+# process (keyed by port) so parallel terminals never share slots,
+# and a /reload respawns on the same port and finds its slots again.
+def bg_dir_of(+root: String, +port: String) -> String:
+  String.append(root, String.append("/bend-bg-", port))
+
 def bg_dir() -> IO(String):
   do IO<String>:
     root : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_BG_ROOT")
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
     +r : String <- IO.pure(String, bg_root.or(root, "/tmp"))
     +p : String <- IO.pure(String, env_or(pr, "0"))
-    IO.pure(String,
-      String.append(r, String.append("/bend-bg-", p)))
+    IO.pure(String, bg_dir_of(r, p))
+
+# ---- the agent-facing contract, pure ----
+# Every driving line below is a COMPLETE shell command on a CONCRETE
+# path: the agent copy-pastes it verbatim, no variables to resolve.
+# The wrapper prints exactly these (its $i slot variable expanded at
+# runtime), so what the laws pin is what the agent reads.
+
+# one slot's file: <dir>/<id><ext>
+def bg_slot(+bg: String, +id: String, +ext: String) -> String:
+  String.append(bg, String.append("/", String.append(id, ext)))
+
+def bg_headline(+bg: String, +id: String, +secs: U32) -> String:
+  String.append("background: still running after ",
+    String.append(U32.show(secs),
+      String.append("s - id ",
+        String.append(id, String.append(" (dir ", String.append(bg, ")"))))))
+
+def bg_tail_cmd(+bg: String, +id: String) -> String:
+  String.append("  output: tail -n 50 ", bg_slot(bg, id, ".out"))
+
+def bg_stdin_cmd(+bg: String, +id: String) -> String:
+  String.append("  stdin (if it reads): printf '%s\\n' 'text' > ",
+    bg_slot(bg, id, ".in"))
+
+def bg_status_cmd(+bg: String, +id: String) -> String:
+  String.append("  status: kill -0 $(cat ",
+    String.append(bg_slot(bg, id, ".pid"),
+      String.append(") && echo RUNNING || cat ",
+        String.append(bg_slot(bg, id, ".rc"), " 2>/dev/null"))))
+
+def bg_kill_cmd(+bg: String, +id: String) -> String:
+  String.append("  kill: kill $(cat ",
+    String.append(bg_slot(bg, id, ".pid"), ")"))
+
+# the two guards: if the agent deletes the bg dir under a running
+# wrapper (a legitimate cleanup), the waits must fail FAST with a
+# clear message, never hang the tool
+def bg_setup_guard(+bg: String) -> String:
+  String.append("  if [ ! -d ", String.append(bg,
+    String.append(" ]; then echo \"background: the bg dir vanished during setup: ",
+      String.append(bg, "\"; exit 1; fi"))))
+
+def bg_rc_guard(+bg: String) -> String:
+  String.append("  if [ ! -d ", String.append(bg,
+    String.append(" ]; then echo \"background: the bg dir vanished before the exit code was recorded: ",
+      String.append(bg, "\"; exit 1; fi"))))
+
+def bg_poll_iters(+after: U32) -> U32:
+  U32.mul(after, 10)
 
 def bg_wrap.seg(+a: String, +b: String) -> String:
   String.append(a, String.append("\n", b))
 
+# the contract lines carry the LITERAL dir (not $BG): at runtime the
+# agent reads a fully concrete path, with only the slot id resolved.
+# printf, not echo: sh-mode echo INTERPRETS backslash escapes, which
+# once split the stdin line in two and stripped its \n — the agent
+# would have copy-pasted a command that deadlocks a fifo reader.
+# printf's %s argument is printed verbatim.
+def bg_wrap.echo(+line: String, +rest: String) -> String:
+  bg_wrap.seg(String.append("    printf '%s\\n' \"", String.append(line, "\"")), rest)
+
 def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
-  +niter = U32.mul(after, 10)
-  +secs = U32.show(after)
+  +niter = bg_poll_iters(after)
   bg_wrap.seg(String.append("BG=", bg),
   bg_wrap.seg("mkdir -p $BG",
   bg_wrap.seg("i=0",
@@ -822,7 +884,10 @@ def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
   bg_wrap.seg("XQ7NDEOF",
   bg_wrap.seg(String.append("( ( ", String.append(command,
       " ) > $BG/$i.out 2>&1 <&9 & echo $! > $BG/$i.pid; wait $!; echo $? > $BG/$i.rc ) >/dev/null 2>&1 &")),
-  bg_wrap.seg("while [ ! -s $BG/$i.pid ]; do sleep 0.05; done",
+  bg_wrap.seg("while [ ! -s $BG/$i.pid ]; do",
+  bg_wrap.seg(bg_setup_guard(bg),
+  bg_wrap.seg("  sleep 0.05",
+  bg_wrap.seg("done",
   bg_wrap.seg("c=$(cat $BG/$i.pid)",
   bg_wrap.seg("e=0",
   bg_wrap.seg("while kill -0 $c 2>/dev/null; do",
@@ -830,25 +895,56 @@ def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
   bg_wrap.seg("  e=$((e+1))",
   bg_wrap.seg(String.append("  if [ $e -ge ",
     String.append(U32.show(niter), " ]; then")),
-  bg_wrap.seg(String.append("    echo \"background: still running after ", String.append(secs, "s - id $i (dir $BG)\"")),
-  bg_wrap.seg("    echo \"  output: tail -n 50 $BG/$i.out\"",
-  bg_wrap.seg("    echo \"  stdin (if it reads): printf '%s\\n' 'text' > $BG/$i.in\"",
-  bg_wrap.seg("    echo \"  status: kill -0 $(cat $BG/$i.pid) && echo RUNNING || cat $BG/$i.rc 2>/dev/null\"",
-  bg_wrap.seg("    echo \"  kill: kill $(cat $BG/$i.pid)\"",
+  bg_wrap.echo(bg_headline(bg, "$i", after),
+  bg_wrap.echo(bg_tail_cmd(bg, "$i"),
+  bg_wrap.echo(bg_stdin_cmd(bg, "$i"),
+  bg_wrap.echo(bg_status_cmd(bg, "$i"),
+  bg_wrap.echo(bg_kill_cmd(bg, "$i"),
   bg_wrap.seg("    exit 199",
   bg_wrap.seg("  fi",
   bg_wrap.seg("done",
-  bg_wrap.seg("while [ ! -e $BG/$i.rc ]; do sleep 0.05; done",
+  bg_wrap.seg("while [ ! -e $BG/$i.rc ]; do",
+  bg_wrap.seg(bg_rc_guard(bg),
+  bg_wrap.seg("  sleep 0.05",
+  bg_wrap.seg("done",
   bg_wrap.seg("s=$(cat $BG/$i.rc)",
   bg_wrap.seg("cat $BG/$i.out",
   bg_wrap.seg("rm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc",
-  "exit $s")))))))))))))))))))))))))))))
+  "exit $s")))))))))))))))))))))))))))))))))))
 
 # snap's wire joins argv with newlines, so a multi-line -c script is
 # impossible; the wrapper goes to a file (the node_run pattern) and sh
-# runs the file
-def bash_script_path(+port: String) -> String:
-  String.append("/tmp/bend-sh-", String.append(port, ".sh"))
+# runs the file.
+#
+# The file is named by a hash of its OWN content: two different
+# commands never share a wrapper file, so an orphaned wrapper (a
+# process that died mid-command, still sleeping in its poll loop)
+# can never re-read ANOTHER command's bytes when it wakes up. Re-running
+# the same command rewrites identical bytes, which is safe: the orphan
+# just continues its own script.
+# a positional weighted sum: each char's code times (pos^2 + 1). No
+# mod, no overflow (14 chars x 1.1M x ~200 << 2^48), deterministic,
+# and different orders of the same chars hash apart. Fuel-first (the
+# codebase idiom): the checker can normalize it in closed laws.
+def bg_script_hash.go(fuel: Nat, +s: String, +pos: Nat, acc: Nat) -> Nat:
+  match fuel:
+    case 0n:
+      acc
+    case 1n+k:
+      match s:
+        case SNil{}:
+          acc
+        case SCon{Chr{+c}, t}:
+          bg_script_hash.go(k, t, Nat.add(pos, 1n),
+            Nat.add(acc,
+              Nat.mul(U32.to_nat(c), Nat.add(Nat.mul(pos, pos), 1n))))
+
+def bg_script_hash(+s: String) -> Nat:
+  bg_script_hash.go(Nat.mul(String.length(s), 2n), s, 1n, 0n)
+
+def bash_script_path(+port: String, +script: String) -> String:
+  String.append("/tmp/bend-sh-", String.append(port,
+    String.append("-", String.append(Nat.show(bg_script_hash(script)), ".sh"))))
 
 @unsafe
 def bash_exec(command: String) -> IO(ExecRes):
@@ -859,9 +955,9 @@ def bash_exec(command: String) -> IO(ExecRes):
     +port : String <- IO.pure(String, env_or(pr, "0"))
     +script : String <- IO.pure(String,
       bg_wrap(Api.flatten(command), bg, secs))
-    w : Unit <- P.write_file(bash_script_path(port), script)
-    out : String <- Snap.run(Con{"/bin/sh",
-      Con{bash_script_path(port), Nil{}}})
+    +path : String <- IO.pure(String, bash_script_path(port, script))
+    w : Unit <- P.write_file(path, script)
+    out : String <- Snap.run(Con{"/bin/sh", Con{path, Nil{}}})
     IO.pure(ExecRes, exec_of(out))
 
 def exec_mr(m: Mcp.MR) -> ExecRes:
