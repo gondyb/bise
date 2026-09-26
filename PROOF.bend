@@ -306,7 +306,7 @@ def Laws.bg_dir_custom_root():
 def Laws.bg_slot_paths():
   {==}
 
-def Laws.bg_poll_ten_per_second():
+def Laws.bg_poll_iters_table():
   {==}
 
 def Laws.bg_headline_names_window_id_dir():
@@ -339,7 +339,7 @@ def Laws.bg_wrapper_never_kills():
 def Laws.bg_wrapper_cleans_slot():
   {==}
 
-def Laws.bg_wrapper_handoff_sentinel():
+def Laws.bg_wrapper_handoff_marker():
   {==}
 
 def Laws.exec_of_success_is_ok():
@@ -440,3 +440,24 @@ def Laws.steering_survives_fail():
 def Laws.steering_arrival_order():
   {==}
 
+
+def Laws.exec_of_real_199_fails():
+  {==}
+
+def Laws.bg_wrapper_atomic_slot_allocation():
+  {==}
+
+def Laws.bg_wrapper_output_capped():
+  {==}
+
+def Laws.bg_wrapper_runner_ownership_check():
+  {==}
+
+def Laws.bg_wrapper_cleans_its_script():
+  {==}
+
+def Laws.bg_wrapper_multiline_command_intact():
+  {==}
+
+def Laws.bg_sentinel_derives_from_command():
+  {==}

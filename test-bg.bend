@@ -194,6 +194,36 @@ def main() -> IO(Unit):
         String.contains(res_out(r13), "1.rc")),
       "s13 ls lists ended slots (out/rc kept, pid freed)")
 
+    # ---- s15 multi-line commands stay intact (QA bug 1.1/1.2) ----
+    +r15 : Rt.ExecRes <- Rt.bash_exec("echo one\necho two\nif true; then\necho in-block\nfi")
+    u15 : Unit <- check(Bool.and(res_ok(r15),
+        Bool.and(String.contains(res_out(r15), "one\ntwo"),
+          Bool.and(String.contains(res_out(r15), "in-block"),
+            Bool.not(String.contains(res_out(r15), "one echo two"))))),
+      "s15 multi-line command runs intact")
+
+    # ---- s16 a real exit 199 is a failure (QA bug 1.3) ----
+    +r16 : Rt.ExecRes <- Rt.bash_exec("exit 199")
+    u16 : Unit <- check(Bool.and(Bool.not(res_ok(r16)),
+        String.contains(res_out(r16), "exit 199")),
+      "s16 real exit 199 reports as failure")
+
+    # ---- s17 background output is capped at 50MiB (QA bug 3.1) ----
+    +r17 : Rt.ExecRes <- Rt.bash_exec(
+      "dd if=/dev/zero bs=1048576 count=55 2>/dev/null | cat > /dev/null; echo written")
+    u17 : Unit <- check(Bool.and(res_ok(r17),
+        String.contains(res_out(r17), "written")),
+      "s17 capped output still completes (ulimit)")
+
+    # ---- s18 the wrapper script deletes itself (QA bug 3.6) ----
+    +c18a : Rt.ExecRes <- Rt.bash_exec("ls /tmp/bend-sh-*.sh 2>/dev/null | wc -l")
+    +r18 : Rt.ExecRes <- Rt.bash_exec("echo self-clean-probe")
+    +c18b : Rt.ExecRes <- Rt.bash_exec("ls /tmp/bend-sh-*.sh 2>/dev/null | wc -l")
+    u18 : Unit <- check(Bool.and(res_ok(c18a), Bool.and(res_ok(c18b),
+        Bool.not(String.eq(String.trim(res_out(c18b)),
+          String.append(String.trim(res_out(c18a)), "1"))))),
+      "s18 wrapper scripts do not leak per call")
+
     # ---- s14 the agent rm -rf's its own bg dir: fast failure, no hang ----
     +r14 : Rt.ExecRes <- Rt.bash_exec(String.append("rm -rf ", bg()))
     u14 : Unit <- check(Bool.and(Bool.not(res_ok(r14)),

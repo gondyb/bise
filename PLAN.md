@@ -1026,3 +1026,45 @@ it). Every build broke. Restored the coherent 2.0.27 toolchain
 (binary + bend2 Base + effs from the v2.0.27 release tarball; the hub
 cache left pristine). PIN: build with bend 2.0.27 until the hub
 packages are republished for 2.0.29. (2.0.29 kept at /tmp/bend-2.0.29.bak.)
+
+## 2026-09-27 — The live agent QA'd its own bash tool; 9 root causes fixed
+
+New: bend_client.py — drive a live harness session programmatically
+(launch repl-live on a private port, speak the line protocol, read the
+obs stream until idle; say/steer/notify/compact; --continue resumes
+the latest session). The QA mission ran the LIVE agent (GLM) against
+its own bash tool with BEND_BG_AFTER=3; it returned a 15-bug report
+(four CRITICAL) with reproductions and benchmarks. Fixes, all
+law-pinned (141 laws):
+
+- Multi-line commands run as written: Api.flatten is gone from
+  bash_exec (it silently joined lines with spaces — the heredoc and
+  the runner subshell both carry real newlines).
+- The heredoc sentinel derives from the command's own hash
+  (bg_sentinel); a command can no longer truncate the wrapper.
+- The handoff is detected by a first-line marker (BEND-BG-HANDOFF-…),
+  never by an exit code: a command that REALLY exits 199 now reports
+  "exit 199" (once silently swallowed as a handoff). The wrapper exits
+  0 on handoff; exec_of strips the marker and keeps the contract.
+- Slot allocation is an atomic mkdir CAS ($i.slot): concurrent
+  wrappers can no longer collide on the same id (once: 4 parallel
+  calls took ids [0,1,0,1] and overwrote each other).
+- The runner is ownership-checked: it writes .rc and frees the slot
+  only if its pid still owns it — a recycled slot cannot be corrupted
+  by a dying runner (that also fixed the "rm -rf the bg dir poisons
+  the next command" cascade).
+- The runner caps file writes: ulimit -f 102400 (50MiB) — an
+  output-looping background command dies at the cap instead of
+  filling the disk (the QA run grew a .out to 6.4GB; the host had
+  178MB free at the worst moment).
+- Both exit paths delete the wrapper script (rm -f "$0"): no more
+  +1 leaked script per call (1,037 had accumulated).
+- The contract's stdin line warns that a stdin-reading background
+  command waits for input until fed or killed (documented semantics —
+  the fifo never EOFs while the harness holds it RDWR).
+- The truncation marker counts discarded chars; the poll loop probes
+  at 20ms for the first 5 iterations (a trivial call costs ~35ms of
+  overhead instead of ~150ms), then 100ms.
+
+Battery: 22 checks green (added: multi-line intact, real 199 fails,
+ulimit cap, no script leak). Demo byte-identical; PROOF green.

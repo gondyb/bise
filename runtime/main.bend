@@ -406,7 +406,9 @@ def cap_out_at.pick(fits: Bool, +out: String, +n: Nat) -> String:
       out
     case False{}:
       String.append(String.take(out, n),
-        "  [output truncated at 20000 chars]")
+        String.append("  [output truncated at 20000 chars; ",
+          String.append(Nat.show(Nat.sub(String.length(out), n)),
+            " more chars discarded]")))
 
 def cap_out_at(+n: Nat, +out: String) -> String:
   cap_out_at.pick(Nat.is_le(String.length(out), n), out, n)
@@ -700,20 +702,49 @@ def exec_of.pick.fail(+code: U32, +output: String) -> ExecRes:
   Ex{False{}, String.append("exit ",
     String.append(U32.show(code), String.append(": ", output)))}
 
-def exec_of.pick.bg(is_bg: Bool, +code: U32, +output: String) -> ExecRes:
-  match is_bg:
+# the handoff marker: the wrapper prints it as the very first line of
+# its output, before the contract. The exit code is no longer the
+# signal (a command that really exits 199 must report 199); only the
+# wrapper can print this line first — a command's output is only
+# cat'd after the marker would have been printed.
+def HANDOFF_MARKER() -> String:
+  "BEND-BG-HANDOFF-6f2c9e5b"
+
+def exec_of.handoff.rest(sp: Maybe<&2, Nat>, +payload: String) -> ExecRes:
+  match sp:
+    case None{}:
+      Ex{True{}, payload}
+    case Some{+p}:
+      Ex{True{}, String.drop(payload, Nat.add(p, 1n))}
+
+def exec_of.handoff(+payload: String) -> ExecRes:
+  # strip the marker line; keep the contract
+  exec_of.handoff.rest(C.find(payload, "\n", 0n), payload)
+
+def exec_of.pick.is_handoff(is_handoff: Bool, +code: U32,
+    +output: String) -> ExecRes:
+  match is_handoff:
     case True{}:
-      # the background handoff: the contract printed by the wrapper
-      Ex{True{}, output}
+      exec_of.handoff(output)
     case False{}:
       exec_of.pick.fail(code, output)
+
+# exit 0 without the marker is a plain success
+def exec_of.pick.zero.ok(is_handoff: Bool, +output: String) -> ExecRes:
+  match is_handoff:
+    case True{}:
+      exec_of.handoff(output)
+    case False{}:
+      Ex{True{}, output}
 
 def exec_of.pick.zero(is_zero: Bool, +code: U32, +output: String) -> ExecRes:
   match is_zero:
     case True{}:
-      Ex{True{}, output}
+      exec_of.pick.zero.ok(
+        String.starts_with(output, HANDOFF_MARKER()), output)
     case False{}:
-      exec_of.pick.bg(U32.is_eq(code, 199), code, output)
+      exec_of.pick.is_handoff(
+        String.starts_with(output, HANDOFF_MARKER()), code, output)
 
 def exec_of.pick(+code: U32, +output: String) -> ExecRes:
   exec_of.pick.zero(U32.is_eq(code, 0), code, output)
@@ -831,7 +862,8 @@ def bg_tail_cmd(+bg: String, +id: String) -> String:
 
 def bg_stdin_cmd(+bg: String, +id: String) -> String:
   String.append("  stdin (if it reads): printf '%s\\n' 'text' > ",
-    bg_slot(bg, id, ".in"))
+    String.append(bg_slot(bg, id, ".in"),
+      "  (a command that reads stdin WAITS for input indefinitely: feed it or kill it)"))
 
 def bg_status_cmd(+bg: String, +id: String) -> String:
   String.append("  status: kill -0 $(cat ",
@@ -856,67 +888,16 @@ def bg_rc_guard(+bg: String) -> String:
     String.append(" ]; then echo \"background: the bg dir vanished before the exit code was recorded: ",
       String.append(bg, "\"; exit 1; fi"))))
 
+# 5 iterations at 20ms then 100ms steps: a trivial command costs
+# ~30ms of polling instead of ~120ms, and the window stays ~after secs
 def bg_poll_iters(+after: U32) -> U32:
-  U32.mul(after, 10)
+  U32.add(U32.mul(after, 10), 5)
 
 # the pid-wait also breaks on an existing .rc: the runner frees the
 # slot (rm pid/cmd/in) as soon as the command ends, so for a fast
 # command the pid file is EPHEMERAL — the wrapper must not wait for a
 # file that already came and went. An empty pid then makes kill -0
 # fail cleanly and the rc-wait completes the sync path.
-def bg_wrap.seg(+a: String, +b: String) -> String:
-  String.append(a, String.append("\n", b))
-
-# the contract lines carry the LITERAL dir (not $BG): at runtime the
-# agent reads a fully concrete path, with only the slot id resolved.
-# printf, not echo: sh-mode echo INTERPRETS backslash escapes, which
-# once split the stdin line in two and stripped its \n — the agent
-# would have copy-pasted a command that deadlocks a fifo reader.
-# printf's %s argument is printed verbatim.
-def bg_wrap.echo(+line: String, +rest: String) -> String:
-  bg_wrap.seg(String.append("    printf '%s\\n' \"", String.append(line, "\"")), rest)
-
-def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
-  +niter = bg_poll_iters(after)
-  bg_wrap.seg(String.append("BG=", bg),
-  bg_wrap.seg("mkdir -p $BG",
-  bg_wrap.seg("i=0",
-  bg_wrap.seg("while [ -e $BG/$i.pid ]; do i=$((i+1)); done",
-  bg_wrap.seg("mkfifo $BG/$i.in 2>/dev/null",
-  bg_wrap.seg("exec 9<>$BG/$i.in",
-  bg_wrap.seg("cat > $BG/$i.cmd <<'XQ7NDEOF'",
-  bg_wrap.seg(command,
-  bg_wrap.seg("XQ7NDEOF",
-  bg_wrap.seg(String.append("( ( ", String.append(command,
-      " ) > $BG/$i.out 2>&1 <&9 & echo $! > $BG/$i.pid; wait $!; echo $? > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in ) >/dev/null 2>&1 &")),
-  bg_wrap.seg("while [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do",
-  bg_wrap.seg(bg_setup_guard(bg),
-  bg_wrap.seg("  sleep 0.05",
-  bg_wrap.seg("done",
-  bg_wrap.seg("c=$(cat $BG/$i.pid 2>/dev/null)",
-  bg_wrap.seg("e=0",
-  bg_wrap.seg("while kill -0 $c 2>/dev/null; do",
-  bg_wrap.seg("  sleep 0.1",
-  bg_wrap.seg("  e=$((e+1))",
-  bg_wrap.seg(String.append("  if [ $e -ge ",
-    String.append(U32.show(niter), " ]; then")),
-  bg_wrap.echo(bg_headline(bg, "$i", after),
-  bg_wrap.echo(bg_tail_cmd(bg, "$i"),
-  bg_wrap.echo(bg_stdin_cmd(bg, "$i"),
-  bg_wrap.echo(bg_status_cmd(bg, "$i"),
-  bg_wrap.echo(bg_kill_cmd(bg, "$i"),
-  bg_wrap.seg("    exit 199",
-  bg_wrap.seg("  fi",
-  bg_wrap.seg("done",
-  bg_wrap.seg("while [ ! -e $BG/$i.rc ]; do",
-  bg_wrap.seg(bg_rc_guard(bg),
-  bg_wrap.seg("  sleep 0.05",
-  bg_wrap.seg("done",
-  bg_wrap.seg("s=$(cat $BG/$i.rc)",
-  bg_wrap.seg("cat $BG/$i.out",
-  bg_wrap.seg("rm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc",
-  "exit $s")))))))))))))))))))))))))))))))))))
-
 # snap's wire joins argv with newlines, so a multi-line -c script is
 # impossible; the wrapper goes to a file (the node_run pattern) and sh
 # runs the file.
@@ -947,6 +928,12 @@ def bg_script_hash.go(fuel: Nat, +s: String, +pos: Nat, acc: Nat) -> Nat:
 def bg_script_hash(+s: String) -> Nat:
   bg_script_hash.go(Nat.mul(String.length(s), 2n), s, 1n, 0n)
 
+# the .cmd heredoc sentinel derives from the command's own hash: a
+# command containing the sentinel would have to contain its own hash
+def bg_sentinel(+command: String) -> String:
+  String.append("XQ-", String.append(Nat.show(bg_script_hash(command)),
+    "-EOF"))
+
 def bash_script_path(+port: String, +script: String) -> String:
   String.append("/tmp/bend-sh-", String.append(port,
     String.append("-", String.append(Nat.show(bg_script_hash(script)), ".sh"))))
@@ -958,8 +945,11 @@ def bash_exec(command: String) -> IO(ExecRes):
     +bg : String <- bg_dir()
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
     +port : String <- IO.pure(String, env_or(pr, "0"))
+    # NO flatten: real newlines stay — the heredoc and the runner
+    # subshell both accept multi-line commands (flatten silently
+    # restructured them)
     +script : String <- IO.pure(String,
-      bg_wrap(Api.flatten(command), bg, secs))
+      bg_wrap(String.trim(command), bg, secs))
     +path : String <- IO.pure(String, bash_script_path(port, script))
     w : Unit <- P.write_file(path, script)
     out : String <- Snap.run(Con{"/bin/sh", Con{path, Nil{}}})
@@ -1137,6 +1127,63 @@ def def_acks.suffix(d: Def) -> String:
       ""
     case _:
       def_acks.suffix.has(True{}, d)
+
+# ---- the wrapper: one line per generated shell statement ----
+def bg_wrap.seg(+a: String, +b: String) -> String:
+  String.append(a, String.append("\n", b))
+
+# the contract lines carry the LITERAL dir (not $BG): at runtime the
+# agent reads a fully concrete path, with only the slot id resolved.
+# printf, not echo: printf's %s argument is printed verbatim.
+def bg_wrap.echo(+line: String, +rest: String) -> String:
+  bg_wrap.seg(String.append("    printf '%s\\n' \"", String.append(line, "\"")), rest)
+
+def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
+  +niter = bg_poll_iters(after)
+  +sent = bg_sentinel(command)
+  bg_wrap.seg(String.append("BG=", bg),
+  bg_wrap.seg("mkdir -p $BG",
+  bg_wrap.seg("i=0",
+  bg_wrap.seg("while ! mkdir $BG/$i.slot 2>/dev/null; do i=$((i+1)); done",
+  bg_wrap.seg("mkfifo $BG/$i.in 2>/dev/null",
+  bg_wrap.seg("exec 9<>$BG/$i.in",
+  bg_wrap.seg(String.append("cat > $BG/$i.cmd <<'", String.append(sent, "'")),
+  bg_wrap.seg(command,
+  bg_wrap.seg(sent,
+  bg_wrap.seg(String.append("( ulimit -f 102400; ( ", String.append(command,
+      " ) > $BG/$i.out 2>&1 <&9 & C=$!; echo $C > $BG/$i.pid; wait $C; R=$?; if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then echo $R > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in; rmdir $BG/$i.slot 2>/dev/null; fi ) >/dev/null 2>&1 &")),
+  bg_wrap.seg("while [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do",
+  bg_wrap.seg(bg_setup_guard(bg),
+  bg_wrap.seg("  sleep 0.05",
+  bg_wrap.seg("done",
+  bg_wrap.seg("c=$(cat $BG/$i.pid 2>/dev/null)",
+  bg_wrap.seg("e=0",
+  bg_wrap.seg("while kill -0 $c 2>/dev/null; do",
+  bg_wrap.seg("  if [ $e -lt 5 ]; then sleep 0.02; else sleep 0.1; fi",
+  bg_wrap.seg("  e=$((e+1))",
+  bg_wrap.seg(String.append("  if [ $e -ge ",
+    String.append(U32.show(niter), " ]; then")),
+  bg_wrap.seg(String.append("    printf '%s\\n' \"",
+    String.append(HANDOFF_MARKER(), "\"")),
+  bg_wrap.echo(bg_headline(bg, "$i", after),
+  bg_wrap.echo(bg_tail_cmd(bg, "$i"),
+  bg_wrap.echo(bg_stdin_cmd(bg, "$i"),
+  bg_wrap.echo(bg_status_cmd(bg, "$i"),
+  bg_wrap.echo(bg_kill_cmd(bg, "$i"),
+  bg_wrap.seg("    rm -f \"$0\"",
+  bg_wrap.seg("    exit 0",
+  bg_wrap.seg("  fi",
+  bg_wrap.seg("done",
+  bg_wrap.seg("while [ ! -e $BG/$i.rc ]; do",
+  bg_wrap.seg(bg_rc_guard(bg),
+  bg_wrap.seg("  sleep 0.05",
+  bg_wrap.seg("done",
+  bg_wrap.seg("s=$(cat $BG/$i.rc)",
+  bg_wrap.seg("cat $BG/$i.out",
+  bg_wrap.seg("rm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc",
+  bg_wrap.seg("rmdir $BG/$i.slot 2>/dev/null",
+  bg_wrap.seg("rm -f \"$0\"",
+  "exit $s")))))))))))))))))))))))))))))))))))))))
 
 # ---- bend-jsrt: run_typescript in a V8 isolate (the Vibe SDK core pattern) ----
 # The model writes real TypeScript/JavaScript; rust/jsrt (deno_core v8 +

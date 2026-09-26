@@ -746,7 +746,7 @@ law node_err_extracts_message:
 # LAW: the wrapper script, byte for byte.
 law bg_wrapper_script:
   {Rt.bg_wrap("whoami", "/tmp/bend-bg-0", 30)
-    == "BG=/tmp/bend-bg-0\nmkdir -p $BG\ni=0\nwhile [ -e $BG/$i.pid ]; do i=$((i+1)); done\nmkfifo $BG/$i.in 2>/dev/null\nexec 9<>$BG/$i.in\ncat > $BG/$i.cmd <<'XQ7NDEOF'\nwhoami\nXQ7NDEOF\n( ( whoami ) > $BG/$i.out 2>&1 <&9 & echo $! > $BG/$i.pid; wait $!; echo $? > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in ) >/dev/null 2>&1 &\nwhile [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished during setup: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\nc=$(cat $BG/$i.pid 2>/dev/null)\ne=0\nwhile kill -0 $c 2>/dev/null; do\n  sleep 0.1\n  e=$((e+1))\n  if [ $e -ge 300 ]; then\n    printf '%s\\n' \"background: still running after 30s - id $i (dir /tmp/bend-bg-0)\"\n    printf '%s\\n' \"  output: tail -n 50 /tmp/bend-bg-0/$i.out\"\n    printf '%s\\n' \"  stdin (if it reads): printf '%s\\n' 'text' > /tmp/bend-bg-0/$i.in\"\n    printf '%s\\n' \"  status: kill -0 $(cat /tmp/bend-bg-0/$i.pid) && echo RUNNING || cat /tmp/bend-bg-0/$i.rc 2>/dev/null\"\n    printf '%s\\n' \"  kill: kill $(cat /tmp/bend-bg-0/$i.pid)\"\n    exit 199\n  fi\ndone\nwhile [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\ns=$(cat $BG/$i.rc)\ncat $BG/$i.out\nrm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc\nexit $s"
+    == "BG=/tmp/bend-bg-0\nmkdir -p $BG\ni=0\nwhile ! mkdir $BG/$i.slot 2>/dev/null; do i=$((i+1)); done\nmkfifo $BG/$i.in 2>/dev/null\nexec 9<>$BG/$i.in\ncat > $BG/$i.cmd <<'XQ-10236-EOF'\nwhoami\nXQ-10236-EOF\n( ulimit -f 102400; ( whoami ) > $BG/$i.out 2>&1 <&9 & C=$!; echo $C > $BG/$i.pid; wait $C; R=$?; if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then echo $R > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in; rmdir $BG/$i.slot 2>/dev/null; fi ) >/dev/null 2>&1 &\nwhile [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished during setup: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\nc=$(cat $BG/$i.pid 2>/dev/null)\ne=0\nwhile kill -0 $c 2>/dev/null; do\n  if [ $e -lt 5 ]; then sleep 0.02; else sleep 0.1; fi\n  e=$((e+1))\n  if [ $e -ge 305 ]; then\n    printf '%s\\n' \"BEND-BG-HANDOFF-6f2c9e5b\"\n    printf '%s\\n' \"background: still running after 30s - id $i (dir /tmp/bend-bg-0)\"\n    printf '%s\\n' \"  output: tail -n 50 /tmp/bend-bg-0/$i.out\"\n    printf '%s\\n' \"  stdin (if it reads): printf '%s\\n' 'text' > /tmp/bend-bg-0/$i.in  (a command that reads stdin WAITS for input indefinitely: feed it or kill it)\"\n    printf '%s\\n' \"  status: kill -0 $(cat /tmp/bend-bg-0/$i.pid) && echo RUNNING || cat /tmp/bend-bg-0/$i.rc 2>/dev/null\"\n    printf '%s\\n' \"  kill: kill $(cat /tmp/bend-bg-0/$i.pid)\"\n    rm -f \"$0\"\n    exit 0\n  fi\ndone\nwhile [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\ns=$(cat $BG/$i.rc)\ncat $BG/$i.out\nrm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc\nrmdir $BG/$i.slot 2>/dev/null\nrm -f \"$0\"\nexit $s"
     : String}
 
 # LAW: the sync window defaults# LAW: the sync window defaults to 30 seconds and clamps into [0, 3600].
@@ -759,11 +759,20 @@ law bg_after_clamps_high:
 law bg_after_keeps_low:
   {Rt.bg_after.clamp(5) == 5 : U32}
 
-# LAW: the exit-199 handoff maps to a SUCCESSFUL result carrying the
-# driving contract — the turn continues and the agent decides.
+# LAW: the handoff maps to a SUCCESSFUL result: the wrapper prints the
+# handoff marker as its first line, exec_of strips it and keeps the
+# contract — the turn continues and the agent decides.
 law exec_of_background_maps_ok:
-  {Rt.exec_of.pick.zero(False{}, 199, "background: still running")
+  {Rt.exec_of(String.append("0\n", String.append(Rt.HANDOFF_MARKER(),
+      "\nbackground: still running")))
     == Rt.Ex{True{}, "background: still running"} : Rt.ExecRes}
+
+# LAW: a command that REALLY exits 199 reports as a failure with its
+# code — the handoff is detected by the marker, never by the code
+# (once: exit 199 was silently swallowed as a handoff).
+law exec_of_real_199_fails:
+  {Rt.exec_of("199\nreal output")
+    == Rt.Ex{False{}, "exit 199: real output"} : Rt.ExecRes}
 
 # LAW: ordinary failures still report their exit code.
 law exec_of_exit_still_fails:
@@ -791,8 +800,10 @@ law bg_slot_paths:
     == True{} : Bool}
 
 # LAW: the poll loop probes ten times per second of sync window.
-law bg_poll_ten_per_second:
-  {Rt.bg_poll_iters(30) == 300 : U32}
+# LAW: the poll loop probes fast first (5 x 20ms), then 100ms steps:
+# a trivial command costs ~30ms of polling, the window stays ~after.
+law bg_poll_iters_table:
+  {Rt.bg_poll_iters(30) == 305 : U32}
 
 # LAW: the headline names the window, the slot id and the dir — the
 # agent can ls the dir right away.
@@ -808,9 +819,11 @@ law bg_tail_cmd_concrete:
     == "  output: tail -n 50 /tmp/bend-bg-0/3.out" : String}
 
 law bg_stdin_cmd_concrete:
-  {Rt.bg_stdin_cmd("/tmp/bend-bg-0", "3")
-    == "  stdin (if it reads): printf '%s\\n' 'text' > /tmp/bend-bg-0/3.in"
-    : String}
+  {Bool.and(
+     String.eq(Rt.bg_stdin_cmd("/tmp/bend-bg-0", "3"),
+       "  stdin (if it reads): printf '%s\\n' 'text' > /tmp/bend-bg-0/3.in  (a command that reads stdin WAITS for input indefinitely: feed it or kill it)"),
+     String.contains(Rt.bg_stdin_cmd("/tmp/bend-bg-0", "3"),
+       "feed it or kill it")) == True{} : Bool}
 
 law bg_status_cmd_concrete:
   {Rt.bg_status_cmd("/tmp/bend-bg-0", "3")
@@ -838,9 +851,14 @@ law bg_wrapper_fifo_rdrw:
     == True{} : Bool}
 
 # LAW: a detached runner is the command's real parent and records the
-# TRUE exit code (a sibling cannot wait — that produced 127).
+# TRUE exit code (a sibling cannot wait — that produced 127). The
+# record is ownership-checked: the rc lands only if the runner's pid
+# still owns the slot.
 law bg_wrapper_runner_waits_and_records:
-  {String.contains(Rt.bg_wrap("x", "/d", 5), "wait $!; echo $? > $BG/$i.rc")
+  {Bool.and(
+     String.contains(Rt.bg_wrap("x", "/d", 5),
+       "C=$!; echo $C > $BG/$i.pid; wait $C; R=$?"),
+     String.contains(Rt.bg_wrap("x", "/d", 5), "echo $R > $BG/$i.rc"))
     == True{} : Bool}
 
 # LAW: output goes to a FILE, never a pipe — the orphan-holding-pipe
@@ -871,10 +889,15 @@ law bg_wrapper_cleans_slot:
      "rm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc")
     == True{} : Bool}
 
-# LAW: the handoff exits on the 199 sentinel, and nothing else in the
-# wrapper uses that code.
-law bg_wrapper_handoff_sentinel:
-  {String.contains(Rt.bg_wrap("x", "/d", 5), "exit 199") == True{} : Bool}
+# LAW: the handoff prints the marker as the wrapper's FIRST output
+# line and exits 0 — the marker (not an exit code) is the signal, so a
+# command that really exits 199 still reports 199.
+law bg_wrapper_handoff_marker:
+  {Bool.and(
+     String.contains(Rt.bg_wrap("x", "/d", 5),
+       String.append("printf '%s\\n' \"", Rt.HANDOFF_MARKER())),
+     Bool.not(String.contains(Rt.bg_wrap("x", "/d", 5), "exit 199")))
+    == True{} : Bool}
 
 # LAW: both waits carry a vanished-dir guard — an agent that cleans
 # its bg dir with rm -rf gets a FAST failure with the dir name, never
@@ -890,6 +913,53 @@ law bg_rc_guard_names_the_dir:
 
 # LAW: the wrapper embeds both guards (the waits are all bounded by
 # the dir check).
+# LAW: slot allocation is an atomic mkdir CAS — two wrappers starting
+# at the same instant can never take the same slot (once: concurrent
+# calls collided on id 0 and corrupted each other's out/rc).
+law bg_wrapper_atomic_slot_allocation:
+  {String.contains(Rt.bg_wrap("x", "/d", 5),
+     "while ! mkdir $BG/$i.slot 2>/dev/null; do i=$((i+1)); done")
+    == True{} : Bool}
+
+# LAW: the runner caps the process's file writes (ulimit -f 102400 =
+# 50MiB) — an output-looping background command dies at the cap
+# instead of filling the disk (once: a 6.4GB .out).
+law bg_wrapper_output_capped:
+  {String.contains(Rt.bg_wrap("x", "/d", 5), "( ulimit -f 102400; ( ")
+    == True{} : Bool}
+
+# LAW: the runner checks it still OWNS the slot before writing the rc
+# and freeing the files — a recycled slot cannot be corrupted by the
+# previous command's dying runner.
+law bg_wrapper_runner_ownership_check:
+  {String.contains(Rt.bg_wrap("x", "/d", 5),
+     "if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then") == True{}
+    : Bool}
+
+# LAW: both exit paths delete the wrapper script ($0) — no more
+# +1 leaked script per bash call (the byte law pins both occurrences).
+law bg_wrapper_cleans_its_script:
+  {String.contains(Rt.bg_wrap("x", "/d", 5), "rm -f \"$0\"") == True{}
+    : Bool}
+
+# LAW: multi-line commands stay intact — the heredoc and the runner
+# subshell carry them verbatim (flatten once silently joined lines
+# with spaces, restructuring scripts).
+law bg_wrapper_multiline_command_intact:
+  {Bool.and(
+     String.contains(Rt.bg_wrap("echo a\necho b", "/d", 5), "echo a\necho b"),
+     Bool.not(String.contains(Rt.bg_wrap("echo a\necho b", "/d", 5),
+       "echo a echo b"))) == True{} : Bool}
+
+# LAW: the .cmd heredoc sentinel derives from the command's own hash —
+# a command cannot contain its own sentinel without containing its
+# own hash.
+law bg_sentinel_derives_from_command:
+  {Bool.and(
+     String.eq(Rt.bg_sentinel("whoami"), Rt.bg_sentinel("whoami")),
+     Bool.not(String.eq(Rt.bg_sentinel("whoami"),
+       Rt.bg_sentinel("whoamiX")))) == True{} : Bool}
+
 law bg_wrapper_has_both_guards:
   {Bool.and(String.contains(Rt.bg_wrap("x", "/d", 5), Rt.bg_setup_guard("/d")),
      String.contains(Rt.bg_wrap("x", "/d", 5), Rt.bg_rc_guard("/d")))
@@ -953,7 +1023,8 @@ law cap_out_at_keeps_small:
 # LAW: an oversized output is cut at the limit with the marker.
 law cap_out_at_truncates:
   {Rt.cap_out_at(5n, "12345678")
-    == "12345  [output truncated at 20000 chars]" : String}
+    == "12345  [output truncated at 20000 chars; 3 more chars discarded]"
+    : String}
 
 # ---- the provider retry classification (runtime/main.bend) ----
 
