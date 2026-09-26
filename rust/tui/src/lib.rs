@@ -957,7 +957,12 @@ fn byte_at_char(s: &str, ci: usize) -> usize {
 // "say", /commands map to protocol words, unknown ones get a server-side
 // warning. This client only handles its own lifecycle and display.
 fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
-    let mut out = vec![Ev::You(v.to_string())];
+    // the steer/say wrappers are transport, not what the user typed
+    let typed = v
+        .strip_prefix("steer ")
+        .or_else(|| v.strip_prefix("say "))
+        .unwrap_or(v);
+    let mut out = vec![Ev::You(typed.to_string())];
     app.history.insert(0, v.to_string());
     app.hist_idx = None;
     app.popup_sel = 0;
@@ -1228,13 +1233,22 @@ fn draw(app: &mut App, frame: &mut Frame) {
         );
     }
 
-    // status bar
-    let status = Line::from(vec![
-        Span::styled(
-            "Entrée : envoyer · / : commandes · Pg↑↓/molette : défiler · End : bas · Échap : interrompre · Ctrl+C : quitter",
-            Style::default().fg(DIM),
-        ),
-    ]);
+    // status bar: the Enter hint follows the turn state (codex semantics)
+    let status = if app.pending {
+        Line::from(vec![
+            Span::styled(
+                "Entrée : diriger le tour · Tab : mettre en file · / : commandes · Pg↑↓ : défiler · End : bas · Échap : interrompre",
+                Style::default().fg(DIM),
+            ),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled(
+                "Entrée : envoyer · / : commandes · Pg↑↓/molette : défiler · End : bas · Ctrl+C : quitter",
+                Style::default().fg(DIM),
+            ),
+        ])
+    };
     frame.render_widget(Paragraph::new(status), chunks[4]);
 }
 
@@ -1353,9 +1367,20 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     }
                     (KeyCode::Tab, _) => {
                         if let Some(c) = sel {
+                            // popup completion
                             app.input = format!("{} ", c.name);
                             app.cursor = app.input.chars().count();
                             app.popup_sel = 0;
+                        } else if app.pending {
+                            // codex queue_keys: queue the draft for after
+                            // the turn ("say" forces the message reading
+                            // even if the text starts with a protocol word)
+                            let v = app.input.trim().to_string();
+                            if !v.is_empty() && !v.starts_with('/') {
+                                app.input.clear();
+                                app.cursor = 0;
+                                handle_input(app, &format!("say {}", v));
+                            }
                         }
                     }
                     (KeyCode::Enter, _) => {
@@ -1377,7 +1402,15 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                             app.follow = true;
                             app.unseen = 0;
                             if !v.is_empty() {
-                                handle_input(app, &v);
+                                // codex semantics: while the agent works,
+                                // Enter STEERS the running turn; at idle it
+                                // starts one. Commands pass through.
+                                let line = if app.pending && !v.starts_with('/') {
+                                    format!("steer {}", v)
+                                } else {
+                                    v
+                                };
+                                handle_input(app, &line);
                             }
                         }
                     }
