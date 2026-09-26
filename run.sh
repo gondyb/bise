@@ -9,6 +9,11 @@
 #   ./run.sh --model NOM     # modèle du provider
 #   ./run.sh --port N        # forcer le port du REPL
 #   ./run.sh --debug        # afficher les annotations (tours, idle)
+#   ./run.sh --continue     # reprendre la session la plus récente
+#                           # (par dernière activité, pas un fichier fixe)
+#   ./run.sh --resume ID    # reprendre une session par id
+#                           # (un préfixe unique suffit) ; /status dans
+#                           # le TUI affiche l'id de la session
 #
 # Plusieurs terminaux = plusieurs ./run.sh : ports auto-attribués,
 # sessions indépendantes, chaque REPL meurt avec son terminal.

@@ -921,6 +921,7 @@ struct App {
     is_live: bool,
     host: String,
     port: u16,
+    session_id: String,
     stream: Option<TcpStream>,
     rx: Receiver<String>,
     should_quit: bool,
@@ -1090,14 +1091,15 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         out.push(Ev::Info("affichage vidé".into()));
     } else if first == "/status" {
         out.push(Ev::Info(format!(
-            "modèle {} · {}:{} · seuil de compaction 800000 · session persistante",
+            "modèle {} · {}:{} · seuil de compaction 800000 · session {}",
             if app.is_live {
                 "zai-glm-5-3"
             } else {
                 "scripté"
             },
             app.host,
-            app.port
+            app.port,
+            app.session_id
         )));
     } else if first == "/help" {
         for c in COMMANDS {
@@ -1769,7 +1771,7 @@ fn run_line_mode(app: &mut App) -> io::Result<()> {
 
 /// Connect to the REPL and run the UI (interactive ratatui when stdin and
 /// stdout are TTYs, line mode otherwise). `is_live` only affects the header.
-pub fn run(host: String, port: u16, is_live: bool, debug: bool) -> io::Result<()> {
+pub fn run(host: String, port: u16, is_live: bool, debug: bool, session_id: String) -> io::Result<()> {
     let stream = TcpStream::connect((host.as_str(), port));
     let connected = true;
     let stream = match stream {
@@ -1836,6 +1838,7 @@ pub fn run(host: String, port: u16, is_live: bool, debug: bool) -> io::Result<()
         is_live,
         host,
         port,
+        session_id,
         stream: Some(stream),
         rx,
         should_quit: false,
