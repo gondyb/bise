@@ -744,3 +744,24 @@ Verified live with timings: quick command 0.05s (was 120s); blocking
 sleep-1000 killed at 3.09s with the readable message; 50000-char
 output capped. PROOF green (79 laws), suite byte-identical, all
 binaries rebuilt.
+
+## 2026-09-25 — Enter steers, Tab queues (codex composer semantics)
+
+The Core already had both paths (ADR 0005: T.Steer — pending input
+injected at the next model-safe boundary; T.Queue — held for the next
+turn; both proven by the scenarios), but the TUI sent plain text, so
+Enter during a running turn always QUEUED — steering required typing
+"steer ..." by hand.
+
+Now (rust/tui): Enter while the agent works sends "steer <text>" (the
+input joins the running turn); at idle Enter starts a turn as before;
+/commands pass through untouched. Tab while the agent works sends
+"say <text>" (queued for after the turn; the wrapper also neutralizes
+text that would read as a protocol word); with the slash popup open
+Tab still completes. The feed echoes the typed text without the
+transport prefix, and the status bar hint follows the turn state.
+
+Live pty verification on a slow 8s bash turn: Enter mid-turn delivered
+the steering into the same answer ("penguins" in the final message);
+Tab mid-turn queued and ran right after the turn ended; idle hints
+restored after.
