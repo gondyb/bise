@@ -35,6 +35,7 @@ import ../core/commands.bend as Cm
 import ../core/session.bend as S
 import ./persist.bend as P
 import ./mcp.bend as Mcp
+import ./skills.bend as Sk
 import ./model.bend as M
 import ./tools.bend as X
 import ./main.bend as R
@@ -521,11 +522,19 @@ def prompt_join(+tu: String, +ct: String) -> String:
     "You are a precise assistant running on the Bend Unified Harness. Discover additional tools with `search_tool_functions`, and call them using `run_typescript`.",
     String.append("\n\n", String.append(tu, String.append("\n\n", ct))))
 
+# the live system prompt = identity + the exact vibe_sdk sections
+# (tool_use_prompt + current_time_prompt), then the skills sections
+# (rules before the <available-skills> catalog, the vibe_sdk order);
+# both only when the skills index is non-empty
+def live_prompt.go(+base: String, +content: String) -> String:
+  Sk.prompt_with(base, content)
+
 def live_prompt() -> IO(String):
   do IO<String>:
     +tu : String <- prompt_read("prompt-tool-use.txt")
     +ct : String <- prompt_read("prompt-current-time.txt")
-    IO.pure(String, prompt_join(tu, ct))
+    +content : String <- Sk.prompt_content()
+    IO.pure(String, live_prompt.go(prompt_join(tu, ct), content))
 
 def live_cfg(+threshold: Nat) -> IO(T.Cfg):
   do IO<T.Cfg>:
@@ -575,6 +584,7 @@ def main() -> IO(Unit):
     kr : Result<&1, &1, U32 & String, String> <- IO.get_env("MISTRAL_API_KEY")
     +key : String <- IO.pure(String, R.env_or(kr, ""))
     u : Unit <- Mcp.bootstrap(key)
+    u4 : Unit <- Sk.skills_scan()
     u3 : Unit <- R.bash_cleanup(U32.show(p))
     f : Flow <- serve(l, ld_greet(ld), ld_sess(ld))
     # Stop (a /reload) lands here: main returns, the process exits 0,

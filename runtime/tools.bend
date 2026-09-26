@@ -41,6 +41,14 @@ def bash_desc() -> IO(String):
     m : Maybe<&2, String> <- P.read_file("tool-desc-bash.txt")
     IO.pure(String, bash_desc.read(m))
 
+def skill_desc.read(m: Maybe<&2, String>) -> String:
+  desc_or(m, "Load a specialized skill that provides domain-specific instructions and workflows.")
+
+def skill_desc() -> IO(String):
+  do IO<String>:
+    m : Maybe<&2, String> <- P.read_file("tool-desc-skill.txt")
+    IO.pure(String, skill_desc.read(m))
+
 # pure: build the catalog from given descriptions
 def catalog_pure(+sd: String, +rd: String, +bd: String) -> List<&2, T.ToolDef>:
   Con{T.ToolDef{"search_tool_functions", sd},
@@ -100,18 +108,23 @@ def tool_desc_at(n: Nat, tools: List<&2, T.ToolDef>) -> String:
         case Con{_, +rest}:
           tool_desc_at(k, rest)
 
-# the live catalog: the four vibe-parity tools plus the self.* harness
-# tools (catalog_short keeps the scripted scenarios byte-identical)
-def catalog_live(+sd: String, +rd: String, +bd: String)
+# the live catalog: the four vibe-parity tools, the skill loader, and
+# the self.* harness tools (catalog_short keeps the scripted scenarios
+# byte-identical)
+def catalog_live(+sd: String, +rd: String, +bd: String, +kd: String)
     -> List<&2, T.ToolDef>:
-  List.append(&2, T.ToolDef, catalog_pure(sd, rd, bd), self_tool_defs())
+  List.append(&2, T.ToolDef,
+    List.append(&2, T.ToolDef, catalog_pure(sd, rd, bd),
+      Con{T.ToolDef{"skill", kd}, Nil{}}),
+    self_tool_defs())
 
 def catalog() -> IO(List<&2, T.ToolDef>):
   do IO<List<&2, T.ToolDef>>:
     +sd : String <- search_desc()
     +rd : String <- rt_desc()
     +bd : String <- bash_desc()
-    IO.pure(List<&2, T.ToolDef>, catalog_live(sd, rd, bd))
+    +kd : String <- skill_desc()
+    IO.pure(List<&2, T.ToolDef>, catalog_live(sd, rd, bd, kd))
 
 # short fallback for pure contexts (laws, scenarios that don't need
 # the full vibe_sdk description text)

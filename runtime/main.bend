@@ -24,6 +24,7 @@ import ./tools.bend as X
 import ./persist.bend as P
 import ./remote.bend as Rem
 import ./mcp.bend as Mcp
+import ./skills.bend as Sk
 import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
 import 0xbf477e663cf4acb1369a68e0f0fa713b/encoding/encoding.bend as Enc
 import 0x9bfd9d57916f3439316c2775fd1f10b4/main.bend as Snap
@@ -1384,13 +1385,23 @@ def exec_program.call.self(is_self: Bool, +name: String, +args: String,
       exec_program.call.node(String.eq(name, "node_program"), name, args,
         live)
 
+def exec_program.call.skill(is_skill: Bool, +name: String, +args: String,
+    +live: Bool) -> IO(ExecRes):
+  match is_skill:
+    case True{}:
+      do IO<ExecRes>:
+        r : Mcp.MR <- Sk.exec_skill(args, live)
+        IO.pure(ExecRes, exec_mr(r))
+    case False{}:
+      exec_program.call.self(is_self_tool(name), name, args, live)
+
 def exec_program.call.search(is_search: Bool, +name: String, +args: String,
     +live: Bool) -> IO(ExecRes):
   match is_search:
     case True{}:
       exec_search(args, live)
     case False{}:
-      exec_program.call.self(is_self_tool(name), name, args, live)
+      exec_program.call.skill(String.eq(name, "skill"), name, args, live)
 
 def exec_program.call.bash(is_bash: Bool, +name: String, +args: String,
     +live: Bool) -> IO(ExecRes):
@@ -1514,8 +1525,20 @@ def exec_program(fuel: Nat, pr0: Out & (Def & EpAct), +prog: String,
     case (out, (d, act)):
       exec_program.go(fuel, out, d, act, prog, results, live)
 
-def exec_pick.not_bash(is_search: Bool, is_self: Bool, +name: String,
-    +args: String, +live: Bool) -> IO(ExecRes):
+# the skill loader: the vibe_sdk exact-name contract, executed by
+# reading the SKILL.md the catalog points at
+def exec_pick.skill(is_skill: Bool, +name: String, +args: String,
+    +live: Bool) -> IO(ExecRes):
+  match is_skill:
+    case True{}:
+      do IO<ExecRes>:
+        r : Mcp.MR <- Sk.exec_skill(args, live)
+        IO.pure(ExecRes, exec_mr(r))
+    case False{}:
+      exec_mcp(name, args, live)
+
+def exec_pick.not_bash(is_search: Bool, is_self: Bool, is_skill: Bool,
+    +name: String, +args: String, +live: Bool) -> IO(ExecRes):
   match is_search:
     case True{}:
       exec_search(args, live)
@@ -1524,26 +1547,28 @@ def exec_pick.not_bash(is_search: Bool, is_self: Bool, +name: String,
         case True{}:
           IO.pure(ExecRes, self_exec(name))
         case False{}:
-          exec_mcp(name, args, live)
+          exec_pick.skill(is_skill, name, args, live)
 
-def exec_pick(is_bash: Bool, is_search: Bool, is_self: Bool, +name: String,
-    +args: String, +live: Bool) -> IO(ExecRes):
+def exec_pick(is_bash: Bool, is_search: Bool, is_self: Bool,
+    is_skill: Bool, +name: String, +args: String, +live: Bool)
+    -> IO(ExecRes):
   match is_bash:
     case True{}:
       bash_exec(args)
     case False{}:
-      exec_pick.not_bash(is_search, is_self, name, args, live)
+      exec_pick.not_bash(is_search, is_self, is_skill, name, args, live)
 
 def call_name(c: T.Call) -> String:
   match c:
     case T.Call{_, +name, _}:
       name
 
-def exec_pick.call(is_bash: Bool, is_search: Bool, +call: T.Call,
-    +live: Bool) -> IO(ExecRes):
+def exec_pick.call(is_bash: Bool, is_search: Bool, is_skill: Bool,
+    +call: T.Call, +live: Bool) -> IO(ExecRes):
   match call:
     case T.Call{_, +name, +args}:
-      exec_pick(is_bash, is_search, is_self_tool(name), name, args, live)
+      exec_pick(is_bash, is_search, is_self_tool(name), is_skill, name,
+        args, live)
 
 def exec_tool.node_args(out: Out, +call: T.Call, +live: Bool)
     -> IO(Out & ExecRes):
@@ -1556,7 +1581,8 @@ def exec_tool.plain(out: Out, +call: T.Call, +live: Bool)
     -> IO(Out & ExecRes):
   do IO<Out & ExecRes>:
     r : ExecRes <- exec_pick.call(String.eq(call_name(call), "bash"),
-      String.eq(call_name(call), "search_tool_functions"), call, live)
+      String.eq(call_name(call), "search_tool_functions"),
+      String.eq(call_name(call), "skill"), call, live)
     IO.pure(Out & ExecRes, (out, r))
 
 def exec_tool.is_node(out: Out, is_node: Bool, +call: T.Call, +live: Bool)

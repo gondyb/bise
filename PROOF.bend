@@ -398,13 +398,13 @@ def Laws.deferred_resets_at_user():
 def Laws.deferred_empty_history():
   {==}
 
-def Laws.live_catalog_has_six_tools():
+def Laws.live_catalog_has_seven_tools():
   {==}
 
 def Laws.parity_catalog_keeps_four():
   {==}
 
-def Laws.live_catalog_self_names():
+def Laws.live_catalog_skill_and_self_names():
   {==}
 
 def Laws.self_reload_desc_says_when():
@@ -484,4 +484,43 @@ def Laws.drain_steering_is_act_free():
   {==}
 
 def Laws.drain_next_of_rejected_keeps_session(s):
+  {==}
+
+def Laws.skills_rules_contract():
+  {==}
+
+def Laws.skills_escape_xml():
+  {==}
+
+def Laws.skills_entry_format():
+  {==}
+
+def Laws.skills_catalog_dedupes():
+  {==}
+
+def Laws.skills_catalog_empty_is_empty():
+  {==}
+
+def Laws.skills_malformed_lines_skipped():
+  {==}
+
+def Laws.skills_args_name_json():
+  {==}
+
+def Laws.skills_args_name_rejects_empty():
+  {==}
+
+def Laws.skills_miss_lists_available():
+  {==}
+
+def Laws.skills_find_exact():
+  {==}
+
+def Laws.skills_prompt_gated():
+  {==}
+
+def Laws.skills_strip_frontmatter():
+  {==}
+
+def Laws.merged_surface_carries_live_catalog():
   {==}

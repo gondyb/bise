@@ -15,6 +15,7 @@ import ./runtime/remote.bend as Rm
 import ./runtime/tools.bend as Xt
 import ./runtime/main.bend as Rt
 import ./runtime/mcp.bend as Mc
+import ./runtime/skills.bend as Sk
 import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
 
 # LAW: a checkpoint restores to exactly the session it exported.
@@ -339,6 +340,87 @@ law drain_next_of_rejected_keeps_session:
   for +s: T.Session
   {Rt.drain_steer.next_of(s, T.Rejected{"nope"}) == s : T.Session}
 
+# ---- Agent Skills (the Vibe CLI design: progressive disclosure) ----
+# The prompt carries name+description+path only; the `skill` tool loads
+# the full SKILL.md on exact-name demand.
+
+# LAW: the rules section is the vibe_sdk contract: proactive loading,
+# exact names, and no re-reading the SKILL.md root.
+law skills_rules_contract:
+  {Bool.and(
+     String.contains(Sk.skills_rules(), "## Available Skills"),
+     Bool.and(
+       String.contains(Sk.skills_rules(),
+         "proactively call the `skill` tool with its exact name"),
+       String.contains(Sk.skills_rules(),
+         "Do not read a root `SKILL.md` path with `bash`"))) == True{} : Bool}
+
+# LAW: XML escaping per vibe_sdk prompt.rs: &, <, >, ", '.
+law skills_escape_xml:
+  {Sk.escape_xml("a<b>&c\"d'e")
+    == "a&lt;b&gt;&amp;c&quot;d&apos;e" : String}
+
+# LAW: one index line renders exactly one vibe_sdk catalog entry.
+law skills_entry_format:
+  {Sk.skill_entry(Sk.Skill{"review", "Review code.", "/skills/review/SKILL.md"})
+    == "  <skill>\n    <name>review</name>\n    <description>Review code.</description>\n    <path>/skills/review/SKILL.md</path>\n  </skill>" : String}
+
+# LAW: the catalog section wraps the entries, deduped by name, first
+# occurrence winning.
+law skills_catalog_dedupes:
+  {Sk.skills_catalog("one\td1\t/p1\none\td2\t/p2\ntwo\td3\t/p3")
+    == "<available-skills>\n  <skill>\n    <name>one</name>\n    <description>d1</description>\n    <path>/p1</path>\n  </skill>\n  <skill>\n    <name>two</name>\n    <description>d3</description>\n    <path>/p3</path>\n  </skill>\n</available-skills>" : String}
+
+# LAW: an empty index yields no section at all (the prompt stays clean).
+law skills_catalog_empty_is_empty:
+  {Sk.skills_catalog("") == "" : String}
+
+# LAW: blank or malformed lines never become skills.
+law skills_malformed_lines_skipped:
+  {Sk.skill_ok_line("") == False{} : Bool}
+
+# LAW: the args are the exact vibe_sdk schema: {"name": "..."}.
+law skills_args_name_json:
+  {Sk.args_name("{\"name\":\"code-quality\"}") == Some{"code-quality"}
+    : Maybe<&2, String>}
+
+# LAW: a missing or empty name is a usage error, never a lookup.
+law skills_args_name_rejects_empty:
+  {Sk.args_name("{}") == None{} : Maybe<&2, String>}
+
+# LAW: a miss returns the vibe_sdk contract: the name, the guidance,
+# and the available list.
+law skills_miss_lists_available:
+  {Bool.and(
+     String.contains(Sk.not_available("bogus", "one\td1\t/p1"),
+       "Skill \"bogus\" is not available"),
+     String.contains(Sk.not_available("bogus", "one\td1\t/p1"),
+       "Available skills: \"one\".")) == True{} : Bool}
+
+# LAW: the live search surface carries the live catalog itself when
+# the MCP index is absent (skill and self.* stay discoverable).
+law merged_surface_carries_live_catalog:
+  {Mc.merged_tools.live(Con{T.ToolDef{"skill", "d"}, Nil{}}, None{})
+    == Con{T.ToolDef{"skill", "d"}, Nil{}} : List<&2, T.ToolDef>}
+
+# LAW: an exact name finds the skill (first hit wins).
+law skills_find_exact:
+  {Sk.find_skill("one\td1\t/p1\ntwo\td2\t/p2", "two")
+    == Some{Sk.Skill{"two", "d2", "/p2"}} : Maybe<&2, Sk.Skill>}
+
+# LAW: the tool returns the CONTENT only — the YAML frontmatter
+# never reaches the model (vibe_sdk ProjectSkill).
+law skills_strip_frontmatter:
+  {Sk.strip_frontmatter("---\nname: x\ndescription: y\n---\n\n# Body\nText")
+    == "# Body\nText" : String}
+
+# LAW: the prompt only gains the sections when skills exist.
+law skills_prompt_gated:
+  {Bool.and(
+     String.eq(Sk.prompt_with("base", ""), "base"),
+     String.contains(Sk.prompt_with("base", "one\td1\t/p1"),
+       "<available-skills>")) == True{} : Bool}
+
 # ---- /reload (the self-improvement loop: restart on the same session) ----
 
 # LAW: /reload maps onto the reload protocol word, sent verbatim.
@@ -452,33 +534,36 @@ law def_acks_suffix_carries_both:
      String.contains(Rt.def_acks.suffix(Rt.Def{True{}, True{}}),
        "reload: scheduled")) == True{} : Bool}
 
-# LAW: the live catalog carries the two tools after the four parity
-# tools; catalog_short (the scripted scenarios) stays untouched.
-law live_catalog_has_six_tools:
-  {Xt.catalog_len(Xt.catalog_live("s", "r", "b")) == 6n : Nat}
+# LAW: the live catalog carries the skill loader and the two self
+# tools after the four parity tools; catalog_short (the scripted
+# scenarios) stays untouched.
+law live_catalog_has_seven_tools:
+  {Xt.catalog_len(Xt.catalog_live("s", "r", "b", "k")) == 7n : Nat}
 
 law parity_catalog_keeps_four:
   {Xt.catalog_len(Xt.catalog_pure("s", "r", "b")) == 4n : Nat}
 
-law live_catalog_self_names:
-  {Bool.and(String.eq(Xt.tool_name_at(4n, Xt.catalog_live("s", "r", "b")),
+law live_catalog_skill_and_self_names:
+  {Bool.and(String.eq(Xt.tool_name_at(4n, Xt.catalog_live("s", "r", "b", "k")),
+      "skill"),
+    Bool.and(String.eq(Xt.tool_name_at(5n, Xt.catalog_live("s", "r", "b", "k")),
       "self.reload"),
-     String.eq(Xt.tool_name_at(5n, Xt.catalog_live("s", "r", "b")),
-      "self.compact")) == True{} : Bool}
+     String.eq(Xt.tool_name_at(6n, Xt.catalog_live("s", "r", "b", "k")),
+      "self.compact"))) == True{} : Bool}
 
 # LAW: the descriptions say what the tools do and when they act.
 law self_reload_desc_says_when:
   {Bool.and(
-     String.contains(Xt.tool_desc_at(4n, Xt.catalog_live("s", "r", "b")),
+     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b", "k")),
        "Restart the harness process with the latest code"),
-     String.contains(Xt.tool_desc_at(4n, Xt.catalog_live("s", "r", "b")),
+     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b", "k")),
        "end of the current turn")) == True{} : Bool}
 
 law self_compact_desc_says_when:
   {Bool.and(
-     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b")),
+     String.contains(Xt.tool_desc_at(6n, Xt.catalog_live("s", "r", "b", "k")),
        "Compact the conversation history"),
-     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b")),
+     String.contains(Xt.tool_desc_at(6n, Xt.catalog_live("s", "r", "b", "k")),
        "end of the current turn")) == True{} : Bool}
 
 # ---- the provider API mapping (core/api.bend, formerly the Rust bridge) ----

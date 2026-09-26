@@ -1,0 +1,1 @@
+Load a specialized skill that provides domain-specific instructions and workflows. When a task matches one of the available skills listed in your system prompt, call this tool with the exact skill name to load the full skill instructions. Only listed names are valid. Call exactly with {"name":"<exact name>"}; no other argument keys are accepted.

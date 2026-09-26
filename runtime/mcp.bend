@@ -521,33 +521,36 @@ def find_line(+content: String, +v: String) -> Maybe<&2, McpTool>:
 # search_tool_functions routes here; reading the index is an effect, so
 # the search runs on the EExec path (bash and MCP calls live there too)
 
-def merged_tools(m: Maybe<&2, String>) -> List<&2, T.ToolDef>:
+# the live surface searches the LIVE catalog (the parity tools, the
+# skill loader, and the self.* harness tools) plus the MCP index; the
+# scripted surface stays on catalog_short so the scenarios never read
+# files (a search that could not see `skill` made the model guess wrong
+# names from inside the sandbox)
+def merged_tools.live(cat: List<&2, T.ToolDef>, m: Maybe<&2, String>)
+    -> List<&2, T.ToolDef>:
   match m:
     case None{}:
-      X.catalog_short()
+      cat
     case Some{+content}:
-      List.append(&2, T.ToolDef, X.catalog_short(), index_of(content))
+      List.append(&2, T.ToolDef, cat, index_of(content))
 
-def merged_search.pick(live: Bool, +args: String,
+def merged_search.pick(cat: List<&2, T.ToolDef>, +args: String,
     m: Maybe<&2, String>) -> MR:
-  match live:
-    case True{}:
-      MR{True{}, X.search_reply(args, merged_tools(m))}
-    case False{}:
-      MR{True{}, X.search_reply(args, X.catalog_short())}
+  MR{True{}, X.search_reply(args, merged_tools.live(cat, m))}
 
 def merged_search.live(+args: String) -> IO(MR):
   do IO<MR>:
+    +cat : List<&2, T.ToolDef> <- X.catalog()
     +path : String <- index_path()
     m : Maybe<&2, String> <- P.read_file(path)
-    IO.pure(MR, merged_search.pick(True{}, args, m))
+    IO.pure(MR, merged_search.pick(cat, args, m))
 
 def merged_search(+args: String, +live: Bool) -> IO(MR):
   match live:
     case True{}:
       merged_search.live(args)
     case False{}:
-      IO.pure(MR, merged_search.pick(False{}, args, None{}))
+      IO.pure(MR, MR{True{}, X.search_reply(args, X.catalog_short())})
 
 # ---- a call by name: three requests on one pooled connection ----
 
