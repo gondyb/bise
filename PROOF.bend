@@ -422,3 +422,9 @@ def Laws.def_acks_suffix_carries_reload():
 def Laws.def_acks_suffix_carries_both():
   {==}
 
+
+def Laws.bg_wrapper_runner_frees_slot():
+  {==}
+
+def Laws.bg_wrapper_pid_wait_breaks_on_rc():
+  {==}

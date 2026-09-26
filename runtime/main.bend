@@ -848,7 +848,8 @@ def bg_kill_cmd(+bg: String, +id: String) -> String:
 # clear message, never hang the tool
 def bg_setup_guard(+bg: String) -> String:
   String.append("  if [ ! -d ", String.append(bg,
-    String.append(" ]; then mkdir -p ", String.append(bg, "; fi"))))
+    String.append(" ]; then echo \"background: the bg dir vanished during setup: ",
+      String.append(bg, "\"; exit 1; fi"))))
 
 def bg_rc_guard(+bg: String) -> String:
   String.append("  if [ ! -d ", String.append(bg,
@@ -858,6 +859,11 @@ def bg_rc_guard(+bg: String) -> String:
 def bg_poll_iters(+after: U32) -> U32:
   U32.mul(after, 10)
 
+# the pid-wait also breaks on an existing .rc: the runner frees the
+# slot (rm pid/cmd/in) as soon as the command ends, so for a fast
+# command the pid file is EPHEMERAL — the wrapper must not wait for a
+# file that already came and went. An empty pid then makes kill -0
+# fail cleanly and the rc-wait completes the sync path.
 def bg_wrap.seg(+a: String, +b: String) -> String:
   String.append(a, String.append("\n", b))
 
@@ -883,11 +889,11 @@ def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
   bg_wrap.seg("XQ7NDEOF",
   bg_wrap.seg(String.append("( ( ", String.append(command,
       " ) > $BG/$i.out 2>&1 <&9 & echo $! > $BG/$i.pid; wait $!; echo $? > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in ) >/dev/null 2>&1 &")),
-  bg_wrap.seg("while [ ! -s $BG/$i.pid ]; do",
+  bg_wrap.seg("while [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do",
   bg_wrap.seg(bg_setup_guard(bg),
   bg_wrap.seg("  sleep 0.05",
   bg_wrap.seg("done",
-  bg_wrap.seg("c=$(cat $BG/$i.pid)",
+  bg_wrap.seg("c=$(cat $BG/$i.pid 2>/dev/null)",
   bg_wrap.seg("e=0",
   bg_wrap.seg("while kill -0 $c 2>/dev/null; do",
   bg_wrap.seg("  sleep 0.1",

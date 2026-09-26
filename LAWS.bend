@@ -669,7 +669,7 @@ law node_err_extracts_message:
 # LAW: the wrapper script, byte for byte.
 law bg_wrapper_script:
   {Rt.bg_wrap("whoami", "/tmp/bend-bg-0", 30)
-    == "BG=/tmp/bend-bg-0\nmkdir -p $BG\ni=0\nwhile [ -e $BG/$i.pid ]; do i=$((i+1)); done\nmkfifo $BG/$i.in 2>/dev/null\nexec 9<>$BG/$i.in\ncat > $BG/$i.cmd <<'XQ7NDEOF'\nwhoami\nXQ7NDEOF\n( ( whoami ) > $BG/$i.out 2>&1 <&9 & echo $! > $BG/$i.pid; wait $!; echo $? > $BG/$i.rc ) >/dev/null 2>&1 &\nwhile [ ! -s $BG/$i.pid ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished during setup: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\nc=$(cat $BG/$i.pid)\ne=0\nwhile kill -0 $c 2>/dev/null; do\n  sleep 0.1\n  e=$((e+1))\n  if [ $e -ge 300 ]; then\n    printf '%s\\n' \"background: still running after 30s - id $i (dir /tmp/bend-bg-0)\"\n    printf '%s\\n' \"  output: tail -n 50 /tmp/bend-bg-0/$i.out\"\n    printf '%s\\n' \"  stdin (if it reads): printf '%s\\n' 'text' > /tmp/bend-bg-0/$i.in\"\n    printf '%s\\n' \"  status: kill -0 $(cat /tmp/bend-bg-0/$i.pid) && echo RUNNING || cat /tmp/bend-bg-0/$i.rc 2>/dev/null\"\n    printf '%s\\n' \"  kill: kill $(cat /tmp/bend-bg-0/$i.pid)\"\n    exit 199\n  fi\ndone\nwhile [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\ns=$(cat $BG/$i.rc)\ncat $BG/$i.out\nrm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc\nexit $s"
+    == "BG=/tmp/bend-bg-0\nmkdir -p $BG\ni=0\nwhile [ -e $BG/$i.pid ]; do i=$((i+1)); done\nmkfifo $BG/$i.in 2>/dev/null\nexec 9<>$BG/$i.in\ncat > $BG/$i.cmd <<'XQ7NDEOF'\nwhoami\nXQ7NDEOF\n( ( whoami ) > $BG/$i.out 2>&1 <&9 & echo $! > $BG/$i.pid; wait $!; echo $? > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in ) >/dev/null 2>&1 &\nwhile [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished during setup: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\nc=$(cat $BG/$i.pid 2>/dev/null)\ne=0\nwhile kill -0 $c 2>/dev/null; do\n  sleep 0.1\n  e=$((e+1))\n  if [ $e -ge 300 ]; then\n    printf '%s\\n' \"background: still running after 30s - id $i (dir /tmp/bend-bg-0)\"\n    printf '%s\\n' \"  output: tail -n 50 /tmp/bend-bg-0/$i.out\"\n    printf '%s\\n' \"  stdin (if it reads): printf '%s\\n' 'text' > /tmp/bend-bg-0/$i.in\"\n    printf '%s\\n' \"  status: kill -0 $(cat /tmp/bend-bg-0/$i.pid) && echo RUNNING || cat /tmp/bend-bg-0/$i.rc 2>/dev/null\"\n    printf '%s\\n' \"  kill: kill $(cat /tmp/bend-bg-0/$i.pid)\"\n    exit 199\n  fi\ndone\nwhile [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\ns=$(cat $BG/$i.rc)\ncat $BG/$i.out\nrm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc\nexit $s"
     : String}
 
 # LAW: the sync window defaults# LAW: the sync window defaults to 30 seconds and clamps into [0, 3600].
@@ -748,6 +748,14 @@ law bg_kill_cmd_concrete:
 
 # LAW: the fifo is held RDWR by the wrapper — never EOF for the
 # reader, never blocks at open.
+# LAW: the pid-wait also breaks on an existing rc — the runner frees
+# the slot when a fast command ends, so the pid file can be ephemeral
+# and the wrapper must never wait for a file that came and went.
+law bg_wrapper_pid_wait_breaks_on_rc:
+  {String.contains(Rt.bg_wrap("x", "/d", 5),
+     "while [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do") == True{}
+    : Bool}
+
 law bg_wrapper_fifo_rdrw:
   {String.contains(Rt.bg_wrap("x", "/d", 5), "exec 9<>$BG/$i.in")
     == True{} : Bool}
@@ -774,6 +782,13 @@ law bg_wrapper_never_kills:
 
 # LAW: a command that finishes inside the window leaves no trace —
 # every slot file is removed.
+# LAW: a background command that ends frees its slot (pid, cmd and
+# fifo are removed by the runner; out and rc stay readable) — the bg
+# dir cannot grow without bound and slots are recycled.
+law bg_wrapper_runner_frees_slot:
+  {String.contains(Rt.bg_wrap("x", "/d", 5),
+     "rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in") == True{} : Bool}
+
 law bg_wrapper_cleans_slot:
   {String.contains(Rt.bg_wrap("x", "/d", 5),
      "rm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc")
@@ -789,8 +804,7 @@ law bg_wrapper_handoff_sentinel:
 # a hung tool.
 law bg_setup_guard_names_the_dir:
   {String.contains(Rt.bg_setup_guard("/tmp/bend-bg-0"),
-     "if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished during setup: /tmp/bend-bg-0\"; exit 1; fi")
-    == True{} : Bool}
+     "the bg dir vanished during setup: /tmp/bend-bg-0") == True{} : Bool}
 
 law bg_rc_guard_names_the_dir:
   {String.contains(Rt.bg_rc_guard("/tmp/bend-bg-0"),

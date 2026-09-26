@@ -15,7 +15,11 @@
 # window (so the suite is fast) and a private bg root (so it is
 # hermetic). With no BEND_REPL_PORT the dir is /tmp/bgtest/bend-bg-0.
 # Every "sleep 1" below is itself a sync command — the suite waits
-# through the very machinery it tests.
+# through the very machinery it tests. Waits are IO.sleep (pure): a
+# bash_exec wait between a slot-freeing event and its evidence read
+# would recycle the slot and destroy the out/rc. Slots RECYCLE: a command that
+# ends frees its slot (pid/cmd/in removed by the runner, out/rc kept
+# readable), so the suite asserts on the ids the recycling assigns.
 #
 # Gates: no FAIL line, and the summary says 14/14.
 import Base
@@ -61,6 +65,9 @@ def check(cond: Bool, +name: String) -> IO(Unit):
         u : Unit <- IO.print(String.append("FAIL ", String.append(name, "\n")))
         IO.pure(Unit, Unit{})
 
+# a sync bash delay (UNUSED in the suite: any bash_exec between a
+# slot-freeing event and its evidence read recycles the slot and
+# destroys the evidence — the suite waits with IO.sleep instead)
 def wait() -> IO(Rt.ExecRes):
   Rt.bash_exec("sleep 1")
 
@@ -68,8 +75,11 @@ def main() -> IO(Unit):
   do IO<Unit>:
     # ---- s01 a fast command returns output + exit 0 ----
     +r1 : Rt.ExecRes <- Rt.bash_exec("echo sync-ok")
+    # output cleanliness: no shell noise from the ephemeral pid race
     u1 : Unit <- check(Bool.and(res_ok(r1),
-        String.contains(res_out(r1), "sync-ok")), "s01 sync output ok")
+        Bool.and(String.contains(res_out(r1), "sync-ok"),
+          Bool.not(String.contains(res_out(r1), "No such file")))),
+      "s01 sync output ok and clean")
 
     # ---- s02 exit 0 is a success ----
     +r2 : Rt.ExecRes <- Rt.bash_exec("true")
@@ -121,29 +131,35 @@ def main() -> IO(Unit):
     # ---- s09 the kill command works; the runner records 143 ----
     +r9 : Rt.ExecRes <- Rt.bash_exec(
       String.append("kill ", String.trim(p8)))
-    +w9 : Rt.ExecRes <- wait()
+    # read the rc immediately: any bash_exec in between would recycle
+    # the freed slot and overwrite it
     +rc9 : String <- readf(slot("0", ".rc"))
     u9 : Unit <- check(String.eq(String.trim(rc9), "143"),
       "s09 kill then rc is 143")
+    # let the detached runner free the slot before the next allocation
+    # (IO.sleep: a bash_exec wait would recycle the freed slot itself)
+    +u9w : Unit <- IO.sleep(1100)
 
     # ---- s10 the fifo feeds a reader: printf > .in ----
     +r10 : Rt.ExecRes <- Rt.bash_exec("read x; echo got:$x")
     f10 : Rt.ExecRes <- Rt.bash_exec(
-      String.append("printf 'fifo-ok\\n' > ", slot("1", ".in")))
-    +w10 : Rt.ExecRes <- wait()
-    +o10 : String <- readf(slot("1", ".out"))
-    +rc10 : String <- readf(slot("1", ".rc"))
+      String.append("printf 'fifo-ok\\n' > ", slot("0", ".in")))
+    # a pure sleep: a bash_exec wait would recycle slot 0 and
+    # destroy the reader's out/rc before they are read
+    +u10w : Unit <- IO.sleep(1100)
+    +o10 : String <- readf(slot("0", ".out"))
+    +rc10 : String <- readf(slot("0", ".rc"))
     u10 : Unit <- check(Bool.and(String.contains(o10, "got:fifo-ok"),
         String.eq(String.trim(rc10), "0")), "s10 stdin fifo feeds reader")
+    # let the runner free the reader's slot before the next allocation
+    +u10b : Unit <- IO.sleep(1100)
 
     # ---- s11 tail while running: empty, then filled when done ----
     +r11 : Rt.ExecRes <- Rt.bash_exec("sleep 3; echo late-line")
-    +o11a : String <- readf(slot("2", ".out"))
-    +w11 : Rt.ExecRes <- wait()
-    +w11b : Rt.ExecRes <- wait()
-    +w11c : Rt.ExecRes <- wait()
-    +o11b : String <- readf(slot("2", ".out"))
-    +rc11 : String <- readf(slot("2", ".rc"))
+    +o11a : String <- readf(slot("0", ".out"))
+    +u11w : Unit <- IO.sleep(2100)
+    +o11b : String <- readf(slot("0", ".out"))
+    +rc11 : String <- readf(slot("0", ".rc"))
     u11 : Unit <- check(Bool.and(Bool.not(String.contains(o11a, "late-line")),
         Bool.and(String.contains(o11b, "late-line"),
           String.eq(String.trim(rc11), "0"))), "s11 tail empty then filled")
@@ -151,19 +167,20 @@ def main() -> IO(Unit):
     # ---- s12 two slow commands run in PARALLEL, distinct slots ----
     +r12a : Rt.ExecRes <- Rt.bash_exec("sleep 8")
     +r12b : Rt.ExecRes <- Rt.bash_exec("sleep 9")
-    +p12a : String <- readf(slot("3", ".pid"))
-    +p12b : String <- readf(slot("4", ".pid"))
+    +p12a : String <- readf(slot("0", ".pid"))
+    +p12b : String <- readf(slot("1", ".pid"))
     +l12a : Rt.ExecRes <- Rt.bash_exec(
       String.append("kill -0 ", String.trim(p12a)))
     +l12b : Rt.ExecRes <- Rt.bash_exec(
       String.append("kill -0 ", String.trim(p12b)))
     +k12a : Rt.ExecRes <- Rt.bash_exec(
       String.append("kill ", String.trim(p12a)))
+    # read slot 0's rc BEFORE the next bash_exec: it would recycle the
+    # freed slot and destroy the evidence
+    +rc12a : String <- readf(slot("0", ".rc"))
     +k12b : Rt.ExecRes <- Rt.bash_exec(
       String.append("kill ", String.trim(p12b)))
-    +w12 : Rt.ExecRes <- wait()
-    +rc12a : String <- readf(slot("3", ".rc"))
-    +rc12b : String <- readf(slot("4", ".rc"))
+    +rc12b : String <- readf(slot("1", ".rc"))
     u12 : Unit <- check(Bool.and(Bool.and(res_ok(l12a), res_ok(l12b)),
         Bool.and(String.eq(String.trim(rc12a), "143"),
           String.eq(String.trim(rc12b), "143"))),
@@ -171,9 +188,11 @@ def main() -> IO(Unit):
 
     # ---- s13 listing the dir is ordinary ls ----
     +r13 : Rt.ExecRes <- Rt.bash_exec(String.append("ls ", bg()))
+    # the ls wrapper itself recycles slot 0 (free), so only slot 1's
+    # kept rc is guaranteed in the listing
     u13 : Unit <- check(Bool.and(res_ok(r13),
-        Bool.and(String.contains(res_out(r13), "0.pid"),
-          String.contains(res_out(r13), "4.pid"))), "s13 ls lists slots")
+        String.contains(res_out(r13), "1.rc")),
+      "s13 ls lists ended slots (out/rc kept, pid freed)")
 
     # ---- s14 the agent rm -rf's its own bg dir: fast failure, no hang ----
     +r14 : Rt.ExecRes <- Rt.bash_exec(String.append("rm -rf ", bg()))

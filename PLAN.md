@@ -949,3 +949,33 @@ turn -> reload acks -> exit 0 with the reload-exit marker (the parent
 then recompiles and respawns). The V8 live path verified through
 exec_program directly: a program that files self.reload() and returns
 a constant still yields a result suffixed with the ack.
+
+## 2026-09-26 — Merge reconciliation: slot recycling meets the battery
+
+The merge of self-reload-compact with the parallel "stuff" commit
+mixed two wrapper evolutions. Reconciled deliberately:
+
+- KEPT from "stuff": the runner frees a finished slot (rm pid/cmd/in;
+  out/rc stay readable) — bounded dir growth, slot recycling; and the
+  boot cleanup of stale wrapper files (bash_cleanup in repl-live).
+- RESTORED from the battery: the fail-fast vanished-dir setup guard.
+  The mkdir-recreate variant has an infinite-loop window exactly in
+  the rm -rf-as-command case (the pid file can be deleted before the
+  runner writes it; the recreated dir never sees it); the
+  between-commands case "stuff" targets is already covered by the
+  wrapper's own mkdir -p.
+
+The recycling exposed two real bugs, both fixed and law-pinned:
+1. The ephemeral pid race: for a fast command the runner writes and
+   REMOVES the pid within milliseconds; the wrapper's pid-wait could
+   wait forever for a file that came and went. The wait now also
+   breaks on an existing rc (bg_wrapper_pid_wait_breaks_on_rc).
+2. Shell noise: the same race made `c=$(cat pid)` leak "No such file"
+   into fast commands' output. Now 2>/dev/null; s01 asserts clean
+   output.
+
+The battery was retaught the recycling semantics: slots RECYCLE, so
+evidence (out/rc) must be read with IO.sleep waits (a bash_exec wait
+recycles the freed slot and destroys it) and immediately after the
+freeing event, before any other bash_exec. 18/18 twice; PROOF green
+(131 laws); demo byte-identical; the "stuff" dbg tests still pass.
