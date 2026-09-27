@@ -350,7 +350,9 @@ fn main() -> std::io::Result<()> {
     //     (same port, same session file), reconnect. This is the
     //     self-improvement loop: run the harness on its own next
     //     version without losing the session.
-    //   - child died any other way: report, die with it.
+    //   - child died any other way (a crash): respawn it on the
+    //     checkpointed session with BEND_CRASH_NOTE, which the new
+    //     REPL shows the user after the replayed history.
     //   - child alive: the user quit the TUI — die together.
     // headless: the client's hang-up is our stdin closing (a crashed
     // client closes it too) - the child never outlives its client
@@ -364,14 +366,36 @@ fn main() -> std::io::Result<()> {
         });
     }
 
+    // the child's stderr: where the Bend runtime writes why it died
+    // ("bend: out of memory", "bend: memory fault", ...) before its
+    // _exit(1). Inherited, it vanished behind the TUI's alternate
+    // screen; appended here, it survives every generation.
+    let err_path = log_dir.join(format!("harness-{}.err", std::process::id()));
+
     let mut reloads = 0usize;
+    // a crashed REPL respawns on the checkpointed session (written
+    // before every provider call, so the turn's history up to its last
+    // call is back); a crash loop stops after MAX_CRASH_RESTARTS
+    // generations that each died young
+    let mut crashes = 0usize;
+    let mut crash_note: Option<String> = None;
     loop {
         let log_file = std::fs::File::create(&log_path)?;
-        let mut child = Command::new(&repl_bin)
-            .env("BEND_REPL_PORT", repl_port.to_string())
+        let err_file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&err_path)?;
+        let err_start = std::fs::metadata(&err_path).map(|m| m.len()).unwrap_or(0);
+        let mut cmd = Command::new(&repl_bin);
+        cmd.env("BEND_REPL_PORT", repl_port.to_string())
             .stdout(Stdio::from(log_file))
-            .stderr(Stdio::inherit())
-            .spawn()?;
+            .stderr(Stdio::from(err_file));
+        match crash_note.take() {
+            Some(note) => cmd.env("BEND_CRASH_NOTE", note),
+            None => cmd.env_remove("BEND_CRASH_NOTE"),
+        };
+        let spawned_at = Instant::now();
+        let mut child = cmd.spawn()?;
 
         // wait for the REPL's banner in the log — a TCP probe would steal
         // the --continue greeting (it counts as a connection)
@@ -473,8 +497,28 @@ fn main() -> std::io::Result<()> {
                 continue;
             }
             (Some(status), _) => {
-                eprintln!("le REPL Bend s'est arrêté : {}", status);
-                return result;
+                // a crash: never take the session down with it
+                if spawned_at.elapsed() > CRASH_WINDOW {
+                    crashes = 0;
+                }
+                crashes += 1;
+                let why = crash_reason(&err_path, err_start, &status.to_string());
+                if crashes > MAX_CRASH_RESTARTS {
+                    eprintln!(
+                        "le REPL Bend a planté {} fois d'affilée ({}) — arrêt. Détails : {}",
+                        MAX_CRASH_RESTARTS,
+                        why,
+                        err_path.display()
+                    );
+                    return result;
+                }
+                eprintln!(
+                    "le REPL Bend a planté ({}) — redémarrage sur la session sauvegardée ({}/{})...",
+                    why, crashes, MAX_CRASH_RESTARTS
+                );
+                std::env::set_var("BEND_CONTINUE", "1");
+                crash_note = Some(why);
+                continue;
             }
             (None, _) => {
                 // child alive: the user closed the TUI — give the REPL a
@@ -485,6 +529,30 @@ fn main() -> std::io::Result<()> {
                 return result;
             }
         }
+    }
+}
+
+const MAX_CRASH_RESTARTS: usize = 5;
+// a generation that lived longer than this was not a crash loop
+const CRASH_WINDOW: Duration = Duration::from_secs(120);
+
+// why the child died: the runtime's last "bend: ..." line on stderr
+// (written since this generation started), else its last line, else
+// the exit status alone
+fn crash_reason(err_path: &std::path::Path, from: u64, status: &str) -> String {
+    let text = std::fs::read(err_path)
+        .map(|b| String::from_utf8_lossy(&b[(from as usize).min(b.len())..]).into_owned())
+        .unwrap_or_default();
+    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let said = lines
+        .iter()
+        .rev()
+        .find(|l| l.starts_with("bend:"))
+        .or(lines.last())
+        .map(|l| l.chars().take(200).collect::<String>());
+    match said {
+        Some(l) => format!("{} · {}", status, l),
+        None => status.to_string(),
     }
 }
 

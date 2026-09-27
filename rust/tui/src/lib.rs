@@ -244,6 +244,21 @@ fn hide_replayed_elapsed(events: &mut [Ev], cache: &mut [Option<EventRows>], id:
     }
 }
 
+// "2/10 · provider 529 (transient) · retry in 4s" -> the warning the
+// user reads while the call waits
+fn provider_retry_text(t: &str) -> String {
+    let parts: Vec<&str> = t.split(" · ").collect();
+    match parts.as_slice() {
+        [n, why, wait] => format!(
+            "API du modèle en erreur (essai {}) : {} — nouvel essai dans {}",
+            n,
+            why,
+            wait.trim_start_matches("retry in ")
+        ),
+        _ => format!("API du modèle en erreur : {}", t),
+    }
+}
+
 fn parse_line(line: &str) -> Option<Ev> {
     if line.is_empty() {
         return None;
@@ -365,6 +380,15 @@ fn parse_line(line: &str) -> Option<Ev> {
     }
     if let Some(t) = o.strip_prefix("notification_delivered: ") {
         return Some(Ev::Info(format!("notification livrée au modèle : {}", t)));
+    }
+    if let Some(t) = o.strip_prefix("provider_retry: ") {
+        return Some(Ev::Warn(provider_retry_text(t)));
+    }
+    if let Some(t) = o.strip_prefix("harness_restarted: ") {
+        return Some(Ev::Err(format!(
+            "le harness a planté ({}) et a redémarré — le tour en cours est interrompu, l'historique est restauré jusqu'au dernier appel au modèle",
+            t
+        )));
     }
     if let Some(t) = o.strip_prefix("candidate_discarded: ") {
         return Some(Ev::Warn(format!("candidat écarté : {}", t)));
@@ -3247,6 +3271,21 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_retry_and_restart_render() {
+        match parse_line("  obs: provider_retry: 2/10 · provider 529 (transient) · retry in 4s") {
+            Some(Ev::Warn(t)) => assert_eq!(
+                t,
+                "API du modèle en erreur (essai 2/10) : provider 529 (transient) — nouvel essai dans 4s"
+            ),
+            _ => panic!("provider_retry must render as a warning"),
+        }
+        match parse_line("  obs: harness_restarted: exit status: 1 · bend: out of memory") {
+            Some(Ev::Err(t)) => assert!(t.contains("bend: out of memory") && t.contains("redémarré")),
+            _ => panic!("harness_restarted must render as an error"),
+        }
+    }
 
     #[test]
     fn split_thinking_takes_every_span() {
