@@ -39,7 +39,7 @@ use std::net::TcpStream;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Duration;
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 // ---- the OpenCode theme (opencode.json, dark) ----
 // primary #fab283 (the OpenCode orange) is the agent color: user blocks,
@@ -61,6 +61,14 @@ const PANEL: Color = Color::Rgb(0x14, 0x14, 0x14); // backgroundPanel
 const ELEMENT: Color = Color::Rgb(0x1e, 0x1e, 0x1e); // backgroundElement
 const BORDER_ACTIVE: Color = Color::Rgb(0x60, 0x60, 0x60); // borderActive
 const FAINT: Color = Color::Rgb(0x4a, 0x4a, 0x4a); // rails & turn marks — dimmer than textMuted
+// the syntax palette of the run_typescript block (OpenCode dark
+// syntax colors: purple keywords, green strings, faint comments,
+// orange numbers, blue calls; types reuse syntaxType)
+const SYNTAX_KEYWORD: Color = Color::Rgb(0xc6, 0x78, 0xdd);
+const SYNTAX_STRING: Color = Color::Rgb(0x98, 0xc3, 0x79);
+const SYNTAX_COMMENT: Color = Color::Rgb(0x5c, 0x63, 0x70);
+const SYNTAX_NUMBER: Color = Color::Rgb(0xd1, 0x9a, 0x66);
+const SYNTAX_FUNC: Color = Color::Rgb(0x61, 0xaf, 0xef);
 
 // the OpenCode prompt/autocomplete borders: only a colored vertical bar
 const SPLIT: border::Set = border::Set {
@@ -107,6 +115,9 @@ struct ToolData {
     id: u32,
     name: Option<String>,
     args: Option<String>,
+    // the run_typescript source, wire-encoded (tool_code annotation);
+    // None for every other tool
+    code: Option<String>,
     state: ToolState,
     result: Option<(bool, String)>,
     started: std::time::Instant,
@@ -143,6 +154,12 @@ enum Ev {
         id: u32,
         ok: bool,
         preview: String,
+    },
+    // the run_typescript source (tool_code annotation): the FULL args,
+    // wire-encoded, merged into the matching Tool by id
+    ToolCode {
+        id: u32,
+        code: String,
     },
     Turn,
     TurnDone,
@@ -190,6 +207,15 @@ fn parse_line(line: &str) -> Option<Ev> {
             id,
             name: name.trim().to_string(),
             args: args.to_string(),
+        });
+    }
+    // tool_code #<id> : <full args, wire-encoded> (run_typescript only)
+    if let Some(r) = line.strip_prefix("tool_code #") {
+        let (id_s, rest) = r.split_once(" : ")?;
+        let id: u32 = id_s.trim().parse().ok()?;
+        return Some(Ev::ToolCode {
+            id,
+            code: rest.to_string(),
         });
     }
     // tool_result #<id> <ok|fail> : <preview>
@@ -248,6 +274,7 @@ fn parse_line(line: &str) -> Option<Ev> {
             args: None,
             state: ToolState::Run,
             result: None,
+            code: None,
             started: std::time::Instant::now(),
             elapsed: None,
         }));
@@ -264,6 +291,7 @@ fn parse_line(line: &str) -> Option<Ev> {
             id,
             name: None,
             args: None,
+            code: None,
             state,
             result: None,
             started,
@@ -439,7 +467,7 @@ fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> 
         rows.push(Line::from(""));
     }
     let user = matches!(ev, Ev::You(_));
-    for l in ev_lines_t(ev, tick) {
+    for l in ev_lines_t(ev, tick, width) {
         for mut r in wrap_line(l, width) {
             if user {
                 pad_line_bg(&mut r, width);
@@ -525,6 +553,7 @@ fn ev_visible(ev: &Ev, debug: bool) -> bool {
             | Ev::Raw(_)
             | Ev::ToolInfo { .. }
             | Ev::ToolResult { .. }
+            | Ev::ToolCode { .. }
     )
 }
 
@@ -549,6 +578,18 @@ fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>>, ev: Ev) 
                 if let Ev::Tool(td) = e {
                     if td.id == *id {
                         td.result = Some((*ok, preview.clone()));
+                        cache[i] = None;
+                        return false;
+                    }
+                }
+            }
+            return false;
+        }
+        Ev::ToolCode { id, code } => {
+            for (i, e) in events.iter_mut().enumerate().rev() {
+                if let Ev::Tool(td) = e {
+                    if td.id == *id {
+                        td.code = Some(code.clone());
                         cache[i] = None;
                         return false;
                     }
@@ -838,11 +879,11 @@ fn args_preview(name: &str, args: &str) -> String {
 // The shape follows the OpenCode message parts: user messages are blocks
 // with a colored left bar and panel background; assistant text is
 // markdown in the OpenCode colors; tools are inline tools.
-fn ev_lines_t(ev: &Ev, tick: u32) -> Vec<Line<'static>> {
+fn ev_lines_t(ev: &Ev, tick: u32, width: usize) -> Vec<Line<'static>> {
     // the feed twin: identical shape, but the tool spinner animates
     match ev {
-        Ev::Tool(td) => tool_lines(td, tick),
-        other => ev_lines(other),
+        Ev::Tool(td) => tool_lines(td, tick, width),
+        other => ev_lines(other, width),
     }
 }
 
@@ -883,12 +924,12 @@ fn fmt_think_ms(ms: u128) -> String {
     }
 }
 
-fn ev_lines(ev: &Ev) -> Vec<Line<'static>> {
+fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
     match ev {
         Ev::You(t) => user_block_lines(t),
         Ev::Assistant(t) => md_to_lines(&unescape_md(t)),
         Ev::Thinking { ms, text, open } => thinking_lines(*ms, text, *open),
-        Ev::Tool(td) => tool_lines(td, 0),
+        Ev::Tool(td) => tool_lines(td, 0, width),
         Ev::Idle => vec![Line::from("")],
         Ev::Sub { name, ok, preview } => vec![Line::from(vec![
             Span::styled(format!("  {} ", GLYPH_BRANCH), Style::default().fg(FAINT)),
@@ -954,7 +995,7 @@ fn ev_lines(ev: &Ev) -> Vec<Line<'static>> {
                 Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
             ),
         ])],
-        Ev::ToolInfo { .. } | Ev::ToolResult { .. } => vec![],
+        Ev::ToolInfo { .. } | Ev::ToolResult { .. } | Ev::ToolCode { .. } => vec![],
         Ev::Raw(t) => vec![Line::from(Span::styled(
             format!("  {}", t),
             Style::default().fg(DIM),
@@ -981,11 +1022,279 @@ fn user_block_lines(text: &str) -> Vec<Line<'static>> {
     rows
 }
 
+// ---- the run_typescript code block ----
+
+// decode the tool_code wire encoding: "\N" newline, "\R" CR, backslash
+// doubled (the same reversible encoding the provider wire uses)
+fn wire_decode(s: &str) -> String {
+    let cs: Vec<char> = s.chars().collect();
+    let mut out = String::new();
+    let mut i = 0usize;
+    while i < cs.len() {
+        if cs[i] == '\\' && i + 1 < cs.len() {
+            match cs[i + 1] {
+                'N' => {
+                    out.push('\n');
+                    i += 2;
+                    continue;
+                }
+                'R' => {
+                    out.push('\r');
+                    i += 2;
+                    continue;
+                }
+                '\\' => {
+                    out.push('\\');
+                    i += 2;
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        out.push(cs[i]);
+        i += 1;
+    }
+    out
+}
+
+const TS_KEYWORDS: &[&str] = &[
+    "abstract", "any", "as", "asserts", "async", "await", "boolean", "break", "case", "catch",
+    "class", "const", "continue", "debugger", "declare", "default", "delete", "do", "else",
+    "enum", "export", "extends", "false", "finally", "for", "from", "function", "if",
+    "implements", "import", "in", "infer", "instanceof", "interface", "is", "keyof", "let",
+    "namespace", "never", "new", "null", "number", "object", "of", "private", "protected",
+    "public", "readonly", "return", "satisfies", "static", "string", "super", "switch",
+    "symbol", "this", "throw", "true", "try", "type", "typeof", "undefined", "unknown", "var",
+    "void", "while", "with", "yield",
+];
+
+fn is_id_start(c: char) -> bool {
+    c.is_ascii_alphabetic() || c == '_' || c == '$'
+}
+
+fn is_id_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_' || c == '$'
+}
+
+// append one token to the per-line span list, splitting on newlines and
+// merging adjacent same-style spans (fewer spans render faster)
+fn push_tok(lines: &mut Vec<Vec<Span<'static>>>, text: &str, style: Style) {
+    if text.is_empty() {
+        return;
+    }
+    let mut first = true;
+    for part in text.split('\n') {
+        if !first {
+            lines.push(Vec::new());
+        }
+        first = false;
+        if part.is_empty() {
+            continue;
+        }
+        let line = lines.last_mut().expect("push_tok: a line exists");
+        if let Some(last) = line.last_mut() {
+            if last.style == style {
+                last.content.to_mut().push_str(part);
+                continue;
+            }
+        }
+        line.push(Span::styled(part.to_string(), style));
+    }
+}
+
+// tokenize TypeScript into highlighted per-line spans, one pass, char by
+// char: keywords, strings and template literals, comments (line and
+// block, block may span lines), numbers, call sites, capitalized types
+fn highlight_ts(src: &str) -> Vec<Vec<Span<'static>>> {
+    let cs: Vec<char> = src.chars().collect();
+    let n = cs.len();
+    let comment = Style::default().fg(SYNTAX_COMMENT).add_modifier(Modifier::ITALIC);
+    let string = Style::default().fg(SYNTAX_STRING);
+    let number = Style::default().fg(SYNTAX_NUMBER);
+    let keyword = Style::default().fg(SYNTAX_KEYWORD).add_modifier(Modifier::BOLD);
+    let func = Style::default().fg(SYNTAX_FUNC);
+    let typ = Style::default().fg(HEAD);
+    let plain = Style::default().fg(TEXT);
+    let punct = Style::default().fg(DIM);
+    let mut lines: Vec<Vec<Span<'static>>> = vec![Vec::new()];
+    let mut i = 0usize;
+    while i < n {
+        let c = cs[i];
+        // line comment
+        if c == '/' && cs.get(i + 1) == Some(&'/') {
+            let mut t = String::new();
+            while i < n && cs[i] != '\n' {
+                t.push(cs[i]);
+                i += 1;
+            }
+            push_tok(&mut lines, &t, comment);
+            continue;
+        }
+        // block comment (may span lines; push_tok splits them)
+        if c == '/' && cs.get(i + 1) == Some(&'*') {
+            let mut t = String::from("/*");
+            i += 2;
+            while i < n {
+                if cs[i] == '*' && cs.get(i + 1) == Some(&'/') {
+                    t.push_str("*/");
+                    i += 2;
+                    break;
+                }
+                t.push(cs[i]);
+                i += 1;
+            }
+            push_tok(&mut lines, &t, comment);
+            continue;
+        }
+        // strings and template literals
+        if c == '"' || c == '\'' || c == '`' {
+            let quote = c;
+            let mut t = String::new();
+            t.push(quote);
+            i += 1;
+            while i < n {
+                if cs[i] == '\\' && i + 1 < n {
+                    t.push(cs[i]);
+                    t.push(cs[i + 1]);
+                    i += 2;
+                    continue;
+                }
+                t.push(cs[i]);
+                if cs[i] == quote {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            push_tok(&mut lines, &t, string);
+            continue;
+        }
+        // number
+        if c.is_ascii_digit() && !cs.get(i.wrapping_sub(1)).map_or(false, |&p| is_id_char(p)) {
+            let mut t = String::new();
+            while i < n && (cs[i].is_ascii_alphanumeric() || matches!(cs[i], '.' | '_')) {
+                t.push(cs[i]);
+                i += 1;
+            }
+            push_tok(&mut lines, &t, number);
+            continue;
+        }
+        // identifier: keyword, call, type or plain name
+        if is_id_start(c) {
+            let mut t = String::new();
+            while i < n && is_id_char(cs[i]) {
+                t.push(cs[i]);
+                i += 1;
+            }
+            let mut k = i;
+            while k < n && cs[k] == ' ' {
+                k += 1;
+            }
+            let style = if TS_KEYWORDS.contains(&t.as_str()) {
+                keyword
+            } else if cs.get(k) == Some(&'(') {
+                func
+            } else if t.starts_with(|ch: char| ch.is_uppercase()) {
+                typ
+            } else {
+                plain
+            };
+            push_tok(&mut lines, &t, style);
+            continue;
+        }
+        // any other char is punctuation
+        push_tok(&mut lines, &c.to_string(), punct);
+        i += 1;
+    }
+    lines
+}
+
+// clip one line of spans to a display width (the block never word-wraps:
+// a box that wraps is not a box)
+fn clip_line(spans: &[Span<'static>], w: usize) -> (Vec<Span<'static>>, usize) {
+    let mut out: Vec<Span<'static>> = Vec::new();
+    let mut used = 0usize;
+    for sp in spans {
+        if used >= w {
+            break;
+        }
+        let mut buf = String::new();
+        for ch in sp.content.chars() {
+            let cw = ch.width().unwrap_or(1).max(1);
+            if used + cw > w {
+                break;
+            }
+            buf.push(ch);
+            used += cw;
+        }
+        if !buf.is_empty() {
+            out.push(Span::styled(buf, sp.style));
+        }
+        if used >= w {
+            break;
+        }
+    }
+    (out, used)
+}
+
+// the code block: a rounded border (orange while the tool runs, dim once
+// done, red on failure), a header, a line-number gutter, and the source
+// verbatim — clipped on the right, never wrapped
+fn code_block_lines(code: &str, state: &ToolState, width: usize) -> Vec<Line<'static>> {
+    let hl = highlight_ts(code);
+    if hl.is_empty() {
+        return Vec::new();
+    }
+    let border = match state {
+        ToolState::Run => BRAND,
+        ToolState::Ok => BORDER_ACTIVE,
+        ToolState::Fail => ERR,
+    };
+    let bstyle = Style::default().fg(border);
+    // 2 feed margin, 2 box borders, " N │ " around the gutter, 1 right pad
+    let gutter_w = hl.len().to_string().len();
+    let cw = width.saturating_sub(gutter_w + 9).max(8);
+    let inner = gutter_w + cw + 5;
+    let mut rows: Vec<Line<'static>> = Vec::new();
+    // top: "  ╭─ typescript ───…───╮"
+    let header = "─ typescript ";
+    let fill = inner.saturating_sub(header.width()).max(1);
+    rows.push(Line::from(vec![
+        Span::styled("  ", Style::default()),
+        Span::styled("╭", bstyle),
+        Span::styled(header.to_string(), bstyle),
+        Span::styled("─".repeat(fill), bstyle),
+        Span::styled("╮", bstyle),
+    ]));
+    for (i, spans) in hl.iter().enumerate() {
+        let (content, used) = clip_line(spans, cw);
+        let mut ls = vec![
+            Span::styled("  ", Style::default()),
+            Span::styled("│ ", bstyle),
+            Span::styled(format!("{:>gw$}", i + 1, gw = gutter_w), Style::default().fg(FAINT)),
+            Span::styled(" │ ", bstyle),
+        ];
+        ls.extend(content);
+        if used < cw {
+            ls.push(Span::styled(" ".repeat(cw - used), Style::default()));
+        }
+        ls.push(Span::styled("│", bstyle));
+        rows.push(Line::from(ls));
+    }
+    rows.push(Line::from(vec![
+        Span::styled("  ", Style::default()),
+        Span::styled("╰", bstyle),
+        Span::styled("─".repeat(inner), bstyle),
+        Span::styled("╯", bstyle),
+    ]));
+    rows
+}
+
 // the tool line, OpenCode inline-tool style: 2-col icon, name,
 // elapsed, args preview; result preview on the next line. The state is
 // a glyph: braille spinner while running, green ✓ once ok, red ✗ on
 // failure.
-fn tool_lines(td: &ToolData, tick: u32) -> Vec<Line<'static>> {
+fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
     let name = td.name.clone().unwrap_or_else(|| format!("#{}", td.id));
     let args = td
         .args
@@ -1040,6 +1349,18 @@ fn tool_lines(td: &ToolData, tick: u32) -> Vec<Line<'static>> {
                     Style::default().fg(if *ok { TOOL } else { ERR }),
                 ),
             ]));
+        }
+    }
+    // the run_typescript source block: the FULL code, highlighted, in a
+    // bordered box under the tool line
+    if let Some(raw) = &td.code {
+        let decoded = wire_decode(raw);
+        let code = match json_str_field(&decoded, "code") {
+            Some(c) => c,
+            None => decoded,
+        };
+        if !code.trim().is_empty() {
+            ls.extend(code_block_lines(&code, &td.state, width));
         }
     }
     ls
@@ -1133,15 +1454,20 @@ impl App {
                     td.result = Some((ok, preview));
                 }
             }
+            Ev::ToolCode { id, code } => {
+                if let Some(td) = self.line_tools.get_mut(&id) {
+                    td.code = Some(code);
+                }
+            }
             Ev::Tool(td) => {
                 if let Some(mut held) = self.line_tools.remove(&td.id) {
                     held.state = td.state;
                     if held.elapsed.is_none() {
                         held.elapsed = Some(fmt_elapsed(held.started));
                     }
-                    print_ev_of(&Ev::Tool(held), self.debug);
+                    print_ev_of(&Ev::Tool(held), self.debug, self.area_w);
                 } else {
-                    print_ev_of(&Ev::Tool(td), self.debug);
+                    print_ev_of(&Ev::Tool(td), self.debug, self.area_w);
                 }
             }
             ev2 @ (Ev::TurnDone | Ev::Idle) => {
@@ -1154,9 +1480,9 @@ impl App {
                     if td.result.is_none() {
                         td.result = Some((false, "interrompu".to_string()));
                     }
-                    print_ev_of(&Ev::Tool(td), self.debug);
+                    print_ev_of(&Ev::Tool(td), self.debug, self.area_w);
                 }
-                print_ev_of(&ev2, self.debug);
+                print_ev_of(&ev2, self.debug, self.area_w);
             }
             Ev::Assistant(t) => {
                 // the line mode shows the same collapsed section: the
@@ -1170,15 +1496,16 @@ impl App {
                                 open: self.debug,
                             },
                             self.debug,
+                            self.area_w,
                         );
                         if !vis.trim().is_empty() {
-                            print_ev_of(&Ev::Assistant(vis.to_string()), self.debug);
+                            print_ev_of(&Ev::Assistant(vis.to_string()), self.debug, self.area_w);
                         }
                     }
-                    None => print_ev_of(&Ev::Assistant(t), self.debug),
+                    None => print_ev_of(&Ev::Assistant(t), self.debug, self.area_w),
                 }
             }
-            other => print_ev_of(&other, self.debug),
+            other => print_ev_of(&other, self.debug, self.area_w),
         }
     }
 }
@@ -1302,7 +1629,7 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         out.push(Ev::Info(format!(
             "modèle {} · {}:{} · seuil de compaction 800000 · session {}",
             if app.is_live {
-                "zai-glm-5-3"
+                "claude-opus-5-5"
             } else {
                 "scripté"
             },
@@ -1538,7 +1865,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
                 ),
                 Span::styled(
                     if app.is_live {
-                        " zai-glm-5-3 · génération…"
+                        " claude-opus-5-5 · génération…"
                     } else {
                         " réponse…"
                     },
@@ -1557,7 +1884,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
                     format!(
                         " bend-harness · {}",
                         if app.is_live {
-                            "zai-glm-5-3"
+                            "claude-opus-5-5"
                         } else {
                             "scripté"
                         }
@@ -1655,7 +1982,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
         Span::styled(" · ", Style::default().fg(DIM)),
         Span::styled(
             if app.is_live {
-                "zai-glm-5-3"
+                "claude-opus-5-5"
             } else {
                 "scripté"
             },
@@ -2220,12 +2547,12 @@ fn run_tui(app: &mut App) -> io::Result<()> {
 
 // ---- line mode (non-interactive stdin) ----
 
-fn print_ev_of(ev: &Ev, debug: bool) {
+fn print_ev_of(ev: &Ev, debug: bool, width: usize) {
     if !ev_visible(ev, debug) {
         return;
     }
     let mut out = io::stdout();
-    for l in ev_lines(ev) {
+    for l in ev_lines(ev, width) {
         for span in l.spans.iter() {
             let _ = write!(out, "{}", span.content);
         }
@@ -2273,7 +2600,7 @@ fn run_line_mode(app: &mut App) -> io::Result<()> {
         }
         let local = handle_input(app, &v);
         for ev in &local {
-            print_ev_of(ev, app.debug);
+            print_ev_of(ev, app.debug, app.area_w);
         }
         if app.should_quit {
             break;
@@ -2346,7 +2673,13 @@ pub fn run(host: String, port: u16, is_live: bool, debug: bool, session_id: Stri
         tail_visible: true,
         bottom_bar_rect: None,
         cache: Vec::new(),
-        area_w: 80,
+        // line mode renders without a frame: the terminal width (or a
+        // sane default) sizes the code blocks; interactive mode
+        // overwrites this every frame
+        area_w: crossterm::terminal::size()
+            .map(|(w, _)| w as usize)
+            .unwrap_or(100)
+            .max(40),
         area_h: 24,
         events: Vec::new(),
         last_line_at: None,
@@ -2386,4 +2719,73 @@ pub fn run(host: String, port: u16, is_live: bool, debug: bool, session_id: Stri
     while let Ok(_) = app.rx.try_recv() {}
     let _ = connected;
     Ok(())
+}
+
+// ---- tests ----
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // the runtime's wire encoding, as emit_code_ann produces it
+    fn wire_encode(s: &str) -> String {
+        s.replace('\\', "\\\\")
+            .replace('\r', "\\R")
+            .replace('\n', "\\N")
+    }
+
+    // proper JSON args, as the model emits them: quotes and backslashes
+    // escaped inside the code string, newlines as \n
+    fn json_escape(s: &str) -> String {
+        s.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+    }
+
+    // the feed receives tool_started, the tool annotations, then
+    // tool_finished: the block must render under the merged line
+    #[test]
+    fn tool_code_block_renders_under_the_tool_line() {
+        let code = "// orchestre les appels
+async function main(): Promise<unknown> {
+  const xs = [1, 2, 3];
+  const s = \"une chaîne\";
+  return xs.length + s.length;
+}";
+        let args = format!("{{\"code\": \"{}\"}}", json_escape(code));
+        let wire_lines = vec![
+            "  obs: tool_started #3".to_string(),
+            format!("tool #3 run_typescript : {}", args),
+            format!("tool_code #3 : {}", wire_encode(&args)),
+            "  obs: tool_finished #3 ok".to_string(),
+        ];
+        let mut events: Vec<Ev> = Vec::new();
+        let mut cache: Vec<Option<EventRows>> = Vec::new();
+        for l in &wire_lines {
+            let ev = parse_line(l).expect("parse");
+            push_event(&mut events, &mut cache, ev);
+        }
+        let tool = events
+            .iter()
+            .find_map(|e| match e {
+                Ev::Tool(td) => Some(td.clone()),
+                _ => None,
+            })
+            .expect("the merged tool");
+        assert_eq!(tool.id, 3);
+        assert_eq!(tool.name.as_deref(), Some("run_typescript"));
+        assert!(tool.code.is_some());
+        let rows = ev_lines(&Ev::Tool(tool), 80);
+        let joined: Vec<String> = rows
+            .iter()
+            .map(|r| r.spans.iter().map(|s| s.content.clone()).collect::<String>())
+            .collect();
+        for (i, l) in joined.iter().enumerate() {
+            println!("{:2} | {}", i, l);
+        }
+        assert!(joined.iter().any(|l| l.contains("╭─ typescript")));
+        assert!(joined.iter().any(|l| l.contains("async function main")));
+        assert!(joined.iter().any(|l| l.contains("une chaîne")));
+        // one bordered row per source line, top and bottom included
+        assert_eq!(joined.iter().filter(|l| l.contains('│')).count(), 6);
+    }
 }

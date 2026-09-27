@@ -1791,3 +1791,157 @@ law deferred_reads_program_acked_result:
           String.append("prog out\n", Rt.COMPACT_ACK()), True{}),
         Nil{}}})
     == Rt.Def{True{}, False{}} : Rt.Def}
+
+# ---- the provider adapters (core/api.bend + runtime/main.bend) ----
+# The vibe CLI structure: one mapping per api_style, a provider table
+# in the runtime. The OpenAI mapping above stays exactly as the GLM
+# laws pinned it; the Anthropic mapping below is the Messages shape
+# the foundry proxy serves (probed live: thinking blocks are optional,
+# tool_use without history thinking is accepted, a thinking block
+# without its signature is rejected - so history thinking is stripped).
+
+# LAW: the alias resolves and the style follows the model name.
+law provider_resolves_alias:
+  {Rt.resolve_model("opus-5.5") == "claude-opus-5-5" : String}
+
+law provider_opus_is_anthropic:
+  {Rt.model_style("claude-opus-5-5") == Api.Anthropic{} : Api.Style}
+
+law provider_glm_is_openai:
+  {Rt.model_style("zai-glm-5-3") == Api.OpenAI{} : Api.Style}
+
+# LAW: the provider table carries the right api_base and key env.
+law provider_anthropic_base:
+  {Rt.model_url(Api.Anthropic{})
+    == "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages"
+    : String}
+
+law provider_openai_base:
+  {Rt.model_url(Api.OpenAI{})
+    == "https://api.mistral.ai/v1/chat/completions" : String}
+
+law provider_anthropic_key_env:
+  {Rt.model_key_env(Api.Anthropic{}) == "ANTHROPIC_FOUNDRY_API_KEY"
+    : String}
+
+law provider_openai_key_env:
+  {Rt.model_key_env(Api.OpenAI{}) == "MISTRAL_API_KEY" : String}
+
+# LAW: the style dispatch routes the body and the reply to the right
+# adapter - the OpenAI side byte-identical to api_body/reply_of.
+law style_routes_body:
+  {Api.api_body_for(Api.OpenAI{}, "m",
+      Api.parse_wire("MODEL default\nMSG user : hi\nEND\n"))
+    == Api.api_body("m",
+      Api.parse_wire("MODEL default\nMSG user : hi\nEND\n"))
+    : String}
+
+law style_routes_reply:
+  {Api.reply_of_for(Api.OpenAI{}, 401, "{\"error\":\"bad key\"}")
+    == Api.reply_of(401, "{\"error\":\"bad key\"}") : String}
+
+# LAW: an Anthropic body maps a simple wire byte-for-byte: the system
+# prompt becomes the top-level system field, the user message a text
+# block, the thinking config the vibe CLI sends for opus-5.5 (adaptive,
+# summarized, effort high, the adaptive max_tokens budget).
+law api_body_anth_maps:
+  {Api.api_body_for(Api.Anthropic{}, "claude-opus-5-5",
+      Api.parse_wire("MODEL default\nMSG system : You are precise.\nMSG user : bonjour\nEND\n"))
+    == "{\"system\":[{\"type\":\"text\",\"text\":\"You are precise.\"}],\"model\":\"claude-opus-5-5\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"bonjour\"}]}]}"
+    : String}
+
+# LAW: an Anthropic compaction call (no TOOL lines) omits tools and
+# tool_choice - the model cannot even offer a tool call.
+law api_body_anth_bare_omits_tools:
+  {Api.api_body_for(Api.Anthropic{}, "m",
+      Api.parse_wire("MODEL default\nMSG user : salut\nEND\n"))
+    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"salut\"}]}]}"
+    : String}
+
+# LAW: the Anthropic tools carry the {name, description, input_schema}
+# shape and tool_choice is the auto object.
+law api_body_anth_tools_shape:
+  {Api.api_body_for(Api.Anthropic{}, "m",
+      Api.parse_wire("MODEL default\nTOOL echo : Returns text.\nMSG user : bonjour\nEND\n"))
+    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"bonjour\"}]}],\"tools\":[{\"name\":\"echo\",\"description\":\"Returns text.\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"}},\"required\":[\"arg\"]}}],\"tool_choice\":{\"type\":\"auto\"}}"
+    : String}
+
+# LAW: an assistant call pairs with its tool result exactly as the
+# OpenAI adapter pairs them - the tool_use id and the tool_use_id of
+# the result agree, and the result rides a USER message.
+law anth_tool_result_pairs:
+  {Api.api_body_for(Api.Anthropic{}, "m",
+      Api.parse_wire("MODEL default\nMSG user : go\nMSG assistant : thinking\n  CALL 7 echo : hi\nMSG tool : tool echo ok: out\nEND\n"))
+    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"go\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"thinking\"},{\"type\":\"tool_use\",\"id\":\"call_7\",\"name\":\"echo\",\"input\":{\"arg\":\"hi\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_7\",\"content\":\"tool echo ok: out\"}]}]}"
+    : String}
+
+# LAW: consecutive tool results merge into ONE user message - the
+# vibe mapper's shape (the ids pair FIFO).
+law anth_tool_results_merge:
+  {String.contains(Api.api_body_for(Api.Anthropic{}, "m",
+      Api.parse_wire("MODEL default\nMSG user : go\nMSG assistant : thinking\n  CALL 7 echo : hi\n  CALL 8 bash : ls\nMSG tool : out1\nMSG tool : out2\nEND\n")),
+    "\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_8\",\"content\":\"out2\"}")
+    == False{} : Bool}
+
+# LAW: the marked history reasoning is STRIPPED on the way back - a
+# thinking block without its signature is rejected by the Messages
+# API (probed), so no \"type\":\"thinking\" block ever rides an
+# assistant message.
+law anth_strips_history_thinking:
+  {Bool.and(
+     String.contains(Api.api_body_for(Api.Anthropic{}, "m",
+       Api.parse_wire("MODEL default\nMSG user : go\nMSG assistant : thinking\n  CALL 7 echo : hi\nMSG tool : out\nEND\n")),
+       "\"type\":\"text\",\"text\":\"thinking\""),
+     Bool.not(String.contains(Api.api_body_for(Api.Anthropic{}, "m",
+       Api.parse_wire("MODEL default\nMSG assistant : 2+2 = 4\n4\nEND\n")),
+       "type\":\"thinking\"")))
+    == True{} : Bool}
+
+# LAW: Anthropic text blocks become separate lines (the GLM parity).
+law anth_blocks_join_lines:
+  {Api.unescape_nl(Api.reply_of_for(Api.Anthropic{}, 200,
+      "{\"type\":\"message\",\"content\":[{\"type\":\"text\",\"text\":\"a\"},{\"type\":\"text\",\"text\":\"b\"}]}"))
+    == "OK a\nb\nEND\n" : String}
+
+# LAW: Anthropic thinking blocks surface in the reply wrapped in the
+# think markers - the same transport the GLM adapter uses, so the TUI
+# and the history are unchanged.
+law anth_thinking_surfaces:
+  {Api.unescape_nl(Api.reply_of_for(Api.Anthropic{}, 200,
+      "{\"type\":\"message\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"2+2 = 4\",\"signature\":\"sig\"},{\"type\":\"text\",\"text\":\"4\"}]}"))
+    == "OK <think>2+2 = 4</think>\n4\nEND\n" : String}
+
+# LAW: tool_use blocks map onto the CALL reply lines the Core parses
+# (1-based ids, the flat arg rehydrated from the input object).
+law anth_tool_calls_map:
+  {Api.reply_of_for(Api.Anthropic{}, 200,
+      "{\"type\":\"message\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_01\",\"name\":\"echo\",\"input\":{\"arg\":\"hi\"}}]}")
+    == "OK \nCALL 1 echo : hi\nEND\n" : String}
+
+# LAW: a structured input rides as its JSON on the CALL line.
+law anth_structured_call_maps:
+  {Api.reply_of_for(Api.Anthropic{}, 200,
+      "{\"type\":\"message\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_01\",\"name\":\"run_typescript\",\"input\":{\"code\":\"x()\"}}]}")
+    == "OK \nCALL 1 run_typescript : {\"code\":\"x()\"}\nEND\n" : String}
+
+# LAW: a 200 that carries an error body surfaces as an error.
+law anth_error_body_maps:
+  {Api.reply_of_for(Api.Anthropic{}, 200,
+      "{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}")
+    == "ERROR provider 200: Overloaded\nEND\n" : String}
+
+# LAW: a non-200 still maps to the flattened ERROR line with the status.
+law anth_status_error_maps:
+  {Api.reply_of_for(Api.Anthropic{}, 401, "{\"error\":\"bad key\"}")
+    == "ERROR provider 401: {\"error\":\"bad key\"}\nEND\n" : String}
+
+# LAW: the Messages API tool-name pattern has no dot - the self.*
+# tools ride as self_* on the way out and come back as their harness
+# names (the proxy rejects "self.reload" with invalid_request_error).
+law anth_tool_name_roundtrip:
+  {Bool.and(
+     String.eq(Api.anth_tool_name_out("self.reload"), "self_reload"),
+     Bool.and(
+       String.eq(Api.anth_tool_name_in("self_reload"), "self.reload"),
+       String.eq(Api.anth_tool_name_out("bash"), "bash")))
+    == True{} : Bool}

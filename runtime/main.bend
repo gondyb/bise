@@ -520,10 +520,80 @@ def model_call.err(e: Http.Err) -> IO(Rem.RemoteRes):
     IO.pure(Rem.RemoteRes,
       Rem.RRErr{String.append("provider unreachable: ", api_err(e))})
 
-def model_call.reply(+res: Http.Res) -> String:
+# ---- the provider table (the vibe config.toml mirror) ----
+# A provider carries an api_base, a key env and an api_style; a model
+# points at one. The active model today is opus-5.5: alias
+# "opus-5.5" -> name "claude-opus-5-5" on foundry-anthropic (the
+# Messages API through the foundry proxy); the Mistral provider keeps
+# the OpenAI-compatible mapping the laws pinned with GLM.
+
+def resolve_model.pick(is_alias: Bool, +name: String) -> String:
+  match is_alias:
+    case True{}:
+      "claude-opus-5-5"
+    case False{}:
+      name
+
+def resolve_model(+name: String) -> String:
+  resolve_model.pick(String.eq(name, "opus-5.5"), name)
+
+def model_style.pick(is_claude: Bool) -> Api.Style:
+  match is_claude:
+    case True{}:
+      Api.Anthropic{}
+    case False{}:
+      Api.OpenAI{}
+
+def model_style(+model: String) -> Api.Style:
+  model_style.pick(String.starts_with(model, "claude"))
+
+def model_url.pick(is_anth: Bool) -> String:
+  match is_anth:
+    case True{}:
+      "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages"
+    case False{}:
+      "https://api.mistral.ai/v1/chat/completions"
+
+def model_url(st: Api.Style) -> String:
+  model_url.pick(Api.is_anthropic(st))
+
+def model_key_env.pick(is_anth: Bool) -> String:
+  match is_anth:
+    case True{}:
+      "ANTHROPIC_FOUNDRY_API_KEY"
+    case False{}:
+      "MISTRAL_API_KEY"
+
+def model_key_env(st: Api.Style) -> String:
+  model_key_env.pick(Api.is_anthropic(st))
+
+def oai_headers(+key: String) -> Map<&2, List<&2, String>>:
+  Http.set(Http.set(Http.empty(), "Authorization",
+      String.append("Bearer ", key)),
+    "Content-Type", "application/json")
+
+def anth_headers(+key: String) -> Map<&2, List<&2, String>>:
+  Http.set(Http.set(Http.set(Http.set(Http.empty(),
+      "x-api-key", key),
+    "anthropic-version", "2023-06-01"),
+  "anthropic-beta",
+  "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31,context-1m-2025-08-07"),
+  "Content-Type", "application/json")
+
+def model_headers.pick(is_anth: Bool, +key: String) -> Map<&2, List<&2, String>>:
+  match is_anth:
+    case True{}:
+      anth_headers(key)
+    case False{}:
+      oai_headers(key)
+
+def model_headers(st: Api.Style, +key: String) -> Map<&2, List<&2, String>>:
+  model_headers.pick(Api.is_anthropic(st), key)
+
+def model_call.reply(st: Api.Style, +res: Http.Res) -> String:
   match res:
     case Http.Res{+status, _, _}:
-      Api.reply_of(status, Http.text(res))
+      Api.reply_of_for(st, status, Http.text(res))
 
 # BEND_WIRE_DUMP also captures the raw provider response (suffix .reply):
 # the tool-call arguments exactly as the provider serialized them,
@@ -541,20 +611,21 @@ def model_call.res.dumper(m: Result<&1, &1, U32 & String, String>, +res: Http.Re
     case Done{+path}:
       model_call.dump_res(path, Http.text(res))
 
-def model_call.res(+res: Http.Res) -> IO(Rem.RemoteRes):
+def model_call.res(+res: Http.Res, st: Api.Style) -> IO(Rem.RemoteRes):
   do IO<Rem.RemoteRes>:
     dw2 : Unit <- P.write_file("/tmp/ap-reply-dump.txt", Http.text(res))
     dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
     d : Unit <- model_call.res.dumper(dr, res)
-    reply : String <- IO.pure(String, model_call.reply(res))
+    reply : String <- IO.pure(String, model_call.reply(st, res))
     IO.pure(Rem.RemoteRes, Rem.parse_reply(reply))
 
-def model_call.ok(r: Result<&2, &2, Http.Err, Http.Res>) -> IO(Rem.RemoteRes):
+def model_call.ok(r: Result<&2, &2, Http.Err, Http.Res>, st: Api.Style)
+    -> IO(Rem.RemoteRes):
   match r:
     case Fail{+e}:
       model_call.err(e)
     case Done{+res}:
-      model_call.res(res)
+      model_call.res(res, st)
 
 # transient failures get another chance: connection loss, DNS, timeouts
 # and server-side statuses (5xx, 429) retry with a pause; everything else
@@ -665,59 +736,64 @@ def model_call.step.retry(can: Bool, +k: Nat, +after_ms: U32, +why: String,
     case False{}:
       IO.pure(Rem.RemoteRes, Rem.RRErr{why})
 
-def model_call.step(a: Attempt, +k: Nat,
+def model_call.step(a: Attempt, +k: Nat, st: Api.Style,
     next: Nat -> IO(Rem.RemoteRes)) -> IO(Rem.RemoteRes):
   match a:
     case AOk{+res}:
-      model_call.res(res)
+      model_call.res(res, st)
     case AFail{+e}:
       model_call.err(e)
     case ARetry{+after_ms, +why}:
       model_call.step.retry(Nat.is_lt(0n, k), k, after_ms, why, next)
 
 @unsafe
-def model_call.try(fuel: Nat, +request: String, +key: String)
-    -> IO(Rem.RemoteRes):
+def model_call.try(fuel: Nat, +request: String, +key: String,
+    +st: Api.Style, +model: String) -> IO(Rem.RemoteRes):
   match fuel:
     case 0n:
       IO.pure(Rem.RemoteRes,
         Rem.RRErr{"provider unreachable: retries exhausted"})
     case 1n+k:
       do IO<Rem.RemoteRes>:
-        mr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_MODEL")
-        +model : String <- IO.pure(String, env_or(mr, "zai-glm-5-3"))
         +body : String <- IO.pure(String,
-          Enc.utf8.encode(Api.api_body(model, Api.parse_wire(request))))
+          Enc.utf8.encode(Api.api_body_for(st, model,
+            Api.parse_wire(request))))
         dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
         dump_dbg : Unit <- dump_wire(env_or(dr, ""), body)
         hdrs : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
-          Http.set(Http.set(Http.empty(), "Authorization",
-              String.append("Bearer ", key)),
-            "Content-Type", "application/json"))
+          model_headers(st, key))
         r : Result<&2, &2, Http.Err, Http.Res> <- Http.fetch.with("POST",
-          "https://api.mistral.ai/v1/chat/completions", hdrs, body, 120000)
+          model_url(st), hdrs, body, 120000)
         +a : Attempt <- IO.pure(Attempt, model_call.attempt_result(r))
-        model_call.step(a, k,
-          k2 => model_call.try(k2, request, key))
+        model_call.step(a, k, st,
+          k2 => model_call.try(k2, request, key, st, model))
 
 # three attempts total: the first try plus two retries
-def model_call.go(+request: String, +key: String) -> IO(Rem.RemoteRes):
-  model_call.try(3n, request, key)
+def model_call.go(+request: String, +key: String, +st: Api.Style,
+    +model: String) -> IO(Rem.RemoteRes):
+  model_call.try(3n, request, key, st, model)
 
-def model_call.key(empty: Bool, +request: String, +key: String)
-    -> IO(Rem.RemoteRes):
+def model_call.key(empty: Bool, +request: String, +key: String,
+    +st: Api.Style, +model: String) -> IO(Rem.RemoteRes):
   match empty:
     case True{}:
-      IO.pure(Rem.RemoteRes, Rem.RRErr{"MISTRAL_API_KEY is not set"})
+      IO.pure(Rem.RemoteRes,
+        Rem.RRErr{String.append(model_key_env(st), " is not set")})
     case False{}:
-      model_call.go(request, key)
+      model_call.go(request, key, st, model)
 
 @unsafe
 def model_call(+request: String) -> IO(Rem.RemoteRes):
   do IO<Rem.RemoteRes>:
-    kr : Result<&1, &1, U32 & String, String> <- IO.get_env("MISTRAL_API_KEY")
+    # the provider table: BEND_MODEL carries the model name or its
+    # alias; the style, the api_base and the key env follow from it
+    mr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_MODEL")
+    +model : String <- IO.pure(String,
+      resolve_model(env_or(mr, "claude-opus-5-5")))
+    +st : Api.Style <- IO.pure(Api.Style, model_style(model))
+    kr : Result<&1, &1, U32 & String, String> <- IO.get_env(model_key_env(st))
     +key : String <- IO.pure(String, env_or(kr, ""))
-    model_call.key(String.is_empty(key), request, key)
+    model_call.key(String.is_empty(key), request, key, st, model)
 
 # ---- the bash tool, fully in Bend (hub snap runner) ----
 # snap execvp's /bin/sh -c; the answer is the exit status on the first
@@ -1961,6 +2037,37 @@ def call_id(c: T.Call) -> U32:
     case T.Call{id, _, _}:
       id
 
+def call_args(c: T.Call) -> String:
+  match c:
+    case T.Call{_, _, args}:
+      args
+
+# the run_typescript source line: the FULL args, wire-encoded (newline
+# as \N, backslash doubled - the same reversible encoding the provider
+# wire uses), never flattened or capped, so the TUI renders the whole
+# program; the tool # preview line stays capped at 200
+def code_ann(+call: T.Call) -> String:
+  String.append("tool_code #", String.append(U32.show(call_id(call)),
+    String.append(" : ", Api.wire_encode(call_args(call)))))
+
+def is_code_call(+name: String) -> Bool:
+  String.eq(Rem.wire_name(name), "run_typescript")
+
+def emit_code_ann.pick(is_code: Bool, out: Out, +call: T.Call) -> IO(Out):
+  match is_code:
+    case True{}:
+      emit(out, Con{code_ann(call), Nil{}})
+    case False{}:
+      IO.pure(Out, out)
+
+def emit_code_ann(out: Out, +call: T.Call, live: Bool) -> IO(Out):
+  match live:
+    case True{}:
+      emit_code_ann.pick(is_code_call(call_name(call)), out, call)
+    case False{}:
+      IO.pure(Out, out)
+
+
 # live completions: run_typescript becomes node_program so the V8 engine
 # executes it (the Core's law-checked interpreter stays for scripted runs)
 def rename_cmd.ok(+action: U32, +text: String, calls: List<&2, T.Call>)
@@ -2227,7 +2334,8 @@ def run(fuel: Nat, out: Out, +rt: Rt, +job: Job, tr: Trans) -> IO(RtEnd):
                       # carry name/args/result to the TUI (live only);
                       # program sub-calls annotate inside exec_program.
                       do IO<RtEnd>:
-                        out2 : Out <- emit_call_ann(out, call, live)
+                        out1 : Out <- emit_call_ann(out, call, live)
+                        out2 : Out <- emit_code_ann(out1, call, live)
                         pr : Out & ExecRes <- exec_tool(out2, call, live)
                         exec_done(pr, k, call, after, rt2, live,
                           k2 => o4 => +r3 => +c =>

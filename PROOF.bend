@@ -737,3 +737,69 @@ def Laws.deferred_reads_prefixed_ack():
 
 def Laws.deferred_reads_program_acked_result():
   {==}
+
+def Laws.provider_resolves_alias():
+  {==}
+
+def Laws.provider_opus_is_anthropic():
+  {==}
+
+def Laws.provider_glm_is_openai():
+  {==}
+
+def Laws.provider_anthropic_base():
+  {==}
+
+def Laws.provider_openai_base():
+  {==}
+
+def Laws.provider_anthropic_key_env():
+  {==}
+
+def Laws.provider_openai_key_env():
+  {==}
+
+def Laws.style_routes_body():
+  {==}
+
+def Laws.style_routes_reply():
+  {==}
+
+def Laws.api_body_anth_maps():
+  {==}
+
+def Laws.api_body_anth_bare_omits_tools():
+  {==}
+
+def Laws.api_body_anth_tools_shape():
+  {==}
+
+def Laws.anth_tool_result_pairs():
+  {==}
+
+def Laws.anth_tool_results_merge():
+  {==}
+
+def Laws.anth_strips_history_thinking():
+  {==}
+
+def Laws.anth_blocks_join_lines():
+  {==}
+
+def Laws.anth_thinking_surfaces():
+  {==}
+
+def Laws.anth_tool_calls_map():
+  {==}
+
+def Laws.anth_structured_call_maps():
+  {==}
+
+def Laws.anth_error_body_maps():
+  {==}
+
+def Laws.anth_status_error_maps():
+  {==}
+
+def Laws.anth_tool_name_roundtrip():
+  {==}
