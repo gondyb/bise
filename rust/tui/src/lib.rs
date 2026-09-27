@@ -3,9 +3,12 @@
 //! Rust port of repl-tui (Ink). Same wire protocol; the presentation is
 //! modeled on the REAL OpenCode TUI (packages/tui in the opencode repo):
 //! no header bar — the screen is the conversation. Blocks breathe: a
-//! blank line at every content transition, blank rows around the
-//! prompt, and the user block paints its panel background the full
-//! column. User messages are
+//! blank line at every content transition, one column of margin on
+//! each edge of the feed, blank rows separating the history from the
+//! composer, and the user block paints its panel background the full
+//! column. Status speaks in glyphs, not words: ✦ reasoning, ✓ ok,
+//! ✗ fail, ▲ warning, ⟳ compaction, ≡ summary, ↳ preview. User
+//! messages are
 //! blocks with a colored left bar and a panel background; assistant
 //! markdown renders in the OpenCode markdown colors; tool calls are
 //! OpenCode inline tools (braille spinner while running, muted ✓ once
@@ -57,6 +60,7 @@ const ERR: Color = Color::Rgb(0xe0, 0x6c, 0x75); // error
 const PANEL: Color = Color::Rgb(0x14, 0x14, 0x14); // backgroundPanel
 const ELEMENT: Color = Color::Rgb(0x1e, 0x1e, 0x1e); // backgroundElement
 const BORDER_ACTIVE: Color = Color::Rgb(0x60, 0x60, 0x60); // borderActive
+const FAINT: Color = Color::Rgb(0x4a, 0x4a, 0x4a); // rails & turn marks — dimmer than textMuted
 
 // the OpenCode prompt/autocomplete borders: only a colored vertical bar
 const SPLIT: border::Set = border::Set {
@@ -76,6 +80,17 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 fn spinner_frame(tick: u32) -> &'static str {
     SPINNER[(tick as usize) % SPINNER.len()]
 }
+
+// ---- the feed glyph vocabulary: status is symbols, not words ----
+const GLYPH_THINK: &str = "✦"; // reasoning section (duration when collapsed)
+const GLYPH_OK: &str = "✓"; // success (tool, sub-call, turn)
+const GLYPH_ERR: &str = "✗"; // failure
+const GLYPH_WARN: &str = "▲"; // warning (interrupt, discarded candidate)
+const GLYPH_INFO: &str = "·"; // neutral notice
+const GLYPH_COMPACT: &str = "⟳"; // compaction running
+const GLYPH_SUMMARY: &str = "≡"; // compaction summary
+const GLYPH_BRANCH: &str = "↳"; // preview / sub-result line
+const GLYPH_RAIL: &str = "│"; // rail of an expanded reasoning section
 
 // ---- feed events ----
 
@@ -130,7 +145,7 @@ enum Ev {
         preview: String,
     },
     Turn,
-    TurnDone(String),
+    TurnDone,
     Compact(String),
     Compacted(String),
     Warn(String),
@@ -290,7 +305,7 @@ fn parse_line(line: &str) -> Option<Ev> {
         // a completed turn needs no annotation; a failure or an
         // interrupt must never disappear — the turn just stops
         if t == "completed" {
-            return Some(Ev::TurnDone("tour terminé".to_string()));
+            return Some(Ev::TurnDone);
         }
         if let Some(why) = t.strip_prefix("failed: ") {
             return Some(Ev::Err(format!("tour échoué : {}", why)));
@@ -462,7 +477,7 @@ fn is_notice(ev: &Ev) -> bool {
             | Ev::Info(_)
             | Ev::Compact(_)
             | Ev::Compacted(_)
-            | Ev::TurnDone(_)
+            | Ev::TurnDone
     )
 }
 
@@ -498,7 +513,7 @@ fn ev_visible(ev: &Ev, debug: bool) -> bool {
     !matches!(
         ev,
         Ev::Turn
-            | Ev::TurnDone(_)
+            | Ev::TurnDone
             | Ev::Idle
             | Ev::Raw(_)
             | Ev::ToolInfo { .. }
@@ -555,7 +570,7 @@ fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>>, ev: Ev) 
         }
         // the turn ended: a tool still shown as running was abandoned
         // (interrupt or failed turn) — freeze it so the elapsed stops
-        Ev::TurnDone(_) | Ev::Idle => {
+        Ev::TurnDone | Ev::Idle => {
             for (i, e) in events.iter_mut().enumerate() {
                 if let Ev::Tool(td) = e {
                     if matches!(td.state, ToolState::Run) {
@@ -824,13 +839,13 @@ fn ev_lines_t(ev: &Ev, tick: u32) -> Vec<Line<'static>> {
     }
 }
 
-// a thinking section: collapsed it is one dim line ("thought for Ns");
-// expanded (ctrl+t) the reasoning shows under it, dim and italic
+// a thinking section: collapsed it is one dim glyph + duration;
+// expanded (ctrl+t, or a click) the reasoning shows under a faint rail
 fn thinking_lines(ms: u128, text: &str, open: bool) -> Vec<Line<'static>> {
     let head = Line::from(vec![
-        Span::styled(" ~ ", Style::default().fg(DIM)),
+        Span::styled(format!(" {} ", GLYPH_THINK), Style::default().fg(DIM)),
         Span::styled(
-            format!("thought for {}", fmt_think_ms(ms)),
+            fmt_think_ms(ms),
             Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
         ),
     ]);
@@ -839,10 +854,13 @@ fn thinking_lines(ms: u128, text: &str, open: bool) -> Vec<Line<'static>> {
     }
     let mut rows = vec![head];
     for l in unescape_md(text).split('\n') {
-        rows.push(Line::from(Span::styled(
-            format!("   {}", l),
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-        )));
+        rows.push(Line::from(vec![
+            Span::styled(format!(" {} ", GLYPH_RAIL), Style::default().fg(FAINT)),
+            Span::styled(
+                l.to_string(),
+                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+            ),
+        ]));
     }
     rows
 }
@@ -866,10 +884,14 @@ fn ev_lines(ev: &Ev) -> Vec<Line<'static>> {
         Ev::Tool(td) => tool_lines(td, 0),
         Ev::Idle => vec![Line::from("")],
         Ev::Sub { name, ok, preview } => vec![Line::from(vec![
-            Span::styled("    ↳ ", Style::default().fg(DIM)),
+            Span::styled(format!("  {} ", GLYPH_BRANCH), Style::default().fg(FAINT)),
             Span::styled(name.clone(), Style::default().fg(DIM)),
             Span::styled(
-                if *ok { " ok " } else { " échec " },
+                if *ok {
+                    format!(" {} ", GLYPH_OK)
+                } else {
+                    format!(" {} ", GLYPH_ERR)
+                },
                 Style::default().fg(if *ok { DIM } else { ERR }),
             ),
             Span::styled(
@@ -877,27 +899,32 @@ fn ev_lines(ev: &Ev) -> Vec<Line<'static>> {
                 Style::default().fg(DIM),
             ),
         ])],
-        Ev::Turn => vec![Line::from(Span::styled(
-            "── tour ".to_string() + &"─".repeat(30),
-            Style::default().fg(DIM),
-        ))],
-        Ev::TurnDone(t) => vec![Line::from(vec![
-            Span::styled(" └ ", Style::default().fg(DIM)),
-            Span::styled(
-                t.clone(),
-                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-            ),
+        Ev::Turn => vec![Line::from(vec![
+            Span::styled(" ── tour ", Style::default().fg(FAINT)),
+            Span::styled("─".repeat(24), Style::default().fg(FAINT)),
+        ])],
+        Ev::TurnDone => vec![Line::from(vec![
+            Span::styled(" └─ ", Style::default().fg(FAINT)),
+            Span::styled(GLYPH_OK, Style::default().fg(DIM)),
         ])],
         Ev::Compact(t) => vec![Line::from(vec![
             Span::styled(
-                "  compaction ",
+                format!("  {} ", GLYPH_COMPACT),
+                Style::default().fg(WARN).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "compaction ",
                 Style::default().fg(WARN).add_modifier(Modifier::BOLD),
             ),
             Span::styled(t.clone(), Style::default().fg(WARN)),
         ])],
         Ev::Compacted(t) => vec![Line::from(vec![
             Span::styled(
-                "  résumé ",
+                format!("  {} ", GLYPH_SUMMARY),
+                Style::default().fg(OK).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "résumé ",
                 Style::default().fg(OK).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
@@ -906,17 +933,20 @@ fn ev_lines(ev: &Ev) -> Vec<Line<'static>> {
             ),
         ])],
         Ev::Warn(t) => vec![Line::from(vec![
-            Span::styled("  ! ", Style::default().fg(WARN)),
+            Span::styled(format!("  {} ", GLYPH_WARN), Style::default().fg(WARN)),
             Span::styled(t.clone(), Style::default().fg(WARN)),
         ])],
         Ev::Err(t) => vec![Line::from(vec![
-            Span::styled("  ✗ ", Style::default().fg(ERR)),
+            Span::styled(format!("  {} ", GLYPH_ERR), Style::default().fg(ERR)),
             Span::styled(t.clone(), Style::default().fg(ERR)),
         ])],
-        Ev::Info(t) => vec![Line::from(Span::styled(
-            format!("  {}", t),
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-        ))],
+        Ev::Info(t) => vec![Line::from(vec![
+            Span::styled(format!("  {} ", GLYPH_INFO), Style::default().fg(FAINT)),
+            Span::styled(
+                t.clone(),
+                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+            ),
+        ])],
         Ev::ToolInfo { .. } | Ev::ToolResult { .. } => vec![],
         Ev::Raw(t) => vec![Line::from(Span::styled(
             format!("  {}", t),
@@ -944,9 +974,10 @@ fn user_block_lines(text: &str) -> Vec<Line<'static>> {
     rows
 }
 
-// the tool line, OpenCode inline-tool style: 2-col icon, name, args
-// preview; result preview on the next line. Running: braille spinner +
-// text. Complete: ✓ + textMuted. Failed: ✗ + error red.
+// the tool line, OpenCode inline-tool style: 2-col icon, name,
+// elapsed, args preview; result preview on the next line. The state is
+// a glyph: braille spinner while running, green ✓ once ok, red ✗ on
+// failure.
 fn tool_lines(td: &ToolData, tick: u32) -> Vec<Line<'static>> {
     let name = td.name.clone().unwrap_or_else(|| format!("#{}", td.id));
     let args = td
@@ -955,6 +986,16 @@ fn tool_lines(td: &ToolData, tick: u32) -> Vec<Line<'static>> {
         .map(|a| args_preview(&name, a))
         .unwrap_or_default();
     let elapsed = fmt_elapsed(td.started);
+    let args_span = |st: Style| {
+        Span::styled(
+            if args.is_empty() {
+                String::new()
+            } else {
+                format!(" · {}", args)
+            },
+            st,
+        )
+    };
     let mut ls = Vec::new();
     match td.state {
         ToolState::Run => ls.push(Line::from(vec![
@@ -962,52 +1003,31 @@ fn tool_lines(td: &ToolData, tick: u32) -> Vec<Line<'static>> {
             Span::styled(spinner_frame(tick / 2), Style::default().fg(BRAND)),
             Span::styled(format!(" {}", name), Style::default().fg(TEXT)),
             Span::styled(format!(" {}", elapsed), Style::default().fg(DIM)),
-            Span::styled(
-                if args.is_empty() {
-                    String::new()
-                } else {
-                    format!(" {}", args)
-                },
-                Style::default().fg(DIM),
-            ),
+            args_span(Style::default().fg(DIM)),
         ])),
         ToolState::Ok => ls.push(Line::from(vec![
-            Span::styled("  ✓ ", Style::default().fg(DIM)),
+            Span::styled(format!("  {} ", GLYPH_OK), Style::default().fg(OK)),
             Span::styled(name.clone(), Style::default().fg(TOOL)),
             Span::styled(
-                format!(" ok {}", td.elapsed.clone().unwrap_or_default()),
+                format!(" {}", td.elapsed.clone().unwrap_or_default()),
                 Style::default().fg(TOOL),
             ),
-            Span::styled(
-                if args.is_empty() {
-                    String::new()
-                } else {
-                    format!(" — {}", args)
-                },
-                Style::default().fg(TOOL),
-            ),
+            args_span(Style::default().fg(TOOL)),
         ])),
         ToolState::Fail => ls.push(Line::from(vec![
-            Span::styled("  ✗ ", Style::default().fg(ERR)),
+            Span::styled(format!("  {} ", GLYPH_ERR), Style::default().fg(ERR)),
             Span::styled(name.clone(), Style::default().fg(ERR)),
             Span::styled(
-                format!(" échec {}", td.elapsed.clone().unwrap_or_default()),
+                format!(" {}", td.elapsed.clone().unwrap_or_default()),
                 Style::default().fg(ERR),
             ),
-            Span::styled(
-                if args.is_empty() {
-                    String::new()
-                } else {
-                    format!(" — {}", args)
-                },
-                Style::default().fg(ERR),
-            ),
+            args_span(Style::default().fg(ERR)),
         ])),
     }
     if let Some((ok, preview)) = &td.result {
         if !preview.trim().is_empty() {
             ls.push(Line::from(vec![
-                Span::styled("    ↳ ", Style::default().fg(TOOL)),
+                Span::styled(format!("    {} ", GLYPH_BRANCH), Style::default().fg(TOOL)),
                 Span::styled(
                     truncate_chars(preview.trim(), 110),
                     Style::default().fg(if *ok { TOOL } else { ERR }),
@@ -1117,7 +1137,7 @@ impl App {
                     print_ev_of(&Ev::Tool(td), self.debug);
                 }
             }
-            ev2 @ (Ev::TurnDone(_) | Ev::Idle) => {
+            ev2 @ (Ev::TurnDone | Ev::Idle) => {
                 // abandoned running tools get one final line
                 let mut held: Vec<ToolData> = self.line_tools.drain().map(|(_, td)| td).collect();
                 held.sort_by_key(|td| td.id);
@@ -1277,6 +1297,9 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         out.push(Ev::Info(
             "texte simple : say implicite (interprété par le harness)".into(),
         ));
+        out.push(Ev::Info(
+            "glyphes : ✦ raisonnement · ✓ ok · ✗ échec · ▲ alerte · ⟳ compaction · ≡ résumé · ↳ aperçu".into(),
+        ));
     } else if (first == "steer" || first == "/steer") && app.pending {
         // mid-turn steering goes through the FILE side-channel: the
         // harness reads the socket only between turns, but the runtime
@@ -1320,11 +1343,12 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
 
 fn draw(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
-    // OpenCode layout: no header. Feed grows to fill, then one status row,
-    // then the prompt block, then one hint row.
+    // OpenCode layout: no header. Feed grows to fill, a blank row, the
+    // status row, another blank row, the prompt block, a blank row,
+    // then the hint row — the composer never touches the history.
     // the composer grows with its content (a pasted multi-line block),
     // capped at half the screen so the feed always survives
-    let inner_w = ((area.width as usize).saturating_sub(4)).max(1);
+    let inner_w = ((area.width as usize).saturating_sub(6)).max(1);
     let composer_rows = {
         let mut rows = 1usize;
         let mut col = 0usize;
@@ -1342,30 +1366,34 @@ fn draw(app: &mut App, frame: &mut Frame) {
         }
         rows
     };
-    // the meta row sits one blank line under the typed text
-    let input_h = ((composer_rows + 4) as u16).min((area.height / 2).max(6));
+    // the prompt block holds: 2 rows of top padding, the typed text,
+    // one blank line, the meta row, 1 row of bottom padding
+    let input_h = ((composer_rows + 5) as u16).min((area.height / 2).max(7));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(3),
+            Constraint::Min(3), // feed
             Constraint::Length(1), // respiration sous le feed
-            Constraint::Length(1),  // status row
-            Constraint::Length(input_h),
+            Constraint::Length(1), // status row
+            Constraint::Length(1), // respiration au-dessus du composeur
+            Constraint::Length(input_h), // prompt
             Constraint::Length(1), // respiration au-dessus de l'aide
-            Constraint::Length(1),
+            Constraint::Length(1), // hint row
         ])
         .split(area);
 
     // ---- feed: cached wrapped rows, only the VISIBLE slice rendered ----
     // (a Paragraph over the whole history re-wraps everything each frame
-    // and lags long sessions). The column is one char narrower so the
-    // scrollbar never covers text.
-    let area_w = (chunks[0].width as usize).saturating_sub(1).max(1);
+    // and lags long sessions). The column keeps one column of margin on
+    // each edge: the history never touches the screen border, and the
+    // scrollbar gets its own gutter.
+    let feed_w = (chunks[0].width as usize).saturating_sub(3).max(1);
+    let area_w = feed_w;
     let area_h = chunks[0].height as usize;
     let text_area = Rect {
-        x: chunks[0].x,
+        x: chunks[0].x + 1,
         y: chunks[0].y,
-        width: chunks[0].width.saturating_sub(1).max(1),
+        width: feed_w as u16,
         height: chunks[0].height,
     };
 
@@ -1512,7 +1540,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
     // width, the cursor is the REVERSED char (or a REVERSED space at
     // the end of the input)
     let chars: Vec<char> = app.input.chars().collect();
-    let inner = ((chunks[3].width as usize).saturating_sub(4)).max(1);
+    let inner = ((chunks[4].width as usize).saturating_sub(6)).max(1);
     let total = chars.len();
     let mut input_lines: Vec<Line> = Vec::new();
     if total == 0 {
@@ -1579,8 +1607,14 @@ fn draw(app: &mut App, frame: &mut Frame) {
             input_lines.push(Line::from(spans));
         }
     }
+    // the meta row speaks glyphs: ◆ the harness, ● connected (quiet),
+    // ○ déconnecté (loud) — the normal state stays muted, only the
+    // broken one raises its voice
     let meta = Line::from(vec![
-        Span::styled("Bend", Style::default().fg(BRAND)),
+        Span::styled(
+            "◆ bend",
+            Style::default().fg(BRAND).add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" · ", Style::default().fg(DIM)),
         Span::styled(
             if app.is_live {
@@ -1590,23 +1624,21 @@ fn draw(app: &mut App, frame: &mut Frame) {
             },
             Style::default().fg(TEXT),
         ),
+        Span::styled(" · ", Style::default().fg(DIM)),
         Span::styled(
             if app.input.contains('\n') {
-                " · ⏎ = Envoyer, Maj+⏎ = Nouvelle ligne"
+                "⏎ envoyer · ⇧⏎ ligne"
             } else {
-                " · Maj+⏎ = Nouvelle ligne (Ctrl+J si le terminal ne supporte pas)"
+                "⇧⏎ ligne"
             },
             Style::default().fg(DIM),
         ),
         Span::styled(" · ", Style::default().fg(DIM)),
-        Span::styled(
-            if app.connected {
-                "connecté"
-            } else {
-                "déconnecté"
-            },
-            Style::default().fg(if app.connected { DIM } else { ERR }),
-        ),
+        if app.connected {
+            Span::styled("●", Style::default().fg(DIM))
+        } else {
+            Span::styled("○ déconnecté", Style::default().fg(ERR))
+        },
     ]);
     // one blank line between the typed text and the meta row
     input_lines.push(Line::from(""));
@@ -1617,19 +1649,19 @@ fn draw(app: &mut App, frame: &mut Frame) {
             .border_set(SPLIT)
             .border_style(Style::default().fg(BRAND))
             .style(Style::default().bg(ELEMENT))
-            .padding(Padding::new(2, 2, 1, 1)),
+            .padding(Padding::new(3, 2, 2, 1)),
     );
-    frame.render_widget(prompt, chunks[3]);
+    frame.render_widget(prompt, chunks[4]);
 
     // ---- slash-command popup (OpenCode autocomplete: split border,
     // backgroundMenu, primary selection)
     let matches = popup_matches(&app.input);
     if !matches.is_empty() {
         let n = matches.len().min(8) as u16;
-        let w = 56u16.min(chunks[3].width);
+        let w = 56u16.min(chunks[4].width);
         let area = Rect {
-            x: chunks[3].x,
-            y: chunks[3].y.saturating_sub(n + 2),
+            x: chunks[4].x,
+            y: chunks[4].y.saturating_sub(n + 2),
             width: w,
             height: n + 2,
         };
@@ -1671,13 +1703,13 @@ fn draw(app: &mut App, frame: &mut Frame) {
 
     // ---- hint row (the OpenCode prompt right hint row)
     let hint = if app.pending {
-        "Entrée : diriger · Tab : mettre en file · Ctrl+C : interrompre · / : commandes · End : bas"
+        "⏎ diriger · Tab file · Ctrl+C interrompre · / commandes · End bas"
     } else {
-        "Entrée : envoyer · Maj+⏎/Ctrl+J : nouvelle ligne · / : commandes · Ctrl+T : raisonnement · Ctrl+C : quitter"
+        "⏎ envoyer · Maj+⏎/Ctrl+J nouvelle ligne · / commandes · Ctrl+T raisonnement · Ctrl+C quitter"
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(DIM)))),
-        chunks[5],
+        chunks[6],
     );
 }
 
