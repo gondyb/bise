@@ -789,6 +789,12 @@ def Laws.anth_tool_result_pairs():
 def Laws.anth_tool_results_merge():
   {==}
 
+def Laws.oai_parallel_results_pair_in_order():
+  {==}
+
+def Laws.anth_parallel_results_pair_in_order():
+  {==}
+
 def Laws.anth_unsigned_thinking_stays_stripped():
   {==}
 

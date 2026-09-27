@@ -232,7 +232,11 @@ def add_call(cur: Maybe<&2, WMsg>, +line: String) -> Maybe<&2, WMsg>:
     case Some{+m}:
       match m:
         case WMsg{+role, +content, +calls}:
-          Some{WMsg{role, content, Con{parse_call(line), calls}}}
+          # appended, not prepended: the calls keep the order of the
+          # CALL lines, which is the order the tool results follow
+          # (the results pair with the calls by position)
+          Some{WMsg{role, content,
+            List.append(&2, WCall, calls, Con{parse_call(line), Nil{}})}}
     case None{}:
       cur
 

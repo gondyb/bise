@@ -1944,6 +1944,22 @@ law anth_tool_results_merge:
     "\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_8\",\"content\":\"out2\"}")
     == False{} : Bool}
 
+# LAW: parallel calls pair with their results in order - the first
+# CALL line takes the first tool result (the calls of one message
+# were once reversed, so each result went to the other call).
+law oai_parallel_results_pair_in_order:
+  {String.contains(Api.api_body("m",
+      Api.parse_wire("MODEL default\nMSG user : go\nMSG assistant : x\n  CALL 7 echo : hi\n  CALL 8 bash : ls\nMSG tool : out1\nMSG tool : out2\nEND\n")),
+    "{\"role\":\"tool\",\"content\":\"out1\",\"tool_call_id\":\"call_7\"},{\"role\":\"tool\",\"content\":\"out2\",\"tool_call_id\":\"call_8\"}")
+    == True{} : Bool}
+
+# LAW: the same pairing on the Anthropic adapter.
+law anth_parallel_results_pair_in_order:
+  {String.contains(Api.api_body_for(Api.Anthropic{}, "m",
+      Api.parse_wire("MODEL default\nMSG user : go\nMSG assistant : x\n  CALL 7 echo : hi\n  CALL 8 bash : ls\nMSG tool : out1\nMSG tool : out2\nEND\n")),
+    "{\"type\":\"tool_result\",\"tool_use_id\":\"call_7\",\"content\":\"out1\"},{\"type\":\"tool_result\",\"tool_use_id\":\"call_8\",\"content\":\"out2\"}")
+    == True{} : Bool}
+
 # LAW: the marked history reasoning is STRIPPED on the way back - a
 # thinking block without its signature is rejected by the Messages
 # API (probed), so no \"type\":\"thinking\" block ever rides an
