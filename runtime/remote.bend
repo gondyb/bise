@@ -27,6 +27,7 @@
 import Base
 import ../core/types.bend as T
 import ../core/compaction.bend as C
+import ../core/api.bend as Api
 
 # ---- the parsed reply ----
 
@@ -78,7 +79,7 @@ def ser_call(+c: T.Call) -> String:
     case T.Call{+id, +name, +args}:
       String.append("\n  CALL ", String.append(U32.show(id),
         String.append(" ", String.append(wire_name(name),
-          String.append(" : ", flatten(args))))))
+          String.append(" : ", Api.wire_encode(args))))))
 
 def ser_calls(calls: List<&2, T.Call>) -> String:
   match calls:
@@ -151,7 +152,7 @@ def parse_call.b(sp2: Maybe<&2, Nat>, +id_str: String, +rest: String)
     case Some{+q}:
       # the separator is " : " (space, colon, space) after the name
       T.Call{u32_or(U32.read(id_str)), String.take(rest, q),
-        String.drop(rest, Nat.add(Nat.add(q, 2n), 1n))}
+        Api.wire_decode(String.drop(rest, Nat.add(Nat.add(q, 2n), 1n)))}
 
 def parse_call.a(sp: Maybe<&2, Nat>, +line: String) -> T.Call:
   match sp:

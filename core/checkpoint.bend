@@ -93,7 +93,7 @@ def calls_text(calls: List<&2, T.Call>) -> String:
         case T.Call{+id, +name, +args}:
           String.append("\n  CALL ", String.append(U32.show(id),
             String.append(" ", String.append(name,
-              String.append(" : ", String.append(args, calls_text(rest)))))))
+              String.append(" : ", String.append(Api.wire_encode(args), calls_text(rest)))))))
 
 def msg_text(m: T.Msg) -> String:
   match m:
@@ -154,7 +154,7 @@ def fcall.name(sp: Maybe<&2, Nat>, +id_str: String, +tail: String) -> T.Call:
   match sp:
     case Some{+q}:
       T.Call{u32_of(U32.read(id_str)), String.take(tail, q),
-        String.drop(tail, Nat.add(q, 3n))}
+        Api.wire_decode(String.drop(tail, Nat.add(q, 3n)))}
     case None{}:
       T.Call{0, tail, ""}
 

@@ -96,6 +96,108 @@ def unescape_nl.go(fuel: Nat, st: UNl, acc: String) -> String:
 def unescape_nl(+s: String) -> String:
   unescape_nl.go(Nat.add(Nat.mul(str_len(s), 2n), 16n), UGo{s}, SNil{})
 
+# ---- wire arg encoding: reversible, unlike escape_nl ----
+# escape_nl is for markdown text; a literal backslash-n in that text is
+# indistinguishable from an encoded newline after a round-trip. Tool
+# args are commands and JSON text full of backslashes, so the arg
+# encoding must decode to exactly what was encoded: LF becomes
+# backslash capital N, CR backslash capital R, backslash doubled.
+# A literal sentinel sequence encodes with a doubled backslash and
+# decodes back. The capital letters keep legacy wire content (which
+# never carries them) intact through the decode.
+
+type WEnc is Data:
+  WEGo{s: String}
+  WEPickLf{is_lf: Bool, c: U32, t: String}
+  WEPickBs{is_bs: Bool, c: U32, t: String}
+  WEPickCr{is_cr: Bool, c: U32, t: String}
+  WEBS{t: String}
+  WELF{t: String}
+  WECR{t: String}
+  WEOther{c: U32, t: String}
+
+def wire_encode.go(fuel: Nat, st: WEnc, acc: String) -> String:
+  match fuel:
+    case 0n:
+      String.reverse(acc)
+    case 1n+k:
+      match st:
+        case WEGo{SNil{}}:
+          String.reverse(acc)
+        case WEGo{SCon{Chr{+c}, t}}:
+          wire_encode.go(k, WEPickLf{U32.is_eq(c, 10), c, t}, acc)
+        case WEPickLf{True{}, _, t}:
+          wire_encode.go(k, WELF{t}, acc)
+        case WEPickLf{False{}, +c, t}:
+          wire_encode.go(k, WEPickBs{U32.is_eq(c, 92), c, t}, acc)
+        case WEPickBs{True{}, _, t}:
+          wire_encode.go(k, WEBS{t}, acc)
+        case WEPickBs{False{}, +c, t}:
+          wire_encode.go(k, WEPickCr{U32.is_eq(c, 13), c, t}, acc)
+        case WEPickCr{True{}, _, t}:
+          wire_encode.go(k, WECR{t}, acc)
+        case WEPickCr{False{}, +c, t}:
+          wire_encode.go(k, WEOther{c, t}, acc)
+        case WEBS{t}:
+          wire_encode.go(k, WEGo{t}, SCon{Chr{92}, SCon{Chr{92}, acc}})
+        case WELF{t}:
+          wire_encode.go(k, WEGo{t}, SCon{Chr{78}, SCon{Chr{92}, acc}})
+        case WECR{t}:
+          wire_encode.go(k, WEGo{t}, SCon{Chr{82}, SCon{Chr{92}, acc}})
+        case WEOther{+c, t}:
+          wire_encode.go(k, WEGo{t}, SCon{Chr{c}, acc})
+
+def wire_encode(+s: String) -> String:
+  wire_encode.go(Nat.add(Nat.mul(str_len(s), 8n), 64n), WEGo{s}, SNil{})
+
+type WDec is Data:
+  WDGo{s: String}
+  WDPick{is_bs: Bool, c: U32, t: String}
+  WDBS{s: String}
+  WDBSPair{is_bs2: Bool, c2: U32, t2: String}
+  WDBSN{is_n: Bool, c2: U32, t2: String}
+  WDBSR{is_r: Bool, c2: U32, t2: String}
+  WDEmit{c: U32, t: String}
+  WDLeg{c2: U32, t2: String}
+
+def wire_decode.go(fuel: Nat, st: WDec, acc: String) -> String:
+  match fuel:
+    case 0n:
+      String.reverse(acc)
+    case 1n+k:
+      match st:
+        case WDGo{SNil{}}:
+          String.reverse(acc)
+        case WDGo{SCon{Chr{+c}, t}}:
+          wire_decode.go(k, WDPick{U32.is_eq(c, 92), c, t}, acc)
+        case WDPick{True{}, _, t}:
+          wire_decode.go(k, WDBS{t}, acc)
+        case WDPick{False{}, +c, t}:
+          wire_decode.go(k, WDEmit{c, t}, acc)
+        case WDBS{SNil{}}:
+          String.reverse(SCon{Chr{92}, acc})
+        case WDBS{SCon{Chr{+c2}, t2}}:
+          wire_decode.go(k, WDBSPair{U32.is_eq(c2, 92), c2, t2}, acc)
+        case WDBSPair{True{}, _, t2}:
+          wire_decode.go(k, WDEmit{92, t2}, acc)
+        case WDBSPair{False{}, +c2, t2}:
+          wire_decode.go(k, WDBSN{U32.is_eq(c2, 78), c2, t2}, acc)
+        case WDBSN{True{}, _, t2}:
+          wire_decode.go(k, WDEmit{10, t2}, acc)
+        case WDBSN{False{}, +c2, t2}:
+          wire_decode.go(k, WDBSR{U32.is_eq(c2, 82), c2, t2}, acc)
+        case WDBSR{True{}, _, t2}:
+          wire_decode.go(k, WDEmit{13, t2}, acc)
+        case WDBSR{False{}, +c2, t2}:
+          wire_decode.go(k, WDLeg{c2, t2}, acc)
+        case WDLeg{+c2, t2}:
+          wire_decode.go(k, WDGo{t2}, SCon{Chr{c2}, SCon{Chr{92}, acc}})
+        case WDEmit{+c, t}:
+          wire_decode.go(k, WDGo{t}, SCon{Chr{c}, acc})
+
+def wire_decode(+s: String) -> String:
+  wire_decode.go(Nat.add(Nat.mul(str_len(s), 8n), 64n), WDGo{s}, SNil{})
+
 # ---- the parsed wire request ----
 
 type WCall is Data:
@@ -126,7 +228,7 @@ def parse_tool(+rest: String) -> WTool:
 def parse_call.name(sp: Maybe<&2, Nat>, +id: String, +tail: String) -> WCall:
   match sp:
     case Some{+q}:
-      WCall{id, String.take(tail, q), String.drop(tail, Nat.add(q, 3n))}
+      WCall{id, String.take(tail, q), wire_decode(String.drop(tail, Nat.add(q, 3n)))}
     case None{}:
       WCall{id, tail, ""}
 
@@ -734,7 +836,7 @@ def tc_line(idx: Nat, tc: J.Json) -> String:
       String.append(" ",
         String.append(J.get_str_or(fn, "name", ""),
           String.append(" : ",
-            String.trim(flatten(arg_of(J.get_str_or(fn, "arguments", "")))))))))
+            String.trim(wire_encode(arg_of(J.get_str_or(fn, "arguments", "")))))))))
 
 def tc_lines.go(tcs: List<&2, J.Json>, +i: Nat) -> List<&2, String>:
   match tcs:

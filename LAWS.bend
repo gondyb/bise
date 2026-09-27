@@ -155,6 +155,14 @@ say b")
     == Con{"say a", Con{"say b", Nil{}}}
     : List<&2, String>}
 
+# LAW: a chunk of only blank lines yields no commands.
+law chunk_lines_empty:
+  {Rp.cmd_lines("\n\n") == Nil{} : List<&2, String>}
+
+# LAW: the interrupt flag file is per-process (the Ctrl+C path).
+law interrupt_path_is_per_port:
+  {Rt.interrupt_path_of("7702") == "/tmp/bend-interrupt-7702.txt" : String}
+
 # ---- multi-line tool args on the wire ----
 
 # LAW: the wire arg encoding is reversible on newlines - tool args are
