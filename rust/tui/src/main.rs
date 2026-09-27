@@ -6,8 +6,13 @@
 fn main() -> std::io::Result<()> {
     let (host, port) = parse_args();
     let debug = std::env::args().any(|a| a == "--debug");
+    let session_id = std::env::args()
+        .skip(1)
+        .skip_while(|a| a != "--session")
+        .nth(1)
+        .unwrap_or_default();
     // 7700 is the scripted REPL convention; anything else is live
-    bend_tui::run(host, port, port != 7700, debug)
+    bend_tui::run(host, port, port != 7700, debug, session_id)
 }
 
 fn parse_args() -> (String, u16) {

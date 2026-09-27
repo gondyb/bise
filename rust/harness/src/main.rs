@@ -186,6 +186,24 @@ fn main() -> std::io::Result<()> {
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+
+    // run FROM ANYWHERE: the bundle is self-contained, every runtime
+    // path (the bend sources, the tool descriptions, the jsrt engine,
+    // the reload recompile) is relative to the application root - the
+    // directory this executable lives in. Move the process there once,
+    // so neither the user cwd nor a launcher location can break it.
+    // The DEV tree is the opposite case: the launch cwd IS the app
+    // root (./run.sh from the repo), and the executable lives in
+    // rust/target/debug - moving there would break every relative
+    // path. Skip the move when the cwd already has the REPL.
+    let cwd_has_repl = std::env::current_dir()
+        .ok()
+        .map_or(false, |d| d.join(repl_name).exists());
+    if !cwd_has_repl {
+        if let Some(root) = exe_dir.as_ref() {
+            let _ = std::env::set_current_dir(root);
+        }
+    }
     let repl_bin = exe_dir
         .iter()
         .map(|d| d.join(repl_name))

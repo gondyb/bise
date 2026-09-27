@@ -1099,3 +1099,76 @@ Laws (144): mcp_alias_normalizes, mcp_alias_dedupes,
 mcp_bootstrap_url_parity. Live check: 14 connectors / 360 tools
 indexed; best_match found web_search.web_search; details returned the
 schema; github_app.get_me returned gvergnaud.
+
+## 2026-09-27 — feed breathing + solid user panel + prompt spacing
+
+The TUI was dense: blocks touched each other at the message/message
+transition, notices glued to the block above them, and the prompt sat
+flush against the status row. Three changes in rust/tui/src/lib.rs:
+
+- build_rows now delegates the blank-line decision to wants_gap_before
+  (pure): one blank row whenever the content kind switches (message /
+  tool block / notice), computed against the previous VISIBLE event.
+  Two exceptions stay: a reply never detaches from its thinking
+  section, and the first event of the feed starts flush at the top.
+- the user block paints its panel background the full column
+  (pad_line_bg sets the line base style to bg PANEL, then fills the
+  remainder), so a user message reads as a solid OpenCode-style panel
+  instead of a 3-cell strip under the bar.
+- draw: one blank row between the feed and the status row, one between
+  the prompt and the hint row, and one blank line inside the prompt
+  between the typed text and the meta row (input_h = composer + 4).
+
+Also: the standalone bend-tui binary entry (rust/tui/src/main.rs) had
+not followed the run() signature (session_id) and no longer compiled;
+it now parses --session and passes it through.
+
+Verified with a pyte pty run against a fake REPL (two turns, tool
+block, markdown, code fence): the user panel spans the full width
+(bg 141414 x0..x108), a blank row at every transition, the meta row
+one line under the input, and the hint row clear of the prompt. Note
+for future pty checks: start the child with start_new_session=True —
+crossterm sizes the terminal from /dev/tty (the controlling terminal),
+not from stdin, so a plain Popen measures the WRONG pty.
+
+## 2026-09-27 — glyph vocabulary + feed margins + roomy composer
+
+The history told its story in words (tool "ok", turn "terminé",
+warning "!"), the feed ran edge-to-edge, and the composer sat one row
+under the status line. Changes in rust/tui/src/lib.rs:
+
+- a glyph vocabulary now carries status, not text: ✦ reasoning
+  (collapsed: duration only, "thought for Ns" is gone), ✓ ok (green),
+  ✗ fail (red), ▲ warning, · notice, ⟳ compaction, ≡ summary, ↳
+  preview/sub-result. Tool lines read "✓ bash 0.2s · <args>" — the
+  ok/échec words are gone; the state is the glyph plus its color.
+- an expanded thinking section shows its reasoning under a faint rail
+  (│, FAINT 0x4a4a4a — dimmer than textMuted) instead of a bare
+  3-space indent.
+- the feed keeps one column of margin on each edge: the text starts at
+  x+1 and stops one column short of the scrollbar (feed_w = width - 3),
+  so history never touches a screen edge and the scrollbar gets its own
+  gutter.
+- the composer is fully separated from the history: blank row, status
+  row, blank row, prompt. The prompt block itself gained air
+  (Padding 3,2,2,1 — two blank rows above the typed text), and its
+  inner width is now computed exactly (width - 6, border + paddings) so
+  the composer wrap and the row estimate agree.
+- Ev::TurnDone dropped its String payload (always "tour terminé"; the
+  other outcomes already map to Err/Warn) — it renders as "└─ ✓".
+- the hint row speaks glyphs and fits 100 cols ("⏎ envoyer · Maj+⏎
+  nouvelle ligne · / commandes · Ctrl+T raisonnement · Ctrl+C
+  quitter"); the old one truncated at width 100.
+
+Follow-ups in the same pass (same session): the prompt meta row is
+glyph-driven too — "◆ bend · zai-glm-5-3 · ⇧⏎ ligne · ●", the
+connection is a quiet ● when up and a loud red "○ déconnecté" when
+down (the Ctrl+J fallback note moved to the hint row, which still
+fits 100 cols); /help documents the vocabulary (one line, 93 cols);
+debug mode brackets a turn with " ── tour ──…" and " └─ ✓".
+
+Verified under tmux (100x40) against a fake wire server: thinking ✦ +
+rail via Ctrl+T, ✓ green / ✗ red tool lines, ↳ previews, the pinned
+"↓ Bas (End)" bar, PageUp/End re-stick, composer wrap flush against
+the ┃ border, Ctrl+J newline with the "⏎ envoyer · ⇧⏎ ligne" meta
+variant, and the hint row intact at the right edge.
