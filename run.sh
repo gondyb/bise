@@ -36,15 +36,28 @@ if [ ! -x rust/jsrt/target/debug/bend-jsrt ]; then
   (cd rust/jsrt && cargo build)
 fi
 
-if [ ! -x repl-live ]; then
-  echo "repl-live absent — compilation avec bend (1-2 min)..." >&2
-  export PATH="$HOME/.bend/bin:$PATH"
-  bend runtime/repl-live.bend -o repl-live
-fi
-if [ ! -x repl-scripted ]; then
-  echo "repl-scripted absent — compilation avec bend..." >&2
-  export PATH="$HOME/.bend/bin:$PATH"
-  bend runtime/repl.bend -o repl-scripted
-fi
+# the Bend REPLs: rebuilt when absent OR older than any Bend source
+# (runtime/, core/, the tool descriptions). A failed rebuild keeps the
+# existing binary when there is one (no toolchain: still runnable).
+export PATH="$HOME/.bend/bin:$PATH"
+bend_stale() {
+  [ ! -x "$1" ] || [ -n "$(find runtime core tool-desc-*.txt -newer "$1" -print -quit 2>/dev/null)" ]
+}
+build_repl() {
+  local out="$1" src="$2"
+  if bend_stale "$out"; then
+    echo "$out absent ou périmé — compilation avec bend (1-2 min)..." >&2
+    if ! bend "$src" -o "$out" >/dev/null; then
+      if [ -x "$out" ]; then
+        echo "compilation de $out échouée — binaire existant conservé" >&2
+      else
+        echo "compilation de $out échouée" >&2
+        exit 1
+      fi
+    fi
+  fi
+}
+build_repl repl-live runtime/repl-live.bend
+build_repl repl-scripted runtime/repl.bend
 
 exec ./rust/target/debug/bend-harness "$@"

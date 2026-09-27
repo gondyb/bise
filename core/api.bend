@@ -600,9 +600,105 @@ def asst_think.start(m: Maybe<&2, Nat>, +content: String)
 def asst_think.find(+content: String) -> Maybe<&2, ThinkSpan>:
   asst_think.start(C.find(content, "<think>", 0n), content)
 
+# the span text verbatim, no trim: a replayed thinking must be exactly
+# what the provider signed
+def asst_think.raw_span(+content: String, +n0: Nat, +n1: Nat) -> String:
+  String.take(String.drop(content, Nat.add(n0, 7n)),
+    Nat.sub(n1, Nat.add(n0, 7n)))
+
 def asst_think.reasoning(+content: String, +n0: Nat, +n1: Nat) -> String:
-  String.trim(String.take(String.drop(content, Nat.add(n0, 7n)),
-    Nat.sub(n1, Nat.add(n0, 7n))))
+  String.trim(asst_think.raw_span(content, n0, n1))
+
+# ---- the signed part of one think span ----
+# The reply parsers (block_think, anth_block.think) append the
+# signature as the span's LAST line: "BENDSIG::<sig>". The split below
+# peels it back off. Only the LAST line counts, so reasoning text that
+# mentions the prefix stays reasoning.
+
+def lines_last(xs: List<&2, String>) -> Maybe<&2, String>:
+  match xs:
+    case Nil{}:
+      None{}
+    case Con{+l, Nil{}}:
+      Some{l}
+    case Con{_, rest}:
+      lines_last(rest)
+
+def lines_init(xs: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{_, Nil{}}:
+      Nil{}
+    case Con{+l, rest}:
+      Con{l, lines_init(rest)}
+
+def think_sig.line(is_sig: Bool, +line: String) -> Maybe<&2, String>:
+  match is_sig:
+    case True{}:
+      Some{String.drop(line, 9n)}
+    case False{}:
+      None{}
+
+def think_sig(+line: String) -> Maybe<&2, String>:
+  think_sig.line(String.starts_with(line, "BENDSIG::"), line)
+
+# (reasoning verbatim, signature) of one think span
+type ThinkMark is Data:
+  TM{reason: String, sig: String}
+
+def nl_str() -> String:
+  String.from_list(Con{newline(), Nil{}})
+
+def think_split.plain(+span: String) -> ThinkMark:
+  TM{span, ""}
+
+def think_split.signed(+span: String, +sig: String) -> ThinkMark:
+  TM{String.join(lines_init(String.split(span, newline())), nl_str()), sig}
+
+def think_split.sig_of(m: Maybe<&2, String>, +span: String) -> ThinkMark:
+  match m:
+    case Some{+s}:
+      think_split.signed(span, s)
+    case None{}:
+      think_split.plain(span)
+
+def think_split.line(m: Maybe<&2, String>, +span: String) -> ThinkMark:
+  match m:
+    case Some{+l}:
+      think_split.sig_of(think_sig(l), span)
+    case None{}:
+      think_split.plain(span)
+
+def think_split(+span: String) -> ThinkMark:
+  think_split.line(lines_last(String.split(span, newline())), span)
+
+# the marked span, with the signature riding on its last line when the
+# provider sent one: byte-identical to the unsigned form when sig is "".
+# The BENDSIG line gets its own newline UNLESS the text already ends
+# with one (think_texts joins parts with a trailing LF - the old
+# pinned form keeps it, so the separator must not double it)
+def think_marked.sep(is_nl: Bool) -> String:
+  match is_nl:
+    case True{}:
+      ""
+    case False{}:
+      nl_str()
+
+def think_marked.pick(is_sig: Bool, +text: String, +sig: String) -> String:
+  match is_sig:
+    case True{}:
+      String.append("<think>",
+        String.append(text,
+          String.append(
+            think_marked.sep(
+              String.starts_with(String.reverse(text), nl_str())),
+            String.append("BENDSIG::", String.append(sig, "</think>")))))
+    case False{}:
+      String.append("<think>", String.append(text, "</think>"))
+
+def think_marked(+text: String, +sig: String) -> String:
+  think_marked.pick(Bool.not(String.is_empty(sig)), text, sig)
 
 def asst_think.visible.strip(is_nl: Bool, +rest: String) -> String:
   match is_nl:
@@ -616,36 +712,66 @@ def asst_think.visible(+rest: String) -> String:
 
 # the exact vibe ThinkChunk shape: the thinking block first, the text
 # block second (a thinking-only assistant message carries no text block)
-def think_block_json(+reasoning: String) -> J.Json:
-  J.obj(Con{J.kv("type", J.str("thinking")),
-    Con{J.kv("thinking",
-      J.arr(Con{J.obj(Con{J.kv("type", J.str("text")),
-        Con{J.kv("text", J.str(reasoning)), Nil{}}}), Nil{}})),
-    Nil{}}})
+def thinking_parts(+reasoning: String) -> J.Json:
+  J.arr(Con{J.obj(Con{J.kv("type", J.str("text")),
+    Con{J.kv("text", J.str(reasoning)), Nil{}}}), Nil{}})
+
+def think_block_json.pick(sig: Maybe<&2, String>, +reasoning: String) -> J.Json:
+  match sig:
+    case Some{+s}:
+      J.obj(Con{J.kv("type", J.str("thinking")),
+        Con{J.kv("thinking", thinking_parts(reasoning)),
+        Con{J.kv("signature", J.str(s)), Nil{}}}})
+    case None{}:
+      J.obj(Con{J.kv("type", J.str("thinking")),
+        Con{J.kv("thinking", thinking_parts(reasoning)), Nil{}}})
 
 def text_block_json(+text: String) -> J.Json:
   J.obj(Con{J.kv("type", J.str("text")),
     Con{J.kv("text", J.str(text)), Nil{}}})
 
 def asst_content.marked.pick(empty_vis: Bool, +reasoning: String,
-    +visible: String) -> J.Json:
+    +visible: String, sig: Maybe<&2, String>) -> J.Json:
   match empty_vis:
     case True{}:
-      J.arr(Con{think_block_json(reasoning), Nil{}})
+      J.arr(Con{think_block_json.pick(sig, reasoning), Nil{}})
     case False{}:
-      J.arr(Con{think_block_json(reasoning),
+      J.arr(Con{think_block_json.pick(sig, reasoning),
         Con{text_block_json(visible), Nil{}}})
 
 def asst_think.raw_visible(+content: String, +n1: Nat) -> String:
   String.drop(content, Nat.add(n1, 8n))
 
+def asst_content.pick_signed.signed(tm: ThinkMark, +visible: String)
+    -> J.Json:
+  match tm:
+    case TM{+reason, +sig}:
+      asst_content.marked.pick(String.is_empty(visible), reason,
+        visible, Some{sig})
+
+def asst_content.pick_signed(is_unsigned: Bool, tm: ThinkMark,
+    +reasoning: String, +visible: String) -> J.Json:
+  match is_unsigned:
+    case True{}:
+      asst_content.marked.pick(String.is_empty(visible), reasoning,
+        visible, None{})
+    case False{}:
+      asst_content.pick_signed.signed(tm, visible)
+
+def asst_content.split(tm: ThinkMark, +content: String, +n0: Nat,
+    +n1: Nat) -> J.Json:
+  match tm:
+    case TM{+reason, +sig}:
+      asst_content.pick_signed(String.is_empty(sig),
+        TM{reason, sig},
+        asst_think.reasoning(content, n0, n1),
+        asst_think.visible(asst_think.raw_visible(content, n1)))
+
 def asst_content.found(pr: ThinkSpan, +content: String) -> J.Json:
   match pr:
     case TSpan{+n0, +n1}:
-      asst_content.marked.pick(String.is_empty(asst_think.visible(
-          asst_think.raw_visible(content, n1))),
-        asst_think.reasoning(content, n0, n1),
-        asst_think.visible(asst_think.raw_visible(content, n1)))
+      asst_content.split(think_split(asst_think.raw_span(content, n0, n1)),
+        content, n0, n1)
 
 def asst_content.pick(parts: Maybe<&2, ThinkSpan>, +content: String) -> J.Json:
   match parts:
@@ -860,9 +986,8 @@ def think_texts(parts: List<&2, J.Json>) -> String:
 def block_think.has(has: Bool, +b: J.Json) -> String:
   match has:
     case True{}:
-      String.append("<think>",
-        String.append(think_texts(arr_field_or(b, "thinking")),
-          "</think>"))
+      think_marked(think_texts(arr_field_or(b, "thinking")),
+        J.get_str_or(b, "signature", ""))
     case False{}:
       ""
 
@@ -951,14 +1076,16 @@ def reply_of(+status: U32, +body: String) -> String:
 # foundry-anthropic proxy serves (probed live: non-streaming works,
 # thinking blocks are optional, tool_use blocks carry their own ids).
 #
-# The one deliberate divergence from the vibe mapper: the harness
-# history stores the assistant reasoning as MARKED TEXT, not as the
-# raw provider block, so the thinking SIGNATURE is not available -
-# and the Messages API rejects a thinking block without its signature
-# (probed: "thinking.signature: Field required"). Assistant thinking
-# is therefore STRIPPED on the way back; the proxy accepts the
-# tool_use blocks alone (probed) and the model re-thinks after every
-# tool result.
+# The harness history stores the assistant reasoning as MARKED TEXT.
+# The signed part of the provider block rides INSIDE the span, on its
+# last line, prefixed "BENDSIG::" - so the signature survives the wire,
+# the history, the checkpoint and the reload, and the request replays
+# the thinking block verbatim WITH its signature (the Messages API
+# rejects an unsigned thinking block: probed
+# "thinking.signature: Field required"). A span WITHOUT a signature
+# line (GLM, or an older session) is still STRIPPED on the way back -
+# the probed fallback; the model re-thinks only when the reasoning is
+# genuinely not replayable.
 
 type Style is Data:
   OpenAI{}
@@ -1041,19 +1168,51 @@ def asst_blocks.text(empty: Bool, +t: String,
     case False{}:
       Con{text_block_json(t), call_blocks(calls)}
 
-# the visible text block plus the tool_use blocks - the marked
-# reasoning is stripped (no signature to send back)
-def asst_visible(pr: Maybe<&2, ThinkSpan>, +content: String) -> String:
-  match pr:
-    case Some{+span}:
-      match span:
-        case TSpan{_, +n1}:
-          asst_think.visible(asst_think.raw_visible(content, n1))
-    case None{}:
-      content
-
 def asst_blocks(+t: String, +calls: List<&2, WCall>) -> List<&2, J.Json>:
   asst_blocks.text(String.is_empty(t), t, calls)
+
+def anth_thinking_block(+reasoning: String, +sig: String) -> J.Json:
+  J.obj(Con{J.kv("type", J.str("thinking")),
+    Con{J.kv("thinking", J.str(reasoning)),
+    Con{J.kv("signature", J.str(sig)), Nil{}}}})
+
+# a signed think span replays its thinking block FIRST (the reasoning
+# text verbatim, the signature at block level - the Messages API
+# rejects an unsigned thinking block, probed); an unsigned span stays
+# stripped: the probed fallback, the model re-thinks
+def asst_blocks_signed.pick(is_replay: Bool, tm: ThinkMark,
+    +visible: String, +calls: List<&2, WCall>) -> List<&2, J.Json>:
+  match is_replay:
+    case True{}:
+      match tm:
+        case TM{+reason, +sig}:
+          List.append(&2, J.Json,
+            Con{anth_thinking_block(reason, sig), Nil{}},
+            asst_blocks(visible, calls))
+    case False{}:
+      asst_blocks(visible, calls)
+
+def asst_blocks_signed.split(tm: ThinkMark, +visible: String,
+    +calls: List<&2, WCall>) -> List<&2, J.Json>:
+  match tm:
+    case TM{+reason, +sig}:
+      asst_blocks_signed.pick(
+        Bool.and(Bool.not(String.is_empty(sig)),
+          Bool.not(String.is_empty(reason))),
+        TM{reason, sig},
+        visible, calls)
+
+def asst_blocks_signed(pr: Maybe<&2, ThinkSpan>, +content: String,
+    +calls: List<&2, WCall>) -> List<&2, J.Json>:
+  match pr:
+    case None{}:
+      asst_blocks(content, calls)
+    case Some{TSpan{+n0, +n1}}:
+      asst_blocks_signed.split(
+        think_split(asst_think.raw_span(content, n0, n1)),
+        asst_think.visible(asst_think.raw_visible(content, n1)),
+        calls)
+
 
 def amsg_json(m: AMsg) -> J.Json:
   match m:
@@ -1119,9 +1278,9 @@ def awalk_go(fuel: Nat, w: AWalk) -> List<&2, J.Json>:
                         case WMsg{_, +content, +calls}:
                           awalk_go(k, AN{todo,
                             List.append(&2, String, ids, ids_of(calls)),
-                            Con{AA{asst_blocks(
-                                asst_visible(asst_think.find(content),
-                                  content), calls)}, acc}})
+                            Con{AA{asst_blocks_signed(
+                                asst_think.find(content),
+                                  content, calls)}, acc}})
                     case False{}:
                       awalk_go(k, AT{user_head_of(acc), acc, ids, m, todo})
         case AT{+user_head, +acc, +ids, +m, +todo}:
@@ -1313,8 +1472,8 @@ def api_body_anth(+model: String, +req: WReq) -> String:
 def anth_block.think(is_think: Bool, +b: J.Json) -> String:
   match is_think:
     case True{}:
-      String.append("<think>",
-        String.append(J.get_str_or(b, "thinking", ""), "</think>"))
+      think_marked(J.get_str_or(b, "thinking", ""),
+        J.get_str_or(b, "signature", ""))
     case False{}:
       ""
 

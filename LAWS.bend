@@ -881,6 +881,29 @@ law glm_thinking_surfaces:
       "{\"choices\":[{\"message\":{\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"2+2 = 4\"}],\"closed\":true},{\"type\":\"text\",\"text\":\"4\"}]}}]}"))
     == "OK <think>2+2 = 4\n</think>\n4\nEND\n" : String}
 
+# LAW: a GLM thinking block with a signature carries it on the span's
+# last line - the same signed transport the Anthropic adapter uses, so
+# one extraction serves both providers.
+law glm_thinking_signature_surfaces:
+  {Api.unescape_nl(Api.reply_of(200,
+      "{\"choices\":[{\"message\":{\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"2+2 = 4\"}],\"signature\":\"sig\"},{\"type\":\"text\",\"text\":\"4\"}]}}]}"))
+    == "OK <think>2+2 = 4
+BENDSIG::sig</think>
+4
+END
+" : String}
+
+# LAW: a signed span replays as the ThinkChunk shape WITH the signature
+# at block level (mistral.py _build_mistral_think_chunk: the metadata
+# rides the block, the thinking array stays the nested text parts).
+law glm_signed_think_signature_replays:
+  {J.stringify(Api.asst_content_json(
+      Api.unescape_nl("<think>2+2 = 4
+BENDSIG::sig</think>
+4")))
+    == "[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"2+2 = 4\"}],\"signature\":\"sig\"},{\"type\":\"text\",\"text\":\"4\"}]"
+    : String}
+
 # LAW: tool calls map onto the CALL reply lines the Core parses (1-based
 # ids, the flat arg rehydrated from the arguments JSON string).
 law api_tool_calls_map:
@@ -1799,7 +1822,10 @@ law deferred_reads_program_acked_result:
 # laws pinned it; the Anthropic mapping below is the Messages shape
 # the foundry proxy serves (probed live: thinking blocks are optional,
 # tool_use without history thinking is accepted, a thinking block
-# without its signature is rejected - so history thinking is stripped).
+# without its signature is rejected). A SIGNED history reasoning
+# replays its thinking block verbatim with the signature (the
+# reasoning continuity across tool calls); an unsigned one stays
+# stripped.
 
 # LAW: the alias resolves and the style follows the model name.
 law provider_resolves_alias:
@@ -1888,16 +1914,29 @@ law anth_tool_results_merge:
 # thinking block without its signature is rejected by the Messages
 # API (probed), so no \"type\":\"thinking\" block ever rides an
 # assistant message.
-law anth_strips_history_thinking:
-  {Bool.and(
-     String.contains(Api.api_body_for(Api.Anthropic{}, "m",
-       Api.parse_wire("MODEL default\nMSG user : go\nMSG assistant : thinking\n  CALL 7 echo : hi\nMSG tool : out\nEND\n")),
-       "\"type\":\"text\",\"text\":\"thinking\""),
-     Bool.not(String.contains(Api.api_body_for(Api.Anthropic{}, "m",
-       Api.parse_wire("MODEL default\nMSG assistant : 2+2 = 4\n4\nEND\n")),
-       "type\":\"thinking\"")))
+law anth_unsigned_thinking_stays_stripped:
+  {Bool.not(String.contains(Api.api_body_for(Api.Anthropic{}, "m",
+       Api.parse_wire("MODEL default
+MSG assistant : <think>2+2 = 4</think>\\n4
+END
+")),
+       "type\":\"thinking\""))
     == True{} : Bool}
 
+# LAW: a SIGNED marked reasoning replays its thinking block verbatim
+# with the signature at block level - the reasoning continuity the
+# Messages API needs across tool calls; the model no longer re-thinks
+# after every tool result.
+law anth_signed_thinking_replays:
+  {String.contains(Api.api_body_for(Api.Anthropic{}, "m",
+       Api.parse_wire("MODEL default
+MSG assistant : <think>2+2 = 4\\nBENDSIG::sig</think>\\n4
+END
+")),
+       "{\"type\":\"thinking\",\"thinking\":\"2+2 = 4\",\"signature\":\"sig\"}")
+    == True{} : Bool}
+
+# comment header preserved below
 # LAW: Anthropic text blocks become separate lines (the GLM parity).
 law anth_blocks_join_lines:
   {Api.unescape_nl(Api.reply_of_for(Api.Anthropic{}, 200,
@@ -1910,8 +1949,13 @@ law anth_blocks_join_lines:
 law anth_thinking_surfaces:
   {Api.unescape_nl(Api.reply_of_for(Api.Anthropic{}, 200,
       "{\"type\":\"message\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"2+2 = 4\",\"signature\":\"sig\"},{\"type\":\"text\",\"text\":\"4\"}]}"))
-    == "OK <think>2+2 = 4</think>\n4\nEND\n" : String}
+    == "OK <think>2+2 = 4
+BENDSIG::sig</think>
+4
+END
+" : String}
 
+# comment header preserved below
 # LAW: tool_use blocks map onto the CALL reply lines the Core parses
 # (1-based ids, the flat arg rehydrated from the input object).
 law anth_tool_calls_map:
@@ -2015,3 +2059,20 @@ law config_template_parses:
 law config_template_threshold:
   {Cf.cfg_u32(Rt.CONFIG_TEMPLATE(), "threshold", 800000) == 800000
     : U32}
+
+# ---- the harness-info line: the single source of truth for clients ----
+# The TUI (through the bend-harness parent) and bend_client.py read
+# this line instead of recomputing the model, the threshold or the
+# side-channel paths. Its format is a contract with both parsers.
+law info_line_format:
+  {Rt.info_line("claude-opus-5-5", "800000", "/tmp/bend-steer-7.txt",
+      "/tmp/bend-interrupt-7.txt")
+    == "harness-info model=claude-opus-5-5 threshold=800000 steer=/tmp/bend-steer-7.txt interrupt=/tmp/bend-interrupt-7.txt"
+    : String}
+
+# LAW: the announced side-channel paths are the ones the runtime
+# drains - the same builders, per port.
+law info_paths_are_the_drained_ones:
+  {Bool.and(String.eq(Rt.steer_path_of("7"), "/tmp/bend-steer-7.txt"),
+     String.eq(Rt.interrupt_path_of("7"), "/tmp/bend-interrupt-7.txt"))
+    == True{} : Bool}

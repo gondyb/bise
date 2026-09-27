@@ -674,6 +674,11 @@ def main() -> IO(Unit):
     +threshold : Nat <- IO.pure(Nat, thr_of_cfg(R.env_or(env, ""), cfgt))
     +p : U32 <- repl_port()
     l : Listener <- IO.try(Listener, TCP.listen(p))
+    # the single source of truth for every client: printed BEFORE the
+    # banner the parent waits for
+    +model : String <- R.resolved_model()
+    +info : String <- R.harness_info(model, Nat.show(threshold))
+    ui : Unit <- IO.print(info)
     IO.print(String.append("bend-harness LIVE REPL on 127.0.0.1:",
       String.append(U32.show(p),
         String.append(" (real model, FS tools, bash) — compaction threshold: ",

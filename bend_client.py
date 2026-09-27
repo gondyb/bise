@@ -1,14 +1,25 @@
 #!/usr/bin/env python3
 """bend_client — drive a live bend-harness session programmatically.
 
-The same thing the TUI does, but a library: launch the Bend REPL
-(repl-live) on a private port, speak the line protocol, read the obs
-stream until the turn ends ("--- idle").
+The SAME entry point as the TUI: this client launches `./run.sh
+--headless`, i.e. the same script (stale-binary rebuilds included),
+the same bend-harness executable, the same environment, config.toml,
+MCP index, session handling and reload loop the user gets from
+`./run.sh`. The only difference is that no TUI runs: the parent prints
+one READY line and the client speaks the wire protocol over TCP.
+
+Nothing is recomputed here. The model, the threshold and the
+side-channel paths come from the READY line, which forwards what the
+Bend REPL itself announced (its `harness-info` line).
+
+The one deliberate isolation: BEND_SESSIONS_DIR points the client's
+sessions at /tmp/bend-sessions, so test sessions never become the
+user's `./run.sh --continue`.
 
   from bend_client import BendSession
-  s = BendSession.fresh(bg_after=3)      # or BendSession.resume(path)
+  s = BendSession.fresh(bg_after=3)      # or BendSession.resume(session_id)
   lines = s.say("hello")                 # blocks until the turn ends
-  print(s.last_assistant())
+  print(s.model, s.last_assistant())
   s.close()
 
 CLI:
@@ -21,7 +32,6 @@ in assistant text); last_assistant() unescapes them for reading.
 """
 
 import argparse
-import glob
 import os
 import socket
 import subprocess
@@ -29,81 +39,92 @@ import sys
 import time
 
 REPO = os.path.dirname(os.path.abspath(__file__))
-REPL = os.path.join(REPO, "repl-live")
+RUN = os.path.join(REPO, "run.sh")
+SESSIONS_DIR = "/tmp/bend-sessions"
 IDLE = "--- idle"
 DEFAULT_TIMEOUT = 900.0
 
 
-def free_port():
-    s = socket.socket()
-    s.bind(("127.0.0.1", 0))
-    port = s.getsockname()[1]
-    s.close()
-    return port
+def parse_ready(line):
+    """`READY port=.. session=.. model=.. ...` -> dict (values have no spaces)."""
+    if not line.startswith("READY "):
+        return None
+    out = {}
+    for kv in line[len("READY "):].split():
+        k, _, v = kv.partition("=")
+        out[k] = v
+    return out
 
 
 class BendSession:
     """One live harness process + one TCP client connection."""
 
-    def __init__(self, port, session_file, log_path, proc=None, sock=None):
-        self.port = port
-        self.session_file = session_file
-        self.log_path = log_path
+    def __init__(self, ready, proc, sock):
+        self.ready = ready
+        self.port = int(ready["port"])
+        self.session_id = ready["session"]
+        self.session_file = os.path.join(SESSIONS_DIR, self.session_id + ".txt")
+        # what the REPL announced - never recomputed by this client
+        self.model = ready["model"]
+        self.threshold = ready["threshold"]
+        self.steer_path = ready["steer"]
+        self.interrupt_path = ready["interrupt"]
+        self.log_path = ready["log"]
         self.proc = proc
         self.sock = sock
         self.buf = b""
         self.lines = []
 
-    # ---- constructors ----
+    # ---- constructors: all through ./run.sh --headless ----
 
     @classmethod
-    def _start(cls, port, session_file, bg_after=None, continue_=False):
-        log_path = "/tmp/bend-client-%d.log" % port
+    def _start(cls, args, bg_after=None, timeout=600):
         env = dict(os.environ)
-        env["BEND_REPL_PORT"] = str(port)
-        env["BEND_SESSION_FILE"] = session_file
+        env["BEND_SESSIONS_DIR"] = SESSIONS_DIR
         if bg_after is not None:
             env["BEND_BG_AFTER"] = str(bg_after)
-        if continue_:
-            env["BEND_CONTINUE"] = "1"
-        log = open(log_path, "w")
+        os.makedirs(SESSIONS_DIR, exist_ok=True)
+        # stdin stays open for the session's life: closing it is the
+        # hang-up the parent watches (a crashed client closes it too)
         proc = subprocess.Popen(
-            [REPL], cwd=REPO, env=env, stdout=log, stderr=subprocess.STDOUT
+            [RUN, "--headless"] + args, cwd=REPO, env=env,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=sys.stderr, text=True, bufsize=1,
         )
-        # wait for the banner (a TCP probe would steal the greet)
-        deadline = time.time() + 30
+        # run.sh may rebuild stale binaries first (minutes, not seconds)
+        deadline = time.time() + timeout
+        ready = None
         while time.time() < deadline:
-            try:
-                with open(log_path) as f:
-                    if "REPL on" in f.read():
-                        break
-            except OSError:
-                pass
-            if proc.poll() is not None:
-                raise RuntimeError("repl died at startup (see %s)" % log_path)
-            time.sleep(0.05)
-        else:
+            line = proc.stdout.readline()
+            if not line:
+                raise RuntimeError("bend-harness exited before READY (rc=%s)" % proc.poll())
+            ready = parse_ready(line.strip())
+            if ready:
+                break
+        if not ready:
             proc.kill()
-            raise RuntimeError("repl did not start (see %s)" % log_path)
-        sock = socket.create_connection(("127.0.0.1", port), timeout=10)
+            raise RuntimeError("bend-harness did not become READY")
+        sock = socket.create_connection(("127.0.0.1", int(ready["port"])), timeout=10)
         sock.settimeout(1.0)
-        sess = cls(port, session_file, log_path, proc, sock)
+        sess = cls(ready, proc, sock)
         sess._drain(2.0)  # the --continue greeting, if any
         return sess
 
     @classmethod
     def fresh(cls, bg_after=None):
-        port = free_port()
-        session_file = "/tmp/bend-sessions/session-%d.txt" % port
-        os.makedirs(os.path.dirname(session_file), exist_ok=True)
-        if os.path.exists(session_file):
-            os.remove(session_file)
-        return cls._start(port, session_file, bg_after=bg_after)
+        return cls._start([], bg_after=bg_after)
 
     @classmethod
-    def resume(cls, session_file, bg_after=None):
-        port = free_port()
-        return cls._start(port, session_file, bg_after=bg_after, continue_=True)
+    def resume(cls, session_id, bg_after=None):
+        """Resume by session id (or a unique prefix) - the parent's
+        resolution, not ours. A path is accepted too (its stem is the id)."""
+        sid = os.path.splitext(os.path.basename(session_id))[0]
+        return cls._start(["--resume", sid], bg_after=bg_after)
+
+    @classmethod
+    def continue_latest(cls, bg_after=None):
+        """The parent's --continue: the most recent session by mtime."""
+        return cls._start(["--continue"], bg_after=bg_after)
 
     # ---- the wire ----
 
@@ -166,13 +187,18 @@ class BendSession:
         """Steer the RUNNING turn through the file side-channel.
 
         The harness reads the socket only between turns; the runtime
-        drains /tmp/bend-steer-<port>.txt at every model/tool safe
+        drains the announced steer file at every model/tool safe
         boundary and commits the text into the running turn (ADR 0005).
         Use this while a turn is in flight (say() in another thread).
         """
-        path = "/tmp/bend-steer-%d.txt" % self.port
-        with open(path, "a") as f:
+        with open(self.steer_path, "a") as f:
             f.write(text + "\n")
+
+    def interrupt(self):
+        """Ctrl+C: the flag file the REPL announced (the TUI writes the
+        same one). The running turn dies at its next safe boundary."""
+        with open(self.interrupt_path, "w") as f:
+            f.write("1")
 
     def notify(self, text, timeout=DEFAULT_TIMEOUT):
         return self.send("notify " + text, timeout)
@@ -210,8 +236,13 @@ class BendSession:
         except OSError:
             pass
         if self.proc:
+            # the hang-up: the parent kills its REPL child and exits
             try:
-                self.proc.wait(timeout=5)
+                self.proc.stdin.close()
+            except OSError:
+                pass
+            try:
+                self.proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
 
@@ -225,19 +256,15 @@ def main():
     args = ap.parse_args()
 
     if args.continue_:
-        files = sorted(glob.glob("/tmp/bend-sessions/session-*.txt"),
-                       key=os.path.getmtime)
-        if not files:
-            print("no session to continue", file=sys.stderr)
-            return 1
-        sess = BendSession.resume(files[-1], bg_after=args.bg_after)
-        print("# resumed %s" % files[-1])
+        sess = BendSession.continue_latest(bg_after=args.bg_after)
+        print("# resumed %s" % sess.session_id)
     else:
         sess = BendSession.fresh(bg_after=args.bg_after)
+    print("# model %s · threshold %s" % (sess.model, sess.threshold))
 
     try:
         sess.say(args.message, timeout=args.timeout, verbose=True)
-        print("\n---- idle. session: %s" % sess.session_file)
+        print("\n---- idle. session: %s" % sess.session_id)
     finally:
         sess.close()
     return 0

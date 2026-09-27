@@ -537,6 +537,9 @@ def main() -> IO(Unit):
     +p : U32 <- repl_port()
     l : Listener <- IO.try(Listener, TCP.listen(p))
     +ps : String <- IO.pure(String, U32.show(p))
+    # the same info line as the live REPL: no provider here
+    +info : String <- R.harness_info("scripted", "400")
+    ui : Unit <- IO.print(info)
     IO.print(String.append("bend-harness REPL on 127.0.0.1:",
       String.append(ps,
         String.append(" — connect with: nc 127.0.0.1 ",

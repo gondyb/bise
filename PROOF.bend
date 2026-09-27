@@ -780,7 +780,16 @@ def Laws.anth_tool_result_pairs():
 def Laws.anth_tool_results_merge():
   {==}
 
-def Laws.anth_strips_history_thinking():
+def Laws.anth_unsigned_thinking_stays_stripped():
+  {==}
+
+def Laws.anth_signed_thinking_replays():
+  {==}
+
+def Laws.glm_thinking_signature_surfaces():
+  {==}
+
+def Laws.glm_signed_think_signature_replays():
   {==}
 
 def Laws.anth_blocks_join_lines():
@@ -841,4 +850,10 @@ def Laws.config_template_parses():
   {==}
 
 def Laws.config_template_threshold():
+  {==}
+
+def Laws.info_line_format():
+  {==}
+
+def Laws.info_paths_are_the_drained_ones():
   {==}

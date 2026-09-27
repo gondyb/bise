@@ -860,17 +860,24 @@ def model_call.key(empty: Bool, +request: String, +key: String,
     case False{}:
       model_call.go(request, key, st, model)
 
+# THE model resolution - the one function every surface uses: the
+# provider call below AND the harness-info line the clients (TUI,
+# bend_client) display. BEND_MODEL > config.toml model > default;
+# aliases resolve through the provider table.
+def resolved_model() -> IO(String):
+  do IO<String>:
+    mr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_MODEL")
+    +cfgt : String <- read_cfg()
+    IO.pure(String,
+      resolve_model(Cf.env_cfg_or(env_or(mr, ""),
+        Cf.cfg_get(cfgt, "model"), "claude-opus-5-5")))
+
 @unsafe
 def model_call(+request: String) -> IO(Rem.RemoteRes):
   do IO<Rem.RemoteRes>:
-    # the provider table: BEND_MODEL (or the config file's model)
-    # carries the model name or its alias; the style, the api_base and
-    # the key env follow from it
-    mr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_MODEL")
-    +cfgt : String <- read_cfg()
-    +model : String <- IO.pure(String,
-      resolve_model(Cf.env_cfg_or(env_or(mr, ""),
-        Cf.cfg_get(cfgt, "model"), "claude-opus-5-5")))
+    # the provider table: the resolved model carries the style, the
+    # api_base and the key env
+    +model : String <- resolved_model()
     +st : Api.Style <- IO.pure(Api.Style, model_style(model))
     kr : Result<&1, &1, U32 & String, String> <- IO.get_env(model_key_env(st))
     +key : String <- IO.pure(String, env_or(kr, ""))
@@ -2203,6 +2210,29 @@ def steer_path() -> IO(String):
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
     +p : String <- IO.pure(String, env_or(pr, "0"))
     IO.pure(String, steer_path_of(p))
+
+# ---- the harness-info line: what every client must know ----
+# The REPL is the single source of truth. Both clients (the TUI via
+# the bend-harness parent, and bend_client.py) read this line from the
+# REPL's output instead of recomputing anything: the resolved model,
+# the compaction threshold, and the two side-channel paths. One line,
+# space-separated key=value pairs, printed BEFORE the "REPL on" banner
+# (the parent waits for the banner, so the info is always there).
+def info_line(+model: String, +threshold: String, +steer: String,
+    +interrupt: String) -> String:
+  String.append("harness-info model=",
+    String.append(model,
+      String.append(" threshold=",
+        String.append(threshold,
+          String.append(" steer=",
+            String.append(steer,
+              String.append(" interrupt=", interrupt)))))))
+
+def harness_info(+model: String, +threshold: String) -> IO(String):
+  do IO<String>:
+    +sp : String <- steer_path()
+    +ip : String <- interrupt_path()
+    IO.pure(String, info_line(model, threshold, sp, ip))
 
 # the feed lines for one drained steering line's apply result; mid-turn
 # Steer is always Accepted (apply.user.busy), so the Rejected arm is

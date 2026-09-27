@@ -22,6 +22,18 @@
 //!                               # latest save, not a fixed path)
 //!   bend-harness --resume ID    # resume one session by id (a unique
 //!                               # prefix of the id is accepted)
+//!   bend-harness --headless     # EVERYTHING identical, minus the TUI:
+//!                               # prints one READY line on stdout and
+//!                               # lives until its stdin closes. This is
+//!                               # how bend_client.py drives a session -
+//!                               # the same script, the same binary, the
+//!                               # same env, sessions and reload loop as
+//!                               # the TUI; the client only speaks the
+//!                               # wire protocol.
+//!
+//! BEND_SESSIONS_DIR overrides the sessions directory (default
+//! ~/.bend-harness/sessions) - the ONLY thing the programmatic client
+//! changes, so its test sessions never become the user's --continue.
 //!
 //! /reload (typed in the TUI, between turns) exits the Bend REPL
 //! cleanly; this parent then recompiles the latest source, respawns
@@ -146,6 +158,7 @@ fn list_sessions(sessions_dir: &str) {
 
 fn main() -> std::io::Result<()> {
     let mut scripted = false;
+    let mut headless = false;
     let mut debug = false;
     let mut resume = false;
     let mut resume_id: Option<String> = None;
@@ -155,6 +168,7 @@ fn main() -> std::io::Result<()> {
     while i < args.len() {
         match args[i].as_str() {
             "--scripted" => scripted = true,
+            "--headless" => headless = true,
             "--debug" => debug = true,
             "--continue" => resume = true,
             "--resume" if i + 1 < args.len() => {
@@ -204,11 +218,16 @@ fn main() -> std::io::Result<()> {
             let _ = std::env::set_current_dir(root);
         }
     }
-    let repl_bin = exe_dir
-        .iter()
-        .map(|d| d.join(repl_name))
-        .chain([std::env::current_dir()?.join(repl_name)])
-        .find(|p| p.exists())
+    // ONE location for the REPL: the app root, which the cwd now is in
+    // both layouts (the dev tree, where ./run.sh builds ./repl-live, and
+    // the bundle, where we just moved next to the executable). The old
+    // lookup tried next-to-the-executable FIRST: in the dev tree that is
+    // rust/target/debug/, where a stale repl-live had landed (a /reload
+    // recompiled into whatever path was found, perpetuating it) - the
+    // TUI ran an old runtime while ./repl-live, the one built, tested
+    // and committed, sat unused.
+    let repl_bin = Some(std::env::current_dir()?.join(repl_name))
+        .filter(|p| p.exists())
         .unwrap_or_else(|| {
             eprintln!(
                 "REPL Bend introuvable : {} (compile avec `bend runtime/{} -o {}`)",
@@ -235,9 +254,14 @@ fn main() -> std::io::Result<()> {
     // session (a unique id prefix is accepted). The single fixed file
     // of the old scheme is the fallback when no per-session file exists
     // yet (back-compat with the pre-sessions checkpoint).
-    let sessions_dir = std::env::var("HOME")
-        .map(|h| format!("{}/.bend-harness/sessions", h))
-        .unwrap_or_else(|_| ".bend-sessions".to_string());
+    let sessions_dir = std::env::var("BEND_SESSIONS_DIR")
+        .ok()
+        .filter(|d| !d.is_empty())
+        .unwrap_or_else(|| {
+            std::env::var("HOME")
+                .map(|h| format!("{}/.bend-harness/sessions", h))
+                .unwrap_or_else(|_| ".bend-sessions".to_string())
+        });
     let _ = std::fs::create_dir_all(&sessions_dir);
     let legacy_file = std::env::var("HOME")
         .map(|h| format!("{}/.bend-harness/session-{}.txt", h, repl_name))
@@ -301,6 +325,18 @@ fn main() -> std::io::Result<()> {
     //     version without losing the session.
     //   - child died any other way: report, die with it.
     //   - child alive: the user quit the TUI — die together.
+    // headless: the client's hang-up is our stdin closing (a crashed
+    // client closes it too) - the child never outlives its client
+    let stdin_closed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    if headless {
+        let flag = stdin_closed.clone();
+        std::thread::spawn(move || {
+            let mut sink = Vec::new();
+            let _ = std::io::Read::read_to_end(&mut std::io::stdin(), &mut sink);
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+    }
+
     let mut reloads = 0usize;
     loop {
         let log_file = std::fs::File::create(&log_path)?;
@@ -327,8 +363,48 @@ fn main() -> std::io::Result<()> {
             std::thread::sleep(Duration::from_millis(50));
         }
 
+        // what the REPL announced - the single source of truth for the
+        // model, the threshold and the side-channel paths
+        let log = std::fs::read_to_string(&log_path).unwrap_or_default();
+        let info = match bend_tui::HarnessInfo::from_log(&log) {
+            Some(i) => i,
+            None => {
+                eprintln!("le REPL Bend n'a pas annoncé sa configuration (harness-info)");
+                let _ = child.kill();
+                std::process::exit(1);
+            }
+        };
+
         let _ = std::io::stderr().flush();
-        let result = bend_tui::run("127.0.0.1".to_string(), repl_port, !scripted, debug, session_id.clone());
+        let result = if headless {
+            // the machine handshake: one line, the same facts the TUI
+            // displays, plus where the child logs
+            println!(
+                "READY port={} session={} model={} threshold={} steer={} interrupt={} log={}",
+                repl_port,
+                session_id,
+                info.model,
+                info.threshold,
+                info.steer_path,
+                info.interrupt_path,
+                log_path.display()
+            );
+            let _ = std::io::stdout().flush();
+            // live until the child exits (a reload or a crash) or the
+            // client hangs up
+            loop {
+                if stdin_closed.load(std::sync::atomic::Ordering::SeqCst) {
+                    break;
+                }
+                if child.try_wait().ok().flatten().is_some() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Ok(())
+        } else {
+            bend_tui::run("127.0.0.1".to_string(), repl_port, info, debug, session_id.clone())
+        };
 
         // the connection closed — why did the child stop?
         // A /reload closes the socket BEFORE exiting (it checkpoints

@@ -902,6 +902,11 @@ fn thinking_lines(ms: u128, text: &str, open: bool) -> Vec<Line<'static>> {
     }
     let mut rows = vec![head];
     for l in unescape_md(text).split('\n') {
+        // the BENDSIG line carries the provider signature (the signed
+        // thinking transport), never part of the reasoning itself
+        if l.starts_with("BENDSIG::") {
+            continue;
+        }
         rows.push(Line::from(vec![
             Span::styled(format!(" {} ", GLYPH_RAIL), Style::default().fg(FAINT)),
             Span::styled(
@@ -1404,7 +1409,7 @@ struct App {
     history: Vec<String>,
     hist_idx: Option<usize>,
     tick: u32,
-    is_live: bool,
+    info: HarnessInfo,
     host: String,
     port: u16,
     session_id: String,
@@ -1568,8 +1573,45 @@ const COMMANDS: &[Cmd] = &[
 
 // BR-002/BR-003: the interrupt side-channel flag, shared by the Ctrl+C
 // key and the /interrupt command
-fn write_interrupt_flag(port: u16) -> bool {
-    let path = format!("/tmp/bend-interrupt-{}.txt", port);
+/// What the Bend REPL announces at startup (its `harness-info` line):
+/// the REPL is the single source of truth, the TUI never recomputes
+/// the model, the threshold or the side-channel paths.
+#[derive(Clone, Debug, Default)]
+pub struct HarnessInfo {
+    pub model: String,
+    pub threshold: String,
+    pub steer_path: String,
+    pub interrupt_path: String,
+}
+
+impl HarnessInfo {
+    /// Parse `harness-info model=M threshold=N steer=P interrupt=Q`.
+    pub fn parse(line: &str) -> Option<HarnessInfo> {
+        let rest = line.trim().strip_prefix("harness-info ")?;
+        let mut info = HarnessInfo::default();
+        for kv in rest.split_whitespace() {
+            let (k, v) = kv.split_once('=')?;
+            match k {
+                "model" => info.model = v.to_string(),
+                "threshold" => info.threshold = v.to_string(),
+                "steer" => info.steer_path = v.to_string(),
+                "interrupt" => info.interrupt_path = v.to_string(),
+                _ => {}
+            }
+        }
+        if info.model.is_empty() || info.steer_path.is_empty() || info.interrupt_path.is_empty() {
+            return None;
+        }
+        Some(info)
+    }
+
+    /// Find the line in a REPL log.
+    pub fn from_log(log: &str) -> Option<HarnessInfo> {
+        log.lines().find_map(HarnessInfo::parse)
+    }
+}
+
+fn write_interrupt_flag(path: &str) -> bool {
     std::fs::OpenOptions::new()
         .create(true)
         .write(true)
@@ -1627,14 +1669,11 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         out.push(Ev::Info("affichage vidé".into()));
     } else if first == "/status" {
         out.push(Ev::Info(format!(
-            "modèle {} · {}:{} · seuil de compaction 800000 · session {}",
-            if app.is_live {
-                "claude-opus-5-5"
-            } else {
-                "scripté"
-            },
+            "modèle {} · {}:{} · seuil de compaction {} · session {}",
+            app.info.model,
             app.host,
             app.port,
+            app.info.threshold,
             app.session_id
         )));
     } else if first == "/help" {
@@ -1653,7 +1692,7 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         // command goes through the same flag file as Ctrl+C while a
         // turn runs, and says so at idle
         if app.pending {
-            let ok = write_interrupt_flag(app.port);
+            let ok = write_interrupt_flag(&app.info.interrupt_path);
             app.pending = false;
             app.interrupt_requested = true;
             out.push(Ev::Info(if ok {
@@ -1667,7 +1706,7 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     } else if (first == "steer" || first == "/steer") && app.pending {
         // mid-turn steering goes through the FILE side-channel: the
         // harness reads the socket only between turns, but the runtime
-        // drains /tmp/bend-steer-<port>.txt at every model/tool safe
+        // drains the announced steer file at every model/tool safe
         // boundary and commits the text into the running turn (ADR 0005)
         let msg = v
             .strip_prefix("steer ")
@@ -1677,7 +1716,7 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         if msg.is_empty() {
             out.push(Ev::Info("steering vide".into()));
         } else {
-            let path = format!("/tmp/bend-steer-{}.txt", app.port);
+            let path = app.info.steer_path.clone();
             let mut line = String::with_capacity(msg.len() + 1);
             line.push_str(msg);
             line.push('\n');
@@ -1864,11 +1903,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
                     Style::default().fg(BRAND),
                 ),
                 Span::styled(
-                    if app.is_live {
-                        " claude-opus-5-5 · génération…"
-                    } else {
-                        " réponse…"
-                    },
+                    format!(" {} · génération…", app.info.model),
                     Style::default().fg(DIM),
                 ),
                 Span::styled(" · ", Style::default().fg(DIM)),
@@ -1883,11 +1918,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
                 Span::styled(
                     format!(
                         " bend-harness · {}",
-                        if app.is_live {
-                            "claude-opus-5-5"
-                        } else {
-                            "scripté"
-                        }
+                        app.info.model
                     ),
                     Style::default().fg(DIM),
                 ),
@@ -1981,11 +2012,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
         ),
         Span::styled(" · ", Style::default().fg(DIM)),
         Span::styled(
-            if app.is_live {
-                "claude-opus-5-5"
-            } else {
-                "scripté"
-            },
+            app.info.model.clone(),
             Style::default().fg(TEXT),
         ),
         Span::styled(" · ", Style::default().fg(DIM)),
@@ -2169,7 +2196,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                         // BR-002: a flag that outlived its turn must
                         // not kill the next one
                         let _ = std::fs::write(
-                            format!("/tmp/bend-interrupt-{}.txt", app.port),
+                            &app.info.interrupt_path,
                             "",
                         );
                     }
@@ -2325,7 +2352,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                         if app.interrupt_requested {
                             break;
                         } else if app.pending {
-                            let ok = write_interrupt_flag(app.port);
+                            let ok = write_interrupt_flag(&app.info.interrupt_path);
                             // the local abort: the composer frees and the
                             // user can type right away; the flag clears
                             // when the interrupted turn's idle arrives
@@ -2618,22 +2645,16 @@ fn run_line_mode(app: &mut App) -> io::Result<()> {
 }
 
 /// Connect to the REPL and run the UI (interactive ratatui when stdin and
-/// stdout are TTYs, line mode otherwise). `is_live` only affects the header.
-pub fn run(host: String, port: u16, is_live: bool, debug: bool, session_id: String) -> io::Result<()> {
+/// stdout are TTYs, line mode otherwise). `info` is what the REPL
+/// announced (model, threshold, side-channel paths).
+pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: String) -> io::Result<()> {
     let stream = TcpStream::connect((host.as_str(), port));
     let connected = true;
     let stream = match stream {
         Ok(s) => s,
         Err(e) => {
             eprintln!("connexion impossible : {}", e);
-            eprintln!(
-                "lance d'abord le harness :  {}",
-                if is_live {
-                    "bend runtime/repl-live.bend (et le bridge)"
-                } else {
-                    "bend runtime/repl.bend"
-                }
-            );
+            eprintln!("lance le harness avec ./run.sh");
             return Ok(());
         }
     };
@@ -2692,7 +2713,7 @@ pub fn run(host: String, port: u16, is_live: bool, debug: bool, session_id: Stri
         history: Vec::new(),
         hist_idx: None,
         tick: 0,
-        is_live,
+        info,
         host,
         port,
         session_id,
@@ -2787,5 +2808,35 @@ async function main(): Promise<unknown> {
         assert!(joined.iter().any(|l| l.contains("une chaîne")));
         // one bordered row per source line, top and bottom included
         assert_eq!(joined.iter().filter(|l| l.contains('│')).count(), 6);
+    }
+}
+
+#[cfg(test)]
+mod harness_info_tests {
+    use super::HarnessInfo;
+
+    // the exact string LAWS.bend pins for Rt.info_line (law
+    // info_line_format): the two sides of the contract agree
+    const BEND_LINE: &str = "harness-info model=claude-opus-5-5 threshold=800000 steer=/tmp/bend-steer-7.txt interrupt=/tmp/bend-interrupt-7.txt";
+
+    #[test]
+    fn parses_the_line_bend_prints() {
+        let info = HarnessInfo::parse(BEND_LINE).expect("parses");
+        assert_eq!(info.model, "claude-opus-5-5");
+        assert_eq!(info.threshold, "800000");
+        assert_eq!(info.steer_path, "/tmp/bend-steer-7.txt");
+        assert_eq!(info.interrupt_path, "/tmp/bend-interrupt-7.txt");
+    }
+
+    #[test]
+    fn finds_the_line_in_a_repl_log() {
+        let log = format!("{}\nbend-harness LIVE REPL on 127.0.0.1:7 ...\n[mcp] connector index written\n", BEND_LINE);
+        assert_eq!(HarnessInfo::from_log(&log).expect("found").model, "claude-opus-5-5");
+    }
+
+    #[test]
+    fn rejects_an_incomplete_line() {
+        assert!(HarnessInfo::parse("harness-info model=m threshold=1").is_none());
+        assert!(HarnessInfo::parse("bend-harness LIVE REPL on 127.0.0.1:7").is_none());
     }
 }

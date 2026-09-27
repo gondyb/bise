@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Drive bend-tui under a pty, capture output, check submit."""
+"""Drive the TUI under a pty through the REAL entry point (the
+bend-harness parent, scripted mode), capture output, check submit."""
 import os, pty, select, subprocess, sys, time
 
 KEYS = sys.argv[1] if len(sys.argv) > 1 else "court test"
 PORT = sys.argv[2] if len(sys.argv) > 2 else "7700"
+# the parent spawns repl-scripted itself: the same path ./run.sh takes
 
 master, slave = pty.openpty()
 # set a terminal size on the slave
@@ -11,7 +13,7 @@ import fcntl, termios, struct
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 90, 0, 0))
 
 p = subprocess.Popen(
-    ["./rust/target/debug/bend-tui", "--port", PORT],
+    ["./rust/target/debug/bend-harness", "--scripted", "--port", PORT],
     stdin=slave, stdout=slave, stderr=slave,
     cwd="/Users/gabrielvergnaud/lab/bend-lab/harness",
     close_fds=True,
@@ -30,7 +32,7 @@ def drain(t):
             except OSError:
                 break
 
-drain(1.0)
+drain(3.0)                       # the parent starts the REPL first
 os.write(master, KEYS.encode())
 drain(0.3)
 os.write(master, b"\r")          # Enter
