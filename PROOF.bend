@@ -803,3 +803,42 @@ def Laws.anth_status_error_maps():
 
 def Laws.anth_tool_name_roundtrip():
   {==}
+
+def Laws.config_parse_flat():
+  {==}
+
+def Laws.config_skips_comments_blanks():
+  {==}
+
+def Laws.config_sections_prefix():
+  {==}
+
+def Laws.config_value_keeps_equals():
+  {==}
+
+def Laws.config_lookup_found():
+  {==}
+
+def Laws.config_lookup_missing():
+  {==}
+
+def Laws.config_u32_parses():
+  {==}
+
+def Laws.config_u32_defaults():
+  {==}
+
+def Laws.config_env_wins():
+  {==}
+
+def Laws.config_env_empty_falls_to_file():
+  {==}
+
+def Laws.config_env_empty_no_file():
+  {==}
+
+def Laws.config_template_parses():
+  {==}
+
+def Laws.config_template_threshold():
+  {==}

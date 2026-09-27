@@ -26,6 +26,7 @@ import ./remote.bend as Rem
 import ./mcp.bend as Mcp
 import ./skills.bend as Sk
 import ../core/patch.bend as Pa
+import ../core/config.bend as Cf
 import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
 import 0xbf477e663cf4acb1369a68e0f0fa713b/encoding/encoding.bend as Enc
 import 0x9bfd9d57916f3439316c2775fd1f10b4/main.bend as Snap
@@ -590,6 +591,83 @@ def model_headers.pick(is_anth: Bool, +key: String) -> Map<&2, List<&2, String>>
 def model_headers(st: Api.Style, +key: String) -> Map<&2, List<&2, String>>:
   model_headers.pick(Api.is_anthropic(st), key)
 
+# shell-wrap a path (single quotes hold spaces; apply_patch never
+# meets a path with a single quote in it)
+def sh_quote(+path: String) -> String:
+  String.append("'", String.append(path, "'"))
+
+# ---- the config file (~/.bend-harness/config.toml) ----
+# The vibe CLI ergonomics: a commented template is written on first
+# run; every key answers the same precedence - environment variable >
+# config file > built-in default. BEND_CONFIG points at another path.
+
+def cfg_path_pick.home(empty: Bool, +home: String) -> String:
+  match empty:
+    case True{}:
+      "/tmp/bend-harness-config.toml"
+    case False{}:
+      String.append(home, "/.bend-harness/config.toml")
+
+def cfg_path_pick.pick(empty: Bool, +custom: String, +home: String)
+    -> String:
+  match empty:
+    case True{}:
+      cfg_path_pick.home(String.is_empty(home), home)
+    case False{}:
+      custom
+
+def cfg_path_pick(+custom: String, +home: String) -> String:
+  cfg_path_pick.pick(String.is_empty(custom), custom, home)
+
+def cfg_path() -> IO(String):
+  do IO<String>:
+    cr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_CONFIG")
+    hr : Result<&1, &1, U32 & String, String> <- IO.get_env("HOME")
+    IO.pure(String,
+      cfg_path_pick(env_or(cr, ""), env_or(hr, "")))
+
+def cfg_text_of(m: Maybe<&2, String>) -> String:
+  match m:
+    case Some{+t}:
+      t
+    case None{}:
+      ""
+
+def read_cfg_m() -> IO(Maybe<&2, String>):
+  do IO<Maybe<&2, String>>:
+    +path : String <- cfg_path()
+    m : Maybe<&2, String> <- P.read_file(path)
+    IO.pure(Maybe<&2, String>, m)
+
+def read_cfg() -> IO(String):
+  do IO<String>:
+    m : Maybe<&2, String> <- read_cfg_m()
+    IO.pure(String, cfg_text_of(m))
+
+def CONFIG_TEMPLATE() -> String:
+  "# bend-harness configuration.\n# Precedence on every key: environment variable > this file > built-in default.\n\n# The model to use: a name or an alias from the provider table\n# (opus-5.5 / claude-opus-5-5 -> foundry-anthropic; zai-glm-5-3 -> mistral)\nmodel = \"opus-5.5\"\n\n# The compaction threshold, in estimated tokens (default 800000)\nthreshold = 800000\n\n# A bash command still running after this many seconds moves to the\n# background and the agent keeps going (default 30)\nbg_after = 30\n"
+
+# the commented template lands on disk when the file does not exist
+def write_cfg_template.m(m: Maybe<&2, String>, +path: String)
+    -> IO(Unit):
+  match m:
+    case Some{_}:
+      IO.pure(Unit, Unit{})
+    case None{}:
+      do IO<Unit>:
+        o : String <- Snap.run(Con{"/bin/sh", Con{"-c",
+          Con{String.append("mkdir -p -- \"$(dirname -- ",
+            String.append(sh_quote(path), ")\"")), Nil{}}}})
+        w : Unit <- P.write_file(path, CONFIG_TEMPLATE())
+        IO.pure(Unit, Unit{})
+
+def write_cfg_template() -> IO(Unit):
+  do IO<Unit>:
+    +path : String <- cfg_path()
+    m : Maybe<&2, String> <- P.read_file(path)
+    u : Unit <- write_cfg_template.m(m, path)
+    IO.pure(Unit, Unit{})
+
 def model_call.reply(st: Api.Style, +res: Http.Res) -> String:
   match res:
     case Http.Res{+status, _, _}:
@@ -785,11 +863,14 @@ def model_call.key(empty: Bool, +request: String, +key: String,
 @unsafe
 def model_call(+request: String) -> IO(Rem.RemoteRes):
   do IO<Rem.RemoteRes>:
-    # the provider table: BEND_MODEL carries the model name or its
-    # alias; the style, the api_base and the key env follow from it
+    # the provider table: BEND_MODEL (or the config file's model)
+    # carries the model name or its alias; the style, the api_base and
+    # the key env follow from it
     mr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_MODEL")
+    +cfgt : String <- read_cfg()
     +model : String <- IO.pure(String,
-      resolve_model(env_or(mr, "claude-opus-5-5")))
+      resolve_model(Cf.env_cfg_or(env_or(mr, ""),
+        Cf.cfg_get(cfgt, "model"), "claude-opus-5-5")))
     +st : Api.Style <- IO.pure(Api.Style, model_style(model))
     kr : Result<&1, &1, U32 & String, String> <- IO.get_env(model_key_env(st))
     +key : String <- IO.pure(String, env_or(kr, ""))
@@ -916,11 +997,37 @@ def bg_after.clamp2(over: Bool, +secs: U32) -> U32:
 def bg_after.clamp(+secs: U32) -> U32:
   bg_after.clamp2(U32.is_lt(3600, secs), secs)
 
+def bg_after.env(+envv: String, +dflt: U32) -> U32:
+  bg_after.read(U32.read(envv), dflt)
+
+def bg_after.pick2(empty: Bool, +envv: String, +cfgt: String,
+    +dflt: U32) -> U32:
+  match empty:
+    case True{}:
+      Cf.cfg_u32(cfgt, "bg_after", dflt)
+    case False{}:
+      bg_after.env(envv, dflt)
+
+def bg_after.or_cfg(+envv: String, +cfgt: String, +dflt: U32) -> U32:
+  bg_after.pick2(String.is_empty(envv), envv, cfgt, dflt)
+
+# env > config > default; the config file only feeds LIVE sessions
+# (BEND_REPL_PORT is the live marker - the scripted suites stay
+# hermetic against the user's config)
+def bg_after.pick(port_empty: Bool, +envv: String) -> IO(U32):
+  match port_empty:
+    case True{}:
+      IO.pure(U32, bg_after.clamp(bg_after.env(envv, 30)))
+    case False{}:
+      do IO<U32>:
+        +cfgt : String <- read_cfg()
+        IO.pure(U32, bg_after.clamp(bg_after.or_cfg(envv, cfgt, 30)))
+
 def bg_after() -> IO(U32):
   do IO<U32>:
     r : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_BG_AFTER")
-    +raw : U32 <- IO.pure(U32, bg_after.or(r, 30))
-    IO.pure(U32, bg_after.clamp(raw))
+    pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
+    bg_after.pick(String.is_empty(env_or(pr, "")), env_or(r, ""))
 
 def bg_root.or(r: Result<&1, &1, U32 & String, String>, +dflt: String) -> String:
   match r:
@@ -1208,11 +1315,6 @@ def exec_patch.val(actions: List<&2, Pa.PAction>, +acc: List<&2, Prep>,
                 p2 : Prep <- IO.pure(Prep, prep_of_po(po, path, chunks))
                 m2 : Maybe<&2, String> <- exec_patch.read_next(rest)
                 exec_patch.val(rest, Con{p2, acc}, m2)
-
-# shell-wrap a path (single quotes hold spaces; apply_patch never
-# meets a path with a single quote in it)
-def sh_quote(+path: String) -> String:
-  String.append("'", String.append(path, "'"))
 
 def patch_summary.go(lines: List<&2, String>) -> String:
   match lines:

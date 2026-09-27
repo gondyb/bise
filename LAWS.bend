@@ -9,6 +9,7 @@ import ./core/checkpoint.bend as K
 import ./core/session.bend as S
 import ./core/program.bend as P
 import ./core/patch.bend as Pa
+import ./core/config.bend as Cf
 import ./core/commands.bend as Cm
 import ./core/api.bend as Api
 import ./core/obs.bend as O
@@ -1945,3 +1946,72 @@ law anth_tool_name_roundtrip:
        String.eq(Api.anth_tool_name_in("self_reload"), "self.reload"),
        String.eq(Api.anth_tool_name_out("bash"), "bash")))
     == True{} : Bool}
+
+# ---- the config file (core/config.bend) ----
+# A pragmatic TOML subset: key = value lines, [section] headers, #
+# comments. Precedence everywhere: env var > config > default.
+
+# LAW: flat keys parse byte-for-byte - strings quoted, numbers bare.
+law config_parse_flat:
+  {Cf.parse_toml("model = \"opus-5.5\"\nthreshold = 800000\n")
+    == Con{Cf.KV{"model", "opus-5.5"}, Con{Cf.KV{"threshold", "800000"},
+      Nil{}}} : List<&2, Cf.KV>}
+
+# LAW: comments and blank lines never reach the pairs.
+law config_skips_comments_blanks:
+  {Cf.parse_toml("# a comment\n\n  \nmodel = \"m\"\n")
+    == Con{Cf.KV{"model", "m"}, Nil{}} : List<&2, Cf.KV>}
+
+# LAW: a key inside a section carries the section prefix.
+law config_sections_prefix:
+  {Cf.parse_toml("[harness]\nbg_after = 5\n")
+    == Con{Cf.KV{"harness.bg_after", "5"}, Nil{}} : List<&2, Cf.KV>}
+
+# LAW: a quoted value may carry '=' itself (the pair splits on the
+# FIRST one only).
+law config_value_keeps_equals:
+  {Cf.parse_toml("cmd = \"a=b\"\n")
+    == Con{Cf.KV{"cmd", "a=b"}, Nil{}} : List<&2, Cf.KV>}
+
+# LAW: the lookups answer the exact key - Some when present, the
+# default when not.
+law config_lookup_found:
+  {Cf.cfg_get("model = \"opus-5.5\"\n", "model") == Some{"opus-5.5"}
+    : Maybe<&2, String>}
+
+law config_lookup_missing:
+  {Cf.cfg_or(Cf.cfg_get("model = \"m\"\n", "threshold"), "800000")
+    == "800000" : String}
+
+# LAW: numbers ride as U32.
+law config_u32_parses:
+  {Cf.cfg_u32("bg_after = 45\n", "bg_after", 30) == 45 : U32}
+
+law config_u32_defaults:
+  {Cf.cfg_u32("model = \"m\"\n", "bg_after", 30) == 30 : U32}
+
+# LAW: the precedence - the environment variable wins, then the
+# config file, then the default.
+law config_env_wins:
+  {Cf.env_cfg_or("zai-glm-5-3",
+      Cf.cfg_get("model = \"opus-5.5\"\n", "model"), "claude-opus-5-5")
+    == "zai-glm-5-3" : String}
+
+law config_env_empty_falls_to_file:
+  {Cf.env_cfg_or("",
+      Cf.cfg_get("model = \"opus-5.5\"\n", "model"), "claude-opus-5-5")
+    == "opus-5.5" : String}
+
+law config_env_empty_no_file:
+  {Cf.env_cfg_or("", Cf.cfg_get("", "model"), "claude-opus-5-5")
+    == "claude-opus-5-5" : String}
+
+# LAW: the template the runtime writes parses - its own keys are
+# what the lookups find.
+law config_template_parses:
+  {Cf.cfg_get(Rt.CONFIG_TEMPLATE(), "model") == Some{"opus-5.5"}
+    : Maybe<&2, String>}
+
+law config_template_threshold:
+  {Cf.cfg_u32(Rt.CONFIG_TEMPLATE(), "threshold", 800000) == 800000
+    : U32}

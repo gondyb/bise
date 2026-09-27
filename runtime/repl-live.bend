@@ -40,6 +40,7 @@ import ./skills.bend as Sk
 import ./model.bend as M
 import ./tools.bend as X
 import ./main.bend as R
+import ../core/config.bend as Cf
 
 # ---- what one input line asks for ----
 
@@ -567,6 +568,21 @@ def thr_of(r: Result<&1, &1, U32 & String, String>) -> Nat:
     case Done{+s}:
       thr_num(U32.read(s))
 
+def env_of(+s: String) -> Result<&1, &1, U32 & String, String>:
+  Done{s}
+
+# the threshold answers the same precedence as everything else:
+# BEND_THRESHOLD env > config.toml threshold > 800000
+def thr_of.pick(empty: Bool, +envv: String, +cfgt: String) -> Nat:
+  match empty:
+    case True{}:
+      U32.to_nat(Cf.cfg_u32(cfgt, "threshold", 800000))
+    case False{}:
+      thr_of(env_of(envv))
+
+def thr_of_cfg(+envv: String, +cfgt: String) -> Nat:
+  thr_of.pick(String.is_empty(envv), envv, cfgt)
+
 # the REPL listen port: BEND_REPL_PORT env (default 7702) so several
 # harness instances can run side by side
 def repl_port.num(m: Maybe<&2, U32>) -> U32:
@@ -649,15 +665,19 @@ def flow_note(f: Flow) -> IO(Unit):
 
 def main() -> IO(Unit):
   do IO<Unit>:
+    # the config template lands on disk on first run, before anything
+    # reads it
+    ut : Unit <- R.write_cfg_template()
     env : Result<&1, &1, U32 & String, String> <- IO.get_env(
       "BEND_THRESHOLD")
-    +threshold : Nat <- IO.pure(Nat, thr_of(env))
+    +cfgt : String <- R.read_cfg()
+    +threshold : Nat <- IO.pure(Nat, thr_of_cfg(R.env_or(env, ""), cfgt))
     +p : U32 <- repl_port()
     l : Listener <- IO.try(Listener, TCP.listen(p))
     IO.print(String.append("bend-harness LIVE REPL on 127.0.0.1:",
       String.append(U32.show(p),
         String.append(" (real model, FS tools, bash) — compaction threshold: ",
-          String.append(Nat.show(threshold), " tokens (BEND_THRESHOLD to change)")))))
+          String.append(Nat.show(threshold), " tokens (BEND_THRESHOLD or ~/.bend-harness/config.toml to change)")))))
     +cfg : T.Cfg <- live_cfg(threshold)
     +ld : P.Load <- P.load(T.new_session(cfg))
     kr : Result<&1, &1, U32 & String, String> <- IO.get_env("MISTRAL_API_KEY")
