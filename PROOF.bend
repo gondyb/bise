@@ -407,6 +407,12 @@ def Laws.self_compact_acks():
 def Laws.self_tool_routing_table():
   {==}
 
+def Laws.sleep_program_bounds():
+  {==}
+
+def Laws.sleep_program_secs():
+  {==}
+
 def Laws.self_acks_carry_markers():
   {==}
 
@@ -425,10 +431,10 @@ def Laws.deferred_resets_at_user():
 def Laws.deferred_empty_history():
   {==}
 
-def Laws.live_catalog_has_seven_tools():
+def Laws.live_catalog_has_six_tools():
   {==}
 
-def Laws.parity_catalog_keeps_four():
+def Laws.parity_catalog_keeps_three():
   {==}
 
 def Laws.live_catalog_skill_and_self_names():

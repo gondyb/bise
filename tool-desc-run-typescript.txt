@@ -33,7 +33,7 @@ The `run_typescript` tool executes TypeScript code in a V8 isolate (types are st
 ## What exists in the sandbox
 
 Available: standard JS built-ins (JSON, Math, Date, Promise, Object, Array, Map, Set, RegExp, Error classes, Symbol, Proxy, Reflect, WeakMap/WeakSet/WeakRef, BigInt, typed arrays, Intl, Temporal), async/await, generators, async generators, for-await, spread/destructuring, optional chaining, `encodeURIComponent`/`decodeURIComponent`.
-Also available as bare identifiers (no `tools.` prefix needed, dotted paths compose): `tools.<group>.<function>` connector functions, `search_tool_functions`, `bash` (call with the command string as the single argument), `skill` (call with `{ name: "<exact name>" }`), `self.compact`/`self.reload` (ack immediately, run at the end of the turn).
+Also available as bare identifiers (no `tools.` prefix needed, dotted paths compose): `tools.<group>.<function>` connector functions, `search_tool_functions`, `bash` (call with the command string as the single argument), `skill` (call with `{ name: "<exact name>" }`), `self.compact`/`self.reload` (ack immediately, run at the end of the turn), `self.sleep` (call with the seconds: `await self.sleep(10)` or `await self.sleep({ seconds: 10 })`; bounds 0 < s < 20; the HOST sleeps once between replay rounds, the result replays by position).
 
 ## What does NOT exist (and the traps)
 

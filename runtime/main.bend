@@ -6,8 +6,8 @@
 # The loop splits in two:
 # - transition: a PURE function from (runtime state, job) to (effect, next
 #   state, next job). It decides everything: applies commands, picks model
-#   replies, runs pure tools, validates sleep bounds.
-# - run: the only IO cycle. It performs the effect (print, sleep) and
+#   replies, runs pure tools.
+# - run: the only IO cycle. It performs the effect (print, tool exec) and
 #   recurses with less fuel, so the Runtime terminates like the Core.
 #
 # The provider adapter is scripted, which makes every scenario
@@ -45,8 +45,6 @@ type Job is Data:
 
 type Effect is Data:
   EPrints{lines: List<&2, String>}
-  # the id and seconds ride along so the loop can annotate the feed
-  ESleep{ms: U32, id: U32, secs: U32}
   # a real provider call: the hub HTTP client, in this process
   EModel{action: U32, request: String, after: List<&2, T.Act>}
   # a real tool execution (bash, the merged search, remote MCP calls).
@@ -78,48 +76,21 @@ def obs_lines(os: List<&2, T.Obs>) -> List<&2, String>:
 
 # ---- the pure transition ----
 
-def trans.tool.bounds(+rt: Rt, +rest: List<&2, T.Act>, +id: U32, +secs: U32,
-    valid: Bool) -> Trans:
-  match valid:
-    case True{}:
-      Tr{ESleep{U32.mul(secs, 1000), id, secs}, rt,
-        JCmd{T.ToolOk{id,
-          String.append("slept ", String.append(U32.show(secs), "s"))}, rest}}
-    case False{}:
-      Tr{ENone{}, rt,
-        JCmd{T.ToolFail{id, "sleep requires 0 < seconds < 20"}, rest}}
-
-def trans.tool.seconds(+rt: Rt, +rest: List<&2, T.Act>, +id: U32,
-    s: Maybe<&2, U32>) -> Trans:
-  match s:
-    case None{}:
-      Tr{ENone{}, rt,
-        JCmd{T.ToolFail{id, "sleep needs a number of seconds"}, rest}}
-    case Some{+secs}:
-      trans.tool.bounds(rt, rest, id, secs,
-        Bool.and(U32.is_lt(0, secs), U32.is_lt(secs, 20)))
 
 def rt_live(+rt: Rt) -> Bool:
   match rt:
     case Rt{_, _, _, +live}:
       live
 
-# every tool except the sleep timer is a Runtime effect: bash, the
-# merged search (it reads the MCP index), remote MCP tools resolved by
-# name, and unknown names (which fail cleanly with the name)
-def trans.tool.is_sleep(+rt: Rt, +rest: List<&2, T.Act>, +id: U32,
-    +args: String, +call: T.Call, sleep: Bool, live: Bool) -> Trans:
-  match sleep:
-    case True{}:
-      trans.tool.seconds(rt, rest, id, U32.read(args))
-    case False{}:
-      Tr{EExec{call, rest, live}, rt, JIdle{}}
-
+# every tool is a Runtime effect: bash, the merged search (it reads
+# the MCP index), remote MCP tools resolved by name, and unknown names
+# (which fail cleanly with the name). self.sleep is NOT a model tool
+# anymore: it is a programmatic tool, called inside a run_typescript
+# program (exec_program.call.sleep below).
 def trans.tool(+rt: Rt, +rest: List<&2, T.Act>, +call: T.Call) -> Trans:
   match call:
-    case T.Call{+id, +name, +args}:
-      trans.tool.is_sleep(rt, rest, id, args, call,
-        String.eq(name, "self.sleep"), rt_live(rt))
+    case T.Call{_, _, _}:
+      Tr{EExec{call, rest, rt_live(rt)}, rt, JIdle{}}
 
 # live only: run_typescript flows to the runtime as node_program, so the
 # V8 engine (bend-jsrt) executes it instead of the in-house interpreter;
@@ -475,16 +446,6 @@ def res_ann(+id: U32, +r: ExecRes) -> String:
         String.append(" ", String.append(ok_label(ok),
           String.append(" : ", ann_flat(out))))))
 
-def sleep_ann(+id: U32, +secs: U32) -> String:
-  String.append("tool #", String.append(U32.show(id),
-    String.append(" self.sleep : ",
-      String.append(U32.show(secs), "s"))))
-
-def sleep_res_ann(+id: U32, +secs: U32) -> String:
-  String.append("tool_result #", String.append(U32.show(id),
-    String.append(" ok : slept ",
-      String.append(U32.show(secs), "s"))))
-
 def emit_call_ann(out: Out, +call: T.Call, live: Bool) -> IO(Out):
   match live:
     case True{}:
@@ -496,16 +457,6 @@ def emit_res_ann(out: Out, +id: U32, +r: ExecRes, live: Bool) -> IO(Out):
   match live:
     case True{}:
       emit(out, Con{res_ann(id, r), Nil{}})
-    case False{}:
-      IO.pure(Out, out)
-
-# the sleep result is known upfront: both lines go out together
-def emit_sleep_anns(out: Out, +id: U32, +secs: U32, live: Bool) -> IO(Out):
-  match live:
-    case True{}:
-      do IO<Out>:
-        out2 : Out <- emit(out, Con{sleep_ann(id, secs), Nil{}})
-        emit(out2, Con{sleep_res_ann(id, secs), Nil{}})
     case False{}:
       IO.pure(Out, out)
 
@@ -1048,8 +999,9 @@ def RELOAD_ACK() -> String:
 def COMPACT_ACK() -> String:
   "compact: scheduled - the conversation will be compacted when this turn ends"
 
-# is this name one of the self.* harness tools? (self.sleep stays a
-# timer — it is live mid-turn and needs no deferral)
+# is this name one of the self.* harness tools? (self.sleep is NOT
+# one: it is a programmatic tool executed inside run_typescript
+# programs — see exec_program.call.sleep)
 def is_self_tool.reload(+name: String) -> Bool:
   String.eq(name, "self.reload")
 
@@ -1412,13 +1364,89 @@ def exec_program.call.node(is_node: Bool, +name: String, +args: String,
     case False{}:
       exec_mcp(name, args, live)
 
+# ---- self.sleep: a programmatic tool (called inside a program) ----
+# await self.sleep(20) inside a run_typescript program. The seconds
+# come as a bare number (self.sleep(20)) or as {seconds: 20}; the HOST
+# sleeps between the replay rounds (the V8 watchdog only bounds the
+# program own CPU), and the recorded result replays by position, so
+# the wait happens exactly once.
+def prog_sleep.unread(m: Maybe<&2, U32>) -> U32:
+  match m:
+    case Some{+u}:
+      u
+    case None{}:
+      0
+
+def prog_sleep.field(f: Jv.Val) -> U32:
+  match f:
+    case Jv.Num{+s}:
+      prog_sleep.unread(U32.read(s))
+    case _:
+      0
+
+def prog_sleep.parsed.num(v: Jv.Val) -> U32:
+  match v:
+    case Jv.Num{+s}:
+      prog_sleep.field(v)
+    case _:
+      0
+
+def prog_sleep.parsed.get(m: Maybe<&2, Jv.Val>, +v: Jv.Val) -> U32:
+  match m:
+    case Some{+f}:
+      prog_sleep.field(f)
+    case None{}:
+      prog_sleep.parsed.num(v)
+
+def prog_sleep.parsed(+v: Jv.Val) -> U32:
+  prog_sleep.parsed.get(Jv.get(v, "seconds"), v)
+
+def prog_sleep.secs.none(+args: String) -> U32:
+  prog_sleep.unread(U32.read(args))
+
+def prog_sleep.secs(m: Maybe<&2, Jv.Val>, +args: String) -> U32:
+  match m:
+    case Some{+v}:
+      prog_sleep.parsed(v)
+    case None{}:
+      prog_sleep.secs.none(args)
+
+def prog_sleep.bounds(+secs: U32) -> Bool:
+  Bool.and(U32.is_lt(0, secs), U32.is_lt(secs, 20))
+
+def exec_program.call.sleep.valid.pick(valid: Bool, +secs: U32)
+    -> IO(ExecRes):
+  match valid:
+    case True{}:
+      do IO<ExecRes>:
+        u : Unit <- IO.sleep(U32.mul(secs, 1000))
+        IO.pure(ExecRes, Ex{True{},
+          String.append("slept ", String.append(U32.show(secs), "s"))})
+    case False{}:
+      IO.pure(ExecRes, Ex{False{}, "sleep requires 0 < seconds < 20"})
+
+def exec_program.call.sleep.valid(+secs: U32) -> IO(ExecRes):
+  exec_program.call.sleep.valid.pick(prog_sleep.bounds(secs), secs)
+
+def exec_program.call.sleep(is_sleep: Bool, +name: String, +args: String,
+    +live: Bool) -> IO(ExecRes):
+  match is_sleep:
+    case True{}:
+      do IO<ExecRes>:
+        +pr : Maybe<&2, Jv.Val> <- IO.pure(Maybe<&2, Jv.Val>, Jv.parse(String.trim(args)))
+        +secs : U32 <- IO.pure(U32, prog_sleep.secs(pr, args))
+        exec_program.call.sleep.valid(secs)
+    case False{}:
+      exec_program.call.node(String.eq(name, "node_program"), name, args,
+        live)
+
 def exec_program.call.self(is_self: Bool, +name: String, +args: String,
     +live: Bool) -> IO(ExecRes):
   match is_self:
     case True{}:
       IO.pure(ExecRes, self_exec(name))
     case False{}:
-      exec_program.call.node(String.eq(name, "node_program"), name, args,
+      exec_program.call.sleep(String.eq(name, "self.sleep"), name, args,
         live)
 
 def exec_program.call.skill(is_skill: Bool, +name: String, +args: String,
@@ -1894,13 +1922,6 @@ def run(fuel: Nat, out: Out, +rt: Rt, +job: Job, tr: Trans) -> IO(RtEnd):
                     case EPrints{lines}:
                       do IO<RtEnd>:
                         out2 : Out <- emit(out, lines)
-                        run(k, out2, rt2, job2, transition(rt2, job2))
-                    case ESleep{+ms, +id, +secs}:
-                      # the sleep timer, annotated for the live feed
-                      do IO<RtEnd>:
-                        out2 : Out <- emit_sleep_anns(out, id, secs,
-                          rt_live(rt))
-                        IO.sleep(ms)
                         run(k, out2, rt2, job2, transition(rt2, job2))
                     case EModel{+action, +request, +after}:
                       # the real provider call (the hub HTTP client);

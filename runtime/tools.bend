@@ -50,12 +50,14 @@ def skill_desc() -> IO(String):
     IO.pure(String, skill_desc.read(m))
 
 # pure: build the catalog from given descriptions
+# self.sleep is NOT a model tool anymore: it is a programmatic tool,
+# called inside a run_typescript program (await self.sleep(20)) -
+# see exec_program.call.sleep in runtime/main.bend
 def catalog_pure(+sd: String, +rd: String, +bd: String) -> List<&2, T.ToolDef>:
   Con{T.ToolDef{"search_tool_functions", sd},
-   Con{T.ToolDef{"self.sleep", "Sleep for a bounded number of seconds (0 < s < 20), then report."},
-    Con{T.ToolDef{"bash", bd},
-     Con{T.ToolDef{"run_typescript", rd},
-      Nil{}}}}}
+   Con{T.ToolDef{"bash", bd},
+    Con{T.ToolDef{"run_typescript", rd},
+     Nil{}}}}
 
 # ---- self.* harness tools (live catalog only) ----
 # The agent drives its own harness from inside a turn: request a

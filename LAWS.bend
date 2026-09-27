@@ -689,12 +689,26 @@ law self_compact_acks:
     : Rt.ExecRes}
 
 # LAW: the routing recognizes exactly the two self.* tools; self.sleep
-# stays a timer and the ordinary tools stay themselves.
+# is a programmatic tool (inside run_typescript programs), the
+# ordinary tools stay themselves.
 law self_tool_routing_table:
   {Bool.and(Rt.is_self_tool("self.reload"),
      Bool.and(Rt.is_self_tool("self.compact"),
        Bool.and(Bool.not(Rt.is_self_tool("self.sleep")),
          Bool.not(Rt.is_self_tool("bash"))))) == True{} : Bool}
+
+
+# LAW: self.sleep is programmatic now: the bounds are 0 < s < 20
+# (a longer sleep stalls the program round for no benefit).
+law sleep_program_bounds:
+  {Bool.and(Rt.prog_sleep.bounds(1),
+     Bool.and(Bool.not(Rt.prog_sleep.bounds(0)),
+       Bool.not(Rt.prog_sleep.bounds(20)))) == True{} : Bool}
+
+# LAW: the seconds parse from the bare argument string (self.sleep(19)
+# in a program) when the JSON parse finds nothing.
+law sleep_program_secs:
+  {Rt.prog_sleep.secs(None{}, "19") == 19 : U32}
 
 # LAW: the acks carry their scan markers — what deferred_of finds is
 # exactly what the model read.
@@ -751,33 +765,35 @@ law def_acks_suffix_carries_both:
 # LAW: the live catalog carries the skill loader and the two self
 # tools after the four parity tools; catalog_short (the scripted
 # scenarios) stays untouched.
-law live_catalog_has_seven_tools:
-  {Xt.catalog_len(Xt.catalog_live("s", "r", "b", "k")) == 7n : Nat}
+# self.sleep left the catalog: it is a programmatic tool now
+# (await self.sleep(n) inside a run_typescript program).
+law live_catalog_has_six_tools:
+  {Xt.catalog_len(Xt.catalog_live("s", "r", "b", "k")) == 6n : Nat}
 
-law parity_catalog_keeps_four:
-  {Xt.catalog_len(Xt.catalog_pure("s", "r", "b")) == 4n : Nat}
+law parity_catalog_keeps_three:
+  {Xt.catalog_len(Xt.catalog_pure("s", "r", "b")) == 3n : Nat}
 
 law live_catalog_skill_and_self_names:
-  {Bool.and(String.eq(Xt.tool_name_at(4n, Xt.catalog_live("s", "r", "b", "k")),
+  {Bool.and(String.eq(Xt.tool_name_at(3n, Xt.catalog_live("s", "r", "b", "k")),
       "skill"),
-    Bool.and(String.eq(Xt.tool_name_at(5n, Xt.catalog_live("s", "r", "b", "k")),
+    Bool.and(String.eq(Xt.tool_name_at(4n, Xt.catalog_live("s", "r", "b", "k")),
       "self.reload"),
-     String.eq(Xt.tool_name_at(6n, Xt.catalog_live("s", "r", "b", "k")),
+     String.eq(Xt.tool_name_at(5n, Xt.catalog_live("s", "r", "b", "k")),
       "self.compact"))) == True{} : Bool}
 
 # LAW: the descriptions say what the tools do and when they act.
 law self_reload_desc_says_when:
   {Bool.and(
-     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b", "k")),
+     String.contains(Xt.tool_desc_at(4n, Xt.catalog_live("s", "r", "b", "k")),
        "Restart the harness process with the latest code"),
-     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b", "k")),
+     String.contains(Xt.tool_desc_at(4n, Xt.catalog_live("s", "r", "b", "k")),
        "end of the current turn")) == True{} : Bool}
 
 law self_compact_desc_says_when:
   {Bool.and(
-     String.contains(Xt.tool_desc_at(6n, Xt.catalog_live("s", "r", "b", "k")),
+     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b", "k")),
        "Compact the conversation history"),
-     String.contains(Xt.tool_desc_at(6n, Xt.catalog_live("s", "r", "b", "k")),
+     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b", "k")),
        "end of the current turn")) == True{} : Bool}
 
 # ---- the provider API mapping (core/api.bend, formerly the Rust bridge) ----
