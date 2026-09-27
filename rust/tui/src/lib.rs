@@ -1520,7 +1520,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
             if app.input.contains('\n') {
                 " · ⏎ = Envoyer, Alt+⏎ = Nouvelle ligne"
             } else {
-                ""
+                " · Ctrl+J = Nouvelle ligne"
             },
             Style::default().fg(DIM),
         ),
@@ -1597,7 +1597,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
     let hint = if app.pending {
         "Entrée : diriger · Tab : mettre en file · Ctrl+C : interrompre · / : commandes · End : bas"
     } else {
-        "Entrée : envoyer · / : commandes · Ctrl+T : raisonnement · End : bas · Ctrl+C : quitter"
+        "Entrée : envoyer · Ctrl+J : nouvelle ligne · / : commandes · Ctrl+T : raisonnement · End : bas · Ctrl+C : quitter"
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(DIM)))),
@@ -1921,9 +1921,11 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                             }
                         }
                     }
-                    // alt/option+enter: a NEWLINE (multi-line input;
-                    // plain Enter sends)
-                    (KeyCode::Enter, KeyModifiers::ALT) => {
+                    // a newline in the composer: ctrl+j (LF, the one
+                    // binding EVERY terminal transmits) or alt+enter;
+                    // plain Enter sends
+                    (KeyCode::Char('j'), KeyModifiers::CONTROL)
+                    | (KeyCode::Enter, KeyModifiers::ALT) => {
                         let b = byte_at_char(&app.input, app.cursor);
                         app.input.insert(b, '\n');
                         app.cursor += 1;
