@@ -573,8 +573,26 @@ def model_call.reply(+res: Http.Res) -> String:
     case Http.Res{+status, _, _}:
       Api.reply_of(status, Http.text(res))
 
-def model_call.res(res: Http.Res) -> IO(Rem.RemoteRes):
+# BEND_WIRE_DUMP also captures the raw provider response (suffix .reply):
+# the tool-call arguments exactly as the provider serialized them,
+# before any harness parsing - the ground truth for wire-encoding bugs.
+def model_call.dump_res(+path: String, +body: String) -> IO(Unit):
+  do IO<Unit>:
+    u : Unit <- P.write_file(String.append(path, ".reply"), body)
+    IO.pure(Unit, Unit{})
+
+def model_call.res.dumper(m: Result<&1, &1, U32 & String, String>, +res: Http.Res)
+    -> IO(Unit):
+  match m:
+    case Fail{_}:
+      IO.pure(Unit, Unit{})
+    case Done{+path}:
+      model_call.dump_res(path, Http.text(res))
+
+def model_call.res(+res: Http.Res) -> IO(Rem.RemoteRes):
   do IO<Rem.RemoteRes>:
+    dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
+    d : Unit <- model_call.res.dumper(dr, res)
     reply : String <- IO.pure(String, model_call.reply(res))
     IO.pure(Rem.RemoteRes, Rem.parse_reply(reply))
 
@@ -1165,7 +1183,11 @@ def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
   bg_wrap.seg(String.append("cat > $BG/$i.cmd <<'", String.append(sent, "'")),
   bg_wrap.seg(command,
   bg_wrap.seg(sent,
-  bg_wrap.seg(String.append("( ulimit -f 102400; ( ", String.append(command,
+    # the command runs FROM THE .cmd FILE, never inline: a heredoc in an
+  # inline command would swallow the wrapper own following lines
+  # (polling, handoff, result print) as its body - the wrapper then
+  # exits before printing anything and the tool returns empty.
+  bg_wrap.seg(String.append("( ulimit -f 102400; ( /bin/sh $BG/$i.cmd", String.append("",
       " ) > $BG/$i.out 2>&1 <&9 & C=$!; echo $C > $BG/$i.pid; wait $C; R=$?; if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then echo $R > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in; rmdir $BG/$i.slot 2>/dev/null; fi ) >/dev/null 2>&1 &")),
   bg_wrap.seg("while [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do",
   bg_wrap.seg(bg_setup_guard(bg),
