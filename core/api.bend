@@ -465,15 +465,105 @@ def content_json.pick(empty: Bool, +text: String) -> J.Json:
 def content_json(+text: String) -> J.Json:
   content_json.pick(String.is_empty(text), text)
 
+# ---- the way back: marked history reasoning becomes a thinking block ----
+# The vibe CLI sends the assistant's own reasoning back as a structured
+# thinking block ahead of the text block (mistral.py prepare_message ->
+# ThinkChunk). The think markers are the transport INSIDE the harness
+# wire/history; they are NEVER sent literally to the API. An assistant
+# message without markers is sent as a plain string, exactly as before.
+
+type ThinkSpan is Data:
+  TSpan{n0: Nat, n1: Nat}
+
+# the search ran on the tail past the start marker (C.find takes a
+# position accumulator, not an offset), so the hit is RELATIVE: rebase
+# it to the absolute end-marker position
+def asst_think.end(m: Maybe<&2, Nat>, +content: String, +n0: Nat)
+    -> Maybe<&2, ThinkSpan>:
+  match m:
+    case Some{+r}:
+      Some{TSpan{n0, Nat.add(Nat.add(n0, 7n), r)}}
+    case None{}:
+      None{}
+
+def asst_think.start(m: Maybe<&2, Nat>, +content: String)
+    -> Maybe<&2, ThinkSpan>:
+  match m:
+    case Some{+n0}:
+      asst_think.end(C.find(String.drop(content, Nat.add(n0, 7n)), "</think>", 0n), content, n0)
+    case None{}:
+      None{}
+
+# the marker span: (start, end) of "<think>R</think>" in the text
+def asst_think.find(+content: String) -> Maybe<&2, ThinkSpan>:
+  asst_think.start(C.find(content, "<think>", 0n), content)
+
+def asst_think.reasoning(+content: String, +n0: Nat, +n1: Nat) -> String:
+  String.trim(String.take(String.drop(content, Nat.add(n0, 7n)),
+    Nat.sub(n1, Nat.add(n0, 7n))))
+
+def asst_think.visible.strip(is_nl: Bool, +rest: String) -> String:
+  match is_nl:
+    case True{}:
+      String.drop(rest, 1n)
+    case False{}:
+      rest
+
+def asst_think.visible(+rest: String) -> String:
+  asst_think.visible.strip(String.starts_with(rest, "\n"), rest)
+
+# the exact vibe ThinkChunk shape: the thinking block first, the text
+# block second (a thinking-only assistant message carries no text block)
+def think_block_json(+reasoning: String) -> J.Json:
+  J.obj(Con{J.kv("type", J.str("thinking")),
+    Con{J.kv("thinking",
+      J.arr(Con{J.obj(Con{J.kv("type", J.str("text")),
+        Con{J.kv("text", J.str(reasoning)), Nil{}}}), Nil{}})),
+    Nil{}}})
+
+def text_block_json(+text: String) -> J.Json:
+  J.obj(Con{J.kv("type", J.str("text")),
+    Con{J.kv("text", J.str(text)), Nil{}}})
+
+def asst_content.marked.pick(empty_vis: Bool, +reasoning: String,
+    +visible: String) -> J.Json:
+  match empty_vis:
+    case True{}:
+      J.arr(Con{think_block_json(reasoning), Nil{}})
+    case False{}:
+      J.arr(Con{think_block_json(reasoning),
+        Con{text_block_json(visible), Nil{}}})
+
+def asst_think.raw_visible(+content: String, +n1: Nat) -> String:
+  String.drop(content, Nat.add(n1, 8n))
+
+def asst_content.found(pr: ThinkSpan, +content: String) -> J.Json:
+  match pr:
+    case TSpan{+n0, +n1}:
+      asst_content.marked.pick(String.is_empty(asst_think.visible(
+          asst_think.raw_visible(content, n1))),
+        asst_think.reasoning(content, n0, n1),
+        asst_think.visible(asst_think.raw_visible(content, n1)))
+
+def asst_content.pick(parts: Maybe<&2, ThinkSpan>, +content: String) -> J.Json:
+  match parts:
+    case None{}:
+      content_json(content)
+    case Some{+pr}:
+      asst_content.found(pr, content)
+
+def asst_content_json(+content: String) -> J.Json:
+  asst_content.pick(asst_think.find(content), content)
+
 def msg_json.asst(+content: String, +calls: List<&2, WCall>,
     ids: List<&2, String>) -> J.Json & List<&2, String>:
   match calls:
     case Nil{}:
       (J.obj(Con{J.kv("role", J.str("assistant")),
-        Con{J.kv("content", content_json(content)), Nil{}}}), ids)
+        Con{J.kv("content", asst_content_json(content)), Nil{}}}), ids)
     case Con{_, _}:
       (J.obj(Con{J.kv("role", J.str("assistant")),
-        Con{J.kv("content", content_json(content)),
+        Con{J.kv("content", asst_content_json(content)),
           Con{J.kv("tool_calls", calls_json(calls)), Nil{}}}}),
         List.append(&2, String, ids, ids_of(calls)))
 
@@ -656,15 +746,6 @@ def tc_lines.go(tcs: List<&2, J.Json>, +i: Nat) -> List<&2, String>:
 def tc_lines(tcs: List<&2, J.Json>) -> List<&2, String>:
   tc_lines.go(tcs, 0n)
 
-def blocks_text(blocks: List<&2, J.Json>) -> String:
-  match blocks:
-    case Nil{}:
-      ""
-    case Con{+b, rest}:
-      String.append(block_text(b),
-        String.append("
-", blocks_text(rest)))
-
 # the texts of one thinking block parts, newline-joined
 def think_texts(parts: List<&2, J.Json>) -> String:
   match parts:
@@ -672,8 +753,7 @@ def think_texts(parts: List<&2, J.Json>) -> String:
       ""
     case Con{+p, rest}:
       String.append(J.get_str_or(p, "text", ""),
-        String.append("
-", think_texts(rest)))
+        String.append("\n", think_texts(rest)))
 
 def block_think.has(has: Bool, +b: J.Json) -> String:
   match has:
@@ -702,6 +782,14 @@ def block_text.pick(is_text: Bool, has_think: Bool, +b: J.Json) -> String:
 def block_text(+b: J.Json) -> String:
   block_text.pick(Bool.not(String.is_empty(J.get_str_or(b, "text", ""))),
     Bool.not(List.is_empty(&2, J.Json, arr_field_or(b, "thinking"))), b)
+
+def blocks_text(blocks: List<&2, J.Json>) -> String:
+  match blocks:
+    case Nil{}:
+      ""
+    case Con{+b, rest}:
+      String.append(block_text(b),
+        String.append("\n", blocks_text(rest)))
 
 # GLM returns content as an array of blocks; the blocks are joined
 def content_of(j: J.Json) -> String:

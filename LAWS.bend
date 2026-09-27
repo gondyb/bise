@@ -17,6 +17,7 @@ import ./runtime/main.bend as Rt
 import ./runtime/mcp.bend as Mc
 import ./runtime/skills.bend as Sk
 import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
+import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
 
 # LAW: a checkpoint restores to exactly the session it exported.
 law checkpoint_roundtrip:
@@ -689,13 +690,50 @@ law api_body_high_reasoning:
       Api.parse_wire("MODEL default\nMSG user : bonjour\nEND\n")),
     "\"reasoning_effort\":\"high\"") == True{} : Bool}
 
-# LAW: GLM content blocks become separate lines (the thinking blocks
-# carry no top-level text field, so only text blocks surface); the wire
-# carries them escaped, the client sees real newlines after unescape.
+# LAW: the way back — an assistant message whose history text carries
+# marked reasoning is re-sent as the vibe CLI ThinkChunk shape: the
+# thinking block first, the text block second.
+law asst_think_roundtrip:
+  {J.stringify(Api.asst_content_json(
+      Api.unescape_nl("<think>2+2 = 4\\n</think>\\n4")))
+    == "[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"2+2 = 4\"}]},{\"type\":\"text\",\"text\":\"4\"}]"
+    : String}
+
+# LAW: a thinking-only assistant message carries no text block.
+law asst_think_only_no_text_block:
+  {J.stringify(Api.asst_content_json(
+      Api.unescape_nl("<think>R\\n</think>")))
+    == "[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"R\"}]}]"
+    : String}
+
+# LAW: a plain assistant message is sent as a plain string, exactly as
+# before — the conversion only fires on marked reasoning.
+law asst_plain_content_stays_plain:
+  {J.stringify(Api.asst_content_json("hello")) == "\"hello\"" : String}
+
+# LAW: end to end on the request path — a wire carrying a marked
+# assistant message produces an API body with the thinking block.
+law api_body_returns_thinking_block:
+  {String.contains(Api.api_body("m",
+      Api.parse_wire("MODEL default\nMSG assistant : <think>2+2 = 4\\n</think>\\n4\nEND\n")),
+    "\"type\":\"thinking\"") == True{} : Bool}
+
+# LAW: GLM content blocks become separate lines; the wire carries them
+# escaped, the client sees real newlines after unescape.
 law glm_blocks_join_lines:
   {Api.unescape_nl(Api.reply_of(200,
       "{\"choices\":[{\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"a\"},{\"type\":\"text\",\"text\":\"b\"}]}}]}"))
     == "OK a\nb\nEND\n" : String}
+
+# LAW: GLM thinking blocks surface in the reply too -- the parts of the
+# nested thinking array wrapped in think markers, ahead of the text
+# blocks. The history the model sees back then carries its own
+# reasoning; the common harness bug dropped it here, so every later
+# hop of a multi-tool turn reasoned blind.
+law glm_thinking_surfaces:
+  {Api.unescape_nl(Api.reply_of(200,
+      "{\"choices\":[{\"message\":{\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"2+2 = 4\"}],\"closed\":true},{\"type\":\"text\",\"text\":\"4\"}]}}]}"))
+    == "OK <think>2+2 = 4\n</think>\n4\nEND\n" : String}
 
 # LAW: tool calls map onto the CALL reply lines the Core parses (1-based
 # ids, the flat arg rehydrated from the arguments JSON string).

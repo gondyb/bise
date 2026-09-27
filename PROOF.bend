@@ -111,6 +111,9 @@ def Laws.api_body_maps():
 def Laws.glm_blocks_join_lines():
   {==}
 
+def Laws.glm_thinking_surfaces():
+  {==}
+
 def Laws.api_tool_calls_map():
   {==}
 
@@ -422,7 +425,6 @@ def Laws.def_acks_suffix_carries_reload():
 def Laws.def_acks_suffix_carries_both():
   {==}
 
-
 def Laws.bg_wrapper_runner_frees_slot():
   {==}
 
@@ -439,7 +441,6 @@ def Laws.steering_survives_fail():
 
 def Laws.steering_arrival_order():
   {==}
-
 
 def Laws.exec_of_real_199_fails():
   {==}
@@ -469,7 +470,6 @@ def Laws.mcp_alias_dedupes():
 
 def Laws.mcp_bootstrap_url_parity():
   {==}
-
 
 def Laws.steer_path_is_per_port():
   {==}
@@ -544,4 +544,16 @@ def Laws.queue_delivered_in_history():
   {==}
 
 def Laws.api_body_high_reasoning():
+  {==}
+
+def Laws.asst_think_roundtrip():
+  {==}
+
+def Laws.asst_think_only_no_text_block():
+  {==}
+
+def Laws.asst_plain_content_stays_plain():
+  {==}
+
+def Laws.api_body_returns_thinking_block():
   {==}
