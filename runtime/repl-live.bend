@@ -476,12 +476,36 @@ def greet_out(greet: Maybe<&2, Nat>, s: Socket) -> IO(R.Out):
     case None{}:
       IO.pure(R.Out, R.ONet{s})
 
+# the restored queue restarts the turn chain by itself (checkpoint v2):
+# the runtime idle boundary pops the queued head into a fresh turn,
+# so the message the user queued before the reload runs without anyone
+# re-typing it; further queued messages chain the same way inside the
+# one run loop entry. Turn/pending are still boundary-empty at a reload,
+# so only the queue and the held notifications resume here.
+def resume_queued.run(s: Socket, +sess: T.Session,
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  do IO<Flow>:
+    e : R.RtEnd <- R.run(1000000n, R.ONet{s},
+      R.Rt{sess, Nil{}, Nil{}, True{}}, R.JIdle{},
+      R.transition(R.Rt{sess, Nil{}, Nil{}, True{}}, R.JIdle{}))
+    f : Flow <- repl_end_stalled(e, next)
+    IO.pure(Flow, f)
+
+def resume_queued(empty: Bool, s: Socket, +sess: T.Session,
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  match empty:
+    case True{}:
+      next(s)(sess)
+    case False{}:
+      resume_queued.run(s, sess, next)
+
 def greet_conn(out: R.Out, +sess: T.Session) -> IO(Flow):
   match out:
     case R.OStd{}:
       IO.pure(Flow, Go{sess})
     case R.ONet{s2}:
-      repl_conn(s2, sess)
+      resume_queued(List.is_empty(&2, String, S.sess_queued(sess)), s2,
+        sess, s3 => sess3 => repl_conn(s3, sess3))
 
 
 

@@ -227,10 +227,12 @@ def start_turn(+text: String, +s: T.Session) -> T.Session:
         Some{T.Turn{0n, Nil{}, Nil{}}}, None{}, queued, notifs}
 
 # ---- the between-turns gate (/reload) ----
-# Checkpoints are only coherent at turn boundaries: turn, pending,
-# queued and notifications are all empty there (ADR 0002 — they are
-# not serialized). A reload may only run in exactly that state, so the
-# restarted process restores a checkpoint that loses nothing.
+# Checkpoints are only coherent at turn boundaries: turn and pending
+# are empty there (ADR 0002 — they are not serialized). The queue and
+# the held notifications ARE serialized (QUEUE/NOTIF lines, v2), so
+# they no longer block a reload: the restarted process pops the
+# queue into the turn it owes, by itself. A reload may still only run
+# with no turn and no pending work.
 
 def no_turn(turn: Maybe<&2, T.Turn>) -> Bool:
   match turn:
@@ -264,10 +266,8 @@ def empty_notifs(notifs: List<&2, String>) -> Bool:
 # NOT serialize is empty, so a reload cannot lose session state
 def reload_allowed(+s: T.Session) -> Bool:
   match s:
-    case T.Sess{_, _, _, _, +turn, +pending, +queued, +notifs}:
-      Bool.and(no_turn(turn),
-        Bool.and(no_pending(pending),
-          Bool.and(empty_queued(queued), empty_notifs(notifs))))
+    case T.Sess{_, _, _, _, +turn, +pending, _, _}:
+      Bool.and(no_turn(turn), no_pending(pending))
 
 # ---- law helpers: what the durable history holds ----
 

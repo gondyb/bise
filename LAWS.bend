@@ -657,21 +657,22 @@ law reload_refused_while_turn:
   {S.reload_allowed(S.start_turn(text, T.new_session(cfg)))
     == False{} : Bool}
 
-# LAW: a queued message at idle blocks the reload: it is not
-# serialized, it would be lost.
-law reload_refused_with_queue:
+# LAW: a queued message no longer blocks the reload: it is serialized
+# (QUEUE lines, v2) and the restarted process pops it into the turn it
+# owes, by itself.
+law reload_allows_with_queue:
   for +cfg: T.Cfg
   for +text: String
   {S.reload_allowed(S.queue_msg(T.new_session(cfg), text))
-    == False{} : Bool}
+    == True{} : Bool}
 
-# LAW: a held notification at idle blocks the reload: it is not
-# serialized, it would be lost.
-law reload_refused_with_notif:
+# LAW: a held notification no longer blocks the reload either: it is
+# serialized (NOTIF lines, v2).
+law reload_allows_with_notif:
   for +cfg: T.Cfg
   for +text: String
   {S.reload_allowed(S.hold_notif(T.new_session(cfg), text))
-    == False{} : Bool}
+    == True{} : Bool}
 
 # ---- self.reload / self.compact: the agent files requests mid-turn ----
 # Callable as tools (top-level or inside a run_typescript program),
@@ -896,6 +897,21 @@ law checkpoint_text_roundtrip:
   {K.from_text(K.to_text(K.export(T.Sess{T.Cfg{400n, 40n, 3n, "You are precise.", Con{T.ToolDef{"echo", "Returns text."}, Nil{}}}, Con{T.user("bonjour"), Con{T.asst("réponse", Con{T.Call{1, "echo", "hi"}, Nil{}}), Con{T.tool_res("hi"), Con{T.injected_user("résumé"), Nil{}}}}}, 3n, 7, None{}, None{}, Nil{}, Nil{}})))
     == Some{K.export(T.Sess{T.Cfg{400n, 40n, 3n, "You are precise.", Con{T.ToolDef{"echo", "Returns text."}, Nil{}}}, Con{T.user("bonjour"), Con{T.asst("réponse", Con{T.Call{1, "echo", "hi"}, Nil{}}), Con{T.tool_res("hi"), Con{T.injected_user("résumé"), Nil{}}}}}, 3n, 7, None{}, None{}, Nil{}, Nil{}})} : Maybe<&2, K.Checkpoint>}
 
+
+
+# LAW: the queue and the held notifications survive the text form too
+# (QUEUE/NOTIF lines, wire-encoded) - the message the user queued
+# mid-turn is there after a reload, so its turn starts by itself.
+law checkpoint_text_roundtrip_queued:
+  {K.from_text(K.to_text(K.export(T.Sess{T.Cfg{400n, 40n, 3n, "You are precise.",
+      Con{T.ToolDef{"echo", "Returns text."}, Nil{}}},
+    Con{T.user("bonjour"), Nil{}}, 1n, 0, None{}, None{},
+    Con{"next question", Nil{}}, Con{"note one", Nil{}}})))
+    == Some{K.export(T.Sess{T.Cfg{400n, 40n, 3n, "You are precise.",
+      Con{T.ToolDef{"echo", "Returns text."}, Nil{}}},
+    Con{T.user("bonjour"), Nil{}}, 1n, 0, None{}, None{},
+    Con{"next question", Nil{}}, Con{"note one", Nil{}}})}
+    : Maybe<&2, K.Checkpoint>}
 
 # ---- call-id renumbering (core/session.bend) ----
 # The wire pairs tool results with calls by id; provider replies number

@@ -156,6 +156,9 @@ def Laws.api_bare_body_omits_tools():
 def Laws.checkpoint_text_roundtrip():
   {==}
 
+def Laws.checkpoint_text_roundtrip_queued():
+  {==}
+
 def Laws.renumber_is_sequential():
   {==}
 
@@ -303,7 +306,7 @@ def Laws.reload_refused_while_turn(cfg, text):
         case _:
           {==}
 
-def Laws.reload_refused_with_queue(cfg, text):
+def Laws.reload_allows_with_queue(cfg, text):
   match cfg:
     case T.Cfg{_, _, _, _, _}:
       match text:
@@ -312,7 +315,7 @@ def Laws.reload_refused_with_queue(cfg, text):
         case _:
           {==}
 
-def Laws.reload_refused_with_notif(cfg, text):
+def Laws.reload_allows_with_notif(cfg, text):
   match cfg:
     case T.Cfg{_, _, _, _, _}:
       match text:

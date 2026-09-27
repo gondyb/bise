@@ -13,7 +13,7 @@ type Checkpoint is Data:
   Chk{version: U32, session: T.Session}
 
 def export(+s: T.Session) -> Checkpoint:
-  Chk{1, s}
+  Chk{2, s}
 
 def restore(+c: Checkpoint) -> T.Session:
   match c:
@@ -30,9 +30,12 @@ def version(+c: Checkpoint) -> U32:
 # line, its CALL sub-lines indented). Stored message texts are already
 # single-line (newlines travel escaped), so the file is line-shaped.
 # The MSG line carries the injected flag, so the compaction protection
-# rules survive the roundtrip. Turn/pending/queued/notifications are
-# NOT serialized: checkpoints are written at turn boundaries, where
-# they are all empty.
+# rules survive the roundtrip. Turn and pending are NOT serialized: checkpoints are written at
+# turn boundaries, where they are empty, and the reload gate enforces
+# exactly that state. The queue and the held notifications ARE
+# serialized (QUEUE and NOTIF lines, format v2): a message the user
+# queued mid-turn survives a reload, so the turn it owes starts by
+# itself in the restarted process.
 
 
 def role_text(r: T.Role) -> String:
@@ -128,23 +131,56 @@ def to_text.cfg(+cfg: T.Cfg) -> String:
     case T.Cfg{+threshold, +select_budget, +max_nulls, +system, +tools}:
       String.append(tools_text(tools), String.append("CFG ", String.append(Nat.show(threshold), String.append(" ", String.append(Nat.show(select_budget), String.append(" ", String.append(Nat.show(max_nulls), String.append(" ", String.append(Api.escape_nl(system), "\n")))))))))
 
+# ---- the queue and the held notifications ride the checkpoint (v2) ----
+# A message the user queued mid-turn used to vanish at a reload, so
+# the turn it owed never started on its own. The QUEUE and NOTIF
+# lines carry them wire-encoded (reversible, multi-line safe).
+def queued_text.go(qs: List<&2, String>) -> String:
+  match qs:
+    case Nil{}:
+      ""
+    case Con{+t, rest}:
+      String.append("QUEUE ",
+        String.append(Api.wire_encode(t),
+          String.append("
+", queued_text.go(rest))))
+
+def queued_text(qs: List<&2, String>) -> String:
+  queued_text.go(qs)
+
+def notifs_text.go(ns: List<&2, String>) -> String:
+  match ns:
+    case Nil{}:
+      ""
+    case Con{+t, rest}:
+      String.append("NOTIF ",
+        String.append(Api.wire_encode(t),
+          String.append("
+", notifs_text.go(rest))))
+
+def notifs_text(ns: List<&2, String>) -> String:
+  notifs_text.go(ns)
+
 def to_text(+c: Checkpoint) -> String:
   match c:
     case Chk{+v, +session}:
       match session:
-        case T.Sess{+cfg, +history, +inputs, +actions, _, _, _, _}:
+        case T.Sess{+cfg, +history, +inputs, +actions, _, _, +queued, +notifs}:
           String.append("BEND-SESSION ", String.append(U32.show(v),
             String.append("\n", String.append(to_text.cfg(cfg),
               String.append("COUNT ", String.append(Nat.show(inputs),
                 String.append(" ", String.append(U32.show(actions),
-                  String.append("\n", msgs_text(history))))))))))
+                  String.append("\n", String.append(queued_text(queued),
+                    String.append(notifs_text(notifs),
+                      msgs_text(history))))))))))))
 
 # ---- from_text: the lines become a session again ----
 
 type FS is Data:
   FS{tools: List<&2, T.ToolDef>, cur: Maybe<&2, T.Msg>,
     msgs: List<&2, T.Msg>, cfg: Maybe<&2, T.Cfg>,
-    inputs: Maybe<&2, U32>, actions: Maybe<&2, U32>, ok: Bool}
+    inputs: Maybe<&2, U32>, actions: Maybe<&2, U32>,
+    queued: List<&2, String>, notifs: List<&2, String>, ok: Bool}
 
 def u32_of(m: Maybe<&2, U32>) -> U32:
   match m:
@@ -194,35 +230,51 @@ def msg_make(injected: Bool, +role: Maybe<&2, T.Role>, +text: String) -> T.Msg:
 
 def step_ver(st: FS, +line: String) -> FS:
   match st:
-    case FS{+tools, +cur, +msgs, +cfg, +inputs, +actions, _}:
+    case FS{+tools, +cur, +msgs, +cfg, +inputs, +actions, +queued, +notifs, _}:
+      FS{tools, cur, msgs, cfg, inputs, actions, queued, notifs,
+        Bool.or(U32.is_eq(u32_of(U32.read(String.drop(line, 13n))), 1),
+          U32.is_eq(u32_of(U32.read(String.drop(line, 13n))), 2))}
+
+# QUEUE <wire-encoded text> / NOTIF <wire-encoded text>: the queued
+# messages and held notifications of a mid-turn session (v2); the
+# wire arg encoding keeps every line single-line and reversible
+def step_queue(st: FS, +line: String) -> FS:
+  match st:
+    case FS{+tools, +cur, +msgs, +cfg, +inputs, +actions, +queued, +notifs, +ok}:
       FS{tools, cur, msgs, cfg, inputs, actions,
-        U32.is_eq(u32_of(U32.read(String.drop(line, 13n))), 1)}
+        Con{Api.wire_decode(String.drop(line, 6n)), queued}, notifs, ok}
+
+def step_notif(st: FS, +line: String) -> FS:
+  match st:
+    case FS{+tools, +cur, +msgs, +cfg, +inputs, +actions, +queued, +notifs, +ok}:
+      FS{tools, cur, msgs, cfg, inputs, actions, queued,
+        Con{Api.wire_decode(String.drop(line, 6n)), notifs}, ok}
 
 def add_call(st: FS, +line: String) -> FS:
   match st:
-    case FS{+tools, +cur, +msgs, +cfg, +inputs, +actions, +ok}:
+    case FS{+tools, +cur, +msgs, +cfg, +inputs, +actions, +queued, +notifs, +ok}:
       match cur:
         case Some{+m}:
           match m:
             case T.Msg{+role, +text, +calls, +injected}:
               FS{tools, Some{T.Msg{role, text, Con{fcall(line), calls},
-                injected}}, msgs, cfg, inputs, actions, ok}
+                injected}}, msgs, cfg, inputs, actions, queued, notifs, ok}
         case None{}:
           st
 
 def push_cur(st: FS) -> FS:
   match st:
-    case FS{+tools, +cur, +msgs, +cfg, +inputs, +actions, +ok}:
+    case FS{+tools, +cur, +msgs, +cfg, +inputs, +actions, +queued, +notifs, +ok}:
       match cur:
         case Some{+m}:
-          FS{tools, None{}, Con{m, msgs}, cfg, inputs, actions, ok}
+          FS{tools, None{}, Con{m, msgs}, cfg, inputs, actions, queued, notifs, ok}
         case None{}:
           st
 
 def step_msg.put(m: T.Msg, st: FS) -> FS:
   match st:
-    case FS{+tools, _, +msgs, +cfg, +inputs, +actions, +ok}:
-      FS{tools, Some{m}, msgs, cfg, inputs, actions, ok}
+    case FS{+tools, _, +msgs, +cfg, +inputs, +actions, +queued, +notifs, +ok}:
+      FS{tools, Some{m}, msgs, cfg, inputs, actions, queued, notifs, ok}
 
 def step_msg.build(role: Maybe<&2, T.Role>, injected: Bool, +text: String,
     st: FS) -> FS:
@@ -259,10 +311,10 @@ def step_tool.cut(sp: Maybe<&2, Nat>, st: FS, +line: String) -> FS:
   match sp:
     case Some{+p}:
       match st:
-        case FS{+tools, +cur, +msgs, +cfg, +inputs, +actions, +ok}:
+        case FS{+tools, +cur, +msgs, +cfg, +inputs, +actions, +queued, +notifs, +ok}:
           FS{Con{T.ToolDef{String.take(String.drop(line, 5n), p),
             String.drop(String.drop(line, 5n), Nat.add(p, 3n))}, tools},
-            cur, msgs, cfg, inputs, actions, ok}
+            cur, msgs, cfg, inputs, actions, queued, notifs, ok}
     case None{}:
       st
 
@@ -272,11 +324,11 @@ def step_tool(st: FS, +line: String) -> FS:
 def step_cfg.sys(threshold: Nat, select: Nat, max_nulls: Nat, +sys: String,
     st: FS) -> FS:
   match st:
-    case FS{+tools, +cur, +msgs, _, +inputs, +actions, +ok}:
+    case FS{+tools, +cur, +msgs, _, +inputs, +actions, +queued, +notifs, +ok}:
       FS{tools, cur, msgs,
         Some{T.Cfg{threshold, select, max_nulls, Api.unescape_nl(sys),
           List.reverse(&2, T.ToolDef, tools)}},
-        inputs, actions, ok}
+        inputs, actions, queued, notifs, ok}
 
 def step_cfg.n3(sp: Maybe<&2, Nat>, +rest: String,
     +threshold: Nat, +select: Nat, st: FS) -> FS:
@@ -316,15 +368,15 @@ def step_count.act(sp: Maybe<&2, Nat>, +inputs: U32, +rest: String,
   match sp:
     case Some{+p}:
       match st:
-        case FS{+tools, +cur, +msgs, +cfg, _, +actions, +ok}:
+        case FS{+tools, +cur, +msgs, +cfg, _, +actions, +queued, +notifs, +ok}:
           FS{tools, cur, msgs, cfg, Some{inputs},
-            Some{u32_of(U32.read(String.take(rest, p)))}, ok}
+            Some{u32_of(U32.read(String.take(rest, p)))}, queued, notifs, ok}
     case None{}:
       # the actions number is the last thing on the line
       match st:
-        case FS{+tools, +cur, +msgs, +cfg, _, _, +ok}:
+        case FS{+tools, +cur, +msgs, +cfg, _, _, +queued, +notifs, +ok}:
           FS{tools, cur, msgs, cfg, Some{inputs},
-            Some{u32_of(U32.read(rest))}, ok}
+            Some{u32_of(U32.read(rest))}, queued, notifs, ok}
 
 def step_count.cut(sp: Maybe<&2, Nat>, st: FS, +line: String) -> FS:
   match sp:
@@ -367,12 +419,26 @@ def step.meta(is_cfg: Bool, st: FS, +line: String) -> FS:
     case False{}:
       step.meta2(String.starts_with(line, "COUNT "), st, line)
 
+def step.metaqn(is_notif: Bool, st: FS, +line: String) -> FS:
+  match is_notif:
+    case True{}:
+      step_notif(st, line)
+    case False{}:
+      step.meta(String.starts_with(line, "CFG "), st, line)
+
+def step.metaq(is_queue: Bool, st: FS, +line: String) -> FS:
+  match is_queue:
+    case True{}:
+      step_queue(st, line)
+    case False{}:
+      step.metaqn(String.starts_with(line, "NOTIF "), st, line)
 def step.kind(is_msg: Bool, st: FS, +line: String) -> FS:
   match is_msg:
     case True{}:
       step.msg_or_call(String.starts_with(line, "MSG "), st, line)
     case False{}:
-      step.meta(String.starts_with(line, "CFG "), st, line)
+      step.metaq(String.starts_with(line, "QUEUE "), st, line)
+
 
 def step.pick(known: Bool, st: FS, +line: String) -> FS:
   match known:
@@ -388,7 +454,9 @@ def step(st: FS, +line: String) -> FS:
       Bool.or(String.starts_with(line, "TOOL "),
         Bool.or(String.starts_with(line, "CFG "),
           Bool.or(String.starts_with(line, "COUNT "),
-            String.starts_with(line, "BEND-SESSION ")))))), st, line)
+            Bool.or(String.starts_with(line, "QUEUE "),
+              Bool.or(String.starts_with(line, "NOTIF "),
+                String.starts_with(line, "BEND-SESSION ")))))))), st, line)
 
 def from_go(lines: List<&2, String>, st: FS) -> FS:
   match lines:
@@ -407,7 +475,9 @@ def push_cur2(cur: Maybe<&2, T.Msg>, +msgs: List<&2, T.Msg>)
 
 def from_finish.ok(ok: Bool, +cur: Maybe<&2, T.Msg>,
     +msgs: List<&2, T.Msg>, +cfg: Maybe<&2, T.Cfg>,
-    +inputs: Maybe<&2, U32>, +actions: Maybe<&2, U32>) -> Maybe<&2, Checkpoint>:
+    +inputs: Maybe<&2, U32>, +actions: Maybe<&2, U32>,
+    +queued: List<&2, String>, +notifs: List<&2, String>)
+    -> Maybe<&2, Checkpoint>:
   match ok:
     case False{}:
       None{}
@@ -416,15 +486,17 @@ def from_finish.ok(ok: Bool, +cur: Maybe<&2, T.Msg>,
         case None{}:
           None{}
         case Some{+c}:
-          Some{Chk{1, T.Sess{c,
+          Some{Chk{2, T.Sess{c,
             List.reverse(&2, T.Msg, push_cur2(cur, msgs)),
             U32.to_nat(u32_of(inputs)), u32_of(actions), None{}, None{},
-            Nil{}, Nil{}}}}
+            List.reverse(&2, String, queued),
+            List.reverse(&2, String, notifs)}}}
 
 def from_finish(st: FS) -> Maybe<&2, Checkpoint>:
   match st:
-    case FS{_, +cur, +msgs, +cfg, +inputs, +actions, +ok}:
-      from_finish.ok(ok, cur, msgs, cfg, inputs, actions)
+    case FS{_, +cur, +msgs, +cfg, +inputs, +actions, +queued, +notifs, +ok}:
+      from_finish.ok(ok, cur, msgs, cfg, inputs, actions, queued,
+        notifs)
 
 def nl.get(m: Maybe<&2, Char>) -> Char:
   match m:
@@ -438,4 +510,4 @@ def nl() -> Char:
 
 def from_text(+s: String) -> Maybe<&2, Checkpoint>:
   from_finish(from_go(String.split(s, nl()),
-    FS{Nil{}, None{}, Nil{}, None{}, None{}, None{}, False{}}))
+    FS{Nil{}, None{}, Nil{}, None{}, None{}, None{}, Nil{}, Nil{}, False{}}))
