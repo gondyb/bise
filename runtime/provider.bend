@@ -157,7 +157,6 @@ def model_call.res.dumper(m: Result<&1, &1, U32 & String, String>, +res: Http.Re
 
 def model_call.res(+res: Http.Res, st: Api.Style) -> IO(Rem.RemoteRes):
   do IO<Rem.RemoteRes>:
-    dw2 : Unit <- P.write_file("/tmp/ap-reply-dump.txt", Http.text(res))
     dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
     d : Unit <- model_call.res.dumper(dr, res)
     reply : String <- IO.pure(String, model_call.reply(st, res))

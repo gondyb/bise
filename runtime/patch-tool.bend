@@ -188,7 +188,6 @@ def exec_patch.parse(acts: Maybe<&2, List<&2, Pa.PAction>>) -> IO(X.ExecRes):
 
 def exec_patch.live(+args: String) -> IO(X.ExecRes):
   do IO<X.ExecRes>:
-    dw : Unit <- P.write_file("/tmp/ap-args-dump.txt", args)
     acts : Maybe<&2, List<&2, Pa.PAction>> <- IO.pure(
       Maybe<&2, List<&2, Pa.PAction>>, Pa.parse_patch(args))
     exec_patch.parse(acts)
