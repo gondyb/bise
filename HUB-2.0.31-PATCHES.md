@@ -29,3 +29,28 @@ OUTSIDE the repo; re-fetching the packages reverts them.
 - exec.c/start.c/par.c: CID_SNAPRUN_* renamed to the namespaced form
   (CID_0X9BFD..._MAIN_SNAPRUN_*) and the io_eff constructors wrapped
   in #ifdef guards (same pattern as wire.c) for unused effects.
+
+# Additional patches for bend 2.0.32
+
+bend 2.0.32 changed `TCP.listen(port)` and `UDP.bind(port)` to
+`TCP.listen(host, port)` / `UDP.bind(host, port)`: `host` is an IPv4
+literal ("127.0.0.1" = this machine only, "0.0.0.0" = every interface).
+The 2.0.31 patches above still apply; on top of them:
+
+## 0xbf477e663cf4acb1369a68e0f0fa713b (http/dns)
+
+- dns/dns.bend (resolve.q): `UDP.bind(0)` -> `UDP.bind("0.0.0.0", 0)`.
+  An ephemeral client socket that must reach an external DNS server.
+- http.bend (serve.with): `TCP.listen(port)` ->
+  `TCP.listen("127.0.0.1", port)`, matching the URL it prints
+  (`http://127.0.0.1:<port>`). The harness does not use this server.
+
+The harness's own listeners (runtime/repl-live.bend, runtime/repl.bend)
+bind "127.0.0.1": every client connects there, and a REPL that runs bash
+must not be reachable from the network.
+
+Also new in 2.0.32: a def that relies on `@unsafe` or foreign code now
+makes `bend PROOF.bend` print SOME PROOFS FAIL (exit 1) and list every
+such def, where 2.0.31 printed "All terms check, but N defs rely on
+unsafe or foreign code". The laws concerned are the same 19 as before;
+no law is false. `bend <file> -o <out>` still builds (exit 0).

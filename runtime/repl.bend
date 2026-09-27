@@ -535,7 +535,7 @@ def flow_note(f: Flow) -> IO(Unit):
 def main() -> IO(Unit):
   do IO<Unit>:
     +p : U32 <- repl_port()
-    l : Listener <- IO.try(Listener, TCP.listen(p))
+    l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", p))
     +ps : String <- IO.pure(String, U32.show(p))
     # the same info line as the live REPL: no provider here
     +info : String <- R.harness_info("scripted", "400")

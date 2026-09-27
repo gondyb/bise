@@ -673,7 +673,7 @@ def main() -> IO(Unit):
     +cfgt : String <- R.read_cfg()
     +threshold : Nat <- IO.pure(Nat, thr_of_cfg(R.env_or(env, ""), cfgt))
     +p : U32 <- repl_port()
-    l : Listener <- IO.try(Listener, TCP.listen(p))
+    l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", p))
     # the single source of truth for every client: printed BEFORE the
     # banner the parent waits for
     +model : String <- R.resolved_model()
