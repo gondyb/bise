@@ -1,8 +1,9 @@
-# Build artifacts (Bend native binaries)
+# Build artifacts (Bend native binaries) — the three REPL binaries are
+# COMMITTED now: a fresh clone runs ./run.sh without a rebuild, and
+# `git checkout -- repl-live` restores a binary the EDR quarantined
+# (CrowdStrike Falcon eats freshly built ones intermittently)
 harness-demo
 repl
-repl-live
-repl-scripted
 
 # Rust build output
 target/
