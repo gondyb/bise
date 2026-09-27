@@ -5,16 +5,19 @@ Executes TypeScript code in a sandbox environment.
 
 The `run_typescript` tool executes TypeScript code in a V8 isolate (types are stripped in-process; interfaces, type aliases and enums are supported). It is a replayable orchestration sandbox, not a Node.js runtime.
 
-## The `main` function contract (IMPORTANT)
+## How to produce the result (the `main` contract)
 
-- ALWAYS define `async function main() { /* ... */ }` containing all your code, and return the final result from it.
-- Do NOT call `main()` yourself; the sandbox calls it automatically and its resolved value becomes the tool output.
-- The detection is textual: only a `function main` DECLARATION is recognized. `const main = async () => ...` is NOT detected - with it your program ends with "the program ended without returning".
-- If no `main` is declared, the code runs as a synchronous function body that must end with a top-level `return <expression>;` - and top-level `await` is NOT allowed there, so a missing `main` plus `await` is always a syntax error.
+- The program is an ASYNC function body: top-level `await` always works.
+- The result is the first that applies:
+  1. a top-level `return <value>;` - its value wins over everything else;
+  2. otherwise, if a `function main` DECLARATION is present, the sandbox calls `main()` automatically and its resolved value is the result;
+  3. otherwise the output is "".
+- RECOMMENDED: put all your code in `async function main() { /* ... */ }` and `return` the final result from it. Do NOT call `main()` yourself - a top-level call to `main()` plus no top-level `return` makes it run TWICE.
+- The `main` detection is textual: only a `function main` DECLARATION is recognized. `const main = async () => ...` is NOT detected - with it the program outputs "" unless it has a top-level `return`.
 
 ## Output rules
 
-- The tool output is ONLY the value returned from `main`. It is serialized with JSON.stringify (plain strings pass through verbatim).
+- The tool output is ONLY the result value (from `main` or a top-level `return`). It is serialized with JSON.stringify (plain strings pass through verbatim).
 - console.log/console.error/console.warn do NOT reach the tool output; they are debugging-only. NEVER rely on console.log to return data - always `return` the value.
 - The tool output is truncated at 20,000 characters.
 - JSON serialization caveats: `undefined` values and fields are silently dropped; `NaN`/`Infinity` become `null`; `BigInt` and circular references make the program fail with "the program ended without returning"; `Map`/`Set` serialize to `{}` and `Date` to an ISO string - convert them explicitly when shape matters (`Array.from(map.entries())`, `date.toISOString()`).

@@ -96,26 +96,36 @@ const console = {
   error: (...a) => __log(a.map(String).join(' ')),
   warn: (...a) => __log(a.map(String).join(' ')),
 };
-const __out = (function () {
+const __finish = (p) => Promise.resolve(p).then(
+  (v) => __done(typeof v === 'string' ? v : JSON.stringify(v === undefined ? '' : v)),
+  (e) => __fail(JSON.stringify(String((e && e.message) || e)))
+);
+const __out = (async function () {
   with (new Proxy({}, __gh)) {
 "#;
 
-// legacy format: the program is a function body that ends with `return`
-const EPILOGUE_RETURN: &str = r#"
-  }
-})();
-__done(typeof __out === 'string' ? __out : JSON.stringify(__out === undefined ? '' : __out));
+// the fallback closure: assigned on globalThis (an identifier assignment
+// inside the `with` scope would land on the proxy target, and `main` is
+// only resolvable from inside that scope - the closure captures it).
+// Injected only when the program declares `function main`.
+const PRELUDE_MAIN_FB: &str = r#"
+globalThis.__fb = () => Promise.resolve(main());
 "#;
 
-// vibe format: the program defines `async function main()`; its resolved
-// value is the result (the Promise drains through the microtask checkpoint)
-const EPILOGUE_MAIN: &str = r#"
-  Promise.resolve(main()).then(
-    (v) => __done(typeof v === 'string' ? v : JSON.stringify(v === undefined ? '' : v)),
-    (e) => __fail(JSON.stringify(String((e && e.message) || e)))
-  );
+// one epilogue for every program: the body is an async function body, so
+// top-level await always works and a top-level `return` gives the result;
+// when the body produced no value and `function main` was declared, the
+// resolved value of main() is the result (the promise chain drains through
+// the microtask checkpoint; __done/__fail exit from inside)
+const EPILOGUE: &str = r#"
   }
 })();
+__finish(__out.then((v) => {
+  if (v === undefined && typeof globalThis.__fb === 'function') {
+    return globalThis.__fb();
+  }
+  return v;
+}));
 "#;
 
 // does the (transpiled) program declare a `main` function?
@@ -232,16 +242,17 @@ fn run(program: &str, results: &str) -> ! {
     } else {
         results.trim().to_string()
     };
-    let epilogue = if declares_main(&js) {
-        EPILOGUE_MAIN
+    let fb = if declares_main(&js) {
+        PRELUDE_MAIN_FB
     } else {
-        EPILOGUE_RETURN
+        ""
     };
     let source = format!(
-        "{}{}{}",
+        "{}{}{}{}",
         PRELUDE.replace("__RESULTS_PLACEHOLDER__", &results_lit),
+        fb,
         js,
-        epilogue
+        EPILOGUE
     );
 
     INITIALIZE_V8.call_once(|| {
