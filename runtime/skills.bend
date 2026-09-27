@@ -17,25 +17,14 @@
 # tabs and quotes from the fields, so the split is unambiguous)
 import Base
 import ../core/types.bend as T
+import ../core/text.bend as Tx
 import ./persist.bend as P
 import ./mcp.bend as Mc
 import 0x16458a2db4f36577294543ec2a6d420c/json.bend as Jv
 import 0x9bfd9d57916f3439316c2775fd1f10b4/main.bend as Snap
 
-# ---- the newline char (the mcp.bend nl() pattern) ----
-
-def nl.get(m: Maybe<&2, Char>) -> Char:
-  match m:
-    case Some{+c}:
-      c
-    case None{}:
-      Char.from_u32(10)
-
-def nl() -> Char:
-  nl.get(String.get("\n", 0n))
-
 def tab() -> Char:
-  nl.get(String.get("\t", 0n))
+  Char.from_u32(9)
 
 # ---- the index line format, parsed ----
 
@@ -126,7 +115,7 @@ def find_skill.go(lines: List<&2, String>, +name: String)
         find_skill.go(rest, name))
 
 def find_skill(+content: String, +name: String) -> Maybe<&2, Skill>:
-  find_skill.go(String.split(content, nl()), name)
+  find_skill.go(String.split(content, Tx.newline()), name)
 
 # ---- the prompt sections (pure; the laws pin the exact contracts) ----
 
@@ -218,12 +207,12 @@ def skills_catalog.pick(empty: Bool, +content: String) -> String:
       ""
     case False{}:
       String.append("<available-skills>\n",
-        String.append(catalog_go(String.split(content, nl()), Nil{}, ""),
+        String.append(catalog_go(String.split(content, Tx.newline()), Nil{}, ""),
           "</available-skills>"))
 
 def skills_catalog(+content: String) -> String:
   skills_catalog.pick(
-    String.is_empty(catalog_go(String.split(content, nl()), Nil{}, "")),
+    String.is_empty(catalog_go(String.split(content, Tx.newline()), Nil{}, "")),
     content)
 
 # the rules section, the exact vibe_sdk text (read_file -> bash: the
@@ -232,10 +221,6 @@ def skills_rules() -> String:
   "## Available Skills\n\nSkills contain task-specific instructions. When a request matches a skill description, proactively call the `skill` tool with its exact name before starting the task, then follow the loaded instructions. If that skill's full instructions are already present in the current context, follow them without calling `skill` again. Load every skill that materially applies.\n\nCall `skill` only with a name listed in `<available-skills>`. Connector names and unlisted names in skill instructions are not skills.\n\nDo not read a root `SKILL.md` path with `bash` after loading a skill. Use `bash` only for support or reference files mentioned by the loaded skill."
 
 # ---- the tool contract ----
-
-# the exact vibe_sdk tool description (tools.rs DESCRIPTION)
-def SKILL_DESC() -> String:
-  "Load a specialized skill that provides domain-specific instructions and workflows. When a task matches one of the available skills listed in your system prompt, call this tool with the exact skill name to load the full skill instructions. Only listed names are valid. Call exactly with {\"name\":\"<exact name>\"}; no other argument keys are accepted."
 
 def SKILL_USAGE() -> String:
   "skill: call exactly with {\"name\":\"<exact name>\"}; no other argument keys are accepted"
@@ -304,17 +289,10 @@ def not_available(+name: String, +content: String) -> String:
   String.append("Skill \"",
     String.append(name,
       String.append("\" is not available. Use an exact name from the available skills below. Connector names and unlisted names in skill instructions are not skills.",
-        avail_text(avail_names.go(String.split(content, nl()), Nil{},
+        avail_text(avail_names.go(String.split(content, Tx.newline()), Nil{},
           Nil{})))))
 
 # ---- the index file (mirror of the MCP index pattern) ----
-
-def env_or(r: Result<&1, &1, U32 & String, String>, +dflt: String) -> String:
-  match r:
-    case Done{+v}:
-      v
-    case Fail{_}:
-      dflt
 
 def index_path.pick2(empty: Bool, +fallback: String, +path: String) -> String:
   match empty:
@@ -333,8 +311,8 @@ def index_path() -> IO(String):
   do IO<String>:
     ir : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_SKILLS_INDEX")
     hr : Result<&1, &1, U32 & String, String> <- IO.get_env("HOME")
-    +ix : String <- IO.pure(String, env_or(ir, ""))
-    +hx : String <- IO.pure(String, env_or(hr, ""))
+    +ix : String <- IO.pure(String, P.env_or(ir, ""))
+    +hx : String <- IO.pure(String, P.env_or(hr, ""))
     IO.pure(String, index_path.pick(String.is_empty(ix), hx, ix))
 
 # ---- the startup scan (live only) ----
@@ -359,7 +337,7 @@ def skills_scan() -> IO(Unit):
   do IO<Unit>:
     +idx : String <- index_path()
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
-    +port : String <- IO.pure(String, env_or(pr, "0"))
+    +port : String <- IO.pure(String, P.env_or(pr, "0"))
     +path : String <- IO.pure(String, scan_path(port))
     u : Unit <- P.write_file(path, scan_script(idx))
     out : String <- Snap.run(Con{"/bin/sh", Con{path, Nil{}}})
@@ -431,7 +409,7 @@ def strip_frontmatter.acc(st: Fm) -> String:
       String.trim(String.join(List.reverse(&2, String, acc), "\n"))
 
 def strip_frontmatter(+content: String) -> String:
-  strip_frontmatter.acc(fm_go(String.split(content, nl()),
+  strip_frontmatter.acc(fm_go(String.split(content, Tx.newline()),
     Fm{FmBefore{}, Nil{}}))
 
 # ---- execution ----

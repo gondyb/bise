@@ -9,6 +9,7 @@ import Base
 import ./types.bend as T
 import ./estimate.bend as E
 import ./history.bend as H
+import ./text.bend as Tx
 
 # ---- fit result ----
 type FitR is Data:
@@ -77,24 +78,6 @@ def fit_list(+budget: Nat, +ms: List<&2, T.Msg>) -> FitR:
   fit(List.length(&2, T.Msg, ms), ms,
     Nat.is_le(E.msgs_tokens(ms), budget), H.drop_one(ms), budget)
 
-# ---- substring search (first occurrence) ----
-
-def find.put(hit: Bool, here: Maybe<&2, Nat>, rest: Maybe<&2, Nat>)
-    -> Maybe<&2, Nat>:
-  match hit:
-    case True{}:
-      here
-    case False{}:
-      rest
-
-def find(s: String, +pat: String, +i: Nat) -> Maybe<&2, Nat>:
-  match s:
-    case SNil{}:
-      None{}
-    case SCon{_, +t}:
-      find.put(String.starts_with(s, pat), Some{i},
-        find(t, pat, Nat.add(i, 1n)))
-
 # ---- summary validation ----
 # a complete <summary>..</summary> block with non-empty trimmed content,
 # else (no delimiters) the trimmed text as a compatibility fallback,
@@ -125,10 +108,10 @@ def parse.open(o: Maybe<&2, Nat>, +text: String) -> Maybe<&2, String>:
       parse.non_empty(String.is_empty(trimmed), trimmed)
     case Some{p}:
       +rest = String.drop(text, Nat.add(p, 9n))
-      parse.close(find(rest, "</summary>", 0n), rest)
+      parse.close(Tx.find(rest, "</summary>", 0n), rest)
 
 def parse_summary(+text: String) -> Maybe<&2, String>:
-  parse.open(find(text, "<summary>", 0n), text)
+  parse.open(Tx.find(text, "<summary>", 0n), text)
 
 # a compaction reply is valid only without tool calls
 def valid_summary(text: String, calls: List<&2, T.Call>) -> Maybe<&2, String>:
@@ -211,15 +194,3 @@ def replace(cfg: T.Cfg, history: List<&2, T.Msg>, summary: String) -> RRes:
         preamble, final)
 
 # ---- session-creation validation ----
-# a threshold that cannot fit the system message, tool catalog, and
-# compaction prompt is rejected
-def base_overhead(cfg: T.Cfg) -> Nat:
-  match cfg:
-    case T.Cfg{_, _, _, +system, +tools}:
-      Nat.add(E.text_tokens(system),
-        Nat.add(E.tool_tokens(tools), E.text_tokens(compaction_prompt(""))))
-
-def valid_threshold(cfg: T.Cfg) -> Bool:
-  match cfg:
-    case T.Cfg{+threshold, _, _, _, _}:
-      Nat.is_lt(base_overhead(cfg), threshold)

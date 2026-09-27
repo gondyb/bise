@@ -56,10 +56,6 @@ def has_user(ms: List<&2, T.Msg>) -> Bool:
     case Con{m, rest}:
       Bool.or(is_user(m), has_user(rest))
 
-# the most recent non-injected user message, if any
-def latest_user(ms: List<&2, T.Msg>) -> Maybe<&2, T.Msg>:
-  List.find(~T.Msg, ~is_user, List.reverse(&2, T.Msg, ms))
-
 def skip_tools.put(is_tool: Bool, +m: T.Msg, skipped: List<&2, T.Msg>) -> List<&2, T.Msg>:
   match is_tool:
     case True{}:

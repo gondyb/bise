@@ -19,6 +19,7 @@ import ../core/checkpoint.bend as K
 import ../core/obs.bend as O
 import ../core/api.bend as Api
 import ../core/compaction.bend as C
+import ../core/text.bend as Tx
 import ./model.bend as M
 import ./tools.bend as X
 import ./persist.bend as P
@@ -374,7 +375,6 @@ def emit(out: Out, lines: List<&2, String>) -> IO(Out):
         IO.pure(Out, ONet{s2})
 
 # ---- live-effect helpers ----
-# the bridge round-trip: connect, send the request, read the reply
 
 # the unified tool-execution result: ok carries the output, failure
 # carries the reason (exit status, stderr) so the model can see it
@@ -425,7 +425,7 @@ def exec_cmd(r: ExecRes, +id: U32) -> T.Cmd:
 #   subtool <name> <ok|fail> : <out>          (inside run_typescript)
 
 def ann_flat(+s: String) -> String:
-  String.take(Api.flatten(s), 200n)
+  String.take(Tx.flatten(s), 200n)
 
 def ok_label(ok: Bool) -> String:
   match ok:
@@ -467,13 +467,6 @@ def emit_res_ann(out: Out, +id: U32, +r: ExecRes, live: Bool) -> IO(Out):
 # OpenAI-compatible JSON in core/api.bend, is POSTed to api.mistral.ai
 # by the hub HTTP client, and the reply maps back through core/api.bend
 # into the OK/CALL/END string remote.bend parses. No bridge process.
-
-def env_or(r: Result<&1, &1, U32 & String, String>, +dflt: String) -> String:
-  match r:
-    case Done{+s}:
-      s
-    case Fail{_}:
-      dflt
 
 def api_err(e: Http.Err) -> String:
   match e:
@@ -624,7 +617,7 @@ def cfg_path() -> IO(String):
     cr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_CONFIG")
     hr : Result<&1, &1, U32 & String, String> <- IO.get_env("HOME")
     IO.pure(String,
-      cfg_path_pick(env_or(cr, ""), env_or(hr, "")))
+      cfg_path_pick(P.env_or(cr, ""), P.env_or(hr, "")))
 
 def cfg_text_of(m: Maybe<&2, String>) -> String:
   match m:
@@ -697,14 +690,6 @@ def model_call.res(+res: Http.Res, st: Api.Style) -> IO(Rem.RemoteRes):
     reply : String <- IO.pure(String, model_call.reply(st, res))
     IO.pure(Rem.RemoteRes, Rem.parse_reply(reply))
 
-def model_call.ok(r: Result<&2, &2, Http.Err, Http.Res>, st: Api.Style)
-    -> IO(Rem.RemoteRes):
-  match r:
-    case Fail{+e}:
-      model_call.err(e)
-    case Done{+res}:
-      model_call.res(res, st)
-
 # transient failures get another chance: connection loss, DNS, timeouts
 # and server-side statuses (5xx, 429) retry with a pause; everything else
 # (4xx auth/validation) fails the candidate immediately. The outcome is
@@ -770,7 +755,7 @@ def interrupt_path_of(+port: String) -> String:
 def interrupt_path() -> IO(String):
   do IO<String>:
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
-    +p : String <- IO.pure(String, env_or(pr, "0"))
+    +p : String <- IO.pure(String, P.env_or(pr, "0"))
     IO.pure(String, interrupt_path_of(p))
 
 # BR-005: a Ctrl+C landing during a failed attempt must not wait for
@@ -837,7 +822,7 @@ def model_call.try(fuel: Nat, +request: String, +key: String,
           Enc.utf8.encode(Api.api_body_for(st, model,
             Api.parse_wire(request))))
         dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
-        dump_dbg : Unit <- dump_wire(env_or(dr, ""), body)
+        dump_dbg : Unit <- dump_wire(P.env_or(dr, ""), body)
         hdrs : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
           model_headers(st, key))
         r : Result<&2, &2, Http.Err, Http.Res> <- Http.fetch.with("POST",
@@ -869,7 +854,7 @@ def resolved_model() -> IO(String):
     mr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_MODEL")
     +cfgt : String <- read_cfg()
     IO.pure(String,
-      resolve_model(Cf.env_cfg_or(env_or(mr, ""),
+      resolve_model(Cf.env_cfg_or(P.env_or(mr, ""),
         Cf.cfg_get(cfgt, "model"), "claude-opus-5-5")))
 
 @unsafe
@@ -880,7 +865,7 @@ def model_call(+request: String) -> IO(Rem.RemoteRes):
     +model : String <- resolved_model()
     +st : Api.Style <- IO.pure(Api.Style, model_style(model))
     kr : Result<&1, &1, U32 & String, String> <- IO.get_env(model_key_env(st))
-    +key : String <- IO.pure(String, env_or(kr, ""))
+    +key : String <- IO.pure(String, P.env_or(kr, ""))
     model_call.key(String.is_empty(key), request, key, st, model)
 
 # ---- the bash tool, fully in Bend (hub snap runner) ----
@@ -909,7 +894,7 @@ def exec_of.handoff.rest(sp: Maybe<&2, Nat>, +payload: String) -> ExecRes:
 
 def exec_of.handoff(+payload: String) -> ExecRes:
   # strip the marker line; keep the contract
-  exec_of.handoff.rest(C.find(payload, "\n", 0n), payload)
+  exec_of.handoff.rest(Tx.find(payload, "\n", 0n), payload)
 
 def exec_of.pick.is_handoff(is_handoff: Bool, +code: U32,
     +output: String) -> ExecRes:
@@ -957,7 +942,7 @@ def exec_of.split(sp: Maybe<&2, Nat>, +out: String) -> ExecRes:
       exec_of.code(out, "")
 
 def exec_of(+out: String) -> ExecRes:
-  exec_of.split(C.find(out, "\n", 0n), out)
+  exec_of.split(Tx.find(out, "\n", 0n), out)
 
 # ---- bash: a sync window, then a background handoff ----
 # A command that outlives the sync window never blocks the turn: it keeps
@@ -985,13 +970,6 @@ def bg_after.read(m: Maybe<&2, U32>, +dflt: U32) -> U32:
     case Some{+secs}:
       secs
     case None{}:
-      dflt
-
-def bg_after.or(r: Result<&1, &1, U32 & String, String>, +dflt: U32) -> U32:
-  match r:
-    case Done{+v}:
-      bg_after.read(U32.read(v), dflt)
-    case Fail{_}:
       dflt
 
 def bg_after.clamp2(over: Bool, +secs: U32) -> U32:
@@ -1034,14 +1012,7 @@ def bg_after() -> IO(U32):
   do IO<U32>:
     r : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_BG_AFTER")
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
-    bg_after.pick(String.is_empty(env_or(pr, "")), env_or(r, ""))
-
-def bg_root.or(r: Result<&1, &1, U32 & String, String>, +dflt: String) -> String:
-  match r:
-    case Done{+v}:
-      v
-    case Fail{_}:
-      dflt
+    bg_after.pick(String.is_empty(P.env_or(pr, "")), P.env_or(r, ""))
 
 # the session's bg dir, pure: <root>/bend-bg-<port>. One dir per REPL
 # process (keyed by port) so parallel terminals never share slots,
@@ -1053,8 +1024,8 @@ def bg_dir() -> IO(String):
   do IO<String>:
     root : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_BG_ROOT")
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
-    +r : String <- IO.pure(String, bg_root.or(root, "/tmp"))
-    +p : String <- IO.pure(String, env_or(pr, "0"))
+    +r : String <- IO.pure(String, P.env_or(root, "/tmp"))
+    +p : String <- IO.pure(String, P.env_or(pr, "0"))
     IO.pure(String, bg_dir_of(r, p))
 
 # ---- the agent-facing contract, pure ----
@@ -1160,7 +1131,7 @@ def bash_exec(command: String) -> IO(ExecRes):
     +secs : U32 <- bg_after()
     +bg : String <- bg_dir()
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
-    +port : String <- IO.pure(String, env_or(pr, "0"))
+    +port : String <- IO.pure(String, P.env_or(pr, "0"))
     # NO flatten: real newlines stay — the heredoc and the runner
     # subshell both accept multi-line commands (flatten silently
     # restructured them)
@@ -1206,7 +1177,7 @@ def exec_mcp.scripted(+name: String) -> ExecRes:
 def exec_mcp.live(+name: String, +args: String) -> IO(ExecRes):
   do IO<ExecRes>:
     kr : Result<&1, &1, U32 & String, String> <- IO.get_env("MISTRAL_API_KEY")
-    +key : String <- IO.pure(String, env_or(kr, ""))
+    +key : String <- IO.pure(String, P.env_or(kr, ""))
     exec_mcp.key(name, args, key)
 
 def exec_mcp(+name: String, +args: String, live: Bool) -> IO(ExecRes):
@@ -1788,7 +1759,7 @@ def node_run.go(+prog: String, +results: List<&2, String>, +path: String,
     u2 : Unit <- P.write_file(res_path, results_json(results))
     +out : String <- Snap.run(Con{"/bin/sh", Con{"-c",
       Con{node_cmd(path, res_path, err_path), Nil{}}}})
-    IO.pure(NR, node_split(C.find(out, "\n", 0n), out))
+    IO.pure(NR, node_split(Tx.find(out, "\n", 0n), out))
 
 def node_run(+prog: String, +results: List<&2, String>, +port: String)
     -> IO(NR):
@@ -2037,7 +2008,7 @@ def exec_program.go(fuel: Nat, out: Out, d: Def, act: EpAct, +prog: String,
         case EpRun{}:
           do IO<Out & ExecRes>:
             pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
-            +port : String <- IO.pure(String, env_or(pr, "0"))
+            +port : String <- IO.pure(String, P.env_or(pr, "0"))
             nr : NR <- node_run(prog, results, port)
             por : Out & (Def & EpNext) <- exec_program.nr(out, nr, prog,
               results, live, d)
@@ -2403,7 +2374,7 @@ def steer_path_of(+port: String) -> String:
 def steer_path() -> IO(String):
   do IO<String>:
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
-    +p : String <- IO.pure(String, env_or(pr, "0"))
+    +p : String <- IO.pure(String, P.env_or(pr, "0"))
     IO.pure(String, steer_path_of(p))
 
 # ---- the harness-info line: what every client must know ----
@@ -2503,7 +2474,7 @@ def drain_steer.some(empty: Bool, +path: String, out: Out, +rt: Rt,
     case False{}:
       do IO<Out & Rt>:
         u : Unit <- P.write_file(path, "")
-        drain_steer.step(out, rt, drain_steer.skip_go(String.split(c, K.nl())))
+        drain_steer.step(out, rt, drain_steer.skip_go(String.split(c, Tx.newline())))
 
 def drain_steer.pick(m: Maybe<&2, String>, +path: String, out: Out, +rt: Rt)
     -> IO(Out & Rt):

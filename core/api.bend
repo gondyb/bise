@@ -12,22 +12,10 @@
 # whose text fields are joined.
 import Base
 import ./compaction.bend as C
+import ./text.bend as Tx
 import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
 
 # ---- single-line flattening (every reply line is one line) ----
-
-def newline.get(m: Maybe<&2, Char>) -> Char:
-  match m:
-    case Some{c}:
-      c
-    case None{}:
-      Char.from_u32(32)
-
-def newline() -> Char:
-  newline.get(String.get("\n", 0n))
-
-def flatten(+s: String) -> String:
-  String.join(String.split(s, newline()), " ")
 
 # ---- newline escaping: the wire is single-line, markdown is multi-line ----
 # Real newlines in a provider text travel as the two chars backslash-n;
@@ -54,15 +42,8 @@ def escape_nl.go(fuel: Nat, st: ENl, acc: String) -> String:
         case EStep{False{}, +c, t}:
           escape_nl.go(k, EGo{t}, SCon{Chr{c}, acc})
 
-def str_len(s: String) -> Nat:
-  match s:
-    case SNil{}:
-      0n
-    case SCon{_, t}:
-      Nat.add(str_len(t), 1n)
-
 def escape_nl(+s: String) -> String:
-  escape_nl.go(Nat.add(Nat.mul(str_len(s), 2n), 16n), EGo{s}, SNil{})
+  escape_nl.go(Nat.add(Nat.mul(String.length(s), 2n), 16n), EGo{s}, SNil{})
 
 type UNl is Data:
   UGo{s: String}
@@ -94,7 +75,7 @@ def unescape_nl.go(fuel: Nat, st: UNl, acc: String) -> String:
           unescape_nl.go(k, UGo{t2}, SCon{Chr{c2}, SCon{Chr{92}, acc}})
 
 def unescape_nl(+s: String) -> String:
-  unescape_nl.go(Nat.add(Nat.mul(str_len(s), 2n), 16n), UGo{s}, SNil{})
+  unescape_nl.go(Nat.add(Nat.mul(String.length(s), 2n), 16n), UGo{s}, SNil{})
 
 # ---- wire arg encoding: reversible, unlike escape_nl ----
 # escape_nl is for markdown text; a literal backslash-n in that text is
@@ -148,7 +129,7 @@ def wire_encode.go(fuel: Nat, st: WEnc, acc: String) -> String:
           wire_encode.go(k, WEGo{t}, SCon{Chr{c}, acc})
 
 def wire_encode(+s: String) -> String:
-  wire_encode.go(Nat.add(Nat.mul(str_len(s), 8n), 64n), WEGo{s}, SNil{})
+  wire_encode.go(Nat.add(Nat.mul(String.length(s), 8n), 64n), WEGo{s}, SNil{})
 
 type WDec is Data:
   WDGo{s: String}
@@ -196,7 +177,7 @@ def wire_decode.go(fuel: Nat, st: WDec, acc: String) -> String:
           wire_decode.go(k, WDGo{t}, SCon{Chr{c}, acc})
 
 def wire_decode(+s: String) -> String:
-  wire_decode.go(Nat.add(Nat.mul(str_len(s), 8n), 64n), WDGo{s}, SNil{})
+  wire_decode.go(Nat.add(Nat.mul(String.length(s), 8n), 64n), WDGo{s}, SNil{})
 
 # ---- the parsed wire request ----
 
@@ -223,7 +204,7 @@ def parse_tool.cut(sp: Maybe<&2, Nat>, +rest: String) -> WTool:
       WTool{rest, ""}
 
 def parse_tool(+rest: String) -> WTool:
-  parse_tool.cut(C.find(rest, " : ", 0n), rest)
+  parse_tool.cut(Tx.find(rest, " : ", 0n), rest)
 
 def parse_call.name(sp: Maybe<&2, Nat>, +id: String, +tail: String) -> WCall:
   match sp:
@@ -235,13 +216,13 @@ def parse_call.name(sp: Maybe<&2, Nat>, +id: String, +tail: String) -> WCall:
 def parse_call.id(sp: Maybe<&2, Nat>, +line: String) -> WCall:
   match sp:
     case Some{+p}:
-      parse_call.name(C.find(String.drop(line, Nat.add(p, 1n)), " : ", 0n),
+      parse_call.name(Tx.find(String.drop(line, Nat.add(p, 1n)), " : ", 0n),
         String.take(line, p), String.drop(line, Nat.add(p, 1n)))
     case None{}:
       WCall{"0", line, ""}
 
 def parse_call.body(+line: String) -> WCall:
-  parse_call.id(C.find(line, " ", 0n), line)
+  parse_call.id(Tx.find(line, " ", 0n), line)
 
 def parse_call(+line: String) -> WCall:
   parse_call.body(String.drop(line, 7n))
@@ -276,7 +257,7 @@ def start_msg.cut(sp: Maybe<&2, Nat>, req: WReq, cur: Maybe<&2, WMsg>,
       req
 
 def start_msg(req: WReq, cur: Maybe<&2, WMsg>, +rest: String) -> WReq:
-  start_msg.cut(C.find(rest, " : ", 0n), req, cur, rest)
+  start_msg.cut(Tx.find(rest, " : ", 0n), req, cur, rest)
 
 def cur_of(req: WReq) -> Maybe<&2, WMsg>:
   match req:
@@ -325,7 +306,7 @@ def parse_go(lines: List<&2, String>, +req: WReq) -> WReq:
       parse_go(rest, step(req, line))
 
 def parse_wire(+request: String) -> WReq:
-  parse_go(String.split(request, newline()), WReq{Nil{}, Nil{}, None{}})
+  parse_go(String.split(request, Tx.newline()), WReq{Nil{}, Nil{}, None{}})
 
 # ---- wire request -> API JSON body ----
 
@@ -592,13 +573,13 @@ def asst_think.start(m: Maybe<&2, Nat>, +content: String)
     -> Maybe<&2, ThinkSpan>:
   match m:
     case Some{+n0}:
-      asst_think.end(C.find(String.drop(content, Nat.add(n0, 7n)), "</think>", 0n), content, n0)
+      asst_think.end(Tx.find(String.drop(content, Nat.add(n0, 7n)), "</think>", 0n), content, n0)
     case None{}:
       None{}
 
 # the marker span: (start, end) of "<think>R</think>" in the text
 def asst_think.find(+content: String) -> Maybe<&2, ThinkSpan>:
-  asst_think.start(C.find(content, "<think>", 0n), content)
+  asst_think.start(Tx.find(content, "<think>", 0n), content)
 
 # the span text verbatim, no trim: a replayed thinking must be exactly
 # what the provider signed
@@ -648,13 +629,13 @@ type ThinkMark is Data:
   TM{reason: String, sig: String}
 
 def nl_str() -> String:
-  String.from_list(Con{newline(), Nil{}})
+  String.from_list(Con{Tx.newline(), Nil{}})
 
 def think_split.plain(+span: String) -> ThinkMark:
   TM{span, ""}
 
 def think_split.signed(+span: String, +sig: String) -> ThinkMark:
-  TM{String.join(lines_init(String.split(span, newline())), nl_str()), sig}
+  TM{String.join(lines_init(String.split(span, Tx.newline())), nl_str()), sig}
 
 def think_split.sig_of(m: Maybe<&2, String>, +span: String) -> ThinkMark:
   match m:
@@ -671,7 +652,7 @@ def think_split.line(m: Maybe<&2, String>, +span: String) -> ThinkMark:
       think_split.plain(span)
 
 def think_split(+span: String) -> ThinkMark:
-  think_split.line(lines_last(String.split(span, newline())), span)
+  think_split.line(lines_last(String.split(span, Tx.newline())), span)
 
 # the marked span, with the signature riding on its last line when the
 # provider sent one: byte-identical to the unsigned form when sig is "".
@@ -832,13 +813,6 @@ def is_empty_tools(ts: List<&2, WTool>) -> Bool:
     case Con{_, _}:
       False{}
 
-def msgs_len(ms: List<&2, WMsg>) -> Nat:
-  match ms:
-    case Nil{}:
-      0n
-    case Con{_, rest}:
-      Nat.add(msgs_len(rest), 1n)
-
 def pair_of.wrap(t: J.Json & List<&2, String>) -> MsgPair:
   match t:
     case (j, ids2):
@@ -863,7 +837,7 @@ def msgs_go(fuel: Nat, w: MWalk) -> List<&2, J.Json>:
               msgs_go(k, MNext{todo, ids2, Con{j, acc}})
 
 def msgs_json(+msgs: List<&2, WMsg>) -> List<&2, J.Json>:
-  msgs_go(Nat.add(Nat.mul(msgs_len(msgs), 2n), 16n),
+  msgs_go(Nat.add(Nat.mul(List.length(&2, WMsg, msgs), 2n), 16n),
     MNext{msgs, Nil{}, Nil{}})
 
 # reasoning_effort rides EVERY call, the vibe CLI parity: the active
@@ -1055,7 +1029,7 @@ def reply_err(+status: U32, +body: String) -> String:
   String.append("ERROR provider ",
     String.append(U32.show(status),
       String.append(": ",
-        String.append(String.take(String.trim(flatten(body)), 300n), "\nEND\n"))))
+        String.append(String.take(String.trim(Tx.flatten(body)), 300n), "\nEND\n"))))
 
 def reply_of.check(ok: Bool, +status: U32, +body: String, +j: J.Json) -> String:
   match ok:
@@ -1352,7 +1326,7 @@ def awalk_go(fuel: Nat, w: AWalk) -> List<&2, J.Json>:
 # with room - an exhausted walk would return NO messages at all
 # (probed: "messages: at least one message is required" past ~15 results)
 def amsgs(+msgs: List<&2, WMsg>) -> List<&2, J.Json>:
-  awalk_go(Nat.add(Nat.mul(msgs_len(msgs), 4n), 16n),
+  awalk_go(Nat.add(Nat.mul(List.length(&2, WMsg, msgs), 4n), 16n),
     AN{msgs, Nil{}, Nil{}})
 
 # ---- Anthropic: the body ----

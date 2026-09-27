@@ -83,13 +83,6 @@ type CWalk is Data:
   CS{sect2: String, todo: List<&2, String>, acc: List<&2, KV>}
   CP{kv: KV, todo: List<&2, String>, sect: String, acc: List<&2, KV>}
 
-def cfg_len(lines: List<&2, String>) -> Nat:
-  match lines:
-    case Nil{}:
-      0n
-    case Con{_, +rest}:
-      Nat.add(cfg_len(rest), 1n)
-
 def cwalk_go(fuel: Nat, w: CWalk) -> List<&2, KV>:
   match fuel:
     case 0n:
@@ -131,7 +124,7 @@ def cwalk_go(fuel: Nat, w: CWalk) -> List<&2, KV>:
 
 def parse_toml(+text: String) -> List<&2, KV>:
   +lines = String.split(text, Char.from_u32(10))
-  cwalk_go(Nat.add(Nat.mul(cfg_len(lines), 2n), 16n),
+  cwalk_go(Nat.add(Nat.mul(List.length(&2, String, lines), 2n), 16n),
     CN{lines, "", Nil{}})
 
 # ---- the lookups ----

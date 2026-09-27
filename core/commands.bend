@@ -10,7 +10,7 @@
 # LAWS.bend pins this contract law by law.
 import Base
 import ./types.bend as T
-import ./compaction.bend as C
+import ./text.bend as Tx
 
 # what one user line becomes: a protocol line to run, or a local
 # warning that changes no session state
@@ -29,7 +29,7 @@ def op_of.found(sp: Maybe<&2, Nat>, +line: String) -> CmdLine:
       CL{String.take(line, p), String.drop(line, Nat.add(p, 1n))}
 
 def op_of(+line: String) -> CmdLine:
-  op_of.found(C.find(line, " ", 0n), line)
+  op_of.found(Tx.find(line, " ", 0n), line)
 
 # the harness protocol words: sent verbatim, never re-interpreted
 def is_raw_word(+w: String) -> Bool:

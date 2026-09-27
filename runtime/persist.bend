@@ -20,13 +20,6 @@ def env_or(r: Result<&1, &1, U32 & String, String>, +dflt: String) -> String:
     case Fail{_}:
       dflt
 
-def hist_len(ms: List<&2, T.Msg>) -> Nat:
-  match ms:
-    case Nil{}:
-      0n
-    case Con{_, rest}:
-      Nat.add(hist_len(rest), 1n)
-
 def history_of(+sess: T.Session) -> List<&2, T.Msg>:
   match sess:
     case T.Sess{_, +history, _, _, _, _, _, _}:
@@ -127,7 +120,7 @@ def load.greeted.put(empty: Bool, +sess: T.Session, +n: Nat) -> Load:
 
 def load.greeted(+sess: T.Session) -> IO(Load):
   do IO<Load>:
-    +n : Nat <- IO.pure(Nat, hist_len(history_of(sess)))
+    +n : Nat <- IO.pure(Nat, List.length(&2, T.Msg, history_of(sess)))
     IO.pure(Load, load.greeted.put(Nat.is_eq(n, 0n), sess, n))
 
 def load.chk(c: Maybe<&2, K.Checkpoint>, +fresh: T.Session) -> IO(Load):

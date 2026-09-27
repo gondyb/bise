@@ -248,20 +248,6 @@ def no_pending(pending: Maybe<&2, T.Pending>) -> Bool:
     case Some{_}:
       False{}
 
-def empty_queued(queued: List<&2, String>) -> Bool:
-  match queued:
-    case Nil{}:
-      True{}
-    case Con{_, _}:
-      False{}
-
-def empty_notifs(notifs: List<&2, String>) -> Bool:
-  match notifs:
-    case Nil{}:
-      True{}
-    case Con{_, _}:
-      False{}
-
 # between two turns in the strict sense: everything the checkpoint does
 # NOT serialize is empty, so a reload cannot lose session state
 def reload_allowed(+s: T.Session) -> Bool:

@@ -25,7 +25,7 @@
 # accept loop is @unsafe (it runs until killed).
 import Base
 import ../core/types.bend as T
-import ../core/compaction.bend as C
+import ../core/text.bend as Tx
 import ../core/commands.bend as Cm
 import ../core/api.bend as Api
 import ../core/session.bend as S
@@ -96,7 +96,7 @@ def op_of.found(sp: Maybe<&2, Nat>, +line: String) -> CmdLine:
       CL{String.take(line, p), String.drop(line, Nat.add(p, 1n))}
 
 def op_of(+line: String) -> CmdLine:
-  op_of.found(C.find(line, " ", 0n), line)
+  op_of.found(Tx.find(line, " ", 0n), line)
 
 def plan_reload(eq: Bool, +op: String) -> Plan:
   match eq:
@@ -173,12 +173,6 @@ def repl_out(out: R.Out, +sess: T.Session,
       IO.pure(Flow, Go{sess})
     case R.ONet{s2}:
       next(s2)(sess)
-
-def repl_end(e: R.RtEnd, next: Socket -> T.Session -> IO(Flow))
-    -> IO(Flow):
-  match e:
-    case R.REnd{sess2, out2}:
-      repl_out(out2, sess2, next)
 
 # ---- /reload and the deferred self.reload: gated, then a clean exit ----
 
@@ -355,16 +349,6 @@ def repl_cmd(s: Socket, +line: String, +sess: T.Session,
 # and swallowed every command after the first (the "messages sent
 # during a compaction are never interpreted" bug). Each line becomes
 # its own command, run in order; quit in a batch drops the rest.
-def repl_nl.get(m: Maybe<&2, Char>) -> Char:
-  match m:
-    case Some{+c}:
-      c
-    case None{}:
-      Char.from_u32(10)
-
-def repl_nl() -> Char:
-  repl_nl.get(String.get("\n", 0n))
-
 def cmd_lines.keep(empty: Bool, +l: String, +rest: List<&2, String>)
     -> List<&2, String>:
   match empty:
@@ -382,7 +366,7 @@ def cmd_lines.go(lines: List<&2, String>) -> List<&2, String>:
         cmd_lines.go(rest))
 
 def cmd_lines(+data: String) -> List<&2, String>:
-  cmd_lines.go(String.split(data, repl_nl()))
+  cmd_lines.go(String.split(data, Tx.newline()))
 
 # @unsafe: the continuation closure self-references the batch loop
 @unsafe

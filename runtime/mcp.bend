@@ -21,7 +21,7 @@
 import Base
 import ../core/types.bend as T
 import ../core/discovery.bend as D
-import ../core/compaction.bend as C
+import ../core/text.bend as Tx
 import ./persist.bend as P
 import ./tools.bend as X
 import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
@@ -37,23 +37,6 @@ type MR is Data:
 
 type McpTool is Data:
   MT{cid: String, tool: String}
-
-def nl.get(m: Maybe<&2, Char>) -> Char:
-  match m:
-    case Some{c}:
-      c
-    case None{}:
-      Char.from_u32(32)
-
-def nl() -> Char:
-  nl.get(String.get("\n", 0n))
-
-def env_or(r: Result<&1, &1, U32 & String, String>, +dflt: String) -> String:
-  match r:
-    case Done{+s}:
-      s
-    case Fail{_}:
-      dflt
 
 def pick2(c: Bool, +a: String, +b: String) -> String:
   match c:
@@ -137,8 +120,8 @@ def index_path() -> IO(String):
   do IO<String>:
     ir : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_MCP_INDEX")
     hr : Result<&1, &1, U32 & String, String> <- IO.get_env("HOME")
-    +ix : String <- IO.pure(String, env_or(ir, ""))
-    +hx : String <- IO.pure(String, env_or(hr, ""))
+    +ix : String <- IO.pure(String, P.env_or(ir, ""))
+    +hx : String <- IO.pure(String, P.env_or(hr, ""))
     IO.pure(String, index_path.pick(String.is_empty(ix), hx, ix))
 
 # ---- bootstrap: the connector catalog becomes index lines ----
@@ -286,13 +269,6 @@ def seen_has(seen: List<&2, String>, +alias: String) -> Bool:
     case Con{+h, rest}:
       seen_pick(String.eq(h, alias), seen_has(rest, alias))
 
-def slen(strs: List<&2, String>) -> Nat:
-  match strs:
-    case Nil{}:
-      0n
-    case Con{_, +rest}:
-      Nat.add(slen(rest), 1n)
-
 def suffix.base(+base: String, +n: Nat) -> String:
   String.append(base, String.append("_", Nat.show(n)))
 
@@ -316,7 +292,7 @@ def dedupe.pick(taken: Bool, +alias: String, +seen: List<&2, String>)
   match taken:
     case True{}:
       # the loop starts by trying <alias>_2 (not the alias itself)
-      suffix_go(Nat.add(slen(seen), 2n), alias, 2n, seen,
+      suffix_go(Nat.add(List.length(&2, String, seen), 2n), alias, 2n, seen,
         seen_has(seen, suffix.base(alias, 2n)))
     case False{}:
       alias
@@ -416,7 +392,7 @@ def line_parts.n2(sp: Maybe<&2, Nat>, +cid: String, +cname: String,
 
 def line_parts.n(+cid: String, +cname: String, +rest: String)
     -> String & String & String & String:
-  line_parts.n2(C.find(rest, " : ", 0n), cid, cname, rest)
+  line_parts.n2(Tx.find(rest, " : ", 0n), cid, cname, rest)
 
 def line_parts.c2(sp: Maybe<&2, Nat>, +cid: String, +rest: String)
     -> String & String & String & String:
@@ -429,7 +405,7 @@ def line_parts.c2(sp: Maybe<&2, Nat>, +cid: String, +rest: String)
 
 def line_parts.c(+cid: String, +rest: String)
     -> String & String & String & String:
-  line_parts.c2(C.find(rest, " ", 0n), cid, rest)
+  line_parts.c2(Tx.find(rest, " ", 0n), cid, rest)
 
 def line_parts.d(sp: Maybe<&2, Nat>, +line: String)
     -> String & String & String & String:
@@ -440,7 +416,7 @@ def line_parts.d(sp: Maybe<&2, Nat>, +line: String)
       ("", "", "", "")
 
 def line_parts(+line: String) -> String & String & String & String:
-  line_parts.d(C.find(line, " ", 0n), line)
+  line_parts.d(Tx.find(line, " ", 0n), line)
 
 # the tool name of an index line ("" when the line is malformed)
 def line_tool.of(sp: String & String & String & String) -> String:
@@ -449,73 +425,6 @@ def line_tool.of(sp: String & String & String & String) -> String:
 
 def line_tool(+line: String) -> String:
   line_tool.of(line_parts(line))
-
-# ---- the connector inventory section (vibe_sdk parity) ----
-# The live system prompt lists the tool groups up front, exactly as
-# vibe core/prompt/system.rs does: build_system_prompt appends the
-# tool_group_inventory_prompt_section after the generic sections
-# (a heading, one "- <name>" line per group, deduplicated, in catalog
-# order). The index cname is the normalized alias (conn_lines), so the
-# unique cnames in index order ARE the connector groups.
-
-def line_cname.of(sp: String & String & String & String) -> String:
-  (a0, cname, a2, a3) = sp
-  cname
-
-def line_cname(+line: String) -> String:
-  line_cname.of(line_parts(line))
-
-# the index holds one line per tool, so a connector with N tools
-# appears N times; a name enters the result only on its FIRST
-# occurrence. The seen list rides as an argument and the recursive
-# result travels to the step helper (the conn_lines.go pattern: the
-# unchosen branch is never forced; the recursion is structural in
-# lines, and the duplicated line_cname reads share by address).
-def conn_names.step(new: Bool, +name: String,
-    +rest_res: List<&2, String>) -> List<&2, String>:
-  match new:
-    case True{}:
-      Con{name, rest_res}
-    case False{}:
-      rest_res
-
-def conn_names.go(lines: List<&2, String>, +seen: List<&2, String>,
-    +rest_res: List<&2, String>) -> List<&2, String>:
-  match lines:
-    case Nil{}:
-      rest_res
-    case Con{+line, rest}:
-      conn_names.step(
-        Bool.and(Bool.not(String.is_empty(line_cname(line))),
-          Bool.not(seen_has(seen, line_cname(line)))),
-        line_cname(line),
-        conn_names.go(rest, Con{line_cname(line), seen}, rest_res))
-
-def conn_names_of(+content: String) -> List<&2, String>:
-  conn_names.go(String.split(content, nl()), Nil{}, Nil{})
-
-# the section body: "- <name>" per group, the exact vibe_sdk rendering
-def groups_lines(names: List<&2, String>, +acc: List<&2, String>)
-    -> List<&2, String>:
-  match names:
-    case Nil{}:
-      List.reverse(&2, String, acc)
-    case Con{+n, rest}:
-      groups_lines(rest, Con{String.append("- ", n), acc})
-
-def groups_body(names: List<&2, String>) -> String:
-  String.join(groups_lines(names, Nil{}), "
-")
-
-def groups_prompt(names: List<&2, String>) -> String:
-  String.append("### Searchable connector groups
-
-", groups_body(names))
-
-# the whole section, straight from an index file content
-def groups_prompt_of(+content: String) -> String:
-  groups_prompt(conn_names_of(content))
-
 
 # ---- the index file becomes tools ----
 
@@ -549,7 +458,7 @@ def index_go(lines: List<&2, String>) -> List<&2, T.ToolDef>:
       index_put(String.is_empty(line_tool(line)), line, index_go(rest))
 
 def index_of(+content: String) -> List<&2, T.ToolDef>:
-  index_go(String.split(content, nl()))
+  index_go(String.split(content, Tx.newline()))
 
 # ---- resolve "<cname>.<tool>" against the index lines ----
 
@@ -582,7 +491,7 @@ def find_line.go(lines: List<&2, String>, +v: String)
       find_put(find_line.hit(line, v), line, find_line.go(rest, v))
 
 def find_line(+content: String, +v: String) -> Maybe<&2, McpTool>:
-  find_line.go(String.split(content, nl()), v)
+  find_line.go(String.split(content, Tx.newline()), v)
 
 # ---- the unified search: static catalog + MCP index ----
 # search_tool_functions routes here; reading the index is an effect, so

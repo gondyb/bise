@@ -1,32 +1,28 @@
-# runtime/remote.bend — the wire protocol between the Bend Runtime and the
-# HTTP bridge (live/bridge.ts).
+# runtime/remote.bend — the provider request/reply line format.
 #
-# Bend has no TLS, so the Runtime cannot speak HTTPS itself. The bridge is
-# a local process that does the real provider call (api.mistral.ai) and
-# talks this tiny line protocol with the Runtime over plain TCP. The Core
-# never sees any of this: it still just emits AgentCall actions and
-# receives completion commands.
+# A leftover of the removed HTTP bridge: the Runtime still serializes
+# the projected model input to this line format, and core/api.bend
+# parses it back in the same process to build the provider JSON. The
+# reply takes the same detour (api.bend renders OK/CALL/END lines,
+# parse_reply reads them). LAWS.bend pins both directions.
 #
-# Request (one per connection, newline-separated):
+# Request (newline-separated):
 #   MODEL default
 #   TOOL <name> : <description>          (the Core's tool catalog)
-#   MSG <role> : <text>
-#     CALL <id> <name> : <args>         (tool calls of an assistant message)
+#   MSG <role> : <text, newlines escaped>
+#     CALL <id> <name> : <args, wire_encode'd>
 #   END
 #
-# Reply (the bridge closes after it):
-#   OK <text flattened>                  (assistant text, may be empty)
-#   CALL <id> <name> : <args>           (0..n tool calls)
+# Reply:
+#   OK <assistant text, newlines escaped>
+#   CALL <id> <name> : <args, wire_encode'd>   (0..n tool calls)
 #   END
 # or
 #   ERROR <message>
 #   END
-#
-# All text on the wire is single-line: file contents and model replies are
-# flattened before they enter history.
 import Base
 import ../core/types.bend as T
-import ../core/compaction.bend as C
+import ../core/text.bend as Tx
 import ../core/api.bend as Api
 
 # ---- the parsed reply ----
@@ -35,19 +31,6 @@ type RemoteRes is Data:
   RROk{text: String, calls: List<&2, T.Call>}
   RRErr{why: String}
 
-
-def newline_char.get(m: Maybe<&2, Char>) -> Char:
-  match m:
-    case Some{c}:
-      c
-    case None{}:
-      Char.from_u32(32)
-
-def newline_char() -> Char:
-  newline_char.get(String.get("\n", 0n))
-
-def flatten(+s: String) -> String:
-  String.join(String.split(s, newline_char()), " ")
 
 # ---- serialization ----
 
@@ -109,7 +92,7 @@ def ser_tool(t: T.ToolDef) -> String:
   match t:
     case T.ToolDef{+name, +desc}:
       String.append("TOOL ", String.append(name,
-        String.append(" : ", flatten(desc))))
+        String.append(" : ", Tx.flatten(desc))))
 
 def ser_tools(ts: List<&2, T.ToolDef>) -> String:
   match ts:
@@ -164,11 +147,11 @@ def parse_call.a(sp: Maybe<&2, Nat>, +line: String) -> T.Call:
     case Some{+p}:
       +id_str = String.take(line, p)
       +rest = String.drop(line, Nat.add(p, 1n))
-      parse_call.b(C.find(rest, " ", 0n), id_str, rest)
+      parse_call.b(Tx.find(rest, " ", 0n), id_str, rest)
 
 def parse_call(+line: String) -> T.Call:
   # "CALL <id> <name> : <args>"
-  parse_call.a(C.find(line, " ", 0n), line)
+  parse_call.a(Tx.find(line, " ", 0n), line)
 
 # bottom-up parse: the tail is parsed first, then the current line is
 # combined into it (the List.filter trick), so every helper is a leaf
@@ -221,7 +204,7 @@ def parse_go(lines: List<&2, String>) -> RemoteRes:
       parse_go.step(String.eq(h, "END"), h, parse_go(rest))
 
 def parse_reply(reply: String) -> RemoteRes:
-  parse_go(String.split(reply, newline_char()))
+  parse_go(String.split(reply, Tx.newline()))
 
 # the reply becomes exactly the completion command the Core expects
 def remote_cmd(res: RemoteRes, +action: U32) -> T.Cmd:

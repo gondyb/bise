@@ -82,11 +82,7 @@ def self_tool_defs() -> List<&2, T.ToolDef>:
 
 # pure helpers the laws pin: catalog size and positional extraction
 def catalog_len(tools: List<&2, T.ToolDef>) -> Nat:
-  match tools:
-    case Nil{}:
-      0n
-    case Con{_, +rest}:
-      Nat.add(catalog_len(rest), 1n)
+  List.length(&2, T.ToolDef, tools)
 
 def tool_name_at(n: Nat, tools: List<&2, T.ToolDef>) -> String:
   match n:
@@ -215,13 +211,6 @@ def word_score(words: List<&2, String>, +td: T.ToolDef) -> Nat:
     case Con{+w, rest}:
       Nat.add(bool_nat(word_hit(w, td)), word_score(rest, td))
 
-def len_defs(ts: List<&2, T.ToolDef>) -> Nat:
-  match ts:
-    case Nil{}:
-      0n
-    case Con{_, rest}:
-      Nat.add(1n, len_defs(rest))
-
 def keep_word(keep: Bool, +w: String, +acc: List<&2, String>) -> List<&2, String>:
   match keep:
     case True{}:
@@ -346,7 +335,7 @@ def sr_best.none(none: Bool, +words: List<&2, String>,
     case True{}:
       "No matching tool candidates for the query."
     case False{}:
-      String.append(more_flag(len_defs(ranked(words, tools))),
+      String.append(more_flag(catalog_len(ranked(words, tools))),
         show_names(List.take(&2, T.ToolDef, ranked(words, tools), 20n)))
 
 def sr_best.has_any(+words: List<&2, String>, +tools: List<&2, T.ToolDef>) -> String:

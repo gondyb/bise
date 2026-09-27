@@ -4,7 +4,7 @@
 # versioned wrapper keeps the restore boundary and version discipline.
 import Base
 import ./types.bend as T
-import ./compaction.bend as C
+import ./text.bend as Tx
 import ./api.bend as Api
 
 # The current checkpoint version. Evolve backward-compatibly; treat a
@@ -200,13 +200,13 @@ def fcall.name(sp: Maybe<&2, Nat>, +id_str: String, +tail: String) -> T.Call:
 def fcall.id(sp: Maybe<&2, Nat>, +line: String) -> T.Call:
   match sp:
     case Some{+p}:
-      fcall.name(C.find(String.drop(line, Nat.add(p, 1n)), " : ", 0n),
+      fcall.name(Tx.find(String.drop(line, Nat.add(p, 1n)), " : ", 0n),
         String.take(line, p), String.drop(line, Nat.add(p, 1n)))
     case None{}:
       T.Call{0, line, ""}
 
 def fcall(+line: String) -> T.Call:
-  fcall.id(C.find(String.drop(line, 7n), " ", 0n), String.drop(line, 7n))
+  fcall.id(Tx.find(String.drop(line, 7n), " ", 0n), String.drop(line, 7n))
 
 def msg_make.user(injected: Bool, +text: String) -> T.Msg:
   match injected:
@@ -293,7 +293,7 @@ def step_msg.cut(sp: Maybe<&2, Nat>, injected: Bool, +r: String, st: FS) -> FS:
       st
 
 def step_msg.inj(injected: Bool, +r: String, st: FS) -> FS:
-  step_msg.cut(C.find(r, " : ", 0n), injected, r, st)
+  step_msg.cut(Tx.find(r, " : ", 0n), injected, r, st)
 
 def step_msg.mark(sp: Maybe<&2, Nat>, st: FS, +rest: String) -> FS:
   match sp:
@@ -304,7 +304,7 @@ def step_msg.mark(sp: Maybe<&2, Nat>, st: FS, +rest: String) -> FS:
       st
 
 def step_msg(st: FS, +line: String) -> FS:
-  step_msg.mark(C.find(String.drop(line, 4n), " ", 0n), st,
+  step_msg.mark(Tx.find(String.drop(line, 4n), " ", 0n), st,
     String.drop(line, 4n))
 
 def step_tool.cut(sp: Maybe<&2, Nat>, st: FS, +line: String) -> FS:
@@ -319,7 +319,7 @@ def step_tool.cut(sp: Maybe<&2, Nat>, st: FS, +line: String) -> FS:
       st
 
 def step_tool(st: FS, +line: String) -> FS:
-  step_tool.cut(C.find(String.drop(line, 5n), " : ", 0n), st, line)
+  step_tool.cut(Tx.find(String.drop(line, 5n), " : ", 0n), st, line)
 
 def step_cfg.sys(threshold: Nat, select: Nat, max_nulls: Nat, +sys: String,
     st: FS) -> FS:
@@ -344,7 +344,7 @@ def step_cfg.n2(sp: Maybe<&2, Nat>, +rest: String, +threshold: Nat,
     st: FS) -> FS:
   match sp:
     case Some{+p}:
-      step_cfg.n3(C.find(String.drop(rest, Nat.add(p, 1n)), " ", 0n),
+      step_cfg.n3(Tx.find(String.drop(rest, Nat.add(p, 1n)), " ", 0n),
         String.drop(rest, Nat.add(p, 1n)), threshold,
         U32.to_nat(u32_of(U32.read(String.take(rest, p)))), st)
     case None{}:
@@ -353,14 +353,14 @@ def step_cfg.n2(sp: Maybe<&2, Nat>, +rest: String, +threshold: Nat,
 def step_cfg.n1(sp: Maybe<&2, Nat>, +rest: String, st: FS) -> FS:
   match sp:
     case Some{+p}:
-      step_cfg.n2(C.find(String.drop(rest, Nat.add(p, 1n)), " ", 0n),
+      step_cfg.n2(Tx.find(String.drop(rest, Nat.add(p, 1n)), " ", 0n),
         String.drop(rest, Nat.add(p, 1n)),
         U32.to_nat(u32_of(U32.read(String.take(rest, p)))), st)
     case None{}:
       st
 
 def step_cfg(st: FS, +line: String) -> FS:
-  step_cfg.n1(C.find(String.drop(line, 4n), " ", 0n),
+  step_cfg.n1(Tx.find(String.drop(line, 4n), " ", 0n),
     String.drop(line, 4n), st)
 
 def step_count.act(sp: Maybe<&2, Nat>, +inputs: U32, +rest: String,
@@ -381,7 +381,7 @@ def step_count.act(sp: Maybe<&2, Nat>, +inputs: U32, +rest: String,
 def step_count.cut(sp: Maybe<&2, Nat>, st: FS, +line: String) -> FS:
   match sp:
     case Some{+p}:
-      step_count.act(C.find(String.drop(String.drop(line, 6n),
+      step_count.act(Tx.find(String.drop(String.drop(line, 6n),
           Nat.add(p, 1n)), " ", 0n),
         u32_of(U32.read(String.take(String.drop(line, 6n), p))),
         String.drop(String.drop(line, 6n), Nat.add(p, 1n)), st)
@@ -389,7 +389,7 @@ def step_count.cut(sp: Maybe<&2, Nat>, st: FS, +line: String) -> FS:
       st
 
 def step_count(st: FS, +line: String) -> FS:
-  step_count.cut(C.find(String.drop(line, 6n), " ", 0n), st, line)
+  step_count.cut(Tx.find(String.drop(line, 6n), " ", 0n), st, line)
 
 def step.msg_or_call(is_msg: Bool, st: FS, +line: String) -> FS:
   match is_msg:
@@ -498,16 +498,6 @@ def from_finish(st: FS) -> Maybe<&2, Checkpoint>:
       from_finish.ok(ok, cur, msgs, cfg, inputs, actions, queued,
         notifs)
 
-def nl.get(m: Maybe<&2, Char>) -> Char:
-  match m:
-    case Some{c}:
-      c
-    case None{}:
-      Char.from_u32(32)
-
-def nl() -> Char:
-  nl.get(String.get("\n", 0n))
-
 def from_text(+s: String) -> Maybe<&2, Checkpoint>:
-  from_finish(from_go(String.split(s, nl()),
+  from_finish(from_go(String.split(s, Tx.newline()),
     FS{Nil{}, None{}, Nil{}, None{}, None{}, None{}, Nil{}, Nil{}, False{}}))
