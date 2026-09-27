@@ -1787,12 +1787,21 @@ fn elapsed_label(elapsed: &Option<String>) -> String {
 
 fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
     let name = td.name.clone().unwrap_or_else(|| format!("#{}", td.id));
-    // a multi-line script previews as its first line (the args line is
-    // flattened on the wire; the full source is in the code block)
-    let args = match (&td.code, code_lang(&name)) {
-        (Some(raw), Some(CodeLang::Bash)) => first_line_preview(&wire_decode(raw)),
-        (Some(raw), Some(CodeLang::Patch)) => patch_summary(&wire_decode(raw)),
-        _ => td
+    // the source of a code tool (run_typescript, bash, apply_patch), when
+    // the runtime sent it: rendered in full, highlighted, under the line
+    let code = match (&td.code, code_lang(&name)) {
+        (Some(raw), Some(lang)) => {
+            Some((lang, tool_source(lang, wire_decode(raw)))).filter(|(_, c)| !c.trim().is_empty())
+        }
+        _ => None,
+    };
+    let args = match &code {
+        // the block shows the whole source: a gray copy on the tool line
+        // would only repeat it
+        Some((CodeLang::Bash | CodeLang::TypeScript, _)) => String::new(),
+        // a patch keeps its one-line summary (the files it touches)
+        Some((CodeLang::Patch, src)) => patch_summary(src),
+        None => td
             .args
             .as_deref()
             .map(|a| args_preview(&name, a))
@@ -1842,13 +1851,9 @@ fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
             ]));
         }
     }
-    // the source block of a code tool (run_typescript, bash): the FULL
-    // code, highlighted, in a bordered box under the tool line
-    if let (Some(raw), Some(lang)) = (&td.code, code_lang(&name)) {
-        let code = tool_source(lang, wire_decode(raw));
-        if !code.trim().is_empty() {
-            ls.extend(code_block_lines(&code, lang, &td.state, width));
-        }
+    // the source block: the FULL code, highlighted, in a bordered box
+    if let Some((lang, src)) = &code {
+        ls.extend(code_block_lines(src, *lang, &td.state, width));
     }
     ls
 }
@@ -3309,6 +3314,7 @@ async function main(): Promise<unknown> {
         for (i, l) in joined.iter().enumerate() {
             println!("{:2} | {}", i, l);
         }
+        assert!(joined[0].contains("run_typescript") && !joined[0].contains("orchestre"));
         assert!(joined.iter().any(|l| l.contains("╭─ typescript")));
         assert!(joined.iter().any(|l| l.contains("async function main")));
         assert!(joined.iter().any(|l| l.contains("une chaîne")));
@@ -3339,7 +3345,7 @@ async function main(): Promise<unknown> {
     }
 
     // bash gets the same block as run_typescript: the raw command (no
-    // JSON), bash header, one row per line, first-line preview
+    // JSON), bash header, one row per line, no preview on the tool line
     #[test]
     fn bash_code_block_renders_under_the_tool_line() {
         let cmd = "# compte les fichiers
@@ -3358,7 +3364,8 @@ done | sort -n";
         for (i, l) in joined.iter().enumerate() {
             println!("{:2} | {}", i, l);
         }
-        assert!(joined[0].contains("bash") && joined[0].contains("# compte les fichiers …"));
+        // the tool line names the tool; the source shows only in the block
+        assert!(joined[0].contains("bash") && !joined[0].contains("compte"));
         assert!(joined.iter().any(|l| l.contains("╭─ bash")));
         assert!(joined.iter().any(|l| l.contains("for f in *.rs; do")));
         assert!(joined.iter().any(|l| l.contains("done | sort -n")));
