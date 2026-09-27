@@ -99,10 +99,12 @@ enum Ev {
     You(String),
     Assistant(String),
     // the model's reasoning for the message that follows: rendered
-    // collapsed as "thought for Ns" (ctrl+t expands every section)
+    // collapsed as "thought for Ns"; ctrl+t expands every section, a
+    // click on the section toggles just that one
     Thinking {
         ms: u128,
         text: String,
+        open: bool,
     },
     Tool(ToolData),
     // a sub-call made inside a run_typescript program
@@ -395,14 +397,7 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
 }
 
 // the rows of one event: the block separator, then the wrapped lines
-fn build_rows(
-    events: &[Ev],
-    i: usize,
-    debug: bool,
-    width: usize,
-    tick: u32,
-    expand: bool,
-) -> Vec<Line<'static>> {
+fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> Vec<Line<'static>> {
     let ev = &events[i];
     let mut rows: Vec<Line<'static>> = Vec::new();
     if !ev_visible(ev, debug) {
@@ -419,7 +414,7 @@ fn build_rows(
     if (message && prev_tool_block) || (tool_block && prev_message) {
         rows.push(Line::from(""));
     }
-    for l in ev_lines_t(ev, tick, expand) {
+    for l in ev_lines_t(ev, tick) {
         rows.extend(wrap_line(l, width));
     }
     rows
@@ -752,17 +747,17 @@ fn args_preview(name: &str, args: &str) -> String {
 // The shape follows the OpenCode message parts: user messages are blocks
 // with a colored left bar and panel background; assistant text is
 // markdown in the OpenCode colors; tools are inline tools.
-fn ev_lines_t(ev: &Ev, tick: u32, expand: bool) -> Vec<Line<'static>> {
+fn ev_lines_t(ev: &Ev, tick: u32) -> Vec<Line<'static>> {
     // the feed twin: identical shape, but the tool spinner animates
     match ev {
         Ev::Tool(td) => tool_lines(td, tick),
-        other => ev_lines(other, expand),
+        other => ev_lines(other),
     }
 }
 
 // a thinking section: collapsed it is one dim line ("thought for Ns");
 // expanded (ctrl+t) the reasoning shows under it, dim and italic
-fn thinking_lines(ms: u128, text: &str, expand: bool) -> Vec<Line<'static>> {
+fn thinking_lines(ms: u128, text: &str, open: bool) -> Vec<Line<'static>> {
     let head = Line::from(vec![
         Span::styled(" ~ ", Style::default().fg(DIM)),
         Span::styled(
@@ -770,7 +765,7 @@ fn thinking_lines(ms: u128, text: &str, expand: bool) -> Vec<Line<'static>> {
             Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
         ),
     ]);
-    if !expand || text.trim().is_empty() {
+    if !open || text.trim().is_empty() {
         return vec![head];
     }
     let mut rows = vec![head];
@@ -794,11 +789,11 @@ fn fmt_think_ms(ms: u128) -> String {
     }
 }
 
-fn ev_lines(ev: &Ev, expand: bool) -> Vec<Line<'static>> {
+fn ev_lines(ev: &Ev) -> Vec<Line<'static>> {
     match ev {
         Ev::You(t) => user_block_lines(t),
         Ev::Assistant(t) => md_to_lines(&unescape_md(t)),
-        Ev::Thinking { ms, text } => thinking_lines(*ms, text, expand),
+        Ev::Thinking { ms, text, open } => thinking_lines(*ms, text, *open),
         Ev::Tool(td) => tool_lines(td, 0),
         Ev::Idle => vec![Line::from("")],
         Ev::Sub { name, ok, preview } => vec![Line::from(vec![
@@ -1066,7 +1061,11 @@ impl App {
                 match split_thinking(&t) {
                     Some((think, vis)) => {
                         print_ev_of(
-                            &Ev::Thinking { ms, text: think.to_string() },
+                            &Ev::Thinking {
+                                ms,
+                                text: think.to_string(),
+                                open: self.debug,
+                            },
                             self.debug,
                         );
                         if !vis.trim().is_empty() {
@@ -1282,14 +1281,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
             .as_ref()
             .map_or(true, |c| c.width != area_w as u16 || live);
         if stale {
-            let rows = build_rows(
-                &app.events,
-                i,
-                app.debug,
-                area_w,
-                app.tick,
-                app.show_thinking,
-            );
+            let rows = build_rows(&app.events, i, app.debug, area_w, app.tick);
             app.cache[i] = Some(EventRows {
                 width: area_w as u16,
                 rows,
@@ -1563,6 +1555,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                                     let mut v = vec![Ev::Thinking {
                                         ms,
                                         text: think.to_string(),
+                                        open: app.show_thinking,
                                     }];
                                     if !vis.trim().is_empty() {
                                         v.push(Ev::Assistant(vis.to_string()));
@@ -1615,7 +1608,8 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                             app.unseen = 0;
                         }
                     }
-                    // click the back-to-bottom bar to return to the tail
+                    // click the back-to-bottom bar to return to the tail;
+                    // click a thinking section to expand/collapse it
                     MouseEventKind::Down(MouseButton::Left) => {
                         if let Some(r) = app.bottom_bar_rect {
                             let inside = m.column >= r.x
@@ -1625,7 +1619,36 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                             if inside {
                                 app.follow = true;
                                 app.unseen = 0;
+                                continue;
                             }
+                        }
+                        // the feed starts at the top of the terminal:
+                        // the clicked terminal row IS the feed row
+                        if m.row as usize >= app.area_h {
+                            continue;
+                        }
+                        // the same math as draw: content row = the
+                        // scroll offset + the feed row, then the event
+                        // whose row range contains it
+                        let top = app.top.min(app.max_top);
+                        let row = top + m.row as usize;
+                        let mut acc = 0usize;
+                        for i in 0..app.events.len() {
+                            let len = app
+                                .cache
+                                .get(i)
+                                .and_then(|c| c.as_ref())
+                                .map_or(0, |c| c.rows.len());
+                            if row < acc + len {
+                                if let Ev::Thinking { open, .. } = &mut app.events[i] {
+                                    *open = !*open;
+                                    if let Some(c) = app.cache.get_mut(i) {
+                                        *c = None;
+                                    }
+                                }
+                                break;
+                            }
+                            acc += len;
                         }
                     }
                     _ => {}
@@ -1675,6 +1698,11 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     // ctrl+t: expand/collapse every thinking section
                     (KeyCode::Char('t'), KeyModifiers::CONTROL) => {
                         app.show_thinking = !app.show_thinking;
+                        for e in app.events.iter_mut() {
+                            if let Ev::Thinking { open, .. } = e {
+                                *open = app.show_thinking;
+                            }
+                        }
                         app.cache.clear();
                     }
                     // ctrl+l: clear the local feed
@@ -1853,12 +1881,11 @@ fn run_tui(app: &mut App) -> io::Result<()> {
 // ---- line mode (non-interactive stdin) ----
 
 fn print_ev_of(ev: &Ev, debug: bool) {
-    let expand = debug;
     if !ev_visible(ev, debug) {
         return;
     }
     let mut out = io::stdout();
-    for l in ev_lines(ev, expand) {
+    for l in ev_lines(ev) {
         for span in l.spans.iter() {
             let _ = write!(out, "{}", span.content);
         }
