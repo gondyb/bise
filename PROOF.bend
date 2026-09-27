@@ -786,6 +786,12 @@ def Laws.anth_unsigned_thinking_stays_stripped():
 def Laws.anth_signed_thinking_replays():
   {==}
 
+def Laws.anth_multi_span_replays():
+  {==}
+
+def Laws.anth_refusal_maps():
+  {==}
+
 def Laws.glm_thinking_signature_surfaces():
   {==}
 

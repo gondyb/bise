@@ -1176,42 +1176,64 @@ def anth_thinking_block(+reasoning: String, +sig: String) -> J.Json:
     Con{J.kv("thinking", J.str(reasoning)),
     Con{J.kv("signature", J.str(sig)), Nil{}}}})
 
-# a signed think span replays its thinking block FIRST (the reasoning
-# text verbatim, the signature at block level - the Messages API
-# rejects an unsigned thinking block, probed); an unsigned span stays
-# stripped: the probed fallback, the model re-thinks
-def asst_blocks_signed.pick(is_replay: Bool, tm: ThinkMark,
-    +visible: String, +calls: List<&2, WCall>) -> List<&2, J.Json>:
+# the thinking block of one span: a signed span replays verbatim, an
+# unsigned one is dropped (the probed fallback, the model re-thinks)
+def asst_seg_think.pick(is_replay: Bool, +reason: String, +sig: String)
+    -> List<&2, J.Json>:
   match is_replay:
     case True{}:
-      match tm:
-        case TM{+reason, +sig}:
-          List.append(&2, J.Json,
-            Con{anth_thinking_block(reason, sig), Nil{}},
-            asst_blocks(visible, calls))
+      Con{anth_thinking_block(reason, sig), Nil{}}
     case False{}:
-      asst_blocks(visible, calls)
+      Nil{}
 
-def asst_blocks_signed.split(tm: ThinkMark, +visible: String,
-    +calls: List<&2, WCall>) -> List<&2, J.Json>:
+def asst_seg_think(tm: ThinkMark) -> List<&2, J.Json>:
   match tm:
     case TM{+reason, +sig}:
-      asst_blocks_signed.pick(
-        Bool.and(Bool.not(String.is_empty(sig)),
-          Bool.not(String.is_empty(reason))),
-        TM{reason, sig},
-        visible, calls)
+      asst_seg_think.pick(Bool.and(Bool.not(String.is_empty(sig)),
+          Bool.not(String.is_empty(reason))), reason, sig)
+
+# the plain text between two spans: a whitespace-only gap (the LF the
+# reply joins its blocks with) is no block at all - the Messages API
+# rejects an empty text block
+def asst_seg_text.pick(empty: Bool, +t: String) -> List<&2, J.Json>:
+  match empty:
+    case True{}:
+      Nil{}
+    case False{}:
+      Con{text_block_json(t), Nil{}}
+
+def asst_seg_text(+t: String) -> List<&2, J.Json>:
+  asst_seg_text.pick(String.is_empty(String.trim(t)), String.trim(t))
+
+# EVERY span of the message, in order: one Anthropic reply can carry
+# several thinking blocks (each with its own signature), and a span
+# left in the text would ride as plain text - the provider refuses
+# that as reasoning extraction (probed: stop_reason "refusal").
+# The fuel bounds the walk; the span found ahead rides the next hop.
+def asst_blocks_signed.go(fuel: Nat, pr: Maybe<&2, ThinkSpan>,
+    +content: String, +calls: List<&2, WCall>) -> List<&2, J.Json>:
+  match fuel:
+    case 0n:
+      asst_blocks(asst_think.visible(content), calls)
+    case 1n+k:
+      match pr:
+        case None{}:
+          asst_blocks(String.trim(asst_think.visible(content)), calls)
+        case Some{TSpan{+n0, +n1}}:
+          +rest = asst_think.raw_visible(content, n1)
+          List.append(&2, J.Json,
+            asst_seg_text(String.take(content, n0)),
+            List.append(&2, J.Json,
+              asst_seg_think(think_split(asst_think.raw_span(content, n0, n1))),
+              asst_blocks_signed.go(k, asst_think.find(rest), rest, calls)))
 
 def asst_blocks_signed(pr: Maybe<&2, ThinkSpan>, +content: String,
     +calls: List<&2, WCall>) -> List<&2, J.Json>:
   match pr:
     case None{}:
       asst_blocks(content, calls)
-    case Some{TSpan{+n0, +n1}}:
-      asst_blocks_signed.split(
-        think_split(asst_think.raw_span(content, n0, n1)),
-        asst_think.visible(asst_think.raw_visible(content, n1)),
-        calls)
+    case Some{+sp}:
+      asst_blocks_signed.go(64n, Some{sp}, content, calls)
 
 
 def amsg_json(m: AMsg) -> J.Json:
@@ -1551,6 +1573,22 @@ def anth_tc_lines(blocks: List<&2, J.Json>) -> List<&2, String>:
 
 # a 200 that carries an error body surfaces as an error (the proxy
 # answers overloads that way)
+# a refusal carries no content: an empty reply would be retried as a
+# null iteration until the limit; it surfaces as the provider's reason
+def reply_anth.refusal(is_refusal: Bool, +j: J.Json) -> String:
+  match is_refusal:
+    case True{}:
+      String.append("ERROR provider refusal: ",
+        String.append(String.take(String.trim(
+          J.get_str_or(field_or(j, "stop_details", J.JNull{}), "explanation",
+            "the model refused")), 300n), "\nEND\n"))
+    case False{}:
+      +blocks = arr_field_or(j, "content")
+      join_lines(Con{String.append("OK ",
+          escape_nl(String.trim(anth_blocks_text(blocks)))),
+        List.append(&2, String, anth_tc_lines(blocks),
+          Con{"END", Nil{}})})
+
 def reply_anth.err(is_err: Bool, +j: J.Json) -> String:
   match is_err:
     case True{}:
@@ -1559,11 +1597,8 @@ def reply_anth.err(is_err: Bool, +j: J.Json) -> String:
           J.get_str_or(field_or(j, "error", J.JNull{}), "message",
             "unknown error")), 300n), "\nEND\n"))
     case False{}:
-      +blocks = arr_field_or(j, "content")
-      join_lines(Con{String.append("OK ",
-          escape_nl(String.trim(anth_blocks_text(blocks)))),
-        List.append(&2, String, anth_tc_lines(blocks),
-          Con{"END", Nil{}})})
+      reply_anth.refusal(
+        String.eq(J.get_str_or(j, "stop_reason", ""), "refusal"), j)
 
 def reply_anth(+j: J.Json) -> String:
   reply_anth.err(String.eq(J.get_str_or(j, "type", ""), "error"), j)

@@ -178,17 +178,30 @@ enum Ev {
 const THINK_START: &str = "<think>";
 const THINK_END: &str = "</think>";
 
-fn split_thinking(s: &str) -> Option<(&str, &str)> {
-    let start = s.find(THINK_START)?;
-    let after = &s[start + THINK_START.len()..];
-    let end = after.find(THINK_END)?;
-    let think = &after[..end];
-    let mut visible = &after[end + THINK_END.len()..];
-    // the wire carries newlines as a literal backslash-n escape
-    if visible.starts_with("\\n") {
-        visible = &visible[2..];
+fn split_thinking(s: &str) -> Option<(String, String)> {
+    // one reply can carry several thinking blocks: every span joins the
+    // section, the text around them stays visible
+    let mut think: Vec<&str> = Vec::new();
+    let mut visible = String::new();
+    let mut rest = s;
+    while let Some(start) = rest.find(THINK_START) {
+        let after = &rest[start + THINK_START.len()..];
+        let Some(end) = after.find(THINK_END) else {
+            break;
+        };
+        visible.push_str(&rest[..start]);
+        think.push(&after[..end]);
+        rest = &after[end + THINK_END.len()..];
+        // the wire carries newlines as a literal backslash-n escape
+        if let Some(r) = rest.strip_prefix("\\n") {
+            rest = r;
+        }
     }
-    Some((think, visible))
+    if think.is_empty() {
+        return None;
+    }
+    visible.push_str(rest);
+    Some((think.join("\\n"), visible))
 }
 
 fn parse_line(line: &str) -> Option<Ev> {
@@ -2746,6 +2759,16 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn split_thinking_takes_every_span() {
+        let t = "<think>a\\nBENDSIG::s1</think>\\n<think>b\\nBENDSIG::s2</think>\\nok";
+        let (think, vis) = split_thinking(t).unwrap();
+        assert_eq!(think, "a\\nBENDSIG::s1\\nb\\nBENDSIG::s2");
+        assert_eq!(vis, "ok");
+        assert!(split_thinking("no markers").is_none());
+        assert!(split_thinking("<think>open").is_none());
+    }
 
     // the runtime's wire encoding, as emit_code_ann produces it
     fn wire_encode(s: &str) -> String {

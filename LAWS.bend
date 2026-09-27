@@ -1936,6 +1936,26 @@ END
        "{\"type\":\"thinking\",\"thinking\":\"2+2 = 4\",\"signature\":\"sig\"}")
     == True{} : Bool}
 
+# LAW: EVERY signed span of one message replays as its own thinking
+# block - a reply with two thinking blocks leaves no marker in the
+# text (a span riding as plain text is refused as reasoning
+# extraction, probed).
+law anth_multi_span_replays:
+  {Api.api_body_for(Api.Anthropic{}, "m",
+       Api.parse_wire("MODEL default
+MSG assistant : <think>a\\nBENDSIG::s1</think>\\n<think>b\\nBENDSIG::s2</think>\\nok
+END
+"))
+    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"a\",\"signature\":\"s1\"},{\"type\":\"thinking\",\"thinking\":\"b\",\"signature\":\"s2\"},{\"type\":\"text\",\"text\":\"ok\"}]}]}"
+    : String}
+
+# LAW: a refusal (empty content, stop_reason "refusal") surfaces as a
+# provider error - never an empty reply retried to the null limit.
+law anth_refusal_maps:
+  {Api.reply_of_for(Api.Anthropic{}, 200,
+      "{\"type\":\"message\",\"content\":[],\"stop_reason\":\"refusal\",\"stop_details\":{\"explanation\":\"blocked\"}}")
+    == "ERROR provider refusal: blocked\nEND\n" : String}
+
 # comment header preserved below
 # LAW: Anthropic text blocks become separate lines (the GLM parity).
 law anth_blocks_join_lines:
