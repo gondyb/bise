@@ -156,7 +156,34 @@ fn list_sessions(sessions_dir: &str) {
     }
 }
 
+// API keys the vibe way: KEY=VALUE lines from ~/.bend-harness/.env,
+// then ~/.vibe/.env (where the vibe CLI keeps ANTHROPIC_FOUNDRY_API_KEY
+// and friends). A variable already set in the real environment always
+// wins; an earlier file wins over a later one. Loaded here, in the one
+// entry point, so the TUI and --headless (bend_client) see the same keys.
+fn load_env_files() {
+    let Ok(home) = std::env::var("HOME") else { return };
+    for path in [format!("{}/.bend-harness/.env", home), format!("{}/.vibe/.env", home)] {
+        let Ok(text) = std::fs::read_to_string(&path) else { continue };
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let line = line.strip_prefix("export ").unwrap_or(line);
+            let Some((k, v)) = line.split_once('=') else { continue };
+            let k = k.trim();
+            let v = v.trim().trim_matches('"').trim_matches('\'');
+            if k.is_empty() || std::env::var_os(k).map_or(false, |x| !x.is_empty()) {
+                continue;
+            }
+            std::env::set_var(k, v);
+        }
+    }
+}
+
 fn main() -> std::io::Result<()> {
+    load_env_files();
     let mut scripted = false;
     let mut headless = false;
     let mut debug = false;
