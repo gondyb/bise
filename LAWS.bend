@@ -8,6 +8,7 @@ import ./core/compaction.bend as C
 import ./core/checkpoint.bend as K
 import ./core/session.bend as S
 import ./core/program.bend as P
+import ./core/patch.bend as Pa
 import ./core/commands.bend as Cm
 import ./core/api.bend as Api
 import ./core/obs.bend as O
@@ -762,38 +763,49 @@ law def_acks_suffix_carries_both:
      String.contains(Rt.def_acks.suffix(Rt.Def{True{}, True{}}),
        "reload: scheduled")) == True{} : Bool}
 
-# LAW: the live catalog carries the skill loader and the two self
-# tools after the four parity tools; catalog_short (the scripted
-# scenarios) stays untouched.
+# LAW: the live catalog carries the skill loader, the apply_patch
+# editor and the two self tools after the four parity tools;
+# catalog_short (the scripted scenarios) stays untouched.
 # self.sleep left the catalog: it is a programmatic tool now
 # (await self.sleep(n) inside a run_typescript program).
-law live_catalog_has_six_tools:
-  {Xt.catalog_len(Xt.catalog_live("s", "r", "b", "k")) == 6n : Nat}
+law live_catalog_has_seven_tools:
+  {Xt.catalog_len(Xt.catalog_live("s", "r", "b", "k", "p")) == 7n : Nat}
 
 law parity_catalog_keeps_three:
   {Xt.catalog_len(Xt.catalog_pure("s", "r", "b")) == 3n : Nat}
 
-law live_catalog_skill_and_self_names:
-  {Bool.and(String.eq(Xt.tool_name_at(3n, Xt.catalog_live("s", "r", "b", "k")),
+law live_catalog_skill_patch_and_self_names:
+  {Bool.and(String.eq(Xt.tool_name_at(3n, Xt.catalog_live("s", "r", "b", "k", "p")),
       "skill"),
-    Bool.and(String.eq(Xt.tool_name_at(4n, Xt.catalog_live("s", "r", "b", "k")),
+    Bool.and(String.eq(Xt.tool_name_at(4n, Xt.catalog_live("s", "r", "b", "k", "p")),
+      "apply_patch"),
+     Bool.and(String.eq(Xt.tool_name_at(5n, Xt.catalog_live("s", "r", "b", "k", "p")),
       "self.reload"),
-     String.eq(Xt.tool_name_at(5n, Xt.catalog_live("s", "r", "b", "k")),
-      "self.compact"))) == True{} : Bool}
+      String.eq(Xt.tool_name_at(6n, Xt.catalog_live("s", "r", "b", "k", "p")),
+       "self.compact")))) == True{} : Bool}
 
-# LAW: the descriptions say what the tools do and when they act.
+# LAW: apply_patch rides at position 4 with its description argument,
+# and the fallback description names the format and the atomicity.
+law apply_patch_desc_names_the_format:
+  {Bool.and(
+     String.eq(Xt.tool_desc_at(4n, Xt.catalog_live("s", "r", "b", "k", "p")), "p"),
+     Bool.and(
+       String.contains(Xt.patch_desc.read(None{}), "Codex V4A"),
+       String.contains(Xt.patch_desc.read(None{}),
+         "validated before anything is written"))) == True{} : Bool}
+
 law self_reload_desc_says_when:
   {Bool.and(
-     String.contains(Xt.tool_desc_at(4n, Xt.catalog_live("s", "r", "b", "k")),
+     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b", "k", "p")),
        "Restart the harness process with the latest code"),
-     String.contains(Xt.tool_desc_at(4n, Xt.catalog_live("s", "r", "b", "k")),
+     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b", "k", "p")),
        "end of the current turn")) == True{} : Bool}
 
 law self_compact_desc_says_when:
   {Bool.and(
-     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b", "k")),
+     String.contains(Xt.tool_desc_at(6n, Xt.catalog_live("s", "r", "b", "k", "p")),
        "Compact the conversation history"),
-     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b", "k")),
+     String.contains(Xt.tool_desc_at(6n, Xt.catalog_live("s", "r", "b", "k", "p")),
        "end of the current turn")) == True{} : Bool}
 
 # ---- the provider API mapping (core/api.bend, formerly the Rust bridge) ----
@@ -1512,3 +1524,196 @@ law attempt_timeout_retries:
 law attempt_tls_fails:
   {Rt.attempt_fail2(Http.ErrTls{1, "handshake"})
     == Rt.AFail{Http.ErrTls{1, "handshake"}} : Rt.Attempt}
+
+# ---- apply_patch: the parser and the strict matcher (core/patch.bend) ----
+# Codex V4A. The parser is pinned byte-for-byte on concrete patches
+# (the kind classifier makes every branch of the mode loop reachable
+# and deterministic); the matcher is pinned on hits, misses, and the
+# sequential cursor.
+
+# LAW: an Add File section accumulates '+' lines; each line keeps a
+# trailing newline (Codex pushes '\n' per line).
+law patch_parse_add:
+  {Pa.parse_patch("*** Begin Patch\n*** Add File: a.txt\n+one\n+two\n*** End Patch")
+    == Some{Con{Pa.PAdd{"a.txt", "one\ntwo\n"}, Nil{}}}
+    : Maybe<&2, List<&2, Pa.PAction>>}
+
+# LAW: an Add File section with zero lines creates an EMPTY file, not
+# a lone newline.
+law patch_parse_add_empty:
+  {Pa.parse_patch("*** Begin Patch\n*** Add File: e.txt\n*** End Patch")
+    == Some{Con{Pa.PAdd{"e.txt", ""}, Nil{}}}
+    : Maybe<&2, List<&2, Pa.PAction>>}
+
+# LAW: a Delete File section is one action.
+law patch_parse_delete:
+  {Pa.parse_patch("*** Begin Patch\n*** Delete File: x\n*** End Patch")
+    == Some{Con{Pa.PDelete{"x"}, Nil{}}}
+    : Maybe<&2, List<&2, Pa.PAction>>}
+
+# LAW: an Update File section carries its chunks with exact
+# old/new line lists and lengths; the @@ hint line is dropped.
+law patch_parse_update:
+  {Pa.parse_patch("*** Begin Patch\n*** Update File: u.txt\n@@ fn foo\n ctx\n-del\n+add\n*** End Patch")
+    == Some{Con{Pa.PUpdate{"u.txt",
+      Con{Pa.PChunk{Con{"ctx", Con{"del", Nil{}}}, Con{"ctx", Con{"add", Nil{}}}, 2n, 2n},
+        Nil{}}}, Nil{}}}
+    : Maybe<&2, List<&2, Pa.PAction>>}
+
+# LAW: content may open a chunk without @@ (Codex creates the chunk
+# implicitly); a lone @@ chunk is skipped, never an action.
+law patch_parse_implicit_chunk:
+  {Pa.parse_patch("*** Begin Patch\n*** Update File: u\n@@\n@@\n a\n-b\n+c\n*** End Patch")
+    == Some{Con{Pa.PUpdate{"u",
+      Con{Pa.PChunk{Con{"a", Con{"b", Nil{}}}, Con{"a", Con{"c", Nil{}}}, 2n, 2n},
+        Nil{}}}, Nil{}}}
+    : Maybe<&2, List<&2, Pa.PAction>>}
+
+# LAW: a multi-section patch parses to its actions in order (Add,
+# Update, Delete here - the list carries them reversed by the fold,
+# Delete last-added first-shown).
+law patch_parse_multi:
+  {Pa.parse_patch("*** Begin Patch\n*** Add File: n\n+hi\n*** Update File: u\n@@\n a\n-b\n+B\n*** Delete File: d\n*** End Patch")
+    == Some{Con{Pa.PAdd{"n", "hi\n"}, Con{Pa.PUpdate{"u", Con{Pa.PChunk{Con{"a", Con{"b", Nil{}}}, Con{"a", Con{"B", Nil{}}}, 2n, 2n}, Nil{}}}, Con{Pa.PDelete{"d"}, Nil{}}}}}
+    : Maybe<&2, List<&2, Pa.PAction>>}
+
+law patch_rejects_missing_end:
+  {Pa.parse_patch("*** Begin Patch\n*** Add File: a\n+x") == None{}
+    : Maybe<&2, List<&2, Pa.PAction>>}
+
+# LAW: the first line must be '*** Begin Patch'.
+law patch_rejects_bad_first:
+  {Pa.parse_patch("hello\n*** End Patch") == None{}
+    : Maybe<&2, List<&2, Pa.PAction>>}
+
+# LAW: an Update File section with no chunk is malformed (Codex:
+# "Update file hunk for path is empty").
+law patch_rejects_empty_update:
+  {Pa.parse_patch("*** Begin Patch\n*** Update File: u\n*** End Patch") == None{}
+    : Maybe<&2, List<&2, Pa.PAction>>}
+
+# LAW: garbage at the section level is rejected loudly.
+law patch_rejects_garbage_section:
+  {Pa.parse_patch("*** Begin Patch\nwhat is this\n*** End Patch") == None{}
+    : Maybe<&2, List<&2, Pa.PAction>>}
+
+# LAW: non-empty content after '*** End Patch' is rejected (Codex:
+# the last line must be End Patch).
+law patch_rejects_after_end:
+  {Pa.parse_patch("*** Begin Patch\n*** Add File: n\n+hi\n*** End Patch\njunk") == None{}
+    : Maybe<&2, List<&2, Pa.PAction>>}
+
+# LAW: the whole patch is trimmed first - a trailing newline after
+# End Patch is fine.
+law patch_tolerates_trailing_newline:
+  {Pa.parse_patch("*** Begin Patch\n*** Add File: n\n+hi\n*** End Patch\n")
+    == Some{Con{Pa.PAdd{"n", "hi\n"}, Nil{}}}
+    : Maybe<&2, List<&2, Pa.PAction>>}
+
+# LAW: the classifier is the parser's spine - every kind pinned.
+law patch_kind_add_line:
+  {Pa.p_kind_of("+x") == Pa.KAdd{} : Pa.PKind}
+
+law patch_kind_del_line:
+  {Pa.p_kind_of("-x") == Pa.KDel{} : Pa.PKind}
+
+law patch_kind_ctx_line:
+  {Pa.p_kind_of(" x") == Pa.KCtx{} : Pa.PKind}
+
+law patch_kind_empty_line:
+  {Pa.p_kind_of("") == Pa.KEmpty{} : Pa.PKind}
+
+law patch_kind_begin:
+  {Pa.p_kind_of("*** Begin Patch ") == Pa.KBegin{} : Pa.PKind}
+
+law patch_kind_end:
+  {Pa.p_kind_of("*** End Patch") == Pa.KEnd{} : Pa.PKind}
+
+law patch_kind_add_header:
+  {Pa.p_kind_of("*** Add File: x") == Pa.KAddHdr{} : Pa.PKind}
+
+law patch_kind_delete_header:
+  {Pa.p_kind_of("*** Delete File: x") == Pa.KDelHdr{} : Pa.PKind}
+
+law patch_kind_update_header:
+  {Pa.p_kind_of("*** Update File: x") == Pa.KUpdHdr{} : Pa.PKind}
+
+law patch_kind_chunk_head:
+  {Pa.p_kind_of("@@ fn foo") == Pa.KHead{} : Pa.PKind}
+
+law patch_kind_garbage:
+  {Pa.p_kind_of("what") == Pa.KGarbage{} : Pa.PKind}
+
+# LAW: a chunk's lines replace exactly; the file's trailing newline
+# survives (the split/join roundtrip is byte-exact).
+law patch_apply_hit:
+  {Pa.apply_update("a\nb\nc\n", Con{Pa.PChunk{Con{"b", Nil{}}, Con{"B", Nil{}}, 1n, 1n}, Nil{}})
+    == Pa.POut{True{}, "a\nB\nc\n", 1n} : Pa.POut}
+
+# LAW: a miss fails loudly with the chunk's index (0-based).
+law patch_apply_miss:
+  {Pa.apply_update("a\nb\nc\n", Con{Pa.PChunk{Con{"x", Nil{}}, Con{"X", Nil{}}, 1n, 1n}, Nil{}})
+    == Pa.POut{False{}, "", 0n} : Pa.POut}
+
+# LAW: chunks apply in order - the second matches AFTER the first's
+# splice (the done/todo cursor is strict).
+law patch_apply_sequential:
+  {Pa.apply_update("f\na\nf\na\n",
+    Con{Pa.PChunk{Con{"f", Nil{}}, Con{"F", Nil{}}, 1n, 1n},
+     Con{Pa.PChunk{Con{"f", Nil{}}, Con{"G", Nil{}}, 1n, 1n}, Nil{}}})
+    == Pa.POut{True{}, "F\na\nG\na\n", 2n} : Pa.POut}
+
+# LAW: the cursor never rewinds - the second chunk may NOT match a
+# line the first chunk already consumed.
+law patch_apply_sequential_miss:
+  {Pa.apply_update("a\nf\n",
+    Con{Pa.PChunk{Con{"a", Nil{}}, Con{"A", Nil{}}, 1n, 1n},
+     Con{Pa.PChunk{Con{"a", Nil{}}, Con{"B", Nil{}}, 1n, 1n}, Nil{}}})
+    == Pa.POut{False{}, "", 1n} : Pa.POut}
+
+# LAW: a chunk with no old lines is a pure insertion at the cursor.
+law patch_apply_insert:
+  {Pa.apply_update("a\n", Con{Pa.PChunk{Nil{}, Con{"X", Nil{}}, 0n, 1n}, Nil{}})
+    == Pa.POut{True{}, "X\na\n", 1n} : Pa.POut}
+
+# LAW: the failed chunk's first line is the error anchor.
+law patch_anchor_names_the_chunk:
+  {Pa.p_chunk_anchor(
+    Con{Pa.PChunk{Con{"one", Nil{}}, Nil{}, 1n, 0n},
+     Con{Pa.PChunk{Con{"two", Nil{}}, Nil{}, 1n, 0n}, Nil{}}}, 1n) == "two" : String}
+
+# LAW: the validate loop reads ahead by action path - every action
+# shape carries one.
+law patch_path_of_actions:
+  {Bool.and(String.eq(Pa.p_path_of(Pa.PAdd{"a", "x"}), "a"),
+    Bool.and(String.eq(Pa.p_path_of(Pa.PDelete{"d"}), "d"),
+     String.eq(Pa.p_path_of(Pa.PUpdate{"u", Nil{}}), "u"))) == True{} : Bool}
+
+# LAW: the Begin marker matches by prefix - the live model appends
+# a stray ' ***' to it (observed end-to-end with GLM).
+law patch_kind_begin_prefix:
+  {Pa.p_kind_of("*** Begin Patch ***") == Pa.KBegin{} : Pa.PKind}
+
+# LAW: section headers parse without the leading '***' too - safe,
+# because a content line inside a chunk always carries a ' ', '+' or
+# '-' prefix, so a bare 'Add File:' line can only be a header.
+law patch_kind_bare_add_header:
+  {Pa.p_kind_of("Add File: x") == Pa.KAddHdr{} : Pa.PKind}
+
+law patch_kind_bare_delete_header:
+  {Pa.p_kind_of("Delete File: x") == Pa.KDelHdr{} : Pa.PKind}
+
+law patch_kind_bare_update_header:
+  {Pa.p_kind_of("Update File: x") == Pa.KUpdHdr{} : Pa.PKind}
+
+# LAW: the exact variant GLM emitted live (trailing ' ***' on Begin,
+# bare section headers) parses to the same actions the canonical
+# form gives.
+law patch_parse_glm_variant:
+  {Pa.parse_patch("*** Begin Patch ***\nUpdate File: ap-e2e/a.txt\n@@ \n one\n-two\n+TWO\nAdd File: ap-e2e/sub/new.txt\n+hello\n+patched\nDelete File: ap-e2e/del.txt\n*** End Patch")
+    == Some{Con{Pa.PUpdate{"ap-e2e/a.txt",
+      Con{Pa.PChunk{Con{"one", Con{"two", Nil{}}}, Con{"one", Con{"TWO", Nil{}}}, 2n, 2n},
+        Nil{}}},
+      Con{Pa.PAdd{"ap-e2e/sub/new.txt", "hello\npatched\n"},
+      Con{Pa.PDelete{"ap-e2e/del.txt"}, Nil{}}}}}
+    : Maybe<&2, List<&2, Pa.PAction>>}

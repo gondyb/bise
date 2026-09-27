@@ -431,13 +431,13 @@ def Laws.deferred_resets_at_user():
 def Laws.deferred_empty_history():
   {==}
 
-def Laws.live_catalog_has_six_tools():
+def Laws.live_catalog_has_seven_tools():
   {==}
 
 def Laws.parity_catalog_keeps_three():
   {==}
 
-def Laws.live_catalog_skill_and_self_names():
+def Laws.live_catalog_skill_patch_and_self_names():
   {==}
 
 def Laws.self_reload_desc_says_when():
@@ -604,4 +604,112 @@ def Laws.ser_msg_escapes_newlines():
   {==}
 
 def Laws.checkpoint_multiline_roundtrip():
+  {==}
+
+def Laws.apply_patch_desc_names_the_format():
+  {==}
+
+def Laws.patch_parse_add():
+  {==}
+
+def Laws.patch_parse_add_empty():
+  {==}
+
+def Laws.patch_parse_delete():
+  {==}
+
+def Laws.patch_parse_update():
+  {==}
+
+def Laws.patch_parse_implicit_chunk():
+  {==}
+
+def Laws.patch_parse_multi():
+  {==}
+
+def Laws.patch_rejects_missing_end():
+  {==}
+
+def Laws.patch_rejects_bad_first():
+  {==}
+
+def Laws.patch_rejects_empty_update():
+  {==}
+
+def Laws.patch_rejects_garbage_section():
+  {==}
+
+def Laws.patch_rejects_after_end():
+  {==}
+
+def Laws.patch_tolerates_trailing_newline():
+  {==}
+
+def Laws.patch_kind_add_line():
+  {==}
+
+def Laws.patch_kind_del_line():
+  {==}
+
+def Laws.patch_kind_ctx_line():
+  {==}
+
+def Laws.patch_kind_empty_line():
+  {==}
+
+def Laws.patch_kind_begin():
+  {==}
+
+def Laws.patch_kind_end():
+  {==}
+
+def Laws.patch_kind_add_header():
+  {==}
+
+def Laws.patch_kind_delete_header():
+  {==}
+
+def Laws.patch_kind_update_header():
+  {==}
+
+def Laws.patch_kind_chunk_head():
+  {==}
+
+def Laws.patch_kind_garbage():
+  {==}
+
+def Laws.patch_apply_hit():
+  {==}
+
+def Laws.patch_apply_miss():
+  {==}
+
+def Laws.patch_apply_sequential():
+  {==}
+
+def Laws.patch_apply_sequential_miss():
+  {==}
+
+def Laws.patch_apply_insert():
+  {==}
+
+def Laws.patch_anchor_names_the_chunk():
+  {==}
+
+def Laws.patch_path_of_actions():
+  {==}
+
+def Laws.patch_kind_begin_prefix():
+  {==}
+
+def Laws.patch_kind_bare_add_header():
+  {==}
+
+def Laws.patch_kind_bare_delete_header():
+  {==}
+
+def Laws.patch_kind_bare_update_header():
+  {==}
+
+def Laws.patch_parse_glm_variant():
   {==}

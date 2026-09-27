@@ -49,6 +49,14 @@ def skill_desc() -> IO(String):
     m : Maybe<&2, String> <- P.read_file("tool-desc-skill.txt")
     IO.pure(String, skill_desc.read(m))
 
+def patch_desc.read(m: Maybe<&2, String>) -> String:
+  desc_or(m, "Create, update or delete files with a patch in the Codex V4A format. The whole patch is validated before anything is written; every failure is loud.")
+
+def patch_desc() -> IO(String):
+  do IO<String>:
+    m : Maybe<&2, String> <- P.read_file("tool-desc-apply-patch.txt")
+    IO.pure(String, patch_desc.read(m))
+
 # pure: build the catalog from given descriptions
 # self.sleep is NOT a model tool anymore: it is a programmatic tool,
 # called inside a run_typescript program (await self.sleep(20)) -
@@ -113,11 +121,12 @@ def tool_desc_at(n: Nat, tools: List<&2, T.ToolDef>) -> String:
 # the live catalog: the four vibe-parity tools, the skill loader, and
 # the self.* harness tools (catalog_short keeps the scripted scenarios
 # byte-identical)
-def catalog_live(+sd: String, +rd: String, +bd: String, +kd: String)
-    -> List<&2, T.ToolDef>:
+def catalog_live(+sd: String, +rd: String, +bd: String, +kd: String,
+    +pd: String) -> List<&2, T.ToolDef>:
   List.append(&2, T.ToolDef,
     List.append(&2, T.ToolDef, catalog_pure(sd, rd, bd),
-      Con{T.ToolDef{"skill", kd}, Nil{}}),
+      Con{T.ToolDef{"skill", kd},
+       Con{T.ToolDef{"apply_patch", pd}, Nil{}}}),
     self_tool_defs())
 
 def catalog() -> IO(List<&2, T.ToolDef>):
@@ -126,7 +135,8 @@ def catalog() -> IO(List<&2, T.ToolDef>):
     +rd : String <- rt_desc()
     +bd : String <- bash_desc()
     +kd : String <- skill_desc()
-    IO.pure(List<&2, T.ToolDef>, catalog_live(sd, rd, bd, kd))
+    +pd : String <- patch_desc()
+    IO.pure(List<&2, T.ToolDef>, catalog_live(sd, rd, bd, kd, pd))
 
 # short fallback for pure contexts (laws, scenarios that don't need
 # the full vibe_sdk description text)

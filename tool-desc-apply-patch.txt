@@ -1,0 +1,34 @@
+Create, update, or delete files by applying a patch in the Codex V4A format. Args: the full patch text. This is the preferred tool for file edits: it is atomic (the whole patch is validated before anything is written) and fails loudly instead of guessing.
+
+The patch format:
+
+*** Begin Patch
+*** Add File: path/to/new.txt
++first line of the new file
++second line
+*** Update File: path/to/existing.txt
+@@ optional context hint (class or function name, ignored by the matcher)
+ unchanged context line (starts with a single space)
+-removed line
++added line
+*** Delete File: path/to/obsolete.txt
+*** End Patch
+
+Rules:
+- The first line must be `*** Begin Patch` and the last `*** End Patch`. Each `*** <marker>: <path>` line starts a section; a patch may carry several sections.
+- In an Add File section, every line starts with `+`; the rest of the line is the file content (a leading `+` is kept as `++line`). An Add fails if the file already exists; parent directories are created.
+- In an Update File section, lines start with ` ` (context), `-` (remove), or `+` (add). A chunk starts at `@@` (the text after `@@` is a hint for you, not the matcher). A bare empty line counts as an empty context line. Context and removed lines must match the file exactly, and each chunk must match after the previous chunk's position, in order.
+- An Update fails loudly if the file does not exist or if a chunk's lines are not found (the error names the chunk and its first line: the file changed since you read it - re-read it and adjust the patch). Nothing is written when any section fails.
+- A Delete fails if the file does not exist.
+- `*** Move to:` and `*** End of File` are not supported; a section with no chunk is rejected.
+- Small format slips are tolerated: a stray suffix after the Begin/End markers, and section headers written without the leading `***` (`Update File: path`) both parse. Context lines still need their exact leading space.
+
+Example - replace a line in src/main.bend:
+
+*** Begin Patch
+*** Update File: src/main.bend
+@@ fn greet
+ def greet():
+-  print("hi")
++  print("hello")
+*** End Patch
