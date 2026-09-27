@@ -615,13 +615,53 @@ def model_call.attempt_result(r: Result<&2, &2, Http.Err, Http.Res>)
     case Fail{+e}:
       attempt_fail2(e)
 
+def interrupt_path_of(+port: String) -> String:
+  String.append("/tmp/bend-interrupt-", String.append(port, ".txt"))
+
+def interrupt_path() -> IO(String):
+  do IO<String>:
+    pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
+    +p : String <- IO.pure(String, env_or(pr, "0"))
+    IO.pure(String, interrupt_path_of(p))
+
+# BR-005: a Ctrl+C landing during a failed attempt must not wait for
+# the remaining retries: the flag is read between attempts, and when
+# set the call bails out - the completion_fail path then fails the
+# turn cleanly instead of another 2-minute round trip.
+def model_call.step.retry.interrupted(set: Bool, +ipath: String,
+    +k: Nat, +after_ms: U32,
+    next: Nat -> IO(Rem.RemoteRes)) -> IO(Rem.RemoteRes):
+  match set:
+    case True{}:
+      do IO<Rem.RemoteRes>:
+        # consume the flag so the boundary drains stay clean
+        u : Unit <- P.write_file(ipath, "")
+        IO.pure(Rem.RemoteRes, Rem.RRErr{"interrupted by the user"})
+    case False{}:
+      do IO<Rem.RemoteRes>:
+        IO.sleep(after_ms)
+        next(k)
+
+def model_call.step.retry.flag(m: Maybe<&2, String>, +ipath: String,
+    +k: Nat, +after_ms: U32,
+    next: Nat -> IO(Rem.RemoteRes)) -> IO(Rem.RemoteRes):
+  match m:
+    case None{}:
+      do IO<Rem.RemoteRes>:
+        IO.sleep(after_ms)
+        next(k)
+    case Some{+c}:
+      model_call.step.retry.interrupted(String.is_empty(c), ipath, k,
+        after_ms, next)
+
 def model_call.step.retry(can: Bool, +k: Nat, +after_ms: U32, +why: String,
     next: Nat -> IO(Rem.RemoteRes)) -> IO(Rem.RemoteRes):
   match can:
     case True{}:
       do IO<Rem.RemoteRes>:
-        IO.sleep(after_ms)
-        next(k)
+        +ipath : String <- interrupt_path()
+        m : Maybe<&2, String> <- P.read_file(ipath)
+        model_call.step.retry.flag(m, ipath, k, after_ms, next)
     case False{}:
       IO.pure(Rem.RemoteRes, Rem.RRErr{why})
 
@@ -1238,17 +1278,37 @@ def def_merge(+d: Def, +compact: Bool, +reload: Bool) -> Def:
     case Def{+c, +r}:
       Def{Bool.or(c, compact), Bool.or(r, reload)}
 
+# BR-004: the scan must only trust TOOL results, and only an ack that
+# stands alone. The direct self.* tool prefixes the ack ("tool X ok:
+# <ack>") so the ack ends the text; a program's result carries the
+# acks on their own lines, and tool texts are escape_nl'd, so there
+# the ack is a whole line between literal backslash-n sequences.
+# Assistant prose quoting the ack is not scanned at all, and a tool
+# output quoting the harness source keeps its quotes and indentation
+# around the constant - neither shape matches.
+def def_ack.hit.ends(hit: Bool, +text: String, +ack: String) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      String.contains(text,
+        String.append(Api.escape_nl("\n"),
+          String.append(ack, Api.escape_nl("\n"))))
+
+def def_ack.hit(+text: String, +ack: String) -> Bool:
+  def_ack.hit.ends(String.ends_with(text, ack), text, ack)
+
 def def_note(+d: Def, +text: String) -> Def:
-  def_merge(d, String.contains(text, "compact: scheduled"),
-    String.contains(text, "reload: scheduled"))
+  def_merge(d, def_ack.hit(text, COMPACT_ACK()),
+    def_ack.hit(text, RELOAD_ACK()))
 
 # a user message starts a new segment: requests before it are spent
-def def_step.reset(is_user: Bool, +d: Def, +text: String) -> Def:
-  match is_user:
-    case True{}:
-      def_none()
-    case False{}:
-      def_note(d, text)
+def def_step.role_is_tool(role: T.Role) -> Bool:
+  match role:
+    case T.RTool{}:
+      True{}
+    case _:
+      False{}
 
 def def_step.role_is_user(role: T.Role) -> Bool:
   match role:
@@ -1257,10 +1317,26 @@ def def_step.role_is_user(role: T.Role) -> Bool:
     case _:
       False{}
 
+# only tool results are scanned; assistant prose is skipped entirely
+def def_step.msg.tool(is_tool: Bool, +d: Def, +text: String) -> Def:
+  match is_tool:
+    case True{}:
+      def_note(d, text)
+    case False{}:
+      d
+
+def def_step.msg.user(is_user: Bool, +role: T.Role, +d: Def,
+    +text: String) -> Def:
+  match is_user:
+    case True{}:
+      def_none()
+    case False{}:
+      def_step.msg.tool(def_step.role_is_tool(role), d, text)
+
 def def_step.msg(+d: Def, +m: T.Msg) -> Def:
   match m:
     case T.Msg{+role, +text, _, _}:
-      def_step.reset(def_step.role_is_user(role), d, text)
+      def_step.msg.user(def_step.role_is_user(role), role, d, text)
 
 def def_scan(msgs: List<&2, T.Msg>, +d: Def) -> Def:
   match msgs:
@@ -2012,15 +2088,6 @@ def drain_steer.pick(m: Maybe<&2, String>, +path: String, out: Out, +rt: Rt)
 # The Core kills the turn (CandidateDiscarded + TurnDone interrupted),
 # commits any steering the turn was holding, and the in-flight result
 # is then rejected cleanly ("no pending completion").
-
-def interrupt_path_of(+port: String) -> String:
-  String.append("/tmp/bend-interrupt-", String.append(port, ".txt"))
-
-def interrupt_path() -> IO(String):
-  do IO<String>:
-    pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
-    +p : String <- IO.pure(String, env_or(pr, "0"))
-    IO.pure(String, interrupt_path_of(p))
 
 def drain_interrupt.some(empty: Bool, +ipath: String, out: Out, +rt: Rt,
     +sess: T.Session, +script: List<&2, M.Reply>, +cmds: List<&2, T.Cmd>,

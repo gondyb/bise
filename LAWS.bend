@@ -1717,3 +1717,77 @@ law patch_parse_glm_variant:
       Con{Pa.PAdd{"ap-e2e/sub/new.txt", "hello\npatched\n"},
       Con{Pa.PDelete{"ap-e2e/del.txt"}, Nil{}}}}}
     : Maybe<&2, List<&2, Pa.PAction>>}
+
+# ---- BR-001: an interrupt must not orphan the calls the turn holds ----
+
+# LAW: interrupting a turn that waits on tool calls answers every
+# waiting call with a failed "interrupted" result BEFORE the turn
+# dies - the answer stays adjacent to its assistant call (the steering
+# the turn held is committed after, by finish_turn).
+law interrupt_closes_waiting_calls:
+  {S.sess_history(S.res_next(S.apply(steer_flow.called(law_cfg()), T.Interrupt{}),
+      steer_flow.called(law_cfg())))
+    == Con{T.user("hi"),
+      Con{T.asst("thinking", Con{T.Call{2, "bash", "ls"}, Nil{}}),
+      Con{T.tool_res("tool bash failed: interrupted"),
+      Con{T.Msg{T.RUser{}, "penguins", Nil{}, True{}}, Nil{}}}}}
+    : List<&2, T.Msg>}
+
+# LAW: the interrupt answers exactly the waiting calls - a program
+# call is answered as one run_typescript result, an agent pending
+# (nothing in history yet) answers nothing.
+law interrupt_closes_prog_pending:
+  {S.interrupt_closes(Some{T.PProg{Nil{}, Nil{}, 0, 0}})
+    == Con{T.tool_res("tool run_typescript failed: interrupted"), Nil{}}
+    : List<&2, T.Msg>}
+
+law interrupt_closes_agent_pending:
+  {S.interrupt_closes(Some{T.PAgent{9}}) == Nil{}
+    : List<&2, T.Msg>}
+
+# ---- BR-004: the deferred scan trusts only standalone tool acks ----
+
+# LAW: assistant prose quoting the ack never fires the deferred
+# request (the model echoes tool outputs routinely).
+# BR-004 helper: an assistant message that quotes the compact ack
+def prose_quoting_ack() -> T.Msg:
+  T.asst(String.append("the tool said '",
+    String.append(Rt.COMPACT_ACK(), "' - filing it")), Nil{})
+
+law deferred_ignores_assistant_prose:
+  {Rt.deferred_of(Con{T.user("hi"), Con{prose_quoting_ack(), Nil{}}})
+    == Rt.Def{False{}, False{}} : Rt.Def}
+
+# LAW: a tool output QUOTING the harness source never fires - the
+# quotes and indentation around the constant break the whole-text
+# and whole-line shapes.
+law deferred_ignores_source_quotes:
+  {Rt.deferred_of(Con{T.user("hi"),
+      Con{T.tool_res(String.append("  \"",
+          String.append(Rt.COMPACT_ACK(), "\""))), Nil{}}})
+    == Rt.Def{False{}, False{}} : Rt.Def}
+
+# LAW: a tool result that merely CONTAINS the marker mid-text never
+# fires - the ack must end the text or stand on its own line.
+law deferred_ignores_midtext_marker:
+  {Rt.deferred_of(Con{T.user("hi"),
+      Con{T.tool_res(String.append("prefix ",
+          String.append(Rt.COMPACT_ACK(), " suffix"))), Nil{}}})
+    == Rt.Def{False{}, False{}} : Rt.Def}
+
+# LAW: the real direct shape fires - the self.* tool result prefixes
+# the ack with "tool X ok: ", so the ack ends the text.
+law deferred_reads_prefixed_ack:
+  {Rt.deferred_of(Con{T.user("hi"),
+      Con{T.tool_res(String.append("tool self.compact ok: ",
+          Rt.COMPACT_ACK())), Nil{}}})
+    == Rt.Def{True{}, False{}} : Rt.Def}
+
+# LAW: the real program shape fires - the acks ride their own lines of
+# the escaped tool text (a literal backslash-n line boundary).
+law deferred_reads_program_acked_result:
+  {Rt.deferred_of(Con{T.user("hi"),
+      Con{S.tool_result_msg("node_program",
+          String.append("prog out\n", Rt.COMPACT_ACK()), True{}),
+        Nil{}}})
+    == Rt.Def{True{}, False{}} : Rt.Def}

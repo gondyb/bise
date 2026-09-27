@@ -713,3 +713,27 @@ def Laws.patch_kind_bare_update_header():
 
 def Laws.patch_parse_glm_variant():
   {==}
+
+def Laws.interrupt_closes_waiting_calls():
+  {==}
+
+def Laws.interrupt_closes_prog_pending():
+  {==}
+
+def Laws.interrupt_closes_agent_pending():
+  {==}
+
+def Laws.deferred_ignores_assistant_prose():
+  {==}
+
+def Laws.deferred_ignores_source_quotes():
+  {==}
+
+def Laws.deferred_ignores_midtext_marker():
+  {==}
+
+def Laws.deferred_reads_prefixed_ack():
+  {==}
+
+def Laws.deferred_reads_program_acked_result():
+  {==}

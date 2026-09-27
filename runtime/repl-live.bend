@@ -302,6 +302,12 @@ def repl_deferred(d: R.Def, +sess2: T.Session, out2: R.Out,
 def repl_end_save.then(+sess2: T.Session, out2: R.Out,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   do IO<Flow>:
+    # BR-002: the turn is over - a stale interrupt flag would kill the
+    # NEXT turn at its first boundary. The runtime is the authority on
+    # turn boundaries: clear the flag now; a flag written later
+    # belongs to a later turn (or to no turn at all).
+    +ipath : String <- R.interrupt_path()
+    uc : Unit <- P.write_file(ipath, "")
     P.save(sess2)
     # the turn asked for nothing: keep serving; else run its requests
     +d : R.Def <- IO.pure(R.Def, R.deferred_of(P.history_of(sess2)))

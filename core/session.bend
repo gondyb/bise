@@ -1078,18 +1078,65 @@ def apply.compact(+extra: String, +s: T.Session) -> T.Res:
 
 # ---- interrupt and fail_turn ----
 
+# BR-001: an interrupt must not orphan the calls the turn holds. The
+# completion carrying them is already in history; every waiting call
+# gets a failed "interrupted" tool result BEFORE the turn dies, so
+# the wire contract (every call answered by the next message) survives
+# the interrupt. The synthesized answers ride the history BEFORE
+# finish_turn commits the steering, so each answer stays adjacent to
+# its assistant call.
+
+def interrupt_closes.calls(waiting: List<&2, T.Call>,
+    +acc: List<&2, T.Msg>) -> List<&2, T.Msg>:
+  match waiting:
+    case Nil{}:
+      acc
+    case Con{+c, rest}:
+      match c:
+        case T.Call{_, +name, _}:
+          interrupt_closes.calls(rest,
+            List.append(&2, T.Msg, acc,
+              Con{tool_result_msg(name, "interrupted", False{}), Nil{}}))
+
+def interrupt_closes.kind(pp: T.Pending) -> List<&2, T.Msg>:
+  match pp:
+    case T.PTools{+waiting}:
+      interrupt_closes.calls(waiting, Nil{})
+    case T.PProg{_, _, _, _}:
+      # the program call is the turn's only unanswered call
+      Con{tool_result_msg("node_program", "interrupted", False{}), Nil{}}
+    case T.PAgent{_}:
+      # the completion is not in history yet: nothing is orphaned
+      Nil{}
+    case T.PComp{_, _, _, _, _}:
+      # a compaction holds no model-visible call
+      Nil{}
+
+def interrupt_closes(p: Maybe<&2, T.Pending>) -> List<&2, T.Msg>:
+  match p:
+    case None{}:
+      Nil{}
+    case Some{+pp}:
+      interrupt_closes.kind(pp)
+
+def with_msgs(+s: T.Session, +extra: List<&2, T.Msg>) -> T.Session:
+  match s:
+    case T.Sess{+cfg, +history, +inputs, +actions, +turn, +pending, +queued,
+        +notifs}:
+      T.Sess{cfg, List.append(&2, T.Msg, history, extra), inputs, actions,
+        turn, pending, queued, notifs}
+
 def apply.interrupt(+s: T.Session) -> T.Res:
   match s:
-    case T.Sess{_, _, _, _, +turn, _, _, _}:
-      match turn:
-        case Some{t}:
-          # the turn dies: what it was still holding is committed
-          T.Accepted{Con{T.CandidateDiscarded{"interrupt"},
-              Con{T.TurnDone{"interrupted"}, Nil{}}},
-            Nil{}, bump_inputs(finish_turn(s))}
-        case None{}:
-          # interrupting an inactive session is an accepted idempotent no-op
-          T.Accepted{Nil{}, Nil{}, bump_inputs(s)}
+    case T.Sess{_, _, _, _, Some{_}, +pending, _, _}:
+      # the turn dies: what it was still holding is committed
+      T.Accepted{Con{T.CandidateDiscarded{"interrupt"},
+          Con{T.TurnDone{"interrupted"}, Nil{}}},
+        Nil{},
+        bump_inputs(finish_turn(with_msgs(s, interrupt_closes(pending))))}
+    case T.Sess{_, _, _, _, None{}, _, _, _}:
+      # interrupting an inactive session is an accepted idempotent no-op
+      T.Accepted{Nil{}, Nil{}, bump_inputs(s)}
 
 def apply.fail(+error: String, +s: T.Session) -> T.Res:
   match s:

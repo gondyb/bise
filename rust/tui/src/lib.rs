@@ -214,6 +214,13 @@ fn parse_line(line: &str) -> Option<Ev> {
         });
     }
     if let Some(r) = line.strip_prefix("core rejected: ") {
+        // BR-003: right after an interrupt the in-flight completion has
+        // no turn to land on - expected plumbing, not an error
+        if r == "no pending completion" || r == "no pending tool result" {
+            return Some(Ev::Info(
+                "réponse en vol ignorée (tour interrompu)".into(),
+            ));
+        }
         return Some(Ev::Err(r.to_string()));
     }
     let Some(o) = line.strip_prefix("  obs: ") else {
@@ -1232,6 +1239,19 @@ const COMMANDS: &[Cmd] = &[
     },
 ];
 
+// BR-002/BR-003: the interrupt side-channel flag, shared by the Ctrl+C
+// key and the /interrupt command
+fn write_interrupt_flag(port: u16) -> bool {
+    let path = format!("/tmp/bend-interrupt-{}.txt", port);
+    std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&path)
+        .and_then(|mut f| f.write_all(b"1"))
+        .is_ok()
+}
+
 fn popup_matches(input: &str) -> Vec<&'static Cmd> {
     if !input.starts_with('/') || input.contains(' ') {
         return Vec::new();
@@ -1300,6 +1320,23 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         out.push(Ev::Info(
             "glyphes : ✦ raisonnement · ✓ ok · ✗ échec · ▲ alerte · ⟳ compaction · ≡ résumé · ↳ aperçu".into(),
         ));
+    } else if first == "/interrupt" {
+        // BR-003: the socket is only read between turns, so sending the
+        // line to the harness could never interrupt anything - the
+        // command goes through the same flag file as Ctrl+C while a
+        // turn runs, and says so at idle
+        if app.pending {
+            let ok = write_interrupt_flag(app.port);
+            app.pending = false;
+            app.interrupt_requested = true;
+            out.push(Ev::Info(if ok {
+                "interrompu — le tour en cours s'arrête au prochain point sûr".into()
+            } else {
+                "interruption non écrite (side-channel inaccessible)".into()
+            }));
+        } else {
+            out.push(Ev::Info("aucun tour en cours à interrompre".into()));
+        }
     } else if (first == "steer" || first == "/steer") && app.pending {
         // mid-turn steering goes through the FILE side-channel: the
         // harness reads the socket only between turns, but the runtime
@@ -1802,6 +1839,12 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     if line == "--- idle" {
                         app.pending = false;
                         app.interrupt_requested = false;
+                        // BR-002: a flag that outlived its turn must
+                        // not kill the next one
+                        let _ = std::fs::write(
+                            format!("/tmp/bend-interrupt-{}.txt", app.port),
+                            "",
+                        );
                     }
                     // thinking duration: the model's reply arrives one
                     // batch after the previous wire line
@@ -1955,14 +1998,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                         if app.interrupt_requested {
                             break;
                         } else if app.pending {
-                            let path = format!("/tmp/bend-interrupt-{}.txt", app.port);
-                            let ok = std::fs::OpenOptions::new()
-                                .create(true)
-                                .write(true)
-                                .truncate(true)
-                                .open(&path)
-                                .and_then(|mut f| f.write_all(b"1"))
-                                .is_ok();
+                            let ok = write_interrupt_flag(app.port);
                             // the local abort: the composer frees and the
                             // user can type right away; the flag clears
                             // when the interrupted turn's idle arrives
