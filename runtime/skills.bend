@@ -340,14 +340,16 @@ def index_path() -> IO(String):
 # ---- the startup scan (live only) ----
 # One POSIX shell script writes the index: every SKILL.md under the
 # standard skill folders with a name: and a single-line description: in
-# its frontmatter. Tabs and quotes are stripped from the fields so the
+# its frontmatter. The repo folder is scanned as $PWD/.agents/skills:
+# skill_ok keeps absolute paths only, so a relative one would drop
+# every local skill. Tabs and quotes are stripped from the fields so the
 # tab-separated line stays unambiguous; folded multi-line YAML
 # descriptions are out of scope (the Agent Skills format is one line).
 
 def scan_script(+idx: String) -> String:
   String.append(": > \"",
     String.append(idx,
-      String.append("\"\nfor d in \"$HOME/.agents/skills\" \"$HOME/.vibe/skills\" \".agents/skills\"; do\n  [ -d \"$d\" ] || continue\n  for f in \"$d\"/*/SKILL.md; do\n    [ -f \"$f\" ] || continue\n    n=$(sed -n 's/^name:[[:space:]]*//p' \"$f\" | head -n 1)\n    s=$(sed -n 's/^description:[[:space:]]*//p' \"$f\" | head -n 1)\n    n=$(printf '%s' \"$n\" | tr -d '\\t\\r\"')\n    s=$(printf '%s' \"$s\" | tr -d '\\t\\r\"')\n    [ -n \"$n\" ] && [ -n \"$s\" ] && printf '%s\\t%s\\t%s\\n' \"$n\" \"$s\" \"$f\" >> \"",
+      String.append("\"\nfor d in \"$HOME/.agents/skills\" \"$HOME/.vibe/skills\" \"$PWD/.agents/skills\"; do\n  [ -d \"$d\" ] || continue\n  for f in \"$d\"/*/SKILL.md; do\n    [ -f \"$f\" ] || continue\n    n=$(sed -n 's/^name:[[:space:]]*//p' \"$f\" | head -n 1)\n    s=$(sed -n 's/^description:[[:space:]]*//p' \"$f\" | head -n 1)\n    n=$(printf '%s' \"$n\" | tr -d '\\t\\r\"')\n    s=$(printf '%s' \"$s\" | tr -d '\\t\\r\"')\n    [ -n \"$n\" ] && [ -n \"$s\" ] && printf '%s\\t%s\\t%s\\n' \"$n\" \"$s\" \"$f\" >> \"",
         String.append(idx, "\"\n  done\ndone"))))
 
 def scan_path(+port: String) -> String:
