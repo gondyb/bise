@@ -4,24 +4,26 @@ import Base
 import ../core/api.bend as Api
 import ../runtime/main.bend as Rt
 import ../runtime/selftools.bend as Sf
+import ../runtime/selftools-pure.bend as Sfp
 import ../runtime/tools.bend as X
+import ../runtime/tools-pure.bend as Xp
 
-def res_out(+r: X.ExecRes) -> String:
+def res_out(+r: Xp.ExecRes) -> String:
   match r:
-    case X.Ex{+ok, +out}:
+    case Xp.Ex{+ok, +out}:
       String.append(Bool.show(ok), String.append("|", out))
 
-def pair_res(pr: Rt.Out & X.ExecRes) -> X.ExecRes:
+def pair_res(pr: Rt.Out & Xp.ExecRes) -> Xp.ExecRes:
   match pr:
     case (_, r):
       r
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    pr : Rt.Out & X.ExecRes <- Rt.exec_program(1000n,
-      (Rt.OStd{}, (Sf.def_none(), Rt.EpRun{})),
+    pr : Rt.Out & Xp.ExecRes <- Rt.exec_program(1000n,
+      (Rt.OStd{}, (Sfp.def_none(), Rt.EpRun{})),
       Api.call_code("const r = self.reload(); return 'done';"),
       Nil{}, True{})
-    +r : X.ExecRes <- IO.pure(X.ExecRes, pair_res(pr))
+    +r : Xp.ExecRes <- IO.pure(Xp.ExecRes, pair_res(pr))
     u : Unit <- IO.print(String.append("V8-RESULT=[", String.append(res_out(r), "]\n")))
     IO.pure(Unit, Unit{})

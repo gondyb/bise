@@ -6,6 +6,7 @@ import Base
 import ../core/text.bend as Tx
 import ./persist.bend as P
 import 0x9bfd9d57916f3439316c2775fd1f10b4/main.bend as Snap
+import ./settings-pure.bend as Stp
 # ---- the config file (~/.bend-harness/config.toml) ----
 # The vibe CLI ergonomics: a commented template is written on first
 # run; every key answers the same precedence - environment variable >
@@ -54,9 +55,6 @@ def read_cfg() -> IO(String):
     m : Maybe<&2, String> <- read_cfg_m()
     IO.pure(String, cfg_text_of(m))
 
-def CONFIG_TEMPLATE() -> String:
-  "# bend-harness configuration.\n# Precedence on every key: environment variable > this file > built-in default.\n\n# The model to use: a name or an alias from the provider table\n# (opus-5.5 / claude-opus-5-5 -> foundry-anthropic; zai-glm-5-3 -> mistral)\nmodel = \"opus-5.5\"\n\n# The compaction threshold, in estimated tokens (default 800000)\nthreshold = 800000\n\n# A bash command still running after this many seconds moves to the\n# background and the agent keeps going (default 30)\nbg_after = 30\n"
-
 # the commented template lands on disk when the file does not exist
 def write_cfg_template.m(m: Maybe<&2, String>, +path: String)
     -> IO(Unit):
@@ -68,7 +66,7 @@ def write_cfg_template.m(m: Maybe<&2, String>, +path: String)
         o : String <- Snap.run(Con{"/bin/sh", Con{"-c",
           Con{String.append("mkdir -p -- \"$(dirname -- ",
             String.append(Tx.sh_quote(path), ")\"")), Nil{}}}})
-        w : Unit <- P.write_file(path, CONFIG_TEMPLATE())
+        w : Unit <- P.write_file(path, Stp.CONFIG_TEMPLATE())
         IO.pure(Unit, Unit{})
 
 def write_cfg_template() -> IO(Unit):

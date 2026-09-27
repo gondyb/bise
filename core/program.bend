@@ -28,7 +28,7 @@
 # values).
 import Base
 import ./types.bend as T
-import 0x16458a2db4f36577294543ec2a6d420c/json.bend as Jv
+import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
 
 # the interpreter's verdict
 type PR is Data:
@@ -1048,28 +1048,33 @@ def on_str(on: Bool) -> String:
     case False{}:
       "false"
 
-# render a JSON value as text
-def render(v: Jv.Val) -> String:
+# render a JSON value as text: a string is its content, every other
+# value its JSON text (numbers keep their written form)
+def render(v: J.Json) -> String:
   match v:
-    case Jv.Str{+s}:
+    case J.JStr{+s}:
       s
-    case Jv.Num{+s}:
-      s
-    case Jv.Flag{+on}:
+    case J.JBool{+on}:
       on_str(on)
-    case Jv.Null{}:
+    case J.JNull{}:
       "null"
-    case Jv.Arr{+xs}:
-      Jv.encode(v)
-    case Jv.Obj{+m}:
-      Jv.encode(v)
+    case _:
+      J.stringify(v)
+
+# the parse result as a Maybe (a malformed value is no value)
+def parse_m(r: Result<&2, &2, String, J.Json>) -> Maybe<&2, J.Json>:
+  match r:
+    case Done{+j}:
+      Some{j}
+    case Fail{_}:
+      None{}
 
 # walk a .field path over a parsed JSON result
 type WalkSt is Data:
-  WVal{v: Jv.Val, path: List<&2, String>}
-  WGot{m: Maybe<&2, Jv.Val>, path: List<&2, String>}
+  WVal{v: J.Json, path: List<&2, String>}
+  WGot{m: Maybe<&2, J.Json>, path: List<&2, String>}
 
-def walk.step(fuel: Nat, st: WalkSt) -> Maybe<&2, Jv.Val>:
+def walk.step(fuel: Nat, st: WalkSt) -> Maybe<&2, J.Json>:
   match fuel:
     case 0n:
       None{}
@@ -1080,7 +1085,7 @@ def walk.step(fuel: Nat, st: WalkSt) -> Maybe<&2, Jv.Val>:
             case Nil{}:
               Some{v}
             case Con{+p, +rest}:
-              walk.step(k, WGot{Jv.get(v, p), rest})
+              walk.step(k, WGot{J.get(v, p), rest})
         case WGot{+m, +path}:
           match m:
             case None{}:
@@ -1088,11 +1093,11 @@ def walk.step(fuel: Nat, st: WalkSt) -> Maybe<&2, Jv.Val>:
             case Some{+w}:
               walk.step(k, WVal{w, path})
 
-def walk(v: Jv.Val, +path: List<&2, String>) -> Maybe<&2, Jv.Val>:
+def walk(v: J.Json, +path: List<&2, String>) -> Maybe<&2, J.Json>:
   walk.step(Nat.add(Nat.mul(List.length(&2, String, path), 2n), 8n),
     WVal{v, path})
 
-def render_m(m: Maybe<&2, Jv.Val>) -> String:
+def render_m(m: Maybe<&2, J.Json>) -> String:
   match m:
     case None{}:
       ""
@@ -1100,7 +1105,7 @@ def render_m(m: Maybe<&2, Jv.Val>) -> String:
       render(v)
 
 # a missing field renders as "" (truthy: false)
-def refval.deep.res(r: Maybe<&2, Jv.Val>, +path: List<&2, String>) -> String:
+def refval.deep.res(r: Maybe<&2, J.Json>, +path: List<&2, String>) -> String:
   match r:
     case Some{+v}:
       render_m(walk(v, path))
@@ -1108,7 +1113,7 @@ def refval.deep.res(r: Maybe<&2, Jv.Val>, +path: List<&2, String>) -> String:
       ""
 
 def refval.deep(+j: String, +path: List<&2, String>) -> String:
-  refval.deep.res(Jv.parse(j), path)
+  refval.deep.res(parse_m(J.parse(j)), path)
 
 def refval.found(j: String, +path: List<&2, String>) -> RRes:
   match path:
@@ -1145,22 +1150,22 @@ def lookup(+env: List<&2, Bind>, +name: String) -> Maybe<&2, String>:
     LEnv{env, name})
 
 # JSON truthiness for conditions
-def truthy.v(v: Jv.Val) -> Bool:
+def truthy.v(v: J.Json) -> Bool:
   match v:
-    case Jv.Str{+s}:
+    case J.JStr{+s}:
       Bool.not(String.is_empty(s))
-    case Jv.Num{+s}:
-      Bool.not(String.eq(s, "0"))
-    case Jv.Flag{+on}:
+    case J.JNum{+n}:
+      Bool.not(Nat.is_eq(n, 0n))
+    case J.JRaw{+r}:
+      Bool.not(String.eq(r, "0"))
+    case J.JBool{+on}:
       on
-    case Jv.Null{}:
+    case J.JNull{}:
       False{}
-    case Jv.Arr{+xs}:
-      True{}
-    case Jv.Obj{+m}:
+    case _:
       True{}
 
-def truthy.res(r: Maybe<&2, Jv.Val>) -> Bool:
+def truthy.res(r: Maybe<&2, J.Json>) -> Bool:
   match r:
     case None{}:
       False{}
@@ -1168,7 +1173,7 @@ def truthy.res(r: Maybe<&2, Jv.Val>) -> Bool:
       truthy.v(v)
 
 def truthy(+j: String) -> Bool:
-  truthy.res(Jv.parse(j))
+  truthy.res(parse_m(J.parse(j)))
 
 def refval.look(m: Maybe<&2, String>, +name: String,
     +path: List<&2, String>) -> RRes:

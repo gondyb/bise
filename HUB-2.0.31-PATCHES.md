@@ -49,8 +49,22 @@ The harness's own listeners (runtime/repl-live.bend, runtime/repl.bend)
 bind "127.0.0.1": every client connects there, and a REPL that runs bash
 must not be reachable from the network.
 
-Also new in 2.0.32: a def that relies on `@unsafe` or foreign code now
-makes `bend PROOF.bend` print SOME PROOFS FAIL (exit 1) and list every
-such def, where 2.0.31 printed "All terms check, but N defs rely on
-unsafe or foreign code". The laws concerned are the same 19 as before;
-no law is false. `bend <file> -o <out>` still builds (exit 0).
+Also new in 2.0.32: ANY def in the checked import closure that is
+`@unsafe` or foreign - even one no law reaches - makes `bend PROOF.bend`
+print SOME PROOFS FAIL (exit 1), where 2.0.31 printed "All terms check,
+but N defs rely on unsafe or foreign code". `bend <file> -o <out>` still
+builds (exit 0).
+
+The gate is green again (ALL PROOFS CHECK) because LAWS.bend imports
+only pure modules:
+- core/program.bend parses JSON with the pure RFC 8259 library
+  (0x1f4d6c03) instead of 0x16458a2d (whose encoder is `@unsafe`);
+  runtime/main.bend and runtime/skills.bend switched with it.
+- every runtime module the laws pin is split in two: `<name>-pure.bend`
+  holds the defs the laws reach (no IO, no `@unsafe`, no foreign code
+  in their closure) and `<name>.bend` keeps the effects and imports it.
+  The LAWS aliases (Rt, Sh, Xt, Pv, Sf, St, Mc, Sk, Rp) point at the
+  pure halves, so the law texts did not change.
+- the provider retry policy judges plain values (status, Retry-After,
+  mapped reply; NetErr for transport failures) instead of the Http
+  types, whose library is `@unsafe`.

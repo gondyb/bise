@@ -292,6 +292,39 @@ def Laws.attempt_timeout_retries():
 def Laws.attempt_tls_fails():
   {==}
 
+def Laws.retryable_status_transient():
+  {==}
+
+def Laws.retryable_err_midstream():
+  {==}
+
+def Laws.provider_max_attempts():
+  {==}
+
+def Laws.provider_backoff_schedule():
+  {==}
+
+def Laws.provider_retry_after():
+  {==}
+
+def Laws.provider_529_retries_with_hint():
+  {==}
+
+def Laws.provider_200_error_body_retries():
+  {==}
+
+def Laws.provider_ok_passes_through():
+  {==}
+
+def Laws.provider_client_error_is_final():
+  {==}
+
+def Laws.provider_retry_line():
+  {==}
+
+def Laws.provider_exhausted_text():
+  {==}
+
 def Laws.exec_of_exit_still_fails():
   {==}
 

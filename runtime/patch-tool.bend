@@ -5,6 +5,7 @@
 import Base
 import ../core/text.bend as Tx
 import ./tools.bend as X
+import ./tools-pure.bend as Xp
 import ./persist.bend as P
 import ../core/patch.bend as Pa
 import 0x9bfd9d57916f3439316c2775fd1f10b4/main.bend as Snap
@@ -164,40 +165,40 @@ def exec_patch.run(preps: List<&2, Prep>, +acc: List<&2, String>)
               Con{String.append("rm -f -- ", Tx.sh_quote(path)), Nil{}}}})
             exec_patch.run(rest, Con{String.append("deleted ", path), acc})
 
-def exec_patch.done(pv: PV) -> IO(X.ExecRes):
+def exec_patch.done(pv: PV) -> IO(Xp.ExecRes):
   match pv:
     case PVFail{+reason}:
-      IO.pure(X.ExecRes, X.Ex{False{}, reason})
+      IO.pure(Xp.ExecRes, Xp.Ex{False{}, reason})
     case PVOk{+preps}:
-      do IO<X.ExecRes>:
+      do IO<Xp.ExecRes>:
         lines : List<&2, String> <- exec_patch.run(preps, Nil{})
-        IO.pure(X.ExecRes, X.Ex{True{}, patch_summary(lines)})
+        IO.pure(Xp.ExecRes, Xp.Ex{True{}, patch_summary(lines)})
 
-def exec_patch.parse_none() -> X.ExecRes:
-  X.Ex{False{}, "invalid patch: the first line must be '*** Begin Patch' and the last '*** End Patch'; inside an Update File section every line must start with ' ' (context), '+' (added) or '-' (removed); an Update File section needs at least one chunk"}
+def exec_patch.parse_none() -> Xp.ExecRes:
+  Xp.Ex{False{}, "invalid patch: the first line must be '*** Begin Patch' and the last '*** End Patch'; inside an Update File section every line must start with ' ' (context), '+' (added) or '-' (removed); an Update File section needs at least one chunk"}
 
-def exec_patch.parse(acts: Maybe<&2, List<&2, Pa.PAction>>) -> IO(X.ExecRes):
+def exec_patch.parse(acts: Maybe<&2, List<&2, Pa.PAction>>) -> IO(Xp.ExecRes):
   match acts:
     case None{}:
-      IO.pure(X.ExecRes, exec_patch.parse_none())
+      IO.pure(Xp.ExecRes, exec_patch.parse_none())
     case Some{+actions}:
-      do IO<X.ExecRes>:
+      do IO<Xp.ExecRes>:
         m : Maybe<&2, String> <- exec_patch.read_next(actions)
         pv : PV <- exec_patch.val(actions, Nil{}, m)
         exec_patch.done(pv)
 
-def exec_patch.live(+args: String) -> IO(X.ExecRes):
-  do IO<X.ExecRes>:
+def exec_patch.live(+args: String) -> IO(Xp.ExecRes):
+  do IO<Xp.ExecRes>:
     acts : Maybe<&2, List<&2, Pa.PAction>> <- IO.pure(
       Maybe<&2, List<&2, Pa.PAction>>, Pa.parse_patch(args))
     exec_patch.parse(acts)
 
-def exec_patch.scripted() -> X.ExecRes:
-  X.Ex{False{}, "apply_patch needs a live session"}
+def exec_patch.scripted() -> Xp.ExecRes:
+  Xp.Ex{False{}, "apply_patch needs a live session"}
 
-def exec_patch(+args: String, live: Bool) -> IO(X.ExecRes):
+def exec_patch(+args: String, live: Bool) -> IO(Xp.ExecRes):
   match live:
     case True{}:
       exec_patch.live(args)
     case False{}:
-      IO.pure(X.ExecRes, exec_patch.scripted())
+      IO.pure(Xp.ExecRes, exec_patch.scripted())

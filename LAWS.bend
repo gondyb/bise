@@ -14,16 +14,15 @@ import ./core/commands.bend as Cm
 import ./core/api.bend as Api
 import ./core/obs.bend as O
 import ./runtime/remote.bend as Rm
-import ./runtime/tools.bend as Xt
-import ./runtime/main.bend as Rt
-import ./runtime/bash.bend as Sh
-import ./runtime/provider.bend as Pv
-import ./runtime/selftools.bend as Sf
-import ./runtime/settings.bend as St
-import ./runtime/mcp.bend as Mc
-import ./runtime/skills.bend as Sk
-import ./runtime/repl-core.bend as Rp
-import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
+import ./runtime/tools-pure.bend as Xt
+import ./runtime/main-pure.bend as Rt
+import ./runtime/bash-pure.bend as Sh
+import ./runtime/provider-pure.bend as Pv
+import ./runtime/selftools-pure.bend as Sf
+import ./runtime/settings-pure.bend as St
+import ./runtime/mcp-pure.bend as Mc
+import ./runtime/skills-pure.bend as Sk
+import ./runtime/repl-core-pure.bend as Rp
 import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
 
 # LAW: a checkpoint restores to exactly the session it exported.
@@ -1564,24 +1563,97 @@ law retryable_status_table:
 # not (retrying a TLS failure or a bad URL only wastes the turn).
 law retryable_err_table:
   {Bool.and(
-      Bool.and(Pv.retryable_err(Http.ErrConnect{1, "refused"}),
-        Pv.retryable_err(Http.ErrDns{})),
-      Bool.and(Pv.retryable_err(Http.ErrTimeout{}),
-        Bool.and(Bool.not(Pv.retryable_err(Http.ErrTls{1, "handshake"})),
-          Bool.not(Pv.retryable_err(Http.ErrUrl{}))))
+      Bool.and(Pv.retryable_err(Pv.NConnect{1, "refused"}),
+        Pv.retryable_err(Pv.NDns{})),
+      Bool.and(Pv.retryable_err(Pv.NTimeout{}),
+        Bool.and(Bool.not(Pv.retryable_err(Pv.NTls{1, "handshake"})),
+          Bool.not(Pv.retryable_err(Pv.NUrl{}))))
     )
     == True{} : Bool}
 
 # LAW: a transient network failure classifies as a retry with the
 # failure text carried for the final error if retries run out.
 law attempt_timeout_retries:
-  {Pv.attempt_fail2(Http.ErrTimeout{})
-    == Pv.ARetry{1500, Pv.api_err(Http.ErrTimeout{})} : Pv.Attempt}
+  {Pv.attempt_err(Pv.NTimeout{})
+    == Pv.ARetry{0, "timeout"} : Pv.Attempt}
 
 # LAW: a TLS failure classifies as final — no retry.
 law attempt_tls_fails:
-  {Pv.attempt_fail2(Http.ErrTls{1, "handshake"})
-    == Pv.AFail{Http.ErrTls{1, "handshake"}} : Pv.Attempt}
+  {Pv.attempt_err(Pv.NTls{1, "handshake"})
+    == Pv.AFail{"provider unreachable: tls 1 handshake"} : Pv.Attempt}
+
+# LAW: the other transient statuses retry too - 529 (Anthropic
+# overloaded), 408, 425 - while auth and validation errors do not.
+law retryable_status_transient:
+  {Bool.and(
+      Bool.and(Pv.retryable_status(529), Pv.retryable_status(408)),
+      Bool.and(Pv.retryable_status(425),
+        Bool.and(Bool.not(Pv.retryable_status(400)),
+          Bool.not(Pv.retryable_status(401)))))
+    == True{} : Bool}
+
+# LAW: a connection cut mid-response (read, write) and a garbled
+# response retry: the request never produced an answer.
+law retryable_err_midstream:
+  {Bool.and(Pv.retryable_err(Pv.NRead{54, "reset"}),
+      Bool.and(Pv.retryable_err(Pv.NWrite{32, "broken pipe"}),
+        Pv.retryable_err(Pv.NBad{})))
+    == True{} : Bool}
+
+# LAW: ten attempts in total.
+law provider_max_attempts:
+  {Pv.max_attempts() == 10n : Nat}
+
+# LAW: the backoff doubles from 1s and caps at 30s; a server hint
+# (Retry-After) wins over it.
+law provider_backoff_schedule:
+  {Bool.and(U32.is_eq(Pv.retry_delay_ms(0, 0n), 1000),
+      Bool.and(U32.is_eq(Pv.retry_delay_ms(0, 3n), 8000),
+        Bool.and(U32.is_eq(Pv.retry_delay_ms(0, 8n), 30000),
+          U32.is_eq(Pv.retry_delay_ms(5000, 2n), 5000))))
+    == True{} : Bool}
+
+# LAW: Retry-After is read in seconds, capped at 60s; garbage is no hint.
+law provider_retry_after:
+  {Bool.and(U32.is_eq(Pv.retry_after_ms(" 12 "), 12000),
+      Bool.and(U32.is_eq(Pv.retry_after_ms("600"), 60000),
+        U32.is_eq(Pv.retry_after_ms("soon"), 0)))
+    == True{} : Bool}
+
+# LAW: a transient status carries the server's Retry-After into the retry.
+law provider_529_retries_with_hint:
+  {Pv.attempt_status(529, "7", "ERROR provider 529: busy\nEND\n")
+    == Pv.ARetry{7000, "provider 529 (transient)"} : Pv.Attempt}
+
+# LAW: a 200 that carries an error body (the proxy's overload answer)
+# is a retry, never a final reply.
+law provider_200_error_body_retries:
+  {Pv.attempt_status(200, "",
+      Api.reply_of_for(Api.Anthropic{}, 200,
+        "{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}"))
+    == Pv.ARetry{0, "provider 200: Overloaded"} : Pv.Attempt}
+
+# LAW: a good response is the reply itself.
+law provider_ok_passes_through:
+  {Pv.attempt_status(200, "", "OK hi\nEND\n")
+    == Pv.AOk{"OK hi\nEND\n"} : Pv.Attempt}
+
+# LAW: a client error is final: the style mapper already made it the
+# ERROR reply the turn fails on - retrying it only wastes the user's time.
+law provider_client_error_is_final:
+  {Pv.attempt_status(400, "", "ERROR provider 400: bad\nEND\n")
+    == Pv.AOk{"ERROR provider 400: bad\nEND\n"} : Pv.Attempt}
+
+# LAW: every retry shows the user where the call stands.
+law provider_retry_line:
+  {Pv.retry_line(0n, "provider 529 (transient)", 1000)
+    == "  obs: provider_retry: 1/10 · provider 529 (transient) · retry in 1s"
+    : String}
+
+# LAW: the final error says how many attempts ran and why the last failed.
+law provider_exhausted_text:
+  {Pv.exhausted_text(10n, "timeout")
+    == "provider failed after 10 attempts: timeout" : String}
 
 # ---- apply_patch: the parser and the strict matcher (core/patch.bend) ----
 # Codex V4A. The parser is pinned byte-for-byte on concrete patches

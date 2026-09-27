@@ -1,9 +1,10 @@
 # runtime/provider.bend — the live provider call.
 #
-# The provider table (model -> API style, URL, key, headers), the HTTPS
-# call through the hub HTTP client, the retry policy for transient
-# failures, and the reply rendered as the OK/CALL/END lines
-# runtime/remote.bend parses.
+# The HTTPS call through the hub HTTP client, the retry loop, and the
+# reply rendered as the OK/CALL/END lines runtime/remote.bend parses.
+# The provider table and the retry policy are pure and live in
+# runtime/provider-pure.bend (the laws pin them there); this module
+# only maps the Http values onto that policy and runs the effects.
 import Base
 import ../core/api.bend as Api
 import ./persist.bend as P
@@ -12,36 +13,34 @@ import ../core/config.bend as Cf
 import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
 import 0xbf477e663cf4acb1369a68e0f0fa713b/encoding/encoding.bend as Enc
 import ./settings.bend as St
+import ./provider-pure.bend as Pvp
 # ---- the live provider call, fully in Bend (hub HTTP client) ----
-# The wire request (MODEL/TOOL/MSG/CALL lines) becomes the
-# OpenAI-compatible JSON in core/api.bend, is POSTed to api.mistral.ai
-# by the hub HTTP client, and the reply maps back through core/api.bend
-# into the OK/CALL/END string remote.bend parses. No bridge process.
+# The wire request (MODEL/TOOL/MSG/CALL lines) becomes the provider
+# JSON in core/api.bend, is POSTed by the hub HTTP client, and the reply
+# maps back through core/api.bend into the OK/CALL/END string remote.bend
+# parses. No bridge process.
 
-def api_err(e: Http.Err) -> String:
+# the transport failure, as the pure policy sees it
+def net_of(e: Http.Err) -> Pvp.NetErr:
   match e:
     case Http.ErrUrl{}:
-      "bad url"
+      Pvp.NUrl{}
     case Http.ErrDns{}:
-      "dns"
+      Pvp.NDns{}
     case Http.ErrConnect{+c, +w}:
-      String.append("connect ",
-        String.append(U32.show(c), String.append(" ", w)))
+      Pvp.NConnect{c, w}
     case Http.ErrTls{+c, +w}:
-      String.append("tls ",
-        String.append(U32.show(c), String.append(" ", w)))
+      Pvp.NTls{c, w}
     case Http.ErrRead{+c, +w}:
-      String.append("read ",
-        String.append(U32.show(c), String.append(" ", w)))
+      Pvp.NRead{c, w}
     case Http.ErrWrite{+c, +w}:
-      String.append("write ",
-        String.append(U32.show(c), String.append(" ", w)))
+      Pvp.NWrite{c, w}
     case Http.ErrTimeout{}:
-      "timeout"
+      Pvp.NTimeout{}
     case Http.ErrRedirect{}:
-      "too many redirects"
+      Pvp.NRedirect{}
     case Http.ErrBad{}:
-      "bad response"
+      Pvp.NBad{}
 
 # BEND_WIRE_DUMP=<path>: write the last provider request body (debug)
 def dump_wire.write(+path: String, +body: String) -> IO(Unit):
@@ -58,58 +57,6 @@ def dump_wire.skip(empty: Bool, +path: String, +body: String) -> IO(Unit):
 
 def dump_wire(+path: String, +body: String) -> IO(Unit):
   dump_wire.skip(String.is_empty(path), path, body)
-
-def model_call.err(e: Http.Err) -> IO(Rem.RemoteRes):
-  do IO<Rem.RemoteRes>:
-    IO.pure(Rem.RemoteRes,
-      Rem.RRErr{String.append("provider unreachable: ", api_err(e))})
-
-# ---- the provider table (the vibe config.toml mirror) ----
-# A provider carries an api_base, a key env and an api_style; a model
-# points at one. The active model today is opus-5.5: alias
-# "opus-5.5" -> name "claude-opus-5-5" on foundry-anthropic (the
-# Messages API through the foundry proxy); the Mistral provider keeps
-# the OpenAI-compatible mapping the laws pinned with GLM.
-
-def resolve_model.pick(is_alias: Bool, +name: String) -> String:
-  match is_alias:
-    case True{}:
-      "claude-opus-5-5"
-    case False{}:
-      name
-
-def resolve_model(+name: String) -> String:
-  resolve_model.pick(String.eq(name, "opus-5.5"), name)
-
-def model_style.pick(is_claude: Bool) -> Api.Style:
-  match is_claude:
-    case True{}:
-      Api.Anthropic{}
-    case False{}:
-      Api.OpenAI{}
-
-def model_style(+model: String) -> Api.Style:
-  model_style.pick(String.starts_with(model, "claude"))
-
-def model_url.pick(is_anth: Bool) -> String:
-  match is_anth:
-    case True{}:
-      "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages"
-    case False{}:
-      "https://api.mistral.ai/v1/chat/completions"
-
-def model_url(st: Api.Style) -> String:
-  model_url.pick(Api.is_anthropic(st))
-
-def model_key_env.pick(is_anth: Bool) -> String:
-  match is_anth:
-    case True{}:
-      "ANTHROPIC_FOUNDRY_API_KEY"
-    case False{}:
-      "MISTRAL_API_KEY"
-
-def model_key_env(st: Api.Style) -> String:
-  model_key_env.pick(Api.is_anthropic(st))
 
 def oai_headers(+key: String) -> Map<&2, List<&2, String>>:
   Http.set(Http.set(Http.empty(), "Authorization",
@@ -134,11 +81,6 @@ def model_headers.pick(is_anth: Bool, +key: String) -> Map<&2, List<&2, String>>
 def model_headers(st: Api.Style, +key: String) -> Map<&2, List<&2, String>>:
   model_headers.pick(Api.is_anthropic(st), key)
 
-def model_call.reply(st: Api.Style, +res: Http.Res) -> String:
-  match res:
-    case Http.Res{+status, _, _}:
-      Api.reply_of_for(st, status, Http.text(res))
-
 # BEND_WIRE_DUMP also captures the raw provider response (suffix .reply):
 # the tool-call arguments exactly as the provider serialized them,
 # before any harness parsing - the ground truth for wire-encoding bugs.
@@ -155,141 +97,121 @@ def model_call.res.dumper(m: Result<&1, &1, U32 & String, String>, +res: Http.Re
     case Done{+path}:
       model_call.dump_res(path, Http.text(res))
 
-def model_call.res(+res: Http.Res, st: Api.Style) -> IO(Rem.RemoteRes):
-  do IO<Rem.RemoteRes>:
-    dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
-    d : Unit <- model_call.res.dumper(dr, res)
-    reply : String <- IO.pure(String, model_call.reply(st, res))
-    IO.pure(Rem.RemoteRes, Rem.parse_reply(reply))
-
-# transient failures get another chance: connection loss, DNS, timeouts
-# and server-side statuses (5xx, 429) retry with a pause; everything else
-# (4xx auth/validation) fails the candidate immediately. The outcome is
-# classified PURELY into an Attempt; the retry goes through a
-# continuation closure that self-references the loop (the exec_done
-# idiom — mutual recursion between defs is not expressible).
-type Attempt is Data:
-  AOk{res: Http.Res}
-  AFail{e: Http.Err}
-  ARetry{after_ms: U32, why: String}
-
-def retryable_err(e: Http.Err) -> Bool:
-  match e:
-    case Http.ErrConnect{_, _}:
-      True{}
-    case Http.ErrDns{}:
-      True{}
-    case Http.ErrTimeout{}:
-      True{}
-    case _:
-      False{}
-
-def retryable_status(+s: U32) -> Bool:
-  Bool.or(U32.is_le(500, s), U32.is_eq(s, 429))
-
-def attempt_res.status_of(+res: Http.Res) -> U32:
+# a response, judged by the pure policy: its status, its Retry-After,
+# and the reply the style mapper made of its body
+def verdict_res(+res: Http.Res, st: Api.Style) -> Pvp.Attempt:
   match res:
-    case Http.Res{+status, _, _}:
-      status
+    case Http.Res{+status, +h, _}:
+      Pvp.attempt_status(status, Http.header(h, "retry-after"),
+        Api.reply_of_for(st, status, Http.text(res)))
 
-def attempt_ok(retryable: Bool, +res: Http.Res) -> Attempt:
-  match retryable:
-    case True{}:
-      ARetry{1500, String.append("provider ",
-        String.append(U32.show(attempt_res.status_of(res)), " (transient)"))}
-    case False{}:
-      AOk{res}
-
-def attempt_res(+res: Http.Res) -> Attempt:
-  attempt_ok(retryable_status(attempt_res.status_of(res)), res)
-
-def attempt_fail(retryable: Bool, +e: Http.Err) -> Attempt:
-  match retryable:
-    case True{}:
-      ARetry{1500, api_err(e)}
-    case False{}:
-      AFail{e}
-
-def attempt_fail2(+e: Http.Err) -> Attempt:
-  attempt_fail(retryable_err(e), e)
-
-def model_call.attempt_result(r: Result<&2, &2, Http.Err, Http.Res>)
-    -> Attempt:
+def model_call.verdict(r: Result<&2, &2, Http.Err, Http.Res>, st: Api.Style)
+    -> IO(Pvp.Attempt):
   match r:
     case Done{+res}:
-      attempt_res(res)
+      do IO<Pvp.Attempt>:
+        dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
+        d : Unit <- model_call.res.dumper(dr, res)
+        IO.pure(Pvp.Attempt, verdict_res(res, st))
     case Fail{+e}:
-      attempt_fail2(e)
+      IO.pure(Pvp.Attempt, Pvp.attempt_err(net_of(e)))
 
-def interrupt_path_of(+port: String) -> String:
-  String.append("/tmp/bend-interrupt-", String.append(port, ".txt"))
+# ---- where the retry notes go: the loop's output, carried through ----
+# (runtime/main.bend's Out, mirrored: this module sits below main)
+
+type Note is Type:
+  NStd{}
+  NNet{sock: Socket}
+
+def note.pair(sm: Socket & Result<&1, &1, U32 & String, Unit>) -> Socket:
+  match sm:
+    case (s2, _):
+      s2
+
+def note(n: Note, +line: String) -> IO(Note):
+  match n:
+    case NStd{}:
+      do IO<Note>:
+        IO.print(line)
+        IO.pure(Note, NStd{})
+    case NNet{sock}:
+      do IO<Note>:
+        sm : Socket & Result<&1, &1, U32 & String, Unit> <- TCP.send(sock,
+          String.append(line, "\n"))
+        s2 : Socket <- IO.pure(Socket, note.pair(sm))
+        IO.pure(Note, NNet{s2})
 
 def interrupt_path() -> IO(String):
   do IO<String>:
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
     +p : String <- IO.pure(String, P.env_or(pr, "0"))
-    IO.pure(String, interrupt_path_of(p))
+    IO.pure(String, Pvp.interrupt_path_of(p))
 
 # BR-005: a Ctrl+C landing during a failed attempt must not wait for
 # the remaining retries: the flag is read between attempts, and when
 # set the call bails out - the completion_fail path then fails the
 # turn cleanly instead of another 2-minute round trip.
-def model_call.step.retry.interrupted(set: Bool, +ipath: String,
+def model_call.step.retry.interrupted(set: Bool, n: Note, +ipath: String,
     +k: Nat, +after_ms: U32,
-    next: Nat -> IO(Rem.RemoteRes)) -> IO(Rem.RemoteRes):
+    next: Nat -> Note -> IO(Note & Rem.RemoteRes)) -> IO(Note & Rem.RemoteRes):
   match set:
     case True{}:
-      do IO<Rem.RemoteRes>:
+      do IO<Note & Rem.RemoteRes>:
         # consume the flag so the boundary drains stay clean
         u : Unit <- P.write_file(ipath, "")
-        IO.pure(Rem.RemoteRes, Rem.RRErr{"interrupted by the user"})
+        IO.pure(Note & Rem.RemoteRes, (n, Rem.RRErr{"interrupted by the user"}))
     case False{}:
-      do IO<Rem.RemoteRes>:
+      do IO<Note & Rem.RemoteRes>:
         IO.sleep(after_ms)
-        next(k)
+        next(k)(n)
 
-def model_call.step.retry.flag(m: Maybe<&2, String>, +ipath: String,
+def model_call.step.retry.flag(m: Maybe<&2, String>, n: Note, +ipath: String,
     +k: Nat, +after_ms: U32,
-    next: Nat -> IO(Rem.RemoteRes)) -> IO(Rem.RemoteRes):
+    next: Nat -> Note -> IO(Note & Rem.RemoteRes)) -> IO(Note & Rem.RemoteRes):
   match m:
     case None{}:
-      do IO<Rem.RemoteRes>:
+      do IO<Note & Rem.RemoteRes>:
         IO.sleep(after_ms)
-        next(k)
+        next(k)(n)
     case Some{+c}:
-      model_call.step.retry.interrupted(String.is_empty(c), ipath, k,
+      model_call.step.retry.interrupted(String.is_empty(c), n, ipath, k,
         after_ms, next)
 
-def model_call.step.retry(can: Bool, +k: Nat, +after_ms: U32, +why: String,
-    next: Nat -> IO(Rem.RemoteRes)) -> IO(Rem.RemoteRes):
+def model_call.step.retry(can: Bool, n: Note, +k: Nat, +tries: Nat,
+    +delay_ms: U32, +why: String,
+    next: Nat -> Note -> IO(Note & Rem.RemoteRes)) -> IO(Note & Rem.RemoteRes):
   match can:
     case True{}:
-      do IO<Rem.RemoteRes>:
+      do IO<Note & Rem.RemoteRes>:
+        n2 : Note <- note(n, Pvp.retry_line(tries, why, delay_ms))
         +ipath : String <- interrupt_path()
         m : Maybe<&2, String> <- P.read_file(ipath)
-        model_call.step.retry.flag(m, ipath, k, after_ms, next)
+        model_call.step.retry.flag(m, n2, ipath, k, delay_ms, next)
     case False{}:
-      IO.pure(Rem.RemoteRes, Rem.RRErr{why})
+      IO.pure(Note & Rem.RemoteRes,
+        (n, Rem.RRErr{Pvp.exhausted_text(Nat.add(tries, 1n), why)}))
 
-def model_call.step(a: Attempt, +k: Nat, st: Api.Style,
-    next: Nat -> IO(Rem.RemoteRes)) -> IO(Rem.RemoteRes):
+def model_call.step(a: Pvp.Attempt, n: Note, +k: Nat, +tries: Nat,
+    next: Nat -> Note -> IO(Note & Rem.RemoteRes)) -> IO(Note & Rem.RemoteRes):
   match a:
-    case AOk{+res}:
-      model_call.res(res, st)
-    case AFail{+e}:
-      model_call.err(e)
-    case ARetry{+after_ms, +why}:
-      model_call.step.retry(Nat.is_lt(0n, k), k, after_ms, why, next)
+    case Pvp.AOk{+reply}:
+      IO.pure(Note & Rem.RemoteRes, (n, Rem.parse_reply(reply)))
+    case Pvp.AFail{+why}:
+      IO.pure(Note & Rem.RemoteRes, (n, Rem.RRErr{why}))
+    case Pvp.ARetry{+after_ms, +why}:
+      model_call.step.retry(Nat.is_lt(0n, k), n, k, tries,
+        Pvp.retry_delay_ms(after_ms, tries), why, next)
 
 @unsafe
-def model_call.try(fuel: Nat, +request: String, +key: String,
-    +st: Api.Style, +model: String) -> IO(Rem.RemoteRes):
+def model_call.try(fuel: Nat, +tries: Nat, n: Note, +request: String,
+    +key: String, +st: Api.Style, +model: String)
+    -> IO(Note & Rem.RemoteRes):
   match fuel:
     case 0n:
-      IO.pure(Rem.RemoteRes,
-        Rem.RRErr{"provider unreachable: retries exhausted"})
+      IO.pure(Note & Rem.RemoteRes,
+        (n, Rem.RRErr{"provider unreachable: retries exhausted"}))
     case 1n+k:
-      do IO<Rem.RemoteRes>:
+      do IO<Note & Rem.RemoteRes>:
         +body : String <- IO.pure(String,
           Enc.utf8.encode(Api.api_body_for(st, model,
             Api.parse_wire(request))))
@@ -297,25 +219,26 @@ def model_call.try(fuel: Nat, +request: String, +key: String,
         dump_dbg : Unit <- dump_wire(P.env_or(dr, ""), body)
         hdrs : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
           model_headers(st, key))
+        ur : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_PROVIDER_URL")
         r : Result<&2, &2, Http.Err, Http.Res> <- Http.fetch.with("POST",
-          model_url(st), hdrs, body, 120000)
-        +a : Attempt <- IO.pure(Attempt, model_call.attempt_result(r))
-        model_call.step(a, k, st,
-          k2 => model_call.try(k2, request, key, st, model))
+          Pvp.provider_url(P.env_or(ur, ""), st), hdrs, body, 120000)
+        a : Pvp.Attempt <- model_call.verdict(r, st)
+        model_call.step(a, n, k, tries,
+          k2 => n2 => model_call.try(k2, Nat.add(tries, 1n), n2, request, key,
+            st, model))
 
-# three attempts total: the first try plus two retries
-def model_call.go(+request: String, +key: String, +st: Api.Style,
-    +model: String) -> IO(Rem.RemoteRes):
-  model_call.try(3n, request, key, st, model)
+def model_call.go(n: Note, +request: String, +key: String, +st: Api.Style,
+    +model: String) -> IO(Note & Rem.RemoteRes):
+  model_call.try(Pvp.max_attempts(), 0n, n, request, key, st, model)
 
-def model_call.key(empty: Bool, +request: String, +key: String,
-    +st: Api.Style, +model: String) -> IO(Rem.RemoteRes):
+def model_call.key(empty: Bool, n: Note, +request: String, +key: String,
+    +st: Api.Style, +model: String) -> IO(Note & Rem.RemoteRes):
   match empty:
     case True{}:
-      IO.pure(Rem.RemoteRes,
-        Rem.RRErr{String.append(model_key_env(st), " is not set")})
+      IO.pure(Note & Rem.RemoteRes,
+        (n, Rem.RRErr{String.append(Pvp.model_key_env(st), " is not set")}))
     case False{}:
-      model_call.go(request, key, st, model)
+      model_call.go(n, request, key, st, model)
 
 # THE model resolution - the one function every surface uses: the
 # provider call below AND the harness-info line the clients (TUI,
@@ -326,16 +249,16 @@ def resolved_model() -> IO(String):
     mr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_MODEL")
     +cfgt : String <- St.read_cfg()
     IO.pure(String,
-      resolve_model(Cf.env_cfg_or(P.env_or(mr, ""),
+      Pvp.resolve_model(Cf.env_cfg_or(P.env_or(mr, ""),
         Cf.cfg_get(cfgt, "model"), "claude-opus-5-5")))
 
 @unsafe
-def model_call(+request: String) -> IO(Rem.RemoteRes):
-  do IO<Rem.RemoteRes>:
+def model_call(n: Note, +request: String) -> IO(Note & Rem.RemoteRes):
+  do IO<Note & Rem.RemoteRes>:
     # the provider table: the resolved model carries the style, the
     # api_base and the key env
     +model : String <- resolved_model()
-    +st : Api.Style <- IO.pure(Api.Style, model_style(model))
-    kr : Result<&1, &1, U32 & String, String> <- IO.get_env(model_key_env(st))
+    +st : Api.Style <- IO.pure(Api.Style, Pvp.model_style(model))
+    kr : Result<&1, &1, U32 & String, String> <- IO.get_env(Pvp.model_key_env(st))
     +key : String <- IO.pure(String, P.env_or(kr, ""))
-    model_call.key(String.is_empty(key), request, key, st, model)
+    model_call.key(String.is_empty(key), n, request, key, st, model)

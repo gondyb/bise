@@ -39,16 +39,11 @@ import ../core/session.bend as S
 import ./persist.bend as P
 import ./model.bend as M
 import ./main.bend as R
+import ./main-pure.bend as Rp
 import ../runtime/provider.bend as Pv
 import ../runtime/selftools.bend as Sf
-
-# ---- what one input line asks for ----
-
-type Plan is Data:
-  PRun{cmds: List<&2, T.Cmd>, script: List<&2, M.Reply>}
-  PHelp{}
-  PQuit{}
-  PReload{}
+import ../runtime/selftools-pure.bend as Sfp
+import ./repl-core-pure.bend as Rcp
 
 # what the loops return: keep serving, or stop. The reload path
 # unwinds to main so the process exits 0 — the parent then recompiles
@@ -68,30 +63,6 @@ def repl_help() -> List<&2, String>:
    Con{"  quit             close (the session survives)",
    Nil{}}}}}}}}}
 
-# the scripted model's plan for a turn
-def script_for.prog(is_prog: Bool, +text: String) -> List<&2, M.Reply>:
-  match is_prog:
-    case True{}:
-      Con{M.ROk{"", Con{T.Call{1, "run_typescript",
-          String.trim(String.drop(text, 5n))}, Nil{}}},
-        Con{M.ROk{"Program complete.", Nil{}}, Nil{}}}
-    case False{}:
-      Con{M.ROk{String.append("You said: ", text), Nil{}}, Nil{}}
-
-def script_for(is_tools: Bool, is_prog: Bool, +text: String)
-    -> List<&2, M.Reply>:
-  match is_tools:
-    case True{}:
-      Con{M.ROk{"", Con{T.Call{1, "search_tool_functions", "best_match: catalog"},
-            Nil{}}},
-        Con{M.ROk{"I searched the catalog.", Nil{}}, Nil{}}}
-    case False{}:
-      script_for.prog(is_prog, text)
-
-def script_for_entry(+text: String) -> List<&2, M.Reply>:
-  script_for(String.starts_with(text, "tools"),
-    String.starts_with(text, "prog:"), text)
-
 # ---- command dispatch ----
 
 type CmdLine is Data:
@@ -107,65 +78,10 @@ def op_of.found(sp: Maybe<&2, Nat>, +line: String) -> CmdLine:
 def op_of(+line: String) -> CmdLine:
   op_of.found(Tx.find(line, " ", 0n), line)
 
-def plan_reload(eq: Bool, +op: String) -> Plan:
-  match eq:
-    case True{}:
-      PReload{}
-    case False{}:
-      PHelp{}
-
-def plan_quit(eq: Bool, +op: String) -> Plan:
-  match eq:
-    case True{}:
-      PQuit{}
-    case False{}:
-      plan_reload(String.eq(op, "reload"), op)
-
-def plan_interrupt(eq: Bool, +op: String) -> Plan:
-  match eq:
-    case True{}:
-      PRun{Con{T.Interrupt{}, Nil{}}, Nil{}}
-    case False{}:
-      plan_quit(String.eq(op, "quit"), op)
-
-def plan_compact(eq: Bool, +op: String) -> Plan:
-  match eq:
-    case True{}:
-      PRun{Con{T.Compact{""}, Nil{}},
-        Con{M.ROk{"<summary>The REPL conversation so far, compacted on request.</summary>", Nil{}},
-          Nil{}}}
-    case False{}:
-      plan_interrupt(String.eq(op, "interrupt"), op)
-
-def plan_notify(eq: Bool, +op: String, +rest: String) -> Plan:
-  match eq:
-    case True{}:
-      PRun{Con{T.Notify{rest}, Nil{}}, Nil{}}
-    case False{}:
-      plan_compact(String.eq(op, "compact"), op)
-
-def plan_steer(eq: Bool, +op: String, +rest: String) -> Plan:
-  match eq:
-    case True{}:
-      PRun{Con{T.UserMsg{T.Steer{}, Api.unescape_nl(rest)}, Nil{}},
-        script_for_entry(Api.unescape_nl(rest))}
-    case False{}:
-      plan_notify(String.eq(op, "notify"), op, rest)
-
-def plan_say(eq: Bool, +op: String, +rest: String) -> Plan:
-  match eq:
-    case True{}:
-      # the client escapes real newlines to keep the socket line
-      # single-line; the message text carries the real newlines
-      PRun{Con{T.UserMsg{T.Queue{}, Api.unescape_nl(rest)}, Nil{}},
-        script_for_entry(Api.unescape_nl(rest))}
-    case False{}:
-      plan_steer(String.eq(op, "steer"), op, rest)
-
-def plan_of(cl: CmdLine) -> Plan:
+def plan_of(cl: CmdLine) -> Rcp.Plan:
   match cl:
     case CL{+op, +rest}:
-      plan_say(String.eq(op, "say"), op, rest)
+      Rcp.plan_say(String.eq(op, "say"), op, rest)
 
 # ---- the connection loop ----
 # Each helper takes the loop continuation as a curried closure (the
@@ -269,8 +185,8 @@ def repl_deferred.compact.after(reload: Bool, e: R.RtEnd,
 # calls the provider and ignores it.
 def repl_run(+live: Bool, out: R.Out, +sess: T.Session,
     +script: List<&2, M.Reply>, +cmds: List<&2, T.Cmd>) -> IO(R.RtEnd):
-  +rt = {R.Rt{sess, script, cmds, live} : R.Rt}
-  R.run(1000000n, out, rt, R.JIdle{}, R.transition(rt, R.JIdle{}))
+  +rt = {Rp.Rt{sess, script, cmds, live} : Rp.Rt}
+  R.run(1000000n, out, rt, Rp.JIdle{}, Rp.transition(rt, Rp.JIdle{}))
 
 # the scripted summary a manual compaction pops (scripted mode only)
 def compact_script() -> List<&2, M.Reply>:
@@ -300,10 +216,10 @@ def repl_deferred.compact.only(+live: Bool, compact: Bool, reload: Bool, +sess2:
     case False{}:
       repl_deferred.reload.only(reload, sess2, out2, next)
 
-def repl_deferred(+live: Bool, d: Sf.Def, +sess2: T.Session, out2: R.Out,
+def repl_deferred(+live: Bool, d: Sfp.Def, +sess2: T.Session, out2: R.Out,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match d:
-    case Sf.Def{+compact, +reload}:
+    case Sfp.Def{+compact, +reload}:
       repl_deferred.compact.only(live, compact, reload, sess2, out2, next)
 
 def repl_end_save.then(+live: Bool, +sess2: T.Session, out2: R.Out,
@@ -317,7 +233,7 @@ def repl_end_save.then(+live: Bool, +sess2: T.Session, out2: R.Out,
     uc : Unit <- P.write_file(ipath, "")
     P.save(sess2)
     # the turn asked for nothing: keep serving; else run its requests
-    +d : Sf.Def <- IO.pure(Sf.Def, Sf.deferred_of(P.history_of(sess2)))
+    +d : Sfp.Def <- IO.pure(Sfp.Def, Sfp.deferred_of(P.history_of(sess2)))
     f : Flow <- repl_deferred(live, d, sess2, out2, next)
     IO.pure(Flow, f)
 
@@ -359,23 +275,23 @@ def repl_end_stalled(+live: Bool, e: R.RtEnd,
     case R.REnd{+sess2, _}:
       repl_end_stalled.stalled(live, turn_active(sess2), e, next)
 
-def repl_plan(+live: Bool, s: Socket, plan: Plan, +sess: T.Session,
+def repl_plan(+live: Bool, s: Socket, plan: Rcp.Plan, +sess: T.Session,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match plan:
-    case PQuit{}:
+    case Rcp.PQuit{}:
       do IO<Flow>:
         Socket.close(s)
         IO.pure(Flow, Go{sess})
-    case PHelp{}:
+    case Rcp.PHelp{}:
       do IO<Flow>:
         out2 : R.Out <- R.emit(R.ONet{s}, repl_help())
         repl_out(out2, sess, next)
-    case PReload{}:
+    case Rcp.PReload{}:
       do IO<Flow>:
         +ok : Bool <- IO.pure(Bool, S.reload_allowed(sess))
         f : Flow <- repl_reload(R.ONet{s}, ok, sess, next)
         IO.pure(Flow, f)
-    case PRun{+cmds, +script}:
+    case Rcp.PRun{+cmds, +script}:
       do IO<Flow>:
         e : R.RtEnd <- repl_run(live, R.ONet{s}, sess, script, cmds)
         repl_end_stalled(live, e, next)
@@ -396,27 +312,6 @@ def repl_interpret(+live: Bool, s: Socket, i: Cm.Interpretation, +sess: T.Sessio
 def repl_cmd(+live: Bool, s: Socket, +line: String, +sess: T.Session,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   repl_interpret(live, s, Cm.interpret(line), sess, next)
-
-# a chunk may carry SEVERAL lines (kernel coalescing while a turn or a
-# compaction ran); each line becomes its own command, run in order
-def cmd_lines.keep(empty: Bool, +l: String, +rest: List<&2, String>)
-    -> List<&2, String>:
-  match empty:
-    case True{}:
-      rest
-    case False{}:
-      Con{l, rest}
-
-def cmd_lines.go(lines: List<&2, String>) -> List<&2, String>:
-  match lines:
-    case Nil{}:
-      Nil{}
-    case Con{+l, rest}:
-      cmd_lines.keep(String.is_empty(String.trim(l)), String.trim(l),
-        cmd_lines.go(rest))
-
-def cmd_lines(+data: String) -> List<&2, String>:
-  cmd_lines.go(String.split(data, Tx.newline()))
 
 # @unsafe: the continuation closure self-references the batch loop
 @unsafe
@@ -439,7 +334,7 @@ def repl_data(+live: Bool, closed: Bool, s: Socket, +data: String, +sess: T.Sess
         Socket.close(s)
         IO.pure(Flow, Go{sess})
     case False{}:
-      repl_lines.go(live, cmd_lines(data), s, sess, next)
+      repl_lines.go(live, Rcp.cmd_lines(data), s, sess, next)
 
 def repl_after(+live: Bool, rm: Socket & Result<&1, &1, U32 & String, String>,
     +sess: T.Session, next: Socket -> T.Session -> IO(Flow))
@@ -468,15 +363,31 @@ def repl_conn(+live: Bool, sock: Socket, sess: T.Session) -> IO(Flow):
 def greet_lines(+n: Nat, +history: List<&2, T.Msg>) -> List<&2, String>:
   # no idle marker: the greeting is unsolicited, not a turn's end — an
   # idle here would make clients give up waiting for the first turn
-  List.append(&2, String, R.replay(history),
+  List.append(&2, String, Rp.replay(history),
     Con{String.append("  obs: session_restored: ",
       String.append(Nat.show(n), " messages")), Nil{}})
+
+# the parent respawned this process after a crash (BEND_CRASH_NOTE =
+# what the dead process said): the user must see it, right after the
+# replayed history - the turn it was running is gone, the history up
+# to its last provider call is back
+def crash_lines(empty: Bool, +note: String) -> List<&2, String>:
+  match empty:
+    case True{}:
+      Nil{}
+    case False{}:
+      Con{String.append("  obs: harness_restarted: ", note), Nil{}}
 
 def greet_out(greet: Maybe<&2, Nat>, s: Socket, +sess: T.Session)
     -> IO(R.Out):
   match greet:
     case Some{+n}:
-      R.emit(R.ONet{s}, greet_lines(n, P.history_of(sess)))
+      do IO<R.Out>:
+        cr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_CRASH_NOTE")
+        +note : String <- IO.pure(String, P.env_or(cr, ""))
+        R.emit(R.ONet{s}, List.append(&2, String,
+          greet_lines(n, P.history_of(sess)),
+          crash_lines(String.is_empty(note), note)))
     case None{}:
       IO.pure(R.Out, R.ONet{s})
 

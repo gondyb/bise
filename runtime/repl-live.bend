@@ -14,7 +14,9 @@ import ../core/config.bend as Cf
 import ./persist.bend as P
 import ./mcp.bend as Mcp
 import ./skills.bend as Sk
+import ./skills-pure.bend as Skp
 import ./tools.bend as X
+import ./tools-pure.bend as Xp
 import ./main.bend as R
 import ../runtime/bash.bend as Sh
 import ../runtime/provider.bend as Pv
@@ -59,7 +61,7 @@ def thr_of_cfg(+envv: String, +cfgt: String) -> Nat:
 def prompt_read(+path: String) -> IO(String):
   do IO<String>:
     m : Maybe<&2, String> <- P.read_file(path)
-    IO.pure(String, X.desc_or(m, ""))
+    IO.pure(String, Xp.desc_or(m, ""))
 
 def prompt_join(+tu: String, +ct: String) -> String:
   String.append(
@@ -71,7 +73,7 @@ def prompt_join(+tu: String, +ct: String) -> String:
 # (rules before the <available-skills> catalog, the vibe_sdk order);
 # both only when the skills index is non-empty
 def live_prompt.go(+base: String, +content: String) -> String:
-  Sk.prompt_with(base, content)
+  Skp.prompt_with(base, content)
 
 def live_prompt() -> IO(String):
   do IO<String>:
