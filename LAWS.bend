@@ -16,6 +16,7 @@ import ./runtime/tools.bend as Xt
 import ./runtime/main.bend as Rt
 import ./runtime/mcp.bend as Mc
 import ./runtime/skills.bend as Sk
+import ./runtime/repl.bend as Rp
 import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
 import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
 
@@ -142,6 +143,76 @@ law wire_reply_roundtrip:
     == Rm.RROk{"hello", Con{T.Call{1, "echo", "hi"}, Nil{}}}
     : Rm.RemoteRes}
 
+# ---- REPL chunk coalescing (the stub in PROOF) ----
+
+# LAW: a chunk carrying several lines splits into separate commands,
+# empty lines dropped - kernel write coalescing must not merge
+# messages or swallow the commands after the first.
+law chunk_lines_split:
+  {Rp.cmd_lines("say a
+
+say b")
+    == Con{"say a", Con{"say b", Nil{}}}
+    : List<&2, String>}
+
+# ---- multi-line tool args on the wire ----
+
+# LAW: the wire arg encoding is reversible on newlines - tool args are
+# commands and JSON text, and a lossy escape would corrupt them
+# (escape_nl cannot tell an encoded newline from a literal backslash-n).
+law wire_args_reversible:
+  {Api.wire_decode(Api.wire_encode("one
+two")) == "one
+two" : String}
+
+# LAW: a literal backslash-n in the arg survives the round-trip (the
+# python -c one-liners are full of them).
+law wire_args_keep_backslash_n:
+  {Api.wire_decode(Api.wire_encode("a\\nb")) == "a\\nb" : String}
+
+# LAW: a literal capital-N sentinel sequence survives too - encoding
+# doubles its backslash, decoding restores it exactly.
+law wire_args_keep_sentinel:
+  {Api.wire_decode(Api.wire_encode("a\\Nb")) == "a\\Nb" : String}
+
+# LAW: the reply wire carries a multi-line arg encoded, on one line.
+law reply_encodes_multiline_args:
+  {Api.reply_of(200, "{\"choices\":[{\"message\":{\"content\":\"\",\"tool_calls\":[{\"function\":{\"name\":\"bash\",\"arguments\":\"{\\\"arg\\\": \\\"one\\\\ntwo\\\"}\"}}]}}]}")
+    == "OK 
+CALL 1 bash : one\\Ntwo
+END
+" : String}
+
+# LAW: the reply parse gives the arg its real newlines back - the
+# heredoc the model wrote is the heredoc bash runs.
+law parse_reply_decodes_multiline_args:
+  {Rm.parse_reply("OK 
+CALL 1 bash : one\\Ntwo
+END
+")
+    == Rm.RROk{"", Con{T.Call{1, "bash", "one
+two"}, Nil{}}}
+    : Rm.RemoteRes}
+
+# LAW: the request wire encodes multi-line args the same way (the
+# session calls ride the wire to every provider round).
+law wire_echo_encodes_multiline_args:
+  {Rm.ser_call(T.Call{7, "bash", "a
+b"})
+    == "
+  CALL 7 bash : a\\Nb" : String}
+
+# LAW: the request parse decodes the args the history carries.
+law api_wire_decodes_args:
+  {Api.parse_wire("MODEL default
+MSG assistant : 
+  CALL 1 bash : one\\Ntwo
+END
+")
+    == Api.WReq{Nil{}, Con{Api.WMsg{"assistant", "",
+      Con{Api.WCall{"1", "bash", "one
+two"}, Nil{}}}, Nil{}}, None{}}
+    : Api.WReq}
 # ---- session-level rejections (the Core accepts nothing uninvited) ----
 
 # LAW: a tool result with no tools pending is rejected — a late or

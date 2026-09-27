@@ -344,6 +344,54 @@ def repl_cmd(s: Socket, +line: String, +sess: T.Session,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   repl_interpret(s, Cm.interpret(line), sess, next)
 
+# a chunk may carry SEVERAL lines: the kernel coalesces writes that
+# arrived while a turn (or a compaction) was running, and one recv
+# returns them all. Treating the chunk as ONE line merged the messages
+# and swallowed every command after the first (the "messages sent
+# during a compaction are never interpreted" bug). Each line becomes
+# its own command, run in order; quit in a batch drops the rest.
+def repl_nl.get(m: Maybe<&2, Char>) -> Char:
+  match m:
+    case Some{+c}:
+      c
+    case None{}:
+      Char.from_u32(10)
+
+def repl_nl() -> Char:
+  repl_nl.get(String.get("\n", 0n))
+
+def cmd_lines.keep(empty: Bool, +l: String, +rest: List<&2, String>)
+    -> List<&2, String>:
+  match empty:
+    case True{}:
+      rest
+    case False{}:
+      Con{l, rest}
+
+def cmd_lines.go(lines: List<&2, String>) -> List<&2, String>:
+  match lines:
+    case Nil{}:
+      Nil{}
+    case Con{+l, rest}:
+      cmd_lines.keep(String.is_empty(String.trim(l)), String.trim(l),
+        cmd_lines.go(rest))
+
+def cmd_lines(+data: String) -> List<&2, String>:
+  cmd_lines.go(String.split(data, repl_nl()))
+
+# @unsafe: the continuation closure self-references the batch loop
+@unsafe
+def repl_lines.go(+lines: List<&2, String>, s: Socket, +sess: T.Session,
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  match lines:
+    case Nil{}:
+      next(s)(sess)
+    case Con{+l, +rest}:
+      do IO<Flow>:
+        f : Flow <- repl_cmd(s, l, sess,
+          s2 => sess2 => repl_lines.go(rest, s2, sess2, next))
+        IO.pure(Flow, f)
+
 def repl_data(closed: Bool, s: Socket, +data: String, +sess: T.Session,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match closed:
@@ -352,7 +400,7 @@ def repl_data(closed: Bool, s: Socket, +data: String, +sess: T.Session,
         Socket.close(s)
         IO.pure(Flow, Go{sess})
     case False{}:
-      repl_cmd(s, String.trim(data), sess, next)
+      repl_lines.go(cmd_lines(data), s, sess, next)
 
 def repl_after(rm: Socket & Result<&1, &1, U32 & String, String>,
     +sess: T.Session, next: Socket -> T.Session -> IO(Flow))

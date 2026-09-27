@@ -1735,10 +1735,67 @@ def drain_steer.pick(m: Maybe<&2, String>, +path: String, out: Out, +rt: Rt)
     case Some{+c}:
       drain_steer.some(String.is_empty(c), path, out, rt, c)
 
+# ---- the interrupt side-channel (Ctrl+C in the TUI) ----
+# Same shape as the steering side-channel: the socket is only read
+# between turns, so a mid-turn interrupt would sit in the kernel buffer
+# until the turn ends. The TUI writes a flag file instead; the runtime
+# drains it right after the steering file at the same safe boundaries.
+# The Core kills the turn (CandidateDiscarded + TurnDone interrupted),
+# commits any steering the turn was holding, and the in-flight result
+# is then rejected cleanly ("no pending completion").
+
+def interrupt_path_of(+port: String) -> String:
+  String.append("/tmp/bend-interrupt-", String.append(port, ".txt"))
+
+def interrupt_path() -> IO(String):
+  do IO<String>:
+    pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
+    +p : String <- IO.pure(String, env_or(pr, "0"))
+    IO.pure(String, interrupt_path_of(p))
+
+def drain_interrupt.some(empty: Bool, +ipath: String, out: Out, +rt: Rt,
+    +sess: T.Session, +script: List<&2, M.Reply>, +cmds: List<&2, T.Cmd>,
+    +live: Bool) -> IO(Out & Rt):
+  match empty:
+    case True{}:
+      do IO<Out & Rt>:
+        IO.pure(Out & Rt, (out, rt))
+    case False{}:
+      do IO<Out & Rt>:
+        u : Unit <- P.write_file(ipath, "")
+        +res : T.Res <- IO.pure(T.Res, S.apply(sess, T.Interrupt{}))
+        out2 : Out <- emit(out, drain_steer.emit_of(res))
+        IO.pure(Out & Rt,
+          (out2, Rt{drain_steer.next_of(sess, res), script, cmds, live}))
+
+def drain_interrupt.pick(m: Maybe<&2, String>, +ipath: String, out: Out,
+    +rt: Rt, +sess: T.Session, +script: List<&2, M.Reply>,
+    +cmds: List<&2, T.Cmd>, live: Bool) -> IO(Out & Rt):
+  match m:
+    case None{}:
+      do IO<Out & Rt>:
+        IO.pure(Out & Rt, (out, rt))
+    case Some{+c}:
+      drain_interrupt.some(String.is_empty(c), ipath, out, rt, sess,
+        script, cmds, live)
+
+# consumes the drained pair once and runs the interrupt check
+def drain_interrupt(pr: Out & Rt) -> IO(Out & Rt):
+  match pr:
+    case (out2, +rt2):
+      match rt2:
+        case Rt{+sess, +script, +cmds, +live}:
+          do IO<Out & Rt>:
+            +ipath : String <- interrupt_path()
+            m : Maybe<&2, String> <- P.read_file(ipath)
+            drain_interrupt.pick(m, ipath, out2, rt2, sess, script, cmds,
+              live)
+
 def drain_steer.file(+path: String, out: Out, +rt: Rt) -> IO(Out & Rt):
   do IO<Out & Rt>:
     m : Maybe<&2, String> <- P.read_file(path)
-    drain_steer.pick(m, path, out, rt)
+    pr : Out & Rt <- drain_steer.pick(m, path, out, rt)
+    drain_interrupt(pr)
 
 # the entry point: scripted runs (live=False) never touch the file, so
 # the scenarios and harness-demo stay hermetic

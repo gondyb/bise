@@ -59,6 +59,27 @@ def Laws.wire_call_roundtrip():
 def Laws.wire_reply_roundtrip():
   {==}
 
+def Laws.wire_args_reversible():
+  {==}
+
+def Laws.wire_args_keep_backslash_n():
+  {==}
+
+def Laws.wire_args_keep_sentinel():
+  {==}
+
+def Laws.reply_encodes_multiline_args():
+  {==}
+
+def Laws.parse_reply_decodes_multiline_args():
+  {==}
+
+def Laws.wire_echo_encodes_multiline_args():
+  {==}
+
+def Laws.api_wire_decodes_args():
+  {==}
+
 def Laws.orphan_tool_result_rejected(cfg):
   match cfg:
     case T.Cfg{_, _, _, _, _}:
@@ -556,4 +577,13 @@ def Laws.asst_plain_content_stays_plain():
   {==}
 
 def Laws.api_body_returns_thinking_block():
+  {==}
+
+def Laws.chunk_lines_split():
+  {==}
+
+def Laws.chunk_lines_empty():
+  {==}
+
+def Laws.interrupt_path_is_per_port():
   {==}

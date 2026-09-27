@@ -9,7 +9,7 @@
 //! done, red ✗ on failure); the prompt is an OpenCode prompt (left
 //! border, element background, agent/model meta row); commands filter
 //! in an OpenCode autocomplete popup (split border, primary selection).
-//! The status row carries the spinner + esc-to-interrupt hints.
+//! The status row carries the spinner + ctrl+c-to-interrupt hints.
 //!
 //! When stdin/stdout is not a TTY (piped), it falls back to line mode so
 //! the UI stays scriptable — the same convention as the Ink version.
@@ -1287,8 +1287,8 @@ fn draw(app: &mut App, frame: &mut Frame) {
                     Style::default().fg(DIM),
                 ),
                 Span::styled(" · ", Style::default().fg(DIM)),
-                Span::styled("esc", Style::default().fg(TEXT)),
-                Span::styled(" interrupt", Style::default().fg(DIM)),
+                Span::styled("ctrl+c", Style::default().fg(TEXT)),
+                Span::styled(" interrompre", Style::default().fg(DIM)),
             ])
         } else {
             // idle: a static standby dot — the spinner only moves
@@ -1425,7 +1425,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
 
     // ---- hint row (the OpenCode prompt right hint row)
     let hint = if app.pending {
-        "Entrée : diriger · Tab : mettre en file · / : commandes · Pg↑↓ : défiler · End : bas"
+        "Entrée : diriger · Tab : mettre en file · Ctrl+C : interrompre · / : commandes · End : bas"
     } else {
         "Entrée : envoyer · / : commandes · Pg↑↓/molette : défiler · End : bas · Ctrl+C : quitter"
     };
@@ -1515,13 +1515,32 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                 };
                 match (k.code, k.modifiers) {
                     // ctrl+c: clear input first, quit when already empty
+                    // ctrl+c: INTERRUPT the running turn — the harness
+                    // reads the socket only between turns, so the request
+                    // rides the flag file the runtime drains at the next
+                    // safe boundary; at idle it quits
                     (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-                        if app.input.is_empty() {
+                        if app.pending {
+                            let path = format!("/tmp/bend-interrupt-{}.txt", app.port);
+                            let ok = std::fs::OpenOptions::new()
+                                .create(true)
+                                .write(true)
+                                .truncate(true)
+                                .open(&path)
+                                .and_then(|mut f| f.write_all(b"1"))
+                                .is_ok();
+                            push_event(
+                                &mut app.events,
+                                &mut app.cache,
+                                Ev::Info(if ok {
+                                    "interruption demandée — effective au prochain point sûr".to_string()
+                                } else {
+                                    "interruption non écrite (side-channel inaccessible)".to_string()
+                                }),
+                            );
+                        } else {
                             break;
                         }
-                        app.input.clear();
-                        app.cursor = 0;
-                        app.hist_idx = None;
                     }
                     // ctrl+l: clear the local feed
                     (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
@@ -1531,13 +1550,12 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                         app.follow = true;
                         app.unseen = 0;
                     }
-                    // esc: close popup, else interrupt the running turn
+                    // esc: close the popup only — it never interrupts
+                    // (Ctrl+C does, through the flag side-channel)
                     (KeyCode::Esc, _) => {
                         if popup_open {
                             app.input.clear();
                             app.cursor = 0;
-                        } else if app.pending {
-                            app.send("interrupt");
                         }
                     }
                     // scrollback: PgUp/PgDn page, End follows the bottom
