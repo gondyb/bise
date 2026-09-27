@@ -15,8 +15,9 @@
 //! the UI stays scriptable — the same convention as the Ink version.
 
 use crossterm::event::{
-    poll, read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
-    KeyModifiers, MouseButton, MouseEventKind,
+    poll, read, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
+    EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton,
+    MouseEventKind,
 };
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -996,8 +997,12 @@ struct App {
 impl App {
     fn send(&mut self, line: &str) {
         self.pending = true;
+        // the socket protocol is line-oriented: real newlines in the
+        // composer escape to a literal backslash-n (the REPL unescapes
+        // the say/steer text; the message carries the real newlines)
+        let wire = line.replace('\n', "\\n");
         if let Some(s) = self.stream.as_mut() {
-            let _ = s.write_all(format!("{}\n", line).as_bytes());
+            let _ = s.write_all(format!("{}\n", wire).as_bytes());
         }
     }
 
@@ -1246,12 +1251,33 @@ fn draw(app: &mut App, frame: &mut Frame) {
     let area = frame.area();
     // OpenCode layout: no header. Feed grows to fill, then one status row,
     // then the prompt block, then one hint row.
+    // the composer grows with its content (a pasted multi-line block),
+    // capped at half the screen so the feed always survives
+    let inner_w = ((area.width as usize).saturating_sub(4)).max(1);
+    let composer_rows = {
+        let mut rows = 1usize;
+        let mut col = 0usize;
+        for c in app.input.chars() {
+            if c == '\n' {
+                rows += 1;
+                col = 0;
+            } else {
+                col += 1;
+                if col > inner_w {
+                    rows += 1;
+                    col = 1;
+                }
+            }
+        }
+        rows
+    };
+    let input_h = ((composer_rows + 3) as u16).min((area.height / 2).max(6));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(3),
             Constraint::Length(1),
-            Constraint::Length(3),
+            Constraint::Length(input_h),
             Constraint::Length(1),
         ])
         .split(area);
@@ -1408,33 +1434,73 @@ fn draw(app: &mut App, frame: &mut Frame) {
     }
 
     // ---- the prompt: OpenCode prompt (left border ┃, element bg, meta row)
+    // multi-line: newlines break rows, long rows wrap at the inner
+    // width, the cursor is the REVERSED char (or a REVERSED space at
+    // the end of the input)
     let chars: Vec<char> = app.input.chars().collect();
     let inner = ((chunks[2].width as usize).saturating_sub(4)).max(1);
     let total = chars.len();
-    let view = if total <= inner {
-        0
-    } else {
-        (app.cursor + 1).saturating_sub(inner).min(total - inner)
-    };
-    let before: String = chars[view..app.cursor.min(total)].iter().collect();
-    let at: String = chars
-        .get(app.cursor)
-        .map(|c| c.to_string())
-        .unwrap_or_default();
-    let after: String = chars[(app.cursor + 1).min(total)..].iter().collect();
-    let mut input_lines = vec![Line::from(vec![
-        Span::styled(before, Style::default().fg(TEXT)),
-        Span::styled(
-            if at.is_empty() { " ".to_string() } else { at },
-            Style::default().fg(TEXT).add_modifier(Modifier::REVERSED),
-        ),
-        Span::styled(after, Style::default().fg(TEXT)),
-    ])];
+    let mut input_lines: Vec<Line> = Vec::new();
     if total == 0 {
         input_lines.push(Line::from(Span::styled(
             "Ask anything…",
             Style::default().fg(DIM),
         )));
+    } else {
+        let mut spans: Vec<Span> = Vec::new();
+        let mut buf = String::new();
+        let mut col = 0usize;
+        let flush_plain = |spans: &mut Vec<Span>, buf: &mut String| {
+            if !buf.is_empty() {
+                spans.push(Span::styled(
+                    std::mem::take(buf),
+                    Style::default().fg(TEXT),
+                ));
+            }
+        };
+        for (i, c) in chars.iter().enumerate() {
+            if *c == '\n' {
+                flush_plain(&mut spans, &mut buf);
+                if i == app.cursor {
+                    spans.push(Span::styled(
+                        " ".to_string(),
+                        Style::default().fg(TEXT).add_modifier(Modifier::REVERSED),
+                    ));
+                }
+                input_lines.push(Line::from(std::mem::take(&mut spans)));
+                spans = Vec::new();
+                col = 0;
+                continue;
+            }
+            if i == app.cursor {
+                flush_plain(&mut spans, &mut buf);
+                spans.push(Span::styled(
+                    c.to_string(),
+                    Style::default().fg(TEXT).add_modifier(Modifier::REVERSED),
+                ));
+                continue;
+            }
+            buf.push(*c);
+            col += 1;
+            if col >= inner {
+                flush_plain(&mut spans, &mut buf);
+                input_lines.push(Line::from(std::mem::take(&mut spans)));
+                spans = Vec::new();
+                col = 0;
+            }
+        }
+        if app.cursor >= total {
+            flush_plain(&mut spans, &mut buf);
+            spans.push(Span::styled(
+                " ".to_string(),
+                Style::default().fg(TEXT).add_modifier(Modifier::REVERSED),
+            ));
+        } else {
+            flush_plain(&mut spans, &mut buf);
+        }
+        if !spans.is_empty() {
+            input_lines.push(Line::from(spans));
+        }
     }
     let meta = Line::from(vec![
         Span::styled("Bend", Style::default().fg(BRAND)),
@@ -1446,6 +1512,14 @@ fn draw(app: &mut App, frame: &mut Frame) {
                 "scripté"
             },
             Style::default().fg(TEXT),
+        ),
+        Span::styled(
+            if app.input.contains('\n') {
+                " · ⏎ = Envoyer, Alt+⏎ = Nouvelle ligne"
+            } else {
+                ""
+            },
+            Style::default().fg(DIM),
         ),
         Span::styled(" · ", Style::default().fg(DIM)),
         Span::styled(
@@ -1528,9 +1602,81 @@ fn draw(app: &mut App, frame: &mut Frame) {
     );
 }
 
+// ---- multi-line composer navigation ----
+// The cursor is a char index over the whole input; Up/Down move it to
+// the same column on the previous/next line (clamped to that line).
+
+fn cursor_pos(input: &str, cursor: usize) -> (usize, usize) {
+    // (line, column) of the cursor
+    let chars: Vec<char> = input.chars().collect();
+    let mut line = 0usize;
+    let mut col = 0usize;
+    for i in 0..cursor.min(chars.len()) {
+        if chars[i] == '\n' {
+            line += 1;
+            col = 0;
+        } else {
+            col += 1;
+        }
+    }
+    (line, col)
+}
+
+fn line_bounds(input: &str) -> Vec<(usize, usize)> {
+    // (start, len-without-newline) of every line
+    let chars: Vec<char> = input.chars().collect();
+    let mut out = vec![(0usize, 0usize)];
+    let mut start = 0usize;
+    for (i, c) in chars.iter().enumerate() {
+        if *c == '\n' {
+            out.last_mut().unwrap().1 = i - start;
+            start = i + 1;
+            out.push((start, 0));
+        }
+    }
+    out.last_mut().unwrap().1 = chars.len() - start;
+    out
+}
+
+fn cursor_line_up(input: &mut String, cursor: &mut usize) {
+    let (_, col) = cursor_pos(input, *cursor);
+    let bounds = line_bounds(input);
+    // find the current line index
+    let mut cur = 0usize;
+    for (i, (st, _)) in bounds.iter().enumerate() {
+        if *st <= *cursor {
+            cur = i;
+        }
+    }
+    if cur == 0 {
+        return;
+    }
+    let (prev_start, prev_len) = bounds[cur - 1];
+    *cursor = prev_start + col.min(prev_len);
+}
+
+fn cursor_line_down(input: &mut String, cursor: &mut usize) {
+    let (_, col) = cursor_pos(input, *cursor);
+    let bounds = line_bounds(input);
+    let mut cur = 0usize;
+    for (i, (st, _)) in bounds.iter().enumerate() {
+        if *st <= *cursor {
+            cur = i;
+        }
+    }
+    if cur + 1 >= bounds.len() {
+        return;
+    }
+    let (next_start, next_len) = bounds[cur + 1];
+    *cursor = next_start + col.min(next_len);
+}
+
 fn run_tui(app: &mut App) -> io::Result<()> {
     let mut terminal = ratatui::init();
     let _ = crossterm::execute!(io::stdout(), EnableMouseCapture);
+    // a multi-line paste arrives as ONE Event::Paste instead of a
+    // keystroke storm where every Enter would send
+    let _ = crossterm::execute!(io::stdout(), EnableBracketedPaste);
     loop {
         loop {
             match app.rx.try_recv() {
@@ -1655,6 +1801,17 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                 }
                 continue;
             }
+            if let Event::Paste(text) = ev {
+                // normalize CRLF/CR so a terminal paste behaves like the
+                // typed newline, then insert at the cursor
+                let text = text.replace("\r\n", "\n").replace('\r', "\n");
+                let b = byte_at_char(&app.input, app.cursor);
+                app.input.insert_str(b, &text);
+                app.cursor += text.chars().count();
+                app.hist_idx = None;
+                app.popup_sel = 0;
+                continue;
+            }
             if let Event::Key(k) = ev {
                 if k.kind != KeyEventKind::Press {
                     continue;
@@ -1761,6 +1918,14 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                             }
                         }
                     }
+                    // alt/option+enter: a NEWLINE (multi-line input;
+                    // plain Enter sends)
+                    (KeyCode::Enter, KeyModifiers::ALT) => {
+                        let b = byte_at_char(&app.input, app.cursor);
+                        app.input.insert(b, '\n');
+                        app.cursor += 1;
+                        app.hist_idx = None;
+                    }
                     (KeyCode::Enter, _) => {
                         if let Some(c) = sel {
                             if c.args {
@@ -1795,6 +1960,8 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     (KeyCode::Up, _) => {
                         if popup_open {
                             app.popup_sel = (app.popup_sel + matches.len() - 1) % matches.len();
+                        } else if app.input.contains('\n') {
+                            cursor_line_up(&mut app.input, &mut app.cursor);
                         } else {
                             let next = match app.hist_idx {
                                 None if !app.history.is_empty() => Some(0),
@@ -1811,6 +1978,8 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     (KeyCode::Down, _) => {
                         if popup_open {
                             app.popup_sel = (app.popup_sel + 1) % matches.len();
+                        } else if app.input.contains('\n') {
+                            cursor_line_down(&mut app.input, &mut app.cursor);
                         } else {
                             let next = match app.hist_idx {
                                 Some(0) | None => None,
@@ -1874,6 +2043,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
         app.tick = app.tick.wrapping_add(1);
     }
     let _ = crossterm::execute!(io::stdout(), DisableMouseCapture);
+    let _ = crossterm::execute!(io::stdout(), DisableBracketedPaste);
     ratatui::restore();
     Ok(())
 }

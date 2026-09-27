@@ -98,9 +98,12 @@ def calls_text(calls: List<&2, T.Call>) -> String:
 def msg_text(m: T.Msg) -> String:
   match m:
     case T.Msg{+role, +text, +calls, +injected}:
+      # the text stays on ONE line: a multi-line message (pasted code,
+      # a paragraph) is escaped exactly like the wire carries it
       String.append("MSG ", String.append(inj_text(injected),
         String.append(" ", String.append(role_text(role),
-          String.append(" : ", String.append(text, calls_text(calls)))))))
+          String.append(" : ", String.append(Api.escape_nl(text),
+            calls_text(calls)))))))
 
 def msgs_text(ms: List<&2, T.Msg>) -> String:
   match ms:
@@ -227,7 +230,7 @@ def step_msg.build(role: Maybe<&2, T.Role>, injected: Bool, +text: String,
 
 def step_msg.role(role: Maybe<&2, T.Role>, injected: Bool, +text: String,
     st: FS) -> FS:
-  step_msg.build(role, injected, text, push_cur(st))
+  step_msg.build(role, injected, Api.unescape_nl(text), push_cur(st))
 
 def step_msg.cut(sp: Maybe<&2, Nat>, injected: Bool, +r: String, st: FS) -> FS:
   match sp:

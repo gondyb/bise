@@ -143,6 +143,43 @@ law wire_reply_roundtrip:
     == Rm.RROk{"hello", Con{T.Call{1, "echo", "hi"}, Nil{}}}
     : Rm.RemoteRes}
 
+# ---- multi-line message text (paste) ----
+# The client escapes real newlines to keep every transport line
+# single-line (socket, wire, checkpoint); the text restores at each
+# parse, and the MODEL input carries the real newlines (ser_msg escapes
+# instead of flattening - flattening turned a pasted block into one
+# space-joined line).
+
+# LAW: the say command line unescapes into the message text.
+law say_multiline_unescapes:
+  {Rp.plan_say(True{}, "say", "a\\nb")
+    == Rp.PRun{Con{T.UserMsg{T.Queue{}, "a
+b"}, Nil{}},
+      Rp.script_for_entry("a
+b")}
+    : Rp.Plan}
+
+# LAW: the request wire carries message text on one line, escaped.
+law ser_msg_escapes_newlines:
+  {Rm.ser_msg(T.Msg{T.RUser{}, "a
+b", Nil{}, False{}})
+    == "MSG user : a\\nb"
+    : String}
+
+# LAW: a multi-line message survives the checkpoint roundtrip.
+def ml_flow.started(+cfg: T.Cfg) -> T.Session:
+  S.res_next(S.apply(T.new_session(cfg), T.UserMsg{T.Queue{}, "a
+b"}),
+    T.new_session(cfg))
+
+def ml_flow.done(+cfg: T.Cfg) -> T.Session:
+  S.res_next(S.apply(ml_flow.started(cfg), T.CompletionOk{0, "done", Nil{}}),
+    ml_flow.started(cfg))
+
+law checkpoint_multiline_roundtrip:
+  {K.restore(K.export(ml_flow.done(law_cfg()))) == ml_flow.done(law_cfg())
+    : T.Session}
+
 # ---- REPL chunk coalescing (the stub in PROOF) ----
 
 # LAW: a chunk carrying several lines splits into separate commands,

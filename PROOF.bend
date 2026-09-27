@@ -587,3 +587,12 @@ def Laws.chunk_lines_empty():
 
 def Laws.interrupt_path_is_per_port():
   {==}
+
+def Laws.say_multiline_unescapes():
+  {==}
+
+def Laws.ser_msg_escapes_newlines():
+  {==}
+
+def Laws.checkpoint_multiline_roundtrip():
+  {==}

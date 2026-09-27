@@ -151,7 +151,9 @@ class BendSession:
         return self._recv_until_idle(timeout)
 
     def say(self, text, timeout=DEFAULT_TIMEOUT, verbose=False):
-        lines = self.send(text, timeout)
+        # the socket line is single-line: real newlines escape (the
+        # REPL's say path unescapes them into the message text)
+        lines = self.send(text.replace("\n", "\\n"), timeout)
         if verbose:
             for line in lines:
                 print(line)

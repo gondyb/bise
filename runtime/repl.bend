@@ -27,6 +27,7 @@ import Base
 import ../core/types.bend as T
 import ../core/compaction.bend as C
 import ../core/commands.bend as Cm
+import ../core/api.bend as Api
 import ../core/session.bend as S
 import ./persist.bend as P
 import ./model.bend as M
@@ -137,14 +138,18 @@ def plan_notify(eq: Bool, +op: String, +rest: String) -> Plan:
 def plan_steer(eq: Bool, +op: String, +rest: String) -> Plan:
   match eq:
     case True{}:
-      PRun{Con{T.UserMsg{T.Steer{}, rest}, Nil{}}, script_for_entry(rest)}
+      PRun{Con{T.UserMsg{T.Steer{}, Api.unescape_nl(rest)}, Nil{}},
+        script_for_entry(Api.unescape_nl(rest))}
     case False{}:
       plan_notify(String.eq(op, "notify"), op, rest)
 
 def plan_say(eq: Bool, +op: String, +rest: String) -> Plan:
   match eq:
     case True{}:
-      PRun{Con{T.UserMsg{T.Queue{}, rest}, Nil{}}, script_for_entry(rest)}
+      # the client escapes real newlines to keep the socket line
+      # single-line; the message text carries the real newlines
+      PRun{Con{T.UserMsg{T.Queue{}, Api.unescape_nl(rest)}, Nil{}},
+        script_for_entry(Api.unescape_nl(rest))}
     case False{}:
       plan_steer(String.eq(op, "steer"), op, rest)
 

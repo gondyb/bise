@@ -91,8 +91,11 @@ def ser_calls(calls: List<&2, T.Call>) -> String:
 def ser_msg(m: T.Msg) -> String:
   match m:
     case T.Msg{+role, +text, +calls, _}:
+      # the text rides ONE wire line: real newlines escape (the model
+      # sees them back after parse_wire's unescape - flattening turned
+      # a pasted multi-line block into one space-joined line)
       String.append("MSG ", String.append(role_str(role),
-        String.append(" : ", String.append(flatten(text),
+        String.append(" : ", String.append(Api.escape_nl(text),
           ser_calls(calls)))))
 
 def ser_msgs(ms: List<&2, T.Msg>) -> String:
