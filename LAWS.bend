@@ -677,8 +677,17 @@ law api_wire_parses:
 law api_body_maps:
   {Api.api_body("zai-glm-5-3",
       Api.parse_wire("MODEL default\nTOOL echo : Returns text.\nMSG user : bonjour\nEND\n"))
-    == "{\"model\":\"zai-glm-5-3\",\"messages\":[{\"role\":\"user\",\"content\":\"bonjour\"}],\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Returns text.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"}},\"required\":[\"arg\"]}}}],\"tool_choice\":\"auto\"}"
+    == "{\"model\":\"zai-glm-5-3\",\"reasoning_effort\":\"high\",\"messages\":[{\"role\":\"user\",\"content\":\"bonjour\"}],\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Returns text.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"}},\"required\":[\"arg\"]}}}],\"tool_choice\":\"auto\"}"
     : String}
+
+# LAW: GLM 5.3 runs at HIGH reasoning effort on every call — the vibe
+# CLI parity (model thinking "high" maps to reasoning_effort "high"
+# on the Mistral API, mistral.py _THINKING_TO_REASONING_EFFORT), and
+# the compaction call carries it too.
+law api_body_high_reasoning:
+  {String.contains(Api.api_body("zai-glm-5-3",
+      Api.parse_wire("MODEL default\nMSG user : bonjour\nEND\n")),
+    "\"reasoning_effort\":\"high\"") == True{} : Bool}
 
 # LAW: GLM content blocks become separate lines (the thinking blocks
 # carry no top-level text field, so only text blocks surface); the wire
@@ -721,7 +730,7 @@ law escape_roundtrip:
 # tools or tool_choice — the model cannot even offer a tool call.
 law api_bare_body_omits_tools:
   {Api.api_body("m", Api.parse_wire("MODEL default\nMSG user : salut\nEND\n"))
-    == "{\"model\":\"m\",\"messages\":[{\"role\":\"user\",\"content\":\"salut\"}]}"
+    == "{\"model\":\"m\",\"reasoning_effort\":\"high\",\"messages\":[{\"role\":\"user\",\"content\":\"salut\"}]}"
     : String}
 
 

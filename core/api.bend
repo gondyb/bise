@@ -548,18 +548,24 @@ def msgs_json(+msgs: List<&2, WMsg>) -> List<&2, J.Json>:
   msgs_go(Nat.add(Nat.mul(msgs_len(msgs), 2n), 16n),
     MNext{msgs, Nil{}, Nil{}})
 
+# reasoning_effort rides EVERY call, the vibe CLI parity: the active
+# model zai-glm-5-3 runs with thinking "high", and the vibe CLI maps
+# thinking medium/high/max to reasoning_effort "high" on the Mistral
+# API (core/llm/backend/mistral.py _THINKING_TO_REASONING_EFFORT)
 def api_body.pick(empty_tools: Bool, +model: String, +tools: List<&2, WTool>,
     +msgs: List<&2, WMsg>) -> String:
   match empty_tools:
     case True{}:
       # a compaction call offers no tools at all
       J.stringify(J.obj(Con{J.kv("model", J.str(model)),
-        Con{J.kv("messages", J.arr(msgs_json(msgs))), Nil{}}}))
+        Con{J.kv("reasoning_effort", J.str("high")),
+        Con{J.kv("messages", J.arr(msgs_json(msgs))), Nil{}}}}))
     case False{}:
       J.stringify(J.obj(Con{J.kv("model", J.str(model)),
+        Con{J.kv("reasoning_effort", J.str("high")),
         Con{J.kv("messages", J.arr(msgs_json(msgs))),
           Con{J.kv("tools", tools_json(tools)),
-            Con{J.kv("tool_choice", J.str("auto")), Nil{}}}}}))
+            Con{J.kv("tool_choice", J.str("auto")), Nil{}}}}}}))
 
 def api_body(+model: String, +req: WReq) -> String:
   match req:
@@ -655,10 +661,49 @@ def blocks_text(blocks: List<&2, J.Json>) -> String:
     case Nil{}:
       ""
     case Con{+b, rest}:
-      String.append(J.get_str_or(b, "text", ""),
-        String.append("\n", blocks_text(rest)))
+      String.append(block_text(b),
+        String.append("
+", blocks_text(rest)))
 
-# GLM returns content as an array of blocks; the text fields are joined
+# the texts of one thinking block parts, newline-joined
+def think_texts(parts: List<&2, J.Json>) -> String:
+  match parts:
+    case Nil{}:
+      ""
+    case Con{+p, rest}:
+      String.append(J.get_str_or(p, "text", ""),
+        String.append("
+", think_texts(rest)))
+
+def block_think.has(has: Bool, +b: J.Json) -> String:
+  match has:
+    case True{}:
+      String.append("<think>",
+        String.append(think_texts(arr_field_or(b, "thinking")),
+          "</think>"))
+    case False{}:
+      ""
+
+def block_think(has: Bool, +b: J.Json) -> String:
+  block_think.has(has, b)
+
+def block_text.pick(is_text: Bool, has_think: Bool, +b: J.Json) -> String:
+  match is_text:
+    case True{}:
+      J.get_str_or(b, "text", "")
+    case False{}:
+      block_think(has_think, b)
+
+# one GLM content block: a text block surfaces its text; a thinking
+# block carries its parts in a nested thinking array -- they surface
+# wrapped in think markers, so the model keeps its own reasoning in the
+# history it sees back (GLM native reasoning convention; dropping it
+# here is the bug that made every multi-tool turn reason blind)
+def block_text(+b: J.Json) -> String:
+  block_text.pick(Bool.not(String.is_empty(J.get_str_or(b, "text", ""))),
+    Bool.not(List.is_empty(&2, J.Json, arr_field_or(b, "thinking"))), b)
+
+# GLM returns content as an array of blocks; the blocks are joined
 def content_of(j: J.Json) -> String:
   match j:
     case J.JStr{+s}:
