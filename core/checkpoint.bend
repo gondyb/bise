@@ -5,6 +5,7 @@
 import Base
 import ./types.bend as T
 import ./compaction.bend as C
+import ./api.bend as Api
 
 # The current checkpoint version. Evolve backward-compatibly; treat a
 # version bump as an intentional compatibility break.
@@ -122,7 +123,7 @@ def tools_text(ts: List<&2, T.ToolDef>) -> String:
 def to_text.cfg(+cfg: T.Cfg) -> String:
   match cfg:
     case T.Cfg{+threshold, +select_budget, +max_nulls, +system, +tools}:
-      String.append(tools_text(tools), String.append("CFG ", String.append(Nat.show(threshold), String.append(" ", String.append(Nat.show(select_budget), String.append(" ", String.append(Nat.show(max_nulls), String.append(" ", String.append(system, "\n")))))))))
+      String.append(tools_text(tools), String.append("CFG ", String.append(Nat.show(threshold), String.append(" ", String.append(Nat.show(select_budget), String.append(" ", String.append(Nat.show(max_nulls), String.append(" ", String.append(Api.escape_nl(system), "\n")))))))))
 
 def to_text(+c: Checkpoint) -> String:
   match c:
@@ -270,7 +271,7 @@ def step_cfg.sys(threshold: Nat, select: Nat, max_nulls: Nat, +sys: String,
   match st:
     case FS{+tools, +cur, +msgs, _, +inputs, +actions, +ok}:
       FS{tools, cur, msgs,
-        Some{T.Cfg{threshold, select, max_nulls, sys,
+        Some{T.Cfg{threshold, select, max_nulls, Api.unescape_nl(sys),
           List.reverse(&2, T.ToolDef, tools)}},
         inputs, actions, ok}
 

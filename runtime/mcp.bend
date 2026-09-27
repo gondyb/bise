@@ -450,6 +450,73 @@ def line_tool.of(sp: String & String & String & String) -> String:
 def line_tool(+line: String) -> String:
   line_tool.of(line_parts(line))
 
+# ---- the connector inventory section (vibe_sdk parity) ----
+# The live system prompt lists the tool groups up front, exactly as
+# vibe core/prompt/system.rs does: build_system_prompt appends the
+# tool_group_inventory_prompt_section after the generic sections
+# (a heading, one "- <name>" line per group, deduplicated, in catalog
+# order). The index cname is the normalized alias (conn_lines), so the
+# unique cnames in index order ARE the connector groups.
+
+def line_cname.of(sp: String & String & String & String) -> String:
+  (a0, cname, a2, a3) = sp
+  cname
+
+def line_cname(+line: String) -> String:
+  line_cname.of(line_parts(line))
+
+# the index holds one line per tool, so a connector with N tools
+# appears N times; a name enters the result only on its FIRST
+# occurrence. The seen list rides as an argument and the recursive
+# result travels to the step helper (the conn_lines.go pattern: the
+# unchosen branch is never forced; the recursion is structural in
+# lines, and the duplicated line_cname reads share by address).
+def conn_names.step(new: Bool, +name: String,
+    +rest_res: List<&2, String>) -> List<&2, String>:
+  match new:
+    case True{}:
+      Con{name, rest_res}
+    case False{}:
+      rest_res
+
+def conn_names.go(lines: List<&2, String>, +seen: List<&2, String>,
+    +rest_res: List<&2, String>) -> List<&2, String>:
+  match lines:
+    case Nil{}:
+      rest_res
+    case Con{+line, rest}:
+      conn_names.step(
+        Bool.and(Bool.not(String.is_empty(line_cname(line))),
+          Bool.not(seen_has(seen, line_cname(line)))),
+        line_cname(line),
+        conn_names.go(rest, Con{line_cname(line), seen}, rest_res))
+
+def conn_names_of(+content: String) -> List<&2, String>:
+  conn_names.go(String.split(content, nl()), Nil{}, Nil{})
+
+# the section body: "- <name>" per group, the exact vibe_sdk rendering
+def groups_lines(names: List<&2, String>, +acc: List<&2, String>)
+    -> List<&2, String>:
+  match names:
+    case Nil{}:
+      List.reverse(&2, String, acc)
+    case Con{+n, rest}:
+      groups_lines(rest, Con{String.append("- ", n), acc})
+
+def groups_body(names: List<&2, String>) -> String:
+  String.join(groups_lines(names, Nil{}), "
+")
+
+def groups_prompt(names: List<&2, String>) -> String:
+  String.append("### Searchable connector groups
+
+", groups_body(names))
+
+# the whole section, straight from an index file content
+def groups_prompt_of(+content: String) -> String:
+  groups_prompt(conn_names_of(content))
+
+
 # ---- the index file becomes tools ----
 
 def pub_name(+cname: String, +tool: String) -> String:
