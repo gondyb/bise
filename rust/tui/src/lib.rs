@@ -98,6 +98,12 @@ struct ToolData {
 enum Ev {
     You(String),
     Assistant(String),
+    // the model's reasoning for the message that follows: rendered
+    // collapsed as "thought for Ns" (ctrl+t expands every section)
+    Thinking {
+        ms: u128,
+        text: String,
+    },
     Tool(ToolData),
     // a sub-call made inside a run_typescript program
     Sub {
@@ -125,6 +131,25 @@ enum Ev {
     Info(String),
     Idle,
     Raw(String),
+}
+
+// the wire carries the model's reasoning wrapped in think markers inside
+// the assistant text (the transport the API re-send depends on); the TUI
+// never shows the markers: it splits them into a Thinking section
+const THINK_START: &str = "<think>";
+const THINK_END: &str = "</think>";
+
+fn split_thinking(s: &str) -> Option<(&str, &str)> {
+    let start = s.find(THINK_START)?;
+    let after = &s[start + THINK_START.len()..];
+    let end = after.find(THINK_END)?;
+    let think = &after[..end];
+    let mut visible = &after[end + THINK_END.len()..];
+    // the wire carries newlines as a literal backslash-n escape
+    if visible.starts_with("\\n") {
+        visible = &visible[2..];
+    }
+    Some((think, visible))
 }
 
 fn parse_line(line: &str) -> Option<Ev> {
@@ -370,7 +395,14 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
 }
 
 // the rows of one event: the block separator, then the wrapped lines
-fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> Vec<Line<'static>> {
+fn build_rows(
+    events: &[Ev],
+    i: usize,
+    debug: bool,
+    width: usize,
+    tick: u32,
+    expand: bool,
+) -> Vec<Line<'static>> {
     let ev = &events[i];
     let mut rows: Vec<Line<'static>> = Vec::new();
     if !ev_visible(ev, debug) {
@@ -379,7 +411,7 @@ fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> 
     // the previous VISIBLE event decides the separator: a debug-only
     // annotation between two blocks must not swallow the blank line
     let prev = events[..i].iter().rev().find(|e| ev_visible(e, debug));
-    let message = matches!(ev, Ev::You(_) | Ev::Assistant(_));
+    let message = matches!(ev, Ev::You(_) | Ev::Assistant(_) | Ev::Thinking { .. });
     let tool_block = matches!(ev, Ev::Tool(_) | Ev::Sub { .. });
     let prev_message = prev.map_or(false, |p| matches!(p, Ev::You(_) | Ev::Assistant(_)));
     let prev_tool_block = prev.map_or(false, |p| matches!(p, Ev::Tool(_) | Ev::Sub { .. }));
@@ -387,7 +419,7 @@ fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> 
     if (message && prev_tool_block) || (tool_block && prev_message) {
         rows.push(Line::from(""));
     }
-    for l in ev_lines_t(ev, tick) {
+    for l in ev_lines_t(ev, tick, expand) {
         rows.extend(wrap_line(l, width));
     }
     rows
@@ -720,18 +752,53 @@ fn args_preview(name: &str, args: &str) -> String {
 // The shape follows the OpenCode message parts: user messages are blocks
 // with a colored left bar and panel background; assistant text is
 // markdown in the OpenCode colors; tools are inline tools.
-fn ev_lines_t(ev: &Ev, tick: u32) -> Vec<Line<'static>> {
+fn ev_lines_t(ev: &Ev, tick: u32, expand: bool) -> Vec<Line<'static>> {
     // the feed twin: identical shape, but the tool spinner animates
     match ev {
         Ev::Tool(td) => tool_lines(td, tick),
-        other => ev_lines(other),
+        other => ev_lines(other, expand),
     }
 }
 
-fn ev_lines(ev: &Ev) -> Vec<Line<'static>> {
+// a thinking section: collapsed it is one dim line ("thought for Ns");
+// expanded (ctrl+t) the reasoning shows under it, dim and italic
+fn thinking_lines(ms: u128, text: &str, expand: bool) -> Vec<Line<'static>> {
+    let head = Line::from(vec![
+        Span::styled(" ~ ", Style::default().fg(DIM)),
+        Span::styled(
+            format!("thought for {}", fmt_think_ms(ms)),
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        ),
+    ]);
+    if !expand || text.trim().is_empty() {
+        return vec![head];
+    }
+    let mut rows = vec![head];
+    for l in unescape_md(text).split('\n') {
+        rows.push(Line::from(Span::styled(
+            format!("   {}", l),
+            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+        )));
+    }
+    rows
+}
+
+// 800ms -> "0.8s"; 4200ms -> "4.2s"; 12_300ms -> "12s"; 90_000 -> "1m30s"
+fn fmt_think_ms(ms: u128) -> String {
+    if ms < 10_000 {
+        format!("{}.{}s", ms / 1000, (ms % 1000) / 100)
+    } else if ms < 60_000 {
+        format!("{}s", ms / 1000)
+    } else {
+        format!("{}m{}s", ms / 60_000, (ms % 60_000) / 1000)
+    }
+}
+
+fn ev_lines(ev: &Ev, expand: bool) -> Vec<Line<'static>> {
     match ev {
         Ev::You(t) => user_block_lines(t),
         Ev::Assistant(t) => md_to_lines(&unescape_md(t)),
+        Ev::Thinking { ms, text } => thinking_lines(*ms, text, expand),
         Ev::Tool(td) => tool_lines(td, 0),
         Ev::Idle => vec![Line::from("")],
         Ev::Sub { name, ok, preview } => vec![Line::from(vec![
@@ -911,6 +978,10 @@ struct App {
     area_w: usize,
     area_h: usize,
     events: Vec<Ev>,
+    // when the last wire line arrived (thinking duration = the delta to
+    // the assistant line) and the ctrl+t thinking-section toggle
+    last_line_at: Option<std::time::Instant>,
+    show_thinking: bool,
     pending: bool,
     input: String,
     cursor: usize, // char index into input
@@ -941,6 +1012,13 @@ impl App {
         if line == "--- idle" {
             self.pending = false;
         }
+        // every wire line moves the timing reference: a thinking
+        // duration is the delta from the previous line's arrival
+        let now = std::time::Instant::now();
+        let ms = self
+            .last_line_at
+            .map_or(0, |t0| now.duration_since(t0).as_millis());
+        self.last_line_at = Some(now);
         let Some(ev) = parse_line(line) else { return };
         match ev {
             Ev::Tool(td) if matches!(td.state, ToolState::Run) => {
@@ -981,6 +1059,22 @@ impl App {
                     print_ev_of(&Ev::Tool(td), self.debug);
                 }
                 print_ev_of(&ev2, self.debug);
+            }
+            Ev::Assistant(t) => {
+                // the line mode shows the same collapsed section: the
+                // raw reasoning never prints (unless --debug)
+                match split_thinking(&t) {
+                    Some((think, vis)) => {
+                        print_ev_of(
+                            &Ev::Thinking { ms, text: think.to_string() },
+                            self.debug,
+                        );
+                        if !vis.trim().is_empty() {
+                            print_ev_of(&Ev::Assistant(vis.to_string()), self.debug);
+                        }
+                    }
+                    None => print_ev_of(&Ev::Assistant(t), self.debug),
+                }
             }
             other => print_ev_of(&other, self.debug),
         }
@@ -1188,7 +1282,14 @@ fn draw(app: &mut App, frame: &mut Frame) {
             .as_ref()
             .map_or(true, |c| c.width != area_w as u16 || live);
         if stale {
-            let rows = build_rows(&app.events, i, app.debug, area_w, app.tick);
+            let rows = build_rows(
+                &app.events,
+                i,
+                app.debug,
+                area_w,
+                app.tick,
+                app.show_thinking,
+            );
             app.cache[i] = Some(EventRows {
                 width: area_w as u16,
                 rows,
@@ -1427,7 +1528,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
     let hint = if app.pending {
         "Entrée : diriger · Tab : mettre en file · Ctrl+C : interrompre · / : commandes · End : bas"
     } else {
-        "Entrée : envoyer · / : commandes · Pg↑↓/molette : défiler · End : bas · Ctrl+C : quitter"
+        "Entrée : envoyer · / : commandes · Ctrl+T : raisonnement · End : bas · Ctrl+C : quitter"
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(DIM)))),
@@ -1445,12 +1546,41 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     if line == "--- idle" {
                         app.pending = false;
                     }
+                    // thinking duration: the model's reply arrives one
+                    // batch after the previous wire line
+                    let now = std::time::Instant::now();
+                    let ms = app
+                        .last_line_at
+                        .map_or(0, |t| now.duration_since(t).as_millis());
+                    app.last_line_at = Some(now);
                     if let Some(ev) = parse_line(&line) {
-                        // the view is top-anchored: a pinned view never moves,
-                        // a following view re-sticks in draw
-                        let appended = push_event(&mut app.events, &mut app.cache, ev);
-                        if appended && !app.follow {
-                            app.unseen += 1;
+                        // the reasoning rides inside the assistant text
+                        // (think markers): it becomes its own collapsed
+                        // section, never raw history text
+                        let evs: Vec<Ev> = match ev {
+                            Ev::Assistant(t) => match split_thinking(&t) {
+                                Some((think, vis)) => {
+                                    let mut v = vec![Ev::Thinking {
+                                        ms,
+                                        text: think.to_string(),
+                                    }];
+                                    if !vis.trim().is_empty() {
+                                        v.push(Ev::Assistant(vis.to_string()));
+                                    }
+                                    v
+                                }
+                                None => vec![Ev::Assistant(t)],
+                            },
+                            other => vec![other],
+                        };
+                        for ev in evs {
+                            // the view is top-anchored: a pinned view never
+                            // moves, a following view re-sticks in draw
+                            let appended =
+                                push_event(&mut app.events, &mut app.cache, ev);
+                            if appended && !app.follow {
+                                app.unseen += 1;
+                            }
                         }
                     }
                 }
@@ -1541,6 +1671,11 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                         } else {
                             break;
                         }
+                    }
+                    // ctrl+t: expand/collapse every thinking section
+                    (KeyCode::Char('t'), KeyModifiers::CONTROL) => {
+                        app.show_thinking = !app.show_thinking;
+                        app.cache.clear();
                     }
                     // ctrl+l: clear the local feed
                     (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
@@ -1718,11 +1853,12 @@ fn run_tui(app: &mut App) -> io::Result<()> {
 // ---- line mode (non-interactive stdin) ----
 
 fn print_ev_of(ev: &Ev, debug: bool) {
+    let expand = debug;
     if !ev_visible(ev, debug) {
         return;
     }
     let mut out = io::stdout();
-    for l in ev_lines(ev) {
+    for l in ev_lines(ev, expand) {
         for span in l.spans.iter() {
             let _ = write!(out, "{}", span.content);
         }
@@ -1846,6 +1982,8 @@ pub fn run(host: String, port: u16, is_live: bool, debug: bool, session_id: Stri
         area_w: 80,
         area_h: 24,
         events: Vec::new(),
+        last_line_at: None,
+        show_thinking: false,
         pending: false,
         input: String::new(),
         cursor: 0,
