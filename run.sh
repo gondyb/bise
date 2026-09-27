@@ -4,7 +4,7 @@
 # (HTTPS vers api.mistral.ai) et le tool bash tournent DANS le REPL Bend
 # (packages hub HTTP + snap) — plus aucun bridge.
 #
-#   ./run.sh                 # session live (GLM + bash)
+#   ./run.sh                 # session live (opus-5.5 + bash)
 #   ./run.sh --scripted      # session scriptée
 #   ./run.sh --model NOM     # modèle du provider
 #   ./run.sh --port N        # forcer le port du REPL
@@ -22,8 +22,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 export PATH="$HOME/.cargo/bin:$PATH"
 
-if [ ! -x rust/target/debug/bend-harness ]; then
-  echo "bend-harness absent — build cargo..." >&2
+# rebuild when the binary is missing OR stale (a source file is newer
+# than it — a stale debug binary once showed a model the runtime no
+# longer used)
+if [ ! -x rust/target/debug/bend-harness ] \
+   || [ -n "$(find rust/harness/src rust/tui/src -newer rust/target/debug/bend-harness -print -quit 2>/dev/null)" ]; then
+  echo "bend-harness absent ou périmé — build cargo..." >&2
   (cd rust && cargo build -p bend-harness)
 fi
 
