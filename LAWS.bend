@@ -60,6 +60,18 @@ law model_input_leads_with_system:
   for +h: List<&2, T.Msg>
   {S.head_role(S.model_input(cfg, h)) == Some{T.RSys{}} : Maybe<&2, T.Role>}
 
+# LAW: the compaction request is [system] ++ history ++ [prompt]: it
+# ENDS with the user-role compaction prompt. An idle history ends with
+# an assistant message, and providers without assistant prefill reject
+# a request that does not end with a user message.
+law compaction_request_ends_with_prompt:
+  {C.project(T.Cfg{400n, 40n, 3n, "You are precise.", Nil{}},
+      Con{T.user("bonjour"), Con{T.asst("réponse", Nil{}), Nil{}}}, "")
+    == C.POk{Con{T.sys("You are precise."),
+      Con{T.user("bonjour"), Con{T.asst("réponse", Nil{}),
+      Con{T.injected_user(C.compaction_prompt("")), Nil{}}}}}}
+    : C.PRes}
+
 # LAW: replay consumes recorded results in order and completes the program
 # (D1: a resumed program can never diverge from the original run).
 law run_consumes_in_order:
@@ -303,6 +315,14 @@ law obs_wire_format:
   {O.show_obs(T.Assistant{"bonjour"}) == "  obs: assistant: bonjour"
     : String}
 
+# LAW: the compaction preview stays on one wire line: a summary that
+# starts with (or contains) newlines is trimmed and flattened.
+law compaction_preview_one_line:
+  {O.show_obs(T.CompactionDone{"
+Le user
+veut ça"})
+    == "  obs: compaction_done: Le user veut ça..." : String}
+
 # ---- the command language (core/commands.bend, server-side) ----
 
 # LAW: plain text is an implicit "say" — the reason no client ever
@@ -320,14 +340,18 @@ law raw_words_pass_through:
 law slash_compact_maps:
   {Cm.interpret("/compact") == Cm.Send{"compact"} : Cm.Interpretation}
 
-# LAW: /steer carries its argument to the steering word.
-law slash_steer_maps:
-  {Cm.interpret("/steer vas-y") == Cm.Send{"steer vas-y"}
+# LAW: /steer is not a user command — steering is the Enter key while
+# a turn runs (the client writes the steer side-channel).
+law slash_steer_is_not_a_command:
+  {Cm.interpret("/steer vas-y")
+    == Cm.Note{"unknown command: /steer — try /help"}
     : Cm.Interpretation}
 
-# LAW: /steer without an argument is refused, not sent.
-law slash_steer_needs_arg:
-  {Cm.interpret("/steer") == Cm.Note{"/steer needs a message"}
+# LAW: /notify is not a user command — notifications come from the
+# system and from background processes, never from the user.
+law slash_notify_is_not_a_command:
+  {Cm.interpret("/notify salut")
+    == Cm.Note{"unknown command: /notify — try /help"}
     : Cm.Interpretation}
 
 # LAW: /quit (and /exit) map onto the connection-closing word.

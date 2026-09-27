@@ -5,6 +5,22 @@
 import Base
 import ./types.bend as T
 
+# a preview must stay on ONE wire line: newlines become spaces (a raw
+# newline in an obs splits it, and the client reads the tail as noise)
+def one_line.code(nl: Bool, c: U32) -> U32:
+  match nl:
+    case True{}:
+      32
+    case False{}:
+      c
+
+def one_line(s: String) -> String:
+  match s:
+    case SNil{}:
+      SNil{}
+    case SCon{Chr{+c}, +t}:
+      SCon{Chr{one_line.code(U32.is_eq(c, 10), c)}, one_line(t)}
+
 def show_obs(o: T.Obs) -> String:
   match o:
     case T.TurnStarted{}:
@@ -40,7 +56,7 @@ def show_obs(o: T.Obs) -> String:
     case T.CompactionFailed{code}:
       String.append("  obs: context_compaction_failed: ", code)
     case T.CompactionDone{summary}:
-      String.append("  obs: compaction_done: ", String.append(String.take(summary, 40n), "..."))
+      String.append("  obs: compaction_done: ", String.append(String.take(one_line(String.trim(summary)), 40n), "..."))
     case T.NullIteration{}:
       "  obs: null_iteration"
     case T.TurnDone{outcome}:

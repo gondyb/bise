@@ -158,14 +158,17 @@ def compaction_prompt(+extra: String) -> String:
   prompt.with_extra(Bool.not(String.is_empty(extra)),
     "Summarize the conversation so far for the agent that continues it. Reply with a single <summary>...</summary> block containing a non-empty summary. Do not call tools.", extra)
 
-def project.build(f: FitR, +head: List<&2, T.Msg>) -> PRes:
+def project.build(f: FitR, +sysmsg: T.Msg, +prompt: T.Msg) -> PRes:
   match f:
     case FOk{ms}:
-      POk{List.append(&2, T.Msg, head, ms)}
+      POk{Con{sysmsg, List.append(&2, T.Msg, ms, Con{prompt, Nil{}})}}
     case FBig{}:
       PBig{}
 
-# [system, compaction prompt] ++ fitted history, within the threshold
+# [system] ++ fitted history ++ [compaction prompt], within the threshold.
+# The prompt goes LAST: the history of an idle session ends with an
+# assistant message, and providers without assistant prefill reject a
+# request that does not end with a user message (provider 400).
 def project(cfg: T.Cfg, history: List<&2, T.Msg>, +extra: String) -> PRes:
   match cfg:
     case T.Cfg{+threshold, _, _, +system, +tools}:
@@ -174,8 +177,7 @@ def project(cfg: T.Cfg, history: List<&2, T.Msg>, +extra: String) -> PRes:
       overhead = Nat.add(E.msg_tokens(sysmsg),
         Nat.add(E.msg_tokens(prompt), E.tool_tokens(tools)))
       budget = Nat.sub(threshold, overhead)
-      project.build(fit_list(budget, history),
-        Con{sysmsg, Con{prompt, Nil{}}})
+      project.build(fit_list(budget, history), sysmsg, prompt)
 
 # ---- the replacement context ----
 type RRes is Data:

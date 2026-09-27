@@ -1553,16 +1553,6 @@ const COMMANDS: &[Cmd] = &[
         args: false,
     },
     Cmd {
-        name: "/steer",
-        desc: "diriger le modèle pendant le tour",
-        args: true,
-    },
-    Cmd {
-        name: "/notify",
-        desc: "injecter une notification au modèle",
-        args: true,
-    },
-    Cmd {
         name: "/status",
         desc: "modèle, connexion, seuil de compaction",
         args: false,
@@ -1694,7 +1684,7 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             out.push(Ev::Info(format!("{:<11} — {}", c.name, c.desc)));
         }
         out.push(Ev::Info(
-            "texte simple : say implicite (interprété par le harness)".into(),
+            "texte simple : nouveau message · pendant un tour, ⏎ dirige le modèle et Tab met en file".into(),
         ));
         out.push(Ev::Info(
             "glyphes : ✦ raisonnement · ✓ ok · ✗ échec · ▲ alerte · ⟳ compaction · ≡ résumé · ↳ aperçu".into(),
@@ -1716,16 +1706,12 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         } else {
             out.push(Ev::Info("aucun tour en cours à interrompre".into()));
         }
-    } else if (first == "steer" || first == "/steer") && app.pending {
+    } else if first == "steer" && app.pending {
         // mid-turn steering goes through the FILE side-channel: the
         // harness reads the socket only between turns, but the runtime
         // drains the announced steer file at every model/tool safe
         // boundary and commits the text into the running turn (ADR 0005)
-        let msg = v
-            .strip_prefix("steer ")
-            .or_else(|| v.strip_prefix("/steer "))
-            .map(|s| s.trim())
-            .unwrap_or(typed);
+        let msg = v.strip_prefix("steer ").map(|s| s.trim()).unwrap_or(typed);
         if msg.is_empty() {
             out.push(Ev::Info("steering vide".into()));
         } else {
@@ -2483,11 +2469,17 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                             if !v.is_empty() {
                                 // codex semantics: while the agent works,
                                 // Enter STEERS the running turn; at idle it
-                                // starts one. Commands pass through.
-                                let line = if app.pending && !v.starts_with('/') {
+                                // starts one. Commands pass through. The
+                                // explicit "say" keeps text that starts
+                                // with a protocol word ("reload ce
+                                // fichier", "compact la fonction") a
+                                // message, never a command.
+                                let line = if v.starts_with('/') {
+                                    v
+                                } else if app.pending {
                                     format!("steer {}", v)
                                 } else {
-                                    v
+                                    format!("say {}", v)
                                 };
                                 handle_input(app, &line);
                             }

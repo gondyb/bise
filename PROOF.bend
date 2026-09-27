@@ -32,6 +32,9 @@ def Laws.model_input_leads_with_system(cfg, h):
     case T.Cfg{_, _, _, _, _}:
       {==}
 
+def Laws.compaction_request_ends_with_prompt():
+  {==}
+
 def Laws.run_consumes_in_order(n1, a1, n2, a2, r1, r2):
   {==}
 
@@ -102,6 +105,9 @@ def Laws.preserve_recent_keeps_users():
 def Laws.obs_wire_format():
   {==}
 
+def Laws.compaction_preview_one_line():
+  {==}
+
 def Laws.implicit_say():
   {==}
 
@@ -111,10 +117,10 @@ def Laws.raw_words_pass_through():
 def Laws.slash_compact_maps():
   {==}
 
-def Laws.slash_steer_maps():
+def Laws.slash_steer_is_not_a_command():
   {==}
 
-def Laws.slash_steer_needs_arg():
+def Laws.slash_notify_is_not_a_command():
   {==}
 
 def Laws.slash_quit_maps():

@@ -3,7 +3,8 @@
 # Any client (nc, the TUI, a future one) sends raw user lines; the REPL
 # interprets them here, in pure Bend:
 #   - plain text becomes an implicit "say <text>"
-#   - /commands map onto the harness protocol
+#   - /commands (/compact, /interrupt, /reload, /help, /quit) map onto
+#     the harness protocol
 #   - raw protocol words (say, steer, notify, compact, interrupt, quit,
 #     reload, help) pass through untouched
 # LAWS.bend pins this contract law by law.
@@ -86,36 +87,12 @@ def interpret.compact(eq: Bool, +name: String, +rest: String) -> Interpretation:
     case False{}:
       interpret.interrupt(String.eq(name, "interrupt"), name, rest)
 
-def interpret.notify.arg(empty: Bool, +rest: String) -> Interpretation:
-  match empty:
-    case True{}:
-      Note{"/notify needs a message"}
-    case False{}:
-      Send{String.append("notify ", String.trim(rest))}
-
-def interpret.notify(eq: Bool, +name: String, +rest: String) -> Interpretation:
-  match eq:
-    case True{}:
-      interpret.notify.arg(String.is_empty(String.trim(rest)), rest)
-    case False{}:
-      interpret.compact(String.eq(name, "compact"), name, rest)
-
-def interpret.steer.arg(empty: Bool, +rest: String) -> Interpretation:
-  match empty:
-    case True{}:
-      Note{"/steer needs a message"}
-    case False{}:
-      Send{String.append("steer ", String.trim(rest))}
-
-def interpret.steer(eq: Bool, +name: String, +rest: String) -> Interpretation:
-  match eq:
-    case True{}:
-      interpret.steer.arg(String.is_empty(String.trim(rest)), rest)
-    case False{}:
-      interpret.notify(String.eq(name, "notify"), name, rest)
-
+# /steer and /notify are NOT user commands: steering is a key in the
+# client (Enter during a turn), queuing too (Tab during a turn), and a
+# notification is a system/background-process event, never typed by the
+# user. The raw protocol words stay (other clients use them).
 def interpret.slash(+name: String, +rest: String) -> Interpretation:
-  interpret.steer(String.eq(name, "steer"), name, rest)
+  interpret.compact(String.eq(name, "compact"), name, rest)
 
 def interpret.line(empty: Bool, raw: Bool, is_slash: Bool, +op: String,
     +rest: String, +line: String) -> Interpretation:
