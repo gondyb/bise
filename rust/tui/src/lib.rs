@@ -69,6 +69,9 @@ const SYNTAX_STRING: Color = Color::Rgb(0x98, 0xc3, 0x79);
 const SYNTAX_COMMENT: Color = Color::Rgb(0x5c, 0x63, 0x70);
 const SYNTAX_NUMBER: Color = Color::Rgb(0xd1, 0x9a, 0x66);
 const SYNTAX_FUNC: Color = Color::Rgb(0x61, 0xaf, 0xef);
+// the apply_patch diff bands (dark tints under the ok / error colors)
+const DIFF_ADD_BG: Color = Color::Rgb(0x16, 0x2e, 0x1c);
+const DIFF_DEL_BG: Color = Color::Rgb(0x3a, 0x18, 0x1b);
 
 // the OpenCode prompt/autocomplete borders: only a colored vertical bar
 const SPLIT: border::Set = border::Set {
@@ -115,8 +118,8 @@ struct ToolData {
     id: u32,
     name: Option<String>,
     args: Option<String>,
-    // the run_typescript source, wire-encoded (tool_code annotation);
-    // None for every other tool
+    // the source of a code tool (run_typescript args JSON, bash raw
+    // command), wire-encoded (tool_code annotation); None otherwise
     code: Option<String>,
     state: ToolState,
     result: Option<(bool, String)>,
@@ -155,8 +158,9 @@ enum Ev {
         ok: bool,
         preview: String,
     },
-    // the run_typescript source (tool_code annotation): the FULL args,
-    // wire-encoded, merged into the matching Tool by id
+    // the source of a code tool (tool_code annotation: run_typescript,
+    // bash): the FULL args, wire-encoded, merged into the matching Tool
+    // by id
     ToolCode {
         id: u32,
         code: String,
@@ -202,6 +206,42 @@ fn split_thinking(s: &str) -> Option<(String, String)> {
     }
     visible.push_str(rest);
     Some((think.join("\\n"), visible))
+}
+
+// --resume / reload: the REPL replays the restored history as the live
+// wire lines, each prefixed "history " (runtime/main.bend replay). Two
+// lines exist only there: "you : <text>" (a user message: live, the
+// client echoes what it sends) and "injected : <text>" (steering and
+// notifications the Core committed). Everything else is a live line.
+fn strip_history(line: &str) -> (&str, bool) {
+    match line.strip_prefix("history ") {
+        Some(rest) => (rest, true),
+        None => (line, false),
+    }
+}
+
+fn parse_history_line(line: &str) -> Option<Ev> {
+    if let Some(t) = line.strip_prefix("you : ") {
+        return Some(Ev::You(unescape_md(t)));
+    }
+    if let Some(t) = line.strip_prefix("injected : ") {
+        let flat = unescape_md(t).replace('\n', " ");
+        return Some(Ev::Info(format!("injecté · {}", truncate_chars(flat.trim(), 110))));
+    }
+    parse_line(line)
+}
+
+// a replayed tool has no meaningful duration (the timing is the replay's)
+fn hide_replayed_elapsed(events: &mut [Ev], cache: &mut [Option<EventRows>], id: u32) {
+    for (i, e) in events.iter_mut().enumerate().rev() {
+        if let Ev::Tool(td) = e {
+            if td.id == id {
+                td.elapsed = Some(String::new());
+                cache[i] = None;
+                return;
+            }
+        }
+    }
 }
 
 fn parse_line(line: &str) -> Option<Ev> {
@@ -863,19 +903,24 @@ fn json_str_field(s: &str, field: &str) -> Option<String> {
 //   run_typescript        the first line of main() (the signature)
 //   search_tool_functions mode and the query
 //   bash / mcp            the raw args
+// the first non-empty line of a source, "…" when more lines follow
+fn first_line_preview(code: &str) -> String {
+    let first = code
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("");
+    let mut p = truncate_chars(first, 64);
+    if code.lines().filter(|l| !l.trim().is_empty()).count() > 1 {
+        p.push_str(" …");
+    }
+    p
+}
+
 fn args_preview(name: &str, args: &str) -> String {
     if name == "run_typescript" {
         if let Some(code) = json_str_field(args, "code") {
-            let first = code
-                .lines()
-                .map(str::trim)
-                .find(|l| !l.is_empty())
-                .unwrap_or("");
-            let mut p = truncate_chars(first, 64);
-            if code.lines().filter(|l| !l.trim().is_empty()).count() > 1 {
-                p.push_str(" …");
-            }
-            return p;
+            return first_line_preview(&code);
         }
     }
     if name == "search_tool_functions" {
@@ -933,7 +978,11 @@ fn thinking_lines(ms: u128, text: &str, open: bool) -> Vec<Line<'static>> {
 
 // 800ms -> "0.8s"; 4200ms -> "4.2s"; 12_300ms -> "12s"; 90_000 -> "1m30s"
 fn fmt_think_ms(ms: u128) -> String {
-    if ms < 10_000 {
+    if ms == 0 {
+        // no measured duration: a replayed (--resume) section, or lines
+        // that arrived in the same batch
+        "raisonnement".to_string()
+    } else if ms < 10_000 {
         format!("{}.{}s", ms / 1000, (ms % 1000) / 100)
     } else if ms < 60_000 {
         format!("{}s", ms / 1000)
@@ -1227,39 +1276,441 @@ fn highlight_ts(src: &str) -> Vec<Vec<Span<'static>>> {
     lines
 }
 
-// clip one line of spans to a display width (the block never word-wraps:
-// a box that wraps is not a box)
-fn clip_line(spans: &[Span<'static>], w: usize) -> (Vec<Span<'static>>, usize) {
-    let mut out: Vec<Span<'static>> = Vec::new();
-    let mut used = 0usize;
-    for sp in spans {
-        if used >= w {
-            break;
-        }
-        let mut buf = String::new();
-        for ch in sp.content.chars() {
-            let cw = ch.width().unwrap_or(1).max(1);
-            if used + cw > w {
-                break;
+// ---- the bash code block ----
+
+const BASH_KEYWORDS: &[&str] = &[
+    "if", "then", "else", "elif", "fi", "case", "esac", "for", "select", "while", "until",
+    "do", "done", "in", "function", "time", "!", "[[", "]]", "coproc",
+];
+
+// keywords after which the next word is a command again
+const BASH_CMD_AFTER: &[&str] = &[
+    "if", "then", "else", "elif", "while", "until", "do", "time", "!", "coproc",
+];
+
+fn is_bash_word_char(c: char) -> bool {
+    !c.is_whitespace() && !matches!(c, '|' | '&' | ';' | '<' | '>' | '(' | ')' | '"' | '\'' | '`' | '$')
+}
+
+// one $-expansion starting at cs[i] == '$': ${...}, $name, $1, $?, ...
+// "$(" is not an expansion (the caller treats it as a command start).
+// Returns the token and the index after it.
+fn bash_var(cs: &[char], i: usize) -> Option<(String, usize)> {
+    let n = cs.len();
+    match cs.get(i + 1) {
+        Some('{') => {
+            let mut j = i + 2;
+            while j < n && cs[j] != '}' && cs[j] != '\n' {
+                j += 1;
             }
-            buf.push(ch);
-            used += cw;
+            let end = if j < n && cs[j] == '}' { j + 1 } else { j };
+            Some((cs[i..end].iter().collect(), end))
         }
-        if !buf.is_empty() {
-            out.push(Span::styled(buf, sp.style));
+        Some(&c) if c.is_ascii_alphabetic() || c == '_' => {
+            let mut j = i + 1;
+            while j < n && (cs[j].is_ascii_alphanumeric() || cs[j] == '_') {
+                j += 1;
+            }
+            Some((cs[i..j].iter().collect(), j))
         }
-        if used >= w {
-            break;
+        Some(&c) if c.is_ascii_digit() || matches!(c, '?' | '@' | '#' | '$' | '!' | '*' | '-') => {
+            Some((cs[i..i + 2].iter().collect(), i + 2))
+        }
+        _ => None,
+    }
+}
+
+// tokenize bash into highlighted per-line spans, one pass: comments,
+// strings (with $-expansions inside double quotes), variables,
+// keywords, the command word of each simple command, options, numbers
+// and operators (pipes, lists, redirections)
+fn highlight_bash(src: &str) -> Vec<Vec<Span<'static>>> {
+    let cs: Vec<char> = src.chars().collect();
+    let n = cs.len();
+    let comment = Style::default().fg(SYNTAX_COMMENT).add_modifier(Modifier::ITALIC);
+    let string = Style::default().fg(SYNTAX_STRING);
+    let number = Style::default().fg(SYNTAX_NUMBER);
+    let var = Style::default().fg(SYNTAX_NUMBER);
+    let keyword = Style::default().fg(SYNTAX_KEYWORD).add_modifier(Modifier::BOLD);
+    let op = Style::default().fg(SYNTAX_KEYWORD);
+    let func = Style::default().fg(SYNTAX_FUNC);
+    let plain = Style::default().fg(TEXT);
+    let option = Style::default().fg(HEAD);
+    let punct = Style::default().fg(DIM);
+    let mut lines: Vec<Vec<Span<'static>>> = vec![Vec::new()];
+    // the next word is a command name (start, after ; | && || ( $( ...)
+    let mut cmd_pos = true;
+    // "for x in", "case x in": the "in" after the name is a keyword
+    let mut want_in = false;
+    let mut i = 0usize;
+    while i < n {
+        let c = cs[i];
+        if c == '\n' {
+            push_tok(&mut lines, "\n", plain);
+            cmd_pos = true;
+            i += 1;
+            continue;
+        }
+        if c.is_whitespace() {
+            push_tok(&mut lines, &c.to_string(), plain);
+            i += 1;
+            continue;
+        }
+        // comment: '#' at the start of a word
+        if c == '#' && (i == 0 || cs[i - 1].is_whitespace() || matches!(cs[i - 1], ';' | '(' | '|' | '&')) {
+            let mut t = String::new();
+            while i < n && cs[i] != '\n' {
+                t.push(cs[i]);
+                i += 1;
+            }
+            push_tok(&mut lines, &t, comment);
+            continue;
+        }
+        // single quotes: literal to the closing quote
+        if c == '\'' {
+            let mut t = String::from("'");
+            i += 1;
+            while i < n {
+                t.push(cs[i]);
+                i += 1;
+                if cs[i - 1] == '\'' {
+                    break;
+                }
+            }
+            push_tok(&mut lines, &t, string);
+            cmd_pos = false;
+            continue;
+        }
+        // double quotes: $-expansions keep their own color
+        if c == '"' {
+            let mut t = String::from("\"");
+            i += 1;
+            while i < n {
+                if cs[i] == '\\' && i + 1 < n {
+                    t.push(cs[i]);
+                    t.push(cs[i + 1]);
+                    i += 2;
+                    continue;
+                }
+                if cs[i] == '$' {
+                    if let Some((v, j)) = bash_var(&cs, i) {
+                        push_tok(&mut lines, &t, string);
+                        t.clear();
+                        push_tok(&mut lines, &v, var);
+                        i = j;
+                        continue;
+                    }
+                }
+                t.push(cs[i]);
+                i += 1;
+                if cs[i - 1] == '"' {
+                    break;
+                }
+            }
+            push_tok(&mut lines, &t, string);
+            cmd_pos = false;
+            continue;
+        }
+        // backquotes: a command substitution, shown as a string
+        if c == '`' {
+            let mut t = String::from("`");
+            i += 1;
+            while i < n {
+                t.push(cs[i]);
+                i += 1;
+                if cs[i - 1] == '`' {
+                    break;
+                }
+            }
+            push_tok(&mut lines, &t, string);
+            continue;
+        }
+        if c == '$' {
+            // $( and $(( open a new command / arithmetic
+            if cs.get(i + 1) == Some(&'(') {
+                push_tok(&mut lines, "$(", op);
+                i += 2;
+                cmd_pos = true;
+                continue;
+            }
+            if let Some((v, j)) = bash_var(&cs, i) {
+                push_tok(&mut lines, &v, var);
+                i = j;
+                cmd_pos = false;
+                continue;
+            }
+            push_tok(&mut lines, "$", plain);
+            i += 1;
+            continue;
+        }
+        // operators: lists, pipes, subshells, redirections
+        if matches!(c, '|' | '&' | ';' | '(' | ')' | '<' | '>') {
+            let mut t = String::new();
+            t.push(c);
+            i += 1;
+            while i < n && matches!(cs[i], '|' | '&' | ';' | '<' | '>') && t.len() < 3 {
+                t.push(cs[i]);
+                i += 1;
+            }
+            push_tok(&mut lines, &t, op);
+            // a redirection target is an argument; everything else
+            // starts a new command
+            cmd_pos = !(t.contains('<') || t.contains('>') || t == ")");
+            continue;
+        }
+        // a word
+        let mut t = String::new();
+        while i < n && is_bash_word_char(cs[i]) {
+            if cs[i] == '\\' && i + 1 < n {
+                t.push(cs[i]);
+                t.push(cs[i + 1]);
+                i += 2;
+                continue;
+            }
+            t.push(cs[i]);
+            i += 1;
+        }
+        if t.is_empty() {
+            // a lone special char the branches above did not take
+            push_tok(&mut lines, &c.to_string(), punct);
+            i += 1;
+            continue;
+        }
+        let w = t.as_str();
+        if want_in && w == "in" {
+            push_tok(&mut lines, w, keyword);
+            want_in = false;
+            cmd_pos = false;
+        } else if (cmd_pos && BASH_KEYWORDS.contains(&w)) || matches!(w, "]]" | "{" | "}") {
+            push_tok(&mut lines, w, keyword);
+            want_in = matches!(w, "for" | "case" | "select");
+            cmd_pos = BASH_CMD_AFTER.contains(&w) || w == "{";
+        } else if cmd_pos
+            && w.find('=').map_or(false, |k| {
+                k > 0 && w[..k].chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            })
+        {
+            // NAME=value before the command: still in command position
+            let k = w.find('=').unwrap_or(0);
+            push_tok(&mut lines, &w[..k], var);
+            push_tok(&mut lines, "=", punct);
+            push_tok(&mut lines, &w[k + 1..], plain);
+        } else if cmd_pos {
+            push_tok(&mut lines, w, func);
+            cmd_pos = false;
+        } else if w.starts_with('-') && w.len() > 1 {
+            push_tok(&mut lines, w, option);
+        } else if w.chars().all(|ch| ch.is_ascii_digit()) {
+            push_tok(&mut lines, w, number);
+        } else {
+            push_tok(&mut lines, w, plain);
         }
     }
-    (out, used)
+    lines
+}
+
+// ---- the apply_patch diff block ----
+
+// the V4A patch as a diff: file headers, hunk markers, added lines on a
+// green band, removed lines on a red band, context dimmed. The
+// Begin/End Patch envelope is noise and never shows.
+fn highlight_patch(src: &str) -> Vec<Vec<Span<'static>>> {
+    let file = |glyph: &str, path: &str, color: Color, note: &str| {
+        let mut v = vec![
+            Span::styled(format!("{} ", glyph), Style::default().fg(color).add_modifier(Modifier::BOLD)),
+            Span::styled(path.to_string(), Style::default().fg(color).add_modifier(Modifier::BOLD)),
+        ];
+        if !note.is_empty() {
+            v.push(Span::styled(format!(" · {}", note), Style::default().fg(DIM)));
+        }
+        v
+    };
+    let mut lines: Vec<Vec<Span<'static>>> = Vec::new();
+    for l in src.split('\n') {
+        let header = if let Some(p) = l.strip_prefix("*** Update File: ") {
+            Some(file("~", p, HEAD, ""))
+        } else if let Some(p) = l.strip_prefix("*** Add File: ") {
+            Some(file("+", p, OK, "nouveau"))
+        } else if let Some(p) = l.strip_prefix("*** Delete File: ") {
+            Some(file("−", p, ERR, "supprimé"))
+        } else {
+            None
+        };
+        if let Some(h) = header {
+            // a blank row between two files
+            if !lines.is_empty() {
+                lines.push(Vec::new());
+            }
+            lines.push(h);
+            continue;
+        }
+        if let Some(p) = l.strip_prefix("*** Move to: ") {
+            lines.push(file("→", p, HEAD, "renommé"));
+            continue;
+        }
+        if l.starts_with("*** ") || (l.is_empty() && lines.is_empty()) {
+            // Begin Patch, End Patch, End of File
+            continue;
+        }
+        let span = if l.starts_with("@@") {
+            Span::styled(l.to_string(), Style::default().fg(SYNTAX_FUNC))
+        } else if l.starts_with('+') {
+            Span::styled(l.to_string(), Style::default().fg(OK).bg(DIFF_ADD_BG))
+        } else if l.starts_with('-') {
+            Span::styled(l.to_string(), Style::default().fg(ERR).bg(DIFF_DEL_BG))
+        } else {
+            Span::styled(l.to_string(), Style::default().fg(DIM))
+        };
+        lines.push(vec![span]);
+    }
+    // a trailing blank (the text's final newline) is not a row
+    while lines.last().map_or(false, |l| l.iter().all(|s| s.content.trim().is_empty())) {
+        lines.pop();
+    }
+    lines
+}
+
+// the tool-line preview of a patch: each file with its line counts,
+// "core/obs.bend +3 −1, LAWS.bend +12"
+fn patch_summary(src: &str) -> String {
+    let mut files: Vec<(String, usize, usize)> = Vec::new();
+    for l in src.split('\n') {
+        let path = l
+            .strip_prefix("*** Update File: ")
+            .or_else(|| l.strip_prefix("*** Add File: "))
+            .or_else(|| l.strip_prefix("*** Delete File: "));
+        if let Some(p) = path {
+            files.push((p.trim().to_string(), 0, 0));
+            continue;
+        }
+        if let Some(p) = l.strip_prefix("*** Move to: ") {
+            if let Some(f) = files.last_mut() {
+                f.0 = format!("{} → {}", f.0, p.trim());
+            }
+            continue;
+        }
+        if let Some(f) = files.last_mut() {
+            if l.starts_with('+') {
+                f.1 += 1;
+            } else if l.starts_with('-') {
+                f.2 += 1;
+            }
+        }
+    }
+    let parts: Vec<String> = files
+        .into_iter()
+        .map(|(p, add, del)| {
+            let mut s = p;
+            if add > 0 {
+                s.push_str(&format!(" +{}", add));
+            }
+            if del > 0 {
+                s.push_str(&format!(" −{}", del));
+            }
+            s
+        })
+        .collect();
+    truncate_chars(&parts.join(", "), 80)
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum CodeLang {
+    TypeScript,
+    Bash,
+    Patch,
+}
+
+// the code tools: which ones render a source block, in which language
+fn code_lang(tool: &str) -> Option<CodeLang> {
+    match tool {
+        "run_typescript" => Some(CodeLang::TypeScript),
+        "bash" => Some(CodeLang::Bash),
+        "apply_patch" => Some(CodeLang::Patch),
+        _ => None,
+    }
+}
+
+// the source a code tool ran, from its tool_code args: the "code" field
+// of the run_typescript JSON, the raw command for bash
+fn tool_source(lang: CodeLang, decoded: String) -> String {
+    match lang {
+        CodeLang::TypeScript => json_str_field(&decoded, "code").unwrap_or(decoded),
+        CodeLang::Bash | CodeLang::Patch => decoded,
+    }
+}
+
+// wrap one line of spans into rows of at most `w` display columns, so
+// the block shows the whole source. A row breaks after its last
+// whitespace when that keeps at least half the row; otherwise (a long
+// token) it breaks hard at the width. Returns each row with its width.
+fn wrap_code_line(spans: &[Span<'static>], w: usize) -> Vec<(Vec<Span<'static>>, usize)> {
+    let w = w.max(1);
+    let cells: Vec<(char, Style, usize)> = spans
+        .iter()
+        .flat_map(|sp| {
+            sp.content
+                .chars()
+                .map(move |ch| (ch, sp.style, ch.width().unwrap_or(1).max(1)))
+        })
+        .collect();
+    let mut rows = Vec::new();
+    let mut start = 0usize;
+    while start < cells.len() {
+        // the longest run that fits
+        let mut end = start;
+        let mut used = 0usize;
+        while end < cells.len() && used + cells[end].2 <= w {
+            used += cells[end].2;
+            end += 1;
+        }
+        if end == start {
+            // a single cell wider than the row: take it anyway
+            end = start + 1;
+        } else if end < cells.len() {
+            // prefer breaking after the last whitespace in the row
+            if let Some(k) = (start..end).rev().find(|&k| cells[k].0.is_whitespace()) {
+                let before: usize = cells[start..=k].iter().map(|c| c.2).sum();
+                if before * 2 >= w {
+                    end = k + 1;
+                }
+            }
+        }
+        let mut row: Vec<Span<'static>> = Vec::new();
+        let mut row_w = 0usize;
+        for &(ch, style, cw) in &cells[start..end] {
+            row_w += cw;
+            match row.last_mut() {
+                Some(last) if last.style == style => last.content.to_mut().push(ch),
+                _ => row.push(Span::styled(ch.to_string(), style)),
+            }
+        }
+        rows.push((row, row_w));
+        start = end;
+    }
+    if rows.is_empty() {
+        // an empty source line still gets its row
+        rows.push((Vec::new(), 0));
+    }
+    rows
 }
 
 // the code block: a rounded border (orange while the tool runs, dim once
-// done, red on failure), a header, a line-number gutter, and the source
-// verbatim — clipped on the right, never wrapped
-fn code_block_lines(code: &str, state: &ToolState, width: usize) -> Vec<Line<'static>> {
-    let hl = highlight_ts(code);
+// done, red on failure), a header, a line-number gutter, and the whole
+// source: a long line wraps inside the box, its continuation rows with
+// an empty gutter (the numbers mark where each source line starts)
+fn code_block_lines(
+    code: &str,
+    lang: CodeLang,
+    state: &ToolState,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let hl = match lang {
+        CodeLang::TypeScript => highlight_ts(code),
+        CodeLang::Bash => highlight_bash(code),
+        CodeLang::Patch => highlight_patch(code),
+    };
+    // a diff has no meaningful line numbers: no gutter
+    let numbered = lang != CodeLang::Patch;
     if hl.is_empty() {
         return Vec::new();
     }
@@ -1269,13 +1720,19 @@ fn code_block_lines(code: &str, state: &ToolState, width: usize) -> Vec<Line<'st
         ToolState::Fail => ERR,
     };
     let bstyle = Style::default().fg(border);
-    // 2 feed margin, 2 box borders, " N │ " around the gutter, 1 right pad
+    // 2 feed margin, "│ " and "│" borders, 1 right pad, and when
+    // numbered the gutter with its " │ " separator
     let gutter_w = hl.len().to_string().len();
-    let cw = width.saturating_sub(gutter_w + 9).max(8);
-    let inner = gutter_w + cw + 5;
+    let overhead = if numbered { gutter_w + 9 } else { 6 };
+    let cw = width.saturating_sub(overhead).max(8);
+    let inner = if numbered { gutter_w + cw + 5 } else { cw + 2 };
     let mut rows: Vec<Line<'static>> = Vec::new();
-    // top: "  ╭─ typescript ───…───╮"
-    let header = "─ typescript ";
+    // top: "  ╭─ typescript ───…───╮" (or "─ bash ")
+    let header = match lang {
+        CodeLang::TypeScript => "─ typescript ",
+        CodeLang::Bash => "─ bash ",
+        CodeLang::Patch => "─ diff ",
+    };
     let fill = inner.saturating_sub(header.width()).max(1);
     rows.push(Line::from(vec![
         Span::styled("  ", Style::default()),
@@ -1285,19 +1742,31 @@ fn code_block_lines(code: &str, state: &ToolState, width: usize) -> Vec<Line<'st
         Span::styled("╮", bstyle),
     ]));
     for (i, spans) in hl.iter().enumerate() {
-        let (content, used) = clip_line(spans, cw);
-        let mut ls = vec![
-            Span::styled("  ", Style::default()),
-            Span::styled("│ ", bstyle),
-            Span::styled(format!("{:>gw$}", i + 1, gw = gutter_w), Style::default().fg(FAINT)),
-            Span::styled(" │ ", bstyle),
-        ];
-        ls.extend(content);
-        if used < cw {
-            ls.push(Span::styled(" ".repeat(cw - used), Style::default()));
+        // a background band (diff lines) runs to the right border
+        let band = spans
+            .first()
+            .and_then(|sp| sp.style.bg)
+            .map_or(Style::default(), |bg| Style::default().bg(bg));
+        for (r, (content, used)) in wrap_code_line(spans, cw).into_iter().enumerate() {
+            let mut ls = vec![
+                Span::styled("  ", Style::default()),
+                Span::styled("│ ", bstyle),
+            ];
+            if numbered {
+                let gutter = if r == 0 {
+                    format!("{:>gw$}", i + 1, gw = gutter_w)
+                } else {
+                    " ".repeat(gutter_w)
+                };
+                ls.push(Span::styled(gutter, Style::default().fg(FAINT)));
+                ls.push(Span::styled(" │ ", bstyle));
+            }
+            ls.extend(content);
+            // pad to the row width, plus the 1-column right pad
+            ls.push(Span::styled(" ".repeat(cw - used.min(cw) + 1), band));
+            ls.push(Span::styled("│", bstyle));
+            rows.push(Line::from(ls));
         }
-        ls.push(Span::styled("│", bstyle));
-        rows.push(Line::from(ls));
     }
     rows.push(Line::from(vec![
         Span::styled("  ", Style::default()),
@@ -1312,13 +1781,27 @@ fn code_block_lines(code: &str, state: &ToolState, width: usize) -> Vec<Line<'st
 // elapsed, args preview; result preview on the next line. The state is
 // a glyph: braille spinner while running, green ✓ once ok, red ✗ on
 // failure.
+// " 1.2s" after the tool name; nothing for a replayed tool (no duration)
+fn elapsed_label(elapsed: &Option<String>) -> String {
+    match elapsed.as_deref() {
+        Some(e) if !e.is_empty() => format!(" {}", e),
+        _ => String::new(),
+    }
+}
+
 fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
     let name = td.name.clone().unwrap_or_else(|| format!("#{}", td.id));
-    let args = td
-        .args
-        .as_deref()
-        .map(|a| args_preview(&name, a))
-        .unwrap_or_default();
+    // a multi-line script previews as its first line (the args line is
+    // flattened on the wire; the full source is in the code block)
+    let args = match (&td.code, code_lang(&name)) {
+        (Some(raw), Some(CodeLang::Bash)) => first_line_preview(&wire_decode(raw)),
+        (Some(raw), Some(CodeLang::Patch)) => patch_summary(&wire_decode(raw)),
+        _ => td
+            .args
+            .as_deref()
+            .map(|a| args_preview(&name, a))
+            .unwrap_or_default(),
+    };
     let elapsed = fmt_elapsed(td.started);
     let args_span = |st: Style| {
         Span::styled(
@@ -1342,19 +1825,13 @@ fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
         ToolState::Ok => ls.push(Line::from(vec![
             Span::styled(format!("  {} ", GLYPH_OK), Style::default().fg(OK)),
             Span::styled(name.clone(), Style::default().fg(TOOL)),
-            Span::styled(
-                format!(" {}", td.elapsed.clone().unwrap_or_default()),
-                Style::default().fg(TOOL),
-            ),
+            Span::styled(elapsed_label(&td.elapsed), Style::default().fg(TOOL)),
             args_span(Style::default().fg(TOOL)),
         ])),
         ToolState::Fail => ls.push(Line::from(vec![
             Span::styled(format!("  {} ", GLYPH_ERR), Style::default().fg(ERR)),
             Span::styled(name.clone(), Style::default().fg(ERR)),
-            Span::styled(
-                format!(" {}", td.elapsed.clone().unwrap_or_default()),
-                Style::default().fg(ERR),
-            ),
+            Span::styled(elapsed_label(&td.elapsed), Style::default().fg(ERR)),
             args_span(Style::default().fg(ERR)),
         ])),
     }
@@ -1369,16 +1846,12 @@ fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
             ]));
         }
     }
-    // the run_typescript source block: the FULL code, highlighted, in a
-    // bordered box under the tool line
-    if let Some(raw) = &td.code {
-        let decoded = wire_decode(raw);
-        let code = match json_str_field(&decoded, "code") {
-            Some(c) => c,
-            None => decoded,
-        };
+    // the source block of a code tool (run_typescript, bash): the FULL
+    // code, highlighted, in a bordered box under the tool line
+    if let (Some(raw), Some(lang)) = (&td.code, code_lang(&name)) {
+        let code = tool_source(lang, wire_decode(raw));
         if !code.trim().is_empty() {
-            ls.extend(code_block_lines(&code, &td.state, width));
+            ls.extend(code_block_lines(&code, lang, &td.state, width));
         }
     }
     ls
@@ -1456,7 +1929,13 @@ impl App {
             .last_line_at
             .map_or(0, |t0| now.duration_since(t0).as_millis());
         self.last_line_at = Some(now);
-        let Some(ev) = parse_line(line) else { return };
+        let (line, replayed) = strip_history(line);
+        let parsed = if replayed {
+            parse_history_line(line)
+        } else {
+            parse_line(line)
+        };
+        let Some(ev) = parsed else { return };
         match ev {
             Ev::Tool(td) if matches!(td.state, ToolState::Run) => {
                 self.line_tools.insert(td.id, td);
@@ -2206,7 +2685,15 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                         .last_line_at
                         .map_or(0, |t| now.duration_since(t).as_millis());
                     app.last_line_at = Some(now);
-                    if let Some(ev) = parse_line(&line) {
+                    let (line, replayed) = strip_history(&line);
+                    // a replayed reasoning section has no duration
+                    let ms = if replayed { 0 } else { ms };
+                    let parsed = if replayed {
+                        parse_history_line(line)
+                    } else {
+                        parse_line(line)
+                    };
+                    if let Some(ev) = parsed {
                         // the reasoning rides inside the assistant text
                         // (think markers): it becomes its own collapsed
                         // section, never raw history text
@@ -2228,12 +2715,21 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                             other => vec![other],
                         };
                         for ev in evs {
+                            let finished = match &ev {
+                                Ev::Tool(td) if !matches!(td.state, ToolState::Run) => {
+                                    Some(td.id)
+                                }
+                                _ => None,
+                            };
                             // the view is top-anchored: a pinned view never
                             // moves, a following view re-sticks in draw
                             let appended =
                                 push_event(&mut app.events, &mut app.cache, ev);
                             if appended && !app.follow {
                                 app.unseen += 1;
+                            }
+                            if let (true, Some(id)) = (replayed, finished) {
+                                hide_replayed_elapsed(&mut app.events, &mut app.cache, id);
                             }
                         }
                     }
@@ -2823,6 +3319,263 @@ async function main(): Promise<unknown> {
         assert!(joined.iter().any(|l| l.contains("une chaîne")));
         // one bordered row per source line, top and bottom included
         assert_eq!(joined.iter().filter(|l| l.contains('│')).count(), 6);
+    }
+
+    fn merged_tool(wire_lines: &[String]) -> ToolData {
+        let mut events: Vec<Ev> = Vec::new();
+        let mut cache: Vec<Option<EventRows>> = Vec::new();
+        for l in wire_lines {
+            let ev = parse_line(l).expect("parse");
+            push_event(&mut events, &mut cache, ev);
+        }
+        events
+            .iter()
+            .find_map(|e| match e {
+                Ev::Tool(td) => Some(td.clone()),
+                _ => None,
+            })
+            .expect("the merged tool")
+    }
+
+    fn rows_text(rows: &[Line<'static>]) -> Vec<String> {
+        rows.iter()
+            .map(|r| r.spans.iter().map(|s| s.content.clone()).collect::<String>())
+            .collect()
+    }
+
+    // bash gets the same block as run_typescript: the raw command (no
+    // JSON), bash header, one row per line, first-line preview
+    #[test]
+    fn bash_code_block_renders_under_the_tool_line() {
+        let cmd = "# compte les fichiers
+for f in *.rs; do
+  echo \"$f: $(wc -l < \"$f\")\"
+done | sort -n";
+        let wire_lines = vec![
+            "  obs: tool_started #4".to_string(),
+            format!("tool #4 bash : {}", cmd.replace('\n', " ")),
+            format!("tool_code #4 : {}", wire_encode(cmd)),
+            "  obs: tool_finished #4 ok".to_string(),
+        ];
+        let tool = merged_tool(&wire_lines);
+        assert_eq!(tool.name.as_deref(), Some("bash"));
+        let joined = rows_text(&ev_lines(&Ev::Tool(tool), 80));
+        for (i, l) in joined.iter().enumerate() {
+            println!("{:2} | {}", i, l);
+        }
+        assert!(joined[0].contains("bash") && joined[0].contains("# compte les fichiers …"));
+        assert!(joined.iter().any(|l| l.contains("╭─ bash")));
+        assert!(joined.iter().any(|l| l.contains("for f in *.rs; do")));
+        assert!(joined.iter().any(|l| l.contains("done | sort -n")));
+        // one bordered row per source line (4 lines)
+        assert_eq!(joined.iter().filter(|l| l.contains('│')).count(), 4);
+    }
+
+    // a bash tool line without tool_code (an older runtime) keeps the
+    // flattened args preview and renders no block
+    #[test]
+    fn bash_without_code_has_no_block() {
+        let tool = merged_tool(&[
+            "  obs: tool_started #5".to_string(),
+            "tool #5 bash : ls -la".to_string(),
+            "  obs: tool_finished #5 ok".to_string(),
+        ]);
+        let joined = rows_text(&ev_lines(&Ev::Tool(tool), 80));
+        assert!(joined[0].contains("ls -la"));
+        assert!(!joined.iter().any(|l| l.contains('╭')));
+    }
+
+    fn style_of(lines: &[Vec<Span<'static>>], tok: &str) -> Style {
+        lines
+            .iter()
+            .flatten()
+            // adjacent same-style spans merge (whitespace included)
+            .find(|s| s.content.trim() == tok)
+            .map(|s| s.style)
+            .unwrap_or_else(|| panic!("no span {:?}", tok))
+    }
+
+    // the lines LAWS.resume_replays_history pins on the Bend side: the
+    // client rebuilds the conversation, tools merged, no fake duration
+    #[test]
+    fn resume_history_rebuilds_the_feed() {
+        let wire = [
+            "history   obs: compaction_done: court...",
+            "history you : salut\\nça va",
+            "history   obs: tool_started #7",
+            "history tool #7 bash : ls -la",
+            "history tool_code #7 : ls -la",
+            "history tool_result #7 fail : boom",
+            "history   obs: tool_finished #7 failed",
+            "history   obs: assistant: fini",
+            "history   obs: tool_started #9",
+            "history tool #9 bash : pwd",
+            "history tool_code #9 : pwd",
+            "history   obs: tool_finished #9 failed",
+            "history injected : [notification] bg 0 done",
+            "  obs: session_restored: 7 messages",
+        ];
+        let mut events: Vec<Ev> = Vec::new();
+        let mut cache: Vec<Option<EventRows>> = Vec::new();
+        for l in wire {
+            let (line, replayed) = strip_history(l);
+            let ev = if replayed { parse_history_line(line) } else { parse_line(line) };
+            let Some(ev) = ev else { continue };
+            let finished = match &ev {
+                Ev::Tool(td) if !matches!(td.state, ToolState::Run) => Some(td.id),
+                _ => None,
+            };
+            push_event(&mut events, &mut cache, ev);
+            if let (true, Some(id)) = (replayed, finished) {
+                hide_replayed_elapsed(&mut events, &mut cache, id);
+            }
+        }
+        let kinds: Vec<String> = events
+            .iter()
+            .map(|e| match e {
+                Ev::Compacted(t) => format!("compacted {}", t),
+                Ev::You(t) => format!("you {}", t),
+                Ev::Assistant(t) => format!("assistant {}", t),
+                Ev::Tool(td) => format!(
+                    "tool {} {} ok={} code={} elapsed={:?}",
+                    td.id,
+                    td.name.clone().unwrap_or_default(),
+                    matches!(td.state, ToolState::Ok),
+                    td.code.is_some(),
+                    td.elapsed
+                ),
+                Ev::Info(t) => format!("info {}", t),
+                _ => "other".to_string(),
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                "compacted court...".to_string(),
+                "you salut\nça va".to_string(),
+                "tool 7 bash ok=false code=true elapsed=Some(\"\")".to_string(),
+                "assistant fini".to_string(),
+                "tool 9 bash ok=false code=true elapsed=Some(\"\")".to_string(),
+                "info injecté · [notification] bg 0 done".to_string(),
+                "info session restaurée · 7 messages".to_string(),
+            ]
+        );
+    }
+
+    // a long line wraps inside the box: nothing is lost, every row has
+    // the box width, continuation rows have an empty gutter
+    #[test]
+    fn long_code_lines_wrap_inside_the_box() {
+        let cmd = "cd /Users/someone/lab/project && cargo test -p some-crate --release 2>&1 | rg 'test result|FAILED|panicked' | head -20
+echo ok";
+        let rows = rows_text(&code_block_lines(cmd, CodeLang::Bash, &ToolState::Ok, 50));
+        for r in &rows {
+            println!("{}", r);
+        }
+        let widths: Vec<usize> = rows.iter().map(|r| r.width()).collect();
+        assert!(widths.iter().all(|&w| w == widths[0]), "aligned box: {:?}", widths);
+        // top + 2 source lines, the first on several rows + bottom
+        assert!(rows.len() > 4);
+        // the text between the gutter bars reassembles the source
+        let body: String = rows[1..rows.len() - 1]
+            .iter()
+            .map(|r| {
+                // between the gutter's closing bar and the right border
+                let first = r.find('│').unwrap();
+                let second = first + 3 + r[first + 3..].find('│').unwrap();
+                let last = r.rfind('│').unwrap();
+                r[second + 3..last].to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("");
+        assert_eq!(body.replace(' ', ""), cmd.replace(['\n', ' '], ""));
+        // line 2 starts on a numbered row; continuation rows are blank
+        assert!(rows[1].contains(" 1 │ cd "));
+        assert!(rows[2].starts_with("  │   │ "));
+        assert!(rows.iter().any(|r| r.contains(" 2 │ echo ok")));
+    }
+
+    // a token longer than the row breaks hard, never overflows
+    #[test]
+    fn wrap_breaks_long_tokens() {
+        let spans = vec![Span::raw("x".repeat(25))];
+        let rows = wrap_code_line(&spans, 10);
+        let ws: Vec<usize> = rows.iter().map(|(_, w)| *w).collect();
+        assert_eq!(ws, vec![10, 10, 5]);
+        assert_eq!(wrap_code_line(&[], 10).len(), 1);
+    }
+
+    // apply_patch renders as a diff: summary in the tool line, the
+    // envelope dropped, file headers, colored bands to the border
+    #[test]
+    fn apply_patch_renders_a_diff_block() {
+        let patch = "*** Begin Patch
+*** Update File: core/obs.bend
+@@ def show_obs
+   case T.Assistant{text}:
+-    old line
++    new line
++    another line
+*** Add File: notes.md
++# Notes
+*** End Patch
+";
+        let tool = merged_tool(&[
+            "  obs: tool_started #6".to_string(),
+            format!("tool #6 apply_patch : {}", patch.replace('\n', " ")),
+            format!("tool_code #6 : {}", wire_encode(patch)),
+            "tool_result #6 ok : Done!".to_string(),
+            "  obs: tool_finished #6 ok".to_string(),
+        ]);
+        let lines = ev_lines(&Ev::Tool(tool), 70);
+        let rows = rows_text(&lines);
+        for r in &rows {
+            println!("{}", r);
+        }
+        assert!(rows[0].contains("apply_patch") && rows[0].ends_with("· core/obs.bend +2 −1, notes.md +1"));
+        assert!(rows.iter().any(|r| r.contains("╭─ diff")));
+        assert!(!rows.iter().any(|r| r.contains("Begin Patch") || r.contains("End Patch")));
+        assert!(rows.iter().any(|r| r.contains("│ ~ core/obs.bend")));
+        assert!(rows.iter().any(|r| r.contains("│ + notes.md · nouveau")));
+        // no line-number gutter in a diff
+        assert!(rows.iter().any(|r| r.contains("│ -    old line")));
+        // box aligned
+        let boxed: Vec<usize> = rows.iter().filter(|r| r.contains('│') || r.contains('╭') || r.contains('╰')).map(|r| r.width()).collect();
+        assert!(boxed.iter().all(|&w| w == boxed[0]), "{:?}", boxed);
+        // the added line's band reaches the right border (padding included)
+        let add_row = lines
+            .iter()
+            .find(|l| l.spans.iter().any(|s| s.content.contains("+    new line")))
+            .expect("the added row");
+        let n = add_row.spans.len();
+        assert_eq!(add_row.spans[n - 2].style.bg, Some(DIFF_ADD_BG));
+        let del_row = lines
+            .iter()
+            .find(|l| l.spans.iter().any(|s| s.content.contains("-    old line")))
+            .expect("the removed row");
+        assert!(del_row.spans.iter().any(|s| s.style.bg == Some(DIFF_DEL_BG)));
+    }
+
+    #[test]
+    fn bash_highlighting_classifies_tokens() {
+        let hl = highlight_bash(
+            "# note
+X=1 grep -n \"$HOME\" f.txt | wc -l && for i in 1 2; do echo $i; done",
+        );
+        let fg = |tok: &str| style_of(&hl, tok).fg;
+        assert_eq!(fg("# note"), Some(SYNTAX_COMMENT));
+        assert_eq!(fg("X"), Some(SYNTAX_NUMBER)); // assignment name
+        assert_eq!(fg("grep"), Some(SYNTAX_FUNC)); // command word
+        assert_eq!(fg("-n"), Some(HEAD)); // option
+        assert_eq!(fg("$HOME"), Some(SYNTAX_NUMBER)); // expansion in quotes
+        assert_eq!(fg("f.txt"), Some(TEXT)); // argument
+        assert_eq!(fg("wc"), Some(SYNTAX_FUNC)); // command after a pipe
+        assert_eq!(fg("for"), Some(SYNTAX_KEYWORD));
+        assert_eq!(fg("in"), Some(SYNTAX_KEYWORD));
+        assert_eq!(fg("do"), Some(SYNTAX_KEYWORD));
+        assert_eq!(fg("echo"), Some(SYNTAX_FUNC)); // command after "do"
+        assert_eq!(fg("done"), Some(SYNTAX_KEYWORD));
+        assert_eq!(hl.len(), 2); // one span list per source line
     }
 }
 

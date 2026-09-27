@@ -469,17 +469,22 @@ def repl_conn(sock: Socket, sess: T.Session) -> IO(Flow):
 # ---- the accept loop: one connection at a time, session survives ----
 
 # the --continue greeting: sent on the first connection of a restored
-# session, then never again
-def greet_lines(+n: Nat) -> List<&2, String>:
+# session (a --resume, or the respawn after a /reload), then never
+# again. The restored history replays first ("history " lines, see
+# R.replay), so the client's fresh feed shows the conversation so far;
+# the session_restored line closes the replay.
+def greet_lines(+n: Nat, +history: List<&2, T.Msg>) -> List<&2, String>:
   # no idle marker: the greeting is unsolicited, not a turn's end — an
   # idle here would make clients give up waiting for the first turn
-  Con{String.append("  obs: session_restored: ",
-      String.append(Nat.show(n), " messages")), Nil{}}
+  List.append(&2, String, R.replay(history),
+    Con{String.append("  obs: session_restored: ",
+      String.append(Nat.show(n), " messages")), Nil{}})
 
-def greet_out(greet: Maybe<&2, Nat>, s: Socket) -> IO(R.Out):
+def greet_out(greet: Maybe<&2, Nat>, s: Socket, +sess: T.Session)
+    -> IO(R.Out):
   match greet:
     case Some{+n}:
-      R.emit(R.ONet{s}, greet_lines(n))
+      R.emit(R.ONet{s}, greet_lines(n, P.history_of(sess)))
     case None{}:
       IO.pure(R.Out, R.ONet{s})
 
@@ -540,7 +545,7 @@ def serve_after(am: Listener & Result<&1, &1, U32 & String, Socket>,
         IO.pure(Flow, Stop{})
     case (l2, Done{s}):
       do IO<Flow>:
-        out2 : R.Out <- greet_out(greet, s)
+        out2 : R.Out <- greet_out(greet, s, sess)
         f : Flow <- greet_conn(out2, sess)
         serve_after.cont(f, l2, next)
 

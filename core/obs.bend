@@ -4,9 +4,12 @@
 # contract every client (TUI, nc) parses. LAWS.bend pins the format.
 import Base
 import ./types.bend as T
+import ./api.bend as Api
 
 # a preview must stay on ONE wire line: newlines become spaces (a raw
-# newline in an obs splits it, and the client reads the tail as noise)
+# newline in an obs splits it, and the client reads the tail as noise).
+# In-session texts carry newlines escaped (backslash-n, the wire
+# convention): the preview unescapes them first, then flattens.
 def one_line.code(nl: Bool, c: U32) -> U32:
   match nl:
     case True{}:
@@ -56,7 +59,7 @@ def show_obs(o: T.Obs) -> String:
     case T.CompactionFailed{code}:
       String.append("  obs: context_compaction_failed: ", code)
     case T.CompactionDone{summary}:
-      String.append("  obs: compaction_done: ", String.append(String.take(one_line(String.trim(summary)), 40n), "..."))
+      String.append("  obs: compaction_done: ", String.append(String.take(one_line(String.trim(Api.unescape_nl(summary))), 40n), "..."))
     case T.NullIteration{}:
       "  obs: null_iteration"
     case T.TurnDone{outcome}:

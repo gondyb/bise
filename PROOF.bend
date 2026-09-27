@@ -108,6 +108,9 @@ def Laws.obs_wire_format():
 def Laws.compaction_preview_one_line():
   {==}
 
+def Laws.compaction_preview_unescapes():
+  {==}
+
 def Laws.implicit_say():
   {==}
 
@@ -871,4 +874,7 @@ def Laws.info_line_format():
   {==}
 
 def Laws.info_paths_are_the_drained_ones():
+  {==}
+
+def Laws.resume_replays_history():
   {==}

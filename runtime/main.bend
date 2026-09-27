@@ -2151,16 +2151,22 @@ def call_args(c: T.Call) -> String:
     case T.Call{_, _, args}:
       args
 
-# the run_typescript source line: the FULL args, wire-encoded (newline
-# as \N, backslash doubled - the same reversible encoding the provider
-# wire uses), never flattened or capped, so the TUI renders the whole
-# program; the tool # preview line stays capped at 200
+# the source line of a code tool (run_typescript, bash, apply_patch -
+# the TUI renders the patch as a diff): the FULL args,
+# wire-encoded (newline as \N, backslash doubled - the same reversible
+# encoding the provider wire uses), never flattened or capped, so the
+# TUI renders the whole program or script; the tool # preview line
+# stays capped at 200
 def code_ann(+call: T.Call) -> String:
   String.append("tool_code #", String.append(U32.show(call_id(call)),
     String.append(" : ", Api.wire_encode(call_args(call)))))
 
+def is_code_call.wire(+w: String) -> Bool:
+  Bool.or(String.eq(w, "run_typescript"),
+    Bool.or(String.eq(w, "bash"), String.eq(w, "apply_patch")))
+
 def is_code_call(+name: String) -> Bool:
-  String.eq(Rem.wire_name(name), "run_typescript")
+  is_code_call.wire(Rem.wire_name(name))
 
 def emit_code_ann.pick(is_code: Bool, out: Out, +call: T.Call) -> IO(Out):
   match is_code:
@@ -2175,6 +2181,195 @@ def emit_code_ann(out: Out, +call: T.Call, live: Bool) -> IO(Out):
       emit_code_ann.pick(is_code_call(call_name(call)), out, call)
     case False{}:
       IO.pure(Out, out)
+
+# ---- --resume / --continue: replay the restored history to the client ----
+# A client's feed starts empty: a fresh TUI after --resume, and after a
+# /reload respawn too. The REPL replays the restored history as the SAME
+# wire lines a live turn prints, each prefixed "history ", so the client
+# renders it with its live code path (tool blocks included). Two lines
+# have no live form: "you : <text>" (a user message, typed client-side
+# in a live turn) and "injected : <text>" (steering / notifications).
+# Tool results carry no call id: they follow their assistant message in
+# call order, so the walk keeps the calls still waiting (pend). A call
+# that never got its result (interrupt, crash) replays as failed.
+# One self-recursive def, fuel first, the state in Data; the output
+# accumulates reversed.
+
+type Rp is Data:
+  Rp{out: List<&2, String>, ms: List<&2, T.Msg>, pend: List<&2, T.Call>}
+
+def hist(+l: String) -> String:
+  String.append("history ", l)
+
+def rev_onto(xs: List<&2, String>, acc: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      acc
+    case Con{h, t}:
+      rev_onto(t, Con{h, acc})
+
+def fin_label(ok: Bool) -> String:
+  match ok:
+    case True{}:
+      " ok"
+    case False{}:
+      " failed"
+
+def replay.fin(+id: U32, ok: Bool) -> String:
+  hist(String.append("  obs: tool_finished #",
+    String.append(U32.show(id), fin_label(ok))))
+
+def replay.code(is_code: Bool, +c: T.Call) -> List<&2, String>:
+  match is_code:
+    case True{}:
+      Con{hist(code_ann(c)), Nil{}}
+    case False{}:
+      Nil{}
+
+def replay.call(+c: T.Call) -> List<&2, String>:
+  Con{hist(String.append("  obs: tool_started #", U32.show(call_id(c)))),
+    Con{hist(call_ann(c)), replay.code(is_code_call(call_name(c)), c)}}
+
+def replay.calls(cs: List<&2, T.Call>) -> List<&2, String>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case Con{+c, t}:
+      List.append(&2, String, replay.call(c), replay.calls(t))
+
+def replay.abandon(cs: List<&2, T.Call>) -> List<&2, String>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case Con{+c, t}:
+      Con{replay.fin(call_id(c), False{}), replay.abandon(t)}
+
+# a committed result: "tool <name> ok: <out>" / "tool <name> failed: <out>"
+# (session.tool_result_msg), the out newline-escaped
+def replay.res.lines(+id: U32, +ok: Bool, +out: String) -> List<&2, String>:
+  Con{hist(res_ann(id, Ex{ok, Api.unescape_nl(out)})),
+    Con{replay.fin(id, ok), Nil{}}}
+
+def replay.res.fail(is_fail: Bool, +id: U32, +text: String, +pfail: String)
+    -> List<&2, String>:
+  match is_fail:
+    case True{}:
+      replay.res.lines(id, False{}, String.drop(text, String.length(pfail)))
+    case False{}:
+      replay.res.lines(id, True{}, text)
+
+def replay.res.ok(is_ok: Bool, +id: U32, +text: String, +pok: String,
+    +pfail: String) -> List<&2, String>:
+  match is_ok:
+    case True{}:
+      replay.res.lines(id, True{}, String.drop(text, String.length(pok)))
+    case False{}:
+      replay.res.fail(String.starts_with(text, pfail), id, text, pfail)
+
+def replay.res(+c: T.Call, +text: String) -> List<&2, String>:
+  match c:
+    case T.Call{+id, +name, _}:
+      +base = String.append("tool ", S.result_name(name))
+      replay.res.ok(String.starts_with(text, String.append(base, " ok: ")),
+        id, text, String.append(base, " ok: "),
+        String.append(base, " failed: "))
+
+def replay.summary_of(m: Maybe<&2, String>, +text: String) -> String:
+  match m:
+    case Some{+s}:
+      s
+    case None{}:
+      text
+
+def replay.injected.other(is_preamble: Bool, +text: String)
+    -> List<&2, String>:
+  match is_preamble:
+    case True{}:
+      Nil{}
+    case False{}:
+      Con{hist(String.append("injected : ", Api.escape_nl(text))), Nil{}}
+
+def replay.injected.summary(is_summary: Bool, +text: String)
+    -> List<&2, String>:
+  match is_summary:
+    case True{}:
+      Con{hist(O.show_obs(T.CompactionDone{
+        replay.summary_of(C.parse_summary(text), text)})), Nil{}}
+    case False{}:
+      replay.injected.other(
+        String.starts_with(text, "The earlier conversation was compacted."),
+        text)
+
+def replay.user(inj: Bool, +text: String, +rest: List<&2, T.Msg>,
+    +pend: List<&2, T.Call>, +out: List<&2, String>) -> Rp:
+  match inj:
+    case False{}:
+      Rp{Con{hist(String.append("you : ", Api.escape_nl(text))), out},
+        rest, pend}
+    case True{}:
+      Rp{rev_onto(replay.injected.summary(
+          String.starts_with(text, "Summary of the earlier conversation:"),
+          text), out), rest, pend}
+
+def replay.asst(empty: Bool, +text: String) -> List<&2, String>:
+  match empty:
+    case True{}:
+      Nil{}
+    case False{}:
+      # the restored text may carry real newlines: escaped, the line stays
+      # one wire line (live replies arrive escaped already)
+      Con{hist(O.show_obs(T.Assistant{Api.escape_nl(text)})), Nil{}}
+
+def replay.tool(pend: List<&2, T.Call>, +text: String,
+    +rest: List<&2, T.Msg>, +out: List<&2, String>) -> Rp:
+  match pend:
+    case Nil{}:
+      Rp{out, rest, Nil{}}
+    case Con{+c, +t}:
+      Rp{rev_onto(replay.res(c, text), out), rest, t}
+
+def replay.msg(+m: T.Msg, +rest: List<&2, T.Msg>, +pend: List<&2, T.Call>,
+    +out: List<&2, String>) -> Rp:
+  match m:
+    case T.Msg{+role, +text, +calls, +inj}:
+      match role:
+        case T.RUser{}:
+          replay.user(inj, text, rest, pend, out)
+        case T.RAsst{}:
+          # a new assistant message: calls still waiting never got a result
+          Rp{rev_onto(List.append(&2, String, replay.abandon(pend),
+              List.append(&2, String, replay.asst(String.is_empty(text), text),
+                replay.calls(calls))), out), rest, calls}
+        case T.RTool{}:
+          replay.tool(pend, text, rest, out)
+        case T.RSys{}:
+          Rp{out, rest, pend}
+
+def replay.step(st: Rp) -> Rp:
+  match st:
+    case Rp{+out, +ms, +pend}:
+      match ms:
+        case Nil{}:
+          Rp{rev_onto(replay.abandon(pend), out), Nil{}, Nil{}}
+        case Con{+m, +rest}:
+          replay.msg(m, rest, pend, out)
+
+def replay.go(fuel: Nat, st: Rp) -> Rp:
+  match fuel:
+    case 0n:
+      st
+    case 1n+k:
+      replay.go(k, replay.step(st))
+
+def replay.out(st: Rp) -> List<&2, String>:
+  match st:
+    case Rp{+out, _, _}:
+      List.reverse(&2, String, out)
+
+# one step per message, one more to flush the calls left waiting
+def replay(+history: List<&2, T.Msg>) -> List<&2, String>:
+  replay.out(replay.go(Nat.add(List.length(&2, T.Msg, history), 1n),
+    Rp{Nil{}, history, Nil{}}))
 
 
 # live completions: run_typescript becomes node_program so the V8 engine

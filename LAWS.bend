@@ -323,6 +323,12 @@ Le user
 veut ça"})
     == "  obs: compaction_done: Le user veut ça..." : String}
 
+# LAW: the same holds for the in-session form, where a newline travels
+# escaped as backslash-n (chars 92, 110).
+law compaction_preview_unescapes:
+  {O.show_obs(T.CompactionDone{SCon{Chr{92}, SCon{Chr{110}, "Le user"}}})
+    == "  obs: compaction_done: Le user..." : String}
+
 # ---- the command language (core/commands.bend, server-side) ----
 
 # LAW: plain text is an implicit "say" — the reason no client ever
@@ -2128,3 +2134,39 @@ law info_paths_are_the_drained_ones:
   {Bool.and(String.eq(Rt.steer_path_of("7"), "/tmp/bend-steer-7.txt"),
      String.eq(Rt.interrupt_path_of("7"), "/tmp/bend-interrupt-7.txt"))
     == True{} : Bool}
+
+# ---- --resume: the restored history replays as live wire lines ----
+
+# LAW: a restored history replays as the lines a live turn prints, each
+# prefixed "history ": the compaction summary (its preamble skipped), the
+# user message, each tool call with its code and its result (paired in
+# call order, no id in the result), the assistant text on ONE wire line
+# (a real newline escaped as backslash-n, chars 92 110, as live replies
+# arrive); a call left without a result (interrupt, crash) replays as
+# failed.
+law resume_replays_history:
+  {Rt.replay(Con{T.injected_user("The earlier conversation was compacted. A summary replaces it; continue from the preserved user messages."),
+      Con{T.injected_user("Summary of the earlier conversation:
+<summary>court</summary>"),
+      Con{T.user("salut"),
+      Con{T.asst("", Con{T.Call{7, "bash", "ls -la"}, Nil{}}),
+      Con{T.tool_res("tool bash failed: boom"),
+      Con{T.asst("<think>hmm</think>
+fini", Nil{}),
+      Con{T.asst("", Con{T.Call{9, "bash", "pwd"}, Nil{}}),
+      Nil{}}}}}}}})
+    == Con{"history   obs: compaction_done: court...",
+      Con{"history you : salut",
+      Con{"history   obs: tool_started #7",
+      Con{"history tool #7 bash : ls -la",
+      Con{"history tool_code #7 : ls -la",
+      Con{"history tool_result #7 fail : boom",
+      Con{"history   obs: tool_finished #7 failed",
+      Con{String.append("history   obs: assistant: <think>hmm</think>",
+        SCon{Chr{92}, SCon{Chr{110}, "fini"}}),
+      Con{"history   obs: tool_started #9",
+      Con{"history tool #9 bash : pwd",
+      Con{"history tool_code #9 : pwd",
+      Con{"history   obs: tool_finished #9 failed",
+      Nil{}}}}}}}}}}}}}
+    : List<&2, String>}
