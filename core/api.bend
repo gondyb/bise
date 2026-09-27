@@ -1348,8 +1348,11 @@ def awalk_go(fuel: Nat, w: AWalk) -> List<&2, J.Json>:
                           Nil{}}}, acc}})
 
 
+# a tool message takes THREE hops (AN, AR, AT): the fuel covers that
+# with room - an exhausted walk would return NO messages at all
+# (probed: "messages: at least one message is required" past ~15 results)
 def amsgs(+msgs: List<&2, WMsg>) -> List<&2, J.Json>:
-  awalk_go(Nat.add(Nat.mul(msgs_len(msgs), 2n), 16n),
+  awalk_go(Nat.add(Nat.mul(msgs_len(msgs), 4n), 16n),
     AN{msgs, Nil{}, Nil{}})
 
 # ---- Anthropic: the body ----

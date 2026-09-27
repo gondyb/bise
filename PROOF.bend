@@ -792,6 +792,9 @@ def Laws.anth_multi_span_replays():
 def Laws.anth_refusal_maps():
   {==}
 
+def Laws.anth_long_tool_run_keeps_messages():
+  {==}
+
 def Laws.glm_thinking_signature_surfaces():
   {==}
 
