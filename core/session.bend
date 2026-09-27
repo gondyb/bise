@@ -276,6 +276,18 @@ def sess_history(+s: T.Session) -> List<&2, T.Msg>:
     case T.Sess{_, +history, _, _, _, _, _, _}:
       history
 
+# the queued texts held for the next turn (queue_msg appends; the
+# runtime's idle boundary pops them one turn at a time)
+def sess_queued(+s: T.Session) -> List<&2, String>:
+  match s:
+    case T.Sess{_, _, _, _, _, _, +queued, _}:
+      queued
+
+def set_queued(+s: T.Session, +q: List<&2, String>) -> T.Session:
+  match s:
+    case T.Sess{+cfg, +history, +inputs, +actions, +turn, +pending, _, +notifs}:
+      T.Sess{cfg, history, inputs, actions, turn, pending, q, notifs}
+
 # does the history hold this injected user message?
 def history_has_user(msgs: List<&2, T.Msg>, +text: String) -> Bool:
   match msgs:

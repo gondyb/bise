@@ -242,12 +242,26 @@ def trans.act(+rt: Rt, +rest: List<&2, T.Act>, +a: T.Act) -> Trans:
     case T.ToolAct{_, call}:
       trans.tool(rt, rest, call)
 
+# the session's own queue drains at the idle boundary: a message the
+# Core queued mid-turn (apply.user.busy: Queue never supersedes
+# in-flight work) starts the next turn as soon as the current one
+# ends — the same contract as a line the client queued between turns
+# (rt.cmds takes priority; the tail stays queued for later turns)
+def trans.idle.queued(q: List<&2, String>, +sess: T.Session,
+    +script: List<&2, M.Reply>, +live: Bool) -> Trans:
+  match q:
+    case Nil{}:
+      Tr{EPrints{Con{"--- idle", Nil{}}}, Rt{sess, script, Nil{}, live}, JDone{}}
+    case Con{+text, +rest}:
+      Tr{ENone{}, Rt{S.set_queued(sess, rest), script, Nil{}, live},
+        JCmd{T.UserMsg{T.Queue{}, text}, Nil{}}}
+
 def trans.idle(+rt: Rt) -> Trans:
   match rt:
     case Rt{+sess, +script, cmds, +live}:
       match cmds:
         case Nil{}:
-          Tr{EPrints{Con{"--- idle", Nil{}}}, rt, JDone{}}
+          trans.idle.queued(S.sess_queued(sess), sess, script, live)
         case Con{c, rest}:
           Tr{ENone{}, Rt{sess, script, rest, live}, JCmd{c, Nil{}}}
 

@@ -524,3 +524,21 @@ def Laws.skills_strip_frontmatter():
 
 def Laws.merged_surface_carries_live_catalog():
   {==}
+
+def Laws.queue_hold_is_act_free():
+  {==}
+
+def Laws.queue_holds_mid_turn():
+  {==}
+
+def Laws.queue_survives_turn_end():
+  {==}
+
+def Laws.queue_pops_at_idle():
+  {==}
+
+def Laws.queue_pop_removes_head():
+  {==}
+
+def Laws.queue_delivered_in_history():
+  {==}

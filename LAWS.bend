@@ -421,6 +421,102 @@ law skills_prompt_gated:
      String.contains(Sk.prompt_with("base", "one\td1\t/p1"),
        "<available-skills>")) == True{} : Bool}
 
+# ---- queued messages (ADR 0005's sibling: Queue never supersedes) ----
+# A Queue message applied mid-turn is HELD (queue_msg), and the idle
+# boundary pops it into the next turn. Before the pop existed, the
+# held list was a black hole: nothing consumed it.
+
+def queue_flow.res(+cfg: T.Cfg) -> T.Res:
+  S.apply(steer_flow.started(cfg), T.UserMsg{T.Queue{}, "penguins"})
+
+def queue_flow.held(+cfg: T.Cfg) -> T.Session:
+  S.res_next(queue_flow.res(cfg), steer_flow.started(cfg))
+
+# LAW: a queued message mid-turn produces no acts — it never
+# supersedes the running turn.
+law queue_hold_is_act_free:
+  {drain_flow.acts(queue_flow.res(law_cfg())) == Nil{} : List<&2, T.Act>}
+
+# LAW: ... and lands in the held list (never in the history yet).
+law queue_holds_mid_turn:
+  {S.sess_queued(queue_flow.held(law_cfg()))
+    == Con{"penguins", Nil{}} : List<&2, String>}
+
+def queue_flow.done(+cfg: T.Cfg) -> T.Session:
+  S.res_next(S.apply(queue_flow.held(cfg),
+      T.CompletionOk{0, "done", Nil{}}), queue_flow.held(cfg))
+
+# LAW: the turn's end keeps the queue intact.
+law queue_survives_turn_end:
+  {S.sess_queued(queue_flow.done(law_cfg()))
+    == Con{"penguins", Nil{}} : List<&2, String>}
+
+def queue_flow.tr(+cfg: T.Cfg) -> Rt.Trans:
+  Rt.transition(Rt.Rt{queue_flow.done(cfg), Nil{}, Nil{}, False{}},
+    Rt.JIdle{})
+
+def queue_flow.job_of(t: Rt.Trans) -> Rt.Job:
+  match t:
+    case Rt.Tr{_, _, job}:
+      job
+
+def queue_flow.is_queue_cmd(job: Rt.Job) -> Bool:
+  match job:
+    case Rt.JCmd{T.UserMsg{T.Queue{}, "penguins"}, Nil{}}:
+      True{}
+    case _:
+      False{}
+
+def queue_flow.tail_of(t: Rt.Trans) -> List<&2, String>:
+  match t:
+    case Rt.Tr{_, +rt2, _}:
+      match rt2:
+        case Rt.Rt{+sess, _, _, _}:
+          S.sess_queued(sess)
+
+def queue_flow.next_of(t: Rt.Trans) -> T.Session:
+  match t:
+    case Rt.Tr{_, +rt2, _}:
+      match rt2:
+        case Rt.Rt{+sess, _, _, _}:
+          sess
+
+# LAW: the idle boundary pops the held head into the next turn's user
+# message ...
+law queue_pops_at_idle:
+  {queue_flow.is_queue_cmd(queue_flow.job_of(queue_flow.tr(law_cfg())))
+    == True{} : Bool}
+
+# LAW: ... and the popped head is REMOVED from the held list (the tail
+# stays queued for later turns; no re-delivery loop).
+law queue_pop_removes_head:
+  {queue_flow.tail_of(queue_flow.tr(law_cfg())) == Nil{}
+    : List<&2, String>}
+
+def queue_flow.delivered(+cfg: T.Cfg) -> T.Session:
+  S.res_next(S.apply(queue_flow.next_of(queue_flow.tr(cfg)),
+      T.UserMsg{T.Queue{}, "penguins"}),
+    queue_flow.next_of(queue_flow.tr(cfg)))
+
+# a PLAIN user text in the history (history_has_user matches only
+# injected messages; a queued message starts a turn as a plain one)
+def queue_flow.has_user(msgs: List<&2, T.Msg>, +text: String) -> Bool:
+  match msgs:
+    case Nil{}:
+      False{}
+    case Con{+m, +rest}:
+      match m:
+        case T.Msg{T.RUser{}, +t, _, False{}}:
+          Bool.or(String.eq(t, text), queue_flow.has_user(rest, text))
+        case _:
+          queue_flow.has_user(rest, text)
+
+# LAW: the popped message starts the next turn and reaches the
+# durable history — the queue is a delivery mechanism, not a hold.
+law queue_delivered_in_history:
+  {queue_flow.has_user(S.sess_history(queue_flow.delivered(law_cfg())),
+    "penguins") == True{} : Bool}
+
 # ---- /reload (the self-improvement loop: restart on the same session) ----
 
 # LAW: /reload maps onto the reload protocol word, sent verbatim.
