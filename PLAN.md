@@ -35,18 +35,38 @@ Sources this port follows:
 
 ## Modules
 
+Core (pure, law-checked):
+
 - `core/types.bend` — roles, messages, commands, actions, observations, config, session.
+- `core/text.bend` — shared string helpers (newline, flatten, find, sh_quote).
 - `core/estimate.bend` — deterministic model-input token estimate.
-- `core/history.bend` — history queries: latest non-injected user, paired drop-oldest, middle-truncate.
+- `core/history.bend` — history queries: paired drop-oldest, middle-truncate.
 - `core/compaction.bend` — ADR 0011: projection fit, summary validation, replacement.
 - `core/discovery.bend` — search_tool_functions.
-- `core/program.bend` — D1: programmatic tool calling in Bend (parser + replay interpreter).
+- `core/program.bend` — D1 JS-lite interpreter (scripted mode only; live mode runs run_typescript in bend-jsrt).
 - `core/session.bend` — `apply`, the step-protocol state machine.
-- `core/checkpoint.bend` — export/restore.
-- `runtime/model.bend` — scripted provider adapter.
-- `runtime/tools.bend` — tool registry + executors.
-- `runtime/main.bend` — scenario runner: applies commands, executes actions, prints observations.
-- `scenarios/*.bend` — acceptance scenarios (core tested through the step protocol, per ADR 0006).
+- `core/checkpoint.bend` — export/restore, the on-disk text form.
+- `core/api.bend` — provider JSON (OpenAI-style and Anthropic) from/to the wire lines.
+- `core/patch.bend` — apply_patch (V4A) parser and matcher.
+- `core/config.bend` — the config.toml subset parser.
+- `core/commands.bend` — user lines and /commands to protocol lines.
+- `core/obs.bend` — observation rendering (one wire line each).
+
+Runtime (IO):
+
+- `runtime/main.bend` — the runtime loop (pure transition + IO run), tool dispatch, bend-jsrt, resume replay, steering/interrupt side-channels.
+- `runtime/provider.bend` — provider table, HTTPS call, retry policy.
+- `runtime/settings.bend` — the config file on disk.
+- `runtime/bash.bend` — the bash tool and its background-handoff contract.
+- `runtime/patch-tool.bend` — the apply_patch executor.
+- `runtime/selftools.bend` — self.reload / self.compact and the deferred-request scan.
+- `runtime/tools.bend` — tool catalog, descriptions, the tool execution result.
+- `runtime/mcp.bend`, `runtime/skills.bend` — MCP connectors, skills.
+- `runtime/remote.bend` — the provider request/reply line format.
+- `runtime/persist.bend` — the session checkpoint file.
+- `runtime/model.bend` — scripted provider replies.
+- `runtime/repl-core.bend` — the REPL line server; `runtime/repl-live.bend` and `runtime/repl.bend` are its two entries.
+- `runtime/demo.bend` — scripted scenarios (harness-demo).
 - `LAWS.bend`, `PROOF.bend` — harness invariants.
 
 ## Plan / progress log

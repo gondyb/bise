@@ -29,7 +29,7 @@ echo "== bend native binaries"
 export PATH="$HOME/.bend/bin:$PATH"
 bend runtime/repl-live.bend -o "$DIST/repl-live"
 bend runtime/repl.bend -o "$DIST/repl-scripted"
-bend runtime/main.bend -o "$DIST/harness-demo"
+bend runtime/demo.bend -o "$DIST/harness-demo"
 
 # 3. the V8 engine (bend-jsrt), release mode - skipped when already built
 #    (the release link is >50MiB: build it outside any ulimit -f)

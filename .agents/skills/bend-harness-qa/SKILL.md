@@ -49,7 +49,7 @@ Separate a harness bug from an environment/model flake — run the deterministic
 
 ```sh
 ~/.bend/bin/bend PROOF.bend          # laws (NEVER `bend update`: pin 2.0.27)
-./harness-demo > /tmp/demo-a.txt && ./harness-demo > /tmp/demo-b.txt && diff /tmp/demo-a.txt /tmp/demo-b.txt   # deterministic
+bend runtime/demo.bend -o harness-demo && ./harness-demo > /tmp/demo-a.txt && ./harness-demo > /tmp/demo-b.txt && diff /tmp/demo-a.txt /tmp/demo-b.txt   # deterministic
 ~/.bend/bin/bend test-bg.bend -o /tmp/bg-suite && rm -rf /tmp/bgtest && BEND_BG_ROOT=/tmp/bgtest BEND_BG_AFTER=2 /tmp/bg-suite
 ```
 
@@ -64,7 +64,7 @@ Write reports as markdown (scratchpad or the file the user asked for), one repor
 3. **Repro** — the SMALLEST python script that triggers it (must be runnable with `python3 -u`), or the exact pipe command.
 4. **Expected / Observed** — two short lines, not prose.
 5. **Transcript excerpt** — the relevant obs lines only, not the whole turn.
-6. **Hypothesis** — the suspected module (`runtime/main.bend`, `core/session.bend`, the TUI...) and what the gates say.
+6. **Hypothesis** — the suspected module (`runtime/main.bend`, `runtime/bash.bend`, `runtime/provider.bend`, `core/session.bend`, the TUI...) and what the gates say.
 7. **Severity** — blocks-turn / degrades / cosmetic.
 
 ## Investigation pointers

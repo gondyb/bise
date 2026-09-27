@@ -16,6 +16,10 @@ import ./core/obs.bend as O
 import ./runtime/remote.bend as Rm
 import ./runtime/tools.bend as Xt
 import ./runtime/main.bend as Rt
+import ./runtime/bash.bend as Sh
+import ./runtime/provider.bend as Pv
+import ./runtime/selftools.bend as Sf
+import ./runtime/settings.bend as St
 import ./runtime/mcp.bend as Mc
 import ./runtime/skills.bend as Sk
 import ./runtime/repl-core.bend as Rp
@@ -212,7 +216,7 @@ law chunk_lines_empty:
 
 # LAW: the interrupt flag file is per-process (the Ctrl+C path).
 law interrupt_path_is_per_port:
-  {Rt.interrupt_path_of("7702") == "/tmp/bend-interrupt-7702.txt" : String}
+  {Pv.interrupt_path_of("7702") == "/tmp/bend-interrupt-7702.txt" : String}
 
 # ---- multi-line tool args on the wire ----
 
@@ -712,22 +716,22 @@ law reload_allows_with_notif:
 
 # LAW: self.reload answers with the reload ack — visible to the model.
 law self_reload_acks:
-  {Rt.self_exec("self.reload") == Rt.Ex{True{}, Rt.RELOAD_ACK()}
-    : Rt.ExecRes}
+  {Sf.self_exec("self.reload") == Xt.Ex{True{}, Sf.RELOAD_ACK()}
+    : Xt.ExecRes}
 
 # LAW: self.compact answers with the compact ack.
 law self_compact_acks:
-  {Rt.self_exec("self.compact") == Rt.Ex{True{}, Rt.COMPACT_ACK()}
-    : Rt.ExecRes}
+  {Sf.self_exec("self.compact") == Xt.Ex{True{}, Sf.COMPACT_ACK()}
+    : Xt.ExecRes}
 
 # LAW: the routing recognizes exactly the two self.* tools; self.sleep
 # is a programmatic tool (inside run_typescript programs), the
 # ordinary tools stay themselves.
 law self_tool_routing_table:
-  {Bool.and(Rt.is_self_tool("self.reload"),
-     Bool.and(Rt.is_self_tool("self.compact"),
-       Bool.and(Bool.not(Rt.is_self_tool("self.sleep")),
-         Bool.not(Rt.is_self_tool("bash"))))) == True{} : Bool}
+  {Bool.and(Sf.is_self_tool("self.reload"),
+     Bool.and(Sf.is_self_tool("self.compact"),
+       Bool.and(Bool.not(Sf.is_self_tool("self.sleep")),
+         Bool.not(Sf.is_self_tool("bash"))))) == True{} : Bool}
 
 
 # LAW: self.sleep is programmatic now: the bounds are 0 < s < 20
@@ -745,53 +749,53 @@ law sleep_program_secs:
 # LAW: the acks carry their scan markers — what deferred_of finds is
 # exactly what the model read.
 law self_acks_carry_markers:
-  {Bool.and(String.contains(Rt.RELOAD_ACK(), "reload: scheduled"),
-     String.contains(Rt.COMPACT_ACK(), "compact: scheduled"))
+  {Bool.and(String.contains(Sf.RELOAD_ACK(), "reload: scheduled"),
+     String.contains(Sf.COMPACT_ACK(), "compact: scheduled"))
     == True{} : Bool}
 
 # LAW: the deferred scan reads the turn that just ended — the tool
 # results after the last user message.
 law deferred_reads_reload_request:
-  {Rt.deferred_of(Con{T.user("hi"), Con{T.tool_res(Rt.RELOAD_ACK()), Nil{}}})
-    == Rt.Def{False{}, True{}} : Rt.Def}
+  {Sf.deferred_of(Con{T.user("hi"), Con{T.tool_res(Sf.RELOAD_ACK()), Nil{}}})
+    == Sf.Def{False{}, True{}} : Sf.Def}
 
 law deferred_reads_compact_request:
-  {Rt.deferred_of(Con{T.user("hi"), Con{T.tool_res(Rt.COMPACT_ACK()), Nil{}}})
-    == Rt.Def{True{}, False{}} : Rt.Def}
+  {Sf.deferred_of(Con{T.user("hi"), Con{T.tool_res(Sf.COMPACT_ACK()), Nil{}}})
+    == Sf.Def{True{}, False{}} : Sf.Def}
 
 law deferred_reads_both_requests:
-  {Rt.deferred_of(Con{T.user("hi"),
-      Con{T.tool_res(Rt.RELOAD_ACK()),
-        Con{T.tool_res(Rt.COMPACT_ACK()), Nil{}}}})
-    == Rt.Def{True{}, True{}} : Rt.Def}
+  {Sf.deferred_of(Con{T.user("hi"),
+      Con{T.tool_res(Sf.RELOAD_ACK()),
+        Con{T.tool_res(Sf.COMPACT_ACK()), Nil{}}}})
+    == Sf.Def{True{}, True{}} : Sf.Def}
 
 # LAW: a request older than the last user message is spent — an old
 # request can never fire twice.
 law deferred_resets_at_user:
-  {Rt.deferred_of(Con{T.tool_res(Rt.RELOAD_ACK()),
+  {Sf.deferred_of(Con{T.tool_res(Sf.RELOAD_ACK()),
       Con{T.user("new turn"), Con{T.asst("hi", Nil{}), Nil{}}}})
-    == Rt.Def{False{}, False{}} : Rt.Def}
+    == Sf.Def{False{}, False{}} : Sf.Def}
 
 # LAW: no history, no requests.
 law deferred_empty_history:
-  {Rt.deferred_of(Nil{}) == Rt.Def{False{}, False{}} : Rt.Def}
+  {Sf.deferred_of(Nil{}) == Sf.Def{False{}, False{}} : Sf.Def}
 
 # LAW: no requests, no suffix on the program result.
 law def_acks_suffix_empty_when_none:
-  {Rt.def_acks.suffix(Rt.Def{False{}, False{}}) == "" : String}
+  {Sf.def_acks.suffix(Sf.Def{False{}, False{}}) == "" : String}
 
 # LAW: a reload filed inside a program rides its result — even when
 # the program returns something else.
 law def_acks_suffix_carries_reload:
-  {String.contains(Rt.def_acks.suffix(Rt.Def{False{}, True{}}),
+  {String.contains(Sf.def_acks.suffix(Sf.Def{False{}, True{}}),
      "reload: scheduled") == True{} : Bool}
 
 # LAW: both requests filed in one program both ride the result.
 law def_acks_suffix_carries_both:
   {Bool.and(
-     String.contains(Rt.def_acks.suffix(Rt.Def{True{}, True{}}),
+     String.contains(Sf.def_acks.suffix(Sf.Def{True{}, True{}}),
        "compact: scheduled"),
-     String.contains(Rt.def_acks.suffix(Rt.Def{True{}, True{}}),
+     String.contains(Sf.def_acks.suffix(Sf.Def{True{}, True{}}),
        "reload: scheduled")) == True{} : Bool}
 
 # LAW: the live catalog carries the skill loader, the apply_patch
@@ -1193,16 +1197,16 @@ law tool_ann_renames_node_program:
 
 # LAW: results annotate with the outcome and a preview.
 law tool_res_ann_ok:
-  {Rt.res_ann(12, Rt.Ex{True{}, "hello"}) == "tool_result #12 ok : hello"
+  {Rt.res_ann(12, Xt.Ex{True{}, "hello"}) == "tool_result #12 ok : hello"
     : String}
 
 law tool_res_ann_fail:
-  {Rt.res_ann(12, Rt.Ex{False{}, "boom"}) == "tool_result #12 fail : boom"
+  {Rt.res_ann(12, Xt.Ex{False{}, "boom"}) == "tool_result #12 fail : boom"
     : String}
 
 # LAW: program sub-calls annotate with name and outcome.
 law subtool_ann_format:
-  {Rt.sub_ann("github_app.get_me", Rt.Ex{True{}, "{}"})
+  {Rt.sub_ann("github_app.get_me", Xt.Ex{True{}, "{}"})
     == "subtool github_app.get_me ok : {}" : String}
 
 # LAW: annotations stay single-line — one wire line each.
@@ -1255,7 +1259,7 @@ law mcp_bootstrap_url_parity:
        String.contains(Mc.bootstrap_url(), "builtin_connectors=web_search")))
     == True{} : Bool}
 
-# ---- bash background handoff (runtime/main.bend) ----
+# ---- bash background handoff (runtime/bash.bend) ----
 # A command that outlives the sync window must never block the turn: it
 # detaches under a per-id directory the agent drives with ordinary bash.
 # The wrapper is pinned byte for byte — output to a FILE (never a pipe,
@@ -1264,39 +1268,39 @@ law mcp_bootstrap_url_parity:
 
 # LAW: the wrapper script, byte for byte.
 law bg_wrapper_script:
-  {Rt.bg_wrap("whoami", "/tmp/bend-bg-0", 30)
+  {Sh.bg_wrap("whoami", "/tmp/bend-bg-0", 30)
     == "BG=/tmp/bend-bg-0\nmkdir -p $BG\ni=0\nwhile ! mkdir $BG/$i.slot 2>/dev/null; do i=$((i+1)); done\nmkfifo $BG/$i.in 2>/dev/null\nexec 9<>$BG/$i.in\ncat > $BG/$i.cmd <<'XQ-10236-EOF'\nwhoami\nXQ-10236-EOF\n( ulimit -f 102400; ( /bin/sh $BG/$i.cmd ) > $BG/$i.out 2>&1 <&9 & C=$!; echo $C > $BG/$i.pid; wait $C; R=$?; if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then echo $R > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in; rmdir $BG/$i.slot 2>/dev/null; fi ) >/dev/null 2>&1 &\nwhile [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished during setup: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\nc=$(cat $BG/$i.pid 2>/dev/null)\ne=0\nwhile kill -0 $c 2>/dev/null; do\n  if [ $e -lt 5 ]; then sleep 0.02; else sleep 0.1; fi\n  e=$((e+1))\n  if [ $e -ge 305 ]; then\n    printf '%s\\n' \"BEND-BG-HANDOFF-6f2c9e5b\"\n    printf '%s\\n' \"background: still running after 30s - id $i (dir /tmp/bend-bg-0)\"\n    printf '%s\\n' \"  output: tail -n 50 /tmp/bend-bg-0/$i.out\"\n    printf '%s\\n' \"  stdin (if it reads): printf '%s\\n' 'text' > /tmp/bend-bg-0/$i.in  (a command that reads stdin WAITS for input indefinitely: feed it or kill it)\"\n    printf '%s\\n' \"  status: kill -0 $(cat /tmp/bend-bg-0/$i.pid) && echo RUNNING || cat /tmp/bend-bg-0/$i.rc 2>/dev/null\"\n    printf '%s\\n' \"  kill: kill $(cat /tmp/bend-bg-0/$i.pid)\"\n    rm -f \"$0\"\n    exit 0\n  fi\ndone\nwhile [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\ns=$(cat $BG/$i.rc)\ncat $BG/$i.out\nrm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc\nrmdir $BG/$i.slot 2>/dev/null\nrm -f \"$0\"\nexit $s"
     : String}
 
 # LAW: the sync window defaults# LAW: the sync window defaults to 30 seconds and clamps into [0, 3600].
 law bg_after_defaults:
-  {Rt.bg_after.read(None{}, 30) == 30 : U32}
+  {Sh.bg_after.read(None{}, 30) == 30 : U32}
 
 law bg_after_clamps_high:
-  {Rt.bg_after.clamp(4000) == 3600 : U32}
+  {Sh.bg_after.clamp(4000) == 3600 : U32}
 
 law bg_after_keeps_low:
-  {Rt.bg_after.clamp(5) == 5 : U32}
+  {Sh.bg_after.clamp(5) == 5 : U32}
 
 # LAW: the handoff maps to a SUCCESSFUL result: the wrapper prints the
 # handoff marker as its first line, exec_of strips it and keeps the
 # contract — the turn continues and the agent decides.
 law exec_of_background_maps_ok:
-  {Rt.exec_of(String.append("0\n", String.append(Rt.HANDOFF_MARKER(),
+  {Sh.exec_of(String.append("0\n", String.append(Sh.HANDOFF_MARKER(),
       "\nbackground: still running")))
-    == Rt.Ex{True{}, "background: still running"} : Rt.ExecRes}
+    == Xt.Ex{True{}, "background: still running"} : Xt.ExecRes}
 
 # LAW: a command that REALLY exits 199 reports as a failure with its
 # code — the handoff is detected by the marker, never by the code
 # (once: exit 199 was silently swallowed as a handoff).
 law exec_of_real_199_fails:
-  {Rt.exec_of("199\nreal output")
-    == Rt.Ex{False{}, "exit 199: real output"} : Rt.ExecRes}
+  {Sh.exec_of("199\nreal output")
+    == Xt.Ex{False{}, "exit 199: real output"} : Xt.ExecRes}
 
 # LAW: ordinary failures still report their exit code.
 law exec_of_exit_still_fails:
-  {Rt.exec_of.pick.zero(False{}, 1, "boom")
-    == Rt.Ex{False{}, "exit 1: boom"} : Rt.ExecRes}
+  {Sh.exec_of.pick.zero(False{}, 1, "boom")
+    == Xt.Ex{False{}, "exit 1: boom"} : Xt.ExecRes}
 
 
 # ---- the background battery: solidity and agent ergonomics ----
@@ -1304,53 +1308,53 @@ law exec_of_exit_still_fails:
 # LAW: the bg dir is per-REPL, keyed by port — parallel terminals
 # never share slots, and a /reload (same port) finds its slots again.
 law bg_dir_default_root:
-  {Rt.bg_dir_of("/tmp", "7702") == "/tmp/bend-bg-7702" : String}
+  {Sh.bg_dir_of("/tmp", "7702") == "/tmp/bend-bg-7702" : String}
 
 law bg_dir_custom_root:
-  {Rt.bg_dir_of("/var/bg", "3") == "/var/bg/bend-bg-3" : String}
+  {Sh.bg_dir_of("/var/bg", "3") == "/var/bg/bend-bg-3" : String}
 
 # LAW: one slot = five files in one dir under one id.
 law bg_slot_paths:
-  {Bool.and(String.eq(Rt.bg_slot("/d", "4", ".out"), "/d/4.out"),
-     Bool.and(String.eq(Rt.bg_slot("/d", "4", ".in"), "/d/4.in"),
-       Bool.and(String.eq(Rt.bg_slot("/d", "4", ".pid"), "/d/4.pid"),
-         Bool.and(String.eq(Rt.bg_slot("/d", "4", ".rc"), "/d/4.rc"),
-           String.eq(Rt.bg_slot("/d", "4", ".cmd"), "/d/4.cmd")))))
+  {Bool.and(String.eq(Sh.bg_slot("/d", "4", ".out"), "/d/4.out"),
+     Bool.and(String.eq(Sh.bg_slot("/d", "4", ".in"), "/d/4.in"),
+       Bool.and(String.eq(Sh.bg_slot("/d", "4", ".pid"), "/d/4.pid"),
+         Bool.and(String.eq(Sh.bg_slot("/d", "4", ".rc"), "/d/4.rc"),
+           String.eq(Sh.bg_slot("/d", "4", ".cmd"), "/d/4.cmd")))))
     == True{} : Bool}
 
 # LAW: the poll loop probes ten times per second of sync window.
 # LAW: the poll loop probes fast first (5 x 20ms), then 100ms steps:
 # a trivial command costs ~30ms of polling, the window stays ~after.
 law bg_poll_iters_table:
-  {Rt.bg_poll_iters(30) == 305 : U32}
+  {Sh.bg_poll_iters(30) == 305 : U32}
 
 # LAW: the headline names the window, the slot id and the dir — the
 # agent can ls the dir right away.
 law bg_headline_names_window_id_dir:
-  {Rt.bg_headline("/tmp/bend-bg-0", "3", 30)
+  {Sh.bg_headline("/tmp/bend-bg-0", "3", 30)
     == "background: still running after 30s - id 3 (dir /tmp/bend-bg-0)"
     : String}
 
 # LAW: each contract line is a COMPLETE command on a CONCRETE path —
 # the agent copy-pastes, it never resolves a variable.
 law bg_tail_cmd_concrete:
-  {Rt.bg_tail_cmd("/tmp/bend-bg-0", "3")
+  {Sh.bg_tail_cmd("/tmp/bend-bg-0", "3")
     == "  output: tail -n 50 /tmp/bend-bg-0/3.out" : String}
 
 law bg_stdin_cmd_concrete:
   {Bool.and(
-     String.eq(Rt.bg_stdin_cmd("/tmp/bend-bg-0", "3"),
+     String.eq(Sh.bg_stdin_cmd("/tmp/bend-bg-0", "3"),
        "  stdin (if it reads): printf '%s\\n' 'text' > /tmp/bend-bg-0/3.in  (a command that reads stdin WAITS for input indefinitely: feed it or kill it)"),
-     String.contains(Rt.bg_stdin_cmd("/tmp/bend-bg-0", "3"),
+     String.contains(Sh.bg_stdin_cmd("/tmp/bend-bg-0", "3"),
        "feed it or kill it")) == True{} : Bool}
 
 law bg_status_cmd_concrete:
-  {Rt.bg_status_cmd("/tmp/bend-bg-0", "3")
+  {Sh.bg_status_cmd("/tmp/bend-bg-0", "3")
     == "  status: kill -0 $(cat /tmp/bend-bg-0/3.pid) && echo RUNNING || cat /tmp/bend-bg-0/3.rc 2>/dev/null"
     : String}
 
 law bg_kill_cmd_concrete:
-  {Rt.bg_kill_cmd("/tmp/bend-bg-0", "3")
+  {Sh.bg_kill_cmd("/tmp/bend-bg-0", "3")
     == "  kill: kill $(cat /tmp/bend-bg-0/3.pid)" : String}
 
 # ---- wrapper invariants (structure, not bytes) ----
@@ -1361,12 +1365,12 @@ law bg_kill_cmd_concrete:
 # the slot when a fast command ends, so the pid file can be ephemeral
 # and the wrapper must never wait for a file that came and went.
 law bg_wrapper_pid_wait_breaks_on_rc:
-  {String.contains(Rt.bg_wrap("x", "/d", 5),
+  {String.contains(Sh.bg_wrap("x", "/d", 5),
      "while [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do") == True{}
     : Bool}
 
 law bg_wrapper_fifo_rdrw:
-  {String.contains(Rt.bg_wrap("x", "/d", 5), "exec 9<>$BG/$i.in")
+  {String.contains(Sh.bg_wrap("x", "/d", 5), "exec 9<>$BG/$i.in")
     == True{} : Bool}
 
 # LAW: a detached runner is the command's real parent and records the
@@ -1375,23 +1379,23 @@ law bg_wrapper_fifo_rdrw:
 # still owns the slot.
 law bg_wrapper_runner_waits_and_records:
   {Bool.and(
-     String.contains(Rt.bg_wrap("x", "/d", 5),
+     String.contains(Sh.bg_wrap("x", "/d", 5),
        "C=$!; echo $C > $BG/$i.pid; wait $C; R=$?"),
-     String.contains(Rt.bg_wrap("x", "/d", 5), "echo $R > $BG/$i.rc"))
+     String.contains(Sh.bg_wrap("x", "/d", 5), "echo $R > $BG/$i.rc"))
     == True{} : Bool}
 
 # LAW: output goes to a FILE, never a pipe — the orphan-holding-pipe
 # bug class (minute-long hangs) is structurally gone.
 law bg_wrapper_output_is_a_file:
-  {Bool.and(String.contains(Rt.bg_wrap("x", "/d", 5), "> $BG/$i.out 2>&1"),
-     Bool.not(String.contains(Rt.bg_wrap("x", "/d", 5), " | ")))
+  {Bool.and(String.contains(Sh.bg_wrap("x", "/d", 5), "> $BG/$i.out 2>&1"),
+     Bool.not(String.contains(Sh.bg_wrap("x", "/d", 5), " | ")))
     == True{} : Bool}
 
 # LAW: the wrapper NEVER kills the command — its only kill is the -0
 # liveness probe; ending a background command is the agent's decision.
 law bg_wrapper_never_kills:
-  {Bool.and(Bool.not(String.contains(Rt.bg_wrap("x", "/d", 5), "kill $c")),
-     Bool.not(String.contains(Rt.bg_wrap("x", "/d", 5), "kill -9")))
+  {Bool.and(Bool.not(String.contains(Sh.bg_wrap("x", "/d", 5), "kill $c")),
+     Bool.not(String.contains(Sh.bg_wrap("x", "/d", 5), "kill -9")))
     == True{} : Bool}
 
 # LAW: a command that finishes inside the window leaves no trace —
@@ -1400,11 +1404,11 @@ law bg_wrapper_never_kills:
 # fifo are removed by the runner; out and rc stay readable) — the bg
 # dir cannot grow without bound and slots are recycled.
 law bg_wrapper_runner_frees_slot:
-  {String.contains(Rt.bg_wrap("x", "/d", 5),
+  {String.contains(Sh.bg_wrap("x", "/d", 5),
      "rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in") == True{} : Bool}
 
 law bg_wrapper_cleans_slot:
-  {String.contains(Rt.bg_wrap("x", "/d", 5),
+  {String.contains(Sh.bg_wrap("x", "/d", 5),
      "rm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc")
     == True{} : Bool}
 
@@ -1413,20 +1417,20 @@ law bg_wrapper_cleans_slot:
 # command that really exits 199 still reports 199.
 law bg_wrapper_handoff_marker:
   {Bool.and(
-     String.contains(Rt.bg_wrap("x", "/d", 5),
-       String.append("printf '%s\\n' \"", Rt.HANDOFF_MARKER())),
-     Bool.not(String.contains(Rt.bg_wrap("x", "/d", 5), "exit 199")))
+     String.contains(Sh.bg_wrap("x", "/d", 5),
+       String.append("printf '%s\\n' \"", Sh.HANDOFF_MARKER())),
+     Bool.not(String.contains(Sh.bg_wrap("x", "/d", 5), "exit 199")))
     == True{} : Bool}
 
 # LAW: both waits carry a vanished-dir guard — an agent that cleans
 # its bg dir with rm -rf gets a FAST failure with the dir name, never
 # a hung tool.
 law bg_setup_guard_names_the_dir:
-  {String.contains(Rt.bg_setup_guard("/tmp/bend-bg-0"),
+  {String.contains(Sh.bg_setup_guard("/tmp/bend-bg-0"),
      "the bg dir vanished during setup: /tmp/bend-bg-0") == True{} : Bool}
 
 law bg_rc_guard_names_the_dir:
-  {String.contains(Rt.bg_rc_guard("/tmp/bend-bg-0"),
+  {String.contains(Sh.bg_rc_guard("/tmp/bend-bg-0"),
      "if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; exit 1; fi")
     == True{} : Bool}
 
@@ -1436,7 +1440,7 @@ law bg_rc_guard_names_the_dir:
 # at the same instant can never take the same slot (once: concurrent
 # calls collided on id 0 and corrupted each other's out/rc).
 law bg_wrapper_atomic_slot_allocation:
-  {String.contains(Rt.bg_wrap("x", "/d", 5),
+  {String.contains(Sh.bg_wrap("x", "/d", 5),
      "while ! mkdir $BG/$i.slot 2>/dev/null; do i=$((i+1)); done")
     == True{} : Bool}
 
@@ -1444,21 +1448,21 @@ law bg_wrapper_atomic_slot_allocation:
 # 50MiB) — an output-looping background command dies at the cap
 # instead of filling the disk (once: a 6.4GB .out).
 law bg_wrapper_output_capped:
-  {String.contains(Rt.bg_wrap("x", "/d", 5), "( ulimit -f 102400; ( ")
+  {String.contains(Sh.bg_wrap("x", "/d", 5), "( ulimit -f 102400; ( ")
     == True{} : Bool}
 
 # LAW: the runner checks it still OWNS the slot before writing the rc
 # and freeing the files — a recycled slot cannot be corrupted by the
 # previous command's dying runner.
 law bg_wrapper_runner_ownership_check:
-  {String.contains(Rt.bg_wrap("x", "/d", 5),
+  {String.contains(Sh.bg_wrap("x", "/d", 5),
      "if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then") == True{}
     : Bool}
 
 # LAW: both exit paths delete the wrapper script ($0) — no more
 # +1 leaked script per bash call (the byte law pins both occurrences).
 law bg_wrapper_cleans_its_script:
-  {String.contains(Rt.bg_wrap("x", "/d", 5), "rm -f \"$0\"") == True{}
+  {String.contains(Sh.bg_wrap("x", "/d", 5), "rm -f \"$0\"") == True{}
     : Bool}
 
 # LAW: multi-line commands stay intact — the heredoc and the runner
@@ -1466,8 +1470,8 @@ law bg_wrapper_cleans_its_script:
 # with spaces, restructuring scripts).
 law bg_wrapper_multiline_command_intact:
   {Bool.and(
-     String.contains(Rt.bg_wrap("echo a\necho b", "/d", 5), "echo a\necho b"),
-     Bool.not(String.contains(Rt.bg_wrap("echo a\necho b", "/d", 5),
+     String.contains(Sh.bg_wrap("echo a\necho b", "/d", 5), "echo a\necho b"),
+     Bool.not(String.contains(Sh.bg_wrap("echo a\necho b", "/d", 5),
        "echo a echo b"))) == True{} : Bool}
 
 # LAW: the .cmd heredoc sentinel derives from the command's own hash —
@@ -1475,13 +1479,13 @@ law bg_wrapper_multiline_command_intact:
 # own hash.
 law bg_sentinel_derives_from_command:
   {Bool.and(
-     String.eq(Rt.bg_sentinel("whoami"), Rt.bg_sentinel("whoami")),
-     Bool.not(String.eq(Rt.bg_sentinel("whoami"),
-       Rt.bg_sentinel("whoamiX")))) == True{} : Bool}
+     String.eq(Sh.bg_sentinel("whoami"), Sh.bg_sentinel("whoami")),
+     Bool.not(String.eq(Sh.bg_sentinel("whoami"),
+       Sh.bg_sentinel("whoamiX")))) == True{} : Bool}
 
 law bg_wrapper_has_both_guards:
-  {Bool.and(String.contains(Rt.bg_wrap("x", "/d", 5), Rt.bg_setup_guard("/d")),
-     String.contains(Rt.bg_wrap("x", "/d", 5), Rt.bg_rc_guard("/d")))
+  {Bool.and(String.contains(Sh.bg_wrap("x", "/d", 5), Sh.bg_setup_guard("/d")),
+     String.contains(Sh.bg_wrap("x", "/d", 5), Sh.bg_rc_guard("/d")))
     == True{} : Bool}
 
 # LAW: the wrapper filename derives from the script's own content:
@@ -1489,95 +1493,95 @@ law bg_wrapper_has_both_guards:
 # wrapper just continues its own script), and the hash is pinned so
 # the naming cannot silently degrade.
 law bg_script_hash_deterministic:
-  {Rt.bg_script_hash("ab") == 684n : Nat}
+  {Sh.bg_script_hash("ab") == 684n : Nat}
 
 # LAW: different scripts hash apart — two commands never share a
 # wrapper file, so an orphan can never re-read another command's
 # bytes when it wakes from a poll sleep.
 law bg_script_hash_distinguishes:
   {Bool.not(String.eq(
-      Nat.show(Rt.bg_script_hash("ab")),
-      Nat.show(Rt.bg_script_hash("cd"))))
+      Nat.show(Sh.bg_script_hash("ab")),
+      Nat.show(Sh.bg_script_hash("cd"))))
     == True{} : Bool}
 
 law bash_script_path_per_command:
-  {Bool.and(String.eq(Rt.bash_script_path("7702", "a b"),
-      Rt.bash_script_path("7702", "a b")),
-     Bool.not(String.eq(Rt.bash_script_path("7702", "a b"),
-       Rt.bash_script_path("7702", "a c")))) == True{} : Bool}
+  {Bool.and(String.eq(Sh.bash_script_path("7702", "a b"),
+      Sh.bash_script_path("7702", "a b")),
+     Bool.not(String.eq(Sh.bash_script_path("7702", "a b"),
+       Sh.bash_script_path("7702", "a c")))) == True{} : Bool}
 
 # ---- exec_of: the tool result the model actually reads ----
 
 # LAW: exit 0 is a success carrying the output.
 law exec_of_success_is_ok:
-  {Rt.exec_of("0\nhello") == Rt.Ex{True{}, "hello"} : Rt.ExecRes}
+  {Sh.exec_of("0\nhello") == Xt.Ex{True{}, "hello"} : Xt.ExecRes}
 
 # LAW: an ordinary failure reports its code and output.
 law exec_of_failure_carries_code:
-  {Rt.exec_of("3\nbad") == Rt.Ex{False{}, "exit 3: bad"} : Rt.ExecRes}
+  {Sh.exec_of("3\nbad") == Xt.Ex{False{}, "exit 3: bad"} : Xt.ExecRes}
 
 # LAW: a garbage status line fails closed as exit 1 (never a success).
 law exec_of_garbage_fails_closed:
-  {Rt.exec_of("not-a-code\nx") == Rt.Ex{False{}, "exit 1: x"} : Rt.ExecRes}
+  {Sh.exec_of("not-a-code\nx") == Xt.Ex{False{}, "exit 1: x"} : Xt.ExecRes}
 
 # LAW: a result with no status line at all fails closed too.
 law exec_of_no_newline_fails_closed:
-  {Rt.exec_of("plain") == Rt.Ex{False{}, "exit 1: "} : Rt.ExecRes}
+  {Sh.exec_of("plain") == Xt.Ex{False{}, "exit 1: "} : Xt.ExecRes}
 
 
-# ---- the tool output cap (runtime/main.bend) ----
+# ---- the tool output cap (runtime/tools.bend) ----
 
 # LAW: outputs that fit pass through untouched.
 law cap_out_keeps_small:
-  {Rt.cap_out("hello") == "hello" : String}
+  {Xt.cap_out("hello") == "hello" : String}
 
 # LAW: the cap limit is 20000.
 law cap_out_limit_is_20000:
-  {Rt.cap_out_limit() == 20000n : Nat}
+  {Xt.cap_out_limit() == 20000n : Nat}
 
 # LAW: outputs that fit pass through untouched.
 law cap_out_at_keeps_small:
-  {Rt.cap_out_at(5n, "12345") == "12345" : String}
+  {Xt.cap_out_at(5n, "12345") == "12345" : String}
 
 # LAW: an oversized output is cut at the limit with the marker.
 law cap_out_at_truncates:
-  {Rt.cap_out_at(5n, "12345678")
+  {Xt.cap_out_at(5n, "12345678")
     == "12345  [output truncated at 20000 chars; 3 more chars discarded]"
     : String}
 
-# ---- the provider retry classification (runtime/main.bend) ----
+# ---- the provider retry classification (runtime/provider.bend) ----
 
 # LAW: transient statuses retry; client errors and success do not.
 law retryable_status_table:
   {Bool.and(
-      Bool.and(Rt.retryable_status(500), Rt.retryable_status(503)),
-      Bool.and(Rt.retryable_status(429),
-        Bool.and(Bool.not(Rt.retryable_status(200)),
-          Bool.not(Rt.retryable_status(404)))))
+      Bool.and(Pv.retryable_status(500), Pv.retryable_status(503)),
+      Bool.and(Pv.retryable_status(429),
+        Bool.and(Bool.not(Pv.retryable_status(200)),
+          Bool.not(Pv.retryable_status(404)))))
     == True{} : Bool}
 
 # LAW: connection loss, DNS and timeout retry; TLS and URL errors do
 # not (retrying a TLS failure or a bad URL only wastes the turn).
 law retryable_err_table:
   {Bool.and(
-      Bool.and(Rt.retryable_err(Http.ErrConnect{1, "refused"}),
-        Rt.retryable_err(Http.ErrDns{})),
-      Bool.and(Rt.retryable_err(Http.ErrTimeout{}),
-        Bool.and(Bool.not(Rt.retryable_err(Http.ErrTls{1, "handshake"})),
-          Bool.not(Rt.retryable_err(Http.ErrUrl{}))))
+      Bool.and(Pv.retryable_err(Http.ErrConnect{1, "refused"}),
+        Pv.retryable_err(Http.ErrDns{})),
+      Bool.and(Pv.retryable_err(Http.ErrTimeout{}),
+        Bool.and(Bool.not(Pv.retryable_err(Http.ErrTls{1, "handshake"})),
+          Bool.not(Pv.retryable_err(Http.ErrUrl{}))))
     )
     == True{} : Bool}
 
 # LAW: a transient network failure classifies as a retry with the
 # failure text carried for the final error if retries run out.
 law attempt_timeout_retries:
-  {Rt.attempt_fail2(Http.ErrTimeout{})
-    == Rt.ARetry{1500, Rt.api_err(Http.ErrTimeout{})} : Rt.Attempt}
+  {Pv.attempt_fail2(Http.ErrTimeout{})
+    == Pv.ARetry{1500, Pv.api_err(Http.ErrTimeout{})} : Pv.Attempt}
 
 # LAW: a TLS failure classifies as final — no retry.
 law attempt_tls_fails:
-  {Rt.attempt_fail2(Http.ErrTls{1, "handshake"})
-    == Rt.AFail{Http.ErrTls{1, "handshake"}} : Rt.Attempt}
+  {Pv.attempt_fail2(Http.ErrTls{1, "handshake"})
+    == Pv.AFail{Http.ErrTls{1, "handshake"}} : Pv.Attempt}
 
 # ---- apply_patch: the parser and the strict matcher (core/patch.bend) ----
 # Codex V4A. The parser is pinned byte-for-byte on concrete patches
@@ -1806,47 +1810,47 @@ law interrupt_closes_agent_pending:
 # BR-004 helper: an assistant message that quotes the compact ack
 def prose_quoting_ack() -> T.Msg:
   T.asst(String.append("the tool said '",
-    String.append(Rt.COMPACT_ACK(), "' - filing it")), Nil{})
+    String.append(Sf.COMPACT_ACK(), "' - filing it")), Nil{})
 
 law deferred_ignores_assistant_prose:
-  {Rt.deferred_of(Con{T.user("hi"), Con{prose_quoting_ack(), Nil{}}})
-    == Rt.Def{False{}, False{}} : Rt.Def}
+  {Sf.deferred_of(Con{T.user("hi"), Con{prose_quoting_ack(), Nil{}}})
+    == Sf.Def{False{}, False{}} : Sf.Def}
 
 # LAW: a tool output QUOTING the harness source never fires - the
 # quotes and indentation around the constant break the whole-text
 # and whole-line shapes.
 law deferred_ignores_source_quotes:
-  {Rt.deferred_of(Con{T.user("hi"),
+  {Sf.deferred_of(Con{T.user("hi"),
       Con{T.tool_res(String.append("  \"",
-          String.append(Rt.COMPACT_ACK(), "\""))), Nil{}}})
-    == Rt.Def{False{}, False{}} : Rt.Def}
+          String.append(Sf.COMPACT_ACK(), "\""))), Nil{}}})
+    == Sf.Def{False{}, False{}} : Sf.Def}
 
 # LAW: a tool result that merely CONTAINS the marker mid-text never
 # fires - the ack must end the text or stand on its own line.
 law deferred_ignores_midtext_marker:
-  {Rt.deferred_of(Con{T.user("hi"),
+  {Sf.deferred_of(Con{T.user("hi"),
       Con{T.tool_res(String.append("prefix ",
-          String.append(Rt.COMPACT_ACK(), " suffix"))), Nil{}}})
-    == Rt.Def{False{}, False{}} : Rt.Def}
+          String.append(Sf.COMPACT_ACK(), " suffix"))), Nil{}}})
+    == Sf.Def{False{}, False{}} : Sf.Def}
 
 # LAW: the real direct shape fires - the self.* tool result prefixes
 # the ack with "tool X ok: ", so the ack ends the text.
 law deferred_reads_prefixed_ack:
-  {Rt.deferred_of(Con{T.user("hi"),
+  {Sf.deferred_of(Con{T.user("hi"),
       Con{T.tool_res(String.append("tool self.compact ok: ",
-          Rt.COMPACT_ACK())), Nil{}}})
-    == Rt.Def{True{}, False{}} : Rt.Def}
+          Sf.COMPACT_ACK())), Nil{}}})
+    == Sf.Def{True{}, False{}} : Sf.Def}
 
 # LAW: the real program shape fires - the acks ride their own lines of
 # the escaped tool text (a literal backslash-n line boundary).
 law deferred_reads_program_acked_result:
-  {Rt.deferred_of(Con{T.user("hi"),
+  {Sf.deferred_of(Con{T.user("hi"),
       Con{S.tool_result_msg("node_program",
-          String.append("prog out\n", Rt.COMPACT_ACK()), True{}),
+          String.append("prog out\n", Sf.COMPACT_ACK()), True{}),
         Nil{}}})
-    == Rt.Def{True{}, False{}} : Rt.Def}
+    == Sf.Def{True{}, False{}} : Sf.Def}
 
-# ---- the provider adapters (core/api.bend + runtime/main.bend) ----
+# ---- the provider adapters (core/api.bend + runtime/provider.bend) ----
 # The vibe CLI structure: one mapping per api_style, a provider table
 # in the runtime. The OpenAI mapping above stays exactly as the GLM
 # laws pinned it; the Anthropic mapping below is the Messages shape
@@ -1859,30 +1863,30 @@ law deferred_reads_program_acked_result:
 
 # LAW: the alias resolves and the style follows the model name.
 law provider_resolves_alias:
-  {Rt.resolve_model("opus-5.5") == "claude-opus-5-5" : String}
+  {Pv.resolve_model("opus-5.5") == "claude-opus-5-5" : String}
 
 law provider_opus_is_anthropic:
-  {Rt.model_style("claude-opus-5-5") == Api.Anthropic{} : Api.Style}
+  {Pv.model_style("claude-opus-5-5") == Api.Anthropic{} : Api.Style}
 
 law provider_glm_is_openai:
-  {Rt.model_style("zai-glm-5-3") == Api.OpenAI{} : Api.Style}
+  {Pv.model_style("zai-glm-5-3") == Api.OpenAI{} : Api.Style}
 
 # LAW: the provider table carries the right api_base and key env.
 law provider_anthropic_base:
-  {Rt.model_url(Api.Anthropic{})
+  {Pv.model_url(Api.Anthropic{})
     == "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages"
     : String}
 
 law provider_openai_base:
-  {Rt.model_url(Api.OpenAI{})
+  {Pv.model_url(Api.OpenAI{})
     == "https://api.mistral.ai/v1/chat/completions" : String}
 
 law provider_anthropic_key_env:
-  {Rt.model_key_env(Api.Anthropic{}) == "ANTHROPIC_FOUNDRY_API_KEY"
+  {Pv.model_key_env(Api.Anthropic{}) == "ANTHROPIC_FOUNDRY_API_KEY"
     : String}
 
 law provider_openai_key_env:
-  {Rt.model_key_env(Api.OpenAI{}) == "MISTRAL_API_KEY" : String}
+  {Pv.model_key_env(Api.OpenAI{}) == "MISTRAL_API_KEY" : String}
 
 # LAW: the style dispatch routes the body and the reply to the right
 # adapter - the OpenAI side byte-identical to api_body/reply_of.
@@ -2111,11 +2115,11 @@ law config_env_empty_no_file:
 # LAW: the template the runtime writes parses - its own keys are
 # what the lookups find.
 law config_template_parses:
-  {Cf.cfg_get(Rt.CONFIG_TEMPLATE(), "model") == Some{"opus-5.5"}
+  {Cf.cfg_get(St.CONFIG_TEMPLATE(), "model") == Some{"opus-5.5"}
     : Maybe<&2, String>}
 
 law config_template_threshold:
-  {Cf.cfg_u32(Rt.CONFIG_TEMPLATE(), "threshold", 800000) == 800000
+  {Cf.cfg_u32(St.CONFIG_TEMPLATE(), "threshold", 800000) == 800000
     : U32}
 
 # ---- the harness-info line: the single source of truth for clients ----
@@ -2132,7 +2136,7 @@ law info_line_format:
 # drains - the same builders, per port.
 law info_paths_are_the_drained_ones:
   {Bool.and(String.eq(Rt.steer_path_of("7"), "/tmp/bend-steer-7.txt"),
-     String.eq(Rt.interrupt_path_of("7"), "/tmp/bend-interrupt-7.txt"))
+     String.eq(Pv.interrupt_path_of("7"), "/tmp/bend-interrupt-7.txt"))
     == True{} : Bool}
 
 # ---- --resume: the restored history replays as live wire lines ----

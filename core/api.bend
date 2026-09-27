@@ -1043,7 +1043,7 @@ def reply_of(+status: U32, +body: String) -> String:
 
 # ---- the provider adapters (the vibe CLI structure) ----
 # One mapping per api_style, selected by the provider table in
-# runtime/main.bend (the mirror of the vibe config: a provider carries
+# runtime/provider.bend (the mirror of the vibe config: a provider carries
 # an api_base, a key env and an api_style; a model points at one).
 # The OpenAI-style mapping above stays exactly as the laws pinned it;
 # the Anthropic-style mapping below is the Messages API shape the

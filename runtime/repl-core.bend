@@ -39,6 +39,8 @@ import ../core/session.bend as S
 import ./persist.bend as P
 import ./model.bend as M
 import ./main.bend as R
+import ../runtime/provider.bend as Pv
+import ../runtime/selftools.bend as Sf
 
 # ---- what one input line asks for ----
 
@@ -298,10 +300,10 @@ def repl_deferred.compact.only(+live: Bool, compact: Bool, reload: Bool, +sess2:
     case False{}:
       repl_deferred.reload.only(reload, sess2, out2, next)
 
-def repl_deferred(+live: Bool, d: R.Def, +sess2: T.Session, out2: R.Out,
+def repl_deferred(+live: Bool, d: Sf.Def, +sess2: T.Session, out2: R.Out,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match d:
-    case R.Def{+compact, +reload}:
+    case Sf.Def{+compact, +reload}:
       repl_deferred.compact.only(live, compact, reload, sess2, out2, next)
 
 def repl_end_save.then(+live: Bool, +sess2: T.Session, out2: R.Out,
@@ -311,11 +313,11 @@ def repl_end_save.then(+live: Bool, +sess2: T.Session, out2: R.Out,
     # NEXT turn at its first boundary. The runtime is the authority on
     # turn boundaries: clear the flag now; a flag written later
     # belongs to a later turn (or to no turn at all).
-    +ipath : String <- R.interrupt_path()
+    +ipath : String <- Pv.interrupt_path()
     uc : Unit <- P.write_file(ipath, "")
     P.save(sess2)
     # the turn asked for nothing: keep serving; else run its requests
-    +d : R.Def <- IO.pure(R.Def, R.deferred_of(P.history_of(sess2)))
+    +d : Sf.Def <- IO.pure(Sf.Def, Sf.deferred_of(P.history_of(sess2)))
     f : Flow <- repl_deferred(live, d, sess2, out2, next)
     IO.pure(Flow, f)
 

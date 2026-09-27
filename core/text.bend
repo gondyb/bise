@@ -30,3 +30,8 @@ def find(s: String, +pat: String, +i: Nat) -> Maybe<&2, Nat>:
     case SCon{_, +t}:
       find.put(String.starts_with(s, pat), Some{i},
         find(t, pat, Nat.add(i, 1n)))
+
+# shell-wrap a path (single quotes hold spaces; apply_patch never
+# meets a path with a single quote in it)
+def sh_quote(+path: String) -> String:
+  String.append("'", String.append(path, "'"))

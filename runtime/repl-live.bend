@@ -16,6 +16,9 @@ import ./mcp.bend as Mcp
 import ./skills.bend as Sk
 import ./tools.bend as X
 import ./main.bend as R
+import ../runtime/bash.bend as Sh
+import ../runtime/provider.bend as Pv
+import ../runtime/settings.bend as St
 import ./repl-core.bend as Rc
 
 # the compaction threshold for real conversations: BEND_THRESHOLD env
@@ -87,16 +90,16 @@ def main() -> IO(Unit):
   do IO<Unit>:
     # the config template lands on disk on first run, before anything
     # reads it
-    ut : Unit <- R.write_cfg_template()
+    ut : Unit <- St.write_cfg_template()
     env : Result<&1, &1, U32 & String, String> <- IO.get_env(
       "BEND_THRESHOLD")
-    +cfgt : String <- R.read_cfg()
+    +cfgt : String <- St.read_cfg()
     +threshold : Nat <- IO.pure(Nat, thr_of_cfg(P.env_or(env, ""), cfgt))
     +p : U32 <- Rc.repl_port(7702)
     l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", p))
     # the single source of truth for every client: printed BEFORE the
     # banner the parent waits for
-    +model : String <- R.resolved_model()
+    +model : String <- Pv.resolved_model()
     +info : String <- R.harness_info(model, Nat.show(threshold))
     ui : Unit <- IO.print(info)
     IO.print(String.append("bend-harness LIVE REPL on 127.0.0.1:",
@@ -109,7 +112,7 @@ def main() -> IO(Unit):
     +key : String <- IO.pure(String, P.env_or(kr, ""))
     u : Unit <- Mcp.bootstrap(key)
     u4 : Unit <- Sk.skills_scan()
-    u3 : Unit <- R.bash_cleanup(U32.show(p))
+    u3 : Unit <- Sh.bash_cleanup(U32.show(p))
     f : Rc.Flow <- Rc.serve(True{}, l, Rc.ld_greet(ld), Rc.ld_sess(ld))
     # Stop (a /reload) lands here: main returns, the process exits 0,
     # and the parent respawns the latest code on the same session.

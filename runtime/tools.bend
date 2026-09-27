@@ -71,7 +71,7 @@ def catalog_pure(+sd: String, +rd: String, +bd: String) -> List<&2, T.ToolDef>:
 # The agent drives its own harness from inside a turn: request a
 # compaction of the conversation, or a restart of the process on the
 # latest code. Both take no arguments; both only take effect at the
-# END of the current turn (see deferred_of in runtime/main.bend), so
+# END of the current turn (see deferred_of in runtime/selftools.bend), so
 # the model can keep working and read the ack as the tool result.
 def self_tool_defs() -> List<&2, T.ToolDef>:
   Con{T.ToolDef{"self.reload",
@@ -506,3 +506,45 @@ def sr_parse(r: Result<&2, &2, String, J.Json>, +args: String,
 
 def search_reply(+args: String, tools: List<&2, T.ToolDef>) -> String:
   sr_parse(J.parse(String.trim(args)), args, tools)
+
+# ---- the tool execution result ----
+
+# the unified tool-execution result: ok carries the output, failure
+# carries the reason (exit status, stderr) so the model can see it
+type ExecRes is Data:
+  Ex{ok: Bool, out: String}
+
+# a giant output (a catted binary, a full log) must never flow into the
+# history and blow up the next provider request. The limit is
+# parameterized so the law can prove the logic at a small scale (a
+# 20001-char literal would overflow the proof checker's stack).
+def cap_out_limit() -> Nat:
+  20000n
+
+def cap_out_at.pick(fits: Bool, +out: String, +n: Nat) -> String:
+  match fits:
+    case True{}:
+      out
+    case False{}:
+      String.append(String.take(out, n),
+        String.append("  [output truncated at 20000 chars; ",
+          String.append(Nat.show(Nat.sub(String.length(out), n)),
+            " more chars discarded]")))
+
+def cap_out_at(+n: Nat, +out: String) -> String:
+  cap_out_at.pick(Nat.is_le(String.length(out), n), out, n)
+
+def cap_out(+out: String) -> String:
+  cap_out_at(cap_out_limit(), out)
+
+def exec_cmd.pick(ok: Bool, +out: String, +id: U32) -> T.Cmd:
+  match ok:
+    case True{}:
+      T.ToolOk{id, cap_out(out)}
+    case False{}:
+      T.ToolFail{id, cap_out(out)}
+
+def exec_cmd(r: ExecRes, +id: U32) -> T.Cmd:
+  match r:
+    case Ex{+ok, +out}:
+      exec_cmd.pick(ok, out, id)
