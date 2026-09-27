@@ -313,8 +313,24 @@ fn main() -> std::io::Result<()> {
         let result = bend_tui::run("127.0.0.1".to_string(), repl_port, !scripted, debug, session_id.clone());
 
         // the connection closed — why did the child stop?
+        // A /reload closes the socket BEFORE exiting (it checkpoints
+        // after the close), so the TUI always disconnects while the
+        // child is still landing its exit status. Without a grace wait
+        // every reload raced into the user-closed-TUI branch and the
+        // parent killed the session (the manual --resume every time).
+        // Give the child up to 3s to exit on its own: a reload exits in
+        // milliseconds; only a user-closed TUI leaves it alive.
+        let mut exited = child.try_wait().ok().flatten();
+        if exited.is_none() {
+            for _ in 0..60 {
+                std::thread::sleep(Duration::from_millis(50));
+                exited = child.try_wait().ok().flatten();
+                if exited.is_some() {
+                    break;
+                }
+            }
+        }
         let log = std::fs::read_to_string(&log_path).unwrap_or_default();
-        let exited = child.try_wait().ok().flatten();
         match (&exited, log.contains("reload-exit")) {
             (Some(status), true) if status.success() => {
                 reloads += 1;
