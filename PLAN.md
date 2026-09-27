@@ -67,9 +67,8 @@ Sources this port follows:
 Scenarios run: `bend runtime/main.bend` or `./harness-demo`.
 Gate: `bend PROOF.bend`.
 REPL: `bend runtime/repl.bend` (or `-o repl && ./repl`), then `nc 127.0.0.1 7700`,
-or the terminal UI: `node --experimental-strip-types repl-ui/repl.ts`
-(zero-dependency TypeScript client over the same socket; colors, prompt,
-history; the session still lives in the harness, not in the UI).
+or `./run.sh` (the Rust TUI; the session still lives in the harness,
+not in the UI).
 
 LIVE MODE (real provider + real filesystem):
 - `node --experimental-strip-types live/bridge.ts` — the HTTP bridge
@@ -133,8 +132,8 @@ RUST REBUILD (bridge + TUI — now the reference clients):
 - Gotchas found: the reader thread must accumulate raw BYTES and
   String::from_utf8_lossy per line (byte-as-char is Latin-1); tool-call
   -only assistant lines are "assistant:" after trim — skipped.
-- The TS versions remain: live/bridge.ts and repl-tui/ (Ink) as
-  alternates; the Rust pair is the reference.
+- The TS versions (live/bridge.ts, repl-tui/, repl-ui/) are DELETED:
+  the Rust pair is the reference and the only client.
 - `./run.sh` — convenience wrapper over the SINGLE EXECUTABLE
   rust/target/debug/bend-harness (auto-builds it and the Bend REPL
   binaries if missing, then execs it).
@@ -467,10 +466,23 @@ calls collapsed into a single line).
 Runtime annotations (live only; scripted runs and scenarios stay
 byte-identical). The EExec loop emits around each tool execution:
   tool #<id> <name> : <args>              (flattened, capped 200)
+  tool_code #<id> : <args>                (run_typescript only: FULL args,
+                                          wire-encoded: \N newline, \R CR,
+                                          backslash doubled — never capped)
   tool_result #<id> <ok|fail> : <out>    (flattened, capped 200)
 exec_program emits one line per sub-call:
   subtool <name> <ok|fail> : <out>
 ESleep carries (ms, id, secs) now so self.sleep annotates too.
+
+RUN_TYPESCRIPT CODE BLOCK (the TUI reads tool_code): the merged tool
+row renders the WHOLE program under the tool line, in a rounded box —
+orange border while running, dim once ok, red on fail — with a
+typescript header, a line-number gutter, and hand-rolled TS highlighting
+(keywords purple, strings green, comments faint italic, numbers orange,
+calls blue, types yellow; the OpenCode syntax palette). The box is
+hard-clipped on the right, never word-wrapped (a wrapped box is not a
+box). The old TS clients (repl-tui Ink, repl-ui, live/bridge.ts) are
+DELETED: the Rust TUI is the only client.
 
 The Out handle threads through the exec chain. Bend lessons paid for:
 Type-kind values are ALSO use-once (no duplication, + is illegal on
