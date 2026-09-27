@@ -2,8 +2,10 @@
 
 The `run_typescript` tool executes TypeScript code in a sandbox environment. You can access external services via functions exposed under the `tools.<group>.<function>` namespace in the sandbox. Users might refer to these functions as "tools", "integrations", "connectors", or "services". `run_typescript` can also be used to perform data manipulation tasks such as counting, computing, filtering, grouping, aggregating, sorting, etc.
 
+IMPORTANT: always write your code as `async function main() { ... }` and RETURN the result from `main` - the returned value is the only thing that comes back as the tool output (console.log does NOT reach the output; only `search_tool_functions` results are visible in discovery mode).
+
 Available tool functions can be discovered with the top-level `search_tool_functions` tool. For unfamiliar tool calls, use this sequence: `best_match` → `details` → `run_typescript`.
 
 1. Call `best_match` with a concise capability query to get ranked function names.
 2. Call `details` with each selected exact function name before its first use.
-3. Call the selected function through its documented `tools.<group>.<function>` path in `run_typescript`.
+3. Call the selected function through its documented `tools.<group>.<function>` path in `run_typescript`, always inside an `async function main()` that returns the final result.

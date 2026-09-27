@@ -3,51 +3,66 @@ Executes TypeScript code in a sandbox environment.
 
 ## How to use run_typescript
 
-The `run_typescript` tool executes TypeScript code in a sandbox environment. This sandbox has access to ES2015 - ES2022 language features, but doesn't have access to NodeJS, browser APIs, or network I/O.
+The `run_typescript` tool executes TypeScript code in a V8 isolate (types are stripped in-process; interfaces, type aliases and enums are supported). It is a replayable orchestration sandbox, not a Node.js runtime.
 
-### Sandbox capabilities and durability model
+## The `main` function contract (IMPORTANT)
 
-- The sandbox is a replayable TypeScript workflow environment, not a general-purpose Node.js runtime. Use it for orchestration, tool-call wiring, and local data transformation.
-- It supports standard JavaScript/TypeScript computation such as async/await, Promises, JSON, Array/Object/Map/Set operations, RegExp, URL parsing, TextEncoder/TextDecoder, and console output for debugging.
-- It does not provide ambient filesystem access, Node.js packages, browser APIs, DOM APIs, or direct network I/O. Reach external systems only through the provided `tools.<group>.<function>` functions.
-- Execution may pause while tool calls are pending and later replay from the beginning. Local code can therefore run more than once; keep it to pure orchestration, pure data transforms, and tool-call wiring.
-- Time, randomness, and promise-selection APIs are recorded automatically and replay deterministically. This includes `Date()`, `new Date()`, `Date.now()`, `performance.now()`, `Math.random()`, `crypto.randomUUID()`, `crypto.getRandomValues()`, `Promise.race()`, and `Promise.any()`.
+- ALWAYS define `async function main() { /* ... */ }` containing all your code, and return the final result from it.
+- Do NOT call `main()` yourself; the sandbox calls it automatically and its resolved value becomes the tool output.
+- The detection is textual: only a `function main` DECLARATION is recognized. `const main = async () => ...` is NOT detected - with it your program ends with "the program ended without returning".
+- If no `main` is declared, the code runs as a synchronous function body that must end with a top-level `return <expression>;` - and top-level `await` is NOT allowed there, so a missing `main` plus `await` is always a syntax error.
 
-### The `main` function
+## Output rules
 
-**IMPORTANT:** The sandboxed environment expects a `main` function that will be run automatically.
-- You MUST always define an `async function main() { /* ... */ }` containing all your code
-- You MUST NOT call `main()` yourself - the sandbox calls it automatically
-- The result of the `main` function will be visible as a { type: "success", value } object.
-- The input must contain inline `code`.
-- Tool calls may throw. Use `try/catch` or `.catch(...)` to recover or keep partial results; otherwise let errors propagate to the tool result.
-- AVOID using console.log or console.error to read the output of functions. Rely on the main function's returned value instead. Only use console for debugging.
-- For independent calls, prefer `Promise.allSettled(...)`. Use `Promise.all(...)` only when all must succeed; avoid sequential awaits when calls can run concurrently.
-- You MUST NOT use `fetch()`, `setInterval()`, `atob()`, `btoa()`, `DOMParser`, `Buffer`, `require()`, `import()`, or `export` — they do not exist. Tool functions are already available under the `tools` namespace.
-- When a string contains double quotes, you MUST use single quotes for the outer string.
-  WRONG: `await tools.web_search.web_search({ query: ""Sample Topic" TV date" });`
-  CORRECT: `await tools.web_search.web_search({ query: '"Sample Topic" TV date' });`
+- The tool output is ONLY the value returned from `main`. It is serialized with JSON.stringify (plain strings pass through verbatim).
+- console.log/console.error/console.warn do NOT reach the tool output; they are debugging-only. NEVER rely on console.log to return data - always `return` the value.
+- The tool output is truncated at 20,000 characters.
+- JSON serialization caveats: `undefined` values and fields are silently dropped; `NaN`/`Infinity` become `null`; `BigInt` and circular references make the program fail with "the program ended without returning"; `Map`/`Set` serialize to `{}` and `Date` to an ISO string - convert them explicitly when shape matters (`Array.from(map.entries())`, `date.toISOString()`).
 
-### Available tool functions
+## Replay model (IMPORTANT)
 
-Tool functions are available under `tools.<group>.<function>`; no imports needed.
+- The program is re-executed from the beginning on every pending tool call. Recorded tool results are replayed to the program by POSITION (call order), not by name.
+- Keep the program deterministic: tool calls must happen in the same order and with the same arguments on every replay. Deriving tool-call arguments from `Math.random()` desyncs the replay (the recorded result answers the round-1 arguments, not the current ones).
+- `Date.now()`/`new Date()` are recorded and replayed with stable values across rounds; `Math.random()` is NOT recorded - it returns fresh values on every re-execution.
+- Local side-effect-free code therefore runs more than once: keep it to pure orchestration, data transforms, and tool-call wiring.
+- Do NOT use `setTimeout`/`setInterval` (they do not exist - see below); use direct awaits.
 
-Before calling an unfamiliar tool function, use `search_tool_functions` to load details for the exact function name. Use only documented function paths and argument shapes.
+## What exists in the sandbox
 
+Available: standard JS built-ins (JSON, Math, Date, Promise, Object, Array, Map, Set, RegExp, Error classes, Symbol, Proxy, Reflect, WeakMap/WeakSet/WeakRef, BigInt, typed arrays, Intl, Temporal), async/await, generators, async generators, for-await, spread/destructuring, optional chaining, `encodeURIComponent`/`decodeURIComponent`.
+Also available as bare identifiers (no `tools.` prefix needed, dotted paths compose): `tools.<group>.<function>` connector functions, `search_tool_functions`, `bash` (call with the command string as the single argument), `skill` (call with `{ name: "<exact name>" }`), `self.compact`/`self.reload` (ack immediately, run at the end of the turn).
 
-### Example
+## What does NOT exist (and the traps)
 
-1. Discover the appropriate tool function signature. Assuming you found the following type definition:
+There is no Node.js, no browser API, no network I/O, no filesystem, no module system. In particular these identifiers DO NOT EXIST and MUST NOT be used: `fetch`, `setTimeout`, `setInterval`, `clearTimeout`, `Buffer`, `process`, `require`, `import`, `crypto`, `performance`, `URL`, `URLSearchParams`, `TextEncoder`, `TextDecoder`, `atob`, `btoa`, `DOMParser`, `structuredClone`.
+TRAP: `typeof fetch` still prints "function" because unresolved identifiers fall through a proxy that turns them into tool calls. Calling one produces misleading errors: "unknown tool: fetch", or "bad tool request from the program" (when the argument is a non-serializable value like a function). Treat these error messages as "this API does not exist in the sandbox" - never retry, rewrite the code.
 
-```typescript
-declare namespace tools.someGroup {
-  function someFunction(args: { timestamp: number, someQuery: string }): Promise<{ someOutput: number }>;
-}
-```
+## Error handling
 
-2. Run TypeScript code. You can call `run_typescript` with code like:
+- A tool call that fails does NOT throw: the error string becomes the awaited value. Check results before using them, and use try/catch around local code.
+- If `main` throws or rejects, the tool fails with the error message (the model can read it and retry).
+- A syntax error in the TypeScript fails the whole call with "SyntaxError: ...".
+
+## Limits
+
+- Each execution round has a 10-second CPU watchdog; the isolate heap is capped (allocation beyond ~64MB kills the process with exit 133).
+- The whole program (all replay rounds combined) has a 1000-step budget.
+- Inner `run_typescript` calls are not supported ("run_typescript inside a program is not supported").
+
+## Calling tools
+
+- Prefer `Promise.allSettled(...)` for independent calls; `Promise.all(...)` only when all must succeed. Avoid sequential awaits when calls can run concurrently.
+- When a string contains double quotes, use single quotes for the outer string.
+  WRONG: `await tools.web_search.news_search({ query: ""Sample Topic" TV date" });`
+  CORRECT: `await tools.web_search.news_search({ query: '"Sample Topic" TV date' });`
+- Discover exact signatures with `search_tool_functions` (mode=best_match, then mode=details) before calling an unfamiliar function.
+
+## Example
 
 ```json
-{"code": "async function main() {\n  const timestamp = Date.now();\n  const { someOutput } = await tools.someGroup.someFunction({ timestamp, someQuery: '...' });\n  return someOutput;\n}"}
+{"code": "async function main() {
+  const news = await tools.web_search.news_search({ query: 'space launch', limit: 5 });
+  const titles = Object.values(news).map((a: any) => a.title).filter((t: string) => t.toLowerCase().includes('nasa'));
+  return { count: titles.length, titles };
+}"}
 ```
-
