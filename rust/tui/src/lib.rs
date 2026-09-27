@@ -1472,15 +1472,18 @@ fn draw(app: &mut App, frame: &mut Frame) {
                 col = 0;
                 continue;
             }
-            if i == app.cursor {
+            // the cursor char counts toward the row width like any
+            // other char: a row may overflow by one otherwise
+            let is_cursor = i == app.cursor;
+            if is_cursor {
                 flush_plain(&mut spans, &mut buf);
                 spans.push(Span::styled(
                     c.to_string(),
                     Style::default().fg(TEXT).add_modifier(Modifier::REVERSED),
                 ));
-                continue;
+            } else {
+                buf.push(*c);
             }
-            buf.push(*c);
             col += 1;
             if col >= inner {
                 flush_plain(&mut spans, &mut buf);
