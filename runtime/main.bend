@@ -87,7 +87,7 @@ def trans.tool.bounds(+rt: Rt, +rest: List<&2, T.Act>, +id: U32, +secs: U32,
           String.append("slept ", String.append(U32.show(secs), "s"))}, rest}}
     case False{}:
       Tr{ENone{}, rt,
-        JCmd{T.ToolFail{id, "sleep requires 0 < seconds < 60"}, rest}}
+        JCmd{T.ToolFail{id, "sleep requires 0 < seconds < 20"}, rest}}
 
 def trans.tool.seconds(+rt: Rt, +rest: List<&2, T.Act>, +id: U32,
     s: Maybe<&2, U32>) -> Trans:
@@ -97,7 +97,7 @@ def trans.tool.seconds(+rt: Rt, +rest: List<&2, T.Act>, +id: U32,
         JCmd{T.ToolFail{id, "sleep needs a number of seconds"}, rest}}
     case Some{+secs}:
       trans.tool.bounds(rt, rest, id, secs,
-        Bool.and(U32.is_lt(0, secs), U32.is_lt(secs, 60)))
+        Bool.and(U32.is_lt(0, secs), U32.is_lt(secs, 20)))
 
 def rt_live(+rt: Rt) -> Bool:
   match rt:

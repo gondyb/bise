@@ -52,7 +52,7 @@ def skill_desc() -> IO(String):
 # pure: build the catalog from given descriptions
 def catalog_pure(+sd: String, +rd: String, +bd: String) -> List<&2, T.ToolDef>:
   Con{T.ToolDef{"search_tool_functions", sd},
-   Con{T.ToolDef{"self.sleep", "Sleep for a bounded number of seconds (0 < s < 60), then report."},
+   Con{T.ToolDef{"self.sleep", "Sleep for a bounded number of seconds (0 < s < 20), then report."},
     Con{T.ToolDef{"bash", bd},
      Con{T.ToolDef{"run_typescript", rd},
       Nil{}}}}}
