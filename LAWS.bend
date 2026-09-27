@@ -18,7 +18,7 @@ import ./runtime/tools.bend as Xt
 import ./runtime/main.bend as Rt
 import ./runtime/mcp.bend as Mc
 import ./runtime/skills.bend as Sk
-import ./runtime/repl.bend as Rp
+import ./runtime/repl-core.bend as Rp
 import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
 import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
 
