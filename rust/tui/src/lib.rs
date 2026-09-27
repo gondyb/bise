@@ -2,7 +2,10 @@
 //!
 //! Rust port of repl-tui (Ink). Same wire protocol; the presentation is
 //! modeled on the REAL OpenCode TUI (packages/tui in the opencode repo):
-//! no header bar — the screen is the conversation. User messages are
+//! no header bar — the screen is the conversation. Blocks breathe: a
+//! blank line at every content transition, blank rows around the
+//! prompt, and the user block paints its panel background the full
+//! column. User messages are
 //! blocks with a colored left bar and a panel background; assistant
 //! markdown renders in the OpenCode markdown colors; tool calls are
 //! OpenCode inline tools (braille spinner while running, muted ✓ once
@@ -16,8 +19,9 @@
 
 use crossterm::event::{
     poll, read, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste,
-    EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton,
-    MouseEventKind,
+    EnableMouseCapture, Event, KeyCode, KeyboardEnhancementFlags, KeyEventKind,
+    KeyModifiers, MouseButton, MouseEventKind, PopKeyboardEnhancementFlags,
+    PushKeyboardEnhancementFlags,
 };
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -397,28 +401,92 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
     rows
 }
 
-// the rows of one event: the block separator, then the wrapped lines
+// the rows of one event: an optional breathing gap, then the wrapped
+// lines. The user block is padded to the full width so its panel
+// background reads as a solid block.
 fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> Vec<Line<'static>> {
     let ev = &events[i];
     let mut rows: Vec<Line<'static>> = Vec::new();
     if !ev_visible(ev, debug) {
         return rows;
     }
-    // the previous VISIBLE event decides the separator: a debug-only
+    // the previous VISIBLE event decides the gap: a debug-only
     // annotation between two blocks must not swallow the blank line
     let prev = events[..i].iter().rev().find(|e| ev_visible(e, debug));
-    let message = matches!(ev, Ev::You(_) | Ev::Assistant(_) | Ev::Thinking { .. });
-    let tool_block = matches!(ev, Ev::Tool(_) | Ev::Sub { .. });
-    let prev_message = prev.map_or(false, |p| matches!(p, Ev::You(_) | Ev::Assistant(_)));
-    let prev_tool_block = prev.map_or(false, |p| matches!(p, Ev::Tool(_) | Ev::Sub { .. }));
-    // messages and tool blocks breathe: a blank line at every transition
-    if (message && prev_tool_block) || (tool_block && prev_message) {
+    if wants_gap_before(ev, prev) {
         rows.push(Line::from(""));
     }
+    let user = matches!(ev, Ev::You(_));
     for l in ev_lines_t(ev, tick) {
-        rows.extend(wrap_line(l, width));
+        for mut r in wrap_line(l, width) {
+            if user {
+                pad_line_bg(&mut r, width);
+            }
+            rows.push(r);
+        }
     }
     rows
+}
+
+// paint the row with the panel background — the line style is the base
+// every span patches, so the bar, the text and the padding all sit on
+// the panel — then fill the rest of the column, so the user block
+// reads as a solid panel the full width (OpenCode style)
+fn pad_line_bg(line: &mut Line<'static>, width: usize) {
+    line.style = Style::default().bg(PANEL);
+    let used: usize = line
+        .spans
+        .iter()
+        .flat_map(|s| s.content.chars())
+        .map(|c| c.width().unwrap_or(0))
+        .sum();
+    if used < width {
+        line.spans
+            .push(Span::styled(" ".repeat(width - used), Style::default().bg(PANEL)));
+    }
+}
+
+fn is_message(ev: &Ev) -> bool {
+    matches!(ev, Ev::You(_) | Ev::Assistant(_) | Ev::Thinking { .. })
+}
+
+fn is_tool_block(ev: &Ev) -> bool {
+    matches!(ev, Ev::Tool(_) | Ev::Sub { .. })
+}
+
+fn is_notice(ev: &Ev) -> bool {
+    matches!(
+        ev,
+        Ev::Warn(_)
+            | Ev::Err(_)
+            | Ev::Info(_)
+            | Ev::Compact(_)
+            | Ev::Compacted(_)
+            | Ev::TurnDone(_)
+    )
+}
+
+// the breathing rules: one blank line when the content kind switches
+// (message / tool block / notice). Two exceptions: a reply never
+// detaches from its thinking section, and the first event of the feed
+// starts flush at the top.
+fn wants_gap_before(ev: &Ev, prev: Option<&Ev>) -> bool {
+    let Some(p) = prev else {
+        return false;
+    };
+    let prev_message = is_message(p);
+    let prev_tool = is_tool_block(p);
+    let prev_notice = is_notice(p);
+    match ev {
+        Ev::Assistant(_) => {
+            !matches!(p, Ev::Thinking { .. })
+                && (prev_message || prev_tool || prev_notice)
+        }
+        Ev::Thinking { .. } => prev_message || prev_tool || prev_notice,
+        _ if is_tool_block(ev) => prev_message || prev_notice,
+        _ if is_notice(ev) => prev_message || prev_tool,
+        _ => prev_message || prev_tool || prev_notice,
+    }
 }
 
 // structural annotations (turn separators, idle markers) are debug-only;
@@ -978,6 +1046,9 @@ struct App {
     // the assistant line) and the ctrl+t thinking-section toggle
     last_line_at: Option<std::time::Instant>,
     show_thinking: bool,
+    // a Ctrl+C interrupt is in flight (until the dying turn's idle):
+    // a second Ctrl+C quits instead of interrupting again
+    interrupt_requested: bool,
     pending: bool,
     input: String,
     cursor: usize, // char index into input
@@ -1271,13 +1342,16 @@ fn draw(app: &mut App, frame: &mut Frame) {
         }
         rows
     };
-    let input_h = ((composer_rows + 3) as u16).min((area.height / 2).max(6));
+    // the meta row sits one blank line under the typed text
+    let input_h = ((composer_rows + 4) as u16).min((area.height / 2).max(6));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(3),
-            Constraint::Length(1),
+            Constraint::Length(1), // respiration sous le feed
+            Constraint::Length(1),  // status row
             Constraint::Length(input_h),
+            Constraint::Length(1), // respiration au-dessus de l'aide
             Constraint::Length(1),
         ])
         .split(area);
@@ -1374,7 +1448,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
     // ---- the status row (the OpenCode prompt status row): back to
     // bottom when pinned, else spinner + cwd while idle
     if !app.tail_visible {
-        app.bottom_bar_rect = Some(chunks[1]);
+        app.bottom_bar_rect = Some(chunks[2]);
         let mut spans = vec![
             Span::styled(
                 "  ↓ Bas ",
@@ -1388,7 +1462,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
                 Style::default().fg(WARN),
             ));
         }
-        frame.render_widget(Paragraph::new(Line::from(spans)), chunks[1]);
+        frame.render_widget(Paragraph::new(Line::from(spans)), chunks[2]);
     } else {
         app.bottom_bar_rect = None;
         let status = if app.pending && app.connected {
@@ -1430,7 +1504,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
                 Span::styled(" · End : bas · Ctrl+C : quitter", Style::default().fg(DIM)),
             ])
         };
-        frame.render_widget(Paragraph::new(status), chunks[1]);
+        frame.render_widget(Paragraph::new(status), chunks[2]);
     }
 
     // ---- the prompt: OpenCode prompt (left border ┃, element bg, meta row)
@@ -1438,7 +1512,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
     // width, the cursor is the REVERSED char (or a REVERSED space at
     // the end of the input)
     let chars: Vec<char> = app.input.chars().collect();
-    let inner = ((chunks[2].width as usize).saturating_sub(4)).max(1);
+    let inner = ((chunks[3].width as usize).saturating_sub(4)).max(1);
     let total = chars.len();
     let mut input_lines: Vec<Line> = Vec::new();
     if total == 0 {
@@ -1518,9 +1592,9 @@ fn draw(app: &mut App, frame: &mut Frame) {
         ),
         Span::styled(
             if app.input.contains('\n') {
-                " · ⏎ = Envoyer, Alt+⏎ = Nouvelle ligne"
+                " · ⏎ = Envoyer, Maj+⏎ = Nouvelle ligne"
             } else {
-                " · Ctrl+J = Nouvelle ligne"
+                " · Maj+⏎ = Nouvelle ligne (Ctrl+J si le terminal ne supporte pas)"
             },
             Style::default().fg(DIM),
         ),
@@ -1534,6 +1608,8 @@ fn draw(app: &mut App, frame: &mut Frame) {
             Style::default().fg(if app.connected { DIM } else { ERR }),
         ),
     ]);
+    // one blank line between the typed text and the meta row
+    input_lines.push(Line::from(""));
     input_lines.push(meta);
     let prompt = Paragraph::new(input_lines).block(
         Block::default()
@@ -1543,17 +1619,17 @@ fn draw(app: &mut App, frame: &mut Frame) {
             .style(Style::default().bg(ELEMENT))
             .padding(Padding::new(2, 2, 1, 1)),
     );
-    frame.render_widget(prompt, chunks[2]);
+    frame.render_widget(prompt, chunks[3]);
 
     // ---- slash-command popup (OpenCode autocomplete: split border,
     // backgroundMenu, primary selection)
     let matches = popup_matches(&app.input);
     if !matches.is_empty() {
         let n = matches.len().min(8) as u16;
-        let w = 56u16.min(chunks[2].width);
+        let w = 56u16.min(chunks[3].width);
         let area = Rect {
-            x: chunks[2].x,
-            y: chunks[2].y.saturating_sub(n + 2),
+            x: chunks[3].x,
+            y: chunks[3].y.saturating_sub(n + 2),
             width: w,
             height: n + 2,
         };
@@ -1597,11 +1673,11 @@ fn draw(app: &mut App, frame: &mut Frame) {
     let hint = if app.pending {
         "Entrée : diriger · Tab : mettre en file · Ctrl+C : interrompre · / : commandes · End : bas"
     } else {
-        "Entrée : envoyer · Ctrl+J : nouvelle ligne · / : commandes · Ctrl+T : raisonnement · End : bas · Ctrl+C : quitter"
+        "Entrée : envoyer · Maj+⏎/Ctrl+J : nouvelle ligne · / : commandes · Ctrl+T : raisonnement · Ctrl+C : quitter"
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(DIM)))),
-        chunks[3],
+        chunks[5],
     );
 }
 
@@ -1680,12 +1756,20 @@ fn run_tui(app: &mut App) -> io::Result<()> {
     // a multi-line paste arrives as ONE Event::Paste instead of a
     // keystroke storm where every Enter would send
     let _ = crossterm::execute!(io::stdout(), EnableBracketedPaste);
+    // the kitty keyboard protocol reports Shift+Enter distinctly (the
+    // plain terminal encodings cannot); terminals without support just
+    // ignore the push, and Ctrl+J remains the universal fallback
+    let _ = crossterm::execute!(
+        io::stdout(),
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    );
     loop {
         loop {
             match app.rx.try_recv() {
                 Ok(line) => {
                     if line == "--- idle" {
                         app.pending = false;
+                        app.interrupt_requested = false;
                     }
                     // thinking duration: the model's reply arrives one
                     // batch after the previous wire line
@@ -1828,12 +1912,17 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                 };
                 match (k.code, k.modifiers) {
                     // ctrl+c: clear input first, quit when already empty
-                    // ctrl+c: INTERRUPT the running turn — the harness
-                    // reads the socket only between turns, so the request
-                    // rides the flag file the runtime drains at the next
-                    // safe boundary; at idle it quits
+                    // ctrl+c: INTERRUPT the running turn — the UI is
+                    // free immediately (local abort); the runtime kills
+                    // the turn at the next safe boundary (the blocking
+                    // model/tool call in flight cannot be cancelled),
+                    // and the dying turn's wire lines still render.
+                    // The SECOND press quits the CLI; at idle, one press
+                    // quits.
                     (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-                        if app.pending {
+                        if app.interrupt_requested {
+                            break;
+                        } else if app.pending {
                             let path = format!("/tmp/bend-interrupt-{}.txt", app.port);
                             let ok = std::fs::OpenOptions::new()
                                 .create(true)
@@ -1842,13 +1931,18 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                                 .open(&path)
                                 .and_then(|mut f| f.write_all(b"1"))
                                 .is_ok();
+                            // the local abort: the composer frees and the
+                            // user can type right away; the flag clears
+                            // when the interrupted turn's idle arrives
+                            app.pending = false;
+                            app.interrupt_requested = true;
                             push_event(
                                 &mut app.events,
                                 &mut app.cache,
                                 Ev::Info(if ok {
-                                    "interruption demandée — effective au prochain point sûr".to_string()
+                                    "interrompu — le tour en cours s'arrête au prochain point sûr · Ctrl+C à nouveau pour quitter".to_string()
                                 } else {
-                                    "interruption non écrite (side-channel inaccessible)".to_string()
+                                    "interruption non écrite (side-channel inaccessible) — Ctrl+C à nouveau pour quitter".to_string()
                                 }),
                             );
                         } else {
@@ -1921,10 +2015,12 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                             }
                         }
                     }
-                    // a newline in the composer: ctrl+j (LF, the one
-                    // binding EVERY terminal transmits) or alt+enter;
+                    // a newline in the composer: Shift+Enter (needs
+                    // the kitty keyboard protocol), Ctrl+J (LF, the one
+                    // binding EVERY terminal transmits), or alt+enter;
                     // plain Enter sends
-                    (KeyCode::Char('j'), KeyModifiers::CONTROL)
+                    (KeyCode::Enter, KeyModifiers::SHIFT)
+                    | (KeyCode::Char('j'), KeyModifiers::CONTROL)
                     | (KeyCode::Enter, KeyModifiers::ALT) => {
                         let b = byte_at_char(&app.input, app.cursor);
                         app.input.insert(b, '\n');
@@ -2049,6 +2145,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
     }
     let _ = crossterm::execute!(io::stdout(), DisableMouseCapture);
     let _ = crossterm::execute!(io::stdout(), DisableBracketedPaste);
+    let _ = crossterm::execute!(io::stdout(), PopKeyboardEnhancementFlags);
     ratatui::restore();
     Ok(())
 }
@@ -2186,6 +2283,7 @@ pub fn run(host: String, port: u16, is_live: bool, debug: bool, session_id: Stri
         events: Vec::new(),
         last_line_at: None,
         show_thinking: false,
+        interrupt_requested: false,
         pending: false,
         input: String::new(),
         cursor: 0,
