@@ -1237,7 +1237,7 @@ fn highlight_ts(src: &str) -> Vec<Vec<Span<'static>>> {
             continue;
         }
         // number
-        if c.is_ascii_digit() && !cs.get(i.wrapping_sub(1)).map_or(false, |&p| is_id_char(p)) {
+        if c.is_ascii_digit() && !cs.get(i.wrapping_sub(1)).is_some_and(|&p| is_id_char(p)) {
             let mut t = String::new();
             while i < n && (cs[i].is_ascii_alphanumeric() || matches!(cs[i], '.' | '_')) {
                 t.push(cs[i]);
@@ -1486,7 +1486,7 @@ fn highlight_bash(src: &str) -> Vec<Vec<Span<'static>>> {
             want_in = matches!(w, "for" | "case" | "select");
             cmd_pos = BASH_CMD_AFTER.contains(&w) || w == "{";
         } else if cmd_pos
-            && w.find('=').map_or(false, |k| {
+            && w.find('=').is_some_and(|k| {
                 k > 0 && w[..k].chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
             })
         {
@@ -1531,11 +1531,7 @@ fn highlight_patch(src: &str) -> Vec<Vec<Span<'static>>> {
             Some(file("~", p, HEAD, ""))
         } else if let Some(p) = l.strip_prefix("*** Add File: ") {
             Some(file("+", p, OK, "nouveau"))
-        } else if let Some(p) = l.strip_prefix("*** Delete File: ") {
-            Some(file("−", p, ERR, "supprimé"))
-        } else {
-            None
-        };
+        } else { l.strip_prefix("*** Delete File: ").map(|p| file("−", p, ERR, "supprimé")) };
         if let Some(h) = header {
             // a blank row between two files
             if !lines.is_empty() {
@@ -1564,7 +1560,7 @@ fn highlight_patch(src: &str) -> Vec<Vec<Span<'static>>> {
         lines.push(vec![span]);
     }
     // a trailing blank (the text's final newline) is not a row
-    while lines.last().map_or(false, |l| l.iter().all(|s| s.content.trim().is_empty())) {
+    while lines.last().is_some_and(|l| l.iter().all(|s| s.content.trim().is_empty())) {
         lines.pop();
     }
     lines
@@ -2098,7 +2094,7 @@ fn write_interrupt_flag(path: &str) -> bool {
         .create(true)
         .write(true)
         .truncate(true)
-        .open(&path)
+        .open(path)
         .and_then(|mut f| f.write_all(b"1"))
         .is_ok()
 }
@@ -2288,7 +2284,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
         let live = matches!(&app.events[i], Ev::Tool(td) if matches!(td.state, ToolState::Run));
         let stale = app.cache[i]
             .as_ref()
-            .map_or(true, |c| c.width != area_w as u16 || live);
+            .is_none_or(|c| c.width != area_w as u16 || live);
         if stale {
             let rows = build_rows(&app.events, i, app.debug, area_w, app.tick);
             app.cache[i] = Some(EventRows {
@@ -2588,11 +2584,10 @@ fn draw(app: &mut App, frame: &mut Frame) {
 
 fn cursor_pos(input: &str, cursor: usize) -> (usize, usize) {
     // (line, column) of the cursor
-    let chars: Vec<char> = input.chars().collect();
     let mut line = 0usize;
     let mut col = 0usize;
-    for i in 0..cursor.min(chars.len()) {
-        if chars[i] == '\n' {
+    for c in input.chars().take(cursor) {
+        if c == '\n' {
             line += 1;
             col = 0;
         } else {
@@ -2618,7 +2613,7 @@ fn line_bounds(input: &str) -> Vec<(usize, usize)> {
     out
 }
 
-fn cursor_line_up(input: &mut String, cursor: &mut usize) {
+fn cursor_line_up(input: &str, cursor: &mut usize) {
     let (_, col) = cursor_pos(input, *cursor);
     let bounds = line_bounds(input);
     // find the current line index
@@ -2635,7 +2630,7 @@ fn cursor_line_up(input: &mut String, cursor: &mut usize) {
     *cursor = prev_start + col.min(prev_len);
 }
 
-fn cursor_line_down(input: &mut String, cursor: &mut usize) {
+fn cursor_line_down(input: &str, cursor: &mut usize) {
     let (_, col) = cursor_pos(input, *cursor);
     let bounds = line_bounds(input);
     let mut cur = 0usize;
@@ -2985,7 +2980,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                         if popup_open {
                             app.popup_sel = (app.popup_sel + matches.len() - 1) % matches.len();
                         } else if app.input.contains('\n') {
-                            cursor_line_up(&mut app.input, &mut app.cursor);
+                            cursor_line_up(&app.input, &mut app.cursor);
                         } else {
                             let next = match app.hist_idx {
                                 None if !app.history.is_empty() => Some(0),
@@ -3003,7 +2998,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                         if popup_open {
                             app.popup_sel = (app.popup_sel + 1) % matches.len();
                         } else if app.input.contains('\n') {
-                            cursor_line_down(&mut app.input, &mut app.cursor);
+                            cursor_line_down(&app.input, &mut app.cursor);
                         } else {
                             let next = match app.hist_idx {
                                 Some(0) | None => None,
@@ -3238,7 +3233,7 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
     }?;
 
     // final drain of the channel in line mode: detect close
-    while let Ok(_) = app.rx.try_recv() {}
+    while app.rx.try_recv().is_ok() {}
     let _ = connected;
     Ok(())
 }

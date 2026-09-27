@@ -107,7 +107,7 @@ fn session_files(sessions_dir: &str) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default();
-    out.sort_by(|a, b| b.0.cmp(&a.0));
+    out.sort_by_key(|e| std::cmp::Reverse(e.0));
     out.into_iter().map(|(_, p)| p).collect()
 }
 
@@ -174,7 +174,7 @@ fn load_env_files() {
             let Some((k, v)) = line.split_once('=') else { continue };
             let k = k.trim();
             let v = v.trim().trim_matches('"').trim_matches('\'');
-            if k.is_empty() || std::env::var_os(k).map_or(false, |x| !x.is_empty()) {
+            if k.is_empty() || std::env::var_os(k).is_some_and(|x| !x.is_empty()) {
                 continue;
             }
             std::env::set_var(k, v);
@@ -239,7 +239,7 @@ fn main() -> std::io::Result<()> {
     // path. Skip the move when the cwd already has the REPL.
     let cwd_has_repl = std::env::current_dir()
         .ok()
-        .map_or(false, |d| d.join(repl_name).exists());
+        .is_some_and(|d| d.join(repl_name).exists());
     if !cwd_has_repl {
         if let Some(root) = exe_dir.as_ref() {
             let _ = std::env::set_current_dir(root);
