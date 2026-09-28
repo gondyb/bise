@@ -85,6 +85,8 @@ pub(super) struct Sb {
     selected: Option<usize>,
     preview: bool,
     confirm: Option<(u64, String)>,
+    /// `D` on an agent asks first (book §16): the agent to drop on `y`.
+    drop_ask: Option<String>,
     /// The feeds out of view where lines arrived since their last visit.
     activity: std::collections::HashSet<String>,
     ready: bool,
@@ -668,6 +670,20 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
     let Some(sb) = app.sb.as_mut() else {
         return false;
     };
+    // `D` asked "drop {name}?": y drops, n or esc keeps it; any other
+    // key drops the question and does its usual job
+    if let Some(name) = sb.drop_ask.take() {
+        let plain = !k.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER);
+        match k.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') if plain => {
+                sb.send_input(format!("/drop {}", name));
+                return true;
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') if plain => return true,
+            KeyCode::Esc => return true,
+            _ => {}
+        }
+    }
     let n = sb.nav().len();
     let nav = nav_key(k);
     match (k.code, k.modifiers) {
@@ -713,7 +729,7 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
         (KeyCode::Char('D'), _) if empty && sb.selected.is_some() => {
             let live = |a: &&Agent| !a.main && !a.archived();
             if let Some(name) = sb.selected_agent().filter(live).map(|a| a.name.clone()) {
-                sb.send_input(format!("/drop {}", name));
+                sb.drop_ask = Some(name);
             }
             true
         }
@@ -1085,6 +1101,55 @@ mod nav_key_tests {
         assert_eq!(app.sb.as_ref().unwrap().selected, Some(1));
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert_eq!(app.sb.as_ref().unwrap().focus, "t1");
+    }
+
+/// D asks first (book §16, BISE-43): the status row says
+    /// `drop {name}? …`; n and esc keep the agent; y sends the /drop.
+    #[test]
+    fn d_asks_before_dropping() {
+        use std::io::Read;
+        let (a, mut hub) = UnixStream::pair().unwrap();
+        hub.set_nonblocking(true).unwrap();
+        let (_tx, rx) = mpsc::channel::<String>();
+        let sb = new_sb(std::sync::Arc::new(std::sync::Mutex::new(a)), "ws".into());
+        let mut app = sb_app(sb, rx, false, 100, crate::voice::Voice::live(false), "ws".into());
+        let mut sent = move || {
+            let mut buf = vec![0u8; 4096];
+            match hub.read(&mut buf) {
+                Ok(n) => String::from_utf8_lossy(&buf[..n]).to_string(),
+                Err(_) => String::new(),
+            }
+        };
+        app.sb.as_mut().unwrap().agents = vec![agent("main"), agent("docs")];
+        app.sb.as_mut().unwrap().selected = Some(1);
+        let status = |app: &App| {
+            let l = status_line(app).unwrap();
+            l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
+        };
+        // D: the question, nothing sent
+        assert!(press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT));
+        assert_eq!(status(&app).trim(), "drop docs? its history stays in archived. y / n");
+        assert_eq!(hint(&app), Some("y drop · n or esc keep"));
+        assert_eq!(sent(), "");
+        // n keeps it, the composer stays empty
+        assert!(press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE));
+        assert!(!status(&app).contains("drop docs?"));
+        assert_eq!(sent(), "");
+        // esc keeps it too
+        press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT);
+        assert!(press(&mut app, KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.sb.as_ref().unwrap().drop_ask, None);
+        assert_eq!(sent(), "");
+        // y drops it
+        press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT);
+        assert!(press(&mut app, KeyCode::Char('y'), KeyModifiers::NONE));
+        let out = sent();
+        assert!(out.contains(r#""op":"input""#) && out.contains("/drop docs"), "{out}");
+        assert_eq!(app.ed.text, "");
+        // main is never asked about
+        app.sb.as_mut().unwrap().selected = Some(0);
+        press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT);
+        assert_eq!(app.sb.as_ref().unwrap().drop_ask, None);
     }
 
     fn infos(app: &App) -> Vec<String> {

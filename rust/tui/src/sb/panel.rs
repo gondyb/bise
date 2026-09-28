@@ -521,6 +521,12 @@ pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bo
 /// `main · idle · 210k / 1M tokens · 21%`.
 pub(crate) fn status_line(app: &App) -> Option<Line<'static>> {
     let sb = app.sb.as_ref()?;
+    if let Some(name) = &sb.drop_ask {
+        return Some(Line::from(vec![
+            Span::raw(" "),
+            Span::styled(drop_question(name), Style::default().fg(accent())),
+        ]));
+    }
     let a = sb.agent(&sb.focus).cloned().unwrap_or_default();
     let d = |t: String| Span::styled(format!(" · {}", t), Style::default().fg(dim()));
     let mut spans: Vec<Span<'static>> = vec![
@@ -578,10 +584,17 @@ pub(crate) fn status_line(app: &App) -> Option<Line<'static>> {
     Some(Line::from(spans))
 }
 
+/// What `D` asks in the status row (book §16, BISE-43).
+pub(crate) fn drop_question(name: &str) -> String {
+    format!("drop {}? its history stays in archived. y / n", name)
+}
+
 /// The key hints, flush right on the composer row (copy deck §17).
 pub(crate) fn hint(app: &App) -> Option<&'static str> {
     let sb = app.sb.as_ref()?;
-    Some(if sb.confirm.is_some() {
+    Some(if sb.drop_ask.is_some() {
+        "y drop · n or esc keep"
+    } else if sb.confirm.is_some() {
         "y yes · n no · esc cancel"
     } else if sb.card.full {
         "alt+r answer · pgup/pgdn scroll · ctrl+f back"

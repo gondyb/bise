@@ -131,10 +131,12 @@ def main():
         typed("/tasks")
         keys("Enter")
         wait_screen("écris {{bash: echo hi-t1}}")
-        # drop from the panel with D
+        # drop from the panel with D: it asks first (BISE-43), y drops
         keys("C-k")
         keys("C-k")
         typed("D")
+        wait_screen("drop t1? its history stays in archived. y / n")
+        typed("y")
         wait_screen("@t1 archived", 20)
         wait_screen("1 archived")
         print(screen())

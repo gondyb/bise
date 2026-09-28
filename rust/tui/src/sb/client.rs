@@ -93,6 +93,7 @@ pub(super) fn new_sb(writer: std::sync::Arc<std::sync::Mutex<UnixStream>>, works
         selected: None,
         preview: false,
         confirm: None,
+        drop_ask: None,
         activity: Default::default(),
         ready: false,
         shell: None,
