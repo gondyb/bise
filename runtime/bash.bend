@@ -10,23 +10,11 @@ import ./tools.bend as X
 import ./tools-pure.bend as Xp
 import ./persist.bend as P
 import ./mcp.bend as Mcp
-import ../core/config.bend as Cf
 import ./proc.bend as Proc
 import ./settings.bend as St
 import ./bash-pure.bend as Shp
 def bg_after.env(+envv: String, +dflt: U32) -> U32:
   Shp.bg_after.read(U32.read(envv), dflt)
-
-def bg_after.pick2(empty: Bool, +envv: String, +cfgt: String,
-    +dflt: U32) -> U32:
-  match empty:
-    case True{}:
-      Cf.cfg_u32(cfgt, "bg_after", dflt)
-    case False{}:
-      bg_after.env(envv, dflt)
-
-def bg_after.or_cfg(+envv: String, +cfgt: String, +dflt: U32) -> U32:
-  bg_after.pick2(String.is_empty(envv), envv, cfgt, dflt)
 
 # env > config > default; the config file only feeds LIVE sessions
 # (BEND_REPL_PORT is the live marker - the scripted suites stay
@@ -38,7 +26,7 @@ def bg_after.pick(port_empty: Bool, +envv: String) -> IO(U32):
     case False{}:
       do IO<U32>:
         +cfgt : String <- St.read_cfg()
-        IO.pure(U32, Shp.bg_after.clamp(bg_after.or_cfg(envv, cfgt, 30)))
+        IO.pure(U32, Shp.bg_after.clamp(St.env_cfg_u32(envv, cfgt, "bg_after", 30)))
 
 def bg_after() -> IO(U32):
   do IO<U32>:

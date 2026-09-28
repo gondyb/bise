@@ -144,6 +144,62 @@ impl ComposerArea {
 }
 
 impl App {
+    /// A fresh screen: empty feed following the tail, empty composer.
+    /// The connection fields (`info`, `host`, `port`, `stream`, `sb`)
+    /// start empty; callers set theirs with struct update syntax.
+    pub(crate) fn new(
+        rx: std::sync::mpsc::Receiver<String>,
+        debug: bool,
+        area_w: usize,
+        voice: crate::voice::Voice,
+        session_id: String,
+    ) -> App {
+        App {
+            connected: true,
+            term: crate::term::Term::default(),
+            help: None,
+            debug,
+            line_tools: std::collections::HashMap::new(),
+            follow: true,
+            anchor: (0, 0),
+            scroll: 0,
+            vis_events: Vec::new(),
+            vis_rows: Vec::new(),
+            feed_x: 0,
+            feed_sel: None,
+            unseen: 0,
+            tail_visible: true,
+            bottom_bar_rect: None,
+            cache: Vec::new(),
+            win: Default::default(),
+            area_w,
+            area_h: 24,
+            events: Vec::new(),
+            last_line_at: None,
+            show_thinking: false,
+            interrupt_requested: false,
+            pending: false,
+            ed: crate::editor::Editor::default(),
+            composer: ComposerArea::default(),
+            flash: None,
+            voice,
+            voice_note: None,
+            mouse: MouseState::default(),
+            popup_sel: 0,
+            popup_dismissed: None,
+            history: Vec::new(),
+            tick: 0,
+            info: HarnessInfo::default(),
+            host: String::new(),
+            port: 0,
+            session_id,
+            stream: None,
+            rx,
+            should_quit: false,
+            sb: None,
+        }
+    }
+
     pub(crate) fn send(&mut self, line: &str) {
         self.pending = true;
         // the socket protocol is line-oriented: real newlines in the

@@ -10,7 +10,6 @@
 # runtime/repl-core.bend; this file builds the live session config.
 import Base
 import ../core/types.bend as T
-import ../core/config.bend as Cf
 import ./persist.bend as P
 import ./mcp.bend as Mcp
 import ./skills.bend as Sk
@@ -29,34 +28,10 @@ import ./repl-core-pure.bend as Rcp
 # (approximate tokens). Default 800000, tuned for 1M-context models
 # (e.g. glm-5.3): compaction starts near 80% of the window, with the
 # ADR 0011 selection budget (20000) for preserved user messages
-def thr_num(m: Maybe<&2, U32>) -> Nat:
-  match m:
-    case Some{+u}:
-      U32.to_nat(u)
-    case None{}:
-      800000n
-
-def thr_of(r: Result<&1, &1, U32 & String, String>) -> Nat:
-  match r:
-    case Fail{_}:
-      800000n
-    case Done{+s}:
-      thr_num(U32.read(s))
-
-def env_of(+s: String) -> Result<&1, &1, U32 & String, String>:
-  Done{s}
-
 # the threshold answers the same precedence as everything else:
 # BEND_THRESHOLD env > config.toml threshold > 800000
-def thr_of.pick(empty: Bool, +envv: String, +cfgt: String) -> Nat:
-  match empty:
-    case True{}:
-      U32.to_nat(Cf.cfg_u32(cfgt, "threshold", 800000))
-    case False{}:
-      thr_of(env_of(envv))
-
 def thr_of_cfg(+envv: String, +cfgt: String) -> Nat:
-  thr_of.pick(String.is_empty(envv), envv, cfgt)
+  U32.to_nat(St.env_cfg_u32(envv, cfgt, "threshold", 800000))
 
 # the live system prompt = identity + the exact vibe_sdk sections
 # (tool_use_prompt + current_time_prompt), loaded from prompt-*.txt

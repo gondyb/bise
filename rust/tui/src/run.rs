@@ -288,55 +288,17 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
     });
     let _ = stream.set_nodelay(true);
 
+    // line mode renders without a frame: the terminal width (or a sane
+    // default) sizes the code blocks; interactive mode overwrites this
+    // every frame
+    let area_w = crossterm::terminal::size().map(|(w, _)| w as usize).unwrap_or(100).max(40);
+    let voice = voice::Voice::live(voice::load_voice_enabled());
     let mut app = App {
-        connected: true,
-        term: term::Term::default(),
-        help: None,
-        debug,
-        line_tools: std::collections::HashMap::new(),
-        follow: true,
-        anchor: (0, 0),
-        scroll: 0,
-        vis_events: Vec::new(),
-        vis_rows: Vec::new(),
-        feed_x: 0,
-        feed_sel: None,
-        unseen: 0,
-        tail_visible: true,
-        bottom_bar_rect: None,
-        cache: Vec::new(),
-        win: Default::default(),
-        // line mode renders without a frame: the terminal width (or a
-        // sane default) sizes the code blocks; interactive mode
-        // overwrites this every frame
-        area_w: crossterm::terminal::size()
-            .map(|(w, _)| w as usize)
-            .unwrap_or(100)
-            .max(40),
-        area_h: 24,
-        events: Vec::new(),
-        last_line_at: None,
-        show_thinking: false,
-        interrupt_requested: false,
-        pending: false,
-        ed: editor::Editor::default(),
-        composer: ComposerArea::default(),
-        flash: None,
-        voice: voice::Voice::live(voice::load_voice_enabled()),
-        voice_note: None,
-        mouse: MouseState::default(),
-        popup_sel: 0,
-        popup_dismissed: None,
-        history: Vec::new(),
-        tick: 0,
         info,
         host,
         port,
-        session_id,
         stream: Some(stream),
-        rx,
-        should_quit: false,
-        sb: None,
+        ..App::new(rx, debug, area_w, voice, session_id)
     };
 
     if io::stdout().is_terminal() && io::stdin().is_terminal() {
