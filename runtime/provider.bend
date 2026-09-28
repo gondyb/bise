@@ -133,14 +133,16 @@ def model_call.verdict(r: Result<&2, &2, Http.Err, Http.Res>, st: Api.Style,
     case Fail{+e}:
       IO.pure(Got, got_err(host, e))
 
-# ---- where the retry notes go: the loop's output, carried through ----
-# (runtime/main.bend's Out, mirrored: this module sits below main)
+# ---- the loop's output: stdout (scripted) or the client socket ----
+# Defined here, below main, so the provider call carries it through (its
+# retry notes reach the client while the call waits). Sockets are affine
+# handles, so Out is a Type: it is threaded, never copied.
 
-type Note is Type:
-  NStd{}
-  NNet{sock: Socket}
+type Out is Type:
+  OStd{}
+  ONet{sock: Socket}
 
-def note.pair(sm: Socket & Result<&1, &1, U32 & String, Unit>) -> Socket:
+def out.pair(sm: Socket & Result<&1, &1, U32 & String, Unit>) -> Socket:
   match sm:
     case (s2, _):
       s2
@@ -167,32 +169,32 @@ def wire_log(+text: String) -> IO(Unit):
     +path : String <- IO.pure(String, P.env_or(fr, ""))
     wire_log.when(String.is_empty(path), path, text)
 
-def note(n: Note, +line: String) -> IO(Note):
+def note(n: Out, +line: String) -> IO(Out):
   match n:
-    case NStd{}:
-      do IO<Note>:
+    case OStd{}:
+      do IO<Out>:
         IO.print(line)
-        IO.pure(Note, NStd{})
-    case NNet{sock}:
-      do IO<Note>:
+        IO.pure(Out, OStd{})
+    case ONet{sock}:
+      do IO<Out>:
         wire_log(String.append(line, "\n"))
         sm : Socket & Result<&1, &1, U32 & String, Unit> <- TCP.send(sock,
           String.append(line, "\n"))
-        s2 : Socket <- IO.pure(Socket, note.pair(sm))
-        IO.pure(Note, NNet{s2})
+        s2 : Socket <- IO.pure(Socket, out.pair(sm))
+        IO.pure(Out, ONet{s2})
 
 # the token usage of a reply, as a feed line (runtime/usage-pure.bend);
 # a reply without usage, or a failed call, prints nothing
-def usage_note.pick(empty: Bool, n: Note, +line: String) -> IO(Note):
+def usage_note.pick(empty: Bool, n: Out, +line: String) -> IO(Out):
   match empty:
     case True{}:
-      IO.pure(Note, n)
+      IO.pure(Out, n)
     case False{}:
       note(n, line)
 
 # the attempt's body: a whole JSON reply, or the Anthropic stream's
 # events (Us.usage_line reads both); no response (status 0) prints nothing
-def usage_note(g: Got, n: Note, st: Api.Style, +model: String) -> IO(Note):
+def usage_note(g: Got, n: Out, st: Api.Style, +model: String) -> IO(Out):
   match g:
     case Got{_, +status, +raw}:
       +line = Us.usage_line(st, model, status, raw)
@@ -222,41 +224,41 @@ def model_call.wait(fuel: Nat, +ipath: String, +left: U32) -> IO(Bool):
         more : Bool <- model_call.wait(k, ipath, Pvp.left_after(stop, left))
         IO.pure(Bool, Bool.or(stop, more))
 
-def model_call.step.retry.go(stop: Bool, n: Note, +ipath: String, +k: Nat,
+def model_call.step.retry.go(stop: Bool, n: Out, +ipath: String, +k: Nat,
     +tries: Nat, +why: String,
-    next: Nat -> Note -> IO(Note & Rem.RemoteRes)) -> IO(Note & Rem.RemoteRes):
+    next: Nat -> Out -> IO(Out & Rem.RemoteRes)) -> IO(Out & Rem.RemoteRes):
   match stop:
     case True{}:
-      do IO<Note & Rem.RemoteRes>:
+      do IO<Out & Rem.RemoteRes>:
         # consume the flag so the boundary drains stay clean
         u : Unit <- P.write_file(ipath, "")
-        IO.pure(Note & Rem.RemoteRes,
+        IO.pure(Out & Rem.RemoteRes,
           (n, Rem.RRErr{Pvp.interrupted_text(Nat.add(tries, 1n), why)}))
     case False{}:
       next(k)(n)
 
-def model_call.step.retry(can: Bool, n: Note, +k: Nat, +tries: Nat,
+def model_call.step.retry(can: Bool, n: Out, +k: Nat, +tries: Nat,
     +delay_ms: U32, +why: String,
-    next: Nat -> Note -> IO(Note & Rem.RemoteRes)) -> IO(Note & Rem.RemoteRes):
+    next: Nat -> Out -> IO(Out & Rem.RemoteRes)) -> IO(Out & Rem.RemoteRes):
   match can:
     case True{}:
-      do IO<Note & Rem.RemoteRes>:
-        n2 : Note <- note(n, Pvp.retry_line(tries, why, delay_ms))
+      do IO<Out & Rem.RemoteRes>:
+        n2 : Out <- note(n, Pvp.retry_line(tries, why, delay_ms))
         +ipath : String <- interrupt_path()
         stop : Bool <- model_call.wait(Pvp.wait_slices(delay_ms), ipath,
           delay_ms)
         model_call.step.retry.go(stop, n2, ipath, k, tries, why, next)
     case False{}:
-      IO.pure(Note & Rem.RemoteRes,
+      IO.pure(Out & Rem.RemoteRes,
         (n, Rem.RRErr{Pvp.exhausted_text(Nat.add(tries, 1n), why)}))
 
-def model_call.step(a: Pvp.Attempt, n: Note, +k: Nat, +tries: Nat,
-    next: Nat -> Note -> IO(Note & Rem.RemoteRes)) -> IO(Note & Rem.RemoteRes):
+def model_call.step(a: Pvp.Attempt, n: Out, +k: Nat, +tries: Nat,
+    next: Nat -> Out -> IO(Out & Rem.RemoteRes)) -> IO(Out & Rem.RemoteRes):
   match a:
     case Pvp.AOk{+reply}:
-      IO.pure(Note & Rem.RemoteRes, (n, Rem.parse_reply(reply)))
+      IO.pure(Out & Rem.RemoteRes, (n, Rem.parse_reply(reply)))
     case Pvp.AFail{+why}:
-      IO.pure(Note & Rem.RemoteRes, (n, Rem.RRErr{why}))
+      IO.pure(Out & Rem.RemoteRes, (n, Rem.RRErr{why}))
     case Pvp.ARetry{+after_ms, +why}:
       model_call.step.retry(Nat.is_lt(0n, k), n, k, tries,
         Pvp.retry_delay_ms(after_ms, tries), why, next)
@@ -441,15 +443,15 @@ def got_attempt(g: Got) -> Pvp.Attempt:
 # one call = up to max_attempts attempts; `call` (its start time, ms)
 # names the call in the debug log
 @unsafe
-def model_call.try(fuel: Nat, +tries: Nat, n: Note, +request: String,
+def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
     +key: String, +st: Api.Style, +model: String, +call: Nat)
-    -> IO(Note & Rem.RemoteRes):
+    -> IO(Out & Rem.RemoteRes):
   match fuel:
     case 0n:
-      IO.pure(Note & Rem.RemoteRes,
+      IO.pure(Out & Rem.RemoteRes,
         (n, Rem.RRErr{"provider unreachable: retries exhausted"}))
     case 1n+k:
-      do IO<Note & Rem.RemoteRes>:
+      do IO<Out & Rem.RemoteRes>:
         +json : String <- IO.pure(String,
           wire_body.pick(Api.is_anthropic(st),
             Api.api_body_for(st, model, Api.parse_wire(request))))
@@ -462,22 +464,22 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Note, +request: String,
         +url : String <- IO.pure(String, Pvp.provider_url(P.env_or(ur, ""), st))
         +g : Got <- call.pick(Api.is_anthropic(st), url, hdrs, body, st)
         lg : Unit <- model_call.log(call, tries, model, url, json, g)
-        nu : Note <- usage_note(g, n, st, model)
+        nu : Out <- usage_note(g, n, st, model)
         model_call.step(got_attempt(g), nu, k, tries,
           k2 => n2 => model_call.try(k2, Nat.add(tries, 1n), n2, request, key,
             st, model, call))
 
-def model_call.go(n: Note, +request: String, +key: String, +st: Api.Style,
-    +model: String) -> IO(Note & Rem.RemoteRes):
-  do IO<Note & Rem.RemoteRes>:
+def model_call.go(n: Out, +request: String, +key: String, +st: Api.Style,
+    +model: String) -> IO(Out & Rem.RemoteRes):
+  do IO<Out & Rem.RemoteRes>:
     +call : Nat <- IO.now()
     model_call.try(Pvp.max_attempts(), 0n, n, request, key, st, model, call)
 
-def model_call.key(empty: Bool, n: Note, +request: String, +key: String,
-    +st: Api.Style, +model: String) -> IO(Note & Rem.RemoteRes):
+def model_call.key(empty: Bool, n: Out, +request: String, +key: String,
+    +st: Api.Style, +model: String) -> IO(Out & Rem.RemoteRes):
   match empty:
     case True{}:
-      IO.pure(Note & Rem.RemoteRes,
+      IO.pure(Out & Rem.RemoteRes,
         (n, Rem.RRErr{String.append(Pvp.model_key_env(st), " is not set")}))
     case False{}:
       model_call.go(n, request, key, st, model)
@@ -495,8 +497,8 @@ def resolved_model() -> IO(String):
         Cf.cfg_get(cfgt, "model"), "claude-opus-5-5")))
 
 @unsafe
-def model_call(n: Note, +request: String) -> IO(Note & Rem.RemoteRes):
-  do IO<Note & Rem.RemoteRes>:
+def model_call(n: Out, +request: String) -> IO(Out & Rem.RemoteRes):
+  do IO<Out & Rem.RemoteRes>:
     # the provider table: the resolved model carries the style, the
     # api_base and the key env
     +model : String <- resolved_model()

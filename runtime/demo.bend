@@ -9,6 +9,7 @@ import ../core/types.bend as T
 import ../core/checkpoint.bend as K
 import ./model.bend as M
 import ./main.bend as R
+import ./provider.bend as Pv
 import ./main-pure.bend as Rp
 def say(text: String) -> T.Cmd:
   T.UserMsg{T.Queue{}, text}
@@ -23,7 +24,7 @@ def scenario(name: String, +c: T.Cfg, +cmds: List<&2, T.Cmd>,
     +script: List<&2, M.Reply>) -> IO(Unit):
   do IO<Unit>:
     IO.print(String.append("\n=== ", String.append(name, " ===")))
-    e : R.RtEnd <- R.run(500n, R.OStd{},
+    e : R.RtEnd <- R.run(500n, Pv.OStd{},
       Rp.Rt{T.new_session(c), script, cmds, False{}},
       Rp.JIdle{},
       Rp.transition(Rp.Rt{T.new_session(c), script, cmds, False{}}, Rp.JIdle{}))

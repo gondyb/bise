@@ -78,22 +78,22 @@ def plan_of(cl: Cm.CmdLine) -> Rcp.Plan:
 # Stop unwinds to main (the reload path — the process exits 0 and the
 # parent respawns the latest code on the same session).
 
-def repl_out(out: R.Out, +sess: T.Session,
+def repl_out(out: Pv.Out, +sess: T.Session,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match out:
-    case R.OStd{}:
+    case Pv.OStd{}:
       IO.pure(Flow, Go{sess})
-    case R.ONet{s2}:
+    case Pv.ONet{s2}:
       next(s2)(sess)
 
 # ---- /reload and the deferred self.reload: gated, then a clean exit ----
 
 # refused: turn/pending/queued/notifs would be lost — the checkpoint
 # only serializes turn boundaries (ADR 0002); say so, keep serving
-def repl_reload.busy(out: R.Out, +sess: T.Session,
+def repl_reload.busy(out: Pv.Out, +sess: T.Session,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   do IO<Flow>:
-    out2 : R.Out <- R.emit(out,
+    out2 : Pv.Out <- R.emit(out,
       Con{"  obs: reload refused: not between turns — finish or interrupt the pending turn first",
         Con{"--- idle", Nil{}}})
     repl_out(out2, sess, next)
@@ -103,24 +103,24 @@ def repl_reload.busy(out: R.Out, +sess: T.Session,
 # BEND_CONTINUE=1 (same port, same session file). Background command
 # slots live in BEND_BG_ROOT on disk: they keep running across the
 # reload and stay reachable from the new process.
-def repl_reload.halt(out: R.Out, +sess: T.Session) -> IO(Flow):
+def repl_reload.halt(out: Pv.Out, +sess: T.Session) -> IO(Flow):
   match out:
-    case R.OStd{}:
+    case Pv.OStd{}:
       do IO<Flow>:
         P.save(sess)
         IO.pure(Flow, Stop{})
-    case R.ONet{s2}:
+    case Pv.ONet{s2}:
       do IO<Flow>:
         Socket.close(s2)
         P.save(sess)
         IO.pure(Flow, Stop{})
 
-def repl_reload(out: R.Out, ok: Bool, +sess: T.Session,
+def repl_reload(out: Pv.Out, ok: Bool, +sess: T.Session,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match ok:
     case True{}:
       do IO<Flow>:
-        out2 : R.Out <- R.emit(out,
+        out2 : Pv.Out <- R.emit(out,
           Con{"  obs: reload: restarting the harness with the latest code",
             Con{"  obs: reload: the session is preserved — background commands keep running",
               Con{"--- idle", Nil{}}}})
@@ -137,7 +137,7 @@ def repl_reload(out: R.Out, ok: Bool, +sess: T.Session,
 # — the compaction turn itself is never re-scanned, so a failing
 # compaction cannot loop.
 
-def repl_deferred.reload(+sess: T.Session, out: R.Out,
+def repl_deferred.reload(+sess: T.Session, out: Pv.Out,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   do IO<Flow>:
     +ok : Bool <- IO.pure(Bool, S.reload_allowed(sess))
@@ -147,7 +147,7 @@ def repl_deferred.reload(+sess: T.Session, out: R.Out,
 # after the deferred compaction: save, then the reload if it was also
 # requested, else keep serving
 def repl_deferred.compact.after.pick(reload: Bool, +sess3: T.Session,
-    out3: R.Out, next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+    out3: Pv.Out, next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match reload:
     case True{}:
       do IO<Flow>:
@@ -170,7 +170,7 @@ def repl_deferred.compact.after(reload: Bool, e: R.RtEnd,
 # for a terminal session (the old 100 died mid-turn around ~20 model
 # rounds, silently). The script only feeds scripted mode; live mode
 # calls the provider and ignores it.
-def repl_run(+live: Bool, out: R.Out, +sess: T.Session,
+def repl_run(+live: Bool, out: Pv.Out, +sess: T.Session,
     +script: List<&2, M.Reply>, +cmds: List<&2, T.Cmd>) -> IO(R.RtEnd):
   +rt = {Rp.Rt{sess, script, cmds, live} : Rp.Rt}
   R.run(1000000n, out, rt, Rp.JIdle{}, Rp.transition(rt, Rp.JIdle{}))
@@ -180,14 +180,14 @@ def compact_script() -> List<&2, M.Reply>:
   Con{M.ROk{"<summary>The REPL conversation so far, compacted on request.</summary>", Nil{}},
     Nil{}}
 
-def repl_deferred.compact(+live: Bool, reload: Bool, +sess2: T.Session, out2: R.Out,
+def repl_deferred.compact(+live: Bool, reload: Bool, +sess2: T.Session, out2: Pv.Out,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   do IO<Flow>:
     e : R.RtEnd <- repl_run(live, out2, sess2, compact_script(),
       Con{T.Compact{""}, Nil{}})
     repl_deferred.compact.after(reload, e, next)
 
-def repl_deferred.reload.only(reload: Bool, +sess2: T.Session, out2: R.Out,
+def repl_deferred.reload.only(reload: Bool, +sess2: T.Session, out2: Pv.Out,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match reload:
     case True{}:
@@ -196,20 +196,20 @@ def repl_deferred.reload.only(reload: Bool, +sess2: T.Session, out2: R.Out,
       repl_out(out2, sess2, next)
 
 def repl_deferred.compact.only(+live: Bool, compact: Bool, reload: Bool, +sess2: T.Session,
-    out2: R.Out, next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+    out2: Pv.Out, next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match compact:
     case True{}:
       repl_deferred.compact(live, reload, sess2, out2, next)
     case False{}:
       repl_deferred.reload.only(reload, sess2, out2, next)
 
-def repl_deferred(+live: Bool, d: Sfp.Def, +sess2: T.Session, out2: R.Out,
+def repl_deferred(+live: Bool, d: Sfp.Def, +sess2: T.Session, out2: Pv.Out,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match d:
     case Sfp.Def{+compact, +reload}:
       repl_deferred.compact.only(live, compact, reload, sess2, out2, next)
 
-def repl_end_save.then(+live: Bool, +sess2: T.Session, out2: R.Out,
+def repl_end_save.then(+live: Bool, +sess2: T.Session, out2: Pv.Out,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   do IO<Flow>:
     # BR-002: the turn is over - a stale interrupt flag would kill the
@@ -248,7 +248,7 @@ def repl_end_stalled.stalled(+live: Bool, active: Bool, e: R.RtEnd,
       match e:
         case R.REnd{+sess2, out2}:
           do IO<Flow>:
-            out3 : R.Out <- R.emit(out2,
+            out3 : Pv.Out <- R.emit(out2,
               Con{"  obs: turn_stalled: execution budget exhausted",
                 Con{"--- idle", Nil{}}})
             P.save(sess2)
@@ -271,16 +271,16 @@ def repl_plan(+live: Bool, s: Socket, plan: Rcp.Plan, +sess: T.Session,
         IO.pure(Flow, Go{sess})
     case Rcp.PHelp{}:
       do IO<Flow>:
-        out2 : R.Out <- R.emit(R.ONet{s}, repl_help())
+        out2 : Pv.Out <- R.emit(Pv.ONet{s}, repl_help())
         repl_out(out2, sess, next)
     case Rcp.PReload{}:
       do IO<Flow>:
         +ok : Bool <- IO.pure(Bool, S.reload_allowed(sess))
-        f : Flow <- repl_reload(R.ONet{s}, ok, sess, next)
+        f : Flow <- repl_reload(Pv.ONet{s}, ok, sess, next)
         IO.pure(Flow, f)
     case Rcp.PRun{+cmds, +script}:
       do IO<Flow>:
-        e : R.RtEnd <- repl_run(live, R.ONet{s}, sess, script, cmds)
+        e : R.RtEnd <- repl_run(live, Pv.ONet{s}, sess, script, cmds)
         repl_end_stalled(live, e, next)
 
 def repl_interpret(+live: Bool, s: Socket, i: Cm.Interpretation, +sess: T.Session,
@@ -292,7 +292,7 @@ def repl_interpret(+live: Bool, s: Socket, i: Cm.Interpretation, +sess: T.Sessio
       # a local warning: no protocol effect, the session is untouched;
       # the idle marker keeps the client contract (batch + idle)
       do IO<Flow>:
-        out2 : R.Out <- R.emit(R.ONet{s},
+        out2 : Pv.Out <- R.emit(Pv.ONet{s},
           Con{String.append("  obs: ", warning), Con{"--- idle", Nil{}}})
         repl_out(out2, sess, next)
 
@@ -366,17 +366,17 @@ def crash_lines(empty: Bool, +note: String) -> List<&2, String>:
       Con{String.append("  obs: harness_restarted: ", note), Nil{}}
 
 def greet_out(greet: Maybe<&2, Nat>, s: Socket, +sess: T.Session)
-    -> IO(R.Out):
+    -> IO(Pv.Out):
   match greet:
     case Some{+n}:
-      do IO<R.Out>:
+      do IO<Pv.Out>:
         cr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_CRASH_NOTE")
         +note : String <- IO.pure(String, P.env_or(cr, ""))
-        R.emit(R.ONet{s}, List.append(&2, String,
+        R.emit(Pv.ONet{s}, List.append(&2, String,
           greet_lines(n, P.history_of(sess)),
           crash_lines(String.is_empty(note), note)))
     case None{}:
-      IO.pure(R.Out, R.ONet{s})
+      IO.pure(Pv.Out, Pv.ONet{s})
 
 # the restored queue restarts the turn chain by itself (checkpoint v2):
 # the runtime idle boundary pops the queued head into a fresh turn,
@@ -387,7 +387,7 @@ def greet_out(greet: Maybe<&2, Nat>, s: Socket, +sess: T.Session)
 def resume_queued.run(+live: Bool, s: Socket, +sess: T.Session,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   do IO<Flow>:
-    e : R.RtEnd <- repl_run(live, R.ONet{s}, sess, Nil{}, Nil{})
+    e : R.RtEnd <- repl_run(live, Pv.ONet{s}, sess, Nil{}, Nil{})
     f : Flow <- repl_end_stalled(live, e, next)
     IO.pure(Flow, f)
 
@@ -399,11 +399,11 @@ def resume_queued(+live: Bool, empty: Bool, s: Socket, +sess: T.Session,
     case False{}:
       resume_queued.run(live, s, sess, next)
 
-def greet_conn(+live: Bool, out: R.Out, +sess: T.Session) -> IO(Flow):
+def greet_conn(+live: Bool, out: Pv.Out, +sess: T.Session) -> IO(Flow):
   match out:
-    case R.OStd{}:
+    case Pv.OStd{}:
       IO.pure(Flow, Go{sess})
-    case R.ONet{s2}:
+    case Pv.ONet{s2}:
       resume_queued(live, List.is_empty(&2, String, S.sess_queued(sess)), s2,
         sess, s3 => sess3 => repl_conn(live, s3, sess3))
 
@@ -433,7 +433,7 @@ def serve_after(+live: Bool, am: Listener & Result<&1, &1, U32 & String, Socket>
         IO.pure(Flow, Stop{})
     case (l2, Done{s}):
       do IO<Flow>:
-        out2 : R.Out <- greet_out(greet, s, sess)
+        out2 : Pv.Out <- greet_out(greet, s, sess)
         f : Flow <- greet_conn(live, out2, sess)
         serve_after.cont(f, l2, next)
 
