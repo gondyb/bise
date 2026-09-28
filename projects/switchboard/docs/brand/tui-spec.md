@@ -151,7 +151,7 @@ Decided (Gabriel): two themes, light and dark, nothing more for now.
 | text | `#ece6da` | cream, all readable text |
 | dim | `#a39c90` | secondary text, durations, labels |
 | faint | `#4a4540` | rails, borders, line numbers only |
-| accent | `#f2766b` | blush: the `:*` mark, "needs you", focus |
+| accent | `#f4a6b0` | pale pink (Gabriel: less like an error): the `:*` mark, "needs you", focus; 9.7:1 |
 | error | `#ff5a52` | failures only |
 | ok | `#b9d99a` | diff additions only |
 
@@ -164,7 +164,7 @@ Syntax colors stay, but softer (see the mockup).
 | text | `#1b1917` | 17.5:1 |
 | dim | `#6b645a` | 5.8:1 |
 | faint | `#cfc8bd` | rails and borders only |
-| accent | `#c8443b` | 4.8:1 (darker blush, so it stays readable) |
+| accent | `#b8416b` | 5.2:1 (a raspberry pink, darker so it stays readable, pink not red) |
 | error | `#b3261e` | 6.5:1 |
 | ok | `#3f7a2a` | 5.2:1 |
 
