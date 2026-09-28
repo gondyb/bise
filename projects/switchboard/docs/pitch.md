@@ -33,6 +33,13 @@ Core message: flow. You work with many agents at once without paying the
 cognitive cost. You're more efficient, you have more fun, and you ship more
 (**⚠** "ship 10x more" is a feeling, not a measurement yet).
 
+**Name: `bise`** (picked by Gabriel). Short to type, and a double meaning: the
+*bise* is a cold north wind (Mistral's family, and wind = flow), and *faire la
+bise* is the French cheek kiss. Checked free on npm, crates.io, PyPI and
+Homebrew. **⚠** `bise.sh` and `bise.ai` are taken; `bise.dev`, GitHub org,
+trademarks and Linux packages not checked yet. Known namesake: BISE, the EU
+Biodiversity Information System for Europe (different field).
+
 Taglines:
 
 - All the agents. None of the overhead.
@@ -196,5 +203,5 @@ teams). The edge is a permanent main plus agents that talk to each other, not
 - **No worktrees is a bet.** It works for one repo and one human. On a large
   monorepo with heavy parallel builds (caches, ports, lockfiles), it can
   break. Keep on-demand worktrees and say so clearly.
-- **Name.** "Switchboard" is a working name; check trademarks and existing
-  products before launch.
+- **Name.** The CLI is now `bise` ("Switchboard" was a working name). Check
+  trademarks, a domain and the GitHub org before launch.

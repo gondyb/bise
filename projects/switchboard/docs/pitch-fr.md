@@ -32,6 +32,13 @@ Message central : le flow. Tu travailles avec plein d'agents sans en payer le
 coût cognitif. Tu es plus efficace, tu prends plus de plaisir, et tu ships
 plus (**⚠** « dix fois plus » est un ressenti, pas encore une mesure).
 
+**Nom : `bise`** (choisi par Gabriel). Court à taper, avec un double sens : la
+bise est un vent froid du nord (la famille du Mistral, et le vent, c'est le
+flow), et *faire la bise*. Vérifié libre sur npm, crates.io, PyPI et Homebrew.
+**⚠** `bise.sh` et `bise.ai` sont pris ; `bise.dev`, l'org GitHub, les marques
+et les paquets Linux ne sont pas encore vérifiés. Homonyme connu : BISE, le
+système d'information européen sur la biodiversité (autre domaine).
+
 Taglines :
 
 | FR | EN |
@@ -202,5 +209,6 @@ des équipes). L'avance tient à main permanent + agents qui se parlent, pas à
 - **Pas de worktrees = pari.** Ça marche sur un repo et un humain. Sur un gros
   monorepo avec des builds lourds et parallèles (caches, ports, lockfiles), ça
   peut casser. Garder le worktree à la demande et le dire clairement.
-- **Nom.** « Switchboard » est un nom de travail ; vérifier les marques et
-  les produits existants avant le lancement.
+- **Nom.** Le CLI s'appelle maintenant `bise` (« Switchboard » était un nom
+  de travail). Vérifier les marques, un domaine et l'org GitHub avant le
+  lancement.
