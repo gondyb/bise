@@ -886,7 +886,7 @@ Index:
 
 ### BISE-61 · one-time hints
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-o-onboard · **commits:** 6fe07f7
 - **track:** O · **owns:** new `hints.rs`; hint calls in `sb.rs` event
   handling (not the key arms)
 - **spec:** book §15 step 6, contract C4
@@ -896,6 +896,47 @@ Index:
   to the thing; it goes away when used or after the next user message.
 - **done when:** each hint shows once across restarts; tests of the store.
 - **notes:**
+  - **API (C4):** `hints::once(app, Hint::X)` asks for a hint; it waits
+    until its thing is on screen and no other hint is up, then shows, and
+    only then counts as seen (`hints.json` `{ "first_agent": true, … }`,
+    next to the onboarding flag: `$XDG_STATE_HOME/switchboard/`, else
+    `~/.local/state/switchboard/`; other keys kept). `hints::used(h)`: it
+    goes away (up or waiting); `hints::user_message()`: the one up goes
+    away. `SB_ONBOARDING=off` turns hints off too (every tmux test but
+    `tui_onboarding_tmux`); under `cargo test` they are off unless a test
+    gives a store (`use_store`).
+  - **Where it points** is read from the drawn frame (so ui.rs / panel /
+    feed stay as they are): the first agent: left of the panel, level with
+    row `1` (arrow `→`); the first message between agents: under the last
+    fold `▸ n messages between k agents` or `│ @ a → b` row (above it near
+    the bottom); the first card: above the last `┃ ? name needs you` title
+    (arrow `↓`). A hint up whose thing leaves the screen goes away (the
+    card answered, the fold scrolled or gone). The box: rounded, accent
+    border, `card_tint` ground (the mockup's tinted note), 36 columns of
+    text, keys in accent.
+  - **Hooks (sb.rs, event handling only):** `apply_state`: an agent that
+    isn't main → FirstAgent; a card → FirstCard, no card → `used`;
+    `ingest_for`: a live (`ready`) `sb msg` / `sb msg-in` line in the feed
+    in view → FirstLevel3; `focus` on an agent → `used(FirstAgent)`;
+    `handle_input`, a message sent → `user_message()`. `run.rs`:
+    `hints::draw(app, f)` after the frame, before `asciify`. `lib.rs`:
+    `mod hints;`.
+  - **The steer hint** (⚠ proposed): `Hint::FirstSteer` (`✓ the agent got
+    it · ✓✓ it read it.`, anchor: a `› … ✓✓` row) is there but not
+    triggered: BISE-15 (track F) calls `once` where it sets `Mark::Read`
+    and drops its `#[allow(dead_code)]`, if main keeps it. Told bise-f-feed.
+  - **Differences with the mockup:** one hint at a time (a later one
+    waits its turn, it is not lost); the note is drawn over the feed (it
+    can cover a line of text, like the mockup's tip).
+  - **Tests:** unit (store keeps other keys, off without a store, once →
+    seen only when it comes up, across a restart, a never-shown one comes
+    back; wrap + accent keys; the boxes' places; a TestBackend frame: no
+    thing → nothing, a card title → the card hint above it and seen, the
+    card gone → the hint goes, then the waiting level-3 one comes up).
+    `tui_onboarding_tmux.py` goes on after the onboarding: spawn → the
+    agent hint, ⌥1 → gone; the card hint, a message → gone; two agents
+    talking → the level-3 hint; `hints.json` holds the three keys
+    (captures 7–9 in `$SB_ONBOARDING_SHOTS`).
 
 ### BISE-70 · images UI
 
