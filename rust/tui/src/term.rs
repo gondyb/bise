@@ -19,6 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tui_term::widget::PseudoTerminal;
 
+#[allow(dead_code)] // the key bar (BISE-98/99) replaced the hint row; bise-k-keys deletes it
 pub(crate) const HINT: &str = "terminal: keys go to the shell · ctrl+` hide · wheel/shift+pgup scroll · drag the border to resize";
 
 const SCROLLBACK: usize = 5000;

@@ -32,12 +32,14 @@ pub(crate) fn split(app: &App, full: Rect) -> (Rect, Option<Rect>) {
     if app.sb.is_none() {
         return (full, None);
     }
-    // the screen's layout (book §8, layout.rs): under the header row and
-    // its blank row, inside the outer margins
-    let c = crate::layout::cols(full.width);
-    let mr = crate::layout::margin_rows(full.height);
-    let top = mr + 2;
-    let body = Rect { y: full.y + top, height: full.height.saturating_sub(top + mr), ..full };
+    // the screen's layout (book §8, layout.rs): under the header and its
+    // blank row, above the composer pane (the divider and what the
+    // smallest composer takes)
+    let c = crate::layout::cols(full.width, full.height);
+    let r = crate::layout::rows(full.width, full.height);
+    let pane = 2 + r.pad_top + r.min_text + r.pad_bottom;
+    let bottom = r.keybar.saturating_sub(pane);
+    let body = Rect { y: full.y + r.body, height: bottom.saturating_sub(r.body), ..full };
     let feed = Rect { x: full.x + c.feed_x, width: c.feed_w, ..body }.intersection(full);
     let panel = c.panel.map(|p| Rect { x: full.x + p.x, width: p.w, ..body }.intersection(full));
     (feed, panel)
@@ -272,18 +274,11 @@ impl Sb {
     /// `short` (no panel), or `no agents yet`. A method, so `ui.rs` reaches
     /// it through `app.sb` (the `panel` module is private to `sb`).
     pub(crate) fn header(&self, width: u16, short: bool) -> Line<'static> {
-        let sb = self;
-        let mut spans = vec![
-            Span::styled(" bise ", Style::default().fg(text()).add_modifier(Modifier::BOLD)),
-            Span::styled(G_MAIN, Style::default().fg(accent())),
-        ];
+        let mut spans = vec![Span::raw(" ")];
+        spans.extend(self.title());
         let left_w: usize = spans.iter().map(|s| s.content.width()).sum();
         // one column of margin on the right, two of gap after `bise :*`
-        let room = (width as usize).saturating_sub(left_w + 3);
-        let right: Vec<Span<'static>> = match counts(sb) {
-            None => vec![Span::styled("no agents yet", Style::default().fg(dim()))],
-            Some(n) => fit_counts(n, short, room),
-        };
+        let right = self.summary((width as usize).saturating_sub(left_w + 3), short);
         let right_w: usize = right.iter().map(|s| s.content.width()).sum();
         let pad = (width as usize).saturating_sub(left_w + right_w + 1);
         if pad >= 2 {
@@ -291,6 +286,44 @@ impl Sb {
             spans.extend(right);
         }
         Line::from(spans)
+    }
+
+    /// The title: `bise` bold in the text color, `:*` in accent.
+    pub(crate) fn title(&self) -> Vec<Span<'static>> {
+        vec![
+            Span::styled("bise ", Style::default().fg(text()).add_modifier(Modifier::BOLD)),
+            Span::styled(crate::theme::glyph(G_MAIN), Style::default().fg(accent())),
+        ]
+    }
+
+    /// The summary in at most `room` columns (book §8 "The frame"): the
+    /// workspace (`~/acme`, dim) then the counts; not enough room, the
+    /// path goes first, then the counts shorten (`∿ 3 · ? 1`).
+    pub(crate) fn summary(&self, room: usize, short: bool) -> Vec<Span<'static>> {
+        let fitted = |room: usize| -> Vec<Span<'static>> {
+            match counts(self) {
+                None => vec![Span::styled("no agents yet", Style::default().fg(dim()))],
+                Some(n) => fit_counts(n, short, room),
+            }
+        };
+        // the path only beside the counts as they are when nothing is short
+        let whole = fitted(usize::MAX);
+        let whole_w: usize = whole.iter().map(|s| s.content.width()).sum();
+        let path = home_path(&self.workspace);
+        if path.is_empty() || path.width() + 3 + whole_w > room {
+            return fitted(room);
+        }
+        let mut out = vec![Span::styled(format!("{} · ", path), Style::default().fg(dim()))];
+        out.extend(whole);
+        out
+    }
+}
+
+/// `path` with the home folder as `~`.
+fn home_path(path: &str) -> String {
+    match std::env::var("HOME") {
+        Ok(h) if !h.is_empty() && (path == h || path.starts_with(&format!("{}/", h))) => format!("~{}", &path[h.len()..]),
+        _ => path.to_string(),
     }
 }
 
@@ -548,25 +581,19 @@ pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bo
     true
 }
 
-/// The status row in switchboard mode (None: the plain one): the agent
-/// you talk to in accent, then dim: its state, the turn's duration, its
-/// context, `shared folder` or `⎇ branch`, then the notes (preview,
-/// read-only, cards, the hub's version).
-/// `main · idle · 210k / 1M tokens · 21%`.
-pub(crate) fn status_line(app: &App) -> Option<Line<'static>> {
+/// The state of the agent you talk to (book §8 "The frame": the right of
+/// the divider; it was the status row), dim: its state, the turn's
+/// duration, its context, `shared folder` or `⎇ branch`, then the notes
+/// (preview, read-only, cards, the hub's version); or the `D` question,
+/// in accent. `idle · 210k / 1M tokens · 21%`.
+pub(crate) fn status_state(app: &App) -> Option<Line<'static>> {
     let sb = app.sb.as_ref()?;
     if let Some(name) = &sb.drop_ask {
-        return Some(Line::from(vec![
-            Span::raw(" "),
-            Span::styled(drop_question(name), Style::default().fg(accent())),
-        ]));
+        return Some(Line::from(Span::styled(drop_question(name), Style::default().fg(accent()))));
     }
     let a = sb.agent(&sb.focus).cloned().unwrap_or_default();
     let d = |t: String| Span::styled(format!(" · {}", t), Style::default().fg(dim()));
-    let mut spans: Vec<Span<'static>> = vec![
-        Span::raw(" "),
-        Span::styled(sb.focus.clone(), Style::default().fg(accent())),
-    ];
+    let mut spans: Vec<Span<'static>> = Vec::new();
     if !a.status.is_empty() {
         spans.push(d(a.status.clone()));
     }
@@ -615,7 +642,29 @@ pub(crate) fn status_line(app: &App) -> Option<Line<'static>> {
             Style::default().fg(error()),
         ));
     }
+    // the first note has no ` · ` before it
+    if let Some(first) = spans.first_mut() {
+        if let Some(t) = first.content.strip_prefix(" · ") {
+            first.content = t.to_string().into();
+        } else if first.content == " · " {
+            spans.remove(0);
+        }
+    }
     Some(Line::from(spans))
+}
+
+/// The divider's text as one string, `name · state` (tests).
+#[cfg(test)]
+pub(crate) fn status_text(app: &App) -> String {
+    let sb = app.sb.as_ref().unwrap();
+    let state: String = status_state(app).unwrap().spans.iter().map(|s| s.content.as_ref()).collect();
+    if sb.drop_ask.is_some() {
+        state
+    } else if state.is_empty() {
+        sb.focus.clone()
+    } else {
+        format!("{} · {}", sb.focus, state)
+    }
 }
 
 /// What `D` asks in the status row (book §16, BISE-43).
@@ -624,6 +673,8 @@ pub(crate) fn drop_question(name: &str) -> String {
 }
 
 /// The key hints, flush right on the composer row (copy deck §17).
+/// Replaced by the key bar (BISE-98/99); bise-k-keys deletes it.
+#[cfg(test)]
 pub(crate) fn hint(app: &App) -> Option<&'static str> {
     let sb = app.sb.as_ref()?;
     Some(if sb.drop_ask.is_some() {
@@ -667,16 +718,22 @@ pub(crate) fn key_mode(app: &App) -> Option<crate::keybar::Mode> {
     })
 }
 
-/// What the empty composer shows after the cursor: nothing, but a
-/// read-only note in an archived agent's history.
+/// What the empty composer shows after the cursor, dim (book §8 "The
+/// frame"): `what's on your mind?` to main, `talk to auth-fix directly`
+/// inside an agent, a read-only note in an archived agent's history.
 pub(crate) fn placeholder(app: &App) -> Option<String> {
     let sb = app.sb.as_ref()?;
     Some(if sb.focus_archived() {
         format!("{} is archived: read-only", sb.focus)
+    } else if sb.is_main_focus() {
+        PLACEHOLDER_MAIN.to_string()
     } else {
-        String::new()
+        format!("talk to {} directly", sb.focus)
     })
 }
+
+/// The empty composer's question, to main (copy deck §17).
+pub(crate) const PLACEHOLDER_MAIN: &str = "what's on your mind?";
 
 /// The first-run text (book §8, §17): shown dim in main's empty feed
 /// while there are no agents yet.
@@ -1223,22 +1280,42 @@ mod chrome_tests {
     fn header_at_60_and_120() {
         let mut app = busy();
         let rows = draw(&mut app, 120, 20);
-        // the header at the outer margins (book §8): 2 columns each side
+        // framed (book §8 "The frame"): the title from column 3 in the
+        // top edge, the path and the counts ending at F - 4
         let head = &rows[0];
-        assert!(head.starts_with("  bise :*"), "{:?}", head);
-        let right = "∿ 3 working · … 1 waiting · ? 1 needs you · ♡ 1 done";
-        assert!(head.ends_with(right), "{:?}", head);
-        assert_eq!(head.chars().count(), 118, "two columns of margin: {:?}", head);
+        assert!(head.starts_with("╭─ bise :* ─"), "{:?}", head);
+        let right = "bench · ∿ 3 working · … 1 waiting · ? 1 needs you · ♡ 1 done";
+        assert!(head.ends_with(&format!(" {} ─╮", right)), "{:?}", head);
+        assert_eq!(head.chars().count(), 120, "{:?}", head);
         assert!(!rows.iter().any(|r| r.contains("Switchboard")));
-        // 60 columns: margins of 1
+        // 60 columns, no panel: the short counts
         let rows = draw(&mut app, 60, 20);
-        assert_eq!(rows[0], format!(" bise :*{}∿ 3 · … 1 · ? 1 · ♡ 1", " ".repeat(60 - 8 - 21 - 1)));
+        assert!(rows[0].ends_with(" bench · ∿ 3 · … 1 · ? 1 · ♡ 1 ─╮"), "{:?}", rows[0]);
+        // too narrow for the path: it goes first
+        let rows = draw(&mut app, 60, 20);
+        assert!(rows[0].starts_with("╭─ bise :* ─"), "{:?}", rows[0]);
+        // under 60 columns: no frame, the header row with margins of 1
+        let rows = draw(&mut app, 59, 20);
+        let summary = "bench · ∿ 3 · … 1 · ? 1 · ♡ 1";
+        assert_eq!(rows[0], format!(" bise :*{}{}", " ".repeat(59 - 8 - summary.chars().count() - 1), summary));
         // no agents: the words
         let mut app = with_main();
         let rows = draw(&mut app, 120, 20);
-        assert!(rows[0].starts_with("  bise :*") && rows[0].ends_with("no agents yet"), "{:?}", rows[0]);
-        let rows = draw(&mut app, 60, 20);
+        assert!(rows[0].starts_with("╭─ bise :*") && rows[0].ends_with("no agents yet ─╮"), "{:?}", rows[0]);
+        let rows = draw(&mut app, 59, 20);
         assert!(rows[0].ends_with("no agents yet"), "{:?}", rows[0]);
+    }
+
+    /// The summary drops the path first, then the words.
+    #[test]
+    fn summary_drops_the_path_first() {
+        let app = busy();
+        let sb = app.sb.as_ref().unwrap();
+        let text = |room: usize, short: bool| sb.summary(room, short).iter().map(|s| s.content.to_string()).collect::<String>();
+        let full = "∿ 3 working · … 1 waiting · ? 1 needs you · ♡ 1 done";
+        assert_eq!(text(100, false), format!("bench · {}", full));
+        assert_eq!(text(full.chars().count() + 7, false), full);
+        assert_eq!(text(full.chars().count() - 1, false), "∿ 3 · … 1 · ? 1 · ♡ 1");
     }
 
     /// Colors of the header: `:*` and "needs you" in accent, the rest dim.
@@ -1258,7 +1335,7 @@ mod chrome_tests {
     #[test]
     fn first_run_screen() {
         let mut app = with_main();
-        let rows = draw(&mut app, 112, 24);
+        let rows = draw(&mut app, 120, 24);
         let all = rows.join("\n");
         for l in FIRST_RUN {
             assert!(rows.iter().any(|r| r.contains(l)), "{:?} missing:\n{}", l, all);
@@ -1266,21 +1343,25 @@ mod chrome_tests {
         assert_eq!(FIRST_RUN[0], "what's on your mind?");
         assert_eq!(FIRST_RUN[1], "say it and keep talking. the work runs in the background, i'm always here.");
         assert_eq!(FIRST_RUN[2], "try: \"fix the flaky login test, and draft the release note\"");
-        // the bottom stack on the reading column's x (book §8)
-        let status = rows.iter().find(|r| r.trim_start().starts_with("main ·")).unwrap_or_else(|| panic!("{}", all));
-        assert!(status.trim_start().starts_with("main · idle"), "{:?}", status);
-        // the composer block (book §13): the bar on its rows, the hints on
-        // their own last row, flush right
-        let hints = rows.last().unwrap();
-        assert!(hints.trim_end().ends_with("⏎ send · @ agent · / commands"), "{:?}", hints);
-        let at = rows.iter().position(|r| r.trim_start().starts_with("main ·")).unwrap();
-        assert!(rows[at + 1..rows.len() - 1].iter().all(|r| r.trim_start().starts_with("│")), "{}", all);
+        // the composer pane (book §8 "The frame"): the divider says who
+        // you talk to and what it does
+        let at = rows.iter().position(|r| r.starts_with("├─ you → main ─")).unwrap_or_else(|| panic!("{}", all));
+        assert!(rows[at].ends_with(" idle ─┤"), "{:?}", rows[at]);
+        assert!(rows[at].contains('┴'), "the panel's rule joins it: {:?}", rows[at]);
+        // then 1 blank bar row, the text, 1 blank bar row: the bar at
+        // column 3; the key bar from column 3; the frame's bottom edge
+        assert!(rows[at + 1..rows.len() - 2].iter().all(|r| r.starts_with("│  │")), "{}", all);
+        // empty, the composer asks
+        assert!(rows[at + 2].starts_with(&format!("│  │   {}", PLACEHOLDER_MAIN)), "{:?}", rows[at + 2]);
+        let keys = &rows[rows.len() - 2];
+        assert!(keys.starts_with("│  ⏎ send   @ agent"), "{:?}", keys);
+        assert!(rows.last().unwrap().starts_with("╰─"), "{}", all);
         // a panel with main only
-        assert!(rows.iter().any(|r| r.ends_with(&format!("0 {} main", G_MAIN))), "{}", all);
+        assert!(rows.iter().any(|r| r.contains(&format!("│  0 {} main", G_MAIN))), "{}", all);
         // once there is an agent, the first-run text goes
         bench::add_agent(&mut app, "auth-fix", "the safari login");
-        let rows = draw(&mut app, 112, 24);
-        assert!(!rows.iter().any(|r| r.contains(FIRST_RUN[0])));
+        let rows = draw(&mut app, 120, 24);
+        assert!(!rows.iter().any(|r| r.contains(FIRST_RUN[1])));
     }
 
     /// Inside an agent (mockup "inside an agent"): the pinned line of the
@@ -1309,13 +1390,16 @@ mod chrome_tests {
         let line = "you're talking to auth-fix directly. main isn't in the loop. esc back to main.";
         // the header row, 1 blank row, then the pinned line (book §8),
         // wrapped in the column when it is narrower
-        let left = |r: &String| r.chars().take(79).collect::<String>().trim().to_string();
+        let left = |r: &String| r.chars().skip(1).take(76).collect::<String>().trim().to_string();
         assert!(format!("{} {}", left(&rows[2]), left(&rows[3])).trim().contains(line), "{}", all);
-        let y = rows.iter().position(|r| r.trim_start().starts_with("auth-fix ·")).unwrap_or_else(|| panic!("{}", all));
-        let x = rows[y].find("auth-fix").unwrap() as u16;
-        assert!(rows[y].trim_start().starts_with("auth-fix · idle · shared folder"), "{:?}", rows[y]);
-        assert_eq!(buf.cell((x, y as u16)).unwrap().fg, accent(), "the name in accent");
-        assert_eq!(buf.cell((x + 9, y as u16)).unwrap().fg, dim(), "the rest dim");
+        // the divider: `you →` dim, the name in accent, the state dim
+        let y = rows.iter().position(|r| r.starts_with("├─ you → auth-fix ─")).unwrap_or_else(|| panic!("{}", all));
+        assert!(rows[y].ends_with(" idle · shared folder ─┤"), "{:?}", rows[y]);
+        let cell = |x: usize| buf.cell((x as u16, y as u16)).unwrap().fg;
+        assert_eq!(cell(3), dim(), "you → dim");
+        assert_eq!(cell(9), accent(), "the name in accent");
+        let idle = rows[y].chars().count() - " idle · shared folder ─┤".chars().count() + 1;
+        assert_eq!(cell(idle), dim(), "the state dim");
         assert!(!all.contains("task"), "no \"task\" in the chrome:\n{}", all);
     }
 
@@ -1356,9 +1440,7 @@ mod chrome_tests {
     #[test]
     fn status_row_and_hints() {
         let mut app = busy();
-        let line = status_line(&app).unwrap();
-        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-        assert_eq!(text, " main · idle");
+        assert_eq!(status_text(&app), "main · idle");
         assert_eq!(hint(&app), Some("⏎ send · @ agent · / commands"));
         app.pending = true;
         assert_eq!(hint(&app), Some("tab queue · ⏎ steer · ctrl+c interrupt"));
@@ -1366,7 +1448,7 @@ mod chrome_tests {
         let sb = app.sb.as_mut().unwrap();
         sb.selected = Some(1);
         sb.preview = true;
-        let text: String = status_line(&app).unwrap().spans.iter().map(|s| s.content.as_ref()).collect();
+        let text = status_text(&app);
         assert!(text.ends_with("preview of auth-fix"), "{:?}", text);
     }
 }

@@ -34,16 +34,9 @@ def sent(E):
 
 
 def composer_row():
-    """The composer's text (book §13, the composer block): the last run
-    of rows with the bar in column 1, their text from column 3."""
-    rows = tui_tmux.screen().splitlines()
-    bar = [i for i, r in enumerate(rows) if r.lstrip().startswith("│")]
-    if not bar:
-        return ""
-    first = bar[-1]
-    while first > 0 and rows[first - 1].lstrip().startswith("│"):
-        first -= 1
-    return " ".join(r[r.index("│") + 1:].strip() for r in rows[first:bar[-1] + 1] if r[r.index("│") + 1:].strip())
+    """The composer's text (book §8 "The frame"): the rows with the bar
+    under the divider, their text after the bar."""
+    return " ".join(x for x in tui_tmux.pane_rows(tui_tmux.screen().splitlines()) if x)
 
 
 def main():
@@ -56,7 +49,7 @@ def main():
         # a slow turn: main runs `sleep 8`
         typed("[[bash: sleep 8]]")
         keys("Enter")
-        wait_screen("tab queue · ⏎ steer", 20)
+        wait_screen("tab queue   ⏎ steer", 20)
         # tab queues: nothing goes to the hub
         typed("queued-one")
         keys("Tab")

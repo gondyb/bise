@@ -23,7 +23,7 @@ import e2e  # noqa: E402
 from tui_tmux import tmux, screen, keys, typed, wait_screen, wait_gone  # noqa: E402
 import tui_tmux  # noqa: E402
 
-NORMAL = "⏎ send · @ agent · / commands"
+NORMAL = "⏎ send   @ agent"  # the key bar (BISE-98/99)
 
 
 def flat(sc):

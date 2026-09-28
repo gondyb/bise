@@ -395,7 +395,7 @@ mod tests {
         // a card title in the feed: its hint comes up above it
         let card = format!("  ┃ {} t1 needs you", theme::glyph(theme::G_CARD));
         t.draw(|f| {
-            f.render_widget(Paragraph::new(card.as_str()), Rect::new(0, 20, 80, 1));
+            f.render_widget(Paragraph::new(card.as_str()), Rect::new(3, 20, 80, 1));
             draw(&app, f)
         })
         .unwrap();
@@ -408,7 +408,7 @@ mod tests {
         assert_eq!(active(), None);
         let l3 = format!("  │ {} t1         → t2        v1 or v2?", theme::glyph(theme::G_MSG));
         t.draw(|f| {
-            f.render_widget(Paragraph::new(l3.as_str()), Rect::new(0, 5, 80, 1));
+            f.render_widget(Paragraph::new(l3.as_str()), Rect::new(3, 5, 80, 1));
             draw(&app, f)
         })
         .unwrap();

@@ -56,23 +56,13 @@ fn check_frame(app: &mut App, width: u16, height: u16, what: &str) {
             }
         }
         let got = screen_row(&buf, area.x, area.y + i as u16, area.w);
-        // the key hints may sit flush right on the last row
-        let hint = ui::hint_text(app);
-        let got = match got.strip_suffix(hint) {
-            Some(g) if i + 1 == drawn => g.trim_end().to_string(),
-            _ => got,
-        };
         assert_eq!(got, want.trim_end(), "{what}: row {i}");
     }
-    // the composer block is the last of the screen: under its text, only
-    // its blank bar row and the key hints (book §13)
-    let b = ui::composer_block(height);
-    assert!(area.h >= drawn.max(b.min_text), "{what}: {} rows for {drawn}", area.h);
-    assert_eq!(
-        area.y as usize + area.h + b.pad_bottom as usize + usize::from(b.hints_row) + crate::layout::margin_rows(height) as usize,
-        height as usize,
-        "{what}: the composer block ends the screen"
-    );
+    // the composer is the last of the screen: under its text, only its
+    // blank bar row, the key bar and the frame's edge (book §8 "The frame")
+    let lr = crate::layout::rows(width, height);
+    assert!(area.h >= drawn.max(lr.min_text as usize), "{what}: {} rows for {drawn}", area.h);
+    assert_eq!(area.y as usize + area.h + lr.pad_bottom as usize, lr.keybar as usize, "{what}: the key bar under the composer");
     let c = if accent.is_some() && fits { c + 1 } else { c };
     let cell = &buf[(area.x + c as u16, area.y + r as u16)];
     assert!(cell.modifier.contains(Modifier::REVERSED), "{what}: cursor at ({r}, {c})");

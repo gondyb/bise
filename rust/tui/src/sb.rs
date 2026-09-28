@@ -21,7 +21,9 @@ mod cards;
 pub(super) use cards::{card_box_height, card_full, card_mouse, close_items, draw_card};
 use cards::{answer_card, Card, CardView};
 mod panel;
-pub(super) use panel::{draw_panel, hint, key_mode, panel_mouse, placeholder, split, status_line, workspace};
+pub(super) use panel::{draw_panel, key_mode, panel_mouse, placeholder, split, status_state, workspace};
+#[cfg(test)]
+pub(super) use panel::{hint, status_text};
 use panel::glyph;
 mod feed;
 pub(super) use feed::FeedWindow;
@@ -1193,10 +1195,7 @@ mod nav_key_tests {
         };
         app.sb.as_mut().unwrap().agents = vec![agent("main"), agent("docs")];
         app.sb.as_mut().unwrap().selected = Some(1);
-        let status = |app: &App| {
-            let l = status_line(app).unwrap();
-            l.spans.iter().map(|s| s.content.as_ref()).collect::<String>()
-        };
+        let status = |app: &App| status_text(app);
         // D: the question, nothing sent
         assert!(press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT));
         assert_eq!(status(&app).trim(), "drop docs? its history stays in archived. y / n");

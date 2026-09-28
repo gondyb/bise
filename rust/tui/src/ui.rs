@@ -48,22 +48,13 @@ pub(crate) fn recording_lines(lines: Vec<Line<'static>>, glyph: char) -> Vec<Lin
 }
 
 pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
-    let mut full = app.term.draw(frame, frame.area());
-    // Switchboard (book §8, spacing in cells): outer margins, the header
-    // row (`bise :*` at the left margin, the counts flush right), 1 blank
-    // row, then the body
+    let full = app.term.draw(frame, frame.area());
+    // Switchboard (book §8 "The frame"): the frame, the history and the
+    // panel, the divider, the composer pane
     if app.sb.is_some() {
-        let cols = crate::layout::cols(full.width);
-        let mr = crate::layout::margin_rows(full.height);
-        full = Rect { y: full.y + mr, height: full.height.saturating_sub(2 * mr), ..full };
-        let short = cols.panel.is_none();
-        if let Some((r, rows)) = crate::layout::header(full, cols) {
-            if let Some(h) = app.sb.as_ref().map(|sb| sb.header(r.width, short)) {
-                frame.render_widget(Paragraph::new(h), r);
-            }
-            full = Rect { y: full.y + rows, height: full.height - rows, ..full };
-        }
-        draw_bise(app, frame, full, cols);
+        let cols = crate::layout::cols(full.width, full.height);
+        let rows = crate::layout::rows(full.width, full.height);
+        draw_bise(app, frame, full, cols, rows);
         help::draw(app, frame);
         return;
     }
@@ -108,7 +99,7 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
 
     let (queue, strip, chunks) =
         (chunks[1], chunks[2], [chunks[0], chunks[3], chunks[4], chunks[5], chunks[6], chunks[7], chunks[8]]);
-    draw_feed(app, frame, chunks[0]);
+    draw_feed(app, frame, chunks[0], None);
     if queue.height > 0 {
         let r = Rect { x: queue.x + 1, width: queue.width.saturating_sub(2), ..queue };
         frame.render_widget(Paragraph::new(crate::queue::lines(app, r.width as usize)), r);
@@ -120,85 +111,89 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     draw_status(app, frame, chunks[2]);
     draw_prompt(app, frame, chunks[4], voice_pad);
     draw_popup(app, frame, chunks[4]);
-    let hint = if app.term.shown() { term::HINT } else { hint_text(app) };
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(theme::dim())))),
-        chunks[6],
-    );
+    frame.render_widget(Paragraph::new(crate::keybar::line(app, chunks[6].width)), chunks[6]);
     help::draw(app, frame);
 }
 
-/// The Switchboard layout (bise book §8), under the header: the feed
-/// (its first row pinned to the "inside an agent" / preview line when
-/// there is one) and a blank row, the agents panel on their right; then,
-/// the whole width, the card box, the status row and the composer: `› `
-/// and the typed text, the key hints flush right on its last row (on
-/// the status row when the text leaves no room).
-fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::Cols) {
-    // the reading column (book §8): the feed, the card box and the bottom
-    // stack (status row, queue, strip, composer block, hints) share its x
-    // and width
-    let col = |r: Rect| Rect { x: area.x + cols.x0, width: cols.col_w.min(area.width.saturating_sub(cols.x0)), ..r };
-    let th = frame.area().height;
-    let block = composer_block(th);
+/// The Switchboard screen (book §8 "The frame", §13 "The composer
+/// pane"). Top down: the header (the frame's top edge, or its own row
+/// when bare) and 1 blank row; the history on the reading column (its
+/// first row pinned to the "inside an agent" / preview line when there
+/// is one), the agents panel on its right behind the rule; the card box;
+/// 1 blank row; the divider `you → main … state`; the queued messages,
+/// the images strip; the composer (bar at the margin, text 2 columns
+/// after it, 1 blank row each side by height); the key bar; the frame's
+/// bottom edge.
+fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::Cols, rows: crate::layout::Rows) {
     // the composer's text wraps like your message in the history: the
     // column less its 3 lead columns
-    let inner_w = (cols.col_w as usize).saturating_sub(3).max(1);
+    let inner_w = (cols.col_w as usize).saturating_sub(3).min((cols.pane_w as usize).saturating_sub(2)).max(1);
     // while recording, the meter takes 2 columns of the text's
     let text_w = inner_w.saturating_sub(if app.voice.active() { 2 } else { 0 }).max(1);
     let composer_rows = {
-        let rows = editor::layout_input(&app.ed.text, text_w);
-        editor::drawn_rows(&rows, app.ed.cursor)
+        let r = editor::layout_input(&app.ed.text, text_w);
+        editor::drawn_rows(&r, app.ed.cursor) as u16
     };
-    let max_rows = ((th as usize * 2) / 5).min(12).max(block.min_text);
-    let text_rows = composer_rows.clamp(block.min_text, max_rows) as u16;
-    let input_h = (block.pad_top + text_rows + block.pad_bottom).min(area.height.saturating_sub(4).max(1));
-    let hints_h = u16::from(block.hints_row);
-    // the images strip (book §14): while images are attached, what the
-    // composer and a 3-row feed leave
-    let strip_h = attach::strip_height(app).min(area.height.saturating_sub(input_h + hints_h + 5));
-    // the queued messages (BISE-89), right above the strip
-    let queue_h = crate::queue::height(app).min(area.height.saturating_sub(input_h + hints_h + strip_h + 5));
-    // the card box: what the composer, the strips, a 3-row feed and the fixed rows leave
-    let card_h = sb::card_box_height(app, area, area.height.saturating_sub(input_h + hints_h + strip_h + queue_h + 6));
+    // the rows that are always there: header and gap, the blank row and
+    // the divider, the blank rows around the text, the key bar and the
+    // frame's bottom edge
+    let foot = area.height.saturating_sub(rows.keybar);
+    let fixed = rows.body + 2 + rows.pad_top + rows.pad_bottom + foot;
+    // what is left keeps a 3-row history
+    let left = |used: u16| area.height.saturating_sub(fixed + used + 3);
+    let text_rows = composer_rows.clamp(rows.min_text, rows.max_text).min(left(0).max(1));
+    // the images strip (book §14) and the queued messages (BISE-89)
+    let strip_h = attach::strip_height(app).min(left(text_rows));
+    let queue_h = crate::queue::height(app).min(left(text_rows + strip_h));
+    // the card box: what the rest leaves, with 1 blank row above it
+    let card_h = sb::card_box_height(app, area, left(text_rows + strip_h + queue_h + 1));
     let card_gap = u16::from(card_h > 0);
     attach::set_model(&app.info.model);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(3),           // feed | panel
-            Constraint::Length(1),        // a blank row under the feed
-            Constraint::Length(card_h),   // the card box (ctrl+g)
-            Constraint::Length(card_gap), // a blank row under the card box
-            Constraint::Length(1),        // status row
-            Constraint::Length(queue_h),  // the queued messages
-            Constraint::Length(strip_h),  // the images strip
-            Constraint::Length(input_h),  // the composer block
-            Constraint::Length(hints_h),  // the key hints
+            Constraint::Length(rows.body),                                   // header, 1 blank row
+            Constraint::Min(1),                                              // history | panel
+            Constraint::Length(card_gap),                                    // a blank row above the card box
+            Constraint::Length(card_h),                                      // the card box (ctrl+g)
+            Constraint::Length(1),                                           // a blank row above the divider
+            Constraint::Length(1),                                           // the divider
+            Constraint::Length(queue_h),                                     // the queued messages
+            Constraint::Length(strip_h),                                     // the images strip
+            Constraint::Length(rows.pad_top + text_rows + rows.pad_bottom), // the composer
+            Constraint::Length(1),                                           // the key bar
+            Constraint::Length(foot.saturating_sub(1)),                      // the frame's bottom edge
         ])
         .split(area);
-    let (queue, strip, hints_row) = (col(chunks[5]), col(chunks[6]), col(chunks[8]));
-    let chunks = [chunks[0], chunks[1], col(chunks[2]), col(chunks[4]), col(chunks[7])];
-    if queue.height > 0 {
-        frame.render_widget(Paragraph::new(crate::queue::lines(app, queue.width as usize)), queue);
+    let (body, card, divider_y) = (chunks[1], chunks[3], chunks[5].y);
+    // the composer pane: from the margin to the right margin
+    let pane = |r: Rect| Rect { x: area.x + cols.margin, width: cols.pane_w.min(area.width.saturating_sub(cols.margin)), ..r };
+    let col = |r: Rect| Rect { x: area.x + cols.x0, width: cols.col_w.min(area.width.saturating_sub(cols.x0)), ..r };
+    let short = cols.panel.is_none();
+    // the frame (or the bare header row)
+    if let Some(sb) = app.sb.as_ref() {
+        if cols.framed {
+            let title = sb.title();
+            chrome::draw_frame(frame.buffer_mut(), area, cols, title, |room| sb.summary(room, short), divider_y);
+        } else if chunks[0].height > 0 {
+            let r = Rect { height: 1, ..chunks[0] };
+            frame.render_widget(Paragraph::new(sb.header(r.width, short)), r);
+        }
     }
-    if strip.height > 0 {
-        let r = Rect { x: strip.x + 3, width: strip.width.saturating_sub(3), ..strip };
-        frame.render_widget(Paragraph::new(attach::strip_lines(app, r.width as usize)), r);
-    }
-    // the panel (flush right at the margin) runs down to the blank row
-    // under the feed; no rule between it and the feed
+    // the panel: from the history's first row down to the blank row
+    // above the divider
     if let Some(p) = cols.panel {
-        let r = Rect { x: area.x + p.x, width: p.w, height: chunks[0].height + chunks[1].height, ..chunks[0] }.intersection(area);
+        let h = divider_y.saturating_sub(body.y + 1);
+        let r = Rect { x: area.x + p.x, width: p.w, y: body.y, height: h }.intersection(area);
         sb::draw_panel(app, frame, r, p.name_cut);
     }
-    // the feed: from the column's x to the feed area's right edge (tables
-    // and code may run there; its last column is the scrollbar's)
+    // the history: from the column's x to the feed area's right edge
+    // (tables and code may run there)
     let feed_right = cols.feed_x + cols.feed_w;
     let mut feed = Rect {
         x: area.x + cols.x0,
         width: feed_right.saturating_sub(cols.x0).min(area.width.saturating_sub(cols.x0)),
-        ..chunks[0]
+        ..body
     };
     if let Some(l) = app.sb.as_ref().and_then(|sb| sb.feed_banner()) {
         // the pinned line wraps in the column (2 rows at most)
@@ -209,10 +204,16 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
             feed = Rect { y: feed.y + n + 1, height: feed.height - n - 1, ..feed };
         }
     }
+    // the scrollbar's column: the panel's rule, else the frame's right
+    // edge; bare, the feed area's last column
+    let bar = cols.framed.then(|| {
+        let x = cols.panel.and_then(|p| p.rule).unwrap_or(area.width.saturating_sub(1));
+        Rect { x: area.x + x, width: 1, ..feed }
+    });
     // a screen too small for a feed: nothing to draw (a scrollbar on an
     // empty area panics)
     if feed.width > 1 && feed.height > 0 {
-        draw_feed(app, frame, feed);
+        draw_feed(app, frame, feed, bar);
     } else {
         app.vis_events.clear();
         app.vis_rows.clear();
@@ -231,52 +232,62 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         let r = Rect { x: feed.x + 3, width: cols.col_w.saturating_sub(3).min(feed.width.saturating_sub(3)), ..feed };
         frame.render_widget(Paragraph::new(lines), r);
     }
-    let status_w = draw_status(app, frame, chunks[3]);
-    draw_composer(app, frame, chunks[4], inner_w, block);
+    // the divider: who you talk to, what it does (was the status row)
+    let (name, state) = divider_text(app);
+    let state_rect = chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, state);
+    app.bottom_bar_rect = (!app.tail_visible).then_some(state_rect);
+    // the queued messages: ` › text`, the `›` under the composer's bar
+    let queue = pane(chunks[6]);
+    if queue.height > 0 {
+        let r = Rect { x: queue.x.saturating_sub(1), width: queue.width + 1, ..queue }.intersection(area);
+        frame.render_widget(Paragraph::new(crate::queue::lines(app, r.width as usize)), r);
+    }
+    // the images strip, at the composer's text
+    let strip = pane(chunks[7]);
+    if strip.height > 0 {
+        let r = Rect { x: strip.x + 2, width: strip.width.saturating_sub(2), ..strip };
+        frame.render_widget(Paragraph::new(attach::strip_lines(app, r.width as usize)), r);
+    }
+    // the composer: its ` │ ` starts 1 column before the margin
+    let composer = pane(chunks[8]);
+    let composer = Rect { x: composer.x.saturating_sub(1), width: (inner_w as u16 + 3).min(composer.width + 1), ..composer };
+    draw_composer(app, frame, composer, inner_w, rows.pad_top, rows.pad_bottom);
     if card_h > 0 {
-        sb::draw_card(app, frame, chunks[2]);
+        sb::draw_card(app, frame, col(card));
     } else if sb::card_full(app) {
-        sb::draw_card(app, frame, chunks[0]);
+        sb::draw_card(app, frame, body);
     }
-    draw_popup(app, frame, chunks[4]);
-    // the key hints, flush right at the column's right edge: their own
-    // last row; a small terminal puts them on the status row (if they fit)
-    let hint = if app.term.shown() { term::HINT } else { hint_text(app) };
-    let hint_w = hint.width() as u16;
-    let row = if hints_row.height > 0 {
-        Some(hints_row)
-    } else if status_w + hint_w + 4 <= chunks[3].width {
-        Some(chunks[3])
+    draw_popup(app, frame, pane(chunks[8]));
+    // the key bar, from the margin to the right margin
+    let kb = pane(chunks[9]);
+    if kb.height > 0 {
+        frame.render_widget(Paragraph::new(crate::keybar::line(app, kb.width)), kb);
+    }
+}
+
+/// The divider's text: the name of the agent you talk to, and on the
+/// right what it does (the old status row): back to the bottom while
+/// scrolled up, a fresh voice or flash note, else its state.
+fn divider_text(app: &App) -> (String, Vec<Span<'static>>) {
+    let name = app.sb.as_ref().map_or_else(String::new, |sb| sb.focus.clone());
+    let d = Style::default().fg(dim());
+    let state = if !app.tail_visible {
+        let mut spans = vec![
+            Span::styled(format!("{} back to the bottom", theme::glyph("↓")), Style::default().fg(text())),
+            Span::styled(" · end", d),
+        ];
+        if app.unseen > 0 {
+            spans.push(Span::styled(format!(" · {} new lines", app.unseen), Style::default().fg(text())));
+        }
+        spans
+    } else if let Some(t) = fresh_note(&app.voice_note) {
+        vec![Span::styled(format!("{} ", theme::glyph("●")), Style::default().fg(accent())), Span::styled(t, Style::default().fg(text()))]
+    } else if let Some(t) = fresh_note(&app.flash) {
+        vec![Span::styled("✓ ", Style::default().fg(accent())), Span::styled(t, Style::default().fg(text()))]
     } else {
-        None
+        sb::status_state(app).map_or_else(Vec::new, |l| l.spans)
     };
-    if let Some(row) = row {
-        let room = row.width;
-        let w = hint_w.min(room);
-        let r = Rect { x: row.x + room - w, width: w, height: 1, ..row }.intersection(frame.area());
-        let hint = if hint.width() <= w as usize { hint.to_string() } else { truncate_chars(hint, w.saturating_sub(1) as usize) };
-        frame.render_widget(Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(dim())))), r);
-    }
-}
-
-/// The rows around the composer's text, by terminal height (book §13):
-/// < 24 drops the blank row under the text, < 18 the one above it too and
-/// the text may shrink to 1 row, < 14 the key hints go on the status row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ComposerBlock {
-    pub(crate) pad_top: u16,
-    pub(crate) pad_bottom: u16,
-    pub(crate) min_text: usize,
-    pub(crate) hints_row: bool,
-}
-
-pub(crate) fn composer_block(term_h: u16) -> ComposerBlock {
-    ComposerBlock {
-        pad_top: u16::from(term_h >= 18),
-        pad_bottom: u16::from(term_h >= 24),
-        min_text: if term_h >= 18 { 2 } else { 1 },
-        hints_row: term_h >= 14,
-    }
+    (name, state)
 }
 
 /// `s` cut at spaces into rows of at most `w` columns.
@@ -296,7 +307,9 @@ fn wrap_words(s: &str, w: usize) -> Vec<String> {
     out
 }
 
-fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect) {
+/// The history in `area`; the scrollbar thumb in `bar` (framed: on the
+/// panel's rule or the frame's edge), else in the area's last column.
+fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect, bar: Option<Rect>) {
     // ---- feed: cached wrapped rows, only the VISIBLE slice rendered ----
     // (a Paragraph over the whole history re-wraps everything each frame
     // and lags long sessions). The column keeps one column of margin on
@@ -304,7 +317,7 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect) {
     // scrollbar gets its own gutter.
     // the rect starts at the reading column's x (book §8); its last
     // column is the scrollbar's
-    let feed_w = (area.width as usize).saturating_sub(1).max(1);
+    let feed_w = (area.width as usize).saturating_sub(usize::from(bar.is_none())).max(1);
     let area_w = feed_w;
     let area_h = area.height as usize;
     let text_area = Rect {
@@ -398,9 +411,9 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect) {
                 .begin_symbol(None)
                 .end_symbol(None)
                 .track_symbol(None)
-                .thumb_symbol("┃")
-                .thumb_style(Style::default().fg(crate::theme::faint())),
-            area,
+                .thumb_symbol(theme::glyph("┃"))
+                .thumb_style(Style::default().fg(if bar.is_some() { dim() } else { crate::theme::faint() })),
+            bar.unwrap_or(area).intersection(frame.area()),
             &mut state,
         );
     }
@@ -455,8 +468,6 @@ fn draw_status(app: &mut App, frame: &mut Frame, area: Rect) -> u16 {
                 Span::styled("  ✓ ", Style::default().fg(theme::accent())),
                 Span::styled(t, Style::default().fg(theme::text())),
             ])
-        } else if let Some(l) = sb::status_line(app) {
-            l
         } else if app.pending && app.connected {
             Line::from(vec![
                 {
@@ -658,15 +669,15 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
     out
 }
 
-/// The Switchboard composer block (book §13): a bar `│` in column 1 on
-/// every row (faint while empty, accent with text or while recording),
-/// a blank bar row above and below the text (`block`), the text from
-/// column 3 wrapped at `inner` columns and scrolled with the cursor row
+/// The Switchboard composer (book §8 "The frame", §13): a bar `│` at
+/// the area's column 1 on every row (faint while empty, accent with text
+/// or while recording), `pad_top` / `pad_bottom` blank bar rows around
+/// the text, the text from the area's column 3 wrapped at `inner` columns and scrolled with the cursor row
 /// in view. Empty: the cursor at column 3 and the dim placeholder;
 /// recording: the meter glyph at column 3, the text after it.
-fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, block: ComposerBlock) {
-    let text_y = area.y + block.pad_top.min(area.height.saturating_sub(1));
-    let text_rows = (area.height.saturating_sub(block.pad_top + block.pad_bottom) as usize).max(1);
+fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, pad_top: u16, pad_bottom: u16) {
+    let text_y = area.y + pad_top.min(area.height.saturating_sub(1));
+    let text_rows = (area.height.saturating_sub(pad_top + pad_bottom) as usize).max(1);
     let voice = app.voice.active();
     // recording: the meter takes 2 columns before the text
     let lead = if voice { 2 } else { 0 };
@@ -699,7 +710,7 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, blo
     let bar_st = Style::default().fg(if empty && !voice { faint() } else { accent() });
     let bar = Span::styled(" │ ", bar_st);
     let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
-    for _ in 0..block.pad_top.min(area.height) {
+    for _ in 0..pad_top.min(area.height) {
         lines.push(Line::from(bar.clone()));
     }
     let mut body = rows.into_iter();
@@ -811,24 +822,4 @@ pub(crate) fn truncate_left(s: &str, max: usize) -> String {
         return String::new();
     }
     std::iter::once('…').chain(out.into_iter().rev()).collect()
-}
-
-pub(crate) fn hint_text(app: &App) -> &'static str {
-    // ---- hint row (the OpenCode prompt right hint row)
-    if app.voice.state() == voice::VoiceState::Recording {
-        "recording · any key stops · esc/ctrl+c cancel"
-    } else if app.voice.state() == voice::VoiceState::Flushing {
-        "transcribing the last words… · esc/ctrl+c cancel"
-    } else if popup_open(app) && files::token(&app.ed.text, app.ed.cursor).is_some() {
-        "⏎/tab insert · ⏎/tab/→ open a folder · ← up · ↑↓ select · esc close"
-    } else if !app.pending && app.sb.is_some() && attach::strip_height(app) > 0 {
-        // images attached (book §14): how to add more
-        attach::STRIP_HINT
-    } else if let Some(h) = sb::hint(app) {
-        h
-    } else if app.pending {
-        "⏎ steer · tab queue · ctrl+c interrupt · / commands · end bottom"
-    } else {
-        "⏎ send · shift+⏎/ctrl+j new line · / commands · ctrl+o open/close all · ctrl+c quit"
-    }
 }

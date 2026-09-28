@@ -585,6 +585,8 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | inside an agent | `you're talking to {name} directly. main isn't in the loop. esc back to main.` |
 | composer hints, main | `⏎ send · @ agent · / commands` |
 | composer hints, during a turn | `tab queue · ⏎ steer · ctrl+c interrupt` |
+| composer placeholder (BISE-98) | `what's on your mind?` (to main) · `talk to {name} directly` (inside an agent) · `{name} is archived: read-only` |
+| divider (BISE-98) | `you → {name}` · on the right the old status row: `idle · 18k / 1M tokens · 2%`, or `↓ back to the bottom · end · {n} new lines` while scrolled up |
 | run of level 3 | `▸ {n} messages between {k} agents` |
 | thinking | `∴ thought for {s}s` |
 | output | `▸ output · {n} lines` (+ ` · {k} failed` when known) |

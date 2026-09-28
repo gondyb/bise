@@ -147,7 +147,7 @@ fn recording_shows_the_meter_an_orange_border_and_dim_text() {
     assert_eq!(buf[(x + 2, y)].fg, theme::dim());
     // the meter takes the place of the `›` prompt
     assert!(find(&buf, &format!("{} ", G_YOU)).is_none(), "no prompt while recording");
-    assert!(find(&buf, "recording · any key stops").is_some());
+    assert!(find(&buf, "any key stops").is_some(), "the key bar says how to stop");
     // idle again: no meter, the normal border
     app.voice.cancel();
     let buf = render(&mut app);

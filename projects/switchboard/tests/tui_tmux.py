@@ -4,6 +4,7 @@ provider, and check the screen: panel, checkout, Esc, preview, cards.
 python3 -u projects/switchboard/tests/tui_tmux.py
 """
 import os
+import re
 import subprocess
 import sys
 import time
@@ -60,9 +61,33 @@ def panel_row(n, name):
 
 
 def in_view(name):
-    """The regex of the status row naming the agent in view (on the
-    reading column: its x depends on the width, BISE-97)."""
-    return r"^ *%s · " % name
+    """The regex of the divider naming the agent in view (book §8 "The
+    frame": `├─ you → main ─…─ idle ─┤`, BISE-98)."""
+    return r"you → %s " % re.escape(name)
+
+
+PLACEHOLDER = re.compile(r"^(what's on your mind\?|talk to \S+ directly)$")
+
+
+def pane_rows(rows):
+    """The composer's rows (BISE-98): from the bottom, the first run of
+    rows whose text, inside the frame's edges, starts with the bar `│`
+    (the key bar and the frame's bottom edge are skipped; a popup may
+    hide the divider); each row's text after the bar."""
+    out = []
+    for r in reversed(rows):
+        r = r.rstrip()
+        if r.startswith("│"):
+            r = r[1:].rstrip()
+            if r.endswith("│"):
+                r = r[:-1]
+        if r.lstrip().startswith("│"):
+            text = r.lstrip()[1:].strip()
+            # the empty composer's dim placeholder is not text
+            out.append("" if PLACEHOLDER.match(text) else text)
+        elif out:
+            break
+    return out[::-1]
 
 
 def wait_gone(needle, timeout=10):
@@ -92,7 +117,7 @@ def main():
         start_tui(E, 150, 42)
         sc = wait_screen("bise :*")
         wait_re(in_view("main"))
-        assert "⏎ send · @ agent · / commands" in sc, sc
+        assert "⏎ send   @ agent" in sc, sc
         wait_screen(" idle")
         typed('crée [[bash: sb spawn t1 --objective "écris {{bash: echo hi-t1}}"]]')
         keys("Enter")
@@ -102,7 +127,7 @@ def main():
         # select the task with Ctrl+K (next: main, then t1), enter it
         keys("C-k")
         keys("C-k")
-        sc = wait_screen("⏎ enter · space preview")
+        sc = wait_screen("⏎ enter   space preview")
         keys("Enter")
         sc = wait_re(in_view("t1"))
         assert "you're talking to t1 directly. main isn't in the loop. esc back to main." in sc, sc

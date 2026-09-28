@@ -23,23 +23,11 @@ tui_tmux.S = S
 
 
 def composer():
-    """The composer's text row(s) (book §13, the composer block): the last
-    run of rows with the bar `│` in column 1 (under the status row), the
-    blank bar rows around the text left out, each row's text from column 3."""
-    import re
+    """The composer's text row(s) (book §8 "The frame"): the rows with the
+    bar `│` under the divider, the blank bar rows left out, each row's
+    text after the bar."""
     rows = screen().rstrip("\n").splitlines()
-    bar = [i for i, r in enumerate(rows) if r.lstrip().startswith("│")]
-    if not bar:
-        return ""
-    last = bar[-1]
-    first = last
-    while first > 0 and rows[first - 1].lstrip().startswith("│"):
-        first -= 1
-    out = []
-    for r in rows[first:last + 1]:
-        r = re.sub(r"\s{2,}(⏎|recording|transcribing|y yes|alt\+r|/restore).*$", "", r)
-        out.append(r[r.index("│") + 1:].strip())
-    return "\n".join(x for x in out if x)
+    return "\n".join(x for x in tui_tmux.pane_rows(rows) if x)
 
 
 def wait_composer(text, timeout=5):
