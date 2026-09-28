@@ -25,13 +25,20 @@ Coding agents are good. Running several of them in parallel is not.
 
 > **You talk to one agent. It runs ten. You never wait.**
 
-Headline tagline (picked by Gabriel):
+Taglines (picked by Gabriel):
 
-> **All the agents. None of the overhead.**
+> **Your team is as big as your ideas.**
+> *Built for people who think faster than they type.*
 
-Core message: flow. You work with many agents at once without paying the
-cognitive cost. You're more efficient, you have more fun, and you ship more
-(**⚠** "ship 10x more" is a feeling, not a measurement yet).
+The secondary tagline is settled. The headline is the current favorite, still
+open.
+
+Audience and core message: people with lots of ideas who move fast and need
+the tech to disappear and keep up with them. The value is human: flow, no
+juggling between agents, no cognitive cost. You're more efficient, you have
+more fun, and you ship more. Avoid a number ("ten", "10x"): it sounds like a
+cap, and the product has none. **⚠** No limit in the product (RFC 0001
+§10.1), but tokens, cost and provider speed are the real limit; say so.
 
 **Name: `bise`** (picked by Gabriel). Short to type, and a double meaning: the
 *bise* is a cold north wind (Mistral's family, and wind = flow), and *faire la
@@ -42,7 +49,11 @@ Biodiversity Information System for Europe (different field).
 
 Taglines:
 
-- All the agents. None of the overhead.
+Rejected: "All the agents. None of the overhead." ("overhead" is unclear);
+"All the agents. Stay in flow."; "Code like a team of ten." (a number).
+Other candidates: "All your ideas. None of the juggling."; "Your ideas lead.
+The agents follow."; "Go as fast as your ideas."
+
 - Never wait on an agent again.
 - One conversation. As many agents as you want.
 - Stay in flow. Main handles the rest.

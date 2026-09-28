@@ -24,13 +24,21 @@ Les agents de code sont bons. Les travailler en parallèle, non.
 
 > **Tu parles à un seul agent. Il en fait travailler dix. Tu n'attends jamais.**
 
-Tagline principale (choisie par Gabriel, gardée en anglais) :
+Taglines (choisies par Gabriel, gardées en anglais) :
 
-> **All the agents. None of the overhead.**
+> **Your team is as big as your ideas.**
+> *Built for people who think faster than they type.*
 
-Message central : le flow. Tu travailles avec plein d'agents sans en payer le
-coût cognitif. Tu es plus efficace, tu prends plus de plaisir, et tu ships
-plus (**⚠** « dix fois plus » est un ressenti, pas encore une mesure).
+La tagline secondaire est tranchée. La principale est la favorite, encore
+ouverte.
+
+Public et message central : les gens qui ont plein d'idées, qui vont vite, et
+qui ont besoin que la tech disparaisse et les suive. La valeur est humaine : le
+flow, pas de jonglage entre agents, pas de coût cognitif. Tu es plus efficace,
+tu prends plus de plaisir, et tu ships plus. Éviter les chiffres (« dix »,
+« 10x ») : ça sonne comme un plafond, et le produit n'en a pas. **⚠** Pas de
+limite dans le produit (RFC 0001 §10.1), mais les tokens, le coût et la
+vitesse du provider sont la vraie limite ; le dire.
 
 **Nom : `bise`** (choisi par Gabriel). Court à taper, avec un double sens : la
 bise est un vent froid du nord (la famille du Mistral, et le vent, c'est le
@@ -43,7 +51,9 @@ Taglines :
 
 | FR | EN |
 |---|---|
-| Tous les agents. Aucune charge mentale. | All the agents. None of the overhead. |
+| Ton équipe est aussi grande que tes idées. | Your team is as big as your ideas. |
+| Fait pour ceux qui pensent plus vite qu'ils ne tapent. | Built for people who think faster than they type. |
+| Toutes tes idées. Aucun jonglage. | All your ideas. None of the juggling. |
 | Ne jamais attendre un agent. | Never wait on an agent again. |
 | Un interlocuteur. Autant d'agents que tu veux. | One conversation. As many agents as you want. |
 | Reste dans le flow, main s'occupe du reste. | Stay in flow. Main handles the rest. |
