@@ -12,18 +12,12 @@
 #   ./run.sh switchboard --dev --status   # dev hub pid, version, paths
 #   ./run.sh switchboard --dev --reset    # stop + wipe the dev workspace and state
 #
-# Layout ($SB_DEV_ROOT, default /tmp/sb-dev):
-#   target/            cargo target dir of the dev builds (incremental)
-#   cache/             repl-live per Bend-source hash (a Bend compile is 1-2 min)
-#   versions/<id>/     one self-contained app root per build:
-#                      bend-harness, repl-live, tool-desc-*.txt, prompt-*.txt,
-#                      rust/jsrt/target/debug/bend-jsrt, VERSION
-#   current            -> versions/<id>, the version the dev hub runs
+# The build is a version of the versions cache (versions.sh build --tree:
+# ~/.local/state/switchboard/versions/<id>, shared with the live hub's
+# version selector). Layout ($SB_DEV_ROOT, default /tmp/sb-dev):
+#   current            -> the version dir the dev hub runs
 #   ws/                the dev workspace (a small git repo; SB_DEV_WS overrides)
 #   state/             the dev hub state (SB_STATE_DIR): hub.sock, journal...
-#
-# A version id is <short commit>, plus -dirty-<hash of the changes> for
-# an uncommitted tree: the same tree gives the same id (cached).
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -61,63 +55,7 @@ stop_hub() {
   local exe="$ROOT/current/bend-harness"
   [ -x "$exe" ] || exe="$REPO/rust/target/debug/bend-harness"
   "$exe" switchboard --stop --workspace "$WS" || true
-}
-
-# the version id of the current tree
-version_id() {
-  local head dirty
-  head="$(git rev-parse --short HEAD)"
-  if [ -z "$(git status --porcelain)" ]; then echo "$head"; return; fi
-  dirty="$( { git diff HEAD; git ls-files --others --exclude-standard -z \
-              | xargs -0 shasum 2>/dev/null; } | shasum | cut -c1-8)"
-  echo "$head-dirty-$dirty"
-}
-
-# hash of everything repl-live is compiled from
-bend_hash() {
-  find runtime core -type f -name '*.bend' -print0 | sort -z | xargs -0 cat | shasum | cut -c1-12
-}
-
-build_version() {
-  local id="$1" vdir="$ROOT/versions/$1"
-  if [ -x "$vdir/bend-harness" ] && [ -x "$vdir/repl-live" ]; then
-    say "version $id déjà construite"
-    return 0
-  fi
-  mkdir -p "$ROOT/cache" "$ROOT/versions"
-  local tmp="$vdir.tmp.$$"
-  rm -rf "$tmp"; mkdir -p "$tmp/rust/jsrt/target/debug"
-
-  say "cargo build (target $ROOT/target)..."
-  (cd rust && CARGO_TARGET_DIR="$ROOT/target" cargo build -q -p bend-harness)
-  cp "$ROOT/target/debug/bend-harness" "$tmp/bend-harness"
-
-  local h; h="$(bend_hash)"
-  if [ ! -x "$ROOT/cache/repl-live-$h" ]; then
-    say "bend runtime/repl-live.bend (1-2 min)..."
-    bend runtime/repl-live.bend -o "$ROOT/cache/repl-live-$h.tmp" >/dev/null
-    mv "$ROOT/cache/repl-live-$h.tmp" "$ROOT/cache/repl-live-$h"
-  fi
-  cp "$ROOT/cache/repl-live-$h" "$tmp/repl-live"
-
-  cp tool-desc-*.txt prompt-*.txt "$tmp/"
-  # the V8 engine: rarely changes, 100 MB - a hard link when possible
-  if [ ! -x rust/jsrt/target/debug/bend-jsrt ]; then
-    say "bend-jsrt absent — build du moteur V8..."
-    (cd rust/jsrt && cargo build)
-  fi
-  ln -f rust/jsrt/target/debug/bend-jsrt "$tmp/rust/jsrt/target/debug/bend-jsrt" 2>/dev/null \
-    || cp rust/jsrt/target/debug/bend-jsrt "$tmp/rust/jsrt/target/debug/bend-jsrt"
-
-  {
-    echo "id=$id"
-    echo "commit=$(git rev-parse HEAD)"
-    echo "subject=$(git log -1 --format=%s)"
-    echo "built=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo "bend_hash=$h"
-  } > "$tmp/VERSION"
-  rm -rf "$vdir"; mv "$tmp" "$vdir"
-  say "version $id construite : $vdir"
+  for _ in $(seq 50); do [ -z "$(hub_pid)" ] && return 0; sleep 0.1; done
 }
 
 init_ws() {
@@ -157,14 +95,14 @@ case "$action" in
     exit 0 ;;
 esac
 
-id="$(version_id)"
-build_version "$id"
+vdir="$(./versions.sh build --tree)"
+id="$(basename "$vdir")"
 running="$(basename "$(readlink "$ROOT/current" 2>/dev/null || echo none)")"
 if [ -n "$(hub_pid)" ] && [ "$running" != "$id" ]; then
   say "le hub de dev tourne sur $running — redémarrage sur $id (journal rejoué, sessions reprises)"
   stop_hub
 fi
-ln -sfn "versions/$id" "$ROOT/current"
+ln -sfn "$vdir" "$ROOT/current"
 init_ws
 [ -n "$(hub_pid)" ] || start_hub
 say "hub de dev pid $(hub_pid), version $id, workspace $WS"
