@@ -169,7 +169,7 @@ impl Resampler {
             let i0 = p.floor() as isize;
             let frac = (p - i0 as f64) as f32;
             let a = at(i0);
-            let b = if i0 + 1 <= (input.len() - 1) as isize { at(i0 + 1) } else { a };
+            let b = if i0 < (input.len() - 1) as isize { at(i0 + 1) } else { a };
             out.push(to_i16(a + (b - a) * frac));
             self.pos += self.step;
         }
@@ -503,8 +503,7 @@ impl Voice {
     /// maximum duration. Call it on every UI tick.
     pub fn poll(&mut self, now: Instant) -> Vec<VoiceOutput> {
         let mut out = Vec::new();
-        loop {
-            let Some(run) = self.run.as_mut() else { break };
+        while let Some(run) = self.run.as_mut() {
             match run.events.try_recv() {
                 Ok(TranscribeEvent::Delta(t)) => {
                     run.text_len += t.chars().count();

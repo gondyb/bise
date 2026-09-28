@@ -100,7 +100,7 @@ pub fn fmt_tokens(n: u64) -> String {
         format!("{}k", (n + 500) / 1000)
     } else {
         let tenths = (n + 50_000) / 100_000;
-        if tenths % 10 == 0 {
+        if tenths.is_multiple_of(10) {
             format!("{}M", tenths / 10)
         } else {
             format!("{}.{}M", tenths / 10, tenths % 10)
