@@ -24,10 +24,19 @@ Les agents de code sont bons. Les travailler en parallèle, non.
 
 > **Tu parles à un seul agent. Il en fait travailler dix. Tu n'attends jamais.**
 
+Tagline principale (choisie par Gabriel, gardée en anglais) :
+
+> **All the agents. None of the overhead.**
+
+Message central : le flow. Tu travailles avec plein d'agents sans en payer le
+coût cognitif. Tu es plus efficace, tu prends plus de plaisir, et tu ships
+plus (**⚠** « dix fois plus » est un ressenti, pas encore une mesure).
+
 Taglines :
 
 | FR | EN |
 |---|---|
+| Tous les agents. Aucune charge mentale. | All the agents. None of the overhead. |
 | Ne jamais attendre un agent. | Never wait on an agent again. |
 | Un interlocuteur. Autant d'agents que tu veux. | One conversation. As many agents as you want. |
 | Reste dans le flow, main s'occupe du reste. | Stay in flow. Main handles the rest. |

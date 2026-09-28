@@ -25,8 +25,17 @@ Coding agents are good. Running several of them in parallel is not.
 
 > **You talk to one agent. It runs ten. You never wait.**
 
+Headline tagline (picked by Gabriel):
+
+> **All the agents. None of the overhead.**
+
+Core message: flow. You work with many agents at once without paying the
+cognitive cost. You're more efficient, you have more fun, and you ship more
+(**⚠** "ship 10x more" is a feeling, not a measurement yet).
+
 Taglines:
 
+- All the agents. None of the overhead.
 - Never wait on an agent again.
 - One conversation. As many agents as you want.
 - Stay in flow. Main handles the rest.
