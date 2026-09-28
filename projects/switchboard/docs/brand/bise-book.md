@@ -75,7 +75,7 @@ in the product, but tokens, cost and provider speed are the real limit.)
 | Where | Line | Status |
 |---|---|---|
 | site, headline | **kiss your backlog goodbye.** | picked (Gabriel) |
-| site, subline | *built for engineers who think faster than they type.* | picked |
+| site, subline | *ramble. interrupt. change your mind. i run the agents. you stay in flow.* | picked (replaces *built for engineers who think faster than they type.*, 2913f0a) |
 | inside the product (onboarding) | **ideas in. little kisses out. also pull requests.** | picked (Gabriel; replaces "your ideas. my hands. lots of them.") |
 | in reserve | you, but with way more hands. · your team is as big as your ideas. | former headlines |
 
