@@ -460,11 +460,17 @@ def img_load.data(empty: Bool, +d: String, +path: String,
     case False{}:
       (True{}, Con{Im.IL{path, d}, acc})
 
+# the data trimmed once (a screenshot's base64 is hundreds of KB, and
+# the trim walks it twice: it was done twice per image per model call)
+def img_load.trimmed(+d: String, +path: String, +acc: List<&2, Im.ILoaded>)
+    -> Bool & List<&2, Im.ILoaded>:
+  img_load.data(String.is_empty(d), d, path, acc)
+
 def img_load.read(m: Maybe<&2, String>, +path: String,
     +acc: List<&2, Im.ILoaded>) -> Bool & List<&2, Im.ILoaded>:
   match m:
     case Some{+d}:
-      img_load.data(String.is_empty(String.trim(d)), String.trim(d), path, acc)
+      img_load.trimmed(String.trim(d), path, acc)
     case None{}:
       (False{}, acc)
 

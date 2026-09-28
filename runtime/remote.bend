@@ -132,22 +132,53 @@ def build_request.bare(cfg: T.Cfg, input: List<&2, T.Msg>) -> String:
 def is_agent_request(+request: String) -> Bool:
   String.contains(request, "\nTOOL ")
 
+# is `s` the "END" line that closes the request (its very last line)?
+# starts_with first: at almost every position the first char differs,
+# so the full comparison runs only where an "END" line begins
+def with_context.last.pick(here: Bool, +s: String) -> Bool:
+  match here:
+    case True{}:
+      String.eq(s, "END
+")
+    case False{}:
+      False{}
+
+def with_context.last(+s: String) -> Bool:
+  with_context.last.pick(String.starts_with(s, "END
+"), s)
+
+# the request with its closing "END" line replaced by `tail`, in one
+# pass (a request that does not end with it comes back unchanged). It
+# used to take length + reverse (ends_with) + take + append: four walks
+# and three copies of a multi-megabyte request on every model call.
+def with_context.swap(s: String, +tail: String, last: Bool) -> String:
+  match s:
+    case SNil{}:
+      SNil{}
+    case SCon{h, +t}:
+      match last:
+        case True{}:
+          tail
+        case False{}:
+          SCon{h, with_context.swap(t, tail, with_context.last(t))}
+
 def with_context.put(inject: Bool, +ctx: String, +request: String)
     -> String:
   match inject:
     case False{}:
       request
     case True{}:
-      String.append(
-        String.take(request, Nat.sub(String.length(request), 4n)),
+      with_context.swap(request,
         String.append("MSG user : ",
-          String.append(Api.escape_nl(ctx), "\nEND\n")))
+          String.append(Api.escape_nl(ctx), "
+END
+")),
+        with_context.last(request))
 
 def with_context(+ctx: String, +request: String) -> String:
   with_context.put(
     Bool.and(Bool.not(String.is_empty(String.trim(ctx))),
-      Bool.and(is_agent_request(request),
-        String.ends_with(request, "END\n"))),
+      is_agent_request(request)),
     ctx, request)
 
 # ---- reply parsing ----

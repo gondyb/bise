@@ -14,22 +14,24 @@ def flatten(+s: String) -> String:
 
 # ---- substring search (first occurrence) ----
 
-def find.put(hit: Bool, here: Maybe<&2, Nat>, rest: Maybe<&2, Nat>)
-    -> Maybe<&2, Nat>:
-  match hit:
-    case True{}:
-      here
-    case False{}:
-      rest
-
-# the index of the first occurrence of `pat` in `s`, counting from `i`
-def find(s: String, +pat: String, +i: Nat) -> Maybe<&2, Nat>:
+# `here`: does `pat` start at the head of `s`. The scan stops at the
+# first hit (a strict call would evaluate the rest of the string too:
+# every search used to walk its whole input, even when the hit came
+# first - megabytes per model call on the request and the body)
+def find.go(s: String, +pat: String, +i: Nat, here: Bool) -> Maybe<&2, Nat>:
   match s:
     case SNil{}:
       None{}
     case SCon{_, +t}:
-      find.put(String.starts_with(s, pat), Some{i},
-        find(t, pat, Nat.add(i, 1n)))
+      match here:
+        case True{}:
+          Some{i}
+        case False{}:
+          find.go(t, pat, Nat.add(i, 1n), String.starts_with(t, pat))
+
+# the index of the first occurrence of `pat` in `s`, counting from `i`
+def find(+s: String, +pat: String, +i: Nat) -> Maybe<&2, Nat>:
+  find.go(s, pat, i, String.starts_with(s, pat))
 
 # one shell word: single-quoted, each inner quote closed, escaped and
 # reopened ('\'') so no path can end the word early
