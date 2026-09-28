@@ -21,7 +21,7 @@ mod cards;
 pub(super) use cards::{card_box_height, card_full, card_mouse, close_items, draw_card};
 use cards::{answer_card, Card, CardView};
 mod panel;
-pub(super) use panel::{draw_panel, hint, panel_mouse, placeholder, split, status_line, workspace};
+pub(super) use panel::{draw_panel, hint, key_mode, panel_mouse, placeholder, split, status_line, workspace};
 use panel::glyph;
 mod feed;
 pub(super) use feed::FeedWindow;

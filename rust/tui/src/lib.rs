@@ -75,6 +75,8 @@ mod keyprobe;
 pub mod timing;
 mod crash;
 mod help;
+#[allow(dead_code)] // BISE-99: bise-f-feed places the row in BISE-98
+mod keybar;
 mod onboarding;
 mod hints;
 mod queue;

@@ -76,6 +76,19 @@ const VOICE: &str = "voice";
 const TERM: &str = "terminal panel";
 const GHOSTTY: &str = "Ghostty tips";
 
+/// The tips of the key bar (BISE-99, book §8): one per session, shown dim
+/// on the right while idle. Each starts with a key of [`ROWS`] (or a
+/// command); the key bar prefixes "tip · ".
+pub(crate) const TIPS: &[&str] = &[
+    "ctrl+o opens everything folded",
+    "ctrl+` opens a terminal in the workspace",
+    "ctrl+g shows or hides the card box",
+    "esc puts your draft away, ↑ brings it back",
+    "shift+⏎ adds a new line",
+    "ctrl+r speaks into the composer (turn it on with /voice)",
+    "/theme switches between light and dark",
+];
+
 /// Every shortcut, in display order (sections appear in first-row order).
 /// Lowercase, "agent" never "task" (book §4, §16).
 #[rustfmt::skip]

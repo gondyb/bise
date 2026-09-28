@@ -651,6 +651,29 @@ pub(crate) fn hint(app: &App) -> Option<&'static str> {
     })
 }
 
+/// The key bar's mode in switchboard (BISE-99): the same order as
+/// [`hint`], which it replaces once the key bar row is placed (BISE-98).
+pub(crate) fn key_mode(app: &App) -> Option<crate::keybar::Mode> {
+    use crate::keybar::Mode;
+    let sb = app.sb.as_ref()?;
+    Some(if sb.drop_ask.is_some() {
+        Mode::DropAsk
+    } else if sb.confirm.is_some() {
+        Mode::Confirm
+    } else if sb.card.full {
+        Mode::CardFull
+    // a shown card box carries its own keys (QA 11): no repeat here
+    } else if sb.selected.is_some() {
+        Mode::Selected
+    } else if sb.focus_archived() {
+        Mode::Archived
+    } else if app.pending {
+        Mode::Steer
+    } else {
+        Mode::Default
+    })
+}
+
 /// What the empty composer shows after the cursor: nothing, but a
 /// read-only note in an archived agent's history.
 pub(crate) fn placeholder(app: &App) -> Option<String> {
