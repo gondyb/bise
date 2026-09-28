@@ -3327,3 +3327,41 @@ def hub_mdisc(m: Maybe<&2, HM.Agent>) -> Type:
 def hub_some_none(-a: HM.Agent, e: {Some{a} == None{} : Maybe<&2, HM.Agent>}) -> Empty:
   %Equal.sym(Maybe<&2, HM.Agent>, Some{a}, None{}, e) : hub_mdisc(_)
   Unit{}
+
+def hub_sdisc(m: Maybe<&2, String>) -> Type:
+  match m:
+    case None{}:
+      Unit
+    case Some{x}:
+      Empty
+
+def hub_some_none_s(-a: String, e: {Some{a} == None{} : Maybe<&2, String>}) -> Empty:
+  %Equal.sym(Maybe<&2, String>, Some{a}, None{}, e) : hub_sdisc(_)
+  Unit{}
+
+def hub_free_of.absurd1(-a: HM.Agent, -t: List<&2, HM.Agent>, -n: String, x: Empty) -> hub_free(HI.profile(a <> t), n):
+  match x:
+
+def hub_free_of.pick(c1: Bool, c2: Bool, +a: HM.Agent, +t: List<&2, HM.Agent>, +n: String,
+    +e1: {String.eq(HM.Agent.name(a), n) == c1 : Bool}, +e2: {HM.str_in(HM.Agent.aliases(a), n) == c2 : Bool},
+    hn: {Bool.pick(Maybe<&2, HM.Agent>, c1, Some{a}, HM.agent_named(t, n)) == None{} : Maybe<&2, HM.Agent>},
+    ha: {Bool.pick(Maybe<&2, String>, c2, Some{HM.Agent.name(a)}, HM.agent_alias(t, n)) == None{} : Maybe<&2, String>},
+    k: @p: {HM.agent_named(t, n) == None{} : Maybe<&2, HM.Agent>} -> @q: {HM.agent_alias(t, n) == None{} : Maybe<&2, String>} -> hub_free(HI.profile(t), n))
+    -> hub_free(HI.profile(a <> t), n):
+  match c1 c2:
+    case True{} _:
+      hub_free_of.absurd1(a, t, n, hub_some_none(a, hn))
+    case False{} True{}:
+      hub_free_of.absurd1(a, t, n, hub_some_none_s(HM.Agent.name(a), ha))
+    case False{} False{}:
+      HX.Both{hub_or_false(String.eq(HM.Agent.name(a), n), HM.str_in(HM.Agent.aliases(a), n), e1, e2), k(hn, ha)}
+
+# a name no agent has as a name or an old name is free in the profile
+def hub_free_of(+xs: List<&2, HM.Agent>, +n: String, hn: {HM.agent_named(xs, n) == None{} : Maybe<&2, HM.Agent>}, ha: {HM.agent_alias(xs, n) == None{} : Maybe<&2, String>})
+    -> hub_free(HI.profile(xs), n):
+  match xs:
+    case Nil{}:
+      Unit{}
+    case Con{a, t}:
+      hub_free_of.pick(String.eq(HM.Agent.name(a), n), HM.str_in(HM.Agent.aliases(a), n), a, t, n, {==}, {==}, hn, ha,
+        p => q => hub_free_of(t, n, p, q))
