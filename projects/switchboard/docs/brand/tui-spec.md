@@ -54,6 +54,35 @@ Three levels, always the same, in main and inside an agent:
 - **⚠** Today the hub's messages to main reach the feed as plain turns; the
   TUI needs the sender, the recipient and the level for each line.
 
+## History order (invariant)
+
+- **The history is append-only, in arrival order.** No section per agent that
+  gets updated later, no reordering, no line that moves. What changes over
+  time (status, age, context fill, open cards) lives outside the history: the
+  agents panel, the header counts, the card box.
+- **Only the tail can grow.** A run of level-3 lines at the very bottom may
+  fold and its count may go up while the run lasts. As soon as a level-1 or
+  level-2 line is appended, the run is closed and frozen.
+- Inside one agent's feed, a tool call and its result stay one item (the
+  agent does nothing else in between), as today.
+- Views are filters over the same stream, never a regrouping: entering an
+  agent shows its own thread; **⚠** a possible filter "only lines about
+  @name" keeps the arrival order.
+
+Staying calm with dozens of agents, without breaking the order:
+
+1. **Fold runs of level 3.** A run longer than 3 lines shows as one dim line
+   `▸ 47 messages between 30 agents`; ▸ opens it in place, in order.
+2. **Fixed name column.** `✉ from → to  text`, names padded or truncated to 10
+   columns, so the eye scans down one column.
+3. **Time marks after a pause.** A faint `· 14:31 ·` only after 5 minutes
+   without a line (**⚠** threshold to tune).
+4. **Main summarizes bursts** at level 2 ("the 12 endpoint agents agreed on
+   one error format").
+5. **The panel scrolls, the history doesn't grow sideways.** With more
+   agents than rows, the panel shows the ones that need you first, then the
+   working ones, then `+ 21 more`.
+
 ## Line width (measure)
 
 - **Prose** (user messages, agent text, reports, cards): wrap at

@@ -57,6 +57,8 @@
   .l1 { border-left:2px solid var(--acc); padding-left:2ch; margin-left:0; }
   .l1 .t { color:var(--acc); font-weight:700; }
   .lv { display:grid; grid-template-columns:18ch 1fr; gap:6px 3ch; max-width:112ch; margin-top:8px; }
+  .tsep { color:var(--faint); margin-top:10px; }
+  .l3 .nm { display:inline-block; width:10ch; overflow:hidden; white-space:nowrap; vertical-align:bottom; }
   hr { border:0; border-top:1px solid var(--line); margin:40px 0; max-width:112ch; }
 </style>
 </head>
@@ -100,6 +102,8 @@ function term({ h, feed, pan, above = "", f, narrow, overlay = "" }) {
   return `<div class="term${narrow ? " narrow" : ""}">${h ?? head()}<div class="grid"><div class="feed">${feed}</div>${narrow ? "" : (pan ?? PANEL())}</div>${above}${f ?? foot()}${overlay}</div>`;
 }
 const bg = (from, to, t) => `<div class="l3"><span class="who">✉</span>${from} <span class="to">→ ${to}</span>  ${t}</div>`;
+const bgc = (from, to, t) => `<div class="l3"><span class="who">✉</span><span class="nm">${from}</span><span class="to">→ </span><span class="nm to">${to}</span>${t}</div>`;
+const fold = (n, a, extra = "") => `<div class="b l3">▸ ${n} messages between ${a} agents${extra}</div>`;
 const bgs = (...ls) => `<div class="b">${ls.join("")}</div>`;
 const need = (title, body, opts) => `<div class="b l1"><div class="t">? ${title}</div><div>${body}</div>${opts ? `<div class="dim">${opts}</div>` : ""}</div>`;
 const you = t => `<div class="b"><span class="who dim">›</span>${t}</div>`;
@@ -149,6 +153,25 @@ const screens = [
    `<div class="b"><span class="who">♡</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div>` +
    `<div class="b l3">▸ 1 message between agents</div>` +
    need("api-v2 needs you", "the v2 schema file isn't in the repo. where is it?", "type the answer · alt+r send · ctrl+x later") })],
+
+["a busy hour, 30 agents", "the history is append-only and in arrival order: nothing is grouped by agent, nothing moves later. density comes from three things only: (1) a run of messages between agents folds into one dim line with its count; only the last run, at the bottom, can still grow; once a line for you arrives, the run is closed and never changes. (2) names sit in a fixed column, so the eye scans. (3) a faint time mark only after a pause. what's for you (levels 1 and 2) is never folded, so it stays readable at any volume.",
+ term({ h: head(`${S.work} 27 working · <span class="acc">? 2 need you</span> · ♡ 11 done`),
+   feed: `<div class="tsep">· 14:02 ·</div>` +
+   you("ship the v2 api: endpoints, docs, sdk, migration, the lot.") +
+   bise("that's 30 pieces. i split it: 12 endpoints, 8 sdk, 6 docs, 4 migration. starting them.") +
+   fold(47, 30) +
+   bise("the 12 endpoint agents agreed on one error format; i picked it for the sdk agents too.") +
+   fold(23, 9) +
+   `<div class="b"><span class="who">♡</span>4 endpoints are done: users, orgs, keys, audit. <span class="dim">▸ reports</span></div>` +
+   `<div class="b l3">▾ 5 messages between 3 agents</div>` +
+   bgc("sdk-py", "sdk-ts", "same pagination shape as you?") + bgc("sdk-ts", "sdk-py", "yes: cursor + limit, max 200.") +
+   bgc("mig-db", "main", "? drop the v1 tables now or after a release?") + bgc("main", "mig-db", "asking the user.") +
+   bgc("docs-auth", "ep-keys", "heads-up, i'm quoting your error codes.") +
+   need("mig-db needs you", "drop the v1 tables now, or keep them one release?", "type the answer · alt+r send · ctrl+x later") +
+   `<div class="tsep">· 14:31 ·</div>` +
+   fold(12, 6, ' <span class="pulse">∿</span>') ,
+   pan: panel([P.main, ...["ep-users","ep-orgs","ep-keys","ep-audit","ep-billing","ep-teams","sdk-py","sdk-ts","mig-db"].map((n, i) =>
+     ({ g: i < 4 ? S.done : n === "mig-db" ? S.need : S.work, name: n, r: i < 4 ? "done" : n === "mig-db" ? '<span class="acc">you</span>' : `${20 - i}m` }))], '<div class="dim b">+ 21 more · ctrl+k scroll</div>') })],
 
 ["reports in main", "each agent's report is one line; ▸ discloses it. ♡ done, ✗ failed, ? blocked, · progress.",
  term({ feed: `<div class="b"><span class="who">♡</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div>
