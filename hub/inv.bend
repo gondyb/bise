@@ -1,8 +1,11 @@
 # hub/inv.bend — the invariants the laws state about the hub's state
 # (LAWS.bend). Definitions only: the proofs are in PROOF.bend.
 import Base
+
 import ./model.bend as M
+
 import ./cx.bend as X
+
 import ./core.bend as H
 
 # the message ids, in the order of the state
@@ -74,3 +77,50 @@ def stuck.agent(m: Maybe<&2, M.Agent>, +s: M.St, +n: String) -> Bool:
 # stuck: nothing would ever deliver it)
 def stuck(+s: M.St, +rts: List<&2, X.Rt>, +n: String) -> Bool:
   Bool.and(H.is_idle(X.Rt.run(H.rt_find(rts, n))), stuck.agent(M.get_agent(s, n), s, n))
+
+# ---- law L4 support: the names of two agents never meet ----
+
+# an agent's names: its name, then its old ones
+def names(+a: M.Agent) -> List<&2, String>:
+  M.Agent.name(a) <> M.Agent.aliases(a)
+
+def profile(xs: List<&2, M.Agent>) -> List<&2, List<&2, String>>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+a, +t}:
+      names(a) <> profile(t)
+
+def Apart.q(+n: String, +al: List<&2, String>, q: List<&2, String>) -> Data:
+  match q:
+    case Nil{}:
+      Unit
+    case Con{+m, +bl}:
+      X.Both<{M.str_in(m <> bl, n) == False{} : Bool}, {M.str_in(al, m) == False{} : Bool}>
+
+# p comes before q: q has none of p's names as a name, p none of q's
+def Apart(p: List<&2, String>, +q: List<&2, String>) -> Data:
+  match p:
+    case Nil{}:
+      Unit
+    case Con{+n, +al}:
+      Apart.q(n, al, q)
+
+def ApartAll(+p: List<&2, String>, qs: List<&2, List<&2, String>>) -> Data:
+  match qs:
+    case Nil{}:
+      Unit
+    case Con{+q, +r}:
+      X.Both<Apart(p, q), ApartAll(p, r)>
+
+def NamesOK(ps: List<&2, List<&2, String>>) -> Data:
+  match ps:
+    case Nil{}:
+      Unit
+    case Con{+p, +r}:
+      X.Both<ApartAll(p, r), NamesOK(r)>
+
+# law names_apart: no name or old name of an agent is a name or old name of
+# another one
+def NamesApart(+s: M.St) -> Data:
+  NamesOK(profile(M.St.agents(s)))
