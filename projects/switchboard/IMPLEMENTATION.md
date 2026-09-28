@@ -89,11 +89,9 @@ commandes.
 
 ## Pas implémenté (v1)
 
-- Budget de tokens par tâche (le runtime ne publie pas l'usage).
 - `needs_approval` (pas de porte d'approbation dans ce harness).
 - Détection d'un worktree supprimé à la main (RFC 0002 §9) : la REPL
   redémarre en boucle puis la tâche passe en `failed`.
-- `hops` (RFC 0001 §7.3) : couvert par la limite de fil (12 messages).
 - Skills du workspace : la REPL tourne depuis la racine de l'app, donc
   `$PWD/.agents/skills` est celui du harness.
 - `/reload` en mode switchboard.

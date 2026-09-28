@@ -343,12 +343,10 @@ enum Pending {
     Drop { name: String },
 }
 
-/// Tunables (RFC 0001 §10.1, RFC 0003 §8).
+/// Technical bounds only: no cap on messages, threads or parallel
+/// tasks (decision of 2026-09-28).
 #[derive(Clone, Debug)]
 pub struct Limits {
-    pub max_working: usize,
-    pub thread_limit: usize,
-    pub wakes_per_hour: usize,
     /// `sb wait` never blocks longer (the bash tool hands a command off
     /// to the background after BEND_BG_AFTER seconds).
     pub wait_cap_s: u64,
@@ -358,9 +356,6 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Limits {
         Limits {
-            max_working: 4,
-            thread_limit: 12,
-            wakes_per_hour: 20,
             wait_cap_s: 25,
             max_crashes: 5,
         }
@@ -385,7 +380,6 @@ pub struct Hub {
     /// excerpts.
     recent: BTreeMap<String, Vec<(u64, String)>>,
     crashes: BTreeMap<String, u32>,
-    wakes: BTreeMap<String, Vec<u64>>,
     confirms: BTreeMap<u64, (ClientId, Pending)>,
     next_confirm: u64,
     contexts: BTreeMap<String, String>,
@@ -424,7 +418,6 @@ impl Hub {
             last_assistant: BTreeMap::new(),
             recent: BTreeMap::new(),
             crashes: BTreeMap::new(),
-            wakes: BTreeMap::new(),
             confirms: BTreeMap::new(),
             next_confirm: 1,
             contexts: BTreeMap::new(),
@@ -447,10 +440,6 @@ impl Hub {
 
     fn agent(&self, name: &str) -> Option<&Agent> {
         self.st.resolve(name).and_then(|n| self.st.agents.get(&n))
-    }
-
-    fn busy_tasks(&self) -> usize {
-        self.st.tasks().filter(|a| a.run == Run::Busy).count()
     }
 
     /// The client snapshot (agents, cards) for the views.
@@ -860,16 +849,6 @@ impl Hub {
             });
         }
         self.pump(fx, env, agent);
-        // a slot freed up: tasks held by the concurrency limit may start
-        let held: Vec<String> = self
-            .st
-            .tasks()
-            .filter(|a| a.run == Run::Idle && !self.st.queued_for(&a.name).is_empty())
-            .map(|a| a.name.clone())
-            .collect();
-        for name in held {
-            self.pump(fx, env, &name);
-        }
     }
 
     // ---- messages (RFC 0003) ----
@@ -950,17 +929,6 @@ impl Hub {
             },
             None => self.st.next_msg,
         };
-        if from != USER && !plain && self.st.agent_run_in_thread(thread) >= self.limits.thread_limit
-        {
-            let text = format!(
-                "le fil t_{} a atteint {} messages entre agents sans intervention humaine (dernier : @{} → @{})",
-                thread, self.limits.thread_limit, from, to
-            );
-            self.open_card(fx, env, "thread_limit", from, &text, None);
-            return Err(
-                "thread_limit: réponds à l'utilisateur ou attends qu'il intervienne".into(),
-            );
-        }
         let msg = Msg {
             id: self.st.next_msg,
             thread,
@@ -1053,7 +1021,6 @@ impl Hub {
         }
         let run = a.run;
         let is_main = a.is_main;
-        let parent = a.parent.clone();
         let queued: Vec<Msg> = self.st.queued_for(name).into_iter().cloned().collect();
         let notes = if is_main {
             self.st.main_notes.clone()
@@ -1066,38 +1033,7 @@ impl Hub {
         let batch: Vec<Msg> = match run {
             Run::Down | Run::Starting => return,
             Run::Busy => queued,
-            Run::Idle => {
-                if !is_main && self.busy_tasks() >= self.limits.max_working {
-                    self.requeue(fx, &queued, "concurrency");
-                    return;
-                }
-                // only a peer's messages count against the wake limit:
-                // the user, the parent, the children and the hub always
-                // get through (main hears every task)
-                let parents: BTreeMap<String, Option<String>> = queued
-                    .iter()
-                    .map(|m| {
-                        (
-                            m.from.clone(),
-                            self.st.agents.get(&m.from).and_then(|a| a.parent.clone()),
-                        )
-                    })
-                    .collect();
-                let is_peer = |m: &Msg| {
-                    let fp = parents.get(&m.from).cloned().flatten();
-                    prompts::relation(&m.from, name, fp.as_deref(), parent.as_deref()) == "peer"
-                };
-                let recent = self.wakes.entry(name.to_string()).or_default();
-                recent.retain(|t| now.saturating_sub(*t) < 3_600_000);
-                if queued.iter().all(is_peer) {
-                    if recent.len() >= self.limits.wakes_per_hour {
-                        self.requeue(fx, &queued, "wake_limit");
-                        return;
-                    }
-                    recent.push(now);
-                }
-                queued
-            }
+            Run::Idle => queued,
         };
         let mut parts: Vec<String> = Vec::new();
         if is_main && !notes.is_empty() {
@@ -1164,23 +1100,6 @@ impl Hub {
             }
         }
         self.dirty = true;
-    }
-
-    fn requeue(&mut self, fx: &mut Fx, msgs: &[Msg], reason: &str) {
-        for m in msgs {
-            let same = matches!(self.st.msg_state.get(&m.id), Some(MsgState::Queued { reason: r }) if r == reason);
-            if !same {
-                self.emit(
-                    fx,
-                    Event::MessageState {
-                        id: m.id,
-                        state: MsgState::Queued {
-                            reason: reason.to_string(),
-                        },
-                    },
-                );
-            }
-        }
     }
 
     fn note_main(&mut self, fx: &mut Fx, env: &mut dyn Env, text: &str) {
@@ -2054,7 +1973,7 @@ impl Hub {
                     "refusée".to_string()
                 }
             }
-            "blocked" | "failed" | "thread_limit" | "budget" | "restart" => {
+            "blocked" | "failed" | "restart" => {
                 if let Err(e) =
                     self.send(fx, env, USER, &card.agent, text, false, None, true, false)
                 {

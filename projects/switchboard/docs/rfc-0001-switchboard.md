@@ -199,7 +199,6 @@ interface TaskBrief {
   constraints: string[];  // ce que la tâche NE DOIT PAS faire
   done_when?: string;     // critère de fin vérifiable ; absent pour une tâche longue durée
   report_format?: string; // ce que main attend dans le rapport final
-  budget_tokens?: number; // défaut : §10.1
   workspace?: "shared" | "worktree"; // défaut : "shared" ; "worktree" seulement si l'utilisateur le demande (RFC 0002)
 }
 ```
@@ -263,8 +262,6 @@ Règles :
 - Une tâche PEUT aussi poser sa question directement à une autre tâche
   (RFC 0003). Main n'est alors pas dans la boucle ; il voit le fil dans
   `<agent_threads>`.
-- Une question transmise à une autre tâche porte un compteur `hops`. Si
-  `hops > 2`, main DOIT poser la question à l'utilisateur.
 - Si l'utilisateur fait un checkout d'une tâche qui attend une réponse, la
   question en attente est affichée en haut de la vue. Répondre dans le
   checkout répond à la question (`answered_by: "user"`) et ferme la carte
@@ -450,15 +447,17 @@ il propose le drop dans une carte d'attention.
 
 ## 10. Limites et garde-fous
 
-### 10.1 Concurrence et coût
+### 10.1 Pas de limite de volume
 
-| Réglage | Défaut |
-|---|---|
-| Tâches en `working` en même temps | 4 (les autres attendent en file, état `starting`) |
-| Budget de tokens par tâche (`budget_tokens`) | 2 M. Une fois atteint, la tâche passe en `idle` et une carte d'attention propose de l'augmenter. |
-| Profondeur de sous-agents | 1 |
-| `hops` max pour une question | 2 |
-| Délai `ask_main` | 900 s |
+Aucune limite artificielle : pas de plafond de tâches en parallèle, de
+messages par heure, de messages par fil, ni de budget de tokens
+(décision du 2026-09-28). Restent seulement :
+
+| Règle | Valeur | Pourquoi |
+|---|---|---|
+| Profondeur de sous-agents | 1 | Structure : seul main crée des tâches. |
+| Attente d'une réponse (`sb wait`, `sb ask`) | 25 s max | Technique : le tool bash passe une commande en arrière-plan après `BEND_BG_AFTER` (30 s). Une réponse plus tardive arrive comme un nouveau message. |
+| Redémarrages après plantage | 5 | Évite une boucle de plantages ; main est prévenu à chaque fois. |
 
 Le fil de main affiche le coût cumulé par tâche dans le tableau et dans la
 barre d'état.
@@ -487,7 +486,7 @@ Une carte d'attention est créée pour :
 
 - une question d'une tâche que main pose à l'utilisateur (§7.3) ;
 - une demande d'approbation d'un appel d'outil ;
-- une tâche `failed`, ou une tâche qui dépasse son budget ;
+- une tâche `failed` ;
 - un `file_overlap` ;
 - un rapport `done` (carte légère, fermée quand l'utilisateur l'a vue).
 
@@ -641,6 +640,8 @@ techniques :
   quand l'agent peut le faire sur demande (pousser une branche, par
   exemple).
 - 2026-09-27 : les agents peuvent se parler directement (RFC 0003).
+- 2026-09-28 : aucune limite de volume (tâches en parallèle, messages par
+  heure, messages par fil, budget).
 - 2026-09-28 : main est prévenu quand une tâche plante ; chaque message
   de l'utilisateur à main commence par le statut des tâches ; `sb tasks`
   donne le détail.

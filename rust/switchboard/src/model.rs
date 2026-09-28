@@ -224,8 +224,8 @@ pub enum MsgState {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Card {
     pub id: u64,
-    /// question | failed | blocked | overlap | done | budget | restart |
-    /// drop | thread_limit
+    /// question | failed | blocked | overlap | done | restart |
+    /// drop
     pub kind: String,
     pub agent: String,
     pub text: String,
@@ -540,16 +540,6 @@ impl State {
     /// Messages of a thread, in order.
     pub fn thread(&self, thread: u64) -> Vec<&Msg> {
         self.msgs.values().filter(|m| m.thread == thread).collect()
-    }
-
-    /// Agent messages since the last message involving the user, in one
-    /// thread (RFC 0003 §8, the thread limit).
-    pub fn agent_run_in_thread(&self, thread: u64) -> usize {
-        self.thread(thread)
-            .iter()
-            .rev()
-            .take_while(|m| m.from != USER && m.to != USER && !m.plain)
-            .count()
     }
 }
 

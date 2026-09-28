@@ -380,77 +380,6 @@ fn waits_time_out() {
 }
 
 #[test]
-fn at_most_four_tasks_work_at_once() {
-    let mut t = T::new();
-    for n in ["a", "b", "c", "d"] {
-        t.spawn_task(n);
-    }
-    let (_, fx) = t.req(
-        MAIN,
-        AgentReq::Spawn {
-            name: "e".into(),
-            brief: Brief {
-                objective: "e".into(),
-                ..Brief::default()
-            },
-            worktree: false,
-            with_changes: false,
-        },
-    );
-    assert!(fx
-        .iter()
-        .any(|e| matches!(e, Effect::Spawn { agent, .. } if agent == "e")));
-    let fx = t.go(Input::ReplReady { agent: "e".into() });
-    assert!(say_to(&fx, "e").is_none(), "held by the concurrency limit");
-    let fx = t.go(Input::ReplIdle {
-        agent: "a".into(),
-        leftover: false,
-    });
-    assert!(say_to(&fx, "e").is_some(), "a slot freed up: {:?}", fx);
-}
-
-#[test]
-fn long_agent_threads_stop_and_ask_the_user() {
-    let mut t = T::new();
-    t.spawn_task("a");
-    t.spawn_task("b");
-    let (_, fx) = t.req(
-        "a",
-        AgentReq::Send {
-            to: "b".into(),
-            text: "0".into(),
-            expect_reply: false,
-            reply_to: None,
-        },
-    );
-    let mut last = t.hub.st.msgs.values().last().unwrap().id;
-    let _ = fx;
-    let mut refused = false;
-    for i in 1..20 {
-        let (from, to) = if i % 2 == 1 { ("b", "a") } else { ("a", "b") };
-        let (tok, fx) = t.req(
-            from,
-            AgentReq::Send {
-                to: to.into(),
-                text: i.to_string(),
-                expect_reply: false,
-                reply_to: Some(last),
-            },
-        );
-        let r = reply(&fx, tok).unwrap();
-        if r["ok"] == false {
-            assert!(r["error"].as_str().unwrap().starts_with("thread_limit"));
-            assert_eq!(i, 12);
-            assert!(t.hub.st.cards.values().any(|c| c.kind == "thread_limit"));
-            refused = true;
-            break;
-        }
-        last = t.hub.st.msgs.values().last().unwrap().id;
-    }
-    assert!(refused);
-}
-
-#[test]
 fn main_learns_what_the_user_said_directly() {
     let mut t = T::new();
     t.spawn_task("docs");
@@ -1074,4 +1003,46 @@ fn sb_tasks_details_every_task() {
         text
     );
     assert!(text.contains("waits for a reply from main"), "{}", text);
+}
+
+#[test]
+fn any_number_of_tasks_work_at_once() {
+    let mut t = T::new();
+    for n in ["a", "b", "c", "d", "e", "f", "g"] {
+        t.spawn_task(n);
+        assert_eq!(t.status(n), Status::Working, "{} starts right away", n);
+    }
+}
+
+#[test]
+fn agents_talk_as_long_as_they_want() {
+    let mut t = T::new();
+    t.spawn_task("a");
+    t.spawn_task("b");
+    let mut last: Option<u64> = None;
+    for i in 0..60 {
+        let (from, to) = if i % 2 == 0 { ("a", "b") } else { ("b", "a") };
+        t.go(Input::ReplIdle {
+            agent: to.into(),
+            leftover: false,
+        });
+        let (tok, fx) = t.req(
+            from,
+            AgentReq::Send {
+                to: to.into(),
+                text: i.to_string(),
+                expect_reply: false,
+                reply_to: last,
+            },
+        );
+        assert_eq!(reply(&fx, tok).unwrap()["ok"], true, "message {}", i);
+        assert!(
+            say_to(&fx, to).is_some(),
+            "message {} delivered: {:?}",
+            i,
+            fx
+        );
+        last = t.hub.st.msgs.values().last().map(|m| m.id);
+    }
+    assert!(t.hub.st.cards.is_empty());
 }

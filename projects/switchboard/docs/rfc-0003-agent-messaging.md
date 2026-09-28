@@ -27,7 +27,7 @@ Elle ajoute :
 - des identifiants de message et de fil, pour répondre et attendre une
   réponse ;
 - des règles de livraison selon l'état du destinataire ;
-- des garde-fous contre les boucles et les attentes croisées.
+- une règle qui évite les attentes croisées (§6.2).
 
 ## 2. Vocabulaire
 
@@ -194,12 +194,14 @@ cycles.
 
 ## 8. Garde-fous
 
-| Règle | Défaut | Effet quand la limite est atteinte |
-|---|---|---|
-| Messages d'agents consécutifs dans un fil, sans intervention humaine | 12 | `sendMessage` renvoie `thread_limit`. Une carte d'attention s'ouvre. Un message de l'humain à un participant du fil remet le compteur à zéro. |
-| Tours réveillés par des pairs, par agent et par heure | 20 | Les messages suivants restent en file jusqu'au prochain tour démarré par l'humain ou le parent. |
-| Envoi à soi-même | interdit | Erreur `invalid_recipient`. |
-| Envoi à tout le groupe | absent | Pas de diffusion en v1. |
+Pas de limite de volume : ni plafond de messages par fil, ni plafond de
+réveils par heure (décision du 2026-09-28). Les attentes croisées sont
+évitées par le §6.2, pas par un compteur.
+
+| Règle | Effet |
+|---|---|
+| Envoi à soi-même | Erreur `invalid_recipient`. |
+| Envoi à tout le groupe | Absent en v1. |
 
 ## 9. Visibilité
 
@@ -225,9 +227,9 @@ t_11 bench → docs      1 message   répondu  "Chiffres du parseur"
 type AgentMessageEvent =
   | { type: "agent_message_sent"; message_id: string; thread_id: string; from: string;
       to: string; reply_to?: string; expects_reply: boolean; auto: boolean; text: string }
-  | { type: "agent_message_queued"; message_id: string; reason: "recipient_busy" | "needs_approval" | "starting" | "wake_limit" }
+  | { type: "agent_message_queued"; message_id: string; reason: "recipient_busy" | "needs_approval" | "starting" }
   | { type: "agent_message_delivered"; message_id: string }
-  | { type: "agent_message_rejected"; message_id: string; error: "recipient_unavailable" | "thread_limit" | "invalid_recipient" }
+  | { type: "agent_message_rejected"; message_id: string; error: "recipient_unavailable" | "invalid_recipient" }
   | { type: "agent_status_declared"; agent: string; status: "working" | "done" | "blocked"; note?: string };
 ```
 
@@ -275,7 +277,6 @@ groupe.
 
 1. Faut-il que l'humain soit adressable (`agentName: "user"`) ? Aujourd'hui,
    un agent passe par main, qui ouvre une carte d'attention.
-2. Les limites du §8 (12 messages, 20 réveils par heure) : bonnes valeurs ?
-3. Un pair doit-il pouvoir réveiller une tâche `done` ? Aujourd'hui : oui,
+2. Un pair doit-il pouvoir réveiller une tâche `done` ? Aujourd'hui : oui,
    comme l'humain.
-4. Faut-il autoriser un pair à créer des agents (profondeur > 1) ?
+3. Faut-il autoriser un pair à créer des agents (profondeur > 1) ?
