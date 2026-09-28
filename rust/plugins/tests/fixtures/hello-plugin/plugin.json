@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hello-plugin",
+  "version": "0.1.0",
+  "description": "Test fixture: one skill and one tiny stdio MCP server (tools.hello_plugin.shout, skill hello_plugin:greet)."
+}

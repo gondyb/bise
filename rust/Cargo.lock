@@ -72,6 +72,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "bend-plugins"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "bend-tui"
 version = "1.0.0"
 dependencies = [
