@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-# Wrapper de commodité : tout se lance via l'exécutable unique
-# rust/target/debug/bend-harness (REPL Bend enfant + TUI). Le provider
-# (HTTPS vers api.mistral.ai) et le tool bash tournent DANS le REPL Bend
-# (packages hub HTTP + snap) — plus aucun bridge.
+# Convenience wrapper: everything starts from the single executable
+# rust/target/debug/bend-harness (child Bend REPL + TUI). The provider
+# (HTTPS to api.mistral.ai) and the bash tool run INSIDE the Bend REPL
+# (hub HTTP + snap packages) — no bridge anymore.
 #
-#   ./run.sh                 # session live (opus-5.5 + bash)
-#   ./run.sh --scripted      # session scriptée
-#   ./run.sh --model NOM     # modèle du provider
-#   ./run.sh --port N        # forcer le port du REPL
-#   ./run.sh --debug        # afficher les annotations (tours, idle)
-#   ./run.sh --continue     # reprendre la session la plus récente
-#                           # (par dernière activité, pas un fichier fixe)
-#   ./run.sh switchboard    # Switchboard : main + tâches, dans le dossier courant
-#   ./run.sh switchboard --stop  # arrêter le hub du dossier courant
-#   ./run.sh switchboard --dev   # Switchboard de test à côté du live : build
-#                                # isolé dans /tmp/sb-dev, hub séparé
-#                                # (voir sb-dev.sh : --no-tui, --stop, --status, --reset)
-#   ./run.sh --resume ID    # reprendre une session par id
-#                           # (un préfixe unique suffit) ; /status dans
-#                           # le TUI affiche l'id de la session
+#   ./run.sh                 # live session (opus-5.5 + bash)
+#   ./run.sh --scripted      # scripted session
+#   ./run.sh --model NAME    # provider model
+#   ./run.sh --port N        # force the REPL port
+#   ./run.sh --debug        # show the annotations (turns, idle)
+#   ./run.sh --continue     # resume the most recent session
+#                           # (by last activity, not a fixed file)
+#   ./run.sh switchboard    # Switchboard: main + tasks, in the current folder
+#   ./run.sh switchboard --stop  # stop the hub of the current folder
+#   ./run.sh switchboard --dev   # test Switchboard next to the live one: build
+#                                # isolated in /tmp/sb-dev, separate hub
+#                                # (see sb-dev.sh: --no-tui, --stop, --status, --reset)
+#   ./run.sh --resume ID    # resume a session by id
+#                           # (a unique prefix is enough); /status in
+#                           # the TUI shows the session id
 #
-# Plusieurs terminaux = plusieurs ./run.sh : ports auto-attribués,
-# sessions indépendantes, chaque REPL meurt avec son terminal.
+# Several terminals = several ./run.sh: ports assigned automatically,
+# independent sessions, each REPL dies with its terminal.
 
 set -euo pipefail
 # the dev switchboard builds elsewhere: never the live tree's binaries
@@ -44,7 +44,7 @@ if [ "${1:-}" = "switchboard" ]; then profile=release; fi
 BIN="rust/target/$profile/bend-harness"
 if [ ! -x "$BIN" ] \
    || [ -n "$(find rust/harness/src rust/tui/src rust/switchboard/src -newer "$BIN" -print -quit 2>/dev/null)" ]; then
-  echo "bend-harness ($profile) absent ou périmé — build cargo..." >&2
+  echo "bend-harness ($profile) missing or outdated — cargo build..." >&2
   if [ "$profile" = release ]; then
     (cd rust && cargo build --release -p bend-harness)
   else
@@ -53,7 +53,7 @@ if [ ! -x "$BIN" ] \
 fi
 
 if [ ! -x rust/jsrt/target/debug/bend-jsrt ]; then
-  echo "bend-jsrt absent — build du moteur V8 (premiere fois: quelques minutes)...">&2
+  echo "bend-jsrt missing — building the V8 engine (first time: a few minutes)...">&2
   (cd rust/jsrt && cargo build)
 fi
 
@@ -67,12 +67,12 @@ bend_stale() {
 build_repl() {
   local out="$1" src="$2"
   if bend_stale "$out"; then
-    echo "$out absent ou périmé — compilation avec bend (1-2 min)..." >&2
+    echo "$out missing or outdated — compiling with bend (1-2 min)..." >&2
     if ! bend "$src" -o "$out" >/dev/null; then
       if [ -x "$out" ]; then
-        echo "compilation de $out échouée — binaire existant conservé" >&2
+        echo "compiling $out failed — existing binary kept" >&2
       else
-        echo "compilation de $out échouée" >&2
+        echo "compiling $out failed" >&2
         exit 1
       fi
     fi
@@ -83,9 +83,9 @@ build_repl repl-scripted runtime/repl.bend
 # sb-core: the Switchboard hub's decisions (hub/*.bend), a child of the
 # switchboard daemon
 if [ ! -x sb-core ] || [ -n "$(find hub vendor -newer sb-core -print -quit 2>/dev/null)" ]; then
-  echo "sb-core absent ou périmé — compilation avec bend..." >&2
+  echo "sb-core missing or outdated — compiling with bend..." >&2
   if ! bend hub/main.bend -o sb-core >/dev/null && [ ! -x sb-core ]; then
-    echo "compilation de sb-core échouée" >&2
+    echo "compiling sb-core failed" >&2
     exit 1
   fi
 fi

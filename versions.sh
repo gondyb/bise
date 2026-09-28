@@ -88,7 +88,7 @@ build_from() {
   # a linked git worktree: the main checkout's engine
   [ -x "$js" ] || js="$(git rev-parse --path-format=absolute --git-common-dir)/../rust/jsrt/target/debug/bend-jsrt"
   if [ ! -x "$js" ]; then
-    say "bend-jsrt absent — build du moteur V8..."
+    say "bend-jsrt missing — building the V8 engine..."
     (cd "$REPO/rust/jsrt" && cargo build)
   fi
   ln -f "$js" "$tmp/rust/jsrt/target/debug/bend-jsrt" 2>/dev/null \
@@ -104,7 +104,7 @@ build_from() {
   } > "$tmp/VERSION"
   rm -rf "$vdir"; mv "$tmp" "$vdir"
   trap - EXIT
-  say "version $id construite : $vdir"
+  say "version $id built: $vdir"
 }
 
 built() { [ -x "$VERSIONS/$1/bend-harness" ] && [ -x "$VERSIONS/$1/repl-live" ] && [ -f "$VERSIONS/$1/VERSION" ]; }

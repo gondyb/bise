@@ -12,7 +12,7 @@ cd "$(dirname "$0")"
 #    the Bend binaries rebuilt by run.sh do not count
 dirty=$(git status --porcelain --untracked-files=no -- . ':!repl-live' ':!repl-scripted' ':!sb-core')
 if [ -n "$dirty" ]; then
-  echo "arbre de travail non propre, relance annulée :" >&2
+  echo "working tree not clean, relaunch cancelled:" >&2
   echo "$dirty" >&2
   exit 1
 fi
@@ -22,7 +22,7 @@ state=$(ls -d "${XDG_STATE_HOME:-$HOME/.local/state}"/switchboard/harness-switch
 if [ -n "$state" ]; then
   backup="/tmp/sb-live-backup-$(date +%Y%m%d-%H%M%S)"
   cp -R "$state" "$backup"
-  echo "état sauvegardé : $backup"
+  echo "state backed up: $backup"
 fi
 
 # 3. stop the running hub (and its agents: the old hub cannot keep them)
