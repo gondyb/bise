@@ -223,6 +223,24 @@ def bash_script_path(+port: String, +script: String) -> String:
   String.append("/tmp/bend-sh-", String.append(port,
     String.append("-", String.append(U32.show(bg_script_hash(script)), ".sh"))))
 
+# ---- BEND_WORKDIR: where the command runs ----
+# A switchboard agent runs its REPL from the app root (the runtime's
+# relative paths live there) but works in its own directory: the
+# workspace, or a task's git worktree. The command then starts with a
+# cd into it; a missing directory fails the command instead of running
+# it somewhere else. Empty: the REPL's own directory, unchanged.
+def with_workdir.pick(empty: Bool, +dir: String, +command: String)
+    -> String:
+  match empty:
+    case True{}:
+      command
+    case False{}:
+      String.append("cd ", String.append(Tx.sh_quote(dir),
+        String.append(" || exit 1\n", command)))
+
+def with_workdir(+dir: String, +command: String) -> String:
+  with_workdir.pick(String.is_empty(dir), dir, command)
+
 # ---- the wrapper: one line per generated shell statement ----
 def bg_wrap.seg(+a: String, +b: String) -> String:
   String.append(a, String.append("\n", b))

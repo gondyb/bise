@@ -16,6 +16,7 @@ import ./settings.bend as St
 import ./provider-pure.bend as Pvp
 import ../core/anth-stream.bend as As
 import ./debug.bend as Dbg
+import ./usage-pure.bend as Us
 # ---- the live provider call, fully in Bend (hub HTTP client) ----
 # The wire request (MODEL/TOOL/MSG/CALL lines) becomes the provider
 # JSON in core/api.bend, is POSTed by the hub HTTP client, and the reply
@@ -112,16 +113,17 @@ def verdict_res(+res: Http.Res, st: Api.Style) -> Pvp.Attempt:
 type Got is Data:
   Got{a: Pvp.Attempt, status: U32, raw: String}
 
-def got_err(+e: Http.Err) -> Got:
-  Got{Pvp.attempt_err(net_of(e)), 0, ""}
+# a transport failure names the host the call went to (Pvp.net_cause)
+def got_err(+host: String, +e: Http.Err) -> Got:
+  Got{Pvp.attempt_err(host, net_of(e)), 0, ""}
 
 def got_res(+res: Http.Res, st: Api.Style) -> Got:
   match res:
     case Http.Res{+status, _, _}:
       Got{verdict_res(res, st), status, Http.text(res)}
 
-def model_call.verdict(r: Result<&2, &2, Http.Err, Http.Res>, st: Api.Style)
-    -> IO(Got):
+def model_call.verdict(r: Result<&2, &2, Http.Err, Http.Res>, st: Api.Style,
+    +host: String) -> IO(Got):
   match r:
     case Done{+res}:
       do IO<Got>:
@@ -129,7 +131,7 @@ def model_call.verdict(r: Result<&2, &2, Http.Err, Http.Res>, st: Api.Style)
         d : Unit <- model_call.res.dumper(dr, res)
         IO.pure(Got, got_res(res, st))
     case Fail{+e}:
-      IO.pure(Got, got_err(e))
+      IO.pure(Got, got_err(host, e))
 
 # ---- where the retry notes go: the loop's output, carried through ----
 # (runtime/main.bend's Out, mirrored: this module sits below main)
@@ -143,6 +145,28 @@ def note.pair(sm: Socket & Result<&1, &1, U32 & String, Unit>) -> Socket:
     case (s2, _):
       s2
 
+# the wire log (BEND_WIRE_LOG, set by the Switchboard hub): every batch
+# sent to the client is appended there FIRST. The hub reads the REPL's
+# output from this file, not from the socket, so a hub that restarts
+# (a version switch, a crash) resumes at its saved offset and loses no
+# line, even one emitted while no hub was connected. BR-007: the notes
+# of a call in flight (provider_retry) go there too, or the hub never
+# sees them.
+def wire_log.when(skip: Bool, +path: String, +text: String) -> IO(Unit):
+  match skip:
+    case True{}:
+      IO.pure(Unit, Unit{})
+    case False{}:
+      do IO<Unit>:
+        f : Result<&1, &1, U32 & String, File> <- File.open(path, "a")
+        P.write.opened(f, text)
+
+def wire_log(+text: String) -> IO(Unit):
+  do IO<Unit>:
+    fr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_LOG")
+    +path : String <- IO.pure(String, P.env_or(fr, ""))
+    wire_log.when(String.is_empty(path), path, text)
+
 def note(n: Note, +line: String) -> IO(Note):
   match n:
     case NStd{}:
@@ -151,10 +175,28 @@ def note(n: Note, +line: String) -> IO(Note):
         IO.pure(Note, NStd{})
     case NNet{sock}:
       do IO<Note>:
+        wire_log(String.append(line, "\n"))
         sm : Socket & Result<&1, &1, U32 & String, Unit> <- TCP.send(sock,
           String.append(line, "\n"))
         s2 : Socket <- IO.pure(Socket, note.pair(sm))
         IO.pure(Note, NNet{s2})
+
+# the token usage of a reply, as a feed line (runtime/usage-pure.bend);
+# a reply without usage, or a failed call, prints nothing
+def usage_note.pick(empty: Bool, n: Note, +line: String) -> IO(Note):
+  match empty:
+    case True{}:
+      IO.pure(Note, n)
+    case False{}:
+      note(n, line)
+
+# the attempt's body: a whole JSON reply, or the Anthropic stream's
+# events (Us.usage_line reads both); no response (status 0) prints nothing
+def usage_note(g: Got, n: Note, st: Api.Style, +model: String) -> IO(Note):
+  match g:
+    case Got{_, +status, +raw}:
+      +line = Us.usage_line(st, model, status, raw)
+      usage_note.pick(String.is_empty(line), n, line)
 
 def interrupt_path() -> IO(String):
   do IO<String>:
@@ -163,34 +205,35 @@ def interrupt_path() -> IO(String):
     IO.pure(String, Pvp.interrupt_path_of(p))
 
 # BR-005: a Ctrl+C landing during a failed attempt must not wait for
-# the remaining retries: the flag is read between attempts, and when
-# set the call bails out - the completion_fail path then fails the
-# turn cleanly instead of another 2-minute round trip.
-def model_call.step.retry.interrupted(set: Bool, n: Note, +ipath: String,
-    +k: Nat, +after_ms: U32,
+# the remaining retries: the pause before a retry is slept in 1 s
+# slices and the flag is read between them. BR-007: only a flag WITH
+# content is an interrupt (Pvp.interrupt_flag) - the cleared flag
+# is an empty file - and the stop keeps the error that made the call
+# retry.
+def model_call.wait(fuel: Nat, +ipath: String, +left: U32) -> IO(Bool):
+  match fuel:
+    case 0n:
+      IO.pure(Bool, False{})
+    case 1n+k:
+      do IO<Bool>:
+        m : Maybe<&2, String> <- P.read_file(ipath)
+        +stop : Bool <- IO.pure(Bool, Pvp.interrupt_flag(m))
+        IO.sleep(Pvp.slice_ms(stop, left))
+        more : Bool <- model_call.wait(k, ipath, Pvp.left_after(stop, left))
+        IO.pure(Bool, Bool.or(stop, more))
+
+def model_call.step.retry.go(stop: Bool, n: Note, +ipath: String, +k: Nat,
+    +tries: Nat, +why: String,
     next: Nat -> Note -> IO(Note & Rem.RemoteRes)) -> IO(Note & Rem.RemoteRes):
-  match set:
+  match stop:
     case True{}:
       do IO<Note & Rem.RemoteRes>:
         # consume the flag so the boundary drains stay clean
         u : Unit <- P.write_file(ipath, "")
-        IO.pure(Note & Rem.RemoteRes, (n, Rem.RRErr{"interrupted by the user"}))
+        IO.pure(Note & Rem.RemoteRes,
+          (n, Rem.RRErr{Pvp.interrupted_text(Nat.add(tries, 1n), why)}))
     case False{}:
-      do IO<Note & Rem.RemoteRes>:
-        IO.sleep(after_ms)
-        next(k)(n)
-
-def model_call.step.retry.flag(m: Maybe<&2, String>, n: Note, +ipath: String,
-    +k: Nat, +after_ms: U32,
-    next: Nat -> Note -> IO(Note & Rem.RemoteRes)) -> IO(Note & Rem.RemoteRes):
-  match m:
-    case None{}:
-      do IO<Note & Rem.RemoteRes>:
-        IO.sleep(after_ms)
-        next(k)(n)
-    case Some{+c}:
-      model_call.step.retry.interrupted(Pvp.interrupt_requested(c), n, ipath,
-        k, after_ms, next)
+      next(k)(n)
 
 def model_call.step.retry(can: Bool, n: Note, +k: Nat, +tries: Nat,
     +delay_ms: U32, +why: String,
@@ -200,8 +243,9 @@ def model_call.step.retry(can: Bool, n: Note, +k: Nat, +tries: Nat,
       do IO<Note & Rem.RemoteRes>:
         n2 : Note <- note(n, Pvp.retry_line(tries, why, delay_ms))
         +ipath : String <- interrupt_path()
-        m : Maybe<&2, String> <- P.read_file(ipath)
-        model_call.step.retry.flag(m, n2, ipath, k, delay_ms, next)
+        stop : Bool <- model_call.wait(Pvp.wait_slices(delay_ms), ipath,
+          delay_ms)
+        model_call.step.retry.go(stop, n2, ipath, k, tries, why, next)
     case False{}:
       IO.pure(Note & Rem.RemoteRes,
         (n, Rem.RRErr{Pvp.exhausted_text(Nat.add(tries, 1n), why)}))
@@ -308,8 +352,8 @@ def sse.body(+status: U32, +retry_after: String, +text: String)
 
 # a stream cut short keeps what it had received (the debug log shows
 # how far the reply got)
-def sse.done(rd: Rd, +status: U32, +retry_after: String, +ipath: String)
-    -> IO(Got):
+def sse.done(rd: Rd, +status: U32, +retry_after: String, +ipath: String,
+    +host: String) -> IO(Got):
   match rd:
     case RdEnd{st, +parts}:
       do IO<Got>:
@@ -318,7 +362,8 @@ def sse.done(rd: Rd, +status: U32, +retry_after: String, +ipath: String)
     case RdErr{st, +parts, +e}:
       do IO<Got>:
         c : Unit <- Http.stream.close(st)
-        IO.pure(Got, Got{Pvp.attempt_err(net_of(e)), status, sse.text(parts)})
+        IO.pure(Got, Got{Pvp.attempt_err(host, net_of(e)), status,
+          sse.text(parts)})
     case RdStop{st, +parts}:
       do IO<Got>:
         c : Unit <- Http.stream.close(st)
@@ -328,23 +373,24 @@ def sse.done(rd: Rd, +status: U32, +retry_after: String, +ipath: String)
           sse.text(parts)})
 
 @unsafe
-def sse.head(sr: Http.Stream & Http.Res, +ipath: String) -> IO(Got):
+def sse.head(sr: Http.Stream & Http.Res, +ipath: String, +host: String)
+    -> IO(Got):
   match sr:
     case (st, res):
       match res:
         case Http.Res{+status, +h, _}:
           do IO<Got>:
             rd : Rd <- sse.read(st, Nil{}, ipath)
-            sse.done(rd, status, Http.header(h, "retry-after"), ipath)
+            sse.done(rd, status, Http.header(h, "retry-after"), ipath, host)
 
 @unsafe
-def sse.opened(r: Result<&1, &1, Http.Err, Http.Stream>, +ipath: String)
-    -> IO(Got):
+def sse.opened(r: Result<&1, &1, Http.Err, Http.Stream>, +ipath: String,
+    +host: String) -> IO(Got):
   match r:
     case Fail{+e}:
-      IO.pure(Got, got_err(e))
+      IO.pure(Got, got_err(host, e))
     case Done{st}:
-      sse.head(Http.stream.res(st), ipath)
+      sse.head(Http.stream.res(st), ipath, host)
 
 @unsafe
 def sse.call(+url: String, hdrs: Map<&2, List<&2, String>>, +body: String)
@@ -353,7 +399,7 @@ def sse.call(+url: String, hdrs: Map<&2, List<&2, String>>, +body: String)
     +ipath : String <- interrupt_path()
     r : Result<&1, &1, Http.Err, Http.Stream> <- Http.open.with("POST", url,
       hdrs, body, Pvp.stream_step_ms())
-    sse.opened(r, ipath)
+    sse.opened(r, ipath, Pvp.url_host(url))
 
 # the whole reply at once (the OpenAI-compatible providers)
 def whole.call(+url: String, hdrs: Map<&2, List<&2, String>>, +body: String,
@@ -361,7 +407,7 @@ def whole.call(+url: String, hdrs: Map<&2, List<&2, String>>, +body: String,
   do IO<Got>:
     r : Result<&2, &2, Http.Err, Http.Res> <- Http.fetch.with("POST", url,
       hdrs, body, Pvp.step_timeout_ms())
-    model_call.verdict(r, st)
+    model_call.verdict(r, st, Pvp.url_host(url))
 
 @unsafe
 def call.pick(is_anth: Bool, +url: String, hdrs: Map<&2, List<&2, String>>,
@@ -416,7 +462,8 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Note, +request: String,
         +url : String <- IO.pure(String, Pvp.provider_url(P.env_or(ur, ""), st))
         +g : Got <- call.pick(Api.is_anthropic(st), url, hdrs, body, st)
         lg : Unit <- model_call.log(call, tries, model, url, json, g)
-        model_call.step(got_attempt(g), n, k, tries,
+        nu : Note <- usage_note(g, n, st, model)
+        model_call.step(got_attempt(g), nu, k, tries,
           k2 => n2 => model_call.try(k2, Nat.add(tries, 1n), n2, request, key,
             st, model, call))
 

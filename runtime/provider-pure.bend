@@ -114,6 +114,91 @@ def api_err(e: NetErr) -> String:
     case NBad{}:
       "bad response"
 
+# ---- what a failure means for the user ----
+# The short code (api_err) is kept inside the text: it is what a bug
+# report needs. The text around it names the host the call went to and
+# the one thing the user can check. English, one line.
+
+# "https://host:port/path" -> "host:port"; anything else is itself
+def url_host.head(xs: List<&2, String>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case Con{+h, _}:
+      h
+
+def url_host.rest(+rest: String) -> String:
+  url_host.head(String.split(rest, '/'))
+
+def url_host.http(is_http: Bool, +url: String) -> String:
+  match is_http:
+    case True{}:
+      url_host.rest(String.drop(url, 7n))
+    case False{}:
+      url_host.rest(url)
+
+def url_host.pick(is_https: Bool, +url: String) -> String:
+  match is_https:
+    case True{}:
+      url_host.rest(String.drop(url, 8n))
+    case False{}:
+      url_host.http(String.starts_with(url, "http://"), url)
+
+def url_host(+url: String) -> String:
+  url_host.pick(String.starts_with(url, "https://"), url)
+
+def check_network() -> String:
+  " — check your network or VPN"
+
+def net_cause(+host: String, e: NetErr) -> String:
+  match e:
+    case NUrl{}:
+      String.concat(["bad provider URL (", host,
+        ") — check BEND_PROVIDER_URL or the provider table"])
+    case NDns{}:
+      String.concat(["cannot resolve ", host, " (dns)", check_network()])
+    case NConnect{+c, +w}:
+      String.concat(["cannot reach ", host, " (", coded("connect ", c, w),
+        ")", check_network()])
+    case NTls{+c, +w}:
+      String.concat(["TLS handshake with ", host, " failed (",
+        coded("tls ", c, w), ")", check_network()])
+    case NRead{+c, +w}:
+      String.concat(["connection to ", host, " lost while reading (",
+        coded("read ", c, w), ")", check_network()])
+    case NWrite{+c, +w}:
+      String.concat(["connection to ", host, " lost while sending (",
+        coded("write ", c, w), ")", check_network()])
+    case NTimeout{}:
+      # the limit depends on the call: stream_step_ms between two
+      # events of a stream, step_timeout_ms for a whole reply
+      String.concat(["no answer from ", host, " (timeout)"])
+    case NRedirect{}:
+      String.concat(["too many redirects from ", host])
+    case NBad{}:
+      String.concat(["garbled response from ", host])
+
+# a final HTTP error: the status and the body the style mapper kept,
+# plus what to check when the status says it
+def status_hint(+s: U32) -> String:
+  Bool.pick(String, Bool.or(U32.is_eq(s, 401), U32.is_eq(s, 403)),
+    " — check the API key",
+    Bool.pick(String, U32.is_eq(s, 404),
+      " — check the model name and the provider URL",
+      Bool.pick(String, U32.is_eq(s, 413), " — the request is too large",
+        "")))
+
+# ---- the interrupt flag, as the retry loop reads it ----
+# The flag file is CLEARED by writing "" (every turn end does it), so an
+# existing empty file is the normal state: only content means "stop"
+# (interrupt_requested, the one predicate). No file: no request.
+def interrupt_flag(m: Maybe<&2, String>) -> Bool:
+  match m:
+    case None{}:
+      False{}
+    case Some{+c}:
+      interrupt_requested(c)
+
 # ---- the retry policy ----
 # Nothing a provider answers may kill the turn at the first blow:
 # connection loss (connect, DNS, timeout, a read/write cut mid-response,
@@ -229,6 +314,20 @@ def attempt_body(is_err_body: Bool, +hint: U32, +reply: String) -> Attempt:
     case False{}:
       AOk{reply}
 
+# a final HTTP error (not 200, not transient): the turn fails on its
+# first line, with the hint for the status
+def attempt_final(is_err: Bool, +status: U32, +hint: U32, +reply: String)
+    -> Attempt:
+  match is_err:
+    case True{}:
+      AFail{String.append(
+        String.drop(first_line(String.split(String.trim(reply), Tx.newline())),
+          6n),
+        status_hint(status))}
+    case False{}:
+      attempt_body(String.starts_with(reply, "ERROR provider 200:"), hint,
+        reply)
+
 def attempt_status.pick(retryable: Bool, +status: U32, +hint: U32,
     +reply: String) -> Attempt:
   match retryable:
@@ -236,8 +335,9 @@ def attempt_status.pick(retryable: Bool, +status: U32, +hint: U32,
       ARetry{hint, String.append("provider ",
         String.append(U32.show(status), " (transient)"))}
     case False{}:
-      attempt_body(String.starts_with(reply, "ERROR provider 200:"), hint,
-        reply)
+      attempt_final(Bool.and(Bool.not(U32.is_eq(status, 200)),
+          String.starts_with(reply, "ERROR provider ")),
+        status, hint, reply)
 
 # a response: its status, its Retry-After header, and the reply the
 # style mapper made of its body
@@ -246,16 +346,18 @@ def attempt_status(+status: U32, +retry_after: String, +reply: String)
   attempt_status.pick(retryable_status(status), status,
     retry_after_ms(retry_after), reply)
 
-def attempt_err.pick(retryable: Bool, +e: NetErr) -> Attempt:
+def attempt_err.pick(retryable: Bool, +host: String, +e: NetErr) -> Attempt:
   match retryable:
     case True{}:
-      ARetry{0, api_err(e)}
+      ARetry{0, net_cause(host, e)}
     case False{}:
-      AFail{String.append("provider unreachable: ", api_err(e))}
+      AFail{net_cause(host, e)}
 
-# a transport failure: no response at all
-def attempt_err(+e: NetErr) -> Attempt:
-  attempt_err.pick(retryable_err(e), e)
+# a transport failure: no response at all. The cause names the host and
+# says what the user can do about it (the text every retry line, the
+# final error and an interrupted retry loop carry)
+def attempt_err(+host: String, +e: NetErr) -> Attempt:
+  attempt_err.pick(retryable_err(e), host, e)
 
 # the line the client shows while the call waits (the TUI renders it
 # as a warning): "provider_retry: 2/10 · <why> · retry in 4s"
@@ -271,6 +373,23 @@ def retry_line(+n: Nat, +why: String, +delay_ms: U32) -> String:
 
 # the final error once every attempt failed: the count and the last cause
 def exhausted_text(+tries: Nat, +why: String) -> String:
-  String.append("provider failed after ",
-    String.append(Nat.show(tries),
-      String.append(" attempts: ", why)))
+  String.append(String.concat(["provider failed after ", Nat.show(tries),
+    " attempts: "]), why)
+
+# an interrupt during the retries stops them, and keeps the error that
+# made them necessary: the user sees both
+def interrupted_text(+tries: Nat, +why: String) -> String:
+  String.append(String.concat(["stopped retrying (interrupted by the user) after ",
+    Nat.show(tries), " failed attempts; last error: "]), why)
+
+# the pause before a retry is slept in 1 s slices, the flag read between
+# them: how many slices a pause takes
+def wait_slices(+ms: U32) -> Nat:
+  U32.to_nat(U32.add(U32.div(ms, 1000), 1))
+
+# one slice of the pause: nothing left or an interrupt -> 0
+def slice_ms(stop: Bool, +left: U32) -> U32:
+  Bool.pick(U32, stop, 0, U32.min(left, 1000))
+
+def left_after(stop: Bool, +left: U32) -> U32:
+  Bool.pick(U32, stop, 0, U32.sub(left, U32.min(left, 1000)))

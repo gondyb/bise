@@ -1,0 +1,436 @@
+//! Version switch of a workspace's hub, with a probation period and an
+//! automatic rollback (the `sbswitch` subcommand).
+//!
+//! A version is an app root built by `versions.sh` (bend-harness,
+//! repl-live, sb-core, VERSION). A switch never stops an agent: the old
+//! hub exits with `keep_agents`, the new one adopts the running REPLs
+//! (each moves to the new binary at its next idle, same session). The
+//! switcher runs from the OLD (known good) binary, detached from both
+//! hubs, and watches the new one for the probation period:
+//! - the hub process died, or does not answer `ping` for ~10 s;
+//! - the hub reported a failure (`probation-fail`: a REPL of the new
+//!   version crashed, or could not start).
+//!
+//! Either one rolls back to the version it came from (same mechanism,
+//! backwards) and leaves a warning in main's thread. A probation without
+//! failure marks the version good. `versions.json` in the state dir holds
+//! `current`, `good` and `previous` (version dirs).
+
+use crate::client;
+use crate::paths::Paths;
+use crate::util::now_ms;
+use serde_json::{json, Value};
+use std::io::Write;
+use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+pub const PROBATION: Duration = Duration::from_secs(120);
+
+pub fn state_file(paths: &Paths) -> PathBuf {
+    paths.state.join("versions.json")
+}
+
+pub fn fail_file(paths: &Paths) -> PathBuf {
+    paths.state.join("probation-fail")
+}
+
+pub fn read_state(paths: &Paths) -> Value {
+    std::fs::read_to_string(state_file(paths))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| json!({}))
+}
+
+fn write_state(paths: &Paths, v: &Value) {
+    let tmp = paths.state.join("versions.json.tmp");
+    if std::fs::write(&tmp, v.to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, state_file(paths));
+    }
+}
+
+/// True while a switch is on probation (a hub then reports its
+/// failures in `probation-fail`).
+pub fn on_probation(paths: &Paths) -> bool {
+    read_state(paths)
+        .get("probation_until")
+        .and_then(|x| x.as_u64())
+        .is_some_and(|t| t > now_ms())
+}
+
+/// A hub on probation reports a failure (the switcher rolls back).
+pub fn report_failure(paths: &Paths, reason: &str) {
+    if on_probation(paths) && !fail_file(paths).exists() {
+        let _ = std::fs::write(fail_file(paths), reason);
+    }
+}
+
+/// The version an app root is (its `VERSION` file), as `key=value`.
+pub fn version_info(root: &Path) -> Value {
+    let mut m = serde_json::Map::new();
+    m.insert("dir".into(), json!(root.to_string_lossy()));
+    if let Ok(t) = std::fs::read_to_string(root.join("VERSION")) {
+        for l in t.lines() {
+            if let Some((k, v)) = l.split_once('=') {
+                m.insert(k.to_string(), json!(v));
+            }
+        }
+    }
+    Value::Object(m)
+}
+
+fn log(paths: &Paths, s: &str) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(paths.log())
+    {
+        let _ = writeln!(f, "{} switch: {}", now_ms(), s);
+    }
+}
+
+fn hub_pid(paths: &Paths) -> Option<u32> {
+    std::fs::read_to_string(paths.pid_file())
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+}
+
+fn alive(pid: u32) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn ping(paths: &Paths) -> bool {
+    client::request(
+        &paths.socket(),
+        &json!({"op": "ping"}),
+        Duration::from_secs(3),
+    )
+    .is_ok()
+}
+
+/// A line in main's thread (and every client), through the hub.
+pub fn notice(paths: &Paths, kind: &str, text: &str) {
+    if let Ok(mut s) = UnixStream::connect(paths.socket()) {
+        let v = json!({"op": "notice", "kind": kind, "text": text});
+        let _ = s.write_all(format!("{}\n", v).as_bytes());
+    }
+}
+
+/// The app root the running hub was started from (its executable's dir).
+pub fn running_root(paths: &Paths) -> Option<PathBuf> {
+    let pid = hub_pid(paths)?;
+    // the hub writes its app root at start (`ps` may truncate the path)
+    if alive(pid) {
+        if let Ok(r) = std::fs::read_to_string(paths.state.join("hub.root")) {
+            let r = PathBuf::from(r.trim());
+            if r.join("repl-live").exists() {
+                return Some(r);
+            }
+        }
+    }
+    let out = std::process::Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .ok()?;
+    let exe = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let root = Path::new(&exe).parent()?.to_path_buf();
+    if !root.is_absolute() {
+        return None;
+    }
+    // the dev tree runs rust/target/debug/bend-harness from the repo
+    if root.join("repl-live").exists() {
+        Some(root)
+    } else {
+        root.ancestors()
+            .skip(1)
+            .take(3)
+            .find(|d| d.join("repl-live").exists())
+            .map(|d| d.to_path_buf())
+    }
+}
+
+/// `root/bend-harness sbd`, detached (its own process group), like
+/// `client::start_hub`; the child handle tells a hub that died at once.
+fn start_hub(paths: &Paths, root: &Path) -> std::io::Result<std::process::Child> {
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command, Stdio};
+    let err = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(paths.state.join("hub.err"))?;
+    // a version dir has bend-harness at its root; the dev tree in rust/target
+    let exe = [
+        root.join("bend-harness"),
+        root.join("rust/target/debug/bend-harness"),
+    ]
+    .into_iter()
+    .find(|p| p.exists())
+    .unwrap_or_else(|| root.join("bend-harness"));
+    Command::new(exe)
+        .arg("sbd")
+        .arg("--workspace")
+        .arg(&paths.workspace)
+        .current_dir(root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::from(err))
+        .process_group(0)
+        .spawn()
+}
+
+/// Stop the hub, agents kept; then start the hub of `root`. Err: why
+/// the new hub is not up.
+fn replace_hub(paths: &Paths, root: &Path) -> Result<(), String> {
+    let old = hub_pid(paths);
+    let _ = client::stop(paths, true);
+    if let Some(p) = old {
+        let t0 = Instant::now();
+        while alive(p) && t0.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        if alive(p) {
+            // not answering: it cannot stop cleanly; its REPLs survive it
+            let _ = std::process::Command::new("kill")
+                .args(["-9", &p.to_string()])
+                .status();
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    }
+    let _ = std::fs::remove_file(paths.socket());
+    let mut child = start_hub(paths, root).map_err(|e| e.to_string())?;
+    let t0 = Instant::now();
+    while t0.elapsed() < Duration::from_secs(20) {
+        if ping(paths) {
+            return Ok(());
+        }
+        if let Ok(Some(_)) = child.try_wait() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = child.kill();
+    let err = std::fs::read_to_string(paths.state.join("hub.err")).unwrap_or_default();
+    let tail = err
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .trim();
+    Err(format!(
+        "the hub did not start{}",
+        if tail.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", crate::util::clip(tail, 200))
+        }
+    ))
+}
+
+fn id_of(root: &Path) -> String {
+    version_info(root)
+        .get("id")
+        .and_then(|x| x.as_str())
+        .map(String::from)
+        .unwrap_or_else(|| root.to_string_lossy().to_string())
+}
+
+/// Watch the new hub for the probation period. Err: the reason to roll back.
+fn probation(paths: &Paths, period: Duration) -> Result<(), String> {
+    let t0 = Instant::now();
+    let mut misses = 0;
+    while t0.elapsed() < period {
+        std::thread::sleep(Duration::from_secs(1));
+        if let Ok(r) = std::fs::read_to_string(fail_file(paths)) {
+            return Err(r);
+        }
+        match hub_pid(paths) {
+            Some(p) if alive(p) => {}
+            _ => return Err("the hub stopped (crash)".into()),
+        }
+        if ping(paths) {
+            misses = 0;
+        } else {
+            misses += 1;
+            if misses >= 4 {
+                return Err("the hub no longer answers".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A switcher is running (a switch on probation).
+pub fn switch_running(paths: &Paths) -> bool {
+    std::fs::read_to_string(paths.state.join("switch.pid"))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .is_some_and(alive)
+}
+
+/// Roll back the switch on probation now (the user asked).
+pub fn abort_probation(paths: &Paths) {
+    let _ = std::fs::write(fail_file(paths), "rollback requested");
+}
+
+/// `sbswitch --to <version dir> [--probation <s>]`: the whole switch.
+/// Copy the hub state (journal, sessions, transcripts) aside before a
+/// switch or a restart: `/tmp/sb-backup-<state dir name>-<ms>`.
+fn backup(paths: &Paths) -> Option<PathBuf> {
+    let name = paths.state.file_name()?.to_string_lossy().to_string();
+    let dest = PathBuf::from(format!("/tmp/sb-backup-{}-{}", name, now_ms()));
+    let ok = std::process::Command::new("rsync")
+        .args(["-a", "--exclude", "hub.sock"])
+        .arg(format!("{}/", paths.state.display()))
+        .arg(format!("{}/", dest.display()))
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    ok.then_some(dest)
+}
+
+/// `restart`: `to` may be the running version (a plain restart of the
+/// hub, e.g. a stuck one); the agents are kept the same way.
+pub fn run(paths: &Paths, to: &Path, period: Duration, restart: bool) -> i32 {
+    let lock = paths.state.join("switch.pid");
+    if let Some(p) = std::fs::read_to_string(&lock)
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+    {
+        if alive(p) && p != std::process::id() {
+            notice(paths, "warn", "a version switch is already in progress");
+            return 1;
+        }
+    }
+    let _ = std::fs::write(&lock, std::process::id().to_string());
+    let code = run_locked(paths, to, period, restart);
+    let _ = std::fs::remove_file(&lock);
+    code
+}
+
+fn run_locked(paths: &Paths, to: &Path, period: Duration, restart: bool) -> i32 {
+    let to = to.canonicalize().unwrap_or_else(|_| to.to_path_buf());
+    if !to.join("repl-live").exists() {
+        notice(
+            paths,
+            "warn",
+            &format!("version not found: {}", to.display()),
+        );
+        return 1;
+    }
+    let mut st = read_state(paths);
+    let from = running_root(paths).or_else(|| {
+        st.get("current")
+            .and_then(|x| x.as_str())
+            .map(PathBuf::from)
+    });
+    let Some(from) = from.map(|p| p.canonicalize().unwrap_or(p)) else {
+        notice(
+            paths,
+            "warn",
+            "current version unknown: no rollback possible, switch cancelled",
+        );
+        return 1;
+    };
+    if from == to && !restart {
+        notice(
+            paths,
+            "info",
+            &format!("already on version {}", id_of(&to)),
+        );
+        return 0;
+    }
+    let (from_id, to_id) = (id_of(&from), id_of(&to));
+    log(paths, &format!("{} -> {}", from.display(), to.display()));
+    let saved = backup(paths)
+        .map(|d| format!(" · state backed up: {}", d.display()))
+        .unwrap_or_default();
+    let what = if from == to {
+        format!("restarting the hub on version {}", to_id)
+    } else if restart {
+        format!("restarting the hub on version {} (from {})", to_id, from_id)
+    } else {
+        format!("switching to version {} (from {})", to_id, from_id)
+    };
+    notice(
+        paths,
+        "info",
+        &format!("{} — the agents keep running{}", what, saved),
+    );
+    let _ = std::fs::remove_file(fail_file(paths));
+    if from != to {
+        st["previous"] = json!(from.to_string_lossy());
+    }
+    st["current"] = json!(to.to_string_lossy());
+    if st.get("good").is_none() {
+        st["good"] = json!(from.to_string_lossy());
+    }
+    st["probation_until"] = json!(now_ms() + period.as_millis() as u64);
+    write_state(paths, &st);
+
+    let outcome = replace_hub(paths, &to).and_then(|_| probation(paths, period));
+    let mut st = read_state(paths);
+    st["probation_until"] = json!(0);
+    match outcome {
+        Ok(()) => {
+            st["good"] = json!(to.to_string_lossy());
+            write_state(paths, &st);
+            log(paths, &format!("{} good", to_id));
+            notice(
+                paths,
+                "info",
+                &if from == to {
+                    format!("hub restarted on version {} (probation passed)", to_id)
+                } else {
+                    format!("version {} validated (probation passed)", to_id)
+                },
+            );
+            0
+        }
+        Err(reason) => {
+            log(
+                paths,
+                &format!("{} failed: {} — rollback to {}", to_id, reason, from_id),
+            );
+            // a restart on the same version goes back to the last good
+            // one when there is another, else it tries that version again
+            let from = if from == to {
+                st.get("good")
+                    .and_then(|x| x.as_str())
+                    .map(PathBuf::from)
+                    .filter(|g| g.canonicalize().map(|c| c != to).unwrap_or(false))
+                    .unwrap_or_else(|| from.clone())
+            } else {
+                from
+            };
+            let from_id = id_of(&from);
+            st["current"] = json!(from.to_string_lossy());
+            if from != to {
+                st["previous"] = json!(to.to_string_lossy());
+            }
+            st["failed"] =
+                json!({"version": to.to_string_lossy(), "reason": reason, "at": now_ms()});
+            write_state(paths, &st);
+            let _ = std::fs::remove_file(fail_file(paths));
+            let back = replace_hub(paths, &from);
+            let text = format!(
+                "version {} failed ({}) — rollback to version {}{}",
+                to_id,
+                reason,
+                from_id,
+                match &back {
+                    Ok(()) => String::new(),
+                    Err(e) => format!(": ROLLBACK FAILED, {}", e),
+                }
+            );
+            notice(paths, "warn", &text);
+            // the hub may still be booting: the notice is also left for it
+            let _ = std::fs::write(paths.state.join("switch-notice"), &text);
+            2
+        }
+    }
+}

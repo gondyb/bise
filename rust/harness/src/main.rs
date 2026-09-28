@@ -142,17 +142,17 @@ fn resolve_session(sessions_dir: &str, id: &str) -> Result<String, String> {
     match hits.len() {
         0 => Err(format!("session {} introuvable", id)),
         1 => Ok(format!("{}/{}.txt", sessions_dir, hits[0])),
-        _ => Err(format!("préfixe {} ambigu ({} sessions)", id, hits.len())),
+        _ => Err(format!("ambiguous prefix {} ({} sessions)", id, hits.len())),
     }
 }
 
 fn list_sessions(sessions_dir: &str) {
     let ids = session_ids(sessions_dir);
     if ids.is_empty() {
-        eprintln!("aucune session sauvegardée");
+        eprintln!("no saved session");
         return;
     }
-    eprintln!("sessions disponibles (les plus récentes d'abord) :");
+    eprintln!("available sessions (most recent first):");
     for id in ids.iter().take(15) {
         eprintln!("  {}", id);
     }
@@ -184,7 +184,156 @@ fn load_env_files() {
     }
 }
 
+// ---- switchboard (projects/switchboard): one main agent, task agents ----
+
+/// The app root: the directory holding the Bend REPL binaries (the dev
+/// tree's repo root, or the bundle next to the executable).
+fn app_root(repl_name: &str) -> Option<std::path::PathBuf> {
+    let cwd = std::env::current_dir().ok();
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    candidates.extend(cwd);
+    if let Some(d) = exe_dir {
+        // the bundle, then the dev tree (rust/target/debug -> repo root)
+        candidates.push(d.clone());
+        candidates.extend(d.ancestors().skip(1).take(3).map(|p| p.to_path_buf()));
+    }
+    candidates.into_iter().find(|d| d.join(repl_name).exists())
+}
+
+/// The workspace a switchboard command is about: --workspace, else the
+/// directory the user launched from (run.sh exports it before its cd).
+fn sb_workspace(args: &[String]) -> std::path::PathBuf {
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--workspace" && i + 1 < args.len() {
+            return std::path::PathBuf::from(&args[i + 1]);
+        }
+        i += 1;
+    }
+    std::env::var("SB_LAUNCH_DIR")
+        .ok()
+        .filter(|d| !d.is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+}
+
+fn run_sbd(args: &[String]) -> std::io::Result<()> {
+    let paths = switchboard::paths::Paths::for_workspace(&sb_workspace(args));
+    let Some(root) = app_root("repl-live") else {
+        eprintln!("repl-live not found (compile it with `bend runtime/repl-live.bend -o repl-live`)");
+        std::process::exit(1);
+    };
+    // the hub's decisions (sb-core) come from the same app root as the
+    // REPLs: a version runs its own sb-core, not the dev tree's
+    if std::env::var_os("SB_CORE_BIN").is_none() && root.join("sb-core").exists() {
+        std::env::set_var("SB_CORE_BIN", root.join("sb-core"));
+    }
+    // the agents' REPLs load their MCP index like a normal session
+    if std::env::var_os("BEND_MCP_INDEX").is_none() {
+        if let Ok(h) = std::env::var("HOME") {
+            std::env::set_var("BEND_MCP_INDEX", format!("{}/.bend-harness/mcp-index.txt", h));
+        }
+    }
+    switchboard::daemon::run(switchboard::daemon::Opts {
+        paths,
+        repl_bin: root.join("repl-live"),
+        app_root: root,
+        exe: std::env::current_exe()?,
+    })
+}
+
+fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
+    let paths = switchboard::paths::Paths::for_workspace(&sb_workspace(args));
+    if args.iter().any(|a| a == "--stop") {
+        let keep = args.iter().any(|a| a == "--keep-agents");
+        match switchboard::client::stop(&paths, keep)? {
+            true => eprintln!("hub stopped ({})", paths.workspace.display()),
+            false => eprintln!("no hub for {}", paths.workspace.display()),
+        }
+        return Ok(());
+    }
+    let Some(root) = app_root("repl-live") else {
+        eprintln!("repl-live introuvable");
+        std::process::exit(1);
+    };
+    let exe = std::env::current_exe()?;
+    let stream = switchboard::client::connect(&paths, &exe, &root)?;
+    bend_tui::run_switchboard(
+        stream,
+        paths.socket(),
+        paths.workspace.to_string_lossy().to_string(),
+        debug,
+    )?;
+    // the hub switched to another version: this TUI becomes that
+    // version's TUI (the terminal is restored; the new one reconnects)
+    if let Some(next) = bend_tui::take_reexec() {
+        use std::os::unix::process::CommandExt;
+        let root = std::path::Path::new(&next)
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or(root);
+        let mut cmd = Command::new(&next);
+        cmd.arg("switchboard")
+            .arg("--workspace")
+            .arg(&paths.workspace)
+            .current_dir(&root);
+        if debug {
+            cmd.arg("--debug");
+        }
+        let err = cmd.exec();
+        eprintln!("TUI version switch: {}", err);
+    }
+    Ok(())
+}
+
 fn main() -> std::io::Result<()> {
+    {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        match args.first().map(|s| s.as_str()) {
+            Some("sb") => std::process::exit(switchboard::cli::main(&args[1..])),
+            Some("sbd") => {
+                load_env_files();
+                return run_sbd(&args[1..]);
+            }
+            Some("sbswitch") => {
+                // the version switcher: detached, from the old version's binary
+                let rest = &args[1..];
+                let paths = switchboard::paths::Paths::for_workspace(&sb_workspace(rest));
+                let val = |k: &str| {
+                    rest.iter()
+                        .position(|a| a == k)
+                        .and_then(|i| rest.get(i + 1))
+                        .cloned()
+                };
+                let Some(to) = val("--to") else {
+                    eprintln!("sbswitch --to <version folder> [--probation <s>]");
+                    std::process::exit(2);
+                };
+                let period = val("--probation")
+                    .and_then(|s| s.parse().ok())
+                    .map(std::time::Duration::from_secs)
+                    .unwrap_or(switchboard::switch::PROBATION);
+                let restart = rest.iter().any(|a| a == "--restart");
+                std::process::exit(switchboard::switch::run(
+                    &paths,
+                    std::path::Path::new(&to),
+                    period,
+                    restart,
+                ));
+            }
+            // the key/mouse events this terminal delivers (macOS shortcuts)
+            Some("keyprobe") => return bend_tui::keyprobe(),
+            Some("switchboard") => {
+                let debug = args.iter().any(|a| a == "--debug");
+                return run_switchboard(&args[1..], debug);
+            }
+            _ => {}
+        }
+    }
     load_env_files();
     let mut scripted = false;
     let mut headless = false;
@@ -220,7 +369,7 @@ fn main() -> std::io::Result<()> {
         i += 1;
     }
     if resume && resume_id.is_some() {
-        eprintln!("utilise --continue OU --resume <id>, pas les deux");
+        eprintln!("use --continue OR --resume <id>, not both");
         std::process::exit(1);
     }
 
@@ -259,7 +408,7 @@ fn main() -> std::io::Result<()> {
         .filter(|p| p.exists())
         .unwrap_or_else(|| {
             eprintln!(
-                "REPL Bend introuvable : {} (compile avec `bend runtime/{} -o {}`)",
+                "Bend REPL not found: {} (compile it with `bend runtime/{} -o {}`)",
                 repl_name,
                 if scripted { "repl.bend" } else { "repl-live.bend" },
                 repl_name
@@ -307,10 +456,10 @@ fn main() -> std::io::Result<()> {
     } else if resume {
         latest_session(&sessions_dir).unwrap_or_else(|| {
             if std::path::Path::new(&legacy_file).exists() {
-                eprintln!("--continue : aucune session nommée, reprise du checkpoint historique");
+                eprintln!("--continue: no named session, resuming the legacy checkpoint");
                 legacy_file.clone()
             } else {
-                eprintln!("--continue : aucune session à reprendre, nouvelle session");
+                eprintln!("--continue: no session to resume, new session");
                 new_session_path(&sessions_dir)
             }
         })
@@ -444,7 +593,7 @@ fn main() -> std::io::Result<()> {
                 }
             }
             if start.elapsed() > Duration::from_secs(15) {
-                eprintln!("le REPL Bend n'a pas démarré sur le port {}", repl_port);
+                eprintln!("the Bend REPL did not start on port {}", repl_port);
                 let exited = child.try_wait().ok().flatten().map(|s| s.to_string());
                 let snap = dbg.crash_snapshot(&err_path, err_start, &log_path, &session_file);
                 dbg.event(
@@ -467,7 +616,7 @@ fn main() -> std::io::Result<()> {
         let info = match bend_tui::HarnessInfo::from_log(&log) {
             Some(i) => i,
             None => {
-                eprintln!("le REPL Bend n'a pas annoncé sa configuration (harness-info)");
+                eprintln!("the Bend REPL did not announce its configuration (harness-info)");
                 let _ = child.kill();
                 std::process::exit(1);
             }
@@ -537,17 +686,17 @@ fn main() -> std::io::Result<()> {
                 reloads += 1;
                 dbg.event("repl_reload", &[("generation", generation.to_string())]);
                 if reloads > 10 {
-                    eprintln!("reload : trop de redémarrages d'affilée, arrêt.");
+                    eprintln!("reload: too many restarts in a row, stopping.");
                     return Ok(());
                 }
                 eprintln!(
-                    "reload : recompilation de la dernière version de {} (1-2 min)...",
+                    "reload: recompiling the latest version of {} (1-2 min)...",
                     repl_name
                 );
                 if !recompile(repl_name, &repl_bin) {
                     dbg.event("reload_recompile_failed", &[]);
                     eprintln!(
-                        "reload : la recompilation a échoué — on garde le binaire précédent (session intacte)."
+                        "reload: the recompilation failed — keeping the previous binary (session intact)."
                     );
                 }
                 // the respawn restores the checkpointed session
@@ -577,7 +726,7 @@ fn main() -> std::io::Result<()> {
                 if crashes > MAX_CRASH_RESTARTS {
                     dbg.event("crash_loop_stop", &[("crashes", crashes.to_string())]);
                     eprintln!(
-                        "le REPL Bend a planté {} fois d'affilée ({}) — arrêt. Détails : {}",
+                        "the Bend REPL crashed {} times in a row ({}) — stopping. Details: {}",
                         MAX_CRASH_RESTARTS,
                         why,
                         err_path.display()
@@ -585,7 +734,7 @@ fn main() -> std::io::Result<()> {
                     return result;
                 }
                 eprintln!(
-                    "le REPL Bend a planté ({}) — redémarrage sur la session sauvegardée ({}/{})...",
+                    "the Bend REPL crashed ({}) — restarting on the saved session ({}/{})...",
                     why, crashes, MAX_CRASH_RESTARTS
                 );
                 std::env::set_var("BEND_CONTINUE", "1");
@@ -646,7 +795,7 @@ fn recompile(repl_name: &str, repl_bin: &std::path::Path) -> bool {
         .map(|d| d.join(source))
         .filter(|p| p.exists())
     else {
-        eprintln!("reload : source {} introuvable, on garde le binaire.", source);
+        eprintln!("reload: source {} not found, keeping the binary.", source);
         return false;
     };
     let home_bend = format!("{}/.bend/bin/bend", std::env::var("HOME").unwrap_or_default());

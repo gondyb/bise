@@ -343,3 +343,79 @@ def reply_any.pick(is_json: Bool, +body: String) -> String:
 
 def reply_any(+body: String) -> String:
   reply_any.pick(String.starts_with(String.trim(body), "{"), body)
+
+# ---- the token usage (runtime/usage-pure.bend reads it) ----
+# A whole reply carries "usage"; a streamed one splits it: message_start
+# has the input side (message.usage, output_tokens still ~1), every
+# message_delta the running usage (output_tokens final in the last
+# one). The usage a whole reply would carry: the last delta's fields in
+# front of the start's (J.get finds the first key). No message_start:
+# no usage (null).
+
+type Use is Data:
+  Use{start: J.Json, delta: J.Json}
+
+def use.delta(hit: Bool, +e: J.Json, +u: Use) -> Use:
+  match hit:
+    case True{}:
+      match u:
+        case Use{+s, _}:
+          Use{s, Api.field_or(e, "usage", J.JNull{})}
+    case False{}:
+      u
+
+def use.start(hit: Bool, +t: String, +e: J.Json, +u: Use) -> Use:
+  match hit:
+    case True{}:
+      match u:
+        case Use{_, +d}:
+          Use{Api.field_or(Api.field_or(e, "message", J.JNull{}), "usage",
+            J.JNull{}), d}
+    case False{}:
+      use.delta(String.eq(t, "message_delta"), e, u)
+
+def use.event(r: Result<&2, &2, String, J.Json>, +u: Use) -> Use:
+  match r:
+    case Done{+e}:
+      use.start(String.eq(str_of(e, "type"), "message_start"),
+        str_of(e, "type"), e, u)
+    case Fail{_}:
+      u
+
+def use.line(is_data: Bool, +l: String, +u: Use) -> Use:
+  match is_data:
+    case True{}:
+      use.event(J.parse(String.trim(String.drop(l, 5n))), u)
+    case False{}:
+      u
+
+def use.fold(lines: List<&2, String>, +u: Use) -> Use:
+  match lines:
+    case Nil{}:
+      u
+    case Con{+l, rest}:
+      use.fold(rest, use.line(String.starts_with(l, "data:"), l, u))
+
+def use.kvs(+j: J.Json) -> List<&2, Sigma<&2, &2, String, _ => J.Json>>:
+  match j:
+    case J.JObj{+kvs}:
+      kvs
+    case _:
+      Nil{}
+
+def use.merged(+s: J.Json, +d: J.Json) -> J.Json:
+  match s:
+    case J.JObj{+kvs}:
+      J.obj(List.append(&2, Sigma<&2, &2, String, _ => J.Json>, use.kvs(d),
+        kvs))
+    case _:
+      J.JNull{}
+
+def use.json(+u: Use) -> J.Json:
+  match u:
+    case Use{+s, +d}:
+      use.merged(s, d)
+
+def usage(+sse: String) -> J.Json:
+  use.json(use.fold(String.split(sse, Tx.newline()),
+    Use{J.JNull{}, J.JNull{}}))

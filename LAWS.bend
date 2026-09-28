@@ -26,6 +26,11 @@ import ./runtime/skills-pure.bend as Sk
 import ./runtime/repl-core-pure.bend as Rp
 import ./vendor/json.bend as J
 import ./runtime/debug-pure.bend as Dg
+import ./runtime/usage-pure.bend as Us
+import ./hub/model.bend as HM
+import ./hub/cx.bend as HX
+import ./hub/core.bend as HC
+import ./hub/inv.bend as HI
 
 # LAW: a checkpoint restores to exactly the session it exported.
 law checkpoint_roundtrip:
@@ -1581,13 +1586,15 @@ law retryable_err_table:
 # LAW: a transient network failure classifies as a retry with the
 # failure text carried for the final error if retries run out.
 law attempt_timeout_retries:
-  {Pv.attempt_err(Pv.NTimeout{})
-    == Pv.ARetry{0, "timeout"} : Pv.Attempt}
+  {Pv.attempt_err("api.example.com", Pv.NTimeout{})
+    == Pv.ARetry{0, "no answer from api.example.com (timeout)"}
+    : Pv.Attempt}
 
 # LAW: a TLS failure classifies as final — no retry.
 law attempt_tls_fails:
-  {Pv.attempt_err(Pv.NTls{1, "handshake"})
-    == Pv.AFail{"provider unreachable: tls 1 handshake"} : Pv.Attempt}
+  {Pv.attempt_err("api.example.com", Pv.NTls{1, "handshake"})
+    == Pv.AFail{"TLS handshake with api.example.com failed (tls 1 handshake) — check your network or VPN"}
+    : Pv.Attempt}
 
 # LAW: the other transient statuses retry too - 529 (Anthropic
 # overloaded), 408, 425 - while auth and validation errors do not.
@@ -1650,11 +1657,58 @@ law provider_ok_passes_through:
   {Pv.attempt_status(200, "", "OK hi\nEND\n")
     == Pv.AOk{"OK hi\nEND\n"} : Pv.Attempt}
 
-# LAW: a client error is final: the style mapper already made it the
-# ERROR reply the turn fails on - retrying it only wastes the user's time.
+# LAW: a client error is final: the turn fails on the status and the
+# body the style mapper kept - retrying it only wastes the user's time.
 law provider_client_error_is_final:
   {Pv.attempt_status(400, "", "ERROR provider 400: bad\nEND\n")
-    == Pv.AOk{"ERROR provider 400: bad\nEND\n"} : Pv.Attempt}
+    == Pv.AFail{"provider 400: bad"} : Pv.Attempt}
+
+# LAW: an auth error says what to check.
+law provider_auth_error_hint:
+  {Pv.attempt_status(401, "", "ERROR provider 401: bad key\nEND\n")
+    == Pv.AFail{"provider 401: bad key — check the API key"} : Pv.Attempt}
+
+# LAW (BR-007): a refused connection names the host and the fix; it
+# retries (a VPN coming back ends the outage).
+law attempt_connect_names_host:
+  {Pv.attempt_err(Pv.url_host("https://foundry.example.net/anthropic/v1/messages"),
+      Pv.NConnect{61, "Connection refused"})
+    == Pv.ARetry{0, "cannot reach foundry.example.net (connect 61 Connection refused) — check your network or VPN"}
+    : Pv.Attempt}
+
+# LAW (BR-007): the cleared interrupt flag is an EMPTY file - it is not
+# an interrupt; neither is a missing file. Only content is.
+law interrupt_flag_needs_content:
+  {Bool.and(Bool.not(Pv.interrupt_flag(None{})),
+      Bool.and(Bool.not(Pv.interrupt_flag(Some{""})),
+        Bool.and(Bool.not(Pv.interrupt_flag(Some{"\n"})),
+          Pv.interrupt_flag(Some{"1"}))))
+    == True{} : Bool}
+
+# LAW (BR-007): an interrupted retry loop keeps the error that made it
+# retry - for every error text.
+law interrupted_keeps_last_error:
+  for +n: Nat
+  for +why: String
+  exs head: String
+  {Pv.interrupted_text(n, why) == String.append(head, why) : String}
+
+# LAW: retries exhausted: the final error ends with the last cause.
+law exhausted_keeps_last_error:
+  for +n: Nat
+  for +why: String
+  exs head: String
+  {Pv.exhausted_text(n, why) == String.append(head, why) : String}
+
+# LAW: a pause is slept in 1 s slices, the flag read before each one; an
+# interrupt empties what is left.
+law retry_wait_slices:
+  {Bool.and(Nat.is_eq(Pv.wait_slices(8000), 9n),
+      Bool.and(U32.is_eq(Pv.slice_ms(False{}, 2500), 1000),
+        Bool.and(U32.is_eq(Pv.left_after(False{}, 2500), 1500),
+          Bool.and(U32.is_eq(Pv.slice_ms(True{}, 2500), 0),
+            U32.is_eq(Pv.left_after(True{}, 2500), 0)))))
+    == True{} : Bool}
 
 # LAW: every retry shows the user where the call stands.
 law provider_retry_line:
@@ -2300,6 +2354,25 @@ law anth_sse_error_event:
   {As.reply("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-5-5\",\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"stop_reason\":null}}\n\nevent: ping\ndata: {\"type\":\"ping\"}\n\nevent: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n")
     == "ERROR provider 200: Overloaded\nEND\n" : String}
 
+# LAW: a streamed reply prints the usage a whole reply would: the input
+# side from message_start, output_tokens from the last message_delta.
+law anth_sse_usage_line:
+  {Us.usage_line(Api.Anthropic{}, "m", 200, "event: message_start
+data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"content\":[],\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":2,\"cache_read_input_tokens\":30,\"output_tokens\":1}}}
+
+event: message_delta
+data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":72}}
+
+")
+    == "  obs: usage: model=m in=42 out=72 cache_read=30 cache_write=2" : String}
+
+# LAW: a stream with no message_start (an error event) prints no usage.
+law anth_sse_no_usage:
+  {Us.usage_line(Api.Anthropic{}, "m", 200, "event: error
+data: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}
+
+") == "" : String}
+
 # LAW: a streamed refusal surfaces like a whole one.
 law anth_sse_refusal:
   {As.reply("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-5-5\",\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"stop_reason\":null}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"refusal\",\"stop_details\":{\"type\":\"refusal\",\"explanation\":\"blocked\"}}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
@@ -2375,3 +2448,181 @@ law debug_stamp:
   {Bool.and(Nat.is_eq(Dg.stamp(Some{"1000\n"}, 5n), 1005n),
       Nat.is_eq(Dg.stamp(None{}, 5n), 5n))
     == True{} : Bool}
+
+# ---- switchboard hooks (BEND_WORKDIR, BEND_CONTEXT_FILE, BEND_EXTRA_PROMPT) ----
+
+# LAW: without BEND_WORKDIR the command is unchanged.
+law workdir_empty_keeps_command:
+  {Sh.with_workdir("", "ls -la") == "ls -la" : String}
+
+# LAW: with BEND_WORKDIR the command first enters the (quoted) directory,
+# and fails instead of running elsewhere when it cannot.
+law workdir_cds_first:
+  {Sh.with_workdir("/tmp/a b", "ls") == "cd '/tmp/a b' || exit 1\nls" : String}
+
+# LAW: an empty context changes nothing.
+law context_empty_keeps_request:
+  {Rm.with_context("", "MODEL default\nTOOL bash : run\n\nMSG user : hi\n\nEND\n")
+    == "MODEL default\nTOOL bash : run\n\nMSG user : hi\n\nEND\n" : String}
+
+# LAW: a context becomes the LAST user message of an agent request,
+# newlines escaped like every wire message.
+law context_is_last_user_message:
+  {Rm.with_context("board\nline 2", "MODEL default\nTOOL bash : run\n\nMSG user : hi\n\nEND\n")
+    == "MODEL default\nTOOL bash : run\n\nMSG user : hi\n\nMSG user : board\\nline 2\nEND\n" : String}
+
+# LAW: a compaction request (no tool catalog) never carries the context.
+law context_skips_compaction:
+  {Rm.with_context("board", "MODEL default\nMSG user : hi\n\nEND\n")
+    == "MODEL default\nMSG user : hi\n\nEND\n" : String}
+
+# LAW: the extra prompt ends the system prompt; an empty one adds nothing.
+law extra_prompt_appends:
+  {Rp.prompt_extra("base", "role") == "base\n\nrole" : String}
+
+law extra_prompt_empty_keeps:
+  {Rp.prompt_extra("base", "  ") == "base" : String}
+
+# LAW: a drained steering line carries escaped newlines back as real ones.
+law steer_line_unescapes:
+  {Rt.steer_cmd("a\\nb") == T.UserMsg{T.Steer{}, "a\nb"} : T.Cmd}
+
+# ---- Switchboard hub (hub/*.bend, the sb-core process) ----
+# The laws quantify over EVERY hub state, EVERY input (any JSON line the
+# daemon may send) and EVERY sequence of inputs: no test could enumerate
+# them. HC.step is the decision of one input, HC.commit what sb-core keeps
+# of it, HC.run its loop over a list of inputs.
+
+# LAW: after any input, the hub's state is exactly the replay of the
+# journal events it emitted over the state before (the journal is a
+# faithful log: a restart that replays it rebuilds the same state).
+law hub_step_replays:
+  for +h: HC.Hub
+  for +i: J.Json
+  {HX.Core.d(HC.Hub.d(h), HX.Cx.c(HC.Hub.d(h), HC.step(h, i)))
+    == HM.apply_all(HX.journal(HX.Core.fx(HC.Hub.d(h), HX.Cx.c(HC.Hub.d(h), HC.step(h, i)))), HC.Hub.d(h)) : HM.St}
+
+# LAW: over any sequence of inputs (git answers still missing included),
+# the final state is the replay of the whole journal over the first one.
+law hub_run_replays:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  {HC.Hub.d(HC.RunR.hub(HC.run(ins, h))) == HM.apply_all(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h)) : HM.St}
+
+# LAW: every message the hub ever sends, over any sequence of inputs,
+# takes the next free id of the state it is sent in: no id is reused, so
+# no message overwrites (loses) another.
+law msg_ids_fresh:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  HX.Fresh(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h))
+
+# LAW: no message the hub ever sends is both an automatic reply and a
+# question (RFC 0003 §7): automatic replies can never start a chain.
+law auto_never_asks:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  HX.Quiet(HC.RunR.journal(HC.run(ins, h)))
+
+# LAW: after a tick, every wait still pending ends later than now: a wait
+# past its deadline always gets its timeout (with the 25 s cap of `sb
+# wait`, no set of agents waiting on each other blocks longer).
+law tick_clears_late_waiters:
+  for -o: HM.St
+  for +cx: HX.Cx<o>
+  HC.Later(HC.waiters_of_cx(o, HC.tick(o, cx)), HX.R.now(HX.Cx.r(o, cx)))
+
+# LAW: stopping or dropping a task leaves no wait of it behind (each got
+# its `stopped` error), whatever the state.
+law stop_leaves_no_waiter:
+  for -o: HM.St
+  for +cx: HX.Cx<o>
+  for +n: String
+  for +life: HM.Life
+  for +why: String
+  HC.NoneOf(HC.waiters_of_cx(o, HC.stop_task(o, cx, n, life, why)), n)
+
+# LAW (L2, no message lost or doubled): a new hub keeps each message as
+# ONE record — its text and its single delivery state; no state exists
+# without its message (the state is a field of the record).
+law init_unique:
+  for +w: String
+  HI.Unique(HM.init(w))
+
+# LAW (L2): from a state where each message is one record, any sequence
+# of inputs keeps it so: no two records ever share an id.
+law msgs_unique:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  for u: HI.Unique(HC.Hub.d(h))
+  HI.Unique(HC.Hub.d(HC.RunR.hub(HC.run(ins, h))))
+
+# LAW (L2): over any sequence of inputs, the messages of the first state
+# start, in order, the messages of the last: a message once sent is never
+# removed (its record, and so its state, stays).
+law msgs_kept:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  HI.Kept(HC.Hub.d(h), HC.Hub.d(HC.RunR.hub(HC.run(ins, h))))
+
+# LAW (L3, delivered at most once, RFC 0003 §6.1): over any sequence of
+# inputs, a message becomes Delivered only while it is Queued, and it goes
+# back to Queued only as an explicit steer_leftover (steering the runtime
+# never read). So a message is delivered once, and again only after an
+# explicit steer_leftover.
+law delivered_once:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  HX.Deliv(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h))
+
+# LAW (L12): stopping or dropping a task, in any state where each message
+# is one record (every state the hub reaches: msgs_unique), leaves no
+# message queued for it (each got recipient_unavailable).
+law stop_leaves_no_queue:
+  for -o: HM.St
+  for +cx: HX.Cx<o>
+  for +n: String
+  for +life: HM.Life
+  for +why: String
+  for u: HI.Unique(HX.d(o, cx))
+  {HM.queued_for(HX.d(o, HC.stop_task(o, cx, n, life, why)), n) == Nil{} : List<&2, HM.Msg>}
+
+# LAW (L12): stopping or dropping a task, in any state where no two open
+# cards share an id (every state the hub reaches: cards_unique), leaves no
+# open card of it.
+law stop_leaves_no_card:
+  for -o: HM.St
+  for +cx: HX.Cx<o>
+  for +n: String
+  for +life: HM.Life
+  for +why: String
+  for u: HI.UniqueCards(HX.d(o, cx))
+  {HC.card_ids(HM.St.cards(HX.d(o, HC.stop_task(o, cx, n, life, why))), n, Nil{}) == Nil{} : List<&2, Nat>}
+
+# LAW (L12 support): a new hub has no two open cards with one id...
+law init_cards_unique:
+  for +w: String
+  HI.UniqueCards(HM.init(w))
+
+# ...and any sequence of inputs keeps it so (each card takes the next
+# free id).
+law cards_unique:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  for u: HI.UniqueCards(HC.Hub.d(h))
+  HI.UniqueCards(HC.Hub.d(HC.RunR.hub(HC.run(ins, h))))
+
+# LAW (L4 support): a new hub keeps the agents' names apart...
+law init_names_apart:
+  for +w: String
+  HI.NamesApart(HM.init(w))
+
+# ...and any sequence of inputs keeps them apart: no name or old name of an
+# agent is ever a name or old name of another one (a message sent to an
+# agent can only be for it).
+law names_apart:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  for u: HI.NamesApart(HC.Hub.d(h))
+  HI.NamesApart(HC.Hub.d(HC.RunR.hub(HC.run(ins, h))))
+

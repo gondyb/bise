@@ -114,3 +114,18 @@ def cmd_lines.go(lines: List<&2, String>) -> List<&2, String>:
 
 def cmd_lines(+data: String) -> List<&2, String>:
   cmd_lines.go(String.split(data, Tx.newline()))
+
+# ---- BEND_EXTRA_PROMPT: a role appended to the system prompt ----
+# A switchboard hub gives each agent its role (main, or a task with its
+# brief rules) as a file; the live prompt ends with it. Empty: the
+# prompt is unchanged.
+def prompt_extra.pick(empty: Bool, +base: String, +extra: String)
+    -> String:
+  match empty:
+    case True{}:
+      base
+    case False{}:
+      String.append(base, String.append("\n\n", extra))
+
+def prompt_extra(+base: String, +extra: String) -> String:
+  prompt_extra.pick(String.is_empty(String.trim(extra)), base, extra)

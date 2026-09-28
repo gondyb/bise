@@ -187,10 +187,56 @@ def exec_patch.parse(acts: Maybe<&2, List<&2, Pa.PAction>>) -> IO(Xp.ExecRes):
         pv : PV <- exec_patch.val(actions, Nil{}, m)
         exec_patch.done(pv)
 
+# ---- BEND_WORKDIR: where a relative path lives ----
+# A switchboard agent's REPL runs from the app root (a version dir like
+# ~/.local/state/switchboard/versions/<sha>) but works in BEND_WORKDIR,
+# where the bash tool cds. A relative patch path resolves there too:
+# before, it resolved against the REPL's own directory, so an Add File
+# landed in the version dir and the file seemed to vanish from the
+# workspace (BR-008). Absolute path or no BEND_WORKDIR: unchanged.
+def resolve_path.pick(keep: Bool, +dir: String, +path: String) -> String:
+  match keep:
+    case True{}:
+      path
+    case False{}:
+      String.append(dir, String.append("/", path))
+
+def resolve_path(+dir: String, +path: String) -> String:
+  resolve_path.pick(
+    String.is_empty(dir) || String.starts_with(path, "/"), dir, path)
+
+def resolve_action(act: Pa.PAction, +dir: String) -> Pa.PAction:
+  match act:
+    case Pa.PAdd{+path, +content}:
+      Pa.PAdd{resolve_path(dir, path), content}
+    case Pa.PDelete{+path}:
+      Pa.PDelete{resolve_path(dir, path)}
+    case Pa.PUpdate{+path, +chunks}:
+      Pa.PUpdate{resolve_path(dir, path), chunks}
+
+def resolve_actions(acts: List<&2, Pa.PAction>, +dir: String)
+    -> List<&2, Pa.PAction>:
+  match acts:
+    case Nil{}:
+      Nil{}
+    case Con{+a, +rest}:
+      Con{resolve_action(a, dir), resolve_actions(rest, dir)}
+
+def resolve_parsed(m: Maybe<&2, List<&2, Pa.PAction>>, +dir: String)
+    -> Maybe<&2, List<&2, Pa.PAction>>:
+  match m:
+    case None{}:
+      None{}
+    case Some{+acts}:
+      Some{resolve_actions(acts, dir)}
+
 def exec_patch.live(+args: String) -> IO(Xp.ExecRes):
   do IO<Xp.ExecRes>:
+    wr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WORKDIR")
+    +dir : String <- IO.pure(String, P.env_or(wr, ""))
     acts : Maybe<&2, List<&2, Pa.PAction>> <- IO.pure(
-      Maybe<&2, List<&2, Pa.PAction>>, Pa.parse_patch(args))
+      Maybe<&2, List<&2, Pa.PAction>>,
+      resolve_parsed(Pa.parse_patch(args), dir))
     exec_patch.parse(acts)
 
 def exec_patch.scripted() -> Xp.ExecRes:

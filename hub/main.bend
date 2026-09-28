@@ -1,0 +1,226 @@
+# hub/main.bend — sb-core: the Switchboard hub's decisions as a process.
+#
+#   bend hub/main.bend -o sb-core && SB_CORE_PORT=7790 ./sb-core
+#
+# The Rust daemon connects over TCP (127.0.0.1) and writes one JSON input
+# per line; sb-core answers one JSON line per input:
+#   {"fx": [...], "dirty": bool}   the effects of the input (committed)
+#   {"need": {...}}                an env query (git): the daemon runs it and
+#                                  sends the same input again with the answer
+#                                  appended to "ans" (nothing was committed)
+# Special inputs: {"t":"init","workspace":..} resets the hub, {"t":"replay",
+# "ev":..} applies one journal event (boot), {"t":"ping"} answers {}.
+# The state lives across connections.
+import Base
+
+import ../vendor/json.bend as J
+
+import ./model.bend as M
+
+import ./codec.bend as C
+
+import ./cx.bend as X
+
+import ./core.bend as H
+
+import ./view.bend as V
+
+type Got is Type:
+  Got{s: Socket, h: H.Hub, buf: String}
+
+type Split is Data:
+  Split{line: String, rest: String}
+
+type Tag is Data:
+  TInit{}
+  TReplay{}
+  TPing{}
+  TView{}
+  TStep{}
+
+type Flow is Type:
+  Go{h: H.Hub}
+
+def fx_json(f: X.Fx) -> J.Json:
+  match f:
+    case X.FJ{+e}:
+      J.obj([J.kv("fx", J.JStr{"journal"}), J.kv("ev", C.ev_json(e))])
+    case X.FO{+o}:
+      o
+
+def fxs_json(xs: List<&2, X.Fx>) -> List<&2, J.Json>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+h, +t}:
+      fx_json(h) <> fxs_json(t)
+
+def done_or_need.go(-o: M.St, need: Maybe<&2, J.Json>, +c: X.Core<o>, +r: X.R, +h: H.Hub) -> H.Hub & String:
+  match need:
+    case Some{+q}:
+      (h, J.stringify(J.obj([J.kv("need", q)])))
+    case None{}:
+      +d = X.Core.d(o, c)
+      +fx = X.Core.fx(o, c)
+      (H.Hub{d, X.R.with_ans(r, Nil{})},
+        J.stringify(J.obj([J.kv("fx", J.JArr{fxs_json(fx)}), J.kv("dirty", J.JBool{X.R.dirty(r)}),
+          J.kv("view", V.view(d, X.R.rts(r), False{}, V.touched(X.journal(fx))))])))
+
+def answer.go(need: Maybe<&2, J.Json>, +h: H.Hub, +fx: List<&2, X.Fx>) -> H.Hub & String:
+  match need:
+    case Some{+q}:
+      (h, J.stringify(J.obj([J.kv("need", q)])))
+    case None{}:
+      (h, J.stringify(J.obj([J.kv("fx", J.JArr{fxs_json(fx)}), J.kv("dirty", J.JBool{X.R.dirty(H.Hub.r(h))}),
+        J.kv("view", V.view(H.Hub.d(h), X.R.rts(H.Hub.r(h)), False{}, V.touched(X.journal(fx))))])))
+
+# the answer line of a committed step (H.commit, the law run_replays)
+def answer(+o: H.Out) -> H.Hub & String:
+  answer.go(H.Out.need(o), H.Out.hub(o), H.Out.fx(o))
+
+def replay(+h: H.Hub, m: Maybe<&2, M.Ev>) -> H.Hub:
+  match m:
+    case None{}:
+      h
+    case Some{+e}:
+      H.Hub{M.apply(H.Hub.d(h), e), H.Hub.r(h)}
+
+def tag_of(+t: String) -> Tag:
+  Bool.pick(Tag, String.eq(t, "init"), TInit{},
+    Bool.pick(Tag, String.eq(t, "replay"), TReplay{},
+      Bool.pick(Tag, String.eq(t, "ping"), TPing{},
+        Bool.pick(Tag, String.eq(t, "view_all"), TView{}, TStep{}))))
+
+def handle.tag(tag: Tag, +h: H.Hub, +i: J.Json) -> H.Hub & String:
+  match tag:
+    case TInit{}:
+      (H.hub_new(J.get_str_or(i, "workspace", "")), "{}")
+    case TReplay{}:
+      (replay(h, C.ev_of(Maybe.default(&2, J.Json, J.get(i, "ev"), J.JNull{}))), "{}")
+    case TPing{}:
+      (h, "{}")
+    case TView{}:
+      (h, J.stringify(J.obj([J.kv("view", V.view(H.Hub.d(h), X.R.rts(H.Hub.r(h)), True{}, Nil{}))])))
+    case TStep{}:
+      answer(H.commit(h, i))
+
+def handle.parsed(r: Result<&2, &2, String, J.Json>, +h: H.Hub) -> H.Hub & String:
+  match r:
+    case Fail{+e}:
+      (h, J.stringify(J.obj([J.kv("error", J.JStr{String.append("json: ", e)})])))
+    case Done{+i}:
+      handle.tag(tag_of(J.get_str_or(i, "t", "")), h, i)
+
+# one input line
+def handle(+h: H.Hub, +line: String) -> H.Hub & String:
+  handle.parsed(J.parse(line), h)
+
+# ---- the line server ----
+
+def send_line.after(r: Socket & Result<&1, &1, U32 & String, Unit>) -> IO(Socket):
+  match r:
+    case (s, _):
+      IO.pure(Socket, s)
+
+def send_line(s: Socket, +text: String) -> IO(Socket):
+  do IO<Socket>:
+    r : Socket & Result<&1, &1, U32 & String, Unit> <- TCP.send(s, String.append(text, "\n"))
+    send_line.after(r)
+
+# split the buffer at the first newline: (line, rest), or None
+def split_line.go(s: String, +acc: String) -> Maybe<&2, Split>:
+  match s:
+    case SNil{}:
+      None{}
+    case SCon{+c, +t}:
+      Bool.pick(Maybe<&2, Split>, Char.is_eq(c, '\n'), Some{Split{String.reverse(acc), t}}, split_line.go(t, SCon{c, acc}))
+
+def split_line(+s: String) -> Maybe<&2, Split>:
+  split_line.go(s, "")
+
+@unsafe
+def lines(s: Socket, +h: H.Hub, +buf: String) -> IO(Got):
+  lines.split(split_line(buf), s, h, buf)
+
+@unsafe
+def lines.answer(p: H.Hub & String, s: Socket, +rest: String) -> IO(Got):
+  match p:
+    case (+h2, +out):
+      do IO<Got>:
+        s2 : Socket <- send_line(s, out)
+        lines(s2, h2, rest)
+
+@unsafe
+def lines.split(m: Maybe<&2, Split>, s: Socket, +h: H.Hub, +buf: String) -> IO(Got):
+  match m:
+    case None{}:
+      IO.pure(Got, Got{s, h, buf})
+    case Some{Split{+l, +rest}}:
+      lines.answer(handle(h, l), s, rest)
+
+@unsafe
+def conn.after(rm: Socket & Result<&1, &1, U32 & String, String>, +h: H.Hub, +buf: String) -> IO(H.Hub):
+  match rm:
+    case (s, Fail{_}):
+      do IO<H.Hub>:
+        Socket.close(s)
+        IO.pure(H.Hub, h)
+    case (s, Done{+data}):
+      conn.data(String.is_empty(data), s, h, String.append(buf, data))
+
+@unsafe
+def conn(s: Socket, +h: H.Hub, +buf: String) -> IO(H.Hub):
+  do IO<H.Hub>:
+    rm : Socket & Result<&1, &1, U32 & String, String> <- TCP.recv(s, 65536)
+    conn.after(rm, h, buf)
+
+@unsafe
+def conn.next(r: Got) -> IO(H.Hub):
+  match r:
+    case Got{s, +h, +buf}:
+      conn(s, h, buf)
+
+@unsafe
+def conn.data(closed: Bool, s: Socket, +h: H.Hub, +buf: String) -> IO(H.Hub):
+  match closed:
+    case True{}:
+      do IO<H.Hub>:
+        Socket.close(s)
+        IO.pure(H.Hub, h)
+    case False{}:
+      do IO<H.Hub>:
+        r : Got <- lines(s, h, buf)
+        conn.next(r)
+
+@unsafe
+def serve.after(am: Listener & Result<&1, &1, U32 & String, Socket>, +h: H.Hub) -> IO(Unit):
+  match am:
+    case (l, Fail{_}):
+      IO.print("sb-core: accept failed")
+    case (l, Done{s}):
+      # one connection: its end (the daemon exited or was killed) ends
+      # sb-core, so no orphan survives the hub
+      do IO<Unit>:
+        h2 : H.Hub <- conn(s, h, "")
+        IO.pure(Unit, Unit{})
+
+@unsafe
+def serve(l: Listener, +h: H.Hub) -> IO(Unit):
+  do IO<Unit>:
+    am : Listener & Result<&1, &1, U32 & String, Socket> <- TCP.accept(l)
+    serve.after(am, h)
+
+def port_of(r: Result<&1, &1, U32 & String, String>) -> U32:
+  match r:
+    case Fail{_}:
+      7790
+    case Done{+s}:
+      Maybe.default(&2, U32, U32.read(s), 7790)
+
+def main() -> IO(Unit):
+  do IO<Unit>:
+    pr : Result<&1, &1, U32 & String, String> <- IO.get_env("SB_CORE_PORT")
+    +p : U32 <- IO.pure(U32, port_of(pr))
+    l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", p))
+    IO.print(String.append("sb-core on 127.0.0.1:", U32.show(p)))
+    serve(l, H.hub_new(""))

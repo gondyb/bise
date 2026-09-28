@@ -23,6 +23,7 @@ import ../runtime/provider.bend as Pv
 import ../runtime/settings.bend as St
 import ./repl-core.bend as Rc
 import ./debug.bend as Dbg
+import ./repl-core-pure.bend as Rcp
 
 # the compaction threshold for real conversations: BEND_THRESHOLD env
 # (approximate tokens). Default 800000, tuned for 1M-context models
@@ -76,12 +77,28 @@ def prompt_join(+tu: String, +ct: String) -> String:
 def live_prompt.go(+base: String, +content: String) -> String:
   Skp.prompt_with(base, content)
 
+# BEND_EXTRA_PROMPT: a file whose content ends the system prompt (a
+# switchboard agent's role); unset or missing: nothing is added
+def extra_prompt.read(empty: Bool, +path: String) -> IO(String):
+  match empty:
+    case True{}:
+      IO.pure(String, "")
+    case False{}:
+      prompt_read(path)
+
+def extra_prompt() -> IO(String):
+  do IO<String>:
+    er : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_EXTRA_PROMPT")
+    +path : String <- IO.pure(String, P.env_or(er, ""))
+    extra_prompt.read(String.is_empty(path), path)
+
 def live_prompt() -> IO(String):
   do IO<String>:
     +tu : String <- prompt_read("prompt-tool-use.txt")
     +ct : String <- prompt_read("prompt-current-time.txt")
     +content : String <- Sk.prompt_content()
-    IO.pure(String, live_prompt.go(prompt_join(tu, ct), content))
+    +extra : String <- extra_prompt()
+    IO.pure(String, Rcp.prompt_extra(live_prompt.go(prompt_join(tu, ct), content), extra))
 
 def live_cfg(+threshold: Nat) -> IO(T.Cfg):
   do IO<T.Cfg>:

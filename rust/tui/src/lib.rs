@@ -39,13 +39,32 @@ use std::net::TcpStream;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Duration;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthStr;
+use unicode_segmentation::UnicodeSegmentation;
 
 // ---- the OpenCode theme (opencode.json, dark) ----
 // primary #fab283 (the OpenCode orange) is the agent color: user blocks,
 // prompt border, spinners, back-to-bottom. Markdown follows the
 // markdown* keys; tools follow the inline-tool rules (muted once
 // complete, error red).
+mod sb;
+mod skills;
+mod emoji;
+mod editor;
+mod clipboard;
+mod usage;
+mod term;
+mod feedsel;
+mod keyprobe;
+mod help;
+mod voice;
+#[cfg(test)]
+mod voice_ui_tests;
+#[cfg(test)]
+mod composer_wrap_tests;
+pub use keyprobe::keyprobe;
+pub use sb::{run_switchboard, take_reexec};
+
 const BRAND: Color = Color::Rgb(0xfa, 0xb2, 0x83); // primary
 const ACCENT: Color = Color::Rgb(0x9d, 0x7c, 0xd8); // markdownHeading
 const HEAD: Color = Color::Rgb(0xe5, 0xc0, 0x7b); // markdownEmph / syntaxType
@@ -58,7 +77,13 @@ const OK: Color = Color::Rgb(0x7f, 0xd8, 0x8f); // success / markdownCode
 const WARN: Color = Color::Rgb(0xf5, 0xa7, 0x42); // warning / markdownStrong
 const ERR: Color = Color::Rgb(0xe0, 0x6c, 0x75); // error
 const PANEL: Color = Color::Rgb(0x14, 0x14, 0x14); // backgroundPanel
+/// text on a BRAND background (the popup selection): black reads
+/// better than white on orange
+const ON_BRAND: Color = Color::Rgb(0, 0, 0);
 const ELEMENT: Color = Color::Rgb(0x1e, 0x1e, 0x1e); // backgroundElement
+/// the composer while recording (Vibe's mistral_orange)
+const RECORDING: Color = Color::Rgb(0xff, 0x82, 0x05);
+const SELECTION: Color = Color::Rgb(0x3a, 0x4a, 0x6b); // selected text background
 const BORDER_ACTIVE: Color = Color::Rgb(0x60, 0x60, 0x60); // borderActive
 const FAINT: Color = Color::Rgb(0x4a, 0x4a, 0x4a); // rails & turn marks — dimmer than textMuted
 // the syntax palette of the run_typescript block (OpenCode dark
@@ -126,6 +151,8 @@ struct ToolData {
     started: std::time::Instant,
     // frozen at finish; None while running (elapsed ticks live)
     elapsed: Option<String>,
+    // a long source block shows whole (a click on the tool toggles it)
+    expanded: bool,
 }
 
 #[derive(Clone)]
@@ -169,11 +196,20 @@ enum Ev {
     TurnDone,
     Compact(String),
     Compacted(String),
+    // token usage of the last model call (hidden; feeds the status row)
+    Usage(usage::Usage),
     Warn(String),
     Err(String),
     Info(String),
     Idle,
     Raw(String),
+    // switchboard: a message from another agent (or the user's answer)
+    AgentMsg {
+        head: String,
+        text: String,
+    },
+    // switchboard: an attention card
+    Card(String),
 }
 
 // the wire carries the model's reasoning wrapped in think markers inside
@@ -226,7 +262,7 @@ fn parse_history_line(line: &str) -> Option<Ev> {
     }
     if let Some(t) = line.strip_prefix("injected : ") {
         let flat = unescape_md(t).replace('\n', " ");
-        return Some(Ev::Info(format!("injecté · {}", truncate_chars(flat.trim(), 110))));
+        return Some(Ev::Info(format!("injected · {}", truncate_chars(flat.trim(), 110))));
     }
     parse_line(line)
 }
@@ -249,19 +285,32 @@ fn hide_replayed_elapsed(events: &mut [Ev], cache: &mut [Option<EventRows>], id:
 fn provider_retry_text(t: &str) -> String {
     let parts: Vec<&str> = t.split(" · ").collect();
     match parts.as_slice() {
-        [n, why, wait] => format!(
-            "API du modèle en erreur (essai {}) : {} — nouvel essai dans {}",
-            n,
-            why,
-            wait.trim_start_matches("retry in ")
-        ),
-        _ => format!("API du modèle en erreur : {}", t),
+        // "2/10" failed: the plan is attempt 3/10 after the pause
+        [n, why, wait] => {
+            let next = n
+                .split_once('/')
+                .and_then(|(a, b)| Some((a.parse::<u32>().ok()? + 1, b)))
+                .map(|(a, b)| format!("retry {}/{}", a, b))
+                .unwrap_or_else(|| "retry".into());
+            format!(
+                "model call failed (attempt {}): {} · {} in {}",
+                n,
+                why,
+                next,
+                wait.trim_start_matches("retry in ")
+            )
+        }
+        _ => format!("model call failed: {}", t),
     }
 }
 
 fn parse_line(line: &str) -> Option<Ev> {
     if line.is_empty() {
         return None;
+    }
+    // switchboard: the hub's own lines in a feed
+    if let Some(rest) = line.strip_prefix("sb ") {
+        return sb::parse_hub_line(rest);
     }
     if line == "--- idle" {
         return Some(Ev::Idle);
@@ -312,7 +361,7 @@ fn parse_line(line: &str) -> Option<Ev> {
         // no turn to land on - expected plumbing, not an error
         if r == "no pending completion" || r == "no pending tool result" {
             return Some(Ev::Info(
-                "réponse en vol ignorée (tour interrompu)".into(),
+                "in-flight response dropped (turn interrupted)".into(),
             ));
         }
         return Some(Ev::Err(r.to_string()));
@@ -345,6 +394,7 @@ fn parse_line(line: &str) -> Option<Ev> {
             code: None,
             started: std::time::Instant::now(),
             elapsed: None,
+            expanded: false,
         }));
     }
     if let Some(rest) = o.strip_prefix("tool_finished #") {
@@ -364,53 +414,57 @@ fn parse_line(line: &str) -> Option<Ev> {
             result: None,
             started,
             elapsed: Some(fmt_elapsed(started)),
+            expanded: false,
         }));
     }
     if o.starts_with("tool_result_committed") {
         return None;
     }
     if let Some(t) = o.strip_prefix("steering_received: ") {
-        return Some(Ev::Info(format!("steering reçu : {}", t)));
+        return Some(Ev::Info(format!("steering received: {}", t)));
     }
     if let Some(t) = o.strip_prefix("steered: ") {
-        return Some(Ev::Info(format!("steering transmis au modèle : {}", t)));
+        return Some(Ev::Info(format!("steering passed to the model: {}", t)));
     }
     if let Some(t) = o.strip_prefix("notification_received: ") {
         return Some(Ev::Info(format!("notification : {}", t)));
     }
     if let Some(t) = o.strip_prefix("notification_delivered: ") {
-        return Some(Ev::Info(format!("notification livrée au modèle : {}", t)));
+        return Some(Ev::Info(format!("notification delivered to the model: {}", t)));
     }
     if let Some(t) = o.strip_prefix("provider_retry: ") {
         return Some(Ev::Warn(provider_retry_text(t)));
     }
     if let Some(t) = o.strip_prefix("harness_restarted: ") {
         return Some(Ev::Err(format!(
-            "le harness a planté ({}) et a redémarré — le tour en cours est interrompu, l'historique est restauré jusqu'au dernier appel au modèle",
+            "the harness crashed ({}) and restarted — the current turn is interrupted, the history is restored up to the last model call",
             t
         )));
     }
     if let Some(t) = o.strip_prefix("candidate_discarded: ") {
-        return Some(Ev::Warn(format!("candidat écarté : {}", t)));
+        return Some(Ev::Warn(format!("candidate discarded: {}", t)));
     }
     if let Some(t) = o.strip_prefix("compaction_started #") {
         return Some(Ev::Compact(t.to_string()));
     }
     if let Some(t) = o.strip_prefix("context_compaction_failed: ") {
-        return Some(Ev::Err(format!("compaction échouée : {}", t)));
+        return Some(Ev::Err(format!("compaction failed: {}", t)));
     }
     if let Some(t) = o.strip_prefix("session_restored: ") {
         return Some(Ev::Info(format!(
-            "session restaurée · {} messages",
+            "session restored · {} messages",
             t.trim_end_matches(" messages")
         )));
     }
     if let Some(t) = o.strip_prefix("compaction_done: ") {
         return Some(Ev::Compacted(t.to_string()));
     }
+    if let Some(t) = o.strip_prefix("usage: ") {
+        return usage::Usage::parse(t).map(Ev::Usage);
+    }
     if o == "null_iteration" {
         return Some(Ev::Warn(
-            "réponse vide du modèle — nouvelle tentative".into(),
+            "empty response from the model — retrying".into(),
         ));
     }
     if let Some(t) = o.strip_prefix("turn_done: ") {
@@ -420,16 +474,16 @@ fn parse_line(line: &str) -> Option<Ev> {
             return Some(Ev::TurnDone);
         }
         if let Some(why) = t.strip_prefix("failed: ") {
-            return Some(Ev::Err(format!("tour échoué : {}", why)));
+            return Some(Ev::Err(format!("turn failed: {}", why)));
         }
         if t == "interrupted" {
-            return Some(Ev::Warn("tour interrompu".into()));
+            return Some(Ev::Warn("turn interrupted".into()));
         }
-        return Some(Ev::Err(format!("tour arrêté : {}", t)));
+        return Some(Ev::Err(format!("turn stopped: {}", t)));
     }
     // the runtime ran out of execution budget mid-turn (never silent)
     if let Some(t) = o.strip_prefix("turn_stalled: ") {
-        return Some(Ev::Err(format!("tour interrompu : {}", t)));
+        return Some(Ev::Err(format!("turn stopped: {}", t)));
     }
     Some(Ev::Raw(o.to_string()))
 }
@@ -437,11 +491,62 @@ fn parse_line(line: &str) -> Option<Ev> {
 // ---- the codex-style layout cache ----
 // Events render to wrapped rows ONCE (per width / per mutation); every
 // frame only the visible slice is cloned into the paragraph. A running
-// tool re-renders each frame because its elapsed ticks live.
+// tool re-renders only its tool line each frame (spinner, elapsed): its
+// body (a source block can be thousands of rows) stays cached.
 
 struct EventRows {
     width: u16,
     rows: Vec<Line<'static>>,
+    /// A running tool: where its tool line sits in `rows`, and what it
+    /// needs to be redrawn alone.
+    live: Option<LiveHead>,
+}
+
+struct LiveHead {
+    at: usize,
+    len: usize,
+    name: String,
+    args: String,
+}
+
+fn event_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> EventRows {
+    let running = match &events[i] {
+        Ev::Tool(td) if matches!(td.state, ToolState::Run) && ev_visible(&events[i], debug) => Some(td),
+        _ => None,
+    };
+    let Some(td) = running else {
+        return EventRows {
+            width: width as u16,
+            rows: build_rows(events, i, debug, width, tick),
+            live: None,
+        };
+    };
+    let prev = events[..i].iter().rev().find(|e| ev_visible(e, debug));
+    let mut rows: Vec<Line<'static>> = Vec::new();
+    if wants_gap_before(&events[i], prev) {
+        rows.push(Line::from(""));
+    }
+    let (name, args, code) = tool_meta(td);
+    let at = rows.len();
+    rows.extend(wrap_line(tool_head(td, tick, &name, &args), width));
+    let len = rows.len() - at;
+    for l in tool_body(td, &code, width) {
+        rows.extend(wrap_line(l, width));
+    }
+    EventRows {
+        width: width as u16,
+        rows,
+        live: Some(LiveHead { at, len, name, args }),
+    }
+}
+
+/// Redraw the tool line of a running tool, keep the rest.
+fn refresh_live(er: &mut EventRows, ev: &Ev, tick: u32) {
+    let (Some(lh), Ev::Tool(td)) = (er.live.as_mut(), ev) else { return };
+    let head = wrap_line(tool_head(td, tick, &lh.name, &lh.args), er.width as usize);
+    let n = head.len();
+    er.rows.splice(lh.at..lh.at + lh.len, head);
+    lh.len = n;
 }
 
 fn line_from(cells: Vec<(char, Style)>) -> Line<'static> {
@@ -466,6 +571,23 @@ fn line_from(cells: Vec<(char, Style)>) -> Line<'static> {
     Line::from(spans)
 }
 
+/// The display width of each char of `chars`, by grapheme: the first
+/// char of a grapheme carries its width (at least 1), the rest 0, so an
+/// emoji ZWJ sequence or a char with a variation selector counts as
+/// ratatui draws it, and a row never breaks inside one.
+fn cell_widths(chars: impl Iterator<Item = char>) -> Vec<usize> {
+    let s: String = chars.collect();
+    let mut out = Vec::with_capacity(s.len());
+    for g in s.graphemes(true) {
+        let mut first = true;
+        for _ in g.chars() {
+            out.push(if first { g.width().max(1) } else { 0 });
+            first = false;
+        }
+    }
+    out
+}
+
 // span-aware greedy word wrap; words wider than the row hard-split
 fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
     let width = width.max(1);
@@ -478,6 +600,7 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
     if cells.is_empty() {
         return vec![Line::from("")];
     }
+    let widths = cell_widths(cells.iter().map(|c| c.0));
     let mut rows: Vec<Line<'static>> = Vec::new();
     let mut row: Vec<(char, Style)> = Vec::new();
     let mut row_w = 0usize;
@@ -487,7 +610,7 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
         let mut word: Vec<(char, Style)> = Vec::new();
         let mut word_w = 0usize;
         while i < cells.len() && cells[i].0 != ' ' {
-            word_w += cells[i].0.width().unwrap_or(1).max(1);
+            word_w += widths[i];
             word.push(cells[i]);
             i += 1;
         }
@@ -500,9 +623,10 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
         if row_w == 0 && word_w > width {
             let mut chunk: Vec<(char, Style)> = Vec::new();
             let mut cw = 0usize;
-            for (c, st) in word {
-                let cc = c.width().unwrap_or(1).max(1);
-                if cw + cc > width {
+            let word_start = i - word.len();
+            for (k, (c, st)) in word.into_iter().enumerate() {
+                let cc = widths[word_start + k];
+                if cc > 0 && cw > 0 && cw + cc > width {
                     rows.push(line_from(std::mem::take(&mut chunk)));
                     cw = 0;
                 }
@@ -524,6 +648,10 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
     }
     if !row.is_empty() || rows.is_empty() {
         rows.push(line_from(row));
+    }
+    // the rows after the first continue the line (the copy joins them)
+    for r in rows.iter_mut().skip(1) {
+        feedsel::mark_soft(r);
     }
     rows
 }
@@ -561,12 +689,7 @@ fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> 
 // reads as a solid panel the full width (OpenCode style)
 fn pad_line_bg(line: &mut Line<'static>, width: usize) {
     line.style = Style::default().bg(PANEL);
-    let used: usize = line
-        .spans
-        .iter()
-        .flat_map(|s| s.content.chars())
-        .map(|c| c.width().unwrap_or(0))
-        .sum();
+    let used: usize = line.spans.iter().map(|s| s.content.width()).sum();
     if used < width {
         line.spans
             .push(Span::styled(" ".repeat(width - used), Style::default().bg(PANEL)));
@@ -574,7 +697,7 @@ fn pad_line_bg(line: &mut Line<'static>, width: usize) {
 }
 
 fn is_message(ev: &Ev) -> bool {
-    matches!(ev, Ev::You(_) | Ev::Assistant(_) | Ev::Thinking { .. })
+    matches!(ev, Ev::You(_) | Ev::Assistant(_) | Ev::Thinking { .. } | Ev::AgentMsg { .. })
 }
 
 fn is_tool_block(ev: &Ev) -> bool {
@@ -585,6 +708,7 @@ fn is_notice(ev: &Ev) -> bool {
     matches!(
         ev,
         Ev::Warn(_)
+            | Ev::Card(_)
             | Ev::Err(_)
             | Ev::Info(_)
             | Ev::Compact(_)
@@ -628,6 +752,7 @@ fn ev_visible(ev: &Ev, debug: bool) -> bool {
             | Ev::TurnDone
             | Ev::Idle
             | Ev::Raw(_)
+            | Ev::Usage(_)
             | Ev::ToolInfo { .. }
             | Ev::ToolResult { .. }
             | Ev::ToolCode { .. }
@@ -696,7 +821,12 @@ fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>>, ev: Ev) 
         // the turn ended: a tool still shown as running was abandoned
         // (interrupt or failed turn) — freeze it so the elapsed stops
         Ev::TurnDone | Ev::Idle => {
-            for (i, e) in events.iter_mut().enumerate() {
+            // back to the previous end of turn: the tools before it were
+            // frozen then (O(turn), not O(history))
+            for (i, e) in events.iter_mut().enumerate().rev() {
+                if matches!(e, Ev::TurnDone | Ev::Idle) {
+                    break;
+                }
                 if let Ev::Tool(td) = e {
                     if matches!(td.state, ToolState::Run) {
                         td.state = ToolState::Fail;
@@ -1063,7 +1193,7 @@ fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
                 Style::default().fg(OK).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                "résumé ",
+                "summary ",
                 Style::default().fg(OK).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
@@ -1087,10 +1217,36 @@ fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             ),
         ])],
         Ev::ToolInfo { .. } | Ev::ToolResult { .. } | Ev::ToolCode { .. } => vec![],
+        Ev::Usage(u) => vec![Line::from(Span::styled(
+            format!("  usage: {} (in {} · out {})", u.label(), u.input, u.output),
+            Style::default().fg(DIM),
+        ))],
         Ev::Raw(t) => vec![Line::from(Span::styled(
             format!("  {}", t),
             Style::default().fg(DIM),
         ))],
+        Ev::AgentMsg { head, text } => {
+            let mut rows = vec![
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled(" ◀ ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                    Span::styled(head.clone(), Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                ]),
+            ];
+            for l in md_to_lines(text) {
+                let mut spans = vec![Span::styled(" │ ", Style::default().fg(ACCENT))];
+                spans.extend(l.spans);
+                rows.push(Line::from(spans));
+            }
+            rows
+        }
+        Ev::Card(t) => vec![Line::from(vec![
+            Span::styled("  ◆ ", Style::default().fg(WARN).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("carte {}", t),
+                Style::default().fg(WARN).add_modifier(Modifier::BOLD),
+            ),
+        ])],
     }
 }
 
@@ -1554,8 +1710,8 @@ fn highlight_patch(src: &str) -> Vec<Vec<Span<'static>>> {
         let header = if let Some(p) = l.strip_prefix("*** Update File: ") {
             Some(file("~", p, HEAD, ""))
         } else if let Some(p) = l.strip_prefix("*** Add File: ") {
-            Some(file("+", p, OK, "nouveau"))
-        } else { l.strip_prefix("*** Delete File: ").map(|p| file("−", p, ERR, "supprimé")) };
+            Some(file("+", p, OK, "new"))
+        } else { l.strip_prefix("*** Delete File: ").map(|p| file("−", p, ERR, "deleted")) };
         if let Some(h) = header {
             // a blank row between two files
             if !lines.is_empty() {
@@ -1565,7 +1721,7 @@ fn highlight_patch(src: &str) -> Vec<Vec<Span<'static>>> {
             continue;
         }
         if let Some(p) = l.strip_prefix("*** Move to: ") {
-            lines.push(file("→", p, HEAD, "renommé"));
+            lines.push(file("→", p, HEAD, "renamed"));
             continue;
         }
         if l.starts_with("*** ") || (l.is_empty() && lines.is_empty()) {
@@ -1665,13 +1821,12 @@ fn tool_source(lang: CodeLang, decoded: String) -> String {
 // token) it breaks hard at the width. Returns each row with its width.
 fn wrap_code_line(spans: &[Span<'static>], w: usize) -> Vec<(Vec<Span<'static>>, usize)> {
     let w = w.max(1);
+    let widths = cell_widths(spans.iter().flat_map(|sp| sp.content.chars()));
     let cells: Vec<(char, Style, usize)> = spans
         .iter()
-        .flat_map(|sp| {
-            sp.content
-                .chars()
-                .map(move |ch| (ch, sp.style, ch.width().unwrap_or(1).max(1)))
-        })
+        .flat_map(|sp| sp.content.chars().map(move |ch| (ch, sp.style)))
+        .zip(widths)
+        .map(|((ch, st), w)| (ch, st, w))
         .collect();
     let mut rows = Vec::new();
     let mut start = 0usize;
@@ -1785,7 +1940,11 @@ fn code_block_lines(
             // pad to the row width, plus the 1-column right pad
             ls.push(Span::styled(" ".repeat(cw - used.min(cw) + 1), band));
             ls.push(Span::styled("│", bstyle));
-            rows.push(Line::from(ls));
+            let mut line = Line::from(ls);
+            if r > 0 {
+                feedsel::mark_soft(&mut line);
+            }
+            rows.push(line);
         }
     }
     rows.push(Line::from(vec![
@@ -1809,7 +1968,8 @@ fn elapsed_label(elapsed: &Option<String>) -> String {
     }
 }
 
-fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
+// the name and the one-line args of a tool, and its decoded source
+fn tool_meta(td: &ToolData) -> (String, String, Option<(CodeLang, String)>) {
     let name = td.name.clone().unwrap_or_else(|| format!("#{}", td.id));
     // the source of a code tool (run_typescript, bash, apply_patch), when
     // the runtime sent it: rendered in full, highlighted, under the line
@@ -1831,7 +1991,12 @@ fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
             .map(|a| args_preview(&name, a))
             .unwrap_or_default(),
     };
-    let elapsed = fmt_elapsed(td.started);
+    (name, args, code)
+}
+
+// the tool line itself: the only part of a running tool that changes
+// from one frame to the next (spinner, elapsed)
+fn tool_head(td: &ToolData, tick: u32, name: &str, args: &str) -> Line<'static> {
     let args_span = |st: Style| {
         Span::styled(
             if args.is_empty() {
@@ -1842,28 +2007,32 @@ fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
             st,
         )
     };
-    let mut ls = Vec::new();
     match td.state {
-        ToolState::Run => ls.push(Line::from(vec![
+        ToolState::Run => Line::from(vec![
             Span::styled("  ", Style::default()),
             Span::styled(spinner_frame(tick / 2), Style::default().fg(BRAND)),
             Span::styled(format!(" {}", name), Style::default().fg(TEXT)),
-            Span::styled(format!(" {}", elapsed), Style::default().fg(DIM)),
+            Span::styled(format!(" {}", fmt_elapsed(td.started)), Style::default().fg(DIM)),
             args_span(Style::default().fg(DIM)),
-        ])),
-        ToolState::Ok => ls.push(Line::from(vec![
+        ]),
+        ToolState::Ok => Line::from(vec![
             Span::styled(format!("  {} ", GLYPH_OK), Style::default().fg(OK)),
-            Span::styled(name.clone(), Style::default().fg(TOOL)),
+            Span::styled(name.to_string(), Style::default().fg(TOOL)),
             Span::styled(elapsed_label(&td.elapsed), Style::default().fg(TOOL)),
             args_span(Style::default().fg(TOOL)),
-        ])),
-        ToolState::Fail => ls.push(Line::from(vec![
+        ]),
+        ToolState::Fail => Line::from(vec![
             Span::styled(format!("  {} ", GLYPH_ERR), Style::default().fg(ERR)),
-            Span::styled(name.clone(), Style::default().fg(ERR)),
+            Span::styled(name.to_string(), Style::default().fg(ERR)),
             Span::styled(elapsed_label(&td.elapsed), Style::default().fg(ERR)),
             args_span(Style::default().fg(ERR)),
-        ])),
+        ]),
     }
+}
+
+// everything under the tool line: the result preview, the source block
+fn tool_body(td: &ToolData, code: &Option<(CodeLang, String)>, width: usize) -> Vec<Line<'static>> {
+    let mut ls = Vec::new();
     if let Some((ok, preview)) = &td.result {
         if !preview.trim().is_empty() {
             ls.push(Line::from(vec![
@@ -1875,10 +2044,33 @@ fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
             ]));
         }
     }
-    // the source block: the FULL code, highlighted, in a bordered box
-    if let Some((lang, src)) = &code {
-        ls.extend(code_block_lines(src, *lang, &td.state, width));
+    // the source block, highlighted, in a bordered box: whole when
+    // short or unfolded, else its first lines (a huge patch or program
+    // would cost thousands of rows to build and scroll past)
+    if let Some((lang, src)) = code {
+        let total = src.lines().count();
+        if total > CODE_FOLD_AT && !td.expanded {
+            let head: String = src.lines().take(CODE_FOLD_SHOW).collect::<Vec<_>>().join("\n");
+            ls.extend(code_block_lines(&head, *lang, &td.state, width));
+            ls.push(Line::from(Span::styled(
+                format!("    … {} more lines · click to show all", total - CODE_FOLD_SHOW),
+                Style::default().fg(DIM),
+            )));
+        } else {
+            ls.extend(code_block_lines(src, *lang, &td.state, width));
+        }
     }
+    ls
+}
+
+/// A source block longer than this shows its first `CODE_FOLD_SHOW` lines.
+const CODE_FOLD_AT: usize = 60;
+const CODE_FOLD_SHOW: usize = 40;
+
+fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
+    let (name, args, code) = tool_meta(td);
+    let mut ls = vec![tool_head(td, tick, &name, &args)];
+    ls.extend(tool_body(td, &code, width));
     ls
 }
 
@@ -1886,16 +2078,31 @@ fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
 
 struct App {
     connected: bool,
+    // the embedded terminal (Ctrl+`)
+    term: term::Term,
+    // the /help or /shortcuts overlay, when open
+    help: Option<help::Overlay>,
     debug: bool,
     // line mode holds running tools until they finish so the printed
     // line carries the merged annotations (name, args, result)
     line_tools: std::collections::HashMap<u32, ToolData>,
-    // feed scrollback: top is an offset from the FIRST row, follow means
-    // stick to the bottom (any scroll up turns it off, End/enter turn it
-    // back on). Top-anchored, so new content never moves a pinned view.
+    // feed scrollback: follow means stick to the bottom (any scroll up
+    // turns it off, End/enter turn it back on). A pinned view is anchored
+    // on its first row, (event, row in the event): new content never
+    // moves it, and a frame only builds the rows it shows (no sum over
+    // the whole history). `scroll` is the move asked since the last
+    // frame, in rows; the frame applies it.
     follow: bool,
-    top: usize,
-    max_top: usize,
+    anchor: (usize, usize),
+    scroll: isize,
+    // the event shown on each row of the feed by the last frame (clicks)
+    vis_events: Vec<usize>,
+    /// the row, among its event's rows, each feed row shows
+    vis_rows: Vec<usize>,
+    /// the screen column of the feed's first text column
+    feed_x: u16,
+    /// the in-app selection in the feed
+    feed_sel: Option<feedsel::FeedSel>,
     // activity that arrived while pinned (shown by the back-to-bottom bar)
     unseen: usize,
     tail_visible: bool,
@@ -1903,6 +2110,8 @@ struct App {
     // wrapped rows per event, keyed by event index (the codex layout
     // cache: rebuild on mutation, width change, or live-elapsed tools)
     cache: Vec<Option<EventRows>>,
+    /// Switchboard: which part of the agent's transcript the feed holds.
+    win: sb::FeedWindow,
     area_w: usize,
     area_h: usize,
     events: Vec<Ev>,
@@ -1914,11 +2123,23 @@ struct App {
     // a second Ctrl+C quits instead of interrupting again
     interrupt_requested: bool,
     pending: bool,
-    input: String,
-    cursor: usize, // char index into input
+    /// the composer: text, cursor, selection, undo, history recall
+    ed: editor::Editor,
+    /// where the last frame drew the composer's text (mouse, Up/Down rows)
+    composer: ComposerArea,
+    /// a short note in the status row ("copied 12 chars") and when
+    flash: Option<(String, std::time::Instant)>,
+    /// the mouse gesture in progress (selection drags, multi-clicks)
+    mouse: MouseState,
+    /// speech-to-text (Ctrl+R, /voice)
+    voice: voice::Voice,
+    /// a voice notice in the status row ("No speech detected") and when
+    voice_note: Option<(String, std::time::Instant)>,
     popup_sel: usize,
+    /// The composer text the user closed the `@` popup on (Esc): the
+    /// popup stays closed until the text changes.
+    popup_dismissed: Option<String>,
     history: Vec<String>,
-    hist_idx: Option<usize>,
     tick: u32,
     info: HarnessInfo,
     host: String,
@@ -1927,6 +2148,68 @@ struct App {
     stream: Option<TcpStream>,
     rx: Receiver<String>,
     should_quit: bool,
+    /// Switchboard mode (projects/switchboard): the hub connection and
+    /// the feeds out of focus.
+    sb: Option<sb::Sb>,
+}
+
+/// The composer's text area in the last frame: its screen origin, its
+/// width in columns, its visible rows and the first layout row shown.
+#[derive(Debug, Default, Clone, Copy)]
+struct ComposerArea {
+    x: u16,
+    y: u16,
+    w: usize,
+    h: usize,
+    top: usize,
+}
+
+/// What a left press started: a selection in the composer (or none),
+/// and the last press for double/triple clicks.
+#[derive(Debug, Default, Clone)]
+struct MouseState {
+    drag: Option<DragIn>,
+    last_press: Option<(std::time::Instant, u16, u16)>,
+    clicks: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DragIn {
+    Composer,
+    /// a press in the feed; `moved` once it selects (a drag, a double
+    /// or triple click) rather than clicks
+    Feed { moved: bool },
+}
+
+impl MouseState {
+    /// Counts this press: 1, 2 (double) or 3 (triple click), for a press
+    /// at the same cell within 400 ms of the last one.
+    fn press(&mut self, x: u16, y: u16, now: std::time::Instant) -> u8 {
+        let again = self
+            .last_press
+            .is_some_and(|(t, px, py)| px == x && py == y && now.duration_since(t) < Duration::from_millis(400));
+        self.clicks = if again { self.clicks % 3 + 1 } else { 1 };
+        self.last_press = Some((now, x, y));
+        self.clicks
+    }
+}
+
+impl ComposerArea {
+    /// The char index under the screen cell (x, y), if inside the text.
+    fn hit(&self, text: &str, x: u16, y: u16, clamp: bool) -> Option<usize> {
+        let inside = x >= self.x.saturating_sub(1)
+            && (x as usize) < self.x as usize + self.w
+            && y >= self.y
+            && (y as usize) < self.y as usize + self.h;
+        if !inside && !clamp {
+            return None;
+        }
+        let rows = editor::layout_input(text, self.w);
+        let dy = y as isize - self.y as isize;
+        let row = (self.top as isize + dy).clamp(0, rows.len() as isize - 1) as usize;
+        let col = x.saturating_sub(self.x) as usize;
+        Some(editor::ci_at(&rows, row, col))
+    }
 }
 
 impl App {
@@ -2043,37 +2326,47 @@ struct Cmd {
 const COMMANDS: &[Cmd] = &[
     Cmd {
         name: "/compact",
-        desc: "compacter la conversation (résumé)",
+        desc: "compact the conversation (summary)",
         args: false,
     },
     Cmd {
         name: "/interrupt",
-        desc: "interrompre le tour en cours",
+        desc: "interrupt the current turn",
         args: false,
     },
     Cmd {
         name: "/reload",
-        desc: "relancer le harness avec le dernier code (session conservée)",
+        desc: "restart the harness with the latest code (session kept)",
         args: false,
     },
     Cmd {
         name: "/status",
-        desc: "modèle, connexion, seuil de compaction",
+        desc: "model, connection, compaction threshold",
         args: false,
     },
     Cmd {
         name: "/clear",
-        desc: "vider l'affichage local",
+        desc: "clear the local display",
+        args: false,
+    },
+    Cmd {
+        name: "/voice",
+        desc: "turn voice mode (Ctrl+R speech-to-text) on or off",
         args: false,
     },
     Cmd {
         name: "/help",
-        desc: "liste des commandes",
+        desc: "the commands and the essential keys",
+        args: false,
+    },
+    Cmd {
+        name: "/shortcuts",
+        desc: "every keyboard shortcut (also /keys)",
         args: false,
     },
     Cmd {
         name: "/quit",
-        desc: "quitter le client (la session survit)",
+        desc: "quit the client (the session survives)",
         args: false,
     },
 ];
@@ -2132,15 +2425,134 @@ fn popup_matches(input: &str) -> Vec<&'static Cmd> {
     if !input.starts_with('/') || input.contains(' ') {
         return Vec::new();
     }
-    COMMANDS
-        .iter()
-        .filter(|c| c.name.starts_with(input))
+    let list = if sb::SB_MODE.load(std::sync::atomic::Ordering::SeqCst) {
+        sb::SB_COMMANDS
+    } else {
+        COMMANDS
+    };
+    list.iter().filter(|c| c.name.starts_with(input)).collect()
+}
+
+/// One entry of the composer popup: a slash command, or an agent name
+/// after `@` (switchboard mode).
+struct PopItem {
+    label: String,
+    desc: String,
+    /// status glyph (mentions)
+    mark: Option<(&'static str, Color)>,
+    /// the composer text once picked with Tab (or Enter when `run` is
+    /// None), and the cursor in it
+    fill: String,
+    fill_cursor: usize,
+    /// Enter runs this line directly (commands without arguments)
+    run: Option<String>,
+    /// Esc closes the list and keeps the text (`@` and `$`); the slash
+    /// popup clears the draft instead
+    closable: bool,
+}
+
+fn popup_items(app: &App) -> Vec<PopItem> {
+    let cmds = popup_matches(&app.ed.text);
+    if !cmds.is_empty() {
+        return cmds
+            .into_iter()
+            .map(|c| PopItem {
+                label: c.name.to_string(),
+                desc: c.desc.to_string(),
+                mark: None,
+                fill: format!("{} ", c.name),
+                fill_cursor: c.name.chars().count() + 1,
+                run: (!c.args).then(|| c.name.to_string()),
+                closable: false,
+            })
+            .collect();
+    }
+    let versions = sb::version_items(app);
+    if !versions.is_empty() {
+        return versions;
+    }
+    let mentions = sb::mentions(app);
+    if mentions.is_empty() {
+        let skills = skill_items(app);
+        return if skills.is_empty() { emoji_items(app) } else { skills };
+    }
+    mentions
+        .into_iter()
+        .map(|m| PopItem {
+            label: format!("@{}", m.name),
+            desc: if m.objective.is_empty() {
+                m.status.clone()
+            } else {
+                format!("{} · {}", m.status, m.objective)
+            },
+            mark: Some(m.glyph(app.tick)),
+            fill_cursor: m.completion().chars().count(),
+            fill: m.completion(),
+            run: None,
+            closable: true,
+        })
         .collect()
 }
 
-// byte offset of the n-th char (char-boundary-safe cursor helpers)
-fn byte_at_char(s: &str, ci: usize) -> usize {
-    s.char_indices().nth(ci).map(|(b, _)| b).unwrap_or(s.len())
+/// `$skill` anywhere in the draft: the skills of the index.
+fn skill_items(app: &App) -> Vec<PopItem> {
+    if app.ed.browsing() || app.popup_dismissed.as_deref() == Some(app.ed.text.as_str()) {
+        return Vec::new();
+    }
+    let Some((start, q)) = skills::token(&app.ed.text, app.ed.cursor) else {
+        return Vec::new();
+    };
+    let all = skills::index();
+    skills::filter(&all, &q)
+        .into_iter()
+        .map(|s| {
+            let (fill, fill_cursor) = skills::complete(&app.ed.text, start, app.ed.cursor, &s.name);
+            PopItem {
+                label: format!("${}", s.name),
+                desc: s.desc.clone(),
+                mark: None,
+                fill,
+                fill_cursor,
+                run: None,
+                closable: true,
+            }
+        })
+        .collect()
+}
+
+/// `:name` anywhere in the draft: the matching emojis (emoji.rs).
+fn emoji_items(app: &App) -> Vec<PopItem> {
+    if app.ed.browsing() || app.popup_dismissed.as_deref() == Some(app.ed.text.as_str()) {
+        return Vec::new();
+    }
+    let Some((start, q)) = emoji::token(&app.ed.text, app.ed.cursor) else {
+        return Vec::new();
+    };
+    emoji::filter(&q)
+        .into_iter()
+        .map(|(e, name)| {
+            let (fill, fill_cursor) = emoji::complete(&app.ed.text, start, app.ed.cursor, e.glyph);
+            PopItem {
+                label: format!(":{}:", name),
+                desc: e.desc.to_string(),
+                mark: Some((e.glyph, TEXT)),
+                fill,
+                fill_cursor,
+                run: None,
+                closable: true,
+            }
+        })
+        .collect()
+}
+
+/// First visible row of a popup of `len` entries showing `rows`, so the
+/// selection `sel` stays in view.
+fn popup_top(sel: usize, len: usize, rows: usize) -> usize {
+    if len <= rows {
+        0
+    } else {
+        sel.min(len - 1).saturating_sub(rows - 1)
+    }
 }
 
 // interprets one user line: slash command, raw protocol word, or plain
@@ -2151,6 +2563,14 @@ fn byte_at_char(s: &str, ci: usize) -> usize {
 // "say", /commands map to protocol words, unknown ones get a server-side
 // warning. This client only handles its own lifecycle and display.
 fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
+    if v.trim() == "/voice" {
+        let ev = toggle_voice(app);
+        push_event(&mut app.events, &mut app.cache, ev.clone());
+        return vec![ev];
+    }
+    if app.sb.is_some() {
+        return sb::handle_input(app, v);
+    }
     // the steer/say wrappers are transport, not what the user typed
     let typed = v
         .strip_prefix("steer ")
@@ -2158,7 +2578,6 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         .unwrap_or(v);
     let mut out = vec![Ev::You(typed.to_string())];
     app.history.insert(0, v.to_string());
-    app.hist_idx = None;
     app.popup_sel = 0;
 
     let first = v.split_whitespace().next().unwrap_or("");
@@ -2170,29 +2589,22 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     } else if first == "/clear" {
         app.events.clear();
         app.cache.clear();
-        app.top = 0;
+        app.anchor = (0, 0);
+        app.scroll = 0;
         app.follow = true;
         app.unseen = 0;
-        out.push(Ev::Info("affichage vidé".into()));
+        out.push(Ev::Info("display cleared".into()));
     } else if first == "/status" {
         out.push(Ev::Info(format!(
-            "modèle {} · {}:{} · seuil de compaction {} · session {}",
+            "model {} · {}:{} · compaction threshold {} · session {}",
             app.info.model,
             app.host,
             app.port,
             app.info.threshold,
             app.session_id
         )));
-    } else if first == "/help" {
-        for c in COMMANDS {
-            out.push(Ev::Info(format!("{:<11} — {}", c.name, c.desc)));
-        }
-        out.push(Ev::Info(
-            "texte simple : nouveau message · pendant un tour, ⏎ dirige le modèle et Tab met en file".into(),
-        ));
-        out.push(Ev::Info(
-            "glyphes : ✦ raisonnement · ✓ ok · ✗ échec · ▲ alerte · ⟳ compaction · ≡ résumé · ↳ aperçu".into(),
-        ));
+    } else if let Some(page) = help::page_of(first) {
+        app.help = Some(help::Overlay::new(page));
     } else if first == "/interrupt" {
         // BR-003: the socket is only read between turns, so sending the
         // line to the harness could never interrupt anything - the
@@ -2203,12 +2615,12 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             app.pending = false;
             app.interrupt_requested = true;
             out.push(Ev::Info(if ok {
-                "interrompu — le tour en cours s'arrête au prochain point sûr".into()
+                "interrupted — the current turn stops at the next safe point".into()
             } else {
-                "interruption non écrite (side-channel inaccessible)".into()
+                "interrupt not written (side channel unreachable)".into()
             }));
         } else {
-            out.push(Ev::Info("aucun tour en cours à interrompre".into()));
+            out.push(Ev::Info("no turn in progress to interrupt".into()));
         }
     } else if first == "steer" && app.pending {
         // mid-turn steering goes through the FILE side-channel: the
@@ -2230,9 +2642,9 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
                 .and_then(|mut f| f.write_all(line.as_bytes()))
                 .is_ok();
             out.push(Ev::Info(if ok {
-                format!("steering mis en attente : {}", msg)
+                format!("steering queued: {}", msg)
             } else {
-                "steering non écrit (side-channel inaccessible)".to_string()
+                "steering not written (side channel unreachable)".to_string()
             }));
         }
     } else {
@@ -2247,34 +2659,168 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     out
 }
 
+/// The rows of event `i` at this width, built when missing (a running
+/// tool redraws its tool line). Returns how many rows it has.
+fn ensure_rows(
+    events: &[Ev],
+    cache: &mut [Option<EventRows>],
+    i: usize,
+    debug: bool,
+    width: usize,
+    tick: u32,
+) -> usize {
+    match cache[i].as_mut() {
+        Some(c) if c.width == width as u16 => {
+            refresh_live(c, &events[i], tick);
+        }
+        _ => cache[i] = Some(event_rows(events, i, debug, width, tick)),
+    }
+    cache[i].as_ref().map_or(0, |c| c.rows.len())
+}
+
+/// The anchor that shows the last `h` rows.
+fn bottom_anchor(n: usize, h: usize, rows_of: &mut dyn FnMut(usize) -> usize) -> (usize, usize) {
+    let mut need = h;
+    let mut i = n;
+    while i > 0 {
+        i -= 1;
+        let len = rows_of(i);
+        if len >= need {
+            return (i, len - need);
+        }
+        need -= len;
+    }
+    (0, 0)
+}
+
+/// Move a (event, row) anchor by `d` rows (negative: up), building only
+/// the rows it walks over.
+fn move_anchor(
+    anchor: (usize, usize),
+    d: isize,
+    n: usize,
+    rows_of: &mut dyn FnMut(usize) -> usize,
+) -> (usize, usize) {
+    if n == 0 {
+        return (0, 0);
+    }
+    let (mut i, mut r) = anchor;
+    if i >= n {
+        i = n - 1;
+        r = usize::MAX;
+    }
+    r = r.min(rows_of(i).saturating_sub(1));
+    let mut k = d.unsigned_abs();
+    if d < 0 {
+        while k > 0 {
+            if r >= k {
+                r -= k;
+                break;
+            }
+            k -= r;
+            r = 0;
+            // one row up: the last row of the previous event with rows
+            let mut j = i;
+            let mut moved = false;
+            while j > 0 {
+                j -= 1;
+                let len = rows_of(j);
+                if len > 0 {
+                    (i, r) = (j, len - 1);
+                    k -= 1;
+                    moved = true;
+                    break;
+                }
+            }
+            if !moved {
+                break;
+            }
+        }
+    } else {
+        while k > 0 {
+            let len = rows_of(i);
+            if r + k < len {
+                r += k;
+                break;
+            }
+            // to the first row of the next event with rows
+            k -= len.saturating_sub(r);
+            let mut j = i + 1;
+            while j < n && rows_of(j) == 0 {
+                j += 1;
+            }
+            if j >= n {
+                r = len.saturating_sub(1);
+                break;
+            }
+            (i, r) = (j, 0);
+        }
+    }
+    (i, r)
+}
+
+/// The meter glyph: the level while recording, the fill spinner while
+/// the last words are flushed.
+fn voice_glyph(v: &voice::Voice) -> char {
+    match v.flushing_since() {
+        Some(at) if v.state() == voice::VoiceState::Flushing => {
+            voice::flush_glyph(at.elapsed().as_millis())
+        }
+        _ => voice::peak_glyph(v.peak()),
+    }
+}
+
+/// The composer's text rows while recording: the meter before the first
+/// row, the rows indented after it, the text dimmed (Vibe's `recording`
+/// input class).
+fn recording_lines(lines: Vec<Line<'static>>, glyph: char) -> Vec<Line<'static>> {
+    lines
+        .into_iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let lead = if i == 0 {
+                Span::styled(
+                    format!("{} ", glyph),
+                    Style::default().fg(RECORDING).add_modifier(Modifier::BOLD),
+                )
+            } else {
+                Span::raw("  ")
+            };
+            let mut spans = vec![lead];
+            spans.extend(l.spans.into_iter().map(|s| {
+                let st = s.style.fg(DIM);
+                Span::styled(s.content, st)
+            }));
+            Line::from(spans)
+        })
+        .collect()
+}
+
 fn draw(app: &mut App, frame: &mut Frame) {
-    let area = frame.area();
+    let full = app.term.draw(frame, frame.area());
+    let (area, sb_panel) = sb::split(app, full);
+    if let Some(p) = sb_panel {
+        sb::draw_panel(app, frame, p);
+    }
     // OpenCode layout: no header. Feed grows to fill, a blank row, the
     // status row, another blank row, the prompt block, a blank row,
     // then the hint row — the composer never touches the history.
     // the composer grows with its content (a pasted multi-line block),
     // capped at half the screen so the feed always survives
-    let inner_w = ((area.width as usize).saturating_sub(6)).max(1);
+    // recording: the level meter takes the first 2 columns (Vibe puts
+    // it in place of the prompt), the text is indented after it
+    let voice_pad = if app.voice.active() { 2 } else { 0 };
+    let inner_w = ((area.width as usize).saturating_sub(6 + voice_pad)).max(1);
+    // rows as drawn (same width, same end-slot rule as the draw below):
+    // wrapped by display width (emojis are 2 columns)
     let composer_rows = {
-        let mut rows = 1usize;
-        let mut col = 0usize;
-        for c in app.input.chars() {
-            if c == '\n' {
-                rows += 1;
-                col = 0;
-            } else {
-                col += 1;
-                if col > inner_w {
-                    rows += 1;
-                    col = 1;
-                }
-            }
-        }
-        rows
+        let rows = editor::layout_input(&app.ed.text, inner_w);
+        editor::drawn_rows(&rows, app.ed.cursor)
     };
     // the prompt block holds: 2 rows of top padding, the typed text,
     // one blank line, the meta row, 1 row of bottom padding
     let input_h = ((composer_rows + 5) as u16).min((area.height / 2).max(7));
+    let card_h = sb::card_box_height(app, area);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -2282,6 +2828,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
             Constraint::Length(1), // respiration sous le feed
             Constraint::Length(1), // status row
             Constraint::Length(1), // respiration au-dessus du composeur
+            Constraint::Length(card_h), // la carte affichée (Ctrl+G)
             Constraint::Length(input_h), // prompt
             Constraint::Length(1), // respiration au-dessus de l'aide
             Constraint::Length(1), // hint row
@@ -2307,76 +2854,91 @@ fn draw(app: &mut App, frame: &mut Frame) {
     if app.cache.len() < n {
         app.cache.resize_with(n, || None);
     }
-    let mut starts: Vec<usize> = Vec::with_capacity(n);
-    let mut total_rows = 0usize;
-    for i in 0..n {
-        let live = matches!(&app.events[i], Ev::Tool(td) if matches!(td.state, ToolState::Run));
-        let stale = app.cache[i]
-            .as_ref()
-            .is_none_or(|c| c.width != area_w as u16 || live);
-        if stale {
-            let rows = build_rows(&app.events, i, app.debug, area_w, app.tick);
-            app.cache[i] = Some(EventRows {
-                width: area_w as u16,
-                rows,
-            });
-        }
-        starts.push(total_rows);
-        total_rows += app.cache[i].as_ref().map(|c| c.rows.len()).unwrap_or(0);
+    let (debug, tick) = (app.debug, app.tick);
+    macro_rules! rows_of {
+        () => {
+            &mut |i: usize| ensure_rows(&app.events, &mut app.cache, i, debug, area_w, tick)
+        };
     }
-
-    let max_top = total_rows.saturating_sub(area_h);
-    if app.follow {
-        app.top = max_top;
-    }
-    let top = app.top.min(max_top);
-    let tail_visible = top + area_h >= total_rows;
-
+    let down = app.scroll > 0;
+    let mut anchor = if app.follow {
+        bottom_anchor(n, area_h, rows_of!())
+    } else {
+        move_anchor(app.anchor, app.scroll, n, rows_of!())
+    };
+    app.scroll = 0;
+    // the rows from the anchor down; fewer than the screen: the bottom
     let mut vis: Vec<Line> = Vec::with_capacity(area_h + 2);
-    if total_rows > 0 {
-        let mut i0 = 0usize;
-        for (i, st) in starts.iter().enumerate() {
-            if *st <= top {
-                i0 = i;
-            } else {
-                break;
-            }
-        }
-        let mut skip = top - starts[i0];
-        for i in i0..n {
-            let empty = &Vec::new();
-            let rows = app.cache[i].as_ref().map(|c| &c.rows).unwrap_or(empty);
-            if skip >= rows.len() {
-                skip -= rows.len();
-                continue;
-            }
-            for r in rows.iter().skip(skip) {
+    let mut vis_events: Vec<usize> = Vec::with_capacity(area_h + 2);
+    let mut vis_rows: Vec<usize> = Vec::with_capacity(area_h + 2);
+    let mut tail_visible = true;
+    for pass in 0..2 {
+        vis.clear();
+        vis_events.clear();
+        vis_rows.clear();
+        tail_visible = true;
+        let (mut i, mut skip) = anchor;
+        while i < n {
+            ensure_rows(&app.events, &mut app.cache, i, debug, area_w, tick);
+            let rows = app.cache[i].as_ref().map(|c| &c.rows[..]).unwrap_or(&[]);
+            for (ri, r) in rows.iter().enumerate().skip(skip) {
                 if vis.len() >= area_h {
+                    tail_visible = false;
                     break;
                 }
-                vis.push(r.clone());
+                // the feed selection on the selection background
+                match app.feed_sel.and_then(|s| s.cols(i, ri)) {
+                    Some((a, b)) => vis.push(feedsel::highlight(r, a, b, SELECTION)),
+                    None => vis.push(r.clone()),
+                }
+                vis_events.push(i);
+                vis_rows.push(ri);
             }
             skip = 0;
-            if vis.len() >= area_h {
+            if !tail_visible {
                 break;
             }
+            i += 1;
         }
+        // a full screen that shows the last row is the tail too
+        if pass == 0 && vis.len() < area_h && anchor != (0, 0) {
+            anchor = bottom_anchor(n, area_h, rows_of!());
+            continue;
+        }
+        break;
     }
+    if tail_visible && down && !app.follow {
+        app.follow = true;
+        app.unseen = 0;
+    }
+    // nothing above the anchor: the view shows the top of the feed
+    let at_top = anchor.1 == 0
+        && !app.events[..anchor.0.min(n)]
+            .iter()
+            .rev()
+            .any(|e| ev_visible(e, app.debug));
     frame.render_widget(Paragraph::new(Text::from(vis)), text_area);
 
-    if total_rows > area_h {
-        let mut state = ScrollbarState::new(total_rows)
-            .position(top)
-            .viewport_content_length(area_h);
+    if !(at_top && tail_visible) && n > 0 {
+        // the scrollbar counts events, not rows: the rows of the whole
+        // history are never summed
+        let shown = vis_events.last().map_or(1, |l| l + 1 - anchor.0.min(*l));
+        let pos = if tail_visible { n - 1 } else { anchor.0 };
+        let mut state = ScrollbarState::new(n)
+            .position(pos)
+            .viewport_content_length(shown);
         frame.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight),
             chunks[0],
             &mut state,
         );
     }
+    app.anchor = anchor;
+    app.vis_events = vis_events;
+    app.vis_rows = vis_rows;
+    app.feed_x = text_area.x;
     app.area_w = area_w;
     app.area_h = area_h;
-    app.max_top = max_top;
     app.tail_visible = tail_visible;
 
     // ---- the status row (the OpenCode prompt status row): back to
@@ -2392,21 +2954,43 @@ fn draw(app: &mut App, frame: &mut Frame) {
         ];
         if app.unseen > 0 {
             spans.push(Span::styled(
-                format!("  ·  {} nouvelles lignes", app.unseen),
+                format!("  ·  {} new lines", app.unseen),
                 Style::default().fg(WARN),
             ));
         }
         frame.render_widget(Paragraph::new(Line::from(spans)), chunks[2]);
     } else {
         app.bottom_bar_rect = None;
-        let status = if app.pending && app.connected {
+        let flash = app
+            .flash
+            .as_ref()
+            .filter(|(_, at)| at.elapsed() < Duration::from_secs(2))
+            .map(|(t, _)| t.clone());
+        let voice_note = app
+            .voice_note
+            .as_ref()
+            .filter(|(_, at)| at.elapsed() < Duration::from_secs(2))
+            .map(|(t, _)| t.clone());
+        let status = if let Some(t) = voice_note {
+            Line::from(vec![
+                Span::styled("  ● ", Style::default().fg(RECORDING)),
+                Span::styled(t, Style::default().fg(TEXT)),
+            ])
+        } else if let Some(t) = flash {
+            Line::from(vec![
+                Span::styled("  ✓ ", Style::default().fg(BRAND)),
+                Span::styled(t, Style::default().fg(TEXT)),
+            ])
+        } else if let Some(l) = sb::status_line(app) {
+            l
+        } else if app.pending && app.connected {
             Line::from(vec![
                 Span::styled(
                     format!("  {}", spinner_frame(app.tick / 2)),
                     Style::default().fg(BRAND),
                 ),
                 Span::styled(
-                    format!(" {} · génération…", app.info.model),
+                    format!(" {} · generating…", app.info.model),
                     Style::default().fg(DIM),
                 ),
                 Span::styled(" · ", Style::default().fg(DIM)),
@@ -2427,7 +3011,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
                 ),
                 Span::styled(" · ", Style::default().fg(DIM)),
                 Span::styled("/ commandes", Style::default().fg(TEXT)),
-                Span::styled(" · End : bas · Ctrl+C : quitter", Style::default().fg(DIM)),
+                Span::styled(" · End: bottom · Ctrl+C: quit", Style::default().fg(DIM)),
             ])
         };
         frame.render_widget(Paragraph::new(status), chunks[2]);
@@ -2435,75 +3019,96 @@ fn draw(app: &mut App, frame: &mut Frame) {
 
     // ---- the prompt: OpenCode prompt (left border ┃, element bg, meta row)
     // multi-line: newlines break rows, long rows wrap at the inner
-    // width, the cursor is the REVERSED char (or a REVERSED space at
-    // the end of the input)
-    let chars: Vec<char> = app.input.chars().collect();
-    let inner = ((chunks[4].width as usize).saturating_sub(6)).max(1);
-    let total = chars.len();
+    // width (layout_input)
+    let inner = ((chunks[5].width as usize).saturating_sub(6 + voice_pad)).max(1);
+    // the text area inside the block: left border + padding 3, padding
+    // 2 right, 2 top; the rows above the meta row and its blank line
+    let text_rows = (chunks[5].height as usize).saturating_sub(5).max(1);
+    app.composer = ComposerArea {
+        x: chunks[5].x + 4 + voice_pad as u16,
+        y: chunks[5].y + 2,
+        w: inner,
+        h: text_rows,
+        top: 0,
+    };
     let mut input_lines: Vec<Line> = Vec::new();
-    if total == 0 {
+    if app.ed.is_empty() && app.voice.active() {
+        input_lines.push(Line::from(""));
+    } else if app.ed.is_empty() {
         input_lines.push(Line::from(Span::styled(
-            "Ask anything…",
+            sb::placeholder(app).unwrap_or_else(|| "Ask anything…".to_string()),
             Style::default().fg(DIM),
         )));
     } else {
-        let mut spans: Vec<Span> = Vec::new();
-        let mut buf = String::new();
-        let mut col = 0usize;
-        let flush_plain = |spans: &mut Vec<Span>, buf: &mut String| {
-            if !buf.is_empty() {
-                spans.push(Span::styled(
-                    std::mem::take(buf),
-                    Style::default().fg(TEXT),
-                ));
-            }
-        };
-        for (i, c) in chars.iter().enumerate() {
-            if *c == '\n' {
-                flush_plain(&mut spans, &mut buf);
-                if i == app.cursor {
-                    spans.push(Span::styled(
-                        " ".to_string(),
-                        Style::default().fg(TEXT).add_modifier(Modifier::REVERSED),
-                    ));
+        // rows by display width (emojis are 2 columns); the cursor is
+        // the REVERSED grapheme, or a REVERSED space on a newline or at
+        // the end of the text; the selection has the selection colors
+        let rows = editor::layout_input(&app.ed.text, inner);
+        let drawn = editor::drawn_rows(&rows, app.ed.cursor);
+        let cursor = app.ed.cursor;
+        let selection = app.ed.selection();
+        let (cur_row, _) = editor::row_col(&rows, cursor);
+        // taller than the box: scroll so the cursor row stays visible
+        let top = (cur_row + 1).saturating_sub(text_rows);
+        app.composer.top = top;
+        let text_style = Style::default().fg(TEXT);
+        let sel_style = Style::default().fg(TEXT).bg(SELECTION);
+        for row in rows.iter().take(drawn).skip(top) {
+            let mut spans: Vec<Span> = Vec::new();
+            let mut buf = String::new();
+            let mut buf_sel = false;
+            for cell in row {
+                let n = cell.text.chars().count().max(1);
+                let is_cursor = if cell.newline {
+                    cell.ci == cursor
+                } else {
+                    cell.ci <= cursor && cursor < cell.ci + n
+                };
+                let in_sel = selection.is_some_and(|(a, b)| a <= cell.ci && cell.ci < b);
+                if is_cursor || buf_sel != in_sel {
+                    if !buf.is_empty() {
+                        let st = if buf_sel { sel_style } else { text_style };
+                        spans.push(Span::styled(std::mem::take(&mut buf), st));
+                    }
+                    buf_sel = in_sel;
                 }
-                input_lines.push(Line::from(std::mem::take(&mut spans)));
-                spans = Vec::new();
-                col = 0;
-                continue;
+                if is_cursor {
+                    // a pending dead key (Option+e…): its accent, marked,
+                    // before the cursor, like macOS; on a full row (no
+                    // column left) it takes the cursor cell instead, so
+                    // the row never overflows and the cursor stays seen
+                    let marked = Style::default().fg(BRAND).add_modifier(Modifier::UNDERLINED);
+                    let row_w: usize = row.iter().map(|c| c.w).sum();
+                    match app.ed.pending_dead() {
+                        Some(acc) if row_w + 1 > inner => spans.push(Span::styled(
+                            acc.to_string(),
+                            marked.add_modifier(Modifier::REVERSED),
+                        )),
+                        acc => {
+                            if let Some(acc) = acc {
+                                spans.push(Span::styled(acc.to_string(), marked));
+                            }
+                            spans.push(Span::styled(
+                                cell.text.to_string(),
+                                text_style.add_modifier(Modifier::REVERSED),
+                            ));
+                        }
+                    }
+                } else if !cell.newline {
+                    buf.push_str(cell.text);
+                } else if in_sel {
+                    // a selected newline shows as one selected blank
+                    buf.push(' ');
+                }
             }
-            // the cursor char counts toward the row width like any
-            // other char: a row may overflow by one otherwise
-            let is_cursor = i == app.cursor;
-            if is_cursor {
-                flush_plain(&mut spans, &mut buf);
-                spans.push(Span::styled(
-                    c.to_string(),
-                    Style::default().fg(TEXT).add_modifier(Modifier::REVERSED),
-                ));
-            } else {
-                buf.push(*c);
+            if !buf.is_empty() {
+                spans.push(Span::styled(buf, if buf_sel { sel_style } else { text_style }));
             }
-            col += 1;
-            if col >= inner {
-                flush_plain(&mut spans, &mut buf);
-                input_lines.push(Line::from(std::mem::take(&mut spans)));
-                spans = Vec::new();
-                col = 0;
-            }
-        }
-        if app.cursor >= total {
-            flush_plain(&mut spans, &mut buf);
-            spans.push(Span::styled(
-                " ".to_string(),
-                Style::default().fg(TEXT).add_modifier(Modifier::REVERSED),
-            ));
-        } else {
-            flush_plain(&mut spans, &mut buf);
-        }
-        if !spans.is_empty() {
             input_lines.push(Line::from(spans));
         }
+    }
+    if app.voice.active() {
+        input_lines = recording_lines(input_lines, voice_glyph(&app.voice));
     }
     // the meta row speaks glyphs: ◆ the harness, ● connected (quiet),
     // ○ déconnecté (loud) — the normal state stays muted, only the
@@ -2520,10 +3125,10 @@ fn draw(app: &mut App, frame: &mut Frame) {
         ),
         Span::styled(" · ", Style::default().fg(DIM)),
         Span::styled(
-            if app.input.contains('\n') {
-                "⏎ envoyer · ⇧⏎ ligne"
+            if app.ed.text.contains('\n') {
+                "⏎ send · ⇧⏎ new line"
             } else {
-                "⇧⏎ ligne"
+                "⇧⏎ new line"
             },
             Style::default().fg(DIM),
         ),
@@ -2531,56 +3136,76 @@ fn draw(app: &mut App, frame: &mut Frame) {
         if app.connected {
             Span::styled("●", Style::default().fg(DIM))
         } else {
-            Span::styled("○ déconnecté", Style::default().fg(ERR))
+            Span::styled("○ disconnected", Style::default().fg(ERR))
         },
     ]);
     // one blank line between the typed text and the meta row
     input_lines.push(Line::from(""));
     input_lines.push(meta);
+    let border = if app.voice.active() { RECORDING } else { BRAND };
     let prompt = Paragraph::new(input_lines).block(
         Block::default()
             .borders(Borders::LEFT)
             .border_set(SPLIT)
-            .border_style(Style::default().fg(BRAND))
+            .border_style(Style::default().fg(border))
             .style(Style::default().bg(ELEMENT))
             .padding(Padding::new(3, 2, 2, 1)),
     );
-    frame.render_widget(prompt, chunks[4]);
+    frame.render_widget(prompt, chunks[5]);
+    if card_h > 0 {
+        sb::draw_card(app, frame, chunks[4]);
+    } else if sb::card_full(app) {
+        sb::draw_card(app, frame, chunks[0]);
+    }
 
     // ---- slash-command popup (OpenCode autocomplete: split border,
     // backgroundMenu, primary selection)
-    let matches = popup_matches(&app.input);
+    let matches = popup_items(app);
     if !matches.is_empty() {
         let n = matches.len().min(8) as u16;
-        let w = 56u16.min(chunks[4].width);
+        let w = if matches[0].closable { 72u16 } else { 56u16 }.min(chunks[5].width);
+        let sel_i = app.popup_sel.min(matches.len() - 1);
+        let top = popup_top(sel_i, matches.len(), 8);
         let area = Rect {
-            x: chunks[4].x,
-            y: chunks[4].y.saturating_sub(n + 2),
+            x: chunks[5].x,
+            y: chunks[5].y.saturating_sub(n + 2),
             width: w,
             height: n + 2,
         };
         frame.render_widget(Clear, area);
         let lines: Vec<Line> = matches
             .iter()
-            .take(8)
             .enumerate()
+            .skip(top)
+            .take(8)
             .map(|(i, c)| {
-                let sel = i == app.popup_sel.min(matches.len() - 1);
+                let sel = i == sel_i;
                 let (name_style, desc_style) = if sel {
                     (
                         Style::default()
                             .bg(BRAND)
-                            .fg(TEXT)
+                            .fg(ON_BRAND)
                             .add_modifier(Modifier::BOLD),
-                        Style::default().bg(BRAND).fg(TEXT),
+                        Style::default().bg(BRAND).fg(ON_BRAND),
                     )
                 } else {
                     (Style::default().fg(TEXT), Style::default().fg(DIM))
                 };
-                Line::from(vec![
-                    Span::styled(format!(" {} ", c.name), name_style),
-                    Span::styled(c.desc, desc_style),
-                ])
+                let mut spans = Vec::new();
+                if let Some((g, color)) = c.mark {
+                    let st = if sel {
+                        Style::default().bg(BRAND).fg(ON_BRAND)
+                    } else {
+                        Style::default().fg(color)
+                    };
+                    spans.push(Span::styled(format!(" {}", g), st));
+                }
+                spans.push(Span::styled(format!(" {} ", c.label), name_style));
+                // columns, not chars: an emoji mark is 2 columns wide
+                let mark_w = c.mark.map(|(g, _)| g.width() + 1).unwrap_or(0);
+                let room = (w as usize).saturating_sub(c.label.width() + mark_w + 6);
+                spans.push(Span::styled(truncate_chars(&c.desc, room), desc_style));
+                Line::from(spans)
             })
             .collect();
         frame.render_widget(
@@ -2596,83 +3221,251 @@ fn draw(app: &mut App, frame: &mut Frame) {
     }
 
     // ---- hint row (the OpenCode prompt right hint row)
-    let hint = if app.pending {
-        "⏎ diriger · Tab file · Ctrl+C interrompre · / commandes · End bas"
+    let hint = if app.voice.state() == voice::VoiceState::Recording {
+        "recording · any key stops · Esc/Ctrl+C cancel"
+    } else if app.voice.state() == voice::VoiceState::Flushing {
+        "transcribing the last words… · Esc/Ctrl+C cancel"
+    } else if let Some(h) = sb::hint(app) {
+        h
+    } else if app.pending {
+        "⏎ steer · Tab queue · Ctrl+C interrupt · / commands · End bottom"
     } else {
-        "⏎ envoyer · Maj+⏎/Ctrl+J nouvelle ligne · / commandes · Ctrl+T raisonnement · Ctrl+C quitter"
+        "⏎ send · Shift+⏎/Ctrl+J new line · / commands · Ctrl+T reasoning · Ctrl+C quit"
     };
+    let hint = if app.term.shown() { term::HINT } else { hint };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(DIM)))),
-        chunks[6],
+        chunks[7],
     );
+    help::draw(app, frame);
 }
 
-// ---- multi-line composer navigation ----
-// The cursor is a char index over the whole input; Up/Down move it to
-// the same column on the previous/next line (clamped to that line).
-
-fn cursor_pos(input: &str, cursor: usize) -> (usize, usize) {
-    // (line, column) of the cursor
-    let mut line = 0usize;
-    let mut col = 0usize;
-    for c in input.chars().take(cursor) {
-        if c == '\n' {
-            line += 1;
-            col = 0;
-        } else {
-            col += 1;
+// one wire line into the feed of the app (the focused view)
+fn ingest_line(app: &mut App, line: String) {
+    if line == "--- idle" {
+        app.pending = false;
+        app.interrupt_requested = false;
+        // BR-002: a flag that outlived its turn must
+        // not kill the next one
+        let _ = std::fs::write(
+            &app.info.interrupt_path,
+            "",
+        );
+    }
+    // thinking duration: the model's reply arrives one
+    // batch after the previous wire line
+    let now = std::time::Instant::now();
+    let ms = app
+        .last_line_at
+        .map_or(0, |t| now.duration_since(t).as_millis());
+    app.last_line_at = Some(now);
+    let (line, replayed) = strip_history(&line);
+    // a replayed reasoning section has no duration
+    let ms = if replayed { 0 } else { ms };
+    let parsed = if replayed {
+        parse_history_line(line)
+    } else {
+        parse_line(line)
+    };
+    if let Some(ev) = parsed {
+        // the reasoning rides inside the assistant text
+        // (think markers): it becomes its own collapsed
+        // section, never raw history text
+        let evs: Vec<Ev> = match ev {
+            Ev::Assistant(t) => match split_thinking(&t) {
+                Some((think, vis)) => {
+                    let mut v = vec![Ev::Thinking {
+                        ms,
+                        text: think.to_string(),
+                        open: app.show_thinking,
+                    }];
+                    if !vis.trim().is_empty() {
+                        v.push(Ev::Assistant(vis.to_string()));
+                    }
+                    v
+                }
+                None => vec![Ev::Assistant(t)],
+            },
+            other => vec![other],
+        };
+        for ev in evs {
+            let finished = match &ev {
+                Ev::Tool(td) if !matches!(td.state, ToolState::Run) => {
+                    Some(td.id)
+                }
+                _ => None,
+            };
+            // the view is top-anchored: a pinned view never
+            // moves, a following view re-sticks in draw
+            let appended =
+                push_event(&mut app.events, &mut app.cache, ev);
+            if appended && !app.follow {
+                app.unseen += 1;
+            }
+            if let (true, Some(id)) = (replayed, finished) {
+                hide_replayed_elapsed(&mut app.events, &mut app.cache, id);
+            }
         }
     }
-    (line, col)
 }
 
-fn line_bounds(input: &str) -> Vec<(usize, usize)> {
-    // (start, len-without-newline) of every line
-    let chars: Vec<char> = input.chars().collect();
-    let mut out = vec![(0usize, 0usize)];
-    let mut start = 0usize;
-    for (i, c) in chars.iter().enumerate() {
-        if *c == '\n' {
-            out.last_mut().unwrap().1 = i - start;
-            start = i + 1;
-            out.push((start, 0));
-        }
-    }
-    out.last_mut().unwrap().1 = chars.len() - start;
-    out
+/// The feed position under the screen cell, from the last frame (the
+/// feed starts at the top of the terminal: the screen row IS the feed
+/// row). `clamp`: a row below the feed is its last row, at the end.
+fn feed_pos(app: &App, x: u16, y: u16, clamp: bool) -> Option<feedsel::FeedPos> {
+    let col = x.saturating_sub(app.feed_x) as usize;
+    let (row, col) = if (y as usize) < app.vis_events.len() {
+        (y as usize, col)
+    } else if clamp && !app.vis_events.is_empty() {
+        (app.vis_events.len() - 1, usize::MAX / 2)
+    } else {
+        return None;
+    };
+    Some((app.vis_events[row], *app.vis_rows.get(row)?, col))
 }
 
-fn cursor_line_up(input: &str, cursor: &mut usize) {
-    let (_, col) = cursor_pos(input, *cursor);
-    let bounds = line_bounds(input);
-    // find the current line index
-    let mut cur = 0usize;
-    for (i, (st, _)) in bounds.iter().enumerate() {
-        if *st <= *cursor {
-            cur = i;
-        }
+/// The text of the feed selection (the rows of every event it spans).
+fn feed_selection_text(app: &mut App) -> Option<String> {
+    let sel = app.feed_sel?;
+    let ((e0, r0, c0), (e1, r1, c1)) = sel.range();
+    let (debug, w, tick) = (app.debug, app.area_w, app.tick);
+    let mut rows: Vec<Line<'static>> = Vec::new();
+    for i in e0..=e1.min(app.events.len().saturating_sub(1)) {
+        ensure_rows(&app.events, &mut app.cache, i, debug, w, tick);
+        let Some(er) = app.cache.get(i).and_then(|c| c.as_ref()) else { continue };
+        let from = if i == e0 { r0 } else { 0 };
+        let to = if i == e1 { (r1 + 1).min(er.rows.len()) } else { er.rows.len() };
+        rows.extend(er.rows.get(from..to).unwrap_or(&[]).iter().cloned());
     }
-    if cur == 0 {
-        return;
-    }
-    let (prev_start, prev_len) = bounds[cur - 1];
-    *cursor = prev_start + col.min(prev_len);
+    Some(feedsel::selection_text(&rows, c0, c1.saturating_add(1)))
 }
 
-fn cursor_line_down(input: &str, cursor: &mut usize) {
-    let (_, col) = cursor_pos(input, *cursor);
-    let bounds = line_bounds(input);
-    let mut cur = 0usize;
-    for (i, (st, _)) in bounds.iter().enumerate() {
-        if *st <= *cursor {
-            cur = i;
+/// Copies to the system clipboard and says so in the status row.
+fn copy_text(app: &mut App, text: &str) {
+    let n = text.chars().count();
+    let note = if clipboard::copy(text) {
+        format!("copied {} char{}", n, if n == 1 { "" } else { "s" })
+    } else {
+        "copy failed (no pbcopy, and the terminal refused OSC 52)".to_string()
+    };
+    app.flash = Some((note, std::time::Instant::now()));
+}
+
+/// Speech-to-text keys (Vibe's text_area._handle_voice_key): Ctrl+R
+/// starts; while recording any key stops, Ctrl+C / Esc cancel; nothing
+/// else sees those keys. `true` when the key was the voice's. `api_key`
+/// finds MISTRAL_API_KEY (read only when a recording starts).
+fn voice_key(
+    app: &mut App,
+    k: &crossterm::event::KeyEvent,
+    api_key: impl FnOnce() -> Option<String>,
+) -> bool {
+    use voice::KeyAction;
+    let now = std::time::Instant::now();
+    match voice::key_action(app.voice.state(), app.voice.enabled, k.code, k.modifiers) {
+        KeyAction::Pass => return false,
+        KeyAction::Start => {
+            if let Err(m) = app.voice.start(api_key(), now) {
+                push_event(&mut app.events, &mut app.cache, Ev::Warn(m));
+            }
+        }
+        KeyAction::Stop => app.voice.stop(now),
+        KeyAction::Cancel => app.voice.cancel(),
+        KeyAction::Swallow => {}
+        KeyAction::OffHint => app.voice_note = Some((voice::OFF_HINT.into(), now)),
+    }
+    true
+}
+
+/// The transcription events of this tick: the text lands at the
+/// composer cursor as it arrives.
+fn pump_voice(app: &mut App) {
+    let now = std::time::Instant::now();
+    for out in app.voice.poll(now) {
+        apply_voice(app, out, now);
+    }
+}
+
+fn apply_voice(app: &mut App, out: voice::VoiceOutput, now: std::time::Instant) {
+    match out {
+        voice::VoiceOutput::Insert(t) => {
+            app.ed.insert_voice(&t);
+            app.popup_sel = 0;
+        }
+        voice::VoiceOutput::Utterance => app.ed.break_undo(),
+        voice::VoiceOutput::Error(m) => {
+            push_event(&mut app.events, &mut app.cache, Ev::Err(m));
+        }
+        voice::VoiceOutput::Notice(m) => app.voice_note = Some((m, now)),
+    }
+}
+
+/// /voice: voice mode on or off, saved in ~/.bend-harness/tui.json.
+fn toggle_voice(app: &mut App) -> Ev {
+    let on = !app.voice.enabled;
+    app.voice.enabled = on;
+    if !on {
+        app.voice.cancel();
+    }
+    match voice::save_voice_enabled(on) {
+        Err(e) => Ev::Warn(format!(
+            "{} (not saved: {})",
+            if on { voice::ENABLED_MESSAGE } else { voice::DISABLED_MESSAGE },
+            e
+        )),
+        Ok(()) => Ev::Info(if on { voice::ENABLED_MESSAGE } else { voice::DISABLED_MESSAGE }.into()),
+    }
+}
+
+/// A key for the composer's editor (after the popups and the app keys):
+/// moves, selection, deletes, undo/redo, typing, copy/cut; Up/Down move
+/// between the visual rows, then through the history from the first and
+/// last rows.
+fn composer_key(app: &mut App, k: &crossterm::event::KeyEvent) {
+    use editor::{Action, Motion};
+    let Some(a) = editor::action(k) else { return };
+    let w = app.composer.w.max(1);
+    match a {
+        Action::Up(sel) => {
+            if !app.ed.row_up(w, sel) && (sel || !app.ed.history_up(&app.history)) {
+                app.ed.move_cursor(Motion::TextStart, sel);
+            }
+        }
+        Action::Down(sel) => {
+            if !app.ed.row_down(w, sel) && (sel || !app.ed.history_down(&app.history)) {
+                app.ed.move_cursor(Motion::TextEnd, sel);
+            }
+        }
+        // the composer's selection, else the feed's
+        Action::Copy => {
+            if let Some(t) = app.ed.selected_text().or_else(|| feed_selection_text(app)) {
+                copy_text(app, &t);
+            }
+        }
+        Action::Cut => {
+            if let Some(t) = app.ed.cut() {
+                copy_text(app, &t);
+                app.popup_sel = 0;
+            }
+        }
+        Action::Insert(t) => {
+            app.ed.insert(&t);
+            app.popup_sel = 0;
+            // a typed (never a pasted) `:name:` becomes its emoji
+            if t == ":" {
+                if let Some((text, cur)) = emoji::replace_typed(&app.ed.text, app.ed.cursor) {
+                    app.ed.set(&text, cur);
+                }
+            }
+        }
+        other => {
+            let edits = !matches!(other, Action::Move(..));
+            app.ed.apply(&other);
+            if edits {
+                app.popup_sel = 0;
+            }
         }
     }
-    if cur + 1 >= bounds.len() {
-        return;
-    }
-    let (next_start, next_len) = bounds[cur + 1];
-    *cursor = next_start + col.min(next_len);
 }
 
 fn run_tui(app: &mut App) -> io::Result<()> {
@@ -2689,73 +3482,22 @@ fn run_tui(app: &mut App) -> io::Result<()> {
         PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
     );
     loop {
+        // the hub replays whole feeds on connect: the lines are taken in
+        // slices of a few ms, a frame in between, so the UI never waits
+        // for a replay to end
+        let slice = std::time::Instant::now();
+        let mut backlog = false;
         loop {
+            if slice.elapsed() >= Duration::from_millis(12) {
+                backlog = true;
+                break;
+            }
             match app.rx.try_recv() {
                 Ok(line) => {
-                    if line == "--- idle" {
-                        app.pending = false;
-                        app.interrupt_requested = false;
-                        // BR-002: a flag that outlived its turn must
-                        // not kill the next one
-                        let _ = std::fs::write(
-                            &app.info.interrupt_path,
-                            "",
-                        );
-                    }
-                    // thinking duration: the model's reply arrives one
-                    // batch after the previous wire line
-                    let now = std::time::Instant::now();
-                    let ms = app
-                        .last_line_at
-                        .map_or(0, |t| now.duration_since(t).as_millis());
-                    app.last_line_at = Some(now);
-                    let (line, replayed) = strip_history(&line);
-                    // a replayed reasoning section has no duration
-                    let ms = if replayed { 0 } else { ms };
-                    let parsed = if replayed {
-                        parse_history_line(line)
+                    if app.sb.is_some() {
+                        sb::dispatch(app, &line);
                     } else {
-                        parse_line(line)
-                    };
-                    if let Some(ev) = parsed {
-                        // the reasoning rides inside the assistant text
-                        // (think markers): it becomes its own collapsed
-                        // section, never raw history text
-                        let evs: Vec<Ev> = match ev {
-                            Ev::Assistant(t) => match split_thinking(&t) {
-                                Some((think, vis)) => {
-                                    let mut v = vec![Ev::Thinking {
-                                        ms,
-                                        text: think.to_string(),
-                                        open: app.show_thinking,
-                                    }];
-                                    if !vis.trim().is_empty() {
-                                        v.push(Ev::Assistant(vis.to_string()));
-                                    }
-                                    v
-                                }
-                                None => vec![Ev::Assistant(t)],
-                            },
-                            other => vec![other],
-                        };
-                        for ev in evs {
-                            let finished = match &ev {
-                                Ev::Tool(td) if !matches!(td.state, ToolState::Run) => {
-                                    Some(td.id)
-                                }
-                                _ => None,
-                            };
-                            // the view is top-anchored: a pinned view never
-                            // moves, a following view re-sticks in draw
-                            let appended =
-                                push_event(&mut app.events, &mut app.cache, ev);
-                            if appended && !app.follow {
-                                app.unseen += 1;
-                            }
-                            if let (true, Some(id)) = (replayed, finished) {
-                                hide_replayed_elapsed(&mut app.events, &mut app.cache, id);
-                            }
-                        }
+                        ingest_line(app, line);
                     }
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
@@ -2773,24 +3515,86 @@ fn run_tui(app: &mut App) -> io::Result<()> {
         if app.should_quit {
             break;
         }
-        terminal.draw(|f| draw(app, f))?;
-        if poll(Duration::from_millis(80))? {
+        // switchboard Ctrl+O: a shell in the agent's directory; the TUI
+        // gives the terminal back when it exits
+        if let Some(dir) = sb::take_shell(app) {
+            let _ = crossterm::execute!(io::stdout(), DisableMouseCapture);
+            ratatui::restore();
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+            println!("shell in {} — exit to return to Switchboard", dir);
+            let _ = std::process::Command::new(shell).current_dir(&dir).status();
+            terminal = ratatui::init();
+            let _ = crossterm::execute!(io::stdout(), EnableMouseCapture);
+            let _ = crossterm::execute!(io::stdout(), EnableBracketedPaste);
+            let _ = terminal.clear();
+        }
+        pump_voice(app);
+        terminal.draw(|f| {
+            if app.sb.is_some() {
+                sb::draw_sb(app, f)
+            } else {
+                draw(app, f)
+            }
+        })?;
+        // the level meter moves every 50 ms while recording (Vibe's poll)
+        let wait = if backlog {
+            Duration::ZERO
+        } else if app.voice.active() {
+            Duration::from_millis(50)
+        } else {
+            Duration::from_millis(80)
+        };
+        if poll(wait)? {
             let ev = read()?;
             if let Event::Mouse(m) = ev {
+                if help::mouse(app, &m) {
+                    continue;
+                }
+                if app.term.mouse(&m, terminal.size().map(|s| s.height).unwrap_or(24)) {
+                    continue;
+                }
                 match m.kind {
                     MouseEventKind::ScrollUp => {
                         app.follow = false;
-                        app.top = app.top.saturating_sub(3);
+                        app.scroll -= 3;
                     }
                     MouseEventKind::ScrollDown => {
-                        app.top += 3;
-                        if app.top >= app.max_top {
-                            app.follow = true;
-                            app.unseen = 0;
+                        if !app.follow {
+                            app.scroll += 3;
                         }
                     }
                     // click the back-to-bottom bar to return to the tail;
                     // click a thinking section to expand/collapse it
+                    // the composer: a press places the cursor (Shift
+                    // extends), a drag selects, a double click selects
+                    // the word, a triple click the whole text; the
+                    // release copies the selection
+                    MouseEventKind::Down(MouseButton::Left)
+                        if app.composer.hit(&app.ed.text, m.column, m.row, false).is_some() =>
+                    {
+                        let ci = app.composer.hit(&app.ed.text, m.column, m.row, false).unwrap_or(0);
+                        let clicks = app.mouse.press(m.column, m.row, std::time::Instant::now());
+                        match clicks {
+                            2 => {
+                                let (a, b) = editor::word_at(&app.ed.text, ci);
+                                app.ed.select_range(a, b);
+                            }
+                            3 => app.ed.select_all(),
+                            _ => app.ed.click(ci, m.modifiers.contains(KeyModifiers::SHIFT)),
+                        }
+                        app.mouse.drag = Some(DragIn::Composer);
+                    }
+                    MouseEventKind::Drag(MouseButton::Left) if app.mouse.drag == Some(DragIn::Composer) => {
+                        if let Some(ci) = app.composer.hit(&app.ed.text, m.column, m.row, true) {
+                            app.ed.click(ci, true);
+                        }
+                    }
+                    MouseEventKind::Up(MouseButton::Left) if app.mouse.drag == Some(DragIn::Composer) => {
+                        app.mouse.drag = None;
+                        if let Some(t) = app.ed.selected_text() {
+                            copy_text(app, &t);
+                        }
+                    }
                     MouseEventKind::Down(MouseButton::Left) => {
                         if let Some(r) = app.bottom_bar_rect {
                             let inside = m.column >= r.x
@@ -2803,61 +3607,116 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                                 continue;
                             }
                         }
-                        // the feed starts at the top of the terminal:
-                        // the clicked terminal row IS the feed row
-                        if m.row as usize >= app.area_h {
+                        // the feed: a press starts a selection (a double
+                        // click selects the word, a triple the row); the
+                        // release copies it, or toggles the section when
+                        // the mouse did not move
+                        let Some(pos) = feed_pos(app, m.column, m.row, false) else {
+                            app.feed_sel = None;
+                            continue;
+                        };
+                        let clicks = app.mouse.press(m.column, m.row, std::time::Instant::now());
+                        let row_text = app
+                            .cache
+                            .get(pos.0)
+                            .and_then(|c| c.as_ref())
+                            .and_then(|c| c.rows.get(pos.1))
+                            .map(feedsel::line_text)
+                            .unwrap_or_default();
+                        let (a, b) = match clicks {
+                            2 => feedsel::word_cols(&row_text, pos.2),
+                            3 => (0, row_text.width().saturating_sub(1)),
+                            _ => (pos.2, pos.2),
+                        };
+                        app.feed_sel = Some(feedsel::FeedSel { anchor: (pos.0, pos.1, a), head: (pos.0, pos.1, b) });
+                        app.mouse.drag = Some(DragIn::Feed { moved: clicks > 1 });
+                    }
+                    MouseEventKind::Drag(MouseButton::Left) if matches!(app.mouse.drag, Some(DragIn::Feed { .. })) => {
+                        // dragging on the top row or below the feed scrolls
+                        if m.row == 0 {
+                            app.follow = false;
+                            app.scroll -= 1;
+                        } else if m.row as usize >= app.area_h && !app.follow {
+                            app.scroll += 1;
+                        }
+                        if let (Some(pos), Some(sel)) = (feed_pos(app, m.column, m.row, true), app.feed_sel.as_mut()) {
+                            if sel.head != pos {
+                                sel.head = pos;
+                                app.mouse.drag = Some(DragIn::Feed { moved: true });
+                            }
+                        }
+                    }
+                    MouseEventKind::Up(MouseButton::Left) if matches!(app.mouse.drag, Some(DragIn::Feed { .. })) => {
+                        let moved = matches!(app.mouse.drag, Some(DragIn::Feed { moved: true }));
+                        app.mouse.drag = None;
+                        if moved {
+                            if let Some(t) = feed_selection_text(app).filter(|t| !t.is_empty()) {
+                                copy_text(app, &t);
+                            }
                             continue;
                         }
-                        // the same math as draw: content row = the
-                        // scroll offset + the feed row, then the event
-                        // whose row range contains it
-                        let top = app.top.min(app.max_top);
-                        let row = top + m.row as usize;
-                        let mut acc = 0usize;
-                        for i in 0..app.events.len() {
-                            let len = app
-                                .cache
-                                .get(i)
-                                .and_then(|c| c.as_ref())
-                                .map_or(0, |c| c.rows.len());
-                            if row < acc + len {
-                                if let Ev::Thinking { open, .. } = &mut app.events[i] {
-                                    *open = !*open;
-                                    if let Some(c) = app.cache.get_mut(i) {
-                                        *c = None;
-                                    }
-                                }
-                                break;
+                        // a plain click: expand/collapse the section
+                        let Some(i) = app.feed_sel.take().map(|s| s.anchor.0) else { continue };
+                        let toggled = match app.events.get_mut(i) {
+                            Some(Ev::Thinking { open, .. }) => {
+                                *open = !*open;
+                                true
                             }
-                            acc += len;
+                            Some(Ev::Tool(td)) if td.code.is_some() => {
+                                td.expanded = !td.expanded;
+                                true
+                            }
+                            _ => false,
+                        };
+                        if toggled {
+                            if let Some(c) = app.cache.get_mut(i) {
+                                *c = None;
+                            }
                         }
                     }
                     _ => {}
                 }
                 continue;
             }
+            if let Event::Paste(text) = &ev {
+                if app.term.paste(text) {
+                    continue;
+                }
+            }
             if let Event::Paste(text) = ev {
                 // normalize CRLF/CR so a terminal paste behaves like the
                 // typed newline, then insert at the cursor
                 let text = text.replace("\r\n", "\n").replace('\r', "\n");
-                let b = byte_at_char(&app.input, app.cursor);
-                app.input.insert_str(b, &text);
-                app.cursor += text.chars().count();
-                app.hist_idx = None;
+                app.ed.paste(&text);
                 app.popup_sel = 0;
                 continue;
             }
             if let Event::Key(k) = ev {
+                if help::on_key(app, &k) {
+                    continue;
+                }
+                if term::on_key(app, &k) {
+                    continue;
+                }
                 if k.kind != KeyEventKind::Press {
                     continue;
                 }
-                let matches = popup_matches(&app.input);
+                if voice_key(app, &k, voice::resolve_api_key) {
+                    continue;
+                }
+                if app.popup_dismissed.as_deref() != Some(app.ed.text.as_str()) {
+                    app.popup_dismissed = None;
+                }
+                let matches = popup_items(app);
                 let popup_open = !matches.is_empty();
                 let sel = if popup_open {
-                    Some(matches[app.popup_sel.min(matches.len() - 1)])
+                    Some(&matches[app.popup_sel.min(matches.len() - 1)])
                 } else {
                     None
                 };
+                if app.sb.is_some() && sb::key(app, &k, popup_open) {
+                    continue;
+                }
                 match (k.code, k.modifiers) {
                     // ctrl+c: clear input first, quit when already empty
                     // ctrl+c: INTERRUPT the running turn — the UI is
@@ -2881,9 +3740,9 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                                 &mut app.events,
                                 &mut app.cache,
                                 Ev::Info(if ok {
-                                    "interrompu — le tour en cours s'arrête au prochain point sûr · Ctrl+C à nouveau pour quitter".to_string()
+                                    "interrupted — the current turn stops at the next safe point · Ctrl+C again to quit".to_string()
                                 } else {
-                                    "interruption non écrite (side-channel inaccessible) — Ctrl+C à nouveau pour quitter".to_string()
+                                    "interrupt not written (side channel unreachable) — Ctrl+C again to quit".to_string()
                                 }),
                             );
                         } else {
@@ -2904,54 +3763,56 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
                         app.events.clear();
                         app.cache.clear();
-                        app.top = 0;
+                        app.anchor = (0, 0);
+        app.scroll = 0;
                         app.follow = true;
                         app.unseen = 0;
                     }
-                    // esc: close the popup only — it never interrupts
-                    // (Ctrl+C does, through the flag side-channel)
+                    // esc: close the popup, else drop the selection — it
+                    // never interrupts (Ctrl+C does, through the flag
+                    // side-channel)
                     (KeyCode::Esc, _) => {
-                        if popup_open {
-                            app.input.clear();
-                            app.cursor = 0;
+                        if sel.is_some_and(|c| c.closable) {
+                            // close the list, keep the text
+                            app.popup_dismissed = Some(app.ed.text.clone());
+                            app.popup_sel = 0;
+                        } else if popup_open {
+                            app.ed.clear();
+                        } else {
+                            app.ed.anchor = None;
+                            app.feed_sel = None;
                         }
                     }
                     // scrollback: PgUp/PgDn page, End follows the bottom
                     (KeyCode::PageUp, _) => {
                         let page = (app.area_h / 2).max(1);
                         app.follow = false;
-                        app.top = app.top.saturating_sub(page);
+                        app.scroll -= page as isize;
                     }
                     (KeyCode::PageDown, _) => {
                         let page = (app.area_h / 2).max(1);
-                        app.top += page;
-                        if app.top >= app.max_top {
-                            app.follow = true;
-                            app.unseen = 0;
+                        if !app.follow {
+                            app.scroll += page as isize;
                         }
                     }
-                    (KeyCode::End, _) => {
-                        if !app.follow {
-                            app.follow = true;
-                            app.unseen = 0;
-                        } else {
-                            app.cursor = app.input.chars().count();
-                        }
+                    // End back to the tail when scrolled up, else the
+                    // line end (the editor)
+                    (KeyCode::End, KeyModifiers::NONE) if !app.follow => {
+                        app.follow = true;
+                        app.unseen = 0;
                     }
                     (KeyCode::Tab, _) => {
                         if let Some(c) = sel {
                             // popup completion
-                            app.input = format!("{} ", c.name);
-                            app.cursor = app.input.chars().count();
+                            app.ed.set(&c.fill, c.fill_cursor);
                             app.popup_sel = 0;
                         } else if app.pending {
                             // codex queue_keys: queue the draft for after
                             // the turn ("say" forces the message reading
                             // even if the text starts with a protocol word)
-                            let v = app.input.trim().to_string();
+                            let v = app.ed.text.trim().to_string();
                             if !v.is_empty() && !v.starts_with('/') {
-                                app.input.clear();
-                                app.cursor = 0;
+                                app.ed.take();
                                 handle_input(app, &format!("say {}", v));
                             }
                         }
@@ -2963,27 +3824,19 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     (KeyCode::Enter, KeyModifiers::SHIFT)
                     | (KeyCode::Char('j'), KeyModifiers::CONTROL)
                     | (KeyCode::Enter, KeyModifiers::ALT) => {
-                        let b = byte_at_char(&app.input, app.cursor);
-                        app.input.insert(b, '\n');
-                        app.cursor += 1;
-                        app.hist_idx = None;
+                        app.ed.insert("\n");
                     }
                     (KeyCode::Enter, _) => {
                         if let Some(c) = sel {
-                            if c.args {
-                                app.input = format!("{} ", c.name);
-                                app.cursor = app.input.chars().count();
-                                app.popup_sel = 0;
-                            } else {
-                                let v = c.name.to_string();
-                                app.input.clear();
-                                app.cursor = 0;
+                            if let Some(v) = c.run.clone() {
+                                app.ed.take();
                                 handle_input(app, &v);
+                            } else {
+                                app.ed.set(&c.fill, c.fill_cursor);
+                                app.popup_sel = 0;
                             }
                         } else {
-                            let v = app.input.trim().to_string();
-                            app.input.clear();
-                            app.cursor = 0;
+                            let v = app.ed.take().trim().to_string();
                             app.follow = true;
                             app.unseen = 0;
                             if !v.is_empty() {
@@ -3005,91 +3858,21 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                             }
                         }
                     }
-                    (KeyCode::Up, _) => {
-                        if popup_open {
-                            app.popup_sel = (app.popup_sel + matches.len() - 1) % matches.len();
-                        } else if app.input.contains('\n') {
-                            cursor_line_up(&app.input, &mut app.cursor);
-                        } else {
-                            let next = match app.hist_idx {
-                                None if !app.history.is_empty() => Some(0),
-                                Some(i) if i + 1 < app.history.len() => Some(i + 1),
-                                other => other,
-                            };
-                            if let Some(i) = next {
-                                app.hist_idx = next;
-                                app.input = app.history[i].clone();
-                                app.cursor = app.input.chars().count();
-                            }
-                        }
+                    // the popup takes the plain arrows
+                    (KeyCode::Up, KeyModifiers::NONE) if popup_open => {
+                        app.popup_sel = (app.popup_sel + matches.len() - 1) % matches.len();
                     }
-                    (KeyCode::Down, _) => {
-                        if popup_open {
-                            app.popup_sel = (app.popup_sel + 1) % matches.len();
-                        } else if app.input.contains('\n') {
-                            cursor_line_down(&app.input, &mut app.cursor);
-                        } else {
-                            let next = match app.hist_idx {
-                                Some(0) | None => None,
-                                Some(i) => Some(i - 1),
-                            };
-                            app.hist_idx = next;
-                            app.input = match next {
-                                Some(i) => app.history[i].clone(),
-                                None => String::new(),
-                            };
-                            app.cursor = app.input.chars().count();
-                        }
+                    (KeyCode::Down, KeyModifiers::NONE) if popup_open => {
+                        app.popup_sel = (app.popup_sel + 1) % matches.len();
                     }
-                    // readline-style cursor movement
-                    (KeyCode::Left, _) => {
-                        app.cursor = app.cursor.saturating_sub(1);
-                    }
-                    (KeyCode::Right, _) => {
-                        if app.cursor < app.input.chars().count() {
-                            app.cursor += 1;
-                        }
-                    }
-                    (KeyCode::Home, _) | (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
-                        app.cursor = 0;
-                    }
-                    (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
-                        app.cursor = app.input.chars().count();
-                    }
-                    (KeyCode::Backspace, _) => {
-                        if app.cursor > 0 {
-                            let b = byte_at_char(&app.input, app.cursor - 1);
-                            let e = byte_at_char(&app.input, app.cursor);
-                            app.input.replace_range(b..e, "");
-                            app.cursor -= 1;
-                        }
-                    }
-                    (KeyCode::Delete, _) => {
-                        if app.cursor < app.input.chars().count() {
-                            let b = byte_at_char(&app.input, app.cursor);
-                            let e = byte_at_char(&app.input, app.cursor + 1);
-                            app.input.replace_range(b..e, "");
-                        }
-                    }
-                    // ctrl+w: delete the word before the cursor
-                    (KeyCode::Char('w'), KeyModifiers::CONTROL) => {
-                        let e = byte_at_char(&app.input, app.cursor);
-                        let head = app.input[..e].trim_end();
-                        let b = head.rfind(char::is_whitespace).map(|i| i + 1).unwrap_or(0);
-                        app.input.replace_range(b..e, "");
-                        app.cursor = app.input[..b].chars().count();
-                    }
-                    (KeyCode::Char(c), m) if m.is_empty() || m == KeyModifiers::SHIFT => {
-                        let b = byte_at_char(&app.input, app.cursor);
-                        app.input.insert(b, c);
-                        app.cursor += 1;
-                    }
-                    _ => {}
+                    _ => composer_key(app, &k),
                 }
             }
         }
         app.tick = app.tick.wrapping_add(1);
     }
+    // no orphan shell
+    app.term.shutdown();
     let _ = crossterm::execute!(io::stdout(), DisableMouseCapture);
     let _ = crossterm::execute!(io::stdout(), DisableBracketedPaste);
     let _ = crossterm::execute!(io::stdout(), PopKeyboardEnhancementFlags);
@@ -3179,7 +3962,7 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
         Ok(s) => s,
         Err(e) => {
             eprintln!("connexion impossible : {}", e);
-            eprintln!("lance le harness avec ./run.sh");
+            eprintln!("start the harness with ./run.sh");
             return Ok(());
         }
     };
@@ -3210,15 +3993,22 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
 
     let mut app = App {
         connected,
+        term: term::Term::default(),
+        help: None,
         debug,
         line_tools: std::collections::HashMap::new(),
         follow: true,
-        top: 0,
-        max_top: 0,
+        anchor: (0, 0),
+        scroll: 0,
+        vis_events: Vec::new(),
+        vis_rows: Vec::new(),
+        feed_x: 0,
+        feed_sel: None,
         unseen: 0,
         tail_visible: true,
         bottom_bar_rect: None,
         cache: Vec::new(),
+        win: Default::default(),
         // line mode renders without a frame: the terminal width (or a
         // sane default) sizes the code blocks; interactive mode
         // overwrites this every frame
@@ -3232,11 +4022,15 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
         show_thinking: false,
         interrupt_requested: false,
         pending: false,
-        input: String::new(),
-        cursor: 0,
+        ed: editor::Editor::default(),
+        composer: ComposerArea::default(),
+        flash: None,
+        voice: voice::Voice::live(voice::load_voice_enabled()),
+        voice_note: None,
+        mouse: MouseState::default(),
         popup_sel: 0,
+        popup_dismissed: None,
         history: Vec::new(),
-        hist_idx: None,
         tick: 0,
         info,
         host,
@@ -3245,6 +4039,7 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
         stream: Some(stream),
         rx,
         should_quit: false,
+        sb: None,
     };
 
     // "connected" updates when the reader ends: reflect it via a probe
@@ -3277,12 +4072,12 @@ mod tests {
         match parse_line("  obs: provider_retry: 2/10 · provider 529 (transient) · retry in 4s") {
             Some(Ev::Warn(t)) => assert_eq!(
                 t,
-                "API du modèle en erreur (essai 2/10) : provider 529 (transient) — nouvel essai dans 4s"
+                "model call failed (attempt 2/10): provider 529 (transient) · retry 3/10 in 4s"
             ),
             _ => panic!("provider_retry must render as a warning"),
         }
         match parse_line("  obs: harness_restarted: exit status: 1 · bend: out of memory") {
-            Some(Ev::Err(t)) => assert!(t.contains("bend: out of memory") && t.contains("redémarré")),
+            Some(Ev::Err(t)) => assert!(t.contains("bend: out of memory") && t.contains("restarted")),
             _ => panic!("harness_restarted must render as an error"),
         }
     }
@@ -3385,6 +4180,25 @@ async function main(): Promise<unknown> {
 
     // bash gets the same block as run_typescript: the raw command (no
     // JSON), bash header, one row per line, no preview on the tool line
+    #[test]
+    fn a_long_source_block_folds_until_clicked() {
+        let cmd: String = (1..=200).map(|i| format!("echo {}", i)).collect::<Vec<_>>().join("\n");
+        let wire_lines = vec![
+            "  obs: tool_started #4".to_string(),
+            "tool #4 bash : echo".to_string(),
+            format!("tool_code #4 : {}", wire_encode(&cmd)),
+            "  obs: tool_finished #4 ok".to_string(),
+        ];
+        let mut tool = merged_tool(&wire_lines);
+        let folded = rows_text(&ev_lines(&Ev::Tool(tool.clone()), 80));
+        assert_eq!(folded.iter().filter(|l| l.contains("│ echo")).count(), CODE_FOLD_SHOW);
+        assert!(folded.iter().any(|l| l.contains("160 more lines")));
+        tool.expanded = true;
+        let whole = rows_text(&ev_lines(&Ev::Tool(tool), 80));
+        assert_eq!(whole.iter().filter(|l| l.contains("│ echo")).count(), 200);
+        assert!(!whole.iter().any(|l| l.contains("more lines")));
+    }
+
     #[test]
     fn bash_code_block_renders_under_the_tool_line() {
         let cmd = "# compte les fichiers
@@ -3497,8 +4311,8 @@ done | sort -n";
                 "tool 7 bash ok=false code=true elapsed=Some(\"\")".to_string(),
                 "assistant fini".to_string(),
                 "tool 9 bash ok=false code=true elapsed=Some(\"\")".to_string(),
-                "info injecté · [notification] bg 0 done".to_string(),
-                "info session restaurée · 7 messages".to_string(),
+                "info injected · [notification] bg 0 done".to_string(),
+                "info session restored · 7 messages".to_string(),
             ]
         );
     }
@@ -3577,7 +4391,7 @@ echo ok";
         assert!(rows.iter().any(|r| r.contains("╭─ diff")));
         assert!(!rows.iter().any(|r| r.contains("Begin Patch") || r.contains("End Patch")));
         assert!(rows.iter().any(|r| r.contains("│ ~ core/obs.bend")));
-        assert!(rows.iter().any(|r| r.contains("│ + notes.md · nouveau")));
+        assert!(rows.iter().any(|r| r.contains("│ + notes.md · new")));
         // no line-number gutter in a diff
         assert!(rows.iter().any(|r| r.contains("│ -    old line")));
         // box aligned
@@ -3647,5 +4461,70 @@ mod harness_info_tests {
     fn rejects_an_incomplete_line() {
         assert!(HarnessInfo::parse("harness-info model=m threshold=1").is_none());
         assert!(HarnessInfo::parse("bend-harness LIVE REPL on 127.0.0.1:7").is_none());
+    }
+}
+
+#[cfg(test)]
+mod popup_tests {
+    use super::popup_top;
+
+    #[test]
+    fn the_selection_stays_in_view() {
+        assert_eq!(popup_top(0, 5, 8), 0);
+        assert_eq!(popup_top(4, 5, 8), 0);
+        assert_eq!(popup_top(7, 12, 8), 0);
+        assert_eq!(popup_top(8, 12, 8), 1);
+        assert_eq!(popup_top(11, 12, 8), 4);
+        assert_eq!(popup_top(99, 12, 8), 4); // clamped like the selection
+    }
+}
+
+#[cfg(test)]
+mod emoji_width_tests {
+    use super::*;
+    use crate::editor::layout_input;
+
+    fn row_widths(input: &str, inner: usize) -> Vec<usize> {
+        layout_input(input, inner)
+            .iter()
+            .map(|r| r.iter().filter(|c| !c.newline).map(|c| c.w).sum())
+            .collect()
+    }
+
+    #[test]
+    fn composer_rows_count_emojis_as_two_columns() {
+        // 5 emojis at 6 columns: 3 per row, the 4th never splits a row
+        assert_eq!(row_widths("👏👏👏👏👏", 6), vec![6, 4]);
+        // an emoji that does not fit the row end moves to the next row
+        assert_eq!(row_widths("abcde👏", 6), vec![5, 2]);
+        for inner in 2..12 {
+            for input in ["a👏b👍🏽c❤️d👨‍👩‍👧e🇫🇷", "👏👏👏👏👏👏👏", "x y 👏👏 z\nq👏"] {
+                assert!(row_widths(input, inner).iter().all(|&w| w <= inner), "{input} @ {inner}");
+            }
+        }
+    }
+
+    #[test]
+    fn composer_cells_are_graphemes_with_char_indices() {
+        let rows = layout_input("a👍🏽❤️👨‍👩‍👧b", 40);
+        let cells: Vec<(usize, &str, usize)> = rows[0].iter().map(|c| (c.ci, c.text, c.w)).collect();
+        assert_eq!(
+            cells,
+            vec![(0, "a", 1), (1, "👍🏽", 2), (3, "❤️", 2), (5, "👨‍👩‍👧", 2), (10, "b", 1), (11, " ", 1)]
+        );
+        // the end cursor slot sits after the last char
+        assert!(rows[0].last().unwrap().newline);
+    }
+
+    #[test]
+    fn feed_wrap_counts_graphemes_as_drawn() {
+        let w = |l: &Line| l.spans.iter().map(|s| s.content.width()).sum::<usize>();
+        let rows = wrap_line(Line::from("👨‍👩‍👧 👨‍👩‍👧 👨‍👩‍👧"), 8);
+        assert_eq!(rows.len(), 1, "3 × 2 cols + 2 spaces fit 8");
+        let rows = wrap_line(Line::from("👏👏👏👏👏"), 4);
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|r| w(r) <= 4));
+        let rows = wrap_code_line(&[Span::raw("❤️❤️❤️")], 4);
+        assert_eq!(rows.iter().map(|r| r.1).collect::<Vec<_>>(), vec![4, 2]);
     }
 }
