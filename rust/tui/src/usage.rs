@@ -48,11 +48,11 @@ impl Usage {
         self.input + self.output
     }
 
-    /// "42k / 200k · 21%"; a model with no known window: "42k tokens".
+    /// "42k / 200k tokens · 21%"; a model with no known window: "42k tokens".
     pub fn label(&self) -> String {
         let used = self.context();
         match context_window(&self.model) {
-            Some(w) => format!("{} / {} · {}%", fmt_tokens(used), fmt_tokens(w), percent(used, w)),
+            Some(w) => format!("{} / {} tokens · {}%", fmt_tokens(used), fmt_tokens(w), percent(used, w)),
             None => format!("{} tokens", fmt_tokens(used)),
         }
     }
@@ -138,10 +138,10 @@ mod tests {
     #[test]
     fn labels() {
         let u = Usage { model: "claude-opus-5-5".into(), input: 209_500, output: 500, ..Default::default() };
-        assert_eq!(u.label(), "210k / 1M · 21%");
+        assert_eq!(u.label(), "210k / 1M tokens · 21%");
         assert_eq!(u.short(), "21%");
         let g = Usage { model: "zai-glm-5-3".into(), input: 42_000, output: 0, ..Default::default() };
-        assert_eq!(g.label(), "42k / 200k · 21%");
+        assert_eq!(g.label(), "42k / 200k tokens · 21%");
         let x = Usage { model: "some-model".into(), input: 950, output: 0, ..Default::default() };
         assert_eq!(x.label(), "950 tokens");
         assert_eq!(x.short(), "950");
