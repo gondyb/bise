@@ -512,9 +512,9 @@ def spawn(-o: M.St, +cx: X.Cx<o>, +n: String, +resume: Bool) -> X.Cx<o>:
 
 # ---- waiters ----
 
-def deliver_to_waiter(-o: M.St, +cx: X.Cx<o>, +w: X.Waiter, +m: M.Msg, +kind: String) -> X.Cx<o>:
-  +cx2 = emit(o, cx, M.EMsgState{M.Msg.id(m), M.Delivered{}}, Unit{}, Unit{})
-  +cx3 = reply(o, cx2, X.Waiter.token(w), ok_body([
+# a wait gets its message (the message is not marked delivered here)
+def waiter_reply(-o: M.St, +cx: X.Cx<o>, +w: X.Waiter, +m: M.Msg, +kind: String) -> X.Cx<o>:
+  +cx3 = reply(o, cx, X.Waiter.token(w), ok_body([
     J.kv("type", J.JStr{kind}), J.kv("from", J.JStr{M.Msg.from(m)}),
     J.kv("message_id", J.JStr{mid(M.Msg.id(m))}),
     J.kv("thread", J.JStr{String.append("t_", ns(M.Msg.thread(m)))}),
@@ -524,6 +524,9 @@ def deliver_to_waiter(-o: M.St, +cx: X.Cx<o>, +w: X.Waiter, +m: M.Msg, +kind: St
   +still = any_waiter(X.R.waiters(rr(o, cx4)), X.Waiter.agent(w))
   +x = X.Rt.with_waiting(rt(o, cx4, X.Waiter.agent(w)), still)
   dirty(o, upd_rt(o, cx4, x))
+
+def deliver_to_waiter(-o: M.St, +cx: X.Cx<o>, +w: X.Waiter, +m: M.Msg, +kind: String) -> X.Cx<o>:
+  waiter_reply(o, emit(o, cx, M.EMsgState{M.Msg.id(m), M.Delivered{}}, Unit{}, Unit{}), w, m, kind)
 
 def reply_all(-o: M.St, ws: List<&2, X.Waiter>, +cx: X.Cx<o>, +why: String) -> X.Cx<o>:
   match ws:
@@ -1526,15 +1529,30 @@ def req_send(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) -> 
     Bool.pick(Maybe<&2, Nat>, expect, None{}, open_question(st(o, cx), to, from)))
   req_send.res(o, send(o, cx, Snd{from, to, jstr(q, "text"), expect, reply_to, False{}, False{}, jbool(q, "queued"), None{}}), token)
 
+def wait.park(-o: M.St, +cx: X.Cx<o>, +w: X.Waiter) -> X.Cx<o>:
+  +r = rr(o, cx)
+  +cx2 = set_r(o, cx, X.R.with_waiters(r, M.snoc(X.Waiter, X.R.waiters(r), w)))
+  dirty(o, upd_rt(o, cx2, X.Rt.with_waiting(rt(o, cx2, X.Waiter.agent(w)), True{})))
+
+# the reply is already there (RFC 0003 §6.1-6.2): a queued one is
+# delivered to the wait, unless it is a queued-mode message (it waits for
+# the next turn); one already delivered is read again, without a second
+# delivery; a rejected or cancelled one never reaches the wait
+def wait.state(-o: M.St, s: Maybe<&2, M.MSt>, +cx: X.Cx<o>, +w: X.Waiter, +r: M.Msg) -> X.Cx<o>:
+  match s:
+    case Some{M.Queued{_}}:
+      Bool.pick(X.Cx<o>, M.Msg.queued(r), wait.park(o, cx, w), deliver_to_waiter(o, cx, w, r, "reply"))
+    case Some{M.Delivered{}}:
+      waiter_reply(o, cx, w, r, "reply")
+    case _:
+      wait.park(o, cx, w)
+
 def wait.existing(-o: M.St, m: Maybe<&2, M.Msg>, +cx: X.Cx<o>, +w: X.Waiter) -> X.Cx<o>:
   match m:
     case Some{+r}:
-      # the reply may already be there
-      deliver_to_waiter(o, cx, w, r, "reply")
+      wait.state(o, M.state_of(st(o, cx), M.Msg.id(r)), cx, w, r)
     case None{}:
-      +r = rr(o, cx)
-      +cx2 = set_r(o, cx, X.R.with_waiters(r, M.snoc(X.Waiter, X.R.waiters(r), w)))
-      dirty(o, upd_rt(o, cx2, X.Rt.with_waiting(rt(o, cx2, X.Waiter.agent(w)), True{})))
+      wait.park(o, cx, w)
 
 def reply_of(xs: List<&2, M.MRec>, +id: Nat, +replier: String) -> Maybe<&2, M.Msg>:
   match xs:

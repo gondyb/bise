@@ -1306,3 +1306,71 @@ fn the_user_closes_a_card_without_answering() {
     assert!(say_to(&fx, "docs").is_none());
     assert!(has_line(&fx, MAIN, &format!("#{} classée", card)), "{:?}", fx);
 }
+
+/// docs asks main (a plain send, not an ask), main answers, docs waits
+/// afterwards: (question id, reply id, the fx of main's reply).
+fn question_then_reply(t: &mut T, queued: bool) -> (u64, u64) {
+    t.spawn_task("docs");
+    let (_, _) = t.req(
+        "docs",
+        AgentReq::Send {
+            to: MAIN.into(),
+            text: "v1 ou v2 ?".into(),
+            expect_reply: true,
+            reply_to: None,
+            queued: false,
+        },
+    );
+    let q = t.hub.st.msgs.values().find(|m| m.text == "v1 ou v2 ?").unwrap().id;
+    t.req(
+        MAIN,
+        AgentReq::Send {
+            to: "docs".into(),
+            text: "v2".into(),
+            expect_reply: false,
+            reply_to: Some(q),
+            queued,
+        },
+    );
+    let r = t.hub.st.msgs.values().find(|m| m.text == "v2").unwrap().id;
+    (q, r)
+}
+
+fn delivered_events(fx: &[Effect], id: u64) -> usize {
+    fx.iter()
+        .filter(|e| {
+            matches!(e, Effect::Journal(Event::MessageState { id: i, state: MsgState::Delivered }) if *i == id)
+        })
+        .count()
+}
+
+/// Found by the law delivered_once (L3): a reply already delivered (here
+/// steered into docs' turn) is read again by `sb wait`, never delivered a
+/// second time.
+#[test]
+fn waiting_for_a_delivered_reply_does_not_deliver_it_twice() {
+    let mut t = T::new();
+    let (q, r) = question_then_reply(&mut t, false);
+    assert!(matches!(t.hub.st.msg_state.get(&r), Some(MsgState::Delivered)));
+    let (tok, fx) = t.req("docs", AgentReq::Wait { msg: q, timeout_s: 20 });
+    assert_eq!(reply(&fx, tok).expect("the wait returns the reply")["message"], "v2");
+    assert_eq!(delivered_events(&fx, r), 0, "{:?}", fx);
+}
+
+/// Found by the law delivered_once (L3): a queued-mode reply still queued
+/// is never handed to `sb wait`; it arrives as the next turn.
+#[test]
+fn a_queued_reply_is_not_handed_to_a_wait() {
+    let mut t = T::new();
+    let (q, r) = question_then_reply(&mut t, true);
+    assert!(matches!(t.hub.st.msg_state.get(&r), Some(MsgState::Queued { .. })));
+    let (tok, fx) = t.req("docs", AgentReq::Wait { msg: q, timeout_s: 20 });
+    assert!(reply(&fx, tok).is_none(), "the wait keeps waiting: {:?}", fx);
+    assert_eq!(delivered_events(&fx, r), 0);
+    let fx = t.go(Input::ReplIdle {
+        agent: "docs".into(),
+        leftover: false,
+    });
+    assert!(say_to(&fx, "docs").unwrap_or_default().contains("v2"), "{:?}", fx);
+    assert_eq!(delivered_events(&fx, r), 1);
+}
