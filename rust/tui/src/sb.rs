@@ -952,8 +952,14 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
                 open: false,
             }
         }
-        "card" => Ev::Card(text),
-        "card-closed" => Ev::Info(format!("card {} ", text)),
+        "card" => Ev::Card { text, closed: String::new() },
+        "card-closed" => match text.strip_prefix('#').and_then(|t| t.split_once(' ')) {
+            Some((id, res)) if id.parse::<u64>().is_ok() => Ev::CardClosed {
+                id: id.parse().unwrap_or(0),
+                res: res.trim().to_string(),
+            },
+            _ => Ev::Info(format!("card {} ", text)),
+        },
         "route" => Ev::Info(format!("→ {}", text)),
         "spawn" => Ev::Info(format!("✚ {}", text)),
         "direct" => Ev::Info(format!("⇄ {}", text)),
@@ -986,7 +992,8 @@ mod hub_line_tests {
             Ev::AgentMsg { from, to, text, level, id, .. } => format!("msg {from}|{to}|{text}|{level}|{id}"),
             Ev::Answered { agent, question, answer, why, .. } => format!("answered {agent}|{question}|{answer}|{why}"),
             Ev::You(t, _) => format!("you {t}"),
-            Ev::Card(t) => format!("card {t}"),
+            Ev::Card { text, .. } => format!("card {text}"),
+            Ev::CardClosed { id, res } => format!("card-closed {id}|{res}"),
             Ev::Info(t) => format!("info {t}"),
             Ev::Warn(t) => format!("warn {t}"),
             _ => "other".into(),
@@ -1012,6 +1019,9 @@ mod hub_line_tests {
         assert_eq!(p("msg-in : @docs : la v2"), Some(msg("docs", "you", "la v2", 2, "")));
         assert_eq!(p("you : bonjour"), Some("you bonjour".into()));
         assert_eq!(p("card : #1 question @docs"), Some("card #1 question @docs".into()));
+        assert_eq!(p("card-closed : #1 answered"), Some("card-closed 1|answered".into()));
+        assert_eq!(p("card-closed : #12 answered via @main"), Some("card-closed 12|answered via @main".into()));
+        assert_eq!(p("card-closed : weird"), Some("info card weird ".into()));
         assert_eq!(p("spawn : main → new task @t : x"), Some("info ✚ main → new task @t : x".into()));
         assert_eq!(p("warn : w"), Some("warn w".into()));
         // and draws: an old main feed with every v1 kind

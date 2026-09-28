@@ -301,7 +301,8 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         Ev::AgentMsg { from, text, .. } => l2_lines(from, text, width),
         Ev::Answered { agent, question, answer, why, open } => answered_lines(agent, question, answer, why, *open, width),
         Ev::TimeMark(t) => vec![Line::from(Span::styled(format!(" {} {} {}", G_NOTE, t, G_NOTE), Style::default().fg(faint())))],
-        Ev::Card(t) => card_lines(t, width),
+        Ev::Card { text, closed } => card_lines(text, closed, width),
+        Ev::CardClosed { .. } => vec![],
     }
 }
 
@@ -432,8 +433,11 @@ pub(crate) fn card_parts(t: &str) -> Option<(&str, &str, &str)> {
 
 // a card in the history (book §9): a question or a blocker is level 1,
 // an accent bar `┃`, the bold accent title `? {name} needs you`, the
-// body in text; a done or failed card is one line for you (`♡`, `✗`)
-fn card_lines(t: &str, width: usize) -> Vec<Line<'static>> {
+// body in text; a done or failed card is one line for you (`♡`, `✗`).
+// Answered (`closed`: the hub's word, book §10, §12), a level-1 card
+// fades in place: dim bar, dim title with ` · answered`, dim body; the
+// answer follows as its own line.
+fn card_lines(t: &str, closed: &str, width: usize) -> Vec<Line<'static>> {
     let text_st = Style::default().fg(text());
     let (kind, name, body) = card_parts(t).unwrap_or(("question", "", t));
     match kind {
@@ -443,15 +447,41 @@ fn card_lines(t: &str, width: usize) -> Vec<Line<'static>> {
         }
         _ => {}
     }
-    let title = if name.is_empty() { "needs you".to_string() } else { format!("{} needs you", name) };
-    let bar = Span::styled(" ┃ ", Style::default().fg(accent()));
-    let accent_st = Style::default().fg(accent()).add_modifier(Modifier::BOLD);
+    let mut title = if name.is_empty() { "needs you".to_string() } else { format!("{} needs you", name) };
+    let (bar_st, title_st, body_st) = if closed.is_empty() {
+        let accent_st = Style::default().fg(accent()).add_modifier(Modifier::BOLD);
+        (Style::default().fg(accent()), accent_st, text_st)
+    } else {
+        title.push_str(&format!(" · {}", closed_word(closed)));
+        let dim_st = Style::default().fg(dim());
+        (dim_st, dim_st, dim_st)
+    };
+    let bar = Span::styled(" ┃ ", bar_st);
     let mut lines = vec![Line::from(vec![
-        Span::styled(format!("{} ", G_CARD), accent_st),
-        Span::styled(title, accent_st),
+        Span::styled(format!("{} ", G_CARD), title_st),
+        Span::styled(title, title_st),
     ])];
-    lines.extend(body.split('\n').map(|l| Line::from(Span::styled(l.to_string(), text_st))));
+    lines.extend(body.split('\n').map(|l| Line::from(Span::styled(l.to_string(), body_st))));
     barred_rows(&bar, lines, width)
+}
+
+/// How a card was closed, in the user's words (the hub's `card-closed`
+/// result: `answered`, `answered via @x`, `closed`, `accepted`, …).
+pub(crate) fn closed_word(res: &str) -> String {
+    let res = res.trim();
+    if let Some(who) = res.strip_prefix("answered via @") {
+        return format!("answered by {}", who);
+    }
+    match res {
+        "closed" => "closed".into(),
+        "accepted" => "dropped".into(),
+        "refused" => "kept".into(),
+        "vue" => "seen".into(),
+        "reprise" => "resumed".into(),
+        "task stopped" => "agent stopped".into(),
+        "" => "answered".into(),
+        r => r.to_string(),
+    }
 }
 
 // your message (book §6, mockups): `›` dim in the glyph column, the text

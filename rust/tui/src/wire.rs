@@ -134,8 +134,20 @@ pub(crate) enum Ev {
     // in memory only (BISE-14, book §10): a faint `· 14:31 ·` after a
     // pause of 5 minutes without a line; the text is the time
     TimeMark(String),
-    // switchboard: an attention card
-    Card(String),
+    // switchboard: an attention card (`#3 question @docs : text`);
+    // `closed`, in memory only (BISE-31, book §12): how it was closed,
+    // the hub's word (empty: open)
+    Card {
+        text: String,
+        closed: String,
+    },
+    // in memory only (BISE-31): the hub closed card `id` (`card-closed :
+    // #3 answered`); push_event fades that card in place, never
+    // appended; shown as an info line when the card is not in the feed
+    CardClosed {
+        id: u64,
+        res: String,
+    },
     // in memory only (C3): a wire line that moves the mark of your last
     // message with this text (push_event applies it, never appended);
     // `or` shows instead when there is none (an injected notification)

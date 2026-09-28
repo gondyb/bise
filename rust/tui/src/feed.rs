@@ -251,7 +251,7 @@ pub(crate) fn is_notice(ev: &Ev) -> bool {
     matches!(
         ev,
         Ev::Warn(_)
-            | Ev::Card(_)
+            | Ev::Card { .. }
             | Ev::Err(_)
             | Ev::Info(_)
             | Ev::Compact(_)
@@ -361,6 +361,25 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
                 }
             }
             return false;
+        }
+        // BISE-31: a closed card fades in place (its last line in this
+        // feed); not in the feed (an older page): an info line as before
+        Ev::CardClosed { id, res } => {
+            let head = format!("#{} ", id);
+            let found = events.iter_mut().enumerate().rev().find_map(|(i, e)| match e {
+                Ev::Card { text, closed } if text.starts_with(&head) => Some((i, closed)),
+                _ => None,
+            });
+            match found {
+                Some((i, closed)) => {
+                    *closed = res.clone();
+                    if let Some(c) = cache.get_mut(i) {
+                        *c = None;
+                    }
+                    return false;
+                }
+                None => return push_event(events, cache, Ev::Info(format!("card #{} {}", id, res))),
+            }
         }
         // a turn starts: the model reads what you sent since the last one
         // (a message at idle goes straight to ✓✓)
