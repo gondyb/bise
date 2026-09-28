@@ -272,7 +272,7 @@ pub(super) const SB_COMMANDS: &[Cmd] = &[
     },
 ];
 
-const KEYS_HELP: &str = "touches (compositeur vide) : Ctrl+J/K choisir une tâche · ⏎ entrer · Espace aperçu · D drop · Esc revenir à main · Alt+1…9 aller à la tâche N · Alt+0 main · Ctrl+G afficher/masquer la carte (Ctrl+A aussi, composer vide) · Ctrl+N/P carte suivante/précédente · Ctrl+R répondre à la carte avec le texte du composer · Ctrl+F carte en plein écran · Ctrl+X classer la carte · Ctrl+Z annuler le dernier routage · Ctrl+O shell dans le dossier de l'agent affiché";
+const KEYS_HELP: &str = "touches (compositeur vide) : Ctrl+K/J tâche suivante/précédente · ⏎ entrer · Espace aperçu · D drop · Esc revenir à main · Alt+1…9 aller à la tâche N · Alt+0 main · Ctrl+G afficher/masquer la carte (Ctrl+A aussi, composer vide) · Ctrl+N/P carte suivante/précédente · Ctrl+R répondre à la carte avec le texte du composer · Ctrl+F carte en plein écran · Ctrl+X classer la carte · Ctrl+Z annuler le dernier routage · Ctrl+O shell dans le dossier de l'agent affiché";
 
 /// The shell asked with Ctrl+O, if any.
 pub(super) fn take_shell(app: &mut App) -> Option<String> {
@@ -684,6 +684,31 @@ pub(super) fn draw_card(app: &mut App, frame: &mut Frame, area: Rect) {
     );
 }
 
+/// Agent navigation from the keyboard.
+#[derive(Debug, PartialEq, Eq)]
+enum Nav {
+    Next,
+    Prev,
+    /// agent number N of the list (0 = main)
+    Goto(usize),
+}
+
+/// Ctrl+K / Alt+↓ next, Ctrl+J / Alt+↑ previous, Alt+N agent N (0 = main).
+fn nav_key(k: &crossterm::event::KeyEvent) -> Option<Nav> {
+    match (k.code, k.modifiers) {
+        (KeyCode::Char('k'), KeyModifiers::CONTROL) | (KeyCode::Down, KeyModifiers::ALT) => {
+            Some(Nav::Next)
+        }
+        (KeyCode::Char('j'), KeyModifiers::CONTROL) | (KeyCode::Up, KeyModifiers::ALT) => {
+            Some(Nav::Prev)
+        }
+        (KeyCode::Char(c), KeyModifiers::ALT) if c.is_ascii_digit() => {
+            c.to_digit(10).map(|d| Nav::Goto(d as usize))
+        }
+        _ => None,
+    }
+}
+
 /// Keys of the switchboard mode; `true` when handled.
 pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: bool) -> bool {
     let empty = app.input.is_empty();
@@ -705,18 +730,14 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             );
             true
         }
-        (KeyCode::Char('j'), KeyModifiers::CONTROL) | (KeyCode::Down, KeyModifiers::ALT)
-            if empty && n > 0 =>
-        {
+        _ if empty && n > 0 && nav_key(k) == Some(Nav::Next) => {
             sb.selected = Some(match sb.selected {
                 None => 0,
                 Some(i) => (i + 1) % n,
             });
             true
         }
-        (KeyCode::Char('k'), KeyModifiers::CONTROL) | (KeyCode::Up, KeyModifiers::ALT)
-            if empty && n > 0 =>
-        {
+        _ if empty && n > 0 && nav_key(k) == Some(Nav::Prev) => {
             sb.selected = Some(match sb.selected {
                 None | Some(0) => n - 1,
                 Some(i) => i - 1,
@@ -767,8 +788,8 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             }
             false
         }
-        (KeyCode::Char(c), KeyModifiers::ALT) if c.is_ascii_digit() => {
-            let i = c.to_digit(10).unwrap_or(0) as usize;
+        _ if matches!(nav_key(k), Some(Nav::Goto(_))) => {
+            let Some(Nav::Goto(i)) = nav_key(k) else { return false };
             let target = sb.nav().get(i).map(|a| a.name.clone());
             if let Some(t) = target {
                 focus(app, &t);
@@ -1072,13 +1093,13 @@ pub(super) fn hint(app: &App) -> Option<&'static str> {
     } else if sb.card.shown {
         "Ctrl+R répondre (⏎ reste pour main) · PgUp/PgDn défiler · Ctrl+N/P carte · Ctrl+F plein écran · Ctrl+X classer · Ctrl+G masquer"
     } else if sb.selected.is_some() {
-        "⏎ entrer · Espace aperçu · D drop · Ctrl+J/K choisir · Esc fermer"
+        "⏎ entrer · Espace aperçu · D drop · Ctrl+K/J choisir · Esc fermer"
     } else if app.pending {
-        "⏎ diriger · Ctrl+C interrompre · Ctrl+J/K tâches · Esc main · /help"
+        "⏎ diriger · Ctrl+C interrompre · Ctrl+K/J tâches · Alt+N° tâche N · Esc main · /help"
     } else if sb.focus != "main" {
-        "⏎ envoyer à la tâche · @main … pour main · Esc revenir à main · Ctrl+J/K tâches · /help"
+        "⏎ envoyer à la tâche · @main … pour main · Esc revenir à main · Ctrl+K/J tâches · Alt+N° tâche N · /help"
     } else {
-        "⏎ envoyer à main · @tâche … direct · Ctrl+J/K tâches · Ctrl+G carte · /help"
+        "⏎ envoyer à main · @tâche … direct · Ctrl+K/J tâches · Alt+N° tâche N · Ctrl+G carte · /help"
     })
 }
 
@@ -1427,6 +1448,45 @@ fn print_hub_event(raw: &str) {
         }
         "notice" | "confirm" => println!("[hub] {}", s("text")),
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod nav_key_tests {
+    use super::*;
+    use crossterm::event::KeyEvent;
+
+    fn nav(code: KeyCode, m: KeyModifiers) -> Option<Nav> {
+        nav_key(&KeyEvent::new(code, m))
+    }
+
+    #[test]
+    fn ctrl_k_next_ctrl_j_previous() {
+        assert_eq!(nav(KeyCode::Char('k'), KeyModifiers::CONTROL), Some(Nav::Next));
+        assert_eq!(nav(KeyCode::Char('j'), KeyModifiers::CONTROL), Some(Nav::Prev));
+        assert_eq!(nav(KeyCode::Down, KeyModifiers::ALT), Some(Nav::Next));
+        assert_eq!(nav(KeyCode::Up, KeyModifiers::ALT), Some(Nav::Prev));
+    }
+
+    #[test]
+    fn alt_digits_go_to_agent_n() {
+        for d in 0..=9u32 {
+            let c = char::from_digit(d, 10).unwrap();
+            assert_eq!(nav(KeyCode::Char(c), KeyModifiers::ALT), Some(Nav::Goto(d as usize)));
+            // Ctrl+digit is not bound (most terminals cannot send it)
+            assert_eq!(nav(KeyCode::Char(c), KeyModifiers::CONTROL), None);
+        }
+    }
+
+    #[test]
+    fn plain_keys_and_card_keys_are_not_navigation() {
+        assert_eq!(nav(KeyCode::Char('1'), KeyModifiers::NONE), None);
+        assert_eq!(nav(KeyCode::Char('k'), KeyModifiers::NONE), None);
+        assert_eq!(nav(KeyCode::Enter, KeyModifiers::NONE), None);
+        assert_eq!(nav(KeyCode::Esc, KeyModifiers::NONE), None);
+        for c in ['g', 'f', 'n', 'p', 'r', 'x', 'a', 'c', 'o', 'z'] {
+            assert_eq!(nav(KeyCode::Char(c), KeyModifiers::CONTROL), None);
+        }
     }
 }
 
