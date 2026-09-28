@@ -71,7 +71,7 @@ projects/switchboard/tests/run_all.sh --live   # + un test avec le vrai modèle
 
 - `rust/switchboard` : 61 tests (22 scénarios du core, routeur, CLI,
   tableau, worktrees sur de vrais dépôts git).
-- `tests/e2e.py` (9 scénarios, dont plantage d'une tâche + `sb tasks`, et
+- `tests/e2e.py` (10 scénarios, dont les contrôles de main, dont plantage d'une tâche + `sb tasks`, et
   `sb inspect main --origin` + recherche par une tâche) : le vrai hub, de vraies REPL, le vrai `sb`, de vrais
   worktrees ; le modèle est `tests/fake_provider.py`, piloté par des
   marqueurs `[[bash: …]]` dans les messages.
@@ -170,5 +170,11 @@ commandes.
 - Lignes synthétiques : `sb you : <texte>` (message de l'utilisateur),
   `sb msg-in : …`, `sb route : …`, `sb spawn : …`, `sb card : #n …`,
   `sb direct : …`, `sb info : …`, `sb warn : …`.
+- Contrôles de main (`sb close N ["note"]`, `sb rename`, `sb restore`,
+  `sb isolate`) : `AgentReq` → `{cmd: close|rename|restore|isolate}` →
+  `req.main.go` dans hub/core.bend (réservés à main, `main_only` sinon) ;
+  ils réutilisent `close_card`, `rename.apply`, `restore_task`,
+  `isolate_task`. `sb version switch|rollback` : réservé à main dans le
+  daemon (`version_allowed`), `list` pour tous.
 - Dossiers par agent : `agents/<dir>/` où `dir` = nom à la création
   (un rename ne déplace rien).

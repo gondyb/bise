@@ -82,6 +82,10 @@ type Cmd is Data:
   CStop{}
   CDrop{}
   CCard{}
+  CClose{}
+  CRename{}
+  CRestore{}
+  CIsolate{}
 
 # the hub after an input: the new state and its effects, or, when a git
 # answer is missing, the hub unchanged and the query (the daemon replays
@@ -1383,18 +1387,21 @@ def user_isolate.res(-o: M.St, p: X.Cx<o> & TaskR) -> X.Cx<o>:
     case (+cx, THalt{}):
       cx
 
+# the rename itself (the user's /rename and main's sb rename)
+def rename.apply(-o: M.St, +cx: X.Cx<o>, +old: String, +new: String) -> X.Cx<o>:
+  +cx2 = emit(o, cx, M.ERenamed{old, new}, Unit{}, Unit{}, Unit{})
+  +r = rr(o, cx2)
+  +cx3 = set_r(o, cx2, X.R.with_rts(X.R.with_waiters(X.R.with_steered(r, steer_rename(X.R.steered(r), old, new)),
+    waiters_rename(X.R.waiters(r), old, new)), rt_rename(X.R.rts(r), old, new)))
+  +cx4 = out(o, cx3, [J.kv("fx", J.JStr{"renamed"}), J.kv("old", J.JStr{old}), J.kv("new", J.JStr{new})])
+  line(o, cx4, M.MAIN(), "info", cat(["@", old, " s'appelle maintenant @", new]))
+
 def rename.go(-o: M.St, ok: Bool, +cx: X.Cx<o>, +old: String, +new: String) -> X.Cx<o>:
   match ok:
     case False{}:
       notice(o, cx, String.append("invalid or taken name: ", new))
     case True{}:
-      +cx2 = emit(o, cx, M.ERenamed{old, new}, Unit{}, Unit{}, Unit{})
-      +r = rr(o, cx2)
-      +cx3 = set_r(o, cx2, X.R.with_rts(X.R.with_waiters(X.R.with_steered(r, steer_rename(X.R.steered(r), old, new)),
-        waiters_rename(X.R.waiters(r), old, new)), rt_rename(X.R.rts(r), old, new)))
-      +cx4 = out(o, cx3, [J.kv("fx", J.JStr{"renamed"}), J.kv("old", J.JStr{old}), J.kv("new", J.JStr{new})])
-      +cx5 = line(o, cx4, M.MAIN(), "info", cat(["@", old, " s'appelle maintenant @", new]))
-      note_main(o, cx5, cat(["the user renamed @", old, " to @", new, " (the old name still works)"]))
+      note_main(o, rename.apply(o, cx, old, new), cat(["the user renamed @", old, " to @", new, " (the old name still works)"]))
 
 def rename.old(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +name: String, +new: String, +valid: Bool) -> X.Cx<o>:
   match m:
@@ -1747,6 +1754,42 @@ def req_card(-o: M.St, for_msg: Maybe<&2, Nat>, +cx: X.Cx<o>, +token: Nat, +text
     case Some{+id}:
       req_card.msg(o, M.msg_of(st(o, cx), id), cx, token, text, id)
 
+# `sb close N ["note"]`: main files a card, with a short resolution
+def req_close(-o: M.St, m: Maybe<&2, M.Card>, +cx: X.Cx<o>, +token: Nat, +id: Nat, +note: String) -> X.Cx<o>:
+  match m:
+    case None{}:
+      reply_err(o, cx, token, String.append("no open card #", ns(id)))
+    case Some{_}:
+      +res = Bool.pick(String, String.is_empty(M.one_line(note)), "closed by main", String.append("main: ", M.one_line(note)))
+      reply(o, close_card(o, cx, id, res), token, ok_body([J.kv("card", J.JNum{id})]))
+
+# `sb rename <task> <new-name>`: the same rules as the user's /rename
+def req_rename.go(-o: M.St, ok: Bool, +cx: X.Cx<o>, +token: Nat, +old: String, +new: String) -> X.Cx<o>:
+  match ok:
+    case False{}:
+      reply_err(o, cx, token, String.append("invalid or taken name: ", new))
+    case True{}:
+      reply(o, rename.apply(o, cx, old, new), token, ok_body([J.kv("name", J.JStr{new})]))
+
+def req_rename(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +token: Nat, +name: String, +new: String, +valid: Bool) -> X.Cx<o>:
+  match m:
+    case None{}:
+      reply_err(o, cx, token, String.append("no task named ", name))
+    case Some{+old}:
+      Bool.pick(X.Cx<o>, String.eq(old, M.MAIN()), reply_err(o, cx, token, String.append("no task named ", name)),
+        req_rename.go(o, valid && Bool.not(M.name_taken(st(o, cx), new)), cx, token, old, new))
+
+# `sb restore` / `sb isolate`: the user or main (main only on the
+# user's explicit request: its prompt says so)
+def req_task.res(-o: M.St, p: X.Cx<o> & TaskR, +token: Nat) -> X.Cx<o>:
+  match p:
+    case (+cx, TOk{+n}):
+      reply(o, cx, token, ok_body([J.kv("name", J.JStr{n})]))
+    case (+cx, TErr{+e}):
+      reply_err(o, cx, token, e)
+    case (+cx, THalt{}):
+      cx
+
 def cmd_tag(+c: String) -> Cmd:
   Bool.pick(Cmd, String.eq(c, "send"), CSend{},
   Bool.pick(Cmd, String.eq(c, "wait"), CWait{},
@@ -1756,7 +1799,11 @@ def cmd_tag(+c: String) -> Cmd:
   Bool.pick(Cmd, String.eq(c, "spawn"), CSpawn{},
   Bool.pick(Cmd, String.eq(c, "interrupt"), CInterrupt{},
   Bool.pick(Cmd, String.eq(c, "stop"), CStop{},
-  Bool.pick(Cmd, String.eq(c, "drop"), CDrop{}, CCard{})))))))))
+  Bool.pick(Cmd, String.eq(c, "drop"), CDrop{},
+  Bool.pick(Cmd, String.eq(c, "close"), CClose{},
+  Bool.pick(Cmd, String.eq(c, "rename"), CRename{},
+  Bool.pick(Cmd, String.eq(c, "restore"), CRestore{},
+  Bool.pick(Cmd, String.eq(c, "isolate"), CIsolate{}, CCard{})))))))))))))
 
 def req.main.go(-o: M.St, c: Cmd, +cx: X.Cx<o>, +token: Nat, +q: J.Json) -> X.Cx<o>:
   match c:
@@ -1768,6 +1815,14 @@ def req.main.go(-o: M.St, c: Cmd, +cx: X.Cx<o>, +token: Nat, +q: J.Json) -> X.Cx
       req_stop(o, M.resolve(st(o, cx), jstr(q, "agent")), cx, token, jstr(q, "agent"), jstr(q, "reason"))
     case CDrop{}:
       req_drop.res(o, drop_task(o, cx, jstr(q, "agent"), False{}), token, jstr(q, "agent"))
+    case CClose{}:
+      req_close(o, M.card_of(M.St.cards(st(o, cx)), jnat(q, "card")), cx, token, jnat(q, "card"), jstr(q, "note"))
+    case CRename{}:
+      req_rename(o, M.resolve(st(o, cx), jstr(q, "agent")), cx, token, jstr(q, "agent"), jstr(q, "new_name"), jbool(q, "valid"))
+    case CRestore{}:
+      req_task.res(o, restore_task(o, cx, jstr(q, "agent")), token)
+    case CIsolate{}:
+      req_task.res(o, isolate_task(o, cx, jstr(q, "agent")), token)
     case _:
       req_card(o, jopt_nat(J.get(q, "for")), cx, token, jstr(q, "text"))
 

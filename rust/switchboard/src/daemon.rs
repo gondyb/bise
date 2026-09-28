@@ -153,6 +153,16 @@ struct Shell {
     restored: std::collections::BTreeSet<String>,
 }
 
+/// `sb version` from an agent: every agent may list the versions; only
+/// main switches or rolls back (the user does it from the TUI).
+fn version_allowed(from: &str, what: &str) -> Result<(), String> {
+    match what {
+        "" | "list" => Ok(()),
+        _ if from == MAIN => Ok(()),
+        _ => Err(format!("sb version {}: reserved for main (the parent of the tasks)", what)),
+    }
+}
+
 fn log_line(paths: &Paths, s: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
@@ -1640,8 +1650,17 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
             }
             Msg::AgentNew { token, stream, v } => sh.agent_request(token, stream, v),
             Msg::Version { mut stream, v } => {
-                let text = sh.version_op(&v);
-                write_json(&mut stream, &json!({"ok": true, "text": text}));
+                let from = v.get("from").and_then(|x| x.as_str()).unwrap_or("");
+                let what = v.get("do").and_then(|x| x.as_str()).unwrap_or("");
+                match version_allowed(from, what) {
+                    Ok(()) => {
+                        let text = sh.version_op(&v);
+                        write_json(&mut stream, &json!({"ok": true, "text": text}));
+                    }
+                    Err(e) => {
+                        write_json(&mut stream, &json!({"ok": false, "error": e}));
+                    }
+                }
             }
             Msg::Notice { kind, text } => {
                 let kind = if kind == "warn" { "warn" } else { "info" };
@@ -1665,4 +1684,24 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     let _ = std::fs::remove_file(paths.socket());
     let _ = std::fs::remove_file(paths.pid_file());
     Ok(())
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::version_allowed;
+
+    #[test]
+    fn only_main_switches_versions() {
+        for who in ["main", "docs", ""] {
+            assert!(version_allowed(who, "list").is_ok());
+            assert!(version_allowed(who, "").is_ok());
+        }
+        assert!(version_allowed("main", "switch").is_ok());
+        assert!(version_allowed("main", "rollback").is_ok());
+        for what in ["switch", "rollback"] {
+            let e = version_allowed("docs", what).unwrap_err();
+            assert!(e.contains("reserved for main"), "{}", e);
+            assert!(version_allowed("", what).is_err());
+        }
+    }
 }

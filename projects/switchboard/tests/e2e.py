@@ -304,6 +304,31 @@ def t_cli_errors(E, c):
     c.wait_idle("t1")
 
 
+def t_main_controls(E, c):
+    # tasks cannot use main's controls nor switch versions; they may list
+    c.wait_idle("main", "t1")
+    c.say('@t1 [[bash: sb close 1 x; sb version switch HEAD; sb version list | head -1]]')
+    c.wait_line("t1", "sb version switch: reserved for main", 90)
+    c.wait_line("t1", "current version:", 30)
+    c.wait_idle("t1")
+    # main closes a card with a note
+    c.say('[[bash: sb card "e2e question?"]]')
+    c.wait(lambda: any(cd["kind"] == "question" for cd in c.cards()), 60, "a question card")
+    card = [cd for cd in c.cards() if cd["kind"] == "question"][0]
+    c.wait_idle("main")
+    c.say("[[bash: sb close %d handled]]" % card["id"])
+    c.wait(lambda: not c.cards(), 60, "card closed by main")
+    c.wait_line("main", "#%d main: handled" % card["id"], 30)
+    c.wait_idle("main")
+    # main renames a task; the old name still works
+    c.say("/new t5: {{bash: echo t5}}")
+    c.wait(lambda: c.agent("t5") is not None, 60, "t5")
+    c.wait_idle("main", "t5")
+    c.say("[[bash: sb rename t5 t5b]]")
+    c.wait(lambda: c.agent("t5b") is not None, 60, "t5 renamed t5b")
+    c.wait_idle("main")
+
+
 def t_origin_and_cursors(E, c):
     # a task reads the user message that led to its spawn, then searches
     # main's thread and gets positions
@@ -349,6 +374,7 @@ SCENARIOS = [
     t_escalation_card,
     t_worktree_drop_restore,
     t_cli_errors,
+    t_main_controls,
     t_origin_and_cursors,
     t_crash_status_and_tasks,
     t_restart_keeps_everything,

@@ -110,6 +110,24 @@ pub enum AgentReq {
         text: String,
         for_msg: Option<u64>,
     },
+    /// `sb close N ["note"]`: close attention card N with a short note.
+    Close {
+        card: u64,
+        note: String,
+    },
+    /// `sb rename <task> <new-name>`: the same rules as `/rename`.
+    Rename {
+        agent: String,
+        new_name: String,
+    },
+    /// `sb restore <task>`: only on the user's explicit request.
+    Restore {
+        agent: String,
+    },
+    /// `sb isolate <task>`: only on the user's explicit request.
+    Isolate {
+        agent: String,
+    },
 }
 
 /// `m_12` or `12`.
@@ -216,6 +234,23 @@ impl AgentReq {
             "card" => AgentReq::Card {
                 text: jstr(v, "text"),
                 for_msg: v.get("for").and_then(|x| x.as_str()).and_then(parse_msg_id),
+            },
+            "close" => AgentReq::Close {
+                card: v
+                    .get("card")
+                    .and_then(|x| x.as_u64())
+                    .ok_or("usage: sb close <card> [\"<note>\"]")?,
+                note: jstr(v, "note"),
+            },
+            "rename" => AgentReq::Rename {
+                agent: jstr(v, "agent"),
+                new_name: jstr(v, "new_name"),
+            },
+            "restore" => AgentReq::Restore {
+                agent: jstr(v, "agent"),
+            },
+            "isolate" => AgentReq::Isolate {
+                agent: jstr(v, "agent"),
             },
             other => return Err(format!("unknown command: {}", other)),
         };
@@ -1269,6 +1304,13 @@ impl Hub {
             AgentReq::Card { text, for_msg } => {
                 json!({"cmd": "card", "text": text, "for": for_msg})
             }
+            AgentReq::Close { card, note } => json!({"cmd": "close", "card": card, "note": note}),
+            AgentReq::Rename { agent, new_name } => {
+                let valid = router::valid_name(&new_name);
+                json!({"cmd": "rename", "agent": agent, "new_name": new_name, "valid": valid})
+            }
+            AgentReq::Restore { agent } => json!({"cmd": "restore", "agent": agent}),
+            AgentReq::Isolate { agent } => json!({"cmd": "isolate", "agent": agent}),
         };
         self.core(
             fx,

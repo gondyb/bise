@@ -1374,3 +1374,74 @@ fn a_queued_reply_is_not_handed_to_a_wait() {
     assert!(say_to(&fx, "docs").unwrap_or_default().contains("v2"), "{:?}", fx);
     assert_eq!(delivered_events(&fx, r), 1);
 }
+
+fn err_of(fx: &[Effect], tok: u64) -> String {
+    reply(fx, tok).unwrap()["error"].as_str().unwrap_or("").to_string()
+}
+
+#[test]
+fn main_closes_a_card_with_a_note_and_tasks_cannot() {
+    let mut t = T::new();
+    let (_, card) = docs_question_card(&mut t);
+    let (tok, fx) = t.req("docs", AgentReq::Close { card, note: "done".into() });
+    assert!(err_of(&fx, tok).contains("reserved for main"));
+    assert!(t.hub.st.cards.contains_key(&card));
+    let (tok, fx) = t.req(MAIN, AgentReq::Close { card: 99, note: String::new() });
+    assert!(err_of(&fx, tok).contains("no open card #99"));
+    let (tok, fx) = t.req(MAIN, AgentReq::Close { card, note: "handled".into() });
+    assert_eq!(reply(&fx, tok).unwrap()["ok"], true);
+    assert!(t.hub.st.cards.is_empty());
+    assert!(say_to(&fx, "docs").is_none());
+    assert!(has_line(&fx, MAIN, &format!("#{} main: handled", card)), "{:?}", fx);
+}
+
+#[test]
+fn main_renames_a_task_and_tasks_cannot() {
+    let mut t = T::new();
+    t.spawn_task("a");
+    t.spawn_task("b");
+    let ren = |a: &str, n: &str| AgentReq::Rename { agent: a.into(), new_name: n.into() };
+    let (tok, fx) = t.req("a", ren("b", "c"));
+    assert!(err_of(&fx, tok).contains("reserved for main"));
+    let (tok, fx) = t.req(MAIN, ren("a", "b"));
+    assert!(err_of(&fx, tok).contains("invalid or taken name"));
+    let (tok, fx) = t.req(MAIN, ren("a", "Bad Name"));
+    assert!(err_of(&fx, tok).contains("invalid or taken name"));
+    let (tok, fx) = t.req(MAIN, ren("main", "boss"));
+    assert!(err_of(&fx, tok).contains("no task named"));
+    let (tok, fx) = t.req(MAIN, ren("a", "alpha"));
+    assert_eq!(reply(&fx, tok).unwrap()["name"], "alpha");
+    assert!(t.hub.st.agents.contains_key("alpha"));
+    // the old name still works
+    let (tok, fx) = t.req(MAIN, ren("a", "alpha2"));
+    assert_eq!(reply(&fx, tok).unwrap()["name"], "alpha2");
+}
+
+#[test]
+fn main_restores_and_isolates_a_task_and_tasks_cannot() {
+    let mut t = T::new();
+    t.spawn_task("a");
+    t.spawn_task("b");
+    t.go(Input::ReplIdle { agent: "b".into(), leftover: false });
+    t.user(MAIN, "/drop b --force");
+    assert_eq!(t.status("b"), Status::Archived);
+    let (tok, fx) = t.req("a", AgentReq::Restore { agent: "b".into() });
+    assert!(err_of(&fx, tok).contains("reserved for main"));
+    assert_eq!(t.status("b"), Status::Archived);
+    let (tok, fx) = t.req(MAIN, AgentReq::Restore { agent: "b".into() });
+    assert_eq!(reply(&fx, tok).unwrap()["name"], "b");
+    assert!(fx
+        .iter()
+        .any(|e| matches!(e, Effect::Spawn { agent, resume: true, .. } if agent == "b")));
+    let (tok, fx) = t.req(MAIN, AgentReq::Restore { agent: "b".into() });
+    assert!(err_of(&fx, tok).contains("active"), "{:?}", reply(&fx, tok));
+    // isolate: a task cannot, main can (a has changed nothing yet)
+    t.go(Input::ReplIdle { agent: "a".into(), leftover: false });
+    let (tok, fx) = t.req("b", AgentReq::Isolate { agent: "a".into() });
+    assert!(err_of(&fx, tok).contains("reserved for main"));
+    let (tok, fx) = t.req(MAIN, AgentReq::Isolate { agent: "a".into() });
+    assert_eq!(reply(&fx, tok).unwrap()["name"], "a", "{:?}", fx);
+    assert!(t.hub.st.agents["a"].ws.mode == crate::model::Mode::Worktree);
+    let (tok, fx) = t.req(MAIN, AgentReq::Isolate { agent: "a".into() });
+    assert!(err_of(&fx, tok).contains("already"), "{:?}", reply(&fx, tok));
+}

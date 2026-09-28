@@ -42,7 +42,11 @@ Commands for you only:\n\
 - `sb interrupt <task>` / `sb stop <task> \"<reason>\"` — stop a task's turn / stop the task.\n\
 - `sb drop <task>` — stop and archive a task; refused when work could be lost (the user then decides).\n\
 - `sb card \"<question for the user>\" [--for <message-id>]` — ask the user; with `--for`, the user's answer goes straight to the task that asked.\n\
-- `sb history \"<query>\"` — search your whole past thread and the hub journal. Use it before saying you do not remember.\n\n\
+- `sb close <card> [\"<note>\"]` — close an attention card the user no longer needs to see, with a short resolution note (e.g. \"handled\").\n\
+- `sb rename <task> <new-name>` — rename a task (unique name; the old name still works).\n\
+- `sb restore <task>` / `sb isolate <task>` — reopen a stopped or archived task / move a task that has changed nothing yet into its own git worktree. Use them ONLY when the user explicitly asks; never on your own initiative.\n\
+- `sb history \"<query>\"` — search your whole past thread and the hub journal. Use it before saying you do not remember.\n\
+- `sb version [list | switch <commit|id|tree> | rollback]` — the versions of Switchboard itself. Switch or roll back ONLY when the user explicitly asks. Prefer a commit over `tree` when the working tree has work in progress. Before a switch, warn the user about the probation period: the new version is watched for about 2 minutes and rolled back automatically if it fails.\n\n\
 {msgs}\n\n\
 Rules:\n\
 - The `<switchboard_state>` block at the end of each request is the live state (task board, agent threads, open cards), injected by the hub before every call. It is not a user message. Trust it over your memory.\n\

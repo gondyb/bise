@@ -19,9 +19,11 @@ sb inspect main --origin
 main only:
 sb spawn <name> --objective \"…\" [--context \"…\"] [--constraint \"…\"]... [--done-when \"…\"] [--report-format \"…\"] [--worktree [--with-changes]]
 sb interrupt <task> | sb stop <task> \"<reason>\" | sb drop <task>
+sb close <card> [\"<note>\"] | sb rename <task> <new-name>
+sb restore <task> | sb isolate <task>   (only on the user's explicit request)
 sb card \"<question for the user>\" [--for m_<n>]
 sb history \"<query>\"
-sb version [list | switch <commit|id|tree> | rollback]   (versions of Switchboard itself)
+sb version [list | switch <commit|id|tree> | rollback]   (versions of Switchboard itself; list: everyone)
 A text argument `-` reads the text from stdin.";
 
 /// Split flags from positional words. `flags` take a value, `switches`
@@ -212,7 +214,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
             req.insert("worktree".into(), json!(o.contains_key("worktree")));
             req.insert("with_changes".into(), json!(o.contains_key("with-changes")));
         }
-        "interrupt" | "drop" => {
+        "interrupt" | "drop" | "restore" | "isolate" => {
             let (pos, _) = parse_args(rest, &[], &[])?;
             req.insert(
                 "agent".into(),
@@ -232,6 +234,25 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                     .trim_start_matches('@')),
             );
             req.insert("reason".into(), json!(pos[1..].join(" ")));
+        }
+        "close" => {
+            let (pos, _) = parse_args(rest, &[], &[])?;
+            let card = pos
+                .first()
+                .and_then(|c| c.trim_start_matches('#').parse::<u64>().ok())
+                .ok_or("usage: sb close <card> [\"<note>\"]")?;
+            req.insert("card".into(), json!(card));
+            req.insert("note".into(), json!(pos[1..].join(" ")));
+        }
+        "rename" => {
+            let (pos, _) = parse_args(rest, &[], &[])?;
+            match pos.as_slice() {
+                [a, b] => {
+                    req.insert("agent".into(), json!(a.trim_start_matches('@')));
+                    req.insert("new_name".into(), json!(b.trim_start_matches('@')));
+                }
+                _ => return Err("usage: sb rename <task> <new-name>".into()),
+            }
         }
         "card" => {
             let (pos, o) = parse_args(rest, &["for"], &[])?;
@@ -321,6 +342,10 @@ pub fn render(cmd: &str, v: &Value) -> (bool, String) {
         }
         "card" => format!("card #{} opened for the user", v.get("card").and_then(|c| c.as_u64()).unwrap_or(0)),
         "report" => format!("reported ({})", s("message_id")),
+        "close" => format!("card #{} closed", v.get("card").and_then(|c| c.as_u64()).unwrap_or(0)),
+        "rename" => format!("renamed: now @{} (the old name still works)", s("name")),
+        "restore" => format!("@{} restored", s("name")),
+        "isolate" => format!("@{} now works in its own git worktree", s("name")),
         _ => "ok".to_string(),
     };
     (true, text)
@@ -336,13 +361,21 @@ fn version(args: &[String]) -> i32 {
         return 2;
     }
     let what = args.get(1).map(|s| s.as_str()).unwrap_or("list");
-    let req = json!({"op": "version", "do": what, "to": args.get(2).cloned().unwrap_or_default()});
+    let from = std::env::var("SB_AGENT").unwrap_or_default();
+    let req = json!({"op": "version", "do": what, "to": args.get(2).cloned().unwrap_or_default(), "from": from});
     match crate::client::request_retry(
         std::path::Path::new(&socket),
         &req,
         Duration::from_secs(30),
         what == "list",
     ) {
+        Ok(v) if v.get("ok") == Some(&json!(false)) => {
+            eprintln!(
+                "error: {}",
+                v.get("error").and_then(|t| t.as_str()).unwrap_or("")
+            );
+            1
+        }
         Ok(v) => {
             println!("{}", v.get("text").and_then(|t| t.as_str()).unwrap_or(""));
             0
@@ -487,10 +520,31 @@ mod tests {
             vec!["report", "done", "all good", "--decision", "v2"],
             vec!["card", "--for", "m_2", "v1 or v2?"],
             vec!["stop", "x", "no", "longer", "needed"],
+            vec!["close", "#3", "handled"],
+            vec!["close", "4"],
+            vec!["rename", "@a", "b"],
+            vec!["restore", "a"],
+            vec!["isolate", "a"],
         ] {
             let r = build(&a(&args)).unwrap();
             crate::core::AgentReq::from_json(&r).unwrap_or_else(|e| panic!("{:?}: {}", args, e));
         }
+    }
+
+    #[test]
+    fn main_controls_parse() {
+        let r = build(&a(&["close", "#3", "handled", "by", "docs"])).unwrap();
+        assert_eq!(r["card"], 3);
+        assert_eq!(r["note"], "handled by docs");
+        assert_eq!(build(&a(&["close", "3"])).unwrap()["note"], "");
+        assert!(build(&a(&["close", "x"])).is_err());
+        assert!(build(&a(&["close"])).is_err());
+        let r = build(&a(&["rename", "@old", "new"])).unwrap();
+        assert_eq!((r["agent"].as_str(), r["new_name"].as_str()), (Some("old"), Some("new")));
+        assert!(build(&a(&["rename", "old"])).is_err());
+        assert_eq!(build(&a(&["restore", "@x"])).unwrap()["agent"], "x");
+        assert_eq!(build(&a(&["isolate", "x"])).unwrap()["agent"], "x");
+        assert!(build(&a(&["isolate"])).is_err());
     }
 
     #[test]

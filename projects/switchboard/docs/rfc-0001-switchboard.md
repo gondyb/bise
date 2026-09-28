@@ -310,6 +310,14 @@ par l'utilisateur en direct.
 | `task_stop(nom, raison)` | Termine la tâche (`stopped`). |
 | `answer(question_id, texte)` | Répond à un `ask_main`. |
 | `history_search(query)` | Recherche dans le journal complet de main (§8.3). |
+| `sb close N ["note"]` | Ferme la carte d'attention N avec une courte résolution (`main: <note>`, ou `closed by main`). |
+| `sb rename <tâche> <nouveau-nom>` | Mêmes règles que `/rename` (nom unique et valide, l'ancien nom reste un alias). |
+| `sb restore <tâche>` / `sb isolate <tâche>` | Comme `/restore` et `/isolate`. Main ne s'en sert QUE sur demande explicite de l'utilisateur (son prompt le dit) : relancer une tâche arrêtée ou archivée est permis à l'utilisateur ou à main, jamais à une tâche ; la relance par simple message reste réservée à l'utilisateur. |
+| `sb version switch <commit\|id\|tree>` / `rollback` | Change de version de Switchboard ; seulement sur demande explicite de l'utilisateur. `sb version list` est permis à tous ; `switch` et `rollback` sont réservés à main. |
+
+Les commandes de main (spawn, interrupt, stop, drop, card, close, rename,
+restore, isolate, version switch/rollback) sont refusées aux tâches
+(`reserved for main`).
 
 ### 7.5 bis Lire le fil d'un autre agent (`sb inspect`)
 
