@@ -13,7 +13,7 @@ echo "== Rust: build, unit and scenario tests, clippy"
 echo "== E2E (real hub, REPLs, git; scripted provider)"
 python3 -u projects/switchboard/tests/e2e.py
 echo "== TUI under tmux"
-for t in tui_tmux tui_help_tmux tui_term_tmux tui_composer_tmux tui_version_tmux tui_at_files_tmux tui_images_tmux tui_clear_tmux tui_archived_tmux; do
+for t in tui_tmux tui_help_tmux tui_term_tmux tui_composer_tmux tui_version_tmux tui_at_files_tmux tui_images_tmux tui_clear_tmux tui_archived_tmux tui_waits_tmux tui_onboarding_tmux; do
   python3 -u "projects/switchboard/tests/$t.py" | tail -1
 done
 if [ "${1:-}" = "--live" ]; then

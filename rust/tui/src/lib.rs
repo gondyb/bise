@@ -77,6 +77,7 @@ mod keyprobe;
 pub mod timing;
 mod crash;
 mod help;
+mod onboarding;
 mod voice;
 #[cfg(test)]
 mod voice_ui_tests;

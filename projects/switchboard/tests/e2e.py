@@ -43,6 +43,8 @@ class Env:
             "BEND_SKILLS_INDEX": os.path.join(self.tmp, "skills-index.txt"),
             "BEND_BG_ROOT": os.path.join(self.tmp, "bg"),
             "BEND_BG_AFTER": "30",
+            # the tmux tests start on the normal UI (tui_onboarding_tmux turns it on)
+            "SB_ONBOARDING": "off",
         }
         self.hub = None
 
