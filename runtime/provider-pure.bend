@@ -35,15 +35,12 @@ def model_style.pick(is_claude: Bool) -> Api.Style:
 def model_style(+model: String) -> Api.Style:
   model_style.pick(String.starts_with(model, "claude"))
 
-def model_url.pick(is_anth: Bool) -> String:
-  match is_anth:
-    case True{}:
-      "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages"
-    case False{}:
-      "https://api.mistral.ai/v1/chat/completions"
-
 def model_url(st: Api.Style) -> String:
-  model_url.pick(Api.is_anthropic(st))
+  match st:
+    case Api.Anthropic{}:
+      "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages"
+    case Api.OpenAI{}:
+      "https://api.mistral.ai/v1/chat/completions"
 
 # BEND_PROVIDER_URL=<url> points the call elsewhere (a local fault
 # injector in the tests); unset, the provider table decides
@@ -57,15 +54,12 @@ def provider_url.pick(empty: Bool, +env: String, st: Api.Style) -> String:
 def provider_url(+env: String, st: Api.Style) -> String:
   provider_url.pick(String.is_empty(env), env, st)
 
-def model_key_env.pick(is_anth: Bool) -> String:
-  match is_anth:
-    case True{}:
-      "ANTHROPIC_FOUNDRY_API_KEY"
-    case False{}:
-      "MISTRAL_API_KEY"
-
 def model_key_env(st: Api.Style) -> String:
-  model_key_env.pick(Api.is_anthropic(st))
+  match st:
+    case Api.Anthropic{}:
+      "ANTHROPIC_FOUNDRY_API_KEY"
+    case Api.OpenAI{}:
+      "MISTRAL_API_KEY"
 
 def interrupt_path_of(+port: String) -> String:
   String.append("/tmp/bend-interrupt-", String.append(port, ".txt"))

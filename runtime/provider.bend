@@ -74,15 +74,12 @@ def anth_headers(+key: String) -> Map<&2, List<&2, String>>:
   "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31,context-1m-2025-08-07"),
   "Content-Type", "application/json")
 
-def model_headers.pick(is_anth: Bool, +key: String) -> Map<&2, List<&2, String>>:
-  match is_anth:
-    case True{}:
-      anth_headers(key)
-    case False{}:
-      oai_headers(key)
-
 def model_headers(st: Api.Style, +key: String) -> Map<&2, List<&2, String>>:
-  model_headers.pick(Api.is_anthropic(st), key)
+  match st:
+    case Api.Anthropic{}:
+      anth_headers(key)
+    case Api.OpenAI{}:
+      oai_headers(key)
 
 # BEND_WIRE_DUMP also captures the raw provider response (suffix .reply):
 # the tool-call arguments exactly as the provider serialized them,
@@ -412,20 +409,20 @@ def whole.call(+url: String, hdrs: Map<&2, List<&2, String>>, +body: String,
     model_call.verdict(r, st, Pvp.url_host(url))
 
 @unsafe
-def call.pick(is_anth: Bool, +url: String, hdrs: Map<&2, List<&2, String>>,
-    +body: String, st: Api.Style) -> IO(Got):
-  match is_anth:
-    case True{}:
+def call.by_style(st: Api.Style, +url: String, hdrs: Map<&2, List<&2, String>>,
+    +body: String) -> IO(Got):
+  match st:
+    case Api.Anthropic{}:
       sse.call(url, hdrs, body)
-    case False{}:
-      whole.call(url, hdrs, body, st)
+    case Api.OpenAI{}:
+      whole.call(url, hdrs, body, Api.OpenAI{})
 
 # the wire body: the Messages API streams, the others answer whole
-def wire_body.pick(is_anth: Bool, +body: String) -> String:
-  match is_anth:
-    case True{}:
+def wire_body(st: Api.Style, +body: String) -> String:
+  match st:
+    case Api.Anthropic{}:
       As.stream_body(body)
-    case False{}:
+    case Api.OpenAI{}:
       body
 
 # the attempt, into the session debug log when it is an incident
@@ -453,7 +450,7 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
     case 1n+k:
       do IO<Out & Rem.RemoteRes>:
         +json : String <- IO.pure(String,
-          wire_body.pick(Api.is_anthropic(st),
+          wire_body(st,
             Api.api_body_for(st, model, Api.parse_wire(request))))
         +body : String <- IO.pure(String, Enc.utf8.encode(json))
         dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
@@ -462,7 +459,7 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
           model_headers(st, key))
         ur : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_PROVIDER_URL")
         +url : String <- IO.pure(String, Pvp.provider_url(P.env_or(ur, ""), st))
-        +g : Got <- call.pick(Api.is_anthropic(st), url, hdrs, body, st)
+        +g : Got <- call.by_style(st, url, hdrs, body)
         lg : Unit <- model_call.log(call, tries, model, url, json, g)
         nu : Out <- usage_note(g, n, st, model)
         model_call.step(got_attempt(g), nu, k, tries,
