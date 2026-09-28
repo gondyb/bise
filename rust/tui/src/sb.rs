@@ -48,8 +48,8 @@ pub(super) struct View {
     pending: bool,
     interrupt_requested: bool,
     last_line_at: Option<std::time::Instant>,
-    input: String,
-    cursor: usize,
+    /// the agent's composer draft, kept while another is in focus
+    ed: crate::editor::Editor,
 }
 
 impl View {
@@ -66,8 +66,7 @@ impl View {
             pending: false,
             interrupt_requested: false,
             last_line_at: None,
-            input: String::new(),
-            cursor: 0,
+            ed: crate::editor::Editor::default(),
         }
     }
 }
@@ -87,8 +86,7 @@ fn swap_feed(app: &mut App, v: &mut View) {
 }
 
 fn swap_draft(app: &mut App, v: &mut View) {
-    std::mem::swap(&mut app.input, &mut v.input);
-    std::mem::swap(&mut app.cursor, &mut v.cursor);
+    std::mem::swap(&mut app.ed, &mut v.ed);
 }
 
 #[derive(Clone, Default)]
@@ -241,10 +239,10 @@ pub(super) fn version_items(app: &App) -> Vec<PopItem> {
     let Some(sb) = app.sb.as_ref() else {
         return Vec::new();
     };
-    if app.hist_idx.is_some() || app.popup_dismissed.as_deref() == Some(app.input.as_str()) {
+    if app.ed.browsing() || app.popup_dismissed.as_deref() == Some(app.ed.text.as_str()) {
         return Vec::new();
     }
-    let Some(q) = version_query(&app.input) else {
+    let Some(q) = version_query(&app.ed.text) else {
         return Vec::new();
     };
     // ask the hub for a fresh list (at most every 3 s while it is open)
@@ -263,8 +261,8 @@ pub(super) fn version_items(app: &App) -> Vec<PopItem> {
             label: "…".into(),
             desc: "loading the versions".into(),
             mark: None,
-            fill: app.input.clone(),
-            fill_cursor: app.cursor,
+            fill: app.ed.text.clone(),
+            fill_cursor: app.ed.cursor,
             run: None,
             closable: true,
         }];
@@ -499,9 +497,9 @@ fn hub_reconnected(app: &mut App) {
     app.unseen = 0;
     let Some(sb) = app.sb.as_mut() else { return };
     for v in sb.views.values_mut() {
-        let draft = (std::mem::take(&mut v.input), v.cursor);
+        let draft = std::mem::take(&mut v.ed);
         *v = View::new();
-        (v.input, v.cursor) = draft;
+        v.ed = draft;
     }
     sb.activity.clear();
     sb.ready = false;
@@ -842,7 +840,6 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         .trim()
         .to_string();
     app.history.insert(0, typed.clone());
-    app.hist_idx = None;
     app.popup_sel = 0;
     let mut out: Vec<Ev> = Vec::new();
     let Some(sb) = app.sb.as_mut() else {
@@ -906,7 +903,7 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
 /// (Enter still talks to the agent in focus). An empty composer only
 /// acknowledges the cards that need no words (done, overlap).
 fn answer_card(app: &mut App) {
-    let text = app.input.trim().to_string();
+    let text = app.ed.text.trim().to_string();
     let Some(sb) = app.sb.as_mut() else { return };
     let Some((id, kind, agent)) = sb
         .current_card()
@@ -928,12 +925,10 @@ fn answer_card(app: &mut App) {
     sb.send(json!({"op": "input", "focus": f, "text": format!("/answer {} {}", id, text)}));
     sb.card.scroll = 0;
     sb.card.full = false;
-    if !app.input.trim().is_empty() {
-        app.history.insert(0, app.input.clone());
+    if !app.ed.text.trim().is_empty() {
+        app.history.insert(0, app.ed.text.clone());
     }
-    app.input.clear();
-    app.cursor = 0;
-    app.hist_idx = None;
+    app.ed.take();
 }
 
 /// The height of the card box above the composer (0: hidden, or full
@@ -1078,7 +1073,7 @@ fn nav_key(k: &crossterm::event::KeyEvent) -> Option<Nav> {
 
 /// Keys of the switchboard mode; `true` when handled.
 pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: bool) -> bool {
-    let empty = app.input.is_empty();
+    let empty = app.ed.text.is_empty();
     let pending = app.pending;
     let interrupt_requested = app.interrupt_requested;
     let Some(sb) = app.sb.as_mut() else {
@@ -1144,9 +1139,8 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             }
             if !empty {
                 // the draft goes to the history (Up brings it back)
-                let d = std::mem::take(&mut app.input);
+                let d = app.ed.take();
                 app.history.insert(0, d);
-                app.cursor = 0;
                 return true;
             }
             if sb.focus != "main" {
@@ -1578,10 +1572,10 @@ pub(super) fn mentions(app: &App) -> Vec<Mention> {
         return Vec::new();
     };
     // a recalled history line is not a completion request
-    if app.hist_idx.is_some() || app.popup_dismissed.as_deref() == Some(app.input.as_str()) {
+    if app.ed.browsing() || app.popup_dismissed.as_deref() == Some(app.ed.text.as_str()) {
         return Vec::new();
     }
-    let Some(q) = mention_query(&app.input) else {
+    let Some(q) = mention_query(&app.ed.text) else {
         return Vec::new();
     };
     filter_mentions(&sb.agents, &sb.focus, q)
@@ -1723,12 +1717,13 @@ pub fn run_switchboard(
         show_thinking: false,
         interrupt_requested: false,
         pending: false,
-        input: String::new(),
-        cursor: 0,
+        ed: crate::editor::Editor::default(),
+        composer: crate::ComposerArea::default(),
+        flash: None,
+        mouse: crate::MouseState::default(),
         popup_sel: 0,
         popup_dismissed: None,
         history: Vec::new(),
-        hist_idx: None,
         tick: 0,
         info: HarnessInfo {
             model: "switchboard".into(),
@@ -1975,7 +1970,7 @@ mod nav_key_tests {
         let mut app = bench::test_app();
         app.sb.as_mut().unwrap().agents = vec![agent("main"), agent("t1")];
         app.sb.as_mut().unwrap().selected = Some(1);
-        app.input = "hello".into();
+        app.ed.text = "hello".into();
         assert!(!press(&mut app, KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(app.sb.as_ref().unwrap().focus, "main");
     }

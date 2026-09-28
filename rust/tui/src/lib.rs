@@ -51,6 +51,7 @@ mod sb;
 mod skills;
 mod emoji;
 mod editor;
+mod clipboard;
 pub use sb::{run_switchboard, take_reexec};
 
 const BRAND: Color = Color::Rgb(0xfa, 0xb2, 0x83); // primary
@@ -69,6 +70,7 @@ const PANEL: Color = Color::Rgb(0x14, 0x14, 0x14); // backgroundPanel
 /// better than white on orange
 const ON_BRAND: Color = Color::Rgb(0, 0, 0);
 const ELEMENT: Color = Color::Rgb(0x1e, 0x1e, 0x1e); // backgroundElement
+const SELECTION: Color = Color::Rgb(0x3a, 0x4a, 0x6b); // selected text background
 const BORDER_ACTIVE: Color = Color::Rgb(0x60, 0x60, 0x60); // borderActive
 const FAINT: Color = Color::Rgb(0x4a, 0x4a, 0x4a); // rails & turn marks — dimmer than textMuted
 // the syntax palette of the run_typescript block (OpenCode dark
@@ -2071,14 +2073,19 @@ struct App {
     // a second Ctrl+C quits instead of interrupting again
     interrupt_requested: bool,
     pending: bool,
-    input: String,
-    cursor: usize, // char index into input
+    /// the composer: text, cursor, selection, undo, history recall
+    ed: editor::Editor,
+    /// where the last frame drew the composer's text (mouse, Up/Down rows)
+    composer: ComposerArea,
+    /// a short note in the status row ("copied 12 chars") and when
+    flash: Option<(String, std::time::Instant)>,
+    /// the mouse gesture in progress (selection drags, multi-clicks)
+    mouse: MouseState,
     popup_sel: usize,
     /// The composer text the user closed the `@` popup on (Esc): the
     /// popup stays closed until the text changes.
     popup_dismissed: Option<String>,
     history: Vec<String>,
-    hist_idx: Option<usize>,
     tick: u32,
     info: HarnessInfo,
     host: String,
@@ -2090,6 +2097,62 @@ struct App {
     /// Switchboard mode (projects/switchboard): the hub connection and
     /// the feeds out of focus.
     sb: Option<sb::Sb>,
+}
+
+/// The composer's text area in the last frame: its screen origin, its
+/// width in columns, its visible rows and the first layout row shown.
+#[derive(Debug, Default, Clone, Copy)]
+struct ComposerArea {
+    x: u16,
+    y: u16,
+    w: usize,
+    h: usize,
+    top: usize,
+}
+
+/// What a left press started: a selection in the composer (or none),
+/// and the last press for double/triple clicks.
+#[derive(Debug, Default, Clone)]
+struct MouseState {
+    drag: Option<DragIn>,
+    last_press: Option<(std::time::Instant, u16, u16)>,
+    clicks: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DragIn {
+    Composer,
+}
+
+impl MouseState {
+    /// Counts this press: 1, 2 (double) or 3 (triple click), for a press
+    /// at the same cell within 400 ms of the last one.
+    fn press(&mut self, x: u16, y: u16, now: std::time::Instant) -> u8 {
+        let again = self
+            .last_press
+            .is_some_and(|(t, px, py)| px == x && py == y && now.duration_since(t) < Duration::from_millis(400));
+        self.clicks = if again { self.clicks % 3 + 1 } else { 1 };
+        self.last_press = Some((now, x, y));
+        self.clicks
+    }
+}
+
+impl ComposerArea {
+    /// The char index under the screen cell (x, y), if inside the text.
+    fn hit(&self, text: &str, x: u16, y: u16, clamp: bool) -> Option<usize> {
+        let inside = x >= self.x.saturating_sub(1)
+            && (x as usize) < self.x as usize + self.w
+            && y >= self.y
+            && (y as usize) < self.y as usize + self.h;
+        if !inside && !clamp {
+            return None;
+        }
+        let rows = editor::layout_input(text, self.w);
+        let dy = y as isize - self.y as isize;
+        let row = (self.top as isize + dy).clamp(0, rows.len() as isize - 1) as usize;
+        let col = x.saturating_sub(self.x) as usize;
+        Some(editor::ci_at(&rows, row, col))
+    }
 }
 
 impl App {
@@ -2322,7 +2385,7 @@ struct PopItem {
 }
 
 fn popup_items(app: &App) -> Vec<PopItem> {
-    let cmds = popup_matches(&app.input);
+    let cmds = popup_matches(&app.ed.text);
     if !cmds.is_empty() {
         return cmds
             .into_iter()
@@ -2366,17 +2429,17 @@ fn popup_items(app: &App) -> Vec<PopItem> {
 
 /// `$skill` anywhere in the draft: the skills of the index.
 fn skill_items(app: &App) -> Vec<PopItem> {
-    if app.hist_idx.is_some() || app.popup_dismissed.as_deref() == Some(app.input.as_str()) {
+    if app.ed.browsing() || app.popup_dismissed.as_deref() == Some(app.ed.text.as_str()) {
         return Vec::new();
     }
-    let Some((start, q)) = skills::token(&app.input, app.cursor) else {
+    let Some((start, q)) = skills::token(&app.ed.text, app.ed.cursor) else {
         return Vec::new();
     };
     let all = skills::index();
     skills::filter(&all, &q)
         .into_iter()
         .map(|s| {
-            let (fill, fill_cursor) = skills::complete(&app.input, start, app.cursor, &s.name);
+            let (fill, fill_cursor) = skills::complete(&app.ed.text, start, app.ed.cursor, &s.name);
             PopItem {
                 label: format!("${}", s.name),
                 desc: s.desc.clone(),
@@ -2392,16 +2455,16 @@ fn skill_items(app: &App) -> Vec<PopItem> {
 
 /// `:name` anywhere in the draft: the matching emojis (emoji.rs).
 fn emoji_items(app: &App) -> Vec<PopItem> {
-    if app.hist_idx.is_some() || app.popup_dismissed.as_deref() == Some(app.input.as_str()) {
+    if app.ed.browsing() || app.popup_dismissed.as_deref() == Some(app.ed.text.as_str()) {
         return Vec::new();
     }
-    let Some((start, q)) = emoji::token(&app.input, app.cursor) else {
+    let Some((start, q)) = emoji::token(&app.ed.text, app.ed.cursor) else {
         return Vec::new();
     };
     emoji::filter(&q)
         .into_iter()
         .map(|(e, name)| {
-            let (fill, fill_cursor) = emoji::complete(&app.input, start, app.cursor, e.glyph);
+            let (fill, fill_cursor) = emoji::complete(&app.ed.text, start, app.ed.cursor, e.glyph);
             PopItem {
                 label: format!(":{}:", name),
                 desc: e.desc.to_string(),
@@ -2425,115 +2488,6 @@ fn popup_top(sel: usize, len: usize, rows: usize) -> usize {
     }
 }
 
-// byte offset of the n-th char (char-boundary-safe cursor helpers)
-fn byte_at_char(s: &str, ci: usize) -> usize {
-    s.char_indices().nth(ci).map(|(b, _)| b).unwrap_or(s.len())
-}
-
-// The composer cursor is a char index that stays on grapheme boundaries:
-// an emoji with a ZWJ, a skin tone or a variation selector is one step.
-
-/// The char index of the grapheme before the one at `cursor`.
-fn prev_grapheme(s: &str, cursor: usize) -> usize {
-    let mut ci = 0usize;
-    let mut prev = 0usize;
-    for g in s.graphemes(true) {
-        if ci >= cursor {
-            break;
-        }
-        prev = ci;
-        ci += g.chars().count();
-    }
-    prev
-}
-
-/// The char index of the grapheme after the one at `cursor`.
-fn next_grapheme(s: &str, cursor: usize) -> usize {
-    let mut ci = 0usize;
-    for g in s.graphemes(true) {
-        ci += g.chars().count();
-        if ci > cursor {
-            return ci;
-        }
-    }
-    ci
-}
-
-/// One cell of the composer layout: a grapheme, its first char index,
-/// its width in columns. A newline is a 1-column slot shown only when the
-/// cursor is on it.
-#[derive(Debug, Clone, PartialEq)]
-struct InputCell<'a> {
-    ci: usize,
-    text: &'a str,
-    w: usize,
-    newline: bool,
-}
-
-/// The composer rows at `inner` columns: newlines break rows, long rows
-/// wrap by width (the widths ratatui uses, so a 2-column emoji never
-/// overflows the row), and the end of the text gets a 1-column cursor
-/// slot.
-fn layout_input(input: &str, inner: usize) -> Vec<Vec<InputCell<'_>>> {
-    let inner = inner.max(2);
-    let mut rows: Vec<Vec<InputCell>> = vec![Vec::new()];
-    let mut col = 0usize;
-    let mut ci = 0usize;
-    for g in input.graphemes(true) {
-        let n = g.chars().count();
-        if g == "\n" || g == "\r\n" {
-            rows.last_mut().unwrap().push(InputCell { ci, text: " ", w: 1, newline: true });
-            rows.push(Vec::new());
-            col = 0;
-            ci += n;
-            continue;
-        }
-        // a control char (a pasted tab) shows as one blank column
-        let (text, w) = if g.chars().any(char::is_control) { (" ", 1) } else { (g, g.width().max(1)) };
-        if col > 0 && col + w > inner {
-            rows.push(Vec::new());
-            col = 0;
-        }
-        rows.last_mut().unwrap().push(InputCell { ci, text, w, newline: false });
-        col += w;
-        if col >= inner {
-            rows.push(Vec::new());
-            col = 0;
-        }
-        ci += n;
-    }
-    rows.last_mut().unwrap().push(InputCell { ci, text: " ", w: 1, newline: true });
-    rows
-}
-
-/// Display column of the cursor on its (newline-separated) line.
-fn line_col_width(input: &str, cursor: usize) -> usize {
-    let b = byte_at_char(input, cursor);
-    let head = &input[..b];
-    let line = head.rsplit('\n').next().unwrap_or("");
-    line.width()
-}
-
-/// The char index, on the line that starts at char `start`, of the
-/// grapheme at display column `col` (or the line end).
-fn char_at_col(input: &str, start: usize, col: usize) -> usize {
-    let b = byte_at_char(input, start);
-    let mut ci = start;
-    let mut w = 0usize;
-    for g in input[b..].graphemes(true) {
-        if g == "\n" || g == "\r\n" {
-            break;
-        }
-        let gw = g.width();
-        if w + gw > col {
-            break;
-        }
-        w += gw;
-        ci += g.chars().count();
-    }
-    ci
-}
-
 // interprets one user line: slash command, raw protocol word, or plain
 // message (implicit "say"). Returns the local events produced (echo
 // included) so line mode can print them.
@@ -2552,7 +2506,6 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         .unwrap_or(v);
     let mut out = vec![Ev::You(typed.to_string())];
     app.history.insert(0, v.to_string());
-    app.hist_idx = None;
     app.popup_sel = 0;
 
     let first = v.split_whitespace().next().unwrap_or("");
@@ -2753,22 +2706,16 @@ fn draw(app: &mut App, frame: &mut Frame) {
     // the composer grows with its content (a pasted multi-line block),
     // capped at half the screen so the feed always survives
     let inner_w = ((area.width as usize).saturating_sub(6)).max(1);
+    // rows as drawn: wrapped by display width (emojis are 2 columns)
     let composer_rows = {
-        let mut rows = 1usize;
-        let mut col = 0usize;
-        for c in app.input.chars() {
-            if c == '\n' {
-                rows += 1;
-                col = 0;
-            } else {
-                col += 1;
-                if col > inner_w {
-                    rows += 1;
-                    col = 1;
-                }
-            }
+        let rows = editor::layout_input(&app.ed.text, inner_w);
+        let n = rows.len();
+        // a trailing row holding only the end slot after a full row
+        if n > 1 && rows[n - 1].len() == 1 && !rows[n - 2].last().is_some_and(|c| c.newline) {
+            n - 1
+        } else {
+            n
         }
-        rows
     };
     // the prompt block holds: 2 rows of top padding, the typed text,
     // one blank line, the meta row, 1 row of bottom padding
@@ -2905,7 +2852,17 @@ fn draw(app: &mut App, frame: &mut Frame) {
         frame.render_widget(Paragraph::new(Line::from(spans)), chunks[2]);
     } else {
         app.bottom_bar_rect = None;
-        let status = if let Some(l) = sb::status_line(app) {
+        let flash = app
+            .flash
+            .as_ref()
+            .filter(|(_, at)| at.elapsed() < Duration::from_secs(2))
+            .map(|(t, _)| t.clone());
+        let status = if let Some(t) = flash {
+            Line::from(vec![
+                Span::styled("  ✓ ", Style::default().fg(BRAND)),
+                Span::styled(t, Style::default().fg(TEXT)),
+            ])
+        } else if let Some(l) = sb::status_line(app) {
             l
         } else if app.pending && app.connected {
             Line::from(vec![
@@ -2944,11 +2901,19 @@ fn draw(app: &mut App, frame: &mut Frame) {
     // ---- the prompt: OpenCode prompt (left border ┃, element bg, meta row)
     // multi-line: newlines break rows, long rows wrap at the inner
     // width (layout_input)
-    let chars: Vec<char> = app.input.chars().collect();
     let inner = ((chunks[5].width as usize).saturating_sub(6)).max(1);
-    let total = chars.len();
+    // the text area inside the block: left border + padding 3, padding
+    // 2 right, 2 top; the rows above the meta row and its blank line
+    let text_rows = (chunks[5].height as usize).saturating_sub(5).max(1);
+    app.composer = ComposerArea {
+        x: chunks[5].x + 4,
+        y: chunks[5].y + 2,
+        w: inner,
+        h: text_rows,
+        top: 0,
+    };
     let mut input_lines: Vec<Line> = Vec::new();
-    if total == 0 {
+    if app.ed.is_empty() {
         input_lines.push(Line::from(Span::styled(
             sb::placeholder(app).unwrap_or_else(|| "Ask anything…".to_string()),
             Style::default().fg(DIM),
@@ -2956,33 +2921,50 @@ fn draw(app: &mut App, frame: &mut Frame) {
     } else {
         // rows by display width (emojis are 2 columns); the cursor is
         // the REVERSED grapheme, or a REVERSED space on a newline or at
-        // the end of the text
-        let rows = layout_input(&app.input, inner);
+        // the end of the text; the selection has the selection colors
+        let rows = editor::layout_input(&app.ed.text, inner);
         let last = rows.len() - 1;
-        for (ri, row) in rows.iter().enumerate() {
+        let cursor = app.ed.cursor;
+        let selection = app.ed.selection();
+        let (cur_row, _) = editor::row_col(&rows, cursor);
+        // taller than the box: scroll so the cursor row stays visible
+        let top = (cur_row + 1).saturating_sub(text_rows);
+        app.composer.top = top;
+        let text_style = Style::default().fg(TEXT);
+        let sel_style = Style::default().fg(TEXT).bg(SELECTION);
+        for (ri, row) in rows.iter().enumerate().skip(top) {
             let mut spans: Vec<Span> = Vec::new();
             let mut buf = String::new();
+            let mut buf_sel = false;
             for cell in row {
                 let n = cell.text.chars().count().max(1);
                 let is_cursor = if cell.newline {
-                    cell.ci == app.cursor
+                    cell.ci == cursor
                 } else {
-                    cell.ci <= app.cursor && app.cursor < cell.ci + n
+                    cell.ci <= cursor && cursor < cell.ci + n
                 };
-                if is_cursor {
+                let in_sel = selection.is_some_and(|(a, b)| a <= cell.ci && cell.ci < b);
+                if is_cursor || buf_sel != in_sel {
                     if !buf.is_empty() {
-                        spans.push(Span::styled(std::mem::take(&mut buf), Style::default().fg(TEXT)));
+                        let st = if buf_sel { sel_style } else { text_style };
+                        spans.push(Span::styled(std::mem::take(&mut buf), st));
                     }
+                    buf_sel = in_sel;
+                }
+                if is_cursor {
                     spans.push(Span::styled(
                         cell.text.to_string(),
-                        Style::default().fg(TEXT).add_modifier(Modifier::REVERSED),
+                        text_style.add_modifier(Modifier::REVERSED),
                     ));
                 } else if !cell.newline {
                     buf.push_str(cell.text);
+                } else if in_sel {
+                    // a selected newline shows as one selected blank
+                    buf.push(' ');
                 }
             }
             if !buf.is_empty() {
-                spans.push(Span::styled(buf, Style::default().fg(TEXT)));
+                spans.push(Span::styled(buf, if buf_sel { sel_style } else { text_style }));
             }
             // a trailing empty row (the text ends on a full row, cursor
             // elsewhere) is not drawn
@@ -3006,7 +2988,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
         ),
         Span::styled(" · ", Style::default().fg(DIM)),
         Span::styled(
-            if app.input.contains('\n') {
+            if app.ed.text.contains('\n') {
                 "⏎ send · ⇧⏎ new line"
             } else {
                 "⇧⏎ new line"
@@ -3114,61 +3096,6 @@ fn draw(app: &mut App, frame: &mut Frame) {
     );
 }
 
-// ---- multi-line composer navigation ----
-// The cursor is a char index over the whole input; Up/Down move it to
-// the same column on the previous/next line (clamped to that line).
-
-fn line_bounds(input: &str) -> Vec<(usize, usize)> {
-    // (start, len-without-newline) of every line
-    let chars: Vec<char> = input.chars().collect();
-    let mut out = vec![(0usize, 0usize)];
-    let mut start = 0usize;
-    for (i, c) in chars.iter().enumerate() {
-        if *c == '\n' {
-            out.last_mut().unwrap().1 = i - start;
-            start = i + 1;
-            out.push((start, 0));
-        }
-    }
-    out.last_mut().unwrap().1 = chars.len() - start;
-    out
-}
-
-fn cursor_line_up(input: &str, cursor: &mut usize) {
-    let col = line_col_width(input, *cursor);
-    let bounds = line_bounds(input);
-    // find the current line index
-    let mut cur = 0usize;
-    for (i, (st, _)) in bounds.iter().enumerate() {
-        if *st <= *cursor {
-            cur = i;
-        }
-    }
-    if cur == 0 {
-        return;
-    }
-    let (prev_start, _) = bounds[cur - 1];
-    // same display column (emojis are 2 wide), on a grapheme boundary
-    *cursor = char_at_col(input, prev_start, col);
-}
-
-fn cursor_line_down(input: &str, cursor: &mut usize) {
-    let col = line_col_width(input, *cursor);
-    let bounds = line_bounds(input);
-    let mut cur = 0usize;
-    for (i, (st, _)) in bounds.iter().enumerate() {
-        if *st <= *cursor {
-            cur = i;
-        }
-    }
-    if cur + 1 >= bounds.len() {
-        return;
-    }
-    let (next_start, _) = bounds[cur + 1];
-    // same display column (emojis are 2 wide), on a grapheme boundary
-    *cursor = char_at_col(input, next_start, col);
-}
-
 // one wire line into the feed of the app (the focused view)
 fn ingest_line(app: &mut App, line: String) {
     if line == "--- idle" {
@@ -3233,6 +3160,67 @@ fn ingest_line(app: &mut App, line: String) {
             }
             if let (true, Some(id)) = (replayed, finished) {
                 hide_replayed_elapsed(&mut app.events, &mut app.cache, id);
+            }
+        }
+    }
+}
+
+/// Copies to the system clipboard and says so in the status row.
+fn copy_text(app: &mut App, text: &str) {
+    let n = text.chars().count();
+    let note = if clipboard::copy(text) {
+        format!("copied {} char{}", n, if n == 1 { "" } else { "s" })
+    } else {
+        "copy failed (no pbcopy, and the terminal refused OSC 52)".to_string()
+    };
+    app.flash = Some((note, std::time::Instant::now()));
+}
+
+/// A key for the composer's editor (after the popups and the app keys):
+/// moves, selection, deletes, undo/redo, typing, copy/cut; Up/Down move
+/// between the visual rows, then through the history from the first and
+/// last rows.
+fn composer_key(app: &mut App, k: &crossterm::event::KeyEvent) {
+    use editor::{Action, Motion};
+    let Some(a) = editor::action(k) else { return };
+    let w = app.composer.w.max(1);
+    match a {
+        Action::Up(sel) => {
+            if !app.ed.row_up(w, sel) && (sel || !app.ed.history_up(&app.history)) {
+                app.ed.move_cursor(Motion::TextStart, sel);
+            }
+        }
+        Action::Down(sel) => {
+            if !app.ed.row_down(w, sel) && (sel || !app.ed.history_down(&app.history)) {
+                app.ed.move_cursor(Motion::TextEnd, sel);
+            }
+        }
+        Action::Copy => {
+            if let Some(t) = app.ed.selected_text() {
+                copy_text(app, &t);
+            }
+        }
+        Action::Cut => {
+            if let Some(t) = app.ed.cut() {
+                copy_text(app, &t);
+                app.popup_sel = 0;
+            }
+        }
+        Action::Insert(t) => {
+            app.ed.insert(&t);
+            app.popup_sel = 0;
+            // a typed (never a pasted) `:name:` becomes its emoji
+            if t == ":" {
+                if let Some((text, cur)) = emoji::replace_typed(&app.ed.text, app.ed.cursor) {
+                    app.ed.set(&text, cur);
+                }
+            }
+        }
+        other => {
+            let edits = !matches!(other, Action::Move(..));
+            app.ed.apply(&other);
+            if edits {
+                app.popup_sel = 0;
             }
         }
     }
@@ -3321,6 +3309,36 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     }
                     // click the back-to-bottom bar to return to the tail;
                     // click a thinking section to expand/collapse it
+                    // the composer: a press places the cursor (Shift
+                    // extends), a drag selects, a double click selects
+                    // the word, a triple click the whole text; the
+                    // release copies the selection
+                    MouseEventKind::Down(MouseButton::Left)
+                        if app.composer.hit(&app.ed.text, m.column, m.row, false).is_some() =>
+                    {
+                        let ci = app.composer.hit(&app.ed.text, m.column, m.row, false).unwrap_or(0);
+                        let clicks = app.mouse.press(m.column, m.row, std::time::Instant::now());
+                        match clicks {
+                            2 => {
+                                let (a, b) = editor::word_at(&app.ed.text, ci);
+                                app.ed.select_range(a, b);
+                            }
+                            3 => app.ed.select_all(),
+                            _ => app.ed.click(ci, m.modifiers.contains(KeyModifiers::SHIFT)),
+                        }
+                        app.mouse.drag = Some(DragIn::Composer);
+                    }
+                    MouseEventKind::Drag(MouseButton::Left) if app.mouse.drag == Some(DragIn::Composer) => {
+                        if let Some(ci) = app.composer.hit(&app.ed.text, m.column, m.row, true) {
+                            app.ed.click(ci, true);
+                        }
+                    }
+                    MouseEventKind::Up(MouseButton::Left) if app.mouse.drag == Some(DragIn::Composer) => {
+                        app.mouse.drag = None;
+                        if let Some(t) = app.ed.selected_text() {
+                            copy_text(app, &t);
+                        }
+                    }
                     MouseEventKind::Down(MouseButton::Left) => {
                         if let Some(r) = app.bottom_bar_rect {
                             let inside = m.column >= r.x
@@ -3366,10 +3384,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                 // normalize CRLF/CR so a terminal paste behaves like the
                 // typed newline, then insert at the cursor
                 let text = text.replace("\r\n", "\n").replace('\r', "\n");
-                let b = byte_at_char(&app.input, app.cursor);
-                app.input.insert_str(b, &text);
-                app.cursor += text.chars().count();
-                app.hist_idx = None;
+                app.ed.paste(&text);
                 app.popup_sel = 0;
                 continue;
             }
@@ -3377,7 +3392,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                 if k.kind != KeyEventKind::Press {
                     continue;
                 }
-                if app.popup_dismissed.as_deref() != Some(app.input.as_str()) {
+                if app.popup_dismissed.as_deref() != Some(app.ed.text.as_str()) {
                     app.popup_dismissed = None;
                 }
                 let matches = popup_items(app);
@@ -3441,16 +3456,18 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                         app.follow = true;
                         app.unseen = 0;
                     }
-                    // esc: close the popup only — it never interrupts
-                    // (Ctrl+C does, through the flag side-channel)
+                    // esc: close the popup, else drop the selection — it
+                    // never interrupts (Ctrl+C does, through the flag
+                    // side-channel)
                     (KeyCode::Esc, _) => {
                         if sel.is_some_and(|c| c.closable) {
                             // close the list, keep the text
-                            app.popup_dismissed = Some(app.input.clone());
+                            app.popup_dismissed = Some(app.ed.text.clone());
                             app.popup_sel = 0;
                         } else if popup_open {
-                            app.input.clear();
-                            app.cursor = 0;
+                            app.ed.clear();
+                        } else {
+                            app.ed.anchor = None;
                         }
                     }
                     // scrollback: PgUp/PgDn page, End follows the bottom
@@ -3465,28 +3482,24 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                             app.scroll += page as isize;
                         }
                     }
-                    (KeyCode::End, _) => {
-                        if !app.follow {
-                            app.follow = true;
-                            app.unseen = 0;
-                        } else {
-                            app.cursor = app.input.chars().count();
-                        }
+                    // End back to the tail when scrolled up, else the
+                    // line end (the editor)
+                    (KeyCode::End, KeyModifiers::NONE) if !app.follow => {
+                        app.follow = true;
+                        app.unseen = 0;
                     }
                     (KeyCode::Tab, _) => {
                         if let Some(c) = sel {
                             // popup completion
-                            app.input = c.fill.clone();
-                            app.cursor = c.fill_cursor;
+                            app.ed.set(&c.fill, c.fill_cursor);
                             app.popup_sel = 0;
                         } else if app.pending {
                             // codex queue_keys: queue the draft for after
                             // the turn ("say" forces the message reading
                             // even if the text starts with a protocol word)
-                            let v = app.input.trim().to_string();
+                            let v = app.ed.text.trim().to_string();
                             if !v.is_empty() && !v.starts_with('/') {
-                                app.input.clear();
-                                app.cursor = 0;
+                                app.ed.take();
                                 handle_input(app, &format!("say {}", v));
                             }
                         }
@@ -3498,26 +3511,19 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     (KeyCode::Enter, KeyModifiers::SHIFT)
                     | (KeyCode::Char('j'), KeyModifiers::CONTROL)
                     | (KeyCode::Enter, KeyModifiers::ALT) => {
-                        let b = byte_at_char(&app.input, app.cursor);
-                        app.input.insert(b, '\n');
-                        app.cursor += 1;
-                        app.hist_idx = None;
+                        app.ed.insert("\n");
                     }
                     (KeyCode::Enter, _) => {
                         if let Some(c) = sel {
                             if let Some(v) = c.run.clone() {
-                                app.input.clear();
-                                app.cursor = 0;
+                                app.ed.take();
                                 handle_input(app, &v);
                             } else {
-                                app.input = c.fill.clone();
-                                app.cursor = c.fill_cursor;
+                                app.ed.set(&c.fill, c.fill_cursor);
                                 app.popup_sel = 0;
                             }
                         } else {
-                            let v = app.input.trim().to_string();
-                            app.input.clear();
-                            app.cursor = 0;
+                            let v = app.ed.take().trim().to_string();
                             app.follow = true;
                             app.unseen = 0;
                             if !v.is_empty() {
@@ -3539,96 +3545,14 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                             }
                         }
                     }
-                    (KeyCode::Up, _) => {
-                        if popup_open {
-                            app.popup_sel = (app.popup_sel + matches.len() - 1) % matches.len();
-                        } else if app.input.contains('\n') {
-                            cursor_line_up(&app.input, &mut app.cursor);
-                        } else {
-                            let next = match app.hist_idx {
-                                None if !app.history.is_empty() => Some(0),
-                                Some(i) if i + 1 < app.history.len() => Some(i + 1),
-                                other => other,
-                            };
-                            if let Some(i) = next {
-                                app.hist_idx = next;
-                                app.input = app.history[i].clone();
-                                app.cursor = app.input.chars().count();
-                            }
-                        }
+                    // the popup takes the plain arrows
+                    (KeyCode::Up, KeyModifiers::NONE) if popup_open => {
+                        app.popup_sel = (app.popup_sel + matches.len() - 1) % matches.len();
                     }
-                    (KeyCode::Down, _) => {
-                        if popup_open {
-                            app.popup_sel = (app.popup_sel + 1) % matches.len();
-                        } else if app.input.contains('\n') {
-                            cursor_line_down(&app.input, &mut app.cursor);
-                        } else {
-                            let next = match app.hist_idx {
-                                Some(0) | None => None,
-                                Some(i) => Some(i - 1),
-                            };
-                            app.hist_idx = next;
-                            app.input = match next {
-                                Some(i) => app.history[i].clone(),
-                                None => String::new(),
-                            };
-                            app.cursor = app.input.chars().count();
-                        }
+                    (KeyCode::Down, KeyModifiers::NONE) if popup_open => {
+                        app.popup_sel = (app.popup_sel + 1) % matches.len();
                     }
-                    // readline-style cursor movement
-                    (KeyCode::Left, _) => {
-                        app.cursor = prev_grapheme(&app.input, app.cursor);
-                    }
-                    (KeyCode::Right, _) => {
-                        app.cursor = next_grapheme(&app.input, app.cursor);
-                    }
-                    (KeyCode::Home, _) | (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
-                        app.cursor = 0;
-                    }
-                    (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
-                        app.cursor = app.input.chars().count();
-                    }
-                    (KeyCode::Backspace, _) => {
-                        if app.cursor > 0 {
-                            // a whole emoji (ZWJ sequence, skin tone,
-                            // variation selector) goes at once
-                            let p = prev_grapheme(&app.input, app.cursor);
-                            let b = byte_at_char(&app.input, p);
-                            let e = byte_at_char(&app.input, app.cursor);
-                            app.input.replace_range(b..e, "");
-                            app.cursor = p;
-                            app.popup_sel = 0;
-                        }
-                    }
-                    (KeyCode::Delete, _) => {
-                        if app.cursor < app.input.chars().count() {
-                            let b = byte_at_char(&app.input, app.cursor);
-                            let e = byte_at_char(&app.input, next_grapheme(&app.input, app.cursor));
-                            app.input.replace_range(b..e, "");
-                        }
-                    }
-                    // ctrl+w: delete the word before the cursor
-                    (KeyCode::Char('w'), KeyModifiers::CONTROL) => {
-                        let e = byte_at_char(&app.input, app.cursor);
-                        let head = app.input[..e].trim_end();
-                        let b = head.rfind(char::is_whitespace).map(|i| i + 1).unwrap_or(0);
-                        app.input.replace_range(b..e, "");
-                        app.cursor = app.input[..b].chars().count();
-                    }
-                    (KeyCode::Char(c), m) if m.is_empty() || m == KeyModifiers::SHIFT => {
-                        let b = byte_at_char(&app.input, app.cursor);
-                        app.input.insert(b, c);
-                        app.cursor += 1;
-                        app.popup_sel = 0;
-                        // a typed (never a pasted) `:name:` becomes its emoji
-                        if c == ':' {
-                            if let Some((text, cur)) = emoji::replace_typed(&app.input, app.cursor) {
-                                app.input = text;
-                                app.cursor = cur;
-                            }
-                        }
-                    }
-                    _ => {}
+                    _ => composer_key(app, &k),
                 }
             }
         }
@@ -3778,12 +3702,13 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
         show_thinking: false,
         interrupt_requested: false,
         pending: false,
-        input: String::new(),
-        cursor: 0,
+        ed: editor::Editor::default(),
+        composer: ComposerArea::default(),
+        flash: None,
+        mouse: MouseState::default(),
         popup_sel: 0,
         popup_dismissed: None,
         history: Vec::new(),
-        hist_idx: None,
         tick: 0,
         info,
         host,
@@ -4235,6 +4160,7 @@ mod popup_tests {
 #[cfg(test)]
 mod emoji_width_tests {
     use super::*;
+    use crate::editor::layout_input;
 
     fn row_widths(input: &str, inner: usize) -> Vec<usize> {
         layout_input(input, inner)
@@ -4266,41 +4192,6 @@ mod emoji_width_tests {
         );
         // the end cursor slot sits after the last char
         assert!(rows[0].last().unwrap().newline);
-    }
-
-    #[test]
-    fn cursor_moves_by_grapheme() {
-        let s = "a👍🏽❤️👨‍👩‍👧b";
-        let mut stops = vec![0];
-        while *stops.last().unwrap() < s.chars().count() {
-            stops.push(next_grapheme(s, *stops.last().unwrap()));
-        }
-        assert_eq!(stops, vec![0, 1, 3, 5, 10, 11]);
-        let mut back = vec![11];
-        while *back.last().unwrap() > 0 {
-            back.push(prev_grapheme(s, *back.last().unwrap()));
-        }
-        assert_eq!(back, vec![11, 10, 5, 3, 1, 0]);
-        // a cursor inside a sequence steps to its bounds
-        assert_eq!(next_grapheme(s, 6), 10);
-        assert_eq!(prev_grapheme(s, 6), 5);
-        assert_eq!(next_grapheme(s, 11), 11);
-        assert_eq!(prev_grapheme(s, 0), 0);
-    }
-
-    #[test]
-    fn up_down_keep_the_display_column() {
-        // "👏👏x" : x at column 4; the line below "abcdef" → char 4 ('e')
-        let s = "👏👏x\nabcdef";
-        let mut c = 2; // on the x
-        cursor_line_down(s, &mut c);
-        assert_eq!(c, 4 + 4); // line 2 starts at char 4
-        cursor_line_up(s, &mut c);
-        assert_eq!(c, 2);
-        // column 1 falls inside an emoji: the cursor stays on it
-        let mut c = 5; // 'b' at column 1
-        cursor_line_up(s, &mut c);
-        assert_eq!(c, 0);
     }
 
     #[test]

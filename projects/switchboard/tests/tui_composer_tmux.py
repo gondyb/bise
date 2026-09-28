@@ -1,0 +1,107 @@
+"""The composer in a real terminal (tmux, legacy key encodings), against
+the fake provider: Up recalls the history and Down past the newest entry
+brings the draft back; Option+←/→ (ESC b / ESC f) jump words, Cmd+←/→
+(Ctrl+A / Ctrl+E in Ghostty) jump to the line ends, Option+Backspace and
+Cmd+Backspace (Ctrl+U) delete a word / to the line start, Ctrl+/ (0x1F)
+undoes.
+
+python3 -u projects/switchboard/tests/tui_composer_tmux.py
+"""
+import os
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import e2e  # noqa: E402
+from tui_tmux import tmux, screen, keys, typed, wait_screen  # noqa: E402
+import tui_tmux  # noqa: E402
+
+S = "sbcomp%d" % os.getpid()
+tui_tmux.S = S
+
+
+def composer():
+    """The composer's text row(s): the rows between the status row and
+    the meta row ("◆ bend")."""
+    rows = screen().splitlines()
+    meta = max(i for i, r in enumerate(rows) if "◆ bend" in r)
+    # the right side panel starts at its "│" border
+    rows = [r.rsplit("│", 1)[0] if "│" in r else r for r in rows[meta - 3:meta - 1]]
+    return "\n".join(r.split("┃", 1)[-1].strip() for r in rows if r.strip("┃ "))
+
+
+def wait_composer(text, timeout=5):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if composer() == text:
+            return
+        time.sleep(0.1)
+    print(screen())
+    raise AssertionError("composer %r, expected %r" % (composer(), text))
+
+
+def main():
+    E = e2e.Env()
+    ok = False
+    try:
+        envs = " ".join("%s=%s" % (k, subprocess.list2cmdline([v])) for k, v in E.env.items()
+                        if k.startswith(("SB_", "BEND_", "MISTRAL_")))
+        cmd = "cd %s && env %s %s switchboard --workspace %s; sleep 30" % (e2e.ROOT, envs, e2e.EXE, E.ws)
+        tmux("new-session", "-d", "-s", S, "-x", "150", "-y", "42", cmd)
+        wait_screen("Switchboard")
+        wait_screen(" idle")
+        # one entry in the history
+        typed("first message")
+        keys("Enter")
+        wait_screen("first message")
+        time.sleep(0.5)
+        # a draft; Up shows the history, Down brings the draft back
+        typed("my draft words")
+        wait_composer("my draft words")
+        keys("Up")
+        wait_composer("first message")
+        keys("Down")
+        wait_composer("my draft words")
+        # word left (ESC b), then type: inserted before "words"
+        keys("M-b")
+        typed("X")
+        wait_composer("my draft Xwords")
+        # line start (Ctrl+A = Cmd+←) and line end (Ctrl+E = Cmd+→)
+        keys("C-a")
+        typed("Y")
+        keys("C-e")
+        typed("Z")
+        wait_composer("Ymy draft XwordsZ")
+        # word right from the start (ESC f): after "Ymy"
+        keys("C-a")
+        keys("M-f")
+        typed("!")
+        wait_composer("Ymy! draft XwordsZ")
+        # Option+Backspace deletes the word before the cursor
+        keys("C-e")
+        keys("M-BSpace")
+        wait_composer("Ymy! draft")
+        # Cmd+Backspace (Ctrl+U) deletes to the line start; Ctrl+/ undoes
+        keys("C-u")
+        wait_composer("Message to main…")   # the empty composer's placeholder
+        keys("C-_")
+        wait_composer("Ymy! draft")
+        print("OK: composer (Up/Down keep the draft, word and line jumps, deletes, undo)")
+        ok = True
+    finally:
+        tmux("kill-session", "-t", S)
+        try:
+            c = e2e.Client(os.path.join(E.state, "hub.sock"))
+            c.send({"op": "stop_hub"})
+            time.sleep(1)
+        except Exception:
+            pass
+        if not ok:
+            os.environ["SB_KEEP"] = "1"
+        E.close()
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()
