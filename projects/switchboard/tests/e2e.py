@@ -7,6 +7,7 @@ Run from anywhere:  python3 -u projects/switchboard/tests/e2e.py [name...]
 import json
 import os
 import queue
+import re
 import shutil
 import socket
 import subprocess
@@ -302,6 +303,23 @@ def t_cli_errors(E, c):
     c.wait_idle("t1")
 
 
+def t_origin_and_cursors(E, c):
+    # a task reads the user message that led to its spawn, then searches
+    # main's thread and gets positions
+    c.wait_idle("main", "t1")
+    c.say('zorglub-origine [[bash: sb spawn orig --objective "{{bash: sb inspect main --origin > o.txt; sb inspect main --query zorglub-origine --limit 3 >> o.txt; echo done}}"]]')
+    c.wait_line("main", "nouvelle tâche @orig")
+    path = os.path.join(E.ws, "o.txt")
+    c.wait(lambda: os.path.exists(path) and "--around" in open(path).read(), 90, "orig wrote o.txt")
+    out = open(path).read()
+    check("origin of `orig` in main's thread" in out, "the origin header: " + out)
+    check("user: zorglub-origine [[bash: sb spawn orig" in out, "the user message verbatim: " + out)
+    check("nouvelle tâche @orig" in out, "main's turn up to the spawn: " + out)
+    check(re.search(r"^#\d+ \(", out, re.M) is not None, "entries carry positions: " + out)
+    c.wait_idle("orig")
+    os.remove(path)
+
+
 def t_crash_status_and_tasks(E, c):
     c.wait_idle("main", "t1")
     # a task crashes: main hears it from the hub
@@ -330,6 +348,7 @@ SCENARIOS = [
     t_escalation_card,
     t_worktree_drop_restore,
     t_cli_errors,
+    t_origin_and_cursors,
     t_crash_status_and_tasks,
     t_restart_keeps_everything,
 ]

@@ -71,13 +71,29 @@ projects/switchboard/tests/run_all.sh --live   # + un test avec le vrai modèle
 
 - `rust/switchboard` : 61 tests (22 scénarios du core, routeur, CLI,
   tableau, worktrees sur de vrais dépôts git).
-- `tests/e2e.py` (8 scénarios, dont plantage d'une tâche + `sb tasks`) : le vrai hub, de vraies REPL, le vrai `sb`, de vrais
+- `tests/e2e.py` (9 scénarios, dont plantage d'une tâche + `sb tasks`, et
+  `sb inspect main --origin` + recherche par une tâche) : le vrai hub, de vraies REPL, le vrai `sb`, de vrais
   worktrees ; le modèle est `tests/fake_provider.py`, piloté par des
   marqueurs `[[bash: …]]` dans les messages.
 - `tests/tui_tmux.py` : le TUI dans tmux (panneau, checkout, Esc, Alt+N,
   aperçu, /tasks, D).
 - `tests/live_smoke.py` : le modèle par défaut du harness crée une tâche,
   la tâche écrit un fichier, main répond.
+
+## Lire le fil d'un agent (`sb inspect`)
+
+Module `rust/switchboard/src/transcript.rs` (pur, testé) ; le daemon lit
+le fichier et appelle ce module. Détail dans la RFC 0001 §7.5 bis.
+
+- Position `#<n>` = numéro de ligne dans `agents/<dir>/transcript.log`
+  (fichier en ajout seul : la position est stable).
+- `--before/--after/--around/--at #<n>`, `--query`, `--limit` (`--last`
+  reste accepté). Page bornée : 20 entrées, 6 000 caractères.
+- `--origin` : la ligne `sb spawn : … → nouvelle tâche @<dir>` du fil de
+  main (la plus proche de `created_ms` si le nom a servi deux fois), et le
+  dernier `sb you :` avant elle. Rien de nouveau dans le journal : tout se
+  relit depuis le transcript.
+- Pas de restriction sur qui lit qui (comme avant).
 
 ## Touches (TUI)
 
@@ -137,7 +153,9 @@ commandes.
   Passthrough(/compact seulement), Interrupt, Context{text}, Line
   (ligne synthétique `sb …` dans le flux d'un agent), Reply{token},
   ToClient, Renamed, State.
-- Livraison (`pump`) : Down/Starting → file ; Busy → steer (ids notés) ;
+- Livraison (`pump`) : Down/Starting → file ; Busy → steer (ids notés)
+  des seuls messages `steer` (un message `Msg.queued`, `sb send --mode
+  queued`, reste en file : jamais steeré ni remis à un `sb wait`) ;
   Idle → `say` (notes de main en préfixe), sauf limite de 4 tâches
   occupées ou limite de réveils par des pairs (20/h).
 - À `--- idle` : le shell lit+vide le fichier steer ; s'il restait du

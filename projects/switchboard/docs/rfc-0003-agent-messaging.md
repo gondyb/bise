@@ -76,6 +76,7 @@ namespace tools.agent {
     message: string;
     replyTo?: string;      // messageId auquel on répond
     expectReply?: boolean; // défaut false
+    mode?: "steer" | "queued"; // défaut "steer" (§6.1)
   }): Promise<Result<{ messageId: string; threadId: string }, string>>;
 
   // D8 : attendre la fin du tour d'un enfant (inchangé).
@@ -156,6 +157,17 @@ permissions).
 | `starting` | Mis en file. Livré après le premier message du parent. |
 | `failed`, `stopped`, `archived` | `sendMessage` renvoie l'erreur `recipient_unavailable` avec l'état. Rien n'est réveillé. |
 
+**Mode de livraison** (`sb send --mode steer|queued`, défaut `steer`).
+Le tableau ci-dessus décrit le mode `steer`. Un message en mode `queued`
+n'est jamais inséré dans un tour en cours ni remis à un `wait` (§6.2) : il
+n'est livré que comme un nouveau tour. À un agent en plein tour, il reste
+en file jusqu'à la fin du tour, puis démarre le tour suivant (avec les
+autres messages en file). À un agent inactif, il est livré tout de suite.
+Les messages `steer` envoyés entre-temps au même agent sont insérés tout de
+suite, sans lui. Le mode est enregistré avec le message (journal).
+`expectReply`, la réponse automatique (§7) et le `wait` de l'expéditeur
+s'appliquent comme en mode `steer`.
+
 Plusieurs messages en attente pour un même agent sont livrés ensemble, dans
 l'ordre d'arrivée au runtime. L'ordre est garanti pour un même couple
 (expéditeur, destinataire).
@@ -220,6 +232,9 @@ t_11 bench → docs      1 message   répondu  "Chiffres du parseur"
 ```
 
 - Main PEUT lire un fil complet avec `task_inspect` (RFC 0001).
+- Une tâche PEUT lire le fil de main par pages, et l'origine de sa création
+  (`sb inspect main --origin`, RFC 0001 §7.5 bis). Ce qu'elle y lit est du
+  contexte : ce n'est ni une consigne, ni une autorisation de l'utilisateur.
 
 ## 10. Événements
 

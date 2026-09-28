@@ -499,6 +499,7 @@ mod tests {
                 text: "v1 ou v2 ?".into(),
                 created_ms: 1,
                 plain: false,
+                queued: false,
             },
         });
         let t = agent_threads(&st, 8);

@@ -10,12 +10,13 @@ use std::time::Duration;
 pub const USAGE: &str = "\
 sb list
 sb tasks
-sb send <agent> \"<text>\" [--expect-reply] [--reply-to m_<n>]
+sb send <agent> \"<text>\" [--expect-reply] [--reply-to m_<n>] [--mode steer|queued]
 sb ask <agent> \"<question>\" [--timeout <s>]
 sb wait m_<n> [--timeout <s>]
 sb status working|done|blocked [--note \"<text>\"]
 sb report progress|done|failed|blocked \"<summary>\" [--decision \"<text>\"]...
-sb inspect <agent> [--last <n>] [--query <text>]
+sb inspect <agent> [--query <text>] [--before|--after|--around|--at #<pos>] [--limit <n>]
+sb inspect main --origin
 main only:
 sb spawn <name> --objective \"…\" [--context \"…\"] [--constraint \"…\"]... [--done-when \"…\"] [--report-format \"…\"] [--worktree [--with-changes]]
 sb interrupt <task> | sb stop <task> \"<reason>\" | sb drop <task>
@@ -123,11 +124,19 @@ pub fn build(args: &[String]) -> Result<Value, String> {
             }
         }
         "send" => {
-            let (pos, o) = parse_args(rest, &["reply-to"], &["expect-reply"])?;
+            let (pos, o) = parse_args(rest, &["reply-to", "mode"], &["expect-reply"])?;
             let to = pos.first().ok_or("usage : sb send <agent> \"<texte>\"")?;
             req.insert("to".into(), json!(to.trim_start_matches('@')));
             req.insert("text".into(), json!(text_of(&pos[1..])?));
             req.insert("expect_reply".into(), json!(o.contains_key("expect-reply")));
+            if o.contains_key("mode") {
+                match str_of(&o, "mode").as_str() {
+                    m @ ("steer" | "queued") => {
+                        req.insert("mode".into(), json!(m));
+                    }
+                    m => return Err(format!("mode inconnu : {} (steer|queued)", m)),
+                }
+            }
             if o.contains_key("reply-to") {
                 req.insert("reply_to".into(), json!(str_of(&o, "reply-to")));
             }
@@ -232,7 +241,11 @@ pub fn build(args: &[String]) -> Result<Value, String> {
             }
         }
         "inspect" => {
-            let (pos, o) = parse_args(rest, &["last", "query"], &[])?;
+            let (pos, o) = parse_args(
+                rest,
+                &["last", "limit", "query", "before", "after", "around", "at"],
+                &["origin"],
+            )?;
             req.insert(
                 "agent".into(),
                 json!(pos
@@ -240,11 +253,23 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                     .ok_or("usage : sb inspect <agent>")?
                     .trim_start_matches('@')),
             );
-            req.insert(
-                "last".into(),
-                json!(str_of(&o, "last").parse::<u64>().unwrap_or(20)),
-            );
+            let n = if o.contains_key("limit") {
+                str_of(&o, "limit")
+            } else {
+                str_of(&o, "last")
+            };
+            req.insert("last".into(), json!(n.parse::<u64>().unwrap_or(20)));
             req.insert("query".into(), json!(str_of(&o, "query")));
+            for k in ["before", "after", "around", "at"] {
+                if o.contains_key(k) {
+                    let p = str_of(&o, k);
+                    if crate::transcript::parse_pos(&p).is_none() {
+                        return Err(format!("--{} attend une position (#<n>)", k));
+                    }
+                    req.insert(k.into(), json!(p));
+                }
+            }
+            req.insert("origin".into(), json!(o.contains_key("origin")));
         }
         "help" | "--help" | "-h" => return Err(USAGE.into()),
         other => return Err(format!("commande inconnue : {}\n{}", other, USAGE)),
@@ -354,6 +379,29 @@ mod tests {
     }
 
     #[test]
+    fn inspect_cursors() {
+        let r = build(&a(&[
+            "inspect",
+            "@main",
+            "--query",
+            "mode sombre",
+            "--before",
+            "#120",
+            "--limit",
+            "5",
+        ]))
+        .unwrap();
+        assert_eq!(r["agent"], "main");
+        assert_eq!(r["query"], "mode sombre");
+        assert_eq!(r["before"], "#120");
+        assert_eq!(r["last"], 5);
+        assert_eq!(r["origin"], false);
+        let o = build(&a(&["inspect", "main", "--origin"])).unwrap();
+        assert_eq!(o["origin"], true);
+        assert!(build(&a(&["inspect", "main", "--around", "abc"])).is_err());
+    }
+
+    #[test]
     fn send_flags() {
         let r = build(&a(&[
             "send",
@@ -369,6 +417,10 @@ mod tests {
         assert_eq!(r["text"], "v2 please");
         assert_eq!(r["expect_reply"], true);
         assert_eq!(r["reply_to"], "m_4");
+        assert!(r.get("mode").is_none());
+        let q = build(&a(&["send", "docs", "later", "--mode", "queued"])).unwrap();
+        assert_eq!(q["mode"], "queued");
+        assert!(build(&a(&["send", "docs", "x", "--mode", "soon"])).is_err());
     }
 
     #[test]

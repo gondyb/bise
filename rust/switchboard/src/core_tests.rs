@@ -317,6 +317,7 @@ fn ask_waits_for_the_reply() {
             text: "v2".into(),
             expect_reply: false,
             reply_to: Some(id),
+            queued: false,
         },
     );
     let r = reply(&fx, tok).expect("the wait ends");
@@ -582,6 +583,7 @@ fn answering_in_the_task_view_answers_its_question() {
             text: "v1 ou v2 ?".into(),
             expect_reply: true,
             reply_to: None,
+            queued: false,
         },
     );
     let id = t
@@ -666,6 +668,7 @@ fn peers_cannot_reach_an_archived_task_but_the_user_can() {
             text: "?".into(),
             expect_reply: false,
             reply_to: None,
+            queued: false,
         },
     );
     assert!(reply(&fx, tok).unwrap()["error"]
@@ -928,6 +931,7 @@ fn many_task_messages_always_reach_main() {
                 text: format!("progress {}", i),
                 expect_reply: false,
                 reply_to: None,
+                queued: false,
             },
         );
         assert!(say_to(&fx, MAIN).is_some(), "message {} held: {:?}", i, fx);
@@ -963,6 +967,7 @@ fn a_user_message_to_main_starts_with_the_task_status() {
             text: "fini".into(),
             expect_reply: false,
             reply_to: None,
+            queued: false,
         },
     );
     let s = steer_to(&fx, MAIN).or_else(|| say_to(&fx, MAIN)).unwrap();
@@ -984,6 +989,7 @@ fn sb_tasks_details_every_task() {
             text: "v1 ou v2 ?".into(),
             expect_reply: true,
             reply_to: None,
+            queued: false,
         },
     );
     let (tok, fx) = t.req(MAIN, AgentReq::Tasks);
@@ -1033,6 +1039,7 @@ fn agents_talk_as_long_as_they_want() {
                 text: i.to_string(),
                 expect_reply: false,
                 reply_to: last,
+                queued: false,
             },
         );
         assert_eq!(reply(&fx, tok).unwrap()["ok"], true, "message {}", i);
@@ -1045,4 +1052,116 @@ fn agents_talk_as_long_as_they_want() {
         last = t.hub.st.msgs.values().last().map(|m| m.id);
     }
     assert!(t.hub.st.cards.is_empty());
+}
+
+fn send(t: &mut T, from: &str, to: &str, text: &str, queued: bool) -> (u64, Vec<Effect>) {
+    t.req(
+        from,
+        AgentReq::Send {
+            to: to.into(),
+            text: text.into(),
+            expect_reply: false,
+            reply_to: None,
+            queued,
+        },
+    )
+}
+
+#[test]
+fn a_queued_message_waits_for_the_end_of_the_turn() {
+    let mut t = T::new();
+    t.spawn_task("a");
+    // `a` is busy: the queued message is neither steered nor said
+    let (tok, fx) = send(&mut t, MAIN, "a", "later", true);
+    assert_eq!(reply(&fx, tok).unwrap()["delivery"], "queued");
+    assert!(
+        steer_to(&fx, "a").is_none() && say_to(&fx, "a").is_none(),
+        "{:?}",
+        fx
+    );
+    let id = t
+        .hub
+        .st
+        .msgs
+        .values()
+        .find(|m| m.text == "later")
+        .unwrap()
+        .id;
+    assert!(
+        t.hub.st.msgs[&id].queued,
+        "the mode is in the journal event"
+    );
+    // a steer message meanwhile goes in at once, alone
+    let (tok, fx) = send(&mut t, MAIN, "a", "now", false);
+    assert_eq!(reply(&fx, tok).unwrap()["delivery"], "delivered");
+    let s = steer_to(&fx, "a").expect("steered");
+    assert!(s.contains("now") && !s.contains("later"), "{}", s);
+    // the turn ends: the queued message starts a new turn
+    let fx = t.go(Input::ReplIdle {
+        agent: "a".into(),
+        leftover: false,
+    });
+    let s = say_to(&fx, "a").expect("a new turn");
+    assert!(
+        s.contains("later") && s.contains(&format!("m_{}", id)),
+        "{}",
+        s
+    );
+    assert_eq!(t.hub.st.msg_state[&id], MsgState::Delivered);
+}
+
+#[test]
+fn a_queued_message_to_an_idle_agent_is_delivered_at_once() {
+    let mut t = T::new();
+    t.spawn_task("a");
+    t.go(Input::ReplIdle {
+        agent: "a".into(),
+        leftover: false,
+    });
+    let (tok, fx) = send(&mut t, MAIN, "a", "go", true);
+    assert_eq!(reply(&fx, tok).unwrap()["delivery"], "delivered");
+    assert!(say_to(&fx, "a").unwrap().contains("go"));
+}
+
+#[test]
+fn a_queued_message_does_not_end_a_wait() {
+    let mut t = T::new();
+    t.spawn_task("a");
+    let (tok, _) = send(&mut t, "a", MAIN, "question", false);
+    let q = t
+        .hub
+        .st
+        .msgs
+        .values()
+        .find(|m| m.text == "question")
+        .unwrap()
+        .id;
+    let (wtok, _) = t.req(
+        "a",
+        AgentReq::Wait {
+            msg: q,
+            timeout_s: 20,
+        },
+    );
+    let _ = tok;
+    let (_, fx) = t.req(
+        MAIN,
+        AgentReq::Send {
+            to: "a".into(),
+            text: "answer".into(),
+            expect_reply: false,
+            reply_to: Some(q),
+            queued: true,
+        },
+    );
+    assert!(
+        reply(&fx, wtok).is_none() && steer_to(&fx, "a").is_none(),
+        "{:?}",
+        fx
+    );
+    let fx = t.go(Input::ReplIdle {
+        agent: "a".into(),
+        leftover: false,
+    });
+    assert!(say_to(&fx, "a").unwrap().contains("answer"));
 }

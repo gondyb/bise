@@ -62,6 +62,8 @@ pub enum AgentReq {
         text: String,
         expect_reply: bool,
         reply_to: Option<u64>,
+        /// `--mode queued`: delivered only as a new turn.
+        queued: bool,
     },
     Wait {
         msg: u64,
@@ -141,6 +143,11 @@ impl AgentReq {
                     .get("reply_to")
                     .and_then(|x| x.as_str())
                     .and_then(parse_msg_id),
+                queued: match jstr(v, "mode").as_str() {
+                    "" | "steer" => false,
+                    "queued" => true,
+                    m => return Err(format!("mode inconnu : {} (steer|queued)", m)),
+                },
             },
             "wait" => AgentReq::Wait {
                 msg: parse_msg_id(&jstr(v, "msg")).ok_or("identifiant de message invalide")?,
@@ -853,7 +860,7 @@ impl Hub {
 
     // ---- messages (RFC 0003) ----
 
-    /// Send a message; answers it, or why it was refused.
+    /// Send a message (steer mode); answers it, or why it was refused.
     #[allow(clippy::too_many_arguments)]
     fn send(
         &mut self,
@@ -866,6 +873,36 @@ impl Hub {
         reply_to: Option<u64>,
         plain: bool,
         auto: bool,
+    ) -> Result<Msg, String> {
+        self.send_mode(
+            fx,
+            env,
+            from,
+            to,
+            text,
+            expect_reply,
+            reply_to,
+            plain,
+            auto,
+            false,
+        )
+    }
+
+    /// Send a message; `queued`: never steered into a running turn nor
+    /// handed to a `sb wait`, delivered only as a new turn (RFC 0003 §6.1).
+    #[allow(clippy::too_many_arguments)]
+    fn send_mode(
+        &mut self,
+        fx: &mut Fx,
+        env: &mut dyn Env,
+        from: &str,
+        to: &str,
+        text: &str,
+        expect_reply: bool,
+        reply_to: Option<u64>,
+        plain: bool,
+        auto: bool,
+        queued: bool,
     ) -> Result<Msg, String> {
         let to = if to == USER {
             return Err(
@@ -940,14 +977,13 @@ impl Hub {
             text: text.to_string(),
             created_ms: env.now(),
             plain,
+            queued,
         };
         self.emit(fx, Event::MessageSent { msg: msg.clone() });
         // a waiting recipient gets it as the result of its `sb wait`
-        if let Some(i) = self
-            .waiters
-            .iter()
-            .position(|w| w.agent == to && (Some(w.msg) == reply_to || (expect_reply && !plain)))
-        {
+        if let Some(i) = self.waiters.iter().position(|w| {
+            !queued && w.agent == to && (Some(w.msg) == reply_to || (expect_reply && !plain))
+        }) {
             let w = self.waiters.remove(i);
             let kind = if Some(w.msg) == reply_to {
                 "reply"
@@ -1032,9 +1068,13 @@ impl Hub {
         }
         let batch: Vec<Msg> = match run {
             Run::Down | Run::Starting => return,
-            Run::Busy => queued,
+            // a queued-mode message waits for the end of the turn
+            Run::Busy => queued.into_iter().filter(|m| !m.queued).collect(),
             Run::Idle => queued,
         };
+        if batch.is_empty() {
+            return;
+        }
         let mut parts: Vec<String> = Vec::new();
         if is_main && !notes.is_empty() {
             let mut s = String::from("<switchboard_notes>\n");
@@ -2059,6 +2099,7 @@ impl Hub {
                 text,
                 expect_reply,
                 reply_to,
+                queued,
             } => {
                 // a plain message to an agent that asked us something
                 // answers it
@@ -2069,7 +2110,7 @@ impl Hub {
                         self.open_question(&to, &from)
                     }
                 });
-                let sent = self.send(
+                let sent = self.send_mode(
                     fx,
                     env,
                     &from,
@@ -2079,6 +2120,7 @@ impl Hub {
                     reply_to,
                     false,
                     false,
+                    queued,
                 );
                 match sent {
                     Ok(m) => {

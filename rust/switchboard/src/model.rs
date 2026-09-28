@@ -209,6 +209,10 @@ pub struct Msg {
     /// as a plain user message, without the agent_message tag.
     #[serde(default)]
     pub plain: bool,
+    /// `sb send --mode queued`: never steered into a running turn,
+    /// delivered only as a new turn (RFC 0003 §6.1).
+    #[serde(default)]
+    pub queued: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -631,6 +635,7 @@ mod tests {
             text: "?".into(),
             created_ms: 1,
             plain: false,
+            queued: false,
         };
         st.apply(&Event::MessageSent { msg: q.clone() });
         st.apply(&Event::MessageState {

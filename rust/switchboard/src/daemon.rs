@@ -14,7 +14,8 @@ use crate::core::{AgentReq, ClientId, Effect, Hub, Input, Token};
 use crate::model::{Agent, Event, MAIN};
 use crate::paths::Paths;
 use crate::prompts;
-use crate::util::{clip, now_ms, wire_escape, wire_unescape};
+use crate::transcript::{self, readable, Anchor};
+use crate::util::{clip, now_ms, wire_escape};
 use crate::worktree::{Config, GitEnv};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, VecDeque};
@@ -124,42 +125,11 @@ fn write_json(stream: &mut UnixStream, v: &Value) -> bool {
     stream.write_all(s.as_bytes()).is_ok()
 }
 
-/// The last `n` entries of a transcript (`<ms>\t<line>` per line).
+/// The last `n` lines of a transcript (`<ms>\t<line>` per line).
 fn transcript_tail(path: &Path, n: usize) -> Vec<(u64, String)> {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return Vec::new();
-    };
-    let all: Vec<(u64, String)> = text
-        .lines()
-        .filter_map(|l| l.split_once('\t'))
-        .map(|(t, l)| (t.parse().unwrap_or(0), l.to_string()))
-        .collect();
+    let all = transcript::read(path);
     let skip = all.len().saturating_sub(n);
-    all.into_iter().skip(skip).collect()
-}
-
-/// What a human would call "the conversation": user messages, messages
-/// in, assistant texts and tool calls, one entry each.
-fn readable(line: &str) -> Option<String> {
-    let t = line.trim_start();
-    if let Some(r) = t.strip_prefix("obs: assistant: ") {
-        let v = crate::util::strip_thinking(&wire_unescape(r));
-        return (!v.is_empty()).then(|| format!("assistant: {}", v));
-    }
-    if let Some(r) = line.strip_prefix("sb you : ") {
-        return Some(format!("user: {}", wire_unescape(r)));
-    }
-    if let Some(r) = line.strip_prefix("sb msg-in : ") {
-        return Some(format!("message from {}", wire_unescape(r)));
-    }
-    if let Some(r) = line.strip_prefix("tool #") {
-        let r = r.split_once(' ').map(|x| x.1).unwrap_or(r);
-        return Some(format!("tool: {}", clip(&wire_unescape(r), 300)));
-    }
-    if let Some(r) = line.strip_prefix("sb ") {
-        return Some(format!("hub: {}", wire_unescape(r)));
-    }
-    None
+    all.into_iter().skip(skip).map(|(_, t, l)| (t, l)).collect()
 }
 
 fn free_port() -> std::io::Result<u16> {
@@ -491,6 +461,56 @@ impl Shell {
         }
     }
 
+    /// `sb inspect`: a bounded page of an agent's thread, with positions
+    /// and cursors, or the origin of the caller (RFC 0001 §7.5).
+    fn inspect(&self, from: &str, v: &Value) -> Value {
+        let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let target = s("agent");
+        let Some(name) = self.hub.st.resolve(&target) else {
+            return json!({"ok": false, "error": format!("aucun agent nommé {}", target)});
+        };
+        let Some(dir) = self.dir_of(&name) else {
+            return json!({"ok": false, "error": format!("aucun agent nommé {}", target)});
+        };
+        let raw = transcript::read(&self.transcript(&dir));
+        let all = transcript::entries(&raw);
+        let now = now_ms();
+        if v.get("origin") == Some(&json!(true)) {
+            let Some(me) = self.hub.st.agents.get(from) else {
+                return json!({"ok": false, "error": "--origin : agent appelant inconnu"});
+            };
+            return match transcript::origin(&raw, &me.dir, me.created_ms) {
+                Some(o) => {
+                    json!({"ok": true, "text": transcript::render_origin(&name, from, &all, &o, now)})
+                }
+                None => {
+                    json!({"ok": false, "error": format!("pas de création de {} dans le fil de {}", from, name)})
+                }
+            };
+        }
+        let pos = |k: &str| transcript::parse_pos(&s(k));
+        let anchor = if let Some(p) = pos("at") {
+            Anchor::At(p)
+        } else if let Some(p) = pos("around") {
+            Anchor::Around(p)
+        } else if let Some(p) = pos("before") {
+            Anchor::Before(p)
+        } else if let Some(p) = pos("after") {
+            Anchor::After(p)
+        } else {
+            Anchor::Tail
+        };
+        let limit = v
+            .get("last")
+            .and_then(|x| x.as_u64())
+            .map(|n| n as usize)
+            .unwrap_or(transcript::DEFAULT_LIMIT);
+        let query = s("query");
+        let words = transcript::words_of(&query);
+        let page = transcript::window(&all, &words, anchor, limit, transcript::BUDGET);
+        json!({"ok": true, "text": transcript::render_page(&name, &query, &page, now)})
+    }
+
     /// `sb inspect` and `sb history` read files; the rest goes to the core.
     fn agent_request(&mut self, token: Token, mut stream: UnixStream, v: Value) {
         let from = v
@@ -501,34 +521,7 @@ impl Shell {
         let cmd = v.get("cmd").and_then(|x| x.as_str()).unwrap_or("");
         match cmd {
             "inspect" => {
-                let target = v.get("agent").and_then(|x| x.as_str()).unwrap_or("");
-                let last = v.get("last").and_then(|x| x.as_u64()).unwrap_or(20) as usize;
-                let query = v
-                    .get("query")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                let body = match self.hub.st.resolve(target).and_then(|n| self.dir_of(&n)) {
-                    None => json!({"ok": false, "error": format!("aucun agent nommé {}", target)}),
-                    Some(dir) => {
-                        let entries: Vec<String> = transcript_tail(&self.transcript(&dir), 20_000)
-                            .into_iter()
-                            .filter_map(|(_, l)| readable(&l))
-                            .filter(|l| query.is_empty() || l.to_lowercase().contains(&query))
-                            .collect();
-                        let skip = entries.len().saturating_sub(last.min(200));
-                        let text: Vec<String> = entries
-                            .into_iter()
-                            .skip(skip)
-                            .map(|e| clip(&e, 1500))
-                            .collect();
-                        let mut out = text.join("\n");
-                        if out.chars().count() > 4000 {
-                            out = crate::util::clip_tail(&out, 4000);
-                        }
-                        json!({"ok": true, "text": out})
-                    }
-                };
+                let body = self.inspect(&from, &v);
                 write_json(&mut stream, &body);
             }
             "history" => {

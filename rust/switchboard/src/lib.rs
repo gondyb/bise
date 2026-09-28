@@ -9,6 +9,7 @@
 //!   (`Hub::handle(input) -> effects`), tested without processes;
 //! - `worktree`: the git operations of RFC 0002;
 //! - `daemon`: the imperative shell (REPL processes, sockets, journal);
+//! - `transcript`: reading a thread (positions, cursors, origin);
 //! - `cli`: the `sb` command the agents call through their bash tool;
 //! - `client`: how a client (TUI, headless test) reaches the hub.
 
@@ -21,6 +22,7 @@ pub mod model;
 pub mod paths;
 pub mod prompts;
 pub mod router;
+pub mod transcript;
 pub mod util;
 pub mod wire;
 pub mod worktree;
