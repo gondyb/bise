@@ -245,9 +245,6 @@ def maybe_nat_is(m: Maybe<&2, Nat>, +n: Nat) -> Bool:
     case Some{+x}:
       Nat.is_eq(x, n)
 
-def is_space(c: Char) -> Bool:
-  Char.is_space(c)
-
 def one_line.push(empty: Bool, +word: String, +acc: List<&2, String>) -> List<&2, String>:
   match empty:
     case True{}:
@@ -255,15 +252,28 @@ def one_line.push(empty: Bool, +word: String, +acc: List<&2, String>) -> List<&2
     case False{}:
       snoc(String, acc, String.reverse(word))
 
+# matches, not Bool.pick: pick would push (snoc, reverse) at every char
+def one_line.word(space: Bool, +c: Char, +word: String) -> String:
+  match space:
+    case True{}:
+      ""
+    case False{}:
+      SCon{c, word}
+
+def one_line.acc(space: Bool, +word: String, +acc: List<&2, String>) -> List<&2, String>:
+  match space:
+    case True{}:
+      one_line.push(String.is_empty(word), word, acc)
+    case False{}:
+      acc
+
 # one line: whitespace runs collapse (util::one_line)
 def one_line.go(s: String, +word: String, +acc: List<&2, String>) -> List<&2, String>:
   match s:
     case SNil{}:
       one_line.push(String.is_empty(word), word, acc)
     case SCon{+c, +t}:
-      one_line.go(t,
-        Bool.pick(String, is_space(c), "", SCon{c, word}),
-        Bool.pick(List<&2, String>, is_space(c), one_line.push(String.is_empty(word), word, acc), acc))
+      one_line.go(t, one_line.word(Char.is_space(c), c, word), one_line.acc(Char.is_space(c), word, acc))
 
 def one_line(+s: String) -> String:
   String.join(one_line.go(s, "", Nil{}), " ")
