@@ -2949,3 +2949,44 @@ def hub_qdeliv(+xs: List<&2, HM.MRec>, +id: Nat, +ns: List<&2, String>, +e: {Lis
         hub_qd.ch(Bool.and(HM.str_in(ns, HM.Msg.to(m)), HM.is_queued(st)), m, st, t, ns, {==}, e),
         hub_qd.tail(Bool.and(HM.str_in(ns, HM.Msg.to(m)), HM.is_queued(st)), m, st, t, ns, {==}, e),
         hub_qdeliv(t, id, ns, hub_qd.tail(Bool.and(HM.str_in(ns, HM.Msg.to(m)), HM.is_queued(st)), m, st, t, ns, {==}, e)))
+
+
+# ---- L4 support: queue implications ----
+
+def hub_qimp_mk(q1: Bool, +q2: Bool, k: {q1 == True{} : Bool} -> {q2 == True{} : Bool}) -> {Bool.or(Bool.not(q1), q2) == True{} : Bool}:
+  match q1:
+    case True{}:
+      k({==})
+    case False{}:
+      {==}
+
+def hub_qimp_use(q1: Bool, -q2: Bool, h: {Bool.or(Bool.not(q1), q2) == True{} : Bool}, e: {q1 == True{} : Bool}) -> {q2 == True{} : Bool}:
+  match q1:
+    case True{}:
+      h
+    case False{}:
+      hub_absurd_eq(hub_ft_absurd(e), Bool, q2, True{})
+
+def hub_qimp_refl(+s: HM.St, +n: String) -> {hub_qimp(s, s, n) == True{} : Bool}:
+  hub_qimp_mk(hub_q(s, n), hub_q(s, n), e => e)
+
+def hub_qimp_trans(+s1: HM.St, +s2: HM.St, +s3: HM.St, +n: String, +h12: {hub_qimp(s1, s2, n) == True{} : Bool},
+    +h23: {hub_qimp(s2, s3, n) == True{} : Bool}) -> {hub_qimp(s1, s3, n) == True{} : Bool}:
+  hub_qimp_mk(hub_q(s1, n), hub_q(s3, n), e => hub_qimp_use(hub_q(s2, n), hub_q(s3, n), h23, hub_qimp_use(hub_q(s1, n), hub_q(s2, n), h12, e)))
+
+def hub_qimp_eq(+s1: HM.St, -s2: HM.St, +n: String, e: {s2 == s1 : HM.St}) -> {hub_qimp(s1, s2, n) == True{} : Bool}:
+  %Equal.sym(HM.St, s2, s1, e) : {hub_qimp(s1, _, n) == True{} : Bool}
+  hub_qimp_refl(s1, n)
+
+# marking a message delivered never fills a queue (on the whole state)
+def hub_qimp_deliv(s: HM.St, +id: Nat, +n: String) -> {hub_qimp(s, HM.apply(s, HM.EMsgState{id, HM.Delivered{}}), n) == True{} : Bool}:
+  match s:
+    case HM.St{+ag, +od, +ms, +ca, +no, +nm, +nc}:
+      +ns = HM.names_of(HM.St{ag, od, ms, ca, no, nm, nc}, n)
+      hub_qimp_mk(List.is_empty(&2, HM.Msg, HM.queued_in(ms, ns)), List.is_empty(&2, HM.Msg, HM.queued_in(HM.map_msg(ms, id, HM.OSt{HM.Delivered{}}), ns)),
+        e => hub_qdeliv(ms, id, ns, e))
+
+def hub_qimp_flush(s: HM.St, +n: String) -> {hub_qimp(s, HM.apply(s, HM.ENotesFlushed{}), n) == True{} : Bool}:
+  match s:
+    case HM.St{+ag, +od, +ms, +ca, +no, +nm, +nc}:
+      hub_qimp_refl(HM.St{ag, od, ms, ca, no, nm, nc}, n)
