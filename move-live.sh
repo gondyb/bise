@@ -65,18 +65,25 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/switchboard"
-# paths.rs: <folder name>-<fnv1a of the canonical path, low 32 bits>
+# the state dir of a workspace, from paths.rs (`bend-harness switchboard
+# --state-dir`): the first binary that knows the flag (versions built
+# before it do not; they would open a TUI)
+state_dir_of() {
+  local b
+  for b in "$@"; do
+    if [ -x "$b" ] && grep -aq -- '--state-dir' "$b"; then
+      "$b" switchboard --state-dir --workspace "$SD_WS" </dev/null
+      return
+    fi
+  done
+  return 1
+}
+# the workspace's own key (an empty SB_STATE_DIR is unset: the old and
+# the new folder have two states)
 state_of() {
-  python3 - "$1" "$STATE_ROOT" <<'PY'
-import os, re, sys
-ws = os.path.realpath(sys.argv[1])
-h = 0xcbf29ce484222325
-for b in ws.encode():
-    h = ((h ^ b) * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF
-base = re.sub(r"[^A-Za-z0-9_-]", "-", os.path.basename(ws) or "root")[:32]
-print(os.path.join(sys.argv[2], "%s-%08x" % (base, h & 0xFFFFFFFF)))
-PY
+  SB_STATE_DIR="" SD_WS="$1" state_dir_of \
+    "$FROM/rust/target/debug/bend-harness" "$FROM/rust/target/release/bend-harness" \
+    || die "no bend-harness with --state-dir in $FROM (build it: cd rust && cargo build)"
 }
 
 TS="$(date +%Y%m%d-%H%M%S)"

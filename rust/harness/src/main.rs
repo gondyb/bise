@@ -260,6 +260,11 @@ fn run_sbd(args: &[String]) -> std::io::Result<()> {
 
 fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
     let paths = switchboard::paths::Paths::for_workspace(&sb_workspace(args));
+    // the live scripts (relaunch-live.sh, move-live.sh) ask for it
+    if args.iter().any(|a| a == "--state-dir") {
+        println!("{}", paths.state.display());
+        return Ok(());
+    }
     if args.iter().any(|a| a == "--stop") {
         let keep = args.iter().any(|a| a == "--keep-agents");
         match switchboard::client::stop(&paths, keep)? {

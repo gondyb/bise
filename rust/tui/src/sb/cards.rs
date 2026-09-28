@@ -33,16 +33,8 @@ impl Sb {
     /// The cards in reading order: what blocks a task first, then the
     /// oldest.
     fn sorted_cards(&self) -> Vec<&Card> {
-        let rank = |k: &str| match k {
-            "question" => 0,
-            "blocked" => 1,
-            "failed" | "restart" => 2,
-            "drop" => 3,
-            "overlap" => 4,
-            _ => 5,
-        };
         let mut v: Vec<&Card> = self.cards.iter().collect();
-        v.sort_by_key(|c| (rank(&c.kind), c.id));
+        v.sort_by_key(|c| (kind_look(&c.kind).0, c.id));
         v
     }
 
@@ -85,6 +77,20 @@ impl Sb {
 /// Alt+R: the composer's text answers the current card, shown or not
 /// (Enter still talks to the agent in focus). An empty composer only
 /// acknowledges the cards that need no words (done, overlap).
+/// A card kind: its rank in reading order (what blocks a task first),
+/// its icon and its color.
+fn kind_look(kind: &str) -> (u8, &'static str, Color) {
+    match kind {
+        "question" => (0, "?", WARN),
+        "blocked" => (1, GLYPH_WARN, WARN),
+        "failed" | "restart" => (2, GLYPH_ERR, ERR),
+        "drop" => (3, "⇣", WARN),
+        "overlap" => (4, "⚠", WARN),
+        "done" => (5, GLYPH_OK, OK),
+        _ => (5, "◆", WARN),
+    }
+}
+
 pub(super) fn answer_card(app: &mut App) {
     let text = app.ed.text.trim().to_string();
     let Some(sb) = app.sb.as_mut() else { return };
@@ -178,15 +184,7 @@ pub(crate) fn draw_card(app: &mut App, frame: &mut Frame, area: Rect) {
     let visible = area.height.saturating_sub(2) as usize;
     let max_scroll = lines.len().saturating_sub(visible);
     let pos = order.iter().position(|x| *x == c.id).unwrap_or(0) + 1;
-    let (icon, color) = match c.kind.as_str() {
-        "question" => ("?", WARN),
-        "blocked" => (GLYPH_WARN, WARN),
-        "failed" | "restart" => (GLYPH_ERR, ERR),
-        "drop" => ("⇣", WARN),
-        "overlap" => ("⚠", WARN),
-        "done" => (GLYPH_OK, OK),
-        _ => ("◆", WARN),
-    };
+    let (_, icon, color) = kind_look(&c.kind);
     let age = ago(c.age_ms + c.seen_at.elapsed().as_millis() as u64);
     let title = format!(
         " ◆ card {}/{} · {} #{} {} @{} · {} ago ",

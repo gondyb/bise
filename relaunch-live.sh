@@ -38,21 +38,25 @@ id="$(basename "$vdir")"
 exe="$vdir/bend-harness"
 echo "version: $id ($vdir)"
 
+# the state dir of a workspace, from paths.rs (`bend-harness switchboard
+# --state-dir`): the first binary that knows the flag (versions built
+# before it do not; they would open a TUI)
+state_dir_of() {
+  local b
+  for b in "$@"; do
+    if [ -x "$b" ] && grep -aq -- '--state-dir' "$b"; then
+      "$b" switchboard --state-dir --workspace "$SD_WS" </dev/null
+      return
+    fi
+  done
+  return 1
+}
+
 # the hub state of the workspace
 if [ -n "${SB_STATE_DIR:-}" ]; then
   state="$SB_STATE_DIR"
 else
-  # paths.rs: <name>-<fnv1a of the canonical workspace path, low 32 bits>
-  state="${XDG_STATE_HOME:-$HOME/.local/state}/switchboard/$(python3 - "$WS" <<'PY'
-import os, re, sys
-ws = os.path.realpath(sys.argv[1])
-h = 0xcbf29ce484222325
-for b in ws.encode():
-    h = ((h ^ b) * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF
-base = re.sub(r"[^A-Za-z0-9_-]", "-", os.path.basename(ws) or "root")[:32]
-print("%s-%08x" % (base, h & 0xFFFFFFFF))
-PY
-)"
+  state="$(SD_WS="$WS" state_dir_of "$exe" "$REPO/rust/target/debug/bend-harness" "$REPO/rust/target/release/bend-harness" || true)"
 fi
 [ -n "$state" ] || { echo "relaunch-live: state dir not found for $WS" >&2; exit 1; }
 mkdir -p "$state"
