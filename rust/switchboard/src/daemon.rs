@@ -14,7 +14,7 @@ use crate::core::{AgentReq, ClientId, Effect, Hub, Input, Token};
 use crate::model::{Agent, Event, MAIN};
 use crate::paths::Paths;
 use crate::prompts;
-use crate::transcript::{self, readable, Anchor};
+use crate::transcript::{self, Anchor};
 use crate::util::{clip, now_ms, wire_escape};
 use crate::worktree::{Config, GitEnv};
 use serde_json::{json, Value};
@@ -1114,36 +1114,11 @@ impl Shell {
                 write_json(&mut stream, &body);
             }
             "history" => {
-                let query = v
-                    .get("query")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                let words: Vec<&str> = query.split_whitespace().collect();
+                let query = v.get("query").and_then(|x| x.as_str()).unwrap_or("");
                 let dir = self.dir_of(&from).unwrap_or_else(|| MAIN.to_string());
-                let mut hits: Vec<String> = transcript::read(&self.transcript(&dir))
-                    .into_iter()
-                    .filter_map(|(_, t, l)| readable(&l).map(|r| (t, r)))
-                    .filter(|(_, r)| {
-                        let low = r.to_lowercase();
-                        !words.is_empty() && words.iter().all(|w| low.contains(w))
-                    })
-                    .map(|(t, r)| format!("[{}] {}", t, clip(&r, 600)))
-                    .collect();
-                if let Ok(j) = std::fs::read_to_string(self.opts.paths.journal()) {
-                    for l in j.lines() {
-                        let low = l.to_lowercase();
-                        if !words.is_empty() && words.iter().all(|w| low.contains(w)) {
-                            hits.push(format!("[journal] {}", clip(l, 600)));
-                        }
-                    }
-                }
-                let skip = hits.len().saturating_sub(30);
-                let text = if hits.is_empty() {
-                    "no match".to_string()
-                } else {
-                    hits.into_iter().skip(skip).collect::<Vec<_>>().join("\n")
-                };
+                let raw = transcript::read(&self.transcript(&dir));
+                let journal = std::fs::read_to_string(self.opts.paths.journal()).unwrap_or_default();
+                let text = transcript::history(&raw, &journal, query);
                 write_json(&mut stream, &json!({"ok": true, "text": text}));
             }
             _ => match AgentReq::from_json(&v) {
