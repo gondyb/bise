@@ -19,4 +19,5 @@ direct, puis revenir à main avec `Esc`. Le fil de main ne se termine jamais.
 
 ## État
 
-Brouillon. Rien n'est implémenté.
+Implémenté sur la branche `switchboard` du harness : voir
+[`IMPLEMENTATION.md`](IMPLEMENTATION.md) (lancer, tester, touches, limites).

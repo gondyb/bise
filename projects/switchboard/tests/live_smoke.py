@@ -20,7 +20,7 @@ def main():
     ws = os.path.join(tmp, "ws")
     st = os.path.join(tmp, "st")
     os.makedirs(ws)
-    e2e.sh(ws, "git init -q && git config user.email t@t && git config user.name t && echo '# demo' > README.md && git add . && git commit -qm init")
+    e2e.sh(ws, "git init -q && git config user.email t@t && git config user.name t && git config commit.gpgsign false && echo '# demo' > README.md && git add . && git commit -qm init")
     env = {**os.environ, "SB_STATE_DIR": st, "BEND_BG_ROOT": os.path.join(tmp, "bg")}
     for k in ["BEND_PROVIDER_URL", "BEND_MODEL"]:
         env.pop(k, None)

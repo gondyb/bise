@@ -436,7 +436,7 @@ mod tests {
         std::fs::create_dir_all(&ws).unwrap();
         sh(
             &ws,
-            "git init -q && git config user.email t@t && git config user.name t && echo a > f && echo SECRET=1 > .env && printf '.env\\n.prepared\\n' > .gitignore && git add f .gitignore && git commit -qm init",
+            "git init -q && git config user.email t@t && git config user.name t && git config commit.gpgsign false && echo a > f && echo SECRET=1 > .env && printf '.env\\n.prepared\\n' > .gitignore && git add f .gitignore && git commit -qm init",
         );
         let paths = Paths {
             workspace: ws.canonicalize().unwrap(),

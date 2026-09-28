@@ -580,6 +580,10 @@ et on perd `ask_main` bloquant et les états précis.
 
 ## 16. Plan
 
+État : les étapes 1, 2, 3 et 5 sont implémentées (option B, avec les
+écarts listés dans [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md)).
+L'étape 4 (option A) reste à faire.
+
 1. **Prototype UX (option B).** Main et tâches en sessions indépendantes,
    routes explicites `@nom`, checkout et `Esc`, tableau des tâches, rapports
    automatiques de fin de tour. Pas de `ask_main`.

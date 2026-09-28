@@ -51,6 +51,53 @@ Ce fichier sert aussi de mémoire de travail : il dit où en est le code.
 - `/new` sans nom : le hub dérive le nom du brief (pas de tour de main).
 - Budget de tokens : non appliqué si le runtime ne publie pas l'usage.
 
+## Lancer
+
+```sh
+cd ~/mon-projet
+~/lab/bend-lab/harness-switchboard/run.sh switchboard        # TUI ; lance le hub si besoin
+~/lab/bend-lab/harness-switchboard/run.sh switchboard --stop # arrête le hub et les agents
+```
+
+Fermer le TUI (`/quit`, Ctrl+C) laisse le hub et les agents tourner. Le
+relancer dans le même dossier retrouve tout (fils, tâches, cartes).
+
+## Tester
+
+```sh
+projects/switchboard/tests/run_all.sh          # lois Bend, tests Rust, E2E, TUI
+projects/switchboard/tests/run_all.sh --live   # + un test avec le vrai modèle
+```
+
+- `rust/switchboard` : 57 tests (22 scénarios du core, routeur, CLI,
+  tableau, worktrees sur de vrais dépôts git).
+- `tests/e2e.py` : le vrai hub, de vraies REPL, le vrai `sb`, de vrais
+  worktrees ; le modèle est `tests/fake_provider.py`, piloté par des
+  marqueurs `[[bash: …]]` dans les messages.
+- `tests/tui_tmux.py` : le TUI dans tmux (panneau, checkout, Esc, Alt+N,
+  aperçu, /tasks, D).
+- `tests/live_smoke.py` : le modèle par défaut du harness crée une tâche,
+  la tâche écrit un fichier, main répond.
+
+## Touches (TUI)
+
+Compositeur vide : Ctrl+J/K choisir dans le panneau, ⏎ entrer (checkout),
+Espace aperçu, D drop, Esc revenir à main, Alt+1…9 tâche N, Alt+0 main,
+Ctrl+A répondre à la carte suivante, Ctrl+Z annuler le dernier routage,
+Ctrl+O shell dans le dossier de l'agent affiché. `/help` liste les
+commandes.
+
+## Pas implémenté (v1)
+
+- Budget de tokens par tâche (le runtime ne publie pas l'usage).
+- `needs_approval` (pas de porte d'approbation dans ce harness).
+- Détection d'un worktree supprimé à la main (RFC 0002 §9) : la REPL
+  redémarre en boucle puis la tâche passe en `failed`.
+- `hops` (RFC 0001 §7.3) : couvert par la limite de fil (12 messages).
+- Skills du workspace : la REPL tourne depuis la racine de l'app, donc
+  `$PWD/.agents/skills` est celui du harness.
+- `/reload` en mode switchboard.
+
 ## Plan
 
 - [x] P0 Bend : BEND_WORKDIR, BEND_EXTRA_PROMPT, BEND_CONTEXT_FILE + lois,
@@ -60,11 +107,11 @@ Ce fichier sert aussi de mémoire de travail : il dit où en est le code.
 - [x] P2 Hub : superviseur des REPL, livraison, socket client, socket CLI.
 - [x] P3 CLI `sb` + prompts de main et des tâches.
 - [x] P4 Worktrees : création, drop avec sauvegarde, restore, isolate.
-- [ ] P5 TUI : vues par agent, liste des tâches, checkout/Esc, aperçu,
+- [x] P5 TUI : vues par agent, liste des tâches, checkout/Esc, aperçu,
       cartes, compteurs.
-- [ ] P6 Tests E2E : faux provider (Python), client headless ; test live ;
+- [x] P6 Tests E2E : faux provider (Python), client headless ; test live ;
       test TUI sous pty.
-- [ ] P7 Docs et commit.
+- [x] P7 Docs et commit.
 
 ## État
 
@@ -72,11 +119,15 @@ Ce fichier sert aussi de mémoire de travail : il dit où en est le code.
 - P1-P4 faits : `rust/switchboard` (core + 22 tests de scénario, worktree
   + tests git, daemon, cli, client), sous-commandes `bend-harness sb|sbd|
   switchboard`. 55 tests unitaires.
-- P5 : mode switchboard du TUI (`rust/tui/src/sb.rs`) écrit ; à tester
-  sous tmux.
+- P5 : mode switchboard du TUI (`rust/tui/src/sb.rs`), testé sous tmux.
 - P6 : `tests/e2e.py` + `tests/fake_provider.py` : 7 scénarios verts
   (spawn + réponse auto, message direct + note, ask/wait, carte, worktree
-  drop/restore, CLI refusée, redémarrage du hub).
+  drop/restore, CLI refusée, redémarrage du hub) ; `tui_tmux.py` et
+  `live_smoke.py` verts.
+- Corrigé grâce au test live : un `sb report` répond à la demande du
+  parent (plus de réponse automatique en double) ; un steering arrivé
+  pendant la réponse finale (jamais lu par le modèle, ADR 0005
+  finish_turn) relance un tour.
 
 ### Notes de conception du core (pour reprendre après compaction)
 
