@@ -2797,3 +2797,34 @@ def hub_str_eq_sound.k(+a: String, +b: String, e: {String.eq(a, b) == True{} : B
 # String.eq is sound: strings it finds equal are the same string
 def hub_str_eq_sound(+a: String, +b: String, e: {String.eq(a, b) == True{} : Bool}) -> {a == b : String}:
   hub_cmpc_sound(a, b, hub_str_eq_sound.k(a, b, e))
+
+# ---- L4 support: a delivery only shrinks queues ----
+
+def hub_is_q_deliv(st: HM.MSt) -> {HM.is_queued(HM.MRec.st(HM.rec_op(HM.MRec{HM.Msg{0n, 0n, "", "", None{}, False{}, False{}, "", 0n, False{}, False{}, None{}}, st, False{}}, HM.OSt{HM.Delivered{}}))) == False{} : Bool}:
+  {==}
+
+def hub_rt_put_other.pick(c: Bool, +h: HX.Rt, +t: List<&2, HX.Rt>, +a: String, +n: String, +run: HM.Run, +w: Bool, +tm: Maybe<&2, Nat>,
+    +e: {String.eq(HX.Rt.name(h), a) == c : Bool}, +ne: {String.eq(a, n) == False{} : Bool},
+    ih: {HC.rt_find(HC.rt_put(t, HX.Rt{a, run, w, tm}), n) == HC.rt_find(t, n) : HX.Rt})
+    -> {HC.rt_find(Bool.pick(List<&2, HX.Rt>, String.eq(HX.Rt.name(h), a), HX.Rt{a, run, w, tm} <> t, h <> HC.rt_put(t, HX.Rt{a, run, w, tm})), n) == HC.rt_find(h <> t, n) : HX.Rt}:
+  match c:
+    case True{}:
+      +hn = hub_str_eq_sound(HX.Rt.name(h), a, e)
+      %Equal.sym(Bool, String.eq(HX.Rt.name(h), a), True{}, e) : {HC.rt_find(Bool.pick(List<&2, HX.Rt>, _, HX.Rt{a, run, w, tm} <> t, h <> HC.rt_put(t, HX.Rt{a, run, w, tm})), n) == HC.rt_find(h <> t, n) : HX.Rt}
+      %Equal.sym(Bool, String.eq(a, n), False{}, ne) : {Bool.pick(HX.Rt, _, HX.Rt{a, run, w, tm}, HC.rt_find(t, n)) == HC.rt_find(h <> t, n) : HX.Rt}
+      %Equal.sym(String, HX.Rt.name(h), a, hn) : {HC.rt_find(t, n) == Bool.pick(HX.Rt, String.eq(_, n), h, HC.rt_find(t, n)) : HX.Rt}
+      %Equal.sym(Bool, String.eq(a, n), False{}, ne) : {HC.rt_find(t, n) == Bool.pick(HX.Rt, _, h, HC.rt_find(t, n)) : HX.Rt}
+      {==}
+    case False{}:
+      %Equal.sym(Bool, String.eq(HX.Rt.name(h), a), False{}, e) : {HC.rt_find(Bool.pick(List<&2, HX.Rt>, _, HX.Rt{a, run, w, tm} <> t, h <> HC.rt_put(t, HX.Rt{a, run, w, tm})), n) == HC.rt_find(h <> t, n) : HX.Rt}
+      Equal.cong(HX.Rt, HX.Rt, y => Bool.pick(HX.Rt, String.eq(HX.Rt.name(h), n), h, y), HC.rt_find(HC.rt_put(t, HX.Rt{a, run, w, tm}), n), HC.rt_find(t, n), ih)
+
+# writing A's runtime state leaves every other agent's as it was
+def hub_rt_put_other(+xs: List<&2, HX.Rt>, +a: String, +n: String, +run: HM.Run, +w: Bool, +tm: Maybe<&2, Nat>, +ne: {String.eq(a, n) == False{} : Bool})
+    -> {HC.rt_find(HC.rt_put(xs, HX.Rt{a, run, w, tm}), n) == HC.rt_find(xs, n) : HX.Rt}:
+  match xs:
+    case Nil{}:
+      %Equal.sym(Bool, String.eq(a, n), False{}, ne) : {Bool.pick(HX.Rt, _, HX.Rt{a, run, w, tm}, HC.rt_find(Nil{}, n)) == HC.rt_find(Nil{}, n) : HX.Rt}
+      {==}
+    case Con{h, t}:
+      hub_rt_put_other.pick(String.eq(HX.Rt.name(h), a), h, t, a, n, run, w, tm, {==}, ne, hub_rt_put_other(t, a, n, run, w, tm, ne))
