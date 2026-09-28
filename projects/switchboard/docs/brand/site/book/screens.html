@@ -26,16 +26,18 @@
   .tbox .ttl { position:absolute; top:-.8lh; left:1ch; background:var(--bg); padding:0 1ch; }
   .tbox .sep { border-top:1px solid var(--faint); margin:.35lh -1.5ch; }
   .tbox pre { margin:0; white-space:pre-wrap; } .tbox .o { color:var(--dim); }
-  .head { display:flex; justify-content:space-between; padding:8px 2ch 6px; }
+  /* book §8 layout: margins 2 columns left/right, 1 row top/bottom, a blank row under the header,
+     no vertical rule before the panel (3 blank columns instead), no rule above the composer */
+  .head { display:flex; justify-content:space-between; padding:1lh 2ch 0; }
   .grid { display:grid; grid-template-columns:1fr 30ch; }
   .term.narrow .grid { grid-template-columns:1fr; }
-  .feed { padding:4px 2ch 10px; min-height:120px; }
+  .feed { padding:1lh 0 1lh 2ch; min-height:120px; }
   .feed > * { max-width:76ch; }
   .feed pre.code, .feed pre.out { max-width:100ch; }
-  .panel { border-left:1px solid var(--line); padding:4px 2ch 10px; }
+  .panel { padding:1lh 2ch 1lh 3ch; }
   .row { display:flex; justify-content:space-between; white-space:nowrap; }
   .row.sel { background:#262220; margin:0 -1ch; padding:0 1ch; }
-  .foot { border-top:1px solid var(--line); padding:6px 2ch 8px; }
+  .foot { padding:0 2ch 1lh; }
   .status { display:flex; justify-content:space-between; color:var(--dim); }
   .composer { display:flex; justify-content:space-between; margin-top:4px; }
   /* the composer block (book §14): a bar │ in column 1 (faint when empty, accent while you type,
