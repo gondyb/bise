@@ -1,45 +1,45 @@
 <!doctype html><meta charset="utf-8"><title>narrow-terminal (ascii)</title>
 <style>body{margin:0;background:#141211}pre{margin:0;padding:12px 14px;background:#141211;color:#ece6da;
 font:13px/1.35 "JetBrains Mono",Menlo,monospace;white-space:pre;display:inline-block}</style>
-<pre><span style="color:#ece6da;font-weight:700"> bise </span><span style="color:#f4a6b0">:*</span>                                                    <span style="color:#f4a6b0">? 1</span>
-                                                               ^
- <span style="color:#a39c90"> &gt; </span><span style="color:#ece6da">[[bash: ls /nonexistent-dir-for-qa]]</span><span style="color:#f4a6b0"> vv</span>                    ║
-                                                               ║
- <span style="color:#ece6da"> $ bash</span><span style="color:#ff5a52"> x 0.2s</span>                                                ║
- <span style="color:#4a4540"> │ </span><span style="color:#8fc4f0">ls</span><span style="color:#ece6da"> /nonexistent-dir-for-qa</span>                                 ║
- <span style="color:#ff5a52">   exit 1: ls: /nonexistent-dir-for-qa: No such file or ...</span><span style="color:#a39c90"> +</span> ║
-                                                               ║
- <span style="color:#f4a6b0"> :* </span><span style="color:#ece6da">done: tool bash failed: exit 1: ls: </span>                      ║
-    <span style="color:#ece6da">/nonexistent-dir-for-qa: No such file or directory</span>         ║
-                                                               ║
- <span style="color:#a39c90"> &gt; </span><span style="color:#ece6da">[[bash: sleep 10 &amp;&amp; echo slept]]</span><span style="color:#f4a6b0"> vv</span>                        ║
-                                                               ║
- <span style="color:#ece6da"> $ bash</span><span style="color:#a39c90"> v 10s</span>                                                 ║
- <span style="color:#4a4540"> │ </span><span style="color:#8fc4f0">sleep</span><span style="color:#ece6da"> </span><span style="color:#f0b27a">10</span><span style="color:#ece6da"> </span><span style="color:#d7a6f0">&amp;&amp;</span><span style="color:#ece6da"> </span><span style="color:#8fc4f0">echo</span><span style="color:#ece6da"> slept</span>                                     ║
- <span style="color:#a39c90">   + output</span>                                                   ║
-                                                               ║
- <span style="color:#a39c90"> &gt; </span><span style="color:#ece6da">also check the logs</span><span style="color:#f4a6b0"> vv</span>                                     ║
-                                                               ║
- <span style="color:#f4a6b0"> :* </span><span style="color:#ece6da">ack: also check the logs</span>                                  ║
-                                                               ║
- <span style="color:#4a4540"> . </span><span style="color:#a39c90">&gt; you &gt; @bench : can you rerun the p95?</span>                    ║
-                                                               ║
- <span style="color:#ece6da"> @ bench to you: ack: &lt;user_message via=&quot;main&quot;&gt; can you rerun</span> ║
-    <span style="color:#ece6da">the p95? </span>                                                  ║
-    <span style="color:#ece6da">&lt;/user_message&gt;</span>                                            ║
-                                                               ║
- <span style="color:#a39c90"> &gt; </span><span style="color:#ece6da">look at this </span><span style="color:#f4a6b0"># shot.png vv</span>                                 ║
-    <span style="color:#a39c90"># shot.png 1x1</span>                                             █
-                                                               █
- <span style="color:#f4a6b0"> :* </span><span style="color:#ece6da">ack: look at this &lt;image name=[Image #1] </span>                 █
-    <span style="color:#ece6da">path=&quot;/var/folders/c5/kw86k5nx0zg2xnbzpnrwsk8h0000gn/T/sb</span>  █
-    <span style="color:#ece6da">-</span>                                                          █
-    <span style="color:#ece6da">e2e-36ojnj8c/ws/shot.png&quot;&gt; &lt;/image&gt;</span>                        █
-                                                               █
- <span style="color:#a39c90"> = compaction 44 (manual)</span>                                     █
- <span style="color:#a39c90"> = summary ......</span>                                             ▼
+<pre><span style="color:#ece6da;background:#141211;font-weight:700"> bise </span><span style="color:#f4a6b0;background:#141211">:*</span><span style="color:#ece6da;background:#141211">                                                    </span><span style="color:#f4a6b0;background:#141211">? 1</span>
 
- <span style="color:#f4a6b0">main</span><span style="color:#a39c90"> . idle . </span><span style="color:#f4a6b0">? 3 cards . ctrl+g</span>
- <span style="color:#a39c90">&gt; </span><span style="color:#141211;background:#ece6da"> </span>                              <span style="color:#a39c90">&lt; send . @ agent . / commands</span>
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#f4a6b0;background:#141211"> :* </span><span style="color:#ece6da;background:#141211">done: tool bash failed: exit 1: ls:</span>
+<span style="color:#ece6da;background:#141211">    /nonexistent-dir-for-qa: No such file or directory</span>
+
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#f4a6b0;background:#141211">|  </span><span style="color:#ece6da;background:#141211">[[bash: sleep 10 &amp;&amp; echo slept]]</span><span style="color:#f4a6b0;background:#141211"> vv</span>
+
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#4a4540;background:#141211">+- </span><span style="color:#ece6da;background:#141211">$ bash</span><span style="color:#a39c90;background:#141211"> ok 10s</span><span style="color:#4a4540;background:#141211"> -------------------------------------------+</span>
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#4a4540;background:#141211">| </span><span style="color:#8fc4f0;background:#141211">sleep</span><span style="color:#ece6da;background:#141211"> </span><span style="color:#f0b27a;background:#141211">10</span><span style="color:#ece6da;background:#141211"> </span><span style="color:#d7a6f0;background:#141211">&amp;&amp;</span><span style="color:#ece6da;background:#141211"> </span><span style="color:#8fc4f0;background:#141211">echo</span><span style="color:#ece6da;background:#141211"> slept                                   </span><span style="color:#4a4540;background:#141211"> |</span>
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#4a4540;background:#141211">+-----------------------------------------------------------+</span>
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#4a4540;background:#141211">| </span><span style="color:#a39c90;background:#141211">slept</span><span style="color:#ece6da;background:#141211">                                                    </span><span style="color:#4a4540;background:#141211"> |</span>
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#4a4540;background:#141211">+-----------------------------------------------------------+</span>
+
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#f4a6b0;background:#141211">|  </span><span style="color:#ece6da;background:#141211">also check the logs</span><span style="color:#f4a6b0;background:#141211"> vv</span>
+
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#f4a6b0;background:#141211"> :* </span><span style="color:#ece6da;background:#141211">ack: also check the logs</span>
+
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#4a4540;background:#141211"> . </span><span style="color:#a39c90;background:#141211">&gt; you &gt; @bench : can you rerun the p95?</span>
+
+<span style="color:#ece6da;background:#141211">  @ bench to you: ack: &lt;user_message via=&quot;main&quot;&gt; can you rerun</span>
+<span style="color:#ece6da;background:#141211">    the p95?</span>
+<span style="color:#ece6da;background:#141211">    &lt;/user_message&gt;</span>
+
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#f4a6b0;background:#141211">|  </span><span style="color:#ece6da;background:#141211">look at this </span><span style="color:#f4a6b0;background:#141211"># shot.png vv</span>
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#f4a6b0;background:#141211">|  </span><span style="color:#a39c90;background:#141211"># shot.png 1x1</span>
+
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#f4a6b0;background:#141211"> :* </span><span style="color:#ece6da;background:#141211">ack: look at this &lt;image name=[Image #1]</span>
+<span style="color:#ece6da;background:#141211">    path=&quot;/var/folders/c5/kw86k5nx0zg2xnbzpnrwsk8h0000gn/T/sb</span>
+<span style="color:#ece6da;background:#141211">    -</span>
+<span style="color:#ece6da;background:#141211">    e2e-rbvrzqhw/ws/shot.png&quot;&gt; &lt;/image&gt;</span>
+
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#a39c90;background:#141211"> = compacting</span>
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#a39c90;background:#141211"> = summary +</span>
+
+<span style="color:#ece6da;background:#141211"> </span><span style="color:#f4a6b0;background:#141211">main</span><span style="color:#a39c90;background:#141211"> . idle . </span><span style="color:#f4a6b0;background:#141211">? 3 cards . ctrl+g</span>
+<span style="color:#4a4540;background:#141211"> │ </span>
+<span style="color:#4a4540;background:#141211"> │ </span><span style="color:#141211;background:#ece6da"> </span>
+<span style="color:#4a4540;background:#141211"> │ </span>
+<span style="color:#4a4540;background:#141211"> │ </span>
+<span style="color:#ece6da;background:#141211">                                 </span><span style="color:#a39c90;background:#141211">&lt; send . @ agent . / commands</span>
 
 </pre>
