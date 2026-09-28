@@ -305,6 +305,9 @@ fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
 }
 
 fn main() -> std::io::Result<()> {
+    // every mode (TUI, hub daemon, sb CLI): a panic leaves a log with its
+    // backtrace, and a TUI gives the terminal back before it reports
+    bend_tui::install_crash_hook();
     {
         let args: Vec<String> = std::env::args().skip(1).collect();
         match args.first().map(|s| s.as_str()) {

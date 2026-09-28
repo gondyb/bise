@@ -79,6 +79,7 @@ mod composer_wrap_tests;
 mod feed_render_tests;
 pub use keyprobe::keyprobe;
 pub use sb::{run_switchboard, take_reexec};
+pub use crash::install as install_crash_hook;
 
 #[cfg(test)]
 mod at_popup_tests;

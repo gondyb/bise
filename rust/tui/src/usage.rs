@@ -89,7 +89,8 @@ fn percent(used: u64, window: u64) -> u64 {
     if window == 0 {
         return 0;
     }
-    (used * 100 + window / 2) / window
+    // saturating: a corrupt token count never overflows (debug panics)
+    used.saturating_mul(100).saturating_add(window / 2) / window
 }
 
 /// 950 -> "950", 42_310 -> "42k", 1_250_000 -> "1.2M".

@@ -914,7 +914,9 @@ impl Hub {
                 }
                 fx.push(Effect::Renamed { old, new });
             }
-            other => panic!("sb-core: unknown effect {}", other),
+            // a newer sb-core (a version switch in flight) may know
+            // effects this hub does not: skipped and logged, never a crash
+            other => eprintln!("sb-core: unknown effect {} (skipped): {}", other, f),
         }
     }
 

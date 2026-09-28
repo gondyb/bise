@@ -136,8 +136,10 @@ pub(crate) fn restore_terminal() {
     let _ = out.flush();
 }
 
-/// Installs the hook (once per process; later calls do nothing).
-pub(crate) fn install() {
+/// Installs the hook (once per process; later calls do nothing). The
+/// harness calls it first thing in every mode (TUI, hub daemon, CLI):
+/// any panic of the process leaves a log with its backtrace.
+pub fn install() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         let previous = std::panic::take_hook();

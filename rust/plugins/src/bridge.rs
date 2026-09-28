@@ -299,12 +299,22 @@ fn handle_rpc(entry: &Entry, body: &[u8]) -> (&'static str, String) {
     }
     let params = msg.get("params").cloned().unwrap_or_else(|| json!({}));
     match entry.forward(method, params) {
-        Ok(mut answer) => {
-            answer["id"] = id;
-            answer["jsonrpc"] = json!("2.0");
-            ("200 OK", answer.to_string())
-        }
+        Ok(answer) => ("200 OK", stamp(answer, id)),
         Err(e) => ("200 OK", rpc_error(&id, -32000, &e)),
+    }
+}
+
+/// The server's answer with the client's id: a JSON object gets `id`
+/// and `jsonrpc`; anything else becomes an error answer (indexing a
+/// non-object `Value` panics).
+fn stamp(answer: Value, id: Value) -> String {
+    match answer {
+        Value::Object(mut o) => {
+            o.insert("id".into(), id);
+            o.insert("jsonrpc".into(), json!("2.0"));
+            Value::Object(o).to_string()
+        }
+        other => rpc_error(&id, -32000, &format!("the plugin server answered a non-object: {}", other)),
     }
 }
 
@@ -385,4 +395,20 @@ pub fn serve(opts: Opts) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod stamp_tests {
+    use super::*;
+
+    #[test]
+    fn a_non_object_answer_is_an_error_not_a_panic() {
+        let ok: Value = serde_json::from_str(&stamp(json!({"result": 1}), json!(7))).unwrap_or_default();
+        assert_eq!((ok["id"].clone(), ok["result"].clone()), (json!(7), json!(1)));
+        for bad in [json!([1, 2]), json!(3), json!("s"), Value::Null] {
+            let e: Value = serde_json::from_str(&stamp(bad, json!(8))).unwrap_or_default();
+            assert_eq!(e["id"], json!(8));
+            assert!(e["error"].is_object(), "{e}");
+        }
+    }
 }

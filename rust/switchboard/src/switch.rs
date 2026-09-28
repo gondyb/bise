@@ -36,9 +36,15 @@ pub fn fail_file(paths: &Paths) -> PathBuf {
 }
 
 pub fn read_state(paths: &Paths) -> Value {
-    std::fs::read_to_string(state_file(paths))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
+    state_of(std::fs::read_to_string(state_file(paths)).ok().as_deref())
+}
+
+/// The state file's text as a JSON object: `st["current"] = ...` panics
+/// on an array or a number, so a hand-edited, truncated or foreign file
+/// reads as empty.
+fn state_of(text: Option<&str>) -> Value {
+    text.and_then(|s| serde_json::from_str(s).ok())
+        .filter(Value::is_object)
         .unwrap_or_else(|| json!({}))
 }
 
@@ -438,5 +444,18 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration, restart: bool) -> i32 
             let _ = std::fs::write(paths.state.join("switch-notice"), &text);
             2
         }
+    }
+}
+
+#[cfg(test)]
+mod state_tests {
+    #[test]
+    fn a_non_object_state_file_reads_as_empty() {
+        for t in [None, Some(""), Some("[1]"), Some("3"), Some("null"), Some("{\"good\": \"x\"")] {
+            let mut st = super::state_of(t);
+            st["current"] = serde_json::json!("v"); // never panics
+            assert_eq!(st["current"], "v");
+        }
+        assert_eq!(super::state_of(Some("{\"good\": \"x\"}"))["good"], "x");
     }
 }

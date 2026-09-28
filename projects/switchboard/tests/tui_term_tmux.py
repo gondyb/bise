@@ -60,7 +60,16 @@ def main():
         wait_screen("after-int")
         typed("echo pid=$$")
         keys("Enter")
-        pid = int(re.search(r"pid=(\d+)", wait_screen("pid=")).group(1))
+        # the typed line "echo pid=$$" shows before its output: wait for digits
+        wait_screen("pid=")
+        m = None
+        for _ in range(50):
+            m = re.search(r"pid=(\d+)", screen())
+            if m:
+                break
+            time.sleep(0.1)
+        assert m, screen()
+        pid = int(m.group(1))
         assert alive(pid)
         # hide with the kitty encoding: the composer gets the keys back
         typed("\x1b[96;5u")
