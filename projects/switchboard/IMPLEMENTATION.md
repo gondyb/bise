@@ -55,11 +55,11 @@ Ce fichier sert aussi de mémoire de travail : il dit où en est le code.
 
 - [x] P0 Bend : BEND_WORKDIR, BEND_EXTRA_PROMPT, BEND_CONTEXT_FILE + lois,
       PROOF vert, repl-live recompilé.
-- [ ] P1 Rust pur : modèle, journal/projection, routeur, règles de
+- [x] P1 Rust pur : modèle, journal/projection, routeur, règles de
       livraison, tableau ; tests unitaires.
-- [ ] P2 Hub : superviseur des REPL, livraison, socket client, socket CLI.
-- [ ] P3 CLI `sb` + prompts de main et des tâches.
-- [ ] P4 Worktrees : création, drop avec sauvegarde, restore, isolate.
+- [x] P2 Hub : superviseur des REPL, livraison, socket client, socket CLI.
+- [x] P3 CLI `sb` + prompts de main et des tâches.
+- [x] P4 Worktrees : création, drop avec sauvegarde, restore, isolate.
 - [ ] P5 TUI : vues par agent, liste des tâches, checkout/Esc, aperçu,
       cartes, compteurs.
 - [ ] P6 Tests E2E : faux provider (Python), client headless ; test live ;
@@ -69,9 +69,14 @@ Ce fichier sert aussi de mémoire de travail : il dit où en est le code.
 ## État
 
 - P0 fait (commit 179e72d) : 8 lois ajoutées, PROOF vert, demo déterministe.
-- P1 en cours : `rust/switchboard` avec util, model, router, wire, paths,
-  prompts, board. Reste : core.rs (machine à états), worktree, daemon,
-  cli, client ; puis TUI.
+- P1-P4 faits : `rust/switchboard` (core + 22 tests de scénario, worktree
+  + tests git, daemon, cli, client), sous-commandes `bend-harness sb|sbd|
+  switchboard`. 55 tests unitaires.
+- P5 : mode switchboard du TUI (`rust/tui/src/sb.rs`) écrit ; à tester
+  sous tmux.
+- P6 : `tests/e2e.py` + `tests/fake_provider.py` : 7 scénarios verts
+  (spawn + réponse auto, message direct + note, ask/wait, carte, worktree
+  drop/restore, CLI refusée, redémarrage du hub).
 
 ### Notes de conception du core (pour reprendre après compaction)
 
