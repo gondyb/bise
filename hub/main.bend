@@ -121,8 +121,12 @@ def split_line.go(s: String, +acc: String) -> Maybe<&2, Split>:
   match s:
     case SNil{}:
       None{}
+    case SCon{'\n', +t}:
+      Some{Split{String.reverse(acc), t}}
     case SCon{+c, +t}:
-      Bool.pick(Maybe<&2, Split>, Char.is_eq(c, '\n'), Some{Split{String.reverse(acc), t}}, split_line.go(t, SCon{c, acc}))
+      # a pattern, not Bool.pick: pick computes both of its arguments, so
+      # it reversed the whole prefix at every char (quadratic in the line)
+      split_line.go(t, SCon{c, acc})
 
 def split_line(+s: String) -> Maybe<&2, Split>:
   split_line.go(s, "")
