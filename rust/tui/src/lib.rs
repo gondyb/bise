@@ -1954,6 +1954,9 @@ struct App {
     input: String,
     cursor: usize, // char index into input
     popup_sel: usize,
+    /// The composer text the user closed the `@` popup on (Esc): the
+    /// popup stays closed until the text changes.
+    popup_dismissed: Option<String>,
     history: Vec<String>,
     hist_idx: Option<usize>,
     tick: u32,
@@ -2178,6 +2181,62 @@ fn popup_matches(input: &str) -> Vec<&'static Cmd> {
         COMMANDS
     };
     list.iter().filter(|c| c.name.starts_with(input)).collect()
+}
+
+/// One entry of the composer popup: a slash command, or an agent name
+/// after `@` (switchboard mode).
+struct PopItem {
+    label: String,
+    desc: String,
+    /// status glyph (mentions)
+    mark: Option<(&'static str, Color)>,
+    /// the composer text once picked with Tab (or Enter when `run` is None)
+    fill: String,
+    /// Enter runs this line directly (commands without arguments)
+    run: Option<String>,
+    mention: bool,
+}
+
+fn popup_items(app: &App) -> Vec<PopItem> {
+    let cmds = popup_matches(&app.input);
+    if !cmds.is_empty() {
+        return cmds
+            .into_iter()
+            .map(|c| PopItem {
+                label: c.name.to_string(),
+                desc: c.desc.to_string(),
+                mark: None,
+                fill: format!("{} ", c.name),
+                run: (!c.args).then(|| c.name.to_string()),
+                mention: false,
+            })
+            .collect();
+    }
+    sb::mentions(app)
+        .into_iter()
+        .map(|m| PopItem {
+            label: format!("@{}", m.name),
+            desc: if m.objective.is_empty() {
+                m.status.clone()
+            } else {
+                format!("{} · {}", m.status, m.objective)
+            },
+            mark: Some(m.glyph(app.tick)),
+            fill: m.completion(),
+            run: None,
+            mention: true,
+        })
+        .collect()
+}
+
+/// First visible row of a popup of `len` entries showing `rows`, so the
+/// selection `sel` stays in view.
+fn popup_top(sel: usize, len: usize, rows: usize) -> usize {
+    if len <= rows {
+        0
+    } else {
+        sel.min(len - 1).saturating_sub(rows - 1)
+    }
 }
 
 // byte offset of the n-th char (char-boundary-safe cursor helpers)
@@ -2599,10 +2658,12 @@ fn draw(app: &mut App, frame: &mut Frame) {
 
     // ---- slash-command popup (OpenCode autocomplete: split border,
     // backgroundMenu, primary selection)
-    let matches = popup_matches(&app.input);
+    let matches = popup_items(app);
     if !matches.is_empty() {
         let n = matches.len().min(8) as u16;
-        let w = 56u16.min(chunks[4].width);
+        let w = if matches[0].mention { 72u16 } else { 56u16 }.min(chunks[4].width);
+        let sel_i = app.popup_sel.min(matches.len() - 1);
+        let top = popup_top(sel_i, matches.len(), 8);
         let area = Rect {
             x: chunks[4].x,
             y: chunks[4].y.saturating_sub(n + 2),
@@ -2612,10 +2673,11 @@ fn draw(app: &mut App, frame: &mut Frame) {
         frame.render_widget(Clear, area);
         let lines: Vec<Line> = matches
             .iter()
-            .take(8)
             .enumerate()
+            .skip(top)
+            .take(8)
             .map(|(i, c)| {
-                let sel = i == app.popup_sel.min(matches.len() - 1);
+                let sel = i == sel_i;
                 let (name_style, desc_style) = if sel {
                     (
                         Style::default()
@@ -2627,10 +2689,19 @@ fn draw(app: &mut App, frame: &mut Frame) {
                 } else {
                     (Style::default().fg(TEXT), Style::default().fg(DIM))
                 };
-                Line::from(vec![
-                    Span::styled(format!(" {} ", c.name), name_style),
-                    Span::styled(c.desc, desc_style),
-                ])
+                let mut spans = Vec::new();
+                if let Some((g, color)) = c.mark {
+                    let st = if sel {
+                        Style::default().bg(BRAND).fg(TEXT)
+                    } else {
+                        Style::default().fg(color)
+                    };
+                    spans.push(Span::styled(format!(" {}", g), st));
+                }
+                spans.push(Span::styled(format!(" {} ", c.label), name_style));
+                let room = (w as usize).saturating_sub(c.label.chars().count() + 6);
+                spans.push(Span::styled(truncate_chars(&c.desc, room), desc_style));
+                Line::from(spans)
             })
             .collect();
         frame.render_widget(
@@ -2931,10 +3002,13 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                 if k.kind != KeyEventKind::Press {
                     continue;
                 }
-                let matches = popup_matches(&app.input);
+                if app.popup_dismissed.as_deref() != Some(app.input.as_str()) {
+                    app.popup_dismissed = None;
+                }
+                let matches = popup_items(app);
                 let popup_open = !matches.is_empty();
                 let sel = if popup_open {
-                    Some(matches[app.popup_sel.min(matches.len() - 1)])
+                    Some(&matches[app.popup_sel.min(matches.len() - 1)])
                 } else {
                     None
                 };
@@ -2994,7 +3068,11 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     // esc: close the popup only — it never interrupts
                     // (Ctrl+C does, through the flag side-channel)
                     (KeyCode::Esc, _) => {
-                        if popup_open {
+                        if sel.is_some_and(|c| c.mention) {
+                            // close the list, keep the text
+                            app.popup_dismissed = Some(app.input.clone());
+                            app.popup_sel = 0;
+                        } else if popup_open {
                             app.input.clear();
                             app.cursor = 0;
                         }
@@ -3024,7 +3102,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     (KeyCode::Tab, _) => {
                         if let Some(c) = sel {
                             // popup completion
-                            app.input = format!("{} ", c.name);
+                            app.input = c.fill.clone();
                             app.cursor = app.input.chars().count();
                             app.popup_sel = 0;
                         } else if app.pending {
@@ -3053,15 +3131,14 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     }
                     (KeyCode::Enter, _) => {
                         if let Some(c) = sel {
-                            if c.args {
-                                app.input = format!("{} ", c.name);
-                                app.cursor = app.input.chars().count();
-                                app.popup_sel = 0;
-                            } else {
-                                let v = c.name.to_string();
+                            if let Some(v) = c.run.clone() {
                                 app.input.clear();
                                 app.cursor = 0;
                                 handle_input(app, &v);
+                            } else {
+                                app.input = c.fill.clone();
+                                app.cursor = app.input.chars().count();
+                                app.popup_sel = 0;
                             }
                         } else {
                             let v = app.input.trim().to_string();
@@ -3145,6 +3222,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                             let e = byte_at_char(&app.input, app.cursor);
                             app.input.replace_range(b..e, "");
                             app.cursor -= 1;
+                            app.popup_sel = 0;
                         }
                     }
                     (KeyCode::Delete, _) => {
@@ -3166,6 +3244,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                         let b = byte_at_char(&app.input, app.cursor);
                         app.input.insert(b, c);
                         app.cursor += 1;
+                        app.popup_sel = 0;
                     }
                     _ => {}
                 }
@@ -3318,6 +3397,7 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
         input: String::new(),
         cursor: 0,
         popup_sel: 0,
+        popup_dismissed: None,
         history: Vec::new(),
         hist_idx: None,
         tick: 0,
@@ -3731,5 +3811,20 @@ mod harness_info_tests {
     fn rejects_an_incomplete_line() {
         assert!(HarnessInfo::parse("harness-info model=m threshold=1").is_none());
         assert!(HarnessInfo::parse("bend-harness LIVE REPL on 127.0.0.1:7").is_none());
+    }
+}
+
+#[cfg(test)]
+mod popup_tests {
+    use super::popup_top;
+
+    #[test]
+    fn the_selection_stays_in_view() {
+        assert_eq!(popup_top(0, 5, 8), 0);
+        assert_eq!(popup_top(4, 5, 8), 0);
+        assert_eq!(popup_top(7, 12, 8), 0);
+        assert_eq!(popup_top(8, 12, 8), 1);
+        assert_eq!(popup_top(11, 12, 8), 4);
+        assert_eq!(popup_top(99, 12, 8), 4); // clamped like the selection
     }
 }
