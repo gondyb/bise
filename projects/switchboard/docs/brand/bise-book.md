@@ -447,8 +447,7 @@ replays it (**⚠** proposed command).
 | `D` | drop the selected agent (asks first) | — |
 | `esc` | close selection; in an agent, back to main | — |
 | `ctrl+g`, `ctrl+n` / `ctrl+p`, `alt+r`, `ctrl+f`, `ctrl+x`, `y` / `n` | cards | hints on the card |
-| `ctrl+t` | all thinking | — |
-| **⚠** new key | all outputs | to pick |
+| `ctrl+t` | open or close everything folded (thinking and outputs) | widened (BISE-42; `ctrl+o` stays the shell) |
 | `ctrl+r` | voice | — |
 | ``ctrl+` `` | terminal panel | — |
 | `ctrl+v` | paste an image | from the images work |
