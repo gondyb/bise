@@ -28,7 +28,7 @@ Coding agents are good. Running several of them in parallel is not.
 Taglines (picked by Gabriel):
 
 > **kiss your backlog goodbye.**
-> *built for engineers who think faster than they type.*
+> *ramble. interrupt. change your mind. i run the agents. you stay in flow.*
 
 **Style rule (Gabriel): no capital letter at the start of any word, ever,
 on every marketing piece and all website text.** It reads like a human typing
@@ -75,10 +75,10 @@ out. also pull requests."** (Gabriel). Rejected: "your ideas. my hands. lots of
 them." (not our philosophy). Pro one-liner for README / bios: "i blow through
 backlogs." (not under the headline: "backlog" twice).
 
-Site subline candidate (Gabriel, kept in reserve, still exploring): "ramble.
-interrupt. change your mind. i run the agents. you stay in flow." Current
-subline "built for engineers who think faster than they type." is judged not
-strong enough.
+Site subline (Gabriel): "ramble. interrupt. change your mind. i run the agents.
+you stay in flow." It replaces "built for engineers who think faster than they
+type." (not strong enough: it does not say you talk any way you want, that bise
+runs the agents for you, or flow).
 
 Name gloss, for English readers (site hero, README, launch posts):
 "bise /beez/ · french, n. 1. a quick kiss on the cheek. 2. a brisk north wind.

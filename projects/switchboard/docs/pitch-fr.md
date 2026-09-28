@@ -27,7 +27,7 @@ Les agents de code sont bons. Les travailler en parallèle, non.
 Taglines (choisies par Gabriel, gardées en anglais) :
 
 > **kiss your backlog goodbye.**
-> *built for engineers who think faster than they type.*
+> *ramble. interrupt. change your mind. i run the agents. you stay in flow.*
 
 **Règle de style (Gabriel) : jamais de majuscule en début de mot, sur tous
 les supports marketing et tous les textes du site.** Ça fait humain qui tape
@@ -71,7 +71,8 @@ Taglines :
 | FR | EN |
 |---|---|
 | Ton équipe est aussi grande que tes idées. | Your team is as big as your ideas. |
-| Fait pour les ingénieurs qui pensent plus vite qu'ils ne tapent. | Built for engineers who think faster than they type. |
+| divague. interromps. change d'avis. je gère les agents. tu restes dans le flow. | ramble. interrupt. change your mind. i run the agents. you stay in flow. (sous-titre du site, choisi par Gabriel) |
+| Fait pour les ingénieurs qui pensent plus vite qu'ils ne tapent. | built for engineers who think faster than they type. (ancien sous-titre, remplacé) |
 | des idées entrent. des bisous sortent. et des pull requests. | ideas in. little kisses out. also pull requests. (tagline dans le produit, choisie par Gabriel) |
 | je souffle sur les backlogs. | i blow through backlogs. (one-liner pro : README, bios) |
 | bise : un bisou sur la joue. aussi un vent du nord. | bise /beez/ · french, n. 1. a quick kiss on the cheek. 2. a brisk north wind. 3. a terminal where your agents ship while you think. (glose pour les anglophones) |
