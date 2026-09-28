@@ -199,7 +199,7 @@ pub(crate) fn popup_open(app: &App) -> bool {
 const FILE_ROWS: usize = 50;
 /// The file and folder marks of the `@` popup.
 const FILE_MARK: &str = "▪";
-const DIR_MARK: &str = "▸";
+const DIR_MARK: &str = theme::G_CLOSED; // a folder opens: the disclosure mark
 
 /// `@word` at the start or inline: the live agents (Switchboard), then
 /// the files and folders of the workspace (files.rs). A file inserts its
@@ -256,7 +256,7 @@ pub(crate) fn at_items(app: &App) -> Vec<PopItem> {
         PopItem {
             label: format!("{}{}", h.path, if h.dir { "/" } else { "" }),
             desc: String::new(),
-            mark: Some(if h.dir { (DIR_MARK, theme::accent()) } else { (FILE_MARK, theme::dim()) }),
+            mark: Some(if h.dir { (theme::glyph(DIR_MARK), theme::accent()) } else { (FILE_MARK, theme::dim()) }),
             fill,
             fill_cursor,
             run: None,
@@ -270,7 +270,7 @@ pub(crate) fn at_items(app: &App) -> Vec<PopItem> {
         PopItem {
             label: format!("{}/", h.path),
             desc: "this folder".into(),
-            mark: Some((DIR_MARK, theme::accent())),
+            mark: Some((theme::glyph(DIR_MARK), theme::accent())),
             fill,
             fill_cursor,
             run: None,

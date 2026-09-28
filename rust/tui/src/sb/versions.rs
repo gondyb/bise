@@ -53,7 +53,7 @@ fn version_marks(marks: &[String]) -> (String, (&'static str, Color)) {
     let glyph = if has("building") {
         ("…", theme::accent())
     } else if has("failed") && !has("current") {
-        ("✗", theme::error())
+        (theme::glyph(theme::G_FAILED), theme::error())
     } else if has("current") {
         ("◉", theme::accent())
     } else if has("good") {
@@ -61,7 +61,7 @@ fn version_marks(marks: &[String]) -> (String, (&'static str, Color)) {
     } else if has("built") {
         ("●", theme::text())
     } else {
-        ("○", theme::dim())
+        (theme::glyph(theme::G_IDLE), theme::dim())
     };
     let words: Vec<&str> = marks
         .iter()

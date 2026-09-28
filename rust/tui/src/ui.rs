@@ -486,7 +486,7 @@ fn draw_prompt(app: &mut App, frame: &mut Frame, area: Rect, voice_pad: usize) {
         if app.connected {
             Span::styled("●", Style::default().fg(theme::dim()))
         } else {
-            Span::styled("○ disconnected", Style::default().fg(theme::error()))
+            Span::styled(format!("{} disconnected", theme::glyph(theme::G_IDLE)), Style::default().fg(theme::error()))
         },
     ]);
     // one blank line between the typed text and the meta row
