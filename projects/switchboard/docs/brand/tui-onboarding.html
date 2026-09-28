@@ -57,6 +57,7 @@
   .controls { margin-top:12px; color:#8a8378; font-size:13px; }
   .controls button { font:inherit; background:#1f1c1a; color:var(--text); border:1px solid #3a3531; border-radius:4px; padding:3px 10px; cursor:pointer; margin-right:6px; }
   .gc { display:inline-block; width:1ch; text-align:center; }
+  .gloss { margin-top:6px; opacity:0; transition:opacity .8s; } .gloss.go { opacity:1; }
 </style>
 </head>
 <body>
@@ -66,7 +67,8 @@
   <!-- 1 welcome -->
   <div class="screen center on" data-s="0">
     <div class="big"><span id="w1"></span><span class="kiss" id="wk">:*</span></div>
-    <div class="dim" style="margin-top:14px; min-height:1.6em" id="w2"></div>
+    <div class="faint gloss" id="wg">bise /beez/ · french: a kiss on the cheek. also a north wind.</div>
+    <div class="dim" style="margin-top:18px; min-height:1.6em" id="w2"></div>
     <div class="hint" id="w3"></div>
   </div>
 
@@ -147,10 +149,11 @@ function show(i) {
 }
 function welcome() {
   const w1 = document.getElementById("w1"), wk = document.getElementById("wk"), w2 = document.getElementById("w2"), w3 = document.getElementById("w3");
-  w1.textContent = ""; w2.textContent = ""; w3.textContent = ""; wk.classList.remove("go");
+  w1.textContent = ""; w2.textContent = ""; w3.textContent = ""; wk.classList.remove("go"); document.getElementById("wg").classList.remove("go");
   later(300, () => type(w1, "hi, i'm bise ", 70, () => later(250, () => {
     wk.classList.add("go");
-    later(1100, () => type(w2, "ideas in. little kisses out. also pull requests.", 35, () => later(500, () => type(w3, "press enter ↵", 30))));
+    later(900, () => document.getElementById("wg").classList.add("go"));
+    later(1900, () => type(w2, "ideas in. little kisses out. also pull requests.", 35, () => later(500, () => type(w3, "press enter ↵", 30))));
   })));
 }
 function lines() {
