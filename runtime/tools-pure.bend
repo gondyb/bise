@@ -6,15 +6,8 @@ import ../core/discovery.bend as D
 import ../vendor/json.bend as J
 import ../core/types.bend as T
 
-def desc_or(m: Maybe<&2, String>, +dflt: String) -> String:
-  match m:
-    case Some{+s}:
-      s
-    case None{}:
-      dflt
-
 def patch_desc.read(m: Maybe<&2, String>) -> String:
-  desc_or(m, "Create, update or delete files with a patch in the Codex V4A format. The whole patch is validated before anything is written; every failure is loud.")
+  Maybe.default(&2, String, m, "Create, update or delete files with a patch in the Codex V4A format. The whole patch is validated before anything is written; every failure is loud.")
 
 # pure: build the catalog from given descriptions
 # self.sleep is NOT a model tool anymore: it is a programmatic tool,

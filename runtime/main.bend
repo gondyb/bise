@@ -777,9 +777,7 @@ def context_now.read(empty: Bool, +path: String) -> IO(String):
     case True{}:
       IO.pure(String, "")
     case False{}:
-      do IO<String>:
-        m : Maybe<&2, String> <- P.read_file(path)
-        IO.pure(String, Xp.desc_or(m, ""))
+      P.read_or(path, "")
 
 def context_now() -> IO(String):
   do IO<String>:

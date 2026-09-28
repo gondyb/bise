@@ -11,37 +11,21 @@ import ./persist.bend as P
 import ../vendor/json.bend as J
 import ./tools-pure.bend as Xtp
 
-def search_desc.read(m: Maybe<&2, String>) -> String:
-  Xtp.desc_or(m, "Discover callable tool functions for run_typescript.")
-
 def search_desc() -> IO(String):
-  do IO<String>:
-    m : Maybe<&2, String> <- P.read_file("tool-desc-search.txt")
-    IO.pure(String, search_desc.read(m))
-
-def rt_desc.read(m: Maybe<&2, String>) -> String:
-  Xtp.desc_or(m, "Executes TypeScript code in a sandbox environment.")
+  P.read_or("tool-desc-search.txt",
+    "Discover callable tool functions for run_typescript.")
 
 def rt_desc() -> IO(String):
-  do IO<String>:
-    m : Maybe<&2, String> <- P.read_file("tool-desc-run-typescript.txt")
-    IO.pure(String, rt_desc.read(m))
-
-def bash_desc.read(m: Maybe<&2, String>) -> String:
-  Xtp.desc_or(m, "Run a real shell command and return its output. Args: the command.")
+  P.read_or("tool-desc-run-typescript.txt",
+    "Executes TypeScript code in a sandbox environment.")
 
 def bash_desc() -> IO(String):
-  do IO<String>:
-    m : Maybe<&2, String> <- P.read_file("tool-desc-bash.txt")
-    IO.pure(String, bash_desc.read(m))
-
-def skill_desc.read(m: Maybe<&2, String>) -> String:
-  Xtp.desc_or(m, "Load a specialized skill that provides domain-specific instructions and workflows.")
+  P.read_or("tool-desc-bash.txt",
+    "Run a real shell command and return its output. Args: the command.")
 
 def skill_desc() -> IO(String):
-  do IO<String>:
-    m : Maybe<&2, String> <- P.read_file("tool-desc-skill.txt")
-    IO.pure(String, skill_desc.read(m))
+  P.read_or("tool-desc-skill.txt",
+    "Load a specialized skill that provides domain-specific instructions and workflows.")
 
 def patch_desc() -> IO(String):
   do IO<String>:

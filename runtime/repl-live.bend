@@ -61,9 +61,7 @@ def thr_of_cfg(+envv: String, +cfgt: String) -> Nat:
 # the live system prompt = identity + the exact vibe_sdk sections
 # (tool_use_prompt + current_time_prompt), loaded from prompt-*.txt
 def prompt_read(+path: String) -> IO(String):
-  do IO<String>:
-    m : Maybe<&2, String> <- P.read_file(path)
-    IO.pure(String, Xp.desc_or(m, ""))
+  P.read_or(path, "")
 
 def prompt_join(+tu: String, +ct: String) -> String:
   String.append(

@@ -109,6 +109,12 @@ def read_file(+path: String) -> IO(Maybe<&2, String>):
     f : Result<&1, &1, U32 & String, File> <- File.open(path, "r")
     read.opened(f)
 
+# a file's text, or dflt when it cannot be read
+def read_or(+path: String, +dflt: String) -> IO(String):
+  do IO<String>:
+    m : Maybe<&2, String> <- read_file(path)
+    IO.pure(String, Maybe.default(&2, String, m, dflt))
+
 # ---- load: fresh, or the checkpoint when BEND_CONTINUE is set ----
 
 def load.greeted.put(empty: Bool, +sess: T.Session, +n: Nat) -> Load:
