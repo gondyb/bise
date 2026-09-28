@@ -47,6 +47,17 @@ Visual references (open them in a browser):
 
 ## 2. What we promise
 
+**The problem, said plainly.** A day coding with agents feels empty. You
+shipped more than ever and feel like you did nothing: progress bars, "v1 or
+v2?", tab switching, reading what an agent did while you looked away. You feel
+slow, useless, out of control, and got nothing back for the fun you gave away.
+It's not you, it's the interruptions: every agent pulls you out of your head
+every few minutes, and flow needs quiet to start. You never get there.
+
+**bise preserves your flow.** Built for humans piloting hundreds of robots,
+from a distance. (**⚠** "hundreds" is the image, not a tested number: no limit
+in the product, but tokens, cost and provider speed are the real limit.)
+
 - **Audience:** people with lots of ideas who move fast, and want the tech to
   disappear and keep up with them. Developers who already use a coding agent
   every day and have hit the wall at 2 or 3 agents.

@@ -115,6 +115,7 @@
   /* every symbol sits in one fixed cell: glyphs missing from the web font
      are drawn by a fallback font whose width is not 1ch */
   .gc { display:inline-block; width:1ch; text-align:center; }
+  .manifesto { font-size:clamp(20px, 2.4vw, 28px); font-weight:700; line-height:1.35; margin:30px 0; max-width:30ch; border-left:2px solid var(--acc); padding-left:2ch; }
   footer { padding:40px 7vw 80px; color:var(--dim); font-size:13px; }
   @media (max-width: 900px) { nav.side { display:none; } main { margin-left:0; } .dodont { grid-template-columns:1fr; } }
 </style>
@@ -164,13 +165,18 @@
 <!-- philosophy -->
 <section id="philosophy">
   <h1>01 · philosophy</h1>
-  <h2>a light touch.</h2>
-  <p class="lead">coding agents are good. running several at once is not. you wait on a turn, you babysit five terminals, you merge five worktrees. the tools got faster; you became the bottleneck.</p>
-  <p>bise turns that around. you talk to one agent. it runs as many as the work needs, in the background, in the same folder. you never wait, and you never manage them. only the decisions that are really yours reach you.</p>
-  <p>a <i>bise</i> is a little kiss, and a cold north wind. both are light and quick. that's how working with bise should feel: a light touch on the shoulder when something needs you, and the rest of the time, a breeze that keeps things moving while you think.</p>
+  <h2>a day with agents feels empty.</h2>
+  <p class="lead">you shipped more than ever. so why does it feel like you did nothing?</p>
+  <p>you spent the day watching progress bars. answering "v1 or v2?". switching tabs. reading what an agent did while you looked away. by evening a lot got merged, and you made none of it. you feel slow, a bit useless, and strangely out of control. you gave away the fun part, and got nothing back.</p>
+  <p>it's not you. it's the interruptions. every agent pulls you out of your head, every few minutes. and flow, the state where you think clearly and the hours disappear, needs quiet to start. with agents tapping your shoulder all day, you never get there.</p>
+  <h3>bise preserves your flow.</h3>
+  <p>you stay in your head. the agents work around you, quietly, in the same folder. the obvious questions get answered without you. what reaches you is only what's really yours, and it waits until you're ready.</p>
+  <p class="manifesto">built for humans piloting hundreds of robots, from a distance.</p>
+  <p>a <i>bise</i> is a little kiss, and a cold north wind. that's the whole idea: a light touch on the shoulder when something needs you, and the rest of the time, a breeze that keeps everything moving while you think.</p>
   <h3>what we believe</h3>
   <ul class="list">
-    <li>the human is the one with the ideas. the tech should keep up, then get out of the way.</li>
+    <li>flow is the product. everything else is plumbing.</li>
+    <li>the human has the ideas. the tech keeps up, then gets out of the way.</li>
     <li>more agents should mean more done, not more to watch.</li>
     <li>a calm screen is a feature. attention is the scarcest thing we handle.</li>
     <li>trust comes from honesty: say what happened, say what isn't built, never pretend.</li>
