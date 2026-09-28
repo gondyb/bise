@@ -1,7 +1,8 @@
-# Build artifacts (Bend native binaries) — the three REPL binaries are
-# COMMITTED now: a fresh clone runs ./run.sh without a rebuild, and
+# Build artifacts (Bend native binaries) — repl-live, repl-scripted and
+# sb-core are COMMITTED: a fresh clone runs ./run.sh without a rebuild, and
 # `git checkout -- repl-live` restores a binary the EDR quarantined
-# (CrowdStrike Falcon eats freshly built ones intermittently)
+# (CrowdStrike Falcon eats freshly built ones intermittently).
+# harness-demo: runtime/demo.bend (bend-harness-qa skill); repl: legacy name
 harness-demo
 repl
 
