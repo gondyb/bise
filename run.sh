@@ -11,6 +11,8 @@
 #   ./run.sh --debug        # afficher les annotations (tours, idle)
 #   ./run.sh --continue     # reprendre la session la plus récente
 #                           # (par dernière activité, pas un fichier fixe)
+#   ./run.sh switchboard    # Switchboard : main + tâches, dans le dossier courant
+#   ./run.sh switchboard --stop  # arrêter le hub du dossier courant
 #   ./run.sh --resume ID    # reprendre une session par id
 #                           # (un préfixe unique suffit) ; /status dans
 #                           # le TUI affiche l'id de la session
@@ -19,6 +21,8 @@
 # sessions indépendantes, chaque REPL meurt avec son terminal.
 
 set -euo pipefail
+# switchboard: the workspace is where the user launched from
+export SB_LAUNCH_DIR="${SB_LAUNCH_DIR:-$PWD}"
 cd "$(dirname "$0")"
 export PATH="$HOME/.cargo/bin:$PATH"
 
@@ -26,7 +30,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # than it — a stale debug binary once showed a model the runtime no
 # longer used)
 if [ ! -x rust/target/debug/bend-harness ] \
-   || [ -n "$(find rust/harness/src rust/tui/src -newer rust/target/debug/bend-harness -print -quit 2>/dev/null)" ]; then
+   || [ -n "$(find rust/harness/src rust/tui/src rust/switchboard/src -newer rust/target/debug/bend-harness -print -quit 2>/dev/null)" ]; then
   echo "bend-harness absent ou périmé — build cargo..." >&2
   (cd rust && cargo build -p bend-harness)
 fi

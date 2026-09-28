@@ -46,6 +46,9 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 // prompt border, spinners, back-to-bottom. Markdown follows the
 // markdown* keys; tools follow the inline-tool rules (muted once
 // complete, error red).
+mod sb;
+pub use sb::run_switchboard;
+
 const BRAND: Color = Color::Rgb(0xfa, 0xb2, 0x83); // primary
 const ACCENT: Color = Color::Rgb(0x9d, 0x7c, 0xd8); // markdownHeading
 const HEAD: Color = Color::Rgb(0xe5, 0xc0, 0x7b); // markdownEmph / syntaxType
@@ -174,6 +177,13 @@ enum Ev {
     Info(String),
     Idle,
     Raw(String),
+    // switchboard: a message from another agent (or the user's answer)
+    AgentMsg {
+        head: String,
+        text: String,
+    },
+    // switchboard: an attention card
+    Card(String),
 }
 
 // the wire carries the model's reasoning wrapped in think markers inside
@@ -262,6 +272,10 @@ fn provider_retry_text(t: &str) -> String {
 fn parse_line(line: &str) -> Option<Ev> {
     if line.is_empty() {
         return None;
+    }
+    // switchboard: the hub's own lines in a feed
+    if let Some(rest) = line.strip_prefix("sb ") {
+        return sb::parse_hub_line(rest);
     }
     if line == "--- idle" {
         return Some(Ev::Idle);
@@ -574,7 +588,7 @@ fn pad_line_bg(line: &mut Line<'static>, width: usize) {
 }
 
 fn is_message(ev: &Ev) -> bool {
-    matches!(ev, Ev::You(_) | Ev::Assistant(_) | Ev::Thinking { .. })
+    matches!(ev, Ev::You(_) | Ev::Assistant(_) | Ev::Thinking { .. } | Ev::AgentMsg { .. })
 }
 
 fn is_tool_block(ev: &Ev) -> bool {
@@ -585,6 +599,7 @@ fn is_notice(ev: &Ev) -> bool {
     matches!(
         ev,
         Ev::Warn(_)
+            | Ev::Card(_)
             | Ev::Err(_)
             | Ev::Info(_)
             | Ev::Compact(_)
@@ -1091,6 +1106,28 @@ fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             format!("  {}", t),
             Style::default().fg(DIM),
         ))],
+        Ev::AgentMsg { head, text } => {
+            let mut rows = vec![
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled(" ◀ ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                    Span::styled(head.clone(), Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                ]),
+            ];
+            for l in md_to_lines(text) {
+                let mut spans = vec![Span::styled(" │ ", Style::default().fg(ACCENT))];
+                spans.extend(l.spans);
+                rows.push(Line::from(spans));
+            }
+            rows
+        }
+        Ev::Card(t) => vec![Line::from(vec![
+            Span::styled("  ◆ ", Style::default().fg(WARN).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("carte {}", t),
+                Style::default().fg(WARN).add_modifier(Modifier::BOLD),
+            ),
+        ])],
     }
 }
 
@@ -1927,6 +1964,9 @@ struct App {
     stream: Option<TcpStream>,
     rx: Receiver<String>,
     should_quit: bool,
+    /// Switchboard mode (projects/switchboard): the hub connection and
+    /// the feeds out of focus.
+    sb: Option<sb::Sb>,
 }
 
 impl App {
@@ -2132,10 +2172,12 @@ fn popup_matches(input: &str) -> Vec<&'static Cmd> {
     if !input.starts_with('/') || input.contains(' ') {
         return Vec::new();
     }
-    COMMANDS
-        .iter()
-        .filter(|c| c.name.starts_with(input))
-        .collect()
+    let list = if sb::SB_MODE.load(std::sync::atomic::Ordering::SeqCst) {
+        sb::SB_COMMANDS
+    } else {
+        COMMANDS
+    };
+    list.iter().filter(|c| c.name.starts_with(input)).collect()
 }
 
 // byte offset of the n-th char (char-boundary-safe cursor helpers)
@@ -2151,6 +2193,9 @@ fn byte_at_char(s: &str, ci: usize) -> usize {
 // "say", /commands map to protocol words, unknown ones get a server-side
 // warning. This client only handles its own lifecycle and display.
 fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
+    if app.sb.is_some() {
+        return sb::handle_input(app, v);
+    }
     // the steer/say wrappers are transport, not what the user typed
     let typed = v
         .strip_prefix("steer ")
@@ -2248,7 +2293,10 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
 }
 
 fn draw(app: &mut App, frame: &mut Frame) {
-    let area = frame.area();
+    let (area, sb_panel) = sb::split(app, frame.area());
+    if let Some(p) = sb_panel {
+        sb::draw_panel(app, frame, p);
+    }
     // OpenCode layout: no header. Feed grows to fill, a blank row, the
     // status row, another blank row, the prompt block, a blank row,
     // then the hint row — the composer never touches the history.
@@ -2399,7 +2447,9 @@ fn draw(app: &mut App, frame: &mut Frame) {
         frame.render_widget(Paragraph::new(Line::from(spans)), chunks[2]);
     } else {
         app.bottom_bar_rect = None;
-        let status = if app.pending && app.connected {
+        let status = if let Some(l) = sb::status_line(app) {
+            l
+        } else if app.pending && app.connected {
             Line::from(vec![
                 Span::styled(
                     format!("  {}", spinner_frame(app.tick / 2)),
@@ -2443,7 +2493,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
     let mut input_lines: Vec<Line> = Vec::new();
     if total == 0 {
         input_lines.push(Line::from(Span::styled(
-            "Ask anything…",
+            sb::placeholder(app).unwrap_or_else(|| "Ask anything…".to_string()),
             Style::default().fg(DIM),
         )));
     } else {
@@ -2596,7 +2646,9 @@ fn draw(app: &mut App, frame: &mut Frame) {
     }
 
     // ---- hint row (the OpenCode prompt right hint row)
-    let hint = if app.pending {
+    let hint = if let Some(h) = sb::hint(app) {
+        h
+    } else if app.pending {
         "⏎ diriger · Tab file · Ctrl+C interrompre · / commandes · End bas"
     } else {
         "⏎ envoyer · Maj+⏎/Ctrl+J nouvelle ligne · / commandes · Ctrl+T raisonnement · Ctrl+C quitter"
@@ -2675,6 +2727,75 @@ fn cursor_line_down(input: &str, cursor: &mut usize) {
     *cursor = next_start + col.min(next_len);
 }
 
+// one wire line into the feed of the app (the focused view)
+fn ingest_line(app: &mut App, line: String) {
+    if line == "--- idle" {
+        app.pending = false;
+        app.interrupt_requested = false;
+        // BR-002: a flag that outlived its turn must
+        // not kill the next one
+        let _ = std::fs::write(
+            &app.info.interrupt_path,
+            "",
+        );
+    }
+    // thinking duration: the model's reply arrives one
+    // batch after the previous wire line
+    let now = std::time::Instant::now();
+    let ms = app
+        .last_line_at
+        .map_or(0, |t| now.duration_since(t).as_millis());
+    app.last_line_at = Some(now);
+    let (line, replayed) = strip_history(&line);
+    // a replayed reasoning section has no duration
+    let ms = if replayed { 0 } else { ms };
+    let parsed = if replayed {
+        parse_history_line(line)
+    } else {
+        parse_line(line)
+    };
+    if let Some(ev) = parsed {
+        // the reasoning rides inside the assistant text
+        // (think markers): it becomes its own collapsed
+        // section, never raw history text
+        let evs: Vec<Ev> = match ev {
+            Ev::Assistant(t) => match split_thinking(&t) {
+                Some((think, vis)) => {
+                    let mut v = vec![Ev::Thinking {
+                        ms,
+                        text: think.to_string(),
+                        open: app.show_thinking,
+                    }];
+                    if !vis.trim().is_empty() {
+                        v.push(Ev::Assistant(vis.to_string()));
+                    }
+                    v
+                }
+                None => vec![Ev::Assistant(t)],
+            },
+            other => vec![other],
+        };
+        for ev in evs {
+            let finished = match &ev {
+                Ev::Tool(td) if !matches!(td.state, ToolState::Run) => {
+                    Some(td.id)
+                }
+                _ => None,
+            };
+            // the view is top-anchored: a pinned view never
+            // moves, a following view re-sticks in draw
+            let appended =
+                push_event(&mut app.events, &mut app.cache, ev);
+            if appended && !app.follow {
+                app.unseen += 1;
+            }
+            if let (true, Some(id)) = (replayed, finished) {
+                hide_replayed_elapsed(&mut app.events, &mut app.cache, id);
+            }
+        }
+    }
+}
+
 fn run_tui(app: &mut App) -> io::Result<()> {
     let mut terminal = ratatui::init();
     let _ = crossterm::execute!(io::stdout(), EnableMouseCapture);
@@ -2692,70 +2813,10 @@ fn run_tui(app: &mut App) -> io::Result<()> {
         loop {
             match app.rx.try_recv() {
                 Ok(line) => {
-                    if line == "--- idle" {
-                        app.pending = false;
-                        app.interrupt_requested = false;
-                        // BR-002: a flag that outlived its turn must
-                        // not kill the next one
-                        let _ = std::fs::write(
-                            &app.info.interrupt_path,
-                            "",
-                        );
-                    }
-                    // thinking duration: the model's reply arrives one
-                    // batch after the previous wire line
-                    let now = std::time::Instant::now();
-                    let ms = app
-                        .last_line_at
-                        .map_or(0, |t| now.duration_since(t).as_millis());
-                    app.last_line_at = Some(now);
-                    let (line, replayed) = strip_history(&line);
-                    // a replayed reasoning section has no duration
-                    let ms = if replayed { 0 } else { ms };
-                    let parsed = if replayed {
-                        parse_history_line(line)
+                    if app.sb.is_some() {
+                        sb::dispatch(app, &line);
                     } else {
-                        parse_line(line)
-                    };
-                    if let Some(ev) = parsed {
-                        // the reasoning rides inside the assistant text
-                        // (think markers): it becomes its own collapsed
-                        // section, never raw history text
-                        let evs: Vec<Ev> = match ev {
-                            Ev::Assistant(t) => match split_thinking(&t) {
-                                Some((think, vis)) => {
-                                    let mut v = vec![Ev::Thinking {
-                                        ms,
-                                        text: think.to_string(),
-                                        open: app.show_thinking,
-                                    }];
-                                    if !vis.trim().is_empty() {
-                                        v.push(Ev::Assistant(vis.to_string()));
-                                    }
-                                    v
-                                }
-                                None => vec![Ev::Assistant(t)],
-                            },
-                            other => vec![other],
-                        };
-                        for ev in evs {
-                            let finished = match &ev {
-                                Ev::Tool(td) if !matches!(td.state, ToolState::Run) => {
-                                    Some(td.id)
-                                }
-                                _ => None,
-                            };
-                            // the view is top-anchored: a pinned view never
-                            // moves, a following view re-sticks in draw
-                            let appended =
-                                push_event(&mut app.events, &mut app.cache, ev);
-                            if appended && !app.follow {
-                                app.unseen += 1;
-                            }
-                            if let (true, Some(id)) = (replayed, finished) {
-                                hide_replayed_elapsed(&mut app.events, &mut app.cache, id);
-                            }
-                        }
+                        ingest_line(app, line);
                     }
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
@@ -2773,7 +2834,13 @@ fn run_tui(app: &mut App) -> io::Result<()> {
         if app.should_quit {
             break;
         }
-        terminal.draw(|f| draw(app, f))?;
+        terminal.draw(|f| {
+            if app.sb.is_some() {
+                sb::draw_sb(app, f)
+            } else {
+                draw(app, f)
+            }
+        })?;
         if poll(Duration::from_millis(80))? {
             let ev = read()?;
             if let Event::Mouse(m) = ev {
@@ -2858,6 +2925,9 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                 } else {
                     None
                 };
+                if app.sb.is_some() && sb::key(app, &k, popup_open) {
+                    continue;
+                }
                 match (k.code, k.modifiers) {
                     // ctrl+c: clear input first, quit when already empty
                     // ctrl+c: INTERRUPT the running turn — the UI is
@@ -3245,6 +3315,7 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
         stream: Some(stream),
         rx,
         should_quit: false,
+        sb: None,
     };
 
     // "connected" updates when the reader ends: reflect it via a probe

@@ -182,7 +182,97 @@ fn load_env_files() {
     }
 }
 
+// ---- switchboard (projects/switchboard): one main agent, task agents ----
+
+/// The app root: the directory holding the Bend REPL binaries (the dev
+/// tree's repo root, or the bundle next to the executable).
+fn app_root(repl_name: &str) -> Option<std::path::PathBuf> {
+    let cwd = std::env::current_dir().ok();
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    candidates.extend(cwd);
+    if let Some(d) = exe_dir {
+        // the bundle, then the dev tree (rust/target/debug -> repo root)
+        candidates.push(d.clone());
+        candidates.extend(d.ancestors().skip(1).take(3).map(|p| p.to_path_buf()));
+    }
+    candidates.into_iter().find(|d| d.join(repl_name).exists())
+}
+
+/// The workspace a switchboard command is about: --workspace, else the
+/// directory the user launched from (run.sh exports it before its cd).
+fn sb_workspace(args: &[String]) -> std::path::PathBuf {
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--workspace" && i + 1 < args.len() {
+            return std::path::PathBuf::from(&args[i + 1]);
+        }
+        i += 1;
+    }
+    std::env::var("SB_LAUNCH_DIR")
+        .ok()
+        .filter(|d| !d.is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+}
+
+fn run_sbd(args: &[String]) -> std::io::Result<()> {
+    let paths = switchboard::paths::Paths::for_workspace(&sb_workspace(args));
+    let Some(root) = app_root("repl-live") else {
+        eprintln!("repl-live introuvable (compile avec `bend runtime/repl-live.bend -o repl-live`)");
+        std::process::exit(1);
+    };
+    // the agents' REPLs load their MCP index like a normal session
+    if std::env::var_os("BEND_MCP_INDEX").is_none() {
+        if let Ok(h) = std::env::var("HOME") {
+            std::env::set_var("BEND_MCP_INDEX", format!("{}/.bend-harness/mcp-index.txt", h));
+        }
+    }
+    switchboard::daemon::run(switchboard::daemon::Opts {
+        paths,
+        repl_bin: root.join("repl-live"),
+        app_root: root,
+        exe: std::env::current_exe()?,
+    })
+}
+
+fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
+    let paths = switchboard::paths::Paths::for_workspace(&sb_workspace(args));
+    if args.iter().any(|a| a == "--stop") {
+        match switchboard::client::stop(&paths)? {
+            true => eprintln!("hub arrêté ({})", paths.workspace.display()),
+            false => eprintln!("aucun hub pour {}", paths.workspace.display()),
+        }
+        return Ok(());
+    }
+    let Some(root) = app_root("repl-live") else {
+        eprintln!("repl-live introuvable");
+        std::process::exit(1);
+    };
+    let exe = std::env::current_exe()?;
+    let stream = switchboard::client::connect(&paths, &exe, &root)?;
+    bend_tui::run_switchboard(stream, paths.workspace.to_string_lossy().to_string(), debug)
+}
+
 fn main() -> std::io::Result<()> {
+    {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        match args.first().map(|s| s.as_str()) {
+            Some("sb") => std::process::exit(switchboard::cli::main(&args[1..])),
+            Some("sbd") => {
+                load_env_files();
+                return run_sbd(&args[1..]);
+            }
+            Some("switchboard") => {
+                let debug = args.iter().any(|a| a == "--debug");
+                return run_switchboard(&args[1..], debug);
+            }
+            _ => {}
+        }
+    }
     load_env_files();
     let mut scripted = false;
     let mut headless = false;
