@@ -353,6 +353,36 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
             after_append(events, cache);
             return true;
         }
+        // BISE-86: the hub could not deliver your message: its line gets
+        // `✗`; only the newest `not delivered` line keeps its question
+        Ev::Undelivered { name, text, .. } => {
+            // your line is the text, or `@name text` from another view
+            let yours = |t: &str| {
+                t == text
+                    || t.strip_prefix('@').and_then(|r| r.split_once(' ')).is_some_and(|(n, r)| n == name && r.trim() == text)
+            };
+            let mut found = false;
+            for (i, e) in events.iter_mut().enumerate().rev() {
+                match e {
+                    Ev::Undelivered { open, .. } if *open => {
+                        *open = false;
+                        cache[i] = None;
+                    }
+                    Ev::You(t, m) if !found && yours(t) && *m != Mark::Failed => {
+                        *m = Mark::Failed;
+                        cache[i] = None;
+                        found = true;
+                    }
+                    _ => {}
+                }
+            }
+            // not in this feed (an `@name` line from another view shows
+            // only once delivered): your line comes back, marked
+            if !found {
+                let t = format!("@{} {}", name, text);
+                push_event(events, cache, Ev::You(t, Mark::Failed));
+            }
+        }
         // C3: a steering line moves the mark of your message
         Ev::MarkYou { text, mark, or } => {
             if !mark_you(events, cache, text, *mark) {

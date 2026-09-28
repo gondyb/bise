@@ -703,6 +703,25 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             _ => {}
         }
     }
+    // BISE-86: `✗ not delivered: {name} stopped. ⏎ send again · esc drop`
+    // is the last line and the composer is empty: ⏎ sends it again, esc
+    // drops it; the question goes away either way
+    if empty && matches!(k.code, KeyCode::Enter | KeyCode::Esc) && k.modifiers == KeyModifiers::NONE {
+        let last = app.events.iter().rposition(|e| crate::feed::ev_visible(e, false));
+        if let Some(i) = last {
+            if let Ev::Undelivered { name, text, open: open @ true } = &mut app.events[i] {
+                *open = false;
+                app.cache[i] = None;
+                let (name, text) = (name.clone(), text.clone());
+                if k.code == KeyCode::Enter {
+                    let v = if sb.focus == name { text.clone() } else { format!("@{} {}", name, text) };
+                    sb.send_input(v.clone());
+                    push_event(&mut app.events, &mut app.cache, Ev::You(v, Mark::Sent));
+                }
+                return true;
+            }
+        }
+    }
     let n = sb.nav().len();
     let nav = nav_key(k);
     match (k.code, k.modifiers) {
@@ -890,6 +909,11 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
     let field = |s: &str| unescape_md(&s.replace(" \\: ", " : "));
     Some(match kind {
         "you" => Ev::You(text, Mark::Sent),
+        // BISE-86: `undelivered : {name} : {text}` (fields escaped)
+        "undelivered" => {
+            let (name, t) = raw.split_once(" : ").unwrap_or((raw, ""));
+            Ev::Undelivered { name: field(name), text: field(t), open: true }
+        }
         // v1: what this feed's owner received: `{from} m_<n> : {text}`
         // (`@{from} : {text}` for an old direct reply to the user)
         "msg-in" => {
@@ -1177,6 +1201,69 @@ mod nav_key_tests {
         app.sb.as_mut().unwrap().selected = Some(0);
         press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT);
         assert_eq!(app.sb.as_ref().unwrap().drop_ask, None);
+    }
+
+    /// BISE-86 (C2 `undelivered`, book §13, §17): the hub could not
+    /// deliver your message: your line ends with `✗`, a line says
+    /// `✗ not delivered: {name} stopped. ⏎ send again · esc drop`; ⏎ on an
+    /// empty composer sends it again (`@name` from another view), esc
+    /// drops it; the question then goes away.
+    #[test]
+    fn a_message_not_delivered_is_marked_and_asks() {
+        use std::io::Read;
+        let (a, mut hub) = UnixStream::pair().unwrap();
+        hub.set_nonblocking(true).unwrap();
+        let (_tx, rx) = mpsc::channel::<String>();
+        let sb = new_sb(std::sync::Arc::new(std::sync::Mutex::new(a)), "ws".into());
+        let mut app = sb_app(sb, rx, false, 100, crate::voice::Voice::live(false), "ws".into());
+        let mut sent = move || {
+            let mut buf = vec![0u8; 4096];
+            match hub.read(&mut buf) {
+                Ok(n) => String::from_utf8_lossy(&buf[..n]).to_string(),
+                Err(_) => String::new(),
+            }
+        };
+        let ev = parse_hub_line("undelivered : fix : d'abord \\: les tests").unwrap();
+        assert!(matches!(&ev, Ev::Undelivered { name, text, open: true } if name == "fix" && text == "d'abord : les tests"));
+        push_event(&mut app.events, &mut app.cache, Ev::You("d'abord : les tests".into(), Mark::Sent));
+        push_event(&mut app.events, &mut app.cache, ev.clone());
+        assert!(matches!(&app.events[0], Ev::You(_, Mark::Failed)));
+        let rows = |app: &App| -> Vec<String> {
+            app.events
+                .iter()
+                .flat_map(|e| crate::render::ev_lines(e, 80))
+                .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+                .collect()
+        };
+        let r = rows(&app);
+        assert!(r[0].trim_end().ends_with("d'abord : les tests ✗"), "{:?}", r);
+        assert_eq!(r[1].trim(), "✗ not delivered: fix stopped. ⏎ send again · esc drop");
+        // esc drops it: nothing sent, the question goes
+        assert!(press(&mut app, KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(sent(), "");
+        assert_eq!(rows(&app)[1].trim(), "✗ not delivered: fix stopped.");
+        // a second one, from main's view: ⏎ sends it again to @fix
+        push_event(&mut app.events, &mut app.cache, Ev::You("encore".into(), Mark::Sent));
+        push_event(&mut app.events, &mut app.cache, parse_hub_line("undelivered : fix : encore").unwrap());
+        assert!(press(&mut app, KeyCode::Enter, KeyModifiers::NONE));
+        let out = sent();
+        assert!(out.contains(r#""op":"input""#) && out.contains("@fix encore"), "{out}");
+        assert!(matches!(app.events.last(), Some(Ev::You(t, Mark::Sent)) if t == "@fix encore"));
+        // `@fix encore` is the line the user wrote in main's view: marked
+        push_event(&mut app.events, &mut app.cache, parse_hub_line("undelivered : fix : encore").unwrap());
+        assert!(matches!(app.events.iter().rev().nth(1), Some(Ev::You(t, Mark::Failed)) if t == "@fix encore"));
+        // a message the feed does not show (an `@fix` line from another
+        // view): it comes back, marked, before the question
+        let n = app.events.len();
+        push_event(&mut app.events, &mut app.cache, parse_hub_line("undelivered : fix : où ?").unwrap());
+        assert!(matches!(&app.events[n], Ev::You(t, Mark::Failed) if t == "@fix où ?"));
+        assert!(matches!(&app.events[n + 1], Ev::Undelivered { open: true, .. }));
+        // not with a draft: ⏎ sends the draft as usual
+        push_event(&mut app.events, &mut app.cache, parse_hub_line("undelivered : fix : x").unwrap());
+        app.ed.text = "draft".into();
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(!sent().contains(r#""text":"@fix x""#));
+        assert!(app.events.iter().any(|e| matches!(e, Ev::Undelivered { text, open: true, .. } if text == "x")));
     }
 
     fn infos(app: &App) -> Vec<String> {

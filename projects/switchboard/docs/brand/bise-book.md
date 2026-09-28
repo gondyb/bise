@@ -585,6 +585,17 @@ and adds structured kinds; the TUI maps each to one level:
   (`wire::parse_history`) and puts `Ev::TimeMark("hh:mm")` (local time)
   before a replayed line that comes 5 minutes or more after the one before
   it, as for live lines (§10).
+- C2 amendment: `undelivered` (BISE-86, accepted by main). When a message
+  from the user cannot reach its agent (stopped, dropped, archived: the
+  send fails with `recipient_unavailable`, or it was still queued when the
+  agent stopped), the hub writes `sb undelivered : {name} : {text}` in the
+  feed where the user wrote it (the agent's own, or the `via` view; fields
+  escaped like `answered`). The `recipient_unavailable` notice stays. TUI:
+  `Ev::Undelivered { name, text, open }`; your matching line (the text, or
+  `@name text`) gets `Mark::Failed` (`✗`, error color), or comes back
+  marked when the feed does not have it; the line reads
+  `✗ not delivered: {name} stopped. ⏎ send again · esc drop` (§13, §17)
+  while `open`: on an empty composer ⏎ sends it again, esc drops it.
 - **⚠** Volume: with 30 agents this is many lines; the TUI folds them (§10),
   the hub must not drop them.
 

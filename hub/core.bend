@@ -850,6 +850,38 @@ def line_fields(-o: M.St, +cx: X.Cx<o>, +agent: String, +kind: String, +fields: 
   out(o, cx, [J.kv("fx", J.JStr{"line"}), J.kv("agent", J.JStr{agent}), J.kv("kind", J.JStr{kind}),
     J.kv("fields", J.JArr{jstrs(fields)})])
 
+# C2 amendment (BISE-86): a message from the user that cannot reach its
+# agent (stopped, dropped, archived) says so in the feed where the user
+# wrote it: `undelivered : {name} : {text}` (the TUI marks the line ✗)
+def undelivered.if(-o: M.St, gone: Bool, +cx: X.Cx<o>, +feed: String, +name: String, +text: String) -> X.Cx<o>:
+  match gone:
+    case True{}:
+      line_fields(o, cx, feed, "undelivered", [name, text])
+    case False{}:
+      cx
+
+# the feed the user wrote a message in: its `via` (another view), else
+# the agent's own
+def undelivered.feed(m: Maybe<&2, String>, +to: String) -> String:
+  match m:
+    case Some{+v}:
+      v
+    case None{}:
+      to
+
+# the user's messages still queued for an agent that stops
+def undelivered_msgs(-o: M.St, xs: List<&2, M.Msg>, +cx: X.Cx<o>) -> X.Cx<o>:
+  match xs:
+    case Nil{}:
+      cx
+    case Con{+m, +rest}:
+      +to = M.Msg.to(m)
+      undelivered_msgs(o, rest, undelivered.if(o, String.eq(M.Msg.from(m), M.USER()), cx,
+        undelivered.feed(M.Msg.via(m), to), to, M.Msg.text(m)))
+
+def unavailable_err(+e: String) -> Bool:
+  String.starts_with(e, "recipient_unavailable")
+
 # the message `m` points to (a card's, a reply's)
 def for_msg_of(+s: M.St, m: Maybe<&2, Nat>) -> Maybe<&2, M.Msg>:
   match m:
@@ -1041,6 +1073,11 @@ def stop_task.go(-o: M.St, +cx: X.Cx<o>, +name: String, +life: M.Life, +reason: 
 def stop_task(-o: M.St, +cx: X.Cx<o>, +name: String, +life: M.Life, +reason: String) -> X.Cx<o>:
   set_waiters(o, stop_task.go(o, cx, name, life, reason), waiters_not(X.R.waiters(rr(o, cx)), name))
 
+# stop_task, after saying which of the user's queued messages will never
+# arrive (BISE-86)
+def stop_noted(-o: M.St, +cx: X.Cx<o>, +name: String, +life: M.Life, +reason: String) -> X.Cx<o>:
+  stop_task(o, undelivered_msgs(o, M.queued_for(st(o, cx), name), cx), name, life, reason)
+
 def plural(+n: Nat) -> String:
   Bool.pick(String, Nat.is_gt(n, 1n), "s", "")
 
@@ -1087,9 +1124,9 @@ def drop.git(-o: M.St, p: X.Cx<o> & Maybe<&2, J.Json>, +a: M.Agent) -> X.Cx<o> &
 def drop.now(-o: M.St, has_wt: Bool, +cx: X.Cx<o>, +a: M.Agent, +loss: J.Json) -> X.Cx<o> & DropR:
   match has_wt:
     case False{}:
-      drop.finish(o, stop_task(o, cx, M.Agent.name(a), M.LArchived{}, "drop"), a, "")
+      drop.finish(o, stop_noted(o, cx, M.Agent.name(a), M.LArchived{}, "drop"), a, "")
     case True{}:
-      +cx2 = stop_task(o, cx, M.Agent.name(a), M.LArchived{}, "drop")
+      +cx2 = stop_noted(o, cx, M.Agent.name(a), M.LArchived{}, "drop")
       drop.git(o, ask(o, cx2, J.obj([J.kv("q", J.JStr{"worktree_drop"}), J.kv("name", J.JStr{M.Agent.name(a)}), J.kv("ws", M.Agent.ws(a)),
         J.kv("dirty", J.JNum{J.get_num_or(loss, "dirty", 0n)}), J.kv("unpushed", J.JNum{J.get_num_or(loss, "unpushed", 0n)})])), a)
 
@@ -1342,7 +1379,7 @@ def question_card(cs: List<&2, M.Card>, +s: M.St, +to: String) -> Maybe<&2, Nat>
 def says.sent(-o: M.St, p: X.Cx<o> & SendR, +to: String, +text: String) -> X.Cx<o>:
   match p:
     case (+cx, SErr{+e}):
-      notice(o, cx, e)
+      undelivered.if(o, unavailable_err(e), notice(o, cx, e), to, to, text)
     case (+cx, SOk{_}):
       pick_lazy(X.Cx<o>, String.eq(to, M.MAIN()), u => cx, u => user_sent(o, cx, text))
 
@@ -1370,7 +1407,7 @@ def close_names(xs: List<&2, String>, +target: String) -> List<&2, String>:
 def route.sent(-o: M.St, p: X.Cx<o> & SendR, +name: String, +text: String, +focus: String) -> X.Cx<o>:
   match p:
     case (+cx, SErr{+e}):
-      notice(o, cx, e)
+      undelivered.if(o, unavailable_err(e), notice(o, cx, e), focus, name, text)
     case (+cx, SOk{+m}):
       +cx2 = line(o, cx, M.MAIN(), "route", cat(["you → @", name, " : ", text]))
       +cx3 = pick_lazy(X.Cx<o>, Bool.not(String.eq(focus, M.MAIN())) || Bool.not(String.eq(name, focus)),
@@ -1724,7 +1761,7 @@ def req_stop(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +token: Nat, +agent: 
       reply_err(o, cx, token, String.append("no task named ", agent))
     case Some{+n}:
       pick_lazy(X.Cx<o>, String.eq(n, M.MAIN()), u => reply_err(o, cx, token, String.append("no task named ", agent)),
-        u => reply(o, line(o, stop_task(o, cx, n, M.LStopped{}, reason), M.MAIN(), "info", cat(["main → @", n, " stopped: ", reason])), token, ok_body(Nil{})))
+        u => reply(o, line(o, stop_noted(o, cx, n, M.LStopped{}, reason), M.MAIN(), "info", cat(["main → @", n, " stopped: ", reason])), token, ok_body(Nil{})))
 
 def req_drop.res(-o: M.St, p: X.Cx<o> & DropR, +token: Nat, +agent: String) -> X.Cx<o>:
   match p:

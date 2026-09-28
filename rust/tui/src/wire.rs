@@ -52,6 +52,8 @@ pub(crate) enum Mark {
     Sent,
     Received,
     Read,
+    // the hub could not deliver it (C2 `undelivered`, BISE-86): `✗`
+    Failed,
 }
 
 #[derive(Clone)]
@@ -155,6 +157,15 @@ pub(crate) enum Ev {
         text: String,
         mark: Mark,
         or: Option<Box<Ev>>,
+    },
+    // switchboard (C2 `undelivered`, BISE-86): your message `text` did not
+    // reach `name` (stopped, dropped, archived); your line gets `✗` and
+    // this line asks `⏎ send again · esc drop` while `open` (in memory:
+    // the last one only, until answered)
+    Undelivered {
+        name: String,
+        text: String,
+        open: bool,
     },
 }
 

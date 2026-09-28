@@ -1716,3 +1716,44 @@ fn fields_escape_the_separator() {
     assert_eq!(field_escape("a : b"), "a \\: b");
     assert_eq!(join_fields(&["docs".into(), "x : y".into(), "z".into(), "".into()]), "docs : x \\: y : z : ");
 }
+
+/// A message from the user that cannot reach its agent (C2 amendment,
+/// BISE-86): `sb undelivered : {name} : {text}` in the feed where the
+/// user wrote it, from the agent's own view or from another one (` : `
+/// inside the text escaped); a message queued when the agent stops says
+/// it too; an agent's message to it does not.
+#[test]
+fn a_message_the_user_cannot_deliver_says_so() {
+    let mut t = T::new();
+    t.user(MAIN, "/new -w fix: corrige le bug");
+    // not ready yet: the user's message waits in the queue
+    let fx = t.user("fix", "d'abord : les tests");
+    assert!(lines_of(&fx, "fix").iter().all(|l| !l.starts_with("sb undelivered")), "{:?}", fx);
+    let fx = t.user(MAIN, "/drop fix");
+    assert_eq!(t.status("fix"), Status::Archived, "{:?}", fx);
+    assert!(
+        lines_of(&fx, "fix").contains(&"sb undelivered : fix : d'abord \\: les tests"),
+        "{:?}",
+        fx
+    );
+    // the worktree is gone: nothing revives it
+    let fx = t.user("fix", "encore");
+    assert!(lines_of(&fx, "fix").contains(&"sb undelivered : fix : encore"), "{:?}", fx);
+    // from main's view: the line goes to main's feed
+    let fx = t.user(MAIN, "@fix et là ?");
+    assert!(lines_of(&fx, MAIN).contains(&"sb undelivered : fix : et là ?"), "{:?}", fx);
+    assert!(lines_of(&fx, "fix").is_empty(), "{:?}", fx);
+    // an agent sending to it gets its error, no undelivered line
+    let (_, fx) = t.req(
+        MAIN,
+        AgentReq::Send {
+            to: "fix".into(),
+            text: "hello".into(),
+            expect_reply: false,
+            reply_to: None,
+            queued: false,
+            why: String::new(),
+        },
+    );
+    assert!(fx.iter().all(|e| !matches!(e, Effect::Line { line, .. } if line.starts_with("sb undelivered"))), "{:?}", fx);
+}

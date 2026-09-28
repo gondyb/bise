@@ -1298,3 +1298,39 @@ Index:
   - **Tests:** `daemon::tests::history_lines_carry_their_time`,
     `sb::bench::replayed_history_gets_its_time_marks` (a mark before the
     line after a 5-minute pause, a line without `ts` still reads).
+
+### BISE-86 · `✗ not delivered` (hub signal + mark)
+
+- **status:** done · **owner:** bise-h-hub · **commits:** (this commit)
+- **owns:** `hub/core.bend` (`undelivered.*`, `undelivered_msgs`,
+  `stop_noted`, the error arms of `says.sent` / `route.sent`), `sb-core`;
+  `wire.rs` (`Mark::Failed`, `Ev::Undelivered`), the `undelivered` arm of
+  `parse_hub_line` and the ⏎/esc hook in `sb.rs` `key`, one `push_event`
+  arm (feed.rs), `mark_span` + one `ev_lines` arm (render.rs)
+- **spec:** book §13 (marks), §17 (copy deck), §21 C2 amendment
+  `undelivered`
+- **do:** the hub says when a message from the user cannot reach its agent;
+  the TUI marks the line `✗` and asks `⏎ send again · esc drop`.
+- **notes:**
+  - **Hub:** `sb undelivered : {name} : {text}` (fields escaped like
+    `answered`) when the user's send fails with `recipient_unavailable`
+    (an agent whose worktree was dropped: a user message still revives a
+    stopped or archived agent in the shared folder), in the feed where the
+    user wrote it (`says.sent`: the agent's; `route.sent`: the focus); and
+    for the user's messages still queued when an agent stops (`stop_noted`
+    wraps `stop_task` at its three call sites: drop, drop with worktree,
+    `sb stop`; the line goes to the message's `via` view, else the agent's).
+    `stop_task` itself is unchanged, so its proofs are too. An agent's
+    failed send gets its error only. PROOF: ALL PROOFS CHECK; sb-core
+    rebuilt unstripped.
+  - **TUI:** `Ev::Undelivered { name, text, open }`. `push_event` marks the
+    newest matching `Ev::You` (`text`, or `@name text`) `Mark::Failed`,
+    or puts `@name text` back marked when the feed does not have it (from
+    main's view, a routed line shows only once delivered); only the newest
+    question stays `open`. On an empty composer, ⏎ sends it again (`@name`
+    from another view, echoed as your line) and esc drops it.
+  - **Tests:** core `a_message_the_user_cannot_deliver_says_so` (own view,
+    main's view, queued at drop, an agent's send), TUI
+    `a_message_not_delivered_is_marked_and_asks`, tmux
+    `tui_undelivered_tmux.py` (throwaway hub: `/new -w t1`, `/drop t1`,
+    `@t1 …` → `✗` + the question, ⏎ again, esc), added to `run_all.sh`.

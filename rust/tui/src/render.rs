@@ -240,6 +240,15 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         // an image marker is an accent chip `▣ login.png` (book §14)
         Ev::You(t, mark) => user_block_lines(t, *mark, width),
         Ev::MarkYou { .. } => vec![],
+        // BISE-86 (book §13, §17): `✗ not delivered: {name} stopped.`, and
+        // while it waits for an answer `⏎ send again · esc drop`
+        Ev::Undelivered { name, open, .. } => {
+            let mut l = glyph_line(G_FAILED, err_st, format!("not delivered: {} stopped.", name), text_st);
+            if *open {
+                l[0].spans.push(Span::styled(" ⏎ send again · esc drop", dim_st));
+            }
+            l
+        }
         // in main's feed, main's reply carries `:*` (book §6), its text at
         // column 3; inside an agent, the reply is the view's own voice
         Ev::Assistant(t) if main_feed() => {
@@ -513,6 +522,7 @@ fn mark_span(mark: Mark) -> Option<Span<'static>> {
         Mark::Sent => (G_SENDING, dim()),
         Mark::Received => (G_RECEIVED, faint()),
         Mark::Read => (G_READ, accent()),
+        Mark::Failed => (G_FAILED, error()),
     };
     Some(Span::styled(format!(" {}", glyph(g)), Style::default().fg(c)))
 }
