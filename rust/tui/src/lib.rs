@@ -60,6 +60,8 @@ mod help;
 mod voice;
 #[cfg(test)]
 mod voice_ui_tests;
+#[cfg(test)]
+mod composer_wrap_tests;
 pub use keyprobe::keyprobe;
 pub use sb::{run_switchboard, take_reexec};
 
@@ -2805,17 +2807,15 @@ fn draw(app: &mut App, frame: &mut Frame) {
     // then the hint row — the composer never touches the history.
     // the composer grows with its content (a pasted multi-line block),
     // capped at half the screen so the feed always survives
-    let inner_w = ((area.width as usize).saturating_sub(6)).max(1);
-    // rows as drawn: wrapped by display width (emojis are 2 columns)
+    // recording: the level meter takes the first 2 columns (Vibe puts
+    // it in place of the prompt), the text is indented after it
+    let voice_pad = if app.voice.active() { 2 } else { 0 };
+    let inner_w = ((area.width as usize).saturating_sub(6 + voice_pad)).max(1);
+    // rows as drawn (same width, same end-slot rule as the draw below):
+    // wrapped by display width (emojis are 2 columns)
     let composer_rows = {
         let rows = editor::layout_input(&app.ed.text, inner_w);
-        let n = rows.len();
-        // a trailing row holding only the end slot after a full row
-        if n > 1 && rows[n - 1].len() == 1 && !rows[n - 2].last().is_some_and(|c| c.newline) {
-            n - 1
-        } else {
-            n
-        }
+        editor::drawn_rows(&rows, app.ed.cursor)
     };
     // the prompt block holds: 2 rows of top padding, the typed text,
     // one blank line, the meta row, 1 row of bottom padding
@@ -3020,9 +3020,6 @@ fn draw(app: &mut App, frame: &mut Frame) {
     // ---- the prompt: OpenCode prompt (left border ┃, element bg, meta row)
     // multi-line: newlines break rows, long rows wrap at the inner
     // width (layout_input)
-    // recording: the level meter takes the first 2 columns (Vibe puts
-    // it in place of the prompt), the text is indented after it
-    let voice_pad = if app.voice.active() { 2 } else { 0 };
     let inner = ((chunks[5].width as usize).saturating_sub(6 + voice_pad)).max(1);
     // the text area inside the block: left border + padding 3, padding
     // 2 right, 2 top; the rows above the meta row and its blank line
@@ -3047,7 +3044,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
         // the REVERSED grapheme, or a REVERSED space on a newline or at
         // the end of the text; the selection has the selection colors
         let rows = editor::layout_input(&app.ed.text, inner);
-        let last = rows.len() - 1;
+        let drawn = editor::drawn_rows(&rows, app.ed.cursor);
         let cursor = app.ed.cursor;
         let selection = app.ed.selection();
         let (cur_row, _) = editor::row_col(&rows, cursor);
@@ -3056,7 +3053,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
         app.composer.top = top;
         let text_style = Style::default().fg(TEXT);
         let sel_style = Style::default().fg(TEXT).bg(SELECTION);
-        for (ri, row) in rows.iter().enumerate().skip(top) {
+        for row in rows.iter().take(drawn).skip(top) {
             let mut spans: Vec<Span> = Vec::new();
             let mut buf = String::new();
             let mut buf_sel = false;
@@ -3077,17 +3074,26 @@ fn draw(app: &mut App, frame: &mut Frame) {
                 }
                 if is_cursor {
                     // a pending dead key (Option+e…): its accent, marked,
-                    // before the cursor, like macOS
-                    if let Some(acc) = app.ed.pending_dead() {
-                        spans.push(Span::styled(
+                    // before the cursor, like macOS; on a full row (no
+                    // column left) it takes the cursor cell instead, so
+                    // the row never overflows and the cursor stays seen
+                    let marked = Style::default().fg(BRAND).add_modifier(Modifier::UNDERLINED);
+                    let row_w: usize = row.iter().map(|c| c.w).sum();
+                    match app.ed.pending_dead() {
+                        Some(acc) if row_w + 1 > inner => spans.push(Span::styled(
                             acc.to_string(),
-                            Style::default().fg(BRAND).add_modifier(Modifier::UNDERLINED),
-                        ));
+                            marked.add_modifier(Modifier::REVERSED),
+                        )),
+                        acc => {
+                            if let Some(acc) = acc {
+                                spans.push(Span::styled(acc.to_string(), marked));
+                            }
+                            spans.push(Span::styled(
+                                cell.text.to_string(),
+                                text_style.add_modifier(Modifier::REVERSED),
+                            ));
+                        }
                     }
-                    spans.push(Span::styled(
-                        cell.text.to_string(),
-                        text_style.add_modifier(Modifier::REVERSED),
-                    ));
                 } else if !cell.newline {
                     buf.push_str(cell.text);
                 } else if in_sel {
@@ -3098,11 +3104,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
             if !buf.is_empty() {
                 spans.push(Span::styled(buf, if buf_sel { sel_style } else { text_style }));
             }
-            // a trailing empty row (the text ends on a full row, cursor
-            // elsewhere) is not drawn
-            if ri < last || !spans.is_empty() {
-                input_lines.push(Line::from(spans));
-            }
+            input_lines.push(Line::from(spans));
         }
     }
     if app.voice.active() {

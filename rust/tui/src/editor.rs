@@ -246,6 +246,23 @@ pub(crate) fn layout_input(input: &str, inner: usize) -> Vec<Vec<InputCell<'_>>>
     rows
 }
 
+/// How many of the `rows` the composer draws: a trailing row holding
+/// only the end slot after a full row (the text ends exactly at the
+/// width) shows only when the cursor sits on it. The composer height
+/// and the draw both use it, so they never disagree by one row (the
+/// top row was clipped when the cursor reached that slot).
+pub(crate) fn drawn_rows(rows: &[Vec<InputCell>], cursor: usize) -> usize {
+    let n = rows.len();
+    let only_end_slot = n > 1
+        && rows[n - 1].len() == 1
+        && !rows[n - 2].last().is_some_and(|c| c.newline);
+    if only_end_slot && rows[n - 1][0].ci != cursor {
+        n - 1
+    } else {
+        n
+    }
+}
+
 /// (row, column) of the char index `ci` in the layout.
 pub(crate) fn row_col(rows: &[Vec<InputCell>], ci: usize) -> (usize, usize) {
     let mut last = (0, 0);
