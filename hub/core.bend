@@ -59,7 +59,6 @@ type In is Data:
   IIsolate{}
   IRename{}
   IAnswer{}
-  ICancel{}
   IInterrupt{}
   IPassthrough{}
   IFocus{}
@@ -1376,7 +1375,7 @@ def route.sent(-o: M.St, p: X.Cx<o> & SendR, +name: String, +text: String, +focu
       +cx2 = line(o, cx, M.MAIN(), "route", cat(["you → @", name, " : ", text]))
       +cx3 = pick_lazy(X.Cx<o>, Bool.not(String.eq(focus, M.MAIN())) || Bool.not(String.eq(name, focus)),
         u => note_main(o, cx2, cat(["the user wrote directly to @", name, ": \"", M.one_line(text), "\""])), u => cx2)
-      out(o, cx3, [J.kv("fx", J.JStr{"routed"}), J.kv("id", J.JNum{M.Msg.id(m)})])
+      cx3
 
 def route.target(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +target: String, +text: String, +focus: String) -> X.Cx<o>:
   match m:
@@ -1474,30 +1473,6 @@ def rename.old(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +name: String, +new
     case Some{+old}:
       pick_lazy(X.Cx<o>, String.eq(old, M.MAIN()), u => notice(o, cx, String.append("no task named @", name)),
         u => rename.go(o, valid && Bool.not(M.name_taken(st(o, cx), new)), cx, old, new))
-
-def cancel.to(m: Maybe<&2, M.Msg>) -> String:
-  match m:
-    case None{}:
-      ""
-    case Some{+x}:
-      M.Msg.to(x)
-
-def cancel.state(-o: M.St, s: Maybe<&2, M.MSt>, +cx: X.Cx<o>, +id: Nat) -> X.Cx<o>:
-  match s:
-    case Some{M.Queued{_}}:
-      +cx2 = emit(o, cx, M.EMsgState{id, M.Cancelled{}}, Unit{}, Unit{}, Unit{})
-      +to = cancel.to(M.msg_of(st(o, cx2), id))
-      +cx3 = line(o, cx2, M.MAIN(), "info", cat(["route to @", to, " cancelled"]))
-      note_main(o, cx3, cat(["the user cancelled the message ", mid(id), " to @", to, " before delivery"]))
-    case _:
-      notice(o, cx, "too late: the message is already delivered, send a correction")
-
-def cancel(-o: M.St, last: Maybe<&2, Nat>, +cx: X.Cx<o>) -> X.Cx<o>:
-  match last:
-    case None{}:
-      notice(o, cx, "no route to cancel")
-    case Some{+id}:
-      cancel.state(o, M.state_of(st(o, cx), id), cx, id)
 
 def interrupt.go(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>) -> X.Cx<o>:
   match m:
@@ -2229,13 +2204,12 @@ def in_tag(+t: String) -> In:
   Bool.pick(In, String.eq(t, "isolate"), IIsolate{},
   Bool.pick(In, String.eq(t, "rename"), IRename{},
   Bool.pick(In, String.eq(t, "answer"), IAnswer{},
-  Bool.pick(In, String.eq(t, "cancel"), ICancel{},
   Bool.pick(In, String.eq(t, "interrupt"), IInterrupt{},
   Bool.pick(In, String.eq(t, "passthrough"), IPassthrough{},
   Bool.pick(In, String.eq(t, "focus"), IFocus{},
   Bool.pick(In, String.eq(t, "close"), IClose{},
   Bool.pick(In, String.eq(t, "force_run"), IForceRun{},
-  INone{}))))))))))))))))))))))))))
+  INone{})))))))))))))))))))))))))
 
 # `/close N`: the user files a card without answering it
 def close_by_user(-o: M.St, m: Maybe<&2, M.Card>, +cx: X.Cx<o>, +id: Nat) -> X.Cx<o>:
@@ -2292,8 +2266,6 @@ def dispatch.go(-o: M.St, tag: In, +cx: X.Cx<o>, +i: J.Json) -> X.Cx<o>:
       rename.old(o, M.resolve(st(o, cx), C.get_s(i, "name")), cx, C.get_s(i, "name"), C.get_s(i, "new_name"), C.get_b(i, "valid"))
     case IAnswer{}:
       answer_card(o, cx, C.get_nat(i, "card"), C.get_s(i, "text"))
-    case ICancel{}:
-      cancel(o, C.opt_nat(J.get(i, "last")), cx)
     case IInterrupt{}:
       interrupt.go(o, M.resolve(st(o, cx), C.get_s(i, "agent")), cx)
     case IPassthrough{}:

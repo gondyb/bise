@@ -43,8 +43,6 @@ pub enum UserCmd {
     Close {
         card: u64,
     },
-    /// `/cancel`: undo the last route if it is not delivered yet.
-    Cancel,
     /// `/tasks`: the board, printed locally.
     Tasks,
     /// `/interrupt`: the agent in focus stops its turn.
@@ -55,6 +53,11 @@ pub enum UserCmd {
     Help,
     Invalid(String),
 }
+
+/// `/cancel` is gone (book §13): an agent may already have acted on a
+/// message, so an undo promises too much. Corrections go through main.
+pub const NO_UNDO: &str =
+    "no undo: an agent may already have acted. say the change to main instead (\"no, v1 for docs\").";
 
 /// A task name (RFC 0001 §9.3): `[a-z0-9-]{1,24}`.
 pub fn valid_name(s: &str) -> bool {
@@ -238,7 +241,7 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
             Ok(card) => UserCmd::Close { card },
             _ => UserCmd::Invalid("usage: /close <card>".into()),
         },
-        "/cancel" => UserCmd::Cancel,
+        "/cancel" | "/undo" => UserCmd::Invalid(NO_UNDO.into()),
         "/tasks" => UserCmd::Tasks,
         "/interrupt" => UserCmd::Interrupt,
         "/help" => UserCmd::Help,
@@ -341,6 +344,12 @@ mod tests {
             parse("/compact", "docs"),
             UserCmd::Passthrough("/compact".into())
         );
+    }
+
+    #[test]
+    fn there_is_no_undo() {
+        assert_eq!(parse("/cancel", MAIN), UserCmd::Invalid(NO_UNDO.into()));
+        assert_eq!(parse("/undo", "docs"), UserCmd::Invalid(NO_UNDO.into()));
     }
 
     #[test]

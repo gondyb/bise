@@ -480,19 +480,20 @@ fn at_task_to_a_busy_task_steers_and_answers_at_turn_end() {
 }
 
 #[test]
-fn an_explicit_route_can_be_cancelled_before_delivery() {
+fn there_is_no_undo_a_route_stays_sent() {
     let mut t = T::new();
     t.spawn_task("docs");
     // docs never started its REPL again: simulate it down
     t.hub.force_run("docs", Run::Starting);
     let fx = t.user(MAIN, "@docs change de plan");
     assert!(has_line(&fx, MAIN, "you → @docs : change de plan"));
+    // book §13: no undo, the user says the change to main instead
     let fx = t.user(MAIN, "/cancel");
-    assert!(has_line(&fx, MAIN, "route to @docs cancelled"), "{:?}", fx);
+    assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").starts_with("no undo"))), "{:?}", fx);
     let fx = t.go(Input::ReplReady {
         agent: "docs".into(),
     });
-    assert!(say_to(&fx, "docs").is_none());
+    assert!(say_to(&fx, "docs").is_some_and(|s| s.contains("change de plan")), "{:?}", fx);
     let fx = t.user(MAIN, "@nope salut");
     assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").contains("no task named @nope"))));
 }

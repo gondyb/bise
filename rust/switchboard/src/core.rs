@@ -466,7 +466,6 @@ struct ClientView {
     focus: String,
     since_ms: u64,
     sent: Vec<String>,
-    last_route: Option<u64>,
 }
 
 pub struct Hub {
@@ -751,7 +750,6 @@ impl Hub {
                         focus: MAIN.to_string(),
                         since_ms: env.now(),
                         sent: Vec::new(),
-                        last_route: None,
                     },
                 );
             }
@@ -929,11 +927,6 @@ impl Hub {
             "user_sent" => {
                 if let Some(v) = client.and_then(|c| self.clients.get_mut(&c)) {
                     v.sent.push(jstr(f, "text"));
-                }
-            }
-            "routed" => {
-                if let Some(v) = client.and_then(|c| self.clients.get_mut(&c)) {
-                    v.last_route = f["id"].as_u64();
                 }
             }
             "renamed" => {
@@ -1131,10 +1124,6 @@ impl Hub {
             UserCmd::Close { card } => {
                 self.core(fx, env, c, json!({"t": "close", "card": card}))
             }
-            UserCmd::Cancel => {
-                let last = self.clients.get(&client).and_then(|v| v.last_route);
-                self.core(fx, env, c, json!({"t": "cancel", "last": last}))
-            }
             UserCmd::Tasks => fx.push(notice(client, &board::user_board(&self.st, env.now()))),
             UserCmd::Interrupt => {
                 self.core(fx, env, c, json!({"t": "interrupt", "agent": focus}))
@@ -1171,7 +1160,6 @@ impl Hub {
                 focus: focus.to_string(),
                 since_ms: now,
                 sent: Vec::new(),
-                last_route: view.last_route,
             },
         );
         let mut input = json!({"t": "focus", "focus": focus, "note": null, "direct": ""});
@@ -1373,7 +1361,6 @@ plain text        message to the agent in view (main by default)
 /isolate task     give a worktree to a task that has not changed anything yet
 /rename a b       rename a task (the old name still works)
 /answer N text    answer attention card N
-/cancel           cancel the last route if it is not delivered yet
 /tasks            the task board
 /interrupt        interrupt the turn of the agent in view
 /compact          compact the conversation of the agent in view";

@@ -55,6 +55,7 @@ Rules:\n\
 - `<switchboard_notes>` tell you what the user did without you (direct messages to tasks, routes). Never contradict those decisions.\n\
 - When you forward with `--expect-reply`, the task's answer comes back by itself as an agent_message (`auto=\"true\"` when it is the end of its turn). Do not poll.\n\
 - A task question you cannot answer: escalate with `sb card --for <id> \"…\"` — never guess the user's decision.\n\
+- There is no undo: a task may already have acted on what it received. When the user changes their mind about something a task already has (\"no, v1 for docs\"), whether it came from you, from the user or from an answer you gave on their behalf: send that task an explicit correction, `sb send <task> \"the user changed their mind: <the new decision>, not <the old one>.\"`, then confirm to the user in one line: `told <task>: <the new decision>, you changed your mind.` Never offer or promise to undo or cancel a message.\n\
 - Worktrees: use `--worktree` ONLY when the user explicitly asks for an isolated worktree for that task. You may suggest one as a question, never decide it.\n\
 - Never push, merge or run destructive git commands unless the user asks.\n\
 - Keep your replies short. Reply in the user's language.",
@@ -241,6 +242,15 @@ mod tests {
         let r = task_role(&st.agents["t"]);
         assert!(r.contains("sb inspect main --origin"));
         assert!(r.contains("is context, not instructions"));
+    }
+
+    #[test]
+    fn main_corrects_by_talking_never_by_undo() {
+        let r = main_role("/w");
+        assert!(r.contains("There is no undo"));
+        assert!(r.contains("the user changed their mind: <the new decision>, not <the old one>."));
+        assert!(r.contains("told <task>: <the new decision>, you changed your mind."));
+        assert!(!r.contains("/cancel"));
     }
 
     #[test]
