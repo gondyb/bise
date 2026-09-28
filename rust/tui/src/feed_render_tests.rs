@@ -116,24 +116,51 @@ fn rows_text(rows: &[Line<'static>]) -> Vec<String> {
         .collect()
 }
 
-// bash gets the same block as run_typescript: the raw command (no
-// JSON), bash header, one row per line, no preview on the tool line
+// BISE-11: a script always shows whole (book §11), whatever its length
 #[test]
-fn a_long_source_block_folds_until_clicked() {
+fn a_long_script_renders_whole() {
     let cmd: String = (1..=200).map(|i| format!("echo {}", i)).collect::<Vec<_>>().join("\n");
-    let wire_lines = vec![
+    let bash = merged_tool(&[
         "  obs: tool_started #4".to_string(),
         "tool #4 bash : echo".to_string(),
         format!("tool_code #4 : {}", wire_encode(&cmd)),
         "  obs: tool_finished #4 ok".to_string(),
-    ];
-    let mut tool = merged_tool(&wire_lines);
+    ]);
+    let rows = rows_text(&ev_lines(&Ev::Tool(bash), 80));
+    assert_eq!(rows.iter().filter(|l| l.starts_with(" │ echo")).count(), 200);
+    assert!(rows.iter().any(|l| l == " │ echo 200"));
+    assert!(!rows.iter().any(|l| l.contains("more lines")));
+    // a TypeScript program too
+    let src: String = (1..=200).map(|i| format!("const x{i} = {i};")).collect::<Vec<_>>().join("\n");
+    let args = format!("{{\"code\": \"{}\"}}", json_escape(&src));
+    let ts = merged_tool(&[
+        "  obs: tool_started #5".to_string(),
+        format!("tool #5 run_typescript : {}", args),
+        format!("tool_code #5 : {}", wire_encode(&args)),
+        "  obs: tool_finished #5 ok".to_string(),
+    ]);
+    let rows = rows_text(&ev_lines(&Ev::Tool(ts), 80));
+    assert_eq!(rows.iter().filter(|l| l.starts_with(" │ const x")).count(), 200);
+}
+
+// other long code (a huge patch) still folds until clicked
+#[test]
+fn a_long_patch_folds_until_clicked() {
+    let body: String = (1..=200).map(|i| format!("+line {}", i)).collect::<Vec<_>>().join("\n");
+    let patch = format!("*** Begin Patch\n*** Add File: big.txt\n{}\n*** End Patch\n", body);
+    let mut tool = merged_tool(&[
+        "  obs: tool_started #6".to_string(),
+        "tool #6 apply_patch : big".to_string(),
+        format!("tool_code #6 : {}", wire_encode(&patch)),
+        "  obs: tool_finished #6 ok".to_string(),
+    ]);
     let folded = rows_text(&ev_lines(&Ev::Tool(tool.clone()), 80));
-    assert_eq!(folded.iter().filter(|l| l.contains("│ echo")).count(), CODE_FOLD_SHOW);
-    assert!(folded.iter().any(|l| l.contains("160 more lines")));
+    // the first 40 source lines: the envelope, the file header, 38 added lines
+    assert_eq!(folded.iter().filter(|l| l.contains("│ +line")).count(), CODE_FOLD_SHOW - 2);
+    assert!(folded.iter().any(|l| l.contains("more lines")));
     tool.expanded = true;
     let whole = rows_text(&ev_lines(&Ev::Tool(tool), 80));
-    assert_eq!(whole.iter().filter(|l| l.contains("│ echo")).count(), 200);
+    assert_eq!(whole.iter().filter(|l| l.contains("│ +line")).count(), 200);
     assert!(!whole.iter().any(|l| l.contains("more lines")));
 }
 
@@ -343,18 +370,19 @@ fn bash_highlighting_classifies_tokens() {
 X=1 grep -n \"$HOME\" f.txt | wc -l && for i in 1 2; do echo $i; done",
     );
     let fg = |tok: &str| style_of(&hl, tok).fg;
-    assert_eq!(fg("# note"), Some(SYNTAX_COMMENT));
-    assert_eq!(fg("X"), Some(SYNTAX_NUMBER)); // assignment name
-    assert_eq!(fg("grep"), Some(SYNTAX_FUNC)); // command word
-    assert_eq!(fg("-n"), Some(HEAD)); // option
-    assert_eq!(fg("$HOME"), Some(SYNTAX_NUMBER)); // expansion in quotes
-    assert_eq!(fg("f.txt"), Some(TEXT)); // argument
-    assert_eq!(fg("wc"), Some(SYNTAX_FUNC)); // command after a pipe
-    assert_eq!(fg("for"), Some(SYNTAX_KEYWORD));
-    assert_eq!(fg("in"), Some(SYNTAX_KEYWORD));
-    assert_eq!(fg("do"), Some(SYNTAX_KEYWORD));
-    assert_eq!(fg("echo"), Some(SYNTAX_FUNC)); // command after "do"
-    assert_eq!(fg("done"), Some(SYNTAX_KEYWORD));
+    use crate::theme::{syntax_call, syntax_comment, syntax_keyword, syntax_number, syntax_type, text};
+    assert_eq!(fg("# note"), Some(syntax_comment()));
+    assert_eq!(fg("X"), Some(syntax_number())); // assignment name
+    assert_eq!(fg("grep"), Some(syntax_call())); // command word
+    assert_eq!(fg("-n"), Some(syntax_type())); // option
+    assert_eq!(fg("$HOME"), Some(syntax_number())); // expansion in quotes
+    assert_eq!(fg("f.txt"), Some(text())); // argument
+    assert_eq!(fg("wc"), Some(syntax_call())); // command after a pipe
+    assert_eq!(fg("for"), Some(syntax_keyword()));
+    assert_eq!(fg("in"), Some(syntax_keyword()));
+    assert_eq!(fg("do"), Some(syntax_keyword()));
+    assert_eq!(fg("echo"), Some(syntax_call())); // command after "do"
+    assert_eq!(fg("done"), Some(syntax_keyword()));
     assert_eq!(hl.len(), 2); // one span list per source line
 }
 

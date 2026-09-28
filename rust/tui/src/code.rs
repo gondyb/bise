@@ -62,14 +62,14 @@ pub(crate) fn push_tok(lines: &mut Vec<Vec<Span<'static>>>, text: &str, style: S
 pub(crate) fn highlight_ts(src: &str) -> Vec<Vec<Span<'static>>> {
     let cs: Vec<char> = src.chars().collect();
     let n = cs.len();
-    let comment = Style::default().fg(SYNTAX_COMMENT).add_modifier(Modifier::ITALIC);
-    let string = Style::default().fg(SYNTAX_STRING);
-    let number = Style::default().fg(SYNTAX_NUMBER);
-    let keyword = Style::default().fg(SYNTAX_KEYWORD).add_modifier(Modifier::BOLD);
-    let func = Style::default().fg(SYNTAX_FUNC);
-    let typ = Style::default().fg(HEAD);
-    let plain = Style::default().fg(TEXT);
-    let punct = Style::default().fg(DIM);
+    let comment = Style::default().fg(syntax_comment()).add_modifier(Modifier::ITALIC);
+    let string = Style::default().fg(syntax_string());
+    let number = Style::default().fg(syntax_number());
+    let keyword = Style::default().fg(syntax_keyword()).add_modifier(Modifier::BOLD);
+    let func = Style::default().fg(syntax_call());
+    let typ = Style::default().fg(syntax_type());
+    let plain = Style::default().fg(text());
+    let punct = Style::default().fg(dim());
     let mut lines: Vec<Vec<Span<'static>>> = vec![Vec::new()];
     let mut i = 0usize;
     while i < n {
@@ -214,16 +214,16 @@ pub(crate) fn bash_var(cs: &[char], i: usize) -> Option<(String, usize)> {
 pub(crate) fn highlight_bash(src: &str) -> Vec<Vec<Span<'static>>> {
     let cs: Vec<char> = src.chars().collect();
     let n = cs.len();
-    let comment = Style::default().fg(SYNTAX_COMMENT).add_modifier(Modifier::ITALIC);
-    let string = Style::default().fg(SYNTAX_STRING);
-    let number = Style::default().fg(SYNTAX_NUMBER);
-    let var = Style::default().fg(SYNTAX_NUMBER);
-    let keyword = Style::default().fg(SYNTAX_KEYWORD).add_modifier(Modifier::BOLD);
-    let op = Style::default().fg(SYNTAX_KEYWORD);
-    let func = Style::default().fg(SYNTAX_FUNC);
-    let plain = Style::default().fg(TEXT);
-    let option = Style::default().fg(HEAD);
-    let punct = Style::default().fg(DIM);
+    let comment = Style::default().fg(syntax_comment()).add_modifier(Modifier::ITALIC);
+    let string = Style::default().fg(syntax_string());
+    let number = Style::default().fg(syntax_number());
+    let var = Style::default().fg(syntax_number());
+    let keyword = Style::default().fg(syntax_keyword()).add_modifier(Modifier::BOLD);
+    let op = Style::default().fg(syntax_keyword());
+    let func = Style::default().fg(syntax_call());
+    let plain = Style::default().fg(text());
+    let option = Style::default().fg(syntax_type());
+    let punct = Style::default().fg(dim());
     let mut lines: Vec<Vec<Span<'static>>> = vec![Vec::new()];
     // the next word is a command name (start, after ; | && || ( $( ...)
     let mut cmd_pos = true;
@@ -398,8 +398,9 @@ pub(crate) fn highlight_bash(src: &str) -> Vec<Vec<Span<'static>>> {
 
 // ---- the apply_patch diff block ----
 
-// the V4A patch as a diff: file headers, hunk markers, added lines on a
-// green band, removed lines on a red band, context dimmed. The
+// the V4A patch as a diff: file headers, hunk markers, added lines in
+// the ok color, removed lines in the error color (no band: the
+// background is never painted), context dimmed. The
 // Begin/End Patch envelope is noise and never shows.
 pub(crate) fn highlight_patch(src: &str) -> Vec<Vec<Span<'static>>> {
     let file = |glyph: &str, path: &str, color: Color, note: &str| {
@@ -408,17 +409,17 @@ pub(crate) fn highlight_patch(src: &str) -> Vec<Vec<Span<'static>>> {
             Span::styled(path.to_string(), Style::default().fg(color).add_modifier(Modifier::BOLD)),
         ];
         if !note.is_empty() {
-            v.push(Span::styled(format!(" · {}", note), Style::default().fg(DIM)));
+            v.push(Span::styled(format!(" · {}", note), Style::default().fg(dim())));
         }
         v
     };
     let mut lines: Vec<Vec<Span<'static>>> = Vec::new();
     for l in src.split('\n') {
         let header = if let Some(p) = l.strip_prefix("*** Update File: ") {
-            Some(file("~", p, HEAD, ""))
+            Some(file("~", p, text(), ""))
         } else if let Some(p) = l.strip_prefix("*** Add File: ") {
-            Some(file("+", p, OK, "new"))
-        } else { l.strip_prefix("*** Delete File: ").map(|p| file("−", p, ERR, "deleted")) };
+            Some(file("+", p, ok(), "new"))
+        } else { l.strip_prefix("*** Delete File: ").map(|p| file("−", p, error(), "deleted")) };
         if let Some(h) = header {
             // a blank row between two files
             if !lines.is_empty() {
@@ -428,7 +429,7 @@ pub(crate) fn highlight_patch(src: &str) -> Vec<Vec<Span<'static>>> {
             continue;
         }
         if let Some(p) = l.strip_prefix("*** Move to: ") {
-            lines.push(file("→", p, HEAD, "renamed"));
+            lines.push(file("→", p, text(), "renamed"));
             continue;
         }
         if l.starts_with("*** ") || (l.is_empty() && lines.is_empty()) {
@@ -436,13 +437,13 @@ pub(crate) fn highlight_patch(src: &str) -> Vec<Vec<Span<'static>>> {
             continue;
         }
         let span = if l.starts_with("@@") {
-            Span::styled(l.to_string(), Style::default().fg(SYNTAX_FUNC))
+            Span::styled(l.to_string(), Style::default().fg(syntax_call()))
         } else if l.starts_with('+') {
-            Span::styled(l.to_string(), Style::default().fg(OK).bg(DIFF_ADD_BG))
+            Span::styled(l.to_string(), Style::default().fg(ok()))
         } else if l.starts_with('-') {
-            Span::styled(l.to_string(), Style::default().fg(ERR).bg(DIFF_DEL_BG))
+            Span::styled(l.to_string(), Style::default().fg(error()))
         } else {
-            Span::styled(l.to_string(), Style::default().fg(DIM))
+            Span::styled(l.to_string(), Style::default().fg(dim()))
         };
         lines.push(vec![span]);
     }

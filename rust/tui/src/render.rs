@@ -439,12 +439,13 @@ pub(crate) fn tool_body(td: &ToolData, code: &Option<(CodeLang, String)>, width:
             ]));
         }
     }
-    // the source block, highlighted, in a bordered box: whole when
-    // short or unfolded, else its first lines (a huge patch or program
-    // would cost thousands of rows to build and scroll past)
+    // the source block, highlighted, under its rail. A bash or
+    // TypeScript script always shows whole (book §11: scripts in full);
+    // only a long patch shows its first lines until opened (a huge
+    // patch would cost thousands of rows to build and scroll past)
     if let Some((lang, src)) = code {
         let total = src.lines().count();
-        if total > CODE_FOLD_AT && !td.expanded {
+        if folds(*lang) && total > CODE_FOLD_AT && !td.expanded {
             let head: String = src.lines().take(CODE_FOLD_SHOW).collect::<Vec<_>>().join("\n");
             ls.extend(code_block_lines(&head, *lang, &td.state, width));
             ls.push(Line::from(Span::styled(
@@ -458,9 +459,14 @@ pub(crate) fn tool_body(td: &ToolData, code: &Option<(CodeLang, String)>, width:
     ls
 }
 
-/// A source block longer than this shows its first `CODE_FOLD_SHOW` lines.
+/// A patch longer than this shows its first `CODE_FOLD_SHOW` lines.
 pub(crate) const CODE_FOLD_AT: usize = 60;
 pub(crate) const CODE_FOLD_SHOW: usize = 40;
+
+/// Scripts never fold (book §11); other code does.
+fn folds(lang: CodeLang) -> bool {
+    !matches!(lang, CodeLang::Bash | CodeLang::TypeScript)
+}
 
 pub(crate) fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
     let (name, args, code) = tool_meta(td);
