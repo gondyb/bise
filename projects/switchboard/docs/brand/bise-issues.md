@@ -475,7 +475,7 @@ Index:
 
 ### BISE-51 · main's voice, summaries, "why"
 
-- **status:** in progress · **owner:** bise-m-main · **commits:** —
+- **status:** done · **owner:** bise-m-main · **commits:** c9bf346
 - **track:** M · **owns:** `prompts.rs`
 - **spec:** book §4 (voice), §9 (summaries, why), §13
 - **do:** main's prompt: speak as "i", lowercase, short, human (§4); say who
@@ -542,6 +542,12 @@ Index:
     corrects itself next turn; main closes the "done" cards itself and
     once said it did so "without reading what it asked first" (card
     closing is not in this issue). Visible text never said "task".
+  - **Gates** (private worktree of HEAD + prompts.rs, shared
+    `/tmp/bise-gate-target`, `SB_CORE_BIN` set to the worktree's): build,
+    test --workspace, clippy (0 warnings), PROOF, run_all.sh green. The
+    first tmux run failed (`'Switchboard' not on screen`) from artifact
+    mixing in the shared target; after touching the sources and
+    rebuilding, all tmux tests PASS.
 
 ---
 
