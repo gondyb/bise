@@ -3455,3 +3455,47 @@ def hub_put_absent(+xs: List<&2, HM.Agent>, +n: String, +a: HM.Agent, f: hub_fre
         case HX.Both{f1, f2}:
           hub_put_absent.pick(String.eq(HM.Agent.name(h), n), h, t, n, a, {==},
             hub_or_false_l(String.eq(HM.Agent.name(h), n), HM.str_in(HM.Agent.aliases(h), n), f1), hub_put_absent(t, n, a, f2))
+
+def hub_str_in_snoc_false(+l: List<&2, String>, +y: String, +z: String, +a: {HM.str_in(l, z) == False{} : Bool}, b: {String.eq(y, z) == False{} : Bool})
+    -> {HM.str_in(HM.snoc(String, l, y), z) == False{} : Bool}:
+  match l:
+    case Nil{}:
+      hub_or_false(String.eq(y, z), False{}, b, {==})
+    case Con{h, t}:
+      hub_or_false(String.eq(h, z), HM.str_in(HM.snoc(String, t, y), z), hub_or_false_l(String.eq(h, z), HM.str_in(t, z), a),
+        hub_str_in_snoc_false(t, y, z, hub_or_false_r(String.eq(h, z), HM.str_in(t, z), a), b))
+
+# the renamed entry against one listed after it
+def hub_apart_ren_after(+m: String, +al: List<&2, String>, +new: String, +y: List<&2, String>, ay: HI.Apart(m <> al, y), fy: {HM.str_in(y, new) == False{} : Bool})
+    -> HI.Apart(new <> HM.snoc(String, al, m), y):
+  match y:
+    case Nil{}:
+      Unit{}
+    case Con{yn, ya}:
+      match ay:
+        case HX.Both{+a1, +a2}:
+          HX.Both{fy, hub_str_in_snoc_false(al, m, yn, a2, hub_str_eq_sym_false(yn, m, hub_or_false_l(String.eq(yn, m), HM.str_in(ya, m), a1)))}
+
+def hub_aa_ren(+m: String, +al: List<&2, String>, +new: String, +ps: List<&2, List<&2, String>>, a: HI.ApartAll(m <> al, ps), f: hub_free(ps, new))
+    -> HI.ApartAll(new <> HM.snoc(String, al, m), ps):
+  match ps:
+    case Nil{}:
+      Unit{}
+    case Con{y, r}:
+      match a f:
+        case HX.Both{a1, a2} HX.Both{f1, f2}:
+          HX.Both{hub_apart_ren_after(m, al, new, y, a1, f1), hub_aa_ren(m, al, new, r, a2, f2)}
+
+# an entry listed before the renamed one
+def hub_apart_ren_before(+x: List<&2, String>, +m: String, +al: List<&2, String>, +new: String, ax: HI.Apart(x, m <> al), +fx: {HM.str_in(x, new) == False{} : Bool})
+    -> HI.Apart(x, new <> HM.snoc(String, al, m)):
+  match x:
+    case Nil{}:
+      Unit{}
+    case Con{xn, xa}:
+      match ax:
+        case HX.Both{+b1, +b2}:
+          HX.Both{hub_or_false(String.eq(new, xn), HM.str_in(HM.snoc(String, al, m), xn),
+              hub_str_eq_sym_false(xn, new, hub_or_false_l(String.eq(xn, new), HM.str_in(xa, new), fx)),
+              hub_str_in_snoc_false(al, m, xn, hub_or_false_r(String.eq(m, xn), HM.str_in(al, xn), b1), hub_or_false_l(String.eq(m, xn), HM.str_in(al, xn), b1))),
+            hub_or_false_r(String.eq(xn, new), HM.str_in(xa, new), fx)}
