@@ -348,3 +348,48 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     }
     out
 }
+
+#[cfg(test)]
+mod harness_info_tests {
+    use super::HarnessInfo;
+
+    // the exact string LAWS.bend pins for Rt.info_line (law
+    // info_line_format): the two sides of the contract agree
+    const BEND_LINE: &str = "harness-info model=claude-opus-5-5 threshold=800000 steer=/tmp/bend-steer-7.txt interrupt=/tmp/bend-interrupt-7.txt";
+
+    #[test]
+    fn parses_the_line_bend_prints() {
+        let info = HarnessInfo::parse(BEND_LINE).expect("parses");
+        assert_eq!(info.model, "claude-opus-5-5");
+        assert_eq!(info.threshold, "800000");
+        assert_eq!(info.steer_path, "/tmp/bend-steer-7.txt");
+        assert_eq!(info.interrupt_path, "/tmp/bend-interrupt-7.txt");
+    }
+
+    #[test]
+    fn finds_the_line_in_a_repl_log() {
+        let log = format!("{}\nbend-harness LIVE REPL on 127.0.0.1:7 ...\n[mcp] connector index written\n", BEND_LINE);
+        assert_eq!(HarnessInfo::from_log(&log).expect("found").model, "claude-opus-5-5");
+    }
+
+    #[test]
+    fn rejects_an_incomplete_line() {
+        assert!(HarnessInfo::parse("harness-info model=m threshold=1").is_none());
+        assert!(HarnessInfo::parse("bend-harness LIVE REPL on 127.0.0.1:7").is_none());
+    }
+}
+
+#[cfg(test)]
+mod popup_tests {
+    use super::popup_top;
+
+    #[test]
+    fn the_selection_stays_in_view() {
+        assert_eq!(popup_top(0, 5, 8), 0);
+        assert_eq!(popup_top(4, 5, 8), 0);
+        assert_eq!(popup_top(7, 12, 8), 0);
+        assert_eq!(popup_top(8, 12, 8), 1);
+        assert_eq!(popup_top(11, 12, 8), 4);
+        assert_eq!(popup_top(99, 12, 8), 4); // clamped like the selection
+    }
+}
