@@ -217,11 +217,11 @@ the slow tail is the cold cache on the first request.</pre>
    <div class="b">should i keep them without links, or drop them from the note?</div>
    <div class="b dim">▾ 12 more lines · pgdn</div>`, pan: PANEL("release") })],
 
-["the agents panel, every state", "one line per agent: its number: ⌥ + number switches to it (0 main, 1 to 9 the first nine agents; no number after nine), glyph, name, age or state, context fill. • = unread activity. Y = agent in its own worktree; no mark = the shared folder. archived agents are counted, not listed.",
+["the agents panel, every state", "one line per agent: its number: ⌥ + number switches to it (0 main, 1 to 9 the first nine agents; no number after nine), glyph, name, age or state, context fill. • = unread activity. ψ = agent in its own worktree; no mark = the shared folder. archived agents are counted, not listed.",
  term({ feed: "", pan: panel([
    P.main, { ...P.auth, sel: true, dot: true }, P.rel, { g: S.start, name: "tests", r: "starting" }, P.docs, P.api,
    { g: '<span class="acc">?</span>', name: "infra", r: '<span class="acc">blocked</span>' }, P.bench, P.deploy, P.ideas,
-   { g: S.stop, name: "old-spike", r: "stopped" }, { g: S.work, name: "big-refactor Y", r: "40m · 64%" },
+   { g: S.stop, name: "old-spike", r: "stopped" }, { g: S.work, name: "big-refactor ψ", r: "40m · 64%" },
  ], `<div class="dim b">4 archived</div>`) })],
 
 ["preview an agent", "Space on a selected agent: its last lines, without leaving main.",
@@ -388,7 +388,7 @@ document.getElementById("screens").innerHTML = screens.map(([t, p, html], i) =>
     ["↳", "a sub-call"], ['<span class="faint">✓</span>', "your message: the agent got it"], ['<span class="acc">✓✓</span>', "your message: read by the model"], ['<span class="img">▣</span>', "an image"], ["±", "file edit"], ["@", "agent to agent"], ['<span class="dim">≡</span>', "compacting"], ['<span class="dim">≡</span>', "compaction summary"], ['<span class="dim">▲</span>', "interrupted"],
     ['<span class="pulse">∿</span>', "working"], ['<span class="pulse dim">·</span>', "starting"], ["…", "waiting on an agent"], ['<span class="acc">?</span>', "needs you / blocked"],
     ["♡", "done"], ['<span class="err">✗</span>', "failed"], ['<span class="dim">○</span>', "idle"], ['<span class="dim">–</span>', "stopped / drop"], ["⇄", "overlap"], ['<span class="err">↻</span>', "restart failed"],
-    ['<span class="acc">•</span>', "unread"], ["Y", "own worktree"], ['<span style="color:#f0b27a">Δ</span>', "building / on trial"],
+    ['<span class="acc">•</span>', "unread"], ["ψ", "own worktree"], ['<span style="color:#f0b27a">Δ</span>', "building / on trial"],
   ].map(([g, t]) => `<div><span>${g}</span>${t}</div>`).join("")}</div></figure>`;
 document.getElementById("toc").innerHTML = screens.map(([t], i) => `<a href="#s${i + 1}">${String(i + 1).padStart(2, "0")} ${t}</a>`).join("");
 
