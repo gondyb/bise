@@ -61,8 +61,11 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     ]));
     lines.push(Line::from(""));
     let nav = sb.nav();
+    let mut owners: Vec<(usize, String)> = Vec::new();
     for (i, a) in nav.iter().enumerate() {
-        lines.extend(agent_lines(app, sb, a, i, w));
+        let rows = agent_lines(app, sb, a, i, w);
+        owners.extend((lines.len()..lines.len() + rows.len()).map(|r| (r, a.name.clone())));
+        lines.extend(rows);
         if a.main && nav.len() > 1 {
             lines.push(Line::from(Span::styled(
                 format!(" {}", "─".repeat(w.saturating_sub(1))),
@@ -97,6 +100,16 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
             )));
         }
     }
+    if let Ok(mut hits) = sb.panel_hits.try_borrow_mut() {
+        *hits = PanelHits {
+            area,
+            rows: owners
+                .into_iter()
+                .filter(|(r, _)| *r < area.height as usize)
+                .map(|(r, name)| (area.y.saturating_add(r as u16), name))
+                .collect(),
+        };
+    }
     frame.render_widget(
         Paragraph::new(lines).block(
             Block::default()
@@ -105,6 +118,50 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
         ),
         area,
     );
+}
+
+/// Where the last frame drew the panel, and the agent of each of its
+/// rows (screen row, agent name): a click on a row focuses the agent.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct PanelHits {
+    area: Rect,
+    rows: Vec<(u16, String)>,
+}
+
+impl PanelHits {
+    /// The agent drawn at screen cell (`x`, `y`), if any.
+    fn agent_at(&self, x: u16, y: u16) -> Option<&str> {
+        if !self.contains(x, y) {
+            return None;
+        }
+        self.rows.iter().find(|(r, _)| *r == y).map(|(_, n)| n.as_str())
+    }
+
+    fn contains(&self, x: u16, y: u16) -> bool {
+        let a = self.area;
+        x >= a.x && x < a.x.saturating_add(a.width) && y >= a.y && y < a.y.saturating_add(a.height)
+    }
+}
+
+/// A left click in the panel: on an agent's rows it focuses that agent,
+/// the same path as Alt+N. `true` when the click was the panel's.
+pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bool {
+    use crossterm::event::{MouseButton, MouseEventKind};
+    if m.kind != MouseEventKind::Down(MouseButton::Left) {
+        return false;
+    }
+    let Some(sb) = app.sb.as_ref() else { return false };
+    let target = {
+        let Ok(hits) = sb.panel_hits.try_borrow() else { return false };
+        if !hits.contains(m.column, m.row) {
+            return false;
+        }
+        hits.agent_at(m.column, m.row).map(str::to_string)
+    };
+    if let Some(name) = target.filter(|n| sb.agent(n).is_some()) {
+        focus(app, &name);
+    }
+    true
 }
 
 /// The status row in switchboard mode (None: the plain one).
@@ -288,4 +345,82 @@ fn agent_lines(app: &App, sb: &Sb, a: &Agent, i: usize, w: usize) -> Vec<Line<'s
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::bench;
+    use super::*;
+    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    fn screen(term: &Terminal<TestBackend>) -> Vec<String> {
+        let buf = term.backend().buffer();
+        let w = buf.area.width as usize;
+        buf.content
+            .chunks(w)
+            .map(|row| row.iter().map(|c| c.symbol()).collect::<String>())
+            .collect()
+    }
+
+    fn click(app: &mut App, column: u16, row: u16) {
+        let m = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        };
+        crate::input::on_mouse(app, &m, 0);
+    }
+
+    /// The screen row and column where `label` shows in the panel.
+    fn find(rows: &[String], panel_x: u16, label: &str) -> (u16, u16) {
+        rows.iter()
+            .enumerate()
+            .find_map(|(y, r)| {
+                let tail: String = r.chars().skip(panel_x as usize).collect();
+                tail.find(label).map(|_| (panel_x + 3, y as u16))
+            })
+            .unwrap_or_else(|| panic!("{} not in the panel:\n{}", label, rows.join("\n")))
+    }
+
+    /// A click on an agent's row (its name or its objective) focuses it,
+    /// like Alt+N; a click on a blank panel row changes nothing.
+    #[test]
+    fn a_click_on_an_agent_row_focuses_it() {
+        let mut app = bench::test_app_drained();
+        if let Some(sb) = app.sb.as_mut() {
+            sb.agents.push(Agent { name: "main".into(), main: true, status: "idle".into(), ..Agent::default() });
+        }
+        bench::add_agent(&mut app, "alpha", "first objective");
+        bench::add_agent(&mut app, "beta", "second objective");
+        bench::add_agent(&mut app, "gamma", "third objective");
+        let mut term = Terminal::new(TestBackend::new(120, 30)).unwrap();
+        let draw = |app: &mut App, term: &mut Terminal<TestBackend>| {
+            term.draw(|f| super::super::draw_sb(app, f)).unwrap();
+        };
+        draw(&mut app, &mut term);
+        let panel_x = app.sb.as_ref().unwrap().panel_hits.borrow().area.x;
+        for (label, name) in [("1 alpha", "alpha"), ("third objective", "gamma"), ("2 beta", "beta")] {
+            let (x, y) = find(&screen(&term), panel_x, label);
+            click(&mut app, x, y);
+            assert_eq!(app.sb.as_ref().unwrap().focus, name, "click on {:?}", label);
+            draw(&mut app, &mut term);
+        }
+        let (x, y) = find(&screen(&term), panel_x, "main");
+        click(&mut app, x, y);
+        assert_eq!(app.sb.as_ref().unwrap().focus, "main");
+        // the blank row under the title: nothing happens
+        draw(&mut app, &mut term);
+        click(&mut app, panel_x + 3, 1);
+        assert_eq!(app.sb.as_ref().unwrap().focus, "main");
+        // a click in the feed is not the panel's
+        let m = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 2,
+            row: 2,
+            modifiers: KeyModifiers::NONE,
+        };
+        assert!(!panel_mouse(&mut app, &m));
+    }
 }

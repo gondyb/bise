@@ -21,7 +21,7 @@ mod cards;
 pub(super) use cards::{card_box_height, card_full, card_mouse, close_items, draw_card};
 use cards::{answer_card, Card, CardView};
 mod panel;
-pub(super) use panel::{draw_panel, hint, placeholder, split, status_line, workspace};
+pub(super) use panel::{draw_panel, hint, panel_mouse, placeholder, split, status_line, workspace};
 use panel::glyph;
 mod feed;
 pub(super) use feed::FeedWindow;
@@ -86,6 +86,8 @@ pub(super) struct Sb {
     versions_asked: std::cell::Cell<Option<std::time::Instant>>,
     /// The card box above the composer (Ctrl+G), never opened by the hub.
     card: CardView,
+    /// Set by the last draw: the panel rows and their agents (clicks).
+    panel_hits: std::cell::RefCell<panel::PanelHits>,
 }
 
 /// The string field `k` of `v` ("" when absent).

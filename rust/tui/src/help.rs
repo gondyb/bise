@@ -97,6 +97,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(TASKS, "Esc", "close the selection; in a task, back to main").sb().top(),
     r(TASKS, "Alt+1 … Alt+9", "go to task N").sb().top(),
     r(TASKS, "Alt+0", "back to main").sb(),
+    r(TASKS, "click a task", "in the right panel: go to that task (main: back to main)").sb().top(),
     r(CARDS, "Ctrl+G|Ctrl+A", "show / hide the card box (Ctrl+A on an empty composer)").sb().top(),
     r(CARDS, "Ctrl+N|Ctrl+P", "next / previous card").sb(),
     r(CARDS, "Alt+R", "answer the card with the composer text (empty: acknowledge a done card)").sb().top(),
