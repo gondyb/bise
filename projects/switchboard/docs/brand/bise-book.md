@@ -267,6 +267,8 @@ outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their ta
   **⚠** No cost in $ until the usage work lands.
 - **Feed** on the left, prose ≤ 76 columns; extra width goes to the margin
   and the panel, never to longer lines.
+- **Scrollbar:** only while you are scrolled up from the bottom: faint, one
+  column, no arrows. Never at the tail (BISE-90).
 - **Agents panel** on the right (hidden under 70 columns; the header keeps the
   counts). Title `agents · ⌥ + number` (fits 26 columns on one line). One
   row per agent: its number (faint; 0 main, 1–9 the first nine agents, blank
