@@ -53,6 +53,7 @@ mod emoji;
 mod editor;
 mod clipboard;
 mod usage;
+mod term;
 mod feedsel;
 mod keyprobe;
 mod voice;
@@ -2074,6 +2075,8 @@ fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
 
 struct App {
     connected: bool,
+    // the embedded terminal (Ctrl+`)
+    term: term::Term,
     debug: bool,
     // line mode holds running tools until they finish so the printed
     // line carries the merged annotations (name, args, result)
@@ -2602,6 +2605,7 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         ));
         out.push(Ev::Info(editor::EDIT_HELP.into()));
         out.push(Ev::Info(editor::GHOSTTY_TIPS.into()));
+        out.push(Ev::Info(term::HELP.into()));
     } else if first == "/interrupt" {
         // BR-003: the socket is only read between turns, so sending the
         // line to the harness could never interrupt anything - the
@@ -2794,7 +2798,8 @@ fn recording_lines(lines: Vec<Line<'static>>, glyph: char) -> Vec<Line<'static>>
 }
 
 fn draw(app: &mut App, frame: &mut Frame) {
-    let (area, sb_panel) = sb::split(app, frame.area());
+    let full = app.term.draw(frame, frame.area());
+    let (area, sb_panel) = sb::split(app, full);
     if let Some(p) = sb_panel {
         sb::draw_panel(app, frame, p);
     }
@@ -3220,6 +3225,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
     } else {
         "⏎ send · Shift+⏎/Ctrl+J new line · / commands · Ctrl+T reasoning · Ctrl+C quit"
     };
+    let hint = if app.term.shown() { term::HINT } else { hint };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(DIM)))),
         chunks[7],
@@ -3533,6 +3539,9 @@ fn run_tui(app: &mut App) -> io::Result<()> {
         if poll(wait)? {
             let ev = read()?;
             if let Event::Mouse(m) = ev {
+                if app.term.mouse(&m, terminal.size().map(|s| s.height).unwrap_or(24)) {
+                    continue;
+                }
                 match m.kind {
                     MouseEventKind::ScrollUp => {
                         app.follow = false;
@@ -3658,6 +3667,11 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                 }
                 continue;
             }
+            if let Event::Paste(text) = &ev {
+                if app.term.paste(text) {
+                    continue;
+                }
+            }
             if let Event::Paste(text) = ev {
                 // normalize CRLF/CR so a terminal paste behaves like the
                 // typed newline, then insert at the cursor
@@ -3667,6 +3681,9 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                 continue;
             }
             if let Event::Key(k) = ev {
+                if term::on_key(app, &k) {
+                    continue;
+                }
                 if k.kind != KeyEventKind::Press {
                     continue;
                 }
@@ -3840,6 +3857,8 @@ fn run_tui(app: &mut App) -> io::Result<()> {
         }
         app.tick = app.tick.wrapping_add(1);
     }
+    // no orphan shell
+    app.term.shutdown();
     let _ = crossterm::execute!(io::stdout(), DisableMouseCapture);
     let _ = crossterm::execute!(io::stdout(), DisableBracketedPaste);
     let _ = crossterm::execute!(io::stdout(), PopKeyboardEnhancementFlags);
@@ -3960,6 +3979,7 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
 
     let mut app = App {
         connected,
+        term: term::Term::default(),
         debug,
         line_tools: std::collections::HashMap::new(),
         follow: true,

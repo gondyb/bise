@@ -905,6 +905,7 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             out.push(Ev::Info(KEYS_HELP.into()));
             out.push(Ev::Info(crate::editor::EDIT_HELP.into()));
             out.push(Ev::Info(crate::editor::GHOSTTY_TIPS.into()));
+            out.push(Ev::Info(crate::term::HELP.into()));
         }
         _ => {
             let focus = sb.focus.clone();
@@ -1253,6 +1254,11 @@ fn glyph(status: &str, tick: u32) -> (&'static str, Color) {
 }
 
 /// The feed and composer area, and the panel on the right when it fits.
+/// The workspace folder (the embedded terminal starts there).
+pub(super) fn workspace(app: &App) -> Option<String> {
+    app.sb.as_ref().map(|sb| sb.workspace.clone()).filter(|w| !w.is_empty())
+}
+
 pub(super) fn split(app: &App, full: Rect) -> (Rect, Option<Rect>) {
     if app.sb.is_none() || full.width < 70 {
         return (full, None);
@@ -1724,6 +1730,7 @@ pub fn run_switchboard(
     let sb = new_sb(writer, workspace.clone());
     let mut app = App {
         connected: true,
+        term: crate::term::Term::default(),
         debug,
         line_tools: std::collections::HashMap::new(),
         follow: true,

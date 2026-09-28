@@ -6,6 +6,10 @@ description = "Ratatui terminal UI for the Bend Unified Harness (Rust port of re
 
 [dependencies]
 ratatui = "0.29"
+# the embedded terminal (term.rs): a PTY, a vt100 parser, its ratatui widget
+tui-term = "0.2"
+vt100 = "0.15"
+portable-pty = "0.9"
 crossterm = "0.28"
 unicode-width = "0.2"
 unicode-segmentation = "1"

@@ -13,6 +13,7 @@ pub(crate) fn test_app() -> App {
     std::mem::forget(_b);
     App {
         connected: true,
+        term: crate::term::Term::default(),
         debug: false,
         line_tools: std::collections::HashMap::new(),
         follow: true,
