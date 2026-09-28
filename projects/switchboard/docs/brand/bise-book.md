@@ -490,6 +490,22 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | images strip | `attached · backspace on a chip removes it` |
 | no undo (ctrl+z, or /cancel typed) | `no undo: an agent may already have acted. say the change to main instead ("no, v1 for docs").` |
 
+| drop asks first (D) | `drop {name}? its history stays in archived. y / n` · hint `y drop · n or esc keep` |
+| yes/no confirm | `answer y (yes) or n (no), then ⏎` · hint `y yes · n no · esc cancel` |
+| archived agent in view | `@{name} is archived: its history is read-only · /restore brings it back · esc → main` |
+| /theme | `theme: {mode}.` / `theme: {mode}. /theme auto, light or dark to change it.` / `theme: {mode}, for now: i couldn't save it ({err}).` / `/theme takes auto, light or dark.` |
+| /clear, ctrl+l | `display cleared — scroll up to see the earlier lines again` |
+| interrupt | `… · ctrl+c again to quit` |
+| terminal panel | title ``terminal · ctrl+` hide`` · hint ``terminal: keys go to the shell · ctrl+` hide · wheel/shift+pgup scroll · drag the border to resize`` |
+| help footer | `type to filter · tab switch · esc close` |
+| steer with nothing | `nothing to steer with: type the text after steer` |
+| connect failed | `couldn't connect: {err}` |
+| voice | `voice mode on. press ctrl+r to start recording.` / `voice mode off.` / `voice mode is off: /voice turns it on` / `no speech detected` / `voice transcription failed: {err}` / `voice transcription needs an API key: set {VAR}` / `no audio input device found.` / `audio backend is unavailable: {err}` / `the last words may be missing (the transcription did not finish in time).` / `no audio detected from the microphone — check your terminal has mic access.` (+ ` grant access in System Settings → Privacy & Security → Microphone.`) |
+| solo client (not bise) | `ask anything…` · `⏎ steer · tab queue · ctrl+c interrupt · / commands · end bottom` |
+| command descriptions | as in `/help` (lowercase, "agent"); `/agents`: `list the agents and what they do` |
+
+Not built yet (a feature, not wording): `♡ turn done · {duration}` and the two `provider down` lines.
+
 Onboarding strings: §15.
 
 ---
