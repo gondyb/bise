@@ -1798,3 +1798,7 @@ texte simple      message à l'agent affiché (main par défaut)
 /tasks            le tableau des tâches
 /interrupt        interrompre le tour de l'agent affiché
 /compact          compacter la conversation de l'agent affiché";
+
+#[cfg(test)]
+#[path = "core_tests.rs"]
+mod tests;
