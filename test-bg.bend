@@ -1,6 +1,6 @@
 # test-bg.bend — the background-command battery, end to end.
 #
-# Runs REAL commands through Sh.bash_exec (the hub snap runner) and
+# Runs REAL commands through Sh.bash_exec (runtime/proc.bend) and
 # asserts on the contract the agent actually reads. Complements the
 # LAWS: the laws pin the pure contract byte for byte, this suite runs
 # it against /bin/sh, real processes, a real fifo, real kills.

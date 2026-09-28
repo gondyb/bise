@@ -3,7 +3,7 @@
 //! One process tree per terminal window:
 //!   - the Bend REPL (repl-live / repl-scripted) runs as a child process;
 //!     it does EVERYTHING in Bend: the provider call (hub HTTP client +
-//!     core/api.bend JSON mapping) and the bash tool (hub snap runner).
+//!     core/api.bend JSON mapping) and the bash tool (Base Process.run).
 //!     No bridge process anymore.
 //!   - the ratatui TUI runs in the main thread.
 //!

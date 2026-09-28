@@ -13,7 +13,7 @@
 import Base
 import ./compaction.bend as C
 import ./text.bend as Tx
-import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
+import ../vendor/json.bend as J
 
 # ---- single-line flattening (every reply line is one line) ----
 

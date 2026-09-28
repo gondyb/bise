@@ -5,9 +5,9 @@ import Base
 import ../core/text.bend as Tx
 import ./tools-pure.bend as Xp
 
-# ---- the bash tool, fully in Bend (hub snap runner) ----
-# snap execvp's /bin/sh -c; the answer is the exit status on the first
-# line, then stdout and stderr. Commands are flattened first (the wire
+# ---- the bash tool, fully in Bend (runtime/proc.bend) ----
+# Proc.run runs /bin/sh on the wrapper; the answer is the exit status on
+# the first line, then stdout and stderr. Commands are flattened first (the wire
 # already flattens call args — double safety).
 
 def exec_of.pick.fail(+code: U32, +output: String) -> Xp.ExecRes:
@@ -182,9 +182,8 @@ def bg_poll_iters(+after: U32) -> U32:
 # command the pid file is EPHEMERAL — the wrapper must not wait for a
 # file that already came and went. An empty pid then makes kill -0
 # fail cleanly and the rc-wait completes the sync path.
-# snap's wire joins argv with newlines, so a multi-line -c script is
-# impossible; the wrapper goes to a file (the node_run pattern) and sh
-# runs the file.
+# The wrapper goes to a file (the node_run pattern) and sh runs the
+# file: the command never travels as an argument.
 #
 # The file is named by a hash of its OWN content: two different
 # commands never share a wrapper file, so an orphaned wrapper (a

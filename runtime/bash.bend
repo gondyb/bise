@@ -11,7 +11,7 @@ import ./tools-pure.bend as Xp
 import ./persist.bend as P
 import ./mcp.bend as Mcp
 import ../core/config.bend as Cf
-import 0x9bfd9d57916f3439316c2775fd1f10b4/main.bend as Snap
+import ./proc.bend as Proc
 import ./settings.bend as St
 import ./bash-pure.bend as Shp
 def bg_after.env(+envv: String, +dflt: U32) -> U32:
@@ -68,7 +68,7 @@ def bash_exec(command: String) -> IO(Xp.ExecRes):
       Shp.bg_wrap(String.trim(command), bg, secs))
     +path : String <- IO.pure(String, Shp.bash_script_path(port, script))
     w : Unit <- P.write_file(path, script)
-    out : String <- Snap.run(Con{"/bin/sh", Con{path, Nil{}}})
+    out : String <- Proc.run(Con{"/bin/sh", Con{path, Nil{}}})
     IO.pure(Xp.ExecRes, Shp.exec_of(out))
 
 # boot cleanup: the wrappers of a previous process on this port cannot be
@@ -77,7 +77,7 @@ def bash_exec(command: String) -> IO(Xp.ExecRes):
 # leak (one file per bash call) would otherwise grow without bound.
 def bash_cleanup(+port: String) -> IO(Unit):
   do IO<Unit>:
-    out : String <- Snap.run(Con{"/bin/sh", Con{"-c",
+    out : String <- Proc.run(Con{"/bin/sh", Con{"-c",
       Con{String.append("rm -f /tmp/bend-sh-",
         String.append(port, "-*.sh")), Nil{}}}})
     IO.pure(Unit, Unit{})

@@ -5,8 +5,8 @@
 #
 # The provider call and the bash tool run INSIDE this process: the hub
 # HTTP client does the TLS call to api.mistral.ai (core/api.bend maps
-# the wire request to the API JSON and the reply back), and the hub snap
-# runner execvp's /bin/sh -c. The line server itself is
+# the wire request to the API JSON and the reply back), and Base's
+# Process.run (runtime/proc.bend) runs /bin/sh. The line server itself is
 # runtime/repl-core.bend; this file builds the live session config.
 import Base
 import ../core/types.bend as T

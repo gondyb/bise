@@ -20,8 +20,8 @@ import ../core/types.bend as T
 import ../core/text.bend as Tx
 import ./persist.bend as P
 import ./mcp.bend as Mc
-import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
-import 0x9bfd9d57916f3439316c2775fd1f10b4/main.bend as Snap
+import ../vendor/json.bend as J
+import ./proc.bend as Proc
 import ./skills-pure.bend as Skp
 
 # ---- the tool contract ----
@@ -77,7 +77,7 @@ def skills_scan() -> IO(Unit):
     +port : String <- IO.pure(String, P.env_or(pr, "0"))
     +path : String <- IO.pure(String, scan_path(port))
     u : Unit <- P.write_file(path, scan_script(idx))
-    out : String <- Snap.run(Con{"/bin/sh", Con{path, Nil{}}})
+    out : String <- Proc.run(Con{"/bin/sh", Con{path, Nil{}}})
     IO.pure(Unit, Unit{})
 
 # ---- execution ----

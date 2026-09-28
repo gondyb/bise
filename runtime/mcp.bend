@@ -29,7 +29,7 @@ import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
 # request bodies are built with J; every PARSE goes through Jv, which keeps
 # numbers as text: Bend's Nat is 48-bit, and the connector bootstrap
 # carries 2^53-1 JSON-schema maximums that would fail to parse otherwise
-import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
+import ../vendor/json.bend as J
 import 0x16458a2db4f36577294543ec2a6d420c/json.bend as Jv
 import ./mcp-pure.bend as Mcp
 

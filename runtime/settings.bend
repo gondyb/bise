@@ -5,7 +5,7 @@
 import Base
 import ../core/text.bend as Tx
 import ./persist.bend as P
-import 0x9bfd9d57916f3439316c2775fd1f10b4/main.bend as Snap
+import ./proc.bend as Proc
 import ./settings-pure.bend as Stp
 # ---- the config file (~/.bend-harness/config.toml) ----
 # The vibe CLI ergonomics: a commented template is written on first
@@ -63,7 +63,7 @@ def write_cfg_template.m(m: Maybe<&2, String>, +path: String)
       IO.pure(Unit, Unit{})
     case None{}:
       do IO<Unit>:
-        o : String <- Snap.run(Con{"/bin/sh", Con{"-c",
+        o : String <- Proc.run(Con{"/bin/sh", Con{"-c",
           Con{String.append("mkdir -p -- \"$(dirname -- ",
             String.append(Tx.sh_quote(path), ")\"")), Nil{}}}})
         w : Unit <- P.write_file(path, Stp.CONFIG_TEMPLATE())

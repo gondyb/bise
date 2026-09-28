@@ -3,7 +3,8 @@
 The pinned hub packages (content-hash imports) were written for the
 2.0.29 C runtime API. bend 2.0.31 changed that API, so the cached
 copies under ~/.bend/lib were patched in place. These patches live
-OUTSIDE the repo; re-fetching the packages reverts them.
+OUTSIDE the repo; re-fetching the packages reverts them. Only the http
+package still needs one (see "Patches removed" below).
 
 ## 0xbf477e663cf4acb1369a68e0f0fa713b (http/wire/bytes/url/dns/zlib)
 
@@ -17,18 +18,21 @@ OUTSIDE the repo; re-fetching the packages reverts them.
   every effect block with #ifdef, so unused effects (whose CID defines
   are not emitted) stay skipped.
 
-## 0x1f4d6c03caf955232d0b0dc6e6f36cf4 (json)
+## Patches removed (fixed in the repo instead)
 
-- json.bend: Nat.read.fit / Nat.read.max (removed base extensions)
-  replaced by Nat.is_le(acc, Nat.div(Nat.sub(2^48-1, d), 10n)), the
-  max built by factorization (16777215n * 16777217n) because 2.0.31
-  caps Nat literals at 2^32-1.
+- 0x1f4d6c03caf955232d0b0dc6e6f36cf4 (json): vendored as
+  vendor/json.bend, with its one-line fix (Nat.read.fit / Nat.read.max,
+  gone from Base, written out as Nat.is_le(acc, Nat.div(Nat.sub(2^48-1,
+  d), 10n))). No module imports the hub hash anymore.
+- 0x9bfd9d57916f3439316c2775fd1f10b4 (snaprun): dropped. Base 2.0.32
+  ships Process.run; runtime/proc.bend wraps it with the same answer
+  (exit status line, then stdout and stderr interleaved).
 
-## 0x9bfd9d57916f3439316c2775fd1f10b4 (snaprun)
-
-- exec.c/start.c/par.c: CID_SNAPRUN_* renamed to the namespaced form
-  (CID_0X9BFD..._MAIN_SNAPRUN_*) and the io_eff constructors wrapped
-  in #ifdef guards (same pattern as wire.c) for unused effects.
+Only the http package below is still patched in ~/.bend/lib: no
+2.0.32-compatible version exists on the hub yet (bend-kit-http
+0.21.1.0 still calls UDP.bind(port) in its dns dependency). A build
+against a cache holding pristine copies of every other package passes
+(BEND_LIB=<dir> points bend at another cache).
 
 # Additional patches for bend 2.0.32
 
@@ -58,7 +62,7 @@ builds (exit 0).
 The gate is green again (ALL PROOFS CHECK) because LAWS.bend imports
 only pure modules:
 - core/program.bend parses JSON with the pure RFC 8259 library
-  (0x1f4d6c03) instead of 0x16458a2d (whose encoder is `@unsafe`);
+  (vendor/json.bend) instead of 0x16458a2d (whose encoder is `@unsafe`);
   runtime/main.bend and runtime/skills.bend switched with it.
 - every runtime module the laws pin is split in two: `<name>-pure.bend`
   holds the defs the laws reach (no IO, no `@unsafe`, no foreign code

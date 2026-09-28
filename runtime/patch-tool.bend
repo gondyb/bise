@@ -8,7 +8,7 @@ import ./tools.bend as X
 import ./tools-pure.bend as Xp
 import ./persist.bend as P
 import ../core/patch.bend as Pa
-import 0x9bfd9d57916f3439316c2775fd1f10b4/main.bend as Snap
+import ./proc.bend as Proc
 # ---- apply_patch: the Codex V4A file editor ----
 # core/patch.bend owns the parser and the strict sequential matcher
 # (both law-pinned); this layer only moves bytes. VALIDATE first,
@@ -150,7 +150,7 @@ def exec_patch.run(preps: List<&2, Prep>, +acc: List<&2, String>)
             IO.pure(List<&2, String>, acc)
         case PrepAdd{+path, +content}:
           do IO<List<&2, String>>:
-            o : String <- Snap.run(Con{"/bin/sh", Con{"-c",
+            o : String <- Proc.run(Con{"/bin/sh", Con{"-c",
               Con{String.append("mkdir -p -- \"$(dirname -- ",
                 String.append(Tx.sh_quote(path), ")\"")), Nil{}}}})
             w : Unit <- P.write_file(path, content)
@@ -161,7 +161,7 @@ def exec_patch.run(preps: List<&2, Prep>, +acc: List<&2, String>)
             exec_patch.run(rest, Con{String.append("updated ", path), acc})
         case PrepDelete{+path}:
           do IO<List<&2, String>>:
-            o : String <- Snap.run(Con{"/bin/sh", Con{"-c",
+            o : String <- Proc.run(Con{"/bin/sh", Con{"-c",
               Con{String.append("rm -f -- ", Tx.sh_quote(path)), Nil{}}}})
             exec_patch.run(rest, Con{String.append("deleted ", path), acc})
 

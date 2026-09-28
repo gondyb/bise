@@ -28,7 +28,7 @@
 # values).
 import Base
 import ./types.bend as T
-import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
+import ../vendor/json.bend as J
 
 # the interpreter's verdict
 type PR is Data:

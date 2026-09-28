@@ -3,7 +3,7 @@
 # PROOF gate refuses any in the import closure since Bend 2.0.32).
 import Base
 import ../core/discovery.bend as D
-import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
+import ../vendor/json.bend as J
 import ../core/types.bend as T
 
 def desc_or(m: Maybe<&2, String>, +dflt: String) -> String:

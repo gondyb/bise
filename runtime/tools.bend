@@ -8,7 +8,7 @@ import Base
 import ../core/types.bend as T
 import ../core/discovery.bend as D
 import ./persist.bend as P
-import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
+import ../vendor/json.bend as J
 import ./tools-pure.bend as Xtp
 
 def search_desc.read(m: Maybe<&2, String>) -> String:

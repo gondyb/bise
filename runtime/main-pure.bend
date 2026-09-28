@@ -4,7 +4,7 @@
 import Base
 import ../core/api.bend as Api
 import ../core/compaction.bend as C
-import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
+import ../vendor/json.bend as J
 import ./model.bend as M
 import ../core/obs.bend as O
 import ./remote.bend as Rem
@@ -353,7 +353,7 @@ def json_m(r: Result<&2, &2, String, J.Json>) -> Maybe<&2, J.Json>:
     case Fail{_}:
       None{}
 
-# parse the snap output: exit-code line, then stdout
+# parse the Proc.run output: exit-code line, then stdout
 def node_req.tool_str(v: J.Json) -> String:
   match v:
     case J.JStr{+s}:

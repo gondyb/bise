@@ -35,8 +35,8 @@ import ./bash.bend as Sh
 import ./patch-tool.bend as Ptl
 import ./selftools.bend as Sf
 import ./selftools-pure.bend as Sfp
-import 0x9bfd9d57916f3439316c2775fd1f10b4/main.bend as Snap
-import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
+import ./proc.bend as Proc
+import ../vendor/json.bend as J
 import ./main-pure.bend as Rtp
 
 # where the loop's output goes: stdout, or a REPL socket. Sockets are
@@ -216,7 +216,7 @@ def node_run.go(+prog: String, +results: List<&2, String>, +path: String,
   do IO<NR>:
     u : Unit <- P.write_file(path, prog)
     u2 : Unit <- P.write_file(res_path, results_json(results))
-    +out : String <- Snap.run(Con{"/bin/sh", Con{"-c",
+    +out : String <- Proc.run(Con{"/bin/sh", Con{"-c",
       Con{node_cmd(path, res_path, err_path), Nil{}}}})
     IO.pure(NR, node_split(Tx.find(out, "\n", 0n), out))
 

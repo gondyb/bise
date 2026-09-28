@@ -23,7 +23,7 @@ import ./runtime/settings-pure.bend as St
 import ./runtime/mcp-pure.bend as Mc
 import ./runtime/skills-pure.bend as Sk
 import ./runtime/repl-core-pure.bend as Rp
-import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
+import ./vendor/json.bend as J
 
 # LAW: a checkpoint restores to exactly the session it exported.
 law checkpoint_roundtrip:

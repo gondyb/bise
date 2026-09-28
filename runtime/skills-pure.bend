@@ -2,7 +2,7 @@
 # no IO, no @unsafe and no foreign code in its closure (the
 # PROOF gate refuses any in the import closure since Bend 2.0.32).
 import Base
-import 0x1f4d6c03caf955232d0b0dc6e6f36cf4/json.bend as J
+import ../vendor/json.bend as J
 import ../core/text.bend as Tx
 
 def tab() -> Char:
