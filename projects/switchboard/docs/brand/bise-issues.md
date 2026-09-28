@@ -1118,12 +1118,30 @@ Index:
 
 ### BISE-82 · visual QA
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-c-cards · **commits:** e0b7e3a
 - **track:** S · **owns:** no code; screenshots under
   `projects/switchboard/docs/brand/qa/`
 - **do:** every screen of `tui-screens.html`, reproduced in the real TUI, in
   Ghostty dark and a light terminal; a table screen × OK / differs (what).
 - **notes:**
+  - Done in tmux (not Ghostty: no Screen Recording permission) at
+    `217b648`, dark / light (`BISE_THEME`) / `BISE_ASCII=1` / onboarding,
+    with `qa/capture.py` (throwaway hub + fake provider, re-runnable);
+    captures as `.ansi` + `.html`, PNG for the cited ones (headless
+    Chrome). The report: `qa/visual-qa.md` (16 differences ranked, a
+    table per screen, the colors vs §5).
+  - Top differences: every report shows twice in main (card line + report
+    line); Info / Warn lines wrap at column 1; a scrollbar on the feed; an
+    agent's reply at column 1 in its own view; a message typed during a
+    turn stays `·` after the answer; the `/` popup cuts its descriptions;
+    compaction lines (`≡` running, raw `44 (manual)`, no `▸`); help key
+    caps paint raw colors (told K); book §6 still says `✉` for `@`.
+  - Light regressions found on `9c79318` (main's replies in the dark text
+    color, popups in dark dim / faint / accent), fixed by BISE-83
+    (`6a3a770`, `bb3f2f9`), confirmed at `217b648`.
+  - n/a with the fake provider: main's own words (change your mind, sends
+    work back, summaries), drop / overlap / restart cards, voice, images
+    from tools, 30 agents, 50k lines, narrow tables.
 
 ### BISE-83 · remove deprecated theme aliases
 
