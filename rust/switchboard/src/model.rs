@@ -1,5 +1,6 @@
-//! The hub's durable state (RFC 0001 §12): a projection of the journal
-//! events. `State::apply` is the only way the durable state changes;
+//! The hub's durable state (RFC 0001 §12), as the views read it. sb-core
+//! (hub/*.bend) is its only source of truth: it applies the journal
+//! events and sends this state back after each step (core.rs stores it);
 //! the runtime-only fields (`Agent::run`, `Agent::waiting`) are set by
 //! the core from REPL activity and are never journaled.
 
@@ -318,7 +319,7 @@ pub enum Event {
     MainNotesFlushed,
 }
 
-/// The durable projection of the journal.
+/// The durable state, as sb-core last sent it.
 #[derive(Clone, Debug, Default)]
 pub struct State {
     pub agents: BTreeMap<String, Agent>,
@@ -401,131 +402,21 @@ impl State {
         name == MAIN || name == USER || name == HUB || self.resolve(name).is_some()
     }
 
-    pub fn apply(&mut self, ev: &Event) {
-        match ev {
-            Event::TaskCreated {
-                name,
-                parent,
-                brief,
-                ws,
-                at_ms,
-            } => {
-                self.agents.insert(
-                    name.clone(),
-                    Agent {
-                        name: name.clone(),
-                        dir: name.clone(),
-                        is_main: false,
-                        parent: Some(parent.clone()),
-                        brief: brief.clone(),
-                        created_ms: *at_ms,
-                        ws: ws.clone(),
-                        lifecycle: Lifecycle::Active,
-                        failure: None,
-                        declared: None,
-                        last_report: None,
-                        aliases: Vec::new(),
-                        files: BTreeSet::new(),
-                        snapshot_ref: None,
-                        run: Run::Down,
-                        waiting: false,
-                        turn_started_ms: None,
-                        activity: None,
-                    },
-                );
-                if !self.order.contains(name) {
-                    self.order.push(name.clone());
-                }
-            }
-            Event::Lifecycle {
-                name,
-                lifecycle,
-                reason,
-            } => {
-                if let Some(a) = self.agents.get_mut(name) {
-                    a.lifecycle = lifecycle.clone();
-                    a.failure = reason.clone();
-                    if *lifecycle == Lifecycle::Active {
-                        a.declared = None;
-                    }
-                }
-            }
-            Event::WorkspaceChanged { name, ws } => {
-                if let Some(a) = self.agents.get_mut(name) {
-                    a.ws = ws.clone();
-                }
-            }
-            Event::Snapshot { name, snapshot_ref } => {
-                if let Some(a) = self.agents.get_mut(name) {
-                    a.snapshot_ref = snapshot_ref.clone();
-                }
-            }
-            Event::Declared { name, status, note } => {
-                if let Some(a) = self.agents.get_mut(name) {
-                    a.declared = status.map(|s| (s, note.clone()));
-                }
-            }
-            Event::Reported { name, report } => {
-                if let Some(a) = self.agents.get_mut(name) {
-                    a.last_report = Some(report.clone());
-                }
-            }
-            Event::FileTouched { name, path } => {
-                if let Some(a) = self.agents.get_mut(name) {
-                    a.files.insert(path.clone());
-                }
-            }
-            Event::Renamed { name, new_name } => {
-                if let Some(mut a) = self.agents.remove(name) {
-                    a.aliases.push(name.clone());
-                    a.name = new_name.clone();
-                    self.agents.insert(new_name.clone(), a);
-                    for n in self.order.iter_mut() {
-                        if n == name {
-                            *n = new_name.clone();
-                        }
-                    }
-                }
-            }
-            Event::MessageSent { msg } => {
-                self.next_msg = self.next_msg.max(msg.id + 1).max(msg.thread + 1);
-                self.msgs.insert(msg.id, msg.clone());
-                self.msg_state.insert(
-                    msg.id,
-                    MsgState::Queued {
-                        reason: "new".to_string(),
-                    },
-                );
-                if let Some(r) = msg.reply_to {
-                    let replier_is_recipient = self
-                        .msgs
-                        .get(&r)
-                        .is_some_and(|orig| orig.to == msg.from || msg.from == USER);
-                    if replier_is_recipient {
-                        self.settled.insert(r);
-                    }
-                }
-            }
-            Event::MessageState { id, state } => {
-                self.msg_state.insert(*id, state.clone());
-            }
-            Event::MessageSettled { id } => {
-                self.settled.insert(*id);
-            }
-            Event::CardOpened { card } => {
-                self.next_card = self.next_card.max(card.id + 1);
-                self.cards.insert(card.id, card.clone());
-            }
-            Event::CardClosed { id, .. } => {
-                self.cards.remove(id);
-            }
-            Event::MainNote { text, .. } => {
-                self.main_notes.push(text.clone());
-            }
-            Event::MainNotesFlushed => {
-                self.main_notes.clear();
-            }
-        }
+    /// Tests only: a task as its creation leaves it (the real state
+    /// comes from sb-core, see core.rs).
+    #[cfg(test)]
+    pub fn test_task(&mut self, name: &str, objective: &str) {
+        let mut a = self.agents[MAIN].clone();
+        a.name = name.to_string();
+        a.dir = name.to_string();
+        a.is_main = false;
+        a.parent = Some(MAIN.to_string());
+        a.brief = Brief {
+            objective: objective.to_string(),
+            ..Brief::default()
+        };
+        self.agents.insert(name.to_string(), a);
+        self.order.push(name.to_string());
     }
 
     /// Messages waiting for delivery to `name`, oldest first.
@@ -597,7 +488,7 @@ mod tests {
     #[test]
     fn status_follows_lifecycle_then_run_then_declared() {
         let mut st = State::new("/w");
-        st.apply(&created("a"));
+        st.test_task("a", "do it");
         let a = st.agents.get_mut("a").unwrap();
         assert_eq!(a.status(), Status::Starting);
         a.run = Run::Busy;
@@ -610,56 +501,5 @@ mod tests {
         assert_eq!(a.status(), Status::Done);
         a.lifecycle = Lifecycle::Archived;
         assert_eq!(a.status(), Status::Archived);
-    }
-
-    #[test]
-    fn rename_keeps_the_old_name_as_alias() {
-        let mut st = State::new("/w");
-        st.apply(&created("a"));
-        st.apply(&Event::Renamed {
-            name: "a".into(),
-            new_name: "b".into(),
-        });
-        assert_eq!(st.resolve("a").as_deref(), Some("b"));
-        assert!(st.name_taken("a"));
-        assert_eq!(st.order, vec!["main".to_string(), "b".to_string()]);
-    }
-
-    #[test]
-    fn a_reply_settles_the_question() {
-        let mut st = State::new("/w");
-        st.apply(&created("a"));
-        let q = Msg {
-            id: 1,
-            thread: 1,
-            from: "a".into(),
-            to: MAIN.into(),
-            reply_to: None,
-            expect_reply: true,
-            auto: false,
-            text: "?".into(),
-            created_ms: 1,
-            plain: false,
-            queued: false,
-            via: None,
-        };
-        st.apply(&Event::MessageSent { msg: q.clone() });
-        st.apply(&Event::MessageState {
-            id: 1,
-            state: MsgState::Delivered,
-        });
-        assert_eq!(st.unanswered_for(MAIN).len(), 1);
-        let r = Msg {
-            id: 2,
-            from: MAIN.into(),
-            to: "a".into(),
-            reply_to: Some(1),
-            expect_reply: false,
-            text: "!".into(),
-            ..q
-        };
-        st.apply(&Event::MessageSent { msg: r });
-        assert!(st.unanswered_for(MAIN).is_empty());
-        assert_eq!(st.next_msg, 3);
     }
 }

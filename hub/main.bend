@@ -22,6 +22,7 @@ import ./codec.bend as C
 import ./cx.bend as X
 
 import ./core.bend as H
+import ./view.bend as V
 
 type Got is Type:
   Got{s: Socket, h: H.Hub, buf: String}
@@ -33,6 +34,7 @@ type Tag is Data:
   TInit{}
   TReplay{}
   TPing{}
+  TView{}
   TStep{}
 
 type Flow is Type:
@@ -57,8 +59,11 @@ def done_or_need.go(-o: M.St, need: Maybe<&2, J.Json>, +c: X.Core<o>, +r: X.R, +
     case Some{+q}:
       (h, J.stringify(J.obj([J.kv("need", q)])))
     case None{}:
-      (H.Hub{X.Core.d(o, c), X.R.with_ans(r, Nil{})},
-        J.stringify(J.obj([J.kv("fx", J.JArr{fxs_json(X.Core.fx(o, c))}), J.kv("dirty", J.JBool{X.R.dirty(r)})])))
+      +d = X.Core.d(o, c)
+      +fx = X.Core.fx(o, c)
+      (H.Hub{d, X.R.with_ans(r, Nil{})},
+        J.stringify(J.obj([J.kv("fx", J.JArr{fxs_json(fx)}), J.kv("dirty", J.JBool{X.R.dirty(r)}),
+          J.kv("view", V.view(d, X.R.rts(r), False{}, V.touched(X.journal(fx))))])))
 
 # the hub after one input, and the answer line
 def done_or_need(-o: M.St, cx: X.Cx<o>, +h: H.Hub) -> H.Hub & String:
@@ -76,7 +81,8 @@ def replay(+h: H.Hub, m: Maybe<&2, M.Ev>) -> H.Hub:
 def tag_of(+t: String) -> Tag:
   Bool.pick(Tag, String.eq(t, "init"), TInit{},
     Bool.pick(Tag, String.eq(t, "replay"), TReplay{},
-      Bool.pick(Tag, String.eq(t, "ping"), TPing{}, TStep{})))
+      Bool.pick(Tag, String.eq(t, "ping"), TPing{},
+        Bool.pick(Tag, String.eq(t, "view_all"), TView{}, TStep{}))))
 
 def handle.tag(tag: Tag, +h: H.Hub, +i: J.Json) -> H.Hub & String:
   match tag:
@@ -86,6 +92,8 @@ def handle.tag(tag: Tag, +h: H.Hub, +i: J.Json) -> H.Hub & String:
       (replay(h, C.ev_of(Maybe.default(&2, J.Json, J.get(i, "ev"), J.JNull{}))), "{}")
     case TPing{}:
       (h, "{}")
+    case TView{}:
+      (h, J.stringify(J.obj([J.kv("view", V.view(H.Hub.d(h), X.R.rts(H.Hub.r(h)), True{}, Nil{}))])))
     case TStep{}:
       done_or_need(H.Hub.d(h), H.step(h, i), h)
 
@@ -189,9 +197,11 @@ def serve.after(am: Listener & Result<&1, &1, U32 & String, Socket>, +h: H.Hub) 
     case (l, Fail{_}):
       IO.print("sb-core: accept failed")
     case (l, Done{s}):
+      # one connection: its end (the daemon exited or was killed) ends
+      # sb-core, so no orphan survives the hub
       do IO<Unit>:
         h2 : H.Hub <- conn(s, h, "")
-        serve(l, h2)
+        IO.pure(Unit, Unit{})
 
 def port_of(r: Result<&1, &1, U32 & String, String>) -> U32:
   match r:

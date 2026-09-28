@@ -425,7 +425,7 @@ def status_of_run(+a: M.Agent, x: X.Rt) -> String:
 # the status every view shows (model.rs Agent::status)
 def status_str(a: M.Agent, +x: X.Rt) -> String:
   match a:
-    case M.Agent{+n, +im, +pa, life, +de, +al, +fi, +ws}:
+    case M.Agent{+n, +im, +pa, life, +de, +al, +fi, +ws, +di, +br, +cr, +fa, +no, +rp, +sn}:
       match life:
         case M.LArchived{}:
           "archived"
@@ -434,7 +434,7 @@ def status_str(a: M.Agent, +x: X.Rt) -> String:
         case M.LFailed{}:
           "failed"
         case M.LActive{}:
-          status_of_run(M.Agent{n, im, pa, M.LActive{}, de, al, fi, ws}, x)
+          status_of_run(M.Agent{n, im, pa, M.LActive{}, de, al, fi, ws, di, br, cr, fa, no, rp, sn}, x)
 
 # the relation of the sender to the recipient, as the recipient reads it
 # (prompts.rs relation)
@@ -975,7 +975,7 @@ def drop.now(-o: M.St, has_wt: Bool, +cx: X.Cx<o>, +a: M.Agent, +loss: J.Json) -
       drop.finish(o, stop_task(o, cx, M.Agent.name(a), M.LArchived{}, "drop"), a, "")
     case True{}:
       +cx2 = stop_task(o, cx, M.Agent.name(a), M.LArchived{}, "drop")
-      drop.git(o, ask(o, cx2, J.obj([J.kv("q", J.JStr{"worktree_drop"}), J.kv("name", J.JStr{M.Agent.name(a)}),
+      drop.git(o, ask(o, cx2, J.obj([J.kv("q", J.JStr{"worktree_drop"}), J.kv("name", J.JStr{M.Agent.name(a)}), J.kv("ws", M.Agent.ws(a)),
         J.kv("dirty", J.JNum{J.get_num_or(loss, "dirty", 0n)}), J.kv("unpushed", J.JNum{J.get_num_or(loss, "unpushed", 0n)})])), a)
 
 def drop.decide(-o: M.St, confirm: Bool, +cx: X.Cx<o>, +a: M.Agent, +has_wt: Bool, +loss: J.Json, +busy: Bool) -> X.Cx<o> & DropR:
@@ -1001,7 +1001,7 @@ def drop.loss(-o: M.St, p: X.Cx<o> & Maybe<&2, J.Json>, +a: M.Agent, +force: Boo
 def drop.wt(-o: M.St, has_wt: Bool, +cx: X.Cx<o>, +a: M.Agent, +force: Bool) -> X.Cx<o> & DropR:
   match has_wt:
     case True{}:
-      drop.loss(o, ask(o, cx, J.obj([J.kv("q", J.JStr{"worktree_loss"}), J.kv("name", J.JStr{M.Agent.name(a)})])), a, force, True{})
+      drop.loss(o, ask(o, cx, J.obj([J.kv("q", J.JStr{"worktree_loss"}), J.kv("name", J.JStr{M.Agent.name(a)}), J.kv("ws", M.Agent.ws(a))])), a, force, True{})
     case False{}:
       drop.loss(o, (cx, Some{J.obj([J.kv("dirty", J.JNum{0n}), J.kv("unpushed", J.JNum{0n})])}), a, force, False{})
 
@@ -1057,10 +1057,18 @@ def restore.ans(-o: M.St, p: X.Cx<o> & Maybe<&2, J.Json>, +a: M.Agent) -> X.Cx<o
     case (+cx, Some{+ans}):
       restore.res(o, ans_ok(ans), cx, a)
 
+def jopt(m: Maybe<&2, String>) -> J.Json:
+  match m:
+    case None{}:
+      J.JNull{}
+    case Some{+x}:
+      J.JStr{x}
+
 def restore.wt(-o: M.St, dropped: Bool, +cx: X.Cx<o>, +a: M.Agent) -> X.Cx<o> & TaskR:
   match dropped:
     case True{}:
-      restore.ans(o, ask(o, cx, J.obj([J.kv("q", J.JStr{"worktree_restore"}), J.kv("name", J.JStr{M.Agent.name(a)})])), a)
+      restore.ans(o, ask(o, cx, J.obj([J.kv("q", J.JStr{"worktree_restore"}), J.kv("name", J.JStr{M.Agent.name(a)}), J.kv("ws", M.Agent.ws(a)),
+        J.kv("snapshot_ref", jopt(M.Agent.snap(a)))])), a)
     case False{}:
       restore.go(o, cx, a)
 

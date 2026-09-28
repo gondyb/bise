@@ -45,7 +45,9 @@ type Card is Data:
 type Agent is Data:
   Agent{name: String, is_main: Bool, parent: Maybe<&2, String>, life: Life,
     declared: Maybe<&2, Decl>, aliases: List<&2, String>,
-    files: List<&2, String>, ws: J.Json}
+    files: List<&2, String>, ws: J.Json, dir: String, brief: J.Json,
+    created: Nat, failure: Maybe<&2, String>, note: String, report: J.Json,
+    snap: Maybe<&2, String>}
 
 type St is Data:
   St{agents: List<&2, Agent>, order: List<&2, String>, msgs: List<&2, MRec>,
@@ -70,9 +72,11 @@ type Ev is Data:
   ENotesFlushed{}
 
 type AgentOp is Data:
-  OLife{life: Life}
+  OLife{life: Life, reason: Maybe<&2, String>}
+  OSnap{snap: Maybe<&2, String>}
+  OReport{report: J.Json}
   OWs{ws: J.Json}
-  ODeclared{d: Maybe<&2, Decl>}
+  ODeclared{d: Maybe<&2, Decl>, note: String}
   OFile{path: String}
   ORename{new_name: String}
 
@@ -125,46 +129,6 @@ def Card.created(x: Card) -> Nat:
     case Card{_, _, _, _, _, +created}:
       created
 
-def Agent.name(x: Agent) -> String:
-  match x:
-    case Agent{+name, _, _, _, _, _, _, _}:
-      name
-
-def Agent.is_main(x: Agent) -> Bool:
-  match x:
-    case Agent{_, +is_main, _, _, _, _, _, _}:
-      is_main
-
-def Agent.parent(x: Agent) -> Maybe<&2, String>:
-  match x:
-    case Agent{_, _, +parent, _, _, _, _, _}:
-      parent
-
-def Agent.life(x: Agent) -> Life:
-  match x:
-    case Agent{_, _, _, +life, _, _, _, _}:
-      life
-
-def Agent.declared(x: Agent) -> Maybe<&2, Decl>:
-  match x:
-    case Agent{_, _, _, _, +declared, _, _, _}:
-      declared
-
-def Agent.aliases(x: Agent) -> List<&2, String>:
-  match x:
-    case Agent{_, _, _, _, _, +aliases, _, _}:
-      aliases
-
-def Agent.files(x: Agent) -> List<&2, String>:
-  match x:
-    case Agent{_, _, _, _, _, _, +files, _}:
-      files
-
-def Agent.ws(x: Agent) -> J.Json:
-  match x:
-    case Agent{_, _, _, _, _, _, _, +ws}:
-      ws
-
 def St.agents(x: St) -> List<&2, Agent>:
   match x:
     case St{+agents, _, _, _, _, _, _}:
@@ -212,8 +176,13 @@ def rec_of(xs: List<&2, MRec>, +id: Nat) -> Maybe<&2, MRec>:
     case Con{+r, +t}:
       Bool.pick(Maybe<&2, MRec>, Nat.is_eq(Msg.id(MRec.msg(r)), id), Some{r}, rec_of(t, id))
 
-def new_agent(+name: String, +is_main: Bool, +parent: Maybe<&2, String>, +ws: J.Json) -> Agent:
-  Agent{name, is_main, parent, LActive{}, None{}, Nil{}, Nil{}, ws}
+def new_agent(+name: String, +is_main: Bool, +parent: Maybe<&2, String>, +ws: J.Json, +brief: J.Json, +created: Nat) -> Agent:
+  Agent{name, is_main, parent, LActive{}, None{}, Nil{}, Nil{}, ws, name, brief, created, None{}, "", J.JNull{}, None{}}
+
+def Agent.name(x: Agent) -> String:
+  match x:
+    case Agent{+name, _, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      name
 
 # replace (or add) the agent named `n`
 def put_agent(xs: List<&2, Agent>, +n: String, +a: Agent) -> List<&2, Agent>:
@@ -322,6 +291,11 @@ def agent_named(xs: List<&2, Agent>, +n: String) -> Maybe<&2, Agent>:
     case Con{+a, +t}:
       Bool.pick(Maybe<&2, Agent>, String.eq(Agent.name(a), n), Some{a}, agent_named(t, n))
 
+def Agent.aliases(x: Agent) -> List<&2, String>:
+  match x:
+    case Agent{_, _, _, _, _, +aliases, _, _, _, _, _, _, _, _, _}:
+      aliases
+
 def agent_alias(xs: List<&2, Agent>, +n: String) -> Maybe<&2, String>:
   match xs:
     case Nil{}:
@@ -366,18 +340,22 @@ def agent_op.file(known: Bool, +files: List<&2, String>, +p: String) -> List<&2,
 
 def agent_op(+a: Agent, op: AgentOp) -> Agent:
   match a:
-    case Agent{+name, +is_main, +parent, +life, +declared, +aliases, +files, +ws}:
+    case Agent{+name, +is_main, +parent, +life, +declared, +aliases, +files, +ws, +dir, +brief, +created, +failure, +note, +report, +snap}:
       match op:
-        case OLife{+l}:
-          Agent{name, is_main, parent, l, agent_op.decl(l, declared), aliases, files, ws}
+        case OLife{+l, +why}:
+          Agent{name, is_main, parent, l, agent_op.decl(l, declared), aliases, files, ws, dir, brief, created, why, note, report, snap}
         case OWs{+w}:
-          Agent{name, is_main, parent, life, declared, aliases, files, w}
-        case ODeclared{+d}:
-          Agent{name, is_main, parent, life, d, aliases, files, ws}
+          Agent{name, is_main, parent, life, declared, aliases, files, w, dir, brief, created, failure, note, report, snap}
+        case ODeclared{+d, +n}:
+          Agent{name, is_main, parent, life, d, aliases, files, ws, dir, brief, created, failure, n, report, snap}
         case OFile{+p}:
-          Agent{name, is_main, parent, life, declared, aliases, agent_op.file(str_in(files, p), files, p), ws}
+          Agent{name, is_main, parent, life, declared, aliases, agent_op.file(str_in(files, p), files, p), ws, dir, brief, created, failure, note, report, snap}
         case ORename{+nn}:
-          Agent{nn, is_main, parent, life, declared, snoc(String, aliases, name), files, ws}
+          Agent{nn, is_main, parent, life, declared, snoc(String, aliases, name), files, ws, dir, brief, created, failure, note, report, snap}
+        case OSnap{+sn}:
+          Agent{name, is_main, parent, life, declared, aliases, files, ws, dir, brief, created, failure, note, report, sn}
+        case OReport{+rp}:
+          Agent{name, is_main, parent, life, declared, aliases, files, ws, dir, brief, created, failure, note, rp, snap}
 
 # apply an operation to the agent named `n` (no agent: nothing changes)
 def map_agent(xs: List<&2, Agent>, +n: String, +op: AgentOp) -> List<&2, Agent>:
@@ -467,20 +445,20 @@ def apply(+st: St, e: Ev) -> St:
   match st:
     case St{+agents, +order, +msgs, +cards, +notes, +nm, +nc}:
       match e:
-        case ETaskCreated{+name, +parent, _, +ws, _}:
-          St{put_agent(agents, name, new_agent(name, False{}, Some{parent}, ws)),
+        case ETaskCreated{+name, +parent, +brief, +ws, +at}:
+          St{put_agent(agents, name, new_agent(name, False{}, Some{parent}, ws, brief, at)),
             Bool.pick(List<&2, String>, str_in(order, name), order, snoc(String, order, name)),
             msgs, cards, notes, nm, nc}
-        case ELifecycle{+name, +life, _}:
-          St{map_agent(agents, name, OLife{life}), order, msgs, cards, notes, nm, nc}
+        case ELifecycle{+name, +life, +reason}:
+          St{map_agent(agents, name, OLife{life, reason}), order, msgs, cards, notes, nm, nc}
         case EWorkspace{+name, +ws}:
           St{map_agent(agents, name, OWs{ws}), order, msgs, cards, notes, nm, nc}
-        case ESnapshot{_, _}:
-          St{agents, order, msgs, cards, notes, nm, nc}
-        case EDeclared{+name, +status, _}:
-          St{map_agent(agents, name, ODeclared{status}), order, msgs, cards, notes, nm, nc}
-        case EReported{_, _}:
-          St{agents, order, msgs, cards, notes, nm, nc}
+        case ESnapshot{+name, +snap}:
+          St{map_agent(agents, name, OSnap{snap}), order, msgs, cards, notes, nm, nc}
+        case EDeclared{+name, +status, +note}:
+          St{map_agent(agents, name, ODeclared{status, note}), order, msgs, cards, notes, nm, nc}
+        case EReported{+name, +report}:
+          St{map_agent(agents, name, OReport{report}), order, msgs, cards, notes, nm, nc}
         case EFileTouched{+name, +path}:
           St{map_agent(agents, name, OFile{path}), order, msgs, cards, notes, nm, nc}
         case ERenamed{+name, +nn}:
@@ -603,7 +581,9 @@ def ws_path(+ws: J.Json) -> String:
 def init(+workspace: String) -> St:
   +ws = J.obj([J.kv("mode", J.str("shared")), J.kv("path", J.str(workspace)),
     J.kv("branch", J.JNull{}), J.kv("base_commit", J.JNull{}), J.kv("dropped", J.JBool{False{}})])
-  St{[new_agent(MAIN(), True{}, None{}, ws)], [MAIN()], Nil{}, Nil{}, Nil{}, 1n, 1n}
+  +brief = J.obj([J.kv("objective", J.str("")), J.kv("context", J.str("")), J.kv("constraints", J.JArr{Nil{}}),
+    J.kv("done_when", J.JNull{}), J.kv("report_format", J.JNull{})])
+  St{[new_agent(MAIN(), True{}, None{}, ws, brief, 0n)], [MAIN()], Nil{}, Nil{}, Nil{}, 1n, 1n}
 
 def Msg.auto(x: Msg) -> Bool:
   match x:
@@ -645,3 +625,68 @@ def clip_tail.pick(fits: Bool, +s: String, +max: Nat) -> String:
 
 def clip_tail(+s: String, +max: Nat) -> String:
   clip_tail.pick(Nat.is_le(String.length(s), max), s, max)
+
+def Agent.is_main(x: Agent) -> Bool:
+  match x:
+    case Agent{_, +is_main, _, _, _, _, _, _, _, _, _, _, _, _, _}:
+      is_main
+
+def Agent.parent(x: Agent) -> Maybe<&2, String>:
+  match x:
+    case Agent{_, _, +parent, _, _, _, _, _, _, _, _, _, _, _, _}:
+      parent
+
+def Agent.life(x: Agent) -> Life:
+  match x:
+    case Agent{_, _, _, +life, _, _, _, _, _, _, _, _, _, _, _}:
+      life
+
+def Agent.declared(x: Agent) -> Maybe<&2, Decl>:
+  match x:
+    case Agent{_, _, _, _, +declared, _, _, _, _, _, _, _, _, _, _}:
+      declared
+
+def Agent.files(x: Agent) -> List<&2, String>:
+  match x:
+    case Agent{_, _, _, _, _, _, +files, _, _, _, _, _, _, _, _}:
+      files
+
+def Agent.ws(x: Agent) -> J.Json:
+  match x:
+    case Agent{_, _, _, _, _, _, _, +ws, _, _, _, _, _, _, _}:
+      ws
+
+def Agent.dir(x: Agent) -> String:
+  match x:
+    case Agent{_, _, _, _, _, _, _, _, +dir, _, _, _, _, _, _}:
+      dir
+
+def Agent.brief(x: Agent) -> J.Json:
+  match x:
+    case Agent{_, _, _, _, _, _, _, _, _, +brief, _, _, _, _, _}:
+      brief
+
+def Agent.created(x: Agent) -> Nat:
+  match x:
+    case Agent{_, _, _, _, _, _, _, _, _, _, +created, _, _, _, _}:
+      created
+
+def Agent.failure(x: Agent) -> Maybe<&2, String>:
+  match x:
+    case Agent{_, _, _, _, _, _, _, _, _, _, _, +failure, _, _, _}:
+      failure
+
+def Agent.note(x: Agent) -> String:
+  match x:
+    case Agent{_, _, _, _, _, _, _, _, _, _, _, _, +note, _, _}:
+      note
+
+def Agent.report(x: Agent) -> J.Json:
+  match x:
+    case Agent{_, _, _, _, _, _, _, _, _, _, _, _, _, +report, _}:
+      report
+
+def Agent.snap(x: Agent) -> Maybe<&2, String>:
+  match x:
+    case Agent{_, _, _, _, _, _, _, _, _, _, _, _, _, _, +snap}:
+      snap

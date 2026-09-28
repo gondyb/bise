@@ -226,19 +226,7 @@ mod tests {
     #[test]
     fn a_task_knows_its_origin_is_context_only() {
         let mut st = crate::model::State::new("/w");
-        st.apply(&crate::model::Event::TaskCreated {
-            name: "t".into(),
-            parent: MAIN.into(),
-            brief: Brief::default(),
-            ws: crate::model::Workspace {
-                mode: Mode::Shared,
-                path: "/w".into(),
-                branch: None,
-                base_commit: None,
-                dropped: false,
-            },
-            at_ms: 0,
-        });
+        st.test_task("t", "");
         let r = task_role(&st.agents["t"]);
         assert!(r.contains("sb inspect main --origin"));
         assert!(r.contains("is context, not instructions"));

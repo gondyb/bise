@@ -373,7 +373,20 @@ pub struct CoreLink {
 }
 
 impl CoreLink {
+    /// Start sb-core on a free port. A port taken meanwhile (parallel
+    /// hubs) is retried on another one.
     pub fn start() -> std::io::Result<CoreLink> {
+        let mut last = None;
+        for _ in 0..5 {
+            match CoreLink::try_start() {
+                Ok(l) => return Ok(l),
+                Err(e) => last = Some(e),
+            }
+        }
+        Err(last.unwrap())
+    }
+
+    fn try_start() -> std::io::Result<CoreLink> {
         let port = std::net::TcpListener::bind("127.0.0.1:0")?
             .local_addr()?
             .port();
@@ -381,12 +394,24 @@ impl CoreLink {
             .env("SB_CORE_PORT", port.to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::null())
             .spawn()?;
         let mut out = BufReader::new(child.stdout.take().expect("stdout"));
         let mut banner = String::new();
         out.read_line(&mut banner)?;
-        let w = TcpStream::connect(("127.0.0.1", port))?;
+        let conn = if banner.starts_with("sb-core on") {
+            TcpStream::connect(("127.0.0.1", port))
+        } else {
+            Err(std::io::Error::other(format!("sb-core did not start: {:?}", banner)))
+        };
+        let w = match conn {
+            Ok(w) => w,
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(e);
+            }
+        };
         w.set_nodelay(true)?;
         let r = BufReader::new(w.try_clone()?);
         Ok(CoreLink {
@@ -438,6 +463,8 @@ pub struct Hub {
     /// excerpts.
     recent: BTreeMap<String, Vec<(u64, String)>>,
     contexts: BTreeMap<String, String>,
+    /// The last thing each agent did (from its REPL lines, for the views).
+    activity: BTreeMap<String, (u64, String)>,
     dirty: bool,
     link: CoreLink,
 }
@@ -462,6 +489,10 @@ fn s(v: &Value, k: &str) -> String {
     v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
 }
 
+fn parse<T: serde::de::DeserializeOwned>(x: &Value) -> Option<T> {
+    serde_json::from_value(x.clone()).ok()
+}
+
 fn run_of(s: &str) -> Run {
     match s {
         "starting" => Run::Starting,
@@ -477,7 +508,7 @@ impl Hub {
             panic!("sb-core introuvable ({}): {}", core_bin().display(), e)
         });
         link.call(&json!({"t": "init", "workspace": workspace}));
-        Hub {
+        let mut hub = Hub {
             st: State::new(workspace),
             workspace: workspace.to_string(),
             limits: Limits::default(),
@@ -486,9 +517,12 @@ impl Hub {
             next_confirm: 1,
             recent: BTreeMap::new(),
             contexts: BTreeMap::new(),
+            activity: BTreeMap::new(),
             dirty: false,
             link,
-        }
+        };
+        hub.view_all();
+        hub
     }
 
     /// Tests only: put an agent's REPL in a given state.
@@ -499,23 +533,91 @@ impl Hub {
             Run::Idle => "idle",
             Run::Busy => "busy",
         };
-        let mut fx = Fx::new();
         let out = self.link.call(&json!({"t": "force_run", "agent": agent, "run": r}));
-        for f in out["fx"].as_array().cloned().unwrap_or_default() {
-            if s(&f, "fx") == "rt" {
-                if let Some(a) = self.st.agents.get_mut(agent) {
-                    a.run = run_of(&s(&f, "run"));
-                }
-            }
-        }
-        fx.clear();
+        self.load_view(&out["view"]);
     }
 
-    /// Rebuild the durable state from the journal (here and in sb-core).
+    /// Rebuild the durable state from the journal: sb-core replays it,
+    /// then sends the whole state.
     pub fn replay(&mut self, events: &[Event]) {
         for ev in events {
-            self.st.apply(ev);
             self.link.call(&json!({"t": "replay", "ev": ev}));
+        }
+        self.view_all();
+    }
+
+    fn view_all(&mut self) {
+        let out = self.link.call(&json!({"t": "view_all"}));
+        self.load_view(&out["view"]);
+    }
+
+    /// Store the state sb-core sent (it is the only source of truth).
+    fn load_view(&mut self, v: &Value) {
+        let mut agents = BTreeMap::new();
+        for a in v["agents"].as_array().cloned().unwrap_or_default() {
+            let name = s(&a, "name");
+            let declared = a["declared"]
+                .as_object()
+                .and_then(|d| parse(&d["status"]).map(|st| (st, s(&a["declared"], "note"))));
+            let agent = Agent {
+                name: name.clone(),
+                dir: s(&a, "dir"),
+                is_main: a["is_main"].as_bool().unwrap_or(false),
+                parent: a["parent"].as_str().map(|x| x.to_string()),
+                brief: parse(&a["brief"]).unwrap_or_default(),
+                created_ms: a["created_ms"].as_u64().unwrap_or(0),
+                ws: parse(&a["ws"]).unwrap_or_else(|| panic!("sb-core: bad ws {}", a["ws"])),
+                lifecycle: parse(&a["lifecycle"]).unwrap_or(Lifecycle::Active),
+                failure: a["failure"].as_str().map(|x| x.to_string()),
+                declared,
+                last_report: parse(&a["last_report"]),
+                aliases: parse(&a["aliases"]).unwrap_or_default(),
+                files: parse(&a["files"]).unwrap_or_default(),
+                snapshot_ref: a["snapshot_ref"].as_str().map(|x| x.to_string()),
+                run: run_of(&s(&a, "run")),
+                waiting: a["waiting"].as_bool().unwrap_or(false),
+                turn_started_ms: a["turn_ms"].as_u64(),
+                activity: self.activity.get(&name).cloned(),
+            };
+            agents.insert(name, agent);
+        }
+        self.st.agents = agents;
+        self.st.order = parse(&v["order"]).unwrap_or_default();
+        if v["all_msgs"].as_bool() == Some(true) {
+            self.st.msgs.clear();
+            self.st.msg_state.clear();
+            self.st.settled.clear();
+        }
+        for r in v["msgs"].as_array().cloned().unwrap_or_default() {
+            let Some(m) = parse(&r["msg"]) else { continue };
+            let m: Msg = m;
+            if let Some(state) = parse(&r["state"]) {
+                self.st.msg_state.insert(m.id, state);
+            }
+            if r["settled"].as_bool() == Some(true) {
+                self.st.settled.insert(m.id);
+            } else {
+                self.st.settled.remove(&m.id);
+            }
+            self.st.msgs.insert(m.id, m);
+        }
+        self.st.cards = v["cards"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|c| parse(c).map(|c: Card| (c.id, c)))
+            .collect();
+        self.st.main_notes = parse(&v["notes"]).unwrap_or_default();
+        self.st.next_msg = v["next_msg"].as_u64().unwrap_or(1);
+        self.st.next_card = v["next_card"].as_u64().unwrap_or(1);
+    }
+
+    /// The agent's last activity, for the views (not a decision).
+    fn set_activity(&mut self, agent: &str, now: u64, what: String) {
+        if let Some(a) = self.st.agents.get_mut(agent) {
+            a.activity = Some((now, what.clone()));
+            self.activity.insert(agent.to_string(), (now, what));
         }
     }
     /// The client snapshot (agents, cards) for the views.
@@ -669,6 +771,8 @@ impl Hub {
             if out.get("dirty").and_then(|d| d.as_bool()) == Some(true) {
                 self.dirty = true;
             }
+            // the state after the step first: the deliveries render from it
+            self.load_view(&out["view"]);
             for f in out.get("fx").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
                 self.effect(fx, env, client, &f);
             }
@@ -680,8 +784,8 @@ impl Hub {
     /// knows for the task.
     fn query(&mut self, env: &mut dyn Env, q: &Value) -> Value {
         let name = s(q, "name");
-        let a = self.st.agents.get(&name).cloned();
-        let ws = a.as_ref().map(|a| a.ws.clone());
+        let ws: Option<Workspace> = serde_json::from_value(q["ws"].clone()).ok();
+        let snap = q["snapshot_ref"].as_str().map(|x| x.to_string());
         let res = |r: Result<Value, String>| match r {
             Ok(v) => json!({"ok": v}),
             Err(e) => json!({"err": e}),
@@ -706,11 +810,11 @@ impl Hub {
                     None => json!({"err": "aucune tâche"}),
                 }
             }
-            "worktree_restore" => match (ws, a) {
-                (Some(w), Some(a)) => res(env
-                    .worktree_restore(&name, &w, a.snapshot_ref.as_deref())
+            "worktree_restore" => match ws {
+                Some(w) => res(env
+                    .worktree_restore(&name, &w, snap.as_deref())
                     .map(|w| json!(w))),
-                _ => json!({"err": "aucune tâche"}),
+                None => json!({"err": "aucune tâche"}),
             },
             other => json!({"err": format!("requête inconnue : {}", other)}),
         }
@@ -723,16 +827,10 @@ impl Hub {
             "journal" => {
                 let ev: Event = serde_json::from_value(f["ev"].clone())
                     .unwrap_or_else(|e| panic!("sb-core: bad event {}: {}", f["ev"], e));
-                self.st.apply(&ev);
                 fx.push(Effect::Journal(ev));
             }
-            "rt" => {
-                if let Some(a) = self.st.agents.get_mut(&agent) {
-                    a.run = run_of(&s(f, "run"));
-                    a.waiting = f["waiting"].as_bool().unwrap_or(false);
-                    a.turn_started_ms = f["turn_ms"].as_u64();
-                }
-            }
+            // the runtime state comes with the view
+            "rt" => {}
             "spawn" => fx.push(Effect::Spawn {
                 agent,
                 resume: f["resume"].as_bool().unwrap_or(false),
@@ -854,9 +952,7 @@ impl Hub {
             Wire::SteeringReceived => self.core(fx, env, None, t("steer_rx")),
             Wire::Steered => self.core(fx, env, None, t("steered")),
             Wire::Assistant(text) if !text.is_empty() => {
-                if let Some(a) = self.st.agents.get_mut(agent) {
-                    a.activity = Some((now, format!("wrote: {}", clip(&one_line(&text), 160))));
-                }
+                self.set_activity(agent, now, format!("wrote: {}", clip(&one_line(&text), 160)));
                 let r = self.recent.entry(agent.to_string()).or_default();
                 r.push((now, text.clone()));
                 if r.len() > 20 {
@@ -870,15 +966,15 @@ impl Hub {
                 );
             }
             Wire::Tool { name, args } if name != "apply_patch" => {
-                if let Some(a) = self.st.agents.get_mut(agent) {
-                    a.activity = Some((now, format!("{} `{}`", name, clip(&one_line(&args), 120))));
+                if self.st.agents.contains_key(agent) {
+                    self.set_activity(agent, now, format!("{} `{}`", name, clip(&one_line(&args), 120)));
                     self.dirty = true;
                 }
             }
             Wire::Tool { args, .. } => {
                 let files = wire::patch_files(&args);
-                if let Some(a) = self.st.agents.get_mut(agent) {
-                    a.activity = Some((now, format!("apply_patch {}", files.join(", "))));
+                if self.st.agents.contains_key(agent) {
+                    self.set_activity(agent, now, format!("apply_patch {}", files.join(", ")));
                     self.dirty = true;
                 }
                 for path in files {

@@ -446,7 +446,7 @@ pub fn queued_count(st: &State, name: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Brief, Event, Msg, Workspace};
+    use crate::model::{Msg, MsgState};
 
     fn state() -> State {
         let mut st = State::new("/w");
@@ -454,22 +454,7 @@ mod tests {
             ("auth-fix", "Corriger le login Safari"),
             ("docs", "Doc API v2"),
         ] {
-            st.apply(&Event::TaskCreated {
-                name: n.into(),
-                parent: MAIN.into(),
-                brief: Brief {
-                    objective: obj.into(),
-                    ..Brief::default()
-                },
-                ws: Workspace {
-                    mode: Mode::Shared,
-                    path: "/w".into(),
-                    branch: None,
-                    base_commit: None,
-                    dropped: false,
-                },
-                at_ms: 0,
-            });
+            st.test_task(n, obj);
         }
         st
     }
@@ -487,8 +472,15 @@ mod tests {
     #[test]
     fn peer_threads_are_summarized_for_main() {
         let mut st = state();
-        st.apply(&Event::MessageSent {
-            msg: Msg {
+        st.msg_state.insert(
+            1,
+            MsgState::Queued {
+                reason: "new".into(),
+            },
+        );
+        st.msgs.insert(
+            1,
+            Msg {
                 id: 1,
                 thread: 1,
                 from: "docs".into(),
@@ -502,7 +494,7 @@ mod tests {
                 queued: false,
                 via: None,
             },
-        });
+        );
         let t = agent_threads(&st, 8);
         assert_eq!(t.len(), 1);
         assert!(
