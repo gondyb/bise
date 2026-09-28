@@ -38,6 +38,8 @@ pub(crate) fn test_app() -> App {
         composer: crate::ComposerArea::default(),
         flash: None,
         mouse: crate::MouseState::default(),
+        voice: crate::voice::Voice::live(false),
+        voice_note: None,
         popup_sel: 0,
         popup_dismissed: None,
         history: Vec::new(),

@@ -55,6 +55,9 @@ mod clipboard;
 mod usage;
 mod feedsel;
 mod keyprobe;
+mod voice;
+#[cfg(test)]
+mod voice_ui_tests;
 pub use keyprobe::keyprobe;
 pub use sb::{run_switchboard, take_reexec};
 
@@ -74,6 +77,8 @@ const PANEL: Color = Color::Rgb(0x14, 0x14, 0x14); // backgroundPanel
 /// better than white on orange
 const ON_BRAND: Color = Color::Rgb(0, 0, 0);
 const ELEMENT: Color = Color::Rgb(0x1e, 0x1e, 0x1e); // backgroundElement
+/// the composer while recording (Vibe's mistral_orange)
+const RECORDING: Color = Color::Rgb(0xff, 0x82, 0x05);
 const SELECTION: Color = Color::Rgb(0x3a, 0x4a, 0x6b); // selected text background
 const BORDER_ACTIVE: Color = Color::Rgb(0x60, 0x60, 0x60); // borderActive
 const FAINT: Color = Color::Rgb(0x4a, 0x4a, 0x4a); // rails & turn marks — dimmer than textMuted
@@ -2118,6 +2123,10 @@ struct App {
     flash: Option<(String, std::time::Instant)>,
     /// the mouse gesture in progress (selection drags, multi-clicks)
     mouse: MouseState,
+    /// speech-to-text (Ctrl+R, /voice)
+    voice: voice::Voice,
+    /// a voice notice in the status row ("No speech detected") and when
+    voice_note: Option<(String, std::time::Instant)>,
     popup_sel: usize,
     /// The composer text the user closed the `@` popup on (Esc): the
     /// popup stays closed until the text changes.
@@ -2333,6 +2342,11 @@ const COMMANDS: &[Cmd] = &[
         args: false,
     },
     Cmd {
+        name: "/voice",
+        desc: "turn voice mode (Ctrl+R speech-to-text) on or off",
+        args: false,
+    },
+    Cmd {
         name: "/help",
         desc: "list the commands",
         args: false,
@@ -2536,6 +2550,11 @@ fn popup_top(sel: usize, len: usize, rows: usize) -> usize {
 // "say", /commands map to protocol words, unknown ones get a server-side
 // warning. This client only handles its own lifecycle and display.
 fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
+    if v.trim() == "/voice" {
+        let ev = toggle_voice(app);
+        push_event(&mut app.events, &mut app.cache, ev.clone());
+        return vec![ev];
+    }
     if app.sb.is_some() {
         return sb::handle_input(app, v);
     }
@@ -2737,6 +2756,43 @@ fn move_anchor(
     (i, r)
 }
 
+/// The meter glyph: the level while recording, the fill spinner while
+/// the last words are flushed.
+fn voice_glyph(v: &voice::Voice) -> char {
+    match v.flushing_since() {
+        Some(at) if v.state() == voice::VoiceState::Flushing => {
+            voice::flush_glyph(at.elapsed().as_millis())
+        }
+        _ => voice::peak_glyph(v.peak()),
+    }
+}
+
+/// The composer's text rows while recording: the meter before the first
+/// row, the rows indented after it, the text dimmed (Vibe's `recording`
+/// input class).
+fn recording_lines(lines: Vec<Line<'static>>, glyph: char) -> Vec<Line<'static>> {
+    lines
+        .into_iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let lead = if i == 0 {
+                Span::styled(
+                    format!("{} ", glyph),
+                    Style::default().fg(RECORDING).add_modifier(Modifier::BOLD),
+                )
+            } else {
+                Span::raw("  ")
+            };
+            let mut spans = vec![lead];
+            spans.extend(l.spans.into_iter().map(|s| {
+                let st = s.style.fg(DIM);
+                Span::styled(s.content, st)
+            }));
+            Line::from(spans)
+        })
+        .collect()
+}
+
 fn draw(app: &mut App, frame: &mut Frame) {
     let (area, sb_panel) = sb::split(app, frame.area());
     if let Some(p) = sb_panel {
@@ -2908,7 +2964,17 @@ fn draw(app: &mut App, frame: &mut Frame) {
             .as_ref()
             .filter(|(_, at)| at.elapsed() < Duration::from_secs(2))
             .map(|(t, _)| t.clone());
-        let status = if let Some(t) = flash {
+        let voice_note = app
+            .voice_note
+            .as_ref()
+            .filter(|(_, at)| at.elapsed() < Duration::from_secs(2))
+            .map(|(t, _)| t.clone());
+        let status = if let Some(t) = voice_note {
+            Line::from(vec![
+                Span::styled("  ● ", Style::default().fg(RECORDING)),
+                Span::styled(t, Style::default().fg(TEXT)),
+            ])
+        } else if let Some(t) = flash {
             Line::from(vec![
                 Span::styled("  ✓ ", Style::default().fg(BRAND)),
                 Span::styled(t, Style::default().fg(TEXT)),
@@ -2952,19 +3018,24 @@ fn draw(app: &mut App, frame: &mut Frame) {
     // ---- the prompt: OpenCode prompt (left border ┃, element bg, meta row)
     // multi-line: newlines break rows, long rows wrap at the inner
     // width (layout_input)
-    let inner = ((chunks[5].width as usize).saturating_sub(6)).max(1);
+    // recording: the level meter takes the first 2 columns (Vibe puts
+    // it in place of the prompt), the text is indented after it
+    let voice_pad = if app.voice.active() { 2 } else { 0 };
+    let inner = ((chunks[5].width as usize).saturating_sub(6 + voice_pad)).max(1);
     // the text area inside the block: left border + padding 3, padding
     // 2 right, 2 top; the rows above the meta row and its blank line
     let text_rows = (chunks[5].height as usize).saturating_sub(5).max(1);
     app.composer = ComposerArea {
-        x: chunks[5].x + 4,
+        x: chunks[5].x + 4 + voice_pad as u16,
         y: chunks[5].y + 2,
         w: inner,
         h: text_rows,
         top: 0,
     };
     let mut input_lines: Vec<Line> = Vec::new();
-    if app.ed.is_empty() {
+    if app.ed.is_empty() && app.voice.active() {
+        input_lines.push(Line::from(""));
+    } else if app.ed.is_empty() {
         input_lines.push(Line::from(Span::styled(
             sb::placeholder(app).unwrap_or_else(|| "Ask anything…".to_string()),
             Style::default().fg(DIM),
@@ -3024,6 +3095,9 @@ fn draw(app: &mut App, frame: &mut Frame) {
             }
         }
     }
+    if app.voice.active() {
+        input_lines = recording_lines(input_lines, voice_glyph(&app.voice));
+    }
     // the meta row speaks glyphs: ◆ the harness, ● connected (quiet),
     // ○ déconnecté (loud) — the normal state stays muted, only the
     // broken one raises its voice
@@ -3056,11 +3130,12 @@ fn draw(app: &mut App, frame: &mut Frame) {
     // one blank line between the typed text and the meta row
     input_lines.push(Line::from(""));
     input_lines.push(meta);
+    let border = if app.voice.active() { RECORDING } else { BRAND };
     let prompt = Paragraph::new(input_lines).block(
         Block::default()
             .borders(Borders::LEFT)
             .border_set(SPLIT)
-            .border_style(Style::default().fg(BRAND))
+            .border_style(Style::default().fg(border))
             .style(Style::default().bg(ELEMENT))
             .padding(Padding::new(3, 2, 2, 1)),
     );
@@ -3134,7 +3209,11 @@ fn draw(app: &mut App, frame: &mut Frame) {
     }
 
     // ---- hint row (the OpenCode prompt right hint row)
-    let hint = if let Some(h) = sb::hint(app) {
+    let hint = if app.voice.state() == voice::VoiceState::Recording {
+        "recording · any key stops · Esc/Ctrl+C cancel"
+    } else if app.voice.state() == voice::VoiceState::Flushing {
+        "transcribing the last words… · Esc/Ctrl+C cancel"
+    } else if let Some(h) = sb::hint(app) {
         h
     } else if app.pending {
         "⏎ steer · Tab queue · Ctrl+C interrupt · / commands · End bottom"
@@ -3258,6 +3337,72 @@ fn copy_text(app: &mut App, text: &str) {
     app.flash = Some((note, std::time::Instant::now()));
 }
 
+/// Speech-to-text keys (Vibe's text_area._handle_voice_key): Ctrl+R
+/// starts; while recording any key stops, Ctrl+C / Esc cancel; nothing
+/// else sees those keys. `true` when the key was the voice's. `api_key`
+/// finds MISTRAL_API_KEY (read only when a recording starts).
+fn voice_key(
+    app: &mut App,
+    k: &crossterm::event::KeyEvent,
+    api_key: impl FnOnce() -> Option<String>,
+) -> bool {
+    use voice::KeyAction;
+    let now = std::time::Instant::now();
+    match voice::key_action(app.voice.state(), app.voice.enabled, k.code, k.modifiers) {
+        KeyAction::Pass => return false,
+        KeyAction::Start => {
+            if let Err(m) = app.voice.start(api_key(), now) {
+                push_event(&mut app.events, &mut app.cache, Ev::Warn(m));
+            }
+        }
+        KeyAction::Stop => app.voice.stop(now),
+        KeyAction::Cancel => app.voice.cancel(),
+        KeyAction::Swallow => {}
+        KeyAction::OffHint => app.voice_note = Some((voice::OFF_HINT.into(), now)),
+    }
+    true
+}
+
+/// The transcription events of this tick: the text lands at the
+/// composer cursor as it arrives.
+fn pump_voice(app: &mut App) {
+    let now = std::time::Instant::now();
+    for out in app.voice.poll(now) {
+        apply_voice(app, out, now);
+    }
+}
+
+fn apply_voice(app: &mut App, out: voice::VoiceOutput, now: std::time::Instant) {
+    match out {
+        voice::VoiceOutput::Insert(t) => {
+            app.ed.insert_voice(&t);
+            app.popup_sel = 0;
+        }
+        voice::VoiceOutput::Utterance => app.ed.break_undo(),
+        voice::VoiceOutput::Error(m) => {
+            push_event(&mut app.events, &mut app.cache, Ev::Err(m));
+        }
+        voice::VoiceOutput::Notice(m) => app.voice_note = Some((m, now)),
+    }
+}
+
+/// /voice: voice mode on or off, saved in ~/.bend-harness/tui.json.
+fn toggle_voice(app: &mut App) -> Ev {
+    let on = !app.voice.enabled;
+    app.voice.enabled = on;
+    if !on {
+        app.voice.cancel();
+    }
+    match voice::save_voice_enabled(on) {
+        Err(e) => Ev::Warn(format!(
+            "{} (not saved: {})",
+            if on { voice::ENABLED_MESSAGE } else { voice::DISABLED_MESSAGE },
+            e
+        )),
+        Ok(()) => Ev::Info(if on { voice::ENABLED_MESSAGE } else { voice::DISABLED_MESSAGE }.into()),
+    }
+}
+
 /// A key for the composer's editor (after the popups and the app keys):
 /// moves, selection, deletes, undo/redo, typing, copy/cut; Up/Down move
 /// between the visual rows, then through the history from the first and
@@ -3369,6 +3514,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
             let _ = crossterm::execute!(io::stdout(), EnableBracketedPaste);
             let _ = terminal.clear();
         }
+        pump_voice(app);
         terminal.draw(|f| {
             if app.sb.is_some() {
                 sb::draw_sb(app, f)
@@ -3376,7 +3522,14 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                 draw(app, f)
             }
         })?;
-        let wait = if backlog { Duration::ZERO } else { Duration::from_millis(80) };
+        // the level meter moves every 50 ms while recording (Vibe's poll)
+        let wait = if backlog {
+            Duration::ZERO
+        } else if app.voice.active() {
+            Duration::from_millis(50)
+        } else {
+            Duration::from_millis(80)
+        };
         if poll(wait)? {
             let ev = read()?;
             if let Event::Mouse(m) = ev {
@@ -3515,6 +3668,9 @@ fn run_tui(app: &mut App) -> io::Result<()> {
             }
             if let Event::Key(k) = ev {
                 if k.kind != KeyEventKind::Press {
+                    continue;
+                }
+                if voice_key(app, &k, voice::resolve_api_key) {
                     continue;
                 }
                 if app.popup_dismissed.as_deref() != Some(app.ed.text.as_str()) {
@@ -3834,6 +3990,8 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
         ed: editor::Editor::default(),
         composer: ComposerArea::default(),
         flash: None,
+        voice: voice::Voice::live(voice::load_voice_enabled()),
+        voice_note: None,
         mouse: MouseState::default(),
         popup_sel: 0,
         popup_dismissed: None,

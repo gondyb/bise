@@ -314,7 +314,7 @@ impl Sb {
         v
     }
 
-    /// The card shown (or answered by Ctrl+R): the chosen one while it
+    /// The card shown (or answered by Alt+R): the chosen one while it
     /// is open, else the focused task's, else the first.
     fn current_card(&self) -> Option<&Card> {
         let v = self.sorted_cards();
@@ -375,6 +375,11 @@ pub(super) static SB_MODE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 pub(super) const SB_COMMANDS: &[Cmd] = &[
+    Cmd {
+        name: "/voice",
+        desc: "turn voice mode (Ctrl+R speech-to-text) on or off",
+        args: false,
+    },
     Cmd {
         name: "/restart",
         desc: "restart the hub safely (agents kept): /restart [<commit>|latest]",
@@ -452,7 +457,7 @@ pub(super) const SB_COMMANDS: &[Cmd] = &[
     },
 ];
 
-const KEYS_HELP: &str = "keys (empty composer): Ctrl+K/J next/previous task · ⏎ enter · Space preview · D drop · Esc back to main · Alt+1…9 go to task N · Alt+0 main · Ctrl+G show/hide the card (also Ctrl+A, empty composer) · Ctrl+N/P next/previous card · Ctrl+R answer the card with the composer text · Ctrl+F card full screen · Ctrl+X close the card · Ctrl+Z cancel the last route · Ctrl+O shell in the folder of the agent in view";
+const KEYS_HELP: &str = "keys (empty composer): Ctrl+K/J next/previous task · ⏎ enter · Space preview · D drop · Esc back to main · Alt+1…9 go to task N · Alt+0 main · Ctrl+G show/hide the card (also Ctrl+A, empty composer) · Ctrl+N/P next/previous card · Alt+R answer the card with the composer text · Ctrl+R voice input (/voice) · Ctrl+F card full screen · Ctrl+X close the card · Ctrl+Z cancel the last route · Ctrl+O shell in the folder of the agent in view";
 
 /// The shell asked with Ctrl+O, if any.
 pub(super) fn take_shell(app: &mut App) -> Option<String> {
@@ -912,7 +917,7 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     out
 }
 
-/// Ctrl+R: the composer's text answers the current card, shown or not
+/// Alt+R: the composer's text answers the current card, shown or not
 /// (Enter still talks to the agent in focus). An empty composer only
 /// acknowledges the cards that need no words (done, overlap).
 fn answer_card(app: &mut App) {
@@ -926,7 +931,7 @@ fn answer_card(app: &mut App) {
     };
     let text = if text.is_empty() {
         if !matches!(kind.as_str(), "done" | "overlap") {
-            let msg = format!("card #{} (@{}): type your answer, then Ctrl+R", id, agent);
+            let msg = format!("card #{} (@{}): type your answer, then Alt+R", id, agent);
             push_event(&mut app.events, &mut app.cache, Ev::Warn(msg));
             return;
         }
@@ -1207,7 +1212,11 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             }
             true
         }
-        (KeyCode::Char('r'), KeyModifiers::CONTROL) if !sb.cards.is_empty() => {
+        // Alt+R; '®' is Option+R on a macOS terminal that does not send
+        // Option as Alt
+        (KeyCode::Char('r'), KeyModifiers::ALT) | (KeyCode::Char('®'), KeyModifiers::NONE)
+            if !sb.cards.is_empty() =>
+        {
             answer_card(app);
             true
         }
@@ -1482,9 +1491,9 @@ pub(super) fn hint(app: &App) -> Option<&'static str> {
     Some(if sb.confirm.is_some() {
         "y yes · n no · Esc cancel"
     } else if sb.card.full {
-        "Ctrl+R answer · PgUp/PgDn scroll · Ctrl+N/P card · Ctrl+X close · Ctrl+F/Esc shrink · Ctrl+G hide"
+        "Alt+R answer · PgUp/PgDn scroll · Ctrl+N/P card · Ctrl+X close · Ctrl+F/Esc shrink · Ctrl+G hide"
     } else if sb.card.shown {
-        "Ctrl+R answer (⏎ still goes to main) · PgUp/PgDn scroll · Ctrl+N/P card · Ctrl+F full screen · Ctrl+X close · Ctrl+G hide"
+        "Alt+R answer (⏎ still goes to main) · PgUp/PgDn scroll · Ctrl+N/P card · Ctrl+F full screen · Ctrl+X close · Ctrl+G hide"
     } else if sb.selected.is_some() {
         "⏎ enter · Space preview · D drop · Ctrl+K/J select · Esc close"
     } else if app.pending {
@@ -1742,6 +1751,8 @@ pub fn run_switchboard(
         ed: crate::editor::Editor::default(),
         composer: crate::ComposerArea::default(),
         flash: None,
+        voice: super::voice::Voice::live(super::voice::load_voice_enabled()),
+        voice_note: None,
         mouse: crate::MouseState::default(),
         popup_sel: 0,
         popup_dismissed: None,
@@ -1862,7 +1873,7 @@ fn print_hub_event(raw: &str) {
 }
 
 #[cfg(test)]
-mod bench;
+pub(crate) mod bench;
 
 #[cfg(test)]
 mod version_picker_tests {
@@ -1984,6 +1995,30 @@ mod nav_key_tests {
         assert_eq!(app.sb.as_ref().unwrap().selected, Some(1));
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert_eq!(app.sb.as_ref().unwrap().focus, "t1");
+    }
+
+    /// Ctrl+R belongs to voice input: Alt+R (or '®', Option+R on a
+    /// macOS terminal) answers the card with the composer text.
+    #[test]
+    fn alt_r_answers_the_card_and_ctrl_r_is_not_the_cards() {
+        let mut app = bench::test_app();
+        app.sb.as_mut().unwrap().cards = vec![Card {
+            id: 7,
+            kind: "question".into(),
+            agent: "t1".into(),
+            text: "which one?".into(),
+            age_ms: 0,
+            seen_at: std::time::Instant::now(),
+            note: String::new(),
+        }];
+        app.ed.text = "the first".into();
+        assert!(!press(&mut app, KeyCode::Char('r'), KeyModifiers::CONTROL));
+        assert_eq!(app.ed.text, "the first");
+        assert!(press(&mut app, KeyCode::Char('r'), KeyModifiers::ALT));
+        assert_eq!(app.ed.text, "", "the answer left the composer");
+        app.ed.text = "again".into();
+        assert!(press(&mut app, KeyCode::Char('®'), KeyModifiers::NONE));
+        assert_eq!(app.ed.text, "");
     }
 
     /// A non-empty composer keeps Enter for sending: no view change.
