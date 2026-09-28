@@ -47,7 +47,7 @@
   .kiss { display:inline-block; color:var(--acc); animation:kiss 1s .6s ease-out both; }
   @keyframes kiss { 0% { opacity:0; transform:scale(.4) } 55% { opacity:1; transform:scale(1.35) rotate(-10deg) } 100% { opacity:1; transform:none } }
   .t1 { font-size:clamp(24px, 3.2vw, 38px); font-weight:700; margin-top:42px; letter-spacing:-.02em; }
-  .t2 { color:var(--dim); margin-top:12px; font-size:clamp(15px, 1.4vw, 17px); max-width:44ch; }
+  .t2 { color:var(--dim); margin-top:12px; font-size:clamp(15px, 1.4vw, 17px); max-width:none; }
   .install { margin-top:44px; color:var(--dim); font-size:15px; cursor:pointer; display:inline-flex; gap:1.5ch; }
   .install .p { color:var(--acc); }
   .install .c { color:var(--faint); transition:color .3s; } .install:hover .c { color:var(--dim); }
@@ -96,6 +96,21 @@
   .how b { display:block; margin-bottom:4px; }
   .how span.d { color:var(--dim); }
 
+  /* features: small animated terminals */
+  .features { max-width:1120px; margin:0 auto; }
+  .fgrid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:72px 56px; margin-top:20px; }
+  .feat h3 { font-size:17px; margin:20px 0 6px; }
+  .feat p { color:var(--dim); font-size:15px; margin:0; max-width:52ch; }
+  .mini { background:var(--soft); border-radius:10px; font-size:13px; line-height:1.6; padding:14px 2.5ch 12px; }
+  .mfeed { height:calc(13px * 1.6 * 8); overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end; }
+  .mfeed > div { animation:enter .5s ease-out; white-space:pre-wrap; }
+  .mcomp { margin-top:8px; white-space:pre; color:var(--text); }
+  .mcomp .cur { background:var(--acc); }
+  .mini .err { color:var(--err); }
+  .mini .row { display:flex; justify-content:space-between; }
+  .mini .l3 { padding-left:1ch; border-left:1px solid var(--faint); margin-left:1ch; }
+  @media (max-width: 900px) { .fgrid { grid-template-columns:1fr; } }
+
   /* the little facts */
   .facts li { list-style:none; margin-bottom:12px; display:grid; grid-template-columns:4ch 1fr; color:var(--dim); }
   .facts li .gc { color:var(--acc); }
@@ -139,7 +154,7 @@
   <div class="hero">
     <div class="big">bise <span class="kiss">:*</span></div>
     <div class="t1">kiss your backlog goodbye.</div>
-    <div class="t2">ramble. interrupt. change your mind. i run the agents. you stay in flow.</div>
+    <div class="t2">ramble. interrupt. change your mind.<br>i run the agents. you stay in flow.</div>
     <div class="install" id="install" title="copy"><span><span class="p">$</span> <span class="tbd" id="cmd" title="⚠ no installer yet: today bise runs from a dev checkout (pitch §8.1)">curl -fsSL bise.dev/install | sh</span></span><span class="c" id="copied">copy</span></div>
     <div class="scroll">↓</div>
   </div>
@@ -199,15 +214,28 @@
   </div>
 </section>
 
+<!-- features, animated -->
+<section id="features">
+  <div class="features">
+    <div class="inner blow" style="margin-bottom:10px"><div class="kicker">what it feels like</div><h2>six things you'll notice in the first hour.</h2></div>
+    <div class="fgrid">
+      <div class="feat blow"><div class="mini" data-play="talk"></div><h3>talk whenever. you never wait.</h3><p>say the next thing while the last one runs. your composer is never locked.</p></div>
+      <div class="feat blow"><div class="mini" data-play="steer"></div><h3>change your mind mid-run.</h3><p>a correction lands in the running agent. ✓ it got it, <span class="acc">✓✓</span> it read it.</p></div>
+      <div class="feat blow"><div class="mini" data-play="router"></div><h3>you're not the router.</h3><p>agents talk to each other quietly. main answers the obvious questions itself, and tells you why.</p></div>
+      <div class="feat blow"><div class="mini" data-play="card"></div><h3>only the real decisions reach you.</h3><p>one card, a couple of choices, one key. then back to what you were doing.</p></div>
+      <div class="feat blow"><div class="mini" data-play="resume"></div><h3>nothing gets dropped.</h3><p>when an agent stops half-way, main picks the work back up from where it was.</p></div>
+      <div class="feat blow"><div class="mini" data-play="worktree"></div><h3>worktrees, only when they help.</h3><p>agents share your folder. when one really needs isolation, it makes a worktree, and cleans it up after.</p></div>
+    </div>
+  </div>
+</section>
+
 <!-- a few facts, quietly -->
 <section>
   <div class="inner blow">
-    <div class="kicker">small print, big deal</div>
+    <div class="kicker">and also</div>
     <ul class="facts">
       <li><span class="gc">∿</span><span><b>as many agents as you have ideas.</b> no cap. your tokens are the limit.</span></li>
-      <li><span class="gc">≡</span><span><b>nothing gets dropped.</b> unfinished work gets picked back up.</span></li>
-      <li><span class="gc">ψ</span><span><b>worktrees, only when they help.</b> agents share your folder. when one really needs its own worktree, it makes one, and cleans it up after. no pile of branches to merge.</span></li>
-      <li><span class="gc">✓</span><span><b>nothing hidden.</b> every script an agent runs is there, in full, in order.</span></li>
+            <li><span class="gc">✓</span><span><b>nothing hidden.</b> every script an agent runs is there, in full, in order.</span></li>
       <li><span class="gc">♡</span><span><b>your terminal.</b> your colors, light or dark, text at a reading width.</span></li>
     </ul>
   </div>
@@ -382,6 +410,72 @@ async function run() {
 }
 run();
 
+// ---- feature demos: tiny scripted terminals, played only while on screen ----
+const plays = {
+  async talk(m) {
+    await m.send("fix the flaky login test");
+    await m.main("on it. auth-fix started."); await m.wait(500);
+    await m.send("and draft the release note");
+    await m.main("release started."); await m.wait(400);
+    await m.send("oh, the docs page 404s too");
+    await m.main("docs started. 3 agents working, you're free."); await m.wait(600);
+    m.line(`<span class="pulse acc">∿</span> <span class="dim">3 working</span>`); await m.wait(3000);
+  },
+  async steer(m) {
+    m.line(`<span class="dim"><span class="pulse acc">∿</span> auth-fix · raising the test timeout to 30s…</span>`); await m.wait(1400);
+    const d = await m.send("@auth-fix actually, don't touch the timeout. wait on the event.", true);
+    await m.wait(1200); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`; await m.wait(700);
+    m.line(`<span class="dim">@ auth-fix to you:</span> got it. reverting the timeout, waiting on the login event instead.`, "b"); await m.wait(2200);
+    m.line(`<span class="acc">♡</span> auth-fix done · 3m 40s`, "b"); await m.wait(3200);
+  },
+  async router(m) {
+    const f = m.line(`<span class="dim">▸ 3 messages between 3 agents</span>`); let n = 3;
+    for (let i = 0; i < 5; i++) { await m.wait(500); n += 1 + (i % 2); f.innerHTML = `<span class="dim">▸ ${n} messages between 3 agents</span>`; }
+    await m.wait(600);
+    m.line(`<span class="faint">│ auth-fix → main: retry the test 3 times?</span>`, "l3"); await m.wait(1200);
+    m.line(`<span class="acc">:*</span> i answered auth-fix for you: no retries, fix the cause. <span class="faint">(you said so last week)</span>`, "b"); await m.wait(1800);
+    m.line(`<span class="acc">:*</span> release asked docs for the changelog. docs had it. nothing for you.`, "b"); await m.wait(3200);
+  },
+  async card(m) {
+    m.line(`<span class="dim">▸ 12 messages between 4 agents</span>`); await m.wait(900);
+    const c = m.line(`<div class="t acc" style="font-weight:700">? release needs you</div><div>v3 changes two public types. call it 2.4 or 3.0?</div><div class="faint">1 · 2.4   2 · 3.0   alt+r answer with text</div>`, "card b");
+    c.style.borderLeft = "2px solid var(--acc)"; c.style.paddingLeft = "2ch";
+    await m.wait(2200); await m.type("2"); m.clear();
+    c.style.borderLeftColor = "var(--faint)"; c.querySelector(".t").outerHTML = `<div class="t dim">✓ release · you said 3.0</div>`;
+    await m.wait(1400); m.line(`<span class="acc">:*</span> release is tagging 3.0. back to you.`, "b"); await m.wait(3200);
+  },
+  async resume(m) {
+    m.line(`<span class="dim"><span class="pulse acc">∿</span> api-bump · moving the client to v3 · 6 of 11 files</span>`); await m.wait(1500);
+    m.line(`<span class="err">✗</span> api-bump stopped: the provider answered 503.`, "b"); await m.wait(1600);
+    m.line(`<span class="acc">:*</span> api-bump stopped half-way. i started it again, from file 7.`, "b"); await m.wait(1400);
+    m.line(`<span class="dim"><span class="pulse acc">∿</span> api-bump · 7 of 11 files…</span>`); await m.wait(1800);
+    m.line(`<span class="acc">♡</span> api-bump done · client on v3, tests green.`, "b"); await m.wait(3200);
+  },
+  async worktree(m) {
+    const r = [`<span class="faint">0</span> <span class="acc">:*</span> main`, `<span class="faint">1</span> <span class="pulse acc">∿</span> auth-fix`, `<span class="faint">2</span> <span class="pulse acc">∿</span> release`];
+    const rows = r.map((h) => m.line(h)); await m.wait(1200);
+    m.line(`<span class="acc">:*</span> perf-bench needs a clean build. it gets its own worktree.`, "b"); await m.wait(900);
+    const p = m.line(`<span class="faint">3</span> <span class="pulse acc">∿</span> perf-bench <span class="acc">ψ</span>`); await m.wait(2600);
+    p.innerHTML = `<span class="faint">3</span> <span class="acc">♡</span> perf-bench`;
+    m.line(`<span class="acc">♡</span> perf-bench done · merged back. worktree cleaned up.`, "b"); await m.wait(3400);
+  },
+};
+function mini(el) {
+  el.innerHTML = `<div class="mfeed"></div><div class="mcomp"><span class="acc">›</span> <span class="ty"></span><span class="cur"></span></div>`;
+  const feedEl = el.querySelector(".mfeed"), ty = el.querySelector(".ty");
+  let visible = false; const gate = () => new Promise((r) => { const t = () => visible && !document.hidden ? r() : setTimeout(t, 300); t(); });
+  new IntersectionObserver(([e]) => visible = e.isIntersecting, { threshold: .3 }).observe(el);
+  const m = {
+    wait: async (ms) => { await gate(); await sleep(reduced ? Math.min(ms, 400) : ms); },
+    line(html, cls) { const d = document.createElement("div"); if (cls) d.className = cls; if (cls && cls.includes("b")) d.style.marginTop = "6px"; d.innerHTML = html; feedEl.append(d); while (feedEl.children.length > 12) feedEl.firstChild.remove(); cellify(d); return d; },
+    async type(t) { for (const ch of t) { await gate(); ty.textContent += ch; await sleep(reduced ? 0 : 28 + Math.random() * 30); } await sleep(300); },
+    clear() { ty.textContent = ""; },
+    async send(t, keep) { await m.type(t); m.clear(); const d = m.line(`${t}<span class="tick">✓</span>`, "b"); if (!keep) { await m.wait(450); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`; } await m.wait(400); return d; },
+    async main(t) { m.line(`<span class="acc">:*</span> ${t}`); await m.wait(300); },
+  };
+  (async () => { for (;;) { await gate(); feedEl.innerHTML = ""; await sleep(600); await plays[el.dataset.play](m); } })();
+}
+
 // ---- one fixed cell per symbol in the demo (fallback glyphs are not 1ch) ----
 const GLYPH_RE = /[\u2010-\u2BFF\u2E00-\u2E7F]/;
 function cellify(r) {
@@ -402,6 +496,8 @@ const term = document.querySelector(".term");
 cellify(term);
 new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && !n.classList.contains("gc")) cellify(n); })
   .observe(term, { childList: true, subtree: true });
+document.querySelectorAll(".feat p, .facts").forEach(cellify);
+document.querySelectorAll("[data-play]").forEach(mini);
 </script>
 </body>
 </html>
