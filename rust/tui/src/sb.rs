@@ -241,11 +241,6 @@ pub(super) const SB_COMMANDS: &[Cmd] = &[
         args: true,
     },
     Cmd {
-        name: "/cancel",
-        desc: "cancel the last undelivered route",
-        args: false,
-    },
-    Cmd {
         name: "/plugins",
         desc: "the workspace's agent plugins (enable|disable NAME)",
         args: true,
@@ -784,10 +779,6 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             sb.shell = Some(dir);
             true
         }
-        (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
-            sb.send_input("/cancel".into());
-            true
-        }
         _ => false,
     }
 }
@@ -1040,6 +1031,19 @@ mod nav_key_tests {
         assert_eq!(app.sb.as_ref().unwrap().selected, Some(1));
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert_eq!(app.sb.as_ref().unwrap().focus, "t1");
+    }
+
+    /// No undo (book §13): Ctrl+Z is not a switchboard key, and the
+    /// composer's own undo (Cmd+Z, Ctrl+/) does not answer to it either.
+    #[test]
+    fn ctrl_z_does_nothing() {
+        let mut app = bench::test_app();
+        app.ed.text = "draft".into();
+        assert!(!press(&mut app, KeyCode::Char('z'), KeyModifiers::CONTROL));
+        let k = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::CONTROL);
+        assert!(crate::editor::action(&k).is_none());
+        assert_eq!(app.ed.text, "draft");
+        assert!(!SB_COMMANDS.iter().any(|c| c.name == "/cancel"));
     }
 
     /// Ctrl+R belongs to voice input: Alt+R (or '®', Option+R on a

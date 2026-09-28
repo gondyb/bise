@@ -82,7 +82,6 @@ pub(crate) const ROWS: &[Row] = &[
     r(TALK, "⏎", "send to the agent in view (main, or the task you entered); while it works, steer its turn").sb().top(),
     r(TALK, "@task …", "direct message to a task without leaving main; @main … from a task").sb().top(),
     r(TALK, "Ctrl+C", "interrupt the turn of the agent in view; again (or at idle) quit — the agents keep running").sb().top(),
-    r(TALK, "Ctrl+Z", "cancel the last route not yet delivered").sb(),
     r(TALK, "Ctrl+O", "a shell in the folder of the agent in view (exit comes back)").sb(),
     r(TALK, "/", "the commands: Tab completes, ⏎ runs").sb().top(),
     r(CONV, "⏎", "send; during a turn, steer the model").solo().top(),
