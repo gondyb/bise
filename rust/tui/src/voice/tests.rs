@@ -42,7 +42,7 @@ fn while_recording_any_key_stops_and_ctrl_c_or_esc_cancel() {
 
 #[test]
 fn mono_averages_the_channels() {
-    assert_eq!(to_mono(&[0.2, 0.4, -1.0, 1.0], 2), vec![0.3f32 as f32, 0.0]);
+    assert_eq!(to_mono(&[0.2, 0.4, -1.0, 1.0], 2), vec![0.3f32, 0.0]);
     assert_eq!(to_mono(&[0.1, 0.2], 1), vec![0.1, 0.2]);
 }
 

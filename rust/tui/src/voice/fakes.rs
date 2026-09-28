@@ -55,11 +55,14 @@ impl Recorder for FakeRecorder {
     }
 }
 
-/// Hands the test the session's ends: the audio it receives, the event
-/// sender, the cancel flag.
+/// The ends of a started session: the audio it receives, the event
+/// sender, the cancel flag, the API key.
+pub(crate) type Session = (Receiver<AudioMsg>, Sender<TranscribeEvent>, Arc<AtomicBool>, String);
+
+/// Hands the test the session's ends.
 #[derive(Clone, Default)]
 pub(crate) struct FakeTranscriber {
-    pub(crate) session: Arc<Mutex<Option<(Receiver<AudioMsg>, Sender<TranscribeEvent>, Arc<AtomicBool>, String)>>>,
+    pub(crate) session: Arc<Mutex<Option<Session>>>,
 }
 
 impl Transcriber for FakeTranscriber {
