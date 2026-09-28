@@ -11,6 +11,10 @@ pub enum Wire {
     /// Visible assistant text (reasoning removed), unescaped.
     Assistant(String),
     TurnDone(String),
+    /// A steering entry reached the Core (committed to the turn).
+    SteeringReceived,
+    /// A steering entry went into a model request.
+    Steered,
     /// `tool #<id> <name> : <args>` (a live tool call annotation).
     Tool { name: String, args: String },
     /// A line replayed from a restored session.
@@ -31,6 +35,12 @@ pub fn parse(line: &str) -> Wire {
     }
     if let Some(rest) = t.strip_prefix("obs: assistant: ") {
         return Wire::Assistant(strip_thinking(&wire_unescape(rest)));
+    }
+    if t.starts_with("obs: steering_received: ") {
+        return Wire::SteeringReceived;
+    }
+    if t.starts_with("obs: steered: ") {
+        return Wire::Steered;
     }
     if let Some(rest) = t.strip_prefix("obs: turn_done: ") {
         return Wire::TurnDone(rest.trim().to_string());

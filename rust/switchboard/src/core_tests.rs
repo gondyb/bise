@@ -714,3 +714,70 @@ fn journal_replay_rebuilds_the_same_state() {
     assert_eq!(h.st.msgs, t2.hub.st.msgs);
     assert_eq!(h.st.agents["b"].ws, t2.hub.st.agents["b"].ws);
 }
+
+#[test]
+fn a_report_answers_the_parent_and_no_auto_reply_repeats_it() {
+    let mut t = T::new();
+    t.spawn_task("a");
+    let (tok, fx) = t.req(
+        "a",
+        AgentReq::Report {
+            kind: "done".into(),
+            summary: "fait".into(),
+            decisions: vec![],
+        },
+    );
+    assert_eq!(reply(&fx, tok).unwrap()["ok"], true);
+    let s = say_to(&fx, MAIN).unwrap();
+    assert!(s.contains("reply_to=\"m_"), "the report replies to the brief: {}", s);
+    t.go(Input::ReplLine {
+        agent: "a".into(),
+        line: "  obs: assistant: fait, fichier écrit".into(),
+    });
+    // main is busy with the report: nothing else may reach it at a's idle
+    let fx = t.go(Input::ReplIdle {
+        agent: "a".into(),
+        leftover: false,
+    });
+    assert!(steer_to(&fx, MAIN).is_none() && say_to(&fx, MAIN).is_none(), "no duplicate: {:?}", fx);
+}
+
+#[test]
+fn steering_the_model_never_read_starts_a_new_turn() {
+    let mut t = T::new();
+    t.user(MAIN, "premier");
+    t.user(MAIN, "question tardive");
+    t.go(Input::ReplLine {
+        agent: MAIN.into(),
+        line: "  obs: steering_received: question tardive".into(),
+    });
+    t.go(Input::ReplLine {
+        agent: MAIN.into(),
+        line: "  obs: assistant: réponse au premier".into(),
+    });
+    let fx = t.go(Input::ReplIdle {
+        agent: MAIN.into(),
+        leftover: false,
+    });
+    let s = say_to(&fx, MAIN).expect("a new turn");
+    assert!(s.contains("not answered them yet"), "{}", s);
+    // when the model did read it, nothing happens
+    t.go(Input::ReplLine {
+        agent: MAIN.into(),
+        line: "  obs: turn_started".into(),
+    });
+    t.user(MAIN, "encore");
+    t.go(Input::ReplLine {
+        agent: MAIN.into(),
+        line: "  obs: steering_received: encore".into(),
+    });
+    t.go(Input::ReplLine {
+        agent: MAIN.into(),
+        line: "  obs: steered: encore".into(),
+    });
+    let fx = t.go(Input::ReplIdle {
+        agent: MAIN.into(),
+        leftover: false,
+    });
+    assert!(say_to(&fx, MAIN).is_none(), "{:?}", fx);
+}

@@ -275,6 +275,11 @@ pub struct Hub {
     waiters: Vec<Waiter>,
     /// Messages written to the steering file in the current turn.
     steered: BTreeMap<String, Vec<u64>>,
+    /// (received, injected) steering entries of the current turn: an
+    /// entry received while the final answer was being written is
+    /// committed to history without the model ever reading it (ADR 0005
+    /// finish_turn).
+    steer_counts: BTreeMap<String, (usize, usize)>,
     last_assistant: BTreeMap<String, String>,
     /// (time, text) of recent assistant messages, for direct-exchange
     /// excerpts.
@@ -315,6 +320,7 @@ impl Hub {
             clients: BTreeMap::new(),
             waiters: Vec::new(),
             steered: BTreeMap::new(),
+            steer_counts: BTreeMap::new(),
             last_assistant: BTreeMap::new(),
             recent: BTreeMap::new(),
             crashes: BTreeMap::new(),
@@ -538,6 +544,8 @@ impl Hub {
                     self.close_cards(fx, |c| c.agent == agent && (c.kind == "blocked" || c.kind == "done"), "reprise");
                 }
             }
+            Wire::SteeringReceived => self.steer_counts.entry(agent.to_string()).or_default().0 += 1,
+            Wire::Steered => self.steer_counts.entry(agent.to_string()).or_default().1 += 1,
             Wire::Assistant(t) if !t.is_empty() => {
                 self.last_assistant.insert(agent.to_string(), t.clone());
                 let r = self.recent.entry(agent.to_string()).or_default();
@@ -602,6 +610,10 @@ impl Hub {
         let now = env.now();
         self.fail_waiters(fx, agent, "turn_ended");
         let steered = self.steered.remove(agent).unwrap_or_default();
+        let (received, injected) = self.steer_counts.remove(agent).unwrap_or_default();
+        // steering committed after the last model call: the model never
+        // read it; a new turn makes it answer
+        let unread = !leftover && received > injected && !steered.is_empty();
         if leftover {
             // the runtime never read them: they go again, as a new turn
             for id in &steered {
@@ -628,7 +640,7 @@ impl Hub {
             .st
             .unanswered_for(agent)
             .into_iter()
-            .filter(|m| !(leftover && steered.contains(&m.id)))
+            .filter(|m| !((leftover || unread) && steered.contains(&m.id)))
             .cloned()
             .collect();
         for m in unanswered {
@@ -654,6 +666,16 @@ impl Hub {
                     },
                 },
             );
+        }
+        if unread && self.st.queued_for(agent).is_empty() {
+            if let Some(a) = self.st.agents.get_mut(agent) {
+                a.run = Run::Busy;
+                a.turn_started_ms = Some(now);
+            }
+            fx.push(Effect::Say {
+                agent: agent.to_string(),
+                text: "[switchboard] The message(s) just above arrived while you were writing your last answer: you have not answered them yet. Answer them now.".to_string(),
+            });
         }
         self.pump(fx, env, agent);
         // a slot freed up: tasks held by the concurrency limit may start
@@ -1542,7 +1564,10 @@ impl Hub {
                 text,
                 expect_reply,
                 reply_to,
-            } => match self.send(fx, env, &from, &to, &text, expect_reply, reply_to, false, false) {
+            } => match {
+                let reply_to = reply_to.or_else(|| if expect_reply { None } else { self.open_question(&to, &from) });
+                self.send(fx, env, &from, &to, &text, expect_reply, reply_to, false, false)
+            } {
                 Ok(m) => {
                     let delivered = matches!(self.st.msg_state.get(&m.id), Some(MsgState::Delivered));
                     reply(
@@ -1611,7 +1636,10 @@ impl Hub {
                 }
                 let parent = self.st.agents.get(&from).and_then(|a| a.parent.clone()).unwrap_or_else(|| MAIN.into());
                 let to = if parent == USER { MAIN.to_string() } else { parent };
-                let r = self.send(fx, env, &from, &to, &text, false, None, false, false);
+                // the report answers the parent's open request, if any:
+                // no automatic reply repeats it at the end of the turn
+                let reply_to = self.open_question(&to, &from);
+                let r = self.send(fx, env, &from, &to, &text, false, reply_to, false, false);
                 match r {
                     Ok(m) => reply(fx, ok(json!({"message_id": format!("m_{}", m.id)}))),
                     Err(e) => reply(fx, err(e)),
@@ -1702,6 +1730,13 @@ impl Hub {
                 reply(fx, ok(json!({"card": id})));
             }
         }
+    }
+
+    /// The oldest delivered message from `asker` to `me` that still
+    /// expects `me`'s reply.
+    fn open_question(&self, asker: &str, me: &str) -> Option<u64> {
+        let asker = self.st.resolve(asker)?;
+        self.st.unanswered_for(me).into_iter().find(|m| m.from == asker).map(|m| m.id)
     }
 
     fn wait(&mut self, fx: &mut Fx, env: &mut dyn Env, token: Token, from: &str, msg: u64, timeout_s: u64) {
