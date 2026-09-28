@@ -46,11 +46,21 @@ pub(super) struct Agent {
     note: String,
     queued: u64,
     turn_ms: Option<u64>,
+    /// The last report, one line, and when it came (for an archived
+    /// task: what it did, and about when it stopped).
+    report: String,
+    report_ms: Option<u64>,
+    created_ms: u64,
 }
 
 impl Agent {
     fn archived(&self) -> bool {
         self.status == "archived"
+    }
+
+    /// When it was last heard of: its last report, else its creation.
+    fn last_ms(&self) -> u64 {
+        self.report_ms.unwrap_or(self.created_ms)
     }
 
     /// In a turn (its feed shows the spinner).
@@ -88,6 +98,9 @@ pub(super) struct Sb {
     card: CardView,
     /// Set by the last draw: the panel rows and their agents (clicks).
     panel_hits: std::cell::RefCell<panel::PanelHits>,
+    /// The archived section of the panel is expanded (`A`, a click on
+    /// its header, `/archived`).
+    archived_open: bool,
 }
 
 /// The string field `k` of `v` ("" when absent).
@@ -104,12 +117,37 @@ impl Sb {
         }
     }
 
-    /// What the panel navigates: main, then the live tasks.
+    /// What the panel navigates: main, then the live tasks, then (the
+    /// section expanded) the archived ones, newest first.
     fn nav(&self) -> Vec<&Agent> {
-        self.agents
-            .iter()
-            .filter(|a| !a.archived())
-            .collect()
+        let mut out: Vec<&Agent> = self.agents.iter().filter(|a| !a.archived()).collect();
+        if self.archived_open {
+            out.extend(self.archived());
+        }
+        out
+    }
+
+    /// The archived tasks, the most recently active first.
+    fn archived(&self) -> Vec<&Agent> {
+        let mut out: Vec<&Agent> = self.agents.iter().filter(|a| a.archived()).collect();
+        out.sort_by_key(|a| std::cmp::Reverse(a.last_ms()));
+        out
+    }
+
+    /// Expand or collapse the archived section; the selection stays on
+    /// the same entry (or leaves a row that is folded away).
+    fn toggle_archived(&mut self) {
+        let sel = self.selected_agent().map(|a| a.name.clone());
+        self.archived_open = !self.archived_open;
+        self.selected = sel.and_then(|n| self.nav().iter().position(|a| a.name == n));
+        if self.selected.is_none() {
+            self.preview = false;
+        }
+    }
+
+    /// The agent in focus is archived: its feed is read-only.
+    fn focus_archived(&self) -> bool {
+        self.agent(&self.focus).is_some_and(|a| a.archived())
     }
 
     /// The context usage of an agent's feed (the focused one lives in
@@ -176,6 +214,11 @@ pub(super) const SB_COMMANDS: &[Cmd] = &[
         name: "/restore",
         desc: "reopen an archived task",
         args: true,
+    },
+    Cmd {
+        name: "/archived",
+        desc: "show or hide the archived tasks in the panel",
+        args: false,
     },
     Cmd {
         name: "/isolate",
@@ -413,6 +456,9 @@ fn apply_state(app: &mut App, v: &Value) {
                     note: s(x, "note"),
                     queued: x.get("queued").and_then(|q| q.as_u64()).unwrap_or(0),
                     turn_ms: x.get("turn_ms").and_then(|q| q.as_u64()),
+                    report: s(x, "report"),
+                    report_ms: x.get("report_ms").and_then(|q| q.as_u64()),
+                    created_ms: x.get("created_ms").and_then(|q| q.as_u64()).unwrap_or(0),
                 })
                 .collect()
         })
@@ -531,6 +577,14 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         "/help" | "/shortcuts" | "/shortcut" | "/keys" => {
             app.help = crate::help::page_of(first).map(crate::help::Overlay::new);
         }
+        "/archived" => sb.toggle_archived(),
+        // an archived task reads nothing: its feed is history only
+        _ if sb.focus_archived() && !typed.starts_with('/') => {
+            out.push(Ev::Warn(format!(
+                "@{} is archived: its history is read-only · /restore brings it back · Esc → main",
+                sb.focus
+            )));
+        }
         _ => {
             sb.send_input(typed);
         }
@@ -612,8 +666,13 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             sb.preview = !sb.preview;
             true
         }
+        (KeyCode::Char('A'), _) if empty && sb.selected.is_some() => {
+            sb.toggle_archived();
+            true
+        }
         (KeyCode::Char('D'), _) if empty && sb.selected.is_some() => {
-            if let Some(name) = sb.selected_agent().filter(|a| !a.main).map(|a| a.name.clone()) {
+            let live = |a: &&Agent| !a.main && !a.archived();
+            if let Some(name) = sb.selected_agent().filter(live).map(|a| a.name.clone()) {
                 sb.send_input(format!("/drop {}", name));
             }
             true
@@ -650,7 +709,8 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
         }
         _ if matches!(nav, Some(Nav::Goto(_))) => {
             if let Some(Nav::Goto(i)) = nav {
-                if let Some(t) = sb.nav().get(i).map(|a| a.name.clone()) {
+                let live = sb.nav().into_iter().filter(|a| !a.archived()).nth(i);
+                if let Some(t) = live.map(|a| a.name.clone()) {
                     focus(app, &t);
                 }
             }
@@ -806,6 +866,7 @@ mod nav_key_tests {
             note: String::new(),
             queued: 0,
             turn_ms: None,
+            ..Agent::default()
         }
     }
 

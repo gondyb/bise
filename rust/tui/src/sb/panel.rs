@@ -61,24 +61,23 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     ]));
     lines.push(Line::from(""));
     let nav = sb.nav();
-    let mut owners: Vec<(usize, String)> = Vec::new();
-    for (i, a) in nav.iter().enumerate() {
+    let live = nav.iter().filter(|a| !a.archived()).count();
+    let mut owners: Vec<(usize, Hit)> = Vec::new();
+    // the first row of the selected entry (the panel scrolls to it)
+    let mut sel_row = None;
+    for (i, a) in nav.iter().take(live).enumerate() {
         let rows = agent_lines(app, sb, a, i, w);
-        owners.extend((lines.len()..lines.len() + rows.len()).map(|r| (r, a.name.clone())));
+        if sb.selected == Some(i) {
+            sel_row = Some(lines.len());
+        }
+        owners.extend((lines.len()..lines.len() + rows.len()).map(|r| (r, Hit::Agent(a.name.clone()))));
         lines.extend(rows);
-        if a.main && nav.len() > 1 {
+        if a.main && live > 1 {
             lines.push(Line::from(Span::styled(
                 format!(" {}", "─".repeat(w.saturating_sub(1))),
                 Style::default().fg(FAINT),
             )));
         }
-    }
-    let archived = sb.agents.iter().filter(|a| a.archived()).count();
-    if archived > 0 {
-        lines.push(Line::from(Span::styled(
-            format!(" {} archived", archived),
-            Style::default().fg(FAINT),
-        )));
     }
     if !sb.cards.is_empty() {
         lines.push(Line::from(""));
@@ -100,18 +99,22 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
             )));
         }
     }
+    archived_lines(sb, live, w, &mut lines, &mut owners, &mut sel_row);
+    // keep the selected entry in view (the archived list can be long)
+    let h = area.height as usize;
+    let top = sel_row.map_or(0, |r| (r + 3).saturating_sub(h));
     if let Ok(mut hits) = sb.panel_hits.try_borrow_mut() {
         *hits = PanelHits {
             area,
             rows: owners
                 .into_iter()
-                .filter(|(r, _)| *r < area.height as usize)
-                .map(|(r, name)| (area.y.saturating_add(r as u16), name))
+                .filter(|(r, _)| *r >= top && *r - top < h)
+                .map(|(r, hit)| (area.y.saturating_add((r - top) as u16), hit))
                 .collect(),
         };
     }
     frame.render_widget(
-        Paragraph::new(lines).block(
+        Paragraph::new(lines).scroll((top.min(u16::MAX as usize) as u16, 0)).block(
             Block::default()
                 .borders(Borders::LEFT)
                 .border_style(Style::default().fg(FAINT)),
@@ -120,21 +123,89 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     );
 }
 
-/// Where the last frame drew the panel, and the agent of each of its
-/// rows (screen row, agent name): a click on a row focuses the agent.
+/// The archived section, under the cards: a dim header `▸ N archived`
+/// (`▾` expanded), then, expanded, one row per task, newest first: name
+/// and how long ago it was last heard of; the selected or focused one
+/// also shows its last report (or its objective). Collapsed, only the
+/// archived task in focus is listed, so the view in focus is always
+/// found in the panel.
+fn archived_lines(
+    sb: &Sb,
+    live: usize,
+    w: usize,
+    lines: &mut Vec<Line<'static>>,
+    owners: &mut Vec<(usize, Hit)>,
+    sel_row: &mut Option<usize>,
+) {
+    let all = sb.archived();
+    if all.is_empty() {
+        return;
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64);
+    lines.push(Line::from(""));
+    owners.push((lines.len(), Hit::Archived));
+    let (arrow, keys) = if sb.archived_open { ("▾", "") } else { ("▸", " · click or /archived") };
+    lines.push(Line::from(vec![
+        Span::styled(format!(" {} {} archived", arrow, all.len()), Style::default().fg(DIM)),
+        Span::styled(truncate_chars(keys, w.saturating_sub(14)), Style::default().fg(FAINT)),
+    ]));
+    for (k, a) in all.iter().enumerate() {
+        let focused = a.name == sb.focus;
+        if !sb.archived_open && !focused {
+            continue;
+        }
+        let selected = sb.archived_open && sb.selected == Some(live + k);
+        if selected {
+            *sel_row = Some(lines.len());
+        }
+        let age = a.report_ms.map(|t| cards::ago(now.saturating_sub(t))).unwrap_or_default();
+        let mut name_style = Style::default().fg(if focused { BRAND } else { DIM });
+        if selected {
+            name_style = name_style.add_modifier(Modifier::REVERSED);
+        }
+        let first = lines.len();
+        lines.push(Line::from(vec![
+            Span::styled("   · ", Style::default().fg(FAINT)),
+            Span::styled(truncate_chars(&a.name, w.saturating_sub(12)), name_style),
+            Span::styled(format!(" {}", age), Style::default().fg(FAINT)),
+        ]));
+        if selected || focused {
+            let what = if a.report.is_empty() { &a.objective } else { &a.report };
+            lines.push(Line::from(Span::styled(
+                format!("     {}", truncate_chars(what, w.saturating_sub(5))),
+                Style::default().fg(DIM),
+            )));
+        }
+        owners.extend((first..lines.len()).map(|r| (r, Hit::Agent(a.name.clone()))));
+    }
+}
+
+/// What a panel row leads to when clicked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Hit {
+    /// Focus this agent (an archived one opens read-only).
+    Agent(String),
+    /// The header of the archived section: expand / collapse.
+    Archived,
+}
+
+/// Where the last frame drew the panel, and what each of its rows leads
+/// to (screen row, target): a click on an agent row focuses the agent.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct PanelHits {
     area: Rect,
-    rows: Vec<(u16, String)>,
+    rows: Vec<(u16, Hit)>,
 }
 
 impl PanelHits {
-    /// The agent drawn at screen cell (`x`, `y`), if any.
-    fn agent_at(&self, x: u16, y: u16) -> Option<&str> {
+    /// What is drawn at screen cell (`x`, `y`), if anything.
+    fn hit_at(&self, x: u16, y: u16) -> Option<&Hit> {
         if !self.contains(x, y) {
             return None;
         }
-        self.rows.iter().find(|(r, _)| *r == y).map(|(_, n)| n.as_str())
+        self.rows.iter().find(|(r, _)| *r == y).map(|(_, h)| h)
     }
 
     fn contains(&self, x: u16, y: u16) -> bool {
@@ -156,10 +227,16 @@ pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bo
         if !hits.contains(m.column, m.row) {
             return false;
         }
-        hits.agent_at(m.column, m.row).map(str::to_string)
+        hits.hit_at(m.column, m.row).cloned()
     };
-    if let Some(name) = target.filter(|n| sb.agent(n).is_some()) {
-        focus(app, &name);
+    match target {
+        Some(Hit::Agent(name)) if sb.agent(&name).is_some() => focus(app, &name),
+        Some(Hit::Archived) => {
+            if let Some(sb) = app.sb.as_mut() {
+                sb.toggle_archived();
+            }
+        }
+        _ => {}
     }
     true
 }
@@ -226,7 +303,12 @@ pub(crate) fn status_line(app: &App) -> Option<Line<'static>> {
             Style::default().fg(DIM),
         ));
     }
-    if sb.focus != "main" {
+    if a.archived() {
+        spans.push(Span::styled(
+            " · read-only history · /restore brings it back · Esc → main".to_string(),
+            Style::default().fg(DIM),
+        ));
+    } else if sb.focus != "main" {
         spans.push(Span::styled(
             " · you talk to the task directly · Esc → main".to_string(),
             Style::default().fg(INFO),
@@ -271,7 +353,9 @@ pub(crate) fn hint(app: &App) -> Option<&'static str> {
     } else if sb.card.shown {
         "Alt+R answer (⏎ still goes to main) · PgUp/PgDn scroll · Ctrl+N/P card · Ctrl+F full screen · Ctrl+X close · Ctrl+G hide"
     } else if sb.selected.is_some() {
-        "⏎ enter · Space preview · D drop · Ctrl+K/J select · Esc close"
+        "⏎ enter · Space preview · D drop · A archived · Ctrl+K/J select · Esc close"
+    } else if sb.focus_archived() {
+        "archived: read-only · /restore brings it back · Esc back to main · Ctrl+K/J tasks · /help"
     } else if app.pending {
         "⏎ steer · Ctrl+C interrupt · Ctrl+K/J tasks · Alt+N° task N · Esc main · /help"
     } else if sb.focus != "main" {
@@ -285,6 +369,8 @@ pub(crate) fn placeholder(app: &App) -> Option<String> {
     let sb = app.sb.as_ref()?;
     Some(if sb.focus == "main" {
         "Message to main…".to_string()
+    } else if sb.focus_archived() {
+        format!("@{} is archived (read-only) · /restore brings it back", sb.focus)
     } else {
         format!("Direct message to @{}…", sb.focus)
     })
@@ -422,5 +508,186 @@ mod tests {
             modifiers: KeyModifiers::NONE,
         };
         assert!(!panel_mouse(&mut app, &m));
+    }
+}
+
+#[cfg(test)]
+mod archived_tests {
+    use super::super::bench;
+    use super::*;
+    use crossterm::event::{KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis() as u64)
+    }
+
+    /// main, one live task, three archived ones (`old` 5 h ago, `mid`
+    /// 2 h, `new` 10 min: listed new, mid, old).
+    fn app() -> App {
+        let mut app = bench::test_app_drained();
+        let now = now_ms();
+        if let Some(sb) = app.sb.as_mut() {
+            sb.agents.push(Agent { name: "main".into(), main: true, status: "idle".into(), ..Agent::default() });
+        }
+        bench::add_agent(&mut app, "alpha", "live objective");
+        if let Some(sb) = app.sb.as_mut() {
+            for (name, h_ago) in [("old", 300u64), ("new", 10), ("mid", 120)] {
+                sb.agents.push(Agent {
+                    name: name.into(),
+                    status: "archived".into(),
+                    objective: format!("{} objective", name),
+                    report: format!("{} did its job", name),
+                    report_ms: Some(now - h_ago * 60_000),
+                    ..Agent::default()
+                });
+            }
+        }
+        app
+    }
+
+    fn draw(app: &mut App, term: &mut Terminal<TestBackend>) -> Vec<String> {
+        term.draw(|f| super::super::draw_sb(app, f)).unwrap();
+        let buf = term.backend().buffer();
+        let w = buf.area.width as usize;
+        buf.content
+            .chunks(w)
+            .map(|row| row.iter().map(|c| c.symbol()).collect::<String>())
+            .collect()
+    }
+
+    fn panel(rows: &[String], x: u16) -> Vec<String> {
+        rows.iter().map(|r| r.chars().skip(x as usize).collect::<String>()).collect()
+    }
+
+    fn row_of(rows: &[String], label: &str) -> Option<usize> {
+        rows.iter().position(|r| r.contains(label))
+    }
+
+    fn click(app: &mut App, column: u16, row: u16) {
+        let m = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        };
+        crate::input::on_mouse(app, &m, 0);
+    }
+
+    fn press(app: &mut App, code: KeyCode, m: KeyModifiers) -> bool {
+        key(app, &KeyEvent::new(code, m), false)
+    }
+
+    /// Collapsed: one dim header, no archived name. A click on it
+    /// expands the list, newest first, dim; a click on a row opens that
+    /// task's history read-only (status row, placeholder, typed text not
+    /// sent); a second click on the header folds the list, the task in
+    /// focus stays listed.
+    #[test]
+    fn archived_section_folds_expands_and_opens_read_only() {
+        let mut app = app();
+        let mut term = Terminal::new(TestBackend::new(120, 30)).unwrap();
+        let rows = draw(&mut app, &mut term);
+        let x = app.sb.as_ref().unwrap().panel_hits.borrow().area.x;
+        let p = panel(&rows, x);
+        let head = row_of(&p, "▸ 3 archived").unwrap_or_else(|| panic!("{}", p.join("\n")));
+        for n in ["· old", "· mid", "· new"] {
+            assert!(row_of(&p, n).is_none(), "{} shown while folded", n);
+        }
+        let buf = term.backend().buffer().clone();
+        let cell = buf.cell((x + 3, head as u16)).unwrap();
+        assert_eq!(cell.fg, DIM, "the header is dim");
+
+        click(&mut app, x + 3, head as u16);
+        let p = panel(&draw(&mut app, &mut term), x);
+        assert!(row_of(&p, "▾ 3 archived").is_some(), "{}", p.join("\n"));
+        let (n, m, o) = (
+            row_of(&p, "· new").unwrap(),
+            row_of(&p, "· mid").unwrap(),
+            row_of(&p, "· old").unwrap(),
+        );
+        assert!(n < m && m < o, "newest first:\n{}", p.join("\n"));
+        assert!(p[n].contains("10 min") && p[o].contains("5 h"), "{}", p.join("\n"));
+        assert!(row_of(&p, "did its job").is_none(), "no report line when not selected");
+        let buf = term.backend().buffer().clone();
+        let name_x = x + p[m].find("mid").map(|b| p[m][..b].chars().count()).unwrap() as u16;
+        assert_eq!(buf.cell((name_x, m as u16)).unwrap().fg, DIM, "archived names are dim");
+
+        click(&mut app, x + 5, m as u16);
+        assert_eq!(app.sb.as_ref().unwrap().focus, "mid");
+        let rows = draw(&mut app, &mut term);
+        let all = rows.join("\n");
+        assert!(all.contains("read-only history"), "{}", all);
+        assert!(panel(&rows, x).iter().any(|r| r.contains("mid did its job")), "{}", all);
+        assert_eq!(
+            placeholder(&app).unwrap(),
+            "@mid is archived (read-only) · /restore brings it back"
+        );
+        let out = handle_input(&mut app, "hello");
+        assert!(matches!(&out[..], [Ev::Warn(w)] if w.contains("/restore")), "not sent");
+
+        let p = panel(&rows, x);
+        let head = row_of(&p, "▾ 3 archived").unwrap();
+        click(&mut app, x + 3, head as u16);
+        let p = panel(&draw(&mut app, &mut term), x);
+        assert!(row_of(&p, "▸ 3 archived").is_some());
+        assert!(row_of(&p, "· mid").is_some(), "the focused archived task stays listed");
+        assert!(row_of(&p, "· new").is_none());
+    }
+
+    /// Keys: A expands from a selection, Ctrl+K/J walk into the archived
+    /// rows (the selected one shows its report), ⏎ opens it; Alt+N never
+    /// lands on an archived task; D does not drop one.
+    #[test]
+    fn archived_keys() {
+        let mut app = app();
+        let mut term = Terminal::new(TestBackend::new(120, 30)).unwrap();
+        press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL);
+        assert_eq!(app.sb.as_ref().unwrap().nav().len(), 2);
+        press(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT);
+        assert!(app.sb.as_ref().unwrap().archived_open);
+        assert_eq!(app.sb.as_ref().unwrap().selected, Some(0), "selection kept");
+        press(&mut app, KeyCode::Char('j'), KeyModifiers::CONTROL);
+        let sb = app.sb.as_ref().unwrap();
+        assert_eq!(sb.selected_agent().map(|a| a.name.as_str()), Some("old"));
+        let x = sb.panel_hits.borrow().area.x;
+        let p = panel(&draw(&mut app, &mut term), x.max(90));
+        assert!(row_of(&p, "old did its job").is_some(), "{}", p.join("\n"));
+        press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(app.sb.as_ref().unwrap().focus, "old");
+        press(&mut app, KeyCode::Char('2'), KeyModifiers::ALT);
+        assert_eq!(app.sb.as_ref().unwrap().focus, "old", "Alt+2: no live task 2");
+        press(&mut app, KeyCode::Char('1'), KeyModifiers::ALT);
+        assert_eq!(app.sb.as_ref().unwrap().focus, "alpha");
+    }
+
+    /// Hundreds of archived tasks, expanded: the panel scrolls to keep
+    /// the selected row in view, and clicks still hit the right row.
+    #[test]
+    fn a_long_archived_list_scrolls_to_the_selection() {
+        let mut app = app();
+        if let Some(sb) = app.sb.as_mut() {
+            for i in 0..300u64 {
+                sb.agents.push(Agent {
+                    name: format!("t{:03}", i),
+                    status: "archived".into(),
+                    report_ms: Some(1_000 + i),
+                    ..Agent::default()
+                });
+            }
+            sb.archived_open = true;
+            // the oldest: t000, last of the list
+            sb.selected = sb.nav().iter().position(|a| a.name == "t000");
+        }
+        let mut term = Terminal::new(TestBackend::new(120, 30)).unwrap();
+        let rows = draw(&mut app, &mut term);
+        let x = app.sb.as_ref().unwrap().panel_hits.borrow().area.x;
+        let p = panel(&rows, x);
+        let y = row_of(&p, "· t000").unwrap_or_else(|| panic!("{}", p.join("\n")));
+        click(&mut app, x + 5, y as u16);
+        assert_eq!(app.sb.as_ref().unwrap().focus, "t000");
     }
 }

@@ -188,7 +188,7 @@ fn card_lines(c: &Card, width: usize) -> Vec<Line<'static>> {
     out
 }
 
-fn ago(ms: u64) -> String {
+pub(super) fn ago(ms: u64) -> String {
     let s = ms / 1000;
     if s < 60 {
         format!("{} s", s)

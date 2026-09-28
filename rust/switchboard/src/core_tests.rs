@@ -746,7 +746,7 @@ fn worktrees_need_git() {
     t.env.git = false;
     let fx = t.user(MAIN, "/new -w x: y");
     assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").contains("not a git repository"))));
-    assert!(t.hub.st.agents.get("x").is_none());
+    assert!(!t.hub.st.agents.contains_key("x"));
 }
 
 #[test]

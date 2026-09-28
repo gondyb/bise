@@ -652,6 +652,8 @@ impl Hub {
                     "created_ms": a.created_ms,
                     "note": a.declared.as_ref().map(|(_, n)| n.clone()).unwrap_or_default(),
                     "report": a.last_report.as_ref().map(|r| clip(&one_line(&r.summary), 200)),
+                    // when it last reported (an archived task: about when it stopped)
+                    "report_ms": a.last_report.as_ref().map(|r| r.at_ms),
                     "queued": board::queued_count(&self.st, &a.name),
                     "turn_ms": a.turn_started_ms.map(|t| now.saturating_sub(t)),
                 })
