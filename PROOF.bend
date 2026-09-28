@@ -2632,3 +2632,168 @@ def hub_pw.agent(-o: HM.St, m: Maybe<&2, HM.Agent>, +cx: HX.Cx<o>, +n: String, +
 # a delivery attempt never leaves its agent idle with queued messages
 def hub_pump_wakes(-o: HM.St, +cx: HX.Cx<o>, +n: String) -> {HI.stuck(HX.d(o, HC.pump(o, cx, n)), hub_rts(o, HC.pump(o, cx, n)), n) == False{} : Bool}:
   hub_pw.agent(o, HM.get_agent(HX.d(o, cx), n), cx, n, {==})
+
+
+# ---- L4 support: string equality is sound (equal strings are the same) ----
+
+def hub_cdisc(c: Cmp) -> Type:
+  match c:
+    case EQ{}:
+      Unit
+    case _:
+      Empty
+
+def hub_lt_eq(e: {LT{} == EQ{} : Cmp}) -> Empty:
+  %Equal.sym(Cmp, LT{}, EQ{}, e) : hub_cdisc(_)
+  Unit{}
+
+def hub_gt_eq(e: {GT{} == EQ{} : Cmp}) -> Empty:
+  %Equal.sym(Cmp, GT{}, EQ{}, e) : hub_cdisc(_)
+  Unit{}
+
+def hub_bool_sound(a: Bool, b: Bool, e: {Bool.cmp(a, b) == EQ{} : Cmp}) -> {a == b : Bool}:
+  match a b:
+    case False{} False{}:
+      {==}
+    case True{} True{}:
+      {==}
+    case False{} True{}:
+      hub_absurd_eq(hub_lt_eq(e), Bool, False{}, True{})
+    case True{} False{}:
+      hub_absurd_eq(hub_gt_eq(e), Bool, True{}, False{})
+
+def hub_word_sound.fin(a: Bool, b: Bool, t: Cmp, +et: {t == EQ{} : Cmp}, e: {Word.cmp.fin(a, b, t) == EQ{} : Cmp}) -> {a == b : Bool}:
+  match t:
+    case LT{}:
+      hub_absurd_eq(hub_lt_eq(et), Bool, a, b)
+    case GT{}:
+      hub_absurd_eq(hub_gt_eq(et), Bool, a, b)
+    case EQ{}:
+      hub_bool_sound(a, b, e)
+
+def hub_word_tail_eq(a: Bool, b: Bool, t: Cmp, e: {Word.cmp.fin(a, b, t) == EQ{} : Cmp}) -> {t == EQ{} : Cmp}:
+  match t:
+    case LT{}:
+      e
+    case GT{}:
+      e
+    case EQ{}:
+      {==}
+
+# equal words are the same word
+def hub_word_sound(+n: Nat, w1: Word(n), w2: Word(n), +e: {Word.cmp(n, w1, w2) == EQ{} : Cmp}) -> {w1 == w2 : Word(n)}:
+  match n:
+    case 0n:
+      match w1 w2:
+        case WNil{} WNil{}:
+          {==}
+    case 1n+p:
+      match w1 w2:
+        case WCon{+a, +at} WCon{+b, +bt}:
+          +et = hub_word_tail_eq(a, b, Word.cmp(p, at, bt), e)
+          +ht = hub_word_sound(p, at, bt, et)
+          +hb = hub_word_sound.fin(a, b, Word.cmp(p, at, bt), et, e)
+          %hb : {WCon{a, at} == WCon{_, bt} : Word(1n+p)}
+          %ht : {WCon{a, at} == WCon{a, _} : Word(1n+p)}
+          {==}
+
+def hub_ccomb(c: Cmp, r: Cmp) -> Cmp:
+  match c:
+    case EQ{}:
+      r
+    case LT{}:
+      LT{}
+    case GT{}:
+      GT{}
+
+def hub_ccmp(a: Char, b: Char) -> Cmp:
+  match a b:
+    case Chr{x} Chr{y}:
+      U32.cmp(x, y)
+
+# the comparison of String.cmp, on its own
+def hub_cmpc(a: String, b: String) -> Cmp:
+  match a b:
+    case SNil{} SNil{}:
+      EQ{}
+    case SNil{} SCon{h, t}:
+      LT{}
+    case SCon{h, t} SNil{}:
+      GT{}
+    case SCon{h1, t1} SCon{h2, t2}:
+      hub_ccomb(hub_ccmp(h1, h2), hub_cmpc(t1, t2))
+
+def hub_scmp_shape.fin(+x: U32, +y: U32, +t1: String, +t2: String, c: Cmp, +ec: {U32.cmp(x, y) == c : Cmp},
+    ih: {String.cmp(t1, t2) == ((t1, t2), hub_cmpc(t1, t2)) : (String & String) & Cmp})
+    -> {String.cmp.fin(t1, t2, ((Chr{x}, Chr{y}), U32.cmp(x, y))) == ((SCon{Chr{x}, t1}, SCon{Chr{y}, t2}), hub_ccomb(U32.cmp(x, y), hub_cmpc(t1, t2))) : (String & String) & Cmp}:
+  match c:
+    case LT{}:
+      %Equal.sym(Cmp, U32.cmp(x, y), LT{}, ec) : {String.cmp.fin(t1, t2, ((Chr{x}, Chr{y}), _)) == ((SCon{Chr{x}, t1}, SCon{Chr{y}, t2}), hub_ccomb(_, hub_cmpc(t1, t2))) : (String & String) & Cmp}
+      {==}
+    case GT{}:
+      %Equal.sym(Cmp, U32.cmp(x, y), GT{}, ec) : {String.cmp.fin(t1, t2, ((Chr{x}, Chr{y}), _)) == ((SCon{Chr{x}, t1}, SCon{Chr{y}, t2}), hub_ccomb(_, hub_cmpc(t1, t2))) : (String & String) & Cmp}
+      {==}
+    case EQ{}:
+      %Equal.sym(Cmp, U32.cmp(x, y), EQ{}, ec) : {String.cmp.fin(t1, t2, ((Chr{x}, Chr{y}), _)) == ((SCon{Chr{x}, t1}, SCon{Chr{y}, t2}), hub_ccomb(_, hub_cmpc(t1, t2))) : (String & String) & Cmp}
+      %Equal.sym((String & String) & Cmp, String.cmp(t1, t2), ((t1, t2), hub_cmpc(t1, t2)), ih) : {String.cmp.rec(Chr{x}, Chr{y}, _) == ((SCon{Chr{x}, t1}, SCon{Chr{y}, t2}), hub_cmpc(t1, t2)) : (String & String) & Cmp}
+      {==}
+
+# String.cmp hands its strings back with hub_cmpc
+def hub_scmp_shape(+a: String, +b: String) -> {String.cmp(a, b) == ((a, b), hub_cmpc(a, b)) : (String & String) & Cmp}:
+  match a b:
+    case SNil{} SNil{}:
+      {==}
+    case SNil{} SCon{h, t}:
+      {==}
+    case SCon{h, t} SNil{}:
+      {==}
+    case SCon{Chr{x}, t1} SCon{Chr{y}, t2}:
+      hub_scmp_shape.fin(x, y, t1, t2, U32.cmp(x, y), {==}, hub_scmp_shape(t1, t2))
+
+def hub_cmpc_tail(c: Cmp, -r: Cmp, e: {Cmp.is_eq(hub_ccomb(c, r)) == True{} : Bool}) -> {Cmp.is_eq(r) == True{} : Bool}:
+  match c:
+    case EQ{}:
+      e
+    case LT{}:
+      hub_absurd_eq(hub_ft_absurd(e), Bool, Cmp.is_eq(r), True{})
+    case GT{}:
+      hub_absurd_eq(hub_ft_absurd(e), Bool, Cmp.is_eq(r), True{})
+
+def hub_cmpc_head(c: Cmp, -r: Cmp, e: {Cmp.is_eq(hub_ccomb(c, r)) == True{} : Bool}) -> {c == EQ{} : Cmp}:
+  match c:
+    case EQ{}:
+      {==}
+    case LT{}:
+      hub_absurd_eq(hub_ft_absurd(e), Cmp, LT{}, EQ{})
+    case GT{}:
+      hub_absurd_eq(hub_ft_absurd(e), Cmp, GT{}, EQ{})
+
+def hub_u32_sound(x: U32, y: U32, e: {U32.cmp(x, y) == EQ{} : Cmp}) -> {Chr{x} == Chr{y} : Char}:
+  match x y:
+    case U32{w1} U32{w2}:
+      %hub_word_sound(32n, w1, w2, e) : {Chr{U32{w1}} == Chr{U32{_}} : Char}
+      {==}
+
+# a comparison that finds the strings equal means they are the same
+def hub_cmpc_sound(+a: String, +b: String, +e: {Cmp.is_eq(hub_cmpc(a, b)) == True{} : Bool}) -> {a == b : String}:
+  match a b:
+    case SNil{} SNil{}:
+      {==}
+    case SNil{} SCon{h, t}:
+      hub_absurd_eq(hub_ft_absurd(e), String, SNil{}, SCon{h, t})
+    case SCon{h, t} SNil{}:
+      hub_absurd_eq(hub_ft_absurd(e), String, SCon{h, t}, SNil{})
+    case SCon{Chr{x}, t1} SCon{Chr{y}, t2}:
+      +ht = hub_cmpc_sound(t1, t2, hub_cmpc_tail(U32.cmp(x, y), hub_cmpc(t1, t2), e))
+      +hh = hub_u32_sound(x, y, hub_cmpc_head(U32.cmp(x, y), hub_cmpc(t1, t2), e))
+      %hh : {SCon{Chr{x}, t1} == SCon{_, t2} : String}
+      %ht : {SCon{Chr{x}, t1} == SCon{Chr{x}, _} : String}
+      {==}
+
+def hub_str_eq_sound.k(+a: String, +b: String, e: {String.eq(a, b) == True{} : Bool}) -> {Cmp.is_eq(hub_cmpc(a, b)) == True{} : Bool}:
+  %hub_scmp_shape(a, b) : {String.eq.fin(_) == True{} : Bool}
+  e
+
+# String.eq is sound: strings it finds equal are the same string
+def hub_str_eq_sound(+a: String, +b: String, e: {String.eq(a, b) == True{} : Bool}) -> {a == b : String}:
+  hub_cmpc_sound(a, b, hub_str_eq_sound.k(a, b, e))
