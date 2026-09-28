@@ -641,7 +641,7 @@ impl Shell {
                 agent,
                 resume,
                 crash_note,
-            } => self.spawn(&agent, resume, crash_note),
+            } => self.spawn_on(&agent, resume, crash_note, None),
             Effect::Kill { agent } => {
                 if let Some(dir) = self.dir_of(&agent) {
                     self.gens.remove(&dir);
@@ -649,7 +649,7 @@ impl Shell {
                         let _ = r.stream.shutdown(std::net::Shutdown::Both);
                     }
                     if let Some((_, pid)) = self.pids.remove(&dir) {
-                        let _ = Command::new("kill").arg(pid.to_string()).status();
+                        kill_pid(pid);
                     }
                 }
             }
@@ -777,12 +777,7 @@ impl Shell {
         }
     }
 
-    /// Start the REPL of `name` on a supervisor thread.
-    fn spawn(&mut self, name: &str, resume: bool, crash_note: Option<String>) {
-        self.spawn_on(name, resume, crash_note, None)
-    }
-
-    /// `port`: the port of the process it replaces (a switch keeps the
+    /// Start the REPL of `name` on a supervisor thread. `port`: the port of the process it replaces (a switch keeps the
     /// port: background commands and steer files are keyed by it).
     fn spawn_on(
         &mut self,
@@ -1167,6 +1162,10 @@ struct ReplInfo {
     bin: PathBuf,
     steer: String,
     interrupt: String,
+}
+
+fn kill_pid(pid: u32) {
+    let _ = Command::new("kill").arg(pid.to_string()).status();
 }
 
 fn pid_alive(pid: u32) -> bool {
@@ -1692,7 +1691,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
             } => {
                 if sh.gens.get(&dir) != Some(&gen) {
                     // killed while it was starting
-                    let _ = Command::new("kill").arg(pid.to_string()).status();
+                    kill_pid(pid);
                     continue;
                 }
                 if !adopted {
@@ -1756,7 +1755,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 if sh.gens.get(&dir) == Some(&gen) {
                     sh.pids.insert(dir, (gen, pid));
                 } else {
-                    let _ = Command::new("kill").arg(pid.to_string()).status();
+                    kill_pid(pid);
                 }
             }
             Msg::ReplLine {
@@ -1855,7 +1854,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     } else {
         log_line(&paths, "hub stop");
         for (_, pid) in sh.pids.values() {
-            let _ = Command::new("kill").arg(pid.to_string()).status();
+            kill_pid(*pid);
         }
     }
     let _ = std::fs::remove_file(paths.socket());
