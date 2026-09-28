@@ -59,6 +59,10 @@
   .lv { display:grid; grid-template-columns:18ch 1fr; gap:6px 3ch; max-width:112ch; margin-top:8px; }
   .tsep { color:var(--faint); margin-top:10px; }
   .l3 .nm { display:inline-block; width:10ch; overflow:hidden; white-space:nowrap; vertical-align:bottom; }
+  .img { color:var(--acc); background:#2a1d1b; border-radius:3px; padding:0 .5ch; }
+  .thumb { margin:4px 0 0 3ch; width:34ch; height:9em; border:1px solid var(--line); border-radius:4px; background:
+    linear-gradient(#e9e4dc 0 18%, transparent 18%), linear-gradient(90deg, #d8d2c8 0 22%, #f6f3ee 22%); position:relative; }
+  .thumb::after { content:"sign in"; position:absolute; left:40%; top:42%; font-size:11px; color:#fff; background:#5b6ee1; padding:2px 8px; border-radius:3px; }
   hr { border:0; border-top:1px solid var(--line); margin:40px 0; max-width:112ch; }
 </style>
 </head>
@@ -287,6 +291,30 @@ src/auth/session.ts:31:  sameSite: "none",</pre>
    <div class="row"><span class="dim">📄 web/src/auth/session.ts</span><span class="dim">file ⚠</span></div></div>`,
    f: foot(undefined, '<span class="dim">›</span> @au<span class="cur"></span>', "tab pick · esc close") })],
 
+["images: attaching", "three ways in, same result: drag a file into the terminal (its path becomes an image), ctrl+v pastes the clipboard image, or pick an image in the @ popup. an image is one atomic chip in the text; the strip above the composer says what each chip is. delete the chip, the image is gone.",
+ term({ feed: you("the login page looks broken on mobile"),
+   above: `<div class="pop" style="max-width:76ch"><div class="dim">attached · backspace on a chip removes it</div>
+   <div class="row"><span><span class="img">▣ 1</span> shots/login-mobile.png</span><span class="dim">1170×2532 · 310 kB</span></div>
+   <div class="row"><span><span class="img">▣ 2</span> clipboard</span><span class="dim">2048×1536 · 1.1 MB → resized to fit 2048</span></div></div>`,
+   f: foot(undefined, '<span class="dim">›</span> compare <span class="img">▣ 1</span> with the design <span class="img">▣ 2</span>, the button is off<span class="cur"></span>', "ctrl+v paste image · @ file") })],
+
+["images in the history", "your message keeps its chips, with the file name. ▸ opens a preview when the terminal can draw images (⚠ kitty / iTerm2 image protocols, not planned yet). main passes the images on with the work (⚠ to check: the marker must travel in the brief).",
+ term({ feed: you('compare <span class="img">▣ login-mobile.png</span> with the design <span class="img">▣ clipboard</span>, the button is off <span class="dim">▸</span>') +
+   `<div class="thumb"></div>` +
+   bise("on it: layout-fix takes it, with both images.") +
+   bgs(bg("main", "layout-fix", 'the sign-in button is off on mobile. images: ▣ 1, ▣ 2.')) })],
+
+["images from tools, and models without eyes", "a script can return an image (a screenshot from a browser tool): it shows as a chip in the result. a model that can't read images says so in plain words, with a way out (⚠ today the provider's raw error shows).",
+ term({ feed: `<div><span class="who">λ</span>typescript <span class="dim">✓ 2.1s</span></div>
+   <pre class="code"><span class="kw">async function</span> <span class="fn">main</span>() {
+  <span class="kw">await</span> tools.browser.<span class="fn">open</span>({ url: <span class="str">"http://localhost:3000/login"</span>, width: <span class="num">390</span> });
+  <span class="kw">return</span> <span class="kw">await</span> tools.browser.<span class="fn">screenshot</span>();
+}</pre>
+   <div class="ind"><span class="dim">result ·</span> <span class="img">▣ screenshot.png</span> <span class="dim">390×844 ▸</span></div>
+   <div class="b">the button overflows at 390 px: it has a fixed width of 420 px. switching it to max-width: 100%.</div>
+   <div class="b"><span class="who err">✗</span><span class="err">glm-5 can't read images.</span> <span class="dim">pick a model that can (/model), or describe the screen in words.</span></div>`,
+   pan: PANEL("auth-fix") })],
+
 ["agents talk to each other", "inside an agent, the messages it sends and receives are level 3 (dim, ✉ from → to); what the agent says to you is level 2.",
  term({ feed: bgs(bg("auth-fix", "release", "heads-up, i'm touching web/src/auth. mention the safari fix in the notes."), bg("release", "auth-fix", 'got it, added under "fixes".')) +
    `<div class="b">added the safari fix to the notes, under "fixes".</div>`, pan: PANEL("release") })],
@@ -354,7 +382,7 @@ document.getElementById("screens").innerHTML = screens.map(([t, p, html], i) =>
   </div></figure>
   <figure><figcaption><b>the symbols</b></figcaption><div class="legend">${[
     ["›", "you"], ['<span class="acc">:*</span>', "main"], ["◇", "brief"], ['<span class="dim">∴</span>', "thinking"], ["$", "bash"], ["λ", "typescript"],
-    ["↳", "a sub-call"], ["±", "file edit"], ["✉", "agent to agent"], ['<span class="dim">⟳</span>', "compacting"], ['<span class="dim">≡</span>', "compaction summary"], ['<span class="dim">▲</span>', "interrupted"],
+    ["↳", "a sub-call"], ['<span class="img">▣</span>', "an image"], ["±", "file edit"], ["✉", "agent to agent"], ['<span class="dim">⟳</span>', "compacting"], ['<span class="dim">≡</span>', "compaction summary"], ['<span class="dim">▲</span>', "interrupted"],
     ['<span class="pulse">∿</span>', "working"], ['<span class="pulse dim">·</span>', "starting"], ["…", "waiting on an agent"], ['<span class="acc">?</span>', "needs you / blocked"],
     ["♡", "done"], ['<span class="err">✗</span>', "failed"], ['<span class="dim">○</span>', "idle"], ['<span class="dim">–</span>', "stopped / drop"], ["⇄", "overlap"], ['<span class="err">↻</span>', "restart failed"],
     ['<span class="acc">•</span>', "unread"], ["⎇", "own worktree"], ['<span style="color:#f0b27a">⧗</span>', "building / on trial"],

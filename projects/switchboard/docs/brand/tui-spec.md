@@ -227,6 +227,29 @@ toggles all outputs.
   is not in the loop. esc back to main."
 - Composer at the bottom: `› ` prompt, key hints on the right, dim.
 
+## Images
+
+Follows the technical plan of the `screenshots` task
+([../images.md](../images.md)): an image is an atomic placeholder in the
+composer; sources are a dragged file, `ctrl+v` (clipboard) and the `@` popup.
+
+- **Chip.** In the composer and the history, an image is a blush chip
+  `▣ 1` / `▣ login.png`, not `[Image #1]`. **⚠** Cosmetic only; the text
+  label underneath can stay what the implementation uses.
+- **Strip above the composer** while images are attached: number, source
+  (file name or "clipboard"), size in pixels and kB, and "resized to fit
+  2048" when it applies. Backspace on a chip removes the image.
+- **History.** Your line keeps the chips with the file name; `▸` opens a
+  preview. **⚠** A real thumbnail needs the kitty or iTerm2 image protocols,
+  not planned in images.md.
+- **Routing.** Main says it passes the images on ("layout-fix takes it, with
+  both images"). **⚠** To check: the image marker must travel in the brief.
+- **Tool results.** A script that returns an image shows `result · ▣
+  screenshot.png 390×844 ▸`.
+- **Model without vision.** Plain words and a way out: "glm-5 can't read
+  images. pick a model that can (/model), or describe the screen in words."
+  **⚠** Today the provider's raw error shows.
+
 ## Onboarding (first launch)
 
 Mockup: [tui-onboarding.html](tui-onboarding.html). Inspired by Vibe's
@@ -297,6 +320,8 @@ To implement:
 14. Lowercase chrome (proper nouns and acronyms excepted).
 15. Onboarding: the 6 steps above, and the one-time hints (stored, so each
     shows once per user).
+16. Images: chips, the attachment strip, readable error for models without
+    vision.
 
 Open questions:
 
