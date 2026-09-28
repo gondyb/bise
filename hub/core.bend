@@ -1089,7 +1089,8 @@ def restore.go(-o: M.St, +cx: X.Cx<o>, +a: M.Agent) -> X.Cx<o> & TaskR:
   +r = rr(o, cx2)
   +cx3 = set_r(o, cx2, X.R.with_crashes(r, kn_del(X.R.crashes(r), n)))
   +cx4 = spawn(o, cx3, n, True{})
-  (line(o, cx4, M.MAIN(), "info", cat(["@", n, " restored"])), TOk{n})
+  # an idle task back from failed gets the mail it kept (law L4)
+  (line(o, pump(o, cx4, n), M.MAIN(), "info", cat(["@", n, " restored"])), TOk{n})
 
 def restore.res(-o: M.St, r: Result<&2, &2, String, J.Json>, +cx: X.Cx<o>, +a: M.Agent) -> X.Cx<o> & TaskR:
   match r:

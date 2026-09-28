@@ -1463,3 +1463,38 @@ fn a_message_queued_before_a_rename_reaches_the_new_name() {
     assert!(say_to(&fx, "api").unwrap_or_default().contains("change de plan"), "{:?}", fx);
     assert!(matches!(t.hub.st.msg_state.get(&id), Some(MsgState::Delivered)));
 }
+
+/// Found by the L4 proof (no message stuck in a queue), also in the Rust
+/// origin: a failed task whose REPL is idle keeps its queued mail; a
+/// /restore gives it that mail as a new turn.
+#[test]
+fn a_restored_idle_task_gets_its_queued_mail() {
+    let mut t = T::new();
+    t.spawn_task("docs");
+    // a queued-mode message waits for the end of docs' turn
+    t.req(
+        MAIN,
+        AgentReq::Send {
+            to: "docs".into(),
+            text: "plus tard".into(),
+            expect_reply: false,
+            reply_to: None,
+            queued: true,
+        },
+    );
+    t.req(
+        "docs",
+        AgentReq::Report {
+            kind: "failed".into(),
+            summary: "bloqué".into(),
+            decisions: vec![],
+        },
+    );
+    let fx = t.go(Input::ReplIdle {
+        agent: "docs".into(),
+        leftover: false,
+    });
+    assert!(say_to(&fx, "docs").is_none(), "a failed task gets no turn");
+    let fx = t.user(MAIN, "/restore docs");
+    assert!(say_to(&fx, "docs").unwrap_or_default().contains("plus tard"), "{:?}", fx);
+}
