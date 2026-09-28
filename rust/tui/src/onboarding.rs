@@ -571,14 +571,56 @@ fn s(t: impl Into<String>, c: Color) -> Span<'static> {
     Span::styled(t.into(), Style::default().fg(c))
 }
 
-/// The `:*` pop: a dot, then big (bold), then itself (scale 0.4 → 1.5 → 1).
+fn bold(t: impl Into<String>, c: Color) -> Span<'static> {
+    Span::styled(t.into(), Style::default().fg(c).add_modifier(Modifier::BOLD))
+}
+
+// ---- layout (book §15 'Layout', BISE-94) ----
+
+/// The content column: 64 wide, centered; width − 8 when narrower, − 4
+/// under 50 columns.
+pub(crate) fn column(area: Rect) -> Rect {
+    let w = if area.width < 50 { area.width.saturating_sub(4) } else { area.width.saturating_sub(8).min(64) };
+    Rect { x: area.x + (area.width - w) / 2, width: w, ..area }
+}
+
+/// Blank rows between blocks: 2, or 1 when the terminal is under 22 rows.
+fn gap_of(area: Rect) -> usize {
+    if area.height < 22 {
+        1
+    } else {
+        2
+    }
+}
+
+fn blanks(v: &mut Vec<Line<'static>>, n: usize) {
+    v.extend(std::iter::repeat_n(Line::raw(""), n));
+}
+
+/// A step's title: bold, text color.
+fn title(t: impl Into<String>) -> Line<'static> {
+    Line::from(bold(t, theme::text()))
+}
+
+/// A key line: dim, the keys (`{…}`) in text color (key lines are read:
+/// never faint).
+pub(crate) fn keyline(text: &str) -> Line<'static> {
+    Line::from(
+        text.split(['{', '}'])
+            .enumerate()
+            .filter(|(_, p)| !p.is_empty())
+            .map(|(i, p)| s(p.to_string(), if i % 2 == 1 { theme::text() } else { theme::dim() }))
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// The `:*` pop: a dot, then big (bold), then itself, bold (scale 0.4 →
+/// 1.5 → 1 in the mockup; a terminal has one size).
 fn kiss(t: u64) -> Span<'static> {
-    let acc = Style::default().fg(theme::accent());
     match t.checked_sub(KISS_AT) {
         None => Span::raw(""),
-        Some(d) if d < 200 => Span::styled(" ·", acc),
-        Some(d) if d < 600 => Span::styled(theme::glyph(theme::G_MAIN), acc.add_modifier(Modifier::BOLD)),
-        Some(_) => Span::styled(theme::glyph(theme::G_MAIN), acc),
+        Some(d) if d < 200 => s(" ·", theme::accent()),
+        Some(_) => bold(theme::glyph(theme::G_MAIN), theme::accent()),
     }
 }
 
@@ -588,18 +630,32 @@ fn gloss() -> String {
     format!("bise /beez/ {} french: a kiss on the cheek. also a north wind.", theme::glyph("·"))
 }
 
-fn welcome(t: u64) -> Vec<Line<'static>> {
-    vec![
-        Line::from(vec![
-            Span::styled(typed(HI, HI_AT, 70, t).to_string(), Style::default().fg(theme::text()).add_modifier(Modifier::BOLD)),
-            kiss(t),
-        ]),
-        Line::from(s(if t >= GLOSS_AT { gloss() } else { String::new() }, theme::faint())),
-        Line::raw(""),
-        Line::from(s(typed(TAGLINE, TAG_AT, 35, t), theme::dim())),
-        Line::raw(""),
-        Line::from(s(typed(PRESS, PRESS_AT, 30, t), theme::faint())),
-    ]
+/// `press enter ↵` typed, dim, `enter` in text color.
+fn press(t: u64) -> Line<'static> {
+    let shown = typed(PRESS, PRESS_AT, 30, t).chars().count();
+    let mut spans = Vec::new();
+    let mut at = 0;
+    for (part, key) in [("press ", false), ("enter", true), (" ↵", false)] {
+        let n = part.chars().count().min(shown.saturating_sub(at));
+        if n > 0 {
+            let p: String = part.chars().take(n).collect();
+            spans.push(s(p, if key { theme::text() } else { theme::dim() }));
+        }
+        at += part.chars().count();
+    }
+    Line::from(spans)
+}
+
+fn welcome(t: u64, gap: usize) -> Vec<Line<'static>> {
+    let mut v = vec![
+        Line::from(vec![bold(typed(HI, HI_AT, 70, t).to_string(), theme::text()), kiss(t)]),
+        Line::from(s(if t >= GLOSS_AT { gloss() } else { String::new() }, theme::dim())),
+    ];
+    blanks(&mut v, gap);
+    v.push(Line::from(s(typed(TAGLINE, TAG_AT, 35, t), theme::text())));
+    blanks(&mut v, gap);
+    v.push(press(t));
+    v
 }
 
 fn name_of(m: Mode) -> &'static str {
@@ -609,31 +665,19 @@ fn name_of(m: Mode) -> &'static str {
     }
 }
 
+/// The theme step's title and note (the previews and the key line are
+/// drawn by `draw`).
 fn theme_text(o: &Onb) -> Vec<Line<'static>> {
-    let bold = |m: Mode| Span::styled(name_of(m), Style::default().fg(theme::text()).add_modifier(Modifier::BOLD));
     let first = match (o.theme_from, o.detected) {
         // forced: say so, no detection involved
-        (ThemeFrom::Env, _) => vec![
-            s(format!("{} is set to ", crate::theme_detect::ENV), theme::text()),
-            bold(o.pick),
-            s(", so i picked it.", theme::text()),
-        ],
-        (ThemeFrom::Saved, _) => vec![
-            s("you picked ", theme::text()),
-            bold(o.pick),
-            s(" last time, so i kept it.", theme::text()),
-        ],
-        (ThemeFrom::Terminal, Some(m)) => vec![
-            s("your terminal looks ", theme::text()),
-            Span::styled(name_of(m), Style::default().fg(theme::text()).add_modifier(Modifier::BOLD)),
-            s(format!(", so i picked {}.", name_of(m)), theme::text()),
-        ],
-        (ThemeFrom::Terminal, None) => vec![s(
-            format!("i couldn't read your terminal's background, so i picked {}.", name_of(o.pick)),
-            theme::text(),
-        )],
+        (ThemeFrom::Env, _) => format!("{} is set to {}, so i picked it.", crate::theme_detect::ENV, name_of(o.pick)),
+        (ThemeFrom::Saved, _) => format!("you picked {} last time, so i kept it.", name_of(o.pick)),
+        (ThemeFrom::Terminal, Some(m)) => format!("your terminal looks {}, so i picked {}.", name_of(m), name_of(m)),
+        (ThemeFrom::Terminal, None) => {
+            format!("i couldn't read your terminal's background, so i picked {}.", name_of(o.pick))
+        }
     };
-    vec![Line::from(first), Line::from(s("you can change it any time with /theme.", theme::dim()))]
+    vec![title(first), Line::from(s("you can change it any time with /theme.", theme::dim()))]
 }
 
 // a preview shows its palette on that palette's ground (theme `bg`)
@@ -681,15 +725,16 @@ fn draw_previews(f: &mut Frame, area: Rect, pick: Mode) {
     }
 }
 
-/// The marker column of an option row: a bar when selected.
-fn opt_line(selected: bool, mut spans: Vec<Span<'static>>) -> Line<'static> {
-    let bar = if selected { s("▎ ", theme::accent()) } else { Span::raw("  ") };
-    spans.insert(0, bar);
-    let l = Line::from(spans);
-    if selected {
-        l.style(Style::default().bg(theme::selection_bg()))
-    } else {
-        l
+/// An option: the selected one `›` accent + its name bold, the others
+/// indented 2; its sub-line dim, indented 2 more, wrapped at `w`.
+fn option(v: &mut Vec<Line<'static>>, selected: bool, name: Vec<Span<'static>>, sub: &str, w: u16) {
+    let mut row = if selected { vec![s(format!("{} ", theme::glyph(theme::G_YOU)), theme::accent())] } else { vec![Span::raw("  ")] };
+    row.extend(name.into_iter().map(|sp| if selected { sp.patch_style(Style::default().add_modifier(Modifier::BOLD)) } else { sp }));
+    v.push(Line::from(row));
+    if !sub.is_empty() {
+        for r in words_in(sub, (w as usize).saturating_sub(4)) {
+            v.push(Line::from(s(format!("    {}", r), theme::dim())));
+        }
     }
 }
 
@@ -712,61 +757,62 @@ fn words_in(text: &str, w: usize) -> Vec<String> {
     out
 }
 
-fn model_lines(o: &Onb, w: u16) -> Vec<Line<'static>> {
+fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
     match &o.sub {
-        Sub::List => model_list(o, w),
+        Sub::List => model_list(o, w, gap),
         Sub::Which(i) => {
-            let mut v = vec![Line::from(s("which key do you want to paste?", theme::text())), Line::raw("")];
+            let mut v = vec![title("which key do you want to paste?")];
+            blanks(&mut v, gap);
             for (k, p) in Provider::ALL.iter().enumerate() {
-                v.push(opt_line(
-                    k == *i,
-                    vec![s(format!("{} · {}  ", k + 1, p.name()), theme::text()), s(p.key_env(), theme::dim())],
-                ));
+                if k > 0 {
+                    v.push(Line::raw(""));
+                }
+                option(&mut v, k == *i, vec![s(format!("{} · {}  ", k + 1, p.name()), theme::text()), s(p.key_env(), theme::dim())], "", w);
             }
-            v.push(Line::raw(""));
-            v.push(Line::from(s("↑↓ choose · enter ok · esc back", theme::faint())));
+            blanks(&mut v, gap);
+            v.push(keyline("{↑↓} choose · {enter} ok · {esc} back"));
             v
         }
         Sub::Paste(p, b) => {
             let dots: String = "•".repeat(b.chars().count().min(48));
             let mut v = vec![
-                Line::from(s(format!("paste your {}:", p.key_env()), theme::text())),
+                title(format!("paste your {}:", p.key_env())),
                 Line::from(s(format!("it goes in {}, only you can read it.", KEY_FILE_SHOWN), theme::dim())),
-                Line::raw(""),
-                Line::from(vec![s(format!("{} ", theme::glyph(theme::G_YOU)), theme::dim()), s(dots, theme::text()), s("█", theme::text())]),
             ];
+            blanks(&mut v, gap);
+            v.push(Line::from(vec![s(format!("{} ", theme::glyph(theme::G_YOU)), theme::accent()), s(dots, theme::text()), s("█", theme::text())]));
             if o.note == Some(Note::NotAKey) {
                 v.push(Line::raw(""));
                 v.push(Line::from(s(format!("{} that doesn't look like a key: no spaces inside.", theme::glyph(theme::G_FAILED)), theme::error())));
             }
-            v.push(Line::raw(""));
-            v.push(Line::from(s("enter save · esc back", theme::faint())));
+            blanks(&mut v, gap);
+            v.push(keyline("{enter} save · {esc} back"));
             v
         }
-        Sub::Confirm(p, _) => vec![
-            Line::from(s(format!("{} is already in {}.", p.key_env(), KEY_FILE_SHOWN), theme::text())),
-            Line::raw(""),
-            Line::from(s("enter replaces it · esc keeps the old one", theme::faint())),
-        ],
+        Sub::Confirm(p, _) => {
+            let mut v = vec![title(format!("{} is already in {}.", p.key_env(), KEY_FILE_SHOWN))];
+            blanks(&mut v, gap);
+            v.push(keyline("{enter} replaces it · {esc} keeps the old one"));
+            v
+        }
     }
 }
 
-fn model_list(o: &Onb, w: u16) -> Vec<Line<'static>> {
+fn model_list(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
     let found = match o.found.len() {
         0 => "i found no key in your environment.".to_string(),
         1 => "i found a key in your environment.".to_string(),
         n => format!("i found {} keys in your environment.", n),
     };
-    let mut v = vec![
-        Line::from(s("which model should do the work?", theme::text())),
-        Line::from(s(found, theme::dim())),
-        Line::raw(""),
-    ];
+    let mut v = vec![title("which model should do the work?"), Line::from(s(found, theme::dim()))];
+    blanks(&mut v, gap);
     let mine = Provider::of_model(&o.model);
     for (i, opt) in o.opts().into_iter().enumerate() {
-        let sel = i == o.sel;
+        if i > 0 {
+            v.push(Line::raw(""));
+        }
         let n = i + 1;
-        let (title, sub) = match opt {
+        let (name, sub) = match opt {
             Opt::Use(p) => (
                 vec![s(format!("{} · use {} ", n, p.key_env()), theme::text()), s("found", theme::accent())],
                 if p == mine {
@@ -784,11 +830,7 @@ fn model_list(o: &Onb, w: u16) -> Vec<Line<'static>> {
             ),
             Opt::Browser => (vec![s(format!("{} · sign in with the browser", n), theme::dim())], "not built yet.".to_string()),
         };
-        v.push(opt_line(sel, title));
-        // the detail under the title, its wrapped rows indented too
-        for row in words_in(&sub, (w as usize).saturating_sub(6)) {
-            v.push(opt_line(sel, vec![s(format!("    {}", row), theme::dim())]));
-        }
+        option(&mut v, i == o.sel, name, &sub, w);
     }
     match &o.note {
         Some(Note::Saved) => {
@@ -804,15 +846,14 @@ fn model_list(o: &Onb, w: u16) -> Vec<Line<'static>> {
         }
         _ => {}
     }
-    v.push(Line::raw(""));
-    v.push(Line::from(s("↑↓ choose · enter ok", theme::faint())));
+    blanks(&mut v, gap);
+    v.push(keyline("{↑↓} choose · {enter} ok"));
     v
 }
 
-fn folder_lines(o: &Onb, w: u16) -> Vec<Line<'static>> {
-    let bold = Style::default().fg(theme::text()).add_modifier(Modifier::BOLD);
+fn folder_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
     let repo = if o.git { "· a git repo ✓" } else { "· not a git repo" };
-    let first = vec![s("i'll work in ", theme::text()), Span::styled(o.folder.clone(), bold)];
+    let first = vec![bold("i'll work in ", theme::text()), bold(o.folder.clone(), theme::text())];
     // the repo note never breaks: on the same row, else on its own
     let fits = "i'll work in ".width() + o.folder.width() + 1 + repo.width() <= w as usize;
     let mut v = if fits {
@@ -822,8 +863,8 @@ fn folder_lines(o: &Onb, w: u16) -> Vec<Line<'static>> {
     } else {
         vec![Line::from(first), Line::from(s(repo, theme::dim()))]
     };
+    blanks(&mut v, gap);
     v.extend([
-        Line::raw(""),
         Line::from(s(
             "all your agents share this folder and know about each other. no worktrees to merge.",
             theme::dim(),
@@ -849,14 +890,14 @@ fn folder_lines(o: &Onb, w: u16) -> Vec<Line<'static>> {
             theme::dim(),
         )));
     }
-    v.push(Line::raw(""));
-    v.push(Line::from(s("enter ok · o another folder", theme::faint())));
+    blanks(&mut v, gap);
+    v.push(keyline("{enter} ok · {o} another folder"));
     v
 }
 
-fn how_lines(t: u64) -> Vec<Line<'static>> {
+fn how_lines(t: u64, gap: usize) -> Vec<Line<'static>> {
     let (wave, wave_c) = theme::working_frame((t / 80) as u32);
-    let rows: [Line<'static>; 4] = [
+    let rows: [Line<'static>; 3] = [
         Line::from(vec![
             s(who(theme::glyph(theme::G_YOU)), theme::dim()),
             s("you talk to me. i start agents for the work, in the background.", theme::text()),
@@ -869,13 +910,18 @@ fn how_lines(t: u64) -> Vec<Line<'static>> {
             s(who(theme::glyph(theme::G_CARD)), theme::accent()),
             s("when someone needs you, you get a card. the rest can wait.", theme::text()),
         ]),
-        Line::from(s("enter, and say what's on your mind.", theme::faint())),
     ];
-    let mut v = vec![Line::from(s("how it works, in three lines:", theme::dim()))];
+    let shown = |i: u64| t >= 400 + i * 900;
+    let mut v = vec![title("how it works, in three lines:")];
+    blanks(&mut v, gap);
     for (i, l) in rows.into_iter().enumerate() {
-        v.push(Line::raw(""));
-        v.push(if t >= 400 + i as u64 * 900 { l } else { Line::raw("") });
+        if i > 0 {
+            v.push(Line::raw(""));
+        }
+        v.push(if shown(i as u64) { l } else { Line::raw("") });
     }
+    blanks(&mut v, gap);
+    v.push(if shown(3) { keyline("{enter}, and say what's on your mind.") } else { Line::raw("") });
     v
 }
 
@@ -891,48 +937,69 @@ fn dots(step: Step) -> Line<'static> {
     Line::from(v)
 }
 
-/// Rows `lines` take at `width` once wrapped.
+/// Rows `lines` take at `width` once word-wrapped (greedy, like the
+/// paragraph: a word that doesn't fit goes to the next row, a word longer
+/// than a row is cut).
 fn height_of(lines: &[Line], width: u16) -> u16 {
     let w = width.max(1) as usize;
-    lines.iter().map(|l| l.width().max(1).div_ceil(w) as u16).sum()
+    let rows = |l: &Line| -> usize {
+        let text: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
+        let (mut rows, mut col) = (1usize, 0usize);
+        for word in text.split(' ') {
+            let ww = word.width();
+            let need = if col == 0 { ww } else { col + 1 + ww };
+            if need <= w {
+                col = need;
+            } else if ww <= w {
+                rows += 1;
+                col = ww;
+            } else {
+                // a long word: it starts on a new row and fills rows
+                rows += usize::from(col > 0) + (ww - 1) / w;
+                col = (ww - 1) % w + 1;
+            }
+        }
+        rows
+    };
+    lines.iter().map(|l| rows(l) as u16).sum()
 }
 
-/// One frame of the onboarding at `now` ms.
+/// One frame of the onboarding at `now` ms (book §15 'Layout'): one
+/// content column, the block at 2/5 of the free rows from the top, the
+/// step dots 2 rows above the bottom.
 pub(crate) fn draw(f: &mut Frame, o: &Onb, now: u64) {
     let area = f.area();
     let t = now.saturating_sub(o.since);
-    // the dots two rows above the bottom, the content centered above them
+    let gap = gap_of(area);
+    // the rows above the dots
     let body = Rect { height: area.height.saturating_sub(3), ..area };
-    let pad = (area.width / 8).min(14);
+    let col = column(body);
     let centered = matches!(o.step, Step::Welcome | Step::Theme);
-    let inner_w = if centered { body.width } else { body.width.saturating_sub(pad * 2) };
     let (lines, extra) = match o.step {
-        Step::Welcome => (welcome(t), 0),
-        Step::Theme => (theme_text(o), PREVIEW_H + 2),
-        Step::Model => (model_lines(o, inner_w), 0),
-        Step::Folder => (folder_lines(o, inner_w), 0),
-        Step::Lines => (how_lines(t), 0),
+        Step::Welcome => (welcome(t, gap), 0),
+        // the previews (1 blank row above), then the key line after a gap
+        Step::Theme => (theme_text(o), 1 + PREVIEW_H + gap as u16 + 1),
+        Step::Model => (model_lines(o, col.width, gap), 0),
+        Step::Folder => (folder_lines(o, col.width, gap), 0),
+        Step::Lines => (how_lines(t, gap), 0),
     };
-    let h = height_of(&lines, inner_w) + extra;
-    let y = body.y + body.height.saturating_sub(h) / 2;
-    let text_h = height_of(&lines, inner_w).min(body.height);
-    let r = Rect {
-        x: body.x + if centered { 0 } else { pad },
-        y,
-        width: inner_w,
-        height: text_h,
-    };
+    let text_h = height_of(&lines, col.width).min(body.height);
+    let h = text_h + extra;
+    let y = body.y + body.height.saturating_sub(h) * 2 / 5;
+    // every row down to the body's end: an estimate too short never cuts
+    // the key line
+    let r = Rect { y, height: if o.step == Step::Theme { text_h } else { body.bottom().saturating_sub(y) }, ..col };
     let para = Paragraph::new(lines).wrap(Wrap { trim: false });
     f.render_widget(if centered { para.alignment(Alignment::Center) } else { para }, r);
     if o.step == Step::Theme {
         let py = y + text_h + 1;
         let prev = Rect { y: py, height: body.bottom().saturating_sub(py), ..body };
         draw_previews(f, prev, o.pick);
-        let hy = py + PREVIEW_H + 1;
+        let hy = py + PREVIEW_H + gap as u16;
         if hy < body.bottom() {
             f.render_widget(
-                Paragraph::new(Line::from(s("←→ switch · enter keep", theme::faint()))).alignment(Alignment::Center),
-                Rect { y: hy, height: 1, ..body },
+                Paragraph::new(keyline("{←→} switch · {enter} keep")).alignment(Alignment::Center),
+                Rect { y: hy, height: 1, ..col },
             );
         }
     }
@@ -1013,6 +1080,11 @@ mod tests {
 
     fn key(c: KeyCode) -> KeyEvent {
         KeyEvent::new(c, KeyModifiers::NONE)
+    }
+
+    /// The screen's text, rows trimmed and joined: phrases across wraps.
+    fn flat(sc: &str) -> String {
+        sc.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ")
     }
 
     fn screen(o: &Onb, now: u64, w: u16, h: u16) -> String {
@@ -1119,7 +1191,7 @@ mod tests {
         let rows: Vec<&str> = sc.lines().collect();
         let hi = rows.iter().position(|r| r.contains("hi, i'm bise :*")).unwrap();
         assert!(rows[hi + 1].contains(gloss), "{}", sc);
-        assert_eq!(welcome(GLOSS_AT)[1].spans[0].style.fg, Some(theme::faint()));
+        assert_eq!(welcome(GLOSS_AT, 2)[1].spans[0].style.fg, Some(theme::dim()), "the gloss is read: dim");
         let sc = screen(&o, WELCOME_END, 100, 30);
         for s in ["hi, i'm bise :*", "ideas in. little kisses out. also pull requests.", "press enter ↵", "● ○ ○ ○ ○ ○"] {
             assert!(sc.contains(s), "{}\n{}", s, sc);
@@ -1310,8 +1382,25 @@ mod tests {
         o.go(Step::Folder, 0);
         let sc = screen(&o, 10, 80, 30);
         assert!(sc.lines().any(|r| r.trim() == "· a git repo ✓"), "{}", sc);
-        let sc = screen(&o, 10, 200, 30);
-        assert!(sc.contains("app · a git repo ✓"), "{}", sc);
+        // a short one: on the title row
+        let ws = h.join("lab/app");
+        std::fs::create_dir_all(ws.join(".git")).unwrap();
+        let mut o = onb(&h, &ws.to_string_lossy());
+        o.go(Step::Folder, 0);
+        assert!(screen(&o, 10, 200, 30).contains("i'll work in ~/lab/app · a git repo ✓"));
+    }
+
+    #[test]
+    fn the_key_line_is_never_cut_by_a_long_path() {
+        let h = tmp("cut");
+        let ws = h.join("a-rather-long-folder-name-that-goes-on-and-on/and-another-one-that-goes-on/app");
+        std::fs::create_dir_all(ws.join(".git")).unwrap();
+        let mut o = onb(&std::path::PathBuf::from("/nowhere"), &ws.to_string_lossy());
+        o.go(Step::Folder, 0);
+        for (w, hh) in [(120, 34), (80, 24), (60, 21)] {
+            let sc = screen(&o, 10, w, hh);
+            assert!(sc.contains("enter ok · o another folder"), "{w}x{hh}\n{sc}");
+        }
     }
 
     #[test]
@@ -1339,7 +1428,7 @@ mod tests {
             "enter ok · o another folder",
             "○ ○ ○ ● ○ ○",
         ] {
-            assert!(sc.contains(s), "{}\n{}", s, sc);
+            assert!(flat(&sc).contains(s), "{}\n{}", s, sc);
         }
         o.on_key(key(KeyCode::Char('o')), 1, &none);
         assert!(screen(&o, 10, 120, 30).contains("another folder? start me there"));
@@ -1362,7 +1451,7 @@ mod tests {
             "enter, and say what's on your mind.",
             "○ ○ ○ ○ ● ○",
         ] {
-            assert!(sc.contains(s), "{}\n{}", s, sc);
+            assert!(flat(&sc).contains(s), "{}\n{}", s, sc);
         }
         assert_eq!(o.on_key(key(KeyCode::Enter), 1, &none), Out::Done);
     }

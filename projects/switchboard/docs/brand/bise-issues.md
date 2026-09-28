@@ -1708,3 +1708,37 @@ Index:
   worktree of 106f7ae + this change): build, `cargo test --workspace`,
   clippy 0 warnings, run_all.sh: every tmux test PASS (after the queue test
   fix).
+
+### BISE-94 · onboarding layout and emphasis
+
+- **status:** done · **owner:** bise-o-onboard · **commits:** see git log (BISE-94)
+- **track:** O · **owns:** `onboarding.rs`, `tests/tui_onboarding_tmux.py`
+- **spec:** book §15 'Layout' (marketing 393dbd3), mockup
+  `site/book/onboarding.html`
+- **do:** one centered content column, the block at 2/5 from the top,
+  titles / notes / key lines emphasis, options `›`, small terminals.
+- **done when:** unit tests + tmux test follow the layout; gates green.
+- **notes:**
+  - `column(area)`: 64 wide, centered; width − 8 when narrower, width − 4
+    under 50 columns. Welcome and theme center their lines in it; model,
+    folder and how-it-works are left-aligned in it. The block sits at 2/5
+    of the free rows from the top; the dots stay 2 rows above the bottom.
+    The theme previews stay centered on the whole screen (2 × 44 columns
+    don't fit in 64), as in the mockup.
+  - Emphasis: `title()` bold text color; notes dim; `keyline("{enter} ok ·
+    {o} another folder")`: dim, keys in text color (never faint). 2 blank
+    rows after the title and before the key line (`gap_of`: 1 under 22
+    rows), 1 between options and lines. Options: `option()`: the selected
+    `›` accent + its name bold, the others indented 2, sub-lines dim and
+    indented 4, wrapped with their indent. The selection tint and the `▎`
+    bar are gone.
+  - Welcome: `hi, i'm bise` bold + `:*` accent bold (after the ` ·` pop);
+    the gloss dim; the tagline text; `press enter ↵` dim with `enter` in
+    text, typed. how-it-works: the title is `how it works, in three lines:`
+    in bold; the key line `enter, and say what's on your mind.` comes last.
+  - **Not done:** OSC 66 text sizing (`hi, i'm bise :*` at scale 2): main
+    sends it later (marketing checks which terminals support it); bold
+    meanwhile.
+  - Tests: the unit tests read phrases across wraps (`flat`); the gloss is
+    dim; the folder note on its own row when the path is long.
+    `tui_onboarding_tmux` asserts on the joined rows too.

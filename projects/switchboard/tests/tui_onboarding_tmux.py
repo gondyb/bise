@@ -26,6 +26,12 @@ import tui_tmux  # noqa: E402
 NORMAL = "⏎ send · @ agent · / commands"
 
 
+def flat(sc):
+    """The screen's rows trimmed and joined: a phrase reads across a wrap
+    (the onboarding's content column is 64 wide, book §15 'Layout')."""
+    return " ".join(r.strip() for r in sc.splitlines() if r.strip())
+
+
 def launch(E, state_root, home):
     tmux("kill-session", "-t", tui_tmux.S)
     tui_tmux.start_tui(E, 120, 34, "XDG_STATE_HOME=%s HOME=%s ANTHROPIC_FOUNDRY_API_KEY=" % (state_root, home))
@@ -56,7 +62,7 @@ def main():
         sc = screen()
         for s in ["hi, i'm bise :*", "bise /beez/ · french: a kiss on the cheek. also a north wind.",
                   "ideas in. little kisses out. also pull requests.", "● ○ ○ ○ ○ ○"]:
-            assert s in sc, sc
+            assert s in flat(sc), sc
         rows = sc.splitlines()
         hi = next(i for i, r in enumerate(rows) if "hi, i'm bise :*" in r)
         assert "bise /beez/" in rows[hi + 1], sc      # the gloss, right under the name
@@ -66,7 +72,7 @@ def main():
         sc = wait_screen("←→ switch · enter keep")
         for s in ["so i picked dark.", "you can change it any time with /theme.", "fix the flaky login test",
                   "on it: auth-fix takes it.", "auth-fix is done.", "○ ● ○ ○ ○ ○"]:
-            assert s in sc, sc
+            assert s in flat(sc), sc
         shot("2-theme", sc)
         keys("Right")
         time.sleep(0.3)
@@ -77,13 +83,13 @@ def main():
         for s in ["i found a key in your environment.", "1 · use MISTRAL_API_KEY found",
                   "mistral, already set up. nothing to paste.", "2 · paste another key",
                   "3 · sign in with the browser", "↑↓ choose · enter ok"]:
-            assert s in sc, sc
+            assert s in flat(sc), sc
         shot("3-model", sc)
         # 4 folder and the honest line
         keys("Enter")
         sc = wait_screen("enter ok · o another folder")
         for s in ["i'll work in ", "git repo ✓", "one honest thing: agents run commands here without asking you."]:
-            assert s in sc, sc
+            assert s in flat(sc), sc
         shot("4-folder", sc)
         keys("o")
         wait_screen("another folder? start me there")
@@ -92,7 +98,7 @@ def main():
         sc = wait_screen("enter, and say what's on your mind.")
         for s in ["how it works, in three lines:", "you talk to me. i start agents for the work, in the background.",
                   "they show up on the right.", "when someone needs you, you get a card. the rest can wait."]:
-            assert s in sc, sc
+            assert s in flat(sc), sc
         shot("5-how-it-works", sc)
         # 6 the normal UI, and the flag
         keys("Enter")
