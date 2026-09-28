@@ -60,8 +60,15 @@ build_from() {
 
   # release: the TUI draws ~10x faster than the debug build
   say "cargo build --release $id..."
-  (cd "$src/rust" && CARGO_TARGET_DIR="$BUILD/target" cargo build -q --release -p bend-harness)
-  cp "$BUILD/target/release/bend-harness" "$tmp/bend-harness"
+  # one cargo target dir per SOURCE: cargo decides freshness by mtime,
+  # and a commit checked out in a worktree (fresh mtimes) would otherwise
+  # leave artifacts newer than the tree's edited files - the next --tree
+  # build would ship stale Rust code. Worktrees are always freshly checked
+  # out, so they can share theirs.
+  local target="$BUILD/target-commits"
+  [ "$src" = "$REPO" ] && target="$BUILD/target-tree"
+  (cd "$src/rust" && CARGO_TARGET_DIR="$target" cargo build -q --release -p bend-harness)
+  cp "$target/release/bend-harness" "$tmp/bend-harness"
 
   local h; h="$(cd "$src" && bend_hash)"
   if [ ! -x "$BUILD/cache/repl-live-$h" ]; then
