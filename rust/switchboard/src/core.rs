@@ -500,10 +500,6 @@ fn notice(client: ClientId, text: &str) -> Effect {
     }
 }
 
-fn s(v: &Value, k: &str) -> String {
-    v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
-}
-
 fn parse<T: serde::de::DeserializeOwned>(x: &Value) -> Option<T> {
     serde_json::from_value(x.clone()).ok()
 }
@@ -571,13 +567,13 @@ impl Hub {
     fn load_view(&mut self, v: &Value) {
         let mut agents = BTreeMap::new();
         for a in v["agents"].as_array().cloned().unwrap_or_default() {
-            let name = s(&a, "name");
+            let name = jstr(&a, "name");
             let declared = a["declared"]
                 .as_object()
-                .and_then(|d| parse(&d["status"]).map(|st| (st, s(&a["declared"], "note"))));
+                .and_then(|d| parse(&d["status"]).map(|st| (st, jstr(&a["declared"], "note"))));
             let agent = Agent {
                 name: name.clone(),
-                dir: s(&a, "dir"),
+                dir: jstr(&a, "dir"),
                 is_main: a["is_main"].as_bool().unwrap_or(false),
                 parent: a["parent"].as_str().map(|x| x.to_string()),
                 brief: parse(&a["brief"]).unwrap_or_default(),
@@ -590,7 +586,7 @@ impl Hub {
                 aliases: parse(&a["aliases"]).unwrap_or_default(),
                 files: parse(&a["files"]).unwrap_or_default(),
                 snapshot_ref: a["snapshot_ref"].as_str().map(|x| x.to_string()),
-                run: run_of(&s(&a, "run")),
+                run: run_of(&jstr(&a, "run")),
                 waiting: a["waiting"].as_bool().unwrap_or(false),
                 turn_started_ms: a["turn_ms"].as_u64(),
                 activity: self.activity.get(&name).cloned(),
@@ -799,14 +795,14 @@ impl Hub {
     /// A git query of sb-core (RFC 0002), on the workspace the mirror
     /// knows for the task.
     fn query(&mut self, env: &mut dyn Env, q: &Value) -> Value {
-        let name = s(q, "name");
+        let name = jstr(q, "name");
         let ws: Option<Workspace> = serde_json::from_value(q["ws"].clone()).ok();
         let snap = q["snapshot_ref"].as_str().map(|x| x.to_string());
         let res = |r: Result<Value, String>| match r {
             Ok(v) => json!({"ok": v}),
             Err(e) => json!({"err": e}),
         };
-        match s(q, "q").as_str() {
+        match jstr(q, "q").as_str() {
             "worktree_create" => {
                 let wc = q.get("with_changes").and_then(|x| x.as_bool()).unwrap_or(false);
                 res(env.worktree_create(&name, wc).map(|w| json!(w)))
@@ -838,8 +834,8 @@ impl Hub {
 
     /// One effect of sb-core.
     fn effect(&mut self, fx: &mut Fx, env: &mut dyn Env, client: Option<ClientId>, f: &Value) {
-        let agent = s(f, "agent");
-        match s(f, "fx").as_str() {
+        let agent = jstr(f, "agent");
+        match jstr(f, "fx").as_str() {
             "journal" => {
                 let ev: Event = serde_json::from_value(f["ev"].clone())
                     .unwrap_or_else(|e| panic!("sb-core: bad event {}: {}", f["ev"], e));
@@ -855,14 +851,14 @@ impl Hub {
             "kill" => fx.push(Effect::Kill { agent }),
             "say" => fx.push(Effect::Say {
                 agent,
-                text: s(f, "text"),
+                text: jstr(f, "text"),
             }),
             "passthrough" => fx.push(Effect::Passthrough {
                 agent,
-                line: s(f, "line"),
+                line: jstr(f, "line"),
             }),
             "interrupt" => fx.push(Effect::Interrupt { agent }),
-            "line" => fx.push(line(&agent, &s(f, "kind"), &s(f, "text"))),
+            "line" => fx.push(line(&agent, &jstr(f, "kind"), &jstr(f, "text"))),
             "reply" => fx.push(Effect::Reply {
                 token: f["token"].as_u64().unwrap_or(0),
                 body: f["body"].clone(),
@@ -877,22 +873,22 @@ impl Hub {
         match kind {
             "notice" => {
                 if let Some(c) = client {
-                    fx.push(notice(c, &s(f, "text")));
+                    fx.push(notice(c, &jstr(f, "text")));
                 }
             }
             "confirm" => {
                 if let Some(c) = client {
                     let id = self.next_confirm;
                     self.next_confirm += 1;
-                    self.confirms.insert(id, (c, s(f, "name")));
+                    self.confirms.insert(id, (c, jstr(f, "name")));
                     fx.push(Effect::ToClient {
                         client: c,
-                        body: json!({"ev": "confirm", "id": id, "text": s(f, "text")}),
+                        body: json!({"ev": "confirm", "id": id, "text": jstr(f, "text")}),
                     });
                 }
             }
             "focus_main" => {
-                let name = s(f, "name");
+                let name = jstr(f, "name");
                 for (c, v) in self.clients.iter() {
                     if v.focus == name {
                         fx.push(Effect::ToClient {
@@ -904,7 +900,7 @@ impl Hub {
             }
             "user_sent" => {
                 if let Some(v) = client.and_then(|c| self.clients.get_mut(&c)) {
-                    v.sent.push(s(f, "text"));
+                    v.sent.push(jstr(f, "text"));
                 }
             }
             "routed" => {
@@ -913,7 +909,7 @@ impl Hub {
                 }
             }
             "renamed" => {
-                let (old, new) = (s(f, "old"), s(f, "new"));
+                let (old, new) = (jstr(f, "old"), jstr(f, "new"));
                 for v in self.clients.values_mut().filter(|v| v.focus == old) {
                     v.focus = new.clone();
                 }
@@ -926,7 +922,7 @@ impl Hub {
     /// The text a delivery puts in the agent's context: main's notes, the
     /// task status block, then each message as the recipient reads it.
     fn deliver(&mut self, fx: &mut Fx, env: &mut dyn Env, f: &Value) {
-        let agent = s(f, "agent");
+        let agent = jstr(f, "agent");
         let mut parts: Vec<String> = Vec::new();
         let notes: Vec<String> = f["notes"]
             .as_array()
@@ -949,11 +945,11 @@ impl Hub {
         for m in f["msgs"].as_array().cloned().unwrap_or_default() {
             let id = m["id"].as_u64().unwrap_or(0);
             if let Some(msg) = self.st.msgs.get(&id) {
-                parts.push(prompts::tagged(msg, &s(&m, "rel")));
+                parts.push(prompts::tagged(msg, &jstr(&m, "rel")));
             }
         }
         let text = parts.join("\n\n");
-        if s(f, "mode") == "steer" {
+        if jstr(f, "mode") == "steer" {
             fx.push(Effect::Steer { agent, text });
         } else {
             fx.push(Effect::Say { agent, text });
@@ -1125,10 +1121,7 @@ impl Hub {
                         clip(&one_line(&c.text), 100)
                     ));
                 }
-                fx.push(Effect::ToClient {
-                    client,
-                    body: json!({"ev": "notice", "text": lines.join("\n")}),
-                });
+                fx.push(notice(client, &lines.join("\n")));
             }
             UserCmd::Interrupt => {
                 self.core(fx, env, c, json!({"t": "interrupt", "agent": focus}))
@@ -1149,10 +1142,7 @@ impl Hub {
                     json!({"t": "passthrough", "focus": focus, "line": l}),
                 )
             }
-            UserCmd::Help => fx.push(Effect::ToClient {
-                client,
-                body: json!({"ev": "notice", "text": HELP}),
-            }),
+            UserCmd::Help => fx.push(notice(client, HELP)),
             UserCmd::Invalid(e) => fx.push(notice(client, &e)),
         }
     }
