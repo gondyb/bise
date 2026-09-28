@@ -211,6 +211,46 @@ fn counts(sb: &Sb) -> Option<[usize; 4]> {
     Some(n)
 }
 
+/// The header counts that fit in `room` columns (QA 14): all of them with
+/// their words when they fit (not `short`), else the numbers only; still
+/// too wide, the least important counts go first ("needs you" stays, then
+/// working, waiting, done), shown in the §8 order.
+fn fit_counts(n: [usize; 4], short: bool, room: usize) -> Vec<Span<'static>> {
+    let parts = [
+        (G_WORKING, "working", dim()),
+        (G_WAITING, "waiting", dim()),
+        (G_NEEDS_YOU, "needs you", accent()),
+        (G_DONE, "done", dim()),
+    ];
+    let spans = |keep: &[usize], words: bool| -> Vec<Span<'static>> {
+        let mut out: Vec<Span<'static>> = Vec::new();
+        for k in (0..4).filter(|k| keep.contains(k)) {
+            if !out.is_empty() {
+                out.push(Span::styled(" · ", Style::default().fg(dim())));
+            }
+            let (g, word, color) = parts[k];
+            let t = if words { format!("{} {} {}", g, n[k], word) } else { format!("{} {}", g, n[k]) };
+            out.push(Span::styled(t, Style::default().fg(color)));
+        }
+        out
+    };
+    let by_importance: Vec<usize> = [2, 0, 1, 3].into_iter().filter(|&k| n[k] > 0).collect();
+    let fits = |out: &Vec<Span<'static>>| out.iter().map(|s| s.content.width()).sum::<usize>() <= room;
+    if !short {
+        let out = spans(&by_importance, true);
+        if fits(&out) {
+            return out;
+        }
+    }
+    for keep in (1..=by_importance.len()).rev() {
+        let out = spans(&by_importance[..keep], false);
+        if fits(&out) {
+            return out;
+        }
+    }
+    Vec::new()
+}
+
 impl Sb {
     /// The header row (book §8): `bise :*` on the left; on the right the
     /// non-zero counts `∿ 3 working · … 1 waiting · ? 1 needs you · ♡ 1
@@ -223,28 +263,14 @@ impl Sb {
             Span::styled(" bise ", Style::default().fg(text()).add_modifier(Modifier::BOLD)),
             Span::styled(G_MAIN, Style::default().fg(accent())),
         ];
-        let mut right: Vec<Span<'static>> = Vec::new();
-        match counts(sb) {
-            None => right.push(Span::styled("no agents yet", Style::default().fg(dim()))),
-            Some(n) => {
-                let parts = [
-                    (G_WORKING, "working", dim()),
-                    (G_WAITING, "waiting", dim()),
-                    (G_NEEDS_YOU, "needs you", accent()),
-                    (G_DONE, "done", dim()),
-                ];
-                for (k, (g, word, color)) in parts.into_iter().enumerate().filter(|(k, _)| n[*k] > 0) {
-                    if !right.is_empty() {
-                        right.push(Span::styled(" · ", Style::default().fg(dim())));
-                    }
-                    let t = if short { format!("{} {}", g, n[k]) } else { format!("{} {} {}", g, n[k], word) };
-                    right.push(Span::styled(t, Style::default().fg(color)));
-                }
-            }
-        }
         let left_w: usize = spans.iter().map(|s| s.content.width()).sum();
+        // one column of margin on the right, two of gap after `bise :*`
+        let room = (width as usize).saturating_sub(left_w + 3);
+        let right: Vec<Span<'static>> = match counts(sb) {
+            None => vec![Span::styled("no agents yet", Style::default().fg(dim()))],
+            Some(n) => fit_counts(n, short, room),
+        };
         let right_w: usize = right.iter().map(|s| s.content.width()).sum();
-        // one column of margin on the right; too narrow: the counts go
         let pad = (width as usize).saturating_sub(left_w + right_w + 1);
         if pad >= 2 {
             spans.push(Span::raw(" ".repeat(pad)));
@@ -598,8 +624,7 @@ pub(crate) fn hint(app: &App) -> Option<&'static str> {
         "y yes · n no · esc cancel"
     } else if sb.card.full {
         "alt+r answer · pgup/pgdn scroll · ctrl+f back"
-    } else if sb.card.shown {
-        "alt+r answer with text · ctrl+x later · ctrl+f full screen"
+    // a shown card box carries its own keys (QA 11): no repeat here
     } else if sb.selected.is_some() {
         "⏎ enter · space preview · D drop · esc close"
     } else if sb.focus_archived() {
@@ -1145,6 +1170,23 @@ mod chrome_tests {
 
     /// The header at 120 columns (panel shown): `bise :*` left, the long
     /// counts flush right; at 60 (no panel) the short counts.
+    /// QA 14: a narrow header keeps what fits, "needs you" first, in
+    /// the §8 order; the words go before the counts do.
+    #[test]
+    fn a_narrow_header_keeps_needs_you_first() {
+        let n = [3, 1, 1, 2];
+        let text = |room| fit_counts(n, false, room).iter().map(|s| s.content.to_string()).collect::<String>();
+        let all = text(200);
+        assert!(all.contains("working") && all.contains("needs you"), "{all}");
+        let numbers = text(30);
+        assert!(!numbers.contains("working"), "{numbers}");
+        assert!(numbers.contains("? 1") && numbers.contains("∿ 3"), "{numbers}");
+        let two = text(9);
+        assert_eq!(two, "∿ 3 · ? 1");
+        assert_eq!(text(3), "? 1");
+        assert_eq!(text(2), "");
+    }
+
     #[test]
     fn header_at_60_and_120() {
         let mut app = busy();
