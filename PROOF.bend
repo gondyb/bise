@@ -438,6 +438,9 @@ def Laws.bg_wrapper_has_both_guards():
 def Laws.bg_script_hash_deterministic():
   {==}
 
+def Laws.bg_script_hash_high_code_points():
+  {==}
+
 def Laws.bg_script_hash_distinguishes():
   {==}
 
@@ -919,4 +922,28 @@ def Laws.info_paths_are_the_drained_ones():
   {==}
 
 def Laws.resume_replays_history():
+  {==}
+
+def Laws.anth_stream_body():
+  {==}
+
+def Laws.anth_sse_tool_call():
+  {==}
+
+def Laws.anth_sse_matches_whole_reply():
+  {==}
+
+def Laws.anth_sse_error_event():
+  {==}
+
+def Laws.anth_sse_refusal():
+  {==}
+
+def Laws.anth_stream_json_error_body():
+  {==}
+
+def Laws.interrupt_flag_semantics():
+  {==}
+
+def Laws.provider_stream_step_timeout():
   {==}

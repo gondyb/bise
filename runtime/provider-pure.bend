@@ -70,6 +70,13 @@ def model_key_env(st: Api.Style) -> String:
 def interrupt_path_of(+port: String) -> String:
   String.append("/tmp/bend-interrupt-", String.append(port, ".txt"))
 
+# the interrupt flag file: the TUI writes "1" on Ctrl+C, the runtime
+# clears it to "" at every turn end. Only a non-empty flag is a request
+# (an empty one read as a Ctrl+C turned every retry after the first
+# turn into "interrupted by the user").
+def interrupt_requested(+c: String) -> Bool:
+  Bool.not(String.is_empty(String.trim(c)))
+
 # ---- a transport failure, without the Http types ----
 
 type NetErr is Data:
@@ -135,6 +142,12 @@ def max_attempts() -> Nat:
 # doomed request. 600 s is Anthropic's own non-streaming ceiling.
 def step_timeout_ms() -> U32:
   600000
+
+# a streamed reply keeps data coming (the first event in ~1 s, the
+# largest gap measured over a 100 s opus-5.5 reply: 5 s), so a read
+# that waits 90 s is a dead connection, not a long answer
+def stream_step_ms() -> U32:
+  90000
 
 def retryable_err(e: NetErr) -> Bool:
   match e:

@@ -14,6 +14,7 @@ import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
 import 0xbf477e663cf4acb1369a68e0f0fa713b/encoding/encoding.bend as Enc
 import ./settings.bend as St
 import ./provider-pure.bend as Pvp
+import ../core/anth-stream.bend as As
 # ---- the live provider call, fully in Bend (hub HTTP client) ----
 # The wire request (MODEL/TOOL/MSG/CALL lines) becomes the provider
 # JSON in core/api.bend, is POSTed by the hub HTTP client, and the reply
@@ -174,8 +175,8 @@ def model_call.step.retry.flag(m: Maybe<&2, String>, n: Note, +ipath: String,
         IO.sleep(after_ms)
         next(k)(n)
     case Some{+c}:
-      model_call.step.retry.interrupted(String.is_empty(c), n, ipath, k,
-        after_ms, next)
+      model_call.step.retry.interrupted(Pvp.interrupt_requested(c), n, ipath,
+        k, after_ms, next)
 
 def model_call.step.retry(can: Bool, n: Note, +k: Nat, +tries: Nat,
     +delay_ms: U32, +why: String,
@@ -202,6 +203,165 @@ def model_call.step(a: Pvp.Attempt, n: Note, +k: Nat, +tries: Nat,
       model_call.step.retry(Nat.is_lt(0n, k), n, k, tries,
         Pvp.retry_delay_ms(after_ms, tries), why, next)
 
+# ---- the streamed call (Anthropic): Server-Sent Events ----
+# The body arrives in pieces (raw bytes; decoded once, whole). Between
+# two pieces the interrupt flag is read, so a Ctrl+C lands during a
+# long generation instead of after it; a read that waits longer than
+# stream_step_ms is a dead connection (a timeout the policy retries).
+
+type Rd is Type:
+  RdEnd{st: Http.Stream, parts: List<&2, String>}
+  RdErr{st: Http.Stream, e: Http.Err}
+  RdStop{st: Http.Stream}
+
+@unsafe
+def sse.flag.set(on: Bool, st: Http.Stream, +parts: List<&2, String>,
+    +ipath: String) -> IO(Rd):
+  match on:
+    case True{}:
+      IO.pure(Rd, RdStop{st})
+    case False{}:
+      sse.read(st, parts, ipath)
+
+@unsafe
+def sse.flag(f: Maybe<&2, String>, st: Http.Stream, +parts: List<&2, String>,
+    +ipath: String) -> IO(Rd):
+  match f:
+    case None{}:
+      sse.read(st, parts, ipath)
+    case Some{+c}:
+      sse.flag.set(Pvp.interrupt_requested(c), st, parts, ipath)
+
+@unsafe
+def sse.piece(m: Maybe<&2, String>, st: Http.Stream, +parts: List<&2, String>,
+    +ipath: String) -> IO(Rd):
+  match m:
+    case None{}:
+      IO.pure(Rd, RdEnd{st, parts})
+    case Some{+p}:
+      do IO<Rd>:
+        f : Maybe<&2, String> <- P.read_file(ipath)
+        sse.flag(f, st, Con{p, parts}, ipath)
+
+@unsafe
+def sse.got(r: Http.Stream & Result<&2, &2, Http.Err, Maybe<&2, String>>,
+    +parts: List<&2, String>, +ipath: String) -> IO(Rd):
+  match r:
+    case (st, res):
+      match res:
+        case Fail{+e}:
+          IO.pure(Rd, RdErr{st, e})
+        case Done{+m}:
+          sse.piece(m, st, parts, ipath)
+
+@unsafe
+def sse.read(st: Http.Stream, +parts: List<&2, String>, +ipath: String)
+    -> IO(Rd):
+  do IO<Rd>:
+    r : Http.Stream & Result<&2, &2, Http.Err, Maybe<&2, String>> <- Http.stream.read(st)
+    sse.got(r, parts, ipath)
+
+# the body text, decoded once from the raw pieces (newest first)
+def sse.text(+parts: List<&2, String>) -> String:
+  Enc.utf8.decode(String.join(List.reverse(&2, String, parts), ""))
+
+def sse.dump(m: Result<&1, &1, U32 & String, String>, +text: String)
+    -> IO(Unit):
+  match m:
+    case Fail{_}:
+      IO.pure(Unit, Unit{})
+    case Done{+path}:
+      model_call.dump_res(path, text)
+
+# a 200 streams events; any other status carries a plain error body
+def sse.verdict.pick(ok: Bool, +status: U32, +retry_after: String,
+    +text: String) -> Pvp.Attempt:
+  match ok:
+    case True{}:
+      Pvp.attempt_status(200, retry_after, As.reply_any(text))
+    case False{}:
+      Pvp.attempt_status(status, retry_after,
+        Api.reply_of_for(Api.Anthropic{}, status, text))
+
+def sse.body(+status: U32, +retry_after: String, +text: String)
+    -> IO(Pvp.Attempt):
+  do IO<Pvp.Attempt>:
+    dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
+    d : Unit <- sse.dump(dr, text)
+    IO.pure(Pvp.Attempt,
+      sse.verdict.pick(U32.is_eq(status, 200), status, retry_after, text))
+
+def sse.done(rd: Rd, +status: U32, +retry_after: String, +ipath: String)
+    -> IO(Pvp.Attempt):
+  match rd:
+    case RdEnd{st, +parts}:
+      do IO<Pvp.Attempt>:
+        c : Unit <- Http.stream.close(st)
+        sse.body(status, retry_after, sse.text(parts))
+    case RdErr{st, +e}:
+      do IO<Pvp.Attempt>:
+        c : Unit <- Http.stream.close(st)
+        IO.pure(Pvp.Attempt, Pvp.attempt_err(net_of(e)))
+    case RdStop{st}:
+      do IO<Pvp.Attempt>:
+        c : Unit <- Http.stream.close(st)
+        # consume the flag: the boundary drains stay clean
+        u : Unit <- P.write_file(ipath, "")
+        IO.pure(Pvp.Attempt, Pvp.AFail{"interrupted by the user"})
+
+@unsafe
+def sse.head(sr: Http.Stream & Http.Res, +ipath: String) -> IO(Pvp.Attempt):
+  match sr:
+    case (st, res):
+      match res:
+        case Http.Res{+status, +h, _}:
+          do IO<Pvp.Attempt>:
+            rd : Rd <- sse.read(st, Nil{}, ipath)
+            sse.done(rd, status, Http.header(h, "retry-after"), ipath)
+
+@unsafe
+def sse.opened(r: Result<&1, &1, Http.Err, Http.Stream>, +ipath: String)
+    -> IO(Pvp.Attempt):
+  match r:
+    case Fail{+e}:
+      IO.pure(Pvp.Attempt, Pvp.attempt_err(net_of(e)))
+    case Done{st}:
+      sse.head(Http.stream.res(st), ipath)
+
+@unsafe
+def sse.call(+url: String, hdrs: Map<&2, List<&2, String>>, +body: String)
+    -> IO(Pvp.Attempt):
+  do IO<Pvp.Attempt>:
+    +ipath : String <- interrupt_path()
+    r : Result<&1, &1, Http.Err, Http.Stream> <- Http.open.with("POST", url,
+      hdrs, body, Pvp.stream_step_ms())
+    sse.opened(r, ipath)
+
+# the whole reply at once (the OpenAI-compatible providers)
+def whole.call(+url: String, hdrs: Map<&2, List<&2, String>>, +body: String,
+    st: Api.Style) -> IO(Pvp.Attempt):
+  do IO<Pvp.Attempt>:
+    r : Result<&2, &2, Http.Err, Http.Res> <- Http.fetch.with("POST", url,
+      hdrs, body, Pvp.step_timeout_ms())
+    model_call.verdict(r, st)
+
+@unsafe
+def call.pick(is_anth: Bool, +url: String, hdrs: Map<&2, List<&2, String>>,
+    +body: String, st: Api.Style) -> IO(Pvp.Attempt):
+  match is_anth:
+    case True{}:
+      sse.call(url, hdrs, body)
+    case False{}:
+      whole.call(url, hdrs, body, st)
+
+# the wire body: the Messages API streams, the others answer whole
+def wire_body.pick(is_anth: Bool, +body: String) -> String:
+  match is_anth:
+    case True{}:
+      As.stream_body(body)
+    case False{}:
+      body
+
 @unsafe
 def model_call.try(fuel: Nat, +tries: Nat, n: Note, +request: String,
     +key: String, +st: Api.Style, +model: String)
@@ -213,16 +373,15 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Note, +request: String,
     case 1n+k:
       do IO<Note & Rem.RemoteRes>:
         +body : String <- IO.pure(String,
-          Enc.utf8.encode(Api.api_body_for(st, model,
-            Api.parse_wire(request))))
+          Enc.utf8.encode(wire_body.pick(Api.is_anthropic(st),
+            Api.api_body_for(st, model, Api.parse_wire(request)))))
         dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
         dump_dbg : Unit <- dump_wire(P.env_or(dr, ""), body)
         hdrs : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
           model_headers(st, key))
         ur : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_PROVIDER_URL")
-        r : Result<&2, &2, Http.Err, Http.Res> <- Http.fetch.with("POST",
-          Pvp.provider_url(P.env_or(ur, ""), st), hdrs, body, Pvp.step_timeout_ms())
-        a : Pvp.Attempt <- model_call.verdict(r, st)
+        a : Pvp.Attempt <- call.pick(Api.is_anthropic(st),
+          Pvp.provider_url(P.env_or(ur, ""), st), hdrs, body, st)
         model_call.step(a, n, k, tries,
           k2 => n2 => model_call.try(k2, Nat.add(tries, 1n), n2, request, key,
             st, model))

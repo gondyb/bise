@@ -191,35 +191,37 @@ def bg_poll_iters(+after: U32) -> U32:
 # can never re-read ANOTHER command's bytes when it wakes up. Re-running
 # the same command rewrites identical bytes, which is safe: the orphan
 # just continues its own script.
-# a positional weighted sum: each char's code times (pos^2 + 1). No
-# mod, no overflow (14 chars x 1.1M x ~200 << 2^48), deterministic,
-# and different orders of the same chars hash apart. Fuel-first (the
-# codebase idiom): the checker can normalize it in closed laws.
-def bg_script_hash.go(fuel: Nat, +s: String, +pos: Nat, acc: Nat) -> Nat:
+# FNV-1a over the code points, in U32: the arithmetic wraps mod 2^32
+# by construction, so no script length can overflow. (The former
+# positional sum c * (pos^2 + 1) was a Nat growing as length^3: it hit
+# the runtime's 2^48-1 ceiling - "bend: a Nat past the largest
+# immediate" - on a ~20k-char ASCII script, far sooner with accented
+# text, and every long heredoc the model wrote killed the REPL.) The
+# hash stays a U32 end to end: a large Nat is also slow to normalize in
+# the laws. Fuel-first (the codebase idiom).
+def bg_script_hash.go(fuel: Nat, +s: String, +h: U32) -> U32:
   match fuel:
     case 0n:
-      acc
+      h
     case 1n+k:
       match s:
         case SNil{}:
-          acc
+          h
         case SCon{Chr{+c}, t}:
-          bg_script_hash.go(k, t, Nat.add(pos, 1n),
-            Nat.add(acc,
-              Nat.mul(U32.to_nat(c), Nat.add(Nat.mul(pos, pos), 1n))))
+          bg_script_hash.go(k, t, U32.mul(U32.xor(h, c), 16777619))
 
-def bg_script_hash(+s: String) -> Nat:
-  bg_script_hash.go(Nat.mul(String.length(s), 2n), s, 1n, 0n)
+def bg_script_hash(+s: String) -> U32:
+  bg_script_hash.go(Nat.add(String.length(s), 1n), s, 2166136261)
 
 # the .cmd heredoc sentinel derives from the command's own hash: a
 # command containing the sentinel would have to contain its own hash
 def bg_sentinel(+command: String) -> String:
-  String.append("XQ-", String.append(Nat.show(bg_script_hash(command)),
+  String.append("XQ-", String.append(U32.show(bg_script_hash(command)),
     "-EOF"))
 
 def bash_script_path(+port: String, +script: String) -> String:
   String.append("/tmp/bend-sh-", String.append(port,
-    String.append("-", String.append(Nat.show(bg_script_hash(script)), ".sh"))))
+    String.append("-", String.append(U32.show(bg_script_hash(script)), ".sh"))))
 
 # ---- the wrapper: one line per generated shell statement ----
 def bg_wrap.seg(+a: String, +b: String) -> String:

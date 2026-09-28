@@ -12,6 +12,7 @@ import ./core/patch.bend as Pa
 import ./core/config.bend as Cf
 import ./core/commands.bend as Cm
 import ./core/api.bend as Api
+import ./core/anth-stream.bend as As
 import ./core/obs.bend as O
 import ./runtime/remote.bend as Rm
 import ./runtime/tools-pure.bend as Xt
@@ -1268,7 +1269,7 @@ law mcp_bootstrap_url_parity:
 # LAW: the wrapper script, byte for byte.
 law bg_wrapper_script:
   {Sh.bg_wrap("whoami", "/tmp/bend-bg-0", 30)
-    == "BG=/tmp/bend-bg-0\nmkdir -p $BG\ni=0\nwhile ! mkdir $BG/$i.slot 2>/dev/null; do i=$((i+1)); done\nmkfifo $BG/$i.in 2>/dev/null\nexec 9<>$BG/$i.in\ncat > $BG/$i.cmd <<'XQ-10236-EOF'\nwhoami\nXQ-10236-EOF\n( ulimit -f 102400; ( /bin/sh $BG/$i.cmd ) > $BG/$i.out 2>&1 <&9 & C=$!; echo $C > $BG/$i.pid; wait $C; R=$?; if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then echo $R > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in; rmdir $BG/$i.slot 2>/dev/null; fi ) >/dev/null 2>&1 &\nwhile [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished during setup: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\nc=$(cat $BG/$i.pid 2>/dev/null)\ne=0\nwhile kill -0 $c 2>/dev/null; do\n  if [ $e -lt 5 ]; then sleep 0.02; else sleep 0.1; fi\n  e=$((e+1))\n  if [ $e -ge 305 ]; then\n    printf '%s\\n' \"BEND-BG-HANDOFF-6f2c9e5b\"\n    printf '%s\\n' \"background: still running after 30s - id $i (dir /tmp/bend-bg-0)\"\n    printf '%s\\n' \"  output: tail -n 50 /tmp/bend-bg-0/$i.out\"\n    printf '%s\\n' \"  stdin (if it reads): printf '%s\\n' 'text' > /tmp/bend-bg-0/$i.in  (a command that reads stdin WAITS for input indefinitely: feed it or kill it)\"\n    printf '%s\\n' \"  status: kill -0 $(cat /tmp/bend-bg-0/$i.pid) && echo RUNNING || cat /tmp/bend-bg-0/$i.rc 2>/dev/null\"\n    printf '%s\\n' \"  kill: kill $(cat /tmp/bend-bg-0/$i.pid)\"\n    rm -f \"$0\"\n    exit 0\n  fi\ndone\nwhile [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\ns=$(cat $BG/$i.rc)\ncat $BG/$i.out\nrm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc\nrmdir $BG/$i.slot 2>/dev/null\nrm -f \"$0\"\nexit $s"
+    == "BG=/tmp/bend-bg-0\nmkdir -p $BG\ni=0\nwhile ! mkdir $BG/$i.slot 2>/dev/null; do i=$((i+1)); done\nmkfifo $BG/$i.in 2>/dev/null\nexec 9<>$BG/$i.in\ncat > $BG/$i.cmd <<'XQ-3131618372-EOF'\nwhoami\nXQ-3131618372-EOF\n( ulimit -f 102400; ( /bin/sh $BG/$i.cmd ) > $BG/$i.out 2>&1 <&9 & C=$!; echo $C > $BG/$i.pid; wait $C; R=$?; if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then echo $R > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in; rmdir $BG/$i.slot 2>/dev/null; fi ) >/dev/null 2>&1 &\nwhile [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished during setup: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\nc=$(cat $BG/$i.pid 2>/dev/null)\ne=0\nwhile kill -0 $c 2>/dev/null; do\n  if [ $e -lt 5 ]; then sleep 0.02; else sleep 0.1; fi\n  e=$((e+1))\n  if [ $e -ge 305 ]; then\n    printf '%s\\n' \"BEND-BG-HANDOFF-6f2c9e5b\"\n    printf '%s\\n' \"background: still running after 30s - id $i (dir /tmp/bend-bg-0)\"\n    printf '%s\\n' \"  output: tail -n 50 /tmp/bend-bg-0/$i.out\"\n    printf '%s\\n' \"  stdin (if it reads): printf '%s\\n' 'text' > /tmp/bend-bg-0/$i.in  (a command that reads stdin WAITS for input indefinitely: feed it or kill it)\"\n    printf '%s\\n' \"  status: kill -0 $(cat /tmp/bend-bg-0/$i.pid) && echo RUNNING || cat /tmp/bend-bg-0/$i.rc 2>/dev/null\"\n    printf '%s\\n' \"  kill: kill $(cat /tmp/bend-bg-0/$i.pid)\"\n    rm -f \"$0\"\n    exit 0\n  fi\ndone\nwhile [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\ns=$(cat $BG/$i.rc)\ncat $BG/$i.out\nrm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc\nrmdir $BG/$i.slot 2>/dev/null\nrm -f \"$0\"\nexit $s"
     : String}
 
 # LAW: the sync window defaults# LAW: the sync window defaults to 30 seconds and clamps into [0, 3600].
@@ -1492,15 +1493,20 @@ law bg_wrapper_has_both_guards:
 # wrapper just continues its own script), and the hash is pinned so
 # the naming cannot silently degrade.
 law bg_script_hash_deterministic:
-  {Sh.bg_script_hash("ab") == 684n : Nat}
+  {Sh.bg_script_hash("ab") == 1294271946 : U32}
+
+# LAW: the hash is a U32 - code points past 2^20 included (the former
+# Nat sum overflowed the runtime's 2^48-1 and killed the REPL).
+law bg_script_hash_high_code_points:
+  {Sh.bg_script_hash("é—􏿿") == 1694011805 : U32}
 
 # LAW: different scripts hash apart — two commands never share a
 # wrapper file, so an orphan can never re-read another command's
 # bytes when it wakes from a poll sleep.
 law bg_script_hash_distinguishes:
   {Bool.not(String.eq(
-      Nat.show(Sh.bg_script_hash("ab")),
-      Nat.show(Sh.bg_script_hash("cd"))))
+      U32.show(Sh.bg_script_hash("ab")),
+      U32.show(Sh.bg_script_hash("cd"))))
     == True{} : Bool}
 
 law bash_script_path_per_command:
@@ -2267,3 +2273,52 @@ fini", Nil{}),
       Con{"history   obs: tool_finished #9 failed",
       Nil{}}}}}}}}}}}}}
     : List<&2, String>}
+
+# ---- the Anthropic stream (core/anth-stream.bend) ----
+
+# LAW: a streamed request is the same body with "stream": true first.
+law anth_stream_body:
+  {As.stream_body("{\"model\":\"m\"}") == "{\"stream\":true,\"model\":\"m\"}" : String}
+
+# LAW: text and tool input stream in pieces; the reply is rebuilt whole -
+# pings, padding and the empty first input piece change nothing.
+law anth_sse_tool_call:
+  {As.reply("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-5-5\",\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"stop_reason\":null}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}      \n\nevent: ping\ndata: {\"type\": \"ping\"}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"I'll list\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" /tmp.\"}}   \n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01\",\"name\":\"bash\",\"input\":{},\"caller\":{\"type\":\"direct\"}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"arg\\\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\": \\\"ls -la /tmp\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\" | head\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":72}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+    == "OK I'll list /tmp.\nCALL 1 bash : ls -la /tmp | head\nEND\n" : String}
+
+# LAW: a streamed reply maps to exactly what the same message sent whole
+# maps to - signed thinking included (the signature streams as its own
+# delta and must survive for the replay).
+law anth_sse_matches_whole_reply:
+  {As.reply("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-5-5\",\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"stop_reason\":null}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"2+2\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" = 4\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"sig\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"4\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+    == Api.reply_of_for(Api.Anthropic{}, 200, "{\"type\":\"message\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"2+2 = 4\",\"signature\":\"sig\"},{\"type\":\"text\",\"text\":\"4\"}],\"stop_reason\":\"end_turn\"}") : String}
+
+# LAW: an error event mid-stream is the reply: the 200 error body the
+# retry policy already retries.
+law anth_sse_error_event:
+  {As.reply("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-5-5\",\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"stop_reason\":null}}\n\nevent: ping\ndata: {\"type\":\"ping\"}\n\nevent: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n")
+    == "ERROR provider 200: Overloaded\nEND\n" : String}
+
+# LAW: a streamed refusal surfaces like a whole one.
+law anth_sse_refusal:
+  {As.reply("event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-5-5\",\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"stop_reason\":null}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"refusal\",\"stop_details\":{\"type\":\"refusal\",\"explanation\":\"blocked\"}}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+    == "ERROR provider refusal: blocked\nEND\n" : String}
+
+# LAW: a 200 that is a whole JSON error body (the proxy's overload
+# answer, even to a streamed request) still maps to the provider error
+# the retry policy retries.
+law anth_stream_json_error_body:
+  {As.reply_any("{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}")
+    == "ERROR provider 200: Overloaded\nEND\n" : String}
+
+# LAW: only a non-empty flag is a Ctrl+C - the runtime clears the flag to
+# "" at every turn end, and that must never read as an interrupt.
+law interrupt_flag_semantics:
+  {Bool.and(Pv.interrupt_requested("1"),
+      Bool.and(Bool.not(Pv.interrupt_requested("")),
+        Bool.not(Pv.interrupt_requested("\n"))))
+    == True{} : Bool}
+
+# LAW: a streamed read waits 90 s at most (events come every few seconds).
+law provider_stream_step_timeout:
+  {Pv.stream_step_ms() == 90000 : U32}
