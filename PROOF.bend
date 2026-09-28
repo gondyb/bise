@@ -3633,6 +3633,9 @@ def Laws.names_apart(ins, h, u):
     Laws.hub_run_replays(ins, h),
     hub_apply_all_names(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h), u, Laws.msg_ids_fresh(ins, h)))
 
+
+# ---- L4: the frame of an agent, by its activity and its queue ----
+
 def hub_act(m: Maybe<&2, HM.Agent>) -> Bool:
   match m:
     case None{}:
