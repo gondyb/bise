@@ -33,7 +33,7 @@ pub fn listing(ws: &std::path::Path) -> String {
 /// Returns the process exit code.
 pub fn main(args: &[String]) -> i32 {
     let sub = args.first().map(String::as_str).unwrap_or("list");
-    let sub = if sub.starts_with("--") { "list" } else { sub };
+    let sub = if sub.starts_with("--") && sub != "--help" { "list" } else { sub };
     match sub {
         "list" => {
             let res = resolve::resolve(&resolve::Roots::standard(Some(&workspace(args))));

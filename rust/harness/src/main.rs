@@ -341,6 +341,9 @@ fn main() -> std::io::Result<()> {
             }
             // the key/mouse events this terminal delivers (macOS shortcuts)
             Some("keyprobe") => return bend_tui::keyprobe(),
+            // agent plugins: list, enable/disable, and the per-session
+            // bridge the REPL starts (projects/switchboard/docs/plugins.md)
+            Some("plugins") => std::process::exit(bend_plugins::cli::main(&args[1..])),
             Some("switchboard") => {
                 let debug = args.iter().any(|a| a == "--debug");
                 return run_switchboard(&args[1..], debug);
@@ -554,6 +557,8 @@ fn main() -> std::io::Result<()> {
         let err_start = std::fs::metadata(&err_path).map(|m| m.len()).unwrap_or(0);
         let mut cmd = Command::new(&repl_bin);
         cmd.env("BEND_REPL_PORT", repl_port.to_string())
+            // the REPL starts its plugins bridge with this binary
+            .env("BEND_HARNESS_BIN", std::env::current_exe().unwrap_or_default())
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(err_file));
         match crash_note.take() {
