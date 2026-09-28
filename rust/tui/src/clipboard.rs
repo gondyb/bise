@@ -2,15 +2,26 @@
 //! size limit, no terminal setting), else OSC 52 through the terminal
 //! (Ghostty allows clipboard writes by default; works over ssh; tmux
 //! needs `set-clipboard on`).
+//!
+//! Unit tests never reach the system clipboard: under `cfg(test)` the
+//! pbcopy and OSC 52 paths are not compiled, a copy lands in a
+//! thread-local buffer ([`test_clipboard`]).
 
+#[cfg(not(test))]
 use std::io::Write;
 
 /// Copies `text`; false when no way worked.
 pub(crate) fn copy(text: &str) -> bool {
-    // tests: the copy goes to a file, never the user's clipboard
+    // tmux tests of the binary: the copy goes to a file, never the
+    // user's clipboard
     if let Some(f) = std::env::var_os("BEND_CLIPBOARD_FILE") {
         return std::fs::write(f, text).is_ok();
     }
+    system_copy(text)
+}
+
+#[cfg(not(test))]
+fn system_copy(text: &str) -> bool {
     let remote = std::env::var_os("SSH_TTY").is_some() || std::env::var_os("SSH_CONNECTION").is_some();
     if cfg!(target_os = "macos") && !remote && pbcopy(text) {
         return true;
@@ -18,6 +29,25 @@ pub(crate) fn copy(text: &str) -> bool {
     osc52(text)
 }
 
+#[cfg(test)]
+thread_local! {
+    static TEST_CLIPBOARD: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Unit tests: the copy stays in this thread's buffer.
+#[cfg(test)]
+fn system_copy(text: &str) -> bool {
+    TEST_CLIPBOARD.with(|c| *c.borrow_mut() = Some(text.to_string()));
+    true
+}
+
+/// Unit tests: the last text copied on this thread.
+#[cfg(test)]
+pub(crate) fn test_clipboard() -> Option<String> {
+    TEST_CLIPBOARD.with(|c| c.borrow().clone())
+}
+
+#[cfg(not(test))]
 fn pbcopy(text: &str) -> bool {
     let child = std::process::Command::new("pbcopy")
         .stdin(std::process::Stdio::piped())
@@ -29,6 +59,7 @@ fn pbcopy(text: &str) -> bool {
     child.wait().is_ok_and(|s| s.success()) && wrote
 }
 
+#[cfg(not(test))]
 fn osc52(text: &str) -> bool {
     let mut out = std::io::stdout();
     write!(out, "\x1b]52;c;{}\x07", base64(text.as_bytes())).is_ok() && out.flush().is_ok()
@@ -53,6 +84,17 @@ pub(crate) fn base64(data: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_copy_in_unit_tests_stays_in_the_test_buffer() {
+        // pbcopy and OSC 52 are not even compiled under cfg(test): the
+        // user's clipboard never gets test text
+        if std::env::var_os("BEND_CLIPBOARD_FILE").is_some() {
+            return;
+        }
+        assert!(super::copy("👍 test text"));
+        assert_eq!(super::test_clipboard().as_deref(), Some("👍 test text"));
+    }
+
     #[test]
     fn base64_matches_the_rfc_vectors() {
         let v = [("", ""), ("f", "Zg=="), ("fo", "Zm8="), ("foo", "Zm9v"), ("foob", "Zm9vYg=="), ("fooba", "Zm9vYmE="), ("foobar", "Zm9vYmFy")];
