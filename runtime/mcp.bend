@@ -100,17 +100,8 @@ def jarr.m(m: Maybe<&2, Jv.Val>) -> List<&2, Jv.Val>:
 def jarr(v: Jv.Val, +k: String) -> List<&2, Jv.Val>:
   jarr.m(Jv.get(v, k))
 
-def index_path.pick(empty: Bool, +home: String, +ir: String) -> String:
-  Bool.pick(String, empty,
-    String.append(home, "/.bend-harness/mcp-index.txt"), ir)
-
 def index_path() -> IO(String):
-  do IO<String>:
-    ir : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_MCP_INDEX")
-    hr : Result<&1, &1, U32 & String, String> <- IO.get_env("HOME")
-    +ix : String <- IO.pure(String, P.env_or(ir, ""))
-    +hx : String <- IO.pure(String, P.env_or(hr, ""))
-    IO.pure(String, index_path.pick(String.is_empty(ix), hx, ix))
+  P.env_path("BEND_MCP_INDEX", "/.bend-harness/mcp-index.txt")
 
 # ---- bootstrap: the connector catalog becomes index lines ----
 

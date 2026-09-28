@@ -31,19 +31,8 @@ def SKILL_USAGE() -> String:
 
 # ---- the index file (mirror of the MCP index pattern) ----
 
-def index_path.default(+home: String) -> String:
-  String.append(home, "/.bend-harness/skills-index.txt")
-
-def index_path.pick(empty: Bool, +home: String, +env: String) -> String:
-  Bool.pick(String, empty, index_path.default(home), env)
-
 def index_path() -> IO(String):
-  do IO<String>:
-    ir : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_SKILLS_INDEX")
-    hr : Result<&1, &1, U32 & String, String> <- IO.get_env("HOME")
-    +ix : String <- IO.pure(String, P.env_or(ir, ""))
-    +hx : String <- IO.pure(String, P.env_or(hr, ""))
-    IO.pure(String, index_path.pick(String.is_empty(ix), hx, ix))
+  P.env_path("BEND_SKILLS_INDEX", "/.bend-harness/skills-index.txt")
 
 # ---- the startup scan (live only) ----
 # One POSIX shell script writes the index: every SKILL.md under the

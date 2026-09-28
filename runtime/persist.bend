@@ -109,6 +109,17 @@ def read_file(+path: String) -> IO(Maybe<&2, String>):
     f : Result<&1, &1, U32 & String, File> <- File.open(path, "r")
     read.opened(f)
 
+# the path in the env var `name`, else $HOME followed by `rel` (the var
+# unset or empty)
+def env_path(+name: String, +rel: String) -> IO(String):
+  do IO<String>:
+    ir : Result<&1, &1, U32 & String, String> <- IO.get_env(name)
+    hr : Result<&1, &1, U32 & String, String> <- IO.get_env("HOME")
+    +ix : String <- IO.pure(String, env_or(ir, ""))
+    +hx : String <- IO.pure(String, env_or(hr, ""))
+    IO.pure(String,
+      Bool.pick(String, String.is_empty(ix), String.append(hx, rel), ix))
+
 # a file's text, or dflt when it cannot be read
 def read_or(+path: String, +dflt: String) -> IO(String):
   do IO<String>:
