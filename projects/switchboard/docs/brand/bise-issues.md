@@ -148,7 +148,7 @@ Index:
 
 ### BISE-04 · hub line protocol v2 (levels, peer traffic)
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-h-protocol · **commits:** ae4437f
 - **track:** H · **owns:** `rust/switchboard/src/core.rs`, `daemon.rs`,
   `transcript.rs`, `core_tests.rs`; `rust/tui/src/wire.rs` (the `Ev` enum
   only); `rust/tui/src/sb.rs` (`parse_hub_line` only)
@@ -169,6 +169,55 @@ Index:
   traffic reaching main's feed); an old transcript still renders; the TUI
   shows peer messages in main (old look is fine).
 - **notes:**
+  - **Wire format as built** (C2 + one amendment main accepted):
+    `sb msg : {from} → {to} : {text}` (level 3) goes into main's feed at
+    send time for every agent message main does **not** receive: between
+    two tasks and main → task (incl. briefs, reports between tasks, auto
+    replies). What main receives stays v1 `sb msg-in : {from} m_<n> :
+    {text}`, written when it is delivered (no duplicate). `sb msg-you : {from} :
+    {text}` (level 2) is a task's end-of-turn reply to `@task …` typed in
+    another view (was `msg-in : @task : …`). `sb answered : {agent} :
+    {question} : {answer} : {why}` (level 2) goes into main's feed instead of the
+    `msg` line when main replies (`--reply-to`, or the implicit open
+    question) to a message where the task asked main (`expect_reply`),
+    including main's auto reply. Inside an `answered` field, `" : "` is escaped as
+    `" \: "` (core.rs `field_escape`; `parse_hub_line` and transcript.rs
+    undo it; a literal `" \: "` in a text would read back as `" : "`).
+    `why` comes from a new `sb send --why "<reason>"` (cli.rs, taken with
+    main's OK); empty when absent. **C2 amendment:** `Ev::AgentMsg` has
+    an extra `id: String` (`m_3` from `msg-in`, empty otherwise) so the
+    current look `◀ t1 m_3` and the tmux tests stay. Book §21 to update.
+  - **Ev mapping:** `msg` → `AgentMsg{from,to,text,level:3,id:""}`;
+    `msg-in` → `{from, to:"" (= the feed owner), level 3, id}`; old
+    `msg-in : @x : …` and `msg-you` → `{to:"you", level 2}`; `answered` →
+    `Ev::Answered{agent,question,answer,why}`. Other kinds are unchanged.
+  - **Bend:** hub/core.bend: `send` now = `send_why(…, "")`, which adds
+    `feed_main` after a successful send; `req_send` passes `q.why`;
+    `auto_reply` writes `msg-you`; `for_msg_of` moved up; new fx field
+    `fields` on `line` (the daemon joins and escapes them). This only adds lines, with no
+    state change, so no law was touched; PROOF: ALL PROOFS CHECK. sb-core rebuilt
+    (not stripped).
+  - **Outside my list (main's OK):** render.rs (AgentMsg arm + helper
+    `agent_msg_rows`, Answered arm, one test), cli.rs (`--why`).
+    daemon.rs unchanged.
+  - **For M (BISE-51):** prompts.rs still documents `sb send` without
+    `--why`; main should use `--why` when it answers for the user.
+  - **For F (BISE-14):** main's feed now gets many level-3 lines: the
+    brief of each new task shows as `main → t1` (long), and main's own
+    sends also show as its bash tool call (a duplicate to fold).
+    Current look: head `from → to`, `from to you` (level 2), `from m_3`
+    (msg-in); `answered` is drawn as a message block "main answered @x".
+  - **Checked:** core_tests (peer traffic in main's feed, main → task,
+    one line for what main receives, answered with/without why and the
+    escape, a reply to a non-question stays `msg`, msg-you); transcript
+    test (v2 kinds + v1); TUI tests (v2 parse, v1 parse + draw of an old
+    main feed, peer/answered draw); throwaway hub (e2e.Env + tmux,
+    `/tmp/bise_h_peer_tmux.py`): `◀ t1 → t2 / peer-hello-from-t1` in
+    main's feed. Gates green: cargo build, test --workspace, clippy
+    (0 warnings), run_all.sh, PROOF.
+  - **Gotcha:** a task's shell inherits `SB_CORE_BIN` (the live hub's
+    versioned sb-core); unset it (and SB_SOCKET…) before `cargo test`,
+    or the hub tests run against the live binary.
 
 ---
 
