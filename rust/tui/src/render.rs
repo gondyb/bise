@@ -157,7 +157,7 @@ pub(crate) fn ev_rows(ev: &Ev, tick: u32, width: usize) -> Vec<Line<'static>> {
 }
 
 // a thinking section: collapsed it is one dim glyph + duration;
-// expanded (ctrl+t, or a click) the reasoning shows under a faint rail
+// expanded (ctrl+o, or a click) the reasoning shows under a faint rail
 pub(crate) fn thinking_lines(ms: u128, text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
     let dim_st = Style::default().fg(dim());
     let label = match fmt_think_ms(ms) {
@@ -200,6 +200,21 @@ pub(crate) fn fmt_think_ms(ms: u128) -> String {
     }
 }
 
+thread_local! {
+    /// the feed drawn is main's (ui.rs sets it before each frame)
+    static MAIN_FEED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whose feed is drawn: main's, or an agent's (its replies carry no
+/// `:*`). The rows built under one owner rebuild under the other.
+pub(crate) fn set_main_feed(on: bool) {
+    MAIN_FEED.with(|c| c.set(on));
+}
+
+pub(crate) fn main_feed() -> bool {
+    MAIN_FEED.with(|c| c.get())
+}
+
 /// The faint rail in front of disclosed text (reasoning, a report, a
 /// brief, a message body).
 const RAIL: &str = " │ ";
@@ -223,7 +238,14 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
     let err_st = Style::default().fg(error());
     match ev {
         // an image marker is an accent chip `▣ login.png` (book §14)
-        Ev::You(t) => user_block_lines(t, width),
+        Ev::You(t, mark) => user_block_lines(t, *mark, width),
+        Ev::MarkYou { .. } => vec![],
+        // in main's feed, main's reply carries `:*` (book §6), its text at
+        // column 3; inside an agent, the reply is the view's own voice
+        Ev::Assistant(t) if main_feed() => {
+            let mark = Span::styled(format!(" {} ", G_MAIN), Style::default().fg(accent()));
+            hung_rows(&mark, &Span::raw("   "), md_to_lines(&unescape_md(t)), width)
+        }
         Ev::Assistant(t) => md_to_lines(&unescape_md(t)),
         Ev::Thinking { ms, text, open } => thinking_lines(*ms, text, *open, width),
         Ev::Tool(td) => tool_lines(td, 0, width),
@@ -435,19 +457,34 @@ fn card_lines(t: &str, width: usize) -> Vec<Line<'static>> {
 // your message (book §6, mockups): `›` dim in the glyph column, the text
 // from column 3, each of its lines (Shift+Enter, paste) on its own rows.
 // No bar, no background: the terminal's own shows through.
-pub(crate) fn user_block_lines(msg: &str, width: usize) -> Vec<Line<'static>> {
+pub(crate) fn user_block_lines(msg: &str, mark: Mark, width: usize) -> Vec<Line<'static>> {
     let style = Style::default().fg(text());
-    let lines = msg
+    let mut lines: Vec<Line<'static>> = msg
         .split('\n')
-        .map(|l| Line::from(crate::attach::chip_spans(l.trim_end_matches('\r'), style)));
-    let mark = Span::styled(format!(" {} ", G_YOU), Style::default().fg(dim()));
-    let mut rows = hung_rows(&mark, &Span::raw("   "), lines, width);
+        .map(|l| Line::from(crate::attach::chip_spans(l.trim_end_matches('\r'), style)))
+        .collect();
+    // its mark at the end (C3): `·` sent, `✓` got, `✓✓` read (accent)
+    if let (Some(last), Some(m)) = (lines.last_mut(), mark_span(mark)) {
+        last.spans.push(m);
+    }
+    let glyph = Span::styled(format!(" {} ", G_YOU), Style::default().fg(dim()));
+    let mut rows = hung_rows(&glyph, &Span::raw("   "), lines, width);
     // the sizes of its images, dim, under it
     if let Some(sizes) = crate::attach::sizes_line(msg) {
         let pad = Span::raw("   ");
         rows.extend(hung_rows(&pad, &pad, [Line::from(Span::styled(sizes, Style::default().fg(dim())))], width));
     }
     rows
+}
+
+/// The mark after your message (C3).
+fn mark_span(mark: Mark) -> Option<Span<'static>> {
+    let (g, c) = match mark {
+        Mark::Sent => (G_SENDING, dim()),
+        Mark::Received => (G_RECEIVED, faint()),
+        Mark::Read => (G_READ, accent()),
+    };
+    Some(Span::styled(format!(" {}", glyph(g)), Style::default().fg(c)))
 }
 
 // each line wrapped to the width left after the bar, every row (the
@@ -801,17 +838,17 @@ mod multiline_tests {
     fn user_message_keeps_its_line_breaks() {
         let long = "word ".repeat(12);
         let text = format!("first line\nsecond line\n{}end", long);
-        let s = screen(Ev::You(text), 30);
+        let s = screen(Ev::You(text, crate::wire::Mark::Read), 30);
         // `›` on the first row only, every row's text at column 3
         assert_eq!(s[0].as_str(), " › first line", "{s:#?}");
         assert_eq!(s[1].as_str(), "   second line", "{s:#?}");
         // the long line wraps into several rows, all at the same column
         assert!(s.len() >= 5, "{s:#?}");
         for r in &s[2..] {
-            assert!(r.starts_with("   word") || r.starts_with("   end"), "{s:#?}");
+            assert!(r.starts_with("   word") || r.starts_with("   end") || r.trim() == "✓✓", "{s:#?}");
             assert!(r.chars().count() <= 30);
         }
-        assert!(s.last().unwrap().ends_with("end"), "{s:#?}");
+        assert!(s.last().unwrap().ends_with("end ✓✓"), "{s:#?}");
         assert!(!s.iter().any(|r| r.contains('\n')));
     }
 

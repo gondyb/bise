@@ -260,6 +260,8 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect) {
     if app.cache.len() < n {
         app.cache.resize_with(n, || None);
     }
+    // main's replies carry `:*` in main's feed only (BISE-15)
+    crate::render::set_main_feed(app.sb.as_ref().is_some_and(|sb| sb.is_main_focus()));
     let (debug, tick) = (app.debug, app.tick);
     macro_rules! rows_of {
         () => {

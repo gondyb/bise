@@ -380,7 +380,7 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         .strip_prefix("steer ")
         .or_else(|| v.strip_prefix("say "))
         .unwrap_or(v);
-    let mut out = vec![Ev::You(typed.to_string())];
+    let mut out = vec![Ev::You(typed.to_string(), Mark::Sent)];
     app.history.insert(0, v.to_string());
     app.popup_sel = 0;
 

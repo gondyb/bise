@@ -111,6 +111,14 @@ fn str_of(v: &Value, k: &str) -> String {
 }
 
 impl Sb {
+    /// The feed in view is main's (its replies carry `:*`, BISE-15).
+    pub(crate) fn is_main_focus(&self) -> bool {
+        match self.agents.iter().find(|a| a.name == self.focus) {
+            Some(a) => a.main,
+            None => self.focus == "main",
+        }
+    }
+
     fn send(&mut self, v: Value) {
         let mut s = v.to_string();
         s.push('\n');
@@ -444,6 +452,8 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>) {
     let level3 = sb.ready
         && sb.focus == agent
         && (line.starts_with("sb msg : ") || line.starts_with("sb msg-in : "));
+    // BISE-15: the first steering the model read (its line turns ✓✓)
+    let steered = sb.ready && sb.focus == agent && line.contains("obs: steered: ");
     if sb.focus != agent {
         let visible = line.contains("obs: assistant:") || line.starts_with("sb ");
         if visible && sb.ready {
@@ -456,6 +466,9 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>) {
     });
     if level3 {
         crate::hints::once(app, crate::hints::Hint::FirstLevel3);
+    }
+    if steered {
+        crate::hints::once(app, crate::hints::Hint::FirstSteer);
     }
 }
 
@@ -876,7 +889,7 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
     let text = unescape_md(raw);
     let field = |s: &str| unescape_md(&s.replace(" \\: ", " : "));
     Some(match kind {
-        "you" => Ev::You(text),
+        "you" => Ev::You(text, Mark::Sent),
         // v1: what this feed's owner received: `{from} m_<n> : {text}`
         // (`@{from} : {text}` for an old direct reply to the user)
         "msg-in" => {
@@ -972,7 +985,7 @@ mod hub_line_tests {
         Some(match parse_hub_line(line)? {
             Ev::AgentMsg { from, to, text, level, id, .. } => format!("msg {from}|{to}|{text}|{level}|{id}"),
             Ev::Answered { agent, question, answer, why, .. } => format!("answered {agent}|{question}|{answer}|{why}"),
-            Ev::You(t) => format!("you {t}"),
+            Ev::You(t, _) => format!("you {t}"),
             Ev::Card(t) => format!("card {t}"),
             Ev::Info(t) => format!("info {t}"),
             Ev::Warn(t) => format!("warn {t}"),

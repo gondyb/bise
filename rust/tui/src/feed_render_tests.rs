@@ -252,7 +252,7 @@ fn resume_history_rebuilds_the_feed() {
         .iter()
         .map(|e| match e {
             Ev::Compacted(t) => format!("compacted {}", t),
-            Ev::You(t) => format!("you {}", t),
+            Ev::You(t, _) => format!("you {}", t),
             Ev::Assistant(t) => format!("assistant {}", t),
             Ev::Tool(td) => format!(
                 "tool {} {} ok={} code={} elapsed={:?}",
@@ -452,7 +452,7 @@ fn measure_feed() -> Vec<Ev> {
         "  obs: tool_finished #3 ok".to_string(),
     ]);
     vec![
-        Ev::You(prose.clone()),
+        Ev::You(prose.clone(), Mark::Read),
         Ev::Assistant(prose.clone()),
         Ev::AgentMsg { from: "docs".into(), to: "main".into(), text: prose.clone(), level: 3, id: String::new(), open: false, fold: false },
         Ev::Thinking { ms: 1200, text: prose.clone(), open: true },
@@ -638,7 +638,7 @@ fn toggles_one_item_and_all_outputs() {
     assert_eq!(expanded(&app), vec![true, true, false]);
     assert!(!toggle_all_outputs(&mut app));
     assert_eq!(expanded(&app), vec![false, false, false]);
-    // thinking is ctrl+t's, untouched
+    // thinking is ctrl+o's, untouched
     assert!(matches!(app.events[1], Ev::Thinking { open: true, .. }));
 }
 
@@ -759,7 +759,7 @@ fn feed_entities_use_the_book_glyphs() {
     assert_eq!(row(Ev::Warn("turn interrupted".into())), " ▲ turn interrupted");
     assert_eq!(row(Ev::Err("boom".into())), " ✗ boom");
     assert_eq!(row(Ev::Sub { name: "gh.x".into(), ok: false, preview: "404".into() }), "   ↳ gh.x ✗ 404");
-    assert!(row(Ev::You("hi".into())).starts_with(" › hi"));
+    assert!(row(Ev::You("hi".into(), Mark::Read)).starts_with(" › hi"));
     // a tool the turn abandoned says so in English
     let mut events = vec![Ev::Tool(ToolData::bare(9, ToolState::Run))];
     let mut cache = vec![None];
@@ -810,14 +810,14 @@ fn traffic(n: usize, k: usize, from: usize) -> Vec<Ev> {
 
 #[test]
 fn a_run_of_twelve_folds() {
-    let mut evs = vec![Ev::You("ship it".into())];
+    let mut evs = vec![Ev::You("ship it".into(), Mark::Read)];
     evs.extend(traffic(12, 5, 0));
     let (mut events, mut cache) = arrive(evs);
     let rows = cached_text(&events, &mut cache, 100);
     let pulse = crate::theme::working_frame(0).0;
     assert_eq!(
         rows,
-        vec![" › ship it".to_string(), String::new(), format!(" │ ▸ 12 messages between 5 agents {}", pulse)],
+        vec![" › ship it ✓✓".to_string(), String::new(), format!(" │ ▸ 12 messages between 5 agents {}", pulse)],
         "the whole run is one line, live"
     );
     // opened in place, in order, each line in its columns
@@ -867,7 +867,7 @@ fn a_level_two_line_closes_the_run() {
 
 #[test]
 fn a_closed_run_never_changes() {
-    let mut evs = vec![Ev::You("go".into())];
+    let mut evs = vec![Ev::You("go".into(), Mark::Read)];
     evs.extend(traffic(6, 4, 0));
     evs.push(Ev::Assistant("the agents agreed.".into()));
     let (mut events, mut cache) = arrive(evs);
@@ -931,7 +931,7 @@ fn time_marks_after_a_pause() {
     let at = || "14:31".to_string();
     // not at the top of a feed
     assert!(!pause_mark(&mut events, &mut cache, PAUSE_MS * 2, at));
-    push_event(&mut events, &mut cache, Ev::You("hi".into()));
+    push_event(&mut events, &mut cache, Ev::You("hi".into(), Mark::Read));
     // a short pause: nothing
     assert!(!pause_mark(&mut events, &mut cache, PAUSE_MS - 1, at));
     assert!(pause_mark(&mut events, &mut cache, PAUSE_MS, at));
@@ -939,7 +939,7 @@ fn time_marks_after_a_pause() {
     assert!(!pause_mark(&mut events, &mut cache, PAUSE_MS, at));
     push_event(&mut events, &mut cache, Ev::Assistant("back".into()));
     let rows = cached_text(&events, &mut cache, 100);
-    assert_eq!(rows, vec![" › hi", "", " · 14:31 ·", "", "back"], "{rows:#?}");
+    assert_eq!(rows, vec![" › hi ✓✓", "", " · 14:31 ·", "", "back"], "{rows:#?}");
     // a mark ends a run of level 3: the run after it counts apart
     let mut evs = traffic(4, 2, 0);
     evs.push(Ev::TimeMark("15:02".into()));
@@ -982,7 +982,7 @@ fn level_two_and_answered_lines() {
 #[test]
 fn the_first_line_of_an_open_fold_toggles_by_row() {
     let long = format!("heads-up: {}", "x ".repeat(40));
-    let mut evs = vec![Ev::You("go".into()), l3("a", "b", &long)];
+    let mut evs = vec![Ev::You("go".into(), Mark::Read), l3("a", "b", &long)];
     evs.extend(traffic(4, 3, 0));
     let (mut events, mut cache) = arrive(evs);
     // row 1 (after the gap) is the fold line
@@ -999,7 +999,7 @@ fn the_first_line_of_an_open_fold_toggles_by_row() {
 #[test]
 fn whats_for_you_matches_the_mockup() {
     let evs = vec![
-        Ev::You("the login breaks on safari. and the api docs, v2 please.".into()),
+        Ev::You("the login breaks on safari. and the api docs, v2 please.".into(), Mark::Read),
         Ev::Assistant("on it: auth-fix takes safari, docs takes the api docs.".into()),
         l3("docs", "main", "v1 or v2 for the examples?"),
         l3("main", "docs", "v2, the brief says so."),
@@ -1015,7 +1015,7 @@ fn whats_for_you_matches_the_mockup() {
     let rows = cached_text(&events, &mut cache, 100);
     println!("{}", rows.join("\n"));
     let want = [
-        " › the login breaks on safari. and the api docs, v2 please.",
+        " › the login breaks on safari. and the api docs, v2 please. ✓✓",
         "",
         "on it: auth-fix takes safari, docs takes the api docs.",
         "",
@@ -1041,7 +1041,7 @@ fn whats_for_you_matches_the_mockup() {
 fn a_busy_hour_matches_the_mockup() {
     let mut evs = vec![
         Ev::TimeMark("14:02".into()),
-        Ev::You("ship the v2 api: endpoints, docs, sdk, migration, the lot.".into()),
+        Ev::You("ship the v2 api: endpoints, docs, sdk, migration, the lot.".into(), Mark::Read),
         Ev::Assistant("that's 30 pieces. i split it: 12 endpoints, 8 sdk, 6 docs, 4 migration. starting them.".into()),
     ];
     evs.extend(traffic(47, 30, 0));
@@ -1067,7 +1067,7 @@ fn a_busy_hour_matches_the_mockup() {
     let want = [
         " · 14:02 ·".to_string(),
         "".into(),
-        " › ship the v2 api: endpoints, docs, sdk, migration, the lot.".into(),
+        " › ship the v2 api: endpoints, docs, sdk, migration, the lot. ✓✓".into(),
         "".into(),
         "that's 30 pieces. i split it: 12 endpoints, 8 sdk, 6 docs, 4 migration.".into(),
         "starting them.".into(),
@@ -1092,4 +1092,143 @@ fn a_busy_hour_matches_the_mockup() {
     let tail: Vec<&String> = rows[want.len()..].iter().collect();
     assert!(tail.iter().any(|r| r.contains("mig-db needs you")), "{rows:#?}");
     assert_eq!(tail[tail.len() - 3..], [&" · 14:31 ·".to_string(), &String::new(), &format!(" │ ▸ 12 messages between 6 agents {}", pulse)]);
+}
+
+// ---- BISE-15: message marks (C3, book §13) ----
+
+/// The wire lines into a feed, as run::ingest_line parses them.
+fn ingest(lines: &[&str]) -> (Vec<Ev>, Vec<Option<EventRows>>) {
+    let (mut events, mut cache) = (Vec::new(), Vec::new());
+    for l in lines {
+        let (line, replayed) = strip_history(l);
+        let ev = if replayed { parse_history_line(line) } else { parse_line(line) };
+        if let Some(ev) = ev {
+            push_event(&mut events, &mut cache, ev);
+        }
+    }
+    (events, cache)
+}
+
+fn marks(events: &[Ev]) -> Vec<(String, Mark)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            Ev::You(t, m) => Some((t.clone(), *m)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn steering_moves_the_mark_of_your_line() {
+    // your line while the agent works: `·`, then `✓` (received), `✓✓` (read)
+    let (mut events, mut cache) = ingest(&[
+        "sb you : run the tests",
+        "  obs: turn_started",
+        "sb you : skip firefox",
+    ]);
+    let rows = cached_text(&events, &mut cache, 100);
+    assert!(rows.contains(&format!(" › skip firefox {}", G_SENDING)), "{rows:#?}");
+    push_event(&mut events, &mut cache, parse_line("  obs: steering_received: skip firefox").unwrap());
+    let rows = cached_text(&events, &mut cache, 100);
+    assert!(rows.contains(&format!(" › skip firefox {}", G_RECEIVED)), "{rows:#?}");
+    push_event(&mut events, &mut cache, parse_line("  obs: steered: skip firefox").unwrap());
+    let rows = cached_text(&events, &mut cache, 100);
+    assert!(rows.contains(&format!(" › skip firefox {}", G_READ)), "{rows:#?}");
+    // no info line for either: the mark says it
+    assert!(!rows.iter().any(|r| r.contains("steer")), "{rows:#?}");
+    // the colors: `·` dim, `✓` faint, `✓✓` accent
+    let last = |evs: &[Ev]| -> Style {
+        let rows = build_rows(evs, evs.len() - 1, false, 100, 0);
+        rows.iter().flat_map(|r| r.spans.clone()).last().unwrap().style
+    };
+    let one = |m| vec![Ev::You("x".into(), m)];
+    assert_eq!(last(&one(Mark::Sent)).fg, Some(crate::theme::dim()));
+    assert_eq!(last(&one(Mark::Received)).fg, Some(crate::theme::faint()));
+    assert_eq!(last(&one(Mark::Read)).fg, Some(crate::theme::accent()));
+}
+
+#[test]
+fn a_mark_only_moves_up_and_finds_its_line() {
+    let (mut events, mut cache) = ingest(&[
+        "sb you : same text",
+        "  obs: turn_started",
+        "sb you : other",
+        "sb you : same   text",
+    ]);
+    // a line break flattened on the wire still matches; the latest line
+    // with the text gets it
+    push_event(&mut events, &mut cache, parse_line("  obs: steered: same text").unwrap());
+    push_event(&mut events, &mut cache, parse_line("  obs: steering_received: same text").unwrap());
+    assert_eq!(
+        marks(&events),
+        vec![("same text".into(), Mark::Read), ("other".into(), Mark::Sent), ("same   text".into(), Mark::Read)]
+    );
+    // a steering line with no line of yours: nothing appended
+    let n = events.len();
+    push_event(&mut events, &mut cache, parse_line("  obs: steered: unknown").unwrap());
+    assert_eq!(events.len(), n);
+}
+
+#[test]
+fn a_message_at_idle_is_read_when_its_turn_starts() {
+    let (events, _) = ingest(&["sb you : hello", "  obs: turn_started", "  obs: assistant: hi", "--- idle", "sb you : next"]);
+    assert_eq!(marks(&events), vec![("hello".into(), Mark::Read), ("next".into(), Mark::Sent)]);
+}
+
+#[test]
+fn a_replayed_history_restores_the_marks() {
+    // --resume: `you :` lines were committed (read); a steering the Core
+    // committed comes back as `injected :` and marks its line; an
+    // injected notification stays an info line
+    let (events, mut cache) = ingest(&[
+        "history you : fix the login",
+        "history   obs: turn_started",
+        "history injected : skip firefox",
+        "history injected : [notification] docs is done",
+    ]);
+    assert_eq!(marks(&events), vec![("fix the login".into(), Mark::Read)]);
+    let rows = cached_text(&events, &mut cache, 100);
+    // a replayed steering has no `you :` line of its own: it stays the
+    // injected line (the REPL history can't tell it from a notification)
+    assert!(rows.iter().any(|r| r.contains("injected · skip firefox")), "{rows:#?}");
+    assert!(rows.iter().any(|r| r.contains("injected · [notification] docs is done")), "{rows:#?}");
+    // with its line in the feed (typed live, then the REPL replays), the
+    // injected line marks it read and adds nothing
+    let (events, mut cache) = ingest(&["sb you : skip firefox", "history injected : skip firefox"]);
+    assert_eq!(marks(&events), vec![("skip firefox".into(), Mark::Read)]);
+    assert_eq!(cached_text(&events, &mut cache, 100), vec![format!(" › skip firefox {}", G_READ)]);
+    // a steering typed live then replayed from the hub transcript: the
+    // same obs lines give the same marks
+    let (events, _) = ingest(&[
+        "sb you : fix the login",
+        "  obs: turn_started",
+        "sb you : skip firefox",
+        "  obs: steering_received: skip firefox",
+        "sb you : and log the headers",
+        "  obs: steering_received: and log the headers",
+        "  obs: steered: skip firefox",
+        "sb you : also logout",
+    ]);
+    assert_eq!(
+        marks(&events),
+        vec![
+            ("fix the login".into(), Mark::Read),
+            ("skip firefox".into(), Mark::Read),
+            ("and log the headers".into(), Mark::Received),
+            ("also logout".into(), Mark::Sent),
+        ]
+    );
+}
+
+#[test]
+fn mains_replies_carry_its_glyph_in_its_feed_only() {
+    let (events, mut cache) = arrive(vec![Ev::Assistant("on it: auth-fix takes safari.".into())]);
+    crate::render::set_main_feed(true);
+    let in_main = cached_text(&events, &mut cache, 100);
+    // the rows built for main's feed rebuild inside an agent
+    crate::render::set_main_feed(false);
+    let in_agent = cached_text(&events, &mut cache, 100);
+    assert_eq!(in_main, vec![format!(" {} on it: auth-fix takes safari.", crate::theme::G_MAIN)]);
+    assert_eq!(in_agent, vec!["on it: auth-fix takes safari.".to_string()]);
 }

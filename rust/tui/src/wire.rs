@@ -44,12 +44,22 @@ impl ToolData {
     }
 }
 
+/// Your message's mark (contract C3, book §13): `·` sent, `✓` the agent
+/// got it (`steering_received`), `✓✓` the model read it (`steered`, or
+/// its turn started). Only ever moves up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Mark {
+    Sent,
+    Received,
+    Read,
+}
+
 #[derive(Clone)]
 pub(crate) enum Ev {
-    You(String),
+    You(String, Mark),
     Assistant(String),
     // the model's reasoning for the message that follows: rendered
-    // collapsed as "thought for Ns"; ctrl+t expands every section, a
+    // collapsed as "thought for Ns"; ctrl+o expands every section, a
     // click on the section toggles just that one
     Thinking {
         ms: u128,
@@ -126,6 +136,14 @@ pub(crate) enum Ev {
     TimeMark(String),
     // switchboard: an attention card
     Card(String),
+    // in memory only (C3): a wire line that moves the mark of your last
+    // message with this text (push_event applies it, never appended);
+    // `or` shows instead when there is none (an injected notification)
+    MarkYou {
+        text: String,
+        mark: Mark,
+        or: Option<Box<Ev>>,
+    },
 }
 
 // the wire carries the model's reasoning wrapped in think markers inside
@@ -173,12 +191,17 @@ pub(crate) fn strip_history(line: &str) -> (&str, bool) {
 }
 
 pub(crate) fn parse_history_line(line: &str) -> Option<Ev> {
+    // a replayed message was committed: the model read it
     if let Some(t) = line.strip_prefix("you : ") {
-        return Some(Ev::You(unescape_md(t)));
+        return Some(Ev::You(unescape_md(t), Mark::Read));
     }
+    // steering the Core committed: your message with this text was read;
+    // none (a notification): the old info line
     if let Some(t) = line.strip_prefix("injected : ") {
-        let flat = unescape_md(t).replace('\n', " ");
-        return Some(Ev::Info(format!("injected · {}", truncate_chars(flat.trim(), 110))));
+        let text = unescape_md(t);
+        let flat = text.replace('\n', " ");
+        let info = Ev::Info(format!("injected · {}", truncate_chars(flat.trim(), 110)));
+        return Some(Ev::MarkYou { text, mark: Mark::Read, or: Some(Box::new(info)) });
     }
     parse_line(line)
 }
@@ -302,11 +325,12 @@ pub(crate) fn parse_line(line: &str) -> Option<Ev> {
     if o.starts_with("tool_result_committed") {
         return None;
     }
+    // C3: steering moves the mark of your message, no info line
     if let Some(t) = o.strip_prefix("steering_received: ") {
-        return Some(Ev::Info(format!("steering received: {}", t)));
+        return Some(Ev::MarkYou { text: t.to_string(), mark: Mark::Received, or: None });
     }
     if let Some(t) = o.strip_prefix("steered: ") {
-        return Some(Ev::Info(format!("steering passed to the model: {}", t)));
+        return Some(Ev::MarkYou { text: t.to_string(), mark: Mark::Read, or: None });
     }
     if let Some(t) = o.strip_prefix("notification_received: ") {
         return Some(Ev::Info(format!("notification : {}", t)));

@@ -34,6 +34,8 @@ fn last_tool_mut(events: &mut [Ev], pred: impl Fn(&ToolData) -> bool) -> Option<
 
 pub(crate) struct EventRows {
     pub(crate) width: u16,
+    /// built for main's feed (render::main_feed)
+    pub(crate) main: bool,
     pub(crate) rows: Vec<Line<'static>>,
     /// A running tool: where its tool line sits in `rows`, and what it
     /// needs to be redrawn alone.
@@ -57,7 +59,7 @@ pub(crate) enum Live {
 pub(crate) fn event_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> EventRows {
     if is_l3(&events[i]) && ev_visible(&events[i], debug) {
         let (rows, live) = l3_rows(events, i, debug, width, tick);
-        return EventRows { width: width as u16, rows, live };
+        return EventRows { width: width as u16, main: main_feed(), rows, live };
     }
     let running = match &events[i] {
         Ev::Tool(td) if matches!(td.state, ToolState::Run) && ev_visible(&events[i], debug) => Some(td),
@@ -66,6 +68,7 @@ pub(crate) fn event_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
     let Some(td) = running else {
         return EventRows {
             width: width as u16,
+            main: main_feed(),
             rows: build_rows(events, i, debug, width, tick),
             live: None,
         };
@@ -86,6 +89,7 @@ pub(crate) fn event_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
     }
     EventRows {
         width: width as u16,
+        main: main_feed(),
         rows,
         live: Some(LiveHead { at, len, what: Live::Tool { name, args } }),
     }
@@ -236,7 +240,7 @@ pub(crate) fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
 }
 
 pub(crate) fn is_message(ev: &Ev) -> bool {
-    matches!(ev, Ev::You(_) | Ev::Assistant(_) | Ev::Thinking { .. } | Ev::AgentMsg { .. } | Ev::Answered { .. })
+    matches!(ev, Ev::You(..) | Ev::Assistant(_) | Ev::Thinking { .. } | Ev::AgentMsg { .. } | Ev::Answered { .. })
 }
 
 pub(crate) fn is_tool_block(ev: &Ev) -> bool {
@@ -349,6 +353,31 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
             after_append(events, cache);
             return true;
         }
+        // C3: a steering line moves the mark of your message
+        Ev::MarkYou { text, mark, or } => {
+            if !mark_you(events, cache, text, *mark) {
+                if let Some(ev) = or {
+                    return push_event(events, cache, (**ev).clone());
+                }
+            }
+            return false;
+        }
+        // a turn starts: the model reads what you sent since the last one
+        // (a message at idle goes straight to ✓✓)
+        Ev::Turn => {
+            for (i, e) in events.iter_mut().enumerate().rev() {
+                match e {
+                    Ev::Turn => break,
+                    Ev::You(_, m) if matches!(*m, Mark::Sent | Mark::Received) => {
+                        *m = Mark::Read;
+                        if let Some(c) = cache.get_mut(i) {
+                            *c = None;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
         // the turn ended: a tool still shown as running was abandoned
         // (interrupt or failed turn) — freeze it so the elapsed stops
         Ev::TurnDone | Ev::Idle => {
@@ -397,7 +426,7 @@ pub(crate) fn ensure_rows(
         cache.resize_with(events.len(), || None);
     }
     match cache[i].as_mut() {
-        Some(c) if c.width == width as u16 => {
+        Some(c) if c.width == width as u16 && c.main == main_feed() => {
             refresh_live(c, &events[i], tick);
         }
         _ => cache[i] = Some(event_rows(events, i, debug, width, tick)),
@@ -780,7 +809,7 @@ pub(crate) fn local_hhmm() -> String {
     })
 }
 
-// ---- everything at once (ctrl+t, input.rs) ----
+// ---- everything at once (ctrl+o, input.rs) ----
 
 /// Whether event `ev` itself is open; None when it has nothing to
 /// disclose.
@@ -803,13 +832,11 @@ pub(crate) fn is_closed_at(events: &[Ev], i: usize) -> bool {
 }
 
 /// Anything closed in the feed.
-#[cfg_attr(not(test), allow(dead_code))] // ctrl+t (input.rs) moves to it
 pub(crate) fn anything_closed(events: &[Ev]) -> bool {
     (0..events.len()).any(|i| is_closed_at(events, i))
 }
 
 /// Open (or close) everything that discloses, folds included.
-#[cfg_attr(not(test), allow(dead_code))] // ctrl+t (input.rs) moves to it
 pub(crate) fn set_everything(events: &mut [Ev], cache: &mut [Option<EventRows>], open: bool) {
     for i in 0..events.len() {
         if is_l3(&events[i]) && fold_open(&events[i]) != open && folded_run(events, i, false) == Some(i) {
@@ -819,4 +846,36 @@ pub(crate) fn set_everything(events: &mut [Ev], cache: &mut [Option<EventRows>],
             toggle_own(events, cache, i);
         }
     }
+}
+
+// ---- message marks (C3, book §13, BISE-15) ----
+
+/// How far back a steering line looks for your message.
+const MARK_LOOKBACK: usize = 500;
+
+/// The words of a text, for matching a steering line to your message
+/// (the wire flattens its line breaks).
+fn words(t: &str) -> impl Iterator<Item = &str> {
+    t.split_whitespace()
+}
+
+/// Move the mark of your last message with `text` up to `mark` (never
+/// down). False when there is no such message.
+pub(crate) fn mark_you(events: &mut [Ev], cache: &mut [Option<EventRows>], text: &str, mark: Mark) -> bool {
+    let plain = crate::markdown::unescape_md(text);
+    let from = events.len().saturating_sub(MARK_LOOKBACK);
+    for i in (from..events.len()).rev() {
+        if let Ev::You(t, m) = &mut events[i] {
+            if words(t).eq(words(&plain)) {
+                if mark > *m {
+                    *m = mark;
+                    if let Some(c) = cache.get_mut(i) {
+                        *c = None;
+                    }
+                }
+                return true;
+            }
+        }
+    }
+    false
 }
