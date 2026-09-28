@@ -257,7 +257,9 @@ Mockup: [tui-onboarding.html](tui-onboarding.html). Inspired by Vibe's
 screen). Six steps, `enter` to go on:
 
 1. **Welcome.** Typed: "hi, i'm bise", then the `:*` pops in blush, then
-   "you, but with way more hands." and "press enter ↵".
+   "code, but with way more hands." and "press enter ↵". Voice rule: in the
+   product bise speaks as "i"; "you" is always the user. So the site tagline
+   "you, but with way more hands." is not used inside the product.
 2. **Theme.** "your terminal looks dark, so i picked dark." Two live
    previews side by side; ←→ switches, `/theme` changes it later.
 3. **Model.** "which model should do the work?" A key found in the
