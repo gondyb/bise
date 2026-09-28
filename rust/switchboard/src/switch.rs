@@ -231,12 +231,18 @@ fn replace_hub(paths: &Paths, root: &Path) -> Result<(), String> {
     ))
 }
 
-fn id_of(root: &Path) -> String {
+/// The id of the version at `root` (from its `VERSION` file); None for
+/// a dev tree.
+pub fn version_id(root: &Path) -> Option<String> {
     version_info(root)
         .get("id")
         .and_then(|x| x.as_str())
         .map(String::from)
-        .unwrap_or_else(|| root.to_string_lossy().to_string())
+}
+
+/// The version id, else the path (for messages).
+pub fn id_of(root: &Path) -> String {
+    version_id(root).unwrap_or_else(|| root.to_string_lossy().to_string())
 }
 
 /// Watch the new hub for the probation period. Err: the reason to roll back.

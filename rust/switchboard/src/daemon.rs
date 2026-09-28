@@ -240,6 +240,17 @@ fn transcript_len(path: &Path) -> usize {
         .unwrap_or(0)
 }
 
+/// `git log -<n>` of the repository versions are built from: one
+/// `<short hash> <subject>` per line (empty when git fails).
+fn recent_commits(repo: &Path, n: usize) -> String {
+    Command::new("git")
+        .args(["log", &format!("-{}", n), "--format=%h %s"])
+        .current_dir(repo)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default()
+}
+
 fn free_port() -> std::io::Result<u16> {
     let l = TcpListener::bind(("127.0.0.1", 0))?;
     Ok(l.local_addr()?.port())
@@ -262,13 +273,7 @@ impl Shell {
         let st = switch::read_state(&paths);
         let root = &self.opts.app_root;
         let me = switch::version_info(root);
-        let id_of = |p: &str| {
-            switch::version_info(Path::new(p))
-                .get("id")
-                .and_then(|x| x.as_str())
-                .map(String::from)
-                .unwrap_or_else(|| p.to_string())
-        };
+        let id_of = |p: &str| switch::id_of(Path::new(p));
         let (repo, versions_dir) = self.version_ctx();
         match s("do").as_str() {
             "" | "list" => {
@@ -290,12 +295,7 @@ impl Shell {
                         f.get("reason").and_then(|x| x.as_str()).unwrap_or("")
                     ));
                 }
-                let log = Command::new("git")
-                    .args(["log", "-12", "--format=%h %s"])
-                    .current_dir(&repo)
-                    .output()
-                    .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-                    .unwrap_or_default();
+                let log = recent_commits(&repo, 12);
                 out.push(format!("commits ({}) — ● built:", repo.display()));
                 for l in log.lines() {
                     let h = l.split(' ').next().unwrap_or("");
@@ -499,13 +499,7 @@ impl Shell {
             st.get(k)
                 .and_then(|x| x.as_str())
                 .filter(|p| !p.is_empty())
-                .map(|p| {
-                    switch::version_info(Path::new(p))
-                        .get("id")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or("")
-                        .to_string()
-                })
+                .and_then(|p| switch::version_id(Path::new(p)))
                 .unwrap_or_default()
         };
         let good = id_at("good");
@@ -531,12 +525,7 @@ impl Shell {
             tree_marks.push("building");
         }
         items.push(json!({"rev": "tree", "subject": "the working tree, uncommitted changes included", "marks": tree_marks}));
-        let log = Command::new("git")
-            .args(["log", "-40", "--format=%h %s"])
-            .current_dir(&repo)
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-            .unwrap_or_default();
+        let log = recent_commits(&repo, 40);
         for l in log.lines() {
             let (h, subject) = l.split_once(' ').unwrap_or((l, ""));
             let mut marks = vec![];
