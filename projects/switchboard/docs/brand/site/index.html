@@ -397,6 +397,14 @@ added secure: true; the webkit test passes now.</div></div>
   <span class="com">// only the open ones</span>
   <span class="kw">return</span> issues.<span class="fn">filter</span>((i) =&gt; i.state === <span class="str">"open"</span>);
 }</pre><div style="padding-left:3ch" class="dim">↳ github.search_issues ✓</div><div style="padding-left:3ch" class="dim">▸ result · 2 items</div></div>
+  <h3>tables</h3>
+  <p>no frame, no bars. two spaces between columns, a bold header, and a faint rule with one segment per column. numbers align right. too wide for the screen: the widest column wraps; still too wide: one block per row, key and value.</p>
+  <div class="term"><div><span class="who acc">:*</span>here's where the v2 endpoints stand:</div><pre style="font:inherit; margin:6px 0 0 3ch; white-space:pre"><b>endpoint</b>  <b>owner     </b>  <b>status </b>  <b>tests</b>  <b>coverage</b>
+<span class="faint">────────  ──────────  ───────  ─────  ────────</span>
+/users    ep-users    done        21       94%
+/orgs     ep-orgs     done        17       91%
+/keys     ep-keys     working      9       62%
+/billing  ep-billing  waiting</pre></div>
   <h3>progressive disclosure</h3>
   <table>
     <tr><th>item</th><th>by default</th><th>open</th></tr>
