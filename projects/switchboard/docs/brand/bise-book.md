@@ -182,7 +182,7 @@ One glyph per entity and per status. Color only for attention.
 |---|---|
 | `·` → `✓` → `✓✓` | your message: sending → the agent got it → the model read it (`✓✓` in accent) |
 | `•` (accent) | unread activity in an agent |
-| worktree mark (BISE-84 picks it: width 1, in ≥ 4 of the audited fonts, not `⌥`) | the agent has its own worktree (no mark: the shared folder); was `⎇`, in almost no font |
+| `ψ` (picked in BISE-84: width 1, in every installed audited font) | the agent has its own worktree (no mark: the shared folder); was `⎇`, in almost no font |
 | `⇄` | overlap: two agents changed the same file |
 | `↻` (error) | a restart failed |
 | `Δ` | a version is building or on trial (was `⧗`: in no font) |
@@ -192,7 +192,7 @@ One glyph per entity and per status. Color only for attention.
 [glyph-audit.md](glyph-audit.md)):** keep the brand glyphs (`∿`, `♡`, `:*`) and
 every glyph a fallback font draws at width 1; replace only the ones that break:
 `✉` → `@` and `↪` → `»` (color-emoji risk), `⟳` → `≡` pulsing, `⧗` → `Δ`,
-`⎇` → a glyph picked in BISE-84. `BISE_ASCII=1` switches every glyph to plain
+`⎇` → `ψ` (BISE-84). `BISE_ASCII=1` switches every glyph to plain
 ASCII (`~` working, `<3` done, `>` you, …) for terminals that draw them badly
 (BISE-84). Terminals must use ambiguous width = narrow (the default).
 
