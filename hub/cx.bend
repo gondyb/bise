@@ -314,12 +314,14 @@ def journal(fx: List<&2, Fx>) -> List<&2, M.Ev>:
 
 # ---- what every journal satisfies (laws msg_ids_fresh, auto_never_asks) ----
 
-# a new message takes the next free id of the state it is sent in: no id
-# is ever reused, so no message overwrites another
+# a new message (a new card) takes the next free id of the state it is
+# created in: no id is ever reused, so nothing overwrites another
 def FreshEv(+s: M.St, e: M.Ev) -> Data:
   match e:
     case M.EMsgSent{+m}:
       {M.Msg.id(m) == M.St.next_msg(s) : Nat}
+    case M.ECardOpened{+c}:
+      {M.Card.id(c) == M.St.next_card(s) : Nat}
     case _:
       Unit
 

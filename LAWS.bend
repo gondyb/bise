@@ -2406,3 +2406,40 @@ law delivered_once:
   for +h: HC.Hub
   HX.Deliv(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h))
 
+# LAW (L12): stopping or dropping a task, in any state where each message
+# is one record (every state the hub reaches: msgs_unique), leaves no
+# message queued for it (each got recipient_unavailable).
+law stop_leaves_no_queue:
+  for -o: HM.St
+  for +cx: HX.Cx<o>
+  for +n: String
+  for +life: HM.Life
+  for +why: String
+  for u: HI.Unique(HX.d(o, cx))
+  {HM.queued_for(HX.d(o, HC.stop_task(o, cx, n, life, why)), n) == Nil{} : List<&2, HM.Msg>}
+
+# LAW (L12): stopping or dropping a task, in any state where no two open
+# cards share an id (every state the hub reaches: cards_unique), leaves no
+# open card of it.
+law stop_leaves_no_card:
+  for -o: HM.St
+  for +cx: HX.Cx<o>
+  for +n: String
+  for +life: HM.Life
+  for +why: String
+  for u: HI.UniqueCards(HX.d(o, cx))
+  {HC.card_ids(HM.St.cards(HX.d(o, HC.stop_task(o, cx, n, life, why))), n, Nil{}) == Nil{} : List<&2, Nat>}
+
+# LAW (L12 support): a new hub has no two open cards with one id...
+law init_cards_unique:
+  for +w: String
+  HI.UniqueCards(HM.init(w))
+
+# ...and any sequence of inputs keeps it so (each card takes the next
+# free id).
+law cards_unique:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  for u: HI.UniqueCards(HC.Hub.d(h))
+  HI.UniqueCards(HC.Hub.d(HC.RunR.hub(HC.run(ins, h))))
+

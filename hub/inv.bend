@@ -48,3 +48,16 @@ def IsPrefix(a: List<&2, Nat>, b: List<&2, Nat>) -> Data:
 # of any later state: a message once sent is never removed
 def Kept(+s1: M.St, +s2: M.St) -> Data:
   IsPrefix(ids(M.St.msgs(s1)), ids(M.St.msgs(s2)))
+
+# the card ids, in the order of the state
+def card_ids(cs: List<&2, M.Card>) -> List<&2, Nat>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case Con{+c, +t}:
+      M.Card.id(c) <> card_ids(t)
+
+# law cards_unique: no two open cards share an id, every id is below the
+# next free one
+def UniqueCards(+s: M.St) -> Data:
+  X.Both<Distinct(card_ids(M.St.cards(s))), Below(card_ids(M.St.cards(s)), M.St.next_card(s))>
