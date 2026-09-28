@@ -145,7 +145,7 @@ fn failing_server_is_a_diagnostic() {
         data: base.join("data"),
         disabled: vec![],
     };
-    // no parent and nothing to serve: returns once the files are written
+    // nothing to serve: returns once the files are written
     bridge::serve(bridge::Opts { dir: dir.clone(), parent: None, roots }).unwrap();
     assert_eq!(std::fs::read_to_string(dir.join("mcp-index.txt")).unwrap(), "");
     let report = std::fs::read_to_string(dir.join("report.txt")).unwrap();

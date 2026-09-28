@@ -23,6 +23,7 @@ import ./mcp.bend as Mc
 import ../vendor/json.bend as J
 import ./proc.bend as Proc
 import ./skills-pure.bend as Skp
+import ./plugins.bend as Pl
 
 # ---- the tool contract ----
 
@@ -35,32 +36,77 @@ def index_path() -> IO(String):
   P.env_path("BEND_SKILLS_INDEX", "/.bend-harness/skills-index.txt")
 
 # ---- the startup scan (live only) ----
-# One POSIX shell script writes the index: every SKILL.md under the
-# standard skill folders with a name: and a single-line description: in
-# its frontmatter. The repo folder is scanned as $PWD/.agents/skills:
+# One POSIX shell script writes two indexes: every SKILL.md under a
+# skill folder with a name: and a single-line description: in its
+# frontmatter.
+#   $1 the shared index: the user folders (~/.agents/skills,
+#      ~/.vibe/skills); the TUI `$` popup reads it
+#   $2 this session's index: the workspace folder
+#      ($BEND_WORKDIR/.agents/skills - the hub runs a task's REPL in the
+#      app root, so $PWD would miss the task's workspace - else
+#      $PWD/.agents/skills), then the plugin skills ($3, written by the
+#      plugins bridge, runtime/plugins.bend)
 # skill_ok keeps absolute paths only, so a relative one would drop
 # every local skill. Tabs and quotes are stripped from the fields so the
 # tab-separated line stays unambiguous; folded multi-line YAML
 # descriptions are out of scope (the Agent Skills format is one line).
 
-def scan_script(+idx: String) -> String:
-  String.append(": > \"",
-    String.append(idx,
-      String.append("\"\nfor d in \"$HOME/.agents/skills\" \"$HOME/.vibe/skills\" \"$PWD/.agents/skills\"; do\n  [ -d \"$d\" ] || continue\n  for f in \"$d\"/*/SKILL.md; do\n    [ -f \"$f\" ] || continue\n    n=$(sed -n 's/^name:[[:space:]]*//p' \"$f\" | head -n 1)\n    s=$(sed -n 's/^description:[[:space:]]*//p' \"$f\" | head -n 1)\n    n=$(printf '%s' \"$n\" | tr -d '\\t\\r\"')\n    s=$(printf '%s' \"$s\" | tr -d '\\t\\r\"')\n    [ -n \"$n\" ] && [ -n \"$s\" ] && printf '%s\\t%s\\t%s\\n' \"$n\" \"$s\" \"$f\" >> \"",
-        String.append(idx, "\"\n  done\ndone"))))
+def scan_script() -> String:
+  "scan() {
+  [ -d \"$1\" ] || return 0
+  for f in \"$1\"/*/SKILL.md; do
+    [ -f \"$f\" ] || continue
+    n=$(sed -n 's/^name:[[:space:]]*//p' \"$f\" | head -n 1)
+    s=$(sed -n 's/^description:[[:space:]]*//p' \"$f\" | head -n 1)
+    n=$(printf '%s' \"$n\" | tr -d '\\t\\r\"')
+    s=$(printf '%s' \"$s\" | tr -d '\\t\\r\"')
+    [ -n \"$n\" ] && [ -n \"$s\" ] && printf '%s\\t%s\\t%s\\n' \"$n\" \"$s\" \"$f\"
+  done
+}
+{ scan \"$HOME/.agents/skills\"; scan \"$HOME/.vibe/skills\"; } > \"$1\"
+mkdir -p \"$(dirname \"$2\")\"
+w=\"${BEND_WORKDIR:-$PWD}\"
+{ scan \"$w/.agents/skills\"; cat \"$3\" 2>/dev/null; } > \"$2\""
 
 def scan_path(+port: String) -> String:
   String.append("/tmp/bend-skills-scan-", String.append(port, ".sh"))
 
+def session_index_path() -> IO(String):
+  do IO<String>:
+    +r : String <- Pl.run_dir()
+    IO.pure(String, String.append(r, "/skills-index.txt"))
+
 def skills_scan() -> IO(Unit):
   do IO<Unit>:
     +idx : String <- index_path()
+    +sidx : String <- session_index_path()
+    +psk : String <- Pl.skills_index_path()
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
     +port : String <- IO.pure(String, P.env_or(pr, "0"))
     +path : String <- IO.pure(String, scan_path(port))
-    u : Unit <- P.write_file(path, scan_script(idx))
-    out : String <- Proc.run(Con{"/bin/sh", Con{path, Nil{}}})
+    u : Unit <- P.write_file(path, scan_script())
+    out : String <- Proc.run(Con{"/bin/sh", Con{path, Con{idx, Con{sidx, Con{psk, Nil{}}}}}})
     IO.pure(Unit, Unit{})
+
+# the index the catalog and the skill tool read: this session's index
+# first (workspace and plugin skills win a name clash: the first
+# occurrence of a name is kept), then the shared one
+def index_content.join(ms: Maybe<&2, String>, mu: Maybe<&2, String>)
+    -> Maybe<&2, String>:
+  match ms:
+    case None{}:
+      mu
+    case Some{+s}:
+      Some{String.append(s, String.append("
+", Maybe.default(&2, String, mu, "")))}
+
+def index_content() -> IO(Maybe<&2, String>):
+  do IO<Maybe<&2, String>>:
+    +sidx : String <- session_index_path()
+    +idx : String <- index_path()
+    ms : Maybe<&2, String> <- P.read_file(sidx)
+    mu : Maybe<&2, String> <- P.read_file(idx)
+    IO.pure(Maybe<&2, String>, index_content.join(ms, mu))
 
 # ---- execution ----
 
@@ -105,8 +151,7 @@ def exec_skill.live.pick(n: Maybe<&2, String>) -> IO(Mc.MR):
       IO.pure(Mc.MR, Mc.MR{False{}, SKILL_USAGE()})
     case Some{+name}:
       do IO<Mc.MR>:
-        idx : String <- index_path()
-        m : Maybe<&2, String> <- P.read_file(idx)
+        m : Maybe<&2, String> <- index_content()
         exec_skill.live.go(m, name)
 
 def exec_skill.live(+args: String) -> IO(Mc.MR):
@@ -126,6 +171,5 @@ def exec_skill(+args: String, live: Bool) -> IO(Mc.MR):
 
 def prompt_content() -> IO(String):
   do IO<String>:
-    idx : String <- index_path()
-    m : Maybe<&2, String> <- P.read_file(idx)
+    m : Maybe<&2, String> <- index_content()
     IO.pure(String, Maybe.default(&2, String, m, ""))

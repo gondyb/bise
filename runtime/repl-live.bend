@@ -13,6 +13,7 @@ import ../core/types.bend as T
 import ./persist.bend as P
 import ./mcp.bend as Mcp
 import ./skills.bend as Sk
+import ./plugins.bend as Pl
 import ./skills-pure.bend as Skp
 import ./tools.bend as X
 import ./tools-pure.bend as Xp
@@ -100,12 +101,15 @@ def main() -> IO(Unit):
       String.append(U32.show(p),
         String.append(" (real model, FS tools, bash) — compaction threshold: ",
           String.append(Nat.show(threshold), " tokens (BEND_THRESHOLD or ~/.bend-harness/config.toml to change)")))))
+    # the plugins bridge, then the skills scan (it reads the plugin
+    # skills), then the prompt (it lists the skills)
+    u5 : Unit <- Pl.start()
+    u4 : Unit <- Sk.skills_scan()
     +cfg : T.Cfg <- live_cfg(threshold)
     +ld : P.Load <- P.load(T.new_session(cfg))
     kr : Result<&1, &1, U32 & String, String> <- IO.get_env("MISTRAL_API_KEY")
     +key : String <- IO.pure(String, P.env_or(kr, ""))
     u : Unit <- Mcp.bootstrap(key)
-    u4 : Unit <- Sk.skills_scan()
     u3 : Unit <- Sh.bash_cleanup(U32.show(p))
     f : Rc.Flow <- Rc.serve(True{}, l, Rc.ld_greet(ld), Rc.ld_sess(ld))
     # Stop (a /reload) lands here: main returns, the process exits 0,

@@ -32,6 +32,7 @@ import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
 import ../vendor/json.bend as J
 import 0x16458a2db4f36577294543ec2a6d420c/json.bend as Jv
 import ./mcp-pure.bend as Mcp
+import ./plugins.bend as Pl
 
 # what an MCP tool call answers (converted to ExecRes by the runtime)
 type MR is Data:
@@ -102,6 +103,25 @@ def jarr(v: Jv.Val, +k: String) -> List<&2, Jv.Val>:
 
 def index_path() -> IO(String):
   P.env_path("BEND_MCP_INDEX", "/.bend-harness/mcp-index.txt")
+
+# the index every lookup reads: this session's plugin tools
+# (runtime/plugins.bend) first, then the connectors; either may be
+# missing
+def index_content.join(mp: Maybe<&2, String>, mc: Maybe<&2, String>)
+    -> Maybe<&2, String>:
+  match mp:
+    case None{}:
+      mc
+    case Some{+s}:
+      Some{String.append(s, Maybe.default(&2, String, mc, ""))}
+
+def index_content() -> IO(Maybe<&2, String>):
+  do IO<Maybe<&2, String>>:
+    +pp : String <- Pl.mcp_index_path()
+    +cp : String <- index_path()
+    mp : Maybe<&2, String> <- P.read_file(pp)
+    mc : Maybe<&2, String> <- P.read_file(cp)
+    IO.pure(Maybe<&2, String>, index_content.join(mp, mc))
 
 # ---- bootstrap: the connector catalog becomes index lines ----
 
@@ -257,8 +277,7 @@ def merged_search.pick(cat: List<&2, T.ToolDef>, +args: String,
 def merged_search.live(+args: String) -> IO(MR):
   do IO<MR>:
     +cat : List<&2, T.ToolDef> <- X.catalog()
-    +path : String <- index_path()
-    m : Maybe<&2, String> <- P.read_file(path)
+    m : Maybe<&2, String> <- index_content()
     IO.pure(MR, merged_search.pick(cat, args, m))
 
 def merged_search(+args: String, +live: Bool) -> IO(MR):
@@ -279,9 +298,15 @@ def notif_body() -> String:
 def call_body(+tool: String, +args: String) -> String:
   J.stringify(J.obj(Con{J.kv("jsonrpc", J.str("2.0")), Con{J.kv("id", J.num(2n)), Con{J.kv("method", J.str("tools/call")), Con{J.kv("params", J.obj(Con{J.kv("name", J.str(tool)), Con{J.kv("arguments", J.raw(args)), Nil{}}})), Nil{}}}}}))
 
+# a plugin tool's cid is already its loopback URL (the plugins bridge);
+# the Mistral key never goes there
+def is_local(+cid: String) -> Bool:
+  String.starts_with(cid, "http://127.0.0.1:")
+
 def gateway_url(+cid: String) -> String:
-  String.append("https://api.mistral.ai/v1/connectors-gateway/",
-    String.append(cid, "/mcp"))
+  Bool.pick(String, is_local(cid), cid,
+    String.append("https://api.mistral.ai/v1/connectors-gateway/",
+      String.append(cid, "/mcp")))
 
 def mcp_hdrs(+key: String) -> Map<&2, List<&2, String>>:
   Http.set(Http.set(Http.set(Http.empty(), "Authorization",
@@ -375,7 +400,7 @@ def mcp_call.found(+cid: String, +tool: String, +args: String, +key: String)
   do IO<MR>:
     +url : String <- IO.pure(String, gateway_url(cid))
     +h : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
-      mcp_hdrs(key))
+      mcp_hdrs(Bool.pick(String, is_local(cid), "", key)))
     pr1 : Http.Pool & Result<&2, &2, Http.Err, Http.Res> <- Http.pool.how(
       Http.pool.new(), "POST", url, h, init_body(), 20000,
       Http.ModeFollow{})
@@ -420,6 +445,5 @@ def mcp_call.read(m: Maybe<&2, String>, +name: String, +args: String,
 
 def mcp_call(+name: String, +args: String, +key: String) -> IO(MR):
   do IO<MR>:
-    +path : String <- index_path()
-    m : Maybe<&2, String> <- P.read_file(path)
+    m : Maybe<&2, String> <- index_content()
     mcp_call.read(m, name, args, key)

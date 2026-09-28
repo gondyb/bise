@@ -341,8 +341,8 @@ fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
     std::fs::rename(&tmp, path)
 }
 
-/// Run the bridge. Returns when the parent is gone (or at once when
-/// there is nothing to serve and no parent to wait for).
+/// Run the bridge. Returns when the parent is gone, or at once when
+/// no server is up (the index files are written either way).
 pub fn serve(opts: Opts) -> std::io::Result<()> {
     std::fs::create_dir_all(&opts.dir)?;
     let listener = TcpListener::bind(("127.0.0.1", 0))?;
@@ -356,7 +356,8 @@ pub fn serve(opts: Opts) -> std::io::Result<()> {
     write_atomic(&opts.dir.join("report.txt"), &session.report)?;
     write_atomic(&opts.dir.join("ready"), &format!("{}\n", std::process::id()))?;
     let entries = Arc::new(entries);
-    if entries.is_empty() && opts.parent.is_none() {
+    // nothing to serve: the files say so, no process lingers
+    if entries.is_empty() {
         return Ok(());
     }
     {

@@ -1,0 +1,77 @@
+# runtime/plugins.bend — agent plugins (Agent Plugins 1.0, the portable
+# base). Design: projects/switchboard/docs/plugins.md.
+#
+# The REPL cannot hold a stdio MCP server open (Process.run waits for
+# the exit), so the Rust side does the work: at live startup this file
+# starts `bend-harness plugins serve` in the background, once per REPL.
+# The bridge resolves the plugins (~/.agents/plugins and
+# <workspace>/.agents/plugins), starts their stdio servers, writes three
+# files into the session's plugin dir, then serves the servers over
+# loopback HTTP until this REPL is gone:
+#   mcp-index.txt    tool lines in the connector index format, the cid
+#                    being the loopback URL (runtime/mcp.bend calls it)
+#   skills-index.txt skill lines in the skills index format
+#   report.txt       the listing /plugins shows
+# Scripted runs never start it (hermetic suites).
+import Base
+import ./persist.bend as P
+import ./proc.bend as Proc
+
+# ---- the session's files: $HOME/.bend-harness/run/<repl port>/ ----
+
+def run_dir.of(+home: String, +port: String) -> String:
+  String.append(home, String.append("/.bend-harness/run/", port))
+
+def run_dir() -> IO(String):
+  do IO<String>:
+    hr : Result<&1, &1, U32 & String, String> <- IO.get_env("HOME")
+    pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
+    IO.pure(String, run_dir.of(P.env_or(hr, "/tmp"), P.env_or(pr, "0")))
+
+def dir() -> IO(String):
+  do IO<String>:
+    +r : String <- run_dir()
+    IO.pure(String, String.append(r, "/plugins"))
+
+def mcp_index_path() -> IO(String):
+  do IO<String>:
+    +d : String <- dir()
+    IO.pure(String, String.append(d, "/mcp-index.txt"))
+
+def skills_index_path() -> IO(String):
+  do IO<String>:
+    +d : String <- dir()
+    IO.pure(String, String.append(d, "/skills-index.txt"))
+
+# ---- the start ----
+# $1 is the plugin dir. The binary: $BEND_HARNESS_BIN (set by
+# bend-harness and by the hub), else the bundle's ./bend-harness, else
+# the dev builds. None: no plugins, no error. $PPID is this REPL: the
+# wrapper execs the script, so the REPL is its parent. The bridge
+# touches ready once its files are written (at most 10 s per server,
+# started in parallel); the wait gives up after 15 s.
+
+def start_script() -> String:
+  "d=\"$1\"
+rm -rf \"$d\"
+mkdir -p \"$d\" || exit 0
+bin=\"$BEND_HARNESS_BIN\"
+[ -n \"$bin\" ] && [ -x \"$bin\" ] || bin=./bend-harness
+[ -x \"$bin\" ] || bin=rust/target/release/bend-harness
+[ -x \"$bin\" ] || bin=rust/target/debug/bend-harness
+[ -x \"$bin\" ] || exit 0
+nohup \"$bin\" plugins serve --dir \"$d\" --parent \"$PPID\" > \"$d/bridge.log\" 2>&1 < /dev/null &
+i=0
+while [ ! -f \"$d/ready\" ] && [ \"$i\" -lt 300 ]; do sleep 0.05; i=$((i+1)); done"
+
+def script_path(+port: String) -> String:
+  String.append("/tmp/bend-plugins-start-", String.append(port, ".sh"))
+
+def start() -> IO(Unit):
+  do IO<Unit>:
+    pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
+    +path : String <- IO.pure(String, script_path(P.env_or(pr, "0")))
+    +d : String <- dir()
+    u : Unit <- P.write_file(path, start_script())
+    out : String <- Proc.run(Con{"/bin/sh", Con{path, Con{d, Nil{}}}})
+    IO.pure(Unit, Unit{})
