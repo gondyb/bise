@@ -30,6 +30,20 @@ pub(crate) struct ToolData {
     pub(crate) expanded: bool,
 }
 
+impl ToolData {
+    /// A tool event as the runtime announces it (started or finished),
+    /// before its annotations (name, args, code, result) merge in. Only
+    /// a running tool keeps its elapsed live.
+    pub(crate) fn bare(id: u32, state: ToolState) -> ToolData {
+        let started = std::time::Instant::now();
+        let elapsed = match state {
+            ToolState::Run => None,
+            _ => Some(fmt_elapsed(started)),
+        };
+        ToolData { id, name: None, args: None, code: None, state, result: None, started, elapsed, expanded: false }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) enum Ev {
     You(String),
@@ -247,17 +261,7 @@ pub(crate) fn parse_line(line: &str) -> Option<Ev> {
     }
     if let Some(n) = o.strip_prefix("tool_started #") {
         let id: u32 = n.parse().ok()?;
-        return Some(Ev::Tool(ToolData {
-            id,
-            name: None,
-            args: None,
-            state: ToolState::Run,
-            result: None,
-            code: None,
-            started: std::time::Instant::now(),
-            elapsed: None,
-            expanded: false,
-        }));
+        return Some(Ev::Tool(ToolData::bare(id, ToolState::Run)));
     }
     if let Some(rest) = o.strip_prefix("tool_finished #") {
         let (id_s, tail) = rest.split_once(' ')?;
@@ -266,18 +270,7 @@ pub(crate) fn parse_line(line: &str) -> Option<Ev> {
             "ok" => ToolState::Ok,
             _ => ToolState::Fail,
         };
-        let started = std::time::Instant::now();
-        return Some(Ev::Tool(ToolData {
-            id,
-            name: None,
-            args: None,
-            code: None,
-            state,
-            result: None,
-            started,
-            elapsed: Some(fmt_elapsed(started)),
-            expanded: false,
-        }));
+        return Some(Ev::Tool(ToolData::bare(id, state)));
     }
     if o.starts_with("tool_result_committed") {
         return None;
