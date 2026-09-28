@@ -605,34 +605,33 @@ impl Shell {
         }
     }
 
+    /// A new client: hello, snapshot, the buffered lines of every feed,
+    /// `ready`, the versions, in one write (thousands of lines: one
+    /// syscall, not one per line).
     fn client_hello(&mut self, id: ClientId, mut stream: UnixStream) {
-        let ok = write_json(
-            &mut stream,
-            &json!({
-                "ev": "hello",
-                "workspace": self.hub.workspace,
-                "state_dir": self.opts.paths.state.to_string_lossy(),
-                "exe": self.opts.exe.to_string_lossy(),
-                "version": crate::switch::version_info(&self.opts.app_root),
-            }),
-        ) && write_json(&mut stream, &self.hub.snapshot(now_ms()));
-        if !ok {
-            return;
-        }
-        for name in self.hub.st.order.clone() {
-            if let Some(b) = self.buffers.get(&name) {
-                for (pos, l) in b {
-                    if !write_json(
-                        &mut stream,
-                        &json!({"ev": "line", "agent": name, "line": l, "pos": pos}),
-                    ) {
-                        return;
-                    }
-                }
+        let mut out = String::new();
+        let mut push = |v: &Value| {
+            out.push_str(&v.to_string());
+            out.push('\n');
+        };
+        push(&json!({
+            "ev": "hello",
+            "workspace": self.hub.workspace,
+            "state_dir": self.opts.paths.state.to_string_lossy(),
+            "exe": self.opts.exe.to_string_lossy(),
+            "version": crate::switch::version_info(&self.opts.app_root),
+        }));
+        push(&self.hub.snapshot(now_ms()));
+        for name in &self.hub.st.order {
+            for (pos, l) in self.buffers.get(name).into_iter().flatten() {
+                push(&json!({"ev": "line", "agent": name, "line": l, "pos": pos}));
             }
         }
-        write_json(&mut stream, &json!({"ev": "ready"}));
-        write_json(&mut stream, &self.version_items());
+        push(&json!({"ev": "ready"}));
+        push(&self.version_items());
+        if stream.write_all(out.as_bytes()).is_err() {
+            return;
+        }
         self.clients.insert(id, stream);
         self.step(Input::ClientHello { client: id });
     }
