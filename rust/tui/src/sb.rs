@@ -374,6 +374,17 @@ impl Sb {
     fn agent(&self, name: &str) -> Option<&Agent> {
         self.agents.iter().find(|a| a.name == name)
     }
+
+    /// The entry of the panel highlighted by Ctrl+K/J.
+    fn selected_agent(&self) -> Option<&Agent> {
+        self.nav().get(self.selected?).copied()
+    }
+
+    /// A line typed to the agent in focus (the hub interprets it).
+    fn send_input(&mut self, text: String) {
+        let focus = self.focus.clone();
+        self.send(json!({"op": "input", "focus": focus, "text": text}));
+    }
 }
 
 pub(super) static SB_MODE: std::sync::atomic::AtomicBool =
@@ -907,8 +918,7 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             app.help = crate::help::page_of(first).map(crate::help::Overlay::new);
         }
         _ => {
-            let focus = sb.focus.clone();
-            sb.send(json!({"op": "input", "focus": focus, "text": typed}));
+            sb.send_input(typed);
         }
     }
     for ev in &out {
@@ -939,8 +949,7 @@ fn answer_card(app: &mut App) {
     } else {
         text
     };
-    let f = sb.focus.clone();
-    sb.send(json!({"op": "input", "focus": f, "text": format!("/answer {} {}", id, text)}));
+    sb.send_input(format!("/answer {} {}", id, text));
     sb.card.scroll = 0;
     sb.card.full = false;
     if !app.ed.text.trim().is_empty() {
@@ -1098,6 +1107,7 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
         return false;
     };
     let n = sb.nav().len();
+    let nav = nav_key(k);
     match (k.code, k.modifiers) {
         (KeyCode::Char('c'), KeyModifiers::CONTROL) if pending && !interrupt_requested => {
             let f = sb.focus.clone();
@@ -1110,14 +1120,14 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             );
             true
         }
-        _ if empty && n > 0 && nav_key(k) == Some(Nav::Next) => {
+        _ if empty && n > 0 && nav == Some(Nav::Next) => {
             sb.selected = Some(match sb.selected {
                 None => 0,
                 Some(i) => (i + 1) % n,
             });
             true
         }
-        _ if empty && n > 0 && nav_key(k) == Some(Nav::Prev) => {
+        _ if empty && n > 0 && nav == Some(Nav::Prev) => {
             sb.selected = Some(match sb.selected {
                 None | Some(0) => n - 1,
                 Some(i) => i - 1,
@@ -1125,8 +1135,9 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             true
         }
         (KeyCode::Enter, KeyModifiers::NONE) if empty && sb.selected.is_some() => {
-            let name = sb.nav()[sb.selected.unwrap().min(n - 1)].name.clone();
-            focus(app, &name);
+            if let Some(name) = sb.selected_agent().map(|a| a.name.clone()) {
+                focus(app, &name);
+            }
             true
         }
         (KeyCode::Char(' '), _) if empty && sb.selected.is_some() => {
@@ -1134,10 +1145,8 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             true
         }
         (KeyCode::Char('D'), _) if empty && sb.selected.is_some() => {
-            let a = sb.nav()[sb.selected.unwrap().min(n - 1)].clone();
-            if !a.main {
-                let f = sb.focus.clone();
-                sb.send(json!({"op": "input", "focus": f, "text": format!("/drop {}", a.name)}));
+            if let Some(name) = sb.selected_agent().filter(|a| !a.main).map(|a| a.name.clone()) {
+                sb.send_input(format!("/drop {}", name));
             }
             true
         }
@@ -1167,11 +1176,11 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             }
             false
         }
-        _ if matches!(nav_key(k), Some(Nav::Goto(_))) => {
-            let Some(Nav::Goto(i)) = nav_key(k) else { return false };
-            let target = sb.nav().get(i).map(|a| a.name.clone());
-            if let Some(t) = target {
-                focus(app, &t);
+        _ if matches!(nav, Some(Nav::Goto(_))) => {
+            if let Some(Nav::Goto(i)) = nav {
+                if let Some(t) = sb.nav().get(i).map(|a| a.name.clone()) {
+                    focus(app, &t);
+                }
             }
             true
         }
@@ -1206,8 +1215,7 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
         }
         (KeyCode::Char('x'), KeyModifiers::CONTROL) if !sb.cards.is_empty() => {
             if let Some(id) = sb.current_card().map(|c| c.id) {
-                let f = sb.focus.clone();
-                sb.send(json!({"op": "input", "focus": f, "text": format!("/close {}", id)}));
+                sb.send_input(format!("/close {}", id));
                 sb.card.scroll = 0;
             }
             true
@@ -1230,8 +1238,7 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             true
         }
         (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
-            let f = sb.focus.clone();
-            sb.send(json!({"op": "input", "focus": f, "text": "/cancel"}));
+            sb.send_input("/cancel".into());
             true
         }
         _ => false,
@@ -1463,8 +1470,8 @@ pub(super) fn status_line(app: &App) -> Option<Line<'static>> {
     }
     if sb.preview {
         if let Some(sel) = sb
-            .selected
-            .and_then(|i| sb.nav().get(i).map(|a| a.name.clone()))
+            .selected_agent()
+            .map(|a| a.name.clone())
         {
             spans.push(Span::styled(
                 format!(" · preview of @{} (⏎ enter, Esc close)", sel),
@@ -1525,8 +1532,8 @@ pub(super) fn draw_sb(app: &mut App, frame: &mut Frame) {
         if !sb.preview {
             return None;
         }
-        sb.selected
-            .and_then(|i| sb.nav().get(i).map(|a| a.name.clone()))
+        sb.selected_agent()
+            .map(|a| a.name.clone())
             .filter(|n| *n != sb.focus)
     });
     match target {
