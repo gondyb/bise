@@ -342,6 +342,26 @@ def Laws.provider_retry_line():
 def Laws.provider_exhausted_text():
   {==}
 
+def Laws.provider_auth_error_hint():
+  {==}
+
+def Laws.attempt_connect_names_host():
+  {==}
+
+def Laws.interrupt_flag_needs_content():
+  {==}
+
+def Laws.interrupted_keeps_last_error(n, why):
+  (String.concat(["stopped retrying (interrupted by the user) after ",
+    Nat.show(n), " failed attempts; last error: "]), {==})
+
+def Laws.exhausted_keeps_last_error(n, why):
+  (String.concat(["provider failed after ", Nat.show(n), " attempts: "]),
+    {==})
+
+def Laws.retry_wait_slices():
+  {==}
+
 def Laws.exec_of_exit_still_fails():
   {==}
 
@@ -3167,6 +3187,7 @@ def hub_pb_frame(-o: HM.St, +busy: Bool, b: List<&2, HM.Msg>, +cx: HX.Cx<o>, +a:
             hub_qimp_eq(HX.d(o, p1), HX.d(o, fin), n, edf))),
         h)
 
+
 def hub_pf.run(-o: HM.St, r: HM.Run, +cx: HX.Cx<o>, +a: String, +q: List<&2, HM.Msg>, +im: Bool, +n: String,
     +ne: {String.eq(a, n) == False{} : Bool}, +h: {HI.stuck(HX.d(o, cx), hub_rts(o, cx), n) == False{} : Bool})
     -> {HI.stuck(HX.d(o, HC.pump.run(o, r, cx, a, q, im)), hub_rts(o, HC.pump.run(o, r, cx, a, q, im)), n) == False{} : Bool}:
@@ -3203,6 +3224,9 @@ def hub_pump_frame(-o: HM.St, +cx: HX.Cx<o>, +a: String, +n: String,
     +ne: {String.eq(a, n) == False{} : Bool}, +h: {HI.stuck(HX.d(o, cx), hub_rts(o, cx), n) == False{} : Bool})
     -> {HI.stuck(HX.d(o, HC.pump(o, cx, a)), hub_rts(o, HC.pump(o, cx, a)), n) == False{} : Bool}:
   hub_pf.agent(o, HM.get_agent(HC.st(o, cx), a), cx, a, n, ne, h)
+
+
+# ---- L4: no agent stuck, except the listed ones ----
 
 def hub_nsx(-o: HM.St, +cx: HX.Cx<o>, +xs: List<&2, String>) -> Type:
   @n: String -> @e: {HM.str_in(xs, n) == False{} : Bool} -> {HI.stuck(HX.d(o, cx), hub_rts(o, cx), n) == False{} : Bool}
