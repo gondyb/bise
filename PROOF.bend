@@ -2298,3 +2298,28 @@ def hub_str_cmp_refl(+s: String) -> {String.cmp(s, s) == ((s, s), EQ{}) : (Strin
 def hub_str_eq_refl(+s: String) -> {String.eq(s, s) == True{} : Bool}:
   %Equal.sym((String & String) & Cmp, String.cmp(s, s), ((s, s), EQ{}), hub_str_cmp_refl(s)) : {String.eq.fin(_) == True{} : Bool}
   {==}
+
+# ---- L4 support: a delivery attempt never leaves its agent stuck ----
+
+def hub_rt_put_find.pick(c: Bool, +h: HX.Rt, +t: List<&2, HX.Rt>, +n: String, +run: HM.Run, +w: Bool, +tm: Maybe<&2, Nat>,
+    +e: {String.eq(HX.Rt.name(h), n) == c : Bool}, ih: {HC.rt_find(HC.rt_put(t, HX.Rt{n, run, w, tm}), n) == HX.Rt{n, run, w, tm} : HX.Rt})
+    -> {HC.rt_find(Bool.pick(List<&2, HX.Rt>, String.eq(HX.Rt.name(h), n), HX.Rt{n, run, w, tm} <> t, h <> HC.rt_put(t, HX.Rt{n, run, w, tm})), n) == HX.Rt{n, run, w, tm} : HX.Rt}:
+  match c:
+    case True{}:
+      %Equal.sym(Bool, String.eq(HX.Rt.name(h), n), True{}, e) : {HC.rt_find(Bool.pick(List<&2, HX.Rt>, _, HX.Rt{n, run, w, tm} <> t, h <> HC.rt_put(t, HX.Rt{n, run, w, tm})), n) == HX.Rt{n, run, w, tm} : HX.Rt}
+      %Equal.sym(Bool, String.eq(n, n), True{}, hub_str_eq_refl(n)) : {Bool.pick(HX.Rt, _, HX.Rt{n, run, w, tm}, HC.rt_find(t, n)) == HX.Rt{n, run, w, tm} : HX.Rt}
+      {==}
+    case False{}:
+      %Equal.sym(Bool, String.eq(HX.Rt.name(h), n), False{}, e) : {HC.rt_find(Bool.pick(List<&2, HX.Rt>, _, HX.Rt{n, run, w, tm} <> t, h <> HC.rt_put(t, HX.Rt{n, run, w, tm})), n) == HX.Rt{n, run, w, tm} : HX.Rt}
+      %Equal.sym(Bool, String.eq(HX.Rt.name(h), n), False{}, e) : {Bool.pick(HX.Rt, _, h, HC.rt_find(HC.rt_put(t, HX.Rt{n, run, w, tm}), n)) == HX.Rt{n, run, w, tm} : HX.Rt}
+      ih
+
+# putting an agent's runtime state and reading it back gives it
+def hub_rt_put_find(+xs: List<&2, HX.Rt>, +n: String, +run: HM.Run, +w: Bool, +tm: Maybe<&2, Nat>)
+    -> {HC.rt_find(HC.rt_put(xs, HX.Rt{n, run, w, tm}), n) == HX.Rt{n, run, w, tm} : HX.Rt}:
+  match xs:
+    case Nil{}:
+      %Equal.sym(Bool, String.eq(n, n), True{}, hub_str_eq_refl(n)) : {Bool.pick(HX.Rt, _, HX.Rt{n, run, w, tm}, HC.rt_find(Nil{}, n)) == HX.Rt{n, run, w, tm} : HX.Rt}
+      {==}
+    case Con{h, t}:
+      hub_rt_put_find.pick(String.eq(HX.Rt.name(h), n), h, t, n, run, w, tm, {==}, hub_rt_put_find(t, n, run, w, tm))

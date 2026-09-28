@@ -3,6 +3,7 @@
 import Base
 import ./model.bend as M
 import ./cx.bend as X
+import ./core.bend as H
 
 # the message ids, in the order of the state
 def ids(xs: List<&2, M.MRec>) -> List<&2, Nat>:
@@ -61,3 +62,15 @@ def card_ids(cs: List<&2, M.Card>) -> List<&2, Nat>:
 # next free one
 def UniqueCards(+s: M.St) -> Data:
   X.Both<Distinct(card_ids(M.St.cards(s))), Below(card_ids(M.St.cards(s)), M.St.next_card(s))>
+
+def stuck.agent(m: Maybe<&2, M.Agent>, +s: M.St, +n: String) -> Bool:
+  match m:
+    case None{}:
+      False{}
+    case Some{+a}:
+      Bool.and(H.is_active(M.Agent.life(a)), Bool.not(List.is_empty(&2, M.Msg, M.queued_for(s, n))))
+
+# law L4: agent `n` is idle, active, and has messages queued (a message
+# stuck: nothing would ever deliver it)
+def stuck(+s: M.St, +rts: List<&2, X.Rt>, +n: String) -> Bool:
+  Bool.and(H.is_idle(X.Rt.run(H.rt_find(rts, n))), stuck.agent(M.get_agent(s, n), s, n))
