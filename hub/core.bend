@@ -11,7 +11,8 @@ import ./cx.bend as X
 
 type Snd is Data:
   Snd{from: String, to: String, text: String, expect: Bool,
-    reply_to: Maybe<&2, Nat>, plain: Bool, auto: Bool, queued: Bool}
+    reply_to: Maybe<&2, Nat>, plain: Bool, auto: Bool, queued: Bool,
+    via: Maybe<&2, String>}
 
 type SendR is Data:
   SOk{m: M.Msg}
@@ -547,7 +548,7 @@ def deliver_each(-o: M.St, batch: List<&2, M.Msg>, +cx: X.Cx<o>, +name: String, 
       +s = st(o, cx)
       +rel = relation(M.Msg.from(m), M.Msg.to(m), parent_of(M.get_agent(s, M.Msg.from(m))), parent_of(M.get_agent(s, M.Msg.to(m))))
       +cx2 = emit(o, cx, M.EMsgState{M.Msg.id(m), M.Delivered{}})
-      +cx3 = Bool.pick(X.Cx<o>, M.Msg.plain(m),
+      +cx3 = Bool.pick(X.Cx<o>, M.Msg.plain(m) || Maybe.is_some(&2, String, M.Msg.via(m)),
         line(o, cx2, name, "you", M.Msg.text(m)),
         line(o, cx2, name, "msg-in", cat([M.Msg.from(m), " ", mid(M.Msg.id(m)), " : ", M.Msg.text(m)])))
       deliver_each(o, rest, cx3, name, M.snoc(J.Json, acc, J.obj([J.kv("id", J.JNum{M.Msg.id(m)}), J.kv("rel", J.JStr{rel})])))
@@ -643,13 +644,31 @@ def send.waiter(-o: M.St, mw: Maybe<&2, X.Waiter>, +cx: X.Cx<o>, +m: M.Msg) -> X
     case None{}:
       (pump(o, cx, M.Msg.to(m)), SOk{m})
 
+def question_for(cs: List<&2, M.Card>, +r: Nat) -> List<&2, Nat>:
+  match cs:
+    case Nil{}:
+      Nil{}
+    case Con{+c, +t}:
+      +rest = question_for(t, r)
+      Bool.pick(List<&2, Nat>, String.eq(M.Card.kind(c), "question") && M.maybe_nat_is(M.Card.for_msg(c), r), M.Card.id(c) <> rest, rest)
+
+def send.cards(-o: M.St, r: Maybe<&2, Nat>, +cx: X.Cx<o>, +from: String) -> X.Cx<o>:
+  match r:
+    case None{}:
+      cx
+    case Some{+id}:
+      close_ids(o, question_for(M.St.cards(st(o, cx)), id), cx, String.append("répondue via @", from))
+
 def send.emit(-o: M.St, +cx: X.Cx<o>, +s: Snd, +thread: Nat) -> X.Cx<o> & SendR:
   match s:
-    case Snd{+from, +to, +text, +expect, +reply_to, +plain, +auto, +queued}:
-      +m = {M.Msg{M.St.next_msg(st(o, cx)), thread, from, to, reply_to, expect, auto, text, now(o, cx), plain, queued} : M.Msg}
-      +cx2 = emit(o, cx, M.EMsgSent{m})
+    case Snd{+from, +to, +text, +expect, +reply_to, +plain, +auto, +queued, +via}:
+      +m = {M.Msg{M.St.next_msg(st(o, cx)), thread, from, to, reply_to, expect, auto, text, now(o, cx), plain, queued, via} : M.Msg}
+      +cx1 = emit(o, cx, M.EMsgSent{m})
+      # a reply to the message a question card stands for answers the
+      # card; the user's own answers close their card in answer_card
+      +cx2 = send.cards(o, Bool.pick(Maybe<&2, Nat>, String.eq(from, M.USER()), None{}, reply_to), cx1, from)
       +w = Bool.pick(Maybe<&2, X.Waiter>, queued, None{},
-        waiter_pick(X.R.waiters(rr(o, cx2)), to, reply_to, expect && Bool.not(plain)))
+        waiter_pick(X.R.waiters(rr(o, cx2)), to, reply_to, expect && Bool.not(plain) && Bool.not(String.eq(from, M.USER()))))
       send.waiter(o, w, cx2, m)
 
 def send.orig(-o: M.St, m: Maybe<&2, M.Msg>, +cx: X.Cx<o>, +s: Snd, +r: Nat) -> X.Cx<o> & SendR:
@@ -668,12 +687,12 @@ def send.thread(-o: M.St, reply_to: Maybe<&2, Nat>, +cx: X.Cx<o>, +s: Snd) -> X.
 
 def Snd.to(x: Snd) -> String:
   match x:
-    case Snd{_, +to, _, _, _, _, _, _}:
+    case Snd{_, +to, _, _, _, _, _, _, _}:
       to
 
 def Snd.reply_to(x: Snd) -> Maybe<&2, Nat>:
   match x:
-    case Snd{_, _, _, _, +reply_to, _, _, _}:
+    case Snd{_, _, _, _, +reply_to, _, _, _, _}:
       reply_to
 
 def send.revive(-o: M.St, ok: Bool, +cx: X.Cx<o>, +s: Snd, +why: String) -> X.Cx<o> & SendR:
@@ -730,13 +749,8 @@ def branch_label(b: J.Json) -> String:
 
 def Snd.from(x: Snd) -> String:
   match x:
-    case Snd{+from, _, _, _, _, _, _, _}:
+    case Snd{+from, _, _, _, _, _, _, _, _}:
       from
-
-def Snd.text(x: Snd) -> String:
-  match x:
-    case Snd{_, _, +text, _, _, _, _, _}:
-      text
 
 def send.life(-o: M.St, life: M.Life, +cx: X.Cx<o>, +s: Snd, +a: M.Agent) -> X.Cx<o> & SendR:
   match life:
@@ -763,10 +777,15 @@ def send.checked(-o: M.St, pre: Maybe<&2, String>, +cx: X.Cx<o>, +s: Snd) -> X.C
     case None{}:
       send.agent(o, M.get_agent(st(o, cx), Snd.to(s)), cx, s)
 
+def Snd.text(x: Snd) -> String:
+  match x:
+    case Snd{_, _, +text, _, _, _, _, _, _}:
+      text
+
 def Snd.with_to(x: Snd, +v: String) -> Snd:
   match x:
-    case Snd{+from, _, +text, +expect, +reply_to, +plain, +auto, +queued}:
-      Snd{from, v, text, expect, reply_to, plain, auto, queued}
+    case Snd{+from, _, +text, +expect, +reply_to, +plain, +auto, +queued, +via}:
+      Snd{from, v, text, expect, reply_to, plain, auto, queued, via}
 
 def send.known(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +s: Snd) -> X.Cx<o> & SendR:
   match m:
@@ -789,7 +808,7 @@ def send(-o: M.St, +cx: X.Cx<o>, +s: Snd) -> X.Cx<o> & SendR:
   send.user(o, String.eq(Snd.to(s), M.USER()), cx, s)
 
 def msg(+from: String, +to: String, +text: String, +expect: Bool, +reply_to: Maybe<&2, Nat>, +plain: Bool, +auto: Bool) -> Snd:
-  Snd{from, to, text, expect, reply_to, plain, auto, False{}}
+  Snd{from, to, text, expect, reply_to, plain, auto, False{}, None{}}
 
 def create.go(-o: M.St, +cx: X.Cx<o>, +t: NewTask, +name: String, +ws: J.Json) -> X.Cx<o> & TaskR:
   +parent = NewTask.parent(t)
@@ -1253,7 +1272,11 @@ def route.target(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +target: String, 
       +hint = Bool.pick(String, List.is_empty(&2, String, close), "", cat([" — tu voulais dire ", String.join(close, ", "), " ?"]))
       notice(o, cx, cat(["aucune tâche nommée @", target, hint]))
     case Some{+name}:
-      route.sent(o, send(o, cx, msg(M.USER(), name, text, False{}, None{}, True{}, False{})), name, text, focus)
+      # RFC 0003 §5.1: from another view, the task reads it tagged and
+      # its answer comes back to that view
+      +elsewhere = Bool.not(String.eq(name, focus))
+      route.sent(o, send(o, cx, Snd{M.USER(), name, text, elsewhere, None{}, Bool.not(elsewhere), False{}, False{},
+        Bool.pick(Maybe<&2, String>, elsewhere, Some{focus}, None{})}), name, text, focus)
 
 # `@task text`: a direct message, without main
 def route(-o: M.St, +cx: X.Cx<o>, +target: String, +text: String, +focus: String) -> X.Cx<o>:
@@ -1460,7 +1483,7 @@ def req_send(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) -> 
   # a plain message to an agent that asked us something answers it
   +reply_to = Maybe.or(&2, Nat, jopt_nat(J.get(q, "reply_to")),
     Bool.pick(Maybe<&2, Nat>, expect, None{}, open_question(st(o, cx), to, from)))
-  req_send.res(o, send(o, cx, Snd{from, to, jstr(q, "text"), expect, reply_to, False{}, False{}, jbool(q, "queued")}), token)
+  req_send.res(o, send(o, cx, Snd{from, to, jstr(q, "text"), expect, reply_to, False{}, False{}, jbool(q, "queued"), None{}}), token)
 
 def wait.existing(-o: M.St, m: Maybe<&2, M.Msg>, +cx: X.Cx<o>, +w: X.Waiter) -> X.Cx<o>:
   match m:
@@ -1711,61 +1734,6 @@ def agent_req(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) ->
 
 # ---- the step ----
 
-def Snd.with_from(x: Snd, +v: String) -> Snd:
-  match x:
-    case Snd{_, +to, +text, +expect, +reply_to, +plain, +auto, +queued}:
-      Snd{v, to, text, expect, reply_to, plain, auto, queued}
-
-def Snd.with_text(x: Snd, +v: String) -> Snd:
-  match x:
-    case Snd{+from, +to, _, +expect, +reply_to, +plain, +auto, +queued}:
-      Snd{from, to, v, expect, reply_to, plain, auto, queued}
-
-def Snd.expect(x: Snd) -> Bool:
-  match x:
-    case Snd{_, _, _, +expect, _, _, _, _}:
-      expect
-
-def Snd.with_expect(x: Snd, +v: Bool) -> Snd:
-  match x:
-    case Snd{+from, +to, +text, _, +reply_to, +plain, +auto, +queued}:
-      Snd{from, to, text, v, reply_to, plain, auto, queued}
-
-def Snd.with_reply_to(x: Snd, +v: Maybe<&2, Nat>) -> Snd:
-  match x:
-    case Snd{+from, +to, +text, +expect, _, +plain, +auto, +queued}:
-      Snd{from, to, text, expect, v, plain, auto, queued}
-
-def Snd.plain(x: Snd) -> Bool:
-  match x:
-    case Snd{_, _, _, _, _, +plain, _, _}:
-      plain
-
-def Snd.with_plain(x: Snd, +v: Bool) -> Snd:
-  match x:
-    case Snd{+from, +to, +text, +expect, +reply_to, _, +auto, +queued}:
-      Snd{from, to, text, expect, reply_to, v, auto, queued}
-
-def Snd.auto(x: Snd) -> Bool:
-  match x:
-    case Snd{_, _, _, _, _, _, +auto, _}:
-      auto
-
-def Snd.with_auto(x: Snd, +v: Bool) -> Snd:
-  match x:
-    case Snd{+from, +to, +text, +expect, +reply_to, +plain, _, +queued}:
-      Snd{from, to, text, expect, reply_to, plain, v, queued}
-
-def Snd.queued(x: Snd) -> Bool:
-  match x:
-    case Snd{_, _, _, _, _, _, _, +queued}:
-      queued
-
-def Snd.with_queued(x: Snd, +v: Bool) -> Snd:
-  match x:
-    case Snd{+from, +to, +text, +expect, +reply_to, +plain, +auto, _}:
-      Snd{from, to, text, expect, reply_to, plain, auto, v}
-
 def Hub.d(x: Hub) -> M.St:
   match x:
     case Hub{+d, _}:
@@ -1997,13 +1965,25 @@ def skip_steered(xs: List<&2, M.Msg>, +skip: Bool, +ids: List<&2, Nat>) -> List<
       +rest = skip_steered(t, skip, ids)
       Bool.pick(List<&2, M.Msg>, skip && M.nat_in(ids, M.Msg.id(h)), rest, h <> rest)
 
+# RFC 0003 §5.1: the end-of-turn answer to `@task message` typed in
+# another view goes back to that view, and main gets it as a note
+def auto_reply(-o: M.St, via: Maybe<&2, String>, +cx: X.Cx<o>, +agent: String, +m: M.Msg, +body: String) -> X.Cx<o>:
+  match via:
+    case None{}:
+      fst(o, send(o, cx, msg(agent, M.Msg.from(m), body, False{}, Some{M.Msg.id(m)}, False{}, True{})))
+    case Some{+view}:
+      +cx2 = emit(o, cx, M.ESettled{M.Msg.id(m)})
+      +cx3 = line(o, cx2, view, "msg-in", cat(["@", agent, " : ", body]))
+      note_main(o, cx3, cat(["@", agent, " answered the user (asked from @", view, "'s view: \"", M.clip(M.one_line(M.Msg.text(m)), 500n),
+        "\"): \"", M.clip_tail(M.one_line(body), 2000n), "\""]))
+
 # RFC 0003 §7: a question gets an answer, the end of the turn
 def auto_replies(-o: M.St, qs: List<&2, M.Msg>, +cx: X.Cx<o>, +agent: String, +body: String) -> X.Cx<o>:
   match qs:
     case Nil{}:
       cx
     case Con{+m, +rest}:
-      auto_replies(o, rest, fst(o, send(o, cx, msg(agent, M.Msg.from(m), body, False{}, Some{M.Msg.id(m)}, False{}, True{}))), agent, body)
+      auto_replies(o, rest, auto_reply(o, Bool.pick(Maybe<&2, String>, String.eq(M.Msg.from(m), M.USER()), M.Msg.via(m), None{}), cx, agent, m, body), agent, body)
 
 def idle.report(-o: M.St, go: Bool, +cx: X.Cx<o>, +agent: String, +text: String) -> X.Cx<o>:
   match go:
@@ -2143,3 +2123,68 @@ def step(+h: Hub, +i: J.Json) -> X.Cx<Hub.d(h)>:
   dispatch(Hub.d(h), start(h, i), i)
 
 # ---- the end of a turn ----
+
+def Snd.with_from(x: Snd, +v: String) -> Snd:
+  match x:
+    case Snd{_, +to, +text, +expect, +reply_to, +plain, +auto, +queued, +via}:
+      Snd{v, to, text, expect, reply_to, plain, auto, queued, via}
+
+def Snd.with_text(x: Snd, +v: String) -> Snd:
+  match x:
+    case Snd{+from, +to, _, +expect, +reply_to, +plain, +auto, +queued, +via}:
+      Snd{from, to, v, expect, reply_to, plain, auto, queued, via}
+
+def Snd.expect(x: Snd) -> Bool:
+  match x:
+    case Snd{_, _, _, +expect, _, _, _, _, _}:
+      expect
+
+def Snd.with_expect(x: Snd, +v: Bool) -> Snd:
+  match x:
+    case Snd{+from, +to, +text, _, +reply_to, +plain, +auto, +queued, +via}:
+      Snd{from, to, text, v, reply_to, plain, auto, queued, via}
+
+def Snd.with_reply_to(x: Snd, +v: Maybe<&2, Nat>) -> Snd:
+  match x:
+    case Snd{+from, +to, +text, +expect, _, +plain, +auto, +queued, +via}:
+      Snd{from, to, text, expect, v, plain, auto, queued, via}
+
+def Snd.plain(x: Snd) -> Bool:
+  match x:
+    case Snd{_, _, _, _, _, +plain, _, _, _}:
+      plain
+
+def Snd.with_plain(x: Snd, +v: Bool) -> Snd:
+  match x:
+    case Snd{+from, +to, +text, +expect, +reply_to, _, +auto, +queued, +via}:
+      Snd{from, to, text, expect, reply_to, v, auto, queued, via}
+
+def Snd.auto(x: Snd) -> Bool:
+  match x:
+    case Snd{_, _, _, _, _, _, +auto, _, _}:
+      auto
+
+def Snd.with_auto(x: Snd, +v: Bool) -> Snd:
+  match x:
+    case Snd{+from, +to, +text, +expect, +reply_to, +plain, _, +queued, +via}:
+      Snd{from, to, text, expect, reply_to, plain, v, queued, via}
+
+def Snd.queued(x: Snd) -> Bool:
+  match x:
+    case Snd{_, _, _, _, _, _, _, +queued, _}:
+      queued
+
+def Snd.with_queued(x: Snd, +v: Bool) -> Snd:
+  match x:
+    case Snd{+from, +to, +text, +expect, +reply_to, +plain, +auto, _, +via}:
+      Snd{from, to, text, expect, reply_to, plain, auto, v, via}
+
+def Snd.via(x: Snd) -> Maybe<&2, String>:
+  match x:
+    case Snd{_, _, _, _, _, _, _, _, +via}:
+      via
+
+def Snd.with_via(x: Snd, +v: Maybe<&2, String>) -> Snd:
+  match x:
+    case Snd{+from, +to, +text, +expect, +reply_to, +plain, +auto, +queued, _}:
+      Snd{from, to, text, expect, reply_to, plain, auto, queued, v}

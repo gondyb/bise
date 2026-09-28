@@ -2,7 +2,9 @@
 # serde format of rust/switchboard/src/model.rs (the Rust mirror and the
 # journal file read them back).
 import Base
+
 import ../vendor/json.bend as J
+
 import ./model.bend as M
 
 def jmaybe_nat(m: Maybe<&2, Nat>) -> J.Json:
@@ -46,13 +48,20 @@ def jmaybe_decl(m: Maybe<&2, M.Decl>) -> J.Json:
     case Some{+d}:
       J.JStr{decl_str(d)}
 
+def via_kv(m: Maybe<&2, String>) -> List<&2, Sigma<&2, &2, String, _ => J.Json>>:
+  match m:
+    case None{}:
+      Nil{}
+    case Some{+v}:
+      [J.kv("via", J.JStr{v})]
+
 def msg_json(+m: M.Msg) -> J.Json:
-  J.obj([J.kv("id", J.JNum{M.Msg.id(m)}), J.kv("thread", J.JNum{M.Msg.thread(m)}),
+  J.obj(List.append(&2, Sigma<&2, &2, String, _ => J.Json>, [J.kv("id", J.JNum{M.Msg.id(m)}), J.kv("thread", J.JNum{M.Msg.thread(m)}),
     J.kv("from", J.JStr{M.Msg.from(m)}), J.kv("to", J.JStr{M.Msg.to(m)}),
     J.kv("reply_to", jmaybe_nat(M.Msg.reply_to(m))),
     J.kv("expect_reply", J.JBool{M.Msg.expect(m)}), J.kv("auto", J.JBool{M.Msg.auto(m)}),
     J.kv("text", J.JStr{M.Msg.text(m)}), J.kv("created_ms", J.JNum{M.Msg.created(m)}),
-    J.kv("plain", J.JBool{M.Msg.plain(m)}), J.kv("queued", J.JBool{M.Msg.queued(m)})])
+    J.kv("plain", J.JBool{M.Msg.plain(m)}), J.kv("queued", J.JBool{M.Msg.queued(m)})], via_kv(M.Msg.via(m))))
 
 def card_json(+c: M.Card) -> J.Json:
   J.obj([J.kv("id", J.JNum{M.Card.id(c)}), J.kv("kind", J.JStr{M.Card.kind(c)}),
@@ -153,7 +162,7 @@ def decl_of(m: Maybe<&2, String>) -> Maybe<&2, M.Decl>:
 def msg_of(+j: J.Json) -> M.Msg:
   M.Msg{get_nat(j, "id"), get_nat(j, "thread"), get_s(j, "from"), get_s(j, "to"),
     opt_nat(J.get(j, "reply_to")), get_b(j, "expect_reply"), get_b(j, "auto"),
-    get_s(j, "text"), get_nat(j, "created_ms"), get_b(j, "plain"), get_b(j, "queued")}
+    get_s(j, "text"), get_nat(j, "created_ms"), get_b(j, "plain"), get_b(j, "queued"), opt_str(J.get(j, "via"))}
 
 def card_of(+j: J.Json) -> M.Card:
   M.Card{get_nat(j, "id"), get_s(j, "kind"), get_s(j, "agent"), get_s(j, "text"),

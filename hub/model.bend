@@ -32,7 +32,7 @@ type MSt is Data:
 type Msg is Data:
   Msg{id: Nat, thread: Nat, from: String, to: String, reply_to: Maybe<&2, Nat>,
     expect: Bool, auto: Bool, text: String, created: Nat, plain: Bool,
-    queued: Bool}
+    queued: Bool, via: Maybe<&2, String>}
 
 # a message, its delivery state and whether it got its (first) reply
 type MRec is Data:
@@ -79,62 +79,6 @@ type AgentOp is Data:
 type MsgOp is Data:
   OSt{st: MSt}
   OSettle{}
-
-# ---- accessors (generated) ----
-def Msg.id(x: Msg) -> Nat:
-  match x:
-    case Msg{+id, _, _, _, _, _, _, _, _, _, _}:
-      id
-
-def Msg.thread(x: Msg) -> Nat:
-  match x:
-    case Msg{_, +thread, _, _, _, _, _, _, _, _, _}:
-      thread
-
-def Msg.from(x: Msg) -> String:
-  match x:
-    case Msg{_, _, +from, _, _, _, _, _, _, _, _}:
-      from
-
-def Msg.to(x: Msg) -> String:
-  match x:
-    case Msg{_, _, _, +to, _, _, _, _, _, _, _}:
-      to
-
-def Msg.reply_to(x: Msg) -> Maybe<&2, Nat>:
-  match x:
-    case Msg{_, _, _, _, +reply_to, _, _, _, _, _, _}:
-      reply_to
-
-def Msg.expect(x: Msg) -> Bool:
-  match x:
-    case Msg{_, _, _, _, _, +expect, _, _, _, _, _}:
-      expect
-
-def Msg.auto(x: Msg) -> Bool:
-  match x:
-    case Msg{_, _, _, _, _, _, +auto, _, _, _, _}:
-      auto
-
-def Msg.text(x: Msg) -> String:
-  match x:
-    case Msg{_, _, _, _, _, _, _, +text, _, _, _}:
-      text
-
-def Msg.created(x: Msg) -> Nat:
-  match x:
-    case Msg{_, _, _, _, _, _, _, _, +created, _, _}:
-      created
-
-def Msg.plain(x: Msg) -> Bool:
-  match x:
-    case Msg{_, _, _, _, _, _, _, _, _, +plain, _}:
-      plain
-
-def Msg.queued(x: Msg) -> Bool:
-  match x:
-    case Msg{_, _, _, _, _, _, _, _, _, _, +queued}:
-      queued
 
 def MRec.msg(x: MRec) -> Msg:
   match x:
@@ -256,7 +200,10 @@ def St.next_card(x: St) -> Nat:
     case St{_, _, _, _, _, _, +next_card}:
       next_card
 
-# ---- end accessors ----
+def Msg.id(x: Msg) -> Nat:
+  match x:
+    case Msg{+id, _, _, _, _, _, _, _, _, _, _, _}:
+      id
 
 def rec_of(xs: List<&2, MRec>, +id: Nat) -> Maybe<&2, MRec>:
   match xs:
@@ -481,6 +428,11 @@ def apply.settle.if(ok: Bool, +msgs: List<&2, MRec>, +id: Nat) -> List<&2, MRec>
     case False{}:
       msgs
 
+def Msg.to(x: Msg) -> String:
+  match x:
+    case Msg{_, _, _, +to, _, _, _, _, _, _, _, _}:
+      to
+
 def apply.settle.go(orig: Maybe<&2, MRec>, +msgs: List<&2, MRec>, +id: Nat, +from: String) -> List<&2, MRec>:
   match orig:
     case None{}:
@@ -495,6 +447,21 @@ def apply.settle(r: Maybe<&2, Nat>, +msgs: List<&2, MRec>, +from: String) -> Lis
       msgs
     case Some{+id}:
       apply.settle.go(rec_of(msgs, id), msgs, id, from)
+
+def Msg.reply_to(x: Msg) -> Maybe<&2, Nat>:
+  match x:
+    case Msg{_, _, _, _, +reply_to, _, _, _, _, _, _, _}:
+      reply_to
+
+def Msg.from(x: Msg) -> String:
+  match x:
+    case Msg{_, _, +from, _, _, _, _, _, _, _, _, _}:
+      from
+
+def Msg.thread(x: Msg) -> Nat:
+  match x:
+    case Msg{_, +thread, _, _, _, _, _, _, _, _, _, _}:
+      thread
 
 def apply(+st: St, e: Ev) -> St:
   match st:
@@ -584,6 +551,11 @@ def queued_in(xs: List<&2, MRec>, +n: String) -> List<&2, Msg>:
 def queued_for(+st: St, +n: String) -> List<&2, Msg>:
   queued_in(St.msgs(st), n)
 
+def Msg.expect(x: Msg) -> Bool:
+  match x:
+    case Msg{_, _, _, _, _, +expect, _, _, _, _, _, _}:
+      expect
+
 def unanswered_in(xs: List<&2, MRec>, +n: String) -> List<&2, Msg>:
   match xs:
     case Nil{}:
@@ -632,3 +604,44 @@ def init(+workspace: String) -> St:
   +ws = J.obj([J.kv("mode", J.str("shared")), J.kv("path", J.str(workspace)),
     J.kv("branch", J.JNull{}), J.kv("base_commit", J.JNull{}), J.kv("dropped", J.JBool{False{}})])
   St{[new_agent(MAIN(), True{}, None{}, ws)], [MAIN()], Nil{}, Nil{}, Nil{}, 1n, 1n}
+
+def Msg.auto(x: Msg) -> Bool:
+  match x:
+    case Msg{_, _, _, _, _, _, +auto, _, _, _, _, _}:
+      auto
+
+def Msg.text(x: Msg) -> String:
+  match x:
+    case Msg{_, _, _, _, _, _, _, +text, _, _, _, _}:
+      text
+
+def Msg.created(x: Msg) -> Nat:
+  match x:
+    case Msg{_, _, _, _, _, _, _, _, +created, _, _, _}:
+      created
+
+def Msg.plain(x: Msg) -> Bool:
+  match x:
+    case Msg{_, _, _, _, _, _, _, _, _, +plain, _, _}:
+      plain
+
+def Msg.queued(x: Msg) -> Bool:
+  match x:
+    case Msg{_, _, _, _, _, _, _, _, _, _, +queued, _}:
+      queued
+
+def Msg.via(x: Msg) -> Maybe<&2, String>:
+  match x:
+    case Msg{_, _, _, _, _, _, _, _, _, _, _, +via}:
+      via
+
+# the last `max` chars, after an ellipsis when cut (util::clip_tail)
+def clip_tail.pick(fits: Bool, +s: String, +max: Nat) -> String:
+  match fits:
+    case True{}:
+      s
+    case False{}:
+      String.append("…", String.drop(s, Nat.sub(String.length(s), Nat.sub(max, 1n))))
+
+def clip_tail(+s: String, +max: Nat) -> String:
+  clip_tail.pick(Nat.is_le(String.length(s), max), s, max)
