@@ -83,6 +83,17 @@ type Cmd is Data:
   CDrop{}
   CCard{}
 
+# the hub after an input: the new state and its effects, or, when a git
+# answer is missing, the hub unchanged and the query (the daemon replays
+# the input with the answer)
+type Out is Data:
+  Out{hub: Hub, fx: List<&2, X.Fx>, need: Maybe<&2, J.Json>}
+
+# a sequence of inputs: the hub at the end and every journal event, in
+# order (the model of sb-core's loop, for the law run_replays)
+type RunR is Data:
+  RunR{hub: Hub, journal: List<&2, M.Ev>}
+
 def WAIT_CAP() -> Nat:
   25n
 
@@ -381,8 +392,10 @@ def dirty(-o: M.St, +cx: X.Cx<o>) -> X.Cx<o>:
 def now(-o: M.St, +cx: X.Cx<o>) -> Nat:
   X.now(o, cx)
 
-def emit(-o: M.St, +cx: X.Cx<o>, +e: M.Ev) -> X.Cx<o>:
-  X.emit(o, cx, e)
+# every event keeps the journal's invariants: a caller that is not sending
+# a message proves them with `Unit{}, Unit{}`
+def emit(-o: M.St, +cx: X.Cx<o>, +e: M.Ev, k: X.FreshEv(X.d(o, cx), e), kq: X.QuietEv(e)) -> X.Cx<o>:
+  X.emit(o, cx, e, k, kq)
 
 # ---- env queries (replayed answers, see hub/main.bend) ----
 
@@ -454,12 +467,12 @@ def parent_of(m: Maybe<&2, M.Agent>) -> Maybe<&2, String>:
 # ---- notes and cards ----
 
 def note_main(-o: M.St, +cx: X.Cx<o>, +text: String) -> X.Cx<o>:
-  emit(o, cx, M.EMainNote{text, now(o, cx)})
+  emit(o, cx, M.EMainNote{text, now(o, cx)}, Unit{}, Unit{})
 
 # opens card number next_card (the caller reads it first when it needs it)
 def open_card(-o: M.St, +cx: X.Cx<o>, +kind: String, +agent: String, +text: String, +for_msg: Maybe<&2, Nat>) -> X.Cx<o>:
   +id = M.St.next_card(st(o, cx))
-  +cx2 = emit(o, cx, M.ECardOpened{M.Card{id, kind, agent, text, for_msg, now(o, cx)}})
+  +cx2 = emit(o, cx, M.ECardOpened{M.Card{id, kind, agent, text, for_msg, now(o, cx)}}, Unit{}, Unit{})
   line(o, cx2, M.MAIN(), "card", cat(["#", ns(id), " ", kind, " @", agent, " : ", text]))
 
 def close_ids(-o: M.St, ids: List<&2, Nat>, +cx: X.Cx<o>, +res: String) -> X.Cx<o>:
@@ -467,7 +480,7 @@ def close_ids(-o: M.St, ids: List<&2, Nat>, +cx: X.Cx<o>, +res: String) -> X.Cx<
     case Nil{}:
       cx
     case Con{+id, +rest}:
-      +cx2 = emit(o, cx, M.ECardClosed{id, res})
+      +cx2 = emit(o, cx, M.ECardClosed{id, res}, Unit{}, Unit{})
       close_ids(o, rest, line(o, cx2, M.MAIN(), "card-closed", cat(["#", ns(id), " ", res])), res)
 
 # the cards of `agent` whose kind is in `kinds` (Nil: every kind)
@@ -500,7 +513,7 @@ def spawn(-o: M.St, +cx: X.Cx<o>, +n: String, +resume: Bool) -> X.Cx<o>:
 # ---- waiters ----
 
 def deliver_to_waiter(-o: M.St, +cx: X.Cx<o>, +w: X.Waiter, +m: M.Msg, +kind: String) -> X.Cx<o>:
-  +cx2 = emit(o, cx, M.EMsgState{M.Msg.id(m), M.Delivered{}})
+  +cx2 = emit(o, cx, M.EMsgState{M.Msg.id(m), M.Delivered{}}, Unit{}, Unit{})
   +cx3 = reply(o, cx2, X.Waiter.token(w), ok_body([
     J.kv("type", J.JStr{kind}), J.kv("from", J.JStr{M.Msg.from(m)}),
     J.kv("message_id", J.JStr{mid(M.Msg.id(m))}),
@@ -549,7 +562,7 @@ def deliver_each(-o: M.St, batch: List<&2, M.Msg>, +cx: X.Cx<o>, +name: String, 
     case Con{+m, +rest}:
       +s = st(o, cx)
       +rel = relation(M.Msg.from(m), M.Msg.to(m), parent_of(M.get_agent(s, M.Msg.from(m))), parent_of(M.get_agent(s, M.Msg.to(m))))
-      +cx2 = emit(o, cx, M.EMsgState{M.Msg.id(m), M.Delivered{}})
+      +cx2 = emit(o, cx, M.EMsgState{M.Msg.id(m), M.Delivered{}}, Unit{}, Unit{})
       +cx3 = Bool.pick(X.Cx<o>, M.Msg.plain(m) || Maybe.is_some(&2, String, M.Msg.via(m)),
         line(o, cx2, name, "you", M.Msg.text(m)),
         line(o, cx2, name, "msg-in", cat([M.Msg.from(m), " ", mid(M.Msg.id(m)), " : ", M.Msg.text(m)])))
@@ -558,7 +571,7 @@ def deliver_each(-o: M.St, batch: List<&2, M.Msg>, +cx: X.Cx<o>, +name: String, 
 def pump.flush(-o: M.St, flush: Bool, +cx: X.Cx<o>) -> X.Cx<o>:
   match flush:
     case True{}:
-      emit(o, cx, M.ENotesFlushed{})
+      emit(o, cx, M.ENotesFlushed{}, Unit{}, Unit{})
     case False{}:
       cx
 
@@ -661,11 +674,22 @@ def send.cards(-o: M.St, r: Maybe<&2, Nat>, +cx: X.Cx<o>, +from: String) -> X.Cx
     case Some{+id}:
       close_ids(o, question_for(M.St.cards(st(o, cx)), id), cx, String.append("répondue via @", from))
 
+def quiet_ok(a: Bool, e: Bool) -> {Bool.and(a, Bool.and(e, Bool.not(a))) == False{} : Bool}:
+  match a e:
+    case True{} True{}:
+      {==}
+    case True{} False{}:
+      {==}
+    case False{} _:
+      {==}
+
 def send.emit(-o: M.St, +cx: X.Cx<o>, +s: Snd, +thread: Nat) -> X.Cx<o> & SendR:
   match s:
     case Snd{+from, +to, +text, +expect, +reply_to, +plain, +auto, +queued, +via}:
-      +m = {M.Msg{M.St.next_msg(st(o, cx)), thread, from, to, reply_to, expect, auto, text, now(o, cx), plain, queued, via} : M.Msg}
-      +cx1 = emit(o, cx, M.EMsgSent{m})
+      # an automatic reply never asks (law auto_never_asks); the id is the
+      # next free one (law msg_ids_fresh)
+      +m = {M.Msg{M.St.next_msg(st(o, cx)), thread, from, to, reply_to, Bool.and(expect, Bool.not(auto)), auto, text, now(o, cx), plain, queued, via} : M.Msg}
+      +cx1 = emit(o, cx, M.EMsgSent{m}, {==}, quiet_ok(auto, expect))
       # a reply to the message a question card stands for answers the
       # card; the user's own answers close their card in answer_card
       +cx2 = send.cards(o, Bool.pick(Maybe<&2, Nat>, String.eq(from, M.USER()), None{}, reply_to), cx1, from)
@@ -703,7 +727,7 @@ def send.revive(-o: M.St, ok: Bool, +cx: X.Cx<o>, +s: Snd, +why: String) -> X.Cx
       serr(o, cx, why)
     case True{}:
       +to = Snd.to(s)
-      +cx2 = emit(o, cx, M.ELifecycle{to, M.LActive{}, None{}})
+      +cx2 = emit(o, cx, M.ELifecycle{to, M.LActive{}, None{}}, Unit{}, Unit{})
       +r = rr(o, cx2)
       +cx3 = set_r(o, cx2, X.R.with_crashes(r, kn_del(X.R.crashes(r), to)))
       send.thread(o, Snd.reply_to(s), spawn(o, cx3, to, True{}), s)
@@ -816,7 +840,7 @@ def create.go(-o: M.St, +cx: X.Cx<o>, +t: NewTask, +name: String, +ws: J.Json) -
   +parent = NewTask.parent(t)
   +label = branch_label(M.ws_branch(ws))
   +obj = M.one_line(NewTask.objective(t))
-  +cx2 = emit(o, cx, M.ETaskCreated{name, parent, NewTask.brief(t), ws, now(o, cx)})
+  +cx2 = emit(o, cx, M.ETaskCreated{name, parent, NewTask.brief(t), ws, now(o, cx)}, Unit{}, Unit{})
   +who = Bool.pick(String, String.eq(parent, M.USER()), "toi", parent)
   +cx3 = line(o, cx2, M.MAIN(), "spawn", cat([who, " → nouvelle tâche @", name, label, " : ", obj]))
   +cx4 = Bool.pick(X.Cx<o>, String.eq(parent, M.USER()), note_main(o, cx3, cat(["the user created the task @", name, label, ": ", obj])), cx3)
@@ -914,7 +938,7 @@ def reject_ids(-o: M.St, ids: List<&2, Nat>, +cx: X.Cx<o>) -> X.Cx<o>:
     case Nil{}:
       cx
     case Con{+id, +rest}:
-      reject_ids(o, rest, emit(o, cx, M.EMsgState{id, M.Rejected{"recipient_unavailable"}}))
+      reject_ids(o, rest, emit(o, cx, M.EMsgState{id, M.Rejected{"recipient_unavailable"}}, Unit{}, Unit{}))
 
 def stop_task(-o: M.St, +cx: X.Cx<o>, +name: String, +life: M.Life, +reason: String) -> X.Cx<o>:
   +cx1 = out(o, cx, [J.kv("fx", J.JStr{"kill"}), J.kv("agent", J.JStr{name})])
@@ -922,7 +946,7 @@ def stop_task(-o: M.St, +cx: X.Cx<o>, +name: String, +life: M.Life, +reason: Str
   +r = rr(o, cx2)
   +cx3 = set_r(o, cx2, X.R.with_steered(r, steer_del(X.R.steered(r), name)))
   +cx4 = upd_rt(o, cx3, X.Rt.with_turn(X.Rt.with_run(rt(o, cx3, name), M.RDown{}), None{}))
-  +cx5 = emit(o, cx4, M.ELifecycle{name, life, Bool.pick(Maybe<&2, String>, String.is_empty(reason), None{}, Some{reason})})
+  +cx5 = emit(o, cx4, M.ELifecycle{name, life, Bool.pick(Maybe<&2, String>, String.is_empty(reason), None{}, Some{reason})}, Unit{}, Unit{})
   +cx6 = reject_ids(o, ids_of(M.queued_for(st(o, cx5), name)), cx5)
   close_cards(o, cx6, name, Nil{}, "tâche arrêtée")
 
@@ -954,8 +978,8 @@ def drop.ws(-o: M.St, r: Result<&2, &2, String, J.Json>, +cx: X.Cx<o>, +a: M.Age
     case Fail{_}:
       cx
     case Done{+snap}:
-      +cx2 = emit(o, cx, M.EWorkspace{M.Agent.name(a), J.set(M.Agent.ws(a), "dropped", J.JBool{True{}})})
-      emit(o, cx2, M.ESnapshot{M.Agent.name(a), drop.snap(snap)})
+      +cx2 = emit(o, cx, M.EWorkspace{M.Agent.name(a), J.set(M.Agent.ws(a), "dropped", J.JBool{True{}})}, Unit{}, Unit{})
+      emit(o, cx2, M.ESnapshot{M.Agent.name(a), drop.snap(snap)}, Unit{}, Unit{})
 
 def drop.finish(-o: M.St, +cx: X.Cx<o>, +a: M.Agent, +label: String) -> X.Cx<o> & DropR:
   +cx2 = line(o, cx, M.MAIN(), "info", cat(["@", M.Agent.name(a), " archivée", label]))
@@ -1036,7 +1060,7 @@ def drop_task(-o: M.St, +cx: X.Cx<o>, +name: String, +force: Bool) -> X.Cx<o> & 
 
 def restore.go(-o: M.St, +cx: X.Cx<o>, +a: M.Agent) -> X.Cx<o> & TaskR:
   +n = M.Agent.name(a)
-  +cx2 = emit(o, cx, M.ELifecycle{n, M.LActive{}, None{}})
+  +cx2 = emit(o, cx, M.ELifecycle{n, M.LActive{}, None{}}, Unit{}, Unit{})
   +r = rr(o, cx2)
   +cx3 = set_r(o, cx2, X.R.with_crashes(r, kn_del(X.R.crashes(r), n)))
   +cx4 = spawn(o, cx3, n, True{})
@@ -1047,8 +1071,8 @@ def restore.res(-o: M.St, r: Result<&2, &2, String, J.Json>, +cx: X.Cx<o>, +a: M
     case Fail{+e}:
       (cx, TErr{e})
     case Done{+ws}:
-      +cx2 = emit(o, cx, M.EWorkspace{M.Agent.name(a), ws})
-      restore.go(o, emit(o, cx2, M.ESnapshot{M.Agent.name(a), None{}}), a)
+      +cx2 = emit(o, cx, M.EWorkspace{M.Agent.name(a), ws}, Unit{}, Unit{})
+      restore.go(o, emit(o, cx2, M.ESnapshot{M.Agent.name(a), None{}}, Unit{}, Unit{}), a)
 
 def restore.ans(-o: M.St, p: X.Cx<o> & Maybe<&2, J.Json>, +a: M.Agent) -> X.Cx<o> & TaskR:
   match p:
@@ -1097,7 +1121,7 @@ def isolate.res(-o: M.St, r: Result<&2, &2, String, J.Json>, +cx: X.Cx<o>, +n: S
     case Done{+ws}:
       +path = M.ws_path(ws)
       +branch = J.get_str_or(ws, "branch", "")
-      +cx2 = emit(o, cx, M.EWorkspace{n, ws})
+      +cx2 = emit(o, cx, M.EWorkspace{n, ws}, Unit{}, Unit{})
       # the REPL takes its new BEND_WORKDIR at the next spawn
       +cx3 = out(o, cx2, [J.kv("fx", J.JStr{"kill"}), J.kv("agent", J.JStr{n})])
       +cx4 = spawn(o, upd_rt(o, cx3, X.Rt.with_run(rt(o, cx3, n), M.RDown{})), n, True{})
@@ -1140,7 +1164,7 @@ def user_sent(-o: M.St, +cx: X.Cx<o>, +text: String) -> X.Cx<o>:
   out(o, cx, [J.kv("fx", J.JStr{"user_sent"}), J.kv("text", J.JStr{text})])
 
 def close_card(-o: M.St, +cx: X.Cx<o>, +id: Nat, +res: String) -> X.Cx<o>:
-  +cx2 = emit(o, cx, M.ECardClosed{id, res})
+  +cx2 = emit(o, cx, M.ECardClosed{id, res}, Unit{}, Unit{})
   line(o, cx2, M.MAIN(), "card-closed", cat(["#", ns(id), " ", res]))
 
 def answer.q.sent(-o: M.St, p: X.Cx<o> & SendR, +c: M.Card, +asker: String, +text: String) -> X.Cx<o>:
@@ -1342,7 +1366,7 @@ def rename.go(-o: M.St, ok: Bool, +cx: X.Cx<o>, +old: String, +new: String) -> X
     case False{}:
       notice(o, cx, String.append("nom invalide ou déjà pris : ", new))
     case True{}:
-      +cx2 = emit(o, cx, M.ERenamed{old, new})
+      +cx2 = emit(o, cx, M.ERenamed{old, new}, Unit{}, Unit{})
       +r = rr(o, cx2)
       +cx3 = set_r(o, cx2, X.R.with_rts(X.R.with_waiters(X.R.with_steered(r, steer_rename(X.R.steered(r), old, new)),
         waiters_rename(X.R.waiters(r), old, new)), rt_rename(X.R.rts(r), old, new)))
@@ -1368,7 +1392,7 @@ def cancel.to(m: Maybe<&2, M.Msg>) -> String:
 def cancel.state(-o: M.St, s: Maybe<&2, M.MSt>, +cx: X.Cx<o>, +id: Nat) -> X.Cx<o>:
   match s:
     case Some{M.Queued{_}}:
-      +cx2 = emit(o, cx, M.EMsgState{id, M.Cancelled{}})
+      +cx2 = emit(o, cx, M.EMsgState{id, M.Cancelled{}}, Unit{}, Unit{})
       +to = cancel.to(M.msg_of(st(o, cx2), id))
       +cx3 = line(o, cx2, M.MAIN(), "info", cat(["routage vers @", to, " annulé"]))
       note_main(o, cx3, cat(["the user cancelled the message ", mid(id), " to @", to, " before delivery"]))
@@ -1546,7 +1570,7 @@ def decl_of(+s: String) -> M.Decl:
 def req_status(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +is_main: Bool, +q: J.Json) -> X.Cx<o>:
   +status = jstr(q, "status")
   +note = jstr(q, "note")
-  +cx2 = emit(o, cx, M.EDeclared{from, Some{decl_of(status)}, note})
+  +cx2 = emit(o, cx, M.EDeclared{from, Some{decl_of(status)}, note}, Unit{}, Unit{})
   +cx3 = Bool.pick(X.Cx<o>, String.eq(status, "blocked") && Bool.not(is_main),
     open_card(o, cx2, "blocked", from, Bool.pick(String, String.is_empty(note), "bloquée", note), None{}), cx2)
   reply(o, cx3, token, ok_body(Nil{}))
@@ -1572,11 +1596,11 @@ def req_report.sent(-o: M.St, p: X.Cx<o> & SendR, +token: Nat) -> X.Cx<o>:
 
 def req_report.kind(-o: M.St, +cx: X.Cx<o>, +from: String, +kind: String, +summary: String) -> X.Cx<o>:
   Bool.pick(X.Cx<o>, String.eq(kind, "done"),
-    open_card(o, emit(o, cx, M.EDeclared{from, Some{M.DDone{}}, ""}), "done", from, M.clip(M.one_line(summary), 200n), None{}),
+    open_card(o, emit(o, cx, M.EDeclared{from, Some{M.DDone{}}, ""}, Unit{}, Unit{}), "done", from, M.clip(M.one_line(summary), 200n), None{}),
     Bool.pick(X.Cx<o>, String.eq(kind, "blocked"),
-      open_card(o, emit(o, cx, M.EDeclared{from, Some{M.DBlocked{}}, summary}), "blocked", from, summary, None{}),
+      open_card(o, emit(o, cx, M.EDeclared{from, Some{M.DBlocked{}}, summary}, Unit{}, Unit{}), "blocked", from, summary, None{}),
       Bool.pick(X.Cx<o>, String.eq(kind, "failed"),
-        open_card(o, emit(o, cx, M.ELifecycle{from, M.LFailed{}, Some{summary}}), "failed", from, summary, None{}),
+        open_card(o, emit(o, cx, M.ELifecycle{from, M.LFailed{}, Some{summary}}, Unit{}, Unit{}), "failed", from, summary, None{}),
         cx)))
 
 def req_report.go(-o: M.St, is_main: Bool, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) -> X.Cx<o>:
@@ -1588,7 +1612,7 @@ def req_report.go(-o: M.St, is_main: Bool, +cx: X.Cx<o>, +token: Nat, +from: Str
       +summary = jstr(q, "summary")
       +decisions = jstr_list(Maybe.default(&2, List<&2, J.Json>, J.get_arr(q, "decisions"), Nil{}))
       +cx2 = emit(o, cx, M.EReported{from, J.obj([J.kv("at_ms", J.JNum{now(o, cx)}), J.kv("kind", J.JStr{kind}),
-        J.kv("summary", J.JStr{summary}), J.kv("decisions", J.JArr{jstrs(decisions)}), J.kv("auto", J.JBool{False{}})])})
+        J.kv("summary", J.JStr{summary}), J.kv("decisions", J.JArr{jstrs(decisions)}), J.kv("auto", J.JBool{False{}})])}, Unit{}, Unit{})
       +cx3 = req_report.kind(o, cx2, from, kind, summary)
       +parent = Maybe.default(&2, String, parent_of(M.get_agent(st(o, cx3), from)), M.MAIN())
       +to = Bool.pick(String, String.eq(parent, M.USER()), M.MAIN(), parent)
@@ -1663,7 +1687,7 @@ def req_card.settle(-o: M.St, m: Maybe<&2, Nat>, +cx: X.Cx<o>) -> X.Cx<o>:
     case None{}:
       cx
     case Some{+id}:
-      emit(o, cx, M.ESettled{id})
+      emit(o, cx, M.ESettled{id}, Unit{}, Unit{})
 
 def req_card.go(-o: M.St, +cx: X.Cx<o>, +token: Nat, +agent: String, +text: String, +for_msg: Maybe<&2, Nat>) -> X.Cx<o>:
   +id = M.St.next_card(st(o, cx))
@@ -1774,7 +1798,7 @@ def agent_decl(m: Maybe<&2, M.Agent>) -> Maybe<&2, M.Decl>:
 def turn.resume(-o: M.St, go: Bool, +cx: X.Cx<o>, +agent: String) -> X.Cx<o>:
   match go:
     case True{}:
-      +cx2 = emit(o, cx, M.EDeclared{agent, None{}, ""})
+      +cx2 = emit(o, cx, M.EDeclared{agent, None{}, ""}, Unit{}, Unit{})
       close_cards(o, cx2, agent, ["blocked", "done"], "reprise")
     case False{}:
       cx
@@ -1835,7 +1859,7 @@ def touch.new(-o: M.St, known: Bool, +cx: X.Cx<o>, +agent: String, +path: String
     case True{}:
       cx
     case False{}:
-      +cx2 = emit(o, cx, M.EFileTouched{agent, path})
+      +cx2 = emit(o, cx, M.EFileTouched{agent, path}, Unit{}, Unit{})
       touch.others(o, overlap_others(M.St.order(st(o, cx2)), st(o, cx2), agent, path), cx2, agent, path)
 
 def touch.shared(-o: M.St, shared: Bool, +cx: X.Cx<o>, +agent: String, +path: String, +known: Bool) -> X.Cx<o>:
@@ -1881,7 +1905,7 @@ def crash.restart(-o: M.St, +cx: X.Cx<o>, +agent: String, +n: Nat, +reason: Stri
 
 def crash.fail(-o: M.St, +cx: X.Cx<o>, +agent: String, +n: Nat, +reason: String) -> X.Cx<o>:
   +why = cat(["la REPL a planté ", ns(n), " fois : ", reason])
-  +cx2 = emit(o, cx, M.ELifecycle{agent, M.LFailed{}, Some{why}})
+  +cx2 = emit(o, cx, M.ELifecycle{agent, M.LFailed{}, Some{why}}, Unit{}, Unit{})
   +cx3 = open_card(o, cx2, "failed", agent, why, None{})
   Bool.pick(X.Cx<o>, String.eq(agent, M.MAIN()), cx3,
     notify_main(o, cx3, cat(["Task @", agent, " failed: ", why, ". It is not restarted anymore. A new message from you or the user restarts it; otherwise tell the user."])))
@@ -1965,7 +1989,7 @@ def requeue(-o: M.St, ids: List<&2, Nat>, +cx: X.Cx<o>) -> X.Cx<o>:
     case Nil{}:
       cx
     case Con{+id, +rest}:
-      requeue(o, rest, emit(o, cx, M.EMsgState{id, M.Queued{"steer_leftover"}}))
+      requeue(o, rest, emit(o, cx, M.EMsgState{id, M.Queued{"steer_leftover"}}, Unit{}, Unit{}))
 
 def skip_steered(xs: List<&2, M.Msg>, +skip: Bool, +ids: List<&2, Nat>) -> List<&2, M.Msg>:
   match xs:
@@ -1982,7 +2006,7 @@ def auto_reply(-o: M.St, via: Maybe<&2, String>, +cx: X.Cx<o>, +agent: String, +
     case None{}:
       fst(o, send(o, cx, msg(agent, M.Msg.from(m), body, False{}, Some{M.Msg.id(m)}, False{}, True{})))
     case Some{+view}:
-      +cx2 = emit(o, cx, M.ESettled{M.Msg.id(m)})
+      +cx2 = emit(o, cx, M.ESettled{M.Msg.id(m)}, Unit{}, Unit{})
       +cx3 = line(o, cx2, view, "msg-in", cat(["@", agent, " : ", body]))
       note_main(o, cx3, cat(["@", agent, " answered the user (asked from @", view, "'s view: \"", M.clip(M.one_line(M.Msg.text(m)), 500n),
         "\"): \"", M.clip_tail(M.one_line(body), 2000n), "\""]))
@@ -1999,7 +2023,7 @@ def idle.report(-o: M.St, go: Bool, +cx: X.Cx<o>, +agent: String, +text: String)
   match go:
     case True{}:
       emit(o, cx, M.EReported{agent, J.obj([J.kv("at_ms", J.JNum{now(o, cx)}), J.kv("kind", J.JStr{"turn"}),
-        J.kv("summary", J.JStr{M.clip(text, 1000n)}), J.kv("decisions", J.JArr{Nil{}}), J.kv("auto", J.JBool{True{}})])})
+        J.kv("summary", J.JStr{M.clip(text, 1000n)}), J.kv("decisions", J.JArr{Nil{}}), J.kv("auto", J.JBool{True{}})])}, Unit{}, Unit{})
     case False{}:
       cx
 
@@ -2218,3 +2242,55 @@ def Snd.with_via(x: Snd, +v: Maybe<&2, String>) -> Snd:
   match x:
     case Snd{+from, +to, +text, +expect, +reply_to, +plain, +auto, +queued, _}:
       Snd{from, to, text, expect, reply_to, plain, auto, queued, v}
+
+# ---- committing a step (what sb-core keeps) ----
+
+def commit.go(-o: M.St, need: Maybe<&2, J.Json>, +c: X.Core<o>, +r: X.R, +h: Hub) -> Out:
+  match need:
+    case Some{+q}:
+      Out{h, Nil{}, Some{q}}
+    case None{}:
+      Out{Hub{X.Core.d(o, c), X.R.with_ans(r, Nil{})}, X.Core.fx(o, c), None{}}
+
+def commit.cx(-o: M.St, cx: X.Cx<o>, +h: Hub) -> Out:
+  match cx:
+    case X.Cx{+c, +r}:
+      commit.go(o, X.R.need(r), c, r, h)
+
+def commit(+h: Hub, +i: J.Json) -> Out:
+  commit.cx(Hub.d(h), step(h, i), h)
+
+def RunR.hub(x: RunR) -> Hub:
+  match x:
+    case RunR{+hub, _}:
+      hub
+
+def Out.fx(x: Out) -> List<&2, X.Fx>:
+  match x:
+    case Out{_, +fx, _}:
+      fx
+
+def RunR.journal(x: RunR) -> List<&2, M.Ev>:
+  match x:
+    case RunR{_, +journal}:
+      journal
+
+def run.cat(+o1: Out, +rr: RunR) -> RunR:
+  RunR{RunR.hub(rr), List.append(&2, M.Ev, X.journal(Out.fx(o1)), RunR.journal(rr))}
+
+def Out.hub(x: Out) -> Hub:
+  match x:
+    case Out{+hub, _, _}:
+      hub
+
+def run(ins: List<&2, J.Json>, +h: Hub) -> RunR:
+  match ins:
+    case Nil{}:
+      RunR{h, Nil{}}
+    case Con{+i, +rest}:
+      run.cat(commit(h, i), run(rest, Out.hub(commit(h, i))))
+
+def Out.need(x: Out) -> Maybe<&2, J.Json>:
+  match x:
+    case Out{_, _, +need}:
+      need

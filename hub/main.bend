@@ -22,6 +22,7 @@ import ./codec.bend as C
 import ./cx.bend as X
 
 import ./core.bend as H
+
 import ./view.bend as V
 
 type Got is Type:
@@ -65,11 +66,17 @@ def done_or_need.go(-o: M.St, need: Maybe<&2, J.Json>, +c: X.Core<o>, +r: X.R, +
         J.stringify(J.obj([J.kv("fx", J.JArr{fxs_json(fx)}), J.kv("dirty", J.JBool{X.R.dirty(r)}),
           J.kv("view", V.view(d, X.R.rts(r), False{}, V.touched(X.journal(fx))))])))
 
-# the hub after one input, and the answer line
-def done_or_need(-o: M.St, cx: X.Cx<o>, +h: H.Hub) -> H.Hub & String:
-  match cx:
-    case X.Cx{+c, +r}:
-      done_or_need.go(o, X.R.need(r), c, r, h)
+def answer.go(need: Maybe<&2, J.Json>, +h: H.Hub, +fx: List<&2, X.Fx>) -> H.Hub & String:
+  match need:
+    case Some{+q}:
+      (h, J.stringify(J.obj([J.kv("need", q)])))
+    case None{}:
+      (h, J.stringify(J.obj([J.kv("fx", J.JArr{fxs_json(fx)}), J.kv("dirty", J.JBool{X.R.dirty(H.Hub.r(h))}),
+        J.kv("view", V.view(H.Hub.d(h), X.R.rts(H.Hub.r(h)), False{}, V.touched(X.journal(fx))))])))
+
+# the answer line of a committed step (H.commit, the law run_replays)
+def answer(+o: H.Out) -> H.Hub & String:
+  answer.go(H.Out.need(o), H.Out.hub(o), H.Out.fx(o))
 
 def replay(+h: H.Hub, m: Maybe<&2, M.Ev>) -> H.Hub:
   match m:
@@ -95,7 +102,7 @@ def handle.tag(tag: Tag, +h: H.Hub, +i: J.Json) -> H.Hub & String:
     case TView{}:
       (h, J.stringify(J.obj([J.kv("view", V.view(H.Hub.d(h), X.R.rts(H.Hub.r(h)), True{}, Nil{}))])))
     case TStep{}:
-      done_or_need(H.Hub.d(h), H.step(h, i), h)
+      answer(H.commit(h, i))
 
 def handle.parsed(r: Result<&2, &2, String, J.Json>, +h: H.Hub) -> H.Hub & String:
   match r:
@@ -132,14 +139,6 @@ def split_line(+s: String) -> Maybe<&2, Split>:
   split_line.go(s, "")
 
 @unsafe
-def lines.split(m: Maybe<&2, Split>, s: Socket, +h: H.Hub, +buf: String) -> IO(Got):
-  match m:
-    case None{}:
-      IO.pure(Got, Got{s, h, buf})
-    case Some{Split{+l, +rest}}:
-      lines.answer(handle(h, l), s, rest)
-
-@unsafe
 def lines(s: Socket, +h: H.Hub, +buf: String) -> IO(Got):
   lines.split(split_line(buf), s, h, buf)
 
@@ -152,16 +151,12 @@ def lines.answer(p: H.Hub & String, s: Socket, +rest: String) -> IO(Got):
         lines(s2, h2, rest)
 
 @unsafe
-def conn.data(closed: Bool, s: Socket, +h: H.Hub, +buf: String) -> IO(H.Hub):
-  match closed:
-    case True{}:
-      do IO<H.Hub>:
-        Socket.close(s)
-        IO.pure(H.Hub, h)
-    case False{}:
-      do IO<H.Hub>:
-        r : Got <- lines(s, h, buf)
-        conn.next(r)
+def lines.split(m: Maybe<&2, Split>, s: Socket, +h: H.Hub, +buf: String) -> IO(Got):
+  match m:
+    case None{}:
+      IO.pure(Got, Got{s, h, buf})
+    case Some{Split{+l, +rest}}:
+      lines.answer(handle(h, l), s, rest)
 
 @unsafe
 def conn.after(rm: Socket & Result<&1, &1, U32 & String, String>, +h: H.Hub, +buf: String) -> IO(H.Hub):
@@ -186,10 +181,16 @@ def conn.next(r: Got) -> IO(H.Hub):
       conn(s, h, buf)
 
 @unsafe
-def serve(l: Listener, +h: H.Hub) -> IO(Unit):
-  do IO<Unit>:
-    am : Listener & Result<&1, &1, U32 & String, Socket> <- TCP.accept(l)
-    serve.after(am, h)
+def conn.data(closed: Bool, s: Socket, +h: H.Hub, +buf: String) -> IO(H.Hub):
+  match closed:
+    case True{}:
+      do IO<H.Hub>:
+        Socket.close(s)
+        IO.pure(H.Hub, h)
+    case False{}:
+      do IO<H.Hub>:
+        r : Got <- lines(s, h, buf)
+        conn.next(r)
 
 @unsafe
 def serve.after(am: Listener & Result<&1, &1, U32 & String, Socket>, +h: H.Hub) -> IO(Unit):
@@ -202,6 +203,12 @@ def serve.after(am: Listener & Result<&1, &1, U32 & String, Socket>, +h: H.Hub) 
       do IO<Unit>:
         h2 : H.Hub <- conn(s, h, "")
         IO.pure(Unit, Unit{})
+
+@unsafe
+def serve(l: Listener, +h: H.Hub) -> IO(Unit):
+  do IO<Unit>:
+    am : Listener & Result<&1, &1, U32 & String, Socket> <- TCP.accept(l)
+    serve.after(am, h)
 
 def port_of(r: Result<&1, &1, U32 & String, String>) -> U32:
   match r:

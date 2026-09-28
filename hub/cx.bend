@@ -39,12 +39,15 @@ type R is Data:
     ans: List<&2, J.Json>, need: Maybe<&2, J.Json>}
 
 type Core<-o: M.St> is Data:
-  Core{d: M.St, fx: List<&2, Fx>, p: {d == M.apply_all(journal(fx), o) : M.St}}
+  Core{d: M.St, fx: List<&2, Fx>, p: {d == M.apply_all(journal(fx), o) : M.St},
+    f: Fresh(journal(fx), o), q: Quiet(journal(fx))}
 
 type Cx<-o: M.St> is Data:
   Cx{c: Core<o>, r: R}
 
-# ---- accessors (generated) ----
+type Both<-A: Data, -B: Data> is Data:
+  Both{a: A, b: B}
+
 def Rt.name(x: Rt) -> String:
   match x:
     case Rt{+name, _, _, _}:
@@ -290,8 +293,6 @@ def R.with_need(x: R, +v: Maybe<&2, J.Json>) -> R:
     case R{+rts, +waiters, +steered, +counts, +last, +crashes, +workspace, +dirty, +now, +git, +ans, _}:
       R{rts, waiters, steered, counts, last, crashes, workspace, dirty, now, git, ans, v}
 
-# ---- end accessors ----
-
 # the journal events among the effects, in order
 def journal(fx: List<&2, Fx>) -> List<&2, M.Ev>:
   match fx:
@@ -306,15 +307,67 @@ def journal(fx: List<&2, Fx>) -> List<&2, M.Ev>:
 
 
 
-# ---- the replay lemmas ----
 
-def apply_all_snoc(+evs: List<&2, M.Ev>, -s: M.St, -e: M.Ev)
-    -> {M.apply(M.apply_all(evs, s), e) == M.apply_all(M.snoc(M.Ev, evs, e), s) : M.St}:
+
+
+
+
+# ---- what every journal satisfies (laws msg_ids_fresh, auto_never_asks) ----
+
+# a new message takes the next free id of the state it is sent in: no id
+# is ever reused, so no message overwrites another
+def FreshEv(+s: M.St, e: M.Ev) -> Data:
+  match e:
+    case M.EMsgSent{+m}:
+      {M.Msg.id(m) == M.St.next_msg(s) : Nat}
+    case _:
+      Unit
+
+def Fresh(evs: List<&2, M.Ev>, +s: M.St) -> Data:
   match evs:
     case Nil{}:
-      {==}
+      Unit
+    case Con{+e, +rest}:
+      Both<FreshEv(s, e), Fresh(rest, M.apply(s, e))>
+
+# an automatic reply never asks for a reply (RFC 0003 §7): no chain
+def QuietEv(e: M.Ev) -> Data:
+  match e:
+    case M.EMsgSent{+m}:
+      {Bool.and(M.Msg.auto(m), M.Msg.expect(m)) == False{} : Bool}
+    case _:
+      Unit
+
+def Quiet(evs: List<&2, M.Ev>) -> Data:
+  match evs:
+    case Nil{}:
+      Unit
+    case Con{+e, +rest}:
+      Both<QuietEv(e), Quiet(rest)>
+
+def fresh_snoc(+evs: List<&2, M.Ev>, -s: M.St, -e: M.Ev, g: Fresh(evs, s), k: FreshEv(M.apply_all(evs, s), e))
+    -> Fresh(M.snoc(M.Ev, evs, e), s):
+  match evs:
+    case Nil{}:
+      Both{k, Unit{}}
     case Con{h, rest}:
-      apply_all_snoc(rest, M.apply(s, h), e)
+      match g:
+        case Both{g1, g2}:
+          Both{g1, fresh_snoc(rest, M.apply(s, h), e, g2, k)}
+
+def quiet_snoc(+evs: List<&2, M.Ev>, -e: M.Ev, g: Quiet(evs), k: QuietEv(e)) -> Quiet(M.snoc(M.Ev, evs, e)):
+  match evs:
+    case Nil{}:
+      Both{k, Unit{}}
+    case Con{h, rest}:
+      match g:
+        case Both{g1, g2}:
+          Both{g1, quiet_snoc(rest, e, g2, k)}
+
+def emit_f.k(-o: M.St, -d: M.St, -fx: List<&2, Fx>, p: {d == M.apply_all(journal(fx), o) : M.St}, -e: M.Ev,
+    k: FreshEv(d, e)) -> FreshEv(M.apply_all(journal(fx), o), e):
+  %p : FreshEv(_, e)
+  k
 
 def journal_snoc_ev(+fx: List<&2, Fx>, -e: M.Ev)
     -> {M.snoc(M.Ev, journal(fx), e) == journal(M.snoc(Fx, fx, FJ{e})) : List<&2, M.Ev>}:
@@ -329,6 +382,15 @@ def journal_snoc_ev(+fx: List<&2, Fx>, -e: M.Ev)
         case FO{_}:
           journal_snoc_ev(rest, e)
 
+def emit_f(-o: M.St, -d: M.St, +fx: List<&2, Fx>, p: {d == M.apply_all(journal(fx), o) : M.St},
+    f: Fresh(journal(fx), o), -e: M.Ev, k: FreshEv(d, e)) -> Fresh(journal(M.snoc(Fx, fx, FJ{e})), o):
+  %journal_snoc_ev(fx, e) : Fresh(_, o)
+  fresh_snoc(journal(fx), o, e, f, emit_f.k(o, d, fx, p, e, k))
+
+def emit_q(+fx: List<&2, Fx>, q: Quiet(journal(fx)), -e: M.Ev, k: QuietEv(e)) -> Quiet(journal(M.snoc(Fx, fx, FJ{e}))):
+  %journal_snoc_ev(fx, e) : Quiet(_)
+  quiet_snoc(journal(fx), e, q, k)
+
 def journal_snoc_out(+fx: List<&2, Fx>, -x: J.Json)
     -> {journal(fx) == journal(M.snoc(Fx, fx, FO{x})) : List<&2, M.Ev>}:
   match fx:
@@ -342,6 +404,24 @@ def journal_snoc_out(+fx: List<&2, Fx>, -x: J.Json)
         case FO{_}:
           journal_snoc_out(rest, x)
 
+def out_f(-o: M.St, +fx: List<&2, Fx>, f: Fresh(journal(fx), o), -x: J.Json) -> Fresh(journal(M.snoc(Fx, fx, FO{x})), o):
+  %journal_snoc_out(fx, x) : Fresh(_, o)
+  f
+
+def out_q(+fx: List<&2, Fx>, q: Quiet(journal(fx)), -x: J.Json) -> Quiet(journal(M.snoc(Fx, fx, FO{x}))):
+  %journal_snoc_out(fx, x) : Quiet(_)
+  q
+
+# ---- the replay lemmas ----
+
+def apply_all_snoc(+evs: List<&2, M.Ev>, -s: M.St, -e: M.Ev)
+    -> {M.apply(M.apply_all(evs, s), e) == M.apply_all(M.snoc(M.Ev, evs, e), s) : M.St}:
+  match evs:
+    case Nil{}:
+      {==}
+    case Con{h, rest}:
+      apply_all_snoc(rest, M.apply(s, h), e)
+
 def emit_ok(-o: M.St, +d: M.St, +fx: List<&2, Fx>, p: {d == M.apply_all(journal(fx), o) : M.St}, -e: M.Ev)
     -> {M.apply(d, e) == M.apply_all(journal(M.snoc(Fx, fx, FJ{e})), o) : M.St}:
   %journal_snoc_ev(fx, e) : {M.apply(d, e) == M.apply_all(_, o) : M.St}
@@ -354,29 +434,41 @@ def out_ok(-o: M.St, +d: M.St, +fx: List<&2, Fx>, p: {d == M.apply_all(journal(f
   %journal_snoc_out(fx, x) : {d == M.apply_all(_, o) : M.St}
   p
 
+
+
+
+
+
+
+
+
+
 # ---- the core primitives ----
-
-def core_emit(-o: M.St, c: Core<o>, +e: M.Ev) -> Core<o>:
-  match c:
-    case Core{+d, +fx, p}:
-      Core{M.apply(d, e), M.snoc(Fx, fx, FJ{e}), emit_ok(o, d, fx, p, e)}
-
-def core_out(-o: M.St, c: Core<o>, +x: J.Json) -> Core<o>:
-  match c:
-    case Core{+d, +fx, p}:
-      Core{d, M.snoc(Fx, fx, FO{x}), out_ok(o, d, fx, p, x)}
-
-def core_start(+d: M.St) -> Core<d>:
-  Core{d, Nil{}, {==}}
 
 def Core.d(-o: M.St, c: Core<o>) -> M.St:
   match c:
-    case Core{+d, _, _}:
+    case Core{+d, _, _, _, _}:
       d
+
+# the only way the state changes: an event, applied and journaled. The
+# caller proves the event keeps the journal's invariants (for anything
+# but a new message both hold by definition: `{==}`)
+def core_emit(-o: M.St, c: Core<o>, +e: M.Ev, k: FreshEv(Core.d(o, c), e), kq: QuietEv(e)) -> Core<o>:
+  match c:
+    case Core{+d, +fx, +p, f, q}:
+      Core{M.apply(d, e), M.snoc(Fx, fx, FJ{e}), emit_ok(o, d, fx, p, e), emit_f(o, d, fx, p, f, e, k), emit_q(fx, q, e, kq)}
+
+def core_out(-o: M.St, c: Core<o>, +x: J.Json) -> Core<o>:
+  match c:
+    case Core{+d, +fx, p, f, q}:
+      Core{d, M.snoc(Fx, fx, FO{x}), out_ok(o, d, fx, p, x), out_f(o, fx, f, x), out_q(fx, q, x)}
+
+def core_start(+d: M.St) -> Core<d>:
+  Core{d, Nil{}, {==}, Unit{}, Unit{}}
 
 def Core.fx(-o: M.St, c: Core<o>) -> List<&2, Fx>:
   match c:
-    case Core{_, +fx, _}:
+    case Core{_, +fx, _, _, _}:
       fx
 
 # ---- the context ----
@@ -399,10 +491,10 @@ def mark(+r: R) -> R:
     case R{+a, +b, +c, +e, +f, +g, +w, _, +n, +gi, +an, +ne}:
       R{a, b, c, e, f, g, w, True{}, n, gi, an, ne}
 
-def emit(-o: M.St, cx: Cx<o>, +e: M.Ev) -> Cx<o>:
+def emit(-o: M.St, cx: Cx<o>, +e: M.Ev, k: FreshEv(d(o, cx), e), kq: QuietEv(e)) -> Cx<o>:
   match cx:
     case Cx{+c, +r}:
-      Cx{core_emit(o, c, e), mark(r)}
+      Cx{core_emit(o, c, e, k, kq), mark(r)}
 
 def out(-o: M.St, cx: Cx<o>, +x: J.Json) -> Cx<o>:
   match cx:
