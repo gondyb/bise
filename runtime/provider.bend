@@ -129,6 +129,28 @@ def note.pair(sm: Socket & Result<&1, &1, U32 & String, Unit>) -> Socket:
     case (s2, _):
       s2
 
+# the wire log (BEND_WIRE_LOG, set by the Switchboard hub): every batch
+# sent to the client is appended there FIRST. The hub reads the REPL's
+# output from this file, not from the socket, so a hub that restarts
+# (a version switch, a crash) resumes at its saved offset and loses no
+# line, even one emitted while no hub was connected. BR-007: the notes
+# of a call in flight (provider_retry) go there too, or the hub never
+# sees them.
+def wire_log.when(skip: Bool, +path: String, +text: String) -> IO(Unit):
+  match skip:
+    case True{}:
+      IO.pure(Unit, Unit{})
+    case False{}:
+      do IO<Unit>:
+        f : Result<&1, &1, U32 & String, File> <- File.open(path, "a")
+        P.write.opened(f, text)
+
+def wire_log(+text: String) -> IO(Unit):
+  do IO<Unit>:
+    fr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_LOG")
+    +path : String <- IO.pure(String, P.env_or(fr, ""))
+    wire_log.when(String.is_empty(path), path, text)
+
 def note(n: Note, +line: String) -> IO(Note):
   match n:
     case NStd{}:
@@ -137,6 +159,7 @@ def note(n: Note, +line: String) -> IO(Note):
         IO.pure(Note, NStd{})
     case NNet{sock}:
       do IO<Note>:
+        wire_log(String.append(line, "\n"))
         sm : Socket & Result<&1, &1, U32 & String, Unit> <- TCP.send(sock,
           String.append(line, "\n"))
         s2 : Socket <- IO.pure(Socket, note.pair(sm))
