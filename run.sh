@@ -13,6 +13,9 @@
 #                           # (par dernière activité, pas un fichier fixe)
 #   ./run.sh switchboard    # Switchboard : main + tâches, dans le dossier courant
 #   ./run.sh switchboard --stop  # arrêter le hub du dossier courant
+#   ./run.sh switchboard --dev   # Switchboard de test à côté du live : build
+#                                # isolé dans /tmp/sb-dev, hub séparé
+#                                # (voir sb-dev.sh : --no-tui, --stop, --status, --reset)
 #   ./run.sh --resume ID    # reprendre une session par id
 #                           # (un préfixe unique suffit) ; /status dans
 #                           # le TUI affiche l'id de la session
@@ -21,6 +24,11 @@
 # sessions indépendantes, chaque REPL meurt avec son terminal.
 
 set -euo pipefail
+# the dev switchboard builds elsewhere: never the live tree's binaries
+if [ "${1:-}" = "switchboard" ] && [[ " $* " == *" --dev "* ]]; then
+  shift
+  exec "$(dirname "$0")/sb-dev.sh" "$@"
+fi
 # switchboard: the workspace is where the user launched from
 export SB_LAUNCH_DIR="${SB_LAUNCH_DIR:-$PWD}"
 cd "$(dirname "$0")"
