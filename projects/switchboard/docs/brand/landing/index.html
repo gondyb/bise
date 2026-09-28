@@ -4,369 +4,388 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>bise :* · kiss your backlog goodbye.</title>
-<meta name="description" content="ramble. interrupt. change your mind. i run the agents. you stay in flow. an open-source terminal for coding with as many agents as you have ideas.">
+<meta name="description" content="ramble. interrupt. change your mind. i run the agents. you stay in flow.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  :root, [data-theme="dark"] {
-    --bg:#141211; --bg2:#1b1816; --term:#100e0d; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --line:#2a2623;
-    --acc:#f4a6b0; --tint:#2b1c21; --err:#ff5a52; --ok:#b9d99a;
-  }
-  [data-theme="light"] {
-    --bg:#f7f4ee; --bg2:#efeae1; --term:#fbf9f5; --text:#1b1917; --dim:#6b645a; --faint:#bdb5a8; --line:#e2dcd2;
-    --acc:#b8416b; --tint:#f6e3e8; --err:#b3261e; --ok:#3f7a2a;
-  }
+  :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --wind:#4a4540; --acc:#f4a6b0; --err:#ff5a52; }
+  [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --wind:#cbc3b6; --acc:#b8416b; --err:#b3261e; }
   * { box-sizing:border-box; margin:0; padding:0; }
   html { scroll-behavior:smooth; }
-  body { background:var(--bg); color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:16px; line-height:1.7; transition:background .3s, color .3s; }
-  a { color:var(--acc); text-decoration:none; } a:hover { text-decoration:underline; }
-  .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)} .ok{color:var(--ok)}
-  b { font-weight:700; }
+  body { background:var(--bg); color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:16px; line-height:1.75; transition:background .4s, color .4s; }
+  a { color:inherit; text-decoration:none; }
+  .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)}
   .gc { display:inline-block; width:1ch; text-align:center; }
 
-  /* draft: claims that are not true yet */
-  .draft { position:fixed; bottom:14px; right:14px; z-index:9; font-size:12px; color:var(--dim); background:var(--bg2); border:1px solid var(--line); border-radius:6px; padding:6px 12px; max-width:44ch; }
-  .draft button { font:inherit; background:none; border:0; color:var(--acc); cursor:pointer; }
-  .tbd { text-decoration:underline dotted var(--err); text-underline-offset:4px; cursor:help; }
-  body.clean .tbd { text-decoration:none; } body.clean .draft .more { display:none; }
+  /* only with ?draft: claims that are not true yet */
+  .tbd { cursor:help; }
+  body.draft .tbd { text-decoration:underline dotted var(--err); text-underline-offset:4px; }
+  .draftnote { display:none; position:fixed; bottom:12px; right:12px; z-index:9; font-size:12px; color:var(--dim); }
+  body.draft .draftnote { display:block; }
 
-  /* top bar */
-  header { position:sticky; top:0; z-index:5; display:flex; align-items:center; justify-content:space-between; padding:14px 5vw; background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(8px); border-bottom:1px solid transparent; transition:border-color .3s; font-size:14px; }
-  header.scrolled { border-bottom-color:var(--line); }
-  header .logo { font-weight:700; font-size:18px; color:var(--text); }
+  /* top: almost nothing */
+  header { position:fixed; top:0; left:0; right:0; z-index:5; display:flex; justify-content:space-between; align-items:center; padding:22px 5vw; font-size:14px; color:var(--dim); }
+  header .logo { color:var(--text); font-weight:700; opacity:0; transition:opacity .5s; }
+  header.scrolled .logo { opacity:1; }
   header nav { display:flex; gap:3ch; align-items:center; }
-  header nav a { color:var(--dim); } header nav a:hover { color:var(--text); text-decoration:none; }
-  header .gh { color:var(--text); border:1px solid var(--line); border-radius:6px; padding:3px 12px; }
-  header button { font:inherit; font-size:13px; background:transparent; color:var(--dim); border:0; cursor:pointer; }
+  header nav a:hover, header button:hover { color:var(--text); }
+  header button { font:inherit; background:none; border:0; color:inherit; cursor:pointer; }
 
-  /* hero */
-  .hero { padding:9vh 5vw 4vh; display:grid; grid-template-columns:minmax(0,1fr); justify-items:center; text-align:center; }
-  .big { font-size:clamp(72px, 13vw, 168px); font-weight:700; letter-spacing:-.045em; line-height:1; }
-  .kiss { display:inline-block; color:var(--acc); animation:kiss 1s .5s ease-out both; }
-  @keyframes kiss { 0% { opacity:0; transform:scale(.4) } 55% { opacity:1; transform:scale(1.4) rotate(-10deg) } 100% { opacity:1; transform:none } }
-  .gloss { color:var(--faint); font-size:13px; margin-top:14px; }
-  .gloss b { color:var(--dim); }
-  .t1 { font-size:clamp(26px, 3.6vw, 44px); font-weight:700; margin-top:36px; letter-spacing:-.02em; }
-  .t2 { color:var(--dim); margin-top:10px; font-size:clamp(15px, 1.5vw, 18px); max-width:62ch; }
-  .cta { display:flex; gap:14px; margin-top:36px; flex-wrap:wrap; justify-content:center; }
-  .install { display:flex; align-items:center; gap:2ch; background:var(--bg2); border:1px solid var(--line); border-radius:8px; padding:10px 14px 10px 18px; font-size:15px; }
+  /* the wind: an ASCII field that drifts behind the hero */
+  .sky { position:relative; overflow:hidden; }
+  pre.wind { position:absolute; inset:0; color:var(--wind); font:inherit; font-size:14px; line-height:1.4; pointer-events:none; user-select:none; white-space:pre; overflow:hidden;
+    -webkit-mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); }
+  .kisses { position:absolute; inset:0; pointer-events:none; font-size:14px; }
+  .kisses span { position:absolute; color:var(--acc); white-space:nowrap; transition:opacity 1.2s; }
+  .cursors { position:absolute; inset:0; pointer-events:none; color:var(--dim); font-size:13px; }
+  .cursors div { position:absolute; white-space:nowrap; opacity:.55; transition:opacity 1s; }
+  .cur { display:inline-block; width:.6em; height:1.05em; background:currentColor; vertical-align:-.18em; animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0 } }
+
+  .hero { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:0 6vw; position:relative; }
+  .big { font-size:clamp(76px, 13vw, 170px); font-weight:700; letter-spacing:-.045em; line-height:1; }
+  .kiss { display:inline-block; color:var(--acc); animation:kiss 1s .6s ease-out both; }
+  @keyframes kiss { 0% { opacity:0; transform:scale(.4) } 55% { opacity:1; transform:scale(1.35) rotate(-10deg) } 100% { opacity:1; transform:none } }
+  .t1 { font-size:clamp(24px, 3.2vw, 38px); font-weight:700; margin-top:42px; letter-spacing:-.02em; }
+  .t2 { color:var(--dim); margin-top:12px; font-size:clamp(15px, 1.4vw, 17px); max-width:44ch; }
+  .install { margin-top:44px; color:var(--dim); font-size:15px; cursor:pointer; display:inline-flex; gap:1.5ch; }
   .install .p { color:var(--acc); }
-  .install button { font:inherit; font-size:12px; background:transparent; color:var(--dim); border:1px solid var(--line); border-radius:5px; padding:2px 10px; cursor:pointer; }
-  .install button:hover { color:var(--text); }
-  .btn { display:flex; align-items:center; border:1px solid var(--line); border-radius:8px; padding:10px 18px; color:var(--text); }
-  .btn:hover { border-color:var(--acc); text-decoration:none; }
-  .fine { color:var(--faint); font-size:13px; margin-top:14px; }
+  .install .c { color:var(--faint); transition:color .3s; } .install:hover .c { color:var(--dim); }
+  .scroll { position:absolute; bottom:30px; color:var(--faint); font-size:13px; animation:breathe 3s ease-in-out infinite; }
+  @keyframes breathe { 50% { opacity:.4; transform:translateY(3px) } }
 
-  /* the terminal demo */
-  .demo { padding:2vh 5vw 10vh; display:flex; justify-content:center; }
-  .term { width:108ch; max-width:100%; background:var(--term); border:1px solid var(--line); border-radius:10px; box-shadow:0 30px 80px rgba(0,0,0,.35); font-size:13.5px; line-height:1.6; overflow:hidden; text-align:left; }
-  .bar { display:flex; gap:7px; padding:10px 14px; border-bottom:1px solid var(--line); }
-  .bar i { width:11px; height:11px; border-radius:50%; background:var(--line); }
-  .bar span { margin-left:auto; color:var(--faint); font-size:12px; }
-  .screen { display:grid; grid-template-columns:minmax(0,1fr) 30ch; height:440px; }
-  .feed { padding:12px 2ch; overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end; }
-  .feed > div { max-width:70ch; animation:enter .35s ease-out; }
-  @keyframes enter { from { opacity:0; transform:translateY(6px) } }
+  /* reveal: text arrives like a breeze */
+  .blow { opacity:0; transform:translateX(-14px); transition:opacity 1.1s ease, transform 1.4s ease; }
+  .blow.in { opacity:1; transform:none; }
+
+  section { padding:18vh 6vw; }
+  .inner { max-width:64ch; margin:0 auto; }
+  .kicker { color:var(--faint); font-size:13px; margin-bottom:18px; }
+  h2 { font-size:clamp(24px, 2.8vw, 34px); line-height:1.25; letter-spacing:-.02em; margin-bottom:28px; font-weight:700; }
+  p { margin-bottom:20px; }
+  p.soft { color:var(--dim); }
+  .turn { color:var(--acc); }
+
+  /* the demo */
+  .demo { padding:0 5vw 10vh; display:flex; justify-content:center; }
+  .term { width:104ch; max-width:100%; background:var(--soft); border-radius:12px; font-size:13.5px; line-height:1.6; overflow:hidden; text-align:left; }
+  .screen { display:grid; grid-template-columns:minmax(0,1fr) 28ch; height:420px; }
+  .feed { padding:18px 3ch 10px; overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end; }
+  .feed > div { max-width:68ch; animation:enter .5s ease-out; }
+  @keyframes enter { from { opacity:0; transform:translateX(-8px) } }
   .feed .b { margin-top:10px; }
-  .me { color:var(--text); } .me .w { color:var(--acc); }
   .tick { color:var(--faint); margin-left:1ch; } .tick.read { color:var(--acc); }
-  .l3 { color:var(--faint); border-left:1px solid var(--line); padding-left:2ch; margin-left:1ch; }
+  .l3 { color:var(--dim); opacity:.6; padding-left:2ch; }
   .card { border-left:2px solid var(--acc); padding-left:2ch; }
   .card .t { color:var(--acc); font-weight:700; }
   .card.answered { border-left-color:var(--faint); } .card.answered .t { color:var(--dim); font-weight:400; }
-  .panel { border-left:1px solid var(--line); padding:12px 2ch; }
-  .panel .h { color:var(--faint); margin-bottom:6px; white-space:nowrap; }
-  .panel .row { display:flex; justify-content:space-between; white-space:nowrap; animation:enter .35s ease-out; }
-  .foot { border-top:1px solid var(--line); padding:6px 2ch 10px; }
+  .panel { padding:18px 2ch; }
+  .panel .h { color:var(--faint); margin-bottom:8px; white-space:nowrap; }
+  .panel .row { display:flex; justify-content:space-between; white-space:nowrap; animation:enter .5s ease-out; }
+  .foot { padding:8px 3ch 14px; }
   .status { display:flex; justify-content:space-between; color:var(--dim); }
   .composer { margin-top:4px; white-space:pre; }
-  .cur { display:inline-block; width:.6em; height:1.05em; background:var(--acc); vertical-align:-.18em; animation:blink 1s steps(1) infinite; }
-  @keyframes blink { 50% { opacity:0 } }
+  .composer .cur { background:var(--acc); }
   .pulse { display:inline-block; animation:pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity:.35 } }
-  .caption { text-align:center; color:var(--faint); font-size:13px; margin-top:14px; }
+  .caption { text-align:center; color:var(--faint); font-size:13px; margin-top:18px; }
 
-  /* sections */
-  section { padding:12vh 5vw; border-top:1px solid var(--line); }
-  .inner { max-width:72ch; margin:0 auto; }
-  .wide { max-width:1100px; margin:0 auto; }
-  .kicker { color:var(--acc); font-size:13px; margin-bottom:14px; }
-  h2 { font-size:clamp(26px, 3.2vw, 40px); line-height:1.2; letter-spacing:-.02em; margin-bottom:26px; }
-  p { margin-bottom:18px; max-width:68ch; }
-  p.lead { font-size:18px; }
-  .manifesto p { font-size:18px; }
-  .manifesto .turn { color:var(--acc); font-weight:700; }
+  /* how: three lines, no boxes */
+  .how li { list-style:none; margin-bottom:34px; display:grid; grid-template-columns:4ch 1fr; }
+  .how .n { color:var(--acc); }
+  .how b { display:block; margin-bottom:4px; }
+  .how span.d { color:var(--dim); }
 
-  .steps { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:28px; margin-top:10px; }
-  .step .n { color:var(--acc); font-weight:700; font-size:34px; line-height:1; margin-bottom:14px; }
-  .step h3 { font-size:18px; margin-bottom:10px; }
-  .step p { color:var(--dim); font-size:15px; }
+  /* the little facts */
+  .facts li { list-style:none; margin-bottom:12px; display:grid; grid-template-columns:4ch 1fr; color:var(--dim); }
+  .facts li .gc { color:var(--acc); }
+  .facts li b { color:var(--text); font-weight:400; }
 
-  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:18px; }
-  .f { background:var(--bg2); border:1px solid var(--line); border-radius:10px; padding:22px 24px; }
-  .f .h { font-weight:700; margin-bottom:8px; } .f .h .gc { color:var(--acc); margin-right:1.5ch; }
-  .f p { color:var(--dim); font-size:15px; margin:0; }
+  .word { text-align:center; }
+  .word .def { display:inline-block; text-align:left; color:var(--dim); line-height:2; }
+  .word .def b { color:var(--text); font-size:20px; }
 
-  .compare { width:100%; border-collapse:collapse; font-size:15px; margin-top:10px; }
-  .compare td { padding:12px 2ch 12px 0; border-bottom:1px solid var(--line); vertical-align:top; }
-  .compare td:first-child { color:var(--dim); width:40%; }
+  .last { text-align:center; padding-bottom:10vh; }
+  .last .big { font-size:clamp(56px, 8vw, 110px); }
 
-  .honest li, .faq li { list-style:none; margin-bottom:14px; padding-left:3ch; text-indent:-3ch; max-width:68ch; }
-  .honest li .gc { color:var(--err); }
-  .faq dt { font-weight:700; margin-top:26px; }
-  .faq dd { color:var(--dim); margin-top:6px; max-width:68ch; }
+  footer { padding:6vh 6vw 8vh; display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px; color:var(--faint); font-size:13px; }
+  footer a:hover { color:var(--text); }
 
-  .oss { text-align:center; }
-  .oss .inner { display:flex; flex-direction:column; align-items:center; }
-  .oss p { text-align:center; }
-
-  footer { padding:8vh 5vw 12vh; border-top:1px solid var(--line); display:flex; justify-content:space-between; flex-wrap:wrap; gap:20px; color:var(--dim); font-size:14px; }
-  footer .logo { color:var(--text); font-weight:700; font-size:22px; }
-
-  @media (max-width: 900px) {
-    .steps { grid-template-columns:1fr; }
-    .screen { grid-template-columns:1fr; } .panel { display:none; }
-    header nav a.opt { display:none; }
-  }
-  @media (prefers-reduced-motion: reduce) { * { animation:none !important; } }
+  @media (max-width: 900px) { .screen { grid-template-columns:1fr; } .panel { display:none; } header nav a.opt { display:none; } }
+  @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } .blow { opacity:1; transform:none; } }
 </style>
 </head>
 <body>
-
-<div class="draft" id="draft">draft · <span class="more">dotted underline = not true yet, hover for why. </span><button onclick="document.body.classList.toggle('clean')">toggle</button></div>
 
 <header id="top">
   <a class="logo" href="#">bise <span class="acc">:*</span></a>
   <nav>
     <a class="opt" href="#why">why</a>
-    <a class="opt" href="#how">how it works</a>
-    <a class="opt" href="#honest">honest bits</a>
+    <a class="opt" href="#how">how</a>
     <a class="opt" href="#faq">faq</a>
     <button id="theme" title="light / dark">◐</button>
-    <a class="gh tbd" title="⚠ repo URL not decided (GitHub org not checked)" href="#">★ GitHub</a>
+    <a class="tbd" title="⚠ repo URL not decided" href="#">GitHub</a>
   </nav>
 </header>
 
-<!-- hero -->
-<div class="hero">
-  <div class="big">bise <span class="kiss">:*</span></div>
-  <div class="gloss"><b>bise</b> /beez/ · french, n. · 1. a quick kiss on the cheek. 2. a brisk north wind. 3. a terminal where your agents ship while you think.</div>
-  <div class="t1">kiss your backlog goodbye.</div>
-  <div class="t2">ramble. interrupt. change your mind. i run the agents. you stay in flow.</div>
-  <div class="cta">
-    <div class="install"><span><span class="p">$</span> <span class="tbd" id="cmd" title="⚠ no installer yet: today bise runs from a dev checkout (run.sh + a Rust binary + a Bend REPL). pitch §8.1">curl -fsSL bise.dev/install | sh</span></span><button id="copy">copy</button></div>
-    <a class="btn" href="#how">see how it works ↓</a>
+<!-- hero, in the wind -->
+<div class="sky">
+  <pre class="wind" id="wind" aria-hidden="true"></pre>
+  <div class="kisses" id="kisses" aria-hidden="true"></div>
+  <div class="cursors" id="cursors" aria-hidden="true"></div>
+  <div class="hero">
+    <div class="big">bise <span class="kiss">:*</span></div>
+    <div class="t1">kiss your backlog goodbye.</div>
+    <div class="t2">ramble. interrupt. change your mind. i run the agents. you stay in flow.</div>
+    <div class="install" id="install" title="copy"><span><span class="p">$</span> <span class="tbd" id="cmd" title="⚠ no installer yet: today bise runs from a dev checkout (pitch §8.1)">curl -fsSL bise.dev/install | sh</span></span><span class="c" id="copied">copy</span></div>
+    <div class="scroll">↓</div>
   </div>
-  <div class="fine">open source · macOS and Linux<span class="tbd" title="⚠ mostly tested on macOS + Ghostty; Linux not checked yet (pitch §8.7)">*</span> · bring your own model key<span class="tbd" title="⚠ which providers are supported is not decided for the public release">*</span></div>
 </div>
 
 <!-- demo -->
-<div class="demo">
+<div class="demo blow">
   <div>
     <div class="term" aria-label="a bise session, animated">
-      <div class="bar"><i></i><i></i><i></i><span>~/acme · bise</span></div>
       <div class="screen">
         <div class="feed" id="feed"></div>
         <div class="panel"><div class="h">agents · ⌥ + number</div><div id="agents"></div></div>
       </div>
       <div class="foot">
-        <div class="status"><span id="st">you → <span class="acc">main</span></span><span id="working" class="dim"></span></div>
+        <div class="status"><span>you → <span class="acc">main</span></span><span id="working" class="dim"></span></div>
         <div class="composer"><span class="acc">›</span> <span id="typed"></span><span class="cur"></span></div>
       </div>
     </div>
-    <div class="caption">a real session, sped up. you never wait: you keep typing while the agents work.</div>
+    <div class="caption">you never wait. you keep typing while the agents work.</div>
   </div>
 </div>
 
 <!-- why -->
-<section id="why" class="manifesto">
-  <div class="inner">
+<section id="why">
+  <div class="inner blow">
     <div class="kicker">why</div>
     <h2>a day of coding with agents feels empty.</h2>
-    <p>you started five things. you shipped some of them, maybe. you spent the day watching output scroll, answering "should i continue?", checking which terminal was doing what.</p>
-    <p>it's not that you did nothing. it's that you never got to <i>think</i>. every few minutes, something pulled you out. you lost control, and got nothing back for it.</p>
-    <p class="turn">that feeling has a name: no flow.</p>
-    <p>bise is built around one idea: protect your flow. you talk, whenever you want, however it comes out. i run the agents in the background. i answer the obvious questions myself. you only hear about what really needs you.</p>
-    <p class="dim">built for humans piloting hundreds of robots, from a distance.<span class="tbd" title="⚠ an image, not a tested number: there's no cap in bise, but your tokens, your wallet and your provider are the real limit">*</span></p>
+    <p class="soft">you started five things. you watched output scroll. you answered "should i continue?". you checked which terminal was doing what.</p>
+    <p class="soft">you never got to think. something always pulled you out.</p>
+    <p class="turn">that's not you. that's no flow.</p>
+    <p>bise protects your flow. you talk, whenever, however. i run the agents in the background, answer the obvious questions myself, and only tap your shoulder when it matters.</p>
   </div>
 </section>
 
 <!-- how -->
 <section id="how">
-  <div class="wide">
-    <div class="kicker">how it works</div>
-    <h2>you talk. i run the agents. you stay in flow.</h2>
-    <div class="steps">
-      <div class="step"><div class="n">1</div><h3>say it, and keep going.</h3><p>type what's on your mind, mid-thought, as often as you want. no prompt engineering, no workflow to design. you never wait for a turn: i'm always listening.</p></div>
-      <div class="step"><div class="n">2</div><h3>i start the agents.</h3><p>one agent per thing, in the background, in your own folder. they know about each other, and talk to each other quietly, so you don't have to route anything.</p></div>
-      <div class="step"><div class="n">3</div><h3>you only hear what matters.</h3><p>the obvious questions, i answer myself. real decisions come to you as a card. when something ships, you get a <span class="acc">♡</span>. that's it.</p></div>
-    </div>
-  </div>
-</section>
-
-<!-- features -->
-<section>
-  <div class="wide">
-    <div class="kicker">what you get</div>
-    <h2>opinionated, so you don't have to be.</h2>
-    <div class="grid">
-      <div class="f"><div class="h"><span class="gc">∿</span>you never wait</div><p>agents work in the background. your composer is always free. send a correction mid-run, it lands.</p></div>
-      <div class="f"><div class="h"><span class="gc">:</span>no orchestration to design</div><p>you don't pick models, write sub-agent configs or draw a graph. you say what you want. bise splits it up.</p></div>
-      <div class="f"><div class="h"><span class="gc">?</span>only the real decisions</div><p>main answers what it can and tells you why. what's left comes to you as a card: answer it, or say later.</p></div>
-      <div class="f"><div class="h"><span class="gc">≡</span>nothing gets dropped</div><p>when an agent stops half-way, main picks the work back up. unfinished things don't quietly disappear.</p></div>
-      <div class="f"><div class="h"><span class="gc">~</span>one folder, no worktrees</div><p>all agents work in your folder and know who touches what. no branches to merge at the end of the day.<span class="tbd" title="⚠ collision detection (two agents on the same file) is not built yet (pitch §8.5)">*</span></p></div>
-      <div class="f"><div class="h"><span class="gc">»</span>a calm screen</div><p>color means attention. what's for you stands out; agents talking to each other stays dim and folded.</p></div>
-      <div class="f"><div class="h"><span class="gc">✓</span>nothing hidden</div><p>the history only grows, in order. every script an agent runs is shown in full. open anything with ctrl+o.</p></div>
-      <div class="f"><div class="h"><span class="gc">♡</span>it's your terminal</div><p>light or dark, it follows your terminal's colors. text is set to a reading width, like a book.</p></div>
-    </div>
-  </div>
-</section>
-
-<!-- compare -->
-<section>
-  <div class="inner">
-    <div class="kicker">compared to one agent in a terminal</div>
-    <h2>more agents should mean more done, not more to watch.</h2>
-    <table class="compare">
-      <tr><td>one agent, one terminal</td><td>you wait 1 to 10 minutes per turn, or you switch and lose the thread.</td></tr>
-      <tr><td>three agents, three terminals</td><td>you become the router. who's doing what, who's stuck, who's waiting on you.</td></tr>
-      <tr><td>one worktree per agent</td><td>five branches, five installs, five merges, and agents that know nothing about each other.</td></tr>
-      <tr><td><b>bise</b></td><td><b>one conversation. as many agents as you have ideas. you keep talking.</b></td></tr>
-    </table>
-  </div>
-</section>
-
-<!-- honest -->
-<section id="honest">
-  <div class="inner">
-    <div class="kicker">the honest bits</div>
-    <h2>what bise doesn't do yet.</h2>
-    <p class="dim">we'd rather you hear it here than find out.</p>
-    <ul class="honest">
-      <li><span class="gc">!</span> agents run commands without asking you. there's no approval mode yet. git is your safety net, so commit often.</li>
-      <li><span class="gc">!</span> more agents means more tokens. bise has no cap; your budget does.<span class="tbd" title="⚠ live cost per agent is in progress (token-usage), not shipped">*</span></li>
-      <li><span class="gc">!</span> two agents can still edit the same file at the same time. they know about each other, but nothing stops them yet.</li>
-      <li><span class="gc">!</span> tested mostly on macOS. Linux and other terminals: tell us what breaks.</li>
+  <div class="inner blow">
+    <div class="kicker">how</div>
+    <h2>you talk. i run the agents.<br>you stay in flow.</h2>
+    <ul class="how">
+      <li><span class="n">1</span><span><b>say it, and keep going.</b><span class="d">mid-thought, as often as you want. no prompt to craft, no workflow to design. i'm always listening.</span></span></li>
+      <li><span class="n">2</span><span><b>i start the agents.</b><span class="d">one per thing, in the background, in your folder. they know about each other and sort things out quietly.</span></span></li>
+      <li><span class="n">3</span><span><b>you only hear what matters.</b><span class="d">real decisions come to you as a card. when something ships, you get a <span class="acc">♡</span>.</span></span></li>
     </ul>
+  </div>
+</section>
+
+<!-- a few facts, quietly -->
+<section>
+  <div class="inner blow">
+    <div class="kicker">small print, big deal</div>
+    <ul class="facts">
+      <li><span class="gc">∿</span><span><b>as many agents as you have ideas.</b> no cap. your tokens are the limit.</span></li>
+      <li><span class="gc">≡</span><span><b>nothing gets dropped.</b> unfinished work gets picked back up.</span></li>
+      <li><span class="gc">~</span><span><b>one folder.</b> no worktrees, no merges at the end of the day.</span></li>
+      <li><span class="gc">✓</span><span><b>nothing hidden.</b> every script an agent runs is there, in full, in order.</span></li>
+      <li><span class="gc">♡</span><span><b>your terminal.</b> your colors, light or dark, text at a reading width.</span></li>
+      <li><span class="gc">!</span><span><b>honest bit:</b> agents run commands without asking yet. commit often.</span></li>
+    </ul>
+  </div>
+</section>
+
+<!-- the word -->
+<section class="word">
+  <div class="blow">
+    <div class="def">
+      <b>bise</b> <span class="faint">/beez/ · french, n.</span><br>
+      1. a quick kiss on the cheek. <span class="acc">:*</span><br>
+      2. a brisk north wind.<br>
+      3. a terminal where your agents ship while you think.
+    </div>
   </div>
 </section>
 
 <!-- faq -->
 <section id="faq">
-  <div class="inner">
+  <div class="inner blow">
     <div class="kicker">questions</div>
-    <h2>you might be wondering.</h2>
-    <dl class="faq">
-      <dt>what does bise mean?</dt>
-      <dd>in french, <i>la bise</i> is the quick kiss on the cheek you give to say hi. it's also a brisk north wind. a light touch when something needs you, and a wind that keeps things moving the rest of the time. say it <i>beez</i>.</dd>
-      <dt>how many agents can i run?</dt>
-      <dd>as many as you have ideas. bise sets no limit. the real limits are your tokens, your budget and your provider's speed.</dd>
-      <dt>which models does it work with?</dt>
-      <dd><span class="tbd" title="⚠ not decided for the public release">bring your own key. the list of supported providers is coming.</span></dd>
-      <dt>do i need to learn a workflow?</dt>
-      <dd>no. there are four words to know: you, main, agents, cards. main is the one you talk to. the rest follows.</dd>
-      <dt>is it safe to let agents run on their own?</dt>
-      <dd>not blindly, not yet. see <a href="#honest">the honest bits</a>. work in a git repo and commit often.</dd>
-      <dt>is it really open source?</dt>
-      <dd>yes. read it, fork it, send a pull request.<span class="tbd" title="⚠ license not decided (pitch §7.3)">*</span></dd>
-    </dl>
+    <p><b>how many agents can i run?</b><br><span class="dim">as many as you want. the real limits are your tokens, your budget and your provider.</span></p>
+    <p><b>which models?</b><br><span class="dim tbd" title="⚠ not decided for the public release">bring your own key. the list is coming.</span></p>
+    <p><b>do i need to learn anything?</b><br><span class="dim">four words: you, main, agents, cards. main is the one you talk to.</span></p>
+    <p><b>is it safe?</b><br><span class="dim">not blindly, not yet. there's no approval mode. work in git, commit often.</span></p>
+    <p><b>open source?</b><br><span class="dim">yes. read it, fork it, send a :*.</span><span class="tbd" title="⚠ license not decided (pitch §7.3)"></span></p>
   </div>
 </section>
 
-<!-- open source / final cta -->
-<section class="oss">
-  <div class="inner">
-    <div class="big" style="font-size:clamp(48px,7vw,96px)"><span class="acc">:*</span></div>
-    <h2 style="margin-top:20px">ideas in. little kisses out. also pull requests.</h2>
-    <p class="dim">bise is open source. install it, break it, tell us.</p>
-    <div class="cta">
-      <div class="install"><span><span class="p">$</span> <span class="tbd" title="⚠ no installer yet">curl -fsSL bise.dev/install | sh</span></span><button class="copy2">copy</button></div>
-      <a class="btn tbd" title="⚠ repo URL not decided" href="#">★ star on GitHub</a>
+<!-- last breath -->
+<div class="sky">
+  <pre class="wind" id="wind2" aria-hidden="true"></pre>
+  <section class="last">
+    <div class="blow">
+      <div class="big acc">:*</div>
+      <p class="dim" style="margin-top:28px">ideas in. little kisses out. also pull requests.</p>
+      <div class="install" id="install2"><span><span class="p">$</span> <span class="tbd" title="⚠ no installer yet">curl -fsSL bise.dev/install | sh</span></span><span class="c">copy</span></div>
     </div>
-  </div>
-</section>
+  </section>
+</div>
 
 <footer>
-  <div><div class="logo">bise <span class="acc">:*</span></div><div class="faint">kiss your backlog goodbye.</div></div>
-  <div><a href="#">GitHub</a> · <a href="#">docs</a> · <a href="../site/index.html">brand book</a></div>
-  <div class="faint">open source<span class="tbd" title="⚠ license not decided">*</span> · made with a lot of :*</div>
+  <span>bise <span class="acc">:*</span> · open source<span class="tbd" title="⚠ license not decided">.</span></span>
+  <span><a class="tbd" title="⚠ repo URL not decided" href="#">GitHub</a> · <a href="../site/index.html">brand book</a></span>
 </footer>
 
+<div class="draftnote">draft · dotted = not true yet (hover)</div>
+
 <script>
-// ---- theme: follow the system, allow a toggle ----
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const root = document.documentElement;
 root.dataset.theme = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 document.getElementById("theme").onclick = () => root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+if (new URLSearchParams(location.search).has("draft")) document.body.classList.add("draft");
 const hdr = document.getElementById("top");
-addEventListener("scroll", () => hdr.classList.toggle("scrolled", scrollY > 10));
-const copy = (btn) => { navigator.clipboard?.writeText(document.getElementById("cmd").textContent); btn.textContent = "copied :*"; setTimeout(() => btn.textContent = "copy", 1500); };
-document.getElementById("copy").onclick = (e) => copy(e.target);
-document.querySelector(".copy2").onclick = (e) => copy(e.target);
+addEventListener("scroll", () => hdr.classList.toggle("scrolled", scrollY > innerHeight * .6));
+for (const id of ["install", "install2"]) document.getElementById(id).onclick = (e) => {
+  navigator.clipboard?.writeText(document.getElementById("cmd").textContent);
+  const c = e.currentTarget.querySelector(".c"); c.textContent = "copied :*"; setTimeout(() => c.textContent = "copy", 1600);
+};
+
+// ---- reveal: blow in when seen ----
+const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { threshold: .15 });
+document.querySelectorAll(".blow").forEach((b) => io.observe(b));
+
+// ---- the wind: soft streams of ASCII drifting to the right ----
+// a slow flow field; only its crests show, so most of the sky stays empty.
+const RAMP = " .·-~∼≈";
+function wind(pre, density) {
+  const probe = document.createElement("span"); probe.textContent = "M"; pre.append(probe);
+  const cw = probe.getBoundingClientRect().width || 8.4, lh = parseFloat(getComputedStyle(pre).lineHeight) || 19.6; probe.remove();
+  let cols = 0, rows = 0;
+  const size = () => { cols = Math.ceil(pre.clientWidth / cw) + 1; rows = Math.ceil(pre.clientHeight / lh) + 1; };
+  size(); addEventListener("resize", size);
+  let t = Math.random() * 100, visible = true;
+  new IntersectionObserver(([e]) => visible = e.isIntersecting).observe(pre);
+  const frame = () => {
+    if (visible && !document.hidden) {
+      let out = "";
+      for (let y = 0; y < rows; y++) {
+        const wy = Math.sin(y * .23 + t * .21) * 3.2;
+        for (let x = 0; x < cols; x++) {
+          const a = Math.sin(x * .045 - t * .9 + wy + Math.sin(y * .09 - t * .15) * 2.4);
+          const b = Math.sin(x * .013 + y * .19 - t * .33);
+          const v = a * .65 + b * .35 - density;
+          out += v <= 0 ? " " : RAMP[Math.min(RAMP.length - 1, 1 + Math.floor(v * 14))];
+        }
+        out += "\n";
+      }
+      pre.textContent = out;
+      t += .045;
+    }
+    if (!reduced) setTimeout(() => requestAnimationFrame(frame), 70);
+  };
+  frame();
+}
+wind(document.getElementById("wind"), .52);
+wind(document.getElementById("wind2"), .58);
+
+// ---- little kisses carried by the wind ----
+const kisses = document.getElementById("kisses");
+function kiss() {
+  if (document.hidden || reduced || kisses.children.length > 2) return;
+  const k = document.createElement("span"); k.textContent = ":*";
+  const y0 = 10 + Math.random() * 80, amp = 1.5 + Math.random() * 3, speed = .018 + Math.random() * .02;
+  let x = -3, ph = Math.random() * 6; k.style.opacity = 0; kisses.append(k);
+  requestAnimationFrame(() => k.style.opacity = .8);
+  const step = () => {
+    x += speed * 3; ph += .03;
+    k.style.left = x + "%"; k.style.top = (y0 + Math.sin(ph) * amp) + "%";
+    k.style.transform = `rotate(${Math.sin(ph * .7) * 14}deg)`;
+    if (x > 60 && k.style.opacity !== "0") k.style.opacity = 0;
+    if (x < 70) requestAnimationFrame(step); else k.remove();
+  };
+  step();
+}
+setTimeout(kiss, 1800); setInterval(kiss, 5200);
+
+// ---- agents typing, here and there (from the brand book) ----
+const tasks = ["fixing the flaky login test", "drafting the release note", "moving the api client to v3", "reading the auth module", "writing the migration", "asking main about the changelog", "running the tests", "renaming the config keys"];
+const box = document.getElementById("cursors");
+setInterval(() => {
+  if (document.hidden || reduced || box.children.length > 2 || scrollY > innerHeight) return;
+  const el = document.createElement("div");
+  const side = Math.random() < .5; el.style.left = (side ? 4 + Math.random() * 18 : 66 + Math.random() * 18) + "%"; el.style.top = (12 + Math.random() * 74) + "%";
+  const txt = document.createElement("span"), cur = document.createElement("span"); cur.className = "cur";
+  el.append(txt, cur); box.append(el);
+  const s = tasks[Math.floor(Math.random() * tasks.length)]; let i = 0;
+  const t = setInterval(() => { txt.textContent = s.slice(0, ++i); if (i >= s.length) { clearInterval(t); setTimeout(() => { el.style.opacity = 0; setTimeout(() => el.remove(), 1000); }, 1800); } }, 60 + Math.random() * 50);
+}, 2600);
 
 // ---- the demo: a scripted session that loops ----
 const feed = document.getElementById("feed"), agents = document.getElementById("agents"), typed = document.getElementById("typed"), working = document.getElementById("working");
-const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const el = (html, cls) => { const d = document.createElement("div"); if (cls) d.className = cls; d.innerHTML = html; return d; };
-const add = (html, cls) => { const d = el(html, cls); feed.append(d); while (feed.children.length > 16) feed.firstChild.remove(); return d; };
+const add = (html, cls) => { const d = document.createElement("div"); if (cls) d.className = cls; d.innerHTML = html; feed.append(d); while (feed.children.length > 16) feed.firstChild.remove(); return d; };
 const rows = {};
-function agent(n, name, state, info) {
+function agent(n, mark, name, info) {
   let r = rows[name];
   if (!r) { r = rows[name] = document.createElement("div"); r.className = "row"; agents.append(r); }
-  r.innerHTML = `<span><span class="faint">${n}</span> ${state} ${name}</span><span class="faint">${info}</span>`;
+  r.innerHTML = `<span><span class="faint">${n}</span> ${mark} ${name}</span><span class="faint">${info}</span>`;
+  r.dataset.busy = mark === "∿" ? "1" : "";
 }
-function count() { const n = Object.values(rows).filter((r) => r.innerHTML.includes("∿")).length; working.innerHTML = n ? `<span class="pulse acc">∿</span> ${n} working` : ""; }
-async function type(text) { for (const ch of text) { typed.textContent += ch; await sleep(reduced ? 0 : 28 + Math.random() * 30); } await sleep(350); }
+function count() { const n = Object.values(rows).filter((r) => r.dataset.busy).length; working.innerHTML = n ? `<span class="pulse acc">∿</span> ${n} working` : ""; }
+async function type(text) { for (const ch of text) { typed.textContent += ch; await sleep(reduced ? 0 : 30 + Math.random() * 35); } await sleep(350); }
 async function send(text) {
   await type(text); typed.textContent = "";
-  const d = add(`<span class="me">${text}</span><span class="tick">✓</span>`, "b");
-  await sleep(500); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`;
-  return d;
+  const d = add(`${text}<span class="tick">✓</span>`, "b");
+  await sleep(550); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`;
 }
 const main = (t) => add(`<span class="acc">:*</span> ${t}`, "b");
 async function run() {
   feed.innerHTML = ""; agents.innerHTML = ""; for (const k in rows) delete rows[k]; working.innerHTML = "";
-  agent(0, `<span class="acc">:*</span>`, "main", ""); rows["main"].querySelector("span").innerHTML = `<span class="faint">0</span> <span class="acc">:*</span> main`;
-  await sleep(900);
+  agent(0, `<span class="acc">:*</span>`, "main", "");
+  await sleep(1200);
   await send("fix the flaky login test, and draft the release note for 2.4");
   await sleep(700);
   main("on it. auth-fix takes the test, release takes the note.");
-  agent(1, "∿", "auth-fix", "0m"); await sleep(250); agent(2, "∿", "release", "0m"); count();
-  await sleep(1400);
-  await send("oh, and the api client should move to v3 while we're at it");
+  agent(1, "∿", "auth-fix", "0m"); await sleep(300); agent(2, "∿", "release", "0m"); count();
+  await sleep(1500);
+  await send("oh, and move the api client to v3 while we're at it");
   await sleep(600);
-  main("got it. api-bump started. it'll check with release about the changelog.");
+  main("got it. api-bump started.");
   agent(3, "∿", "api-bump", "0m"); count();
-  await sleep(1300);
+  await sleep(1400);
   add(`▸ 7 messages between 3 agents`, "l3 b");
   agent(1, "∿", "auth-fix", "2m"); agent(2, "∿", "release", "2m"); agent(3, "∿", "api-bump", "1m");
-  await sleep(1500);
-  main("auth-fix asked whether to retry the test 3 times. i said no: fix the cause. <span class='faint'>(you told me that last week)</span>");
-  await sleep(1800);
-  const card = add(`<div class="t">? release needs you</div><div>v3 breaks two public types. call it 2.4 or 3.0?</div><div class="faint">1 · 2.4 with a note   2 · 3.0   alt+r answer with text</div>`, "card b");
+  await sleep(1600);
+  main("auth-fix wanted to retry the test 3 times. i said no, fix the cause.");
   await sleep(1900);
+  const card = add(`<div class="t">? release needs you</div><div>v3 changes two public types. call it 2.4 or 3.0?</div><div class="faint">1 · 2.4   2 · 3.0   alt+r answer with text</div>`, "card b");
+  await sleep(2000);
   await type("2"); typed.textContent = "";
   card.classList.add("answered"); card.querySelector(".t").textContent = "✓ release · you said 3.0";
-  await sleep(1300);
-  agent(1, "<span class='acc'>♡</span>", "auth-fix", "4m"); count();
-  add(`<span class="acc">♡</span> auth-fix done · 4m 12s · the test waited on a timer; now it waits on the event.`, "b");
-  await sleep(1800);
-  agent(2, "<span class='acc'>♡</span>", "release", "5m"); agent(3, "<span class='acc'>♡</span>", "api-bump", "5m"); count();
-  add(`<span class="acc">♡</span> release and api-bump done · 3.0 notes drafted, client on v3, tests green.`, "b");
-  await sleep(1200);
-  await type("kiss kiss"); await sleep(300); typed.textContent = "";
-  add(`<span class="me">kiss kiss</span><span class="tick read">✓✓</span>`, "b");
+  await sleep(1400);
+  agent(1, `<span class="acc">♡</span>`, "auth-fix", "4m"); count();
+  add(`<span class="acc">♡</span> auth-fix done · the test waited on a timer; now it waits on the event.`, "b");
+  await sleep(1900);
+  agent(2, `<span class="acc">♡</span>`, "release", "5m"); agent(3, `<span class="acc">♡</span>`, "api-bump", "5m"); count();
+  add(`<span class="acc">♡</span> release and api-bump done · 3.0 notes drafted, client on v3.`, "b");
+  await sleep(1400);
+  await send("thanks");
   await sleep(500); main(":*");
-  await sleep(4000);
+  await sleep(4500);
   run();
 }
 run();
 
-// ---- one fixed cell per symbol (fallback glyphs are not 1ch wide) ----
+// ---- one fixed cell per symbol in the demo (fallback glyphs are not 1ch) ----
 const GLYPH_RE = /[\u2010-\u2BFF\u2E00-\u2E7F]/;
-function cellify(root) {
-  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (n) =>
-    GLYPH_RE.test(n.data) && !n.parentElement.closest(".gc, script, style, button") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+function cellify(r) {
+  const w = document.createTreeWalker(r, NodeFilter.SHOW_TEXT, { acceptNode: (n) =>
+    GLYPH_RE.test(n.data) && !n.parentElement.closest(".gc, script, style, button, pre") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
   const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
   for (const n of nodes) {
     const f = document.createDocumentFragment();
@@ -378,9 +397,10 @@ function cellify(root) {
     n.replaceWith(f);
   }
 }
-cellify(document.querySelector(".term"));
+const term = document.querySelector(".term");
+cellify(term);
 new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && !n.classList.contains("gc")) cellify(n); })
-  .observe(document.querySelector(".term"), { childList: true, subtree: true });
+  .observe(term, { childList: true, subtree: true });
 </script>
 </body>
 </html>
