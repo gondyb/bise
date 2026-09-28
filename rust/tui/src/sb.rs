@@ -201,6 +201,11 @@ pub(super) const SB_COMMANDS: &[Cmd] = &[
         args: false,
     },
     Cmd {
+        name: "/plugins",
+        desc: "the workspace's agent plugins (enable|disable NAME)",
+        args: true,
+    },
+    Cmd {
         name: "/tasks",
         desc: "the task board",
         args: false,
@@ -496,6 +501,10 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
                 to => json!({"op": "version", "do": "switch", "to": to}),
             };
             sb.send(req);
+        }
+        "/plugins" => {
+            let ws = std::path::PathBuf::from(&sb.workspace);
+            out.push(Ev::Info(crate::plugins::command(&typed, &ws, None)));
         }
         "/clear" => {
             app.events.clear();

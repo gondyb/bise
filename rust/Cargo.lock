@@ -83,6 +83,7 @@ name = "bend-tui"
 version = "1.0.0"
 dependencies = [
  "base64",
+ "bend-plugins",
  "cpal",
  "crossterm",
  "ignore",

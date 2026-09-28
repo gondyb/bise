@@ -30,6 +30,11 @@ pub(crate) const COMMANDS: &[Cmd] = &[
         args: false,
     },
     Cmd {
+        name: "/plugins",
+        desc: "the agent plugins (enable|disable NAME)",
+        args: true,
+    },
+    Cmd {
         name: "/status",
         desc: "model, connection, compaction threshold",
         args: false,
@@ -339,6 +344,10 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         app.follow = true;
         app.unseen = 0;
         out.push(Ev::Info("display cleared".into()));
+    } else if first == "/plugins" {
+        let ws = crate::plugins::single_workspace();
+        let rep = crate::plugins::session_report(app.port);
+        out.push(Ev::Info(crate::plugins::command(v, &ws, Some(&rep))));
     } else if first == "/status" {
         out.push(Ev::Info(format!(
             "model {} · {}:{} · compaction threshold {} · session {}",

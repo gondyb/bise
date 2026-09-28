@@ -60,6 +60,7 @@ use run::*;
 mod sb;
 mod skills;
 mod files;
+mod plugins;
 mod emoji;
 mod editor;
 mod clipboard;
