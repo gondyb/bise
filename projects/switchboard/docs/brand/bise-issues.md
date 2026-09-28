@@ -774,7 +774,8 @@ Index:
 
 ### BISE-70 · images UI
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done (the history screens wait for F's 3 call sites) ·
+  **owner:** bise-i-images · **commits:** 16bc2a2
 - **track:** I · **owns:** `attach.rs`, the chip drawing in the composer
   render path, the strip in `ui.rs`
 - **spec:** book §14, `../images.md`
@@ -787,6 +788,60 @@ Index:
 - **done when:** screenshots match the three image screens of
   `tui-screens.html`; tests for the strip text (sizes, "resized to fit").
 - **notes:**
+  - **Composer chips:** the text keeps `[Image #N]`; `editor::layout_input`
+    makes it one cell (`InputCell.chip`, `w` = width of `▣ N`), `ui.rs`
+    draws it `▣ N` in accent (reversed under the cursor, selection bg when
+    selected). Atomic: `prev/next_grapheme` step over it, `move_to` never
+    lands inside, `delete_back/forward` (all units) widen to the whole chip
+    (`attach::chips / chip_around / chip_widen`). This touches `editor.rs`
+    beyond its render path (the grapheme/delete/move functions): no other
+    track owns them.
+  - **Strip** (`attach::strip_lines`, drawn by `ui.rs` above the status row,
+    both layouts): `attached · backspace on a chip removes it`, then one row
+    per chip still in the text, `▣ 1 shots/login-mobile.png` and, flush
+    right, dim, `1170×2532 · 310 kB` (+ ` → resized to fit 2048`). Sizes are
+    what the model gets (after the downscale); resized = the stored bytes
+    differ from the original (the store keeps them as is otherwise). Size
+    text: decimal units (`999 B`, `310 kB`, `1.1 MB`). A long path keeps its
+    end. `Attachment` gained `info: Info` (source, w, h, bytes, resized).
+  - **Hint** while images are attached (sb view, not during a turn):
+    `ctrl+v paste image · @ file` (from the mockup; **new string for §17**).
+    The flash says `attached ▣ 1` (was `[Image #1]`).
+  - **History, for track F** (render.rs, agreed with bise-f-feed):
+    `attach::chip_spans(line, style)` (markers → accent `▣ login.png`;
+    clipboard images, whose path is in the image store, → `▣ clipboard`),
+    `attach::sizes_line(text)` (the dim size line under the user line; sizes
+    read once from the stored copy beside the `.b64`, cached),
+    `attach::result_spans(preview)` (`result · ▣ screenshot.png 390×844`),
+    `attach::without_markers`, `attach::no_vision(err)` (the §17 line; the
+    model is the agent in view, set by ui.rs each frame; matches provider
+    wordings: image/vision + not supported / only supported / invalid
+    content type…). They carry `#[allow(dead_code)]` until F wires them.
+  - **Tests:** `attach::tests` (chips by char index, widen, strip text:
+    sizes + resized, strip rows flush right + cut path, history chips /
+    sizes / result line / missing store file, no-vision matching and the
+    §17 line), `editor::tests::image_chips_are_atomic`.
+    `tui_images_tmux.py`: composer waits now expect `▣ 1 ▣ 2 and ▣ 3`, the
+    strip rows, backspace removing a chip whole; the feed check accepts
+    `[Image #1 shots/red-blue.png]` or `▣ red-blue.png` (before/after F);
+    its own `wait_composer` leaves out the new hint.
+  - **Differences with the mockups:** the chip has no background tint (book
+    §5: we never paint the background); the strip has no box border (plain
+    rows at the composer's indent, like the card box region). The history
+    screens (chips in your line, the size line, `result ·`, no-vision) show
+    once F calls the helpers. Routing (`with both images`) is main's prompt,
+    not here.
+  - **Gates** (worktree of 1ee22b9 + my files, own target dir): build,
+    clippy workspace all-targets clean, `cargo test --workspace` (two flaky
+    failures under load, `switchboard::core` and `bend-plugins` bridge,
+    pass alone), `PROOF.bend` OK, e2e OK, tmux images/composer/at-files/
+    help/term/version/clear/archived OK. `tui_tmux.py` fails at HEAD on
+    `# Task \`t1\`` (BISE-12 folded the brief; someone has a fix in the
+    tree). **Found:** the committed `sb-core` is stale vs `hub/*.bend` at
+    HEAD (6 `core::tests` fail with it, pass with a fresh
+    `bend hub/main.bend`); and `/tmp/bise-gate-target` is shared by all
+    tracks' gates, so one track's build overwrites another's binary; use one
+    target dir per track.
 
 ---
 
