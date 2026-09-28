@@ -322,9 +322,8 @@ The same three levels everywhere, in main and inside an agent.
 | a run of level 3 | `▸ 12 messages between 8 agents` | the messages, in order |
 | a card | open while it needs you | see §12 |
 
-  Keys: click or `space` on the selected item toggles it; `ctrl+t` opens or
-  closes all thinking (today); **⚠** one new key opens or closes all outputs
-  (to pick, not `ctrl+b`: tmux).
+  Keys: click or `space` on the selected item toggles it; `ctrl+o` opens or
+  closes everything folded, one state (like Claude Code; `ctrl+t` is gone).
 - **Failures** stay one line in error color with the reason; `▸` for the
   full error: `$ bash ✗ exit 1 · 0.8s` then `error[E0425]: … ▸ 18 lines`.
 
@@ -447,7 +446,7 @@ replays it (**⚠** proposed command).
 | `D` | drop the selected agent (asks first) | — |
 | `esc` | close selection; in an agent, back to main | — |
 | `ctrl+g`, `ctrl+n` / `ctrl+p`, `alt+r`, `ctrl+f`, `ctrl+x`, `y` / `n` | cards | hints on the card |
-| `ctrl+t` | open or close everything folded (thinking and outputs) | widened (BISE-42; `ctrl+o` stays the shell) |
+| `ctrl+o` | open or close everything folded (thinking, outputs, diffs, reports, runs, `▸ why`) | was `ctrl+t` (removed, no alias); the `ctrl+o` shell is gone: the terminal panel is the one shell |
 | `ctrl+r` | voice | — |
 | ``ctrl+` `` | terminal panel | — |
 | `ctrl+v` | paste an image | from the images work |

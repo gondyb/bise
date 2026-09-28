@@ -50,7 +50,7 @@ pub(crate) struct App {
     pub(crate) area_h: usize,
     pub(crate) events: Vec<Ev>,
     // when the last wire line arrived (thinking duration = the delta to
-    // the assistant line) and the ctrl+t thinking-section toggle
+    // the assistant line) and the ctrl+o state of new thinking sections
     pub(crate) last_line_at: Option<std::time::Instant>,
     pub(crate) show_thinking: bool,
     // a Ctrl+C interrupt is in flight (until the dying turn's idle):

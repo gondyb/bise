@@ -83,7 +83,6 @@ pub(crate) const ROWS: &[Row] = &[
     r(TALK, "⏎", "send to the agent in view (main, or the agent you entered); while it works, steer its turn").sb().top(),
     r(TALK, "@agent …", "a direct message to an agent without leaving main; @main … from inside an agent").sb().top(),
     r(TALK, "ctrl+c", "interrupt the turn of the agent in view; again (or at idle) quit, the agents keep running").sb().top(),
-    r(TALK, "ctrl+o", "a shell in the folder of the agent in view (exit comes back)").sb(),
     r(TALK, "/", "the commands: tab completes, ⏎ runs").sb().top(),
     r(CONV, "⏎", "send; during a turn, steer the model").solo().top(),
     r(CONV, "tab", "during a turn: queue the draft for after the turn").solo().top(),
@@ -107,7 +106,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(CARDS, "pgup|pgdn", "scroll the card").sb(),
     r(CARDS, "y|n|esc", "a confirmation: yes / no / not now").sb(),
     r(FEED, "click ▸|space", "open or close one folded item: thinking, an output, a diff, a report (space: the item selected in the feed, composer empty)"),
-    r(FEED, "ctrl+t", "open or close everything folded").top(),
+    r(FEED, "ctrl+o", "open or close everything folded").top(),
     r(FEED, "pgup|pgdn|wheel", "scroll the feed (the card when it is shown)"),
     r(FEED, "end", "back to the bottom"),
     r(FEED, "ctrl+l", "clear the display (/clear); in switchboard, scroll up to see the lines again"),
@@ -581,8 +580,10 @@ mod tests {
             }
         }
         assert!(!ROWS.iter().any(|r| r.keys.contains("ctrl+z")), "no undo (book §13)");
-        let t = ROWS.iter().find(|r| r.keys == "ctrl+t").unwrap();
-        assert_eq!(t.action, "open or close everything folded");
+        let o: Vec<_> = ROWS.iter().filter(|r| r.keys.split('|').any(|k| k == "ctrl+o")).collect();
+        assert_eq!(o.len(), 1, "ctrl+o is only the folds (no shell)");
+        assert_eq!(o[0].action, "open or close everything folded");
+        assert!(!ROWS.iter().any(|r| r.keys.split('|').any(|k| k == "ctrl+t")), "ctrl+t is gone");
     }
 
     #[test]

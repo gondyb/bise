@@ -747,6 +747,6 @@ pub(crate) fn hint_text(app: &App) -> &'static str {
     } else if app.pending {
         "⏎ steer · Tab queue · Ctrl+C interrupt · / commands · End bottom"
     } else {
-        "⏎ send · Shift+⏎/Ctrl+J new line · / commands · Ctrl+T reasoning · Ctrl+C quit"
+        "⏎ send · shift+⏎/ctrl+j new line · / commands · ctrl+o open/close all · ctrl+c quit"
     }
 }

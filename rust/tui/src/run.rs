@@ -263,18 +263,6 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
             }
             continue;
         }
-        // switchboard Ctrl+O: a shell in the agent's directory; the TUI
-        // gives the terminal back (every mode) while the shell runs
-        if let Some(dir) = sb::take_shell(app) {
-            crash::set_ui_thread(false);
-            crash::restore_terminal();
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-            println!("shell in {} — exit to return to Switchboard", dir);
-            let _ = std::process::Command::new(shell).current_dir(&dir).status();
-            *terminal = init_terminal()?;
-            crash::set_ui_thread(true);
-            let _ = terminal.clear();
-        }
         pump_voice(app);
         let t_draw = std::time::Instant::now();
         let drawn = crash::guarded(|| {

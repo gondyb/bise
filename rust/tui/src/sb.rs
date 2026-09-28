@@ -90,8 +90,6 @@ pub(super) struct Sb {
     /// The feeds out of view where lines arrived since their last visit.
     activity: std::collections::HashSet<String>,
     ready: bool,
-    /// Ctrl+O: a shell to open in this directory (RFC 0002 §6).
-    shell: Option<String>,
     /// The version the hub runs (its VERSION id), for the status row.
     version: String,
     /// The `/version` picker (the hub's `versions` event), and when it
@@ -329,11 +327,6 @@ pub(super) fn is_ready(app: &App) -> bool {
 /// Startup timing: the events of the feeds not in focus.
 pub(super) fn background_events(app: &App) -> usize {
     app.sb.as_ref().map_or(0, |sb| sb.views.values().map(|v| v.events.len()).sum())
-}
-
-/// The shell asked with Ctrl+O, if any.
-pub(super) fn take_shell(app: &mut App) -> Option<String> {
-    app.sb.as_mut().and_then(|sb| sb.shell.take())
 }
 
 /// The hub is back (a new connection, `hello` sent): it replays every
@@ -840,15 +833,6 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             if !sb.cards.is_empty() =>
         {
             answer_card(app);
-            true
-        }
-        (KeyCode::Char('o'), KeyModifiers::CONTROL) => {
-            let dir = sb
-                .agent(&sb.focus)
-                .map(|a| a.path.clone())
-                .filter(|p| !p.is_empty());
-            let dir = dir.unwrap_or_else(|| sb.workspace.clone());
-            sb.shell = Some(dir);
             true
         }
         // no undo (book §13): say it, and how to change course

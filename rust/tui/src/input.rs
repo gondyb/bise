@@ -294,7 +294,7 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
     }
 }
 
-/// `ctrl+t`: one state for everything folded (thinking, outputs, diffs,
+/// `ctrl+o`: one state for everything folded (thinking, outputs, diffs,
 /// reports, briefs, runs of level 3, `▸ why`). Anything closed: open them
 /// all; else close them all. New thinking sections follow it.
 pub(crate) fn toggle_everything(app: &mut App) {
@@ -392,8 +392,8 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
                 return true;
             }
         }
-        // ctrl+t: open or close everything folded (book §11, §16)
-        (KeyCode::Char('t'), KeyModifiers::CONTROL) => toggle_everything(app),
+        // ctrl+o: open or close everything folded (book §11, §16)
+        (KeyCode::Char('o'), KeyModifiers::CONTROL) => toggle_everything(app),
         // space on the item selected in the feed (composer empty; an
         // agent selected in the panel keeps space for its preview)
         (KeyCode::Char(' '), KeyModifiers::NONE) if app.ed.text.is_empty() && app.feed_sel.is_some() => {
@@ -601,19 +601,22 @@ mod keys_tests {
         on_key(app, &KeyEvent::new(code, m));
     }
 
-    /// ctrl+t (book §16): one state for everything folded. Anything
+    /// ctrl+o (book §16): one state for everything folded. Anything
     /// closed: all open; again: all closed; new thinking follows.
     #[test]
-    fn ctrl_t_opens_then_closes_everything_folded() {
+    fn ctrl_o_opens_then_closes_everything_folded() {
         let mut app = crate::sb::bench::test_app();
         app.events = vec![thinking(true), report(false), Ev::Info("x".into()), thinking(false)];
         app.cache = (0..4).map(|_| None).collect();
-        press(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL);
+        press(&mut app, KeyCode::Char('o'), KeyModifiers::CONTROL);
         assert_eq!(opens(&app), vec![true, true, true, true]);
         assert!(app.show_thinking);
-        press(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL);
+        press(&mut app, KeyCode::Char('o'), KeyModifiers::CONTROL);
         assert_eq!(opens(&app), vec![false, false, true, false]);
         assert!(!app.show_thinking);
+        // ctrl+t is gone (no alias): nothing changes
+        press(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL);
+        assert_eq!(opens(&app), vec![false, false, true, false]);
     }
 
     /// space on the item selected in the feed toggles it, only with an
