@@ -274,7 +274,7 @@ Index:
 
 ### BISE-10 · reading width
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-f-feed · **commits:** 90d76f2
 - **track:** F · **owns:** `render.rs`, `feed.rs`, `code.rs`, `markdown.rs`,
   `feed_render_tests.rs`
 - **spec:** book §11 (measure)
@@ -284,11 +284,11 @@ Index:
   extra width is left empty (the feed doesn't stretch lines).
 - **done when:** render tests at widths 60, 100, 160 show prose ≤ 76 and code
   ≤ 100; the 50k-line bench (`sb/bench.rs`) is not slower.
-- **notes:**
+- **notes:** `render::PROSE_MAX` 76 / `CODE_MAX` 100, `prose_width` / `code_width`, `ev_rows` (a tool follows the code measure, everything else the prose measure); rows never stretch (the user row's panel stopped at the measure, then went away in BISE-13). Code blocks lost the box, header and line numbers for a faint rail ` │ ` (mockup "inside an agent"); a long line wraps with a hanging indent and a faint wrap mark (`↪`, now `theme::G_WRAP` = `»`), marked soft so the copy joins it; the copy drops the rail. Open reasoning wraps behind its rail. Tests: `prose_wraps_at_76_and_code_at_100` (60/100/160), `long_code_lines_wrap_with_a_hanging_indent`, feedsel `code_rail_rows_copy_the_code_only`. Known: `wrap_line` keeps the blank after a word at the row end (as before; the copy relies on it), so a row can be measure + 1 with a trailing space. Markdown fences inside a message wrap at the prose measure. bench (`bench_long_feed`, 50k lines of main's transcript, release, 200×50), before (7d07b05) → after (d740568): replay 87.5 → 88.8 ms; first draw 1.0 → 0.8 ms; steady frame 0.32 → 0.20 ms; PageUp 0.86 → 0.76 ms; top 0.39 → 0.31 ms; PageDown 0.78 → 0.81 ms; 20 live lines 0.27 → 0.24 ms; resize 0.7 → 0.5 ms; windowed PageUp worst 1.51 → 1.52 ms, page ingest 2.8 → 1.9 ms. Not slower (noise level).
 
 ### BISE-11 · scripts in full
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-f-feed · **commits:** 312daaf
 - **track:** F · **owns:** as BISE-10
 - **spec:** book §11 (scripts in full)
 - **do:** bash and `run_typescript` sources are never folded
@@ -297,11 +297,11 @@ Index:
   patch) still folds behind `▸`.
 - **done when:** a 200-line script renders whole in a test; colors come from
   `theme::` roles.
-- **notes:**
+- **notes:** bash and TypeScript sources never fold; syntax and diff colors come from the roles (`syntax_*()`, `text()`, `dim()`, `ok()`, `error()`), no diff bands (never paint the background). Tests: `a_long_script_renders_whole` (200-line bash and TypeScript), `bash_highlighting_classifies_tokens` on the roles. The 60/40 patch fold was replaced in BISE-12 by the edit line itself (a patch is hidden until opened, then whole).
 
 ### BISE-12 · progressive disclosure
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-f-feed · **commits:** eb8c667
 - **track:** F · **owns:** as BISE-10 + `feedsel.rs`
 - **spec:** book §11 (table)
 - **do:** one-line collapsed forms and their disclosed forms for: tool
@@ -313,11 +313,11 @@ Index:
   **Don't bind keys** (K does it in BISE-42).
 - **done when:** render tests for each collapsed / open form; the two
   functions exist and are tested.
-- **notes:**
+- **notes:** Forms: output `   ▸ output` (` · {k} failed` when the text has "N failed") / open `   ▾ output` + the text under the rail; a failure is one line with its reason (error color), `▸` when cut; edit `± edit {path} ✓ +a −d ▸` (several files: `{n} files`; failure: `✗ {reason}`), the diff only when opened; report in main (`[report: kind] …` msg-in) `♡ {from}: {summary} ▸ report` (✗ failed, ? blocked, · progress; `▸ report` only when there is more), open: the rest under the rail; brief inside an agent (msg-in starting `# Task \``) `◇ brief ▸`, open: the brief without its title. API: `feed::discloses`, `feed::toggle_event(events, cache, i)` (the click; input.rs now calls it: one hunk, main OK'd, bise-k-keys told), `feed::toggle_selected(app)` (selection head's event) and `feed::toggle_all_outputs(app)` (tools only: one closed → all open, else all close) for BISE-42, not bound. Contract: `Ev::AgentMsg` got an in-memory `open: bool` (main OK'd, C2 note; wire.rs + the 4 parse_hub_line constructors in sb.rs). Tests: one per form, `toggles_one_item_and_all_outputs`, `fit_chars_keeps_the_ellipsis_inside`. **Differs from the book:** the runtime's `tool_result` is a one-line preview (newlines flattened, ~250 chars), so there is no line count: the closed form is `▸ output`, not `▸ output · 42 lines` (needs the runtime to send the line count or the full output: for main). `result · 2 items` for TypeScript is not done (one word, `output`, everywhere).
 
 ### BISE-13 · entity glyphs in the feed
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-f-feed · **commits:** d740568
 - **track:** F · **owns:** as BISE-12
 - **spec:** book §6 (entities), glyph audit (BISE-03)
 - **do:** use the §6 glyphs in the feed: `›` you, `:*` main, `$` bash, `λ`
@@ -327,7 +327,7 @@ Index:
   {name} needs you`).
 - **done when:** render tests updated; screenshots of the feed match
   `tui-screens.html` screens "inside an agent" and "everything disclosed".
-- **notes:**
+- **notes:** Glyphs through the theme constants: `›` you (dim, text from column 3; no bar, no panel background), `$ bash` / `λ typescript` (other tools: empty glyph column), working pulse while running, `✓` dim / `✗` error, `↳` sub-calls (a failed one gives its reason), `∴ thought for {s}s ▸` (no duration: `thought`), `≡` compaction and summary (dim), `▲` interrupt (dim), `✗` errors, `:*` on messages from main, `@` (`G_MSG`) on the others (their level look is BISE-14), a card is level 1 (accent `┃`, bold accent `? {name} needs you`, body in text; `♡ {name} is done: …`, `✗ {name} failed: …`). French leftovers fixed (`interrompu`, `raisonnement`, `tour`). Tests: `inside_an_agent_matches_the_mockup`, `everything_disclosed_matches_the_mockup` (rows at 100 columns), `a_card_is_level_one`, `feed_entities_use_the_book_glyphs`; updated sb.rs `hub_line_tests` and tmux waits (`tui_archived_tmux.py`, `tui_at_files_tmux.py`, `tui_tmux.py`: glyph-agnostic `" t1 m_"`, brief folded; the tui_tmux.py lines landed with ecb4bec). **Differs from the mockups:** (1) no `:*` in front of main's own replies in main's feed: the render path doesn't know whose feed it draws (needs a feed-owner flag from ui.rs → `ensure_rows`; proposed for BISE-14); (2) `♡ turn done · {duration}` is not drawn (TurnDone is still debug-only); (3) the elapsed shows only for live tools (replayed ones have none); (4) an open diff keeps its `~ path` header; (5) the mockup's blank lines between blocks follow today's gap rules. Visual check done on TestBackend rows, not yet in Ghostty dark/light (BISE-82). Not done here: `theme::glyph()` for BISE_ASCII (the draw-time `asciify` net covers it), `compacting_frame` pulse (the line is static history), wiring bise-i-images' attach.rs helpers (16bc2a2: chip_spans, sizes_line, result_spans, no_vision) → next render.rs work. help.rs still says `click ✦` (K, BISE-41).
 
 ### BISE-20 · agents panel
 
