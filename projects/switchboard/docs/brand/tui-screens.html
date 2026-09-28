@@ -51,6 +51,12 @@
   .rec { color:var(--acc); }
   .legend { display:grid; grid-template-columns:repeat(3, 38ch); gap:2px 3ch; max-width:120ch; }
   .legend span:first-child { display:inline-block; width:3ch; }
+  .l3 { color:var(--dim); border-left:1px solid var(--faint); padding-left:2ch; margin-left:1ch; }
+  .l3 + .l3 { margin-top:0; }
+  .l3 .to { color:var(--faint); }
+  .l1 { border-left:2px solid var(--acc); padding-left:2ch; margin-left:0; }
+  .l1 .t { color:var(--acc); font-weight:700; }
+  .lv { display:grid; grid-template-columns:18ch 1fr; gap:6px 3ch; max-width:112ch; margin-top:8px; }
   hr { border:0; border-top:1px solid var(--line); margin:40px 0; max-width:112ch; }
 </style>
 </head>
@@ -72,8 +78,8 @@ function head(right) {
   return `<div class="head"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim">${right ?? `${S.work} 3 working · <span class="acc">? 1 needs you</span> · ♡ 1 done`}</span></div>`;
 }
 function panel(rows, extra = "") {
-  return `<div class="panel"><div class="dim" style="margin-bottom:4px">agents</div>${rows.map((r, i) =>
-    `<div class="row${r.sel ? " sel" : ""}"><span><span class="faint">${i <= 9 ? "⌥ " + i : "   "}</span> ${r.g} ${r.name}${r.dot ? ' <span class="acc">•</span>' : ""}</span><span class="dim">${r.r ?? ""}</span></div>`).join("")}${extra}</div>`;
+  return `<div class="panel"><div style="margin-bottom:4px">agents <span class="faint">· ⌥ + number to switch</span></div>${rows.map((r, i) =>
+    `<div class="row${r.sel ? " sel" : ""}"><span><span class="faint">${i <= 9 ? i : " "}</span> ${r.g} ${r.name}${r.dot ? ' <span class="acc">•</span>' : ""}</span><span class="dim">${r.r ?? ""}</span></div>`).join("")}${extra}</div>`;
 }
 const P = {
   main:   { g: '<span class="acc">:*</span>', name: "main", r: "" },
@@ -93,6 +99,9 @@ function foot(status, composer, hints) {
 function term({ h, feed, pan, above = "", f, narrow, overlay = "" }) {
   return `<div class="term${narrow ? " narrow" : ""}">${h ?? head()}<div class="grid"><div class="feed">${feed}</div>${narrow ? "" : (pan ?? PANEL())}</div>${above}${f ?? foot()}${overlay}</div>`;
 }
+const bg = (from, to, t) => `<div class="l3"><span class="who">✉</span>${from} <span class="to">→ ${to}</span>  ${t}</div>`;
+const bgs = (...ls) => `<div class="b">${ls.join("")}</div>`;
+const need = (title, body, opts) => `<div class="b l1"><div class="t">? ${title}</div><div>${body}</div>${opts ? `<div class="dim">${opts}</div>` : ""}</div>`;
 const you = t => `<div class="b"><span class="who dim">›</span>${t}</div>`;
 const bise = t => `<div class="b"><span class="who acc">:*</span>${t}</div>`;
 const ts = `<span class="kw">async function</span> <span class="fn">main</span>() {
@@ -121,9 +130,25 @@ const screens = [
    bise("on it. two agents:") + `<div class="ind">${S.work} auth-fix <span class="dim">the safari login bug</span></div><div class="ind">${S.work} release <span class="dim">the release note for 0.4</span></div>` +
    you("also the api docs, v2") + bise(`sent to docs. <span class="dim">ctrl+z undo · 4s</span>`) })],
 
-["main answers for you", "a routine question answered by main from the brief. always visible, always reversible (⚠ undo of an answer is not built today; only routes can be undone).",
- term({ feed: bise(`docs asked "v1 or v2 for the examples?". the brief says v2, so i answered v2. <span class="dim">▸ why · undo</span>`) +
-   bise(`auth-fix asked "may i touch web/src/auth?". nobody else is in it, so yes.`) })],
+["what's for you, what isn't", "three levels, always the same. <b>needs you</b>: blush bar, bold, stays until answered (also in the card box). <b>for you</b>: normal text, what main and agents say to you. <b>between agents</b>: dim, under a faint rail, ✉ from → to; it keeps the story readable without asking for attention. main's line after the traffic is the summary for you. (⚠ undo of an answer main gave is not built today.)",
+ term({ feed: you("the login breaks on safari. and the api docs, v2 please.") +
+   bise("on it: auth-fix takes safari, docs takes the api docs.") +
+   bgs(bg("docs", "main", "v1 or v2 for the examples?"), bg("main", "docs", "v2, the brief says so.")) +
+   bise(`docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why · undo</span>`) +
+   bgs(bg("auth-fix", "release", "heads-up, i'm touching web/src/auth."), bg("release", "auth-fix", "ok, i'll mention the fix."), bg("bench", "main", "♡ done. p95 180 ms, 3 runs.")) +
+   `<div class="b"><span class="who">♡</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div>` +
+   bgs(bg("api-v2", "main", "? i need the v2 schema file, it isn't in the repo.")) +
+   need("api-v2 needs you", "the v2 schema file isn't in the repo. where is it?", "type the answer · alt+r send · ctrl+x later") })],
+
+["the same, quiet", "one key folds the traffic between agents into a single dim line per run (⚠ new key, e.g. ctrl+b). what's for you stays exactly where it was.",
+ term({ feed: you("the login breaks on safari. and the api docs, v2 please.") +
+   bise("on it: auth-fix takes safari, docs takes the api docs.") +
+   `<div class="b l3">▸ 2 messages between agents</div>` +
+   bise(`docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why · undo</span>`) +
+   `<div class="b l3">▸ 3 messages between agents</div>` +
+   `<div class="b"><span class="who">♡</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div>` +
+   `<div class="b l3">▸ 1 message between agents</div>` +
+   need("api-v2 needs you", "the v2 schema file isn't in the repo. where is it?", "type the answer · alt+r send · ctrl+x later") })],
 
 ["reports in main", "each agent's report is one line; ▸ discloses it. ♡ done, ✗ failed, ? blocked, · progress.",
  term({ feed: `<div class="b"><span class="who">♡</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div>
@@ -163,7 +188,7 @@ the slow tail is the cold cache on the first request.</pre>
    <div class="b">should i keep them without links, or drop them from the note?</div>
    <div class="b dim">▾ 12 more lines · pgdn</div>`, pan: PANEL("release") })],
 
-["the agents panel, every state", "one line per agent: its shortcut (⌥0 main, ⌥1 to ⌥9 the first nine agents; no label after nine), glyph, name, age or state, context fill. • = unread activity. ⎇ = agent in its own worktree; no mark = the shared folder. archived agents are counted, not listed.",
+["the agents panel, every state", "one line per agent: its number: ⌥ + number switches to it (0 main, 1 to 9 the first nine agents; no number after nine), glyph, name, age or state, context fill. • = unread activity. ⎇ = agent in its own worktree; no mark = the shared folder. archived agents are counted, not listed.",
  term({ feed: "", pan: panel([
    P.main, { ...P.auth, sel: true, dot: true }, P.rel, { g: S.start, name: "tests", r: "starting" }, P.docs, P.api,
    { g: '<span class="acc">?</span>', name: "infra", r: '<span class="acc">blocked</span>' }, P.bench, P.deploy, P.ideas,
@@ -291,7 +316,12 @@ shell     ctrl+\` show / hide</pre></div>` })],
 
 document.getElementById("screens").innerHTML = screens.map(([t, p, html], i) =>
   `<figure id="s${i + 1}"><figcaption><b><span class="n">${String(i + 1).padStart(2, "0")}</span>${t}</b><p>${p.replace(/⚠[^.;)]*/g, m => `<span class="warn">${m}</span>`)}</p></figcaption>${html}</figure>`).join("") +
-  `<hr><figure><figcaption><b>the symbols</b></figcaption><div class="legend">${[
+  `<hr><figure><figcaption><b>the 3 levels</b><p>brightness, a bar and a rail carry the hierarchy; color is only for what needs you.</p></figcaption><div class="lv">
+   <div class="acc"><b>1 · needs you</b></div><div class="l1"><div class="t">? api-v2 needs you</div><div>the v2 schema file isn't in the repo. where is it?</div></div>
+   <div><b>2 · for you</b></div><div><span class="who acc">:*</span>docs asked v1 or v2; the brief says v2, so i answered.</div>
+   <div class="dim">3 · between agents</div><div class="l3"><span class="who">✉</span>auth-fix <span class="to">→ release</span>  heads-up, i'm touching web/src/auth.</div>
+  </div></figure>
+  <figure><figcaption><b>the symbols</b></figcaption><div class="legend">${[
     ["›", "you"], ['<span class="acc">:*</span>', "main"], ["◇", "brief"], ['<span class="dim">∴</span>', "thinking"], ["$", "bash"], ["λ", "typescript"],
     ["↳", "a sub-call"], ["±", "file edit"], ["✉", "agent to agent"], ['<span class="dim">⟳</span>', "compacting"], ['<span class="dim">≡</span>', "compaction summary"], ['<span class="dim">▲</span>', "interrupted"],
     ['<span class="pulse">∿</span>', "working"], ['<span class="pulse dim">·</span>', "starting"], ["…", "waiting on an agent"], ['<span class="acc">?</span>', "needs you / blocked"],
