@@ -128,6 +128,12 @@ impl Sb {
         self.nav().get(self.selected?).copied()
     }
 
+    /// Tell the hub which feed is in focus.
+    fn send_focus(&mut self) {
+        let focus = self.focus.clone();
+        self.send(json!({"op": "focus", "focus": focus}));
+    }
+
     /// A line typed to the agent in focus (the hub interprets it).
     fn send_input(&mut self, text: String) {
         let focus = self.focus.clone();
@@ -253,8 +259,7 @@ fn hub_reconnected(app: &mut App) {
     sb.activity.clear();
     sb.ready = false;
     sb.confirm = None;
-    let focus = sb.focus.clone();
-    sb.send(json!({"op": "focus", "focus": focus}));
+    sb.send_focus();
 }
 
 /// Route one hub event.
@@ -439,7 +444,7 @@ pub(super) fn focus(app: &mut App, name: &str) {
     let old = std::mem::replace(&mut sb.focus, name.to_string());
     sb.activity.remove(name);
     let mut incoming = sb.views.remove(name).unwrap_or_else(View::new);
-    sb.send(json!({"op": "focus", "focus": name}));
+    sb.send_focus();
     swap_feed(app, &mut incoming);
     swap_draft(app, &mut incoming);
     // a feed selection belongs to the feed we left
@@ -496,7 +501,7 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             app.events.clear();
             app.cache.clear();
             app.anchor = (0, 0);
-    app.scroll = 0;
+            app.scroll = 0;
             app.follow = true;
             out.push(Ev::Info("display cleared".into()));
         }
