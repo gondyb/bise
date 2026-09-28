@@ -3101,3 +3101,38 @@ def hub_rts_send_other(-o: HM.St, p: HX.Cx<o> & List<&2, J.Json>, +a: String, +i
       %Equal.sym(List<&2, HX.Rt>, hub_rts(o, HC.dirty(o, HC.out(o, cx2, J.kv("fx", J.JStr{"deliver"}) <> J.kv("mode", J.JStr{"say"}) <> kvs))), hub_rts(o, cx2),
           hub_rts_dirty_out(o, cx2, J.kv("fx", J.JStr{"deliver"}) <> J.kv("mode", J.JStr{"say"}) <> kvs)) : {HC.rt_find(_, n) == HC.rt_find(hub_rts(o, cx), n) : HX.Rt}
       hub_rts_if_other(o, HC.has_agent(o, cx, a), cx, a, HX.Rt.waiting(HC.rt(o, cx, a)), Some{HC.now(o, cx)}, n, ne)
+
+def hub_rt_run_eq(+x: List<&2, HX.Rt>, +y: List<&2, HX.Rt>, +n: String, e: {HC.rt_find(x, n) == HC.rt_find(y, n) : HX.Rt})
+    -> {HX.Rt.run(HC.rt_find(x, n)) == HX.Rt.run(HC.rt_find(y, n)) : HM.Run}:
+  Equal.cong(HX.Rt, HM.Run, r => HX.Rt.run(r), HC.rt_find(x, n), HC.rt_find(y, n), e)
+
+def hub_ga_eq(-o: HM.St, +a: HX.Cx<o>, +b: HX.Cx<o>, +n: String, e: {hub_ag(o, a) == hub_ag(o, b) : List<&2, HM.Agent>})
+    -> {HM.get_agent(HX.d(o, a), n) == HM.get_agent(HX.d(o, b), n) : Maybe<&2, HM.Agent>}:
+  Equal.cong(List<&2, HM.Agent>, Maybe<&2, HM.Agent>, xs => HM.agent_named(xs, n), hub_ag(o, a), hub_ag(o, b), e)
+
+def hub_pb_rt.go(-o: HM.St, busy: Bool, +bb: List<&2, HM.Msg>, +cx2: HX.Cx<o>, +cx: HX.Cx<o>, +a: String, +kvs: List<&2, Sigma<&2, &2, String, _ => J.Json>>, +n: String,
+    +ne: {String.eq(a, n) == False{} : Bool}, +ep: {hub_rts(o, hub_p1(o, HC.deliver_each(o, bb, cx2, a, Nil{}))) == hub_rts(o, cx) : List<&2, HX.Rt>})
+    -> {HX.Rt.run(HC.rt_find(hub_rts(o, HC.pump.send(o, busy, HC.deliver_each(o, bb, cx2, a, Nil{}), a, HC.ids_of(bb), kvs)), n))
+        == HX.Rt.run(HC.rt_find(hub_rts(o, cx), n)) : HM.Run}:
+  match busy:
+    case True{}:
+      hub_rt_run_eq(hub_rts(o, HC.pump.send(o, True{}, HC.deliver_each(o, bb, cx2, a, Nil{}), a, HC.ids_of(bb), kvs)), hub_rts(o, cx), n,
+        Equal.cong(List<&2, HX.Rt>, HX.Rt, xs => HC.rt_find(xs, n), hub_rts(o, HC.pump.send(o, True{}, HC.deliver_each(o, bb, cx2, a, Nil{}), a, HC.ids_of(bb), kvs)), hub_rts(o, cx),
+          Equal.trans(List<&2, HX.Rt>, hub_rts(o, HC.pump.send(o, True{}, HC.deliver_each(o, bb, cx2, a, Nil{}), a, HC.ids_of(bb), kvs)),
+            hub_rts(o, hub_p1(o, HC.deliver_each(o, bb, cx2, a, Nil{}))), hub_rts(o, cx),
+            hub_rts_steer(o, HC.deliver_each(o, bb, cx2, a, Nil{}), a, HC.ids_of(bb), kvs), ep)))
+    case False{}:
+      hub_rt_run_eq(hub_rts(o, HC.pump.send(o, False{}, HC.deliver_each(o, bb, cx2, a, Nil{}), a, HC.ids_of(bb), kvs)), hub_rts(o, cx), n,
+        Equal.trans(HX.Rt, HC.rt_find(hub_rts(o, HC.pump.send(o, False{}, HC.deliver_each(o, bb, cx2, a, Nil{}), a, HC.ids_of(bb), kvs)), n),
+          HC.rt_find(hub_rts(o, hub_p1(o, HC.deliver_each(o, bb, cx2, a, Nil{}))), n), HC.rt_find(hub_rts(o, cx), n),
+          hub_rts_send_other(o, HC.deliver_each(o, bb, cx2, a, Nil{}), a, HC.ids_of(bb), kvs, n, ne),
+          Equal.cong(List<&2, HX.Rt>, HX.Rt, xs => HC.rt_find(xs, n), hub_rts(o, hub_p1(o, HC.deliver_each(o, bb, cx2, a, Nil{}))), hub_rts(o, cx), ep)))
+
+# the runtime state of another agent after a batch to A
+def hub_pb_rt(-o: HM.St, busy: Bool, +bb: List<&2, HM.Msg>, +cx2: HX.Cx<o>, +cx: HX.Cx<o>, +a: String, +kvs: List<&2, Sigma<&2, &2, String, _ => J.Json>>, +n: String,
+    +ne: {String.eq(a, n) == False{} : Bool}, +e2: {hub_rts(o, cx2) == hub_rts(o, cx) : List<&2, HX.Rt>})
+    -> {HX.Rt.run(HC.rt_find(hub_rts(o, HC.pump.send(o, busy, HC.deliver_each(o, bb, cx2, a, Nil{}), a, HC.ids_of(bb), kvs)), n))
+        == HX.Rt.run(HC.rt_find(hub_rts(o, cx), n)) : HM.Run}:
+  +p1 = hub_p1(o, HC.deliver_each(o, bb, cx2, a, Nil{}))
+  +ep = Equal.trans(List<&2, HX.Rt>, hub_rts(o, p1), hub_rts(o, cx2), hub_rts(o, cx), hub_rts_deliver(o, bb, cx2, a, Nil{}), e2)
+  hub_pb_rt.go(o, busy, bb, cx2, cx, a, kvs, n, ne, ep)
