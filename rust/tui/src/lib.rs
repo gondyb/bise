@@ -39,7 +39,8 @@ use std::net::TcpStream;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Duration;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthStr;
+use unicode_segmentation::UnicodeSegmentation;
 
 // ---- the OpenCode theme (opencode.json, dark) ----
 // primary #fab283 (the OpenCode orange) is the agent color: user blocks,
@@ -48,6 +49,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 // complete, error red).
 mod sb;
 mod skills;
+mod emoji;
 pub use sb::{run_switchboard, take_reexec};
 
 const BRAND: Color = Color::Rgb(0xfa, 0xb2, 0x83); // primary
@@ -539,6 +541,23 @@ fn line_from(cells: Vec<(char, Style)>) -> Line<'static> {
     Line::from(spans)
 }
 
+/// The display width of each char of `chars`, by grapheme: the first
+/// char of a grapheme carries its width (at least 1), the rest 0, so an
+/// emoji ZWJ sequence or a char with a variation selector counts as
+/// ratatui draws it, and a row never breaks inside one.
+fn cell_widths(chars: impl Iterator<Item = char>) -> Vec<usize> {
+    let s: String = chars.collect();
+    let mut out = Vec::with_capacity(s.len());
+    for g in s.graphemes(true) {
+        let mut first = true;
+        for _ in g.chars() {
+            out.push(if first { g.width().max(1) } else { 0 });
+            first = false;
+        }
+    }
+    out
+}
+
 // span-aware greedy word wrap; words wider than the row hard-split
 fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
     let width = width.max(1);
@@ -551,6 +570,7 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
     if cells.is_empty() {
         return vec![Line::from("")];
     }
+    let widths = cell_widths(cells.iter().map(|c| c.0));
     let mut rows: Vec<Line<'static>> = Vec::new();
     let mut row: Vec<(char, Style)> = Vec::new();
     let mut row_w = 0usize;
@@ -560,7 +580,7 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
         let mut word: Vec<(char, Style)> = Vec::new();
         let mut word_w = 0usize;
         while i < cells.len() && cells[i].0 != ' ' {
-            word_w += cells[i].0.width().unwrap_or(1).max(1);
+            word_w += widths[i];
             word.push(cells[i]);
             i += 1;
         }
@@ -573,9 +593,10 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
         if row_w == 0 && word_w > width {
             let mut chunk: Vec<(char, Style)> = Vec::new();
             let mut cw = 0usize;
-            for (c, st) in word {
-                let cc = c.width().unwrap_or(1).max(1);
-                if cw + cc > width {
+            let word_start = i - word.len();
+            for (k, (c, st)) in word.into_iter().enumerate() {
+                let cc = widths[word_start + k];
+                if cc > 0 && cw > 0 && cw + cc > width {
                     rows.push(line_from(std::mem::take(&mut chunk)));
                     cw = 0;
                 }
@@ -634,12 +655,7 @@ fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> 
 // reads as a solid panel the full width (OpenCode style)
 fn pad_line_bg(line: &mut Line<'static>, width: usize) {
     line.style = Style::default().bg(PANEL);
-    let used: usize = line
-        .spans
-        .iter()
-        .flat_map(|s| s.content.chars())
-        .map(|c| c.width().unwrap_or(0))
-        .sum();
+    let used: usize = line.spans.iter().map(|s| s.content.width()).sum();
     if used < width {
         line.spans
             .push(Span::styled(" ".repeat(width - used), Style::default().bg(PANEL)));
@@ -1766,13 +1782,12 @@ fn tool_source(lang: CodeLang, decoded: String) -> String {
 // token) it breaks hard at the width. Returns each row with its width.
 fn wrap_code_line(spans: &[Span<'static>], w: usize) -> Vec<(Vec<Span<'static>>, usize)> {
     let w = w.max(1);
+    let widths = cell_widths(spans.iter().flat_map(|sp| sp.content.chars()));
     let cells: Vec<(char, Style, usize)> = spans
         .iter()
-        .flat_map(|sp| {
-            sp.content
-                .chars()
-                .map(move |ch| (ch, sp.style, ch.width().unwrap_or(1).max(1)))
-        })
+        .flat_map(|sp| sp.content.chars().map(move |ch| (ch, sp.style)))
+        .zip(widths)
+        .map(|((ch, st), w)| (ch, st, w))
         .collect();
     let mut rows = Vec::new();
     let mut start = 0usize;
@@ -2323,7 +2338,8 @@ fn popup_items(app: &App) -> Vec<PopItem> {
     }
     let mentions = sb::mentions(app);
     if mentions.is_empty() {
-        return skill_items(app);
+        let skills = skill_items(app);
+        return if skills.is_empty() { emoji_items(app) } else { skills };
     }
     mentions
         .into_iter()
@@ -2369,6 +2385,31 @@ fn skill_items(app: &App) -> Vec<PopItem> {
         .collect()
 }
 
+/// `:name` anywhere in the draft: the matching emojis (emoji.rs).
+fn emoji_items(app: &App) -> Vec<PopItem> {
+    if app.hist_idx.is_some() || app.popup_dismissed.as_deref() == Some(app.input.as_str()) {
+        return Vec::new();
+    }
+    let Some((start, q)) = emoji::token(&app.input, app.cursor) else {
+        return Vec::new();
+    };
+    emoji::filter(&q)
+        .into_iter()
+        .map(|(e, name)| {
+            let (fill, fill_cursor) = emoji::complete(&app.input, start, app.cursor, e.glyph);
+            PopItem {
+                label: format!(":{}:", name),
+                desc: e.desc.to_string(),
+                mark: Some((e.glyph, TEXT)),
+                fill,
+                fill_cursor,
+                run: None,
+                closable: true,
+            }
+        })
+        .collect()
+}
+
 /// First visible row of a popup of `len` entries showing `rows`, so the
 /// selection `sel` stays in view.
 fn popup_top(sel: usize, len: usize, rows: usize) -> usize {
@@ -2382,6 +2423,110 @@ fn popup_top(sel: usize, len: usize, rows: usize) -> usize {
 // byte offset of the n-th char (char-boundary-safe cursor helpers)
 fn byte_at_char(s: &str, ci: usize) -> usize {
     s.char_indices().nth(ci).map(|(b, _)| b).unwrap_or(s.len())
+}
+
+// The composer cursor is a char index that stays on grapheme boundaries:
+// an emoji with a ZWJ, a skin tone or a variation selector is one step.
+
+/// The char index of the grapheme before the one at `cursor`.
+fn prev_grapheme(s: &str, cursor: usize) -> usize {
+    let mut ci = 0usize;
+    let mut prev = 0usize;
+    for g in s.graphemes(true) {
+        if ci >= cursor {
+            break;
+        }
+        prev = ci;
+        ci += g.chars().count();
+    }
+    prev
+}
+
+/// The char index of the grapheme after the one at `cursor`.
+fn next_grapheme(s: &str, cursor: usize) -> usize {
+    let mut ci = 0usize;
+    for g in s.graphemes(true) {
+        ci += g.chars().count();
+        if ci > cursor {
+            return ci;
+        }
+    }
+    ci
+}
+
+/// One cell of the composer layout: a grapheme, its first char index,
+/// its width in columns. A newline is a 1-column slot shown only when the
+/// cursor is on it.
+#[derive(Debug, Clone, PartialEq)]
+struct InputCell<'a> {
+    ci: usize,
+    text: &'a str,
+    w: usize,
+    newline: bool,
+}
+
+/// The composer rows at `inner` columns: newlines break rows, long rows
+/// wrap by width (the widths ratatui uses, so a 2-column emoji never
+/// overflows the row), and the end of the text gets a 1-column cursor
+/// slot.
+fn layout_input(input: &str, inner: usize) -> Vec<Vec<InputCell<'_>>> {
+    let inner = inner.max(2);
+    let mut rows: Vec<Vec<InputCell>> = vec![Vec::new()];
+    let mut col = 0usize;
+    let mut ci = 0usize;
+    for g in input.graphemes(true) {
+        let n = g.chars().count();
+        if g == "\n" || g == "\r\n" {
+            rows.last_mut().unwrap().push(InputCell { ci, text: " ", w: 1, newline: true });
+            rows.push(Vec::new());
+            col = 0;
+            ci += n;
+            continue;
+        }
+        // a control char (a pasted tab) shows as one blank column
+        let (text, w) = if g.chars().any(char::is_control) { (" ", 1) } else { (g, g.width().max(1)) };
+        if col > 0 && col + w > inner {
+            rows.push(Vec::new());
+            col = 0;
+        }
+        rows.last_mut().unwrap().push(InputCell { ci, text, w, newline: false });
+        col += w;
+        if col >= inner {
+            rows.push(Vec::new());
+            col = 0;
+        }
+        ci += n;
+    }
+    rows.last_mut().unwrap().push(InputCell { ci, text: " ", w: 1, newline: true });
+    rows
+}
+
+/// Display column of the cursor on its (newline-separated) line.
+fn line_col_width(input: &str, cursor: usize) -> usize {
+    let b = byte_at_char(input, cursor);
+    let head = &input[..b];
+    let line = head.rsplit('\n').next().unwrap_or("");
+    line.width()
+}
+
+/// The char index, on the line that starts at char `start`, of the
+/// grapheme at display column `col` (or the line end).
+fn char_at_col(input: &str, start: usize, col: usize) -> usize {
+    let b = byte_at_char(input, start);
+    let mut ci = start;
+    let mut w = 0usize;
+    for g in input[b..].graphemes(true) {
+        if g == "\n" || g == "\r\n" {
+            break;
+        }
+        let gw = g.width();
+        if w + gw > col {
+            break;
+        }
+        w += gw;
+        ci += g.chars().count();
+    }
+    ci
 }
 
 // interprets one user line: slash command, raw protocol word, or plain
@@ -2793,8 +2938,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
 
     // ---- the prompt: OpenCode prompt (left border ┃, element bg, meta row)
     // multi-line: newlines break rows, long rows wrap at the inner
-    // width, the cursor is the REVERSED char (or a REVERSED space at
-    // the end of the input)
+    // width (layout_input)
     let chars: Vec<char> = app.input.chars().collect();
     let inner = ((chunks[5].width as usize).saturating_sub(6)).max(1);
     let total = chars.len();
@@ -2805,62 +2949,41 @@ fn draw(app: &mut App, frame: &mut Frame) {
             Style::default().fg(DIM),
         )));
     } else {
-        let mut spans: Vec<Span> = Vec::new();
-        let mut buf = String::new();
-        let mut col = 0usize;
-        let flush_plain = |spans: &mut Vec<Span>, buf: &mut String| {
-            if !buf.is_empty() {
-                spans.push(Span::styled(
-                    std::mem::take(buf),
-                    Style::default().fg(TEXT),
-                ));
-            }
-        };
-        for (i, c) in chars.iter().enumerate() {
-            if *c == '\n' {
-                flush_plain(&mut spans, &mut buf);
-                if i == app.cursor {
+        // rows by display width (emojis are 2 columns); the cursor is
+        // the REVERSED grapheme, or a REVERSED space on a newline or at
+        // the end of the text
+        let rows = layout_input(&app.input, inner);
+        let last = rows.len() - 1;
+        for (ri, row) in rows.iter().enumerate() {
+            let mut spans: Vec<Span> = Vec::new();
+            let mut buf = String::new();
+            for cell in row {
+                let n = cell.text.chars().count().max(1);
+                let is_cursor = if cell.newline {
+                    cell.ci == app.cursor
+                } else {
+                    cell.ci <= app.cursor && app.cursor < cell.ci + n
+                };
+                if is_cursor {
+                    if !buf.is_empty() {
+                        spans.push(Span::styled(std::mem::take(&mut buf), Style::default().fg(TEXT)));
+                    }
                     spans.push(Span::styled(
-                        " ".to_string(),
+                        cell.text.to_string(),
                         Style::default().fg(TEXT).add_modifier(Modifier::REVERSED),
                     ));
+                } else if !cell.newline {
+                    buf.push_str(cell.text);
                 }
-                input_lines.push(Line::from(std::mem::take(&mut spans)));
-                spans = Vec::new();
-                col = 0;
-                continue;
             }
-            // the cursor char counts toward the row width like any
-            // other char: a row may overflow by one otherwise
-            let is_cursor = i == app.cursor;
-            if is_cursor {
-                flush_plain(&mut spans, &mut buf);
-                spans.push(Span::styled(
-                    c.to_string(),
-                    Style::default().fg(TEXT).add_modifier(Modifier::REVERSED),
-                ));
-            } else {
-                buf.push(*c);
+            if !buf.is_empty() {
+                spans.push(Span::styled(buf, Style::default().fg(TEXT)));
             }
-            col += 1;
-            if col >= inner {
-                flush_plain(&mut spans, &mut buf);
-                input_lines.push(Line::from(std::mem::take(&mut spans)));
-                spans = Vec::new();
-                col = 0;
+            // a trailing empty row (the text ends on a full row, cursor
+            // elsewhere) is not drawn
+            if ri < last || !spans.is_empty() {
+                input_lines.push(Line::from(spans));
             }
-        }
-        if app.cursor >= total {
-            flush_plain(&mut spans, &mut buf);
-            spans.push(Span::styled(
-                " ".to_string(),
-                Style::default().fg(TEXT).add_modifier(Modifier::REVERSED),
-            ));
-        } else {
-            flush_plain(&mut spans, &mut buf);
-        }
-        if !spans.is_empty() {
-            input_lines.push(Line::from(spans));
         }
     }
     // the meta row speaks glyphs: ◆ the harness, ● connected (quiet),
@@ -2953,7 +3076,9 @@ fn draw(app: &mut App, frame: &mut Frame) {
                     spans.push(Span::styled(format!(" {}", g), st));
                 }
                 spans.push(Span::styled(format!(" {} ", c.label), name_style));
-                let room = (w as usize).saturating_sub(c.label.chars().count() + 6);
+                // columns, not chars: an emoji mark is 2 columns wide
+                let mark_w = c.mark.map(|(g, _)| g.width() + 1).unwrap_or(0);
+                let room = (w as usize).saturating_sub(c.label.width() + mark_w + 6);
                 spans.push(Span::styled(truncate_chars(&c.desc, room), desc_style));
                 Line::from(spans)
             })
@@ -2988,21 +3113,6 @@ fn draw(app: &mut App, frame: &mut Frame) {
 // The cursor is a char index over the whole input; Up/Down move it to
 // the same column on the previous/next line (clamped to that line).
 
-fn cursor_pos(input: &str, cursor: usize) -> (usize, usize) {
-    // (line, column) of the cursor
-    let mut line = 0usize;
-    let mut col = 0usize;
-    for c in input.chars().take(cursor) {
-        if c == '\n' {
-            line += 1;
-            col = 0;
-        } else {
-            col += 1;
-        }
-    }
-    (line, col)
-}
-
 fn line_bounds(input: &str) -> Vec<(usize, usize)> {
     // (start, len-without-newline) of every line
     let chars: Vec<char> = input.chars().collect();
@@ -3020,7 +3130,7 @@ fn line_bounds(input: &str) -> Vec<(usize, usize)> {
 }
 
 fn cursor_line_up(input: &str, cursor: &mut usize) {
-    let (_, col) = cursor_pos(input, *cursor);
+    let col = line_col_width(input, *cursor);
     let bounds = line_bounds(input);
     // find the current line index
     let mut cur = 0usize;
@@ -3032,12 +3142,13 @@ fn cursor_line_up(input: &str, cursor: &mut usize) {
     if cur == 0 {
         return;
     }
-    let (prev_start, prev_len) = bounds[cur - 1];
-    *cursor = prev_start + col.min(prev_len);
+    let (prev_start, _) = bounds[cur - 1];
+    // same display column (emojis are 2 wide), on a grapheme boundary
+    *cursor = char_at_col(input, prev_start, col);
 }
 
 fn cursor_line_down(input: &str, cursor: &mut usize) {
-    let (_, col) = cursor_pos(input, *cursor);
+    let col = line_col_width(input, *cursor);
     let bounds = line_bounds(input);
     let mut cur = 0usize;
     for (i, (st, _)) in bounds.iter().enumerate() {
@@ -3048,8 +3159,9 @@ fn cursor_line_down(input: &str, cursor: &mut usize) {
     if cur + 1 >= bounds.len() {
         return;
     }
-    let (next_start, next_len) = bounds[cur + 1];
-    *cursor = next_start + col.min(next_len);
+    let (next_start, _) = bounds[cur + 1];
+    // same display column (emojis are 2 wide), on a grapheme boundary
+    *cursor = char_at_col(input, next_start, col);
 }
 
 // one wire line into the feed of the app (the focused view)
@@ -3460,12 +3572,10 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     }
                     // readline-style cursor movement
                     (KeyCode::Left, _) => {
-                        app.cursor = app.cursor.saturating_sub(1);
+                        app.cursor = prev_grapheme(&app.input, app.cursor);
                     }
                     (KeyCode::Right, _) => {
-                        if app.cursor < app.input.chars().count() {
-                            app.cursor += 1;
-                        }
+                        app.cursor = next_grapheme(&app.input, app.cursor);
                     }
                     (KeyCode::Home, _) | (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
                         app.cursor = 0;
@@ -3475,17 +3585,20 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     }
                     (KeyCode::Backspace, _) => {
                         if app.cursor > 0 {
-                            let b = byte_at_char(&app.input, app.cursor - 1);
+                            // a whole emoji (ZWJ sequence, skin tone,
+                            // variation selector) goes at once
+                            let p = prev_grapheme(&app.input, app.cursor);
+                            let b = byte_at_char(&app.input, p);
                             let e = byte_at_char(&app.input, app.cursor);
                             app.input.replace_range(b..e, "");
-                            app.cursor -= 1;
+                            app.cursor = p;
                             app.popup_sel = 0;
                         }
                     }
                     (KeyCode::Delete, _) => {
                         if app.cursor < app.input.chars().count() {
                             let b = byte_at_char(&app.input, app.cursor);
-                            let e = byte_at_char(&app.input, app.cursor + 1);
+                            let e = byte_at_char(&app.input, next_grapheme(&app.input, app.cursor));
                             app.input.replace_range(b..e, "");
                         }
                     }
@@ -3502,6 +3615,13 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                         app.input.insert(b, c);
                         app.cursor += 1;
                         app.popup_sel = 0;
+                        // a typed (never a pasted) `:name:` becomes its emoji
+                        if c == ':' {
+                            if let Some((text, cur)) = emoji::replace_typed(&app.input, app.cursor) {
+                                app.input = text;
+                                app.cursor = cur;
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -4104,5 +4224,89 @@ mod popup_tests {
         assert_eq!(popup_top(8, 12, 8), 1);
         assert_eq!(popup_top(11, 12, 8), 4);
         assert_eq!(popup_top(99, 12, 8), 4); // clamped like the selection
+    }
+}
+
+#[cfg(test)]
+mod emoji_width_tests {
+    use super::*;
+
+    fn row_widths(input: &str, inner: usize) -> Vec<usize> {
+        layout_input(input, inner)
+            .iter()
+            .map(|r| r.iter().filter(|c| !c.newline).map(|c| c.w).sum())
+            .collect()
+    }
+
+    #[test]
+    fn composer_rows_count_emojis_as_two_columns() {
+        // 5 emojis at 6 columns: 3 per row, the 4th never splits a row
+        assert_eq!(row_widths("👏👏👏👏👏", 6), vec![6, 4]);
+        // an emoji that does not fit the row end moves to the next row
+        assert_eq!(row_widths("abcde👏", 6), vec![5, 2]);
+        for inner in 2..12 {
+            for input in ["a👏b👍🏽c❤️d👨‍👩‍👧e🇫🇷", "👏👏👏👏👏👏👏", "x y 👏👏 z\nq👏"] {
+                assert!(row_widths(input, inner).iter().all(|&w| w <= inner), "{input} @ {inner}");
+            }
+        }
+    }
+
+    #[test]
+    fn composer_cells_are_graphemes_with_char_indices() {
+        let rows = layout_input("a👍🏽❤️👨‍👩‍👧b", 40);
+        let cells: Vec<(usize, &str, usize)> = rows[0].iter().map(|c| (c.ci, c.text, c.w)).collect();
+        assert_eq!(
+            cells,
+            vec![(0, "a", 1), (1, "👍🏽", 2), (3, "❤️", 2), (5, "👨‍👩‍👧", 2), (10, "b", 1), (11, " ", 1)]
+        );
+        // the end cursor slot sits after the last char
+        assert!(rows[0].last().unwrap().newline);
+    }
+
+    #[test]
+    fn cursor_moves_by_grapheme() {
+        let s = "a👍🏽❤️👨‍👩‍👧b";
+        let mut stops = vec![0];
+        while *stops.last().unwrap() < s.chars().count() {
+            stops.push(next_grapheme(s, *stops.last().unwrap()));
+        }
+        assert_eq!(stops, vec![0, 1, 3, 5, 10, 11]);
+        let mut back = vec![11];
+        while *back.last().unwrap() > 0 {
+            back.push(prev_grapheme(s, *back.last().unwrap()));
+        }
+        assert_eq!(back, vec![11, 10, 5, 3, 1, 0]);
+        // a cursor inside a sequence steps to its bounds
+        assert_eq!(next_grapheme(s, 6), 10);
+        assert_eq!(prev_grapheme(s, 6), 5);
+        assert_eq!(next_grapheme(s, 11), 11);
+        assert_eq!(prev_grapheme(s, 0), 0);
+    }
+
+    #[test]
+    fn up_down_keep_the_display_column() {
+        // "👏👏x" : x at column 4; the line below "abcdef" → char 4 ('e')
+        let s = "👏👏x\nabcdef";
+        let mut c = 2; // on the x
+        cursor_line_down(s, &mut c);
+        assert_eq!(c, 4 + 4); // line 2 starts at char 4
+        cursor_line_up(s, &mut c);
+        assert_eq!(c, 2);
+        // column 1 falls inside an emoji: the cursor stays on it
+        let mut c = 5; // 'b' at column 1
+        cursor_line_up(s, &mut c);
+        assert_eq!(c, 0);
+    }
+
+    #[test]
+    fn feed_wrap_counts_graphemes_as_drawn() {
+        let w = |l: &Line| l.spans.iter().map(|s| s.content.width()).sum::<usize>();
+        let rows = wrap_line(Line::from("👨‍👩‍👧 👨‍👩‍👧 👨‍👩‍👧"), 8);
+        assert_eq!(rows.len(), 1, "3 × 2 cols + 2 spaces fit 8");
+        let rows = wrap_line(Line::from("👏👏👏👏👏"), 4);
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|r| w(r) <= 4));
+        let rows = wrap_code_line(&[Span::raw("❤️❤️❤️")], 4);
+        assert_eq!(rows.iter().map(|r| r.1).collect::<Vec<_>>(), vec![4, 2]);
     }
 }
