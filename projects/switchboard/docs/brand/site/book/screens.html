@@ -26,27 +26,36 @@
   .tbox .ttl { position:absolute; top:-.8lh; left:1ch; background:var(--bg); padding:0 1ch; }
   .tbox .sep { border-top:1px solid var(--faint); margin:.35lh -1.5ch; }
   .tbox pre { margin:0; white-space:pre-wrap; } .tbox .o { color:var(--dim); }
-  /* book §8 layout: margins 2 columns left/right, 1 row top/bottom, a blank row under the header,
-     no vertical rule before the panel (3 blank columns instead), no rule above the composer */
-  .head { display:flex; justify-content:space-between; padding:1lh 2ch 0; }
-  .grid { display:grid; grid-template-columns:1fr 30ch; }
+  /* book §8 layout, framed (the "app" look): a faint rounded frame on the terminal's edge (column 0,
+     row 0, last column, last row); the title "bise :*" and the summary sit in its top border; 2 blank
+     columns inside it (text from column 3); the agents panel behind a faint rule joined to the frame (┬ ┴);
+     a full-width divider ├─┤ above the composer pane, its label "you → main" left, the state right */
+  .term { padding:.5lh 1ch; }
+  .app { border:1px solid var(--faint); border-radius:7px; position:relative; }
+  .head { position:absolute; top:-.55lh; left:1ch; right:1ch; display:flex; justify-content:space-between; pointer-events:none; }
+  .head > span { background:var(--bg); padding:0 1ch; }
+  .grid { display:grid; grid-template-columns:1fr 32ch; }
   .term.narrow .grid { grid-template-columns:1fr; }
-  .feed { padding:1lh 0 1lh 2ch; min-height:120px; }
+  .feed { padding:1lh 2ch 1lh 2ch; min-height:120px; }
   .feed > * { max-width:76ch; }
   .feed pre.code, .feed pre.out { max-width:100ch; }
-  .panel { padding:1lh 2ch 1lh 3ch; }
+  .panel { padding:1lh 2ch 1lh 2ch; border-left:1px solid var(--faint); }
   .row { display:flex; justify-content:space-between; white-space:nowrap; }
   .row.sel { background:#262220; margin:0 -1ch; padding:0 1ch; }
-  .foot { padding:0 2ch 1lh; }
-  .status { display:flex; justify-content:space-between; color:var(--dim); }
+  /* the composer pane: the divider, 1 blank row, the text (a bar │ at column 3, faint when empty,
+     accent while you type; text at column 5; at least 2 rows), 1 blank row, the key bar, the frame */
+  .foot { border-top:1px solid var(--faint); position:relative; padding:1lh 2ch 0 2ch; }
+  .flabel { position:absolute; top:-.55lh; left:1ch; right:1ch; display:flex; justify-content:space-between; }
+  .flabel > span { background:var(--bg); padding:0 1ch; }
+  .status { display:none; }
   .composer { display:flex; justify-content:space-between; margin-top:4px; }
-  /* the composer block (book §14): a bar │ in column 1 (faint when empty, accent while you type,
-     the same bar your message keeps in the history), 1 blank row above and below the text,
-     at least 2 text rows, text at column 3; the key hints get their own last row */
-  .cbox { margin-top:4px; border-left:1px solid var(--faint); padding:1lh 0 1lh calc(2ch - 1px); }
+  .cbox { border-left:1px solid var(--faint); padding:0 0 0 calc(2ch - 1px); }
   .cbox.typing { border-left-color:var(--acc); }
   .cbox .ctext { min-height:2lh; white-space:pre-wrap; }
-  .hintrow { text-align:right; color:var(--dim); margin-top:2px; min-height:1lh; }
+  .ph { color:var(--dim); }
+  .hintrow { display:flex; justify-content:space-between; color:var(--dim); margin-top:1lh; min-height:1lh; }
+  .hintrow .k { color:var(--text); }
+  .hintrow .ks span + span { margin-left:3ch; }
   .queue { margin-top:4px; }
   .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)} .err{color:var(--err)} .ok{color:var(--ok)}
   .kw{color:var(--kw)} .str{color:var(--str)} .com{color:var(--com)} .num{color:var(--num)} .fn{color:var(--fn)}
@@ -105,7 +114,7 @@ const S = {
   fail: '<span class="err">✗</span>', idle: '<span class="dim">○</span>', start: '<span class="pulse dim">·</span>', stop: '<span class="dim">–</span>',
 };
 function head(right) {
-  return `<div class="head"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim">${right ?? `${S.work} 3 working · <span class="acc">? 1 needs you</span> · ♡ 1 done`}</span></div>`;
+  return `<div class="head"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim">~/acme · ${right ?? `${S.work} 3 working · <span class="acc">? 1 needs you</span> · ♡ 1 done`}</span></div>`;
 }
 function panel(rows, extra = "") {
   return `<div class="panel"><div style="margin-bottom:4px">agents <span class="faint">· ⌥ + number</span></div>${rows.map((r, i) =>
@@ -124,17 +133,31 @@ const P = {
 const PANEL = (sel, ...more) => panel([P.main, P.auth, P.rel, P.docs, P.api, P.bench, P.deploy, ...more].map(r => ({ ...r, sel: r.name === sel })));
 // the agent you talk to is named in blush, so you always know who gets your message
 const who = (st) => st.startsWith("<") ? st : st.replace(/^([\w-]+)/, '<span class="acc">$1</span>');
+// the key bar: keys in the text color, what they do dim, 3 columns apart; a tip on the right when idle
+function keybar(h) {
+  const ks = h.split(" · ").map((x) => { const i = x.indexOf(" "); return i < 0 ? `<span class="k">${x}</span>`
+    : `<span><span class="k">${x.slice(0, i)}</span> ${x.slice(i + 1)}</span>`; }).join("");
+  return `<span class="ks">${ks}</span>`;
+}
 function foot(status, composer, hints, queue = "") {
   // the composer text without the old "› " lead (the bar replaces it)
   const c = (composer ?? "").replace(/^<span class="dim">›<\/span>\s?/, "");
   const typing = c.replace(/<span class="cur"><\/span>/g, "").replace(/<[^>]+>/g, "").trim().length > 0;
-  return `<div class="foot"><div class="status"><span>${who(status ?? 'main · idle · 210k / 1M tokens · 21%')}</span></div>
+  // the old status row moves into the divider: "you → main" on the left, the state on the right
+  const st = status ?? "main · idle · 210k / 1M tokens · 21%";
+  const m = st.match(/^([\w-]+) · (.*)$/s);
+  const left = m ? `<span class="dim">you →</span> <span class="acc">${m[1]}</span>` : who(st);
+  const right = m ? `<span class="dim">${m[2]}</span>` : "";
+  const dflt = hints === undefined || hints === "";
+  const h = dflt ? "⏎ send · @ agent · ⌥0-9 switch · / commands · ? help" : hints;
+  const tip = dflt && !typing ? '<span class="dim">tip · ctrl+o opens everything folded</span>' : "";
+  return `<div class="foot"><div class="flabel"><span>${left}</span>${right ? `<span>${right}</span>` : ""}</div>
   ${queue ? `<div class="queue">${queue}</div>` : ""}
-  <div class="cbox${typing ? " typing" : ""}"><div class="ctext">${c || '<span class="cur"></span>'}</div></div>
-  <div class="hintrow">${hints === undefined || hints === "" ? "⏎ send · @ agent · / commands · ? help" : hints}</div></div>`;
+  <div class="cbox${typing ? " typing" : ""}"><div class="ctext">${c || '<span class="cur"></span><span class="ph">what\'s on your mind?</span>'}</div></div>
+  <div class="hintrow">${/<span/.test(h) ? h : keybar(h)}${tip}</div></div>`;
 }
 function term({ h, feed, pan, above = "", f, narrow, overlay = "" }) {
-  return `<div class="term${narrow ? " narrow" : ""}">${h ?? head()}<div class="grid"><div class="feed">${feed}</div>${narrow ? "" : (pan ?? PANEL())}</div>${above}${f ?? foot()}${overlay}</div>`;
+  return `<div class="term${narrow ? " narrow" : ""}"><div class="app">${h ?? head()}<div class="grid"><div class="feed">${feed}</div>${narrow ? "" : (pan ?? PANEL())}</div>${above}${f ?? foot()}</div>${overlay}</div>`;
 }
 const bg = (from, to, t) => `<div class="l3"><span class="who">@</span>${from} <span class="to">→ ${to}</span>  ${t}</div>`;
 const bgc = (from, to, t) => `<div class="l3"><span class="who">@</span><span class="nm">${from}</span><span class="to">→ </span><span class="nm to">${to}</span>${t}</div>`;
@@ -353,7 +376,7 @@ docs      waiting for your call   needs you
    bise('on it: auth-fix takes the bug, release takes the note.') +
    bgs(bg("release", "auth-fix", "which version gets the fix?"), bg("auth-fix", "release", "2.4, landing in 10 min")) +
    `<div class="b"><span class="who">♡</span>auth-fix is done · 6m · the cookie had SameSite=None without Secure; safari drops it.</div></div>`,
-   pan: PANEL("main"), h: head(), f: `<div class="foot"><div class="grid" style="grid-template-columns:1fr 30ch"><div class="ccol"><div class="status"><span>${who('main · idle · 210k / 1M tokens · 21%')}</span></div><div class="cbox typing"><div class="ctext">and ask docs to update the cookie page<span class="cur"></span></div></div><div class="hintrow">⏎ send · @ agent · / commands · ? help</div></div><div></div></div></div>` }).replace('<div class="term">', '<div class="term wide">')],
+   pan: PANEL("main"), h: head(), f: foot(undefined, 'and ask docs to update the cookie page<span class="cur"></span>').replace(/<div class="cbox[\s\S]*$/, (m) => `<div class="grid" style="grid-template-columns:1fr 32ch"><div class="ccol">${m.replace(/<\/div>$/, "")}</div><div></div></div></div>`) }).replace('<div class="term">', '<div class="term wide">')],
 
 ["bash and typescript: a box", "each bash or typescript call is a box with its title in the top border. running: border in text color, ∿ pulsing, the script in full (BISE-11), then the last 15 lines of output as they stream. done: border faint; the output keeps its first 5 and last 9 lines around ▸ n more lines (15 rows); ▸ (or ctrl+o) opens all of it in place. failed: border and ✗ in the error color, the output keeps its last 15 lines (the error is at the end). other tools (edit, read) stay one line.",
  term({ feed: `<div class="tbox run"><span class="ttl">$ bash <span class="pulse">∿</span> <span class="dim">12s</span></span><pre>npx playwright test --project=webkit</pre><div class="sep"></div><pre class="o"><span class="faint">… 38 lines above</span>

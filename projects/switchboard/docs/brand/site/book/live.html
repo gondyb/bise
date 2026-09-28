@@ -10,18 +10,24 @@
   body { background:#0b0a09; color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:13px; line-height:1.55; padding:24px; }
   .lead { color:#8a8378; max-width:112ch; margin-bottom:14px; }
   .lead b { color:var(--text); font-weight:400; }
-  .term { background:var(--bg); border-radius:8px; width:112ch; max-width:100%; box-shadow:0 12px 40px rgba(0,0,0,.45); display:flex; flex-direction:column; height:640px; }
-  .head { display:flex; justify-content:space-between; padding:1lh 2ch 0; }
+  /* framed app look (book §8): a faint frame on the terminal's edge, title and summary in its top border,
+     the panel behind a faint rule, a divider above the composer pane with "you → main" and the state */
+  .term { background:var(--bg); border-radius:8px; width:112ch; max-width:100%; box-shadow:0 12px 40px rgba(0,0,0,.45); height:640px; padding:.5lh 1ch; }
+  .app { border:1px solid var(--faint); border-radius:7px; position:relative; display:flex; flex-direction:column; height:100%; }
+  .head { position:absolute; top:-.55lh; left:1ch; right:1ch; display:flex; justify-content:space-between; }
+  .head > span, .flabel > span { background:var(--bg); padding:0 1ch; }
   .grid { display:grid; grid-template-columns:1fr 32ch; flex:1; min-height:0; }
-  .feed { padding:1lh 0 1lh 2ch; overflow-y:auto; scroll-behavior:smooth; }
+  .feed { padding:1lh 2ch 1lh 2ch; overflow-y:auto; scroll-behavior:smooth; }
   .feed > * { max-width:76ch; }
-  .panel { padding:1lh 2ch 0 3ch; overflow:hidden; }
+  .panel { padding:1lh 2ch 0 2ch; overflow:hidden; border-left:1px solid var(--faint); }
   .row { display:flex; justify-content:space-between; white-space:nowrap; transition:background .4s; }
   .row.new { background:#2e2926; }
-  .foot { padding:0 2ch 1lh; }
-  .status, .composer { display:flex; justify-content:space-between; }
-  .status { color:var(--dim); }
-  .composer { margin-top:4px; }
+  .foot { border-top:1px solid var(--faint); position:relative; padding:1lh 2ch 0 2ch; }
+  .flabel { position:absolute; top:-.55lh; left:1ch; right:1ch; display:flex; justify-content:space-between; color:var(--dim); }
+  .composer { display:flex; border-left:1px solid var(--faint); padding-left:calc(2ch - 1px); min-height:2lh; align-items:flex-start; }
+  .composer.typing { border-left-color:var(--acc); }
+  .hintrow { display:flex; justify-content:space-between; color:var(--dim); margin:1lh 0 .1lh; }
+  .hintrow .k { color:var(--text); } .hintrow .ks > span + span { margin-left:3ch; }
   .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)} .err{color:var(--err)}
   .b { margin-top:1.6em; margin-top:1lh; } .who { display:inline-block; width:3ch; }
   /* your message: a thin accent bar on the left (│), on every wrapped line; text at column 3 */
@@ -62,13 +68,14 @@
 <body>
 <p class="lead"><b>bise :* — a live simulation.</b> ~80 seconds, scripted, played in real time: you type, main starts 10 agents, they talk to each other, one needs you, you answer, main sends unfinished work back. the history only grows at the bottom, in arrival order; only the last run of messages between agents can still grow. click a <span class="dim">▸ run</span> to open it. keys: space play/pause · r restart.</p>
 
-<div class="term">
+<div class="term"><div class="app">
   <div class="head"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim" id="counts"></span></div>
   <div class="grid"><div class="feed" id="feed"><div class="tsep">· 14:02 ·</div><div id="intro"></div><div id="items"></div></div><div class="panel"><div style="margin-bottom:4px">agents <span class="faint">· ⌥ + number</span></div><div id="rows"></div></div></div>
   <div id="cards"></div>
-  <div class="foot"><div class="status"><span id="status"></span><span id="clock" class="faint"></span></div>
-    <div class="composer"><span style="flex:1;display:flex"><span class="dim">›&nbsp;</span><span id="composer"></span><input id="inp" autocomplete="off" spellcheck="false"></span><span class="dim" id="hints">⏎ send · @ agent · / commands</span></div></div>
-</div>
+  <div class="foot"><div class="flabel"><span id="status"></span><span id="clock"></span></div>
+    <div class="composer" id="cbox"><span style="flex:1;display:flex"><span id="composer"></span><input id="inp" autocomplete="off" spellcheck="false"></span></div>
+    <div class="hintrow"><span class="ks" id="hints"><span><span class="k">⏎</span> send</span><span><span class="k">@</span> agent</span><span><span class="k">⌥0-9</span> switch</span><span><span class="k">/</span> commands</span><span><span class="k">?</span> help</span></span><span id="tip">tip · ctrl+o opens everything folded</span></div></div>
+</div></div>
 
 <div class="controls">
   <button id="play">pause</button>
@@ -263,8 +270,9 @@ function render(now, force = false) {
   // the scripted "you" types only while your own composer is empty
   const inp = document.getElementById("inp"), mine = inp.value !== "" || document.activeElement === inp;
   setH(document.getElementById("composer"), mine || st.typing == null ? "" : `${st.typing}<span class="cur"></span>`);
+  document.getElementById("cbox").classList.toggle("typing", inp.value !== "" || (!mine && st.typing != null && st.typing !== ""));
   inp.placeholder = mine || st.typing != null ? "" : "type here, any time: a new request, @agent …, where are we?, no, …, an answer to a card";
-  setH(document.getElementById("status"), `<span class="acc">main</span> · ${st.typing != null ? "you're typing" : "listening"} · ${st.agents.length} agents`);
+  setH(document.getElementById("status"), `you → <span class="acc">main</span> · ${st.typing != null ? "you're typing" : "listening"} · ${st.agents.length} agents`);
   setH(document.getElementById("clock"), hhmm(st.sim));
   document.getElementById("prog").style.width = `${100 * now / END}%`;
   setH(document.getElementById("tlabel"), `${now.toFixed(0)}s / ${END}s`);
