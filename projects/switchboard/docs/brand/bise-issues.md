@@ -1548,3 +1548,44 @@ Index:
     worktree was deleted: /restore)`; `unknown command: {cmd} (see /help)`;
     `empty message for @{name}`; `--with-changes only works with -w`; the
     usage lines; `no agents yet` on /agents.
+
+### BISE-89 · queued messages
+
+- **status:** done · **owner:** bise-f-feed · **commits:** 87c0774
+- **track:** F · **owns:** new `queue.rs`; the queue hunks in `app.rs`,
+  `sb/feed.rs` (View), `sb.rs` (`ingest_for`, `send_input_to`), `run.rs`
+  (solo loop), `input.rs` (tab, ↑), `ui.rs` (the rows above the
+  composer), `sb/panel.rs` (the row count, the during-turn hint); new
+  `tests/tui_queue_tmux.py`
+- **spec:** book §13 (queued messages), §16, §17; after Codex
+  (`bottom_pane/pending_input_preview.rs`, `chatwidget/input_flow.rs`,
+  `input_restore.rs`); screen "queued messages" (marketing 484f543)
+- **do:** a message queued for after the turn stays in the TUI, listed
+  above the composer; ↑ pops it back to edit; the queue sends in order
+  when the turn ends; one queue per agent; honest about persistence.
+- **done when:** unit + tmux tests; gates green.
+- **notes:** Codex lists queued inputs above the composer and pops the last
+  one with shift+← / alt+↑; it sends one per turn. Here: `tab` during a
+  turn queues the composer text **and its images** (nothing goes to the
+  hub); rows above the composer: ` › text…` dim (one line, cut to the
+  width), the 5 newest (`+ n more` above), then the faint `queued · sent
+  when this turn ends · ↑ edit`. `↑` in an empty composer pops the newest
+  (before the history); `tab` queues it again, `⏎` steers it now, clearing
+  drops it. Codex's keys clash here (alt+↑ = previous agent, shift+← =
+  selection). When the turn ends (`--- idle`), the oldest goes out as a
+  normal message through the same path as ⏎ at idle (marks `·` → `✓✓`);
+  the feed is marked pending at once, so the next waits for the turn that
+  one starts. One queue per feed (`App.queued`, swapped with the View); an
+  agent out of view still gets its queue (`Sb::send_input_to`); the solo
+  client the same. Panel row: faint `· n queued`. During-turn hint: `tab
+  queue · ⏎ steer · ctrl+c interrupt`. **Not persisted:** a TUI restart
+  drops the queue (old lines never fire at an idle agent after a
+  restart); the book says so. **Tests:** `queue::tests` (tab/↑/tab, the
+  oldest at turn end one per turn, the rows above the composer, a queued
+  image keeps its image), `chrome_tests` hint updated,
+  `tui_queue_tmux.py` (throwaway hub, a slow `sleep 8` turn: nothing sent
+  while queued, `· 2 queued`, ↑ edit + tab, sent in order after the turn,
+  the queue empties), added to `run_all.sh`. **Gates** (own target
+  `/tmp/bise-f-target`, worktree of 20f6732 + this change): build, `cargo
+  test --workspace`, clippy `--all-targets` 0 warnings, run_all.sh green;
+  rebased on e01177d (K's panel title): build + queue/chrome tests green.
