@@ -105,7 +105,13 @@ Rules:\n\
 
 /// The first message of a task (RFC 0001 §7.1).
 pub fn brief_text(name: &str, b: &Brief) -> String {
-    let mut s = format!("# Task `{}`\n\nObjective: {}\n", name, b.objective.trim());
+    format!("# Task `{}`\n\n{}", name, brief_body(b))
+}
+
+/// The brief without its `# Task` header (sb-core adds it with the final
+/// name).
+pub fn brief_body(b: &Brief) -> String {
+    let mut s = format!("Objective: {}\n", b.objective.trim());
     if !b.context.trim().is_empty() {
         s.push_str(&format!("\nContext: {}\n", b.context.trim()));
     }

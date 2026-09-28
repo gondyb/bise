@@ -1327,9 +1327,7 @@ fn new_task(name: Option<&str>, brief: &Brief, worktree: bool, with_changes: boo
         }
         _ => router::slug(&brief.objective),
     };
-    let full = prompts::brief_text("", brief);
-    let rest = full.strip_prefix("# Task ``\n\n").unwrap_or(&full).to_string();
-    Ok(json!({"base": base, "brief": brief, "brief_text": rest, "objective": brief.objective,
+    Ok(json!({"base": base, "brief": brief, "brief_text": prompts::brief_body(brief), "objective": brief.objective,
               "worktree": worktree, "with_changes": with_changes}))
 }
 
