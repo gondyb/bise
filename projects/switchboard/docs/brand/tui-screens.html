@@ -98,8 +98,10 @@ const P = {
   ideas:  { g: S.idle, name: "ideas", r: "idle" },
 };
 const PANEL = (sel, ...more) => panel([P.main, P.auth, P.rel, P.docs, P.api, P.bench, P.deploy, ...more].map(r => ({ ...r, sel: r.name === sel })));
+// the agent you talk to is named in blush, so you always know who gets your message
+const who = (st) => st.startsWith("<") ? st : st.replace(/^([\w-]+)/, '<span class="acc">$1</span>');
 function foot(status, composer, hints) {
-  return `<div class="foot"><div class="status"><span>${status ?? 'main · idle · 210k / 1M tokens · 21%'}</span><span>${hints ?? ""}</span></div>
+  return `<div class="foot"><div class="status"><span>${who(status ?? 'main · idle · 210k / 1M tokens · 21%')}</span><span>${hints ?? ""}</span></div>
   <div class="composer"><span>${composer ?? '<span class="dim">›</span> <span class="cur"></span>'}</span><span class="dim">${hints === undefined ? "⏎ send · @ agent · / commands · ? help" : ""}</span></div></div>`;
 }
 function term({ h, feed, pan, above = "", f, narrow, overlay = "" }) {

@@ -256,7 +256,7 @@ function render(now, force = false) {
   const inp = document.getElementById("inp"), mine = inp.value !== "" || document.activeElement === inp;
   setH(document.getElementById("composer"), mine || st.typing == null ? "" : `${st.typing}<span class="cur"></span>`);
   inp.placeholder = mine || st.typing != null ? "" : "type here, any time: a new request, @agent …, where are we?, no, …, an answer to a card";
-  setH(document.getElementById("status"), `main · ${st.typing != null ? "you're typing" : "listening"} · ${st.agents.length} agents`);
+  setH(document.getElementById("status"), `<span class="acc">main</span> · ${st.typing != null ? "you're typing" : "listening"} · ${st.agents.length} agents`);
   setH(document.getElementById("clock"), hhmm(st.sim));
   document.getElementById("prog").style.width = `${100 * now / END}%`;
   setH(document.getElementById("tlabel"), `${now.toFixed(0)}s / ${END}s`);

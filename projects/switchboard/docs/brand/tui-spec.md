@@ -225,7 +225,10 @@ toggles all outputs.
   `ctrl+z` (cancel a route not yet delivered) goes away.
 - Checkout view: a one-line banner "you are talking to auth-fix directly. main
   is not in the loop. esc back to main."
-- Composer at the bottom: `› ` prompt, key hints on the right, dim.
+- Composer at the bottom: `› ` prompt, key hints on the right, dim. The
+  status row above it starts with the name of the agent you talk to
+  (`main`, `auth-fix`) in the accent color (Gabriel), so you always see who
+  gets your message; the rest of the row stays dim.
 
 ## Images
 
