@@ -128,11 +128,11 @@
   @media (max-width: 900px) { .fgrid { grid-template-columns:1fr; } }
 
   /* quiet scrollbars, everywhere (Firefox, Chrome, Safari, Edge on Windows) */
-  .scroll { scrollbar-width:thin; scrollbar-color:var(--faint) transparent; }
-  .scroll::-webkit-scrollbar { width:6px; height:6px; }
-  .scroll::-webkit-scrollbar-track { background:transparent; }
-  .scroll::-webkit-scrollbar-thumb { background:var(--faint); border-radius:3px; }
-  .scroll::-webkit-scrollbar-thumb:hover { background:var(--dim); }
+  .scrollbox { scrollbar-width:thin; scrollbar-color:var(--faint) transparent; }
+  .scrollbox::-webkit-scrollbar { width:6px; height:6px; }
+  .scrollbox::-webkit-scrollbar-track { background:transparent; }
+  .scrollbox::-webkit-scrollbar-thumb { background:var(--faint); border-radius:3px; }
+  .scrollbox::-webkit-scrollbar-thumb:hover { background:var(--dim); }
 
   /* the little facts */
   .facts li { list-style:none; margin-bottom:12px; display:grid; grid-template-columns:4ch 1fr; color:var(--dim); }
@@ -202,7 +202,7 @@
     <div class="term" aria-label="a bise session, animated">
       <div class="thead"><span>bise <span class="acc">:*</span></span><span class="faint">~/acme</span></div>
       <div class="screen">
-        <div class="feed scroll" id="feed"></div>
+        <div class="feed scrollbox" id="feed"></div>
         <div class="panel"><div class="h">agents · ⌥ + number</div><div id="agents"></div></div>
       </div>
       <div class="foot">
@@ -542,7 +542,7 @@ const plays = {
 // below picks it); the others rest on their last frame, dimmed.
 let active = null, pinned = null;
 function mini(el, i) {
-  el.innerHTML = `<div class="mfeed scroll"></div><div class="mcomp"><span class="acc">›</span> <span class="ty"></span><span class="cur"></span></div>`;
+  el.innerHTML = `<div class="mfeed scrollbox"></div><div class="mcomp"><span class="acc">›</span> <span class="ty"></span><span class="cur"></span></div>`;
   const feedEl = el.querySelector(".mfeed"), ty = el.querySelector(".ty"), comp = el.querySelector(".mcomp");
   const self = { el, feat: el.closest(".feat"), i, done: null };
   let fast = false;
