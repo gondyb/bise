@@ -27,8 +27,14 @@ Coding agents are good. Running several of them in parallel is not.
 
 Taglines (picked by Gabriel):
 
-> **Your team is as big as your ideas.**
-> *Built for people who think faster than they type.*
+> **your team is as big as your ideas.**
+> *built for people who think faster than they type.*
+
+**Style rule (Gabriel): no capital letter at the start of any word, ever,
+on every marketing piece and all website text.** It reads like a human typing
+on a keyboard. Tone: human, casual, first person when it fits; avoid the
+polished "X. None of the Y." LLM pattern. (Internal docs like this one keep
+normal capitals, except for the copy itself.)
 
 The secondary tagline is settled. The headline is the current favorite, still
 open.
@@ -51,8 +57,10 @@ Taglines:
 
 Rejected: "All the agents. None of the overhead." ("overhead" is unclear);
 "All the agents. Stay in flow."; "Code like a team of ten." (a number).
-Other candidates: "All your ideas. None of the juggling."; "Your ideas lead.
-The agents follow."; "Go as fast as your ideas."
+"All your ideas. None of the juggling." (sounds like an LLM).
+Other candidates, human tone: "too many ideas? good."; "say it once. forget
+about it. it's done."; "finally, something that keeps up with my brain.";
+"you, but with way more hands."
 
 - Never wait on an agent again.
 - One conversation. As many agents as you want.

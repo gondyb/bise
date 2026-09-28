@@ -26,8 +26,14 @@ Les agents de code sont bons. Les travailler en parallèle, non.
 
 Taglines (choisies par Gabriel, gardées en anglais) :
 
-> **Your team is as big as your ideas.**
-> *Built for people who think faster than they type.*
+> **your team is as big as your ideas.**
+> *built for people who think faster than they type.*
+
+**Règle de style (Gabriel) : jamais de majuscule en début de mot, sur tous
+les supports marketing et tous les textes du site.** Ça fait humain qui tape
+au clavier. Ton : humain, décontracté, à la première personne quand ça colle ;
+éviter la structure lisse « X. None of the Y. » qui sonne LLM. (Les docs
+internes comme celle-ci gardent les majuscules, sauf dans la copy elle-même.)
 
 La tagline secondaire est tranchée. La principale est la favorite, encore
 ouverte.
@@ -53,7 +59,10 @@ Taglines :
 |---|---|
 | Ton équipe est aussi grande que tes idées. | Your team is as big as your ideas. |
 | Fait pour ceux qui pensent plus vite qu'ils ne tapent. | Built for people who think faster than they type. |
-| Toutes tes idées. Aucun jonglage. | All your ideas. None of the juggling. |
+| trop d'idées ? tant mieux. | too many ideas? good. |
+| dis-le une fois. oublie. c'est fait. | say it once. forget about it. it's done. |
+| enfin un truc qui suit mon cerveau. | finally, something that keeps up with my brain. |
+| toi, mais avec beaucoup plus de mains. | you, but with way more hands. |
 | Ne jamais attendre un agent. | Never wait on an agent again. |
 | Un interlocuteur. Autant d'agents que tu veux. | One conversation. As many agents as you want. |
 | Reste dans le flow, main s'occupe du reste. | Stay in flow. Main handles the rest. |
