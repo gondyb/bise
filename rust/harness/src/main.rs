@@ -203,6 +203,21 @@ fn app_root(repl_name: &str) -> Option<std::path::PathBuf> {
     candidates.into_iter().find(|d| d.join(repl_name).exists())
 }
 
+/// The app root of the live REPL, or exit with how to build it.
+fn live_app_root_or_exit() -> std::path::PathBuf {
+    app_root("repl-live").unwrap_or_else(|| {
+        eprintln!("repl-live not found (compile it with `bend runtime/repl-live.bend -o repl-live`)");
+        std::process::exit(1);
+    })
+}
+
+/// `$HOME/<rel>`, or `fallback` (relative to the cwd) without a HOME.
+fn home_path(rel: &str, fallback: &str) -> String {
+    std::env::var("HOME")
+        .map(|h| format!("{}/{}", h, rel))
+        .unwrap_or_else(|_| fallback.to_string())
+}
+
 /// The workspace a switchboard command is about: --workspace, else the
 /// directory the user launched from (run.sh exports it before its cd).
 fn sb_workspace(args: &[String]) -> std::path::PathBuf {
@@ -223,10 +238,7 @@ fn sb_workspace(args: &[String]) -> std::path::PathBuf {
 
 fn run_sbd(args: &[String]) -> std::io::Result<()> {
     let paths = switchboard::paths::Paths::for_workspace(&sb_workspace(args));
-    let Some(root) = app_root("repl-live") else {
-        eprintln!("repl-live not found (compile it with `bend runtime/repl-live.bend -o repl-live`)");
-        std::process::exit(1);
-    };
+    let root = live_app_root_or_exit();
     // the hub's decisions (sb-core) come from the same app root as the
     // REPLs: a version runs its own sb-core, not the dev tree's
     if std::env::var_os("SB_CORE_BIN").is_none() && root.join("sb-core").exists() {
@@ -256,10 +268,7 @@ fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
         }
         return Ok(());
     }
-    let Some(root) = app_root("repl-live") else {
-        eprintln!("repl-live introuvable");
-        std::process::exit(1);
-    };
+    let root = live_app_root_or_exit();
     let exe = std::env::current_exe()?;
     let stream = switchboard::client::connect(&paths, &exe, &root)?;
     bend_tui::run_switchboard(
@@ -435,15 +444,12 @@ fn main() -> std::io::Result<()> {
     let sessions_dir = std::env::var("BEND_SESSIONS_DIR")
         .ok()
         .filter(|d| !d.is_empty())
-        .unwrap_or_else(|| {
-            std::env::var("HOME")
-                .map(|h| format!("{}/.bend-harness/sessions", h))
-                .unwrap_or_else(|_| ".bend-sessions".to_string())
-        });
+        .unwrap_or_else(|| home_path(".bend-harness/sessions", ".bend-sessions"));
     let _ = std::fs::create_dir_all(&sessions_dir);
-    let legacy_file = std::env::var("HOME")
-        .map(|h| format!("{}/.bend-harness/session-{}.txt", h, repl_name))
-        .unwrap_or_else(|_| format!(".bend-session-{}.txt", repl_name));
+    let legacy_file = home_path(
+        &format!(".bend-harness/session-{}.txt", repl_name),
+        &format!(".bend-session-{}.txt", repl_name),
+    );
     let session_file = if let Some(id) = &resume_id {
         match resolve_session(&sessions_dir, id) {
             Ok(path) => path,
@@ -504,9 +510,7 @@ fn main() -> std::io::Result<()> {
 
     // MCP connector index: the live REPL bootstraps the connector catalog
     // here at startup; search_mcp_tools/call_mcp_tool read it
-    let mcp_index = std::env::var("HOME")
-        .map(|h| format!("{}/.bend-harness/mcp-index.txt", h))
-        .unwrap_or_else(|_| ".bend-mcp-index.txt".to_string());
+    let mcp_index = home_path(".bend-harness/mcp-index.txt", ".bend-mcp-index.txt");
     if let Some(dir) = std::path::Path::new(&mcp_index).parent() {
         let _ = std::fs::create_dir_all(dir);
     }
