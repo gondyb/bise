@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tui_term::widget::PseudoTerminal;
 
-pub(crate) const HINT: &str = "terminal: keys go to the shell · Ctrl+` hide · wheel/Shift+PgUp scroll · drag the border to resize";
+pub(crate) const HINT: &str = "terminal: keys go to the shell · ctrl+` hide · wheel/shift+pgup scroll · drag the border to resize";
 
 const SCROLLBACK: usize = 5000;
 const MIN_ROWS: u16 = 5;
@@ -340,7 +340,7 @@ impl Term {
         let (top, panel) = split(full, self.pct);
         self.area = Some(panel);
         let inner = Block::default().borders(Borders::ALL).inner(panel);
-        let mut title = " terminal · Ctrl+` hide ".to_string();
+        let mut title = " terminal · ctrl+` hide ".to_string();
         let border = Style::default().fg(Color::DarkGray);
         let Some(pty) = self.pty.as_mut() else {
             let msg = self.error.clone().unwrap_or_default();
@@ -358,10 +358,10 @@ impl Term {
         // the clamped offset: the history may be shorter than asked
         self.scroll = parser.screen().scrollback();
         if self.scroll > 0 {
-            title = format!(" terminal · ↑ {} lines · Ctrl+` hide ", self.scroll);
+            title = format!(" terminal · ↑ {} lines · ctrl+` hide ", self.scroll);
         }
         if !alive {
-            title = " terminal · the shell exited · Ctrl+` twice for a new one ".to_string();
+            title = " terminal · the shell exited · ctrl+` twice for a new one ".to_string();
         }
         let block = Block::default().borders(Borders::ALL).title(title).border_style(border);
         let mut w = PseudoTerminal::new(parser.screen()).block(block);

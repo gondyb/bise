@@ -22,7 +22,7 @@ import tui_tmux  # noqa: E402
 
 S = "sbterm%d" % os.getpid()
 tui_tmux.S = S
-TITLE = "terminal · Ctrl+` hide"
+TITLE = "terminal · ctrl+` hide"
 
 
 def alive(pid):

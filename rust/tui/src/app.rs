@@ -67,7 +67,7 @@ pub(crate) struct App {
     pub(crate) mouse: MouseState,
     /// speech-to-text (Ctrl+R, /voice)
     pub(crate) voice: voice::Voice,
-    /// a voice notice in the status row ("No speech detected") and when
+    /// a voice notice in the status row ("no speech detected") and when
     pub(crate) voice_note: Option<(String, std::time::Instant)>,
     pub(crate) popup_sel: usize,
     /// The composer text the user closed the `@` popup on (Esc): the

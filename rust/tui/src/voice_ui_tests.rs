@@ -95,7 +95,7 @@ fn a_start_error_is_a_warning_in_the_feed() {
     assert_eq!(app.voice.state(), VoiceState::Idle);
     assert!(matches!(
         app.events.last(),
-        Some(Ev::Warn(m)) if m == "Voice transcription needs an API key: set MISTRAL_API_KEY"
+        Some(Ev::Warn(m)) if m == "voice transcription needs an API key: set MISTRAL_API_KEY"
     ));
 }
 
@@ -107,13 +107,13 @@ fn transcription_errors_and_notices_are_shown() {
     pump_voice(&mut app);
     assert!(matches!(
         app.events.last(),
-        Some(Ev::Err(m)) if m == "Voice transcription failed: HTTP 401 Unauthorized"
+        Some(Ev::Err(m)) if m == "voice transcription failed: HTTP 401 Unauthorized"
     ));
     ctrl_r(&mut app);
     press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE);
     tr.send(TranscribeEvent::Done);
     pump_voice(&mut app);
-    assert_eq!(app.voice_note.as_ref().map(|(t, _)| t.as_str()), Some("No speech detected"));
+    assert_eq!(app.voice_note.as_ref().map(|(t, _)| t.as_str()), Some("no speech detected"));
 }
 
 fn render(app: &mut App) -> ratatui::buffer::Buffer {

@@ -30,7 +30,7 @@ const TARGET_STREAMING_DELAY_MS: u32 = 500;
 const SEND_BLOCK: usize = SAMPLE_RATE as usize / 5;
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(10);
 /// The flush timed out after some text arrived.
-pub const LATE_DONE_NOTICE: &str = "The last words may be missing (the transcription did not finish in time).";
+pub const LATE_DONE_NOTICE: &str = "the last words may be missing (the transcription did not finish in time).";
 const MAX_DURATION: Duration = Duration::from_secs(300);
 /// Shorter than this, a recording has no audio blocks yet: silence then
 /// means "stopped too early", not "the microphone is muted".
@@ -59,9 +59,9 @@ pub fn flush_glyph(ms: u128) -> char {
 
 fn mic_access_hint() -> &'static str {
     if cfg!(target_os = "macos") {
-        " Grant access in System Settings → Privacy & Security → Microphone."
+        " grant access in System Settings → Privacy & Security → Microphone."
     } else if cfg!(target_os = "windows") {
-        " Grant access in Settings → Privacy & security → Microphone."
+        " grant access in Settings → Privacy & security → Microphone."
     } else {
         ""
     }
@@ -69,14 +69,14 @@ fn mic_access_hint() -> &'static str {
 
 fn no_audio_detected_message() -> String {
     format!(
-        "No audio detected from microphone — check your terminal has mic access.{}",
+        "no audio detected from the microphone — check your terminal has mic access.{}",
         mic_access_hint()
     )
 }
 
-pub const ENABLED_MESSAGE: &str = "Voice mode enabled. Press Ctrl+R to start recording.";
-pub const DISABLED_MESSAGE: &str = "Voice mode disabled.";
-pub const OFF_HINT: &str = "Voice mode is off: /voice to enable";
+pub const ENABLED_MESSAGE: &str = "voice mode on. press ctrl+r to start recording.";
+pub const DISABLED_MESSAGE: &str = "voice mode off.";
+pub const OFF_HINT: &str = "voice mode is off: /voice turns it on";
 
 // ---- keys ----
 
@@ -456,12 +456,12 @@ impl Voice {
             return Ok(());
         }
         let Some(key) = api_key.filter(|k| !k.trim().is_empty()) else {
-            return Err(format!("Voice transcription needs an API key: set {}", API_KEY_ENV));
+            return Err(format!("voice transcription needs an API key: set {}", API_KEY_ENV));
         };
         let (audio_tx, audio_rx) = mpsc::channel();
         let capture = self.recorder.start(SAMPLE_RATE, audio_tx.clone()).map_err(|e| match e {
-            StartError::NoInputDevice => format!("No audio input device found.{}", mic_access_hint()),
-            StartError::Backend(m) => format!("Audio backend is unavailable: {}", m),
+            StartError::NoInputDevice => format!("no audio input device found.{}", mic_access_hint()),
+            StartError::Backend(m) => format!("audio backend is unavailable: {}", m),
         })?;
         let (ev_tx, ev_rx) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
@@ -516,7 +516,7 @@ impl Voice {
                 Ok(TranscribeEvent::SessionCreated) => {}
                 Ok(TranscribeEvent::Error(m)) => {
                     self.cancel();
-                    out.push(VoiceOutput::Error(format!("Voice transcription failed: {}", m)));
+                    out.push(VoiceOutput::Error(format!("voice transcription failed: {}", m)));
                 }
                 Ok(TranscribeEvent::Done) | Err(TryRecvError::Disconnected) => {
                     out.extend(self.finish(now));
@@ -540,7 +540,7 @@ impl Voice {
                     out.push(VoiceOutput::Notice(LATE_DONE_NOTICE.into()));
                 } else {
                     out.push(VoiceOutput::Error(
-                        "Voice transcription failed: Transcription timed out".into(),
+                        "voice transcription failed: the transcription timed out".into(),
                     ));
                 }
             }
@@ -559,11 +559,11 @@ impl Voice {
             vec![VoiceOutput::Utterance]
         } else if !run.has_signal && duration >= MIN_SIGNAL_DURATION {
             vec![VoiceOutput::Error(format!(
-                "Voice transcription failed: {}",
+                "voice transcription failed: {}",
                 no_audio_detected_message()
             ))]
         } else {
-            vec![VoiceOutput::Notice("No speech detected".into())]
+            vec![VoiceOutput::Notice("no speech detected".into())]
         }
     }
 }
@@ -800,7 +800,7 @@ pub fn stream_session(
                     return Ok(());
                 }
                 SocketRead::Closed => {
-                    return Err("Connection closed before the recording finished".into())
+                    return Err("the connection closed before the recording finished".into())
                 }
                 SocketRead::Idle => break,
             }

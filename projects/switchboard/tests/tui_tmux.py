@@ -128,7 +128,7 @@ def main():
         wait_screen("preview of t1")
         keys("Escape")
         # a slash command and its notice
-        typed("/tasks")
+        typed("/agents")
         keys("Enter")
         wait_screen("écris {{bash: echo hi-t1}}")
         # drop from the panel with D: it asks first (BISE-43), y drops

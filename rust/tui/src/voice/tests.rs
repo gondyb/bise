@@ -182,7 +182,7 @@ fn start_needs_an_api_key() {
     let (rec, tr) = (FakeRecorder::ok(true), FakeTranscriber::default());
     let mut v = voice(&rec, &tr);
     let e = v.start(None, Instant::now()).unwrap_err();
-    assert_eq!(e, "Voice transcription needs an API key: set MISTRAL_API_KEY");
+    assert_eq!(e, "voice transcription needs an API key: set MISTRAL_API_KEY");
     assert_eq!(v.start(Some("  ".into()), Instant::now()).unwrap_err(), e);
     assert_eq!(v.state(), VoiceState::Idle);
 }
@@ -193,10 +193,10 @@ fn start_errors_say_what_to_do() {
     let mut rec = FakeRecorder::ok(true);
     rec.result = Err(StartError::NoInputDevice);
     let e = voice(&rec, &tr).start(key(), Instant::now()).unwrap_err();
-    assert!(e.starts_with("No audio input device found."), "{}", e);
+    assert!(e.starts_with("no audio input device found."), "{}", e);
     rec.result = Err(StartError::Backend("boom".into()));
     let e = voice(&rec, &tr).start(key(), Instant::now()).unwrap_err();
-    assert_eq!(e, "Audio backend is unavailable: boom");
+    assert_eq!(e, "audio backend is unavailable: boom");
 }
 
 #[test]
@@ -253,7 +253,7 @@ fn a_server_error_stops_the_recording() {
     tr.send(TranscribeEvent::Error("HTTP 401 Unauthorized".into()));
     assert_eq!(
         v.poll(Instant::now()),
-        vec![VoiceOutput::Error("Voice transcription failed: HTTP 401 Unauthorized".into())]
+        vec![VoiceOutput::Error("voice transcription failed: HTTP 401 Unauthorized".into())]
     );
     assert_eq!(v.state(), VoiceState::Idle);
     assert!(*rec.stopped.borrow());
@@ -272,7 +272,7 @@ fn no_text_and_silence_blames_the_microphone() {
     assert_eq!(out.len(), 1);
     match &out[0] {
         VoiceOutput::Error(m) => assert!(
-            m.starts_with("Voice transcription failed: No audio detected from microphone"),
+            m.starts_with("voice transcription failed: no audio detected from the microphone"),
             "{}",
             m
         ),
@@ -291,7 +291,7 @@ fn no_text_but_a_signal_or_a_short_press_is_no_speech() {
         tr.close();
         assert_eq!(
             v.poll(t0 + Duration::from_millis(ms + 10)),
-            vec![VoiceOutput::Notice("No speech detected".into())]
+            vec![VoiceOutput::Notice("no speech detected".into())]
         );
         assert_eq!(v.state(), VoiceState::Idle);
     }
@@ -307,7 +307,7 @@ fn the_flush_times_out_after_ten_seconds() {
     assert!(v.poll(t0 + Duration::from_secs(9)).is_empty());
     assert_eq!(
         v.poll(t0 + Duration::from_secs(10)),
-        vec![VoiceOutput::Error("Voice transcription failed: Transcription timed out".into())]
+        vec![VoiceOutput::Error("voice transcription failed: the transcription timed out".into())]
     );
     assert_eq!(v.state(), VoiceState::Idle);
     assert!(tr.cancelled());
@@ -399,7 +399,7 @@ fn a_closed_socket_after_the_end_is_done_before_it_a_failure() {
     let mut ws = FakeSocket::default();
     ws.script.push_back(SocketRead::Closed);
     let (r, _) = run_fake(&mut ws, vec![AudioMsg::Chunk(vec![1; 10])]);
-    assert_eq!(r, Err("Connection closed before the recording finished".into()));
+    assert_eq!(r, Err("the connection closed before the recording finished".into()));
 }
 
 #[test]

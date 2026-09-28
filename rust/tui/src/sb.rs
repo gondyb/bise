@@ -280,8 +280,8 @@ pub(super) const SB_COMMANDS: &[Cmd] = &[
         args: true,
     },
     Cmd {
-        name: "/tasks",
-        desc: "every agent: what it does, its last report, its questions",
+        name: "/agents",
+        desc: "list the agents and what they do",
         args: false,
     },
     Cmd {
@@ -636,7 +636,7 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         // an archived task reads nothing: its feed is history only
         _ if sb.focus_archived() && !typed.starts_with('/') => {
             out.push(Ev::Warn(format!(
-                "@{} is archived: its history is read-only · /restore brings it back · Esc → main",
+                "@{} is archived: its history is read-only · /restore brings it back · esc → main",
                 sb.focus
             )));
         }
@@ -732,7 +732,7 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             push_event(
                 &mut app.events,
                 &mut app.cache,
-                Ev::Info("interrupted — the turn stops at the next safe point · Ctrl+C again to quit".into()),
+                Ev::Info("interrupted — the turn stops at the next safe point · ctrl+c again to quit".into()),
             );
             true
         }

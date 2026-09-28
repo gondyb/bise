@@ -422,7 +422,7 @@ fn draw_status(app: &mut App, frame: &mut Frame, area: Rect) -> u16 {
                 ),
                 Span::styled(" · ", Style::default().fg(DIM)),
                 Span::styled("/ commandes", Style::default().fg(TEXT)),
-                Span::styled(" · End: bottom · Ctrl+C: quit", Style::default().fg(DIM)),
+                Span::styled(" · end: bottom · ctrl+c: quit", Style::default().fg(DIM)),
             ])
         };
         let w = status.width() as u16;
@@ -451,7 +451,7 @@ fn draw_prompt(app: &mut App, frame: &mut Frame, area: Rect, voice_pad: usize) {
         input_lines.push(Line::from(""));
     } else if app.ed.is_empty() {
         input_lines.push(Line::from(Span::styled(
-            sb::placeholder(app).unwrap_or_else(|| "Ask anything…".to_string()),
+            sb::placeholder(app).unwrap_or_else(|| "ask anything…".to_string()),
             Style::default().fg(DIM),
         )));
     } else {
@@ -747,7 +747,7 @@ pub(crate) fn hint_text(app: &App) -> &'static str {
     } else if let Some(h) = sb::hint(app) {
         h
     } else if app.pending {
-        "⏎ steer · Tab queue · Ctrl+C interrupt · / commands · End bottom"
+        "⏎ steer · tab queue · ctrl+c interrupt · / commands · end bottom"
     } else {
         "⏎ send · shift+⏎/ctrl+j new line · / commands · ctrl+o open/close all · ctrl+c quit"
     }

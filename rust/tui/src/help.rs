@@ -484,7 +484,7 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     } else {
         String::new()
     };
-    let foot = format!(" {}type to filter · Tab switch · Esc close ", pos);
+    let foot = format!(" {}type to filter · tab switch · esc close ", pos);
     scroll_box(frame, area, BRAND, Line::from(title), foot, lines, o.scroll);
 }
 

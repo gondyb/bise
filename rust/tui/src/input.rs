@@ -383,9 +383,9 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
                     &mut app.events,
                     &mut app.cache,
                     Ev::Info(if ok {
-                        "interrupted — the current turn stops at the next safe point · Ctrl+C again to quit".to_string()
+                        "interrupted — the current turn stops at the next safe point · ctrl+c again to quit".to_string()
                     } else {
-                        "interrupt not written (side channel unreachable) — Ctrl+C again to quit".to_string()
+                        "interrupt not written (side channel unreachable) — ctrl+c again to quit".to_string()
                     }),
                 );
             } else {
