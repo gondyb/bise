@@ -5,10 +5,12 @@
 //!
 //! Layout (functional core, imperative shell):
 //! - `model`, `router`, `wire`, `board`, `prompts`: pure data and parsing;
-//! - `core`: the hub's decisions, a pure state machine
-//!   (`Hub::handle(input) -> effects`), tested without processes;
+//! - `core`: the link to sb-core (the hub's decisions, in Bend,
+//!   `hub/*.bend`): `Hub::handle(input) -> effects`, plus the read-only
+//!   state mirror the views read; tested without REPLs or sockets;
 //! - `worktree`: the git operations of RFC 0002;
-//! - `daemon`: the imperative shell (REPL processes, sockets, journal);
+//! - `daemon`: the imperative shell (sockets, journal, feeds), with
+//!   `daemon/repl` (REPL processes) and `daemon/versions` (`/version`);
 //! - `transcript`: reading a thread (positions, cursors, origin);
 //! - `cli`: the `sb` command the agents call through their bash tool;
 //! - `client`: how a client (TUI, headless test) reaches the hub.
