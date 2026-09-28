@@ -79,9 +79,9 @@
   .thead .faint { font-weight:400; }
   .term { width:104ch; max-width:100%; background:var(--soft); border-radius:12px; font-size:13.5px; line-height:1.6; overflow:hidden; text-align:left; }
   .screen { display:grid; grid-template-columns:minmax(0,1fr) 28ch; height:420px; }
-  .feed { padding:18px 3ch 10px; overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end; }
+  .feed { padding:18px 3ch 10px; overflow-y:auto; overscroll-behavior:contain; }
   .feed > div { max-width:68ch; animation:enter .5s ease-out; }
-  @keyframes enter { from { opacity:0; transform:translateX(-8px) } }
+  @keyframes enter { from { opacity:0; transform:translateY(5px) } }
   .feed .b { margin-top:10px; }
   .tick { color:var(--faint); margin-left:1ch; } .tick.read { color:var(--acc); }
   .l3 { color:var(--dim); opacity:.6; padding-left:2ch; }
@@ -111,14 +111,28 @@
   .feat h3 { font-size:17px; margin:20px 0 6px; }
   .feat p { color:var(--dim); font-size:15px; margin:0; max-width:52ch; }
   .mini { background:var(--soft); border-radius:10px; font-size:13px; line-height:1.6; padding:14px 2.5ch 12px; }
-  .mfeed { height:calc(13px * 1.6 * 8); overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end; }
-  .mfeed > div { animation:enter .5s ease-out; white-space:pre-wrap; }
-  .mcomp { margin-top:8px; white-space:pre; color:var(--text); }
+  .mfeed { height:calc(13px * 1.6 * 8); overflow-y:auto; overscroll-behavior:contain; padding-right:1ch; }
+  .mfeed > div { animation:enter .45s ease-out; white-space:pre-wrap; }
+  .mfeed.still > div { animation:none; }
+  .mcomp { margin-top:8px; white-space:pre; overflow:hidden; color:var(--text); }
+  /* one demo plays at a time: the others rest on their last frame */
+  .mini { transition:opacity .6s ease; }
+  .fgrid.directed .mini:not(.active) { opacity:.42; }
+  .mini:not(.active) .cur, .mini:not(.active) .pulse { animation:none; }
+  .mini:not(.active) .cur { opacity:0; }
+  .feat { cursor:default; }
   .mcomp .cur { background:var(--acc); }
   .mini .err { color:var(--err); } .mini .ok { color:#b9d99a; } [data-theme="light"] .mini .ok { color:#3f7a2a; }
   .mini .row { display:flex; justify-content:space-between; }
   .mini .l3 { padding-left:1ch; border-left:1px solid var(--faint); margin-left:1ch; }
   @media (max-width: 900px) { .fgrid { grid-template-columns:1fr; } }
+
+  /* quiet scrollbars, everywhere (Firefox, Chrome, Safari, Edge on Windows) */
+  .scroll { scrollbar-width:thin; scrollbar-color:var(--faint) transparent; }
+  .scroll::-webkit-scrollbar { width:6px; height:6px; }
+  .scroll::-webkit-scrollbar-track { background:transparent; }
+  .scroll::-webkit-scrollbar-thumb { background:var(--faint); border-radius:3px; }
+  .scroll::-webkit-scrollbar-thumb:hover { background:var(--dim); }
 
   /* the little facts */
   .facts li { list-style:none; margin-bottom:12px; display:grid; grid-template-columns:4ch 1fr; color:var(--dim); }
@@ -188,7 +202,7 @@
     <div class="term" aria-label="a bise session, animated">
       <div class="thead"><span>bise <span class="acc">:*</span></span><span class="faint">~/acme</span></div>
       <div class="screen">
-        <div class="feed" id="feed"></div>
+        <div class="feed scroll" id="feed"></div>
         <div class="panel"><div class="h">agents · ⌥ + number</div><div id="agents"></div></div>
       </div>
       <div class="foot">
@@ -217,10 +231,10 @@
 <section id="how">
   <div class="inner blow">
     <div class="kicker">how</div>
-    <h2>you talk. i run the agents.<br>you stay in flow.</h2>
+    <h2>you talk. bise runs the agents.<br>you stay in flow.</h2>
     <ul class="how">
-      <li><span class="n">1</span><span><b>say it, and keep going.</b><span class="d">mid-thought, as often as you want. no prompt to craft, no workflow to design. i'm always listening.</span></span></li>
-      <li><span class="n">2</span><span><b>i start the agents.</b><span class="d">one per thing, in the background, in your folder. they know about each other and sort things out quietly.</span></span></li>
+      <li><span class="n">1</span><span><b>say it, and keep going.</b><span class="d">mid-thought, as often as you want. no prompt to craft, no workflow to design. bise is always listening.</span></span></li>
+      <li><span class="n">2</span><span><b>bise starts the agents.</b><span class="d">one per thing, in the background, in your folder. they know about each other and sort things out quietly.</span></span></li>
       <li><span class="n">3</span><span><b>you only hear what matters.</b><span class="d">real decisions come to you as a card. when something ships, you get a <span class="acc">♡</span>.</span></span></li>
     </ul>
   </div>
@@ -373,7 +387,10 @@ setInterval(() => {
 // ---- the demo: a scripted session that loops ----
 const feed = document.getElementById("feed"), agents = document.getElementById("agents"), typed = document.getElementById("typed"), working = document.getElementById("working");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const add = (html, cls) => { const d = document.createElement("div"); if (cls) d.className = cls; d.innerHTML = html; feed.append(d); while (feed.children.length > 16) feed.firstChild.remove(); return d; };
+// a feed follows its bottom, unless the reader scrolled up to read
+const follow = (box, stuck, instant) => { if (stuck) box.scrollTo({ top: box.scrollHeight, behavior: instant || reduced ? "auto" : "smooth" }); };
+const atBottom = (box) => box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+const add = (html, cls) => { const stuck = atBottom(feed); const d = document.createElement("div"); if (cls) d.className = cls; d.innerHTML = html; feed.append(d); follow(feed, stuck); return d; };
 const rows = {};
 function agent(n, mark, name, info) {
   let r = rows[name];
@@ -521,21 +538,92 @@ const plays = {
     m.line(`<span class="acc">♡</span> perf-bench done · merged back. worktree cleaned up.`, "b"); await m.wait(3400);
   },
 };
-function mini(el) {
-  el.innerHTML = `<div class="mfeed"></div><div class="mcomp"><span class="acc">›</span> <span class="ty"></span><span class="cur"></span></div>`;
-  const feedEl = el.querySelector(".mfeed"), ty = el.querySelector(".ty");
-  let visible = false; const gate = () => new Promise((r) => { const t = () => visible && !document.hidden ? r() : setTimeout(t, 300); t(); });
-  new IntersectionObserver(([e]) => visible = e.isIntersecting, { threshold: .3 }).observe(el);
+// each demo is a tiny terminal. only one plays at a time (the director
+// below picks it); the others rest on their last frame, dimmed.
+let active = null, pinned = null;
+function mini(el, i) {
+  el.innerHTML = `<div class="mfeed scroll"></div><div class="mcomp"><span class="acc">›</span> <span class="ty"></span><span class="cur"></span></div>`;
+  const feedEl = el.querySelector(".mfeed"), ty = el.querySelector(".ty"), comp = el.querySelector(".mcomp");
+  const self = { el, feat: el.closest(".feat"), i, done: null };
+  let fast = false;
+  const turn = () => new Promise((r) => { const t = () => active === self && !document.hidden ? r() : setTimeout(t, 120); t(); });
   const m = {
-    wait: async (ms) => { await gate(); await sleep(reduced ? Math.min(ms, 400) : ms); },
-    line(html, cls) { const d = document.createElement("div"); if (cls) d.className = cls; if (cls && cls.includes("b")) d.style.marginTop = "6px"; d.innerHTML = html; feedEl.append(d); while (feedEl.children.length > 12) feedEl.firstChild.remove(); cellify(d); return d; },
-    async type(t) { for (const ch of t) { await gate(); ty.textContent += ch; await sleep(reduced ? 0 : 28 + Math.random() * 30); } await sleep(300); },
-    clear() { ty.textContent = ""; },
+    wait: async (ms) => { if (fast) return; await turn(); await sleep(reduced ? Math.min(ms, 400) : ms); await turn(); },
+    line(html, cls) {
+      const stuck = fast || atBottom(feedEl);
+      const d = document.createElement("div"); if (cls) d.className = cls; if (cls && cls.includes("b")) d.style.marginTop = "6px";
+      d.innerHTML = html; feedEl.append(d); cellify(d); follow(feedEl, stuck, fast); return d;
+    },
+    async type(t) {
+      if (fast) { ty.textContent += t; return; }
+      for (const ch of t) { await turn(); ty.textContent += ch; comp.scrollLeft = comp.scrollWidth; await sleep(reduced ? 0 : 28 + Math.random() * 30); }
+      await sleep(300);
+    },
+    clear() { ty.textContent = ""; comp.scrollLeft = 0; },
     async send(t, keep) { await m.type(t); m.clear(); const d = m.line(`${t}<span class="tick">✓</span>`, "b"); if (!keep) { await m.wait(450); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`; } await m.wait(400); return d; },
     async main(t) { m.line(`<span class="acc">:*</span> ${t}`); await m.wait(300); },
   };
-  (async () => { for (;;) { await gate(); feedEl.innerHTML = ""; await sleep(600); await plays[el.dataset.play](m); } })();
+  const play = () => plays[el.dataset.play](m);
+  // first, a still: the last frame, drawn at once
+  (async () => {
+    await sleep(0);   // let the whole script load first (cellify's regexp is defined below)
+    fast = true; feedEl.classList.add("still"); await play(); m.clear(); feedEl.classList.remove("still"); fast = false;
+    for (;;) {
+      await turn();
+      feedEl.innerHTML = ""; m.clear(); await sleep(350);
+      await play();
+      await sleep(900);
+      finished(self);
+    }
+  })();
+  return self;
 }
+
+// ---- the director: play the most relevant demo, one at a time ----
+// 1. the one under the pointer (or tapped) wins, and loops while it's there;
+// 2. otherwise the one nearest the middle of the screen;
+// 3. when a demo ends, the next visible one in reading order takes over,
+//    so a row plays left then right, like reading.
+const grid = document.querySelector(".fgrid");
+const minis = [...document.querySelectorAll("[data-play]")].map(mini);
+const seen = (el) => { const r = el.getBoundingClientRect(); const h = Math.min(r.bottom, innerHeight) - Math.max(r.top, 0); return Math.max(0, h) / r.height; };
+const off = (el) => { const r = el.getBoundingClientRect(); return Math.abs((r.top + r.bottom) / 2 - innerHeight / 2); };
+const rowOf = (m) => Math.round(m.el.getBoundingClientRect().top);
+function best() {
+  const vis = minis.filter((m) => seen(m.el) >= .6);
+  return vis.length ? vis.sort((a, b) => off(a.el) - off(b.el) || a.i - b.i)[0] : null;
+}
+function setActive(m) {
+  if (m === active) return;
+  active?.el.classList.remove("active");
+  active = m; m?.el.classList.add("active");
+  grid.classList.toggle("directed", !!m);
+}
+function finished(m) {
+  if (active !== m) return;
+  if (pinned === m) return;               // still under the pointer: play it again
+  const vis = minis.filter((x) => seen(x.el) >= .6);
+  if (!vis.includes(m)) return setActive(best());
+  const next = vis[(vis.indexOf(m) + 1) % vis.length];
+  setActive(next === m ? m : next);
+}
+function onView() {
+  if (pinned) return;
+  const b = best();
+  if (!b) return setActive(null);
+  if (!active || seen(active.el) < .6) return setActive(b);
+  // the reader moved on to another row: follow them, don't finish the old one
+  if (rowOf(b) !== rowOf(active) && off(active.el) - off(b.el) > 140) setActive(b);
+}
+let ticking = false;
+addEventListener("scroll", () => { if (!ticking) { ticking = true; requestAnimationFrame(() => { ticking = false; onView(); }); } }, { passive: true });
+addEventListener("resize", onView);
+for (const m of minis) {
+  m.feat.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") { pinned = m; setActive(m); } });
+  m.feat.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse" && pinned === m) pinned = null; });
+  m.feat.addEventListener("click", () => { pinned = null; setActive(m); });   // touch: tap to play
+}
+setTimeout(onView, 300);
 
 // ---- one fixed cell per symbol in the demo (fallback glyphs are not 1ch) ----
 const GLYPH_RE = /[\u2010-\u2BFF\u2E00-\u2E7F]/;
@@ -558,7 +646,6 @@ cellify(term);
 new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && !n.classList.contains("gc")) cellify(n); })
   .observe(term, { childList: true, subtree: true });
 document.querySelectorAll(".feat p, .facts").forEach(cellify);
-document.querySelectorAll("[data-play]").forEach(mini);
 </script>
 </body>
 </html>
