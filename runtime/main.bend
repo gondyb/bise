@@ -47,12 +47,35 @@ type RtEnd is Type:
 
 # ---- the IO loop ----
 
-# send one batch of lines to the loop's output (Pv.send); every batch
-# also leaves its breadcrumbs in the session debug log
+def print_lines(lines: List<&2, String>) -> IO(Unit):
+  match lines:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case Con{l, rest}:
+      do IO<Unit>:
+        IO.print(l)
+        print_lines(rest)
+
+# send one batch of lines to the loop's output; a socket send hands the
+# socket back, so the new Pv.Out is returned for the next hop.
+# every batch also leaves its breadcrumbs in the session debug log;
+# the wire log: Pv.wire_log (the provider's in-flight notes share it)
 def emit(out: Pv.Out, +lines: List<&2, String>) -> IO(Pv.Out):
-  do IO<Pv.Out>:
-    d : Unit <- Dbg.sent(lines)
-    Pv.send(out, lines)
+  match out:
+    case Pv.OStd{}:
+      do IO<Pv.Out>:
+        d : Unit <- Dbg.sent(lines)
+        print_lines(lines)
+        IO.pure(Pv.Out, Pv.OStd{})
+    case Pv.ONet{sock}:
+      do IO<Pv.Out>:
+        d : Unit <- Dbg.sent(lines)
+        +text : String <- IO.pure(String,
+          String.append(String.join(lines, "\n"), "\n"))
+        Pv.wire_log(text)
+        sm : Socket & Result<&1, &1, U32 & String, Unit> <- TCP.send(sock, text)
+        s2 : Socket <- IO.pure(Socket, Pv.out.pair(sm))
+        IO.pure(Pv.Out, Pv.ONet{s2})
 
 def emit_call_ann(out: Pv.Out, +call: T.Call, live: Bool) -> IO(Pv.Out):
   match live:
