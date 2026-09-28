@@ -15,6 +15,7 @@ import 0xbf477e663cf4acb1369a68e0f0fa713b/encoding/encoding.bend as Enc
 import ./settings.bend as St
 import ./provider-pure.bend as Pvp
 import ../core/anth-stream.bend as As
+import ./debug.bend as Dbg
 # ---- the live provider call, fully in Bend (hub HTTP client) ----
 # The wire request (MODEL/TOOL/MSG/CALL lines) becomes the provider
 # JSON in core/api.bend, is POSTed by the hub HTTP client, and the reply
@@ -106,16 +107,29 @@ def verdict_res(+res: Http.Res, st: Api.Style) -> Pvp.Attempt:
       Pvp.attempt_status(status, Http.header(h, "retry-after"),
         Api.reply_of_for(st, status, Http.text(res)))
 
+# one attempt as the loop and the debug log see it: the policy's
+# verdict, the HTTP status (0: no response) and the raw body received
+type Got is Data:
+  Got{a: Pvp.Attempt, status: U32, raw: String}
+
+def got_err(+e: Http.Err) -> Got:
+  Got{Pvp.attempt_err(net_of(e)), 0, ""}
+
+def got_res(+res: Http.Res, st: Api.Style) -> Got:
+  match res:
+    case Http.Res{+status, _, _}:
+      Got{verdict_res(res, st), status, Http.text(res)}
+
 def model_call.verdict(r: Result<&2, &2, Http.Err, Http.Res>, st: Api.Style)
-    -> IO(Pvp.Attempt):
+    -> IO(Got):
   match r:
     case Done{+res}:
-      do IO<Pvp.Attempt>:
+      do IO<Got>:
         dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
         d : Unit <- model_call.res.dumper(dr, res)
-        IO.pure(Pvp.Attempt, verdict_res(res, st))
+        IO.pure(Got, got_res(res, st))
     case Fail{+e}:
-      IO.pure(Pvp.Attempt, Pvp.attempt_err(net_of(e)))
+      IO.pure(Got, got_err(e))
 
 # ---- where the retry notes go: the loop's output, carried through ----
 # (runtime/main.bend's Out, mirrored: this module sits below main)
@@ -211,15 +225,15 @@ def model_call.step(a: Pvp.Attempt, n: Note, +k: Nat, +tries: Nat,
 
 type Rd is Type:
   RdEnd{st: Http.Stream, parts: List<&2, String>}
-  RdErr{st: Http.Stream, e: Http.Err}
-  RdStop{st: Http.Stream}
+  RdErr{st: Http.Stream, parts: List<&2, String>, e: Http.Err}
+  RdStop{st: Http.Stream, parts: List<&2, String>}
 
 @unsafe
 def sse.flag.set(on: Bool, st: Http.Stream, +parts: List<&2, String>,
     +ipath: String) -> IO(Rd):
   match on:
     case True{}:
-      IO.pure(Rd, RdStop{st})
+      IO.pure(Rd, RdStop{st, parts})
     case False{}:
       sse.read(st, parts, ipath)
 
@@ -250,7 +264,7 @@ def sse.got(r: Http.Stream & Result<&2, &2, Http.Err, Maybe<&2, String>>,
     case (st, res):
       match res:
         case Fail{+e}:
-          IO.pure(Rd, RdErr{st, e})
+          IO.pure(Rd, RdErr{st, parts, e})
         case Done{+m}:
           sse.piece(m, st, parts, ipath)
 
@@ -284,54 +298,58 @@ def sse.verdict.pick(ok: Bool, +status: U32, +retry_after: String,
         Api.reply_of_for(Api.Anthropic{}, status, text))
 
 def sse.body(+status: U32, +retry_after: String, +text: String)
-    -> IO(Pvp.Attempt):
-  do IO<Pvp.Attempt>:
+    -> IO(Got):
+  do IO<Got>:
     dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
     d : Unit <- sse.dump(dr, text)
-    IO.pure(Pvp.Attempt,
-      sse.verdict.pick(U32.is_eq(status, 200), status, retry_after, text))
+    IO.pure(Got,
+      Got{sse.verdict.pick(U32.is_eq(status, 200), status, retry_after, text),
+        status, text})
 
+# a stream cut short keeps what it had received (the debug log shows
+# how far the reply got)
 def sse.done(rd: Rd, +status: U32, +retry_after: String, +ipath: String)
-    -> IO(Pvp.Attempt):
+    -> IO(Got):
   match rd:
     case RdEnd{st, +parts}:
-      do IO<Pvp.Attempt>:
+      do IO<Got>:
         c : Unit <- Http.stream.close(st)
         sse.body(status, retry_after, sse.text(parts))
-    case RdErr{st, +e}:
-      do IO<Pvp.Attempt>:
+    case RdErr{st, +parts, +e}:
+      do IO<Got>:
         c : Unit <- Http.stream.close(st)
-        IO.pure(Pvp.Attempt, Pvp.attempt_err(net_of(e)))
-    case RdStop{st}:
-      do IO<Pvp.Attempt>:
+        IO.pure(Got, Got{Pvp.attempt_err(net_of(e)), status, sse.text(parts)})
+    case RdStop{st, +parts}:
+      do IO<Got>:
         c : Unit <- Http.stream.close(st)
         # consume the flag: the boundary drains stay clean
         u : Unit <- P.write_file(ipath, "")
-        IO.pure(Pvp.Attempt, Pvp.AFail{"interrupted by the user"})
+        IO.pure(Got, Got{Pvp.AFail{"interrupted by the user"}, status,
+          sse.text(parts)})
 
 @unsafe
-def sse.head(sr: Http.Stream & Http.Res, +ipath: String) -> IO(Pvp.Attempt):
+def sse.head(sr: Http.Stream & Http.Res, +ipath: String) -> IO(Got):
   match sr:
     case (st, res):
       match res:
         case Http.Res{+status, +h, _}:
-          do IO<Pvp.Attempt>:
+          do IO<Got>:
             rd : Rd <- sse.read(st, Nil{}, ipath)
             sse.done(rd, status, Http.header(h, "retry-after"), ipath)
 
 @unsafe
 def sse.opened(r: Result<&1, &1, Http.Err, Http.Stream>, +ipath: String)
-    -> IO(Pvp.Attempt):
+    -> IO(Got):
   match r:
     case Fail{+e}:
-      IO.pure(Pvp.Attempt, Pvp.attempt_err(net_of(e)))
+      IO.pure(Got, got_err(e))
     case Done{st}:
       sse.head(Http.stream.res(st), ipath)
 
 @unsafe
 def sse.call(+url: String, hdrs: Map<&2, List<&2, String>>, +body: String)
-    -> IO(Pvp.Attempt):
-  do IO<Pvp.Attempt>:
+    -> IO(Got):
+  do IO<Got>:
     +ipath : String <- interrupt_path()
     r : Result<&1, &1, Http.Err, Http.Stream> <- Http.open.with("POST", url,
       hdrs, body, Pvp.stream_step_ms())
@@ -339,15 +357,15 @@ def sse.call(+url: String, hdrs: Map<&2, List<&2, String>>, +body: String)
 
 # the whole reply at once (the OpenAI-compatible providers)
 def whole.call(+url: String, hdrs: Map<&2, List<&2, String>>, +body: String,
-    st: Api.Style) -> IO(Pvp.Attempt):
-  do IO<Pvp.Attempt>:
+    st: Api.Style) -> IO(Got):
+  do IO<Got>:
     r : Result<&2, &2, Http.Err, Http.Res> <- Http.fetch.with("POST", url,
       hdrs, body, Pvp.step_timeout_ms())
     model_call.verdict(r, st)
 
 @unsafe
 def call.pick(is_anth: Bool, +url: String, hdrs: Map<&2, List<&2, String>>,
-    +body: String, st: Api.Style) -> IO(Pvp.Attempt):
+    +body: String, st: Api.Style) -> IO(Got):
   match is_anth:
     case True{}:
       sse.call(url, hdrs, body)
@@ -362,9 +380,23 @@ def wire_body.pick(is_anth: Bool, +body: String) -> String:
     case False{}:
       body
 
+# the attempt, into the session debug log when it is an incident
+def model_call.log(+call: Nat, +tries: Nat, +model: String, +url: String,
+    +json: String, g: Got) -> IO(Unit):
+  match g:
+    case Got{+a, +status, +raw}:
+      Dbg.attempt(call, tries, model, url, status, json, raw, a)
+
+def got_attempt(g: Got) -> Pvp.Attempt:
+  match g:
+    case Got{+a, _, _}:
+      a
+
+# one call = up to max_attempts attempts; `call` (its start time, ms)
+# names the call in the debug log
 @unsafe
 def model_call.try(fuel: Nat, +tries: Nat, n: Note, +request: String,
-    +key: String, +st: Api.Style, +model: String)
+    +key: String, +st: Api.Style, +model: String, +call: Nat)
     -> IO(Note & Rem.RemoteRes):
   match fuel:
     case 0n:
@@ -372,23 +404,27 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Note, +request: String,
         (n, Rem.RRErr{"provider unreachable: retries exhausted"}))
     case 1n+k:
       do IO<Note & Rem.RemoteRes>:
-        +body : String <- IO.pure(String,
-          Enc.utf8.encode(wire_body.pick(Api.is_anthropic(st),
-            Api.api_body_for(st, model, Api.parse_wire(request)))))
+        +json : String <- IO.pure(String,
+          wire_body.pick(Api.is_anthropic(st),
+            Api.api_body_for(st, model, Api.parse_wire(request))))
+        +body : String <- IO.pure(String, Enc.utf8.encode(json))
         dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
         dump_dbg : Unit <- dump_wire(P.env_or(dr, ""), body)
         hdrs : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
           model_headers(st, key))
         ur : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_PROVIDER_URL")
-        a : Pvp.Attempt <- call.pick(Api.is_anthropic(st),
-          Pvp.provider_url(P.env_or(ur, ""), st), hdrs, body, st)
-        model_call.step(a, n, k, tries,
+        +url : String <- IO.pure(String, Pvp.provider_url(P.env_or(ur, ""), st))
+        +g : Got <- call.pick(Api.is_anthropic(st), url, hdrs, body, st)
+        lg : Unit <- model_call.log(call, tries, model, url, json, g)
+        model_call.step(got_attempt(g), n, k, tries,
           k2 => n2 => model_call.try(k2, Nat.add(tries, 1n), n2, request, key,
-            st, model))
+            st, model, call))
 
 def model_call.go(n: Note, +request: String, +key: String, +st: Api.Style,
     +model: String) -> IO(Note & Rem.RemoteRes):
-  model_call.try(Pvp.max_attempts(), 0n, n, request, key, st, model)
+  do IO<Note & Rem.RemoteRes>:
+    +call : Nat <- IO.now()
+    model_call.try(Pvp.max_attempts(), 0n, n, request, key, st, model, call)
 
 def model_call.key(empty: Bool, n: Note, +request: String, +key: String,
     +st: Api.Style, +model: String) -> IO(Note & Rem.RemoteRes):

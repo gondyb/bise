@@ -10,9 +10,11 @@ import ../core/types.bend as T
 import ./persist.bend as P
 import ./main.bend as R
 import ./repl-core.bend as Rc
+import ./debug.bend as Dbg
 
 def main() -> IO(Unit):
   do IO<Unit>:
+    dbg : Unit <- Dbg.start()
     +p : U32 <- Rc.repl_port(7700)
     l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", p))
     +ps : String <- IO.pure(String, U32.show(p))

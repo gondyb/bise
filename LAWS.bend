@@ -25,6 +25,7 @@ import ./runtime/mcp-pure.bend as Mc
 import ./runtime/skills-pure.bend as Sk
 import ./runtime/repl-core-pure.bend as Rp
 import ./vendor/json.bend as J
+import ./runtime/debug-pure.bend as Dg
 
 # LAW: a checkpoint restores to exactly the session it exported.
 law checkpoint_roundtrip:
@@ -2322,3 +2323,55 @@ law interrupt_flag_semantics:
 # LAW: a streamed read waits 90 s at most (events come every few seconds).
 law provider_stream_step_timeout:
   {Pv.stream_step_ms() == 90000 : U32}
+
+# LAW: a debug event is one JSON object on one line: ts, src, kind, then
+# the fields in order; strings are JSON-escaped (a newline stays \\n).
+law debug_event_line:
+  {Dg.ev_line(7n, "a\"b", Con{Dg.FStr{"k", "x\ny"}, Con{Dg.FNat{"n", 3n}, Nil{}}})
+    == "{\"ts\":7,\"src\":\"repl\",\"kind\":\"a\\\"b\",\"k\":\"x\\ny\",\"n\":3}" : String}
+
+# LAW: only obs and tool annotations become breadcrumbs, one line each.
+law debug_crumbs_filter:
+  {Dg.crumbs(Con{"  obs: turn_started", Con{"hello", Con{"tool #3 bash : ls", Nil{}}}}, 5n)
+    == "{\"ts\":5,\"src\":\"repl\",\"kind\":\"sent\",\"line\":\"obs: turn_started\"}\n{\"ts\":5,\"src\":\"repl\",\"kind\":\"sent\",\"line\":\"tool #3 bash : ls\"}\n" : String}
+
+# LAW: a first attempt that works is not logged; a later one that works
+# is a recovery; a failure, a retry or a 200 carrying an ERROR reply is
+# an incident.
+law debug_plan_ok_first:
+  {Dg.plan(Pv.AOk{"OK\nEND\n"}, 0n) == Dg.PSkip{} : Dg.Plan}
+
+law debug_plan_recovered:
+  {Dg.plan(Pv.AOk{"OK\nEND\n"}, 2n) == Dg.PRecovered{} : Dg.Plan}
+
+law debug_plan_error_reply:
+  {Dg.plan(Pv.AOk{"ERROR provider refusal: x"}, 0n)
+    == Dg.PFailed{"error_reply", "ERROR provider refusal: x", 0} : Dg.Plan}
+
+law debug_plan_retry:
+  {Dg.plan(Pv.ARetry{5000, "provider 529 (transient)"}, 1n)
+    == Dg.PFailed{"retry", "provider 529 (transient)", 5000} : Dg.Plan}
+
+# LAW: an artifact is cut at the limit, and says how long it was.
+law debug_clip:
+  {Bool.and(String.eq(Dg.clip("abcdef", 3n), "abc\n[... truncated: 6 chars in total]"),
+      String.eq(Dg.clip("abc", 3n), "abc"))
+    == True{} : Bool}
+
+# LAW: the reply artifact names the attempt 1-based, like the retry notes.
+law debug_reply_name:
+  {Dg.reply_name(12n, 0n) == "reply-12-1.txt" : String}
+
+# LAW: the clock probe answers "<status>\n<epoch ms>": the offset is
+# epoch - mono; an unreadable answer gives no offset (0).
+law debug_clock_anchor:
+  {Dg.anchor(Con{"0", Con{"1500", Nil{}}}, 500n) == 1000n : Nat}
+
+law debug_clock_anchor_failed:
+  {Dg.anchor(Con{"127", Con{"sh: perl: not found", Nil{}}}, 500n) == 0n : Nat}
+
+# LAW: an event is stamped mono + the stored offset, mono without one.
+law debug_stamp:
+  {Bool.and(Nat.is_eq(Dg.stamp(Some{"1000\n"}, 5n), 1005n),
+      Nat.is_eq(Dg.stamp(None{}, 5n), 5n))
+    == True{} : Bool}

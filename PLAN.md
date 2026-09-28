@@ -64,6 +64,7 @@ Runtime (IO):
 - `runtime/mcp.bend`, `runtime/skills.bend` — MCP connectors, skills.
 - `runtime/remote.bend` — the provider request/reply line format.
 - `runtime/persist.bend` — the session checkpoint file.
+- `runtime/debug.bend` (+ `debug-pure.bend`) — the session debug log: events.jsonl, provider incident artifacts.
 - `runtime/model.bend` — scripted provider replies.
 - `runtime/repl-core.bend` — the REPL line server; `runtime/repl-live.bend` and `runtime/repl.bend` are its two entries.
 - `runtime/demo.bend` — scripted scenarios (harness-demo).
@@ -1204,3 +1205,47 @@ rail via Ctrl+T, ✓ green / ✗ red tool lines, ↳ previews, the pinned
 "↓ Bas (End)" bar, PageUp/End re-stick, composer wrap flush against
 the ┃ border, Ctrl+J newline with the "⏎ envoyer · ⇧⏎ ligne" meta
 variant, and the hint row intact at the right edge.
+
+## 2026-09-28 — Session debug log: every error leaves a trail
+
+Every session now keeps `~/.bend-harness/sessions/<id>.debug/` next to
+its checkpoint (the parent creates it and passes `BEND_DEBUG_DIR`; the
+scripted suites never set it, so they stay byte-identical).
+
+```
+<id>.debug/
+├── events.jsonl          one JSON object per line, src = parent | repl
+├── clock                 the REPL's clock offset (epoch ms - IO.now())
+├── req-<call>.json       request body of a call that failed (once per call)
+├── reply-<call>-<n>.txt  raw reply / SSE text of failed attempt n (256 KB max)
+└── crash-<ts>/           one per REPL crash
+    ├── stderr.txt        the dead generation's stderr ("bend: ...")
+    ├── stdout.txt        its stdout (banner, mcp bootstrap) - overwritten on respawn
+    ├── session.txt       the checkpoint it restarts from
+    └── env.txt           the BEND_* environment
+```
+
+Events:
+- parent (rust/harness/src/debuglog.rs): `harness_start` (args, repl
+  binary + mtime, port), `repl_spawn` (generation, pid, cause
+  start|reload|crash), `repl_ready`, `repl_reload`,
+  `reload_recompile_failed`, `repl_crash` (exit status, last `bend:`
+  line, uptime, crashes in a row, snapshot path), `repl_start_failed`,
+  `crash_loop_stop`, `harness_exit` (+ TUI error), `panic` (message,
+  location, backtrace; the hook chains to ratatui's restore).
+- REPL: `repl_start` (clock anchor), `sent` (every obs line and tool
+  annotation sent to the client, 2000 chars max: the breadcrumbs before
+  a crash), `provider_attempt_failed` (call, attempt, verdict
+  retry|fail|error_reply, why, status, retry-after, model, url, sizes,
+  artifact names), `provider_recovered`.
+
+`IO.now()` is monotonic (ms since boot) and Bend has no wall clock: at
+startup the REPL probes epoch ms once (`perl` Time::HiRes, `date +%s`
+fallback), stores the offset in `clock`, and stamps events mono +
+offset, so both sources sort on one time scale. 11 laws pin the line
+format, the breadcrumb filter, the incident policy, the clip and the
+clock (315 total). events.jsonl rotates to events.1.jsonl past 8 MB at
+startup.
+
+Investigating: `tail -50 <id>.debug/events.jsonl` (or `jq -c 'select(.kind
+!= "sent")'` for the incidents only), then the artifacts it names.

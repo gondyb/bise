@@ -947,3 +947,36 @@ def Laws.interrupt_flag_semantics():
 
 def Laws.provider_stream_step_timeout():
   {==}
+
+def Laws.debug_event_line():
+  {==}
+
+def Laws.debug_crumbs_filter():
+  {==}
+
+def Laws.debug_plan_ok_first():
+  {==}
+
+def Laws.debug_plan_recovered():
+  {==}
+
+def Laws.debug_plan_error_reply():
+  {==}
+
+def Laws.debug_plan_retry():
+  {==}
+
+def Laws.debug_clip():
+  {==}
+
+def Laws.debug_reply_name():
+  {==}
+
+def Laws.debug_clock_anchor():
+  {==}
+
+def Laws.debug_clock_anchor_failed():
+  {==}
+
+def Laws.debug_stamp():
+  {==}

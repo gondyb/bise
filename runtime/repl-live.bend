@@ -22,6 +22,7 @@ import ../runtime/bash.bend as Sh
 import ../runtime/provider.bend as Pv
 import ../runtime/settings.bend as St
 import ./repl-core.bend as Rc
+import ./debug.bend as Dbg
 
 # the compaction threshold for real conversations: BEND_THRESHOLD env
 # (approximate tokens). Default 800000, tuned for 1M-context models
@@ -92,6 +93,7 @@ def main() -> IO(Unit):
   do IO<Unit>:
     # the config template lands on disk on first run, before anything
     # reads it
+    dbg : Unit <- Dbg.start()
     ut : Unit <- St.write_cfg_template()
     env : Result<&1, &1, U32 & String, String> <- IO.get_env(
       "BEND_THRESHOLD")

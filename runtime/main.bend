@@ -38,6 +38,7 @@ import ./selftools-pure.bend as Sfp
 import ./proc.bend as Proc
 import ../vendor/json.bend as J
 import ./main-pure.bend as Rtp
+import ./debug.bend as Dbg
 
 # where the loop's output goes: stdout, or a REPL socket. Sockets are
 # affine handles, so Out is a Type: it is threaded, never copied.
@@ -67,14 +68,17 @@ def emit.pair(sm: Socket & Result<&1, &1, U32 & String, Unit>) -> Socket:
     case (s2, _):
       s2
 
-def emit(out: Out, lines: List<&2, String>) -> IO(Out):
+# every batch also leaves its breadcrumbs in the session debug log
+def emit(out: Out, +lines: List<&2, String>) -> IO(Out):
   match out:
     case OStd{}:
       do IO<Out>:
+        d : Unit <- Dbg.sent(lines)
         print_lines(lines)
         IO.pure(Out, OStd{})
     case ONet{sock}:
       do IO<Out>:
+        d : Unit <- Dbg.sent(lines)
         sm : Socket & Result<&1, &1, U32 & String, Unit> <- TCP.send(sock,
           String.append(String.join(lines, "\n"), "\n"))
         s2 : Socket <- IO.pure(Socket, emit.pair(sm))

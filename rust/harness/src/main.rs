@@ -47,6 +47,8 @@ use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+mod debuglog;
+
 // ---- session ids and resolution (codex-style) ----
 //
 // id = UTC timestamp + pid: sortable, readable, unique across parallel
@@ -323,6 +325,30 @@ fn main() -> std::io::Result<()> {
         .to_string();
     eprintln!("session : {}", session_id);
     std::env::set_var("BEND_SESSION_FILE", &session_file);
+
+    // the session debug log (events.jsonl + crash snapshots), shared
+    // with the REPL through BEND_DEBUG_DIR
+    let dbg = debuglog::DebugLog::open(debuglog::dir_for(&session_file));
+    std::env::set_var("BEND_DEBUG_DIR", dbg.dir());
+    dbg.install_panic_hook();
+    let repl_mtime = std::fs::metadata(&repl_bin)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs().to_string())
+        .unwrap_or_default();
+    dbg.event(
+        "harness_start",
+        &[
+            ("pid", std::process::id().to_string()),
+            ("args", args.join(" ")),
+            ("repl", repl_bin.display().to_string()),
+            ("repl_mtime", repl_mtime),
+            ("port", repl_port.to_string()),
+            ("session", session_id.clone()),
+            ("resumed", (resume || resume_id.is_some()).to_string()),
+        ],
+    );
     if resume || resume_id.is_some() {
         std::env::set_var("BEND_CONTINUE", "1");
     }
@@ -379,7 +405,10 @@ fn main() -> std::io::Result<()> {
     // generations that each died young
     let mut crashes = 0usize;
     let mut crash_note: Option<String> = None;
+    let mut generation = 0usize;
+    let mut cause = "start";
     loop {
+        generation += 1;
         let log_file = std::fs::File::create(&log_path)?;
         let err_file = std::fs::OpenOptions::new()
             .create(true)
@@ -396,6 +425,14 @@ fn main() -> std::io::Result<()> {
         };
         let spawned_at = Instant::now();
         let mut child = cmd.spawn()?;
+        dbg.event(
+            "repl_spawn",
+            &[
+                ("generation", generation.to_string()),
+                ("child_pid", child.id().to_string()),
+                ("cause", cause.to_string()),
+            ],
+        );
 
         // wait for the REPL's banner in the log — a TCP probe would steal
         // the --continue greeting (it counts as a connection)
@@ -408,6 +445,16 @@ fn main() -> std::io::Result<()> {
             }
             if start.elapsed() > Duration::from_secs(15) {
                 eprintln!("le REPL Bend n'a pas démarré sur le port {}", repl_port);
+                let exited = child.try_wait().ok().flatten().map(|s| s.to_string());
+                let snap = dbg.crash_snapshot(&err_path, err_start, &log_path, &session_file);
+                dbg.event(
+                    "repl_start_failed",
+                    &[
+                        ("generation", generation.to_string()),
+                        ("exit_status", exited.unwrap_or_else(|| "running".to_string())),
+                        ("snapshot", snap.display().to_string()),
+                    ],
+                );
                 let _ = child.kill();
                 std::process::exit(1);
             }
@@ -425,6 +472,15 @@ fn main() -> std::io::Result<()> {
                 std::process::exit(1);
             }
         };
+
+        dbg.event(
+            "repl_ready",
+            &[
+                ("generation", generation.to_string()),
+                ("model", info.model.clone()),
+                ("startup_ms", spawned_at.elapsed().as_millis().to_string()),
+            ],
+        );
 
         let _ = std::io::stderr().flush();
         let result = if headless {
@@ -479,6 +535,7 @@ fn main() -> std::io::Result<()> {
         match (&exited, log.contains("reload-exit")) {
             (Some(status), true) if status.success() => {
                 reloads += 1;
+                dbg.event("repl_reload", &[("generation", generation.to_string())]);
                 if reloads > 10 {
                     eprintln!("reload : trop de redémarrages d'affilée, arrêt.");
                     return Ok(());
@@ -488,12 +545,14 @@ fn main() -> std::io::Result<()> {
                     repl_name
                 );
                 if !recompile(repl_name, &repl_bin) {
+                    dbg.event("reload_recompile_failed", &[]);
                     eprintln!(
                         "reload : la recompilation a échoué — on garde le binaire précédent (session intacte)."
                     );
                 }
                 // the respawn restores the checkpointed session
                 std::env::set_var("BEND_CONTINUE", "1");
+                cause = "reload";
                 continue;
             }
             (Some(status), _) => {
@@ -503,7 +562,20 @@ fn main() -> std::io::Result<()> {
                 }
                 crashes += 1;
                 let why = crash_reason(&err_path, err_start, &status.to_string());
+                let snap = dbg.crash_snapshot(&err_path, err_start, &log_path, &session_file);
+                dbg.event(
+                    "repl_crash",
+                    &[
+                        ("generation", generation.to_string()),
+                        ("exit_status", status.to_string()),
+                        ("why", why.clone()),
+                        ("uptime_ms", spawned_at.elapsed().as_millis().to_string()),
+                        ("crashes_in_a_row", crashes.to_string()),
+                        ("snapshot", snap.display().to_string()),
+                    ],
+                );
                 if crashes > MAX_CRASH_RESTARTS {
+                    dbg.event("crash_loop_stop", &[("crashes", crashes.to_string())]);
                     eprintln!(
                         "le REPL Bend a planté {} fois d'affilée ({}) — arrêt. Détails : {}",
                         MAX_CRASH_RESTARTS,
@@ -518,6 +590,7 @@ fn main() -> std::io::Result<()> {
                 );
                 std::env::set_var("BEND_CONTINUE", "1");
                 crash_note = Some(why);
+                cause = "crash";
                 continue;
             }
             (None, _) => {
@@ -526,6 +599,11 @@ fn main() -> std::io::Result<()> {
                 std::thread::sleep(Duration::from_millis(200));
                 let _ = child.kill();
                 let _ = child.wait();
+                let mut fields = vec![("generation", generation.to_string())];
+                if let Err(e) = &result {
+                    fields.push(("tui_error", e.to_string()));
+                }
+                dbg.event("harness_exit", &fields);
                 return result;
             }
         }
