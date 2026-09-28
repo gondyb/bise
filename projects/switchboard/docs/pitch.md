@@ -70,6 +70,8 @@ Taglines:
 Rejected: "All the agents. None of the overhead." ("overhead" is unclear);
 "All the agents. Stay in flow."; "Code like a team of ten." (a number).
 "All your ideas. None of the juggling." (sounds like an LLM).
+In-product tagline (onboarding, bise speaks as "i"): **"your ideas. my hands.
+lots of them."** (Gabriel).
 Other candidates, human tone: "too many ideas? good."; "say it once. forget
 about it. it's done."; "finally, something that keeps up with my brain."
 

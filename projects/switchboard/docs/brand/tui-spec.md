@@ -257,7 +257,7 @@ Mockup: [tui-onboarding.html](tui-onboarding.html). Inspired by Vibe's
 screen). Six steps, `enter` to go on:
 
 1. **Welcome.** Typed: "hi, i'm bise", then the `:*` pops in blush, then
-   "code, but with way more hands." and "press enter ↵". Voice rule: in the
+   "your ideas. my hands. lots of them." (Gabriel) and "press enter ↵". Voice rule: in the
    product bise speaks as "i"; "you" is always the user. So the site tagline
    "you, but with way more hands." is not used inside the product.
 2. **Theme.** "your terminal looks dark, so i picked dark." Two live
@@ -267,7 +267,10 @@ screen). Six steps, `enter` to go on:
    depends on the providers bise ships with; browser sign-in is not built.
 4. **Folder, and one honest thing.** "i'll work in ~/lab/app · a git repo ✓.
    all your agents share this folder." Then: "agents run commands here without
-   asking you. git is your safety net." **⚠** No approval mode yet.
+   asking you. git is your safety net." **⚠** No approval mode yet; it will
+   probably ship before release. Then the copy becomes: "agents ask you before
+   risky commands (push, deleting outside this folder). change it in
+   /settings."
 5. **How it works, in three lines.** `›` you talk, `∿` agents on the right
    (⌥ + number, esc), `?` a card when someone needs you.
 6. **The real first run, with just-in-time hints.** No tour: each hint shows

@@ -72,6 +72,7 @@ Taglines :
 |---|---|
 | Ton équipe est aussi grande que tes idées. | Your team is as big as your ideas. |
 | Fait pour ceux qui pensent plus vite qu'ils ne tapent. | Built for people who think faster than they type. |
+| tes idées. mes mains. plein. | your ideas. my hands. lots of them. (tagline dans le produit, choisie par Gabriel) |
 | trop d'idées ? tant mieux. | too many ideas? good. |
 | dis-le une fois. oublie. c'est fait. | say it once. forget about it. it's done. |
 | enfin un truc qui suit mon cerveau. | finally, something that keeps up with my brain. |
