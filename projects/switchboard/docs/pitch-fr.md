@@ -27,7 +27,7 @@ Les agents de code sont bons. Les travailler en parallèle, non.
 Taglines (choisies par Gabriel, gardées en anglais) :
 
 > **you, but with way more hands.**
-> *built for people who think faster than they type.*
+> *built for engineers who think faster than they type.*
 
 **Règle de style (Gabriel) : jamais de majuscule en début de mot, sur tous
 les supports marketing et tous les textes du site.** Ça fait humain qui tape
@@ -71,7 +71,7 @@ Taglines :
 | FR | EN |
 |---|---|
 | Ton équipe est aussi grande que tes idées. | Your team is as big as your ideas. |
-| Fait pour ceux qui pensent plus vite qu'ils ne tapent. | Built for people who think faster than they type. |
+| Fait pour les ingénieurs qui pensent plus vite qu'ils ne tapent. | Built for engineers who think faster than they type. |
 | tes idées. mes mains. plein. | your ideas. my hands. lots of them. (tagline dans le produit, choisie par Gabriel) |
 | trop d'idées ? tant mieux. | too many ideas? good. |
 | dis-le une fois. oublie. c'est fait. | say it once. forget about it. it's done. |

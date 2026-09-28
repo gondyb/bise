@@ -64,7 +64,7 @@ Visual references (open them in a browser):
 | Where | Line | Status |
 |---|---|---|
 | site, headline | **you, but with way more hands.** | picked |
-| site, subline | *built for people who think faster than they type.* | picked |
+| site, subline | *built for engineers who think faster than they type.* | picked |
 | inside the product (onboarding) | **your ideas. my hands. lots of them.** | picked |
 | alternative headline | your team is as big as your ideas. | kept in reserve |
 

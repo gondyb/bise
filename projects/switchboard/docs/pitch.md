@@ -28,7 +28,7 @@ Coding agents are good. Running several of them in parallel is not.
 Taglines (picked by Gabriel):
 
 > **you, but with way more hands.**
-> *built for people who think faster than they type.*
+> *built for engineers who think faster than they type.*
 
 **Style rule (Gabriel): no capital letter at the start of any word, ever,
 on every marketing piece and all website text.** It reads like a human typing
