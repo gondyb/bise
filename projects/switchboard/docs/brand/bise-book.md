@@ -132,7 +132,7 @@ is ≥ 4.5:1 (WCAG AA) on white, our cream, black and a typical dark grey
 | text | `#ece6da` (15:1) | `#1b1917` (17.5:1) | everything you read |
 | dim | `#a39c90` (6.9:1) | `#6b645a` (5.8:1) | secondary text, level 3, durations |
 | faint | `#4a4540` | `#cfc8bd` | rails, borders, numbers; **never** for text you must read |
-| accent | `#f4a6b0` pale pink (9.7:1) | `#b8416b` raspberry (5.2:1) | the `:*`, "needs you", the agent you talk to, `✓✓` read |
+| accent | `#f4a6b0` pale pink (9.7:1) | `#b8416b` raspberry (5.2:1) | the `:*`, "needs you", the agent you talk to, `✓✓` read, the bar on your messages |
 | error | `#ff5a52` | `#b3261e` | failures only |
 | ok | `#b9d99a` | `#3f7a2a` | diff additions only |
 
@@ -155,7 +155,8 @@ One glyph per entity and per status. Color only for attention.
 
 | Glyph | Meaning |
 |---|---|
-| `›` | you (and the composer prompt) |
+| `›` | the composer prompt, and queued messages above it |
+| `│` (accent) | your message in the history: a thin bar in column 1, on every wrapped line (heavy `┃` is for cards). ASCII: `|` |
 | `:*` (accent) | main, the agent you talk to by default |
 | `◇` | an agent's brief |
 | `∴` (dim) | thinking |
@@ -227,7 +228,7 @@ ASCII (`~` working, `<3` done, `>` you, …) for terminals that draw them badly
 ```
  bise :*                              ∿ 3 working · ? 1 needs you · ♡ 1 done    ← header
                                                     │ agents · ⌥ + number
-  › the login breaks on safari                      │ 0 :* main
+  │  the login breaks on safari                     │ 0 :* main
   :* on it: auth-fix takes it.                      │ 1 ∿ auth-fix     12m · 21%
     │ @ docs      → main      v1 or v2?             │ 2 ∿ release       3m · 8%
     │ @ main      → docs      v2, the brief says so │ 3 ? docs              you
@@ -278,6 +279,8 @@ The same three levels everywhere, in main and inside an agent.
 | **1 · needs you** | a question or a blocker addressed to you | accent bar `┃` on the left, bold accent title `? docs needs you`, normal body; stays until answered; also in the card box |
 | **2 · for you** | what main or an agent says to you: replies, summaries, reports on your requests, main answering on your behalf | normal text, with `:*`, a status glyph (`♡` `✗`) or `@ name to you:` in front |
 | **3 · between agents** | messages agents send each other and to main | dim text under a faint rail: `@ from → to  text`, names padded to 10 columns, one line each, `▸` when long |
+
+- **Your messages** carry a thin accent bar `│` on the left, on every wrapped line, text at column 3; marks `·` `✓` `✓✓` at the end. Thin bar = you, heavy bar `┃` = needs you, so you can tell at a glance what you said from what the agents said (decided by Gabriel, 2026-09-28).
 
 - Traffic between agents is **always in the history** (including between two
   agents that aren't main), so what happened stays understandable. Main's
