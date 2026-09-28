@@ -142,6 +142,10 @@ commandes.
   parent (plus de réponse automatique en double) ; un steering arrivé
   pendant la réponse finale (jamais lu par le modèle, ADR 0005
   finish_turn) relance un tour.
+- `@tâche message` depuis une autre vue (RFC 0003 §5.1) : `Msg.via` = la
+  vue ; balise `<user_message via=…>` (prompts::tagged) ; à la fin du tour,
+  `answer_user_via` affiche `sb msg-in : @tâche : …` dans la vue, règle le
+  message et note main. Testé dans un hub de dev (`--dev`).
 
 ### Notes de conception du core (pour reprendre après compaction)
 

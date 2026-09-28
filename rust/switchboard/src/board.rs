@@ -500,6 +500,7 @@ mod tests {
                 created_ms: 1,
                 plain: false,
                 queued: false,
+                via: None,
             },
         });
         let t = agent_threads(&st, 8);

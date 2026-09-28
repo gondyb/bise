@@ -213,6 +213,11 @@ pub struct Msg {
     /// delivered only as a new turn (RFC 0003 §6.1).
     #[serde(default)]
     pub queued: bool,
+    /// `@task message` typed in another agent's view: that view. The
+    /// task reads it tagged, its end-of-turn answer is shown back there
+    /// (RFC 0003 §5.1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub via: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -636,6 +641,7 @@ mod tests {
             created_ms: 1,
             plain: false,
             queued: false,
+            via: None,
         };
         st.apply(&Event::MessageSent { msg: q.clone() });
         st.apply(&Event::MessageState {

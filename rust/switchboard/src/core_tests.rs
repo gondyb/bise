@@ -419,6 +419,65 @@ fn main_learns_what_the_user_said_directly() {
 }
 
 #[test]
+fn at_task_from_main_view_answers_there_and_notes_main() {
+    let mut t = T::new();
+    t.spawn_task("docs");
+    t.go(Input::ReplIdle {
+        agent: "docs".into(),
+        leftover: false,
+    });
+    t.turn(MAIN, "noté");
+    // the task reads it tagged, from the user via main's view
+    let fx = t.user(MAIN, "@docs v1 ou v2 ?");
+    let s = say_to(&fx, "docs").unwrap();
+    assert_eq!(
+        s,
+        "<user_message via=\"main\">\nv1 ou v2 ?\n</user_message>"
+    );
+    assert!(has_line(&fx, "docs", "sb you : v1 ou v2 ?"), "{:?}", fx);
+    // its end-of-turn answer comes back to main's view, main not woken
+    let fx = t.turn("docs", "la v2");
+    assert!(has_line(&fx, MAIN, "sb msg-in : @docs : la v2"), "{:?}", fx);
+    assert!(say_to(&fx, MAIN).is_none() && steer_to(&fx, MAIN).is_none());
+    assert!(t.hub.st.unanswered_for("docs").is_empty());
+    // main's next turn carries the exchange
+    let fx = t.user(MAIN, "et ensuite ?");
+    let s = say_to(&fx, MAIN).unwrap();
+    assert!(
+        s.contains("@docs answered the user (asked from @main's view: \"v1 ou v2 ?\"): \"la v2\""),
+        "{}",
+        s
+    );
+    // in the task's own view, it stays a plain user message
+    t.turn(MAIN, "ok");
+    let fx = t.user("docs", "@docs merci");
+    assert_eq!(say_to(&fx, "docs").as_deref(), Some("merci"));
+    let fx = t.turn("docs", "de rien");
+    assert!(!has_line(&fx, MAIN, "@docs : de rien"));
+}
+
+#[test]
+fn at_task_to_a_busy_task_steers_and_answers_at_turn_end() {
+    let mut t = T::new();
+    t.spawn_task("docs");
+    // docs is still in its first turn
+    let fx = t.user(MAIN, "@docs où en es-tu ?");
+    let s = steer_to(&fx, "docs").unwrap();
+    assert!(s.starts_with("<user_message via=\"main\">"), "{}", s);
+    t.go(Input::ReplLine {
+        agent: "docs".into(),
+        line: "  obs: assistant: à mi-chemin".into(),
+    });
+    let fx = t.go(Input::ReplIdle {
+        agent: "docs".into(),
+        leftover: false,
+    });
+    assert!(has_line(&fx, MAIN, "@docs : à mi-chemin"), "{:?}", fx);
+    // main still gets its own automatic reply to the brief
+    assert!(t.hub.st.unanswered_for("docs").is_empty());
+}
+
+#[test]
 fn an_explicit_route_can_be_cancelled_before_delivery() {
     let mut t = T::new();
     t.spawn_task("docs");

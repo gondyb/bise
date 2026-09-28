@@ -817,6 +817,10 @@ impl Hub {
             } else {
                 text.clone()
             };
+            if let Some(view) = m.via.as_deref().filter(|_| m.from == USER) {
+                self.answer_user_via(fx, env, agent, &m, view, &body);
+                continue;
+            }
             let _ = self.send(
                 fx,
                 env,
@@ -885,6 +889,7 @@ impl Hub {
             plain,
             auto,
             false,
+            None,
         )
     }
 
@@ -903,6 +908,7 @@ impl Hub {
         plain: bool,
         auto: bool,
         queued: bool,
+        via: Option<String>,
     ) -> Result<Msg, String> {
         let to = if to == USER {
             return Err(
@@ -978,11 +984,14 @@ impl Hub {
             created_ms: env.now(),
             plain,
             queued,
+            via,
         };
         self.emit(fx, Event::MessageSent { msg: msg.clone() });
         // a waiting recipient gets it as the result of its `sb wait`
         if let Some(i) = self.waiters.iter().position(|w| {
-            !queued && w.agent == to && (Some(w.msg) == reply_to || (expect_reply && !plain))
+            !queued
+                && w.agent == to
+                && (Some(w.msg) == reply_to || (expect_reply && !plain && from != USER))
         }) {
             let w = self.waiters.remove(i);
             let kind = if Some(w.msg) == reply_to {
@@ -1105,7 +1114,7 @@ impl Hub {
                     state: MsgState::Delivered,
                 },
             );
-            if m.plain {
+            if m.plain || m.via.is_some() {
                 fx.push(line(name, "you", &m.text));
             } else {
                 fx.push(line(
@@ -1140,6 +1149,32 @@ impl Hub {
             }
         }
         self.dirty = true;
+    }
+
+    /// RFC 0003 §5.1: the end-of-turn answer to `@task message` typed in
+    /// another view goes back to that view, and main gets it as a note.
+    fn answer_user_via(
+        &mut self,
+        fx: &mut Fx,
+        env: &mut dyn Env,
+        agent: &str,
+        m: &Msg,
+        view: &str,
+        body: &str,
+    ) {
+        self.emit(fx, Event::MessageSettled { id: m.id });
+        fx.push(line(view, "msg-in", &format!("@{} : {}", agent, body)));
+        self.note_main(
+            fx,
+            env,
+            &format!(
+                "@{} answered the user (asked from @{}'s view: \"{}\"): \"{}\"",
+                agent,
+                view,
+                clip(&one_line(&m.text), 500),
+                clip_tail(&one_line(body), 2000)
+            ),
+        );
     }
 
     fn note_main(&mut self, fx: &mut Fx, env: &mut dyn Env, text: &str) {
@@ -1667,7 +1702,24 @@ impl Hub {
                     );
                     return;
                 };
-                match self.send(fx, env, USER, &name, &text, false, None, true, false) {
+                // RFC 0003 §5.1: from another view, the task reads it
+                // tagged and its answer comes back to that view
+                let via = (name != focus).then(|| focus.clone());
+                let from_elsewhere = via.is_some();
+                let sent = self.send_mode(
+                    fx,
+                    env,
+                    USER,
+                    &name,
+                    &text,
+                    from_elsewhere,
+                    None,
+                    !from_elsewhere,
+                    false,
+                    false,
+                    via,
+                );
+                match sent {
                     Ok(m) => {
                         fx.push(line(MAIN, "route", &format!("toi → @{} : {}", name, text)));
                         if focus != MAIN || name != focus {
@@ -2121,6 +2173,7 @@ impl Hub {
                     false,
                     false,
                     queued,
+                    None,
                 );
                 match sent {
                     Ok(m) => {

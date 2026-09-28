@@ -144,6 +144,27 @@ des permissions, ni modifier le rôle du destinataire. Les approbations
 restent à l'humain (D8 : les sous-agents héritent de la politique de
 permissions).
 
+### 5.1 `@tâche message` écrit depuis une autre vue
+
+Quand l'utilisateur écrit `@tâche message` depuis une vue qui n'est pas
+celle de la tâche (celle de main, ou d'une autre tâche), le message porte
+`via=<vue>` et `expects_reply=true`. La tâche le lit balisé :
+
+```
+<user_message via="main">
+v1 ou v2 ?
+</user_message>
+```
+
+Autorité d'un message de l'utilisateur ; le prompt de rôle dit que la
+réponse sera lue dans l'autre vue, donc qu'elle doit se suffire à
+elle-même. À la fin du tour, le hub (pas le modèle) affiche le dernier
+message de la tâche dans la vue d'origine (`@tâche : …`), règle le message,
+et ajoute à main une note avec la question et la réponse (main n'est pas
+réveillé pour ça). Un tel message ne termine pas un `sb wait` ; une tâche
+occupée le reçoit en steering. Dans la vue de la tâche elle-même, rien ne
+change : message `user` sans balise.
+
 ## 6. Livraison
 
 ### 6.1 Selon l'état du destinataire

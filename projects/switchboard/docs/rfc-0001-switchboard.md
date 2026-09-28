@@ -289,6 +289,11 @@ interface DirectExchange {
 Ce résumé est construit **sans LLM** : il est déterministe et ne coûte rien.
 Le fil de main l'affiche replié : `Tu as parlé à @auth-fix (2 messages)`.
 
+`@tâche message` écrit depuis la vue de main (ou d'une autre tâche) ne
+passe pas par ce résumé : la réponse revient dans la vue d'origine et main
+reçoit une note question + réponse à la fin du tour de la tâche (RFC 0003
+§5.1).
+
 But : main ne donne pas plus tard une consigne contraire à une décision prise
 par l'utilisateur en direct.
 
