@@ -3187,7 +3187,6 @@ def hub_pb_frame(-o: HM.St, +busy: Bool, b: List<&2, HM.Msg>, +cx: HX.Cx<o>, +a:
             hub_qimp_eq(HX.d(o, p1), HX.d(o, fin), n, edf))),
         h)
 
-
 def hub_pf.run(-o: HM.St, r: HM.Run, +cx: HX.Cx<o>, +a: String, +q: List<&2, HM.Msg>, +im: Bool, +n: String,
     +ne: {String.eq(a, n) == False{} : Bool}, +h: {HI.stuck(HX.d(o, cx), hub_rts(o, cx), n) == False{} : Bool})
     -> {HI.stuck(HX.d(o, HC.pump.run(o, r, cx, a, q, im)), hub_rts(o, HC.pump.run(o, r, cx, a, q, im)), n) == False{} : Bool}:
@@ -3245,6 +3244,9 @@ def hub_pump_nsx.pick(-o: HM.St, c: Bool, +cx: HX.Cx<o>, +a: String, +xs: List<&
 def hub_pump_nsx(-o: HM.St, +cx: HX.Cx<o>, +a: String, +xs: List<&2, String>, h: hub_nsx(o, cx, a <> xs)) -> hub_nsx(o, HC.pump(o, cx, a), xs):
   +n => nx => hub_pump_nsx.pick(o, String.eq(a, n), cx, a, xs, n, {==}, h, nx)
 
+
+# ---- L4 support: names apart — the operations that keep names ----
+
 def hub_is_rename(op: HM.AgentOp) -> Bool:
   match op:
     case HM.ORename{x}:
@@ -3290,6 +3292,9 @@ def hub_prof_map(+xs: List<&2, HM.Agent>, +n: String, +op: HM.AgentOp, +nr: {hub
       {==}
     case Con{h, t}:
       hub_prof_map.pick(String.eq(HM.Agent.name(h), n), h, t, n, op, {==}, nr, hub_prof_map(t, n, op, nr))
+
+
+# ---- L4 support: names apart — a free name ----
 
 def hub_str_eq_sym_false.aa(+a: String, -b: String, s: {b == a : String}, e: {String.eq(a, b) == False{} : Bool}) -> {String.eq(a, a) == False{} : Bool}:
   %s : {String.eq(a, _) == False{} : Bool}
@@ -3392,6 +3397,9 @@ def hub_nt(+s: HM.St, +n: String, e: {HM.name_taken(s, n) == False{} : Bool}) ->
   hub_nt.named(HM.agent_named(HM.St.agents(s), n), s, n, {==},
     hub_or_false_r(String.eq(n, HM.MAIN()) || String.eq(n, HM.USER()) || String.eq(n, HM.HUB()), Maybe.is_some(&2, String, HM.resolve(s, n)), e))
 
+
+# ---- L4 support: names apart — a new agent ----
+
 def hub_allapart(ps: List<&2, List<&2, String>>, +q: List<&2, String>) -> Data:
   match ps:
     case Nil{}:
@@ -3455,6 +3463,9 @@ def hub_put_absent(+xs: List<&2, HM.Agent>, +n: String, +a: HM.Agent, f: hub_fre
         case HX.Both{f1, f2}:
           hub_put_absent.pick(String.eq(HM.Agent.name(h), n), h, t, n, a, {==},
             hub_or_false_l(String.eq(HM.Agent.name(h), n), HM.str_in(HM.Agent.aliases(h), n), f1), hub_put_absent(t, n, a, f2))
+
+
+# ---- L4 support: names apart — a rename ----
 
 def hub_str_in_snoc_false(+l: List<&2, String>, +y: String, +z: String, +a: {HM.str_in(l, z) == False{} : Bool}, b: {String.eq(y, z) == False{} : Bool})
     -> {HM.str_in(HM.snoc(String, l, y), z) == False{} : Bool}:
@@ -3557,3 +3568,67 @@ def hub_nok_ren(+xs: List<&2, HM.Agent>, +old: String, +new: String, nok: HI.Nam
       match nok f:
         case HX.Both{+a1, +nt} HX.Both{+fh, +ft}:
           hub_nok_ren.pick(String.eq(HM.Agent.name(h), old), h, t, old, new, {==}, a1, nt, fh, ft, hub_nok_ren(t, old, new, nt, ft))
+
+def hub_nok_tr(-x: List<&2, List<&2, String>>, -y: List<&2, List<&2, String>>, e: {x == y : List<&2, List<&2, String>>}, d: HI.NamesOK(y)) -> HI.NamesOK(x):
+  %Equal.sym(List<&2, List<&2, String>>, x, y, e) : HI.NamesOK(_)
+  d
+
+# every event with its journal invariant (a free name for a new task or a
+# new name) keeps the names of the agents apart
+def hub_apply_names(s: HM.St, e: HM.Ev, u: HI.NamesApart(s), +k: HX.FreshEv(s, e)) -> HI.NamesApart(HM.apply(s, e)):
+  match s:
+    case HM.St{+ag, +od, +ms, +ca, +no, +nm, +nc}:
+      match e:
+        case HM.ETaskCreated{+n, pa, br, ws, at}:
+          hub_nok_tr(HI.profile(HM.put_agent(ag, n, HM.new_agent(n, False{}, Some{pa}, ws, br, at))), HM.snoc(List<&2, String>, HI.profile(ag), [n]),
+            hub_put_absent(ag, n, HM.new_agent(n, False{}, Some{pa}, ws, br, at), hub_nt(HM.St{ag, od, ms, ca, no, nm, nc}, n, k)),
+            hub_nok_snoc(HI.profile(ag), [n], u, hub_allapart_new(HI.profile(ag), n, hub_nt(HM.St{ag, od, ms, ca, no, nm, nc}, n, k))))
+        case HM.ERenamed{old, +new}:
+          hub_nok_ren(ag, old, new, u, hub_nt(HM.St{ag, od, ms, ca, no, nm, nc}, new, k))
+        case HM.ELifecycle{+x, +l, +r}:
+          hub_nok_tr(HI.profile(HM.map_agent(ag, x, HM.OLife{l, r})), HI.profile(ag), hub_prof_map(ag, x, HM.OLife{l, r}, {==}), u)
+        case HM.EWorkspace{+x, +w}:
+          hub_nok_tr(HI.profile(HM.map_agent(ag, x, HM.OWs{w})), HI.profile(ag), hub_prof_map(ag, x, HM.OWs{w}, {==}), u)
+        case HM.EDeclared{+x, +d, +nt}:
+          hub_nok_tr(HI.profile(HM.map_agent(ag, x, HM.ODeclared{d, nt})), HI.profile(ag), hub_prof_map(ag, x, HM.ODeclared{d, nt}, {==}), u)
+        case HM.EFileTouched{+x, +p}:
+          hub_nok_tr(HI.profile(HM.map_agent(ag, x, HM.OFile{p})), HI.profile(ag), hub_prof_map(ag, x, HM.OFile{p}, {==}), u)
+        case HM.ESnapshot{+x, +sn}:
+          hub_nok_tr(HI.profile(HM.map_agent(ag, x, HM.OSnap{sn})), HI.profile(ag), hub_prof_map(ag, x, HM.OSnap{sn}, {==}), u)
+        case HM.EReported{+x, +rp}:
+          hub_nok_tr(HI.profile(HM.map_agent(ag, x, HM.OReport{rp})), HI.profile(ag), hub_prof_map(ag, x, HM.OReport{rp}, {==}), u)
+        case HM.EMsgSent{m}:
+          u
+        case HM.EMsgState{a, b}:
+          u
+        case HM.ESettled{a}:
+          u
+        case HM.ECardOpened{c}:
+          u
+        case HM.ECardClosed{a, b}:
+          u
+        case HM.EMainNote{a, b}:
+          u
+        case HM.ENotesFlushed{}:
+          u
+
+def hub_apply_all_names(+evs: List<&2, HM.Ev>, +s: HM.St, u: HI.NamesApart(s), f: HX.Fresh(evs, s)) -> HI.NamesApart(HM.apply_all(evs, s)):
+  match evs:
+    case Nil{}:
+      u
+    case Con{e, t}:
+      match f:
+        case HX.Both{k, ft}:
+          hub_apply_all_names(t, HM.apply(s, e), hub_apply_names(s, e, u, k), ft)
+
+def hub_napart_tr(-x: HM.St, -y: HM.St, e: {x == y : HM.St}, u: HI.NamesApart(y)) -> HI.NamesApart(x):
+  %Equal.sym(HM.St, x, y, e) : HI.NamesApart(_)
+  u
+
+def Laws.init_names_apart(w):
+  HX.Both{Unit{}, Unit{}}
+
+def Laws.names_apart(ins, h, u):
+  hub_napart_tr(HC.Hub.d(HC.RunR.hub(HC.run(ins, h))), HM.apply_all(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h)),
+    Laws.hub_run_replays(ins, h),
+    hub_apply_all_names(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h), u, Laws.msg_ids_fresh(ins, h)))

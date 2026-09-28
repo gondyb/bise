@@ -2492,3 +2492,17 @@ law cards_unique:
   for u: HI.UniqueCards(HC.Hub.d(h))
   HI.UniqueCards(HC.Hub.d(HC.RunR.hub(HC.run(ins, h))))
 
+# LAW (L4 support): a new hub keeps the agents' names apart...
+law init_names_apart:
+  for +w: String
+  HI.NamesApart(HM.init(w))
+
+# ...and any sequence of inputs keeps them apart: no name or old name of an
+# agent is ever a name or old name of another one (a message sent to an
+# agent can only be for it).
+law names_apart:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  for u: HI.NamesApart(HC.Hub.d(h))
+  HI.NamesApart(HC.Hub.d(HC.RunR.hub(HC.run(ins, h))))
+
