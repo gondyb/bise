@@ -6,17 +6,21 @@ empty state root (XDG_STATE_HOME) and HOME in a temp dir:
   saved in $SB_ONBOARDING_SHOTS (default: the temp dir) for the mockup
   comparison;
 - the second launch goes straight to the normal UI;
-- esc on a fresh state root skips it and marks it seen.
+- esc on a fresh state root skips it and marks it seen;
+- the one-time hints (BISE-61) of the first run: the first agent, the
+  first card, the first message between agents; each one goes away when
+  used or after the next message, and is marked in hints.json.
 
 python3 -u projects/switchboard/tests/tui_onboarding_tmux.py
 """
+import json
 import os
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tmux, screen, keys, wait_screen  # noqa: E402
+from tui_tmux import tmux, screen, keys, typed, wait_screen, wait_gone  # noqa: E402
 import tui_tmux  # noqa: E402
 
 NORMAL = "⏎ send · @ agent · / commands"
@@ -91,6 +95,28 @@ def main():
         sc = wait_screen(NORMAL)
         shot("6-first-run", sc)
         assert os.path.exists(flag), flag
+        # BISE-61: the one-time hints of the first run, one at a time
+        hints = os.path.join(root, "switchboard", "hints.json")
+        typed('[[bash: sb spawn t1 --objective "{{bash: sb report blocked pick-one}}"]]')
+        keys("Enter")
+        sc = wait_screen("new: your agents.", 60)
+        shot("7-hint-first-agent", sc)
+        keys("M-1")                       # used: it goes away
+        wait_gone("new: your agents.")
+        keys("Escape")
+        sc = wait_screen("a card: someone needs you.", 60)
+        shot("8-hint-first-card", sc)
+        typed("ok")                       # the next user message: it goes away
+        keys("Enter")
+        wait_gone("a card: someone needs you.")
+        typed('[[bash: sb spawn t2 --objective "{{bash: sleep 60}}"]] '
+              '[[bash: sb spawn t3 --objective "{{bash: sb ask t2 v1-or-v2 --timeout 60}}"]]')
+        keys("Enter")
+        sc = wait_screen("agents talk to each other.", 60)
+        shot("9-hint-first-level3", sc)
+        with open(hints) as f:
+            seen = json.load(f)
+        assert seen == {"first_agent": True, "first_card": True, "first_level3": True}, seen
         # the second launch: no onboarding
         launch(E, root, home)
         sc = wait_screen(NORMAL)

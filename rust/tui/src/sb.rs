@@ -447,6 +447,10 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
 
 fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>) {
     let Some(sb) = app.sb.as_mut() else { return };
+    // BISE-61: the first live message between agents in view
+    let level3 = sb.ready
+        && sb.focus == agent
+        && (line.starts_with("sb msg : ") || line.starts_with("sb msg-in : "));
     if sb.focus != agent {
         let visible = line.contains("obs: assistant:") || line.starts_with("sb ");
         if visible && sb.ready {
@@ -457,6 +461,9 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>) {
         ingest_at(app, line, pos);
         trim_window(app);
     });
+    if level3 {
+        crate::hints::once(app, crate::hints::Hint::FirstLevel3);
+    }
 }
 
 fn apply_state(app: &mut App, v: &Value) {
@@ -523,11 +530,26 @@ fn apply_state(app: &mut App, v: &Value) {
     if !focus_busy {
         app.interrupt_requested = false;
     }
+    // BISE-61: the first agent, the first card (one-time hints)
+    let Some(sb) = app.sb.as_ref() else { return };
+    let (agent, card) = (sb.agents.iter().any(|a| !a.main && !a.archived()), !sb.cards.is_empty());
+    if agent {
+        crate::hints::once(app, crate::hints::Hint::FirstAgent);
+    }
+    if card {
+        crate::hints::once(app, crate::hints::Hint::FirstCard);
+    } else {
+        crate::hints::used(crate::hints::Hint::FirstCard);
+    }
 }
 
 /// Change the feed in focus (checkout / return).
 pub(super) fn focus(app: &mut App, name: &str) {
     let Some(sb) = app.sb.as_mut() else { return };
+    // BISE-61: looking inside an agent is what the first-agent hint asks
+    if sb.agents.iter().any(|a| a.name == name && !a.main) {
+        crate::hints::used(crate::hints::Hint::FirstAgent);
+    }
     sb.selected = None;
     sb.preview = false;
     if sb.focus == name {
@@ -614,6 +636,8 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         }
         _ => {
             sb.send_input(typed);
+            // BISE-61: a hint goes away after the next user message
+            crate::hints::user_message();
         }
     }
     if recolor {

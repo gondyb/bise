@@ -78,6 +78,7 @@ pub mod timing;
 mod crash;
 mod help;
 mod onboarding;
+mod hints;
 mod voice;
 #[cfg(test)]
 mod voice_ui_tests;

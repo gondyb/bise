@@ -284,6 +284,7 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
                 } else {
                     draw(app, f)
                 }
+                crate::hints::draw(app, f); // BISE-61: one-time hints
                 crate::theme::asciify(f.buffer_mut()); // BISE-84: BISE_ASCII=1
             })
         });
