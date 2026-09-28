@@ -425,8 +425,7 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         (KeyCode::Tab, _) => {
             if let Some(c) = sel {
                 // popup completion
-                app.ed.set(&c.fill, c.fill_cursor);
-                app.popup_sel = 0;
+                pick(app, c);
             } else if app.pending {
                 // codex queue_keys: queue the draft for after
                 // the turn ("say" forces the message reading
@@ -453,8 +452,7 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
                     app.ed.take();
                     handle_input(app, &v);
                 } else {
-                    app.ed.set(&c.fill, c.fill_cursor);
-                    app.popup_sel = 0;
+                    pick(app, c);
                 }
             } else {
                 let v = app.ed.take().trim().to_string();
@@ -489,4 +487,14 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         _ => composer_key(app, k),
     }
     false
+}
+
+/// Take the popup entry `c` into the composer (a picked path ranks first
+/// in the next `@` searches).
+fn pick(app: &mut App, c: &PopItem) {
+    if let Some(p) = &c.path {
+        files::picked(p);
+    }
+    app.ed.set(&c.fill, c.fill_cursor);
+    app.popup_sel = 0;
 }

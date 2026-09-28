@@ -84,7 +84,7 @@ pub(crate) fn version_items(app: &App) -> Vec<PopItem> {
     let Some(sb) = app.sb.as_ref() else {
         return Vec::new();
     };
-    if app.ed.browsing() || app.popup_dismissed.as_deref() == Some(app.ed.text.as_str()) {
+    if !popup_open(app) {
         return Vec::new();
     }
     let Some(q) = version_query(&app.ed.text) else {
@@ -110,6 +110,7 @@ pub(crate) fn version_items(app: &App) -> Vec<PopItem> {
             fill_cursor: app.ed.cursor,
             run: None,
             closable: true,
+            path: None,
         }];
     }
     filter_versions(&sb.versions, q)
@@ -129,6 +130,7 @@ pub(crate) fn version_items(app: &App) -> Vec<PopItem> {
                 fill: line.clone(),
                 run: Some(line),
                 closable: true,
+                path: None,
             }
         })
         .collect()

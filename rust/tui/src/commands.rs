@@ -139,6 +139,8 @@ pub(crate) struct PopItem {
     /// Esc closes the list and keeps the text (`@` and `$`); the slash
     /// popup clears the draft instead
     pub(crate) closable: bool,
+    /// a workspace path: remembered when picked (ranked first next time)
+    pub(crate) path: Option<String>,
 }
 
 pub(crate) fn popup_items(app: &App) -> Vec<PopItem> {
@@ -154,6 +156,7 @@ pub(crate) fn popup_items(app: &App) -> Vec<PopItem> {
                 fill_cursor: c.name.chars().count() + 1,
                 run: (!c.args).then(|| c.name.to_string()),
                 closable: false,
+                path: None,
             })
             .collect();
     }
@@ -161,14 +164,44 @@ pub(crate) fn popup_items(app: &App) -> Vec<PopItem> {
     if !versions.is_empty() {
         return versions;
     }
-    let mentions = sb::mentions(app);
-    if mentions.is_empty() {
-        let skills = skill_items(app);
-        return if skills.is_empty() { emoji_items(app) } else { skills };
+    let at = at_items(app);
+    if !at.is_empty() {
+        return at;
     }
-    mentions
-        .into_iter()
-        .map(|m| PopItem {
+    let skills = skill_items(app);
+    if skills.is_empty() {
+        emoji_items(app)
+    } else {
+        skills
+    }
+}
+
+/// A `@`, `$`, `:` or `/version` popup may complete the draft: not while
+/// a history line is recalled, nor after Esc closed the list on this text.
+pub(crate) fn popup_open(app: &App) -> bool {
+    !app.ed.browsing() && app.popup_dismissed.as_deref() != Some(app.ed.text.as_str())
+}
+
+/// Files listed after the agents in the `@` popup.
+const FILE_ROWS: usize = 50;
+/// The file and folder marks of the `@` popup.
+const FILE_MARK: &str = "▪";
+const DIR_MARK: &str = "▸";
+
+/// `@word` at the start or inline: the live agents (Switchboard), then
+/// the files and folders of the workspace (files.rs). A file inserts its
+/// relative path, an agent `@name`.
+pub(crate) fn at_items(app: &App) -> Vec<PopItem> {
+    if !popup_open(app) {
+        return Vec::new();
+    }
+    let Some((start, q)) = files::token(&app.ed.text, app.ed.cursor) else {
+        return Vec::new();
+    };
+    let fill = |ins: &str| files::complete(&app.ed.text, start, app.ed.cursor, ins);
+    let agents = sb::mentions(app, &q).into_iter().map(|m| {
+        let (fill, fill_cursor) = fill(&m.completion());
+        PopItem {
             label: format!("@{}", m.name),
             desc: if m.objective.is_empty() {
                 m.status.clone()
@@ -176,17 +209,37 @@ pub(crate) fn popup_items(app: &App) -> Vec<PopItem> {
                 format!("{} · {}", m.status, m.objective)
             },
             mark: Some(m.glyph(app.tick)),
-            fill_cursor: m.completion().chars().count(),
-            fill: m.completion(),
+            fill,
+            fill_cursor,
             run: None,
             closable: true,
-        })
-        .collect()
+            path: None,
+        }
+    });
+    // the Switchboard workspace, else the folder the TUI runs in
+    let root = sb::workspace(app)
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_default();
+    let files = files::search(&root, &q, FILE_ROWS).into_iter().map(|h| {
+        let (fill, fill_cursor) = fill(&files::reference(&h.path, h.dir));
+        PopItem {
+            label: if h.dir { format!("{}/", h.path) } else { h.path.clone() },
+            desc: String::new(),
+            mark: Some(if h.dir { (DIR_MARK, BRAND) } else { (FILE_MARK, DIM) }),
+            fill,
+            fill_cursor,
+            run: None,
+            closable: true,
+            path: Some(h.path),
+        }
+    });
+    agents.chain(files).collect()
 }
 
 /// `$skill` anywhere in the draft: the skills of the index.
 pub(crate) fn skill_items(app: &App) -> Vec<PopItem> {
-    if app.ed.browsing() || app.popup_dismissed.as_deref() == Some(app.ed.text.as_str()) {
+    if !popup_open(app) {
         return Vec::new();
     }
     let Some((start, q)) = skills::token(&app.ed.text, app.ed.cursor) else {
@@ -205,6 +258,7 @@ pub(crate) fn skill_items(app: &App) -> Vec<PopItem> {
                 fill_cursor,
                 run: None,
                 closable: true,
+                path: None,
             }
         })
         .collect()
@@ -212,7 +266,7 @@ pub(crate) fn skill_items(app: &App) -> Vec<PopItem> {
 
 /// `:name` anywhere in the draft: the matching emojis (emoji.rs).
 pub(crate) fn emoji_items(app: &App) -> Vec<PopItem> {
-    if app.ed.browsing() || app.popup_dismissed.as_deref() == Some(app.ed.text.as_str()) {
+    if !popup_open(app) {
         return Vec::new();
     }
     let Some((start, q)) = emoji::token(&app.ed.text, app.ed.cursor) else {
@@ -230,6 +284,7 @@ pub(crate) fn emoji_items(app: &App) -> Vec<PopItem> {
                 fill_cursor,
                 run: None,
                 closable: true,
+                path: None,
             }
         })
         .collect()

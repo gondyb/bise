@@ -1,17 +1,8 @@
-//! The `@` popup: the live agents a `@name` at the start of the
-//! composer can name.
+//! The agents of the `@` popup (the files follow them, files.rs): the
+//! live agents a `@name` can name. At the start of the composer the
+//! name routes the message; inline it is a mention the model reads.
 
 use super::*;
-
-/// The `@` popup: the name being typed when the composer holds `@prefix`
-/// and nothing else yet (routing only reads `@name` at line start).
-fn mention_query(input: &str) -> Option<&str> {
-    let rest = input.strip_prefix('@')?;
-    if rest.contains(char::is_whitespace) {
-        return None;
-    }
-    Some(rest)
-}
 
 /// The live agents a `@query` can name, the one in focus excluded:
 /// case-insensitive prefix matches first, then substring matches, each
@@ -31,9 +22,10 @@ pub(crate) struct Mention {
 }
 
 impl Mention {
-    /// What the composer holds once the entry is picked.
+    /// What replaces the `@word` once the entry is picked (a space
+    /// follows).
     pub(crate) fn completion(&self) -> String {
-        format!("@{} ", self.name)
+        format!("@{}", self.name)
     }
 
     pub(crate) fn glyph(&self, tick: u32) -> (&'static str, Color) {
@@ -41,16 +33,9 @@ impl Mention {
     }
 }
 
-/// The `@` popup entries for the composer's current text (empty: closed).
-pub(crate) fn mentions(app: &App) -> Vec<Mention> {
+/// The agents for the `@query` being typed (none outside Switchboard).
+pub(crate) fn mentions(app: &App, q: &str) -> Vec<Mention> {
     let Some(sb) = app.sb.as_ref() else {
-        return Vec::new();
-    };
-    // a recalled history line is not a completion request
-    if app.ed.browsing() || app.popup_dismissed.as_deref() == Some(app.ed.text.as_str()) {
-        return Vec::new();
-    }
-    let Some(q) = mention_query(&app.ed.text) else {
         return Vec::new();
     };
     filter_mentions(&sb.agents, &sb.focus, q)
@@ -77,16 +62,6 @@ mod tests {
 
     fn names(v: Vec<&Agent>) -> Vec<&str> {
         v.into_iter().map(|a| a.name.as_str()).collect()
-    }
-
-    #[test]
-    fn query_only_while_the_name_is_typed() {
-        assert_eq!(mention_query("@"), Some(""));
-        assert_eq!(mention_query("@be"), Some("be"));
-        assert_eq!(mention_query("@bend-hub salut"), None);
-        assert_eq!(mention_query("salut @be"), None);
-        assert_eq!(mention_query("/new"), None);
-        assert_eq!(mention_query(""), None);
     }
 
     #[test]
@@ -119,13 +94,18 @@ mod tests {
     }
 
     #[test]
-    fn completion_inserts_the_name_and_a_space() {
+    fn completion_inserts_the_name() {
         let m = Mention {
             name: "bend-hub".into(),
             status: "working".into(),
             objective: String::new(),
         };
-        assert_eq!(m.completion(), "@bend-hub ");
-        assert_eq!(mention_query(&m.completion()), None); // popup closes
+        assert_eq!(m.completion(), "@bend-hub");
+        // at the start: the routing form; inline: a mention
+        let (t, c) = crate::files::complete("@be", 0, 3, &m.completion());
+        assert_eq!((t.as_str(), c), ("@bend-hub ", 10));
+        assert_eq!(crate::files::token(&t, c), None); // popup closes
+        let (t, _) = crate::files::complete("ask @be about it", 4, 7, &m.completion());
+        assert_eq!(t, "ask @bend-hub about it");
     }
 }

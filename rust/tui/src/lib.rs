@@ -59,6 +59,7 @@ pub use run::run;
 use run::*;
 mod sb;
 mod skills;
+mod files;
 mod emoji;
 mod editor;
 mod clipboard;
