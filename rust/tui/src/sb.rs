@@ -25,6 +25,11 @@ pub(super) use panel::{draw_panel, hint, placeholder, split, status_line, worksp
 use panel::glyph;
 mod feed;
 pub(super) use feed::FeedWindow;
+mod client;
+pub use client::{run_switchboard, take_reexec};
+use client::{follow_hub_exe, HUB_DOWN, HUB_UP};
+#[cfg(test)]
+use client::{new_sb, sb_app};
 use feed::{
     ingest_at, prepend_page, swap_draft, swap_feed, trim_window, want_older, with_feed, View,
 };
@@ -226,38 +231,6 @@ pub(super) fn take_shell(app: &mut App) -> Option<String> {
     app.sb.as_mut().and_then(|sb| sb.shell.take())
 }
 
-/// Route one hub event.
-/// The executable this TUI should re-exec as (the hub switched to
-/// another version): taken by the caller once the terminal is restored.
-static REEXEC: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-
-/// The hub runs `exe`: another binary than ours (and one that exists)
-/// means another version, which this TUI must follow. Only in a
-/// terminal: the line mode has nothing to keep.
-fn follow_hub_exe(exe: &str) -> bool {
-    let canon = |p: &std::path::Path| p.canonicalize().ok();
-    let theirs = canon(std::path::Path::new(exe));
-    let ours = std::env::current_exe().ok().and_then(|p| canon(&p));
-    let differs = theirs.is_some() && theirs != ours;
-    if differs && io::stdout().is_terminal() {
-        if let Ok(mut r) = REEXEC.lock() {
-            *r = Some(exe.to_string());
-        }
-        return true;
-    }
-    false
-}
-
-/// After `run_switchboard` returned: the binary to exec to follow the
-/// hub's version, if it asked for one.
-pub fn take_reexec() -> Option<String> {
-    REEXEC.lock().ok().and_then(|mut r| r.take())
-}
-
-/// Markers of the reader thread (not JSON): the hub went away / is back.
-const HUB_DOWN: &str = "\u{0}hub-down";
-const HUB_UP: &str = "\u{0}hub-up";
-
 /// The hub is back (a new connection, `hello` sent): it replays every
 /// feed, so the feeds start empty again. The focus and the drafts stay.
 fn hub_reconnected(app: &mut App) {
@@ -284,6 +257,7 @@ fn hub_reconnected(app: &mut App) {
     sb.send(json!({"op": "focus", "focus": focus}));
 }
 
+/// Route one hub event.
 pub(super) fn dispatch(app: &mut App, raw: &str) {
     if raw == HUB_DOWN {
         app.connected = false;
@@ -751,254 +725,6 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
         "warn" => Ev::Warn(text),
         _ => Ev::Info(text),
     })
-}
-
-/// `bend-harness switchboard`: the client of a workspace's hub.
-/// Read the hub's lines; when the hub goes away, say so and reconnect
-/// (the socket path stays the same across hub restarts and version
-/// switches), then swap the fresh stream into `writer`.
-fn hub_reader(
-    stream: UnixStream,
-    socket: std::path::PathBuf,
-    writer: std::sync::Arc<std::sync::Mutex<UnixStream>>,
-    tx: mpsc::Sender<String>,
-) {
-    let mut stream = stream;
-    loop {
-        let mut r = io::BufReader::new(stream);
-        let mut line = String::new();
-        loop {
-            line.clear();
-            match io::BufRead::read_line(&mut r, &mut line) {
-                Ok(0) | Err(_) => break,
-                Ok(_) => {
-                    if tx.send(line.trim_end().to_string()).is_err() {
-                        return;
-                    }
-                }
-            }
-        }
-        if tx.send(HUB_DOWN.to_string()).is_err() {
-            return;
-        }
-        stream = loop {
-            thread::sleep(std::time::Duration::from_millis(250));
-            let Ok(mut s) = UnixStream::connect(&socket) else { continue };
-            let Ok(w) = s.try_clone() else { continue };
-            if s.write_all(b"{\"op\":\"hello\"}\n").is_err() {
-                continue;
-            }
-            if let Ok(mut slot) = writer.lock() {
-                *slot = w;
-            }
-            break s;
-        };
-        if tx.send(HUB_UP.to_string()).is_err() {
-            return;
-        }
-    }
-}
-
-/// A fresh switchboard state over the hub connection `writer`.
-fn new_sb(writer: std::sync::Arc<std::sync::Mutex<UnixStream>>, workspace: String) -> Sb {
-    Sb {
-        writer,
-        workspace,
-        focus: "main".to_string(),
-        views: HashMap::new(),
-        agents: Vec::new(),
-        cards: Vec::new(),
-        card: CardView::default(),
-        selected: None,
-        preview: false,
-        confirm: None,
-        activity: HashMap::new(),
-        ready: false,
-        shell: None,
-        version: String::new(),
-        versions: Vec::new(),
-        versions_asked: std::cell::Cell::new(None),
-    }
-}
-
-/// The `App` of the switchboard mode: an empty feed (main in focus),
-/// fed by the hub lines of `rx`.
-fn sb_app(
-    sb: Sb,
-    rx: Receiver<String>,
-    debug: bool,
-    area_w: usize,
-    voice: crate::voice::Voice,
-    session_id: String,
-) -> App {
-    App {
-        connected: true,
-        term: crate::term::Term::default(),
-        help: None,
-        debug,
-        line_tools: HashMap::new(),
-        follow: true,
-        anchor: (0, 0),
-        scroll: 0,
-        vis_events: Vec::new(),
-        vis_rows: Vec::new(),
-        feed_x: 0,
-        feed_sel: None,
-        unseen: 0,
-        tail_visible: true,
-        bottom_bar_rect: None,
-        cache: Vec::new(),
-        win: FeedWindow::default(),
-        area_w,
-        area_h: 24,
-        events: Vec::new(),
-        last_line_at: None,
-        show_thinking: false,
-        interrupt_requested: false,
-        pending: false,
-        ed: crate::editor::Editor::default(),
-        composer: crate::ComposerArea::default(),
-        flash: None,
-        voice,
-        voice_note: None,
-        mouse: crate::MouseState::default(),
-        popup_sel: 0,
-        popup_dismissed: None,
-        history: Vec::new(),
-        tick: 0,
-        info: HarnessInfo {
-            model: "switchboard".into(),
-            threshold: String::new(),
-            steer_path: String::new(),
-            interrupt_path: String::new(),
-        },
-        host: String::new(),
-        port: 0,
-        session_id,
-        stream: None,
-        rx,
-        should_quit: false,
-        sb: Some(sb),
-    }
-}
-
-pub fn run_switchboard(
-    stream: UnixStream,
-    socket: std::path::PathBuf,
-    workspace: String,
-    debug: bool,
-) -> io::Result<()> {
-    SB_MODE.store(true, std::sync::atomic::Ordering::SeqCst);
-    let reader = stream.try_clone()?;
-    let (tx, rx) = mpsc::channel::<String>();
-    let writer = std::sync::Arc::new(std::sync::Mutex::new(stream));
-    {
-        let writer = writer.clone();
-        thread::spawn(move || hub_reader(reader, socket, writer, tx));
-    }
-    let sb = new_sb(writer, workspace.clone());
-    let area_w = crossterm::terminal::size()
-        .map(|(w, _)| w as usize)
-        .unwrap_or(100)
-        .max(40);
-    let voice = super::voice::Voice::live(super::voice::load_voice_enabled());
-    let mut app = sb_app(sb, rx, debug, area_w, voice, workspace);
-    let interactive = io::stdout().is_terminal() && io::stdin().is_terminal();
-    if interactive {
-        run_tui(&mut app)
-    } else {
-        line_mode(&mut app)
-    }
-}
-
-/// Without a terminal: stdin lines go to the agent in focus (`:focus
-/// <agent>` changes it), every feed prints as `[agent] …`. Ends when
-/// stdin is closed and every agent is idle.
-fn line_mode(app: &mut App) -> io::Result<()> {
-    let (itx, irx) = mpsc::channel::<Option<String>>();
-    thread::spawn(move || {
-        let stdin = io::stdin();
-        for l in io::BufRead::lines(stdin.lock()).map_while(Result::ok) {
-            if itx.send(Some(l)).is_err() {
-                return;
-            }
-        }
-        let _ = itx.send(None);
-    });
-    let mut stdin_open = true;
-    let mut quiet_since: Option<std::time::Instant> = None;
-    loop {
-        while let Ok(raw) = app.rx.try_recv() {
-            print_hub_event(&raw);
-            dispatch(app, &raw);
-        }
-        while let Ok(l) = irx.try_recv() {
-            match l {
-                Some(l) => {
-                    if let Some(f) = l.strip_prefix(":focus ") {
-                        focus(app, f.trim());
-                    } else if !l.trim().is_empty() {
-                        handle_input(app, &l);
-                    }
-                    quiet_since = None;
-                }
-                None => stdin_open = false,
-            }
-        }
-        let busy = app
-            .sb
-            .as_ref()
-            .map(|sb| {
-                sb.agents.iter().any(|a| a.busy() || a.status == "starting")
-            })
-            .unwrap_or(false);
-        if !stdin_open && !busy {
-            let t = *quiet_since.get_or_insert_with(std::time::Instant::now);
-            if t.elapsed() > Duration::from_secs(3) {
-                return Ok(());
-            }
-        } else {
-            quiet_since = None;
-        }
-        if app.should_quit {
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-}
-
-fn print_hub_event(raw: &str) {
-    let Ok(v) = serde_json::from_str::<Value>(raw) else {
-        return;
-    };
-    let s = |k: &str| str_of(&v, k);
-    match s("ev").as_str() {
-        "line" => {
-            let line = s("line");
-            let shown = if let Some(r) = line.strip_prefix("sb ") {
-                Some(format!(
-                    "[{}] {}",
-                    s("agent"),
-                    unescape_md(r).replace('\n', " ⏎ ")
-                ))
-            } else if let Some(r) = line.trim_start().strip_prefix("obs: assistant: ") {
-                let (_, vis) = split_thinking(r).unwrap_or((String::new(), r.to_string()));
-                Some(format!(
-                    "[{}] assistant: {}",
-                    s("agent"),
-                    unescape_md(&vis).replace('\n', " ⏎ ")
-                ))
-            } else {
-                line.strip_prefix("tool #")
-                    .map(|r| format!("[{}] tool {}", s("agent"), truncate_chars(r, 200)))
-            };
-            if let Some(t) = shown {
-                println!("{}", t);
-            }
-        }
-        "notice" | "confirm" => println!("[hub] {}", s("text")),
-        _ => {}
-    }
 }
 
 #[cfg(test)]
