@@ -33,7 +33,10 @@ Taglines (picked by Gabriel):
 **Style rule (Gabriel): no capital letter at the start of any word, ever,
 on every marketing piece and all website text.** It reads like a human typing
 on a keyboard. Tone: human, casual, first person when it fits; avoid the
-polished "X. None of the Y." LLM pattern. (Internal docs like this one keep
+polished "X. None of the Y." LLM pattern. Exceptions: proper nouns keep
+their capitals (Mistral, Vibe, Claude Code, GitHub); acronyms stay as is
+(CLI, API); ALL CAPS is allowed to shout, extremely rarely. Our own name
+stays lowercase: `bise`. (Internal docs like this one keep
 normal capitals, except for the copy itself.)
 
 Both picked by Gabriel. Previous headline, kept as an alternative: "your
