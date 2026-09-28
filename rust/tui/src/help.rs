@@ -41,6 +41,15 @@ const fn r(section: &'static str, keys: &'static str, action: &'static str) -> R
 }
 
 impl Row {
+    /// The row exists in this client (Switchboard or the single agent).
+    fn applies(&self, sb: bool) -> bool {
+        match self.scope {
+            Scope::All => true,
+            Scope::Sb => sb,
+            Scope::Solo => !sb,
+        }
+    }
+
     const fn sb(mut self) -> Row {
         self.scope = Scope::Sb;
         self
@@ -247,11 +256,7 @@ const CODE: Style = Style::new().fg(Color::Rgb(0xb8, 0xd4, 0xf0));
 pub(crate) fn rows(page: Page, sb: bool, filter: &str) -> Vec<&'static Row> {
     let f = filter.to_lowercase();
     ROWS.iter()
-        .filter(|r| match r.scope {
-            Scope::All => true,
-            Scope::Sb => sb,
-            Scope::Solo => !sb,
-        })
+        .filter(|r| r.applies(sb))
         .filter(|r| page == Page::Shortcuts || r.top)
         .filter(|r| {
             f.is_empty()
@@ -532,12 +537,7 @@ mod tests {
                     let w = spans_width(&l.spans);
                     assert!(w <= width, "overflow {} > {}: {:?}", w, width, l);
                 }
-                let applies = |r: &&Row| match r.scope {
-                    Scope::All => true,
-                    Scope::Sb => sb,
-                    Scope::Solo => !sb,
-                };
-                for r in ROWS.iter().filter(applies) {
+                for r in ROWS.iter().filter(|r| r.applies(sb)) {
                     assert!(all.contains(r.section), "section {}", r.section);
                     for alt in r.keys.split('|').filter(|k| !k.is_empty()) {
                         for step in alt.split(" then ") {
