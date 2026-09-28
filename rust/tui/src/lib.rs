@@ -242,7 +242,7 @@ fn parse_history_line(line: &str) -> Option<Ev> {
     }
     if let Some(t) = line.strip_prefix("injected : ") {
         let flat = unescape_md(t).replace('\n', " ");
-        return Some(Ev::Info(format!("injecté · {}", truncate_chars(flat.trim(), 110))));
+        return Some(Ev::Info(format!("injected · {}", truncate_chars(flat.trim(), 110))));
     }
     parse_line(line)
 }
@@ -266,12 +266,12 @@ fn provider_retry_text(t: &str) -> String {
     let parts: Vec<&str> = t.split(" · ").collect();
     match parts.as_slice() {
         [n, why, wait] => format!(
-            "API du modèle en erreur (essai {}) : {} — nouvel essai dans {}",
+            "model API error (attempt {}): {} — retry in {}",
             n,
             why,
             wait.trim_start_matches("retry in ")
         ),
-        _ => format!("API du modèle en erreur : {}", t),
+        _ => format!("model API error: {}", t),
     }
 }
 
@@ -332,7 +332,7 @@ fn parse_line(line: &str) -> Option<Ev> {
         // no turn to land on - expected plumbing, not an error
         if r == "no pending completion" || r == "no pending tool result" {
             return Some(Ev::Info(
-                "réponse en vol ignorée (tour interrompu)".into(),
+                "in-flight response dropped (turn interrupted)".into(),
             ));
         }
         return Some(Ev::Err(r.to_string()));
@@ -392,38 +392,38 @@ fn parse_line(line: &str) -> Option<Ev> {
         return None;
     }
     if let Some(t) = o.strip_prefix("steering_received: ") {
-        return Some(Ev::Info(format!("steering reçu : {}", t)));
+        return Some(Ev::Info(format!("steering received: {}", t)));
     }
     if let Some(t) = o.strip_prefix("steered: ") {
-        return Some(Ev::Info(format!("steering transmis au modèle : {}", t)));
+        return Some(Ev::Info(format!("steering passed to the model: {}", t)));
     }
     if let Some(t) = o.strip_prefix("notification_received: ") {
         return Some(Ev::Info(format!("notification : {}", t)));
     }
     if let Some(t) = o.strip_prefix("notification_delivered: ") {
-        return Some(Ev::Info(format!("notification livrée au modèle : {}", t)));
+        return Some(Ev::Info(format!("notification delivered to the model: {}", t)));
     }
     if let Some(t) = o.strip_prefix("provider_retry: ") {
         return Some(Ev::Warn(provider_retry_text(t)));
     }
     if let Some(t) = o.strip_prefix("harness_restarted: ") {
         return Some(Ev::Err(format!(
-            "le harness a planté ({}) et a redémarré — le tour en cours est interrompu, l'historique est restauré jusqu'au dernier appel au modèle",
+            "the harness crashed ({}) and restarted — the current turn is interrupted, the history is restored up to the last model call",
             t
         )));
     }
     if let Some(t) = o.strip_prefix("candidate_discarded: ") {
-        return Some(Ev::Warn(format!("candidat écarté : {}", t)));
+        return Some(Ev::Warn(format!("candidate discarded: {}", t)));
     }
     if let Some(t) = o.strip_prefix("compaction_started #") {
         return Some(Ev::Compact(t.to_string()));
     }
     if let Some(t) = o.strip_prefix("context_compaction_failed: ") {
-        return Some(Ev::Err(format!("compaction échouée : {}", t)));
+        return Some(Ev::Err(format!("compaction failed: {}", t)));
     }
     if let Some(t) = o.strip_prefix("session_restored: ") {
         return Some(Ev::Info(format!(
-            "session restaurée · {} messages",
+            "session restored · {} messages",
             t.trim_end_matches(" messages")
         )));
     }
@@ -432,7 +432,7 @@ fn parse_line(line: &str) -> Option<Ev> {
     }
     if o == "null_iteration" {
         return Some(Ev::Warn(
-            "réponse vide du modèle — nouvelle tentative".into(),
+            "empty response from the model — retrying".into(),
         ));
     }
     if let Some(t) = o.strip_prefix("turn_done: ") {
@@ -442,12 +442,12 @@ fn parse_line(line: &str) -> Option<Ev> {
             return Some(Ev::TurnDone);
         }
         if let Some(why) = t.strip_prefix("failed: ") {
-            return Some(Ev::Err(format!("tour échoué : {}", why)));
+            return Some(Ev::Err(format!("turn failed: {}", why)));
         }
         if t == "interrupted" {
             return Some(Ev::Warn("tour interrompu".into()));
         }
-        return Some(Ev::Err(format!("tour arrêté : {}", t)));
+        return Some(Ev::Err(format!("turn stopped: {}", t)));
     }
     // the runtime ran out of execution budget mid-turn (never silent)
     if let Some(t) = o.strip_prefix("turn_stalled: ") {
@@ -1142,7 +1142,7 @@ fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
                 Style::default().fg(OK).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                "résumé ",
+                "summary ",
                 Style::default().fg(OK).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
@@ -1656,7 +1656,7 @@ fn highlight_patch(src: &str) -> Vec<Vec<Span<'static>>> {
             Some(file("~", p, HEAD, ""))
         } else if let Some(p) = l.strip_prefix("*** Add File: ") {
             Some(file("+", p, OK, "nouveau"))
-        } else { l.strip_prefix("*** Delete File: ").map(|p| file("−", p, ERR, "supprimé")) };
+        } else { l.strip_prefix("*** Delete File: ").map(|p| file("−", p, ERR, "deleted")) };
         if let Some(h) = header {
             // a blank row between two files
             if !lines.is_empty() {
@@ -1666,7 +1666,7 @@ fn highlight_patch(src: &str) -> Vec<Vec<Span<'static>>> {
             continue;
         }
         if let Some(p) = l.strip_prefix("*** Move to: ") {
-            lines.push(file("→", p, HEAD, "renommé"));
+            lines.push(file("→", p, HEAD, "renamed"));
             continue;
         }
         if l.starts_with("*** ") || (l.is_empty() && lines.is_empty()) {
@@ -1995,7 +1995,7 @@ fn tool_body(td: &ToolData, code: &Option<(CodeLang, String)>, width: usize) -> 
             let head: String = src.lines().take(CODE_FOLD_SHOW).collect::<Vec<_>>().join("\n");
             ls.extend(code_block_lines(&head, *lang, &td.state, width));
             ls.push(Line::from(Span::styled(
-                format!("    … {} lignes de plus · clic pour tout voir", total - CODE_FOLD_SHOW),
+                format!("    … {} more lines · click to show all", total - CODE_FOLD_SHOW),
                 Style::default().fg(DIM),
             )));
         } else {
@@ -2190,7 +2190,7 @@ struct Cmd {
 const COMMANDS: &[Cmd] = &[
     Cmd {
         name: "/compact",
-        desc: "compacter la conversation (résumé)",
+        desc: "compact the conversation (summary)",
         args: false,
     },
     Cmd {
@@ -2200,12 +2200,12 @@ const COMMANDS: &[Cmd] = &[
     },
     Cmd {
         name: "/reload",
-        desc: "relancer le harness avec le dernier code (session conservée)",
+        desc: "restart the harness with the latest code (session kept)",
         args: false,
     },
     Cmd {
         name: "/status",
-        desc: "modèle, connexion, seuil de compaction",
+        desc: "model, connection, compaction threshold",
         args: false,
     },
     Cmd {
@@ -2220,7 +2220,7 @@ const COMMANDS: &[Cmd] = &[
     },
     Cmd {
         name: "/quit",
-        desc: "quitter le client (la session survit)",
+        desc: "quit the client (the session survives)",
         args: false,
     },
 ];
@@ -2418,10 +2418,10 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         app.scroll = 0;
         app.follow = true;
         app.unseen = 0;
-        out.push(Ev::Info("affichage vidé".into()));
+        out.push(Ev::Info("display cleared".into()));
     } else if first == "/status" {
         out.push(Ev::Info(format!(
-            "modèle {} · {}:{} · seuil de compaction {} · session {}",
+            "model {} · {}:{} · compaction threshold {} · session {}",
             app.info.model,
             app.host,
             app.port,
@@ -2433,10 +2433,10 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             out.push(Ev::Info(format!("{:<11} — {}", c.name, c.desc)));
         }
         out.push(Ev::Info(
-            "texte simple : nouveau message · pendant un tour, ⏎ dirige le modèle et Tab met en file".into(),
+            "plain text: new message · during a turn, ⏎ steers the model and Tab queues".into(),
         ));
         out.push(Ev::Info(
-            "glyphes : ✦ raisonnement · ✓ ok · ✗ échec · ▲ alerte · ⟳ compaction · ≡ résumé · ↳ aperçu".into(),
+            "glyphs: ✦ reasoning · ✓ ok · ✗ failure · ▲ warning · ⟳ compaction · ≡ summary · ↳ preview".into(),
         ));
     } else if first == "/interrupt" {
         // BR-003: the socket is only read between turns, so sending the
@@ -2448,12 +2448,12 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             app.pending = false;
             app.interrupt_requested = true;
             out.push(Ev::Info(if ok {
-                "interrompu — le tour en cours s'arrête au prochain point sûr".into()
+                "interrupted — the current turn stops at the next safe point".into()
             } else {
-                "interruption non écrite (side-channel inaccessible)".into()
+                "interrupt not written (side channel unreachable)".into()
             }));
         } else {
-            out.push(Ev::Info("aucun tour en cours à interrompre".into()));
+            out.push(Ev::Info("no turn in progress to interrupt".into()));
         }
     } else if first == "steer" && app.pending {
         // mid-turn steering goes through the FILE side-channel: the
@@ -2477,7 +2477,7 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             out.push(Ev::Info(if ok {
                 format!("steering mis en attente : {}", msg)
             } else {
-                "steering non écrit (side-channel inaccessible)".to_string()
+                "steering not written (side channel unreachable)".to_string()
             }));
         }
     } else {
@@ -2764,7 +2764,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
                     Style::default().fg(BRAND),
                 ),
                 Span::styled(
-                    format!(" {} · génération…", app.info.model),
+                    format!(" {} · generating…", app.info.model),
                     Style::default().fg(DIM),
                 ),
                 Span::styled(" · ", Style::default().fg(DIM)),
@@ -2889,7 +2889,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
         if app.connected {
             Span::styled("●", Style::default().fg(DIM))
         } else {
-            Span::styled("○ déconnecté", Style::default().fg(ERR))
+            Span::styled("○ disconnected", Style::default().fg(ERR))
         },
     ]);
     // one blank line between the typed text and the meta row
@@ -2976,7 +2976,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
     } else if app.pending {
         "⏎ diriger · Tab file · Ctrl+C interrompre · / commandes · End bas"
     } else {
-        "⏎ envoyer · Maj+⏎/Ctrl+J nouvelle ligne · / commandes · Ctrl+T raisonnement · Ctrl+C quitter"
+        "⏎ send · Shift+⏎/Ctrl+J new line · / commands · Ctrl+T reasoning · Ctrl+C quit"
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(DIM)))),
@@ -3174,7 +3174,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
             let _ = crossterm::execute!(io::stdout(), DisableMouseCapture);
             ratatui::restore();
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-            println!("shell dans {} — exit pour revenir à Switchboard", dir);
+            println!("shell in {} — exit to return to Switchboard", dir);
             let _ = std::process::Command::new(shell).current_dir(&dir).status();
             terminal = ratatui::init();
             let _ = crossterm::execute!(io::stdout(), EnableMouseCapture);
@@ -3296,9 +3296,9 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                                 &mut app.events,
                                 &mut app.cache,
                                 Ev::Info(if ok {
-                                    "interrompu — le tour en cours s'arrête au prochain point sûr · Ctrl+C à nouveau pour quitter".to_string()
+                                    "interrupted — the current turn stops at the next safe point · Ctrl+C again to quit".to_string()
                                 } else {
-                                    "interruption non écrite (side-channel inaccessible) — Ctrl+C à nouveau pour quitter".to_string()
+                                    "interrupt not written (side channel unreachable) — Ctrl+C again to quit".to_string()
                                 }),
                             );
                         } else {
@@ -3598,7 +3598,7 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
         Ok(s) => s,
         Err(e) => {
             eprintln!("connexion impossible : {}", e);
-            eprintln!("lance le harness avec ./run.sh");
+            eprintln!("start the harness with ./run.sh");
             return Ok(());
         }
     };
@@ -3700,12 +3700,12 @@ mod tests {
         match parse_line("  obs: provider_retry: 2/10 · provider 529 (transient) · retry in 4s") {
             Some(Ev::Warn(t)) => assert_eq!(
                 t,
-                "API du modèle en erreur (essai 2/10) : provider 529 (transient) — nouvel essai dans 4s"
+                "model API error (attempt 2/10): provider 529 (transient) — retry in 4s"
             ),
             _ => panic!("provider_retry must render as a warning"),
         }
         match parse_line("  obs: harness_restarted: exit status: 1 · bend: out of memory") {
-            Some(Ev::Err(t)) => assert!(t.contains("bend: out of memory") && t.contains("redémarré")),
+            Some(Ev::Err(t)) => assert!(t.contains("bend: out of memory") && t.contains("restarted")),
             _ => panic!("harness_restarted must render as an error"),
         }
     }
@@ -3820,11 +3820,11 @@ async function main(): Promise<unknown> {
         let mut tool = merged_tool(&wire_lines);
         let folded = rows_text(&ev_lines(&Ev::Tool(tool.clone()), 80));
         assert_eq!(folded.iter().filter(|l| l.contains("│ echo")).count(), CODE_FOLD_SHOW);
-        assert!(folded.iter().any(|l| l.contains("160 lignes de plus")));
+        assert!(folded.iter().any(|l| l.contains("160 more lines")));
         tool.expanded = true;
         let whole = rows_text(&ev_lines(&Ev::Tool(tool), 80));
         assert_eq!(whole.iter().filter(|l| l.contains("│ echo")).count(), 200);
-        assert!(!whole.iter().any(|l| l.contains("lignes de plus")));
+        assert!(!whole.iter().any(|l| l.contains("more lines")));
     }
 
     #[test]
@@ -3939,8 +3939,8 @@ done | sort -n";
                 "tool 7 bash ok=false code=true elapsed=Some(\"\")".to_string(),
                 "assistant fini".to_string(),
                 "tool 9 bash ok=false code=true elapsed=Some(\"\")".to_string(),
-                "info injecté · [notification] bg 0 done".to_string(),
-                "info session restaurée · 7 messages".to_string(),
+                "info injected · [notification] bg 0 done".to_string(),
+                "info session restored · 7 messages".to_string(),
             ]
         );
     }

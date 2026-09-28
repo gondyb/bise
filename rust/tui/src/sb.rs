@@ -235,77 +235,77 @@ pub(super) static SB_MODE: std::sync::atomic::AtomicBool =
 pub(super) const SB_COMMANDS: &[Cmd] = &[
     Cmd {
         name: "/version",
-        desc: "versions de Switchboard : /version [<commit>|tree|back]",
+        desc: "Switchboard versions: /version [<commit>|tree|back]",
         args: true,
     },
     Cmd {
         name: "/new",
-        desc: "créer une tâche : /new [-w] [nom:] objectif",
+        desc: "create a task: /new [-w] [name:] objective",
         args: true,
     },
     Cmd {
         name: "/drop",
-        desc: "arrêter et archiver une tâche (et son worktree)",
+        desc: "stop and archive a task (and its worktree)",
         args: true,
     },
     Cmd {
         name: "/restore",
-        desc: "rouvrir une tâche archivée",
+        desc: "reopen an archived task",
         args: true,
     },
     Cmd {
         name: "/isolate",
-        desc: "donner un worktree git à une tâche",
+        desc: "give a task its own git worktree",
         args: true,
     },
     Cmd {
         name: "/rename",
-        desc: "renommer une tâche",
+        desc: "rename a task",
         args: true,
     },
     Cmd {
         name: "/answer",
-        desc: "répondre à une carte : /answer N texte",
+        desc: "answer a card: /answer N text",
         args: true,
     },
     Cmd {
         name: "/close",
-        desc: "classer une carte sans répondre : /close N",
+        desc: "close a card without answering: /close N",
         args: true,
     },
     Cmd {
         name: "/cancel",
-        desc: "annuler le dernier routage non livré",
+        desc: "cancel the last undelivered route",
         args: false,
     },
     Cmd {
         name: "/tasks",
-        desc: "le tableau des tâches",
+        desc: "the task board",
         args: false,
     },
     Cmd {
         name: "/interrupt",
-        desc: "interrompre le tour de l'agent affiché",
+        desc: "interrupt the turn of the agent in view",
         args: false,
     },
     Cmd {
         name: "/compact",
-        desc: "compacter la conversation de l'agent affiché",
+        desc: "compact the conversation of the agent in view",
         args: false,
     },
     Cmd {
         name: "/help",
-        desc: "commandes et touches",
+        desc: "commands and keys",
         args: false,
     },
     Cmd {
         name: "/quit",
-        desc: "quitter (les agents continuent)",
+        desc: "quit (the agents keep running)",
         args: false,
     },
 ];
 
-const KEYS_HELP: &str = "touches (compositeur vide) : Ctrl+K/J tâche suivante/précédente · ⏎ entrer · Espace aperçu · D drop · Esc revenir à main · Alt+1…9 aller à la tâche N · Alt+0 main · Ctrl+G afficher/masquer la carte (Ctrl+A aussi, composer vide) · Ctrl+N/P carte suivante/précédente · Ctrl+R répondre à la carte avec le texte du composer · Ctrl+F carte en plein écran · Ctrl+X classer la carte · Ctrl+Z annuler le dernier routage · Ctrl+O shell dans le dossier de l'agent affiché";
+const KEYS_HELP: &str = "keys (empty composer): Ctrl+K/J next/previous task · ⏎ enter · Space preview · D drop · Esc back to main · Alt+1…9 go to task N · Alt+0 main · Ctrl+G show/hide the card (also Ctrl+A, empty composer) · Ctrl+N/P next/previous card · Ctrl+R answer the card with the composer text · Ctrl+F card full screen · Ctrl+X close the card · Ctrl+Z cancel the last route · Ctrl+O shell in the folder of the agent in view";
 
 /// The shell asked with Ctrl+O, if any.
 pub(super) fn take_shell(app: &mut App) -> Option<String> {
@@ -417,7 +417,7 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
             push_event(
                 &mut app.events,
                 &mut app.cache,
-                Ev::Info("réponds y (oui) ou n (non), puis ⏎".into()),
+                Ev::Info("answer y (yes) or n (no), then ⏎".into()),
             );
             if let Some(sb) = app.sb.as_mut() {
                 sb.confirm = Some((id, text));
@@ -731,14 +731,14 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             app.anchor = (0, 0);
     app.scroll = 0;
             app.follow = true;
-            out.push(Ev::Info("affichage vidé".into()));
+            out.push(Ev::Info("display cleared".into()));
         }
         "/help" => {
             for c in SB_COMMANDS {
                 out.push(Ev::Info(format!("{:<10} — {}", c.name, c.desc)));
             }
             out.push(Ev::Info(
-                "@tâche texte — message direct à une tâche (@main depuis une tâche)".into(),
+                "@task text — direct message to a task (@main from a task)".into(),
             ));
             out.push(Ev::Info(KEYS_HELP.into()));
         }
@@ -767,11 +767,11 @@ fn answer_card(app: &mut App) {
     };
     let text = if text.is_empty() {
         if !matches!(kind.as_str(), "done" | "overlap") {
-            let msg = format!("carte #{} (@{}) : tape ta réponse puis Ctrl+R", id, agent);
+            let msg = format!("card #{} (@{}): type your answer, then Ctrl+R", id, agent);
             push_event(&mut app.events, &mut app.cache, Ev::Warn(msg));
             return;
         }
-        "vu".to_string()
+        "seen".to_string()
     } else {
         text
     };
@@ -863,7 +863,7 @@ pub(super) fn draw_card(app: &mut App, frame: &mut Frame, area: Rect) {
     };
     let age = ago(c.age_ms + c.seen_at.elapsed().as_millis() as u64);
     let title = format!(
-        " ◆ carte {}/{} · {} #{} {} @{} · il y a {} ",
+        " ◆ card {}/{} · {} #{} {} @{} · {} ago ",
         pos,
         order.len(),
         icon,
@@ -944,7 +944,7 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             push_event(
                 &mut app.events,
                 &mut app.cache,
-                Ev::Info("interrompu — le tour s'arrête au prochain point sûr · Ctrl+C à nouveau pour quitter".into()),
+                Ev::Info("interrupted — the turn stops at the next safe point · Ctrl+C again to quit".into()),
             );
             true
         }
@@ -1184,9 +1184,8 @@ pub(super) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     if archived > 0 {
         lines.push(Line::from(Span::styled(
             format!(
-                " {} archivée{}",
-                archived,
-                if archived > 1 { "s" } else { "" }
+                " {} archived",
+                archived
             ),
             Style::default().fg(FAINT),
         )));
@@ -1194,7 +1193,7 @@ pub(super) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     if !sb.cards.is_empty() {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            format!(" ◆ cartes ({}) · Ctrl+G", sb.cards.len()),
+            format!(" ◆ cards ({}) · Ctrl+G", sb.cards.len()),
             Style::default().fg(WARN).add_modifier(Modifier::BOLD),
         )));
         for c in &sb.cards {
@@ -1262,7 +1261,7 @@ pub(super) fn status_line(app: &App) -> Option<Line<'static>> {
         ));
     } else if !a.main && !a.path.is_empty() && a.mode == "shared" {
         spans.push(Span::styled(
-            " · dossier partagé".to_string(),
+            " · shared folder".to_string(),
             Style::default().fg(DIM),
         ));
     }
@@ -1274,7 +1273,7 @@ pub(super) fn status_line(app: &App) -> Option<Line<'static>> {
     }
     if sb.focus != "main" {
         spans.push(Span::styled(
-            " · tu parles directement à la tâche · Esc → main".to_string(),
+            " · you talk to the task directly · Esc → main".to_string(),
             Style::default().fg(INFO),
         ));
     }
@@ -1284,7 +1283,7 @@ pub(super) fn status_line(app: &App) -> Option<Line<'static>> {
             .and_then(|i| sb.nav().get(i).map(|a| a.name.clone()))
         {
             spans.push(Span::styled(
-                format!(" · aperçu de @{} (⏎ entrer, Esc fermer)", sel),
+                format!(" · preview of @{} (⏎ enter, Esc close)", sel),
                 Style::default().fg(WARN),
             ));
         }
@@ -1292,7 +1291,7 @@ pub(super) fn status_line(app: &App) -> Option<Line<'static>> {
     if !sb.cards.is_empty() && !sb.card.shown {
         spans.push(Span::styled(
             format!(
-                " · ◆ {} carte{} · Ctrl+G",
+                " · ◆ {} card{} · Ctrl+G",
                 sb.cards.len(),
                 if sb.cards.len() > 1 { "s" } else { "" }
             ),
@@ -1301,7 +1300,7 @@ pub(super) fn status_line(app: &App) -> Option<Line<'static>> {
     }
     if !app.connected {
         spans.push(Span::styled(
-            " · ○ hub déconnecté".to_string(),
+            " · ○ hub disconnected".to_string(),
             Style::default().fg(ERR),
         ));
     }
@@ -1311,28 +1310,28 @@ pub(super) fn status_line(app: &App) -> Option<Line<'static>> {
 pub(super) fn hint(app: &App) -> Option<&'static str> {
     let sb = app.sb.as_ref()?;
     Some(if sb.confirm.is_some() {
-        "y oui · n non · Esc annuler"
+        "y yes · n no · Esc cancel"
     } else if sb.card.full {
-        "Ctrl+R répondre · PgUp/PgDn défiler · Ctrl+N/P carte · Ctrl+X classer · Ctrl+F/Esc réduire · Ctrl+G masquer"
+        "Ctrl+R answer · PgUp/PgDn scroll · Ctrl+N/P card · Ctrl+X close · Ctrl+F/Esc shrink · Ctrl+G hide"
     } else if sb.card.shown {
-        "Ctrl+R répondre (⏎ reste pour main) · PgUp/PgDn défiler · Ctrl+N/P carte · Ctrl+F plein écran · Ctrl+X classer · Ctrl+G masquer"
+        "Ctrl+R answer (⏎ still goes to main) · PgUp/PgDn scroll · Ctrl+N/P card · Ctrl+F full screen · Ctrl+X close · Ctrl+G hide"
     } else if sb.selected.is_some() {
-        "⏎ entrer · Espace aperçu · D drop · Ctrl+K/J choisir · Esc fermer"
+        "⏎ enter · Space preview · D drop · Ctrl+K/J select · Esc close"
     } else if app.pending {
-        "⏎ diriger · Ctrl+C interrompre · Ctrl+K/J tâches · Alt+N° tâche N · Esc main · /help"
+        "⏎ steer · Ctrl+C interrupt · Ctrl+K/J tasks · Alt+N° task N · Esc main · /help"
     } else if sb.focus != "main" {
-        "⏎ envoyer à la tâche · @main … pour main · Esc revenir à main · Ctrl+K/J tâches · Alt+N° tâche N · /help"
+        "⏎ send to the task · @main … for main · Esc back to main · Ctrl+K/J tasks · Alt+N° task N · /help"
     } else {
-        "⏎ envoyer à main · @tâche … direct · Ctrl+K/J tâches · Alt+N° tâche N · Ctrl+G carte · /help"
+        "⏎ send to main · @task … direct · Ctrl+K/J tasks · Alt+N° task N · Ctrl+G card · /help"
     })
 }
 
 pub(super) fn placeholder(app: &App) -> Option<String> {
     let sb = app.sb.as_ref()?;
     Some(if sb.focus == "main" {
-        "Message à main…".to_string()
+        "Message to main…".to_string()
     } else {
-        format!("Message direct à @{}…", sb.focus)
+        format!("Direct message to @{}…", sb.focus)
     })
 }
 
@@ -1452,7 +1451,7 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
             }
         }
         "card" => Ev::Card(text),
-        "card-closed" => Ev::Info(format!("carte {} ", text)),
+        "card-closed" => Ev::Info(format!("card {} ", text)),
         "route" => Ev::Info(format!("→ {}", text)),
         "spawn" => Ev::Info(format!("✚ {}", text)),
         "direct" => Ev::Info(format!("⇄ {}", text)),
