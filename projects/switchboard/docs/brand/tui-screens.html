@@ -85,7 +85,7 @@ function head(right) {
   return `<div class="head"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim">${right ?? `${S.work} 3 working · <span class="acc">? 1 needs you</span> · ♡ 1 done`}</span></div>`;
 }
 function panel(rows, extra = "") {
-  return `<div class="panel"><div style="margin-bottom:4px">agents <span class="faint">· ⌥ + number to switch</span></div>${rows.map((r, i) =>
+  return `<div class="panel"><div style="margin-bottom:4px">agents <span class="faint">· ⌥ + number</span></div>${rows.map((r, i) =>
     `<div class="row${r.sel ? " sel" : ""}"><span><span class="faint">${i <= 9 ? i : " "}</span> ${r.g} ${r.name}${r.dot ? ' <span class="acc">•</span>' : ""}</span><span class="dim">${r.r ?? ""}</span></div>`).join("")}${extra}</div>`;
 }
 const P = {

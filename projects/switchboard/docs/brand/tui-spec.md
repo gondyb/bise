@@ -234,7 +234,8 @@ toggles all outputs.
   available today (only tokens per agent); add it once the usage work lands.
 - Feed on the left (prose ≤ 76 columns), task panel on the right titled
   `agents`, one line per agent: its shortcut, glyph, name, age or state,
-  context fill. The panel title says how to switch once, `agents · ⌥ + number to switch`,
+  context fill. The panel title says how to switch once, `agents · ⌥ + number` (short
+  on purpose: it must fit the narrowest panel, 26 columns, on one line),
   and each row starts with its number in the faint color (0 main, 1…9 the
   first nine agents, blank after), so switching is discoverable without
   `/help`.
@@ -337,7 +338,7 @@ To implement:
 5. Progressive disclosure: thinking, outputs, diffs, reports, brief behind ▸;
    keys to open one item, all thinking, all outputs.
 6. Say "agent" everywhere in the UI and `/help`, never "task".
-7. Agents panel: title `agents · ⌥ + number to switch`, a number per row.
+7. Agents panel: title `agents · ⌥ + number`, a number per row.
 8. The 3 levels (needs you / for you / between agents); the hub tags each
    feed line with its sender, recipient and level.
 9. A quiet key that folds the runs of level 3.
