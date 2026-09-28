@@ -1498,3 +1498,34 @@ fn a_restored_idle_task_gets_its_queued_mail() {
     let fx = t.user(MAIN, "/restore docs");
     assert!(say_to(&fx, "docs").unwrap_or_default().contains("plus tard"), "{:?}", fx);
 }
+
+// BR-007: a task whose turn fails (network down, provider error) must
+// not go quiet: its parent gets the real cause as a report
+#[test]
+fn a_failed_turn_of_a_task_reaches_main() {
+    let mut t = T::new();
+    t.spawn_task("net");
+    let fx = t.go(Input::ReplLine {
+        agent: "net".into(),
+        line: "  obs: turn_done: failed: provider failed after 10 attempts: cannot reach api.example.com (connect 61 Connection refused) — check your network or VPN".into(),
+    });
+    let said = say_to(&fx, MAIN).unwrap_or_default();
+    assert!(
+        said.contains("[report: turn_failed]") && said.contains("cannot reach api.example.com"),
+        "{:?}",
+        fx
+    );
+}
+
+#[test]
+fn failed_turn_report_skips_main_and_user_stops() {
+    assert!(failed_turn_report("net", "failed: provider 401: bad key").is_some());
+    assert!(failed_turn_report("main", "failed: provider 401: bad key").is_none());
+    assert!(failed_turn_report("net", "completed").is_none());
+    assert!(failed_turn_report("net", "interrupted").is_none());
+    assert!(failed_turn_report(
+        "net",
+        "failed: stopped retrying (interrupted by the user) after 2 failed attempts; last error: x"
+    )
+    .is_none());
+}

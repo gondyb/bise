@@ -1023,6 +1023,27 @@ impl Hub {
                     );
                 }
             }
+            // BR-007: a task whose turn failed (network down, provider
+            // error...) must not go quiet: the failure reaches its parent
+            // as a report (board + message), like a report the task wrote.
+            // Main's own failures show in main's view (its turn_done line);
+            // a stop the user asked for (Ctrl+C) is not news to anyone.
+            Wire::TurnDone(t) => {
+                if let Some(summary) = failed_turn_report(agent, &t) {
+                    if self.st.agents.contains_key(agent) {
+                        let q = json!({"cmd": "report", "kind": "turn_failed",
+                            "summary": summary, "decisions": []});
+                        // token 0: no connection waits for this reply
+                        // (connection tokens start at 1)
+                        self.core(
+                            fx,
+                            env,
+                            None,
+                            json!({"t": "req", "token": 0, "from": agent, "req": q}),
+                        );
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -1321,6 +1342,21 @@ impl Hub {
             json!({"t": "req", "token": token, "from": from, "req": q}),
         );
     }
+}
+
+/// BR-007: the report a failed turn of a task sends to its parent, or
+/// None when there is nothing to report: a completed or interrupted
+/// turn, main (its own view shows the failure), or a retry loop the user
+/// stopped on purpose.
+fn failed_turn_report(agent: &str, turn_done: &str) -> Option<String> {
+    let why = turn_done.strip_prefix("failed: ")?;
+    if agent == "main" || why.starts_with("stopped retrying (interrupted by the user)") {
+        return None;
+    }
+    Some(format!(
+        "my turn failed: {} — a new message retries it",
+        why
+    ))
 }
 
 /// The checks and texts of a new task the daemon prepares for sb-core
