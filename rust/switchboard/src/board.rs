@@ -64,32 +64,27 @@ pub fn agent_threads(st: &State, limit: usize) -> Vec<String> {
     for m in st.msgs.values() {
         threads.entry(m.thread).or_default().push(m);
     }
-    let mut out: Vec<(u64, String)> = Vec::new();
-    for (t, ms) in threads {
-        if ms.iter().any(|m| m.from == USER || m.to == USER || m.plain) {
-            continue;
-        }
-        let parties: Vec<&str> = {
-            let mut p: Vec<&str> = Vec::new();
-            for m in &ms {
-                for x in [m.from.as_str(), m.to.as_str()] {
-                    if !p.contains(&x) {
-                        p.push(x);
-                    }
-                }
-            }
-            p
-        };
-        if parties.contains(&MAIN) && parties.len() == 2 {
-            // main's own conversations are already in its thread
-            continue;
-        }
-        let open = ms
-            .iter()
-            .any(|m| m.expect_reply && !st.settled.contains(&m.id));
-        let last = ms.last().map(|m| m.created_ms).unwrap_or(0);
-        out.push((
-            last,
+    let mut shown: Vec<(u64, u64, Vec<&crate::model::Msg>, Vec<&str>)> = threads
+        .into_iter()
+        .filter(|(_, ms)| !ms.iter().any(|m| m.from == USER || m.to == USER || m.plain))
+        .map(|(t, ms)| {
+            let parties = parties_of(&ms);
+            let last = ms.last().map(|m| m.created_ms).unwrap_or(0);
+            (last, t, ms, parties)
+        })
+        // main's own conversations are already in its thread
+        .filter(|(_, _, _, p)| !(p.contains(&MAIN) && p.len() == 2))
+        .collect();
+    // stable: equal times keep the thread order; only the shown ones
+    // are rendered
+    shown.sort_by_key(|x| std::cmp::Reverse(x.0));
+    shown
+        .into_iter()
+        .take(limit)
+        .map(|(_, t, ms, parties)| {
+            let open = ms
+                .iter()
+                .any(|m| m.expect_reply && !st.settled.contains(&m.id));
             format!(
                 "t_{} {}  {} message{}  {}  \"{}\"",
                 t,
@@ -98,11 +93,20 @@ pub fn agent_threads(st: &State, limit: usize) -> Vec<String> {
                 if ms.len() > 1 { "s" } else { "" },
                 if open { "open" } else { "answered" },
                 clip(&one_line(&ms[0].text), 60)
-            ),
-        ));
+            )
+        })
+        .collect()
+}
+
+/// The senders and recipients of a thread, in order of appearance.
+fn parties_of<'a>(ms: &[&'a crate::model::Msg]) -> Vec<&'a str> {
+    let mut p: Vec<&str> = Vec::new();
+    for x in ms.iter().flat_map(|m| [m.from.as_str(), m.to.as_str()]) {
+        if !p.contains(&x) {
+            p.push(x);
+        }
     }
-    out.sort_by_key(|x| std::cmp::Reverse(x.0));
-    out.into_iter().take(limit).map(|(_, s)| s).collect()
+    p
 }
 
 /// The block appended to every model request of main.
