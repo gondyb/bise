@@ -3290,3 +3290,40 @@ def hub_prof_map(+xs: List<&2, HM.Agent>, +n: String, +op: HM.AgentOp, +nr: {hub
       {==}
     case Con{h, t}:
       hub_prof_map.pick(String.eq(HM.Agent.name(h), n), h, t, n, op, {==}, nr, hub_prof_map(t, n, op, nr))
+
+def hub_str_eq_sym_false.aa(+a: String, -b: String, s: {b == a : String}, e: {String.eq(a, b) == False{} : Bool}) -> {String.eq(a, a) == False{} : Bool}:
+  %s : {String.eq(a, _) == False{} : Bool}
+  e
+
+def hub_str_eq_sym_false.bad(+a: String, -b: String, s: {b == a : String}, e: {String.eq(a, b) == False{} : Bool}) -> {True{} == False{} : Bool}:
+  Equal.trans(Bool, True{}, String.eq(a, a), False{}, Equal.sym(Bool, String.eq(a, a), True{}, hub_str_eq_refl(a)), hub_str_eq_sym_false.aa(a, b, s, e))
+
+def hub_str_eq_sym_false.pick(c: Bool, +a: String, +b: String, +ec: {String.eq(b, a) == c : Bool}, e: {String.eq(a, b) == False{} : Bool})
+    -> {String.eq(b, a) == False{} : Bool}:
+  match c:
+    case False{}:
+      ec
+    case True{}:
+      hub_absurd_eq(hub_tf_absurd(hub_str_eq_sym_false.bad(a, b, hub_str_eq_sound(b, a, ec), e)), Bool, String.eq(b, a), False{})
+
+def hub_str_eq_sym_false(+a: String, +b: String, e: {String.eq(a, b) == False{} : Bool}) -> {String.eq(b, a) == False{} : Bool}:
+  hub_str_eq_sym_false.pick(String.eq(b, a), a, b, {==}, e)
+
+# n is none of the names of the listed agents
+def hub_free(ps: List<&2, List<&2, String>>, +n: String) -> Data:
+  match ps:
+    case Nil{}:
+      Unit
+    case Con{+p, +r}:
+      HX.Both<{HM.str_in(p, n) == False{} : Bool}, hub_free(r, n)>
+
+def hub_mdisc(m: Maybe<&2, HM.Agent>) -> Type:
+  match m:
+    case None{}:
+      Unit
+    case Some{x}:
+      Empty
+
+def hub_some_none(-a: HM.Agent, e: {Some{a} == None{} : Maybe<&2, HM.Agent>}) -> Empty:
+  %Equal.sym(Maybe<&2, HM.Agent>, Some{a}, None{}, e) : hub_mdisc(_)
+  Unit{}
