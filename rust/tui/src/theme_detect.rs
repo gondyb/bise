@@ -126,7 +126,6 @@ fn home() -> Option<std::path::PathBuf> {
 
 /// `/theme light|dark|auto`: switch now and save it for the next launches.
 /// The mode is switched even when the save fails (the error says why).
-#[allow(dead_code)] // until /theme (BISE-41, track K) calls it
 pub(crate) fn choose(choice: Choice) -> (Mode, Result<(), String>) {
     let m = apply(choice);
     let saved = match home() {

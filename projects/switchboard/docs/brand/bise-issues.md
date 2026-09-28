@@ -1146,7 +1146,7 @@ Index:
   - **For K (/theme, BISE-41):** `theme_detect::choose(Choice::parse(arg)?)`
     → `(Mode, Result<(), String>)`: switches now and saves; on `Err` the
     mode is switched anyway, say it wasn't saved. Marked
-    `#[allow(dead_code)]` until K calls it (drop the attribute then). Told
+    `#[allow(dead_code)]` until K called it (5ff22eb; dropped since). Told
     bise-k-keys.
   - Onboarding step 2: `enter` saves `auto` when the pick is what the
     terminal gave (dark with no answer), else the pick, so a kept default
