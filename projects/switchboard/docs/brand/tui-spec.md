@@ -268,13 +268,14 @@ composer; sources are a dragged file, `ctrl+v` (clipboard) and the `@` popup.
 - **Strip above the composer** while images are attached: number, source
   (file name or "clipboard"), size in pixels and kB, and "resized to fit
   2048" when it applies. Backspace on a chip removes the image.
-- **History.** Your line keeps the chips with the file name; `▸` opens a
-  preview. **⚠** A real thumbnail needs the kitty or iTerm2 image protocols,
-  not planned in images.md.
+- **History.** Your line keeps the chips with the file name, and one dim
+  line under it gives each image's size. **Later** (Gabriel: too ambitious
+  for now): drawing the picture in the terminal (kitty / iTerm2 image
+  protocols).
 - **Routing.** Main says it passes the images on ("layout-fix takes it, with
   both images"). **⚠** To check: the image marker must travel in the brief.
 - **Tool results.** A script that returns an image shows `result · ▣
-  screenshot.png 390×844 ▸`.
+  screenshot.png 390×844`.
 - **Model without vision.** Plain words and a way out: "glm-5 can't read
   images. pick a model that can (/model), or describe the screen in words."
   **⚠** Today the provider's raw error shows.

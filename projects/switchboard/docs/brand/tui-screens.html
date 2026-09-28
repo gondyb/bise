@@ -300,9 +300,9 @@ src/auth/session.ts:31:  sameSite: "none",</pre>
    <div class="row"><span><span class="img">▣ 2</span> clipboard</span><span class="dim">2048×1536 · 1.1 MB → resized to fit 2048</span></div></div>`,
    f: foot(undefined, '<span class="dim">›</span> compare <span class="img">▣ 1</span> with the design <span class="img">▣ 2</span>, the button is off<span class="cur"></span>', "ctrl+v paste image · @ file") })],
 
-["images in the history", "your message keeps its chips, with the file name. ▸ opens a preview when the terminal can draw images (⚠ kitty / iTerm2 image protocols, not planned yet). main passes the images on with the work (⚠ to check: the marker must travel in the brief).",
- term({ feed: you('compare <span class="img">▣ login-mobile.png</span> with the design <span class="img">▣ clipboard</span>, the button is off <span class="dim">▸</span>') +
-   `<div class="thumb"></div>` +
+["images in the history", "your message keeps its chips, with the file name and size. no picture drawn in the terminal for now (later). main passes the images on with the work (⚠ to check: the marker must travel in the brief).",
+ term({ feed: you('compare <span class="img">▣ login-mobile.png</span> with the design <span class="img">▣ clipboard</span>, the button is off') +
+   `<div class="ind dim">▣ login-mobile.png 1170×2532 · ▣ clipboard 2048×1536</div>` +
    bise("on it: layout-fix takes it, with both images.") +
    bgs(bg("main", "layout-fix", 'the sign-in button is off on mobile. images: ▣ 1, ▣ 2.')) })],
 
@@ -312,7 +312,7 @@ src/auth/session.ts:31:  sameSite: "none",</pre>
   <span class="kw">await</span> tools.browser.<span class="fn">open</span>({ url: <span class="str">"http://localhost:3000/login"</span>, width: <span class="num">390</span> });
   <span class="kw">return</span> <span class="kw">await</span> tools.browser.<span class="fn">screenshot</span>();
 }</pre>
-   <div class="ind"><span class="dim">result ·</span> <span class="img">▣ screenshot.png</span> <span class="dim">390×844 ▸</span></div>
+   <div class="ind"><span class="dim">result ·</span> <span class="img">▣ screenshot.png</span> <span class="dim">390×844</span></div>
    <div class="b">the button overflows at 390 px: it has a fixed width of 420 px. switching it to max-width: 100%.</div>
    <div class="b"><span class="who err">✗</span><span class="err">glm-5 can't read images.</span> <span class="dim">pick a model that can (/model), or describe the screen in words.</span></div>`,
    pan: PANEL("auth-fix") })],
