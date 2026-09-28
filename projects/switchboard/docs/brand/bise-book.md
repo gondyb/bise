@@ -212,7 +212,9 @@ ASCII (`~` working, `<3` done, `>` you, …) for terminals that draw them badly
 4. **One symbol per thing** (§6).
 5. **The history never lies.** Append-only, in arrival order (§10).
 6. **No new vocabulary** (§4): you, main, agents, cards.
-7. **Honest.** No undo that can't undo, no silent failure, no hidden limit.
+7. **Honest.** No silent failure, no hidden limit, nothing we pretend to
+   have. (Don't talk about undo in user-facing copy: it doesn't exist for the
+   user, so mentioning it is an artifact. §13 keeps it for implementers.)
 
 ## 8. Layout
 
