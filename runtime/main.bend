@@ -11,7 +11,7 @@
 #   tool exec) and recurses with less fuel, so the Runtime terminates
 #   like the Core.
 #
-# Also here: tool dispatch (exec_pick), run_typescript through bend-jsrt,
+# Also here: tool dispatch (exec_tool), run_typescript through bend-jsrt,
 # the --resume history replay, and the steering/interrupt side-channels.
 # The tools themselves live in their own modules (bash, patch-tool,
 # selftools, mcp, skills), the provider call in provider.bend. Live mode
@@ -428,80 +428,61 @@ def exec_program(fuel: Nat, pr0: Pv.Out & (Sfp.Def & EpAct), +prog: String,
     case (out, (d, act)):
       exec_program.go(fuel, out, d, act, prog, results, live)
 
-# the skill loader: the vibe_sdk exact-name contract, executed by
-# reading the SKILL.md the catalog points at
-def exec_pick.patch(is_patch: Bool, +name: String, +args: String,
-    +live: Bool) -> IO(Xp.ExecRes):
-  match is_patch:
-    case True{}:
-      Ptl.exec_patch(args, live)
-    case False{}:
-      Sh.exec_mcp(name, args, live)
+# tool dispatch: which executor a call's name selects (checked in this
+# order; anything unknown is an MCP connector tool). The comparisons are
+# a handful of short String.eq: evaluating them all is cheap.
+type Tool is Data:
+  TNode{}
+  TBash{}
+  TSearch{}
+  TSelf{}
+  TSkill{}
+  TPatch{}
+  TMcp{}
 
-def exec_pick.skill(is_skill: Bool, +name: String, +args: String,
-    +live: Bool) -> IO(Xp.ExecRes):
-  match is_skill:
-    case True{}:
-      do IO<Xp.ExecRes>:
-        r : Mcp.MR <- Sk.exec_skill(args, live)
-        IO.pure(Xp.ExecRes, Sh.exec_mr(r))
-    case False{}:
-      exec_pick.patch(String.eq(name, "apply_patch"), name, args, live)
+def tool_of(+name: String) -> Tool:
+  Bool.pick(Tool, String.eq(name, "node_program"), TNode{},
+  Bool.pick(Tool, String.eq(name, "bash"), TBash{},
+  Bool.pick(Tool, String.eq(name, "search_tool_functions"), TSearch{},
+  Bool.pick(Tool, Sfp.is_self_tool(name), TSelf{},
+  Bool.pick(Tool, String.eq(name, "skill"), TSkill{},
+  Bool.pick(Tool, String.eq(name, "apply_patch"), TPatch{}, TMcp{}))))))
 
-def exec_pick.not_bash(is_search: Bool, is_self: Bool, is_skill: Bool,
-    +name: String, +args: String, +live: Bool) -> IO(Xp.ExecRes):
-  match is_search:
-    case True{}:
-      Sh.exec_search(args, live)
-    case False{}:
-      match is_self:
-        case True{}:
-          IO.pure(Xp.ExecRes, Sfp.self_exec(name))
-        case False{}:
-          exec_pick.skill(is_skill, name, args, live)
-
-def exec_pick(is_bash: Bool, is_search: Bool, is_self: Bool,
-    is_skill: Bool, +name: String, +args: String, +live: Bool)
-    -> IO(Xp.ExecRes):
-  match is_bash:
-    case True{}:
-      Sh.bash_exec(args)
-    case False{}:
-      exec_pick.not_bash(is_search, is_self, is_skill, name, args, live)
-
-def exec_pick.call(is_bash: Bool, is_search: Bool, is_skill: Bool,
-    +call: T.Call, +live: Bool) -> IO(Xp.ExecRes):
-  match call:
-    case T.Call{_, +name, +args}:
-      exec_pick(is_bash, is_search, Sfp.is_self_tool(name), is_skill, name,
-        args, live)
-
-def exec_tool.node_args(out: Pv.Out, +call: T.Call, +live: Bool)
-    -> IO(Pv.Out & Xp.ExecRes):
-  match call:
-    case T.Call{_, _, +args}:
-      exec_program(1000n, (out, (Sfp.def_none(), EpRun{})),
-        Api.call_code(args), Nil{}, live)
-
-def exec_tool.plain(out: Pv.Out, +call: T.Call, +live: Bool)
-    -> IO(Pv.Out & Xp.ExecRes):
+def exec_tool.with(out: Pv.Out, act: IO(Xp.ExecRes)) -> IO(Pv.Out & Xp.ExecRes):
   do IO<Pv.Out & Xp.ExecRes>:
-    r : Xp.ExecRes <- exec_pick.call(String.eq(Rtp.call_name(call), "bash"),
-      String.eq(Rtp.call_name(call), "search_tool_functions"),
-      String.eq(Rtp.call_name(call), "skill"), call, live)
+    r : Xp.ExecRes <- act
     IO.pure(Pv.Out & Xp.ExecRes, (out, r))
 
-def exec_tool.is_node(out: Pv.Out, is_node: Bool, +call: T.Call, +live: Bool)
-    -> IO(Pv.Out & Xp.ExecRes):
-  match is_node:
-    case True{}:
-      exec_tool.node_args(out, call, live)
-    case False{}:
-      exec_tool.plain(out, call, live)
+# the skill loader: the vibe_sdk exact-name contract, executed by
+# reading the SKILL.md the catalog points at
+def exec_tool.skill(+args: String, +live: Bool) -> IO(Xp.ExecRes):
+  do IO<Xp.ExecRes>:
+    r : Mcp.MR <- Sk.exec_skill(args, live)
+    IO.pure(Xp.ExecRes, Sh.exec_mr(r))
+
+def exec_tool.run(t: Tool, out: Pv.Out, +name: String, +args: String,
+    +live: Bool) -> IO(Pv.Out & Xp.ExecRes):
+  match t:
+    case TNode{}:
+      exec_program(1000n, (out, (Sfp.def_none(), EpRun{})),
+        Api.call_code(args), Nil{}, live)
+    case TBash{}:
+      exec_tool.with(out, Sh.bash_exec(args))
+    case TSearch{}:
+      exec_tool.with(out, Sh.exec_search(args, live))
+    case TSelf{}:
+      IO.pure(Pv.Out & Xp.ExecRes, (out, Sfp.self_exec(name)))
+    case TSkill{}:
+      exec_tool.with(out, exec_tool.skill(args, live))
+    case TPatch{}:
+      exec_tool.with(out, Ptl.exec_patch(args, live))
+    case TMcp{}:
+      exec_tool.with(out, Sh.exec_mcp(name, args, live))
 
 def exec_tool(out: Pv.Out, +call: T.Call, +live: Bool) -> IO(Pv.Out & Xp.ExecRes):
-  exec_tool.is_node(out, String.eq(Rtp.call_name(call), "node_program"),
-    call, live)
+  match call:
+    case T.Call{_, +name, +args}:
+      exec_tool.run(tool_of(name), out, name, args, live)
 
 def emit_code_ann.pick(is_code: Bool, out: Pv.Out, +call: T.Call) -> IO(Pv.Out):
   match is_code:
