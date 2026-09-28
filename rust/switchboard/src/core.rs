@@ -501,7 +501,7 @@ fn notice(client: ClientId, text: &str) -> Effect {
 }
 
 fn parse<T: serde::de::DeserializeOwned>(x: &Value) -> Option<T> {
-    serde_json::from_value(x.clone()).ok()
+    T::deserialize(x).ok()
 }
 
 fn run_of(s: &str) -> Run {
@@ -566,7 +566,7 @@ impl Hub {
     /// Store the state sb-core sent (it is the only source of truth).
     fn load_view(&mut self, v: &Value) {
         let mut agents = BTreeMap::new();
-        for a in v["agents"].as_array().cloned().unwrap_or_default() {
+        for a in v["agents"].as_array().into_iter().flatten() {
             let name = jstr(&a, "name");
             let declared = a["declared"]
                 .as_object()
@@ -600,7 +600,7 @@ impl Hub {
             self.st.msg_state.clear();
             self.st.settled.clear();
         }
-        for r in v["msgs"].as_array().cloned().unwrap_or_default() {
+        for r in v["msgs"].as_array().into_iter().flatten() {
             let Some(m) = parse(&r["msg"]) else { continue };
             let m: Msg = m;
             if let Some(state) = parse(&r["state"]) {
@@ -615,9 +615,8 @@ impl Hub {
         }
         self.st.cards = v["cards"]
             .as_array()
-            .cloned()
-            .unwrap_or_default()
-            .iter()
+            .into_iter()
+            .flatten()
             .filter_map(|c| parse(c).map(|c: Card| (c.id, c)))
             .collect();
         self.st.main_notes = parse(&v["notes"]).unwrap_or_default();
@@ -785,7 +784,7 @@ impl Hub {
             }
             // the state after the step first: the deliveries render from it
             self.load_view(&out["view"]);
-            for f in out.get("fx").and_then(|x| x.as_array()).cloned().unwrap_or_default() {
+            for f in out.get("fx").and_then(|x| x.as_array()).into_iter().flatten() {
                 self.effect(fx, env, client, &f);
             }
             return;
@@ -942,7 +941,7 @@ impl Hub {
                 parts.push(status);
             }
         }
-        for m in f["msgs"].as_array().cloned().unwrap_or_default() {
+        for m in f["msgs"].as_array().into_iter().flatten() {
             let id = m["id"].as_u64().unwrap_or(0);
             if let Some(msg) = self.st.msgs.get(&id) {
                 parts.push(prompts::tagged(msg, &jstr(&m, "rel")));
@@ -1261,12 +1260,7 @@ impl Hub {
                 timeout_s,
             } => json!({"cmd": "ask", "to": to, "text": text, "timeout_s": timeout_s}),
             AgentReq::Status { status, note } => {
-                let st = match status {
-                    Declared::Working => "working",
-                    Declared::Done => "done",
-                    Declared::Blocked => "blocked",
-                };
-                json!({"cmd": "status", "status": st, "note": note})
+                json!({"cmd": "status", "status": status, "note": note})
             }
             AgentReq::Report {
                 kind,
