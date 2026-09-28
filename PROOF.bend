@@ -3528,3 +3528,32 @@ def hub_aa_map_ren(+x: List<&2, String>, +t: List<&2, HM.Agent>, +old: String, +
       match a:
         case HX.Both{+a1, +a2}:
           hub_aa_map_ren.pick(String.eq(HM.Agent.name(h), old), x, h, r, old, new, {==}, a1, fx, a2, hub_aa_map_ren(x, r, old, new, a2, fx))
+
+def hub_nok_ren.top(h: HM.Agent, +t: List<&2, HM.Agent>, +new: String, a1: HI.ApartAll(HI.names(h), HI.profile(t)), ft: hub_free(HI.profile(t), new),
+    nt: HI.NamesOK(HI.profile(t))) -> HI.NamesOK(HI.profile(HM.agent_op(h, HM.ORename{new}) <> t)):
+  match h:
+    case HM.Agent{name, im, pa, life, de, al, fi, ws, di, br, cr, fa, no, rp, sn}:
+      HX.Both{hub_aa_ren(name, al, new, HI.profile(t), a1, ft), nt}
+
+def hub_nok_ren.pick(c: Bool, +h: HM.Agent, +t: List<&2, HM.Agent>, +old: String, +new: String, +e: {String.eq(HM.Agent.name(h), old) == c : Bool},
+    a1: HI.ApartAll(HI.names(h), HI.profile(t)), nt: HI.NamesOK(HI.profile(t)), +fh: {HM.str_in(HI.names(h), new) == False{} : Bool},
+    ft: hub_free(HI.profile(t), new), ih: HI.NamesOK(HI.profile(HM.map_agent(t, old, HM.ORename{new}))))
+    -> HI.NamesOK(HI.profile(Bool.pick(List<&2, HM.Agent>, String.eq(HM.Agent.name(h), old), HM.agent_op(h, HM.ORename{new}) <> t, h <> HM.map_agent(t, old, HM.ORename{new})))):
+  match c:
+    case True{}:
+      %Equal.sym(Bool, String.eq(HM.Agent.name(h), old), True{}, e) : HI.NamesOK(HI.profile(Bool.pick(List<&2, HM.Agent>, _, HM.agent_op(h, HM.ORename{new}) <> t, h <> HM.map_agent(t, old, HM.ORename{new}))))
+      hub_nok_ren.top(h, t, new, a1, ft, nt)
+    case False{}:
+      %Equal.sym(Bool, String.eq(HM.Agent.name(h), old), False{}, e) : HI.NamesOK(HI.profile(Bool.pick(List<&2, HM.Agent>, _, HM.agent_op(h, HM.ORename{new}) <> t, h <> HM.map_agent(t, old, HM.ORename{new}))))
+      HX.Both{hub_aa_map_ren(HI.names(h), t, old, new, a1, fh), ih}
+
+# a rename to a free name keeps every agent's names apart
+def hub_nok_ren(+xs: List<&2, HM.Agent>, +old: String, +new: String, nok: HI.NamesOK(HI.profile(xs)), f: hub_free(HI.profile(xs), new))
+    -> HI.NamesOK(HI.profile(HM.map_agent(xs, old, HM.ORename{new}))):
+  match xs:
+    case Nil{}:
+      Unit{}
+    case Con{h, t}:
+      match nok f:
+        case HX.Both{+a1, +nt} HX.Both{+fh, +ft}:
+          hub_nok_ren.pick(String.eq(HM.Agent.name(h), old), h, t, old, new, {==}, a1, nt, fh, ft, hub_nok_ren(t, old, new, nt, ft))
