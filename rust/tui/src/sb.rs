@@ -103,6 +103,17 @@ pub(super) struct Agent {
     turn_ms: Option<u64>,
 }
 
+impl Agent {
+    fn archived(&self) -> bool {
+        self.status == "archived"
+    }
+
+    /// In a turn (its feed shows the spinner).
+    fn busy(&self) -> bool {
+        self.status == "working" || self.status == "waiting"
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct Card {
     id: u64,
@@ -358,7 +369,7 @@ impl Sb {
     fn nav(&self) -> Vec<&Agent> {
         self.agents
             .iter()
-            .filter(|a| a.status != "archived")
+            .filter(|a| !a.archived())
             .collect()
     }
 
@@ -816,16 +827,7 @@ fn apply_state(app: &mut App, v: &Value) {
         sb.card.full = false;
     }
     // the spinner of every feed follows the agent, whoever started the turn
-    let busy: HashMap<String, bool> = sb
-        .agents
-        .iter()
-        .map(|a| {
-            (
-                a.name.clone(),
-                a.status == "working" || a.status == "waiting",
-            )
-        })
-        .collect();
+    let busy: HashMap<String, bool> = sb.agents.iter().map(|a| (a.name.clone(), a.busy())).collect();
     for (name, view) in sb.views.iter_mut() {
         view.pending = busy.get(name).copied().unwrap_or(false);
     }
@@ -1288,7 +1290,8 @@ pub(super) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
         ),
     ]));
     lines.push(Line::from(""));
-    for (i, a) in sb.nav().iter().enumerate() {
+    let nav = sb.nav();
+    for (i, a) in nav.iter().enumerate() {
         let (g, gc) = glyph(&a.status, app.tick);
         let focused = a.name == sb.focus;
         let selected = sb.selected == Some(i);
@@ -1339,14 +1342,14 @@ pub(super) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
                 )));
             }
         }
-        if a.main && sb.nav().len() > 1 {
+        if a.main && nav.len() > 1 {
             lines.push(Line::from(Span::styled(
                 format!(" {}", "─".repeat(w.saturating_sub(1))),
                 Style::default().fg(FAINT),
             )));
         }
     }
-    let archived = sb.agents.iter().filter(|a| a.status == "archived").count();
+    let archived = sb.agents.iter().filter(|a| a.archived()).count();
     if archived > 0 {
         lines.push(Line::from(Span::styled(
             format!(
@@ -1548,7 +1551,7 @@ fn filter_mentions<'a>(agents: &'a [Agent], focus: &str, query: &str) -> Vec<&'a
     let q = query.to_lowercase();
     let live = agents
         .iter()
-        .filter(|a| a.status != "archived" && a.name != focus && !a.name.is_empty());
+        .filter(|a| !a.archived() && a.name != focus && !a.name.is_empty());
     let (mut prefix, mut inner) = (Vec::new(), Vec::new());
     for a in live {
         let n = a.name.to_lowercase();
@@ -1821,9 +1824,7 @@ fn line_mode(app: &mut App) -> io::Result<()> {
             .sb
             .as_ref()
             .map(|sb| {
-                sb.agents.iter().any(|a| {
-                    a.status == "working" || a.status == "waiting" || a.status == "starting"
-                })
+                sb.agents.iter().any(|a| a.busy() || a.status == "starting")
             })
             .unwrap_or(false);
         if !stdin_open && !busy {
