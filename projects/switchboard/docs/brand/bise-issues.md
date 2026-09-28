@@ -1334,3 +1334,25 @@ Index:
     `a_message_not_delivered_is_marked_and_asks`, tmux
     `tui_undelivered_tmux.py` (throwaway hub: `/new -w t1`, `/drop t1`,
     `@t1 …` → `✗` + the question, ⏎ again, esc), added to `run_all.sh`.
+
+### BISE-88 · code quality pass (last, with a budget)
+
+- **status:** todo · **owner:** — · **commits:** —
+- **track:** S · **owns:** the code the bise work touched (`rust/tui`,
+  `rust/switchboard`, `hub/*.bend`), one area at a time
+- **when:** after BISE-80–83 and BISE-82's fixes, before main's final
+  integration gate
+- **do:** review what the bise waves added or changed (`git diff 4282501..HEAD`)
+  with the `code-quality` and `codebase-design` skills: dead code, duplicated
+  logic, modules that grew too big (`sb.rs`, `render.rs`, `feed.rs`), hidden
+  state, `unwrap`/panics on input, tests that test nothing, missing tests on
+  risky paths. Write the findings first (`docs/brand/qa/code-quality.md`,
+  ranked by risk × cost), then fix from the top until the budget runs out.
+- **budget (hard):** at most ~1500 changed lines in total and 3 hours of work;
+  one refactor per commit, each gated; no behaviour change, no contract change
+  (C1–C4, the hub line protocol, the journal), bench not slower. What doesn't
+  fit the budget stays listed in the findings for main.
+- **done when:** findings written; the fixes that fit are committed and gated
+  (build, test --workspace, clippy --all-targets -D warnings, run_all.sh,
+  PROOF if a `.bend` changed); the rest listed with a cost estimate.
+- **notes:**
