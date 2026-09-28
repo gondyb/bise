@@ -11,12 +11,18 @@
   .lead { color:#8a8378; max-width:100ch; margin-bottom:14px; font-size:13px; }
   .lead b { color:var(--text); font-weight:400; }
   .term { background:var(--bg); border-radius:8px; width:100ch; max-width:100%; height:520px; box-shadow:0 12px 40px rgba(0,0,0,.45); position:relative; overflow:hidden; }
-  .screen { position:absolute; inset:0; padding:40px 6ch; display:none; flex-direction:column; justify-content:center; }
+  /* book §15: one content column, 64 columns wide (terminal − 8 when narrower), centered;
+     the block sits a bit above the middle (2/5 of the free rows above it) */
+  .screen { position:absolute; inset:0; padding:40px 6ch 110px; display:none; flex-direction:column; justify-content:center; align-items:center; }
+  .screen > .col { width:64ch; max-width:100%; }
+  .title { font-weight:700; margin-bottom:2lh; }
+  .k { color:var(--text); }
   .screen.on { display:flex; animation:fade .4s ease-out; }
   @keyframes fade { from { opacity:0 } to { opacity:1 } }
   .center { align-items:center; text-align:center; }
   .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)}
-  .big { font-size:28px; font-weight:700; }
+  .big { font-size:14px; font-weight:700; }  /* the terminal has one size: bold. 2× only where OSC 66 text sizing exists (kitty ≥ 0.40), see book §15 */
+  .big.x2 { font-size:28px; }
   .kiss { display:inline-block; color:var(--acc); opacity:0; }
   .kiss.go { animation:kiss .9s ease-out forwards; }
   @keyframes kiss { 0% { opacity:0; transform:scale(.4) } 55% { opacity:1; transform:scale(1.5) rotate(-10deg) } 100% { opacity:1; transform:scale(1) } }
@@ -24,7 +30,7 @@
   @keyframes blink { 50% { opacity:0 } }
   .step { position:absolute; bottom:14px; left:0; right:0; text-align:center; color:var(--faint); letter-spacing:4px; }
   .step .on { color:var(--acc); }
-  .hint { color:var(--faint); margin-top:26px; }
+  .hint { color:var(--dim); margin-top:2lh; }  /* key lines are read: dim, never faint; keys in text */
   .opt { padding:2px 1ch; border-left:2px solid transparent; }
   .opt.sel { border-left-color:var(--acc); background:#1f1c1a; }
   .opt .tag { color:var(--acc); font-size:12px; margin-left:1ch; }
@@ -69,14 +75,14 @@
   <!-- 1 welcome -->
   <div class="screen center on" data-s="0">
     <div class="big"><span id="w1"></span><span class="kiss" id="wk">:*</span></div>
-    <div class="faint gloss" id="wg">bise /beez/ · french: a kiss on the cheek. also a north wind.</div>
-    <div class="dim" style="margin-top:18px; min-height:1.6em" id="w2"></div>
+    <div class="dim gloss" id="wg">bise /beez/ · french: a kiss on the cheek. also a north wind.</div>
+    <div style="margin-top:2lh; min-height:1.6em" id="w2"></div>
     <div class="hint" id="w3"></div>
   </div>
 
   <!-- 2 theme -->
   <div class="screen center" data-s="1">
-    <div>your terminal looks <b>dark</b>, so i picked dark.</div>
+    <div class="title" style="margin-bottom:0">your terminal looks dark, so i picked dark.</div>
     <div class="dim">you can change it any time with /theme.</div>
     <div class="themes">
       <div class="prev dark sel" data-t="dark"><div class="d">dark</div>
@@ -90,34 +96,40 @@
         <div class="b r d">@ auth-fix → main  found it</div>
         <div class="b"><span class="who">♡</span>auth-fix is done.</div></div>
     </div>
-    <div class="hint">←→ switch · enter keep</div>
+    <div class="hint"><span class="k">←→</span> switch · <span class="k">enter</span> keep</div>
   </div>
 
   <!-- 3 model -->
-  <div class="screen" data-s="2" style="padding-left:14ch">
-    <div>which model should do the work?</div>
-    <div class="dim" style="margin-bottom:14px">i found a key in your environment.</div>
+  <div class="screen" data-s="2">
+    <div class="col">
+    <div class="title">which model should do the work?</div>
+    <div class="dim" style="margin:-1lh 0 1lh">i found a key in your environment.</div>
     <div class="opt sel" data-o>1 · use ANTHROPIC_API_KEY <span class="tag">found</span><div class="sub">claude, already set up. nothing to paste.</div></div>
     <div class="opt" data-o>2 · paste another key<div class="sub">mistral, openai, anthropic, z.ai… ⚠ list depends on what ships</div></div>
     <div class="opt" data-o>3 · sign in with the browser<div class="sub">⚠ not built</div></div>
-    <div class="hint">↑↓ choose · enter ok</div>
+    <div class="hint"><span class="k">↑↓</span> choose · <span class="k">enter</span> ok</div>
+    </div>
   </div>
 
   <!-- 4 folder + honesty -->
-  <div class="screen" data-s="3" style="padding-left:14ch; padding-right:14ch">
-    <div>i'll work in <b>~/lab/app</b> <span class="dim">· a git repo ✓</span></div>
+  <div class="screen" data-s="3">
+    <div class="col">
+    <div class="title">i'll work in ~/lab/app <span class="dim" style="font-weight:400">· a git repo ✓</span></div>
     <div class="b dim">all your agents share this folder and know about each other. no worktrees to merge.</div>
     <div class="b">one honest thing: <span class="acc">agents run commands here without asking you.</span> <span class="dim">git is your safety net, so commit often. ⚠ an approval mode is not built yet.</span></div>
-    <div class="hint">enter ok · o another folder</div>
+    <div class="hint"><span class="k">enter</span> ok · <span class="k">o</span> another folder</div>
+    </div>
   </div>
 
   <!-- 5 how it works -->
-  <div class="screen" data-s="4" style="padding-left:14ch">
-    <div class="dim">how it works, in three lines:</div>
+  <div class="screen" data-s="4">
+    <div class="col">
+    <div class="title">how it works, in three lines:</div>
     <div class="line you" data-l>you talk to me. i start agents for the work, in the background.</div>
     <div class="line" data-l><span class="who"><span class="pulse">∿</span></span>they show up on the right. ⌥ + number to look inside, esc to come back.</div>
     <div class="line" data-l><span class="who acc">?</span>when someone needs you, you get a card. the rest can wait.</div>
-    <div class="hint line" data-l>enter, and say what's on your mind.</div>
+    <div class="hint line" data-l><span class="k">enter</span>, and say what's on your mind.</div>
+    </div>
   </div>
 
   <!-- 6 first run with just-in-time hints -->

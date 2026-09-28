@@ -31,6 +31,14 @@
   .foot { border-top:1px solid var(--line); padding:6px 2ch 8px; }
   .status { display:flex; justify-content:space-between; color:var(--dim); }
   .composer { display:flex; justify-content:space-between; margin-top:4px; }
+  /* the composer block (book §14): a bar │ in column 1 (faint when empty, accent while you type,
+     the same bar your message keeps in the history), 1 blank row above and below the text,
+     at least 2 text rows, text at column 3; the key hints get their own last row */
+  .cbox { margin-top:4px; border-left:1px solid var(--faint); padding:1lh 0 1lh calc(2ch - 1px); }
+  .cbox.typing { border-left-color:var(--acc); }
+  .cbox .ctext { min-height:2lh; white-space:pre-wrap; }
+  .hintrow { text-align:right; color:var(--dim); margin-top:2px; min-height:1lh; }
+  .queue { margin-top:4px; }
   .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)} .err{color:var(--err)} .ok{color:var(--ok)}
   .kw{color:var(--kw)} .str{color:var(--str)} .com{color:var(--com)} .num{color:var(--num)} .fn{color:var(--fn)}
   .b { margin-top:1.6em; margin-top:1lh; } .who { display:inline-block; width:3ch; } .ind { padding-left:3ch; }
@@ -107,9 +115,14 @@ const P = {
 const PANEL = (sel, ...more) => panel([P.main, P.auth, P.rel, P.docs, P.api, P.bench, P.deploy, ...more].map(r => ({ ...r, sel: r.name === sel })));
 // the agent you talk to is named in blush, so you always know who gets your message
 const who = (st) => st.startsWith("<") ? st : st.replace(/^([\w-]+)/, '<span class="acc">$1</span>');
-function foot(status, composer, hints) {
-  return `<div class="foot"><div class="status"><span>${who(status ?? 'main · idle · 210k / 1M tokens · 21%')}</span><span>${hints ?? ""}</span></div>
-  <div class="composer"><span>${composer ?? '<span class="dim">›</span> <span class="cur"></span>'}</span><span class="dim">${hints === undefined ? "⏎ send · @ agent · / commands · ? help" : ""}</span></div></div>`;
+function foot(status, composer, hints, queue = "") {
+  // the composer text without the old "› " lead (the bar replaces it)
+  const c = (composer ?? "").replace(/^<span class="dim">›<\/span>\s?/, "");
+  const typing = c.replace(/<span class="cur"><\/span>/g, "").replace(/<[^>]+>/g, "").trim().length > 0;
+  return `<div class="foot"><div class="status"><span>${who(status ?? 'main · idle · 210k / 1M tokens · 21%')}</span></div>
+  ${queue ? `<div class="queue">${queue}</div>` : ""}
+  <div class="cbox${typing ? " typing" : ""}"><div class="ctext">${c || '<span class="cur"></span>'}</div></div>
+  <div class="hintrow">${hints === undefined || hints === "" ? "⏎ send · @ agent · / commands · ? help" : hints}</div></div>`;
 }
 function term({ h, feed, pan, above = "", f, narrow, overlay = "" }) {
   return `<div class="term${narrow ? " narrow" : ""}">${h ?? head()}<div class="grid"><div class="feed">${feed}</div>${narrow ? "" : (pan ?? PANEL())}</div>${above}${f ?? foot()}${overlay}</div>`;
@@ -354,8 +367,7 @@ docs      waiting for your call   needs you
    `<div class="b"><span class="who dim">∴</span><span class="dim">thought for 6s</span></div>` +
    `<div class="b"><span class="who">$</span>bash <span class="pulse dim">∿ 40s</span></div><pre class="code">npx playwright test --project=webkit</pre>`,
    pan: panel([{ ...P.main, g: S.work, r: '<span class="faint">· 2 queued</span>', sel: true }, P.auth, P.rel]),
-   above: `<div style="padding:0 2ch 2px"><div class="dim"> › also check the logout path, it uses the same cookie…</div><div class="dim"> › and draft the release note for 2.4…</div><div class="faint">queued · sent when this turn ends · ↑ edit</div></div>`,
-   f: foot('main · working · 40s', '<span class="dim">›</span> <span class="cur"></span>', "tab queue · ⏎ steer · ctrl+c interrupt") })],
+   f: foot('main · working · 40s', '<span class="dim">›</span> <span class="cur"></span>', "tab queue · ⏎ steer · ctrl+c interrupt", `<div ><div class="dim"> › also check the logout path, it uses the same cookie…</div><div class="dim"> › and draft the release note for 2.4…</div><div class="faint">queued · sent when this turn ends · ↑ edit</div></div>`) })],
 
 ["talk to an agent from main", "@name sends a direct message without leaving main (main stays out of it); the agent's reply is for you, so level 2. from inside an agent, @main goes back up. the @ popup lists agents (⚠ and files: the at-files task is building it).",
  term({ feed: you("@auth-fix also check the logout path") + `<div class="b"><span class="who">@</span>auth-fix <span class="dim">to you:</span> got it, i'll check logout after the login fix.</div>`,
