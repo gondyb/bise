@@ -28,7 +28,6 @@ use crossterm::event::{
 };
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::symbols::border;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{
     Block, Borders, Clear, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
@@ -42,11 +41,8 @@ use std::time::Duration;
 use unicode_width::UnicodeWidthStr;
 use unicode_segmentation::UnicodeSegmentation;
 
-// ---- the OpenCode theme (opencode.json, dark) ----
-// primary #fab283 (the OpenCode orange) is the agent color: user blocks,
-// prompt border, spinners, back-to-bottom. Markdown follows the
-// markdown* keys; tools follow the inline-tool rules (muted once
-// complete, error red).
+mod theme;
+use theme::*;
 mod sb;
 mod skills;
 mod emoji;
@@ -64,69 +60,6 @@ mod voice_ui_tests;
 mod composer_wrap_tests;
 pub use keyprobe::keyprobe;
 pub use sb::{run_switchboard, take_reexec};
-
-const BRAND: Color = Color::Rgb(0xfa, 0xb2, 0x83); // primary
-const ACCENT: Color = Color::Rgb(0x9d, 0x7c, 0xd8); // markdownHeading
-const HEAD: Color = Color::Rgb(0xe5, 0xc0, 0x7b); // markdownEmph / syntaxType
-const INFO: Color = Color::Rgb(0x56, 0xb6, 0xc2); // info / markdownListEnumeration
-const TEXT: Color = Color::Rgb(0xee, 0xee, 0xee); // text
-const DIM: Color = Color::Rgb(0x80, 0x80, 0x80); // textMuted
-                                                 // complete tools sit at textMuted (OpenCode: fg textMuted when complete)
-const TOOL: Color = Color::Rgb(0x80, 0x80, 0x80);
-const OK: Color = Color::Rgb(0x7f, 0xd8, 0x8f); // success / markdownCode
-const WARN: Color = Color::Rgb(0xf5, 0xa7, 0x42); // warning / markdownStrong
-const ERR: Color = Color::Rgb(0xe0, 0x6c, 0x75); // error
-const PANEL: Color = Color::Rgb(0x14, 0x14, 0x14); // backgroundPanel
-/// text on a BRAND background (the popup selection): black reads
-/// better than white on orange
-const ON_BRAND: Color = Color::Rgb(0, 0, 0);
-const ELEMENT: Color = Color::Rgb(0x1e, 0x1e, 0x1e); // backgroundElement
-/// the composer while recording (Vibe's mistral_orange)
-const RECORDING: Color = Color::Rgb(0xff, 0x82, 0x05);
-const SELECTION: Color = Color::Rgb(0x3a, 0x4a, 0x6b); // selected text background
-const BORDER_ACTIVE: Color = Color::Rgb(0x60, 0x60, 0x60); // borderActive
-const FAINT: Color = Color::Rgb(0x4a, 0x4a, 0x4a); // rails & turn marks — dimmer than textMuted
-// the syntax palette of the run_typescript block (OpenCode dark
-// syntax colors: purple keywords, green strings, faint comments,
-// orange numbers, blue calls; types reuse syntaxType)
-const SYNTAX_KEYWORD: Color = Color::Rgb(0xc6, 0x78, 0xdd);
-const SYNTAX_STRING: Color = Color::Rgb(0x98, 0xc3, 0x79);
-const SYNTAX_COMMENT: Color = Color::Rgb(0x5c, 0x63, 0x70);
-const SYNTAX_NUMBER: Color = Color::Rgb(0xd1, 0x9a, 0x66);
-const SYNTAX_FUNC: Color = Color::Rgb(0x61, 0xaf, 0xef);
-// the apply_patch diff bands (dark tints under the ok / error colors)
-const DIFF_ADD_BG: Color = Color::Rgb(0x16, 0x2e, 0x1c);
-const DIFF_DEL_BG: Color = Color::Rgb(0x3a, 0x18, 0x1b);
-
-// the OpenCode prompt/autocomplete borders: only a colored vertical bar
-const SPLIT: border::Set = border::Set {
-    top_left: "",
-    top_right: "",
-    bottom_left: "",
-    bottom_right: "",
-    vertical_left: "┃",
-    vertical_right: "┃",
-    horizontal_top: " ",
-    horizontal_bottom: " ",
-};
-
-// the OpenCode spinner (component/spinner.tsx): braille dots
-const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
-fn spinner_frame(tick: u32) -> &'static str {
-    SPINNER[(tick as usize) % SPINNER.len()]
-}
-
-// ---- the feed glyph vocabulary: status is symbols, not words ----
-const GLYPH_THINK: &str = "✦"; // reasoning section (duration when collapsed)
-const GLYPH_OK: &str = "✓"; // success (tool, sub-call, turn)
-const GLYPH_ERR: &str = "✗"; // failure
-const GLYPH_WARN: &str = "▲"; // warning (interrupt, discarded candidate)
-const GLYPH_INFO: &str = "·"; // neutral notice
-const GLYPH_COMPACT: &str = "⟳"; // compaction running
-const GLYPH_SUMMARY: &str = "≡"; // compaction summary
-const GLYPH_BRANCH: &str = "↳"; // preview / sub-result line
-const GLYPH_RAIL: &str = "│"; // rail of an expanded reasoning section
 
 // ---- feed events ----
 
