@@ -1,9 +1,10 @@
 """Images in the composer (docs/images.md), in a real terminal (tmux),
 against the fake provider: an image picked in the `@` popup, a file
 path pasted like a Finder drag-and-drop, and Ctrl+V (the clipboard
-image) each become `[Image #N]`; on send the request to the provider
+image) each become `[Image #N]`, drawn as the chip `▣ N` (BISE-70) with
+the strip above the composer; on send the request to the provider
 carries each one as an image_url part with the PNG data, and the feed
-shows `[Image #N path]`, not the marker.
+shows the image by name, not the marker.
 
 python3 -u projects/switchboard/tests/tui_images_tmux.py
 """
@@ -16,7 +17,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
 from tui_tmux import tmux, screen, keys, typed, wait_screen  # noqa: E402
 import tui_tmux  # noqa: E402
-from tui_composer_tmux import wait_composer  # noqa: E402
 import tui_composer_tmux  # noqa: E402
 
 S = "sbimg%d" % os.getpid()
@@ -26,6 +26,21 @@ tui_composer_tmux.S = S
 # 1x1 PNG
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+
+
+def wait_composer(text, timeout=5):
+    """tui_composer_tmux.wait_composer, the hint shown while images are
+    attached (`ctrl+v paste image · @ file`) left out too."""
+    import re
+    t0 = time.time()
+    got = ""
+    while time.time() - t0 < timeout:
+        got = re.sub(r"\s{2,}ctrl\+v paste image.*$", "", tui_composer_tmux.composer(), flags=re.M)
+        if got == text:
+            return
+        time.sleep(0.1)
+    print(screen())
+    raise AssertionError("composer %r, expected %r" % (got, text))
 
 
 def paste(text):
@@ -57,20 +72,38 @@ def main():
         typed("look @red-bl")
         wait_screen("shots/red-blue.png")
         keys("Tab")
-        wait_composer("look [Image #1]")
+        wait_composer("look ▣ 1")
+        # the strip above the composer says what the chip is
+        wait_screen("attached · backspace on a chip removes it")
+        wait_screen("▣ 1 shots/red-blue.png")
+        wait_screen("1×1 · 70 B")
         # a dropped file: the terminal pastes its shell-escaped path
         paste(drop.replace(" ", "\\ ") + " ")
-        wait_composer("look [Image #1] [Image #2]")
+        wait_composer("look ▣ 1 ▣ 2")
         # a paste that is not an image path stays text
         paste("and")
-        wait_composer("look [Image #1] [Image #2] and")
+        wait_composer("look ▣ 1 ▣ 2 and")
         # Ctrl+V: the clipboard image
         keys("C-v")
-        wait_composer("look [Image #1] [Image #2] and [Image #3]")
+        wait_composer("look ▣ 1 ▣ 2 and ▣ 3")
+        wait_screen("▣ 3 clipboard")
+        # backspace on a chip removes it whole (and its strip row)
+        keys("BSpace")
+        keys("BSpace")
+        wait_composer("look ▣ 1 ▣ 2 and")
+        keys("C-v")
+        wait_composer("look ▣ 1 ▣ 2 and ▣ 3")
         typed("colors?")
         keys("Enter")
-        wait_screen("[Image #1 shots/red-blue.png]")
-        sc = screen()
+        # the feed names the image: `[Image #1 shots/red-blue.png]`, or
+        # the chip `▣ red-blue.png` once render.rs draws the chips
+        t0 = time.time()
+        while time.time() - t0 < 40:
+            sc = screen()
+            if "[Image #1 shots/red-blue.png]" in sc or "▣ red-blue.png" in sc:
+                break
+            time.sleep(0.2)
+        assert "red-blue.png" in sc and "attached ·" not in sc, sc
         assert "<image name=" not in sc, sc
         t0 = time.time()
         reqs = []

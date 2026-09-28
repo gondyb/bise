@@ -17,8 +17,12 @@ pub(crate) fn byte_at_char(s: &str, ci: usize) -> usize {
     s.char_indices().nth(ci).map(|(b, _)| b).unwrap_or(s.len())
 }
 
-/// The char index of the grapheme before the one at `cursor`.
+/// The char index of the grapheme before the one at `cursor`. An image
+/// chip `[Image #N]` is one step (attach.rs).
 pub(crate) fn prev_grapheme(s: &str, cursor: usize) -> usize {
+    if let Some((a, _)) = crate::attach::chips(s).into_iter().find(|&(a, b, _)| a < cursor && cursor <= b).map(|(a, b, _)| (a, b)) {
+        return a;
+    }
     let mut ci = 0usize;
     let mut prev = 0usize;
     for g in s.graphemes(true) {
@@ -31,8 +35,12 @@ pub(crate) fn prev_grapheme(s: &str, cursor: usize) -> usize {
     prev
 }
 
-/// The char index of the grapheme after the one at `cursor`.
+/// The char index of the grapheme after the one at `cursor`. An image
+/// chip is one step.
 pub(crate) fn next_grapheme(s: &str, cursor: usize) -> usize {
+    if let Some((_, b, _)) = crate::attach::chips(s).into_iter().find(|&(a, b, _)| a <= cursor && cursor < b) {
+        return b;
+    }
     let mut ci = 0usize;
     for g in s.graphemes(true) {
         ci += g.chars().count();
@@ -208,6 +216,9 @@ pub(crate) struct InputCell<'a> {
     pub(crate) text: &'a str,
     pub(crate) w: usize,
     pub(crate) newline: bool,
+    /// an image chip: `text` is its label `[Image #N]`, drawn `▣ N`
+    /// (attach::chip_text) in `w` columns
+    pub(crate) chip: bool,
 }
 
 /// The composer rows at `inner` columns: newlines break rows, long rows
@@ -219,10 +230,38 @@ pub(crate) fn layout_input(input: &str, inner: usize) -> Vec<Vec<InputCell<'_>>>
     let mut rows: Vec<Vec<InputCell>> = vec![Vec::new()];
     let mut col = 0usize;
     let mut ci = 0usize;
-    for g in input.graphemes(true) {
+    // an image chip `[Image #N]` is one cell, drawn `▣ N` (attach.rs)
+    let chips = crate::attach::chips(input);
+    let mut chip_i = 0usize;
+    let mut skip_to = 0usize;
+    for (bi, g) in input.grapheme_indices(true) {
         let n = g.chars().count();
+        if ci < skip_to {
+            ci += n;
+            continue;
+        }
+        while chips.get(chip_i).is_some_and(|c| c.1 <= ci) {
+            chip_i += 1;
+        }
+        if let Some(&(a, b, _)) = chips.get(chip_i).filter(|c| c.0 == ci) {
+            let label = &input[bi..bi + (b - a)]; // ASCII: chars = bytes
+            let w = crate::attach::chip_text(label).width();
+            if col > 0 && col + w > inner {
+                rows.push(Vec::new());
+                col = 0;
+            }
+            rows.last_mut().unwrap().push(InputCell { ci, text: label, w, newline: false, chip: true });
+            col += w;
+            if col >= inner {
+                rows.push(Vec::new());
+                col = 0;
+            }
+            skip_to = b;
+            ci += n;
+            continue;
+        }
         if g == "\n" || g == "\r\n" {
-            rows.last_mut().unwrap().push(InputCell { ci, text: " ", w: 1, newline: true });
+            rows.last_mut().unwrap().push(InputCell { ci, text: " ", w: 1, newline: true, chip: false });
             rows.push(Vec::new());
             col = 0;
             ci += n;
@@ -234,7 +273,7 @@ pub(crate) fn layout_input(input: &str, inner: usize) -> Vec<Vec<InputCell<'_>>>
             rows.push(Vec::new());
             col = 0;
         }
-        rows.last_mut().unwrap().push(InputCell { ci, text, w, newline: false });
+        rows.last_mut().unwrap().push(InputCell { ci, text, w, newline: false, chip: false });
         col += w;
         if col >= inner {
             rows.push(Vec::new());
@@ -242,7 +281,7 @@ pub(crate) fn layout_input(input: &str, inner: usize) -> Vec<Vec<InputCell<'_>>>
         }
         ci += n;
     }
-    rows.last_mut().unwrap().push(InputCell { ci, text: " ", w: 1, newline: true });
+    rows.last_mut().unwrap().push(InputCell { ci, text: " ", w: 1, newline: true, chip: false });
     rows
 }
 
@@ -538,6 +577,11 @@ impl Editor {
         } else {
             self.anchor = None;
         }
+        // never inside an image chip: its edge on the side of the move
+        let to = match crate::attach::chip_around(&self.text, to) {
+            Some((a, b)) => if to < self.cursor { a } else { b },
+            None => to,
+        };
         self.cursor = to;
         self.break_undo();
     }
@@ -615,6 +659,8 @@ impl Editor {
                 s => s,
             },
         };
+        // an image chip goes whole (attach.rs)
+        let (a, c) = crate::attach::chip_widen(&self.text, a, c);
         if a < c {
             self.checkpoint(if u == Unit::Grapheme { Kind::Deleting } else { Kind::Other }, false);
             self.replace(a, c, "");
@@ -636,6 +682,7 @@ impl Editor {
                 e => e,
             },
         };
+        let (c, b) = crate::attach::chip_widen(&self.text, c, b);
         if b > c {
             self.checkpoint(if u == Unit::Grapheme { Kind::Deleting } else { Kind::Other }, false);
             self.replace(c, b, "");
@@ -935,6 +982,41 @@ mod tests {
 
     fn key(code: KeyCode, m: KeyModifiers) -> Option<Action> {
         action(&KeyEvent::new(code, m))
+    }
+
+    #[test]
+    fn image_chips_are_atomic() {
+        // `[Image #1]` is chars 4..14: one cell `▣ 1`, one step, one delete
+        let t = "see [Image #1] ok";
+        let rows = layout_input(t, 40);
+        let chip: Vec<_> = rows[0].iter().filter(|c| c.chip).collect();
+        assert_eq!(chip.len(), 1);
+        assert_eq!((chip[0].ci, chip[0].text, chip[0].w), (4, "[Image #1]", 3));
+        assert_eq!(rows[0].iter().filter(|c| !c.newline).map(|c| c.w).sum::<usize>(), 4 + 3 + 3);
+        assert_eq!(next_grapheme(t, 4), 14);
+        assert_eq!(prev_grapheme(t, 14), 4);
+        assert_eq!(row_col(&rows, 14), (0, 7));
+        let mut e = ed(t, 14);
+        e.delete_back(Unit::Grapheme);
+        assert_eq!((e.text.as_str(), e.cursor), ("see  ok", 4));
+        let mut e = ed(t, 4);
+        e.delete_forward(Unit::Grapheme);
+        assert_eq!((e.text.as_str(), e.cursor), ("see  ok", 4));
+        // a word delete that bites into the chip takes it whole
+        let mut e = ed(t, 14);
+        e.delete_back(Unit::Word);
+        assert_eq!(e.text, "see  ok");
+        // arrows never land inside
+        let mut e = ed(t, 4);
+        e.move_cursor(Motion::Right, false);
+        assert_eq!(e.cursor, 14);
+        e.move_cursor(Motion::Left, false);
+        assert_eq!(e.cursor, 4);
+        e.click(9, false);
+        assert!(e.cursor == 4 || e.cursor == 14);
+        // a chip wraps whole
+        let rows = layout_input("abcdef [Image #2]", 8);
+        assert!(rows.iter().any(|r| r.first().is_some_and(|c| c.chip)));
     }
 
     #[test]

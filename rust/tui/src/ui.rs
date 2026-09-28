@@ -79,10 +79,14 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     // the prompt block holds: 2 rows of top padding, the typed text,
     // one blank line, the meta row, 1 row of bottom padding
     let input_h = ((composer_rows + 5) as u16).min((area.height / 2).max(7));
+    // the images strip (book §14) above the status row, while images are attached
+    let strip_h = attach::strip_height(app).min(area.height.saturating_sub(input_h + 7));
+    attach::set_model(&app.info.model);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(3), // feed
+            Constraint::Length(strip_h), // the images strip
             Constraint::Length(1), // respiration sous le feed
             Constraint::Length(1), // status row
             Constraint::Length(1), // respiration au-dessus du composeur
@@ -92,7 +96,12 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
         ])
         .split(area);
 
+    let (strip, chunks) = (chunks[1], [chunks[0], chunks[2], chunks[3], chunks[4], chunks[5], chunks[6], chunks[7]]);
     draw_feed(app, frame, chunks[0]);
+    if strip.height > 0 {
+        let r = Rect { x: strip.x + 4, width: strip.width.saturating_sub(6), ..strip };
+        frame.render_widget(Paragraph::new(attach::strip_lines(app, r.width as usize)), r);
+    }
     draw_status(app, frame, chunks[2]);
     draw_prompt(app, frame, chunks[4], voice_pad);
     draw_popup(app, frame, chunks[4]);
@@ -119,18 +128,28 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect) {
         editor::drawn_rows(&rows, app.ed.cursor)
     };
     let input_h = (composer_rows.max(1) as u16).min((area.height / 2).max(1));
-    // the card box: what the composer, a 3-row feed and the 2 fixed rows leave
-    let card_h = sb::card_box_height(app, area, area.height.saturating_sub(input_h + 5));
+    // the images strip (book §14): while images are attached, what the
+    // composer and a 3-row feed leave
+    let strip_h = attach::strip_height(app).min(area.height.saturating_sub(input_h + 5));
+    // the card box: what the composer, the strip, a 3-row feed and the 2 fixed rows leave
+    let card_h = sb::card_box_height(app, area, area.height.saturating_sub(input_h + strip_h + 5));
+    attach::set_model(&app.info.model);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(3),          // feed | panel
             Constraint::Length(1),       // a blank row under the feed
             Constraint::Length(card_h),  // the card box (ctrl+g)
+            Constraint::Length(strip_h), // the images strip, above the status row
             Constraint::Length(1),       // status row
             Constraint::Length(input_h), // composer
         ])
         .split(area);
+    let (strip, chunks) = (chunks[3], [chunks[0], chunks[1], chunks[2], chunks[4], chunks[5]]);
+    if strip.height > 0 {
+        let r = Rect { x: strip.x + 3, width: strip.width.saturating_sub(4), ..strip };
+        frame.render_widget(Paragraph::new(attach::strip_lines(app, r.width as usize)), r);
+    }
     // the panel runs down to the blank row under the feed
     let top = Rect { height: chunks[0].height + chunks[1].height, ..chunks[0] };
     let (left, sb_panel) = sb::split(app, top);
@@ -513,6 +532,23 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
                 cell.ci <= cursor && cursor < cell.ci + n
             };
             let in_sel = selection.is_some_and(|(a, b)| a <= cell.ci && cell.ci < b);
+            if cell.chip {
+                // an image chip `▣ N` (accent, atomic): its own span
+                if !buf.is_empty() {
+                    let st = if buf_sel { sel_style } else { text_style };
+                    spans.push(Span::styled(std::mem::take(&mut buf), st));
+                }
+                buf_sel = in_sel;
+                let mut st = attach::chip_style();
+                if in_sel {
+                    st = st.bg(SELECTION);
+                }
+                if is_cursor {
+                    st = st.add_modifier(Modifier::REVERSED);
+                }
+                spans.push(Span::styled(attach::chip_text(cell.text), st));
+                continue;
+            }
             if is_cursor || buf_sel != in_sel {
                 if !buf.is_empty() {
                     let st = if buf_sel { sel_style } else { text_style };
@@ -703,6 +739,9 @@ pub(crate) fn hint_text(app: &App) -> &'static str {
         "transcribing the last words… · esc/ctrl+c cancel"
     } else if popup_open(app) && files::token(&app.ed.text, app.ed.cursor).is_some() {
         "⏎/tab insert · ⏎/tab/→ open a folder · ← up · ↑↓ select · esc close"
+    } else if !app.pending && app.sb.is_some() && attach::strip_height(app) > 0 {
+        // images attached (book §14): how to add more
+        attach::STRIP_HINT
     } else if let Some(h) = sb::hint(app) {
         h
     } else if app.pending {
