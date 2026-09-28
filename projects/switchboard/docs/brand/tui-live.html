@@ -57,7 +57,7 @@
 </style>
 </head>
 <body>
-<p class="lead"><b>bise :* — a live simulation.</b> ~80 seconds, scripted, played in real time: you type, main starts 10 agents, they talk to each other, one needs you, you answer, main sends unfinished work back. the history only grows at the bottom, in arrival order; only the last run of messages between agents can still grow. click a <span class="dim">▸ run</span> to open it. keys: space play/pause · q quiet · r restart.</p>
+<p class="lead"><b>bise :* — a live simulation.</b> ~80 seconds, scripted, played in real time: you type, main starts 10 agents, they talk to each other, one needs you, you answer, main sends unfinished work back. the history only grows at the bottom, in arrival order; only the last run of messages between agents can still grow. click a <span class="dim">▸ run</span> to open it. keys: space play/pause · r restart.</p>
 
 <div class="term">
   <div class="head"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim" id="counts"></span></div>
@@ -71,7 +71,6 @@
   <button id="play">pause</button>
   <button data-speed="1" class="on">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button>
   <button id="restart">restart</button>
-  <button id="quiet">quiet</button>
   <span id="tlabel"></span>
 </div>
 <div class="timeline" id="timeline"><div class="prog" id="prog"></div></div>
@@ -190,7 +189,6 @@ function stateAt(now) {
 // ---------- rendering ----------
 const hhmm = (s) => `${String(Math.floor(s / 3600) % 24).padStart(2, "0")}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}`;
 const expanded = new Set();
-let quiet = false;
 function msgLine(m) {
   return `<div class="l3"><span class="who">✉</span><span class="nm">${m.from}</span><span class="to">→ </span><span class="nm to">${m.to}</span>${m.text}</div>`;
 }
@@ -209,8 +207,8 @@ function renderItem(it, st) {
     case "run": {
       const n = it.msgs.length, open = it === st.tailRun;
       const agents = new Set(it.msgs.flatMap((m) => [m.from, m.to])).size;
-      const folded = (quiet || n > 3) && !expanded.has(it.id);
-      if (!folded) return `<div class="b">${n > 3 || quiet ? `<div class="l3 fold" data-run="${it.id}">▾ ${n} messages between ${agents} agents</div>` : ""}${it.msgs.map(msgLine).join("")}</div>`;
+      const folded = n > 3 && !expanded.has(it.id);
+      if (!folded) return `<div class="b">${n > 3 ? `<div class="l3 fold" data-run="${it.id}">▾ ${n} messages between ${agents} agents</div>` : ""}${it.msgs.map(msgLine).join("")}</div>`;
       return `<div class="b l3 fold" data-run="${it.id}">▸ ${n} message${n > 1 ? "s" : ""} between ${agents} agents${open ? ' <span class="pulse">∿</span>' : ""}</div>`;
     }
   }
@@ -297,7 +295,6 @@ document.getElementById("restart").onclick = () => {
   for (let i = EV.length - 1; i >= 0; i--) if (EV[i].real) EV.splice(i, 1);
   END = 78; drawMarkers(); now = 0; expanded.clear(); render(0, true); setPlaying(true);
 };
-document.getElementById("quiet").onclick = (e) => { quiet = !quiet; e.target.classList.toggle("on", quiet); render(now, true); };
 document.querySelectorAll("[data-speed]").forEach((b) => b.onclick = () => {
   speed = +b.dataset.speed; document.querySelectorAll("[data-speed]").forEach((x) => x.classList.toggle("on", x === b));
 });
@@ -308,7 +305,6 @@ document.getElementById("feed").onclick = (e) => {
 document.addEventListener("keydown", (e) => {
   if (document.activeElement === document.getElementById("inp")) return;
   if (e.key === " ") { e.preventDefault(); document.getElementById("play").click(); }
-  if (e.key === "q") document.getElementById("quiet").click();
   if (e.key === "r") document.getElementById("restart").click();
 });
 // ---------- you, typing for real ----------

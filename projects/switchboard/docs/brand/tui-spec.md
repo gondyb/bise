@@ -50,8 +50,8 @@ Three levels, always the same, in main and inside an agent:
   understandable. Main's level-2 line after it is the summary for you.
 - Color is reserved for level 1 (and errors). Levels 2 and 3 differ by
   brightness and the rail, not by hue.
-- **⚠** New: a "quiet" key (e.g. `ctrl+b`) folds each run of level-3 lines
-  into one dim line `▸ 3 messages between agents`. Levels 1 and 2 never fold.
+- No "quiet" mode (Gabriel): the levels and the folding of long runs already
+  keep the screen calm.
 - **⚠** Today the hub's messages to main reach the feed as plain turns; the
   TUI needs the sender, the recipient and the level for each line.
 
@@ -341,19 +341,18 @@ To implement:
 7. Agents panel: title `agents · ⌥ + number`, a number per row.
 8. The 3 levels (needs you / for you / between agents); the hub tags each
    feed line with its sender, recipient and level.
-9. A quiet key that folds the runs of level 3.
-10. Append-only history: fold runs longer than 3, only the tail run grows,
+9. Append-only history: fold runs longer than 3, only the tail run grows,
     time marks after a pause, fixed name column.
-11. No undo: remove `ctrl+z`; main's prompt sends explicit corrections.
-12. First-run copy: "what's on your mind? / say it and keep talking. the work
+10. No undo: remove `ctrl+z`; main's prompt sends explicit corrections.
+11. First-run copy: "what's on your mind? / say it and keep talking. the work
     runs in the background, i'm always here."
-13. Header: `bise :*` and the live counts.
-14. Lowercase chrome (proper nouns and acronyms excepted).
-15. Onboarding: the 6 steps above, and the one-time hints (stored, so each
+12. Header: `bise :*` and the live counts.
+13. Lowercase chrome (proper nouns and acronyms excepted).
+14. Onboarding: the 6 steps above, and the one-time hints (stored, so each
     shows once per user).
-16. Images: chips, the attachment strip, readable error for models without
+15. Images: chips, the attachment strip, readable error for models without
     vision.
-17. Message marks `·` `✓` `✓✓` on your lines (and faint on notifications),
+16. Message marks `·` `✓` `✓✓` on your lines (and faint on notifications),
     replacing the steering info lines.
 
 Open questions:
