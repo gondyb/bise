@@ -342,7 +342,7 @@ Index:
 
 ### BISE-30 · cards as level 1
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-c-cards · **commits:** b5c4e52
 - **track:** C · **owns:** `sb/cards.rs`
 - **spec:** book §12, §9 (level 1)
 - **do:** the card box uses the level-1 look (accent border / bar, `?
@@ -353,6 +353,47 @@ Index:
 - **done when:** tests for each kind; screenshots match "cards: a question",
   "cards: every kind", "a card, full screen".
 - **notes:**
+  - **look:** a box with the kind's color on the border, the left side a
+    heavy bar `┃` (corners `┎` `┖`, right side rounded `╮` `╯`). Title
+    `{glyph} {title}` bold in the kind's color, then dim `· 1 of 3 · 2m`
+    (`1 of 3` only with 2+ cards; full screen: `· full screen · ctrl+f
+    back`). Text in `text()`, wrapped at 76; the hub's note dim italic
+    (the `ⓘ` is gone). Keys dim at the bottom left, scroll state dim at
+    the bottom right: `▾ {n} more lines · pgdn`, then `end · pgup`
+    (short form `▾ {n}` when narrow). The scrollbar, the 70% cap, the
+    wheel/arrows, `ctrl+f`, `/close` completion and every key are kept.
+  - **kinds (`kind_look`, theme `G_*`):** question `? {name} needs you`
+    and blocked `? {name} is blocked` (accent); failed `✗ {name} failed`
+    and restart `↻ restart failed` (error); drop `– drop {name}?`,
+    overlap `⇄ overlap`, done `♡ {name} is done` (glyph `text()`, border
+    `faint()`). Order unchanged: question, blocked, failed/restart,
+    drop, overlap, done, then oldest.
+  - **choices:** the hub has no field for them, so the TUI reads them
+    from the text: a run of 2–9 last lines `1. x` / `1) x` / `1 - x`
+    numbered from 1 becomes `1 x   2 y` (number accent bold) under the
+    text; answer by typing the number then `alt+r`. Not for done/overlap
+    (a done summary keeps its numbered list). A real `choices` field in
+    the card snapshot (hub + C2) would be cleaner: later, if wanted.
+  - **keys line:** `alt+r answer with text · ctrl+x later · ctrl+f full
+    screen`, + `ctrl+n next` with 2+ cards; `alt+r got it` for done and
+    overlap; full screen drops `ctrl+f full screen` (it is in the title).
+    What does not fit is cut from the right.
+  - **vs the mockups:** the keys sit on the bottom border, not on the
+    choices row (they stay visible when the text scrolls); the question
+    box spans the feed width (text still wraps at 76); blocked says
+    `is blocked` (every-kind mockup), not `needs you`; `drop` says `alt+r
+    answer with text` (the hub's drop card is answered yes/no by text,
+    not `y`/`n`); failed/restart/drop/overlap have no `▸ report` link.
+  - **not mine, seen:** the hint row under the composer
+    (`hint_text`, ui/render) still says `Alt+R answer … Ctrl+N/P card …`
+    in capitals (for K/S). `Card` now has `Default` (bise-p-chrome's panel
+    test uses it). `ago()` stays `#[allow(dead_code)]` until BISE-20
+    drops its last caller; then remove it.
+  - **gates:** run in a private worktree of 7d07b05 + cards.rs (shared
+    tree has other tracks' WIP), `CARGO_TARGET_DIR=/tmp/bise-gate-target`,
+    `SB_CORE_BIN` = the worktree's sb-core: build, `cargo test
+    --workspace`, clippy `--all-targets` (no warnings), `run_all.sh` all
+    green. No .bend change.
 
 ### BISE-40 · remove undo (TUI)
 
