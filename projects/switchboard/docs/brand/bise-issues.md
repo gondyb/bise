@@ -1154,3 +1154,33 @@ Index:
   - Tests: `the_choice_is_saved_next_to_the_other_settings`,
     `env_beats_the_saved_choice_beats_detection` (theme_detect), step 2's
     test saves in a temp HOME (onboarding).
+
+### BISE-43 · `D` asks first
+
+- **status:** done · **owner:** bise-k-keys · **commits:** e08966f
+- **track:** K · **owns:** the `D` key arm and a `drop_ask` field in
+  `sb.rs`, its init in `sb/client.rs`, the drop branch of `status_line` /
+  `hint` in `sb/panel.rs`
+- **spec:** book §16 (`D` drops the selected agent, asks first)
+- **do:** TUI side only: `D` on an agent shows a one-line confirm in the
+  status row; `y` sends the existing `/drop`, `n` or `esc` cancels; test.
+- **done when:** nothing is dropped before `y`; tests; gates green.
+- **notes:**
+  - `D` on a live agent (never main, never an archived one) sets
+    `Sb.drop_ask`; the status row says `drop {name}? its history stays in
+    archived. y / n` (accent, `panel::drop_question`), the hint `y drop · n
+    or esc keep` (**new string for §17**). `y` (no ctrl/alt/cmd) sends
+    `/drop {name}` as before; `n` and `esc` keep the agent; any other key
+    drops the question and does its usual job, so nothing gets stuck. The
+    hub is unchanged (`/drop` typed still drops at once).
+  - **Tests:** `sb::…::d_asks_before_dropping` (reads the hub end of a
+    socket pair: nothing sent on `D`, `n`, `esc`; `/drop docs` on `y`; main
+    is never asked about). `tui_tmux.py`: after `D` it waits for the
+    question, then types `y` (the drop is still checked).
+  - **Gates** (worktree of 682338a + exactly this commit, shared target,
+    `SB_CORE_BIN` = the worktree's): build, `cargo test --workspace`,
+    clippy `--workspace --all-targets -D warnings`, e2e and the 11 tmux
+    tests: green.
+  - **Also (fix of 5ff22eb):** 0bb65b4. A `-U0` patch had put a test body
+    inside a doc comment, so bend-tui tests did not build at 5ff22eb/7fe7cc7.
+    Now each commit is the exact tree that was gated.
