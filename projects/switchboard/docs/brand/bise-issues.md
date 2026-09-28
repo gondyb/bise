@@ -226,7 +226,7 @@ Index:
 
 ### BISE-02 · theme auto-detection and `/theme`
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-t-theme · **commits:** 6fdba1f
 - **track:** T · **owns:** `rust/tui/src/term.rs`, new `theme_detect.rs`;
   the `/theme` entry in `commands.rs` **is done by K in BISE-41** (write the
   function it calls here)
@@ -241,6 +241,36 @@ Index:
   and tmux; unit test of the reply parser (`rgb:ffff/ffff/ffff`, 2- and
   4-digit hex, garbage).
 - **notes:**
+  - **Where (main's correction):** not `term.rs` (the embedded shell). New
+    `rust/tui/src/theme_detect.rs`; `lib.rs` +1 line (`mod theme_detect;`);
+    `run.rs` `init_terminal` +2 lines (a comment + `crate::theme_detect::init();`)
+    right after `enable_raw_mode()?` and before `EnterAlternateScreen`.
+  - **API:** `Choice { Auto, Light, Dark }`, `Choice::parse(&str)` (light / dark
+    / auto, any case), `apply(Choice) -> Mode` (for `/theme`, BISE-41),
+    `detected() -> Option<Mode>` (what the terminal said at start), `init()`
+    (once per process: a re-init after suspend keeps the `/theme` choice),
+    `ENV = "BISE_THEME"`.
+  - **How:** writes `ESC]11;?BEL` then DA1 `ESC[c` to `/dev/tty`, reads until
+    the DA1 reply (every terminal answers it, so no 100 ms wait when OSC 11 is
+    unsupported) or 100 ms. Waiting uses libc `select` declared by hand (no new
+    dependency): **`poll` does not work on ttys on macOS** (returns at once,
+    POLLNVAL). `/theme auto` at runtime reuses the start answer: querying
+    while the UI reads keys would turn the reply into keystrokes.
+  - **Threshold:** light when relative luminance > 0.184 (L* > 50), not 0.5:
+    that is where our dark text reads better than our light text (mid-grey
+    `#808080` → light, `#707070` → dark).
+  - **By hand** (`cargo test -p bend-tui --lib probe_this_terminal -- --ignored`,
+    writes `/tmp/bise-theme-probe.txt`): Ghostty dark `rgb:1616/1616/1616` →
+    dark; Ghostty `--background=#f7f4ee` → light; tmux 3.5a inside Ghostty
+    (dark and cream) → forwards the outer color, right mode; Terminal.app
+    default profile `1e1e1e` → dark, white window → light; detached tmux (no
+    client) answers only DA1 → dark in < 1 ms. All answers < 1 ms.
+  - **Visible effect:** little until wave 1 moves off the deprecated aliases
+    (they are fixed dark); the roles already switch.
+  - **Gates** (private worktree, shared target): build, test --workspace (208 +
+    97 + …, all ok), clippy clean, PROOF, e2e all PASS, tmux: tui, help, term,
+    composer OK; `tui_version_tmux` fails **on HEAD 6159bb4 without my change
+    too** (the BISE-20/21/22 chrome), so not from BISE-02.
 
 ### BISE-10 · reading width
 
