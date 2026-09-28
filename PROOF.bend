@@ -3632,3 +3632,45 @@ def Laws.names_apart(ins, h, u):
   hub_napart_tr(HC.Hub.d(HC.RunR.hub(HC.run(ins, h))), HM.apply_all(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h)),
     Laws.hub_run_replays(ins, h),
     hub_apply_all_names(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h), u, Laws.msg_ids_fresh(ins, h)))
+
+def hub_act(m: Maybe<&2, HM.Agent>) -> Bool:
+  match m:
+    case None{}:
+      False{}
+    case Some{a}:
+      HC.is_active(HM.Agent.life(a))
+
+def hub_sa_act(m: Maybe<&2, HM.Agent>, +s: HM.St, +n: String) -> {HI.stuck.agent(m, s, n) == Bool.and(hub_act(m), Bool.not(hub_q(s, n))) : Bool}:
+  match m:
+    case None{}:
+      {==}
+    case Some{a}:
+      {==}
+
+# the state part of an agent's frame: same activity, a queue that can only empty
+def hub_sf(+s1: HM.St, +s2: HM.St, +n: String) -> Data:
+  HX.Both<{hub_act(HM.get_agent(s2, n)) == hub_act(HM.get_agent(s1, n)) : Bool}, {hub_qimp(s1, s2, n) == True{} : Bool}>
+
+def hub_frame2.q(a: Bool, +q1: Bool, +q2: Bool, h: {Bool.and(a, Bool.not(q1)) == False{} : Bool}, qi: {Bool.or(Bool.not(q1), q2) == True{} : Bool})
+    -> {Bool.and(a, Bool.not(q2)) == False{} : Bool}:
+  match a:
+    case False{}:
+      {==}
+    case True{}:
+      hub_sa.q(q1, q2, {==}, h, qi)
+
+def hub_frame2.h(m: Maybe<&2, HM.Agent>, +s: HM.St, +n: String, h: {HI.stuck.agent(m, s, n) == False{} : Bool}) -> {Bool.and(hub_act(m), Bool.not(hub_q(s, n))) == False{} : Bool}:
+  match m:
+    case None{}:
+      {==}
+    case Some{a}:
+      h
+
+def hub_frame2.sa(+s1: HM.St, +s2: HM.St, +n: String, sf: hub_sf(s1, s2, n), h: {HI.stuck.agent(HM.get_agent(s1, n), s1, n) == False{} : Bool})
+    -> {HI.stuck.agent(HM.get_agent(s2, n), s2, n) == False{} : Bool}:
+  match sf:
+    case HX.Both{ea, qi}:
+      %Equal.sym(Bool, HI.stuck.agent(HM.get_agent(s2, n), s2, n), Bool.and(hub_act(HM.get_agent(s2, n)), Bool.not(hub_q(s2, n))), hub_sa_act(HM.get_agent(s2, n), s2, n)) : {_ == False{} : Bool}
+      %Equal.sym(Bool, hub_act(HM.get_agent(s2, n)), hub_act(HM.get_agent(s1, n)), ea) : {Bool.and(_, Bool.not(hub_q(s2, n))) == False{} : Bool}
+      hub_frame2.q(hub_act(HM.get_agent(s1, n)), hub_q(s1, n), hub_q(s2, n),
+        hub_frame2.h(HM.get_agent(s1, n), s1, n, h), qi)
