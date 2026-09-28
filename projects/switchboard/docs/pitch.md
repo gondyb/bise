@@ -1,195 +1,191 @@
-# Switchboard : pitch et go-to-market
+# Switchboard: pitch and go-to-market
 
-Brouillon, 2026-09. Point de départ : ce que Gabriel dit de Switchboard après
-l'avoir utilisé tous les jours pour le construire. Les affirmations pas encore
-vraies sont marquées **⚠**.
+*Version française : [pitch-fr.md](pitch-fr.md).*
 
-## 1. Le problème
+Draft, 2026-09. Starting point: what Gabriel says about Switchboard after using
+it every day to build it. Claims that aren't true yet are flagged **⚠**.
 
-Les agents de code sont bons. Les travailler en parallèle, non.
+## 1. The problem
 
-- **On attend.** Un tour dure 1 à 10 minutes. Pendant ce temps, le terminal
-  est pris. On regarde défiler, ou on change de contexte et on perd le fil.
-- **On fait la nounou.** Avec 3 agents, on devient le routeur : quel terminal
-  fait quoi, qui attend une réponse, qui a fini à moitié, qui faut-il relancer.
-  La charge mentale monte avec chaque agent. En pratique, on plafonne à 2 ou 3.
-- **On jongle avec les worktrees.** Pour que les agents ne se marchent pas
-  dessus, chaque outil pousse vers un worktree ou une VM par tâche. Résultat :
-  des branches à merger, des conflits à la fin, des dépendances à réinstaller,
-  et des agents qui ne savent rien les uns des autres.
+Coding agents are good. Running several of them in parallel is not.
 
-## 2. La promesse
+- **You wait.** A turn takes 1 to 10 minutes, and your terminal is stuck the
+  whole time. You either watch the output scroll by, or you switch context and
+  lose the thread.
+- **You babysit.** With 3 agents, you become the router: which terminal is
+  doing what, who is waiting on an answer, who half-finished, who needs a
+  nudge. The mental load grows with every agent. In practice, you top out at
+  2 or 3.
+- **You juggle worktrees.** To keep agents from stepping on each other, every
+  tool pushes you toward one worktree or VM per task. The result: branches to
+  merge, conflicts at the end, dependencies to reinstall, and agents that know
+  nothing about each other.
 
-> **Tu parles à un seul agent. Il en fait travailler dix. Tu n'attends jamais.**
+## 2. The promise
 
-Taglines :
+> **You talk to one agent. It runs ten. You never wait.**
 
-| FR | EN |
-|---|---|
-| Ne jamais attendre un agent. | Never wait on an agent again. |
-| Un interlocuteur. Autant d'agents que tu veux. | One conversation. As many agents as you want. |
-| Reste dans le flow, main s'occupe du reste. | Stay in flow. Main handles the rest. |
-| Le standard téléphonique de tes agents. | The switchboard for your agents. |
-| Plus d'agents, pas plus de charge mentale. | More agents, not more overhead. |
+Taglines:
 
-## 3. Les 5 piliers
+- Never wait on an agent again.
+- One conversation. As many agents as you want.
+- Stay in flow. Main handles the rest.
+- The switchboard for your agents.
+- More agents, not more overhead.
 
-**1. Tu restes en flow : tu n'attends jamais la fin d'un tour.**
-Main est toujours disponible. Chaque demande part dans une tâche qui tourne en
-parallèle.
-- Avant : « lance les tests » → 6 minutes à regarder le terminal.
-- Après : « lance les tests », puis tout de suite « et regarde ce bug Safari »,
-  puis « écris la release note ». Trois tâches tournent, tu as déjà enchaîné.
+## 3. The 5 pillars
 
-**2. Tu ne sais pas qui fait quoi, et tu n'as pas besoin de le savoir.**
-Main route tes messages vers la bonne tâche et garde le tableau de toutes les
-tâches, même après compaction. Tu peux entrer dans une tâche (`Enter`) et
-revenir (`Esc`), mais tu n'es pas obligé.
-- Avant : 5 onglets de terminal, un post-it mental par agent.
-- Après : « où en est le fix Safari ? » → main répond, avec l'état réel de la
-  tâche.
+**1. You stay in flow: you never wait for a turn to end.**
+Main is always available. Every request becomes a task that runs in parallel.
+- Before: "run the tests" → 6 minutes staring at the terminal.
+- After: "run the tests", then right away "look at that Safari bug", then
+  "write the release note". Three tasks are running, and you've already moved
+  on.
 
-**3. Main répond seul aux questions évidentes.**
-Quand une tâche demande « v1 ou v2 de l'API ? » et que la réponse est dans le
-brief ou le repo, main répond. Seules les vraies décisions arrivent jusqu'à toi,
-sous forme de carte.
-- Avant : 12 interruptions par heure, dont 10 triviales.
-- Après : 2 cartes, les 2 qui comptent.
+**2. You don't know who's doing what, and you don't need to.**
+Main routes your messages to the right task and keeps the board of every task,
+even across compaction. You can step into a task (`Enter`) and back out
+(`Esc`), but you don't have to.
+- Before: 5 terminal tabs, a mental sticky note per agent.
+- After: "where's the Safari fix at?" → main answers, with the task's real
+  state.
 
-**4. Main relance ce qui n'est pas fini.**
-Main relit le rapport de la tâche. Si c'est incomplet ou faux, il renvoie la
-tâche au travail avec une consigne précise, avant de te déranger.
-- Avant : « done ! » … sauf que les tests ne passent pas. Tu découvres ça 20
-  minutes plus tard.
-- Après : main a vu que les tests échouaient et a relancé. Tu reçois un vrai
-  « fini ».
+**3. Main answers the obvious questions itself.**
+When a task asks "API v1 or v2?" and the answer is in the brief or the repo,
+main answers. Only real decisions reach you, as a card.
+- Before: 12 interruptions an hour, 10 of them trivial.
+- After: 2 cards, the 2 that matter.
 
-**5. Pas de worktrees : tous les agents dans le même dossier.**
-Les agents se connaissent. Ils se voient (`sb list`, `sb tasks`), lisent le fil
-des autres, et se préviennent avant de toucher un fichier partagé. Un worktree
-reste possible, sur demande.
-- Avant : 5 branches, 5 `npm install`, 5 merges.
-- Après : un repo, un dossier, un historique git linéaire.
+**4. Main sends unfinished work back.**
+Main reads the task's report. If it's incomplete or wrong, main sends the task
+back to work with precise instructions, before bothering you.
+- Before: "done!" … except the tests fail. You find out 20 minutes later.
+- After: main saw the failing tests and sent the task back. You get a real
+  "done".
 
-**⚠ Honnêteté sur les piliers.** Les piliers 3, 4 et 5 viennent du prompt et
-du modèle, pas d'une garantie du système. Ils marchent bien avec un bon modèle,
-pas toujours. Le pilier 5 n'a pas de filet : la détection de fichiers modifiés
-par deux tâches (RFC 0001 §10.3) n'est pas implémentée, et on a déjà eu un
-commit qui a embarqué le travail d'une autre tâche. « À l'infini » est faux :
-le coût en tokens et la vitesse du provider sont la vraie limite.
+**5. No worktrees: every agent works in the same folder.**
+The agents know about each other. They see each other (`sb list`, `sb tasks`),
+read each other's threads, and give a heads-up before touching a shared file.
+A worktree is still available on request.
+- Before: 5 branches, 5 `npm install`s, 5 merges.
+- After: one repo, one folder, one linear git history.
 
-## 4. Pour qui, et par où commencer
+**⚠ Honesty about the pillars.** Pillars 3, 4 and 5 come from the prompt and
+the model, not from a system guarantee. They work well with a good model, not
+always. Pillar 5 has no safety net: detecting files changed by two tasks
+(RFC 0001 §10.3) isn't implemented, and we've already had a commit that swept
+up another task's work. "As many as you want" is not literally true: token cost
+and provider speed are the real limit.
 
-- **Cible :** développeurs qui utilisent déjà un agent CLI tous les jours et
-  qui en veulent plusieurs en parallèle. Ils ont déjà ressenti la douleur
-  « j'attends / je fais la nounou ».
-- **Premier coin (wedge) :** les utilisateurs de Vibe CLI chez Mistral, puis
-  les power users de Vibe dehors. Même stack, même modèle, feedback en 1 jour.
-- **Pas maintenant :** les non-développeurs, les équipes (multi-utilisateurs),
-  le cloud.
+## 4. Who it's for, and where to start
 
-## 5. Preuves et démo
+- **Target:** developers who already use a CLI agent every day and want
+  several running in parallel. They've already felt the "I'm waiting / I'm
+  babysitting" pain.
+- **Wedge:** Vibe CLI users at Mistral, then Vibe power users outside. Same
+  stack, same model, feedback within a day.
+- **Not now:** non-developers, teams (multi-user), cloud.
 
-Preuves à montrer :
-- **Construit avec lui-même.** Switchboard a été développé dans Switchboard :
-  7 tâches en parallèle sur le même repo au moment où ce doc est écrit (hub en
-  Bend, versions, voix, erreurs, éditeur, tokens, ce pitch).
-- **Un cœur prouvé.** Le hub est écrit en Bend, avec des lois vérifiées par la
-  machine : aucun message perdu, livré une seule fois, aucun agent ne reste
-  inactif avec du courrier en attente. Les preuves ont trouvé de vrais bugs
-  (ex. une tâche restaurée qui ne recevait pas son courrier). **⚠** Les preuves
-  couvrent la livraison des messages, pas le comportement des agents.
-- **On le met à jour sans rien arrêter.** `/restart latest` reconstruit, relance
-  le hub en période d'essai et revient en arrière si ça casse. Les agents
-  continuent leur tour.
+## 5. Proof and demo
 
-Storyboard vidéo, 2 minutes :
+Proof points:
+- **Built with itself.** Switchboard was developed inside Switchboard: 7 tasks
+  running in parallel on the same repo as this doc is written (Bend hub,
+  versions, voice, errors, editor, tokens, this pitch).
+- **A proven core.** The hub is written in Bend, with machine-checked laws: no
+  message is lost, each is delivered exactly once, and no agent sits idle with
+  mail waiting. The proofs found real bugs (e.g. a restored task that never
+  received its mail). **⚠** The proofs cover message delivery, not agent
+  behavior.
+- **Updates without stopping anything.** `/restart latest` rebuilds, restarts
+  the hub on probation, and rolls back if it breaks. The agents keep going
+  mid-turn.
 
-| Temps | Écran | Voix off |
+Video storyboard, 2 minutes:
+
+| Time | Screen | Voiceover |
 |---|---|---|
-| 0:00 | Un dev devant Claude Code, une barre de progression. Il attend. | « Un agent, c'est génial. Attendre un agent, non. » |
-| 0:10 | Switchboard vide. Il tape 3 demandes à la suite, sans attendre. | « Tu parles à main. Main crée les tâches. » |
-| 0:30 | Panneau des tâches : 3 `working`. Une 4e demande à la voix **⚠ (voix en cours)**. | « Tu n'attends jamais. » |
-| 0:45 | Une tâche pose une question ; main répond seul, ligne `sb route`. | « Les questions évidentes, main y répond. » |
-| 1:00 | Une carte arrive : vraie décision. Il répond en un mot (`Ctrl+A`). | « Toi, tu ne gardes que les vraies décisions. » |
-| 1:15 | Une tâche dit « fini », main voit un test rouge et la relance. | « Main vérifie avant de te déranger. » |
-| 1:30 | Deux tâches sur le même fichier : message de pair « je touche router.rs ». `git log` linéaire. | « Même repo, même dossier. Pas de worktrees. » |
-| 1:45 | Il demande « où on en est ? » : résumé propre. Il ferme le laptop, le rouvre, tout est là. | « Switchboard. Plus d'agents, pas plus de charge mentale. » |
+| 0:00 | A dev in front of Claude Code, a progress bar. He waits. | "One agent is great. Waiting on one isn't." |
+| 0:10 | Empty Switchboard. He types 3 requests back to back, no waiting. | "You talk to main. Main creates the tasks." |
+| 0:30 | Task panel: 3 `working`. A 4th request by voice **⚠ (voice in progress)**. | "You never wait." |
+| 0:45 | A task asks a question; main answers it alone, `sb route` line. | "The obvious questions? Main answers them." |
+| 1:00 | A card arrives: a real decision. He answers in one word (`Ctrl+A`). | "You only keep the real decisions." |
+| 1:15 | A task says "done"; main spots a red test and sends it back. | "Main checks before it bothers you." |
+| 1:30 | Two tasks on the same file: peer message "I'm touching router.rs". Linear `git log`. | "Same repo, same folder. No worktrees." |
+| 1:45 | He asks "where are we?": a clean summary. He closes the laptop, reopens it, everything's still there. | "Switchboard. More agents, not more overhead." |
 
-## 6. Positionnement
+## 6. Positioning
 
-| | Point fort | Ce que Switchboard fait autrement |
+| | Strength | What Switchboard does differently |
 |---|---|---|
-| **Claude Code** | Meilleur agent CLI solo ; sous-agents et Agent Teams. | Les sous-agents de Claude Code servent un tour ; le lead d'une équipe disparaît avec elle. Ici main est permanent (fil infini) et tu lui parles pendant que tout tourne. |
-| **Codex (CLI + cloud)** | Tâches parallèles dans le cloud, une PR par tâche. | Local, même dossier, pas de PR à merger ; les tâches se parlent. |
-| **Cursor background agents** | Intégré à l'IDE, VM distante par agent. | Terminal, local, pas de VM ; un orchestrateur au lieu d'une liste d'agents à surveiller. |
-| **Devin** | Ingénieur autonome dans le cloud, via Slack. | Tu restes aux commandes, en local, et tu peux entrer dans chaque tâche en une touche. |
-| **claude-squad, Conductor, tmux** | Voir plusieurs agents côte à côte. | Ils affichent ; ils ne routent pas. Avec eux, tu restes le routeur. |
+| **Claude Code** | Best solo CLI agent; subagents and Agent Teams. | Claude Code's subagents serve a single turn; a team's lead goes away with the team. Here main is permanent (infinite thread) and you talk to it while everything runs. |
+| **Codex (CLI + cloud)** | Parallel tasks in the cloud, one PR per task. | Local, same folder, no PRs to merge; tasks talk to each other. |
+| **Cursor background agents** | Built into the IDE, a remote VM per agent. | Terminal, local, no VMs; one orchestrator instead of a list of agents to watch. |
+| **Devin** | Autonomous cloud engineer, driven from Slack. | You stay in control, locally, and can step into any task with one key. |
+| **claude-squad, Conductor, tmux** | See several agents side by side. | They display; they don't route. With them, you're still the router. |
 
-En une phrase : **les autres parallélisent les agents ; Switchboard
-parallélise sans te transformer en chef de projet.**
+In one sentence: **others parallelize agents; Switchboard parallelizes them
+without turning you into a project manager.**
 
-**⚠** Ces outils bougent vite (Claude Code a déjà des tâches en arrière-plan et
-des équipes). L'avance tient à main permanent + agents qui se parlent, pas à
-« le parallèle ».
+**⚠** These tools move fast (Claude Code already has background tasks and
+teams). The edge is a permanent main plus agents that talk to each other, not
+"parallelism" itself.
 
 ## 7. Go-to-market
 
-1. **Dogfooding (maintenant → +1 mois).** 5 à 10 devs Mistral, Vibe
-   utilisateurs. Mesures : nombre de tâches en parallèle par jour, temps
-   d'attente évité, nombre de questions résolues par main sans l'humain,
-   incidents « deux agents sur le même fichier ».
-2. **Intégration Vibe (+1 à 3 mois).** Switchboard devient un mode de Vibe
-   (`vibe --switchboard` ou `/switchboard`), pas un produit à part. C'est
-   l'option A de la RFC 0001 : le hub comme runtime du Unified Harness. Le
-   même concept peut ensuite exister dans Le Chat (tâches d'arrière-plan
-   pilotées par une conversation).
-3. **Open source ?** Recommandation : ouvrir le hub et le protocole `sb`
-   (le cœur Bend prouvé est un bon argument technique et un bon article),
-   garder l'intégration Vibe comme porte d'entrée. À trancher avec Mistral :
-   licence, et si on ouvre le pilotage d'autres CLI (Claude Code, Codex)
-   comme sous-agents.
-4. **Lancement.** Vidéo de 2 min + article « On a construit Switchboard avec
-   Switchboard » + article technique « Prouver un orchestrateur d'agents en
-   Bend ». Canaux : X/HN, blog Mistral, doc Vibe.
+1. **Dogfooding (now → +1 month).** 5 to 10 Mistral devs who use Vibe.
+   Metrics: parallel tasks per day, waiting time avoided, questions resolved
+   by main without the human, "two agents on the same file" incidents.
+2. **Vibe integration (+1 to 3 months).** Switchboard becomes a Vibe mode
+   (`vibe --switchboard` or `/switchboard`), not a separate product. This is
+   option A of RFC 0001: the hub as the Unified Harness runtime. The same
+   concept can then show up in Le Chat (background tasks driven by a
+   conversation).
+3. **Open source?** Recommendation: open the hub and the `sb` protocol (the
+   proven Bend core is a strong technical argument and a good article), and
+   keep the Vibe integration as the front door. To settle with Mistral:
+   license, and whether to open up driving other CLIs (Claude Code, Codex) as
+   subagents.
+4. **Launch.** 2-minute video + "We built Switchboard with Switchboard"
+   article + technical article "Proving an agent orchestrator in Bend".
+   Channels: X/HN, Mistral blog, Vibe docs.
 
-## 8. À corriger avant que quelqu'un d'autre l'utilise
+## 8. What to fix before anyone else uses it
 
-1. **Installation.** Aujourd'hui : `run.sh` depuis un worktree de dev,
-   binaire Rust + REPL Bend à compiler. Il faut un binaire (brew / curl |
-   sh) ou, mieux, livré dans Vibe.
-2. **Onboarding.** Premier lancement guidé : ce qu'est main, ce qu'est une
-   tâche, `Enter`/`Esc`, les cartes. Un exemple joué en 60 secondes.
-3. **Coût et tokens visibles.** Par tâche et au total, en direct, avec une
-   alerte de budget (en cours : tâche `token-usage`). Sans ça, « autant
-   d'agents que tu veux » fait peur, à raison.
-4. **Confiance et sécurité.** Pas de porte d'approbation : les agents lancent
-   des commandes bash sans demander. Il faut au minimum un mode approbation,
-   une liste de commandes interdites (push, rm hors repo) et un journal clair
-   de ce que chaque agent a changé.
-5. **Collisions dans le dossier partagé.** Détecter deux tâches sur le même
-   fichier (RFC 0001 §10.3) et empêcher un commit d'embarquer le travail d'une
-   autre tâche (`git add` ciblé imposé, ou alerte).
-6. **Erreurs visibles.** Une panne de provider doit se voir tout de suite, et
-   pas passer pour une tâche silencieuse (en cours : tâche `error-report`).
-7. **Portabilité.** Testé surtout sur macOS + Ghostty ; à vérifier sur Linux,
-   autres terminaux, et hors du harness Bend.
+1. **Install.** Today: `run.sh` from a dev worktree, with a Rust binary and a
+   Bend REPL to build. It needs a binary (brew / curl | sh) or, better, to
+   ship inside Vibe.
+2. **Onboarding.** A guided first run: what main is, what a task is,
+   `Enter`/`Esc`, cards. A 60-second played-out example.
+3. **Visible cost and tokens.** Per task and in total, live, with a budget
+   alert (in progress: `token-usage` task). Without it, "as many agents as you
+   want" is scary, and rightly so.
+4. **Trust and safety.** No approval gate: agents run bash commands without
+   asking. At minimum it needs an approval mode, a deny-list (push, rm outside
+   the repo), and a clear log of what each agent changed.
+5. **Collisions in the shared folder.** Detect two tasks on the same file
+   (RFC 0001 §10.3) and stop a commit from sweeping up another task's work
+   (enforced targeted `git add`, or a warning).
+6. **Visible errors.** A provider outage must show up immediately, not look
+   like a silent task (in progress: `error-report` task).
+7. **Portability.** Mostly tested on macOS + Ghostty; needs checking on Linux,
+   other terminals, and outside the Bend harness.
 
-## 9. Risques
+## 9. Risks
 
-- **La qualité dépend du modèle.** Les piliers 3 et 4 sont des comportements
-  du modèle. Un modèle plus faible = un main qui répond faux à ta place. Il
-  faut des évals sur « main répond seul » et « main relance ».
-- **Confiance.** Main qui répond à ta place, c'est un gain de temps jusqu'à la
-  première mauvaise décision silencieuse. Il faut que chaque réponse de main
-  à une tâche soit visible et annulable.
-- **Coût.** 7 agents en parallèle coûtent 7 fois plus. Le public doit le voir
-  avant de le découvrir sur la facture.
-- **Rattrapage.** Anthropic, OpenAI et Cursor peuvent ajouter un « main
-  permanent » vite. L'avance doit venir de l'intégration Vibe et de la
-  fiabilité (cœur prouvé), pas seulement de l'idée.
-- **Pas de worktrees = pari.** Ça marche sur un repo et un humain. Sur un gros
-  monorepo avec des builds lourds et parallèles (caches, ports, lockfiles), ça
-  peut casser. Garder le worktree à la demande et le dire clairement.
-- **Nom.** « Switchboard » est un nom de travail ; vérifier les marques et
-  les produits existants avant le lancement.
+- **Quality depends on the model.** Pillars 3 and 4 are model behaviors. A
+  weaker model means a main that answers wrong on your behalf. We need evals
+  on "main answers alone" and "main sends work back".
+- **Trust.** Main answering for you saves time, right up to the first bad
+  silent decision. Every answer main gives a task must be visible and
+  reversible.
+- **Cost.** 7 agents in parallel cost 7 times as much. Users must see that
+  before they discover it on the bill.
+- **Catch-up.** Anthropic, OpenAI and Cursor can add a "permanent main"
+  quickly. The edge has to come from the Vibe integration and reliability
+  (the proven core), not just the idea.
+- **No worktrees is a bet.** It works for one repo and one human. On a large
+  monorepo with heavy parallel builds (caches, ports, lockfiles), it can
+  break. Keep on-demand worktrees and say so clearly.
+- **Name.** "Switchboard" is a working name; check trademarks and existing
+  products before launch.
