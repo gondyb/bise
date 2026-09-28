@@ -65,22 +65,9 @@ def repl_help() -> List<&2, String>:
 
 # ---- command dispatch ----
 
-type CmdLine is Data:
-  CL{op: String, rest: String}
-
-def op_of.found(sp: Maybe<&2, Nat>, +line: String) -> CmdLine:
-  match sp:
-    case None{}:
-      CL{line, ""}
-    case Some{+p}:
-      CL{String.take(line, p), String.drop(line, Nat.add(p, 1n))}
-
-def op_of(+line: String) -> CmdLine:
-  op_of.found(Tx.find(line, " ", 0n), line)
-
-def plan_of(cl: CmdLine) -> Rcp.Plan:
+def plan_of(cl: Cm.CmdLine) -> Rcp.Plan:
   match cl:
-    case CL{+op, +rest}:
+    case Cm.CL{+op, +rest}:
       Rcp.plan_say(String.eq(op, "say"), op, rest)
 
 # ---- the connection loop ----
@@ -300,7 +287,7 @@ def repl_interpret(+live: Bool, s: Socket, i: Cm.Interpretation, +sess: T.Sessio
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match i:
     case Cm.Send{+line}:
-      repl_plan(live, s, plan_of(op_of(line)), sess, next)
+      repl_plan(live, s, plan_of(Cm.op_of(line)), sess, next)
     case Cm.Note{+warning}:
       # a local warning: no protocol effect, the session is untouched;
       # the idle marker keeps the client contract (batch + idle)
@@ -458,20 +445,13 @@ def serve(+live: Bool, l: Listener, greet: Maybe<&2, Nat>, sess: T.Session) -> I
 
 # the REPL listen port: BEND_REPL_PORT env (default: the entry's) so several
 # harness instances can run side by side
-def repl_port.num(m: Maybe<&2, U32>, +dflt: U32) -> U32:
-  match m:
-    case Some{+u}:
-      u
-    case None{}:
-      dflt
-
 def repl_port.pick(r: Result<&1, &1, U32 & String, String>, +dflt: U32)
     -> U32:
   match r:
     case Fail{_}:
       dflt
     case Done{+s}:
-      repl_port.num(U32.read(s), dflt)
+      Maybe.default(&2, U32, U32.read(s), dflt)
 
 def repl_port(+dflt: U32) -> IO(U32):
   do IO<U32>:

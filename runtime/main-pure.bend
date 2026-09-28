@@ -386,13 +386,6 @@ def node_err(+body: String) -> String:
 # sleeps between the replay rounds (the V8 watchdog only bounds the
 # program own CPU), and the recorded result replays by position, so
 # the wait happens exactly once.
-def prog_sleep.unread(m: Maybe<&2, U32>) -> U32:
-  match m:
-    case Some{+u}:
-      u
-    case None{}:
-      0
-
 def prog_sleep.field(f: J.Json) -> U32:
   match f:
     case J.JNum{+n}:
@@ -411,7 +404,7 @@ def prog_sleep.parsed(+v: J.Json) -> U32:
   prog_sleep.parsed.get(J.get(v, "seconds"), v)
 
 def prog_sleep.secs.none(+args: String) -> U32:
-  prog_sleep.unread(U32.read(args))
+  Maybe.default(&2, U32, U32.read(args), 0)
 
 def prog_sleep.secs(m: Maybe<&2, J.Json>, +args: String) -> U32:
   match m:
@@ -558,13 +551,6 @@ def replay.res(+c: T.Call, +text: String) -> List<&2, String>:
         id, text, String.append(base, " ok: "),
         String.append(base, " failed: "))
 
-def replay.summary_of(m: Maybe<&2, String>, +text: String) -> String:
-  match m:
-    case Some{+s}:
-      s
-    case None{}:
-      text
-
 def replay.injected.other(is_preamble: Bool, +text: String)
     -> List<&2, String>:
   match is_preamble:
@@ -578,7 +564,7 @@ def replay.injected.summary(is_summary: Bool, +text: String)
   match is_summary:
     case True{}:
       Con{hist(O.show_obs(T.CompactionDone{
-        replay.summary_of(C.parse_summary(text), text)})), Nil{}}
+        Maybe.default(&2, String, C.parse_summary(text), text)})), Nil{}}
     case False{}:
       replay.injected.other(
         String.starts_with(text, "The earlier conversation was compacted."),

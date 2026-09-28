@@ -40,13 +40,6 @@ type MR is Data:
 type McpTool is Data:
   MT{cid: String, tool: String}
 
-def pick2(c: Bool, +a: String, +b: String) -> String:
-  match c:
-    case True{}:
-      a
-    case False{}:
-      b
-
 # ---- tolerant JSON accessors (numbers-as-text JSON) ----
 
 def jdone(m: Maybe<&2, Jv.Val>) -> Jv.Val:
@@ -107,16 +100,9 @@ def jarr.m(m: Maybe<&2, Jv.Val>) -> List<&2, Jv.Val>:
 def jarr(v: Jv.Val, +k: String) -> List<&2, Jv.Val>:
   jarr.m(Jv.get(v, k))
 
-def index_path.pick2(empty: Bool, +fallback: String, +path: String) -> String:
-  match empty:
-    case True{}:
-      fallback
-    case False{}:
-      path
-
 def index_path.pick(empty: Bool, +home: String, +ir: String) -> String:
-  index_path.pick2(empty, String.append(home, "/.bend-harness/mcp-index.txt"),
-    ir)
+  Bool.pick(String, empty,
+    String.append(home, "/.bend-harness/mcp-index.txt"), ir)
 
 def index_path() -> IO(String):
   do IO<String>:

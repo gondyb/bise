@@ -37,13 +37,6 @@ def cfg_path() -> IO(String):
     IO.pure(String,
       cfg_path_pick(P.env_or(cr, ""), P.env_or(hr, "")))
 
-def cfg_text_of(m: Maybe<&2, String>) -> String:
-  match m:
-    case Some{+t}:
-      t
-    case None{}:
-      ""
-
 def read_cfg_m() -> IO(Maybe<&2, String>):
   do IO<Maybe<&2, String>>:
     +path : String <- cfg_path()
@@ -53,7 +46,7 @@ def read_cfg_m() -> IO(Maybe<&2, String>):
 def read_cfg() -> IO(String):
   do IO<String>:
     m : Maybe<&2, String> <- read_cfg_m()
-    IO.pure(String, cfg_text_of(m))
+    IO.pure(String, Maybe.default(&2, String, m, ""))
 
 # the commented template lands on disk when the file does not exist
 def write_cfg_template.m(m: Maybe<&2, String>, +path: String)

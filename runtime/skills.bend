@@ -31,18 +31,11 @@ def SKILL_USAGE() -> String:
 
 # ---- the index file (mirror of the MCP index pattern) ----
 
-def index_path.pick2(empty: Bool, +fallback: String, +path: String) -> String:
-  match empty:
-    case True{}:
-      fallback
-    case False{}:
-      path
-
 def index_path.default(+home: String) -> String:
   String.append(home, "/.bend-harness/skills-index.txt")
 
 def index_path.pick(empty: Bool, +home: String, +env: String) -> String:
-  index_path.pick2(empty, index_path.default(home), env)
+  Bool.pick(String, empty, index_path.default(home), env)
 
 def index_path() -> IO(String):
   do IO<String>:
@@ -142,15 +135,8 @@ def exec_skill(+args: String, live: Bool) -> IO(Mc.MR):
     case False{}:
       IO.pure(Mc.MR, exec_skill.scripted())
 
-def prompt_content.read(m: Maybe<&2, String>) -> String:
-  match m:
-    case None{}:
-      ""
-    case Some{+c}:
-      c
-
 def prompt_content() -> IO(String):
   do IO<String>:
     idx : String <- index_path()
     m : Maybe<&2, String> <- P.read_file(idx)
-    IO.pure(String, prompt_content.read(m))
+    IO.pure(String, Maybe.default(&2, String, m, ""))
