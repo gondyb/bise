@@ -2905,3 +2905,47 @@ def hub_frame(+s1: HM.St, +rts1: List<&2, HX.Rt>, +s2: HM.St, +rts2: List<&2, HX
   %Equal.sym(HM.Run, HX.Rt.run(HC.rt_find(rts2, n)), HX.Rt.run(HC.rt_find(rts1, n)), er) : {Bool.and(HC.is_idle(_), HI.stuck.agent(HM.get_agent(s2, n), s2, n)) == False{} : Bool}
   %Equal.sym(Maybe<&2, HM.Agent>, HM.get_agent(s2, n), HM.get_agent(s1, n), ea) : {Bool.and(HC.is_idle(HX.Rt.run(HC.rt_find(rts1, n))), HI.stuck.agent(_, s2, n)) == False{} : Bool}
   hub_frame.idle(HC.is_idle(HX.Rt.run(HC.rt_find(rts1, n))), HX.Rt.run(HC.rt_find(rts1, n)), HM.get_agent(s1, n), s1, s2, n, {==}, h, qi)
+
+
+# ---- L4 support: a delivery only empties queues ----
+
+def hub_qd.tail(c: Bool, +m: HM.Msg, -st: HM.MSt, -t: List<&2, HM.MRec>, -ns: List<&2, String>, +e: {Bool.and(HM.str_in(ns, HM.Msg.to(m)), HM.is_queued(st)) == c : Bool},
+    h: {List.is_empty(&2, HM.Msg, Bool.pick(List<&2, HM.Msg>, c, m <> HM.queued_in(t, ns), HM.queued_in(t, ns))) == True{} : Bool}) -> {List.is_empty(&2, HM.Msg, HM.queued_in(t, ns)) == True{} : Bool}:
+  match c:
+    case False{}:
+      h
+    case True{}:
+      hub_absurd_eq(hub_ft_absurd(h), Bool, List.is_empty(&2, HM.Msg, HM.queued_in(t, ns)), True{})
+
+def hub_qd.ch(c: Bool, +m: HM.Msg, -st: HM.MSt, -t: List<&2, HM.MRec>, -ns: List<&2, String>, +e: {Bool.and(HM.str_in(ns, HM.Msg.to(m)), HM.is_queued(st)) == c : Bool},
+    h: {List.is_empty(&2, HM.Msg, Bool.pick(List<&2, HM.Msg>, c, m <> HM.queued_in(t, ns), HM.queued_in(t, ns))) == True{} : Bool}) -> {Bool.and(HM.str_in(ns, HM.Msg.to(m)), HM.is_queued(st)) == False{} : Bool}:
+  match c:
+    case False{}:
+      e
+    case True{}:
+      hub_absurd_eq(hub_ft_absurd(h), Bool, Bool.and(HM.str_in(ns, HM.Msg.to(m)), HM.is_queued(st)), False{})
+
+def hub_qd.pick(ce: Bool, +m: HM.Msg, +st: HM.MSt, +se: Bool, +t: List<&2, HM.MRec>, +id: Nat, +ns: List<&2, String>,
+    +eid: {Nat.is_eq(HM.Msg.id(m), id) == ce : Bool}, +ech: {Bool.and(HM.str_in(ns, HM.Msg.to(m)), HM.is_queued(st)) == False{} : Bool},
+    +et: {List.is_empty(&2, HM.Msg, HM.queued_in(t, ns)) == True{} : Bool}, ih: {List.is_empty(&2, HM.Msg, HM.queued_in(HM.map_msg(t, id, HM.OSt{HM.Delivered{}}), ns)) == True{} : Bool})
+    -> {List.is_empty(&2, HM.Msg, HM.queued_in(Bool.pick(List<&2, HM.MRec>, Nat.is_eq(HM.Msg.id(m), id), HM.rec_op(HM.MRec{m, st, se}, HM.OSt{HM.Delivered{}}) <> t, HM.MRec{m, st, se} <> HM.map_msg(t, id, HM.OSt{HM.Delivered{}})), ns)) == True{} : Bool}:
+  match ce:
+    case True{}:
+      %Equal.sym(Bool, Nat.is_eq(HM.Msg.id(m), id), True{}, eid) : {List.is_empty(&2, HM.Msg, HM.queued_in(Bool.pick(List<&2, HM.MRec>, _, HM.rec_op(HM.MRec{m, st, se}, HM.OSt{HM.Delivered{}}) <> t, HM.MRec{m, st, se} <> HM.map_msg(t, id, HM.OSt{HM.Delivered{}})), ns)) == True{} : Bool}
+      %Equal.sym(Bool, Bool.and(HM.str_in(ns, HM.Msg.to(m)), False{}), False{}, hub_and_false_r(HM.str_in(ns, HM.Msg.to(m)))) : {List.is_empty(&2, HM.Msg, Bool.pick(List<&2, HM.Msg>, _, m <> HM.queued_in(t, ns), HM.queued_in(t, ns))) == True{} : Bool}
+      et
+    case False{}:
+      %Equal.sym(Bool, Nat.is_eq(HM.Msg.id(m), id), False{}, eid) : {List.is_empty(&2, HM.Msg, HM.queued_in(Bool.pick(List<&2, HM.MRec>, _, HM.rec_op(HM.MRec{m, st, se}, HM.OSt{HM.Delivered{}}) <> t, HM.MRec{m, st, se} <> HM.map_msg(t, id, HM.OSt{HM.Delivered{}})), ns)) == True{} : Bool}
+      %Equal.sym(Bool, Bool.and(HM.str_in(ns, HM.Msg.to(m)), HM.is_queued(st)), False{}, ech) : {List.is_empty(&2, HM.Msg, Bool.pick(List<&2, HM.Msg>, _, m <> HM.queued_in(HM.map_msg(t, id, HM.OSt{HM.Delivered{}}), ns), HM.queued_in(HM.map_msg(t, id, HM.OSt{HM.Delivered{}}), ns))) == True{} : Bool}
+      ih
+
+# marking a message delivered never fills a queue
+def hub_qdeliv(+xs: List<&2, HM.MRec>, +id: Nat, +ns: List<&2, String>, +e: {List.is_empty(&2, HM.Msg, HM.queued_in(xs, ns)) == True{} : Bool}) -> {List.is_empty(&2, HM.Msg, HM.queued_in(HM.map_msg(xs, id, HM.OSt{HM.Delivered{}}), ns)) == True{} : Bool}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{HM.MRec{m, st, se}, t}:
+      hub_qd.pick(Nat.is_eq(HM.Msg.id(m), id), m, st, se, t, id, ns, {==},
+        hub_qd.ch(Bool.and(HM.str_in(ns, HM.Msg.to(m)), HM.is_queued(st)), m, st, t, ns, {==}, e),
+        hub_qd.tail(Bool.and(HM.str_in(ns, HM.Msg.to(m)), HM.is_queued(st)), m, st, t, ns, {==}, e),
+        hub_qdeliv(t, id, ns, hub_qd.tail(Bool.and(HM.str_in(ns, HM.Msg.to(m)), HM.is_queued(st)), m, st, t, ns, {==}, e)))
