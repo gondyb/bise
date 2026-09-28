@@ -6,6 +6,7 @@ description = "Ratatui terminal UI for the Bend Unified Harness (Rust port of re
 
 [dependencies]
 bend-plugins = { path = "../plugins" }
+bend-images = { path = "../images" }
 ratatui = "0.29"
 # the embedded terminal (term.rs): a PTY, a vt100 parser, its ratatui widget
 tui-term = "0.2"

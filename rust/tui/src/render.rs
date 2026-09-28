@@ -161,7 +161,8 @@ pub(crate) fn fmt_think_ms(ms: u128) -> String {
 
 pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
     match ev {
-        Ev::You(t) => user_block_lines(t, width),
+        // an image marker shows as `[Image #1 path]` (docs/images.md)
+        Ev::You(t) => user_block_lines(&bend_images::display(t), width),
         Ev::Assistant(t) => md_to_lines(&unescape_md(t)),
         Ev::Thinking { ms, text, open } => thinking_lines(*ms, text, *open),
         Ev::Tool(td) => tool_lines(td, 0, width),
@@ -226,7 +227,7 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         Ev::Info(t) => vec![Line::from(vec![
             Span::styled(format!("  {} ", GLYPH_INFO), Style::default().fg(FAINT)),
             Span::styled(
-                t.clone(),
+                bend_images::display(t),
                 Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
             ),
         ])],
@@ -382,7 +383,7 @@ pub(crate) fn tool_body(td: &ToolData, code: &Option<(CodeLang, String)>, width:
             ls.push(Line::from(vec![
                 Span::styled(format!("    {} ", GLYPH_BRANCH), Style::default().fg(TOOL)),
                 Span::styled(
-                    truncate_chars(preview.trim(), 110),
+                    truncate_chars(bend_images::display(preview).trim(), 110),
                     Style::default().fg(if *ok { TOOL } else { ERR }),
                 ),
             ]));

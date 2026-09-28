@@ -73,6 +73,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "bend-images"
+version = "0.1.0"
+
+[[package]]
 name = "bend-plugins"
 version = "0.1.0"
 dependencies = [
@@ -84,6 +88,7 @@ name = "bend-tui"
 version = "1.0.0"
 dependencies = [
  "base64",
+ "bend-images",
  "bend-plugins",
  "cpal",
  "crossterm",

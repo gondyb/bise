@@ -9,5 +9,6 @@ edition = "2021"
 [dependencies]
 deno_core = { version = "=0.409.0", default-features = false, features = ["reactor-tokio"] }
 deno_ast = { version = "=0.53.3", features = ["transpiling"] }
+bend-images = { path = "../images" }
 
 [workspace]

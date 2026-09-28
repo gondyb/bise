@@ -1,0 +1,9 @@
+[package]
+name = "bend-images"
+version = "0.1.0"
+edition = "2021"
+description = "Image attachments: sniffing, the image store, the text marker (docs/images.md)."
+
+# no dependencies on purpose: bend-jsrt (its own workspace) and the TUI
+# both use it
+[dependencies]

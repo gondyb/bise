@@ -64,6 +64,7 @@ mod plugins;
 mod emoji;
 mod editor;
 mod clipboard;
+mod attach;
 mod usage;
 mod term;
 mod feedsel;

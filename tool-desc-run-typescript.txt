@@ -22,6 +22,11 @@ The `run_typescript` tool executes TypeScript code in a V8 isolate (types are st
 - The tool output is truncated at 20,000 characters.
 - JSON serialization caveats: `undefined` values and fields are silently dropped; `NaN`/`Infinity` become `null`; `BigInt` and circular references make the program fail with "the program ended without returning"; `Map`/`Set` serialize to `{}` and `Date` to an ISO string - convert them explicitly when shape matters (`Array.from(map.entries())`, `date.toISOString()`).
 
+## Returning images
+
+- To show images to the model, return a non-empty ARRAY of content blocks: `{ type: 'text', text }`, `{ type: 'image', data: '<base64>', mimeType: 'image/png' }`, or `{ type: 'image', path: '/abs/file.png' }` (a local PNG/JPEG/GIF/WebP file, e.g. a screenshot taken with `bash`). The blocks replace the result: the images reach the model as images, not as text.
+  Example: `await bash('screencapture -x /tmp/s.png'); return [{ type: 'image', path: '/tmp/s.png' }];`
+
 ## Replay model (IMPORTANT)
 
 - The program is re-executed from the beginning on every pending tool call. Recorded tool results are replayed to the program by POSITION (call order), not by name.

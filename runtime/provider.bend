@@ -15,6 +15,7 @@ import 0xbf477e663cf4acb1369a68e0f0fa713b/encoding/encoding.bend as Enc
 import ./settings.bend as St
 import ./provider-pure.bend as Pvp
 import ../core/anth-stream.bend as As
+import ../core/image.bend as Im
 import ./debug.bend as Dbg
 import ./usage-pure.bend as Us
 # ---- the live provider call, fully in Bend (hub HTTP client) ----
@@ -437,11 +438,121 @@ def got_attempt(g: Got) -> Pvp.Attempt:
     case Got{+a, _, _}:
       a
 
+# ---- images (docs/images.md): load the markers' base64 from the store ----
+# Each marker of the request names a .b64 file; the ones inside the image
+# store that read non-empty are loaded (once per path), the 20 last kept,
+# the others turned into plain text (Im.img_defang). The body is printed
+# with placeholders and the data spliced in after (Im.img_splice).
+
+def img_cap() -> Nat:
+  20n
+
+def img_dir() -> IO(String):
+  do IO<String>:
+    +d : String <- P.env_path("BEND_IMAGE_DIR", "/.bend-harness/images")
+    IO.pure(String, String.append(d, "/"))
+
+def img_load.data(empty: Bool, +d: String, +path: String,
+    +acc: List<&2, Im.ILoaded>) -> Bool & List<&2, Im.ILoaded>:
+  match empty:
+    case True{}:
+      (False{}, acc)
+    case False{}:
+      (True{}, Con{Im.IL{path, d}, acc})
+
+def img_load.read(m: Maybe<&2, String>, +path: String,
+    +acc: List<&2, Im.ILoaded>) -> Bool & List<&2, Im.ILoaded>:
+  match m:
+    case Some{+d}:
+      img_load.data(String.is_empty(String.trim(d)), String.trim(d), path, acc)
+    case None{}:
+      (False{}, acc)
+
+def img_load.one.pick(have: Bool, ok_path: Bool, +path: String,
+    +acc: List<&2, Im.ILoaded>) -> IO(Bool & List<&2, Im.ILoaded>):
+  match have:
+    case True{}:
+      IO.pure(Bool & List<&2, Im.ILoaded>, (True{}, acc))
+    case False{}:
+      match ok_path:
+        case True{}:
+          do IO<Bool & List<&2, Im.ILoaded>>:
+            m : Maybe<&2, String> <- P.read_file(path)
+            IO.pure(Bool & List<&2, Im.ILoaded>, img_load.read(m, path, acc))
+        case False{}:
+          IO.pure(Bool & List<&2, Im.ILoaded>, (False{}, acc))
+
+def img_load.one(+path: String, +dir: String, +acc: List<&2, Im.ILoaded>)
+    -> IO(Bool & List<&2, Im.ILoaded>):
+  img_load.one.pick(Bool.not(String.is_empty(Im.img_lookup(path, acc))),
+    Bool.and(String.starts_with(path, dir),
+      Bool.and(String.ends_with(path, ".b64"),
+        Bool.not(String.contains(path, "/../")))),
+    path, acc)
+
+def img_load.next(r: Bool & List<&2, Im.ILoaded>, +flags: List<&2, Bool>)
+    -> List<&2, Bool> & List<&2, Im.ILoaded>:
+  match r:
+    case (f, acc):
+      (Con{f, flags}, acc)
+
+# flags (reversed) and the loaded images
+@unsafe
+def img_load(paths: List<&2, String>, +dir: String, +flags: List<&2, Bool>,
+    +acc: List<&2, Im.ILoaded>) -> IO(List<&2, Bool> & List<&2, Im.ILoaded>):
+  match paths:
+    case Nil{}:
+      IO.pure(List<&2, Bool> & List<&2, Im.ILoaded>, (flags, acc))
+    case Con{+p, rest}:
+      do IO<List<&2, Bool> & List<&2, Im.ILoaded>>:
+        r : Bool & List<&2, Im.ILoaded> <- img_load.one(p, dir, acc)
+        img_load.go(img_load.next(r, flags), rest, dir)
+
+@unsafe
+def img_load.go(st: List<&2, Bool> & List<&2, Im.ILoaded>,
+    rest: List<&2, String>, +dir: String)
+    -> IO(List<&2, Bool> & List<&2, Im.ILoaded>):
+  match st:
+    case (fl, ac):
+      img_load(rest, dir, fl, ac)
+
+type ImgReq is Data:
+  ImgReq{request: String, loaded: List<&2, Im.ILoaded>}
+
+def img_req.of(r: List<&2, Bool> & List<&2, Im.ILoaded>, +request: String)
+    -> ImgReq:
+  match r:
+    case (rflags, loaded):
+      ImgReq{Im.img_defang(request,
+        Im.img_keep(List.reverse(&2, Bool, rflags), img_cap())), loaded}
+
+@unsafe
+def img_req.load(+request: String) -> IO(ImgReq):
+  do IO<ImgReq>:
+    +dir : String <- img_dir()
+    r : List<&2, Bool> & List<&2, Im.ILoaded> <- img_load(Im.img_paths(request),
+      dir, Nil{}, Nil{})
+    IO.pure(ImgReq, img_req.of(r, request))
+
+# a request without marker costs one scan
+@unsafe
+def img_req.pick(has: Bool, +request: String) -> IO(ImgReq):
+  match has:
+    case True{}:
+      img_req.load(request)
+    case False{}:
+      IO.pure(ImgReq, ImgReq{request, Nil{}})
+
+@unsafe
+def img_req(+request: String) -> IO(ImgReq):
+  img_req.pick(Im.has_image(request), request)
+
 # one call = up to max_attempts attempts; `call` (its start time, ms)
 # names the call in the debug log
 @unsafe
 def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
-    +key: String, +st: Api.Style, +model: String, +call: Nat)
+    +key: String, +st: Api.Style, +model: String, +call: Nat,
+    +imgs: List<&2, Im.ILoaded>)
     -> IO(Out & Rem.RemoteRes):
   match fuel:
     case 0n:
@@ -452,7 +563,7 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
         +json : String <- IO.pure(String,
           wire_body(st,
             Api.api_body_for(st, model, Api.parse_wire(request))))
-        +body : String <- IO.pure(String, Enc.utf8.encode(json))
+        +body : String <- IO.pure(String, Enc.utf8.encode(Im.img_splice(json, imgs)))
         dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
         dump_dbg : Unit <- dump_wire(P.env_or(dr, ""), body)
         hdrs : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
@@ -464,13 +575,21 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
         nu : Out <- usage_note(g, n, st, model)
         model_call.step(got_attempt(g), nu, k, tries,
           k2 => n2 => model_call.try(k2, Nat.add(tries, 1n), n2, request, key,
-            st, model, call))
+            st, model, call, imgs))
+
+def model_call.img(ir: ImgReq, n: Out, +key: String, +st: Api.Style,
+    +model: String, +call: Nat) -> IO(Out & Rem.RemoteRes):
+  match ir:
+    case ImgReq{+request, +imgs}:
+      model_call.try(Pvp.max_attempts(), 0n, n, request, key, st, model, call,
+        imgs)
 
 def model_call.go(n: Out, +request: String, +key: String, +st: Api.Style,
     +model: String) -> IO(Out & Rem.RemoteRes):
   do IO<Out & Rem.RemoteRes>:
     +call : Nat <- IO.now()
-    model_call.try(Pvp.max_attempts(), 0n, n, request, key, st, model, call)
+    ir : ImgReq <- img_req(request)
+    model_call.img(ir, n, key, st, model, call)
 
 def model_call.key(empty: Bool, n: Out, +request: String, +key: String,
     +st: Api.Style, +model: String) -> IO(Out & Rem.RemoteRes):

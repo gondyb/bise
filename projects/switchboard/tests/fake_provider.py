@@ -92,9 +92,13 @@ class H(http.server.BaseHTTPRequestHandler):
                 last_user = text_of(m.get("content"))
                 if not last_user.lstrip().startswith("<switchboard_state>"):
                     user = last_user
+        # the image parts of the request (docs/images.md): their data urls
+        images = [p.get("image_url", {}).get("url", "")
+                  for m in msgs if isinstance(m.get("content"), list)
+                  for p in m["content"] if isinstance(p, dict) and p.get("type") == "image_url"]
         with open(LOG, "a") as f:
             f.write(json.dumps({"agent": agent, "last_user": last_user[:3000], "user": user[:3000],
-                                "reply": msg}) + "\n")
+                                "reply": msg, "images": [u[:200] for u in images]}) + "\n")
         out = {
             "id": "fake",
             "object": "chat.completion",

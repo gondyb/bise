@@ -3740,3 +3740,24 @@ def hub_frame2.sa(+s1: HM.St, +s2: HM.St, +n: String, sf: hub_sf(s1, s2, n), h: 
       %Equal.sym(Bool, hub_act(HM.get_agent(s2, n)), hub_act(HM.get_agent(s1, n)), ea) : {Bool.and(_, Bool.not(hub_q(s2, n))) == False{} : Bool}
       hub_frame2.q(hub_act(HM.get_agent(s1, n)), hub_q(s1, n), hub_q(s2, n),
         hub_frame2.h(HM.get_agent(s1, n), s1, n, h), qi)
+
+def Laws.image_split_marker():
+  {==}
+
+def Laws.image_split_refuses_bad_marker():
+  {==}
+
+def Laws.api_body_image_user_parts():
+  {==}
+
+def Laws.api_body_image_anth_tool_result():
+  {==}
+
+def Laws.image_keep_last():
+  {==}
+
+def Laws.image_defang_unkept():
+  {==}
+
+def Laws.image_splice_data():
+  {==}

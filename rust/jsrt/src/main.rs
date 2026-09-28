@@ -96,8 +96,24 @@ const console = {
   error: (...a) => __log(a.map(String).join(' ')),
   warn: (...a) => __log(a.map(String).join(' ')),
 };
+// the Vibe rule: a non-empty array of content blocks REPLACES the result;
+// text blocks stay text, image blocks ({type:'image', data, mimeType} or
+// our {type:'image', path}) become image markers (docs/images.md)
+const __isBlock = (b) => b !== null && typeof b === 'object' && (
+  (b.type === 'text' && typeof b.text === 'string') ||
+  (b.type === 'image' && (typeof b.data === 'string' || typeof b.path === 'string')));
+const __blocks = (v) => {
+  let n = 0;
+  return v.map((b) => b.type === 'text' ? b.text : __image(
+    typeof b.data === 'string' ? b.data : '',
+    String(b.mimeType || b.mime_type || ''),
+    typeof b.path === 'string' ? b.path : '',
+    '[Image #' + (++n) + ']')).join('\n');
+};
 const __finish = (p) => Promise.resolve(p).then(
-  (v) => __done(typeof v === 'string' ? v : JSON.stringify(v === undefined ? '' : v)),
+  (v) => __done(typeof v === 'string' ? v
+    : (Array.isArray(v) && v.length > 0 && v.every(__isBlock)) ? __blocks(v)
+    : JSON.stringify(v === undefined ? '' : v)),
   (e) => __fail(JSON.stringify(String((e && e.message) || e)))
 );
 const __out = (async function () {
@@ -209,10 +225,42 @@ unsafe extern "C" fn native_call(
             println!("{{\"error\": {message}}}");
             std::process::exit(43);
         }
+        "__image" => {
+            let data = to_rust_string(&mut scope, args.get(0));
+            let mime = to_rust_string(&mut scope, args.get(1));
+            let path = to_rust_string(&mut scope, args.get(2));
+            let name = to_rust_string(&mut scope, args.get(3));
+            let text = image_marker(&data, &mime, &path, &name);
+            if let Some(v) = v8::String::new(&scope, &text) {
+                let mut rv = v8::ReturnValue::from_function_callback_info(info);
+                rv.set(v.into());
+            }
+        }
         _ => {
             let line = to_rust_string(&mut scope, args.get(0));
             eprintln!("[program] {line}");
         }
+    }
+}
+
+// one image block of a returned content array -> its marker (the image
+// goes to the store), or a text note the model can read
+fn image_marker(data: &str, mime: &str, path: &str, name: &str) -> String {
+    let stored = if !path.is_empty() {
+        bend_images::store_file(std::path::Path::new(path))
+    } else {
+        match bend_images::base64_decode(data) {
+            Some(bytes) if bend_images::sniff(&bytes).is_some() => bend_images::store_bytes(bytes),
+            Some(_) => Err(format!("the data is not a PNG, JPEG, GIF or WebP image (mimeType {mime:?})")),
+            None => Err("the data is not base64".to_string()),
+        }
+    };
+    match stored {
+        Ok(s) => {
+            let source = if path.is_empty() { s.file.to_string_lossy().to_string() } else { path.to_string() };
+            bend_images::marker(name, &source, &s)
+        }
+        Err(e) => format!("[image not attached: {e}]"),
     }
 }
 
@@ -282,6 +330,7 @@ fn run(program: &str, results: &str) -> ! {
     set_global(tc, &context, "__done");
     set_global(tc, &context, "__fail");
     set_global(tc, &context, "__log");
+    set_global(tc, &context, "__image");
 
     let code = match v8::String::new(tc, &source) {
         Some(code) => code,

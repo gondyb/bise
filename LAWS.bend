@@ -12,6 +12,7 @@ import ./core/patch.bend as Pa
 import ./core/config.bend as Cf
 import ./core/commands.bend as Cm
 import ./core/api.bend as Api
+import ./core/image.bend as Im
 import ./core/anth-stream.bend as As
 import ./core/obs.bend as O
 import ./runtime/remote.bend as Rm
@@ -2626,3 +2627,59 @@ law names_apart:
   for u: HI.NamesApart(HC.Hub.d(h))
   HI.NamesApart(HC.Hub.d(HC.RunR.hub(HC.run(ins, h))))
 
+
+# ---- images (docs/images.md, core/image.bend) ----
+
+# LAW: a text splits into its text parts and its image markers, in order.
+law image_split_marker:
+  {Im.img_split("a <image name=\"[Image #1]\" path=\"p.png\" mime=\"image/png\" b64=\"/s/x.b64\"> b")
+    == Con{Im.IText{"a "}, Con{Im.IImg{"[Image #1]", "p.png", "image/png", "/s/x.b64"},
+      Con{Im.IText{" b"}, Nil{}}}}
+    : List<&2, Im.IPart>}
+
+# LAW: a marker that does not name a .b64 file is no image.
+law image_split_refuses_bad_marker:
+  {Im.img_paths("<image name=\"x\" path=\"p\" mime=\"image/png\" b64=\"/etc/passwd\">")
+    == Nil{} : List<&2, String>}
+
+# LAW: OpenAI style - a user message with a marker becomes content
+# parts, the Codex frame around a data-url placeholder.
+law api_body_image_user_parts:
+  {Api.api_body_for(Api.OpenAI{}, "m", Api.parse_wire("MODEL default
+MSG user : see <image name=\"[Image #1]\" path=\"p.png\" mime=\"image/png\" b64=\"/s/x.b64\">
+END
+"))
+    == "{\"model\":\"m\",\"reasoning_effort\":\"high\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"see \"},{\"type\":\"text\",\"text\":\"<image name=[Image #1] path=\\\"p.png\\\">\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,@@BENDIMG:/s/x.b64@@\"}},{\"type\":\"text\",\"text\":\"</image>\"}]}]}"
+    : String}
+
+# LAW: Anthropic - a tool result with a marker carries image blocks.
+law api_body_image_anth_tool_result:
+  {Api.api_body_for(Api.Anthropic{}, "m", Api.parse_wire("MODEL default
+MSG user : go
+MSG assistant : 
+  CALL 1 run_typescript : {}
+MSG tool : <image name=\"[Image #1]\" path=\"p.png\" mime=\"image/png\" b64=\"/s/x.b64\">
+END
+"))
+    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"go\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"call_1\",\"name\":\"run_typescript\",\"input\":{}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_1\",\"content\":[{\"type\":\"text\",\"text\":\"<image name=[Image #1] path=\\\"p.png\\\">\"},{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"@@BENDIMG:/s/x.b64@@\"}},{\"type\":\"text\",\"text\":\"</image>\"}]}]}]}"
+    : String}
+
+# LAW: only the last `cap` loaded images are kept.
+law image_keep_last:
+  {Im.img_keep(Con{True{}, Con{False{}, Con{True{}, Con{True{}, Nil{}}}}}, 2n)
+    == Con{False{}, Con{False{}, Con{True{}, Con{True{}, Nil{}}}}}
+    : List<&2, Bool>}
+
+# LAW: a marker that is not kept becomes plain text; the others stay.
+law image_defang_unkept:
+  {Im.img_defang("<image name=\"a\" path=\"p\" mime=\"image/png\" b64=\"/s/1.b64\"> <image name=\"b\" path=\"q\" mime=\"image/png\" b64=\"/s/2.b64\">",
+      Con{False{}, Con{True{}, Nil{}}})
+    == "<image-unavailable name=\"a\" path=\"p\" mime=\"image/png\" b64=\"/s/1.b64\"> <image name=\"b\" path=\"q\" mime=\"image/png\" b64=\"/s/2.b64\">"
+    : String}
+
+# LAW: the splice puts each image's data at its placeholder (an unknown
+# one becomes empty).
+law image_splice_data:
+  {Im.img_splice("{\"d\":\"@@BENDIMG:/s/1.b64@@\",\"e\":\"@@BENDIMG:/s/9.b64@@\"}",
+      Con{Im.IL{"/s/1.b64", "QUJD"}, Nil{}})
+    == "{\"d\":\"QUJD\",\"e\":\"\"}" : String}

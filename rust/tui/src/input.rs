@@ -311,8 +311,28 @@ pub(crate) fn on_paste(app: &mut App, text: &str) {
     // normalize CRLF/CR so a terminal paste behaves like the
     // typed newline, then insert at the cursor
     let text = text.replace("\r\n", "\n").replace('\r', "\n");
-    app.ed.paste(&text);
+    // a paste that is only image paths (a file dragged into the
+    // terminal) attaches the images; an empty paste (Cmd+V on an image
+    // in some terminals) tries the clipboard image
+    let attached = if text.trim().is_empty() {
+        Some(crate::attach::attach_clipboard(app).map(|l| vec![l]))
+    } else {
+        crate::attach::on_paste(app, &text)
+    };
+    match attached {
+        Some(Ok(labels)) => flash(app, format!("attached {}", labels.join(" "))),
+        Some(Err(e)) if !text.trim().is_empty() => {
+            flash(app, format!("image not attached: {e}"));
+            app.ed.paste(&text);
+        }
+        Some(Err(_)) => {}
+        None => app.ed.paste(&text),
+    }
     app.popup_sel = 0;
+}
+
+fn flash(app: &mut App, note: String) {
+    app.flash = Some((note, std::time::Instant::now()));
 }
 
 /// A key event; true when it quits the UI.
@@ -435,6 +455,7 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
                 let v = app.ed.text.trim().to_string();
                 if !v.is_empty() && !v.starts_with('/') {
                     app.ed.take();
+                    let v = crate::attach::expand(app, &v);
                     handle_input(app, &format!("say {}", v));
                 }
             }
@@ -443,6 +464,11 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         // the kitty keyboard protocol), Ctrl+J (LF, the one
         // binding EVERY terminal transmits), or alt+enter;
         // plain Enter sends
+        // ctrl+v: attach the clipboard image (terminals paste text only)
+        (KeyCode::Char('v'), KeyModifiers::CONTROL) => match crate::attach::attach_clipboard(app) {
+            Ok(l) => flash(app, format!("attached {l}")),
+            Err(e) => flash(app, e),
+        },
         (KeyCode::Enter, KeyModifiers::SHIFT)
         | (KeyCode::Char('j'), KeyModifiers::CONTROL)
         | (KeyCode::Enter, KeyModifiers::ALT) => {
@@ -458,6 +484,7 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
                 }
             } else {
                 let v = app.ed.take().trim().to_string();
+                let v = if v.starts_with('/') { v } else { crate::attach::expand(app, &v) };
                 app.follow = true;
                 app.unseen = 0;
                 if !v.is_empty() {
@@ -531,6 +558,16 @@ fn at_nav(app: &mut App, k: &crossterm::event::KeyEvent, sel: Option<&PopItem>) 
 fn pick(app: &mut App, c: &PopItem) {
     if let Some(p) = c.path.as_ref().filter(|_| !c.folder) {
         files::picked(p);
+        // an image is attached, not inserted as a path
+        match crate::attach::pick_image(app, p) {
+            Some(Ok(l)) => {
+                flash(app, format!("attached {l} {p}"));
+                app.popup_sel = 0;
+                return;
+            }
+            Some(Err(e)) => flash(app, format!("image not attached: {e}")),
+            None => {}
+        }
     }
     app.ed.set(&c.fill, c.fill_cursor);
     app.popup_sel = 0;

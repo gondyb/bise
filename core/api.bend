@@ -13,6 +13,7 @@
 import Base
 import ./compaction.bend as C
 import ./text.bend as Tx
+import ./image.bend as Im
 import ../vendor/json.bend as J
 
 # ---- single-line flattening (every reply line is one line) ----
@@ -528,6 +529,18 @@ def ids_of(calls: List<&2, WCall>) -> List<&2, String>:
         case WCall{+id, _, _}:
           Con{call_id_of(id), ids_of(rest)}
 
+# a user or tool content with image markers (core/image.bend) becomes
+# content parts; any other content is the plain string, as before
+def img_content.pick(has: Bool, +st: Im.IStyle, +content: String) -> J.Json:
+  match has:
+    case True{}:
+      J.arr(Im.content_blocks(st, content))
+    case False{}:
+      J.str(content)
+
+def img_content(+st: Im.IStyle, +content: String) -> J.Json:
+  img_content.pick(Im.has_image(content), st, content)
+
 # tool results pair with assistant calls FIFO: each tool message takes
 # the oldest unmatched id
 def msg_json.tool(ids: List<&2, String>, +content: String)
@@ -535,11 +548,11 @@ def msg_json.tool(ids: List<&2, String>, +content: String)
   match ids:
     case Con{+id, rest}:
       (J.obj(Con{J.kv("role", J.str("tool")),
-        Con{J.kv("content", J.str(content)),
+        Con{J.kv("content", img_content(Im.IOai{}, content)),
           Con{J.kv("tool_call_id", J.str(id)), Nil{}}}}), rest)
     case Nil{}:
       (J.obj(Con{J.kv("role", J.str("tool")),
-        Con{J.kv("content", J.str(content)),
+        Con{J.kv("content", img_content(Im.IOai{}, content)),
           Con{J.kv("tool_call_id", J.str("call_0")), Nil{}}}}), Nil{})
 
 def content_json.pick(empty: Bool, +text: String) -> J.Json:
@@ -792,7 +805,7 @@ def msg_json.pick(is_tool: Bool, is_asst: Bool, +role: String,
           msg_json.asst(content, calls, ids)
         case False{}:
           (J.obj(Con{J.kv("role", J.str(role)),
-            Con{J.kv("content", J.str(content)), Nil{}}}), ids)
+            Con{J.kv("content", img_content(Im.IOai{}, content)), Nil{}}}), ids)
 
 def msg_json(m: WMsg, ids: List<&2, String>) -> J.Json & List<&2, String>:
   match m:
@@ -1105,7 +1118,18 @@ def tool_use_json(c: WCall) -> J.Json:
 def tool_result_json(+id: String, +content: String) -> J.Json:
   J.obj(Con{J.kv("type", J.str("tool_result")),
     Con{J.kv("tool_use_id", J.str(id)),
-    Con{J.kv("content", J.str(content)), Nil{}}}})
+    Con{J.kv("content", img_content(Im.IAnth{}, content)), Nil{}}}})
+
+# a user message: one text block, or the parts when it carries images
+def user_blocks.pick(has: Bool, +content: String) -> List<&2, J.Json>:
+  match has:
+    case True{}:
+      Im.content_blocks(Im.IAnth{}, content)
+    case False{}:
+      Con{text_block_json(content), Nil{}}
+
+def user_blocks(+content: String) -> List<&2, J.Json>:
+  user_blocks.pick(Im.has_image(content), content)
 
 # ---- Anthropic: the message walk ----
 # The wire roles do not map 1:1 onto Messages messages: the system
@@ -1270,7 +1294,7 @@ def awalk_go(fuel: Nat, w: AWalk) -> List<&2, J.Json>:
                   match m:
                     case WMsg{_, +content, _}:
                       awalk_go(k, AN{todo, ids,
-                        Con{AU{Con{text_block_json(content), Nil{}}}, acc}})
+                        Con{AU{user_blocks(content)}, acc}})
                 case False{}:
                   match is_asst:
                     case True{}:

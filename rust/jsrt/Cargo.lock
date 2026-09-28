@@ -96,9 +96,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bend-images"
+version = "0.1.0"
+
+[[package]]
 name = "bend-jsrt"
 version = "0.1.0"
 dependencies = [
+ "bend-images",
  "deno_ast",
  "deno_core",
 ]

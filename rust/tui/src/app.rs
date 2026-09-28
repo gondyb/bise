@@ -82,6 +82,8 @@ pub(crate) struct App {
     /// Switchboard mode (projects/switchboard): the hub connection and
     /// the feeds out of focus.
     pub(crate) sb: Option<sb::Sb>,
+    /// the images attached in the composer (`[Image #N]`, attach.rs)
+    pub(crate) attachments: Vec<crate::attach::Attachment>,
 }
 
 /// The composer's text area in the last frame: its screen origin, its
@@ -198,6 +200,7 @@ impl App {
             rx,
             should_quit: false,
             sb: None,
+            attachments: Vec::new(),
         }
     }
 
