@@ -2022,6 +2022,8 @@ struct App {
     // wrapped rows per event, keyed by event index (the codex layout
     // cache: rebuild on mutation, width change, or live-elapsed tools)
     cache: Vec<Option<EventRows>>,
+    /// Switchboard: which part of the agent's transcript the feed holds.
+    win: sb::FeedWindow,
     area_w: usize,
     area_h: usize,
     events: Vec<Ev>,
@@ -3607,6 +3609,7 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
         tail_visible: true,
         bottom_bar_rect: None,
         cache: Vec::new(),
+        win: Default::default(),
         // line mode renders without a frame: the terminal width (or a
         // sane default) sizes the code blocks; interactive mode
         // overwrites this every frame

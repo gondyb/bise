@@ -27,8 +27,12 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
 
-/// Lines kept in memory per feed (older ones stay in the transcript).
-const BUFFER_LINES: usize = 4000;
+/// Lines kept in memory per feed and replayed to a new client (older
+/// ones stay in the transcript: the client pages them with the
+/// `history` op when the user scrolls up).
+const BUFFER_LINES: usize = 1000;
+/// Lines one `history` page may carry.
+const PAGE_LINES: usize = 2000;
 
 pub struct Opts {
     pub paths: Paths,
@@ -125,7 +129,10 @@ struct Shell {
     pids: BTreeMap<String, (u64, u32)>,
     clients: BTreeMap<ClientId, UnixStream>,
     replies: BTreeMap<Token, UnixStream>,
-    buffers: BTreeMap<String, VecDeque<String>>,
+    /// The last lines of each feed, with their transcript positions.
+    buffers: BTreeMap<String, VecDeque<(usize, String)>>,
+    /// The position of the last line of each feed's transcript.
+    positions: BTreeMap<String, usize>,
     /// Wire-log offsets processed since the last flush to `wire.offset`.
     offsets: BTreeMap<String, u64>,
     /// True while `Input::Boot` runs: its spawns may adopt a REPL.
@@ -167,6 +174,36 @@ fn transcript_tail(path: &Path, n: usize) -> Vec<(u64, String)> {
     let all = transcript::read(path);
     let skip = all.len().saturating_sub(n);
     all.into_iter().skip(skip).map(|(_, t, l)| (t, l)).collect()
+}
+
+/// The lines of a transcript at positions [before - count, before)
+/// (positions from 1, as `transcript.rs`), without keeping the rest of
+/// the file in memory.
+fn transcript_page(path: &Path, before: usize, count: usize) -> Vec<(usize, String)> {
+    use std::io::BufRead;
+    let Ok(f) = std::fs::File::open(path) else { return Vec::new() };
+    let from = before.saturating_sub(count).max(1);
+    let mut out = Vec::new();
+    for (i, l) in std::io::BufReader::new(f).lines().enumerate() {
+        let pos = i + 1;
+        if pos >= before {
+            break;
+        }
+        let Ok(l) = l else { break };
+        if pos >= from {
+            if let Some((_, line)) = l.split_once('\t') {
+                out.push((pos, line.to_string()));
+            }
+        }
+    }
+    out
+}
+
+/// How many lines a transcript holds (the position of its last line).
+fn transcript_len(path: &Path) -> usize {
+    std::fs::read(path)
+        .map(|b| b.iter().filter(|c| **c == b'\n').count())
+        .unwrap_or(0)
 }
 
 fn free_port() -> std::io::Result<u16> {
@@ -376,19 +413,25 @@ impl Shell {
     /// A line enters a feed: memory, transcript, every client.
     fn feed(&mut self, name: &str, line: &str) {
         let Some(dir) = self.dir_of(name) else { return };
+        let path = self.transcript(&dir);
+        let pos = match self.positions.get(name) {
+            Some(p) => p + 1,
+            None => transcript_len(&path) + 1,
+        };
+        self.positions.insert(name.to_string(), pos);
         let b = self.buffers.entry(name.to_string()).or_default();
-        b.push_back(line.to_string());
+        b.push_back((pos, line.to_string()));
         while b.len() > BUFFER_LINES {
             b.pop_front();
         }
         if let Ok(mut f) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(self.transcript(&dir))
+            .open(&path)
         {
             let _ = writeln!(f, "{}\t{}", now_ms(), line);
         }
-        self.broadcast(&json!({"ev": "line", "agent": name, "line": line}));
+        self.broadcast(&json!({"ev": "line", "agent": name, "line": line, "pos": pos}));
     }
 
     fn broadcast(&mut self, v: &Value) {
@@ -490,6 +533,9 @@ impl Shell {
             Effect::Renamed { old, new } => {
                 if let Some(b) = self.buffers.remove(&old) {
                     self.buffers.insert(new.clone(), b);
+                }
+                if let Some(p) = self.positions.remove(&old) {
+                    self.positions.insert(new.clone(), p);
                 }
                 self.broadcast(&json!({"ev": "renamed", "old": old, "new": new}));
             }
@@ -730,10 +776,10 @@ impl Shell {
         }
         for name in self.hub.st.order.clone() {
             if let Some(b) = self.buffers.get(&name) {
-                for l in b {
+                for (pos, l) in b {
                     if !write_json(
                         &mut stream,
-                        &json!({"ev": "line", "agent": name, "line": l}),
+                        &json!({"ev": "line", "agent": name, "line": l, "pos": pos}),
                     ) {
                         return;
                     }
@@ -759,6 +805,29 @@ impl Shell {
                 focus: s("focus"),
                 text: s("text"),
             }),
+            // older lines of a feed, before a position (the TUI scrolled
+            // to the top of what it holds)
+            "history" => {
+                let agent = s("agent");
+                let before = v.get("before").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
+                let count = v
+                    .get("count")
+                    .and_then(|x| x.as_u64())
+                    .map_or(PAGE_LINES, |c| (c as usize).min(PAGE_LINES));
+                let lines: Vec<Value> = match self.dir_of(&agent) {
+                    Some(dir) => transcript_page(&self.transcript(&dir), before, count)
+                        .into_iter()
+                        .map(|(pos, line)| json!({"pos": pos, "line": line}))
+                        .collect(),
+                    None => Vec::new(),
+                };
+                if let Some(c) = self.clients.get_mut(&id) {
+                    write_json(
+                        c,
+                        &json!({"ev": "history", "agent": agent, "before": before, "lines": lines}),
+                    );
+                }
+            }
             "focus" => self.step(Input::ClientFocus {
                 client: id,
                 focus: s("focus"),
@@ -1384,6 +1453,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         clients: BTreeMap::new(),
         replies: BTreeMap::new(),
         buffers: BTreeMap::new(),
+        positions: BTreeMap::new(),
         offsets: BTreeMap::new(),
         booting: false,
         bins: BTreeMap::new(),
@@ -1394,10 +1464,11 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     };
     // the feeds survive a hub restart through their transcripts
     for a in sh.hub.st.agents.values() {
-        let tail: VecDeque<String> = transcript_tail(&sh.transcript(&a.dir), BUFFER_LINES)
-            .into_iter()
-            .map(|(_, l)| l)
-            .collect();
+        let all = transcript::read(&sh.transcript(&a.dir));
+        sh.positions.insert(a.name.clone(), all.last().map_or(0, |r| r.0));
+        let skip = all.len().saturating_sub(BUFFER_LINES);
+        let tail: VecDeque<(usize, String)> =
+            all.into_iter().skip(skip).map(|(p, _, l)| (p, l)).collect();
         if !tail.is_empty() {
             sh.buffers.insert(a.name.clone(), tail);
         }

@@ -12,10 +12,34 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::os::unix::net::UnixStream;
 
+/// Events a feed keeps while it follows its tail; past it, the oldest
+/// go (down to `KEEP_EVENTS`) and come back from the hub by pages when
+/// the user scrolls up to them.
+const MAX_EVENTS: usize = 3000;
+const KEEP_EVENTS: usize = 2000;
+/// Lines asked per page of older history.
+const PAGE_LINES: usize = 1000;
+/// A page is asked when the view gets this close to its first event.
+const PAGE_AHEAD: usize = 100;
+
+/// Which part of an agent's transcript a feed holds.
+#[derive(Default)]
+pub(super) struct FeedWindow {
+    /// (event index, transcript position) of each line that added an
+    /// event: where the feed can be cut, and where a page starts.
+    marks: std::collections::VecDeque<(usize, usize)>,
+    /// The position of the oldest line taken in (None: a hub without
+    /// positions, nothing to page).
+    first_pos: Option<usize>,
+    /// A page was asked and has not arrived.
+    loading: bool,
+}
+
 /// Everything that belongs to one feed.
 pub(super) struct View {
     events: Vec<Ev>,
     cache: Vec<Option<EventRows>>,
+    win: FeedWindow,
     follow: bool,
     anchor: (usize, usize),
     scroll: isize,
@@ -33,6 +57,7 @@ impl View {
         View {
             events: Vec::new(),
             cache: Vec::new(),
+            win: FeedWindow::default(),
             follow: true,
             anchor: (0, 0),
             scroll: 0,
@@ -50,6 +75,7 @@ impl View {
 fn swap_feed(app: &mut App, v: &mut View) {
     std::mem::swap(&mut app.events, &mut v.events);
     std::mem::swap(&mut app.cache, &mut v.cache);
+    std::mem::swap(&mut app.win, &mut v.win);
     std::mem::swap(&mut app.follow, &mut v.follow);
     std::mem::swap(&mut app.anchor, &mut v.anchor);
     std::mem::swap(&mut app.scroll, &mut v.scroll);
@@ -324,6 +350,7 @@ fn hub_reconnected(app: &mut App) {
     app.connected = true;
     app.events.clear();
     app.cache.clear();
+    app.win = FeedWindow::default();
     app.pending = false;
     app.interrupt_requested = false;
     app.follow = true;
@@ -357,7 +384,26 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
     };
     let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
     match s("ev").as_str() {
-        "line" => ingest_for(app, &s("agent"), s("line")),
+        "line" => {
+            let pos = v.get("pos").and_then(|x| x.as_u64()).map(|p| p as usize);
+            ingest_for(app, &s("agent"), s("line"), pos)
+        }
+        "history" => {
+            let before = v.get("before").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
+            let lines: Vec<(usize, String)> = v
+                .get("lines")
+                .and_then(|l| l.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| {
+                            let pos = x.get("pos")?.as_u64()? as usize;
+                            Some((pos, x.get("line")?.as_str()?.to_string()))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            with_feed(app, &s("agent"), |app| prepend_page(app, before, lines));
+        }
         "state" => apply_state(app, &v),
         "notice" => {
             for l in s("text").lines() {
@@ -413,23 +459,140 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
     }
 }
 
-fn ingest_for(app: &mut App, agent: &str, line: String) {
+fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>) {
+    let Some(sb) = app.sb.as_mut() else { return };
+    if sb.focus != agent {
+        let visible = line.contains("obs: assistant:") || line.starts_with("sb ");
+        if visible && sb.ready {
+            *sb.activity.entry(agent.to_string()).or_insert(0) += 1;
+        }
+    }
+    with_feed(app, agent, |app| {
+        ingest_at(app, line, pos);
+        trim_window(app);
+    });
+}
+
+/// Run `f` on the feed of `agent`, swapped into the `App` fields when it
+/// is not the one in focus.
+fn with_feed(app: &mut App, agent: &str, f: impl FnOnce(&mut App)) {
     let Some(sb) = app.sb.as_mut() else { return };
     if sb.focus == agent {
-        ingest_line(app, line);
+        f(app);
         return;
-    }
-    let visible = line.contains("obs: assistant:") || line.starts_with("sb ");
-    if visible && sb.ready {
-        *sb.activity.entry(agent.to_string()).or_insert(0) += 1;
     }
     let mut view = sb.views.remove(agent).unwrap_or_else(View::new);
     swap_feed(app, &mut view);
-    ingest_line(app, line);
+    f(app);
     swap_feed(app, &mut view);
     if let Some(sb) = app.sb.as_mut() {
         sb.views.insert(agent.to_string(), view);
     }
+}
+
+/// One line of the feed, at transcript position `pos`.
+fn ingest_at(app: &mut App, line: String, pos: Option<usize>) {
+    let n0 = app.events.len();
+    ingest_line(app, line);
+    if let Some(p) = pos {
+        app.win.first_pos.get_or_insert(p);
+        if app.events.len() > n0 {
+            app.win.marks.push_back((n0, p));
+        }
+    }
+}
+
+/// A feed that follows its tail keeps its last events only: the oldest
+/// go, cut at a line boundary (they come back by pages).
+fn trim_window(app: &mut App) {
+    if !app.follow || app.events.len() <= MAX_EVENTS {
+        return;
+    }
+    let want = app.events.len() - KEEP_EVENTS;
+    let Some(&(k, pos)) = app.win.marks.iter().find(|(i, _)| *i >= want) else {
+        return;
+    };
+    app.events.drain(..k);
+    let c = k.min(app.cache.len());
+    app.cache.drain(..c);
+    if let Some(first) = app.cache.first_mut() {
+        // its breathing gap depended on the event before it
+        *first = None;
+    }
+    while app.win.marks.front().is_some_and(|(i, _)| *i < k) {
+        app.win.marks.pop_front();
+    }
+    for m in app.win.marks.iter_mut() {
+        m.0 -= k;
+    }
+    app.win.first_pos = Some(pos);
+    app.anchor.0 = app.anchor.0.saturating_sub(k);
+}
+
+/// The view came close to the first event it holds: ask the hub for the
+/// lines before it (one page at a time).
+fn want_older(app: &mut App) {
+    if app.follow || app.win.loading || app.anchor.0 >= PAGE_AHEAD {
+        return;
+    }
+    let Some(before) = app.win.first_pos.filter(|p| *p > 1) else { return };
+    let Some(sb) = app.sb.as_mut() else { return };
+    let agent = sb.focus.clone();
+    sb.send(json!({"op": "history", "agent": agent, "before": before, "count": PAGE_LINES}));
+    app.win.loading = true;
+}
+
+/// A page of older lines arrived: its events go in front of the feed,
+/// the view stays on the rows it shows.
+fn prepend_page(app: &mut App, before: usize, lines: Vec<(usize, String)>) {
+    if app.win.first_pos != Some(before) {
+        // the feed changed since the ask (cut, reconnection): stale
+        app.win.loading = false;
+        return;
+    }
+    let first = lines.first().map_or(1, |l| l.0);
+    // the page renders through the same path as live lines, on an empty
+    // feed; what the live feed holds is set aside meanwhile
+    let events = std::mem::take(&mut app.events);
+    let cache = std::mem::take(&mut app.cache);
+    let marks = std::mem::take(&mut app.win.marks);
+    let kept = (
+        app.follow,
+        app.unseen,
+        app.pending,
+        app.interrupt_requested,
+        app.last_line_at,
+    );
+    app.follow = true;
+    for (pos, line) in lines {
+        ingest_at(app, line, Some(pos));
+    }
+    let k = app.events.len();
+    app.cache.resize_with(k, || None);
+    app.events.extend(events);
+    app.cache.extend(cache);
+    // the old first event may gain its breathing gap: the view keeps
+    // showing the same rows
+    let mut shift = 0;
+    if let Some(Some(old)) = app.cache.get(k) {
+        let rows = event_rows(&app.events, k, app.debug, old.width as usize, app.tick);
+        shift = rows.rows.len().saturating_sub(old.rows.len());
+        app.cache[k] = Some(rows);
+    }
+    app.win.marks.extend(marks.into_iter().map(|(i, p)| (i + k, p)));
+    (
+        app.follow,
+        app.unseen,
+        app.pending,
+        app.interrupt_requested,
+        app.last_line_at,
+    ) = kept;
+    if app.anchor.0 == 0 {
+        app.anchor.1 += shift;
+    }
+    app.anchor.0 += k;
+    app.win.first_pos = Some(first);
+    app.win.loading = false;
 }
 
 fn apply_state(app: &mut App, v: &Value) {
@@ -1197,7 +1360,10 @@ pub(super) fn draw_sb(app: &mut App, frame: &mut Frame) {
                 sb.views.insert(name, view);
             }
         }
-        None => draw(app, frame),
+        None => {
+            draw(app, frame);
+            want_older(app);
+        }
     }
 }
 
@@ -1388,6 +1554,7 @@ pub fn run_switchboard(
         tail_visible: true,
         bottom_bar_rect: None,
         cache: Vec::new(),
+        win: Default::default(),
         area_w: crossterm::terminal::size()
             .map(|(w, _)| w as usize)
             .unwrap_or(100)
