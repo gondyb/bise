@@ -567,13 +567,13 @@ impl Hub {
     fn load_view(&mut self, v: &Value) {
         let mut agents = BTreeMap::new();
         for a in v["agents"].as_array().into_iter().flatten() {
-            let name = jstr(&a, "name");
+            let name = jstr(a, "name");
             let declared = a["declared"]
                 .as_object()
                 .and_then(|d| parse(&d["status"]).map(|st| (st, jstr(&a["declared"], "note"))));
             let agent = Agent {
                 name: name.clone(),
-                dir: jstr(&a, "dir"),
+                dir: jstr(a, "dir"),
                 is_main: a["is_main"].as_bool().unwrap_or(false),
                 parent: a["parent"].as_str().map(|x| x.to_string()),
                 brief: parse(&a["brief"]).unwrap_or_default(),
@@ -586,7 +586,7 @@ impl Hub {
                 aliases: parse(&a["aliases"]).unwrap_or_default(),
                 files: parse(&a["files"]).unwrap_or_default(),
                 snapshot_ref: a["snapshot_ref"].as_str().map(|x| x.to_string()),
-                run: run_of(&jstr(&a, "run")),
+                run: run_of(&jstr(a, "run")),
                 waiting: a["waiting"].as_bool().unwrap_or(false),
                 turn_started_ms: a["turn_ms"].as_u64(),
                 activity: self.activity.get(&name).cloned(),
@@ -785,7 +785,7 @@ impl Hub {
             // the state after the step first: the deliveries render from it
             self.load_view(&out["view"]);
             for f in out.get("fx").and_then(|x| x.as_array()).into_iter().flatten() {
-                self.effect(fx, env, client, &f);
+                self.effect(fx, env, client, f);
             }
             return;
         }
@@ -944,7 +944,7 @@ impl Hub {
         for m in f["msgs"].as_array().into_iter().flatten() {
             let id = m["id"].as_u64().unwrap_or(0);
             if let Some(msg) = self.st.msgs.get(&id) {
-                parts.push(prompts::tagged(msg, &jstr(&m, "rel")));
+                parts.push(prompts::tagged(msg, &jstr(m, "rel")));
             }
         }
         let text = parts.join("\n\n");
