@@ -1,0 +1,205 @@
+//! One feed of the switchboard: its events and view state (`View`),
+//! swapped into the `App` fields while in focus, and the bounded window
+//! of the transcript it holds (trimmed at the tail, paged back from the
+//! hub).
+
+use super::*;
+
+/// Events a feed keeps while it follows its tail; past it, the oldest
+/// go (down to `KEEP_EVENTS`) and come back from the hub by pages when
+/// the user scrolls up to them.
+pub(super) const MAX_EVENTS: usize = 3000;
+pub(super) const KEEP_EVENTS: usize = 2000;
+/// Lines asked per page of older history.
+pub(super) const PAGE_LINES: usize = 1000;
+/// A page is asked when the view gets this close to its first event.
+pub(super) const PAGE_AHEAD: usize = 100;
+
+/// Which part of an agent's transcript a feed holds.
+#[derive(Default)]
+pub(crate) struct FeedWindow {
+    /// (event index, transcript position) of each line that added an
+    /// event: where the feed can be cut, and where a page starts.
+    pub(super) marks: std::collections::VecDeque<(usize, usize)>,
+    /// The position of the oldest line taken in (None: a hub without
+    /// positions, nothing to page).
+    pub(super) first_pos: Option<usize>,
+    /// A page was asked and has not arrived.
+    pub(super) loading: bool,
+}
+
+/// Everything that belongs to one feed.
+pub(super) struct View {
+    pub(super) events: Vec<Ev>,
+    pub(super) cache: Vec<Option<EventRows>>,
+    pub(super) win: FeedWindow,
+    pub(super) follow: bool,
+    pub(super) anchor: (usize, usize),
+    pub(super) scroll: isize,
+    pub(super) unseen: usize,
+    pub(super) tail_visible: bool,
+    pub(super) pending: bool,
+    pub(super) interrupt_requested: bool,
+    pub(super) last_line_at: Option<std::time::Instant>,
+    /// the agent's composer draft, kept while another is in focus
+    pub(super) ed: crate::editor::Editor,
+}
+
+impl View {
+    pub(super) fn new() -> View {
+        View {
+            events: Vec::new(),
+            cache: Vec::new(),
+            win: FeedWindow::default(),
+            follow: true,
+            anchor: (0, 0),
+            scroll: 0,
+            unseen: 0,
+            tail_visible: true,
+            pending: false,
+            interrupt_requested: false,
+            last_line_at: None,
+            ed: crate::editor::Editor::default(),
+        }
+    }
+}
+
+pub(super) fn swap_feed(app: &mut App, v: &mut View) {
+    std::mem::swap(&mut app.events, &mut v.events);
+    std::mem::swap(&mut app.cache, &mut v.cache);
+    std::mem::swap(&mut app.win, &mut v.win);
+    std::mem::swap(&mut app.follow, &mut v.follow);
+    std::mem::swap(&mut app.anchor, &mut v.anchor);
+    std::mem::swap(&mut app.scroll, &mut v.scroll);
+    std::mem::swap(&mut app.unseen, &mut v.unseen);
+    std::mem::swap(&mut app.tail_visible, &mut v.tail_visible);
+    std::mem::swap(&mut app.pending, &mut v.pending);
+    std::mem::swap(&mut app.interrupt_requested, &mut v.interrupt_requested);
+    std::mem::swap(&mut app.last_line_at, &mut v.last_line_at);
+}
+
+pub(super) fn swap_draft(app: &mut App, v: &mut View) {
+    std::mem::swap(&mut app.ed, &mut v.ed);
+}
+
+/// Run `f` on the feed of `agent`, swapped into the `App` fields when it
+/// is not the one in focus.
+pub(super) fn with_feed(app: &mut App, agent: &str, f: impl FnOnce(&mut App)) {
+    let Some(sb) = app.sb.as_mut() else { return };
+    if sb.focus == agent {
+        f(app);
+        return;
+    }
+    let mut view = sb.views.remove(agent).unwrap_or_else(View::new);
+    swap_feed(app, &mut view);
+    f(app);
+    swap_feed(app, &mut view);
+    if let Some(sb) = app.sb.as_mut() {
+        sb.views.insert(agent.to_string(), view);
+    }
+}
+
+/// One line of the feed, at transcript position `pos`.
+pub(super) fn ingest_at(app: &mut App, line: String, pos: Option<usize>) {
+    let n0 = app.events.len();
+    ingest_line(app, line);
+    if let Some(p) = pos {
+        app.win.first_pos.get_or_insert(p);
+        if app.events.len() > n0 {
+            app.win.marks.push_back((n0, p));
+        }
+    }
+}
+
+/// A feed that follows its tail keeps its last events only: the oldest
+/// go, cut at a line boundary (they come back by pages).
+pub(super) fn trim_window(app: &mut App) {
+    if !app.follow || app.events.len() <= MAX_EVENTS {
+        return;
+    }
+    let want = app.events.len() - KEEP_EVENTS;
+    let Some(&(k, pos)) = app.win.marks.iter().find(|(i, _)| *i >= want) else {
+        return;
+    };
+    app.events.drain(..k);
+    let c = k.min(app.cache.len());
+    app.cache.drain(..c);
+    if let Some(first) = app.cache.first_mut() {
+        // its breathing gap depended on the event before it
+        *first = None;
+    }
+    while app.win.marks.front().is_some_and(|(i, _)| *i < k) {
+        app.win.marks.pop_front();
+    }
+    for m in app.win.marks.iter_mut() {
+        m.0 -= k;
+    }
+    app.win.first_pos = Some(pos);
+    app.anchor.0 = app.anchor.0.saturating_sub(k);
+}
+
+/// The view came close to the first event it holds: ask the hub for the
+/// lines before it (one page at a time).
+pub(super) fn want_older(app: &mut App) {
+    if app.follow || app.win.loading || app.anchor.0 >= PAGE_AHEAD {
+        return;
+    }
+    let Some(before) = app.win.first_pos.filter(|p| *p > 1) else { return };
+    let Some(sb) = app.sb.as_mut() else { return };
+    let agent = sb.focus.clone();
+    sb.send(json!({"op": "history", "agent": agent, "before": before, "count": PAGE_LINES}));
+    app.win.loading = true;
+}
+
+/// A page of older lines arrived: its events go in front of the feed,
+/// the view stays on the rows it shows.
+pub(super) fn prepend_page(app: &mut App, before: usize, lines: Vec<(usize, String)>) {
+    if app.win.first_pos != Some(before) {
+        // the feed changed since the ask (cut, reconnection): stale
+        app.win.loading = false;
+        return;
+    }
+    let first = lines.first().map_or(1, |l| l.0);
+    // the page renders through the same path as live lines, on an empty
+    // feed; what the live feed holds is set aside meanwhile
+    let events = std::mem::take(&mut app.events);
+    let cache = std::mem::take(&mut app.cache);
+    let marks = std::mem::take(&mut app.win.marks);
+    let kept = (
+        app.follow,
+        app.unseen,
+        app.pending,
+        app.interrupt_requested,
+        app.last_line_at,
+    );
+    app.follow = true;
+    for (pos, line) in lines {
+        ingest_at(app, line, Some(pos));
+    }
+    let k = app.events.len();
+    app.cache.resize_with(k, || None);
+    app.events.extend(events);
+    app.cache.extend(cache);
+    // the old first event may gain its breathing gap: the view keeps
+    // showing the same rows
+    let mut shift = 0;
+    if let Some(Some(old)) = app.cache.get(k) {
+        let rows = event_rows(&app.events, k, app.debug, old.width as usize, app.tick);
+        shift = rows.rows.len().saturating_sub(old.rows.len());
+        app.cache[k] = Some(rows);
+    }
+    app.win.marks.extend(marks.into_iter().map(|(i, p)| (i + k, p)));
+    (
+        app.follow,
+        app.unseen,
+        app.pending,
+        app.interrupt_requested,
+        app.last_line_at,
+    ) = kept;
+    if app.anchor.0 == 0 {
+        app.anchor.1 += shift;
+    }
+    app.anchor.0 += k;
+    app.win.first_pos = Some(first);
+    app.win.loading = false;
+}

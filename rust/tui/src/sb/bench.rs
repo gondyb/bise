@@ -2,6 +2,7 @@
 //! SB_BENCH_LINES=50000 cargo test --release -p bend-tui bench_long_feed -- --ignored --nocapture`.
 
 use super::*;
+use super::feed::{MAX_EVENTS, PAGE_LINES};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 use std::time::Instant;
