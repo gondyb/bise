@@ -174,15 +174,35 @@ pub(super) fn want_older(app: &mut App) {
     app.win.loading = true;
 }
 
+/// The local time of `ms` (ms since the epoch), `14:31`: std has no time
+/// zone, `date` has (`-r` on macOS, `-d @` on GNU); UTC when it fails.
+pub(super) fn hhmm_at(ms: u64) -> String {
+    let secs = ms / 1000;
+    let at = |args: &[String]| {
+        std::process::Command::new("date")
+            .args(args)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+            .filter(|s| s.len() == 5)
+    };
+    let fmt = "+%H:%M".to_string();
+    at(&["-r".into(), secs.to_string(), fmt.clone()])
+        .or_else(|| at(&["-d".into(), format!("@{}", secs), fmt]))
+        .unwrap_or_else(|| format!("{:02}:{:02}", (secs / 3600) % 24, (secs / 60) % 60))
+}
+
 /// A page of older lines arrived: its events go in front of the feed,
 /// the view stays on the rows it shows.
-pub(super) fn prepend_page(app: &mut App, before: usize, lines: Vec<(usize, String)>) {
+pub(super) fn prepend_page(app: &mut App, before: usize, lines: Vec<crate::wire::HistLine>) {
     if app.win.first_pos != Some(before) {
         // the feed changed since the ask (cut, reconnection): stale
         app.win.loading = false;
         return;
     }
-    let first = lines.first().map_or(1, |l| l.0);
+    let first = lines.first().map_or(1, |l| l.pos);
     // the page renders through the same path as live lines, on an empty
     // feed; what the live feed holds is set aside meanwhile
     let events = std::mem::take(&mut app.events);
@@ -196,8 +216,17 @@ pub(super) fn prepend_page(app: &mut App, before: usize, lines: Vec<(usize, Stri
         app.last_line_at,
     );
     app.follow = true;
-    for (pos, line) in lines {
-        ingest_at(app, line, Some(pos));
+    // a pause of 5 minutes between two replayed lines gets its time
+    // mark, as live (the first line of a page gets none: the gap with
+    // the older page is not known here)
+    let mut last_ts: Option<u64> = None;
+    for l in lines {
+        if let (Some(prev), Some(ts)) = (last_ts, l.ts) {
+            let gap = u128::from(ts.saturating_sub(prev));
+            crate::feed::pause_mark(&mut app.events, &mut app.cache, gap, || hhmm_at(ts));
+        }
+        last_ts = l.ts.or(last_ts);
+        ingest_at(app, l.line, Some(l.pos));
     }
     let k = app.events.len();
     app.cache.resize_with(k, || None);

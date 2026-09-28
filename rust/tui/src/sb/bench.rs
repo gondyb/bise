@@ -388,3 +388,49 @@ fn ctrl_l_clears_like_clear() {
     assert_eq!(app.win.first_pos, Some(11));
     assert!(app.follow);
 }
+
+/// A page of replayed history carries each line's time (`ts`, C2
+/// amendment): a pause of 5 minutes between two replayed lines gets its
+/// `· hh:mm ·` mark, as live; a line without `ts` (an older hub) still
+/// reads, and gets no mark.
+#[test]
+fn replayed_history_gets_its_time_marks() {
+    use crate::wire::{parse_history, HistLine};
+    let t0: u64 = 1_700_000_000_000;
+    let v = json!({"ev": "history", "agent": "main", "before": 10, "lines": [
+        {"pos": 1, "line": "  obs: assistant: one", "ts": t0},
+        {"pos": 2, "line": "  obs: assistant: two", "ts": t0 + 60_000},
+        {"pos": 3, "line": "  obs: assistant: three", "ts": t0 + 60_000 + 5 * 60_000},
+        {"pos": 4, "line": "  obs: assistant: old hub"},
+    ]});
+    let lines = parse_history(&v);
+    assert_eq!(lines[3], HistLine { pos: 4, line: "  obs: assistant: old hub".into(), ts: None });
+    assert_eq!(lines[2].ts, Some(t0 + 360_000));
+    let mut app = test_app();
+    for p in 10..=12 {
+        dispatch(
+            &mut app,
+            &json!({"ev": "line", "agent": "main", "line": format!("  obs: assistant: live {}", p), "pos": p}).to_string(),
+        );
+    }
+    app.win.first_pos = Some(10);
+    dispatch(&mut app, &v.to_string());
+    let marks: Vec<(usize, String)> = app
+        .events
+        .iter()
+        .enumerate()
+        .filter_map(|(i, e)| match e {
+            Ev::TimeMark(t) => Some((i, t.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0].1, super::feed::hhmm_at(t0 + 360_000));
+    // the mark sits right before the line after the pause
+    assert!(matches!(&app.events[marks[0].0 + 1], Ev::Assistant(t) if t.contains("three")));
+    assert_eq!(app.win.first_pos, Some(1));
+    // an old page (no `ts` at all) reads as before, without marks
+    let old = json!({"lines": [{"pos": 1, "line": "x"}, {"pos": 2, "line": "y"}]});
+    assert_eq!(parse_history(&old).iter().map(|l| l.ts).collect::<Vec<_>>(), vec![None, None]);
+    assert!(super::feed::hhmm_at(t0).as_bytes()[2] == b':');
+}

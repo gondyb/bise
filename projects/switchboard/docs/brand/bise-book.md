@@ -579,6 +579,13 @@ and adds structured kinds; the TUI maps each to one level:
   into main's feed (today main only sees messages to main).
 - Old kinds keep working (a v1 transcript still renders).
 - Amendment (BISE-04, accepted by main): `Ev::AgentMsg` carries `id` (the message id, `m_3` for `msg-in`, empty otherwise). A ` : ` inside a field of `answered` is escaped as ` \: `. `sb send --why <text>` fills the `why` of `answered`.
+- C2 amendment: history timestamp (BISE-85, accepted by main). A `history`
+  page line is `{pos, line, ts?}`: `ts` is when the hub's transcript wrote
+  the line (ms since the epoch), optional; a line without it still parses.
+  The TUI reads it into `wire::HistLine { pos, line, ts: Option<u64> }`
+  (`wire::parse_history`) and puts `Ev::TimeMark("hh:mm")` (local time)
+  before a replayed line that comes 5 minutes or more after the one before
+  it, as for live lines (§10).
 - **⚠** Volume: with 30 agents this is many lines; the TUI folds them (§10),
   the hub must not drop them.
 

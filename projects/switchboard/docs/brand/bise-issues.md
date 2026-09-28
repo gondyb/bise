@@ -1184,3 +1184,40 @@ Index:
   - **Also (fix of 5ff22eb):** 0bb65b4. A `-U0` patch had put a test body
     inside a doc comment, so bend-tui tests did not build at 5ff22eb/7fe7cc7.
     Now each commit is the exact tree that was gated.
+
+### BISE-85 · replayed history has time marks; stale sb-core in gates
+
+- **status:** done · **owner:** bise-h-hub · **commits:** (this commit)
+- **owns:** `daemon.rs` (the `history` page), `wire.rs` (`HistLine`,
+  `parse_history`), the `history` arm of `dispatch` (sb.rs),
+  `sb/feed.rs` `prepend_page` + `hhmm_at`
+- **spec:** book §10 (time marks), §21 C2 amendment: history timestamp
+- **do:** (1) find why `core_tests::a_waiting_agent_says_who_it_waits_on`
+  and `tui_waits_tmux.py` fail at 8122fa8. (2) the hub sends each replayed
+  history line's transcript time; the TUI draws `· hh:mm ·` marks in it.
+- **notes:**
+  - **(1) cause:** not the code. HEAD's `sb-core` blob (ecb4bec) has
+    `waiting_on`; both tests pass in a clean worktree of HEAD. Two stale
+    binaries made them fail: (a) an agent's shell inherits `SB_CORE_BIN`
+    from the live hub, which runs version 2a43d58 (before 5d13667 stopped
+    passing it to REPLs): `cargo test` runs the core tests against that
+    old sb-core; (b) the shared tree's `sb-core` is the c03071e blob:
+    ecb4bec committed the new binary through a private index, so the
+    working file never changed (it shows `M sb-core`). `sbd` runs the
+    sb-core of its app root, so the tmux tests run from the shared tree
+    use that old file. Fix: gate in a worktree with `SB_CORE_BIN` set to
+    its own sb-core (or unset); after committing an sb-core through a
+    private index, copy it into the shared tree if the file there is still
+    the previous blob.
+  - **(2) wire:** a `history` page line is `{pos, line, ts?}` (`ts`: ms
+    since the epoch, from the transcript stamp; missing if it does not
+    parse). TUI: `wire::HistLine { pos, line, ts: Option<u64> }`, read by
+    `wire::parse_history(&Value)`; `prepend_page` calls
+    `feed::pause_mark(.., gap, || hhmm_at(ts))` before a line whose `ts`
+    is `PAUSE_MS` or more after the previous one (the first line of a page
+    gets none: its gap with the older page is not known). `hhmm_at`: local
+    time via `date -r` (macOS) / `date -d @` (GNU), UTC fallback. The REPL's
+    own `history ` lines (`--resume`) carry no time: no marks there.
+  - **Tests:** `daemon::tests::history_lines_carry_their_time`,
+    `sb::bench::replayed_history_gets_its_time_marks` (a mark before the
+    line after a 5-minute pause, a line without `ts` still reads).

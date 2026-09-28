@@ -382,18 +382,7 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
         }
         "history" => {
             let before = v.get("before").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
-            let lines: Vec<(usize, String)> = v
-                .get("lines")
-                .and_then(|l| l.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|x| {
-                            let pos = x.get("pos")?.as_u64()? as usize;
-                            Some((pos, x.get("line")?.as_str()?.to_string()))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
+            let lines = crate::wire::parse_history(&v);
             with_feed(app, &s("agent"), |app| prepend_page(app, before, lines));
         }
         "state" => apply_state(app, &v),

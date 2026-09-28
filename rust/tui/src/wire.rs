@@ -402,3 +402,30 @@ pub(crate) fn wire_decode(s: &str) -> String {
     }
     out
 }
+
+// switchboard (C2 `history`, amended): one line of a page of older feed
+// lines, `{pos, line, ts?}`. `ts` is when the hub's transcript wrote the
+// line (ms since the epoch); a hub before the amendment sends no `ts`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct HistLine {
+    pub(crate) pos: usize,
+    pub(crate) line: String,
+    pub(crate) ts: Option<u64>,
+}
+
+// the `lines` of a `history` event; a line without `pos` or `line` is
+// skipped
+pub(crate) fn parse_history(v: &serde_json::Value) -> Vec<HistLine> {
+    let Some(a) = v.get("lines").and_then(|l| l.as_array()) else {
+        return Vec::new();
+    };
+    a.iter()
+        .filter_map(|x| {
+            Some(HistLine {
+                pos: x.get("pos")?.as_u64()? as usize,
+                line: x.get("line")?.as_str()?.to_string(),
+                ts: x.get("ts").and_then(|t| t.as_u64()),
+            })
+        })
+        .collect()
+}
