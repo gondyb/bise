@@ -1145,11 +1145,47 @@ Index:
 
 ### BISE-83 · remove deprecated theme aliases
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-k-keys · **commits:** 6a3a770,
+  bb3f2f9, da63fa7, 7d827f3
 - **track:** S · **owns:** `theme.rs` and whatever still uses an alias
 - **do:** remove the `#[deprecated]` aliases of BISE-01; every file uses the
   roles.
 - **notes:**
+  - **Aliases gone** (theme.rs, and lib.rs's `#![allow(deprecated)]`).
+    Users moved to the roles: 6a3a770 (ui.rs, help.rs, commands.rs,
+    sb/versions.rs, voice_ui_tests.rs), bb3f2f9 (markdown.rs, after
+    bise-f-feed's BISE-87). Map: `BRAND`/`WARN`/`RECORDING` → `accent()`,
+    `TEXT`/`ACCENT`/`HEAD` → `text()`, `DIM`/`INFO`/`TOOL` → `dim()`,
+    `OK` → `ok()`, `ERR` → `error()`, `SELECTION` → `selection_bg()`,
+    `ON_BRAND` → `on_accent()`, `BORDER_ACTIVE`/`FAINT` → `faint()`,
+    `SYNTAX_*` → the syntax roles, `PANEL`/`ELEMENT`/`DIFF_*_BG` →
+    `Color::Reset`. The solo client's braille spinner is `working_frame`
+    (`∿`, `~` in ASCII mode). The alias test left with the aliases.
+  - **Colors:** dark is unchanged by construction (each alias was the dark
+    value of the role it maps to). Light changes, and that is the fix: the
+    aliases were fixed to the dark palette, so assistant replies (markdown),
+    popups, /help and /version drew dark colors on a light terminal
+    (bise-c-cards' BISE-82 light pass saw it). They now read the light
+    palette.
+  - **da63fa7:** the /help key caps were raw `#eeeeee` on a painted
+    `#3a3a44`; now accent + bold, no background (book §5). The Ghostty
+    config lines use `syntax_string()`.
+  - **Glyphs (7d827f3):** literals that have a §6 constant go through
+    `theme::glyph()`: /version marks (`✗` `G_FAILED`, `○` `G_IDLE`), the
+    solo `○ disconnected` (`G_IDLE`), the @ popup's folder mark
+    (`G_CLOSED`). The rest are chrome with no §6 entity: `·` separators,
+    `…`, `⏎ ← ↑ → ⌥ ⇧`, `● ◉ ◆ ✚ ◀ ▪ ×`, the direct-message `⇄`, the
+    flash `✓`, and the `const` help rows. Those stay literals, and
+    `asciify` (the C1 safety net) rewrites them in ASCII mode.
+  - **ASCII check** (`BISE_ASCII=1`, tmux on a throwaway hub, the tree of
+    7d827f3): start, `/` popup, /help and /shortcuts, /version, the @
+    popup. No non-ASCII but letters and box drawing, except `§` inside
+    commit subjects (text, like `é`).
+  - **Gates:** each area ran build, `cargo test -p bend-tui` and clippy
+    `--workspace --all-targets -D warnings` on its exact tree, with my own
+    target (`/tmp/bise-k-target`, deleted after). Then the full gate on
+    HEAD 7d827f3: `cargo test --workspace`, `run_all.sh` (PROOF, e2e, the
+    13 tmux tests): green.
 
 ---
 
