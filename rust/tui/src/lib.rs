@@ -52,6 +52,7 @@ mod skills;
 mod emoji;
 mod editor;
 mod clipboard;
+mod usage;
 mod feedsel;
 mod keyprobe;
 pub use keyprobe::keyprobe;
@@ -186,6 +187,8 @@ enum Ev {
     TurnDone,
     Compact(String),
     Compacted(String),
+    // token usage of the last model call (hidden; feeds the status row)
+    Usage(usage::Usage),
     Warn(String),
     Err(String),
     Info(String),
@@ -437,6 +440,9 @@ fn parse_line(line: &str) -> Option<Ev> {
     }
     if let Some(t) = o.strip_prefix("compaction_done: ") {
         return Some(Ev::Compacted(t.to_string()));
+    }
+    if let Some(t) = o.strip_prefix("usage: ") {
+        return usage::Usage::parse(t).map(Ev::Usage);
     }
     if o == "null_iteration" {
         return Some(Ev::Warn(
@@ -728,6 +734,7 @@ fn ev_visible(ev: &Ev, debug: bool) -> bool {
             | Ev::TurnDone
             | Ev::Idle
             | Ev::Raw(_)
+            | Ev::Usage(_)
             | Ev::ToolInfo { .. }
             | Ev::ToolResult { .. }
             | Ev::ToolCode { .. }
@@ -1192,6 +1199,10 @@ fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             ),
         ])],
         Ev::ToolInfo { .. } | Ev::ToolResult { .. } | Ev::ToolCode { .. } => vec![],
+        Ev::Usage(u) => vec![Line::from(Span::styled(
+            format!("  usage: {} (in {} · out {})", u.label(), u.input, u.output),
+            Style::default().fg(DIM),
+        ))],
         Ev::Raw(t) => vec![Line::from(Span::styled(
             format!("  {}", t),
             Style::default().fg(DIM),

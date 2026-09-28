@@ -357,6 +357,15 @@ impl Sb {
             .collect()
     }
 
+    /// The context usage of an agent's feed (the focused one lives in
+    /// the `App` fields).
+    fn usage_of<'a>(&'a self, app: &'a App, name: &str) -> Option<&'a crate::usage::Usage> {
+        if self.focus == name {
+            return crate::usage::current(&app.events);
+        }
+        crate::usage::current(&self.views.get(name)?.events)
+    }
+
     fn agent(&self, name: &str) -> Option<&Agent> {
         self.agents.iter().find(|a| a.name == name)
     }
@@ -1294,6 +1303,9 @@ pub(super) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
             Span::styled(truncate_chars(&label, w.saturating_sub(12)), name_style),
             Span::styled(format!(" {}", a.status), Style::default().fg(DIM)),
         ];
+        if let Some(u) = sb.usage_of(app, &a.name) {
+            spans.push(Span::styled(format!(" {}", u.short()), Style::default().fg(FAINT)));
+        }
         if act > 0 && !focused {
             spans.push(Span::styled(" •", Style::default().fg(INFO)));
         }
@@ -1419,6 +1431,9 @@ pub(super) fn status_line(app: &App) -> Option<Line<'static>> {
             " · shared folder".to_string(),
             Style::default().fg(DIM),
         ));
+    }
+    if let Some(u) = crate::usage::current(&app.events) {
+        spans.push(Span::styled(format!(" · {}", u.label()), Style::default().fg(DIM)));
     }
     if let Some(ms) = a.turn_ms.filter(|_| app.pending) {
         spans.push(Span::styled(

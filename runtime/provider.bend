@@ -14,6 +14,7 @@ import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
 import 0xbf477e663cf4acb1369a68e0f0fa713b/encoding/encoding.bend as Enc
 import ./settings.bend as St
 import ./provider-pure.bend as Pvp
+import ./usage-pure.bend as Us
 # ---- the live provider call, fully in Bend (hub HTTP client) ----
 # The wire request (MODEL/TOOL/MSG/CALL lines) becomes the provider
 # JSON in core/api.bend, is POSTed by the hub HTTP client, and the reply
@@ -141,6 +142,30 @@ def note(n: Note, +line: String) -> IO(Note):
         s2 : Socket <- IO.pure(Socket, note.pair(sm))
         IO.pure(Note, NNet{s2})
 
+# the token usage of a reply, as a feed line (runtime/usage-pure.bend);
+# a reply without usage, or a failed call, prints nothing
+def usage_note.pick(empty: Bool, n: Note, +line: String) -> IO(Note):
+  match empty:
+    case True{}:
+      IO.pure(Note, n)
+    case False{}:
+      note(n, line)
+
+def usage_note.res(+res: Http.Res, n: Note, st: Api.Style, +model: String)
+    -> IO(Note):
+  match res:
+    case Http.Res{+status, _, _}:
+      +line = Us.usage_line(st, model, status, Http.text(res))
+      usage_note.pick(String.is_empty(line), n, line)
+
+def usage_note(r: Result<&2, &2, Http.Err, Http.Res>, n: Note, st: Api.Style,
+    +model: String) -> IO(Note):
+  match r:
+    case Done{+res}:
+      usage_note.res(res, n, st, model)
+    case Fail{_}:
+      IO.pure(Note, n)
+
 def interrupt_path() -> IO(String):
   do IO<String>:
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
@@ -223,10 +248,11 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Note, +request: String,
           model_headers(st, key))
         ur : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_PROVIDER_URL")
         +url : String <- IO.pure(String, Pvp.provider_url(P.env_or(ur, ""), st))
-        r : Result<&2, &2, Http.Err, Http.Res> <- Http.fetch.with("POST",
+        +r : Result<&2, &2, Http.Err, Http.Res> <- Http.fetch.with("POST",
           url, hdrs, body, Pvp.request_timeout_ms())
+        nu : Note <- usage_note(r, n, st, model)
         a : Pvp.Attempt <- model_call.verdict(r, st, Pvp.url_host(url))
-        model_call.step(a, n, k, tries,
+        model_call.step(a, nu, k, tries,
           k2 => n2 => model_call.try(k2, Nat.add(tries, 1n), n2, request, key,
             st, model))
 
