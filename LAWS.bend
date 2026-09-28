@@ -2396,3 +2396,13 @@ law msgs_kept:
   for +h: HC.Hub
   HI.Kept(HC.Hub.d(h), HC.Hub.d(HC.RunR.hub(HC.run(ins, h))))
 
+# LAW (L3, delivered at most once, RFC 0003 §6.1): over any sequence of
+# inputs, a message becomes Delivered only while it is Queued, and it goes
+# back to Queued only as an explicit steer_leftover (steering the runtime
+# never read). So a message is delivered once, and again only after an
+# explicit steer_leftover.
+law delivered_once:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  HX.Deliv(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h))
+

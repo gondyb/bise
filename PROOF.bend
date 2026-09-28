@@ -973,7 +973,7 @@ def Laws.steer_line_unescapes():
 # a step context's state is the replay of its journal: the proof it carries
 def hub_core_ok(-o: HM.St, c: HX.Core<o>) -> {HX.Core.d(o, c) == HM.apply_all(HX.journal(HX.Core.fx(o, c)), o) : HM.St}:
   match c:
-    case HX.Core{d, fx, p, f, q}:
+    case HX.Core{d, fx, p, f, q, v}:
       p
 
 def Laws.hub_step_replays(h, i):
@@ -1059,7 +1059,7 @@ def hub_commit_go_f(+h: HC.Hub, need: Maybe<&2, J.Json>, c: HX.Core<HC.Hub.d(h)>
       HX.Both{Unit{}, Unit{}}
     case None{}:
       match c:
-        case HX.Core{d, fx, p, f, q}:
+        case HX.Core{d, fx, p, f, q, v}:
           HX.Both{f, q}
 
 def hub_commit_f.cx(+h: HC.Hub, cx: HX.Cx<HC.Hub.d(h)>)
@@ -1542,3 +1542,45 @@ def Laws.msgs_kept(ins, h):
   hub_kept_tr(HC.Hub.d(h), HC.Hub.d(HC.RunR.hub(HC.run(ins, h))), HM.apply_all(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h)),
     Laws.hub_run_replays(ins, h), hub_apply_all_kept(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h)))
 
+# ---- L3: delivered only from the queue (delivered_once) ----
+
+def hub_deliv_append(+a: List<&2, HM.Ev>, -b: List<&2, HM.Ev>, -s: HM.St, fa: HX.Deliv(a, s),
+    fb: HX.Deliv(b, HM.apply_all(a, s))) -> HX.Deliv(List.append(&2, HM.Ev, a, b), s):
+  match a:
+    case Nil{}:
+      fb
+    case Con{e, t}:
+      match fa:
+        case HX.Both{x, y}:
+          HX.Both{x, hub_deliv_append(t, b, HM.apply(s, e), y, fb)}
+
+def hub_deliv_tr(-evs: List<&2, HM.Ev>, -x: HM.St, -y: HM.St, e: {x == y : HM.St}, f: HX.Deliv(evs, x)) -> HX.Deliv(evs, y):
+  %e : HX.Deliv(evs, _)
+  f
+
+def hub_commit_go_v(+h: HC.Hub, need: Maybe<&2, J.Json>, c: HX.Core<HC.Hub.d(h)>, +r: HX.R)
+    -> HX.Deliv(HX.journal(HC.Out.fx(HC.commit.go(HC.Hub.d(h), need, c, r, h))), HC.Hub.d(h)):
+  match need:
+    case Some{q}:
+      Unit{}
+    case None{}:
+      match c:
+        case HX.Core{d, fx, p, f, q, v}:
+          v
+
+def hub_commit_v.cx(+h: HC.Hub, cx: HX.Cx<HC.Hub.d(h)>)
+    -> HX.Deliv(HX.journal(HC.Out.fx(HC.commit.cx(HC.Hub.d(h), cx, h))), HC.Hub.d(h)):
+  match cx:
+    case HX.Cx{c, +r}:
+      hub_commit_go_v(h, HX.R.need(r), c, r)
+
+def Laws.delivered_once(ins, h):
+  match ins:
+    case Nil{}:
+      Unit{}
+    case Con{i, rest}:
+      hub_deliv_append(HX.journal(HC.Out.fx(HC.commit(h, i))), HC.RunR.journal(HC.run(rest, HC.Out.hub(HC.commit(h, i)))), HC.Hub.d(h),
+        hub_commit_v.cx(h, HC.step(h, i)),
+        hub_deliv_tr(HC.RunR.journal(HC.run(rest, HC.Out.hub(HC.commit(h, i)))),
+          HC.Hub.d(HC.Out.hub(HC.commit(h, i))), HM.apply_all(HX.journal(HC.Out.fx(HC.commit(h, i))), HC.Hub.d(h)),
+          hub_commit_ok(h, i), Laws.delivered_once(rest, HC.Out.hub(HC.commit(h, i)))))

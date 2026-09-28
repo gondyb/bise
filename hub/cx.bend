@@ -40,7 +40,7 @@ type R is Data:
 
 type Core<-o: M.St> is Data:
   Core{d: M.St, fx: List<&2, Fx>, p: {d == M.apply_all(journal(fx), o) : M.St},
-    f: Fresh(journal(fx), o), q: Quiet(journal(fx))}
+    f: Fresh(journal(fx), o), q: Quiet(journal(fx)), v: Deliv(journal(fx), o)}
 
 type Cx<-o: M.St> is Data:
   Cx{c: Core<o>, r: R}
@@ -412,6 +412,65 @@ def out_q(+fx: List<&2, Fx>, q: Quiet(journal(fx)), -x: J.Json) -> Quiet(journal
   %journal_snoc_out(fx, x) : Quiet(_)
   q
 
+# a message is delivered only while it is queued, and a message goes back
+# to the queue only as a steer_leftover (law delivered_once)
+def queued_at.go(m: Maybe<&2, M.MSt>) -> Bool:
+  match m:
+    case Some{M.Queued{_}}:
+      True{}
+    case _:
+      False{}
+
+def queued_at(+s: M.St, +id: Nat) -> Bool:
+  queued_at.go(M.state_of(s, id))
+
+def DelivSt(+s: M.St, +id: Nat, x: M.MSt) -> Data:
+  match x:
+    case M.Delivered{}:
+      {queued_at(s, id) == True{} : Bool}
+    case M.Queued{+r}:
+      {String.eq(r, "steer_leftover") == True{} : Bool}
+    case _:
+      Unit
+
+def DelivEv(+s: M.St, e: M.Ev) -> Data:
+  match e:
+    case M.EMsgState{+id, +x}:
+      DelivSt(s, id, x)
+    case _:
+      Unit
+
+def Deliv(evs: List<&2, M.Ev>, +s: M.St) -> Data:
+  match evs:
+    case Nil{}:
+      Unit
+    case Con{+e, +rest}:
+      Both<DelivEv(s, e), Deliv(rest, M.apply(s, e))>
+
+def deliv_snoc(+evs: List<&2, M.Ev>, -s: M.St, -e: M.Ev, g: Deliv(evs, s), k: DelivEv(M.apply_all(evs, s), e))
+    -> Deliv(M.snoc(M.Ev, evs, e), s):
+  match evs:
+    case Nil{}:
+      Both{k, Unit{}}
+    case Con{h, rest}:
+      match g:
+        case Both{g1, g2}:
+          Both{g1, deliv_snoc(rest, M.apply(s, h), e, g2, k)}
+
+def emit_v.k(-o: M.St, -d: M.St, -fx: List<&2, Fx>, p: {d == M.apply_all(journal(fx), o) : M.St}, -e: M.Ev,
+    k: DelivEv(d, e)) -> DelivEv(M.apply_all(journal(fx), o), e):
+  %p : DelivEv(_, e)
+  k
+
+def emit_v(-o: M.St, -d: M.St, +fx: List<&2, Fx>, p: {d == M.apply_all(journal(fx), o) : M.St},
+    v: Deliv(journal(fx), o), -e: M.Ev, k: DelivEv(d, e)) -> Deliv(journal(M.snoc(Fx, fx, FJ{e})), o):
+  %journal_snoc_ev(fx, e) : Deliv(_, o)
+  deliv_snoc(journal(fx), o, e, v, emit_v.k(o, d, fx, p, e, k))
+
+def out_v(-o: M.St, +fx: List<&2, Fx>, v: Deliv(journal(fx), o), -x: J.Json) -> Deliv(journal(M.snoc(Fx, fx, FO{x})), o):
+  %journal_snoc_out(fx, x) : Deliv(_, o)
+  v
+
 # ---- the replay lemmas ----
 
 def apply_all_snoc(+evs: List<&2, M.Ev>, -s: M.St, -e: M.Ev)
@@ -447,28 +506,28 @@ def out_ok(-o: M.St, +d: M.St, +fx: List<&2, Fx>, p: {d == M.apply_all(journal(f
 
 def Core.d(-o: M.St, c: Core<o>) -> M.St:
   match c:
-    case Core{+d, _, _, _, _}:
+    case Core{+d, _, _, _, _, _}:
       d
 
 # the only way the state changes: an event, applied and journaled. The
 # caller proves the event keeps the journal's invariants (for anything
 # but a new message both hold by definition: `{==}`)
-def core_emit(-o: M.St, c: Core<o>, +e: M.Ev, k: FreshEv(Core.d(o, c), e), kq: QuietEv(e)) -> Core<o>:
+def core_emit(-o: M.St, c: Core<o>, +e: M.Ev, k: FreshEv(Core.d(o, c), e), kq: QuietEv(e), kv: DelivEv(Core.d(o, c), e)) -> Core<o>:
   match c:
-    case Core{+d, +fx, +p, f, q}:
-      Core{M.apply(d, e), M.snoc(Fx, fx, FJ{e}), emit_ok(o, d, fx, p, e), emit_f(o, d, fx, p, f, e, k), emit_q(fx, q, e, kq)}
+    case Core{+d, +fx, +p, f, q, v}:
+      Core{M.apply(d, e), M.snoc(Fx, fx, FJ{e}), emit_ok(o, d, fx, p, e), emit_f(o, d, fx, p, f, e, k), emit_q(fx, q, e, kq), emit_v(o, d, fx, p, v, e, kv)}
 
 def core_out(-o: M.St, c: Core<o>, +x: J.Json) -> Core<o>:
   match c:
-    case Core{+d, +fx, p, f, q}:
-      Core{d, M.snoc(Fx, fx, FO{x}), out_ok(o, d, fx, p, x), out_f(o, fx, f, x), out_q(fx, q, x)}
+    case Core{+d, +fx, p, f, q, v}:
+      Core{d, M.snoc(Fx, fx, FO{x}), out_ok(o, d, fx, p, x), out_f(o, fx, f, x), out_q(fx, q, x), out_v(o, fx, v, x)}
 
 def core_start(+d: M.St) -> Core<d>:
-  Core{d, Nil{}, {==}, Unit{}, Unit{}}
+  Core{d, Nil{}, {==}, Unit{}, Unit{}, Unit{}}
 
 def Core.fx(-o: M.St, c: Core<o>) -> List<&2, Fx>:
   match c:
-    case Core{_, +fx, _, _, _}:
+    case Core{_, +fx, _, _, _, _}:
       fx
 
 # ---- the context ----
@@ -491,10 +550,10 @@ def mark(+r: R) -> R:
     case R{+a, +b, +c, +e, +f, +g, +w, _, +n, +gi, +an, +ne}:
       R{a, b, c, e, f, g, w, True{}, n, gi, an, ne}
 
-def emit(-o: M.St, cx: Cx<o>, +e: M.Ev, k: FreshEv(d(o, cx), e), kq: QuietEv(e)) -> Cx<o>:
+def emit(-o: M.St, cx: Cx<o>, +e: M.Ev, k: FreshEv(d(o, cx), e), kq: QuietEv(e), kv: DelivEv(d(o, cx), e)) -> Cx<o>:
   match cx:
     case Cx{+c, +r}:
-      Cx{core_emit(o, c, e, k, kq), mark(r)}
+      Cx{core_emit(o, c, e, k, kq, kv), mark(r)}
 
 def out(-o: M.St, cx: Cx<o>, +x: J.Json) -> Cx<o>:
   match cx:
