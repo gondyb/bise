@@ -854,16 +854,28 @@ def send(-o: M.St, +cx: X.Cx<o>, +s: Snd) -> X.Cx<o> & SendR:
 def msg(+from: String, +to: String, +text: String, +expect: Bool, +reply_to: Maybe<&2, Nat>, +plain: Bool, +auto: Bool) -> Snd:
   Snd{from, to, text, expect, reply_to, plain, auto, False{}, None{}}
 
-def create.go(-o: M.St, +cx: X.Cx<o>, +t: NewTask, +name: String, +ws: J.Json) -> X.Cx<o> & TaskR:
+def create.go.new(-o: M.St, +cx: X.Cx<o>, +t: NewTask, +name: String, +ws: J.Json, +e: {M.name_taken(X.d(o, cx), name) == False{} : Bool}) -> X.Cx<o> & TaskR:
   +parent = NewTask.parent(t)
   +label = branch_label(M.ws_branch(ws))
   +obj = M.one_line(NewTask.objective(t))
-  +cx2 = emit(o, cx, M.ETaskCreated{name, parent, NewTask.brief(t), ws, now(o, cx)}, Unit{}, Unit{}, Unit{})
+  +cx2 = emit(o, cx, M.ETaskCreated{name, parent, NewTask.brief(t), ws, now(o, cx)}, e, Unit{}, Unit{})
   +who = Bool.pick(String, String.eq(parent, M.USER()), "you", parent)
   +cx3 = line(o, cx2, M.MAIN(), "spawn", cat([who, " → new task @", name, label, " : ", obj]))
   +cx4 = Bool.pick(X.Cx<o>, String.eq(parent, M.USER()), note_main(o, cx3, cat(["the user created the task @", name, label, ": ", obj])), cx3)
   +cx5 = spawn(o, cx4, name, False{})
   create.sent(o, send(o, cx5, msg(parent, name, cat(["# Task `", name, "`\n\n", NewTask.brief_text(t)]), String.eq(parent, M.MAIN()), None{}, String.eq(parent, M.USER()), False{})), name)
+
+def create.go.free(-o: M.St, taken: Bool, +cx: X.Cx<o>, +t: NewTask, +name: String, +ws: J.Json, +e: {M.name_taken(X.d(o, cx), name) == taken : Bool}) -> X.Cx<o> & TaskR:
+  match taken:
+    case True{}:
+      (cx, TErr{String.append("name already taken: ", name)})
+    case False{}:
+      create.go.new(o, cx, t, name, ws, e)
+
+# the name is still free (unique_name found it; it can only be taken if
+# its search ran out)
+def create.go(-o: M.St, +cx: X.Cx<o>, +t: NewTask, +name: String, +ws: J.Json) -> X.Cx<o> & TaskR:
+  create.go.free(o, M.name_taken(st(o, cx), name), cx, t, name, ws, {==})
 
 def ans_ok.go(m: Maybe<&2, J.Json>, +j: J.Json) -> Result<&2, &2, String, J.Json>:
   match m:
@@ -1387,14 +1399,25 @@ def user_isolate.res(-o: M.St, p: X.Cx<o> & TaskR) -> X.Cx<o>:
     case (+cx, THalt{}):
       cx
 
-# the rename itself (the user's /rename and main's sb rename)
-def rename.apply(-o: M.St, +cx: X.Cx<o>, +old: String, +new: String) -> X.Cx<o>:
-  +cx2 = emit(o, cx, M.ERenamed{old, new}, Unit{}, Unit{}, Unit{})
+def rename.apply.new(-o: M.St, +cx: X.Cx<o>, +old: String, +new: String, +e: {M.name_taken(X.d(o, cx), new) == False{} : Bool}) -> X.Cx<o>:
+  +cx2 = emit(o, cx, M.ERenamed{old, new}, e, Unit{}, Unit{})
   +r = rr(o, cx2)
   +cx3 = set_r(o, cx2, X.R.with_rts(X.R.with_waiters(X.R.with_steered(r, steer_rename(X.R.steered(r), old, new)),
     waiters_rename(X.R.waiters(r), old, new)), rt_rename(X.R.rts(r), old, new)))
   +cx4 = out(o, cx3, [J.kv("fx", J.JStr{"renamed"}), J.kv("old", J.JStr{old}), J.kv("new", J.JStr{new})])
   line(o, cx4, M.MAIN(), "info", cat(["@", old, " s'appelle maintenant @", new]))
+
+def rename.apply.free(-o: M.St, taken: Bool, +cx: X.Cx<o>, +old: String, +new: String, +e: {M.name_taken(X.d(o, cx), new) == taken : Bool}) -> X.Cx<o>:
+  match taken:
+    case True{}:
+      notice(o, cx, String.append("invalid or taken name: ", new))
+    case False{}:
+      rename.apply.new(o, cx, old, new, e)
+
+# the rename itself (the user's /rename and main's sb rename)
+# the new name is free (the callers checked it on this state)
+def rename.apply(-o: M.St, +cx: X.Cx<o>, +old: String, +new: String) -> X.Cx<o>:
+  rename.apply.free(o, M.name_taken(st(o, cx), new), cx, old, new, {==})
 
 def rename.go(-o: M.St, ok: Bool, +cx: X.Cx<o>, +old: String, +new: String) -> X.Cx<o>:
   match ok:
