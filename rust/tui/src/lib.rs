@@ -50,6 +50,7 @@ use unicode_segmentation::UnicodeSegmentation;
 mod sb;
 mod skills;
 mod emoji;
+mod editor;
 pub use sb::{run_switchboard, take_reexec};
 
 const BRAND: Color = Color::Rgb(0xfa, 0xb2, 0x83); // primary
