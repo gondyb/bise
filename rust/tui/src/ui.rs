@@ -81,11 +81,14 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     let input_h = ((composer_rows + 5) as u16).min((area.height / 2).max(7));
     // the images strip (book §14) above the status row, while images are attached
     let strip_h = attach::strip_height(app).min(area.height.saturating_sub(input_h + 7));
+    // the queued messages (BISE-89), above the strip
+    let queue_h = crate::queue::height(app).min(area.height.saturating_sub(input_h + strip_h + 7));
     attach::set_model(&app.info.model);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(3), // feed
+            Constraint::Length(queue_h), // the queued messages
             Constraint::Length(strip_h), // the images strip
             Constraint::Length(1), // respiration sous le feed
             Constraint::Length(1), // status row
@@ -96,8 +99,13 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
         ])
         .split(area);
 
-    let (strip, chunks) = (chunks[1], [chunks[0], chunks[2], chunks[3], chunks[4], chunks[5], chunks[6], chunks[7]]);
+    let (queue, strip, chunks) =
+        (chunks[1], chunks[2], [chunks[0], chunks[3], chunks[4], chunks[5], chunks[6], chunks[7], chunks[8]]);
     draw_feed(app, frame, chunks[0]);
+    if queue.height > 0 {
+        let r = Rect { x: queue.x + 1, width: queue.width.saturating_sub(2), ..queue };
+        frame.render_widget(Paragraph::new(crate::queue::lines(app, r.width as usize)), r);
+    }
     if strip.height > 0 {
         let r = Rect { x: strip.x + 4, width: strip.width.saturating_sub(6), ..strip };
         frame.render_widget(Paragraph::new(attach::strip_lines(app, r.width as usize)), r);
@@ -132,7 +140,9 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect) {
     // composer and a 3-row feed leave
     let strip_h = attach::strip_height(app).min(area.height.saturating_sub(input_h + 5));
     // the card box: what the composer, the strip, a 3-row feed and the 2 fixed rows leave
-    let card_h = sb::card_box_height(app, area, area.height.saturating_sub(input_h + strip_h + 5));
+    // the queued messages (BISE-89), above the strip
+    let queue_h = crate::queue::height(app).min(area.height.saturating_sub(input_h + strip_h + 5));
+    let card_h = sb::card_box_height(app, area, area.height.saturating_sub(input_h + strip_h + queue_h + 5));
     attach::set_model(&app.info.model);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -140,12 +150,17 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect) {
             Constraint::Min(3),          // feed | panel
             Constraint::Length(1),       // a blank row under the feed
             Constraint::Length(card_h),  // the card box (ctrl+g)
+            Constraint::Length(queue_h), // the queued messages
             Constraint::Length(strip_h), // the images strip, above the status row
             Constraint::Length(1),       // status row
             Constraint::Length(input_h), // composer
         ])
         .split(area);
-    let (strip, chunks) = (chunks[3], [chunks[0], chunks[1], chunks[2], chunks[4], chunks[5]]);
+    let (queue, strip, chunks) = (chunks[3], chunks[4], [chunks[0], chunks[1], chunks[2], chunks[5], chunks[6]]);
+    if queue.height > 0 {
+        let r = Rect { x: queue.x, width: queue.width.saturating_sub(1), ..queue };
+        frame.render_widget(Paragraph::new(crate::queue::lines(app, r.width as usize)), r);
+    }
     if strip.height > 0 {
         let r = Rect { x: strip.x + 3, width: strip.width.saturating_sub(4), ..strip };
         frame.render_widget(Paragraph::new(attach::strip_lines(app, r.width as usize)), r);

@@ -187,7 +187,12 @@ impl Sb {
     /// A line typed to the agent in focus (the hub interprets it).
     fn send_input(&mut self, text: String) {
         let focus = self.focus.clone();
-        self.send(json!({"op": "input", "focus": focus, "text": text}));
+        self.send_input_to(&focus, text);
+    }
+
+    /// What the user typed, for `agent` (in view or not).
+    fn send_input_to(&mut self, agent: &str, text: String) {
+        self.send(json!({"op": "input", "focus": agent, "text": text}));
     }
 }
 
@@ -460,10 +465,20 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>) {
             sb.activity.insert(agent.to_string());
         }
     }
+    let mut queued = None;
     with_feed(app, agent, |app| {
         ingest_at(app, line, pos);
         trim_window(app);
+        // BISE-89: its turn ended, the oldest queued message goes (and
+        // the next one waits for the turn it starts)
+        queued = crate::queue::next(app);
+        if queued.is_some() {
+            app.pending = true;
+        }
     });
+    if let (Some(m), Some(sb)) = (queued, app.sb.as_mut()) {
+        sb.send_input_to(agent, m);
+    }
     if level3 {
         crate::hints::once(app, crate::hints::Hint::FirstLevel3);
     }

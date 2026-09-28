@@ -449,15 +449,10 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
                 // popup completion
                 pick(app, c);
             } else if app.pending {
-                // codex queue_keys: queue the draft for after
-                // the turn ("say" forces the message reading
-                // even if the text starts with a protocol word)
-                let v = app.ed.text.trim().to_string();
-                if !v.is_empty() && !v.starts_with('/') {
-                    app.ed.take();
-                    let v = crate::attach::expand(app, &v);
-                    handle_input(app, &format!("say {}", v));
-                }
+                // BISE-89 (after Codex): the draft waits in the TUI for
+                // the end of the turn, shown above the composer; nothing
+                // goes to the hub before
+                crate::queue::push(app);
             }
         }
         // a newline in the composer: Shift+Enter (needs
@@ -505,6 +500,11 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
                     handle_input(app, &line);
                 }
             }
+        }
+        // BISE-89: ↑ in an empty composer edits the newest queued
+        // message (the history comes after the queue)
+        (KeyCode::Up, KeyModifiers::NONE) if !popup_open && app.ed.text.is_empty() && !app.queued.is_empty() => {
+            crate::queue::pop_last(app);
         }
         // the popup takes the plain arrows
         (KeyCode::Up, KeyModifiers::NONE) if popup_open => {

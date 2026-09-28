@@ -76,6 +76,7 @@ mod crash;
 mod help;
 mod onboarding;
 mod hints;
+mod queue;
 mod voice;
 #[cfg(test)]
 mod voice_ui_tests;

@@ -193,6 +193,11 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usi
     if a.queued > 0 {
         marks.push(Span::styled(format!(" {}{}", G_MSG, a.queued), Style::default().fg(dim())));
     }
+    // BISE-89: the messages queued here for after its turn
+    let mine = if focused { app.queued.len() } else { sb.views.get(&a.name).map_or(0, |v| v.queued.len()) };
+    if mine > 0 {
+        marks.push(Span::styled(format!(" · {} queued", mine), Style::default().fg(faint())));
+    }
     let bg = selected.then(selection_bg);
     row(num, g, &a.name, name_style, marks, right_of(app, sb, a), w, bg)
 }
@@ -640,7 +645,7 @@ pub(crate) fn hint(app: &App) -> Option<&'static str> {
     } else if sb.focus_archived() {
         "/restore brings it back · esc back to main"
     } else if app.pending {
-        "⏎ steer · ctrl+c interrupt"
+        "tab queue · ⏎ steer · ctrl+c interrupt"
     } else {
         "⏎ send · @ agent · / commands"
     })
@@ -1328,7 +1333,7 @@ mod chrome_tests {
         assert_eq!(text, " main · idle");
         assert_eq!(hint(&app), Some("⏎ send · @ agent · / commands"));
         app.pending = true;
-        assert_eq!(hint(&app), Some("⏎ steer · ctrl+c interrupt"));
+        assert_eq!(hint(&app), Some("tab queue · ⏎ steer · ctrl+c interrupt"));
         app.pending = false;
         let sb = app.sb.as_mut().unwrap();
         sb.selected = Some(1);

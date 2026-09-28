@@ -398,6 +398,19 @@ The same three levels everywhere, in main and inside an agent.
   the model: …". A message at idle goes straight to `✓✓`. If the agent is
   gone: `✗ not delivered: auth-fix stopped. ⏎ send again · esc drop` (**⚠**
   new).
+- **Queued messages** (BISE-89, after Codex). During a turn, `tab` keeps
+  the composer text for after the turn instead of steering: it stays in
+  the TUI, **nothing goes to the hub** until it leaves the queue. The queue
+  shows just above the composer, one dim line each (` › text…`, cut to the
+  width), newest last, then a faint `queued · sent when this turn ends · ↑
+  edit`. `↑` in an empty composer pops the newest back to edit (the
+  history comes after the queue); `tab` queues it again, `⏎` steers it
+  now, clearing the composer drops it. When the turn ends, the oldest goes
+  out as a normal message (marks `·` → `✓✓`) and starts the next turn; the
+  next one waits for that turn to end. One queue per agent (main and each
+  agent), kept even out of view; the panel row shows `· {n} queued`. A
+  restart of the TUI drops the queue (old lines never fire at an idle
+  agent after a restart).
 - **No undo.** Agents may already have acted, so an undo promises too much.
   To change something, you say it ("no, v1 for docs"). Main sends the agent an
   explicit correction (`the user changed their mind: use v1, not v2.`) and
@@ -478,6 +491,8 @@ replays it (**⚠** proposed command).
 | Keys | Action | Change |
 |---|---|---|
 | `⏎` | send to the agent in view; during a turn, steer | — |
+| `tab` | during a turn: queue the message for after it | shown above the composer (BISE-89) |
+| `↑` in an empty composer | edit the newest queued message (then the history) | new (BISE-89) |
 | `@name …` | direct message from main | — |
 | `ctrl+c` | interrupt; again (or idle) quit, agents keep running | — |
 | `⌥ + 0…9` | go to main / agent N | now shown in the panel |
@@ -507,7 +522,7 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | first run | `what's on your mind?` / `say it and keep talking. the work runs in the background, i'm always here.` / `try: "fix the flaky login test, and draft the release note"` |
 | inside an agent | `you're talking to {name} directly. main isn't in the loop. esc back to main.` |
 | composer hints, main | `⏎ send · @ agent · / commands` |
-| composer hints, during a turn | `⏎ steer · ctrl+c interrupt` |
+| composer hints, during a turn | `tab queue · ⏎ steer · ctrl+c interrupt` |
 | run of level 3 | `▸ {n} messages between {k} agents` |
 | thinking | `∴ thought for {s}s` |
 | output | `▸ output · {n} lines` (+ ` · {k} failed` when known) |
@@ -532,6 +547,7 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | terminal panel | title ``terminal · ctrl+` hide`` · hint ``terminal: keys go to the shell · ctrl+` hide · wheel/shift+pgup scroll · drag the border to resize`` |
 | help footer | `type to filter · tab switch · esc close` |
 | steer with nothing | `nothing to steer with: type the text after steer` |
+| queued messages | ` › {text}…` (one per line, dim) · hint `queued · sent when this turn ends · ↑ edit` · panel row `· {n} queued` |
 | connect failed | `couldn't connect: {err}` |
 | voice | `voice mode on. press ctrl+r to start recording.` / `voice mode off.` / `voice mode is off: /voice turns it on` / `no speech detected` / `voice transcription failed: {err}` / `voice transcription needs an API key: set {VAR}` / `no audio input device found.` / `audio backend is unavailable: {err}` / `the last words may be missing (the transcription did not finish in time).` / `no audio detected from the microphone — check your terminal has mic access.` (+ ` grant access in System Settings → Privacy & Security → Microphone.`) |
 | solo client (not bise) | `ask anything…` · `⏎ steer · tab queue · ctrl+c interrupt · / commands · end bottom` |

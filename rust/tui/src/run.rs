@@ -126,6 +126,10 @@ fn drain_lines(app: &mut App) -> bool {
                     sb::dispatch(app, &line);
                 } else {
                     ingest_line(app, line);
+                    // the turn ended: the oldest queued message goes (BISE-89)
+                    if let Some(m) = crate::queue::next(app) {
+                        handle_input(app, &format!("say {}", m));
+                    }
                 }
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => return false,

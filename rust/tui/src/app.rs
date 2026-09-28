@@ -87,6 +87,8 @@ pub(crate) struct App {
     pub(crate) sb: Option<sb::Sb>,
     /// the images attached in the composer (`[Image #N]`, attach.rs)
     pub(crate) attachments: Vec<crate::attach::Attachment>,
+    /// messages queued for after the turn (BISE-89), this feed's
+    pub(crate) queued: Vec<crate::queue::Queued>,
 }
 
 /// The composer's text area in the last frame: its screen origin, its
@@ -205,6 +207,7 @@ impl App {
             should_quit: false,
             sb: None,
             attachments: Vec::new(),
+            queued: Vec::new(),
         }
     }
 
