@@ -1846,3 +1846,43 @@ Index:
 - **spec:** book §8 "The frame" (key bar line), §13 "The composer pane".
 - **what:** the key bar from column 3: keys in text color, what they do dim, 3 spaces between pairs; default `⏎ send   @ agent   ⌥0-9 switch   / commands   ? help`, per-mode sets as today; on the right, ending at F−4, a dim tip, one per session (`tip · ctrl+o opens everything folded`), hidden while you type or when fewer than 3 columns separate it from the keys. ASCII forms per §6.
 - **notes (K):** a8ffe09: new `rust/tui/src/keybar.rs`. Agreed with bise-f-feed: F calls `keybar::line(app, width) -> Line<'static>` on its row (width = the row, x = column 3, last column F−4); the pure part is `keybar::render(mode, width, typing, tip)`. `keybar::Mode` covers every set of the old hint row (terminal panel, voice, `@` file popup, images, drop ask, confirm, card full, selected, archived, steer, default, and the two sets without switchboard). `sb::key_mode` picks the switchboard modes in the order of `sb::hint`. Pairs that don't fit are dropped from the end. The tip shows in the default mode only, while the composer is empty, with 3 free columns. It is one of `help::TIPS`, chosen once per run; a test checks that each tip starts with a key of the help. ASCII: `enter`, `alt+0-9`, `left` / `right` / `up/down`, `...`, `tip: `. The module is `#[allow(dead_code)]` until BISE-98 calls it. **Left:** once F has switched the row (and deleted `ui::hint_text`), I delete `sb::hint`, drop the allow, run `run_all.sh` and recapture the qa/ shots.
+
+### BISE-97 · the global layout
+
+- **status:** done · **owner:** bise-f-feed · **commits:** 3d9ec56
+- **track:** F · **owns:** `layout.rs` (new), `ui.rs` `draw` / `draw_bise`,
+  `sb/panel.rs` `split` / `draw_panel`, `render.rs` measures
+- **spec:** book §8 "the reading column" and "spacing, in cells"
+- **done when:** every block of the screen takes its x and width from one
+  layout function; the width tiers; tests; gates green; bench not slower.
+- **notes:** `layout::cols(width)`: margins 2 (1 under 64 columns), the
+  feed area, the reading column (79 wide, centered when the feed area has
+  ≥ 83 columns, else at the left margin; tables and code run to 103 from its
+  x), the panel by tier (≥ 100: 28 wide, gap 3, names cut at 16; 90–99: 24,
+  gap 2, cut at 12; < 90: none). `layout::margin_rows` (1 top and bottom
+  from 30 rows) and `layout::header` (the header row 1 column before the
+  margin, 1 blank row under it): the numbers are constants in layout.rs, so
+  BISE-98 changes them in one place. The screen: header, then feed | blank
+  | card | blank | status | queue | strip | composer | hints, all on the
+  column; the panel has no left border (title, 1 blank row, rows); the
+  scrollbar is the feed area's last column; the pinned banner wraps to 2
+  rows. `PROSE_MAX` 79, `CODE_MAX` 103. Fixed on the way: main's `:*`
+  reply was wrapped twice at 80 columns (one-word rows) and its rows under
+  the first sat 1 column left of its text; the header overflowed a
+  1-column buffer (fuzz). `sb/cards.rs` (agreed with bise-c-cards):
+  `keys_hint` leaves room for the short scroll hint. **Tests:** layout
+  unit tests, `mains_reply_wraps_once_under_its_text`,
+  `prose_wraps_at_79_and_code_at_103`, panel / chrome / composer / bench
+  updated. **Tmux assertions changed** (behaviour still checked): the
+  composer readers (`tui_composer_tmux.composer()`,
+  `tui_queue_tmux.composer_row()`) and `tui_tmux.in_view` find the rows at
+  the column's x, not column 1. **Bench** (50k lines, release):
+  windowed PageUp to the top 1467–1476 ms after vs 1532–1574 ms before,
+  frames ≤ 0.51 ms. **Gates** (private worktree of HEAD + this change):
+  build, clippy `--all-targets` 0 warnings, `cargo test -p bend-tui`,
+  `run_all.sh` green. Two things outside this change: `cargo test -p
+  switchboard` has 12 `core::tests` failing at HEAD (the crate is not
+  touched here; run_all only greps the first result line); and
+  `tui_version_tmux` fails when HEAD is already built in the shared
+  `~/.local/state/switchboard/versions` (it switches with no "building"
+  line): run it with `XDG_STATE_HOME` set to a temp dir.
