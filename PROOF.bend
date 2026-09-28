@@ -3391,3 +3391,67 @@ def hub_nt.named(m: Maybe<&2, HM.Agent>, +s: HM.St, +n: String, +em: {HM.agent_n
 def hub_nt(+s: HM.St, +n: String, e: {HM.name_taken(s, n) == False{} : Bool}) -> hub_free(HI.profile(HM.St.agents(s)), n):
   hub_nt.named(HM.agent_named(HM.St.agents(s), n), s, n, {==},
     hub_or_false_r(String.eq(n, HM.MAIN()) || String.eq(n, HM.USER()) || String.eq(n, HM.HUB()), Maybe.is_some(&2, String, HM.resolve(s, n)), e))
+
+def hub_allapart(ps: List<&2, List<&2, String>>, +q: List<&2, String>) -> Data:
+  match ps:
+    case Nil{}:
+      Unit
+    case Con{+p, +r}:
+      HX.Both<HI.Apart(p, q), hub_allapart(r, q)>
+
+def hub_aa_snoc(+p: List<&2, String>, +r: List<&2, List<&2, String>>, +q: List<&2, String>, a: HI.ApartAll(p, r), b: HI.Apart(p, q)) -> HI.ApartAll(p, HM.snoc(List<&2, String>, r, q)):
+  match r:
+    case Nil{}:
+      HX.Both{b, Unit{}}
+    case Con{x, t}:
+      match a:
+        case HX.Both{a1, a2}:
+          HX.Both{a1, hub_aa_snoc(p, t, q, a2, b)}
+
+def hub_nok_snoc(+ps: List<&2, List<&2, String>>, +q: List<&2, String>, nok: HI.NamesOK(ps), aa: hub_allapart(ps, q)) -> HI.NamesOK(HM.snoc(List<&2, String>, ps, q)):
+  match ps:
+    case Nil{}:
+      HX.Both{Unit{}, Unit{}}
+    case Con{p, r}:
+      match nok aa:
+        case HX.Both{n1, n2} HX.Both{a1, a2}:
+          HX.Both{hub_aa_snoc(p, r, q, n1, a1), hub_nok_snoc(r, q, n2, a2)}
+
+def hub_apart_new(+p: List<&2, String>, +n: String, +f: {HM.str_in(p, n) == False{} : Bool}) -> HI.Apart(p, [n]):
+  match p:
+    case Nil{}:
+      Unit{}
+    case Con{m, al}:
+      HX.Both{hub_or_false(String.eq(n, m), False{}, hub_str_eq_sym_false(m, n, hub_or_false_l(String.eq(m, n), HM.str_in(al, n), f)), {==}),
+        hub_or_false_r(String.eq(m, n), HM.str_in(al, n), f)}
+
+def hub_allapart_new(+ps: List<&2, List<&2, String>>, +n: String, f: hub_free(ps, n)) -> hub_allapart(ps, [n]):
+  match ps:
+    case Nil{}:
+      Unit{}
+    case Con{p, r}:
+      match f:
+        case HX.Both{f1, f2}:
+          HX.Both{hub_apart_new(p, n, f1), hub_allapart_new(r, n, f2)}
+
+def hub_put_absent.pick(c: Bool, +h: HM.Agent, +t: List<&2, HM.Agent>, +n: String, +a: HM.Agent, +e: {String.eq(HM.Agent.name(h), n) == c : Bool},
+    ec: {c == False{} : Bool}, ih: {HI.profile(HM.put_agent(t, n, a)) == HM.snoc(List<&2, String>, HI.profile(t), HI.names(a)) : List<&2, List<&2, String>>})
+    -> {HI.profile(Bool.pick(List<&2, HM.Agent>, String.eq(HM.Agent.name(h), n), a <> t, h <> HM.put_agent(t, n, a))) == HM.snoc(List<&2, String>, HI.profile(h <> t), HI.names(a)) : List<&2, List<&2, String>>}:
+  match c:
+    case True{}:
+      hub_absurd_eq(hub_tf_absurd(ec), List<&2, List<&2, String>>, HI.profile(Bool.pick(List<&2, HM.Agent>, String.eq(HM.Agent.name(h), n), a <> t, h <> HM.put_agent(t, n, a))), HM.snoc(List<&2, String>, HI.profile(h <> t), HI.names(a)))
+    case False{}:
+      %Equal.sym(Bool, String.eq(HM.Agent.name(h), n), False{}, e) : {HI.profile(Bool.pick(List<&2, HM.Agent>, _, a <> t, h <> HM.put_agent(t, n, a))) == HM.snoc(List<&2, String>, HI.profile(h <> t), HI.names(a)) : List<&2, List<&2, String>>}
+      Equal.cong(List<&2, List<&2, String>>, List<&2, List<&2, String>>, x => HI.names(h) <> x, HI.profile(HM.put_agent(t, n, a)), HM.snoc(List<&2, String>, HI.profile(t), HI.names(a)), ih)
+
+# a new agent under a free name goes last
+def hub_put_absent(+xs: List<&2, HM.Agent>, +n: String, +a: HM.Agent, f: hub_free(HI.profile(xs), n))
+    -> {HI.profile(HM.put_agent(xs, n, a)) == HM.snoc(List<&2, String>, HI.profile(xs), HI.names(a)) : List<&2, List<&2, String>>}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      match f:
+        case HX.Both{f1, f2}:
+          hub_put_absent.pick(String.eq(HM.Agent.name(h), n), h, t, n, a, {==},
+            hub_or_false_l(String.eq(HM.Agent.name(h), n), HM.str_in(HM.Agent.aliases(h), n), f1), hub_put_absent(t, n, a, f2))
