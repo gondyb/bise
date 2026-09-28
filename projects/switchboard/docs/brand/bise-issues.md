@@ -356,7 +356,7 @@ Index:
 
 ### BISE-40 · remove undo (TUI)
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-k-keys · **commits:** 1965b91
 - **track:** K · **owns:** `sb.rs` (the `ctrl+z` key arm only), `help.rs`
 - **spec:** book §13 (no undo), §16
 - **do:** remove the `ctrl+z` → `/cancel` binding and its help row. The hub
@@ -364,6 +364,22 @@ Index:
 - **done when:** `ctrl+z` does nothing in the switchboard client (the
   composer's own undo, `cmd+z` / `ctrl+/`, is untouched); help tests pass.
 - **notes:**
+  - Removed in `sb.rs`: the `ctrl+z` → `/cancel` key arm and the `/cancel`
+    entry of `SB_COMMANDS`; in `help.rs`: the `Ctrl+Z` row. `ctrl+z` now
+    falls through to the composer, where `editor::action` maps it to
+    nothing (undo is `cmd+z` / `ctrl+/` only), so it does nothing. The
+    terminal is raw, so no SIGTSTP either.
+  - New test `sb::nav_key_tests::ctrl_z_does_nothing` (the key is not
+    consumed, the editor has no action for it, the draft is untouched,
+    `/cancel` is not in the command list).
+  - No tmux test asserted on `/cancel` or `Ctrl+Z`: no assertion changed.
+  - Hub side (`UserCmd::Cancel`) is BISE-50 (bise-m-main); until it lands a
+    typed `/cancel` still reaches the hub as input.
+  - Gates in a private worktree of HEAD + my files (shared tree had other
+    tracks' work): cargo build, cargo test --workspace (with
+    `SB_CORE_BIN` unset), cargo clippy --workspace --all-targets
+    -D warnings, e2e.py and the 9 tmux tests of run_all.sh: all green. No
+    `.bend` file changed.
 
 ### BISE-50 · no undo in the hub, corrections by talking
 
