@@ -47,6 +47,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 // markdown* keys; tools follow the inline-tool rules (muted once
 // complete, error red).
 mod sb;
+mod skills;
 pub use sb::run_switchboard;
 
 const BRAND: Color = Color::Rgb(0xfa, 0xb2, 0x83); // primary
@@ -2190,11 +2191,15 @@ struct PopItem {
     desc: String,
     /// status glyph (mentions)
     mark: Option<(&'static str, Color)>,
-    /// the composer text once picked with Tab (or Enter when `run` is None)
+    /// the composer text once picked with Tab (or Enter when `run` is
+    /// None), and the cursor in it
     fill: String,
+    fill_cursor: usize,
     /// Enter runs this line directly (commands without arguments)
     run: Option<String>,
-    mention: bool,
+    /// Esc closes the list and keeps the text (`@` and `$`); the slash
+    /// popup clears the draft instead
+    closable: bool,
 }
 
 fn popup_items(app: &App) -> Vec<PopItem> {
@@ -2207,12 +2212,17 @@ fn popup_items(app: &App) -> Vec<PopItem> {
                 desc: c.desc.to_string(),
                 mark: None,
                 fill: format!("{} ", c.name),
+                fill_cursor: c.name.chars().count() + 1,
                 run: (!c.args).then(|| c.name.to_string()),
-                mention: false,
+                closable: false,
             })
             .collect();
     }
-    sb::mentions(app)
+    let mentions = sb::mentions(app);
+    if mentions.is_empty() {
+        return skill_items(app);
+    }
+    mentions
         .into_iter()
         .map(|m| PopItem {
             label: format!("@{}", m.name),
@@ -2222,9 +2232,36 @@ fn popup_items(app: &App) -> Vec<PopItem> {
                 format!("{} · {}", m.status, m.objective)
             },
             mark: Some(m.glyph(app.tick)),
+            fill_cursor: m.completion().chars().count(),
             fill: m.completion(),
             run: None,
-            mention: true,
+            closable: true,
+        })
+        .collect()
+}
+
+/// `$skill` anywhere in the draft: the skills of the index.
+fn skill_items(app: &App) -> Vec<PopItem> {
+    if app.hist_idx.is_some() || app.popup_dismissed.as_deref() == Some(app.input.as_str()) {
+        return Vec::new();
+    }
+    let Some((start, q)) = skills::token(&app.input, app.cursor) else {
+        return Vec::new();
+    };
+    let all = skills::index();
+    skills::filter(&all, &q)
+        .into_iter()
+        .map(|s| {
+            let (fill, fill_cursor) = skills::complete(&app.input, start, app.cursor, &s.name);
+            PopItem {
+                label: format!("${}", s.name),
+                desc: s.desc.clone(),
+                mark: None,
+                fill,
+                fill_cursor,
+                run: None,
+                closable: true,
+            }
         })
         .collect()
 }
@@ -2661,7 +2698,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
     let matches = popup_items(app);
     if !matches.is_empty() {
         let n = matches.len().min(8) as u16;
-        let w = if matches[0].mention { 72u16 } else { 56u16 }.min(chunks[4].width);
+        let w = if matches[0].closable { 72u16 } else { 56u16 }.min(chunks[4].width);
         let sel_i = app.popup_sel.min(matches.len() - 1);
         let top = popup_top(sel_i, matches.len(), 8);
         let area = Rect {
@@ -3068,7 +3105,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     // esc: close the popup only — it never interrupts
                     // (Ctrl+C does, through the flag side-channel)
                     (KeyCode::Esc, _) => {
-                        if sel.is_some_and(|c| c.mention) {
+                        if sel.is_some_and(|c| c.closable) {
                             // close the list, keep the text
                             app.popup_dismissed = Some(app.input.clone());
                             app.popup_sel = 0;
@@ -3103,7 +3140,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                         if let Some(c) = sel {
                             // popup completion
                             app.input = c.fill.clone();
-                            app.cursor = app.input.chars().count();
+                            app.cursor = c.fill_cursor;
                             app.popup_sel = 0;
                         } else if app.pending {
                             // codex queue_keys: queue the draft for after
@@ -3137,7 +3174,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                                 handle_input(app, &v);
                             } else {
                                 app.input = c.fill.clone();
-                                app.cursor = app.input.chars().count();
+                                app.cursor = c.fill_cursor;
                                 app.popup_sel = 0;
                             }
                         } else {
