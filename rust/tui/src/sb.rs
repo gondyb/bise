@@ -166,8 +166,13 @@ pub(super) struct VersionItem {
     marks: Vec<String>,
 }
 
+/// The string field `k` of `v` ("" when absent).
+fn str_of(v: &Value, k: &str) -> String {
+    v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
+}
+
 fn parse_versions(v: &Value) -> Vec<VersionItem> {
-    let s = |x: &Value, k: &str| x.get(k).and_then(|y| y.as_str()).unwrap_or("").to_string();
+    let s = str_of;
     v.get("items")
         .and_then(|a| a.as_array())
         .map(|a| {
@@ -537,7 +542,7 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
     let Ok(v) = serde_json::from_str::<Value>(raw) else {
         return;
     };
-    let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let s = |k: &str| str_of(&v, k);
     match s("ev").as_str() {
         "line" => {
             let pos = v.get("pos").and_then(|x| x.as_u64()).map(|p| p as usize);
@@ -757,7 +762,7 @@ fn prepend_page(app: &mut App, before: usize, lines: Vec<(usize, String)>) {
 
 fn apply_state(app: &mut App, v: &Value) {
     let Some(sb) = app.sb.as_mut() else { return };
-    let s = |x: &Value, k: &str| x.get(k).and_then(|y| y.as_str()).unwrap_or("").to_string();
+    let s = str_of;
     sb.agents = v
         .get("agents")
         .and_then(|a| a.as_array())
@@ -1525,19 +1530,7 @@ pub(super) fn draw_sb(app: &mut App, frame: &mut Frame) {
             .filter(|n| *n != sb.focus)
     });
     match target {
-        Some(name) => {
-            let mut view = app
-                .sb
-                .as_mut()
-                .and_then(|sb| sb.views.remove(&name))
-                .unwrap_or_else(View::new);
-            swap_feed(app, &mut view);
-            draw(app, frame);
-            swap_feed(app, &mut view);
-            if let Some(sb) = app.sb.as_mut() {
-                sb.views.insert(name, view);
-            }
-        }
+        Some(name) => with_feed(app, &name, |app| draw(app, frame)),
         None => {
             draw(app, frame);
             want_older(app);
@@ -1707,6 +1700,67 @@ fn new_sb(writer: std::sync::Arc<std::sync::Mutex<UnixStream>>, workspace: Strin
     }
 }
 
+/// The `App` of the switchboard mode: an empty feed (main in focus),
+/// fed by the hub lines of `rx`.
+fn sb_app(
+    sb: Sb,
+    rx: Receiver<String>,
+    debug: bool,
+    area_w: usize,
+    voice: crate::voice::Voice,
+    session_id: String,
+) -> App {
+    App {
+        connected: true,
+        term: crate::term::Term::default(),
+        help: None,
+        debug,
+        line_tools: HashMap::new(),
+        follow: true,
+        anchor: (0, 0),
+        scroll: 0,
+        vis_events: Vec::new(),
+        vis_rows: Vec::new(),
+        feed_x: 0,
+        feed_sel: None,
+        unseen: 0,
+        tail_visible: true,
+        bottom_bar_rect: None,
+        cache: Vec::new(),
+        win: FeedWindow::default(),
+        area_w,
+        area_h: 24,
+        events: Vec::new(),
+        last_line_at: None,
+        show_thinking: false,
+        interrupt_requested: false,
+        pending: false,
+        ed: crate::editor::Editor::default(),
+        composer: crate::ComposerArea::default(),
+        flash: None,
+        voice,
+        voice_note: None,
+        mouse: crate::MouseState::default(),
+        popup_sel: 0,
+        popup_dismissed: None,
+        history: Vec::new(),
+        tick: 0,
+        info: HarnessInfo {
+            model: "switchboard".into(),
+            threshold: String::new(),
+            steer_path: String::new(),
+            interrupt_path: String::new(),
+        },
+        host: String::new(),
+        port: 0,
+        session_id,
+        stream: None,
+        rx,
+        should_quit: false,
+        sb: Some(sb),
+    }
+}
+
 pub fn run_switchboard(
     stream: UnixStream,
     socket: std::path::PathBuf,
@@ -1722,58 +1776,12 @@ pub fn run_switchboard(
         thread::spawn(move || hub_reader(reader, socket, writer, tx));
     }
     let sb = new_sb(writer, workspace.clone());
-    let mut app = App {
-        connected: true,
-        term: crate::term::Term::default(),
-        help: None,
-        debug,
-        line_tools: std::collections::HashMap::new(),
-        follow: true,
-        anchor: (0, 0),
-        scroll: 0,
-        vis_events: Vec::new(),
-        vis_rows: Vec::new(),
-        feed_x: 0,
-        feed_sel: None,
-        unseen: 0,
-        tail_visible: true,
-        bottom_bar_rect: None,
-        cache: Vec::new(),
-        win: Default::default(),
-        area_w: crossterm::terminal::size()
-            .map(|(w, _)| w as usize)
-            .unwrap_or(100)
-            .max(40),
-        area_h: 24,
-        events: Vec::new(),
-        last_line_at: None,
-        show_thinking: false,
-        interrupt_requested: false,
-        pending: false,
-        ed: crate::editor::Editor::default(),
-        composer: crate::ComposerArea::default(),
-        flash: None,
-        voice: super::voice::Voice::live(super::voice::load_voice_enabled()),
-        voice_note: None,
-        mouse: crate::MouseState::default(),
-        popup_sel: 0,
-        popup_dismissed: None,
-        history: Vec::new(),
-        tick: 0,
-        info: HarnessInfo {
-            model: "switchboard".into(),
-            threshold: String::new(),
-            steer_path: String::new(),
-            interrupt_path: String::new(),
-        },
-        host: String::new(),
-        port: 0,
-        session_id: workspace,
-        stream: None,
-        rx,
-        should_quit: false,
-        sb: Some(sb),
-    };
+    let area_w = crossterm::terminal::size()
+        .map(|(w, _)| w as usize)
+        .unwrap_or(100)
+        .max(40);
+    let voice = super::voice::Voice::live(super::voice::load_voice_enabled());
+    let mut app = sb_app(sb, rx, debug, area_w, voice, workspace);
     let interactive = io::stdout().is_terminal() && io::stdin().is_terminal();
     if interactive {
         run_tui(&mut app)
@@ -1844,7 +1852,7 @@ fn print_hub_event(raw: &str) {
     let Ok(v) = serde_json::from_str::<Value>(raw) else {
         return;
     };
-    let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let s = |k: &str| str_of(&v, k);
     match s("ev").as_str() {
         "line" => {
             let line = s("line");

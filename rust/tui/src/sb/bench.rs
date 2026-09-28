@@ -11,55 +11,7 @@ pub(crate) fn test_app() -> App {
     let (_tx, rx) = mpsc::channel::<String>();
     let sb = new_sb(std::sync::Arc::new(std::sync::Mutex::new(a)), "bench".into());
     std::mem::forget(_b);
-    App {
-        connected: true,
-        term: crate::term::Term::default(),
-        help: None,
-        debug: false,
-        line_tools: std::collections::HashMap::new(),
-        follow: true,
-        anchor: (0, 0),
-        scroll: 0,
-        vis_events: Vec::new(),
-        vis_rows: Vec::new(),
-        feed_x: 0,
-        feed_sel: None,
-        unseen: 0,
-        tail_visible: true,
-        bottom_bar_rect: None,
-        cache: Vec::new(),
-        win: FeedWindow::default(),
-        area_w: 100,
-        area_h: 24,
-        events: Vec::new(),
-        last_line_at: None,
-        show_thinking: false,
-        interrupt_requested: false,
-        pending: false,
-        ed: crate::editor::Editor::default(),
-        composer: crate::ComposerArea::default(),
-        flash: None,
-        mouse: crate::MouseState::default(),
-        voice: crate::voice::Voice::live(false),
-        voice_note: None,
-        popup_sel: 0,
-        popup_dismissed: None,
-        history: Vec::new(),
-        tick: 0,
-        info: HarnessInfo {
-            model: "switchboard".into(),
-            threshold: String::new(),
-            steer_path: String::new(),
-            interrupt_path: String::new(),
-        },
-        host: String::new(),
-        port: 0,
-        session_id: "bench".into(),
-        stream: None,
-        rx,
-        should_quit: false,
-        sb: Some(sb),
-    }
+    sb_app(sb, rx, false, 100, crate::voice::Voice::live(false), "bench".into())
 }
 
 fn ms(t: Instant) -> f64 {
