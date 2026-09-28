@@ -265,27 +265,7 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
     };
     let reader = stream.try_clone()?;
     let (tx, rx) = mpsc::channel::<String>();
-    thread::spawn(move || {
-        let mut r = reader;
-        let mut bytes: Vec<u8> = Vec::new();
-        let mut byte = [0u8; 1];
-        loop {
-            match r.read(&mut byte) {
-                Ok(0) => break,
-                Ok(_) => {
-                    bytes.push(byte[0]);
-                    while let Some(i) = bytes.iter().position(|b| *b == b'\n') {
-                        let line = String::from_utf8_lossy(&bytes[..i]).trim_end().to_string();
-                        bytes.drain(..=i);
-                        if tx.send(line).is_err() {
-                            return;
-                        }
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    });
+    thread::spawn(move || forward_lines(reader, tx));
     let _ = stream.set_nodelay(true);
 
     // line mode renders without a frame: the terminal width (or a sane
@@ -305,5 +285,60 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
         run_tui(&mut app)
     } else {
         run_line_mode(&mut app)
+    }
+}
+
+/// Forwards each `\n`-terminated line of the REPL socket, trailing
+/// whitespace trimmed, until EOF, an error, or the receiver is gone. A
+/// last line without its `\n` is dropped (the REPL died mid-write).
+fn forward_lines(reader: impl Read, tx: mpsc::Sender<String>) {
+    let mut r = io::BufReader::new(reader);
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match r.read_until(b'\n', &mut buf) {
+            Ok(_) if buf.pop() == Some(b'\n') => {
+                let line = String::from_utf8_lossy(&buf).trim_end().to_string();
+                if tx.send(line).is_err() {
+                    return;
+                }
+            }
+            // EOF (possibly after an unterminated tail) or a read error
+            _ => return,
+        }
+    }
+}
+
+#[cfg(test)]
+mod forward_lines_tests {
+    use super::*;
+
+    fn lines_of(input: &[u8]) -> Vec<String> {
+        let (tx, rx) = mpsc::channel();
+        forward_lines(input, tx);
+        rx.into_iter().collect()
+    }
+
+    #[test]
+    fn splits_trims_and_drops_an_unterminated_tail() {
+        let got = lines_of(b"a b  \r\n\nsecond\xff\npartial");
+        assert_eq!(got, vec!["a b".to_string(), String::new(), "second\u{fffd}".to_string()]);
+    }
+
+    /// `cargo test --release -p bend-tui bench_forward_lines -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_forward_lines() {
+        let mut input = Vec::new();
+        for i in 0..20_000 {
+            input.extend_from_slice(format!("[tool] {} some ordinary wire line of text\n", i).as_bytes());
+        }
+        for _ in 0..4 {
+            input.extend(std::iter::repeat_n(b'x', 256 * 1024));
+            input.push(b'\n');
+        }
+        let t = std::time::Instant::now();
+        let n = lines_of(&input).len();
+        eprintln!("forward_lines: {} lines, {} bytes: {:.1} ms", n, input.len(), t.elapsed().as_secs_f64() * 1000.0);
     }
 }
