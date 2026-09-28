@@ -62,6 +62,9 @@ const OK: Color = Color::Rgb(0x7f, 0xd8, 0x8f); // success / markdownCode
 const WARN: Color = Color::Rgb(0xf5, 0xa7, 0x42); // warning / markdownStrong
 const ERR: Color = Color::Rgb(0xe0, 0x6c, 0x75); // error
 const PANEL: Color = Color::Rgb(0x14, 0x14, 0x14); // backgroundPanel
+/// text on a BRAND background (the popup selection): black reads
+/// better than white on orange
+const ON_BRAND: Color = Color::Rgb(0, 0, 0);
 const ELEMENT: Color = Color::Rgb(0x1e, 0x1e, 0x1e); // backgroundElement
 const BORDER_ACTIVE: Color = Color::Rgb(0x60, 0x60, 0x60); // borderActive
 const FAINT: Color = Color::Rgb(0x4a, 0x4a, 0x4a); // rails & turn marks — dimmer than textMuted
@@ -2719,9 +2722,9 @@ fn draw(app: &mut App, frame: &mut Frame) {
                     (
                         Style::default()
                             .bg(BRAND)
-                            .fg(TEXT)
+                            .fg(ON_BRAND)
                             .add_modifier(Modifier::BOLD),
-                        Style::default().bg(BRAND).fg(TEXT),
+                        Style::default().bg(BRAND).fg(ON_BRAND),
                     )
                 } else {
                     (Style::default().fg(TEXT), Style::default().fg(DIM))
@@ -2729,7 +2732,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
                 let mut spans = Vec::new();
                 if let Some((g, color)) = c.mark {
                     let st = if sel {
-                        Style::default().bg(BRAND).fg(TEXT)
+                        Style::default().bg(BRAND).fg(ON_BRAND)
                     } else {
                         Style::default().fg(color)
                     };
