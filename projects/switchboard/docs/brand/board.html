@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bise — brand board v0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Manrope:wght@300;500;800&family=Caveat:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root { --mono: "JetBrains Mono", ui-monospace, Menlo, monospace; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--mono); background: #fff; color: #111; }
+  header { padding: 48px 56px 24px; }
+  header h1 { font-size: 14px; font-weight: 400; color: #777; }
+  header p { font-size: 14px; color: #777; margin-top: 6px; max-width: 720px; line-height: 1.5; }
+  section { padding: 56px; min-height: 92vh; position: relative; overflow: hidden; display: grid; grid-template-columns: 1.3fr 1fr; gap: 48px; align-items: center; }
+  .label { font-size: 12px; letter-spacing: .08em; opacity: .6; margin-bottom: 28px; }
+  .logo { line-height: .9; }
+  .tag1 { margin-top: 28px; font-size: 30px; }
+  .tag2 { margin-top: 10px; font-size: 16px; opacity: .7; }
+  .side { font-size: 13px; line-height: 1.7; }
+  .swatches { display: flex; gap: 10px; margin: 18px 0 26px; }
+  .sw { width: 64px; }
+  .sw i { display: block; height: 64px; border-radius: 6px; border: 1px solid rgba(0,0,0,.08); }
+  .sw span { font-size: 10px; opacity: .7; display: block; margin-top: 4px; }
+  .note { margin-top: 18px; font-size: 12px; opacity: .65; }
+
+  /* A — le vent */
+  #a { background: #f4f6f8; color: #0e1116; font-family: "Manrope", sans-serif; }
+  #a .logo { font-weight: 800; font-size: 160px; letter-spacing: -.04em; position: relative; z-index: 1; }
+  #a .logo .gust { color: #9cc9f5; }
+  #a .tag1 { font-weight: 300; }
+  #a svg.wind { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #a svg.wind path { fill: none; stroke: #9cc9f5; stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 180 900; animation: blow 6s linear infinite; }
+  @keyframes blow { from { stroke-dashoffset: 1080; } to { stroke-dashoffset: 0; } }
+  #a > * { position: relative; z-index: 1; }
+
+  /* B — la bise */
+  #b { background: #fbf3e8; color: #1b1b1b; }
+  #b .logo { font-family: "Caveat", cursive; font-weight: 700; font-size: 190px; }
+  #b .logo .x { color: #f2766b; display: inline-block; animation: smack 2.4s ease-in-out infinite; }
+  @keyframes smack { 0%,70%,100% { transform: scale(1) rotate(0); } 80% { transform: scale(1.35) rotate(-8deg); } }
+  #b .tag1 { font-family: "Caveat", cursive; font-size: 44px; }
+  #b .hands { font-size: 34px; margin-top: 22px; letter-spacing: 6px; }
+  #b .hands span { display: inline-block; animation: wave 1.6s ease-in-out infinite; transform-origin: 70% 90%; }
+  @keyframes wave { 0%,100% { transform: rotate(0); } 50% { transform: rotate(14deg); } }
+
+  /* C — terminal brut */
+  #c { background: #f3efe6; color: #111; }
+  #c .logo { font-size: 150px; font-weight: 700; letter-spacing: -.03em; }
+  .cur { display: inline-block; width: .55em; height: .95em; background: currentColor; vertical-align: -0.12em; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #c .screen { position: absolute; inset: 0; pointer-events: none; font-size: 13px; color: #8a8a8a; }
+  #c .screen div { position: absolute; white-space: nowrap; }
+  #c .screen .cur { width: 7px; height: 14px; background: #111; }
+  #c > .left, #c > .side { position: relative; z-index: 1; }
+
+  /* reco — C + soul of B */
+  #r { background: #f3efe6; color: #111; grid-template-columns: 1fr; text-align: left; }
+  #r .logo { font-size: 170px; font-weight: 700; letter-spacing: -.03em; }
+  #r .logo .x { color: #f2766b; font-family: "Caveat", cursive; font-size: .8em; margin-left: .15em; }
+  #r .prompt { margin-top: 36px; font-size: 18px; }
+  #r .prompt b { color: #f2766b; font-weight: 400; }
+  #r .lines { margin-top: 18px; font-size: 14px; color: #8a8a8a; line-height: 1.9; min-height: 140px; }
+  #r .lines .ok { color: #111; }
+  footer { padding: 32px 56px 64px; font-size: 12px; color: #777; line-height: 1.7; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>bise — brand board v0 (draft, for picking a direction)</h1>
+  <p>3 directions + 1 recommendation. all copy lowercase (proper nouns and acronyms excepted). fonts are stand-ins from Google Fonts. hands are emoji placeholders, not final illustration.</p>
+</header>
+
+<section id="a">
+  <svg class="wind" viewBox="0 0 1200 800" preserveAspectRatio="none">
+    <path d="M-50 180 C 250 120, 450 260, 750 190 S 1150 140, 1300 200"/>
+    <path d="M-50 330 C 300 290, 500 400, 800 330 S 1100 300, 1300 350" style="animation-delay:-2s"/>
+    <path d="M-50 520 C 200 470, 520 600, 820 520 S 1150 480, 1300 540" style="animation-delay:-4s"/>
+    <path d="M-50 660 C 350 620, 600 720, 900 650 S 1150 640, 1300 680" style="animation-delay:-1s"/>
+  </svg>
+  <div class="left">
+    <div class="label">a — le vent</div>
+    <div class="logo">b<span class="gust">ı</span>se</div>
+    <div class="tag1">you, but with way more hands.</div>
+    <div class="tag2">built for people who think faster than they type.</div>
+  </div>
+  <div class="side">
+    <div>feel: calm, speed, flow. air, lots of white.</div>
+    <div class="swatches">
+      <div class="sw"><i style="background:#f4f6f8"></i><span>paper f4f6f8</span></div>
+      <div class="sw"><i style="background:#9cc9f5"></i><span>north sky 9cc9f5</span></div>
+      <div class="sw"><i style="background:#1e3a5f"></i><span>deep 1e3a5f</span></div>
+      <div class="sw"><i style="background:#0e1116"></i><span>ink 0e1116</span></div>
+    </div>
+    <div>type: Manrope (soft geometric sans).</div>
+    <div>logo: lowercase wordmark, the dot of the i blown away.</div>
+    <div class="note">risk: pretty but generic. many SaaS look like this. says "flow", not "hands".</div>
+  </div>
+</section>
+
+<section id="b">
+  <div class="left">
+    <div class="label">b — la bise</div>
+    <div class="logo">bise <span class="x">x</span></div>
+    <div class="tag1">you, but with way more hands.</div>
+    <div class="tag2">built for people who think faster than they type.</div>
+    <div class="hands"><span>✋</span><span style="animation-delay:-.2s">🖐️</span><span style="animation-delay:-.4s">✍️</span><span style="animation-delay:-.6s">👋</span><span style="animation-delay:-.8s">🤚</span><span style="animation-delay:-1s">👌</span><span style="animation-delay:-1.2s">✋</span></div>
+  </div>
+  <div class="side">
+    <div>feel: warm, human, fun, memorable. a text from a friend.</div>
+    <div class="swatches">
+      <div class="sw"><i style="background:#fbf3e8"></i><span>cream fbf3e8</span></div>
+      <div class="sw"><i style="background:#f9c6c0"></i><span>cheek f9c6c0</span></div>
+      <div class="sw"><i style="background:#f2766b"></i><span>blush f2766b</span></div>
+      <div class="sw"><i style="background:#1b1b1b"></i><span>ink 1b1b1b</span></div>
+    </div>
+    <div>type: Caveat (handwritten) + a mono for code.</div>
+    <div>logo: "bise x", the kiss sign-off of a French text message.</div>
+    <div class="note">risk: can read as a consumer app, less credible to devs. needs a real illustrator for the hands.</div>
+  </div>
+</section>
+
+<section id="c">
+  <div class="screen" id="c-screen"></div>
+  <div class="left">
+    <div class="label">c — terminal brut</div>
+    <div class="logo">bise<span class="cur"></span></div>
+    <div class="tag1">you, but with way more hands.</div>
+    <div class="tag2">built for people who think faster than they type.</div>
+  </div>
+  <div class="side">
+    <div>feel: honest, dev-credible, raw. the product is the visual.</div>
+    <div class="swatches">
+      <div class="sw"><i style="background:#f3efe6"></i><span>cream f3efe6</span></div>
+      <div class="sw"><i style="background:#8a8a8a"></i><span>dim 8a8a8a</span></div>
+      <div class="sw"><i style="background:#111111"></i><span>ink 111111</span></div>
+    </div>
+    <div>type: JetBrains Mono, one size family, lowercase.</div>
+    <div>logo: the word and a block cursor.</div>
+    <div class="note">risk: cold on its own. cheapest to make by tomorrow.</div>
+  </div>
+</section>
+
+<section id="r">
+  <div>
+    <div class="label">recommendation — c as the base, with the soul of b</div>
+    <div class="logo">bise<span class="x">x</span></div>
+    <div class="prompt"><b>you&gt;</b> <span id="r-type"></span><span class="cur"></span></div>
+    <div class="lines" id="r-lines"></div>
+    <div class="tag1">you, but with way more hands.</div>
+    <div class="tag2">built for people who think faster than they type.</div>
+    <div class="swatches">
+      <div class="sw"><i style="background:#f3efe6"></i><span>cream f3efe6</span></div>
+      <div class="sw"><i style="background:#111111"></i><span>ink 111111</span></div>
+      <div class="sw"><i style="background:#8a8a8a"></i><span>dim 8a8a8a</span></div>
+      <div class="sw"><i style="background:#f2766b"></i><span>blush f2766b</span></div>
+    </div>
+    <div class="side">terminal = credibility. one warm accent (blush) + the handwritten "x" = the human. key visual: you type one idea after another, and new cursors keep appearing and working.</div>
+  </div>
+</section>
+
+<footer>
+  draft by the marketing task. nothing here is final: colors, fonts and the logo are directions, not assets.<br>
+  bise is a standalone brand, unrelated to Mistral.
+</footer>
+
+<script>
+// c: cursors appear across the screen and type
+const tasks = ["fixing the safari bug", "writing the release note", "running the tests", "renaming the config keys", "drafting the landing page", "reviewing the auth PR", "profiling the slow query", "updating the docs"];
+const screen = document.getElementById("c-screen");
+function spawn() {
+  const el = document.createElement("div");
+  el.style.left = (5 + Math.random() * 80) + "%";
+  el.style.top = (5 + Math.random() * 88) + "%";
+  const txt = document.createElement("span");
+  const cur = document.createElement("span"); cur.className = "cur";
+  el.append(txt, cur); screen.append(el);
+  const s = tasks[Math.floor(Math.random() * tasks.length)];
+  let i = 0;
+  const t = setInterval(() => { txt.textContent = s.slice(0, ++i); if (i >= s.length) { clearInterval(t); setTimeout(() => el.remove(), 2500); } }, 60 + Math.random() * 60);
+}
+setInterval(spawn, 700);
+
+// reco: you type ideas, hands pick them up
+const ideas = ["fix the safari bug", "and write the release note", "oh and the landing page copy", "can someone look at the slow query?"];
+const typeEl = document.getElementById("r-type"), lines = document.getElementById("r-lines");
+let k = 0;
+function nextIdea() {
+  const s = ideas[k % ideas.length]; let i = 0; typeEl.textContent = "";
+  const t = setInterval(() => {
+    typeEl.textContent = s.slice(0, ++i);
+    if (i >= s.length) {
+      clearInterval(t);
+      setTimeout(() => {
+        const l = document.createElement("div");
+        l.innerHTML = "✋ on it: " + s + ' <span class="ok">· working</span>';
+        lines.append(l); if (lines.children.length > 4) lines.firstChild.remove();
+        k++; nextIdea();
+      }, 500);
+    }
+  }, 45);
+}
+nextIdea();
+</script>
+</body>
+</html>
