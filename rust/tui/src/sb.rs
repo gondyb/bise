@@ -1280,6 +1280,25 @@ fn hub_reader(
     }
 }
 
+/// A fresh switchboard state over the hub connection `writer`.
+fn new_sb(writer: std::sync::Arc<std::sync::Mutex<UnixStream>>, workspace: String) -> Sb {
+    Sb {
+        writer,
+        workspace,
+        focus: "main".to_string(),
+        views: HashMap::new(),
+        agents: Vec::new(),
+        cards: Vec::new(),
+        card: CardView::default(),
+        selected: None,
+        preview: false,
+        confirm: None,
+        activity: HashMap::new(),
+        ready: false,
+        shell: None,
+    }
+}
+
 pub fn run_switchboard(
     stream: UnixStream,
     socket: std::path::PathBuf,
@@ -1294,21 +1313,7 @@ pub fn run_switchboard(
         let writer = writer.clone();
         thread::spawn(move || hub_reader(reader, socket, writer, tx));
     }
-    let sb = Sb {
-        writer,
-        workspace: workspace.clone(),
-        focus: "main".to_string(),
-        views: HashMap::new(),
-        agents: Vec::new(),
-        cards: Vec::new(),
-        card: CardView::default(),
-        selected: None,
-        preview: false,
-        confirm: None,
-        activity: HashMap::new(),
-        ready: false,
-        shell: None,
-    };
+    let sb = new_sb(writer, workspace.clone());
     let mut app = App {
         connected: true,
         debug,
@@ -1450,6 +1455,9 @@ fn print_hub_event(raw: &str) {
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod bench;
 
 #[cfg(test)]
 mod nav_key_tests {
