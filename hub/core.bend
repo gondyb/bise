@@ -61,6 +61,8 @@ type In is Data:
   IInterrupt{}
   IPassthrough{}
   IFocus{}
+  IClose{}
+  IForceRun{}
   INone{}
 
 type CardK is Data:
@@ -2059,7 +2061,22 @@ def in_tag(+t: String) -> In:
   Bool.pick(In, String.eq(t, "interrupt"), IInterrupt{},
   Bool.pick(In, String.eq(t, "passthrough"), IPassthrough{},
   Bool.pick(In, String.eq(t, "focus"), IFocus{},
-  INone{}))))))))))))))))))))))))
+  Bool.pick(In, String.eq(t, "close"), IClose{},
+  Bool.pick(In, String.eq(t, "force_run"), IForceRun{},
+  INone{}))))))))))))))))))))))))))
+
+# `/close N`: the user files a card without answering it
+def close_by_user(-o: M.St, m: Maybe<&2, M.Card>, +cx: X.Cx<o>, +id: Nat) -> X.Cx<o>:
+  match m:
+    case None{}:
+      notice(o, cx, String.append("aucune carte ouverte #", ns(id)))
+    case Some{+c}:
+      note_main(o, close_card(o, cx, id, "classée"), cat(["the user closed card #", ns(id), " (", M.Card.kind(c), " @", M.Card.agent(c), ": \"", M.one_line(M.Card.text(c)), "\") without answering"]))
+
+def force_run_of(+r: String) -> M.Run:
+  Bool.pick(M.Run, String.eq(r, "starting"), M.RStarting{},
+    Bool.pick(M.Run, String.eq(r, "idle"), M.RIdle{},
+      Bool.pick(M.Run, String.eq(r, "busy"), M.RBusy{}, M.RDown{})))
 
 def dispatch.go(-o: M.St, tag: In, +cx: X.Cx<o>, +i: J.Json) -> X.Cx<o>:
   match tag:
@@ -2111,6 +2128,11 @@ def dispatch.go(-o: M.St, tag: In, +cx: X.Cx<o>, +i: J.Json) -> X.Cx<o>:
       passthrough(o, cx, jstr(i, "focus"), jstr(i, "line"))
     case IFocus{}:
       focus(o, cx, jstr(i, "focus"), jopt_str(J.get(i, "note")), jstr(i, "direct"))
+    case IClose{}:
+      close_by_user(o, M.card_of(M.St.cards(st(o, cx)), jnat(i, "card")), cx, jnat(i, "card"))
+    case IForceRun{}:
+      # tests only: put an agent's REPL in a given state
+      set_run(o, cx, jstr(i, "agent"), force_run_of(jstr(i, "run")))
     case INone{}:
       cx
 

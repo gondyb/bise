@@ -482,7 +482,7 @@ fn an_explicit_route_can_be_cancelled_before_delivery() {
     let mut t = T::new();
     t.spawn_task("docs");
     // docs never started its REPL again: simulate it down
-    t.hub.st.agents.get_mut("docs").unwrap().run = Run::Starting;
+    t.hub.force_run("docs", Run::Starting);
     let fx = t.user(MAIN, "@docs change de plan");
     assert!(has_line(&fx, MAIN, "toi → @docs : change de plan"));
     let fx = t.user(MAIN, "/cancel");

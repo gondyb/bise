@@ -71,5 +71,14 @@ build_repl() {
 }
 build_repl repl-live runtime/repl-live.bend
 build_repl repl-scripted runtime/repl.bend
+# sb-core: the Switchboard hub's decisions (hub/*.bend), a child of the
+# switchboard daemon
+if [ ! -x sb-core ] || [ -n "$(find hub vendor -newer sb-core -print -quit 2>/dev/null)" ]; then
+  echo "sb-core absent ou périmé — compilation avec bend..." >&2
+  if ! bend hub/main.bend -o sb-core >/dev/null && [ ! -x sb-core ]; then
+    echo "compilation de sb-core échouée" >&2
+    exit 1
+  fi
+fi
 
 exec ./rust/target/debug/bend-harness "$@"
