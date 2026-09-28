@@ -112,7 +112,7 @@ burst(28, 33.5, [
   ["docs", "main", "? v1 or v2 for the examples?"], ["main", "docs", "v2, the brief says so."],
   ["ep-keys", "main", "♡ /keys done, 14 tests green."], ["sdk-py", "ep-users", "is /users/{id} 404 or 410 when deleted?"], ["ep-users", "sdk-py", "410."],
 ]);
-at(34.2, { type: "main", html: 'docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why · undo</span>' });
+at(34.2, { type: "main", html: 'docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span>' });
 burst(35, 40, [
   ["ep-orgs", "ep-billing", "members endpoint is live on my branch."], ["ep-billing", "ep-orgs", "thanks, wiring it."],
   ["sdk-ts", "sdk-py", "retry policy: 3 tries, backoff 2^n?"], ["sdk-py", "sdk-ts", "same, with jitter."], ["docs", "ep-orgs", "example payload for /orgs?"],
@@ -255,7 +255,7 @@ function render(now, force = false) {
   // the scripted "you" types only while your own composer is empty
   const inp = document.getElementById("inp"), mine = inp.value !== "" || document.activeElement === inp;
   setH(document.getElementById("composer"), mine || st.typing == null ? "" : `${st.typing}<span class="cur"></span>`);
-  inp.placeholder = mine || st.typing != null ? "" : "type here, any time: a new request, @agent …, where are we?, an answer to a card";
+  inp.placeholder = mine || st.typing != null ? "" : "type here, any time: a new request, @agent …, where are we?, no, …, an answer to a card";
   setH(document.getElementById("status"), `main · ${st.typing != null ? "you're typing" : "listening"} · ${st.agents.length} agents`);
   setH(document.getElementById("clock"), hhmm(st.sim));
   document.getElementById("prog").style.width = `${100 * now / END}%`;
@@ -325,6 +325,12 @@ function send(text) {
   } else if (/where are we|status|how('s| is) it going|on en est|où en/.test(low)) {
     const c = (s) => st.agents.filter((a) => a.status === s).length;
     add(1.2, { type: "main", html: `${c("working") + c("starting")} working, ${c("done")} done${c("waiting") ? `, ${c("waiting")} waiting on another agent` : ""}${card ? `. ${card.agent} needs you: ${card.body}` : ", nothing needs you."}` });
+  } else if (/^(no|nope|actually|wait|non)\b/.test(low)) {
+    // no undo: a correction is a message. main tells the agent explicitly
+    const target = names.find((n) => low.includes(n)) ?? "docs";
+    add(1, { type: "main", html: `told ${target}: you changed your mind.` });
+    add(1.1, { type: "msg", from: "main", to: target, text: `the user changed their mind: "${text}".` });
+    add(3, { type: "msg", from: target, to: "main", text: "ok, redoing it that way." });
   } else if (card) {
     add(1, { type: "main", html: `passed your answer to ${card.agent}.` });
     add(1.1, { type: "msg", from: "main", to: card.agent, text });
@@ -332,13 +338,13 @@ function send(text) {
   } else {
     const target = names.find((n) => low.includes(n));
     if (target) {
-      add(1, { type: "main", html: `sent to ${target}. <span class="dim">ctrl+z undo</span>` });
+      add(1, { type: "main", html: `sent to ${target}.` });
       add(1.1, { type: "msg", from: "main", to: target, text });
       add(1.2, { type: "agent", name: target, status: "working" });
       add(6, { type: "msg", from: target, to: "main", text: "· on it, adjusting my plan." });
     } else {
       let n = slug(text), k = 2; while (names.includes(n)) n = `${slug(text)}-${k++}`;
-      add(1, { type: "main", html: `on it: ${n} takes it. <span class="dim">ctrl+z undo</span>` });
+      add(1, { type: "main", html: `on it: ${n} takes it.` });
       add(1.3, { type: "agent", name: n, status: "starting" });
       add(2.8, { type: "agent", name: n, status: "working" });
       add(7, { type: "msg", from: n, to: "main", text: "· found where it lives, working on it." });

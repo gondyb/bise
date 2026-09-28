@@ -129,16 +129,16 @@ const screens = [
    <div class="b dim">try: "fix the flaky login test, and draft the release note"</div>`,
    pan: panel([P.main]), f: foot('main · idle') })],
 
-["you ask, main starts agents", "several requests in a row, no waiting. main says which agent took what. undo a route while it isn't delivered yet (today: Ctrl+Z).",
+["you ask, main starts agents", "several requests in a row, no waiting. main says which agent took what. no undo: to change something, just say it (see \"you change your mind\").",
  term({ feed: you("the login breaks on safari. oh and can someone write the release note for 0.4?") +
    bise("on it. two agents:") + `<div class="ind">${S.work} auth-fix <span class="dim">the safari login bug</span></div><div class="ind">${S.work} release <span class="dim">the release note for 0.4</span></div>` +
-   you("also the api docs, v2") + bise(`sent to docs. <span class="dim">ctrl+z undo · 4s</span>`) })],
+   you("also the api docs, v2") + bise("docs takes it.") })],
 
-["what's for you, what isn't", "three levels, always the same. <b>needs you</b>: blush bar, bold, stays until answered (also in the card box). <b>for you</b>: normal text, what main and agents say to you. <b>between agents</b>: dim, under a faint rail, ✉ from → to; it keeps the story readable without asking for attention. main's line after the traffic is the summary for you. (⚠ undo of an answer main gave is not built today.)",
+["what's for you, what isn't", "three levels, always the same. <b>needs you</b>: blush bar, bold, stays until answered (also in the card box). <b>for you</b>: normal text, what main and agents say to you. <b>between agents</b>: dim, under a faint rail, ✉ from → to; it keeps the story readable without asking for attention. main's line after the traffic is the summary for you. ▸ why shows the reasoning behind a decision main took for you.",
  term({ feed: you("the login breaks on safari. and the api docs, v2 please.") +
    bise("on it: auth-fix takes safari, docs takes the api docs.") +
    bgs(bg("docs", "main", "v1 or v2 for the examples?"), bg("main", "docs", "v2, the brief says so.")) +
-   bise(`docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why · undo</span>`) +
+   bise(`docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span>`) +
    bgs(bg("auth-fix", "release", "heads-up, i'm touching web/src/auth."), bg("release", "auth-fix", "ok, i'll mention the fix."), bg("bench", "main", "♡ done. p95 180 ms, 3 runs.")) +
    `<div class="b"><span class="who">♡</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div>` +
    bgs(bg("api-v2", "main", "? i need the v2 schema file, it isn't in the repo.")) +
@@ -148,11 +148,17 @@ const screens = [
  term({ feed: you("the login breaks on safari. and the api docs, v2 please.") +
    bise("on it: auth-fix takes safari, docs takes the api docs.") +
    `<div class="b l3">▸ 2 messages between agents</div>` +
-   bise(`docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why · undo</span>`) +
+   bise(`docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span>`) +
    `<div class="b l3">▸ 3 messages between agents</div>` +
    `<div class="b"><span class="who">♡</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div>` +
    `<div class="b l3">▸ 1 message between agents</div>` +
    need("api-v2 needs you", "the v2 schema file isn't in the repo. where is it?", "type the answer · alt+r send · ctrl+x later") })],
+
+["you change your mind", "no undo button: agents may already have acted, so an undo would promise too much. you just say it; main sends the agent an explicit correction, and the exchange stays in the history like everything else.",
+ term({ feed: bise(`docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span>`) +
+   you("no, v1 for docs") +
+   bise("told docs: v1, you changed your mind.") +
+   bgs(bg("main", "docs", "the user changed their mind: use v1, not v2."), bg("docs", "main", "ok, switching the examples to v1.")) })],
 
 ["a busy hour, 30 agents", "the history is append-only and in arrival order: nothing is grouped by agent, nothing moves later. density comes from three things only: (1) a run of messages between agents folds into one dim line with its count; only the last run, at the bottom, can still grow; once a line for you arrives, the run is closed and never changes. (2) names sit in a fixed column, so the eye scans. (3) a faint time mark only after a pause. what's for you (levels 1 and 2) is never folded, so it stays readable at any volume.",
  term({ h: head(`${S.work} 27 working · <span class="acc">? 2 need you</span> · ♡ 11 done`),
@@ -183,7 +189,9 @@ the slow tail is the cold cache on the first request.</pre>
    <div class="b"><span class="who acc">?</span>docs is blocked: it needs the v2 schema file. <span class="dim">▸ card</span></div>` })],
 
 ["main sends work back", "main reads a \"done\", sees it isn't, and sends the agent back before bothering you.",
- term({ feed: bise(`auth-fix said done, but the webkit test still fails. i sent it back: "the test is red, fix it and rerun it". <span class="dim">▸ report</span>`) })],
+ term({ feed: bgs(bg("auth-fix", "main", "♡ done: added Secure to the session cookie.")) +
+   bise(`auth-fix said done, but the webkit test still fails. i sent it back. <span class="dim">▸ report</span>`) +
+   bgs(bg("main", "auth-fix", "the webkit test is red. fix it and rerun it.")) })],
 
 ["cards: a question", "the card box sits above the composer. a question has numbered choices when the agent gives some; otherwise type the answer. keys today: Ctrl+G show/hide, Ctrl+N/P next/previous, Alt+R answer with the composer text, Ctrl+X close.",
  term({ feed: you("where are we?") + bise("3 agents working, 1 needs you (docs), bench is done."),
@@ -272,16 +280,16 @@ src/auth/session.ts:31:  sameSite: "none",</pre>
    <div class="b"><span class="who dim">▲</span><span class="dim">interrupted by you</span></div>`, pan: PANEL("auth-fix"),
    f: foot('auth-fix · working · 12s', '<span class="dim">›</span> <span class="cur"></span>', "⏎ steer · ctrl+c interrupt") })],
 
-["talk to an agent from main", "@name sends a direct message without leaving main; from inside an agent, @main goes back up. the @ popup lists agents (⚠ and files: the at-files task is building it).",
- term({ feed: you("@auth-fix also check the logout path") + `<div class="ind dim">✉ sent to auth-fix</div>`,
+["talk to an agent from main", "@name sends a direct message without leaving main (main stays out of it); the agent's reply is for you, so level 2. from inside an agent, @main goes back up. the @ popup lists agents (⚠ and files: the at-files task is building it).",
+ term({ feed: you("@auth-fix also check the logout path") + `<div class="b"><span class="who">✉</span>auth-fix <span class="dim">to you:</span> got it, i'll check logout after the login fix.</div>`,
    above: `<div class="pop"><div class="row sel"><span>${S.work} auth-fix</span><span class="dim">the safari login bug</span></div>
    <div class="row"><span>${S.work} release</span><span class="dim">the release note</span></div>
    <div class="row"><span class="dim">📄 web/src/auth/session.ts</span><span class="dim">file ⚠</span></div></div>`,
    f: foot(undefined, '<span class="dim">›</span> @au<span class="cur"></span>', "tab pick · esc close") })],
 
-["agents talk to each other", "messages between agents show in the agent's feed with ✉, so you can follow who told what to whom.",
- term({ feed: `<div><span class="who">✉</span><span class="dim">auth-fix → release:</span> heads-up, i'm touching web/src/auth. mention the safari fix in the notes.</div>
-   <div class="b"><span class="who">✉</span><span class="dim">release → auth-fix:</span> got it, added under "fixes".</div>`, pan: PANEL("release") })],
+["agents talk to each other", "inside an agent, the messages it sends and receives are level 3 (dim, ✉ from → to); what the agent says to you is level 2.",
+ term({ feed: bgs(bg("auth-fix", "release", "heads-up, i'm touching web/src/auth. mention the safari fix in the notes."), bg("release", "auth-fix", 'got it, added under "fixes".')) +
+   `<div class="b">added the safari fix to the notes, under "fixes".</div>`, pan: PANEL("release") })],
 
 ["compaction", "when a context fills up, the agent compacts: one line while it runs, then a summary behind ▸.",
  term({ feed: `<div><span class="who dim">⟳</span><span class="dim">compacting the conversation… 81% full</span></div>

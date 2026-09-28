@@ -187,8 +187,12 @@ toggles all outputs.
   first nine agents, blank after), so switching is discoverable without
   `/help`.
   **⚠** `⌥` is macOS; show `alt+1` on Linux and Windows.
-- Main answering a task on your behalf is shown in the feed, with its undo
-  (`ctrl+z`).
+- Main answering an agent on your behalf is shown in the feed, with `▸ why`.
+- **No undo** (Gabriel, 2026-09-28). Agents may already have acted, so an
+  undo promises too much, and it is one more concept. To change something,
+  you say it ("no, v1 for docs"); main sends the agent an explicit correction
+  ("the user changed their mind: …") and confirms in one line. Today's
+  `ctrl+z` (cancel a route not yet delivered) goes away.
 - Checkout view: a one-line banner "you are talking to auth-fix directly. main
   is not in the loop. esc back to main."
 - Composer at the bottom: `› ` prompt, key hints on the right, dim.
@@ -199,7 +203,7 @@ Checked against `rust/tui` on 2026-09-28 (`help.rs` rows, `sb/panel.rs`,
 `sb/cards.rs`, `wire.rs` events, `commands.rs`). Every item has a screen in
 [tui-screens.html](tui-screens.html):
 
-first run · routing and route undo · main answering for you · reports in main ·
+first run · routing · main answering for you · you change your mind · reports in main ·
 main sending work back · question card · every card kind (question, blocked,
 failed, restart, drop, overlap, done) · full-screen card · the agents panel in
 every state (starting, working, waiting, needs you, blocked, done, failed,
@@ -209,7 +213,41 @@ and the `@` popup · agent-to-agent messages · compaction · provider and hub
 errors · `/version` build and trial · slash commands · voice · terminal panel
 · help · drop confirmation · narrow terminal · long history.
 
-Not built today, shown with **⚠** in the screens: undo of an answer main gave
-for you, files in the `@` popup (at-files task in progress), one key to open
+Not built today, shown with **⚠** in the screens: files in the `@` popup (at-files task in progress), one key to open
 every output, cost in $. Not mocked: the text editor keys and selection (no
 visual change), emoji completion, plugins (in progress).
+
+## Decisions and backlog
+
+Decided with Gabriel. Nothing is sent to implementation yet: the task list
+is written once every open question below is settled.
+
+To implement:
+
+1. Replace the OpenCode theme with the bise palette (dark), one accent.
+2. The glyph set for entities and statuses (tables above).
+3. Prose wraps at 76 columns, code at 100 with a hanging indent.
+4. bash and TypeScript scripts always shown in full, with syntax colors.
+5. Progressive disclosure: thinking, outputs, diffs, reports, brief behind ▸;
+   keys to open one item, all thinking, all outputs.
+6. Say "agent" everywhere in the UI and `/help`, never "task".
+7. Agents panel: title `agents · ⌥ + number to switch`, a number per row.
+8. The 3 levels (needs you / for you / between agents); the hub tags each
+   feed line with its sender, recipient and level.
+9. A quiet key that folds the runs of level 3.
+10. Append-only history: fold runs longer than 3, only the tail run grows,
+    time marks after a pause, fixed name column.
+11. No undo: remove `ctrl+z`; main's prompt sends explicit corrections.
+12. First-run copy: "what's on your mind? / say it and keep talking. the work
+    runs in the background, i'm always here."
+13. Header: `bise :*` and the live counts.
+14. Lowercase chrome (proper nouns and acronyms excepted).
+
+Open questions:
+
+- A card once answered: fade it in place (gray, "answered"), or leave it
+  as it was and let the answer follow below?
+- Background: our warm near-black, or the terminal's own?
+- A light theme.
+- Glyph coverage in common fonts and terminals; `alt+` labels off macOS.
+- Cost in $ in the header (needs the usage work).
