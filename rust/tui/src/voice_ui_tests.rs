@@ -145,9 +145,8 @@ fn recording_shows_the_meter_an_orange_border_and_dim_text() {
     let (x, y) = find(&buf, "▅ dictated").expect("meter before the text");
     assert_eq!(buf[(x, y)].fg, RECORDING);
     assert_eq!(buf[(x + 2, y)].fg, DIM);
-    // the composer's left bar
-    let bar = (0..x).rev().find(|&bx| buf[(bx, y)].symbol() == "┃").expect("left bar");
-    assert_eq!(buf[(bar, y)].fg, RECORDING);
+    // the meter takes the place of the `›` prompt
+    assert!(find(&buf, &format!("{} ", G_YOU)).is_none(), "no prompt while recording");
     assert!(find(&buf, "recording · any key stops").is_some());
     // idle again: no meter, the normal border
     app.voice.cancel();

@@ -251,7 +251,8 @@ fn scrolling_up_then_down_comes_back() {
     // the top of the feed is reachable and stops there
     app.scroll -= 100_000;
     term.draw(|f| draw_sb(&mut app, f)).unwrap();
-    assert!(screen(&term)[0].contains("event 0"));
+    // (row 0 is the header)
+    assert!(screen(&term)[1].contains("event 0"));
     // every row of the feed maps to the event it shows (clicks)
     assert_eq!(app.vis_events[0], 0);
     assert_eq!(app.vis_events.len(), app.area_h);

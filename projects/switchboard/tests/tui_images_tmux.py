@@ -51,7 +51,7 @@ def main():
     ok = False
     try:
         tui_tmux.start_tui(E, 150, 42, "BEND_CLIPBOARD_IMAGE_FILE=%s" % clip)
-        wait_screen("Switchboard")
+        wait_screen("bise :*")
         wait_screen(" idle")
         # the @ popup: an image is attached, not inserted as a path
         typed("look @red-bl")

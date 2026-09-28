@@ -38,7 +38,7 @@ def main():
     ok = False
     try:
         tui_tmux.start_tui(E, 150, 42)
-        wait_screen("Switchboard")
+        wait_screen("bise :*")
         wait_screen(" idle")
         # a task, so an agent is listed
         typed('crée [[bash: sb spawn notes --objective "écris {{bash: echo hi}}"]]')

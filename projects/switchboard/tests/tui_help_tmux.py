@@ -22,7 +22,7 @@ def run(cols, rows):
     ok = False
     try:
         tui_tmux.start_tui(E, cols, rows)
-        wait_screen("Switchboard")
+        wait_screen("bise :*")
         wait_screen(" idle")
         # /help: the commands and the essential keys
         typed("/help")

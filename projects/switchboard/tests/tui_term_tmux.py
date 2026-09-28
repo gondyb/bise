@@ -34,7 +34,7 @@ def main():
     ok = False
     try:
         tui_tmux.start_tui(E, 150, 42, "SHELL=/bin/bash")
-        wait_screen("Switchboard")
+        wait_screen("bise :*")
         wait_screen(" idle")
         # show (legacy NUL), run a command
         keys("C-Space")

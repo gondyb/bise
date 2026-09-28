@@ -32,7 +32,7 @@ def main():
     second_subject = git("log", "-1", "--format=%s", second)
     try:
         tui_tmux.start_tui(E, 160, 42)
-        wait_screen("Switchboard")
+        wait_screen("bise :*")
         wait_screen(" idle")
         # the popup: tree and the commits, with the current one marked
         typed("/version ")

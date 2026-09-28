@@ -32,7 +32,7 @@ def main():
     ok = False
     try:
         tui_tmux.start_tui(E, 120, 30)
-        wait_screen("Switchboard")
+        wait_screen("bise :*")
         wait_screen(" idle")
         typed("first-marker")
         keys("Enter")

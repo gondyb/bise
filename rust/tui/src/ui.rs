@@ -48,11 +48,19 @@ pub(crate) fn recording_lines(lines: Vec<Line<'static>>, glyph: char) -> Vec<Lin
 }
 
 pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
-    let full = app.term.draw(frame, frame.area());
-    let (area, sb_panel) = sb::split(app, full);
-    if let Some(p) = sb_panel {
-        sb::draw_panel(app, frame, p);
+    let mut full = app.term.draw(frame, frame.area());
+    // Switchboard: the header row on top, over the feed and the panel
+    // (under 70 columns, no panel: the counts shorten)
+    if let Some(h) = app.sb.as_ref().filter(|_| full.height > 1).map(|sb| sb.header(full.width, full.width < 70)) {
+        frame.render_widget(Paragraph::new(h), Rect { height: 1, ..full });
+        full = Rect { y: full.y + 1, height: full.height - 1, ..full };
     }
+    if app.sb.is_some() {
+        draw_bise(app, frame, full);
+        help::draw(app, frame);
+        return;
+    }
+    let area = full;
     // OpenCode layout: no header. Feed grows to fill, a blank row, the
     // status row, another blank row, the prompt block, a blank row,
     // then the hint row — the composer never touches the history.
@@ -71,8 +79,6 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     // the prompt block holds: 2 rows of top padding, the typed text,
     // one blank line, the meta row, 1 row of bottom padding
     let input_h = ((composer_rows + 5) as u16).min((area.height / 2).max(7));
-    // the card box: what the composer, a 3-row feed and the 5 fixed rows leave
-    let card_h = sb::card_box_height(app, area, area.height.saturating_sub(input_h + 8));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -80,7 +86,6 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
             Constraint::Length(1), // respiration sous le feed
             Constraint::Length(1), // status row
             Constraint::Length(1), // respiration au-dessus du composeur
-            Constraint::Length(card_h), // la carte affichée (Ctrl+G)
             Constraint::Length(input_h), // prompt
             Constraint::Length(1), // respiration au-dessus de l'aide
             Constraint::Length(1), // hint row
@@ -89,20 +94,129 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
 
     draw_feed(app, frame, chunks[0]);
     draw_status(app, frame, chunks[2]);
-    draw_prompt(app, frame, chunks[5], voice_pad);
-    if card_h > 0 {
-        sb::draw_card(app, frame, chunks[4]);
-    } else if sb::card_full(app) {
-        sb::draw_card(app, frame, chunks[0]);
-    }
-
-    draw_popup(app, frame, chunks[5]);
+    draw_prompt(app, frame, chunks[4], voice_pad);
+    draw_popup(app, frame, chunks[4]);
     let hint = if app.term.shown() { term::HINT } else { hint_text(app) };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(DIM)))),
-        chunks[7],
+        chunks[6],
     );
     help::draw(app, frame);
+}
+
+/// The Switchboard layout (bise book §8), under the header: the feed
+/// (its first row pinned to the "inside an agent" / preview line when
+/// there is one) and a blank row, the agents panel on their right; then,
+/// the whole width, the card box, the status row and the composer: `› `
+/// and the typed text, the key hints flush right on its last row (on
+/// the status row when the text leaves no room).
+fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect) {
+    // the composer: 1 column of margin, `› ` (or the voice meter), the
+    // text, 1 column of margin on the right
+    let inner_w = (area.width as usize).saturating_sub(4).max(1);
+    let composer_rows = {
+        let rows = editor::layout_input(&app.ed.text, inner_w);
+        editor::drawn_rows(&rows, app.ed.cursor)
+    };
+    let input_h = (composer_rows.max(1) as u16).min((area.height / 2).max(1));
+    // the card box: what the composer, a 3-row feed and the 2 fixed rows leave
+    let card_h = sb::card_box_height(app, area, area.height.saturating_sub(input_h + 5));
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(3),          // feed | panel
+            Constraint::Length(1),       // a blank row under the feed
+            Constraint::Length(card_h),  // the card box (ctrl+g)
+            Constraint::Length(1),       // status row
+            Constraint::Length(input_h), // composer
+        ])
+        .split(area);
+    // the panel runs down to the blank row under the feed
+    let top = Rect { height: chunks[0].height + chunks[1].height, ..chunks[0] };
+    let (left, sb_panel) = sb::split(app, top);
+    if let Some(p) = sb_panel {
+        sb::draw_panel(app, frame, p);
+    }
+    let blank = Rect { y: chunks[1].y, height: chunks[1].height, ..left };
+    let mut feed = Rect { height: chunks[0].height, ..left };
+    if let Some(l) = app.sb.as_ref().and_then(|sb| sb.feed_banner()) {
+        if feed.height > 3 {
+            let row = Rect { x: feed.x + 1, width: feed.width.saturating_sub(2), height: 1, ..feed };
+            frame.render_widget(Paragraph::new(l), row);
+            feed = Rect { y: feed.y + 2, height: feed.height - 2, ..feed };
+        }
+    }
+    draw_feed(app, frame, feed);
+    // no agents yet, nothing said: the first-run text, dim, in the feed
+    let first_run = app.sb.as_ref().and_then(|sb| sb.first_run());
+    if let Some(text) = first_run.filter(|_| !app.events.iter().any(|e| ev_visible(e, app.debug))) {
+        let w = (feed.width as usize).saturating_sub(3).clamp(1, 76);
+        let mut lines: Vec<Line> = Vec::new();
+        for p in text {
+            if !lines.is_empty() {
+                lines.push(Line::from(""));
+            }
+            lines.extend(wrap_words(p, w).into_iter().map(|l| Line::from(Span::styled(l, Style::default().fg(dim())))));
+        }
+        let r = Rect { x: feed.x + 1, width: feed.width.saturating_sub(2), ..feed };
+        frame.render_widget(Paragraph::new(lines), r);
+    }
+    let status_w = draw_status(app, frame, chunks[3]);
+    draw_composer(app, frame, chunks[4], inner_w);
+    if card_h > 0 {
+        sb::draw_card(app, frame, chunks[2]);
+    } else if sb::card_full(app) {
+        sb::draw_card(app, frame, chunks[0]);
+    }
+    draw_popup(app, frame, chunks[4]);
+    // the key hints, flush right: on the composer's last row, else on
+    // the status row, else not at all
+    let hint = if app.term.shown() { term::HINT } else { hint_text(app) };
+    let hint_w = hint.width() as u16 + 1;
+    let last_w = composer_last_width(app, inner_w) as u16 + 3;
+    let fits = |used: u16, row: Rect| row.height > 0 && used + hint_w + 2 <= row.width;
+    let row = if fits(last_w, chunks[4]) {
+        Some(Rect { y: chunks[4].y + chunks[4].height - 1, ..chunks[4] })
+    } else if fits(status_w, chunks[3]) {
+        Some(chunks[3])
+    } else if blank.height > 0 {
+        // the blank row under the feed
+        Some(Rect { width: blank.width, ..blank })
+    } else {
+        None
+    };
+    if let Some(row) = row {
+        let w = hint_w.min(row.width);
+        let r = Rect { x: row.x + row.width - w, width: w, height: 1, ..row }.intersection(frame.area());
+        let hint = if hint.width() < w as usize { hint.to_string() } else { truncate_chars(hint, w.saturating_sub(2) as usize) };
+        frame.render_widget(Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(dim())))), r);
+    }
+}
+
+/// `s` cut at spaces into rows of at most `w` columns.
+fn wrap_words(s: &str, w: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for word in s.split(' ') {
+        if !cur.is_empty() && cur.width() + 1 + word.width() > w {
+            out.push(std::mem::take(&mut cur));
+        }
+        if !cur.is_empty() {
+            cur.push(' ');
+        }
+        cur.push_str(word);
+    }
+    out.push(cur);
+    out
+}
+
+/// The display width of the composer's last drawn row.
+fn composer_last_width(app: &App, inner_w: usize) -> usize {
+    let rows = editor::layout_input(&app.ed.text, inner_w);
+    let n = editor::drawn_rows(&rows, app.ed.cursor);
+    let w = rows.get(n.saturating_sub(1)).map_or(0, |r| r.iter().filter(|c| !c.newline).map(|c| c.w).sum());
+    // the cursor at the end of the row takes one more column
+    w + 1
 }
 
 fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect) {
@@ -210,6 +324,7 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect) {
     app.vis_events = vis_events;
     app.vis_rows = vis_rows;
     app.feed_x = text_area.x;
+    app.feed_y = text_area.y;
     app.area_w = area_w;
     app.area_h = area_h;
     app.tail_visible = tail_visible;
@@ -222,25 +337,26 @@ fn fresh_note(note: &Option<(String, std::time::Instant)>) -> Option<String> {
         .map(|(t, _)| t.clone())
 }
 
-fn draw_status(app: &mut App, frame: &mut Frame, area: Rect) {
+/// Draw the status row; the width of what it shows.
+fn draw_status(app: &mut App, frame: &mut Frame, area: Rect) -> u16 {
     // ---- the status row (the OpenCode prompt status row): back to
     // bottom when pinned, else spinner + cwd while idle
     if !app.tail_visible {
         app.bottom_bar_rect = Some(area);
         let mut spans = vec![
-            Span::styled(
-                "  ↓ Bas ",
-                Style::default().fg(BRAND).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("(End)", Style::default().fg(DIM)),
+            Span::styled(" ↓ back to the bottom", Style::default().fg(text())),
+            Span::styled(" · end", Style::default().fg(dim())),
         ];
         if app.unseen > 0 {
             spans.push(Span::styled(
-                format!("  ·  {} new lines", app.unseen),
-                Style::default().fg(WARN),
+                format!(" · {} new lines", app.unseen),
+                Style::default().fg(text()),
             ));
         }
-        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+        let line = Line::from(spans);
+        let w = line.width() as u16;
+        frame.render_widget(Paragraph::new(line), area);
+        w
     } else {
         app.bottom_bar_rect = None;
         let flash = fresh_note(&app.flash);
@@ -288,7 +404,9 @@ fn draw_status(app: &mut App, frame: &mut Frame, area: Rect) {
                 Span::styled(" · End: bottom · Ctrl+C: quit", Style::default().fg(DIM)),
             ])
         };
+        let w = status.width() as u16;
         frame.render_widget(Paragraph::new(status), area);
+        w
     }
 }
 
@@ -316,72 +434,7 @@ fn draw_prompt(app: &mut App, frame: &mut Frame, area: Rect, voice_pad: usize) {
             Style::default().fg(DIM),
         )));
     } else {
-        // rows by display width (emojis are 2 columns); the cursor is
-        // the REVERSED grapheme, or a REVERSED space on a newline or at
-        // the end of the text; the selection has the selection colors
-        let rows = editor::layout_input(&app.ed.text, inner);
-        let drawn = editor::drawn_rows(&rows, app.ed.cursor);
-        let cursor = app.ed.cursor;
-        let selection = app.ed.selection();
-        let (cur_row, _) = editor::row_col(&rows, cursor);
-        // taller than the box: scroll so the cursor row stays visible
-        let top = (cur_row + 1).saturating_sub(text_rows);
-        app.composer.top = top;
-        let text_style = Style::default().fg(TEXT);
-        let sel_style = Style::default().fg(TEXT).bg(SELECTION);
-        for row in rows.iter().take(drawn).skip(top) {
-            let mut spans: Vec<Span> = Vec::new();
-            let mut buf = String::new();
-            let mut buf_sel = false;
-            for cell in row {
-                let n = cell.text.chars().count().max(1);
-                let is_cursor = if cell.newline {
-                    cell.ci == cursor
-                } else {
-                    cell.ci <= cursor && cursor < cell.ci + n
-                };
-                let in_sel = selection.is_some_and(|(a, b)| a <= cell.ci && cell.ci < b);
-                if is_cursor || buf_sel != in_sel {
-                    if !buf.is_empty() {
-                        let st = if buf_sel { sel_style } else { text_style };
-                        spans.push(Span::styled(std::mem::take(&mut buf), st));
-                    }
-                    buf_sel = in_sel;
-                }
-                if is_cursor {
-                    // a pending dead key (Option+e…): its accent, marked,
-                    // before the cursor, like macOS; on a full row (no
-                    // column left) it takes the cursor cell instead, so
-                    // the row never overflows and the cursor stays seen
-                    let marked = Style::default().fg(BRAND).add_modifier(Modifier::UNDERLINED);
-                    let row_w: usize = row.iter().map(|c| c.w).sum();
-                    match app.ed.pending_dead() {
-                        Some(acc) if row_w + 1 > inner => spans.push(Span::styled(
-                            acc.to_string(),
-                            marked.add_modifier(Modifier::REVERSED),
-                        )),
-                        acc => {
-                            if let Some(acc) = acc {
-                                spans.push(Span::styled(acc.to_string(), marked));
-                            }
-                            spans.push(Span::styled(
-                                cell.text.to_string(),
-                                text_style.add_modifier(Modifier::REVERSED),
-                            ));
-                        }
-                    }
-                } else if !cell.newline {
-                    buf.push_str(cell.text);
-                } else if in_sel {
-                    // a selected newline shows as one selected blank
-                    buf.push(' ');
-                }
-            }
-            if !buf.is_empty() {
-                spans.push(Span::styled(buf, if buf_sel { sel_style } else { text_style }));
-            }
-            input_lines.push(Line::from(spans));
-        }
+        input_lines = typed_lines(app, inner, text_rows);
     }
     if app.voice.active() {
         input_lines = recording_lines(input_lines, voice_glyph(&app.voice));
@@ -428,6 +481,128 @@ fn draw_prompt(app: &mut App, frame: &mut Frame, area: Rect, voice_pad: usize) {
             .padding(Padding::new(3, 2, 2, 1)),
     );
     frame.render_widget(prompt, area);
+}
+
+/// The composer's typed text as drawn rows, `inner` columns wide, at
+/// most `text_rows` of them (scrolled to keep the cursor row in view;
+/// sets `app.composer.top`).
+fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'static>> {
+    let mut out: Vec<Line<'static>> = Vec::new();
+    // rows by display width (emojis are 2 columns); the cursor is
+    // the REVERSED grapheme, or a REVERSED space on a newline or at
+    // the end of the text; the selection has the selection colors
+    let rows = editor::layout_input(&app.ed.text, inner);
+    let drawn = editor::drawn_rows(&rows, app.ed.cursor);
+    let cursor = app.ed.cursor;
+    let selection = app.ed.selection();
+    let (cur_row, _) = editor::row_col(&rows, cursor);
+    // taller than the box: scroll so the cursor row stays visible
+    let top = (cur_row + 1).saturating_sub(text_rows);
+    app.composer.top = top;
+    let text_style = Style::default().fg(TEXT);
+    let sel_style = Style::default().fg(TEXT).bg(SELECTION);
+    for row in rows.iter().take(drawn).skip(top) {
+        let mut spans: Vec<Span> = Vec::new();
+        let mut buf = String::new();
+        let mut buf_sel = false;
+        for cell in row {
+            let n = cell.text.chars().count().max(1);
+            let is_cursor = if cell.newline {
+                cell.ci == cursor
+            } else {
+                cell.ci <= cursor && cursor < cell.ci + n
+            };
+            let in_sel = selection.is_some_and(|(a, b)| a <= cell.ci && cell.ci < b);
+            if is_cursor || buf_sel != in_sel {
+                if !buf.is_empty() {
+                    let st = if buf_sel { sel_style } else { text_style };
+                    spans.push(Span::styled(std::mem::take(&mut buf), st));
+                }
+                buf_sel = in_sel;
+            }
+            if is_cursor {
+                // a pending dead key (Option+e…): its accent, marked,
+                // before the cursor, like macOS; on a full row (no
+                // column left) it takes the cursor cell instead, so
+                // the row never overflows and the cursor stays seen
+                let marked = Style::default().fg(BRAND).add_modifier(Modifier::UNDERLINED);
+                let row_w: usize = row.iter().map(|c| c.w).sum();
+                match app.ed.pending_dead() {
+                    Some(acc) if row_w + 1 > inner => spans.push(Span::styled(
+                        acc.to_string(),
+                        marked.add_modifier(Modifier::REVERSED),
+                    )),
+                    acc => {
+                        if let Some(acc) = acc {
+                            spans.push(Span::styled(acc.to_string(), marked));
+                        }
+                        spans.push(Span::styled(
+                            cell.text.to_string(),
+                            text_style.add_modifier(Modifier::REVERSED),
+                        ));
+                    }
+                }
+            } else if !cell.newline {
+                buf.push_str(cell.text);
+            } else if in_sel {
+                // a selected newline shows as one selected blank
+                buf.push(' ');
+            }
+        }
+        if !buf.is_empty() {
+            spans.push(Span::styled(buf, if buf_sel { sel_style } else { text_style }));
+        }
+        out.push(Line::from(spans));
+    }
+    out
+}
+
+/// The Switchboard composer: `› ` (dim) then the typed text, one row
+/// per wrapped row, continuation rows indented under the text; while
+/// recording, the level meter takes the place of `›`. An empty
+/// composer shows only the cursor (or a read-only note).
+fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize) {
+    let text_rows = (area.height as usize).max(1);
+    app.composer = ComposerArea {
+        x: area.x + 3,
+        y: area.y,
+        w: inner,
+        h: text_rows,
+        top: 0,
+    };
+    let mut rows = if app.ed.is_empty() && !app.voice.active() {
+        let note = sb::placeholder(app).unwrap_or_default();
+        let mut spans = vec![Span::styled(" ", Style::default().fg(text()).add_modifier(Modifier::REVERSED))];
+        if !note.is_empty() {
+            spans.push(Span::styled(format!(" {}", note), Style::default().fg(dim())));
+        }
+        vec![Line::from(spans)]
+    } else if app.ed.is_empty() {
+        vec![Line::from("")]
+    } else {
+        typed_lines(app, inner, text_rows)
+    };
+    let lead = if app.voice.active() {
+        Span::styled(
+            format!("{} ", voice_glyph(&app.voice)),
+            Style::default().fg(accent()).add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::styled(format!("{} ", G_YOU), Style::default().fg(dim()))
+    };
+    for (i, l) in rows.iter_mut().enumerate() {
+        let mut spans = vec![Span::raw(" "), if i == 0 { lead.clone() } else { Span::raw("  ") }];
+        spans.extend(l.spans.drain(..).map(|s| {
+            if app.voice.active() {
+                let st = s.style.fg(dim());
+                Span::styled(s.content, st)
+            } else {
+                s
+            }
+        }));
+        *l = Line::from(spans);
+    }
+    frame.render_widget(Paragraph::new(rows), area);
 }
 
 fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
@@ -520,14 +695,14 @@ pub(crate) fn truncate_left(s: &str, max: usize) -> String {
     std::iter::once('…').chain(out.into_iter().rev()).collect()
 }
 
-fn hint_text(app: &App) -> &'static str {
+pub(crate) fn hint_text(app: &App) -> &'static str {
     // ---- hint row (the OpenCode prompt right hint row)
     if app.voice.state() == voice::VoiceState::Recording {
-        "recording · any key stops · Esc/Ctrl+C cancel"
+        "recording · any key stops · esc/ctrl+c cancel"
     } else if app.voice.state() == voice::VoiceState::Flushing {
-        "transcribing the last words… · Esc/Ctrl+C cancel"
+        "transcribing the last words… · esc/ctrl+c cancel"
     } else if popup_open(app) && files::token(&app.ed.text, app.ed.cursor).is_some() {
-        "⏎/Tab insert · ⏎/Tab/→ open a folder · ← up · ↑↓ select · Esc close"
+        "⏎/tab insert · ⏎/tab/→ open a folder · ← up · ↑↓ select · esc close"
     } else if let Some(h) = sb::hint(app) {
         h
     } else if app.pending {

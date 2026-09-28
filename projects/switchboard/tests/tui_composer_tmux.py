@@ -23,13 +23,17 @@ tui_tmux.S = S
 
 
 def composer():
-    """The composer's text row(s): the rows between the status row and
-    the meta row ("◆ bend")."""
-    rows = screen().splitlines()
-    meta = max(i for i, r in enumerate(rows) if "◆ bend" in r)
-    # the right side panel starts at its "│" border
-    rows = [r.rsplit("│", 1)[0] if "│" in r else r for r in rows[meta - 3:meta - 1]]
-    return "\n".join(r.split("┃", 1)[-1].strip() for r in rows if r.strip("┃ "))
+    """The composer's text row(s): from the `› ` prompt row to the bottom
+    of the screen (continuation rows are indented), the key hints flush
+    right on the last row left out."""
+    import re
+    rows = screen().rstrip("\n").splitlines()
+    first = max(i for i, r in enumerate(rows) if r.startswith(" › ") or r.rstrip() == " ›")
+    out = []
+    for r in rows[first:]:
+        r = re.sub(r"\s{2,}(⏎|recording|transcribing|y yes|alt\+r|/restore).*$", "", r)
+        out.append(r[3:].strip())
+    return "\n".join(x for x in out if x)
 
 
 def wait_composer(text, timeout=5):
@@ -75,7 +79,7 @@ def main():
     ok = False
     try:
         tui_tmux.start_tui(E, 150, 42)
-        wait_screen("Switchboard")
+        wait_screen("bise :*")
         wait_screen(" idle")
         # one entry in the history
         typed("first message")
@@ -110,7 +114,7 @@ def main():
         wait_composer("Ymy! draft")
         # Cmd+Backspace (Ctrl+U) deletes to the line start; Ctrl+/ undoes
         keys("C-u")
-        wait_composer("Message to main…")   # the empty composer's placeholder
+        wait_composer("")   # the empty composer: the prompt and the cursor only
         keys("C-_")
         wait_composer("Ymy! draft")
         # the feed: drag over "first message" in the fake reply, release copies

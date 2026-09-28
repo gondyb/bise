@@ -41,6 +41,29 @@ def wait_screen(needle, timeout=40):
     raise AssertionError("not on screen: %r" % needle)
 
 
+def wait_re(pattern, timeout=40):
+    """Wait for the regex `pattern` on the screen (multiline)."""
+    import re
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        sc = screen()
+        if re.search(pattern, sc, re.M):
+            return sc
+        time.sleep(0.2)
+    print(screen())
+    raise AssertionError("not on screen: /%s/" % pattern)
+
+
+def panel_row(n, name):
+    """The regex of agent `name`'s panel row: its number, a status glyph."""
+    return r"\b%d \S+ %s\b" % (n, name)
+
+
+def in_view(name):
+    """The regex of the status row naming the agent in view."""
+    return r"^ %s · " % name
+
+
 def wait_gone(needle, timeout=10):
     t0 = time.time()
     while time.time() - t0 < timeout:
@@ -66,22 +89,22 @@ def main():
     ok = False
     try:
         start_tui(E, 150, 42)
-        sc = wait_screen("Switchboard")
-        assert "Message to main…" in sc, sc
+        sc = wait_screen("bise :*")
+        wait_re(in_view("main"))
+        assert "⏎ send · @ agent · / commands" in sc, sc
         wait_screen(" idle")
         typed('crée [[bash: sb spawn t1 --objective "écris {{bash: echo hi-t1}}"]]')
         keys("Enter")
-        sc = wait_screen("1 t1")
+        sc = wait_re(panel_row(1, "t1"))
         wait_screen("new task @t1")
         wait_screen("◀ t1 m_", 60)            # the automatic reply in main's feed
         # select the task with Ctrl+K (next: main, then t1), enter it
         keys("C-k")
         keys("C-k")
-        sc = wait_screen("⏎ enter · Space preview")
+        sc = wait_screen("⏎ enter · space preview")
         keys("Enter")
-        sc = wait_screen("@t1 ·")
-        assert "you talk to the task directly" in sc, sc
-        assert "Direct message to @t1…" in sc, sc
+        sc = wait_re(in_view("t1"))
+        assert "you're talking to t1 directly. main isn't in the loop. esc back to main." in sc, sc
         assert "# Task `t1`" in sc or "Task" in sc, sc
         wait_screen("done: tool bash ok: hi-t1")
         # talk to it directly
@@ -90,18 +113,18 @@ def main():
         wait_screen("ack: salut t1")
         # Esc goes back to main, which learns about it
         keys("Escape")
-        sc = wait_screen("Message to main…")
+        sc = wait_re(in_view("main"))
         wait_screen("You talked to @t1 (1 message)")
         # Alt+1 checks out task 1 again; Esc back
         keys("M-1")
-        wait_screen("Direct message to @t1…")
+        wait_re(in_view("t1"))
         keys("Escape")
-        wait_screen("Message to main…")
+        wait_re(in_view("main"))
         # preview: select, Space; the status says it; Esc closes
         keys("C-k")
         keys("C-k")
         keys("Space")
-        wait_screen("preview of @t1")
+        wait_screen("preview of t1")
         keys("Escape")
         # a slash command and its notice
         typed("/tasks")

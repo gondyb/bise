@@ -7,10 +7,12 @@ use ratatui::text::Line;
 use unicode_width::UnicodeWidthStr;
 
 /// The feed position under the screen cell, from the last frame (the
-/// feed starts at the top of the terminal: the screen row IS the feed
-/// row). `clamp`: a row below the feed is its last row, at the end.
+/// feed starts at screen row `app.feed_y`: under the Switchboard header).
+/// `clamp`: a row below the feed is its last row, at the end; a row
+/// above it is none.
 pub(crate) fn feed_pos(app: &App, x: u16, y: u16, clamp: bool) -> Option<feedsel::FeedPos> {
     let col = x.saturating_sub(app.feed_x) as usize;
+    let y = y.checked_sub(app.feed_y)?;
     let (row, col) = if (y as usize) < app.vis_events.len() {
         (y as usize, col)
     } else if clamp && !app.vis_events.is_empty() {
@@ -261,10 +263,10 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
         }
         MouseEventKind::Drag(MouseButton::Left) if matches!(app.mouse.drag, Some(DragIn::Feed { .. })) => {
             // dragging on the top row or below the feed scrolls
-            if m.row == 0 {
+            if m.row <= app.feed_y {
                 app.follow = false;
                 app.scroll -= 1;
-            } else if m.row as usize >= app.area_h && !app.follow {
+            } else if m.row as usize >= app.feed_y as usize + app.area_h && !app.follow {
                 app.scroll += 1;
             }
             if let (Some(pos), Some(sel)) = (feed_pos(app, m.column, m.row, true), app.feed_sel.as_mut()) {

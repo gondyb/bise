@@ -56,11 +56,16 @@ fn check_frame(app: &mut App, width: u16, height: u16, what: &str) {
             }
         }
         let got = screen_row(&buf, area.x, area.y + i as u16, area.w);
+        // the key hints may sit flush right on the last row
+        let hint = ui::hint_text(app);
+        let got = match got.strip_suffix(hint) {
+            Some(g) if i + 1 == drawn => g.trim_end().to_string(),
+            _ => got,
+        };
         assert_eq!(got, want.trim_end(), "{what}: row {i}");
     }
-    // the row under the text is the blank line before the meta row
-    let under = screen_row(&buf, area.x, area.y + drawn as u16, area.w);
-    assert_eq!(under, "", "{what}: row after the text");
+    // the composer is the last block of the screen: nothing under it
+    assert_eq!(area.y as usize + drawn, height as usize, "{what}: the composer ends the screen");
     let c = if accent.is_some() && fits { c + 1 } else { c };
     let cell = &buf[(area.x + c as u16, area.y + r as u16)];
     assert!(cell.modifier.contains(Modifier::REVERSED), "{what}: cursor at ({r}, {c})");

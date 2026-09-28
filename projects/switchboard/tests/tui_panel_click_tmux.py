@@ -10,7 +10,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tmux, screen, keys, typed, wait_screen  # noqa: E402
+from tui_tmux import tmux, screen, keys, typed, wait_screen, wait_re, panel_row, in_view  # noqa: E402
 import tui_tmux  # noqa: E402
 
 S = "sbclick%d" % os.getpid()
@@ -38,21 +38,25 @@ def main():
     ok = False
     try:
         tui_tmux.start_tui(E, COLS, ROWS)
-        wait_screen("Switchboard")
+        wait_screen("bise :*")
         wait_screen(" idle")
         typed('[[bash: sb spawn t1 --objective "first"]] [[bash: sb spawn t2 --objective "second"]]')
         keys("Enter")
-        wait_screen("1 t1")
-        wait_screen("2 t2")
-        click_on("1 t1")
-        wait_screen("Direct message to @t1…")
-        click_on("2 t2")
-        wait_screen("Direct message to @t2…")
-        # the objective row belongs to the task too
+        wait_re(panel_row(1, "t1"))
+        wait_re(panel_row(2, "t2"))
+        click_on(" t1")
+        wait_re(in_view("t1"))
+        click_on(" t2")
+        wait_re(in_view("t2"))
+        # the selected agent shows its objective under its row: that
+        # row belongs to the agent too
+        keys("C-k")
+        keys("C-k")
+        wait_screen("first")
         click_on("first")
-        wait_screen("Direct message to @t1…")
-        click_on("main")
-        wait_screen("Message to main…")
+        wait_re(in_view("t1"))
+        click_on(" main")
+        wait_re(in_view("main"))
         # the feed still takes clicks: the composer keeps its text
         typed("still here")
         wait_screen("still here")

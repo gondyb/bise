@@ -1,19 +1,24 @@
-//! The chrome of the switchboard mode: the task panel on the right,
-//! the status row, the key hints and the composer placeholder.
+//! The chrome of the switchboard mode: the header row, the agents panel
+//! on the right, the status row, the key hints and the composer
+//! placeholder (bise book §8, §17).
 
 use super::*;
+use unicode_width::UnicodeWidthStr;
 
+/// The status glyph of an agent and its color (book §6): `∿` pulses
+/// while it works, `·` while it starts; only "needs you" and a failure
+/// get a hue.
 pub(super) fn glyph(status: &str, tick: u32) -> (&'static str, Color) {
     match status {
-        "working" => (spinner_frame(tick / 2), BRAND),
-        "waiting" => ("◌", INFO),
-        "starting" => ("…", DIM),
-        "idle" => ("○", DIM),
-        "done" => (GLYPH_OK, OK),
-        "blocked" => (GLYPH_WARN, WARN),
-        "failed" => (GLYPH_ERR, ERR),
-        "stopped" => ("■", DIM),
-        _ => ("·", FAINT),
+        "working" => working_frame(tick),
+        "starting" => starting_frame(tick),
+        "waiting" => (G_WAITING, text()),
+        "blocked" => (G_NEEDS_YOU, accent()),
+        "done" => (G_DONE, text()),
+        "failed" => (G_FAILED, error()),
+        "idle" => (G_IDLE, dim()),
+        "stopped" | "archived" => (G_STOPPED, dim()),
+        _ => (G_STARTING, faint()),
     }
 }
 
@@ -41,94 +46,323 @@ pub(crate) fn split(app: &App, full: Rect) -> (Rect, Option<Rect>) {
     )
 }
 
+/// The panel title: `agents · ⌥ + number` (the key part faint).
+pub(crate) const PANEL_TITLE: (&str, &str) = ("agents", " · ⌥ + number");
+
+/// The agent waits on you: it is blocked, or one of its cards asks you
+/// something.
+fn needs_you(sb: &Sb, a: &Agent) -> bool {
+    a.status == "blocked"
+        || (!matches!(a.status.as_str(), "failed" | "stopped" | "archived")
+            && sb
+                .cards
+                .iter()
+                .any(|c| c.agent == a.name && matches!(c.kind.as_str(), "question" | "blocked")))
+}
+
+/// A duration in the panel: `40s`, `12m`, `3h`, `2d`.
+pub(crate) fn short_age(ms: u64) -> String {
+    let s = ms / 1000;
+    match s {
+        0..=59 => format!("{}s", s),
+        60..=3599 => format!("{}m", s / 60),
+        3600..=86_399 => format!("{}h", s / 3600),
+        _ => format!("{}d", s / 86_400),
+    }
+}
+
+/// What the right side of an agent's row says, and its color: its age
+/// and context fill while it works, else its state in one word.
+fn right_of(app: &App, sb: &Sb, a: &Agent) -> (String, Color) {
+    if needs_you(sb, a) {
+        return ("you".into(), accent());
+    }
+    let fill = || sb.usage_of(app, &a.name).map(|u| u.short());
+    let busy = || {
+        let parts: Vec<String> = a.turn_ms.map(short_age).into_iter().chain(fill()).collect();
+        parts.join(" · ")
+    };
+    let s = match a.status.as_str() {
+        "working" => busy(),
+        // who it waits on is not in the hub's snapshot (yet)
+        "waiting" => "waiting".into(),
+        _ if a.main => String::new(),
+        "idle" => fill().map_or_else(|| "idle".into(), |f| format!("idle · {}", f)),
+        s => s.to_string(),
+    };
+    (s, dim())
+}
+
+/// One row of the panel, `w` columns: ` N G name marks …… right `. The
+/// name is cut to leave room for the marks and the right side; `bg`
+/// paints the whole row (the selection).
+#[allow(clippy::too_many_arguments)]
+fn row(
+    num: Option<usize>,
+    g: (&str, Color),
+    name: &str,
+    name_style: Style,
+    marks: Vec<Span<'static>>,
+    right: (String, Color),
+    w: usize,
+    bg: Option<Color>,
+) -> Line<'static> {
+    let num = match num {
+        Some(n) if n <= 9 => n.to_string(),
+        _ => " ".to_string(),
+    };
+    let lead = format!(" {} ", num);
+    let gl = format!("{} ", g.0);
+    let marks_w: usize = marks.iter().map(|s| s.content.width()).sum();
+    let right_w = if right.0.is_empty() { 0 } else { right.0.width() + 1 };
+    // 1 column of margin on the right
+    let room = w.saturating_sub(lead.width() + gl.width() + marks_w + right_w + 1);
+    let name = fit(name, room);
+    let used = lead.width() + gl.width() + name.width() + marks_w;
+    let pad = w.saturating_sub(used + right_w + 1);
+    let mut spans = vec![
+        Span::styled(lead, Style::default().fg(faint())),
+        Span::styled(gl, Style::default().fg(g.1)),
+        Span::styled(name, name_style),
+    ];
+    spans.extend(marks);
+    spans.push(Span::raw(" ".repeat(pad)));
+    if right_w > 0 {
+        spans.push(Span::styled(format!(" {}", right.0), Style::default().fg(right.1)));
+    }
+    spans.push(Span::raw(" "));
+    if let Some(bg) = bg {
+        spans = spans.into_iter().map(|s| { let st = s.style.bg(bg); s.style(st) }).collect();
+    }
+    Line::from(spans)
+}
+
+/// `s` cut to `max` display columns, `…` at the cut.
+fn fit(s: &str, max: usize) -> String {
+    if s.width() <= max {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    for c in s.chars() {
+        if out.width() + c.to_string().width() + 1 > max {
+            break;
+        }
+        out.push(c);
+    }
+    if max > 0 {
+        out.push('…');
+    }
+    out
+}
+
+/// The row of live agent `a`, number `i` (0 main; blank after 9).
+fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, w: usize) -> Line<'static> {
+    let focused = a.name == sb.focus;
+    let selected = sb.selected == Some(i);
+    let g = if a.main {
+        (G_MAIN, accent())
+    } else if needs_you(sb, a) {
+        (G_NEEDS_YOU, accent())
+    } else {
+        glyph(&a.status, app.tick)
+    };
+    let name_style = if focused {
+        Style::default().fg(accent()).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(text())
+    };
+    let mut marks = Vec::new();
+    if sb.activity.contains(&a.name) && !focused {
+        marks.push(Span::styled(format!(" {}", G_UNREAD), Style::default().fg(accent())));
+    }
+    if a.branch.is_some() || a.mode == "worktree" {
+        marks.push(Span::styled(format!(" {}", G_WORKTREE), Style::default().fg(dim())));
+    }
+    if a.queued > 0 {
+        marks.push(Span::styled(format!(" {}{}", G_MSG, a.queued), Style::default().fg(dim())));
+    }
+    let bg = selected.then(selection_bg);
+    row(Some(i), g, &a.name, name_style, marks, right_of(app, sb, a), w, bg)
+}
+
+/// The live agents (main and the archived left out) by what the header
+/// counts: working, waiting, needs you, done.
+fn counts(sb: &Sb) -> Option<[usize; 4]> {
+    let live: Vec<&Agent> = sb.agents.iter().filter(|a| !a.main && !a.archived()).collect();
+    if live.is_empty() {
+        return None;
+    }
+    let mut n = [0; 4];
+    for a in live {
+        let k = if needs_you(sb, a) {
+            2
+        } else {
+            match a.status.as_str() {
+                "working" => 0,
+                "waiting" => 1,
+                "done" => 3,
+                _ => continue,
+            }
+        };
+        n[k] += 1;
+    }
+    Some(n)
+}
+
+impl Sb {
+    /// The header row (book §8): `bise :*` on the left; on the right the
+    /// non-zero counts `∿ 3 working · … 1 waiting · ? 1 needs you · ♡ 1
+    /// done` (`? … needs you` in accent), shortened to `∿ 3 · ? 1` when
+    /// `short` (no panel), or `no agents yet`. A method, so `ui.rs` reaches
+    /// it through `app.sb` (the `panel` module is private to `sb`).
+    pub(crate) fn header(&self, width: u16, short: bool) -> Line<'static> {
+        let sb = self;
+        let mut spans = vec![
+            Span::styled(" bise ", Style::default().fg(text()).add_modifier(Modifier::BOLD)),
+            Span::styled(G_MAIN, Style::default().fg(accent())),
+        ];
+        let mut right: Vec<Span<'static>> = Vec::new();
+        match counts(sb) {
+            None => right.push(Span::styled("no agents yet", Style::default().fg(dim()))),
+            Some(n) => {
+                let parts = [
+                    (G_WORKING, "working", dim()),
+                    (G_WAITING, "waiting", dim()),
+                    (G_NEEDS_YOU, "needs you", accent()),
+                    (G_DONE, "done", dim()),
+                ];
+                for (k, (g, word, color)) in parts.into_iter().enumerate().filter(|(k, _)| n[*k] > 0) {
+                    if !right.is_empty() {
+                        right.push(Span::styled(" · ", Style::default().fg(dim())));
+                    }
+                    let t = if short { format!("{} {}", g, n[k]) } else { format!("{} {} {}", g, n[k], word) };
+                    right.push(Span::styled(t, Style::default().fg(color)));
+                }
+            }
+        }
+        let left_w: usize = spans.iter().map(|s| s.content.width()).sum();
+        let right_w: usize = right.iter().map(|s| s.content.width()).sum();
+        // one column of margin on the right; too narrow: the counts go
+        let pad = (width as usize).saturating_sub(left_w + right_w + 1);
+        if pad >= 2 {
+            spans.push(Span::raw(" ".repeat(pad)));
+            spans.extend(right);
+        }
+        Line::from(spans)
+    }
+}
+
 pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     let Some(sb) = app.sb.as_ref() else { return };
-    let w = area.width.saturating_sub(3) as usize;
+    // the left border takes one column
+    let w = area.width.saturating_sub(1) as usize;
+    let title = Line::from(vec![
+        Span::styled(format!(" {}", PANEL_TITLE.0), Style::default().fg(text())),
+        Span::styled(PANEL_TITLE.1, Style::default().fg(faint())),
+    ]);
     let mut lines: Vec<Line> = Vec::new();
-    let ws = std::path::Path::new(&sb.workspace)
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_default();
-    lines.push(Line::from(vec![
-        Span::styled(
-            " Switchboard ",
-            Style::default().fg(BRAND).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            truncate_chars(&ws, w.saturating_sub(13)),
-            Style::default().fg(DIM),
-        ),
-    ]));
-    lines.push(Line::from(""));
     let nav = sb.nav();
     let live = nav.iter().filter(|a| !a.archived()).count();
     let mut owners: Vec<(usize, Hit)> = Vec::new();
     // the first row of the selected entry (the panel scrolls to it)
     let mut sel_row = None;
     for (i, a) in nav.iter().take(live).enumerate() {
-        let rows = agent_lines(app, sb, a, i, w);
         if sb.selected == Some(i) {
             sel_row = Some(lines.len());
         }
-        owners.extend((lines.len()..lines.len() + rows.len()).map(|r| (r, Hit::Agent(a.name.clone()))));
-        lines.extend(rows);
-        if a.main && live > 1 {
-            lines.push(Line::from(Span::styled(
-                format!(" {}", "─".repeat(w.saturating_sub(1))),
-                Style::default().fg(FAINT),
-            )));
-        }
-    }
-    if !sb.cards.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            format!(" ◆ cards ({}) · Ctrl+G", sb.cards.len()),
-            Style::default().fg(WARN).add_modifier(Modifier::BOLD),
-        )));
-        for c in &sb.cards {
-            lines.push(Line::from(vec![
-                Span::styled(format!(" #{} ", c.id), Style::default().fg(WARN)),
-                Span::styled(
-                    truncate_chars(&format!("{} @{}", c.kind, c.agent), w.saturating_sub(5)),
-                    Style::default().fg(TEXT),
-                ),
-            ]));
-            lines.push(Line::from(Span::styled(
-                format!("   {}", truncate_chars(&c.text, w.saturating_sub(3))),
-                Style::default().fg(DIM),
-            )));
+        owners.push((lines.len(), Hit::Agent(a.name.clone())));
+        lines.push(agent_row(app, sb, a, i, w));
+        // the selected agent: what it is for and its last note, under its row
+        if sb.selected == Some(i) && !a.main {
+            for t in [&a.objective, &a.note].into_iter().filter(|t| !t.is_empty()) {
+                owners.push((lines.len(), Hit::Agent(a.name.clone())));
+                lines.push(Line::from(Span::styled(
+                    format!("     {}", fit(t, w.saturating_sub(6))),
+                    Style::default().fg(dim()),
+                )));
+            }
         }
     }
     archived_lines(sb, live, w, &mut lines, &mut owners, &mut sel_row);
-    // keep the selected entry in view (the archived list can be long)
-    let h = area.height as usize;
-    let top = sel_row.map_or(0, |r| (r + 3).saturating_sub(h));
+    // the body under the title: scrolled to keep the selection in view;
+    // what does not fit below ends in `+ {n} more`
+    let h = (area.height as usize).saturating_sub(1);
+    let (top, more) = window(&lines, &owners, sel_row, h, sb.archived_open, sb.archived().len());
+    let mut body: Vec<Line> = lines.into_iter().skip(top).take(if more.is_some() { h - 1 } else { h }).collect();
+    if let Some(n) = more {
+        body.push(Line::from(Span::styled(format!(" + {} more", n), Style::default().fg(dim()))));
+    }
+    let shown = body.len() - usize::from(more.is_some());
     if let Ok(mut hits) = sb.panel_hits.try_borrow_mut() {
         *hits = PanelHits {
             area,
             rows: owners
                 .into_iter()
-                .filter(|(r, _)| *r >= top && *r - top < h)
-                .map(|(r, hit)| (area.y.saturating_add((r - top) as u16), hit))
+                .filter(|(r, _)| *r >= top && *r - top < shown)
+                .map(|(r, hit)| (area.y.saturating_add(1 + (r - top) as u16), hit))
                 .collect(),
         };
     }
+    let mut all = vec![title];
+    all.extend(body);
     frame.render_widget(
-        Paragraph::new(lines).scroll((top.min(u16::MAX as usize) as u16, 0)).block(
+        Paragraph::new(all).block(
             Block::default()
                 .borders(Borders::LEFT)
-                .border_style(Style::default().fg(FAINT)),
+                .border_style(Style::default().fg(faint())),
         ),
         area,
     );
 }
 
-/// The archived section, under the cards: a dim header `▸ N archived`
-/// (`▾` expanded), then, expanded, one row per task, newest first: name
-/// and how long ago it was last heard of; the selected or focused one
-/// also shows its last report (or its objective). Collapsed, only the
-/// archived task in focus is listed, so the view in focus is always
-/// found in the panel.
+/// The first body row shown in `h` rows, and the `+ {n} more` count
+/// when rows are left below: the agents under the window (a folded
+/// archived section counts its agents).
+fn window(
+    lines: &[Line],
+    owners: &[(usize, Hit)],
+    sel_row: Option<usize>,
+    h: usize,
+    archived_open: bool,
+    archived: usize,
+) -> (usize, Option<usize>) {
+    if lines.len() <= h || h < 2 {
+        return (0, None);
+    }
+    // the selection (and the row under it) stays in view, over the
+    // `+ n more` row
+    let top = sel_row.map_or(0, |r| (r + 3).saturating_sub(h));
+    if top + h >= lines.len() {
+        // the end of the list fits: no `+ n more`
+        return (lines.len() - h, None);
+    }
+    let end = top + h - 1;
+    let mut below: Vec<&Hit> = Vec::new();
+    for (r, hit) in owners {
+        if *r >= end && !below.contains(&hit) {
+            below.push(hit);
+        }
+    }
+    let n = below
+        .iter()
+        .map(|h| match h {
+            Hit::Agent(_) => 1,
+            Hit::Archived if !archived_open => archived,
+            Hit::Archived => 0,
+        })
+        .sum::<usize>();
+    if n == 0 {
+        return (lines.len() - h, None);
+    }
+    (top, Some(n))
+}
+
+/// The archived section, at the bottom: a dim folded row `▸ {n}
+/// archived` (`▾` open), then, open, one row per agent, newest first:
+/// its name and how long ago it was last heard of; the selected or
+/// focused one also shows its last report (or its objective). Folded,
+/// only the archived agent in focus is listed, so the view in focus is
+/// always found in the panel.
 fn archived_lines(
     sb: &Sb,
     live: usize,
@@ -146,11 +380,11 @@ fn archived_lines(
         .map_or(0, |d| d.as_millis() as u64);
     lines.push(Line::from(""));
     owners.push((lines.len(), Hit::Archived));
-    let (arrow, keys) = if sb.archived_open { ("▾", "") } else { ("▸", " · click or /archived") };
-    lines.push(Line::from(vec![
-        Span::styled(format!(" {} {} archived", arrow, all.len()), Style::default().fg(DIM)),
-        Span::styled(truncate_chars(keys, w.saturating_sub(14)), Style::default().fg(FAINT)),
-    ]));
+    let arrow = if sb.archived_open { G_OPEN } else { G_CLOSED };
+    lines.push(Line::from(Span::styled(
+        format!(" {} {} archived", arrow, all.len()),
+        Style::default().fg(dim()),
+    )));
     for (k, a) in all.iter().enumerate() {
         let focused = a.name == sb.focus;
         if !sb.archived_open && !focused {
@@ -160,22 +394,16 @@ fn archived_lines(
         if selected {
             *sel_row = Some(lines.len());
         }
-        let age = a.report_ms.map(|t| cards::ago(now.saturating_sub(t))).unwrap_or_default();
-        let mut name_style = Style::default().fg(if focused { BRAND } else { DIM });
-        if selected {
-            name_style = name_style.add_modifier(Modifier::REVERSED);
-        }
+        let age = a.report_ms.map(|t| short_age(now.saturating_sub(t))).unwrap_or_default();
+        let name_style = Style::default().fg(if focused { accent() } else { dim() });
         let first = lines.len();
-        lines.push(Line::from(vec![
-            Span::styled("   · ", Style::default().fg(FAINT)),
-            Span::styled(truncate_chars(&a.name, w.saturating_sub(12)), name_style),
-            Span::styled(format!(" {}", age), Style::default().fg(FAINT)),
-        ]));
+        let bg = selected.then(selection_bg);
+        lines.push(row(None, (G_STOPPED, faint()), &a.name, name_style, Vec::new(), (age, dim()), w, bg));
         if selected || focused {
             let what = if a.report.is_empty() { &a.objective } else { &a.report };
             lines.push(Line::from(Span::styled(
-                format!("     {}", truncate_chars(what, w.saturating_sub(5))),
-                Style::default().fg(DIM),
+                format!("     {}", fit(what, w.saturating_sub(6))),
+                Style::default().fg(dim()),
             )));
         }
         owners.extend((first..lines.len()).map(|r| (r, Hit::Agent(a.name.clone()))));
@@ -241,196 +469,136 @@ pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bo
     true
 }
 
-/// The status row in switchboard mode (None: the plain one).
+/// The status row in switchboard mode (None: the plain one): the agent
+/// you talk to in accent, then dim: its state, the turn's duration, its
+/// context, `shared folder` or `⎇ branch`, then the notes (preview,
+/// read-only, cards, the hub's version).
+/// `main · idle · 210k / 1M tokens · 21%`.
 pub(crate) fn status_line(app: &App) -> Option<Line<'static>> {
     let sb = app.sb.as_ref()?;
     let a = sb.agent(&sb.focus).cloned().unwrap_or_default();
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    if !sb.version.is_empty() {
+    let d = |t: String| Span::styled(format!(" · {}", t), Style::default().fg(dim()));
+    let mut spans: Vec<Span<'static>> = vec![
+        Span::raw(" "),
+        Span::styled(sb.focus.clone(), Style::default().fg(accent())),
+    ];
+    if !a.status.is_empty() {
+        spans.push(d(a.status.clone()));
+    }
+    if let Some(ms) = a.turn_ms.filter(|_| app.pending) {
+        spans.push(d(short_age(ms)));
+    }
+    if let Some(u) = crate::usage::current(&app.events) {
+        spans.push(d(u.label()));
+    }
+    if let Some(b) = &a.branch {
+        spans.push(d(format!("{} {}", G_WORKTREE, b)));
+    } else if !a.main && !a.path.is_empty() && a.mode == "shared" {
+        spans.push(d("shared folder".into()));
+    }
+    if a.archived() {
+        spans.push(d("read-only history · /restore brings it back".into()));
+    }
+    if sb.preview {
+        if let Some(sel) = sb.selected_agent().map(|a| a.name.clone()) {
+            spans.push(d(format!("preview of {}", sel)));
+        }
+    }
+    if !sb.cards.is_empty() && !sb.card.shown {
+        let n = sb.cards.len();
+        spans.push(Span::styled(" · ", Style::default().fg(dim())));
         spans.push(Span::styled(
-            format!("  v {}", sb.version.chars().take(24).collect::<String>()),
-            Style::default().fg(DIM),
+            format!("{} {} card{} · ctrl+g", G_CARD, n, if n > 1 { "s" } else { "" }),
+            Style::default().fg(accent()),
         ));
     }
     for i in &sb.versions {
         if i.marks.iter().any(|m| m == "building") {
-            spans.push(Span::styled(format!("  ⧗ building {}", i.rev), Style::default().fg(WARN)));
+            spans.push(d(format!("{} building {}", G_BUILDING, i.rev)));
         }
         if i.marks.iter().any(|m| m == "trial") {
-            spans.push(Span::styled(format!("  ⧗ {} on trial", i.rev), Style::default().fg(WARN)));
+            spans.push(d(format!("{} {} on trial", G_BUILDING, i.rev)));
         }
     }
-    if app.pending {
-        spans.push(Span::styled(
-            format!("  {} ", spinner_frame(app.tick / 2)),
-            Style::default().fg(BRAND),
-        ));
-    } else {
-        spans.push(Span::styled("  ● ", Style::default().fg(BRAND)));
-    }
-    if sb.focus == "main" {
-        spans.push(Span::styled(
-            "main".to_string(),
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
-        ));
-    } else {
-        spans.push(Span::styled(
-            format!("@{}", sb.focus),
-            Style::default().fg(BRAND).add_modifier(Modifier::BOLD),
-        ));
-    }
-    spans.push(Span::styled(
-        format!(" · {}", a.status),
-        Style::default().fg(DIM),
-    ));
-    if let Some(b) = &a.branch {
-        spans.push(Span::styled(
-            format!(" · ⎇ {}", b),
-            Style::default().fg(DIM),
-        ));
-    } else if !a.main && !a.path.is_empty() && a.mode == "shared" {
-        spans.push(Span::styled(
-            " · shared folder".to_string(),
-            Style::default().fg(DIM),
-        ));
-    }
-    if let Some(u) = crate::usage::current(&app.events) {
-        spans.push(Span::styled(format!(" · {}", u.label()), Style::default().fg(DIM)));
-    }
-    if let Some(ms) = a.turn_ms.filter(|_| app.pending) {
-        spans.push(Span::styled(
-            format!(" · {}s", ms / 1000),
-            Style::default().fg(DIM),
-        ));
-    }
-    if a.archived() {
-        spans.push(Span::styled(
-            " · read-only history · /restore brings it back · Esc → main".to_string(),
-            Style::default().fg(DIM),
-        ));
-    } else if sb.focus != "main" {
-        spans.push(Span::styled(
-            " · you talk to the task directly · Esc → main".to_string(),
-            Style::default().fg(INFO),
-        ));
-    }
-    if sb.preview {
-        if let Some(sel) = sb
-            .selected_agent()
-            .map(|a| a.name.clone())
-        {
-            spans.push(Span::styled(
-                format!(" · preview of @{} (⏎ enter, Esc close)", sel),
-                Style::default().fg(WARN),
-            ));
-        }
-    }
-    if !sb.cards.is_empty() && !sb.card.shown {
-        spans.push(Span::styled(
-            format!(
-                " · ◆ {} card{} · Ctrl+G",
-                sb.cards.len(),
-                if sb.cards.len() > 1 { "s" } else { "" }
-            ),
-            Style::default().fg(WARN).add_modifier(Modifier::BOLD),
-        ));
+    if !sb.version.is_empty() {
+        spans.push(d(format!("v {}", sb.version.chars().take(24).collect::<String>())));
     }
     if !app.connected {
+        spans.push(Span::styled(" · ", Style::default().fg(dim())));
         spans.push(Span::styled(
-            " · ○ hub disconnected".to_string(),
-            Style::default().fg(ERR),
+            format!("{} hub disconnected · reconnecting…", G_IDLE),
+            Style::default().fg(error()),
         ));
     }
     Some(Line::from(spans))
 }
 
+/// The key hints, flush right on the composer row (copy deck §17).
 pub(crate) fn hint(app: &App) -> Option<&'static str> {
     let sb = app.sb.as_ref()?;
     Some(if sb.confirm.is_some() {
-        "y yes · n no · Esc cancel"
+        "y yes · n no · esc cancel"
     } else if sb.card.full {
-        "Alt+R answer · PgUp/PgDn scroll · Ctrl+N/P card · Ctrl+X close · Ctrl+F/Esc shrink · Ctrl+G hide"
+        "alt+r answer · pgup/pgdn scroll · ctrl+f back"
     } else if sb.card.shown {
-        "Alt+R answer (⏎ still goes to main) · PgUp/PgDn scroll · Ctrl+N/P card · Ctrl+F full screen · Ctrl+X close · Ctrl+G hide"
+        "alt+r answer with text · ctrl+x later · ctrl+f full screen"
     } else if sb.selected.is_some() {
-        "⏎ enter · Space preview · D drop · A archived · Ctrl+K/J select · Esc close"
+        "⏎ enter · space preview · D drop · esc close"
     } else if sb.focus_archived() {
-        "archived: read-only · /restore brings it back · Esc back to main · Ctrl+K/J tasks · /help"
+        "/restore brings it back · esc back to main"
     } else if app.pending {
-        "⏎ steer · Ctrl+C interrupt · Ctrl+K/J tasks · Alt+N° task N · Esc main · /help"
-    } else if sb.focus != "main" {
-        "⏎ send to the task · @main … for main · Esc back to main · Ctrl+K/J tasks · Alt+N° task N · /help"
+        "⏎ steer · ctrl+c interrupt"
     } else {
-        "⏎ send to main · @task … direct · Ctrl+K/J tasks · Alt+N° task N · Ctrl+G card · /help"
+        "⏎ send · @ agent · / commands"
     })
 }
 
+/// What the empty composer shows after the cursor: nothing, but a
+/// read-only note in an archived agent's history.
 pub(crate) fn placeholder(app: &App) -> Option<String> {
     let sb = app.sb.as_ref()?;
-    Some(if sb.focus == "main" {
-        "Message to main…".to_string()
-    } else if sb.focus_archived() {
-        format!("@{} is archived (read-only) · /restore brings it back", sb.focus)
+    Some(if sb.focus_archived() {
+        format!("{} is archived: read-only", sb.focus)
     } else {
-        format!("Direct message to @{}…", sb.focus)
+        String::new()
     })
 }
 
-/// The rows of agent `a`, entry `i` of the panel, `w` columns wide: its
-/// glyph, name, status, context use, unseen lines and queue, then (a
-/// task) its branch and objective and its note.
-fn agent_lines(app: &App, sb: &Sb, a: &Agent, i: usize, w: usize) -> Vec<Line<'static>> {
-    let mut out = Vec::new();
-    let (g, gc) = glyph(&a.status, app.tick);
-    let focused = a.name == sb.focus;
-    let selected = sb.selected == Some(i);
-    let mut name_style = Style::default().fg(if focused { BRAND } else { TEXT });
-    if focused {
-        name_style = name_style.add_modifier(Modifier::BOLD);
+/// The first-run text (book §8, §17): shown dim in main's empty feed
+/// while there are no agents yet.
+pub(crate) const FIRST_RUN: [&str; 3] = [
+    "what's on your mind?",
+    "say it and keep talking. the work runs in the background, i'm always here.",
+    "try: \"fix the flaky login test, and draft the release note\"",
+];
+
+impl Sb {
+    /// No agents yet and main in view: the first-run text, which shows
+    /// while main's feed is empty.
+    pub(crate) fn first_run(&self) -> Option<[&'static str; 3]> {
+        (self.focus == "main" && counts(self).is_none() && !self.preview).then_some(FIRST_RUN)
     }
-    if selected {
-        name_style = name_style.add_modifier(Modifier::REVERSED);
-    }
-    let label = if a.main {
-        "main".to_string()
-    } else {
-        format!("{} {}", i, a.name)
-    };
-    let mut spans = vec![
-        Span::styled(format!(" {} ", g), Style::default().fg(gc)),
-        Span::styled(truncate_chars(&label, w.saturating_sub(12)), name_style),
-        Span::styled(format!(" {}", a.status), Style::default().fg(DIM)),
-    ];
-    if let Some(u) = sb.usage_of(app, &a.name) {
-        spans.push(Span::styled(format!(" {}", u.short()), Style::default().fg(FAINT)));
-    }
-    if sb.activity.contains(&a.name) && !focused {
-        spans.push(Span::styled(" •", Style::default().fg(INFO)));
-    }
-    if a.queued > 0 {
-        spans.push(Span::styled(
-            format!(" ✉{}", a.queued),
-            Style::default().fg(WARN),
-        ));
-    }
-    out.push(Line::from(spans));
-    if !a.main {
-        let mut sub = truncate_chars(&a.objective, w.saturating_sub(3));
-        if let Some(b) = &a.branch {
-            sub = truncate_chars(&format!("⎇ {} · {}", b, a.objective), w.saturating_sub(3));
+
+    /// The line pinned on top of the feed: the preview of the selected
+    /// agent, or, inside an agent, that main is out of the loop.
+    pub(crate) fn feed_banner(&self) -> Option<Line<'static>> {
+        let dim = Style::default().fg(dim());
+        if self.preview {
+            let name = self.selected_agent().map(|a| a.name.clone()).filter(|n| *n != self.focus)?;
+            return Some(Line::from(vec![
+                Span::styled("preview · ", dim),
+                Span::styled(name, Style::default().fg(text())),
+                Span::styled(" · ⏎ enter · esc close", dim),
+            ]));
         }
-        out.push(Line::from(Span::styled(
-            format!("   {}", sub),
-            Style::default().fg(FAINT),
-        )));
-        if !a.note.is_empty() {
-            out.push(Line::from(Span::styled(
-                format!("   {}", truncate_chars(&a.note, w.saturating_sub(3))),
-                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-            )));
+        if self.focus == "main" || self.focus_archived() || self.agent(&self.focus).is_none() {
+            return None;
         }
+        Some(Line::from(Span::styled(
+            format!("you're talking to {} directly. main isn't in the loop. esc back to main.", self.focus),
+            dim,
+        )))
     }
-    out
 }
 
 #[cfg(test)]
@@ -470,8 +638,8 @@ mod tests {
             .unwrap_or_else(|| panic!("{} not in the panel:\n{}", label, rows.join("\n")))
     }
 
-    /// A click on an agent's row (its name or its objective) focuses it,
-    /// like Alt+N; a click on a blank panel row changes nothing.
+    /// A click on an agent's row focuses it, like Alt+N (the objective
+    /// under the selected row too); a click on the title changes nothing.
     #[test]
     fn a_click_on_an_agent_row_focuses_it() {
         let mut app = bench::test_app_drained();
@@ -487,18 +655,28 @@ mod tests {
         };
         draw(&mut app, &mut term);
         let panel_x = app.sb.as_ref().unwrap().panel_hits.borrow().area.x;
-        for (label, name) in [("1 alpha", "alpha"), ("third objective", "gamma"), ("2 beta", "beta")] {
+        for (label, name) in [("alpha", "alpha"), ("beta", "beta")] {
             let (x, y) = find(&screen(&term), panel_x, label);
             click(&mut app, x, y);
             assert_eq!(app.sb.as_ref().unwrap().focus, name, "click on {:?}", label);
             draw(&mut app, &mut term);
         }
+        // the selected agent shows its objective under its row
+        if let Some(sb) = app.sb.as_mut() {
+            sb.selected = Some(3);
+        }
+        draw(&mut app, &mut term);
+        let (x, y) = find(&screen(&term), panel_x, "third objective");
+        click(&mut app, x, y);
+        assert_eq!(app.sb.as_ref().unwrap().focus, "gamma");
+        draw(&mut app, &mut term);
         let (x, y) = find(&screen(&term), panel_x, "main");
         click(&mut app, x, y);
         assert_eq!(app.sb.as_ref().unwrap().focus, "main");
-        // the blank row under the title: nothing happens
+        // the title row: nothing happens
         draw(&mut app, &mut term);
-        click(&mut app, panel_x + 3, 1);
+        let (x, y) = find(&screen(&term), panel_x, PANEL_TITLE.0);
+        click(&mut app, x, y);
         assert_eq!(app.sb.as_ref().unwrap().focus, "main");
         // a click in the feed is not the panel's
         let m = MouseEvent {
@@ -508,6 +686,147 @@ mod tests {
             modifiers: KeyModifiers::NONE,
         };
         assert!(!panel_mouse(&mut app, &m));
+    }
+
+    fn agent(name: &str, status: &str) -> Agent {
+        Agent { name: name.into(), status: status.into(), ..Agent::default() }
+    }
+
+    /// main and one agent in every state, as in the mockup.
+    fn every_state() -> App {
+        let mut app = bench::test_app_drained();
+        let sb = app.sb.as_mut().unwrap();
+        sb.agents.push(Agent { name: "main".into(), main: true, status: "idle".into(), ..Agent::default() });
+        sb.agents.push(Agent { turn_ms: Some(12 * 60_000), ..agent("auth-fix", "working") });
+        sb.agents.push(agent("tests", "starting"));
+        sb.agents.push(agent("docs", "waiting"));
+        sb.agents.push(agent("api-v2", "waiting"));
+        sb.agents.push(agent("bench", "done"));
+        sb.agents.push(agent("deploy", "failed"));
+        sb.agents.push(agent("ideas", "idle"));
+        sb.agents.push(agent("old-spike", "stopped"));
+        sb.agents.push(Agent { branch: Some("sb/big".into()), mode: "worktree".into(), ..agent("big-refactor-of-auth", "working") });
+        sb.agents.push(agent("eleventh", "idle"));
+        sb.cards.push(Card {
+            id: 1,
+            kind: "question".into(),
+            agent: "docs".into(),
+            text: "v1 or v2?".into(),
+            age_ms: 0,
+            seen_at: std::time::Instant::now(),
+            note: String::new(),
+        });
+        sb.activity.insert("auth-fix".into());
+        app
+    }
+
+    /// The panel alone, `w` columns wide, `h` rows high.
+    fn panel_rows(app: &App, w: u16, h: u16) -> Vec<String> {
+        let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+        term.draw(|f| draw_panel(app, f, f.area())).unwrap();
+        screen(&term)
+    }
+
+    fn trimmed(rows: &[String]) -> Vec<String> {
+        rows.iter().map(|r| r.trim_end().to_string()).collect()
+    }
+
+    /// The row layout at the two panel widths: number (0-9, blank
+    /// after), status glyph, name, marks, the right side flush right
+    /// with one column of margin; the title never wraps.
+    #[test]
+    fn panel_rows_at_28_and_40() {
+        let app = every_state();
+        for w in [28u16, 40] {
+            let rows = panel_rows(&app, w, 16);
+            let t = trimmed(&rows);
+            let row = |n: &str| t.iter().find(|r| r.contains(n)).unwrap_or_else(|| panic!("{} missing:\n{}", n, t.join("\n"))).clone();
+            assert_eq!(t[0], format!("│ {}{}", PANEL_TITLE.0, PANEL_TITLE.1), "the title on one row at {}", w);
+            assert_eq!(row("main"), format!("│ 0 {} main", G_MAIN));
+            let flush = |n: &str, right: &str| {
+                let r = row(n);
+                assert!(r.ends_with(right), "{:?} ends with {:?} at {}", r, right, w);
+                // one column of margin on the right
+                assert_eq!(rows.iter().find(|x| x.contains(n)).unwrap().chars().count(), w as usize);
+                assert_eq!(r.chars().count(), w as usize - 1, "{:?} flush right at {}", r, w);
+            };
+            flush("auth-fix", "12m");
+            assert!(row("auth-fix").starts_with(&format!("│ 1 {} auth-fix {}", G_WORKING, G_UNREAD)));
+            flush("tests", "starting");
+            flush("docs", "you");
+            assert!(row("docs").starts_with(&format!("│ 3 {} docs", G_NEEDS_YOU)));
+            flush("api-v2", "waiting");
+            assert!(row("api-v2").starts_with(&format!("│ 4 {} api-v2", G_WAITING)));
+            flush("bench", "done");
+            assert!(row("bench").starts_with(&format!("│ 5 {} bench", G_DONE)));
+            flush("deploy", "failed");
+            assert!(row("deploy").starts_with(&format!("│ 6 {} deploy", G_FAILED)));
+            flush("ideas", "idle");
+            flush("old-spike", "stopped");
+            assert!(row("old-spike").starts_with(&format!("│ 8 {} old-spike", G_STOPPED)));
+            assert!(row("big-re").starts_with(&format!("│ 9 {} big-re", G_WORKING)));
+            assert!(row("big-re").contains(G_WORKTREE));
+            // no number after 9
+            assert!(row("eleventh").starts_with(&format!("│   {} eleventh", G_IDLE)), "{:?}", row("eleventh"));
+            assert!(!t.iter().any(|r| r.to_lowercase().contains("task")), "no \"task\" in the panel");
+        }
+        // 28 columns: a long name is cut, the worktree mark kept
+        let t = trimmed(&panel_rows(&app, 28, 16));
+        let big = t.iter().find(|r| r.contains("big-")).unwrap();
+        assert!(big.contains("…") && big.contains(G_WORKTREE), "{:?}", big);
+        let t = trimmed(&panel_rows(&app, 40, 16));
+        assert!(t.iter().any(|r| r.contains("big-refactor-of-auth ⎇")), "{}", t.join("\n"));
+    }
+
+    /// Colors: the number faint, the agent in view in accent, "needs
+    /// you" in accent, a failure in error, the right side dim.
+    #[test]
+    fn panel_colors() {
+        let mut app = every_state();
+        app.sb.as_mut().unwrap().focus = "bench".into();
+        let mut term = Terminal::new(TestBackend::new(40, 16)).unwrap();
+        term.draw(|f| draw_panel(&app, f, f.area())).unwrap();
+        let rows = screen(&term);
+        let buf = term.backend().buffer();
+        let at = |n: &str, what: &str| {
+            let y = rows.iter().position(|r| r.contains(n)).unwrap();
+            let x = rows[y].find(what).map(|b| rows[y][..b].chars().count()).unwrap();
+            buf.cell((x as u16, y as u16)).unwrap().fg
+        };
+        assert_eq!(at("main", "0"), faint());
+        assert_eq!(at("main", G_MAIN), accent());
+        assert_eq!(at("bench", "bench"), accent(), "the agent in view");
+        assert_eq!(at("auth-fix", "auth-fix"), text());
+        assert_eq!(at("docs", G_NEEDS_YOU), accent());
+        assert_eq!(at("docs", "you"), accent());
+        assert_eq!(at("deploy", G_FAILED), error());
+        assert_eq!(at("deploy", "failed"), dim());
+        assert_eq!(at("auth-fix", G_UNREAD), accent());
+    }
+
+    /// More agents than rows: the list ends with `+ {n} more`, and
+    /// scrolls to keep the selection in view.
+    #[test]
+    fn overflow_ends_with_more() {
+        let mut app = bench::test_app_drained();
+        {
+            let sb = app.sb.as_mut().unwrap();
+            sb.agents.push(Agent { name: "main".into(), main: true, status: "idle".into(), ..Agent::default() });
+            for i in 1..=30 {
+                sb.agents.push(agent(&format!("a{:02}", i), "working"));
+            }
+        }
+        let t = trimmed(&panel_rows(&app, 28, 10));
+        // title + 8 agents + the more row
+        assert_eq!(t[9], "│ + 23 more", "{}", t.join("\n"));
+        app.sb.as_mut().unwrap().selected = Some(30);
+        let t = trimmed(&panel_rows(&app, 28, 10));
+        assert!(t.iter().any(|r| r.contains("a30")), "{}", t.join("\n"));
+        assert!(!t.iter().any(|r| r.contains("more")), "nothing left below");
+        app.sb.as_mut().unwrap().selected = Some(15);
+        let t = trimmed(&panel_rows(&app, 28, 10));
+        assert!(t.iter().any(|r| r.contains("a15")), "{}", t.join("\n"));
+        assert!(t[9].contains("more"), "{}", t.join("\n"));
     }
 }
 
@@ -593,27 +912,27 @@ mod archived_tests {
         let x = app.sb.as_ref().unwrap().panel_hits.borrow().area.x;
         let p = panel(&rows, x);
         let head = row_of(&p, "▸ 3 archived").unwrap_or_else(|| panic!("{}", p.join("\n")));
-        for n in ["· old", "· mid", "· new"] {
+        for n in [&format!("{} old", G_STOPPED), &format!("{} mid", G_STOPPED), &format!("{} new", G_STOPPED)] {
             assert!(row_of(&p, n).is_none(), "{} shown while folded", n);
         }
         let buf = term.backend().buffer().clone();
         let cell = buf.cell((x + 3, head as u16)).unwrap();
-        assert_eq!(cell.fg, DIM, "the header is dim");
+        assert_eq!(cell.fg, dim(), "the header is dim");
 
         click(&mut app, x + 3, head as u16);
         let p = panel(&draw(&mut app, &mut term), x);
         assert!(row_of(&p, "▾ 3 archived").is_some(), "{}", p.join("\n"));
         let (n, m, o) = (
-            row_of(&p, "· new").unwrap(),
-            row_of(&p, "· mid").unwrap(),
-            row_of(&p, "· old").unwrap(),
+            row_of(&p, &format!("{} new", G_STOPPED)).unwrap(),
+            row_of(&p, &format!("{} mid", G_STOPPED)).unwrap(),
+            row_of(&p, &format!("{} old", G_STOPPED)).unwrap(),
         );
         assert!(n < m && m < o, "newest first:\n{}", p.join("\n"));
-        assert!(p[n].contains("10 min") && p[o].contains("5 h"), "{}", p.join("\n"));
+        assert!(p[n].contains("10m") && p[o].contains("5h"), "{}", p.join("\n"));
         assert!(row_of(&p, "did its job").is_none(), "no report line when not selected");
         let buf = term.backend().buffer().clone();
         let name_x = x + p[m].find("mid").map(|b| p[m][..b].chars().count()).unwrap() as u16;
-        assert_eq!(buf.cell((name_x, m as u16)).unwrap().fg, DIM, "archived names are dim");
+        assert_eq!(buf.cell((name_x, m as u16)).unwrap().fg, dim(), "archived names are dim");
 
         click(&mut app, x + 5, m as u16);
         assert_eq!(app.sb.as_ref().unwrap().focus, "mid");
@@ -621,10 +940,7 @@ mod archived_tests {
         let all = rows.join("\n");
         assert!(all.contains("read-only history"), "{}", all);
         assert!(panel(&rows, x).iter().any(|r| r.contains("mid did its job")), "{}", all);
-        assert_eq!(
-            placeholder(&app).unwrap(),
-            "@mid is archived (read-only) · /restore brings it back"
-        );
+        assert_eq!(placeholder(&app).unwrap(), "mid is archived: read-only");
         let out = handle_input(&mut app, "hello");
         assert!(matches!(&out[..], [Ev::Warn(w)] if w.contains("/restore")), "not sent");
 
@@ -633,8 +949,8 @@ mod archived_tests {
         click(&mut app, x + 3, head as u16);
         let p = panel(&draw(&mut app, &mut term), x);
         assert!(row_of(&p, "▸ 3 archived").is_some());
-        assert!(row_of(&p, "· mid").is_some(), "the focused archived task stays listed");
-        assert!(row_of(&p, "· new").is_none());
+        assert!(row_of(&p, &format!("{} mid", G_STOPPED)).is_some(), "the focused archived task stays listed");
+        assert!(row_of(&p, &format!("{} new", G_STOPPED)).is_none());
     }
 
     /// Keys: A expands from a selection, Ctrl+K/J walk into the archived
@@ -686,8 +1002,187 @@ mod archived_tests {
         let rows = draw(&mut app, &mut term);
         let x = app.sb.as_ref().unwrap().panel_hits.borrow().area.x;
         let p = panel(&rows, x);
-        let y = row_of(&p, "· t000").unwrap_or_else(|| panic!("{}", p.join("\n")));
+        let y = row_of(&p, &format!("{} t000", G_STOPPED)).unwrap_or_else(|| panic!("{}", p.join("\n")));
         click(&mut app, x + 5, y as u16);
         assert_eq!(app.sb.as_ref().unwrap().focus, "t000");
+    }
+}
+
+#[cfg(test)]
+mod chrome_tests {
+    use super::super::bench;
+    use super::*;
+    use ratatui::{backend::TestBackend, Terminal};
+
+    fn draw(app: &mut App, w: u16, h: u16) -> Vec<String> {
+        let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+        term.draw(|f| super::super::draw_sb(app, f)).unwrap();
+        let buf = term.backend().buffer();
+        buf.content
+            .chunks(w as usize)
+            .map(|row| row.iter().map(|c| c.symbol()).collect::<String>().trim_end().to_string())
+            .collect()
+    }
+
+    fn with_main() -> App {
+        let mut app = bench::test_app_drained();
+        app.sb.as_mut().unwrap().agents.push(Agent {
+            name: "main".into(),
+            main: true,
+            status: "idle".into(),
+            ..Agent::default()
+        });
+        app
+    }
+
+    fn busy() -> App {
+        let mut app = with_main();
+        let sb = app.sb.as_mut().unwrap();
+        for (n, st) in [("auth-fix", "working"), ("release", "working"), ("big", "working"), ("api-v2", "waiting"), ("docs", "blocked"), ("bench", "done"), ("ideas", "idle")] {
+            sb.agents.push(Agent { name: n.into(), status: st.into(), ..Agent::default() });
+        }
+        app
+    }
+
+    /// The header at 120 columns (panel shown): `bise :*` left, the long
+    /// counts flush right; at 60 (no panel) the short counts.
+    #[test]
+    fn header_at_60_and_120() {
+        let mut app = busy();
+        let rows = draw(&mut app, 120, 20);
+        let head = &rows[0];
+        assert!(head.starts_with(" bise :*"), "{:?}", head);
+        let right = "∿ 3 working · … 1 waiting · ? 1 needs you · ♡ 1 done";
+        assert!(head.ends_with(right), "{:?}", head);
+        assert_eq!(head.chars().count(), 119, "one column of margin: {:?}", head);
+        assert!(!rows.iter().any(|r| r.contains("Switchboard")));
+        let rows = draw(&mut app, 60, 20);
+        assert_eq!(rows[0], format!(" bise :*{}∿ 3 · … 1 · ? 1 · ♡ 1", " ".repeat(60 - 8 - 21 - 1)));
+        // no agents: the words
+        let mut app = with_main();
+        let rows = draw(&mut app, 120, 20);
+        assert!(rows[0].starts_with(" bise :*") && rows[0].ends_with("no agents yet"), "{:?}", rows[0]);
+        let rows = draw(&mut app, 60, 20);
+        assert!(rows[0].ends_with("no agents yet"), "{:?}", rows[0]);
+    }
+
+    /// Colors of the header: `:*` and "needs you" in accent, the rest dim.
+    #[test]
+    fn header_colors() {
+        let app = busy();
+        let line = app.sb.as_ref().unwrap().header(120, false);
+        let color_of = |t: &str| line.spans.iter().find(|s| s.content.contains(t)).map(|s| s.style.fg);
+        assert_eq!(color_of(":*"), Some(Some(accent())));
+        assert_eq!(color_of("needs you"), Some(Some(accent())));
+        assert_eq!(color_of("working"), Some(Some(dim())));
+    }
+
+    /// First run: the header says `no agents yet`, the feed the three
+    /// dim lines of the copy deck, the status row `main · idle`, the
+    /// composer `›` with the main hints (mockup "first run").
+    #[test]
+    fn first_run_screen() {
+        let mut app = with_main();
+        let rows = draw(&mut app, 112, 24);
+        let all = rows.join("\n");
+        for l in FIRST_RUN {
+            assert!(rows.iter().any(|r| r.contains(l)), "{:?} missing:\n{}", l, all);
+        }
+        assert_eq!(FIRST_RUN[0], "what's on your mind?");
+        assert_eq!(FIRST_RUN[1], "say it and keep talking. the work runs in the background, i'm always here.");
+        assert_eq!(FIRST_RUN[2], "try: \"fix the flaky login test, and draft the release note\"");
+        let status = rows.iter().find(|r| r.starts_with(" main ·")).unwrap_or_else(|| panic!("{}", all));
+        assert!(status.starts_with(" main · idle"), "{:?}", status);
+        let composer = rows.last().unwrap();
+        assert!(composer.starts_with(&format!(" {} ", G_YOU)), "{:?}", composer);
+        assert!(composer.ends_with("⏎ send · @ agent · / commands"), "{:?}", composer);
+        // a panel with main only
+        assert!(rows.iter().any(|r| r.ends_with(&format!("0 {} main", G_MAIN))), "{}", all);
+        // once there is an agent, the first-run text goes
+        bench::add_agent(&mut app, "auth-fix", "the safari login");
+        let rows = draw(&mut app, 112, 24);
+        assert!(!rows.iter().any(|r| r.contains(FIRST_RUN[0])));
+    }
+
+    /// Inside an agent (mockup "inside an agent"): the pinned line of the
+    /// copy deck on top of the feed, the status row starts with the
+    /// agent's name in accent, then dim; `shared folder`.
+    #[test]
+    fn inside_an_agent_screen() {
+        let mut app = with_main();
+        app.sb.as_mut().unwrap().agents.push(Agent {
+            name: "auth-fix".into(),
+            status: "idle".into(),
+            mode: "shared".into(),
+            path: "/ws".into(),
+            ..Agent::default()
+        });
+        focus(&mut app, "auth-fix");
+        let mut term = Terminal::new(TestBackend::new(112, 24)).unwrap();
+        term.draw(|f| super::super::draw_sb(&mut app, f)).unwrap();
+        let buf = term.backend().buffer().clone();
+        let rows: Vec<String> = buf
+            .content
+            .chunks(112)
+            .map(|row| row.iter().map(|c| c.symbol()).collect::<String>().trim_end().to_string())
+            .collect();
+        let all = rows.join("\n");
+        let line = "you're talking to auth-fix directly. main isn't in the loop. esc back to main.";
+        assert!(rows[1].contains(line), "{}", all);
+        let y = rows.iter().position(|r| r.starts_with(" auth-fix ·")).unwrap_or_else(|| panic!("{}", all));
+        assert!(rows[y].starts_with(" auth-fix · idle · shared folder"), "{:?}", rows[y]);
+        assert_eq!(buf.cell((1, y as u16)).unwrap().fg, accent(), "the name in accent");
+        assert_eq!(buf.cell((10, y as u16)).unwrap().fg, dim(), "the rest dim");
+        assert!(!all.contains("task"), "no \"task\" in the chrome:\n{}", all);
+    }
+
+    /// A click lands on the feed row drawn under it: the feed starts
+    /// under the header (and, inside an agent, under the pinned line).
+    #[test]
+    fn feed_clicks_land_on_the_row_under_the_header() {
+        for inside in [false, true] {
+            let mut app = with_main();
+            if inside {
+                bench::add_agent(&mut app, "auth-fix", "the safari login");
+                focus(&mut app, "auth-fix");
+            }
+            for k in 0..5 {
+                push_event(&mut app.events, &mut app.cache, Ev::Info(format!("event {}", k)));
+            }
+            let rows = draw(&mut app, 100, 24);
+            assert!(app.feed_y >= 1, "the header is above the feed");
+            if inside {
+                assert!(rows[1].contains("you're talking to auth-fix"));
+                assert_eq!(app.feed_y, 3);
+            }
+            for k in 0..5 {
+                let label = format!("event {}", k);
+                let y = rows.iter().position(|r| r.contains(&label)).unwrap_or_else(|| panic!("{}", rows.join("\n")));
+                let x = rows[y].find(&label).unwrap() as u16;
+                let pos = crate::input::feed_pos(&app, x, y as u16, false).expect("a feed row");
+                assert_eq!(pos.0, k, "inside {}: {} at screen row {}", inside, label, y);
+            }
+            // the header row is not the feed
+            assert!(crate::input::feed_pos(&app, 5, 0, false).is_none());
+        }
+    }
+
+    /// The status row: lowercase, the context, a preview note, the
+    /// steer hints during a turn.
+    #[test]
+    fn status_row_and_hints() {
+        let mut app = busy();
+        let line = status_line(&app).unwrap();
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, " main · idle");
+        assert_eq!(hint(&app), Some("⏎ send · @ agent · / commands"));
+        app.pending = true;
+        assert_eq!(hint(&app), Some("⏎ steer · ctrl+c interrupt"));
+        app.pending = false;
+        let sb = app.sb.as_mut().unwrap();
+        sb.selected = Some(1);
+        sb.preview = true;
+        let text: String = status_line(&app).unwrap().spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.ends_with("preview of auth-fix"), "{:?}", text);
     }
 }

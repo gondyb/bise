@@ -32,6 +32,9 @@ pub(crate) struct App {
     pub(crate) vis_rows: Vec<usize>,
     /// the screen column of the feed's first text column
     pub(crate) feed_x: u16,
+    /// The screen row of the feed's first row (under the Switchboard
+    /// header and the "inside an agent" line; 0 without).
+    pub(crate) feed_y: u16,
     /// the in-app selection in the feed
     pub(crate) feed_sel: Option<feedsel::FeedSel>,
     // activity that arrived while pinned (shown by the back-to-bottom bar)
@@ -169,6 +172,7 @@ impl App {
             vis_events: Vec::new(),
             vis_rows: Vec::new(),
             feed_x: 0,
+            feed_y: 0,
             feed_sel: None,
             unseen: 0,
             tail_visible: true,
