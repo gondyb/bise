@@ -126,6 +126,16 @@ fn split_named(s: &str) -> (Option<String>, String) {
     (None, s.trim().to_string())
 }
 
+/// A task name as typed (`@name` or `name`).
+fn bare(w: &str) -> String {
+    w.trim_start_matches('@').to_string()
+}
+
+/// The task in focus, when the focus is not main (a command's default).
+fn focus_task(focus: &str) -> Option<String> {
+    (focus != MAIN).then(|| focus.to_string())
+}
+
 /// Parse one line typed while `focus` has the focus.
 pub fn parse(line: &str, focus: &str) -> UserCmd {
     let line = line.trim();
@@ -188,15 +198,15 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
             let name = words
                 .iter()
                 .find(|w| !w.starts_with("--"))
-                .map(|w| w.trim_start_matches('@').to_string());
-            let name = name.or_else(|| (focus != MAIN).then(|| focus.to_string()));
+                .map(|w| bare(w));
+            let name = name.or_else(|| focus_task(focus));
             UserCmd::Drop { name, force }
         }
         "/restore" | "/isolate" => {
             let name = words
                 .first()
-                .map(|w| w.trim_start_matches('@').to_string())
-                .or_else(|| (focus != MAIN).then(|| focus.to_string()));
+                .map(|w| bare(w))
+                .or_else(|| focus_task(focus));
             match name {
                 Some(name) if cmd == "/restore" => UserCmd::Restore { name },
                 Some(name) => UserCmd::Isolate { name },
@@ -205,12 +215,12 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
         }
         "/rename" => match words.as_slice() {
             [a, b] => UserCmd::Rename {
-                name: a.trim_start_matches('@').to_string(),
-                new_name: b.trim_start_matches('@').to_string(),
+                name: bare(a),
+                new_name: bare(b),
             },
             [b] if focus != MAIN => UserCmd::Rename {
                 name: focus.to_string(),
-                new_name: b.trim_start_matches('@').to_string(),
+                new_name: bare(b),
             },
             _ => UserCmd::Invalid("usage: /rename <task> <new-name>".into()),
         },
