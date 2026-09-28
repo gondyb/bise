@@ -72,7 +72,9 @@ Taglines :
 |---|---|
 | Ton équipe est aussi grande que tes idées. | Your team is as big as your ideas. |
 | Fait pour les ingénieurs qui pensent plus vite qu'ils ne tapent. | Built for engineers who think faster than they type. |
-| tes idées. mes mains. plein. | your ideas. my hands. lots of them. (tagline dans le produit, choisie par Gabriel) |
+| des idées entrent. des bisous sortent. et des pull requests. | ideas in. little kisses out. also pull requests. (tagline dans le produit, choisie par Gabriel) |
+| je souffle sur les backlogs. | i blow through backlogs. (one-liner pro : README, bios) |
+| bise : un bisou sur la joue. aussi un vent du nord. | bise /beez/ · french, n. 1. a quick kiss on the cheek. 2. a brisk north wind. 3. a terminal where your agents ship while you think. (glose pour les anglophones) |
 | trop d'idées ? tant mieux. | too many ideas? good. |
 | dis-le une fois. oublie. c'est fait. | say it once. forget about it. it's done. |
 | enfin un truc qui suit mon cerveau. | finally, something that keeps up with my brain. |

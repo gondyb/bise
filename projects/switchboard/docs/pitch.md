@@ -70,8 +70,15 @@ Taglines:
 Rejected: "All the agents. None of the overhead." ("overhead" is unclear);
 "All the agents. Stay in flow."; "Code like a team of ten." (a number).
 "All your ideas. None of the juggling." (sounds like an LLM).
-In-product tagline (onboarding, bise speaks as "i"): **"your ideas. my hands.
-lots of them."** (Gabriel).
+In-product tagline (onboarding, bise speaks as "i"): **"ideas in. little kisses
+out. also pull requests."** (Gabriel). Rejected: "your ideas. my hands. lots of
+them." (not our philosophy). Pro one-liner for README / bios: "i blow through
+backlogs." (not under the headline: "backlog" twice).
+
+Name gloss, for English readers (site hero, README, launch posts):
+"bise /beez/ · french, n. 1. a quick kiss on the cheek. 2. a brisk north wind.
+3. a terminal where your agents ship while you think." One-line form: "bise
+(say: beez): french for a kiss. also a wind."
 Other candidates, human tone: "too many ideas? good."; "say it once. forget
 about it. it's done."; "finally, something that keeps up with my brain."
 
