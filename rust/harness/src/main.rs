@@ -349,42 +349,21 @@ fn main() -> std::io::Result<()> {
         }
     }
     load_env_files();
-    let mut scripted = false;
-    let mut headless = false;
-    let mut debug = false;
-    let mut resume = false;
-    let mut resume_id: Option<String> = None;
-    let mut forced_port: Option<u16> = None;
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--scripted" => scripted = true,
-            "--headless" => headless = true,
-            "--debug" => debug = true,
-            "--continue" => resume = true,
-            "--resume" if i + 1 < args.len() => {
-                i += 1;
-                resume_id = Some(args[i].clone());
-            }
-            "--model" if i + 1 < args.len() => {
-                i += 1;
-                std::env::set_var("BEND_MODEL", &args[i]);
-            }
-            "--port" if i + 1 < args.len() => {
-                i += 1;
-                forced_port = args[i].parse().ok();
-            }
-            other => {
-                eprintln!("argument inconnu : {}", other);
-                std::process::exit(1);
-            }
-        }
-        i += 1;
-    }
-    if resume && resume_id.is_some() {
-        eprintln!("use --continue OR --resume <id>, not both");
+    let CliArgs {
+        scripted,
+        headless,
+        debug,
+        resume,
+        resume_id,
+        model,
+        forced_port,
+    } = parse_args(&args).unwrap_or_else(|msg| {
+        eprintln!("{}", msg);
         std::process::exit(1);
+    });
+    if let Some(m) = model {
+        std::env::set_var("BEND_MODEL", m);
     }
 
     // locate the Bend REPL binary next to this executable, then in cwd
@@ -834,4 +813,70 @@ fn which_lookup(cmd: &str) -> bool {
             })
         })
         .unwrap_or(false)
+}
+
+/// The single-agent command line (`./run.sh [flags]`).
+#[derive(Debug, Default, PartialEq)]
+struct CliArgs {
+    scripted: bool,
+    headless: bool,
+    debug: bool,
+    /// --continue: the most recent session
+    resume: bool,
+    /// --resume <id>: one exact session (a unique prefix is enough)
+    resume_id: Option<String>,
+    /// --model <name>: becomes BEND_MODEL for the REPL
+    model: Option<String>,
+    /// --port <n>: an unparsable port counts as none (a free one is picked)
+    forced_port: Option<u16>,
+}
+
+/// Parse the flags; Err is the message to print before exiting 1.
+fn parse_args(args: &[String]) -> Result<CliArgs, String> {
+    let mut out = CliArgs::default();
+    let mut it = args.iter().peekable();
+    while let Some(arg) = it.next() {
+        let has_value = it.peek().is_some();
+        match arg.as_str() {
+            "--scripted" => out.scripted = true,
+            "--headless" => out.headless = true,
+            "--debug" => out.debug = true,
+            "--continue" => out.resume = true,
+            "--resume" if has_value => out.resume_id = it.next().cloned(),
+            "--model" if has_value => out.model = it.next().cloned(),
+            "--port" if has_value => out.forced_port = it.next().and_then(|p| p.parse().ok()),
+            other => return Err(format!("argument inconnu : {}", other)),
+        }
+    }
+    if out.resume && out.resume_id.is_some() {
+        return Err("use --continue OR --resume <id>, not both".to_string());
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn argv(xs: &[&str]) -> Vec<String> {
+        xs.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn parse_args_flags_and_values() {
+        let a = parse_args(&argv(&["--headless", "--model", "m", "--port", "7", "--resume", "ab"])).unwrap();
+        assert!(a.headless && !a.scripted && !a.resume);
+        assert_eq!(a.model.as_deref(), Some("m"));
+        assert_eq!(a.forced_port, Some(7));
+        assert_eq!(a.resume_id.as_deref(), Some("ab"));
+        assert_eq!(parse_args(&argv(&["--port", "x"])).unwrap().forced_port, None);
+    }
+
+    #[test]
+    fn parse_args_rejects() {
+        assert!(parse_args(&argv(&["--bogus"])).is_err());
+        // a value flag without its value is unknown, as before
+        assert!(parse_args(&argv(&["--model"])).is_err());
+        assert!(parse_args(&argv(&["--continue", "--resume", "x"])).is_err());
+    }
 }
