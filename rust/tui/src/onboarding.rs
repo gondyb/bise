@@ -37,6 +37,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+use unicode_width::UnicodeWidthStr;
 
 /// The env var: `off` never shows the onboarding, `on` always does.
 pub(crate) const ENV: &str = "SB_ONBOARDING";
@@ -305,6 +306,8 @@ pub(crate) struct Onb {
     /// when the step started (ms): its animations count from there
     pub since: u64,
     pub detected: Option<Mode>,
+    /// where the mode at start came from
+    pub theme_from: ThemeFrom,
     pub pick: Mode,
     pub home: Option<PathBuf>,
     pub model: String,
@@ -317,6 +320,30 @@ pub(crate) struct Onb {
     pub git: bool,
     /// `o` pressed on the folder step
     pub other_folder: bool,
+}
+
+/// Where the mode at start came from (book §15 step 2 says which).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ThemeFrom {
+    /// the terminal's background (`detected`; None: no answer)
+    Terminal,
+    /// `BISE_THEME=light|dark`
+    Env,
+    /// the choice saved by step 2 or `/theme` (BISE-62)
+    Saved,
+}
+
+/// `BISE_THEME` first, then the saved choice, like `theme_detect::init`.
+pub(crate) fn theme_from(env: Env, home: Option<&Path>) -> ThemeFrom {
+    use crate::theme_detect::{load_in, Choice};
+    match env(crate::theme_detect::ENV).and_then(|v| Choice::parse(&v)) {
+        Some(Choice::Light | Choice::Dark) => ThemeFrom::Env,
+        Some(Choice::Auto) => ThemeFrom::Terminal,
+        None => match home.and_then(load_in) {
+            Some(Choice::Light | Choice::Dark) => ThemeFrom::Saved,
+            _ => ThemeFrom::Terminal,
+        },
+    }
 }
 
 /// `/Users/x/lab/app` → `~/lab/app` under that home.
@@ -341,6 +368,7 @@ impl Onb {
             step: Step::Welcome,
             since: 0,
             detected: crate::theme_detect::detected(),
+            theme_from: theme_from(env, home.as_deref()),
             pick: theme::mode(),
             model: current_model(env, home.as_deref()),
             found: Vec::new(),
@@ -372,12 +400,12 @@ impl Onb {
         v
     }
 
-    /// What step 2 saves: auto when the pick is what the terminal gave
-    /// (or dark, with no answer), else the pick.
+    /// What step 2 saves: auto when the mode follows the terminal and the
+    /// pick is what it gave (or dark, with no answer), else the pick.
     pub(crate) fn theme_choice(&self) -> crate::theme_detect::Choice {
         use crate::theme_detect::Choice;
         match (self.pick, self.detected.unwrap_or(Mode::Dark)) {
-            (p, d) if p == d => Choice::Auto,
+            (p, d) if p == d && self.theme_from == ThemeFrom::Terminal => Choice::Auto,
             (Mode::Light, _) => Choice::Light,
             (Mode::Dark, _) => Choice::Dark,
         }
@@ -574,13 +602,25 @@ fn name_of(m: Mode) -> &'static str {
 }
 
 fn theme_text(o: &Onb) -> Vec<Line<'static>> {
-    let first = match o.detected {
-        Some(m) => vec![
+    let bold = |m: Mode| Span::styled(name_of(m), Style::default().fg(theme::text()).add_modifier(Modifier::BOLD));
+    let first = match (o.theme_from, o.detected) {
+        // forced: say so, no detection involved
+        (ThemeFrom::Env, _) => vec![
+            s(format!("{} is set to ", crate::theme_detect::ENV), theme::text()),
+            bold(o.pick),
+            s(", so i picked it.", theme::text()),
+        ],
+        (ThemeFrom::Saved, _) => vec![
+            s("you picked ", theme::text()),
+            bold(o.pick),
+            s(" last time, so i kept it.", theme::text()),
+        ],
+        (ThemeFrom::Terminal, Some(m)) => vec![
             s("your terminal looks ", theme::text()),
             Span::styled(name_of(m), Style::default().fg(theme::text()).add_modifier(Modifier::BOLD)),
             s(format!(", so i picked {}.", name_of(m)), theme::text()),
         ],
-        None => vec![s(
+        (ThemeFrom::Terminal, None) => vec![s(
             format!("i couldn't read your terminal's background, so i picked {}.", name_of(o.pick)),
             theme::text(),
         )],
@@ -650,9 +690,26 @@ fn opt_line(selected: bool, mut spans: Vec<Span<'static>>) -> Line<'static> {
 
 const KEY_FILE_SHOWN: &str = "~/.bend-harness/.env";
 
-fn model_lines(o: &Onb) -> Vec<Line<'static>> {
+/// `text` in lines of at most `w` columns, cut at spaces.
+fn words_in(text: &str, w: usize) -> Vec<String> {
+    let mut out: Vec<String> = vec![String::new()];
+    for word in text.split(' ') {
+        let cur = out.last_mut().expect("one line");
+        if !cur.is_empty() && cur.width() + 1 + word.width() > w.max(1) {
+            out.push(word.to_string());
+        } else {
+            if !cur.is_empty() {
+                cur.push(' ');
+            }
+            cur.push_str(word);
+        }
+    }
+    out
+}
+
+fn model_lines(o: &Onb, w: u16) -> Vec<Line<'static>> {
     match &o.sub {
-        Sub::List => model_list(o),
+        Sub::List => model_list(o, w),
         Sub::Which(i) => {
             let mut v = vec![Line::from(s("which key do you want to paste?", theme::text())), Line::raw("")];
             for (k, p) in Provider::ALL.iter().enumerate() {
@@ -689,7 +746,7 @@ fn model_lines(o: &Onb) -> Vec<Line<'static>> {
     }
 }
 
-fn model_list(o: &Onb) -> Vec<Line<'static>> {
+fn model_list(o: &Onb, w: u16) -> Vec<Line<'static>> {
     let found = match o.found.len() {
         0 => "i found no key in your environment.".to_string(),
         1 => "i found a key in your environment.".to_string(),
@@ -723,7 +780,10 @@ fn model_list(o: &Onb) -> Vec<Line<'static>> {
             Opt::Browser => (vec![s(format!("{} · sign in with the browser", n), theme::dim())], "not built yet.".to_string()),
         };
         v.push(opt_line(sel, title));
-        v.push(opt_line(sel, vec![s(format!("    {}", sub), theme::dim())]));
+        // the detail under the title, its wrapped rows indented too
+        for row in words_in(&sub, (w as usize).saturating_sub(6)) {
+            v.push(opt_line(sel, vec![s(format!("    {}", row), theme::dim())]));
+        }
     }
     match &o.note {
         Some(Note::Saved) => {
@@ -744,14 +804,20 @@ fn model_list(o: &Onb) -> Vec<Line<'static>> {
     v
 }
 
-fn folder_lines(o: &Onb) -> Vec<Line<'static>> {
+fn folder_lines(o: &Onb, w: u16) -> Vec<Line<'static>> {
     let bold = Style::default().fg(theme::text()).add_modifier(Modifier::BOLD);
-    let mut v = vec![
-        Line::from(vec![
-            s("i'll work in ", theme::text()),
-            Span::styled(o.folder.clone(), bold),
-            s(if o.git { " · a git repo ✓" } else { " · not a git repo" }, theme::dim()),
-        ]),
+    let repo = if o.git { "· a git repo ✓" } else { "· not a git repo" };
+    let first = vec![s("i'll work in ", theme::text()), Span::styled(o.folder.clone(), bold)];
+    // the repo note never breaks: on the same row, else on its own
+    let fits = "i'll work in ".width() + o.folder.width() + 1 + repo.width() <= w as usize;
+    let mut v = if fits {
+        let mut l = first;
+        l.push(s(format!(" {}", repo), theme::dim()));
+        vec![Line::from(l)]
+    } else {
+        vec![Line::from(first), Line::from(s(repo, theme::dim()))]
+    };
+    v.extend([
         Line::raw(""),
         Line::from(s(
             "all your agents share this folder and know about each other. no worktrees to merge.",
@@ -770,7 +836,7 @@ fn folder_lines(o: &Onb) -> Vec<Line<'static>> {
                 theme::dim(),
             ),
         ]),
-    ];
+    ]);
     if o.other_folder {
         v.push(Line::raw(""));
         v.push(Line::from(s(
@@ -833,14 +899,15 @@ pub(crate) fn draw(f: &mut Frame, o: &Onb, now: u64) {
     // the dots two rows above the bottom, the content centered above them
     let body = Rect { height: area.height.saturating_sub(3), ..area };
     let pad = (area.width / 8).min(14);
-    let (lines, centered, extra) = match o.step {
-        Step::Welcome => (welcome(t), true, 0),
-        Step::Theme => (theme_text(o), true, PREVIEW_H + 2),
-        Step::Model => (model_lines(o), false, 0),
-        Step::Folder => (folder_lines(o), false, 0),
-        Step::Lines => (how_lines(t), false, 0),
-    };
+    let centered = matches!(o.step, Step::Welcome | Step::Theme);
     let inner_w = if centered { body.width } else { body.width.saturating_sub(pad * 2) };
+    let (lines, extra) = match o.step {
+        Step::Welcome => (welcome(t), 0),
+        Step::Theme => (theme_text(o), PREVIEW_H + 2),
+        Step::Model => (model_lines(o, inner_w), 0),
+        Step::Folder => (folder_lines(o, inner_w), 0),
+        Step::Lines => (how_lines(t), 0),
+    };
     let h = height_of(&lines, inner_w) + extra;
     let y = body.y + body.height.saturating_sub(h) / 2;
     let text_h = height_of(&lines, inner_w).min(body.height);
@@ -1144,6 +1211,65 @@ mod tests {
         o.sel = 0;
         o.on_key(key(KeyCode::Enter), 5, &e);
         assert_eq!(o.step, Step::Folder);
+    }
+
+    #[test]
+    fn step_2_says_why_when_the_theme_is_forced() {
+        use crate::theme_detect::{save_in, Choice};
+        let h = tmp("s2f");
+        let home = h.to_string_lossy().to_string();
+        // BISE_THEME: no detection, it says so
+        let e = env_of(HashMap::from([("HOME", home.clone()), ("BISE_THEME", "light".to_string())]));
+        theme::set_mode(Mode::Light);
+        let mut o = Onb::new("/w", &e);
+        assert_eq!(o.theme_from, ThemeFrom::Env);
+        o.go(Step::Theme, 0);
+        let sc = screen(&o, 10, 100, 30);
+        assert!(sc.contains("BISE_THEME is set to light, so i picked it."), "{}", sc);
+        assert!(!sc.contains("couldn't read"), "{}", sc);
+        // a saved choice: it was picked before
+        save_in(&h, Choice::Light).unwrap();
+        let e = env_of(HashMap::from([("HOME", home.clone())]));
+        let mut o = Onb::new("/w", &e);
+        assert_eq!(o.theme_from, ThemeFrom::Saved);
+        o.go(Step::Theme, 0);
+        assert!(screen(&o, 10, 100, 30).contains("you picked light last time, so i kept it."));
+        // keeping a forced mode saves it as is, not auto
+        o.pick = Mode::Dark;
+        assert_eq!(o.theme_choice(), Choice::Dark);
+        // BISE_THEME=auto: the terminal decides
+        let e = env_of(HashMap::from([("HOME", home), ("BISE_THEME", "auto".to_string())]));
+        assert_eq!(Onb::new("/w", &e).theme_from, ThemeFrom::Terminal);
+        theme::set_mode(Mode::Dark);
+    }
+
+    #[test]
+    fn wrapped_details_keep_their_indent_and_the_repo_note_never_breaks() {
+        let h = tmp("wrap");
+        let e = env_of(HashMap::from([
+            ("HOME", h.to_string_lossy().to_string()),
+            ("MISTRAL_API_KEY", "k".to_string()),
+        ]));
+        let mut o = Onb::new("/w", &e);
+        o.go(Step::Model, 0);
+        let sc = screen(&o, 10, 70, 30);
+        let rows: Vec<&str> = sc.lines().collect();
+        let i = rows.iter().position(|r| r.contains("mistral. your model is")).expect("the detail");
+        // the wrapped row starts where the detail starts (same column)
+        let col = |r: &str, pat: &str| r.chars().collect::<String>().find(pat).map(|b| r[..b].chars().count());
+        let start = col(rows[i], "mistral").unwrap();
+        let next: Vec<char> = rows[i + 1].chars().collect();
+        assert!(next[start] != ' ' && next[start - 4..start].iter().all(|c| *c == ' '), "{}", sc);
+        assert!(sc.contains("config.toml."), "{}", sc);
+        // a long path: the repo note goes on its own row, whole
+        let ws = h.join("a-rather-long-folder-name/and-another-one-that-goes-on/app");
+        std::fs::create_dir_all(ws.join(".git")).unwrap();
+        let mut o = onb(&h, &ws.to_string_lossy());
+        o.go(Step::Folder, 0);
+        let sc = screen(&o, 10, 80, 30);
+        assert!(sc.lines().any(|r| r.trim() == "· a git repo ✓"), "{}", sc);
+        let sc = screen(&o, 10, 200, 30);
+        assert!(sc.contains("app · a git repo ✓"), "{}", sc);
     }
 
     #[test]

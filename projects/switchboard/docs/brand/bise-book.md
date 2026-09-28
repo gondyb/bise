@@ -418,7 +418,10 @@ Vibe's (`vibe/setup/onboarding`). Six steps, `enter` to go on:
    the cheek. also a north wind.`, then `ideas in. little kisses out. also
    pull requests.` (dim) is typed, then `press enter ↵` (faint).
 2. **Theme.** `your terminal looks dark, so i picked dark.` / `you can change
-   it any time with /theme.` Two live previews side by side (the same four
+   it any time with /theme.` When no detection was needed, it says why:
+   `BISE_THEME is set to light, so i picked it.` or `you picked light last
+   time, so i kept it.` (the saved choice); no answer from the terminal:
+   `i couldn't read your terminal's background, so i picked dark.` Two live previews side by side (the same four
    lines of a bise feed); `←→` switches, `enter` keeps.
 3. **Model.** `which model should do the work?` A key found in the
    environment first: `1 · use ANTHROPIC_API_KEY  found` / `claude, already
