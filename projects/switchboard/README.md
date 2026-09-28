@@ -7,6 +7,8 @@ direct, puis revenir à main avec `Esc`. Le fil de main ne se termine jamais.
 
 ## Documents
 
+Design :
+
 - [`docs/rfc-0001-switchboard.md`](docs/rfc-0001-switchboard.md) : design
   global et comportement attendu (RFC, brouillon).
 - [`docs/rfc-0002-worktrees.md`](docs/rfc-0002-worktrees.md) : worktree
@@ -16,8 +18,25 @@ direct, puis revenir à main avec `Esc`. Le fil de main ne se termine jamais.
   chaque agent peut parler à n'importe quel agent du groupe.
 - [`docs/ux-notes.md`](docs/ux-notes.md) : questions UX à trancher, pour le
   brainstorming.
+- [`docs/bend-laws-report.md`](docs/bend-laws-report.md) : les interactions
+  du hub en Bend (`hub/*.bend`) et leurs lois.
+
+Distribution et produit :
+
+- [`docs/packaging.md`](docs/packaging.md) (EN) : packaging et
+  installation ; les scripts sont dans [`packaging/`](packaging/)
+  (`build-dist.sh`, `install.sh`, `test-install.sh`).
+- [`docs/pitch.md`](docs/pitch.md) (EN) / [`docs/pitch-fr.md`](docs/pitch-fr.md) :
+  pitch et go-to-market.
+
+Code et tests :
+
+- [`IMPLEMENTATION.md`](IMPLEMENTATION.md) : architecture, lancer, tester,
+  touches, limites.
+- [`tests/`](tests/) : `run_all.sh` lance les contrôles déterministes
+  (lois Bend, Rust, e2e, TUI sous tmux) ; `--live` ajoute un vrai modèle.
 
 ## État
 
-Implémenté sur la branche `switchboard` du harness : voir
+Implémenté dans le harness (branche `main`) : voir
 [`IMPLEMENTATION.md`](IMPLEMENTATION.md) (lancer, tester, touches, limites).

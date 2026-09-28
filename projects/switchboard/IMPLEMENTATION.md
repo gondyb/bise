@@ -1,6 +1,6 @@
 # Switchboard — implémentation (journal de travail)
 
-Branche `switchboard`, worktree `~/lab/bend-lab/harness-switchboard`.
+Sur `main` (branche `switchboard` fusionnée), checkout `~/lab/bend-lab/harness`.
 Ce fichier sert aussi de mémoire de travail : il dit où en est le code.
 
 ## Architecture retenue (option B de la RFC 0001, §13)
@@ -55,8 +55,8 @@ Ce fichier sert aussi de mémoire de travail : il dit où en est le code.
 
 ```sh
 cd ~/mon-projet
-~/lab/bend-lab/harness-switchboard/run.sh switchboard        # TUI ; lance le hub si besoin
-~/lab/bend-lab/harness-switchboard/run.sh switchboard --stop # arrête le hub et les agents
+~/lab/bend-lab/harness/run.sh switchboard        # TUI ; lance le hub si besoin
+~/lab/bend-lab/harness/run.sh switchboard --stop # arrête le hub et les agents
 ```
 
 Fermer le TUI (`/quit`, Ctrl+C) laisse le hub et les agents tourner. Le
