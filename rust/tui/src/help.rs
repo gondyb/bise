@@ -247,10 +247,15 @@ pub(crate) fn mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bool {
 
 // ---- rendering (pure: rows in, lines out) ----
 
-const CHIP: Style = Style::new()
-    .fg(Color::Rgb(0xee, 0xee, 0xee))
-    .bg(Color::Rgb(0x3a, 0x3a, 0x44));
-const CODE: Style = Style::new().fg(Color::Rgb(0xb8, 0xd4, 0xf0));
+/// A key cap: accent and bold, no painted background (book §5).
+fn chip() -> Style {
+    Style::new().fg(theme::accent()).add_modifier(Modifier::BOLD)
+}
+
+/// A config line to copy (the Ghostty tips): the code string color.
+fn code() -> Style {
+    Style::new().fg(theme::syntax_string())
+}
 
 /// The rows of a page for a client, filtered (case-insensitive, over the
 /// section, the keys and the action).
@@ -316,7 +321,7 @@ fn chip_rows(keys: &str, width: usize) -> Vec<Vec<Span<'static>>> {
             if i > 0 {
                 u.push(Span::styled(" then ", Style::default().fg(theme::dim())));
             }
-            u.push(Span::styled(format!(" {} ", step), CHIP));
+            u.push(Span::styled(format!(" {} ", step), chip()));
         }
         u
     });
@@ -370,7 +375,7 @@ pub(crate) fn table_lines(rows: &[&Row], width: usize) -> Vec<Line<'static>> {
             section = r.section;
         }
         if r.keys.is_empty() {
-            let style = if r.action.starts_with("keybind") { CODE } else { Style::default() };
+            let style = if r.action.starts_with("keybind") { code() } else { Style::default() };
             for l in wrap(r.action, width.saturating_sub(2)) {
                 out.push(Line::from(vec![Span::raw("  "), Span::styled(l, style)]));
             }
