@@ -2257,3 +2257,44 @@ def Laws.cards_unique(ins, h, u):
   hub_ucards_tr(HC.Hub.d(HC.RunR.hub(HC.run(ins, h))), HM.apply_all(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h)),
     Laws.hub_run_replays(ins, h),
     hub_apply_all_ucards(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h), u, Laws.msg_ids_fresh(ins, h)))
+
+# ---- L4 support: string equality is reflexive ----
+
+def hub_bool_cmp_refl(b: Bool) -> {Bool.cmp(b, b) == EQ{} : Cmp}:
+  match b:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def hub_word_cmp_refl(+n: Nat, +w: Word(n)) -> {Word.cmp(n, w, w) == EQ{} : Cmp}:
+  match n:
+    case 0n:
+      {==}
+    case 1n+p:
+      match w:
+        case WCon{b, t}:
+          %Equal.sym(Cmp, Word.cmp(p, t, t), EQ{}, hub_word_cmp_refl(p, t)) : {Word.cmp.fin(b, b, _) == EQ{} : Cmp}
+          hub_bool_cmp_refl(b)
+
+def hub_char_cmp_refl(+c: Char) -> {Char.cmp(c, c) == ((c, c), EQ{}) : (Char & Char) & Cmp}:
+  match c:
+    case Chr{x}:
+      match x:
+        case U32{w}:
+          %Equal.sym(Cmp, Word.cmp(32n, w, w), EQ{}, hub_word_cmp_refl(32n, w)) : {((Chr{U32{w}}, Chr{U32{w}}), _) == ((Chr{U32{w}}, Chr{U32{w}}), EQ{}) : (Char & Char) & Cmp}
+          {==}
+
+def hub_str_cmp_refl(+s: String) -> {String.cmp(s, s) == ((s, s), EQ{}) : (String & String) & Cmp}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{h, t}:
+      %Equal.sym((Char & Char) & Cmp, Char.cmp(h, h), ((h, h), EQ{}), hub_char_cmp_refl(h)) : {String.cmp.fin(t, t, _) == ((SCon{h, t}, SCon{h, t}), EQ{}) : (String & String) & Cmp}
+      %Equal.sym((String & String) & Cmp, String.cmp(t, t), ((t, t), EQ{}), hub_str_cmp_refl(t)) : {String.cmp.rec(h, h, _) == ((SCon{h, t}, SCon{h, t}), EQ{}) : (String & String) & Cmp}
+      {==}
+
+# every string equals itself
+def hub_str_eq_refl(+s: String) -> {String.eq(s, s) == True{} : Bool}:
+  %Equal.sym((String & String) & Cmp, String.cmp(s, s), ((s, s), EQ{}), hub_str_cmp_refl(s)) : {String.eq.fin(_) == True{} : Bool}
+  {==}
