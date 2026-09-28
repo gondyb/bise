@@ -332,6 +332,12 @@ The same three levels everywhere, in main and inside an agent.
   closes everything folded, one state (like Claude Code; `ctrl+t` is gone).
 - **Failures** stay one line in error color with the reason; `▸` for the
   full error: `$ bash ✗ exit 1 · 0.8s` then `error[E0425]: … ▸ 18 lines`.
+- **Markdown** in messages: headers, lists, quotes, code fences, inline
+  bold/italic/code, and GFM tables (BISE-87): no frame, columns 2 spaces
+  apart, bold header over one faint `─` per column, aligned by display
+  width (`---:`, `:---:`); up to the code measure, then the widest column
+  shrinks and wraps inside it (a blank line between rows once one wraps);
+  too many columns: one `title` + `  key  value` block per row.
 
 ## 12. Cards
 

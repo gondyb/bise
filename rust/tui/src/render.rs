@@ -145,10 +145,17 @@ pub(crate) fn code_width(width: usize) -> usize {
 pub(crate) fn ev_rows(ev: &Ev, tick: u32, width: usize) -> Vec<Line<'static>> {
     let w = match ev {
         Ev::Tool(_) => code_width(width),
+        // a reply wraps its prose at the prose measure itself; its tables
+        // may run to the code measure (BISE-87)
+        Ev::Assistant(_) => code_width(width),
         // a level-3 line is a row of a list, not prose: the code measure
         Ev::AgentMsg { level: 3, text, .. } if !is_brief(text) && report_parts(text).is_none() => code_width(width),
         _ => prose_width(width),
     };
+    // a reply's rows are final (md_lines wrapped them): no second pass
+    if matches!(ev, Ev::Assistant(_)) && !main_feed() {
+        return ev_lines_t(ev, tick, w);
+    }
     let mut rows = Vec::new();
     for l in ev_lines_t(ev, tick, w) {
         rows.extend(wrap_line(l, w));
@@ -253,9 +260,10 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         // column 3; inside an agent, the reply is the view's own voice
         Ev::Assistant(t) if main_feed() => {
             let mark = Span::styled(format!(" {} ", G_MAIN), Style::default().fg(accent()));
-            hung_rows(&mark, &Span::raw("   "), md_to_lines(&unescape_md(t)), width)
+            let rows = md_lines(&unescape_md(t), prose_width(width).saturating_sub(3), width.saturating_sub(3));
+            hung_rows(&mark, &Span::raw("   "), rows, width)
         }
-        Ev::Assistant(t) => md_to_lines(&unescape_md(t)),
+        Ev::Assistant(t) => md_lines(&unescape_md(t), prose_width(width), width),
         Ev::Thinking { ms, text, open } => thinking_lines(*ms, text, *open, width),
         Ev::Tool(td) => tool_lines(td, 0, width),
         Ev::Idle => vec![Line::from("")],
@@ -374,7 +382,7 @@ fn l2_lines(from: &str, body: &str, width: usize) -> Vec<Line<'static>> {
     } else {
         (G_MSG, text_st, format!("{} to you: ", from))
     };
-    let mut lines = md_to_lines(&unescape_md(body.trim()));
+    let mut lines = md_lines(&unescape_md(body.trim()), width.saturating_sub(3), width.saturating_sub(3));
     if lines.is_empty() {
         lines.push(Line::from(""));
     }
@@ -400,7 +408,7 @@ fn answered_lines(agent: &str, question: &str, answer: &str, why: &str, open: bo
     let mut ls = hung_rows(&mark, &Span::raw("   "), [Line::from(line)], width);
     if open && !why.trim().is_empty() {
         let bar = Span::styled(RAIL, Style::default().fg(faint()));
-        ls.extend(barred_rows(&bar, md_to_lines(why.trim()), width));
+        ls.extend(barred_rows(&bar, md_lines(why.trim(), width.saturating_sub(3), width.saturating_sub(3)), width));
     }
     ls
 }
@@ -832,7 +840,7 @@ fn report_lines(from: &str, kind: &str, body: &str, open: bool, width: usize) ->
     let mut ls = vec![Line::from(row)];
     if open && !rest.trim().is_empty() {
         let bar = Span::styled(" │ ", Style::default().fg(faint()));
-        ls.extend(barred_rows(&bar, md_to_lines(rest), width));
+        ls.extend(barred_rows(&bar, md_lines(rest, width.saturating_sub(3), width.saturating_sub(3)), width));
     }
     ls
 }
@@ -848,7 +856,7 @@ fn brief_lines(brief: &str, open: bool, width: usize) -> Vec<Line<'static>> {
     if open {
         let body = brief.split_once('\n').map(|(_, r)| r.trim_matches('\n')).unwrap_or("");
         let bar = Span::styled(" │ ", Style::default().fg(faint()));
-        ls.extend(barred_rows(&bar, md_to_lines(body), width));
+        ls.extend(barred_rows(&bar, md_lines(body, width.saturating_sub(3), width.saturating_sub(3)), width));
     }
     ls
 }

@@ -153,6 +153,9 @@ pub(crate) fn cell_widths(chars: impl Iterator<Item = char>) -> Vec<usize> {
 // span-aware greedy word wrap; words wider than the row hard-split
 pub(crate) fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
     let width = width.max(1);
+    // a row that is already the continuation of a wrapped line stays one
+    // (a second wrap, wider, never loses the soft mark the copy joins on)
+    let soft = feedsel::is_soft(&line);
     let mut cells: Vec<(char, Style)> = Vec::new();
     for sp in line.spans {
         for c in sp.content.chars() {
@@ -212,7 +215,7 @@ pub(crate) fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>>
         rows.push(line_from(row));
     }
     // the rows after the first continue the line (the copy joins them)
-    for r in rows.iter_mut().skip(1) {
+    for r in rows.iter_mut().skip(usize::from(!soft)) {
         feedsel::mark_soft(r);
     }
     rows
