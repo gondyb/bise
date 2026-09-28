@@ -133,6 +133,8 @@ struct ToolData {
     started: std::time::Instant,
     // frozen at finish; None while running (elapsed ticks live)
     elapsed: Option<String>,
+    // a long source block shows whole (a click on the tool toggles it)
+    expanded: bool,
 }
 
 #[derive(Clone)]
@@ -363,6 +365,7 @@ fn parse_line(line: &str) -> Option<Ev> {
             code: None,
             started: std::time::Instant::now(),
             elapsed: None,
+            expanded: false,
         }));
     }
     if let Some(rest) = o.strip_prefix("tool_finished #") {
@@ -382,6 +385,7 @@ fn parse_line(line: &str) -> Option<Ev> {
             result: None,
             started,
             elapsed: Some(fmt_elapsed(started)),
+            expanded: false,
         }));
     }
     if o.starts_with("tool_result_committed") {
@@ -1982,12 +1986,28 @@ fn tool_body(td: &ToolData, code: &Option<(CodeLang, String)>, width: usize) -> 
             ]));
         }
     }
-    // the source block: the FULL code, highlighted, in a bordered box
+    // the source block, highlighted, in a bordered box: whole when
+    // short or unfolded, else its first lines (a huge patch or program
+    // would cost thousands of rows to build and scroll past)
     if let Some((lang, src)) = code {
-        ls.extend(code_block_lines(src, *lang, &td.state, width));
+        let total = src.lines().count();
+        if total > CODE_FOLD_AT && !td.expanded {
+            let head: String = src.lines().take(CODE_FOLD_SHOW).collect::<Vec<_>>().join("\n");
+            ls.extend(code_block_lines(&head, *lang, &td.state, width));
+            ls.push(Line::from(Span::styled(
+                format!("    … {} lignes de plus · clic pour tout voir", total - CODE_FOLD_SHOW),
+                Style::default().fg(DIM),
+            )));
+        } else {
+            ls.extend(code_block_lines(src, *lang, &td.state, width));
+        }
     }
     ls
 }
+
+/// A source block longer than this shows its first `CODE_FOLD_SHOW` lines.
+const CODE_FOLD_AT: usize = 60;
+const CODE_FOLD_SHOW: usize = 40;
 
 fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
     let (name, args, code) = tool_meta(td);
@@ -3203,8 +3223,18 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                         }
                         // the event the last frame showed on that row
                         if let Some(&i) = app.vis_events.get(m.row as usize) {
-                            if let Some(Ev::Thinking { open, .. }) = app.events.get_mut(i) {
-                                *open = !*open;
+                            let toggled = match app.events.get_mut(i) {
+                                Some(Ev::Thinking { open, .. }) => {
+                                    *open = !*open;
+                                    true
+                                }
+                                Some(Ev::Tool(td)) if td.code.is_some() => {
+                                    td.expanded = !td.expanded;
+                                    true
+                                }
+                                _ => false,
+                            };
+                            if toggled {
                                 if let Some(c) = app.cache.get_mut(i) {
                                     *c = None;
                                 }
@@ -3778,6 +3808,25 @@ async function main(): Promise<unknown> {
 
     // bash gets the same block as run_typescript: the raw command (no
     // JSON), bash header, one row per line, no preview on the tool line
+    #[test]
+    fn a_long_source_block_folds_until_clicked() {
+        let cmd: String = (1..=200).map(|i| format!("echo {}", i)).collect::<Vec<_>>().join("\n");
+        let wire_lines = vec![
+            "  obs: tool_started #4".to_string(),
+            "tool #4 bash : echo".to_string(),
+            format!("tool_code #4 : {}", wire_encode(&cmd)),
+            "  obs: tool_finished #4 ok".to_string(),
+        ];
+        let mut tool = merged_tool(&wire_lines);
+        let folded = rows_text(&ev_lines(&Ev::Tool(tool.clone()), 80));
+        assert_eq!(folded.iter().filter(|l| l.contains("│ echo")).count(), CODE_FOLD_SHOW);
+        assert!(folded.iter().any(|l| l.contains("160 lignes de plus")));
+        tool.expanded = true;
+        let whole = rows_text(&ev_lines(&Ev::Tool(tool), 80));
+        assert_eq!(whole.iter().filter(|l| l.contains("│ echo")).count(), 200);
+        assert!(!whole.iter().any(|l| l.contains("lignes de plus")));
+    }
+
     #[test]
     fn bash_code_block_renders_under_the_tool_line() {
         let cmd = "# compte les fichiers
