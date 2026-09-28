@@ -1,5 +1,8 @@
 # bise terminal UI: design spec v0
 
+> Design log. The source of truth is now [bise-book.md](bise-book.md) (brand,
+> spec, implementation plan) with [bise-issues.md](bise-issues.md).
+
 Design only, not implemented. Mockups: [tui-mockup.html](tui-mockup.html) (one
 screen, interactive) and [tui-screens.html](tui-screens.html) (every feature of
 today's TUI) and [tui-live.html](tui-live.html) (an 80-second live simulation
