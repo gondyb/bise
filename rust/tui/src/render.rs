@@ -113,9 +113,41 @@ pub(crate) fn ev_lines_t(ev: &Ev, tick: u32, width: usize) -> Vec<Line<'static>>
     }
 }
 
+// ---- the measure (book §11) ----
+
+/// Prose (messages, reports, notices) wraps at this many columns.
+pub(crate) const PROSE_MAX: usize = 76;
+/// Code (scripts, diffs, outputs) runs up to this many columns.
+pub(crate) const CODE_MAX: usize = 100;
+
+/// The prose measure in a feed column of `width`.
+pub(crate) fn prose_width(width: usize) -> usize {
+    width.clamp(1, PROSE_MAX)
+}
+
+/// The code measure in a feed column of `width`.
+pub(crate) fn code_width(width: usize) -> usize {
+    width.clamp(1, CODE_MAX)
+}
+
+/// The rows of one event in a feed column of `width`: prose wrapped at
+/// its measure, a tool (its line, its code, its output) at the code
+/// measure. The extra width stays empty: rows never stretch.
+pub(crate) fn ev_rows(ev: &Ev, tick: u32, width: usize) -> Vec<Line<'static>> {
+    let w = match ev {
+        Ev::Tool(_) => code_width(width),
+        _ => prose_width(width),
+    };
+    let mut rows = Vec::new();
+    for l in ev_lines_t(ev, tick, w) {
+        rows.extend(wrap_line(l, w));
+    }
+    rows
+}
+
 // a thinking section: collapsed it is one dim glyph + duration;
 // expanded (ctrl+t, or a click) the reasoning shows under a faint rail
-pub(crate) fn thinking_lines(ms: u128, text: &str, open: bool) -> Vec<Line<'static>> {
+pub(crate) fn thinking_lines(ms: u128, text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
     let head = Line::from(vec![
         Span::styled(format!(" {} ", GLYPH_THINK), Style::default().fg(DIM)),
         Span::styled(
@@ -127,20 +159,16 @@ pub(crate) fn thinking_lines(ms: u128, text: &str, open: bool) -> Vec<Line<'stat
         return vec![head];
     }
     let mut rows = vec![head];
-    for l in unescape_md(text).split('\n') {
-        // the BENDSIG line carries the provider signature (the signed
-        // thinking transport), never part of the reasoning itself
-        if l.starts_with("BENDSIG::") {
-            continue;
-        }
-        rows.push(Line::from(vec![
-            Span::styled(format!(" {} ", GLYPH_RAIL), Style::default().fg(FAINT)),
-            Span::styled(
-                l.to_string(),
-                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-            ),
-        ]));
-    }
+    let style = Style::default().fg(DIM).add_modifier(Modifier::ITALIC);
+    // the BENDSIG line carries the provider signature (the signed
+    // thinking transport), never part of the reasoning itself
+    let body = unescape_md(text);
+    let lines = body
+        .split('\n')
+        .filter(|l| !l.starts_with("BENDSIG::"))
+        .map(|l| Line::from(Span::styled(l.to_string(), style)));
+    let bar = Span::styled(format!(" {} ", GLYPH_RAIL), Style::default().fg(FAINT));
+    rows.extend(barred_rows(&bar, lines, width));
     rows
 }
 
@@ -164,7 +192,7 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         // an image marker shows as `[Image #1 path]` (docs/images.md)
         Ev::You(t) => user_block_lines(&bend_images::display(t), width),
         Ev::Assistant(t) => md_to_lines(&unescape_md(t)),
-        Ev::Thinking { ms, text, open } => thinking_lines(*ms, text, *open),
+        Ev::Thinking { ms, text, open } => thinking_lines(*ms, text, *open, width),
         Ev::Tool(td) => tool_lines(td, 0, width),
         Ev::Idle => vec![Line::from("")],
         Ev::Sub { name, ok, preview } => vec![Line::from(vec![

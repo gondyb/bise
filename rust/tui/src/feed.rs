@@ -66,11 +66,13 @@ pub(crate) fn event_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
         rows.push(Line::from(""));
     }
     let (name, args, code) = tool_meta(td);
+    // a tool is code: its rows follow the code measure
+    let cw = code_width(width);
     let at = rows.len();
-    rows.extend(wrap_line(tool_head(td, tick, &name, &args), width));
+    rows.extend(wrap_line(tool_head(td, tick, &name, &args), cw));
     let len = rows.len() - at;
-    for l in tool_body(td, &code, width) {
-        rows.extend(wrap_line(l, width));
+    for l in tool_body(td, &code, cw) {
+        rows.extend(wrap_line(l, cw));
     }
     EventRows {
         width: width as u16,
@@ -82,7 +84,7 @@ pub(crate) fn event_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
 /// Redraw the tool line of a running tool, keep the rest.
 pub(crate) fn refresh_live(er: &mut EventRows, ev: &Ev, tick: u32) {
     let (Some(lh), Ev::Tool(td)) = (er.live.as_mut(), ev) else { return };
-    let head = wrap_line(tool_head(td, tick, &lh.name, &lh.args), er.width as usize);
+    let head = wrap_line(tool_head(td, tick, &lh.name, &lh.args), code_width(er.width as usize));
     let n = head.len();
     er.rows.splice(lh.at..lh.at + lh.len, head);
     lh.len = n;
@@ -211,13 +213,11 @@ pub(crate) fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
         rows.push(Line::from(""));
     }
     let user = matches!(ev, Ev::You(_));
-    for l in ev_lines_t(ev, tick, width) {
-        for mut r in wrap_line(l, width) {
-            if user {
-                pad_line_bg(&mut r, width);
-            }
-            rows.push(r);
+    for mut r in ev_rows(ev, tick, width) {
+        if user {
+            pad_line_bg(&mut r, prose_width(width));
         }
+        rows.push(r);
     }
     rows
 }

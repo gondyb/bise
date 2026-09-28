@@ -522,12 +522,17 @@ pub(crate) fn tool_source(lang: CodeLang, decoded: String) -> String {
     }
 }
 
-// wrap one line of spans into rows of at most `w` display columns, so
-// the block shows the whole source. A row breaks after its last
-// whitespace when that keeps at least half the row; otherwise (a long
-// token) it breaks hard at the width. Returns each row with its width.
-pub(crate) fn wrap_code_line(spans: &[Span<'static>], w: usize) -> Vec<(Vec<Span<'static>>, usize)> {
-    let w = w.max(1);
+// wrap one line of spans into rows of at most `first` display columns
+// for the first row, `rest` for the continuations (they carry the
+// hanging indent and its `↪`), so the block shows the whole source. A
+// row breaks after its last whitespace when that keeps at least half
+// the row; otherwise (a long token) it breaks hard at the width.
+// Returns each row with its width.
+pub(crate) fn wrap_code_line_hanging(
+    spans: &[Span<'static>],
+    first: usize,
+    rest: usize,
+) -> Vec<(Vec<Span<'static>>, usize)> {
     let widths = cell_widths(spans.iter().flat_map(|sp| sp.content.chars()));
     let cells: Vec<(char, Style, usize)> = spans
         .iter()
@@ -538,6 +543,7 @@ pub(crate) fn wrap_code_line(spans: &[Span<'static>], w: usize) -> Vec<(Vec<Span
     let mut rows = Vec::new();
     let mut start = 0usize;
     while start < cells.len() {
+        let w = if rows.is_empty() { first } else { rest }.max(1);
         // the longest run that fits
         let mut end = start;
         let mut used = 0usize;
@@ -576,14 +582,24 @@ pub(crate) fn wrap_code_line(spans: &[Span<'static>], w: usize) -> Vec<(Vec<Span
     rows
 }
 
-// the code block: a rounded border (orange while the tool runs, dim once
-// done, red on failure), a header, a line-number gutter, and the whole
-// source: a long line wraps inside the box, its continuation rows with
-// an empty gutter (the numbers mark where each source line starts)
+/// The wrap mark of a code continuation row (book §11). Not a §6 glyph:
+/// the audit (BISE-03) proposes `»` as its fallback.
+pub(crate) const G_WRAP: &str = "↪";
+
+/// The rail in front of every row of a code block: one blank column,
+/// the faint rail, one blank column (the text starts at column 3, under
+/// the tool's name).
+pub(crate) const CODE_RAIL: &str = " │ ";
+
+// the code block (book §11, mockup "inside an agent"): the whole source
+// under a faint rail, syntax colored, no box and no line numbers. A line
+// longer than the block wraps with a hanging indent and a faint `↪`.
+// `width` is the whole row (rail included); the caller caps it at the
+// code measure.
 pub(crate) fn code_block_lines(
     code: &str,
     lang: CodeLang,
-    state: &ToolState,
+    _state: &ToolState,
     width: usize,
 ) -> Vec<Line<'static>> {
     let hl = match lang {
@@ -591,62 +607,21 @@ pub(crate) fn code_block_lines(
         CodeLang::Bash => highlight_bash(code),
         CodeLang::Patch => highlight_patch(code),
     };
-    // a diff has no meaningful line numbers: no gutter
-    let numbered = lang != CodeLang::Patch;
     if hl.is_empty() {
         return Vec::new();
     }
-    let border = match state {
-        ToolState::Run => BRAND,
-        ToolState::Ok => BORDER_ACTIVE,
-        ToolState::Fail => ERR,
-    };
-    let bstyle = Style::default().fg(border);
-    // 2 feed margin, "│ " and "│" borders, 1 right pad, and when
-    // numbered the gutter with its " │ " separator
-    let gutter_w = hl.len().to_string().len();
-    let overhead = if numbered { gutter_w + 9 } else { 6 };
-    let cw = width.saturating_sub(overhead).max(8);
-    let inner = if numbered { gutter_w + cw + 5 } else { cw + 2 };
+    let rail = Span::styled(CODE_RAIL, Style::default().fg(faint()));
+    let hang = Span::styled(format!("{} ", G_WRAP), Style::default().fg(faint()));
+    let first = width.saturating_sub(CODE_RAIL.width()).max(8);
+    let rest = first.saturating_sub(hang.content.width()).max(6);
     let mut rows: Vec<Line<'static>> = Vec::new();
-    // top: "  ╭─ typescript ───…───╮" (or "─ bash ")
-    let header = match lang {
-        CodeLang::TypeScript => "─ typescript ",
-        CodeLang::Bash => "─ bash ",
-        CodeLang::Patch => "─ diff ",
-    };
-    let fill = inner.saturating_sub(header.width()).max(1);
-    rows.push(Line::from(vec![
-        Span::styled("  ", Style::default()),
-        Span::styled("╭", bstyle),
-        Span::styled(header.to_string(), bstyle),
-        Span::styled("─".repeat(fill), bstyle),
-        Span::styled("╮", bstyle),
-    ]));
-    for (i, spans) in hl.iter().enumerate() {
-        // a background band (diff lines) runs to the right border
-        let band = spans
-            .first()
-            .and_then(|sp| sp.style.bg)
-            .map_or(Style::default(), |bg| Style::default().bg(bg));
-        for (r, (content, used)) in wrap_code_line(spans, cw).into_iter().enumerate() {
-            let mut ls = vec![
-                Span::styled("  ", Style::default()),
-                Span::styled("│ ", bstyle),
-            ];
-            if numbered {
-                let gutter = if r == 0 {
-                    format!("{:>gw$}", i + 1, gw = gutter_w)
-                } else {
-                    " ".repeat(gutter_w)
-                };
-                ls.push(Span::styled(gutter, Style::default().fg(FAINT)));
-                ls.push(Span::styled(" │ ", bstyle));
+    for spans in &hl {
+        for (r, (content, _)) in wrap_code_line_hanging(spans, first, rest).into_iter().enumerate() {
+            let mut ls = vec![rail.clone()];
+            if r > 0 {
+                ls.push(hang.clone());
             }
             ls.extend(content);
-            // pad to the row width, plus the 1-column right pad
-            ls.push(Span::styled(" ".repeat(cw - used.min(cw) + 1), band));
-            ls.push(Span::styled("│", bstyle));
             let mut line = Line::from(ls);
             if r > 0 {
                 feedsel::mark_soft(&mut line);
@@ -654,11 +629,5 @@ pub(crate) fn code_block_lines(
             rows.push(line);
         }
     }
-    rows.push(Line::from(vec![
-        Span::styled("  ", Style::default()),
-        Span::styled("╰", bstyle),
-        Span::styled("─".repeat(inner), bstyle),
-        Span::styled("╯", bstyle),
-    ]));
     rows
 }

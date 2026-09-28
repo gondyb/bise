@@ -78,8 +78,10 @@ pub(crate) fn slice_cols(s: &str, from: usize, to: usize) -> String {
     out
 }
 
-/// The columns of a row that are text, not decoration: a code box row
-/// ("  │ 12 │ code   │") keeps only the code.
+/// The columns of a row that are text, not decoration: a row behind a
+/// rail (" │ code", a code block, an agent message, a thinking section)
+/// keeps only its text, and a code continuation row (" │ ↪ rest") drops
+/// its wrap mark too.
 fn content_cols(s: &str) -> (usize, usize) {
     let w = s.width();
     let lead = s.len() - s.trim_start_matches(' ').len();
@@ -88,20 +90,10 @@ fn content_cols(s: &str) -> (usize, usize) {
         return (0, w);
     };
     let mut c0 = lead + 2;
-    // a line-number gutter: digits or blanks, then " │ "
-    if let Some(p) = inner.find(" │ ") {
-        if inner[..p].chars().all(|c| c.is_ascii_digit() || c == ' ') {
-            c0 += inner[..p].width() + 3;
-        }
+    if inner.starts_with(crate::code::G_WRAP) && inner[crate::code::G_WRAP.len()..].starts_with(' ') {
+        c0 += crate::code::G_WRAP.width() + 1;
     }
-    let c1 = if s.ends_with('│') { w - 1 } else { w };
-    (c0.min(c1), c1)
-}
-
-/// A box top or bottom border ("╭ bash ──╮", "╰───╯").
-fn is_border(s: &str) -> bool {
-    let t = s.trim_start();
-    t.starts_with('╭') || t.starts_with('╰')
+    (c0.min(w), w)
 }
 
 /// The text of the selected rows: `rows` are the rows from the first to
@@ -112,9 +104,6 @@ pub(crate) fn selection_text(rows: &[Line], from: usize, to: usize) -> String {
     let mut out = String::new();
     for (i, l) in rows.iter().enumerate() {
         let s = line_text(l);
-        if n > 1 && is_border(&s) {
-            continue;
-        }
         let (c0, c1) = content_cols(&s);
         let a = if i == 0 { from.max(c0) } else { c0 };
         let b = if i + 1 == n { to.min(c1) } else { c1 };
@@ -199,15 +188,16 @@ mod tests {
     }
 
     #[test]
-    fn code_box_rows_copy_the_code_only() {
+    fn code_rail_rows_copy_the_code_only() {
+        // a wrapped code line: its continuation row carries the wrap
+        // mark and joins the row before
         let rows = vec![
-            Line::from("  ╭ bash ─────╮"),
-            Line::from("  │  1 │ ls -la │"),
-            Line::from("  │  2 │ pwd    │"),
-            Line::from("  ╰───────────╯"),
+            Line::from(" │ ls -la "),
+            soft(" │ ↪ --color"),
+            Line::from(" │ pwd"),
         ];
-        assert_eq!(selection_text(&rows, 0, usize::MAX), "ls -la\npwd");
-        let rows = vec![Line::from("  │ plain output │")];
+        assert_eq!(selection_text(&rows, 0, usize::MAX), "ls -la --color\npwd");
+        let rows = vec![Line::from(" │ plain output")];
         assert_eq!(selection_text(&rows, 0, usize::MAX), "plain output");
     }
 

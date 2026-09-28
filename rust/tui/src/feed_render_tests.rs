@@ -88,11 +88,10 @@ async function main(): Promise<unknown> {
         println!("{:2} | {}", i, l);
     }
     assert!(joined[0].contains("run_typescript") && !joined[0].contains("orchestre"));
-    assert!(joined.iter().any(|l| l.contains("╭─ typescript")));
-    assert!(joined.iter().any(|l| l.contains("async function main")));
+    assert!(joined.iter().any(|l| l.starts_with(" │ async function main")));
     assert!(joined.iter().any(|l| l.contains("une chaîne")));
-    // one bordered row per source line, top and bottom included
-    assert_eq!(joined.iter().filter(|l| l.contains('│')).count(), 6);
+    // one row per source line, behind the rail
+    assert_eq!(joined.iter().filter(|l| l.starts_with(" │ ")).count(), 6);
 }
 
 fn merged_tool(wire_lines: &[String]) -> ToolData {
@@ -158,11 +157,10 @@ done | sort -n";
     }
     // the tool line names the tool; the source shows only in the block
     assert!(joined[0].contains("bash") && !joined[0].contains("compte"));
-    assert!(joined.iter().any(|l| l.contains("╭─ bash")));
     assert!(joined.iter().any(|l| l.contains("for f in *.rs; do")));
     assert!(joined.iter().any(|l| l.contains("done | sort -n")));
-    // one bordered row per source line (4 lines)
-    assert_eq!(joined.iter().filter(|l| l.contains('│')).count(), 4);
+    // one row per source line (4 lines), behind the rail
+    assert_eq!(joined.iter().filter(|l| l.starts_with(" │ ")).count(), 4);
 }
 
 // a bash tool line without tool_code (an older runtime) keeps the
@@ -176,7 +174,7 @@ fn bash_without_code_has_no_block() {
     ]);
     let joined = rows_text(&ev_lines(&Ev::Tool(tool), 80));
     assert!(joined[0].contains("ls -la"));
-    assert!(!joined.iter().any(|l| l.contains('╭')));
+    assert!(!joined.iter().any(|l| l.starts_with(" │ ")));
 }
 
 fn style_of(lines: &[Vec<Span<'static>>], tok: &str) -> Style {
@@ -256,47 +254,51 @@ fn resume_history_rebuilds_the_feed() {
     );
 }
 
-// a long line wraps inside the box: nothing is lost, every row has
-// the box width, continuation rows have an empty gutter
+// a long line wraps under the rail with a hanging indent and a faint
+// ↪: nothing is lost, no row is wider than the block, the continuation
+// rows join the row before when copied
 #[test]
-fn long_code_lines_wrap_inside_the_box() {
-    let cmd = "cd /Users/someone/lab/project && cargo test -p some-crate --release 2>&1 | rg 'test result|FAILED|panicked' | head -20
-echo ok";
-    let rows = rows_text(&code_block_lines(cmd, CodeLang::Bash, &ToolState::Ok, 50));
+fn long_code_lines_wrap_with_a_hanging_indent() {
+    let cmd = "cd /Users/someone/lab/project && cargo test -p some-crate --release 2>&1 | rg 'test result|FAILED|panicked' | head -20\necho ok";
+    let lines = code_block_lines(cmd, CodeLang::Bash, &ToolState::Ok, 50);
+    let rows = rows_text(&lines);
     for r in &rows {
         println!("{}", r);
     }
-    let widths: Vec<usize> = rows.iter().map(|r| r.width()).collect();
-    assert!(widths.iter().all(|&w| w == widths[0]), "aligned box: {:?}", widths);
-    // top + 2 source lines, the first on several rows + bottom
-    assert!(rows.len() > 4);
-    // the text between the gutter bars reassembles the source
-    let body: String = rows[1..rows.len() - 1]
+    assert!(rows.iter().all(|r| r.width() <= 50), "{rows:#?}");
+    // 2 source lines, the first on several rows
+    assert!(rows.len() > 3);
+    assert!(rows[0].starts_with(" │ cd "));
+    assert!(rows[1].starts_with(" │ ↪ "), "{rows:#?}");
+    assert!(crate::feedsel::is_soft(&lines[1]) && !crate::feedsel::is_soft(&lines[0]));
+    assert_eq!(rows.last().unwrap(), " │ echo ok");
+    // the text after the rail and the wrap marks reassembles the source
+    let body: String = rows
         .iter()
         .map(|r| {
-            // between the gutter's closing bar and the right border
-            let first = r.find('│').unwrap();
-            let second = first + 3 + r[first + 3..].find('│').unwrap();
-            let last = r.rfind('│').unwrap();
-            r[second + 3..last].to_string()
+            let t = r.strip_prefix(" │ ").unwrap();
+            t.strip_prefix("↪ ").unwrap_or(t).to_string()
         })
         .collect::<Vec<_>>()
         .join("");
     assert_eq!(body.replace(' ', ""), cmd.replace(['\n', ' '], ""));
-    // line 2 starts on a numbered row; continuation rows are blank
-    assert!(rows[1].contains(" 1 │ cd "));
-    assert!(rows[2].starts_with("  │   │ "));
-    assert!(rows.iter().any(|r| r.contains(" 2 │ echo ok")));
+    // the rail and the wrap mark are faint
+    let faint = Some(crate::theme::faint());
+    assert_eq!(lines[1].spans[0].style.fg, faint);
+    assert_eq!(lines[1].spans[1].style.fg, faint);
 }
 
 // a token longer than the row breaks hard, never overflows
 #[test]
 fn wrap_breaks_long_tokens() {
     let spans = vec![Span::raw("x".repeat(25))];
-    let rows = wrap_code_line(&spans, 10);
+    let rows = wrap_code_line_hanging(&spans, 10, 10);
     let ws: Vec<usize> = rows.iter().map(|(_, w)| *w).collect();
     assert_eq!(ws, vec![10, 10, 5]);
-    assert_eq!(wrap_code_line(&[], 10).len(), 1);
+    assert_eq!(wrap_code_line_hanging(&[], 10, 10).len(), 1);
+    // continuation rows get their own, narrower width
+    let ws: Vec<usize> = wrap_code_line_hanging(&spans, 10, 8).iter().map(|(_, w)| *w).collect();
+    assert_eq!(ws, vec![10, 8, 7]);
 }
 
 // apply_patch renders as a diff: summary in the tool line, the
@@ -327,27 +329,11 @@ fn apply_patch_renders_a_diff_block() {
         println!("{}", r);
     }
     assert!(rows[0].contains("apply_patch") && rows[0].ends_with("· core/obs.bend +2 −1, notes.md +1"));
-    assert!(rows.iter().any(|r| r.contains("╭─ diff")));
     assert!(!rows.iter().any(|r| r.contains("Begin Patch") || r.contains("End Patch")));
-    assert!(rows.iter().any(|r| r.contains("│ ~ core/obs.bend")));
-    assert!(rows.iter().any(|r| r.contains("│ + notes.md · new")));
+    assert!(rows.iter().any(|r| r.starts_with(" │ ~ core/obs.bend")));
+    assert!(rows.iter().any(|r| r.starts_with(" │ + notes.md · new")));
     // no line-number gutter in a diff
-    assert!(rows.iter().any(|r| r.contains("│ -    old line")));
-    // box aligned
-    let boxed: Vec<usize> = rows.iter().filter(|r| r.contains('│') || r.contains('╭') || r.contains('╰')).map(|r| r.width()).collect();
-    assert!(boxed.iter().all(|&w| w == boxed[0]), "{:?}", boxed);
-    // the added line's band reaches the right border (padding included)
-    let add_row = lines
-        .iter()
-        .find(|l| l.spans.iter().any(|s| s.content.contains("+    new line")))
-        .expect("the added row");
-    let n = add_row.spans.len();
-    assert_eq!(add_row.spans[n - 2].style.bg, Some(DIFF_ADD_BG));
-    let del_row = lines
-        .iter()
-        .find(|l| l.spans.iter().any(|s| s.content.contains("-    old line")))
-        .expect("the removed row");
-    assert!(del_row.spans.iter().any(|s| s.style.bg == Some(DIFF_DEL_BG)));
+    assert!(rows.iter().any(|r| r.starts_with(" │ -    old line")));
 }
 
 #[test]
@@ -414,6 +400,60 @@ fn feed_wrap_counts_graphemes_as_drawn() {
     let rows = wrap_line(Line::from("👏👏👏👏👏"), 4);
     assert_eq!(rows.len(), 3);
     assert!(rows.iter().all(|r| w(r) <= 4));
-    let rows = wrap_code_line(&[Span::raw("❤️❤️❤️")], 4);
+    let rows = wrap_code_line_hanging(&[Span::raw("❤️❤️❤️")], 4, 4);
     assert_eq!(rows.iter().map(|r| r.1).collect::<Vec<_>>(), vec![4, 2]);
+}
+
+// ---- the measure (BISE-10, book §11) ----
+
+fn feed_rows(events: &[Ev], width: usize) -> Vec<Vec<String>> {
+    (0..events.len())
+        .map(|i| rows_text(&build_rows(events, i, false, width, 0)))
+        .collect()
+}
+
+fn measure_feed() -> Vec<Ev> {
+    let prose = "the login breaks on safari because the session cookie is set with SameSite=None and without Secure, so the browser drops it on the redirect and the user lands on the sign-in page again. ".repeat(2);
+    let long_line = format!("cargo test -p bend-tui --release -- {} --nocapture", "feed_render ".repeat(14));
+    let tool = merged_tool(&[
+        "  obs: tool_started #3".to_string(),
+        "tool #3 bash : cargo".to_string(),
+        format!("tool_code #3 : {}", wire_encode(&format!("cd rust\n{}", long_line))),
+        "  obs: tool_finished #3 ok".to_string(),
+    ]);
+    vec![
+        Ev::You(prose.clone()),
+        Ev::Assistant(prose.clone()),
+        Ev::AgentMsg { from: "docs".into(), to: "main".into(), text: prose.clone(), level: 3, id: String::new() },
+        Ev::Thinking { ms: 1200, text: prose.clone(), open: true },
+        Ev::Tool(tool),
+    ]
+}
+
+#[test]
+fn prose_wraps_at_76_and_code_at_100() {
+    for width in [60usize, 100, 160] {
+        let events = measure_feed();
+        let rows = feed_rows(&events, width);
+        let widest = |rs: &[String]| rs.iter().map(|r| r.trim_end().width()).max().unwrap_or(0);
+        // prose: the user block, the reply, the message, the reasoning
+        for (i, rs) in rows[..4].iter().enumerate() {
+            let w = widest(rs);
+            assert!(w <= 76.min(width), "event {i} at {width}: {w} columns\n{rs:#?}");
+            // the text fills its measure: it is not wrapped narrower
+            assert!(w >= 76.min(width) - 12, "event {i} at {width}: only {w} columns\n{rs:#?}");
+        }
+        // the user block's panel stops at the measure too (a wrapped
+        // row keeps the blank after its last word, as before)
+        assert!(rows[0].iter().all(|r| r.trim_end().width() <= 76.min(width) && r.width() <= 77.min(width + 1)), "{width}: {:#?}", rows[0]);
+        // code: the tool line and its script
+        let code = &rows[4];
+        let w = widest(code);
+        assert!(w <= 100.min(width), "code at {width}: {w}\n{code:#?}");
+        if width > 100 {
+            // the long script line uses the whole code measure
+            assert!(w >= 90, "code at {width}: {w}\n{code:#?}");
+        }
+        assert!(code.iter().any(|r| r.starts_with(" │ ↪ ")), "code at {width}: {code:#?}");
+    }
 }
