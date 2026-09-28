@@ -1589,3 +1589,43 @@ Index:
   `/tmp/bise-f-target`, worktree of 20f6732 + this change): build, `cargo
   test --workspace`, clippy `--all-targets` 0 warnings, run_all.sh green;
   rebased on e01177d (K's panel title): build + queue/chrome tests green.
+
+### BISE-91 · chrome fixes from the visual QA
+
+- **status:** done · **owner:** bise-k-keys · **commits:** 432d477,
+  31ac636, e05cd9b, 97f3786 (shots)
+- **track:** K · **owns:** `ui.rs` draw_popup, `sb/panel.rs` header counts
+  + hint + panel title, `theme.rs` ASCII table + `ellipsis()`, `render.rs`
+  truncate_chars / fit_chars (OK'd by bise-c-cards), `help.rs` key text,
+  book §6 ASCII table
+- **spec:** qa/visual-qa.md items 6, 11, 12, 14; book §6, §8
+- **notes:**
+  - **(6) 432d477:** the `/` popup and the `/version` picker are as wide as
+    their widest line (at least 56 / 72, at most the prompt's width), so
+    descriptions show whole.
+  - **(11) 31ac636:** the hint row drops `alt+r answer with text · ctrl+x
+    later · ctrl+f full screen` while the card box is shown (the box
+    carries them); it shows the normal hint instead.
+  - **(14) 31ac636:** the header fits its counts to the room left: every
+    count with its word, else numbers only, then the least important go
+    first ("needs you" stays, then working, waiting, done), always in the
+    §8 order. Test `a_narrow_header_keeps_needs_you_first`.
+  - **(12) e05cd9b:** each §6 entity has its own one-cell ASCII form:
+    brief `&`, thinking `:`, sub-call `L`, wrap `}`, waiting `;`, done `*`,
+    stopped `_`, unread `!`, overlap `/`, restart failed `(`, building `A`,
+    closed / open `+` / `-` (the rest unchanged). A cut text ends with
+    `...` in ASCII mode (`theme::ellipsis()`, used by `truncate_chars` /
+    `fit_chars`), so `…` never reads `:` or `;` in prose. The panel title
+    and the help keys say `alt + number` (source level: the cell net
+    would give `M`). Box drawing stays. Book §6 has the table. Test
+    `every_entity_has_its_own_ascii_form`.
+  - **Shots (97f3786):** recaptured on e05cd9b with `qa/capture.py dark`
+    and `ascii`: dark 04–09, 22, 24, 29 and ascii 02, 03, 29 (the others
+    left as bise-c-cards made them). In that session only one agent is
+    counted, so dark/29 still reads `? 1`: correct. The fit logic is
+    covered by the test.
+  - **Gates:** each commit ran build, `cargo test -p bend-tui` and clippy
+    `--workspace --all-targets -D warnings` on its exact tree (own target
+    `/tmp/bise-k-target`, deleted after). The full gate on e05cd9b:
+    `cargo test --workspace`, `run_all.sh` (PROOF, e2e, the 13 tmux
+    tests): green.
