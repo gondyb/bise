@@ -1705,6 +1705,65 @@ mod nav_key_tests {
         assert_eq!(nav(KeyCode::Up, KeyModifiers::ALT), Some(Nav::Prev));
     }
 
+    fn agent(name: &str) -> Agent {
+        Agent {
+            name: name.into(),
+            main: name == "main",
+            status: "idle".into(),
+            objective: String::new(),
+            mode: String::new(),
+            branch: None,
+            path: String::new(),
+            note: String::new(),
+            queued: 0,
+            turn_ms: None,
+        }
+    }
+
+    fn press(app: &mut App, code: KeyCode, m: KeyModifiers) -> bool {
+        key(app, &KeyEvent::new(code, m), false)
+    }
+
+    /// The panel path of tui_tmux.py: from no selection, Ctrl+K selects
+    /// main then the first task; Enter (empty composer) enters its view.
+    #[test]
+    fn ctrl_k_then_enter_enters_the_selected_task() {
+        let mut app = bench::test_app();
+        app.sb.as_mut().unwrap().agents = vec![agent("main"), agent("t1")];
+        assert!(press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL));
+        assert_eq!(app.sb.as_ref().unwrap().selected, Some(0));
+        assert!(press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL));
+        assert_eq!(app.sb.as_ref().unwrap().selected, Some(1));
+        assert!(press(&mut app, KeyCode::Enter, KeyModifiers::NONE));
+        let sb = app.sb.as_ref().unwrap();
+        assert_eq!(sb.focus, "t1");
+        assert_eq!(sb.selected, None);
+    }
+
+    /// Ctrl+J goes backwards: from no selection, the last agent first.
+    #[test]
+    fn ctrl_j_from_nothing_selects_the_last_agent() {
+        let mut app = bench::test_app();
+        app.sb.as_mut().unwrap().agents = vec![agent("main"), agent("t1"), agent("t2")];
+        press(&mut app, KeyCode::Char('j'), KeyModifiers::CONTROL);
+        assert_eq!(app.sb.as_ref().unwrap().selected, Some(2));
+        press(&mut app, KeyCode::Char('j'), KeyModifiers::CONTROL);
+        assert_eq!(app.sb.as_ref().unwrap().selected, Some(1));
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(app.sb.as_ref().unwrap().focus, "t1");
+    }
+
+    /// A non-empty composer keeps Enter for sending: no view change.
+    #[test]
+    fn enter_with_text_does_not_enter_the_selection() {
+        let mut app = bench::test_app();
+        app.sb.as_mut().unwrap().agents = vec![agent("main"), agent("t1")];
+        app.sb.as_mut().unwrap().selected = Some(1);
+        app.input = "hello".into();
+        assert!(!press(&mut app, KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.sb.as_ref().unwrap().focus, "main");
+    }
+
     #[test]
     fn alt_digits_go_to_agent_n() {
         for d in 0..=9u32 {

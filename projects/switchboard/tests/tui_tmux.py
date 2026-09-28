@@ -57,9 +57,9 @@ def main():
         sc = wait_screen("1 t1")
         wait_screen("new task @t1")
         wait_screen("◀ t1 m_", 60)            # the automatic reply in main's feed
-        # select the task with Ctrl+J, enter it
-        keys("C-j")
-        keys("C-j")
+        # select the task with Ctrl+K (next: main, then t1), enter it
+        keys("C-k")
+        keys("C-k")
         sc = wait_screen("⏎ enter · Space preview")
         keys("Enter")
         sc = wait_screen("@t1 ·")
@@ -81,8 +81,8 @@ def main():
         keys("Escape")
         wait_screen("Message to main…")
         # preview: select, Space; the status says it; Esc closes
-        keys("C-j")
-        keys("C-j")
+        keys("C-k")
+        keys("C-k")
         keys("Space")
         wait_screen("preview of @t1")
         keys("Escape")
@@ -91,8 +91,8 @@ def main():
         keys("Enter")
         wait_screen("écris {{bash: echo hi-t1}}")
         # drop from the panel with D
-        keys("C-j")
-        keys("C-j")
+        keys("C-k")
+        keys("C-k")
         typed("D")
         wait_screen("@t1 archived", 20)
         wait_screen("1 archived")
