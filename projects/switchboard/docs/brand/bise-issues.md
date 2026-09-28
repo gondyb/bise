@@ -1051,20 +1051,70 @@ Index:
 
 ### BISE-80 · vocabulary sweep
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done (TUI side) · **owner:** bise-k-keys (TUI), bise-h-hub
+  (hub) · **commits:** f812423 (TUI)
 - **track:** S · **owns:** any user-visible string, one file at a time
 - **do:** `rg -n -i 'task'` over user-visible strings of `rust/tui` and the
   hub's messages to the UI; "agent" everywhere (code identifiers may stay).
 - **notes:**
+  - **TUI:** `/agents` is the command in the TUI list, with the
+    description agreed with bise-h-hub: `list the agents and what they do`
+    (the hub keeps `/tasks` as a hidden alias, d4ae5b1). `tui_tmux.py`
+    types `/agents`. Every other user-visible "task" had already gone in
+    BISE-41 (help, command lines). What is left says "task" only in code:
+    identifiers, the `# Task` brief parser in render.rs, and render.rs
+    mapping the hub's `task stopped` to `agent stopped`.
 
 ### BISE-81 · lowercase and copy-deck sweep
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done (TUI side) · **owner:** bise-k-keys (TUI), bise-h-hub
+  (hub) · **commits:** f812423, 574f904 (TUI)
 - **track:** S
 - **do:** every UI string lowercase (§4 exceptions); every string in §17
   matches exactly; list the strings not in §17 in the notes so main adds
   them.
 - **notes:**
+  - **TUI, lowercased (f812423):** voice notices and errors (`voice mode
+    on. press ctrl+r to start recording.`, `voice mode off.`, `voice mode
+    is off: /voice turns it on`, `no speech detected`, `voice
+    transcription failed: {err}`, `voice transcription needs an API key:
+    set {VAR}`, `no audio input device found.`, `audio backend is
+    unavailable: {err}`, `the last words may be missing (the
+    transcription did not finish in time).`, `no audio detected from the
+    microphone — check your terminal has mic access.` + ` grant access in
+    System Settings → Privacy & Security → Microphone.`); the interrupt
+    lines (`… · ctrl+c again to quit`); `@{name} is archived: its history
+    is read-only · /restore brings it back · esc → main`; the terminal
+    panel (`terminal · ctrl+\` hide`, its hint `terminal: keys go to the
+    shell · ctrl+\` hide · wheel/shift+pgup scroll · drag the border to
+    resize`); the solo client's status and hint rows (`ask anything…`, `⏎
+    steer · tab queue · ctrl+c interrupt · / commands · end bottom`); the
+    help footer (`type to filter · tab switch · esc close`). **574f904:**
+    two French leftovers: `nothing to steer with: type the text after
+    steer`, `couldn't connect: {err}`.
+  - **§17 check** (every backquoted string of §17 looked up in
+    `rust/tui/src`): all found as written, except `♡ turn done ·
+    {duration}` and the two `provider down` lines: the TUI has no such
+    line yet (features to build, not a wording fix).
+  - **Not in §17 (for main to add):** the strings above; from BISE-41/43:
+    `theme: {mode}.`, `theme: {mode}. /theme auto, light or dark to change
+    it.`, `theme: {mode}, for now: i couldn't save it ({err}).`, `/theme
+    takes auto, light or dark.`, `drop {name}? its history stays in
+    archived. y / n`, hint `y drop · n or esc keep`; the confirm hint `y
+    yes · n no · esc cancel` and `answer y (yes) or n (no), then ⏎`;
+    `display cleared — scroll up to see the earlier lines again`; the
+    command descriptions of `/help`.
+  - **Left as is:** `keyprobe` (a diagnostic, `bend-harness keyprobe`)
+    still says `Option/Cmd`, `Ctrl+C`. `onboarding.rs` and `hints.rs` were
+    already lowercase (bise-o-onboard). render.rs / markdown.rs had nothing
+    to change outside bise-f-feed's table work.
+  - **Gates** (each batch on HEAD + its files in a private worktree, shared
+    target, `SB_CORE_BIN` = the worktree's): build, `cargo test
+    --workspace`, clippy `--workspace --all-targets -D warnings`,
+    `run_all.sh`. Its switchboard step failed twice (4 core tests) because
+    another worktree was building in the shared target at the same time
+    (bise-h-hub confirmed it). It passed after touching the sources, then
+    e2e and every tmux test passed.
 
 ### BISE-82 · visual QA
 
