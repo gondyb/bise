@@ -24,19 +24,48 @@ Les agents de code sont bons. Les travailler en parallèle, non.
 
 > **Tu parles à un seul agent. Il en fait travailler dix. Tu n'attends jamais.**
 
-Tagline principale (choisie par Gabriel, gardée en anglais) :
+Taglines (choisies par Gabriel, gardées en anglais) :
 
-> **All the agents. None of the overhead.**
+> **you, but with way more hands.**
+> *built for people who think faster than they type.*
 
-Message central : le flow. Tu travailles avec plein d'agents sans en payer le
-coût cognitif. Tu es plus efficace, tu prends plus de plaisir, et tu ships
-plus (**⚠** « dix fois plus » est un ressenti, pas encore une mesure).
+**Règle de style (Gabriel) : jamais de majuscule en début de mot, sur tous
+les supports marketing et tous les textes du site.** Ça fait humain qui tape
+au clavier. Ton : humain, décontracté, à la première personne quand ça colle ;
+éviter la structure lisse « X. None of the Y. » qui sonne LLM. Exceptions : les noms
+propres gardent leurs majuscules (Mistral, Vibe, Claude Code, GitHub) ; les
+sigles en majuscules (API, MCP), mais « cli » en minuscules passe bien ; les MAJUSCULES pour crier sont
+permises, extrêmement rarement. Notre nom reste en minuscules : `bise`. (Les docs
+internes comme celle-ci gardent les majuscules, sauf dans la copy elle-même.)
+
+Les deux choisies par Gabriel. Ancienne principale, gardée en alternative :
+« your team is as big as your ideas. »
+
+Public et message central : les gens qui ont plein d'idées, qui vont vite, et
+qui ont besoin que la tech disparaisse et les suive. La valeur est humaine : le
+flow, pas de jonglage entre agents, pas de coût cognitif. Tu es plus efficace,
+tu prends plus de plaisir, et tu ships plus. Éviter les chiffres (« dix »,
+« 10x ») : ça sonne comme un plafond, et le produit n'en a pas. **⚠** Pas de
+limite dans le produit (RFC 0001 §10.1), mais les tokens, le coût et la
+vitesse du provider sont la vraie limite ; le dire.
+
+**Nom : `bise`** (choisi par Gabriel). Court à taper, avec un double sens : la
+bise est un vent froid du nord (la famille du Mistral, et le vent, c'est le
+flow), et *faire la bise*. Vérifié libre sur npm, crates.io, PyPI et Homebrew.
+**⚠** `bise.sh` et `bise.ai` sont pris ; `bise.dev`, l'org GitHub, les marques
+et les paquets Linux ne sont pas encore vérifiés. Homonyme connu : BISE, le
+système d'information européen sur la biodiversité (autre domaine).
 
 Taglines :
 
 | FR | EN |
 |---|---|
-| Tous les agents. Aucune charge mentale. | All the agents. None of the overhead. |
+| Ton équipe est aussi grande que tes idées. | Your team is as big as your ideas. |
+| Fait pour ceux qui pensent plus vite qu'ils ne tapent. | Built for people who think faster than they type. |
+| trop d'idées ? tant mieux. | too many ideas? good. |
+| dis-le une fois. oublie. c'est fait. | say it once. forget about it. it's done. |
+| enfin un truc qui suit mon cerveau. | finally, something that keeps up with my brain. |
+| toi, mais avec beaucoup plus de mains. | you, but with way more hands. |
 | Ne jamais attendre un agent. | Never wait on an agent again. |
 | Un interlocuteur. Autant d'agents que tu veux. | One conversation. As many agents as you want. |
 | Reste dans le flow, main s'occupe du reste. | Stay in flow. Main handles the rest. |
@@ -110,7 +139,7 @@ Preuves à montrer :
   inactif avec du courrier en attente. Les preuves ont trouvé de vrais bugs
   (ex. une tâche restaurée qui ne recevait pas son courrier). **⚠** Les preuves
   couvrent la livraison des messages, pas le comportement des agents.
-- **On le met à jour sans rien arrêter.** `/restart latest` reconstruit, relance
+- **On le met à jour sans rien arrêter.** `/restart` reconstruit, relance
   le hub en période d'essai et revient en arrière si ça casse. Les agents
   continuent leur tour.
 
@@ -202,5 +231,6 @@ des équipes). L'avance tient à main permanent + agents qui se parlent, pas à
 - **Pas de worktrees = pari.** Ça marche sur un repo et un humain. Sur un gros
   monorepo avec des builds lourds et parallèles (caches, ports, lockfiles), ça
   peut casser. Garder le worktree à la demande et le dire clairement.
-- **Nom.** « Switchboard » est un nom de travail ; vérifier les marques et
-  les produits existants avant le lancement.
+- **Nom.** Le CLI s'appelle maintenant `bise` (« Switchboard » était un nom
+  de travail). Vérifier les marques, un domaine et l'org GitHub avant le
+  lancement.

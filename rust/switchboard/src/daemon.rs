@@ -176,6 +176,25 @@ fn version_allowed(from: &str, what: &str) -> Result<(), String> {
     }
 }
 
+/// What `/restart [<arg>]` restarts the hub on.
+#[derive(Debug, PartialEq)]
+enum RestartTarget {
+    /// `current`: the running version, nothing rebuilt.
+    Current,
+    /// no argument, `latest` or `head`: HEAD, built if needed.
+    Latest,
+    /// `<commit>`: that commit, built if needed.
+    Rev(String),
+}
+
+fn restart_target(arg: &str) -> RestartTarget {
+    match arg.trim() {
+        "current" => RestartTarget::Current,
+        "" | "latest" | "head" | "HEAD" => RestartTarget::Latest,
+        r => RestartTarget::Rev(r.to_string()),
+    }
+}
+
 fn log_line(paths: &Paths, s: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
@@ -306,18 +325,23 @@ impl Shell {
                 "a version switch is in progress (probation): wait for it to end, or /version back".into()
             }
             "restart" => {
-                let to = s("to");
                 let (repo, versions_dir) = self.version_ctx();
-                let rev = match to.as_str() {
-                    "" => String::new(),
-                    "latest" | "head" | "HEAD" => Command::new("git")
+                let rev = match restart_target(&s("to")) {
+                    RestartTarget::Current => String::new(),
+                    RestartTarget::Latest => Command::new("git")
                         .args(["rev-parse", "--short", "HEAD"])
                         .current_dir(&repo)
                         .output()
                         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
                         .unwrap_or_default(),
-                    r => r.to_string(),
+                    RestartTarget::Rev(r) => r,
                 };
+                if rev.is_empty() && restart_target(&s("to")) == RestartTarget::Latest {
+                    return format!(
+                        "no latest commit found in {}: /restart current restarts on the running version",
+                        repo.display()
+                    );
+                }
                 let cur = root.canonicalize().unwrap_or_else(|_| root.clone());
                 let same = rev.is_empty()
                     || versions_dir
@@ -1905,5 +1929,17 @@ mod version_tests {
             assert!(e.contains("reserved for main"), "{}", e);
             assert!(version_allowed("", what).is_err());
         }
+    }
+
+    #[test]
+    fn restart_defaults_to_latest() {
+        use super::{restart_target, RestartTarget::*};
+        assert_eq!(restart_target(""), Latest);
+        assert_eq!(restart_target("  "), Latest);
+        assert_eq!(restart_target("latest"), Latest);
+        assert_eq!(restart_target("head"), Latest);
+        assert_eq!(restart_target("HEAD"), Latest);
+        assert_eq!(restart_target("current"), Current);
+        assert_eq!(restart_target("021b8a1"), Rev("021b8a1".into()));
     }
 }

@@ -25,17 +25,45 @@ Coding agents are good. Running several of them in parallel is not.
 
 > **You talk to one agent. It runs ten. You never wait.**
 
-Headline tagline (picked by Gabriel):
+Taglines (picked by Gabriel):
 
-> **All the agents. None of the overhead.**
+> **you, but with way more hands.**
+> *built for people who think faster than they type.*
 
-Core message: flow. You work with many agents at once without paying the
-cognitive cost. You're more efficient, you have more fun, and you ship more
-(**⚠** "ship 10x more" is a feeling, not a measurement yet).
+**Style rule (Gabriel): no capital letter at the start of any word, ever,
+on every marketing piece and all website text.** It reads like a human typing
+on a keyboard. Tone: human, casual, first person when it fits; avoid the
+polished "X. None of the Y." LLM pattern. Exceptions: proper nouns keep
+their capitals (Mistral, Vibe, Claude Code, GitHub); acronyms in caps
+(API, MCP), though "cli" in lowercase is fine; ALL CAPS is allowed to shout, extremely rarely. Our own name
+stays lowercase: `bise`. (Internal docs like this one keep
+normal capitals, except for the copy itself.)
+
+Both picked by Gabriel. Previous headline, kept as an alternative: "your
+team is as big as your ideas."
+
+Audience and core message: people with lots of ideas who move fast and need
+the tech to disappear and keep up with them. The value is human: flow, no
+juggling between agents, no cognitive cost. You're more efficient, you have
+more fun, and you ship more. Avoid a number ("ten", "10x"): it sounds like a
+cap, and the product has none. **⚠** No limit in the product (RFC 0001
+§10.1), but tokens, cost and provider speed are the real limit; say so.
+
+**Name: `bise`** (picked by Gabriel). Short to type, and a double meaning: the
+*bise* is a cold north wind (Mistral's family, and wind = flow), and *faire la
+bise* is the French cheek kiss. Checked free on npm, crates.io, PyPI and
+Homebrew. **⚠** `bise.sh` and `bise.ai` are taken; `bise.dev`, GitHub org,
+trademarks and Linux packages not checked yet. Known namesake: BISE, the EU
+Biodiversity Information System for Europe (different field).
 
 Taglines:
 
-- All the agents. None of the overhead.
+Rejected: "All the agents. None of the overhead." ("overhead" is unclear);
+"All the agents. Stay in flow."; "Code like a team of ten." (a number).
+"All your ideas. None of the juggling." (sounds like an LLM).
+Other candidates, human tone: "too many ideas? good."; "say it once. forget
+about it. it's done."; "finally, something that keeps up with my brain."
+
 - Never wait on an agent again.
 - One conversation. As many agents as you want.
 - Stay in flow. Main handles the rest.
@@ -106,7 +134,7 @@ Proof points:
   mail waiting. The proofs found real bugs (e.g. a restored task that never
   received its mail). **⚠** The proofs cover message delivery, not agent
   behavior.
-- **Updates without stopping anything.** `/restart latest` rebuilds, restarts
+- **Updates without stopping anything.** `/restart` rebuilds, restarts
   the hub on probation, and rolls back if it breaks. The agents keep going
   mid-turn.
 
@@ -196,5 +224,5 @@ teams). The edge is a permanent main plus agents that talk to each other, not
 - **No worktrees is a bet.** It works for one repo and one human. On a large
   monorepo with heavy parallel builds (caches, ports, lockfiles), it can
   break. Keep on-demand worktrees and say so clearly.
-- **Name.** "Switchboard" is a working name; check trademarks and existing
-  products before launch.
+- **Name.** The CLI is now `bise` ("Switchboard" was a working name). Check
+  trademarks, a domain and the GitHub org before launch.

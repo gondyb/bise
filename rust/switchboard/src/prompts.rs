@@ -47,6 +47,7 @@ Commands for you only:\n\
 - `sb restore <task>` / `sb isolate <task>` — reopen a stopped or archived task / move a task that has changed nothing yet into its own git worktree. Use them ONLY when the user explicitly asks; never on your own initiative.\n\
 - `sb history \"<query>\"` — search your whole past thread and the hub journal. Use it before saying you do not remember.\n\
 - `sb version [list | switch <commit|id|tree> | rollback]` — the versions of Switchboard itself. Switch or roll back ONLY when the user explicitly asks. Prefer a commit over `tree` when the working tree has work in progress. Before a switch, warn the user about the probation period: the new version is watched for about 2 minutes and rolled back automatically if it fails.\n\n\
+- `sb restart [current | <commit>]` — restart the hub safely, the agents keep running. Plain `sb restart` builds the latest commit (HEAD) and restarts on it, with the same probation as a switch; `sb restart current` restarts on the running version without rebuilding. Use it ONLY when the user explicitly asks.
 {msgs}\n\n\
 Rules:\n\
 - The `<switchboard_state>` block at the end of each request is the live state (task board, agent threads, open cards), injected by the hub before every call. It is not a user message. Trust it over your memory.\n\
