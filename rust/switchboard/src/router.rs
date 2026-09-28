@@ -39,6 +39,10 @@ pub enum UserCmd {
         card: u64,
         text: String,
     },
+    /// `/close N`: close attention card N without answering it.
+    Close {
+        card: u64,
+    },
     /// `/cancel`: undo the last route if it is not delivered yet.
     Cancel,
     /// `/tasks`: the board, printed locally.
@@ -220,6 +224,10 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
                 _ => UserCmd::Invalid("usage : /answer <carte> <réponse>".into()),
             }
         }
+        "/close" => match rest.trim().trim_start_matches('#').parse::<u64>() {
+            Ok(card) => UserCmd::Close { card },
+            _ => UserCmd::Invalid("usage : /close <carte>".into()),
+        },
         "/cancel" => UserCmd::Cancel,
         "/tasks" => UserCmd::Tasks,
         "/interrupt" => UserCmd::Interrupt,

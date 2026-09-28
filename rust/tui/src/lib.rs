@@ -2422,6 +2422,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
     // the prompt block holds: 2 rows of top padding, the typed text,
     // one blank line, the meta row, 1 row of bottom padding
     let input_h = ((composer_rows + 5) as u16).min((area.height / 2).max(7));
+    let card_h = sb::card_box_height(app, area);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -2429,6 +2430,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
             Constraint::Length(1), // respiration sous le feed
             Constraint::Length(1), // status row
             Constraint::Length(1), // respiration au-dessus du composeur
+            Constraint::Length(card_h), // la carte affichée (Ctrl+G)
             Constraint::Length(input_h), // prompt
             Constraint::Length(1), // respiration au-dessus de l'aide
             Constraint::Length(1), // hint row
@@ -2587,7 +2589,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
     // width, the cursor is the REVERSED char (or a REVERSED space at
     // the end of the input)
     let chars: Vec<char> = app.input.chars().collect();
-    let inner = ((chunks[4].width as usize).saturating_sub(6)).max(1);
+    let inner = ((chunks[5].width as usize).saturating_sub(6)).max(1);
     let total = chars.len();
     let mut input_lines: Vec<Line> = Vec::new();
     if total == 0 {
@@ -2694,19 +2696,24 @@ fn draw(app: &mut App, frame: &mut Frame) {
             .style(Style::default().bg(ELEMENT))
             .padding(Padding::new(3, 2, 2, 1)),
     );
-    frame.render_widget(prompt, chunks[4]);
+    frame.render_widget(prompt, chunks[5]);
+    if card_h > 0 {
+        sb::draw_card(app, frame, chunks[4]);
+    } else if sb::card_full(app) {
+        sb::draw_card(app, frame, chunks[0]);
+    }
 
     // ---- slash-command popup (OpenCode autocomplete: split border,
     // backgroundMenu, primary selection)
     let matches = popup_items(app);
     if !matches.is_empty() {
         let n = matches.len().min(8) as u16;
-        let w = if matches[0].closable { 72u16 } else { 56u16 }.min(chunks[4].width);
+        let w = if matches[0].closable { 72u16 } else { 56u16 }.min(chunks[5].width);
         let sel_i = app.popup_sel.min(matches.len() - 1);
         let top = popup_top(sel_i, matches.len(), 8);
         let area = Rect {
-            x: chunks[4].x,
-            y: chunks[4].y.saturating_sub(n + 2),
+            x: chunks[5].x,
+            y: chunks[5].y.saturating_sub(n + 2),
             width: w,
             height: n + 2,
         };
@@ -2766,7 +2773,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(DIM)))),
-        chunks[6],
+        chunks[7],
     );
 }
 

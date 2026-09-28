@@ -478,9 +478,41 @@ impl Hub {
         let cards: Vec<Value> = self
             .st
             .open_cards()
-            .map(|c| json!({"id": c.id, "kind": c.kind, "agent": c.agent, "text": c.text, "for_msg": c.for_msg}))
+            .map(|c| {
+                json!({
+                    "id": c.id,
+                    "kind": c.kind,
+                    "agent": c.agent,
+                    "text": c.text,
+                    "for_msg": c.for_msg,
+                    "age_ms": now.saturating_sub(c.created_ms),
+                    "note": self.card_note(c),
+                })
+            })
             .collect();
         json!({"ev": "state", "agents": agents, "cards": cards})
+    }
+
+    /// A question card whose asker heard from main since, without a
+    /// reply to the question: maybe answered another way (the card
+    /// stays open, the view says so).
+    fn card_note(&self, c: &Card) -> Option<String> {
+        if c.kind != "question" || c.agent == MAIN {
+            return None;
+        }
+        let m = self
+            .st
+            .msgs
+            .values()
+            .rev()
+            .take_while(|m| m.created_ms >= c.created_ms)
+            .find(|m| m.from == MAIN && m.to == c.agent && m.reply_to != c.for_msg)?;
+        Some(format!(
+            "@main a écrit à @{} depuis (m_{}) : {}",
+            c.agent,
+            m.id,
+            clip(&one_line(&m.text), 120)
+        ))
     }
 
     pub fn handle(&mut self, input: Input, env: &mut dyn Env) -> Fx {
@@ -987,6 +1019,13 @@ impl Hub {
             via,
         };
         self.emit(fx, Event::MessageSent { msg: msg.clone() });
+        // a reply to the message a question card stands for answers
+        // the card (main answered through `sb send --reply-to`); the
+        // user's own answers close their card in `answer_card`
+        if let Some(r) = reply_to.filter(|_| from != USER) {
+            let by = format!("répondue via @{}", from);
+            self.close_cards(fx, |c| c.kind == "question" && c.for_msg == Some(r), &by);
+        }
         // a waiting recipient gets it as the result of its `sb wait`
         if let Some(i) = self.waiters.iter().position(|w| {
             !queued
@@ -1842,6 +1881,23 @@ impl Hub {
                 );
             }
             UserCmd::Answer { card, text } => self.answer_card(fx, env, client, card, &text),
+            UserCmd::Close { card } => match self.st.cards.get(&card).cloned() {
+                Some(c) => {
+                    self.close_cards(fx, |x| x.id == card, "classée");
+                    self.note_main(
+                        fx,
+                        env,
+                        &format!(
+                            "the user closed card #{} ({} @{}: \"{}\") without answering",
+                            card,
+                            c.kind,
+                            c.agent,
+                            one_line(&c.text)
+                        ),
+                    );
+                }
+                None => fx.push(self.notice(client, &format!("aucune carte ouverte #{}", card))),
+            },
             UserCmd::Cancel => {
                 let last = self.clients.get(&client).and_then(|v| v.last_route);
                 match last {

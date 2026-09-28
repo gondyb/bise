@@ -85,6 +85,11 @@ pub(super) struct Card {
     kind: String,
     agent: String,
     text: String,
+    /// The card's age when the snapshot arrived, and when it arrived.
+    age_ms: u64,
+    seen_at: std::time::Instant,
+    /// The hub's remark (the asker heard from main since...).
+    note: String,
 }
 
 pub(super) struct Sb {
@@ -106,6 +111,21 @@ pub(super) struct Sb {
     ready: bool,
     /// Ctrl+O: a shell to open in this directory (RFC 0002 §6).
     shell: Option<String>,
+    /// The card box above the composer (Ctrl+G), never opened by the hub.
+    card: CardView,
+}
+
+/// What the user sees of the attention cards: which one, shown or not,
+/// full screen or not, and how far it is scrolled.
+#[derive(Default)]
+struct CardView {
+    shown: bool,
+    full: bool,
+    sel: Option<u64>,
+    scroll: usize,
+    /// Set by the last draw: the last scroll offset and the page size.
+    max_scroll: usize,
+    page: usize,
 }
 
 impl Sb {
@@ -115,6 +135,57 @@ impl Sb {
         if let Ok(mut w) = self.writer.lock() {
             let _ = w.write_all(s.as_bytes());
         }
+    }
+
+    /// The cards in reading order: what blocks a task first, then the
+    /// oldest.
+    fn sorted_cards(&self) -> Vec<&Card> {
+        let rank = |k: &str| match k {
+            "question" => 0,
+            "blocked" => 1,
+            "failed" | "restart" => 2,
+            "drop" => 3,
+            "overlap" => 4,
+            _ => 5,
+        };
+        let mut v: Vec<&Card> = self.cards.iter().collect();
+        v.sort_by_key(|c| (rank(&c.kind), c.id));
+        v
+    }
+
+    /// The card shown (or answered by Ctrl+R): the chosen one while it
+    /// is open, else the focused task's, else the first.
+    fn current_card(&self) -> Option<&Card> {
+        let v = self.sorted_cards();
+        self.card
+            .sel
+            .and_then(|id| v.iter().find(|c| c.id == id).copied())
+            .or_else(|| v.iter().find(|c| c.agent == self.focus).copied())
+            .or_else(|| v.first().copied())
+    }
+
+    fn toggle_card(&mut self) {
+        self.card.shown = !self.card.shown;
+        self.card.full = false;
+        if self.card.shown {
+            self.card.sel = self.current_card().map(|c| c.id);
+            self.card.scroll = 0;
+        }
+    }
+
+    /// Ctrl+N / Ctrl+P: the next or previous card, shown.
+    fn step_card(&mut self, d: isize) {
+        let ids: Vec<u64> = self.sorted_cards().iter().map(|c| c.id).collect();
+        if ids.is_empty() {
+            return;
+        }
+        let cur = self.current_card().map(|c| c.id);
+        let i = cur.and_then(|id| ids.iter().position(|x| *x == id)).unwrap_or(0) as isize;
+        let n = ids.len() as isize;
+        let j = if self.card.shown { (i + d).rem_euclid(n) } else { i };
+        self.card.sel = Some(ids[j as usize]);
+        self.card.shown = true;
+        self.card.scroll = 0;
     }
 
     /// What the panel navigates: main, then the live tasks.
@@ -165,6 +236,11 @@ pub(super) const SB_COMMANDS: &[Cmd] = &[
         args: true,
     },
     Cmd {
+        name: "/close",
+        desc: "classer une carte sans répondre : /close N",
+        args: true,
+    },
+    Cmd {
         name: "/cancel",
         desc: "annuler le dernier routage non livré",
         args: false,
@@ -196,7 +272,7 @@ pub(super) const SB_COMMANDS: &[Cmd] = &[
     },
 ];
 
-const KEYS_HELP: &str = "touches (compositeur vide) : Ctrl+J/K choisir une tâche · ⏎ entrer · Espace aperçu · D drop · Esc revenir à main · Alt+1…9 aller à la tâche N · Alt+0 main · Ctrl+A carte suivante · Ctrl+Z annuler le dernier routage · Ctrl+O shell dans le dossier de l'agent affiché";
+const KEYS_HELP: &str = "touches (compositeur vide) : Ctrl+J/K choisir une tâche · ⏎ entrer · Espace aperçu · D drop · Esc revenir à main · Alt+1…9 aller à la tâche N · Alt+0 main · Ctrl+G afficher/masquer la carte (Ctrl+A aussi, composer vide) · Ctrl+N/P carte suivante/précédente · Ctrl+R répondre à la carte avec le texte du composer · Ctrl+F carte en plein écran · Ctrl+X classer la carte · Ctrl+Z annuler le dernier routage · Ctrl+O shell dans le dossier de l'agent affiché";
 
 /// The shell asked with Ctrl+O, if any.
 pub(super) fn take_shell(app: &mut App) -> Option<String> {
@@ -344,10 +420,17 @@ fn apply_state(app: &mut App, v: &Value) {
                     kind: s(x, "kind"),
                     agent: s(x, "agent"),
                     text: s(x, "text"),
+                    age_ms: x.get("age_ms").and_then(|i| i.as_u64()).unwrap_or(0),
+                    seen_at: std::time::Instant::now(),
+                    note: s(x, "note"),
                 })
                 .collect()
         })
         .unwrap_or_default();
+    if sb.cards.is_empty() {
+        sb.card.shown = false;
+        sb.card.full = false;
+    }
     // the spinner of every feed follows the agent, whoever started the turn
     let busy: HashMap<String, bool> = sb
         .agents
@@ -452,6 +535,155 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     out
 }
 
+/// Ctrl+R: the composer's text answers the current card, shown or not
+/// (Enter still talks to the agent in focus). An empty composer only
+/// acknowledges the cards that need no words (done, overlap).
+fn answer_card(app: &mut App) {
+    let text = app.input.trim().to_string();
+    let Some(sb) = app.sb.as_mut() else { return };
+    let Some((id, kind, agent)) = sb
+        .current_card()
+        .map(|c| (c.id, c.kind.clone(), c.agent.clone()))
+    else {
+        return;
+    };
+    let text = if text.is_empty() {
+        if !matches!(kind.as_str(), "done" | "overlap") {
+            let msg = format!("carte #{} (@{}) : tape ta réponse puis Ctrl+R", id, agent);
+            push_event(&mut app.events, &mut app.cache, Ev::Warn(msg));
+            return;
+        }
+        "vu".to_string()
+    } else {
+        text
+    };
+    let f = sb.focus.clone();
+    sb.send(json!({"op": "input", "focus": f, "text": format!("/answer {} {}", id, text)}));
+    sb.card.scroll = 0;
+    sb.card.full = false;
+    if !app.input.trim().is_empty() {
+        app.history.insert(0, app.input.clone());
+    }
+    app.input.clear();
+    app.cursor = 0;
+    app.hist_idx = None;
+}
+
+/// The height of the card box above the composer (0: hidden, or full
+/// screen over the feed instead).
+pub(super) fn card_box_height(app: &App, area: Rect) -> u16 {
+    let Some(sb) = app.sb.as_ref() else { return 0 };
+    if !sb.card.shown || sb.card.full {
+        return 0;
+    }
+    let Some(c) = sb.current_card() else { return 0 };
+    let w = (area.width as usize).saturating_sub(4).max(1);
+    let rows = card_lines(c, w).len() as u16 + 2;
+    let cap = (area.height * 35 / 100).max(5);
+    rows.min(cap)
+}
+
+pub(super) fn card_full(app: &App) -> bool {
+    app.sb
+        .as_ref()
+        .is_some_and(|sb| sb.card.shown && sb.card.full && !sb.cards.is_empty())
+}
+
+fn card_lines(c: &Card, width: usize) -> Vec<Line<'static>> {
+    let mut out: Vec<Line<'static>> = Vec::new();
+    for l in c.text.lines() {
+        out.extend(wrap_line(
+            Line::from(Span::styled(l.to_string(), Style::default().fg(TEXT))),
+            width,
+        ));
+    }
+    if !c.note.is_empty() {
+        out.push(Line::from(""));
+        out.extend(wrap_line(
+            Line::from(Span::styled(
+                format!("ⓘ {}", c.note),
+                Style::default().fg(INFO).add_modifier(Modifier::ITALIC),
+            )),
+            width,
+        ));
+    }
+    out
+}
+
+fn ago(ms: u64) -> String {
+    let s = ms / 1000;
+    if s < 60 {
+        format!("{} s", s)
+    } else if s < 3600 {
+        format!("{} min", s / 60)
+    } else {
+        format!("{} h", s / 3600)
+    }
+}
+
+/// The card box: the whole text, wrapped, scrolled by PgUp/PgDn.
+pub(super) fn draw_card(app: &mut App, frame: &mut Frame, area: Rect) {
+    let Some(sb) = app.sb.as_mut() else { return };
+    if area.height < 3 {
+        return;
+    }
+    let order: Vec<u64> = sb.sorted_cards().iter().map(|c| c.id).collect();
+    let Some(c) = sb.current_card() else { return };
+    let w = (area.width as usize).saturating_sub(4).max(1);
+    let lines = card_lines(c, w);
+    let visible = area.height.saturating_sub(2) as usize;
+    let max_scroll = lines.len().saturating_sub(visible);
+    let pos = order.iter().position(|x| *x == c.id).unwrap_or(0) + 1;
+    let (icon, color) = match c.kind.as_str() {
+        "question" => ("?", WARN),
+        "blocked" => (GLYPH_WARN, WARN),
+        "failed" | "restart" => (GLYPH_ERR, ERR),
+        "drop" => ("⇣", WARN),
+        "overlap" => ("⚠", WARN),
+        "done" => (GLYPH_OK, OK),
+        _ => ("◆", WARN),
+    };
+    let age = ago(c.age_ms + c.seen_at.elapsed().as_millis() as u64);
+    let title = format!(
+        " ◆ carte {}/{} · {} #{} {} @{} · il y a {} ",
+        pos,
+        order.len(),
+        icon,
+        c.id,
+        c.kind,
+        c.agent,
+        age
+    );
+    let scroll = sb.card.scroll.min(max_scroll);
+    let more = if max_scroll > 0 {
+        format!(
+            " {}–{}/{} · PgUp/PgDn ",
+            scroll + 1,
+            (scroll + visible).min(lines.len()),
+            lines.len()
+        )
+    } else {
+        String::new()
+    };
+    sb.card.scroll = scroll;
+    sb.card.max_scroll = max_scroll;
+    sb.card.page = (visible / 2).max(1);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(color))
+        .title(Span::styled(
+            truncate_chars(&title, (area.width as usize).saturating_sub(4)),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ))
+        .title_bottom(Line::from(Span::styled(more, Style::default().fg(DIM))).right_aligned())
+        .padding(Padding::horizontal(1));
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines).block(block).scroll((scroll as u16, 0)),
+        area,
+    );
+}
+
 /// Keys of the switchboard mode; `true` when handled.
 pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: bool) -> bool {
     let empty = app.input.is_empty();
@@ -509,6 +741,10 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             true
         }
         (KeyCode::Esc, _) if !popup_open => {
+            if sb.card.full {
+                sb.card.full = false;
+                return true;
+            }
             if let Some((id, _)) = sb.confirm.take() {
                 sb.send(json!({"op": "confirm", "id": id, "yes": false}));
                 return true;
@@ -539,10 +775,45 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             }
             true
         }
+        (KeyCode::Char('g'), KeyModifiers::CONTROL) if !sb.cards.is_empty() => {
+            sb.toggle_card();
+            true
+        }
+        // on an empty composer, Ctrl+A (line start) has nothing to do
         (KeyCode::Char('a'), KeyModifiers::CONTROL) if empty && !sb.cards.is_empty() => {
-            let id = sb.cards[0].id;
-            app.input = format!("/answer {} ", id);
-            app.cursor = app.input.chars().count();
+            sb.toggle_card();
+            true
+        }
+        (KeyCode::Char('f'), KeyModifiers::CONTROL) if sb.card.shown => {
+            sb.card.full = !sb.card.full;
+            true
+        }
+        (KeyCode::Char('n'), KeyModifiers::CONTROL) if !sb.cards.is_empty() => {
+            sb.step_card(1);
+            true
+        }
+        (KeyCode::Char('p'), KeyModifiers::CONTROL) if !sb.cards.is_empty() => {
+            sb.step_card(-1);
+            true
+        }
+        (KeyCode::PageUp, _) if sb.card.shown && !popup_open => {
+            sb.card.scroll = sb.card.scroll.saturating_sub(sb.card.page.max(1));
+            true
+        }
+        (KeyCode::PageDown, _) if sb.card.shown && !popup_open => {
+            sb.card.scroll = (sb.card.scroll + sb.card.page.max(1)).min(sb.card.max_scroll);
+            true
+        }
+        (KeyCode::Char('x'), KeyModifiers::CONTROL) if !sb.cards.is_empty() => {
+            if let Some(id) = sb.current_card().map(|c| c.id) {
+                let f = sb.focus.clone();
+                sb.send(json!({"op": "input", "focus": f, "text": format!("/close {}", id)}));
+                sb.card.scroll = 0;
+            }
+            true
+        }
+        (KeyCode::Char('r'), KeyModifiers::CONTROL) if !sb.cards.is_empty() => {
+            answer_card(app);
             true
         }
         (KeyCode::Char('o'), KeyModifiers::CONTROL) => {
@@ -684,7 +955,7 @@ pub(super) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     if !sb.cards.is_empty() {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            format!(" ◆ cartes ({}) · Ctrl+A", sb.cards.len()),
+            format!(" ◆ cartes ({}) · Ctrl+G", sb.cards.len()),
             Style::default().fg(WARN).add_modifier(Modifier::BOLD),
         )));
         for c in &sb.cards {
@@ -773,10 +1044,14 @@ pub(super) fn status_line(app: &App) -> Option<Line<'static>> {
             ));
         }
     }
-    if !sb.cards.is_empty() {
+    if !sb.cards.is_empty() && !sb.card.shown {
         spans.push(Span::styled(
-            format!(" · ◆ {}", sb.cards.len()),
-            Style::default().fg(WARN),
+            format!(
+                " · ◆ {} carte{} · Ctrl+G",
+                sb.cards.len(),
+                if sb.cards.len() > 1 { "s" } else { "" }
+            ),
+            Style::default().fg(WARN).add_modifier(Modifier::BOLD),
         ));
     }
     if !app.connected {
@@ -792,6 +1067,10 @@ pub(super) fn hint(app: &App) -> Option<&'static str> {
     let sb = app.sb.as_ref()?;
     Some(if sb.confirm.is_some() {
         "y oui · n non · Esc annuler"
+    } else if sb.card.full {
+        "Ctrl+R répondre · PgUp/PgDn défiler · Ctrl+N/P carte · Ctrl+X classer · Ctrl+F/Esc réduire · Ctrl+G masquer"
+    } else if sb.card.shown {
+        "Ctrl+R répondre (⏎ reste pour main) · PgUp/PgDn défiler · Ctrl+N/P carte · Ctrl+F plein écran · Ctrl+X classer · Ctrl+G masquer"
     } else if sb.selected.is_some() {
         "⏎ entrer · Espace aperçu · D drop · Ctrl+J/K choisir · Esc fermer"
     } else if app.pending {
@@ -799,7 +1078,7 @@ pub(super) fn hint(app: &App) -> Option<&'static str> {
     } else if sb.focus != "main" {
         "⏎ envoyer à la tâche · @main … pour main · Esc revenir à main · Ctrl+J/K tâches · /help"
     } else {
-        "⏎ envoyer à main · @tâche … direct · Ctrl+J/K tâches · Ctrl+A carte · /help"
+        "⏎ envoyer à main · @tâche … direct · Ctrl+J/K tâches · Ctrl+G carte · /help"
     })
 }
 
@@ -1001,6 +1280,7 @@ pub fn run_switchboard(
         views: HashMap::new(),
         agents: Vec::new(),
         cards: Vec::new(),
+        card: CardView::default(),
         selected: None,
         preview: false,
         confirm: None,

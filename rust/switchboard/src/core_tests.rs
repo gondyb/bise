@@ -1224,3 +1224,85 @@ fn a_queued_message_does_not_end_a_wait() {
     });
     assert!(say_to(&fx, "a").unwrap().contains("answer"));
 }
+
+/// Opens a question card for a question of `docs` to main; returns
+/// (message id, card id).
+fn docs_question_card(t: &mut T) -> (u64, u64) {
+    t.spawn_task("docs");
+    t.req(
+        "docs",
+        AgentReq::Send {
+            to: MAIN.into(),
+            text: "v1 ou v2 ?".into(),
+            expect_reply: true,
+            reply_to: None,
+            queued: false,
+        },
+    );
+    let id = t
+        .hub
+        .st
+        .msgs
+        .values()
+        .find(|m| m.text == "v1 ou v2 ?")
+        .unwrap()
+        .id;
+    t.req(
+        MAIN,
+        AgentReq::Card {
+            text: "v1 ou v2 ?".into(),
+            for_msg: Some(id),
+        },
+    );
+    let card = *t.hub.st.cards.keys().next().unwrap();
+    (id, card)
+}
+
+#[test]
+fn main_replying_to_the_question_closes_its_card() {
+    let mut t = T::new();
+    let (id, card) = docs_question_card(&mut t);
+    // a plain message from main does not close it: the view says so
+    t.env.now += 10;
+    t.req(
+        MAIN,
+        AgentReq::Send {
+            to: "docs".into(),
+            text: "patiente".into(),
+            expect_reply: false,
+            reply_to: None,
+            queued: false,
+        },
+    );
+    assert!(t.hub.st.cards.contains_key(&card));
+    let snap = t.hub.snapshot(t.env.now);
+    let note = snap["cards"][0]["note"].as_str().unwrap_or("");
+    assert!(note.contains("@main a écrit à @docs"), "{}", snap);
+    // the reply to the question closes it
+    let (_, fx) = t.req(
+        MAIN,
+        AgentReq::Send {
+            to: "docs".into(),
+            text: "v2".into(),
+            expect_reply: false,
+            reply_to: Some(id),
+            queued: false,
+        },
+    );
+    assert!(t.hub.st.cards.is_empty());
+    assert!(
+        has_line(&fx, MAIN, &format!("#{} répondue via @main", card)),
+        "{:?}",
+        fx
+    );
+}
+
+#[test]
+fn the_user_closes_a_card_without_answering() {
+    let mut t = T::new();
+    let (_, card) = docs_question_card(&mut t);
+    let fx = t.user(MAIN, &format!("/close {}", card));
+    assert!(t.hub.st.cards.is_empty());
+    assert!(say_to(&fx, "docs").is_none());
+    assert!(has_line(&fx, MAIN, &format!("#{} classée", card)), "{:?}", fx);
+}
