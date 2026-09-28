@@ -302,6 +302,7 @@ par l'utilisateur en direct.
 | `task_spawn(nom, brief)` | Crée une tâche et envoie le brief. |
 | `task_send(nom, message)` | Envoie un message utilisateur à la tâche (nouveau tour ou steering). |
 | `task_list()` | État de toutes les tâches (déjà dans le tableau, §8.2). |
+| `tasks()` (`sb tasks`) | Le détail de chaque tâche (§8.2 bis). |
 | `task_inspect(nom, { last_n?, query? })` | Extraits bornés du fil d'une tâche (max 4 000 caractères). |
 | `task_interrupt(nom)` | Arrête le tour en cours ; la tâche passe en `idle`. |
 | `task_stop(nom, raison)` | Termine la tâche (`stopped`). |
@@ -340,6 +341,28 @@ bench      done          2h  "Bench du parseur"           rapport final disponib
 
 Le tableau NE DOIT PAS être stocké dans l'historique. Il est recalculé à
 chaque requête. La compaction ne peut donc jamais perdre l'état des tâches.
+
+### 8.2 bis Statut des tâches devant chaque message de l'utilisateur
+
+Chaque message de l'utilisateur à main commence par un bloc
+`<task_status>` écrit par le hub : une ligne par tâche non archivée
+(statut, âge, branche, ce qu'elle fait en ce moment ou son dernier
+rapport). Contrairement au tableau (§8.2), ce bloc reste dans
+l'historique : main voit comment l'état a évolué entre deux messages.
+Aucun bloc quand il n'y a pas de tâche.
+
+`sb tasks` donne le détail complet à la demande : objectif, tour en
+cours, dernière activité (dernier appel d'outil ou dernier texte),
+dernier rapport, questions en attente dans les deux sens, fichiers
+modifiés, cartes ouvertes.
+
+### 8.2 ter Notifications du hub
+
+Le hub écrit à main sous le nom `switchboard` (`relation="hub"`) :
+un fait, jamais une instruction. Il le fait quand une tâche plante (la
+session redémarre sur son checkpoint, tentative N/5) et quand elle passe
+en `failed` (plus de redémarrage). Ces messages réveillent main comme
+n'importe quel message.
 
 ### 8.3 Retrouver le passé
 
@@ -618,3 +641,6 @@ techniques :
   quand l'agent peut le faire sur demande (pousser une branche, par
   exemple).
 - 2026-09-27 : les agents peuvent se parler directement (RFC 0003).
+- 2026-09-28 : main est prévenu quand une tâche plante ; chaque message
+  de l'utilisateur à main commence par le statut des tâches ; `sb tasks`
+  donne le détail.

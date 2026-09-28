@@ -69,9 +69,9 @@ projects/switchboard/tests/run_all.sh          # lois Bend, tests Rust, E2E, TUI
 projects/switchboard/tests/run_all.sh --live   # + un test avec le vrai modèle
 ```
 
-- `rust/switchboard` : 57 tests (22 scénarios du core, routeur, CLI,
+- `rust/switchboard` : 61 tests (22 scénarios du core, routeur, CLI,
   tableau, worktrees sur de vrais dépôts git).
-- `tests/e2e.py` : le vrai hub, de vraies REPL, le vrai `sb`, de vrais
+- `tests/e2e.py` (8 scénarios, dont plantage d'une tâche + `sb tasks`) : le vrai hub, de vraies REPL, le vrai `sb`, de vrais
   worktrees ; le modèle est `tests/fake_provider.py`, piloté par des
   marqueurs `[[bash: …]]` dans les messages.
 - `tests/tui_tmux.py` : le TUI dans tmux (panneau, checkout, Esc, Alt+N,
