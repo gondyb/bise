@@ -474,24 +474,38 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
         title.push(Span::styled(format!(" filter: {}▏ ", o.filter), Style::default().fg(BRAND)));
     }
     let pos = if o.max_scroll > 0 {
-        format!(
-            "{}–{}/{} ↑↓ PgUp/PgDn · ",
-            o.scroll + 1,
-            (o.scroll + visible).min(lines.len()),
-            lines.len()
-        )
+        format!("{} ↑↓ PgUp/PgDn · ", rows_shown(o.scroll, visible, lines.len()))
     } else {
         String::new()
     };
     let foot = format!(" {}type to filter · Tab switch · Esc close ", pos);
+    scroll_box(frame, area, BRAND, Line::from(title), foot, lines, o.scroll);
+}
+
+/// "12–40/85": the rows a scrolled box shows, of how many.
+pub(crate) fn rows_shown(scroll: usize, visible: usize, total: usize) -> String {
+    format!("{}–{}/{}", scroll + 1, (scroll + visible).min(total), total)
+}
+
+/// A box over what is under it: `lines` scrolled by `scroll` rows, the
+/// border and `title` in `color`, `foot` dim at the bottom right.
+pub(crate) fn scroll_box(
+    frame: &mut Frame,
+    area: Rect,
+    color: Color,
+    title: Line<'static>,
+    foot: String,
+    lines: Vec<Line<'static>>,
+    scroll: usize,
+) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(BRAND))
-        .title(Line::from(title))
+        .border_style(Style::default().fg(color))
+        .title(title)
         .title_bottom(Line::from(Span::styled(foot, Style::default().fg(DIM))).right_aligned())
         .padding(Padding::horizontal(1));
     frame.render_widget(Clear, area);
-    frame.render_widget(Paragraph::new(lines).block(block).scroll((o.scroll as u16, 0)), area);
+    frame.render_widget(Paragraph::new(lines).block(block).scroll((scroll as u16, 0)), area);
 }
 
 #[cfg(test)]

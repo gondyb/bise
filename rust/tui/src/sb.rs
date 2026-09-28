@@ -1045,32 +1045,18 @@ pub(super) fn draw_card(app: &mut App, frame: &mut Frame, area: Rect) {
     );
     let scroll = sb.card.scroll.min(max_scroll);
     let more = if max_scroll > 0 {
-        format!(
-            " {}–{}/{} · PgUp/PgDn ",
-            scroll + 1,
-            (scroll + visible).min(lines.len()),
-            lines.len()
-        )
+        format!(" {} · PgUp/PgDn ", crate::help::rows_shown(scroll, visible, lines.len()))
     } else {
         String::new()
     };
     sb.card.scroll = scroll;
     sb.card.max_scroll = max_scroll;
     sb.card.page = (visible / 2).max(1);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(color))
-        .title(Span::styled(
-            truncate_chars(&title, (area.width as usize).saturating_sub(4)),
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        ))
-        .title_bottom(Line::from(Span::styled(more, Style::default().fg(DIM))).right_aligned())
-        .padding(Padding::horizontal(1));
-    frame.render_widget(Clear, area);
-    frame.render_widget(
-        Paragraph::new(lines).block(block).scroll((scroll as u16, 0)),
-        area,
-    );
+    let title = Line::from(Span::styled(
+        truncate_chars(&title, (area.width as usize).saturating_sub(4)),
+        Style::default().fg(color).add_modifier(Modifier::BOLD),
+    ));
+    crate::help::scroll_box(frame, area, color, title, more, lines, scroll);
 }
 
 /// Agent navigation from the keyboard.
