@@ -18,10 +18,11 @@ Visual references (open them in a browser):
 
 | File | What |
 |---|---|
-| [tui-screens.html](tui-screens.html) | every screen of the product, 32 mockups + the levels and symbol legends |
-| [tui-live.html](tui-live.html) | an 80-second live simulation; you can type and send messages |
-| [tui-onboarding.html](tui-onboarding.html) | the first launch, 6 steps (validated as is) |
+| [site/book/screens.html](site/book/screens.html) | every screen of the product, 32 mockups + the levels and symbol legends |
+| [site/book/live.html](site/book/live.html) | an 80-second live simulation; you can type and send messages |
+| [site/book/onboarding.html](site/book/onboarding.html) | the first launch, 6 steps (validated as is) |
 | [tui-mockup.html](tui-mockup.html) | the first single-screen mockup (superseded by tui-screens) |
+| [site/index.html](site/index.html) | the one static site: the landing page, and the book under `site/book/` (old `tui-*.html` paths redirect) |
 | [board.html](board.html) | the brand exploration (3 art directions + the chosen one) |
 | [tui-spec.md](tui-spec.md) | the design log (how we got here) |
 | [../pitch.md](../pitch.md) | positioning and go-to-market |
@@ -409,7 +410,7 @@ pasted), `ctrl+v` (clipboard image) and an image picked in the `@` popup.
 
 ## 15. Onboarding (first launch)
 
-Validated as is: [tui-onboarding.html](tui-onboarding.html). Inspired by
+Validated as is: [site/book/onboarding.html](site/book/onboarding.html). Inspired by
 Vibe's (`vibe/setup/onboarding`). Six steps, `enter` to go on:
 
 1. **Welcome**, centered. Typed at ~70 ms per character: `hi, i'm bise`, then
