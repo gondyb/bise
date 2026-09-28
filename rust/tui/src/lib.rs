@@ -766,7 +766,12 @@ fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>>, ev: Ev) 
         // the turn ended: a tool still shown as running was abandoned
         // (interrupt or failed turn) — freeze it so the elapsed stops
         Ev::TurnDone | Ev::Idle => {
-            for (i, e) in events.iter_mut().enumerate() {
+            // back to the previous end of turn: the tools before it were
+            // frozen then (O(turn), not O(history))
+            for (i, e) in events.iter_mut().enumerate().rev() {
+                if matches!(e, Ev::TurnDone | Ev::Idle) {
+                    break;
+                }
                 if let Ev::Tool(td) = e {
                     if matches!(td.state, ToolState::Run) {
                         td.state = ToolState::Fail;
@@ -3108,7 +3113,16 @@ fn run_tui(app: &mut App) -> io::Result<()> {
         PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
     );
     loop {
+        // the hub replays whole feeds on connect: the lines are taken in
+        // slices of a few ms, a frame in between, so the UI never waits
+        // for a replay to end
+        let slice = std::time::Instant::now();
+        let mut backlog = false;
         loop {
+            if slice.elapsed() >= Duration::from_millis(12) {
+                backlog = true;
+                break;
+            }
             match app.rx.try_recv() {
                 Ok(line) => {
                     if app.sb.is_some() {
@@ -3152,7 +3166,8 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                 draw(app, f)
             }
         })?;
-        if poll(Duration::from_millis(80))? {
+        let wait = if backlog { Duration::ZERO } else { Duration::from_millis(80) };
+        if poll(wait)? {
             let ev = read()?;
             if let Event::Mouse(m) = ev {
                 match m.kind {
