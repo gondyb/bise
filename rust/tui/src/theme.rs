@@ -218,6 +218,11 @@ pub(crate) fn syntax_type() -> Color {
 }
 
 // ---- glyphs (book §6): one glyph per entity and per status ----
+// After the glyph audit (BISE-03, BISE-84): only glyphs a fallback font
+// draws at width 1; the breakers are replaced (✉ → @, ⟳ → ≡ pulsing,
+// ⧗ → Δ, ⎇ → ψ, ↪ → »). Under `BISE_ASCII=1` every glyph has a plain
+// ASCII form: call [`glyph`] (the constants are the Unicode forms), and
+// [`asciify`] catches what is drawn without it.
 
 // entities
 pub(crate) const G_YOU: &str = "›"; // you, and the composer prompt
@@ -228,12 +233,13 @@ pub(crate) const G_BASH: &str = "$"; // a bash call
 pub(crate) const G_TS: &str = "λ"; // a TypeScript call
 pub(crate) const G_SUBCALL: &str = "↳"; // a sub-call inside a TypeScript run
 pub(crate) const G_PATCH: &str = "±"; // a file edit
-pub(crate) const G_MSG: &str = "✉"; // a message between agents, or to you
+pub(crate) const G_MSG: &str = "@"; // a message between agents, or to you (was ✉)
 pub(crate) const G_IMAGE: &str = "▣"; // an image (accent chip)
 pub(crate) const G_CARD: &str = "?"; // a card: a decision that needs you (accent)
-pub(crate) const G_COMPACTING: &str = "⟳"; // compaction running (dim)
-pub(crate) const G_SUMMARY: &str = "≡"; // compaction summary (dim)
+pub(crate) const G_COMPACTING: &str = "≡"; // compaction running (dim, pulsing; was ⟳)
+pub(crate) const G_SUMMARY: &str = "≡"; // compaction summary (dim, still)
 pub(crate) const G_INTERRUPTED: &str = "▲"; // turn interrupted (dim)
+pub(crate) const G_WRAP: &str = "»"; // a wrapped code row continues (faint; was ↪)
 
 // agent status
 pub(crate) const G_STARTING: &str = "·"; // dim, pulsing
@@ -250,24 +256,164 @@ pub(crate) const G_SENDING: &str = "·"; // your message: sending
 pub(crate) const G_RECEIVED: &str = "✓"; // the agent got it
 pub(crate) const G_READ: &str = "✓✓"; // the model read it (accent)
 pub(crate) const G_UNREAD: &str = "•"; // unread activity (accent)
-pub(crate) const G_WORKTREE: &str = "⎇"; // the agent has its own worktree
+pub(crate) const G_WORKTREE: &str = "ψ"; // the agent has its own worktree (was ⎇)
 pub(crate) const G_OVERLAP: &str = "⇄"; // two agents changed the same file
 pub(crate) const G_RESTART_FAILED: &str = "↻"; // error
-pub(crate) const G_BUILDING: &str = "⧗"; // a version building or on trial
+pub(crate) const G_BUILDING: &str = "Δ"; // a version building or on trial (was ⧗)
 pub(crate) const G_CLOSED: &str = "▸"; // progressive disclosure: closed
 pub(crate) const G_OPEN: &str = "▾"; // progressive disclosure: open
+
+/// Every `G_*` glyph with its ASCII form, then the other glyphs the TUI
+/// draws today (chrome, hints, old feed glyphs, the braille spinner): the
+/// table [`glyph`] and [`asciify`] read. One cell each, except `✓✓`.
+/// Box drawing (`│ ┃ ─ ╮ …`) and block elements (`▁ █ ▏ …`) stay: they
+/// draw everywhere. User text is never in it (no letters, accents, CJK,
+/// emoji, quotes).
+pub(crate) const ASCII: &[(&str, &str)] = &[
+    // §6 glyphs
+    ("›", ">"),
+    ("◇", "+"),
+    ("∴", "."),
+    ("λ", "\\"),
+    ("↳", "-"),
+    ("±", "%"),
+    ("▣", "#"),
+    ("≡", "="),
+    ("▲", "^"),
+    ("»", ">"),
+    ("·", "."),
+    ("∿", "~"),
+    ("…", ":"),
+    ("♡", "+"),
+    ("✗", "x"),
+    ("○", "o"),
+    ("–", "-"),
+    ("✓✓", "vv"),
+    ("✓", "v"),
+    ("•", "*"),
+    ("ψ", "Y"),
+    ("⇄", "="),
+    ("↻", "!"),
+    ("Δ", "^"),
+    ("▸", ">"),
+    ("▾", "v"),
+    // the replaced ones, while old code still draws them
+    ("✉", "@"),
+    ("⟳", "="),
+    ("⧗", "^"),
+    ("⎇", "Y"),
+    ("↪", ">"),
+    // chrome and hints drawn outside the G_* constants (BISE-83 moves them)
+    ("✦", "*"),
+    ("◀", "<"),
+    ("▶", ">"),
+    ("●", "*"),
+    ("◉", "@"),
+    ("◆", "*"),
+    ("✚", "+"),
+    ("▪", "*"),
+    ("×", "x"),
+    ("⏎", "<"),
+    ("→", ">"),
+    ("←", "<"),
+    ("↑", "^"),
+    ("↓", "v"),
+    ("⇧", "S"),
+    ("⌥", "M"),
+    ("—", "-"),
+    ("−", "-"),
+    // the old braille spinner
+    ("⠋", "~"),
+    ("⠙", "~"),
+    ("⠹", "~"),
+    ("⠸", "~"),
+    ("⠼", "~"),
+    ("⠴", "~"),
+    ("⠦", "~"),
+    ("⠧", "~"),
+    ("⠇", "~"),
+    ("⠏", "~"),
+];
+
+#[cfg(not(test))]
+mod ascii_cell {
+    //! `BISE_ASCII=1` (or `true`), read once.
+    use std::sync::OnceLock;
+
+    static ASCII: OnceLock<bool> = OnceLock::new();
+
+    pub(super) fn get() -> bool {
+        *ASCII.get_or_init(|| {
+            std::env::var("BISE_ASCII").is_ok_and(|v| matches!(v.trim(), "1" | "true" | "yes"))
+        })
+    }
+}
+
+#[cfg(test)]
+mod ascii_cell {
+    //! Per thread under `cargo test`, like the mode; off by default.
+    use std::cell::Cell;
+
+    thread_local!(static ASCII: Cell<bool> = const { Cell::new(false) });
+
+    pub(super) fn get() -> bool {
+        ASCII.with(|c| c.get())
+    }
+    pub(super) fn set(on: bool) {
+        ASCII.with(|c| c.set(on));
+    }
+}
+
+/// True under `BISE_ASCII=1`: every glyph is drawn in plain ASCII.
+pub(crate) fn ascii_mode() -> bool {
+    ascii_cell::get()
+}
+
+/// The glyph to draw for `g` (a `G_*` constant, or any glyph of the
+/// table): its ASCII form under `BISE_ASCII=1`, else `g` itself.
+pub(crate) fn glyph(g: &'static str) -> &'static str {
+    if !ascii_mode() {
+        return g;
+    }
+    ASCII.iter().find(|(u, _)| *u == g).map_or(g, |(_, a)| *a)
+}
+
+/// Under `BISE_ASCII=1`, rewrite every cell of `buf` holding a glyph of the
+/// table to its ASCII form (one cell to one cell, layout unchanged).
+/// Nothing else is touched: letters, accents, CJK, emoji, box drawing.
+/// Called after each draw; free when the mode is off.
+pub(crate) fn asciify(buf: &mut ratatui::buffer::Buffer) {
+    if !ascii_mode() {
+        return;
+    }
+    for cell in buf.content.iter_mut() {
+        let sym = cell.symbol();
+        if sym.is_ascii() {
+            continue;
+        }
+        if let Some((_, a)) = ASCII.iter().find(|(u, a)| *u == sym && a.len() == 1) {
+            cell.set_symbol(a);
+        }
+    }
+}
 
 /// The working pulse: `∿` in text, then dim, then text… (one phase every
 /// 4 ticks). Replaces the braille spinner.
 pub(crate) fn working_frame(tick: u32) -> (&'static str, Color) {
     let color = if (tick / 4).is_multiple_of(2) { text() } else { dim() };
-    (G_WORKING, color)
+    (glyph(G_WORKING), color)
 }
 
 /// The starting pulse: `·`, dim then faint, same rhythm as [`working_frame`].
 pub(crate) fn starting_frame(tick: u32) -> (&'static str, Color) {
     let color = if (tick / 4).is_multiple_of(2) { dim() } else { faint() };
-    (G_STARTING, color)
+    (glyph(G_STARTING), color)
+}
+
+/// The compaction pulse: `≡`, dim then faint, same rhythm.
+pub(crate) fn compacting_frame(tick: u32) -> (&'static str, Color) {
+    let color = if (tick / 4).is_multiple_of(2) { dim() } else { faint() };
+    (glyph(G_COMPACTING), color)
 }
 
 // the prompt/autocomplete borders: only a vertical bar
@@ -498,6 +644,103 @@ mod tests {
         assert!(frames.iter().all(|(g, _)| *g == G_WORKING));
         assert_eq!(frames[0].1, text());
         assert_eq!(frames[4].1, dim());
+    }
+
+    const ALL_GLYPHS: &[&str] = &[
+        G_YOU, G_MAIN, G_BRIEF, G_THINK, G_BASH, G_TS, G_SUBCALL, G_PATCH, G_MSG, G_IMAGE,
+        G_CARD, G_COMPACTING, G_SUMMARY, G_INTERRUPTED, G_WRAP, G_STARTING, G_WORKING,
+        G_WAITING, G_NEEDS_YOU, G_DONE, G_FAILED, G_IDLE, G_STOPPED, G_SENDING, G_RECEIVED,
+        G_READ, G_UNREAD, G_WORKTREE, G_OVERLAP, G_RESTART_FAILED, G_BUILDING, G_CLOSED, G_OPEN,
+    ];
+
+    /// The documented widths: `:*` and `✓✓` are two cells, the rest one.
+    fn documented_width(g: &str) -> usize {
+        if g == G_MAIN || g == G_READ {
+            2
+        } else {
+            1
+        }
+    }
+
+    #[test]
+    fn every_glyph_is_one_cell_in_both_modes() {
+        use unicode_width::UnicodeWidthStr;
+        for ascii in [false, true] {
+            ascii_cell::set(ascii);
+            for g in ALL_GLYPHS {
+                let shown = glyph(g);
+                assert_eq!(shown.width(), documented_width(g), "{g:?} → {shown:?} (ascii {ascii})");
+                // no ambiguous-width surprise: the CJK width agrees for ASCII forms
+                if ascii {
+                    assert!(shown.is_ascii(), "{g:?} → {shown:?} is not ASCII");
+                    assert_eq!(shown.width_cjk(), shown.width());
+                }
+            }
+            let (w, _) = working_frame(0);
+            assert_eq!(w, if ascii { "~" } else { "∿" });
+        }
+        ascii_cell::set(false);
+    }
+
+    #[test]
+    fn the_ascii_table_is_one_cell_to_one_cell() {
+        use unicode_width::UnicodeWidthStr;
+        let mut seen = std::collections::HashSet::new();
+        for (u, a) in ASCII {
+            assert!(seen.insert(*u), "{u:?} twice in the table");
+            assert!(a.is_ascii() && !a.is_empty(), "{u:?} → {a:?}");
+            assert_eq!(u.width(), a.width(), "{u:?} → {a:?} changes the width");
+            assert!(u.chars().all(|c| !c.is_alphanumeric() || c == 'λ' || c == 'ψ' || c == 'Δ'),
+                "{u:?}: letters are user text");
+        }
+        // every G_* glyph that is not ASCII has its form
+        for g in ALL_GLYPHS.iter().filter(|g| !g.is_ascii()) {
+            assert!(ASCII.iter().any(|(u, _)| u == g), "{g:?} has no ASCII form");
+        }
+        // the replaced glyphs are gone from the constants
+        for gone in ["✉", "⟳", "⧗", "⎇", "↪"] {
+            assert!(!ALL_GLYPHS.contains(&gone), "{gone} is back");
+        }
+    }
+
+    #[test]
+    fn glyph_is_the_identity_when_off() {
+        assert!(!ascii_mode());
+        for g in ALL_GLYPHS {
+            assert_eq!(glyph(g), *g);
+        }
+    }
+
+    fn buffer_of(text: &str) -> ratatui::buffer::Buffer {
+        use ratatui::layout::Rect;
+        use unicode_width::UnicodeWidthStr;
+        let mut buf = ratatui::buffer::Buffer::empty(Rect::new(0, 0, text.width() as u16, 1));
+        buf.set_string(0, 0, text, ratatui::style::Style::default());
+        buf
+    }
+
+    fn row(buf: &ratatui::buffer::Buffer) -> String {
+        buf.content.iter().map(|c| c.symbol()).collect()
+    }
+
+    #[test]
+    fn asciify_maps_only_the_table() {
+        let text = "› ∿ ♡ ✓ ψ Δ … · ─│┃ é ñ ü 漢字 👍 « » “q” ✦ ⠋";
+        let mut buf = buffer_of(text);
+        let before = row(&buf);
+        asciify(&mut buf);
+        assert_eq!(row(&buf), before, "off: nothing changes");
+        ascii_cell::set(true);
+        asciify(&mut buf);
+        ascii_cell::set(false);
+        let after = row(&buf);
+        // (wide characters keep their continuation cell: compare buffers)
+        assert_eq!(after, row(&buffer_of("> ~ + v Y ^ : . ─│┃ é ñ ü 漢字 👍 « > “q” * ~")));
+        let non_ascii: String = after
+            .chars()
+            .filter(|c| !c.is_ascii() && !('\u{2500}'..='\u{257f}').contains(c))
+            .collect();
+        assert_eq!(non_ascii, "éñü漢字👍«“”", "only user text and box drawing survive");
     }
 
     #[test]
