@@ -3025,3 +3025,58 @@ def hub_d_send(-o: HM.St, b: Bool, p: HX.Cx<o> & List<&2, J.Json>, +a: String, +
   match p:
     case (+cx, +msgs):
       hub_d_send.go(o, b, cx, a, ids, HM.snoc(Sigma<&2, &2, String, _ => J.Json>, kvs0, J.kv("msgs", J.JArr{msgs})))
+
+def hub_d_eq_qimp(-o: HM.St, +a: HX.Cx<o>, +b: HX.Cx<o>, +n: String, e: {HX.d(o, b) == HX.d(o, a) : HM.St}) -> {hub_qimp(HX.d(o, a), HX.d(o, b), n) == True{} : Bool}:
+  hub_qimp_eq(HX.d(o, a), HX.d(o, b), n, e)
+
+def hub_qimp_mark.go(-o: HM.St, +cx: HX.Cx<o>, +id: Nat, +n: String, c: Bool, +e: {HX.queued_at(HX.d(o, cx), id) == c : Bool})
+    -> {hub_qimp(HX.d(o, cx), HX.d(o, HC.mark_delivered.go(o, cx, id, c, e)), n) == True{} : Bool}:
+  match c:
+    case True{}:
+      hub_qimp_trans(HX.d(o, cx), HM.apply(HX.d(o, cx), HM.EMsgState{id, HM.Delivered{}}), HX.d(o, HC.mark_delivered.go(o, cx, id, True{}, e)), n,
+        hub_qimp_deliv(HX.d(o, cx), id, n),
+        hub_qimp_eq(HM.apply(HX.d(o, cx), HM.EMsgState{id, HM.Delivered{}}), HX.d(o, HC.mark_delivered.go(o, cx, id, True{}, e)), n,
+          hub_d_emit(o, cx, HM.EMsgState{id, HM.Delivered{}}, Unit{}, Unit{}, e)))
+    case False{}:
+      hub_qimp_refl(HX.d(o, cx), n)
+
+def hub_qimp_pick(-o: HM.St, c: Bool, +x: HX.Cx<o>, +y: HX.Cx<o>, +z: HX.Cx<o>, +n: String,
+    ex: {HX.d(o, x) == HX.d(o, z) : HM.St}, ey: {HX.d(o, y) == HX.d(o, z) : HM.St})
+    -> {hub_qimp(HX.d(o, z), HX.d(o, Bool.pick(HX.Cx<o>, c, x, y)), n) == True{} : Bool}:
+  match c:
+    case True{}:
+      hub_qimp_eq(HX.d(o, z), HX.d(o, x), n, ex)
+    case False{}:
+      hub_qimp_eq(HX.d(o, z), HX.d(o, y), n, ey)
+
+# delivering a batch never fills a queue
+def hub_qimp_deliver(-o: HM.St, +b: List<&2, HM.Msg>, +cx: HX.Cx<o>, +name: String, +acc: List<&2, J.Json>, +n: String)
+    -> {hub_qimp(HX.d(o, cx), HX.d(o, hub_p1(o, HC.deliver_each(o, b, cx, name, acc))), n) == True{} : Bool}:
+  match b:
+    case Nil{}:
+      hub_qimp_refl(HX.d(o, cx), n)
+    case Con{m, rest}:
+      +cx2 = HC.mark_delivered(o, cx, HM.Msg.id(m))
+      +l1 = HC.line(o, cx2, name, "you", HM.Msg.text(m))
+      +l2 = HC.line(o, cx2, name, "msg-in", HC.cat([HM.Msg.from(m), " ", HC.mid(HM.Msg.id(m)), " : ", HM.Msg.text(m)]))
+      +cx3 = Bool.pick(HX.Cx<o>, HM.Msg.plain(m) || Maybe.is_some(&2, String, HM.Msg.via(m)), l1, l2)
+      +s = HC.st(o, cx)
+      +rel = HC.relation(HM.Msg.from(m), HM.Msg.to(m), HC.parent_of(HM.get_agent(s, HM.Msg.from(m))), HC.parent_of(HM.get_agent(s, HM.Msg.to(m))))
+      +acc2 = HM.snoc(J.Json, acc, J.obj([J.kv("id", J.JNum{HM.Msg.id(m)}), J.kv("rel", J.JStr{rel})]))
+      hub_qimp_trans(HX.d(o, cx), HX.d(o, cx3), HX.d(o, hub_p1(o, HC.deliver_each(o, rest, cx3, name, acc2))), n,
+        hub_qimp_trans(HX.d(o, cx), HX.d(o, cx2), HX.d(o, cx3), n,
+          hub_qimp_mark.go(o, cx, HM.Msg.id(m), n, HX.queued_at(HX.d(o, cx), HM.Msg.id(m)), {==}),
+          hub_qimp_pick(o, HM.Msg.plain(m) || Maybe.is_some(&2, String, HM.Msg.via(m)), l1, l2, cx2, n,
+            hub_d_line(o, cx2, name, "you", HM.Msg.text(m)),
+            hub_d_line(o, cx2, name, "msg-in", HC.cat([HM.Msg.from(m), " ", HC.mid(HM.Msg.id(m)), " : ", HM.Msg.text(m)])))),
+        hub_qimp_deliver(o, rest, cx3, name, acc2, n))
+
+def hub_qimp_flush_cx(-o: HM.St, f: Bool, +cx: HX.Cx<o>, +n: String) -> {hub_qimp(HX.d(o, cx), HX.d(o, HC.pump.flush(o, f, cx)), n) == True{} : Bool}:
+  match f:
+    case True{}:
+      hub_qimp_trans(HX.d(o, cx), HM.apply(HX.d(o, cx), HM.ENotesFlushed{}), HX.d(o, HC.pump.flush(o, True{}, cx)), n,
+        hub_qimp_flush(HX.d(o, cx), n),
+        hub_qimp_eq(HM.apply(HX.d(o, cx), HM.ENotesFlushed{}), HX.d(o, HC.pump.flush(o, True{}, cx)), n,
+          hub_d_emit(o, cx, HM.ENotesFlushed{}, Unit{}, Unit{}, Unit{})))
+    case False{}:
+      hub_qimp_refl(HX.d(o, cx), n)
