@@ -146,19 +146,19 @@ def repl_deferred.reload(+sess: T.Session, out: Pv.Out,
 
 # after the deferred compaction: save, then the reload if it was also
 # requested, else keep serving
-def repl_deferred.compact.after.pick(reload: Bool, +sess3: T.Session,
-    out3: Pv.Out, next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+def repl_deferred.reload.only(reload: Bool, +sess2: T.Session, out2: Pv.Out,
+    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match reload:
     case True{}:
-      do IO<Flow>:
-        u : Unit <- P.save(sess3)
-        f : Flow <- repl_deferred.reload(sess3, out3, next)
-        IO.pure(Flow, f)
+      repl_deferred.reload(sess2, out2, next)
     case False{}:
-      do IO<Flow>:
-        u : Unit <- P.save(sess3)
-        f : Flow <- repl_out(out3, sess3, next)
-        IO.pure(Flow, f)
+      repl_out(out2, sess2, next)
+
+def repl_deferred.compact.after.pick(reload: Bool, +sess3: T.Session,
+    out3: Pv.Out, next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+  do IO<Flow>:
+    u : Unit <- P.save(sess3)
+    repl_deferred.reload.only(reload, sess3, out3, next)
 
 def repl_deferred.compact.after(reload: Bool, e: R.RtEnd,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
@@ -186,14 +186,6 @@ def repl_deferred.compact(+live: Bool, reload: Bool, +sess2: T.Session, out2: Pv
     e : R.RtEnd <- repl_run(live, out2, sess2, compact_script(),
       Con{T.Compact{""}, Nil{}})
     repl_deferred.compact.after(reload, e, next)
-
-def repl_deferred.reload.only(reload: Bool, +sess2: T.Session, out2: Pv.Out,
-    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
-  match reload:
-    case True{}:
-      repl_deferred.reload(sess2, out2, next)
-    case False{}:
-      repl_out(out2, sess2, next)
 
 def repl_deferred.compact.only(+live: Bool, compact: Bool, reload: Bool, +sess2: T.Session,
     out2: Pv.Out, next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
