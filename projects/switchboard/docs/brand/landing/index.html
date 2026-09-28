@@ -48,9 +48,13 @@
   @keyframes kiss { 0% { opacity:0; transform:scale(.4) } 55% { opacity:1; transform:scale(1.35) rotate(-10deg) } 100% { opacity:1; transform:none } }
   .t1 { font-size:clamp(24px, 3.2vw, 38px); font-weight:700; margin-top:42px; letter-spacing:-.02em; }
   .t2 { color:var(--dim); margin-top:12px; font-size:clamp(15px, 1.4vw, 17px); max-width:none; }
-  .install { margin-top:44px; color:var(--dim); font-size:15px; cursor:pointer; display:inline-flex; gap:1.5ch; }
+  .install { margin-top:44px; color:var(--text); font-size:15px; cursor:pointer; display:inline-flex; align-items:center; gap:2.5ch;
+    background:var(--soft); border:1px solid var(--faint); border-radius:10px; padding:11px 12px 11px 20px; transition:border-color .3s, background .3s; }
+  .install:hover { border-color:var(--acc); }
   .install .p { color:var(--acc); }
-  .install .c { color:var(--faint); transition:color .3s; } .install:hover .c { color:var(--dim); }
+  .install .c { font-size:12px; color:var(--dim); border:1px solid var(--faint); border-radius:6px; padding:2px 10px; transition:color .3s, border-color .3s; }
+  .install:hover .c { color:var(--text); border-color:var(--dim); }
+  .install.done .c { color:var(--acc); border-color:var(--acc); }
   .scroll { position:absolute; bottom:30px; color:var(--faint); font-size:13px; animation:breathe 3s ease-in-out infinite; }
   @keyframes breathe { 50% { opacity:.4; transform:translateY(3px) } }
 
@@ -157,7 +161,7 @@
     <div class="big">bise <span class="kiss">:*</span></div>
     <div class="t1">kiss your backlog goodbye.</div>
     <div class="t2">ramble. interrupt. change your mind.<br>i run the agents. you stay in flow.</div>
-    <div class="install" id="install" title="copy"><span><span class="p">$</span> <span class="tbd" id="cmd" title="⚠ no installer yet: today bise runs from a dev checkout (pitch §8.1)">curl -fsSL bise.dev/install | sh</span></span><span class="c" id="copied">copy</span></div>
+    <div class="install" id="install" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span class="tbd" id="cmd" title="⚠ no installer yet: today bise runs from a dev checkout (pitch §8.1)">curl -fsSL bise.dev/install | sh</span></span><span class="c" id="copied">copy</span></div>
     <div class="scroll">↓</div>
   </div>
 </div>
@@ -265,7 +269,7 @@
     <div class="blow">
       <div class="big acc">:*</div>
       <p class="dim" style="margin-top:28px">ideas in. little kisses out. also pull requests.</p>
-      <div class="install" id="install2"><span><span class="p">$</span> <span class="tbd" title="⚠ no installer yet">curl -fsSL bise.dev/install | sh</span></span><span class="c">copy</span></div>
+      <div class="install" id="install2" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span class="tbd" title="⚠ no installer yet">curl -fsSL bise.dev/install | sh</span></span><span class="c">copy</span></div>
     </div>
   </section>
 </div>
@@ -287,7 +291,7 @@ const hdr = document.getElementById("top");
 addEventListener("scroll", () => hdr.classList.toggle("scrolled", scrollY > innerHeight * .6));
 for (const id of ["install", "install2"]) document.getElementById(id).onclick = (e) => {
   navigator.clipboard?.writeText(document.getElementById("cmd").textContent);
-  const c = e.currentTarget.querySelector(".c"); c.textContent = "copied :*"; setTimeout(() => c.textContent = "copy", 1600);
+  const box = e.currentTarget, c = box.querySelector(".c"); c.textContent = "copied :*"; box.classList.add("done"); setTimeout(() => { c.textContent = "copy"; box.classList.remove("done"); }, 1600);
 };
 
 // ---- reveal: blow in when seen ----
