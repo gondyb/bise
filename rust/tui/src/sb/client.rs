@@ -93,7 +93,7 @@ pub(super) fn new_sb(writer: std::sync::Arc<std::sync::Mutex<UnixStream>>, works
         selected: None,
         preview: false,
         confirm: None,
-        activity: HashMap::new(),
+        activity: Default::default(),
         ready: false,
         shell: None,
         version: String::new(),

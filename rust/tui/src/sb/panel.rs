@@ -77,7 +77,6 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
         } else {
             format!("{} {}", i, a.name)
         };
-        let act = sb.activity.get(&a.name).copied().unwrap_or(0);
         let mut spans = vec![
             Span::styled(format!(" {} ", g), Style::default().fg(gc)),
             Span::styled(truncate_chars(&label, w.saturating_sub(12)), name_style),
@@ -86,7 +85,7 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
         if let Some(u) = sb.usage_of(app, &a.name) {
             spans.push(Span::styled(format!(" {}", u.short()), Style::default().fg(FAINT)));
         }
-        if act > 0 && !focused {
+        if sb.activity.contains(&a.name) && !focused {
             spans.push(Span::styled(" •", Style::default().fg(INFO)));
         }
         if a.queued > 0 {

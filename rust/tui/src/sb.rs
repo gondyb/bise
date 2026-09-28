@@ -73,8 +73,8 @@ pub(super) struct Sb {
     selected: Option<usize>,
     preview: bool,
     confirm: Option<(u64, String)>,
-    /// Lines that arrived in a feed out of view, since its last visit.
-    activity: HashMap<String, usize>,
+    /// The feeds out of view where lines arrived since their last visit.
+    activity: std::collections::HashSet<String>,
     ready: bool,
     /// Ctrl+O: a shell to open in this directory (RFC 0002 §6).
     shell: Option<String>,
@@ -357,7 +357,7 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>) {
     if sb.focus != agent {
         let visible = line.contains("obs: assistant:") || line.starts_with("sb ");
         if visible && sb.ready {
-            *sb.activity.entry(agent.to_string()).or_insert(0) += 1;
+            sb.activity.insert(agent.to_string());
         }
     }
     with_feed(app, agent, |app| {
