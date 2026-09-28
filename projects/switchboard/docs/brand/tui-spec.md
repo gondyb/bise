@@ -35,6 +35,25 @@ us. The features are right; the look and the reading comfort are not.
 - **bash and TypeScript scripts are shown in full in the history**, never
   truncated or collapsed by default, with syntax colors.
 
+## Visual hierarchy: what's for you, what isn't
+
+Three levels, always the same, in main and inside an agent:
+
+| Level | What | Look |
+|---|---|---|
+| 1 · needs you | a question or a blocker addressed to you | blush bar `┃` on the left, bold blush title with `?`, normal text; stays until answered, also in the card box |
+| 2 · for you | what main or an agent says to you: replies, summaries, main answering on your behalf, reports on your requests | normal text, `:*` or the status glyph in front |
+| 3 · between agents | messages agents send each other and to main | dim text under a faint rail, `✉ from → to  text`, one line each, disclosed with ▸ when long |
+
+- Traffic between agents is **always in the history**, so what happened stays
+  understandable. Main's level-2 line after it is the summary for you.
+- Color is reserved for level 1 (and errors). Levels 2 and 3 differ by
+  brightness and the rail, not by hue.
+- **⚠** New: a "quiet" key (e.g. `ctrl+b`) folds each run of level-3 lines
+  into one dim line `▸ 3 messages between agents`. Levels 1 and 2 never fold.
+- **⚠** Today the hub's messages to main reach the feed as plain turns; the
+  TUI needs the sender, the recipient and the level for each line.
+
 ## Line width (measure)
 
 - **Prose** (user messages, agent text, reports, cards): wrap at
@@ -133,8 +152,10 @@ toggles all outputs.
   available today (only tokens per agent); add it once the usage work lands.
 - Feed on the left (prose ≤ 76 columns), task panel on the right titled
   `agents`, one line per agent: its shortcut, glyph, name, age or state,
-  context fill. The shortcut is always shown, in the faint color, with a space (`⌥ 0` main, `⌥ 1`…`⌥ 9` the first
-  nine agents, blank after) so switching is discoverable without `/help`.
+  context fill. The panel title says how to switch once, `agents · ⌥ + number to switch`,
+  and each row starts with its number in the faint color (0 main, 1…9 the
+  first nine agents, blank after), so switching is discoverable without
+  `/help`.
   **⚠** `⌥` is macOS; show `alt+1` on Linux and Windows.
 - Main answering a task on your behalf is shown in the feed, with its undo
   (`ctrl+z`).
