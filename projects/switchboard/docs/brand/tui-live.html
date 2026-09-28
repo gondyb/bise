@@ -36,6 +36,7 @@
   #inp { flex:1; background:transparent; border:0; outline:0; color:var(--text); font:inherit; caret-color:var(--acc); }
   #inp::placeholder { color:var(--faint); }
   .mine { color:var(--acc); }
+  .tick { color:var(--faint); margin-left:1ch; } .tick.read { color:var(--acc); }
   .enter { animation:enter .35s ease-out; }
   @keyframes enter { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
   .pulse { display:inline-block; animation:pulse 1.6s ease-in-out infinite; }
@@ -159,7 +160,7 @@ function stateAt(now) {
     const sim = START + e.t * 12 + st.offset;
     switch (e.type) {
       case "type": if (now < e.t + e.dur) st.typing = e.text.slice(0, Math.floor(e.text.length * (now - e.t) / e.dur)); break;
-      case "you": push({ k: "you", html: e.text, real: e.real }); if (!e.real) st.typing = null; break;
+      case "you": push({ k: "you", html: e.text, real: e.real, t: e.t }); if (!e.real) st.typing = null; break;
       case "main": push({ k: "main", html: e.html }); break;
       case "report": push({ k: "report", g: e.g, html: e.html }); break;
       case "msg":
@@ -181,6 +182,7 @@ function stateAt(now) {
     }
   }
   st.tailRun = run;
+  st.now = now;
   st.sim = START + now * 12 + st.offset;
   return st;
 }
@@ -194,7 +196,12 @@ function msgLine(m) {
 }
 function renderItem(it, st) {
   switch (it.k) {
-    case "you": return `<div class="b"><span class="who ${it.real ? "mine" : "dim"}">›</span>${it.html}</div>`;
+    case "you": {
+      // WhatsApp-style marks: · sending, ✓ the agent got it, ✓✓ the model read it
+      const age = st.now - it.t;
+      const tick = age < 0.4 ? '<span class="tick">·</span>' : age < 1.4 ? '<span class="tick">✓</span>' : '<span class="tick read">✓✓</span>';
+      return `<div class="b"><span class="who ${it.real ? "mine" : "dim"}">›</span>${it.html}${tick}</div>`;
+    }
     case "main": return `<div class="b"><span class="who acc">:*</span>${it.html}</div>`;
     case "report": return `<div class="b"><span class="who">${it.g}</span>${it.html}</div>`;
     case "time": return `<div class="tsep">· ${hhmm(it.sim)} ·</div>`;

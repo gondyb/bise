@@ -55,12 +55,34 @@ Three levels, always the same, in main and inside an agent:
 - **⚠** Today the hub's messages to main reach the feed as plain turns; the
   TUI needs the sender, the recipient and the level for each line.
 
+## Your message: sent, received, read
+
+WhatsApp's double check, at the end of your own line (Gabriel):
+
+| Mark | Meaning | Wire today |
+|---|---|---|
+| `·` (faint) | sending | the client sent it |
+| `✓` (faint) | the agent got it, waiting for its turn | `steering_received` |
+| `✓✓` (accent) | the model read it | `steered` |
+| `✗ not delivered` (red, own line) | the agent is gone; `⏎` send again | **⚠** new |
+
+- Replaces today's separate info lines ("steering received: …", "steering
+  passed to the model: …"): less noise, and the answer to "did it get my
+  message?" sits where you look.
+- The same marks on level-3 lines for notifications
+  (`notification_received` / `notification_delivered`), faint, so you can
+  see an agent hasn't read main's message yet.
+- A message sent at idle starts the turn at once: it goes straight to `✓✓`.
+
 ## History order (invariant)
 
 - **The history is append-only, in arrival order.** No section per agent that
   gets updated later, no reordering, no line that moves. What changes over
   time (status, age, context fill, open cards) lives outside the history: the
   agents panel, the header counts, the card box.
+- **Content is frozen; small status marks are not.** The only in-place
+  change on an existing line is its status mark (`✓` → `✓✓` on your
+  message). The line never moves and its text never changes.
 - **Only the tail can grow.** A run of level-3 lines at the very bottom may
   fold and its count may go up while the run lasts. As soon as a level-1 or
   level-2 line is appended, the run is closed and frozen.
@@ -330,6 +352,8 @@ To implement:
     shows once per user).
 16. Images: chips, the attachment strip, readable error for models without
     vision.
+17. Message marks `·` `✓` `✓✓` on your lines (and faint on notifications),
+    replacing the steering info lines.
 
 Open questions:
 

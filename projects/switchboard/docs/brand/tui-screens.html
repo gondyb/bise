@@ -63,6 +63,7 @@
   .thumb { margin:4px 0 0 3ch; width:34ch; height:9em; border:1px solid var(--line); border-radius:4px; background:
     linear-gradient(#e9e4dc 0 18%, transparent 18%), linear-gradient(90deg, #d8d2c8 0 22%, #f6f3ee 22%); position:relative; }
   .thumb::after { content:"sign in"; position:absolute; left:40%; top:42%; font-size:11px; color:#fff; background:#5b6ee1; padding:2px 8px; border-radius:3px; }
+  .tick { color:var(--faint); margin-left:1ch; } .tick.read { color:var(--acc); }
   hr { border:0; border-top:1px solid var(--line); margin:40px 0; max-width:112ch; }
 </style>
 </head>
@@ -280,9 +281,18 @@ src/auth/session.ts:31:  sameSite: "none",</pre>
    <div class="ind"><span class="err">error[E0425]: cannot find value \`width\` in this scope</span> <span class="dim">▸ 18 lines</span></div>
    <div class="b"><span class="who">±</span>edit rust/tui/src/feed.rs <span class="err">✗ the patch doesn't apply: context not found</span></div>`, pan: PANEL("auth-fix") })],
 
-["a turn in progress: steer, interrupt", "while an agent works, ⏎ steers its turn; Ctrl+C interrupts it. the agents keep running when you quit.",
+["your message: sent, received, read", "like WhatsApp. when the agent is busy, your message waits for its turn: · sending, ✓ the agent got it (steering_received), ✓✓ the model read it (steered), in blush like WhatsApp's blue. the marks sit at the end of your own line and are the only thing that changes on it; the old separate lines (\"steering received: …\", \"steering passed to the model: …\") go away.",
+ term({ feed: `<div><span class="who">$</span>bash <span class="pulse dim">∿ 40s</span></div><pre class="code">npx playwright test --project=webkit</pre>` +
+   you('skip firefox, only webkit<span class="tick read">✓✓</span>') +
+   you('and log the cookie headers<span class="tick">✓</span>') +
+   you('also the logout path<span class="tick">·</span>') +
+   `<div class="b l3">✉ main → auth-fix  release needs the fix by 5pm.<span class="tick read">✓✓</span></div>` +
+   `<div class="b"><span class="who err">✗</span><span class="err">not delivered: auth-fix stopped.</span> <span class="dim">⏎ send again · esc drop</span></div>`,
+   pan: PANEL("auth-fix"), f: foot('auth-fix · working · 40s', '<span class="dim">›</span> <span class="cur"></span>', "⏎ steer · ctrl+c interrupt") })],
+
+["a turn in progress: steer, interrupt", "while an agent works, ⏎ steers its turn (the marks above show when it's read); Ctrl+C interrupts it. the agents keep running when you quit.",
  term({ feed: `<div><span class="who">$</span>bash <span class="pulse dim">∿ 12s</span></div><pre class="code">npx playwright test --project=webkit</pre>
-   ${you("skip firefox, only webkit")}<div class="ind dim">↳ steered the running turn</div>
+   ${you('skip firefox, only webkit<span class="tick read">✓✓</span>')}
    <div class="b"><span class="who dim">▲</span><span class="dim">interrupted by you</span></div>`, pan: PANEL("auth-fix"),
    f: foot('auth-fix · working · 12s', '<span class="dim">›</span> <span class="cur"></span>', "⏎ steer · ctrl+c interrupt") })],
 
@@ -384,7 +394,7 @@ document.getElementById("screens").innerHTML = screens.map(([t, p, html], i) =>
   </div></figure>
   <figure><figcaption><b>the symbols</b></figcaption><div class="legend">${[
     ["›", "you"], ['<span class="acc">:*</span>', "main"], ["◇", "brief"], ['<span class="dim">∴</span>', "thinking"], ["$", "bash"], ["λ", "typescript"],
-    ["↳", "a sub-call"], ['<span class="img">▣</span>', "an image"], ["±", "file edit"], ["✉", "agent to agent"], ['<span class="dim">⟳</span>', "compacting"], ['<span class="dim">≡</span>', "compaction summary"], ['<span class="dim">▲</span>', "interrupted"],
+    ["↳", "a sub-call"], ['<span class="faint">✓</span>', "your message: the agent got it"], ['<span class="acc">✓✓</span>', "your message: read by the model"], ['<span class="img">▣</span>', "an image"], ["±", "file edit"], ["✉", "agent to agent"], ['<span class="dim">⟳</span>', "compacting"], ['<span class="dim">≡</span>', "compaction summary"], ['<span class="dim">▲</span>', "interrupted"],
     ['<span class="pulse">∿</span>', "working"], ['<span class="pulse dim">·</span>', "starting"], ["…", "waiting on an agent"], ['<span class="acc">?</span>', "needs you / blocked"],
     ["♡", "done"], ['<span class="err">✗</span>', "failed"], ['<span class="dim">○</span>', "idle"], ['<span class="dim">–</span>', "stopped / drop"], ["⇄", "overlap"], ['<span class="err">↻</span>', "restart failed"],
     ['<span class="acc">•</span>', "unread"], ["⎇", "own worktree"], ['<span style="color:#f0b27a">⧗</span>', "building / on trial"],
