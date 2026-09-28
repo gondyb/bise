@@ -169,12 +169,16 @@ def Msg.id(x: Msg) -> Nat:
     case Msg{+id, _, _, _, _, _, _, _, _, _, _, _}:
       id
 
-def rec_of(xs: List<&2, MRec>, +id: Nat) -> Maybe<&2, MRec>:
+# the first entry whose key is `k`
+def find(~A: Data, ~K: Data, ~key: A -> K, ~eq: K -> K -> Bool, xs: List<&2, A>, +k: K) -> Maybe<&2, A>:
   match xs:
     case Nil{}:
       None{}
-    case Con{+r, +t}:
-      Bool.pick(Maybe<&2, MRec>, Nat.is_eq(Msg.id(MRec.msg(r)), id), Some{r}, rec_of(t, id))
+    case Con{+h, +t}:
+      Bool.pick(Maybe<&2, A>, eq(key(h), k), Some{h}, find(~A, ~K, ~key, ~eq, t, k))
+
+def rec_of(xs: List<&2, MRec>, +id: Nat) -> Maybe<&2, MRec>:
+  find(~MRec, ~Nat, ~(r => Msg.id(MRec.msg(r))), ~(a => b => Nat.is_eq(a, b)), xs, id)
 
 def new_agent(+name: String, +is_main: Bool, +parent: Maybe<&2, String>, +ws: J.Json, +brief: J.Json, +created: Nat) -> Agent:
   Agent{name, is_main, parent, LActive{}, None{}, Nil{}, Nil{}, ws, name, brief, created, None{}, "", J.JNull{}, None{}}
@@ -295,11 +299,7 @@ def trim_is_empty(+s: String) -> Bool:
 # ---- lookups ----
 
 def agent_named(xs: List<&2, Agent>, +n: String) -> Maybe<&2, Agent>:
-  match xs:
-    case Nil{}:
-      None{}
-    case Con{+a, +t}:
-      Bool.pick(Maybe<&2, Agent>, String.eq(Agent.name(a), n), Some{a}, agent_named(t, n))
+  find(~Agent, ~String, ~Agent.name, ~(a => b => String.eq(a, b)), xs, n)
 
 def Agent.aliases(x: Agent) -> List<&2, String>:
   match x:
@@ -491,11 +491,7 @@ def apply_all(evs: List<&2, Ev>, +st: St) -> St:
       apply_all(rest, apply(st, e))
 
 def card_of(xs: List<&2, Card>, +id: Nat) -> Maybe<&2, Card>:
-  match xs:
-    case Nil{}:
-      None{}
-    case Con{+c, +t}:
-      Bool.pick(Maybe<&2, Card>, Nat.is_eq(Card.id(c), id), Some{c}, card_of(t, id))
+  find(~Card, ~Nat, ~Card.id, ~(a => b => Nat.is_eq(a, b)), xs, id)
 
 def is_queued(s: MSt) -> Bool:
   match s:
