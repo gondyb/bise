@@ -154,8 +154,6 @@ pub(crate) fn run_tui(app: &mut App) -> io::Result<()> {
     crash::install();
     let mut terminal = init_terminal()?;
     crash::set_ui_thread(true);
-    // BISE-60: the first launch of the switchboard UI plays the onboarding
-    crate::onboarding::request_if_due(app);
     let r = ui_loop(app, &mut terminal);
     crash::set_ui_thread(false);
     // no orphan shell
@@ -243,21 +241,6 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
         }
         if app.should_quit {
             break;
-        }
-        // BISE-60: the onboarding (first launch, /welcome) over the whole screen
-        if crate::onboarding::take_request() {
-            let shown = crash::guarded(|| {
-                crate::onboarding::show(app, terminal, &mut |app| {
-                    if let Err(c) = crash::guarded(|| drain_lines(app)) {
-                        report_crash(app, &c, "a hub line");
-                    }
-                })
-            });
-            match shown {
-                Ok(r) => r?,
-                Err(c) => report_crash(app, &c, "the onboarding"),
-            }
-            continue;
         }
         // switchboard Ctrl+O: a shell in the agent's directory; the TUI
         // gives the terminal back (every mode) while the shell runs
