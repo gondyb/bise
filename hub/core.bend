@@ -2261,8 +2261,9 @@ def dispatch.go(-o: M.St, tag: In, +cx: X.Cx<o>, +i: J.Json) -> X.Cx<o>:
     case IClose{}:
       close_by_user(o, M.card_of(M.St.cards(st(o, cx)), jnat(i, "card")), cx, jnat(i, "card"))
     case IForceRun{}:
-      # tests only: put an agent's REPL in a given state
-      set_run(o, cx, jstr(i, "agent"), force_run_of(jstr(i, "run")))
+      # tests only: put an agent's REPL in a given state (then deliver, like
+      # any change of run: law L4)
+      pump(o, set_run(o, cx, jstr(i, "agent"), force_run_of(jstr(i, "run"))), jstr(i, "agent"))
     case INone{}:
       cx
 

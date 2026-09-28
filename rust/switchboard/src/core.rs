@@ -560,7 +560,9 @@ impl Hub {
         hub
     }
 
-    /// Tests only: put an agent's REPL in a given state.
+    /// Tests only: put an agent's REPL in a given state (never sent by
+    /// the daemon).
+    #[cfg(test)]
     pub fn force_run(&mut self, agent: &str, run: Run) {
         let r = match run {
             Run::Down => "down",
