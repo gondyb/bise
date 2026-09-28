@@ -175,6 +175,10 @@ commandes.
   `req.main.go` dans hub/core.bend (réservés à main, `main_only` sinon) ;
   ils réutilisent `close_card`, `rename.apply`, `restore_task`,
   `isolate_task`. `sb version switch|rollback` : réservé à main dans le
-  daemon (`version_allowed`), `list` pour tous.
+  daemon (`version_allowed`), `list` pour tous. `sb restart` / `/restart`
+  (réservé à main) : `restart_target` dans le daemon ; sans argument (ou
+  `latest`) il construit HEAD et relance dessus (un switch, avec
+  probation) ; `current` relance sur la version en cours sans rien
+  reconstruire ; `<commit>` relance sur ce commit.
 - Dossiers par agent : `agents/<dir>/` où `dir` = nom à la création
   (un rename ne déplace rien).

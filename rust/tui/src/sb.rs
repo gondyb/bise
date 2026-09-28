@@ -382,7 +382,7 @@ pub(super) const SB_COMMANDS: &[Cmd] = &[
     },
     Cmd {
         name: "/restart",
-        desc: "restart the hub safely (agents kept): /restart [<commit>|latest]",
+        desc: "rebuild + restart the hub on the latest commit (agents kept): /restart [current|<commit>]",
         args: true,
     },
     Cmd {

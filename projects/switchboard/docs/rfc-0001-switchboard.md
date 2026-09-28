@@ -314,6 +314,7 @@ par l'utilisateur en direct.
 | `sb rename <tâche> <nouveau-nom>` | Mêmes règles que `/rename` (nom unique et valide, l'ancien nom reste un alias). |
 | `sb restore <tâche>` / `sb isolate <tâche>` | Comme `/restore` et `/isolate`. Main ne s'en sert QUE sur demande explicite de l'utilisateur (son prompt le dit) : relancer une tâche arrêtée ou archivée est permis à l'utilisateur ou à main, jamais à une tâche ; la relance par simple message reste réservée à l'utilisateur. |
 | `sb version switch <commit\|id\|tree>` / `rollback` | Change de version de Switchboard ; seulement sur demande explicite de l'utilisateur. `sb version list` est permis à tous ; `switch` et `rollback` sont réservés à main. |
+| `sb restart [current\|<commit>]` | Relance le hub sans arrêter les agents ; réservé à main, seulement sur demande explicite. Sans argument : construit le dernier commit (HEAD) et relance dessus (période d'essai) ; `current` : relance la version en cours sans reconstruire. Côté TUI : `/restart [current\|<commit>]`. |
 
 Les commandes de main (spawn, interrupt, stop, drop, card, close, rename,
 restore, isolate, version switch/rollback) sont refusées aux tâches

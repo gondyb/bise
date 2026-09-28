@@ -117,7 +117,7 @@ Preuves à montrer :
   inactif avec du courrier en attente. Les preuves ont trouvé de vrais bugs
   (ex. une tâche restaurée qui ne recevait pas son courrier). **⚠** Les preuves
   couvrent la livraison des messages, pas le comportement des agents.
-- **On le met à jour sans rien arrêter.** `/restart latest` reconstruit, relance
+- **On le met à jour sans rien arrêter.** `/restart` reconstruit, relance
   le hub en période d'essai et revient en arrière si ça casse. Les agents
   continuent leur tour.
 

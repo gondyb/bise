@@ -113,7 +113,7 @@ Proof points:
   mail waiting. The proofs found real bugs (e.g. a restored task that never
   received its mail). **⚠** The proofs cover message delivery, not agent
   behavior.
-- **Updates without stopping anything.** `/restart latest` rebuilds, restarts
+- **Updates without stopping anything.** `/restart` rebuilds, restarts
   the hub on probation, and rolls back if it breaks. The agents keep going
   mid-turn.
 
