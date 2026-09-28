@@ -112,6 +112,9 @@ pub(crate) fn complete(input: &str, start: usize, cursor: usize, glyph: &str) ->
 }
 
 fn splice(chars: &[char], start: usize, end: usize, glyph: &str) -> (String, usize) {
+    // total: a stale range is clamped to the text, never sliced past it
+    let end = end.min(chars.len());
+    let start = start.min(end);
     let mut out: String = chars[..start].iter().collect();
     out.push_str(glyph);
     let cur = start + glyph.chars().count();

@@ -137,7 +137,8 @@ impl ComposerArea {
         }
         let rows = editor::layout_input(text, self.w);
         let dy = y as isize - self.y as isize;
-        let row = (self.top as isize + dy).clamp(0, rows.len() as isize - 1) as usize;
+        let last = rows.len().saturating_sub(1) as isize;
+        let row = (self.top as isize + dy).clamp(0, last) as usize;
         let col = x.saturating_sub(self.x) as usize;
         Some(editor::ci_at(&rows, row, col))
     }

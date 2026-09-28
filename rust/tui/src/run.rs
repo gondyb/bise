@@ -3,8 +3,8 @@
 
 use crate::*;
 use crossterm::event::{
-    poll, read, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event,
-    KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    poll, read, EnableBracketedPaste, EnableMouseCapture, Event, KeyboardEnhancementFlags,
+    PushKeyboardEnhancementFlags,
 };
 use std::io::{self, BufRead, IsTerminal, Read, Write};
 use std::net::TcpStream;
@@ -81,15 +81,27 @@ pub(crate) fn ingest_line(app: &mut App, line: String) {
     }
 }
 
-/// The terminal in UI mode: raw + alternate screen (ratatui), mouse
-/// reports, and bracketed paste (a multi-line paste arrives as ONE
-/// Event::Paste instead of a keystroke storm where every Enter would
-/// send).
-fn init_terminal() -> ratatui::DefaultTerminal {
-    let terminal = ratatui::init();
-    let _ = crossterm::execute!(io::stdout(), EnableMouseCapture);
-    let _ = crossterm::execute!(io::stdout(), EnableBracketedPaste);
-    terminal
+/// The terminal in UI mode: raw + alternate screen, mouse reports,
+/// bracketed paste (a multi-line paste arrives as ONE Event::Paste
+/// instead of a keystroke storm where every Enter would send), and the
+/// kitty keyboard protocol (Shift+Enter reported distinctly; terminals
+/// without support ignore the push, Ctrl+J remains the fallback).
+/// Fallible, unlike `ratatui::init` (which panics), and without its
+/// panic hook: `crash::install` restores every one of these modes.
+fn init_terminal() -> io::Result<ratatui::DefaultTerminal> {
+    use crossterm::terminal::{enable_raw_mode, EnterAlternateScreen};
+    let setup = || -> io::Result<ratatui::DefaultTerminal> {
+        enable_raw_mode()?;
+        crossterm::execute!(io::stdout(), EnterAlternateScreen)?;
+        let _ = crossterm::execute!(io::stdout(), EnableMouseCapture);
+        let _ = crossterm::execute!(io::stdout(), EnableBracketedPaste);
+        let _ = crossterm::execute!(
+            io::stdout(),
+            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+        );
+        ratatui::Terminal::new(ratatui::backend::CrosstermBackend::new(io::stdout()))
+    };
+    setup().inspect_err(|_| crash::restore_terminal())
 }
 
 /// Takes the waiting wire lines for at most 12 ms. The hub replays whole
@@ -124,39 +136,89 @@ fn drain_lines(app: &mut App) -> bool {
     }
 }
 
+/// A caught panic of one handler: shown in the feed (it was logged by
+/// the hook), the editor state clamped back to valid.
+fn report_crash(app: &mut App, c: &crash::Crash, what: &str) {
+    app.ed.cursor = app.ed.cursor.min(app.ed.len());
+    app.ed.anchor = app.ed.anchor.map(|a| a.min(app.ed.len()));
+    push_event(&mut app.events, &mut app.cache, Ev::Err(c.line(what)));
+}
+
+/// Consecutive frames that panicked before the UI gives up (a draw that
+/// always panics would loop forever): it exits with the terminal back.
+const MAX_DRAW_CRASHES: u32 = 3;
+
 pub(crate) fn run_tui(app: &mut App) -> io::Result<()> {
-    let mut terminal = init_terminal();
-    // the kitty keyboard protocol reports Shift+Enter distinctly (the
-    // plain terminal encodings cannot); terminals without support just
-    // ignore the push, and Ctrl+J remains the universal fallback
-    let _ = crossterm::execute!(
-        io::stdout(),
-        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
-    );
+    crash::install();
+    let mut terminal = init_terminal()?;
+    crash::set_ui_thread(true);
+    let r = ui_loop(app, &mut terminal);
+    crash::set_ui_thread(false);
+    // no orphan shell
+    app.term.shutdown();
+    crash::restore_terminal();
+    r
+}
+
+fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
+    let mut draw_crashes = 0u32;
     loop {
-        let backlog = drain_lines(app);
+        let backlog = match crash::guarded(|| drain_lines(app)) {
+            Ok(b) => b,
+            Err(c) => {
+                report_crash(app, &c, "a hub line");
+                true
+            }
+        };
+        for note in crash::take_notes() {
+            push_event(&mut app.events, &mut app.cache, Ev::Err(note));
+        }
         if app.should_quit {
             break;
         }
         // switchboard Ctrl+O: a shell in the agent's directory; the TUI
-        // gives the terminal back when it exits
+        // gives the terminal back (every mode) while the shell runs
         if let Some(dir) = sb::take_shell(app) {
-            let _ = crossterm::execute!(io::stdout(), DisableMouseCapture);
-            ratatui::restore();
+            crash::set_ui_thread(false);
+            crash::restore_terminal();
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
             println!("shell in {} — exit to return to Switchboard", dir);
             let _ = std::process::Command::new(shell).current_dir(&dir).status();
-            terminal = init_terminal();
+            *terminal = init_terminal()?;
+            crash::set_ui_thread(true);
             let _ = terminal.clear();
         }
         pump_voice(app);
-        terminal.draw(|f| {
-            if app.sb.is_some() {
-                sb::draw_sb(app, f)
-            } else {
-                draw(app, f)
+        let drawn = crash::guarded(|| {
+            terminal.draw(|f| {
+                if app.sb.is_some() {
+                    sb::draw_sb(app, f)
+                } else {
+                    draw(app, f)
+                }
+            })
+        });
+        match drawn {
+            Ok(r) => {
+                r?;
+                draw_crashes = 0;
             }
-        })?;
+            Err(c) => {
+                draw_crashes += 1;
+                if draw_crashes >= MAX_DRAW_CRASHES {
+                    return Err(io::Error::other(format!(
+                        "the screen could not be drawn ({} panics in a row): {} at {}{}",
+                        draw_crashes,
+                        c.message,
+                        c.location,
+                        c.log.map(|p| format!(" — details: {}", p.display())).unwrap_or_default()
+                    )));
+                }
+                report_crash(app, &c, "a frame");
+                // the half-drawn buffer is dropped: the next frame repaints all
+                let _ = terminal.clear();
+            }
+        }
         // the level meter moves every 50 ms while recording (Vibe's poll)
         let wait = if backlog {
             Duration::ZERO
@@ -166,24 +228,28 @@ pub(crate) fn run_tui(app: &mut App) -> io::Result<()> {
             Duration::from_millis(80)
         };
         if poll(wait)? {
-            match read()? {
+            let ev = read()?;
+            let term_h = terminal.size().map(|s| s.height).unwrap_or(24);
+            let handled = crash::guarded(|| match ev {
                 Event::Mouse(m) => {
-                    let term_h = terminal.size().map(|s| s.height).unwrap_or(24);
                     on_mouse(app, &m, term_h);
+                    false
                 }
-                Event::Paste(text) => on_paste(app, &text),
-                Event::Key(k) if on_key(app, &k) => break,
-                _ => {}
+                Event::Paste(text) => {
+                    on_paste(app, &text);
+                    false
+                }
+                Event::Key(k) => on_key(app, &k),
+                _ => false,
+            });
+            match handled {
+                Ok(true) => break,
+                Ok(false) => {}
+                Err(c) => report_crash(app, &c, "an input event"),
             }
         }
         app.tick = app.tick.wrapping_add(1);
     }
-    // no orphan shell
-    app.term.shutdown();
-    let _ = crossterm::execute!(io::stdout(), DisableMouseCapture);
-    let _ = crossterm::execute!(io::stdout(), DisableBracketedPaste);
-    let _ = crossterm::execute!(io::stdout(), PopKeyboardEnhancementFlags);
-    ratatui::restore();
     Ok(())
 }
 

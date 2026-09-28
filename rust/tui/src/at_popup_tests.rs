@@ -9,7 +9,7 @@ use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
 /// One workspace for the whole file (the file index is per process).
-fn ws() -> &'static str {
+pub(crate) fn ws() -> &'static str {
     static WS: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     WS.get_or_init(|| {
         let root = std::env::temp_dir().join(format!("at-popup-{}", std::process::id()));

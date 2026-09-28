@@ -126,6 +126,8 @@ pub(crate) fn prefix_first<'a, T>(
 pub(crate) fn complete(input: &str, start: usize, cursor: usize, name: &str) -> (String, usize) {
     let chars: Vec<char> = input.chars().collect();
     let cursor = cursor.min(chars.len());
+    // a stale start (past the cursor) never slices past the text
+    let start = start.min(cursor);
     let head: String = chars[..start].iter().collect();
     let ins = format!("${} ", name);
     let mut tail: String = chars[cursor..].iter().collect();

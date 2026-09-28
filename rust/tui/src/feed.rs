@@ -371,12 +371,20 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
 /// tool redraws its tool line). Returns how many rows it has.
 pub(crate) fn ensure_rows(
     events: &[Ev],
-    cache: &mut [Option<EventRows>],
+    cache: &mut Vec<Option<EventRows>>,
     i: usize,
     debug: bool,
     width: usize,
     tick: u32,
 ) -> usize {
+    // total: no event there, no rows; a cache shorter than the events
+    // (a feed swapped or trimmed since the last frame) grows first
+    if i >= events.len() {
+        return 0;
+    }
+    if cache.len() < events.len() {
+        cache.resize_with(events.len(), || None);
+    }
     match cache[i].as_mut() {
         Some(c) if c.width == width as u16 => {
             refresh_live(c, &events[i], tick);

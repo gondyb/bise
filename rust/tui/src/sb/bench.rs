@@ -15,6 +15,19 @@ pub(crate) fn test_app() -> App {
     sb_app(sb, rx, false, 100, crate::voice::Voice::live(false), "bench".into())
 }
 
+/// A test app whose hub end is read and dropped by a thread: any number
+/// of sends (Enter, commands) never fills the socket and blocks.
+pub(crate) fn test_app_drained() -> App {
+    let (a, mut b) = UnixStream::pair().unwrap();
+    std::thread::spawn(move || {
+        let _ = std::io::copy(&mut b, &mut std::io::sink());
+    });
+    let (_tx, rx) = mpsc::channel::<String>();
+    std::mem::forget(_tx);
+    let sb = new_sb(std::sync::Arc::new(std::sync::Mutex::new(a)), "bench".into());
+    sb_app(sb, rx, false, 100, crate::voice::Voice::live(false), "bench".into())
+}
+
 /// Test setup: the workspace of the `@` popup, and a live agent.
 pub(crate) fn set_workspace(app: &mut App, ws: &str) {
     if let Some(sb) = app.sb.as_mut() {

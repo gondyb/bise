@@ -118,7 +118,9 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect) {
         y: area.y,
         width: feed_w as u16,
         height: area.height,
-    };
+    }
+    // a 1..3-column feed: the margins leave no room (never outside it)
+    .intersection(area);
 
     let n = app.events.len();
     if app.cache.len() < n {
@@ -441,7 +443,10 @@ fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
             y: prompt.y.saturating_sub(n + 2),
             width: w,
             height: n + 2,
-        };
+        }
+        // a short terminal: the prompt sits near the top, the popup
+        // would hang below the screen (ratatui panics outside its buffer)
+        .intersection(frame.area());
         frame.render_widget(Clear, area);
         let lines: Vec<Line> = matches
             .iter()

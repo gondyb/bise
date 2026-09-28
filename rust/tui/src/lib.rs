@@ -68,6 +68,7 @@ mod usage;
 mod term;
 mod feedsel;
 mod keyprobe;
+mod crash;
 mod help;
 mod voice;
 #[cfg(test)]
@@ -81,3 +82,5 @@ pub use sb::{run_switchboard, take_reexec};
 
 #[cfg(test)]
 mod at_popup_tests;
+#[cfg(test)]
+mod fuzz_tests;

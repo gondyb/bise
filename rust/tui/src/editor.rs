@@ -710,7 +710,8 @@ impl Editor {
 
     fn show_entry(&mut self, history: &[String], i: usize) {
         self.hist_idx = Some(i);
-        self.text = self.scratch.get(&i).cloned().unwrap_or_else(|| history[i].clone());
+        // total: a history that changed under the browse shows an empty entry
+        self.text = self.scratch.get(&i).or(history.get(i)).cloned().unwrap_or_default();
         self.cursor = self.len();
         self.anchor = None;
         self.last = None;
