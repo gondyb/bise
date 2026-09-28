@@ -13,15 +13,18 @@ use unicode_width::UnicodeWidthStr;
 
 // a replayed tool has no meaningful duration (the timing is the replay's)
 pub(crate) fn hide_replayed_elapsed(events: &mut [Ev], cache: &mut [Option<EventRows>], id: u32) {
-    for (i, e) in events.iter_mut().enumerate().rev() {
-        if let Ev::Tool(td) = e {
-            if td.id == id {
-                td.elapsed = Some(String::new());
-                cache[i] = None;
-                return;
-            }
-        }
+    if let Some((i, td)) = last_tool_mut(events, |td| td.id == id) {
+        td.elapsed = Some(String::new());
+        cache[i] = None;
     }
+}
+
+/// The newest tool event that matches, with its index.
+fn last_tool_mut(events: &mut [Ev], pred: impl Fn(&ToolData) -> bool) -> Option<(usize, &mut ToolData)> {
+    events.iter_mut().enumerate().rev().find_map(|(i, e)| match e {
+        Ev::Tool(td) if pred(td) => Some((i, td)),
+        _ => None,
+    })
 }
 
 // ---- the codex-style layout cache ----
@@ -299,56 +302,38 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
     // annotations enrich the matching tool event instead of stacking
     match &ev {
         Ev::ToolInfo { id, name, args } => {
-            for (i, e) in events.iter_mut().enumerate().rev() {
-                if let Ev::Tool(td) = e {
-                    if td.id == *id {
-                        td.name = Some(name.clone());
-                        td.args = Some(args.clone());
-                        cache[i] = None;
-                        return false;
-                    }
-                }
+            if let Some((i, td)) = last_tool_mut(events, |td| td.id == *id) {
+                td.name = Some(name.clone());
+                td.args = Some(args.clone());
+                cache[i] = None;
             }
             return false;
         }
         Ev::ToolResult { id, ok, preview } => {
-            for (i, e) in events.iter_mut().enumerate().rev() {
-                if let Ev::Tool(td) = e {
-                    if td.id == *id {
-                        td.result = Some((*ok, preview.clone()));
-                        cache[i] = None;
-                        return false;
-                    }
-                }
+            if let Some((i, td)) = last_tool_mut(events, |td| td.id == *id) {
+                td.result = Some((*ok, preview.clone()));
+                cache[i] = None;
             }
             return false;
         }
         Ev::ToolCode { id, code } => {
-            for (i, e) in events.iter_mut().enumerate().rev() {
-                if let Ev::Tool(td) = e {
-                    if td.id == *id {
-                        td.code = Some(code.clone());
-                        cache[i] = None;
-                        return false;
-                    }
-                }
+            if let Some((i, td)) = last_tool_mut(events, |td| td.id == *id) {
+                td.code = Some(code.clone());
+                cache[i] = None;
             }
             return false;
         }
-        Ev::Tool(td) if !matches!(td.state, ToolState::Run) => {
+        Ev::Tool(done) if !matches!(done.state, ToolState::Run) => {
             // a tool finishing rewrites its running line
-            for (i, e) in events.iter_mut().enumerate().rev() {
-                if let Ev::Tool(td2) = e {
-                    if td2.id == td.id && matches!(td2.state, ToolState::Run) {
-                        td2.state = td.state.clone();
-                        td2.elapsed = Some(fmt_elapsed(td2.started));
-                        if td2.result.is_none() {
-                            td2.result = td.result.clone();
-                        }
-                        cache[i] = None;
-                        return false;
-                    }
+            let running = |td: &ToolData| td.id == done.id && matches!(td.state, ToolState::Run);
+            if let Some((i, td)) = last_tool_mut(events, running) {
+                td.state = done.state.clone();
+                td.elapsed = Some(fmt_elapsed(td.started));
+                if td.result.is_none() {
+                    td.result = done.result.clone();
                 }
+                cache[i] = None;
+                return false;
             }
             events.push(ev);
             cache.push(None);
