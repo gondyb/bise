@@ -254,7 +254,12 @@ fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
     };
     let exe = std::env::current_exe()?;
     let stream = switchboard::client::connect(&paths, &exe, &root)?;
-    bend_tui::run_switchboard(stream, paths.workspace.to_string_lossy().to_string(), debug)
+    bend_tui::run_switchboard(
+        stream,
+        paths.socket(),
+        paths.workspace.to_string_lossy().to_string(),
+        debug,
+    )
 }
 
 fn main() -> std::io::Result<()> {

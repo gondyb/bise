@@ -88,7 +88,10 @@ pub(super) struct Card {
 }
 
 pub(super) struct Sb {
-    writer: UnixStream,
+    /// Shared with the reader thread, which swaps in a fresh stream when
+    /// it reconnects after the hub went away (a hub restart, a switch
+    /// of version).
+    writer: std::sync::Arc<std::sync::Mutex<UnixStream>>,
     workspace: String,
     pub(super) focus: String,
     views: HashMap<String, View>,
@@ -109,7 +112,9 @@ impl Sb {
     fn send(&mut self, v: Value) {
         let mut s = v.to_string();
         s.push('\n');
-        let _ = self.writer.write_all(s.as_bytes());
+        if let Ok(mut w) = self.writer.lock() {
+            let _ = w.write_all(s.as_bytes());
+        }
     }
 
     /// What the panel navigates: main, then the live tasks.
@@ -199,7 +204,43 @@ pub(super) fn take_shell(app: &mut App) -> Option<String> {
 }
 
 /// Route one hub event.
+/// Markers of the reader thread (not JSON): the hub went away / is back.
+const HUB_DOWN: &str = "\u{0}hub-down";
+const HUB_UP: &str = "\u{0}hub-up";
+
+/// The hub is back (a new connection, `hello` sent): it replays every
+/// feed, so the feeds start empty again. The focus and the drafts stay.
+fn hub_reconnected(app: &mut App) {
+    app.connected = true;
+    app.events.clear();
+    app.cache.clear();
+    app.pending = false;
+    app.interrupt_requested = false;
+    app.follow = true;
+    app.top = 0;
+    app.unseen = 0;
+    let Some(sb) = app.sb.as_mut() else { return };
+    for v in sb.views.values_mut() {
+        let draft = (std::mem::take(&mut v.input), v.cursor);
+        *v = View::new();
+        (v.input, v.cursor) = draft;
+    }
+    sb.activity.clear();
+    sb.ready = false;
+    sb.confirm = None;
+    let focus = sb.focus.clone();
+    sb.send(json!({"op": "focus", "focus": focus}));
+}
+
 pub(super) fn dispatch(app: &mut App, raw: &str) {
+    if raw == HUB_DOWN {
+        app.connected = false;
+        return;
+    }
+    if raw == HUB_UP {
+        hub_reconnected(app);
+        return;
+    }
     let Ok(v) = serde_json::from_str::<Value>(raw) else {
         return;
     };
@@ -894,12 +935,18 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
 }
 
 /// `bend-harness switchboard`: the client of a workspace's hub.
-pub fn run_switchboard(stream: UnixStream, workspace: String, debug: bool) -> io::Result<()> {
-    SB_MODE.store(true, std::sync::atomic::Ordering::SeqCst);
-    let reader = stream.try_clone()?;
-    let (tx, rx) = mpsc::channel::<String>();
-    thread::spawn(move || {
-        let mut r = io::BufReader::new(reader);
+/// Read the hub's lines; when the hub goes away, say so and reconnect
+/// (the socket path stays the same across hub restarts and version
+/// switches), then swap the fresh stream into `writer`.
+fn hub_reader(
+    stream: UnixStream,
+    socket: std::path::PathBuf,
+    writer: std::sync::Arc<std::sync::Mutex<UnixStream>>,
+    tx: mpsc::Sender<String>,
+) {
+    let mut stream = stream;
+    loop {
+        let mut r = io::BufReader::new(stream);
         let mut line = String::new();
         loop {
             line.clear();
@@ -907,14 +954,48 @@ pub fn run_switchboard(stream: UnixStream, workspace: String, debug: bool) -> io
                 Ok(0) | Err(_) => break,
                 Ok(_) => {
                     if tx.send(line.trim_end().to_string()).is_err() {
-                        break;
+                        return;
                     }
                 }
             }
         }
-    });
+        if tx.send(HUB_DOWN.to_string()).is_err() {
+            return;
+        }
+        stream = loop {
+            thread::sleep(std::time::Duration::from_millis(250));
+            let Ok(mut s) = UnixStream::connect(&socket) else { continue };
+            let Ok(w) = s.try_clone() else { continue };
+            if s.write_all(b"{\"op\":\"hello\"}\n").is_err() {
+                continue;
+            }
+            if let Ok(mut slot) = writer.lock() {
+                *slot = w;
+            }
+            break s;
+        };
+        if tx.send(HUB_UP.to_string()).is_err() {
+            return;
+        }
+    }
+}
+
+pub fn run_switchboard(
+    stream: UnixStream,
+    socket: std::path::PathBuf,
+    workspace: String,
+    debug: bool,
+) -> io::Result<()> {
+    SB_MODE.store(true, std::sync::atomic::Ordering::SeqCst);
+    let reader = stream.try_clone()?;
+    let (tx, rx) = mpsc::channel::<String>();
+    let writer = std::sync::Arc::new(std::sync::Mutex::new(stream));
+    {
+        let writer = writer.clone();
+        thread::spawn(move || hub_reader(reader, socket, writer, tx));
+    }
     let sb = Sb {
-        writer: stream,
+        writer,
         workspace: workspace.clone(),
         focus: "main".to_string(),
         views: HashMap::new(),

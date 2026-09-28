@@ -52,7 +52,7 @@ build_from() {
   mkdir -p "$BUILD/cache" "$VERSIONS"
   local tmp="$vdir.tmp.$$"
   rm -rf "$tmp"; mkdir -p "$tmp/rust/jsrt/target/debug"
-  trap 'rm -rf "$tmp"' EXIT
+  trap "rm -rf '$tmp'" EXIT
 
   say "cargo build $id..."
   (cd "$src/rust" && CARGO_TARGET_DIR="$BUILD/target" cargo build -q -p bend-harness)
@@ -100,7 +100,7 @@ build() {
     if ! built "$id"; then
       local wt="/tmp/sb-build-$id-$$"
       git worktree add -q --detach "$wt" "$id"
-      trap 'git worktree remove --force "$wt" 2>/dev/null || true' RETURN
+      trap "git worktree remove --force '$wt' 2>/dev/null || true" RETURN
       build_from "$wt" "$id" "$id"
     fi
   fi

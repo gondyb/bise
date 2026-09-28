@@ -102,7 +102,7 @@ if [ -n "$(hub_pid)" ] && [ "$running" != "$id" ]; then
   say "le hub de dev tourne sur $running — redémarrage sur $id (journal rejoué, sessions reprises)"
   stop_hub
 fi
-ln -sfn "$vdir" "$ROOT/current"
+mkdir -p "$ROOT"; ln -sfn "$vdir" "$ROOT/current"
 init_ws
 [ -n "$(hub_pid)" ] || start_hub
 say "hub de dev pid $(hub_pid), version $id, workspace $WS"
