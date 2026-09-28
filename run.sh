@@ -37,10 +37,19 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # rebuild when the binary is missing OR stale (a source file is newer
 # than it — a stale debug binary once showed a model the runtime no
 # longer used)
-if [ ! -x rust/target/debug/bend-harness ] \
-   || [ -n "$(find rust/harness/src rust/tui/src rust/switchboard/src -newer rust/target/debug/bend-harness -print -quit 2>/dev/null)" ]; then
-  echo "bend-harness absent ou périmé — build cargo..." >&2
-  (cd rust && cargo build -p bend-harness)
+# switchboard runs the RELEASE build: its TUI draws ~10x faster
+# than the debug one (the sb shim of the agents points to it too)
+profile=debug
+if [ "${1:-}" = "switchboard" ]; then profile=release; fi
+BIN="rust/target/$profile/bend-harness"
+if [ ! -x "$BIN" ] \
+   || [ -n "$(find rust/harness/src rust/tui/src rust/switchboard/src -newer "$BIN" -print -quit 2>/dev/null)" ]; then
+  echo "bend-harness ($profile) absent ou périmé — build cargo..." >&2
+  if [ "$profile" = release ]; then
+    (cd rust && cargo build --release -p bend-harness)
+  else
+    (cd rust && cargo build -p bend-harness)
+  fi
 fi
 
 if [ ! -x rust/jsrt/target/debug/bend-jsrt ]; then
@@ -81,4 +90,4 @@ if [ ! -x sb-core ] || [ -n "$(find hub vendor -newer sb-core -print -quit 2>/de
   fi
 fi
 
-exec ./rust/target/debug/bend-harness "$@"
+exec "./$BIN" "$@"

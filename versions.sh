@@ -42,9 +42,12 @@ tree_id() {
 
 rev_id() { git rev-parse --short "$1^{commit}"; }
 
-# hash of everything repl-live is compiled from (run inside the source dir)
+# hash of everything repl-live is compiled from (run inside the source
+# dir). The CONTENT decides, never a date: a fresh checkout has fresh
+# mtimes, and the repl-live committed in the repo may predate its sources
+# - a version always compiles its own (cached by this hash).
 bend_hash() {
-  find runtime core -type f -name '*.bend' -print0 | sort -z | xargs -0 cat | shasum | cut -c1-12
+  find runtime core vendor -type f -name '*.bend' -print0 | sort -z | xargs -0 cat | shasum | cut -c1-12
 }
 
 # build the source dir $1 into version $2 (subject/commit from $3)
@@ -55,9 +58,10 @@ build_from() {
   rm -rf "$tmp"; mkdir -p "$tmp/rust/jsrt/target/debug"
   trap "rm -rf '$tmp'" EXIT
 
-  say "cargo build $id..."
-  (cd "$src/rust" && CARGO_TARGET_DIR="$BUILD/target" cargo build -q -p bend-harness)
-  cp "$BUILD/target/debug/bend-harness" "$tmp/bend-harness"
+  # release: the TUI draws ~10x faster than the debug build
+  say "cargo build --release $id..."
+  (cd "$src/rust" && CARGO_TARGET_DIR="$BUILD/target" cargo build -q --release -p bend-harness)
+  cp "$BUILD/target/release/bend-harness" "$tmp/bend-harness"
 
   local h; h="$(cd "$src" && bend_hash)"
   if [ ! -x "$BUILD/cache/repl-live-$h" ]; then
