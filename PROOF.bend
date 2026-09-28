@@ -1,16 +1,29 @@
 # PROOF.bend — proofs of the harness laws. Each holds by unfolding the
 # definitions involved; the checker verifies the equalities.
 import Base
+
 import ./core/types.bend as T
+
 import ./core/history.bend as H
+
 import ./core/compaction.bend as C
+
 import ./core/checkpoint.bend as K
+
 import ./core/session.bend as S
+
 import ./core/program.bend as P
+
 import ./vendor/json.bend as J
+
 import ./hub/model.bend as HM
+
 import ./hub/cx.bend as HX
+
 import ./hub/core.bend as HC
+
+import ./hub/inv.bend as HI
+
 import ./LAWS.bend as Laws
 
 def Laws.checkpoint_roundtrip(s):
@@ -450,6 +463,7 @@ def Laws.bg_hash_pos_cycles():
 
 def Laws.bash_script_path_per_command():
   {==}
+
 def Laws.self_reload_acks():
   {==}
 
@@ -512,6 +526,7 @@ def Laws.bg_wrapper_runner_frees_slot():
 
 def Laws.bg_wrapper_pid_wait_breaks_on_rc():
   {==}
+
 def Laws.steering_lands_in_history():
   {==}
 
@@ -544,6 +559,7 @@ def Laws.bg_wrapper_multiline_command_intact():
 
 def Laws.bg_sentinel_derives_from_command():
   {==}
+
 def Laws.mcp_alias_normalizes():
   {==}
 
@@ -927,20 +943,28 @@ def Laws.info_paths_are_the_drained_ones():
 
 def Laws.resume_replays_history():
   {==}
+
 def Laws.workdir_empty_keeps_command():
   {==}
+
 def Laws.workdir_cds_first():
   {==}
+
 def Laws.context_empty_keeps_request():
   {==}
+
 def Laws.context_is_last_user_message():
   {==}
+
 def Laws.context_skips_compaction():
   {==}
+
 def Laws.extra_prompt_appends():
   {==}
+
 def Laws.extra_prompt_empty_keeps():
   {==}
+
 def Laws.steer_line_unescapes():
   {==}
 
@@ -954,7 +978,6 @@ def hub_core_ok(-o: HM.St, c: HX.Core<o>) -> {HX.Core.d(o, c) == HM.apply_all(HX
 
 def Laws.hub_step_replays(h, i):
   hub_core_ok(HC.Hub.d(h), HX.Cx.c(HC.Hub.d(h), HC.step(h, i)))
-
 
 def hub_append(+a: List<&2, HM.Ev>, -b: List<&2, HM.Ev>, -s: HM.St)
     -> {HM.apply_all(b, HM.apply_all(a, s)) == HM.apply_all(List.append(&2, HM.Ev, a, b), s) : HM.St}:
@@ -1143,3 +1166,281 @@ def Laws.stop_leaves_no_waiter(o, cx, n, life, why):
   hub_none_tr(HC.waiters_of_cx(o, HC.stop_task(o, cx, n, life, why)), HC.waiters_not(HX.R.waiters(HX.Cx.r(o, cx)), n), n,
     hub_set_waiters(o, HC.stop_task.go(o, cx, n, life, why), HC.waiters_not(HX.R.waiters(HX.Cx.r(o, cx)), n)),
     hub_not_none(HX.R.waiters(HX.Cx.r(o, cx)), n))
+
+# ---- L2: each message is one record (msgs_unique) ----
+
+def hub_bdisc(b: Bool) -> Type:
+  match b:
+    case True{}:
+      Unit
+    case False{}:
+      Empty
+
+def hub_ft_absurd(e: {False{} == True{} : Bool}) -> Empty:
+  %Equal.sym(Bool, False{}, True{}, e) : hub_bdisc(_)
+  Unit{}
+
+def hub_absurd_eq(x: Empty, -A: Type, -a: A, -b: A) -> {a == b : A}:
+  match x:
+
+# y < x: x is not y
+def hub_lt_neq(+y: Nat, +x: Nat, h: {Nat.is_lt(y, x) == True{} : Bool}) -> {Nat.is_eq(x, y) == False{} : Bool}:
+  match y x:
+    case 0n 0n:
+      hub_absurd_eq(hub_ft_absurd(h), Bool, Nat.is_eq(x, y), False{})
+    case 0n 1n+xp:
+      {==}
+    case 1n+yp 0n:
+      hub_absurd_eq(hub_ft_absurd(h), Bool, Nat.is_eq(x, y), False{})
+    case 1n+yp 1n+xp:
+      hub_lt_neq(yp, xp, h)
+
+# x < a and a <= b: x < b
+def hub_lt_ge(+x: Nat, +a: Nat, +b: Nat, h: {Nat.is_lt(x, a) == True{} : Bool}, g: {Nat.is_ge(b, a) == True{} : Bool})
+    -> {Nat.is_lt(x, b) == True{} : Bool}:
+  match x a b:
+    case _ 0n _:
+      hub_absurd_eq(hub_ft_absurd(h), Bool, Nat.is_lt(x, b), True{})
+    case 0n 1n+ap 0n:
+      hub_absurd_eq(hub_ft_absurd(g), Bool, Nat.is_lt(x, b), True{})
+    case 0n 1n+ap 1n+bp:
+      {==}
+    case 1n+xp 1n+ap 0n:
+      hub_absurd_eq(hub_ft_absurd(g), Bool, Nat.is_lt(x, b), True{})
+    case 1n+xp 1n+ap 1n+bp:
+      hub_lt_ge(xp, ap, bp, h, g)
+
+def hub_lt_succ(+n: Nat) -> {Nat.is_lt(n, 1n+n) == True{} : Bool}:
+  match n:
+    case 0n:
+      {==}
+    case 1n+p:
+      hub_lt_succ(p)
+
+def hub_rec_op_id(+r: HM.MRec, op: HM.MsgOp, -rest: List<&2, Nat>)
+    -> {HM.Msg.id(HM.MRec.msg(HM.rec_op(r, op))) <> rest == HM.Msg.id(HM.MRec.msg(r)) <> rest : List<&2, Nat>}:
+  match r:
+    case HM.MRec{m, st, se}:
+      match op:
+        case HM.OSt{x}:
+          {==}
+        case HM.OSettle{}:
+          {==}
+
+def hub_ids_map.pick(c: Bool, +h: HM.MRec, -t: List<&2, HM.MRec>, -id: Nat, +op: HM.MsgOp,
+    +e: {Nat.is_eq(HM.Msg.id(HM.MRec.msg(h)), id) == c : Bool}, ih: {HI.ids(HM.map_msg(t, id, op)) == HI.ids(t) : List<&2, Nat>})
+    -> {HI.ids(Bool.pick(List<&2, HM.MRec>, Nat.is_eq(HM.Msg.id(HM.MRec.msg(h)), id), HM.rec_op(h, op) <> t, h <> HM.map_msg(t, id, op)))
+        == HI.ids(h <> t) : List<&2, Nat>}:
+  match c:
+    case True{}:
+      %Equal.sym(Bool, Nat.is_eq(HM.Msg.id(HM.MRec.msg(h)), id), True{}, e) : {HI.ids(Bool.pick(List<&2, HM.MRec>, _, HM.rec_op(h, op) <> t, h <> HM.map_msg(t, id, op))) == HI.ids(h <> t) : List<&2, Nat>}
+      hub_rec_op_id(h, op, HI.ids(t))
+    case False{}:
+      %Equal.sym(Bool, Nat.is_eq(HM.Msg.id(HM.MRec.msg(h)), id), False{}, e) : {HI.ids(Bool.pick(List<&2, HM.MRec>, _, HM.rec_op(h, op) <> t, h <> HM.map_msg(t, id, op))) == HI.ids(h <> t) : List<&2, Nat>}
+      Equal.cong(List<&2, Nat>, List<&2, Nat>, xs => HM.Msg.id(HM.MRec.msg(h)) <> xs, HI.ids(HM.map_msg(t, id, op)), HI.ids(t), ih)
+
+# updating one record keeps every id in place
+def hub_ids_map(+xs: List<&2, HM.MRec>, +id: Nat, +op: HM.MsgOp) -> {HI.ids(HM.map_msg(xs, id, op)) == HI.ids(xs) : List<&2, Nat>}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      hub_ids_map.pick(Nat.is_eq(HM.Msg.id(HM.MRec.msg(h)), id), h, t, id, op, {==}, hub_ids_map(t, id, op))
+
+# settling a question keeps every id in place
+def hub_settle_if_ids(ok: Bool, +xs: List<&2, HM.MRec>, +id: Nat) -> {HI.ids(HM.apply.settle.if(ok, xs, id)) == HI.ids(xs) : List<&2, Nat>}:
+  match ok:
+    case True{}:
+      hub_ids_map(xs, id, HM.OSettle{})
+    case False{}:
+      {==}
+
+def hub_settle_go_ids(o: Maybe<&2, HM.MRec>, +xs: List<&2, HM.MRec>, +id: Nat, +from: String)
+    -> {HI.ids(HM.apply.settle.go(o, xs, id, from)) == HI.ids(xs) : List<&2, Nat>}:
+  match o:
+    case None{}:
+      {==}
+    case Some{+r}:
+      hub_settle_if_ids(String.eq(HM.Msg.to(HM.MRec.msg(r)), from) || String.eq(from, HM.USER()), xs, id)
+
+def hub_settle_ids(r: Maybe<&2, Nat>, +xs: List<&2, HM.MRec>, +from: String)
+    -> {HI.ids(HM.apply.settle(r, xs, from)) == HI.ids(xs) : List<&2, Nat>}:
+  match r:
+    case None{}:
+      {==}
+    case Some{+id}:
+      hub_settle_go_ids(HM.rec_of(xs, id), xs, id, from)
+
+def hub_ids_snoc(+xs: List<&2, HM.MRec>, +r: HM.MRec)
+    -> {HI.ids(HM.snoc(HM.MRec, xs, r)) == HM.snoc(Nat, HI.ids(xs), HM.Msg.id(HM.MRec.msg(r))) : List<&2, Nat>}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      Equal.cong(List<&2, Nat>, List<&2, Nat>, ys => HM.Msg.id(HM.MRec.msg(h)) <> ys,
+        HI.ids(HM.snoc(HM.MRec, t, r)), HM.snoc(Nat, HI.ids(t), HM.Msg.id(HM.MRec.msg(r))), hub_ids_snoc(t, r))
+
+def hub_tf_absurd(e: {True{} == False{} : Bool}) -> Empty:
+  %e : hub_bdisc(_)
+  Unit{}
+
+def hub_or_false_l(a: Bool, -b: Bool, e: {Bool.or(a, b) == False{} : Bool}) -> {a == False{} : Bool}:
+  match a:
+    case False{}:
+      {==}
+    case True{}:
+      hub_absurd_eq(hub_tf_absurd(e), Bool, True{}, False{})
+
+def hub_or_false_r(a: Bool, -b: Bool, e: {Bool.or(a, b) == False{} : Bool}) -> {b == False{} : Bool}:
+  match a:
+    case False{}:
+      e
+    case True{}:
+      hub_absurd_eq(hub_tf_absurd(e), Bool, b, False{})
+
+def hub_or_false(a: Bool, -b: Bool, ea: {a == False{} : Bool}, eb: {b == False{} : Bool}) -> {Bool.or(a, b) == False{} : Bool}:
+  %Equal.sym(Bool, a, False{}, ea) : {Bool.or(_, b) == False{} : Bool}
+  eb
+
+# y is neither in t nor x: it is not in t ++ [x]
+def hub_nat_in_snoc(+t: List<&2, Nat>, +x: Nat, +y: Nat, +a: {HM.nat_in(t, y) == False{} : Bool}, b: {Nat.is_eq(x, y) == False{} : Bool})
+    -> {HM.nat_in(HM.snoc(Nat, t, x), y) == False{} : Bool}:
+  match t:
+    case Nil{}:
+      hub_or_false(Nat.is_eq(x, y), False{}, b, {==})
+    case Con{h, tt}:
+      hub_or_false(Nat.is_eq(h, y), HM.nat_in(HM.snoc(Nat, tt, x), y),
+        hub_or_false_l(Nat.is_eq(h, y), HM.nat_in(tt, y), a),
+        hub_nat_in_snoc(tt, x, y, hub_or_false_r(Nat.is_eq(h, y), HM.nat_in(tt, y), a), b))
+
+def hub_distinct_snoc(+ns: List<&2, Nat>, +x: Nat, d: HI.Distinct(ns), bl: HI.Below(ns, x)) -> HI.Distinct(HM.snoc(Nat, ns, x)):
+  match ns:
+    case Nil{}:
+      HX.Both{{==}, Unit{}}
+    case Con{y, t}:
+      match d bl:
+        case HX.Both{dy, dt} HX.Both{ly, bt}:
+          HX.Both{hub_nat_in_snoc(t, x, y, dy, hub_lt_neq(y, x, ly)), hub_distinct_snoc(t, x, dt, bt)}
+
+def hub_below_mono(+ns: List<&2, Nat>, +a: Nat, +b: Nat, +g: {Nat.is_ge(b, a) == True{} : Bool}, bl: HI.Below(ns, a)) -> HI.Below(ns, b):
+  match ns:
+    case Nil{}:
+      Unit{}
+    case Con{y, t}:
+      match bl:
+        case HX.Both{ly, bt}:
+          HX.Both{hub_lt_ge(y, a, b, ly, g), hub_below_mono(t, a, b, g, bt)}
+
+def hub_below_snoc(+ns: List<&2, Nat>, +x: Nat, +n: Nat, bl: HI.Below(ns, n), lx: {Nat.is_lt(x, n) == True{} : Bool})
+    -> HI.Below(HM.snoc(Nat, ns, x), n):
+  match ns:
+    case Nil{}:
+      HX.Both{lx, Unit{}}
+    case Con{y, t}:
+      match bl:
+        case HX.Both{ly, bt}:
+          HX.Both{ly, hub_below_snoc(t, x, n, bt, lx)}
+
+def hub_distinct_tr(-x: List<&2, Nat>, -y: List<&2, Nat>, e: {x == y : List<&2, Nat>}, d: HI.Distinct(y)) -> HI.Distinct(x):
+  %Equal.sym(List<&2, Nat>, x, y, e) : HI.Distinct(_)
+  d
+
+def hub_below_tr(-x: List<&2, Nat>, -y: List<&2, Nat>, -n: Nat, e: {x == y : List<&2, Nat>}, b: HI.Below(y, n)) -> HI.Below(x, n):
+  %Equal.sym(List<&2, Nat>, x, y, e) : HI.Below(_, n)
+  b
+
+def hub_below_n(-ns: List<&2, Nat>, -a: Nat, -b: Nat, e: {a == b : Nat}, bl: HI.Below(ns, b)) -> HI.Below(ns, a):
+  %Equal.sym(Nat, a, b, e) : HI.Below(ns, _)
+  bl
+
+# an update of one record keeps the state unique
+def hub_unique_map(+ms: List<&2, HM.MRec>, +id: Nat, +op: HM.MsgOp, -nm: Nat,
+    u: HX.Both<HI.Distinct(HI.ids(ms)), HI.Below(HI.ids(ms), nm)>)
+    -> HX.Both<HI.Distinct(HI.ids(HM.map_msg(ms, id, op))), HI.Below(HI.ids(HM.map_msg(ms, id, op)), nm)>:
+  match u:
+    case HX.Both{d, b}:
+      HX.Both{hub_distinct_tr(HI.ids(HM.map_msg(ms, id, op)), HI.ids(ms), hub_ids_map(ms, id, op), d),
+        hub_below_tr(HI.ids(HM.map_msg(ms, id, op)), HI.ids(ms), nm, hub_ids_map(ms, id, op), b)}
+
+# a new message with the next free id keeps the state unique
+def hub_unique_sent(+ms: List<&2, HM.MRec>, +m: HM.Msg, +nm: Nat, k: {HM.Msg.id(m) == nm : Nat},
+    u: HX.Both<HI.Distinct(HI.ids(ms)), HI.Below(HI.ids(ms), nm)>)
+    -> HX.Both<HI.Distinct(HI.ids(HM.apply.settle(HM.Msg.reply_to(m), HM.snoc(HM.MRec, ms, HM.MRec{m, HM.Queued{"new"}, False{}}), HM.Msg.from(m)))),
+               HI.Below(HI.ids(HM.apply.settle(HM.Msg.reply_to(m), HM.snoc(HM.MRec, ms, HM.MRec{m, HM.Queued{"new"}, False{}}), HM.Msg.from(m))),
+                 Nat.max(Nat.max(nm, 1n+HM.Msg.id(m)), 1n+HM.Msg.thread(m)))>:
+  match u:
+    case HX.Both{+d, +b}:
+      +xs = HM.snoc(HM.MRec, ms, HM.MRec{m, HM.Queued{"new"}, False{}})
+      +a = Nat.max(nm, 1n+HM.Msg.id(m))
+      +top = Nat.max(a, 1n+HM.Msg.thread(m))
+      +e = Equal.trans(List<&2, Nat>, HI.ids(HM.apply.settle(HM.Msg.reply_to(m), xs, HM.Msg.from(m))), HI.ids(xs),
+        HM.snoc(Nat, HI.ids(ms), HM.Msg.id(m)),
+        hub_settle_ids(HM.Msg.reply_to(m), xs, HM.Msg.from(m)), hub_ids_snoc(ms, HM.MRec{m, HM.Queued{"new"}, False{}}))
+      +lt = hub_lt_ge(HM.Msg.id(m), a, top,
+        hub_lt_ge(HM.Msg.id(m), 1n+HM.Msg.id(m), a, hub_lt_succ(HM.Msg.id(m)), Nat.max_ge_r(nm, 1n+HM.Msg.id(m))),
+        Nat.max_ge_l(a, 1n+HM.Msg.thread(m)))
+      HX.Both{hub_distinct_tr(HI.ids(HM.apply.settle(HM.Msg.reply_to(m), xs, HM.Msg.from(m))), HM.snoc(Nat, HI.ids(ms), HM.Msg.id(m)), e,
+          hub_distinct_snoc(HI.ids(ms), HM.Msg.id(m), d, hub_below_n(HI.ids(ms), HM.Msg.id(m), nm, k, b))),
+        hub_below_tr(HI.ids(HM.apply.settle(HM.Msg.reply_to(m), xs, HM.Msg.from(m))), HM.snoc(Nat, HI.ids(ms), HM.Msg.id(m)), top, e,
+          hub_below_snoc(HI.ids(ms), HM.Msg.id(m), top,
+            hub_below_mono(HI.ids(ms), a, top, Nat.max_ge_l(a, 1n+HM.Msg.thread(m)),
+              hub_below_mono(HI.ids(ms), nm, a, Nat.max_ge_l(nm, 1n+HM.Msg.id(m)), b)), lt))}
+
+# every event with its journal invariant (a fresh id for a new message)
+# keeps the state unique
+def hub_apply_unique(s: HM.St, e: HM.Ev, u: HI.Unique(s), k: HX.FreshEv(s, e)) -> HI.Unique(HM.apply(s, e)):
+  match s:
+    case HM.St{ag, od, ms, ca, no, nm, nc}:
+      match e:
+        case HM.ETaskCreated{a, b, c, d, f}:
+          u
+        case HM.ELifecycle{a, b, c}:
+          u
+        case HM.EWorkspace{a, b}:
+          u
+        case HM.ESnapshot{a, b}:
+          u
+        case HM.EDeclared{a, b, c}:
+          u
+        case HM.EReported{a, b}:
+          u
+        case HM.EFileTouched{a, b}:
+          u
+        case HM.ERenamed{a, b}:
+          u
+        case HM.EMsgSent{m}:
+          hub_unique_sent(ms, m, nm, k, u)
+        case HM.EMsgState{id, x}:
+          hub_unique_map(ms, id, HM.OSt{x}, nm, u)
+        case HM.ESettled{id}:
+          hub_unique_map(ms, id, HM.OSettle{}, nm, u)
+        case HM.ECardOpened{c}:
+          u
+        case HM.ECardClosed{a, b}:
+          u
+        case HM.EMainNote{a, b}:
+          u
+        case HM.ENotesFlushed{}:
+          u
+
+def hub_apply_all_unique(+evs: List<&2, HM.Ev>, +s: HM.St, u: HI.Unique(s), f: HX.Fresh(evs, s)) -> HI.Unique(HM.apply_all(evs, s)):
+  match evs:
+    case Nil{}:
+      u
+    case Con{e, t}:
+      match f:
+        case HX.Both{k, ft}:
+          hub_apply_all_unique(t, HM.apply(s, e), hub_apply_unique(s, e, u, k), ft)
+
+def Laws.init_unique(w):
+  HX.Both{Unit{}, Unit{}}
+
+def hub_unique_tr(-x: HM.St, -y: HM.St, e: {x == y : HM.St}, u: HI.Unique(y)) -> HI.Unique(x):
+  %Equal.sym(HM.St, x, y, e) : HI.Unique(_)
+  u
+
+def Laws.msgs_unique(ins, h, u):
+  hub_unique_tr(HC.Hub.d(HC.RunR.hub(HC.run(ins, h))), HM.apply_all(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h)),
+    Laws.hub_run_replays(ins, h),
+    hub_apply_all_unique(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h), u, Laws.msg_ids_fresh(ins, h)))
+

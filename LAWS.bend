@@ -27,6 +27,7 @@ import ./vendor/json.bend as J
 import ./hub/model.bend as HM
 import ./hub/cx.bend as HX
 import ./hub/core.bend as HC
+import ./hub/inv.bend as HI
 
 # LAW: a checkpoint restores to exactly the session it exported.
 law checkpoint_roundtrip:
@@ -2371,4 +2372,19 @@ law stop_leaves_no_waiter:
   for +life: HM.Life
   for +why: String
   HC.NoneOf(HC.waiters_of_cx(o, HC.stop_task(o, cx, n, life, why)), n)
+
+# LAW (L2, no message lost or doubled): a new hub keeps each message as
+# ONE record — its text and its single delivery state; no state exists
+# without its message (the state is a field of the record).
+law init_unique:
+  for +w: String
+  HI.Unique(HM.init(w))
+
+# LAW (L2): from a state where each message is one record, any sequence
+# of inputs keeps it so: no two records ever share an id.
+law msgs_unique:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  for u: HI.Unique(HC.Hub.d(h))
+  HI.Unique(HC.Hub.d(HC.RunR.hub(HC.run(ins, h))))
 
