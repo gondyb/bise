@@ -2883,3 +2883,25 @@ def hub_sa(m: Maybe<&2, HM.Agent>, +s1: HM.St, +s2: HM.St, +n: String,
       {==}
     case Some{+a}:
       hub_sa.act(HC.is_active(HM.Agent.life(a)), a, s1, s2, n, {==}, e1, qi)
+
+def hub_frame.idle(b: Bool, +r: HM.Run, m: Maybe<&2, HM.Agent>, +s1: HM.St, +s2: HM.St, +n: String,
+    +eb: {HC.is_idle(r) == b : Bool}, h: {Bool.and(HC.is_idle(r), HI.stuck.agent(m, s1, n)) == False{} : Bool},
+    qi: {hub_qimp(s1, s2, n) == True{} : Bool}) -> {Bool.and(HC.is_idle(r), HI.stuck.agent(m, s2, n)) == False{} : Bool}:
+  match b:
+    case False{}:
+      %Equal.sym(Bool, HC.is_idle(r), False{}, eb) : {Bool.and(_, HI.stuck.agent(m, s2, n)) == False{} : Bool}
+      {==}
+    case True{}:
+      %Equal.sym(Bool, HC.is_idle(r), True{}, eb) : {Bool.and(_, HI.stuck.agent(m, s2, n)) == False{} : Bool}
+      hub_sa(m, s1, s2, n, hub_sa.e1(HC.is_idle(r), HI.stuck.agent(m, s1, n), eb, h), qi)
+
+# an agent not stuck stays so when its run and record are unchanged and
+# its queue can only have emptied
+def hub_frame(+s1: HM.St, +rts1: List<&2, HX.Rt>, +s2: HM.St, +rts2: List<&2, HX.Rt>, +n: String,
+    er: {HX.Rt.run(HC.rt_find(rts2, n)) == HX.Rt.run(HC.rt_find(rts1, n)) : HM.Run},
+    ea: {HM.get_agent(s2, n) == HM.get_agent(s1, n) : Maybe<&2, HM.Agent>},
+    qi: {hub_qimp(s1, s2, n) == True{} : Bool}, h: {HI.stuck(s1, rts1, n) == False{} : Bool})
+    -> {HI.stuck(s2, rts2, n) == False{} : Bool}:
+  %Equal.sym(HM.Run, HX.Rt.run(HC.rt_find(rts2, n)), HX.Rt.run(HC.rt_find(rts1, n)), er) : {Bool.and(HC.is_idle(_), HI.stuck.agent(HM.get_agent(s2, n), s2, n)) == False{} : Bool}
+  %Equal.sym(Maybe<&2, HM.Agent>, HM.get_agent(s2, n), HM.get_agent(s1, n), ea) : {Bool.and(HC.is_idle(HX.Rt.run(HC.rt_find(rts1, n))), HI.stuck.agent(_, s2, n)) == False{} : Bool}
+  hub_frame.idle(HC.is_idle(HX.Rt.run(HC.rt_find(rts1, n))), HX.Rt.run(HC.rt_find(rts1, n)), HM.get_agent(s1, n), s1, s2, n, {==}, h, qi)
