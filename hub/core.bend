@@ -1629,7 +1629,7 @@ def req_report.sent(-o: M.St, p: X.Cx<o> & SendR, +token: Nat) -> X.Cx<o>:
 
 def req_report.kind(-o: M.St, +cx: X.Cx<o>, +from: String, +kind: String, +summary: String) -> X.Cx<o>:
   pick_lazy(X.Cx<o>, String.eq(kind, "done"),
-    u => open_card(o, emit(o, cx, M.EDeclared{from, Some{M.DDone{}}, ""}, Unit{}, Unit{}, Unit{}), "done", from, M.clip(M.one_line(summary), 200n), None{}),
+    u => open_card(o, emit(o, cx, M.EDeclared{from, Some{M.DDone{}}, ""}, Unit{}, Unit{}, Unit{}), "done", from, summary, None{}),
     u => pick_lazy(X.Cx<o>, String.eq(kind, "blocked"),
       u => open_card(o, emit(o, cx, M.EDeclared{from, Some{M.DBlocked{}}, summary}, Unit{}, Unit{}, Unit{}), "blocked", from, summary, None{}),
       u => pick_lazy(X.Cx<o>, String.eq(kind, "failed"),

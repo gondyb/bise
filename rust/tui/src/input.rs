@@ -175,6 +175,9 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
     if app.term.mouse(m, term_h) {
         return;
     }
+    if sb::card_mouse(app, m) {
+        return;
+    }
     match m.kind {
         MouseEventKind::ScrollUp => {
             app.follow = false;

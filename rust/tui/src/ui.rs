@@ -71,7 +71,8 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     // the prompt block holds: 2 rows of top padding, the typed text,
     // one blank line, the meta row, 1 row of bottom padding
     let input_h = ((composer_rows + 5) as u16).min((area.height / 2).max(7));
-    let card_h = sb::card_box_height(app, area);
+    // the card box: what the composer, a 3-row feed and the 5 fixed rows leave
+    let card_h = sb::card_box_height(app, area, area.height.saturating_sub(input_h + 8));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

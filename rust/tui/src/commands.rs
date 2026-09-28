@@ -173,6 +173,10 @@ pub(crate) fn popup_items(app: &App) -> Vec<PopItem> {
     if !versions.is_empty() {
         return versions;
     }
+    let cards = sb::close_items(app);
+    if !cards.is_empty() {
+        return cards;
+    }
     let at = at_items(app);
     if !at.is_empty() {
         return at;

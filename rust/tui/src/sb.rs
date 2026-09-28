@@ -18,7 +18,7 @@ use versions::{parse_versions, VersionItem};
 mod mention;
 pub(super) use mention::mentions;
 mod cards;
-pub(super) use cards::{card_box_height, card_full, draw_card};
+pub(super) use cards::{card_box_height, card_full, card_mouse, close_items, draw_card};
 use cards::{answer_card, Card, CardView};
 mod panel;
 pub(super) use panel::{draw_panel, hint, placeholder, split, status_line, workspace};
@@ -618,6 +618,10 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
                 sb.preview = false;
                 return true;
             }
+            if sb.card.shown && empty {
+                sb.card.shown = false;
+                return true;
+            }
             if !empty {
                 // the draft goes to the history (Up brings it back)
                 let d = app.ed.take();
@@ -660,11 +664,26 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             true
         }
         (KeyCode::PageUp, _) if sb.card.shown && !popup_open => {
-            sb.card.scroll = sb.card.scroll.saturating_sub(sb.card.page.max(1));
+            let page = sb.card.page.max(1) as isize;
+            sb.card.scroll_by(-page);
             true
         }
         (KeyCode::PageDown, _) if sb.card.shown && !popup_open => {
-            sb.card.scroll = (sb.card.scroll + sb.card.page.max(1)).min(sb.card.max_scroll);
+            let page = sb.card.page.max(1) as isize;
+            sb.card.scroll_by(page);
+            true
+        }
+        // an empty composer: the arrows scroll a card longer than its box
+        (KeyCode::Up, KeyModifiers::NONE)
+            if empty && sb.card.shown && sb.card.max_scroll > 0 && !popup_open =>
+        {
+            sb.card.scroll_by(-1);
+            true
+        }
+        (KeyCode::Down, KeyModifiers::NONE)
+            if empty && sb.card.shown && sb.card.max_scroll > 0 && !popup_open =>
+        {
+            sb.card.scroll_by(1);
             true
         }
         (KeyCode::Char('x'), KeyModifiers::CONTROL) if !sb.cards.is_empty() => {
