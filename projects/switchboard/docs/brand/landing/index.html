@@ -64,7 +64,9 @@
   h2 { font-size:clamp(24px, 2.8vw, 34px); line-height:1.25; letter-spacing:-.02em; margin-bottom:28px; font-weight:700; }
   p { margin-bottom:20px; }
   p.soft { color:var(--dim); }
-  .turn { color:var(--acc); }
+  .turn { color:var(--acc); font-weight:700; }
+  h2.punch { font-size:clamp(30px, 4.4vw, 58px); line-height:1.1; letter-spacing:-.03em; margin-bottom:40px; }
+  #why .inner { max-width:78ch; } #why p { max-width:64ch; }
 
   /* the demo */
   .demo { padding:0 5vw 10vh; display:flex; justify-content:center; }
@@ -106,7 +108,7 @@
   .mfeed > div { animation:enter .5s ease-out; white-space:pre-wrap; }
   .mcomp { margin-top:8px; white-space:pre; color:var(--text); }
   .mcomp .cur { background:var(--acc); }
-  .mini .err { color:var(--err); }
+  .mini .err { color:var(--err); } .mini .ok { color:#b9d99a; } [data-theme="light"] .mini .ok { color:#3f7a2a; }
   .mini .row { display:flex; justify-content:space-between; }
   .mini .l3 { padding-left:1ch; border-left:1px solid var(--faint); margin-left:1ch; }
   @media (max-width: 900px) { .fgrid { grid-template-columns:1fr; } }
@@ -193,11 +195,11 @@
 <section id="why">
   <div class="inner blow">
     <div class="kicker">why</div>
-    <h2>a day of coding with agents feels empty.</h2>
-    <p class="soft">you started five things. you watched output scroll. you answered "should i continue?". you checked which terminal was doing what.</p>
-    <p class="soft">you never got to think. something always pulled you out.</p>
-    <p class="turn">that's not you. that's no flow.</p>
-    <p>bise protects your flow. you talk, whenever, however. i run the agents in the background, answer the obvious questions myself, and only tap your shoulder when it matters.</p>
+    <h2 class="punch">you didn't become an engineer<br>to babysit robots.</h2>
+    <p class="soft">you started five things. you watched output scroll. you answered "should i continue?" eleven times. at 6pm you'd shipped more than ever, and felt like you did nothing.</p>
+    <p class="soft">that's not you. every few minutes, something pulled you out. you never got to think.</p>
+    <p class="turn">you lost your flow. bise gives it back.</p>
+    <p>you talk, whenever, however. i run the agents in the background, answer the obvious questions myself, and only tap your shoulder when it matters.</p>
   </div>
 </section>
 
@@ -217,14 +219,18 @@
 <!-- features, animated -->
 <section id="features">
   <div class="features">
-    <div class="inner blow" style="margin-bottom:10px"><div class="kicker">what it feels like</div><h2>six things you'll notice in the first hour.</h2></div>
+    <div class="inner blow" style="margin-bottom:10px"><div class="kicker">what it feels like</div><h2>ten things you'll notice in the first hour.</h2></div>
     <div class="fgrid">
       <div class="feat blow"><div class="mini" data-play="talk"></div><h3>talk whenever. you never wait.</h3><p>say the next thing while the last one runs. your composer is never locked.</p></div>
+      <div class="feat blow"><div class="mini" data-play="direct"></div><h3>talk to any agent, anytime.</h3><p>⌥ + a number, or @name. ask it why, push it, then go back to main. nobody has to stop.</p></div>
       <div class="feat blow"><div class="mini" data-play="steer"></div><h3>change your mind mid-run.</h3><p>a correction lands in the running agent. ✓ it got it, <span class="acc">✓✓</span> it read it.</p></div>
-      <div class="feat blow"><div class="mini" data-play="router"></div><h3>you're not the router.</h3><p>agents talk to each other quietly. main answers the obvious questions itself, and tells you why.</p></div>
+      <div class="feat blow"><div class="mini" data-play="sync"></div><h3>agents sync on their own.</h3><p>every agent can talk to every other one. they ask, share and hand off quietly, folded out of your way.</p></div>
+      <div class="feat blow"><div class="mini" data-play="router"></div><h3>you're not the router.</h3><p>main answers the obvious questions itself, the way you would, and tells you why.</p></div>
       <div class="feat blow"><div class="mini" data-play="card"></div><h3>only the real decisions reach you.</h3><p>one card, a couple of choices, one key. then back to what you were doing.</p></div>
       <div class="feat blow"><div class="mini" data-play="resume"></div><h3>nothing gets dropped.</h3><p>when an agent stops half-way, main picks the work back up from where it was.</p></div>
       <div class="feat blow"><div class="mini" data-play="worktree"></div><h3>worktrees, only when they help.</h3><p>agents share your folder. when one really needs isolation, it makes a worktree, and cleans it up after.</p></div>
+      <div class="feat blow"><div class="mini" data-play="mcp"></div><h3>as many MCP servers as you want.</h3><p>agents call tools from code, and look them up only when they need them. a hundred servers cost your context about as much as one.</p></div>
+      <div class="feat blow"><div class="mini" data-play="plugins"></div><h3>bring your plugins.</h3><p class="tbd" title="⚠ which plugin and skill folders are picked up at launch: to confirm before release">your skills, plugins and MCP servers come with you. switching costs you an afternoon, not a month.</p></div>
     </div>
   </div>
 </section>
@@ -429,12 +435,55 @@ const plays = {
     m.line(`<span class="acc">♡</span> auth-fix done · 3m 40s`, "b"); await m.wait(3200);
   },
   async router(m) {
-    const f = m.line(`<span class="dim">▸ 3 messages between 3 agents</span>`); let n = 3;
-    for (let i = 0; i < 5; i++) { await m.wait(500); n += 1 + (i % 2); f.innerHTML = `<span class="dim">▸ ${n} messages between 3 agents</span>`; }
-    await m.wait(600);
+    m.line(`<span class="dim"><span class="pulse acc">∿</span> 4 working</span>`); await m.wait(900);
     m.line(`<span class="faint">│ auth-fix → main: retry the test 3 times?</span>`, "l3"); await m.wait(1200);
     m.line(`<span class="acc">:*</span> i answered auth-fix for you: no retries, fix the cause. <span class="faint">(you said so last week)</span>`, "b"); await m.wait(1800);
-    m.line(`<span class="acc">:*</span> release asked docs for the changelog. docs had it. nothing for you.`, "b"); await m.wait(3200);
+    m.line(`<span class="faint">│ release → main: tag it on main or on a branch?</span>`, "l3"); await m.wait(1200);
+    m.line(`<span class="acc">:*</span> i told release: on main, like every release. <span class="faint">(it's in CONTRIBUTING.md)</span>`, "b"); await m.wait(3200);
+  },
+  async direct(m) {
+    m.line(`<span class="faint">you → </span><span class="acc">main</span>`); await m.wait(1000);
+    await m.type("⌥1"); m.clear();
+    m.line(`<span class="faint">you → </span><span class="acc">auth-fix</span>`, "b"); await m.wait(600);
+    await m.send("why did the test flake?");
+    m.line(`<span class="dim">@ auth-fix to you:</span> it raced the login event. i'm making it wait on the event, not a timer.`, "b"); await m.wait(1800);
+    await m.send("nice. add a test for the race too");
+    m.line(`<span class="dim">@ auth-fix to you:</span> on it.`, "b"); await m.wait(900);
+    await m.type("⌥0"); m.clear();
+    m.line(`<span class="faint">you → </span><span class="acc">main</span>`, "b"); await m.wait(3000);
+  },
+  async sync(m) {
+    const ls = [
+      "│ release → api-bump: changing public types?",
+      "│ api-bump → release: yes: Session and Token.",
+      "│ release → docs: need a 3.0 migration section",
+      "│ docs → release: done, docs/migrate.md",
+    ].map((t) => t.replace(/→ (\S+):/, `→ $1:`));
+    const els = [];
+    for (const t of ls) { els.push(m.line(`<span class="faint">${t}</span>`, "l3")); await m.wait(1000); }
+    await m.wait(500);
+    els.slice(1).forEach((e) => e.remove());
+    els[0].className = ""; els[0].innerHTML = `<span class="dim">▸ 4 messages between 3 agents</span>`;
+    await m.wait(1100);
+    m.line(`<span class="acc">:*</span> release has what it needs. nothing for you.`, "b"); await m.wait(3200);
+  },
+  async mcp(m) {
+    m.line(`<span class="acc">:*</span> 42 MCP servers connected. none of them in my context.`); await m.wait(1400);
+    m.line(`<span class="dim">$ typescript · triage</span>`, "b"); await m.wait(400);
+    for (const l of [
+      `<span class="acc">const</span> bugs = <span class="acc">await</span> tools.sentry.issues({ since: <span class="ok">"24h"</span> })`,
+      `<span class="acc">for</span> (<span class="acc">const</span> b <span class="acc">of</span> bugs.slice(0, 5))`,
+      `  <span class="acc">await</span> tools.linear.create({ title: b.title })`,
+    ]) { m.line(`<span class="dim">│</span> ${l}`); await m.wait(450); }
+    await m.wait(700);
+    m.line(`<span class="acc">✓</span> 5 issues filed from 2 servers · 0.9s`, "b"); await m.wait(3400);
+  },
+  async plugins(m) {
+    await m.type("bise"); m.clear();
+    m.line(`<span class="acc">:*</span> hi. i found your setup:`, "b"); await m.wait(800);
+    for (const l of ["  ✓ 14 skills", "  ✓ 3 plugins", "  ✓ 6 MCP servers"]) { m.line(`<span class="dim">${l}</span>`); await m.wait(500); }
+    await m.wait(600);
+    m.line(`<span class="acc">:*</span> everything you had works here. nothing to port.`, "b"); await m.wait(3400);
   },
   async card(m) {
     m.line(`<span class="dim">▸ 12 messages between 4 agents</span>`); await m.wait(900);
