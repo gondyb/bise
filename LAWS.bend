@@ -1604,6 +1604,11 @@ law retryable_err_midstream:
 law provider_max_attempts:
   {Pv.max_attempts() == 10n : Nat}
 
+# LAW: one read may wait long enough for the longest non-streaming
+# reply (32k tokens took 255 s on opus-5.5): 10 minutes.
+law provider_step_timeout_covers_long_replies:
+  {Pv.step_timeout_ms() == 600000 : U32}
+
 # LAW: the backoff doubles from 1s and caps at 30s; a server hint
 # (Retry-After) wins over it.
 law provider_backoff_schedule:

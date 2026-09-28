@@ -128,6 +128,14 @@ type Attempt is Data:
 def max_attempts() -> Nat:
   10n
 
+# how long one read may wait for data. A non-streaming reply sends
+# NOTHING until the whole generation is done: measured on opus-5.5, a
+# 32k-token reply arrives after 255 s (first byte = last byte). At
+# 120 s every long reply timed out, and the retries replayed the same
+# doomed request. 600 s is Anthropic's own non-streaming ceiling.
+def step_timeout_ms() -> U32:
+  600000
+
 def retryable_err(e: NetErr) -> Bool:
   match e:
     case NConnect{_, _}:

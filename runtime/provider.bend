@@ -221,7 +221,7 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Note, +request: String,
           model_headers(st, key))
         ur : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_PROVIDER_URL")
         r : Result<&2, &2, Http.Err, Http.Res> <- Http.fetch.with("POST",
-          Pvp.provider_url(P.env_or(ur, ""), st), hdrs, body, 120000)
+          Pvp.provider_url(P.env_or(ur, ""), st), hdrs, body, Pvp.step_timeout_ms())
         a : Pvp.Attempt <- model_call.verdict(r, st)
         model_call.step(a, n, k, tries,
           k2 => n2 => model_call.try(k2, Nat.add(tries, 1n), n2, request, key,

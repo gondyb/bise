@@ -301,6 +301,9 @@ def Laws.retryable_err_midstream():
 def Laws.provider_max_attempts():
   {==}
 
+def Laws.provider_step_timeout_covers_long_replies():
+  {==}
+
 def Laws.provider_backoff_schedule():
   {==}
 
