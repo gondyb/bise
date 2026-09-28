@@ -746,7 +746,7 @@ Index:
 
 ### BISE-60 · onboarding flow
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-o-onboard · **commits:** 7d6ee92
 - **track:** O · **owns:** new `rust/tui/src/onboarding.rs`, its entry in
   `run.rs`
 - **spec:** book §15, mockup `tui-onboarding.html` (validated)
@@ -758,6 +758,67 @@ Index:
 - **done when:** a first launch with an empty state directory shows it; a
   second launch doesn't; screenshots match the mockup step by step.
 - **notes:**
+  - **Where:** `onboarding.rs` (state `Onb`, pure `draw(f, &Onb, now_ms)`,
+    `on_key`, the `show` loop). `run.rs`: `request_if_due` in `run_tui`,
+    and the request taken at the top of `ui_loop` (under `crash::guarded`;
+    hub lines keep being drained during it). `lib.rs`: `mod onboarding;`.
+    **Switchboard only** (bise is the Switchboard UI; the single-agent
+    client never shows it).
+  - **For K (BISE-41):** `/welcome` calls `onboarding::run(app)`: it asks
+    for a replay, the loop plays it at the next frame.
+  - **Flag:** `$XDG_STATE_HOME/switchboard/onboarded`, else
+    `~/.local/state/switchboard/onboarded` (per user, the root
+    `switchboard::paths` uses). Written when it ends or is skipped.
+    `SB_ONBOARDING=off` never shows it, `on` always does. `e2e.Env` sets
+    `off` (main OK'd), so every other tmux test starts on the normal UI.
+  - **Keys (decided with main):** the harness knows two providers
+    (`runtime/provider-pure.bend`): claude, `ANTHROPIC_FOUNDRY_API_KEY`
+    (opus-5.5 through the foundry proxy), and mistral, `MISTRAL_API_KEY`
+    (every non-claude model, OpenAI-style API). Found in the env, else
+    `~/.bend-harness/.env`, else `~/.vibe/.env` (the order `load_env_files`
+    uses). Rows: each found key (the current model's first; another
+    provider's key says `your model is {m}: set model in
+    ~/.bend-harness/config.toml.`: the model is never changed here), `paste
+    another key` (`paste a key` when none), `sign in with the browser`
+    (dim, `not built yet.`, skipped by ↑↓). Paste: pick claude / mistral,
+    paste masked (`•`), saved in `~/.bend-harness/.env` (created 600, an
+    existing mode kept, other lines kept, an existing `KEY=` replaced only
+    after `enter replaces it · esc keeps the old one`). Never logged, never
+    in a feed. Unit tests use temp HOME / state dirs only.
+  - **New strings (for §17):** `i couldn't read your terminal's background,
+    so i picked {mode}.` (no OSC 11 answer, e.g. tmux) · `i found no key in
+    your environment.` / `i found {n} keys in your environment.` · `paste a
+    key` · `claude or mistral.` · `not built yet.` · `{name}, already set
+    up. nothing to paste.` · `{name}. your model is {m}: set model in
+    ~/.bend-harness/config.toml.` · `which key do you want to paste?` · `↑↓
+    choose · enter ok · esc back` · `paste your {KEY}:` · `it goes in
+    ~/.bend-harness/.env, only you can read it.` · `enter save · esc back` ·
+    `✗ that doesn't look like a key: no spaces inside.` · `{KEY} is already
+    in ~/.bend-harness/.env.` · `enter replaces it · esc keeps the old one`
+    · `✓ saved in ~/.bend-harness/.env. i'll use it after a restart
+    (switchboard --stop, then start me again).` (the hub loads the env
+    files at its start) · `✗ couldn't save the key: {err}` · `· not a git
+    repo` + ` git would be your safety net: git init here, and commit
+    often.` · `another folder? start me there: cd into it, then run
+    switchboard.` (the `o` key: a running hub can't change folder).
+  - **Differences with the mockup:** no big font (the welcome line is
+    bold); the `:*` pop is ` ·` → bold `:*` → `:*` (no scale in a
+    terminal); the previews paint their own background (#141211 / #f7f4ee:
+    the only painted ground, so the light preview reads on a dark
+    terminal); the selected option is `▎` + the selection tint; `esc` in
+    the paste sub-steps goes back to the options instead of skipping
+    (`ctrl+c` still skips); step 6 is the normal UI (its hints: BISE-61).
+  - **Not done here:** the theme picked on step 2 is not saved across
+    launches (detection runs again; `/theme` has no store either). Needs a
+    settings slot (e.g. `~/.bend-harness/tui.json`), owner to pick.
+    Visual check done in tmux (text captures, dark); not in Ghostty light.
+  - **Tests:** 13 unit tests in `onboarding.rs` (flag + env var, key
+    lookup, model/provider, save 600/replace/keep mode, typing clock, each
+    step's screen, esc / ctrl+c, narrow sizes); new
+    `tests/tui_onboarding_tmux.py` (5 steps enter by enter with captures in
+    `$SB_ONBOARDING_SHOTS`, the flag, a second launch without it, esc skips
+    and marks seen), added to `run_all.sh` with `tui_waits_tmux` (main's
+    ask). No existing assertion changed.
 
 ### BISE-61 · one-time hints
 
