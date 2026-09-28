@@ -229,8 +229,8 @@ ASCII (`~` working, `<3` done, `>` you, …) for terminals that draw them badly
                                                     │ agents · ⌥ + number
   › the login breaks on safari                      │ 0 :* main
   :* on it: auth-fix takes it.                      │ 1 ∿ auth-fix     12m · 21%
-    │ ✉ docs      → main      v1 or v2?             │ 2 ∿ release       3m · 8%
-    │ ✉ main      → docs      v2, the brief says so │ 3 ? docs              you
+    │ @ docs      → main      v1 or v2?             │ 2 ∿ release       3m · 8%
+    │ @ main      → docs      v2, the brief says so │ 3 ? docs              you
   :* docs asked v1 or v2; the brief says v2,        │ 4 … api-v2     waits docs
      so i answered. ▸ why                           │ 5 ♡ bench            done
   ┃ ? docs needs you                                │
@@ -276,8 +276,8 @@ The same three levels everywhere, in main and inside an agent.
 | Level | What | Look |
 |---|---|---|
 | **1 · needs you** | a question or a blocker addressed to you | accent bar `┃` on the left, bold accent title `? docs needs you`, normal body; stays until answered; also in the card box |
-| **2 · for you** | what main or an agent says to you: replies, summaries, reports on your requests, main answering on your behalf | normal text, with `:*`, a status glyph (`♡` `✗`) or `✉ name to you:` in front |
-| **3 · between agents** | messages agents send each other and to main | dim text under a faint rail: `✉ from → to  text`, names padded to 10 columns, one line each, `▸` when long |
+| **2 · for you** | what main or an agent says to you: replies, summaries, reports on your requests, main answering on your behalf | normal text, with `:*`, a status glyph (`♡` `✗`) or `@ name to you:` in front |
+| **3 · between agents** | messages agents send each other and to main | dim text under a faint rail: `@ from → to  text`, names padded to 10 columns, one line each, `▸` when long |
 
 - Traffic between agents is **always in the history** (including between two
   agents that aren't main), so what happened stays understandable. Main's
@@ -363,7 +363,7 @@ The same three levels everywhere, in main and inside an agent.
   safari bug, release takes the note.` New agents appear in the panel.
 - **To an agent directly from main:** `@name text` (popup with the agents).
   Main is not in the loop; the agent's reply to you is level 2:
-  `✉ auth-fix to you: got it, i'll check logout after the login fix.`
+  `@ auth-fix to you: got it, i'll check logout after the login fix.`
 - **Inside an agent:** `⏎` on a selected agent or `⌥ + number`. One dim line
   says: `you're talking to auth-fix directly. main isn't in the loop. esc back
   to main.` `@main` goes back up.
@@ -488,7 +488,7 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | turn done (inside an agent) | `♡ turn done · {duration}` |
 | card title | `? {name} needs you` |
 | card keys | `alt+r answer with text · ctrl+x later · ctrl+f full screen` |
-| direct reply | `✉ {name} to you: {text}` |
+| direct reply | `@ {name} to you: {text}` |
 | not delivered | `✗ not delivered: {name} stopped. ⏎ send again · esc drop` |
 | no vision | `✗ {model} can't read images. pick a model that can (/model), or describe the screen in words.` |
 | provider down | `✗ the model provider answered {code}. retrying in {s}s ({i} of {n}).` / `{names} are waiting on it; nothing is lost.` |
