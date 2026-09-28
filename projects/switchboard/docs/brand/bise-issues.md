@@ -1385,6 +1385,60 @@ Index:
     `tui_undelivered_tmux.py` (throwaway hub: `/new -w t1`, `/drop t1`,
     `@t1 …` → `✗` + the question, ⏎ again, esc), added to `run_all.sh`.
 
+### BISE-87 · markdown tables
+
+- **status:** done · **owner:** bise-f-feed · **commits:** de1b2d7
+- **track:** F · **owns:** `markdown.rs`; the `md_lines` call sites in
+  `render.rs`; `wrap_line` in `feed.rs`
+- **spec:** book §11 (Markdown), the look from marketing (m_881; screen
+  "markdown tables" in tui-screens.html, 8eca2bc)
+- **do:** render GFM tables in messages: bold header, a faint rule, columns
+  aligned by display width, `:---:` / `---:` honored, inline markdown in
+  cells, fit to the width (shrink the widest columns, wrap inside a
+  column), too many columns → one block per row; never inside a code
+  fence; `BISE_ASCII=1` keeps it ASCII.
+- **done when:** tests for alignment, wide chars, wrap, the narrow
+  fallback, a half-streamed table; bench not slower; gates green.
+- **notes:** `markdown::md_lines(text, prose, wide)` replaces `md_to_lines`:
+  it wraps prose at `prose` itself and lays tables out at their natural
+  width up to `wide` (the code measure, 100), so no later wrap cuts a table
+  row (a reply's rows now use the code measure in `render::ev_rows`; its
+  prose still wraps at 76). A table = a row with `|` then a delimiter row
+  with as many cells; its body runs to a blank line or a line without `|`;
+  never inside a fence. Cells split on `|` outside backticks (`\|` is a
+  pipe); a short row gets blank cells, extra cells are dropped. Look (as
+  marketing's spec): no frame, 2 spaces between columns, the header bold
+  (following its column's alignment), one faint `─` segment per column
+  (`-` under `BISE_ASCII=1`), cells with inline markdown in the text color.
+  Too wide: the widest columns shrink to one cap, never under max(8, the
+  longest word up to 12); cells wrap by words in their column, no wrap mark,
+  then one blank line between the rows of that table. Still too wide: one
+  block per row, the first cell as a bold title, then `  key  value` (keys
+  dim, padded to the longest; the value wrapped at the prose measure under
+  its column), a blank line between blocks. A header whose delimiter hasn't
+  arrived yet stays a plain line (streaming). `feed::wrap_line` keeps a soft
+  (continuation) row soft when it wraps it again, so pre-wrapped prose
+  still copies as one line. Level 2, answered, report and brief bodies
+  keep the prose measure for their tables. **Tests** (markdown.rs
+  `table_tests`, TestBackend): `columns_align_as_the_delimiter_says`,
+  `wide_chars_align_by_display_width` (CJK, emoji),
+  `a_long_cell_wraps_inside_its_column` (and the blank lines, the code
+  measure), `too_many_columns_turn_into_blocks`,
+  `cells_keep_their_inline_markdown` (bold, code, `\|`, a pipe in code),
+  `a_streamed_half_table_never_panics` (every prefix at widths 1–76),
+  `no_table_inside_a_code_fence`, `column_widths_fit`. The ASCII rule isn't
+  unit-tested: `ascii_mode` is read once per process. **Bench** (50k
+  lines, release, the same machine, base and mine interleaved: the load
+  average was 10–34 during the runs): in the quiet runs replay 88.5 → 86.2
+  ms, steady 0.26 → 0.24, PageUp 0.46 → 0.89/0.45, PageDown 0.50 → 0.50,
+  windowed PageUp worst 2.96 → 1.47 ms, total 1471 → 1453 ms: not slower.
+  An earlier version wrapped a reply twice (md_lines, then ev_rows): the
+  second pass is skipped now. **Gates** (worktree of b4cf2e7 + this change,
+  the shared target): build, `cargo test --workspace`, clippy
+  `--all-targets` 0 warnings, run_all.sh: every tmux test PASS after a
+  fresh build (tui_term, tui_composer and a plugins bridge test failed once
+  on artifacts mixed in the shared target / a full disk, and passed rebuilt).
+
 ### BISE-88 · code quality pass (last, with a budget)
 
 - **status:** todo · **owner:** — · **commits:** —
