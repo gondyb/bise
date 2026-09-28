@@ -1834,7 +1834,7 @@ Index:
 
 ### BISE-98 · the frame (app look)
 
-- **status:** done · **owner:** bise-f-feed · **commits:** see notes
+- **status:** done · **owner:** bise-f-feed · **commits:** a455133
 - **track:** F · **owns:** `layout.rs`, `ui.rs` (draw_bise, the divider, the composer pane), `sb/panel.rs` (rule, header), scrollbar
 - **spec:** book §8 "The frame" (exact layout), §13 "The composer pane"; mockups site/book/screens.html + live.html (marketing 9f000c8). User request on 805e538.
 - **what:** a faint rounded frame on the terminal edge with `bise :*` and the summary in the top border; 2 blank columns inside; the panel behind a faint rule joined with `┬`/`┴`; a full-width divider `├─ you → main ─…─ state ─┤` replacing the status row; the composer bar at column 3, text at 5; the scrollbar thumb on the panel rule (or the right border); small-terminal tiers (no frame under 60×16). Lands after BISE-97, on its layout function. The key bar row itself is BISE-99.
