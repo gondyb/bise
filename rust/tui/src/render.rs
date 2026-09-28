@@ -161,7 +161,7 @@ pub(crate) fn fmt_think_ms(ms: u128) -> String {
 
 pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
     match ev {
-        Ev::You(t) => user_block_lines(t),
+        Ev::You(t) => user_block_lines(t, width),
         Ev::Assistant(t) => md_to_lines(&unescape_md(t)),
         Ev::Thinking { ms, text, open } => thinking_lines(*ms, text, *open),
         Ev::Tool(td) => tool_lines(td, 0, width),
@@ -247,11 +247,8 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
                     Span::styled(head.clone(), Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
                 ]),
             ];
-            for l in md_to_lines(text) {
-                let mut spans = vec![Span::styled(" │ ", Style::default().fg(ACCENT))];
-                spans.extend(l.spans);
-                rows.push(Line::from(spans));
-            }
+            let bar = Span::styled(" │ ", Style::default().fg(ACCENT));
+            rows.extend(barred_rows(&bar, md_to_lines(text), width));
             rows
         }
         Ev::Card(t) => vec![Line::from(vec![
@@ -265,21 +262,40 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
 }
 
 // the OpenCode user message block: colored left bar (┃ primary), panel
-// background, one blank line above and below
-pub(crate) fn user_block_lines(text: &str) -> Vec<Line<'static>> {
+// background, one blank line above and below. Each line of the text is
+// its own row (Shift+Enter, paste), wrapped under the bar.
+pub(crate) fn user_block_lines(text: &str, width: usize) -> Vec<Line<'static>> {
     let mut rows = vec![Line::from("")];
-    for l in wrap_line(
-        Line::from(Span::styled(
-            text.to_string(),
-            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
-        )),
-        4000,
-    ) {
-        let mut spans = vec![Span::styled(" ┃ ", Style::default().fg(BRAND))];
-        spans.extend(l.spans);
-        rows.push(Line::from(spans));
-    }
+    let style = Style::default().fg(TEXT).add_modifier(Modifier::BOLD);
+    let lines = text
+        .split('\n')
+        .map(|l| Line::from(Span::styled(l.trim_end_matches('\r').to_string(), style)));
+    let bar = Span::styled(" ┃ ", Style::default().fg(BRAND));
+    rows.extend(barred_rows(&bar, lines, width));
     rows.push(Line::from(Span::styled("   ", Style::default().bg(PANEL))));
+    rows
+}
+
+// each line wrapped to the width left after the bar, every row (the
+// wrapped continuations too) behind the same bar, so the text stays
+// aligned; a continuation keeps its soft mark (the copy joins it)
+fn barred_rows(
+    bar: &Span<'static>,
+    lines: impl IntoIterator<Item = Line<'static>>,
+    width: usize,
+) -> Vec<Line<'static>> {
+    use unicode_width::UnicodeWidthStr;
+    let inner = width.saturating_sub(bar.content.width()).max(1);
+    let mut rows = Vec::new();
+    for l in lines {
+        for r in wrap_line(l, inner) {
+            let mut spans = vec![bar.clone()];
+            spans.extend(r.spans);
+            let mut row = Line::from(spans);
+            row.alignment = r.alignment;
+            rows.push(row);
+        }
+    }
     rows
 }
 
@@ -400,4 +416,56 @@ pub(crate) fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'st
     let mut ls = vec![tool_head(td, tick, &name, &args)];
     ls.extend(tool_body(td, &code, width));
     ls
+}
+
+// a multi-line user message (Shift+Enter, paste) and an agent message:
+// one row per line, a long line wrapped, every row behind the bar
+#[cfg(test)]
+mod multiline_tests {
+    use crate::feed::build_rows;
+    use crate::wire::Ev;
+    use ratatui::backend::TestBackend;
+    use ratatui::widgets::Paragraph;
+    use ratatui::Terminal;
+
+    fn screen(ev: Ev, width: u16) -> Vec<String> {
+        let rows = build_rows(&[ev], 0, false, width as usize, 0);
+        let h = rows.len() as u16;
+        let mut term = Terminal::new(TestBackend::new(width, h)).unwrap();
+        term.draw(|f| f.render_widget(Paragraph::new(rows), f.area())).unwrap();
+        let buf = term.backend().buffer().clone();
+        (0..h)
+            .map(|y| (0..width).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn user_message_keeps_its_line_breaks() {
+        let long = "word ".repeat(12);
+        let text = format!("first line\nsecond line\n{}end", long);
+        let s = screen(Ev::You(text), 30);
+        let body: Vec<&String> = s.iter().filter(|r| r.starts_with(" ┃ ")).collect();
+        assert_eq!(body[0].as_str(), " ┃ first line", "{s:#?}");
+        assert_eq!(body[1].as_str(), " ┃ second line", "{s:#?}");
+        // the long line wraps into several rows, all behind the bar at
+        // the same column
+        assert!(body.len() >= 5, "{s:#?}");
+        for r in &body[2..] {
+            assert!(r.starts_with(" ┃ word") || r.starts_with(" ┃ end"), "{s:#?}");
+            assert!(r.chars().count() <= 30);
+        }
+        assert!(body.last().unwrap().ends_with("end"), "{s:#?}");
+        assert!(!s.iter().any(|r| r.contains('\n')));
+    }
+
+    #[test]
+    fn agent_message_wraps_behind_its_bar() {
+        let text = format!("one\ntwo {}", "x ".repeat(30));
+        let s = screen(Ev::AgentMsg { head: "main".into(), text }, 24);
+        let body: Vec<&String> = s.iter().filter(|r| r.starts_with(" │ ")).collect();
+        assert_eq!(body[0].as_str(), " │ one", "{s:#?}");
+        assert!(body[1].starts_with(" │ two x"), "{s:#?}");
+        assert!(body.len() >= 4, "{s:#?}");
+        assert!(s.iter().filter(|r| !r.is_empty() && !r.starts_with(" ◀ ")).all(|r| r.starts_with(" │ ")), "{s:#?}");
+    }
 }
