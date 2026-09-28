@@ -88,6 +88,74 @@ pub(crate) fn word_right(s: &str, cursor: usize) -> usize {
     gs.get(i).map(|g| g.0).unwrap_or(end)
 }
 
+/// The case class of an alphanumeric grapheme, for subword moves:
+/// None for the rest (`_`, `-`, spaces, punctuation, emojis), which
+/// separate subwords and are skipped like the gaps between words.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Sub {
+    Upper,
+    /// lowercase, or a letter without case
+    Lower,
+    Digit,
+}
+
+fn sub_class(g: &str) -> Option<Sub> {
+    let c = g.chars().next()?;
+    if c.is_numeric() {
+        Some(Sub::Digit)
+    } else if c.is_uppercase() {
+        Some(Sub::Upper)
+    } else if c.is_alphabetic() {
+        Some(Sub::Lower)
+    } else {
+        None
+    }
+}
+
+/// True when a subword boundary falls between the graphemes `i - 1` and
+/// `i` (0 < i < len): the edges of alphanumeric runs, lower→Upper
+/// (camel|Case), letter↔digit (utf|8), and before the last capital of
+/// an acronym followed by a lowercase letter (HTTP|Server).
+fn sub_boundary(cs: &[Option<Sub>], i: usize) -> bool {
+    use Sub::*;
+    match (cs[i - 1], cs[i]) {
+        (None, _) | (_, None) => true,
+        (Some(Lower), Some(Upper)) => true,
+        (Some(p), Some(c)) if (p == Digit) != (c == Digit) => true,
+        (Some(Upper), Some(Upper)) => cs.get(i + 1) == Some(&Some(Lower)),
+        _ => false,
+    }
+}
+
+/// Zed-style subword ←: to the start of the subword before the cursor
+/// (in snake_case, camelCase, PascalCase, kebab-case, digits).
+pub(crate) fn subword_left(s: &str, cursor: usize) -> usize {
+    let gs = graphemes_ci(s);
+    let cs: Vec<Option<Sub>> = gs.iter().map(|g| sub_class(g.1)).collect();
+    let mut i = gs.iter().position(|&(ci, _)| ci >= cursor).unwrap_or(gs.len());
+    while i > 0 {
+        i -= 1;
+        if cs[i].is_some() && (i == 0 || sub_boundary(&cs, i)) {
+            return gs[i].0;
+        }
+    }
+    0
+}
+
+/// Zed-style subword →: to the end of the subword after the cursor.
+pub(crate) fn subword_right(s: &str, cursor: usize) -> usize {
+    let gs = graphemes_ci(s);
+    let cs: Vec<Option<Sub>> = gs.iter().map(|g| sub_class(g.1)).collect();
+    let mut i = gs.iter().position(|&(ci, _)| ci >= cursor).unwrap_or(gs.len());
+    while i < gs.len() {
+        i += 1;
+        if cs[i - 1].is_some() && (i == gs.len() || sub_boundary(&cs, i)) {
+            break;
+        }
+    }
+    gs.get(i).map(|g| g.0).unwrap_or(s.chars().count())
+}
+
 /// Start of the (newline-separated) line holding `cursor`.
 pub(crate) fn line_start(s: &str, cursor: usize) -> usize {
     let head: Vec<char> = s.chars().take(cursor).collect();
@@ -241,6 +309,8 @@ pub(crate) enum Motion {
     Right,
     WordLeft,
     WordRight,
+    SubwordLeft,
+    SubwordRight,
     LineStart,
     LineEnd,
     TextStart,
@@ -251,6 +321,7 @@ pub(crate) enum Motion {
 pub(crate) enum Unit {
     Grapheme,
     Word,
+    Subword,
     /// to the line start (backward) or the line end (forward)
     Line,
 }
@@ -411,6 +482,8 @@ impl Editor {
             Motion::Right => next_grapheme(s, c),
             Motion::WordLeft => word_left(s, c),
             Motion::WordRight => word_right(s, c),
+            Motion::SubwordLeft => subword_left(s, c),
+            Motion::SubwordRight => subword_right(s, c),
             Motion::LineStart => line_start(s, c),
             Motion::LineEnd => line_end(s, c),
             Motion::TextStart => 0,
@@ -496,6 +569,7 @@ impl Editor {
         let a = match u {
             Unit::Grapheme => prev_grapheme(&self.text, c),
             Unit::Word => word_left(&self.text, c),
+            Unit::Subword => subword_left(&self.text, c),
             // at a line start, joins the line above
             Unit::Line => match line_start(&self.text, c) {
                 s if s == c => prev_grapheme(&self.text, c),
@@ -517,6 +591,7 @@ impl Editor {
         let b = match u {
             Unit::Grapheme => next_grapheme(&self.text, c),
             Unit::Word => word_right(&self.text, c),
+            Unit::Subword => subword_right(&self.text, c),
             Unit::Line => match line_end(&self.text, c) {
                 e if e == c => next_grapheme(&self.text, c),
                 e => e,
@@ -633,7 +708,7 @@ impl Editor {
 // ---- the help ----
 
 /// The composer's keys, for /help.
-pub(crate) const EDIT_HELP: &str = "composer: Option+←/→ word · Cmd+←/→ or Ctrl+A/E line start/end · Ctrl+Home/End text start/end · Option+Backspace or Ctrl+W delete a word · Cmd+Backspace or Ctrl+U delete to the line start · Ctrl+K delete to the line end (outside Switchboard) · Shift + any move selects · Ctrl+/ undo · Alt+/ redo · ↑/↓ move between rows, then the history (↓ past the newest brings the draft back) · mouse: click, drag, double click (word), triple click; the release copies · Ctrl+Shift+C copy · Ctrl+Shift+X cut · Shift+drag: the terminal's own selection";
+pub(crate) const EDIT_HELP: &str = "composer: Option+←/→ word · Ctrl+Option+←/→ subword (camelCase, snake_case, kebab-case, digits) · Cmd+←/→ or Ctrl+A/E line start/end · Ctrl+Home/End text start/end · Option+Backspace or Ctrl+W delete a word · Ctrl+Option+Backspace/Delete delete a subword · Cmd+Backspace or Ctrl+U delete to the line start · Ctrl+K delete to the line end (outside Switchboard) · Shift + any move selects · Ctrl+/ undo · Alt+/ redo · ↑/↓ move between rows, then the history (↓ past the newest brings the draft back) · mouse: click, drag, double click (word), triple click; the release copies · Ctrl+Shift+C copy · Ctrl+Shift+X cut · Shift+drag: the terminal's own selection";
 
 /// Ghostty tips, for /help: the shortcuts Ghostty keeps unless unbound.
 pub(crate) const GHOSTTY_TIPS: &str = "Ghostty tips: Cmd+↑/↓, Cmd+Z and Cmd+C are Ghostty's by default. To get them in the composer, add to ~/Library/Application Support/com.mitchellh.ghostty/config: keybind = super+arrow_up=unbind · keybind = super+arrow_down=unbind · keybind = super+z=unbind · keybind = super+shift+z=unbind · keybind = super+c=performable:copy_to_clipboard (Cmd+C copies Ghostty's selection if any, else the app's). Check what reaches the app: bend-harness keyprobe";
@@ -644,7 +719,9 @@ pub(crate) const GHOSTTY_TIPS: &str = "Ghostty tips: Cmd+↑/↓, Cmd+Z and Cmd+
 /// sends by default: Option+←/→ = ESC b / ESC f (Alt+b/f), Cmd+←/→ =
 /// Ctrl+A / Ctrl+E, Cmd+Backspace = Ctrl+U; Cmd+↑/↓, Cmd+A/C/Z are its
 /// own unless unbound (then they arrive with SUPER under the kitty
-/// keyboard protocol).
+/// keyboard protocol). Ctrl+Option+←/→ has no Ghostty binding: it
+/// arrives as ←/→ with CONTROL|ALT (CSI 1;7D/C, also without the kitty
+/// flags) and moves by subword; macOS keeps only Ctrl+←/→ (Spaces).
 pub(crate) fn action(k: &KeyEvent) -> Option<Action> {
     use Action::*;
     use Motion::*;
@@ -659,6 +736,8 @@ pub(crate) fn action(k: &KeyEvent) -> Option<Action> {
             let right = k.code == KeyCode::Right;
             let mo = if sup {
                 if right { LineEnd } else { LineStart }
+            } else if alt && ctrl {
+                if right { SubwordRight } else { SubwordLeft }
             } else if alt || ctrl {
                 if right { WordRight } else { WordLeft }
             } else if right {
@@ -677,9 +756,11 @@ pub(crate) fn action(k: &KeyEvent) -> Option<Action> {
         KeyCode::Home => Move(LineStart, shift),
         KeyCode::End => Move(LineEnd, shift),
         KeyCode::Backspace if sup => DeleteBack(Unit::Line),
+        KeyCode::Backspace if alt && ctrl => DeleteBack(Unit::Subword),
         KeyCode::Backspace if alt || ctrl => DeleteBack(Unit::Word),
         KeyCode::Backspace => DeleteBack(Unit::Grapheme),
         KeyCode::Delete if sup => DeleteForward(Unit::Line),
+        KeyCode::Delete if alt && ctrl => DeleteForward(Unit::Subword),
         KeyCode::Delete if alt || ctrl => DeleteForward(Unit::Word),
         KeyCode::Delete => DeleteForward(Unit::Grapheme),
         KeyCode::Char(c) if ctrl && !alt && !sup => match c.to_ascii_lowercase() {
@@ -700,6 +781,8 @@ pub(crate) fn action(k: &KeyEvent) -> Option<Action> {
             '/' | '?' | '_' => Redo,
             _ => return None,
         },
+        // legacy Ctrl+Option+Backspace: ESC ^H
+        KeyCode::Char('h') if alt && ctrl && !sup => DeleteBack(Unit::Subword),
         KeyCode::Char(c) if alt && !ctrl && !sup => match c {
             'b' => Move(WordLeft, false),
             'f' => Move(WordRight, false),
@@ -755,6 +838,95 @@ mod tests {
             stops.push(c);
         }
         assert_eq!(stops, vec![0, 5, 12, 23]);
+    }
+
+    /// Every stop of repeated moves from one end of `s`.
+    fn stops(s: &str, mv: fn(&str, usize) -> usize, from: usize) -> Vec<usize> {
+        let mut v = vec![from];
+        loop {
+            let c = mv(s, *v.last().unwrap());
+            if c == *v.last().unwrap() {
+                return v;
+            }
+            v.push(c);
+        }
+    }
+
+    /// The pieces between the stops of subword → from the start.
+    fn right_pieces(s: &str) -> Vec<String> {
+        let st = stops(s, subword_right, 0);
+        let cs: Vec<char> = s.chars().collect();
+        st.windows(2).map(|w| cs[w[0]..w[1]].iter().collect()).collect()
+    }
+
+    /// The pieces between the stops of subword ← from the end.
+    fn left_pieces(s: &str) -> Vec<String> {
+        let st = stops(s, subword_left, s.chars().count());
+        let cs: Vec<char> = s.chars().collect();
+        st.windows(2).map(|w| cs[w[1]..w[0]].iter().collect()).collect()
+    }
+
+    #[test]
+    fn subwords_snake_kebab_camel() {
+        assert_eq!(right_pieces("snake_case_name"), ["snake", "_case", "_name"]);
+        assert_eq!(left_pieces("snake_case_name"), ["name", "case_", "snake_"]);
+        assert_eq!(right_pieces("__init__"), ["__init", "__"]);
+        assert_eq!(right_pieces("kebab-case-name"), ["kebab", "-case", "-name"]);
+        assert_eq!(left_pieces("kebab-case"), ["case", "kebab-"]);
+        assert_eq!(right_pieces("camelCaseName"), ["camel", "Case", "Name"]);
+        assert_eq!(left_pieces("PascalCase"), ["Case", "Pascal"]);
+        assert_eq!(right_pieces("ÉtéÀParis"), ["Été", "À", "Paris"]);
+        // words still split at spaces and punctuation
+        assert_eq!(right_pieces("fooBar baz.quxQuux"), ["foo", "Bar", " baz", ".qux", "Quux"]);
+    }
+
+    #[test]
+    fn subwords_acronyms() {
+        assert_eq!(right_pieces("HTTPServer"), ["HTTP", "Server"]);
+        assert_eq!(left_pieces("HTTPServer"), ["Server", "HTTP"]);
+        assert_eq!(right_pieces("parseHTTPResponse"), ["parse", "HTTP", "Response"]);
+        assert_eq!(right_pieces("getURL"), ["get", "URL"]);
+        assert_eq!(right_pieces("ALL_CAPS"), ["ALL", "_CAPS"]);
+        assert_eq!(right_pieces("IOError"), ["IO", "Error"]);
+        assert_eq!(right_pieces("A"), ["A"]);
+    }
+
+    #[test]
+    fn subwords_digits() {
+        assert_eq!(right_pieces("utf8Decode"), ["utf", "8", "Decode"]);
+        assert_eq!(right_pieces("x86_64"), ["x", "86", "_64"]);
+        assert_eq!(left_pieces("v2Beta10"), ["10", "Beta", "2", "v"]);
+        assert_eq!(right_pieces("HTTP2Server"), ["HTTP", "2", "Server"]);
+        assert_eq!(right_pieces("1234"), ["1234"]);
+    }
+
+    #[test]
+    fn subwords_emojis_are_gaps_and_stay_whole() {
+        // 👨‍👩‍👧 is one grapheme (ZWJ), 👍🏽 too (skin tone)
+        let s = "fooBar👨‍👩‍👧bazQux 👍🏽x";
+        assert_eq!(right_pieces(s), ["foo", "Bar", "👨‍👩‍👧baz", "Qux", " 👍🏽x"]);
+        assert_eq!(left_pieces(s), ["x", "Qux 👍🏽", "baz", "Bar👨‍👩‍👧", "foo"]);
+        // from inside a run of emojis, never inside one
+        let n = "a👍🏽👍🏽b".chars().count();
+        assert_eq!(subword_left("a👍🏽👍🏽b", n - 1), 0);
+        assert_eq!(subword_right("a👍🏽👍🏽b", 1), n);
+        assert_eq!(right_pieces("👍🏽"), ["👍🏽"]);
+        assert_eq!(right_pieces(""), Vec::<String>::new());
+    }
+
+    #[test]
+    fn subword_edits_and_selection() {
+        let mut e = ed("fooBarBaz", 9);
+        e.delete_back(Unit::Subword);
+        assert_eq!((e.text.as_str(), e.cursor), ("fooBar", 6));
+        let mut e = ed("fooBarBaz", 0);
+        e.delete_forward(Unit::Subword);
+        assert_eq!((e.text.as_str(), e.cursor), ("BarBaz", 0));
+        let mut e = ed("snake_case", 5);
+        e.move_cursor(Motion::SubwordRight, true);
+        assert_eq!(e.selected_text().as_deref(), Some("_case"));
+        e.move_cursor(Motion::SubwordLeft, false);
+        assert_eq!(e.cursor, 6);
     }
 
     #[test]
@@ -941,6 +1113,18 @@ mod tests {
         assert_eq!(key(Char('C'), c | s), Some(Action::Copy));
         // text
         assert_eq!(key(Char('É'), s), Some(Action::Insert("É".into())));
+        // Ctrl+Option+←/→: subwords (CSI 1;7D/C), Shift selects
+        let ca = c | a;
+        assert_eq!(key(Left, ca), Some(Action::Move(Motion::SubwordLeft, false)));
+        assert_eq!(key(Right, ca), Some(Action::Move(Motion::SubwordRight, false)));
+        assert_eq!(key(Left, ca | s), Some(Action::Move(Motion::SubwordLeft, true)));
+        assert_eq!(key(Right, ca | s), Some(Action::Move(Motion::SubwordRight, true)));
+        // Ctrl+←/→ alone stay words
+        assert_eq!(key(Left, c), Some(Action::Move(Motion::WordLeft, false)));
+        assert_eq!(key(Backspace, ca), Some(Action::DeleteBack(Unit::Subword)));
+        assert_eq!(key(Delete, ca), Some(Action::DeleteForward(Unit::Subword)));
+        assert_eq!(key(Char('h'), ca), Some(Action::DeleteBack(Unit::Subword)));
+        assert_eq!(key(Backspace, c), Some(Action::DeleteBack(Unit::Word)));
         // Alt+↑/↓ stay the task navigation
         assert_eq!(key(Up, a), None);
     }
