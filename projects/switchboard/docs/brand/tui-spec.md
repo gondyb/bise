@@ -103,6 +103,24 @@ Staying calm with dozens of agents, without breaking the order:
 - One blank line between blocks. One bold level. No italic for long text.
 - Marketing screenshots: JetBrains Mono (free) or a similar clean mono.
 
+## Themes: light and dark
+
+Decided (Gabriel): two themes, light and dark, nothing more for now.
+
+- **The background stays the terminal's own.** ratatui can paint any
+  background (`Color::Rgb` on every cell), but that fights the user's
+  terminal (their exact color, transparency, blur). We draw on
+  `Color::Reset` and only set foreground colors, plus at most a light tint
+  for the selection and the card box. (Today `theme.rs` paints some panels
+  `#141414`; that goes.)
+- **Pick the theme automatically.** At start, ask the terminal for its
+  background color (OSC 11; Ghostty, iTerm2, kitty, WezTerm, Terminal.app,
+  Alacritty answer it) and choose light or dark by its brightness. A setting
+  forces one. **⚠** Fallback when the terminal doesn't answer (e.g. some tmux
+  setups): dark.
+- Both palettes keep every readable text ≥ 4.5:1, checked against white,
+  our cream, black and a typical dark grey (`#282c34`).
+
 ## Palette (dark)
 
 | Role | Hex | Use |
@@ -115,8 +133,20 @@ Staying calm with dozens of agents, without breaking the order:
 | error | `#ff5a52` | failures only |
 | ok | `#b9d99a` | diff additions only |
 
-Syntax colors stay, but softer (see the mockup). **⚠** A light theme is not
-designed yet.
+Syntax colors stay, but softer (see the mockup).
+
+## Palette (light)
+
+| Role | Hex | Contrast on white |
+|---|---|---|
+| text | `#1b1917` | 17.5:1 |
+| dim | `#6b645a` | 5.8:1 |
+| faint | `#cfc8bd` | rails and borders only |
+| accent | `#c8443b` | 4.8:1 (darker blush, so it stays readable) |
+| error | `#b3261e` | 6.5:1 |
+| ok | `#3f7a2a` | 5.2:1 |
+
+**⚠** Not mocked yet; the light syntax colors are still to pick.
 
 ## Symbols
 
@@ -224,7 +254,8 @@ is written once every open question below is settled.
 
 To implement:
 
-1. Replace the OpenCode theme with the bise palette (dark), one accent.
+1. Replace the OpenCode theme with two bise palettes, light and dark, on the
+   terminal's own background, chosen by querying it (OSC 11).
 2. The glyph set for entities and statuses (tables above).
 3. Prose wraps at 76 columns, code at 100 with a hanging indent.
 4. bash and TypeScript scripts always shown in full, with syntax colors.
@@ -247,7 +278,5 @@ Open questions:
 
 - A card once answered: fade it in place (gray, "answered"), or leave it
   as it was and let the answer follow below?
-- Background: our warm near-black, or the terminal's own?
-- A light theme.
 - Glyph coverage in common fonts and terminals; `alt+` labels off macOS.
 - Cost in $ in the header (needs the usage work).
