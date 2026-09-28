@@ -140,17 +140,17 @@ fn resolve_session(sessions_dir: &str, id: &str) -> Result<String, String> {
     match hits.len() {
         0 => Err(format!("session {} introuvable", id)),
         1 => Ok(format!("{}/{}.txt", sessions_dir, hits[0])),
-        _ => Err(format!("préfixe {} ambigu ({} sessions)", id, hits.len())),
+        _ => Err(format!("ambiguous prefix {} ({} sessions)", id, hits.len())),
     }
 }
 
 fn list_sessions(sessions_dir: &str) {
     let ids = session_ids(sessions_dir);
     if ids.is_empty() {
-        eprintln!("aucune session sauvegardée");
+        eprintln!("no saved session");
         return;
     }
-    eprintln!("sessions disponibles (les plus récentes d'abord) :");
+    eprintln!("available sessions (most recent first):");
     for id in ids.iter().take(15) {
         eprintln!("  {}", id);
     }
@@ -222,7 +222,7 @@ fn sb_workspace(args: &[String]) -> std::path::PathBuf {
 fn run_sbd(args: &[String]) -> std::io::Result<()> {
     let paths = switchboard::paths::Paths::for_workspace(&sb_workspace(args));
     let Some(root) = app_root("repl-live") else {
-        eprintln!("repl-live introuvable (compile avec `bend runtime/repl-live.bend -o repl-live`)");
+        eprintln!("repl-live not found (compile it with `bend runtime/repl-live.bend -o repl-live`)");
         std::process::exit(1);
     };
     // the hub's decisions (sb-core) come from the same app root as the
@@ -249,8 +249,8 @@ fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
     if args.iter().any(|a| a == "--stop") {
         let keep = args.iter().any(|a| a == "--keep-agents");
         match switchboard::client::stop(&paths, keep)? {
-            true => eprintln!("hub arrêté ({})", paths.workspace.display()),
-            false => eprintln!("aucun hub pour {}", paths.workspace.display()),
+            true => eprintln!("hub stopped ({})", paths.workspace.display()),
+            false => eprintln!("no hub for {}", paths.workspace.display()),
         }
         return Ok(());
     }
@@ -283,7 +283,7 @@ fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
             cmd.arg("--debug");
         }
         let err = cmd.exec();
-        eprintln!("changement de version de la TUI : {}", err);
+        eprintln!("TUI version switch: {}", err);
     }
     Ok(())
 }
@@ -308,7 +308,7 @@ fn main() -> std::io::Result<()> {
                         .cloned()
                 };
                 let Some(to) = val("--to") else {
-                    eprintln!("sbswitch --to <dossier de version> [--probation <s>]");
+                    eprintln!("sbswitch --to <version folder> [--probation <s>]");
                     std::process::exit(2);
                 };
                 let period = val("--probation")
@@ -363,7 +363,7 @@ fn main() -> std::io::Result<()> {
         i += 1;
     }
     if resume && resume_id.is_some() {
-        eprintln!("utilise --continue OU --resume <id>, pas les deux");
+        eprintln!("use --continue OR --resume <id>, not both");
         std::process::exit(1);
     }
 
@@ -402,7 +402,7 @@ fn main() -> std::io::Result<()> {
         .filter(|p| p.exists())
         .unwrap_or_else(|| {
             eprintln!(
-                "REPL Bend introuvable : {} (compile avec `bend runtime/{} -o {}`)",
+                "Bend REPL not found: {} (compile it with `bend runtime/{} -o {}`)",
                 repl_name,
                 if scripted { "repl.bend" } else { "repl-live.bend" },
                 repl_name
@@ -450,10 +450,10 @@ fn main() -> std::io::Result<()> {
     } else if resume {
         latest_session(&sessions_dir).unwrap_or_else(|| {
             if std::path::Path::new(&legacy_file).exists() {
-                eprintln!("--continue : aucune session nommée, reprise du checkpoint historique");
+                eprintln!("--continue: no named session, resuming the legacy checkpoint");
                 legacy_file.clone()
             } else {
-                eprintln!("--continue : aucune session à reprendre, nouvelle session");
+                eprintln!("--continue: no session to resume, new session");
                 new_session_path(&sessions_dir)
             }
         })
@@ -552,7 +552,7 @@ fn main() -> std::io::Result<()> {
                 }
             }
             if start.elapsed() > Duration::from_secs(15) {
-                eprintln!("le REPL Bend n'a pas démarré sur le port {}", repl_port);
+                eprintln!("the Bend REPL did not start on port {}", repl_port);
                 let _ = child.kill();
                 std::process::exit(1);
             }
@@ -565,7 +565,7 @@ fn main() -> std::io::Result<()> {
         let info = match bend_tui::HarnessInfo::from_log(&log) {
             Some(i) => i,
             None => {
-                eprintln!("le REPL Bend n'a pas annoncé sa configuration (harness-info)");
+                eprintln!("the Bend REPL did not announce its configuration (harness-info)");
                 let _ = child.kill();
                 std::process::exit(1);
             }
@@ -625,16 +625,16 @@ fn main() -> std::io::Result<()> {
             (Some(status), true) if status.success() => {
                 reloads += 1;
                 if reloads > 10 {
-                    eprintln!("reload : trop de redémarrages d'affilée, arrêt.");
+                    eprintln!("reload: too many restarts in a row, stopping.");
                     return Ok(());
                 }
                 eprintln!(
-                    "reload : recompilation de la dernière version de {} (1-2 min)...",
+                    "reload: recompiling the latest version of {} (1-2 min)...",
                     repl_name
                 );
                 if !recompile(repl_name, &repl_bin) {
                     eprintln!(
-                        "reload : la recompilation a échoué — on garde le binaire précédent (session intacte)."
+                        "reload: the recompilation failed — keeping the previous binary (session intact)."
                     );
                 }
                 // the respawn restores the checkpointed session
@@ -650,7 +650,7 @@ fn main() -> std::io::Result<()> {
                 let why = crash_reason(&err_path, err_start, &status.to_string());
                 if crashes > MAX_CRASH_RESTARTS {
                     eprintln!(
-                        "le REPL Bend a planté {} fois d'affilée ({}) — arrêt. Détails : {}",
+                        "the Bend REPL crashed {} times in a row ({}) — stopping. Details: {}",
                         MAX_CRASH_RESTARTS,
                         why,
                         err_path.display()
@@ -658,7 +658,7 @@ fn main() -> std::io::Result<()> {
                     return result;
                 }
                 eprintln!(
-                    "le REPL Bend a planté ({}) — redémarrage sur la session sauvegardée ({}/{})...",
+                    "the Bend REPL crashed ({}) — restarting on the saved session ({}/{})...",
                     why, crashes, MAX_CRASH_RESTARTS
                 );
                 std::env::set_var("BEND_CONTINUE", "1");
@@ -713,7 +713,7 @@ fn recompile(repl_name: &str, repl_bin: &std::path::Path) -> bool {
         .map(|d| d.join(source))
         .filter(|p| p.exists())
     else {
-        eprintln!("reload : source {} introuvable, on garde le binaire.", source);
+        eprintln!("reload: source {} not found, keeping the binary.", source);
         return false;
     };
     let home_bend = format!("{}/.bend/bin/bend", std::env::var("HOME").unwrap_or_default());
