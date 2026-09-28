@@ -63,10 +63,10 @@ Visual references (open them in a browser):
 
 | Where | Line | Status |
 |---|---|---|
-| site, headline | **you, but with way more hands.** | picked |
+| site, headline | **kiss your backlog goodbye.** | picked (Gabriel) |
 | site, subline | *built for engineers who think faster than they type.* | picked |
 | inside the product (onboarding) | **your ideas. my hands. lots of them.** | picked |
-| alternative headline | your team is as big as your ideas. | kept in reserve |
+| in reserve | you, but with way more hands. · your team is as big as your ideas. | former headlines |
 
 Rejected, don't bring them back: "all the agents. none of the overhead."
 ("overhead" is unclear), "all the agents. stay in flow.", "code like a team
@@ -84,7 +84,9 @@ LLM).
 - **Who speaks.** Inside the product, bise speaks as **"i"**; **"you"** is
   always the user. ("say it and keep talking. the work runs in the
   background, i'm always here.") The site talks to the reader as "you", so
-  "you, but with way more hands." is a site line, never an in-product line.
+  "kiss your backlog goodbye." is a site line, never an in-product line.
+  Why it works: an English idiom everyone knows, turned: the backlog goes,
+  and the kiss gives the name its meaning for English speakers.
 - **Human, short, concrete.** Casual, warm, a bit cheeky. Short sentences.
   Show the moment instead of naming the feeling. Avoid polished LLM patterns
   ("X. None of the Y.", "seamless", "unleash", "supercharge").

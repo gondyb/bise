@@ -27,7 +27,7 @@ Coding agents are good. Running several of them in parallel is not.
 
 Taglines (picked by Gabriel):
 
-> **you, but with way more hands.**
+> **kiss your backlog goodbye.**
 > *built for engineers who think faster than they type.*
 
 **Style rule (Gabriel): no capital letter at the start of any word, ever,

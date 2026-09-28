@@ -26,7 +26,7 @@ Les agents de code sont bons. Les travailler en parallèle, non.
 
 Taglines (choisies par Gabriel, gardées en anglais) :
 
-> **you, but with way more hands.**
+> **kiss your backlog goodbye.**
 > *built for engineers who think faster than they type.*
 
 **Règle de style (Gabriel) : jamais de majuscule en début de mot, sur tous
@@ -76,7 +76,8 @@ Taglines :
 | trop d'idées ? tant mieux. | too many ideas? good. |
 | dis-le une fois. oublie. c'est fait. | say it once. forget about it. it's done. |
 | enfin un truc qui suit mon cerveau. | finally, something that keeps up with my brain. |
-| toi, mais avec beaucoup plus de mains. | you, but with way more hands. |
+| dis adieu à ton backlog (et un bisou au passage). | kiss your backlog goodbye. (tagline principale, choisie par Gabriel) |
+| toi, mais avec beaucoup plus de mains. | you, but with way more hands. (ancienne principale, en réserve) |
 | Ne jamais attendre un agent. | Never wait on an agent again. |
 | Un interlocuteur. Autant d'agents que tu veux. | One conversation. As many agents as you want. |
 | Reste dans le flow, main s'occupe du reste. | Stay in flow. Main handles the rest. |
