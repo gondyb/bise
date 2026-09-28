@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bise :* — onboarding v0</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#141211; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --acc:#f2766b; --line:#2a2623; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:#0b0a09; color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:14px; line-height:1.6; padding:24px; }
+  .lead { color:#8a8378; max-width:100ch; margin-bottom:14px; font-size:13px; }
+  .lead b { color:var(--text); font-weight:400; }
+  .term { background:var(--bg); border-radius:8px; width:100ch; max-width:100%; height:520px; box-shadow:0 12px 40px rgba(0,0,0,.45); position:relative; overflow:hidden; }
+  .screen { position:absolute; inset:0; padding:40px 6ch; display:none; flex-direction:column; justify-content:center; }
+  .screen.on { display:flex; animation:fade .4s ease-out; }
+  @keyframes fade { from { opacity:0 } to { opacity:1 } }
+  .center { align-items:center; text-align:center; }
+  .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)}
+  .big { font-size:28px; font-weight:700; }
+  .kiss { display:inline-block; color:var(--acc); opacity:0; }
+  .kiss.go { animation:kiss .9s ease-out forwards; }
+  @keyframes kiss { 0% { opacity:0; transform:scale(.4) } 55% { opacity:1; transform:scale(1.5) rotate(-10deg) } 100% { opacity:1; transform:scale(1) } }
+  .cur { display:inline-block; width:.6em; height:1.05em; background:var(--text); vertical-align:-.18em; animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0 } }
+  .step { position:absolute; bottom:14px; left:0; right:0; text-align:center; color:var(--faint); letter-spacing:4px; }
+  .step .on { color:var(--acc); }
+  .hint { color:var(--faint); margin-top:26px; }
+  .opt { padding:2px 1ch; border-left:2px solid transparent; }
+  .opt.sel { border-left-color:var(--acc); background:#1f1c1a; }
+  .opt .tag { color:var(--acc); font-size:12px; margin-left:1ch; }
+  .opt .sub { color:var(--dim); font-size:13px; padding-left:3ch; }
+  .themes { display:flex; gap:3ch; margin-top:18px; }
+  .prev { border:1px solid var(--line); border-radius:6px; padding:10px 2ch; width:40ch; font-size:12.5px; transition:border-color .2s; }
+  .prev.sel { border-color:var(--acc); }
+  .prev.light { background:#f7f4ee; color:#1b1917; } .prev.light .d { color:#6b645a; } .prev.light .a { color:#c8443b; } .prev.light .r { border-color:#cfc8bd; }
+  .prev.dark { background:#141211; } .prev.dark .d { color:var(--dim); } .prev.dark .a { color:var(--acc); } .prev.dark .r { border-color:var(--faint); }
+  .prev .r { border-left:1px solid; padding-left:1.5ch; margin-left:.5ch; }
+  .line { opacity:0; transform:translateY(4px); transition:all .5s ease-out; margin-top:10px; }
+  .line.show { opacity:1; transform:none; }
+  .who { display:inline-block; width:3ch; }
+  /* the first run with just-in-time hints */
+  .app { position:absolute; inset:0; display:grid; grid-template-columns:1fr 30ch; grid-template-rows:auto 1fr auto; }
+  .app .head { grid-column:1 / -1; display:flex; justify-content:space-between; padding:8px 2ch 4px; }
+  .app .feed { padding:4px 2ch; overflow:hidden; }
+  .app .panel { border-left:1px solid var(--line); padding:4px 2ch; position:relative; }
+  .app .foot { grid-column:1 / -1; border-top:1px solid var(--line); padding:6px 2ch 10px; position:relative; }
+  .row { display:flex; justify-content:space-between; white-space:nowrap; }
+  .b { margin-top:10px; }
+  .l3 { color:var(--dim); border-left:1px solid var(--faint); padding-left:2ch; margin-left:1ch; }
+  .l1 { border-left:2px solid var(--acc); padding-left:2ch; }
+  .l1 .t { color:var(--acc); font-weight:700; }
+  .tip { position:absolute; background:#2a1d1b; border:1px solid var(--acc); color:var(--text); border-radius:6px; padding:6px 1.5ch; font-size:12.5px; max-width:36ch; opacity:0; transition:opacity .4s; pointer-events:none; }
+  .tip.show { opacity:1; }
+  .tip b { color:var(--acc); font-weight:400; }
+  .pulse { display:inline-block; animation:pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity:.35 } }
+  .controls { margin-top:12px; color:#8a8378; font-size:13px; }
+  .controls button { font:inherit; background:#1f1c1a; color:var(--text); border:1px solid #3a3531; border-radius:4px; padding:3px 10px; cursor:pointer; margin-right:6px; }
+</style>
+</head>
+<body>
+<p class="lead"><b>bise :* — onboarding v0.</b> the first launch, in 6 steps, inspired by Vibe's (typed welcome, live theme preview, one choice per screen). press <b>enter</b> to go on, <b>↑↓</b> to choose. the last step is the real first run, with hints that show up once, only when the thing they explain happens.</p>
+<div class="term" id="term">
+
+  <!-- 1 welcome -->
+  <div class="screen center on" data-s="0">
+    <div class="big"><span id="w1"></span><span class="kiss" id="wk">:*</span></div>
+    <div class="dim" style="margin-top:14px; min-height:1.6em" id="w2"></div>
+    <div class="hint" id="w3"></div>
+  </div>
+
+  <!-- 2 theme -->
+  <div class="screen center" data-s="1">
+    <div>your terminal looks <b>dark</b>, so i picked dark.</div>
+    <div class="dim">you can change it any time with /theme.</div>
+    <div class="themes">
+      <div class="prev dark sel" data-t="dark"><div class="d">dark</div>
+        <div class="b"><span class="who d">›</span>fix the flaky login test</div>
+        <div class="b"><span class="who a">:*</span>on it: auth-fix takes it.</div>
+        <div class="b r d">✉ auth-fix → main  found it</div>
+        <div class="b"><span class="who">♡</span>auth-fix is done.</div></div>
+      <div class="prev light" data-t="light"><div class="d">light</div>
+        <div class="b"><span class="who d">›</span>fix the flaky login test</div>
+        <div class="b"><span class="who a">:*</span>on it: auth-fix takes it.</div>
+        <div class="b r d">✉ auth-fix → main  found it</div>
+        <div class="b"><span class="who">♡</span>auth-fix is done.</div></div>
+    </div>
+    <div class="hint">←→ switch · enter keep</div>
+  </div>
+
+  <!-- 3 model -->
+  <div class="screen" data-s="2" style="padding-left:14ch">
+    <div>which model should do the work?</div>
+    <div class="dim" style="margin-bottom:14px">i found a key in your environment.</div>
+    <div class="opt sel" data-o>1 · use ANTHROPIC_API_KEY <span class="tag">found</span><div class="sub">claude, already set up. nothing to paste.</div></div>
+    <div class="opt" data-o>2 · paste another key<div class="sub">mistral, openai, anthropic, z.ai… ⚠ list depends on what ships</div></div>
+    <div class="opt" data-o>3 · sign in with the browser<div class="sub">⚠ not built</div></div>
+    <div class="hint">↑↓ choose · enter ok</div>
+  </div>
+
+  <!-- 4 folder + honesty -->
+  <div class="screen" data-s="3" style="padding-left:14ch; padding-right:14ch">
+    <div>i'll work in <b>~/lab/app</b> <span class="dim">· a git repo ✓</span></div>
+    <div class="b dim">all your agents share this folder and know about each other. no worktrees to merge.</div>
+    <div class="b">one honest thing: <span class="acc">agents run commands here without asking you.</span> <span class="dim">git is your safety net, so commit often. ⚠ an approval mode is not built yet.</span></div>
+    <div class="hint">enter ok · o another folder</div>
+  </div>
+
+  <!-- 5 how it works -->
+  <div class="screen" data-s="4" style="padding-left:14ch">
+    <div class="dim">how it works, in three lines:</div>
+    <div class="line" data-l><span class="who dim">›</span>you talk to me. i start agents for the work, in the background.</div>
+    <div class="line" data-l><span class="who"><span class="pulse">∿</span></span>they show up on the right. ⌥ + number to look inside, esc to come back.</div>
+    <div class="line" data-l><span class="who acc">?</span>when someone needs you, you get a card. the rest can wait.</div>
+    <div class="hint line" data-l>enter, and say what's on your mind.</div>
+  </div>
+
+  <!-- 6 first run with just-in-time hints -->
+  <div class="screen" data-s="5" style="padding:0">
+    <div class="app">
+      <div class="head"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim" id="fcount">no agents yet</span></div>
+      <div class="feed" id="ffeed"><div class="b dim">what's on your mind?</div><div class="b dim">say it and keep talking. the work runs in the background, i'm always here.</div></div>
+      <div class="panel"><div>agents <span class="faint">· ⌥ + number to switch</span></div><div id="frows"><div class="row"><span><span class="faint">0</span> <span class="acc">:*</span> main</span></div></div></div>
+      <div class="foot"><span class="dim">›</span> <span id="fin"></span><span class="cur"></span></div>
+      <div class="tip" id="tip1" style="right:31ch; top:48px">new: your agents. they work in the background. <b>⌥ 1</b> to look inside, <b>esc</b> to come back. →</div>
+      <div class="tip" id="tip2" style="left:4ch; top:210px">agents talk to each other. it stays dim: you can ignore it, or <b>▸</b> to read.</div>
+      <div class="tip" id="tip3" style="left:4ch; bottom:60px">a card: someone needs you. type your answer, <b>alt+r</b> sends it. ↓</div>
+    </div>
+  </div>
+
+  <div class="step" id="dots"></div>
+</div>
+<div class="controls"><button id="next">next (enter)</button><button id="again">start over</button> <span id="where"></span></div>
+
+<script>
+const screens = [...document.querySelectorAll(".screen")];
+let cur = 0, timers = [];
+const later = (ms, f) => timers.push(setTimeout(f, ms));
+const type = (el, text, ms, done) => { let i = 0; const go = () => { el.textContent = text.slice(0, ++i); if (i < text.length) later(ms, go); else done && done(); }; go(); };
+function dots() { document.getElementById("dots").innerHTML = screens.map((_, i) => `<span class="${i === cur ? "on" : ""}">${i === cur ? "●" : "○"}</span>`).join(" "); }
+function show(i) {
+  timers.forEach(clearTimeout); timers = [];
+  cur = i; screens.forEach((s, k) => s.classList.toggle("on", k === i)); dots();
+  document.getElementById("where").textContent = ["welcome", "theme", "model", "folder", "how it works", "first run"][i];
+  ({ 0: welcome, 4: lines, 5: firstRun })[i]?.();
+}
+function welcome() {
+  const w1 = document.getElementById("w1"), wk = document.getElementById("wk"), w2 = document.getElementById("w2"), w3 = document.getElementById("w3");
+  w1.textContent = ""; w2.textContent = ""; w3.textContent = ""; wk.classList.remove("go");
+  later(300, () => type(w1, "hi, i'm bise ", 70, () => later(250, () => {
+    wk.classList.add("go");
+    later(1100, () => type(w2, "you, but with way more hands.", 35, () => later(500, () => type(w3, "press enter ↵", 30))));
+  })));
+}
+function lines() {
+  const ls = [...screens[4].querySelectorAll("[data-l]")]; ls.forEach((l) => l.classList.remove("show"));
+  ls.forEach((l, i) => later(400 + i * 900, () => l.classList.add("show")));
+}
+function firstRun() {
+  const feed = document.getElementById("ffeed"), rows = document.getElementById("frows"), fin = document.getElementById("fin"), count = document.getElementById("fcount");
+  feed.innerHTML = '<div class="b dim">what\'s on your mind?</div><div class="b dim">say it and keep talking. the work runs in the background, i\'m always here.</div>';
+  rows.innerHTML = '<div class="row"><span><span class="faint">0</span> <span class="acc">:*</span> main</span></div>'; fin.textContent = ""; count.textContent = "no agents yet";
+  document.querySelectorAll(".tip").forEach((t) => t.classList.remove("show"));
+  const add = (h) => { const d = document.createElement("div"); d.innerHTML = h; d.style.animation = "fade .4s"; feed.append(d); };
+  const agent = (n, name) => { const d = document.createElement("div"); d.className = "row"; d.innerHTML = `<span><span class="faint">${n}</span> <span class="pulse">∿</span> ${name}</span><span class="dim">now</span>`; rows.append(d); };
+  const msg = "fix the flaky login test, and draft the release note";
+  later(800, () => type(fin, msg, 40, () => later(400, () => {
+    feed.innerHTML = ""; fin.textContent = "";
+    add(`<div class="b"><span class="who dim">›</span>${msg}</div>`);
+    later(700, () => { add('<div class="b"><span class="who acc">:*</span>on it: auth-fix takes the test, release takes the note.</div>'); agent(1, "auth-fix"); later(300, () => agent(2, "release")); count.innerHTML = '<span class="pulse">∿</span> 2 working'; });
+    later(1500, () => document.getElementById("tip1").classList.add("show"));
+    later(5000, () => { document.getElementById("tip1").classList.remove("show");
+      add('<div class="b l3">✉ auth-fix → release  heads-up, the fix touches CHANGELOG.md</div><div class="l3">✉ release → auth-fix  ok, i\'ll add it under fixes.</div>');
+      later(500, () => document.getElementById("tip2").classList.add("show")); });
+    later(9000, () => { document.getElementById("tip2").classList.remove("show");
+      add('<div class="b l1"><div class="t">? auth-fix needs you</div><div>the test is flaky because of a 2 s timeout. raise it to 5 s, or mock the clock?</div></div>');
+      count.innerHTML = '<span class="pulse">∿</span> 1 working · <span class="acc">? 1 needs you</span>';
+      later(600, () => document.getElementById("tip3").classList.add("show")); });
+    later(14000, () => { document.getElementById("tip3").classList.remove("show");
+      add('<div class="b dim">that\'s all the tour there is. each hint shows up once, the first time it matters.</div>'); });
+  })));
+}
+// theme: ←→
+function pickTheme(t) { document.querySelectorAll(".prev").forEach((p) => p.classList.toggle("sel", p.dataset.t === t)); }
+document.querySelectorAll(".prev").forEach((p) => p.onclick = () => pickTheme(p.dataset.t));
+// model: ↑↓
+let opt = 0; const opts = [...document.querySelectorAll("[data-o]")];
+const pickOpt = (k) => { opt = (k + opts.length) % opts.length; opts.forEach((o, i) => o.classList.toggle("sel", i === opt)); };
+opts.forEach((o, i) => o.onclick = () => pickOpt(i));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); if (cur < screens.length - 1) show(cur + 1); }
+  if (cur === 1 && (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown")) pickTheme(document.querySelector(".prev.sel").dataset.t === "dark" ? "light" : "dark");
+  if (cur === 2 && e.key === "ArrowDown") pickOpt(opt + 1);
+  if (cur === 2 && e.key === "ArrowUp") pickOpt(opt - 1);
+});
+document.getElementById("next").onclick = () => show(Math.min(cur + 1, screens.length - 1));
+document.getElementById("again").onclick = () => show(0);
+const q = new URLSearchParams(location.search); show(+(q.get("s") ?? 0));
+</script>
+</body>
+</html>

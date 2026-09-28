@@ -227,6 +227,28 @@ toggles all outputs.
   is not in the loop. esc back to main."
 - Composer at the bottom: `› ` prompt, key hints on the right, dim.
 
+## Onboarding (first launch)
+
+Mockup: [tui-onboarding.html](tui-onboarding.html). Inspired by Vibe's
+(`vibe/setup/onboarding`: typed welcome, live theme preview, one choice per
+screen). Six steps, `enter` to go on:
+
+1. **Welcome.** Typed: "hi, i'm bise", then the `:*` pops in blush, then
+   "you, but with way more hands." and "press enter ↵".
+2. **Theme.** "your terminal looks dark, so i picked dark." Two live
+   previews side by side; ←→ switches, `/theme` changes it later.
+3. **Model.** "which model should do the work?" A key found in the
+   environment comes first ("use ANTHROPIC_API_KEY · found"). **⚠** The list
+   depends on the providers bise ships with; browser sign-in is not built.
+4. **Folder, and one honest thing.** "i'll work in ~/lab/app · a git repo ✓.
+   all your agents share this folder." Then: "agents run commands here without
+   asking you. git is your safety net." **⚠** No approval mode yet.
+5. **How it works, in three lines.** `›` you talk, `∿` agents on the right
+   (⌥ + number, esc), `?` a card when someone needs you.
+6. **The real first run, with just-in-time hints.** No tour: each hint shows
+   once, next to the thing, the first time it happens (first agent, first
+   messages between agents, first card), and goes away when you use it.
+
 ## Coverage of today's features
 
 Checked against `rust/tui` on 2026-09-28 (`help.rs` rows, `sb/panel.rs`,
@@ -273,6 +295,8 @@ To implement:
     runs in the background, i'm always here."
 13. Header: `bise :*` and the live counts.
 14. Lowercase chrome (proper nouns and acronyms excepted).
+15. Onboarding: the 6 steps above, and the one-time hints (stored, so each
+    shows once per user).
 
 Open questions:
 
