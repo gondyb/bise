@@ -88,6 +88,11 @@ enum Msg {
         stream: UnixStream,
         v: Value,
     },
+    /// `sb version …` (one request, one answer).
+    Version {
+        stream: UnixStream,
+        v: Value,
+    },
     /// A line for main's thread (the version switcher).
     Notice {
         kind: String,
@@ -170,6 +175,182 @@ fn free_port() -> std::io::Result<u16> {
 }
 
 impl Shell {
+    /// `version` op (`/version` in the TUI, `sb version`): list the
+    /// versions, switch to one (built first when needed), roll back.
+    /// Answers a text for the user.
+    fn version_op(&mut self, v: &Value) -> String {
+        use crate::switch;
+        let s = |k: &str| {
+            v.get(k)
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string()
+        };
+        let paths = self.opts.paths.clone();
+        let st = switch::read_state(&paths);
+        let root = &self.opts.app_root;
+        let me = switch::version_info(root);
+        let id_of = |p: &str| {
+            switch::version_info(Path::new(p))
+                .get("id")
+                .and_then(|x| x.as_str())
+                .map(String::from)
+                .unwrap_or_else(|| p.to_string())
+        };
+        let repo = me
+            .get("repo")
+            .and_then(|x| x.as_str())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| root.clone());
+        let versions_dir = if root.join("VERSION").exists() {
+            root.parent().map(|p| p.to_path_buf())
+        } else {
+            None
+        }
+        .unwrap_or_else(|| {
+            let base = std::env::var("XDG_STATE_HOME")
+                .ok()
+                .filter(|d| !d.is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local/state")
+                });
+            base.join("switchboard/versions")
+        });
+        match s("do").as_str() {
+            "" | "list" => {
+                let cur = me.get("id").and_then(|x| x.as_str()).unwrap_or("arbre de dev");
+                let mut out = vec![format!(
+                    "version courante : {} — {}",
+                    cur,
+                    me.get("subject").and_then(|x| x.as_str()).unwrap_or(&root.to_string_lossy())
+                )];
+                for (k, label) in [("good", "dernière bonne"), ("previous", "précédente")] {
+                    if let Some(p) = st.get(k).and_then(|x| x.as_str()) {
+                        out.push(format!("{} : {}", label, id_of(p)));
+                    }
+                }
+                if let Some(f) = st.get("failed") {
+                    out.push(format!(
+                        "dernier échec : {} ({})",
+                        id_of(f.get("version").and_then(|x| x.as_str()).unwrap_or("")),
+                        f.get("reason").and_then(|x| x.as_str()).unwrap_or("")
+                    ));
+                }
+                let log = Command::new("git")
+                    .args(["log", "-12", "--format=%h %s"])
+                    .current_dir(&repo)
+                    .output()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                    .unwrap_or_default();
+                out.push(format!("commits ({}) — ● construit :", repo.display()));
+                for l in log.lines() {
+                    let h = l.split(' ').next().unwrap_or("");
+                    let built = versions_dir.join(h).join("VERSION").exists();
+                    out.push(format!("  {} {}", if built { "●" } else { "○" }, clip(l, 100)));
+                }
+                out.push(
+                    "/version <commit> : passer à ce commit (build si besoin) · /version tree : l'arbre de travail · /version back : revenir"
+                        .into(),
+                );
+                out.join("\n")
+            }
+            "rollback" | "back" if switch::switch_running(&paths) => {
+                // on probation: the switcher itself goes back
+                switch::abort_probation(&paths);
+                "retour à la version précédente (la période d'essai est interrompue)".into()
+            }
+            "switch" if switch::switch_running(&paths) => {
+                "un changement de version est en cours (période d'essai) : attends sa fin, ou /version back".into()
+            }
+            "rollback" | "back" => {
+                let cur = root.canonicalize().unwrap_or_else(|_| root.clone());
+                let target = ["good", "previous"].iter().find_map(|k| {
+                    st.get(*k)
+                        .and_then(|x| x.as_str())
+                        .map(PathBuf::from)
+                        .filter(|p| p.canonicalize().map(|c| c != cur).unwrap_or(false))
+                });
+                match target {
+                    Some(t) => {
+                        self.start_switch(&t);
+                        format!("retour à la version {}", id_of(&t.to_string_lossy()))
+                    }
+                    None => "pas d'autre version où revenir".into(),
+                }
+            }
+            "switch" => {
+                let to = s("to");
+                if to.is_empty() {
+                    return "à quelle version ? (un commit, un id, un dossier, ou tree)".into();
+                }
+                // a version dir, a built id, else a git revision to build
+                let dir = PathBuf::from(&to);
+                let target = if dir.join("bend-harness").exists() {
+                    Some(dir)
+                } else if versions_dir.join(&to).join("bend-harness").exists() {
+                    Some(versions_dir.join(&to))
+                } else {
+                    None
+                };
+                if let Some(t) = target {
+                    self.start_switch(&t);
+                    return format!("passage à la version {}", id_of(&t.to_string_lossy()));
+                }
+                let script = repo.join("versions.sh");
+                if !script.exists() {
+                    return format!("versions.sh introuvable dans {}", repo.display());
+                }
+                let rev = if to == "tree" { "--tree".to_string() } else { to.clone() };
+                let exe = self.opts.exe.clone();
+                let tx = self.tx.clone();
+                let answer = format!(
+                    "build de {} en cours (sans rien interrompre), puis passage à cette version",
+                    to
+                );
+                std::thread::spawn(move || {
+                    let out = Command::new(&script)
+                        .args(["build", &rev])
+                        .current_dir(&repo)
+                        .stdin(Stdio::null())
+                        .output();
+                    let note = |kind: &str, text: String| {
+                        let _ = tx.send(Msg::Notice {
+                            kind: kind.into(),
+                            text,
+                        });
+                    };
+                    match out {
+                        Ok(o) if o.status.success() => {
+                            let dir = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                            spawn_switcher(&paths, &exe, Path::new(&dir));
+                        }
+                        Ok(o) => {
+                            let err = String::from_utf8_lossy(&o.stderr).to_string();
+                            let tail: Vec<&str> = err.lines().rev().take(4).collect();
+                            note(
+                                "warn",
+                                format!(
+                                    "build de {} échoué : {}",
+                                    to,
+                                    tail.into_iter().rev().collect::<Vec<_>>().join(" ⏎ ")
+                                ),
+                            );
+                        }
+                        Err(e) => note("warn", format!("build de {} : {}", to, e)),
+                    }
+                });
+                answer
+            }
+            other => format!("version : action inconnue {}", other),
+        }
+    }
+
+    fn start_switch(&self, to: &Path) {
+        spawn_switcher(&self.opts.paths, &self.opts.exe, to);
+    }
+
     /// Save how far each wire log was processed: the next hub adopts
     /// the REPLs from there.
     fn flush_offsets(&mut self) {
@@ -540,6 +721,8 @@ impl Shell {
                 "ev": "hello",
                 "workspace": self.hub.workspace,
                 "state_dir": self.opts.paths.state.to_string_lossy(),
+                "exe": self.opts.exe.to_string_lossy(),
+                "version": crate::switch::version_info(&self.opts.app_root),
             }),
         ) && write_json(&mut stream, &self.hub.snapshot(now_ms()));
         if !ok {
@@ -565,6 +748,12 @@ impl Shell {
     fn client_line(&mut self, id: ClientId, v: Value) {
         let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
         match s("op").as_str() {
+            "version" => {
+                let text = self.version_op(&v);
+                if let Some(c) = self.clients.get_mut(&id) {
+                    write_json(c, &json!({"ev": "notice", "text": text}));
+                }
+            }
             "input" => self.step(Input::ClientInput {
                 client: id,
                 focus: s("focus"),
@@ -707,6 +896,31 @@ impl Shell {
                 }
             },
         }
+    }
+}
+
+/// `exe sbswitch --to <dir>`: detached, from THIS (known good) binary;
+/// it outlives this hub, which it replaces.
+fn spawn_switcher(paths: &Paths, exe: &Path, to: &Path) {
+    use std::os::unix::process::CommandExt;
+    let err = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(paths.state.join("hub.err"));
+    let mut cmd = Command::new(exe);
+    cmd.arg("sbswitch")
+        .arg("--workspace")
+        .arg(&paths.workspace)
+        .arg("--to")
+        .arg(to)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .process_group(0);
+    if let Ok(f) = err {
+        cmd.stderr(Stdio::from(f));
+    }
+    if let Err(e) = cmd.spawn() {
+        log_line(paths, &format!("sbswitch: {}", e));
     }
 }
 
@@ -1057,6 +1271,9 @@ fn accept_loop(listener: UnixListener, tx: Sender<Msg>) {
                         v,
                     });
                 }
+                Some("version") => {
+                    let _ = tx.send(Msg::Version { stream, v });
+                }
                 Some("notice") => {
                     let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
                     let _ = tx.send(Msg::Notice {
@@ -1351,6 +1568,10 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 }
             }
             Msg::AgentNew { token, stream, v } => sh.agent_request(token, stream, v),
+            Msg::Version { mut stream, v } => {
+                let text = sh.version_op(&v);
+                write_json(&mut stream, &json!({"ok": true, "text": text}));
+            }
             Msg::Notice { kind, text } => {
                 let kind = if kind == "warn" { "warn" } else { "info" };
                 sh.feed(MAIN, &format!("sb {} : {}", kind, wire_escape(&text)));

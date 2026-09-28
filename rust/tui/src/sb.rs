@@ -111,6 +111,8 @@ pub(super) struct Sb {
     ready: bool,
     /// Ctrl+O: a shell to open in this directory (RFC 0002 §6).
     shell: Option<String>,
+    /// The version the hub runs (its VERSION id), for the status row.
+    version: String,
     /// The card box above the composer (Ctrl+G), never opened by the hub.
     card: CardView,
 }
@@ -206,6 +208,11 @@ pub(super) static SB_MODE: std::sync::atomic::AtomicBool =
 
 pub(super) const SB_COMMANDS: &[Cmd] = &[
     Cmd {
+        name: "/version",
+        desc: "versions de Switchboard : /version [<commit>|tree|back]",
+        args: true,
+    },
+    Cmd {
         name: "/new",
         desc: "créer une tâche : /new [-w] [nom:] objectif",
         args: true,
@@ -280,6 +287,33 @@ pub(super) fn take_shell(app: &mut App) -> Option<String> {
 }
 
 /// Route one hub event.
+/// The executable this TUI should re-exec as (the hub switched to
+/// another version): taken by the caller once the terminal is restored.
+static REEXEC: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// The hub runs `exe`: another binary than ours (and one that exists)
+/// means another version, which this TUI must follow. Only in a
+/// terminal: the line mode has nothing to keep.
+fn follow_hub_exe(exe: &str) -> bool {
+    let canon = |p: &std::path::Path| p.canonicalize().ok();
+    let theirs = canon(std::path::Path::new(exe));
+    let ours = std::env::current_exe().ok().and_then(|p| canon(&p));
+    let differs = theirs.is_some() && theirs != ours;
+    if differs && io::stdout().is_terminal() {
+        if let Ok(mut r) = REEXEC.lock() {
+            *r = Some(exe.to_string());
+        }
+        return true;
+    }
+    false
+}
+
+/// After `run_switchboard` returned: the binary to exec to follow the
+/// hub's version, if it asked for one.
+pub fn take_reexec() -> Option<String> {
+    REEXEC.lock().ok().and_then(|mut r| r.take())
+}
+
 /// Markers of the reader thread (not JSON): the hub went away / is back.
 const HUB_DOWN: &str = "\u{0}hub-down";
 const HUB_UP: &str = "\u{0}hub-up";
@@ -357,6 +391,16 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
         "hello" => {
             if let Some(sb) = app.sb.as_mut() {
                 sb.workspace = s("workspace");
+                sb.version = v
+                    .pointer("/version/id")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+            }
+            // the hub runs another version: this TUI follows it
+            let exe = s("exe");
+            if !exe.is_empty() && follow_hub_exe(&exe) {
+                app.should_quit = true;
             }
         }
         "ready" => {
@@ -508,6 +552,15 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     let first = typed.split_whitespace().next().unwrap_or("");
     match first {
         "/quit" | "/exit" => app.should_quit = true,
+        "/version" => {
+            let arg = typed.split_whitespace().nth(1).unwrap_or("");
+            let req = match arg {
+                "" | "list" => json!({"op": "version", "do": "list"}),
+                "back" | "rollback" => json!({"op": "version", "do": "rollback"}),
+                to => json!({"op": "version", "do": "switch", "to": to}),
+            };
+            sb.send(req);
+        }
         "/clear" => {
             app.events.clear();
             app.cache.clear();
@@ -1008,6 +1061,12 @@ pub(super) fn status_line(app: &App) -> Option<Line<'static>> {
     let sb = app.sb.as_ref()?;
     let a = sb.agent(&sb.focus).cloned().unwrap_or_default();
     let mut spans: Vec<Span<'static>> = Vec::new();
+    if !sb.version.is_empty() {
+        spans.push(Span::styled(
+            format!("  v {}", sb.version.chars().take(24).collect::<String>()),
+            Style::default().fg(DIM),
+        ));
+    }
     if app.pending {
         spans.push(Span::styled(
             format!("  {} ", spinner_frame(app.tick / 2)),
@@ -1280,25 +1339,6 @@ fn hub_reader(
     }
 }
 
-/// A fresh switchboard state over the hub connection `writer`.
-fn new_sb(writer: std::sync::Arc<std::sync::Mutex<UnixStream>>, workspace: String) -> Sb {
-    Sb {
-        writer,
-        workspace,
-        focus: "main".to_string(),
-        views: HashMap::new(),
-        agents: Vec::new(),
-        cards: Vec::new(),
-        card: CardView::default(),
-        selected: None,
-        preview: false,
-        confirm: None,
-        activity: HashMap::new(),
-        ready: false,
-        shell: None,
-    }
-}
-
 pub fn run_switchboard(
     stream: UnixStream,
     socket: std::path::PathBuf,
@@ -1313,7 +1353,22 @@ pub fn run_switchboard(
         let writer = writer.clone();
         thread::spawn(move || hub_reader(reader, socket, writer, tx));
     }
-    let sb = new_sb(writer, workspace.clone());
+    let sb = Sb {
+        writer,
+        workspace: workspace.clone(),
+        focus: "main".to_string(),
+        views: HashMap::new(),
+        agents: Vec::new(),
+        cards: Vec::new(),
+        card: CardView::default(),
+        selected: None,
+        preview: false,
+        confirm: None,
+        activity: HashMap::new(),
+        ready: false,
+        shell: None,
+        version: String::new(),
+    };
     let mut app = App {
         connected: true,
         debug,
@@ -1455,9 +1510,6 @@ fn print_hub_event(raw: &str) {
         _ => {}
     }
 }
-
-#[cfg(test)]
-mod bench;
 
 #[cfg(test)]
 mod nav_key_tests {

@@ -265,7 +265,27 @@ fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
         paths.socket(),
         paths.workspace.to_string_lossy().to_string(),
         debug,
-    )
+    )?;
+    // the hub switched to another version: this TUI becomes that
+    // version's TUI (the terminal is restored; the new one reconnects)
+    if let Some(next) = bend_tui::take_reexec() {
+        use std::os::unix::process::CommandExt;
+        let root = std::path::Path::new(&next)
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or(root);
+        let mut cmd = Command::new(&next);
+        cmd.arg("switchboard")
+            .arg("--workspace")
+            .arg(&paths.workspace)
+            .current_dir(&root);
+        if debug {
+            cmd.arg("--debug");
+        }
+        let err = cmd.exec();
+        eprintln!("changement de version de la TUI : {}", err);
+    }
+    Ok(())
 }
 
 fn main() -> std::io::Result<()> {

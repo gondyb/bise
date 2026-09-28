@@ -151,7 +151,15 @@ fn start_hub(paths: &Paths, root: &Path) -> std::io::Result<std::process::Child>
         .create(true)
         .append(true)
         .open(paths.state.join("hub.err"))?;
-    Command::new(root.join("bend-harness"))
+    // a version dir has bend-harness at its root; the dev tree in rust/target
+    let exe = [
+        root.join("bend-harness"),
+        root.join("rust/target/debug/bend-harness"),
+    ]
+    .into_iter()
+    .find(|p| p.exists())
+    .unwrap_or_else(|| root.join("bend-harness"));
+    Command::new(exe)
         .arg("sbd")
         .arg("--workspace")
         .arg(&paths.workspace)
@@ -244,6 +252,19 @@ fn probation(paths: &Paths, period: Duration) -> Result<(), String> {
     Ok(())
 }
 
+/// A switcher is running (a switch on probation).
+pub fn switch_running(paths: &Paths) -> bool {
+    std::fs::read_to_string(paths.state.join("switch.pid"))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .is_some_and(alive)
+}
+
+/// Roll back the switch on probation now (the user asked).
+pub fn abort_probation(paths: &Paths) {
+    let _ = std::fs::write(fail_file(paths), "retour demandé");
+}
+
 /// `sbswitch --to <version dir> [--probation <s>]`: the whole switch.
 pub fn run(paths: &Paths, to: &Path, period: Duration) -> i32 {
     let lock = paths.state.join("switch.pid");
@@ -264,7 +285,7 @@ pub fn run(paths: &Paths, to: &Path, period: Duration) -> i32 {
 
 fn run_locked(paths: &Paths, to: &Path, period: Duration) -> i32 {
     let to = to.canonicalize().unwrap_or_else(|_| to.to_path_buf());
-    if !to.join("bend-harness").exists() || !to.join("repl-live").exists() {
+    if !to.join("repl-live").exists() {
         notice(
             paths,
             "warn",

@@ -21,6 +21,7 @@ sb spawn <name> --objective \"…\" [--context \"…\"] [--constraint \"…\"]..
 sb interrupt <task> | sb stop <task> \"<reason>\" | sb drop <task>
 sb card \"<question for the user>\" [--for m_<n>]
 sb history \"<query>\"
+sb version [list | switch <commit|id|tree> | rollback]   (versions of Switchboard itself)
 A text argument `-` reads the text from stdin.";
 
 /// Split flags from positional words. `flags` take a value, `switches`
@@ -326,7 +327,37 @@ pub fn render(cmd: &str, v: &Value) -> (bool, String) {
 }
 
 /// `sb …` entry point: the process exit code.
+/// `sb version [list | switch <commit|id|tree> | rollback]`: the
+/// versions of Switchboard itself (a hub op, not an agent request).
+fn version(args: &[String]) -> i32 {
+    let socket = std::env::var("SB_SOCKET").unwrap_or_default();
+    if socket.is_empty() {
+        eprintln!("sb : SB_SOCKET manque");
+        return 2;
+    }
+    let what = args.get(1).map(|s| s.as_str()).unwrap_or("list");
+    let req = json!({"op": "version", "do": what, "to": args.get(2).cloned().unwrap_or_default()});
+    match crate::client::request_retry(
+        std::path::Path::new(&socket),
+        &req,
+        Duration::from_secs(30),
+        what == "list",
+    ) {
+        Ok(v) => {
+            println!("{}", v.get("text").and_then(|t| t.as_str()).unwrap_or(""));
+            0
+        }
+        Err(e) => {
+            eprintln!("sb : {}", e);
+            1
+        }
+    }
+}
+
 pub fn main(args: &[String]) -> i32 {
+    if args.first().map(|s| s.as_str()) == Some("version") {
+        return version(args);
+    }
     let req = match build(args) {
         Ok(r) => r,
         Err(e) => {

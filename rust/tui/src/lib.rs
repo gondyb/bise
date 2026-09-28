@@ -48,7 +48,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 // complete, error red).
 mod sb;
 mod skills;
-pub use sb::run_switchboard;
+pub use sb::{run_switchboard, take_reexec};
 
 const BRAND: Color = Color::Rgb(0xfa, 0xb2, 0x83); // primary
 const ACCENT: Color = Color::Rgb(0x9d, 0x7c, 0xd8); // markdownHeading
@@ -455,62 +455,11 @@ fn parse_line(line: &str) -> Option<Ev> {
 // ---- the codex-style layout cache ----
 // Events render to wrapped rows ONCE (per width / per mutation); every
 // frame only the visible slice is cloned into the paragraph. A running
-// tool re-renders only its tool line each frame (spinner, elapsed): its
-// body (a source block can be thousands of rows) stays cached.
+// tool re-renders each frame because its elapsed ticks live.
 
 struct EventRows {
     width: u16,
     rows: Vec<Line<'static>>,
-    /// A running tool: where its tool line sits in `rows`, and what it
-    /// needs to be redrawn alone.
-    live: Option<LiveHead>,
-}
-
-struct LiveHead {
-    at: usize,
-    len: usize,
-    name: String,
-    args: String,
-}
-
-fn event_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> EventRows {
-    let running = match &events[i] {
-        Ev::Tool(td) if matches!(td.state, ToolState::Run) && ev_visible(&events[i], debug) => Some(td),
-        _ => None,
-    };
-    let Some(td) = running else {
-        return EventRows {
-            width: width as u16,
-            rows: build_rows(events, i, debug, width, tick),
-            live: None,
-        };
-    };
-    let prev = events[..i].iter().rev().find(|e| ev_visible(e, debug));
-    let mut rows: Vec<Line<'static>> = Vec::new();
-    if wants_gap_before(&events[i], prev) {
-        rows.push(Line::from(""));
-    }
-    let (name, args, code) = tool_meta(td);
-    let at = rows.len();
-    rows.extend(wrap_line(tool_head(td, tick, &name, &args), width));
-    let len = rows.len() - at;
-    for l in tool_body(td, &code, width) {
-        rows.extend(wrap_line(l, width));
-    }
-    EventRows {
-        width: width as u16,
-        rows,
-        live: Some(LiveHead { at, len, name, args }),
-    }
-}
-
-/// Redraw the tool line of a running tool, keep the rest.
-fn refresh_live(er: &mut EventRows, ev: &Ev, tick: u32) {
-    let (Some(lh), Ev::Tool(td)) = (er.live.as_mut(), ev) else { return };
-    let head = wrap_line(tool_head(td, tick, &lh.name, &lh.args), er.width as usize);
-    let n = head.len();
-    er.rows.splice(lh.at..lh.at + lh.len, head);
-    lh.len = n;
 }
 
 fn line_from(cells: Vec<(char, Style)>) -> Line<'static> {
@@ -1901,8 +1850,7 @@ fn elapsed_label(elapsed: &Option<String>) -> String {
     }
 }
 
-// the name and the one-line args of a tool, and its decoded source
-fn tool_meta(td: &ToolData) -> (String, String, Option<(CodeLang, String)>) {
+fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
     let name = td.name.clone().unwrap_or_else(|| format!("#{}", td.id));
     // the source of a code tool (run_typescript, bash, apply_patch), when
     // the runtime sent it: rendered in full, highlighted, under the line
@@ -1924,12 +1872,7 @@ fn tool_meta(td: &ToolData) -> (String, String, Option<(CodeLang, String)>) {
             .map(|a| args_preview(&name, a))
             .unwrap_or_default(),
     };
-    (name, args, code)
-}
-
-// the tool line itself: the only part of a running tool that changes
-// from one frame to the next (spinner, elapsed)
-fn tool_head(td: &ToolData, tick: u32, name: &str, args: &str) -> Line<'static> {
+    let elapsed = fmt_elapsed(td.started);
     let args_span = |st: Style| {
         Span::styled(
             if args.is_empty() {
@@ -1940,32 +1883,28 @@ fn tool_head(td: &ToolData, tick: u32, name: &str, args: &str) -> Line<'static> 
             st,
         )
     };
+    let mut ls = Vec::new();
     match td.state {
-        ToolState::Run => Line::from(vec![
+        ToolState::Run => ls.push(Line::from(vec![
             Span::styled("  ", Style::default()),
             Span::styled(spinner_frame(tick / 2), Style::default().fg(BRAND)),
             Span::styled(format!(" {}", name), Style::default().fg(TEXT)),
-            Span::styled(format!(" {}", fmt_elapsed(td.started)), Style::default().fg(DIM)),
+            Span::styled(format!(" {}", elapsed), Style::default().fg(DIM)),
             args_span(Style::default().fg(DIM)),
-        ]),
-        ToolState::Ok => Line::from(vec![
+        ])),
+        ToolState::Ok => ls.push(Line::from(vec![
             Span::styled(format!("  {} ", GLYPH_OK), Style::default().fg(OK)),
-            Span::styled(name.to_string(), Style::default().fg(TOOL)),
+            Span::styled(name.clone(), Style::default().fg(TOOL)),
             Span::styled(elapsed_label(&td.elapsed), Style::default().fg(TOOL)),
             args_span(Style::default().fg(TOOL)),
-        ]),
-        ToolState::Fail => Line::from(vec![
+        ])),
+        ToolState::Fail => ls.push(Line::from(vec![
             Span::styled(format!("  {} ", GLYPH_ERR), Style::default().fg(ERR)),
-            Span::styled(name.to_string(), Style::default().fg(ERR)),
+            Span::styled(name.clone(), Style::default().fg(ERR)),
             Span::styled(elapsed_label(&td.elapsed), Style::default().fg(ERR)),
             args_span(Style::default().fg(ERR)),
-        ]),
+        ])),
     }
-}
-
-// everything under the tool line: the result preview, the source block
-fn tool_body(td: &ToolData, code: &Option<(CodeLang, String)>, width: usize) -> Vec<Line<'static>> {
-    let mut ls = Vec::new();
     if let Some((ok, preview)) = &td.result {
         if !preview.trim().is_empty() {
             ls.push(Line::from(vec![
@@ -1978,16 +1917,9 @@ fn tool_body(td: &ToolData, code: &Option<(CodeLang, String)>, width: usize) -> 
         }
     }
     // the source block: the FULL code, highlighted, in a bordered box
-    if let Some((lang, src)) = code {
+    if let Some((lang, src)) = &code {
         ls.extend(code_block_lines(src, *lang, &td.state, width));
     }
-    ls
-}
-
-fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
-    let (name, args, code) = tool_meta(td);
-    let mut ls = vec![tool_head(td, tick, &name, &args)];
-    ls.extend(tool_body(td, &code, width));
     ls
 }
 
@@ -2527,13 +2459,16 @@ fn draw(app: &mut App, frame: &mut Frame) {
     let mut starts: Vec<usize> = Vec::with_capacity(n);
     let mut total_rows = 0usize;
     for i in 0..n {
+        let live = matches!(&app.events[i], Ev::Tool(td) if matches!(td.state, ToolState::Run));
         let stale = app.cache[i]
             .as_ref()
-            .is_none_or(|c| c.width != area_w as u16);
+            .is_none_or(|c| c.width != area_w as u16 || live);
         if stale {
-            app.cache[i] = Some(event_rows(&app.events, i, app.debug, area_w, app.tick));
-        } else if let Some(c) = app.cache[i].as_mut() {
-            refresh_live(c, &app.events[i], app.tick);
+            let rows = build_rows(&app.events, i, app.debug, area_w, app.tick);
+            app.cache[i] = Some(EventRows {
+                width: area_w as u16,
+                rows,
+            });
         }
         starts.push(total_rows);
         total_rows += app.cache[i].as_ref().map(|c| c.rows.len()).unwrap_or(0);
