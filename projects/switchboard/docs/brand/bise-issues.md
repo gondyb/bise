@@ -799,6 +799,14 @@ Index:
     `feed::toggle_event`, so `feed::toggle_all_outputs` stays unbound
     (F may drop it). Free ctrl keys found, if one is needed later:
     `ctrl+y`, `ctrl+s`, `ctrl+q`.
+  - **User decision (bcfb8c2):** the key is now **`ctrl+o`** (like Claude
+    Code), same one state, now through `feed::anything_closed` /
+    `set_everything` (1a667af). `ctrl+t` is removed, with no alias. The
+    `ctrl+o` shell in the agent's folder is removed (key arm, `Sb.shell`,
+    `take_shell`, the run.rs block): the terminal panel (``ctrl+` `` /
+    `ctrl+space`) is the one shell. Help rows, the solo hint row and book
+    §11 / §16 are updated. `tui-screens.html` and `site/index.html` still
+    say `ctrl+t` (main / marketing).
   - **`space`:** on the item selected in the feed (`app.feed_sel`, after
     a drag or a double click; a plain click already toggles and leaves no
     selection), with an empty composer: `feed::toggle_selected`. An agent
