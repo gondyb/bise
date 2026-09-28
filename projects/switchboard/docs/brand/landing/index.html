@@ -73,7 +73,11 @@
   #why .inner { max-width:78ch; } #why p { max-width:64ch; }
 
   /* the demo */
-  .demo { padding:0 5vw 10vh; display:flex; justify-content:center; }
+  .demo { padding:12vh 5vw 10vh; display:flex; justify-content:center; }
+  .dhead { text-align:center; margin:0 auto 44px; max-width:64ch; }
+  .dhead p { margin:0 auto; }
+  .thead { display:flex; justify-content:space-between; padding:14px 3ch 0; font-weight:700; }
+  .thead .faint { font-weight:400; }
   .term { width:104ch; max-width:100%; background:var(--soft); border-radius:12px; font-size:13.5px; line-height:1.6; overflow:hidden; text-align:left; }
   .screen { display:grid; grid-template-columns:minmax(0,1fr) 28ch; height:420px; }
   .feed { padding:18px 3ch 10px; overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end; }
@@ -181,7 +185,9 @@
 <!-- demo -->
 <div class="demo blow">
   <div>
+    <div class="dhead"><div class="kicker">watch</div><h2>this is what flow looks like.</h2><p class="soft">one conversation with main. the agents work on the side. you never stop typing.</p></div>
     <div class="term" aria-label="a bise session, animated">
+      <div class="thead"><span>bise <span class="acc">:*</span></span><span class="faint">~/acme</span></div>
       <div class="screen">
         <div class="feed" id="feed"></div>
         <div class="panel"><div class="h">agents · ⌥ + number</div><div id="agents"></div></div>
@@ -191,7 +197,7 @@
         <div class="composer"><span class="acc">›</span> <span id="typed"></span><span class="cur"></span></div>
       </div>
     </div>
-    <div class="caption">you never wait. you keep typing while the agents work.</div>
+    <div class="caption">a session, sped up.</div>
   </div>
 </div>
 
