@@ -467,6 +467,7 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | provider down | `✗ the model provider answered {code}. retrying in {s}s ({i} of {n}).` / `{names} are waiting on it; nothing is lost.` |
 | hub lost | `○ hub disconnected · reconnecting…` |
 | images strip | `attached · backspace on a chip removes it` |
+| no undo (ctrl+z, or /cancel typed) | `no undo: an agent may already have acted. say the change to main instead ("no, v1 for docs").` |
 
 Onboarding strings: §15.
 
