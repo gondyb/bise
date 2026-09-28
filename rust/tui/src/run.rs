@@ -81,12 +81,51 @@ pub(crate) fn ingest_line(app: &mut App, line: String) {
     }
 }
 
-pub(crate) fn run_tui(app: &mut App) -> io::Result<()> {
-    let mut terminal = ratatui::init();
+/// The terminal in UI mode: raw + alternate screen (ratatui), mouse
+/// reports, and bracketed paste (a multi-line paste arrives as ONE
+/// Event::Paste instead of a keystroke storm where every Enter would
+/// send).
+fn init_terminal() -> ratatui::DefaultTerminal {
+    let terminal = ratatui::init();
     let _ = crossterm::execute!(io::stdout(), EnableMouseCapture);
-    // a multi-line paste arrives as ONE Event::Paste instead of a
-    // keystroke storm where every Enter would send
     let _ = crossterm::execute!(io::stdout(), EnableBracketedPaste);
+    terminal
+}
+
+/// Takes the waiting wire lines for at most 12 ms. The hub replays whole
+/// feeds on connect: the lines are taken in slices, a frame in between,
+/// so the UI never waits for a replay to end. True when lines are left
+/// (the next frame must not wait for input).
+fn drain_lines(app: &mut App) -> bool {
+    let slice = std::time::Instant::now();
+    loop {
+        if slice.elapsed() >= Duration::from_millis(12) {
+            return true;
+        }
+        match app.rx.try_recv() {
+            Ok(line) => {
+                if app.sb.is_some() {
+                    sb::dispatch(app, &line);
+                } else {
+                    ingest_line(app, line);
+                }
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => return false,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                // the REPL process is gone: a /reload exits it (the
+                // parent respawns and reconnects), a crash does not.
+                // Either way this UI is dead — stop, let the parent
+                // decide.
+                app.connected = false;
+                app.should_quit = true;
+                return false;
+            }
+        }
+    }
+}
+
+pub(crate) fn run_tui(app: &mut App) -> io::Result<()> {
+    let mut terminal = init_terminal();
     // the kitty keyboard protocol reports Shift+Enter distinctly (the
     // plain terminal encodings cannot); terminals without support just
     // ignore the push, and Ctrl+J remains the universal fallback
@@ -95,36 +134,7 @@ pub(crate) fn run_tui(app: &mut App) -> io::Result<()> {
         PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
     );
     loop {
-        // the hub replays whole feeds on connect: the lines are taken in
-        // slices of a few ms, a frame in between, so the UI never waits
-        // for a replay to end
-        let slice = std::time::Instant::now();
-        let mut backlog = false;
-        loop {
-            if slice.elapsed() >= Duration::from_millis(12) {
-                backlog = true;
-                break;
-            }
-            match app.rx.try_recv() {
-                Ok(line) => {
-                    if app.sb.is_some() {
-                        sb::dispatch(app, &line);
-                    } else {
-                        ingest_line(app, line);
-                    }
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    // the REPL process is gone: a /reload exits it (the
-                    // parent respawns and reconnects), a crash does not.
-                    // Either way this UI is dead — stop, let the parent
-                    // decide.
-                    app.connected = false;
-                    app.should_quit = true;
-                    break;
-                }
-            }
-        }
+        let backlog = drain_lines(app);
         if app.should_quit {
             break;
         }
@@ -136,9 +146,7 @@ pub(crate) fn run_tui(app: &mut App) -> io::Result<()> {
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
             println!("shell in {} — exit to return to Switchboard", dir);
             let _ = std::process::Command::new(shell).current_dir(&dir).status();
-            terminal = ratatui::init();
-            let _ = crossterm::execute!(io::stdout(), EnableMouseCapture);
-            let _ = crossterm::execute!(io::stdout(), EnableBracketedPaste);
+            terminal = init_terminal();
             let _ = terminal.clear();
         }
         pump_voice(app);
