@@ -72,8 +72,8 @@ function head(right) {
   return `<div class="head"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim">${right ?? `${S.work} 3 working · <span class="acc">? 1 needs you</span> · ♡ 1 done`}</span></div>`;
 }
 function panel(rows, extra = "") {
-  return `<div class="panel"><div class="dim" style="margin-bottom:4px">agents</div>${rows.map(r =>
-    `<div class="row${r.sel ? " sel" : ""}"><span>${r.g} ${r.name}${r.dot ? ' <span class="acc">•</span>' : ""}</span><span class="dim">${r.r ?? ""}</span></div>`).join("")}${extra}</div>`;
+  return `<div class="panel"><div class="dim" style="margin-bottom:4px">agents</div>${rows.map((r, i) =>
+    `<div class="row${r.sel ? " sel" : ""}"><span><span class="dim">${i <= 9 ? "⌥" + i : "  "}</span> ${r.g} ${r.name}${r.dot ? ' <span class="acc">•</span>' : ""}</span><span class="dim">${r.r ?? ""}</span></div>`).join("")}${extra}</div>`;
 }
 const P = {
   main:   { g: '<span class="acc">:*</span>', name: "main", r: "" },
@@ -163,7 +163,7 @@ the slow tail is the cold cache on the first request.</pre>
    <div class="b">should i keep them without links, or drop them from the note?</div>
    <div class="b dim">▾ 12 more lines · pgdn</div>`, pan: PANEL("release") })],
 
-["the agents panel, every state", "one line per agent: glyph, name, age or state, context fill. • = unread activity. ⎇ = agent in its own worktree; no mark = the shared folder. archived agents are counted, not listed.",
+["the agents panel, every state", "one line per agent: its shortcut (⌥0 main, ⌥1 to ⌥9 the first nine agents; no label after nine), glyph, name, age or state, context fill. • = unread activity. ⎇ = agent in its own worktree; no mark = the shared folder. archived agents are counted, not listed.",
  term({ feed: "", pan: panel([
    P.main, { ...P.auth, sel: true, dot: true }, P.rel, { g: S.start, name: "tests", r: "starting" }, P.docs, P.api,
    { g: '<span class="acc">?</span>', name: "infra", r: '<span class="acc">blocked</span>' }, P.bench, P.deploy, P.ideas,
