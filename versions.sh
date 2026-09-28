@@ -42,12 +42,12 @@ tree_id() {
 
 rev_id() { git rev-parse --short "$1^{commit}"; }
 
-# hash of everything repl-live is compiled from (run inside the source
-# dir). The CONTENT decides, never a date: a fresh checkout has fresh
-# mtimes, and the repl-live committed in the repo may predate its sources
-# - a version always compiles its own (cached by this hash).
-bend_hash() {
-  find runtime core vendor -type f -name '*.bend' -print0 | sort -z | xargs -0 cat | shasum | cut -c1-12
+# hash of the *.bend files under the given dirs (run inside the source
+# dir): the cache key of a Bend compile. The CONTENT decides, never a
+# date: a fresh checkout has fresh mtimes, and the binaries committed in
+# the repo may predate their sources - a version always compiles its own.
+bend_src_hash() {
+  find "$@" -type f -name '*.bend' -print0 | sort -z | xargs -0 cat | shasum | cut -c1-12
 }
 
 # build the source dir $1 into version $2 (subject/commit from $3)
@@ -70,7 +70,7 @@ build_from() {
   (cd "$src/rust" && CARGO_TARGET_DIR="$target" cargo build -q --release -p bend-harness)
   cp "$target/release/bend-harness" "$tmp/bend-harness"
 
-  local h; h="$(cd "$src" && bend_hash)"
+  local h; h="$(cd "$src" && bend_src_hash runtime core vendor)"
   if [ ! -x "$BUILD/cache/repl-live-$h" ]; then
     say "bend runtime/repl-live.bend $id (1-2 min)..."
     (cd "$src" && bend runtime/repl-live.bend -o "$BUILD/cache/repl-live-$h.tmp" >/dev/null)
@@ -80,7 +80,7 @@ build_from() {
 
   # sb-core: the hub's decisions in Bend (hub/*.bend), when the version has them
   if [ -f "$src/hub/main.bend" ]; then
-    local hc; hc="$(cd "$src" && find hub vendor -type f -name '*.bend' -print0 | sort -z | xargs -0 cat | shasum | cut -c1-12)"
+    local hc; hc="$(cd "$src" && bend_src_hash hub vendor)"
     if [ ! -x "$BUILD/cache/sb-core-$hc" ]; then
       say "bend hub/main.bend $id..."
       (cd "$src" && bend hub/main.bend -o "$BUILD/cache/sb-core-$hc.tmp" >/dev/null)
