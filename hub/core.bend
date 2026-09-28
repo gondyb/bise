@@ -121,6 +121,15 @@ def mid(+n: Nat) -> String:
 def cat(+xs: List<&2, String>) -> String:
   String.concat(xs)
 
+# Bool.pick computes both of its arguments; pick_lazy computes only the
+# branch it takes (for branches that are whole step paths)
+def pick_lazy(-A: Type, c: Bool, a: Unit -> A, b: Unit -> A) -> A:
+  match c:
+    case True{}:
+      a(Unit{})
+    case False{}:
+      b(Unit{})
+
 def run_str(r: M.Run) -> String:
   match r:
     case M.RDown{}:
@@ -848,7 +857,7 @@ def create.go.new(-o: M.St, +cx: X.Cx<o>, +t: NewTask, +name: String, +ws: J.Jso
   +cx2 = emit(o, cx, M.ETaskCreated{name, parent, NewTask.brief(t), ws, now(o, cx)}, e, Unit{}, Unit{})
   +who = Bool.pick(String, String.eq(parent, M.USER()), "you", parent)
   +cx3 = line(o, cx2, M.MAIN(), "spawn", cat([who, " → new task @", name, label, " : ", obj]))
-  +cx4 = Bool.pick(X.Cx<o>, String.eq(parent, M.USER()), note_main(o, cx3, cat(["the user created the task @", name, label, ": ", obj])), cx3)
+  +cx4 = pick_lazy(X.Cx<o>, String.eq(parent, M.USER()), u => note_main(o, cx3, cat(["the user created the task @", name, label, ": ", obj])), u => cx3)
   +cx5 = spawn(o, cx4, name, False{})
   create.sent(o, send(o, cx5, msg(parent, name, cat(["# Task `", name, "`\n\n", NewTask.brief_text(t)]), String.eq(parent, M.MAIN()), None{}, String.eq(parent, M.USER()), False{})), name)
 
@@ -1119,8 +1128,8 @@ def restore.agent(-o: M.St, m: Maybe<&2, M.Agent>, +cx: X.Cx<o>, +name: String) 
     case None{}:
       (cx, TErr{String.append("no task named ", name)})
     case Some{+a}:
-      Bool.pick(X.Cx<o> & TaskR, is_active(M.Agent.life(a)), (cx, TErr{cat(["@", M.Agent.name(a), " is active"])}),
-        restore.wt(o, M.ws_worktree(M.Agent.ws(a)) && M.ws_dropped(M.Agent.ws(a)), cx, a))
+      pick_lazy(X.Cx<o> & TaskR, is_active(M.Agent.life(a)), u => (cx, TErr{cat(["@", M.Agent.name(a), " is active"])}),
+        u => restore.wt(o, M.ws_worktree(M.Agent.ws(a)) && M.ws_dropped(M.Agent.ws(a)), cx, a))
 
 def restore_task(-o: M.St, +cx: X.Cx<o>, +name: String) -> X.Cx<o> & TaskR:
   restore.agent(o, agent_of(st(o, cx), M.resolve(st(o, cx), name)), cx, name)
@@ -1284,7 +1293,7 @@ def says.sent(-o: M.St, p: X.Cx<o> & SendR, +to: String, +text: String) -> X.Cx<
     case (+cx, SErr{+e}):
       notice(o, cx, e)
     case (+cx, SOk{_}):
-      Bool.pick(X.Cx<o>, String.eq(to, M.MAIN()), cx, user_sent(o, cx, text))
+      pick_lazy(X.Cx<o>, String.eq(to, M.MAIN()), u => cx, u => user_sent(o, cx, text))
 
 def says.card(-o: M.St, card: Maybe<&2, Nat>, +cx: X.Cx<o>, +to: String, +text: String) -> X.Cx<o>:
   match card:
@@ -1313,8 +1322,8 @@ def route.sent(-o: M.St, p: X.Cx<o> & SendR, +name: String, +text: String, +focu
       notice(o, cx, e)
     case (+cx, SOk{+m}):
       +cx2 = line(o, cx, M.MAIN(), "route", cat(["you → @", name, " : ", text]))
-      +cx3 = Bool.pick(X.Cx<o>, Bool.not(String.eq(focus, M.MAIN())) || Bool.not(String.eq(name, focus)),
-        note_main(o, cx2, cat(["the user wrote directly to @", name, ": \"", M.one_line(text), "\""])), cx2)
+      +cx3 = pick_lazy(X.Cx<o>, Bool.not(String.eq(focus, M.MAIN())) || Bool.not(String.eq(name, focus)),
+        u => note_main(o, cx2, cat(["the user wrote directly to @", name, ": \"", M.one_line(text), "\""])), u => cx2)
       out(o, cx3, [J.kv("fx", J.JStr{"routed"}), J.kv("id", J.JNum{M.Msg.id(m)})])
 
 def route.target(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +target: String, +text: String, +focus: String) -> X.Cx<o>:
@@ -1332,8 +1341,8 @@ def route.target(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +target: String, 
 
 # `@task text`: a direct message, without main
 def route(-o: M.St, +cx: X.Cx<o>, +target: String, +text: String, +focus: String) -> X.Cx<o>:
-  Bool.pick(X.Cx<o>, String.eq(target, M.MAIN()), user_says(o, cx, M.MAIN(), text),
-    route.target(o, M.resolve(st(o, cx), target), cx, target, text, focus))
+  pick_lazy(X.Cx<o>, String.eq(target, M.MAIN()), u => user_says(o, cx, M.MAIN(), text),
+    u => route.target(o, M.resolve(st(o, cx), target), cx, target, text, focus))
 
 def user_new.res(-o: M.St, p: X.Cx<o> & TaskR) -> X.Cx<o>:
   match p:
@@ -1411,8 +1420,8 @@ def rename.old(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +name: String, +new
     case None{}:
       notice(o, cx, String.append("no task named @", name))
     case Some{+old}:
-      Bool.pick(X.Cx<o>, String.eq(old, M.MAIN()), notice(o, cx, String.append("no task named @", name)),
-        rename.go(o, valid && Bool.not(M.name_taken(st(o, cx), new)), cx, old, new))
+      pick_lazy(X.Cx<o>, String.eq(old, M.MAIN()), u => notice(o, cx, String.append("no task named @", name)),
+        u => rename.go(o, valid && Bool.not(M.name_taken(st(o, cx), new)), cx, old, new))
 
 def cancel.to(m: Maybe<&2, M.Msg>) -> String:
   match m:
@@ -1441,19 +1450,19 @@ def cancel(-o: M.St, last: Maybe<&2, Nat>, +cx: X.Cx<o>) -> X.Cx<o>:
 def interrupt.go(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>) -> X.Cx<o>:
   match m:
     case Some{+n}:
-      Bool.pick(X.Cx<o>, is_busy(X.Rt.run(rt(o, cx, n))),
-        out(o, cx, [J.kv("fx", J.JStr{"interrupt"}), J.kv("agent", J.JStr{n})]),
-        notice(o, cx, "no turn in progress to interrupt"))
+      pick_lazy(X.Cx<o>, is_busy(X.Rt.run(rt(o, cx, n))),
+        u => out(o, cx, [J.kv("fx", J.JStr{"interrupt"}), J.kv("agent", J.JStr{n})]),
+        u => notice(o, cx, "no turn in progress to interrupt"))
     case None{}:
       notice(o, cx, "no turn in progress to interrupt")
 
 def passthrough(-o: M.St, +cx: X.Cx<o>, +focus: String, +l: String) -> X.Cx<o>:
-  Bool.pick(X.Cx<o>, has_agent(o, cx, focus) && is_idle(X.Rt.run(rt(o, cx, focus))),
-    out(o, dirty(o, set_run(o, cx, focus, M.RBusy{})), [J.kv("fx", J.JStr{"passthrough"}), J.kv("agent", J.JStr{focus}), J.kv("line", J.JStr{l})]),
-    notice(o, cx, "the agent is not idle: retry at the end of its turn"))
+  pick_lazy(X.Cx<o>, has_agent(o, cx, focus) && is_idle(X.Rt.run(rt(o, cx, focus))),
+    u => out(o, dirty(o, set_run(o, cx, focus, M.RBusy{})), [J.kv("fx", J.JStr{"passthrough"}), J.kv("agent", J.JStr{focus}), J.kv("line", J.JStr{l})]),
+    u => notice(o, cx, "the agent is not idle: retry at the end of its turn"))
 
 def focus.cards(-o: M.St, +cx: X.Cx<o>, +f: String) -> X.Cx<o>:
-  Bool.pick(X.Cx<o>, String.eq(f, M.MAIN()), cx, close_cards(o, cx, f, ["done"], "vue"))
+  pick_lazy(X.Cx<o>, String.eq(f, M.MAIN()), u => cx, u => close_cards(o, cx, f, ["done"], "vue"))
 
 # the daemon computed what main learns about a direct exchange (RFC
 # 0001 §7.4); a task's view closes its done cards
@@ -1540,7 +1549,7 @@ def wait.park(-o: M.St, +cx: X.Cx<o>, +w: X.Waiter) -> X.Cx<o>:
 def wait.state(-o: M.St, s: Maybe<&2, M.MSt>, +cx: X.Cx<o>, +w: X.Waiter, +r: M.Msg) -> X.Cx<o>:
   match s:
     case Some{M.Queued{_}}:
-      Bool.pick(X.Cx<o>, M.Msg.queued(r), wait.park(o, cx, w), deliver_to_waiter(o, cx, w, r, "reply"))
+      pick_lazy(X.Cx<o>, M.Msg.queued(r), u => wait.park(o, cx, w), u => deliver_to_waiter(o, cx, w, r, "reply"))
     case Some{M.Delivered{}}:
       waiter_reply(o, cx, w, r, "reply")
     case _:
@@ -1595,8 +1604,8 @@ def req_status(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +is_main: Boo
   +status = C.get_s(q, "status")
   +note = C.get_s(q, "note")
   +cx2 = emit(o, cx, M.EDeclared{from, Some{decl_of(status)}, note}, Unit{}, Unit{}, Unit{})
-  +cx3 = Bool.pick(X.Cx<o>, String.eq(status, "blocked") && Bool.not(is_main),
-    open_card(o, cx2, "blocked", from, Bool.pick(String, String.is_empty(note), "blocked", note), None{}), cx2)
+  +cx3 = pick_lazy(X.Cx<o>, String.eq(status, "blocked") && Bool.not(is_main),
+    u => open_card(o, cx2, "blocked", from, Bool.pick(String, String.is_empty(note), "blocked", note), None{}), u => cx2)
   reply(o, cx3, token, ok_body(Nil{}))
 
 def report_lines(xs: List<&2, String>) -> List<&2, String>:
@@ -1619,13 +1628,13 @@ def req_report.sent(-o: M.St, p: X.Cx<o> & SendR, +token: Nat) -> X.Cx<o>:
       reply(o, cx, token, ok_body([J.kv("message_id", J.JStr{mid(M.Msg.id(m))})]))
 
 def req_report.kind(-o: M.St, +cx: X.Cx<o>, +from: String, +kind: String, +summary: String) -> X.Cx<o>:
-  Bool.pick(X.Cx<o>, String.eq(kind, "done"),
-    open_card(o, emit(o, cx, M.EDeclared{from, Some{M.DDone{}}, ""}, Unit{}, Unit{}, Unit{}), "done", from, M.clip(M.one_line(summary), 200n), None{}),
-    Bool.pick(X.Cx<o>, String.eq(kind, "blocked"),
-      open_card(o, emit(o, cx, M.EDeclared{from, Some{M.DBlocked{}}, summary}, Unit{}, Unit{}, Unit{}), "blocked", from, summary, None{}),
-      Bool.pick(X.Cx<o>, String.eq(kind, "failed"),
-        open_card(o, emit(o, cx, M.ELifecycle{from, M.LFailed{}, Some{summary}}, Unit{}, Unit{}, Unit{}), "failed", from, summary, None{}),
-        cx)))
+  pick_lazy(X.Cx<o>, String.eq(kind, "done"),
+    u => open_card(o, emit(o, cx, M.EDeclared{from, Some{M.DDone{}}, ""}, Unit{}, Unit{}, Unit{}), "done", from, M.clip(M.one_line(summary), 200n), None{}),
+    u => pick_lazy(X.Cx<o>, String.eq(kind, "blocked"),
+      u => open_card(o, emit(o, cx, M.EDeclared{from, Some{M.DBlocked{}}, summary}, Unit{}, Unit{}, Unit{}), "blocked", from, summary, None{}),
+      u => pick_lazy(X.Cx<o>, String.eq(kind, "failed"),
+        u => open_card(o, emit(o, cx, M.ELifecycle{from, M.LFailed{}, Some{summary}}, Unit{}, Unit{}, Unit{}), "failed", from, summary, None{}),
+        u => cx)))
 
 def req_report.go(-o: M.St, is_main: Bool, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) -> X.Cx<o>:
   match is_main:
@@ -1678,17 +1687,17 @@ def req_interrupt(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +token: Nat, +ag
     case None{}:
       reply_err(o, cx, token, String.append("no task named ", agent))
     case Some{+n}:
-      Bool.pick(X.Cx<o>, is_busy(X.Rt.run(rt(o, cx, n))),
-        reply(o, out(o, cx, [J.kv("fx", J.JStr{"interrupt"}), J.kv("agent", J.JStr{n})]), token, ok_body(Nil{})),
-        reply_err(o, cx, token, "no turn in progress"))
+      pick_lazy(X.Cx<o>, is_busy(X.Rt.run(rt(o, cx, n))),
+        u => reply(o, out(o, cx, [J.kv("fx", J.JStr{"interrupt"}), J.kv("agent", J.JStr{n})]), token, ok_body(Nil{})),
+        u => reply_err(o, cx, token, "no turn in progress"))
 
 def req_stop(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +token: Nat, +agent: String, +reason: String) -> X.Cx<o>:
   match m:
     case None{}:
       reply_err(o, cx, token, String.append("no task named ", agent))
     case Some{+n}:
-      Bool.pick(X.Cx<o>, String.eq(n, M.MAIN()), reply_err(o, cx, token, String.append("no task named ", agent)),
-        reply(o, line(o, stop_task(o, cx, n, M.LStopped{}, reason), M.MAIN(), "info", cat(["main → @", n, " stopped: ", reason])), token, ok_body(Nil{})))
+      pick_lazy(X.Cx<o>, String.eq(n, M.MAIN()), u => reply_err(o, cx, token, String.append("no task named ", agent)),
+        u => reply(o, line(o, stop_task(o, cx, n, M.LStopped{}, reason), M.MAIN(), "info", cat(["main → @", n, " stopped: ", reason])), token, ok_body(Nil{})))
 
 def req_drop.res(-o: M.St, p: X.Cx<o> & DropR, +token: Nat, +agent: String) -> X.Cx<o>:
   match p:
@@ -1756,8 +1765,8 @@ def req_rename(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +token: Nat, +name:
     case None{}:
       reply_err(o, cx, token, String.append("no task named ", name))
     case Some{+old}:
-      Bool.pick(X.Cx<o>, String.eq(old, M.MAIN()), reply_err(o, cx, token, String.append("no task named ", name)),
-        req_rename.go(o, valid && Bool.not(M.name_taken(st(o, cx), new)), cx, token, old, new))
+      pick_lazy(X.Cx<o>, String.eq(old, M.MAIN()), u => reply_err(o, cx, token, String.append("no task named ", name)),
+        u => req_rename.go(o, valid && Bool.not(M.name_taken(st(o, cx), new)), cx, token, old, new))
 
 # `sb restore` / `sb isolate`: the user or main (main only on the
 # user's explicit request: its prompt says so)
@@ -1972,15 +1981,15 @@ def crash.restart(-o: M.St, +cx: X.Cx<o>, +agent: String, +n: Nat, +reason: Stri
   +cx3 = out(o, cx2, [J.kv("fx", J.JStr{"spawn"}), J.kv("agent", J.JStr{agent}),
     J.kv("resume", J.JBool{True{}}), J.kv("crash_note", J.JStr{reason})])
   +cx4 = line(o, cx3, M.MAIN(), "warn", cat(["the session of @", agent, " crashed (", reason, ") — restart ", ns(n), "/", ns(MAX_CRASHES())]))
-  Bool.pick(X.Cx<o>, String.eq(agent, M.MAIN()), cx4,
-    notify_main(o, cx4, cat(["Task @", agent, " crashed (", reason, "). Its session restarts on its saved checkpoint (attempt ", ns(n), "/", ns(MAX_CRASHES()), "); the turn it was running is interrupted and it may need a new message to continue."])))
+  pick_lazy(X.Cx<o>, String.eq(agent, M.MAIN()), u => cx4,
+    u => notify_main(o, cx4, cat(["Task @", agent, " crashed (", reason, "). Its session restarts on its saved checkpoint (attempt ", ns(n), "/", ns(MAX_CRASHES()), "); the turn it was running is interrupted and it may need a new message to continue."])))
 
 def crash.fail(-o: M.St, +cx: X.Cx<o>, +agent: String, +n: Nat, +reason: String) -> X.Cx<o>:
   +why = cat(["the REPL crashed ", ns(n), " times: ", reason])
   +cx2 = emit(o, cx, M.ELifecycle{agent, M.LFailed{}, Some{why}}, Unit{}, Unit{}, Unit{})
   +cx3 = open_card(o, cx2, "failed", agent, why, None{})
-  Bool.pick(X.Cx<o>, String.eq(agent, M.MAIN()), cx3,
-    notify_main(o, cx3, cat(["Task @", agent, " failed: ", why, ". It is not restarted anymore. A new message from you or the user restarts it; otherwise tell the user."])))
+  pick_lazy(X.Cx<o>, String.eq(agent, M.MAIN()), u => cx3,
+    u => notify_main(o, cx3, cat(["Task @", agent, " failed: ", why, ". It is not restarted anymore. A new message from you or the user restarts it; otherwise tell the user."])))
 
 def crash.pick(-o: M.St, again: Bool, +cx: X.Cx<o>, +agent: String, +n: Nat, +reason: String) -> X.Cx<o>:
   match again:
@@ -2141,7 +2150,7 @@ def repl_idle(-o: M.St, +cx: X.Cx<o>, +agent: String, +leftover: Bool) -> X.Cx<o
   # it; a new turn makes it answer
   +unread = Bool.not(leftover) && Nat.is_gt(X.Cnt.recv(c), X.Cnt.inj(c)) && Bool.not(List.is_empty(&2, Nat, steered))
   # leftover: the runtime never read them: they go again, as a new turn
-  +cx3 = Bool.pick(X.Cx<o>, leftover, requeue(o, steered, cx2), cx2)
+  +cx3 = pick_lazy(X.Cx<o>, leftover, u => requeue(o, steered, cx2), u => cx2)
   idle.agent(o, M.get_agent(st(o, cx3), agent), cx3, agent, leftover, unread, steered)
 
 # ---- waits (RFC 0003 §6.2) ----
