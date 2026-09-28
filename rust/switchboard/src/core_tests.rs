@@ -947,3 +947,131 @@ fn steering_the_model_never_read_starts_a_new_turn() {
     });
     assert!(say_to(&fx, MAIN).is_none(), "{:?}", fx);
 }
+
+#[test]
+fn main_hears_when_a_task_crashes_and_when_it_fails() {
+    let mut t = T::new();
+    t.spawn_task("a");
+    t.go(Input::ReplIdle {
+        agent: "a".into(),
+        leftover: false,
+    });
+    t.turn(MAIN, "vu");
+    let fx = t.go(Input::ReplExited {
+        agent: "a".into(),
+        crashed: true,
+        reason: "bend: out of memory".into(),
+    });
+    let s = say_to(&fx, MAIN).expect("main is woken");
+    assert!(s.contains("from=\"switchboard\" relation=\"hub\""), "{}", s);
+    assert!(
+        s.contains("Task @a crashed (bend: out of memory)") && s.contains("attempt 1/5"),
+        "{}",
+        s
+    );
+    for _ in 2..=5 {
+        t.go(Input::ReplExited {
+            agent: "a".into(),
+            crashed: true,
+            reason: "boom".into(),
+        });
+    }
+    t.turn(MAIN, "vu");
+    let fx = t.go(Input::ReplExited {
+        agent: "a".into(),
+        crashed: true,
+        reason: "boom".into(),
+    });
+    let s = say_to(&fx, MAIN).expect("main is woken again");
+    assert!(s.contains("Task @a failed"), "{}", s);
+}
+
+#[test]
+fn many_task_messages_always_reach_main() {
+    let mut t = T::new();
+    t.spawn_task("a");
+    for i in 0..30 {
+        t.turn(MAIN, "ok");
+        let (_, fx) = t.req(
+            "a",
+            AgentReq::Send {
+                to: MAIN.into(),
+                text: format!("progress {}", i),
+                expect_reply: false,
+                reply_to: None,
+            },
+        );
+        assert!(say_to(&fx, MAIN).is_some(), "message {} held: {:?}", i, fx);
+    }
+}
+
+#[test]
+fn a_user_message_to_main_starts_with_the_task_status() {
+    let mut t = T::new();
+    let fx = t.user(MAIN, "salut");
+    assert_eq!(
+        say_to(&fx, MAIN).as_deref(),
+        Some("salut"),
+        "no task: no status"
+    );
+    t.turn(MAIN, "ok");
+    t.spawn_task("docs");
+    t.go(Input::ReplLine {
+        agent: "docs".into(),
+        line: "tool #3 bash : cargo test --all".into(),
+    });
+    t.turn(MAIN, "ok");
+    let fx = t.user(MAIN, "où en est-on ?");
+    let s = say_to(&fx, MAIN).unwrap();
+    assert!(s.starts_with("<task_status>\ndocs working"), "{}", s);
+    assert!(s.contains("now: bash `cargo test --all`"), "{}", s);
+    assert!(s.ends_with("où en est-on ?"), "{}", s);
+    // a task's message to main carries no status block
+    let (_, fx) = t.req(
+        "docs",
+        AgentReq::Send {
+            to: MAIN.into(),
+            text: "fini".into(),
+            expect_reply: false,
+            reply_to: None,
+        },
+    );
+    let s = steer_to(&fx, MAIN).or_else(|| say_to(&fx, MAIN)).unwrap();
+    assert!(!s.contains("<task_status>"), "{}", s);
+}
+
+#[test]
+fn sb_tasks_details_every_task() {
+    let mut t = T::new();
+    t.spawn_task("docs");
+    t.go(Input::ReplLine {
+        agent: "docs".into(),
+        line: "tool #3 bash : npm run build".into(),
+    });
+    t.req(
+        "docs",
+        AgentReq::Send {
+            to: MAIN.into(),
+            text: "v1 ou v2 ?".into(),
+            expect_reply: true,
+            reply_to: None,
+        },
+    );
+    let (tok, fx) = t.req(MAIN, AgentReq::Tasks);
+    let text = reply(&fx, tok).unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        text.starts_with("## docs — working — shared workspace"),
+        "{}",
+        text
+    );
+    assert!(text.contains("objective: objective of docs"), "{}", text);
+    assert!(
+        text.contains("last activity (0s ago): bash `npm run build`"),
+        "{}",
+        text
+    );
+    assert!(text.contains("waits for a reply from main"), "{}", text);
+}

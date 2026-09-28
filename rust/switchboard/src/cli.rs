@@ -9,6 +9,7 @@ use std::time::Duration;
 
 pub const USAGE: &str = "\
 sb list
+sb tasks
 sb send <agent> \"<text>\" [--expect-reply] [--reply-to m_<n>]
 sb ask <agent> \"<question>\" [--timeout <s>]
 sb wait m_<n> [--timeout <s>]
@@ -115,7 +116,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
     let mut req = Map::new();
     req.insert("cmd".into(), json!(cmd));
     match cmd.as_str() {
-        "list" | "history" => {
+        "list" | "tasks" | "history" => {
             let (pos, _) = parse_args(rest, &[], &[])?;
             if cmd == "history" {
                 req.insert("query".into(), json!(text_of(&pos)?));
@@ -262,7 +263,7 @@ pub fn render(cmd: &str, v: &Value) -> (bool, String) {
         return (false, e);
     }
     let text = match cmd {
-        "list" | "inspect" | "history" => s("text"),
+        "list" | "tasks" | "inspect" | "history" => s("text"),
         "send" => format!("sent {} to {} ({}, thread {})", s("message_id"), s("to"), s("delivery"), s("thread")),
         "ask" | "wait" => match s("type").as_str() {
             "reply" => format!(

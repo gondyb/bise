@@ -54,6 +54,7 @@ def reply_for(messages):
     user = text_of(messages[idx]["content"])
     # the hub's notes about the past are not a script to run
     user = re.sub(r"<switchboard_notes>.*?</switchboard_notes>", "", user, flags=re.S)
+    user = re.sub(r"<task_status>.*?</task_status>", "", user, flags=re.S).strip()
     after = messages[idx + 1:]
     calls_done = sum(len(m.get("tool_calls") or []) for m in after if m.get("role") == "assistant")
     marks = MARK.findall(user) or INNER.findall(user)

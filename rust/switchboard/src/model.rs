@@ -10,6 +10,9 @@ use std::collections::{BTreeMap, BTreeSet};
 pub const MAIN: &str = "main";
 /// The human, as a message sender. Never an agent name.
 pub const USER: &str = "user";
+/// The hub itself, as the sender of notifications (a task crashed...).
+/// Never an agent name.
+pub const HUB: &str = "switchboard";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -140,6 +143,8 @@ pub struct Agent {
     /// Inside `sb wait` (its bash call is blocked on the hub).
     pub waiting: bool,
     pub turn_started_ms: Option<u64>,
+    /// The last thing it did: (time, "bash `cargo test`", "wrote: ...").
+    pub activity: Option<(u64, String)>,
 }
 
 impl Agent {
@@ -352,6 +357,7 @@ impl State {
                 run: Run::Down,
                 waiting: false,
                 turn_started_ms: None,
+                activity: None,
             },
         );
         st.order.push(MAIN.to_string());
@@ -383,7 +389,7 @@ impl State {
 
     /// Is `name` taken, as a name or as an alias (RFC 0001 §9.3)?
     pub fn name_taken(&self, name: &str) -> bool {
-        name == MAIN || name == USER || self.resolve(name).is_some()
+        name == MAIN || name == USER || name == HUB || self.resolve(name).is_some()
     }
 
     pub fn apply(&mut self, ev: &Event) {
@@ -415,6 +421,7 @@ impl State {
                         run: Run::Down,
                         waiting: false,
                         turn_started_ms: None,
+                        activity: None,
                     },
                 );
                 if !self.order.contains(name) {

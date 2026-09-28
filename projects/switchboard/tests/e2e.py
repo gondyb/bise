@@ -302,6 +302,27 @@ def t_cli_errors(E, c):
     c.wait_idle("t1")
 
 
+def t_crash_status_and_tasks(E, c):
+    c.wait_idle("main", "t1")
+    # a task crashes: main hears it from the hub
+    pid = open(os.path.join(E.state, "agents", "t1", "repl.pid")).read().strip()
+    os.kill(int(pid), 9)
+    c.wait_line("main", "sb msg-in : switchboard", 60)
+    c.wait(lambda: any(r["agent"] == "main" and "Task @t1 crashed" in r["user"] for r in E.fake_requests()), 60,
+           "main's model got the crash notification")
+    c.wait_status("t1", ["idle", "done", "blocked"], 60)
+    c.wait_idle("main")
+    # every user message to main starts with the task status
+    c.say("[[bash: sb tasks]]")
+    c.wait(lambda: any(r["agent"] == "main" and r["user"].endswith("[[bash: sb tasks]]") for r in E.fake_requests()), 60,
+           "main's request")
+    u = [r for r in E.fake_requests() if r["agent"] == "main" and r["user"].endswith("[[bash: sb tasks]]")][0]["user"]
+    check(u.startswith("<task_status>") and "\nt1 " in u, "status block: " + u)
+    # sb tasks gives main the detail
+    c.wait_line("main", "## t1 —", 60)
+    c.wait_idle("main")
+
+
 SCENARIOS = [
     t_spawn_and_auto_reply,
     t_direct_message_and_note,
@@ -309,6 +330,7 @@ SCENARIOS = [
     t_escalation_card,
     t_worktree_drop_restore,
     t_cli_errors,
+    t_crash_status_and_tasks,
     t_restart_keeps_everything,
 ]
 

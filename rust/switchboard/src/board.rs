@@ -40,6 +40,15 @@ pub fn task_line(a: &Agent, now: u64) -> String {
             clip(&one_line(&r.summary), 160)
         ));
     }
+    if matches!(st, Status::Working | Status::Waiting) {
+        if let Some((t, what)) = &a.activity {
+            s.push_str(&format!(
+                "  now: {} ({} ago)",
+                clip(&one_line(what), 100),
+                age(*t, now)
+            ));
+        }
+    }
     if st == Status::Failed {
         if let Some(f) = &a.failure {
             s.push_str(&format!("  failure: {}", clip(&one_line(f), 120)));
@@ -180,6 +189,171 @@ pub fn main_context(st: &State, now: u64) -> String {
     }
     s.push_str("</switchboard_state>");
     s
+}
+
+/// The short status that precedes each user message to main: one line
+/// per task that is not archived. Empty when there is no such task.
+pub fn status_block(st: &State, now: u64) -> String {
+    let lines: Vec<String> = st
+        .tasks()
+        .filter(|a| a.status() != Status::Archived)
+        .map(|a| {
+            let mut l = format!(
+                "{} {} {}",
+                a.name,
+                a.status().as_str(),
+                age(a.created_ms, now)
+            );
+            if let Some(b) =
+                a.ws.branch
+                    .as_ref()
+                    .filter(|_| a.ws.mode == Mode::Worktree && !a.ws.dropped)
+            {
+                l.push_str(&format!(" [{}]", b));
+            }
+            match a.status() {
+                Status::Working | Status::Waiting => {
+                    if let Some((t, what)) = &a.activity {
+                        l.push_str(&format!(
+                            " — now: {} ({} ago)",
+                            clip(&one_line(what), 70),
+                            age(*t, now)
+                        ));
+                    }
+                }
+                _ => {
+                    if let Some(r) = &a.last_report {
+                        l.push_str(&format!(" — last: \"{}\"", clip(&one_line(&r.summary), 90)));
+                    }
+                }
+            }
+            if a.status() == Status::Failed {
+                if let Some(f) = &a.failure {
+                    l.push_str(&format!(" — failure: {}", clip(&one_line(f), 90)));
+                }
+            }
+            l
+        })
+        .collect();
+    if lines.is_empty() {
+        return String::new();
+    }
+    format!("<task_status>\n{}\n</task_status>", lines.join("\n"))
+}
+
+/// `sb tasks`: every task in detail, for main (and anyone).
+pub fn tasks_detail(st: &State, now: u64) -> String {
+    let mut out: Vec<String> = Vec::new();
+    for a in st.tasks() {
+        let mut b = vec![format!(
+            "## {} — {}{} (created {} ago, by {})",
+            a.name,
+            a.status().as_str(),
+            match a.ws.mode {
+                Mode::Worktree if a.ws.dropped => " — worktree dropped".to_string(),
+                Mode::Worktree => format!(
+                    " — worktree {} on {}",
+                    a.ws.path,
+                    a.ws.branch.clone().unwrap_or_default()
+                ),
+                Mode::Shared => " — shared workspace".to_string(),
+            },
+            age(a.created_ms, now),
+            a.parent.clone().unwrap_or_default()
+        )];
+        b.push(format!(
+            "objective: {}",
+            clip(&one_line(&a.brief.objective), 300)
+        ));
+        if let Some(t) = a
+            .turn_started_ms
+            .filter(|_| matches!(a.status(), Status::Working | Status::Waiting))
+        {
+            b.push(format!("current turn: started {} ago", age(t, now)));
+        }
+        if let Some((t, what)) = &a.activity {
+            b.push(format!(
+                "last activity ({} ago): {}",
+                age(*t, now),
+                clip(&one_line(what), 200)
+            ));
+        }
+        if let Some((d, note)) = &a.declared {
+            b.push(format!(
+                "declared: {:?}{}",
+                d,
+                if note.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — {}", clip(&one_line(note), 200))
+                }
+            ));
+        }
+        if let Some(r) = &a.last_report {
+            b.push(format!(
+                "last report ({}, {} ago): {}",
+                if r.auto {
+                    "end of turn"
+                } else {
+                    r.kind.as_str()
+                },
+                age(r.at_ms, now),
+                clip(&one_line(&r.summary), 500)
+            ));
+        }
+        if let Some(f) = &a.failure {
+            b.push(format!("failure: {}", clip(&one_line(f), 300)));
+        }
+        let q = queued_count(st, &a.name);
+        if q > 0 {
+            b.push(format!("messages waiting for delivery: {}", q));
+        }
+        for m in st.unanswered_for(&a.name) {
+            b.push(format!(
+                "owes a reply to {} (m_{}): \"{}\"",
+                m.from,
+                m.id,
+                clip(&one_line(&m.text), 120)
+            ));
+        }
+        for m in st
+            .msgs
+            .values()
+            .filter(|m| m.from == a.name && m.expect_reply && !st.settled.contains(&m.id))
+        {
+            b.push(format!(
+                "waits for a reply from {} (m_{}): \"{}\"",
+                m.to,
+                m.id,
+                clip(&one_line(&m.text), 120)
+            ));
+        }
+        if !a.files.is_empty() {
+            b.push(format!(
+                "files changed: {}",
+                a.files
+                    .iter()
+                    .take(10)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        for c in st.open_cards().filter(|c| c.agent == a.name) {
+            b.push(format!(
+                "open card #{} {}: {}",
+                c.id,
+                c.kind,
+                clip(&one_line(&c.text), 150)
+            ));
+        }
+        out.push(b.join("\n"));
+    }
+    if out.is_empty() {
+        "no task".to_string()
+    } else {
+        out.join("\n\n")
+    }
 }
 
 /// The group roster, as `name` sees it (`sb list`, and the context of a

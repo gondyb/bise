@@ -55,6 +55,8 @@ pub trait Env {
 #[derive(Clone, Debug, PartialEq)]
 pub enum AgentReq {
     List,
+    /// `sb tasks`: the detailed state of every task.
+    Tasks,
     Send {
         to: String,
         text: String,
@@ -127,6 +129,7 @@ impl AgentReq {
         let timeout = v.get("timeout_s").and_then(|x| x.as_u64()).unwrap_or(20);
         let req = match cmd.as_str() {
             "list" => AgentReq::List,
+            "tasks" => AgentReq::Tasks,
             "send" => AgentReq::Send {
                 to: jstr(v, "to"),
                 text: jstr(v, "text"),
@@ -628,6 +631,13 @@ impl Hub {
                     agent, reason, n, self.limits.max_crashes
                 ),
             ));
+            if agent != MAIN {
+                let text = format!(
+                    "Task @{} crashed ({}). Its session restarts on its saved checkpoint (attempt {}/{}); the turn it was running is interrupted and it may need a new message to continue.",
+                    agent, reason, n, self.limits.max_crashes
+                );
+                self.notify_main(fx, env, &text);
+            }
         } else {
             let reason = format!("la REPL a planté {} fois : {}", n, reason);
             self.emit(
@@ -639,7 +649,20 @@ impl Hub {
                 },
             );
             self.open_card(fx, env, "failed", agent, &reason, None);
+            if agent != MAIN {
+                let text = format!(
+                    "Task @{} failed: {}. It is not restarted anymore. A new message from you or the user restarts it; otherwise tell the user.",
+                    agent, reason
+                );
+                self.notify_main(fx, env, &text);
+            }
         }
+    }
+
+    /// A notification of the hub to main: it wakes main (or steers its
+    /// running turn) like any message.
+    fn notify_main(&mut self, fx: &mut Fx, env: &mut dyn Env, text: &str) {
+        let _ = self.send(fx, env, HUB, MAIN, text, false, None, false, false);
     }
 
     fn repl_line(&mut self, fx: &mut Fx, env: &mut dyn Env, agent: &str, raw: &str) {
@@ -673,6 +696,9 @@ impl Hub {
             }
             Wire::Steered => self.steer_counts.entry(agent.to_string()).or_default().1 += 1,
             Wire::Assistant(t) if !t.is_empty() => {
+                if let Some(a) = self.st.agents.get_mut(agent) {
+                    a.activity = Some((now, format!("wrote: {}", clip(&one_line(&t), 160))));
+                }
                 self.last_assistant.insert(agent.to_string(), t.clone());
                 let r = self.recent.entry(agent.to_string()).or_default();
                 r.push((now, t));
@@ -680,7 +706,19 @@ impl Hub {
                     r.remove(0);
                 }
             }
-            Wire::Tool { name, args } if name == "apply_patch" => {
+            Wire::Tool { name, args } if name != "apply_patch" => {
+                if let Some(a) = self.st.agents.get_mut(agent) {
+                    a.activity = Some((now, format!("{} `{}`", name, clip(&one_line(&args), 120))));
+                    self.dirty = true;
+                }
+            }
+            Wire::Tool { name, args } => {
+                let _ = name;
+                let files = wire::patch_files(&args);
+                if let Some(a) = self.st.agents.get_mut(agent) {
+                    a.activity = Some((now, format!("apply_patch {}", files.join(", "))));
+                    self.dirty = true;
+                }
                 let shared = self
                     .st
                     .agents
@@ -1033,8 +1071,21 @@ impl Hub {
                     self.requeue(fx, &queued, "concurrency");
                     return;
                 }
+                // only a peer's messages count against the wake limit:
+                // the user, the parent, the children and the hub always
+                // get through (main hears every task)
+                let parents: BTreeMap<String, Option<String>> = queued
+                    .iter()
+                    .map(|m| {
+                        (
+                            m.from.clone(),
+                            self.st.agents.get(&m.from).and_then(|a| a.parent.clone()),
+                        )
+                    })
+                    .collect();
                 let is_peer = |m: &Msg| {
-                    m.from != USER && Some(m.from.as_str()) != parent.as_deref() && m.from != MAIN
+                    let fp = parents.get(&m.from).cloned().flatten();
+                    prompts::relation(&m.from, name, fp.as_deref(), parent.as_deref()) == "peer"
                 };
                 let recent = self.wakes.entry(name.to_string()).or_default();
                 recent.retain(|t| now.saturating_sub(*t) < 3_600_000);
@@ -1057,6 +1108,12 @@ impl Hub {
             s.push_str("</switchboard_notes>");
             parts.push(s);
             self.emit(fx, Event::MainNotesFlushed);
+        }
+        if is_main && batch.iter().any(|m| m.from == USER) {
+            let status = board::status_block(&self.st, now);
+            if !status.is_empty() {
+                parts.push(status);
+            }
         }
         for m in &batch {
             let (fp, tp) = (
@@ -2071,6 +2128,12 @@ impl Hub {
             AgentReq::List => {
                 let lines = board::roster(&self.st, &from, env.now());
                 reply(fx, ok(json!({"text": lines.join("\n")})));
+            }
+            AgentReq::Tasks => {
+                reply(
+                    fx,
+                    ok(json!({"text": board::tasks_detail(&self.st, env.now())})),
+                );
             }
             AgentReq::Send {
                 to,
