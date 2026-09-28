@@ -841,14 +841,14 @@ impl Hub {
                 };
                 match ws {
                     Some(w) => res(env.worktree_drop(&name, &w, &loss).map(|r| json!(r))),
-                    None => json!({"err": "no task"}),
+                    None => json!({"err": "no agent"}),
                 }
             }
             "worktree_restore" => match ws {
                 Some(w) => res(env
                     .worktree_restore(&name, &w, snap.as_deref())
                     .map(|w| json!(w))),
-                None => json!({"err": "no task"}),
+                None => json!({"err": "no agent"}),
             },
             other => json!({"err": format!("unknown query: {}", other)}),
         }
@@ -1097,7 +1097,7 @@ impl Hub {
             UserCmd::Drop { name, force } => match name {
                 None => fx.push(notice(
                     client,
-                    "usage: /drop <task> (or /drop from the task's view)",
+                    "usage: /drop <agent> (or /drop from the agent's view)",
                 )),
                 Some(name) => self.core(
                     fx,
@@ -1357,14 +1357,14 @@ fn new_task(name: Option<&str>, brief: &Brief, worktree: bool, with_changes: boo
 
 pub const HELP: &str = "\
 plain text        message to the agent in view (main by default)
-@task text        direct message to a task, without main (@main from a task)
-/new [-w] [name:] objective   create a task (-w: isolated git worktree, --with-changes: with your changes)
-/drop [task] [--force]        stop and archive a task (and delete its worktree)
-/restore task     reopen an archived task (and its saved worktree)
-/isolate task     give a worktree to a task that has not changed anything yet
-/rename a b       rename a task (the old name still works)
-/answer N text    answer attention card N
-/tasks            the task board
+@agent text       direct message to an agent, without main (@main from an agent)
+/new [-w] [name:] objective   create an agent (-w: its own git worktree, --with-changes: with your changes)
+/drop [agent] [--force]       stop and archive an agent (and delete its worktree)
+/restore agent    reopen an archived agent (and its saved worktree)
+/isolate agent    give a worktree to an agent that has not changed anything yet
+/rename a b       rename an agent (the old name still works)
+/answer N text    answer card N
+/agents           list the agents and what they do
 /interrupt        interrupt the turn of the agent in view
 /compact          compact the conversation of the agent in view";
 

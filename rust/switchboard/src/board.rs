@@ -57,11 +57,11 @@ pub fn task_line(a: &Agent, now: u64) -> String {
     s
 }
 
-/// `/tasks`: the task board the user reads, then the open cards.
+/// `/agents`: the board of the agents the user reads, then the open cards.
 pub fn user_board(st: &State, now: u64) -> String {
     let mut lines: Vec<String> = st.tasks().map(|a| task_line(a, now)).collect();
     if lines.is_empty() {
-        lines.push("no task".into());
+        lines.push("no agents yet".into());
     }
     lines.extend(st.open_cards().map(|c| {
         format!("card #{} {} @{}: {}", c.id, c.kind, c.agent, clip(&one_line(&c.text), 100))
@@ -332,7 +332,7 @@ pub fn tasks_detail(st: &State, now: u64) -> String {
         out.push(b.join("\n"));
     }
     if out.is_empty() {
-        "no task".to_string()
+        "no agents yet".to_string()
     } else {
         out.join("\n\n")
     }

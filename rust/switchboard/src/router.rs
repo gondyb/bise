@@ -213,7 +213,7 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
             match name {
                 Some(name) if cmd == "/restore" => UserCmd::Restore { name },
                 Some(name) => UserCmd::Isolate { name },
-                None => UserCmd::Invalid(format!("usage: {} <task>", cmd)),
+                None => UserCmd::Invalid(format!("usage: {} <agent>", cmd)),
             }
         }
         "/rename" => match words.as_slice() {
@@ -225,7 +225,7 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
                 name: focus.to_string(),
                 new_name: bare(b),
             },
-            _ => UserCmd::Invalid("usage: /rename <task> <new-name>".into()),
+            _ => UserCmd::Invalid("usage: /rename <agent> <new-name>".into()),
         },
         "/answer" | "/reply" => {
             let (n, text) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
@@ -242,7 +242,8 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
             _ => UserCmd::Invalid("usage: /close <card>".into()),
         },
         "/cancel" | "/undo" => UserCmd::Invalid(NO_UNDO.into()),
-        "/tasks" => UserCmd::Tasks,
+        // `/agents`, the board of every agent (`/tasks`: the old name)
+        "/agents" | "/tasks" => UserCmd::Tasks,
         "/interrupt" => UserCmd::Interrupt,
         "/help" => UserCmd::Help,
         _ => UserCmd::Passthrough(line.to_string()),
@@ -350,6 +351,9 @@ mod tests {
     fn there_is_no_undo() {
         assert_eq!(parse("/cancel", MAIN), UserCmd::Invalid(NO_UNDO.into()));
         assert_eq!(parse("/undo", "docs"), UserCmd::Invalid(NO_UNDO.into()));
+        // `/agents` (book §4: agents, never tasks); `/tasks` stays an alias
+        assert_eq!(parse("/agents", MAIN), UserCmd::Tasks);
+        assert_eq!(parse("/tasks", "docs"), UserCmd::Tasks);
     }
 
     #[test]

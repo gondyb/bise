@@ -168,7 +168,7 @@ impl Agent {
     /// One line: what this agent is for.
     pub fn description(&self) -> String {
         if self.is_main {
-            "orchestrator: routes the user's requests to the tasks".to_string()
+            "orchestrator: routes the user's requests to the agents".to_string()
         } else {
             crate::util::one_line(&self.brief.objective)
         }

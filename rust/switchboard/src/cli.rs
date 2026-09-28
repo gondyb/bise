@@ -18,9 +18,9 @@ sb inspect <agent> [--query <text>] [--before|--after|--around|--at #<pos>] [--l
 sb inspect main --origin
 main only:
 sb spawn <name> --objective \"…\" [--context \"…\"] [--constraint \"…\"]... [--done-when \"…\"] [--report-format \"…\"] [--worktree [--with-changes]]
-sb interrupt <task> | sb stop <task> \"<reason>\" | sb drop <task>
-sb close <card> [\"<note>\"] | sb rename <task> <new-name>
-sb restore <task> | sb isolate <task>   (only on the user's explicit request)
+sb interrupt <agent> | sb stop <agent> \"<reason>\" | sb drop <agent>
+sb close <card> [\"<note>\"] | sb rename <agent> <new-name>
+sb restore <agent> | sb isolate <agent>   (only on the user's explicit request)
 sb card \"<question for the user>\" [--for m_<n>]
 sb history \"<query>\"
 sb version [list | switch <commit|id|tree> | rollback]   (versions of Switchboard itself; list: everyone)
@@ -228,11 +228,11 @@ pub fn build(args: &[String]) -> Result<Value, String> {
         }
         "interrupt" | "drop" | "restore" | "isolate" => {
             let (pos, _) = parse_args(rest, &[], &[])?;
-            req.insert("agent".into(), json!(agent_arg(&pos, format!("usage: sb {} <task>", cmd))?));
+            req.insert("agent".into(), json!(agent_arg(&pos, format!("usage: sb {} <agent>", cmd))?));
         }
         "stop" => {
             let (pos, _) = parse_args(rest, &[], &[])?;
-            req.insert("agent".into(), json!(agent_arg(&pos, "usage: sb stop <task> \"<reason>\"")?));
+            req.insert("agent".into(), json!(agent_arg(&pos, "usage: sb stop <agent> \"<reason>\"")?));
             req.insert("reason".into(), json!(pos[1..].join(" ")));
         }
         "close" => {
@@ -251,7 +251,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                     req.insert("agent".into(), json!(a.trim_start_matches('@')));
                     req.insert("new_name".into(), json!(b.trim_start_matches('@')));
                 }
-                _ => return Err("usage: sb rename <task> <new-name>".into()),
+                _ => return Err("usage: sb rename <agent> <new-name>".into()),
             }
         }
         "card" => {
@@ -323,7 +323,7 @@ pub fn render(cmd: &str, v: &Value) -> (bool, String) {
             ),
         },
         "spawn" => format!(
-            "task {} created{} — it starts now; its answer will come back as a message",
+            "agent {} created{} — it starts now; its answer will come back as a message",
             s("name"),
             v.get("branch").and_then(|b| b.as_str()).map(|b| format!(" in worktree {} (branch {})", s("path"), b)).unwrap_or_default()
         ),

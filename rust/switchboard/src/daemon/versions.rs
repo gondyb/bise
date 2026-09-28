@@ -16,7 +16,7 @@ pub(super) fn version_allowed(from: &str, what: &str) -> Result<(), String> {
     match what {
         "" | "list" => Ok(()),
         _ if from == MAIN => Ok(()),
-        _ => Err(format!("sb version {}: reserved for main (the parent of the tasks)", what)),
+        _ => Err(format!("sb version {}: reserved for main (the parent of the agents)", what)),
     }
 }
 
