@@ -60,8 +60,9 @@ def panel_row(n, name):
 
 
 def in_view(name):
-    """The regex of the status row naming the agent in view."""
-    return r"^ %s · " % name
+    """The regex of the status row naming the agent in view (on the
+    reading column: its x depends on the width, BISE-97)."""
+    return r"^ *%s · " % name
 
 
 def wait_gone(needle, timeout=10):

@@ -29,21 +29,18 @@ pub(crate) fn workspace(app: &App) -> Option<String> {
 
 /// The feed and composer area, and the panel on the right when it fits.
 pub(crate) fn split(app: &App, full: Rect) -> (Rect, Option<Rect>) {
-    if app.sb.is_none() || full.width < 70 {
+    if app.sb.is_none() {
         return (full, None);
     }
-    let w = (full.width / 4).clamp(28, 40);
-    (
-        Rect {
-            width: full.width - w,
-            ..full
-        },
-        Some(Rect {
-            x: full.x + full.width - w,
-            width: w,
-            ..full
-        }),
-    )
+    // the screen's layout (book §8, layout.rs): under the header row and
+    // its blank row, inside the outer margins
+    let c = crate::layout::cols(full.width);
+    let mr = crate::layout::margin_rows(full.height);
+    let top = mr + 2;
+    let body = Rect { y: full.y + top, height: full.height.saturating_sub(top + mr), ..full };
+    let feed = Rect { x: full.x + c.feed_x, width: c.feed_w, ..body }.intersection(full);
+    let panel = c.panel.map(|p| Rect { x: full.x + p.x, width: p.w, ..body }.intersection(full));
+    (feed, panel)
 }
 
 /// The panel title: `agents · ⌥ + number` (the key part faint).
@@ -168,7 +165,7 @@ fn fit(s: &str, max: usize) -> String {
 
 /// The row of live agent `a`, entry `i` of the panel, number `num`
 /// (0 main; blank after 9).
-fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usize) -> Line<'static> {
+fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usize, name_cut: usize) -> Line<'static> {
     let focused = a.name == sb.focus;
     let selected = sb.selected == Some(i);
     let g = if a.main {
@@ -199,7 +196,9 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usi
         marks.push(Span::styled(format!(" · {} queued", mine), Style::default().fg(faint())));
     }
     let bg = selected.then(selection_bg);
-    row(num, g, &a.name, name_style, marks, right_of(app, sb, a), w, bg)
+    // names cut at 16 columns (12 in a narrow panel), book §8
+    let name = fit(&a.name, name_cut.max(1));
+    row(num, g, &name, name_style, marks, right_of(app, sb, a), w, bg)
 }
 
 /// The live agents (main and the archived left out) by what the header
@@ -295,10 +294,10 @@ impl Sb {
     }
 }
 
-pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
+pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect, name_cut: usize) {
     let Some(sb) = app.sb.as_ref() else { return };
-    // the left border takes one column
-    let w = area.width.saturating_sub(1) as usize;
+    // no rule on its left: whitespace and alignment do the job (book §8)
+    let w = area.width as usize;
     let title = Line::from(vec![
         Span::styled(format!(" {}", PANEL_TITLE.0), Style::default().fg(text())),
         Span::styled(panel_title_keys(), Style::default().fg(faint())),
@@ -316,7 +315,7 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
         }
         owners.push((lines.len(), Hit::Agent(a.name.clone())));
         let n = numbers.iter().find(|(name, _)| *name == a.name).map(|(_, n)| *n);
-        lines.push(agent_row(app, sb, a, i, n, w));
+        lines.push(agent_row(app, sb, a, i, n, w, name_cut));
         // the selected agent: what it is for and its last note, under its row
         if sb.selected == Some(i) && !a.main {
             for t in [&a.objective, &a.note].into_iter().filter(|t| !t.is_empty()) {
@@ -331,7 +330,7 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     archived_lines(sb, live, w, &mut lines, &mut owners, &mut sel_row);
     // the body under the title: scrolled to keep the selection in view;
     // what does not fit below ends in `+ {n} more`
-    let h = (area.height as usize).saturating_sub(1);
+    let h = (area.height as usize).saturating_sub(2);
     let (top, more) = window(&lines, &owners, sel_row, h, sb.archived_open, sb.archived().len());
     let mut body: Vec<Line> = lines.into_iter().skip(top).take(if more.is_some() { h - 1 } else { h }).collect();
     if let Some(n) = more {
@@ -343,19 +342,13 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
         hits.rows = owners
             .into_iter()
             .filter(|(r, _)| *r >= top && *r - top < shown)
-            .map(|(r, hit)| (area.y.saturating_add(1 + (r - top) as u16), hit))
+            .map(|(r, hit)| (area.y.saturating_add(2 + (r - top) as u16), hit))
             .collect();
     }
-    let mut all = vec![title];
+    // the title, then 1 blank row (book §8)
+    let mut all = vec![title, Line::from("")];
     all.extend(body);
-    frame.render_widget(
-        Paragraph::new(all).block(
-            Block::default()
-                .borders(Borders::LEFT)
-                .border_style(Style::default().fg(faint())),
-        ),
-        area,
-    );
+    frame.render_widget(Paragraph::new(all), area);
 }
 
 /// The first body row shown in `h` rows, and the `+ {n} more` count
@@ -844,7 +837,7 @@ mod tests {
     /// The panel alone, `w` columns wide, `h` rows high.
     fn panel_rows(app: &App, w: u16, h: u16) -> Vec<String> {
         let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
-        term.draw(|f| draw_panel(app, f, f.area())).unwrap();
+        term.draw(|f| draw_panel(app, f, f.area(), 16)).unwrap();
         screen(&term)
     }
 
@@ -862,8 +855,8 @@ mod tests {
             let rows = panel_rows(&app, w, 16);
             let t = trimmed(&rows);
             let row = |n: &str| t.iter().find(|r| r.contains(n)).unwrap_or_else(|| panic!("{} missing:\n{}", n, t.join("\n"))).clone();
-            assert_eq!(t[0], format!("│ {}{}", PANEL_TITLE.0, PANEL_TITLE.1), "the title on one row at {}", w);
-            assert_eq!(row("main"), format!("│ 0 {} main", G_MAIN));
+            assert_eq!(t[0], format!(" {}{}", PANEL_TITLE.0, PANEL_TITLE.1), "the title on one row at {}", w);
+            assert_eq!(row("main"), format!(" 0 {} main", G_MAIN));
             let flush = |n: &str, right: &str| {
                 let r = row(n);
                 assert!(r.ends_with(right), "{:?} ends with {:?} at {}", r, right, w);
@@ -872,31 +865,32 @@ mod tests {
                 assert_eq!(r.chars().count(), w as usize - 1, "{:?} flush right at {}", r, w);
             };
             flush("auth-fix", "12m");
-            assert!(row("auth-fix").starts_with(&format!("│ 1 {} auth-fix {}", G_WORKING, G_UNREAD)));
+            assert!(row("auth-fix").starts_with(&format!(" 1 {} auth-fix {}", G_WORKING, G_UNREAD)));
             flush("tests", "starting");
             flush("docs", "you");
-            assert!(row("docs").starts_with(&format!("│ 3 {} docs", G_NEEDS_YOU)));
+            assert!(row("docs").starts_with(&format!(" 3 {} docs", G_NEEDS_YOU)));
             flush("api-v2", "waits docs");
-            assert!(row("api-v2").starts_with(&format!("│ 4 {} api-v2", G_WAITING)));
+            assert!(row("api-v2").starts_with(&format!(" 4 {} api-v2", G_WAITING)));
             flush("bench", "done");
-            assert!(row("bench").starts_with(&format!("│ 5 {} bench", G_DONE)));
+            assert!(row("bench").starts_with(&format!(" 5 {} bench", G_DONE)));
             flush("deploy", "failed");
-            assert!(row("deploy").starts_with(&format!("│ 6 {} deploy", G_FAILED)));
+            assert!(row("deploy").starts_with(&format!(" 6 {} deploy", G_FAILED)));
             flush("ideas", "idle");
             flush("old-spike", "stopped");
-            assert!(row("old-spike").starts_with(&format!("│ 8 {} old-spike", G_STOPPED)));
-            assert!(row("big-re").starts_with(&format!("│ 9 {} big-re", G_WORKING)));
+            assert!(row("old-spike").starts_with(&format!(" 8 {} old-spike", G_STOPPED)));
+            assert!(row("big-re").starts_with(&format!(" 9 {} big-re", G_WORKING)));
             assert!(row("big-re").contains(G_WORKTREE));
             // no number after 9
-            assert!(row("eleventh").starts_with(&format!("│   {} eleventh", G_IDLE)), "{:?}", row("eleventh"));
+            assert!(row("eleventh").starts_with(&format!("   {} eleventh", G_IDLE)), "{:?}", row("eleventh"));
             assert!(!t.iter().any(|r| r.to_lowercase().contains("task")), "no \"task\" in the panel");
         }
         // 28 columns: a long name is cut, the worktree mark kept
         let t = trimmed(&panel_rows(&app, 28, 16));
         let big = t.iter().find(|r| r.contains("big-")).unwrap();
         assert!(big.contains("…") && big.contains(G_WORKTREE), "{:?}", big);
+        // names are cut at 16 even with room (book §8)
         let t = trimmed(&panel_rows(&app, 40, 16));
-        assert!(t.iter().any(|r| r.contains(&format!("big-refactor-of-auth {}", G_WORKTREE))), "{}", t.join("\n"));
+        assert!(t.iter().any(|r| r.contains(&format!("big-refactor-of… {}", G_WORKTREE))), "{}", t.join("\n"));
     }
 
     /// Colors: the number faint, the agent in view in accent, "needs
@@ -906,7 +900,7 @@ mod tests {
         let mut app = every_state();
         app.sb.as_mut().unwrap().focus = "bench".into();
         let mut term = Terminal::new(TestBackend::new(40, 16)).unwrap();
-        term.draw(|f| draw_panel(&app, f, f.area())).unwrap();
+        term.draw(|f| draw_panel(&app, f, f.area(), 16)).unwrap();
         let rows = screen(&term);
         let buf = term.backend().buffer();
         let at = |n: &str, what: &str| {
@@ -941,13 +935,13 @@ mod tests {
         }
         let num = |app: &App, n: &str| app.sb.as_ref().unwrap().numbers().into_iter().find(|(x, _)| x == n).map(|(_, k)| k);
         let t = trimmed(&panel_rows(&app, 28, 10));
-        assert!(t.iter().any(|r| r.starts_with(&format!("│ 3 {} c", G_WORKING))), "{}", t.join("\n"));
+        assert!(t.iter().any(|r| r.starts_with(&format!(" 3 {} c", G_WORKING))), "{}", t.join("\n"));
         assert_eq!((num(&app, "a"), num(&app, "b"), num(&app, "c")), (Some(1), Some(2), Some(3)));
         // a is dropped (archived): b and c keep 2 and 3
         app.sb.as_mut().unwrap().agents[1].status = "archived".into();
         let t = trimmed(&panel_rows(&app, 28, 10));
-        assert!(t.iter().any(|r| r.starts_with(&format!("│ 2 {} b", G_WORKING))), "{}", t.join("\n"));
-        assert!(t.iter().any(|r| r.starts_with(&format!("│ 3 {} c", G_WORKING))), "{}", t.join("\n"));
+        assert!(t.iter().any(|r| r.starts_with(&format!(" 2 {} b", G_WORKING))), "{}", t.join("\n"));
+        assert!(t.iter().any(|r| r.starts_with(&format!(" 3 {} c", G_WORKING))), "{}", t.join("\n"));
         assert_eq!(num(&app, "a"), None);
         // Alt+3 goes to c, Alt+1 to no one, Alt+0 to main
         key(&mut app, &KeyEvent::new(KeyCode::Char('3'), KeyModifiers::ALT), false);
@@ -979,8 +973,8 @@ mod tests {
             }
         }
         let t = trimmed(&panel_rows(&app, 28, 10));
-        // title + 8 agents + the more row
-        assert_eq!(t[9], "│ + 23 more", "{}", t.join("\n"));
+        // title + 1 blank row + 7 agents + the more row
+        assert_eq!(t[9], " + 24 more", "{}", t.join("\n"));
         app.sb.as_mut().unwrap().selected = Some(30);
         let t = trimmed(&panel_rows(&app, 28, 10));
         assert!(t.iter().any(|r| r.contains("a30")), "{}", t.join("\n"));
@@ -1229,18 +1223,20 @@ mod chrome_tests {
     fn header_at_60_and_120() {
         let mut app = busy();
         let rows = draw(&mut app, 120, 20);
+        // the header at the outer margins (book §8): 2 columns each side
         let head = &rows[0];
-        assert!(head.starts_with(" bise :*"), "{:?}", head);
+        assert!(head.starts_with("  bise :*"), "{:?}", head);
         let right = "∿ 3 working · … 1 waiting · ? 1 needs you · ♡ 1 done";
         assert!(head.ends_with(right), "{:?}", head);
-        assert_eq!(head.chars().count(), 119, "one column of margin: {:?}", head);
+        assert_eq!(head.chars().count(), 118, "two columns of margin: {:?}", head);
         assert!(!rows.iter().any(|r| r.contains("Switchboard")));
+        // 60 columns: margins of 1
         let rows = draw(&mut app, 60, 20);
         assert_eq!(rows[0], format!(" bise :*{}∿ 3 · … 1 · ? 1 · ♡ 1", " ".repeat(60 - 8 - 21 - 1)));
         // no agents: the words
         let mut app = with_main();
         let rows = draw(&mut app, 120, 20);
-        assert!(rows[0].starts_with(" bise :*") && rows[0].ends_with("no agents yet"), "{:?}", rows[0]);
+        assert!(rows[0].starts_with("  bise :*") && rows[0].ends_with("no agents yet"), "{:?}", rows[0]);
         let rows = draw(&mut app, 60, 20);
         assert!(rows[0].ends_with("no agents yet"), "{:?}", rows[0]);
     }
@@ -1270,14 +1266,15 @@ mod chrome_tests {
         assert_eq!(FIRST_RUN[0], "what's on your mind?");
         assert_eq!(FIRST_RUN[1], "say it and keep talking. the work runs in the background, i'm always here.");
         assert_eq!(FIRST_RUN[2], "try: \"fix the flaky login test, and draft the release note\"");
-        let status = rows.iter().find(|r| r.starts_with(" main ·")).unwrap_or_else(|| panic!("{}", all));
-        assert!(status.starts_with(" main · idle"), "{:?}", status);
+        // the bottom stack on the reading column's x (book §8)
+        let status = rows.iter().find(|r| r.trim_start().starts_with("main ·")).unwrap_or_else(|| panic!("{}", all));
+        assert!(status.trim_start().starts_with("main · idle"), "{:?}", status);
         // the composer block (book §13): the bar on its rows, the hints on
         // their own last row, flush right
         let hints = rows.last().unwrap();
         assert!(hints.trim_end().ends_with("⏎ send · @ agent · / commands"), "{:?}", hints);
-        let at = rows.iter().position(|r| r.starts_with(" main ·")).unwrap();
-        assert!(rows[at + 1..rows.len() - 1].iter().all(|r| r.starts_with(" │")), "{}", all);
+        let at = rows.iter().position(|r| r.trim_start().starts_with("main ·")).unwrap();
+        assert!(rows[at + 1..rows.len() - 1].iter().all(|r| r.trim_start().starts_with("│")), "{}", all);
         // a panel with main only
         assert!(rows.iter().any(|r| r.ends_with(&format!("0 {} main", G_MAIN))), "{}", all);
         // once there is an agent, the first-run text goes
@@ -1310,11 +1307,15 @@ mod chrome_tests {
             .collect();
         let all = rows.join("\n");
         let line = "you're talking to auth-fix directly. main isn't in the loop. esc back to main.";
-        assert!(rows[1].contains(line), "{}", all);
-        let y = rows.iter().position(|r| r.starts_with(" auth-fix ·")).unwrap_or_else(|| panic!("{}", all));
-        assert!(rows[y].starts_with(" auth-fix · idle · shared folder"), "{:?}", rows[y]);
-        assert_eq!(buf.cell((1, y as u16)).unwrap().fg, accent(), "the name in accent");
-        assert_eq!(buf.cell((10, y as u16)).unwrap().fg, dim(), "the rest dim");
+        // the header row, 1 blank row, then the pinned line (book §8),
+        // wrapped in the column when it is narrower
+        let left = |r: &String| r.chars().take(79).collect::<String>().trim().to_string();
+        assert!(format!("{} {}", left(&rows[2]), left(&rows[3])).trim().contains(line), "{}", all);
+        let y = rows.iter().position(|r| r.trim_start().starts_with("auth-fix ·")).unwrap_or_else(|| panic!("{}", all));
+        let x = rows[y].find("auth-fix").unwrap() as u16;
+        assert!(rows[y].trim_start().starts_with("auth-fix · idle · shared folder"), "{:?}", rows[y]);
+        assert_eq!(buf.cell((x, y as u16)).unwrap().fg, accent(), "the name in accent");
+        assert_eq!(buf.cell((x + 9, y as u16)).unwrap().fg, dim(), "the rest dim");
         assert!(!all.contains("task"), "no \"task\" in the chrome:\n{}", all);
     }
 
@@ -1334,8 +1335,9 @@ mod chrome_tests {
             let rows = draw(&mut app, 100, 24);
             assert!(app.feed_y >= 1, "the header is above the feed");
             if inside {
-                assert!(rows[1].contains("you're talking to auth-fix"));
-                assert_eq!(app.feed_y, 3);
+                assert!(rows[2].contains("you're talking to auth-fix"));
+                // under the pinned line (1 or 2 rows) and a blank row
+                assert!(app.feed_y >= 4, "{}", app.feed_y);
             }
             for k in 0..5 {
                 let label = format!("event {}", k);

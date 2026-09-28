@@ -131,9 +131,9 @@ pub(crate) fn ev_lines_t(ev: &Ev, tick: u32, width: usize) -> Vec<Line<'static>>
 // ---- the measure (book §11) ----
 
 /// Prose (messages, reports, notices) wraps at this many columns.
-pub(crate) const PROSE_MAX: usize = 76;
+pub(crate) const PROSE_MAX: usize = 79;
 /// Code (scripts, diffs, outputs) runs up to this many columns.
-pub(crate) const CODE_MAX: usize = 100;
+pub(crate) const CODE_MAX: usize = 103;
 
 /// The prose measure in a feed column of `width`.
 pub(crate) fn prose_width(width: usize) -> usize {
@@ -287,8 +287,13 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         // column 3; inside an agent, the reply is the view's own voice
         Ev::Assistant(t) if main_feed() => {
             let mark = Span::styled(format!(" {} ", G_MAIN), Style::default().fg(accent()));
-            let rows = md_lines(&unescape_md(t), prose_width(width).saturating_sub(3), width.saturating_sub(3));
-            hung_rows(&mark, &Span::raw("   "), rows, width)
+            // wrapped once, at the text's own width: the rows under the
+            // first one line up with its text (BISE-97: at 80 columns a
+            // row 1 cell too wide wrapped again, leaving one-word rows)
+            use unicode_width::UnicodeWidthStr;
+            let lead = mark.content.width();
+            let rows = md_lines(&unescape_md(t), prose_width(width).saturating_sub(lead), width.saturating_sub(lead));
+            hung_rows(&mark, &Span::raw(" ".repeat(lead)), rows, width)
         }
         // inside an agent: the reply starts at the glyph column, like the
         // mockup "inside an agent" (BISE-90; it was one column left of it)

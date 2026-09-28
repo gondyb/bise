@@ -429,7 +429,13 @@ pub(crate) fn draw_card(app: &mut App, frame: &mut Frame, area: Rect) {
     let title = title_line(c, pos, order.len(), sb.card.full, inner_w);
     let scroll = sb.card.scroll.min(max_scroll);
     // the keys first (copy deck), then where the text is if it fits
-    let keys = keys_hint(&c.kind, order.len() > 1, sb.card.full, inner_w);
+    // a scrolled card keeps room for its short scroll hint (` ▾ 12 `):
+    // in the reading column (≤ 79, BISE-97) all the keys would take it
+    let keep = {
+        use unicode_width::UnicodeWidthStr;
+        scroll_hint_short(scroll, max_scroll).width()
+    };
+    let keys = keys_hint(&c.kind, order.len() > 1, sb.card.full, inner_w.saturating_sub(keep + usize::from(keep > 0)));
     let hint = {
         use unicode_width::UnicodeWidthStr;
         let room = inner_w.saturating_sub(keys.width() + 1);
@@ -598,12 +604,15 @@ mod tests {
         let area = app.sb.as_ref().unwrap().card.area;
         assert!(area.height >= h * 6 / 10, "box height {} of {}", area.height, h);
         assert!(s.contains("line 01 of the card"));
+        // the box takes the reading column (≤ 79, book §8): with every key
+        // shown, the scroll hint may be its short form (`▾ 58`)
+        assert!(s.contains("more lines · pgdn") || s.contains(&format!(" {} ", crate::theme::G_OPEN)), "a scroll hint in
+{}", s);
+        // the most useful keys first; the last ones give way to the
+        // scroll hint when the column is narrow
         for k in [
-            "more lines · pgdn",
             "alt+r answer with text",
             "ctrl+x later",
-            "ctrl+f full screen",
-            "ctrl+n next",
             "? t1 needs you · 1 of 2",
         ] {
             assert!(s.contains(k), "{} in\n{}", k, s);

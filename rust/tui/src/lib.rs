@@ -80,6 +80,7 @@ mod keybar;
 mod onboarding;
 mod hints;
 mod queue;
+mod layout;
 mod voice;
 #[cfg(test)]
 mod voice_ui_tests;

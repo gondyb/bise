@@ -461,7 +461,9 @@ fn measure_feed() -> Vec<Ev> {
 }
 
 #[test]
-fn prose_wraps_at_76_and_code_at_100() {
+fn prose_wraps_at_79_and_code_at_103() {
+    // the reading column (book §8): 3 lead + 76 of text; code to 103
+    let (pm, cm) = (crate::render::PROSE_MAX, crate::render::CODE_MAX);
     for width in [60usize, 100, 160] {
         let events = measure_feed();
         let rows = feed_rows(&events, width);
@@ -469,22 +471,22 @@ fn prose_wraps_at_76_and_code_at_100() {
         // prose: the user block, the reply, the reasoning
         for (i, rs) in rows[..4].iter().enumerate().filter(|(i, _)| *i != 2) {
             let w = widest(rs);
-            assert!(w <= 76.min(width), "event {i} at {width}: {w} columns\n{rs:#?}");
+            assert!(w <= pm.min(width), "event {i} at {width}: {w} columns\n{rs:#?}");
             // the text fills its measure: it is not wrapped narrower
-            assert!(w >= 76.min(width) - 12, "event {i} at {width}: only {w} columns\n{rs:#?}");
+            assert!(w >= pm.min(width) - 12, "event {i} at {width}: only {w} columns\n{rs:#?}");
         }
         // a message between agents is one row of a list: the code measure
         let msg: Vec<&String> = rows[2].iter().filter(|r| !r.is_empty()).collect();
         assert_eq!(msg.len(), 1, "{width}: {msg:#?}");
-        assert!(msg[0].trim_end().width() <= 100.min(width).max(35), "{width}: {msg:#?}");
+        assert!(msg[0].trim_end().width() <= cm.min(width).max(35), "{width}: {msg:#?}");
         // the user block's panel stops at the measure too (a wrapped
         // row keeps the blank after its last word, as before)
-        assert!(rows[0].iter().all(|r| r.trim_end().width() <= 76.min(width) && r.width() <= 77.min(width + 1)), "{width}: {:#?}", rows[0]);
+        assert!(rows[0].iter().all(|r| r.trim_end().width() <= pm.min(width) && r.width() <= (pm + 1).min(width + 1)), "{width}: {:#?}", rows[0]);
         // code: the tool line and its script
         let code = &rows[4];
         let w = widest(code);
-        assert!(w <= 100.min(width), "code at {width}: {w}\n{code:#?}");
-        if width > 100 {
+        assert!(w <= cm.min(width), "code at {width}: {w}\n{code:#?}");
+        if width > cm {
             // the long script line uses the whole code measure
             assert!(w >= 90, "code at {width}: {w}\n{code:#?}");
         }
@@ -1332,4 +1334,29 @@ fn an_open_report_hangs_its_rows() {
     for r in &rows[1..] {
         assert!(r.starts_with("   ") && !r.starts_with("    "), "{r:?} in {rows:#?}");
     }
+}
+
+// BISE-97: main's reply is wrapped once, at its text's width; the rows
+// under the first line up with its text (at 80 columns a row 1 cell too
+// wide used to wrap again, leaving a one-word row)
+#[test]
+fn mains_reply_wraps_once_under_its_text() {
+    let long = "the quick brown fox jumps over the lazy dog and keeps running across the field until the evening comes and the light fades away slowly";
+    crate::render::set_main_feed(true);
+    for w in 40..110usize {
+        let rows: Vec<String> = crate::render::ev_rows(&Ev::Assistant(long.into()), 0, w)
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect();
+        let text_w = crate::render::prose_width(w) - 4;
+        // no row is cut short: each one but the last could not take the next word
+        for pair in rows.windows(2) {
+            let next = pair[1].split_whitespace().next().unwrap();
+            assert!(pair[0].trim_start_matches([' ', ':', '*']).chars().count() + 1 + next.chars().count() > text_w, "w {}: {:?}", w, rows);
+        }
+        for r in &rows[1..] {
+            assert!(r.starts_with("    ") && !r[4..].starts_with(' '), "w {}: {:?}", w, rows);
+        }
+    }
+    crate::render::set_main_feed(false);
 }

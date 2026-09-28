@@ -218,7 +218,7 @@ fn a_pinned_view_does_not_move_when_lines_arrive() {
     assert!(!app.tail_visible);
     // the text of the feed (the scrollbar thumb moves: more history)
     let text = |t: &Terminal<TestBackend>, h: usize| -> Vec<String> {
-        screen(t).into_iter().take(h).map(|l| l.chars().take(40).collect()).collect()
+        screen(t).into_iter().take(h).map(|l| l.chars().take(40).collect::<String>().trim_end().to_string()).collect()
     };
     let before = text(&term, app.area_h);
     assert!(!before.iter().any(|l| l.contains("event 299")));
@@ -251,8 +251,8 @@ fn scrolling_up_then_down_comes_back() {
     // the top of the feed is reachable and stops there
     app.scroll -= 100_000;
     term.draw(|f| draw_sb(&mut app, f)).unwrap();
-    // (row 0 is the header)
-    assert!(screen(&term)[1].contains("event 0"));
+    // (the header, its blank row and the top margin come first)
+    assert!(screen(&term)[app.feed_y as usize].contains("event 0"));
     // every row of the feed maps to the event it shows (clicks)
     assert_eq!(app.vis_events[0], 0);
     assert_eq!(app.vis_events.len(), app.area_h);
@@ -283,7 +283,7 @@ fn a_following_feed_keeps_its_last_events_then_pages_back() {
     term.draw(|f| draw_sb(&mut app, f)).unwrap();
     assert!(app.win.loading);
     let shown = |t: &Terminal<TestBackend>| -> Vec<String> {
-        screen(t).into_iter().take(10).map(|l| l.chars().take(40).collect()).collect()
+        screen(t).into_iter().take(10).map(|l| l.chars().take(40).collect::<String>().trim_end().to_string()).collect()
     };
     let before = shown(&term);
     let n0 = app.events.len();

@@ -37,13 +37,13 @@ def composer_row():
     """The composer's text (book §13, the composer block): the last run
     of rows with the bar in column 1, their text from column 3."""
     rows = tui_tmux.screen().splitlines()
-    bar = [i for i, r in enumerate(rows) if r.startswith(" │")]
+    bar = [i for i, r in enumerate(rows) if r.lstrip().startswith("│")]
     if not bar:
         return ""
     first = bar[-1]
-    while first > 0 and rows[first - 1].startswith(" │"):
+    while first > 0 and rows[first - 1].lstrip().startswith("│"):
         first -= 1
-    return " ".join(r[3:].strip() for r in rows[first:bar[-1] + 1] if r[3:].strip())
+    return " ".join(r[r.index("│") + 1:].strip() for r in rows[first:bar[-1] + 1] if r[r.index("│") + 1:].strip())
 
 
 def main():

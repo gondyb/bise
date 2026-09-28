@@ -69,7 +69,7 @@ fn check_frame(app: &mut App, width: u16, height: u16, what: &str) {
     let b = ui::composer_block(height);
     assert!(area.h >= drawn.max(b.min_text), "{what}: {} rows for {drawn}", area.h);
     assert_eq!(
-        area.y as usize + area.h + b.pad_bottom as usize + usize::from(b.hints_row),
+        area.y as usize + area.h + b.pad_bottom as usize + usize::from(b.hints_row) + crate::layout::margin_rows(height) as usize,
         height as usize,
         "{what}: the composer block ends the screen"
     );
