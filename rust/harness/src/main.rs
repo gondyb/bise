@@ -225,6 +225,11 @@ fn run_sbd(args: &[String]) -> std::io::Result<()> {
         eprintln!("repl-live introuvable (compile avec `bend runtime/repl-live.bend -o repl-live`)");
         std::process::exit(1);
     };
+    // the hub's decisions (sb-core) come from the same app root as the
+    // REPLs: a version runs its own sb-core, not the dev tree's
+    if std::env::var_os("SB_CORE_BIN").is_none() && root.join("sb-core").exists() {
+        std::env::set_var("SB_CORE_BIN", root.join("sb-core"));
+    }
     // the agents' REPLs load their MCP index like a normal session
     if std::env::var_os("BEND_MCP_INDEX").is_none() {
         if let Ok(h) = std::env::var("HOME") {
@@ -242,7 +247,8 @@ fn run_sbd(args: &[String]) -> std::io::Result<()> {
 fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
     let paths = switchboard::paths::Paths::for_workspace(&sb_workspace(args));
     if args.iter().any(|a| a == "--stop") {
-        match switchboard::client::stop(&paths)? {
+        let keep = args.iter().any(|a| a == "--keep-agents");
+        match switchboard::client::stop(&paths, keep)? {
             true => eprintln!("hub arrêté ({})", paths.workspace.display()),
             false => eprintln!("aucun hub pour {}", paths.workspace.display()),
         }

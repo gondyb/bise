@@ -2,7 +2,6 @@
 //! (RFC 0003 §4, RFC 0001 §7.2 and §7.5). It speaks to the hub of its
 //! workspace (`SB_SOCKET`) as `SB_AGENT`.
 
-use crate::client::request;
 use serde_json::{json, Map, Value};
 use std::io::Read;
 use std::time::Duration;
@@ -348,10 +347,15 @@ pub fn main(args: &[String]) -> i32 {
     req["from"] = json!(from);
     let cmd = args[0].clone();
     let timeout = req.get("timeout_s").and_then(|t| t.as_u64()).unwrap_or(0) + 30;
-    match request(
+    let idempotent = matches!(
+        cmd.as_str(),
+        "list" | "tasks" | "history" | "inspect" | "wait"
+    );
+    match crate::client::request_retry(
         std::path::Path::new(&socket),
         &req,
         Duration::from_secs(timeout),
+        idempotent,
     ) {
         Ok(v) => {
             let (ok, text) = render(&cmd, &v);

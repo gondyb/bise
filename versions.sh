@@ -4,7 +4,8 @@
 # A version is an immutable app root built from one git commit (or from
 # the working tree, uncommitted changes included):
 #   $SB_VERSIONS_DIR/<id>/  bend-harness, repl-live, tool-desc-*.txt,
-#                           prompt-*.txt, rust/jsrt/target/debug/bend-jsrt,
+#                           prompt-*.txt, sb-core (when hub/ exists),
+#                           rust/jsrt/target/debug/bend-jsrt,
 #                           VERSION (id, commit, subject, built, bend_hash)
 # id = <short commit>, or <short commit>-dirty-<hash of the changes>.
 # A hub runs FROM a version dir: rebuilding the tree never changes a
@@ -65,6 +66,17 @@ build_from() {
     mv "$BUILD/cache/repl-live-$h.tmp" "$BUILD/cache/repl-live-$h"
   fi
   cp "$BUILD/cache/repl-live-$h" "$tmp/repl-live"
+
+  # sb-core: the hub's decisions in Bend (hub/*.bend), when the version has them
+  if [ -f "$src/hub/main.bend" ]; then
+    local hc; hc="$(cd "$src" && find hub vendor -type f -name '*.bend' -print0 | sort -z | xargs -0 cat | shasum | cut -c1-12)"
+    if [ ! -x "$BUILD/cache/sb-core-$hc" ]; then
+      say "bend hub/main.bend $id..."
+      (cd "$src" && bend hub/main.bend -o "$BUILD/cache/sb-core-$hc.tmp" >/dev/null)
+      mv "$BUILD/cache/sb-core-$hc.tmp" "$BUILD/cache/sb-core-$hc"
+    fi
+    cp "$BUILD/cache/sb-core-$hc" "$tmp/sb-core"
+  fi
   cp "$src"/tool-desc-*.txt "$src"/prompt-*.txt "$tmp/"
 
   # the V8 engine: rarely changes, 100 MB - a hard link of the live tree's

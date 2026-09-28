@@ -2,7 +2,7 @@
 //! starting the hub first when none runs.
 
 use crate::paths::Paths;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -56,11 +56,14 @@ pub fn connect(paths: &Paths, exe: &Path, app_root: &Path) -> std::io::Result<Un
     Ok(s)
 }
 
-/// Stop the hub of a workspace and every agent REPL.
-pub fn stop(paths: &Paths) -> std::io::Result<bool> {
+/// Stop the hub of a workspace and every agent REPL. `keep_agents`:
+/// the REPLs keep running (their turns too) for the next hub to adopt -
+/// a version switch, a hub restart.
+pub fn stop(paths: &Paths, keep_agents: bool) -> std::io::Result<bool> {
     match UnixStream::connect(paths.socket()) {
         Ok(mut s) => {
-            s.write_all(b"{\"op\":\"hello\"}\n{\"op\":\"stop_hub\"}\n")?;
+            let req = json!({"op": "stop_hub", "keep_agents": keep_agents});
+            s.write_all(format!("{{\"op\":\"hello\"}}\n{}\n", req).as_bytes())?;
             // wait for the socket to go away
             let t0 = Instant::now();
             while paths.socket().exists() && t0.elapsed() < Duration::from_secs(5) {
@@ -87,4 +90,34 @@ pub fn request(socket: &Path, req: &Value, timeout: Duration) -> Result<Value, S
         .map_err(|e| format!("pas de réponse du hub : {}", e))?;
     serde_json::from_str(answer.trim())
         .map_err(|e| format!("réponse illisible : {} ({})", e, answer.trim()))
+}
+
+/// `request`, through a hub restart (a version switch, a crash): a hub
+/// that is not there yet is waited for (up to 20 s); a connection the hub
+/// closed without answering is retried when `idempotent` (a read, a
+/// wait) - never a send, which may have been done already.
+pub fn request_retry(
+    socket: &Path,
+    req: &Value,
+    timeout: Duration,
+    idempotent: bool,
+) -> Result<Value, String> {
+    let t0 = Instant::now();
+    loop {
+        let connected = UnixStream::connect(socket).is_ok();
+        let r = if connected {
+            request(socket, req, timeout)
+        } else {
+            Err("hub absent".to_string())
+        };
+        let again = match &r {
+            Ok(_) => false,
+            Err(_) if !connected => true,
+            Err(e) => idempotent && e.starts_with("réponse illisible"),
+        };
+        if !again || t0.elapsed() > Duration::from_secs(20) {
+            return r;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
 }
