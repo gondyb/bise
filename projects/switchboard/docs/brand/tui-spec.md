@@ -50,6 +50,9 @@ Three levels, always the same, in main and inside an agent:
   understandable. Main's level-2 line after it is the summary for you.
 - Color is reserved for level 1 (and errors). Levels 2 and 3 differ by
   brightness and the rail, not by hue.
+- **Cards: keep `ctrl+f`** (Gabriel). A card opens full screen and
+  scrollable (`pgup` / `pgdn`); `ctrl+f` or `esc` brings it back. Its hint
+  sits on the card: `ctrl+f full screen`.
 - No "quiet" mode (Gabriel): the levels and the folding of long runs already
   keep the screen calm.
 - **⚠** Today the hub's messages to main reach the feed as plain turns; the

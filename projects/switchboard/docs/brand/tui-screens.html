@@ -194,7 +194,7 @@ the slow tail is the cold cache on the first request.</pre>
  term({ feed: you("where are we?") + bise("3 agents working, 1 needs you (docs), bench is done."),
    above: `<div class="card"><div><span class="acc">?</span> docs needs you <span class="dim">· 1 of 3 · 2m</span></div>
    <div class="b" style="margin-top:4px">the brief says "keep old clients working", but v2 removes /users. do we document v1 or v2?</div>
-   <div class="opts b" style="margin-top:6px"><span><b>1</b> v1</span><span><b>2</b> v2</span><span class="dim"><b>alt+r</b> answer with text</span><span class="dim"><b>ctrl+x</b> later</span></div></div>` })],
+   <div class="opts b" style="margin-top:6px"><span><b>1</b> v1</span><span><b>2</b> v2</span><span class="dim"><b>alt+r</b> answer with text</span><span class="dim"><b>ctrl+x</b> later</span><span class="dim"><b>ctrl+f</b> full screen</span></div></div>` })],
 
 ["cards: every kind", "same box, one glyph per kind, sorted by what blocks an agent first. ⚠ the heart on a done card replaces today's ✓.",
  term({ feed: "",
@@ -208,7 +208,7 @@ the slow tail is the cold cache on the first request.</pre>
     ['♡', "bench is done", "p95 at 180 ms, nothing to fix.  alt+r got it"],
    ].map(([g, t, x]) => `<div class="card soft"><span class="${g.includes("acc") ? "" : ""}">${g}</span> ${t} <span class="dim">· ${x}</span></div>`).join("") })],
 
-["a card, full screen", "long cards open full screen (today: Ctrl+F), scroll with PgUp/PgDn. prose still wraps at 76 columns.",
+["a card, full screen", "kept as today (Gabriel): ctrl+f opens the card full screen, pgup/pgdn scroll it, ctrl+f or esc brings it back. prose still wraps at 76 columns.",
  term({ feed: `<div><span class="acc">?</span> release needs you <span class="dim">· full screen · ctrl+f back</span></div>
    <div class="b">the changelog has 41 entries since 0.3. i grouped them in 4 themes: auth, speed, voice, cards. two entries have no PR link:</div>
    <pre class="out">- "fix the ghost cursor in the composer"
