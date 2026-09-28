@@ -58,11 +58,11 @@ if [ ! -x rust/jsrt/target/debug/bend-jsrt ]; then
 fi
 
 # the Bend REPLs: rebuilt when absent OR older than any Bend source
-# (runtime/, core/, the tool descriptions). A failed rebuild keeps the
-# existing binary when there is one (no toolchain: still runnable).
+# (runtime/, core/, vendor/, the tool descriptions). A failed rebuild keeps
+# the existing binary when there is one (no toolchain: still runnable).
 export PATH="$HOME/.bend/bin:$PATH"
 bend_stale() {
-  [ ! -x "$1" ] || [ -n "$(find runtime core tool-desc-*.txt -newer "$1" -print -quit 2>/dev/null)" ]
+  [ ! -x "$1" ] || [ -n "$(find runtime core vendor tool-desc-*.txt -newer "$1" -print -quit 2>/dev/null)" ]
 }
 build_repl() {
   local out="$1" src="$2"
