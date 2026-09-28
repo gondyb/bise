@@ -698,7 +698,7 @@ Index:
 
 ### BISE-15 · message marks `·` `✓` `✓✓`
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-f-feed · **commits:** 9e44f32
 - **track:** F · **owns:** as BISE-12 + `wire.rs` (steering lines only)
 - **spec:** book §13 (steering and marks), contract C3
 - **do:** `steering_received:` / `steered:` set a mark on the last `Ev::You`
@@ -709,7 +709,7 @@ Index:
   (**⚠** needs a hub signal; if missing, write it in the notes for main).
 - **done when:** tests for the three marks and a replayed history (marks
   restored from `injected :` lines).
-- **notes:**
+- **notes:** `Ev::You(text, Mark)` with `Mark::{Sent, Received, Read}` (C3; no `None`: every line has a mark). Drawn after the last line of your message: `·` dim, `✓` faint, `✓✓` accent (through `theme::glyph`). `steering_received:` / `steered:` parse to an in-memory `Ev::MarkYou { text, mark, or }`: `push_event` moves the mark of your **last** line with the same words (whitespace-insensitive: the wire flattens line breaks; looks back 500 events), only upward, appends nothing; no info lines any more. A turn start (`Ev::Turn`) marks what you sent since the previous turn as read (a message at idle → `✓✓`). Your line is `·` when it appears (the hub's `sb you` echo, the solo client's local echo). Replayed history (REPL `--resume`): `you :` → read; `injected : X` marks your line X read, or stays the old `injected · X` info line when there is none (the REPL history has no `you :` line for a steering, and can't tell it from a notification). Hub history pages carry the same obs lines, so their marks come back the same way. `Hint::FirstSteer` (BISE-61) fires on the first `steered:` in view (sb.rs `ingest_for`). Also here (main's OK, m_828): **`:*` on main's replies in main's feed** — `render::set_main_feed` (ui.rs `draw_feed`, from `Sb::is_main_focus`); `EventRows.main` records the owner the rows were built for, and `ensure_rows` rebuilds on a mismatch. **Not done, needs a hub signal (for main):** `✗ not delivered: {name} stopped. ⏎ send again · esc drop` — the hub says nothing when a message goes to a stopped agent; a `sb undelivered : {name} : {text}` line (C2) would let `push_event` mark the line (a `Mark::Failed`) and draw the prompt. **Tests:** `steering_moves_the_mark_of_your_line` (`·` → `✓` → `✓✓`, no info line, the three colors), `a_mark_only_moves_up_and_finds_its_line`, `a_message_at_idle_is_read_when_its_turn_starts`, `a_replayed_history_restores_the_marks` (`you :`, `injected :` with and without its line, the live obs lines), `mains_replies_carry_its_glyph_in_its_feed_only`; mockup and multi-line tests updated (`✓✓` on your lines). **Gates** (worktree of b4808a2 + my hunks, `SB_CORE_BIN` = the worktree's): build, `cargo test --workspace` green (the core `waiting_on` failure is gone with the right sb-core, per bise-h-hub), clippy `--all-targets` 0 warnings, `run_all.sh` rc 0 (all tmux PASS, `tui_waits` too); rebased on 07ce911 (K's ctrl+o): build + clippy clean. **Bench** (50k lines): replay 85.7 / 84.9 / 84.3 ms (base 82.5, noise ±10), steady 0.22–0.23, PageUp 0.46–0.50, PageDown 0.50–1.06, windowed PageUp worst 0.97–1.35, page ingest 1.3–1.9: not slower. **Differs from the mockups:** every line of yours carries its mark (the mockups show marks only in the steering screen); the hint says `✓✓` in the accent.
 
 ### BISE-31 · answered cards
 
