@@ -51,6 +51,8 @@ pub(super) struct Agent {
     report: String,
     report_ms: Option<u64>,
     created_ms: u64,
+    /// Who it waits on (`sb wait` / `sb ask`), "" when no one.
+    waiting_on: String,
 }
 
 impl Agent {
@@ -454,6 +456,7 @@ fn apply_state(app: &mut App, v: &Value) {
                     report: s(x, "report"),
                     report_ms: x.get("report_ms").and_then(|q| q.as_u64()),
                     created_ms: x.get("created_ms").and_then(|q| q.as_u64()).unwrap_or(0),
+                    waiting_on: s(x, "waiting_on"),
                 })
                 .collect()
         })
@@ -703,11 +706,9 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             false
         }
         _ if matches!(nav, Some(Nav::Goto(_))) => {
-            if let Some(Nav::Goto(i)) = nav {
-                let live = sb.nav().into_iter().filter(|a| !a.archived()).nth(i);
-                if let Some(t) = live.map(|a| a.name.clone()) {
-                    focus(app, &t);
-                }
+            // the number shown in the panel (it stays while the agent lives)
+            if let Some(t) = nav.and_then(|n| if let Nav::Goto(i) = n { sb.agent_numbered(i) } else { None }) {
+                focus(app, &t);
             }
             true
         }

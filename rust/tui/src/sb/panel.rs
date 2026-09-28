@@ -84,7 +84,8 @@ fn right_of(app: &App, sb: &Sb, a: &Agent) -> (String, Color) {
     };
     let s = match a.status.as_str() {
         "working" => busy(),
-        // who it waits on is not in the hub's snapshot (yet)
+        // who it waits on (`sb wait` / `sb ask`), when the hub says
+        "waiting" if !a.waiting_on.is_empty() => format!("waits {}", a.waiting_on),
         "waiting" => "waiting".into(),
         _ if a.main => String::new(),
         "idle" => fill().map_or_else(|| "idle".into(), |f| format!("idle · {}", f)),
@@ -155,8 +156,9 @@ fn fit(s: &str, max: usize) -> String {
     out
 }
 
-/// The row of live agent `a`, number `i` (0 main; blank after 9).
-fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, w: usize) -> Line<'static> {
+/// The row of live agent `a`, entry `i` of the panel, number `num`
+/// (0 main; blank after 9).
+fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usize) -> Line<'static> {
     let focused = a.name == sb.focus;
     let selected = sb.selected == Some(i);
     let g = if a.main {
@@ -182,7 +184,7 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, w: usize) -> Line<'static>
         marks.push(Span::styled(format!(" {}{}", G_MSG, a.queued), Style::default().fg(dim())));
     }
     let bg = selected.then(selection_bg);
-    row(Some(i), g, &a.name, name_style, marks, right_of(app, sb, a), w, bg)
+    row(num, g, &a.name, name_style, marks, right_of(app, sb, a), w, bg)
 }
 
 /// The live agents (main and the archived left out) by what the header
@@ -261,6 +263,7 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
         Span::styled(PANEL_TITLE.1, Style::default().fg(faint())),
     ]);
     let mut lines: Vec<Line> = Vec::new();
+    let numbers = sb.numbers();
     let nav = sb.nav();
     let live = nav.iter().filter(|a| !a.archived()).count();
     let mut owners: Vec<(usize, Hit)> = Vec::new();
@@ -271,7 +274,8 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
             sel_row = Some(lines.len());
         }
         owners.push((lines.len(), Hit::Agent(a.name.clone())));
-        lines.push(agent_row(app, sb, a, i, w));
+        let n = numbers.iter().find(|(name, _)| *name == a.name).map(|(_, n)| *n);
+        lines.push(agent_row(app, sb, a, i, n, w));
         // the selected agent: what it is for and its last note, under its row
         if sb.selected == Some(i) && !a.main {
             for t in [&a.objective, &a.note].into_iter().filter(|t| !t.is_empty()) {
@@ -294,14 +298,12 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     }
     let shown = body.len() - usize::from(more.is_some());
     if let Ok(mut hits) = sb.panel_hits.try_borrow_mut() {
-        *hits = PanelHits {
-            area,
-            rows: owners
-                .into_iter()
-                .filter(|(r, _)| *r >= top && *r - top < shown)
-                .map(|(r, hit)| (area.y.saturating_add(1 + (r - top) as u16), hit))
-                .collect(),
-        };
+        hits.area = area;
+        hits.rows = owners
+            .into_iter()
+            .filter(|(r, _)| *r >= top && *r - top < shown)
+            .map(|(r, hit)| (area.y.saturating_add(1 + (r - top) as u16), hit))
+            .collect();
     }
     let mut all = vec![title];
     all.extend(body);
@@ -425,6 +427,49 @@ pub(crate) enum Hit {
 pub(crate) struct PanelHits {
     area: Rect,
     rows: Vec<(u16, Hit)>,
+    /// The panel's numbers (Alt+N): agent name → number, kept while the
+    /// agent lives (see [`Sb::numbers`]).
+    slots: Vec<(String, usize)>,
+}
+
+impl Sb {
+    /// The number of every live agent: main 0; an agent keeps its number
+    /// while it lives (a drop does not renumber the others); a new one
+    /// takes the smallest free number, so the first agents get 1, 2, 3 in
+    /// creation order. Only 0-9 are shown and reachable with Alt+N.
+    pub(crate) fn numbers(&self) -> Vec<(String, usize)> {
+        let live: Vec<&Agent> = self.agents.iter().filter(|a| !a.archived()).collect();
+        let Ok(mut hits) = self.panel_hits.try_borrow_mut() else {
+            return assign(Vec::new(), &live);
+        };
+        let slots = assign(std::mem::take(&mut hits.slots), &live);
+        hits.slots = slots.clone();
+        slots
+    }
+
+    /// The live agent with number `n`, if any.
+    pub(crate) fn agent_numbered(&self, n: usize) -> Option<String> {
+        self.numbers().into_iter().find(|(_, k)| *k == n).map(|(name, _)| name)
+    }
+}
+
+/// `slots` brought up to date with the `live` agents (hub order): the
+/// gone ones free their number, main is 0, a newcomer takes the smallest
+/// free number from 1.
+fn assign(mut slots: Vec<(String, usize)>, live: &[&Agent]) -> Vec<(String, usize)> {
+    slots.retain(|(name, n)| live.iter().any(|a| a.name == *name && (a.main == (*n == 0))));
+    for a in live {
+        if slots.iter().any(|(name, _)| *name == a.name) {
+            continue;
+        }
+        let n = if a.main {
+            0
+        } else {
+            (1..).find(|k| !slots.iter().any(|(_, n)| n == k)).unwrap_or(1)
+        };
+        slots.push((a.name.clone(), n));
+    }
+    slots
 }
 
 impl PanelHits {
@@ -700,7 +745,7 @@ mod tests {
         sb.agents.push(Agent { turn_ms: Some(12 * 60_000), ..agent("auth-fix", "working") });
         sb.agents.push(agent("tests", "starting"));
         sb.agents.push(agent("docs", "waiting"));
-        sb.agents.push(agent("api-v2", "waiting"));
+        sb.agents.push(Agent { waiting_on: "docs".into(), ..agent("api-v2", "waiting") });
         sb.agents.push(agent("bench", "done"));
         sb.agents.push(agent("deploy", "failed"));
         sb.agents.push(agent("ideas", "idle"));
@@ -755,7 +800,7 @@ mod tests {
             flush("tests", "starting");
             flush("docs", "you");
             assert!(row("docs").starts_with(&format!("│ 3 {} docs", G_NEEDS_YOU)));
-            flush("api-v2", "waiting");
+            flush("api-v2", "waits docs");
             assert!(row("api-v2").starts_with(&format!("│ 4 {} api-v2", G_WAITING)));
             flush("bench", "done");
             assert!(row("bench").starts_with(&format!("│ 5 {} bench", G_DONE)));
@@ -775,7 +820,7 @@ mod tests {
         let big = t.iter().find(|r| r.contains("big-")).unwrap();
         assert!(big.contains("…") && big.contains(G_WORKTREE), "{:?}", big);
         let t = trimmed(&panel_rows(&app, 40, 16));
-        assert!(t.iter().any(|r| r.contains("big-refactor-of-auth ⎇")), "{}", t.join("\n"));
+        assert!(t.iter().any(|r| r.contains(&format!("big-refactor-of-auth {}", G_WORKTREE))), "{}", t.join("\n"));
     }
 
     /// Colors: the number faint, the agent in view in accent, "needs
@@ -802,6 +847,47 @@ mod tests {
         assert_eq!(at("deploy", G_FAILED), error());
         assert_eq!(at("deploy", "failed"), dim());
         assert_eq!(at("auth-fix", G_UNREAD), accent());
+    }
+
+    /// Numbers stay while an agent lives: a drop does not renumber the
+    /// others, Alt+N follows the number shown; a newcomer takes the free
+    /// number.
+    #[test]
+    fn numbers_survive_a_drop() {
+        use crossterm::event::{KeyCode, KeyEvent};
+        let mut app = bench::test_app_drained();
+        {
+            let sb = app.sb.as_mut().unwrap();
+            sb.agents.push(Agent { name: "main".into(), main: true, status: "idle".into(), ..Agent::default() });
+            for n in ["a", "b", "c"] {
+                sb.agents.push(agent(n, "working"));
+            }
+        }
+        let num = |app: &App, n: &str| app.sb.as_ref().unwrap().numbers().into_iter().find(|(x, _)| x == n).map(|(_, k)| k);
+        let t = trimmed(&panel_rows(&app, 28, 10));
+        assert!(t.iter().any(|r| r.starts_with(&format!("│ 3 {} c", G_WORKING))), "{}", t.join("\n"));
+        assert_eq!((num(&app, "a"), num(&app, "b"), num(&app, "c")), (Some(1), Some(2), Some(3)));
+        // a is dropped (archived): b and c keep 2 and 3
+        app.sb.as_mut().unwrap().agents[1].status = "archived".into();
+        let t = trimmed(&panel_rows(&app, 28, 10));
+        assert!(t.iter().any(|r| r.starts_with(&format!("│ 2 {} b", G_WORKING))), "{}", t.join("\n"));
+        assert!(t.iter().any(|r| r.starts_with(&format!("│ 3 {} c", G_WORKING))), "{}", t.join("\n"));
+        assert_eq!(num(&app, "a"), None);
+        // Alt+3 goes to c, Alt+1 to no one, Alt+0 to main
+        key(&mut app, &KeyEvent::new(KeyCode::Char('3'), KeyModifiers::ALT), false);
+        assert_eq!(app.sb.as_ref().unwrap().focus, "c");
+        key(&mut app, &KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT), false);
+        assert_eq!(app.sb.as_ref().unwrap().focus, "c", "no agent 1 any more");
+        key(&mut app, &KeyEvent::new(KeyCode::Char('0'), KeyModifiers::ALT), false);
+        assert_eq!(app.sb.as_ref().unwrap().focus, "main");
+        // a newcomer takes the free number 1; the others keep theirs
+        app.sb.as_mut().unwrap().agents.push(agent("d", "starting"));
+        assert_eq!((num(&app, "d"), num(&app, "b"), num(&app, "c")), (Some(1), Some(2), Some(3)));
+        key(&mut app, &KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT), false);
+        assert_eq!(app.sb.as_ref().unwrap().focus, "d");
+        // restored, a comes back with a free number (4)
+        app.sb.as_mut().unwrap().agents[1].status = "idle".into();
+        assert_eq!(num(&app, "a"), Some(4));
     }
 
     /// More agents than rows: the list ends with `+ {n} more`, and

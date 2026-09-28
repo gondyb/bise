@@ -335,6 +335,45 @@ fn ask_waits_for_the_reply() {
     );
 }
 
+/// The agent state says who a waiting agent waits on (the panel's
+/// `waits {name}`), and forgets it when the wait ends.
+#[test]
+fn a_waiting_agent_says_who_it_waits_on() {
+    let mut t = T::new();
+    t.spawn_task("docs");
+    t.user(MAIN, "go");
+    let (tok, _) = t.req(
+        "docs",
+        AgentReq::Ask {
+            to: MAIN.into(),
+            text: "v1 ou v2 ?".into(),
+            timeout_s: 20,
+        },
+    );
+    let agent = |t: &T, n: &str| {
+        let snap = t.hub.snapshot(0);
+        snap["agents"].as_array().unwrap().iter().find(|a| a["name"] == n).cloned().unwrap()
+    };
+    let docs = agent(&t, "docs");
+    assert_eq!(docs["status"], "waiting");
+    assert_eq!(docs["waiting_on"], MAIN, "{}", docs);
+    assert!(agent(&t, MAIN)["waiting_on"].is_null());
+    let id = t.hub.st.msgs.values().find(|m| m.text == "v1 ou v2 ?").unwrap().id;
+    let (_, fx) = t.req(
+        MAIN,
+        AgentReq::Send {
+            to: "docs".into(),
+            text: "v2".into(),
+            expect_reply: false,
+            reply_to: Some(id),
+            queued: false,
+            why: String::new(),
+        },
+    );
+    assert!(reply(&fx, tok).is_some(), "the wait ends");
+    assert!(agent(&t, "docs")["waiting_on"].is_null());
+}
+
 #[test]
 fn a_question_to_a_waiting_agent_ends_its_wait() {
     let mut t = T::new();

@@ -20,7 +20,25 @@ def jdecl(d: Maybe<&2, M.Decl>, +note: String) -> J.Json:
     case Some{+x}:
       J.obj([J.kv("status", J.JStr{C.decl_str(x)}), J.kv("note", J.JStr{note})])
 
-def agent_json(+a: M.Agent, +x: X.Rt) -> J.Json:
+# the recipient of a message (null: unknown message)
+def waits_to(m: Maybe<&2, M.Msg>) -> J.Json:
+  match m:
+    case None{}:
+      J.JNull{}
+    case Some{+x}:
+      J.JStr{M.Msg.to(x)}
+
+# who `n` waits on: the recipient of the message its first `sb wait` (or
+# `sb ask`) waits for the reply to; null when it waits on no one
+def waits_on(+ws: List<&2, X.Waiter>, +s: M.St, +n: String) -> J.Json:
+  match ws:
+    case Nil{}:
+      J.JNull{}
+    case Con{+w, +t}:
+      Bool.pick(J.Json, String.eq(X.Waiter.agent(w), n),
+        waits_to(M.msg_of(s, X.Waiter.msg(w))), waits_on(t, s, n))
+
+def agent_json(+a: M.Agent, +x: X.Rt, +wo: J.Json) -> J.Json:
   J.obj([J.kv("name", J.JStr{M.Agent.name(a)}), J.kv("dir", J.JStr{M.Agent.dir(a)}),
     J.kv("is_main", J.JBool{M.Agent.is_main(a)}), J.kv("parent", C.jmaybe_str(M.Agent.parent(a))),
     J.kv("brief", M.Agent.brief(a)), J.kv("created_ms", J.JNum{M.Agent.created(a)}),
@@ -31,14 +49,15 @@ def agent_json(+a: M.Agent, +x: X.Rt) -> J.Json:
     J.kv("aliases", J.JArr{H.jstrs(M.Agent.aliases(a))}), J.kv("files", J.JArr{H.jstrs(M.Agent.files(a))}),
     J.kv("snapshot_ref", C.jmaybe_str(M.Agent.snap(a))),
     J.kv("run", J.JStr{H.run_str(X.Rt.run(x))}), J.kv("waiting", J.JBool{X.Rt.waiting(x)}),
+    J.kv("waiting_on", wo),
     J.kv("turn_ms", H.jturn(X.Rt.turn(x)))])
 
-def agents_json(xs: List<&2, M.Agent>, +rts: List<&2, X.Rt>) -> List<&2, J.Json>:
+def agents_json(xs: List<&2, M.Agent>, +rts: List<&2, X.Rt>, +ws: List<&2, X.Waiter>, +s: M.St) -> List<&2, J.Json>:
   match xs:
     case Nil{}:
       Nil{}
     case Con{+a, +t}:
-      agent_json(a, H.rt_find(rts, M.Agent.name(a))) <> agents_json(t, rts)
+      agent_json(a, H.rt_find(rts, M.Agent.name(a)), waits_on(ws, s, M.Agent.name(a))) <> agents_json(t, rts, ws, s)
 
 def rec_json(+r: M.MRec) -> J.Json:
   J.obj([J.kv("msg", C.msg_json(M.MRec.msg(r))), J.kv("state", J.obj(C.mst_kvs(M.MRec.st(r)))),
@@ -93,8 +112,8 @@ def touched(evs: List<&2, M.Ev>) -> List<&2, Nat>:
       List.append(&2, Nat, ev_ids(e), touched(t))
 
 # the view: every agent, card and note; the messages in `ids` (or all)
-def view(+s: M.St, +rts: List<&2, X.Rt>, +all: Bool, +ids: List<&2, Nat>) -> J.Json:
-  J.obj([J.kv("agents", J.JArr{agents_json(M.St.agents(s), rts)}),
+def view(+s: M.St, +rts: List<&2, X.Rt>, +ws: List<&2, X.Waiter>, +all: Bool, +ids: List<&2, Nat>) -> J.Json:
+  J.obj([J.kv("agents", J.JArr{agents_json(M.St.agents(s), rts, ws, s)}),
     J.kv("order", J.JArr{H.jstrs(M.St.order(s))}),
     J.kv("msgs", J.JArr{recs_json(M.St.msgs(s), all, ids)}),
     J.kv("all_msgs", J.JBool{all}),

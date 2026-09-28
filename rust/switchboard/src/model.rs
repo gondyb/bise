@@ -137,6 +137,9 @@ pub struct Agent {
     pub run: Run,
     /// Inside `sb wait` (its bash call is blocked on the hub).
     pub waiting: bool,
+    /// Who it waits on: the recipient of the message its `sb wait` /
+    /// `sb ask` waits for the reply to (sb-core's view).
+    pub waiting_on: Option<String>,
     pub turn_started_ms: Option<u64>,
     /// The last thing it did: (time, "bash `cargo test`", "wrote: ...").
     pub activity: Option<(u64, String)>,
@@ -360,6 +363,7 @@ impl State {
                 snapshot_ref: None,
                 run: Run::Down,
                 waiting: false,
+                waiting_on: None,
                 turn_started_ms: None,
                 activity: None,
             },

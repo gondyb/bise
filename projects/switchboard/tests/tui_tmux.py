@@ -97,7 +97,7 @@ def main():
         keys("Enter")
         sc = wait_re(panel_row(1, "t1"))
         wait_screen("new task @t1")
-        wait_screen("◀ t1 m_", 60)            # the automatic reply in main's feed
+        wait_screen(" t1 m_", 60)            # the automatic reply in main's feed (after its glyph)
         # select the task with Ctrl+K (next: main, then t1), enter it
         keys("C-k")
         keys("C-k")
@@ -105,7 +105,8 @@ def main():
         keys("Enter")
         sc = wait_re(in_view("t1"))
         assert "you're talking to t1 directly. main isn't in the loop. esc back to main." in sc, sc
-        assert "# Task `t1`" in sc or "Task" in sc, sc
+        # its brief, folded (BISE-12)
+        assert "brief" in sc, sc
         wait_screen("done: tool bash ok: hi-t1")
         # talk to it directly
         typed("salut t1")

@@ -607,6 +607,7 @@ impl Hub {
                 snapshot_ref: a["snapshot_ref"].as_str().map(|x| x.to_string()),
                 run: run_of(&jstr(a, "run")),
                 waiting: a["waiting"].as_bool().unwrap_or(false),
+                waiting_on: a["waiting_on"].as_str().map(|x| x.to_string()),
                 turn_started_ms: a["turn_ms"].as_u64(),
                 activity: self.activity.get(&name).cloned(),
             };
@@ -675,6 +676,8 @@ impl Hub {
                     "report_ms": a.last_report.as_ref().map(|r| r.at_ms),
                     "queued": board::queued_count(&self.st, &a.name),
                     "turn_ms": a.turn_started_ms.map(|t| now.saturating_sub(t)),
+                    // who it waits on (`sb wait` / `sb ask`), for `waits {name}`
+                    "waiting_on": a.waiting_on.as_ref().filter(|_| a.waiting),
                 })
             })
             .collect();
