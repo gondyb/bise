@@ -3365,3 +3365,29 @@ def hub_free_of(+xs: List<&2, HM.Agent>, +n: String, hn: {HM.agent_named(xs, n) 
     case Con{a, t}:
       hub_free_of.pick(String.eq(HM.Agent.name(a), n), HM.str_in(HM.Agent.aliases(a), n), a, t, n, {==}, {==}, hn, ha,
         p => q => hub_free_of(t, n, p, q))
+
+def hub_nt.absurd(-s: HM.St, -n: String, x: Empty) -> hub_free(HI.profile(HM.St.agents(s)), n):
+  match x:
+
+def hub_nt.alias(r: Maybe<&2, String>, +s: HM.St, +n: String, +er: {HM.agent_alias(HM.St.agents(s), n) == r : Maybe<&2, String>},
+    +en: {HM.agent_named(HM.St.agents(s), n) == None{} : Maybe<&2, HM.Agent>}, hs: {Maybe.is_some(&2, String, r) == False{} : Bool})
+    -> hub_free(HI.profile(HM.St.agents(s)), n):
+  match r:
+    case None{}:
+      hub_free_of(HM.St.agents(s), n, en, er)
+    case Some{x}:
+      hub_nt.absurd(s, n, hub_ft_absurd(Equal.sym(Bool, True{}, False{}, hs)))
+
+def hub_nt.named(m: Maybe<&2, HM.Agent>, +s: HM.St, +n: String, +em: {HM.agent_named(HM.St.agents(s), n) == m : Maybe<&2, HM.Agent>},
+    hs: {Maybe.is_some(&2, String, HM.resolve.pick(m, s, n)) == False{} : Bool})
+    -> hub_free(HI.profile(HM.St.agents(s)), n):
+  match m:
+    case Some{a}:
+      hub_nt.absurd(s, n, hub_ft_absurd(Equal.sym(Bool, True{}, False{}, hs)))
+    case None{}:
+      hub_nt.alias(HM.agent_alias(HM.St.agents(s), n), s, n, {==}, em, hs)
+
+# a name that is not taken is free among the agents' names
+def hub_nt(+s: HM.St, +n: String, e: {HM.name_taken(s, n) == False{} : Bool}) -> hub_free(HI.profile(HM.St.agents(s)), n):
+  hub_nt.named(HM.agent_named(HM.St.agents(s), n), s, n, {==},
+    hub_or_false_r(String.eq(n, HM.MAIN()) || String.eq(n, HM.USER()) || String.eq(n, HM.HUB()), Maybe.is_some(&2, String, HM.resolve(s, n)), e))
