@@ -44,13 +44,20 @@ def rec_json(+r: M.MRec) -> J.Json:
   J.obj([J.kv("msg", C.msg_json(M.MRec.msg(r))), J.kv("state", J.obj(C.mst_kvs(M.MRec.st(r)))),
     J.kv("settled", J.JBool{M.MRec.settled(r)})])
 
+# a match, not Bool.pick: pick would encode every message, kept or not
+def recs_json.keep(keep: Bool, +r: M.MRec, +rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  match keep:
+    case True{}:
+      rec_json(r) <> rest
+    case False{}:
+      rest
+
 def recs_json(xs: List<&2, M.MRec>, +all: Bool, +ids: List<&2, Nat>) -> List<&2, J.Json>:
   match xs:
     case Nil{}:
       Nil{}
     case Con{+r, +t}:
-      +rest = recs_json(t, all, ids)
-      Bool.pick(List<&2, J.Json>, all || M.nat_in(ids, M.Msg.id(M.MRec.msg(r))), rec_json(r) <> rest, rest)
+      recs_json.keep(all || M.nat_in(ids, M.Msg.id(M.MRec.msg(r))), r, recs_json(t, all, ids))
 
 def cards_json(xs: List<&2, M.Card>) -> List<&2, J.Json>:
   match xs:
