@@ -22,6 +22,7 @@ pub mod model;
 pub mod paths;
 pub mod prompts;
 pub mod router;
+pub mod switch;
 pub mod transcript;
 pub mod util;
 pub mod wire;

@@ -277,6 +277,30 @@ fn main() -> std::io::Result<()> {
                 load_env_files();
                 return run_sbd(&args[1..]);
             }
+            Some("sbswitch") => {
+                // the version switcher: detached, from the old version's binary
+                let rest = &args[1..];
+                let paths = switchboard::paths::Paths::for_workspace(&sb_workspace(rest));
+                let val = |k: &str| {
+                    rest.iter()
+                        .position(|a| a == k)
+                        .and_then(|i| rest.get(i + 1))
+                        .cloned()
+                };
+                let Some(to) = val("--to") else {
+                    eprintln!("sbswitch --to <dossier de version> [--probation <s>]");
+                    std::process::exit(2);
+                };
+                let period = val("--probation")
+                    .and_then(|s| s.parse().ok())
+                    .map(std::time::Duration::from_secs)
+                    .unwrap_or(switchboard::switch::PROBATION);
+                std::process::exit(switchboard::switch::run(
+                    &paths,
+                    std::path::Path::new(&to),
+                    period,
+                ));
+            }
             Some("switchboard") => {
                 let debug = args.iter().any(|a| a == "--debug");
                 return run_switchboard(&args[1..], debug);

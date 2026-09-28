@@ -88,6 +88,11 @@ enum Msg {
         stream: UnixStream,
         v: Value,
     },
+    /// A line for main's thread (the version switcher).
+    Notice {
+        kind: String,
+        text: String,
+    },
     /// `keep`: leave the REPLs running for the next hub to adopt.
     Shutdown {
         keep: bool,
@@ -128,6 +133,9 @@ struct Shell {
     /// turns): the writes meant for them wait here until the new process
     /// is connected, on the same port and session.
     switching: BTreeMap<String, Vec<String>>,
+    /// Of those, the ones whose new process is already spawned: its exit
+    /// is a crash (of the new version), not the reload.
+    switch_spawned: std::collections::BTreeSet<String>,
     /// Restarted by a switch: their greeting (restored history) is not
     /// news for the feeds.
     restored: std::collections::BTreeSet<String>,
@@ -1049,6 +1057,13 @@ fn accept_loop(listener: UnixListener, tx: Sender<Msg>) {
                         v,
                     });
                 }
+                Some("notice") => {
+                    let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let _ = tx.send(Msg::Notice {
+                        kind: s("kind"),
+                        text: s("text"),
+                    });
+                }
                 Some("ping") => {
                     let mut s = stream;
                     let _ = write_json(&mut s, &json!({"ok": true, "pid": std::process::id()}));
@@ -1157,6 +1172,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         bins: BTreeMap::new(),
         ports: BTreeMap::new(),
         switching: BTreeMap::new(),
+        switch_spawned: std::collections::BTreeSet::new(),
         restored: std::collections::BTreeSet::new(),
     };
     // the feeds survive a hub restart through their transcripts
@@ -1182,6 +1198,12 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 break;
             }
         });
+    }
+    // a rollback's warning, left by the switcher for this hub
+    let notice = paths.state.join("switch-notice");
+    if let Ok(t) = std::fs::read_to_string(&notice) {
+        let _ = std::fs::remove_file(&notice);
+        sh.feed(MAIN, &format!("sb warn : {}", wire_escape(&t)));
     }
     sh.booting = true;
     sh.step(Input::Boot);
@@ -1228,6 +1250,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                         interrupt,
                     },
                 );
+                sh.switch_spawned.remove(&dir);
                 if let Some(q) = sh.switching.remove(&dir) {
                     // a switched REPL: same session, the core never saw
                     // it go; the writes it missed go now
@@ -1291,17 +1314,27 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 sh.repls.remove(&dir);
                 sh.pids.remove(&dir);
                 let _ = ok_exit;
-                if sh.switching.contains_key(&dir) {
+                if sh.switching.contains_key(&dir) && !sh.switch_spawned.contains(&dir) {
                     // the reload a switch asked for: the same session on
                     // this hub's binary, the same port
                     let port = sh.ports.get(&dir).copied();
                     if let Some(name) = sh.agent_by_dir(&dir).map(|a| a.name.clone()) {
                         sh.restored.insert(dir.clone());
+                        sh.switch_spawned.insert(dir.clone());
                         sh.spawn_on(&name, true, None, port);
                         continue;
                     }
-                    sh.switching.remove(&dir);
                 }
+                // the new process of a switch died: a crash like any other
+                sh.switching.remove(&dir);
+                sh.switch_spawned.remove(&dir);
+                sh.restored.remove(&dir);
+                // a new version on probation: a REPL that dies is a
+                // reason to roll back
+                crate::switch::report_failure(
+                    &sh.opts.paths,
+                    &format!("la REPL de {} s'est arrêtée : {}", dir, reason),
+                );
                 if let Some(name) = sh.agent_by_dir(&dir).map(|a| a.name.clone()) {
                     sh.step(Input::ReplExited {
                         agent: name,
@@ -1318,6 +1351,10 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 }
             }
             Msg::AgentNew { token, stream, v } => sh.agent_request(token, stream, v),
+            Msg::Notice { kind, text } => {
+                let kind = if kind == "warn" { "warn" } else { "info" };
+                sh.feed(MAIN, &format!("sb {} : {}", kind, wire_escape(&text)));
+            }
             Msg::Shutdown { keep } => {
                 keep_agents = keep;
                 break;

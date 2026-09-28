@@ -81,6 +81,8 @@ build_from() {
 
   # the V8 engine: rarely changes, 100 MB - a hard link of the live tree's
   local js="$REPO/rust/jsrt/target/debug/bend-jsrt"
+  # a linked git worktree: the main checkout's engine
+  [ -x "$js" ] || js="$(git rev-parse --path-format=absolute --git-common-dir)/../rust/jsrt/target/debug/bend-jsrt"
   if [ ! -x "$js" ]; then
     say "bend-jsrt absent — build du moteur V8..."
     (cd "$REPO/rust/jsrt" && cargo build)
@@ -94,6 +96,7 @@ build_from() {
     echo "subject=$(git log -1 --format=%s "$rev")"
     echo "built=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "bend_hash=$h"
+    echo "repo=$REPO"
   } > "$tmp/VERSION"
   rm -rf "$vdir"; mv "$tmp" "$vdir"
   trap - EXIT
