@@ -79,6 +79,8 @@
   [data-theme="dark"] .term { background:#0f0e0d; }
   .term .row { white-space:pre; }
   .who { display:inline-block; width:3ch; }
+  /* your message: a thin accent bar on the left (│), on every wrapped line; text at column 3 */
+  .you { border-left:1px solid var(--acc); padding-left:calc(3ch - 1px); }
   .l3 { color:var(--dim); border-left:1px solid var(--faint); padding-left:2ch; margin-left:1ch; white-space:pre; }
   .l1 { border-left:2px solid var(--acc); padding-left:2ch; }
   .l1 .t { color:var(--acc); font-weight:700; }
@@ -272,7 +274,7 @@
   <p>status is a symbol, not a word and not a color. learn them once, read a screen of 30 agents at a glance.</p>
   <h3>entities</h3>
   <div class="glyphs">
-    <div><b class="dim">›</b>you</div><div><b class="acc">:*</b>main</div><div><b>◇</b>a brief</div><div><b class="dim">∴</b>thinking</div>
+    <div><b class="acc">│</b>your message</div><div><b class="dim">›</b>the composer</div><div><b class="acc">:*</b>main</div><div><b>◇</b>a brief</div><div><b class="dim">∴</b>thinking</div>
     <div><b>$</b>bash</div><div><b>λ</b>typescript</div><div><b>↳</b>a sub-call</div><div><b>±</b>a file edit</div>
     <div><b>@</b>a message</div><div><b class="acc">▣</b>an image</div><div><b class="acc">?</b>a card: needs you</div><div><b class="dim pulse">≡</b>compacting (pulsing)</div>
   </div>
@@ -311,7 +313,7 @@
     <div class="shead"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim"><span class="pulse">∿</span> 3 working · <span class="acc">? 1 needs you</span> · ♡ 1 done</span></div>
     <div class="sgrid">
       <div class="sfeed">
-        <div><span class="who dim">›</span>the login breaks on safari</div>
+        <div class="you">the login breaks on safari</div>
         <div><span class="who acc">:*</span>on it: auth-fix takes it.</div>
         <div class="l3"><span class="nm">@ docs</span><span class="nm">→ main</span>v1 or v2?</div>
         <div class="l3"><span class="nm">@ main</span><span class="nm">→ docs</span>v2, the brief says so</div>
@@ -374,7 +376,7 @@
   </ul>
   <div class="term">
     <div class="faint">· 14:02 ·</div>
-    <div class="b"><span class="who dim">›</span>ship the v2 api: endpoints, sdk, docs, migration.</div>
+    <div class="b you">ship the v2 api: endpoints, sdk, docs, migration.</div>
     <div class="b"><span class="who acc">:*</span>that's 30 pieces. i split it and started them.</div>
     <div class="b l3">▸ 47 messages between 30 agents</div>
     <div class="b"><span class="who acc">:*</span>the endpoint agents agreed on one error format; the sdk agents use it too.</div>
@@ -444,15 +446,15 @@ added secure: true; the webkit test passes now.</div></div>
   <h2>just talk. that's the whole interface.</h2>
   <h3>to main</h3>
   <p>say what you want, as many things as you want, one after the other. main says who takes what.</p>
-  <div class="term"><div><span class="who dim">›</span>the login breaks on safari. oh and draft the release note.</div><div class="b"><span class="who acc">:*</span>on it: auth-fix takes the bug, release takes the note.</div></div>
+  <div class="term"><div class="you">the login breaks on safari. oh and draft the release note.</div><div class="b"><span class="who acc">:*</span>on it: auth-fix takes the bug, release takes the note.</div></div>
   <h3>to one agent</h3>
   <p><code>@name</code> sends a direct message without leaving main. <code>⌥ + number</code> or <code>⏎</code> on an agent takes you inside it; <code>esc</code> brings you back.</p>
   <h3>did it get my message?</h3>
   <p>while an agent works, what you send waits for its turn. the marks at the end of your line tell you where it is, like a text message.</p>
-  <div class="term"><div><span class="who dim">›</span>skip firefox, only webkit<span class="tick read">✓✓</span> <span class="faint" style="margin-left:4ch">the model read it</span></div><div class="b"><span class="who dim">›</span>and log the cookie headers<span class="tick">✓</span> <span class="faint" style="margin-left:3ch">the agent got it, waiting for its turn</span></div><div class="b"><span class="who dim">›</span>also the logout path<span class="tick">·</span> <span class="faint" style="margin-left:6ch">sending</span></div></div>
+  <div class="term"><div class="you">skip firefox, only webkit<span class="tick read">✓✓</span> <span class="faint" style="margin-left:4ch">the model read it</span></div><div class="b you">and log the cookie headers<span class="tick">✓</span> <span class="faint" style="margin-left:3ch">the agent got it, waiting for its turn</span></div><div class="b you">also the logout path<span class="tick">·</span> <span class="faint" style="margin-left:6ch">sending</span></div></div>
   <h3>changing your mind</h3>
   <p>you just say it, like you would to a person. main tells the agent, plainly, and confirms.</p>
-  <div class="term"><div><span class="who acc">:*</span>docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span></div><div class="b"><span class="who dim">›</span>no, v1 for docs</div><div class="b"><span class="who acc">:*</span>told docs: v1, you changed your mind.</div><div class="b l3">@ main      → docs      the user changed their mind: use v1, not v2.</div></div>
+  <div class="term"><div><span class="who acc">:*</span>docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span></div><div class="b you">no, v1 for docs</div><div class="b"><span class="who acc">:*</span>told docs: v1, you changed your mind.</div><div class="b l3">@ main      → docs      the user changed their mind: use v1, not v2.</div></div>
 </section>
 
 <!-- images -->

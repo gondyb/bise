@@ -83,6 +83,8 @@
   .feed > div { max-width:68ch; animation:enter .5s ease-out; }
   @keyframes enter { from { opacity:0; transform:translateY(5px) } }
   .feed .b { margin-top:10px; }
+  /* your message: a thin accent bar on the left, like in the product */
+  .you { border-left:1px solid var(--acc); padding-left:calc(2ch - 1px); }
   .tick { color:var(--faint); margin-left:1ch; } .tick.read { color:var(--acc); }
   .l3 { color:var(--dim); opacity:.6; padding-left:2ch; }
   .card { border-left:2px solid var(--acc); padding-left:2ch; }
@@ -106,12 +108,12 @@
   .how span.d { color:var(--dim); }
 
   /* features: small animated terminals */
-  .features { max-width:1120px; margin:0 auto; }
-  .fgrid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:72px 56px; margin-top:20px; }
+  .features { max-width:1200px; margin:0 auto; }
+  .fgrid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:80px 48px; margin-top:20px; }
   .feat h3 { font-size:17px; margin:20px 0 6px; }
   .feat p { color:var(--dim); font-size:15px; margin:0; max-width:52ch; }
-  .mini { background:var(--soft); border-radius:10px; font-size:13px; line-height:1.6; padding:14px 2.5ch 12px; }
-  .mfeed { height:calc(13px * 1.6 * 8); overflow-y:auto; overscroll-behavior:contain; padding-right:1ch; }
+  .mini { background:var(--soft); border-radius:10px; font-size:13.5px; line-height:1.6; padding:18px 2.5ch 14px; }
+  .mfeed { height:calc(13.5px * 1.6 * 10); overflow-y:auto; overscroll-behavior:contain; padding-right:1ch; }
   .mfeed > div { animation:enter .45s ease-out; white-space:pre-wrap; }
   .mfeed.still > div { animation:none; }
   .mcomp { margin-top:8px; white-space:pre; overflow:hidden; color:var(--text); }
@@ -402,7 +404,7 @@ function count() { const n = Object.values(rows).filter((r) => r.dataset.busy).l
 async function type(text) { for (const ch of text) { typed.textContent += ch; await sleep(reduced ? 0 : 30 + Math.random() * 35); } await sleep(350); }
 async function send(text) {
   await type(text); typed.textContent = "";
-  const d = add(`${text}<span class="tick">✓</span>`, "b");
+  const d = add(`${text}<span class="tick">✓</span>`, "b you");
   await sleep(550); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`;
 }
 const main = (t) => add(`<span class="acc">:*</span> ${t}`, "b");
@@ -560,7 +562,7 @@ function mini(el, i) {
       await sleep(300);
     },
     clear() { ty.textContent = ""; comp.scrollLeft = 0; },
-    async send(t, keep) { await m.type(t); m.clear(); const d = m.line(`${t}<span class="tick">✓</span>`, "b"); if (!keep) { await m.wait(450); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`; } await m.wait(400); return d; },
+    async send(t, keep) { await m.type(t); m.clear(); const d = m.line(`${t}<span class="tick">✓</span>`, "b you"); if (!keep) { await m.wait(450); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`; } await m.wait(400); return d; },
     async main(t) { m.line(`<span class="acc">:*</span> ${t}`); await m.wait(300); },
   };
   const play = () => plays[el.dataset.play](m);

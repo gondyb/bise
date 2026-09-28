@@ -24,6 +24,8 @@
   .composer { margin-top:4px; }
   .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)} .err{color:var(--err)}
   .b { margin-top:10px; } .who { display:inline-block; width:3ch; }
+  /* your message: a thin accent bar on the left (│), on every wrapped line; text at column 3 */
+  .you { border-left:1px solid var(--acc); padding-left:calc(3ch - 1px); }
   .l3 { color:var(--dim); border-left:1px solid var(--faint); padding-left:2ch; margin-left:1ch; }
   .l3 .to { color:var(--faint); } .l3 .nm { display:inline-block; width:10ch; overflow:hidden; vertical-align:bottom; white-space:nowrap; }
   .l3.fold { cursor:pointer; } .l3.fold:hover { color:var(--text); }
@@ -199,7 +201,7 @@ function renderItem(it, st) {
       // WhatsApp-style marks: · sending, ✓ the agent got it, ✓✓ the model read it
       const age = st.now - it.t;
       const tick = age < 0.4 ? '<span class="tick">·</span>' : age < 1.4 ? '<span class="tick">✓</span>' : '<span class="tick read">✓✓</span>';
-      return `<div class="b"><span class="who ${it.real ? "mine" : "dim"}">›</span>${it.html}${tick}</div>`;
+      return `<div class="b you">${it.html}${tick}</div>`;
     }
     case "main": return `<div class="b"><span class="who acc">:*</span>${it.html}</div>`;
     case "report": return `<div class="b"><span class="who">${it.g}</span>${it.html}</div>`;

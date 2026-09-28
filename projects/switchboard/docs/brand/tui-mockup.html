@@ -32,6 +32,8 @@
   .prose { max-width: 76ch; }
   .blk { margin-top: 14px; }
   .who { display: inline-block; width: 3ch; }
+  /* your message: a thin accent bar on the left (│), on every wrapped line; text at column 3 */
+  .you { border-left:1px solid var(--acc); padding-left:calc(3ch - 1px); }
   .ind { padding-left: 3ch; }
   details > summary { list-style: none; cursor: pointer; }
   details > summary::-webkit-details-marker { display: none; }
@@ -82,7 +84,7 @@
       <!-- main view -->
       <div class="view on" id="v-main">
         <div class="prose">
-          <div class="blk"><span class="who dim">›</span>the login breaks on safari. oh and can someone write the release note for 0.4?</div>
+          <div class="blk you">the login breaks on safari. oh and can someone write the release note for 0.4?</div>
 
           <div class="blk"><span class="who acc">:*</span>on it. two tasks:</div>
           <div class="ind"><span class="pulse">∿</span> auth-fix <span class="dim">the safari login bug</span></div>

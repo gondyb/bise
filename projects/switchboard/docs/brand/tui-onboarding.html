@@ -38,6 +38,8 @@
   .line { opacity:0; transform:translateY(4px); transition:all .5s ease-out; margin-top:10px; }
   .line.show { opacity:1; transform:none; }
   .who { display:inline-block; width:3ch; }
+  /* your message: a thin accent bar on the left (│), on every wrapped line; text at column 3 */
+  .you { border-left:1px solid var(--acc); padding-left:calc(3ch - 1px); }
   /* the first run with just-in-time hints */
   .app { position:absolute; inset:0; display:grid; grid-template-columns:1fr 30ch; grid-template-rows:auto 1fr auto; }
   .app .head { grid-column:1 / -1; display:flex; justify-content:space-between; padding:8px 2ch 4px; }
@@ -78,12 +80,12 @@
     <div class="dim">you can change it any time with /theme.</div>
     <div class="themes">
       <div class="prev dark sel" data-t="dark"><div class="d">dark</div>
-        <div class="b"><span class="who d">›</span>fix the flaky login test</div>
+        <div class="b you">fix the flaky login test</div>
         <div class="b"><span class="who a">:*</span>on it: auth-fix takes it.</div>
         <div class="b r d">@ auth-fix → main  found it</div>
         <div class="b"><span class="who">♡</span>auth-fix is done.</div></div>
       <div class="prev light" data-t="light"><div class="d">light</div>
-        <div class="b"><span class="who d">›</span>fix the flaky login test</div>
+        <div class="b you">fix the flaky login test</div>
         <div class="b"><span class="who a">:*</span>on it: auth-fix takes it.</div>
         <div class="b r d">@ auth-fix → main  found it</div>
         <div class="b"><span class="who">♡</span>auth-fix is done.</div></div>
@@ -112,7 +114,7 @@
   <!-- 5 how it works -->
   <div class="screen" data-s="4" style="padding-left:14ch">
     <div class="dim">how it works, in three lines:</div>
-    <div class="line" data-l><span class="who dim">›</span>you talk to me. i start agents for the work, in the background.</div>
+    <div class="line you" data-l>you talk to me. i start agents for the work, in the background.</div>
     <div class="line" data-l><span class="who"><span class="pulse">∿</span></span>they show up on the right. ⌥ + number to look inside, esc to come back.</div>
     <div class="line" data-l><span class="who acc">?</span>when someone needs you, you get a card. the rest can wait.</div>
     <div class="hint line" data-l>enter, and say what's on your mind.</div>
@@ -170,7 +172,7 @@ function firstRun() {
   const msg = "fix the flaky login test, and draft the release note";
   later(800, () => type(fin, msg, 40, () => later(400, () => {
     feed.innerHTML = ""; fin.textContent = "";
-    add(`<div class="b"><span class="who dim">›</span>${msg}</div>`);
+    add(`<div class="b you">${msg}</div>`);
     later(700, () => { add('<div class="b"><span class="who acc">:*</span>on it: auth-fix takes the test, release takes the note.</div>'); agent(1, "auth-fix"); later(300, () => agent(2, "release")); count.innerHTML = '<span class="pulse">∿</span> 2 working'; });
     later(1500, () => document.getElementById("tip1").classList.add("show"));
     later(5000, () => { document.getElementById("tip1").classList.remove("show");

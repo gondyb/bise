@@ -34,6 +34,8 @@
   .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)} .err{color:var(--err)} .ok{color:var(--ok)}
   .kw{color:var(--kw)} .str{color:var(--str)} .com{color:var(--com)} .num{color:var(--num)} .fn{color:var(--fn)}
   .b { margin-top:10px; } .who { display:inline-block; width:3ch; } .ind { padding-left:3ch; }
+  /* your message: a thin accent bar on the left (│), on every wrapped line; text at column 3 */
+  .you { border-left:1px solid var(--acc); padding-left:calc(3ch - 1px); }
   pre { font:inherit; white-space:pre-wrap; }
   pre.code { border-left:1px solid var(--line); padding-left:2ch; margin:3px 0 0 1ch; }
   pre.out { border-left:1px solid var(--line); padding-left:2ch; margin:3px 0 0 1ch; color:var(--dim); }
@@ -117,7 +119,7 @@ const bgc = (from, to, t) => `<div class="l3"><span class="who">@</span><span cl
 const fold = (n, a, extra = "") => `<div class="b l3">▸ ${n} messages between ${a} agents${extra}</div>`;
 const bgs = (...ls) => `<div class="b">${ls.join("")}</div>`;
 const need = (title, body, opts) => `<div class="b l1"><div class="t">? ${title}</div><div>${body}</div>${opts ? `<div class="dim">${opts}</div>` : ""}</div>`;
-const you = t => `<div class="b"><span class="who dim">›</span>${t}</div>`;
+const you = t => `<div class="b you">${t}</div>`;
 const bise = t => `<div class="b"><span class="who acc">:*</span>${t}</div>`;
 const ts = `<span class="kw">async function</span> <span class="fn">main</span>() {
   <span class="kw">const</span> issues = <span class="kw">await</span> tools.github.<span class="fn">search_issues</span>({
@@ -336,6 +338,25 @@ docs      waiting for your call   needs you
    <div class="b"><span class="who dim">▲</span><span class="dim">interrupted by you</span></div>`, pan: PANEL("auth-fix"),
    f: foot('auth-fix · working · 12s', '<span class="dim">›</span> <span class="cur"></span>', "⏎ steer · ctrl+c interrupt") })],
 
+["your message: a thin accent bar", "every message you write carries a thin accent bar │ in the first column, on every wrapped line; the text starts at column 3, like everyone else's. the marks · ✓ ✓✓ close the last line. so you can tell at a glance what you said from what the agents said. the heavy bar ┃ stays for cards (needs you): thin = you, heavy = needs you. same in main and inside an agent; light theme: raspberry; BISE_ASCII=1: a | in accent.",
+ term({ feed: you('the login breaks on safari. oh and draft the release note for 2.4, the one with the new api client, and keep it short please<span class="tick read">✓✓</span>') +
+   bise('on it: auth-fix takes the bug, release takes the note.') +
+   bgs(bg("release", "docs", "is the migration section ready?")) +
+   `<div class="b l1"><div class="t">? docs needs you</div><div>v2 removes /users. document v1 or v2?</div></div>` +
+   you('v2<span class="tick read">✓✓</span>') +
+   you('@auth-fix check logout too<span class="tick">✓</span>') +
+   `<div class="tlabel">BISE_ASCII=1</div><pre class="code" style="margin-left:0"><span class="acc">|</span>  the login breaks on safari. oh and draft the release note for 2.4, the
+<span class="acc">|</span>  one with the new api client, and keep it short please</pre>`,
+   pan: PANEL("main") })],
+
+["queued messages (BISE-89)", "during a turn, tab keeps what you typed for after the turn: nothing is sent yet. just above the composer, one dim line per queued message (cut to the width), newest last, then a faint hint. ↑ in an empty composer pops the newest back to edit it; tab queues it again, ⏎ steers it now, clearing it drops it. when the turn ends, the oldest goes out as a normal message (│ bar, · then ✓✓) and starts the next turn. one queue per agent; a restart of the TUI drops it.",
+ term({ feed: you('the login breaks on safari, find out why<span class="tick read">✓✓</span>') +
+   `<div class="b"><span class="who dim">∴</span><span class="dim">thought for 6s</span></div>` +
+   `<div class="b"><span class="who">$</span>bash <span class="pulse dim">∿ 40s</span></div><pre class="code">npx playwright test --project=webkit</pre>`,
+   pan: panel([{ ...P.main, g: S.work, r: '<span class="faint">· 2 queued</span>', sel: true }, P.auth, P.rel]),
+   above: `<div style="padding:0 2ch 2px"><div class="dim"> › also check the logout path, it uses the same cookie…</div><div class="dim"> › and draft the release note for 2.4…</div><div class="faint">queued · sent when this turn ends · ↑ edit</div></div>`,
+   f: foot('main · working · 40s', '<span class="dim">›</span> <span class="cur"></span>', "tab queue · ⏎ steer · ctrl+c interrupt") })],
+
 ["talk to an agent from main", "@name sends a direct message without leaving main (main stays out of it); the agent's reply is for you, so level 2. from inside an agent, @main goes back up. the @ popup lists agents (⚠ and files: the at-files task is building it).",
  term({ feed: you("@auth-fix also check the logout path") + `<div class="b"><span class="who">@</span>auth-fix <span class="dim">to you:</span> got it, i'll check logout after the login fix.</div>`,
    above: `<div class="pop"><div class="row sel"><span>${S.work} auth-fix</span><span class="dim">the safari login bug</span></div>
@@ -433,7 +454,7 @@ document.getElementById("screens").innerHTML = screens.map(([t, p, html], i) =>
    <div class="dim">3 · between agents</div><div class="l3"><span class="who">@</span>auth-fix <span class="to">→ release</span>  heads-up, i'm touching web/src/auth.</div>
   </div></figure>
   <figure><figcaption><b>the symbols</b></figcaption><div class="legend">${[
-    ["›", "you"], ['<span class="acc">:*</span>', "main"], ["◇", "brief"], ['<span class="dim">∴</span>', "thinking"], ["$", "bash"], ["λ", "typescript"],
+    ["›", "the composer prompt"], ['<span class="acc">│</span>', "your message (bar)"], ['<span class="acc">:*</span>', "main"], ["◇", "brief"], ['<span class="dim">∴</span>', "thinking"], ["$", "bash"], ["λ", "typescript"],
     ["↳", "a sub-call"], ['<span class="faint">✓</span>', "your message: the agent got it"], ['<span class="acc">✓✓</span>', "your message: read by the model"], ['<span class="img">▣</span>', "an image"], ["±", "file edit"], ["@", "agent to agent"], ['<span class="dim">≡</span>', "compacting"], ['<span class="dim">≡</span>', "compaction summary"], ['<span class="dim">▲</span>', "interrupted"],
     ['<span class="pulse">∿</span>', "working"], ['<span class="pulse dim">·</span>', "starting"], ["…", "waiting on an agent"], ['<span class="acc">?</span>', "needs you / blocked"],
     ["♡", "done"], ['<span class="err">✗</span>', "failed"], ['<span class="dim">○</span>', "idle"], ['<span class="dim">–</span>', "stopped / drop"], ["⇄", "overlap"], ['<span class="err">↻</span>', "restart failed"],
