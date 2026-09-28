@@ -37,7 +37,6 @@ pub(crate) enum Hint {
     FirstLevel3,
     FirstCard,
     /// book §15 (⚠ proposed): for the steering marks (BISE-15, track F)
-    #[allow(dead_code)] // until BISE-15 calls it
     FirstSteer,
 }
 
