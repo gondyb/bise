@@ -240,17 +240,25 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             format!("  {}", t),
             Style::default().fg(DIM),
         ))],
-        Ev::AgentMsg { head, text } => {
-            let mut rows = vec![
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled(" ◀ ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-                    Span::styled(head.clone(), Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-                ]),
-            ];
-            let bar = Span::styled(" │ ", Style::default().fg(ACCENT));
-            rows.extend(barred_rows(&bar, md_to_lines(text), width));
-            rows
+        // BISE-04: the v2 variants in the v1 look (the F track restyles
+        // them by level in BISE-14)
+        Ev::AgentMsg { from, to, text, level, id } => {
+            let mut head = match (*level, to.as_str()) {
+                (2, _) => format!("{} to you", from),
+                (_, "") => from.clone(),
+                _ => format!("{} → {}", from, to),
+            };
+            if !id.is_empty() {
+                head = format!("{} {}", head, id);
+            }
+            agent_msg_rows(&head, text, width)
+        }
+        Ev::Answered { agent, question, answer, why } => {
+            let mut body = format!("{} asked: {}\n\nmain answered: {}", agent, question, answer);
+            if !why.is_empty() {
+                body.push_str(&format!("\n\nwhy: {}", why));
+            }
+            agent_msg_rows(&format!("main answered @{}", agent), &body, width)
         }
         Ev::Card(t) => vec![Line::from(vec![
             Span::styled("  ◆ ", Style::default().fg(WARN).add_modifier(Modifier::BOLD)),
@@ -260,6 +268,20 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             ),
         ])],
     }
+}
+
+// a message from an agent: accent head, the body behind an accent bar
+fn agent_msg_rows(head: &str, text: &str, width: usize) -> Vec<Line<'static>> {
+    let mut rows = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(" ◀ ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled(head.to_string(), Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+        ]),
+    ];
+    let bar = Span::styled(" │ ", Style::default().fg(ACCENT));
+    rows.extend(barred_rows(&bar, md_to_lines(text), width));
+    rows
 }
 
 // the OpenCode user message block: colored left bar (┃ primary), panel
@@ -462,7 +484,7 @@ mod multiline_tests {
     #[test]
     fn agent_message_wraps_behind_its_bar() {
         let text = format!("one\ntwo {}", "x ".repeat(30));
-        let s = screen(Ev::AgentMsg { head: "main".into(), text }, 24);
+        let s = screen(Ev::AgentMsg { from: "main".into(), to: String::new(), text, level: 3, id: String::new() }, 24);
         let body: Vec<&String> = s.iter().filter(|r| r.starts_with(" │ ")).collect();
         assert_eq!(body[0].as_str(), " │ one", "{s:#?}");
         assert!(body[1].starts_with(" │ two x"), "{s:#?}");

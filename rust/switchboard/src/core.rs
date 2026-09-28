@@ -71,6 +71,9 @@ pub enum AgentReq {
         reply_to: Option<u64>,
         /// `--mode queued`: delivered only as a new turn.
         queued: bool,
+        /// `--why`: main's reason when it answers a task for the user
+        /// (shown in the `answered` line of main's feed).
+        why: String,
     },
     Wait {
         msg: u64,
@@ -173,6 +176,7 @@ impl AgentReq {
                     "queued" => true,
                     m => return Err(format!("unknown mode: {} (steer|queued)", m)),
                 },
+                why: jstr(v, "why"),
             },
             "wait" => AgentReq::Wait {
                 msg: parse_msg_id(&jstr(v, "msg")).ok_or("invalid message id")?,
@@ -491,6 +495,22 @@ fn line(agent: &str, kind: &str, text: &str) -> Effect {
         agent: agent.to_string(),
         line: format!("sb {} : {}", kind, wire_escape(text)),
     }
+}
+
+/// The separator of the fields of a hub line (C2: `answered`).
+pub const FIELD_SEP: &str = " : ";
+
+/// A field of a multi-field hub line: a `" : "` inside it becomes
+/// `" \\: "`, so the reader splits on the real separators only (the TUI's
+/// `parse_hub_line` undoes it).
+pub fn field_escape(s: &str) -> String {
+    s.replace(FIELD_SEP, " \\: ")
+}
+
+/// The text of a hub line made of fields (C2 `answered`: agent,
+/// question, answer, why).
+pub fn join_fields(fields: &[String]) -> String {
+    fields.iter().map(|f| field_escape(f)).collect::<Vec<_>>().join(FIELD_SEP)
 }
 
 fn notice(client: ClientId, text: &str) -> Effect {
@@ -859,7 +879,14 @@ impl Hub {
                 line: jstr(f, "line"),
             }),
             "interrupt" => fx.push(Effect::Interrupt { agent }),
-            "line" => fx.push(line(&agent, &jstr(f, "kind"), &jstr(f, "text"))),
+            "line" => {
+                // C2: a multi-field line (`answered`) comes as `fields`
+                let text = match f.get("fields") {
+                    Some(_) => join_fields(&jstrs(f, "fields")),
+                    None => jstr(f, "text"),
+                };
+                fx.push(line(&agent, &jstr(f, "kind"), &text))
+            }
             "reply" => fx.push(Effect::Reply {
                 token: f["token"].as_u64().unwrap_or(0),
                 body: f["body"].clone(),
@@ -1222,8 +1249,9 @@ impl Hub {
                 expect_reply,
                 reply_to,
                 queued,
+                why,
             } => json!({"cmd": "send", "to": to, "text": text, "expect_reply": expect_reply,
-                        "reply_to": reply_to, "queued": queued}),
+                        "reply_to": reply_to, "queued": queued, "why": why}),
             AgentReq::Wait { msg, timeout_s } => {
                 json!({"cmd": "wait", "msg": msg, "timeout_s": timeout_s})
             }

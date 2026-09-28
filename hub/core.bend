@@ -843,9 +843,68 @@ def send.user(-o: M.St, user: Bool, +cx: X.Cx<o>, +s: Snd) -> X.Cx<o> & SendR:
     case False{}:
       send.known(o, M.resolve(st(o, cx), Snd.to(s)), cx, s)
 
+# ---- main's feed (BISE-04, hub line protocol v2, contract C2) ----
+
+# a hub line whose text is several fields joined by " : " (the daemon
+# escapes " : " inside each field, see core.rs)
+def line_fields(-o: M.St, +cx: X.Cx<o>, +agent: String, +kind: String, +fields: List<&2, String>) -> X.Cx<o>:
+  out(o, cx, [J.kv("fx", J.JStr{"line"}), J.kv("agent", J.JStr{agent}), J.kv("kind", J.JStr{kind}),
+    J.kv("fields", J.JArr{jstrs(fields)})])
+
+# the message `m` points to (a card's, a reply's)
+def for_msg_of(+s: M.St, m: Maybe<&2, Nat>) -> Maybe<&2, M.Msg>:
+  match m:
+    case None{}:
+      None{}
+    case Some{+id}:
+      M.msg_of(s, id)
+
+# the question `to` asked main, that `m` answers
+def asked_main(q: Maybe<&2, M.Msg>, +to: String) -> Bool:
+  match q:
+    case None{}:
+      False{}
+    case Some{+x}:
+      String.eq(M.Msg.from(x), to) && String.eq(M.Msg.to(x), M.MAIN()) && M.Msg.expect(x)
+
+def question_text(q: Maybe<&2, M.Msg>) -> String:
+  match q:
+    case None{}:
+      ""
+    case Some{+x}:
+      M.Msg.text(x)
+
+# main's feed shows every message between agents (including between two
+# tasks), so what happened stays readable: `msg : from → to : text`.
+# What main receives already shows as `msg-in` when delivered; main
+# answering a task's question shows as `answered` (level 2) instead.
+def feed_main(-o: M.St, +cx: X.Cx<o>, +m: M.Msg, +why: String) -> X.Cx<o>:
+  +from = M.Msg.from(m)
+  +to = M.Msg.to(m)
+  +q = for_msg_of(st(o, cx), M.Msg.reply_to(m))
+  +answered = String.eq(from, M.MAIN()) && asked_main(q, to)
+  +agents = Bool.not(String.eq(from, M.USER())) && Bool.not(String.eq(to, M.MAIN()))
+  pick_lazy(X.Cx<o>, answered,
+    u => line_fields(o, cx, M.MAIN(), "answered", [to, question_text(q), M.Msg.text(m), why]),
+    u => pick_lazy(X.Cx<o>, agents,
+      v => line(o, cx, M.MAIN(), "msg", cat([from, " → ", to, " : ", M.Msg.text(m)])),
+      v => cx))
+
+def send.fed(-o: M.St, p: X.Cx<o> & SendR, +why: String) -> X.Cx<o> & SendR:
+  match p:
+    case (+cx, SOk{+m}):
+      (feed_main(o, cx, m, why), SOk{m})
+    case (+cx, SErr{+e}):
+      (cx, SErr{e})
+
+# send a message, with main's reason when it answers for the user
+# (`sb send --why`); answers it, or why it was refused
+def send_why(-o: M.St, +cx: X.Cx<o>, +s: Snd, +why: String) -> X.Cx<o> & SendR:
+  send.fed(o, send.user(o, String.eq(Snd.to(s), M.USER()), cx, s), why)
+
 # send a message; answers it, or why it was refused
 def send(-o: M.St, +cx: X.Cx<o>, +s: Snd) -> X.Cx<o> & SendR:
-  send.user(o, String.eq(Snd.to(s), M.USER()), cx, s)
+  send_why(o, cx, s, "")
 
 def msg(+from: String, +to: String, +text: String, +expect: Bool, +reply_to: Maybe<&2, Nat>, +plain: Bool, +auto: Bool) -> Snd:
   Snd{from, to, text, expect, reply_to, plain, auto, False{}, None{}}
@@ -1213,13 +1272,6 @@ def answer.q(-o: M.St, m: Maybe<&2, M.Msg>, +cx: X.Cx<o>, +c: M.Card, +text: Str
       +cx2 = note_main(o, cx, cat(["the user answered card #", ns(id), " (\"", M.one_line(M.Card.text(c)), "\"): \"", M.one_line(text), "\""]))
       close_card(o, cx2, id, "answered")
 
-def for_msg_of(+s: M.St, m: Maybe<&2, Nat>) -> Maybe<&2, M.Msg>:
-  match m:
-    case None{}:
-      None{}
-    case Some{+id}:
-      M.msg_of(s, id)
-
 def answer.dropped(-o: M.St, p: X.Cx<o> & DropR, +c: M.Card) -> X.Cx<o>:
   match p:
     case (+cx, DErr{+e}):
@@ -1535,7 +1587,7 @@ def req_send(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) -> 
   # a plain message to an agent that asked us something answers it
   +reply_to = Maybe.or(&2, Nat, C.opt_nat(J.get(q, "reply_to")),
     Bool.pick(Maybe<&2, Nat>, expect, None{}, open_question(st(o, cx), to, from)))
-  req_send.res(o, send(o, cx, Snd{from, to, C.get_s(q, "text"), expect, reply_to, False{}, False{}, C.get_b(q, "queued"), None{}}), token)
+  req_send.res(o, send_why(o, cx, Snd{from, to, C.get_s(q, "text"), expect, reply_to, False{}, False{}, C.get_b(q, "queued"), None{}}, C.get_s(q, "why")), token)
 
 def wait.park(-o: M.St, +cx: X.Cx<o>, +w: X.Waiter) -> X.Cx<o>:
   +r = rr(o, cx)
@@ -2094,7 +2146,8 @@ def auto_reply(-o: M.St, via: Maybe<&2, String>, +cx: X.Cx<o>, +agent: String, +
       fst(o, send(o, cx, msg(agent, M.Msg.from(m), body, False{}, Some{M.Msg.id(m)}, False{}, True{})))
     case Some{+view}:
       +cx2 = emit(o, cx, M.ESettled{M.Msg.id(m)}, Unit{}, Unit{}, Unit{})
-      +cx3 = line(o, cx2, view, "msg-in", cat(["@", agent, " : ", body]))
+      # an agent writing to the user (C2 `msg-you`, level 2)
+      +cx3 = line(o, cx2, view, "msg-you", cat([agent, " : ", body]))
       note_main(o, cx3, cat(["@", agent, " answered the user (asked from @", view, "'s view: \"", M.clip(M.one_line(M.Msg.text(m)), 500n),
         "\"): \"", M.clip_tail(M.one_line(body), 2000n), "\""]))
 

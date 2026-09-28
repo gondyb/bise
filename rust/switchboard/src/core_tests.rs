@@ -318,6 +318,7 @@ fn ask_waits_for_the_reply() {
             expect_reply: false,
             reply_to: Some(id),
             queued: false,
+            why: String::new(),
         },
     );
     let r = reply(&fx, tok).expect("the wait ends");
@@ -437,7 +438,8 @@ fn at_task_from_main_view_answers_there_and_notes_main() {
     assert!(has_line(&fx, "docs", "sb you : v1 ou v2 ?"), "{:?}", fx);
     // its end-of-turn answer comes back to main's view, main not woken
     let fx = t.turn("docs", "la v2");
-    assert!(has_line(&fx, MAIN, "sb msg-in : @docs : la v2"), "{:?}", fx);
+    // C2 `msg-you`: an agent writing to the user
+    assert!(has_line(&fx, MAIN, "sb msg-you : docs : la v2"), "{:?}", fx);
     assert!(say_to(&fx, MAIN).is_none() && steer_to(&fx, MAIN).is_none());
     assert!(t.hub.st.unanswered_for("docs").is_empty());
     // main's next turn carries the exchange
@@ -472,7 +474,7 @@ fn at_task_to_a_busy_task_steers_and_answers_at_turn_end() {
         agent: "docs".into(),
         leftover: false,
     });
-    assert!(has_line(&fx, MAIN, "@docs : à mi-chemin"), "{:?}", fx);
+    assert!(has_line(&fx, MAIN, "sb msg-you : docs : à mi-chemin"), "{:?}", fx);
     // main still gets its own automatic reply to the brief
     assert!(t.hub.st.unanswered_for("docs").is_empty());
 }
@@ -643,6 +645,7 @@ fn answering_in_the_task_view_answers_its_question() {
             expect_reply: true,
             reply_to: None,
             queued: false,
+            why: String::new(),
         },
     );
     let id = t
@@ -728,6 +731,7 @@ fn peers_cannot_reach_an_archived_task_but_the_user_can() {
             expect_reply: false,
             reply_to: None,
             queued: false,
+            why: String::new(),
         },
     );
     assert!(reply(&fx, tok).unwrap()["error"]
@@ -991,6 +995,7 @@ fn many_task_messages_always_reach_main() {
                 expect_reply: false,
                 reply_to: None,
                 queued: false,
+                why: String::new(),
             },
         );
         assert!(say_to(&fx, MAIN).is_some(), "message {} held: {:?}", i, fx);
@@ -1027,6 +1032,7 @@ fn a_user_message_to_main_starts_with_the_task_status() {
             expect_reply: false,
             reply_to: None,
             queued: false,
+            why: String::new(),
         },
     );
     let s = steer_to(&fx, MAIN).or_else(|| say_to(&fx, MAIN)).unwrap();
@@ -1049,6 +1055,7 @@ fn sb_tasks_details_every_task() {
             expect_reply: true,
             reply_to: None,
             queued: false,
+            why: String::new(),
         },
     );
     let (tok, fx) = t.req(MAIN, AgentReq::Tasks);
@@ -1099,6 +1106,7 @@ fn agents_talk_as_long_as_they_want() {
                 expect_reply: false,
                 reply_to: last,
                 queued: false,
+                why: String::new(),
             },
         );
         assert_eq!(reply(&fx, tok).unwrap()["ok"], true, "message {}", i);
@@ -1122,6 +1130,7 @@ fn send(t: &mut T, from: &str, to: &str, text: &str, queued: bool) -> (u64, Vec<
             expect_reply: false,
             reply_to: None,
             queued,
+            why: String::new(),
         },
     )
 }
@@ -1211,6 +1220,7 @@ fn a_queued_message_does_not_end_a_wait() {
             expect_reply: false,
             reply_to: Some(q),
             queued: true,
+            why: String::new(),
         },
     );
     assert!(
@@ -1237,6 +1247,7 @@ fn docs_question_card(t: &mut T) -> (u64, u64) {
             expect_reply: true,
             reply_to: None,
             queued: false,
+            why: String::new(),
         },
     );
     let id = t
@@ -1272,6 +1283,7 @@ fn main_replying_to_the_question_closes_its_card() {
             expect_reply: false,
             reply_to: None,
             queued: false,
+            why: String::new(),
         },
     );
     assert!(t.hub.st.cards.contains_key(&card));
@@ -1287,6 +1299,7 @@ fn main_replying_to_the_question_closes_its_card() {
             expect_reply: false,
             reply_to: Some(id),
             queued: false,
+            why: String::new(),
         },
     );
     assert!(t.hub.st.cards.is_empty());
@@ -1319,6 +1332,7 @@ fn question_then_reply(t: &mut T, queued: bool) -> (u64, u64) {
             expect_reply: true,
             reply_to: None,
             queued: false,
+            why: String::new(),
         },
     );
     let q = t.hub.st.msgs.values().find(|m| m.text == "v1 ou v2 ?").unwrap().id;
@@ -1330,6 +1344,7 @@ fn question_then_reply(t: &mut T, queued: bool) -> (u64, u64) {
             expect_reply: false,
             reply_to: Some(q),
             queued,
+            why: String::new(),
         },
     );
     let r = t.hub.st.msgs.values().find(|m| m.text == "v2").unwrap().id;
@@ -1480,6 +1495,7 @@ fn a_restored_idle_task_gets_its_queued_mail() {
             expect_reply: false,
             reply_to: None,
             queued: true,
+            why: String::new(),
         },
     );
     t.req(
@@ -1528,4 +1544,135 @@ fn failed_turn_report_skips_main_and_user_stops() {
         "failed: stopped retrying (interrupted by the user) after 2 failed attempts; last error: x"
     )
     .is_none());
+}
+
+// ---- BISE-04: hub line protocol v2 (contract C2) ----
+
+fn send_v2(t: &mut T, from: &str, to: &str, text: &str, expect: bool, reply_to: Option<u64>, why: &str) -> Vec<Effect> {
+    let (tok, fx) = t.req(
+        from,
+        AgentReq::Send {
+            to: to.into(),
+            text: text.into(),
+            expect_reply: expect,
+            reply_to,
+            queued: false,
+            why: why.into(),
+        },
+    );
+    let r = reply(&fx, tok).expect("send answers");
+    assert_eq!(r["ok"], true, "{}", r);
+    fx
+}
+
+fn lines_of<'a>(fx: &'a [Effect], agent: &str) -> Vec<&'a str> {
+    fx.iter()
+        .filter_map(|e| match e {
+            Effect::Line { agent: a, line } if a == agent => Some(line.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Traffic between two tasks reaches main's feed as a `msg` line (level
+/// 3), text whole: main no longer only sees what is sent to main.
+#[test]
+fn peer_traffic_reaches_mains_feed() {
+    let mut t = T::new();
+    t.spawn_task("a");
+    t.spawn_task("b");
+    let fx = send_v2(&mut t, "a", "b", "can you check logout?\nafter the fix", false, None, "");
+    assert!(
+        lines_of(&fx, MAIN).contains(&"sb msg : a → b : can you check logout?\\nafter the fix"),
+        "{:?}",
+        fx
+    );
+    // the recipient's own feed still reads it as `msg-in`
+    assert!(has_line(&fx, "b", "sb msg-in : a m_"), "{:?}", fx);
+}
+
+/// Main writing to a task shows in main's feed too; a message TO main
+/// shows once, as the `msg-in` of its delivery (no `msg` duplicate).
+#[test]
+fn main_traffic_in_mains_feed_once() {
+    let mut t = T::new();
+    t.spawn_task("docs");
+    t.go(Input::ReplIdle {
+        agent: "docs".into(),
+        leftover: false,
+    });
+    let fx = send_v2(&mut t, MAIN, "docs", "use v2", false, None, "");
+    assert!(lines_of(&fx, MAIN).contains(&"sb msg : main → docs : use v2"), "{:?}", fx);
+    t.turn(MAIN, "ok");
+    let fx = send_v2(&mut t, "docs", MAIN, "done", false, None, "");
+    let main = lines_of(&fx, MAIN);
+    assert!(!main.iter().any(|l| l.starts_with("sb msg : ")), "{:?}", main);
+    assert!(main.iter().any(|l| l.starts_with("sb msg-in : docs m_") && l.ends_with(" : done")), "{:?}", main);
+}
+
+/// Main answering a task's question: `answered : agent : question :
+/// answer : why` in main's feed (level 2), instead of the `msg` line;
+/// a " : " inside a field is escaped.
+#[test]
+fn main_answering_a_question_is_answered() {
+    let mut t = T::new();
+    t.spawn_task("docs");
+    t.turn(MAIN, "ok");
+    let (tok, _) = t.req(
+        "docs",
+        AgentReq::Send {
+            to: MAIN.into(),
+            text: "v1 or v2 : which one?".into(),
+            expect_reply: true,
+            reply_to: None,
+            queued: false,
+            why: String::new(),
+        },
+    );
+    t.turn(MAIN, "thinking");
+    let q = t.hub.st.msgs.values().find(|m| m.from == "docs" && m.to == MAIN).map(|m| m.id).expect("the question");
+    let _ = tok;
+    let fx = send_v2(&mut t, MAIN, "docs", "v2", false, Some(q), "the brief says v2");
+    let main = lines_of(&fx, MAIN);
+    assert!(
+        main.contains(&"sb answered : docs : v1 or v2 \\: which one? : v2 : the brief says v2"),
+        "{:?}",
+        main
+    );
+    assert!(!main.iter().any(|l| l.starts_with("sb msg : ")), "{:?}", main);
+    // without --why the field is there, empty
+    let (_, _) = t.req(
+        "docs",
+        AgentReq::Send {
+            to: MAIN.into(),
+            text: "and the title?".into(),
+            expect_reply: true,
+            reply_to: None,
+            queued: false,
+            why: String::new(),
+        },
+    );
+    let q2 = t.hub.st.msgs.values().filter(|m| m.from == "docs" && m.to == MAIN).map(|m| m.id).max().unwrap();
+    let fx = send_v2(&mut t, MAIN, "docs", "keep it", false, Some(q2), "");
+    assert!(lines_of(&fx, MAIN).contains(&"sb answered : docs : and the title? : keep it : "), "{:?}", fx);
+}
+
+/// A reply of main to a task message that did not ask anything stays a
+/// plain `msg` line.
+#[test]
+fn main_replying_to_a_non_question_is_msg() {
+    let mut t = T::new();
+    t.spawn_task("docs");
+    t.turn(MAIN, "ok");
+    send_v2(&mut t, "docs", MAIN, "fyi: done", false, None, "");
+    t.turn(MAIN, "noted");
+    let id = t.hub.st.msgs.values().filter(|m| m.from == "docs").map(|m| m.id).max().unwrap();
+    let fx = send_v2(&mut t, MAIN, "docs", "thanks", false, Some(id), "");
+    assert!(lines_of(&fx, MAIN).contains(&"sb msg : main → docs : thanks"), "{:?}", fx);
+}
+
+#[test]
+fn fields_escape_the_separator() {
+    assert_eq!(field_escape("a : b"), "a \\: b");
+    assert_eq!(join_fields(&["docs".into(), "x : y".into(), "z".into(), "".into()]), "docs : x \\: y : z : ");
 }

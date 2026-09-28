@@ -812,16 +812,70 @@ pub(super) fn draw_sb(app: &mut App, frame: &mut Frame) {
 }
 
 /// The synthetic lines of the hub (`sb <kind> : <text>`) as feed events.
+/// A hub line `sb <kind> : <text>` (hub line protocol, contract C2).
+/// v1 kinds keep working (an old transcript still renders); v2 adds:
+/// - `msg : {from} → {to} : {text}`: between agents (level 3);
+/// - `msg-you : {from} : {text}`: an agent writing to the user (level 2);
+/// - `answered : {agent} : {question} : {answer} : {why}`: main answered
+///   an agent for the user (level 2). Inside a field the hub escapes
+///   `" : "` as `" \: "` (core.rs `field_escape`); undone here.
 pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
-    let (kind, text) = rest.split_once(" : ").unwrap_or((rest, ""));
-    let text = unescape_md(text);
+    let (kind, raw) = rest.split_once(" : ").unwrap_or((rest, ""));
+    let text = unescape_md(raw);
+    let field = |s: &str| unescape_md(&s.replace(" \\: ", " : "));
     Some(match kind {
         "you" => Ev::You(text),
+        // v1: what this feed's owner received: `{from} m_<n> : {text}`
+        // (`@{from} : {text}` for an old direct reply to the user)
         "msg-in" => {
             let (head, body) = text.split_once(" : ").unwrap_or(("", text.as_str()));
+            let (from, id) = head.split_once(' ').unwrap_or((head, ""));
+            match from.strip_prefix('@') {
+                Some(f) => Ev::AgentMsg {
+                    from: f.to_string(),
+                    to: "you".into(),
+                    text: body.to_string(),
+                    level: 2,
+                    id: id.to_string(),
+                },
+                None => Ev::AgentMsg {
+                    from: from.to_string(),
+                    to: String::new(),
+                    text: body.to_string(),
+                    level: 3,
+                    id: id.to_string(),
+                },
+            }
+        }
+        "msg" => {
+            let (head, body) = text.split_once(" : ").unwrap_or(("", text.as_str()));
+            let (from, to) = head.split_once(" → ").unwrap_or((head, ""));
             Ev::AgentMsg {
-                head: head.to_string(),
+                from: from.to_string(),
+                to: to.to_string(),
                 text: body.to_string(),
+                level: 3,
+                id: String::new(),
+            }
+        }
+        "msg-you" => {
+            let (from, body) = text.split_once(" : ").unwrap_or(("", text.as_str()));
+            Ev::AgentMsg {
+                from: from.to_string(),
+                to: "you".into(),
+                text: body.to_string(),
+                level: 2,
+                id: String::new(),
+            }
+        }
+        "answered" => {
+            let mut f = raw.splitn(4, " : ").map(field);
+            let mut next = || f.next().unwrap_or_default();
+            Ev::Answered {
+                agent: next(),
+                question: next(),
+                answer: next(),
+                why: next(),
             }
         }
         "card" => Ev::Card(text),
@@ -832,6 +886,91 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
         "warn" => Ev::Warn(text),
         _ => Ev::Info(text),
     })
+}
+
+/// BISE-04: the hub line protocol, v1 and v2 kinds (contract C2).
+#[cfg(test)]
+mod hub_line_tests {
+    use super::*;
+
+    fn msg(from: &str, to: &str, text: &str, level: u8, id: &str) -> String {
+        format!("msg {from}|{to}|{text}|{level}|{id}")
+    }
+
+    /// The feed rows of `evs`, as text.
+    fn draw(evs: &[Ev]) -> String {
+        (0..evs.len())
+            .flat_map(|i| crate::feed::build_rows(evs, i, false, 60, 0))
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>() + "\n")
+            .collect()
+    }
+
+    /// A comparable form of the events these tests look at (`Ev` has no
+    /// `PartialEq`).
+    fn p(line: &str) -> Option<String> {
+        Some(match parse_hub_line(line)? {
+            Ev::AgentMsg { from, to, text, level, id } => format!("msg {from}|{to}|{text}|{level}|{id}"),
+            Ev::Answered { agent, question, answer, why } => format!("answered {agent}|{question}|{answer}|{why}"),
+            Ev::You(t) => format!("you {t}"),
+            Ev::Card(t) => format!("card {t}"),
+            Ev::Info(t) => format!("info {t}"),
+            Ev::Warn(t) => format!("warn {t}"),
+            _ => "other".into(),
+        })
+    }
+
+    #[test]
+    fn v2_kinds() {
+        assert_eq!(p("msg : a → b : hi : there"), Some(msg("a", "b", "hi : there", 3, "")));
+        assert_eq!(p("msg : a → b : one\\ntwo"), Some(msg("a", "b", "one\ntwo", 3, "")));
+        assert_eq!(p("msg-you : docs : la v2"), Some(msg("docs", "you", "la v2", 2, "")));
+        assert_eq!(
+            p("answered : docs : v1 \\: v2? : v2 : the brief says v2").as_deref(),
+            Some("answered docs|v1 : v2?|v2|the brief says v2")
+        );
+        assert_eq!(p("answered : docs : q : a : ").as_deref(), Some("answered docs|q|a|"));
+    }
+
+    /// An old (v1) transcript still parses to what it drew before.
+    #[test]
+    fn v1_kinds_still_parse() {
+        assert_eq!(p("msg-in : docs m_3 : done : ok"), Some(msg("docs", "", "done : ok", 3, "m_3")));
+        assert_eq!(p("msg-in : @docs : la v2"), Some(msg("docs", "you", "la v2", 2, "")));
+        assert_eq!(p("you : bonjour"), Some("you bonjour".into()));
+        assert_eq!(p("card : #1 question @docs"), Some("card #1 question @docs".into()));
+        assert_eq!(p("spawn : main → new task @t : x"), Some("info ✚ main → new task @t : x".into()));
+        assert_eq!(p("warn : w"), Some("warn w".into()));
+        // and draws: an old main feed with every v1 kind
+        let evs: Vec<Ev> = [
+            "you : bonjour",
+            "msg-in : docs m_3 : done",
+            "msg-in : @docs : la v2",
+            "card : #1 question @docs",
+            "card-closed : #1 answered",
+            "route : you → @docs : v2",
+            "direct : x",
+            "warn : w",
+        ]
+        .iter()
+        .filter_map(|l| parse_hub_line(l))
+        .collect();
+        let text = draw(&evs);
+        for want in ["◀ docs m_3", "done", "◀ docs to you", "la v2", "#1 question @docs", "→ you → @docs"] {
+            assert!(text.contains(want), "{want:?} missing in:\n{text}");
+        }
+    }
+
+    #[test]
+    fn peer_and_answered_draw() {
+        let evs = vec![
+            parse_hub_line("msg : a → b : hello b").unwrap(),
+            parse_hub_line("answered : docs : v1 or v2? : v2 : the brief").unwrap(),
+        ];
+        let text = draw(&evs);
+        for want in ["◀ a → b", "hello b", "main answered @docs", "docs asked: v1 or v2?", "main answered: v2", "why: the brief"] {
+            assert!(text.contains(want), "{want:?} missing in:\n{text}");
+        }
+    }
 }
 
 #[cfg(test)]

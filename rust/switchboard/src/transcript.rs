@@ -54,6 +54,20 @@ pub fn readable(line: &str) -> Option<String> {
     if let Some(r) = line.strip_prefix("sb msg-in : ") {
         return Some(format!("message from {}", wire_unescape(r)));
     }
+    // hub line protocol v2 (C2)
+    if let Some(r) = line.strip_prefix("sb msg : ") {
+        return Some(format!("message {}", wire_unescape(r)));
+    }
+    if let Some(r) = line.strip_prefix("sb msg-you : ") {
+        let (from, text) = r.split_once(" : ").unwrap_or(("?", r));
+        return Some(format!("{} to the user: {}", from, wire_unescape(text)));
+    }
+    if let Some(r) = line.strip_prefix("sb answered : ") {
+        let f: Vec<String> = r.split(" : ").map(|x| wire_unescape(&x.replace(" \\: ", " : "))).collect();
+        let get = |i: usize| f.get(i).map(String::as_str).unwrap_or("");
+        let why = if get(3).is_empty() { String::new() } else { format!(" (why: {})", get(3)) };
+        return Some(format!("main answered @{} for the user: {} -> {}{}", get(0), get(1), get(2), why));
+    }
     if let Some(r) = line.strip_prefix("tool #") {
         let r = r.split_once(' ').map(|x| x.1).unwrap_or(r);
         return Some(format!("tool: {}", clip(&wire_unescape(r), 300)));
@@ -407,6 +421,21 @@ pub fn render_origin(agent: &str, task: &str, all: &[Entry], o: &Origin, now: u6
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The v2 kinds (C2) read back as conversation entries; v1 lines
+    /// still read as before.
+    #[test]
+    fn protocol_v2_kinds_are_readable() {
+        assert_eq!(readable("sb msg : a → b : hi\\nthere").unwrap(), "message a → b : hi\nthere");
+        assert_eq!(readable("sb msg-you : docs : la v2").unwrap(), "docs to the user: la v2");
+        assert_eq!(
+            readable("sb answered : docs : v1 \\: v2? : v2 : the brief says v2").unwrap(),
+            "main answered @docs for the user: v1 : v2? -> v2 (why: the brief says v2)"
+        );
+        assert_eq!(readable("sb answered : docs : q : a : ").unwrap(), "main answered @docs for the user: q -> a");
+        assert_eq!(readable("sb msg-in : docs m_3 : x").unwrap(), "message from docs m_3 : x");
+        assert_eq!(readable("sb msg-in : @docs : la v2").unwrap(), "message from @docs : la v2");
+    }
 
     fn log(lines: &[&str]) -> Vec<Raw> {
         let text: Vec<String> = lines

@@ -92,10 +92,25 @@ pub(crate) enum Ev {
     Info(String),
     Idle,
     Raw(String),
-    // switchboard: a message from another agent (or the user's answer)
+    // switchboard (hub line protocol v2, contract C2): a message between
+    // agents. `to` empty: the owner of the feed it is in (v1 `msg-in`).
+    // `level`: 3 between agents (`msg`, `msg-in`), 2 an agent writing to
+    // the user (`msg-you`, to = "you"). `id`: the message id (`m_3`)
+    // when the line carries one (`msg-in`), else empty.
     AgentMsg {
-        head: String,
+        from: String,
+        to: String,
         text: String,
+        level: u8,
+        id: String,
+    },
+    // switchboard (C2 `answered`): main answered an agent's question for
+    // the user (level 2); `why` may be empty.
+    Answered {
+        agent: String,
+        question: String,
+        answer: String,
+        why: String,
     },
     // switchboard: an attention card
     Card(String),

@@ -9,7 +9,7 @@ use std::time::Duration;
 pub const USAGE: &str = "\
 sb list
 sb tasks
-sb send <agent> \"<text>\" [--expect-reply] [--reply-to m_<n>] [--mode steer|queued]
+sb send <agent> \"<text>\" [--expect-reply] [--reply-to m_<n>] [--mode steer|queued] [--why \"<reason>\"]
 sb ask <agent> \"<question>\" [--timeout <s>]
 sb wait m_<n> [--timeout <s>]
 sb status working|done|blocked [--note \"<text>\"]
@@ -139,7 +139,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
             }
         }
         "send" => {
-            let (pos, o) = parse_args(rest, &["reply-to", "mode"], &["expect-reply"])?;
+            let (pos, o) = parse_args(rest, &["reply-to", "mode", "why"], &["expect-reply"])?;
             let to = agent_arg(&pos, "usage: sb send <agent> \"<text>\"")?;
             req.insert("to".into(), json!(to));
             req.insert("text".into(), json!(text_of(&pos[1..])?));
@@ -154,6 +154,11 @@ pub fn build(args: &[String]) -> Result<Value, String> {
             }
             if o.contains_key("reply-to") {
                 req.insert("reply_to".into(), json!(str_of(&o, "reply-to")));
+            }
+            // main answering a task for the user: the reason, shown to
+            // the user in main's feed (C2 `answered`)
+            if o.contains_key("why") {
+                req.insert("why".into(), json!(str_of(&o, "why")));
             }
         }
         "ask" => {
@@ -481,6 +486,10 @@ mod tests {
         assert_eq!(r["expect_reply"], true);
         assert_eq!(r["reply_to"], "m_4");
         assert!(r.get("mode").is_none());
+        assert!(r.get("why").is_none());
+        let w = build(&a(&["send", "docs", "v2", "--reply-to", "m_4", "--why", "the brief says v2"])).unwrap();
+        assert_eq!(w["why"], "the brief says v2");
+        assert_eq!(w["text"], "v2");
         let q = build(&a(&["send", "docs", "later", "--mode", "queued"])).unwrap();
         assert_eq!(q["mode"], "queued");
         assert!(build(&a(&["send", "docs", "x", "--mode", "soon"])).is_err());
