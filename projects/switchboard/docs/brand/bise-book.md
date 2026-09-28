@@ -144,10 +144,10 @@ One glyph per entity and per status. Color only for attention.
 | `λ` | a TypeScript call |
 | `↳` | a sub-call inside a TypeScript run |
 | `±` | a file edit (patch) |
-| `✉` | a message between agents, or an agent writing to you |
+| `@` | a message between agents, or an agent writing to you (was `✉`: can turn into a color emoji) |
 | `▣` (accent chip) | an image |
 | `?` (accent) | a card: a decision that needs you |
-| `⟳` / `≡` (dim) | compaction running / its summary |
+| `≡` (dim; pulsing while running) | compaction running / its summary (was `⟳`: in almost no font) |
 | `▲` (dim) | turn interrupted |
 
 **Agent status**
@@ -169,15 +169,19 @@ One glyph per entity and per status. Color only for attention.
 |---|---|
 | `·` → `✓` → `✓✓` | your message: sending → the agent got it → the model read it (`✓✓` in accent) |
 | `•` (accent) | unread activity in an agent |
-| `⎇` | the agent has its own worktree (no mark: the shared folder) |
+| worktree mark (BISE-84 picks it: width 1, in ≥ 4 of the audited fonts, not `⌥`) | the agent has its own worktree (no mark: the shared folder); was `⎇`, in almost no font |
 | `⇄` | overlap: two agents changed the same file |
 | `↻` (error) | a restart failed |
-| `⧗` | a version is building or on trial |
+| `Δ` | a version is building or on trial (was `⧗`: in no font) |
 | `▸` / `▾` | closed / open (progressive disclosure) |
 
-**⚠** Every glyph must be checked single-width in SF Mono, Menlo, JetBrains
-Mono, Fira Code, Cascadia, and in Ghostty, iTerm2, Terminal.app, kitty,
-WezTerm (issue BISE-03), with fallbacks where needed.
+**Decided by Gabriel (2026-09-28), after the glyph audit (BISE-03,
+[glyph-audit.md](glyph-audit.md)):** keep the brand glyphs (`∿`, `♡`, `:*`) and
+every glyph a fallback font draws at width 1; replace only the ones that break:
+`✉` → `@` and `↪` → `»` (color-emoji risk), `⟳` → `≡` pulsing, `⧗` → `Δ`,
+`⎇` → a glyph picked in BISE-84. `BISE_ASCII=1` switches every glyph to plain
+ASCII (`~` working, `<3` done, `>` you, …) for terminals that draw them badly
+(BISE-84). Terminals must use ambiguous width = narrow (the default).
 
 ---
 
@@ -323,9 +327,9 @@ The same three levels everywhere, in main and inside an agent.
   previous, `alt+r` answer with the composer text (empty: acknowledge a done
   card), `ctrl+x` close without answering, `y` / `n` / `esc` on a
   confirmation.
-- **⚠ Open question:** once answered, does the card in the history fade in
-  place (grey bar, "answered"), or stay as it was with your answer below?
-  (The status-mark rule of §10 allows the fade.)
+- **Answered cards fade in place** (decided by Gabriel, 2026-09-28): once
+  answered, the card in the history turns grey (dim bar, `answered`), your
+  answer follows as a normal line. BISE-31.
 
 ## 13. Talking to agents
 

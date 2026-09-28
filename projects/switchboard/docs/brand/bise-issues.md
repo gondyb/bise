@@ -24,7 +24,7 @@ Index:
 | BISE-21 | header row | 1 | P | 20 |
 | BISE-22 | status row, composer, first run | 1 | P | 21 |
 | BISE-30 | cards as level 1 | 1 | C | 01 |
-| BISE-31 | answered cards | 2 | C | 30, Gabriel's answer |
+| BISE-31 | answered cards (fade in place) | 2 | C | 30, 14 |
 | BISE-40 | remove undo (TUI) | 1 | K | — |
 | BISE-41 | help and commands: words and case | 2 | K | 40, wave 1 done |
 | BISE-42 | new keys | 2 | K | 12, 41 |
@@ -37,6 +37,7 @@ Index:
 | BISE-81 | lowercase and copy-deck sweep | 3 | S | 80 |
 | BISE-82 | visual QA | 3 | S | 81 |
 | BISE-83 | remove deprecated theme aliases | 3 | S | 81 |
+| BISE-84 | glyph fallbacks and `BISE_ASCII` | 1 | T | 01, 03 |
 
 ---
 
@@ -474,7 +475,7 @@ Index:
 
 ### BISE-51 · main's voice, summaries, "why"
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** in progress · **owner:** bise-m-main · **commits:** —
 - **track:** M · **owns:** `prompts.rs`
 - **spec:** book §4 (voice), §9 (summaries, why), §13
 - **do:** main's prompt: speak as "i", lowercase, short, human (§4); say who
@@ -486,6 +487,61 @@ Index:
   mockups (`tui-live.html`); paste them in the notes. **⚠** Model behavior,
   not a guarantee: note what fails.
 - **notes:**
+  - Main's prompt gets a "how you talk to the user" block: "i" / "you",
+    lowercase starts (proper nouns and acronyms keep capitals), 1–3 short
+    sentences, no filler; "agents" and "cards" to the user, never task /
+    sub-agent / hub / orchestrator; routing in one line `on it: auth-fix
+    takes …, release takes …`; one summary line per burst of agent
+    traffic; answering for the user = `sb send <agent> --reply-to <id>
+    --why "<one sentence>" "<answer>"` then `docs asked v1 or v2; the
+    brief says v2, so i answered.`; same style in the user's language.
+    `--why` is also listed in main's own commands (not in `SB_COMMANDS`,
+    tasks don't need it). Test `main_speaks_as_i_routes_summarizes_and_says_why`.
+  - **5 scripted conversations** (real model, throwaway hubs
+    `/tmp/m-_uxk1x0p`, `/tmp/m-viohgygj`, `/tmp/m-wc8nlg3f`; script
+    `/tmp/m-live/live.py`, main's visible lines only):
+    1. routing — you: `two things: make test_login.sh not flaky (it
+       should never sleep), and draft a 3-line release note for v0.2 in
+       NOTES.md` → main: `on it: login-flaky makes test_login.sh stable
+       with no sleeps, and release-note writes the 3-line v0.2 note in
+       NOTES.md.` then, per report: `login-flaky fixed it: a random 0–2 s
+       sleep before \`echo ok\` was causing the flakiness. it removed the
+       sleep, and the test passed 20 out of 20 runs. nothing is committed.
+       release-note is still writing the v0.2 note.` / `release-note wrote
+       the v0.2 note in NOTES.md, so both jobs are done. …`
+    2. status — you: `what's going on?` → `both jobs are done and nothing
+       needs you. test_login.sh no longer sleeps and passed 20 out of 20
+       runs, and NOTES.md has the 3-line v0.2 note. nothing is committed
+       yet, so tell me if you want a commit.`
+    3. answering for you — docs asks `v1 or v2?`, the user said v2 →
+       main: `sb send docs --reply-to m_3 --why "the user said they want
+       v2 and told me to answer this myself" "v2"` (hub: `sb answered :
+       docs : v1 or v2? : v2 : the user said …`), then `docs asked whether
+       to document v1 or v2. you'd already said v2, so i answered v2.`
+    4. correction — you: `no, v1 for docs` → `sb send docs "the user
+       changed their mind: document v1, not v2. rewrite docs.txt … then
+       report done."` and `told docs to switch to v1 instead of v2 because
+       you changed your mind. it'll rewrite docs.txt to \`version: v1\`
+       once it finishes its current turn.` docs.txt ends `version: v1`.
+    5. agents talking to each other — schema + client, client asks
+       schema directly (hub: `sb msg : client → schema : what type is
+       org_id?`, `sb msg : schema → client : string`) → main: `on it:
+       schema writes schema.json and answers questions about it, and
+       client asks schema for the type and writes client.txt without
+       reading any files.` … `Correction to my last line: both agents are
+       already done. … I checked both files and they're right, so nothing
+       needs you.`
+  - **What fails (model, not code):** the confirmations follow the idea
+    but not the exact shape (`told docs to switch to v1 instead of v2
+    because you changed your mind.` vs `told docs: v1, you changed your
+    mind.`); a capital slips in now and then (`Correction to…`, `I
+    checked`); a summary is one line per main turn, and each report
+    wakes main, so a burst of N reports can still give N lines (the
+    folding of BISE-14 has to carry that); main sometimes speaks from a
+    stale picture (`client is asking it now` when both were done) and
+    corrects itself next turn; main closes the "done" cards itself and
+    once said it did so "without reading what it asked first" (card
+    closing is not in this issue). Visible text never said "task".
 
 ---
 
@@ -526,12 +582,12 @@ Index:
 
 ### BISE-31 · answered cards
 
-- **status:** blocked (Gabriel: fade in place, or stay and answer below?)
+- **status:** todo (decided: the card fades in place, grey bar + `answered`; starts after F's BISE-14/15)
 - **owner:** — · **commits:** —
 - **track:** C · **owns:** `sb/cards.rs`, and the level-1 feed line style
   in `render.rs` **only after F's wave 2 is done**
 - **spec:** book §12 (open question), §10 (status marks)
-- **do:** implement the chosen behavior.
+- **do:** once answered, the card's line in the history turns grey (dim bar, `answered`), the answer follows as a normal line; the box closes as today.
 - **notes:**
 
 ### BISE-41 · help and commands: words and case
@@ -637,4 +693,26 @@ Index:
 - **track:** S · **owns:** `theme.rs` and whatever still uses an alias
 - **do:** remove the `#[deprecated]` aliases of BISE-01; every file uses the
   roles.
+- **notes:**
+
+---
+
+## Added by main
+
+### BISE-84 · glyph fallbacks and `BISE_ASCII`
+
+- **status:** todo · **owner:** — · **commits:** —
+- **track:** T · **owns:** `rust/tui/src/theme.rs` (the `G_*` constants)
+- **spec:** book §6 (decision after the glyph audit), glyph-audit.md
+- **do:** apply the §6 decision in the `G_*` constants: `✉` → `@`, `↪` → `»`,
+  `⟳` → `≡` (pulsing while running), `⧗` → `Δ`; pick the worktree mark
+  (width 1, in ≥ 4 of the audited fonts, not `⌥`, check it with the audit's
+  method) and write it in the notes (main updates §6). Add `BISE_ASCII=1`:
+  every `G_*` glyph (and `working_frame`) returns a plain-ASCII form
+  (`~` working, `<3` done, `>` you, `*` main mark stays `:*`, …; table in the
+  notes). Glyphs must go through functions or a table so the switch is
+  global.
+- **done when:** a unit test checks every glyph is width 1 (or its documented
+  width) in both modes; the TUI runs with `BISE_ASCII=1` on a throwaway hub
+  and shows no non-ASCII glyph except box-drawing lines.
 - **notes:**
