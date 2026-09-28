@@ -830,9 +830,25 @@ Index:
 
 ## Added by main
 
+### BISE-23 · stable panel numbers, `waits {name}`
+
+- **status:** in progress · **owner:** bise-p-chrome · **commits:** —
+- **track:** P · **owns:** `sb/panel.rs`; the `Nav::Goto` path and the
+  agent fields of `apply_state` in `sb.rs`; `waiting_on` in the hub
+  (`hub/view.bend`, `hub/main.bend`, `sb-core`, `core.rs` snapshot,
+  `model.rs` Agent)
+- **spec:** book §8 (agents panel: numbers never change while an agent
+  lives; `waits docs`)
+- **do:** (a) a slot map: each live agent keeps its number while it lives;
+  Alt+N goes by that number. (b) the hub sends `waiting_on` (who the agent
+  waits on) in the agent state; the panel shows `waits {name}`.
+- **done when:** numbers survive a drop (test); `waits x` shows when an
+  agent waits on another (throwaway hub); gates green.
+- **notes:**
+
 ### BISE-84 · glyph fallbacks and `BISE_ASCII`
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-t-theme · **commits:** 1a9179d, 601bc3c (fix: 1a9179d had swept in BISE-60 hunks of run.rs)
 - **track:** T · **owns:** `rust/tui/src/theme.rs` (the `G_*` constants)
 - **spec:** book §6 (decision after the glyph audit), glyph-audit.md
 - **do:** apply the §6 decision in the `G_*` constants: `✉` → `@`, `↪` → `»`,
@@ -847,3 +863,51 @@ Index:
   width) in both modes; the TUI runs with `BISE_ASCII=1` on a throwaway hub
   and shows no non-ASCII glyph except box-drawing lines.
 - **notes:**
+  - **C1 amendment (OK'd by main):** `G_*` stay `&'static str` constants
+    (the Unicode forms). New: `ascii_mode()` (`BISE_ASCII=1|true|yes`, read
+    once; per thread under `cargo test`), `glyph(G_X) -> &str` (the ASCII
+    form in ASCII mode, else `G_X`), the table `ASCII: &[(&str, &str)]`, and
+    `asciify(&mut Buffer)`: a safety net after each draw (run.rs +1 line in the
+    `terminal.draw` closure) that rewrites only the table's glyphs, one cell to
+    one cell. It returns at once when the mode is off. Letters, accents, CJK,
+    emoji, quotes, box drawing and block elements are never touched (tested).
+    `working_frame` / `starting_frame` / new `compacting_frame` switch too.
+  - **Replacements:** `G_MSG` `✉`→`@`, `G_COMPACTING` `⟳`→`≡` (pulse with
+    `compacting_frame`, dim/faint), `G_BUILDING` `⧗`→`Δ`, new `G_WRAP` `»`
+    (F switches `code.rs::G_WRAP` to it), **worktree mark `ψ`** (U+03C8).
+  - **Worktree mark check:** fontTools cmap and advance = advance of `0` (the
+    audit's method), in SF Mono, Menlo, JetBrains Mono and MesloLGS NF: 4 of 4
+    fonts installed here (Fira Code and Cascadia are not installed). EAW A,
+    `unicode-width` 1. It looks like a fork, and it is not `⌥`. Other passes: `Ψ`,
+    `¥`, `Y`. Misses: `⋔ ⑂ ⅄ ᛘ ⎌` (0 fonts), `↱` (2), `⊢ ⊻` (1).
+  - **ASCII forms (one cell each, `✓✓` two):** `›` > · `:*` :* · `◇` + · `∴` . ·
+    `$` $ · `λ` \\ · `↳` - · `±` % · `@` @ · `▣` # · `?` ? · `≡` = · `▲` ^ · `»` > ·
+    `·` . · `∿` ~ · `…` : · `♡` + · `✗` x · `○` o · `–` - · `✓` v · `✓✓` vv ·
+    `•` * · `ψ` Y · `⇄` = · `↻` ! · `Δ` ^ · `▸` > · `▾` v. The net also covers
+    the old glyphs (`✉ ⟳ ⧗ ⎇ ↪`), chrome/hints (`✦ ◀ ▶ ● ◉ ◆ ✚ ▪ × ⏎ → ← ↑ ↓
+    ⇧ ⌥ — −`) and the braille spinner (`~`). In ASCII mode `…` and `·` in
+    agent prose become `:` and `.`, `»` becomes `>` (accepted: table glyphs only).
+  - **Tests:** every `G_*` is its documented width (1, `:*` and `✓✓` 2) in
+    both modes and ASCII in ASCII mode; the table maps one cell to one cell,
+    no duplicates, no letters but `λ ψ Δ`; every non-ASCII `G_*` has an ASCII
+    form; `asciify` leaves `é ñ ü 漢字 👍 « “”` and box drawing alone.
+  - **By hand:** TUI with `BISE_ASCII=1` on a throwaway hub (tmux, e2e env):
+    start, spawn a task, preview, `/` popup, `/help`. No non-ASCII on screen
+    except letters and box drawing.
+  - **For BISE-83 (the sweep to `theme::glyph()`):** hard-coded glyph
+    literals are in `sb/panel.rs` (`∿ ♡ ⎇ ▸ ▾ ⌥ …`), `sb/cards.rs` (`✗ ♡ ⇄ ↻ –`),
+    `sb/versions.rs` (`✓ ✗ ● ○ ◉`), `ui.rs` (`✓ ● ○ ◆ ⇧ ← ↑ ↓ ⏎`), `render.rs`
+    (`◀ → − └`), `sb.rs` (`◀ ⇄ ✚ ⏎ →`), `help.rs` (`✦ ▸ ⏎ → ↑ ↓ ←`),
+    `commands.rs` (`▸ ▪`), `code.rs` (`↪`/G_WRAP, `−`), `attach.rs` (`× →`),
+    `sb/client.rs` (`⏎`), `term.rs` (`↑`), `keyprobe.rs` (`→ …`) and the `·`
+    separators in many hint strings. The net covers all of them today.
+  - **Other tracks told:** P fixed its `sb/panel.rs` test that hard-coded `⎇`
+    (lands with BISE-23). F got `G_WRAP` and `compacting_frame`. O knows about
+    the run.rs line.
+  - **Gates** (private worktree, shared target): build ok; clippy clean;
+    PROOF ok; e2e all PASS; test --workspace: all ok except
+    `panel_rows_at_28_and_40` (the `⎇` literal above, fixed by P). tmux: help,
+    term, version, at_files, images, clear, archived OK; composer is flaky
+    under load (1 fail, 1 pass with my change; passes on HEAD); `tui_tmux`
+    fails on HEAD b5eb670 **without my change too** (the brief now folds,
+    BISE-12).
