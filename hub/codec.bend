@@ -174,22 +174,78 @@ def mst_of(+j: J.Json) -> M.MSt:
     Bool.pick(M.MSt, String.eq(s, "rejected"), M.Rejected{get_s(j, "error")},
       Bool.pick(M.MSt, String.eq(s, "cancelled"), M.Cancelled{}, M.Queued{get_s(j, "reason")})))
 
+type EvK is Data:
+  KTaskCreated{}
+  KLifecycle{}
+  KWorkspace{}
+  KSnapshot{}
+  KDeclared{}
+  KReported{}
+  KFileTouched{}
+  KRenamed{}
+  KMsgSent{}
+  KMsgState{}
+  KSettled{}
+  KCardOpened{}
+  KCardClosed{}
+  KMainNote{}
+  KNotesFlushed{}
+  KUnknown{}
+
+def ev_kind(+t: String) -> EvK:
+  Bool.pick(EvK, String.eq(t, "task_created"), KTaskCreated{},
+  Bool.pick(EvK, String.eq(t, "lifecycle"), KLifecycle{},
+  Bool.pick(EvK, String.eq(t, "workspace_changed"), KWorkspace{},
+  Bool.pick(EvK, String.eq(t, "snapshot"), KSnapshot{},
+  Bool.pick(EvK, String.eq(t, "declared"), KDeclared{},
+  Bool.pick(EvK, String.eq(t, "reported"), KReported{},
+  Bool.pick(EvK, String.eq(t, "file_touched"), KFileTouched{},
+  Bool.pick(EvK, String.eq(t, "renamed"), KRenamed{},
+  Bool.pick(EvK, String.eq(t, "message_sent"), KMsgSent{},
+  Bool.pick(EvK, String.eq(t, "message_state"), KMsgState{},
+  Bool.pick(EvK, String.eq(t, "message_settled"), KSettled{},
+  Bool.pick(EvK, String.eq(t, "card_opened"), KCardOpened{},
+  Bool.pick(EvK, String.eq(t, "card_closed"), KCardClosed{},
+  Bool.pick(EvK, String.eq(t, "main_note"), KMainNote{},
+  Bool.pick(EvK, String.eq(t, "main_notes_flushed"), KNotesFlushed{},
+  KUnknown{})))))))))))))))
+
+# a match on the kind, not a Bool.pick chain: the chain decoded the event
+# as every kind, then kept one
+def ev_of.kind(k: EvK, +j: J.Json, +n: String) -> Maybe<&2, M.Ev>:
+  match k:
+    case KTaskCreated{}:
+      Some{M.ETaskCreated{n, get_s(j, "parent"), get_j(j, "brief"), get_j(j, "ws"), get_nat(j, "at_ms")}}
+    case KLifecycle{}:
+      Some{M.ELifecycle{n, life_of(get_s(j, "lifecycle")), opt_str(J.get(j, "reason"))}}
+    case KWorkspace{}:
+      Some{M.EWorkspace{n, get_j(j, "ws")}}
+    case KSnapshot{}:
+      Some{M.ESnapshot{n, opt_str(J.get(j, "snapshot_ref"))}}
+    case KDeclared{}:
+      Some{M.EDeclared{n, decl_of(opt_str(J.get(j, "status"))), get_s(j, "note")}}
+    case KReported{}:
+      Some{M.EReported{n, get_j(j, "report")}}
+    case KFileTouched{}:
+      Some{M.EFileTouched{n, get_s(j, "path")}}
+    case KRenamed{}:
+      Some{M.ERenamed{n, get_s(j, "new_name")}}
+    case KMsgSent{}:
+      Some{M.EMsgSent{msg_of(get_j(j, "msg"))}}
+    case KMsgState{}:
+      Some{M.EMsgState{get_nat(j, "id"), mst_of(j)}}
+    case KSettled{}:
+      Some{M.ESettled{get_nat(j, "id")}}
+    case KCardOpened{}:
+      Some{M.ECardOpened{card_of(get_j(j, "card"))}}
+    case KCardClosed{}:
+      Some{M.ECardClosed{get_nat(j, "id"), get_s(j, "resolution")}}
+    case KMainNote{}:
+      Some{M.EMainNote{get_s(j, "text"), get_nat(j, "at_ms")}}
+    case KNotesFlushed{}:
+      Some{M.ENotesFlushed{}}
+    case KUnknown{}:
+      None{}
+
 def ev_of(+j: J.Json) -> Maybe<&2, M.Ev>:
-  +t = get_s(j, "type")
-  +n = get_s(j, "name")
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "task_created"), Some{M.ETaskCreated{n, get_s(j, "parent"), get_j(j, "brief"), get_j(j, "ws"), get_nat(j, "at_ms")}},
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "lifecycle"), Some{M.ELifecycle{n, life_of(get_s(j, "lifecycle")), opt_str(J.get(j, "reason"))}},
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "workspace_changed"), Some{M.EWorkspace{n, get_j(j, "ws")}},
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "snapshot"), Some{M.ESnapshot{n, opt_str(J.get(j, "snapshot_ref"))}},
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "declared"), Some{M.EDeclared{n, decl_of(opt_str(J.get(j, "status"))), get_s(j, "note")}},
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "reported"), Some{M.EReported{n, get_j(j, "report")}},
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "file_touched"), Some{M.EFileTouched{n, get_s(j, "path")}},
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "renamed"), Some{M.ERenamed{n, get_s(j, "new_name")}},
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "message_sent"), Some{M.EMsgSent{msg_of(get_j(j, "msg"))}},
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "message_state"), Some{M.EMsgState{get_nat(j, "id"), mst_of(j)}},
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "message_settled"), Some{M.ESettled{get_nat(j, "id")}},
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "card_opened"), Some{M.ECardOpened{card_of(get_j(j, "card"))}},
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "card_closed"), Some{M.ECardClosed{get_nat(j, "id"), get_s(j, "resolution")}},
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "main_note"), Some{M.EMainNote{get_s(j, "text"), get_nat(j, "at_ms")}},
-  Bool.pick(Maybe<&2, M.Ev>, String.eq(t, "main_notes_flushed"), Some{M.ENotesFlushed{}},
-  None{})))))))))))))))
+  ev_of.kind(ev_kind(get_s(j, "type")), j, get_s(j, "name"))
