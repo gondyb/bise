@@ -1062,3 +1062,31 @@ Index:
     under load (1 fail, 1 pass with my change; passes on HEAD); `tui_tmux`
     fails on HEAD b5eb670 **without my change too** (the brief now folds,
     BISE-12).
+
+### BISE-62 · the theme choice is saved
+
+- **status:** done · **owner:** bise-o-onboard · **commits:** 8e56af4
+- **track:** O · **owns:** the saved-choice part of `theme_detect.rs`
+  (track T is done), `onboarding.rs` step 2
+- **spec:** book §5 (a setting to force one), §15 step 2
+- **do:** the theme picked in onboarding step 2 and by `/theme` is saved in
+  `~/.bend-harness/tui.json` and reused at the next launch; precedence
+  `BISE_THEME` > saved choice > auto-detect; tests with a temp HOME.
+- **done when:** tests of the store and the precedence; gates green.
+- **notes:**
+  - `theme_detect.rs`: `"theme": "light" | "dark" | "auto"` in
+    `~/.bend-harness/tui.json`, next to `/voice`'s `voice_mode_enabled`
+    (other keys kept). `init()` uses `startup_choice(BISE_THEME, saved)`.
+    Store: `settings_path`, `saved_from`, `with_theme`, `load_in(home)`,
+    `save_in(home, choice)` (all take the home: tests use a temp dir).
+  - **For K (/theme, BISE-41):** `theme_detect::choose(Choice::parse(arg)?)`
+    → `(Mode, Result<(), String>)`: switches now and saves; on `Err` the
+    mode is switched anyway, say it wasn't saved. Marked
+    `#[allow(dead_code)]` until K calls it (drop the attribute then). Told
+    bise-k-keys.
+  - Onboarding step 2: `enter` saves `auto` when the pick is what the
+    terminal gave (dark with no answer), else the pick, so a kept default
+    keeps following the terminal. `esc` / `ctrl+c` there don't save.
+  - Tests: `the_choice_is_saved_next_to_the_other_settings`,
+    `env_beats_the_saved_choice_beats_detection` (theme_detect), step 2's
+    test saves in a temp HOME (onboarding).
