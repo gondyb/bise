@@ -34,7 +34,7 @@ les supports marketing et tous les textes du site.** Ça fait humain qui tape
 au clavier. Ton : humain, décontracté, à la première personne quand ça colle ;
 éviter la structure lisse « X. None of the Y. » qui sonne LLM. Exceptions : les noms
 propres gardent leurs majuscules (Mistral, Vibe, Claude Code, GitHub) ; les
-sigles restent tels quels (CLI, API) ; les MAJUSCULES pour crier sont
+sigles en majuscules (API, MCP), mais « cli » en minuscules passe bien ; les MAJUSCULES pour crier sont
 permises, extrêmement rarement. Notre nom reste en minuscules : `bise`. (Les docs
 internes comme celle-ci gardent les majuscules, sauf dans la copy elle-même.)
 
