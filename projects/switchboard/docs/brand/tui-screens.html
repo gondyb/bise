@@ -65,6 +65,7 @@
   .thumb::after { content:"sign in"; position:absolute; left:40%; top:42%; font-size:11px; color:#fff; background:#5b6ee1; padding:2px 8px; border-radius:3px; }
   .tick { color:var(--faint); margin-left:1ch; } .tick.read { color:var(--acc); }
   hr { border:0; border-top:1px solid var(--line); margin:40px 0; max-width:112ch; }
+  .gc { display:inline-block; width:1ch; text-align:center; }
 </style>
 </head>
 <body>
@@ -108,8 +109,8 @@ function foot(status, composer, hints) {
 function term({ h, feed, pan, above = "", f, narrow, overlay = "" }) {
   return `<div class="term${narrow ? " narrow" : ""}">${h ?? head()}<div class="grid"><div class="feed">${feed}</div>${narrow ? "" : (pan ?? PANEL())}</div>${above}${f ?? foot()}${overlay}</div>`;
 }
-const bg = (from, to, t) => `<div class="l3"><span class="who">✉</span>${from} <span class="to">→ ${to}</span>  ${t}</div>`;
-const bgc = (from, to, t) => `<div class="l3"><span class="who">✉</span><span class="nm">${from}</span><span class="to">→ </span><span class="nm to">${to}</span>${t}</div>`;
+const bg = (from, to, t) => `<div class="l3"><span class="who">@</span>${from} <span class="to">→ ${to}</span>  ${t}</div>`;
+const bgc = (from, to, t) => `<div class="l3"><span class="who">@</span><span class="nm">${from}</span><span class="to">→ </span><span class="nm to">${to}</span>${t}</div>`;
 const fold = (n, a, extra = "") => `<div class="b l3">▸ ${n} messages between ${a} agents${extra}</div>`;
 const bgs = (...ls) => `<div class="b">${ls.join("")}</div>`;
 const need = (title, body, opts) => `<div class="b l1"><div class="t">? ${title}</div><div>${body}</div>${opts ? `<div class="dim">${opts}</div>` : ""}</div>`;
@@ -141,7 +142,7 @@ const screens = [
    bise("on it. two agents:") + `<div class="ind">${S.work} auth-fix <span class="dim">the safari login bug</span></div><div class="ind">${S.work} release <span class="dim">the release note for 0.4</span></div>` +
    you("also the api docs, v2") + bise("docs takes it.") })],
 
-["what's for you, what isn't", "three levels, always the same. <b>needs you</b>: blush bar, bold, stays until answered (also in the card box). <b>for you</b>: normal text, what main and agents say to you. <b>between agents</b>: dim, under a faint rail, ✉ from → to; it keeps the story readable without asking for attention. main's line after the traffic is the summary for you. ▸ why shows the reasoning behind a decision main took for you.",
+["what's for you, what isn't", "three levels, always the same. <b>needs you</b>: blush bar, bold, stays until answered (also in the card box). <b>for you</b>: normal text, what main and agents say to you. <b>between agents</b>: dim, under a faint rail, @ from → to; it keeps the story readable without asking for attention. main's line after the traffic is the summary for you. ▸ why shows the reasoning behind a decision main took for you.",
  term({ feed: you("the login breaks on safari. and the api docs, v2 please.") +
    bise("on it: auth-fix takes safari, docs takes the api docs.") +
    bgs(bg("docs", "main", "v1 or v2 for the examples?"), bg("main", "docs", "v2, the brief says so.")) +
@@ -216,11 +217,11 @@ the slow tail is the cold cache on the first request.</pre>
    <div class="b">should i keep them without links, or drop them from the note?</div>
    <div class="b dim">▾ 12 more lines · pgdn</div>`, pan: PANEL("release") })],
 
-["the agents panel, every state", "one line per agent: its number: ⌥ + number switches to it (0 main, 1 to 9 the first nine agents; no number after nine), glyph, name, age or state, context fill. • = unread activity. ⎇ = agent in its own worktree; no mark = the shared folder. archived agents are counted, not listed.",
+["the agents panel, every state", "one line per agent: its number: ⌥ + number switches to it (0 main, 1 to 9 the first nine agents; no number after nine), glyph, name, age or state, context fill. • = unread activity. Y = agent in its own worktree; no mark = the shared folder. archived agents are counted, not listed.",
  term({ feed: "", pan: panel([
    P.main, { ...P.auth, sel: true, dot: true }, P.rel, { g: S.start, name: "tests", r: "starting" }, P.docs, P.api,
    { g: '<span class="acc">?</span>', name: "infra", r: '<span class="acc">blocked</span>' }, P.bench, P.deploy, P.ideas,
-   { g: S.stop, name: "old-spike", r: "stopped" }, { g: S.work, name: "big-refactor ⎇", r: "40m · 64%" },
+   { g: S.stop, name: "old-spike", r: "stopped" }, { g: S.work, name: "big-refactor Y", r: "40m · 64%" },
  ], `<div class="dim b">4 archived</div>`) })],
 
 ["preview an agent", "Space on a selected agent: its last lines, without leaving main.",
@@ -276,7 +277,7 @@ src/auth/session.ts:31:  sameSite: "none",</pre>
    you('skip firefox, only webkit<span class="tick read">✓✓</span>') +
    you('and log the cookie headers<span class="tick">✓</span>') +
    you('also the logout path<span class="tick">·</span>') +
-   `<div class="b l3">✉ main → auth-fix  release needs the fix by 5pm.<span class="tick read">✓✓</span></div>` +
+   `<div class="b l3">@ main → auth-fix  release needs the fix by 5pm.<span class="tick read">✓✓</span></div>` +
    `<div class="b"><span class="who err">✗</span><span class="err">not delivered: auth-fix stopped.</span> <span class="dim">⏎ send again · esc drop</span></div>`,
    pan: PANEL("auth-fix"), f: foot('auth-fix · working · 40s', '<span class="dim">›</span> <span class="cur"></span>', "⏎ steer · ctrl+c interrupt") })],
 
@@ -287,7 +288,7 @@ src/auth/session.ts:31:  sameSite: "none",</pre>
    f: foot('auth-fix · working · 12s', '<span class="dim">›</span> <span class="cur"></span>', "⏎ steer · ctrl+c interrupt") })],
 
 ["talk to an agent from main", "@name sends a direct message without leaving main (main stays out of it); the agent's reply is for you, so level 2. from inside an agent, @main goes back up. the @ popup lists agents (⚠ and files: the at-files task is building it).",
- term({ feed: you("@auth-fix also check the logout path") + `<div class="b"><span class="who">✉</span>auth-fix <span class="dim">to you:</span> got it, i'll check logout after the login fix.</div>`,
+ term({ feed: you("@auth-fix also check the logout path") + `<div class="b"><span class="who">@</span>auth-fix <span class="dim">to you:</span> got it, i'll check logout after the login fix.</div>`,
    above: `<div class="pop"><div class="row sel"><span>${S.work} auth-fix</span><span class="dim">the safari login bug</span></div>
    <div class="row"><span>${S.work} release</span><span class="dim">the release note</span></div>
    <div class="row"><span class="dim">📄 web/src/auth/session.ts</span><span class="dim">file ⚠</span></div></div>`,
@@ -317,12 +318,12 @@ src/auth/session.ts:31:  sameSite: "none",</pre>
    <div class="b"><span class="who err">✗</span><span class="err">glm-5 can't read images.</span> <span class="dim">pick a model that can (/model), or describe the screen in words.</span></div>`,
    pan: PANEL("auth-fix") })],
 
-["agents talk to each other", "inside an agent, the messages it sends and receives are level 3 (dim, ✉ from → to); what the agent says to you is level 2.",
+["agents talk to each other", "inside an agent, the messages it sends and receives are level 3 (dim, @ from → to); what the agent says to you is level 2.",
  term({ feed: bgs(bg("auth-fix", "release", "heads-up, i'm touching web/src/auth. mention the safari fix in the notes."), bg("release", "auth-fix", 'got it, added under "fixes".')) +
    `<div class="b">added the safari fix to the notes, under "fixes".</div>`, pan: PANEL("release") })],
 
 ["compaction", "when a context fills up, the agent compacts: one line while it runs, then a summary behind ▸.",
- term({ feed: `<div><span class="who dim">⟳</span><span class="dim">compacting the conversation… 81% full</span></div>
+ term({ feed: `<div><span class="who dim pulse">≡</span><span class="dim">compacting the conversation… 81% full</span></div>
    <div class="b"><span class="who dim">≡</span><span class="dim">compacted: 820k → 34k tokens ▸ summary</span></div>`, pan: PANEL("auth-fix"),
    f: foot('auth-fix · working · 34k / 1M tokens · 3%') })],
 
@@ -338,7 +339,7 @@ src/auth/session.ts:31:  sameSite: "none",</pre>
    <div class="row sel"><span>7f3a2c  tui: prose wraps at 76 cols</span><span class="dim">latest</span></div>
    <div class="row"><span>81986cd packaging prototype</span><span class="dim">current</span></div>
    <div class="row"><span>c7d3a81 brand board v0</span><span class="dim"></span></div></div>`,
-   f: foot('main · idle · v 81986cd · <span style="color:#f0b27a">⧗ building 7f3a2c</span>') })],
+   f: foot('main · idle · v 81986cd · <span style="color:#f0b27a">Δ building 7f3a2c</span>') })],
 
 ["slash commands", "/ opens the commands; tab completes. lowercase labels, one line each.",
  term({ feed: "", above: `<div class="pop">${[
@@ -380,16 +381,42 @@ document.getElementById("screens").innerHTML = screens.map(([t, p, html], i) =>
   `<hr><figure><figcaption><b>the 3 levels</b><p>brightness, a bar and a rail carry the hierarchy; color is only for what needs you.</p></figcaption><div class="lv">
    <div class="acc"><b>1 · needs you</b></div><div class="l1"><div class="t">? api-v2 needs you</div><div>the v2 schema file isn't in the repo. where is it?</div></div>
    <div><b>2 · for you</b></div><div><span class="who acc">:*</span>docs asked v1 or v2; the brief says v2, so i answered.</div>
-   <div class="dim">3 · between agents</div><div class="l3"><span class="who">✉</span>auth-fix <span class="to">→ release</span>  heads-up, i'm touching web/src/auth.</div>
+   <div class="dim">3 · between agents</div><div class="l3"><span class="who">@</span>auth-fix <span class="to">→ release</span>  heads-up, i'm touching web/src/auth.</div>
   </div></figure>
   <figure><figcaption><b>the symbols</b></figcaption><div class="legend">${[
     ["›", "you"], ['<span class="acc">:*</span>', "main"], ["◇", "brief"], ['<span class="dim">∴</span>', "thinking"], ["$", "bash"], ["λ", "typescript"],
-    ["↳", "a sub-call"], ['<span class="faint">✓</span>', "your message: the agent got it"], ['<span class="acc">✓✓</span>', "your message: read by the model"], ['<span class="img">▣</span>', "an image"], ["±", "file edit"], ["✉", "agent to agent"], ['<span class="dim">⟳</span>', "compacting"], ['<span class="dim">≡</span>', "compaction summary"], ['<span class="dim">▲</span>', "interrupted"],
+    ["↳", "a sub-call"], ['<span class="faint">✓</span>', "your message: the agent got it"], ['<span class="acc">✓✓</span>', "your message: read by the model"], ['<span class="img">▣</span>', "an image"], ["±", "file edit"], ["@", "agent to agent"], ['<span class="dim">≡</span>', "compacting"], ['<span class="dim">≡</span>', "compaction summary"], ['<span class="dim">▲</span>', "interrupted"],
     ['<span class="pulse">∿</span>', "working"], ['<span class="pulse dim">·</span>', "starting"], ["…", "waiting on an agent"], ['<span class="acc">?</span>', "needs you / blocked"],
     ["♡", "done"], ['<span class="err">✗</span>', "failed"], ['<span class="dim">○</span>', "idle"], ['<span class="dim">–</span>', "stopped / drop"], ["⇄", "overlap"], ['<span class="err">↻</span>', "restart failed"],
-    ['<span class="acc">•</span>', "unread"], ["⎇", "own worktree"], ['<span style="color:#f0b27a">⧗</span>', "building / on trial"],
+    ['<span class="acc">•</span>', "unread"], ["Y", "own worktree"], ['<span style="color:#f0b27a">Δ</span>', "building / on trial"],
   ].map(([g, t]) => `<div><span>${g}</span>${t}</div>`).join("")}</div></figure>`;
 document.getElementById("toc").innerHTML = screens.map(([t], i) => `<a href="#s${i + 1}">${String(i + 1).padStart(2, "0")} ${t}</a>`).join("");
+
+// ---- one fixed cell per symbol ----
+// glyphs missing from the web font (∿ ♡ ✓ ▸ …) are drawn by a fallback font
+// whose advance is not 1ch; that shifts every column after them. wrap each
+// symbol in a 1ch cell, now and whenever the page adds text.
+const GLYPH_RE = /[\u2010-\u2BFF\u2E00-\u2E7F]/;
+function cellify(root) {
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => GLYPH_RE.test(n.data) && !n.parentElement.closest(".gc, script, style, textarea, input")
+      ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+  const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+  for (const n of nodes) {
+    const f = document.createDocumentFragment();
+    for (const ch of n.data) {
+      if (GLYPH_RE.test(ch)) { const s = document.createElement("span"); s.className = "gc"; s.textContent = ch; f.append(s); }
+      else if (f.lastChild && f.lastChild.nodeType === 3) f.lastChild.data += ch;
+      else f.append(document.createTextNode(ch));
+    }
+    n.replaceWith(f);
+  }
+}
+cellify(document.body);
+new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) {
+  if (n.nodeType === 1 && !n.classList.contains("gc")) cellify(n);
+  else if (n.nodeType === 3 && GLYPH_RE.test(n.data) && n.parentElement && !n.parentElement.closest(".gc")) cellify(n.parentElement);
+} }).observe(document.body, { childList: true, subtree: true, characterData: false });
 </script>
 </body>
 </html>

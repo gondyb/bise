@@ -54,6 +54,7 @@
   .timeline i.l3 { height:6px; background:var(--faint); }
   .timeline .head-mark { position:absolute; top:0; bottom:0; width:2px; background:var(--acc); }
   .legend { margin-top:6px; color:#8a8378; font-size:12px; }
+  .gc { display:inline-block; width:1ch; text-align:center; }
 </style>
 </head>
 <body>
@@ -190,7 +191,7 @@ function stateAt(now) {
 const hhmm = (s) => `${String(Math.floor(s / 3600) % 24).padStart(2, "0")}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}`;
 const expanded = new Set();
 function msgLine(m) {
-  return `<div class="l3"><span class="who">✉</span><span class="nm">${m.from}</span><span class="to">→ </span><span class="nm to">${m.to}</span>${m.text}</div>`;
+  return `<div class="l3"><span class="who">@</span><span class="nm">${m.from}</span><span class="to">→ </span><span class="nm to">${m.to}</span>${m.text}</div>`;
 }
 function renderItem(it, st) {
   switch (it.k) {
@@ -324,7 +325,7 @@ function send(text) {
   const card = st.cards[0];
   if (direct && names.includes(direct[1])) {
     // a direct message: main is not in the loop; the agent answers the traffic way
-    add(2.5, { type: "report", g: "✉", html: `${direct[1]} <span class="dim">to you:</span> got it, doing that next.` });
+    add(2.5, { type: "report", g: "@", html: `${direct[1]} <span class="dim">to you:</span> got it, doing that next.` });
   } else if (/where are we|status|how('s| is) it going|on en est|où en/.test(low)) {
     const c = (s) => st.agents.filter((a) => a.status === s).length;
     add(1.2, { type: "main", html: `${c("working") + c("starting")} working, ${c("done")} done${c("waiting") ? `, ${c("waiting")} waiting on another agent` : ""}${card ? `. ${card.agent} needs you: ${card.body}` : ", nothing needs you."}` });
@@ -375,6 +376,32 @@ if (q.has("paused")) setPlaying(false);
 // test hook: ?t=45&paused&say=...&after=17 sends a message at 45 s and shows 17 s later
 if (q.has("say")) { send(q.get("say")); now = Math.min(END, now + +(q.get("after") ?? 0)); setPlaying(!q.has("paused")); render(now, true); }
 requestAnimationFrame(frame);
+
+// ---- one fixed cell per symbol ----
+// glyphs missing from the web font (∿ ♡ ✓ ▸ …) are drawn by a fallback font
+// whose advance is not 1ch; that shifts every column after them. wrap each
+// symbol in a 1ch cell, now and whenever the page adds text.
+const GLYPH_RE = /[\u2010-\u2BFF\u2E00-\u2E7F]/;
+function cellify(root) {
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => GLYPH_RE.test(n.data) && !n.parentElement.closest(".gc, script, style, textarea, input")
+      ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+  const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+  for (const n of nodes) {
+    const f = document.createDocumentFragment();
+    for (const ch of n.data) {
+      if (GLYPH_RE.test(ch)) { const s = document.createElement("span"); s.className = "gc"; s.textContent = ch; f.append(s); }
+      else if (f.lastChild && f.lastChild.nodeType === 3) f.lastChild.data += ch;
+      else f.append(document.createTextNode(ch));
+    }
+    n.replaceWith(f);
+  }
+}
+cellify(document.body);
+new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) {
+  if (n.nodeType === 1 && !n.classList.contains("gc")) cellify(n);
+  else if (n.nodeType === 3 && GLYPH_RE.test(n.data) && n.parentElement && !n.parentElement.closest(".gc")) cellify(n.parentElement);
+} }).observe(document.body, { childList: true, subtree: true, characterData: false });
 </script>
 </body>
 </html>

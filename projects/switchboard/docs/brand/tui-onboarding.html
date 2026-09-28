@@ -56,6 +56,7 @@
   @keyframes pulse { 50% { opacity:.35 } }
   .controls { margin-top:12px; color:#8a8378; font-size:13px; }
   .controls button { font:inherit; background:#1f1c1a; color:var(--text); border:1px solid #3a3531; border-radius:4px; padding:3px 10px; cursor:pointer; margin-right:6px; }
+  .gc { display:inline-block; width:1ch; text-align:center; }
 </style>
 </head>
 <body>
@@ -77,12 +78,12 @@
       <div class="prev dark sel" data-t="dark"><div class="d">dark</div>
         <div class="b"><span class="who d">›</span>fix the flaky login test</div>
         <div class="b"><span class="who a">:*</span>on it: auth-fix takes it.</div>
-        <div class="b r d">✉ auth-fix → main  found it</div>
+        <div class="b r d">@ auth-fix → main  found it</div>
         <div class="b"><span class="who">♡</span>auth-fix is done.</div></div>
       <div class="prev light" data-t="light"><div class="d">light</div>
         <div class="b"><span class="who d">›</span>fix the flaky login test</div>
         <div class="b"><span class="who a">:*</span>on it: auth-fix takes it.</div>
-        <div class="b r d">✉ auth-fix → main  found it</div>
+        <div class="b r d">@ auth-fix → main  found it</div>
         <div class="b"><span class="who">♡</span>auth-fix is done.</div></div>
     </div>
     <div class="hint">←→ switch · enter keep</div>
@@ -170,7 +171,7 @@ function firstRun() {
     later(700, () => { add('<div class="b"><span class="who acc">:*</span>on it: auth-fix takes the test, release takes the note.</div>'); agent(1, "auth-fix"); later(300, () => agent(2, "release")); count.innerHTML = '<span class="pulse">∿</span> 2 working'; });
     later(1500, () => document.getElementById("tip1").classList.add("show"));
     later(5000, () => { document.getElementById("tip1").classList.remove("show");
-      add('<div class="b l3">✉ auth-fix → release  heads-up, the fix touches CHANGELOG.md</div><div class="l3">✉ release → auth-fix  ok, i\'ll add it under fixes.</div>');
+      add('<div class="b l3">@ auth-fix → release  heads-up, the fix touches CHANGELOG.md</div><div class="l3">@ release → auth-fix  ok, i\'ll add it under fixes.</div>');
       later(500, () => document.getElementById("tip2").classList.add("show")); });
     later(9000, () => { document.getElementById("tip2").classList.remove("show");
       add('<div class="b l1"><div class="t">? auth-fix needs you</div><div>the test is flaky because of a 2 s timeout. raise it to 5 s, or mock the clock?</div></div>');
@@ -196,6 +197,32 @@ document.addEventListener("keydown", (e) => {
 document.getElementById("next").onclick = () => show(Math.min(cur + 1, screens.length - 1));
 document.getElementById("again").onclick = () => show(0);
 const q = new URLSearchParams(location.search); show(+(q.get("s") ?? 0));
+
+// ---- one fixed cell per symbol ----
+// glyphs missing from the web font (∿ ♡ ✓ ▸ …) are drawn by a fallback font
+// whose advance is not 1ch; that shifts every column after them. wrap each
+// symbol in a 1ch cell, now and whenever the page adds text.
+const GLYPH_RE = /[\u2010-\u2BFF\u2E00-\u2E7F]/;
+function cellify(root) {
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => GLYPH_RE.test(n.data) && !n.parentElement.closest(".gc, script, style, textarea, input")
+      ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+  const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+  for (const n of nodes) {
+    const f = document.createDocumentFragment();
+    for (const ch of n.data) {
+      if (GLYPH_RE.test(ch)) { const s = document.createElement("span"); s.className = "gc"; s.textContent = ch; f.append(s); }
+      else if (f.lastChild && f.lastChild.nodeType === 3) f.lastChild.data += ch;
+      else f.append(document.createTextNode(ch));
+    }
+    n.replaceWith(f);
+  }
+}
+cellify(document.body);
+new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) {
+  if (n.nodeType === 1 && !n.classList.contains("gc")) cellify(n);
+  else if (n.nodeType === 3 && GLYPH_RE.test(n.data) && n.parentElement && !n.parentElement.closest(".gc")) cellify(n.parentElement);
+} }).observe(document.body, { childList: true, subtree: true, characterData: false });
 </script>
 </body>
 </html>

@@ -103,6 +103,18 @@
   .measure { position:relative; max-width:100ch; }
   .rule76 { border-left:1px dashed var(--acc); position:absolute; top:0; bottom:0; left:calc(76ch + 2ch); opacity:.6; }
   .rule76::after { content:"76"; position:absolute; top:-2px; left:4px; font-size:11px; color:var(--acc); }
+  .term.screen { padding:0; }
+  .shead { display:flex; justify-content:space-between; padding:10px 2ch 8px; }
+  .sgrid { display:grid; grid-template-columns:minmax(0, 1fr) 30ch; }
+  .sfeed { padding:0 2ch 12px; } .sfeed > div { margin-top:6px; max-width:62ch; }
+  .spanel { border-left:1px solid var(--line); padding:0 2ch 12px; }
+  .prow { display:flex; justify-content:space-between; white-space:nowrap; }
+  .sfoot { border-top:1px solid var(--line); padding:8px 2ch 10px; }
+  .scomp { display:flex; justify-content:space-between; margin-top:4px; }
+  .l3 .nm { display:inline-block; width:10ch; white-space:nowrap; }
+  /* every symbol sits in one fixed cell: glyphs missing from the web font
+     are drawn by a fallback font whose width is not 1ch */
+  .gc { display:inline-block; width:1ch; text-align:center; }
   footer { padding:40px 7vw 80px; color:var(--dim); font-size:13px; }
   @media (max-width: 900px) { nav.side { display:none; } main { margin-left:0; } .dodont { grid-template-columns:1fr; } }
 </style>
@@ -253,7 +265,7 @@
   <div class="glyphs">
     <div><b class="dim">›</b>you</div><div><b class="acc">:*</b>main</div><div><b>◇</b>a brief</div><div><b class="dim">∴</b>thinking</div>
     <div><b>$</b>bash</div><div><b>λ</b>typescript</div><div><b>↳</b>a sub-call</div><div><b>±</b>a file edit</div>
-    <div><b>✉</b>a message</div><div><b class="acc">▣</b>an image</div><div><b class="acc">?</b>a card: needs you</div><div><b class="dim">⟳</b>compacting</div>
+    <div><b>@</b>a message</div><div><b class="acc">▣</b>an image</div><div><b class="acc">?</b>a card: needs you</div><div><b class="dim pulse">≡</b>compacting (pulsing)</div>
   </div>
   <h3>agent status</h3>
   <div class="glyphs">
@@ -262,7 +274,7 @@
   </div>
   <h3>marks</h3>
   <div class="glyphs">
-    <div><b class="faint">✓</b>the agent got your message</div><div><b class="acc">✓✓</b>the model read it</div><div><b class="acc">•</b>unread activity</div><div><b>⎇</b>own worktree</div>
+    <div><b class="faint">✓</b>the agent got your message</div><div><b class="acc">✓✓</b>the model read it</div><div><b class="acc">•</b>unread activity</div><div><b>Y</b>own worktree</div>
     <div><b>⇄</b>two agents, one file</div><div><b>▸</b>closed · open with a key</div>
   </div>
 </section>
@@ -286,20 +298,29 @@
 <section id="layout" class="wide">
   <h1>08 · the screen</h1>
   <h2>one conversation, all your agents.</h2>
-  <div class="term">
-<div class="row"><b>bise</b> <span class="acc">:*</span>                                          <span class="dim"><span class="pulse">∿</span> 3 working · <span class="acc">? 1 needs you</span> · ♡ 1 done</span></div>
-<div class="row"> </div>
-<div class="row"><span class="dim">›</span>  the login breaks on safari                         <span class="faint">│</span> agents <span class="faint">· ⌥ + number</span></div>
-<div class="row"><span class="acc">:*</span> on it: auth-fix takes it.                         <span class="faint">│</span> <span class="faint">0</span> <span class="acc">:*</span> main</div>
-<div class="row"><span class="dim">   │ ✉ docs      → main      v1 or v2?</span>             <span class="faint">│</span> <span class="faint">1</span> <span class="pulse">∿</span> auth-fix   <span class="dim">12m · 21%</span></div>
-<div class="row"><span class="dim">   │ ✉ main      → docs      v2, the brief says so</span>  <span class="faint">│</span> <span class="faint">2</span> <span class="pulse">∿</span> release     <span class="dim">3m · 8%</span></div>
-<div class="row"><span class="acc">:*</span> docs asked v1 or v2; the brief says v2,          <span class="faint">│</span> <span class="faint">3</span> <span class="acc">?</span> docs            <span class="acc">you</span></div>
-<div class="row">   so i answered. <span class="dim">▸ why</span>                            <span class="faint">│</span> <span class="faint">4</span> … api-v2   <span class="dim">waits docs</span></div>
-<div class="row"><span class="acc">┃ ? docs needs you</span>                                  <span class="faint">│</span> <span class="faint">5</span> ♡ bench          <span class="dim">done</span></div>
-<div class="row"><span class="acc">┃</span> v2 removes /users. document v1 or v2?</div>
-<div class="row"> </div>
-<div class="row"><span class="acc">main</span> <span class="dim">· idle · 210k / 1M tokens · 21%</span></div>
-<div class="row"><span class="dim">›</span> <span class="cur"></span>                                           <span class="dim">⏎ send · @ agent · / commands</span></div>
+  <div class="term screen">
+    <div class="shead"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim"><span class="pulse">∿</span> 3 working · <span class="acc">? 1 needs you</span> · ♡ 1 done</span></div>
+    <div class="sgrid">
+      <div class="sfeed">
+        <div><span class="who dim">›</span>the login breaks on safari</div>
+        <div><span class="who acc">:*</span>on it: auth-fix takes it.</div>
+        <div class="l3"><span class="nm">@ docs</span><span class="nm">→ main</span>v1 or v2?</div>
+        <div class="l3"><span class="nm">@ main</span><span class="nm">→ docs</span>v2, the brief says so</div>
+        <div><span class="who acc">:*</span>docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span></div>
+        <div class="l1 b"><div class="t">? docs needs you</div><div>v2 removes /users. document v1 or v2?</div></div>
+      </div>
+      <div class="spanel">
+        <div>agents <span class="faint">· ⌥ + number</span></div>
+        <div class="prow"><span><span class="faint">0</span> <span class="acc">:*</span> main</span><span></span></div>
+        <div class="prow"><span><span class="faint">1</span> <span class="pulse">∿</span> auth-fix</span><span class="dim">12m · 21%</span></div>
+        <div class="prow"><span><span class="faint">2</span> <span class="pulse">∿</span> release</span><span class="dim">3m · 8%</span></div>
+        <div class="prow"><span><span class="faint">3</span> <span class="acc">?</span> docs</span><span class="acc">you</span></div>
+        <div class="prow"><span><span class="faint">4</span> … api-v2</span><span class="dim">waits docs</span></div>
+        <div class="prow"><span><span class="faint">5</span> ♡ bench</span><span class="dim">done</span></div>
+      </div>
+    </div>
+    <div class="sfoot"><div><span class="acc">main</span> <span class="dim">· idle · 210k / 1M tokens · 21%</span></div>
+      <div class="scomp"><span><span class="dim">›</span> <span class="cur"></span></span><span class="dim">⏎ send · @ agent · / commands</span></div></div>
   </div>
   <table>
     <tr><td class="dim">header</td><td><code>bise :*</code>, then only the non-zero counts. the pink one is the one that needs you.</td></tr>
@@ -321,9 +342,9 @@
     <div class="acc"><b>1 · needs you</b></div>
     <div class="term" style="margin:0"><div class="l1"><div class="t">? api-v2 needs you</div><div>the v2 schema file isn't in the repo. where is it?</div><div class="dim">alt+r answer with text · ctrl+x later · ctrl+f full screen</div></div></div>
     <div><b>2 · for you</b></div>
-    <div class="term" style="margin:0"><div><span class="who acc">:*</span>docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span></div><div class="b"><span class="who">♡</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div><div class="b"><span class="who">✉</span>auth-fix <span class="dim">to you:</span> got it, i'll check logout next.</div></div>
+    <div class="term" style="margin:0"><div><span class="who acc">:*</span>docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span></div><div class="b"><span class="who">♡</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div><div class="b"><span class="who">@</span>auth-fix <span class="dim">to you:</span> got it, i'll check logout next.</div></div>
     <div class="dim">3 · between agents</div>
-    <div class="term" style="margin:0"><div class="l3">✉ auth-fix  → release   heads-up, i'm touching web/src/auth.</div><div class="l3">✉ release   → auth-fix  ok, i'll mention the fix.</div></div>
+    <div class="term" style="margin:0"><div class="l3">@ auth-fix  → release   heads-up, i'm touching web/src/auth.</div><div class="l3">@ release   → auth-fix  ok, i'll mention the fix.</div></div>
   </div>
   <ul class="list">
     <li>level 1 gets the pink bar and stays until you answer.</li>
@@ -359,7 +380,7 @@
 <section id="reading" class="wide">
   <h1>11 · reading</h1>
   <h2>a novel line, not a wall.</h2>
-  <p>prose wraps at 76 columns, whatever the terminal width. code goes up to 100, then wraps with a faint <span class="faint">↪</span>.</p>
+  <p>prose wraps at 76 columns, whatever the terminal width. code goes up to 100, then wraps with a faint <span class="faint">»</span>.</p>
   <div class="measure"><div class="term" style="position:relative"><div class="rule76"></div>found it: safari drops SameSite=None cookies that aren't Secure. the dev
 server sets the cookie without Secure, so the session is lost on the redirect.
 added secure: true; the webkit test passes now.</div></div>
@@ -414,7 +435,7 @@ added secure: true; the webkit test passes now.</div></div>
   <div class="term"><div><span class="who dim">›</span>skip firefox, only webkit<span class="tick read">✓✓</span> <span class="faint" style="margin-left:4ch">the model read it</span></div><div class="b"><span class="who dim">›</span>and log the cookie headers<span class="tick">✓</span> <span class="faint" style="margin-left:3ch">the agent got it, waiting for its turn</span></div><div class="b"><span class="who dim">›</span>also the logout path<span class="tick">·</span> <span class="faint" style="margin-left:6ch">sending</span></div></div>
   <h3>changing your mind</h3>
   <p>there is no undo: agents may already have acted, and an undo would promise too much. you just say it. main tells the agent, plainly, and confirms.</p>
-  <div class="term"><div><span class="who acc">:*</span>docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span></div><div class="b"><span class="who dim">›</span>no, v1 for docs</div><div class="b"><span class="who acc">:*</span>told docs: v1, you changed your mind.</div><div class="b l3">✉ main      → docs      the user changed their mind: use v1, not v2.</div></div>
+  <div class="term"><div><span class="who acc">:*</span>docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span></div><div class="b"><span class="who dim">›</span>no, v1 for docs</div><div class="b"><span class="who acc">:*</span>told docs: v1, you changed your mind.</div><div class="b l3">@ main      → docs      the user changed their mind: use v1, not v2.</div></div>
 </section>
 
 <!-- images -->
@@ -482,7 +503,7 @@ added secure: true; the webkit test passes now.</div></div>
     <tr><td class="dim">composer</td><td>⏎ send · @ agent · / commands · ⏎ steer · ctrl+c interrupt</td></tr>
     <tr><td class="dim">history</td><td>▸ 12 messages between 8 agents · ∴ thought for 14s · ▸ output · 42 lines · ♡ turn done · 2m 10s</td></tr>
     <tr><td class="dim">cards</td><td>? docs needs you · alt+r answer with text · ctrl+x later · ctrl+f full screen</td></tr>
-    <tr><td class="dim">direct</td><td>✉ auth-fix to you: …</td></tr>
+    <tr><td class="dim">direct</td><td>@ auth-fix to you: …</td></tr>
     <tr><td class="dim">not delivered</td><td>✗ not delivered: auth-fix stopped. ⏎ send again · esc drop</td></tr>
     <tr><td class="dim">provider down</td><td>✗ the model provider answered 503. retrying in 8s (2 of 5). · auth-fix and release are waiting on it; nothing is lost.</td></tr>
     <tr><td class="dim">onboarding</td><td>hi, i'm bise :* · your ideas. my hands. lots of them. · press enter ↵</td></tr>
@@ -542,6 +563,32 @@ const obs = new IntersectionObserver((es) => es.forEach((e) => {
   if (e.isIntersecting) links.forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + e.target.id));
 }), { rootMargin: "-40% 0px -55% 0px" });
 document.querySelectorAll("section[id]").forEach((s) => obs.observe(s));
+
+// ---- one fixed cell per symbol ----
+// glyphs missing from the web font (∿ ♡ ✓ ▸ …) are drawn by a fallback font
+// whose advance is not 1ch; that shifts every column after them. wrap each
+// symbol in a 1ch cell, now and whenever the page adds text.
+const GLYPH_RE = /[\u2010-\u2BFF\u2E00-\u2E7F]/;
+function cellify(root) {
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => GLYPH_RE.test(n.data) && !n.parentElement.closest(".gc, script, style, textarea, input")
+      ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+  const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+  for (const n of nodes) {
+    const f = document.createDocumentFragment();
+    for (const ch of n.data) {
+      if (GLYPH_RE.test(ch)) { const s = document.createElement("span"); s.className = "gc"; s.textContent = ch; f.append(s); }
+      else if (f.lastChild && f.lastChild.nodeType === 3) f.lastChild.data += ch;
+      else f.append(document.createTextNode(ch));
+    }
+    n.replaceWith(f);
+  }
+}
+cellify(document.body);
+new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) {
+  if (n.nodeType === 1 && !n.classList.contains("gc")) cellify(n);
+  else if (n.nodeType === 3 && GLYPH_RE.test(n.data) && n.parentElement && !n.parentElement.closest(".gc")) cellify(n.parentElement);
+} }).observe(document.body, { childList: true, subtree: true, characterData: false });
 </script>
 </body>
 </html>

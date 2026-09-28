@@ -58,6 +58,7 @@
   .legend { margin-top: 26px; max-width: 124ch; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 3ch; font-size: 13px; }
   .legend h3 { grid-column: 1 / -1; font-size: 13px; font-weight: 400; color: #8a8378; margin-top: 12px; }
   .legend div span:first-child { display: inline-block; width: 3ch; }
+  .gc { display:inline-block; width:1ch; text-align:center; }
 </style>
 </head>
 <body>
@@ -156,7 +157,7 @@ src/auth/session.ts:31:  sameSite: "none",</pre></div>
    },</pre>
         </details>
 
-        <div class="blk"><span class="who">✉</span><span class="dim">to release:</span> heads-up, i'm touching web/src/auth. mention the safari fix in the notes.</div>
+        <div class="blk"><span class="who">@</span><span class="dim">to release:</span> heads-up, i'm touching web/src/auth. mention the safari fix in the notes.</div>
 
         <div class="blk prose"><span class="who"><span class="pulse">∿</span></span>re-running the webkit tests…</div>
       </div>
@@ -185,7 +186,7 @@ src/auth/session.ts:31:  sameSite: "none",</pre></div>
   <div><span>$</span>bash</div>
   <div><span>λ</span>typescript</div>
   <div><span>±</span>file edit</div>
-  <div><span>✉</span>message between agents</div>
+  <div><span>@</span>message between agents</div>
   <div><span class="acc">?</span>card: needs you</div>
   <h3>task status</h3>
   <div><span class="pulse">∿</span>working (a breeze)</div>
@@ -204,6 +205,32 @@ document.querySelectorAll(".tabs span").forEach(t => t.onclick = () => {
   document.querySelectorAll(".tabs span").forEach(x => x.classList.toggle("on", x === t));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === "v-" + t.dataset.v));
 });
+
+// ---- one fixed cell per symbol ----
+// glyphs missing from the web font (∿ ♡ ✓ ▸ …) are drawn by a fallback font
+// whose advance is not 1ch; that shifts every column after them. wrap each
+// symbol in a 1ch cell, now and whenever the page adds text.
+const GLYPH_RE = /[\u2010-\u2BFF\u2E00-\u2E7F]/;
+function cellify(root) {
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => GLYPH_RE.test(n.data) && !n.parentElement.closest(".gc, script, style, textarea, input")
+      ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+  const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+  for (const n of nodes) {
+    const f = document.createDocumentFragment();
+    for (const ch of n.data) {
+      if (GLYPH_RE.test(ch)) { const s = document.createElement("span"); s.className = "gc"; s.textContent = ch; f.append(s); }
+      else if (f.lastChild && f.lastChild.nodeType === 3) f.lastChild.data += ch;
+      else f.append(document.createTextNode(ch));
+    }
+    n.replaceWith(f);
+  }
+}
+cellify(document.body);
+new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) {
+  if (n.nodeType === 1 && !n.classList.contains("gc")) cellify(n);
+  else if (n.nodeType === 3 && GLYPH_RE.test(n.data) && n.parentElement && !n.parentElement.closest(".gc")) cellify(n.parentElement);
+} }).observe(document.body, { childList: true, subtree: true, characterData: false });
 </script>
 </body>
 </html>
