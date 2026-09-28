@@ -419,6 +419,18 @@ The same three levels everywhere, in main and inside an agent.
 - `ctrl+c` interrupts the turn of the agent in view; again (or at idle)
   quits; the agents keep running.
 
+### The composer block (layout; user request, marketing 393dbd3)
+
+Bottom of the screen, top to bottom:
+
+1. the status row (1 row);
+2. the queued messages (BISE-89) and their faint hint, if any: they are the composer's pending texts, so they sit right above it;
+3. the images strip, if any (the composer's attachments, §14);
+4. the composer: a bar `│` in column 1 on every row of the block, faint while the composer is empty, accent as soon as there is text (the same bar your message keeps in the history, so a sent message just moves up unchanged); 1 blank row (bar only) above the text and 1 below; the text from column 3, at least 2 rows, growing one row per wrapped row up to min(12, 40% of the terminal height), then scrolling with the cursor row in view; right margin 2 columns; the text wraps at the same width as your message in the history (§11), so the composer shows how it will read. Empty: the cursor at column 3 and the dim placeholder. Recording: the bar in accent, the meter glyph at column 3 of the first text row, the text after it. `›` leaves the composer (it stays for the queued lines).
+5. the key hints: their own last row, dim, flush right with 2 columns of margin (never on the text row).
+
+Rows: 1 status + 1 + 2 text + 1 + 1 hints = 6 at minimum (+ the blank row under the feed). Small terminals: height < 24 drops the bottom blank row; < 18 also the top one, and the minimum goes to 1 text row; < 14 the hints go back on the status row.
+
 ## 14. Images
 
 Built on the technical work of the `screenshots` task
@@ -485,6 +497,8 @@ Vibe's (`vibe/setup/onboarding`). Six steps, `enter` to go on:
 
 The onboarding runs once per user (a flag in the state directory); `/welcome`
 replays it (**⚠** proposed command).
+
+**Layout.** One content column for all steps: 64 columns (terminal width − 8 when narrower), horizontally centered. Welcome and theme center their lines inside it; model, folder and how-it-works are left-aligned inside it. Vertically, the block sits a bit above the middle: 2/5 of the free rows above it, 3/5 below; the step dots stay 2 rows above the bottom. **Emphasis** (a terminal has one font size, so "size" is weight, color and space): each step's first line is its title, bold, text color; then 2 blank rows; the body in text color, notes dim, 1 blank row between options or lines; then 2 blank rows and the key line. Key lines are read, so they are dim, never faint (§5), with the keys themselves in text color: `enter ok · o another folder`. Options: the selected one `›` accent + name bold, the others indented 2, their sub-line dim and indented 2 more. Welcome: `hi, i'm bise` bold + `:*` accent bold; the gloss dim (not faint: it is read); 2 blank rows; the tagline in text color; 2 blank rows; `press enter ↵` dim with `enter` in text. Where the terminal supports text sizing (kitty ≥ 0.40, OSC 66), `hi, i'm bise :*` is drawn at scale 2; elsewhere bold. Small terminals: height < 22 turns every 2 blank rows into 1; width < 50 makes the column width − 4.
 
 ## 16. Keys (final)
 
