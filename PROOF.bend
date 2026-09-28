@@ -2393,3 +2393,242 @@ def hub_ag_deliver(-o: HM.St, +b: List<&2, HM.Msg>, +cx: HX.Cx<o>, +name: String
             hub_ag_line(o, cx2, name, "you", HM.Msg.text(m)),
             hub_ag_line(o, cx2, name, "msg-in", HC.cat([HM.Msg.from(m), " ", HC.mid(HM.Msg.id(m)), " : ", HM.Msg.text(m)]))),
           hub_ag_mark(o, cx, HM.Msg.id(m))))
+
+def hub_rts(-o: HM.St, +cx: HX.Cx<o>) -> List<&2, HX.Rt>:
+  HX.R.rts(HX.Cx.r(o, cx))
+
+def hub_rts_dirty_out(-o: HM.St, cx: HX.Cx<o>, +kvs: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
+    -> {hub_rts(o, HC.dirty(o, HC.out(o, cx, kvs))) == hub_rts(o, cx) : List<&2, HX.Rt>}:
+  match cx:
+    case HX.Cx{c, r}:
+      match r:
+        case HX.R{a, b, c2, d, e, f, g, h, i, j, k, l}:
+          {==}
+
+def hub_rts_set_rt(-o: HM.St, cx: HX.Cx<o>, +x: HX.Rt) -> {hub_rts(o, HC.set_rt(o, cx, x)) == HC.rt_put(hub_rts(o, cx), x) : List<&2, HX.Rt>}:
+  match cx:
+    case HX.Cx{c, r}:
+      match r:
+        case HX.R{a, b, c2, d, e, f, g, h, i, j, k, l}:
+          {==}
+
+def hub_run_if_agent(-o: HM.St, known: Bool, +cx: HX.Cx<o>, +n: String, +w: Bool, +tm: Maybe<&2, Nat>, +e: {known == True{} : Bool})
+    -> {HX.Rt.run(HC.rt_find(hub_rts(o, HC.if_agent(o, known, cx, HX.Rt{n, HM.RBusy{}, w, tm})), n)) == HM.RBusy{} : HM.Run}:
+  match known:
+    case True{}:
+      %Equal.sym(List<&2, HX.Rt>, hub_rts(o, HC.set_rt(o, cx, HX.Rt{n, HM.RBusy{}, w, tm})), HC.rt_put(hub_rts(o, cx), HX.Rt{n, HM.RBusy{}, w, tm}),
+          hub_rts_set_rt(o, cx, HX.Rt{n, HM.RBusy{}, w, tm})) : {HX.Rt.run(HC.rt_find(_, n)) == HM.RBusy{} : HM.Run}
+      %Equal.sym(HX.Rt, HC.rt_find(HC.rt_put(hub_rts(o, cx), HX.Rt{n, HM.RBusy{}, w, tm}), n), HX.Rt{n, HM.RBusy{}, w, tm},
+          hub_rt_put_find(hub_rts(o, cx), n, HM.RBusy{}, w, tm)) : {HX.Rt.run(_) == HM.RBusy{} : HM.Run}
+      {==}
+    case False{}:
+      hub_absurd_eq(hub_ft_absurd(e), HM.Run, HX.Rt.run(HC.rt_find(hub_rts(o, HC.if_agent(o, False{}, cx, HX.Rt{n, HM.RBusy{}, w, tm})), n)), HM.RBusy{})
+
+# a new turn marks its agent busy
+def hub_send_busy(-o: HM.St, p: HX.Cx<o> & List<&2, J.Json>, +n: String, +ids: List<&2, Nat>, +kvs0: List<&2, Sigma<&2, &2, String, _ => J.Json>>,
+    h: {HC.has_agent(o, hub_p1(o, p), n) == True{} : Bool})
+    -> {HX.Rt.run(HC.rt_find(hub_rts(o, HC.pump.send(o, False{}, p, n, ids, kvs0)), n)) == HM.RBusy{} : HM.Run}:
+  match p:
+    case (+cx, +msgs):
+      +x = {HX.Rt{n, HM.RBusy{}, HX.Rt.waiting(HC.rt(o, cx, n)), Some{HC.now(o, cx)}} : HX.Rt}
+      +cx2 = HC.upd_rt(o, cx, x)
+      +kvs = HM.snoc(Sigma<&2, &2, String, _ => J.Json>, kvs0, J.kv("msgs", J.JArr{msgs}))
+      %Equal.sym(List<&2, HX.Rt>, hub_rts(o, HC.dirty(o, HC.out(o, cx2, J.kv("fx", J.JStr{"deliver"}) <> J.kv("mode", J.JStr{"say"}) <> kvs))), hub_rts(o, cx2),
+          hub_rts_dirty_out(o, cx2, J.kv("fx", J.JStr{"deliver"}) <> J.kv("mode", J.JStr{"say"}) <> kvs)) : {HX.Rt.run(HC.rt_find(_, n)) == HM.RBusy{} : HM.Run}
+      hub_run_if_agent(o, HC.has_agent(o, cx, n), cx, n, HX.Rt.waiting(HC.rt(o, cx, n)), Some{HC.now(o, cx)}, h)
+
+def hub_has_tr(-o: HM.St, -a: HX.Cx<o>, -b: HX.Cx<o>, -n: String, e: {hub_ag(o, a) == hub_ag(o, b) : List<&2, HM.Agent>},
+    h: {HC.has_agent(o, b, n) == True{} : Bool}) -> {HC.has_agent(o, a, n) == True{} : Bool}:
+  %Equal.sym(List<&2, HM.Agent>, hub_ag(o, a), hub_ag(o, b), e) : {Maybe.is_some(&2, HM.Agent, HM.agent_named(_, n)) == True{} : Bool}
+  h
+
+# a batch to an idle agent starts its turn: the agent ends busy
+def hub_batch_idle(-o: HM.St, +m: HM.Msg, +t: List<&2, HM.Msg>, +cx: HX.Cx<o>, +n: String, +im: Bool,
+    h: {HC.has_agent(o, cx, n) == True{} : Bool})
+    -> {HX.Rt.run(HC.rt_find(hub_rts(o, HC.pump.batch(o, m <> t, cx, n, False{}, im)), n)) == HM.RBusy{} : HM.Run}:
+  +b = {m <> t : List<&2, HM.Msg>}
+  +notes = Bool.pick(List<&2, String>, im, HM.St.notes(HC.st(o, cx)), Nil{})
+  +cx2 = HC.pump.flush(o, Bool.not(List.is_empty(&2, String, notes)), cx)
+  hub_send_busy(o, HC.deliver_each(o, b, cx2, n, Nil{}), n, HC.ids_of(b), [J.kv("agent", J.JStr{n}), J.kv("notes", J.JArr{HC.jstrs(notes)}), J.kv("status", J.JBool{im && HC.any_from_user(b)})],
+    hub_has_tr(o, hub_p1(o, HC.deliver_each(o, b, cx2, n, Nil{})), cx, n,
+      Equal.trans(List<&2, HM.Agent>, hub_ag(o, hub_p1(o, HC.deliver_each(o, b, cx2, n, Nil{}))), hub_ag(o, cx2), hub_ag(o, cx),
+        hub_ag_deliver(o, b, cx2, n, Nil{}), hub_ag_flush(o, Bool.not(List.is_empty(&2, String, notes)), cx)),
+      h))
+
+def hub_rts_emit(-o: HM.St, cx: HX.Cx<o>, +e: HM.Ev, +k: HX.FreshEv(HX.d(o, cx), e), +kq: HX.QuietEv(e), +kv: HX.DelivEv(HX.d(o, cx), e))
+    -> {hub_rts(o, HC.emit(o, cx, e, k, kq, kv)) == hub_rts(o, cx) : List<&2, HX.Rt>}:
+  match cx:
+    case HX.Cx{c, r}:
+      match r:
+        case HX.R{a, b, c2, d, e2, f, g, h, i, j, k2, l}:
+          {==}
+
+def hub_rts_line(-o: HM.St, cx: HX.Cx<o>, +a: String, +k: String, +t: String) -> {hub_rts(o, HC.line(o, cx, a, k, t)) == hub_rts(o, cx) : List<&2, HX.Rt>}:
+  match cx:
+    case HX.Cx{c, r}:
+      {==}
+
+def hub_rts_mark.go(-o: HM.St, +cx: HX.Cx<o>, +id: Nat, c: Bool, +e: {HX.queued_at(HX.d(o, cx), id) == c : Bool})
+    -> {hub_rts(o, HC.mark_delivered.go(o, cx, id, c, e)) == hub_rts(o, cx) : List<&2, HX.Rt>}:
+  match c:
+    case True{}:
+      hub_rts_emit(o, cx, HM.EMsgState{id, HM.Delivered{}}, Unit{}, Unit{}, e)
+    case False{}:
+      {==}
+
+def hub_rts_flush(-o: HM.St, f: Bool, +cx: HX.Cx<o>) -> {hub_rts(o, HC.pump.flush(o, f, cx)) == hub_rts(o, cx) : List<&2, HX.Rt>}:
+  match f:
+    case True{}:
+      hub_rts_emit(o, cx, HM.ENotesFlushed{}, Unit{}, Unit{}, Unit{})
+    case False{}:
+      {==}
+
+def hub_rts_pick(-o: HM.St, c: Bool, +x: HX.Cx<o>, +y: HX.Cx<o>, -z: HX.Cx<o>, ex: {hub_rts(o, x) == hub_rts(o, z) : List<&2, HX.Rt>},
+    ey: {hub_rts(o, y) == hub_rts(o, z) : List<&2, HX.Rt>}) -> {hub_rts(o, Bool.pick(HX.Cx<o>, c, x, y)) == hub_rts(o, z) : List<&2, HX.Rt>}:
+  match c:
+    case True{}:
+      ex
+    case False{}:
+      ey
+
+def hub_rts_deliver(-o: HM.St, +b: List<&2, HM.Msg>, +cx: HX.Cx<o>, +name: String, +acc: List<&2, J.Json>)
+    -> {hub_rts(o, hub_p1(o, HC.deliver_each(o, b, cx, name, acc))) == hub_rts(o, cx) : List<&2, HX.Rt>}:
+  match b:
+    case Nil{}:
+      {==}
+    case Con{m, rest}:
+      +cx2 = HC.mark_delivered(o, cx, HM.Msg.id(m))
+      +l1 = HC.line(o, cx2, name, "you", HM.Msg.text(m))
+      +l2 = HC.line(o, cx2, name, "msg-in", HC.cat([HM.Msg.from(m), " ", HC.mid(HM.Msg.id(m)), " : ", HM.Msg.text(m)]))
+      +cx3 = Bool.pick(HX.Cx<o>, HM.Msg.plain(m) || Maybe.is_some(&2, String, HM.Msg.via(m)), l1, l2)
+      +s = HC.st(o, cx)
+      +rel = HC.relation(HM.Msg.from(m), HM.Msg.to(m), HC.parent_of(HM.get_agent(s, HM.Msg.from(m))), HC.parent_of(HM.get_agent(s, HM.Msg.to(m))))
+      Equal.trans(List<&2, HX.Rt>, hub_rts(o, hub_p1(o, HC.deliver_each(o, rest, cx3, name, HM.snoc(J.Json, acc, J.obj([J.kv("id", J.JNum{HM.Msg.id(m)}), J.kv("rel", J.JStr{rel})]))))),
+        hub_rts(o, cx3), hub_rts(o, cx),
+        hub_rts_deliver(o, rest, cx3, name, HM.snoc(J.Json, acc, J.obj([J.kv("id", J.JNum{HM.Msg.id(m)}), J.kv("rel", J.JStr{rel})]))),
+        Equal.trans(List<&2, HX.Rt>, hub_rts(o, cx3), hub_rts(o, cx2), hub_rts(o, cx),
+          hub_rts_pick(o, HM.Msg.plain(m) || Maybe.is_some(&2, String, HM.Msg.via(m)), l1, l2, cx2,
+            hub_rts_line(o, cx2, name, "you", HM.Msg.text(m)),
+            hub_rts_line(o, cx2, name, "msg-in", HC.cat([HM.Msg.from(m), " ", HC.mid(HM.Msg.id(m)), " : ", HM.Msg.text(m)]))),
+          hub_rts_mark.go(o, cx, HM.Msg.id(m), HX.queued_at(HX.d(o, cx), HM.Msg.id(m)), {==})))
+
+def hub_rts_steer(-o: HM.St, p: HX.Cx<o> & List<&2, J.Json>, +n: String, +ids: List<&2, Nat>, +kvs0: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
+    -> {hub_rts(o, HC.pump.send(o, True{}, p, n, ids, kvs0)) == hub_rts(o, hub_p1(o, p)) : List<&2, HX.Rt>}:
+  match p:
+    case (cx, msgs):
+      match cx:
+        case HX.Cx{c, r}:
+          match r:
+            case HX.R{a, b, c2, d, e, f, g, h, i, j, k, l}:
+              {==}
+
+# a batch to a busy agent (steering) keeps every runtime state
+def hub_batch_busy(-o: HM.St, +b: List<&2, HM.Msg>, +cx: HX.Cx<o>, +n: String, +im: Bool)
+    -> {hub_rts(o, HC.pump.batch(o, b, cx, n, True{}, im)) == hub_rts(o, cx) : List<&2, HX.Rt>}:
+  match b:
+    case Nil{}:
+      {==}
+    case Con{m, t}:
+      +bb = {m <> t : List<&2, HM.Msg>}
+      +notes = Bool.pick(List<&2, String>, im, HM.St.notes(HC.st(o, cx)), Nil{})
+      +cx2 = HC.pump.flush(o, Bool.not(List.is_empty(&2, String, notes)), cx)
+      Equal.trans(List<&2, HX.Rt>, hub_rts(o, HC.pump.send(o, True{}, HC.deliver_each(o, bb, cx2, n, Nil{}), n, HC.ids_of(bb),
+          [J.kv("agent", J.JStr{n}), J.kv("notes", J.JArr{HC.jstrs(notes)}), J.kv("status", J.JBool{im && HC.any_from_user(bb)})])),
+        hub_rts(o, hub_p1(o, HC.deliver_each(o, bb, cx2, n, Nil{}))), hub_rts(o, cx),
+        hub_rts_steer(o, HC.deliver_each(o, bb, cx2, n, Nil{}), n, HC.ids_of(bb),
+          [J.kv("agent", J.JStr{n}), J.kv("notes", J.JArr{HC.jstrs(notes)}), J.kv("status", J.JBool{im && HC.any_from_user(bb)})]),
+        Equal.trans(List<&2, HX.Rt>, hub_rts(o, hub_p1(o, HC.deliver_each(o, bb, cx2, n, Nil{}))), hub_rts(o, cx2), hub_rts(o, cx),
+          hub_rts_deliver(o, bb, cx2, n, Nil{}), hub_rts_flush(o, Bool.not(List.is_empty(&2, String, notes)), cx)))
+
+def hub_and_false_r(a: Bool) -> {Bool.and(a, False{}) == False{} : Bool}:
+  match a:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+# an agent that is not idle is not stuck
+def hub_stuck_run(+s: HM.St, +rts: List<&2, HX.Rt>, +n: String, -r: HM.Run, e: {HX.Rt.run(HC.rt_find(rts, n)) == r : HM.Run},
+    ni: {HC.is_idle(r) == False{} : Bool}) -> {HI.stuck(s, rts, n) == False{} : Bool}:
+  %Equal.sym(HM.Run, HX.Rt.run(HC.rt_find(rts, n)), r, e) : {Bool.and(HC.is_idle(_), HI.stuck.agent(HM.get_agent(s, n), s, n)) == False{} : Bool}
+  %Equal.sym(Bool, HC.is_idle(r), False{}, ni) : {Bool.and(_, HI.stuck.agent(HM.get_agent(s, n), s, n)) == False{} : Bool}
+  {==}
+
+# an agent whose own record says it is not stuck is not stuck
+def hub_stuck_agent(+s: HM.St, +rts: List<&2, HX.Rt>, +n: String, e: {HI.stuck.agent(HM.get_agent(s, n), s, n) == False{} : Bool})
+    -> {HI.stuck(s, rts, n) == False{} : Bool}:
+  %Equal.sym(Bool, HI.stuck.agent(HM.get_agent(s, n), s, n), False{}, e) : {Bool.and(HC.is_idle(HX.Rt.run(HC.rt_find(rts, n))), _) == False{} : Bool}
+  hub_and_false_r(HC.is_idle(HX.Rt.run(HC.rt_find(rts, n))))
+
+def hub_pw.idle.nil(-o: HM.St, +a: HM.Agent, +cx: HX.Cx<o>, +n: String,
+    e: {HM.get_agent(HX.d(o, cx), n) == Some{a} : Maybe<&2, HM.Agent>}, ec: {HC.is_active(HM.Agent.life(a)) == True{} : Bool},
+    eq: {HM.queued_for(HX.d(o, cx), n) == Nil{} : List<&2, HM.Msg>}) -> {HI.stuck.agent(HM.get_agent(HX.d(o, cx), n), HX.d(o, cx), n) == False{} : Bool}:
+  %Equal.sym(Maybe<&2, HM.Agent>, HM.get_agent(HX.d(o, cx), n), Some{a}, e) : {HI.stuck.agent(_, HX.d(o, cx), n) == False{} : Bool}
+  %Equal.sym(Bool, HC.is_active(HM.Agent.life(a)), True{}, ec) : {Bool.and(_, Bool.not(List.is_empty(&2, HM.Msg, HM.queued_for(HX.d(o, cx), n)))) == False{} : Bool}
+  %Equal.sym(List<&2, HM.Msg>, HM.queued_for(HX.d(o, cx), n), Nil{}, eq) : {Bool.and(True{}, Bool.not(List.is_empty(&2, HM.Msg, _))) == False{} : Bool}
+  {==}
+
+def hub_has_some(-o: HM.St, -a: HM.Agent, +cx: HX.Cx<o>, +n: String, e: {HM.get_agent(HX.d(o, cx), n) == Some{a} : Maybe<&2, HM.Agent>})
+    -> {HC.has_agent(o, cx, n) == True{} : Bool}:
+  %Equal.sym(Maybe<&2, HM.Agent>, HM.get_agent(HX.d(o, cx), n), Some{a}, e) : {Maybe.is_some(&2, HM.Agent, _) == True{} : Bool}
+  {==}
+
+def hub_pw.idle(-o: HM.St, q: List<&2, HM.Msg>, +a: HM.Agent, +cx: HX.Cx<o>, +n: String,
+    +e: {HM.get_agent(HX.d(o, cx), n) == Some{a} : Maybe<&2, HM.Agent>}, +ec: {HC.is_active(HM.Agent.life(a)) == True{} : Bool},
+    +er: {HX.Rt.run(HC.rt_find(hub_rts(o, cx), n)) == HM.RIdle{} : HM.Run}, +eq: {HM.queued_for(HX.d(o, cx), n) == q : List<&2, HM.Msg>})
+    -> {HI.stuck(HX.d(o, HC.pump.batch(o, q, cx, n, False{}, HM.Agent.is_main(a))), hub_rts(o, HC.pump.batch(o, q, cx, n, False{}, HM.Agent.is_main(a))), n) == False{} : Bool}:
+  match q:
+    case Nil{}:
+      hub_stuck_agent(HX.d(o, cx), hub_rts(o, cx), n, hub_pw.idle.nil(o, a, cx, n, e, ec, eq))
+    case Con{+m, +t}:
+      hub_stuck_run(HX.d(o, HC.pump.batch(o, m <> t, cx, n, False{}, HM.Agent.is_main(a))), hub_rts(o, HC.pump.batch(o, m <> t, cx, n, False{}, HM.Agent.is_main(a))), n, HM.RBusy{},
+        hub_batch_idle(o, m, t, cx, n, HM.Agent.is_main(a), hub_has_some(o, a, cx, n, e)), {==})
+
+def hub_pw.run(-o: HM.St, r: HM.Run, +a: HM.Agent, +cx: HX.Cx<o>, +n: String,
+    +e: {HM.get_agent(HX.d(o, cx), n) == Some{a} : Maybe<&2, HM.Agent>}, +ec: {HC.is_active(HM.Agent.life(a)) == True{} : Bool},
+    +er: {HX.Rt.run(HC.rt_find(hub_rts(o, cx), n)) == r : HM.Run})
+    -> {HI.stuck(HX.d(o, HC.pump.run(o, r, cx, n, HM.queued_for(HX.d(o, cx), n), HM.Agent.is_main(a))), hub_rts(o, HC.pump.run(o, r, cx, n, HM.queued_for(HX.d(o, cx), n), HM.Agent.is_main(a))), n) == False{} : Bool}:
+  match r:
+    case HM.RDown{}:
+      hub_stuck_run(HX.d(o, cx), hub_rts(o, cx), n, HM.RDown{}, er, {==})
+    case HM.RStarting{}:
+      hub_stuck_run(HX.d(o, cx), hub_rts(o, cx), n, HM.RStarting{}, er, {==})
+    case HM.RBusy{}:
+      +fin = HC.pump.batch(o, HC.not_queued_mode(HM.queued_for(HX.d(o, cx), n)), cx, n, True{}, HM.Agent.is_main(a))
+      hub_stuck_run(HX.d(o, fin), hub_rts(o, fin), n, HM.RBusy{},
+        Equal.trans(HM.Run, HX.Rt.run(HC.rt_find(hub_rts(o, fin), n)), HX.Rt.run(HC.rt_find(hub_rts(o, cx), n)), HM.RBusy{},
+          Equal.cong(List<&2, HX.Rt>, HM.Run, xs => HX.Rt.run(HC.rt_find(xs, n)), hub_rts(o, fin), hub_rts(o, cx),
+            hub_batch_busy(o, HC.not_queued_mode(HM.queued_for(HX.d(o, cx), n)), cx, n, HM.Agent.is_main(a))), er), {==})
+    case HM.RIdle{}:
+      hub_pw.idle(o, HM.queued_for(HX.d(o, cx), n), a, cx, n, e, ec, er, {==})
+
+def hub_pw.inactive(-o: HM.St, +a: HM.Agent, +cx: HX.Cx<o>, +n: String,
+    e: {HM.get_agent(HX.d(o, cx), n) == Some{a} : Maybe<&2, HM.Agent>}, ec: {HC.is_active(HM.Agent.life(a)) == False{} : Bool}) -> {HI.stuck.agent(HM.get_agent(HX.d(o, cx), n), HX.d(o, cx), n) == False{} : Bool}:
+  %Equal.sym(Maybe<&2, HM.Agent>, HM.get_agent(HX.d(o, cx), n), Some{a}, e) : {HI.stuck.agent(_, HX.d(o, cx), n) == False{} : Bool}
+  %Equal.sym(Bool, HC.is_active(HM.Agent.life(a)), False{}, ec) : {Bool.and(_, Bool.not(List.is_empty(&2, HM.Msg, HM.queued_for(HX.d(o, cx), n)))) == False{} : Bool}
+  {==}
+
+def hub_pw.active(-o: HM.St, c: Bool, +a: HM.Agent, +cx: HX.Cx<o>, +n: String,
+    +e: {HM.get_agent(HX.d(o, cx), n) == Some{a} : Maybe<&2, HM.Agent>}, +ec: {HC.is_active(HM.Agent.life(a)) == c : Bool})
+    -> {HI.stuck(HX.d(o, HC.pump.active(o, c, cx, n, HM.Agent.is_main(a))), hub_rts(o, HC.pump.active(o, c, cx, n, HM.Agent.is_main(a))), n) == False{} : Bool}:
+  match c:
+    case True{}:
+      hub_pw.run(o, HX.Rt.run(HC.rt_find(hub_rts(o, cx), n)), a, cx, n, e, ec, {==})
+    case False{}:
+      hub_stuck_agent(HX.d(o, cx), hub_rts(o, cx), n, hub_pw.inactive(o, a, cx, n, e, ec))
+
+def hub_pw.none(-o: HM.St, +cx: HX.Cx<o>, +n: String, e: {HM.get_agent(HX.d(o, cx), n) == None{} : Maybe<&2, HM.Agent>}) -> {HI.stuck.agent(HM.get_agent(HX.d(o, cx), n), HX.d(o, cx), n) == False{} : Bool}:
+  %Equal.sym(Maybe<&2, HM.Agent>, HM.get_agent(HX.d(o, cx), n), None{}, e) : {HI.stuck.agent(_, HX.d(o, cx), n) == False{} : Bool}
+  {==}
+
+def hub_pw.agent(-o: HM.St, m: Maybe<&2, HM.Agent>, +cx: HX.Cx<o>, +n: String, +e: {HM.get_agent(HX.d(o, cx), n) == m : Maybe<&2, HM.Agent>})
+    -> {HI.stuck(HX.d(o, HC.pump.agent(o, m, cx, n)), hub_rts(o, HC.pump.agent(o, m, cx, n)), n) == False{} : Bool}:
+  match m:
+    case None{}:
+      hub_stuck_agent(HX.d(o, cx), hub_rts(o, cx), n, hub_pw.none(o, cx, n, e))
+    case Some{+a}:
+      hub_pw.active(o, HC.is_active(HM.Agent.life(a)), a, cx, n, e, {==})
+
+# a delivery attempt never leaves its agent idle with queued messages
+def hub_pump_wakes(-o: HM.St, +cx: HX.Cx<o>, +n: String) -> {HI.stuck(HX.d(o, HC.pump(o, cx, n)), hub_rts(o, HC.pump(o, cx, n)), n) == False{} : Bool}:
+  hub_pw.agent(o, HM.get_agent(HX.d(o, cx), n), cx, n, {==})
