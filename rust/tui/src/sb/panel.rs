@@ -62,55 +62,7 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     lines.push(Line::from(""));
     let nav = sb.nav();
     for (i, a) in nav.iter().enumerate() {
-        let (g, gc) = glyph(&a.status, app.tick);
-        let focused = a.name == sb.focus;
-        let selected = sb.selected == Some(i);
-        let mut name_style = Style::default().fg(if focused { BRAND } else { TEXT });
-        if focused {
-            name_style = name_style.add_modifier(Modifier::BOLD);
-        }
-        if selected {
-            name_style = name_style.add_modifier(Modifier::REVERSED);
-        }
-        let label = if a.main {
-            "main".to_string()
-        } else {
-            format!("{} {}", i, a.name)
-        };
-        let mut spans = vec![
-            Span::styled(format!(" {} ", g), Style::default().fg(gc)),
-            Span::styled(truncate_chars(&label, w.saturating_sub(12)), name_style),
-            Span::styled(format!(" {}", a.status), Style::default().fg(DIM)),
-        ];
-        if let Some(u) = sb.usage_of(app, &a.name) {
-            spans.push(Span::styled(format!(" {}", u.short()), Style::default().fg(FAINT)));
-        }
-        if sb.activity.contains(&a.name) && !focused {
-            spans.push(Span::styled(" •", Style::default().fg(INFO)));
-        }
-        if a.queued > 0 {
-            spans.push(Span::styled(
-                format!(" ✉{}", a.queued),
-                Style::default().fg(WARN),
-            ));
-        }
-        lines.push(Line::from(spans));
-        if !a.main {
-            let mut sub = truncate_chars(&a.objective, w.saturating_sub(3));
-            if let Some(b) = &a.branch {
-                sub = truncate_chars(&format!("⎇ {} · {}", b, a.objective), w.saturating_sub(3));
-            }
-            lines.push(Line::from(Span::styled(
-                format!("   {}", sub),
-                Style::default().fg(FAINT),
-            )));
-            if !a.note.is_empty() {
-                lines.push(Line::from(Span::styled(
-                    format!("   {}", truncate_chars(&a.note, w.saturating_sub(3))),
-                    Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-                )));
-            }
-        }
+        lines.extend(agent_lines(app, sb, a, i, w));
         if a.main && nav.len() > 1 {
             lines.push(Line::from(Span::styled(
                 format!(" {}", "─".repeat(w.saturating_sub(1))),
@@ -121,10 +73,7 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     let archived = sb.agents.iter().filter(|a| a.archived()).count();
     if archived > 0 {
         lines.push(Line::from(Span::styled(
-            format!(
-                " {} archived",
-                archived
-            ),
+            format!(" {} archived", archived),
             Style::default().fg(FAINT),
         )));
     }
@@ -282,4 +231,61 @@ pub(crate) fn placeholder(app: &App) -> Option<String> {
     } else {
         format!("Direct message to @{}…", sb.focus)
     })
+}
+
+/// The rows of agent `a`, entry `i` of the panel, `w` columns wide: its
+/// glyph, name, status, context use, unseen lines and queue, then (a
+/// task) its branch and objective and its note.
+fn agent_lines(app: &App, sb: &Sb, a: &Agent, i: usize, w: usize) -> Vec<Line<'static>> {
+    let mut out = Vec::new();
+    let (g, gc) = glyph(&a.status, app.tick);
+    let focused = a.name == sb.focus;
+    let selected = sb.selected == Some(i);
+    let mut name_style = Style::default().fg(if focused { BRAND } else { TEXT });
+    if focused {
+        name_style = name_style.add_modifier(Modifier::BOLD);
+    }
+    if selected {
+        name_style = name_style.add_modifier(Modifier::REVERSED);
+    }
+    let label = if a.main {
+        "main".to_string()
+    } else {
+        format!("{} {}", i, a.name)
+    };
+    let mut spans = vec![
+        Span::styled(format!(" {} ", g), Style::default().fg(gc)),
+        Span::styled(truncate_chars(&label, w.saturating_sub(12)), name_style),
+        Span::styled(format!(" {}", a.status), Style::default().fg(DIM)),
+    ];
+    if let Some(u) = sb.usage_of(app, &a.name) {
+        spans.push(Span::styled(format!(" {}", u.short()), Style::default().fg(FAINT)));
+    }
+    if sb.activity.contains(&a.name) && !focused {
+        spans.push(Span::styled(" •", Style::default().fg(INFO)));
+    }
+    if a.queued > 0 {
+        spans.push(Span::styled(
+            format!(" ✉{}", a.queued),
+            Style::default().fg(WARN),
+        ));
+    }
+    out.push(Line::from(spans));
+    if !a.main {
+        let mut sub = truncate_chars(&a.objective, w.saturating_sub(3));
+        if let Some(b) = &a.branch {
+            sub = truncate_chars(&format!("⎇ {} · {}", b, a.objective), w.saturating_sub(3));
+        }
+        out.push(Line::from(Span::styled(
+            format!("   {}", sub),
+            Style::default().fg(FAINT),
+        )));
+        if !a.note.is_empty() {
+            out.push(Line::from(Span::styled(
+                format!("   {}", truncate_chars(&a.note, w.saturating_sub(3))),
+                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+            )));
+        }
+    }
+    out
 }
