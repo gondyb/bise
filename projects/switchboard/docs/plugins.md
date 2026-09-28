@@ -1,6 +1,8 @@
 # Agent plugins in the harness and Switchboard
 
-Status: design, 2026-09-28. Task `plugins`.
+Status: implemented, 2026-09-28 (task `plugins`). Code: `rust/plugins`
+(`bend-plugins`), `runtime/plugins.bend`, `runtime/skills.bend`,
+`runtime/mcp.bend`, `rust/tui/src/plugins.rs`.
 
 ## Goal
 
@@ -157,13 +159,16 @@ tests use temp dirs.
   result, notifications answer `202`, anything else is forwarded with a
   fresh id and answered as `application/json` (60 s timeout). A server
   that died is respawned once on the next call.
-- Polls the REPL pid every 500 ms; when it is gone, closes the servers'
-  stdin, waits 1 s, kills them, exits. `/reload` therefore restarts the
+- No server up (no plugin, or every server failed): it exits as soon
+  as the files are written, so no process lingers.
+- Polls the REPL pid every 500 ms; when it is gone, stops the servers
+  (a short grace period, then a kill) and exits. `/reload` therefore restarts the
   bridge with the new REPL, and plugin edits apply on `/reload`.
 
 ### Bend runtime
 
-- `repl-live` startup, before the skills scan: `Pl.plugins_start()` runs
+- `repl-live` startup, before the skills scan and before the system
+  prompt is built (it lists the skills): `Pl.start()` runs
   one `/bin/sh` script: clear `D`, start the bridge in the background
   (`$BEND_HARNESS_BIN`, else `./bend-harness`, else the dev build under
   `rust/target`), wait for `D/ready` (at most 15 s). No binary: no
@@ -195,19 +200,34 @@ tests use temp dirs.
 
 ## Tests
 
-- Unit tests in `bend-plugins`: every diagnostic code, precedence,
-  containment (a symlink out of the root), placeholder expansion, the
-  enable state, the index line format.
-- Integration test in `bend-plugins`: the fixture plugin
-  (`rust/plugins/tests/fixtures/hello-plugin`: one skill and a
-  dependency-free Python stdio server) through the real bridge: index
-  written, `initialize` + `tools/call` over HTTP answer.
-- End to end (manual, recorded in the task report): a throwaway
-  workspace with the fixture under `.agents/plugins/`, a real
-  `bend-harness --headless` session driven by `bend_client.py` that loads
-  the skill and calls the tool from `run_typescript`, then the same in a
-  Switchboard task on a throwaway hub (`SB_DEV_ROOT=/tmp/plugins-*`).
-- `bend PROOF.bend` for the runtime changes.
+- `cargo test -p bend-plugins`: unit tests for every diagnostic code,
+  precedence, containment (a symlink out of the root), placeholder
+  expansion, the enable state (`src/resolve/tests.rs`, `src/state.rs`);
+  `tests/bridge.rs` runs the fixture plugin
+  (`rust/plugins/tests/fixtures/hello-plugin`: skill `greet`, a
+  dependency-free Python stdio server with one tool `shout`) through the
+  real bridge: index files, `initialize` + `initialized` + `tools/call`
+  over HTTP on one connection, a wrong token is a 404, `PLUGIN_DATA`
+  written, the bridge stops with its parent; a failing server is a
+  `plugin.mcp.connection_failed` diagnostic and the skill still loads.
+- `cargo test -p bend-tui plugins`: `/plugins` text.
+- `projects/switchboard/tests/plugins_live.py` (live model): a real
+  `bend-harness --headless` session on a throwaway workspace loads
+  `hello_plugin:greet` and calls `tools.hello_plugin.shout` from
+  `run_typescript`.
+- `projects/switchboard/tests/plugins_sb_live.py` (live model): the
+  same from a Switchboard task on a throwaway hub.
+- `bend PROOF.bend`, the scripted e2e suite and the TUI tmux suite stay
+  green (scripted runs never start the bridge).
+
+## Known limits
+
+- The TUI `$` skill popup reads the shared index only: workspace and
+  plugin skills work for the agent but are not offered in the popup.
+- Plugin edits apply at the next session start or `/reload` (no
+  file watching, no `/reload-plugins`).
+- The Switchboard `/plugins` shows the static listing of the hub
+  workspace, not the per-task bridge report.
 
 ## Later
 
