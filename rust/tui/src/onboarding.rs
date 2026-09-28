@@ -308,6 +308,8 @@ pub(crate) struct Onb {
     pub detected: Option<Mode>,
     /// where the mode at start came from
     pub theme_from: ThemeFrom,
+    /// the mode at start (a saved choice kept as is is not written again)
+    pub start: Mode,
     pub pick: Mode,
     pub home: Option<PathBuf>,
     pub model: String,
@@ -369,6 +371,7 @@ impl Onb {
             since: 0,
             detected: crate::theme_detect::detected(),
             theme_from: theme_from(env, home.as_deref()),
+            start: theme::mode(),
             pick: theme::mode(),
             model: current_model(env, home.as_deref()),
             found: Vec::new(),
@@ -400,14 +403,19 @@ impl Onb {
         v
     }
 
-    /// What step 2 saves: auto when the mode follows the terminal and the
-    /// pick is what it gave (or dark, with no answer), else the pick.
-    pub(crate) fn theme_choice(&self) -> crate::theme_detect::Choice {
+    /// What step 2 saves, if anything. `BISE_THEME` is a session
+    /// override: never saved, whatever the pick. A saved choice kept as is:
+    /// nothing to write. Else auto when the pick is what the terminal gave
+    /// (or dark, with no answer), else the pick.
+    pub(crate) fn theme_choice(&self) -> Option<crate::theme_detect::Choice> {
         use crate::theme_detect::Choice;
-        match (self.pick, self.detected.unwrap_or(Mode::Dark)) {
-            (p, d) if p == d && self.theme_from == ThemeFrom::Terminal => Choice::Auto,
-            (Mode::Light, _) => Choice::Light,
-            (Mode::Dark, _) => Choice::Dark,
+        let explicit = |m: Mode| if m == Mode::Light { Choice::Light } else { Choice::Dark };
+        match self.theme_from {
+            ThemeFrom::Env => None,
+            ThemeFrom::Saved if self.pick == self.start => None,
+            ThemeFrom::Saved => Some(explicit(self.pick)),
+            ThemeFrom::Terminal if self.pick == self.detected.unwrap_or(Mode::Dark) => Some(Choice::Auto),
+            ThemeFrom::Terminal => Some(explicit(self.pick)),
         }
     }
 
@@ -445,8 +453,8 @@ impl Onb {
             (Step::Theme, KeyCode::Enter) => {
                 // BISE-62: kept for the next launches; the terminal's own
                 // mode stays "auto" (it follows the terminal)
-                if let Some(h) = &self.home {
-                    let _ = crate::theme_detect::save_in(h, self.theme_choice());
+                if let (Some(h), Some(c)) = (&self.home, self.theme_choice()) {
+                    let _ = crate::theme_detect::save_in(h, c);
                 }
                 self.advance(now)
             }
@@ -1139,9 +1147,9 @@ mod tests {
         assert_eq!(theme::mode(), Mode::Dark);
         // BISE-62: enter saves the pick (auto when it is the terminal's)
         use crate::theme_detect::{load_in, Choice};
-        assert_eq!(o.theme_choice(), Choice::Auto);
+        assert_eq!(o.theme_choice(), Some(Choice::Auto));
         o.on_key(key(KeyCode::Right), 50, &none);
-        assert_eq!(o.theme_choice(), Choice::Light);
+        assert_eq!(o.theme_choice(), Some(Choice::Light));
         o.on_key(key(KeyCode::Enter), 60, &none);
         assert_eq!((o.step, load_in(&h)), (Step::Model, Some(Choice::Light)));
     }
@@ -1234,12 +1242,41 @@ mod tests {
         assert_eq!(o.theme_from, ThemeFrom::Saved);
         o.go(Step::Theme, 0);
         assert!(screen(&o, 10, 100, 30).contains("you picked light last time, so i kept it."));
-        // keeping a forced mode saves it as is, not auto
+        // a saved choice kept as is: nothing written; changed: the new pick
+        assert_eq!(o.theme_choice(), None);
         o.pick = Mode::Dark;
-        assert_eq!(o.theme_choice(), Choice::Dark);
+        assert_eq!(o.theme_choice(), Some(Choice::Dark));
         // BISE_THEME=auto: the terminal decides
         let e = env_of(HashMap::from([("HOME", home), ("BISE_THEME", "auto".to_string())]));
         assert_eq!(Onb::new("/w", &e).theme_from, ThemeFrom::Terminal);
+        theme::set_mode(Mode::Dark);
+    }
+
+    #[test]
+    fn bise_theme_is_never_saved() {
+        use crate::theme_detect::{load_in, save_in, settings_path, Choice};
+        let h = tmp("s2env");
+        let home = h.to_string_lossy().to_string();
+        let e = env_of(HashMap::from([("HOME", home), ("BISE_THEME", "light".to_string())]));
+        theme::set_mode(Mode::Light);
+        // kept, or switched away and back, or switched: enter writes nothing
+        for toggles in [0, 2, 1] {
+            let mut o = Onb::new("/w", &e);
+            o.go(Step::Theme, 0);
+            for _ in 0..toggles {
+                o.on_key(key(KeyCode::Right), 1, &e);
+            }
+            assert_eq!(o.theme_choice(), None);
+            o.on_key(key(KeyCode::Enter), 2, &e);
+            assert_eq!(o.step, Step::Model);
+            assert!(!settings_path(&h).exists(), "BISE_THEME was saved ({} toggles)", toggles);
+        }
+        // a real saved choice stays what it was
+        save_in(&h, Choice::Dark).unwrap();
+        let mut o = Onb::new("/w", &e);
+        o.go(Step::Theme, 0);
+        o.on_key(key(KeyCode::Enter), 2, &e);
+        assert_eq!(load_in(&h), Some(Choice::Dark));
         theme::set_mode(Mode::Dark);
     }
 
