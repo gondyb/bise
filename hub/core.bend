@@ -246,12 +246,45 @@ def waiter_drop(xs: List<&2, X.Waiter>, +tok: Nat) -> List<&2, X.Waiter>:
     case Con{+h, +t}:
       Bool.pick(List<&2, X.Waiter>, Nat.is_eq(X.Waiter.token(h), tok), t, h <> waiter_drop(t, tok))
 
-def steer_get(xs: List<&2, X.Steer>, +n: String) -> List<&2, Nat>:
+# ---- keyed lists (a list of entries, at most one per key) ----
+
+# the entries whose key is not `n`
+def del_key(~A: Data, ~key: A -> String, xs: List<&2, A>, +n: String) -> List<&2, A>:
   match xs:
     case Nil{}:
       Nil{}
     case Con{+h, +t}:
-      Bool.pick(List<&2, Nat>, String.eq(X.Steer.agent(h), n), X.Steer.ids(h), steer_get(t, n))
+      +rest = del_key(~A, ~key, t, n)
+      Bool.pick(List<&2, A>, String.eq(key(h), n), rest, h <> rest)
+
+# the value of the first entry whose key is `n`, or `dflt`
+def get_key(~A: Data, ~B: Data, ~key: A -> String, ~val: A -> B, xs: List<&2, A>, +n: String, +dflt: B) -> B:
+  match xs:
+    case Nil{}:
+      dflt
+    case Con{+h, +t}:
+      Bool.pick(B, String.eq(key(h), n), val(h), get_key(~A, ~B, ~key, ~val, t, n, dflt))
+
+def steer_get(xs: List<&2, X.Steer>, +n: String) -> List<&2, Nat>:
+  get_key(~X.Steer, ~List<&2, Nat>, ~X.Steer.agent, ~X.Steer.ids, xs, n, Nil{})
+
+def cnt_get(xs: List<&2, X.Cnt>, +n: String) -> X.Cnt:
+  get_key(~X.Cnt, ~X.Cnt, ~X.Cnt.agent, ~(c => c), xs, n, X.Cnt{n, 0n, 0n})
+
+def cnt_del(xs: List<&2, X.Cnt>, +n: String) -> List<&2, X.Cnt>:
+  del_key(~X.Cnt, ~X.Cnt.agent, xs, n)
+
+def kv_get(xs: List<&2, X.Kv>, +n: String) -> String:
+  get_key(~X.Kv, ~String, ~X.Kv.key, ~X.Kv.val, xs, n, "")
+
+def kv_del(xs: List<&2, X.Kv>, +n: String) -> List<&2, X.Kv>:
+  del_key(~X.Kv, ~X.Kv.key, xs, n)
+
+def kn_get(xs: List<&2, X.Kn>, +n: String) -> Nat:
+  get_key(~X.Kn, ~Nat, ~X.Kn.key, ~X.Kn.n, xs, n, 0n)
+
+def kn_del(xs: List<&2, X.Kn>, +n: String) -> List<&2, X.Kn>:
+  del_key(~X.Kn, ~X.Kn.key, xs, n)
 
 def steer_del(xs: List<&2, X.Steer>, +n: String) -> List<&2, X.Steer>:
   match xs:
@@ -270,51 +303,6 @@ def steer_rename(xs: List<&2, X.Steer>, +old: String, +new: String) -> List<&2, 
       Nil{}
     case Con{+h, +t}:
       Bool.pick(X.Steer, String.eq(X.Steer.agent(h), old), X.Steer{new, X.Steer.ids(h)}, h) <> steer_rename(t, old, new)
-
-def cnt_get(xs: List<&2, X.Cnt>, +n: String) -> X.Cnt:
-  match xs:
-    case Nil{}:
-      X.Cnt{n, 0n, 0n}
-    case Con{+h, +t}:
-      Bool.pick(X.Cnt, String.eq(X.Cnt.agent(h), n), h, cnt_get(t, n))
-
-def cnt_del(xs: List<&2, X.Cnt>, +n: String) -> List<&2, X.Cnt>:
-  match xs:
-    case Nil{}:
-      Nil{}
-    case Con{+h, +t}:
-      +rest = cnt_del(t, n)
-      Bool.pick(List<&2, X.Cnt>, String.eq(X.Cnt.agent(h), n), rest, h <> rest)
-
-def kv_get(xs: List<&2, X.Kv>, +n: String) -> String:
-  match xs:
-    case Nil{}:
-      ""
-    case Con{+h, +t}:
-      Bool.pick(String, String.eq(X.Kv.key(h), n), X.Kv.val(h), kv_get(t, n))
-
-def kv_del(xs: List<&2, X.Kv>, +n: String) -> List<&2, X.Kv>:
-  match xs:
-    case Nil{}:
-      Nil{}
-    case Con{+h, +t}:
-      +rest = kv_del(t, n)
-      Bool.pick(List<&2, X.Kv>, String.eq(X.Kv.key(h), n), rest, h <> rest)
-
-def kn_get(xs: List<&2, X.Kn>, +n: String) -> Nat:
-  match xs:
-    case Nil{}:
-      0n
-    case Con{+h, +t}:
-      Bool.pick(Nat, String.eq(X.Kn.key(h), n), X.Kn.n(h), kn_get(t, n))
-
-def kn_del(xs: List<&2, X.Kn>, +n: String) -> List<&2, X.Kn>:
-  match xs:
-    case Nil{}:
-      Nil{}
-    case Con{+h, +t}:
-      +rest = kn_del(t, n)
-      Bool.pick(List<&2, X.Kn>, String.eq(X.Kn.key(h), n), rest, h <> rest)
 
 def ids_of(xs: List<&2, M.Msg>) -> List<&2, Nat>:
   match xs:
