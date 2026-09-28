@@ -746,7 +746,7 @@ Index:
 
 ### BISE-60 · onboarding flow
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** in progress · **owner:** bise-o-onboard · **commits:** —
 - **track:** O · **owns:** new `rust/tui/src/onboarding.rs`, its entry in
   `run.rs`
 - **spec:** book §15, mockup `tui-onboarding.html` (validated)
@@ -758,6 +758,67 @@ Index:
 - **done when:** a first launch with an empty state directory shows it; a
   second launch doesn't; screenshots match the mockup step by step.
 - **notes:**
+  - **Where:** `onboarding.rs` (state `Onb`, pure `draw(f, &Onb, now_ms)`,
+    `on_key`, the `show` loop). `run.rs`: `request_if_due` in `run_tui`,
+    and the request taken at the top of `ui_loop` (under `crash::guarded`;
+    hub lines keep being drained during it). `lib.rs`: `mod onboarding;`.
+    **Switchboard only** (bise is the Switchboard UI; the single-agent
+    client never shows it).
+  - **For K (BISE-41):** `/welcome` calls `onboarding::run(app)`: it asks
+    for a replay, the loop plays it at the next frame.
+  - **Flag:** `$XDG_STATE_HOME/switchboard/onboarded`, else
+    `~/.local/state/switchboard/onboarded` (per user, the root
+    `switchboard::paths` uses). Written when it ends or is skipped.
+    `SB_ONBOARDING=off` never shows it, `on` always does. `e2e.Env` sets
+    `off` (main OK'd), so every other tmux test starts on the normal UI.
+  - **Keys (decided with main):** the harness knows two providers
+    (`runtime/provider-pure.bend`): claude, `ANTHROPIC_FOUNDRY_API_KEY`
+    (opus-5.5 through the foundry proxy), and mistral, `MISTRAL_API_KEY`
+    (every non-claude model, OpenAI-style API). Found in the env, else
+    `~/.bend-harness/.env`, else `~/.vibe/.env` (the order `load_env_files`
+    uses). Rows: each found key (the current model's first; another
+    provider's key says `your model is {m}: set model in
+    ~/.bend-harness/config.toml.`: the model is never changed here), `paste
+    another key` (`paste a key` when none), `sign in with the browser`
+    (dim, `not built yet.`, skipped by ↑↓). Paste: pick claude / mistral,
+    paste masked (`•`), saved in `~/.bend-harness/.env` (created 600, an
+    existing mode kept, other lines kept, an existing `KEY=` replaced only
+    after `enter replaces it · esc keeps the old one`). Never logged, never
+    in a feed. Unit tests use temp HOME / state dirs only.
+  - **New strings (for §17):** `i couldn't read your terminal's background,
+    so i picked {mode}.` (no OSC 11 answer, e.g. tmux) · `i found no key in
+    your environment.` / `i found {n} keys in your environment.` · `paste a
+    key` · `claude or mistral.` · `not built yet.` · `{name}, already set
+    up. nothing to paste.` · `{name}. your model is {m}: set model in
+    ~/.bend-harness/config.toml.` · `which key do you want to paste?` · `↑↓
+    choose · enter ok · esc back` · `paste your {KEY}:` · `it goes in
+    ~/.bend-harness/.env, only you can read it.` · `enter save · esc back` ·
+    `✗ that doesn't look like a key: no spaces inside.` · `{KEY} is already
+    in ~/.bend-harness/.env.` · `enter replaces it · esc keeps the old one`
+    · `✓ saved in ~/.bend-harness/.env. i'll use it after a restart
+    (switchboard --stop, then start me again).` (the hub loads the env
+    files at its start) · `✗ couldn't save the key: {err}` · `· not a git
+    repo` + ` git would be your safety net: git init here, and commit
+    often.` · `another folder? start me there: cd into it, then run
+    switchboard.` (the `o` key: a running hub can't change folder).
+  - **Differences with the mockup:** no big font (the welcome line is
+    bold); the `:*` pop is ` ·` → bold `:*` → `:*` (no scale in a
+    terminal); the previews paint their own background (#141211 / #f7f4ee:
+    the only painted ground, so the light preview reads on a dark
+    terminal); the selected option is `▎` + the selection tint; `esc` in
+    the paste sub-steps goes back to the options instead of skipping
+    (`ctrl+c` still skips); step 6 is the normal UI (its hints: BISE-61).
+  - **Not done here:** the theme picked on step 2 is not saved across
+    launches (detection runs again; `/theme` has no store either). Needs a
+    settings slot (e.g. `~/.bend-harness/tui.json`), owner to pick.
+    Visual check done in tmux (text captures, dark); not in Ghostty light.
+  - **Tests:** 13 unit tests in `onboarding.rs` (flag + env var, key
+    lookup, model/provider, save 600/replace/keep mode, typing clock, each
+    step's screen, esc / ctrl+c, narrow sizes); new
+    `tests/tui_onboarding_tmux.py` (5 steps enter by enter with captures in
+    `$SB_ONBOARDING_SHOTS`, the flag, a second launch without it, esc skips
+    and marks seen), added to `run_all.sh` with `tui_waits_tmux` (main's
+    ask). No existing assertion changed.
 
 ### BISE-61 · one-time hints
 
@@ -774,7 +835,8 @@ Index:
 
 ### BISE-70 · images UI
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done (the history screens wait for F's 3 call sites) ·
+  **owner:** bise-i-images · **commits:** 16bc2a2
 - **track:** I · **owns:** `attach.rs`, the chip drawing in the composer
   render path, the strip in `ui.rs`
 - **spec:** book §14, `../images.md`
@@ -787,6 +849,60 @@ Index:
 - **done when:** screenshots match the three image screens of
   `tui-screens.html`; tests for the strip text (sizes, "resized to fit").
 - **notes:**
+  - **Composer chips:** the text keeps `[Image #N]`; `editor::layout_input`
+    makes it one cell (`InputCell.chip`, `w` = width of `▣ N`), `ui.rs`
+    draws it `▣ N` in accent (reversed under the cursor, selection bg when
+    selected). Atomic: `prev/next_grapheme` step over it, `move_to` never
+    lands inside, `delete_back/forward` (all units) widen to the whole chip
+    (`attach::chips / chip_around / chip_widen`). This touches `editor.rs`
+    beyond its render path (the grapheme/delete/move functions): no other
+    track owns them.
+  - **Strip** (`attach::strip_lines`, drawn by `ui.rs` above the status row,
+    both layouts): `attached · backspace on a chip removes it`, then one row
+    per chip still in the text, `▣ 1 shots/login-mobile.png` and, flush
+    right, dim, `1170×2532 · 310 kB` (+ ` → resized to fit 2048`). Sizes are
+    what the model gets (after the downscale); resized = the stored bytes
+    differ from the original (the store keeps them as is otherwise). Size
+    text: decimal units (`999 B`, `310 kB`, `1.1 MB`). A long path keeps its
+    end. `Attachment` gained `info: Info` (source, w, h, bytes, resized).
+  - **Hint** while images are attached (sb view, not during a turn):
+    `ctrl+v paste image · @ file` (from the mockup; **new string for §17**).
+    The flash says `attached ▣ 1` (was `[Image #1]`).
+  - **History, for track F** (render.rs, agreed with bise-f-feed): 
+    `attach::chip_spans(line, style)` (markers → accent `▣ login.png`;
+    clipboard images, whose path is in the image store, → `▣ clipboard`),
+    `attach::sizes_line(text)` (the dim size line under the user line; sizes
+    read once from the stored copy beside the `.b64`, cached),
+    `attach::result_spans(preview)` (`result · ▣ screenshot.png 390×844`),
+    `attach::without_markers`, `attach::no_vision(err)` (the §17 line; the
+    model is the agent in view, set by ui.rs each frame; matches provider
+    wordings: image/vision + not supported / only supported / invalid
+    content type…). They carry `#[allow(dead_code)]` until F wires them.
+  - **Tests:** `attach::tests` (chips by char index, widen, strip text:
+    sizes + resized, strip rows flush right + cut path, history chips /
+    sizes / result line / missing store file, no-vision matching and the
+    §17 line), `editor::tests::image_chips_are_atomic`.
+    `tui_images_tmux.py`: composer waits now expect `▣ 1 ▣ 2 and ▣ 3`, the
+    strip rows, backspace removing a chip whole; the feed check accepts
+    `[Image #1 shots/red-blue.png]` or `▣ red-blue.png` (before/after F);
+    its own `wait_composer` leaves out the new hint.
+  - **Differences with the mockups:** the chip has no background tint (book
+    §5: we never paint the background); the strip has no box border (plain
+    rows at the composer's indent, like the card box region). The history
+    screens (chips in your line, the size line, `result ·`, no-vision) show
+    once F calls the helpers. Routing (`with both images`) is main's prompt,
+    not here.
+  - **Gates** (worktree of 1ee22b9 + my files, own target dir): build,
+    clippy workspace all-targets clean, `cargo test --workspace` (two flaky
+    failures under load, `switchboard::core` and `bend-plugins` bridge,
+    pass alone), `PROOF.bend` OK, e2e OK, tmux images/composer/at-files/
+    help/term/version/clear/archived OK. `tui_tmux.py` fails at HEAD on
+    `# Task \`t1\`` (BISE-12 folded the brief; someone has a fix in the
+    tree). **Found:** the committed `sb-core` is stale vs `hub/*.bend` at
+    HEAD (6 `core::tests` fail with it, pass with a fresh
+    `bend hub/main.bend`); and `/tmp/bise-gate-target` is shared by all
+    tracks' gates, so one track's build overwrites another's binary; use one
+    target dir per track.
 
 ---
 
