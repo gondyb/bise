@@ -27,17 +27,23 @@ pub(crate) fn truncate_chars(s: &str, max: usize) -> String {
         s.to_string()
     } else {
         let head: String = s.chars().take(max).collect();
-        format!("{}…", head)
+        format!("{}{}", head, ellipsis())
     }
 }
 
-/// `s` in at most `room` chars, the `…` included when it is cut.
+/// `s` in at most `room` chars, the `…` (`...` in ASCII mode) included
+/// when it is cut.
 pub(crate) fn fit_chars(s: &str, room: usize) -> String {
     if s.chars().count() <= room {
         return s.to_string();
     }
-    let head: String = s.chars().take(room.saturating_sub(1)).collect();
-    format!("{}…", head)
+    let e = ellipsis();
+    let n = e.chars().count();
+    if room < n {
+        return s.chars().take(room).collect();
+    }
+    let head: String = s.chars().take(room - n).collect();
+    format!("{}{}", head, e)
 }
 
 // naive "field":"value" extractor for JSON-ish args (no parser needed:

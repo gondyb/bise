@@ -204,6 +204,26 @@ every glyph a fallback font draws at width 1; replace only the ones that break:
 ASCII (`~` working, `<3` done, `>` you, …) for terminals that draw them badly
 (BISE-84). Terminals must use ambiguous width = narrow (the default).
 
+**ASCII forms** (`BISE_ASCII=1`, BISE-84, made distinct in BISE-91): one
+cell each, and no two entities share one.
+
+| Glyph | ASCII | | Glyph | ASCII | | Glyph | ASCII |
+|---|---|---|---|---|---|---|---|
+| `›` you | `>` | | `▲` interrupted | `^` | | `✓` got it | `v` |
+| `:*` main | `:*` | | `»` wrap | `}` | | `✓✓` read | `vv` |
+| `◇` brief | `&` | | `·` starting, sending | `.` | | `•` unread | `!` |
+| `∴` thinking | `:` | | `∿` working | `~` | | `ψ` worktree | `Y` |
+| `λ` TypeScript | `\` | | `…` waiting | `;` | | `⇄` overlap | `/` |
+| `↳` sub-call | `L` | | `♡` done | `*` | | `↻` restart failed | `(` |
+| `±` edit | `%` | | `✗` failed | `x` | | `Δ` building | `A` |
+| `▣` image | `#` | | `○` idle | `o` | | `▸` / `▾` | `+` / `-` |
+| `≡` compaction | `=` | | `–` stopped | `_` | | `$` `@` `?` | themselves |
+
+A cut text ends with `...` (not the one-cell `;`), and the panel title and
+the help keys say `alt + number` instead of `⌥ + number`. Chrome glyphs
+outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their table forms through
+`theme::asciify`. Box drawing stays (it is drawn by every font).
+
 ---
 
 # Part II — Product spec (the terminal UI)

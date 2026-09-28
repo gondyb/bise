@@ -312,6 +312,16 @@ fn spans_width(spans: &[Span]) -> usize {
     spans.iter().map(|s| s.content.width()).sum()
 }
 
+/// A key as drawn: in ASCII mode `⌥` reads `alt` and `…` reads `...`
+/// (QA 12: the cell-by-cell net would give `M + 0;9`).
+fn key_text(step: &str) -> String {
+    if theme::ascii_mode() {
+        step.replace('⌥', "alt").replace('…', "...")
+    } else {
+        step.to_string()
+    }
+}
+
 /// The chips of one keys field, as rows of spans at most `width` wide
 /// (an alternative never splits).
 fn chip_rows(keys: &str, width: usize) -> Vec<Vec<Span<'static>>> {
@@ -321,7 +331,7 @@ fn chip_rows(keys: &str, width: usize) -> Vec<Vec<Span<'static>>> {
             if i > 0 {
                 u.push(Span::styled(" then ", Style::default().fg(theme::dim())));
             }
-            u.push(Span::styled(format!(" {} ", step), chip()));
+            u.push(Span::styled(format!(" {} ", key_text(step)), chip()));
         }
         u
     });

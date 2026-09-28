@@ -49,6 +49,16 @@ pub(crate) fn split(app: &App, full: Rect) -> (Rect, Option<Rect>) {
 /// The panel title: `agents · ⌥ + number` (the key part faint).
 pub(crate) const PANEL_TITLE: (&str, &str) = ("agents", " · ⌥ + number");
 
+/// The keys part of the panel title: `alt + number` in ASCII mode (QA 12;
+/// the cell net would turn `⌥` into `M`).
+fn panel_title_keys() -> &'static str {
+    if theme::ascii_mode() {
+        " . alt + number"
+    } else {
+        PANEL_TITLE.1
+    }
+}
+
 /// The agent waits on you: it is blocked, or one of its cards asks you
 /// something.
 fn needs_you(sb: &Sb, a: &Agent) -> bool {
@@ -286,7 +296,7 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     let w = area.width.saturating_sub(1) as usize;
     let title = Line::from(vec![
         Span::styled(format!(" {}", PANEL_TITLE.0), Style::default().fg(text())),
-        Span::styled(PANEL_TITLE.1, Style::default().fg(faint())),
+        Span::styled(panel_title_keys(), Style::default().fg(faint())),
     ]);
     let mut lines: Vec<Line> = Vec::new();
     let numbers = sb.numbers();

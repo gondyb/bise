@@ -272,37 +272,37 @@ pub(crate) const G_OPEN: &str = "▾"; // progressive disclosure: open
 pub(crate) const ASCII: &[(&str, &str)] = &[
     // §6 glyphs
     ("›", ">"),
-    ("◇", "+"),
-    ("∴", "."),
+    ("◇", "&"),
+    ("∴", ":"),
     ("λ", "\\"),
-    ("↳", "-"),
+    ("↳", "L"),
     ("±", "%"),
     ("▣", "#"),
     ("≡", "="),
     ("▲", "^"),
-    ("»", ">"),
+    ("»", "}"),
     ("·", "."),
     ("∿", "~"),
-    ("…", ":"),
-    ("♡", "+"),
+    ("…", ";"),
+    ("♡", "*"),
     ("✗", "x"),
     ("○", "o"),
-    ("–", "-"),
+    ("–", "_"),
     ("✓✓", "vv"),
     ("✓", "v"),
-    ("•", "*"),
+    ("•", "!"),
     ("ψ", "Y"),
-    ("⇄", "="),
-    ("↻", "!"),
-    ("Δ", "^"),
-    ("▸", ">"),
-    ("▾", "v"),
+    ("⇄", "/"),
+    ("↻", "("),
+    ("Δ", "A"),
+    ("▸", "+"),
+    ("▾", "-"),
     // the replaced ones, while old code still draws them
     ("✉", "@"),
     ("⟳", "="),
-    ("⧗", "^"),
+    ("⧗", "A"),
     ("⎇", "Y"),
-    ("↪", ">"),
+    ("↪", "}"),
     // chrome and hints drawn outside the G_* constants (BISE-83 moves them)
     ("✦", "*"),
     ("◀", "<"),
@@ -376,6 +376,16 @@ pub(crate) fn glyph(g: &'static str) -> &'static str {
         return g;
     }
     ASCII.iter().find(|(u, _)| *u == g).map_or(g, |(_, a)| *a)
+}
+
+/// The mark of a cut text: `…`, or `...` under `BISE_ASCII=1` (QA 12: the
+/// one-cell `;` of the table is for the waiting status, not for prose).
+pub(crate) fn ellipsis() -> &'static str {
+    if ascii_mode() {
+        "..."
+    } else {
+        "…"
+    }
 }
 
 /// Under `BISE_ASCII=1`, rewrite every cell of `buf` holding a glyph of the
@@ -621,6 +631,22 @@ mod tests {
         }
     }
 
+    /// QA 12: two different glyphs never share an ASCII form, and the
+    /// cut-text mark is `...` in ASCII mode.
+    #[test]
+    fn every_entity_has_its_own_ascii_form() {
+        ascii_cell::set(true);
+        let mut by_ascii: std::collections::HashMap<&str, &str> = Default::default();
+        for g in ALL_GLYPHS {
+            if let Some(other) = by_ascii.insert(glyph(g), g) {
+                assert_eq!(other, *g, "{other:?} and {g:?} both read {:?}", glyph(g));
+            }
+        }
+        assert_eq!(ellipsis(), "...");
+        ascii_cell::set(false);
+        assert_eq!(ellipsis(), "…");
+    }
+
     #[test]
     fn glyph_is_the_identity_when_off() {
         assert!(!ascii_mode());
@@ -653,7 +679,7 @@ mod tests {
         ascii_cell::set(false);
         let after = row(&buf);
         // (wide characters keep their continuation cell: compare buffers)
-        assert_eq!(after, row(&buffer_of("> ~ + v Y ^ : . ─│┃ é ñ ü 漢字 👍 « > “q” * ~")));
+        assert_eq!(after, row(&buffer_of("> ~ * v Y A ; . ─│┃ é ñ ü 漢字 👍 « } “q” * ~")));
         let non_ascii: String = after
             .chars()
             .filter(|c| !c.is_ascii() && !('\u{2500}'..='\u{257f}').contains(c))
