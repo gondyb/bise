@@ -1,10 +1,14 @@
 //! The attention cards: the hub's questions and alerts, answered from
-//! the card box above the composer (Ctrl+G, Alt+R).
+//! the card box above the composer (ctrl+g, alt+r). A card is level 1
+//! (bise book §9, §12): a bar on the left, `? {name} needs you`, the
+//! question wrapped at 76, the choices, the keys dim.
 
 use super::*;
 use crate::commands::PopItem;
+use crate::theme;
 use ratatui::layout::Margin;
-use ratatui::widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState};
+use ratatui::symbols::border;
+use ratatui::widgets::{Clear, Padding, Scrollbar, ScrollbarOrientation, ScrollbarState};
 
 #[derive(Clone)]
 pub(crate) struct Card {
@@ -17,6 +21,20 @@ pub(crate) struct Card {
     pub(super) seen_at: std::time::Instant,
     /// The hub's remark (the asker heard from main since...).
     pub(super) note: String,
+}
+
+impl Default for Card {
+    fn default() -> Self {
+        Card {
+            id: 0,
+            kind: String::new(),
+            agent: String::new(),
+            text: String::new(),
+            age_ms: 0,
+            seen_at: std::time::Instant::now(),
+            note: String::new(),
+        }
+    }
 }
 
 /// What the user sees of the attention cards: which one, shown or not,
@@ -35,8 +53,21 @@ pub(super) struct CardView {
     pub(super) area: Rect,
 }
 
-/// The widest a card line gets: longer lines are hard to follow.
-const READ_WIDTH: usize = 100;
+/// The widest a card line gets: prose wraps at 76 (book §11).
+const READ_WIDTH: usize = 76;
+
+/// The level-1 box: a heavy bar on the left (book §9 `┃`), light and
+/// rounded elsewhere.
+const LEVEL1: border::Set = border::Set {
+    top_left: "┎",
+    top_right: "╮",
+    bottom_left: "┖",
+    bottom_right: "╯",
+    vertical_left: "┃",
+    vertical_right: "│",
+    horizontal_top: "─",
+    horizontal_bottom: "─",
+};
 
 impl CardView {
     /// Scroll by `d` rows (negative: up), within the text.
@@ -94,23 +125,87 @@ impl Sb {
     }
 }
 
-/// Alt+R: the composer's text answers the current card, shown or not
-/// (Enter still talks to the agent in focus). An empty composer only
-/// acknowledges the cards that need no words (done, overlap).
-/// A card kind: its rank in reading order (what blocks a task first),
-/// its icon and its color.
+/// A card kind: its rank in reading order (what blocks an agent first),
+/// its glyph and its color. Color means attention (book §5): needs you
+/// in accent, failures in error, the rest plain text.
 fn kind_look(kind: &str) -> (u8, &'static str, Color) {
     match kind {
-        "question" => (0, "?", WARN),
-        "blocked" => (1, GLYPH_WARN, WARN),
-        "failed" | "restart" => (2, GLYPH_ERR, ERR),
-        "drop" => (3, "⇣", WARN),
-        "overlap" => (4, "⚠", WARN),
-        "done" => (5, GLYPH_OK, OK),
-        _ => (5, "◆", WARN),
+        "question" => (0, theme::G_NEEDS_YOU, theme::accent()),
+        "blocked" => (1, theme::G_NEEDS_YOU, theme::accent()),
+        "failed" => (2, theme::G_FAILED, theme::error()),
+        "restart" => (2, theme::G_RESTART_FAILED, theme::error()),
+        "drop" => (3, theme::G_STOPPED, theme::text()),
+        "overlap" => (4, theme::G_OVERLAP, theme::text()),
+        "done" => (5, theme::G_DONE, theme::text()),
+        _ => (5, theme::G_CARD, theme::accent()),
     }
 }
 
+/// The border of a card's box: the kind's hue when it has one, else
+/// faint (a done card does not call for attention).
+fn border_color(kind: &str) -> Color {
+    match kind {
+        "drop" | "overlap" | "done" => theme::faint(),
+        k => kind_look(k).2,
+    }
+}
+
+/// A card's title, after its glyph (copy deck §17: `{name} needs you`).
+fn kind_title(kind: &str, agent: &str) -> String {
+    match kind {
+        "question" => format!("{agent} needs you"),
+        "blocked" => format!("{agent} is blocked"),
+        "failed" => format!("{agent} failed"),
+        "restart" => "restart failed".into(),
+        "drop" => format!("drop {agent}?"),
+        "overlap" => "overlap".into(),
+        "done" => format!("{agent} is done"),
+        k => format!("{agent}: {k}"),
+    }
+}
+
+/// The cards answered with no words: `alt+r` on an empty composer.
+fn no_words(kind: &str) -> bool {
+    matches!(kind, "done" | "overlap")
+}
+
+/// The choices an agent gives at the end of its question: its last
+/// lines `1. v1` / `1) v1` / `1 - v1`, numbered 1, 2, … (two to nine).
+/// Returns the text without them, and the choices (none: the text as is).
+fn split_choices(text: &str) -> (String, Vec<String>) {
+    let lines: Vec<&str> = text.trim_end().lines().collect();
+    let choice = |l: &str| -> Option<(u32, String)> {
+        let l = l.trim();
+        let digits: String = l.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let n: u32 = digits.parse().ok()?;
+        let rest = &l[digits.len()..];
+        let label = rest
+            .strip_prefix(". ")
+            .or_else(|| rest.strip_prefix(") "))
+            .or_else(|| rest.strip_prefix(" - "))
+            .or_else(|| rest.strip_prefix(" – "))?
+            .trim();
+        (!label.is_empty()).then(|| (n, label.to_string()))
+    };
+    let mut tail: Vec<(u32, String)> = Vec::new();
+    for l in lines.iter().rev() {
+        match choice(l) {
+            Some(c) => tail.push(c),
+            None => break,
+        }
+    }
+    tail.reverse();
+    let numbered = tail.iter().enumerate().all(|(i, (n, _))| *n as usize == i + 1);
+    if tail.len() < 2 || tail.len() > 9 || !numbered {
+        return (text.to_string(), Vec::new());
+    }
+    let body = lines[..lines.len() - tail.len()].join("\n").trim_end().to_string();
+    (body, tail.into_iter().map(|(_, l)| l).collect())
+}
+
+/// Alt+R: the composer's text answers the current card, shown or not
+/// (Enter still talks to the agent in focus). An empty composer only
+/// acknowledges the cards that need no words (done, overlap).
 pub(super) fn answer_card(app: &mut App) {
     let text = app.ed.text.trim().to_string();
     let Some(sb) = app.sb.as_mut() else { return };
@@ -121,8 +216,8 @@ pub(super) fn answer_card(app: &mut App) {
         return;
     };
     let text = if text.is_empty() {
-        if !matches!(kind.as_str(), "done" | "overlap") {
-            let msg = format!("card #{} (@{}): type your answer, then Alt+R", id, agent);
+        if !no_words(&kind) {
+            let msg = format!("card #{} ({}): type your answer, then alt+r", id, agent);
             push_event(&mut app.events, &mut app.cache, Ev::Warn(msg));
             return;
         }
@@ -156,7 +251,7 @@ pub(crate) fn card_box_height(app: &App, area: Rect, room: u16) -> u16 {
 }
 
 /// The wrap width of a card's text in a box `width` columns wide (the
-/// borders and the padding take 4).
+/// borders and the padding take 4), at most 76.
 fn text_width(width: u16) -> usize {
     (width as usize).saturating_sub(4).clamp(1, READ_WIDTH)
 }
@@ -168,10 +263,15 @@ pub(crate) fn card_full(app: &App) -> bool {
 }
 
 fn card_lines(c: &Card, width: usize) -> Vec<Line<'static>> {
+    let (body, choices) = if no_words(&c.kind) {
+        (c.text.clone(), Vec::new())
+    } else {
+        split_choices(&c.text)
+    };
     let mut out: Vec<Line<'static>> = Vec::new();
-    for l in c.text.lines() {
+    for l in body.lines() {
         out.extend(wrap_line(
-            Line::from(Span::styled(l.to_string(), Style::default().fg(TEXT))),
+            Line::from(Span::styled(l.to_string(), Style::default().fg(theme::text()))),
             width,
         ));
     }
@@ -179,15 +279,34 @@ fn card_lines(c: &Card, width: usize) -> Vec<Line<'static>> {
         out.push(Line::from(""));
         out.extend(wrap_line(
             Line::from(Span::styled(
-                format!("ⓘ {}", c.note),
-                Style::default().fg(INFO).add_modifier(Modifier::ITALIC),
+                c.note.clone(),
+                Style::default().fg(theme::dim()).add_modifier(Modifier::ITALIC),
             )),
             width,
         ));
     }
+    if !choices.is_empty() {
+        // `1 v1   2 v2`: the number in accent (type it, then alt+r)
+        let mut spans: Vec<Span<'static>> = Vec::new();
+        for (i, label) in choices.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::raw("   "));
+            }
+            spans.push(Span::styled(
+                format!("{}", i + 1),
+                Style::default().fg(theme::accent()).add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(format!(" {}", label), Style::default().fg(theme::text())));
+        }
+        out.push(Line::from(""));
+        out.extend(wrap_line(Line::from(spans), width));
+    }
     out
 }
 
+/// The panel's age of a report (`12 s`, `3 min`, `2 h`); the panel
+/// stops using it with BISE-20 (its own `short_age`).
+#[allow(dead_code)]
 pub(super) fn ago(ms: u64) -> String {
     let s = ms / 1000;
     if s < 60 {
@@ -199,29 +318,34 @@ pub(super) fn ago(ms: u64) -> String {
     }
 }
 
-/// The keys of the card box footer, most useful first; the footer keeps
+/// A card's age, short (`12s`, `2m`, `3h`, `2d`).
+fn short_age(ms: u64) -> String {
+    let s = ms / 1000;
+    match s {
+        0..=59 => format!("{}s", s),
+        60..=3599 => format!("{}m", s / 60),
+        3600..=86399 => format!("{}h", s / 3600),
+        _ => format!("{}d", s / 86400),
+    }
+}
+
+/// The keys of the card box (copy deck §17), most useful first; keeps
 /// those that fit in `width` columns.
-fn footer(kind: &str, pos: Option<String>, many: bool, full: bool, width: usize) -> String {
+fn keys_hint(kind: &str, many: bool, full: bool, width: usize) -> String {
     use unicode_width::UnicodeWidthStr;
-    let answer = if matches!(kind, "done" | "overlap") {
-        "alt+r ok"
-    } else {
-        "alt+r answer"
-    };
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(p) = pos {
-        parts.push(format!("{} ↑↓ PgUp/PgDn", p));
+    let mut parts: Vec<&str> = vec![
+        if no_words(kind) { "alt+r got it" } else { "alt+r answer with text" },
+        "ctrl+x later",
+    ];
+    if !full {
+        parts.push("ctrl+f full screen");
     }
-    parts.push(answer.into());
     if many {
-        parts.push("ctrl+n/p next".into());
+        parts.push("ctrl+n next");
     }
-    parts.push(if full { "ctrl+f box" } else { "ctrl+f full" }.into());
-    parts.push("ctrl+x close".into());
-    parts.push("esc hide".into());
     let mut out = String::new();
     for p in parts {
-        let next = if out.is_empty() { p } else { format!("{} · {}", out, p) };
+        let next = if out.is_empty() { p.to_string() } else { format!("{} · {}", out, p) };
         if next.width() + 2 > width {
             break;
         }
@@ -231,6 +355,57 @@ fn footer(kind: &str, pos: Option<String>, many: bool, full: bool, width: usize)
         out
     } else {
         format!(" {} ", out)
+    }
+}
+
+/// Where the text is scrolled (none when it fits): the lines below the
+/// view (`▾ 12 more lines · pgdn`), or the way back up at the end.
+fn scroll_hint(scroll: usize, max_scroll: usize) -> String {
+    if max_scroll == 0 {
+        return String::new();
+    }
+    let left = max_scroll.saturating_sub(scroll);
+    match left {
+        0 => " end · pgup ".to_string(),
+        1 => format!(" {} 1 more line · pgdn ", theme::G_OPEN),
+        n => format!(" {} {} more lines · pgdn ", theme::G_OPEN, n),
+    }
+}
+
+/// The scroll hint when the keys leave little room: ` ▾ 12 ` / ` end `.
+fn scroll_hint_short(scroll: usize, max_scroll: usize) -> String {
+    match max_scroll.saturating_sub(scroll) {
+        _ if max_scroll == 0 => String::new(),
+        0 => " end ".to_string(),
+        n => format!(" {} {} ", theme::G_OPEN, n),
+    }
+}
+
+/// The title: the glyph and `{name} needs you` bold in the kind's
+/// color, then dim where it is (`1 of 3`, its age, or `full screen ·
+/// ctrl+f back`); what does not fit in `width` is cut.
+fn title_line(c: &Card, pos: usize, count: usize, full: bool, width: usize) -> Line<'static> {
+    use unicode_width::UnicodeWidthStr;
+    let (_, glyph, color) = kind_look(&c.kind);
+    let head = format!(" {} {}", glyph, kind_title(&c.kind, &c.agent));
+    let mut meta: Vec<String> = Vec::new();
+    if count > 1 {
+        meta.push(format!("{} of {}", pos, count));
+    }
+    if full {
+        meta.push("full screen · ctrl+f back".into());
+    } else {
+        meta.push(short_age(c.age_ms.saturating_add(c.seen_at.elapsed().as_millis() as u64)));
+    }
+    let meta = format!(" · {} ", meta.join(" · "));
+    let bold = Style::default().fg(color).add_modifier(Modifier::BOLD);
+    if head.width() + meta.width() <= width {
+        Line::from(vec![Span::styled(head, bold), Span::styled(meta, Style::default().fg(theme::dim()))])
+    } else {
+        Line::from(Span::styled(
+            format!("{} ", truncate_chars(&head, width.saturating_sub(2))),
+            bold,
+        ))
     }
 }
 
@@ -249,37 +424,41 @@ pub(crate) fn draw_card(app: &mut App, frame: &mut Frame, area: Rect) {
     let visible = area.height.saturating_sub(2) as usize;
     let max_scroll = lines.len().saturating_sub(visible);
     let pos = order.iter().position(|x| *x == c.id).unwrap_or(0) + 1;
-    let (_, icon, color) = kind_look(&c.kind);
-    let age = ago(c.age_ms.saturating_add(c.seen_at.elapsed().as_millis() as u64));
-    let title = format!(
-        " ◆ card {}/{} · {} #{} {} @{} · {} ago ",
-        pos,
-        order.len(),
-        icon,
-        c.id,
-        c.kind,
-        c.agent,
-        age
-    );
+    let color = border_color(&c.kind);
+    let inner_w = (area.width as usize).saturating_sub(2);
+    let title = title_line(c, pos, order.len(), sb.card.full, inner_w);
     let scroll = sb.card.scroll.min(max_scroll);
-    let shown = (max_scroll > 0).then(|| crate::help::rows_shown(scroll, visible, lines.len()));
-    let foot = footer(
-        &c.kind,
-        shown,
-        order.len() > 1,
-        sb.card.full,
-        (area.width as usize).saturating_sub(2),
-    );
+    // the keys first (copy deck), then where the text is if it fits
+    let keys = keys_hint(&c.kind, order.len() > 1, sb.card.full, inner_w);
+    let hint = {
+        use unicode_width::UnicodeWidthStr;
+        let room = inner_w.saturating_sub(keys.width() + 1);
+        let long = scroll_hint(scroll, max_scroll);
+        let short = scroll_hint_short(scroll, max_scroll);
+        if long.width() <= room {
+            long
+        } else if short.width() <= room {
+            short
+        } else {
+            String::new()
+        }
+    };
     sb.card.scroll = scroll;
     sb.card.max_scroll = max_scroll;
     sb.card.page = visible.saturating_sub(1).max(1);
     sb.card.area = area;
-    let title = Line::from(Span::styled(
-        truncate_chars(&title, (area.width as usize).saturating_sub(4)),
-        Style::default().fg(color).add_modifier(Modifier::BOLD),
-    ));
     let total = lines.len();
-    crate::help::scroll_box(frame, area, color, title, foot, lines, scroll);
+    let dim = Style::default().fg(theme::dim());
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(LEVEL1)
+        .border_style(Style::default().fg(color))
+        .title(title)
+        .title_bottom(Line::from(Span::styled(keys, dim)).left_aligned())
+        .title_bottom(Line::from(Span::styled(hint, dim)).right_aligned())
+        .padding(Padding::horizontal(1));
+    frame.render_widget(Clear, area);
+    frame.render_widget(Paragraph::new(lines).block(block).scroll((scroll as u16, 0)), area);
     if max_scroll > 0 {
         // on the right border: how much there is, and where
         let mut state = ScrollbarState::new(max_scroll + 1)
@@ -410,7 +589,7 @@ mod tests {
     #[test]
     fn a_long_card_is_big_and_fully_scrollable() {
         let mut app = bench::test_app();
-        let (w, h) = (100u16, 40u16);
+        let (w, h) = (140u16, 40u16);
         let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
         app.sb.as_mut().unwrap().cards = vec![card(3, "question", long_text()), card(4, "done", "ok".into())];
         app.sb.as_mut().unwrap().toggle_card();
@@ -419,8 +598,14 @@ mod tests {
         let area = app.sb.as_ref().unwrap().card.area;
         assert!(area.height >= h * 6 / 10, "box height {} of {}", area.height, h);
         assert!(s.contains("line 01 of the card"));
-        assert!(s.contains("1–"), "{}", s);
-        for k in ["↑↓ PgUp/PgDn", "alt+r answer", "ctrl+n/p next", "ctrl+f full"] {
+        for k in [
+            "more lines · pgdn",
+            "alt+r answer with text",
+            "ctrl+x later",
+            "ctrl+f full screen",
+            "ctrl+n next",
+            "? t1 needs you · 1 of 2",
+        ] {
             assert!(s.contains(k), "{} in\n{}", k, s);
         }
         // every line shows up while scrolling to the end
@@ -452,6 +637,8 @@ mod tests {
             }
         }
         assert_eq!(seen.len(), 70, "missing lines: {:?}", seen);
+        term.draw(|f| draw_sb(&mut app, f)).unwrap();
+        assert!(screen(&term).contains("end · pgup"));
         // back up with ↑ and PgUp; Esc hides the box
         assert!(press(&mut app, KeyCode::PageUp));
         assert!(press(&mut app, KeyCode::Up));
@@ -470,7 +657,8 @@ mod tests {
             app.sb.as_mut().unwrap().toggle_card();
             term.draw(|f| draw_sb(&mut app, f)).unwrap();
             let a = app.sb.as_ref().unwrap().card.area;
-            assert!(a.y.saturating_add(a.height) <= h.saturating_sub(7) || a.height == 0, "{}x{}: {:?}", w, h, a);
+            // at least the status row and one composer row stay under it
+            assert!(a.y.saturating_add(a.height) <= h.saturating_sub(2) || a.height == 0, "{}x{}: {:?}", w, h, a);
             app.sb.as_mut().unwrap().card.full = true;
             term.draw(|f| draw_sb(&mut app, f)).unwrap();
         }
@@ -484,8 +672,161 @@ mod tests {
         app.sb.as_mut().unwrap().cards = vec![card(1, "done", long_line)];
         app.sb.as_mut().unwrap().toggle_card();
         let h = card_box_height(&app, Rect::new(0, 0, 200, 50), 40);
-        // 300 chars wrapped at 100 columns: 3-4 rows, plus the borders
-        assert!((5..=6).contains(&h), "height {}", h);
+        // 300 chars wrapped at 76 columns: 4 rows, plus the borders
+        assert_eq!(h, 6, "height {}", h);
+    }
+
+    /// Draws `cards` with the box shown (the first one in reading order)
+    /// on a 100x30 screen; returns the screen and the box's area.
+    fn draw_cards(app: &mut App, cards: Vec<Card>) -> (String, Rect, Terminal<TestBackend>) {
+        let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        app.sb.as_mut().unwrap().cards = cards;
+        app.sb.as_mut().unwrap().toggle_card();
+        term.draw(|f| draw_sb(app, f)).unwrap();
+        let s = screen(&term);
+        let a = app.sb.as_ref().unwrap().card.area;
+        (s, a, term)
+    }
+
+    /// The box's rows, as text.
+    fn box_rows(s: &str, a: Rect) -> Vec<String> {
+        s.lines()
+            .skip(a.y as usize)
+            .take(a.height as usize)
+            .map(|l| l.chars().skip(a.x as usize).take(a.width as usize).collect())
+            .collect()
+    }
+
+    /// "cards: a question": level 1 (accent bar on the left, bold accent
+    /// `? docs needs you`), the question, the choices, the keys dim.
+    #[test]
+    fn a_question_is_level_one_with_its_choices_and_keys() {
+        let mut app = bench::test_app();
+        let mut q = card(
+            1,
+            "question",
+            "the brief says \"keep old clients working\", but v2 removes /users. do we document v1 or v2?\n1. v1\n2. v2".into(),
+        );
+        q.agent = "docs".into();
+        q.age_ms = 120_000;
+        let (s, a, term) = draw_cards(&mut app, vec![q]);
+        let rows = box_rows(&s, a);
+        assert!(rows[0].starts_with("┎ ? docs needs you · 2m "), "{}", rows[0]);
+        assert!(rows[1].starts_with("┃ the brief says"), "{}", rows[1]);
+        assert!(rows.iter().any(|r| r.contains("1 v1   2 v2")), "{}", s);
+        assert!(!rows.iter().any(|r| r.contains("1. v1")), "the choices are not in the text: {}", s);
+        let last = rows.last().unwrap();
+        assert!(
+            last.contains("alt+r answer with text · ctrl+x later · ctrl+f full screen"),
+            "{}",
+            last
+        );
+        assert!(last.starts_with("┖"), "{}", last);
+        // every text row within 76 columns (the box is 100 wide)
+        for r in &rows[1..rows.len() - 1] {
+            let text = r.trim_start_matches('┃').trim_end_matches('│').trim_end();
+            assert!(text.chars().count() <= 77, "{:?}", r);
+        }
+        // colors: bar, glyph and title in accent; the keys dim; the choice number accent
+        let buf = term.backend().buffer();
+        let cell = |x: u16, y: u16| buf[(x, y)].clone();
+        assert_eq!(cell(a.x, a.y + 1).fg, theme::accent(), "bar");
+        assert_eq!(cell(a.x + 2, a.y).fg, theme::accent(), "glyph");
+        assert!(cell(a.x + 4, a.y).modifier.contains(Modifier::BOLD), "title bold");
+        assert_eq!(cell(a.x + 2, a.y + a.height - 1).fg, theme::dim(), "keys");
+        let crow = rows.iter().position(|r| r.contains("1 v1")).unwrap() as u16;
+        let cx = rows[crow as usize].chars().position(|c| c == '1').unwrap() as u16;
+        assert_eq!(cell(a.x + cx, a.y + crow).fg, theme::accent(), "choice number");
+    }
+
+    /// "cards: every kind": one glyph and one title per kind, the hue
+    /// only for attention (needs you, failures), sorted by what blocks an
+    /// agent first.
+    #[test]
+    fn every_kind_has_its_glyph_title_and_color() {
+        let cases = [
+            ("question", "? t1 needs you", Some(theme::accent())),
+            ("blocked", "? t1 is blocked", Some(theme::accent())),
+            ("failed", "✗ t1 failed", Some(theme::error())),
+            ("restart", "↻ restart failed", Some(theme::error())),
+            ("drop", "– drop t1?", None),
+            ("overlap", "⇄ overlap", None),
+            ("done", "♡ t1 is done", None),
+        ];
+        for (kind, title, hue) in cases {
+            let mut app = bench::test_app();
+            let (s, a, term) = draw_cards(&mut app, vec![card(1, kind, "some text".into())]);
+            let rows = box_rows(&s, a);
+            assert!(rows[0].starts_with(&format!("┎ {} · ", title)), "{}: {}", kind, rows[0]);
+            let buf = term.backend().buffer();
+            let border = buf[(a.x, a.y + 1)].fg;
+            let glyph = buf[(a.x + 2, a.y)].fg;
+            match hue {
+                Some(h) => {
+                    assert_eq!(border, h, "{} border", kind);
+                    assert_eq!(glyph, h, "{} glyph", kind);
+                }
+                None => {
+                    assert_eq!(border, theme::faint(), "{} border", kind);
+                    assert_eq!(glyph, theme::text(), "{} glyph", kind);
+                }
+            }
+            let answer = if matches!(kind, "done" | "overlap") { "alt+r got it" } else { "alt+r answer with text" };
+            assert!(rows.last().unwrap().contains(answer), "{}: {}", kind, s);
+            // the /close list uses the same glyph
+            let mark = kind_look(kind).1;
+            assert_eq!(mark, title.split(' ').next().unwrap(), "{}", kind);
+        }
+        // reading order: what blocks first, then the oldest
+        let mut app = bench::test_app();
+        let kinds = ["done", "overlap", "drop", "restart", "failed", "blocked", "question"];
+        app.sb.as_mut().unwrap().cards =
+            kinds.iter().enumerate().map(|(i, k)| card(i as u64 + 1, k, "x".into())).collect();
+        let order: Vec<String> =
+            app.sb.as_ref().unwrap().sorted_cards().iter().map(|c| c.kind.clone()).collect();
+        assert_eq!(order, vec!["question", "blocked", "restart", "failed", "drop", "overlap", "done"]);
+    }
+
+    /// "a card, full screen": ctrl+f opens it over the feed (title
+    /// `full screen · ctrl+f back`, still wrapped at 76, pgdn scrolls);
+    /// ctrl+f or esc brings the box back.
+    #[test]
+    fn ctrl_f_opens_the_card_full_screen_and_back() {
+        let mut app = bench::test_app();
+        let mut c = card(5, "question", long_text());
+        c.agent = "release".into();
+        let (_, _, mut term) = draw_cards(&mut app, vec![c]);
+        let ctrl = |app: &mut App, ch: char| key(app, &KeyEvent::new(KeyCode::Char(ch), KeyModifiers::CONTROL), false);
+        assert!(ctrl(&mut app, 'f'));
+        assert!(card_full(&app));
+        term.draw(|f| draw_sb(&mut app, f)).unwrap();
+        let s = screen(&term);
+        let a = app.sb.as_ref().unwrap().card.area;
+        assert!(a.height > 15, "full screen: {:?}", a);
+        assert!(s.contains("? release needs you · full screen · ctrl+f back"), "{}", s);
+        assert!(s.contains("more lines · pgdn"), "{}", s);
+        assert!(!s.contains("ctrl+f full screen"), "{}", s);
+        assert!(press(&mut app, KeyCode::PageDown));
+        assert!(app.sb.as_ref().unwrap().card.scroll > 0);
+        assert!(ctrl(&mut app, 'f'));
+        assert!(!card_full(&app) && app.sb.as_ref().unwrap().card.shown);
+        assert!(ctrl(&mut app, 'f'));
+        assert!(press(&mut app, KeyCode::Esc));
+        assert!(!card_full(&app) && app.sb.as_ref().unwrap().card.shown);
+    }
+
+    /// Choices: only a numbered run (1, 2, …) at the end of the text.
+    #[test]
+    fn choices_are_a_numbered_run_at_the_end() {
+        let (b, c) = split_choices("pick one:\n1) sqlite\n2) postgres\n3 - both\n");
+        assert_eq!(b, "pick one:");
+        assert_eq!(c, vec!["sqlite", "postgres", "both"]);
+        for t in ["just text", "1. only one", "steps:\n2. b\n3. c", "a\n1. x\n3. y", "1. x\nthen more"] {
+            assert_eq!(split_choices(t), (t.to_string(), Vec::new()), "{:?}", t);
+        }
+        // a done card keeps its whole summary (numbered lists included)
+        let d = card(1, "done", "did:\n1. a\n2. b".into());
+        assert_eq!(card_lines(&d, 76).len(), 3);
     }
 
     /// `/close ` lists the open cards; a query filters by id, kind, agent
