@@ -50,21 +50,21 @@ def main():
         cmd = "cd %s && env %s %s switchboard --workspace %s; sleep 30" % (e2e.ROOT, envs, e2e.EXE, E.ws)
         tmux("new-session", "-d", "-s", S, "-x", "150", "-y", "42", cmd)
         sc = wait_screen("Switchboard")
-        assert "Message à main…" in sc, sc
+        assert "Message to main…" in sc, sc
         wait_screen(" idle")
         typed('crée [[bash: sb spawn t1 --objective "écris {{bash: echo hi-t1}}"]]')
         keys("Enter")
         sc = wait_screen("1 t1")
-        wait_screen("nouvelle tâche @t1")
+        wait_screen("new task @t1")
         wait_screen("◀ t1 m_", 60)            # the automatic reply in main's feed
         # select the task with Ctrl+J, enter it
         keys("C-j")
         keys("C-j")
-        sc = wait_screen("⏎ entrer · Espace aperçu")
+        sc = wait_screen("⏎ enter · Space preview")
         keys("Enter")
         sc = wait_screen("@t1 ·")
-        assert "tu parles directement à la tâche" in sc, sc
-        assert "Message direct à @t1…" in sc, sc
+        assert "you talk to the task directly" in sc, sc
+        assert "Direct message to @t1…" in sc, sc
         assert "# Task `t1`" in sc or "Task" in sc, sc
         wait_screen("done: tool bash ok: hi-t1")
         # talk to it directly
@@ -73,18 +73,18 @@ def main():
         wait_screen("ack: salut t1")
         # Esc goes back to main, which learns about it
         keys("Escape")
-        sc = wait_screen("Message à main…")
-        wait_screen("Tu as parlé à @t1 (1 message)")
+        sc = wait_screen("Message to main…")
+        wait_screen("You talked to @t1 (1 message)")
         # Alt+1 checks out task 1 again; Esc back
         keys("M-1")
-        wait_screen("Message direct à @t1…")
+        wait_screen("Direct message to @t1…")
         keys("Escape")
-        wait_screen("Message à main…")
+        wait_screen("Message to main…")
         # preview: select, Space; the status says it; Esc closes
         keys("C-j")
         keys("C-j")
         keys("Space")
-        wait_screen("aperçu de @t1")
+        wait_screen("preview of @t1")
         keys("Escape")
         # a slash command and its notice
         typed("/tasks")
@@ -94,8 +94,8 @@ def main():
         keys("C-j")
         keys("C-j")
         typed("D")
-        wait_screen("@t1 archivée", 20)
-        wait_screen("1 archivée")
+        wait_screen("@t1 archived", 20)
+        wait_screen("1 archived")
         print(screen())
         ok = True
         print("PASS tui")

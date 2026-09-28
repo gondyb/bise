@@ -1655,7 +1655,7 @@ fn highlight_patch(src: &str) -> Vec<Vec<Span<'static>>> {
         let header = if let Some(p) = l.strip_prefix("*** Update File: ") {
             Some(file("~", p, HEAD, ""))
         } else if let Some(p) = l.strip_prefix("*** Add File: ") {
-            Some(file("+", p, OK, "nouveau"))
+            Some(file("+", p, OK, "new"))
         } else { l.strip_prefix("*** Delete File: ").map(|p| file("−", p, ERR, "deleted")) };
         if let Some(h) = header {
             // a blank row between two files
@@ -2195,7 +2195,7 @@ const COMMANDS: &[Cmd] = &[
     },
     Cmd {
         name: "/interrupt",
-        desc: "interrompre le tour en cours",
+        desc: "interrupt the current turn",
         args: false,
     },
     Cmd {
@@ -2210,12 +2210,12 @@ const COMMANDS: &[Cmd] = &[
     },
     Cmd {
         name: "/clear",
-        desc: "vider l'affichage local",
+        desc: "clear the local display",
         args: false,
     },
     Cmd {
         name: "/help",
-        desc: "liste des commandes",
+        desc: "list the commands",
         args: false,
     },
     Cmd {
@@ -2475,7 +2475,7 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
                 .and_then(|mut f| f.write_all(line.as_bytes()))
                 .is_ok();
             out.push(Ev::Info(if ok {
-                format!("steering mis en attente : {}", msg)
+                format!("steering queued: {}", msg)
             } else {
                 "steering not written (side channel unreachable)".to_string()
             }));
@@ -2748,7 +2748,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
         ];
         if app.unseen > 0 {
             spans.push(Span::styled(
-                format!("  ·  {} nouvelles lignes", app.unseen),
+                format!("  ·  {} new lines", app.unseen),
                 Style::default().fg(WARN),
             ));
         }
@@ -2785,7 +2785,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
                 ),
                 Span::styled(" · ", Style::default().fg(DIM)),
                 Span::styled("/ commandes", Style::default().fg(TEXT)),
-                Span::styled(" · End : bas · Ctrl+C : quitter", Style::default().fg(DIM)),
+                Span::styled(" · End: bottom · Ctrl+C: quit", Style::default().fg(DIM)),
             ])
         };
         frame.render_widget(Paragraph::new(status), chunks[2]);
@@ -2879,9 +2879,9 @@ fn draw(app: &mut App, frame: &mut Frame) {
         Span::styled(" · ", Style::default().fg(DIM)),
         Span::styled(
             if app.input.contains('\n') {
-                "⏎ envoyer · ⇧⏎ ligne"
+                "⏎ send · ⇧⏎ new line"
             } else {
-                "⇧⏎ ligne"
+                "⇧⏎ new line"
             },
             Style::default().fg(DIM),
         ),
@@ -2974,7 +2974,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
     let hint = if let Some(h) = sb::hint(app) {
         h
     } else if app.pending {
-        "⏎ diriger · Tab file · Ctrl+C interrompre · / commandes · End bas"
+        "⏎ steer · Tab queue · Ctrl+C interrupt · / commands · End bottom"
     } else {
         "⏎ send · Shift+⏎/Ctrl+J new line · / commands · Ctrl+T reasoning · Ctrl+C quit"
     };
@@ -4019,7 +4019,7 @@ echo ok";
         assert!(rows.iter().any(|r| r.contains("╭─ diff")));
         assert!(!rows.iter().any(|r| r.contains("Begin Patch") || r.contains("End Patch")));
         assert!(rows.iter().any(|r| r.contains("│ ~ core/obs.bend")));
-        assert!(rows.iter().any(|r| r.contains("│ + notes.md · nouveau")));
+        assert!(rows.iter().any(|r| r.contains("│ + notes.md · new")));
         // no line-number gutter in a diff
         assert!(rows.iter().any(|r| r.contains("│ -    old line")));
         // box aligned

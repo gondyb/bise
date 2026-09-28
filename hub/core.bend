@@ -687,7 +687,7 @@ def send.cards(-o: M.St, r: Maybe<&2, Nat>, +cx: X.Cx<o>, +from: String) -> X.Cx
     case None{}:
       cx
     case Some{+id}:
-      close_ids(o, question_for(M.St.cards(st(o, cx)), id), cx, String.append("répondue via @", from))
+      close_ids(o, question_for(M.St.cards(st(o, cx)), id), cx, String.append("answered via @", from))
 
 def quiet_ok(a: Bool, e: Bool) -> {Bool.and(a, Bool.and(e, Bool.not(a))) == False{} : Bool}:
   match a e:
@@ -751,8 +751,8 @@ def dropped_wt(+a: M.Agent) -> Bool:
   M.ws_worktree(M.Agent.ws(a)) && M.ws_dropped(M.Agent.ws(a))
 
 def unavailable(-o: M.St, +cx: X.Cx<o>, +s: Snd, +a: M.Agent) -> String:
-  cat(["recipient_unavailable: @", Snd.to(s), " est ", status_str(a, rt(o, cx, Snd.to(s))),
-    Bool.pick(String, dropped_wt(a), " (son worktree a été supprimé : /restore)", "")])
+  cat(["recipient_unavailable: @", Snd.to(s), " is ", status_str(a, rt(o, cx, Snd.to(s))),
+    Bool.pick(String, dropped_wt(a), " (its worktree was deleted: /restore)", "")])
 
 def create.sent(-o: M.St, p: X.Cx<o> & SendR, +name: String) -> X.Cx<o> & TaskR:
   match p:
@@ -807,7 +807,7 @@ def send.life(-o: M.St, life: M.Life, +cx: X.Cx<o>, +s: Snd, +a: M.Agent) -> X.C
 def send.agent(-o: M.St, m: Maybe<&2, M.Agent>, +cx: X.Cx<o>, +s: Snd) -> X.Cx<o> & SendR:
   match m:
     case None{}:
-      serr(o, cx, String.append("recipient_unknown: aucun agent nommé ", Snd.to(s)))
+      serr(o, cx, String.append("recipient_unknown: no agent named ", Snd.to(s)))
     case Some{+a}:
       send.life(o, M.Agent.life(a), cx, s, a)
 
@@ -831,16 +831,16 @@ def Snd.with_to(x: Snd, +v: String) -> Snd:
 def send.known(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +s: Snd) -> X.Cx<o> & SendR:
   match m:
     case None{}:
-      serr(o, cx, String.append("recipient_unknown: aucun agent nommé ", Snd.to(s)))
+      serr(o, cx, String.append("recipient_unknown: no agent named ", Snd.to(s)))
     case Some{+to}:
-      +pre = Bool.pick(Maybe<&2, String>, String.eq(to, Snd.from(s)), Some{"invalid_recipient: un agent ne s'écrit pas à lui-même"},
+      +pre = Bool.pick(Maybe<&2, String>, String.eq(to, Snd.from(s)), Some{"invalid_recipient: an agent cannot write to itself"},
         Bool.pick(Maybe<&2, String>, M.trim_is_empty(Snd.text(s)), Some{"message vide"}, None{}))
       send.checked(o, pre, cx, Snd.with_to(s, to))
 
 def send.user(-o: M.St, user: Bool, +cx: X.Cx<o>, +s: Snd) -> X.Cx<o> & SendR:
   match user:
     case True{}:
-      serr(o, cx, "invalid_recipient: pour parler à l'utilisateur, passe par main (sb card)")
+      serr(o, cx, "invalid_recipient: to talk to the user, go through main (sb card)")
     case False{}:
       send.known(o, M.resolve(st(o, cx), Snd.to(s)), cx, s)
 
@@ -856,8 +856,8 @@ def create.go(-o: M.St, +cx: X.Cx<o>, +t: NewTask, +name: String, +ws: J.Json) -
   +label = branch_label(M.ws_branch(ws))
   +obj = M.one_line(NewTask.objective(t))
   +cx2 = emit(o, cx, M.ETaskCreated{name, parent, NewTask.brief(t), ws, now(o, cx)}, Unit{}, Unit{}, Unit{})
-  +who = Bool.pick(String, String.eq(parent, M.USER()), "toi", parent)
-  +cx3 = line(o, cx2, M.MAIN(), "spawn", cat([who, " → nouvelle tâche @", name, label, " : ", obj]))
+  +who = Bool.pick(String, String.eq(parent, M.USER()), "you", parent)
+  +cx3 = line(o, cx2, M.MAIN(), "spawn", cat([who, " → new task @", name, label, " : ", obj]))
   +cx4 = Bool.pick(X.Cx<o>, String.eq(parent, M.USER()), note_main(o, cx3, cat(["the user created the task @", name, label, ": ", obj])), cx3)
   +cx5 = spawn(o, cx4, name, False{})
   create.sent(o, send(o, cx5, msg(parent, name, cat(["# Task `", name, "`\n\n", NewTask.brief_text(t)]), String.eq(parent, M.MAIN()), None{}, String.eq(parent, M.USER()), False{})), name)
@@ -894,7 +894,7 @@ def NewTask.with_changes(x: NewTask) -> Bool:
 def create.git(-o: M.St, git: Bool, +cx: X.Cx<o>, +t: NewTask, +name: String) -> X.Cx<o> & TaskR:
   match git:
     case False{}:
-      (cx, TErr{"le workspace n'est pas un dépôt git : pas de worktree possible"})
+      (cx, TErr{"the workspace is not a git repository: no worktree possible"})
     case True{}:
       create.ws(o, ask(o, cx, J.obj([J.kv("q", J.JStr{"worktree_create"}), J.kv("name", J.JStr{name}),
         J.kv("with_changes", J.JBool{NewTask.with_changes(t)})])), t, name)
@@ -966,7 +966,7 @@ def stop_task.go(-o: M.St, +cx: X.Cx<o>, +name: String, +life: M.Life, +reason: 
   +cx4 = upd_rt(o, cx3, X.Rt.with_turn(X.Rt.with_run(rt(o, cx3, name), M.RDown{}), None{}))
   +cx5 = emit(o, cx4, M.ELifecycle{name, life, Bool.pick(Maybe<&2, String>, String.is_empty(reason), None{}, Some{reason})}, Unit{}, Unit{}, Unit{})
   +cx6 = reject_ids(o, ids_of(M.queued_for(st(o, cx5), name)), cx5)
-  close_cards(o, cx6, name, Nil{}, "tâche arrêtée")
+  close_cards(o, cx6, name, Nil{}, "task stopped")
 
 # no wait of the stopped task survives (law stop_leaves_no_waiter)
 def stop_task(-o: M.St, +cx: X.Cx<o>, +name: String, +life: M.Life, +reason: String) -> X.Cx<o>:
@@ -976,17 +976,17 @@ def plural(+n: Nat) -> String:
   Bool.pick(String, Nat.is_gt(n, 1n), "s", "")
 
 def loss_text(+dirty: Nat, +unpushed: Nat) -> String:
-  cat([ns(dirty), " fichier", plural(dirty), " modifié", plural(dirty), " et ", ns(unpushed),
-    " commit", plural(unpushed), " non poussé", plural(unpushed), " seront sauvegardés (/restore)"])
+  cat([ns(dirty), " changed file", plural(dirty), " and ", ns(unpushed),
+    " unpushed commit", plural(unpushed), " will be saved (/restore)"])
 
 def drop.label(r: Result<&2, &2, String, J.Json>) -> String:
   match r:
     case Fail{+e}:
-      String.append(" — worktree NON supprimé : ", e)
+      String.append(" — worktree NOT deleted: ", e)
     case Done{J.JStr{_}}:
-      " — travail sauvegardé (/restore)"
+      " — work saved (/restore)"
     case Done{_}:
-      " — worktree supprimé"
+      " — worktree deleted"
 
 def drop.snap(j: J.Json) -> Maybe<&2, String>:
   match j:
@@ -1004,7 +1004,7 @@ def drop.ws(-o: M.St, r: Result<&2, &2, String, J.Json>, +cx: X.Cx<o>, +a: M.Age
       emit(o, cx2, M.ESnapshot{M.Agent.name(a), drop.snap(snap)}, Unit{}, Unit{}, Unit{})
 
 def drop.finish(-o: M.St, +cx: X.Cx<o>, +a: M.Agent, +label: String) -> X.Cx<o> & DropR:
-  +cx2 = line(o, cx, M.MAIN(), "info", cat(["@", M.Agent.name(a), " archivée", label]))
+  +cx2 = line(o, cx, M.MAIN(), "info", cat(["@", M.Agent.name(a), " archived", label]))
   # a client looking at it goes back to main
   (out(o, cx2, [J.kv("fx", J.JStr{"focus_main"}), J.kv("name", J.JStr{M.Agent.name(a)})]), DDone{})
 
@@ -1029,9 +1029,9 @@ def drop.decide(-o: M.St, confirm: Bool, +cx: X.Cx<o>, +a: M.Agent, +has_wt: Boo
     case True{}:
       +dirty = J.get_num_or(loss, "dirty", 0n)
       +unpushed = J.get_num_or(loss, "unpushed", 0n)
-      +parts = List.append(&2, String, Bool.pick(List<&2, String>, busy, ["la tâche est en cours"], Nil{}),
+      +parts = List.append(&2, String, Bool.pick(List<&2, String>, busy, ["the task is mid-turn"], Nil{}),
         Bool.pick(List<&2, String>, Nat.is_gt(Nat.add(dirty, unpushed), 0n), [loss_text(dirty, unpushed)], Nil{}))
-      (cx, DAsk{cat(["Drop @", M.Agent.name(a), " ? ", String.join(parts, " ; "), ". [y/N]"])})
+      (cx, DAsk{cat(["Drop @", M.Agent.name(a), "? ", String.join(parts, " ; "), ". [y/N]"])})
     case False{}:
       drop.now(o, has_wt, cx, a, loss)
 
@@ -1054,18 +1054,18 @@ def drop.wt(-o: M.St, has_wt: Bool, +cx: X.Cx<o>, +a: M.Agent, +force: Bool) -> 
 def drop.checks(-o: M.St, is_main: Bool, life: M.Life, +cx: X.Cx<o>, +a: M.Agent, +force: Bool) -> X.Cx<o> & DropR:
   match is_main:
     case True{}:
-      (cx, DErr{"main ne se droppe pas"})
+      (cx, DErr{"main cannot be dropped"})
     case False{}:
       match life:
         case M.LArchived{}:
-          (cx, DErr{cat(["@", M.Agent.name(a), " est déjà archivée"])})
+          (cx, DErr{cat(["@", M.Agent.name(a), " is already archived"])})
         case _:
           drop.wt(o, M.ws_worktree(M.Agent.ws(a)) && Bool.not(M.ws_dropped(M.Agent.ws(a))), cx, a, force)
 
 def drop.agent(-o: M.St, m: Maybe<&2, M.Agent>, +cx: X.Cx<o>, +name: String, +force: Bool) -> X.Cx<o> & DropR:
   match m:
     case None{}:
-      (cx, DErr{String.append("aucune tâche nommée ", name)})
+      (cx, DErr{String.append("no task named ", name)})
     case Some{+a}:
       drop.checks(o, M.Agent.is_main(a), M.Agent.life(a), cx, a, force)
 
@@ -1086,7 +1086,7 @@ def restore.go(-o: M.St, +cx: X.Cx<o>, +a: M.Agent) -> X.Cx<o> & TaskR:
   +r = rr(o, cx2)
   +cx3 = set_r(o, cx2, X.R.with_crashes(r, kn_del(X.R.crashes(r), n)))
   +cx4 = spawn(o, cx3, n, True{})
-  (line(o, cx4, M.MAIN(), "info", cat(["@", n, " restaurée"])), TOk{n})
+  (line(o, cx4, M.MAIN(), "info", cat(["@", n, " restored"])), TOk{n})
 
 def restore.res(-o: M.St, r: Result<&2, &2, String, J.Json>, +cx: X.Cx<o>, +a: M.Agent) -> X.Cx<o> & TaskR:
   match r:
@@ -1121,9 +1121,9 @@ def restore.wt(-o: M.St, dropped: Bool, +cx: X.Cx<o>, +a: M.Agent) -> X.Cx<o> & 
 def restore.agent(-o: M.St, m: Maybe<&2, M.Agent>, +cx: X.Cx<o>, +name: String) -> X.Cx<o> & TaskR:
   match m:
     case None{}:
-      (cx, TErr{String.append("aucune tâche nommée ", name)})
+      (cx, TErr{String.append("no task named ", name)})
     case Some{+a}:
-      Bool.pick(X.Cx<o> & TaskR, is_active(M.Agent.life(a)), (cx, TErr{cat(["@", M.Agent.name(a), " est active"])}),
+      Bool.pick(X.Cx<o> & TaskR, is_active(M.Agent.life(a)), (cx, TErr{cat(["@", M.Agent.name(a), " is active"])}),
         restore.wt(o, M.ws_worktree(M.Agent.ws(a)) && M.ws_dropped(M.Agent.ws(a)), cx, a))
 
 def restore_task(-o: M.St, +cx: X.Cx<o>, +name: String) -> X.Cx<o> & TaskR:
@@ -1134,7 +1134,7 @@ def isolate.sent(-o: M.St, p: X.Cx<o> & SendR, +n: String, +branch: String) -> X
     case (+cx, SErr{+e}):
       (cx, TErr{e})
     case (+cx, SOk{_}):
-      (line(o, cx, M.MAIN(), "info", cat(["@", n, " travaille maintenant dans le worktree ", branch])), TOk{n})
+      (line(o, cx, M.MAIN(), "info", cat(["@", n, " now works in the worktree ", branch])), TOk{n})
 
 def isolate.res(-o: M.St, r: Result<&2, &2, String, J.Json>, +cx: X.Cx<o>, +n: String) -> X.Cx<o> & TaskR:
   match r:
@@ -1167,14 +1167,14 @@ def isolate.pre(-o: M.St, pre: Maybe<&2, String>, +cx: X.Cx<o>, +n: String) -> X
 def isolate.agent(-o: M.St, m: Maybe<&2, M.Agent>, +cx: X.Cx<o>, +name: String) -> X.Cx<o> & TaskR:
   match m:
     case None{}:
-      (cx, TErr{String.append("aucune tâche nommée ", name)})
+      (cx, TErr{String.append("no task named ", name)})
     case Some{+a}:
       +n = M.Agent.name(a)
-      +pre = Bool.pick(Maybe<&2, String>, M.Agent.is_main(a) || M.ws_worktree(M.Agent.ws(a)), Some{cat(["@", n, " a déjà son propre dossier"])},
+      +pre = Bool.pick(Maybe<&2, String>, M.Agent.is_main(a) || M.ws_worktree(M.Agent.ws(a)), Some{cat(["@", n, " already has its own folder"])},
         Bool.pick(Maybe<&2, String>, Bool.not(List.is_empty(&2, String, M.Agent.files(a))),
-          Some{cat(["@", n, " a déjà modifié des fichiers du workspace (", String.join(List.take(&2, String, M.Agent.files(a), 3n), ", "), ") : impossible de séparer son travail du tien"])},
-          Bool.pick(Maybe<&2, String>, is_busy(X.Rt.run(rt(o, cx, n))), Some{cat(["@", n, " est en plein tour : attends la fin"])},
-            Bool.pick(Maybe<&2, String>, X.R.git(rr(o, cx)), None{}, Some{"le workspace n'est pas un dépôt git"}))))
+          Some{cat(["@", n, " already changed files of the workspace (", String.join(List.take(&2, String, M.Agent.files(a), 3n), ", "), "): its work cannot be separated from yours"])},
+          Bool.pick(Maybe<&2, String>, is_busy(X.Rt.run(rt(o, cx, n))), Some{cat(["@", n, " is mid-turn: wait for the end of its turn"])},
+            Bool.pick(Maybe<&2, String>, X.R.git(rr(o, cx)), None{}, Some{"the workspace is not a git repository"}))))
       isolate.pre(o, pre, cx, n)
 
 def isolate_task(-o: M.St, +cx: X.Cx<o>, +name: String) -> X.Cx<o> & TaskR:
@@ -1196,8 +1196,8 @@ def answer.q.sent(-o: M.St, p: X.Cx<o> & SendR, +c: M.Card, +asker: String, +tex
     case (+cx, SOk{_}):
       +id = M.Card.id(c)
       +cx2 = note_main(o, cx, cat(["the user answered card #", ns(id), " (@", asker, " asked: \"", M.one_line(M.Card.text(c)), "\"): \"", M.one_line(text), "\""]))
-      +cx3 = line(o, cx2, M.MAIN(), "route", cat(["toi → @", asker, " (réponse à la carte #", ns(id), ") : ", text]))
-      close_card(o, cx3, id, "répondue")
+      +cx3 = line(o, cx2, M.MAIN(), "route", cat(["you → @", asker, " (answer to card #", ns(id), ") : ", text]))
+      close_card(o, cx3, id, "answered")
 
 def answer.q(-o: M.St, m: Maybe<&2, M.Msg>, +cx: X.Cx<o>, +c: M.Card, +text: String) -> X.Cx<o>:
   match m:
@@ -1206,7 +1206,7 @@ def answer.q(-o: M.St, m: Maybe<&2, M.Msg>, +cx: X.Cx<o>, +c: M.Card, +text: Str
     case None{}:
       +id = M.Card.id(c)
       +cx2 = note_main(o, cx, cat(["the user answered card #", ns(id), " (\"", M.one_line(M.Card.text(c)), "\"): \"", M.one_line(text), "\""]))
-      close_card(o, cx2, id, "répondue")
+      close_card(o, cx2, id, "answered")
 
 def for_msg_of(+s: M.St, m: Maybe<&2, Nat>) -> Maybe<&2, M.Msg>:
   match m:
@@ -1218,23 +1218,23 @@ def for_msg_of(+s: M.St, m: Maybe<&2, Nat>) -> Maybe<&2, M.Msg>:
 def answer.dropped(-o: M.St, p: X.Cx<o> & DropR, +c: M.Card) -> X.Cx<o>:
   match p:
     case (+cx, DErr{+e}):
-      close_card(o, notice(o, cx, e), M.Card.id(c), "acceptée")
+      close_card(o, notice(o, cx, e), M.Card.id(c), "accepted")
     case (+cx, _):
-      close_card(o, note_main(o, cx, String.append("the user accepted to drop @", M.Card.agent(c))), M.Card.id(c), "acceptée")
+      close_card(o, note_main(o, cx, String.append("the user accepted to drop @", M.Card.agent(c))), M.Card.id(c), "accepted")
 
 def answer.drop(-o: M.St, yes: Bool, +cx: X.Cx<o>, +c: M.Card) -> X.Cx<o>:
   match yes:
     case True{}:
       answer.dropped(o, drop_task(o, cx, M.Card.agent(c), True{}), c)
     case False{}:
-      close_card(o, note_main(o, cx, String.append("the user refused to drop @", M.Card.agent(c))), M.Card.id(c), "refusée")
+      close_card(o, note_main(o, cx, String.append("the user refused to drop @", M.Card.agent(c))), M.Card.id(c), "refused")
 
 def answer.plain.sent(-o: M.St, p: X.Cx<o> & SendR, +id: Nat) -> X.Cx<o>:
   match p:
     case (+cx, SErr{+e}):
       notice(o, cx, e)
     case (+cx, SOk{_}):
-      close_card(o, cx, id, "répondue")
+      close_card(o, cx, id, "answered")
 
 def is_yes(+t: String) -> Bool:
   +s = String.to_lower(String.trim(t))
@@ -1259,7 +1259,7 @@ def answer.kind(-o: M.St, k: CardK, +cx: X.Cx<o>, +c: M.Card, +text: String) -> 
 def answer.card(-o: M.St, m: Maybe<&2, M.Card>, +cx: X.Cx<o>, +id: Nat, +text: String) -> X.Cx<o>:
   match m:
     case None{}:
-      notice(o, cx, String.append("aucune carte ouverte #", ns(id)))
+      notice(o, cx, String.append("no open card #", ns(id)))
     case Some{+c}:
       answer.kind(o, card_kind(M.Card.kind(c)), cx, c, text)
 
@@ -1316,7 +1316,7 @@ def route.sent(-o: M.St, p: X.Cx<o> & SendR, +name: String, +text: String, +focu
     case (+cx, SErr{+e}):
       notice(o, cx, e)
     case (+cx, SOk{+m}):
-      +cx2 = line(o, cx, M.MAIN(), "route", cat(["toi → @", name, " : ", text]))
+      +cx2 = line(o, cx, M.MAIN(), "route", cat(["you → @", name, " : ", text]))
       +cx3 = Bool.pick(X.Cx<o>, Bool.not(String.eq(focus, M.MAIN())) || Bool.not(String.eq(name, focus)),
         note_main(o, cx2, cat(["the user wrote directly to @", name, ": \"", M.one_line(text), "\""])), cx2)
       out(o, cx3, [J.kv("fx", J.JStr{"routed"}), J.kv("id", J.JNum{M.Msg.id(m)})])
@@ -1325,8 +1325,8 @@ def route.target(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +target: String, 
   match m:
     case None{}:
       +close = close_names(M.St.order(st(o, cx)), target)
-      +hint = Bool.pick(String, List.is_empty(&2, String, close), "", cat([" — tu voulais dire ", String.join(close, ", "), " ?"]))
-      notice(o, cx, cat(["aucune tâche nommée @", target, hint]))
+      +hint = Bool.pick(String, List.is_empty(&2, String, close), "", cat([" — did you mean ", String.join(close, ", "), "?"]))
+      notice(o, cx, cat(["no task named @", target, hint]))
     case Some{+name}:
       # RFC 0003 §5.1: from another view, the task reads it tagged and
       # its answer comes back to that view
@@ -1386,7 +1386,7 @@ def user_isolate.res(-o: M.St, p: X.Cx<o> & TaskR) -> X.Cx<o>:
 def rename.go(-o: M.St, ok: Bool, +cx: X.Cx<o>, +old: String, +new: String) -> X.Cx<o>:
   match ok:
     case False{}:
-      notice(o, cx, String.append("nom invalide ou déjà pris : ", new))
+      notice(o, cx, String.append("invalid or taken name: ", new))
     case True{}:
       +cx2 = emit(o, cx, M.ERenamed{old, new}, Unit{}, Unit{}, Unit{})
       +r = rr(o, cx2)
@@ -1399,9 +1399,9 @@ def rename.go(-o: M.St, ok: Bool, +cx: X.Cx<o>, +old: String, +new: String) -> X
 def rename.old(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +name: String, +new: String, +valid: Bool) -> X.Cx<o>:
   match m:
     case None{}:
-      notice(o, cx, String.append("aucune tâche nommée @", name))
+      notice(o, cx, String.append("no task named @", name))
     case Some{+old}:
-      Bool.pick(X.Cx<o>, String.eq(old, M.MAIN()), notice(o, cx, String.append("aucune tâche nommée @", name)),
+      Bool.pick(X.Cx<o>, String.eq(old, M.MAIN()), notice(o, cx, String.append("no task named @", name)),
         rename.go(o, valid && Bool.not(M.name_taken(st(o, cx), new)), cx, old, new))
 
 def cancel.to(m: Maybe<&2, M.Msg>) -> String:
@@ -1416,15 +1416,15 @@ def cancel.state(-o: M.St, s: Maybe<&2, M.MSt>, +cx: X.Cx<o>, +id: Nat) -> X.Cx<
     case Some{M.Queued{_}}:
       +cx2 = emit(o, cx, M.EMsgState{id, M.Cancelled{}}, Unit{}, Unit{}, Unit{})
       +to = cancel.to(M.msg_of(st(o, cx2), id))
-      +cx3 = line(o, cx2, M.MAIN(), "info", cat(["routage vers @", to, " annulé"]))
+      +cx3 = line(o, cx2, M.MAIN(), "info", cat(["route to @", to, " cancelled"]))
       note_main(o, cx3, cat(["the user cancelled the message ", mid(id), " to @", to, " before delivery"]))
     case _:
-      notice(o, cx, "trop tard : le message est déjà livré, envoie une correction")
+      notice(o, cx, "too late: the message is already delivered, send a correction")
 
 def cancel(-o: M.St, last: Maybe<&2, Nat>, +cx: X.Cx<o>) -> X.Cx<o>:
   match last:
     case None{}:
-      notice(o, cx, "aucun routage à annuler")
+      notice(o, cx, "no route to cancel")
     case Some{+id}:
       cancel.state(o, M.state_of(st(o, cx), id), cx, id)
 
@@ -1433,14 +1433,14 @@ def interrupt.go(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>) -> X.Cx<o>:
     case Some{+n}:
       Bool.pick(X.Cx<o>, is_busy(X.Rt.run(rt(o, cx, n))),
         out(o, cx, [J.kv("fx", J.JStr{"interrupt"}), J.kv("agent", J.JStr{n})]),
-        notice(o, cx, "aucun tour en cours à interrompre"))
+        notice(o, cx, "no turn in progress to interrupt"))
     case None{}:
-      notice(o, cx, "aucun tour en cours à interrompre")
+      notice(o, cx, "no turn in progress to interrupt")
 
 def passthrough(-o: M.St, +cx: X.Cx<o>, +focus: String, +l: String) -> X.Cx<o>:
   Bool.pick(X.Cx<o>, has_agent(o, cx, focus) && is_idle(X.Rt.run(rt(o, cx, focus))),
     out(o, dirty(o, set_run(o, cx, focus, M.RBusy{})), [J.kv("fx", J.JStr{"passthrough"}), J.kv("agent", J.JStr{focus}), J.kv("line", J.JStr{l})]),
-    notice(o, cx, "l'agent n'est pas inactif : réessaie à la fin du tour"))
+    notice(o, cx, "the agent is not idle: retry at the end of its turn"))
 
 def focus.cards(-o: M.St, +cx: X.Cx<o>, +f: String) -> X.Cx<o>:
   Bool.pick(X.Cx<o>, String.eq(f, M.MAIN()), cx, close_cards(o, cx, f, ["done"], "vue"))
@@ -1495,7 +1495,7 @@ def jstr_list(xs: List<&2, J.Json>) -> List<&2, String>:
       jstr_list.one(h, rest)
 
 def main_only(-o: M.St, +cx: X.Cx<o>, +token: Nat) -> X.Cx<o>:
-  reply_err(o, cx, token, "réservé à main (le parent des tâches)")
+  reply_err(o, cx, token, "reserved for main (the parent of the tasks)")
 
 def req_send.delivered(m: Maybe<&2, M.MSt>) -> Bool:
   match m:
@@ -1579,7 +1579,7 @@ def reply_of(xs: List<&2, M.MRec>, +id: Nat, +replier: String) -> Maybe<&2, M.Ms
 def wait.mine(-o: M.St, mine: Bool, +cx: X.Cx<o>, +token: Nat, +from: String, +orig: M.Msg, +timeout: Nat) -> X.Cx<o>:
   match mine:
     case False{}:
-      reply_err(o, cx, token, "on n'attend que la réponse à ses propres messages")
+      reply_err(o, cx, token, "you can only wait for the reply to your own messages")
     case True{}:
       +w = {X.Waiter{token, from, M.Msg.id(orig), Nat.add(now(o, cx), Nat.mul(1000n, Nat.min(timeout, WAIT_CAP())))} : X.Waiter}
       wait.existing(o, reply_of(M.St.msgs(st(o, cx)), M.Msg.id(orig), M.Msg.to(orig)), cx, w)
@@ -1609,7 +1609,7 @@ def req_status(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +is_main: Boo
   +note = jstr(q, "note")
   +cx2 = emit(o, cx, M.EDeclared{from, Some{decl_of(status)}, note}, Unit{}, Unit{}, Unit{})
   +cx3 = Bool.pick(X.Cx<o>, String.eq(status, "blocked") && Bool.not(is_main),
-    open_card(o, cx2, "blocked", from, Bool.pick(String, String.is_empty(note), "bloquée", note), None{}), cx2)
+    open_card(o, cx2, "blocked", from, Bool.pick(String, String.is_empty(note), "blocked", note), None{}), cx2)
   reply(o, cx3, token, ok_body(Nil{}))
 
 def report_lines(xs: List<&2, String>) -> List<&2, String>:
@@ -1643,7 +1643,7 @@ def req_report.kind(-o: M.St, +cx: X.Cx<o>, +from: String, +kind: String, +summa
 def req_report.go(-o: M.St, is_main: Bool, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) -> X.Cx<o>:
   match is_main:
     case True{}:
-      reply_err(o, cx, token, "main ne se rapporte à personne")
+      reply_err(o, cx, token, "main reports to no one")
     case False{}:
       +kind = jstr(q, "kind")
       +summary = jstr(q, "summary")
@@ -1689,19 +1689,19 @@ def req_spawn.pre(-o: M.St, pre: Maybe<&2, String>, +cx: X.Cx<o>, +token: Nat, +
 def req_interrupt(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +token: Nat, +agent: String) -> X.Cx<o>:
   match m:
     case None{}:
-      reply_err(o, cx, token, String.append("aucune tâche nommée ", agent))
+      reply_err(o, cx, token, String.append("no task named ", agent))
     case Some{+n}:
       Bool.pick(X.Cx<o>, is_busy(X.Rt.run(rt(o, cx, n))),
         reply(o, out(o, cx, [J.kv("fx", J.JStr{"interrupt"}), J.kv("agent", J.JStr{n})]), token, ok_body(Nil{})),
-        reply_err(o, cx, token, "pas de tour en cours"))
+        reply_err(o, cx, token, "no turn in progress"))
 
 def req_stop(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +token: Nat, +agent: String, +reason: String) -> X.Cx<o>:
   match m:
     case None{}:
-      reply_err(o, cx, token, String.append("aucune tâche nommée ", agent))
+      reply_err(o, cx, token, String.append("no task named ", agent))
     case Some{+n}:
-      Bool.pick(X.Cx<o>, String.eq(n, M.MAIN()), reply_err(o, cx, token, String.append("aucune tâche nommée ", agent)),
-        reply(o, line(o, stop_task(o, cx, n, M.LStopped{}, reason), M.MAIN(), "info", cat(["main → @", n, " arrêtée : ", reason])), token, ok_body(Nil{})))
+      Bool.pick(X.Cx<o>, String.eq(n, M.MAIN()), reply_err(o, cx, token, String.append("no task named ", agent)),
+        reply(o, line(o, stop_task(o, cx, n, M.LStopped{}, reason), M.MAIN(), "info", cat(["main → @", n, " stopped: ", reason])), token, ok_body(Nil{})))
 
 def req_drop.res(-o: M.St, p: X.Cx<o> & DropR, +token: Nat, +agent: String) -> X.Cx<o>:
   match p:
@@ -1711,7 +1711,7 @@ def req_drop.res(-o: M.St, p: X.Cx<o> & DropR, +token: Nat, +agent: String) -> X
       +n = Maybe.default(&2, String, M.resolve(st(o, cx), agent), agent)
       +id = M.St.next_card(st(o, cx))
       +text = Bool.pick(String, String.ends_with(q, " [y/N]"), String.take(q, Nat.sub(String.length(q), 6n)), q)
-      +cx2 = open_card(o, cx, "drop", n, cat(["main propose : ", text, " (réponds oui ou non)"]), None{})
+      +cx2 = open_card(o, cx, "drop", n, cat(["main suggests: ", text, " (answer yes or no)"]), None{})
       reply(o, cx2, token, ok_body([J.kv("dropped", J.JBool{False{}}), J.kv("card", J.JNum{id}),
         J.kv("reason", J.JStr{"the user must confirm: an attention card is open"})]))
     case (+cx, DErr{+e}):
@@ -1871,7 +1871,7 @@ def touch.others(-o: M.St, others: List<&2, String>, +cx: X.Cx<o>, +agent: Strin
     case Nil{}:
       cx
     case Con{+h, +t}:
-      +text = cat([path, " est modifié par @", agent, " et par @", String.join({h <> t : List<&2, String>}, ", @")])
+      +text = cat([path, " is changed by @", agent, " and by @", String.join({h <> t : List<&2, String>}, ", @")])
       note_main(o, open_card(o, cx, "overlap", agent, text, None{}), String.append("file overlap: ", text))
 
 def overlap_hit(m: Maybe<&2, M.Agent>, +agent: String, +path: String) -> Bool:
@@ -1936,12 +1936,12 @@ def crash.restart(-o: M.St, +cx: X.Cx<o>, +agent: String, +n: Nat, +reason: Stri
   +cx2 = set_run(o, cx, agent, M.RStarting{})
   +cx3 = out(o, cx2, [J.kv("fx", J.JStr{"spawn"}), J.kv("agent", J.JStr{agent}),
     J.kv("resume", J.JBool{True{}}), J.kv("crash_note", J.JStr{reason})])
-  +cx4 = line(o, cx3, M.MAIN(), "warn", cat(["la session de @", agent, " a planté (", reason, ") — redémarrage ", ns(n), "/", ns(MAX_CRASHES())]))
+  +cx4 = line(o, cx3, M.MAIN(), "warn", cat(["the session of @", agent, " crashed (", reason, ") — restart ", ns(n), "/", ns(MAX_CRASHES())]))
   Bool.pick(X.Cx<o>, String.eq(agent, M.MAIN()), cx4,
     notify_main(o, cx4, cat(["Task @", agent, " crashed (", reason, "). Its session restarts on its saved checkpoint (attempt ", ns(n), "/", ns(MAX_CRASHES()), "); the turn it was running is interrupted and it may need a new message to continue."])))
 
 def crash.fail(-o: M.St, +cx: X.Cx<o>, +agent: String, +n: Nat, +reason: String) -> X.Cx<o>:
-  +why = cat(["la REPL a planté ", ns(n), " fois : ", reason])
+  +why = cat(["the REPL crashed ", ns(n), " times: ", reason])
   +cx2 = emit(o, cx, M.ELifecycle{agent, M.LFailed{}, Some{why}}, Unit{}, Unit{}, Unit{})
   +cx3 = open_card(o, cx2, "failed", agent, why, None{})
   Bool.pick(X.Cx<o>, String.eq(agent, M.MAIN()), cx3,
@@ -2089,7 +2089,7 @@ def idle.agent(-o: M.St, m: Maybe<&2, M.Agent>, +cx: X.Cx<o>, +agent: String, +l
       +text = kv_get(X.R.last(r), agent)
       +cx3 = set_r(o, cx2, X.R.with_last(r, kv_del(X.R.last(r), agent)))
       +qs = skip_steered(M.unanswered_for(st(o, cx3), agent), leftover || unread, steered)
-      +body = Bool.pick(String, M.trim_is_empty(text), "(pas de réponse écrite à la fin du tour)", text)
+      +body = Bool.pick(String, M.trim_is_empty(text), "(no written reply at the end of the turn)", text)
       +cx4 = auto_replies(o, qs, cx3, agent, body)
       # RFC 0001 §7.2: the automatic report (board only)
       +cx5 = idle.report(o, Bool.not(M.Agent.is_main(a)) && Bool.not(M.trim_is_empty(text)), cx4, agent, text)
@@ -2144,9 +2144,9 @@ def in_tag(+t: String) -> In:
 def close_by_user(-o: M.St, m: Maybe<&2, M.Card>, +cx: X.Cx<o>, +id: Nat) -> X.Cx<o>:
   match m:
     case None{}:
-      notice(o, cx, String.append("aucune carte ouverte #", ns(id)))
+      notice(o, cx, String.append("no open card #", ns(id)))
     case Some{+c}:
-      note_main(o, close_card(o, cx, id, "classée"), cat(["the user closed card #", ns(id), " (", M.Card.kind(c), " @", M.Card.agent(c), ": \"", M.one_line(M.Card.text(c)), "\") without answering"]))
+      note_main(o, close_card(o, cx, id, "closed"), cat(["the user closed card #", ns(id), " (", M.Card.kind(c), " @", M.Card.agent(c), ": \"", M.one_line(M.Card.text(c)), "\") without answering"]))
 
 def force_run_of(+r: String) -> M.Run:
   Bool.pick(M.Run, String.eq(r, "starting"), M.RStarting{},

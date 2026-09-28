@@ -484,15 +484,15 @@ fn an_explicit_route_can_be_cancelled_before_delivery() {
     // docs never started its REPL again: simulate it down
     t.hub.force_run("docs", Run::Starting);
     let fx = t.user(MAIN, "@docs change de plan");
-    assert!(has_line(&fx, MAIN, "toi → @docs : change de plan"));
+    assert!(has_line(&fx, MAIN, "you → @docs : change de plan"));
     let fx = t.user(MAIN, "/cancel");
-    assert!(has_line(&fx, MAIN, "routage vers @docs annulé"), "{:?}", fx);
+    assert!(has_line(&fx, MAIN, "route to @docs cancelled"), "{:?}", fx);
     let fx = t.go(Input::ReplReady {
         agent: "docs".into(),
     });
     assert!(say_to(&fx, "docs").is_none());
     let fx = t.user(MAIN, "@nope salut");
-    assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").contains("aucune tâche nommée @nope"))));
+    assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").contains("no task named @nope"))));
 }
 
 #[test]
@@ -500,7 +500,7 @@ fn dropping_a_worktree_with_work_asks_first() {
     let mut t = T::new();
     let fx = t.user(MAIN, "/new -w fix: corrige le bug");
     assert!(
-        has_line(&fx, MAIN, "nouvelle tâche @fix (worktree sb/fix)"),
+        has_line(&fx, MAIN, "new task @fix (worktree sb/fix)"),
         "{:?}",
         fx
     );
@@ -527,7 +527,7 @@ fn dropping_a_worktree_with_work_asks_first() {
         })
         .expect("a confirmation");
     assert!(
-        text.contains("3 fichiers modifiés et 2 commits non poussés"),
+        text.contains("3 changed files and 2 unpushed commits"),
         "{}",
         text
     );
@@ -745,7 +745,7 @@ fn worktrees_need_git() {
     let mut t = T::new();
     t.env.git = false;
     let fx = t.user(MAIN, "/new -w x: y");
-    assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").contains("pas un dépôt git"))));
+    assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").contains("not a git repository"))));
     assert!(t.hub.st.agents.get("x").is_none());
 }
 
@@ -774,7 +774,7 @@ fn shared_tasks_touching_one_file_open_a_card() {
         .any(|c| c.kind == "overlap" && c.text.contains("src/x.rs")));
     // a task that changed a file cannot be isolated anymore
     let fx = t.user(MAIN, "/isolate a");
-    assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").contains("déjà modifié"))));
+    assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").contains("already changed files"))));
 }
 
 #[test]
@@ -823,7 +823,7 @@ fn only_main_controls_tasks() {
     assert!(reply(&fx, tok).unwrap()["error"]
         .as_str()
         .unwrap()
-        .contains("réservé à main"));
+        .contains("reserved for main"));
 }
 
 #[test]
@@ -1291,7 +1291,7 @@ fn main_replying_to_the_question_closes_its_card() {
     );
     assert!(t.hub.st.cards.is_empty());
     assert!(
-        has_line(&fx, MAIN, &format!("#{} répondue via @main", card)),
+        has_line(&fx, MAIN, &format!("#{} answered via @main", card)),
         "{:?}",
         fx
     );
@@ -1304,7 +1304,7 @@ fn the_user_closes_a_card_without_answering() {
     let fx = t.user(MAIN, &format!("/close {}", card));
     assert!(t.hub.st.cards.is_empty());
     assert!(say_to(&fx, "docs").is_none());
-    assert!(has_line(&fx, MAIN, &format!("#{} classée", card)), "{:?}", fx);
+    assert!(has_line(&fx, MAIN, &format!("#{} closed", card)), "{:?}", fx);
 }
 
 /// docs asks main (a plain send, not an ask), main answers, docs waits

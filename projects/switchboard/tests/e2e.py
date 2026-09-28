@@ -176,7 +176,7 @@ def t_spawn_and_auto_reply(E, c):
     c.wait_status("main", "idle", 60)
     c.say('crée une tâche [[bash: sb spawn t1 --objective "écris le fichier {{bash: echo hello-from-t1 > t1.txt && echo wrote}}"]]')
     c.wait(lambda: c.agent("t1") is not None, 60, "t1 exists")
-    c.wait_line("main", "nouvelle tâche @t1")
+    c.wait_line("main", "new task @t1")
     c.wait(lambda: os.path.exists(os.path.join(E.ws, "t1.txt")), 90, "t1.txt written in the workspace")
     check(open(os.path.join(E.ws, "t1.txt")).read().strip() == "hello-from-t1", "t1.txt content")
     # t1's turn ends: its reply comes back to main automatically
@@ -199,7 +199,7 @@ def t_direct_message_and_note(E, c):
     c.wait_line("t1", "ack: parle-moi directement")
     c.wait_idle("t1")
     c.send({"op": "focus", "focus": "main"})
-    c.wait_line("main", "sb direct : Tu as parlé à @t1 (1 message)")
+    c.wait_line("main", "sb direct : You talked to @t1 (1 message)")
     c.say("et alors ?")
     c.wait(lambda: any(r["agent"] == "main" and r["user"].endswith("et alors ?") for r in E.fake_requests()), 60,
            "main's request with the new message")
@@ -210,7 +210,7 @@ def t_direct_message_and_note(E, c):
     c.wait_idle("main")
     before = len([r for r in E.fake_requests() if r["agent"] == "main"])
     c.say("@t1 route explicite")
-    c.wait_line("main", "sb route : toi → @t1 : route explicite")
+    c.wait_line("main", "sb route : you → @t1 : route explicite")
     # from main's view the task reads it tagged (RFC 0003 §5.1)
     c.wait_line("t1", 'ack: <user_message via="main"> route explicite')
     c.wait_idle("t1")
@@ -265,7 +265,7 @@ def t_worktree_drop_restore(E, c):
     c.say("/drop t4")
     c.wait(lambda: any(n.get("ev") == "confirm" for n in c.notices()), 30, "a confirmation")
     conf = [n for n in c.notices() if n.get("ev") == "confirm"][-1]
-    check("1 commit non poussé" in conf["text"], conf["text"])
+    check("1 unpushed commit" in conf["text"], conf["text"])
     c.send({"op": "confirm", "id": conf["id"], "yes": True})
     c.wait_status("t4", "archived", 30)
     check(not os.path.exists(wt), "worktree removed")
@@ -300,7 +300,7 @@ def t_cli_errors(E, c):
     # the CLI refuses tasks' main-only commands, through the real shim
     c.wait_idle("main")
     c.say('@t1 [[bash: sb spawn nope --objective x; echo rc=$?]]')
-    c.wait_line("t1", "réservé à main", 90)
+    c.wait_line("t1", "reserved for main", 90)
     c.wait_idle("t1")
 
 
@@ -309,13 +309,13 @@ def t_origin_and_cursors(E, c):
     # main's thread and gets positions
     c.wait_idle("main", "t1")
     c.say('zorglub-origine [[bash: sb spawn orig --objective "{{bash: sb inspect main --origin > o.txt; sb inspect main --query zorglub-origine --limit 3 >> o.txt; echo done}}"]]')
-    c.wait_line("main", "nouvelle tâche @orig")
+    c.wait_line("main", "new task @orig")
     path = os.path.join(E.ws, "o.txt")
     c.wait(lambda: os.path.exists(path) and "--around" in open(path).read(), 90, "orig wrote o.txt")
     out = open(path).read()
     check("origin of `orig` in main's thread" in out, "the origin header: " + out)
     check("user: zorglub-origine [[bash: sb spawn orig" in out, "the user message verbatim: " + out)
-    check("nouvelle tâche @orig" in out, "main's turn up to the spawn: " + out)
+    check("new task @orig" in out, "main's turn up to the spawn: " + out)
     check(re.search(r"^#\d+ \(", out, re.M) is not None, "entries carry positions: " + out)
     c.wait_idle("orig")
     os.remove(path)
