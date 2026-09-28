@@ -7,6 +7,10 @@ use std::io::Write;
 
 /// Copies `text`; false when no way worked.
 pub(crate) fn copy(text: &str) -> bool {
+    // tests: the copy goes to a file, never the user's clipboard
+    if let Some(f) = std::env::var_os("BEND_CLIPBOARD_FILE") {
+        return std::fs::write(f, text).is_ok();
+    }
     let remote = std::env::var_os("SSH_TTY").is_some() || std::env::var_os("SSH_CONNECTION").is_some();
     if cfg!(target_os = "macos") && !remote && pbcopy(text) {
         return true;

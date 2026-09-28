@@ -823,6 +823,8 @@ pub(super) fn focus(app: &mut App, name: &str) {
     sb.send(json!({"op": "focus", "focus": name}));
     swap_feed(app, &mut incoming);
     swap_draft(app, &mut incoming);
+    // a feed selection belongs to the feed we left
+    app.feed_sel = None;
     // `incoming` now holds the feed we left
     if let Some(sb) = app.sb.as_mut() {
         sb.views.insert(old, incoming);
@@ -1702,6 +1704,9 @@ pub fn run_switchboard(
         anchor: (0, 0),
         scroll: 0,
         vis_events: Vec::new(),
+        vis_rows: Vec::new(),
+        feed_x: 0,
+        feed_sel: None,
         unseen: 0,
         tail_visible: true,
         bottom_bar_rect: None,

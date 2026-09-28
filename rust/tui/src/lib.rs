@@ -52,6 +52,7 @@ mod skills;
 mod emoji;
 mod editor;
 mod clipboard;
+mod feedsel;
 pub use sb::{run_switchboard, take_reexec};
 
 const BRAND: Color = Color::Rgb(0xfa, 0xb2, 0x83); // primary
@@ -621,6 +622,10 @@ fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
     }
     if !row.is_empty() || rows.is_empty() {
         rows.push(line_from(row));
+    }
+    // the rows after the first continue the line (the copy joins them)
+    for r in rows.iter_mut().skip(1) {
+        feedsel::mark_soft(r);
     }
     rows
 }
@@ -1904,7 +1909,11 @@ fn code_block_lines(
             // pad to the row width, plus the 1-column right pad
             ls.push(Span::styled(" ".repeat(cw - used.min(cw) + 1), band));
             ls.push(Span::styled("│", bstyle));
-            rows.push(Line::from(ls));
+            let mut line = Line::from(ls);
+            if r > 0 {
+                feedsel::mark_soft(&mut line);
+            }
+            rows.push(line);
         }
     }
     rows.push(Line::from(vec![
@@ -2053,6 +2062,12 @@ struct App {
     scroll: isize,
     // the event shown on each row of the feed by the last frame (clicks)
     vis_events: Vec<usize>,
+    /// the row, among its event's rows, each feed row shows
+    vis_rows: Vec<usize>,
+    /// the screen column of the feed's first text column
+    feed_x: u16,
+    /// the in-app selection in the feed
+    feed_sel: Option<feedsel::FeedSel>,
     // activity that arrived while pinned (shown by the back-to-bottom bar)
     unseen: usize,
     tail_visible: bool,
@@ -2122,6 +2137,9 @@ struct MouseState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DragIn {
     Composer,
+    /// a press in the feed; `moved` once it selects (a drag, a double
+    /// or triple click) rather than clicks
+    Feed { moved: bool },
 }
 
 impl MouseState {
@@ -2770,22 +2788,29 @@ fn draw(app: &mut App, frame: &mut Frame) {
     // the rows from the anchor down; fewer than the screen: the bottom
     let mut vis: Vec<Line> = Vec::with_capacity(area_h + 2);
     let mut vis_events: Vec<usize> = Vec::with_capacity(area_h + 2);
+    let mut vis_rows: Vec<usize> = Vec::with_capacity(area_h + 2);
     let mut tail_visible = true;
     for pass in 0..2 {
         vis.clear();
         vis_events.clear();
+        vis_rows.clear();
         tail_visible = true;
         let (mut i, mut skip) = anchor;
         while i < n {
             ensure_rows(&app.events, &mut app.cache, i, debug, area_w, tick);
             let rows = app.cache[i].as_ref().map(|c| &c.rows[..]).unwrap_or(&[]);
-            for r in rows.iter().skip(skip) {
+            for (ri, r) in rows.iter().enumerate().skip(skip) {
                 if vis.len() >= area_h {
                     tail_visible = false;
                     break;
                 }
-                vis.push(r.clone());
+                // the feed selection on the selection background
+                match app.feed_sel.and_then(|s| s.cols(i, ri)) {
+                    Some((a, b)) => vis.push(feedsel::highlight(r, a, b, SELECTION)),
+                    None => vis.push(r.clone()),
+                }
                 vis_events.push(i);
+                vis_rows.push(ri);
             }
             skip = 0;
             if !tail_visible {
@@ -2828,6 +2853,8 @@ fn draw(app: &mut App, frame: &mut Frame) {
     }
     app.anchor = anchor;
     app.vis_events = vis_events;
+    app.vis_rows = vis_rows;
+    app.feed_x = text_area.x;
     app.area_w = area_w;
     app.area_h = area_h;
     app.tail_visible = tail_visible;
@@ -3165,6 +3192,37 @@ fn ingest_line(app: &mut App, line: String) {
     }
 }
 
+/// The feed position under the screen cell, from the last frame (the
+/// feed starts at the top of the terminal: the screen row IS the feed
+/// row). `clamp`: a row below the feed is its last row, at the end.
+fn feed_pos(app: &App, x: u16, y: u16, clamp: bool) -> Option<feedsel::FeedPos> {
+    let col = x.saturating_sub(app.feed_x) as usize;
+    let (row, col) = if (y as usize) < app.vis_events.len() {
+        (y as usize, col)
+    } else if clamp && !app.vis_events.is_empty() {
+        (app.vis_events.len() - 1, usize::MAX / 2)
+    } else {
+        return None;
+    };
+    Some((app.vis_events[row], *app.vis_rows.get(row)?, col))
+}
+
+/// The text of the feed selection (the rows of every event it spans).
+fn feed_selection_text(app: &mut App) -> Option<String> {
+    let sel = app.feed_sel?;
+    let ((e0, r0, c0), (e1, r1, c1)) = sel.range();
+    let (debug, w, tick) = (app.debug, app.area_w, app.tick);
+    let mut rows: Vec<Line<'static>> = Vec::new();
+    for i in e0..=e1.min(app.events.len().saturating_sub(1)) {
+        ensure_rows(&app.events, &mut app.cache, i, debug, w, tick);
+        let Some(er) = app.cache.get(i).and_then(|c| c.as_ref()) else { continue };
+        let from = if i == e0 { r0 } else { 0 };
+        let to = if i == e1 { (r1 + 1).min(er.rows.len()) } else { er.rows.len() };
+        rows.extend(er.rows.get(from..to).unwrap_or(&[]).iter().cloned());
+    }
+    Some(feedsel::selection_text(&rows, c0, c1.saturating_add(1)))
+}
+
 /// Copies to the system clipboard and says so in the status row.
 fn copy_text(app: &mut App, text: &str) {
     let n = text.chars().count();
@@ -3195,8 +3253,9 @@ fn composer_key(app: &mut App, k: &crossterm::event::KeyEvent) {
                 app.ed.move_cursor(Motion::TextEnd, sel);
             }
         }
+        // the composer's selection, else the feed's
         Action::Copy => {
-            if let Some(t) = app.ed.selected_text() {
+            if let Some(t) = app.ed.selected_text().or_else(|| feed_selection_text(app)) {
                 copy_text(app, &t);
             }
         }
@@ -3351,28 +3410,70 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                                 continue;
                             }
                         }
-                        // the feed starts at the top of the terminal:
-                        // the clicked terminal row IS the feed row
-                        if m.row as usize >= app.area_h {
+                        // the feed: a press starts a selection (a double
+                        // click selects the word, a triple the row); the
+                        // release copies it, or toggles the section when
+                        // the mouse did not move
+                        let Some(pos) = feed_pos(app, m.column, m.row, false) else {
+                            app.feed_sel = None;
+                            continue;
+                        };
+                        let clicks = app.mouse.press(m.column, m.row, std::time::Instant::now());
+                        let row_text = app
+                            .cache
+                            .get(pos.0)
+                            .and_then(|c| c.as_ref())
+                            .and_then(|c| c.rows.get(pos.1))
+                            .map(feedsel::line_text)
+                            .unwrap_or_default();
+                        let (a, b) = match clicks {
+                            2 => feedsel::word_cols(&row_text, pos.2),
+                            3 => (0, row_text.width().saturating_sub(1)),
+                            _ => (pos.2, pos.2),
+                        };
+                        app.feed_sel = Some(feedsel::FeedSel { anchor: (pos.0, pos.1, a), head: (pos.0, pos.1, b) });
+                        app.mouse.drag = Some(DragIn::Feed { moved: clicks > 1 });
+                    }
+                    MouseEventKind::Drag(MouseButton::Left) if matches!(app.mouse.drag, Some(DragIn::Feed { .. })) => {
+                        // dragging on the top row or below the feed scrolls
+                        if m.row == 0 {
+                            app.follow = false;
+                            app.scroll -= 1;
+                        } else if m.row as usize >= app.area_h && !app.follow {
+                            app.scroll += 1;
+                        }
+                        if let (Some(pos), Some(sel)) = (feed_pos(app, m.column, m.row, true), app.feed_sel.as_mut()) {
+                            if sel.head != pos {
+                                sel.head = pos;
+                                app.mouse.drag = Some(DragIn::Feed { moved: true });
+                            }
+                        }
+                    }
+                    MouseEventKind::Up(MouseButton::Left) if matches!(app.mouse.drag, Some(DragIn::Feed { .. })) => {
+                        let moved = matches!(app.mouse.drag, Some(DragIn::Feed { moved: true }));
+                        app.mouse.drag = None;
+                        if moved {
+                            if let Some(t) = feed_selection_text(app).filter(|t| !t.is_empty()) {
+                                copy_text(app, &t);
+                            }
                             continue;
                         }
-                        // the event the last frame showed on that row
-                        if let Some(&i) = app.vis_events.get(m.row as usize) {
-                            let toggled = match app.events.get_mut(i) {
-                                Some(Ev::Thinking { open, .. }) => {
-                                    *open = !*open;
-                                    true
-                                }
-                                Some(Ev::Tool(td)) if td.code.is_some() => {
-                                    td.expanded = !td.expanded;
-                                    true
-                                }
-                                _ => false,
-                            };
-                            if toggled {
-                                if let Some(c) = app.cache.get_mut(i) {
-                                    *c = None;
-                                }
+                        // a plain click: expand/collapse the section
+                        let Some(i) = app.feed_sel.take().map(|s| s.anchor.0) else { continue };
+                        let toggled = match app.events.get_mut(i) {
+                            Some(Ev::Thinking { open, .. }) => {
+                                *open = !*open;
+                                true
+                            }
+                            Some(Ev::Tool(td)) if td.code.is_some() => {
+                                td.expanded = !td.expanded;
+                                true
+                            }
+                            _ => false,
+                        };
+                        if toggled {
+                            if let Some(c) = app.cache.get_mut(i) {
+                                *c = None;
                             }
                         }
                     }
@@ -3468,6 +3569,7 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                             app.ed.clear();
                         } else {
                             app.ed.anchor = None;
+                            app.feed_sel = None;
                         }
                     }
                     // scrollback: PgUp/PgDn page, End follows the bottom
@@ -3684,6 +3786,9 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
         anchor: (0, 0),
         scroll: 0,
         vis_events: Vec::new(),
+        vis_rows: Vec::new(),
+        feed_x: 0,
+        feed_sel: None,
         unseen: 0,
         tail_visible: true,
         bottom_bar_rect: None,
