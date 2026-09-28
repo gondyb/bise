@@ -516,12 +516,14 @@ pub(crate) fn typed(text: &str, start: u64, per: u64, t: u64) -> &str {
 
 // the welcome timeline (the mockup's): typing, the kiss, the tagline, the hint
 const HI: &str = "hi, i'm bise ";
-const TAGLINE: &str = "your ideas. my hands. lots of them.";
+const TAGLINE: &str = "ideas in. little kisses out. also pull requests.";
 const PRESS: &str = "press enter ↵";
 const HI_AT: u64 = 300;
 const KISS_AT: u64 = HI_AT + 12 * 70 + 250;
-const TAG_AT: u64 = KISS_AT + 1100;
-const PRESS_AT: u64 = TAG_AT + 34 * 35 + 500;
+/// the name gloss, faint, under the first line, just after the pop
+const GLOSS_AT: u64 = KISS_AT + 900;
+const TAG_AT: u64 = KISS_AT + 1900;
+const PRESS_AT: u64 = TAG_AT + (TAGLINE.len() as u64 - 1) * 35 + 500;
 /// when the welcome is fully written
 #[cfg(test)]
 pub(crate) const WELCOME_END: u64 = PRESS_AT + 12 * 30;
@@ -544,12 +546,19 @@ fn kiss(t: u64) -> Span<'static> {
     }
 }
 
+/// `bise /beez/ · french: a kiss on the cheek. also a north wind.` (the
+/// `·` follows BISE_ASCII)
+fn gloss() -> String {
+    format!("bise /beez/ {} french: a kiss on the cheek. also a north wind.", theme::glyph("·"))
+}
+
 fn welcome(t: u64) -> Vec<Line<'static>> {
     vec![
         Line::from(vec![
             Span::styled(typed(HI, HI_AT, 70, t).to_string(), Style::default().fg(theme::text()).add_modifier(Modifier::BOLD)),
             kiss(t),
         ]),
+        Line::from(s(if t >= GLOSS_AT { gloss() } else { String::new() }, theme::faint())),
         Line::raw(""),
         Line::from(s(typed(TAGLINE, TAG_AT, 35, t), theme::dim())),
         Line::raw(""),
@@ -1021,8 +1030,18 @@ mod tests {
         let o = onb(&h, "/w");
         let sc = screen(&o, 1000, 100, 30);
         assert!(sc.contains("hi, i'm b") && !sc.contains(":*"), "{}", sc);
+        // the gloss comes after the pop, before the tagline, right under the name
+        let gloss = "bise /beez/ · french: a kiss on the cheek. also a north wind.";
+        let sc = screen(&o, KISS_AT + 700, 100, 30);
+        assert!(sc.contains("hi, i'm bise :*") && !sc.contains(gloss), "{}", sc);
+        let sc = screen(&o, GLOSS_AT, 100, 30);
+        assert!(sc.contains(gloss) && !sc.contains("ideas in."), "{}", sc);
+        let rows: Vec<&str> = sc.lines().collect();
+        let hi = rows.iter().position(|r| r.contains("hi, i'm bise :*")).unwrap();
+        assert!(rows[hi + 1].contains(gloss), "{}", sc);
+        assert_eq!(welcome(GLOSS_AT)[1].spans[0].style.fg, Some(theme::faint()));
         let sc = screen(&o, WELCOME_END, 100, 30);
-        for s in ["hi, i'm bise :*", "your ideas. my hands. lots of them.", "press enter ↵", "● ○ ○ ○ ○ ○"] {
+        for s in ["hi, i'm bise :*", "ideas in. little kisses out. also pull requests.", "press enter ↵", "● ○ ○ ○ ○ ○"] {
             assert!(sc.contains(s), "{}\n{}", s, sc);
         }
     }

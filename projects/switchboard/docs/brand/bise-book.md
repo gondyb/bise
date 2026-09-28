@@ -76,8 +76,14 @@ in the product, but tokens, cost and provider speed are the real limit.)
 |---|---|---|
 | site, headline | **kiss your backlog goodbye.** | picked (Gabriel) |
 | site, subline | *built for engineers who think faster than they type.* | picked |
-| inside the product (onboarding) | **your ideas. my hands. lots of them.** | picked |
+| inside the product (onboarding) | **ideas in. little kisses out. also pull requests.** | picked (Gabriel; replaces "your ideas. my hands. lots of them.") |
 | in reserve | you, but with way more hands. · your team is as big as your ideas. | former headlines |
+
+**The name gloss**, outside the product only (site hero, README, launch
+posts); inside, the welcome screen has the short one (§15):
+
+> **bise** /beez/ · french, n. 1. a quick kiss on the cheek. 2. a brisk north
+> wind. 3. a terminal where your agents ship while you think.
 
 Rejected, don't bring them back: "all the agents. none of the overhead."
 ("overhead" is unclear), "all the agents. stay in flow.", "code like a team
@@ -398,8 +404,10 @@ Validated as is: [tui-onboarding.html](tui-onboarding.html). Inspired by
 Vibe's (`vibe/setup/onboarding`). Six steps, `enter` to go on:
 
 1. **Welcome**, centered. Typed at ~70 ms per character: `hi, i'm bise`, then
-   `:*` pops in accent (scale 0.4 → 1.5 → 1, 0.9 s), then `your ideas. my
-   hands. lots of them.` (dim), then `press enter ↵` (faint).
+   `:*` pops in accent (scale 0.4 → 1.5 → 1, 0.9 s), then, right under the
+   name, the short gloss fades in (faint): `bise /beez/ · french: a kiss on
+   the cheek. also a north wind.`, then `ideas in. little kisses out. also
+   pull requests.` (dim) is typed, then `press enter ↵` (faint).
 2. **Theme.** `your terminal looks dark, so i picked dark.` / `you can change
    it any time with /theme.` Two live previews side by side (the same four
    lines of a bise feed); `←→` switches, `enter` keeps.

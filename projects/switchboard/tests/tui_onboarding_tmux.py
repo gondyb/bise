@@ -54,8 +54,12 @@ def main():
         sc = wait_screen("press enter ↵", 30)
         time.sleep(0.5)
         sc = screen()
-        for s in ["hi, i'm bise :*", "your ideas. my hands. lots of them.", "● ○ ○ ○ ○ ○"]:
+        for s in ["hi, i'm bise :*", "bise /beez/ · french: a kiss on the cheek. also a north wind.",
+                  "ideas in. little kisses out. also pull requests.", "● ○ ○ ○ ○ ○"]:
             assert s in sc, sc
+        rows = sc.splitlines()
+        hi = next(i for i, r in enumerate(rows) if "hi, i'm bise :*" in r)
+        assert "bise /beez/" in rows[hi + 1], sc      # the gloss, right under the name
         shot("1-welcome", sc)
         # 2 theme: two previews, ←→ switches live
         keys("Enter")
