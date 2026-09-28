@@ -211,7 +211,8 @@ def t_direct_message_and_note(E, c):
     before = len([r for r in E.fake_requests() if r["agent"] == "main"])
     c.say("@t1 route explicite")
     c.wait_line("main", "sb route : toi → @t1 : route explicite")
-    c.wait_line("t1", "ack: route explicite")
+    # from main's view the task reads it tagged (RFC 0003 §5.1)
+    c.wait_line("t1", 'ack: <user_message via="main"> route explicite')
     c.wait_idle("t1")
     check(len([r for r in E.fake_requests() if r["agent"] == "main"]) == before, "an explicit route costs no main turn")
 
