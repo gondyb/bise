@@ -26,7 +26,7 @@ Les agents de code sont bons. Les travailler en parallèle, non.
 
 Taglines (choisies par Gabriel, gardées en anglais) :
 
-> **your team is as big as your ideas.**
+> **you, but with way more hands.**
 > *built for people who think faster than they type.*
 
 **Règle de style (Gabriel) : jamais de majuscule en début de mot, sur tous
@@ -35,8 +35,8 @@ au clavier. Ton : humain, décontracté, à la première personne quand ça coll
 éviter la structure lisse « X. None of the Y. » qui sonne LLM. (Les docs
 internes comme celle-ci gardent les majuscules, sauf dans la copy elle-même.)
 
-La tagline secondaire est tranchée. La principale est la favorite, encore
-ouverte.
+Les deux choisies par Gabriel. Ancienne principale, gardée en alternative :
+« your team is as big as your ideas. »
 
 Public et message central : les gens qui ont plein d'idées, qui vont vite, et
 qui ont besoin que la tech disparaisse et les suive. La valeur est humaine : le

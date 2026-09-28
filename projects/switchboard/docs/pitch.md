@@ -27,7 +27,7 @@ Coding agents are good. Running several of them in parallel is not.
 
 Taglines (picked by Gabriel):
 
-> **your team is as big as your ideas.**
+> **you, but with way more hands.**
 > *built for people who think faster than they type.*
 
 **Style rule (Gabriel): no capital letter at the start of any word, ever,
@@ -36,8 +36,8 @@ on a keyboard. Tone: human, casual, first person when it fits; avoid the
 polished "X. None of the Y." LLM pattern. (Internal docs like this one keep
 normal capitals, except for the copy itself.)
 
-The secondary tagline is settled. The headline is the current favorite, still
-open.
+Both picked by Gabriel. Previous headline, kept as an alternative: "your
+team is as big as your ideas."
 
 Audience and core message: people with lots of ideas who move fast and need
 the tech to disappear and keep up with them. The value is human: flow, no
@@ -59,8 +59,7 @@ Rejected: "All the agents. None of the overhead." ("overhead" is unclear);
 "All the agents. Stay in flow."; "Code like a team of ten." (a number).
 "All your ideas. None of the juggling." (sounds like an LLM).
 Other candidates, human tone: "too many ideas? good."; "say it once. forget
-about it. it's done."; "finally, something that keeps up with my brain.";
-"you, but with way more hands."
+about it. it's done."; "finally, something that keeps up with my brain."
 
 - Never wait on an agent again.
 - One conversation. As many agents as you want.
