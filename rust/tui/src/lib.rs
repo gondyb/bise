@@ -1999,12 +1999,17 @@ struct App {
     // line mode holds running tools until they finish so the printed
     // line carries the merged annotations (name, args, result)
     line_tools: std::collections::HashMap<u32, ToolData>,
-    // feed scrollback: top is an offset from the FIRST row, follow means
-    // stick to the bottom (any scroll up turns it off, End/enter turn it
-    // back on). Top-anchored, so new content never moves a pinned view.
+    // feed scrollback: follow means stick to the bottom (any scroll up
+    // turns it off, End/enter turn it back on). A pinned view is anchored
+    // on its first row, (event, row in the event): new content never
+    // moves it, and a frame only builds the rows it shows (no sum over
+    // the whole history). `scroll` is the move asked since the last
+    // frame, in rows; the frame applies it.
     follow: bool,
-    top: usize,
-    max_top: usize,
+    anchor: (usize, usize),
+    scroll: isize,
+    // the event shown on each row of the feed by the last frame (clicks)
+    vis_events: Vec<usize>,
     // activity that arrived while pinned (shown by the back-to-bottom bar)
     unseen: usize,
     tail_visible: bool,
@@ -2382,7 +2387,8 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     } else if first == "/clear" {
         app.events.clear();
         app.cache.clear();
-        app.top = 0;
+        app.anchor = (0, 0);
+        app.scroll = 0;
         app.follow = true;
         app.unseen = 0;
         out.push(Ev::Info("affichage vidé".into()));
@@ -2459,6 +2465,106 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     out
 }
 
+/// The rows of event `i` at this width, built when missing (a running
+/// tool redraws its tool line). Returns how many rows it has.
+fn ensure_rows(
+    events: &[Ev],
+    cache: &mut [Option<EventRows>],
+    i: usize,
+    debug: bool,
+    width: usize,
+    tick: u32,
+) -> usize {
+    match cache[i].as_mut() {
+        Some(c) if c.width == width as u16 => {
+            refresh_live(c, &events[i], tick);
+        }
+        _ => cache[i] = Some(event_rows(events, i, debug, width, tick)),
+    }
+    cache[i].as_ref().map_or(0, |c| c.rows.len())
+}
+
+/// The anchor that shows the last `h` rows.
+fn bottom_anchor(n: usize, h: usize, rows_of: &mut dyn FnMut(usize) -> usize) -> (usize, usize) {
+    let mut need = h;
+    let mut i = n;
+    while i > 0 {
+        i -= 1;
+        let len = rows_of(i);
+        if len >= need {
+            return (i, len - need);
+        }
+        need -= len;
+    }
+    (0, 0)
+}
+
+/// Move a (event, row) anchor by `d` rows (negative: up), building only
+/// the rows it walks over.
+fn move_anchor(
+    anchor: (usize, usize),
+    d: isize,
+    n: usize,
+    rows_of: &mut dyn FnMut(usize) -> usize,
+) -> (usize, usize) {
+    if n == 0 {
+        return (0, 0);
+    }
+    let (mut i, mut r) = anchor;
+    if i >= n {
+        i = n - 1;
+        r = usize::MAX;
+    }
+    r = r.min(rows_of(i).saturating_sub(1));
+    let mut k = d.unsigned_abs();
+    if d < 0 {
+        while k > 0 {
+            if r >= k {
+                r -= k;
+                break;
+            }
+            k -= r;
+            r = 0;
+            // one row up: the last row of the previous event with rows
+            let mut j = i;
+            let mut moved = false;
+            while j > 0 {
+                j -= 1;
+                let len = rows_of(j);
+                if len > 0 {
+                    (i, r) = (j, len - 1);
+                    k -= 1;
+                    moved = true;
+                    break;
+                }
+            }
+            if !moved {
+                break;
+            }
+        }
+    } else {
+        while k > 0 {
+            let len = rows_of(i);
+            if r + k < len {
+                r += k;
+                break;
+            }
+            // to the first row of the next event with rows
+            k -= len.saturating_sub(r);
+            let mut j = i + 1;
+            while j < n && rows_of(j) == 0 {
+                j += 1;
+            }
+            if j >= n {
+                r = len.saturating_sub(1);
+                break;
+            }
+            (i, r) = (j, 0);
+        }
+    }
+    (i, r)
+}
+
 fn draw(app: &mut App, frame: &mut Frame) {
     let (area, sb_panel) = sb::split(app, frame.area());
     if let Some(p) = sb_panel {
@@ -2524,73 +2630,82 @@ fn draw(app: &mut App, frame: &mut Frame) {
     if app.cache.len() < n {
         app.cache.resize_with(n, || None);
     }
-    let mut starts: Vec<usize> = Vec::with_capacity(n);
-    let mut total_rows = 0usize;
-    for i in 0..n {
-        let stale = app.cache[i]
-            .as_ref()
-            .is_none_or(|c| c.width != area_w as u16);
-        if stale {
-            app.cache[i] = Some(event_rows(&app.events, i, app.debug, area_w, app.tick));
-        } else if let Some(c) = app.cache[i].as_mut() {
-            refresh_live(c, &app.events[i], app.tick);
-        }
-        starts.push(total_rows);
-        total_rows += app.cache[i].as_ref().map(|c| c.rows.len()).unwrap_or(0);
+    let (debug, tick) = (app.debug, app.tick);
+    macro_rules! rows_of {
+        () => {
+            &mut |i: usize| ensure_rows(&app.events, &mut app.cache, i, debug, area_w, tick)
+        };
     }
-
-    let max_top = total_rows.saturating_sub(area_h);
-    if app.follow {
-        app.top = max_top;
-    }
-    let top = app.top.min(max_top);
-    let tail_visible = top + area_h >= total_rows;
-
+    let down = app.scroll > 0;
+    let mut anchor = if app.follow {
+        bottom_anchor(n, area_h, rows_of!())
+    } else {
+        move_anchor(app.anchor, app.scroll, n, rows_of!())
+    };
+    app.scroll = 0;
+    // the rows from the anchor down; fewer than the screen: the bottom
     let mut vis: Vec<Line> = Vec::with_capacity(area_h + 2);
-    if total_rows > 0 {
-        let mut i0 = 0usize;
-        for (i, st) in starts.iter().enumerate() {
-            if *st <= top {
-                i0 = i;
-            } else {
-                break;
-            }
-        }
-        let mut skip = top - starts[i0];
-        for i in i0..n {
-            let empty = &Vec::new();
-            let rows = app.cache[i].as_ref().map(|c| &c.rows).unwrap_or(empty);
-            if skip >= rows.len() {
-                skip -= rows.len();
-                continue;
-            }
+    let mut vis_events: Vec<usize> = Vec::with_capacity(area_h + 2);
+    let mut tail_visible = true;
+    for pass in 0..2 {
+        vis.clear();
+        vis_events.clear();
+        tail_visible = true;
+        let (mut i, mut skip) = anchor;
+        while i < n {
+            ensure_rows(&app.events, &mut app.cache, i, debug, area_w, tick);
+            let rows = app.cache[i].as_ref().map(|c| &c.rows[..]).unwrap_or(&[]);
             for r in rows.iter().skip(skip) {
                 if vis.len() >= area_h {
+                    tail_visible = false;
                     break;
                 }
                 vis.push(r.clone());
+                vis_events.push(i);
             }
             skip = 0;
-            if vis.len() >= area_h {
+            if !tail_visible {
                 break;
             }
+            i += 1;
         }
+        // a full screen that shows the last row is the tail too
+        if pass == 0 && vis.len() < area_h && anchor != (0, 0) {
+            anchor = bottom_anchor(n, area_h, rows_of!());
+            continue;
+        }
+        break;
     }
+    if tail_visible && down && !app.follow {
+        app.follow = true;
+        app.unseen = 0;
+    }
+    // nothing above the anchor: the view shows the top of the feed
+    let at_top = anchor.1 == 0
+        && !app.events[..anchor.0.min(n)]
+            .iter()
+            .rev()
+            .any(|e| ev_visible(e, app.debug));
     frame.render_widget(Paragraph::new(Text::from(vis)), text_area);
 
-    if total_rows > area_h {
-        let mut state = ScrollbarState::new(total_rows)
-            .position(top)
-            .viewport_content_length(area_h);
+    if !(at_top && tail_visible) && n > 0 {
+        // the scrollbar counts events, not rows: the rows of the whole
+        // history are never summed
+        let shown = vis_events.last().map_or(1, |l| l + 1 - anchor.0.min(*l));
+        let pos = if tail_visible { n - 1 } else { anchor.0 };
+        let mut state = ScrollbarState::new(n)
+            .position(pos)
+            .viewport_content_length(shown);
         frame.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight),
             chunks[0],
             &mut state,
         );
     }
+    app.anchor = anchor;
+    app.vis_events = vis_events;
     app.area_w = area_w;
     app.area_h = area_h;
-    app.max_top = max_top;
     app.tail_visible = tail_visible;
 
     // ---- the status row (the OpenCode prompt status row): back to
@@ -3043,13 +3158,11 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                 match m.kind {
                     MouseEventKind::ScrollUp => {
                         app.follow = false;
-                        app.top = app.top.saturating_sub(3);
+                        app.scroll -= 3;
                     }
                     MouseEventKind::ScrollDown => {
-                        app.top += 3;
-                        if app.top >= app.max_top {
-                            app.follow = true;
-                            app.unseen = 0;
+                        if !app.follow {
+                            app.scroll += 3;
                         }
                     }
                     // click the back-to-bottom bar to return to the tail;
@@ -3071,28 +3184,14 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                         if m.row as usize >= app.area_h {
                             continue;
                         }
-                        // the same math as draw: content row = the
-                        // scroll offset + the feed row, then the event
-                        // whose row range contains it
-                        let top = app.top.min(app.max_top);
-                        let row = top + m.row as usize;
-                        let mut acc = 0usize;
-                        for i in 0..app.events.len() {
-                            let len = app
-                                .cache
-                                .get(i)
-                                .and_then(|c| c.as_ref())
-                                .map_or(0, |c| c.rows.len());
-                            if row < acc + len {
-                                if let Ev::Thinking { open, .. } = &mut app.events[i] {
-                                    *open = !*open;
-                                    if let Some(c) = app.cache.get_mut(i) {
-                                        *c = None;
-                                    }
+                        // the event the last frame showed on that row
+                        if let Some(&i) = app.vis_events.get(m.row as usize) {
+                            if let Some(Ev::Thinking { open, .. }) = app.events.get_mut(i) {
+                                *open = !*open;
+                                if let Some(c) = app.cache.get_mut(i) {
+                                    *c = None;
                                 }
-                                break;
                             }
-                            acc += len;
                         }
                     }
                     _ => {}
@@ -3173,7 +3272,8 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
                         app.events.clear();
                         app.cache.clear();
-                        app.top = 0;
+                        app.anchor = (0, 0);
+        app.scroll = 0;
                         app.follow = true;
                         app.unseen = 0;
                     }
@@ -3193,14 +3293,12 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                     (KeyCode::PageUp, _) => {
                         let page = (app.area_h / 2).max(1);
                         app.follow = false;
-                        app.top = app.top.saturating_sub(page);
+                        app.scroll -= page as isize;
                     }
                     (KeyCode::PageDown, _) => {
                         let page = (app.area_h / 2).max(1);
-                        app.top += page;
-                        if app.top >= app.max_top {
-                            app.follow = true;
-                            app.unseen = 0;
+                        if !app.follow {
+                            app.scroll += page as isize;
                         }
                     }
                     (KeyCode::End, _) => {
@@ -3487,8 +3585,9 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
         debug,
         line_tools: std::collections::HashMap::new(),
         follow: true,
-        top: 0,
-        max_top: 0,
+        anchor: (0, 0),
+        scroll: 0,
+        vis_events: Vec::new(),
         unseen: 0,
         tail_visible: true,
         bottom_bar_rect: None,

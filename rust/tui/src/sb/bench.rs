@@ -16,8 +16,9 @@ pub(crate) fn test_app() -> App {
         debug: false,
         line_tools: std::collections::HashMap::new(),
         follow: true,
-        top: 0,
-        max_top: 0,
+        anchor: (0, 0),
+        scroll: 0,
+        vis_events: Vec::new(),
         unseen: 0,
         tail_visible: true,
         bottom_bar_rect: None,
@@ -109,10 +110,26 @@ fn bench_long_feed() {
         }
     }
     app.follow = false;
-    app.top = 0;
+    let mut worst = 0f64;
+    for _ in 0..50 {
+        app.scroll -= 25;
+        let t = Instant::now();
+        term.draw(|f| draw_sb(&mut app, f)).unwrap();
+        worst = worst.max(ms(t));
+    }
+    eprintln!("PageUp frames (worst of 50): {:.2} ms", worst);
+    app.anchor = (0, 0);
     let t = Instant::now();
     term.draw(|f| draw_sb(&mut app, f)).unwrap();
-    eprintln!("frame at the top: {:.2} ms", ms(t));
+    eprintln!("jump to the top: {:.2} ms", ms(t));
+    let mut worst = 0f64;
+    for _ in 0..50 {
+        app.scroll += 25;
+        let t = Instant::now();
+        term.draw(|f| draw_sb(&mut app, f)).unwrap();
+        worst = worst.max(ms(t));
+    }
+    eprintln!("PageDown frames from the top (worst of 50): {:.2} ms", worst);
     let t = Instant::now();
     for l in lines.iter().take(20) {
         let j = json!({"ev": "line", "agent": "big", "line": l}).to_string();
@@ -130,4 +147,74 @@ fn bench_long_feed() {
     focus(&mut app, "big");
     term.draw(|f| draw_sb(&mut app, f)).unwrap();
     eprintln!("focus away and back + 2 draws: {:.1} ms", ms(t));
+}
+
+// ---- the anchored scroll (O(visible) frames) ----
+
+fn screen(term: &Terminal<TestBackend>) -> Vec<String> {
+    let buf = term.backend().buffer();
+    let w = buf.area.width as usize;
+    buf.content
+        .chunks(w)
+        .map(|row| row.iter().map(|c| c.symbol()).collect::<String>().trim_end().to_string())
+        .collect()
+}
+
+fn feed(app: &mut App, from: usize, to: usize) {
+    for k in from..to {
+        push_event(&mut app.events, &mut app.cache, Ev::Info(format!("event {}", k)));
+    }
+}
+
+#[test]
+fn a_pinned_view_does_not_move_when_lines_arrive() {
+    let mut app = test_app();
+    let mut term = Terminal::new(TestBackend::new(80, 30)).unwrap();
+    feed(&mut app, 0, 300);
+    term.draw(|f| draw_sb(&mut app, f)).unwrap();
+    assert!(app.tail_visible);
+    assert!(screen(&term).iter().any(|l| l.contains("event 299")));
+    app.follow = false;
+    app.scroll -= 40;
+    term.draw(|f| draw_sb(&mut app, f)).unwrap();
+    assert!(!app.tail_visible);
+    // the text of the feed (the scrollbar thumb moves: more history)
+    let text = |t: &Terminal<TestBackend>, h: usize| -> Vec<String> {
+        screen(t).into_iter().take(h).map(|l| l.chars().take(40).collect()).collect()
+    };
+    let before = text(&term, app.area_h);
+    assert!(!before.iter().any(|l| l.contains("event 299")));
+    feed(&mut app, 300, 320);
+    term.draw(|f| draw_sb(&mut app, f)).unwrap();
+    let after = text(&term, app.area_h);
+    assert_eq!(before, after);
+    // back down: the view follows again
+    app.scroll += 1000;
+    term.draw(|f| draw_sb(&mut app, f)).unwrap();
+    assert!(app.follow && app.tail_visible);
+    assert!(screen(&term).iter().any(|l| l.contains("event 319")));
+}
+
+#[test]
+fn scrolling_up_then_down_comes_back() {
+    let mut app = test_app();
+    let mut term = Terminal::new(TestBackend::new(80, 30)).unwrap();
+    feed(&mut app, 0, 300);
+    term.draw(|f| draw_sb(&mut app, f)).unwrap();
+    app.follow = false;
+    app.scroll -= 100;
+    term.draw(|f| draw_sb(&mut app, f)).unwrap();
+    let a = app.anchor;
+    app.scroll -= 37;
+    term.draw(|f| draw_sb(&mut app, f)).unwrap();
+    app.scroll += 37;
+    term.draw(|f| draw_sb(&mut app, f)).unwrap();
+    assert_eq!(app.anchor, a);
+    // the top of the feed is reachable and stops there
+    app.scroll -= 100_000;
+    term.draw(|f| draw_sb(&mut app, f)).unwrap();
+    assert!(screen(&term)[0].contains("event 0"));
+    // every row of the feed maps to the event it shows (clicks)
+    assert_eq!(app.vis_events[0], 0);
+    assert_eq!(app.vis_events.len(), app.area_h);
 }

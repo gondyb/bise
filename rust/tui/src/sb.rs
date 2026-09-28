@@ -17,8 +17,8 @@ pub(super) struct View {
     events: Vec<Ev>,
     cache: Vec<Option<EventRows>>,
     follow: bool,
-    top: usize,
-    max_top: usize,
+    anchor: (usize, usize),
+    scroll: isize,
     unseen: usize,
     tail_visible: bool,
     pending: bool,
@@ -34,8 +34,8 @@ impl View {
             events: Vec::new(),
             cache: Vec::new(),
             follow: true,
-            top: 0,
-            max_top: 0,
+            anchor: (0, 0),
+            scroll: 0,
             unseen: 0,
             tail_visible: true,
             pending: false,
@@ -51,8 +51,8 @@ fn swap_feed(app: &mut App, v: &mut View) {
     std::mem::swap(&mut app.events, &mut v.events);
     std::mem::swap(&mut app.cache, &mut v.cache);
     std::mem::swap(&mut app.follow, &mut v.follow);
-    std::mem::swap(&mut app.top, &mut v.top);
-    std::mem::swap(&mut app.max_top, &mut v.max_top);
+    std::mem::swap(&mut app.anchor, &mut v.anchor);
+    std::mem::swap(&mut app.scroll, &mut v.scroll);
     std::mem::swap(&mut app.unseen, &mut v.unseen);
     std::mem::swap(&mut app.tail_visible, &mut v.tail_visible);
     std::mem::swap(&mut app.pending, &mut v.pending);
@@ -327,7 +327,8 @@ fn hub_reconnected(app: &mut App) {
     app.pending = false;
     app.interrupt_requested = false;
     app.follow = true;
-    app.top = 0;
+    app.anchor = (0, 0);
+    app.scroll = 0;
     app.unseen = 0;
     let Some(sb) = app.sb.as_mut() else { return };
     for v in sb.views.values_mut() {
@@ -564,7 +565,8 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         "/clear" => {
             app.events.clear();
             app.cache.clear();
-            app.top = 0;
+            app.anchor = (0, 0);
+    app.scroll = 0;
             app.follow = true;
             out.push(Ev::Info("affichage vidé".into()));
         }
@@ -1379,8 +1381,9 @@ pub fn run_switchboard(
         debug,
         line_tools: std::collections::HashMap::new(),
         follow: true,
-        top: 0,
-        max_top: 0,
+        anchor: (0, 0),
+        scroll: 0,
+        vis_events: Vec::new(),
         unseen: 0,
         tail_visible: true,
         bottom_bar_rect: None,
