@@ -830,6 +830,57 @@ Index:
 
 ## Added by main
 
+### BISE-23 · stable panel numbers, `waits {name}`
+
+- **status:** done · **owner:** bise-p-chrome · **commits:** ecb4bec
+- **track:** P · **owns:** `sb/panel.rs`; the `Nav::Goto` path and the
+  agent fields of `apply_state` in `sb.rs`; `waiting_on` in the hub
+  (`hub/view.bend`, `hub/main.bend`, `sb-core`, `core.rs` snapshot,
+  `model.rs` Agent)
+- **spec:** book §8 (agents panel: numbers never change while an agent
+  lives; `waits docs`)
+- **do:** (a) a slot map: each live agent keeps its number while it lives;
+  Alt+N goes by that number. (b) the hub sends `waiting_on` (who the agent
+  waits on) in the agent state; the panel shows `waits {name}`.
+- **done when:** numbers survive a drop (test); `waits x` shows when an
+  agent waits on another (throwaway hub); gates green.
+- **notes:**
+  - **Numbers:** `Sb::numbers()` (panel.rs) keeps a slot map in the panel's
+    per-frame state (`PanelHits.slots`, no new `Sb` field): main 0; an agent
+    keeps its number while it lives (stopped/failed too, archived frees it);
+    a newcomer takes the smallest free number, so a fresh session numbers in
+    creation order. `Nav::Goto` (sb.rs) uses `Sb::agent_numbered(n)`. Rows
+    stay in the hub's order: after a drop and a newcomer, the panel can read
+    `2 b, 3 c, 1 d` (the number is the key, not the rank).
+  - **waiting_on:** in sb-core's view (`hub/view.bend` `waits_on`: the
+    recipient of the message behind the agent's first waiter, i.e. its `sb
+    wait` / `sb ask`; `view()` now takes the waiters, `hub/main.bend` passes
+    `X.R.waiters`), read by `core.rs::load_view` into `model::Agent.waiting_on`
+    and sent in the snapshot as `waiting_on` while the agent waits (null
+    otherwise). No law touched; PROOF ALL PROOFS CHECK. sb-core rebuilt
+    unstripped (`bend hub/main.bend -o`), read and run by the tests without
+    being killed. The TUI reads it in `apply_state` (sb.rs, one field);
+    the panel says `waits {name}` (plain `waiting` without it).
+  - **Tests:** `panel::tests::numbers_survive_a_drop` (drop, Alt+3/1/0, a
+    newcomer takes 1, a restored agent gets a free number), `waits docs` in
+    `panel_rows_at_28_and_40`, core `a_waiting_agent_says_who_it_waits_on`,
+    tmux `tui_waits_tmux.py` (throwaway hub: `3 … t3 • waits t2` while t2
+    sleeps, drop t1 keeps `2 t2` / `3 t3`, Alt+2 → t2). Not added to
+    `run_all.sh` (not mine): main may add it.
+  - **Also fixed:** `tui_tmux.py` asserted the brief text in an agent's feed;
+    since BISE-12 the brief is folded (`◇ brief ▸`): it checks `brief`.
+    `tui_version_tmux.py` passes in my gate (HEAD 063285b + my files and at
+    c51d8e6): not reproduced; the stale `SB_CORE_BIN` of the live hub's env
+    may explain the failure seen elsewhere.
+  - **Seen, not done:** a working agent's `12m` comes from the snapshot's
+    `turn_ms`, refreshed only when the hub sends a new state: it can sit at
+    `0s` for a while (the TUI could add the time since the snapshot).
+  - **Gates** (private worktree, shared target): build, `cargo test
+    --workspace` (switchboard 98), clippy `--workspace --all-targets` clean,
+    PROOF ALL PROOFS CHECK, `run_all.sh` e2e + every tmux test PASS (+
+    panel_click, waits). The working-tree `sb-core` is still the old one
+    (HEAD has the new one): left alone.
+
 ### BISE-84 · glyph fallbacks and `BISE_ASCII`
 
 - **status:** done · **owner:** bise-t-theme · **commits:** 1a9179d, 601bc3c (fix: 1a9179d had swept in BISE-60 hunks of run.rs)
