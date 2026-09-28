@@ -630,6 +630,14 @@ impl Editor {
     }
 }
 
+// ---- the help ----
+
+/// The composer's keys, for /help.
+pub(crate) const EDIT_HELP: &str = "composer: Option+←/→ word · Cmd+←/→ or Ctrl+A/E line start/end · Ctrl+Home/End text start/end · Option+Backspace or Ctrl+W delete a word · Cmd+Backspace or Ctrl+U delete to the line start · Ctrl+K delete to the line end (outside Switchboard) · Shift + any move selects · Ctrl+/ undo · Alt+/ redo · ↑/↓ move between rows, then the history (↓ past the newest brings the draft back) · mouse: click, drag, double click (word), triple click; the release copies · Ctrl+Shift+C copy · Ctrl+Shift+X cut · Shift+drag: the terminal's own selection";
+
+/// Ghostty tips, for /help: the shortcuts Ghostty keeps unless unbound.
+pub(crate) const GHOSTTY_TIPS: &str = "Ghostty tips: Cmd+↑/↓, Cmd+Z and Cmd+C are Ghostty's by default. To get them in the composer, add to ~/Library/Application Support/com.mitchellh.ghostty/config: keybind = super+arrow_up=unbind · keybind = super+arrow_down=unbind · keybind = super+z=unbind · keybind = super+shift+z=unbind · keybind = super+c=performable:copy_to_clipboard (Cmd+C copies Ghostty's selection if any, else the app's). Check what reaches the app: bend-harness keyprobe";
+
 // ---- the key map ----
 
 /// The editing action of a key, macOS text-field style. What Ghostty

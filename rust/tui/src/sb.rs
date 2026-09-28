@@ -889,6 +889,8 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
                 "@task text — direct message to a task (@main from a task)".into(),
             ));
             out.push(Ev::Info(KEYS_HELP.into()));
+            out.push(Ev::Info(crate::editor::EDIT_HELP.into()));
+            out.push(Ev::Info(crate::editor::GHOSTTY_TIPS.into()));
         }
         _ => {
             let focus = sb.focus.clone();

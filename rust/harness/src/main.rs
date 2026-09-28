@@ -323,6 +323,8 @@ fn main() -> std::io::Result<()> {
                     restart,
                 ));
             }
+            // the key/mouse events this terminal delivers (macOS shortcuts)
+            Some("keyprobe") => return bend_tui::keyprobe(),
             Some("switchboard") => {
                 let debug = args.iter().any(|a| a == "--debug");
                 return run_switchboard(&args[1..], debug);

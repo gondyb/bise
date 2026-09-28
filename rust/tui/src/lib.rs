@@ -53,6 +53,8 @@ mod emoji;
 mod editor;
 mod clipboard;
 mod feedsel;
+mod keyprobe;
+pub use keyprobe::keyprobe;
 pub use sb::{run_switchboard, take_reexec};
 
 const BRAND: Color = Color::Rgb(0xfa, 0xb2, 0x83); // primary
@@ -2559,6 +2561,8 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         out.push(Ev::Info(
             "glyphs: ✦ reasoning · ✓ ok · ✗ failure · ▲ warning · ⟳ compaction · ≡ summary · ↳ preview".into(),
         ));
+        out.push(Ev::Info(editor::EDIT_HELP.into()));
+        out.push(Ev::Info(editor::GHOSTTY_TIPS.into()));
     } else if first == "/interrupt" {
         // BR-003: the socket is only read between turns, so sending the
         // line to the harness could never interrupt anything - the
