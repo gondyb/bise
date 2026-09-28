@@ -393,6 +393,12 @@ pub(crate) fn ascii_mode() -> bool {
     ascii_cell::get()
 }
 
+/// Tests of other modules switch ASCII mode for their thread.
+#[cfg(test)]
+pub(crate) fn set_ascii_for_tests(on: bool) {
+    ascii_cell::set(on);
+}
+
 /// The glyph to draw for `g` (a `G_*` constant, or any glyph of the
 /// table): its ASCII form under `BISE_ASCII=1`, else `g` itself.
 pub(crate) fn glyph(g: &'static str) -> &'static str {

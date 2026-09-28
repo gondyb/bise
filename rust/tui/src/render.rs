@@ -675,9 +675,10 @@ pub(crate) fn tool_head(td: &ToolData, tick: u32, name: &str, args: &str) -> Lin
         other => (" ", other),
     };
     let dim_st = Style::default().fg(dim());
+    // §9 Emphasis: a one-line tool call is the agent's own work, dim
     let mut row = vec![
-        Span::styled(format!(" {} ", glyph), Style::default().fg(text())),
-        Span::styled(label.to_string(), Style::default().fg(text())),
+        Span::styled(format!(" {} ", glyph), dim_st),
+        Span::styled(label.to_string(), dim_st),
     ];
     match td.state {
         ToolState::Run => {
@@ -845,6 +846,9 @@ pub(crate) fn edit_head(td: &ToolData, tick: u32, src: &str) -> Line<'static> {
 
 pub(crate) fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
     let (name, args, code) = tool_meta(td);
+    if crate::toolbox::is_boxed(td) {
+        return crate::toolbox::box_lines(td, &code, &[], tick, code_width(width));
+    }
     let mut ls = vec![tool_head(td, tick, &name, &args)];
     ls.extend(tool_body(td, &code, width));
     ls

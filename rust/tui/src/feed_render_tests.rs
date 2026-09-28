@@ -88,11 +88,11 @@ async function main(): Promise<unknown> {
         println!("{:2} | {}", i, l);
     }
     // the tool line: λ, the tool's name, its state; the source only in the block
-    assert!(joined[0].starts_with(" λ typescript ✓") && !joined[0].contains("orchestre"), "{}", joined[0]);
-    assert!(joined.iter().any(|l| l.starts_with(" │ async function main")));
+    assert!(joined[0].starts_with("╭─ λ typescript ✓") && !joined[0].contains("orchestre"), "{}", joined[0]);
+    assert!(joined.iter().any(|l| l.starts_with("│ async function main")));
     assert!(joined.iter().any(|l| l.contains("une chaîne")));
-    // one row per source line, behind the rail
-    assert_eq!(joined.iter().filter(|l| l.starts_with(" │ ")).count(), 6);
+    // one row per source line, inside the box (BISE-96)
+    assert_eq!(joined[1..].iter().take_while(|l| !l.starts_with('├') && !l.starts_with('╰')).count(), 6);
 }
 
 fn merged_tool(wire_lines: &[String]) -> ToolData {
@@ -128,8 +128,8 @@ fn a_long_script_renders_whole() {
         "  obs: tool_finished #4 ok".to_string(),
     ]);
     let rows = rows_text(&ev_lines(&Ev::Tool(bash), 80));
-    assert_eq!(rows.iter().filter(|l| l.starts_with(" │ echo")).count(), 200);
-    assert!(rows.iter().any(|l| l == " │ echo 200"));
+    assert_eq!(rows.iter().filter(|l| l.starts_with("│ echo")).count(), 200);
+    assert!(rows.iter().any(|l| l.starts_with("│ echo 200 ")));
     assert!(!rows.iter().any(|l| l.contains("more lines")));
     // a TypeScript program too
     let src: String = (1..=200).map(|i| format!("const x{i} = {i};")).collect::<Vec<_>>().join("\n");
@@ -141,7 +141,7 @@ fn a_long_script_renders_whole() {
         "  obs: tool_finished #5 ok".to_string(),
     ]);
     let rows = rows_text(&ev_lines(&Ev::Tool(ts), 80));
-    assert_eq!(rows.iter().filter(|l| l.starts_with(" │ const x")).count(), 200);
+    assert_eq!(rows.iter().filter(|l| l.starts_with("│ const x")).count(), 200);
 }
 
 // other code (a patch, however long) stays behind its ▸ until opened,
@@ -185,8 +185,8 @@ done | sort -n";
     assert!(joined[0].contains("bash") && !joined[0].contains("compte"));
     assert!(joined.iter().any(|l| l.contains("for f in *.rs; do")));
     assert!(joined.iter().any(|l| l.contains("done | sort -n")));
-    // one row per source line (4 lines), behind the rail
-    assert_eq!(joined.iter().filter(|l| l.starts_with(" │ ")).count(), 4);
+    // one row per source line (4 lines), inside the box (BISE-96)
+    assert_eq!(joined[1..].iter().take_while(|l| !l.starts_with('├') && !l.starts_with('╰')).count(), 4);
 }
 
 // a bash tool line without tool_code (an older runtime) keeps the
@@ -199,8 +199,8 @@ fn bash_without_code_has_no_block() {
         "  obs: tool_finished #5 ok".to_string(),
     ]);
     let joined = rows_text(&ev_lines(&Ev::Tool(tool), 80));
-    assert!(joined[0].contains("ls -la"));
-    assert!(!joined.iter().any(|l| l.starts_with(" │ ")));
+    assert!(joined.iter().any(|l| l.contains("ls -la")));
+    assert!(!joined.iter().any(|l| l.starts_with('├')), "no output, no rule");
 }
 
 fn style_of(lines: &[Vec<Span<'static>>], tok: &str) -> Style {
@@ -488,7 +488,7 @@ fn prose_wraps_at_76_and_code_at_100() {
             // the long script line uses the whole code measure
             assert!(w >= 90, "code at {width}: {w}\n{code:#?}");
         }
-        assert!(code.iter().any(|r| r.starts_with(" │ » ")), "code at {width}: {code:#?}");
+        assert!(code.iter().any(|r| r.starts_with("│ » ")), "code at {width}: {code:#?}");
     }
 }
 
@@ -512,36 +512,40 @@ fn text_of(ev: &Ev, width: usize) -> Vec<String> {
 
 #[test]
 fn an_output_is_one_line_until_opened() {
+    // bash / TypeScript: the output is inside the box, whole when short
     let out = "running 12 tests  test login ... FAILED  1 failed, 11 passed (6.1s)";
-    let mut td = tool_with(3, "bash", Some("npx playwright test"), Some((true, out)), true);
-    let closed = text_of(&Ev::Tool(td.clone()), 100);
-    // the script in full, then one line for the output
-    assert!(closed.iter().any(|r| r == " │ npx playwright test"), "{closed:#?}");
-    assert_eq!(closed.last().unwrap(), "   ▸ output · 1 failed", "{closed:#?}");
-    assert!(!closed.iter().any(|r| r.contains("11 passed")));
+    let td = tool_with(3, "bash", Some("npx playwright test"), Some((true, out)), true);
+    let closed = text_of(&Ev::Tool(td), 100);
+    assert!(closed.iter().any(|r| r.starts_with("│ npx playwright test ")), "{closed:#?}");
+    assert!(closed.iter().any(|r| r.starts_with('├')), "{closed:#?}");
+    assert!(closed.iter().any(|r| r.contains("11 passed")), "{closed:#?}");
+    assert!(closed.last().unwrap().starts_with('╰'), "{closed:#?}");
+    // other tools: one line until opened
+    let mut td = tool_with(4, "search", None, Some((true, "3 results\nmore")), true);
+    assert_eq!(text_of(&Ev::Tool(td.clone()), 100).last().unwrap(), "   ▸ output");
     td.expanded = true;
     let open = text_of(&Ev::Tool(td), 100);
     assert!(open.iter().any(|r| r == "   ▾ output"), "{open:#?}");
-    assert!(open.iter().any(|r| r.starts_with(" │ running 12 tests") && r.contains("11 passed")), "{open:#?}");
-    // no count when the output does not say
-    let td = tool_with(4, "search", None, Some((true, "3 results")), true);
-    assert_eq!(text_of(&Ev::Tool(td), 100).last().unwrap(), "   ▸ output");
 }
 
 #[test]
 fn a_failure_is_one_line_with_its_reason() {
+    // a failing bash call is a box with an error border (BISE-96)
     let reason = "error[E0425]: cannot find value `width` in this scope";
+    let td = tool_with(5, "bash", Some("cargo test"), Some((false, reason)), false);
+    let rows = text_of(&Ev::Tool(td), 100);
+    assert!(rows[0].starts_with("╭─ $ bash ✗"), "{rows:#?}");
+    assert!(rows.iter().any(|r| r.starts_with(&format!("│ {reason}"))), "{rows:#?}");
+    // another tool: one line, its reason first; `▸` when cut
     let long = format!("{reason}  {}", "--> tui/src/feed.rs:12:5 ".repeat(8));
-    let mut td = tool_with(5, "bash", Some("cargo test"), Some((false, &long)), false);
+    let mut td = tool_with(6, "read", None, Some((false, &long)), false);
     let closed = text_of(&Ev::Tool(td.clone()), 100);
     let last = closed.last().unwrap();
     assert!(last.starts_with(&format!("   {reason}")) && last.ends_with("… ▸"), "{closed:#?}");
     td.expanded = true;
     let open = text_of(&Ev::Tool(td), 100);
-    assert!(open.iter().any(|r| r == "   ▾ output"), "{open:#?}");
     assert!(open.iter().any(|r| r.contains("feed.rs:12:5")));
-    // a short reason: nothing more to show, no ▸
-    let td = tool_with(6, "bash", Some("false"), Some((false, "exit 1")), false);
+    let td = tool_with(7, "read", None, Some((false, "exit 1")), false);
     assert_eq!(text_of(&Ev::Tool(td), 100).last().unwrap(), "   exit 1");
 }
 
@@ -604,8 +608,9 @@ fn the_brief_is_one_line_until_opened() {
 #[test]
 fn toggles_one_item_and_all_outputs() {
     let mut app = crate::sb::bench::test_app();
-    let out = tool_with(1, "bash", Some("ls"), Some((true, "a b c")), true);
-    let quiet = tool_with(2, "bash", Some("true"), None, true);
+    // one-line tools (a bash box folds only past 15 output rows)
+    let out = tool_with(1, "search", None, Some((true, "a b c")), true);
+    let quiet = tool_with(2, "search", None, None, true);
     app.events = vec![
         Ev::Tool(out.clone()),
         Ev::Thinking { ms: 10, text: "hm".into(), open: false },
@@ -686,20 +691,24 @@ fn feed_text(events: &[Ev], width: usize) -> Vec<String> {
     feed_rows(events, width).into_iter().flatten().map(|r| r.trim_end().to_string()).collect()
 }
 
+/// A box row without its padding and right border (BISE-96), so the
+/// mockup's rows compare by their text.
+fn unbox(r: &str) -> String {
+    r.trim_end_matches([' ', '│', '─', '╮', '╯', '┤']).to_string()
+}
+
 #[test]
 fn inside_an_agent_matches_the_mockup() {
-    let rows = feed_text(&mockup_turn(false), 100);
+    let rows: Vec<String> = feed_text(&mockup_turn(false), 100).iter().map(|r| unbox(r)).collect();
     println!("{}", rows.join("\n"));
     let want = [
         " ◇ brief ▸",
         " ∴ thought for 14s ▸",
-        " $ bash ✓",
-        " │ npx playwright test login --project=webkit --reporter=line",
-        "   ▸ output · 1 failed",
-        " λ typescript ✓",
-        " │ async function main() {",
-        "   ▸ output",
-        "   ↳ github.search_issues ✓",
+        "╭─ $ bash ✓",
+        "│ npx playwright test login --project=webkit --reporter=line",
+        "╭─ λ typescript ✓",
+        "│ async function main() {",
+        "│ ↳ github.search_issues ✓",
         " ± edit web/src/auth/session.ts ✓ +2 −1 ▸",
         " found it: safari drops SameSite=None cookies without Secure. added secure:",
     ];
@@ -713,22 +722,21 @@ fn inside_an_agent_matches_the_mockup() {
 
 #[test]
 fn everything_disclosed_matches_the_mockup() {
-    let rows = feed_text(&mockup_turn(true), 100);
+    let rows: Vec<String> = feed_text(&mockup_turn(true), 100).iter().map(|r| unbox(r)).collect();
     println!("{}", rows.join("\n"));
     let want = [
         " ◇ brief ▾",
         " │ the login breaks on safari 18. reproduce with playwright, fix it,",
         " ∴ thought for 14s ▾",
         " │ Secure, and the dev server sets it without. check session.ts first.",
-        " $ bash ✓",
-        "   ▾ output",
+        "╭─ $ bash ✓",
         " ± edit web/src/auth/session.ts ✓ +2 −1 ▾",
         " │ +    secure: true,",
     ];
     for w in want {
         assert!(rows.iter().any(|r| r == w), "{w:?} missing:\n{}", rows.join("\n"));
     }
-    assert!(rows.iter().any(|r| r.starts_with(" │ [webkit] › login.spec.ts:12")));
+    assert!(rows.iter().any(|r| r.starts_with("│ [webkit] › login.spec.ts:12")));
 }
 
 // a card in the history: a question or a blocker is level 1 (accent bar,

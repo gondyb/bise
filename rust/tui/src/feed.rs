@@ -97,6 +97,16 @@ pub(crate) fn event_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
     // a tool is code: its rows follow the code measure
     let cw = code_width(width);
     let at = rows.len();
+    if crate::toolbox::is_boxed(td) {
+        // a running box redraws its top border only (title, pulse, time)
+        rows.extend(crate::toolbox::box_lines(td, &code, &subs_of(events, i), tick, cw));
+        return EventRows {
+            width: width as u16,
+            main: main_feed(),
+            rows,
+            live: Some(LiveHead { at, len: 1, what: Live::Tool { name, args } }),
+        };
+    }
     rows.extend(wrap_line(tool_head(td, tick, &name, &args), cw));
     let len = rows.len() - at;
     for l in tool_body(td, &code, cw) {
@@ -115,6 +125,9 @@ pub(crate) fn event_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
 pub(crate) fn refresh_live(er: &mut EventRows, ev: &Ev, tick: u32) {
     let Some(lh) = er.live.as_mut() else { return };
     let head = match (&lh.what, ev) {
+        (Live::Tool { .. }, Ev::Tool(td)) if crate::toolbox::is_boxed(td) => {
+            vec![crate::toolbox::box_top(td, tick, code_width(er.width as usize))]
+        }
         (Live::Tool { name, args }, Ev::Tool(td)) => {
             wrap_line(tool_head(td, tick, name, args), code_width(er.width as usize))
         }
@@ -251,10 +264,20 @@ pub(crate) fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
     // the previous VISIBLE event decides the gap: a debug-only
     // annotation between two blocks must not swallow the blank line
     let prev = events[..i].iter().rev().find(|e| ev_visible(e, debug));
+    // a sub-call of a box is drawn inside it (book §11)
+    if matches!(ev, Ev::Sub { .. }) && box_owner(events, i).is_some() {
+        return rows;
+    }
     if wants_gap_before(ev, prev) {
         rows.push(Line::from(""));
     }
-    rows.extend(ev_rows(ev, tick, width));
+    match ev {
+        Ev::Tool(td) if crate::toolbox::is_boxed(td) => {
+            let (_, _, code) = tool_meta(td);
+            rows.extend(crate::toolbox::box_lines(td, &code, &subs_of(events, i), tick, code_width(width)));
+        }
+        _ => rows.extend(ev_rows(ev, tick, width)),
+    }
     rows
 }
 
@@ -536,10 +559,40 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
         }
         _ => {}
     }
+    // a sub-call is an output line of its TypeScript box: the box rebuilds
+    if matches!(ev, Ev::Sub { .. }) {
+        if let Some(j) = box_owner(events, events.len()) {
+            cache[j] = None;
+        }
+    }
     events.push(ev);
     cache.push(None);
     after_append(events, cache);
     true
+}
+
+/// The bash / TypeScript box that event `i` (a sub-call) belongs to: the
+/// tool right before it, sub-calls in between.
+pub(crate) fn box_owner(events: &[Ev], i: usize) -> Option<usize> {
+    for j in (0..i).rev() {
+        match &events[j] {
+            Ev::Sub { .. } => continue,
+            Ev::Tool(td) if crate::toolbox::is_boxed(td) => return Some(j),
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// The sub-calls right after the box at `i` (its output lines).
+fn subs_of(events: &[Ev], i: usize) -> Vec<crate::toolbox::SubCall<'_>> {
+    events[i + 1..]
+        .iter()
+        .map_while(|e| match e {
+            Ev::Sub { name, ok, preview } => Some(crate::toolbox::SubCall { name, ok: *ok, preview }),
+            _ => None,
+        })
+        .collect()
 }
 
 /// The rows of event `i` at this width, built when missing (a running
@@ -654,6 +707,9 @@ pub(crate) fn move_anchor(
 
 /// A tool has something behind its `▸`: an output, or an edit's diff.
 fn tool_discloses(td: &ToolData) -> bool {
+    if crate::toolbox::is_boxed(td) {
+        return crate::toolbox::box_folds(td);
+    }
     td.result.as_ref().is_some_and(|(_, r)| !r.trim().is_empty())
         || (td.name.as_deref() == Some("apply_patch") && td.code.is_some())
 }
