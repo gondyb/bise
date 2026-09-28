@@ -57,37 +57,31 @@ if [ ! -x rust/jsrt/target/debug/bend-jsrt ]; then
   (cd rust/jsrt && cargo build)
 fi
 
-# the Bend REPLs: rebuilt when absent OR older than any Bend source
-# (runtime/, core/, vendor/, the tool descriptions). A failed rebuild keeps
-# the existing binary when there is one (no toolchain: still runnable).
+# the Bend binaries: rebuilt when absent OR older than any of their
+# sources. A failed rebuild keeps the existing binary when there is one
+# (no toolchain: still runnable).
 export PATH="$HOME/.bend/bin:$PATH"
-bend_stale() {
-  [ ! -x "$1" ] || [ -n "$(find runtime core vendor tool-desc-*.txt -newer "$1" -print -quit 2>/dev/null)" ]
-}
-build_repl() {
+build_bend() {  # <out> <main .bend> <source paths...>
   local out="$1" src="$2"
-  if bend_stale "$out"; then
-    echo "$out missing or outdated — compiling with bend (1-2 min)..." >&2
-    if ! bend "$src" -o "$out" >/dev/null; then
-      if [ -x "$out" ]; then
-        echo "compiling $out failed — existing binary kept" >&2
-      else
-        echo "compiling $out failed" >&2
-        exit 1
-      fi
+  shift 2
+  if [ -x "$out" ] && [ -z "$(find "$@" -newer "$out" -print -quit 2>/dev/null)" ]; then
+    return 0
+  fi
+  echo "$out missing or outdated — compiling with bend (1-2 min)..." >&2
+  if ! bend "$src" -o "$out" >/dev/null; then
+    if [ -x "$out" ]; then
+      echo "compiling $out failed — existing binary kept" >&2
+    else
+      echo "compiling $out failed" >&2
+      exit 1
     fi
   fi
 }
-build_repl repl-live runtime/repl-live.bend
-build_repl repl-scripted runtime/repl.bend
+# the REPLs: runtime/, core/, vendor/, the tool descriptions
+build_bend repl-live runtime/repl-live.bend runtime core vendor tool-desc-*.txt
+build_bend repl-scripted runtime/repl.bend runtime core vendor tool-desc-*.txt
 # sb-core: the Switchboard hub's decisions (hub/*.bend), a child of the
 # switchboard daemon
-if [ ! -x sb-core ] || [ -n "$(find hub vendor -newer sb-core -print -quit 2>/dev/null)" ]; then
-  echo "sb-core missing or outdated — compiling with bend..." >&2
-  if ! bend hub/main.bend -o sb-core >/dev/null && [ ! -x sb-core ]; then
-    echo "compiling sb-core failed" >&2
-    exit 1
-  fi
-fi
+build_bend sb-core hub/main.bend hub vendor
 
 exec "./$BIN" "$@"
