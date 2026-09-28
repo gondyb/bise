@@ -1629,3 +1629,51 @@ Index:
     `/tmp/bise-k-target`, deleted after). The full gate on e05cd9b:
     `cargo test --workspace`, `run_all.sh` (PROOF, e2e, the 13 tmux
     tests): green.
+
+### BISE-92 · bise paints its own background
+
+- **status:** done · **owner:** bise-o-onboard · **commits:** see git log (BISE-92)
+- **track:** O (main's call) · **owns:** `theme.rs` (ground role, the paint
+  pass), `theme_detect.rs` (OSC 11 set / restore), `crash.rs`
+  `restore_terminal` (+1 call), `run.rs` (`draw_frame`), `onboarding.rs`
+- **spec:** book §5 (the background rule, rewritten), §21 C1 (`bg()`)
+- **do:** every cell of every frame gets the theme's ground; the terminal's
+  own default background follows (OSC 11) and is always given back;
+  `/theme` and the onboarding switch repaint at once; `BISE_ASCII` and tmux
+  still fine.
+- **done when:** no cell keeps a Reset background in any view (test); the
+  restore sequence (test); tmux captures; gates green.
+- **notes:**
+  - **Ground:** `Palette.bg`, `theme::bg()` returns it: dark `#141211`,
+    light `#fdfbf7` (a lighter cream than `#f7f4ee`: on `#f7f4ee` no light
+    selection/card tint was both visible and ≥ 4.5:1 for dim and accent).
+    Light tints moved to stay visible on it: selection `#fdeef2`, card
+    `#f1eee6` (dark unchanged). Tests: every role ≥ 4.5:1 on the ground,
+    each tint ≥ 1.08:1 from the ground and ≥ 1.03:1 from the other.
+  - **The pass:** `theme::paint(buf)` after each frame (before `asciify`):
+    a cell left at `Color::Reset` gets the ground (bg) or `text()` (fg), so
+    no widget can leak the terminal's color, including the 4
+    `bg(Color::Reset)` still in `markdown.rs` (111, 118) and `ui.rs` (516,
+    730) and the embedded terminal's cells; those lines need no edit. The
+    old `PANEL` / `ELEMENT` / `DIFF_*_BG` aliases are gone since BISE-83.
+    `run::draw_frame(app, f)` is the one frame (view, hints, paint,
+    asciify); the onboarding paints too (its previews use `palette.bg`).
+  - **The terminal's background:** `theme_detect::sync_terminal_bg()` before
+    each frame sends `OSC 11 ; #rrggbb` when the mode changed (start,
+    `/theme`, the onboarding's switch); `restore_terminal_bg()` in
+    `crash::restore_terminal` (exit, panic hook, the shell path) sends `OSC
+    111`, then the color read at start (`OSC 11 ; rgb:…`) when we have it;
+    the next frame sets it again. `BISE_TERM_BG=0` turns the OSC 11 part off.
+    There is no suspend path to cover: in raw mode ctrl+z is a key (no
+    undo), not SIGTSTP; SIGSTOP can't be caught.
+  - `/theme` and the onboarding: the pass reads the mode each frame, so
+    the ground changes at once; the onboarding clears the feed's color cache
+    when the mode changed during it (`/theme` already did).
+  - **Tests:** `run::paint_tests` (TestBackend, dark and light: main with
+    agents, a card and level-3 lines, the card box, the `/` popup, `/help`,
+    inside an agent: no Reset bg or fg cell); `theme` (ground contrast,
+    tints, `paint` keeps set colors); `theme_detect` (set / restore
+    sequences, the restore color parses back). `tui_onboarding_tmux`
+    checks the dark ground in a `capture-pane -e`. Not checked by hand in
+    Ghostty / Terminal.app (no screen here): the OSC 11 part is the one to
+    look at there.

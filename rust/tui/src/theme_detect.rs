@@ -153,12 +153,76 @@ pub(crate) fn init() {
         );
         if choice == Choice::Auto {
             if let Some(rgb) = tty::query_background(TIMEOUT) {
+                let _ = STARTUP_BG.set(rgb);
                 let m = mode_for(rgb);
                 DETECTED.store(if m == Mode::Light { 2 } else { 1 }, Ordering::Relaxed);
             }
         }
         apply(choice);
     });
+}
+
+// ---- the terminal's own background (BISE-92) ----
+//
+// Where the terminal supports OSC 11, its default background is set to the
+// theme's ground, so the padding around the grid matches the painted cells.
+// It is ALWAYS given back when the UI lets the terminal go
+// (`crash::restore_terminal`: exit, panic, a shell): OSC 111 (reset to the
+// profile's color), then the color read at start when we have it. A
+// terminal that ignores these just keeps its color.
+
+/// The background the terminal answered at start (0..=1 per channel).
+static STARTUP_BG: std::sync::OnceLock<[f64; 3]> = std::sync::OnceLock::new();
+
+/// The ground we set last: 0 none (the terminal's own), 1 dark, 2 light.
+static SET_BG: AtomicU8 = AtomicU8::new(0);
+
+/// `OSC 11 ; #rrggbb ST`: the terminal's default background.
+pub(crate) fn set_bg_seq(c: ratatui::style::Color) -> Option<String> {
+    match c {
+        ratatui::style::Color::Rgb(r, g, b) => Some(format!("\x1b]11;#{:02x}{:02x}{:02x}\x1b\\", r, g, b)),
+        _ => None,
+    }
+}
+
+/// Give the background back: `OSC 111 ST` (reset), then the color read at
+/// start (`OSC 11 ; rgb:rrrr/gggg/bbbb ST`) for terminals without 111.
+pub(crate) fn restore_bg_seq(startup: Option<[f64; 3]>) -> String {
+    let mut s = String::from("\x1b]111\x1b\\");
+    if let Some(rgb) = startup {
+        let c = |v: f64| (v.clamp(0.0, 1.0) * 65535.0).round() as u32;
+        s.push_str(&format!("\x1b]11;rgb:{:04x}/{:04x}/{:04x}\x1b\\", c(rgb[0]), c(rgb[1]), c(rgb[2])));
+    }
+    s
+}
+
+/// Once per frame of the interactive UI: when the mode changed since the
+/// last frame (start, `/theme`, the onboarding's switch), set the
+/// terminal's background to the new ground. `BISE_TERM_BG=0` turns it off.
+pub(crate) fn sync_terminal_bg() {
+    let want = if theme::mode() == Mode::Light { 2 } else { 1 };
+    if SET_BG.load(Ordering::Relaxed) == want || std::env::var("BISE_TERM_BG").is_ok_and(|v| v == "0") {
+        return;
+    }
+    if let Some(seq) = set_bg_seq(theme::bg()) {
+        use std::io::Write;
+        let mut out = std::io::stdout();
+        let _ = out.write_all(seq.as_bytes());
+        let _ = out.flush();
+        SET_BG.store(want, Ordering::Relaxed);
+    }
+}
+
+/// The terminal's background back to its own, if we changed it (every way
+/// out: `crash::restore_terminal`). The next frame sets it again.
+pub(crate) fn restore_terminal_bg() {
+    if SET_BG.swap(0, Ordering::Relaxed) == 0 {
+        return;
+    }
+    use std::io::Write;
+    let mut out = std::io::stdout();
+    let _ = out.write_all(restore_bg_seq(STARTUP_BG.get().copied()).as_bytes());
+    let _ = out.flush();
 }
 
 /// Light when the background is lighter than mid-grey in perceived
@@ -416,6 +480,23 @@ mod tests {
         assert_eq!(startup_choice(Some("junk"), Some(Choice::Light)), Choice::Light);
         assert_eq!(startup_choice(Some("auto"), Some(Choice::Light)), Choice::Auto);
         assert_eq!(startup_choice(None, None), Choice::Auto);
+    }
+
+    #[test]
+    fn the_background_is_set_then_given_back() {
+        use ratatui::style::Color;
+        assert_eq!(set_bg_seq(Color::Rgb(0x14, 0x12, 0x11)).as_deref(), Some("\x1b]11;#141211\x1b\\"));
+        assert_eq!(set_bg_seq(Color::Reset), None);
+        // no color read at start: the reset alone
+        assert_eq!(restore_bg_seq(None), "\x1b]111\x1b\\");
+        // with it: the reset, then that color for terminals without 111
+        assert_eq!(
+            restore_bg_seq(Some([1.0, 0.0, 0.5])),
+            "\x1b]111\x1b\\\x1b]11;rgb:ffff/0000/8000\x1b\\"
+        );
+        // what we read back parses to the same color
+        let back = parse_osc11(restore_bg_seq(Some([0.2, 0.4, 0.6])).split("\x1b\\").nth(1).unwrap().as_bytes()).unwrap();
+        assert!(back.iter().zip([0.2, 0.4, 0.6]).all(|(a, b)| (a - b).abs() < 1e-4), "{back:?}");
     }
 
     #[test]

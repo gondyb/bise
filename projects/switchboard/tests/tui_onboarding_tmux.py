@@ -98,6 +98,10 @@ def main():
         keys("Enter")
         sc = wait_screen(NORMAL)
         shot("6-first-run", sc)
+        # BISE-92: bise paints its ground on every cell (dark here: tmux gives
+        # no OSC 11 answer): the capture with colors holds the ground
+        colors = tmux("capture-pane", "-p", "-e", "-t", tui_tmux.S)
+        assert "48;2;20;18;17" in colors, colors[:2000]
         assert os.path.exists(flag), flag
         # BISE-61: the one-time hints of the first run, one at a time
         hints = os.path.join(root, "switchboard", "hints.json")

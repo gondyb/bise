@@ -131,6 +131,8 @@ pub(crate) fn restore_terminal() {
     }
     use crossterm::event::{DisableBracketedPaste, DisableMouseCapture, PopKeyboardEnhancementFlags};
     use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
+    // BISE-92: the terminal's own background back first
+    crate::theme_detect::restore_terminal_bg();
     let mut out = std::io::stdout();
     let _ = crossterm::execute!(out, PopKeyboardEnhancementFlags);
     let _ = crossterm::execute!(out, DisableBracketedPaste);

@@ -118,10 +118,15 @@ LLM).
 credibility (monospace, calm, the product is the visual) plus one warm human
 touch (the pale pink accent, the `:*`, a heart for "done").
 
-**Background.** In the terminal we never paint the background: the user's
-terminal background shows through (their exact color, transparency, blur).
-We only set foreground colors, plus at most a light tint for the selection
-and the card box.
+**Background.** bise paints its own background (BISE-92, Gabriel's call;
+it replaces "the terminal's background shows through"): every cell gets the
+theme's ground (dark `#141211`, light `#fdfbf7`), so the text reads whatever
+the terminal's colors, its transparency, or a wrong theme pick. On that
+ground, only two tints: the selection and the card box. Where the terminal
+supports it (OSC 11), its own default background is set to the same ground
+so the padding around the grid matches; it is always given back (OSC 111,
+then the color read at start) on exit, on a crash and when a shell takes
+the terminal. A terminal that ignores OSC 11 just keeps its padding color.
 
 **Two themes, light and dark,** chosen automatically from the terminal's
 background (OSC 11 query), with a setting to force one. Every readable text
@@ -136,6 +141,7 @@ is ≥ 4.5:1 (WCAG AA) on white, our cream, black and a typical dark grey
 | accent | `#f4a6b0` pale pink (9.7:1) | `#b8416b` raspberry (5.2:1) | the `:*`, "needs you", the agent you talk to, `✓✓` read, the bar on your messages |
 | error | `#ff5a52` | `#b3261e` | failures only |
 | ok | `#b9d99a` | `#3f7a2a` | diff additions only |
+| ground (`bg`) | `#141211` | `#fdfbf7` | every cell (BISE-92); tints on it: selection `#33292c` / `#fdeef2`, card `#211d1b` / `#f1eee6` |
 
 - **Color means attention.** Only "needs you" and errors get a hue. Everything
   else is text, dim or faint. The accent is pink, not red, so "needs you"
@@ -655,7 +661,9 @@ hooks), `ui.rs` (P wave 1, I wave 2).
 
 **C1 · theme tokens** (BISE-01). `theme.rs` exposes roles, not colors:
 `text()`, `dim()`, `faint()`, `accent()`, `error()`, `ok()`, `selection_bg()`,
-`card_tint()`, syntax roles, and `set_mode(Mode::Light | Mode::Dark)`. The old
+`card_tint()`, `bg()` (the painted ground, BISE-92; every cell left at
+`Color::Reset` gets it through the frame pass `theme::paint`), syntax roles,
+and `set_mode(Mode::Light | Mode::Dark)`. The old
 constants (`BRAND`, `ACCENT`, `INFO`, `WARN`, `HEAD`, `PANEL`, …) stay as
 deprecated aliases until BISE-83, so no track breaks. Glyph constants for §6
 (`G_YOU`, `G_MAIN`, `G_WORKING`, …) live there too.

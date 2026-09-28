@@ -233,6 +233,19 @@ impl Startup {
     }
 }
 
+/// One frame of the UI: the view, the one-time hints, then the frame
+/// passes: the theme's ground on every cell (BISE-92), `BISE_ASCII`.
+pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
+    if app.sb.is_some() {
+        sb::draw_sb(app, f)
+    } else {
+        draw(app, f)
+    }
+    crate::hints::draw(app, f); // BISE-61: one-time hints
+    crate::theme::paint(f.buffer_mut()); // BISE-92: bise paints its ground
+    crate::theme::asciify(f.buffer_mut()); // BISE-84: BISE_ASCII=1
+}
+
 fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
     let mut draw_crashes = 0u32;
     let mut startup = Startup { on: crate::timing::enabled(), ..Startup::default() };
@@ -270,15 +283,9 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
         pump_voice(app);
         let t_draw = std::time::Instant::now();
         let drawn = crash::guarded(|| {
-            terminal.draw(|f| {
-                if app.sb.is_some() {
-                    sb::draw_sb(app, f)
-                } else {
-                    draw(app, f)
-                }
-                crate::hints::draw(app, f); // BISE-61: one-time hints
-                crate::theme::asciify(f.buffer_mut()); // BISE-84: BISE_ASCII=1
-            })
+            // BISE-92: the terminal's own background follows the theme
+            crate::theme_detect::sync_terminal_bg();
+            terminal.draw(|f| draw_frame(app, f))
         });
         startup.after_draw(t_draw);
         match drawn {
@@ -497,5 +504,79 @@ mod forward_lines_tests {
         let t = std::time::Instant::now();
         let n = lines_of(&input).len();
         eprintln!("forward_lines: {} lines, {} bytes: {:.1} ms", n, input.len(), t.elapsed().as_secs_f64() * 1000.0);
+    }
+}
+
+/// BISE-92: bise paints its own ground: no cell of a frame keeps the
+/// terminal's default background, in any view, in both themes.
+#[cfg(test)]
+mod paint_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::backend::TestBackend;
+    use ratatui::style::Color;
+    use ratatui::Terminal;
+    use serde_json::json;
+
+    fn resets(app: &mut App) -> Vec<(u16, u16)> {
+        let mut t = Terminal::new(TestBackend::new(120, 36)).unwrap();
+        t.draw(|f| draw_frame(app, f)).unwrap();
+        let b = t.backend().buffer();
+        let mut out = Vec::new();
+        for y in 0..36 {
+            for x in 0..120 {
+                let c = &b[(x, y)];
+                if c.bg == Color::Reset || c.fg == Color::Reset {
+                    out.push((x, y));
+                }
+            }
+        }
+        out
+    }
+
+    fn with_agents_and_a_card(app: &mut App) {
+        let state = json!({"ev": "state", "agents": [
+            {"name": "main", "main": true, "status": "idle"},
+            {"name": "docs", "status": "working", "objective": "write the docs"},
+        ], "cards": [
+            {"id": 1, "kind": "question", "agent": "docs", "text": "v1 or v2 for the api docs?", "age_ms": 0},
+        ]});
+        sb::dispatch(app, &state.to_string());
+        for l in ["sb you : ship it", "sb msg : docs → main : found it", "sb card : #1 question @docs : v1 or v2?"] {
+            sb::dispatch(app, &json!({"ev": "line", "agent": "main", "line": l}).to_string());
+        }
+    }
+
+    #[test]
+    fn no_cell_keeps_the_terminals_background() {
+        for mode in [crate::theme::Mode::Dark, crate::theme::Mode::Light] {
+            crate::theme::set_mode(mode);
+            let mut app = crate::sb::bench::test_app();
+            with_agents_and_a_card(&mut app);
+            assert_eq!(resets(&mut app), vec![], "main, {mode:?}");
+            // the card box above the composer
+            let g = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
+            sb::key(&mut app, &g, false);
+            assert_eq!(resets(&mut app), vec![], "card, {mode:?}");
+            // the / popup
+            app.ed.text = "/".into();
+            app.ed.cursor = 1;
+            assert_eq!(resets(&mut app), vec![], "popup, {mode:?}");
+            app.ed.text.clear();
+            app.ed.cursor = 0;
+            // /help
+            sb::handle_input(&mut app, "/help");
+            assert!(app.help.is_some());
+            assert_eq!(resets(&mut app), vec![], "help, {mode:?}");
+            app.help = None;
+            // inside an agent
+            sb::focus(&mut app, "docs");
+            assert_eq!(resets(&mut app), vec![], "agent, {mode:?}");
+            // every cell with no color of its own is the theme's ground
+            let mut t = Terminal::new(TestBackend::new(40, 5)).unwrap();
+            t.draw(|f| draw_frame(&mut app, f)).unwrap();
+            assert!(t.backend().buffer().content.iter().any(|c| c.bg == crate::theme::bg()));
+        }
+        crate::theme::set_mode(crate::theme::Mode::Dark);
     }
 }

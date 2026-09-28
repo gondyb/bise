@@ -1,9 +1,11 @@
 //! The bise theme (book §5-6, contract C1): roles, not colors.
 //!
 //! Two palettes, dark and light, switched by [`set_mode`] (default dark).
-//! We never paint the background: every role is a foreground color, the
-//! background is `Color::Reset` (the user's terminal shows through). The
-//! only tints are [`selection_bg`] and [`card_tint`].
+//! BISE-92: bise paints its own background ([`bg`], the palette's ground)
+//! on every cell, so the text reads whatever the terminal's colors or a
+//! wrong theme pick: [`paint`] turns every cell left at `Color::Reset`
+//! into the theme's ground and text, once per frame. The tints on that
+//! ground are [`selection_bg`] and [`card_tint`].
 //!
 //! Color means attention: only "needs you" (accent) and errors get a hue;
 //! everything else is text, dim or faint. `faint` is never for text you
@@ -95,6 +97,8 @@ pub(crate) struct Palette {
     pub on_accent: Color,
     pub selection_bg: Color,
     pub card_tint: Color,
+    /// the ground every cell is painted with (BISE-92)
+    pub bg: Color,
     pub syntax_keyword: Color,
     pub syntax_string: Color,
     pub syntax_comment: Color,
@@ -114,6 +118,7 @@ pub(crate) const DARK: Palette = Palette {
     on_accent: rgb(0x1b1917),
     selection_bg: rgb(0x33292c),
     card_tint: rgb(0x211d1b),
+    bg: rgb(0x141211),
     syntax_keyword: rgb(0xd7a6f0),
     syntax_string: rgb(0xb9d99a),
     // the book's #857e74 is 3.5:1 on #282c34: lifted to pass 4.5:1
@@ -132,8 +137,12 @@ pub(crate) const LIGHT: Palette = Palette {
     error: rgb(0xb3261e),
     ok: rgb(0x3f7a2a),
     on_accent: rgb(0xffffff),
-    selection_bg: rgb(0xfaeef0),
-    card_tint: rgb(0xf3eee6),
+    // on the painted ground (a lighter cream than #f7f4ee, so both tints
+    // show on it and every role still reads on them): a pink selection,
+    // a sand card
+    selection_bg: rgb(0xfdeef2),
+    card_tint: rgb(0xf1eee6),
+    bg: rgb(0xfdfbf7),
     syntax_keyword: rgb(0x8a3fb0),
     syntax_string: rgb(0x44782a),
     syntax_comment: rgb(0x726b60),
@@ -185,9 +194,24 @@ pub(crate) fn ok() -> Color {
 pub(crate) fn on_accent() -> Color {
     palette().on_accent
 }
-/// The background: never painted, the terminal's own shows through.
+/// The ground: painted on every cell (BISE-92).
 pub(crate) fn bg() -> Color {
-    Color::Reset
+    palette().bg
+}
+
+/// The frame pass (BISE-92): every cell left at the terminal's default
+/// (`Color::Reset`) gets the theme's ground, or text color for the
+/// foreground. Runs after everything is drawn, before `asciify`.
+pub(crate) fn paint(buf: &mut ratatui::buffer::Buffer) {
+    let (ground, ink) = (bg(), text());
+    for cell in buf.content.iter_mut() {
+        if cell.bg == Color::Reset {
+            cell.bg = ground;
+        }
+        if cell.fg == Color::Reset {
+            cell.fg = ink;
+        }
+    }
 }
 /// The light tint under selected text.
 pub(crate) fn selection_bg() -> Color {
@@ -523,6 +547,33 @@ mod tests {
     }
 
     #[test]
+    fn roles_read_on_the_painted_ground_and_the_tints_show_on_it() {
+        for p in [&DARK, &LIGHT] {
+            let fails = check(p, &[("ground", p.bg)]);
+            assert!(fails.is_empty(), "below 4.5:1 on the ground: {fails:?}");
+            // a tint must be seen on the ground, and apart from the other one
+            for (name, tint) in [("selection", p.selection_bg), ("card", p.card_tint)] {
+                let r = contrast(tint, p.bg);
+                assert!(r >= 1.08, "{name} tint vs ground: {r:.3}");
+            }
+            assert!(contrast(p.selection_bg, p.card_tint) >= 1.03);
+        }
+    }
+
+    #[test]
+    fn paint_leaves_no_reset_cell() {
+        use ratatui::buffer::Buffer;
+        use ratatui::layout::Rect;
+        use ratatui::style::Style;
+        let mut b = Buffer::empty(Rect::new(0, 0, 4, 1));
+        b[(1, 0)].set_style(Style::default().bg(card_tint()).fg(accent()));
+        paint(&mut b);
+        assert!(b.content.iter().all(|c| c.bg != Color::Reset && c.fg != Color::Reset));
+        assert_eq!((b[(0, 0)].bg, b[(0, 0)].fg), (bg(), text()));
+        assert_eq!((b[(1, 0)].bg, b[(1, 0)].fg), (card_tint(), accent()), "set colors stay");
+    }
+
+    #[test]
     fn faint_is_quieter_than_dim() {
         // faint sits between dim and the background, in both modes
         let dark_bg = rgb(0x141211);
@@ -542,6 +593,7 @@ mod tests {
             on_accent(),
             selection_bg(),
             card_tint(),
+            bg(),
             syntax_keyword(),
             syntax_string(),
             syntax_comment(),
@@ -563,7 +615,7 @@ mod tests {
         for (i, (d, l)) in dark.iter().zip(&light).enumerate() {
             assert_ne!(d, l, "role #{i} is the same in both modes");
         }
-        assert_eq!(bg(), Color::Reset);
+        assert_eq!(bg(), DARK.bg);
     }
 
     #[test]

@@ -636,10 +636,7 @@ fn theme_text(o: &Onb) -> Vec<Line<'static>> {
     vec![Line::from(first), Line::from(s("you can change it any time with /theme.", theme::dim()))]
 }
 
-// the preview backgrounds: a preview shows the other palette on its own
-// ground (the only place bise paints a background)
-const PREVIEW_BG_DARK: Color = Color::Rgb(0x14, 0x12, 0x11);
-const PREVIEW_BG_LIGHT: Color = Color::Rgb(0xf7, 0xf4, 0xee);
+// a preview shows its palette on that palette's ground (theme `bg`)
 
 fn who(g: &str) -> String {
     format!("{:<3}", g)
@@ -671,7 +668,7 @@ fn draw_previews(f: &mut Frame, area: Rect, pick: Mode) {
     let x0 = area.x + area.width.saturating_sub(bw * 2 + 3) / 2;
     for (i, m) in [Mode::Dark, Mode::Light].into_iter().enumerate() {
         let p = theme::palette_of(m);
-        let bg = if m == Mode::Dark { PREVIEW_BG_DARK } else { PREVIEW_BG_LIGHT };
+        let bg = p.bg;
         let border = if m == pick { theme::accent() } else { theme::faint() };
         let r = Rect { x: x0 + i as u16 * (bw + 3), y: area.y, width: bw, height: PREVIEW_H.min(area.height) };
         let block = Block::default()
@@ -955,6 +952,7 @@ pub(crate) fn show(
     pump: &mut dyn FnMut(&mut App),
 ) -> io::Result<()> {
     let t0 = Instant::now();
+    let mode_before = theme::mode();
     let mut o = Onb::new(&app.session_id, &real_env);
     let _ = terminal.clear();
     let r = (|| -> io::Result<()> {
@@ -964,8 +962,11 @@ pub(crate) fn show(
                 return Ok(());
             }
             let now = t0.elapsed().as_millis() as u64;
+            // BISE-92: the switch repaints the terminal's background too
+            crate::theme_detect::sync_terminal_bg();
             terminal.draw(|f| {
                 draw(f, &o, now);
+                theme::paint(f.buffer_mut()); // BISE-92: bise paints its ground
                 theme::asciify(f.buffer_mut()); // BISE-84: BISE_ASCII=1
             })?;
             if !poll(Duration::from_millis(33))? {
@@ -984,6 +985,10 @@ pub(crate) fn show(
         }
     })();
     let _ = mark_seen(&real_env);
+    // the feed's rows carry their colors: a new theme builds them again
+    if theme::mode() != mode_before {
+        app.cache.clear();
+    }
     let _ = terminal.clear();
     r
 }
