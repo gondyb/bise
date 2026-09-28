@@ -1,0 +1,36 @@
+
+
+
+
+
+
+
+
+
+              [38;2;236;230;218mwhich model should do the work?[39m
+              [38;2;163;156;144mi found 2 keys in your environment.[39m
+
+              [38;2;244;166;176m[48;2;51;41;44m▎ [38;2;236;230;218m1 · use MISTRAL_API_KEY [38;2;244;166;176mfound[39m[49m
+              [38;2;244;166;176m[48;2;51;41;44m▎ [38;2;163;156;144m    mistral, already set up. nothing to paste.[39m[49m
+                [38;2;236;230;218m2 · use ANTHROPIC_FOUNDRY_API_KEY [38;2;244;166;176mfound[39m
+                [38;2;163;156;144m    claude. your model is mistral-small-latest: set model in[39m
+              [38;2;163;156;144m~/.bend-harness/config.toml.[39m
+                [38;2;236;230;218m3 · paste another key[39m
+                [38;2;163;156;144m    claude or mistral.[39m
+                [38;2;163;156;144m4 · sign in with the browser[39m
+                [38;2;163;156;144m    not built yet.[39m
+
+              [38;2;74;69;64m↑↓ choose · enter ok[39m
+
+
+
+
+
+
+
+
+
+
+
+                                                   [38;2;74;69;64m○[39m [38;2;74;69;64m○[39m [38;2;244;166;176m●[39m [38;2;74;69;64m○[39m [38;2;74;69;64m○[39m [38;2;74;69;64m○[39m
+
