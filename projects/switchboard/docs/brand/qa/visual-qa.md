@@ -30,6 +30,29 @@ and compared with the mockups and the book (§5 colors, §6 glyphs, §8–§17).
   model's behavior, a microphone, a version switch or 30 live agents are
   marked **n/a**.
 
+## Status after the fixes (recapture on `44acc36` + BISE-90 `7c032cd`)
+
+`shots/dark/` and `shots/light/` were recaptured on that build (bise now
+paints its own background, BISE-92). The ascii and onboarding shots are
+still from `217b648` (ascii 02, 03, 29 recaptured by BISE-91).
+
+| # | status |
+|---|---|
+| 1 report twice | **fixed** (BISE-90 a5b841f): blocked keeps the level-1 card, done and failed keep the report line (dark/02) |
+| 2 info / warn wrap at column 1 | **fixed** (a5b841f, 7c032cd): spawn, provider error, opened reports hang under their text (dark/02, 30) |
+| 3 feed scrollbar | **fixed** (a5b841f): only while scrolled up, a faint `┃` thumb, no arrows or track; none at the tail |
+| 4 agent reply at column 1 | **fixed** (a5b841f): starts at the glyph column (dark/13) |
+| 5 `·` after the answer | **fixed** (7c032cd): the hub steered it with an agent message + the status block; an unmatched steer now marks what you sent this turn (dark/17 `·`, dark/18 `✓✓`) |
+| 6 `/` popup cuts | fixed by BISE-91 |
+| 7 compaction | **fixed** (a5b841f): `≡ compacting` pulsing, then `≡ summary ▸` folded (dark/27, 28) |
+| 8 help key caps | fixed by BISE-83 (`da63fa7`) |
+| 9 `✉` in the book | fixed in the book (`4728293`) |
+| 10 id in the `to` column | **fixed** (a5b841f): `@ talk-a    → main      …` (dark/03) |
+| 11 hint row repeats the card keys | fixed by BISE-91 |
+| 12 ASCII | fixed by BISE-91 |
+| 13–16 | open (provider wording: runtime; narrow header: BISE-91; onboarding: BISE-94; brief capitals: M) |
+| new | your messages have a thin accent bar `│` on every row (user decision, BISE-90) |
+
 ## Differences, most visible first
 
 | # | what | where (shot) | likely owner |
