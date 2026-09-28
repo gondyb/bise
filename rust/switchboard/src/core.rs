@@ -371,25 +371,6 @@ pub enum Effect {
     State,
 }
 
-/// Technical bounds only: no cap on messages, threads or parallel
-/// tasks (decision of 2026-09-28).
-#[derive(Clone, Debug)]
-pub struct Limits {
-    /// `sb wait` never blocks longer (the bash tool hands a command off
-    /// to the background after BEND_BG_AFTER seconds).
-    pub wait_cap_s: u64,
-    pub max_crashes: u32,
-}
-
-impl Default for Limits {
-    fn default() -> Limits {
-        Limits {
-            wait_cap_s: 25,
-            max_crashes: 5,
-        }
-    }
-}
-
 /// The sb-core executable: `SB_CORE_BIN`, else `sb-core` at the root of
 /// the repository this crate was built from.
 pub fn core_bin() -> std::path::PathBuf {
@@ -489,7 +470,6 @@ pub struct Hub {
     /// reports), for the views.
     pub st: State,
     pub workspace: String,
-    pub limits: Limits,
     clients: BTreeMap<ClientId, ClientView>,
     /// Drop confirmations pending on a client: id -> (client, task).
     confirms: BTreeMap<u64, (ClientId, String)>,
@@ -546,7 +526,6 @@ impl Hub {
         let mut hub = Hub {
             st: State::new(workspace),
             workspace: workspace.to_string(),
-            limits: Limits::default(),
             clients: BTreeMap::new(),
             confirms: BTreeMap::new(),
             next_confirm: 1,

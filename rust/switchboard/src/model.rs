@@ -110,12 +110,6 @@ impl Status {
         }
     }
 
-    /// Can any agent's message reach this agent (RFC 0003 §6.1)? A
-    /// failed task is reachable: a new message restarts it (RFC 0001
-    /// §9.2), but only from the user or its parent.
-    pub fn reachable(self) -> bool {
-        !matches!(self, Status::Stopped | Status::Archived)
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -397,11 +391,6 @@ impl State {
         self.cards.values()
     }
 
-    /// Is `name` taken, as a name or as an alias (RFC 0001 §9.3)?
-    pub fn name_taken(&self, name: &str) -> bool {
-        name == MAIN || name == USER || name == HUB || self.resolve(name).is_some()
-    }
-
     /// Tests only: a task as its creation leaves it (the real state
     /// comes from sb-core, see core.rs).
     #[cfg(test)]
@@ -419,15 +408,6 @@ impl State {
         self.order.push(name.to_string());
     }
 
-    /// Messages waiting for delivery to `name`, oldest first.
-    pub fn queued_for(&self, name: &str) -> Vec<&Msg> {
-        self.msgs
-            .values()
-            .filter(|m| m.to == name)
-            .filter(|m| matches!(self.msg_state.get(&m.id), Some(MsgState::Queued { .. })))
-            .collect()
-    }
-
     /// Delivered messages to `name` that expect a reply it has not given.
     pub fn unanswered_for(&self, name: &str) -> Vec<&Msg> {
         self.msgs
@@ -437,10 +417,6 @@ impl State {
             .collect()
     }
 
-    /// Messages of a thread, in order.
-    pub fn thread(&self, thread: u64) -> Vec<&Msg> {
-        self.msgs.values().filter(|m| m.thread == thread).collect()
-    }
 }
 
 #[cfg(test)]

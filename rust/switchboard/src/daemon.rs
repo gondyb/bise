@@ -73,7 +73,6 @@ enum Msg {
     ReplGone {
         dir: String,
         gen: u64,
-        ok_exit: bool,
         reason: String,
     },
     ClientNew {
@@ -209,13 +208,6 @@ fn write_json(stream: &mut UnixStream, v: &Value) -> bool {
     let mut s = v.to_string();
     s.push('\n');
     stream.write_all(s.as_bytes()).is_ok()
-}
-
-/// The last `n` lines of a transcript (`<ms>\t<line>` per line).
-fn transcript_tail(path: &Path, n: usize) -> Vec<(u64, String)> {
-    let all = transcript::read(path);
-    let skip = all.len().saturating_sub(n);
-    all.into_iter().skip(skip).map(|(_, t, l)| (t, l)).collect()
 }
 
 /// The lines of a transcript at positions [before - count, before)
@@ -867,7 +859,6 @@ impl Shell {
                 let _ = self.tx.send(Msg::ReplGone {
                     dir,
                     gen,
-                    ok_exit: false,
                     reason: format!("no free port: {}", e),
                 });
                 return;
@@ -1141,9 +1132,9 @@ impl Shell {
                     .to_lowercase();
                 let words: Vec<&str> = query.split_whitespace().collect();
                 let dir = self.dir_of(&from).unwrap_or_else(|| MAIN.to_string());
-                let mut hits: Vec<String> = transcript_tail(&self.transcript(&dir), usize::MAX)
+                let mut hits: Vec<String> = transcript::read(&self.transcript(&dir))
                     .into_iter()
-                    .filter_map(|(t, l)| readable(&l).map(|r| (t, r)))
+                    .filter_map(|(_, t, l)| readable(&l).map(|r| (t, r)))
                     .filter(|(_, r)| {
                         let low = r.to_lowercase();
                         !words.is_empty() && words.iter().all(|w| low.contains(w))
@@ -1340,7 +1331,6 @@ fn adopt(r: ReplInfo, dir: String, gen: u64, adir: PathBuf, tx: Sender<Msg>, pat
         let _ = tx.send(Msg::ReplGone {
             dir: dir.clone(),
             gen,
-            ok_exit: false,
             reason,
         });
     };
@@ -1401,17 +1391,16 @@ fn supervise(
     let log_path = adir.join("repl.log");
     let err_path = adir.join("repl.err");
     let bin = PathBuf::from(cmd.get_program());
-    let gone = |ok_exit: bool, reason: String| {
+    let gone = |reason: String| {
         let _ = tx.send(Msg::ReplGone {
             dir: dir.clone(),
             gen,
-            ok_exit,
             reason,
         });
     };
     let log = match std::fs::File::create(&log_path) {
         Ok(f) => f,
-        Err(e) => return gone(false, format!("log : {}", e)),
+        Err(e) => return gone(format!("log : {}", e)),
     };
     let err = std::fs::OpenOptions::new()
         .create(true)
@@ -1424,7 +1413,7 @@ fn supervise(
     };
     let mut child = match cmd.spawn() {
         Ok(c) => c,
-        Err(e) => return gone(false, format!("spawn : {}", e)),
+        Err(e) => return gone(format!("spawn : {}", e)),
     };
     let _ = tx.send(Msg::ReplSpawned {
         dir: dir.clone(),
@@ -1438,12 +1427,12 @@ fn supervise(
             break content;
         }
         if let Ok(Some(st)) = child.try_wait() {
-            return gone(false, format!("the REPL died at startup ({})", st));
+            return gone(format!("the REPL died at startup ({})", st));
         }
         if start.elapsed() > Duration::from_secs(30) {
             let _ = child.kill();
             let _ = child.wait();
-            return gone(false, "the REPL did not start within 30 s".into());
+            return gone("the REPL did not start within 30 s".into());
         }
         std::thread::sleep(Duration::from_millis(50));
     };
@@ -1463,13 +1452,13 @@ fn supervise(
         Err(e) => {
             let _ = child.kill();
             let _ = child.wait();
-            return gone(false, format!("connecting to the REPL: {}", e));
+            return gone(format!("connecting to the REPL: {}", e));
         }
     };
     let _ = stream.set_nodelay(true);
     let writer = match stream.try_clone() {
         Ok(r) => r,
-        Err(e) => return gone(false, e.to_string()),
+        Err(e) => return gone(e.to_string()),
     };
     // what the next hub needs to adopt this REPL
     let _ = std::fs::write(
@@ -1506,7 +1495,7 @@ fn supervise(
         Err(e) => e.to_string(),
     };
     log_line(&paths, &format!("repl {} exited: {}", dir, reason));
-    gone(status.map(|s| s.success()).unwrap_or(false), reason);
+    gone(reason);
 }
 
 fn accept_loop(listener: UnixListener, tx: Sender<Msg>) {
@@ -1820,7 +1809,6 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
             Msg::ReplGone {
                 dir,
                 gen,
-                ok_exit,
                 reason,
             } => {
                 // a killed generation is not live anymore: its exit is
@@ -1832,7 +1820,6 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 sh.gens.remove(&dir);
                 sh.repls.remove(&dir);
                 sh.pids.remove(&dir);
-                let _ = ok_exit;
                 if sh.switching.contains_key(&dir) && !sh.switch_spawned.contains(&dir) {
                     // the reload a switch asked for: the same session on
                     // this hub's binary, the same port
