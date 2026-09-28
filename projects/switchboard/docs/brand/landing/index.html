@@ -104,6 +104,9 @@
   .word { text-align:center; }
   .word .def { display:inline-block; text-align:left; color:var(--dim); line-height:2; }
   .word .def b { color:var(--text); font-size:20px; }
+  .word { padding-top:8vh; }
+  .word .three { color:var(--text); font-weight:700; font-size:clamp(17px, 1.7vw, 21px); }
+  .word .three::before { content:""; }
 
   .last { text-align:center; padding-bottom:10vh; }
   .last .big { font-size:clamp(56px, 8vw, 110px); }
@@ -141,6 +144,18 @@
     <div class="scroll">↓</div>
   </div>
 </div>
+
+<!-- the word -->
+<section class="word">
+  <div class="blow">
+    <div class="def">
+      <b>bise</b> <span class="faint">/beez/ · french, n.</span><br>
+      1. a quick kiss on the cheek. <span class="acc">:*</span><br>
+      2. a brisk north wind.<br>
+      <span class="three">3. a terminal where your agents ship while you think.</span>
+    </div>
+  </div>
+</section>
 
 <!-- demo -->
 <div class="demo blow">
@@ -191,23 +206,10 @@
     <ul class="facts">
       <li><span class="gc">∿</span><span><b>as many agents as you have ideas.</b> no cap. your tokens are the limit.</span></li>
       <li><span class="gc">≡</span><span><b>nothing gets dropped.</b> unfinished work gets picked back up.</span></li>
-      <li><span class="gc">~</span><span><b>one folder.</b> no worktrees, no merges at the end of the day.</span></li>
+      <li><span class="gc">ψ</span><span><b>worktrees, only when they help.</b> agents share your folder. when one really needs its own worktree, it makes one, and cleans it up after. no pile of branches to merge.</span></li>
       <li><span class="gc">✓</span><span><b>nothing hidden.</b> every script an agent runs is there, in full, in order.</span></li>
       <li><span class="gc">♡</span><span><b>your terminal.</b> your colors, light or dark, text at a reading width.</span></li>
-      <li><span class="gc">!</span><span><b>honest bit:</b> agents run commands without asking yet. commit often.</span></li>
     </ul>
-  </div>
-</section>
-
-<!-- the word -->
-<section class="word">
-  <div class="blow">
-    <div class="def">
-      <b>bise</b> <span class="faint">/beez/ · french, n.</span><br>
-      1. a quick kiss on the cheek. <span class="acc">:*</span><br>
-      2. a brisk north wind.<br>
-      3. a terminal where your agents ship while you think.
-    </div>
   </div>
 </section>
 
@@ -218,7 +220,6 @@
     <p><b>how many agents can i run?</b><br><span class="dim">as many as you want. the real limits are your tokens, your budget and your provider.</span></p>
     <p><b>which models?</b><br><span class="dim tbd" title="⚠ not decided for the public release">bring your own key. the list is coming.</span></p>
     <p><b>do i need to learn anything?</b><br><span class="dim">four words: you, main, agents, cards. main is the one you talk to.</span></p>
-    <p><b>is it safe?</b><br><span class="dim">not blindly, not yet. there's no approval mode. work in git, commit often.</span></p>
     <p><b>open source?</b><br><span class="dim">yes. read it, fork it, send a :*.</span><span class="tbd" title="⚠ license not decided (pitch §7.3)"></span></p>
   </div>
 </section>

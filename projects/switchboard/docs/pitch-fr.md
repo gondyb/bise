@@ -119,10 +119,12 @@ tâche au travail avec une consigne précise, avant de te déranger.
 - Après : main a vu que les tests échouaient et a relancé. Tu reçois un vrai
   « fini ».
 
-**5. Pas de worktrees : tous les agents dans le même dossier.**
+**5. Un seul dossier, des worktrees seulement quand ça aide.**
 Les agents se connaissent. Ils se voient (`sb list`, `sb tasks`), lisent le fil
-des autres, et se préviennent avant de toucher un fichier partagé. Un worktree
-reste possible, sur demande.
+des autres, et se préviennent avant de toucher un fichier partagé. Quand un
+agent juge qu'il a vraiment besoin d'isolation, il crée son propre worktree
+(marqué `ψ`) et le nettoie après. Il n'en crée pas des centaines. Argument de
+vente (Gabriel) : les worktrees sont supportés, mais tu ne les gères jamais.
 - Avant : 5 branches, 5 `npm install`, 5 merges.
 - Après : un repo, un dossier, un historique git linéaire.
 

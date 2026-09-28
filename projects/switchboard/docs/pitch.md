@@ -123,10 +123,12 @@ back to work with precise instructions, before bothering you.
 - After: main saw the failing tests and sent the task back. You get a real
   "done".
 
-**5. No worktrees: every agent works in the same folder.**
+**5. One folder, worktrees only when they help.**
 The agents know about each other. They see each other (`sb list`, `sb tasks`),
 read each other's threads, and give a heads-up before touching a shared file.
-A worktree is still available on request.
+When an agent judges it really needs isolation, it creates its own worktree
+(marked `ψ`), and cleans it up after. It doesn't make hundreds of them.
+Selling point (Gabriel): worktrees are supported, but you never manage them.
 - Before: 5 branches, 5 `npm install`s, 5 merges.
 - After: one repo, one folder, one linear git history.
 
