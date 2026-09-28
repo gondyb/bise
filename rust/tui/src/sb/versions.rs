@@ -111,6 +111,7 @@ pub(crate) fn version_items(app: &App) -> Vec<PopItem> {
             run: None,
             closable: true,
             path: None,
+            folder: false,
         }];
     }
     filter_versions(&sb.versions, q)
@@ -131,6 +132,7 @@ pub(crate) fn version_items(app: &App) -> Vec<PopItem> {
                 run: Some(line),
                 closable: true,
                 path: None,
+                folder: false,
             }
         })
         .collect()

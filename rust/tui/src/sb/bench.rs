@@ -15,6 +15,24 @@ pub(crate) fn test_app() -> App {
     sb_app(sb, rx, false, 100, crate::voice::Voice::live(false), "bench".into())
 }
 
+/// Test setup: the workspace of the `@` popup, and a live agent.
+pub(crate) fn set_workspace(app: &mut App, ws: &str) {
+    if let Some(sb) = app.sb.as_mut() {
+        sb.workspace = ws.to_string();
+    }
+}
+
+pub(crate) fn add_agent(app: &mut App, name: &str, objective: &str) {
+    if let Some(sb) = app.sb.as_mut() {
+        sb.agents.push(Agent {
+            name: name.into(),
+            status: "working".into(),
+            objective: objective.into(),
+            ..Agent::default()
+        });
+    }
+}
+
 fn ms(t: Instant) -> f64 {
     t.elapsed().as_secs_f64() * 1000.0
 }

@@ -146,6 +146,9 @@ pub(crate) struct PopItem {
     pub(crate) closable: bool,
     /// a workspace path: remembered when picked (ranked first next time)
     pub(crate) path: Option<String>,
+    /// a folder of the `@` popup: `fill` browses it (`@path/`, the popup
+    /// stays open on its entries); Tab, Enter and → take it
+    pub(crate) folder: bool,
 }
 
 pub(crate) fn popup_items(app: &App) -> Vec<PopItem> {
@@ -162,6 +165,7 @@ pub(crate) fn popup_items(app: &App) -> Vec<PopItem> {
                 run: (!c.args).then(|| c.name.to_string()),
                 closable: false,
                 path: None,
+                folder: false,
             })
             .collect();
     }
@@ -219,6 +223,7 @@ pub(crate) fn at_items(app: &App) -> Vec<PopItem> {
             run: None,
             closable: true,
             path: None,
+            folder: false,
         }
     });
     // the Switchboard workspace, else the folder the TUI runs in
@@ -226,10 +231,26 @@ pub(crate) fn at_items(app: &App) -> Vec<PopItem> {
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::current_dir().ok())
         .unwrap_or_default();
-    let files = files::search(&root, &q, FILE_ROWS).into_iter().map(|h| {
-        let (fill, fill_cursor) = fill(&files::reference(&h.path, h.dir));
+    let mut hits = files::search(&root, &q, FILE_ROWS);
+    // browsing a folder: the folder itself last (↑ from the first row),
+    // so ⏎ can still insert a folder reference
+    let this = files::parent_query(&q)
+        .and_then(|_| hits.first())
+        .and_then(|h| h.path.rsplit_once('/'))
+        .map(|(parent, _)| parent)
+        .filter(|parent| parent.to_lowercase() == q.trim_end_matches('/').to_lowercase())
+        .map(|parent| files::Hit { path: parent.to_string(), dir: true });
+    if this.is_some() {
+        hits.truncate(FILE_ROWS - 1);
+    }
+    let files = hits.into_iter().map(|h| {
+        let (fill, fill_cursor) = if h.dir {
+            files::replace_token(&app.ed.text, start, app.ed.cursor, &files::browse(&h.path))
+        } else {
+            fill(&files::reference(&h.path, false))
+        };
         PopItem {
-            label: if h.dir { format!("{}/", h.path) } else { h.path.clone() },
+            label: format!("{}{}", h.path, if h.dir { "/" } else { "" }),
             desc: String::new(),
             mark: Some(if h.dir { (DIR_MARK, BRAND) } else { (FILE_MARK, DIM) }),
             fill,
@@ -237,9 +258,36 @@ pub(crate) fn at_items(app: &App) -> Vec<PopItem> {
             run: None,
             closable: true,
             path: Some(h.path),
+            folder: h.dir,
         }
     });
-    agents.chain(files).collect()
+    let this = this.map(|h| {
+        let (fill, fill_cursor) = fill(&files::reference(&h.path, true));
+        PopItem {
+            label: format!("{}/", h.path),
+            desc: "this folder".into(),
+            mark: Some((DIR_MARK, BRAND)),
+            fill,
+            fill_cursor,
+            run: None,
+            closable: true,
+            path: Some(h.path),
+            folder: false,
+        }
+    });
+    agents.chain(files).chain(this).collect()
+}
+
+/// ← or Backspace while the `@` popup browses a folder (`@rust/tui/`):
+/// the composer one folder up (`@rust/`), the popup still open. None
+/// when the token does not end with `/` (the key edits as usual).
+pub(crate) fn at_up(app: &App) -> Option<(String, usize)> {
+    if !popup_open(app) || app.ed.anchor.is_some() {
+        return None;
+    }
+    let (start, q) = files::token(&app.ed.text, app.ed.cursor)?;
+    let up = files::parent_query(&q)?;
+    Some(files::replace_token(&app.ed.text, start, app.ed.cursor, &files::browse(up)))
 }
 
 /// `$skill` anywhere in the draft: the skills of the index.
@@ -264,6 +312,7 @@ pub(crate) fn skill_items(app: &App) -> Vec<PopItem> {
                 run: None,
                 closable: true,
                 path: None,
+                folder: false,
             }
         })
         .collect()
@@ -290,6 +339,7 @@ pub(crate) fn emoji_items(app: &App) -> Vec<PopItem> {
                 run: None,
                 closable: true,
                 path: None,
+                folder: false,
             }
         })
         .collect()

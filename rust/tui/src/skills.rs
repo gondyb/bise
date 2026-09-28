@@ -88,10 +88,11 @@ pub(crate) fn token(input: &str, cursor: usize) -> Option<(usize, String)> {
     let chars: Vec<char> = input.chars().collect();
     let cursor = cursor.min(chars.len());
     let start = chars[..cursor].iter().rposition(|c| c.is_whitespace()).map(|i| i + 1).unwrap_or(0);
-    if chars.get(start) != Some(&'$') {
-        return None;
+    // the cursor on or before the `$`: no token (and no slice past it)
+    match chars[..cursor].get(start..) {
+        Some(['$', rest @ ..]) => Some((start, rest.iter().collect())),
+        _ => None,
     }
-    Some((start, chars[start + 1..cursor].iter().collect()))
 }
 
 /// Case-insensitive prefix matches first, then substring matches.
@@ -162,6 +163,9 @@ mcp-builder\tGuide for MCP servers\t/a/m/SKILL.md
 
     #[test]
     fn token_is_the_dollar_word_at_the_cursor() {
+        // the cursor on the `$` (← after typing it): none, no panic
+        assert_eq!(token("$", 0), None);
+        assert_eq!(token("run $be", 4), None);
         assert_eq!(token("$", 1), Some((0, String::new())));
         assert_eq!(token("$be", 3), Some((0, "be".into())));
         assert_eq!(token("use $gr", 7), Some((4, "gr".into())));

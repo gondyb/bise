@@ -470,10 +470,12 @@ fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
                     };
                     spans.push(Span::styled(format!(" {}", g), st));
                 }
-                spans.push(Span::styled(format!(" {} ", c.label), name_style));
                 // columns, not chars: an emoji mark is 2 columns wide
                 let mark_w = c.mark.map(|(g, _)| g.width() + 1).unwrap_or(0);
-                let room = (w as usize).saturating_sub(c.label.width() + mark_w + 6);
+                // a long path keeps its end (the file name) in view
+                let label = truncate_left(&c.label, (w as usize).saturating_sub(mark_w + 4));
+                spans.push(Span::styled(format!(" {} ", label), name_style));
+                let room = (w as usize).saturating_sub(label.width() + mark_w + 6);
                 spans.push(Span::styled(truncate_chars(&c.desc, room), desc_style));
                 Line::from(spans)
             })
@@ -491,12 +493,35 @@ fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
     }
 }
 
+/// `s` in at most `max` columns: its end, after a `…` when cut.
+pub(crate) fn truncate_left(s: &str, max: usize) -> String {
+    if s.width() <= max {
+        return s.to_string();
+    }
+    let mut out: Vec<char> = Vec::new();
+    let mut used = 1; // the `…`
+    for ch in s.chars().rev() {
+        let cw = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+        if used + cw > max {
+            break;
+        }
+        used += cw;
+        out.push(ch);
+    }
+    if max == 0 {
+        return String::new();
+    }
+    std::iter::once('…').chain(out.into_iter().rev()).collect()
+}
+
 fn hint_text(app: &App) -> &'static str {
     // ---- hint row (the OpenCode prompt right hint row)
     if app.voice.state() == voice::VoiceState::Recording {
         "recording · any key stops · Esc/Ctrl+C cancel"
     } else if app.voice.state() == voice::VoiceState::Flushing {
         "transcribing the last words… · Esc/Ctrl+C cancel"
+    } else if popup_open(app) && files::token(&app.ed.text, app.ed.cursor).is_some() {
+        "⏎/Tab insert · ⏎/Tab/→ open a folder · ← up · ↑↓ select · Esc close"
     } else if let Some(h) = sb::hint(app) {
         h
     } else if app.pending {

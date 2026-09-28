@@ -111,8 +111,10 @@ pub(crate) fn rank(entries: &[Entry], query: &str, recent: &[String], limit: usi
     let dots = qname.first() == Some(&b'.');
     let visible = |e: &Entry| dots || e.lname().first() != Some(&b'.');
     let is_recent = |e: &Entry| recent.contains(&e.path);
+    // `rust/tui/` names a folder of the index: the search stays inside it
+    let scoped = !qdir.is_empty() && is_folder(entries, &qdir[..qdir.len() - 1]);
     if qname.is_empty() {
-        return children(entries, qdir, &visible, &is_recent, limit);
+        return children(entries, qdir, scoped, &visible, &is_recent, limit);
     }
     let qm = mask(q) & !(1u64 << b'/');
     let mut tiers: [Vec<usize>; 4] = Default::default();
@@ -120,17 +122,22 @@ pub(crate) fn rank(entries: &[Entry], query: &str, recent: &[String], limit: usi
         if qm & !e.mask != 0 || !visible(e) {
             continue;
         }
-        if !qdir.is_empty() && !subseq(&e.lower[..e.name], qdir) {
+        if scoped && !e.lower.starts_with(qdir) {
             continue;
         }
+        let parent = &e.lower[..e.name];
+        let dir_ok = qdir.is_empty() || scoped || subseq(parent, qdir);
         let n = e.lname();
-        let tier = if n == qname {
+        let tier = if dir_ok && n == qname {
             0
-        } else if n.starts_with(qname) {
+        } else if dir_ok && n.starts_with(qname) {
             1
-        } else if subseq(n, qname) {
+        } else if dir_ok && subseq(n, qname) {
             2
-        } else if qdir.is_empty() && subseq(&e.lower, qname) {
+        } else if scoped && subseq(&e.lower[qdir.len()..], qname) {
+            3
+        } else if !scoped && subseq(&e.lower, if qdir.is_empty() { qname } else { q }) {
+            // the whole query along the path (`src/tu` finds `src/tui/`)
             3
         } else {
             continue;
@@ -173,11 +180,18 @@ pub(crate) fn rank(entries: &[Entry], query: &str, recent: &[String], limit: usi
     out
 }
 
+/// `lower` (lowercase, no trailing `/`) is a folder of the index.
+fn is_folder(entries: &[Entry], lower: &[u8]) -> bool {
+    entries.iter().any(|e| e.dir && e.lower == lower)
+}
+
 /// The children of folder `dir` (`""`: the root; a folder query like
-/// `src/` also matches `rust/tui/src/`), recent then folders first.
+/// `src/` also matches `rust/tui/src/` unless `scoped`: `dir` is a folder
+/// of the index, only its own children), recent then folders first.
 fn children(
     entries: &[Entry],
     dir: &[u8],
+    scoped: bool,
     visible: &dyn Fn(&Entry) -> bool,
     is_recent: &dyn Fn(&Entry) -> bool,
     limit: usize,
@@ -191,8 +205,8 @@ fn children(
         .filter(|(_, e)| visible(e))
         .filter(|(_, e)| {
             let p = parent(e);
-            if dir.is_empty() {
-                p.is_empty()
+            if dir.is_empty() || scoped {
+                p == dir
             } else {
                 p.ends_with(dir) && (p.len() == dir.len() || p[p.len() - dir.len() - 1] == b'/')
             }
@@ -211,19 +225,47 @@ fn children(
 
 /// The `@word` that ends at the cursor: its start (char index of the
 /// `@`) and the query typed so far. The `@` opens a word (line start or
-/// after a space) and the word has no space yet.
+/// after a space) and the word has no space yet, or it is an open quote
+/// (`@"docs/my notes/`, a folder with a space) not closed yet. None when
+/// the cursor is on or before the `@`.
 pub(crate) fn token(input: &str, cursor: usize) -> Option<(usize, String)> {
     let chars: Vec<char> = input.chars().collect();
-    let cursor = cursor.min(chars.len());
-    let start = chars[..cursor]
+    let before = &chars[..cursor.min(chars.len())];
+    if let Some(q) = before.iter().rposition(|&c| c == '"') {
+        let opens = q >= 1 && before[q - 1] == '@' && (q == 1 || before[q - 2].is_whitespace());
+        if opens && !before[q + 1..].contains(&'\n') {
+            return Some((q - 1, before[q + 1..].iter().collect()));
+        }
+    }
+    let start = before
         .iter()
         .rposition(|c| c.is_whitespace())
         .map(|i| i + 1)
         .unwrap_or(0);
-    if chars.get(start) != Some(&'@') {
-        return None;
+    match before.get(start..) {
+        Some(['@', rest @ ..]) => Some((start, rest.iter().collect())),
+        _ => None,
     }
-    Some((start, chars[start + 1..cursor].iter().collect()))
+}
+
+/// The token text that browses folder `path`: `@path/`, `@"path/` when
+/// the path holds a space (the popup lists the folder's entries).
+pub(crate) fn browse(path: &str) -> String {
+    if path.is_empty() {
+        "@".to_string()
+    } else if path.contains(char::is_whitespace) {
+        format!("@\"{path}/")
+    } else {
+        format!("@{path}/")
+    }
+}
+
+/// One folder up from a query that browses a folder (`rust/tui/` →
+/// `rust`, `rust/` → the root `""`); None when the query does not end
+/// with `/`.
+pub(crate) fn parent_query(query: &str) -> Option<&str> {
+    let q = query.strip_suffix('/')?;
+    Some(q.rfind('/').map_or("", |i| &q[..i]))
 }
 
 /// What a picked entry inserts: the relative path (a folder with a
@@ -242,6 +284,7 @@ pub(crate) fn reference(path: &str, dir: bool) -> String {
 pub(crate) fn complete(input: &str, start: usize, cursor: usize, ins: &str) -> (String, usize) {
     let chars: Vec<char> = input.chars().collect();
     let cursor = cursor.min(chars.len());
+    let start = start.min(cursor);
     let head: String = chars[..start].iter().collect();
     let mut tail: String = chars[cursor..].iter().collect();
     if tail.starts_with(' ') {
@@ -249,6 +292,17 @@ pub(crate) fn complete(input: &str, start: usize, cursor: usize, ins: &str) -> (
     }
     let at = start + ins.chars().count() + 1;
     (format!("{head}{ins} {tail}"), at)
+}
+
+/// The composer once `tok` replaces the token at `start..cursor`, the
+/// popup still open: the new text and the cursor right after `tok`.
+pub(crate) fn replace_token(input: &str, start: usize, cursor: usize, tok: &str) -> (String, usize) {
+    let chars: Vec<char> = input.chars().collect();
+    let cursor = cursor.min(chars.len());
+    let start = start.min(cursor);
+    let head: String = chars[..start].iter().collect();
+    let tail: String = chars[cursor..].iter().collect();
+    (format!("{head}{tok}{tail}"), start + tok.chars().count())
 }
 
 /// The shared index of the process: the working directory walked in the
@@ -452,6 +506,58 @@ mod tests {
         assert_eq!(token("mail a@b.c", 10), None); // mid-word @
         assert_eq!(token("@main ", 6), None); // done: a space follows
         assert_eq!(token("line\n@ap", 8), Some((5, "ap".into())));
+    }
+
+    #[test]
+    fn token_is_total_and_reads_an_open_quote() {
+        // the cursor on the `@` (← after typing it): no token, no panic
+        assert_eq!(token("@", 0), None);
+        assert_eq!(token("see @ru", 4), None);
+        assert_eq!(token("", 5), None);
+        // an open quote: a folder with a space being browsed
+        assert_eq!(token("@\"docs/my notes/", 16), Some((0, "docs/my notes/".into())));
+        assert_eq!(token("see @\"docs/my notes/a", 21), Some((4, "docs/my notes/a".into())));
+        // a closed quote ends it; a quote mid-word is not an opener
+        assert_eq!(token("@\"docs/my notes/a.md\" ", 22), None);
+        assert_eq!(token("say \"@x", 7), None);
+    }
+
+    #[test]
+    fn browse_and_parent_query() {
+        assert_eq!(browse("rust/tui"), "@rust/tui/");
+        assert_eq!(browse("docs/my notes"), "@\"docs/my notes/");
+        assert_eq!(browse(""), "@");
+        assert_eq!(parent_query("rust/tui/"), Some("rust"));
+        assert_eq!(parent_query("rust/"), Some(""));
+        assert_eq!(parent_query("rust/tu"), None);
+        assert_eq!(parent_query(""), None);
+        assert_eq!(replace_token("see @ru now", 4, 7, "@rust/"), ("see @rust/ now".into(), 10));
+        assert_eq!(replace_token("@", 5, 9, "@x/"), ("@@x/".into(), 4)); // out of range: clamped, no panic
+    }
+
+    #[test]
+    fn a_folder_path_scopes_the_search() {
+        let e = index(&[
+            "rust/",
+            "rust/tui/",
+            "rust/tui/src/",
+            "rust/tui/src/files.rs",
+            "rust/tui/src/main.rs",
+            "rust/tui/Cargo.toml",
+            "rust/other/",
+            "rust/other/tui/",
+            "rust/other/tui/files.rs",
+            "vendor/rust/tui/x.rs",
+        ]);
+        // an exact folder: its own children only (not vendor/rust/tui/)
+        assert_eq!(top(&e, "rust/tui/", &[]), ["rust/tui/src", "rust/tui/Cargo.toml"]);
+        // a name inside it: its descendants only
+        assert_eq!(top(&e, "rust/tui/fi", &[]), ["rust/tui/src/files.rs"]);
+        // not a folder path: fuzzy as before, and the whole query along
+        // the path finds folders (`src/fi`, `tu/sr`)
+        assert_eq!(top(&e, "tui/", &[]), ["rust/tui/src", "rust/tui/Cargo.toml", "rust/other/tui/files.rs", "vendor/rust/tui/x.rs"]);
+        assert_eq!(top(&e, "rust/tu", &[])[..2], ["rust/tui", "rust/other/tui"]);
+        assert!(top(&e, "tu/sr", &[]).contains(&"rust/tui/src"));
     }
 
     #[test]

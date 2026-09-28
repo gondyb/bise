@@ -106,6 +106,12 @@ Empty query (`@` alone) and `dir/`: the recent picks, then the immediate
 children of the root (or of `dir/`), directories first. Dot files show
 only when the query starts with `.` (Vibe).
 
+A dir part that is a folder of the index (`rust/tui/`, exact path, case
+insensitive) scopes the search: `rust/tui/` lists that folder's own
+children only, `rust/tui/fi` its descendants only. Any other dir part
+stays fuzzy (`src/` also lists `rust/tui/src/`), and the whole query as a
+subsequence of the path is the last tier (`tu/sr` finds `rust/tui/src/`).
+
 ### Popup
 
 - Agents first (the current `@` agent filter, Switchboard only), then the
@@ -117,6 +123,30 @@ only when the query starts with `.` (Vibe).
 - Picking an agent inserts `@name ` (as today); at line start in
   Switchboard it still routes. Picking a file replaces the `@query` token
   with the path and a space.
+- Folders are browsed, not inserted (Codex / Claude Code / Zed path
+  completion). The composer text is the whole state: `@rust/tui/` lists
+  that folder. Keys (`input::at_nav`, `commands::at_up`):
+
+  | key | agent row | file row | folder row |
+  |---|---|---|---|
+  | ⏎ / Tab | `@name ` | the path + space, popup closed | `@path/`, popup on its entries |
+  | → | cursor right | cursor right | `@path/`, popup on its entries |
+  | ← / ⌫ on `@dir/` | one folder up (`@rust/tui/` → `@rust/` → `@`) | same | same |
+  | ← / ⌫ otherwise | edit as usual | same | same |
+  | ↑ ↓ | select, wrapping | same | same |
+  | Esc | close, keep the text | same | same |
+
+  While browsing, the last row is the folder itself (`rust/tui/` · this
+  folder: ↑ from the first row, ⏎ inserts `rust/tui/ `). A folder with a
+  space is browsed quoted: `@"docs/my notes/`; `files::token` reads an
+  open `@"` up to the cursor. A long path is cut from the left so the
+  name stays visible. The hint row lists the keys while the popup is open.
+- The panic of the first version: `files::token` sliced
+  `chars[start + 1..cursor]` with the cursor on the `@` (`@` then ←, or
+  Home on `see @ru`): `slice index starts at 1 but ends at 0`. The same
+  bug was in `skills::token` (`$` then ←). Both now match on
+  `before.get(start..)`; the key handler reads the selection with `get`
+  and steps it with `input::popup_step` (total on an empty or stale list).
 
 ## Latency (prototype, release build, Apple M-series)
 
@@ -151,5 +181,13 @@ walk: 84629 entries in 310.7ms
   the agent then the root; inline `@not` puts `@notes` above
   `docs/at-notes.md`; `target/` (ignored) never shows; Tab and Enter
   insert the path; `sb/me` narrows by folder; `a@b` opens nothing; an
-  agent picked at the start keeps `@notes` (routing).
+  agent picked at the start keeps `@notes` (routing); `@` then ← (the
+  panic) then →; `@rust/` → `tui/` (← up, → again) → `src/` ⏎ on
+  `files.rs` gives `rust/tui/src/files.rs`.
+- Popup state machine (`at_popup_tests.rs`, real `on_key` on a temp
+  workspace): browse and pick, Tab, ←/⌫ up, → on a file or an agent,
+  inline with a tail, the folder row, a quoted folder, an empty folder,
+  and every key × every row (first, middle, last, stale) × 16 composer
+  states (emoji and CJK names, 180-char paths, cursor on the `@`) drawn
+  at 12/40/150 columns: no panic.
 - Latency: `files::tests::bench` (ignored), numbers above.

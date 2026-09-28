@@ -79,3 +79,5 @@ mod feed_render_tests;
 pub use keyprobe::keyprobe;
 pub use sb::{run_switchboard, take_reexec};
 
+#[cfg(test)]
+mod at_popup_tests;

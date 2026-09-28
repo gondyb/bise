@@ -331,12 +331,11 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
     }
     let matches = popup_items(app);
     let popup_open = !matches.is_empty();
-    let sel = if popup_open {
-        Some(&matches[app.popup_sel.min(matches.len() - 1)])
-    } else {
-        None
-    };
+    let sel = matches.get(app.popup_sel.min(matches.len().saturating_sub(1)));
     if app.sb.is_some() && sb::key(app, k, popup_open) {
+        return false;
+    }
+    if at_nav(app, k, sel) {
         return false;
     }
     match (k.code, k.modifiers) {
@@ -479,20 +478,55 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         }
         // the popup takes the plain arrows
         (KeyCode::Up, KeyModifiers::NONE) if popup_open => {
-            app.popup_sel = (app.popup_sel + matches.len() - 1) % matches.len();
+            app.popup_sel = popup_step(app.popup_sel, matches.len(), false);
         }
         (KeyCode::Down, KeyModifiers::NONE) if popup_open => {
-            app.popup_sel = (app.popup_sel + 1) % matches.len();
+            app.popup_sel = popup_step(app.popup_sel, matches.len(), true);
         }
         _ => composer_key(app, k),
     }
     false
 }
 
+/// The selection one row down (or up) in a popup of `len` rows,
+/// wrapping; 0 when the list is empty or the selection is stale.
+pub(crate) fn popup_step(sel: usize, len: usize, down: bool) -> usize {
+    match len {
+        0 => 0,
+        _ if sel >= len => 0,
+        _ if down => (sel + 1) % len,
+        _ => sel.checked_sub(1).unwrap_or(len - 1),
+    }
+}
+
+/// The folder keys of the `@` popup: → on a folder row browses it (the
+/// popup stays open on its entries); ← or Backspace on `@dir/` goes one
+/// folder up. True when the key was taken.
+fn at_nav(app: &mut App, k: &crossterm::event::KeyEvent, sel: Option<&PopItem>) -> bool {
+    match (k.code, k.modifiers) {
+        (KeyCode::Right, KeyModifiers::NONE) => match sel {
+            Some(c) if c.folder => {
+                pick(app, c);
+                true
+            }
+            _ => false,
+        },
+        (KeyCode::Left | KeyCode::Backspace, KeyModifiers::NONE) => match commands::at_up(app) {
+            Some((text, cursor)) => {
+                app.ed.set(&text, cursor);
+                app.popup_sel = 0;
+                true
+            }
+            None => false,
+        },
+        _ => false,
+    }
+}
+
 /// Take the popup entry `c` into the composer (a picked path ranks first
-/// in the next `@` searches).
+/// in the next `@` searches; a folder is browsed, not picked).
 fn pick(app: &mut App, c: &PopItem) {
-    if let Some(p) = &c.path {
+    if let Some(p) = c.path.as_ref().filter(|_| !c.folder) {
         files::picked(p);
     }
     app.ed.set(&c.fill, c.fill_cursor);

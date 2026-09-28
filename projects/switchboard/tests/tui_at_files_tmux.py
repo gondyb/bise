@@ -28,10 +28,11 @@ def popup_rows():
 
 def main():
     E = e2e.Env()
-    for d in ["src/sb", "target/debug", "docs"]:
+    for d in ["src/sb", "target/debug", "docs", "rust/tui/src"]:
         os.makedirs(os.path.join(E.ws, d), exist_ok=True)
     for f, body in [(".gitignore", "target/\n"), ("src/app.rs", ""), ("src/sb/mention.rs", ""),
-                    ("docs/at-notes.md", ""), ("target/debug/appcache.rs", "")]:
+                    ("docs/at-notes.md", ""), ("target/debug/appcache.rs", ""),
+                    ("rust/tui/src/files.rs", ""), ("rust/tui/Cargo.toml", "")]:
         with open(os.path.join(E.ws, f), "w") as fh:
             fh.write(body)
     ok = False
@@ -80,6 +81,35 @@ def main():
         wait_screen("@notes")
         keys("Tab")
         wait_composer("@notes")
+        keys("C-u")
+        # the reported panic: ← with the cursor onto the `@`
+        typed("@")
+        wait_screen("▸ rust/")
+        keys("Left")
+        wait_gone("▸ rust/")
+        keys("Right")
+        wait_screen("▸ rust/")
+        keys("BSpace")
+        # browse folders without leaving the popup: `@rust/`, → into
+        # tui/, → into src/, pick files.rs
+        typed("@rust/")
+        wait_screen("▸ rust/tui/")
+        keys("Right")
+        wait_composer("@rust/tui/")
+        sc = wait_screen("▸ rust/tui/src/")
+        assert "▪ rust/tui/Cargo.toml" in sc and "this folder" in sc, sc
+        keys("Left")                       # ← goes one folder up
+        wait_composer("@rust/")
+        keys("Right")
+        wait_composer("@rust/tui/")
+        wait_screen("▸ rust/tui/src/")
+        keys("Right")
+        wait_composer("@rust/tui/src/")
+        wait_screen("▪ rust/tui/src/files.rs")
+        keys("Enter")
+        wait_composer("rust/tui/src/files.rs")
+        wait_gone("▪ rust/tui/src/files.rs")
+        assert "@" not in composer(), composer()
         print(screen())
         ok = True
         print("PASS tui at-files")
