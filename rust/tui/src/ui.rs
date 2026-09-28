@@ -649,7 +649,14 @@ fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
     let matches = popup_items(app);
     if !matches.is_empty() {
         let n = matches.len().min(8) as u16;
-        let w = if matches[0].closable { 72u16 } else { 56u16 }.min(prompt.width);
+        // wide enough for the widest line, whole (QA 6), within the prompt
+        let need = matches
+            .iter()
+            .map(|c| c.mark.map(|(g, _)| g.width() + 1).unwrap_or(0) + c.label.width() + c.desc.width() + 6)
+            .max()
+            .unwrap_or(0);
+        let min = if matches[0].closable { 72 } else { 56 };
+        let w = (need.max(min) as u16).min(prompt.width);
         let sel_i = app.popup_sel.min(matches.len() - 1);
         let top = popup_top(sel_i, matches.len(), 8);
         let area = Rect {
