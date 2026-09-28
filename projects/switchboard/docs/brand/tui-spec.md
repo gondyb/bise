@@ -1,6 +1,8 @@
 # bise terminal UI: design spec v0
 
-Design only, not implemented. Mockup: [tui-mockup.html](tui-mockup.html).
+Design only, not implemented. Mockups: [tui-mockup.html](tui-mockup.html) (one
+screen, interactive) and [tui-screens.html](tui-screens.html) (every feature of
+today's TUI, 26 screens).
 Brand board: [board.html](board.html). Items marked **⚠** need a check or a
 decision.
 
@@ -21,7 +23,11 @@ us. The features are right; the look and the reading comfort are not.
    keypress away. Scripts are the exception: always shown in full.
 4. **A visual language of symbols.** Every entity and every status has one
    glyph. Color is for attention only.
-5. **Lowercase chrome.** All UI labels lowercase (proper nouns and acronyms
+5. **Few words to learn.** The user meets four things: *you*, *main*,
+   *agents*, *cards*. The UI says "agent", never "task", "hands" or "hub"
+   (Gabriel: avoid new vocabulary). **⚠** Today's UI and `/help` say "task";
+   rename them.
+6. **Lowercase chrome.** All UI labels lowercase (proper nouns and acronyms
    excepted), like the marketing.
 
 ## Must keep (Gabriel)
@@ -78,6 +84,9 @@ Entities:
 | `±` | file edit (patch) |
 | `✉` | message between agents |
 | `?` | card: a decision that needs you |
+| `↳` | a sub-call inside a TypeScript run, or a steer |
+| `⟳` / `≡` | compaction running / its summary |
+| `▲` (dim) | turn interrupted |
 
 Task status:
 
@@ -89,6 +98,13 @@ Task status:
 | `♡` | done |
 | `✗` (red) | failed |
 | `○` (dim) | idle |
+| `·` (dim, pulsing) | starting |
+| `–` (dim) | stopped |
+
+Marks next to an agent: `•` unread activity, `⎇` own worktree (no mark: the
+shared folder), context fill as `21%`. Card kinds reuse the status glyphs, plus
+`⇄` overlap (two agents changed the same file), `↻` failed restart, `–` drop
+confirmation. Versions: `⧗` building / on trial.
 
 **⚠** Check that `∿ ∴ ◇ ± ✉ ♡ λ` exist and are single-width in common
 terminal fonts (SF Mono, Menlo, JetBrains Mono, Fira Code, Cascadia) and in
@@ -113,11 +129,33 @@ toggles all outputs.
 ## Layout
 
 - Header: `bise :*` on the left; on the right a live count
-  `∿ 2 working · ? 1 needs you · ♡ 1 done · $1.20`.
+  `∿ 2 working · ? 1 needs you · ♡ 1 done`. **⚠** A cost in $ is not
+  available today (only tokens per agent); add it once the usage work lands.
 - Feed on the left (prose ≤ 76 columns), task panel on the right titled
-  `hands`, one line per task: glyph, name, age or state.
+  `agents`, one line per agent: glyph, name, age or state, context fill.
 - Main answering a task on your behalf is shown in the feed, with its undo
   (`ctrl+z`).
 - Checkout view: a one-line banner "you are talking to auth-fix directly. main
   is not in the loop. esc back to main."
 - Composer at the bottom: `› ` prompt, key hints on the right, dim.
+
+## Coverage of today's features
+
+Checked against `rust/tui` on 2026-09-28 (`help.rs` rows, `sb/panel.rs`,
+`sb/cards.rs`, `wire.rs` events, `commands.rs`). Every item has a screen in
+[tui-screens.html](tui-screens.html):
+
+first run · routing and route undo · main answering for you · reports in main ·
+main sending work back · question card · every card kind (question, blocked,
+failed, restart, drop, overlap, done) · full-screen card · the agents panel in
+every state (starting, working, waiting, needs you, blocked, done, failed,
+idle, stopped, unread, worktree, archived) · preview (space) · checkout ·
+everything disclosed · failing tool · steer and interrupt · `@agent` messages
+and the `@` popup · agent-to-agent messages · compaction · provider and hub
+errors · `/version` build and trial · slash commands · voice · terminal panel
+· help · drop confirmation · narrow terminal · long history.
+
+Not built today, shown with **⚠** in the screens: undo of an answer main gave
+for you, files in the `@` popup (at-files task in progress), one key to open
+every output, cost in $. Not mocked: the text editor keys and selection (no
+visual change), emoji completion, plugins (in progress).

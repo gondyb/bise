@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bise — every terminal screen, v0</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#141211; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --acc:#f2766b; --err:#ff5a52; --ok:#b9d99a;
+          --kw:#d7a6f0; --str:#b9d99a; --com:#857e74; --num:#f0b27a; --fn:#8fc4f0; --line:#2a2623; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background:#0b0a09; color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:13px; line-height:1.55; padding:28px; }
+  h1 { font-size:15px; } .lead { color:#8a8378; max-width:100ch; margin:6px 0 18px; }
+  nav { columns: 3; max-width: 120ch; margin-bottom: 28px; color:#8a8378; }
+  nav a { color:#8a8378; text-decoration:none; display:block; } nav a:hover { color:var(--acc); }
+  figure { margin: 0 0 44px; }
+  figcaption { max-width: 100ch; margin-bottom: 10px; }
+  figcaption b { font-weight:700; } figcaption .n { color:var(--acc); margin-right:1ch; }
+  figcaption p { color:#8a8378; margin-top:2px; }
+  figcaption .warn { color:#f0b27a; }
+  .term { background:var(--bg); border-radius:8px; width:112ch; max-width:100%; overflow:hidden; box-shadow:0 12px 40px rgba(0,0,0,.45); position:relative; }
+  .term.narrow { width:64ch; }
+  .head { display:flex; justify-content:space-between; padding:8px 2ch 6px; }
+  .grid { display:grid; grid-template-columns:1fr 30ch; }
+  .term.narrow .grid { grid-template-columns:1fr; }
+  .feed { padding:4px 2ch 10px; min-height:120px; }
+  .feed > * { max-width:76ch; }
+  .feed pre.code, .feed pre.out { max-width:100ch; }
+  .panel { border-left:1px solid var(--line); padding:4px 2ch 10px; }
+  .row { display:flex; justify-content:space-between; white-space:nowrap; }
+  .row.sel { background:#262220; margin:0 -1ch; padding:0 1ch; }
+  .foot { border-top:1px solid var(--line); padding:6px 2ch 8px; }
+  .status { display:flex; justify-content:space-between; color:var(--dim); }
+  .composer { display:flex; justify-content:space-between; margin-top:4px; }
+  .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)} .err{color:var(--err)} .ok{color:var(--ok)}
+  .kw{color:var(--kw)} .str{color:var(--str)} .com{color:var(--com)} .num{color:var(--num)} .fn{color:var(--fn)}
+  .b { margin-top:10px; } .who { display:inline-block; width:3ch; } .ind { padding-left:3ch; }
+  pre { font:inherit; white-space:pre-wrap; }
+  pre.code { border-left:1px solid var(--line); padding-left:2ch; margin:3px 0 0 1ch; }
+  pre.out { border-left:1px solid var(--line); padding-left:2ch; margin:3px 0 0 1ch; color:var(--dim); }
+  .card { border:1px solid var(--acc); border-radius:6px; padding:6px 2ch; margin:8px 2ch 0; max-width:80ch; }
+  .card.soft { border-color:var(--line); }
+  .card .opts span { margin-right:3ch; } .card .opts b { color:var(--acc); font-weight:400; }
+  .pop { border:1px solid var(--line); border-radius:6px; margin:0 2ch 4px; padding:4px 1ch; background:#1b1816; max-width:70ch; }
+  .pop .row.sel { background:#2e2926; }
+  .overlay { position:absolute; inset:34px 6ch 50px; background:#1b1816; border:1px solid var(--line); border-radius:8px; padding:10px 3ch; }
+  .shell { border-top:1px solid var(--acc); margin-top:6px; padding:6px 2ch; background:#0f0e0d; }
+  .pulse { display:inline-block; animation:pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity:.35 } }
+  .cur { display:inline-block; width:.6em; height:1.05em; background:var(--text); vertical-align:-.18em; animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0 } }
+  .rec { color:var(--acc); }
+  .legend { display:grid; grid-template-columns:repeat(3, 38ch); gap:2px 3ch; max-width:120ch; }
+  .legend span:first-child { display:inline-block; width:3ch; }
+  hr { border:0; border-top:1px solid var(--line); margin:40px 0; max-width:112ch; }
+</style>
+</head>
+<body>
+<h1>bise :* — every terminal screen, v0</h1>
+<p class="lead">design only. one mockup per feature of today's TUI (rust/tui, 2026-09-28), redrawn with the new look: calm screen, one accent, symbols for status, prose ≤ 76 columns, bash and TypeScript scripts always in full, everything else disclosed with ▸. in the UI, sub-agents are called <b>agents</b>. <span style="color:#f0b27a">⚠ = not built today, or a choice to make.</span></p>
+
+<nav id="toc"></nav>
+
+<div id="screens"></div>
+
+<script>
+// ---------- helpers ----------
+const S = {
+  work: '<span class="pulse">∿</span>', wait: '…', need: '<span class="acc">?</span>', done: '♡',
+  fail: '<span class="err">✗</span>', idle: '<span class="dim">○</span>', start: '<span class="pulse dim">·</span>', stop: '<span class="dim">–</span>',
+};
+function head(right) {
+  return `<div class="head"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim">${right ?? `${S.work} 3 working · <span class="acc">? 1 needs you</span> · ♡ 1 done`}</span></div>`;
+}
+function panel(rows, extra = "") {
+  return `<div class="panel"><div class="dim" style="margin-bottom:4px">agents</div>${rows.map(r =>
+    `<div class="row${r.sel ? " sel" : ""}"><span>${r.g} ${r.name}${r.dot ? ' <span class="acc">•</span>' : ""}</span><span class="dim">${r.r ?? ""}</span></div>`).join("")}${extra}</div>`;
+}
+const P = {
+  main:   { g: '<span class="acc">:*</span>', name: "main", r: "" },
+  auth:   { g: S.work, name: "auth-fix", r: "12m · 21%" },
+  rel:    { g: S.work, name: "release", r: "3m · 8%" },
+  docs:   { g: S.need, name: "docs", r: '<span class="acc">you</span>' },
+  api:    { g: S.wait, name: "api-v2", r: "waits docs" },
+  bench:  { g: S.done, name: "bench", r: "done" },
+  deploy: { g: S.fail, name: "deploy", r: "failed" },
+  ideas:  { g: S.idle, name: "ideas", r: "idle" },
+};
+const PANEL = (sel, ...more) => panel([P.main, P.auth, P.rel, P.docs, P.api, P.bench, P.deploy, ...more].map(r => ({ ...r, sel: r.name === sel })));
+function foot(status, composer, hints) {
+  return `<div class="foot"><div class="status"><span>${status ?? 'main · idle · 210k / 1M tokens · 21%'}</span><span>${hints ?? ""}</span></div>
+  <div class="composer"><span>${composer ?? '<span class="dim">›</span> <span class="cur"></span>'}</span><span class="dim">${hints === undefined ? "⏎ send · @ agent · / commands · ? help" : ""}</span></div></div>`;
+}
+function term({ h, feed, pan, above = "", f, narrow, overlay = "" }) {
+  return `<div class="term${narrow ? " narrow" : ""}">${h ?? head()}<div class="grid"><div class="feed">${feed}</div>${narrow ? "" : (pan ?? PANEL())}</div>${above}${f ?? foot()}${overlay}</div>`;
+}
+const you = t => `<div class="b"><span class="who dim">›</span>${t}</div>`;
+const bise = t => `<div class="b"><span class="who acc">:*</span>${t}</div>`;
+const ts = `<span class="kw">async function</span> <span class="fn">main</span>() {
+  <span class="kw">const</span> issues = <span class="kw">await</span> tools.github.<span class="fn">search_issues</span>({
+    query: <span class="str">"safari login cookie"</span>,
+    limit: <span class="num">5</span>,
+  });
+  <span class="com">// only the open ones, newest first</span>
+  <span class="kw">return</span> issues.<span class="fn">filter</span>((i) =&gt; i.state === <span class="str">"open"</span>).<span class="fn">map</span>((i) =&gt; i.title);
+}`;
+const bash = `<span class="kw">cd</span> web
+npx playwright test login --project=webkit --reporter=line
+<span class="kw">grep</span> -rn <span class="str">"SameSite"</span> src/auth/`;
+
+// ---------- the screens ----------
+const screens = [
+["first run", "the empty state. one sentence says what to do; no vocabulary to learn.",
+ term({ h: head('<span class="dim">no agents yet</span>'),
+   feed: `<div class="b dim">what's on your mind? say it, and keep going. i start an agent for each thing, and tell you when something needs you.</div>
+   <div class="b dim">try: "fix the flaky login test, and draft the release note"</div>`,
+   pan: panel([P.main]), f: foot('main · idle') })],
+
+["you ask, main starts agents", "several requests in a row, no waiting. main says which agent took what. undo a route while it isn't delivered yet (today: Ctrl+Z).",
+ term({ feed: you("the login breaks on safari. oh and can someone write the release note for 0.4?") +
+   bise("on it. two agents:") + `<div class="ind">${S.work} auth-fix <span class="dim">the safari login bug</span></div><div class="ind">${S.work} release <span class="dim">the release note for 0.4</span></div>` +
+   you("also the api docs, v2") + bise(`sent to docs. <span class="dim">ctrl+z undo · 4s</span>`) })],
+
+["main answers for you", "a routine question answered by main from the brief. always visible, always reversible (⚠ undo of an answer is not built today; only routes can be undone).",
+ term({ feed: bise(`docs asked "v1 or v2 for the examples?". the brief says v2, so i answered v2. <span class="dim">▸ why · undo</span>`) +
+   bise(`auth-fix asked "may i touch web/src/auth?". nobody else is in it, so yes.`) })],
+
+["reports in main", "each agent's report is one line; ▸ discloses it. ♡ done, ✗ failed, ? blocked, · progress.",
+ term({ feed: `<div class="b"><span class="who">♡</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div>
+   <pre class="out">ran the load test 3 times on staging.
+p50 42 ms · p95 180 ms · p99 410 ms (budget: p95 &lt; 250 ms)
+the slow tail is the cold cache on the first request.</pre>
+   <div class="b"><span class="who dim">·</span><span class="dim">release: first draft written, checking the changelog links.</span></div>
+   <div class="b"><span class="who err">✗</span>deploy failed: the staging token expired. <span class="dim">▸ report</span></div>
+   <div class="b"><span class="who acc">?</span>docs is blocked: it needs the v2 schema file. <span class="dim">▸ card</span></div>` })],
+
+["main sends work back", "main reads a \"done\", sees it isn't, and sends the agent back before bothering you.",
+ term({ feed: bise(`auth-fix said done, but the webkit test still fails. i sent it back: "the test is red, fix it and rerun it". <span class="dim">▸ report</span>`) })],
+
+["cards: a question", "the card box sits above the composer. a question has numbered choices when the agent gives some; otherwise type the answer. keys today: Ctrl+G show/hide, Ctrl+N/P next/previous, Alt+R answer with the composer text, Ctrl+X close.",
+ term({ feed: you("where are we?") + bise("3 agents working, 1 needs you (docs), bench is done."),
+   above: `<div class="card"><div><span class="acc">?</span> docs needs you <span class="dim">· 1 of 3 · 2m</span></div>
+   <div class="b" style="margin-top:4px">the brief says "keep old clients working", but v2 removes /users. do we document v1 or v2?</div>
+   <div class="opts b" style="margin-top:6px"><span><b>1</b> v1</span><span><b>2</b> v2</span><span class="dim"><b>alt+r</b> answer with text</span><span class="dim"><b>ctrl+x</b> later</span></div></div>` })],
+
+["cards: every kind", "same box, one glyph per kind, sorted by what blocks an agent first. ⚠ the heart on a done card replaces today's ✓.",
+ term({ feed: "",
+   above: [
+    ['<span class="acc">?</span>', "docs asks", "v1 or v2 for the api docs?"],
+    ['<span class="acc">?</span>', "api-v2 is blocked", "it needs the v2 schema file, which isn't in the repo."],
+    ['<span class="err">✗</span>', "deploy failed", "the staging token expired. ▸ report"],
+    ['<span class="err">↻</span>', "restart failed", "version 7f3a2c crashed on start; back on 81986cd."],
+    ['–', "drop ideas?", "it has uncommitted work in notes/ideas.md.  y drop · n keep"],
+    ['⇄', "overlap", "auth-fix and release both changed web/CHANGELOG.md."],
+    ['♡', "bench is done", "p95 at 180 ms, nothing to fix.  alt+r got it"],
+   ].map(([g, t, x]) => `<div class="card soft"><span class="${g.includes("acc") ? "" : ""}">${g}</span> ${t} <span class="dim">· ${x}</span></div>`).join("") })],
+
+["a card, full screen", "long cards open full screen (today: Ctrl+F), scroll with PgUp/PgDn. prose still wraps at 76 columns.",
+ term({ feed: `<div><span class="acc">?</span> release needs you <span class="dim">· full screen · ctrl+f back</span></div>
+   <div class="b">the changelog has 41 entries since 0.3. i grouped them in 4 themes: auth, speed, voice, cards. two entries have no PR link:</div>
+   <pre class="out">- "fix the ghost cursor in the composer"
+- "cards can be answered with alt+r"</pre>
+   <div class="b">should i keep them without links, or drop them from the note?</div>
+   <div class="b dim">▾ 12 more lines · pgdn</div>`, pan: PANEL("release") })],
+
+["the agents panel, every state", "one line per agent: glyph, name, age or state, context fill. • = unread activity. ⎇ = agent in its own worktree; no mark = the shared folder. archived agents are counted, not listed.",
+ term({ feed: "", pan: panel([
+   P.main, { ...P.auth, sel: true, dot: true }, P.rel, { g: S.start, name: "tests", r: "starting" }, P.docs, P.api,
+   { g: '<span class="acc">?</span>', name: "infra", r: '<span class="acc">blocked</span>' }, P.bench, P.deploy, P.ideas,
+   { g: S.stop, name: "old-spike", r: "stopped" }, { g: S.work, name: "big-refactor ⎇", r: "40m · 64%" },
+ ], `<div class="dim b">4 archived</div>`) })],
+
+["preview an agent", "Space on a selected agent: its last lines, without leaving main.",
+ term({ feed: you("…") + `<div class="card soft"><div class="dim">preview · auth-fix · ⏎ enter · esc close</div>
+   <div class="b" style="margin-top:4px"><span class="who">$</span>bash <span class="dim">✓ 6.2s · 1 failed</span></div>
+   <div><span class="who dim">∴</span><span class="dim">safari drops the cookie without Secure. fixing session.ts.</span></div>
+   <div><span class="who">±</span>edit web/src/auth/session.ts <span class="dim">✓ +3 −1</span></div>
+   <div><span class="who pulse">∿</span><span class="dim">re-running the webkit tests…</span></div></div>`, pan: PANEL("auth-fix"),
+   f: foot('main · idle · preview of auth-fix') })],
+
+["inside an agent (checkout)", "⏎ on an agent: you talk to it directly. one line says main is out of the loop. scripts in full; brief, thinking, outputs and diffs behind ▸.",
+ term({ h: head(), feed: `<div class="dim">you're talking to auth-fix directly. main isn't in the loop. <span class="acc">esc</span> back to main.</div>
+   <div class="b"><span class="who">◇</span>brief <span class="dim">▸</span></div>
+   <div class="b"><span class="who dim">∴</span><span class="dim">thought for 14s ▸</span></div>
+   <div class="b"><span class="who">$</span>bash <span class="dim">✓ 6.2s</span></div><pre class="code">${bash}</pre>
+   <div class="ind dim">▸ output · 42 lines · 1 failed</div>
+   <div class="b"><span class="who">λ</span>typescript <span class="dim">✓ 0.4s</span></div><pre class="code">${ts}</pre>
+   <div class="ind"><span class="dim">↳ github.search_issues ✓</span></div>
+   <div class="ind dim">▸ result · 2 items</div>
+   <div class="b"><span class="who">±</span>edit web/src/auth/session.ts <span class="dim">✓ +3 −1 ▸</span></div>
+   <div class="b">found it: safari drops SameSite=None cookies without Secure. added secure: true; the webkit test passes now.</div>
+   <div class="b"><span class="who">♡</span><span class="dim">turn done · 2m 10s</span></div>`,
+   pan: PANEL("auth-fix"), f: foot('auth-fix · idle · 210k / 1M tokens · 21% · shared folder') })],
+
+["everything disclosed", "the same turn with every ▸ open (today: Ctrl+T opens all thinking; ⚠ one key for all outputs is new).",
+ term({ feed: `<div><span class="who">◇</span>brief <span class="dim">▾</span></div>
+   <pre class="out">the login breaks on safari 18. reproduce with playwright, fix it,
+keep the chrome path unchanged. report with the test output.</pre>
+   <div class="b"><span class="who dim">∴</span><span class="dim">thought for 14s ▾</span></div>
+   <pre class="out">safari drops the session cookie on the redirect. SameSite=None needs
+Secure, and the dev server sets it without. check session.ts first.</pre>
+   <div class="b"><span class="who">$</span>bash <span class="dim">✓ 6.2s</span></div><pre class="code">${bash}</pre>
+   <pre class="out">[webkit] › login.spec.ts:12 › logs in and stays logged in
+  expected cookie "sid" to be set after redirect
+1 failed, 11 passed (6.1s)
+src/auth/session.ts:31:  sameSite: "none",</pre>
+   <div class="b"><span class="who">±</span>edit web/src/auth/session.ts <span class="dim">✓ +3 −1 ▾</span></div>
+   <pre class="code"><span class="com">@@ -29,5 +29,7 @@</span>
+   cookie: {
+<span class="err">-    sameSite: "none",</span>
+<span class="ok">+    sameSite: "none",</span>
+<span class="ok">+    secure: true,</span>
+   },</pre>`, pan: PANEL("auth-fix") })],
+
+["a failing tool", "a failed call stays one line, in red, with the reason; ▸ for the full error.",
+ term({ feed: `<div><span class="who">$</span>bash <span class="err">✗ exit 1 · 0.8s</span></div>
+   <pre class="code">cargo test -p bend-tui feed_render</pre>
+   <div class="ind"><span class="err">error[E0425]: cannot find value \`width\` in this scope</span> <span class="dim">▸ 18 lines</span></div>
+   <div class="b"><span class="who">±</span>edit rust/tui/src/feed.rs <span class="err">✗ the patch doesn't apply: context not found</span></div>`, pan: PANEL("auth-fix") })],
+
+["a turn in progress: steer, interrupt", "while an agent works, ⏎ steers its turn; Ctrl+C interrupts it. the agents keep running when you quit.",
+ term({ feed: `<div><span class="who">$</span>bash <span class="pulse dim">∿ 12s</span></div><pre class="code">npx playwright test --project=webkit</pre>
+   ${you("skip firefox, only webkit")}<div class="ind dim">↳ steered the running turn</div>
+   <div class="b"><span class="who dim">▲</span><span class="dim">interrupted by you</span></div>`, pan: PANEL("auth-fix"),
+   f: foot('auth-fix · working · 12s', '<span class="dim">›</span> <span class="cur"></span>', "⏎ steer · ctrl+c interrupt") })],
+
+["talk to an agent from main", "@name sends a direct message without leaving main; from inside an agent, @main goes back up. the @ popup lists agents (⚠ and files: the at-files task is building it).",
+ term({ feed: you("@auth-fix also check the logout path") + `<div class="ind dim">✉ sent to auth-fix</div>`,
+   above: `<div class="pop"><div class="row sel"><span>${S.work} auth-fix</span><span class="dim">the safari login bug</span></div>
+   <div class="row"><span>${S.work} release</span><span class="dim">the release note</span></div>
+   <div class="row"><span class="dim">📄 web/src/auth/session.ts</span><span class="dim">file ⚠</span></div></div>`,
+   f: foot(undefined, '<span class="dim">›</span> @au<span class="cur"></span>', "tab pick · esc close") })],
+
+["agents talk to each other", "messages between agents show in the agent's feed with ✉, so you can follow who told what to whom.",
+ term({ feed: `<div><span class="who">✉</span><span class="dim">auth-fix → release:</span> heads-up, i'm touching web/src/auth. mention the safari fix in the notes.</div>
+   <div class="b"><span class="who">✉</span><span class="dim">release → auth-fix:</span> got it, added under "fixes".</div>`, pan: PANEL("release") })],
+
+["compaction", "when a context fills up, the agent compacts: one line while it runs, then a summary behind ▸.",
+ term({ feed: `<div><span class="who dim">⟳</span><span class="dim">compacting the conversation… 81% full</span></div>
+   <div class="b"><span class="who dim">≡</span><span class="dim">compacted: 820k → 34k tokens ▸ summary</span></div>`, pan: PANEL("auth-fix"),
+   f: foot('auth-fix · working · 34k / 1M tokens · 3%') })],
+
+["provider or hub errors", "an outage is loud and immediate, never a silent agent. (error-report work is in progress.)",
+ term({ feed: `<div><span class="who err">✗</span><span class="err">the model provider answered 503. retrying in 8s (2 of 5).</span></div>
+   <div class="b dim">auth-fix and release are waiting on it; nothing is lost.</div>`,
+   h: head(`<span class="err">✗ provider down</span> · ${S.wait} 2 waiting`),
+   f: foot('<span class="err">○ hub disconnected · reconnecting…</span>') })],
+
+["versions: build, try, roll back", "/version picks a build; the hub restarts on trial and rolls back if it breaks. the agents keep going.",
+ term({ feed: you("/version latest") + bise("building 7f3a2c, then a trial restart. your agents keep working."),
+   above: `<div class="pop"><div class="dim">versions · type to filter · ⏎ switch</div>
+   <div class="row sel"><span>7f3a2c  tui: prose wraps at 76 cols</span><span class="dim">latest</span></div>
+   <div class="row"><span>81986cd packaging prototype</span><span class="dim">current</span></div>
+   <div class="row"><span>c7d3a81 brand board v0</span><span class="dim"></span></div></div>`,
+   f: foot('main · idle · v 81986cd · <span style="color:#f0b27a">⧗ building 7f3a2c</span>') })],
+
+["slash commands", "/ opens the commands; tab completes. lowercase labels, one line each.",
+ term({ feed: "", above: `<div class="pop">${[
+   ["/compact", "compact this conversation"], ["/interrupt", "stop the current turn"], ["/status", "state of this agent"],
+   ["/version", "switch the build"], ["/voice", "turn voice input on"], ["/clear", "clear the display"], ["/help", "keys and commands"], ["/quit", "quit (agents keep running)"]]
+   .map(([c, d], i) => `<div class="row${i === 0 ? " sel" : ""}"><span>${c}</span><span class="dim">${d}</span></div>`).join("")}</div>`,
+   f: foot(undefined, '<span class="dim">›</span> /<span class="cur"></span>', "tab complete · ⏎ run") })],
+
+["voice", "Ctrl+R records into the composer; any key stops and keeps the text, Esc cancels.",
+ term({ feed: "", f: foot('main · idle', '<span class="rec">● rec 0:04</span> <span class="rec">▁▃▅▇▅▃▁▂▅</span> <span class="dim">and write the release note for zero point four</span>', "any key stop · esc cancel") })],
+
+["the terminal panel", "Ctrl+` opens a shell in the workspace under the feed; it keeps running while hidden.",
+ term({ feed: you("run the tests yourself if you want") + bise("sure, the shell is below."),
+   above: `<div class="shell"><div class="dim">shell · ~/lab/app · ctrl+\` hide</div><pre>$ cargo test -p bend-tui
+test result: ok. 214 passed; 0 failed</pre><span class="dim">$</span> <span class="cur"></span></div>`, f: "" })],
+
+["help", "? or /help: the essential keys, grouped, with a filter. /shortcuts shows every key.",
+ term({ feed: "", overlay: `<div class="overlay"><div class="dim">help · type to filter · tab all keys · esc close</div>
+   <pre class="b">talk      ⏎ send · @agent message · ctrl+c interrupt · / commands
+agents    ctrl+k / ctrl+j select · ⏎ enter · space preview · esc main
+cards     ctrl+g show · ctrl+n next · alt+r answer · ctrl+x later
+feed      ctrl+t all thinking · pgup/pgdn scroll · end bottom
+voice     ctrl+r record
+shell     ctrl+\` show / hide</pre></div>` })],
+
+["drop an agent", "D on a selected agent asks first when it has work in progress.",
+ term({ feed: "", pan: PANEL("deploy"), above: `<div class="card"><span class="acc">–</span> drop deploy? its last report failed; nothing uncommitted. <span class="opts"><span><b>y</b> drop</span><span><b>n</b> keep</span></span></div>`,
+   f: foot('main · idle', undefined, "y yes · n no · esc cancel") })],
+
+["a narrow terminal", "under 70 columns the panel hides; the header keeps the counts.",
+ term({ narrow: true, h: head(`${S.work} 3 · <span class="acc">? 1</span> · ♡ 1`), feed: you("where are we?") + bise("3 agents working. docs needs you: v1 or v2 for the api docs?"), f: foot("main · idle", undefined, "") })],
+
+["a long history", "older pages load when you scroll up; the feed never slows down (tested at 50k lines).",
+ term({ feed: `<div class="dim">↑ loading older messages…</div>` + you("where are we?") + bise("same as an hour ago, plus release is done."), pan: PANEL() })],
+];
+
+document.getElementById("screens").innerHTML = screens.map(([t, p, html], i) =>
+  `<figure id="s${i + 1}"><figcaption><b><span class="n">${String(i + 1).padStart(2, "0")}</span>${t}</b><p>${p.replace(/⚠[^.;)]*/g, m => `<span class="warn">${m}</span>`)}</p></figcaption>${html}</figure>`).join("") +
+  `<hr><figure><figcaption><b>the symbols</b></figcaption><div class="legend">${[
+    ["›", "you"], ['<span class="acc">:*</span>', "main"], ["◇", "brief"], ['<span class="dim">∴</span>', "thinking"], ["$", "bash"], ["λ", "typescript"],
+    ["↳", "a sub-call"], ["±", "file edit"], ["✉", "agent to agent"], ['<span class="dim">⟳</span>', "compacting"], ['<span class="dim">≡</span>', "compaction summary"], ['<span class="dim">▲</span>', "interrupted"],
+    ['<span class="pulse">∿</span>', "working"], ['<span class="pulse dim">·</span>', "starting"], ["…", "waiting on an agent"], ['<span class="acc">?</span>', "needs you / blocked"],
+    ["♡", "done"], ['<span class="err">✗</span>', "failed"], ['<span class="dim">○</span>', "idle"], ['<span class="dim">–</span>', "stopped / drop"], ["⇄", "overlap"], ['<span class="err">↻</span>', "restart failed"],
+    ['<span class="acc">•</span>', "unread"], ["⎇", "own worktree"], ['<span style="color:#f0b27a">⧗</span>', "building / on trial"],
+  ].map(([g, t]) => `<div><span>${g}</span>${t}</div>`).join("")}</div></figure>`;
+document.getElementById("toc").innerHTML = screens.map(([t], i) => `<a href="#s${i + 1}">${String(i + 1).padStart(2, "0")} ${t}</a>`).join("");
+</script>
+</body>
+</html>
