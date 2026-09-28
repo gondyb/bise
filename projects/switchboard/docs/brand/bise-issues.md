@@ -680,7 +680,7 @@ Index:
 
 ### BISE-14 · the three levels, folding, time marks
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-k-keys · **commits:** 5ff22eb
 - **track:** F · **owns:** as BISE-12
 - **spec:** book §9, §10
 - **do:** render `Ev::AgentMsg` by level: level 3 dim under a faint rail
@@ -732,10 +732,58 @@ Index:
   **⚠** `/welcome` (replays the onboarding, BISE-60).
 - **done when:** help tests updated; `/help` and `/shortcuts` read like §16.
 - **notes:**
+  - **Help (`help.rs`):** every section, key and action lowercase, "agent"
+    never "task" (sections: `talk to agents`, `agents (empty composer)`,
+    `cards`, `feed`, …; keys written like §16: `ctrl+c`, `alt+r`,
+    `option+←`, `esc`, `tab`). Kept capitals: `Ghostty`, `macOS U.S.`,
+    the config path, and the keys `D` / `A` (they are shift+letter). New
+    or changed rows: `⌥ + 0…9` "go to main (0) or to the agent with that
+    number in the panel" (replaces the two `alt+1 … alt+9` / `alt+0`
+    rows, top), `ctrl+f` (now top), `click ▸|space` in the feed,
+    `ctrl+t` "open or close everything folded" (top), `ctrl+/|cmd+z`
+    "undo your typing (only the composer: sent messages have no undo)".
+    `D` says "drop the selected agent (stop it, archive its history)": it
+    does **not** ask first today (book §16 says it does; the hub's
+    `/drop` has no confirm). Headers `commands` and `essential keys ·
+    every key: /shortcuts (tab here)`.
+  - **Commands:** `SB_COMMANDS` (sb.rs) and `COMMANDS` (commands.rs)
+    lowercase, "agent" (`/new` "start an agent", `/drop`, `/restore`,
+    `/isolate`, `/rename`, `/archived`); "hub" left the `/restart` line
+    ("rebuild and restart switchboard…"). **`/tasks` keeps its name** (the
+    hub parses it): its line says "every agent: what it does, its last
+    report, its questions". Renaming it `/agents` is a hub change (M).
+  - **`/theme [auto|light|dark]`:** `theme_detect::choose` (BISE-62):
+    switches and saves; says `theme: light.`; a failed save says `theme:
+    light, for now: i couldn't save it ({err}).`; no argument says the
+    mode in use; a wrong one `/theme takes auto, light or dark.` The feed
+    cache is rebuilt (rows carry their colors). **`/welcome`:**
+    `onboarding::run(app)`.
+  - **No undo (§17):** `ctrl+z` and a typed `/cancel` push the info line
+    `no undo: an agent may already have acted. say the change to main
+    instead ("no, v1 for docs").` (sb.rs `NO_UNDO`); nothing reaches the
+    hub, the draft stays. (BISE-40 had made ctrl+z silent.)
+  - **New strings (for §17):** `theme: {mode}.` · `theme: {mode}. /theme
+    auto, light or dark to change it.` · `theme: {mode}, for now: i
+    couldn't save it ({err}).` · `/theme takes auto, light or dark.` ·
+    the command lines above.
+  - **Tests:** `help::tests::rows_read_lowercase_and_say_agent` (no
+    capital but the proper nouns, no "task", no ctrl+z row, the ctrl+t
+    text), `help_is_commands_and_essentials` (lowercase keys, `⌥ + 0…9`),
+    `sb::…::theme_and_welcome_commands` (a fake chooser: tests never
+    write the real `~/.bend-harness/tui.json`),
+    `ctrl_z_and_cancel_say_no_undo`. **`tui_help_tmux.py`** assertions
+    follow the lowercase strings (`essential keys · every key`,
+    `commands`, `agents (empty composer)`, `talk to agents`,
+    `ctrl+option+←`); it waits for `essential keys · every key` because
+    the `/help` popup line also says "essential keys".
+  - **Gates** (worktree of 45f5a36 + my files, shared target,
+    `SB_CORE_BIN` = the worktree's): build, `cargo test --workspace`,
+    clippy `--workspace --all-targets -D warnings`, e2e and the 11 tmux
+    tests of `run_all.sh`: green. No `.bend` change.
 
 ### BISE-42 · new keys
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-k-keys · **commits:** 5ff22eb
 - **track:** K · **owns:** `input.rs`, key arms of `sb.rs`
 - **spec:** book §11 (keys), §16
 - **do:** bind `space` on a selected feed item to `feed::toggle_selected`,
@@ -743,6 +791,22 @@ Index:
   not tmux's `ctrl+b`, not taken in `help.rs`).
 - **done when:** keyprobe / input tests; no conflict with the composer.
 - **notes:**
+  - **No new key (main's call):** `ctrl+o` stays the shell. `ctrl+t` now
+    opens or closes **everything folded**, one state: if any item that
+    discloses (`feed::discloses`: thinking, an output, a diff, a report,
+    a brief) is closed, all open; else all close. New thinking sections
+    follow it (`show_thinking`). `input::toggle_everything` goes through
+    `feed::toggle_event`, so `feed::toggle_all_outputs` stays unbound
+    (F may drop it). Free ctrl keys found, if one is needed later:
+    `ctrl+y`, `ctrl+s`, `ctrl+q`.
+  - **`space`:** on the item selected in the feed (`app.feed_sel`, after
+    a drag or a double click; a plain click already toggles and leaves no
+    selection), with an empty composer: `feed::toggle_selected`. An agent
+    selected in the panel keeps `space` for its preview (sb.rs arm first);
+    with text in the composer, space is a space.
+  - **Tests:** `input::keys_tests` (ctrl+t opens all then closes all,
+    `show_thinking` follows; space toggles the selected item, types a
+    space when the composer has text).
 
 ### BISE-60 · onboarding flow
 
