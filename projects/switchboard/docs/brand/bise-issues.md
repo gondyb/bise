@@ -1831,3 +1831,17 @@ Index:
     rebase on HEAD. One `at_popup_tests` timing flake passed on rerun.
     Full gate on 5461388: `cargo test --workspace`, `run_all.sh` (PROOF,
     e2e, 14 tmux tests): green.
+
+### BISE-98 · the frame (app look)
+
+- **status:** todo · **owner:** bise-f-feed · **commits:** —
+- **track:** F · **owns:** `layout.rs`, `ui.rs` (draw_bise, the divider, the composer pane), `sb/panel.rs` (rule, header), scrollbar
+- **spec:** book §8 "The frame" (exact layout), §13 "The composer pane"; mockups site/book/screens.html + live.html (marketing 9f000c8). User request on 805e538.
+- **what:** a faint rounded frame on the terminal edge with `bise :*` and the summary in the top border; 2 blank columns inside; the panel behind a faint rule joined with `┬`/`┴`; a full-width divider `├─ you → main ─…─ state ─┤` replacing the status row; the composer bar at column 3, text at 5; the scrollbar thumb on the panel rule (or the right border); small-terminal tiers (no frame under 60×16). Lands after BISE-97, on its layout function. The key bar row itself is BISE-99.
+
+### BISE-99 · the key bar and the tip
+
+- **status:** todo · **owner:** bise-k-keys · **commits:** —
+- **track:** K · **owns:** a pure `keybar` function (keys + tip → styled line for a given width and mode), `hints.rs` / `help.rs` for the tip texts; F places the row (BISE-98).
+- **spec:** book §8 "The frame" (key bar line), §13 "The composer pane".
+- **what:** the key bar from column 3: keys in text color, what they do dim, 3 spaces between pairs; default `⏎ send   @ agent   ⌥0-9 switch   / commands   ? help`, per-mode sets as today; on the right, ending at F−4, a dim tip, one per session (`tip · ctrl+o opens everything folded`), hidden while you type or when fewer than 3 columns separate it from the keys. ASCII forms per §6.

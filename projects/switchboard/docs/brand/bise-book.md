@@ -314,6 +314,26 @@ outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their ta
 - **Narrow terminals:** ≥ 100 columns as above; 90–99: panel 24 wide (names cut at 12), gap 2; < 90: no panel (the header summary grows to `∿ 3 working · ⌥ + number`), margins 2, column = min(79, width − 4) (at 80: 76 wide, 73 of text); at 60: margins 1, column 58 (55 of text). The column is centered only when the feed area has at least 83 columns, else it starts at the left margin.
 - **What the demo does that a terminal can't:** its own font (the terminal's is the user's), line height (1.2 vs 1.6), sub-cell gaps (the site's 10–18 px become 0 or 1 whole row: we take 1), 1 px rules (a terminal rule is a full cell), fade and slide motion. bise does paint its theme background (§5, BISE-92), but no rounded panels. The demo is the reference for rhythm and proportions, not for exact pixels.
 
+**The frame** (user request on 805e538, marketing 9f000c8; replaces, in "Spacing, in cells" above, the outer margins, the header row, "no vertical rule" and the bottom stack's status and hints rows; the reading column, the panel widths and the narrow tiers stay). bise draws itself like an app: a thin faint frame on the edge of the terminal, with "bise :*" and the summary in its top border. Inside, 2 blank columns on each side. The agents panel sits behind a faint rule that joins the frame. A full-width divider separates the history from the composer pane. The lines are faint so the text stays in front: the frame is a shape, not a decoration. Under 60 columns or 16 rows the frame goes, the divider stays.
+
+Exact layout (terminal F columns × H rows, 0-based; all lines faint; ASCII: `+ - |`):
+
+Frame (when F ≥ 60 and H ≥ 16):
+- rounded frame on the terminal edge: row 0, row H−1, column 0, column F−1 (╭ ╮ ╰ ╯ ─ │).
+- row 0 = the header. `╭─ bise :* ───…─── ~/acme · ∿ 3 working · ? 1 needs you ─╮`: title from column 3 ("bise" bold text, ":*" accent), 1 space around it and the summary; the summary dim (its glyphs keep their colors), ending at column F−4. Not enough room: drop the path first, then use the short counts (∿ 3 · ? 1 · ♡ 2).
+- row 1 blank. The history starts on row 2 and ends 1 blank row above the divider.
+- inside the frame: 2 blank columns each side. Text starts at column 3.
+- panel, F ≥ 100: a rule │ at column F−33, joined with ┬ on row 0 and ┴ on the divider; panel text from F−31 to F−4 (28 columns); the history ends at column F−36. F 90–99: panel 24 wide (rule at F−29). F < 90: no panel, no rule.
+- scrollbar: a dim ┃ thumb drawn on the panel rule (on the frame's right border if there is no panel), only while you are scrolled away from the bottom.
+Composer pane (bottom up):
+- H−1 frame bottom. H−2 the key bar. H−3 blank. The composer text. 1 blank. [images strip] [queued lines, BISE-89]. The divider.
+- divider: a full-width rule `├─ you → main ─────…───── idle · 18k / 1M tokens · 2% ─┤` joining the frame. Label from column 3: "you →" dim, the agent name accent. The state is dim and ends at F−4. This replaces the status row (recording, typing, tokens: same text as today).
+- composer: bar │ at column 3 (faint while empty, accent with text or recording), text from column 5, wrapped like your message in the history. At least 2 rows, growing to min(12, 40% of H), then scrolling. Empty: cursor then a dim placeholder "what's on your mind?" (to an agent: "talk to auth-fix directly").
+- key bar, from column 3: keys in text color, what they do dim, 3 spaces between pairs; default `⏎ send   @ agent   ⌥0-9 switch   / commands   ? help`; per-mode sets as today. On the right, ending at F−4: a dim tip, one per session (e.g. "tip · ctrl+o opens everything folded"), hidden while you type or when there are fewer than 3 columns between it and the keys.
+- height: divider + blank + 2 + blank + key bar + frame = 7 rows, the same as today's block + bottom margin. The frame gives back 1 row at the top (border+blank instead of margin+header+blank). It costs 2 columns (3 each side instead of 2).
+Small terminals: H < 24: drop the blank row under the text. H < 20: also the one above. H < 16 or F < 60: no frame. Then a header row on row 0, the divider is a plain ─ rule, margins of 1, the key bar stays.
+The frame and the rules paint no background of their own: the theme ground (§5, BISE-92) stays everywhere; light theme = same tokens.
+
 ## 9. Three levels: what's for you, what isn't
 
 The same three levels everywhere, in main and inside an agent.
@@ -456,6 +476,8 @@ Bottom of the screen, top to bottom:
 5. the key hints: their own last row, dim, flush right with 2 columns of margin (never on the text row).
 
 Rows: 1 status + 1 + 2 text + 1 + 1 hints = 6 at minimum (+ the blank row under the feed). Small terminals: height < 24 drops the bottom blank row; < 18 also the top one, and the minimum goes to 1 text row; < 14 the hints go back on the status row.
+
+**The composer pane** (framed; supersedes the list above for the status row and the hints, see §8 "The frame" for the exact rows). The bottom of the frame belongs to you. The divider says who you talk to (you → main, the name in blush) and, on the right, what main is doing: it replaces the status row. Under it, a blank row, your text behind the same thin bar your messages keep in the history (faint while empty, blush once you type), at least 2 rows, then a blank row and the key bar: the keys in the text color, what they do dim, and a tip on the right when you're idle. Empty, it asks: what's on your mind?
 
 ## 14. Images
 
