@@ -3080,3 +3080,24 @@ def hub_qimp_flush_cx(-o: HM.St, f: Bool, +cx: HX.Cx<o>, +n: String) -> {hub_qim
           hub_d_emit(o, cx, HM.ENotesFlushed{}, Unit{}, Unit{}, Unit{})))
     case False{}:
       hub_qimp_refl(HX.d(o, cx), n)
+
+def hub_rts_if_other(-o: HM.St, known: Bool, +cx: HX.Cx<o>, +a: String, +w: Bool, +tm: Maybe<&2, Nat>, +n: String, +ne: {String.eq(a, n) == False{} : Bool})
+    -> {HC.rt_find(hub_rts(o, HC.if_agent(o, known, cx, HX.Rt{a, HM.RBusy{}, w, tm})), n) == HC.rt_find(hub_rts(o, cx), n) : HX.Rt}:
+  match known:
+    case True{}:
+      %Equal.sym(List<&2, HX.Rt>, hub_rts(o, HC.set_rt(o, cx, HX.Rt{a, HM.RBusy{}, w, tm})), HC.rt_put(hub_rts(o, cx), HX.Rt{a, HM.RBusy{}, w, tm}), hub_rts_set_rt(o, cx, HX.Rt{a, HM.RBusy{}, w, tm})) : {HC.rt_find(_, n) == HC.rt_find(hub_rts(o, cx), n) : HX.Rt}
+      hub_rt_put_other(hub_rts(o, cx), a, n, HM.RBusy{}, w, tm, ne)
+    case False{}:
+      {==}
+
+# a new turn of A leaves the runtime state of any other agent as it was
+def hub_rts_send_other(-o: HM.St, p: HX.Cx<o> & List<&2, J.Json>, +a: String, +ids: List<&2, Nat>, +kvs0: List<&2, Sigma<&2, &2, String, _ => J.Json>>, +n: String, +ne: {String.eq(a, n) == False{} : Bool})
+    -> {HC.rt_find(hub_rts(o, HC.pump.send(o, False{}, p, a, ids, kvs0)), n) == HC.rt_find(hub_rts(o, hub_p1(o, p)), n) : HX.Rt}:
+  match p:
+    case (+cx, +msgs):
+      +x = {HX.Rt{a, HM.RBusy{}, HX.Rt.waiting(HC.rt(o, cx, a)), Some{HC.now(o, cx)}} : HX.Rt}
+      +cx2 = HC.upd_rt(o, cx, x)
+      +kvs = HM.snoc(Sigma<&2, &2, String, _ => J.Json>, kvs0, J.kv("msgs", J.JArr{msgs}))
+      %Equal.sym(List<&2, HX.Rt>, hub_rts(o, HC.dirty(o, HC.out(o, cx2, J.kv("fx", J.JStr{"deliver"}) <> J.kv("mode", J.JStr{"say"}) <> kvs))), hub_rts(o, cx2),
+          hub_rts_dirty_out(o, cx2, J.kv("fx", J.JStr{"deliver"}) <> J.kv("mode", J.JStr{"say"}) <> kvs)) : {HC.rt_find(_, n) == HC.rt_find(hub_rts(o, cx), n) : HX.Rt}
+      hub_rts_if_other(o, HC.has_agent(o, cx, a), cx, a, HX.Rt.waiting(HC.rt(o, cx, a)), Some{HC.now(o, cx)}, n, ne)
