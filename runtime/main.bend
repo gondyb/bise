@@ -563,7 +563,7 @@ def drain_steer.one(steers: List<&2, String>, out: Out, +sess: T.Session,
     case Con{+l, +rest}:
       do IO<Out & Rtp.Rt>:
         +res : T.Res <- IO.pure(T.Res,
-          S.apply(sess, T.UserMsg{T.Steer{}, l}))
+          S.apply(sess, Rtp.steer_cmd(l)))
         out2 : Out <- emit(out, Rtp.drain_steer.emit_of(res))
         drain_steer.one(rest, out2, Rtp.drain_steer.next_of(sess, res),
           script, cmds, live)
@@ -768,8 +768,9 @@ def run(fuel: Nat, out: Out, +rt: Rtp.Rt, +job: Rtp.Job, tr: Rtp.Trans) -> IO(Rt
                       # the turn at this safe boundary
                       do IO<RtEnd>:
                         sv : Unit <- save_rt(rt2)
+                        +ctx : String <- context_now()
                         nr : Pv.Note & Rem.RemoteRes <- Pv.model_call(
-                          note_of(out), request)
+                          note_of(out), Rem.with_context(ctx, request))
                         model_back(nr, rt2, k, action, after,
                           k2 => o3 => +r3 => +c =>
                             run(k2, o3, r3, Rtp.JCmd{c, after},
@@ -787,6 +788,23 @@ def run(fuel: Nat, out: Out, +rt: Rtp.Rt, +job: Rtp.Job, tr: Rtp.Trans) -> IO(Rt
                           k2 => o4 => +r3 => +c =>
                             run(k2, o4, r3, Rtp.JCmd{c, after},
                               Rtp.transition(r3, Rtp.JCmd{c, after})))
+
+# BEND_CONTEXT_FILE: the ephemeral context, re-read before every model
+# call (runtime/remote.bend with_context); unset or missing: ""
+def context_now.read(empty: Bool, +path: String) -> IO(String):
+  match empty:
+    case True{}:
+      IO.pure(String, "")
+    case False{}:
+      do IO<String>:
+        m : Maybe<&2, String> <- P.read_file(path)
+        IO.pure(String, Xp.desc_or(m, ""))
+
+def context_now() -> IO(String):
+  do IO<String>:
+    cr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_CONTEXT_FILE")
+    +path : String <- IO.pure(String, P.env_or(cr, ""))
+    context_now.read(String.is_empty(path), path)
 
 # ---- scenarios (ADR 0006: the Core tested through the Step Protocol) ----
 

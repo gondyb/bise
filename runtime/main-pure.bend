@@ -705,6 +705,12 @@ def drain_steer.next_of(+sess: T.Session, res: T.Res) -> T.Session:
     case T.Accepted{_, _, +next}:
       next
 
+# one drained steering line: its escaped newlines come back (the same
+# wire convention as a socket "steer"), so a multi-line message fits the
+# one-line-per-steer file format
+def steer_cmd(+l: String) -> T.Cmd:
+  T.UserMsg{T.Steer{}, Api.unescape_nl(l)}
+
 # the drained content becomes steering lines; blank lines never steer
 def drain_steer.push(empty: Bool, +l: String, +rest: List<&2, String>)
     -> List<&2, String>:

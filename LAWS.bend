@@ -2262,3 +2262,41 @@ fini", Nil{}),
       Con{"history   obs: tool_finished #9 failed",
       Nil{}}}}}}}}}}}}}
     : List<&2, String>}
+
+# ---- switchboard hooks (BEND_WORKDIR, BEND_CONTEXT_FILE, BEND_EXTRA_PROMPT) ----
+
+# LAW: without BEND_WORKDIR the command is unchanged.
+law workdir_empty_keeps_command:
+  {Sh.with_workdir("", "ls -la") == "ls -la" : String}
+
+# LAW: with BEND_WORKDIR the command first enters the (quoted) directory,
+# and fails instead of running elsewhere when it cannot.
+law workdir_cds_first:
+  {Sh.with_workdir("/tmp/a b", "ls") == "cd '/tmp/a b' || exit 1\nls" : String}
+
+# LAW: an empty context changes nothing.
+law context_empty_keeps_request:
+  {Rm.with_context("", "MODEL default\nTOOL bash : run\n\nMSG user : hi\n\nEND\n")
+    == "MODEL default\nTOOL bash : run\n\nMSG user : hi\n\nEND\n" : String}
+
+# LAW: a context becomes the LAST user message of an agent request,
+# newlines escaped like every wire message.
+law context_is_last_user_message:
+  {Rm.with_context("board\nline 2", "MODEL default\nTOOL bash : run\n\nMSG user : hi\n\nEND\n")
+    == "MODEL default\nTOOL bash : run\n\nMSG user : hi\n\nMSG user : board\\nline 2\nEND\n" : String}
+
+# LAW: a compaction request (no tool catalog) never carries the context.
+law context_skips_compaction:
+  {Rm.with_context("board", "MODEL default\nMSG user : hi\n\nEND\n")
+    == "MODEL default\nMSG user : hi\n\nEND\n" : String}
+
+# LAW: the extra prompt ends the system prompt; an empty one adds nothing.
+law extra_prompt_appends:
+  {Rp.prompt_extra("base", "role") == "base\n\nrole" : String}
+
+law extra_prompt_empty_keeps:
+  {Rp.prompt_extra("base", "  ") == "base" : String}
+
+# LAW: a drained steering line carries escaped newlines back as real ones.
+law steer_line_unescapes:
+  {Rt.steer_cmd("a\\nb") == T.UserMsg{T.Steer{}, "a\nb"} : T.Cmd}

@@ -121,6 +121,35 @@ def build_request.bare(cfg: T.Cfg, input: List<&2, T.Msg>) -> String:
           String.append("\n", "END\n")))
 
 
+# ---- BEND_CONTEXT_FILE: an ephemeral context message ----
+# A switchboard hub rewrites a small context file (the task board for
+# main, the group roster for a task) whenever its state changes. The
+# runtime appends it to every AGENT request as a last user message: the
+# model always sees the current state, and the canonical history never
+# stores it, so compaction can never lose or stale it. Compaction
+# requests (no TOOL lines) are left untouched: a summary must not
+# freeze a snapshot of the board.
+def is_agent_request(+request: String) -> Bool:
+  String.contains(request, "\nTOOL ")
+
+def with_context.put(inject: Bool, +ctx: String, +request: String)
+    -> String:
+  match inject:
+    case False{}:
+      request
+    case True{}:
+      String.append(
+        String.take(request, Nat.sub(String.length(request), 4n)),
+        String.append("MSG user : ",
+          String.append(Api.escape_nl(ctx), "\nEND\n")))
+
+def with_context(+ctx: String, +request: String) -> String:
+  with_context.put(
+    Bool.and(Bool.not(String.is_empty(String.trim(ctx))),
+      Bool.and(is_agent_request(request),
+        String.ends_with(request, "END\n"))),
+    ctx, request)
+
 # ---- reply parsing ----
 
 def u32_or(m: Maybe<&2, U32>) -> U32:

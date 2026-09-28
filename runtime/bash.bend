@@ -64,8 +64,10 @@ def bash_exec(command: String) -> IO(Xp.ExecRes):
     # NO flatten: real newlines stay — the heredoc and the runner
     # subshell both accept multi-line commands (flatten silently
     # restructured them)
+    wr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WORKDIR")
     +script : String <- IO.pure(String,
-      Shp.bg_wrap(String.trim(command), bg, secs))
+      Shp.bg_wrap(Shp.with_workdir(P.env_or(wr, ""), String.trim(command)),
+        bg, secs))
     +path : String <- IO.pure(String, Shp.bash_script_path(port, script))
     w : Unit <- P.write_file(path, script)
     out : String <- Proc.run(Con{"/bin/sh", Con{path, Nil{}}})

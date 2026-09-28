@@ -917,3 +917,19 @@ def Laws.info_paths_are_the_drained_ones():
 
 def Laws.resume_replays_history():
   {==}
+def Laws.workdir_empty_keeps_command():
+  {==}
+def Laws.workdir_cds_first():
+  {==}
+def Laws.context_empty_keeps_request():
+  {==}
+def Laws.context_is_last_user_message():
+  {==}
+def Laws.context_skips_compaction():
+  {==}
+def Laws.extra_prompt_appends():
+  {==}
+def Laws.extra_prompt_empty_keeps():
+  {==}
+def Laws.steer_line_unescapes():
+  {==}
