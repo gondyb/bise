@@ -372,6 +372,17 @@ impl Onb {
         v
     }
 
+    /// What step 2 saves: auto when the pick is what the terminal gave
+    /// (or dark, with no answer), else the pick.
+    pub(crate) fn theme_choice(&self) -> crate::theme_detect::Choice {
+        use crate::theme_detect::Choice;
+        match (self.pick, self.detected.unwrap_or(Mode::Dark)) {
+            (p, d) if p == d => Choice::Auto,
+            (Mode::Light, _) => Choice::Light,
+            (Mode::Dark, _) => Choice::Dark,
+        }
+    }
+
     fn go(&mut self, step: Step, now: u64) {
         self.step = step;
         self.since = now;
@@ -402,6 +413,14 @@ impl Onb {
                 self.pick = if self.pick == Mode::Dark { Mode::Light } else { Mode::Dark };
                 theme::set_mode(self.pick);
                 Out::Stay
+            }
+            (Step::Theme, KeyCode::Enter) => {
+                // BISE-62: kept for the next launches; the terminal's own
+                // mode stays "auto" (it follows the terminal)
+                if let Some(h) = &self.home {
+                    let _ = crate::theme_detect::save_in(h, self.theme_choice());
+                }
+                self.advance(now)
             }
             (Step::Model, KeyCode::Up | KeyCode::Down) => {
                 let n = self.opts().iter().filter(|o| **o != Opt::Browser).count();
@@ -1032,6 +1051,13 @@ mod tests {
         assert_eq!(theme::mode(), Mode::Light);
         o.on_key(key(KeyCode::Left), 40, &none);
         assert_eq!(theme::mode(), Mode::Dark);
+        // BISE-62: enter saves the pick (auto when it is the terminal's)
+        use crate::theme_detect::{load_in, Choice};
+        assert_eq!(o.theme_choice(), Choice::Auto);
+        o.on_key(key(KeyCode::Right), 50, &none);
+        assert_eq!(o.theme_choice(), Choice::Light);
+        o.on_key(key(KeyCode::Enter), 60, &none);
+        assert_eq!((o.step, load_in(&h)), (Step::Model, Some(Choice::Light)));
     }
 
     #[test]

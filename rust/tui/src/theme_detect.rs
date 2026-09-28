@@ -9,7 +9,11 @@
 //! dumb terminal): dark.
 //!
 //! `BISE_THEME=light|dark|auto` forces a mode (auto, or anything else,
-//! detects). `/theme` calls [`apply`].
+//! detects). `/theme` calls [`choose`]: it applies and saves.
+//!
+//! BISE-62: the choice is saved in `~/.bend-harness/tui.json` (`"theme":
+//! "light" | "dark" | "auto"`, next to `/voice`'s key) and reused at the
+//! next launch. Precedence: `BISE_THEME` > the saved choice > detection.
 
 use crate::theme::{self, Mode};
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -68,17 +72,86 @@ pub(crate) fn apply(choice: Choice) -> Mode {
     m
 }
 
+// ---- the saved choice (BISE-62) ----
+
+impl Choice {
+    fn word(self) -> &'static str {
+        match self {
+            Choice::Auto => "auto",
+            Choice::Light => "light",
+            Choice::Dark => "dark",
+        }
+    }
+}
+
+/// `~/.bend-harness/tui.json` under `home` (the file `/voice` saves in).
+pub(crate) fn settings_path(home: &std::path::Path) -> std::path::PathBuf {
+    home.join(".bend-harness").join("tui.json")
+}
+
+/// The `theme` of a settings text, if any.
+pub(crate) fn saved_from(settings: &str) -> Option<Choice> {
+    let v: serde_json::Value = serde_json::from_str(settings).ok()?;
+    Choice::parse(v.get("theme")?.as_str()?)
+}
+
+/// The settings text with `theme` set, the other keys kept.
+pub(crate) fn with_theme(settings: Option<&str>, choice: Choice) -> String {
+    let mut v = settings
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok())
+        .filter(|v| v.is_object())
+        .unwrap_or_else(|| serde_json::json!({}));
+    v["theme"] = serde_json::Value::String(choice.word().into());
+    serde_json::to_string_pretty(&v).unwrap_or_default() + "\n"
+}
+
+/// The choice saved under `home`, if any.
+pub(crate) fn load_in(home: &std::path::Path) -> Option<Choice> {
+    saved_from(&std::fs::read_to_string(settings_path(home)).ok()?)
+}
+
+/// Save `choice` under `home`.
+pub(crate) fn save_in(home: &std::path::Path, choice: Choice) -> Result<(), String> {
+    let path = settings_path(home);
+    let old = std::fs::read_to_string(&path).ok();
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, with_theme(old.as_deref(), choice)).map_err(|e| e.to_string())
+}
+
+fn home() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME").filter(|h| !h.is_empty()).map(std::path::PathBuf::from)
+}
+
+/// `/theme light|dark|auto`: switch now and save it for the next launches.
+/// The mode is switched even when the save fails (the error says why).
+#[allow(dead_code)] // until /theme (BISE-41, track K) calls it
+pub(crate) fn choose(choice: Choice) -> (Mode, Result<(), String>) {
+    let m = apply(choice);
+    let saved = match home() {
+        Some(h) => save_in(&h, choice),
+        None => Err("HOME is not set".into()),
+    };
+    (m, saved)
+}
+
+/// What the launch uses: `BISE_THEME`, else the saved choice, else auto.
+pub(crate) fn startup_choice(env: Option<&str>, saved: Option<Choice>) -> Choice {
+    env.and_then(Choice::parse).or(saved).unwrap_or(Choice::Auto)
+}
+
 /// Once per process, from the terminal init (raw mode on, alternate screen
-/// not yet entered): read `BISE_THEME`, ask the terminal when it is auto,
-/// set the mode. Later inits (after a suspend) keep what is set, so a
-/// `/theme` choice survives them.
+/// not yet entered): `BISE_THEME`, else the saved choice; ask the terminal
+/// when it is auto, set the mode. Later inits (after a suspend) keep what
+/// is set, so a `/theme` choice survives them.
 pub(crate) fn init() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        let choice = std::env::var(ENV)
-            .ok()
-            .and_then(|v| Choice::parse(&v))
-            .unwrap_or(Choice::Auto);
+        let choice = startup_choice(
+            std::env::var(ENV).ok().as_deref(),
+            home().and_then(|h| load_in(&h)),
+        );
         if choice == Choice::Auto {
             if let Some(rgb) = tty::query_background(TIMEOUT) {
                 let m = mode_for(rgb);
@@ -316,6 +389,34 @@ mod tests {
         assert_eq!(mode_for([0x80 as f64 / 255.0; 3]), Mode::Light);
         assert_eq!(mode_for([0x70 as f64 / 255.0; 3]), Mode::Dark);
         assert_eq!(mode_for([0x14 as f64 / 255.0, 0x12 as f64 / 255.0, 0x11 as f64 / 255.0]), Mode::Dark);
+    }
+
+    #[test]
+    fn the_choice_is_saved_next_to_the_other_settings() {
+        let h = std::env::temp_dir().join(format!("bise-theme-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&h);
+        assert_eq!(load_in(&h), None);
+        std::fs::create_dir_all(h.join(".bend-harness")).unwrap();
+        std::fs::write(settings_path(&h), "{\"voice_mode_enabled\": true}").unwrap();
+        save_in(&h, Choice::Light).unwrap();
+        assert_eq!(load_in(&h), Some(Choice::Light));
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(settings_path(&h)).unwrap()).unwrap();
+        assert_eq!(v["voice_mode_enabled"], serde_json::Value::Bool(true));
+        save_in(&h, Choice::Auto).unwrap();
+        assert_eq!(load_in(&h), Some(Choice::Auto));
+        assert_eq!(saved_from("{\"theme\": \"pink\"}"), None);
+        assert_eq!(saved_from("not json"), None);
+        let _ = std::fs::remove_dir_all(&h);
+    }
+
+    #[test]
+    fn env_beats_the_saved_choice_beats_detection() {
+        assert_eq!(startup_choice(Some("dark"), Some(Choice::Light)), Choice::Dark);
+        assert_eq!(startup_choice(None, Some(Choice::Light)), Choice::Light);
+        assert_eq!(startup_choice(Some("junk"), Some(Choice::Light)), Choice::Light);
+        assert_eq!(startup_choice(Some("auto"), Some(Choice::Light)), Choice::Auto);
+        assert_eq!(startup_choice(None, None), Choice::Auto);
     }
 
     #[test]
