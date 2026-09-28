@@ -2990,3 +2990,38 @@ def hub_qimp_flush(s: HM.St, +n: String) -> {hub_qimp(s, HM.apply(s, HM.ENotesFl
   match s:
     case HM.St{+ag, +od, +ms, +ca, +no, +nm, +nc}:
       hub_qimp_refl(HM.St{ag, od, ms, ca, no, nm, nc}, n)
+
+
+# ---- L4 support: the frame of a delivery to another agent ----
+
+def hub_d_steer(-o: HM.St, cx: HX.Cx<o>, +a: String, +ids: List<&2, Nat>, +kvs: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
+    -> {HX.d(o, HC.pump.send.go(o, True{}, cx, a, ids, kvs)) == HX.d(o, cx) : HM.St}:
+  match cx:
+    case HX.Cx{c, r}:
+      match c:
+        case HX.Core{d, fx, p, f, q, v}:
+          {==}
+
+def hub_d_dirty_out(-o: HM.St, cx: HX.Cx<o>, +kvs: List<&2, Sigma<&2, &2, String, _ => J.Json>>) -> {HX.d(o, HC.dirty(o, HC.out(o, cx, kvs))) == HX.d(o, cx) : HM.St}:
+  match cx:
+    case HX.Cx{c, r}:
+      match c:
+        case HX.Core{d, fx, p, f, q, v}:
+          {==}
+
+def hub_d_send.go(-o: HM.St, b: Bool, +cx: HX.Cx<o>, +a: String, +ids: List<&2, Nat>, +kvs: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
+    -> {HX.d(o, HC.pump.send.go(o, b, cx, a, ids, kvs)) == HX.d(o, cx) : HM.St}:
+  match b:
+    case True{}:
+      hub_d_steer(o, cx, a, ids, kvs)
+    case False{}:
+      +x = {HX.Rt{a, HM.RBusy{}, HX.Rt.waiting(HC.rt(o, cx, a)), Some{HC.now(o, cx)}} : HX.Rt}
+      Equal.trans(HM.St, HX.d(o, HC.pump.send.go(o, False{}, cx, a, ids, kvs)), HX.d(o, HC.upd_rt(o, cx, x)), HX.d(o, cx),
+        hub_d_dirty_out(o, HC.upd_rt(o, cx, x), J.kv("fx", J.JStr{"deliver"}) <> J.kv("mode", J.JStr{"say"}) <> kvs),
+        hub_d_upd_rt(o, cx, x))
+
+def hub_d_send(-o: HM.St, b: Bool, p: HX.Cx<o> & List<&2, J.Json>, +a: String, +ids: List<&2, Nat>, +kvs0: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
+    -> {HX.d(o, HC.pump.send(o, b, p, a, ids, kvs0)) == HX.d(o, hub_p1(o, p)) : HM.St}:
+  match p:
+    case (+cx, +msgs):
+      hub_d_send.go(o, b, cx, a, ids, HM.snoc(Sigma<&2, &2, String, _ => J.Json>, kvs0, J.kv("msgs", J.JArr{msgs})))
