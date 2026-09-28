@@ -830,22 +830,6 @@ Index:
 
 ## Added by main
 
-### BISE-23 · stable panel numbers, `waits {name}`
-
-- **status:** in progress · **owner:** bise-p-chrome · **commits:** —
-- **track:** P · **owns:** `sb/panel.rs`; the `Nav::Goto` path and the
-  agent fields of `apply_state` in `sb.rs`; `waiting_on` in the hub
-  (`hub/view.bend`, `hub/main.bend`, `sb-core`, `core.rs` snapshot,
-  `model.rs` Agent)
-- **spec:** book §8 (agents panel: numbers never change while an agent
-  lives; `waits docs`)
-- **do:** (a) a slot map: each live agent keeps its number while it lives;
-  Alt+N goes by that number. (b) the hub sends `waiting_on` (who the agent
-  waits on) in the agent state; the panel shows `waits {name}`.
-- **done when:** numbers survive a drop (test); `waits x` shows when an
-  agent waits on another (throwaway hub); gates green.
-- **notes:**
-
 ### BISE-84 · glyph fallbacks and `BISE_ASCII`
 
 - **status:** done · **owner:** bise-t-theme · **commits:** 1a9179d, 601bc3c (fix: 1a9179d had swept in BISE-60 hunks of run.rs)
