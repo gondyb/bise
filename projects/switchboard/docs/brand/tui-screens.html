@@ -73,7 +73,7 @@ function head(right) {
 }
 function panel(rows, extra = "") {
   return `<div class="panel"><div class="dim" style="margin-bottom:4px">agents</div>${rows.map((r, i) =>
-    `<div class="row${r.sel ? " sel" : ""}"><span><span class="dim">${i <= 9 ? "⌥" + i : "  "}</span> ${r.g} ${r.name}${r.dot ? ' <span class="acc">•</span>' : ""}</span><span class="dim">${r.r ?? ""}</span></div>`).join("")}${extra}</div>`;
+    `<div class="row${r.sel ? " sel" : ""}"><span><span class="faint">${i <= 9 ? "⌥ " + i : "   "}</span> ${r.g} ${r.name}${r.dot ? ' <span class="acc">•</span>' : ""}</span><span class="dim">${r.r ?? ""}</span></div>`).join("")}${extra}</div>`;
 }
 const P = {
   main:   { g: '<span class="acc">:*</span>', name: "main", r: "" },

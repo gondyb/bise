@@ -133,7 +133,7 @@ toggles all outputs.
   available today (only tokens per agent); add it once the usage work lands.
 - Feed on the left (prose ≤ 76 columns), task panel on the right titled
   `agents`, one line per agent: its shortcut, glyph, name, age or state,
-  context fill. The shortcut is always shown (`⌥0` main, `⌥1`…`⌥9` the first
+  context fill. The shortcut is always shown, in the faint color, with a space (`⌥ 0` main, `⌥ 1`…`⌥ 9` the first
   nine agents, blank after) so switching is discoverable without `/help`.
   **⚠** `⌥` is macOS; show `alt+1` on Linux and Windows.
 - Main answering a task on your behalf is shown in the feed, with its undo
