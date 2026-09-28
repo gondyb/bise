@@ -291,6 +291,8 @@ outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their ta
   try: "fix the flaky login test, and draft the release note"
   ```
 
+**The reading column** (user request, marketing 82f1742). The history is a 79-column column (3 for the lead + 76 of text), centered in the space left of the panel: F = terminal width − panel (30) − 1; x0 = floor((F − 79) / 2) when F ≥ 83, else column 1. Tables and code start at x0 and may run to 103 columns (capped at F − 1), extending right, never re-centered. The status row, the queue, the images strip, the composer block and its hints use the same x0 and width (hints right-aligned to x0 + 79). The agents panel stays flush right. Under 70 columns the panel hides and F = width.
+
 ## 9. Three levels: what's for you, what isn't
 
 The same three levels everywhere, in main and inside an agent.
@@ -310,6 +312,8 @@ The same three levels everywhere, in main and inside an agent.
 - Main deciding for you is level 2 and says why on demand:
   `:* docs asked v1 or v2; the brief says v2, so i answered. ▸ why`.
 - No "quiet" mode: the levels and the folding (§10) already keep it calm.
+
+**Emphasis** (user request, marketing 82f1742). A terminal has one font size, so what's for you reads bigger through contrast and room: level 2 in text color with its speaker in bold (`:*` accent bold, `@ name to you:` text bold) and a blank row above and below, even between two level-2 blocks; the agent's own work (thinking `∴`, the one-line tool calls, level 3) is dim; cards (level 1) unchanged. OSC 66 text sizing is never used in the history (§15 may use it for the welcome line only, where detected).
 
 ## 10. The history (invariant)
 
@@ -344,7 +348,8 @@ The same three levels everywhere, in main and inside an agent.
 |---|---|---|
 | thinking | `∴ thought for 14s ▸` | the full text |
 | bash / TypeScript script | **always in full** | — |
-| tool output / result | `▸ output · 42 lines · 1 failed` | the full output |
+| bash / TypeScript output | inside its box, 15 rows (see *Scripts: a box*) | the full output |
+| other tool results | `▸ output · 42 lines · 1 failed` | the full output |
 | sub-calls | `↳ github.search_issues ✓` | — |
 | file edit | `± edit web/src/auth/session.ts ✓ +3 −1 ▸` | the diff |
 | report in main | `♡ bench is done. p95 at 180 ms ▸ report` | the report |
@@ -354,8 +359,8 @@ The same three levels everywhere, in main and inside an agent.
 
   Keys: click or `space` on the selected item toggles it; `ctrl+o` opens or
   closes everything folded, one state (like Claude Code; `ctrl+t` is gone).
-- **Failures** stay one line in error color with the reason; `▸` for the
-  full error: `$ bash ✗ exit 1 · 0.8s` then `error[E0425]: … ▸ 18 lines`.
+- **Scripts: a box** (user request, marketing 82f1742). Each bash or typescript call is a box, rounded (`╭─╮ │ ╰─╯`), the width of the reading column, content at 2 columns of inner margin, its title in the top border (`╭─ $ bash ∿ 12s ─…╮`, `λ typescript ✓ 1.1s`, `$ bash ✗ exit 1 · 0.8s`). Border: text color while running (with the pulsing `∿`; not the accent), faint when done, error when failed. Inside: the script in full (never capped), a faint rule `├──┤`, then the output, dim, 15 rows at most while closed: running = the last 15 as they stream, with a faint `… n lines above`; done ok = the first 5, a dim `▸ n more lines`, the last 9; failed = the last 15 with `… n lines above`; 15 lines or fewer: all, no fold. `▸` or `ctrl+o` opens the whole output in place and closes back to the same 15. TypeScript sub-calls `↳ github.search_issues ✓ 0.8s` are output lines inside the box. ASCII: `+- $ bash ok 0.9s ---+`, `|`, `+---+`, `> 27 more lines`. The box replaces the separate folded `▸ output · n lines` line and the code/output left rails.
+- **Failures**: a failing bash/typescript call is a box with an error border (above); other failing tools (edit, read, web) stay one line in error color with the reason, `▸` for the full error.
 - **Markdown** in messages: headers, lists, quotes, code fences, inline
   bold/italic/code, and GFM tables (BISE-87): no frame, columns 2 spaces
   apart, bold header over one faint `─` per column, aligned by display
