@@ -233,14 +233,12 @@ pub(crate) fn chip_style() -> Style {
 
 /// The image store holds `path` (a clipboard image is stored first,
 /// its path is the store's).
-#[allow(dead_code)] // the history helpers: render.rs (track F) calls them
 fn in_store(path: &str) -> bool {
     let Some(dir) = bend_images::store_dir() else { return false };
     Path::new(path).parent().is_some_and(|p| p == dir)
 }
 
 /// The name of an image in the history: `clipboard`, else the file name.
-#[allow(dead_code)] // the history helpers: render.rs (track F) calls them
 fn short_name(path: &str) -> String {
     if path.is_empty() {
         return "image".into();
@@ -263,7 +261,6 @@ thread_local! {
 
 /// The size of a marker's image: the decoded copy beside its `.b64`
 /// in the store (`<hash>.<ext>`), read once. None when it is gone.
-#[allow(dead_code)] // the history helpers: render.rs (track F) calls them
 fn marker_size(m: &bend_images::Marker) -> Option<(u32, u32)> {
     if let Some(s) = SIZES.with(|c| c.borrow().get(&m.b64).copied()) {
         return s;
@@ -277,14 +274,12 @@ fn marker_size(m: &bend_images::Marker) -> Option<(u32, u32)> {
     size
 }
 
-#[allow(dead_code)] // the history helpers: render.rs (track F) calls them
 fn wxh((w, h): (u32, u32)) -> String {
     format!("{w}×{h}")
 }
 
 /// `text` as spans in `style`, each image marker an accent chip
 /// `▣ login.png` (a user line of the history; one line, no `\n`).
-#[allow(dead_code)] // the history helpers: render.rs (track F) calls them
 pub(crate) fn chip_spans(text: &str, style: Style) -> Vec<Span<'static>> {
     let mut out = Vec::new();
     let mut last = 0usize;
@@ -306,7 +301,6 @@ pub(crate) fn chip_spans(text: &str, style: Style) -> Vec<Span<'static>> {
 /// The dim line under a user line with images: each image's size,
 /// `▣ login-mobile.png 1170×2532 · ▣ clipboard 2048×1536`. None
 /// without images.
-#[allow(dead_code)] // the history helpers: render.rs (track F) calls them
 pub(crate) fn sizes_line(text: &str) -> Option<String> {
     let parts: Vec<String> = bend_images::markers(text)
         .iter()
@@ -320,7 +314,6 @@ pub(crate) fn sizes_line(text: &str) -> Option<String> {
 
 /// A tool result holding images: `result · ▣ screenshot.png 390×844`
 /// (dim, accent chip, dim size). None without images.
-#[allow(dead_code)] // the history helpers: render.rs (track F) calls them
 pub(crate) fn result_spans(text: &str) -> Option<Vec<Span<'static>>> {
     let ms = bend_images::markers(text);
     if ms.is_empty() {
@@ -342,7 +335,6 @@ pub(crate) fn result_spans(text: &str) -> Option<Vec<Span<'static>>> {
 }
 
 /// `text` without its image markers (the text around a result's images).
-#[allow(dead_code)] // the history helpers: render.rs (track F) calls them
 pub(crate) fn without_markers(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut last = 0usize;
@@ -368,7 +360,6 @@ pub(crate) fn set_model(model: &str) {
 /// The provider refused images: its error says image (or vision) and
 /// that it is not supported. Anthropic, Mistral and OpenAI-style
 /// providers each word it their way.
-#[allow(dead_code)] // the history helpers: render.rs (track F) calls them
 pub(crate) fn is_no_vision(err: &str) -> bool {
     let e = err.to_lowercase();
     let about = ["image", "vision", "multimodal", "multi-modal"].iter().any(|w| e.contains(w));
@@ -394,7 +385,6 @@ pub(crate) fn is_no_vision(err: &str) -> bool {
 
 /// The no-vision line: `✗ {model} can't read images.` (error) then the
 /// way out (dim). None when `err` is another error.
-#[allow(dead_code)] // the history helpers: render.rs (track F) calls them
 pub(crate) fn no_vision(err: &str) -> Option<Vec<Span<'static>>> {
     if !is_no_vision(err) {
         return None;
@@ -403,7 +393,6 @@ pub(crate) fn no_vision(err: &str) -> Option<Vec<Span<'static>>> {
     Some(no_vision_spans(if model.is_empty() { "this model" } else { &model }))
 }
 
-#[allow(dead_code)] // the history helpers: render.rs (track F) calls them
 fn no_vision_spans(model: &str) -> Vec<Span<'static>> {
     vec![
         Span::styled(format!("  {G_FAILED} "), Style::default().fg(error())),

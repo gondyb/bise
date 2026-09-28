@@ -104,8 +104,12 @@ pub(crate) enum Ev {
         level: u8,
         id: String,
         // in memory only (not on the wire): a folded message (a report,
-        // a brief) is disclosed (BISE-12, a click or feed::toggle_event)
+        // a brief) is disclosed (BISE-12, a click or feed::toggle_event);
+        // a level-3 line shows its whole text (BISE-14)
         open: bool,
+        // in memory only: the fold of level-3 lines that starts at this
+        // message is open (BISE-14, book §10)
+        fold: bool,
     },
     // switchboard (C2 `answered`): main answered an agent's question for
     // the user (level 2); `why` may be empty.
@@ -114,7 +118,12 @@ pub(crate) enum Ev {
         question: String,
         answer: String,
         why: String,
+        // in memory only: its `▸ why` is disclosed (BISE-14)
+        open: bool,
     },
+    // in memory only (BISE-14, book §10): a faint `· 14:31 ·` after a
+    // pause of 5 minutes without a line; the text is the time
+    TimeMark(String),
     // switchboard: an attention card
     Card(String),
 }

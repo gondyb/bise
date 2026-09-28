@@ -285,9 +285,10 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
                 }
                 return;
             }
-            // a plain click: expand/collapse the section
-            let Some(i) = app.feed_sel.take().map(|s| s.anchor.0) else { return };
-            crate::feed::toggle_event(&mut app.events, &mut app.cache, i);
+            // a plain click: expand/collapse the section (on the first
+            // line of an open fold, its row says which: the fold or the line)
+            let Some((i, row, _)) = app.feed_sel.take().map(|s| s.anchor) else { return };
+            crate::feed::toggle_at(&mut app.events, &mut app.cache, i, row);
         }
         _ => {}
     }
@@ -595,7 +596,7 @@ mod keys_tests {
 
     fn report(open: bool) -> Ev {
         let text = "[report: done] p95 at 180 ms.\n- ran 3 times";
-        Ev::AgentMsg { from: "bench".into(), to: String::new(), text: text.into(), level: 3, id: "m_3".into(), open }
+        Ev::AgentMsg { from: "bench".into(), to: String::new(), text: text.into(), level: 3, id: "m_3".into(), open, fold: false }
     }
 
     fn opens(app: &App) -> Vec<bool> {

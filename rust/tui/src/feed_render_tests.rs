@@ -454,7 +454,7 @@ fn measure_feed() -> Vec<Ev> {
     vec![
         Ev::You(prose.clone()),
         Ev::Assistant(prose.clone()),
-        Ev::AgentMsg { from: "docs".into(), to: "main".into(), text: prose.clone(), level: 3, id: String::new(), open: false },
+        Ev::AgentMsg { from: "docs".into(), to: "main".into(), text: prose.clone(), level: 3, id: String::new(), open: false, fold: false },
         Ev::Thinking { ms: 1200, text: prose.clone(), open: true },
         Ev::Tool(tool),
     ]
@@ -466,13 +466,17 @@ fn prose_wraps_at_76_and_code_at_100() {
         let events = measure_feed();
         let rows = feed_rows(&events, width);
         let widest = |rs: &[String]| rs.iter().map(|r| r.trim_end().width()).max().unwrap_or(0);
-        // prose: the user block, the reply, the message, the reasoning
-        for (i, rs) in rows[..4].iter().enumerate() {
+        // prose: the user block, the reply, the reasoning
+        for (i, rs) in rows[..4].iter().enumerate().filter(|(i, _)| *i != 2) {
             let w = widest(rs);
             assert!(w <= 76.min(width), "event {i} at {width}: {w} columns\n{rs:#?}");
             // the text fills its measure: it is not wrapped narrower
             assert!(w >= 76.min(width) - 12, "event {i} at {width}: only {w} columns\n{rs:#?}");
         }
+        // a message between agents is one row of a list: the code measure
+        let msg: Vec<&String> = rows[2].iter().filter(|r| !r.is_empty()).collect();
+        assert_eq!(msg.len(), 1, "{width}: {msg:#?}");
+        assert!(msg[0].trim_end().width() <= 100.min(width).max(35), "{width}: {msg:#?}");
         // the user block's panel stops at the measure too (a wrapped
         // row keeps the blank after its last word, as before)
         assert!(rows[0].iter().all(|r| r.trim_end().width() <= 76.min(width) && r.width() <= 77.min(width + 1)), "{width}: {:#?}", rows[0]);
@@ -561,7 +565,7 @@ fn an_edit_is_one_line_its_diff_when_opened() {
 }
 
 fn agent_msg(from: &str, text: &str) -> Ev {
-    Ev::AgentMsg { from: from.into(), to: String::new(), text: text.into(), level: 3, id: "m_3".into(), open: false }
+    Ev::AgentMsg { from: from.into(), to: String::new(), text: text.into(), level: 3, id: "m_3".into(), open: false, fold: false }
 }
 
 #[test]
@@ -668,7 +672,7 @@ fn mockup_turn(open: bool) -> Vec<Ev> {
     }
     let brief = "# Task `auth-fix`\n\nthe login breaks on safari 18. reproduce with playwright, fix it,\nkeep the chrome path unchanged. report with the test output.";
     vec![
-        Ev::AgentMsg { from: "main".into(), to: String::new(), text: brief.into(), level: 3, id: "m_1".into(), open },
+        Ev::AgentMsg { from: "main".into(), to: String::new(), text: brief.into(), level: 3, id: "m_1".into(), open, fold: false },
         Ev::Thinking { ms: 14_000, text: "safari drops the session cookie on the redirect. SameSite=None needs\nSecure, and the dev server sets it without. check session.ts first.".into(), open },
         Ev::Tool(b),
         Ev::Tool(t),
@@ -761,4 +765,331 @@ fn feed_entities_use_the_book_glyphs() {
     let mut cache = vec![None];
     push_event(&mut events, &mut cache, Ev::TurnDone);
     assert!(matches!(&events[0], Ev::Tool(td) if td.result.as_ref().is_some_and(|r| r.1 == "interrupted")));
+}
+
+// ---- BISE-14: the three levels, folding, time marks (book §9, §10) ----
+
+fn l3(from: &str, to: &str, text: &str) -> Ev {
+    Ev::AgentMsg { from: from.into(), to: to.into(), text: text.into(), level: 3, id: String::new(), open: false, fold: false }
+}
+
+fn to_you(from: &str, text: &str) -> Ev {
+    Ev::AgentMsg { from: from.into(), to: "you".into(), text: text.into(), level: 2, id: String::new(), open: false, fold: false }
+}
+
+/// Events pushed one by one, as they arrive (the merge and the cache
+/// rules of push_event apply).
+fn arrive(evs: Vec<Ev>) -> (Vec<Ev>, Vec<Option<EventRows>>) {
+    let (mut events, mut cache) = (Vec::new(), Vec::new());
+    for ev in evs {
+        push_event(&mut events, &mut cache, ev);
+    }
+    (events, cache)
+}
+
+/// The rows through the cache, as a frame draws them.
+fn cached_text(events: &[Ev], cache: &mut Vec<Option<EventRows>>, width: usize) -> Vec<String> {
+    (0..events.len())
+        .flat_map(|i| {
+            ensure_rows(events, cache, i, false, width, 0);
+            rows_text(&cache[i].as_ref().unwrap().rows)
+        })
+        .map(|r| r.trim_end().to_string())
+        .collect()
+}
+
+/// `n` level-3 lines among `k` agents, numbered from `from`.
+fn traffic(n: usize, k: usize, from: usize) -> Vec<Ev> {
+    (0..n)
+        .map(|j| {
+            let m = from + j;
+            l3(&format!("a{}", m % k), &format!("a{}", (m + 1) % k), &format!("message {}", m))
+        })
+        .collect()
+}
+
+#[test]
+fn a_run_of_twelve_folds() {
+    let mut evs = vec![Ev::You("ship it".into())];
+    evs.extend(traffic(12, 5, 0));
+    let (mut events, mut cache) = arrive(evs);
+    let rows = cached_text(&events, &mut cache, 100);
+    let pulse = crate::theme::working_frame(0).0;
+    assert_eq!(
+        rows,
+        vec![" › ship it".to_string(), String::new(), format!(" │ ▸ 12 messages between 5 agents {}", pulse)],
+        "the whole run is one line, live"
+    );
+    // opened in place, in order, each line in its columns
+    assert!(toggle_event(&mut events, &mut cache, 1));
+    let rows = cached_text(&events, &mut cache, 100);
+    assert_eq!(rows[2], format!(" │ ▾ 12 messages between 5 agents {}", pulse));
+    let lines: Vec<&String> = rows[3..].iter().collect();
+    assert_eq!(lines.len(), 12, "{rows:#?}");
+    for (j, r) in lines.iter().enumerate() {
+        let want = format!(" │ @ {:<10}→ {:<10}message {}", format!("a{}", j % 5), format!("a{}", (j + 1) % 5), j);
+        assert_eq!(r.as_str(), want);
+    }
+    // three lines or fewer never fold
+    let (events, mut cache) = arrive(traffic(3, 5, 0));
+    assert_eq!(cached_text(&events, &mut cache, 100).len(), 3);
+}
+
+#[test]
+fn a_level_two_line_closes_the_run() {
+    let mut evs = traffic(5, 3, 0);
+    evs.push(to_you("docs", "the v2 docs are up."));
+    evs.extend(traffic(2, 3, 5));
+    let (mut events, mut cache) = arrive(evs);
+    let rows = cached_text(&events, &mut cache, 100);
+    assert_eq!(rows[0], " │ ▸ 5 messages between 3 agents", "closed: no pulse");
+    assert_eq!(rows[1], "");
+    assert_eq!(rows[2], format!(" {} docs to you: the v2 docs are up.", crate::theme::G_MSG));
+    assert_eq!(rows[3], "");
+    assert!(rows[4].ends_with("message 5") && rows[5].ends_with("message 6"), "{rows:#?}");
+    // the new run grows past three: it folds; the closed one stays
+    for ev in traffic(2, 3, 7) {
+        push_event(&mut events, &mut cache, ev);
+    }
+    let rows = cached_text(&events, &mut cache, 100);
+    let pulse = crate::theme::working_frame(0).0;
+    assert_eq!(rows[0], " │ ▸ 5 messages between 3 agents");
+    assert_eq!(rows[4], format!(" │ ▸ 4 messages between 3 agents {}", pulse));
+    assert_eq!(rows.len(), 5, "{rows:#?}");
+    // a main line (level 2) and a card (level 1) close it too
+    for closer in [Ev::Assistant("done.".into()), Ev::Card("#1 question @docs : v1 or v2?".into())] {
+        let mut evs = traffic(4, 3, 0);
+        evs.push(closer);
+        let (events, mut cache) = arrive(evs);
+        assert_eq!(cached_text(&events, &mut cache, 100)[0], " │ ▸ 4 messages between 3 agents");
+    }
+}
+
+#[test]
+fn a_closed_run_never_changes() {
+    let mut evs = vec![Ev::You("go".into())];
+    evs.extend(traffic(6, 4, 0));
+    evs.push(Ev::Assistant("the agents agreed.".into()));
+    let (mut events, mut cache) = arrive(evs);
+    let before = cached_text(&events, &mut cache, 100);
+    let n0 = events.len();
+    // everything else arrives after it: more traffic, lines for you, tools
+    let mut more = traffic(9, 7, 6);
+    more.push(to_you("docs", "done"));
+    more.push(Ev::Tool(tool_with(1, "bash", Some("ls"), Some((true, "a")), true)));
+    more.extend(traffic(5, 2, 20));
+    for ev in more {
+        push_event(&mut events, &mut cache, ev);
+    }
+    let after = cached_text(&events, &mut cache, 100);
+    assert_eq!(after[..before.len()], before[..], "cached");
+    let fresh = feed_text(&events[..], 100);
+    assert_eq!(fresh[..before.len()], before[..], "rebuilt");
+    let rebuilt: Vec<String> = feed_text(&events[..n0], 100);
+    assert_eq!(rebuilt, before);
+}
+
+#[test]
+fn arrival_order_holds_with_many_agents() {
+    // 30 agents talk over each other, lines for you in between: nothing
+    // is grouped by agent, nothing moves
+    let names: Vec<String> = (0..30).map(|k| format!("ep-{}", k)).collect();
+    let mut evs = Vec::new();
+    let mut want = Vec::new();
+    for m in 0..120 {
+        if m % 40 == 39 {
+            evs.push(to_you(&names[m % 30], &format!("for you {}", m)));
+            want.push(format!("for you {}", m));
+        } else {
+            evs.push(l3(&names[(m * 7) % 30], &names[(m * 11 + 3) % 30], &format!("line {}", m)));
+            want.push(format!("line {}", m));
+        }
+    }
+    let (mut events, mut cache) = arrive(evs);
+    set_everything(&mut events, &mut cache, true);
+    let rows = cached_text(&events, &mut cache, 100);
+    let got: Vec<String> = rows
+        .iter()
+        .filter_map(|r| r.find("line ").or_else(|| r.find("for you ")).map(|k| r[k..].to_string()))
+        .collect();
+    assert_eq!(got, want);
+    // the folds say how many lines and agents each run holds
+    let folds: Vec<&String> = rows.iter().filter(|r| r.contains("messages between")).collect();
+    assert_eq!(folds.len(), 3, "{folds:#?}");
+    assert!(folds[0].contains("▾ 39 messages between 30 agents"), "{folds:#?}");
+    // closed again: one line per run
+    set_everything(&mut events, &mut cache, false);
+    assert!(!anything_closed(&[]));
+    assert!(anything_closed(&events));
+    let rows = cached_text(&events, &mut cache, 100);
+    assert_eq!(rows.iter().filter(|r| r.contains("line ")).count(), 0, "{rows:#?}");
+}
+
+#[test]
+fn time_marks_after_a_pause() {
+    let (mut events, mut cache) = arrive(vec![]);
+    let at = || "14:31".to_string();
+    // not at the top of a feed
+    assert!(!pause_mark(&mut events, &mut cache, PAUSE_MS * 2, at));
+    push_event(&mut events, &mut cache, Ev::You("hi".into()));
+    // a short pause: nothing
+    assert!(!pause_mark(&mut events, &mut cache, PAUSE_MS - 1, at));
+    assert!(pause_mark(&mut events, &mut cache, PAUSE_MS, at));
+    // never two in a row
+    assert!(!pause_mark(&mut events, &mut cache, PAUSE_MS, at));
+    push_event(&mut events, &mut cache, Ev::Assistant("back".into()));
+    let rows = cached_text(&events, &mut cache, 100);
+    assert_eq!(rows, vec![" › hi", "", " · 14:31 ·", "", "back"], "{rows:#?}");
+    // a mark ends a run of level 3: the run after it counts apart
+    let mut evs = traffic(4, 2, 0);
+    evs.push(Ev::TimeMark("15:02".into()));
+    evs.extend(traffic(4, 2, 4));
+    let (events, mut cache) = arrive(evs);
+    let rows = cached_text(&events, &mut cache, 100);
+    assert_eq!(rows[0], " │ ▸ 4 messages between 2 agents");
+    assert_eq!(rows[2], " · 15:02 ·");
+    assert!(rows[4].starts_with(" │ ▸ 4 messages between 2 agents "));
+    assert!(local_hhmm().len() == 5 && local_hhmm().as_bytes()[2] == b':');
+}
+
+#[test]
+fn level_two_and_answered_lines() {
+    let why = Ev::Answered {
+        agent: "docs".into(),
+        question: "v1 or v2?".into(),
+        answer: "v2".into(),
+        why: "the brief says v2.".into(),
+        open: false,
+    };
+    let (mut events, mut cache) = arrive(vec![to_you("docs", "the examples use v2."), why]);
+    let rows = cached_text(&events, &mut cache, 100);
+    assert_eq!(rows, vec![" @ docs to you: the examples use v2.", "", " :* docs asked: v1 or v2? i answered: v2 ▸ why"]);
+    assert!(toggle_event(&mut events, &mut cache, 1));
+    let rows = cached_text(&events, &mut cache, 100);
+    assert_eq!(rows[2..], [" :* docs asked: v1 or v2? i answered: v2 ▾ why", " │ the brief says v2."]);
+    // a long level-3 line: one line, ▸; open, its text under the rail
+    let long = format!("heads-up: {}", "i'm touching web/src/auth ".repeat(4));
+    let (mut events, mut cache) = arrive(vec![l3("auth-fix", "release", &long)]);
+    let rows = cached_text(&events, &mut cache, 100);
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].starts_with(" │ @ auth-fix  → release   heads-up") && rows[0].ends_with("… ▸"), "{rows:#?}");
+    assert!(rows[0].chars().count() <= CODE_MAX, "{rows:#?}");
+    assert!(toggle_event(&mut events, &mut cache, 0));
+    let rows = cached_text(&events, &mut cache, 100);
+    assert!(rows[0].ends_with("… ▾") && rows[1].starts_with(" │   heads-up: i'm touching"), "{rows:#?}");
+}
+
+#[test]
+fn the_first_line_of_an_open_fold_toggles_by_row() {
+    let long = format!("heads-up: {}", "x ".repeat(40));
+    let mut evs = vec![Ev::You("go".into()), l3("a", "b", &long)];
+    evs.extend(traffic(4, 3, 0));
+    let (mut events, mut cache) = arrive(evs);
+    // row 1 (after the gap) is the fold line
+    assert!(toggle_at(&mut events, &mut cache, 1, 1));
+    assert!(matches!(events[1], Ev::AgentMsg { fold: true, open: false, .. }));
+    // row 2 is its message: that opens the message
+    assert!(toggle_at(&mut events, &mut cache, 1, 2));
+    assert!(matches!(events[1], Ev::AgentMsg { fold: true, open: true, .. }));
+    assert!(toggle_at(&mut events, &mut cache, 1, 1));
+    assert!(matches!(events[1], Ev::AgentMsg { fold: false, .. }));
+}
+
+/// Mockup "what's for you, what isn't" (tui-screens.html).
+#[test]
+fn whats_for_you_matches_the_mockup() {
+    let evs = vec![
+        Ev::You("the login breaks on safari. and the api docs, v2 please.".into()),
+        Ev::Assistant("on it: auth-fix takes safari, docs takes the api docs.".into()),
+        l3("docs", "main", "v1 or v2 for the examples?"),
+        l3("main", "docs", "v2, the brief says so."),
+        Ev::Answered { agent: "docs".into(), question: "v1 or v2 for the examples?".into(), answer: "v2".into(), why: "the brief says v2.".into(), open: false },
+        l3("auth-fix", "release", "heads-up, i'm touching web/src/auth."),
+        l3("release", "auth-fix", "ok, i'll mention the fix."),
+        l3("bench", "main", "♡ done. p95 180 ms, 3 runs."),
+        Ev::AgentMsg { from: "bench".into(), to: String::new(), text: "[report: done] p95 at 180 ms, nothing to fix.\nran it 3 times".into(), level: 3, id: String::new(), open: false, fold: false },
+        l3("api-v2", "main", "? i need the v2 schema file, it isn't in the repo."),
+        Ev::Card("#4 question @api-v2 : the v2 schema file isn't in the repo. where is it?".into()),
+    ];
+    let (events, mut cache) = arrive(evs);
+    let rows = cached_text(&events, &mut cache, 100);
+    println!("{}", rows.join("\n"));
+    let want = [
+        " › the login breaks on safari. and the api docs, v2 please.",
+        "",
+        "on it: auth-fix takes safari, docs takes the api docs.",
+        "",
+        " │ @ docs      → main      v1 or v2 for the examples?",
+        " │ @ main      → docs      v2, the brief says so.",
+        "",
+        " :* docs asked: v1 or v2 for the examples? i answered: v2 ▸ why",
+        "",
+        " │ @ auth-fix  → release   heads-up, i'm touching web/src/auth.",
+        " │ @ release   → auth-fix  ok, i'll mention the fix.",
+        " │ @ bench     → main      ♡ done. p95 180 ms, 3 runs.",
+        "",
+        " ♡ bench: p95 at 180 ms, nothing to fix. ▸ report",
+        "",
+        " │ @ api-v2    → main      ? i need the v2 schema file, it isn't in the repo.",
+    ];
+    assert_eq!(rows[..want.len()], want[..], "{rows:#?}");
+    assert!(rows[want.len()..].iter().any(|r| r.contains("api-v2 needs you")), "{rows:#?}");
+}
+
+/// Mockup "a busy hour, 30 agents" (tui-screens.html).
+#[test]
+fn a_busy_hour_matches_the_mockup() {
+    let mut evs = vec![
+        Ev::TimeMark("14:02".into()),
+        Ev::You("ship the v2 api: endpoints, docs, sdk, migration, the lot.".into()),
+        Ev::Assistant("that's 30 pieces. i split it: 12 endpoints, 8 sdk, 6 docs, 4 migration. starting them.".into()),
+    ];
+    evs.extend(traffic(47, 30, 0));
+    evs.push(Ev::Assistant("the 12 endpoint agents agreed on one error format; i picked it for the sdk agents too.".into()));
+    evs.extend(traffic(23, 9, 100));
+    evs.push(Ev::AgentMsg { from: "ep-users".into(), to: String::new(), text: "[report: done] 4 endpoints are done: users, orgs, keys, audit.\nmore".into(), level: 3, id: String::new(), open: false, fold: false });
+    evs.extend([
+        l3("sdk-py", "sdk-ts", "same pagination shape as you?"),
+        l3("sdk-ts", "sdk-py", "yes: cursor + limit, max 200."),
+        l3("mig-db", "main", "? drop the v1 tables now or after a release?"),
+        l3("main", "mig-db", "asking the user."),
+        l3("docs-auth", "ep-keys", "heads-up, i'm quoting your error codes."),
+    ]);
+    let opened = evs.len() - 5;
+    evs.push(Ev::Card("#7 question @mig-db : drop the v1 tables now, or keep them one release?".into()));
+    evs.push(Ev::TimeMark("14:31".into()));
+    evs.extend(traffic(12, 6, 200));
+    let (mut events, mut cache) = arrive(evs);
+    assert!(toggle_event(&mut events, &mut cache, opened));
+    let rows = cached_text(&events, &mut cache, 100);
+    println!("{}", rows.join("\n"));
+    let pulse = crate::theme::working_frame(0).0;
+    let want = [
+        " · 14:02 ·".to_string(),
+        "".into(),
+        " › ship the v2 api: endpoints, docs, sdk, migration, the lot.".into(),
+        "".into(),
+        "that's 30 pieces. i split it: 12 endpoints, 8 sdk, 6 docs, 4 migration.".into(),
+        "starting them.".into(),
+        "".into(),
+        " │ ▸ 47 messages between 30 agents".into(),
+        "".into(),
+        "the 12 endpoint agents agreed on one error format; i picked it for the sdk".into(),
+        "agents too.".into(),
+        "".into(),
+        " │ ▸ 23 messages between 9 agents".into(),
+        "".into(),
+        " ♡ ep-users: 4 endpoints are done: users, orgs, keys, audit. ▸ report".into(),
+        "".into(),
+        " │ ▾ 5 messages between 6 agents".into(),
+        " │ @ sdk-py    → sdk-ts    same pagination shape as you?".into(),
+        " │ @ sdk-ts    → sdk-py    yes: cursor + limit, max 200.".into(),
+        " │ @ mig-db    → main      ? drop the v1 tables now or after a release?".into(),
+        " │ @ main      → mig-db    asking the user.".into(),
+        " │ @ docs-auth → ep-keys   heads-up, i'm quoting your error codes.".into(),
+    ];
+    assert_eq!(rows[..want.len()], want[..], "{rows:#?}");
+    let tail: Vec<&String> = rows[want.len()..].iter().collect();
+    assert!(tail.iter().any(|r| r.contains("mig-db needs you")), "{rows:#?}");
+    assert_eq!(tail[tail.len() - 3..], [&" · 14:31 ·".to_string(), &String::new(), &format!(" │ ▸ 12 messages between 6 agents {}", pulse)]);
 }

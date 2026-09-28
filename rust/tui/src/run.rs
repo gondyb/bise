@@ -32,6 +32,10 @@ pub(crate) fn ingest_line(app: &mut App, line: String) {
         .map_or(0, |t| now.duration_since(t).as_millis());
     app.last_line_at = Some(now);
     let (line, replayed) = strip_history(&line);
+    // a live line after a pause: a time mark first (BISE-14, book §10)
+    if !replayed {
+        crate::feed::pause_mark(&mut app.events, &mut app.cache, ms, crate::feed::local_hhmm);
+    }
     // a replayed reasoning section has no duration
     let ms = if replayed { 0 } else { ms };
     let parsed = if replayed {

@@ -145,6 +145,8 @@ pub(crate) fn code_width(width: usize) -> usize {
 pub(crate) fn ev_rows(ev: &Ev, tick: u32, width: usize) -> Vec<Line<'static>> {
     let w = match ev {
         Ev::Tool(_) => code_width(width),
+        // a level-3 line is a row of a list, not prose: the code measure
+        Ev::AgentMsg { level: 3, text, .. } if !is_brief(text) && report_parts(text).is_none() => code_width(width),
         _ => prose_width(width),
     };
     let mut rows = Vec::new();
@@ -220,8 +222,8 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
     let text_st = Style::default().fg(text());
     let err_st = Style::default().fg(error());
     match ev {
-        // an image marker shows as `[Image #1 path]` (docs/images.md)
-        Ev::You(t) => user_block_lines(&bend_images::display(t), width),
+        // an image marker is an accent chip `▣ login.png` (book §14)
+        Ev::You(t) => user_block_lines(t, width),
         Ev::Assistant(t) => md_to_lines(&unescape_md(t)),
         Ev::Thinking { ms, text, open } => thinking_lines(*ms, text, *open, width),
         Ev::Tool(td) => tool_lines(td, 0, width),
@@ -251,7 +253,16 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         // an interrupted turn is dim; any other warning reads as text
         Ev::Warn(t) if t == "turn interrupted" => glyph_line(G_INTERRUPTED, dim_st, t.clone(), dim_st),
         Ev::Warn(t) => glyph_line(G_INTERRUPTED, dim_st, t.clone(), text_st),
-        Ev::Err(t) => glyph_line(G_FAILED, err_st, t.clone(), err_st),
+        // a model without vision refused an image: say so, and the way out
+        Ev::Err(t) => match crate::attach::no_vision(t) {
+            Some(mut spans) => {
+                if let Some(first) = spans.first_mut() {
+                    first.content = format!(" {} ", G_FAILED).into();
+                }
+                vec![Line::from(spans)]
+            }
+            None => glyph_line(G_FAILED, err_st, t.clone(), err_st),
+        },
         Ev::Info(t) => glyph_line(G_NOTE, Style::default().fg(faint()), bend_images::display(t), dim_st),
         Ev::ToolInfo { .. } | Ev::ToolResult { .. } | Ev::ToolCode { .. } => vec![],
         Ev::Usage(u) => vec![Line::from(Span::styled(
@@ -264,45 +275,126 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             let (kind, body) = report_parts(text).unwrap_or_default();
             report_lines(from, kind, body, *open, width)
         }
-        // BISE-04: the v2 variants, §6 glyphs on the v1 look (the levels
-        // come with BISE-14)
-        Ev::AgentMsg { from, to, text, level, id, .. } => {
-            let mut head = match (*level, to.as_str()) {
-                (2, _) => format!("{} to you", from),
-                (_, "") => from.clone(),
-                _ => format!("{} → {}", from, to),
-            };
-            if !id.is_empty() {
-                head = format!("{} {}", head, id);
-            }
-            let glyph = if from == "main" { G_MAIN } else { G_MSG };
-            agent_msg_rows(glyph, &head, text, width)
-        }
-        Ev::Answered { agent, question, answer, why } => {
-            let mut body = format!("{} asked: {}\n\nmain answered: {}", agent, question, answer);
-            if !why.is_empty() {
-                body.push_str(&format!("\n\nwhy: {}", why));
-            }
-            agent_msg_rows(G_MAIN, &format!("main answered @{}", agent), &body, width)
-        }
+        Ev::AgentMsg { from, to, text, level: 3, id, open, .. } => l3_lines(from, to, id, text, *open, width),
+        Ev::AgentMsg { from, text, .. } => l2_lines(from, text, width),
+        Ev::Answered { agent, question, answer, why, open } => answered_lines(agent, question, answer, why, *open, width),
+        Ev::TimeMark(t) => vec![Line::from(Span::styled(format!(" {} {} {}", G_NOTE, t, G_NOTE), Style::default().fg(faint())))],
         Ev::Card(t) => card_lines(t, width),
     }
 }
 
-// a message from an agent: its glyph and head in the accent, the body
-// behind an accent bar
-fn agent_msg_rows(glyph: &str, head: &str, text: &str, width: usize) -> Vec<Line<'static>> {
-    let st = Style::default().fg(accent()).add_modifier(Modifier::BOLD);
-    let mut rows = vec![
-        Line::from(""),
-        Line::from(vec![
-            Span::styled(format!(" {} ", glyph), st),
-            Span::styled(head.to_string(), st),
-        ]),
+// ---- the three levels (book §9) ----
+
+/// The columns a level-3 line gives each name.
+const NAME_COLS: usize = 10;
+/// Where the text of a level-3 line starts: rail, glyph, two names.
+const L3_HEAD: usize = 3 + 2 + NAME_COLS + 2 + NAME_COLS;
+
+/// A name in its fixed column: cut to leave a space, then padded.
+fn name_col(name: &str) -> String {
+    format!("{:<w$}", fit_chars(name, NAME_COLS - 1), w = NAME_COLS)
+}
+
+/// A level-3 text that may not fit its line: it opens (`▸`).
+pub(crate) fn l3_long(text: &str) -> bool {
+    text.trim().contains('\n') || text.trim().chars().count() > CODE_MAX - L3_HEAD
+}
+
+/// A message between agents (level 3): dim, under a faint rail, one line
+/// `@ from      → to        text`, `▸` when cut; open, the whole text
+/// under the rail. No `to` (what this feed's owner received): the
+/// message id sits in its column.
+pub(crate) fn l3_lines(from: &str, to: &str, id: &str, text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
+    let dim_st = Style::default().fg(dim());
+    let faint_st = Style::default().fg(faint());
+    let flat = text.trim().replace('\n', " ");
+    let long = l3_long(text);
+    let cut = flat.chars().count() > width.saturating_sub(L3_HEAD) || text.trim().contains('\n');
+    // room for the text, and for ` ▸` when it is cut and opens
+    let room = width.saturating_sub(L3_HEAD + if cut && long { 2 } else { 0 }).max(8);
+    let (arrow, target) = if to.is_empty() { ("  ", id) } else { ("→ ", to) };
+    let mut row = vec![
+        Span::styled(RAIL, faint_st),
+        Span::styled(format!("{} ", G_MSG), dim_st),
+        Span::styled(name_col(from), dim_st),
+        Span::styled(arrow, faint_st),
+        Span::styled(name_col(target), faint_st),
+        Span::styled(fit_chars(&flat, room), dim_st),
     ];
-    let bar = Span::styled(RAIL, Style::default().fg(accent()));
-    rows.extend(barred_rows(&bar, md_to_lines(text), width));
-    rows
+    if cut && long {
+        row.push(Span::styled(format!(" {}", if open { G_OPEN } else { G_CLOSED }), dim_st));
+    }
+    let mut ls = vec![Line::from(row)];
+    if open && cut && long {
+        let bar = Span::styled(format!("{}  ", RAIL), faint_st);
+        let body = text.trim().split('\n').map(|l| Line::from(Span::styled(l.to_string(), dim_st)));
+        ls.extend(barred_rows(&bar, body, width.min(PROSE_MAX)));
+    }
+    ls
+}
+
+/// An agent writing to you (level 2): normal text, `@ name to you: …`
+/// (from main: `:* …`).
+fn l2_lines(from: &str, body: &str, width: usize) -> Vec<Line<'static>> {
+    let text_st = Style::default().fg(text());
+    let (glyph, glyph_st, lead) = if from == "main" {
+        (G_MAIN, Style::default().fg(accent()), String::new())
+    } else {
+        (G_MSG, text_st, format!("{} to you: ", from))
+    };
+    let mut lines = md_to_lines(&unescape_md(body.trim()));
+    if lines.is_empty() {
+        lines.push(Line::from(""));
+    }
+    lines[0].spans.insert(0, Span::styled(lead, text_st));
+    let mark = Span::styled(format!(" {} ", glyph), glyph_st);
+    hung_rows(&mark, &Span::raw("   "), lines, width)
+}
+
+/// Main answered an agent for you (level 2): `:* docs asked: v1 or v2?
+/// i answered: v2. ▸ why`; open, the why under the rail.
+fn answered_lines(agent: &str, question: &str, answer: &str, why: &str, open: bool, width: usize) -> Vec<Line<'static>> {
+    let text_st = Style::default().fg(text());
+    let q = question.trim().replace('\n', " ");
+    let sep = if q.ends_with(['?', '.', '!', ':']) { " " } else { "; " };
+    let mut line = vec![Span::styled(
+        format!("{} asked: {}{}i answered: {}", agent, q, sep, answer.trim().replace('\n', " ")),
+        text_st,
+    )];
+    if !why.trim().is_empty() {
+        line.push(Span::styled(format!(" {} why", if open { G_OPEN } else { G_CLOSED }), Style::default().fg(dim())));
+    }
+    let mark = Span::styled(format!(" {} ", G_MAIN), Style::default().fg(accent()));
+    let mut ls = hung_rows(&mark, &Span::raw("   "), [Line::from(line)], width);
+    if open && !why.trim().is_empty() {
+        let bar = Span::styled(RAIL, Style::default().fg(faint()));
+        ls.extend(barred_rows(&bar, md_to_lines(why.trim()), width));
+    }
+    ls
+}
+
+/// The fold of a run of level-3 lines (book §10): `▸ 47 messages
+/// between 30 agents`, dim under the faint rail; the last run, still
+/// growing, carries the working pulse.
+pub(crate) fn fold_line(n: usize, agents: usize, open: bool, live: bool, tick: u32) -> Line<'static> {
+    let mut row = vec![
+        Span::styled(RAIL, Style::default().fg(faint())),
+        Span::styled(
+            format!(
+                "{} {} messages between {} agent{}",
+                if open { G_OPEN } else { G_CLOSED },
+                n,
+                agents,
+                if agents == 1 { "" } else { "s" }
+            ),
+            Style::default().fg(dim()),
+        ),
+    ];
+    if live {
+        let (g, c) = working_frame(tick);
+        row.push(Span::styled(format!(" {}", g), Style::default().fg(c)));
+    }
+    Line::from(row)
 }
 
 /// A card line of the hub (`#3 question @docs : v1 or v2?`): its kind,
@@ -347,9 +439,15 @@ pub(crate) fn user_block_lines(msg: &str, width: usize) -> Vec<Line<'static>> {
     let style = Style::default().fg(text());
     let lines = msg
         .split('\n')
-        .map(|l| Line::from(Span::styled(l.trim_end_matches('\r').to_string(), style)));
+        .map(|l| Line::from(crate::attach::chip_spans(l.trim_end_matches('\r'), style)));
     let mark = Span::styled(format!(" {} ", G_YOU), Style::default().fg(dim()));
-    hung_rows(&mark, &Span::raw("   "), lines, width)
+    let mut rows = hung_rows(&mark, &Span::raw("   "), lines, width);
+    // the sizes of its images, dim, under it
+    if let Some(sizes) = crate::attach::sizes_line(msg) {
+        let pad = Span::raw("   ");
+        rows.extend(hung_rows(&pad, &pad, [Line::from(Span::styled(sizes, Style::default().fg(dim())))], width));
+    }
+    rows
 }
 
 // each line wrapped to the width left after the bar, every row (the
@@ -493,12 +591,27 @@ pub(crate) fn tool_body(td: &ToolData, code: &Option<(CodeLang, String)>, width:
 /// text under the rail.
 pub(crate) fn output_lines(td: &ToolData, width: usize) -> Vec<Line<'static>> {
     let Some((ok, preview)) = &td.result else { return Vec::new() };
-    let shown = bend_images::display(preview);
+    // images in the result: `result · ▣ shot.png 390×844` (book §14)
+    let images = crate::attach::result_spans(preview);
+    let shown = if images.is_some() { crate::attach::without_markers(preview) } else { preview.clone() };
     let text = shown.trim();
+    let faint_st = Style::default().fg(dim());
+    if let Some(spans) = images.filter(|_| *ok) {
+        let mut row = vec![Span::raw("   ")];
+        if !text.is_empty() {
+            row.push(Span::styled(format!("{} ", if td.expanded { G_OPEN } else { G_CLOSED }), faint_st));
+        }
+        row.extend(spans);
+        let mut ls = vec![Line::from(row)];
+        if td.expanded && !text.is_empty() {
+            let hl: Vec<Vec<Span<'static>>> = text.split('\n').map(|l| vec![Span::styled(l.to_string(), faint_st)]).collect();
+            ls.extend(rail_rows(&hl, width));
+        }
+        return ls;
+    }
     if text.is_empty() {
         return Vec::new();
     }
-    let faint_st = Style::default().fg(dim());
     let text_st = Style::default().fg(if *ok { dim() } else { error() });
     let mut ls = Vec::new();
     if td.expanded {
@@ -639,7 +752,7 @@ fn report_lines(from: &str, kind: &str, body: &str, open: bool, width: usize) ->
     if more {
         row.push(Span::styled(label, Style::default().fg(dim())));
     }
-    let mut ls = vec![Line::from(""), Line::from(row)];
+    let mut ls = vec![Line::from(row)];
     if open && !rest.trim().is_empty() {
         let bar = Span::styled(" │ ", Style::default().fg(faint()));
         ls.extend(barred_rows(&bar, md_to_lines(rest), width));
@@ -704,14 +817,15 @@ mod multiline_tests {
 
     #[test]
     fn agent_message_wraps_behind_its_bar() {
-        let text = format!("one\ntwo {}", "x ".repeat(30));
-        let s = screen(Ev::AgentMsg { from: "main".into(), to: String::new(), text, level: 3, id: String::new(), open: false }, 24);
-        let body: Vec<&String> = s.iter().filter(|r| r.starts_with(" │ ")).collect();
-        assert_eq!(body[0].as_str(), " │ one", "{s:#?}");
-        assert!(body[1].starts_with(" │ two x"), "{s:#?}");
-        assert!(body.len() >= 4, "{s:#?}");
-        let head = format!(" {} main", crate::theme::G_MAIN);
-        assert!(s.contains(&head), "{s:#?}");
-        assert!(s.iter().filter(|r| !r.is_empty() && **r != head).all(|r| r.starts_with(" │ ")), "{s:#?}");
+        // a level-3 line is one line; open, its whole text under the rail
+        let text = format!("one{}two {}", '\n', "x ".repeat(30));
+        let s = screen(Ev::AgentMsg { from: "main".into(), to: String::new(), text, level: 3, id: String::new(), open: true, fold: false }, 40);
+        let head = format!(" │ {} main", crate::theme::G_MSG);
+        assert!(s[0].starts_with(&head), "{s:#?}");
+        let body = &s[1..];
+        assert_eq!(body[0].as_str(), " │   one", "{s:#?}");
+        assert!(body[1].starts_with(" │   two x"), "{s:#?}");
+        assert!(body.len() >= 3, "{s:#?}");
+        assert!(body.iter().all(|r| r.starts_with(" │   ")), "{s:#?}");
     }
 }

@@ -43,11 +43,22 @@ pub(crate) struct EventRows {
 pub(crate) struct LiveHead {
     pub(crate) at: usize,
     pub(crate) len: usize,
-    pub(crate) name: String,
-    pub(crate) args: String,
+    pub(crate) what: Live,
+}
+
+/// What a live row redraws each frame.
+pub(crate) enum Live {
+    /// a running tool's line (its pulse, its elapsed)
+    Tool { name: String, args: String },
+    /// the fold of the last run of level-3 lines (its pulse)
+    Fold { n: usize, agents: usize, open: bool },
 }
 
 pub(crate) fn event_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> EventRows {
+    if is_l3(&events[i]) && ev_visible(&events[i], debug) {
+        let (rows, live) = l3_rows(events, i, debug, width, tick);
+        return EventRows { width: width as u16, rows, live };
+    }
     let running = match &events[i] {
         Ev::Tool(td) if matches!(td.state, ToolState::Run) && ev_visible(&events[i], debug) => Some(td),
         _ => None,
@@ -76,14 +87,21 @@ pub(crate) fn event_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
     EventRows {
         width: width as u16,
         rows,
-        live: Some(LiveHead { at, len, name, args }),
+        live: Some(LiveHead { at, len, what: Live::Tool { name, args } }),
     }
 }
 
-/// Redraw the tool line of a running tool, keep the rest.
+/// Redraw the live row of an event (a running tool's line, the pulse of
+/// the last fold), keep the rest.
 pub(crate) fn refresh_live(er: &mut EventRows, ev: &Ev, tick: u32) {
-    let (Some(lh), Ev::Tool(td)) = (er.live.as_mut(), ev) else { return };
-    let head = wrap_line(tool_head(td, tick, &lh.name, &lh.args), code_width(er.width as usize));
+    let Some(lh) = er.live.as_mut() else { return };
+    let head = match (&lh.what, ev) {
+        (Live::Tool { name, args }, Ev::Tool(td)) => {
+            wrap_line(tool_head(td, tick, name, args), code_width(er.width as usize))
+        }
+        (Live::Fold { n, agents, open }, _) => vec![fold_line(*n, *agents, *open, true, tick)],
+        _ => return,
+    };
     let n = head.len();
     er.rows.splice(lh.at..lh.at + lh.len, head);
     lh.len = n;
@@ -204,6 +222,9 @@ pub(crate) fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
     if !ev_visible(ev, debug) {
         return rows;
     }
+    if is_l3(ev) {
+        return l3_rows(events, i, debug, width, tick).0;
+    }
     // the previous VISIBLE event decides the gap: a debug-only
     // annotation between two blocks must not swallow the blank line
     let prev = events[..i].iter().rev().find(|e| ev_visible(e, debug));
@@ -215,7 +236,7 @@ pub(crate) fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
 }
 
 pub(crate) fn is_message(ev: &Ev) -> bool {
-    matches!(ev, Ev::You(_) | Ev::Assistant(_) | Ev::Thinking { .. } | Ev::AgentMsg { .. })
+    matches!(ev, Ev::You(_) | Ev::Assistant(_) | Ev::Thinking { .. } | Ev::AgentMsg { .. } | Ev::Answered { .. })
 }
 
 pub(crate) fn is_tool_block(ev: &Ev) -> bool {
@@ -232,6 +253,7 @@ pub(crate) fn is_notice(ev: &Ev) -> bool {
             | Ev::Compact(_)
             | Ev::Compacted(_)
             | Ev::TurnDone
+            | Ev::TimeMark(_)
     )
 }
 
@@ -243,6 +265,14 @@ pub(crate) fn wants_gap_before(ev: &Ev, prev: Option<&Ev>) -> bool {
     let Some(p) = prev else {
         return false;
     };
+    // the lines of a run of level 3 sit together; a time mark stands
+    // apart from whatever came before
+    if is_l3(ev) && is_l3(p) {
+        return false;
+    }
+    if matches!(ev, Ev::TimeMark(_)) {
+        return true;
+    }
     let prev_message = is_message(p);
     let prev_tool = is_tool_block(p);
     let prev_notice = is_notice(p);
@@ -316,6 +346,7 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
             }
             events.push(ev);
             cache.push(None);
+            after_append(events, cache);
             return true;
         }
         // the turn ended: a tool still shown as running was abandoned
@@ -343,6 +374,7 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
     }
     events.push(ev);
     cache.push(None);
+    after_append(events, cache);
     true
 }
 
@@ -468,7 +500,9 @@ pub(crate) fn discloses(ev: &Ev) -> bool {
     match ev {
         Ev::Thinking { .. } => true,
         Ev::Tool(td) => tool_discloses(td),
+        Ev::AgentMsg { text, level: 3, .. } if !is_brief(text) && report_parts(text).is_none() => l3_long(text),
         Ev::AgentMsg { text, .. } => is_brief(text) || report_parts(text).is_some(),
+        Ev::Answered { why, .. } => !why.trim().is_empty(),
         _ => false,
     }
 }
@@ -476,11 +510,44 @@ pub(crate) fn discloses(ev: &Ev) -> bool {
 /// Open or close event `i` in place (its rows rebuild). False when it
 /// has nothing to disclose.
 pub(crate) fn toggle_event(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize) -> bool {
+    // the first line of a folded run: the fold opens or closes
+    if events.get(i).is_some_and(is_l3) && folded_run(events, i, false) == Some(i) {
+        return toggle_fold(events, cache, i);
+    }
+    toggle_own(events, cache, i)
+}
+
+/// Open or close the fold starting at `start` (its lines rebuild).
+fn toggle_fold(events: &mut [Ev], cache: &mut [Option<EventRows>], start: usize) -> bool {
+    let end = run_from(events, start, false).end;
+    if let Some(Ev::AgentMsg { fold, .. }) = events.get_mut(start) {
+        *fold = !*fold;
+    }
+    forget(cache, start..=end);
+    true
+}
+
+/// Open or close event `i` in place from row `row` of its rows: on the
+/// first line of an open fold, its fold row toggles the fold and its
+/// message row the message; elsewhere as [`toggle_event`].
+pub(crate) fn toggle_at(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize, row: usize) -> bool {
+    if events.get(i).is_some_and(|e| is_l3(e) && fold_open(e)) && folded_run(events, i, false) == Some(i) {
+        let prev = prev_visible(events, i, false).map(|p| &events[p]);
+        let fold_row = usize::from(wants_gap_before(&events[i], prev));
+        if row > fold_row {
+            return toggle_own(events, cache, i);
+        }
+    }
+    toggle_event(events, cache, i)
+}
+
+/// Open or close event `i` itself (not a fold).
+fn toggle_own(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize) -> bool {
     let Some(ev) = events.get_mut(i).filter(|e| discloses(e)) else {
         return false;
     };
     match ev {
-        Ev::Thinking { open, .. } | Ev::AgentMsg { open, .. } => *open = !*open,
+        Ev::Thinking { open, .. } | Ev::AgentMsg { open, .. } | Ev::Answered { open, .. } => *open = !*open,
         Ev::Tool(td) => td.expanded = !td.expanded,
         _ => return false,
     }
@@ -492,7 +559,6 @@ pub(crate) fn toggle_event(events: &mut [Ev], cache: &mut [Option<EventRows>], i
 
 /// Toggle the item the feed selection is on (`space`; the key is bound
 /// in BISE-42). False when there is no selection or nothing to toggle.
-#[cfg_attr(not(test), allow(dead_code))] // bound by BISE-42
 pub(crate) fn toggle_selected(app: &mut crate::app::App) -> bool {
     let Some(i) = app.feed_sel.map(|s| s.head.0) else {
         return false;
@@ -521,4 +587,236 @@ pub(crate) fn set_all_outputs(events: &mut [Ev], cache: &mut [Option<EventRows>]
         }
     }
     open
+}
+
+// ---- the history: runs of level 3, folds, time marks (book §10, BISE-14) ----
+
+/// A run of level-3 lines longer than this folds into one line.
+pub(crate) const FOLD_AFTER: usize = 3;
+/// A pause this long without a line gets a time mark.
+pub(crate) const PAUSE_MS: u128 = 5 * 60 * 1000;
+
+/// A message between agents (level 3), not a brief or a report (they
+/// have their own lines).
+pub(crate) fn is_l3(ev: &Ev) -> bool {
+    matches!(ev, Ev::AgentMsg { level: 3, text, .. } if !is_brief(text) && report_parts(text).is_none())
+}
+
+/// The visible event before `i`.
+fn prev_visible(events: &[Ev], i: usize, debug: bool) -> Option<usize> {
+    (0..i).rev().find(|&j| ev_visible(&events[j], debug))
+}
+
+/// The first line of the run that holds level-3 line `i`, and how many
+/// of its lines come up to `i` (included).
+fn run_back(events: &[Ev], i: usize, debug: bool) -> (usize, usize) {
+    let (mut start, mut n) = (i, 1);
+    let mut j = i;
+    while let Some(p) = prev_visible(events, j, debug) {
+        if !is_l3(&events[p]) {
+            break;
+        }
+        (start, n, j) = (p, n + 1, p);
+    }
+    (start, n)
+}
+
+/// A run of level-3 lines: consecutive among the visible events. Any
+/// other visible line ends it (a level-1 or level-2 line, a tool, a time
+/// mark), so a closed run never changes: only the last one grows.
+pub(crate) struct Run {
+    /// its last line
+    pub(crate) end: usize,
+    pub(crate) n: usize,
+    /// the agents it names (senders and receivers)
+    pub(crate) agents: usize,
+    /// nothing visible after it yet: it may still grow
+    pub(crate) live: bool,
+}
+
+/// The run that starts at level-3 line `start`, counted forward.
+fn run_from(events: &[Ev], start: usize, debug: bool) -> Run {
+    let mut names: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let (mut n, mut end, mut live) = (0, start, true);
+    for (j, e) in events.iter().enumerate().skip(start) {
+        if !ev_visible(e, debug) {
+            continue;
+        }
+        let Ev::AgentMsg { from, to, .. } = e else {
+            live = false;
+            break;
+        };
+        if !is_l3(e) {
+            live = false;
+            break;
+        }
+        names.insert(from);
+        if !to.is_empty() {
+            names.insert(to);
+        }
+        n += 1;
+        end = j;
+    }
+    Run { end, n, agents: names.len(), live }
+}
+
+/// Whether the run of level-3 line `i` folds, and where it starts:
+/// counted back to its start, then forward only as far as needed.
+fn folded_run(events: &[Ev], i: usize, debug: bool) -> Option<usize> {
+    let (start, mut n) = run_back(events, i, debug);
+    let mut j = i + 1;
+    while n <= FOLD_AFTER && j < events.len() {
+        let e = &events[j];
+        if ev_visible(e, debug) {
+            if !is_l3(e) {
+                break;
+            }
+            n += 1;
+        }
+        j += 1;
+    }
+    (n > FOLD_AFTER).then_some(start)
+}
+
+fn fold_open(ev: &Ev) -> bool {
+    matches!(ev, Ev::AgentMsg { fold: true, .. })
+}
+
+/// The rows of level-3 line `i`: its own line in a short run; in a
+/// folded one the first line carries the fold (`▸ 12 messages between 5
+/// agents`), the others show only when it is open, in place, in order.
+fn l3_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> (Vec<Line<'static>>, Option<LiveHead>) {
+    let ev = &events[i];
+    let mut rows: Vec<Line<'static>> = Vec::new();
+    let Some(start) = folded_run(events, i, debug) else {
+        let prev = prev_visible(events, i, debug).map(|p| &events[p]);
+        if wants_gap_before(ev, prev) {
+            rows.push(Line::from(""));
+        }
+        rows.extend(ev_rows(ev, tick, width));
+        return (rows, None);
+    };
+    let open = fold_open(&events[start]);
+    if i != start {
+        if open {
+            rows.extend(ev_rows(ev, tick, width));
+        }
+        return (rows, None);
+    }
+    let prev = prev_visible(events, i, debug).map(|p| &events[p]);
+    if wants_gap_before(ev, prev) {
+        rows.push(Line::from(""));
+    }
+    let run = run_from(events, start, debug);
+    let at = rows.len();
+    rows.push(fold_line(run.n, run.agents, open, run.live, tick));
+    if open {
+        rows.extend(ev_rows(ev, tick, width));
+    }
+    let live = run.live.then_some(LiveHead {
+        at,
+        len: 1,
+        what: Live::Fold { n: run.n, agents: run.agents, open },
+    });
+    (rows, live)
+}
+
+fn forget(cache: &mut [Option<EventRows>], range: std::ops::RangeInclusive<usize>) {
+    for c in cache.iter_mut().take(range.end() + 1).skip(*range.start()) {
+        *c = None;
+    }
+}
+
+/// A line was appended: the run before it changes (its count, the lines
+/// that fold at the fourth, its pulse when it closes). Nothing else does.
+fn after_append(events: &[Ev], cache: &mut [Option<EventRows>]) {
+    let e = events.len() - 1;
+    if !ev_visible(&events[e], false) {
+        return;
+    }
+    let Some(p) = prev_visible(events, e, false).filter(|&p| is_l3(&events[p])) else {
+        return;
+    };
+    let (start, n) = run_back(events, p, false);
+    if is_l3(&events[e]) && n + 1 == FOLD_AFTER + 1 {
+        forget(cache, start..=e);
+    } else if n + usize::from(is_l3(&events[e])) > FOLD_AFTER {
+        forget(cache, start..=start);
+    }
+}
+
+/// A live line after a pause of `gap_ms`: first a time mark `· 14:31 ·`
+/// (`now` gives the time). Not at the top of a feed, not twice.
+pub(crate) fn pause_mark(
+    events: &mut Vec<Ev>,
+    cache: &mut Vec<Option<EventRows>>,
+    gap_ms: u128,
+    now: impl FnOnce() -> String,
+) -> bool {
+    if gap_ms < PAUSE_MS {
+        return false;
+    }
+    match events.iter().rev().find(|e| ev_visible(e, false)) {
+        None | Some(Ev::TimeMark(_)) => false,
+        Some(_) => push_event(events, cache, Ev::TimeMark(now())),
+    }
+}
+
+/// The local time, `14:31` (`date` knows the zone; the standard library
+/// does not). UTC when `date` fails.
+pub(crate) fn local_hhmm() -> String {
+    let local = std::process::Command::new("date")
+        .arg("+%H:%M")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| s.len() == 5);
+    local.unwrap_or_else(|| {
+        let s = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        format!("{:02}:{:02}", (s / 3600) % 24, (s / 60) % 60)
+    })
+}
+
+// ---- everything at once (ctrl+t, input.rs) ----
+
+/// Whether event `ev` itself is open; None when it has nothing to
+/// disclose.
+fn own_open(ev: &Ev) -> Option<bool> {
+    if !discloses(ev) {
+        return None;
+    }
+    match ev {
+        Ev::Thinking { open, .. } | Ev::AgentMsg { open, .. } | Ev::Answered { open, .. } => Some(*open),
+        Ev::Tool(td) => Some(td.expanded),
+        _ => None,
+    }
+}
+
+/// Whether event `i` is closed and can open: a thinking section, an
+/// output, a report, a brief, a long level-3 line, a `▸ why`, a fold.
+pub(crate) fn is_closed_at(events: &[Ev], i: usize) -> bool {
+    let ev = &events[i];
+    own_open(ev) == Some(false) || (is_l3(ev) && !fold_open(ev) && folded_run(events, i, false) == Some(i))
+}
+
+/// Anything closed in the feed.
+#[cfg_attr(not(test), allow(dead_code))] // ctrl+t (input.rs) moves to it
+pub(crate) fn anything_closed(events: &[Ev]) -> bool {
+    (0..events.len()).any(|i| is_closed_at(events, i))
+}
+
+/// Open (or close) everything that discloses, folds included.
+#[cfg_attr(not(test), allow(dead_code))] // ctrl+t (input.rs) moves to it
+pub(crate) fn set_everything(events: &mut [Ev], cache: &mut [Option<EventRows>], open: bool) {
+    for i in 0..events.len() {
+        if is_l3(&events[i]) && fold_open(&events[i]) != open && folded_run(events, i, false) == Some(i) {
+            toggle_fold(events, cache, i);
+        }
+        if own_open(&events[i]).is_some_and(|o| o != open) {
+            toggle_own(events, cache, i);
+        }
+    }
 }
