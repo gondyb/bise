@@ -447,7 +447,12 @@ pub(super) const SB_COMMANDS: &[Cmd] = &[
     },
     Cmd {
         name: "/help",
-        desc: "commands and keys",
+        desc: "the commands and the essential keys",
+        args: false,
+    },
+    Cmd {
+        name: "/shortcuts",
+        desc: "every keyboard shortcut (also /keys)",
         args: false,
     },
     Cmd {
@@ -456,8 +461,6 @@ pub(super) const SB_COMMANDS: &[Cmd] = &[
         args: false,
     },
 ];
-
-const KEYS_HELP: &str = "keys (empty composer): Ctrl+K/J next/previous task · ⏎ enter · Space preview · D drop · Esc back to main · Alt+1…9 go to task N · Alt+0 main · Ctrl+G show/hide the card (also Ctrl+A, empty composer) · Ctrl+N/P next/previous card · Alt+R answer the card with the composer text · Ctrl+R voice input (/voice) · Ctrl+F card full screen · Ctrl+X close the card · Ctrl+Z cancel the last route · Ctrl+O shell in the folder of the agent in view";
 
 /// The shell asked with Ctrl+O, if any.
 pub(super) fn take_shell(app: &mut App) -> Option<String> {
@@ -895,17 +898,8 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             app.follow = true;
             out.push(Ev::Info("display cleared".into()));
         }
-        "/help" => {
-            for c in SB_COMMANDS {
-                out.push(Ev::Info(format!("{:<10} — {}", c.name, c.desc)));
-            }
-            out.push(Ev::Info(
-                "@task text — direct message to a task (@main from a task)".into(),
-            ));
-            out.push(Ev::Info(KEYS_HELP.into()));
-            out.push(Ev::Info(crate::editor::EDIT_HELP.into()));
-            out.push(Ev::Info(crate::editor::GHOSTTY_TIPS.into()));
-            out.push(Ev::Info(crate::term::HELP.into()));
+        "/help" | "/shortcuts" | "/shortcut" | "/keys" => {
+            app.help = crate::help::page_of(first).map(crate::help::Overlay::new);
         }
         _ => {
             let focus = sb.focus.clone();
@@ -1731,6 +1725,7 @@ pub fn run_switchboard(
     let mut app = App {
         connected: true,
         term: crate::term::Term::default(),
+        help: None,
         debug,
         line_tools: std::collections::HashMap::new(),
         follow: true,

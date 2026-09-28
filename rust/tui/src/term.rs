@@ -19,7 +19,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tui_term::widget::PseudoTerminal;
 
-pub(crate) const HELP: &str = "terminal: Ctrl+` shows/hides a shell at the bottom (it keeps running while hidden) · while shown every key goes to the shell · wheel or Shift+PgUp/PgDn scroll its history · drag its top border to resize";
 pub(crate) const HINT: &str = "terminal: keys go to the shell · Ctrl+` hide · wheel/Shift+PgUp scroll · drag the border to resize";
 
 const SCROLLBACK: usize = 5000;

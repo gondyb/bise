@@ -56,6 +56,7 @@ mod usage;
 mod term;
 mod feedsel;
 mod keyprobe;
+mod help;
 mod voice;
 #[cfg(test)]
 mod voice_ui_tests;
@@ -2077,6 +2078,8 @@ struct App {
     connected: bool,
     // the embedded terminal (Ctrl+`)
     term: term::Term,
+    // the /help or /shortcuts overlay, when open
+    help: Option<help::Overlay>,
     debug: bool,
     // line mode holds running tools until they finish so the printed
     // line carries the merged annotations (name, args, result)
@@ -2351,7 +2354,12 @@ const COMMANDS: &[Cmd] = &[
     },
     Cmd {
         name: "/help",
-        desc: "list the commands",
+        desc: "the commands and the essential keys",
+        args: false,
+    },
+    Cmd {
+        name: "/shortcuts",
+        desc: "every keyboard shortcut (also /keys)",
         args: false,
     },
     Cmd {
@@ -2593,19 +2601,8 @@ fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             app.info.threshold,
             app.session_id
         )));
-    } else if first == "/help" {
-        for c in COMMANDS {
-            out.push(Ev::Info(format!("{:<11} — {}", c.name, c.desc)));
-        }
-        out.push(Ev::Info(
-            "plain text: new message · during a turn, ⏎ steers the model and Tab queues".into(),
-        ));
-        out.push(Ev::Info(
-            "glyphs: ✦ reasoning · ✓ ok · ✗ failure · ▲ warning · ⟳ compaction · ≡ summary · ↳ preview".into(),
-        ));
-        out.push(Ev::Info(editor::EDIT_HELP.into()));
-        out.push(Ev::Info(editor::GHOSTTY_TIPS.into()));
-        out.push(Ev::Info(term::HELP.into()));
+    } else if let Some(page) = help::page_of(first) {
+        app.help = Some(help::Overlay::new(page));
     } else if first == "/interrupt" {
         // BR-003: the socket is only read between turns, so sending the
         // line to the harness could never interrupt anything - the
@@ -3238,6 +3235,7 @@ fn draw(app: &mut App, frame: &mut Frame) {
         Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(DIM)))),
         chunks[7],
     );
+    help::draw(app, frame);
 }
 
 // one wire line into the feed of the app (the focused view)
@@ -3547,6 +3545,9 @@ fn run_tui(app: &mut App) -> io::Result<()> {
         if poll(wait)? {
             let ev = read()?;
             if let Event::Mouse(m) = ev {
+                if help::mouse(app, &m) {
+                    continue;
+                }
                 if app.term.mouse(&m, terminal.size().map(|s| s.height).unwrap_or(24)) {
                     continue;
                 }
@@ -3689,6 +3690,9 @@ fn run_tui(app: &mut App) -> io::Result<()> {
                 continue;
             }
             if let Event::Key(k) = ev {
+                if help::on_key(app, &k) {
+                    continue;
+                }
                 if term::on_key(app, &k) {
                     continue;
                 }
@@ -3988,6 +3992,7 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
     let mut app = App {
         connected,
         term: term::Term::default(),
+        help: None,
         debug,
         line_tools: std::collections::HashMap::new(),
         follow: true,

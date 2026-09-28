@@ -14,6 +14,7 @@ pub(crate) fn test_app() -> App {
     App {
         connected: true,
         term: crate::term::Term::default(),
+        help: None,
         debug: false,
         line_tools: std::collections::HashMap::new(),
         follow: true,
