@@ -257,20 +257,20 @@ impl Shell {
         });
         match s("do").as_str() {
             "" | "list" => {
-                let cur = me.get("id").and_then(|x| x.as_str()).unwrap_or("arbre de dev");
+                let cur = me.get("id").and_then(|x| x.as_str()).unwrap_or("dev tree");
                 let mut out = vec![format!(
-                    "version courante : {} — {}",
+                    "current version: {} — {}",
                     cur,
                     me.get("subject").and_then(|x| x.as_str()).unwrap_or(&root.to_string_lossy())
                 )];
-                for (k, label) in [("good", "dernière bonne"), ("previous", "précédente")] {
+                for (k, label) in [("good", "last good"), ("previous", "previous")] {
                     if let Some(p) = st.get(k).and_then(|x| x.as_str()) {
-                        out.push(format!("{} : {}", label, id_of(p)));
+                        out.push(format!("{}: {}", label, id_of(p)));
                     }
                 }
                 if let Some(f) = st.get("failed") {
                     out.push(format!(
-                        "dernier échec : {} ({})",
+                        "last failure: {} ({})",
                         id_of(f.get("version").and_then(|x| x.as_str()).unwrap_or("")),
                         f.get("reason").and_then(|x| x.as_str()).unwrap_or("")
                     ));
@@ -281,14 +281,14 @@ impl Shell {
                     .output()
                     .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
                     .unwrap_or_default();
-                out.push(format!("commits ({}) — ● construit :", repo.display()));
+                out.push(format!("commits ({}) — ● built:", repo.display()));
                 for l in log.lines() {
                     let h = l.split(' ').next().unwrap_or("");
                     let built = versions_dir.join(h).join("VERSION").exists();
                     out.push(format!("  {} {}", if built { "●" } else { "○" }, clip(l, 100)));
                 }
                 out.push(
-                    "/version <commit> : passer à ce commit (build si besoin) · /version tree : l'arbre de travail · /version back : revenir"
+                    "/version <commit>: switch to this commit (built if needed) · /version tree: the working tree · /version back: roll back"
                         .into(),
                 );
                 out.join("\n")
@@ -296,10 +296,10 @@ impl Shell {
             "rollback" | "back" if switch::switch_running(&paths) => {
                 // on probation: the switcher itself goes back
                 switch::abort_probation(&paths);
-                "retour à la version précédente (la période d'essai est interrompue)".into()
+                "rolling back to the previous version (probation stopped)".into()
             }
             "switch" if switch::switch_running(&paths) => {
-                "un changement de version est en cours (période d'essai) : attends sa fin, ou /version back".into()
+                "a version switch is in progress (probation): wait for it to end, or /version back".into()
             }
             "rollback" | "back" => {
                 let cur = root.canonicalize().unwrap_or_else(|_| root.clone());
@@ -312,15 +312,15 @@ impl Shell {
                 match target {
                     Some(t) => {
                         self.start_switch(&t);
-                        format!("retour à la version {}", id_of(&t.to_string_lossy()))
+                        format!("rolling back to version {}", id_of(&t.to_string_lossy()))
                     }
-                    None => "pas d'autre version où revenir".into(),
+                    None => "no other version to roll back to".into(),
                 }
             }
             "switch" => {
                 let to = s("to");
                 if to.is_empty() {
-                    return "à quelle version ? (un commit, un id, un dossier, ou tree)".into();
+                    return "which version? (a commit, an id, a folder, or tree)".into();
                 }
                 // a version dir, a built id, else a git revision to build
                 let dir = PathBuf::from(&to);
@@ -333,17 +333,17 @@ impl Shell {
                 };
                 if let Some(t) = target {
                     self.start_switch(&t);
-                    return format!("passage à la version {}", id_of(&t.to_string_lossy()));
+                    return format!("switching to version {}", id_of(&t.to_string_lossy()));
                 }
                 let script = repo.join("versions.sh");
                 if !script.exists() {
-                    return format!("versions.sh introuvable dans {}", repo.display());
+                    return format!("versions.sh not found in {}", repo.display());
                 }
                 let rev = if to == "tree" { "--tree".to_string() } else { to.clone() };
                 let exe = self.opts.exe.clone();
                 let tx = self.tx.clone();
                 let answer = format!(
-                    "build de {} en cours (sans rien interrompre), puis passage à cette version",
+                    "building {} (nothing is interrupted), then switching to this version",
                     to
                 );
                 std::thread::spawn(move || {
@@ -369,18 +369,18 @@ impl Shell {
                             note(
                                 "warn",
                                 format!(
-                                    "build de {} échoué : {}",
+                                    "build of {} failed: {}",
                                     to,
                                     tail.into_iter().rev().collect::<Vec<_>>().join(" ⏎ ")
                                 ),
                             );
                         }
-                        Err(e) => note("warn", format!("build de {} : {}", to, e)),
+                        Err(e) => note("warn", format!("build of {}: {}", to, e)),
                     }
                 });
                 answer
             }
-            other => format!("version : action inconnue {}", other),
+            other => format!("version: unknown action {}", other),
         }
     }
 
@@ -664,7 +664,7 @@ impl Shell {
                     dir,
                     gen,
                     ok_exit: false,
-                    reason: format!("pas de port libre : {}", e),
+                    reason: format!("no free port: {}", e),
                 });
                 return;
             }
@@ -852,7 +852,7 @@ impl Shell {
                 if let Some(c) = self.clients.get_mut(&id) {
                     write_json(
                         c,
-                        &json!({"ev": "notice", "text": format!("op inconnue : {}", other)}),
+                        &json!({"ev": "notice", "text": format!("unknown op: {}", other)}),
                     );
                 }
             }
@@ -865,24 +865,24 @@ impl Shell {
         let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
         let target = s("agent");
         let Some(name) = self.hub.st.resolve(&target) else {
-            return json!({"ok": false, "error": format!("aucun agent nommé {}", target)});
+            return json!({"ok": false, "error": format!("no agent named {}", target)});
         };
         let Some(dir) = self.dir_of(&name) else {
-            return json!({"ok": false, "error": format!("aucun agent nommé {}", target)});
+            return json!({"ok": false, "error": format!("no agent named {}", target)});
         };
         let raw = transcript::read(&self.transcript(&dir));
         let all = transcript::entries(&raw);
         let now = now_ms();
         if v.get("origin") == Some(&json!(true)) {
             let Some(me) = self.hub.st.agents.get(from) else {
-                return json!({"ok": false, "error": "--origin : agent appelant inconnu"});
+                return json!({"ok": false, "error": "--origin: unknown calling agent"});
             };
             return match transcript::origin(&raw, &me.dir, me.created_ms) {
                 Some(o) => {
                     json!({"ok": true, "text": transcript::render_origin(&name, from, &all, &o, now)})
                 }
                 None => {
-                    json!({"ok": false, "error": format!("pas de création de {} dans le fil de {}", from, name)})
+                    json!({"ok": false, "error": format!("no creation of {} in the thread of {}", from, name)})
                 }
             };
         }
@@ -1139,7 +1139,7 @@ fn adopt(r: ReplInfo, dir: String, gen: u64, adir: PathBuf, tx: Sender<Msg>, pat
         .unwrap_or(0);
     let stream = match TcpStream::connect(("127.0.0.1", r.port)) {
         Ok(s) => s,
-        Err(e) => return gone(format!("reconnexion à la REPL : {}", e)),
+        Err(e) => return gone(format!("reconnecting to the REPL: {}", e)),
     };
     let _ = stream.set_nodelay(true);
     let Ok(writer) = stream.try_clone() else {
@@ -1165,9 +1165,9 @@ fn adopt(r: ReplInfo, dir: String, gen: u64, adir: PathBuf, tx: Sender<Msg>, pat
     }
     let tail = err_tail(&adir.join("repl.err"));
     let reason = if tail.is_empty() {
-        "la REPL s'est arrêtée".to_string()
+        "the REPL stopped".to_string()
     } else {
-        format!("la REPL s'est arrêtée · {}", tail)
+        format!("the REPL stopped · {}", tail)
     };
     log_line(
         &paths,
@@ -1226,12 +1226,12 @@ fn supervise(
             break content;
         }
         if let Ok(Some(st)) = child.try_wait() {
-            return gone(false, format!("la REPL est morte au démarrage ({})", st));
+            return gone(false, format!("the REPL died at startup ({})", st));
         }
         if start.elapsed() > Duration::from_secs(30) {
             let _ = child.kill();
             let _ = child.wait();
-            return gone(false, "la REPL n'a pas démarré en 30 s".into());
+            return gone(false, "the REPL did not start within 30 s".into());
         }
         std::thread::sleep(Duration::from_millis(50));
     };
@@ -1251,7 +1251,7 @@ fn supervise(
         Err(e) => {
             let _ = child.kill();
             let _ = child.wait();
-            return gone(false, format!("connexion à la REPL : {}", e));
+            return gone(false, format!("connecting to the REPL: {}", e));
         }
     };
     let _ = stream.set_nodelay(true);
@@ -1404,7 +1404,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     std::fs::create_dir_all(&paths.state)?;
     // one hub per workspace
     if UnixStream::connect(paths.socket()).is_ok() {
-        eprintln!("un hub tourne déjà pour {}", paths.workspace.display());
+        eprintln!("a hub is already running for {}", paths.workspace.display());
         return Ok(());
     }
     let _ = std::fs::remove_file(paths.socket());
@@ -1621,7 +1621,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 // reason to roll back
                 crate::switch::report_failure(
                     &sh.opts.paths,
-                    &format!("la REPL de {} s'est arrêtée : {}", dir, reason),
+                    &format!("the REPL of {} stopped: {}", dir, reason),
                 );
                 if let Some(name) = sh.agent_by_dir(&dir).map(|a| a.name.clone()) {
                     sh.step(Input::ReplExited {

@@ -405,7 +405,7 @@ fn main_learns_what_the_user_said_directly() {
         focus: MAIN.into(),
     });
     assert!(
-        has_line(&fx, MAIN, "Tu as parlé à @docs (1 message)"),
+        has_line(&fx, MAIN, "You talked to @docs (1 message)"),
         "{:?}",
         fx
     );
@@ -1277,7 +1277,7 @@ fn main_replying_to_the_question_closes_its_card() {
     assert!(t.hub.st.cards.contains_key(&card));
     let snap = t.hub.snapshot(t.env.now);
     let note = snap["cards"][0]["note"].as_str().unwrap_or("");
-    assert!(note.contains("@main a écrit à @docs"), "{}", snap);
+    assert!(note.contains("@main wrote to @docs"), "{}", snap);
     // the reply to the question closes it
     let (_, fx) = t.req(
         MAIN,

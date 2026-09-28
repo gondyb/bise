@@ -153,11 +153,11 @@ impl AgentReq {
                 queued: match jstr(v, "mode").as_str() {
                     "" | "steer" => false,
                     "queued" => true,
-                    m => return Err(format!("mode inconnu : {} (steer|queued)", m)),
+                    m => return Err(format!("unknown mode: {} (steer|queued)", m)),
                 },
             },
             "wait" => AgentReq::Wait {
-                msg: parse_msg_id(&jstr(v, "msg")).ok_or("identifiant de message invalide")?,
+                msg: parse_msg_id(&jstr(v, "msg")).ok_or("invalid message id")?,
                 timeout_s: timeout,
             },
             "ask" => AgentReq::Ask {
@@ -170,7 +170,7 @@ impl AgentReq {
                     "working" => Declared::Working,
                     "done" => Declared::Done,
                     "blocked" => Declared::Blocked,
-                    s => return Err(format!("statut inconnu : {} (working|done|blocked)", s)),
+                    s => return Err(format!("unknown status: {} (working|done|blocked)", s)),
                 },
                 note: jstr(v, "note"),
             },
@@ -178,7 +178,7 @@ impl AgentReq {
                 let kind = jstr(v, "kind");
                 if !["progress", "done", "failed", "blocked"].contains(&kind.as_str()) {
                     return Err(format!(
-                        "type de rapport inconnu : {} (progress|done|failed|blocked)",
+                        "unknown report kind: {} (progress|done|failed|blocked)",
                         kind
                     ));
                 }
@@ -217,7 +217,7 @@ impl AgentReq {
                 text: jstr(v, "text"),
                 for_msg: v.get("for").and_then(|x| x.as_str()).and_then(parse_msg_id),
             },
-            other => return Err(format!("commande inconnue : {}", other)),
+            other => return Err(format!("unknown command: {}", other)),
         };
         Ok(req)
     }
@@ -679,7 +679,7 @@ impl Hub {
             .take_while(|m| m.created_ms >= c.created_ms)
             .find(|m| m.from == MAIN && m.to == c.agent && m.reply_to != c.for_msg)?;
         Some(format!(
-            "@main a écrit à @{} depuis (m_{}) : {}",
+            "@main wrote to @{} since then (m_{}): {}",
             c.agent,
             m.id,
             clip(&one_line(&m.text), 120)
@@ -807,16 +807,16 @@ impl Hub {
                 };
                 match ws {
                     Some(w) => res(env.worktree_drop(&name, &w, &loss).map(|r| json!(r))),
-                    None => json!({"err": "aucune tâche"}),
+                    None => json!({"err": "no task"}),
                 }
             }
             "worktree_restore" => match ws {
                 Some(w) => res(env
                     .worktree_restore(&name, &w, snap.as_deref())
                     .map(|w| json!(w))),
-                None => json!({"err": "aucune tâche"}),
+                None => json!({"err": "no task"}),
             },
-            other => json!({"err": format!("requête inconnue : {}", other)}),
+            other => json!({"err": format!("unknown query: {}", other)}),
         }
     }
 
@@ -1038,7 +1038,7 @@ impl Hub {
             UserCmd::Drop { name, force } => match name {
                 None => fx.push(notice(
                     client,
-                    "usage : /drop <tâche> (ou /drop depuis la vue de la tâche)",
+                    "usage: /drop <task> (or /drop from the task's view)",
                 )),
                 Some(name) => self.core(
                     fx,
@@ -1077,11 +1077,11 @@ impl Hub {
                 let mut lines: Vec<String> =
                     self.st.tasks().map(|a| board::task_line(a, now)).collect();
                 if lines.is_empty() {
-                    lines.push("aucune tâche".into());
+                    lines.push("no task".into());
                 }
                 for c in self.st.open_cards() {
                     lines.push(format!(
-                        "carte #{} {} @{} : {}",
+                        "card #{} {} @{}: {}",
                         c.id,
                         c.kind,
                         c.agent,
@@ -1101,7 +1101,7 @@ impl Hub {
                 if first != "/compact" {
                     fx.push(notice(
                         client,
-                        &format!("commande inconnue : {} (voir /help)", first),
+                        &format!("unknown command: {} (see /help)", first),
                     ));
                     return;
                 }
@@ -1164,7 +1164,7 @@ impl Hub {
                 prev.focus,
                 clip_tail(&one_line(&reply), 2000)
             ));
-            input["direct"] = json!(format!("Tu as parlé à @{} ({} message{})", prev.focus, n, s));
+            input["direct"] = json!(format!("You talked to @{} ({} message{})", prev.focus, n, s));
         }
         self.core(fx, env, Some(client), input);
     }
@@ -1174,7 +1174,7 @@ impl Hub {
             return;
         };
         if !yes {
-            fx.push(notice(client, &format!("drop de @{} annulé", name)));
+            fx.push(notice(client, &format!("drop of @{} cancelled", name)));
             return;
         }
         self.core(fx, env, Some(client), json!({"t": "confirm_drop", "name": name}));
@@ -1206,7 +1206,7 @@ impl Hub {
         let q = match req {
             AgentReq::List | AgentReq::Tasks => {
                 let Some(from) = self.st.resolve(from) else {
-                    reply(fx, json!({"ok": false, "error": format!("agent inconnu : {}", from)}));
+                    reply(fx, json!({"ok": false, "error": format!("unknown agent: {}", from)}));
                     return;
                 };
                 let text = if req == AgentReq::List {
@@ -1285,12 +1285,12 @@ impl Hub {
 /// name).
 fn new_task(name: Option<&str>, brief: &Brief, worktree: bool, with_changes: bool) -> Result<Value, String> {
     if brief.objective.trim().is_empty() {
-        return Err("objectif vide".into());
+        return Err("empty objective".into());
     }
     let base = match name {
         Some(n) if !n.is_empty() => {
             if !router::valid_name(n) {
-                return Err(format!("nom invalide : {} ([a-z0-9-], 24 caractères max)", n));
+                return Err(format!("invalid name: {} ([a-z0-9-], 24 characters max)", n));
             }
             n.to_string()
         }
@@ -1304,18 +1304,18 @@ fn new_task(name: Option<&str>, brief: &Brief, worktree: bool, with_changes: boo
 
 
 pub const HELP: &str = "\
-texte simple      message à l'agent affiché (main par défaut)
-@tâche texte      message direct à une tâche, sans passer par main (@main depuis une tâche)
-/new [-w] [nom:] objectif   créer une tâche (-w : worktree git isolé, --with-changes : avec tes modifs)
-/drop [tâche] [--force]     arrêter et archiver une tâche (et supprimer son worktree)
-/restore tâche    rouvrir une tâche archivée (et son worktree sauvegardé)
-/isolate tâche    donner un worktree à une tâche qui n'a encore rien modifié
-/rename a b       renommer une tâche (l'ancien nom reste valable)
-/answer N texte   répondre à la carte d'attention N
-/cancel           annuler le dernier routage s'il n'est pas encore livré
-/tasks            le tableau des tâches
-/interrupt        interrompre le tour de l'agent affiché
-/compact          compacter la conversation de l'agent affiché";
+plain text        message to the agent in view (main by default)
+@task text        direct message to a task, without main (@main from a task)
+/new [-w] [name:] objective   create a task (-w: isolated git worktree, --with-changes: with your changes)
+/drop [task] [--force]        stop and archive a task (and delete its worktree)
+/restore task     reopen an archived task (and its saved worktree)
+/isolate task     give a worktree to a task that has not changed anything yet
+/rename a b       rename a task (the old name still works)
+/answer N text    answer attention card N
+/cancel           cancel the last route if it is not delivered yet
+/tasks            the task board
+/interrupt        interrupt the turn of the agent in view
+/compact          compact the conversation of the agent in view";
 
 #[cfg(test)]
 #[path = "core_tests.rs"]

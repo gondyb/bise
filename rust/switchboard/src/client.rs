@@ -44,7 +44,7 @@ pub fn connect(paths: &Paths, exe: &Path, app_root: &Path) -> std::io::Result<Un
                 }
                 if t0.elapsed() > Duration::from_secs(15) {
                     return Err(std::io::Error::other(format!(
-                        "le hub n'a pas démarré (voir {})",
+                        "the hub did not start (see {})",
                         paths.state.join("hub.err").display()
                     )));
                 }
@@ -87,9 +87,9 @@ pub fn request(socket: &Path, req: &Value, timeout: Duration) -> Result<Value, S
     let mut r = BufReader::new(s);
     let mut answer = String::new();
     r.read_line(&mut answer)
-        .map_err(|e| format!("pas de réponse du hub : {}", e))?;
+        .map_err(|e| format!("no answer from the hub: {}", e))?;
     serde_json::from_str(answer.trim())
-        .map_err(|e| format!("réponse illisible : {} ({})", e, answer.trim()))
+        .map_err(|e| format!("unreadable answer: {} ({})", e, answer.trim()))
 }
 
 /// `request`, through a hub restart (a version switch, a crash): a hub
@@ -113,7 +113,7 @@ pub fn request_retry(
         let again = match &r {
             Ok(_) => false,
             Err(_) if !connected => true,
-            Err(e) => idempotent && e.starts_with("réponse illisible"),
+            Err(e) => idempotent && e.starts_with("unreadable answer"),
         };
         if !again || t0.elapsed() > Duration::from_secs(20) {
             return r;

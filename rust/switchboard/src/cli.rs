@@ -50,7 +50,7 @@ fn parse_args(
                         i += 1;
                         args.get(i)
                             .cloned()
-                            .ok_or(format!("--{} attend une valeur", name))?
+                            .ok_or(format!("--{} expects a value", name))?
                     }
                 };
                 match opts.get_mut(&name) {
@@ -64,7 +64,7 @@ fn parse_args(
                     }
                 }
             } else {
-                return Err(format!("option inconnue : --{}", name));
+                return Err(format!("unknown option: --{}", name));
             }
         } else {
             pos.push(a.clone());
@@ -84,7 +84,7 @@ fn text_of(words: &[String]) -> Result<String, String> {
     }
     let t = words.join(" ");
     if t.trim().is_empty() {
-        return Err("texte manquant".into());
+        return Err("missing text".into());
     }
     Ok(t)
 }
@@ -125,7 +125,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
         }
         "send" => {
             let (pos, o) = parse_args(rest, &["reply-to", "mode"], &["expect-reply"])?;
-            let to = pos.first().ok_or("usage : sb send <agent> \"<texte>\"")?;
+            let to = pos.first().ok_or("usage: sb send <agent> \"<text>\"")?;
             req.insert("to".into(), json!(to.trim_start_matches('@')));
             req.insert("text".into(), json!(text_of(&pos[1..])?));
             req.insert("expect_reply".into(), json!(o.contains_key("expect-reply")));
@@ -134,7 +134,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                     m @ ("steer" | "queued") => {
                         req.insert("mode".into(), json!(m));
                     }
-                    m => return Err(format!("mode inconnu : {} (steer|queued)", m)),
+                    m => return Err(format!("unknown mode: {} (steer|queued)", m)),
                 }
             }
             if o.contains_key("reply-to") {
@@ -143,7 +143,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
         }
         "ask" => {
             let (pos, o) = parse_args(rest, &["timeout"], &[])?;
-            let to = pos.first().ok_or("usage : sb ask <agent> \"<question>\"")?;
+            let to = pos.first().ok_or("usage: sb ask <agent> \"<question>\"")?;
             req.insert("to".into(), json!(to.trim_start_matches('@')));
             req.insert("text".into(), json!(text_of(&pos[1..])?));
             req.insert(
@@ -168,7 +168,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                 "status".into(),
                 json!(pos
                     .first()
-                    .ok_or("usage : sb status working|done|blocked")?),
+                    .ok_or("usage: sb status working|done|blocked")?),
             );
             req.insert("note".into(), json!(str_of(&o, "note")));
         }
@@ -176,7 +176,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
             let (pos, o) = parse_args(rest, &["decision"], &[])?;
             req.insert(
                 "kind".into(),
-                json!(pos.first().ok_or("usage : sb report <kind> \"<résumé>\"")?),
+                json!(pos.first().ok_or("usage: sb report <kind> \"<summary>\"")?),
             );
             req.insert("summary".into(), json!(text_of(&pos[1..])?));
             req.insert("decisions".into(), json!(list_of(o.get("decision"))));
@@ -202,7 +202,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                 objective = pos[1..].join(" ");
             }
             if objective.is_empty() {
-                return Err("sb spawn : --objective est obligatoire".into());
+                return Err("sb spawn: --objective is required".into());
             }
             req.insert("objective".into(), json!(objective));
             req.insert("context".into(), json!(str_of(&o, "context")));
@@ -218,7 +218,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                 "agent".into(),
                 json!(pos
                     .first()
-                    .ok_or(format!("usage : sb {} <tâche>", cmd))?
+                    .ok_or(format!("usage: sb {} <task>", cmd))?
                     .trim_start_matches('@')),
             );
         }
@@ -228,7 +228,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                 "agent".into(),
                 json!(pos
                     .first()
-                    .ok_or("usage : sb stop <tâche> \"<raison>\"")?
+                    .ok_or("usage: sb stop <task> \"<reason>\"")?
                     .trim_start_matches('@')),
             );
             req.insert("reason".into(), json!(pos[1..].join(" ")));
@@ -250,7 +250,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                 "agent".into(),
                 json!(pos
                     .first()
-                    .ok_or("usage : sb inspect <agent>")?
+                    .ok_or("usage: sb inspect <agent>")?
                     .trim_start_matches('@')),
             );
             let n = if o.contains_key("limit") {
@@ -264,7 +264,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                 if o.contains_key(k) {
                     let p = str_of(&o, k);
                     if crate::transcript::parse_pos(&p).is_none() {
-                        return Err(format!("--{} attend une position (#<n>)", k));
+                        return Err(format!("--{} expects a position (#<n>)", k));
                     }
                     req.insert(k.into(), json!(p));
                 }
@@ -272,7 +272,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
             req.insert("origin".into(), json!(o.contains_key("origin")));
         }
         "help" | "--help" | "-h" => return Err(USAGE.into()),
-        other => return Err(format!("commande inconnue : {}\n{}", other, USAGE)),
+        other => return Err(format!("unknown command: {}\n{}", other, USAGE)),
     }
     Ok(Value::Object(req))
 }
@@ -369,7 +369,7 @@ pub fn main(args: &[String]) -> i32 {
     let from = std::env::var("SB_AGENT").unwrap_or_default();
     if socket.is_empty() || from.is_empty() {
         eprintln!(
-            "sb : SB_SOCKET et SB_AGENT manquent (sb ne tourne que dans un agent Switchboard)"
+            "sb: SB_SOCKET and SB_AGENT are missing (sb only runs inside a Switchboard agent)"
         );
         return 2;
     }

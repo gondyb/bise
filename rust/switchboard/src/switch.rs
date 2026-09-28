@@ -210,7 +210,7 @@ fn replace_hub(paths: &Paths, root: &Path) -> Result<(), String> {
         .unwrap_or("")
         .trim();
     Err(format!(
-        "le hub n'a pas démarré{}",
+        "the hub did not start{}",
         if tail.is_empty() {
             String::new()
         } else {
@@ -238,14 +238,14 @@ fn probation(paths: &Paths, period: Duration) -> Result<(), String> {
         }
         match hub_pid(paths) {
             Some(p) if alive(p) => {}
-            _ => return Err("le hub s'est arrêté (crash)".into()),
+            _ => return Err("the hub stopped (crash)".into()),
         }
         if ping(paths) {
             misses = 0;
         } else {
             misses += 1;
             if misses >= 4 {
-                return Err("le hub ne répond plus".into());
+                return Err("the hub no longer answers".into());
             }
         }
     }
@@ -262,7 +262,7 @@ pub fn switch_running(paths: &Paths) -> bool {
 
 /// Roll back the switch on probation now (the user asked).
 pub fn abort_probation(paths: &Paths) {
-    let _ = std::fs::write(fail_file(paths), "retour demandé");
+    let _ = std::fs::write(fail_file(paths), "rollback requested");
 }
 
 /// `sbswitch --to <version dir> [--probation <s>]`: the whole switch.
@@ -273,7 +273,7 @@ pub fn run(paths: &Paths, to: &Path, period: Duration) -> i32 {
         .and_then(|s| s.trim().parse().ok())
     {
         if alive(p) && p != std::process::id() {
-            notice(paths, "warn", "un changement de version est déjà en cours");
+            notice(paths, "warn", "a version switch is already in progress");
             return 1;
         }
     }
@@ -289,7 +289,7 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration) -> i32 {
         notice(
             paths,
             "warn",
-            &format!("version introuvable : {}", to.display()),
+            &format!("version not found: {}", to.display()),
         );
         return 1;
     }
@@ -303,7 +303,7 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration) -> i32 {
         notice(
             paths,
             "warn",
-            "version courante inconnue : pas de retour possible, switch annulé",
+            "current version unknown: no rollback possible, switch cancelled",
         );
         return 1;
     };
@@ -311,7 +311,7 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration) -> i32 {
         notice(
             paths,
             "info",
-            &format!("déjà sur la version {}", id_of(&to)),
+            &format!("already on version {}", id_of(&to)),
         );
         return 0;
     }
@@ -321,7 +321,7 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration) -> i32 {
         paths,
         "info",
         &format!(
-            "passage à la version {} (depuis {}) — les agents continuent",
+            "switching to version {} (from {}) — the agents keep running",
             to_id, from_id
         ),
     );
@@ -345,7 +345,7 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration) -> i32 {
             notice(
                 paths,
                 "info",
-                &format!("version {} validée (période d'essai passée)", to_id),
+                &format!("version {} validated (probation passed)", to_id),
             );
             0
         }
@@ -362,13 +362,13 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration) -> i32 {
             let _ = std::fs::remove_file(fail_file(paths));
             let back = replace_hub(paths, &from);
             let text = format!(
-                "la version {} a échoué ({}) — retour à la version {}{}",
+                "version {} failed ({}) — rollback to version {}{}",
                 to_id,
                 reason,
                 from_id,
                 match &back {
                     Ok(()) => String::new(),
-                    Err(e) => format!(" : ÉCHEC du retour, {}", e),
+                    Err(e) => format!(": ROLLBACK FAILED, {}", e),
                 }
             );
             notice(paths, "warn", &text);

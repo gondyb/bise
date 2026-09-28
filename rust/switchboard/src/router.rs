@@ -133,7 +133,7 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
         let (target, text) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
         let text = text.trim();
         if text.is_empty() {
-            return UserCmd::Invalid(format!("message vide pour @{}", target));
+            return UserCmd::Invalid(format!("empty message for @{}", target));
         }
         return UserCmd::To {
             target: target.to_string(),
@@ -171,10 +171,10 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
             }
             let (name, brief) = split_named(body);
             if brief.is_empty() {
-                return UserCmd::Invalid("usage : /new [-w] [nom:] objectif".into());
+                return UserCmd::Invalid("usage: /new [-w] [name:] objective".into());
             }
             if with_changes && !worktree {
-                return UserCmd::Invalid("--with-changes ne sert qu'avec -w".into());
+                return UserCmd::Invalid("--with-changes only works with -w".into());
             }
             UserCmd::New {
                 name,
@@ -200,7 +200,7 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
             match name {
                 Some(name) if cmd == "/restore" => UserCmd::Restore { name },
                 Some(name) => UserCmd::Isolate { name },
-                None => UserCmd::Invalid(format!("usage : {} <tâche>", cmd)),
+                None => UserCmd::Invalid(format!("usage: {} <task>", cmd)),
             }
         }
         "/rename" => match words.as_slice() {
@@ -212,7 +212,7 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
                 name: focus.to_string(),
                 new_name: b.trim_start_matches('@').to_string(),
             },
-            _ => UserCmd::Invalid("usage : /rename <tâche> <nouveau-nom>".into()),
+            _ => UserCmd::Invalid("usage: /rename <task> <new-name>".into()),
         },
         "/answer" | "/reply" => {
             let (n, text) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
@@ -221,12 +221,12 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
                     card,
                     text: text.trim().to_string(),
                 },
-                _ => UserCmd::Invalid("usage : /answer <carte> <réponse>".into()),
+                _ => UserCmd::Invalid("usage: /answer <card> <answer>".into()),
             }
         }
         "/close" => match rest.trim().trim_start_matches('#').parse::<u64>() {
             Ok(card) => UserCmd::Close { card },
-            _ => UserCmd::Invalid("usage : /close <carte>".into()),
+            _ => UserCmd::Invalid("usage: /close <card>".into()),
         },
         "/cancel" => UserCmd::Cancel,
         "/tasks" => UserCmd::Tasks,

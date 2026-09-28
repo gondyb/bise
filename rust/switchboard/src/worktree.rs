@@ -194,7 +194,7 @@ impl GitEnv {
                 if let Some(d) = dst.parent() {
                     let _ = std::fs::create_dir_all(d);
                 }
-                std::fs::copy(&src, &dst).map_err(|e| format!("copie de {} : {}", f, e))?;
+                std::fs::copy(&src, &dst).map_err(|e| format!("copy of {}: {}", f, e))?;
             }
         }
         if !self.config.setup.trim().is_empty() {
@@ -212,7 +212,7 @@ impl GitEnv {
             ));
             if !out.status.success() {
                 return Err(format!(
-                    "setup `{}` a échoué : {}",
+                    "setup `{}` failed: {}",
                     self.config.setup,
                     crate::util::clip_tail(&String::from_utf8_lossy(&out.stderr), 400)
                 ));
@@ -330,7 +330,7 @@ impl Env for GitEnv {
             };
             let tmp =
                 std::env::temp_dir().join(format!("sb-index-{}-{}", name, std::process::id()));
-            std::fs::copy(&index, &tmp).map_err(|e| format!("copie de l'index : {}", e))?;
+            std::fs::copy(&index, &tmp).map_err(|e| format!("copy of the index: {}", e))?;
             let tmp_s = tmp.to_string_lossy().to_string();
             let env = [("GIT_INDEX_FILE", tmp_s.as_str())];
             let saved = (|| {
@@ -338,7 +338,7 @@ impl Env for GitEnv {
                 let tree = git_env(&path, &["write-tree"], &env)?;
                 let mut id_env: Vec<(&str, &str)> = identity(&path);
                 id_env.extend_from_slice(&env);
-                let msg = format!("switchboard: sauvegarde de la tâche {}", name);
+                let msg = format!("switchboard: backup of task {}", name);
                 let commit = git_env(
                     &path,
                     &["commit-tree", "-p", "HEAD", "-m", &msg, &tree],

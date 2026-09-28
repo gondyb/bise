@@ -285,7 +285,9 @@ fn spawn_line(raw: &[Raw], task: &str, created_ms: u64) -> Option<(usize, bool)>
             let Some(r) = l.strip_prefix("sb spawn : ") else {
                 return false;
             };
-            r.split_once(" → nouvelle tâche ")
+            // " → new task " (older journals: " → nouvelle tâche ")
+            r.split_once(" → new task ")
+                .or_else(|| r.split_once(" → nouvelle tâche "))
                 .map(|(_, t)| {
                     t.strip_prefix(&tag).is_some_and(|rest| {
                         !rest
@@ -297,7 +299,7 @@ fn spawn_line(raw: &[Raw], task: &str, created_ms: u64) -> Option<(usize, bool)>
                 .unwrap_or(false)
         })
         .min_by_key(|(_, ms, _)| ms.abs_diff(created_ms))
-        .map(|(pos, _, l)| (*pos, l.starts_with("sb spawn : toi →")))
+        .map(|(pos, _, l)| (*pos, (l.starts_with("sb spawn : you →") || l.starts_with("sb spawn : toi →"))))
 }
 
 /// Where a task came from in its parent's thread.
@@ -400,10 +402,10 @@ mod tests {
             "sb you : ajoute le mode sombre\\n\\navec un toggle", // 5
             "  obs: assistant: je crée une tâche",                // 6
             "tool #1 bash : sb spawn dark --objective x",         // 7
-            "sb spawn : main → nouvelle tâche @dark : x",         // 8
-            "sb spawn : main → nouvelle tâche @dark-2 : y",       // 9
+            "sb spawn : main → new task @dark : x",               // 8
+            "sb spawn : main → new task @dark-2 : y",             // 9
             "sb you : et les tests ?",                            // 10
-            "sb spawn : toi → nouvelle tâche @solo : z",          // 11
+            "sb spawn : toi → nouvelle tâche @solo : z",          // 11 (older French journal)
         ])
     }
 
@@ -472,7 +474,7 @@ mod tests {
         assert!(text.contains("--around #<pos>"));
         let spawns = window(
             &e,
-            &words_of("nouvelle tâche"),
+            &words_of("new task"),
             Anchor::Before(11),
             20,
             BUDGET,
@@ -516,9 +518,9 @@ mod tests {
     fn a_reused_name_takes_the_nearest_spawn() {
         let raw = log(&[
             "sb you : a",
-            "sb spawn : main → nouvelle tâche @t : a",
+            "sb spawn : main → new task @t : a",
             "sb you : b",
-            "sb spawn : main → nouvelle tâche @t : b",
+            "sb spawn : main → new task @t : b",
         ]);
         assert_eq!(
             origin(&raw, "t", 1003),

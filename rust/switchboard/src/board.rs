@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 fn ws_label(a: &Agent) -> String {
     match a.ws.mode {
-        Mode::Worktree if a.ws.dropped => " [worktree supprimé]".to_string(),
+        Mode::Worktree if a.ws.dropped => " [worktree dropped]".to_string(),
         Mode::Worktree => format!(" [worktree {}]", a.ws.branch.clone().unwrap_or_default()),
         Mode::Shared => String::new(),
     }
@@ -96,7 +96,7 @@ pub fn agent_threads(st: &State, limit: usize) -> Vec<String> {
                 parties.join(" ↔ "),
                 ms.len(),
                 if ms.len() > 1 { "s" } else { "" },
-                if open { "ouvert" } else { "répondu" },
+                if open { "open" } else { "answered" },
                 clip(&one_line(&ms[0].text), 60)
             ),
         ));
@@ -498,7 +498,7 @@ mod tests {
         let t = agent_threads(&st, 8);
         assert_eq!(t.len(), 1);
         assert!(
-            t[0].contains("docs ↔ auth-fix") && t[0].contains("ouvert"),
+            t[0].contains("docs ↔ auth-fix") && t[0].contains("open"),
             "{}",
             t[0]
         );
