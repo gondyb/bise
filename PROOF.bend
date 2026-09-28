@@ -1721,28 +1721,28 @@ def hub_rej_skip(+ids: List<&2, Nat>, +h: HM.MRec, +t: List<&2, HM.MRec>, +nf: {
         hub_rej_skip(ns, h, HM.map_msg(t, i, HM.OSt{HM.Rejected{"recipient_unavailable"}}),
           hub_or_false_r(Nat.is_eq(i, HM.Msg.id(HM.MRec.msg(h))), HM.nat_in(ns, HM.Msg.id(HM.MRec.msg(h))), nf)))
 
-def hub_q_sub.pick(c: Bool, +h: HM.MRec, -tt: List<&2, HM.MRec>, -n: String, +x: Nat,
-    +e: {Bool.and(String.eq(HM.Msg.to(HM.MRec.msg(h)), n), HM.is_queued(HM.MRec.st(h))) == c : Bool},
+def hub_q_sub.pick(c: Bool, +h: HM.MRec, -tt: List<&2, HM.MRec>, -n: List<&2, String>, +x: Nat,
+    +e: {Bool.and(HM.str_in(n, HM.Msg.to(HM.MRec.msg(h))), HM.is_queued(HM.MRec.st(h))) == c : Bool},
     e1: {Nat.is_eq(HM.Msg.id(HM.MRec.msg(h)), x) == False{} : Bool},
     ih: {HM.nat_in(HC.ids_of(HM.queued_in(tt, n)), x) == False{} : Bool})
-    -> {HM.nat_in(HC.ids_of(Bool.pick(List<&2, HM.Msg>, Bool.and(String.eq(HM.Msg.to(HM.MRec.msg(h)), n), HM.is_queued(HM.MRec.st(h))),
+    -> {HM.nat_in(HC.ids_of(Bool.pick(List<&2, HM.Msg>, Bool.and(HM.str_in(n, HM.Msg.to(HM.MRec.msg(h))), HM.is_queued(HM.MRec.st(h))),
           HM.MRec.msg(h) <> HM.queued_in(tt, n), HM.queued_in(tt, n))), x) == False{} : Bool}:
   match c:
     case True{}:
-      %Equal.sym(Bool, Bool.and(String.eq(HM.Msg.to(HM.MRec.msg(h)), n), HM.is_queued(HM.MRec.st(h))), True{}, e) : {HM.nat_in(HC.ids_of(Bool.pick(List<&2, HM.Msg>, _, HM.MRec.msg(h) <> HM.queued_in(tt, n), HM.queued_in(tt, n))), x) == False{} : Bool}
+      %Equal.sym(Bool, Bool.and(HM.str_in(n, HM.Msg.to(HM.MRec.msg(h))), HM.is_queued(HM.MRec.st(h))), True{}, e) : {HM.nat_in(HC.ids_of(Bool.pick(List<&2, HM.Msg>, _, HM.MRec.msg(h) <> HM.queued_in(tt, n), HM.queued_in(tt, n))), x) == False{} : Bool}
       hub_or_false(Nat.is_eq(HM.Msg.id(HM.MRec.msg(h)), x), HM.nat_in(HC.ids_of(HM.queued_in(tt, n)), x), e1, ih)
     case False{}:
-      %Equal.sym(Bool, Bool.and(String.eq(HM.Msg.to(HM.MRec.msg(h)), n), HM.is_queued(HM.MRec.st(h))), False{}, e) : {HM.nat_in(HC.ids_of(Bool.pick(List<&2, HM.Msg>, _, HM.MRec.msg(h) <> HM.queued_in(tt, n), HM.queued_in(tt, n))), x) == False{} : Bool}
+      %Equal.sym(Bool, Bool.and(HM.str_in(n, HM.Msg.to(HM.MRec.msg(h))), HM.is_queued(HM.MRec.st(h))), False{}, e) : {HM.nat_in(HC.ids_of(Bool.pick(List<&2, HM.Msg>, _, HM.MRec.msg(h) <> HM.queued_in(tt, n), HM.queued_in(tt, n))), x) == False{} : Bool}
       ih
 
 # the queued ids of a list are among its ids
-def hub_q_sub(+t: List<&2, HM.MRec>, +x: Nat, +n: String, +nf: {HM.nat_in(HI.ids(t), x) == False{} : Bool})
+def hub_q_sub(+t: List<&2, HM.MRec>, +x: Nat, +n: List<&2, String>, +nf: {HM.nat_in(HI.ids(t), x) == False{} : Bool})
     -> {HM.nat_in(HC.ids_of(HM.queued_in(t, n)), x) == False{} : Bool}:
   match t:
     case Nil{}:
       {==}
     case Con{h, tt}:
-      hub_q_sub.pick(Bool.and(String.eq(HM.Msg.to(HM.MRec.msg(h)), n), HM.is_queued(HM.MRec.st(h))), h, tt, n, x, {==},
+      hub_q_sub.pick(Bool.and(HM.str_in(n, HM.Msg.to(HM.MRec.msg(h))), HM.is_queued(HM.MRec.st(h))), h, tt, n, x, {==},
         hub_or_false_l(Nat.is_eq(HM.Msg.id(HM.MRec.msg(h)), x), HM.nat_in(HI.ids(tt), x), nf),
         hub_q_sub(tt, x, n, hub_or_false_r(Nat.is_eq(HM.Msg.id(HM.MRec.msg(h)), x), HM.nat_in(HI.ids(tt), x), nf)))
 
@@ -1753,25 +1753,25 @@ def hub_and_left(a: Bool, -b: Bool, e: {Bool.and(a, b) == True{} : Bool}) -> {a 
     case False{}:
       hub_absurd_eq(hub_ft_absurd(e), Bool, False{}, True{})
 
-def hub_K.pick(c: Bool, +m: HM.Msg, +st: HM.MSt, +se: Bool, +t: List<&2, HM.MRec>, +n: String,
-    +e: {Bool.and(String.eq(HM.Msg.to(m), n), HM.is_queued(st)) == c : Bool}, +dh: {HM.nat_in(HI.ids(t), HM.Msg.id(m)) == False{} : Bool},
+def hub_K.pick(c: Bool, +m: HM.Msg, +st: HM.MSt, +se: Bool, +t: List<&2, HM.MRec>, +n: List<&2, String>,
+    +e: {Bool.and(HM.str_in(n, HM.Msg.to(m)), HM.is_queued(st)) == c : Bool}, +dh: {HM.nat_in(HI.ids(t), HM.Msg.id(m)) == False{} : Bool},
     ih: {HM.queued_in(hub_rej(HC.ids_of(HM.queued_in(t, n)), t), n) == Nil{} : List<&2, HM.Msg>})
-    -> {HM.queued_in(hub_rej(HC.ids_of(Bool.pick(List<&2, HM.Msg>, Bool.and(String.eq(HM.Msg.to(m), n), HM.is_queued(st)), m <> HM.queued_in(t, n), HM.queued_in(t, n))), HM.MRec{m, st, se} <> t), n) == Nil{} : List<&2, HM.Msg>}:
+    -> {HM.queued_in(hub_rej(HC.ids_of(Bool.pick(List<&2, HM.Msg>, Bool.and(HM.str_in(n, HM.Msg.to(m)), HM.is_queued(st)), m <> HM.queued_in(t, n), HM.queued_in(t, n))), HM.MRec{m, st, se} <> t), n) == Nil{} : List<&2, HM.Msg>}:
   match c:
     case True{}:
-      %Equal.sym(Bool, Bool.and(String.eq(HM.Msg.to(m), n), HM.is_queued(st)), True{}, e) : {HM.queued_in(hub_rej(HC.ids_of(Bool.pick(List<&2, HM.Msg>, _, m <> HM.queued_in(t, n), HM.queued_in(t, n))), HM.MRec{m, st, se} <> t), n) == Nil{} : List<&2, HM.Msg>}
+      %Equal.sym(Bool, Bool.and(HM.str_in(n, HM.Msg.to(m)), HM.is_queued(st)), True{}, e) : {HM.queued_in(hub_rej(HC.ids_of(Bool.pick(List<&2, HM.Msg>, _, m <> HM.queued_in(t, n), HM.queued_in(t, n))), HM.MRec{m, st, se} <> t), n) == Nil{} : List<&2, HM.Msg>}
       %Equal.sym(Bool, Nat.is_eq(HM.Msg.id(m), HM.Msg.id(m)), True{}, hub_eq_refl(HM.Msg.id(m))) : {HM.queued_in(hub_rej(HC.ids_of(HM.queued_in(t, n)), Bool.pick(List<&2, HM.MRec>, _, HM.rec_op(HM.MRec{m, st, se}, HM.OSt{HM.Rejected{"recipient_unavailable"}}) <> t, HM.MRec{m, st, se} <> HM.map_msg(t, HM.Msg.id(m), HM.OSt{HM.Rejected{"recipient_unavailable"}}))), n) == Nil{} : List<&2, HM.Msg>}
       %Equal.sym(List<&2, HM.MRec>, hub_rej(HC.ids_of(HM.queued_in(t, n)), HM.MRec{m, HM.Rejected{"recipient_unavailable"}, se} <> t), HM.MRec{m, HM.Rejected{"recipient_unavailable"}, se} <> hub_rej(HC.ids_of(HM.queued_in(t, n)), t), hub_rej_skip(HC.ids_of(HM.queued_in(t, n)), HM.MRec{m, HM.Rejected{"recipient_unavailable"}, se}, t, hub_q_sub(t, HM.Msg.id(m), n, dh))) : {HM.queued_in(_, n) == Nil{} : List<&2, HM.Msg>}
-      %Equal.sym(Bool, String.eq(HM.Msg.to(m), n), True{}, hub_and_left(String.eq(HM.Msg.to(m), n), HM.is_queued(st), e)) : {Bool.pick(List<&2, HM.Msg>, Bool.and(_, False{}), m <> HM.queued_in(hub_rej(HC.ids_of(HM.queued_in(t, n)), t), n), HM.queued_in(hub_rej(HC.ids_of(HM.queued_in(t, n)), t), n)) == Nil{} : List<&2, HM.Msg>}
+      %Equal.sym(Bool, HM.str_in(n, HM.Msg.to(m)), True{}, hub_and_left(HM.str_in(n, HM.Msg.to(m)), HM.is_queued(st), e)) : {Bool.pick(List<&2, HM.Msg>, Bool.and(_, False{}), m <> HM.queued_in(hub_rej(HC.ids_of(HM.queued_in(t, n)), t), n), HM.queued_in(hub_rej(HC.ids_of(HM.queued_in(t, n)), t), n)) == Nil{} : List<&2, HM.Msg>}
       ih
     case False{}:
-      %Equal.sym(Bool, Bool.and(String.eq(HM.Msg.to(m), n), HM.is_queued(st)), False{}, e) : {HM.queued_in(hub_rej(HC.ids_of(Bool.pick(List<&2, HM.Msg>, _, m <> HM.queued_in(t, n), HM.queued_in(t, n))), HM.MRec{m, st, se} <> t), n) == Nil{} : List<&2, HM.Msg>}
+      %Equal.sym(Bool, Bool.and(HM.str_in(n, HM.Msg.to(m)), HM.is_queued(st)), False{}, e) : {HM.queued_in(hub_rej(HC.ids_of(Bool.pick(List<&2, HM.Msg>, _, m <> HM.queued_in(t, n), HM.queued_in(t, n))), HM.MRec{m, st, se} <> t), n) == Nil{} : List<&2, HM.Msg>}
       %Equal.sym(List<&2, HM.MRec>, hub_rej(HC.ids_of(HM.queued_in(t, n)), HM.MRec{m, st, se} <> t), HM.MRec{m, st, se} <> hub_rej(HC.ids_of(HM.queued_in(t, n)), t), hub_rej_skip(HC.ids_of(HM.queued_in(t, n)), HM.MRec{m, st, se}, t, hub_q_sub(t, HM.Msg.id(m), n, dh))) : {HM.queued_in(_, n) == Nil{} : List<&2, HM.Msg>}
-      %Equal.sym(Bool, Bool.and(String.eq(HM.Msg.to(m), n), HM.is_queued(st)), False{}, e) : {Bool.pick(List<&2, HM.Msg>, _, m <> HM.queued_in(hub_rej(HC.ids_of(HM.queued_in(t, n)), t), n), HM.queued_in(hub_rej(HC.ids_of(HM.queued_in(t, n)), t), n)) == Nil{} : List<&2, HM.Msg>}
+      %Equal.sym(Bool, Bool.and(HM.str_in(n, HM.Msg.to(m)), HM.is_queued(st)), False{}, e) : {Bool.pick(List<&2, HM.Msg>, _, m <> HM.queued_in(hub_rej(HC.ids_of(HM.queued_in(t, n)), t), n), HM.queued_in(hub_rej(HC.ids_of(HM.queued_in(t, n)), t), n)) == Nil{} : List<&2, HM.Msg>}
       ih
 
 # rejecting every message queued for `n` leaves none queued for it
-def hub_K(+xs: List<&2, HM.MRec>, +n: String, d: HI.Distinct(HI.ids(xs))) -> {HM.queued_in(hub_rej(HC.ids_of(HM.queued_in(xs, n)), xs), n) == Nil{} : List<&2, HM.Msg>}:
+def hub_K(+xs: List<&2, HM.MRec>, +n: List<&2, String>, d: HI.Distinct(HI.ids(xs))) -> {HM.queued_in(hub_rej(HC.ids_of(HM.queued_in(xs, n)), xs), n) == Nil{} : List<&2, HM.Msg>}:
   match xs:
     case Nil{}:
       {==}
@@ -1780,7 +1780,7 @@ def hub_K(+xs: List<&2, HM.MRec>, +n: String, d: HI.Distinct(HI.ids(xs))) -> {HM
         case HM.MRec{m, st, se}:
           match d:
             case HX.Both{dh, dt}:
-              hub_K.pick(Bool.and(String.eq(HM.Msg.to(m), n), HM.is_queued(st)), m, st, se, t, n, {==}, dh, hub_K(t, n, dt))
+              hub_K.pick(Bool.and(HM.str_in(n, HM.Msg.to(m)), HM.is_queued(st)), m, st, se, t, n, {==}, dh, hub_K(t, n, dt))
 
 def hub_d_hout(-o: HM.St, +cx: HX.Cx<o>, +kvs: List<&2, Sigma<&2, &2, String, _ => J.Json>>) -> {HX.d(o, HC.out(o, cx, kvs)) == HX.d(o, cx) : HM.St}:
   match cx:
@@ -1827,9 +1827,60 @@ def hub_msgs_close_ids(-o: HM.St, +ids: List<&2, Nat>, +cx: HX.Cx<o>, +res: Stri
               hub_d_emit(o, cx, HM.ECardClosed{id, res}, Unit{}, Unit{}, Unit{})),
             hub_msgs_closed(HX.d(o, cx), id, res))))
 
-def hub_msgs_tr(-a: List<&2, HM.MRec>, -b: List<&2, HM.MRec>, -n: String, e: {a == b : List<&2, HM.MRec>},
+def hub_msgs_tr(-a: List<&2, HM.MRec>, -b: List<&2, HM.MRec>, -n: List<&2, String>, e: {a == b : List<&2, HM.MRec>},
     k: {HM.queued_in(b, n) == Nil{} : List<&2, HM.Msg>}) -> {HM.queued_in(a, n) == Nil{} : List<&2, HM.Msg>}:
   %Equal.sym(List<&2, HM.MRec>, a, b, e) : {HM.queued_in(_, n) == Nil{} : List<&2, HM.Msg>}
+  k
+
+def hub_agents_eq(-o: HM.St, -a: HX.Cx<o>, -b: HX.Cx<o>, e: {HX.d(o, a) == HX.d(o, b) : HM.St}) -> {HM.St.agents(HX.d(o, a)) == HM.St.agents(HX.d(o, b)) : List<&2, HM.Agent>}:
+  Equal.cong(HM.St, List<&2, HM.Agent>, s => HM.St.agents(s), HX.d(o, a), HX.d(o, b), e)
+
+def hub_agents_closed(s: HM.St, +id: Nat, +res: String) -> {HM.St.agents(HM.apply(s, HM.ECardClosed{id, res})) == HM.St.agents(s) : List<&2, HM.Agent>}:
+  match s:
+    case HM.St{ag, od, ms, ca, no, nm, nc}:
+      {==}
+
+def hub_agents_close_ids(-o: HM.St, +ids: List<&2, Nat>, +cx: HX.Cx<o>, +res: String)
+    -> {HM.St.agents(HX.d(o, HC.close_ids(o, ids, cx, res))) == HM.St.agents(HX.d(o, cx)) : List<&2, HM.Agent>}:
+  match ids:
+    case Nil{}:
+      {==}
+    case Con{id, rest}:
+      +ev = {HM.ECardClosed{id, res} : HM.Ev}
+      +cx2 = HC.emit(o, cx, ev, Unit{}, Unit{}, Unit{})
+      +cx3 = HC.line(o, cx2, HM.MAIN(), "card-closed", HC.cat(["#", HC.ns(id), " ", res]))
+      Equal.trans(List<&2, HM.Agent>, HM.St.agents(HX.d(o, HC.close_ids(o, rest, cx3, res))), HM.St.agents(HX.d(o, cx3)), HM.St.agents(HX.d(o, cx)),
+        hub_agents_close_ids(o, rest, cx3, res),
+        Equal.trans(List<&2, HM.Agent>, HM.St.agents(HX.d(o, cx3)), HM.St.agents(HX.d(o, cx2)), HM.St.agents(HX.d(o, cx)),
+          hub_agents_eq(o, cx3, cx2, hub_d_line(o, cx2, HM.MAIN(), "card-closed", HC.cat(["#", HC.ns(id), " ", res]))),
+          Equal.trans(List<&2, HM.Agent>, HM.St.agents(HX.d(o, cx2)), HM.St.agents(HM.apply(HX.d(o, cx), ev)), HM.St.agents(HX.d(o, cx)),
+            Equal.cong(HM.St, List<&2, HM.Agent>, s => HM.St.agents(s), HX.d(o, cx2), HM.apply(HX.d(o, cx), ev), hub_d_emit(o, cx, ev, Unit{}, Unit{}, Unit{})),
+            hub_agents_closed(HX.d(o, cx), id, res))))
+
+def hub_agents_state(s: HM.St, +id: Nat, +x: HM.MSt) -> {HM.St.agents(HM.apply(s, HM.EMsgState{id, x})) == HM.St.agents(s) : List<&2, HM.Agent>}:
+  match s:
+    case HM.St{ag, od, ms, ca, no, nm, nc}:
+      {==}
+
+def hub_agents_reject(-o: HM.St, +ids: List<&2, Nat>, +cx: HX.Cx<o>)
+    -> {HM.St.agents(HX.d(o, HC.reject_ids(o, ids, cx))) == HM.St.agents(HX.d(o, cx)) : List<&2, HM.Agent>}:
+  match ids:
+    case Nil{}:
+      {==}
+    case Con{id, t}:
+      +ev = {HM.EMsgState{id, HM.Rejected{"recipient_unavailable"}} : HM.Ev}
+      +cx2 = HC.emit(o, cx, ev, Unit{}, Unit{}, Unit{})
+      Equal.trans(List<&2, HM.Agent>, HM.St.agents(HX.d(o, HC.reject_ids(o, t, cx2))), HM.St.agents(HX.d(o, cx2)), HM.St.agents(HX.d(o, cx)),
+        hub_agents_reject(o, t, cx2),
+        Equal.trans(List<&2, HM.Agent>, HM.St.agents(HX.d(o, cx2)), HM.St.agents(HM.apply(HX.d(o, cx), ev)), HM.St.agents(HX.d(o, cx)),
+          Equal.cong(HM.St, List<&2, HM.Agent>, s => HM.St.agents(s), HX.d(o, cx2), HM.apply(HX.d(o, cx), ev), hub_d_emit(o, cx, ev, Unit{}, Unit{}, Unit{})),
+          hub_agents_state(HX.d(o, cx), id, HM.Rejected{"recipient_unavailable"})))
+
+def hub_names_tr(-a: List<&2, HM.MRec>, -b: List<&2, HM.MRec>, -na: List<&2, String>, -nb: List<&2, String>,
+    e: {a == b : List<&2, HM.MRec>}, en: {na == nb : List<&2, String>},
+    k: {HM.queued_in(b, nb) == Nil{} : List<&2, HM.Msg>}) -> {HM.queued_in(a, na) == Nil{} : List<&2, HM.Msg>}:
+  %Equal.sym(List<&2, HM.MRec>, a, b, e) : {HM.queued_in(_, na) == Nil{} : List<&2, HM.Msg>}
+  %Equal.sym(List<&2, String>, na, nb, en) : {HM.queued_in(b, _) == Nil{} : List<&2, HM.Msg>}
   k
 
 def Laws.stop_leaves_no_queue(o, cx, n, life, why, u):
@@ -1842,7 +1893,8 @@ def Laws.stop_leaves_no_queue(o, cx, n, life, why, u):
   +ev = {HM.ELifecycle{n, life, Bool.pick(Maybe<&2, String>, String.is_empty(why), None{}, Some{why})} : HM.Ev}
   +cx5 = HC.emit(o, cx4, ev, Unit{}, Unit{}, Unit{})
   +m5 = HM.St.msgs(HX.d(o, cx5))
-  +ids = HC.ids_of(HM.queued_in(m5, n))
+  +n5 = HM.names_of(HX.d(o, cx5), n)
+  +ids = HC.ids_of(HM.queued_in(m5, n5))
   +cx6 = HC.reject_ids(o, ids, cx5)
   +g = HC.stop_task.go(o, cx, n, life, why)
   # d is unchanged up to cx4
@@ -1862,8 +1914,16 @@ def Laws.stop_leaves_no_queue(o, cx, n, life, why, u):
     Equal.trans(List<&2, HM.MRec>, HM.St.msgs(HX.d(o, g)), HM.St.msgs(HX.d(o, cx6)), hub_rej(ids, m5),
       hub_msgs_close_ids(o, HC.card_ids(HM.St.cards(HX.d(o, cx6)), n, Nil{}), cx6, "task stopped"),
       hub_msgs_reject(o, ids, cx5)))
-  hub_msgs_tr(HM.St.msgs(HX.d(o, HC.stop_task(o, cx, n, life, why))), hub_rej(ids, m5), n, ef,
-    hub_K(m5, n, hub_distinct_tr(HI.ids(m5), HI.ids(HM.St.msgs(HX.d(o, cx))),
+  # the names at the end: those of cx5 (no agent changes after it)
+  +en = Equal.cong(List<&2, HM.Agent>, List<&2, String>, xs => n <> HM.names_of.go(HM.agent_named(xs, n)),
+    HM.St.agents(HX.d(o, HC.stop_task(o, cx, n, life, why))), HM.St.agents(HX.d(o, cx5)),
+    Equal.trans(List<&2, HM.Agent>, HM.St.agents(HX.d(o, HC.stop_task(o, cx, n, life, why))), HM.St.agents(HX.d(o, g)), HM.St.agents(HX.d(o, cx5)),
+      hub_agents_eq(o, HC.stop_task(o, cx, n, life, why), g, hub_d_with_r(o, g, HX.R.with_waiters(HC.rr(o, g), HC.waiters_not(HX.R.waiters(HC.rr(o, cx)), n)))),
+      Equal.trans(List<&2, HM.Agent>, HM.St.agents(HX.d(o, g)), HM.St.agents(HX.d(o, cx6)), HM.St.agents(HX.d(o, cx5)),
+        hub_agents_close_ids(o, HC.card_ids(HM.St.cards(HX.d(o, cx6)), n, Nil{}), cx6, "task stopped"),
+        hub_agents_reject(o, ids, cx5))))
+  hub_names_tr(HM.St.msgs(HX.d(o, HC.stop_task(o, cx, n, life, why))), hub_rej(ids, m5), HM.names_of(HX.d(o, HC.stop_task(o, cx, n, life, why)), n), n5, ef, en,
+    hub_K(m5, n5, hub_distinct_tr(HI.ids(m5), HI.ids(HM.St.msgs(HX.d(o, cx))),
       Equal.cong(List<&2, HM.MRec>, List<&2, Nat>, xs => HI.ids(xs), m5, HM.St.msgs(HX.d(o, cx)), e5),
       hub_fst(HI.Distinct(HI.ids(HM.St.msgs(HX.d(o, cx)))), HI.Below(HI.ids(HM.St.msgs(HX.d(o, cx))), HM.St.next_msg(HX.d(o, cx))), u))))
 
@@ -2008,7 +2068,7 @@ def Laws.stop_leaves_no_card(o, cx, n, life, why, u):
   +cx4 = HC.upd_rt(o, cx3, x4)
   +ev = {HM.ELifecycle{n, life, Bool.pick(Maybe<&2, String>, String.is_empty(why), None{}, Some{why})} : HM.Ev}
   +cx5 = HC.emit(o, cx4, ev, Unit{}, Unit{}, Unit{})
-  +ids = HC.ids_of(HM.queued_in(HM.St.msgs(HX.d(o, cx5)), n))
+  +ids = HC.ids_of(HM.queued_in(HM.St.msgs(HX.d(o, cx5)), HM.names_of(HX.d(o, cx5), n)))
   +cx6 = HC.reject_ids(o, ids, cx5)
   +c6 = HM.St.cards(HX.d(o, cx6))
   +g = HC.stop_task.go(o, cx, n, life, why)

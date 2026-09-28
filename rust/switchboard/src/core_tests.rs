@@ -1445,3 +1445,21 @@ fn main_restores_and_isolates_a_task_and_tasks_cannot() {
     let (tok, fx) = t.req(MAIN, AgentReq::Isolate { agent: "a".into() });
     assert!(err_of(&fx, tok).contains("already"), "{:?}", reply(&fx, tok));
 }
+
+/// Found while stating the law L4 (no message stuck in a queue): a message
+/// queued for a task that is renamed before it is delivered reaches the
+/// task under its new name.
+#[test]
+fn a_message_queued_before_a_rename_reaches_the_new_name() {
+    let mut t = T::new();
+    t.spawn_task("docs");
+    t.hub.force_run("docs", Run::Starting);
+    t.user(MAIN, "@docs change de plan");
+    let id = t.hub.st.msgs.values().find(|m| m.text == "change de plan").unwrap().id;
+    assert!(matches!(t.hub.st.msg_state.get(&id), Some(MsgState::Queued { .. })));
+    t.user(MAIN, "/rename docs api");
+    assert!(t.hub.st.agents.contains_key("api"));
+    let fx = t.go(Input::ReplReady { agent: "api".into() });
+    assert!(say_to(&fx, "api").unwrap_or_default().contains("change de plan"), "{:?}", fx);
+    assert!(matches!(t.hub.st.msg_state.get(&id), Some(MsgState::Delivered)));
+}

@@ -517,34 +517,46 @@ def is_delivered(s: MSt) -> Bool:
     case Cancelled{}:
       False{}
 
-def queued_in(xs: List<&2, MRec>, +n: String) -> List<&2, Msg>:
+def queued_in(xs: List<&2, MRec>, +ns: List<&2, String>) -> List<&2, Msg>:
   match xs:
     case Nil{}:
       Nil{}
     case Con{+r, +t}:
-      +rest = queued_in(t, n)
-      Bool.pick(List<&2, Msg>, String.eq(Msg.to(MRec.msg(r)), n) && is_queued(MRec.st(r)), MRec.msg(r) <> rest, rest)
+      +rest = queued_in(t, ns)
+      Bool.pick(List<&2, Msg>, str_in(ns, Msg.to(MRec.msg(r))) && is_queued(MRec.st(r)), MRec.msg(r) <> rest, rest)
 
-# messages waiting for delivery to `n`, oldest first
+def names_of.go(m: Maybe<&2, Agent>) -> List<&2, String>:
+  match m:
+    case None{}:
+      Nil{}
+    case Some{+a}:
+      Agent.aliases(a)
+
+# an agent's names: its own and its old ones (a message sent before a
+# rename is still for it)
+def names_of(+st: St, +n: String) -> List<&2, String>:
+  n <> names_of.go(get_agent(st, n))
+
+# messages waiting for delivery to `n` (under any of its names), oldest first
 def queued_for(+st: St, +n: String) -> List<&2, Msg>:
-  queued_in(St.msgs(st), n)
+  queued_in(St.msgs(st), names_of(st, n))
 
 def Msg.expect(x: Msg) -> Bool:
   match x:
     case Msg{_, _, _, _, _, +expect, _, _, _, _, _, _}:
       expect
 
-def unanswered_in(xs: List<&2, MRec>, +n: String) -> List<&2, Msg>:
+def unanswered_in(xs: List<&2, MRec>, +ns: List<&2, String>) -> List<&2, Msg>:
   match xs:
     case Nil{}:
       Nil{}
     case Con{+r, +t}:
-      +rest = unanswered_in(t, n)
-      Bool.pick(List<&2, Msg>, String.eq(Msg.to(MRec.msg(r)), n) && Msg.expect(MRec.msg(r)) && Bool.not(MRec.settled(r)) && is_delivered(MRec.st(r)), MRec.msg(r) <> rest, rest)
+      +rest = unanswered_in(t, ns)
+      Bool.pick(List<&2, Msg>, str_in(ns, Msg.to(MRec.msg(r))) && Msg.expect(MRec.msg(r)) && Bool.not(MRec.settled(r)) && is_delivered(MRec.st(r)), MRec.msg(r) <> rest, rest)
 
 # delivered messages to `n` that expect a reply it has not given
 def unanswered_for(+st: St, +n: String) -> List<&2, Msg>:
-  unanswered_in(St.msgs(st), n)
+  unanswered_in(St.msgs(st), names_of(st, n))
 
 def msg_of.go(m: Maybe<&2, MRec>) -> Maybe<&2, Msg>:
   match m:
