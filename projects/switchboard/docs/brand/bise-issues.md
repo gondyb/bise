@@ -69,7 +69,7 @@ Index:
 
 ### BISE-03 · glyph audit
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-g-glyphs · **commits:** see `git log -- projects/switchboard/docs/brand/glyph-audit.md`
 - **track:** G · **owns:** new `projects/switchboard/docs/brand/glyph-audit.md`
 - **spec:** book §6
 - **do:** check every glyph of §6 (and `↪ ▸ ▾ ┃ │ ─`) for width 1 and
@@ -81,6 +81,19 @@ Index:
 - **done when:** the audit file has one table glyph × font/terminal, and a
   fallback list; main updates §6 if a glyph changes.
 - **notes:**
+  - Width: every glyph is 1 cell in `unicode-width` 0.2.0/0.1.14 and
+    measured 1 cell in Ghostty 1.3.1 and Terminal.app (cursor-position probe).
+  - Fonts: 17 of 33 glyphs are missing from at least one font. `∿ ⧗` are in
+    none; `⟳ ⎇` only in Fira; `✉ ⇄ ↻ ♡` only in Menlo/Meslo. `✉ ↪` can
+    become color emoji.
+  - Proposed §6 changes (main/Gabriel decide): `∿`→`~`, `⧗`→`Δ`,
+    `⟳`/`≡`→`Σ` (pulsing/still), `⎇`→`⌥`, `✉`→`@`, `⇄`→`↔`, `↻`→`!`,
+    `♡`→`✓` (brand call), `∴`→`≈`, `↳`→`└`, `▣`→`■`, `◇`→`◊`, `✗`→`×`,
+    `↪`→`»`; keep `▸ ▾`.
+  - Not checked: iTerm2 (did not run the probe), kitty and WezTerm (not
+    installed), screenshots (no Screen Recording permission).
+  - The user's Ghostty asks for FiraCode, which is not installed, so it
+    uses its built-in JetBrains Mono.
 
 ### BISE-04 · hub line protocol v2 (levels, peer traffic)
 
