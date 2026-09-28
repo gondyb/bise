@@ -542,8 +542,9 @@ and adds structured kinds; the TUI maps each to one level:
 
 | kind | text | level | Ev |
 |---|---|---|---|
-| `msg` | `{from} → {to} : {text}` | 3 | `Ev::AgentMsg { from, to, text, level: 3 }` |
-| `msg-you` | `{from} : {text}` (an agent writing to the user) | 2 | `Ev::AgentMsg { from, to: "you", text, level: 2 }` |
+| `msg-in` | `{from} {m_id} : {text}` (what the feed owner receives; v1) | 3 | `Ev::AgentMsg { from, to: "", text, level: 3, id: "m_3" }` |
+| `msg` | `{from} → {to} : {text}` | 3 | `Ev::AgentMsg { from, to, text, level: 3, id: "" }` |
+| `msg-you` | `{from} : {text}` (an agent writing to the user) | 2 | `Ev::AgentMsg { from, to: "you", text, level: 2, id: "" }` |
 | `answered` | `{agent} : {question} : {answer} : {why}` (main answered for you) | 2 | `Ev::Answered { … }` |
 | `route` / `spawn` | as today | 2 | as today |
 | `card` | as today | 1 | as today |
@@ -551,6 +552,7 @@ and adds structured kinds; the TUI maps each to one level:
 - The hub also feeds `msg` lines for **messages between two other agents**
   into main's feed (today main only sees messages to main).
 - Old kinds keep working (a v1 transcript still renders).
+- Amendment (BISE-04, accepted by main): `Ev::AgentMsg` carries `id` (the message id, `m_3` for `msg-in`, empty otherwise). A ` : ` inside a field of `answered` is escaped as ` \: `. `sb send --why <text>` fills the `why` of `answered`.
 - **⚠** Volume: with 30 agents this is many lines; the TUI folds them (§10),
   the hub must not drop them.
 
