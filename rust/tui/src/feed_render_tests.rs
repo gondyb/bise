@@ -87,7 +87,8 @@ async function main(): Promise<unknown> {
     for (i, l) in joined.iter().enumerate() {
         println!("{:2} | {}", i, l);
     }
-    assert!(joined[0].contains("run_typescript") && !joined[0].contains("orchestre"));
+    // the tool line: λ, the tool's name, its state; the source only in the block
+    assert!(joined[0].starts_with(" λ typescript ✓") && !joined[0].contains("orchestre"), "{}", joined[0]);
     assert!(joined.iter().any(|l| l.starts_with(" │ async function main")));
     assert!(joined.iter().any(|l| l.contains("une chaîne")));
     // one row per source line, behind the rail
@@ -280,7 +281,7 @@ fn resume_history_rebuilds_the_feed() {
 }
 
 // a long line wraps under the rail with a hanging indent and a faint
-// ↪: nothing is lost, no row is wider than the block, the continuation
+// »: nothing is lost, no row is wider than the block, the continuation
 // rows join the row before when copied
 #[test]
 fn long_code_lines_wrap_with_a_hanging_indent() {
@@ -294,7 +295,7 @@ fn long_code_lines_wrap_with_a_hanging_indent() {
     // 2 source lines, the first on several rows
     assert!(rows.len() > 3);
     assert!(rows[0].starts_with(" │ cd "));
-    assert!(rows[1].starts_with(" │ ↪ "), "{rows:#?}");
+    assert!(rows[1].starts_with(" │ » "), "{rows:#?}");
     assert!(crate::feedsel::is_soft(&lines[1]) && !crate::feedsel::is_soft(&lines[0]));
     assert_eq!(rows.last().unwrap(), " │ echo ok");
     // the text after the rail and the wrap marks reassembles the source
@@ -302,7 +303,7 @@ fn long_code_lines_wrap_with_a_hanging_indent() {
         .iter()
         .map(|r| {
             let t = r.strip_prefix(" │ ").unwrap();
-            t.strip_prefix("↪ ").unwrap_or(t).to_string()
+            t.strip_prefix("» ").unwrap_or(t).to_string()
         })
         .collect::<Vec<_>>()
         .join("");
@@ -483,7 +484,7 @@ fn prose_wraps_at_76_and_code_at_100() {
             // the long script line uses the whole code measure
             assert!(w >= 90, "code at {width}: {w}\n{code:#?}");
         }
-        assert!(code.iter().any(|r| r.starts_with(" │ ↪ ")), "code at {width}: {code:#?}");
+        assert!(code.iter().any(|r| r.starts_with(" │ » ")), "code at {width}: {code:#?}");
     }
 }
 
@@ -641,4 +642,123 @@ fn toggles_one_item_and_all_outputs() {
 fn fit_chars_keeps_the_ellipsis_inside() {
     assert_eq!(crate::render::fit_chars("abcdef", 6), "abcdef");
     assert_eq!(crate::render::fit_chars("abcdefg", 6), "abcde…");
+}
+
+// ---- the mockups (BISE-13): tui-screens.html "inside an agent" and
+// "everything disclosed", as feed rows ----
+
+fn mockup_turn(open: bool) -> Vec<Ev> {
+    let bash = "cd web\nnpx playwright test login --project=webkit --reporter=line\ngrep -rn \"SameSite\" src/auth/";
+    let ts = "async function main() {\n  const issues = await tools.github.search_issues({\n    query: \"safari login cookie\",\n    limit: 5,\n  });\n  // only the open ones, newest first\n  return issues.filter((i) => i.state === \"open\").map((i) => i.title);\n}";
+    let args = format!("{{\"code\": \"{}\"}}", json_escape(ts));
+    let out = "[webkit] › login.spec.ts:12 › logs in and stays logged in  expected cookie \"sid\" to be set after redirect  1 failed, 11 passed (6.1s)";
+    let patch = "*** Begin Patch\n*** Update File: web/src/auth/session.ts\n@@ -29,5 +29,7 @@\n   cookie: {\n-    sameSite: \"none\",\n+    sameSite: \"none\",\n+    secure: true,\n   },\n*** End Patch\n";
+    let mut b = tool_with(1, "bash", Some(bash), Some((true, out)), true);
+    let mut t = merged_tool(&[
+        "  obs: tool_started #2".to_string(),
+        format!("tool #2 run_typescript : {}", args),
+        format!("tool_code #2 : {}", wire_encode(&args)),
+        "tool_result #2 ok : [\"Safari drops the session cookie\", \"Login loop on webkit\"]".to_string(),
+        "  obs: tool_finished #2 ok".to_string(),
+    ]);
+    let mut p = tool_with(3, "apply_patch", Some(patch), Some((true, "Done!")), true);
+    for td in [&mut b, &mut t, &mut p] {
+        td.elapsed = Some(String::new());
+        td.expanded = open;
+    }
+    let brief = "# Task `auth-fix`\n\nthe login breaks on safari 18. reproduce with playwright, fix it,\nkeep the chrome path unchanged. report with the test output.";
+    vec![
+        Ev::AgentMsg { from: "main".into(), to: String::new(), text: brief.into(), level: 3, id: "m_1".into(), open },
+        Ev::Thinking { ms: 14_000, text: "safari drops the session cookie on the redirect. SameSite=None needs\nSecure, and the dev server sets it without. check session.ts first.".into(), open },
+        Ev::Tool(b),
+        Ev::Tool(t),
+        Ev::Sub { name: "github.search_issues".into(), ok: true, preview: "2 items".into() },
+        Ev::Tool(p),
+        Ev::Assistant("found it: safari drops SameSite=None cookies without Secure. added secure: true; the webkit test passes now.".into()),
+    ]
+}
+
+fn feed_text(events: &[Ev], width: usize) -> Vec<String> {
+    feed_rows(events, width).into_iter().flatten().map(|r| r.trim_end().to_string()).collect()
+}
+
+#[test]
+fn inside_an_agent_matches_the_mockup() {
+    let rows = feed_text(&mockup_turn(false), 100);
+    println!("{}", rows.join("\n"));
+    let want = [
+        " ◇ brief ▸",
+        " ∴ thought for 14s ▸",
+        " $ bash ✓",
+        " │ npx playwright test login --project=webkit --reporter=line",
+        "   ▸ output · 1 failed",
+        " λ typescript ✓",
+        " │ async function main() {",
+        "   ▸ output",
+        "   ↳ github.search_issues ✓",
+        " ± edit web/src/auth/session.ts ✓ +2 −1 ▸",
+        "found it: safari drops SameSite=None cookies without Secure. added secure:",
+    ];
+    for w in want {
+        assert!(rows.iter().any(|r| r == w), "{w:?} missing:\n{}", rows.join("\n"));
+    }
+    // in that order
+    let at = |w: &str| rows.iter().position(|r| r == w).unwrap();
+    assert!(want.windows(2).all(|p| at(p[0]) < at(p[1])));
+}
+
+#[test]
+fn everything_disclosed_matches_the_mockup() {
+    let rows = feed_text(&mockup_turn(true), 100);
+    println!("{}", rows.join("\n"));
+    let want = [
+        " ◇ brief ▾",
+        " │ the login breaks on safari 18. reproduce with playwright, fix it,",
+        " ∴ thought for 14s ▾",
+        " │ Secure, and the dev server sets it without. check session.ts first.",
+        " $ bash ✓",
+        "   ▾ output",
+        " ± edit web/src/auth/session.ts ✓ +2 −1 ▾",
+        " │ +    secure: true,",
+    ];
+    for w in want {
+        assert!(rows.iter().any(|r| r == w), "{w:?} missing:\n{}", rows.join("\n"));
+    }
+    assert!(rows.iter().any(|r| r.starts_with(" │ [webkit] › login.spec.ts:12")));
+}
+
+// a card in the history: a question or a blocker is level 1 (accent bar,
+// bold accent `? {name} needs you`, the body in text); done is one line
+#[test]
+fn a_card_is_level_one() {
+    let lines = ev_rows(&Ev::Card("#2 question @docs : v1 or v2 for the api docs?".into()), 0, 100);
+    let rows = rows_text(&lines);
+    assert_eq!(rows, vec![" ┃ ? docs needs you".to_string(), " ┃ v1 or v2 for the api docs?".to_string()]);
+    let accent = Some(crate::theme::accent());
+    assert_eq!(lines[0].spans[0].style.fg, accent);
+    assert_eq!(lines[0].spans[1].style.fg, accent);
+    assert!(lines[0].spans[1].style.add_modifier.contains(Modifier::BOLD));
+    assert_eq!(lines[1].spans[1].style.fg, Some(crate::theme::text()));
+    let blocked = rows_text(&ev_rows(&Ev::Card("#4 blocked @api-v2 : the schema file isn't in the repo".into()), 0, 100));
+    assert_eq!(blocked[0], " ┃ ? api-v2 needs you");
+    let done = rows_text(&ev_rows(&Ev::Card("#3 done @bench : p95 at 180 ms".into()), 0, 100));
+    assert_eq!(done, vec![" ♡ bench is done: p95 at 180 ms".to_string()]);
+}
+
+// the other §6 entities of the feed
+#[test]
+fn feed_entities_use_the_book_glyphs() {
+    let row = |ev: Ev| rows_text(&ev_rows(&ev, 0, 100)).join("\n");
+    assert_eq!(row(Ev::Thinking { ms: 0, text: String::new(), open: false }), " ∴ thought ▸");
+    assert_eq!(row(Ev::Compact("12 messages".into())), format!(" {} compaction 12 messages", crate::theme::G_COMPACTING));
+    assert_eq!(row(Ev::Compacted("short".into())), " ≡ summary short");
+    assert_eq!(row(Ev::Warn("turn interrupted".into())), " ▲ turn interrupted");
+    assert_eq!(row(Ev::Err("boom".into())), " ✗ boom");
+    assert_eq!(row(Ev::Sub { name: "gh.x".into(), ok: false, preview: "404".into() }), "   ↳ gh.x ✗ 404");
+    assert!(row(Ev::You("hi".into())).starts_with(" › hi"));
+    // a tool the turn abandoned says so in English
+    let mut events = vec![Ev::Tool(ToolData::bare(9, ToolState::Run))];
+    let mut cache = vec![None];
+    push_event(&mut events, &mut cache, Ev::TurnDone);
+    assert!(matches!(&events[0], Ev::Tool(td) if td.result.as_ref().is_some_and(|r| r.1 == "interrupted")));
 }

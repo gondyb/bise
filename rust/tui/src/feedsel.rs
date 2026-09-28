@@ -80,18 +80,23 @@ pub(crate) fn slice_cols(s: &str, from: usize, to: usize) -> String {
 
 /// The columns of a row that are text, not decoration: a row behind a
 /// rail (" │ code", a code block, an agent message, a thinking section)
-/// keeps only its text, and a code continuation row (" │ ↪ rest") drops
-/// its wrap mark too.
+/// keeps only its text, and a code continuation row (" │ » rest") drops
+/// its wrap mark too; your own line (" › text") drops its mark.
 fn content_cols(s: &str) -> (usize, usize) {
     let w = s.width();
     let lead = s.len() - s.trim_start_matches(' ').len();
     let rest = &s[lead..];
+    // your own line: `› text`
+    if rest.strip_prefix(crate::theme::G_YOU).is_some_and(|t| t.starts_with(' ')) {
+        let c0 = lead + crate::theme::G_YOU.width() + 1;
+        return (c0.min(w), w);
+    }
     let Some(inner) = rest.strip_prefix("│ ") else {
         return (0, w);
     };
     let mut c0 = lead + 2;
-    if inner.starts_with(crate::code::G_WRAP) && inner[crate::code::G_WRAP.len()..].starts_with(' ') {
-        c0 += crate::code::G_WRAP.width() + 1;
+    if inner.starts_with(crate::theme::G_WRAP) && inner[crate::theme::G_WRAP.len()..].starts_with(' ') {
+        c0 += crate::theme::G_WRAP.width() + 1;
     }
     (c0.min(w), w)
 }
@@ -193,7 +198,7 @@ mod tests {
         // mark and joins the row before
         let rows = vec![
             Line::from(" │ ls -la "),
-            soft(" │ ↪ --color"),
+            soft(" │ » --color"),
             Line::from(" │ pwd"),
         ];
         assert_eq!(selection_text(&rows, 0, usize::MAX), "ls -la --color\npwd");

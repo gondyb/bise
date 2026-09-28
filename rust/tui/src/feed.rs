@@ -3,7 +3,6 @@
 //! merge rules (push_event) and the scroll anchor arithmetic.
 
 use crate::render::*;
-use crate::theme::*;
 use crate::wire::*;
 use crate::feedsel;
 use ratatui::style::Style;
@@ -198,8 +197,7 @@ pub(crate) fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>>
 }
 
 // the rows of one event: an optional breathing gap, then the wrapped
-// lines. The user block is padded to the full width so its panel
-// background reads as a solid block.
+// lines.
 pub(crate) fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> Vec<Line<'static>> {
     let ev = &events[i];
     let mut rows: Vec<Line<'static>> = Vec::new();
@@ -212,27 +210,8 @@ pub(crate) fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
     if wants_gap_before(ev, prev) {
         rows.push(Line::from(""));
     }
-    let user = matches!(ev, Ev::You(_));
-    for mut r in ev_rows(ev, tick, width) {
-        if user {
-            pad_line_bg(&mut r, prose_width(width));
-        }
-        rows.push(r);
-    }
+    rows.extend(ev_rows(ev, tick, width));
     rows
-}
-
-// paint the row with the panel background — the line style is the base
-// every span patches, so the bar, the text and the padding all sit on
-// the panel — then fill the rest of the column, so the user block
-// reads as a solid panel the full width (OpenCode style)
-pub(crate) fn pad_line_bg(line: &mut Line<'static>, width: usize) {
-    line.style = Style::default().bg(PANEL);
-    let used: usize = line.spans.iter().map(|s| s.content.width()).sum();
-    if used < width {
-        line.spans
-            .push(Span::styled(" ".repeat(width - used), Style::default().bg(PANEL)));
-    }
 }
 
 pub(crate) fn is_message(ev: &Ev) -> bool {
@@ -353,7 +332,7 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
                         td.state = ToolState::Fail;
                         td.elapsed = Some(fmt_elapsed(td.started));
                         if td.result.is_none() {
-                            td.result = Some((false, "interrompu".to_string()));
+                            td.result = Some((false, "interrupted".to_string()));
                         }
                         cache[i] = None;
                     }

@@ -951,7 +951,8 @@ mod hub_line_tests {
         .filter_map(|l| parse_hub_line(l))
         .collect();
         let text = draw(&evs);
-        for want in ["◀ docs m_3", "done", "◀ docs to you", "la v2", "#1 question @docs", "→ you → @docs"] {
+        let (m3, to_you) = (format!("{G_MSG} docs m_3"), format!("{G_MSG} docs to you"));
+        for want in [m3.as_str(), "done", to_you.as_str(), "la v2", "docs needs you", "→ you → @docs"] {
             assert!(text.contains(want), "{want:?} missing in:\n{text}");
         }
     }
@@ -963,7 +964,8 @@ mod hub_line_tests {
             parse_hub_line("answered : docs : v1 or v2? : v2 : the brief").unwrap(),
         ];
         let text = draw(&evs);
-        for want in ["◀ a → b", "hello b", "main answered @docs", "docs asked: v1 or v2?", "main answered: v2", "why: the brief"] {
+        let ab = format!("{G_MSG} a → b");
+        for want in [ab.as_str(), "hello b", "main answered @docs", "docs asked: v1 or v2?", "main answered: v2", "why: the brief"] {
             assert!(text.contains(want), "{want:?} missing in:\n{text}");
         }
     }

@@ -531,7 +531,7 @@ pub(crate) fn tool_source(lang: CodeLang, decoded: String) -> String {
 
 // wrap one line of spans into rows of at most `first` display columns
 // for the first row, `rest` for the continuations (they carry the
-// hanging indent and its `↪`), so the block shows the whole source. A
+// hanging indent and its wrap mark), so the block shows the whole source. A
 // row breaks after its last whitespace when that keeps at least half
 // the row; otherwise (a long token) it breaks hard at the width.
 // Returns each row with its width.
@@ -589,9 +589,6 @@ pub(crate) fn wrap_code_line_hanging(
     rows
 }
 
-/// The wrap mark of a code continuation row (book §11). Not a §6 glyph:
-/// the audit (BISE-03) proposes `»` as its fallback.
-pub(crate) const G_WRAP: &str = "↪";
 
 /// The rail in front of every row of a code block: one blank column,
 /// the faint rail, one blank column (the text starts at column 3, under
@@ -600,7 +597,7 @@ pub(crate) const CODE_RAIL: &str = " │ ";
 
 // the code block (book §11, mockup "inside an agent"): the whole source
 // under a faint rail, syntax colored, no box and no line numbers. A line
-// longer than the block wraps with a hanging indent and a faint `↪`.
+// longer than the block wraps with a hanging indent and a faint `»`.
 // `width` is the whole row (rail included); the caller caps it at the
 // code measure.
 pub(crate) fn code_block_lines(
@@ -619,7 +616,7 @@ pub(crate) fn code_block_lines(
 
 /// Styled lines under the faint rail, `width` columns at most (rail
 /// included); a line too long wraps with a hanging indent and a faint
-/// `↪`, its continuation rows marked soft (the copy joins them).
+/// wrap mark, its continuation rows marked soft (the copy joins them).
 pub(crate) fn rail_rows(hl: &[Vec<Span<'static>>], width: usize) -> Vec<Line<'static>> {
     let rail = Span::styled(CODE_RAIL, Style::default().fg(faint()));
     let hang = Span::styled(format!("{} ", G_WRAP), Style::default().fg(faint()));

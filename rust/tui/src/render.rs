@@ -157,36 +157,38 @@ pub(crate) fn ev_rows(ev: &Ev, tick: u32, width: usize) -> Vec<Line<'static>> {
 // a thinking section: collapsed it is one dim glyph + duration;
 // expanded (ctrl+t, or a click) the reasoning shows under a faint rail
 pub(crate) fn thinking_lines(ms: u128, text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
+    let dim_st = Style::default().fg(dim());
+    let label = match fmt_think_ms(ms) {
+        d if d.is_empty() => "thought".to_string(),
+        d => format!("thought for {}", d),
+    };
     let head = Line::from(vec![
-        Span::styled(format!(" {} ", GLYPH_THINK), Style::default().fg(DIM)),
-        Span::styled(
-            fmt_think_ms(ms),
-            Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-        ),
+        Span::styled(format!(" {} ", G_THINK), dim_st),
+        Span::styled(label, dim_st),
+        Span::styled(format!(" {}", if open { G_OPEN } else { G_CLOSED }), dim_st),
     ]);
     if !open || text.trim().is_empty() {
         return vec![head];
     }
     let mut rows = vec![head];
-    let style = Style::default().fg(DIM).add_modifier(Modifier::ITALIC);
     // the BENDSIG line carries the provider signature (the signed
     // thinking transport), never part of the reasoning itself
     let body = unescape_md(text);
     let lines = body
         .split('\n')
         .filter(|l| !l.starts_with("BENDSIG::"))
-        .map(|l| Line::from(Span::styled(l.to_string(), style)));
-    let bar = Span::styled(format!(" {} ", GLYPH_RAIL), Style::default().fg(FAINT));
+        .map(|l| Line::from(Span::styled(l.to_string(), dim_st)));
+    let bar = Span::styled(RAIL, Style::default().fg(faint()));
     rows.extend(barred_rows(&bar, lines, width));
     rows
 }
 
-// 800ms -> "0.8s"; 4200ms -> "4.2s"; 12_300ms -> "12s"; 90_000 -> "1m30s"
+// 800ms -> "0.8s"; 4200ms -> "4.2s"; 12_300ms -> "12s"; 90_000 -> "1m30s";
+// 0 (no measured duration: a replayed section, or lines that arrived in
+// the same batch) -> ""
 pub(crate) fn fmt_think_ms(ms: u128) -> String {
     if ms == 0 {
-        // no measured duration: a replayed (--resume) section, or lines
-        // that arrived in the same batch
-        "raisonnement".to_string()
+        String::new()
     } else if ms < 10_000 {
         format!("{}.{}s", ms / 1000, (ms % 1000) / 100)
     } else if ms < 60_000 {
@@ -196,7 +198,27 @@ pub(crate) fn fmt_think_ms(ms: u128) -> String {
     }
 }
 
+/// The faint rail in front of disclosed text (reasoning, a report, a
+/// brief, a message body).
+const RAIL: &str = " │ ";
+
+/// A notice with no §6 glyph (an info line). Not in the book: see the
+/// BISE-13 notes.
+const G_NOTE: &str = "·";
+
+/// One line in the feed's glyph column: the glyph at column 1, the text
+/// from column 3 (under the names of the tool lines).
+fn glyph_line(glyph: &str, glyph_st: Style, text: String, text_st: Style) -> Vec<Line<'static>> {
+    vec![Line::from(vec![
+        Span::styled(format!(" {} ", glyph), glyph_st),
+        Span::styled(text, text_st),
+    ])]
+}
+
 pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
+    let dim_st = Style::default().fg(dim());
+    let text_st = Style::default().fg(text());
+    let err_st = Style::default().fg(error());
     match ev {
         // an image marker shows as `[Image #1 path]` (docs/images.md)
         Ev::You(t) => user_block_lines(&bend_images::display(t), width),
@@ -204,86 +226,46 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         Ev::Thinking { ms, text, open } => thinking_lines(*ms, text, *open, width),
         Ev::Tool(td) => tool_lines(td, 0, width),
         Ev::Idle => vec![Line::from("")],
+        // a sub-call inside a TypeScript run: `↳ github.search_issues ✓`;
+        // a failed one says why, in the error color
         Ev::Sub { name, ok, preview } => vec![Line::from(vec![
-            Span::styled(format!("  {} ", GLYPH_BRANCH), Style::default().fg(FAINT)),
-            Span::styled(name.clone(), Style::default().fg(DIM)),
-            Span::styled(
-                if *ok {
-                    format!(" {} ", GLYPH_OK)
-                } else {
-                    format!(" {} ", GLYPH_ERR)
-                },
-                Style::default().fg(if *ok { DIM } else { ERR }),
-            ),
-            Span::styled(
-                truncate_chars(preview.trim(), 100),
-                Style::default().fg(DIM),
-            ),
+            Span::styled(format!("   {} ", G_SUBCALL), dim_st),
+            Span::styled(name.clone(), dim_st),
+            if *ok {
+                Span::styled(format!(" {}", G_RECEIVED), dim_st)
+            } else {
+                let why = fit_chars(preview.trim(), 80);
+                Span::styled(format!(" {} {}", G_FAILED, why).trim_end().to_string(), err_st)
+            },
         ])],
         Ev::Turn => vec![Line::from(vec![
-            Span::styled(" ── tour ", Style::default().fg(FAINT)),
-            Span::styled("─".repeat(24), Style::default().fg(FAINT)),
+            Span::styled(" ── turn ", Style::default().fg(faint())),
+            Span::styled("─".repeat(24), Style::default().fg(faint())),
         ])],
         Ev::TurnDone => vec![Line::from(vec![
-            Span::styled(" └─ ", Style::default().fg(FAINT)),
-            Span::styled(GLYPH_OK, Style::default().fg(DIM)),
+            Span::styled(" └─ ", Style::default().fg(faint())),
+            Span::styled(G_RECEIVED, dim_st),
         ])],
-        Ev::Compact(t) => vec![Line::from(vec![
-            Span::styled(
-                format!("  {} ", GLYPH_COMPACT),
-                Style::default().fg(WARN).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                "compaction ",
-                Style::default().fg(WARN).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(t.clone(), Style::default().fg(WARN)),
-        ])],
-        Ev::Compacted(t) => vec![Line::from(vec![
-            Span::styled(
-                format!("  {} ", GLYPH_SUMMARY),
-                Style::default().fg(OK).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                "summary ",
-                Style::default().fg(OK).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                unescape_md(t),
-                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-            ),
-        ])],
-        Ev::Warn(t) => vec![Line::from(vec![
-            Span::styled(format!("  {} ", GLYPH_WARN), Style::default().fg(WARN)),
-            Span::styled(t.clone(), Style::default().fg(WARN)),
-        ])],
-        Ev::Err(t) => vec![Line::from(vec![
-            Span::styled(format!("  {} ", GLYPH_ERR), Style::default().fg(ERR)),
-            Span::styled(t.clone(), Style::default().fg(ERR)),
-        ])],
-        Ev::Info(t) => vec![Line::from(vec![
-            Span::styled(format!("  {} ", GLYPH_INFO), Style::default().fg(FAINT)),
-            Span::styled(
-                bend_images::display(t),
-                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
-            ),
-        ])],
+        Ev::Compact(t) => glyph_line(G_COMPACTING, dim_st, format!("compaction {}", t), dim_st),
+        Ev::Compacted(t) => glyph_line(G_SUMMARY, dim_st, format!("summary {}", unescape_md(t)), dim_st),
+        // an interrupted turn is dim; any other warning reads as text
+        Ev::Warn(t) if t == "turn interrupted" => glyph_line(G_INTERRUPTED, dim_st, t.clone(), dim_st),
+        Ev::Warn(t) => glyph_line(G_INTERRUPTED, dim_st, t.clone(), text_st),
+        Ev::Err(t) => glyph_line(G_FAILED, err_st, t.clone(), err_st),
+        Ev::Info(t) => glyph_line(G_NOTE, Style::default().fg(faint()), bend_images::display(t), dim_st),
         Ev::ToolInfo { .. } | Ev::ToolResult { .. } | Ev::ToolCode { .. } => vec![],
         Ev::Usage(u) => vec![Line::from(Span::styled(
             format!("  usage: {} (in {} · out {})", u.label(), u.input, u.output),
-            Style::default().fg(DIM),
+            dim_st,
         ))],
-        Ev::Raw(t) => vec![Line::from(Span::styled(
-            format!("  {}", t),
-            Style::default().fg(DIM),
-        ))],
-        // BISE-04: the v2 variants in the v1 look (the F track restyles
-        // them by level in BISE-14)
-        Ev::AgentMsg { from, text, open, .. } if is_brief(text) => brief_lines(text, *open, width),
+        Ev::Raw(t) => vec![Line::from(Span::styled(format!("  {}", t), dim_st))],
+        Ev::AgentMsg { text, open, .. } if is_brief(text) => brief_lines(text, *open, width),
         Ev::AgentMsg { from, text, open, .. } if report_parts(text).is_some() => {
             let (kind, body) = report_parts(text).unwrap_or_default();
             report_lines(from, kind, body, *open, width)
         }
+        // BISE-04: the v2 variants, §6 glyphs on the v1 look (the levels
+        // come with BISE-14)
         Ev::AgentMsg { from, to, text, level, id, .. } => {
             let mut head = match (*level, to.as_str()) {
                 (2, _) => format!("{} to you", from),
@@ -293,52 +275,81 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             if !id.is_empty() {
                 head = format!("{} {}", head, id);
             }
-            agent_msg_rows(&head, text, width)
+            let glyph = if from == "main" { G_MAIN } else { G_MSG };
+            agent_msg_rows(glyph, &head, text, width)
         }
         Ev::Answered { agent, question, answer, why } => {
             let mut body = format!("{} asked: {}\n\nmain answered: {}", agent, question, answer);
             if !why.is_empty() {
                 body.push_str(&format!("\n\nwhy: {}", why));
             }
-            agent_msg_rows(&format!("main answered @{}", agent), &body, width)
+            agent_msg_rows(G_MAIN, &format!("main answered @{}", agent), &body, width)
         }
-        Ev::Card(t) => vec![Line::from(vec![
-            Span::styled("  ◆ ", Style::default().fg(WARN).add_modifier(Modifier::BOLD)),
-            Span::styled(
-                format!("carte {}", t),
-                Style::default().fg(WARN).add_modifier(Modifier::BOLD),
-            ),
-        ])],
+        Ev::Card(t) => card_lines(t, width),
     }
 }
 
-// a message from an agent: accent head, the body behind an accent bar
-fn agent_msg_rows(head: &str, text: &str, width: usize) -> Vec<Line<'static>> {
+// a message from an agent: its glyph and head in the accent, the body
+// behind an accent bar
+fn agent_msg_rows(glyph: &str, head: &str, text: &str, width: usize) -> Vec<Line<'static>> {
+    let st = Style::default().fg(accent()).add_modifier(Modifier::BOLD);
     let mut rows = vec![
         Line::from(""),
         Line::from(vec![
-            Span::styled(" ◀ ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-            Span::styled(head.to_string(), Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" {} ", glyph), st),
+            Span::styled(head.to_string(), st),
         ]),
     ];
-    let bar = Span::styled(" │ ", Style::default().fg(ACCENT));
+    let bar = Span::styled(RAIL, Style::default().fg(accent()));
     rows.extend(barred_rows(&bar, md_to_lines(text), width));
     rows
 }
 
-// the OpenCode user message block: colored left bar (┃ primary), panel
-// background, one blank line above and below. Each line of the text is
-// its own row (Shift+Enter, paste), wrapped under the bar.
-pub(crate) fn user_block_lines(text: &str, width: usize) -> Vec<Line<'static>> {
-    let mut rows = vec![Line::from("")];
-    let style = Style::default().fg(TEXT).add_modifier(Modifier::BOLD);
-    let lines = text
+/// A card line of the hub (`#3 question @docs : v1 or v2?`): its kind,
+/// the agent, the text.
+pub(crate) fn card_parts(t: &str) -> Option<(&str, &str, &str)> {
+    let rest = t.strip_prefix('#')?;
+    let (_, rest) = rest.split_once(' ')?;
+    let (kind, rest) = rest.split_once(' ')?;
+    let rest = rest.strip_prefix('@')?;
+    let (name, text) = rest.split_once(" : ").unwrap_or((rest, ""));
+    Some((kind, name, text))
+}
+
+// a card in the history (book §9): a question or a blocker is level 1,
+// an accent bar `┃`, the bold accent title `? {name} needs you`, the
+// body in text; a done or failed card is one line for you (`♡`, `✗`)
+fn card_lines(t: &str, width: usize) -> Vec<Line<'static>> {
+    let text_st = Style::default().fg(text());
+    let (kind, name, body) = card_parts(t).unwrap_or(("question", "", t));
+    match kind {
+        "done" => return glyph_line(G_DONE, text_st, format!("{} is done: {}", name, body), text_st),
+        k if k.contains("fail") => {
+            return glyph_line(G_FAILED, Style::default().fg(error()), format!("{} failed: {}", name, body), text_st)
+        }
+        _ => {}
+    }
+    let title = if name.is_empty() { "needs you".to_string() } else { format!("{} needs you", name) };
+    let bar = Span::styled(" ┃ ", Style::default().fg(accent()));
+    let accent_st = Style::default().fg(accent()).add_modifier(Modifier::BOLD);
+    let mut lines = vec![Line::from(vec![
+        Span::styled(format!("{} ", G_CARD), accent_st),
+        Span::styled(title, accent_st),
+    ])];
+    lines.extend(body.split('\n').map(|l| Line::from(Span::styled(l.to_string(), text_st))));
+    barred_rows(&bar, lines, width)
+}
+
+// your message (book §6, mockups): `›` dim in the glyph column, the text
+// from column 3, each of its lines (Shift+Enter, paste) on its own rows.
+// No bar, no background: the terminal's own shows through.
+pub(crate) fn user_block_lines(msg: &str, width: usize) -> Vec<Line<'static>> {
+    let style = Style::default().fg(text());
+    let lines = msg
         .split('\n')
         .map(|l| Line::from(Span::styled(l.trim_end_matches('\r').to_string(), style)));
-    let bar = Span::styled(" ┃ ", Style::default().fg(BRAND));
-    rows.extend(barred_rows(&bar, lines, width));
-    rows.push(Line::from(Span::styled("   ", Style::default().bg(PANEL))));
-    rows
+    let mark = Span::styled(format!(" {} ", G_YOU), Style::default().fg(dim()));
+    hung_rows(&mark, &Span::raw("   "), lines, width)
 }
 
 // each line wrapped to the width left after the bar, every row (the
@@ -349,12 +360,23 @@ fn barred_rows(
     lines: impl IntoIterator<Item = Line<'static>>,
     width: usize,
 ) -> Vec<Line<'static>> {
+    hung_rows(bar, bar, lines, width)
+}
+
+// the same with a different prefix on the very first row (a glyph) and
+// on all the others (its blank indent); both the same width
+fn hung_rows(
+    first: &Span<'static>,
+    rest: &Span<'static>,
+    lines: impl IntoIterator<Item = Line<'static>>,
+    width: usize,
+) -> Vec<Line<'static>> {
     use unicode_width::UnicodeWidthStr;
-    let inner = width.saturating_sub(bar.content.width()).max(1);
+    let inner = width.saturating_sub(first.content.width()).max(1);
     let mut rows = Vec::new();
     for l in lines {
         for r in wrap_line(l, inner) {
-            let mut spans = vec![bar.clone()];
+            let mut spans = vec![if rows.is_empty() { first.clone() } else { rest.clone() }];
             spans.extend(r.spans);
             let mut row = Line::from(spans);
             row.alignment = r.alignment;
@@ -365,10 +387,9 @@ fn barred_rows(
 }
 
 
-// the tool line, OpenCode inline-tool style: 2-col icon, name,
-// elapsed, args preview; result preview on the next line. The state is
-// a glyph: braille spinner while running, green ✓ once ok, red ✗ on
-// failure.
+// the tool line (book §6, mockup "inside an agent"): the tool's glyph,
+// its name, its state (the working pulse and the elapsed time while it
+// runs, `✓` once ok, `✗` in the error color on failure), the args.
 // " 1.2s" after the tool name; nothing for a replayed tool (no duration)
 pub(crate) fn elapsed_label(elapsed: &Option<String>) -> String {
     match elapsed.as_deref() {
@@ -411,37 +432,38 @@ pub(crate) fn tool_head(td: &ToolData, tick: u32, name: &str, args: &str) -> Lin
             return edit_head(td, tick, &src);
         }
     }
-    let args_span = |st: Style| {
-        Span::styled(
-            if args.is_empty() {
-                String::new()
-            } else {
-                format!(" · {}", args)
-            },
-            st,
-        )
+    // book §6: `$` bash, `λ` TypeScript; other tools keep an empty
+    // glyph column
+    let (glyph, label) = match name {
+        "bash" => (G_BASH, "bash"),
+        "run_typescript" => (G_TS, "typescript"),
+        other => (" ", other),
     };
+    let dim_st = Style::default().fg(dim());
+    let mut row = vec![
+        Span::styled(format!(" {} ", glyph), Style::default().fg(text())),
+        Span::styled(label.to_string(), Style::default().fg(text())),
+    ];
     match td.state {
-        ToolState::Run => Line::from(vec![
-            Span::styled("  ", Style::default()),
-            Span::styled(spinner_frame(tick / 2), Style::default().fg(BRAND)),
-            Span::styled(format!(" {}", name), Style::default().fg(TEXT)),
-            Span::styled(format!(" {}", fmt_elapsed(td.started)), Style::default().fg(DIM)),
-            args_span(Style::default().fg(DIM)),
-        ]),
-        ToolState::Ok => Line::from(vec![
-            Span::styled(format!("  {} ", GLYPH_OK), Style::default().fg(OK)),
-            Span::styled(name.to_string(), Style::default().fg(TOOL)),
-            Span::styled(elapsed_label(&td.elapsed), Style::default().fg(TOOL)),
-            args_span(Style::default().fg(TOOL)),
-        ]),
-        ToolState::Fail => Line::from(vec![
-            Span::styled(format!("  {} ", GLYPH_ERR), Style::default().fg(ERR)),
-            Span::styled(name.to_string(), Style::default().fg(ERR)),
-            Span::styled(elapsed_label(&td.elapsed), Style::default().fg(ERR)),
-            args_span(Style::default().fg(ERR)),
-        ]),
+        ToolState::Run => {
+            let (g, c) = working_frame(tick);
+            row.push(Span::styled(format!(" {}", g), Style::default().fg(c)));
+            row.push(Span::styled(format!(" {}", fmt_elapsed(td.started)), dim_st));
+        }
+        ToolState::Ok => {
+            row.push(Span::styled(format!(" {}{}", G_RECEIVED, elapsed_label(&td.elapsed)), dim_st));
+        }
+        ToolState::Fail => {
+            row.push(Span::styled(
+                format!(" {}{}", G_FAILED, elapsed_label(&td.elapsed)),
+                Style::default().fg(error()),
+            ));
+        }
     }
+    if !args.is_empty() {
+        row.push(Span::styled(format!(" · {}", args), dim_st));
+    }
+    Line::from(row)
 }
 
 // everything under the tool line (book §11, progressive disclosure): a
@@ -667,17 +689,16 @@ mod multiline_tests {
         let long = "word ".repeat(12);
         let text = format!("first line\nsecond line\n{}end", long);
         let s = screen(Ev::You(text), 30);
-        let body: Vec<&String> = s.iter().filter(|r| r.starts_with(" ┃ ")).collect();
-        assert_eq!(body[0].as_str(), " ┃ first line", "{s:#?}");
-        assert_eq!(body[1].as_str(), " ┃ second line", "{s:#?}");
-        // the long line wraps into several rows, all behind the bar at
-        // the same column
-        assert!(body.len() >= 5, "{s:#?}");
-        for r in &body[2..] {
-            assert!(r.starts_with(" ┃ word") || r.starts_with(" ┃ end"), "{s:#?}");
+        // `›` on the first row only, every row's text at column 3
+        assert_eq!(s[0].as_str(), " › first line", "{s:#?}");
+        assert_eq!(s[1].as_str(), "   second line", "{s:#?}");
+        // the long line wraps into several rows, all at the same column
+        assert!(s.len() >= 5, "{s:#?}");
+        for r in &s[2..] {
+            assert!(r.starts_with("   word") || r.starts_with("   end"), "{s:#?}");
             assert!(r.chars().count() <= 30);
         }
-        assert!(body.last().unwrap().ends_with("end"), "{s:#?}");
+        assert!(s.last().unwrap().ends_with("end"), "{s:#?}");
         assert!(!s.iter().any(|r| r.contains('\n')));
     }
 
@@ -689,6 +710,8 @@ mod multiline_tests {
         assert_eq!(body[0].as_str(), " │ one", "{s:#?}");
         assert!(body[1].starts_with(" │ two x"), "{s:#?}");
         assert!(body.len() >= 4, "{s:#?}");
-        assert!(s.iter().filter(|r| !r.is_empty() && !r.starts_with(" ◀ ")).all(|r| r.starts_with(" │ ")), "{s:#?}");
+        let head = format!(" {} main", crate::theme::G_MAIN);
+        assert!(s.contains(&head), "{s:#?}");
+        assert!(s.iter().filter(|r| !r.is_empty() && **r != head).all(|r| r.starts_with(" │ ")), "{s:#?}");
     }
 }
