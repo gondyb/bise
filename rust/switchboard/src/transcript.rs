@@ -323,8 +323,9 @@ fn spawn_line(raw: &[Raw], task: &str, created_ms: u64) -> Option<(usize, bool)>
             let Some(r) = l.strip_prefix("sb spawn : ") else {
                 return false;
             };
-            // " → new task " (older journals: " → nouvelle tâche ")
-            r.split_once(" → new task ")
+            // " → new agent " (older journals: " → new task ", " → nouvelle tâche ")
+            r.split_once(" → new agent ")
+                .or_else(|| r.split_once(" → new task "))
                 .or_else(|| r.split_once(" → nouvelle tâche "))
                 .map(|(_, t)| {
                     t.strip_prefix(&tag).is_some_and(|rest| {

@@ -534,7 +534,7 @@ fn there_is_no_undo_a_route_stays_sent() {
     });
     assert!(say_to(&fx, "docs").is_some_and(|s| s.contains("change de plan")), "{:?}", fx);
     let fx = t.user(MAIN, "@nope salut");
-    assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").contains("no task named @nope"))));
+    assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").contains("no agent named @nope"))));
 }
 
 #[test]
@@ -542,7 +542,7 @@ fn dropping_a_worktree_with_work_asks_first() {
     let mut t = T::new();
     let fx = t.user(MAIN, "/new -w fix: corrige le bug");
     assert!(
-        has_line(&fx, MAIN, "new task @fix (worktree sb/fix)"),
+        has_line(&fx, MAIN, "new agent @fix (worktree sb/fix)"),
         "{:?}",
         fx
     );
@@ -1000,7 +1000,7 @@ fn main_hears_when_a_task_crashes_and_when_it_fails() {
     let s = say_to(&fx, MAIN).expect("main is woken");
     assert!(s.contains("from=\"switchboard\" relation=\"hub\""), "{}", s);
     assert!(
-        s.contains("Task @a crashed (bend: out of memory)") && s.contains("attempt 1/5"),
+        s.contains("agent @a crashed (bend: out of memory)") && s.contains("attempt 1/5"),
         "{}",
         s
     );
@@ -1018,7 +1018,7 @@ fn main_hears_when_a_task_crashes_and_when_it_fails() {
         reason: "boom".into(),
     });
     let s = say_to(&fx, MAIN).expect("main is woken again");
-    assert!(s.contains("Task @a failed"), "{}", s);
+    assert!(s.contains("agent @a failed"), "{}", s);
 }
 
 #[test]
@@ -1463,7 +1463,7 @@ fn main_renames_a_task_and_tasks_cannot() {
     let (tok, fx) = t.req(MAIN, ren("a", "Bad Name"));
     assert!(err_of(&fx, tok).contains("invalid or taken name"));
     let (tok, fx) = t.req(MAIN, ren("main", "boss"));
-    assert!(err_of(&fx, tok).contains("no task named"));
+    assert!(err_of(&fx, tok).contains("no agent named"));
     let (tok, fx) = t.req(MAIN, ren("a", "alpha"));
     assert_eq!(reply(&fx, tok).unwrap()["name"], "alpha");
     assert!(t.hub.st.agents.contains_key("alpha"));

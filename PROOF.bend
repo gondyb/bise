@@ -1995,7 +1995,7 @@ def Laws.stop_leaves_no_queue(o, cx, n, life, why, u):
   +ef = Equal.trans(List<&2, HM.MRec>, HM.St.msgs(HX.d(o, HC.stop_task(o, cx, n, life, why))), HM.St.msgs(HX.d(o, g)), hub_rej(ids, m5),
     hub_msgs_eq(o, HC.stop_task(o, cx, n, life, why), g, hub_d_with_r(o, g, HX.R.with_waiters(HC.rr(o, g), HC.waiters_not(HX.R.waiters(HC.rr(o, cx)), n)))),
     Equal.trans(List<&2, HM.MRec>, HM.St.msgs(HX.d(o, g)), HM.St.msgs(HX.d(o, cx6)), hub_rej(ids, m5),
-      hub_msgs_close_ids(o, HC.card_ids(HM.St.cards(HX.d(o, cx6)), n, Nil{}), cx6, "task stopped"),
+      hub_msgs_close_ids(o, HC.card_ids(HM.St.cards(HX.d(o, cx6)), n, Nil{}), cx6, "agent stopped"),
       hub_msgs_reject(o, ids, cx5)))
   # the names at the end: those of cx5 (no agent changes after it)
   +en = Equal.cong(List<&2, HM.Agent>, List<&2, String>, xs => n <> HM.names_of.go(HM.agent_named(xs, n)),
@@ -2003,7 +2003,7 @@ def Laws.stop_leaves_no_queue(o, cx, n, life, why, u):
     Equal.trans(List<&2, HM.Agent>, HM.St.agents(HX.d(o, HC.stop_task(o, cx, n, life, why))), HM.St.agents(HX.d(o, g)), HM.St.agents(HX.d(o, cx5)),
       hub_agents_eq(o, HC.stop_task(o, cx, n, life, why), g, hub_d_with_r(o, g, HX.R.with_waiters(HC.rr(o, g), HC.waiters_not(HX.R.waiters(HC.rr(o, cx)), n)))),
       Equal.trans(List<&2, HM.Agent>, HM.St.agents(HX.d(o, g)), HM.St.agents(HX.d(o, cx6)), HM.St.agents(HX.d(o, cx5)),
-        hub_agents_close_ids(o, HC.card_ids(HM.St.cards(HX.d(o, cx6)), n, Nil{}), cx6, "task stopped"),
+        hub_agents_close_ids(o, HC.card_ids(HM.St.cards(HX.d(o, cx6)), n, Nil{}), cx6, "agent stopped"),
         hub_agents_reject(o, ids, cx5))))
   hub_names_tr(HM.St.msgs(HX.d(o, HC.stop_task(o, cx, n, life, why))), hub_rej(ids, m5), HM.names_of(HX.d(o, HC.stop_task(o, cx, n, life, why)), n), n5, ef, en,
     hub_K(m5, n5, hub_distinct_tr(HI.ids(m5), HI.ids(HM.St.msgs(HX.d(o, cx))),
@@ -2171,7 +2171,7 @@ def Laws.stop_leaves_no_card(o, cx, n, life, why, u):
   +ef = Equal.trans(List<&2, HM.Card>, HM.St.cards(HX.d(o, HC.stop_task(o, cx, n, life, why))), HM.St.cards(HX.d(o, g)),
     hub_dropc(HC.card_ids(c6, n, Nil{}), c6),
     hub_cards_eq(o, HC.stop_task(o, cx, n, life, why), g, hub_d_with_r(o, g, HX.R.with_waiters(HC.rr(o, g), HC.waiters_not(HX.R.waiters(HC.rr(o, cx)), n)))),
-    hub_cards_close_ids(o, HC.card_ids(c6, n, Nil{}), cx6, "task stopped"))
+    hub_cards_close_ids(o, HC.card_ids(c6, n, Nil{}), cx6, "agent stopped"))
   hub_cids_tr(HM.St.cards(HX.d(o, HC.stop_task(o, cx, n, life, why))), hub_dropc(HC.card_ids(c6, n, Nil{}), c6), n, ef,
     hub_KC(c6, n, hub_distinct_tr(HI.card_ids(c6), HI.card_ids(HM.St.cards(HX.d(o, cx))),
       Equal.cong(List<&2, HM.Card>, List<&2, Nat>, cs => HI.card_ids(cs), c6, HM.St.cards(HX.d(o, cx)), e6),

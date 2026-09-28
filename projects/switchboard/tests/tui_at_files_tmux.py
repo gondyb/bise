@@ -43,7 +43,7 @@ def main():
         # a task, so an agent is listed
         typed('crée [[bash: sb spawn notes --objective "écris {{bash: echo hi}}"]]')
         keys("Enter")
-        wait_screen("new task @notes")
+        wait_screen("new agent @notes")
         tui_tmux.wait_re(r"notes +m_\d", 60)
         # `@` alone at the start: the agent, then the root of the workspace
         typed("@")

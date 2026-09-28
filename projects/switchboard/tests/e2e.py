@@ -178,7 +178,7 @@ def t_spawn_and_auto_reply(E, c):
     c.wait_status("main", "idle", 60)
     c.say('crée une tâche [[bash: sb spawn t1 --objective "écris le fichier {{bash: echo hello-from-t1 > t1.txt && echo wrote}}"]]')
     c.wait(lambda: c.agent("t1") is not None, 60, "t1 exists")
-    c.wait_line("main", "new task @t1")
+    c.wait_line("main", "new agent @t1")
     c.wait(lambda: os.path.exists(os.path.join(E.ws, "t1.txt")), 90, "t1.txt written in the workspace")
     check(open(os.path.join(E.ws, "t1.txt")).read().strip() == "hello-from-t1", "t1.txt content")
     # t1's turn ends: its reply comes back to main automatically
@@ -336,13 +336,13 @@ def t_origin_and_cursors(E, c):
     # main's thread and gets positions
     c.wait_idle("main", "t1")
     c.say('zorglub-origine [[bash: sb spawn orig --objective "{{bash: sb inspect main --origin > o.txt; sb inspect main --query zorglub-origine --limit 3 >> o.txt; echo done}}"]]')
-    c.wait_line("main", "new task @orig")
+    c.wait_line("main", "new agent @orig")
     path = os.path.join(E.ws, "o.txt")
     c.wait(lambda: os.path.exists(path) and "--around" in open(path).read(), 90, "orig wrote o.txt")
     out = open(path).read()
     check("origin of `orig` in main's thread" in out, "the origin header: " + out)
     check("user: zorglub-origine [[bash: sb spawn orig" in out, "the user message verbatim: " + out)
-    check("new task @orig" in out, "main's turn up to the spawn: " + out)
+    check("new agent @orig" in out, "main's turn up to the spawn: " + out)
     check(re.search(r"^#\d+ \(", out, re.M) is not None, "entries carry positions: " + out)
     c.wait_idle("orig")
     os.remove(path)
@@ -354,7 +354,7 @@ def t_crash_status_and_tasks(E, c):
     pid = open(os.path.join(E.state, "agents", "t1", "repl.pid")).read().strip()
     os.kill(int(pid), 9)
     c.wait_line("main", "sb msg-in : switchboard", 60)
-    c.wait(lambda: any(r["agent"] == "main" and "Task @t1 crashed" in r["user"] for r in E.fake_requests()), 60,
+    c.wait(lambda: any(r["agent"] == "main" and "agent @t1 crashed" in r["user"] for r in E.fake_requests()), 60,
            "main's model got the crash notification")
     c.wait_status("t1", ["idle", "done", "blocked"], 60)
     c.wait_idle("main")

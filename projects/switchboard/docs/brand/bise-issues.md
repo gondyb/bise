@@ -1406,3 +1406,37 @@ Index:
   (build, test --workspace, clippy --all-targets -D warnings, run_all.sh,
   PROOF if a `.bend` changed); the rest listed with a cost estimate.
 - **notes:**
+
+### BISE-80/81 · hub side (vocabulary, lowercase)
+
+- **status:** done · **owner:** bise-h-hub · **commits:** d4ae5b1 (Rust),
+  (this commit) (hub/*.bend)
+- **owns:** the hub's strings to the UI and the user (`rust/switchboard`,
+  `hub/*.bend`); the TUI side is bise-k-keys'
+- **notes:**
+  - **/agents** is the user command (the board of every agent); `/tasks`
+    stays an alias (router). Help row: `/agents  list the agents and what
+    they do` (agreed with bise-k-keys, used verbatim in the TUI list).
+  - **agent, never task** in what the user reads: /help rows, usage lines
+    (`/drop <agent>`, `sb stop <agent> "<reason>"`…), `agent {name} created`
+    (sb spawn), the spawn line `{who} → new agent @{name} …` (transcript.rs
+    still reads `new task` and `nouvelle tâche` in old journals), `no agent
+    named @{name}`, `the agent is mid-turn`, the card result `agent stopped`
+    (the TUI maps the old `task stopped` too), notes to main (`the user
+    created / dropped / restored the agent @x`, `agent @x crashed …`,
+    `agent @x failed: …`), empty boards `no agents yet` (§17). Lowercase:
+    `drop @x? … [y/N]`.
+  - **Left as is:** identifiers, wire keys and journal fields
+    (`task_created`, `sb tasks`, `SB_TASK`, `<task_board>`); model prompts
+    (prompts.rs) and the brief's `# Task \`name\`` header (a model prompt,
+    and the TUI's brief detection reads it).
+  - **Strings not in §17** (main to add): the /help rows; `no agent named
+    @{name} — did you mean @a, @b?`; `{who} → new agent @{name} (worktree
+    sb/{name}) : {objective}`; `@{name} archived` + ` — worktree deleted` /
+    ` — work saved (/restore)` / ` — worktree NOT deleted: {why}`; `drop
+    @{name}? {n} changed files and {m} unpushed commits will be saved
+    (/restore) [y/N]`; `drop of @{name} cancelled`; `main → @{name}
+    stopped: {reason}`; `recipient_unavailable: @{name} is {status} (its
+    worktree was deleted: /restore)`; `unknown command: {cmd} (see /help)`;
+    `empty message for @{name}`; `--with-changes only works with -w`; the
+    usage lines; `no agents yet` on /agents.
