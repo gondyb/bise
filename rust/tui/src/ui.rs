@@ -86,19 +86,38 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
         ])
         .split(area);
 
+    draw_feed(app, frame, chunks[0]);
+    draw_status(app, frame, chunks[2]);
+    draw_prompt(app, frame, chunks[5], voice_pad);
+    if card_h > 0 {
+        sb::draw_card(app, frame, chunks[4]);
+    } else if sb::card_full(app) {
+        sb::draw_card(app, frame, chunks[0]);
+    }
+
+    draw_popup(app, frame, chunks[5]);
+    let hint = if app.term.shown() { term::HINT } else { hint_text(app) };
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(DIM)))),
+        chunks[7],
+    );
+    help::draw(app, frame);
+}
+
+fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect) {
     // ---- feed: cached wrapped rows, only the VISIBLE slice rendered ----
     // (a Paragraph over the whole history re-wraps everything each frame
     // and lags long sessions). The column keeps one column of margin on
     // each edge: the history never touches the screen border, and the
     // scrollbar gets its own gutter.
-    let feed_w = (chunks[0].width as usize).saturating_sub(3).max(1);
+    let feed_w = (area.width as usize).saturating_sub(3).max(1);
     let area_w = feed_w;
-    let area_h = chunks[0].height as usize;
+    let area_h = area.height as usize;
     let text_area = Rect {
-        x: chunks[0].x + 1,
-        y: chunks[0].y,
+        x: area.x + 1,
+        y: area.y,
         width: feed_w as u16,
-        height: chunks[0].height,
+        height: area.height,
     };
 
     let n = app.events.len();
@@ -180,7 +199,7 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
             .viewport_content_length(shown);
         frame.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight),
-            chunks[0],
+            area,
             &mut state,
         );
     }
@@ -191,11 +210,20 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     app.area_w = area_w;
     app.area_h = area_h;
     app.tail_visible = tail_visible;
+}
 
+/// A status note (flash, voice) still worth showing: younger than 2 s.
+fn fresh_note(note: &Option<(String, std::time::Instant)>) -> Option<String> {
+    note.as_ref()
+        .filter(|(_, at)| at.elapsed() < Duration::from_secs(2))
+        .map(|(t, _)| t.clone())
+}
+
+fn draw_status(app: &mut App, frame: &mut Frame, area: Rect) {
     // ---- the status row (the OpenCode prompt status row): back to
     // bottom when pinned, else spinner + cwd while idle
     if !app.tail_visible {
-        app.bottom_bar_rect = Some(chunks[2]);
+        app.bottom_bar_rect = Some(area);
         let mut spans = vec![
             Span::styled(
                 "  ↓ Bas ",
@@ -209,19 +237,11 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
                 Style::default().fg(WARN),
             ));
         }
-        frame.render_widget(Paragraph::new(Line::from(spans)), chunks[2]);
+        frame.render_widget(Paragraph::new(Line::from(spans)), area);
     } else {
         app.bottom_bar_rect = None;
-        let flash = app
-            .flash
-            .as_ref()
-            .filter(|(_, at)| at.elapsed() < Duration::from_secs(2))
-            .map(|(t, _)| t.clone());
-        let voice_note = app
-            .voice_note
-            .as_ref()
-            .filter(|(_, at)| at.elapsed() < Duration::from_secs(2))
-            .map(|(t, _)| t.clone());
+        let flash = fresh_note(&app.flash);
+        let voice_note = fresh_note(&app.voice_note);
         let status = if let Some(t) = voice_note {
             Line::from(vec![
                 Span::styled("  ● ", Style::default().fg(RECORDING)),
@@ -265,19 +285,21 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
                 Span::styled(" · End: bottom · Ctrl+C: quit", Style::default().fg(DIM)),
             ])
         };
-        frame.render_widget(Paragraph::new(status), chunks[2]);
+        frame.render_widget(Paragraph::new(status), area);
     }
+}
 
+fn draw_prompt(app: &mut App, frame: &mut Frame, area: Rect, voice_pad: usize) {
     // ---- the prompt: OpenCode prompt (left border ┃, element bg, meta row)
     // multi-line: newlines break rows, long rows wrap at the inner
     // width (layout_input)
-    let inner = ((chunks[5].width as usize).saturating_sub(6 + voice_pad)).max(1);
+    let inner = ((area.width as usize).saturating_sub(6 + voice_pad)).max(1);
     // the text area inside the block: left border + padding 3, padding
     // 2 right, 2 top; the rows above the meta row and its blank line
-    let text_rows = (chunks[5].height as usize).saturating_sub(5).max(1);
+    let text_rows = (area.height as usize).saturating_sub(5).max(1);
     app.composer = ComposerArea {
-        x: chunks[5].x + 4 + voice_pad as u16,
-        y: chunks[5].y + 2,
+        x: area.x + 4 + voice_pad as u16,
+        y: area.y + 2,
         w: inner,
         h: text_rows,
         top: 0,
@@ -402,24 +424,21 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
             .style(Style::default().bg(ELEMENT))
             .padding(Padding::new(3, 2, 2, 1)),
     );
-    frame.render_widget(prompt, chunks[5]);
-    if card_h > 0 {
-        sb::draw_card(app, frame, chunks[4]);
-    } else if sb::card_full(app) {
-        sb::draw_card(app, frame, chunks[0]);
-    }
+    frame.render_widget(prompt, area);
+}
 
+fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
     // ---- slash-command popup (OpenCode autocomplete: split border,
     // backgroundMenu, primary selection)
     let matches = popup_items(app);
     if !matches.is_empty() {
         let n = matches.len().min(8) as u16;
-        let w = if matches[0].closable { 72u16 } else { 56u16 }.min(chunks[5].width);
+        let w = if matches[0].closable { 72u16 } else { 56u16 }.min(prompt.width);
         let sel_i = app.popup_sel.min(matches.len() - 1);
         let top = popup_top(sel_i, matches.len(), 8);
         let area = Rect {
-            x: chunks[5].x,
-            y: chunks[5].y.saturating_sub(n + 2),
+            x: prompt.x,
+            y: prompt.y.saturating_sub(n + 2),
             width: w,
             height: n + 2,
         };
@@ -470,9 +489,11 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
             area,
         );
     }
+}
 
+fn hint_text(app: &App) -> &'static str {
     // ---- hint row (the OpenCode prompt right hint row)
-    let hint = if app.voice.state() == voice::VoiceState::Recording {
+    if app.voice.state() == voice::VoiceState::Recording {
         "recording · any key stops · Esc/Ctrl+C cancel"
     } else if app.voice.state() == voice::VoiceState::Flushing {
         "transcribing the last words… · Esc/Ctrl+C cancel"
@@ -482,11 +503,5 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
         "⏎ steer · Tab queue · Ctrl+C interrupt · / commands · End bottom"
     } else {
         "⏎ send · Shift+⏎/Ctrl+J new line · / commands · Ctrl+T reasoning · Ctrl+C quit"
-    };
-    let hint = if app.term.shown() { term::HINT } else { hint };
-    frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(DIM)))),
-        chunks[7],
-    );
-    help::draw(app, frame);
+    }
 }
