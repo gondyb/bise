@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bise — terminal UI mockup v0</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #141211; --panel: #1b1816; --text: #ece6da; --dim: #a39c90; --faint: #4a4540;
+    --accent: #f2766b; --err: #ff5a52; --ok: #b9d99a;
+    --kw: #d7a6f0; --str: #b9d99a; --com: #857e74; --num: #f0b27a; --fn: #8fc4f0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0b0a09; font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: 14px; line-height: 1.55; color: var(--text); padding: 28px; }
+  .intro { color: #8a8378; max-width: 90ch; margin-bottom: 18px; font-size: 13px; }
+  .intro b { color: var(--text); font-weight: 400; }
+  .controls { margin-bottom: 14px; font-size: 13px; color: #8a8378; }
+  .controls button { font: inherit; background: #1f1c1a; color: var(--text); border: 1px solid #3a3531; border-radius: 4px; padding: 3px 10px; cursor: pointer; margin-right: 6px; }
+  .controls button.on { border-color: var(--accent); color: var(--accent); }
+  .term { background: var(--bg); border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.5); width: 124ch; max-width: 100%; overflow: hidden; }
+  .bar { padding: 8px 14px; display: flex; gap: 8px; }
+  .bar i { width: 12px; height: 12px; border-radius: 50%; background: #3a3531; display: inline-block; }
+  .head { display: flex; justify-content: space-between; padding: 4px 2ch 10px; }
+  .logo { font-weight: 700; } .logo .k { color: var(--accent); }
+  .dim { color: var(--dim); } .faint { color: var(--faint); } .acc { color: var(--accent); } .err { color: var(--err); }
+  .body { display: grid; grid-template-columns: 1fr 30ch; min-height: 560px; }
+  .feed { padding: 0 2ch 12px; position: relative; }
+  .panel { border-left: 1px solid #2a2623; padding: 0 2ch; }
+  .measure { position: absolute; top: 0; bottom: 0; left: calc(2ch + 76ch); border-left: 1px dashed var(--accent); opacity: .5; display: none; }
+  .measure::after { content: "76 cols"; position: absolute; top: 0; left: 6px; color: var(--accent); font-size: 11px; }
+  body.show-measure .measure { display: block; }
+  .prose { max-width: 76ch; }
+  .blk { margin-top: 14px; }
+  .who { display: inline-block; width: 3ch; }
+  .ind { padding-left: 3ch; }
+  details > summary { list-style: none; cursor: pointer; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary .tw::before { content: "▸"; color: var(--dim); }
+  details[open] > summary .tw::before { content: "▾"; }
+  pre { font: inherit; white-space: pre-wrap; max-width: 100ch; }
+  .code { padding-left: 3ch; border-left: 1px solid #2a2623; margin: 4px 0 0 1ch; }
+  .code .ln { color: var(--faint); user-select: none; }
+  .kw { color: var(--kw); } .str { color: var(--str); } .com { color: var(--com); } .num { color: var(--num); } .fn { color: var(--fn); }
+  .out { color: var(--dim); padding-left: 3ch; margin: 4px 0 0 1ch; border-left: 1px solid #2a2623; }
+  .card { border: 1px solid var(--accent); border-radius: 6px; padding: 8px 2ch; max-width: 76ch; margin-top: 14px; }
+  .card .opts span { margin-right: 3ch; }
+  .card .opts b { color: var(--accent); font-weight: 400; }
+  .task { display: flex; justify-content: space-between; }
+  .task.sel { background: #262220; margin: 0 -1ch; padding: 0 1ch; }
+  .pulse { display: inline-block; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .composer { border-top: 1px solid #2a2623; padding: 10px 2ch 14px; display: flex; justify-content: space-between; }
+  .cur { display: inline-block; width: .6em; height: 1.05em; background: var(--text); vertical-align: -0.18em; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .tabs { padding: 0 2ch 8px; color: var(--dim); }
+  .tabs span { margin-right: 2ch; cursor: pointer; } .tabs span.on { color: var(--text); text-decoration: underline; text-underline-offset: 4px; }
+  .view { display: none; } .view.on { display: block; }
+  .legend { margin-top: 26px; max-width: 124ch; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 3ch; font-size: 13px; }
+  .legend h3 { grid-column: 1 / -1; font-size: 13px; font-weight: 400; color: #8a8378; margin-top: 12px; }
+  .legend div span:first-child { display: inline-block; width: 3ch; }
+</style>
+</head>
+<body>
+<p class="intro"><b>bise — terminal UI mockup v0.</b> design only, nothing implemented. click ▸ to disclose. switch views with the tabs. fonts, colors and glyphs are proposals; glyph coverage must be checked in real terminal fonts.</p>
+<div class="controls">
+  <button id="m">show the 76-col measure</button>
+  <button id="all">expand everything</button>
+</div>
+
+<div class="term">
+  <div class="bar"><i></i><i></i><i></i></div>
+  <div class="head">
+    <span class="logo">bise <span class="k">:*</span></span>
+    <span class="dim"><span class="pulse">∿</span> 2 working · <span class="acc">? 1 needs you</span> · ♡ 1 done · $1.20</span>
+  </div>
+  <div class="tabs"><span data-v="main" class="on">main</span><span data-v="task">auth-fix (checkout)</span></div>
+  <div class="body">
+    <div class="feed">
+      <div class="measure"></div>
+
+      <!-- main view -->
+      <div class="view on" id="v-main">
+        <div class="prose">
+          <div class="blk"><span class="who dim">›</span>the login breaks on safari. oh and can someone write the release note for 0.4?</div>
+
+          <div class="blk"><span class="who acc">:*</span>on it. two tasks:</div>
+          <div class="ind"><span class="pulse">∿</span> auth-fix <span class="dim">the safari login bug</span></div>
+          <div class="ind"><span class="pulse">∿</span> release <span class="dim">the release note for 0.4</span></div>
+
+          <div class="blk"><span class="who acc">:*</span>docs asked "v1 or v2 for the examples?". the brief says v2, so i answered v2.
+            <span class="dim">(undo: ctrl+z)</span></div>
+
+          <details class="blk">
+            <summary><span class="who">♡</span>bench is done. p95 at 180 ms, nothing to fix. <span class="tw"></span> <span class="dim">report</span></summary>
+            <div class="out"><pre>ran the load test 3 times on the staging build.
+p50 42 ms · p95 180 ms · p99 410 ms (budget: p95 &lt; 250 ms)
+the slow tail is the cold cache on the first request; not worth fixing now.</pre></div>
+          </details>
+        </div>
+
+        <div class="card">
+          <div><span class="acc">?</span> docs needs you</div>
+          <div class="blk" style="margin-top:6px">the brief says "keep old clients working", but v2 removes /users. do we document v1 or v2?</div>
+          <div class="opts blk" style="margin-top:8px"><span><b>1</b> v1</span><span><b>2</b> v2</span><span class="dim"><b>esc</b> later</span></div>
+        </div>
+      </div>
+
+      <!-- task view -->
+      <div class="view" id="v-task">
+        <div class="dim">you are talking to auth-fix directly. main is not in the loop. <span class="acc">esc</span> back to main.</div>
+        <details class="blk">
+          <summary><span class="who">◇</span>brief <span class="tw"></span></summary>
+          <div class="out"><pre>the login breaks on safari 18 (webkit). reproduce with playwright,
+fix it, keep the chrome path unchanged. report with the test output.</pre></div>
+        </details>
+
+        <details class="blk">
+          <summary><span class="who dim">∴</span><span class="dim">thought for 14s</span> <span class="tw"></span></summary>
+          <div class="out"><pre>safari drops the session cookie on the redirect. SameSite=None needs
+Secure, and the dev server sets it without Secure. check session.ts first.</pre></div>
+        </details>
+
+        <div class="blk"><span class="who">$</span>bash <span class="dim">✓ 6.2s</span></div>
+        <pre class="code"><span class="kw">cd</span> web
+npx playwright test login --project=webkit --reporter=line
+<span class="kw">grep</span> -rn <span class="str">"SameSite"</span> src/auth/</pre>
+        <details>
+          <summary class="ind"><span class="tw"></span> <span class="dim">output · 42 lines · 1 failed</span></summary>
+          <div class="out"><pre>[webkit] › login.spec.ts:12 › logs in and stays logged in
+  expected cookie "sid" to be set after redirect
+1 failed, 11 passed (6.1s)
+src/auth/session.ts:31:  sameSite: "none",</pre></div>
+        </details>
+
+        <div class="blk"><span class="who">λ</span>typescript <span class="dim">✓ 0.4s</span></div>
+        <pre class="code"><span class="kw">async function</span> <span class="fn">main</span>() {
+  <span class="kw">const</span> issues = <span class="kw">await</span> tools.github.<span class="fn">search_issues</span>({
+    query: <span class="str">"safari login cookie"</span>,
+    limit: <span class="num">5</span>,
+  });
+  <span class="com">// only the open ones, newest first</span>
+  <span class="kw">return</span> issues.<span class="fn">filter</span>((i) =&gt; i.state === <span class="str">"open"</span>).<span class="fn">map</span>((i) =&gt; i.title);
+}</pre>
+        <details>
+          <summary class="ind"><span class="tw"></span> <span class="dim">result · 2 items</span></summary>
+          <div class="out"><pre>["login loop on safari 18", "cookie lost after sso redirect"]</pre></div>
+        </details>
+
+        <details class="blk">
+          <summary><span class="who">±</span>edit web/src/auth/session.ts <span class="dim">✓ +3 −1</span> <span class="tw"></span></summary>
+          <pre class="code"><span class="com">@@ -29,5 +29,7 @@</span>
+   cookie: {
+<span class="err">-    sameSite: "none",</span>
+<span style="color:var(--ok)">+    sameSite: "none",</span>
+<span style="color:var(--ok)">+    secure: true,</span>
+<span style="color:var(--ok)">+    // safari drops SameSite=None cookies without Secure</span>
+   },</pre>
+        </details>
+
+        <div class="blk"><span class="who">✉</span><span class="dim">to release:</span> heads-up, i'm touching web/src/auth. mention the safari fix in the notes.</div>
+
+        <div class="blk prose"><span class="who"><span class="pulse">∿</span></span>re-running the webkit tests…</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="dim" style="margin-bottom:6px">hands</div>
+      <div class="task sel"><span><span class="pulse">∿</span> auth-fix</span><span class="dim">12m</span></div>
+      <div class="task"><span><span class="pulse">∿</span> release</span><span class="dim">3m</span></div>
+      <div class="task"><span><span class="acc">?</span> docs</span><span class="acc">you</span></div>
+      <div class="task"><span>… api-v2</span><span class="dim">waits docs</span></div>
+      <div class="task"><span>♡ bench</span><span class="dim">done</span></div>
+      <div class="task"><span class="err">✗</span> deploy<span class="dim">failed</span></div>
+      <div class="task"><span class="dim">○ ideas</span><span class="dim">idle</span></div>
+    </div>
+  </div>
+  <div class="composer"><span><span class="dim">›</span> <span class="cur"></span></span><span class="dim">enter send · @ route · ctrl+a next card</span></div>
+</div>
+
+<div class="legend">
+  <h3>entities</h3>
+  <div><span class="dim">›</span>you</div>
+  <div><span class="acc">:*</span>bise (main)</div>
+  <div><span>◇</span>brief</div>
+  <div><span class="dim">∴</span>thinking</div>
+  <div><span>$</span>bash</div>
+  <div><span>λ</span>typescript</div>
+  <div><span>±</span>file edit</div>
+  <div><span>✉</span>message between agents</div>
+  <div><span class="acc">?</span>card: needs you</div>
+  <h3>task status</h3>
+  <div><span class="pulse">∿</span>working (a breeze)</div>
+  <div><span>…</span>waiting on another task</div>
+  <div><span class="acc">?</span>needs you</div>
+  <div><span>♡</span>done</div>
+  <div><span class="err">✗</span>failed</div>
+  <div><span class="dim">○</span>idle</div>
+</div>
+
+<script>
+document.getElementById("m").onclick = (e) => { document.body.classList.toggle("show-measure"); e.target.classList.toggle("on"); };
+let open = false;
+document.getElementById("all").onclick = (e) => { open = !open; document.querySelectorAll("details").forEach(d => d.open = open); e.target.classList.toggle("on"); };
+document.querySelectorAll(".tabs span").forEach(t => t.onclick = () => {
+  document.querySelectorAll(".tabs span").forEach(x => x.classList.toggle("on", x === t));
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === "v-" + t.dataset.v));
+});
+</script>
+</body>
+</html>
