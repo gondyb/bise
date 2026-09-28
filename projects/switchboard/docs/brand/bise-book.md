@@ -539,6 +539,13 @@ hooks), `ui.rs` (P wave 1, I wave 2).
 constants (`BRAND`, `ACCENT`, `INFO`, `WARN`, `HEAD`, `PANEL`, …) stay as
 deprecated aliases until BISE-83, so no track breaks. Glyph constants for §6
 (`G_YOU`, `G_MAIN`, `G_WORKING`, …) live there too.
+Amendment (BISE-84, accepted by main): `G_*` stay `&'static str` constants
+(Unicode, with the §6 fallbacks applied); `theme::glyph(G_X)` returns the
+ASCII form when `BISE_ASCII=1` (`theme::ascii_mode()`); as a safety net,
+`theme::asciify(buf)` rewrites the drawn buffer's cells that hold a table
+glyph (only those) after each draw, only in ASCII mode. ASCII forms are one
+cell wide (`+` done, `:*` stays). Hard-coded glyph literals migrate to
+`glyph()` in BISE-83.
 
 **C2 · hub line protocol v2** (BISE-04). Today the hub writes synthetic lines
 `sb <kind> : <text>` into an agent's feed (`you`, `msg-in`, `card`,
