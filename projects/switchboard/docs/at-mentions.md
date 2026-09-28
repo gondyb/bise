@@ -1,6 +1,8 @@
 # `@` mentions: agents and files in one popup
 
-Status: design (task `at-files`), then implemented in `rust/tui`.
+Status: implemented (task `at-files`): `rust/tui/src/files.rs` (index,
+ranking, `@` token), `commands.rs::at_items` (the popup rows),
+`sb/mention.rs` (the agents).
 
 ## Goal
 
@@ -74,8 +76,9 @@ Why the Codex way and not the Vibe way:
 - Files **and** directories, relative, `/`-separated, capped at 200 000
   entries. Each entry keeps its lowercase bytes, the offset of its name,
   its depth, and a 64-bit mask of the bytes it contains.
-- The walk starts in a thread when the TUI starts, so the index is ready
-  before the first `@`. The index is an `Arc<Vec<Entry>>` swapped under a
+- Root: the Switchboard workspace, else the folder the TUI runs in. The
+  walk starts in a thread at the first `@` (the files show a frame
+  later: 3 ms here, ~300 ms on an 84k-entry monorepo). The index is an `Arc<Vec<Entry>>` swapped under a
   mutex: readers never wait for a walk.
 - Freshness: when the popup opens (the `@` token appears) and the index
   is older than 3 s, a new walk starts in the background (at most one at
@@ -125,8 +128,18 @@ only when the query starts with `.` (Vibe).
 | this repo | 208 | 3 ms | 20 µs | | | | 8 µs | |
 
 Before the mask and the tiers, the same queries took 6-17 ms on
-dashboard (every hit fuzzy-scored). The final numbers from the TUI code
-are in the section below once it lands.
+dashboard (every hit fuzzy-scored).
+
+From the TUI code (`files::tests::bench`, `--ignored`, release, 10 runs
+per query, the whole 84 629-entry dashboard index, top 50):
+
+```
+AT_FILES_BENCH=~/mistral/dashboard cargo test --release -p bend-tui files::tests::bench -- --ignored --nocapture
+walk: 84629 entries in 310.7ms
+""  131µs   "m" 1.08ms   "ma" 1.70ms   "main" 2.25ms   "main.rs" 3.04ms
+"src/" 382µs   "src/comp" 1.54ms   "README" 2.93ms   "composer" 3.04ms
+"fidx" 401µs   "zzzq" 68µs                               worst 3.04 ms
+```
 
 ## Tests
 
@@ -134,7 +147,9 @@ are in the section below once it lands.
   recent boost, dot files), `.gitignore` respected (temp dir with a git
   repo), inline `@` detection (start, after a space, not mid-word, cursor
   position), completion text (quotes, trailing `/`).
-- tmux: type `@` + a file query in the TUI, see agents and files, pick a
-  file, check the composer text.
-- Latency: an ignored test / bench that indexes a large repo and prints
-  per-query times.
+- tmux (`tests/tui_at_files_tmux.py`, in `run_all.sh`): `@` alone lists
+  the agent then the root; inline `@not` puts `@notes` above
+  `docs/at-notes.md`; `target/` (ignored) never shows; Tab and Enter
+  insert the path; `sb/me` narrows by folder; `a@b` opens nothing; an
+  agent picked at the start keeps `@notes` (routing).
+- Latency: `files::tests::bench` (ignored), numbers above.
