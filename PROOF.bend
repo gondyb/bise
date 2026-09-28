@@ -2828,3 +2828,58 @@ def hub_rt_put_other(+xs: List<&2, HX.Rt>, +a: String, +n: String, +run: HM.Run,
       {==}
     case Con{h, t}:
       hub_rt_put_other.pick(String.eq(HX.Rt.name(h), a), h, t, a, n, run, w, tm, {==}, ne, hub_rt_put_other(t, a, n, run, w, tm, ne))
+
+
+# ---- L4: the frame of an agent (what makes it stuck) ----
+
+def hub_q(+s: HM.St, +n: String) -> Bool:
+  List.is_empty(&2, HM.Msg, HM.queued_for(s, n))
+
+# the queue of n in s2 is empty whenever it is in s1
+def hub_qimp(+s1: HM.St, +s2: HM.St, +n: String) -> Bool:
+  Bool.or(Bool.not(hub_q(s1, n)), hub_q(s2, n))
+
+def hub_not_true(q: Bool, e: {q == True{} : Bool}) -> {Bool.not(q) == False{} : Bool}:
+  match q:
+    case True{}:
+      {==}
+    case False{}:
+      hub_absurd_eq(hub_ft_absurd(e), Bool, True{}, False{})
+
+# not(q1) is false and q1 => q2: not(q2) is false
+def hub_sa.q(q1: Bool, +q2: Bool, +e: {q1 == q1 : Bool}, h: {Bool.not(q1) == False{} : Bool}, qi: {Bool.or(Bool.not(q1), q2) == True{} : Bool})
+    -> {Bool.not(q2) == False{} : Bool}:
+  match q1:
+    case True{}:
+      hub_not_true(q2, qi)
+    case False{}:
+      hub_absurd_eq(hub_tf_absurd(h), Bool, Bool.not(q2), False{})
+
+def hub_sa.e1(x: Bool, -y: Bool, e: {x == True{} : Bool}, h: {Bool.and(x, y) == False{} : Bool}) -> {y == False{} : Bool}:
+  match x:
+    case True{}:
+      h
+    case False{}:
+      hub_absurd_eq(hub_ft_absurd(e), Bool, y, False{})
+
+def hub_sa.act(b: Bool, +a: HM.Agent, +s1: HM.St, +s2: HM.St, +n: String, +eb: {HC.is_active(HM.Agent.life(a)) == b : Bool},
+    e1: {Bool.and(HC.is_active(HM.Agent.life(a)), Bool.not(hub_q(s1, n))) == False{} : Bool}, qi: {hub_qimp(s1, s2, n) == True{} : Bool})
+    -> {Bool.and(HC.is_active(HM.Agent.life(a)), Bool.not(hub_q(s2, n))) == False{} : Bool}:
+  match b:
+    case False{}:
+      %Equal.sym(Bool, HC.is_active(HM.Agent.life(a)), False{}, eb) : {Bool.and(_, Bool.not(hub_q(s2, n))) == False{} : Bool}
+      {==}
+    case True{}:
+      %Equal.sym(Bool, HC.is_active(HM.Agent.life(a)), True{}, eb) : {Bool.and(_, Bool.not(hub_q(s2, n))) == False{} : Bool}
+      hub_sa.q(hub_q(s1, n), hub_q(s2, n), {==}, hub_sa.e1(HC.is_active(HM.Agent.life(a)), Bool.not(hub_q(s1, n)), eb, e1), qi)
+
+# an agent not stuck by its record in s1 is not in s2, when its queue can
+# only have emptied
+def hub_sa(m: Maybe<&2, HM.Agent>, +s1: HM.St, +s2: HM.St, +n: String,
+    e1: {HI.stuck.agent(m, s1, n) == False{} : Bool}, qi: {hub_qimp(s1, s2, n) == True{} : Bool})
+    -> {HI.stuck.agent(m, s2, n) == False{} : Bool}:
+  match m:
+    case None{}:
+      {==}
+    case Some{+a}:
+      hub_sa.act(HC.is_active(HM.Agent.life(a)), a, s1, s2, n, {==}, e1, qi)
