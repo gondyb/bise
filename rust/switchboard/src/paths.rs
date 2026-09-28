@@ -27,15 +27,27 @@ pub fn workspace_id(workspace: &Path) -> String {
         .unwrap_or_else(|| "root".to_string());
     let base: String = base
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .take(32)
         .collect();
-    format!("{}-{:08x}", base, fnv1a(&workspace.to_string_lossy()) as u32)
+    format!(
+        "{}-{:08x}",
+        base,
+        fnv1a(&workspace.to_string_lossy()) as u32
+    )
 }
 
 impl Paths {
     pub fn for_workspace(workspace: &Path) -> Paths {
-        let workspace = workspace.canonicalize().unwrap_or_else(|_| workspace.to_path_buf());
+        let workspace = workspace
+            .canonicalize()
+            .unwrap_or_else(|_| workspace.to_path_buf());
         let state = match std::env::var("SB_STATE_DIR") {
             Ok(d) if !d.is_empty() => PathBuf::from(d),
             _ => {

@@ -109,7 +109,11 @@ struct Shell {
 }
 
 fn log_line(paths: &Paths, s: &str) {
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(paths.log()) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(paths.log())
+    {
         let _ = writeln!(f, "{} {}", now_ms(), s);
     }
 }
@@ -122,7 +126,9 @@ fn write_json(stream: &mut UnixStream, v: &Value) -> bool {
 
 /// The last `n` entries of a transcript (`<ms>\t<line>` per line).
 fn transcript_tail(path: &Path, n: usize) -> Vec<(u64, String)> {
-    let Ok(text) = std::fs::read_to_string(path) else { return Vec::new() };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
     let all: Vec<(u64, String)> = text
         .lines()
         .filter_map(|l| l.split_once('\t'))
@@ -182,7 +188,11 @@ impl Shell {
         while b.len() > BUFFER_LINES {
             b.pop_front();
         }
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(self.transcript(&dir)) {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.transcript(&dir))
+        {
             let _ = writeln!(f, "{}\t{}", now_ms(), line);
         }
         self.broadcast(&json!({"ev": "line", "agent": name, "line": line}));
@@ -216,7 +226,11 @@ impl Shell {
                     let _ = self.journal.flush();
                 }
             }
-            Effect::Spawn { agent, resume, crash_note } => self.spawn(&agent, resume, crash_note),
+            Effect::Spawn {
+                agent,
+                resume,
+                crash_note,
+            } => self.spawn(&agent, resume, crash_note),
             Effect::Kill { agent } => {
                 if let Some(dir) = self.dir_of(&agent) {
                     self.gens.remove(&dir);
@@ -231,7 +245,10 @@ impl Shell {
             Effect::Say { agent, text } => {
                 let line = format!("say {}\n", wire_escape(&text));
                 if !self.repl_write(&agent, &line) {
-                    log_line(&self.opts.paths, &format!("say to {} failed: not connected", agent));
+                    log_line(
+                        &self.opts.paths,
+                        &format!("say to {} failed: not connected", agent),
+                    );
                 }
             }
             Effect::Steer { agent, text } => {
@@ -240,7 +257,9 @@ impl Shell {
                         .create(true)
                         .append(true)
                         .open(&r.steer)
-                        .and_then(|mut f| f.write_all(format!("{}\n", wire_escape(&text)).as_bytes()));
+                        .and_then(|mut f| {
+                            f.write_all(format!("{}\n", wire_escape(&text)).as_bytes())
+                        });
                     if ok.is_err() {
                         log_line(&self.opts.paths, &format!("steer to {} failed", agent));
                     }
@@ -289,7 +308,9 @@ impl Shell {
     }
 
     fn repl_write(&mut self, agent: &str, line: &str) -> bool {
-        let Some(dir) = self.dir_of(agent) else { return false };
+        let Some(dir) = self.dir_of(agent) else {
+            return false;
+        };
         match self.repls.get_mut(&dir) {
             Some(r) => r.stream.write_all(line.as_bytes()).is_ok(),
             None => false,
@@ -298,7 +319,9 @@ impl Shell {
 
     /// Start the REPL of `name` on a supervisor thread.
     fn spawn(&mut self, name: &str, resume: bool, crash_note: Option<String>) {
-        let Some(a) = self.hub.st.agents.get(name).cloned() else { return };
+        let Some(a) = self.hub.st.agents.get(name).cloned() else {
+            return;
+        };
         let dir = a.dir.clone();
         let adir = self.opts.paths.agent_dir(&dir);
         let _ = std::fs::create_dir_all(&adir);
@@ -336,6 +359,18 @@ impl Shell {
             .env("BEND_WORKDIR", &a.ws.path)
             .env("SB_SOCKET", self.opts.paths.socket())
             .env("SB_AGENT", &a.name)
+            // RFC 0002 §9: two dev servers must not fight for one port
+            .env("SB_TASK", &a.name)
+            .env(
+                "SB_PORT_OFFSET",
+                self.hub
+                    .st
+                    .order
+                    .iter()
+                    .position(|n| *n == a.name)
+                    .unwrap_or(0)
+                    .to_string(),
+            )
             .env(
                 "PATH",
                 format!(
@@ -360,7 +395,9 @@ impl Shell {
     }
 
     fn on_repl_line(&mut self, dir: &str, line: &str) {
-        let Some(name) = self.agent_by_dir(dir).map(|a| a.name.clone()) else { return };
+        let Some(name) = self.agent_by_dir(dir).map(|a| a.name.clone()) else {
+            return;
+        };
         if line.starts_with("history ") && self.buffers.get(&name).is_some_and(|b| !b.is_empty()) {
             // a restored session replays its history: the feed has it
             return;
@@ -378,7 +415,10 @@ impl Shell {
                     !c.trim().is_empty()
                 })
                 .unwrap_or(false);
-            self.step(Input::ReplIdle { agent: name, leftover });
+            self.step(Input::ReplIdle {
+                agent: name,
+                leftover,
+            });
         } else {
             self.step(Input::ReplLine {
                 agent: name,
@@ -402,7 +442,10 @@ impl Shell {
         for name in self.hub.st.order.clone() {
             if let Some(b) = self.buffers.get(&name) {
                 for l in b {
-                    if !write_json(&mut stream, &json!({"ev": "line", "agent": name, "line": l})) {
+                    if !write_json(
+                        &mut stream,
+                        &json!({"ev": "line", "agent": name, "line": l}),
+                    ) {
                         return;
                     }
                 }
@@ -421,19 +464,28 @@ impl Shell {
                 focus: s("focus"),
                 text: s("text"),
             }),
-            "focus" => self.step(Input::ClientFocus { client: id, focus: s("focus") }),
+            "focus" => self.step(Input::ClientFocus {
+                client: id,
+                focus: s("focus"),
+            }),
             "confirm" => self.step(Input::ClientConfirm {
                 client: id,
                 id: v.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
                 yes: v.get("yes").and_then(|x| x.as_bool()).unwrap_or(false),
             }),
-            "interrupt" => self.step(Input::ClientInterrupt { client: id, agent: s("agent") }),
+            "interrupt" => self.step(Input::ClientInterrupt {
+                client: id,
+                agent: s("agent"),
+            }),
             "stop_hub" => {
                 let _ = self.tx.send(Msg::Shutdown);
             }
             other => {
                 if let Some(c) = self.clients.get_mut(&id) {
-                    write_json(c, &json!({"ev": "notice", "text": format!("op inconnue : {}", other)}));
+                    write_json(
+                        c,
+                        &json!({"ev": "notice", "text": format!("op inconnue : {}", other)}),
+                    );
                 }
             }
         }
@@ -441,13 +493,21 @@ impl Shell {
 
     /// `sb inspect` and `sb history` read files; the rest goes to the core.
     fn agent_request(&mut self, token: Token, mut stream: UnixStream, v: Value) {
-        let from = v.get("from").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let from = v
+            .get("from")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
         let cmd = v.get("cmd").and_then(|x| x.as_str()).unwrap_or("");
         match cmd {
             "inspect" => {
                 let target = v.get("agent").and_then(|x| x.as_str()).unwrap_or("");
                 let last = v.get("last").and_then(|x| x.as_u64()).unwrap_or(20) as usize;
-                let query = v.get("query").and_then(|x| x.as_str()).unwrap_or("").to_lowercase();
+                let query = v
+                    .get("query")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_lowercase();
                 let body = match self.hub.st.resolve(target).and_then(|n| self.dir_of(&n)) {
                     None => json!({"ok": false, "error": format!("aucun agent nommé {}", target)}),
                     Some(dir) => {
@@ -457,7 +517,11 @@ impl Shell {
                             .filter(|l| query.is_empty() || l.to_lowercase().contains(&query))
                             .collect();
                         let skip = entries.len().saturating_sub(last.min(200));
-                        let text: Vec<String> = entries.into_iter().skip(skip).map(|e| clip(&e, 1500)).collect();
+                        let text: Vec<String> = entries
+                            .into_iter()
+                            .skip(skip)
+                            .map(|e| clip(&e, 1500))
+                            .collect();
                         let mut out = text.join("\n");
                         if out.chars().count() > 4000 {
                             out = crate::util::clip_tail(&out, 4000);
@@ -468,7 +532,11 @@ impl Shell {
                 write_json(&mut stream, &body);
             }
             "history" => {
-                let query = v.get("query").and_then(|x| x.as_str()).unwrap_or("").to_lowercase();
+                let query = v
+                    .get("query")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_lowercase();
                 let words: Vec<&str> = query.split_whitespace().collect();
                 let dir = self.dir_of(&from).unwrap_or_else(|| MAIN.to_string());
                 let mut hits: Vec<String> = transcript_tail(&self.transcript(&dir), usize::MAX)
@@ -511,7 +579,16 @@ impl Shell {
 
 /// Spawn one REPL, wait for its banner, connect, stream its lines.
 #[allow(clippy::too_many_arguments)]
-fn supervise(mut cmd: Command, dir: String, gen: u64, log_path: PathBuf, err_path: PathBuf, port: u16, tx: Sender<Msg>, paths: Paths) {
+fn supervise(
+    mut cmd: Command,
+    dir: String,
+    gen: u64,
+    log_path: PathBuf,
+    err_path: PathBuf,
+    port: u16,
+    tx: Sender<Msg>,
+    paths: Paths,
+) {
     let gone = |ok_exit: bool, reason: String| {
         let _ = tx.send(Msg::ReplGone {
             dir: dir.clone(),
@@ -524,7 +601,10 @@ fn supervise(mut cmd: Command, dir: String, gen: u64, log_path: PathBuf, err_pat
         Ok(f) => f,
         Err(e) => return gone(false, format!("log : {}", e)),
     };
-    let err = std::fs::OpenOptions::new().create(true).append(true).open(&err_path);
+    let err = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&err_path);
     cmd.stdin(Stdio::null()).stdout(Stdio::from(log));
     match err {
         Ok(f) => cmd.stderr(Stdio::from(f)),
@@ -558,7 +638,10 @@ fn supervise(mut cmd: Command, dir: String, gen: u64, log_path: PathBuf, err_pat
     let field = |k: &str| -> String {
         info.lines()
             .find(|l| l.starts_with("harness-info "))
-            .and_then(|l| l.split_whitespace().find_map(|kv| kv.strip_prefix(&format!("{}=", k)).map(|v| v.to_string())))
+            .and_then(|l| {
+                l.split_whitespace()
+                    .find_map(|kv| kv.strip_prefix(&format!("{}=", k)).map(|v| v.to_string()))
+            })
             .unwrap_or_default()
     };
     let steer = field("steer");
@@ -591,8 +674,17 @@ fn supervise(mut cmd: Command, dir: String, gen: u64, log_path: PathBuf, err_pat
         match r.read_until(b'\n', &mut buf) {
             Ok(0) | Err(_) => break,
             Ok(_) => {
-                let line = String::from_utf8_lossy(&buf).trim_end_matches(['\n', '\r']).to_string();
-                if tx.send(Msg::ReplLine { dir: dir.clone(), gen, line }).is_err() {
+                let line = String::from_utf8_lossy(&buf)
+                    .trim_end_matches(['\n', '\r'])
+                    .to_string();
+                if tx
+                    .send(Msg::ReplLine {
+                        dir: dir.clone(),
+                        gen,
+                        line,
+                    })
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -603,9 +695,22 @@ fn supervise(mut cmd: Command, dir: String, gen: u64, log_path: PathBuf, err_pat
         Ok(s) => {
             let tail = std::fs::read_to_string(&err_path)
                 .ok()
-                .and_then(|t| t.lines().rev().find(|l| !l.trim().is_empty()).map(|l| clip(l.trim(), 200)))
+                .and_then(|t| {
+                    t.lines()
+                        .rev()
+                        .find(|l| !l.trim().is_empty())
+                        .map(|l| clip(l.trim(), 200))
+                })
                 .unwrap_or_default();
-            format!("{}{}", s, if tail.is_empty() { String::new() } else { format!(" · {}", tail) })
+            format!(
+                "{}{}",
+                s,
+                if tail.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · {}", tail)
+                }
+            )
         }
         Err(e) => e.to_string(),
     };
@@ -621,13 +726,17 @@ fn accept_loop(listener: UnixListener, tx: Sender<Msg>) {
         next += 1;
         let tx = tx.clone();
         std::thread::spawn(move || {
-            let Ok(read_half) = stream.try_clone() else { return };
+            let Ok(read_half) = stream.try_clone() else {
+                return;
+            };
             let mut r = BufReader::new(read_half);
             let mut first = String::new();
             if r.read_line(&mut first).unwrap_or(0) == 0 {
                 return;
             }
-            let Ok(v) = serde_json::from_str::<Value>(first.trim()) else { return };
+            let Ok(v) = serde_json::from_str::<Value>(first.trim()) else {
+                return;
+            };
             match v.get("op").and_then(|x| x.as_str()) {
                 Some("hello") => {
                     let _ = tx.send(Msg::ClientNew { id, stream });
@@ -646,7 +755,11 @@ fn accept_loop(listener: UnixListener, tx: Sender<Msg>) {
                     let _ = tx.send(Msg::ClientGone { id });
                 }
                 Some("agent") => {
-                    let _ = tx.send(Msg::AgentNew { token: id, stream, v });
+                    let _ = tx.send(Msg::AgentNew {
+                        token: id,
+                        stream,
+                        v,
+                    });
                 }
                 Some("ping") => {
                     let mut s = stream;
@@ -663,7 +776,9 @@ fn accept_loop(listener: UnixListener, tx: Sender<Msg>) {
 fn kill_stale_repls(sh: &Shell) {
     for a in sh.hub.st.agents.values() {
         let f = sh.opts.paths.agent_dir(&a.dir).join("repl.pid");
-        let Ok(pid) = std::fs::read_to_string(&f) else { continue };
+        let Ok(pid) = std::fs::read_to_string(&f) else {
+            continue;
+        };
         let pid = pid.trim().to_string();
         let cmdline = Command::new("ps")
             .args(["-p", &pid, "-o", "command="])
@@ -671,7 +786,10 @@ fn kill_stale_repls(sh: &Shell) {
             .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
             .unwrap_or_default();
         if cmdline.contains("repl-live") {
-            log_line(&sh.opts.paths, &format!("killing a stale REPL of {} (pid {})", a.name, pid));
+            log_line(
+                &sh.opts.paths,
+                &format!("killing a stale REPL of {} (pid {})", a.name, pid),
+            );
             let _ = Command::new("kill").arg(&pid).status();
         }
         let _ = std::fs::remove_file(&f);
@@ -700,7 +818,14 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     let listener = UnixListener::bind(paths.socket())?;
     std::fs::write(paths.pid_file(), std::process::id().to_string())?;
     write_shim(&paths, &opts.exe)?;
-    log_line(&paths, &format!("hub start pid={} workspace={}", std::process::id(), paths.workspace.display()));
+    log_line(
+        &paths,
+        &format!(
+            "hub start pid={} workspace={}",
+            std::process::id(),
+            paths.workspace.display()
+        ),
+    );
 
     let workspace = paths.workspace.to_string_lossy().to_string();
     let mut hub = Hub::new(&workspace);
@@ -710,7 +835,10 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         .filter_map(|l| serde_json::from_str(l).ok())
         .collect();
     hub.replay(&events);
-    let journal = std::fs::OpenOptions::new().create(true).append(true).open(paths.journal())?;
+    let journal = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(paths.journal())?;
 
     let (tx, rx): (Sender<Msg>, Receiver<Msg>) = channel();
     let log_paths = paths.clone();
@@ -779,13 +907,23 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 let _ = std::fs::write(&steer, "");
                 let _ = std::fs::write(&interrupt, "");
                 let _ = pid;
-                sh.repls.insert(dir.clone(), Repl { stream, steer, interrupt });
+                sh.repls.insert(
+                    dir.clone(),
+                    Repl {
+                        stream,
+                        steer,
+                        interrupt,
+                    },
+                );
                 if let Some(name) = sh.agent_by_dir(&dir).map(|a| a.name.clone()) {
                     sh.step(Input::ReplReady { agent: name });
                 }
             }
             Msg::ReplSpawned { dir, gen, pid } => {
-                let _ = std::fs::write(sh.opts.paths.agent_dir(&dir).join("repl.pid"), pid.to_string());
+                let _ = std::fs::write(
+                    sh.opts.paths.agent_dir(&dir).join("repl.pid"),
+                    pid.to_string(),
+                );
                 if sh.gens.get(&dir) == Some(&gen) {
                     sh.pids.insert(dir, (gen, pid));
                 } else {
@@ -797,7 +935,12 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                     sh.on_repl_line(&dir, &line);
                 }
             }
-            Msg::ReplGone { dir, gen, ok_exit, reason } => {
+            Msg::ReplGone {
+                dir,
+                gen,
+                ok_exit,
+                reason,
+            } => {
                 // a killed generation is not live anymore: its exit is
                 // expected; any exit of the live one is a crash (the hub
                 // never asks a REPL to quit)

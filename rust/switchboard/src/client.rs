@@ -74,13 +74,17 @@ pub fn stop(paths: &Paths) -> std::io::Result<bool> {
 
 /// One request, one JSON answer (the `sb` CLI).
 pub fn request(socket: &Path, req: &Value, timeout: Duration) -> Result<Value, String> {
-    let mut s = UnixStream::connect(socket).map_err(|e| format!("hub injoignable ({}) : {}", socket.display(), e))?;
-    s.set_read_timeout(Some(timeout)).map_err(|e| e.to_string())?;
+    let mut s = UnixStream::connect(socket)
+        .map_err(|e| format!("hub injoignable ({}) : {}", socket.display(), e))?;
+    s.set_read_timeout(Some(timeout))
+        .map_err(|e| e.to_string())?;
     let mut line = req.to_string();
     line.push('\n');
     s.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
     let mut r = BufReader::new(s);
     let mut answer = String::new();
-    r.read_line(&mut answer).map_err(|e| format!("pas de réponse du hub : {}", e))?;
-    serde_json::from_str(answer.trim()).map_err(|e| format!("réponse illisible : {} ({})", e, answer.trim()))
+    r.read_line(&mut answer)
+        .map_err(|e| format!("pas de réponse du hub : {}", e))?;
+    serde_json::from_str(answer.trim())
+        .map_err(|e| format!("réponse illisible : {} ({})", e, answer.trim()))
 }

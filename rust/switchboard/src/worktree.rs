@@ -53,16 +53,30 @@ impl Config {
             if !in_section {
                 continue;
             }
-            let Some((k, v)) = l.split_once('=') else { continue };
+            let Some((k, v)) = l.split_once('=') else {
+                continue;
+            };
             match k.trim() {
-                "root" => c.root = Some(toml_str(v)).filter(|s| !s.is_empty()).map(PathBuf::from),
-                "base" => c.base = Some(toml_str(v)).filter(|s| !s.is_empty()).unwrap_or(c.base),
+                "root" => {
+                    c.root = Some(toml_str(v))
+                        .filter(|s| !s.is_empty())
+                        .map(PathBuf::from)
+                }
+                "base" => {
+                    c.base = Some(toml_str(v))
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(c.base)
+                }
                 "branch_prefix" => c.branch_prefix = toml_str(v),
                 "setup" => c.setup = toml_str(v),
                 "copy" => {
                     let inner = v.trim().trim_start_matches('[');
                     let inner = inner.split(']').next().unwrap_or("");
-                    c.copy = inner.split(',').map(toml_str).filter(|s| !s.is_empty()).collect();
+                    c.copy = inner
+                        .split(',')
+                        .map(toml_str)
+                        .filter(|s| !s.is_empty())
+                        .collect();
                 }
                 _ => {}
             }
@@ -88,17 +102,25 @@ fn git_env(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Result<String, St
     for (k, v) in env {
         cmd.env(k, v);
     }
-    let out = cmd.output().map_err(|e| format!("git introuvable : {}", e))?;
+    let out = cmd
+        .output()
+        .map_err(|e| format!("git introuvable : {}", e))?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).trim_end().to_string())
     } else {
-        Err(format!("git {} : {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim()))
+        Err(format!(
+            "git {} : {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
     }
 }
 
 /// An identity for the snapshot commit when the repo has none.
 fn identity(dir: &Path) -> Vec<(&'static str, &'static str)> {
-    let has = git(dir, &["config", "user.email"]).map(|s| !s.is_empty()).unwrap_or(false);
+    let has = git(dir, &["config", "user.email"])
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
     if has {
         Vec::new()
     } else {
@@ -124,7 +146,16 @@ impl GitEnv {
     }
 
     fn branch_exists(&self, b: &str) -> bool {
-        git(self.ws(), &["show-ref", "--verify", "--quiet", &format!("refs/heads/{}", b)]).is_ok()
+        git(
+            self.ws(),
+            &[
+                "show-ref",
+                "--verify",
+                "--quiet",
+                &format!("refs/heads/{}", b),
+            ],
+        )
+        .is_ok()
     }
 
     fn free_branch(&self, name: &str) -> String {
@@ -132,7 +163,10 @@ impl GitEnv {
         if !self.branch_exists(&base) {
             return base;
         }
-        (2..).map(|i| format!("{}-{}", base, i)).find(|b| !self.branch_exists(b)).unwrap()
+        (2..)
+            .map(|i| format!("{}-{}", base, i))
+            .find(|b| !self.branch_exists(b))
+            .unwrap()
     }
 
     fn free_path(&self, name: &str) -> PathBuf {
@@ -188,7 +222,10 @@ impl GitEnv {
     }
 
     fn remove(&self, path: &Path, branch: &str) {
-        let _ = git(self.ws(), &["worktree", "remove", "--force", &path.to_string_lossy()]);
+        let _ = git(
+            self.ws(),
+            &["worktree", "remove", "--force", &path.to_string_lossy()],
+        );
         let _ = git(self.ws(), &["worktree", "prune"]);
         if !branch.is_empty() {
             let _ = git(self.ws(), &["branch", "-D", branch]);
@@ -206,14 +243,24 @@ impl Env for GitEnv {
     }
 
     fn worktree_create(&mut self, name: &str, with_changes: bool) -> Result<Workspace, String> {
-        let base = git(self.ws(), &["rev-parse", "--verify", &format!("{}^{{commit}}", self.config.base)])?;
+        let base = git(
+            self.ws(),
+            &[
+                "rev-parse",
+                "--verify",
+                &format!("{}^{{commit}}", self.config.base),
+            ],
+        )?;
         let branch = self.free_branch(name);
         let path = self.free_path(name);
         if let Some(p) = path.parent() {
             std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
         }
         let ps = path.to_string_lossy().to_string();
-        git(self.ws(), &["worktree", "add", "-q", "-b", &branch, &ps, &base])?;
+        git(
+            self.ws(),
+            &["worktree", "add", "-q", "-b", &branch, &ps, &base],
+        )?;
         let result = (|| {
             if with_changes {
                 let stash = git(self.ws(), &["stash", "create"])?;
@@ -247,13 +294,28 @@ impl Env for GitEnv {
         let branch = ws.branch.clone().unwrap_or_default();
         // the pattern is relative to refs/heads/ when it applies to --branches
         let exclude = format!("--exclude={}", branch);
-        let unpushed = git(path, &["rev-list", &branch, "--not", "--remotes", &exclude, "--branches"])
-            .map(|s| s.lines().filter(|l| !l.trim().is_empty()).count())
-            .unwrap_or(0);
+        let unpushed = git(
+            path,
+            &[
+                "rev-list",
+                &branch,
+                "--not",
+                "--remotes",
+                &exclude,
+                "--branches",
+            ],
+        )
+        .map(|s| s.lines().filter(|l| !l.trim().is_empty()).count())
+        .unwrap_or(0);
         Loss { dirty, unpushed }
     }
 
-    fn worktree_drop(&mut self, name: &str, ws: &Workspace, loss: &Loss) -> Result<Option<String>, String> {
+    fn worktree_drop(
+        &mut self,
+        name: &str,
+        ws: &Workspace,
+        loss: &Loss,
+    ) -> Result<Option<String>, String> {
         let path = PathBuf::from(&ws.path);
         let branch = ws.branch.clone().unwrap_or_default();
         let mut snapshot = None;
@@ -261,8 +323,13 @@ impl Env for GitEnv {
             // RFC 0002 §5.2: a commit of everything, without touching the
             // worktree or its index
             let index = git(&path, &["rev-parse", "--git-path", "index"])?;
-            let index = if Path::new(&index).is_absolute() { PathBuf::from(index) } else { path.join(index) };
-            let tmp = std::env::temp_dir().join(format!("sb-index-{}-{}", name, std::process::id()));
+            let index = if Path::new(&index).is_absolute() {
+                PathBuf::from(index)
+            } else {
+                path.join(index)
+            };
+            let tmp =
+                std::env::temp_dir().join(format!("sb-index-{}-{}", name, std::process::id()));
             std::fs::copy(&index, &tmp).map_err(|e| format!("copie de l'index : {}", e))?;
             let tmp_s = tmp.to_string_lossy().to_string();
             let env = [("GIT_INDEX_FILE", tmp_s.as_str())];
@@ -272,7 +339,11 @@ impl Env for GitEnv {
                 let mut id_env: Vec<(&str, &str)> = identity(&path);
                 id_env.extend_from_slice(&env);
                 let msg = format!("switchboard: sauvegarde de la tâche {}", name);
-                let commit = git_env(&path, &["commit-tree", "-p", "HEAD", "-m", &msg, &tree], &id_env)?;
+                let commit = git_env(
+                    &path,
+                    &["commit-tree", "-p", "HEAD", "-m", &msg, &tree],
+                    &id_env,
+                )?;
                 let r = format!("refs/switchboard/trash/{}/{}", name, crate::util::now_ms());
                 git(&path, &["update-ref", &r, &commit])?;
                 Ok::<String, String>(r)
@@ -284,10 +355,19 @@ impl Env for GitEnv {
         Ok(snapshot)
     }
 
-    fn worktree_restore(&mut self, name: &str, ws: &Workspace, snapshot: Option<&str>) -> Result<Workspace, String> {
+    fn worktree_restore(
+        &mut self,
+        name: &str,
+        ws: &Workspace,
+        snapshot: Option<&str>,
+    ) -> Result<Workspace, String> {
         let branch = self.free_branch(name);
         let path = PathBuf::from(&ws.path);
-        let path = if path.exists() { self.free_path(name) } else { path };
+        let path = if path.exists() {
+            self.free_path(name)
+        } else {
+            path
+        };
         if let Some(p) = path.parent() {
             std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
         }
@@ -295,14 +375,28 @@ impl Env for GitEnv {
         match snapshot {
             Some(r) => {
                 let commit = git(self.ws(), &["rev-parse", "--verify", r])?;
-                git(self.ws(), &["worktree", "add", "-q", "-b", &branch, &ps, &format!("{}^", commit)])?;
+                git(
+                    self.ws(),
+                    &[
+                        "worktree",
+                        "add",
+                        "-q",
+                        "-b",
+                        &branch,
+                        &ps,
+                        &format!("{}^", commit),
+                    ],
+                )?;
                 git(&path, &["checkout", &commit, "--", "."])?;
                 git(&path, &["reset", "-q"])?;
                 let _ = git(self.ws(), &["update-ref", "-d", r]);
             }
             None => {
                 let base = ws.base_commit.clone().unwrap_or_else(|| "HEAD".into());
-                git(self.ws(), &["worktree", "add", "-q", "-b", &branch, &ps, &base])?;
+                git(
+                    self.ws(),
+                    &["worktree", "add", "-q", "-b", &branch, &ps, &base],
+                )?;
             }
         }
         self.prepare(&path)?;
@@ -321,12 +415,23 @@ mod tests {
     use super::*;
 
     fn sh(dir: &Path, script: &str) {
-        let ok = Command::new("/bin/sh").arg("-c").arg(script).current_dir(dir).status().unwrap().success();
+        let ok = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(script)
+            .current_dir(dir)
+            .status()
+            .unwrap()
+            .success();
         assert!(ok, "{}", script);
     }
 
     fn repo(tag: &str) -> (PathBuf, GitEnv) {
-        let root = std::env::temp_dir().join(format!("sb-wt-test-{}-{}-{}", tag, std::process::id(), crate::util::now_ms()));
+        let root = std::env::temp_dir().join(format!(
+            "sb-wt-test-{}-{}-{}",
+            tag,
+            std::process::id(),
+            crate::util::now_ms()
+        ));
         let ws = root.join("repo");
         std::fs::create_dir_all(&ws).unwrap();
         sh(
@@ -342,7 +447,14 @@ mod tests {
             setup: "echo prepared > .prepared".into(),
             ..Config::default()
         };
-        (root, GitEnv { paths, config, log: Box::new(|_| {}) })
+        (
+            root,
+            GitEnv {
+                paths,
+                config,
+                log: Box::new(|_| {}),
+            },
+        )
     }
 
     #[test]
@@ -364,25 +476,51 @@ mod tests {
         let p = PathBuf::from(&ws.path);
         assert_eq!(ws.branch.as_deref(), Some("sb/fix"));
         assert!(p.join("f").exists() && p.join(".env").exists() && p.join(".prepared").exists());
-        assert_eq!(env.worktree_loss(&ws), Loss::default(), "copied and setup files are ignored");
+        assert_eq!(
+            env.worktree_loss(&ws),
+            Loss::default(),
+            "copied and setup files are ignored"
+        );
         // a second task with the same name gets the next branch
         let ws2 = env.worktree_create("fix", false).unwrap();
         assert_eq!(ws2.branch.as_deref(), Some("sb/fix-2"));
-        assert_eq!(env.worktree_drop("fix", &ws2, &Loss::default()).unwrap(), None);
+        assert_eq!(
+            env.worktree_drop("fix", &ws2, &Loss::default()).unwrap(),
+            None
+        );
         // work: one commit, one dirty file, one new file
-        sh(&p, "echo b >> f && git commit -qam work && echo c >> f && echo new > n.txt");
+        sh(
+            &p,
+            "echo b >> f && git commit -qam work && echo c >> f && echo new > n.txt",
+        );
         let loss = env.worktree_loss(&ws);
-        assert_eq!(loss, Loss { dirty: 2, unpushed: 1 });
-        let snap = env.worktree_drop("fix", &ws, &loss).unwrap().expect("saved");
+        assert_eq!(
+            loss,
+            Loss {
+                dirty: 2,
+                unpushed: 1
+            }
+        );
+        let snap = env
+            .worktree_drop("fix", &ws, &loss)
+            .unwrap()
+            .expect("saved");
         assert!(!p.exists());
-        assert!(git(&env.paths.workspace, &["show-ref", "--verify", "--quiet", "refs/heads/sb/fix"]).is_err());
+        assert!(git(
+            &env.paths.workspace,
+            &["show-ref", "--verify", "--quiet", "refs/heads/sb/fix"]
+        )
+        .is_err());
         assert!(git(&env.paths.workspace, &["rev-parse", "--verify", &snap]).is_ok());
         let back = env.worktree_restore("fix", &ws, Some(&snap)).unwrap();
         let bp = PathBuf::from(&back.path);
         assert_eq!(std::fs::read_to_string(bp.join("f")).unwrap(), "a\nb\nc\n");
         assert_eq!(std::fs::read_to_string(bp.join("n.txt")).unwrap(), "new\n");
         assert_eq!(git(&bp, &["log", "-1", "--format=%s"]).unwrap(), "work");
-        assert!(git(&env.paths.workspace, &["rev-parse", "--verify", &snap]).is_err(), "the ref is consumed");
+        assert!(
+            git(&env.paths.workspace, &["rev-parse", "--verify", &snap]).is_err(),
+            "the ref is consumed"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -391,8 +529,14 @@ mod tests {
         let (root, mut env) = repo("changes");
         sh(&env.paths.workspace, "echo mine >> f");
         let ws = env.worktree_create("t", true).unwrap();
-        assert_eq!(std::fs::read_to_string(Path::new(&ws.path).join("f")).unwrap(), "a\nmine\n");
-        assert_eq!(std::fs::read_to_string(env.paths.workspace.join("f")).unwrap(), "a\nmine\n");
+        assert_eq!(
+            std::fs::read_to_string(Path::new(&ws.path).join("f")).unwrap(),
+            "a\nmine\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(env.paths.workspace.join("f")).unwrap(),
+            "a\nmine\n"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -403,7 +547,11 @@ mod tests {
         let e = env.worktree_create("t", false).unwrap_err();
         assert!(e.contains("setup"), "{}", e);
         assert!(!env.paths.worktree("t").exists());
-        assert!(git(&env.paths.workspace, &["show-ref", "--verify", "--quiet", "refs/heads/sb/t"]).is_err());
+        assert!(git(
+            &env.paths.workspace,
+            &["show-ref", "--verify", "--quiet", "refs/heads/sb/t"]
+        )
+        .is_err());
         let _ = std::fs::remove_dir_all(root);
     }
 }

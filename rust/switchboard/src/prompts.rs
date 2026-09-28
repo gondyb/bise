@@ -115,7 +115,12 @@ pub fn brief_text(name: &str, b: &Brief) -> String {
 }
 
 /// How `from` relates to `to` (RFC 0003 §2).
-pub fn relation(from: &str, to: &str, from_parent: Option<&str>, to_parent: Option<&str>) -> &'static str {
+pub fn relation(
+    from: &str,
+    to: &str,
+    from_parent: Option<&str>,
+    to_parent: Option<&str>,
+) -> &'static str {
     if from == USER {
         "user"
     } else if to_parent == Some(from) || (from == MAIN && to != MAIN) {
@@ -143,7 +148,11 @@ pub fn tagged(m: &Msg, relation: &str) -> String {
     if m.auto {
         attrs.push_str(" auto=\"true\"");
     }
-    format!("<agent_message {}>\n{}\n</agent_message>", attrs, m.text.trim())
+    format!(
+        "<agent_message {}>\n{}\n</agent_message>",
+        attrs,
+        m.text.trim()
+    )
 }
 
 #[cfg(test)]
@@ -172,7 +181,10 @@ mod tests {
             t,
             "<agent_message from=\"docs\" relation=\"peer\" id=\"m_42\" thread=\"t_9\" reply_to=\"m_40\" expects_reply=\"true\">\nv1 ou v2 ?\n</agent_message>"
         );
-        let plain = Msg { plain: true, ..msg() };
+        let plain = Msg {
+            plain: true,
+            ..msg()
+        };
         assert_eq!(tagged(&plain, "user"), "v1 ou v2 ?");
     }
 

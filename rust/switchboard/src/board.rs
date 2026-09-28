@@ -92,7 +92,7 @@ pub fn agent_threads(st: &State, limit: usize) -> Vec<String> {
             ),
         ));
     }
-    out.sort_by(|a, b| b.0.cmp(&a.0));
+    out.sort_by_key(|x| std::cmp::Reverse(x.0));
     out.into_iter().take(limit).map(|(_, s)| s).collect()
 }
 
@@ -101,7 +101,10 @@ pub fn main_context(st: &State, now: u64) -> String {
     let mut s = String::from(
         "<switchboard_state>\nLive state injected by the Switchboard hub before this call (not a user message).\n<task_board>\n",
     );
-    let tasks: Vec<&Agent> = st.tasks().filter(|a| a.status() != Status::Archived).collect();
+    let tasks: Vec<&Agent> = st
+        .tasks()
+        .filter(|a| a.status() != Status::Archived)
+        .collect();
     if tasks.is_empty() {
         s.push_str("(no task)\n");
     }
@@ -109,9 +112,16 @@ pub fn main_context(st: &State, now: u64) -> String {
         s.push_str(&task_line(a, now));
         s.push('\n');
     }
-    let archived = st.tasks().filter(|a| a.status() == Status::Archived).count();
+    let archived = st
+        .tasks()
+        .filter(|a| a.status() == Status::Archived)
+        .count();
     if archived > 0 {
-        s.push_str(&format!("({} archived task{})\n", archived, if archived > 1 { "s" } else { "" }));
+        s.push_str(&format!(
+            "({} archived task{})\n",
+            archived,
+            if archived > 1 { "s" } else { "" }
+        ));
     }
     s.push_str("</task_board>\n");
     let threads = agent_threads(st, 8);
@@ -126,8 +136,18 @@ pub fn main_context(st: &State, now: u64) -> String {
     let cards: Vec<String> = st
         .open_cards()
         .map(|c| {
-            let for_msg = c.for_msg.map(|m| format!(" (answers m_{})", m)).unwrap_or_default();
-            format!("#{} {} @{}: \"{}\"{}", c.id, c.kind, c.agent, clip(&one_line(&c.text), 100), for_msg)
+            let for_msg = c
+                .for_msg
+                .map(|m| format!(" (answers m_{})", m))
+                .unwrap_or_default();
+            format!(
+                "#{} {} @{}: \"{}\"{}",
+                c.id,
+                c.kind,
+                c.agent,
+                clip(&one_line(&c.text), 100),
+                for_msg
+            )
         })
         .collect();
     if !cards.is_empty() {
@@ -141,7 +161,14 @@ pub fn main_context(st: &State, now: u64) -> String {
     let waiting: Vec<String> = st
         .unanswered_for(MAIN)
         .iter()
-        .map(|m| format!("m_{} from {}: \"{}\"", m.id, m.from, clip(&one_line(&m.text), 80)))
+        .map(|m| {
+            format!(
+                "m_{} from {}: \"{}\"",
+                m.id,
+                m.from,
+                clip(&one_line(&m.text), 80)
+            )
+        })
         .collect();
     if !waiting.is_empty() {
         s.push_str("<questions_for_you>\n");
@@ -167,7 +194,12 @@ pub fn roster(st: &State, viewer: &str, now: u64) -> Vec<String> {
             let rel = if a.name == viewer {
                 "self"
             } else {
-                match relation(&a.name, viewer, a.parent.as_deref(), viewer_parent.as_deref()) {
+                match relation(
+                    &a.name,
+                    viewer,
+                    a.parent.as_deref(),
+                    viewer_parent.as_deref(),
+                ) {
                     "parent" => "parent",
                     "child" => "child",
                     _ => "peer",
@@ -206,7 +238,14 @@ pub fn task_context(st: &State, name: &str, now: u64) -> String {
     let waiting: Vec<String> = st
         .unanswered_for(name)
         .iter()
-        .map(|m| format!("m_{} from {}: \"{}\"", m.id, m.from, clip(&one_line(&m.text), 80)))
+        .map(|m| {
+            format!(
+                "m_{} from {}: \"{}\"",
+                m.id,
+                m.from,
+                clip(&one_line(&m.text), 80)
+            )
+        })
         .collect();
     if !waiting.is_empty() {
         s.push_str("<questions_for_you>\n");
@@ -224,7 +263,9 @@ pub fn task_context(st: &State, name: &str, now: u64) -> String {
 pub fn queued_count(st: &State, name: &str) -> usize {
     st.msgs
         .values()
-        .filter(|m| m.to == name && matches!(st.msg_state.get(&m.id), Some(MsgState::Queued { .. })))
+        .filter(|m| {
+            m.to == name && matches!(st.msg_state.get(&m.id), Some(MsgState::Queued { .. }))
+        })
         .count()
 }
 
@@ -235,7 +276,10 @@ mod tests {
 
     fn state() -> State {
         let mut st = State::new("/w");
-        for (n, obj) in [("auth-fix", "Corriger le login Safari"), ("docs", "Doc API v2")] {
+        for (n, obj) in [
+            ("auth-fix", "Corriger le login Safari"),
+            ("docs", "Doc API v2"),
+        ] {
             st.apply(&Event::TaskCreated {
                 name: n.into(),
                 parent: MAIN.into(),
@@ -285,15 +329,34 @@ mod tests {
         });
         let t = agent_threads(&st, 8);
         assert_eq!(t.len(), 1);
-        assert!(t[0].contains("docs ↔ auth-fix") && t[0].contains("ouvert"), "{}", t[0]);
+        assert!(
+            t[0].contains("docs ↔ auth-fix") && t[0].contains("ouvert"),
+            "{}",
+            t[0]
+        );
     }
 
     #[test]
     fn a_task_sees_its_relations() {
         let st = state();
         let r = roster(&st, "docs", 0);
-        assert!(r.iter().any(|l| l.starts_with("main") && l.contains("parent")), "{:?}", r);
-        assert!(r.iter().any(|l| l.starts_with("auth-fix") && l.contains("peer")), "{:?}", r);
-        assert!(r.iter().any(|l| l.starts_with("docs") && l.contains("self")), "{:?}", r);
+        assert!(
+            r.iter()
+                .any(|l| l.starts_with("main") && l.contains("parent")),
+            "{:?}",
+            r
+        );
+        assert!(
+            r.iter()
+                .any(|l| l.starts_with("auth-fix") && l.contains("peer")),
+            "{:?}",
+            r
+        );
+        assert!(
+            r.iter()
+                .any(|l| l.starts_with("docs") && l.contains("self")),
+            "{:?}",
+            r
+        );
     }
 }

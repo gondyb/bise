@@ -36,9 +36,19 @@ pub trait Env {
     fn worktree_create(&mut self, name: &str, with_changes: bool) -> Result<Workspace, String>;
     fn worktree_loss(&mut self, ws: &Workspace) -> Loss;
     /// RFC 0002 §5.2-5.3: save if needed, then remove. Answers the ref.
-    fn worktree_drop(&mut self, name: &str, ws: &Workspace, loss: &Loss) -> Result<Option<String>, String>;
+    fn worktree_drop(
+        &mut self,
+        name: &str,
+        ws: &Workspace,
+        loss: &Loss,
+    ) -> Result<Option<String>, String>;
     /// RFC 0002 §5.6.
-    fn worktree_restore(&mut self, name: &str, ws: &Workspace, snapshot: Option<&str>) -> Result<Workspace, String>;
+    fn worktree_restore(
+        &mut self,
+        name: &str,
+        ws: &Workspace,
+        snapshot: Option<&str>,
+    ) -> Result<Workspace, String>;
 }
 
 /// A request of the `sb` CLI (RFC 0003 §4, RFC 0001 §7.2, §7.5).
@@ -103,7 +113,11 @@ fn jstr(v: &Value, k: &str) -> String {
 fn jstrs(v: &Value, k: &str) -> Vec<String> {
     v.get(k)
         .and_then(|x| x.as_array())
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -116,8 +130,14 @@ impl AgentReq {
             "send" => AgentReq::Send {
                 to: jstr(v, "to"),
                 text: jstr(v, "text"),
-                expect_reply: v.get("expect_reply").and_then(|x| x.as_bool()).unwrap_or(false),
-                reply_to: v.get("reply_to").and_then(|x| x.as_str()).and_then(parse_msg_id),
+                expect_reply: v
+                    .get("expect_reply")
+                    .and_then(|x| x.as_bool())
+                    .unwrap_or(false),
+                reply_to: v
+                    .get("reply_to")
+                    .and_then(|x| x.as_str())
+                    .and_then(parse_msg_id),
             },
             "wait" => AgentReq::Wait {
                 msg: parse_msg_id(&jstr(v, "msg")).ok_or("identifiant de message invalide")?,
@@ -140,7 +160,10 @@ impl AgentReq {
             "report" => {
                 let kind = jstr(v, "kind");
                 if !["progress", "done", "failed", "blocked"].contains(&kind.as_str()) {
-                    return Err(format!("type de rapport inconnu : {} (progress|done|failed|blocked)", kind));
+                    return Err(format!(
+                        "type de rapport inconnu : {} (progress|done|failed|blocked)",
+                        kind
+                    ));
                 }
                 AgentReq::Report {
                     kind,
@@ -158,14 +181,21 @@ impl AgentReq {
                     report_format: Some(jstr(v, "report_format")).filter(|s| !s.is_empty()),
                 },
                 worktree: v.get("worktree").and_then(|x| x.as_bool()).unwrap_or(false),
-                with_changes: v.get("with_changes").and_then(|x| x.as_bool()).unwrap_or(false),
+                with_changes: v
+                    .get("with_changes")
+                    .and_then(|x| x.as_bool())
+                    .unwrap_or(false),
             },
-            "interrupt" => AgentReq::Interrupt { agent: jstr(v, "agent") },
+            "interrupt" => AgentReq::Interrupt {
+                agent: jstr(v, "agent"),
+            },
             "stop" => AgentReq::Stop {
                 agent: jstr(v, "agent"),
                 reason: jstr(v, "reason"),
             },
-            "drop" => AgentReq::Drop { agent: jstr(v, "agent") },
+            "drop" => AgentReq::Drop {
+                agent: jstr(v, "agent"),
+            },
             "card" => AgentReq::Card {
                 text: jstr(v, "text"),
                 for_msg: v.get("for").and_then(|x| x.as_str()).and_then(parse_msg_id),
@@ -181,43 +211,110 @@ pub enum Input {
     /// The daemon started: spawn every live agent.
     Boot,
     /// The REPL of `agent` is connected and idle.
-    ReplReady { agent: String },
-    ReplLine { agent: String, line: String },
+    ReplReady {
+        agent: String,
+    },
+    ReplLine {
+        agent: String,
+        line: String,
+    },
     /// `--- idle`. `leftover`: steering written during the turn was still
     /// in the file (never read by the runtime).
-    ReplIdle { agent: String, leftover: bool },
-    ReplExited { agent: String, crashed: bool, reason: String },
-    ClientHello { client: ClientId },
-    ClientInput { client: ClientId, focus: String, text: String },
-    ClientFocus { client: ClientId, focus: String },
-    ClientGone { client: ClientId },
-    ClientConfirm { client: ClientId, id: u64, yes: bool },
-    ClientInterrupt { client: ClientId, agent: String },
-    Agent { token: Token, from: String, req: AgentReq },
+    ReplIdle {
+        agent: String,
+        leftover: bool,
+    },
+    ReplExited {
+        agent: String,
+        crashed: bool,
+        reason: String,
+    },
+    ClientHello {
+        client: ClientId,
+    },
+    ClientInput {
+        client: ClientId,
+        focus: String,
+        text: String,
+    },
+    ClientFocus {
+        client: ClientId,
+        focus: String,
+    },
+    ClientGone {
+        client: ClientId,
+    },
+    ClientConfirm {
+        client: ClientId,
+        id: u64,
+        yes: bool,
+    },
+    ClientInterrupt {
+        client: ClientId,
+        agent: String,
+    },
+    Agent {
+        token: Token,
+        from: String,
+        req: AgentReq,
+    },
     Tick,
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[allow(clippy::large_enum_variant)] // short-lived, one list per input
 pub enum Effect {
     /// Append to the journal (already applied to the state).
     Journal(Event),
-    Spawn { agent: String, resume: bool, crash_note: Option<String> },
-    Kill { agent: String },
+    Spawn {
+        agent: String,
+        resume: bool,
+        crash_note: Option<String>,
+    },
+    Kill {
+        agent: String,
+    },
     /// A new turn: `say <text>` on the REPL socket (the agent is idle).
-    Say { agent: String, text: String },
+    Say {
+        agent: String,
+        text: String,
+    },
     /// Steering: appended to the steering file (the agent is busy).
-    Steer { agent: String, text: String },
+    Steer {
+        agent: String,
+        text: String,
+    },
     /// A raw REPL command line (`/compact`), the agent is idle.
-    Passthrough { agent: String, line: String },
-    Interrupt { agent: String },
+    Passthrough {
+        agent: String,
+        line: String,
+    },
+    Interrupt {
+        agent: String,
+    },
     /// Rewrite the agent's BEND_CONTEXT_FILE.
-    Context { agent: String, text: String },
+    Context {
+        agent: String,
+        text: String,
+    },
     /// A synthetic line in the agent's feed (`sb <kind> : <text>`).
-    Line { agent: String, line: String },
+    Line {
+        agent: String,
+        line: String,
+    },
     /// The answer to an `sb` request.
-    Reply { token: Token, body: Value },
-    ToClient { client: ClientId, body: Value },
-    Renamed { old: String, new: String },
+    Reply {
+        token: Token,
+        body: Value,
+    },
+    ToClient {
+        client: ClientId,
+        body: Value,
+    },
+    Renamed {
+        old: String,
+        new: String,
+    },
     /// The state changed: broadcast a snapshot.
     State,
 }
@@ -394,7 +491,11 @@ impl Hub {
             Input::ReplReady { agent } => self.repl_ready(&mut fx, env, &agent),
             Input::ReplLine { agent, line } => self.repl_line(&mut fx, env, &agent, &line),
             Input::ReplIdle { agent, leftover } => self.repl_idle(&mut fx, env, &agent, leftover),
-            Input::ReplExited { agent, crashed, reason } => self.repl_exited(&mut fx, env, &agent, crashed, &reason),
+            Input::ReplExited {
+                agent,
+                crashed,
+                reason,
+            } => self.repl_exited(&mut fx, env, &agent, crashed, &reason),
             Input::ClientHello { client } => {
                 self.clients.insert(
                     client,
@@ -406,7 +507,11 @@ impl Hub {
                     },
                 );
             }
-            Input::ClientInput { client, focus, text } => self.user_input(&mut fx, env, client, &focus, &text),
+            Input::ClientInput {
+                client,
+                focus,
+                text,
+            } => self.user_input(&mut fx, env, client, &focus, &text),
             Input::ClientFocus { client, focus } => self.set_focus(&mut fx, env, client, &focus),
             Input::ClientGone { client } => {
                 self.set_focus(&mut fx, env, client, MAIN);
@@ -445,7 +550,10 @@ impl Hub {
             .order
             .iter()
             .filter(|n| {
-                self.st.agents.get(*n).is_some_and(|a| a.lifecycle == Lifecycle::Active)
+                self.st
+                    .agents
+                    .get(*n)
+                    .is_some_and(|a| a.lifecycle == Lifecycle::Active)
             })
             .cloned()
             .collect();
@@ -483,10 +591,19 @@ impl Hub {
         self.pump(fx, env, agent);
     }
 
-    fn repl_exited(&mut self, fx: &mut Fx, env: &mut dyn Env, agent: &str, crashed: bool, reason: &str) {
+    fn repl_exited(
+        &mut self,
+        fx: &mut Fx,
+        env: &mut dyn Env,
+        agent: &str,
+        crashed: bool,
+        reason: &str,
+    ) {
         self.fail_waiters(fx, agent, "interrupted_by_restart");
         self.steered.remove(agent);
-        let Some(a) = self.st.agents.get_mut(agent) else { return };
+        let Some(a) = self.st.agents.get_mut(agent) else {
+            return;
+        };
         a.run = Run::Down;
         a.turn_started_ms = None;
         self.dirty = true;
@@ -506,7 +623,10 @@ impl Hub {
             fx.push(line(
                 MAIN,
                 "warn",
-                &format!("la session de @{} a planté ({}) — redémarrage {}/{}", agent, reason, n, self.limits.max_crashes),
+                &format!(
+                    "la session de @{} a planté ({}) — redémarrage {}/{}",
+                    agent, reason, n, self.limits.max_crashes
+                ),
             ));
         } else {
             let reason = format!("la REPL a planté {} fois : {}", n, reason);
@@ -541,10 +661,16 @@ impl Hub {
                             note: String::new(),
                         },
                     );
-                    self.close_cards(fx, |c| c.agent == agent && (c.kind == "blocked" || c.kind == "done"), "reprise");
+                    self.close_cards(
+                        fx,
+                        |c| c.agent == agent && (c.kind == "blocked" || c.kind == "done"),
+                        "reprise",
+                    );
                 }
             }
-            Wire::SteeringReceived => self.steer_counts.entry(agent.to_string()).or_default().0 += 1,
+            Wire::SteeringReceived => {
+                self.steer_counts.entry(agent.to_string()).or_default().0 += 1
+            }
             Wire::Steered => self.steer_counts.entry(agent.to_string()).or_default().1 += 1,
             Wire::Assistant(t) if !t.is_empty() => {
                 self.last_assistant.insert(agent.to_string(), t.clone());
@@ -576,7 +702,11 @@ impl Hub {
 
     /// RFC 0001 §10.3: a file changed by two live shared tasks.
     fn touch(&mut self, fx: &mut Fx, env: &mut dyn Env, agent: &str, path: &str) {
-        let known = self.st.agents.get(agent).is_some_and(|a| a.files.contains(path));
+        let known = self
+            .st
+            .agents
+            .get(agent)
+            .is_some_and(|a| a.files.contains(path));
         if known {
             return;
         }
@@ -590,7 +720,9 @@ impl Hub {
         let others: Vec<String> = self
             .st
             .tasks()
-            .filter(|a| a.name != agent && a.ws.mode == Mode::Shared && a.lifecycle == Lifecycle::Active)
+            .filter(|a| {
+                a.name != agent && a.ws.mode == Mode::Shared && a.lifecycle == Lifecycle::Active
+            })
             .filter(|a| a.files.contains(path))
             .map(|a| a.name.clone())
             .collect();
@@ -628,7 +760,9 @@ impl Hub {
                 );
             }
         }
-        let Some(a) = self.st.agents.get_mut(agent) else { return };
+        let Some(a) = self.st.agents.get_mut(agent) else {
+            return;
+        };
         a.run = Run::Idle;
         a.waiting = false;
         a.turn_started_ms = None;
@@ -649,7 +783,17 @@ impl Hub {
             } else {
                 text.clone()
             };
-            let _ = self.send(fx, env, agent, &m.from, &body, false, Some(m.id), false, true);
+            let _ = self.send(
+                fx,
+                env,
+                agent,
+                &m.from,
+                &body,
+                false,
+                Some(m.id),
+                false,
+                true,
+            );
         }
         // RFC 0001 §7.2: the automatic report (board only)
         if !is_main && !text.trim().is_empty() {
@@ -707,9 +851,13 @@ impl Hub {
         auto: bool,
     ) -> Result<Msg, String> {
         let to = if to == USER {
-            return Err("invalid_recipient: pour parler à l'utilisateur, passe par main (sb card)".into());
+            return Err(
+                "invalid_recipient: pour parler à l'utilisateur, passe par main (sb card)".into(),
+            );
         } else {
-            self.st.resolve(to).ok_or_else(|| format!("recipient_unknown: aucun agent nommé {}", to))?
+            self.st
+                .resolve(to)
+                .ok_or_else(|| format!("recipient_unknown: aucun agent nommé {}", to))?
         };
         if to == from {
             return Err("invalid_recipient: un agent ne s'écrit pas à lui-même".into());
@@ -734,8 +882,17 @@ impl Hub {
                 Lifecycle::Active => true,
             };
             if !revivable {
-                let hint = if dropped_wt { " (son worktree a été supprimé : /restore)" } else { "" };
-                return Err(format!("recipient_unavailable: @{} est {}{}", to, status.as_str(), hint));
+                let hint = if dropped_wt {
+                    " (son worktree a été supprimé : /restore)"
+                } else {
+                    ""
+                };
+                return Err(format!(
+                    "recipient_unavailable: @{} est {}{}",
+                    to,
+                    status.as_str(),
+                    hint
+                ));
             }
             self.emit(
                 fx,
@@ -755,13 +912,16 @@ impl Hub {
             },
             None => self.st.next_msg,
         };
-        if from != USER && !plain && self.st.agent_run_in_thread(thread) >= self.limits.thread_limit {
+        if from != USER && !plain && self.st.agent_run_in_thread(thread) >= self.limits.thread_limit
+        {
             let text = format!(
                 "le fil t_{} a atteint {} messages entre agents sans intervention humaine (dernier : @{} → @{})",
                 thread, self.limits.thread_limit, from, to
             );
             self.open_card(fx, env, "thread_limit", from, &text, None);
-            return Err("thread_limit: réponds à l'utilisateur ou attends qu'il intervienne".into());
+            return Err(
+                "thread_limit: réponds à l'utilisateur ou attends qu'il intervienne".into(),
+            );
         }
         let msg = Msg {
             id: self.st.next_msg,
@@ -777,11 +937,17 @@ impl Hub {
         };
         self.emit(fx, Event::MessageSent { msg: msg.clone() });
         // a waiting recipient gets it as the result of its `sb wait`
-        if let Some(i) = self.waiters.iter().position(|w| {
-            w.agent == to && (Some(w.msg) == reply_to || (expect_reply && !plain))
-        }) {
+        if let Some(i) = self
+            .waiters
+            .iter()
+            .position(|w| w.agent == to && (Some(w.msg) == reply_to || (expect_reply && !plain)))
+        {
             let w = self.waiters.remove(i);
-            let kind = if Some(w.msg) == reply_to { "reply" } else { "incoming_request" };
+            let kind = if Some(w.msg) == reply_to {
+                "reply"
+            } else {
+                "incoming_request"
+            };
             self.deliver_to_waiter(fx, w, &msg, kind);
             return Ok(msg);
         }
@@ -810,7 +976,11 @@ impl Hub {
                 "message": msg.text,
             })),
         });
-        fx.push(line(&w.agent, "msg-in", &format!("{} m_{} : {}", msg.from, msg.id, msg.text)));
+        fx.push(line(
+            &w.agent,
+            "msg-in",
+            &format!("{} m_{} : {}", msg.from, msg.id, msg.text),
+        ));
         let still = self.waiters.iter().any(|x| x.agent == w.agent);
         if let Some(a) = self.st.agents.get_mut(&w.agent) {
             a.waiting = still;
@@ -819,7 +989,8 @@ impl Hub {
     }
 
     fn fail_waiters(&mut self, fx: &mut Fx, agent: &str, why: &str) {
-        let (gone, keep): (Vec<Waiter>, Vec<Waiter>) = self.waiters.drain(..).partition(|w| w.agent == agent);
+        let (gone, keep): (Vec<Waiter>, Vec<Waiter>) =
+            self.waiters.drain(..).partition(|w| w.agent == agent);
         self.waiters = keep;
         for w in gone {
             fx.push(Effect::Reply {
@@ -836,7 +1007,9 @@ impl Hub {
     /// (RFC 0003 §6.1, RFC 0001 §10.1).
     fn pump(&mut self, fx: &mut Fx, env: &mut dyn Env, name: &str) {
         let now = env.now();
-        let Some(a) = self.st.agents.get(name) else { return };
+        let Some(a) = self.st.agents.get(name) else {
+            return;
+        };
         if a.lifecycle != Lifecycle::Active {
             return;
         }
@@ -844,7 +1017,11 @@ impl Hub {
         let is_main = a.is_main;
         let parent = a.parent.clone();
         let queued: Vec<Msg> = self.st.queued_for(name).into_iter().cloned().collect();
-        let notes = if is_main { self.st.main_notes.clone() } else { Vec::new() };
+        let notes = if is_main {
+            self.st.main_notes.clone()
+        } else {
+            Vec::new()
+        };
         if queued.is_empty() {
             return;
         }
@@ -856,7 +1033,9 @@ impl Hub {
                     self.requeue(fx, &queued, "concurrency");
                     return;
                 }
-                let is_peer = |m: &Msg| m.from != USER && Some(m.from.as_str()) != parent.as_deref() && m.from != MAIN;
+                let is_peer = |m: &Msg| {
+                    m.from != USER && Some(m.from.as_str()) != parent.as_deref() && m.from != MAIN
+                };
                 let recent = self.wakes.entry(name.to_string()).or_default();
                 recent.retain(|t| now.saturating_sub(*t) < 3_600_000);
                 if queued.iter().all(is_peer) {
@@ -896,13 +1075,20 @@ impl Hub {
             if m.plain {
                 fx.push(line(name, "you", &m.text));
             } else {
-                fx.push(line(name, "msg-in", &format!("{} m_{} : {}", m.from, m.id, m.text)));
+                fx.push(line(
+                    name,
+                    "msg-in",
+                    &format!("{} m_{} : {}", m.from, m.id, m.text),
+                ));
             }
         }
         let text = parts.join("\n\n");
         match run {
             Run::Busy => {
-                self.steered.entry(name.to_string()).or_default().extend(batch.iter().map(|m| m.id));
+                self.steered
+                    .entry(name.to_string())
+                    .or_default()
+                    .extend(batch.iter().map(|m| m.id));
                 fx.push(Effect::Steer {
                     agent: name.to_string(),
                     text,
@@ -950,7 +1136,15 @@ impl Hub {
         );
     }
 
-    fn open_card(&mut self, fx: &mut Fx, env: &mut dyn Env, kind: &str, agent: &str, text: &str, for_msg: Option<u64>) -> u64 {
+    fn open_card(
+        &mut self,
+        fx: &mut Fx,
+        env: &mut dyn Env,
+        kind: &str,
+        agent: &str,
+        text: &str,
+        for_msg: Option<u64>,
+    ) -> u64 {
         let id = self.st.next_card;
         self.emit(
             fx,
@@ -965,12 +1159,21 @@ impl Hub {
                 },
             },
         );
-        fx.push(line(MAIN, "card", &format!("#{} {} @{} : {}", id, kind, agent, text)));
+        fx.push(line(
+            MAIN,
+            "card",
+            &format!("#{} {} @{} : {}", id, kind, agent, text),
+        ));
         id
     }
 
     fn close_cards(&mut self, fx: &mut Fx, pred: impl Fn(&Card) -> bool, resolution: &str) {
-        let ids: Vec<u64> = self.st.open_cards().filter(|c| pred(c)).map(|c| c.id).collect();
+        let ids: Vec<u64> = self
+            .st
+            .open_cards()
+            .filter(|c| pred(c))
+            .map(|c| c.id)
+            .collect();
         for id in ids {
             self.emit(
                 fx,
@@ -979,7 +1182,11 @@ impl Hub {
                     resolution: resolution.to_string(),
                 },
             );
-            fx.push(line(MAIN, "card-closed", &format!("#{} {}", id, resolution)));
+            fx.push(line(
+                MAIN,
+                "card-closed",
+                &format!("#{} {}", id, resolution),
+            ));
         }
     }
 
@@ -993,7 +1200,11 @@ impl Hub {
             .map(|i| {
                 let suffix = format!("-{}", i);
                 let keep = 24usize.saturating_sub(suffix.len());
-                format!("{}{}", &base[..base.len().min(keep)].trim_end_matches('-'), suffix)
+                format!(
+                    "{}{}",
+                    base[..base.len().min(keep)].trim_end_matches('-'),
+                    suffix
+                )
             })
             .find(|n| !self.st.name_taken(n))
             .unwrap()
@@ -1017,7 +1228,10 @@ impl Hub {
         let base = match name {
             Some(n) if !n.is_empty() => {
                 if !router::valid_name(n) {
-                    return Err(format!("nom invalide : {} ([a-z0-9-], 24 caractères max)", n));
+                    return Err(format!(
+                        "nom invalide : {} ([a-z0-9-], 24 caractères max)",
+                        n
+                    ));
                 }
                 n.to_string()
             }
@@ -1026,7 +1240,9 @@ impl Hub {
         let name = self.unique_name(&base);
         let ws = if worktree {
             if !env.is_git() {
-                return Err("le workspace n'est pas un dépôt git : pas de worktree possible".into());
+                return Err(
+                    "le workspace n'est pas un dépôt git : pas de worktree possible".into(),
+                );
             }
             env.worktree_create(&name, with_changes)?
         } else {
@@ -1053,19 +1269,50 @@ impl Hub {
             },
         );
         let who = if parent == USER { "toi" } else { parent };
-        fx.push(line(MAIN, "spawn", &format!("{} → nouvelle tâche @{}{} : {}", who, name, label, one_line(&brief.objective))));
+        fx.push(line(
+            MAIN,
+            "spawn",
+            &format!(
+                "{} → nouvelle tâche @{}{} : {}",
+                who,
+                name,
+                label,
+                one_line(&brief.objective)
+            ),
+        ));
         if parent == USER {
-            self.note_main(fx, env, &format!("the user created the task @{}{}: {}", name, label, one_line(&brief.objective)));
+            self.note_main(
+                fx,
+                env,
+                &format!(
+                    "the user created the task @{}{}: {}",
+                    name,
+                    label,
+                    one_line(&brief.objective)
+                ),
+            );
         }
         self.spawn(fx, &name, false);
         let text = prompts::brief_text(&name, &brief);
         let expect = parent == MAIN;
-        self.send(fx, env, parent, &name, &text, expect, None, parent == USER, false)?;
+        self.send(
+            fx,
+            env,
+            parent,
+            &name,
+            &text,
+            expect,
+            None,
+            parent == USER,
+            false,
+        )?;
         Ok(name)
     }
 
     fn stop_task(&mut self, fx: &mut Fx, name: &str, lifecycle: Lifecycle, reason: &str) {
-        fx.push(Effect::Kill { agent: name.to_string() });
+        fx.push(Effect::Kill {
+            agent: name.to_string(),
+        });
         self.fail_waiters(fx, name, "stopped");
         self.steered.remove(name);
         if let Some(a) = self.st.agents.get_mut(name) {
@@ -1097,8 +1344,17 @@ impl Hub {
 
     /// RFC 0001 §9.4 + RFC 0002 §5. `Err` carries a reason; `Ok(None)`:
     /// done; `Ok(Some(text))`: needs a confirmation first.
-    fn drop_task(&mut self, fx: &mut Fx, env: &mut dyn Env, name: &str, force: bool) -> Result<Option<String>, String> {
-        let a = self.agent(name).ok_or_else(|| format!("aucune tâche nommée {}", name))?.clone();
+    fn drop_task(
+        &mut self,
+        fx: &mut Fx,
+        env: &mut dyn Env,
+        name: &str,
+        force: bool,
+    ) -> Result<Option<String>, String> {
+        let a = self
+            .agent(name)
+            .ok_or_else(|| format!("aucune tâche nommée {}", name))?
+            .clone();
         if a.is_main {
             return Err("main ne se droppe pas".into());
         }
@@ -1106,7 +1362,11 @@ impl Hub {
             return Err(format!("@{} est déjà archivée", a.name));
         }
         let has_wt = a.ws.mode == Mode::Worktree && !a.ws.dropped;
-        let loss = if has_wt { env.worktree_loss(&a.ws) } else { Loss::default() };
+        let loss = if has_wt {
+            env.worktree_loss(&a.ws)
+        } else {
+            Loss::default()
+        };
         let busy = a.run == Run::Busy;
         if !force && (busy || loss.any()) {
             let mut parts: Vec<String> = Vec::new();
@@ -1124,7 +1384,11 @@ impl Hub {
                     if loss.unpushed > 1 { "s" } else { "" },
                 ));
             }
-            return Ok(Some(format!("Drop @{} ? {}. [y/N]", a.name, parts.join(" ; "))));
+            return Ok(Some(format!(
+                "Drop @{} ? {}. [y/N]",
+                a.name,
+                parts.join(" ; ")
+            )));
         }
         self.stop_task(fx, &a.name, Lifecycle::Archived, "drop");
         let mut label = String::new();
@@ -1133,18 +1397,34 @@ impl Hub {
                 Ok(snap) => {
                     let mut ws = a.ws.clone();
                     ws.dropped = true;
-                    self.emit(fx, Event::WorkspaceChanged { name: a.name.clone(), ws });
+                    self.emit(
+                        fx,
+                        Event::WorkspaceChanged {
+                            name: a.name.clone(),
+                            ws,
+                        },
+                    );
                     if snap.is_some() {
                         label = " — travail sauvegardé (/restore)".into();
                     } else {
                         label = " — worktree supprimé".into();
                     }
-                    self.emit(fx, Event::Snapshot { name: a.name.clone(), snapshot_ref: snap });
+                    self.emit(
+                        fx,
+                        Event::Snapshot {
+                            name: a.name.clone(),
+                            snapshot_ref: snap,
+                        },
+                    );
                 }
                 Err(e) => label = format!(" — worktree NON supprimé : {}", e),
             }
         }
-        fx.push(line(MAIN, "info", &format!("@{} archivée{}", a.name, label)));
+        fx.push(line(
+            MAIN,
+            "info",
+            &format!("@{} archivée{}", a.name, label),
+        ));
         // a client looking at it goes back to main
         let watchers: Vec<ClientId> = self
             .clients
@@ -1161,15 +1441,35 @@ impl Hub {
         Ok(None)
     }
 
-    fn restore_task(&mut self, fx: &mut Fx, env: &mut dyn Env, name: &str) -> Result<String, String> {
-        let a = self.agent(name).ok_or_else(|| format!("aucune tâche nommée {}", name))?.clone();
+    fn restore_task(
+        &mut self,
+        fx: &mut Fx,
+        env: &mut dyn Env,
+        name: &str,
+    ) -> Result<String, String> {
+        let a = self
+            .agent(name)
+            .ok_or_else(|| format!("aucune tâche nommée {}", name))?
+            .clone();
         if a.lifecycle == Lifecycle::Active {
             return Err(format!("@{} est active", a.name));
         }
         if a.ws.mode == Mode::Worktree && a.ws.dropped {
             let ws = env.worktree_restore(&a.name, &a.ws, a.snapshot_ref.as_deref())?;
-            self.emit(fx, Event::WorkspaceChanged { name: a.name.clone(), ws });
-            self.emit(fx, Event::Snapshot { name: a.name.clone(), snapshot_ref: None });
+            self.emit(
+                fx,
+                Event::WorkspaceChanged {
+                    name: a.name.clone(),
+                    ws,
+                },
+            );
+            self.emit(
+                fx,
+                Event::Snapshot {
+                    name: a.name.clone(),
+                    snapshot_ref: None,
+                },
+            );
         }
         self.emit(
             fx,
@@ -1185,8 +1485,16 @@ impl Hub {
         Ok(a.name)
     }
 
-    fn isolate_task(&mut self, fx: &mut Fx, env: &mut dyn Env, name: &str) -> Result<String, String> {
-        let a = self.agent(name).ok_or_else(|| format!("aucune tâche nommée {}", name))?.clone();
+    fn isolate_task(
+        &mut self,
+        fx: &mut Fx,
+        env: &mut dyn Env,
+        name: &str,
+    ) -> Result<String, String> {
+        let a = self
+            .agent(name)
+            .ok_or_else(|| format!("aucune tâche nommée {}", name))?
+            .clone();
         if a.is_main || a.ws.mode == Mode::Worktree {
             return Err(format!("@{} a déjà son propre dossier", a.name));
         }
@@ -1206,9 +1514,17 @@ impl Hub {
         let ws = env.worktree_create(&a.name, false)?;
         let path = ws.path.clone();
         let branch = ws.branch.clone().unwrap_or_default();
-        self.emit(fx, Event::WorkspaceChanged { name: a.name.clone(), ws });
+        self.emit(
+            fx,
+            Event::WorkspaceChanged {
+                name: a.name.clone(),
+                ws,
+            },
+        );
         // the REPL takes its new BEND_WORKDIR at the next spawn
-        fx.push(Effect::Kill { agent: a.name.clone() });
+        fx.push(Effect::Kill {
+            agent: a.name.clone(),
+        });
         if let Some(x) = self.st.agents.get_mut(&a.name) {
             x.run = Run::Down;
         }
@@ -1218,7 +1534,14 @@ impl Hub {
             path, branch
         );
         self.send(fx, env, USER, &a.name, &text, false, None, true, false)?;
-        fx.push(line(MAIN, "info", &format!("@{} travaille maintenant dans le worktree {}", a.name, branch)));
+        fx.push(line(
+            MAIN,
+            "info",
+            &format!(
+                "@{} travaille maintenant dans le worktree {}",
+                a.name, branch
+            ),
+        ));
         Ok(a.name)
     }
 
@@ -1226,7 +1549,9 @@ impl Hub {
 
     fn set_focus(&mut self, fx: &mut Fx, env: &mut dyn Env, client: ClientId, focus: &str) {
         let now = env.now();
-        let Some(view) = self.clients.get_mut(&client) else { return };
+        let Some(view) = self.clients.get_mut(&client) else {
+            return;
+        };
         let prev = std::mem::replace(
             view,
             ClientView {
@@ -1249,7 +1574,11 @@ impl Hub {
                         .join("\n")
                 })
                 .unwrap_or_default();
-            let quoted: Vec<String> = prev.sent.iter().map(|m| format!("\"{}\"", one_line(m))).collect();
+            let quoted: Vec<String> = prev
+                .sent
+                .iter()
+                .map(|m| format!("\"{}\"", one_line(m)))
+                .collect();
             let note = format!(
                 "The user talked directly to @{} ({} message{}): {}. Last reply of @{}: \"{}\"",
                 prev.focus,
@@ -1276,7 +1605,14 @@ impl Hub {
         }
     }
 
-    fn user_input(&mut self, fx: &mut Fx, env: &mut dyn Env, client: ClientId, focus: &str, text: &str) {
+    fn user_input(
+        &mut self,
+        fx: &mut Fx,
+        env: &mut dyn Env,
+        client: ClientId,
+        focus: &str,
+        text: &str,
+    ) {
         let focus = self.st.resolve(focus).unwrap_or_else(|| MAIN.to_string());
         if let Some(v) = self.clients.get_mut(&client) {
             if v.focus != focus {
@@ -1299,18 +1635,35 @@ impl Hub {
                     let close: Vec<String> = self
                         .st
                         .tasks()
-                        .filter(|a| a.name.starts_with(target.chars().next().unwrap_or('?')) || a.name.contains(&target))
+                        .filter(|a| {
+                            a.name.starts_with(target.chars().next().unwrap_or('?'))
+                                || a.name.contains(&target)
+                        })
                         .map(|a| format!("@{}", a.name))
                         .collect();
-                    let hint = if close.is_empty() { String::new() } else { format!(" — tu voulais dire {} ?", close.join(", ")) };
-                    fx.push(self.notice(client, &format!("aucune tâche nommée @{}{}", target, hint)));
+                    let hint = if close.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" — tu voulais dire {} ?", close.join(", "))
+                    };
+                    fx.push(
+                        self.notice(client, &format!("aucune tâche nommée @{}{}", target, hint)),
+                    );
                     return;
                 };
                 match self.send(fx, env, USER, &name, &text, false, None, true, false) {
                     Ok(m) => {
                         fx.push(line(MAIN, "route", &format!("toi → @{} : {}", name, text)));
                         if focus != MAIN || name != focus {
-                            self.note_main(fx, env, &format!("the user wrote directly to @{}: \"{}\"", name, one_line(&text)));
+                            self.note_main(
+                                fx,
+                                env,
+                                &format!(
+                                    "the user wrote directly to @{}: \"{}\"",
+                                    name,
+                                    one_line(&text)
+                                ),
+                            );
                         }
                         if let Some(v) = self.clients.get_mut(&client) {
                             v.last_route = Some(m.id);
@@ -1329,22 +1682,30 @@ impl Hub {
                     objective: brief,
                     ..Brief::default()
                 };
-                if let Err(e) = self.create_task(fx, env, USER, name.as_deref(), b, worktree, with_changes) {
+                if let Err(e) =
+                    self.create_task(fx, env, USER, name.as_deref(), b, worktree, with_changes)
+                {
                     fx.push(self.notice(client, &e));
                 }
             }
             UserCmd::Drop { name, force } => {
                 let Some(name) = name else {
-                    fx.push(self.notice(client, "usage : /drop <tâche> (ou /drop depuis la vue de la tâche)"));
+                    fx.push(self.notice(
+                        client,
+                        "usage : /drop <tâche> (ou /drop depuis la vue de la tâche)",
+                    ));
                     return;
                 };
                 match self.drop_task(fx, env, &name, force) {
-                    Ok(None) => self.note_main(fx, env, &format!("the user dropped the task @{}", name)),
+                    Ok(None) => {
+                        self.note_main(fx, env, &format!("the user dropped the task @{}", name))
+                    }
                     Ok(Some(q)) => {
                         let id = self.next_confirm;
                         self.next_confirm += 1;
                         let canon = self.st.resolve(&name).unwrap_or(name);
-                        self.confirms.insert(id, (client, Pending::Drop { name: canon }));
+                        self.confirms
+                            .insert(id, (client, Pending::Drop { name: canon }));
                         fx.push(Effect::ToClient {
                             client,
                             body: json!({"ev": "confirm", "id": id, "text": q}),
@@ -1358,7 +1719,11 @@ impl Hub {
                 Err(e) => fx.push(self.notice(client, &e)),
             },
             UserCmd::Isolate { name } => match self.isolate_task(fx, env, &name) {
-                Ok(n) => self.note_main(fx, env, &format!("the user moved @{} into its own git worktree", n)),
+                Ok(n) => self.note_main(
+                    fx,
+                    env,
+                    &format!("the user moved @{} into its own git worktree", n),
+                ),
                 Err(e) => fx.push(self.notice(client, &e)),
             },
             UserCmd::Rename { name, new_name } => {
@@ -1367,10 +1732,18 @@ impl Hub {
                     return;
                 };
                 if !router::valid_name(&new_name) || self.st.name_taken(&new_name) {
-                    fx.push(self.notice(client, &format!("nom invalide ou déjà pris : {}", new_name)));
+                    fx.push(
+                        self.notice(client, &format!("nom invalide ou déjà pris : {}", new_name)),
+                    );
                     return;
                 }
-                self.emit(fx, Event::Renamed { name: old.clone(), new_name: new_name.clone() });
+                self.emit(
+                    fx,
+                    Event::Renamed {
+                        name: old.clone(),
+                        new_name: new_name.clone(),
+                    },
+                );
                 for m in [&mut self.steered] {
                     if let Some(v) = m.remove(&old) {
                         m.insert(new_name.clone(), v);
@@ -1382,32 +1755,76 @@ impl Hub {
                 for v in self.clients.values_mut().filter(|v| v.focus == old) {
                     v.focus = new_name.clone();
                 }
-                fx.push(Effect::Renamed { old: old.clone(), new: new_name.clone() });
-                fx.push(line(MAIN, "info", &format!("@{} s'appelle maintenant @{}", old, new_name)));
-                self.note_main(fx, env, &format!("the user renamed @{} to @{} (the old name still works)", old, new_name));
+                fx.push(Effect::Renamed {
+                    old: old.clone(),
+                    new: new_name.clone(),
+                });
+                fx.push(line(
+                    MAIN,
+                    "info",
+                    &format!("@{} s'appelle maintenant @{}", old, new_name),
+                ));
+                self.note_main(
+                    fx,
+                    env,
+                    &format!(
+                        "the user renamed @{} to @{} (the old name still works)",
+                        old, new_name
+                    ),
+                );
             }
             UserCmd::Answer { card, text } => self.answer_card(fx, env, client, card, &text),
             UserCmd::Cancel => {
                 let last = self.clients.get(&client).and_then(|v| v.last_route);
                 match last {
-                    Some(id) if matches!(self.st.msg_state.get(&id), Some(MsgState::Queued { .. })) => {
-                        self.emit(fx, Event::MessageState { id, state: MsgState::Cancelled });
-                        let to = self.st.msgs.get(&id).map(|m| m.to.clone()).unwrap_or_default();
+                    Some(id)
+                        if matches!(self.st.msg_state.get(&id), Some(MsgState::Queued { .. })) =>
+                    {
+                        self.emit(
+                            fx,
+                            Event::MessageState {
+                                id,
+                                state: MsgState::Cancelled,
+                            },
+                        );
+                        let to = self
+                            .st
+                            .msgs
+                            .get(&id)
+                            .map(|m| m.to.clone())
+                            .unwrap_or_default();
                         fx.push(line(MAIN, "info", &format!("routage vers @{} annulé", to)));
-                        self.note_main(fx, env, &format!("the user cancelled the message m_{} to @{} before delivery", id, to));
+                        self.note_main(
+                            fx,
+                            env,
+                            &format!(
+                                "the user cancelled the message m_{} to @{} before delivery",
+                                id, to
+                            ),
+                        );
                     }
-                    Some(_) => fx.push(self.notice(client, "trop tard : le message est déjà livré, envoie une correction")),
+                    Some(_) => fx.push(self.notice(
+                        client,
+                        "trop tard : le message est déjà livré, envoie une correction",
+                    )),
                     None => fx.push(self.notice(client, "aucun routage à annuler")),
                 }
             }
             UserCmd::Tasks => {
                 let now = env.now();
-                let mut lines: Vec<String> = self.st.tasks().map(|a| board::task_line(a, now)).collect();
+                let mut lines: Vec<String> =
+                    self.st.tasks().map(|a| board::task_line(a, now)).collect();
                 if lines.is_empty() {
                     lines.push("aucune tâche".into());
                 }
                 for c in self.st.open_cards() {
-                    lines.push(format!("carte #{} {} @{} : {}", c.id, c.kind, c.agent, clip(&one_line(&c.text), 100)));
+                    lines.push(format!(
+                        "carte #{} {} @{} : {}",
+                        c.id,
+                        c.kind,
+                        c.agent,
+                        clip(&one_line(&c.text), 100)
+                    ));
                 }
                 fx.push(Effect::ToClient {
                     client,
@@ -1415,22 +1832,33 @@ impl Hub {
                 });
             }
             UserCmd::Interrupt => match self.st.agents.get(&focus).map(|a| a.run) {
-                Some(Run::Busy) => fx.push(Effect::Interrupt { agent: focus.clone() }),
+                Some(Run::Busy) => fx.push(Effect::Interrupt {
+                    agent: focus.clone(),
+                }),
                 _ => fx.push(self.notice(client, "aucun tour en cours à interrompre")),
             },
             UserCmd::Passthrough(l) => {
                 let first = l.split_whitespace().next().unwrap_or("");
                 if first != "/compact" {
-                    fx.push(self.notice(client, &format!("commande inconnue : {} (voir /help)", first)));
+                    fx.push(self.notice(
+                        client,
+                        &format!("commande inconnue : {} (voir /help)", first),
+                    ));
                     return;
                 }
                 match self.st.agents.get_mut(&focus) {
                     Some(a) if a.run == Run::Idle => {
                         a.run = Run::Busy;
                         self.dirty = true;
-                        fx.push(Effect::Passthrough { agent: focus.clone(), line: l });
+                        fx.push(Effect::Passthrough {
+                            agent: focus.clone(),
+                            line: l,
+                        });
                     }
-                    _ => fx.push(self.notice(client, "l'agent n'est pas inactif : réessaie à la fin du tour")),
+                    _ => fx.push(self.notice(
+                        client,
+                        "l'agent n'est pas inactif : réessaie à la fin du tour",
+                    )),
                 }
             }
             UserCmd::Help => fx.push(Effect::ToClient {
@@ -1442,14 +1870,25 @@ impl Hub {
     }
 
     /// Plain text from the user to the agent in focus.
-    fn user_says(&mut self, fx: &mut Fx, env: &mut dyn Env, client: ClientId, to: &str, text: &str) {
+    fn user_says(
+        &mut self,
+        fx: &mut Fx,
+        env: &mut dyn Env,
+        client: ClientId,
+        to: &str,
+        text: &str,
+    ) {
         // RFC 0001 §7.3: answering a task that waits on the user, from
         // its own view, answers its question
         if to != MAIN {
             let card = self
                 .st
                 .open_cards()
-                .find(|c| c.kind == "question" && c.for_msg.is_some_and(|m| self.st.msgs.get(&m).is_some_and(|x| x.from == to)))
+                .find(|c| {
+                    c.kind == "question"
+                        && c.for_msg
+                            .is_some_and(|m| self.st.msgs.get(&m).is_some_and(|x| x.from == to))
+                })
                 .map(|c| c.id);
             if let Some(id) = card {
                 if let Some(v) = self.clients.get_mut(&client) {
@@ -1471,29 +1910,69 @@ impl Hub {
         }
     }
 
-    fn answer_card(&mut self, fx: &mut Fx, env: &mut dyn Env, client: ClientId, id: u64, text: &str) {
+    fn answer_card(
+        &mut self,
+        fx: &mut Fx,
+        env: &mut dyn Env,
+        client: ClientId,
+        id: u64,
+        text: &str,
+    ) {
         let Some(card) = self.st.cards.get(&id).cloned() else {
             fx.push(self.notice(client, &format!("aucune carte ouverte #{}", id)));
             return;
         };
-        let yes = matches!(text.trim().to_lowercase().as_str(), "y" | "yes" | "o" | "oui" | "ok");
+        let yes = matches!(
+            text.trim().to_lowercase().as_str(),
+            "y" | "yes" | "o" | "oui" | "ok"
+        );
         let resolution = match card.kind.as_str() {
             "question" => {
-                let target = card.for_msg.and_then(|m| self.st.msgs.get(&m).map(|x| (m, x.from.clone())));
+                let target = card
+                    .for_msg
+                    .and_then(|m| self.st.msgs.get(&m).map(|x| (m, x.from.clone())));
                 match target {
-                    Some((m, asker)) => match self.send(fx, env, USER, &asker, text, false, Some(m), false, false) {
-                        Ok(_) => {
-                            self.note_main(fx, env, &format!("the user answered card #{} (@{} asked: \"{}\"): \"{}\"", id, asker, one_line(&card.text), one_line(text)));
-                            fx.push(line(MAIN, "route", &format!("toi → @{} (réponse à la carte #{}) : {}", asker, id, text)));
-                            "répondue".to_string()
+                    Some((m, asker)) => {
+                        match self.send(fx, env, USER, &asker, text, false, Some(m), false, false) {
+                            Ok(_) => {
+                                self.note_main(
+                                    fx,
+                                    env,
+                                    &format!(
+                                        "the user answered card #{} (@{} asked: \"{}\"): \"{}\"",
+                                        id,
+                                        asker,
+                                        one_line(&card.text),
+                                        one_line(text)
+                                    ),
+                                );
+                                fx.push(line(
+                                    MAIN,
+                                    "route",
+                                    &format!(
+                                        "toi → @{} (réponse à la carte #{}) : {}",
+                                        asker, id, text
+                                    ),
+                                ));
+                                "répondue".to_string()
+                            }
+                            Err(e) => {
+                                fx.push(self.notice(client, &e));
+                                return;
+                            }
                         }
-                        Err(e) => {
-                            fx.push(self.notice(client, &e));
-                            return;
-                        }
-                    },
+                    }
                     None => {
-                        self.note_main(fx, env, &format!("the user answered card #{} (\"{}\"): \"{}\"", id, one_line(&card.text), one_line(text)));
+                        self.note_main(
+                            fx,
+                            env,
+                            &format!(
+                                "the user answered card #{} (\"{}\"): \"{}\"",
+                                id,
+                                one_line(&card.text),
+                                one_line(text)
+                            ),
+                        );
                         "répondue".to_string()
                     }
                 }
@@ -1501,17 +1980,27 @@ impl Hub {
             "drop" => {
                 if yes {
                     match self.drop_task(fx, env, &card.agent, true) {
-                        Ok(_) => self.note_main(fx, env, &format!("the user accepted to drop @{}", card.agent)),
+                        Ok(_) => self.note_main(
+                            fx,
+                            env,
+                            &format!("the user accepted to drop @{}", card.agent),
+                        ),
                         Err(e) => fx.push(self.notice(client, &e)),
                     }
                     "acceptée".to_string()
                 } else {
-                    self.note_main(fx, env, &format!("the user refused to drop @{}", card.agent));
+                    self.note_main(
+                        fx,
+                        env,
+                        &format!("the user refused to drop @{}", card.agent),
+                    );
                     "refusée".to_string()
                 }
             }
             "blocked" | "failed" | "thread_limit" | "budget" | "restart" => {
-                if let Err(e) = self.send(fx, env, USER, &card.agent, text, false, None, true, false) {
+                if let Err(e) =
+                    self.send(fx, env, USER, &card.agent, text, false, None, true, false)
+                {
                     fx.push(self.notice(client, &e));
                     return;
                 }
@@ -1519,12 +2008,24 @@ impl Hub {
             }
             _ => "vue".to_string(),
         };
-        self.emit(fx, Event::CardClosed { id, resolution: resolution.clone() });
-        fx.push(line(MAIN, "card-closed", &format!("#{} {}", id, resolution)));
+        self.emit(
+            fx,
+            Event::CardClosed {
+                id,
+                resolution: resolution.clone(),
+            },
+        );
+        fx.push(line(
+            MAIN,
+            "card-closed",
+            &format!("#{} {}", id, resolution),
+        ));
     }
 
     fn confirm(&mut self, fx: &mut Fx, env: &mut dyn Env, client: ClientId, id: u64, yes: bool) {
-        let Some((_, pending)) = self.confirms.remove(&id) else { return };
+        let Some((_, pending)) = self.confirms.remove(&id) else {
+            return;
+        };
         match pending {
             Pending::Drop { name } => {
                 if !yes {
@@ -1532,7 +2033,9 @@ impl Hub {
                     return;
                 }
                 match self.drop_task(fx, env, &name, true) {
-                    Ok(_) => self.note_main(fx, env, &format!("the user dropped the task @{}", name)),
+                    Ok(_) => {
+                        self.note_main(fx, env, &format!("the user dropped the task @{}", name))
+                    }
                     Err(e) => fx.push(self.notice(client, &e)),
                 }
             }
@@ -1541,9 +2044,19 @@ impl Hub {
 
     // ---- the agents' `sb` requests ----
 
-    fn agent_req(&mut self, fx: &mut Fx, env: &mut dyn Env, token: Token, from: &str, req: AgentReq) {
+    fn agent_req(
+        &mut self,
+        fx: &mut Fx,
+        env: &mut dyn Env,
+        token: Token,
+        from: &str,
+        req: AgentReq,
+    ) {
         let Some(from) = self.st.resolve(from) else {
-            fx.push(Effect::Reply { token, body: err(format!("agent inconnu : {}", from)) });
+            fx.push(Effect::Reply {
+                token,
+                body: err(format!("agent inconnu : {}", from)),
+            });
             return;
         };
         let is_main = from == MAIN;
@@ -1564,37 +2077,79 @@ impl Hub {
                 text,
                 expect_reply,
                 reply_to,
-            } => match {
-                let reply_to = reply_to.or_else(|| if expect_reply { None } else { self.open_question(&to, &from) });
-                self.send(fx, env, &from, &to, &text, expect_reply, reply_to, false, false)
-            } {
-                Ok(m) => {
-                    let delivered = matches!(self.st.msg_state.get(&m.id), Some(MsgState::Delivered));
-                    reply(
-                        fx,
-                        ok(json!({
-                            "message_id": format!("m_{}", m.id),
-                            "thread": format!("t_{}", m.thread),
-                            "to": m.to,
-                            "delivery": if delivered { "delivered" } else { "queued" },
-                        })),
-                    );
+            } => {
+                // a plain message to an agent that asked us something
+                // answers it
+                let reply_to = reply_to.or_else(|| {
+                    if expect_reply {
+                        None
+                    } else {
+                        self.open_question(&to, &from)
+                    }
+                });
+                let sent = self.send(
+                    fx,
+                    env,
+                    &from,
+                    &to,
+                    &text,
+                    expect_reply,
+                    reply_to,
+                    false,
+                    false,
+                );
+                match sent {
+                    Ok(m) => {
+                        let delivered =
+                            matches!(self.st.msg_state.get(&m.id), Some(MsgState::Delivered));
+                        reply(
+                            fx,
+                            ok(json!({
+                                "message_id": format!("m_{}", m.id),
+                                "thread": format!("t_{}", m.thread),
+                                "to": m.to,
+                                "delivery": if delivered { "delivered" } else { "queued" },
+                            })),
+                        );
+                    }
+                    Err(e) => reply(fx, err(e)),
                 }
-                Err(e) => reply(fx, err(e)),
-            },
+            }
             AgentReq::Wait { msg, timeout_s } => self.wait(fx, env, token, &from, msg, timeout_s),
-            AgentReq::Ask { to, text, timeout_s } => match self.send(fx, env, &from, &to, &text, true, None, false, false) {
+            AgentReq::Ask {
+                to,
+                text,
+                timeout_s,
+            } => match self.send(fx, env, &from, &to, &text, true, None, false, false) {
                 Ok(m) => self.wait(fx, env, token, &from, m.id, timeout_s),
                 Err(e) => reply(fx, err(e)),
             },
             AgentReq::Status { status, note } => {
-                self.emit(fx, Event::Declared { name: from.clone(), status: Some(status), note: note.clone() });
+                self.emit(
+                    fx,
+                    Event::Declared {
+                        name: from.clone(),
+                        status: Some(status),
+                        note: note.clone(),
+                    },
+                );
                 if status == Declared::Blocked && !is_main {
-                    self.open_card(fx, env, "blocked", &from, if note.is_empty() { "bloquée" } else { &note }, None);
+                    self.open_card(
+                        fx,
+                        env,
+                        "blocked",
+                        &from,
+                        if note.is_empty() { "bloquée" } else { &note },
+                        None,
+                    );
                 }
                 reply(fx, ok(json!({})));
             }
-            AgentReq::Report { kind, summary, decisions } => {
+            AgentReq::Report {
+                kind,
+                summary,
+                decisions,
+            } => {
                 if is_main {
                     reply(fx, err("main ne se rapporte à personne"));
                     return;
@@ -1614,15 +2169,43 @@ impl Hub {
                 );
                 match kind.as_str() {
                     "done" => {
-                        self.emit(fx, Event::Declared { name: from.clone(), status: Some(Declared::Done), note: String::new() });
-                        self.open_card(fx, env, "done", &from, &clip(&one_line(&summary), 200), None);
+                        self.emit(
+                            fx,
+                            Event::Declared {
+                                name: from.clone(),
+                                status: Some(Declared::Done),
+                                note: String::new(),
+                            },
+                        );
+                        self.open_card(
+                            fx,
+                            env,
+                            "done",
+                            &from,
+                            &clip(&one_line(&summary), 200),
+                            None,
+                        );
                     }
                     "blocked" => {
-                        self.emit(fx, Event::Declared { name: from.clone(), status: Some(Declared::Blocked), note: summary.clone() });
+                        self.emit(
+                            fx,
+                            Event::Declared {
+                                name: from.clone(),
+                                status: Some(Declared::Blocked),
+                                note: summary.clone(),
+                            },
+                        );
                         self.open_card(fx, env, "blocked", &from, &summary, None);
                     }
                     "failed" => {
-                        self.emit(fx, Event::Lifecycle { name: from.clone(), lifecycle: Lifecycle::Failed, reason: Some(summary.clone()) });
+                        self.emit(
+                            fx,
+                            Event::Lifecycle {
+                                name: from.clone(),
+                                lifecycle: Lifecycle::Failed,
+                                reason: Some(summary.clone()),
+                            },
+                        );
                         self.open_card(fx, env, "failed", &from, &summary, None);
                     }
                     _ => {}
@@ -1634,8 +2217,17 @@ impl Hub {
                         text.push_str(&format!("\n- {}", d));
                     }
                 }
-                let parent = self.st.agents.get(&from).and_then(|a| a.parent.clone()).unwrap_or_else(|| MAIN.into());
-                let to = if parent == USER { MAIN.to_string() } else { parent };
+                let parent = self
+                    .st
+                    .agents
+                    .get(&from)
+                    .and_then(|a| a.parent.clone())
+                    .unwrap_or_else(|| MAIN.into());
+                let to = if parent == USER {
+                    MAIN.to_string()
+                } else {
+                    parent
+                };
                 // the report answers the parent's open request, if any:
                 // no automatic reply repeats it at the end of the turn
                 let reply_to = self.open_question(&to, &from);
@@ -1655,10 +2247,21 @@ impl Hub {
                     main_only(fx);
                     return;
                 }
-                match self.create_task(fx, env, MAIN, Some(&name).filter(|n| !n.is_empty()).map(|s| s.as_str()), brief, worktree, with_changes) {
+                match self.create_task(
+                    fx,
+                    env,
+                    MAIN,
+                    Some(&name).filter(|n| !n.is_empty()).map(|s| s.as_str()),
+                    brief,
+                    worktree,
+                    with_changes,
+                ) {
                     Ok(n) => {
                         let a = &self.st.agents[&n];
-                        reply(fx, ok(json!({"name": n, "path": a.ws.path, "branch": a.ws.branch})));
+                        reply(
+                            fx,
+                            ok(json!({"name": n, "path": a.ws.path, "branch": a.ws.branch})),
+                        );
                     }
                     Err(e) => reply(fx, err(e)),
                 }
@@ -1685,7 +2288,11 @@ impl Hub {
                 match self.st.resolve(&agent).filter(|n| n != MAIN) {
                     Some(n) => {
                         self.stop_task(fx, &n, Lifecycle::Stopped, &reason);
-                        fx.push(line(MAIN, "info", &format!("main → @{} arrêtée : {}", n, reason)));
+                        fx.push(line(
+                            MAIN,
+                            "info",
+                            &format!("main → @{} arrêtée : {}", n, reason),
+                        ));
                         reply(fx, ok(json!({})));
                     }
                     None => reply(fx, err(format!("aucune tâche nommée {}", agent))),
@@ -1701,8 +2308,20 @@ impl Hub {
                     Ok(Some(q)) => {
                         let n = self.st.resolve(&agent).unwrap_or(agent.clone());
                         let text = q.trim_end_matches(" [y/N]").to_string();
-                        let id = self.open_card(fx, env, "drop", &n, &format!("main propose : {} (réponds oui ou non)", text), None);
-                        reply(fx, ok(json!({"dropped": false, "card": id, "reason": "the user must confirm: an attention card is open"})));
+                        let id = self.open_card(
+                            fx,
+                            env,
+                            "drop",
+                            &n,
+                            &format!("main propose : {} (réponds oui ou non)", text),
+                            None,
+                        );
+                        reply(
+                            fx,
+                            ok(
+                                json!({"dropped": false, "card": id, "reason": "the user must confirm: an attention card is open"}),
+                            ),
+                        );
                     }
                     Err(e) => reply(fx, err(e)),
                 }
@@ -1736,12 +2355,27 @@ impl Hub {
     /// expects `me`'s reply.
     fn open_question(&self, asker: &str, me: &str) -> Option<u64> {
         let asker = self.st.resolve(asker)?;
-        self.st.unanswered_for(me).into_iter().find(|m| m.from == asker).map(|m| m.id)
+        self.st
+            .unanswered_for(me)
+            .into_iter()
+            .find(|m| m.from == asker)
+            .map(|m| m.id)
     }
 
-    fn wait(&mut self, fx: &mut Fx, env: &mut dyn Env, token: Token, from: &str, msg: u64, timeout_s: u64) {
+    fn wait(
+        &mut self,
+        fx: &mut Fx,
+        env: &mut dyn Env,
+        token: Token,
+        from: &str,
+        msg: u64,
+        timeout_s: u64,
+    ) {
         let Some(orig) = self.st.msgs.get(&msg).cloned() else {
-            fx.push(Effect::Reply { token, body: err(format!("message inconnu : m_{}", msg)) });
+            fx.push(Effect::Reply {
+                token,
+                body: err(format!("message inconnu : m_{}", msg)),
+            });
             return;
         };
         if orig.from != from {
@@ -1777,7 +2411,8 @@ impl Hub {
 
     fn tick(&mut self, fx: &mut Fx, env: &mut dyn Env) {
         let now = env.now();
-        let (late, keep): (Vec<Waiter>, Vec<Waiter>) = self.waiters.drain(..).partition(|w| w.deadline_ms <= now);
+        let (late, keep): (Vec<Waiter>, Vec<Waiter>) =
+            self.waiters.drain(..).partition(|w| w.deadline_ms <= now);
         self.waiters = keep;
         for w in late {
             fx.push(Effect::Reply {

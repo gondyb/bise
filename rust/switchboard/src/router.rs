@@ -8,7 +8,10 @@ pub enum UserCmd {
     /// Plain text for the agent in focus.
     Say(String),
     /// `@name text`: an explicit route, no main turn (RFC 0001 §7.1).
-    To { target: String, text: String },
+    To {
+        target: String,
+        text: String,
+    },
     /// `/new [-w] [--with-changes] [name:] brief`.
     New {
         name: Option<String>,
@@ -17,12 +20,25 @@ pub enum UserCmd {
         with_changes: bool,
     },
     /// `/drop [name] [--force]` (no name: the task in focus).
-    Drop { name: Option<String>, force: bool },
-    Restore { name: String },
-    Isolate { name: String },
-    Rename { name: String, new_name: String },
+    Drop {
+        name: Option<String>,
+        force: bool,
+    },
+    Restore {
+        name: String,
+    },
+    Isolate {
+        name: String,
+    },
+    Rename {
+        name: String,
+        new_name: String,
+    },
     /// `/answer N text`: the answer to attention card N.
-    Answer { card: u64, text: String },
+    Answer {
+        card: u64,
+        text: String,
+    },
     /// `/cancel`: undo the last route if it is not delivered yet.
     Cancel,
     /// `/tasks`: the board, printed locally.
@@ -40,7 +56,8 @@ pub enum UserCmd {
 pub fn valid_name(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 24
-        && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
         && !s.starts_with('-')
 }
 
@@ -132,7 +149,10 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
             let mut body = rest;
             loop {
                 let b = body.trim_start();
-                if let Some(r) = b.strip_prefix("-w ").or_else(|| b.strip_prefix("--worktree ")) {
+                if let Some(r) = b
+                    .strip_prefix("-w ")
+                    .or_else(|| b.strip_prefix("--worktree "))
+                {
                     worktree = true;
                     body = r;
                 } else if let Some(r) = b.strip_prefix("--with-changes ") {
@@ -161,7 +181,10 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
         }
         "/drop" => {
             let force = words.contains(&"--force");
-            let name = words.iter().find(|w| !w.starts_with("--")).map(|w| w.trim_start_matches('@').to_string());
+            let name = words
+                .iter()
+                .find(|w| !w.starts_with("--"))
+                .map(|w| w.trim_start_matches('@').to_string());
             let name = name.or_else(|| (focus != MAIN).then(|| focus.to_string()));
             UserCmd::Drop { name, force }
         }
@@ -256,7 +279,10 @@ mod tests {
                 with_changes: false
             }
         );
-        assert!(matches!(parse("/new --with-changes x: y", MAIN), UserCmd::Invalid(_)));
+        assert!(matches!(
+            parse("/new --with-changes x: y", MAIN),
+            UserCmd::Invalid(_)
+        ));
     }
 
     #[test]
@@ -268,7 +294,13 @@ mod tests {
                 force: false
             }
         );
-        assert_eq!(parse("/drop", MAIN), UserCmd::Drop { name: None, force: false });
+        assert_eq!(
+            parse("/drop", MAIN),
+            UserCmd::Drop {
+                name: None,
+                force: false
+            }
+        );
         assert_eq!(
             parse("/drop @bench --force", MAIN),
             UserCmd::Drop {
@@ -287,7 +319,10 @@ mod tests {
                 text: "v2".into()
             }
         );
-        assert_eq!(parse("/compact", "docs"), UserCmd::Passthrough("/compact".into()));
+        assert_eq!(
+            parse("/compact", "docs"),
+            UserCmd::Passthrough("/compact".into())
+        );
     }
 
     #[test]

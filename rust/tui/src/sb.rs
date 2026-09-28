@@ -101,6 +101,8 @@ pub(super) struct Sb {
     /// Lines that arrived in a feed out of view, since its last visit.
     activity: HashMap<String, usize>,
     ready: bool,
+    /// Ctrl+O: a shell to open in this directory (RFC 0002 §6).
+    shell: Option<String>,
 }
 
 impl Sb {
@@ -112,7 +114,10 @@ impl Sb {
 
     /// What the panel navigates: main, then the live tasks.
     fn nav(&self) -> Vec<&Agent> {
-        self.agents.iter().filter(|a| a.status != "archived").collect()
+        self.agents
+            .iter()
+            .filter(|a| a.status != "archived")
+            .collect()
     }
 
     fn agent(&self, name: &str) -> Option<&Agent> {
@@ -120,28 +125,84 @@ impl Sb {
     }
 }
 
-pub(super) static SB_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub(super) static SB_MODE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 pub(super) const SB_COMMANDS: &[Cmd] = &[
-    Cmd { name: "/new", desc: "créer une tâche : /new [-w] [nom:] objectif", args: true },
-    Cmd { name: "/drop", desc: "arrêter et archiver une tâche (et son worktree)", args: true },
-    Cmd { name: "/restore", desc: "rouvrir une tâche archivée", args: true },
-    Cmd { name: "/isolate", desc: "donner un worktree git à une tâche", args: true },
-    Cmd { name: "/rename", desc: "renommer une tâche", args: true },
-    Cmd { name: "/answer", desc: "répondre à une carte : /answer N texte", args: true },
-    Cmd { name: "/cancel", desc: "annuler le dernier routage non livré", args: false },
-    Cmd { name: "/tasks", desc: "le tableau des tâches", args: false },
-    Cmd { name: "/interrupt", desc: "interrompre le tour de l'agent affiché", args: false },
-    Cmd { name: "/compact", desc: "compacter la conversation de l'agent affiché", args: false },
-    Cmd { name: "/help", desc: "commandes et touches", args: false },
-    Cmd { name: "/quit", desc: "quitter (les agents continuent)", args: false },
+    Cmd {
+        name: "/new",
+        desc: "créer une tâche : /new [-w] [nom:] objectif",
+        args: true,
+    },
+    Cmd {
+        name: "/drop",
+        desc: "arrêter et archiver une tâche (et son worktree)",
+        args: true,
+    },
+    Cmd {
+        name: "/restore",
+        desc: "rouvrir une tâche archivée",
+        args: true,
+    },
+    Cmd {
+        name: "/isolate",
+        desc: "donner un worktree git à une tâche",
+        args: true,
+    },
+    Cmd {
+        name: "/rename",
+        desc: "renommer une tâche",
+        args: true,
+    },
+    Cmd {
+        name: "/answer",
+        desc: "répondre à une carte : /answer N texte",
+        args: true,
+    },
+    Cmd {
+        name: "/cancel",
+        desc: "annuler le dernier routage non livré",
+        args: false,
+    },
+    Cmd {
+        name: "/tasks",
+        desc: "le tableau des tâches",
+        args: false,
+    },
+    Cmd {
+        name: "/interrupt",
+        desc: "interrompre le tour de l'agent affiché",
+        args: false,
+    },
+    Cmd {
+        name: "/compact",
+        desc: "compacter la conversation de l'agent affiché",
+        args: false,
+    },
+    Cmd {
+        name: "/help",
+        desc: "commandes et touches",
+        args: false,
+    },
+    Cmd {
+        name: "/quit",
+        desc: "quitter (les agents continuent)",
+        args: false,
+    },
 ];
 
-const KEYS_HELP: &str = "touches (compositeur vide) : Ctrl+J/K choisir une tâche · ⏎ entrer · Espace aperçu · D drop · Esc revenir à main · Alt+1…9 aller à la tâche N · Alt+0 main · Ctrl+A carte suivante · Ctrl+Z annuler le dernier routage";
+const KEYS_HELP: &str = "touches (compositeur vide) : Ctrl+J/K choisir une tâche · ⏎ entrer · Espace aperçu · D drop · Esc revenir à main · Alt+1…9 aller à la tâche N · Alt+0 main · Ctrl+A carte suivante · Ctrl+Z annuler le dernier routage · Ctrl+O shell dans le dossier de l'agent affiché";
+
+/// The shell asked with Ctrl+O, if any.
+pub(super) fn take_shell(app: &mut App) -> Option<String> {
+    app.sb.as_mut().and_then(|sb| sb.shell.take())
+}
 
 /// Route one hub event.
 pub(super) fn dispatch(app: &mut App, raw: &str) {
-    let Ok(v) = serde_json::from_str::<Value>(raw) else { return };
+    let Ok(v) = serde_json::from_str::<Value>(raw) else {
+        return;
+    };
     let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
     match s("ev").as_str() {
         "line" => ingest_for(app, &s("agent"), s("line")),
@@ -155,7 +216,11 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
             let id = v.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
             let text = s("text");
             push_event(&mut app.events, &mut app.cache, Ev::Warn(text.clone()));
-            push_event(&mut app.events, &mut app.cache, Ev::Info("réponds y (oui) ou n (non), puis ⏎".into()));
+            push_event(
+                &mut app.events,
+                &mut app.cache,
+                Ev::Info("réponds y (oui) ou n (non), puis ⏎".into()),
+            );
             if let Some(sb) = app.sb.as_mut() {
                 sb.confirm = Some((id, text));
             }
@@ -246,7 +311,12 @@ fn apply_state(app: &mut App, v: &Value) {
     let busy: HashMap<String, bool> = sb
         .agents
         .iter()
-        .map(|a| (a.name.clone(), a.status == "working" || a.status == "waiting"))
+        .map(|a| {
+            (
+                a.name.clone(),
+                a.status == "working" || a.status == "waiting",
+            )
+        })
         .collect();
     for (name, view) in sb.views.iter_mut() {
         view.pending = busy.get(name).copied().unwrap_or(false);
@@ -298,7 +368,9 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     app.hist_idx = None;
     app.popup_sel = 0;
     let mut out: Vec<Ev> = Vec::new();
-    let Some(sb) = app.sb.as_mut() else { return out };
+    let Some(sb) = app.sb.as_mut() else {
+        return out;
+    };
     if let Some((id, _)) = sb.confirm.clone() {
         let t = typed.to_lowercase();
         let yes = matches!(t.as_str(), "y" | "yes" | "o" | "oui");
@@ -323,7 +395,9 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             for c in SB_COMMANDS {
                 out.push(Ev::Info(format!("{:<10} — {}", c.name, c.desc)));
             }
-            out.push(Ev::Info("@tâche texte — message direct à une tâche (@main depuis une tâche)".into()));
+            out.push(Ev::Info(
+                "@tâche texte — message direct à une tâche (@main depuis une tâche)".into(),
+            ));
             out.push(Ev::Info(KEYS_HELP.into()));
         }
         _ => {
@@ -342,7 +416,9 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
     let empty = app.input.is_empty();
     let pending = app.pending;
     let interrupt_requested = app.interrupt_requested;
-    let Some(sb) = app.sb.as_mut() else { return false };
+    let Some(sb) = app.sb.as_mut() else {
+        return false;
+    };
     let n = sb.nav().len();
     match (k.code, k.modifiers) {
         (KeyCode::Char('c'), KeyModifiers::CONTROL) if pending && !interrupt_requested => {
@@ -356,14 +432,18 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             );
             true
         }
-        (KeyCode::Char('j'), KeyModifiers::CONTROL) | (KeyCode::Down, KeyModifiers::ALT) if empty && n > 0 => {
+        (KeyCode::Char('j'), KeyModifiers::CONTROL) | (KeyCode::Down, KeyModifiers::ALT)
+            if empty && n > 0 =>
+        {
             sb.selected = Some(match sb.selected {
                 None => 0,
                 Some(i) => (i + 1) % n,
             });
             true
         }
-        (KeyCode::Char('k'), KeyModifiers::CONTROL) | (KeyCode::Up, KeyModifiers::ALT) if empty && n > 0 => {
+        (KeyCode::Char('k'), KeyModifiers::CONTROL) | (KeyCode::Up, KeyModifiers::ALT)
+            if empty && n > 0 =>
+        {
             sb.selected = Some(match sb.selected {
                 None | Some(0) => n - 1,
                 Some(i) => i - 1,
@@ -424,6 +504,15 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             app.cursor = app.input.chars().count();
             true
         }
+        (KeyCode::Char('o'), KeyModifiers::CONTROL) => {
+            let dir = sb
+                .agent(&sb.focus)
+                .map(|a| a.path.clone())
+                .filter(|p| !p.is_empty());
+            let dir = dir.unwrap_or_else(|| sb.workspace.clone());
+            sb.shell = Some(dir);
+            true
+        }
         (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
             let f = sb.focus.clone();
             sb.send(json!({"op": "input", "focus": f, "text": "/cancel"}));
@@ -454,7 +543,10 @@ pub(super) fn split(app: &App, full: Rect) -> (Rect, Option<Rect>) {
     }
     let w = (full.width / 4).clamp(28, 40);
     (
-        Rect { width: full.width - w, ..full },
+        Rect {
+            width: full.width - w,
+            ..full
+        },
         Some(Rect {
             x: full.x + full.width - w,
             width: w,
@@ -472,8 +564,14 @@ pub(super) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
     lines.push(Line::from(vec![
-        Span::styled(" Switchboard ", Style::default().fg(BRAND).add_modifier(Modifier::BOLD)),
-        Span::styled(truncate_chars(&ws, w.saturating_sub(13)), Style::default().fg(DIM)),
+        Span::styled(
+            " Switchboard ",
+            Style::default().fg(BRAND).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            truncate_chars(&ws, w.saturating_sub(13)),
+            Style::default().fg(DIM),
+        ),
     ]));
     lines.push(Line::from(""));
     for (i, a) in sb.nav().iter().enumerate() {
@@ -487,7 +585,11 @@ pub(super) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
         if selected {
             name_style = name_style.add_modifier(Modifier::REVERSED);
         }
-        let label = if a.main { "main".to_string() } else { format!("{} {}", i, a.name) };
+        let label = if a.main {
+            "main".to_string()
+        } else {
+            format!("{} {}", i, a.name)
+        };
         let act = sb.activity.get(&a.name).copied().unwrap_or(0);
         let mut spans = vec![
             Span::styled(format!(" {} ", g), Style::default().fg(gc)),
@@ -498,7 +600,10 @@ pub(super) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
             spans.push(Span::styled(" •", Style::default().fg(INFO)));
         }
         if a.queued > 0 {
-            spans.push(Span::styled(format!(" ✉{}", a.queued), Style::default().fg(WARN)));
+            spans.push(Span::styled(
+                format!(" ✉{}", a.queued),
+                Style::default().fg(WARN),
+            ));
         }
         lines.push(Line::from(spans));
         if !a.main {
@@ -506,7 +611,10 @@ pub(super) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
             if let Some(b) = &a.branch {
                 sub = truncate_chars(&format!("⎇ {} · {}", b, a.objective), w.saturating_sub(3));
             }
-            lines.push(Line::from(Span::styled(format!("   {}", sub), Style::default().fg(FAINT))));
+            lines.push(Line::from(Span::styled(
+                format!("   {}", sub),
+                Style::default().fg(FAINT),
+            )));
             if !a.note.is_empty() {
                 lines.push(Line::from(Span::styled(
                     format!("   {}", truncate_chars(&a.note, w.saturating_sub(3))),
@@ -515,13 +623,20 @@ pub(super) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
             }
         }
         if a.main && sb.nav().len() > 1 {
-            lines.push(Line::from(Span::styled(format!(" {}", "─".repeat(w.saturating_sub(1))), Style::default().fg(FAINT))));
+            lines.push(Line::from(Span::styled(
+                format!(" {}", "─".repeat(w.saturating_sub(1))),
+                Style::default().fg(FAINT),
+            )));
         }
     }
     let archived = sb.agents.iter().filter(|a| a.status == "archived").count();
     if archived > 0 {
         lines.push(Line::from(Span::styled(
-            format!(" {} archivée{}", archived, if archived > 1 { "s" } else { "" }),
+            format!(
+                " {} archivée{}",
+                archived,
+                if archived > 1 { "s" } else { "" }
+            ),
             Style::default().fg(FAINT),
         )));
     }
@@ -534,7 +649,10 @@ pub(super) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
         for c in &sb.cards {
             lines.push(Line::from(vec![
                 Span::styled(format!(" #{} ", c.id), Style::default().fg(WARN)),
-                Span::styled(truncate_chars(&format!("{} @{}", c.kind, c.agent), w.saturating_sub(5)), Style::default().fg(TEXT)),
+                Span::styled(
+                    truncate_chars(&format!("{} @{}", c.kind, c.agent), w.saturating_sub(5)),
+                    Style::default().fg(TEXT),
+                ),
             ]));
             lines.push(Line::from(Span::styled(
                 format!("   {}", truncate_chars(&c.text, w.saturating_sub(3))),
@@ -558,37 +676,73 @@ pub(super) fn status_line(app: &App) -> Option<Line<'static>> {
     let a = sb.agent(&sb.focus).cloned().unwrap_or_default();
     let mut spans: Vec<Span<'static>> = Vec::new();
     if app.pending {
-        spans.push(Span::styled(format!("  {} ", spinner_frame(app.tick / 2)), Style::default().fg(BRAND)));
+        spans.push(Span::styled(
+            format!("  {} ", spinner_frame(app.tick / 2)),
+            Style::default().fg(BRAND),
+        ));
     } else {
         spans.push(Span::styled("  ● ", Style::default().fg(BRAND)));
     }
     if sb.focus == "main" {
-        spans.push(Span::styled("main".to_string(), Style::default().fg(TEXT).add_modifier(Modifier::BOLD)));
+        spans.push(Span::styled(
+            "main".to_string(),
+            Style::default().fg(TEXT).add_modifier(Modifier::BOLD),
+        ));
     } else {
-        spans.push(Span::styled(format!("@{}", sb.focus), Style::default().fg(BRAND).add_modifier(Modifier::BOLD)));
+        spans.push(Span::styled(
+            format!("@{}", sb.focus),
+            Style::default().fg(BRAND).add_modifier(Modifier::BOLD),
+        ));
     }
-    spans.push(Span::styled(format!(" · {}", a.status), Style::default().fg(DIM)));
+    spans.push(Span::styled(
+        format!(" · {}", a.status),
+        Style::default().fg(DIM),
+    ));
     if let Some(b) = &a.branch {
-        spans.push(Span::styled(format!(" · ⎇ {}", b), Style::default().fg(DIM)));
+        spans.push(Span::styled(
+            format!(" · ⎇ {}", b),
+            Style::default().fg(DIM),
+        ));
     } else if !a.main && !a.path.is_empty() && a.mode == "shared" {
-        spans.push(Span::styled(" · dossier partagé".to_string(), Style::default().fg(DIM)));
+        spans.push(Span::styled(
+            " · dossier partagé".to_string(),
+            Style::default().fg(DIM),
+        ));
     }
     if let Some(ms) = a.turn_ms.filter(|_| app.pending) {
-        spans.push(Span::styled(format!(" · {}s", ms / 1000), Style::default().fg(DIM)));
+        spans.push(Span::styled(
+            format!(" · {}s", ms / 1000),
+            Style::default().fg(DIM),
+        ));
     }
     if sb.focus != "main" {
-        spans.push(Span::styled(" · tu parles directement à la tâche · Esc → main".to_string(), Style::default().fg(INFO)));
+        spans.push(Span::styled(
+            " · tu parles directement à la tâche · Esc → main".to_string(),
+            Style::default().fg(INFO),
+        ));
     }
     if sb.preview {
-        if let Some(sel) = sb.selected.and_then(|i| sb.nav().get(i).map(|a| a.name.clone())) {
-            spans.push(Span::styled(format!(" · aperçu de @{} (⏎ entrer, Esc fermer)", sel), Style::default().fg(WARN)));
+        if let Some(sel) = sb
+            .selected
+            .and_then(|i| sb.nav().get(i).map(|a| a.name.clone()))
+        {
+            spans.push(Span::styled(
+                format!(" · aperçu de @{} (⏎ entrer, Esc fermer)", sel),
+                Style::default().fg(WARN),
+            ));
         }
     }
     if !sb.cards.is_empty() {
-        spans.push(Span::styled(format!(" · ◆ {}", sb.cards.len()), Style::default().fg(WARN)));
+        spans.push(Span::styled(
+            format!(" · ◆ {}", sb.cards.len()),
+            Style::default().fg(WARN),
+        ));
     }
     if !app.connected {
-        spans.push(Span::styled(" · ○ hub déconnecté".to_string(), Style::default().fg(ERR)));
+        spans.push(Span::styled(
+            " · ○ hub déconnecté".to_string(),
+            Style::default().fg(ERR),
+        ));
     }
     Some(Line::from(spans))
 }
@@ -700,6 +854,7 @@ pub fn run_switchboard(stream: UnixStream, workspace: String, debug: bool) -> io
         confirm: None,
         activity: HashMap::new(),
         ready: false,
+        shell: None,
     };
     let mut app = App {
         connected: true,
@@ -712,7 +867,10 @@ pub fn run_switchboard(stream: UnixStream, workspace: String, debug: bool) -> io
         tail_visible: true,
         bottom_bar_rect: None,
         cache: Vec::new(),
-        area_w: crossterm::terminal::size().map(|(w, _)| w as usize).unwrap_or(100).max(40),
+        area_w: crossterm::terminal::size()
+            .map(|(w, _)| w as usize)
+            .unwrap_or(100)
+            .max(40),
         area_h: 24,
         events: Vec::new(),
         last_line_at: None,
@@ -784,7 +942,11 @@ fn line_mode(app: &mut App) -> io::Result<()> {
         let busy = app
             .sb
             .as_ref()
-            .map(|sb| sb.agents.iter().any(|a| a.status == "working" || a.status == "waiting" || a.status == "starting"))
+            .map(|sb| {
+                sb.agents.iter().any(|a| {
+                    a.status == "working" || a.status == "waiting" || a.status == "starting"
+                })
+            })
             .unwrap_or(false);
         if !stdin_open && !busy {
             let t = *quiet_since.get_or_insert_with(std::time::Instant::now);
@@ -802,20 +964,29 @@ fn line_mode(app: &mut App) -> io::Result<()> {
 }
 
 fn print_hub_event(raw: &str) {
-    let Ok(v) = serde_json::from_str::<Value>(raw) else { return };
+    let Ok(v) = serde_json::from_str::<Value>(raw) else {
+        return;
+    };
     let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
     match s("ev").as_str() {
         "line" => {
             let line = s("line");
             let shown = if let Some(r) = line.strip_prefix("sb ") {
-                Some(format!("[{}] {}", s("agent"), unescape_md(r).replace('\n', " ⏎ ")))
+                Some(format!(
+                    "[{}] {}",
+                    s("agent"),
+                    unescape_md(r).replace('\n', " ⏎ ")
+                ))
             } else if let Some(r) = line.trim_start().strip_prefix("obs: assistant: ") {
                 let (_, vis) = split_thinking(r).unwrap_or((String::new(), r.to_string()));
-                Some(format!("[{}] assistant: {}", s("agent"), unescape_md(&vis).replace('\n', " ⏎ ")))
-            } else if let Some(r) = line.strip_prefix("tool #") {
-                Some(format!("[{}] tool {}", s("agent"), truncate_chars(r, 200)))
+                Some(format!(
+                    "[{}] assistant: {}",
+                    s("agent"),
+                    unescape_md(&vis).replace('\n', " ⏎ ")
+                ))
             } else {
-                None
+                line.strip_prefix("tool #")
+                    .map(|r| format!("[{}] tool {}", s("agent"), truncate_chars(r, 200)))
             };
             if let Some(t) = shown {
                 println!("{}", t);

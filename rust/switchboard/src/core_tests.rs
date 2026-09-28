@@ -40,11 +40,23 @@ impl Env for FakeEnv {
     fn worktree_loss(&mut self, _ws: &Workspace) -> Loss {
         self.loss.clone()
     }
-    fn worktree_drop(&mut self, name: &str, _ws: &Workspace, loss: &Loss) -> Result<Option<String>, String> {
+    fn worktree_drop(
+        &mut self,
+        name: &str,
+        _ws: &Workspace,
+        loss: &Loss,
+    ) -> Result<Option<String>, String> {
         self.dropped.push(name.to_string());
-        Ok(loss.any().then(|| format!("refs/switchboard/trash/{}/1", name)))
+        Ok(loss
+            .any()
+            .then(|| format!("refs/switchboard/trash/{}/1", name)))
     }
-    fn worktree_restore(&mut self, name: &str, ws: &Workspace, _snap: Option<&str>) -> Result<Workspace, String> {
+    fn worktree_restore(
+        &mut self,
+        name: &str,
+        ws: &Workspace,
+        _snap: Option<&str>,
+    ) -> Result<Workspace, String> {
         let mut ws = ws.clone();
         ws.dropped = false;
         let _ = name;
@@ -128,9 +140,18 @@ impl T {
                 with_changes: false,
             },
         );
-        assert!(fx.iter().any(|e| matches!(e, Effect::Spawn { agent, .. } if agent == name)), "{:?}", fx);
+        assert!(
+            fx.iter()
+                .any(|e| matches!(e, Effect::Spawn { agent, .. } if agent == name)),
+            "{:?}",
+            fx
+        );
         let fx = self.go(Input::ReplReady { agent: name.into() });
-        assert!(say_to(&fx, name).is_some(), "the brief starts the first turn: {:?}", fx);
+        assert!(
+            say_to(&fx, name).is_some(),
+            "the brief starts the first turn: {:?}",
+            fx
+        );
         // the first turn ends: main gets the automatic reply
         self.go(Input::ReplLine {
             agent: name.into(),
@@ -165,7 +186,9 @@ fn reply(fx: &[Effect], token: u64) -> Option<Value> {
 }
 
 fn has_line(fx: &[Effect], agent: &str, needle: &str) -> bool {
-    fx.iter().any(|e| matches!(e, Effect::Line { agent: a, line } if a == agent && line.contains(needle)))
+    fx.iter().any(
+        |e| matches!(e, Effect::Line { agent: a, line } if a == agent && line.contains(needle)),
+    )
 }
 
 #[test]
@@ -195,12 +218,19 @@ fn a_spawned_task_answers_main_automatically() {
         leftover: false,
     });
     let to_main = say_to(&fx, MAIN).expect("main is woken by the automatic reply");
-    assert!(to_main.contains("from=\"auth-fix\" relation=\"child\""), "{}", to_main);
+    assert!(
+        to_main.contains("from=\"auth-fix\" relation=\"child\""),
+        "{}",
+        to_main
+    );
     assert!(to_main.contains("auto=\"true\""), "{}", to_main);
     assert!(to_main.contains("corrigé"), "{}", to_main);
     // the board carries the automatic report
     let a = &t.hub.st.agents["auth-fix"];
-    assert_eq!(a.last_report.as_ref().map(|r| r.summary.as_str()), Some("corrigé"));
+    assert_eq!(
+        a.last_report.as_ref().map(|r| r.summary.as_str()),
+        Some("corrigé")
+    );
     assert_eq!(t.status("auth-fix"), Status::Idle);
 }
 
@@ -226,7 +256,11 @@ fn the_board_of_main_follows_the_tasks() {
             _ => None,
         })
         .expect("main's context is rewritten");
-    assert!(ctx.contains("docs") && ctx.contains("Doc API v2"), "{}", ctx);
+    assert!(
+        ctx.contains("docs") && ctx.contains("Doc API v2"),
+        "{}",
+        ctx
+    );
 }
 
 #[test]
@@ -263,8 +297,19 @@ fn ask_waits_for_the_reply() {
     assert!(reply(&fx, tok).is_none(), "the ask blocks");
     assert_eq!(t.status("docs"), Status::Waiting);
     let q = steer_to(&fx, MAIN).expect("delivered to main");
-    let id = t.hub.st.msgs.values().find(|m| m.text == "v1 ou v2 ?").unwrap().id;
-    assert!(q.contains(&format!("id=\"m_{}\"", id)) && q.contains("expects_reply=\"true\""), "{}", q);
+    let id = t
+        .hub
+        .st
+        .msgs
+        .values()
+        .find(|m| m.text == "v1 ou v2 ?")
+        .unwrap()
+        .id;
+    assert!(
+        q.contains(&format!("id=\"m_{}\"", id)) && q.contains("expects_reply=\"true\""),
+        "{}",
+        q
+    );
     let (tok2, fx) = t.req(
         MAIN,
         AgentReq::Send {
@@ -281,7 +326,11 @@ fn ask_waits_for_the_reply() {
     assert_eq!(t.status("docs"), Status::Working);
     // main answered: no automatic reply at the end of its turn
     let fx = t.turn(MAIN, "réglé");
-    assert!(say_to(&fx, "docs").is_none() && steer_to(&fx, "docs").is_none(), "{:?}", fx);
+    assert!(
+        say_to(&fx, "docs").is_none() && steer_to(&fx, "docs").is_none(),
+        "{:?}",
+        fx
+    );
 }
 
 #[test]
@@ -348,7 +397,9 @@ fn at_most_four_tasks_work_at_once() {
             with_changes: false,
         },
     );
-    assert!(fx.iter().any(|e| matches!(e, Effect::Spawn { agent, .. } if agent == "e")));
+    assert!(fx
+        .iter()
+        .any(|e| matches!(e, Effect::Spawn { agent, .. } if agent == "e")));
     let fx = t.go(Input::ReplReady { agent: "e".into() });
     assert!(say_to(&fx, "e").is_none(), "held by the concurrency limit");
     let fx = t.go(Input::ReplIdle {
@@ -423,7 +474,11 @@ fn main_learns_what_the_user_said_directly() {
         client: 1,
         focus: MAIN.into(),
     });
-    assert!(has_line(&fx, MAIN, "Tu as parlé à @docs (1 message)"), "{:?}", fx);
+    assert!(
+        has_line(&fx, MAIN, "Tu as parlé à @docs (1 message)"),
+        "{:?}",
+        fx
+    );
     // the note rides with the next message to main
     let fx = t.user(MAIN, "où en est la doc ?");
     let s = say_to(&fx, MAIN).unwrap();
@@ -443,7 +498,9 @@ fn an_explicit_route_can_be_cancelled_before_delivery() {
     assert!(has_line(&fx, MAIN, "toi → @docs : change de plan"));
     let fx = t.user(MAIN, "/cancel");
     assert!(has_line(&fx, MAIN, "routage vers @docs annulé"), "{:?}", fx);
-    let fx = t.go(Input::ReplReady { agent: "docs".into() });
+    let fx = t.go(Input::ReplReady {
+        agent: "docs".into(),
+    });
     assert!(say_to(&fx, "docs").is_none());
     let fx = t.user(MAIN, "@nope salut");
     assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").contains("aucune tâche nommée @nope"))));
@@ -453,24 +510,46 @@ fn an_explicit_route_can_be_cancelled_before_delivery() {
 fn dropping_a_worktree_with_work_asks_first() {
     let mut t = T::new();
     let fx = t.user(MAIN, "/new -w fix: corrige le bug");
-    assert!(has_line(&fx, MAIN, "nouvelle tâche @fix (worktree sb/fix)"), "{:?}", fx);
-    t.go(Input::ReplReady { agent: "fix".into() });
+    assert!(
+        has_line(&fx, MAIN, "nouvelle tâche @fix (worktree sb/fix)"),
+        "{:?}",
+        fx
+    );
+    t.go(Input::ReplReady {
+        agent: "fix".into(),
+    });
     t.go(Input::ReplIdle {
         agent: "fix".into(),
         leftover: false,
     });
-    t.env.loss = Loss { dirty: 3, unpushed: 2 };
+    t.env.loss = Loss {
+        dirty: 3,
+        unpushed: 2,
+    };
     let fx = t.user(MAIN, "/drop fix");
     let (id, text) = fx
         .iter()
         .find_map(|e| match e {
-            Effect::ToClient { body, .. } if body["ev"] == "confirm" => Some((body["id"].as_u64().unwrap(), body["text"].as_str().unwrap().to_string())),
+            Effect::ToClient { body, .. } if body["ev"] == "confirm" => Some((
+                body["id"].as_u64().unwrap(),
+                body["text"].as_str().unwrap().to_string(),
+            )),
             _ => None,
         })
         .expect("a confirmation");
-    assert!(text.contains("3 fichiers modifiés et 2 commits non poussés"), "{}", text);
-    let fx = t.go(Input::ClientConfirm { client: 1, id, yes: true });
-    assert!(fx.contains(&Effect::Kill { agent: "fix".into() }));
+    assert!(
+        text.contains("3 fichiers modifiés et 2 commits non poussés"),
+        "{}",
+        text
+    );
+    let fx = t.go(Input::ClientConfirm {
+        client: 1,
+        id,
+        yes: true,
+    });
+    assert!(fx.contains(&Effect::Kill {
+        agent: "fix".into()
+    }));
     assert_eq!(t.env.dropped, vec!["fix".to_string()]);
     assert_eq!(t.status("fix"), Status::Archived);
     assert!(t.hub.st.agents["fix"].snapshot_ref.is_some());
@@ -479,7 +558,9 @@ fn dropping_a_worktree_with_work_asks_first() {
     assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").contains("/restore"))));
     // restore brings it back
     let fx = t.user(MAIN, "/restore fix");
-    assert!(fx.iter().any(|e| matches!(e, Effect::Spawn { agent, resume: true, .. } if agent == "fix")));
+    assert!(fx
+        .iter()
+        .any(|e| matches!(e, Effect::Spawn { agent, resume: true, .. } if agent == "fix")));
     assert!(!t.hub.st.agents["fix"].ws.dropped);
 }
 
@@ -487,15 +568,32 @@ fn dropping_a_worktree_with_work_asks_first() {
 fn main_cannot_drop_work_away() {
     let mut t = T::new();
     t.user(MAIN, "/new -w fix: x");
-    t.go(Input::ReplReady { agent: "fix".into() });
+    t.go(Input::ReplReady {
+        agent: "fix".into(),
+    });
     t.go(Input::ReplIdle {
         agent: "fix".into(),
         leftover: false,
     });
-    t.env.loss = Loss { dirty: 1, unpushed: 0 };
-    let (tok, fx) = t.req(MAIN, AgentReq::Drop { agent: "fix".into() });
+    t.env.loss = Loss {
+        dirty: 1,
+        unpushed: 0,
+    };
+    let (tok, fx) = t.req(
+        MAIN,
+        AgentReq::Drop {
+            agent: "fix".into(),
+        },
+    );
     assert_eq!(reply(&fx, tok).unwrap()["dropped"], false);
-    let card = t.hub.st.cards.values().find(|c| c.kind == "drop").unwrap().id;
+    let card = t
+        .hub
+        .st
+        .cards
+        .values()
+        .find(|c| c.kind == "drop")
+        .unwrap()
+        .id;
     t.user(MAIN, &format!("/answer {} oui", card));
     assert_eq!(t.status("fix"), Status::Archived);
 }
@@ -513,7 +611,14 @@ fn an_escalated_question_is_answered_by_the_user() {
         },
     );
     assert!(say_to(&fx, MAIN).is_some());
-    let id = t.hub.st.msgs.values().find(|m| m.text == "v1 ou v2 ?").unwrap().id;
+    let id = t
+        .hub
+        .st
+        .msgs
+        .values()
+        .find(|m| m.text == "v1 ou v2 ?")
+        .unwrap()
+        .id;
     let (_, fx) = t.req(
         MAIN,
         AgentReq::Card {
@@ -521,7 +626,11 @@ fn an_escalated_question_is_answered_by_the_user() {
             for_msg: Some(id),
         },
     );
-    assert!(has_line(&fx, MAIN, "sb card : #1 question @docs"), "{:?}", fx);
+    assert!(
+        has_line(&fx, MAIN, "sb card : #1 question @docs"),
+        "{:?}",
+        fx
+    );
     // main ends its turn: no automatic reply, the question is handed over
     let fx = t.turn(MAIN, "J'ai demandé à l'utilisateur.");
     assert!(reply(&fx, tok).is_none());
@@ -546,7 +655,14 @@ fn answering_in_the_task_view_answers_its_question() {
             reply_to: None,
         },
     );
-    let id = t.hub.st.msgs.values().find(|m| m.text == "v1 ou v2 ?").unwrap().id;
+    let id = t
+        .hub
+        .st
+        .msgs
+        .values()
+        .find(|m| m.text == "v1 ou v2 ?")
+        .unwrap()
+        .id;
     t.req(
         MAIN,
         AgentReq::Card {
@@ -564,7 +680,11 @@ fn answering_in_the_task_view_answers_its_question() {
     });
     let fx = t.user("docs", "v2");
     let s = say_to(&fx, "docs").unwrap();
-    assert!(s.contains("from=\"user\"") && s.contains(&format!("reply_to=\"m_{}\"", id)), "{}", s);
+    assert!(
+        s.contains("from=\"user\"") && s.contains(&format!("reply_to=\"m_{}\"", id)),
+        "{}",
+        s
+    );
     assert!(t.hub.st.cards.is_empty());
 }
 
@@ -578,7 +698,12 @@ fn a_crashing_repl_restarts_then_fails() {
             crashed: true,
             reason: "boom".into(),
         });
-        assert!(fx.iter().any(|e| matches!(e, Effect::Spawn { agent, resume: true, .. } if agent == "a")), "crash {}", i);
+        assert!(
+            fx.iter()
+                .any(|e| matches!(e, Effect::Spawn { agent, resume: true, .. } if agent == "a")),
+            "crash {}",
+            i
+        );
     }
     let fx = t.go(Input::ReplExited {
         agent: "a".into(),
@@ -590,7 +715,9 @@ fn a_crashing_repl_restarts_then_fails() {
     assert!(t.hub.st.cards.values().any(|c| c.kind == "failed"));
     // the user's message revives it
     let fx = t.user(MAIN, "@a réessaie");
-    assert!(fx.iter().any(|e| matches!(e, Effect::Spawn { agent, .. } if agent == "a")));
+    assert!(fx
+        .iter()
+        .any(|e| matches!(e, Effect::Spawn { agent, .. } if agent == "a")));
 }
 
 #[test]
@@ -612,9 +739,14 @@ fn peers_cannot_reach_an_archived_task_but_the_user_can() {
             reply_to: None,
         },
     );
-    assert!(reply(&fx, tok).unwrap()["error"].as_str().unwrap().starts_with("recipient_unavailable"));
+    assert!(reply(&fx, tok).unwrap()["error"]
+        .as_str()
+        .unwrap()
+        .starts_with("recipient_unavailable"));
     let fx = t.user(MAIN, "@b reviens");
-    assert!(fx.iter().any(|e| matches!(e, Effect::Spawn { agent, .. } if agent == "b")));
+    assert!(fx
+        .iter()
+        .any(|e| matches!(e, Effect::Spawn { agent, .. } if agent == "b")));
 }
 
 #[test]
@@ -631,11 +763,24 @@ fn shared_tasks_touching_one_file_open_a_card() {
     let mut t = T::new();
     t.spawn_task("a");
     t.spawn_task("b");
-    let patch = |f: &str| format!("tool #1 apply_patch : {{\"arg\":\"*** Begin Patch\\n*** Update File: {}\\n@@\\n-x\\n+y\\n*** End Patch\"}}", f);
-    t.go(Input::ReplLine { agent: "a".into(), line: patch("src/x.rs") });
+    let patch = |f: &str| {
+        format!("tool #1 apply_patch : {{\"arg\":\"*** Begin Patch\\n*** Update File: {}\\n@@\\n-x\\n+y\\n*** End Patch\"}}", f)
+    };
+    t.go(Input::ReplLine {
+        agent: "a".into(),
+        line: patch("src/x.rs"),
+    });
     assert!(t.hub.st.cards.is_empty());
-    t.go(Input::ReplLine { agent: "b".into(), line: patch("src/x.rs") });
-    assert!(t.hub.st.cards.values().any(|c| c.kind == "overlap" && c.text.contains("src/x.rs")));
+    t.go(Input::ReplLine {
+        agent: "b".into(),
+        line: patch("src/x.rs"),
+    });
+    assert!(t
+        .hub
+        .st
+        .cards
+        .values()
+        .any(|c| c.kind == "overlap" && c.text.contains("src/x.rs")));
     // a task that changed a file cannot be isolated anymore
     let fx = t.user(MAIN, "/isolate a");
     assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").contains("déjà modifié"))));
@@ -655,7 +800,11 @@ fn a_done_report_updates_the_board_and_wakes_main() {
     );
     assert_eq!(reply(&fx, tok).unwrap()["ok"], true);
     let s = say_to(&fx, MAIN).expect("main is woken");
-    assert!(s.contains("[report: done] fini") && s.contains("- API v2"), "{}", s);
+    assert!(
+        s.contains("[report: done] fini") && s.contains("- API v2"),
+        "{}",
+        s
+    );
     t.go(Input::ReplIdle {
         agent: "a".into(),
         leftover: false,
@@ -673,8 +822,17 @@ fn a_done_report_updates_the_board_and_wakes_main() {
 fn only_main_controls_tasks() {
     let mut t = T::new();
     t.spawn_task("a");
-    let (tok, fx) = t.req("a", AgentReq::Stop { agent: "main".into(), reason: "x".into() });
-    assert!(reply(&fx, tok).unwrap()["error"].as_str().unwrap().contains("réservé à main"));
+    let (tok, fx) = t.req(
+        "a",
+        AgentReq::Stop {
+            agent: "main".into(),
+            reason: "x".into(),
+        },
+    );
+    assert!(reply(&fx, tok).unwrap()["error"]
+        .as_str()
+        .unwrap()
+        .contains("réservé à main"));
 }
 
 #[test]
@@ -729,7 +887,11 @@ fn a_report_answers_the_parent_and_no_auto_reply_repeats_it() {
     );
     assert_eq!(reply(&fx, tok).unwrap()["ok"], true);
     let s = say_to(&fx, MAIN).unwrap();
-    assert!(s.contains("reply_to=\"m_"), "the report replies to the brief: {}", s);
+    assert!(
+        s.contains("reply_to=\"m_"),
+        "the report replies to the brief: {}",
+        s
+    );
     t.go(Input::ReplLine {
         agent: "a".into(),
         line: "  obs: assistant: fait, fichier écrit".into(),
@@ -739,7 +901,11 @@ fn a_report_answers_the_parent_and_no_auto_reply_repeats_it() {
         agent: "a".into(),
         leftover: false,
     });
-    assert!(steer_to(&fx, MAIN).is_none() && say_to(&fx, MAIN).is_none(), "no duplicate: {:?}", fx);
+    assert!(
+        steer_to(&fx, MAIN).is_none() && say_to(&fx, MAIN).is_none(),
+        "no duplicate: {:?}",
+        fx
+    );
 }
 
 #[test]

@@ -16,7 +16,10 @@ pub enum Wire {
     /// A steering entry went into a model request.
     Steered,
     /// `tool #<id> <name> : <args>` (a live tool call annotation).
-    Tool { name: String, args: String },
+    Tool {
+        name: String,
+        args: String,
+    },
     /// A line replayed from a restored session.
     History,
     Other,
@@ -64,7 +67,12 @@ pub fn patch_files(args: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in text.lines() {
         let l = line.trim().trim_start_matches('"');
-        for marker in ["*** Update File: ", "*** Add File: ", "*** Delete File: ", "*** Move to: "] {
+        for marker in [
+            "*** Update File: ",
+            "*** Add File: ",
+            "*** Delete File: ",
+            "*** Move to: ",
+        ] {
             if let Some(p) = l.strip_prefix(marker) {
                 let p = p.trim().trim_end_matches('"').trim_end_matches(',').trim();
                 if !p.is_empty() && !out.iter().any(|x| x == p) {
@@ -84,7 +92,10 @@ mod tests {
     fn turn_markers() {
         assert_eq!(parse("  obs: turn_started"), Wire::TurnStarted);
         assert_eq!(parse("--- idle"), Wire::Idle);
-        assert_eq!(parse("  obs: turn_done: completed"), Wire::TurnDone("completed".into()));
+        assert_eq!(
+            parse("  obs: turn_done: completed"),
+            Wire::TurnDone("completed".into())
+        );
         assert_eq!(parse("history   obs: turn_started"), Wire::History);
     }
 
@@ -110,6 +121,9 @@ mod tests {
     #[test]
     fn patch_headers() {
         let args = "{\"arg\":\"*** Begin Patch\\n*** Update File: src/a.rs\\n@@\\n-x\\n+y\\n*** Add File: b.md\\n+z\\n*** End Patch\"}";
-        assert_eq!(patch_files(args), vec!["src/a.rs".to_string(), "b.md".to_string()]);
+        assert_eq!(
+            patch_files(args),
+            vec!["src/a.rs".to_string(), "b.md".to_string()]
+        );
     }
 }

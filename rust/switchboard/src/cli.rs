@@ -24,7 +24,11 @@ A text argument `-` reads the text from stdin.";
 
 /// Split flags from positional words. `flags` take a value, `switches`
 /// do not; a repeated flag accumulates.
-fn parse_args(args: &[String], flags: &[&str], switches: &[&str]) -> Result<(Vec<String>, Map<String, Value>), String> {
+fn parse_args(
+    args: &[String],
+    flags: &[&str],
+    switches: &[&str],
+) -> Result<(Vec<String>, Map<String, Value>), String> {
     let mut pos: Vec<String> = Vec::new();
     let mut opts: Map<String, Value> = Map::new();
     let mut i = 0;
@@ -42,7 +46,9 @@ fn parse_args(args: &[String], flags: &[&str], switches: &[&str]) -> Result<(Vec
                     Some(v) => v,
                     None => {
                         i += 1;
-                        args.get(i).cloned().ok_or(format!("--{} attend une valeur", name))?
+                        args.get(i)
+                            .cloned()
+                            .ok_or(format!("--{} attend une valeur", name))?
                     }
                 };
                 match opts.get_mut(&name) {
@@ -69,7 +75,9 @@ fn parse_args(args: &[String], flags: &[&str], switches: &[&str]) -> Result<(Vec
 fn text_of(words: &[String]) -> Result<String, String> {
     if words.len() == 1 && words[0] == "-" {
         let mut s = String::new();
-        std::io::stdin().read_to_string(&mut s).map_err(|e| e.to_string())?;
+        std::io::stdin()
+            .read_to_string(&mut s)
+            .map_err(|e| e.to_string())?;
         return Ok(s.trim().to_string());
     }
     let t = words.join(" ");
@@ -81,7 +89,10 @@ fn text_of(words: &[String]) -> Result<String, String> {
 
 fn list_of(v: Option<&Value>) -> Vec<String> {
     match v {
-        Some(Value::Array(a)) => a.iter().filter_map(|x| x.as_str().map(String::from)).collect(),
+        Some(Value::Array(a)) => a
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect(),
         Some(Value::String(s)) => vec![s.clone()],
         _ => Vec::new(),
     }
@@ -97,7 +108,9 @@ fn str_of(opts: &Map<String, Value>, k: &str) -> String {
 
 /// The JSON request for `sb <args>`.
 pub fn build(args: &[String]) -> Result<Value, String> {
-    let Some(cmd) = args.first() else { return Err(USAGE.into()) };
+    let Some(cmd) = args.first() else {
+        return Err(USAGE.into());
+    };
     let rest = &args[1..];
     let mut req = Map::new();
     req.insert("cmd".into(), json!(cmd));
@@ -123,31 +136,57 @@ pub fn build(args: &[String]) -> Result<Value, String> {
             let to = pos.first().ok_or("usage : sb ask <agent> \"<question>\"")?;
             req.insert("to".into(), json!(to.trim_start_matches('@')));
             req.insert("text".into(), json!(text_of(&pos[1..])?));
-            req.insert("timeout_s".into(), json!(str_of(&o, "timeout").parse::<u64>().unwrap_or(20)));
+            req.insert(
+                "timeout_s".into(),
+                json!(str_of(&o, "timeout").parse::<u64>().unwrap_or(20)),
+            );
         }
         "wait" => {
             let (pos, o) = parse_args(rest, &["timeout"], &[])?;
-            req.insert("msg".into(), json!(pos.first().ok_or("usage : sb wait m_<n>")?));
-            req.insert("timeout_s".into(), json!(str_of(&o, "timeout").parse::<u64>().unwrap_or(20)));
+            req.insert(
+                "msg".into(),
+                json!(pos.first().ok_or("usage : sb wait m_<n>")?),
+            );
+            req.insert(
+                "timeout_s".into(),
+                json!(str_of(&o, "timeout").parse::<u64>().unwrap_or(20)),
+            );
         }
         "status" => {
             let (pos, o) = parse_args(rest, &["note"], &[])?;
-            req.insert("status".into(), json!(pos.first().ok_or("usage : sb status working|done|blocked")?));
+            req.insert(
+                "status".into(),
+                json!(pos
+                    .first()
+                    .ok_or("usage : sb status working|done|blocked")?),
+            );
             req.insert("note".into(), json!(str_of(&o, "note")));
         }
         "report" => {
             let (pos, o) = parse_args(rest, &["decision"], &[])?;
-            req.insert("kind".into(), json!(pos.first().ok_or("usage : sb report <kind> \"<résumé>\"")?));
+            req.insert(
+                "kind".into(),
+                json!(pos.first().ok_or("usage : sb report <kind> \"<résumé>\"")?),
+            );
             req.insert("summary".into(), json!(text_of(&pos[1..])?));
             req.insert("decisions".into(), json!(list_of(o.get("decision"))));
         }
         "spawn" => {
             let (pos, o) = parse_args(
                 rest,
-                &["objective", "context", "constraint", "done-when", "report-format"],
+                &[
+                    "objective",
+                    "context",
+                    "constraint",
+                    "done-when",
+                    "report-format",
+                ],
                 &["worktree", "with-changes"],
             )?;
-            req.insert("name".into(), json!(pos.first().cloned().unwrap_or_default()));
+            req.insert(
+                "name".into(),
+                json!(pos.first().cloned().unwrap_or_default()),
+            );
             let mut objective = str_of(&o, "objective");
             if objective.is_empty() && pos.len() > 1 {
                 objective = pos[1..].join(" ");
@@ -165,11 +204,23 @@ pub fn build(args: &[String]) -> Result<Value, String> {
         }
         "interrupt" | "drop" => {
             let (pos, _) = parse_args(rest, &[], &[])?;
-            req.insert("agent".into(), json!(pos.first().ok_or(format!("usage : sb {} <tâche>", cmd))?.trim_start_matches('@')));
+            req.insert(
+                "agent".into(),
+                json!(pos
+                    .first()
+                    .ok_or(format!("usage : sb {} <tâche>", cmd))?
+                    .trim_start_matches('@')),
+            );
         }
         "stop" => {
             let (pos, _) = parse_args(rest, &[], &[])?;
-            req.insert("agent".into(), json!(pos.first().ok_or("usage : sb stop <tâche> \"<raison>\"")?.trim_start_matches('@')));
+            req.insert(
+                "agent".into(),
+                json!(pos
+                    .first()
+                    .ok_or("usage : sb stop <tâche> \"<raison>\"")?
+                    .trim_start_matches('@')),
+            );
             req.insert("reason".into(), json!(pos[1..].join(" ")));
         }
         "card" => {
@@ -181,8 +232,17 @@ pub fn build(args: &[String]) -> Result<Value, String> {
         }
         "inspect" => {
             let (pos, o) = parse_args(rest, &["last", "query"], &[])?;
-            req.insert("agent".into(), json!(pos.first().ok_or("usage : sb inspect <agent>")?.trim_start_matches('@')));
-            req.insert("last".into(), json!(str_of(&o, "last").parse::<u64>().unwrap_or(20)));
+            req.insert(
+                "agent".into(),
+                json!(pos
+                    .first()
+                    .ok_or("usage : sb inspect <agent>")?
+                    .trim_start_matches('@')),
+            );
+            req.insert(
+                "last".into(),
+                json!(str_of(&o, "last").parse::<u64>().unwrap_or(20)),
+            );
             req.insert("query".into(), json!(str_of(&o, "query")));
         }
         "help" | "--help" | "-h" => return Err(USAGE.into()),
@@ -252,7 +312,9 @@ pub fn main(args: &[String]) -> i32 {
     let socket = std::env::var("SB_SOCKET").unwrap_or_default();
     let from = std::env::var("SB_AGENT").unwrap_or_default();
     if socket.is_empty() || from.is_empty() {
-        eprintln!("sb : SB_SOCKET et SB_AGENT manquent (sb ne tourne que dans un agent Switchboard)");
+        eprintln!(
+            "sb : SB_SOCKET et SB_AGENT manquent (sb ne tourne que dans un agent Switchboard)"
+        );
         return 2;
     }
     let mut req = req;
@@ -260,7 +322,11 @@ pub fn main(args: &[String]) -> i32 {
     req["from"] = json!(from);
     let cmd = args[0].clone();
     let timeout = req.get("timeout_s").and_then(|t| t.as_u64()).unwrap_or(0) + 30;
-    match request(std::path::Path::new(&socket), &req, Duration::from_secs(timeout)) {
+    match request(
+        std::path::Path::new(&socket),
+        &req,
+        Duration::from_secs(timeout),
+    ) {
         Ok(v) => {
             let (ok, text) = render(&cmd, &v);
             if ok {
@@ -288,7 +354,16 @@ mod tests {
 
     #[test]
     fn send_flags() {
-        let r = build(&a(&["send", "@docs", "v2", "please", "--expect-reply", "--reply-to", "m_4"])).unwrap();
+        let r = build(&a(&[
+            "send",
+            "@docs",
+            "v2",
+            "please",
+            "--expect-reply",
+            "--reply-to",
+            "m_4",
+        ]))
+        .unwrap();
         assert_eq!(r["to"], "docs");
         assert_eq!(r["text"], "v2 please");
         assert_eq!(r["expect_reply"], true);
@@ -298,7 +373,15 @@ mod tests {
     #[test]
     fn spawn_repeats_constraints() {
         let r = build(&a(&[
-            "spawn", "fix", "--objective", "fix it", "--constraint", "no push", "--constraint", "tests", "--worktree",
+            "spawn",
+            "fix",
+            "--objective",
+            "fix it",
+            "--constraint",
+            "no push",
+            "--constraint",
+            "tests",
+            "--worktree",
         ]))
         .unwrap();
         assert_eq!(r["constraints"], json!(["no push", "tests"]));
@@ -324,9 +407,15 @@ mod tests {
 
     #[test]
     fn rendering() {
-        let (ok, t) = render("ask", &json!({"ok": true, "type": "reply", "from": "main", "message_id": "m_3", "message": "v2", "auto": false}));
+        let (ok, t) = render(
+            "ask",
+            &json!({"ok": true, "type": "reply", "from": "main", "message_id": "m_3", "message": "v2", "auto": false}),
+        );
         assert!(ok && t.starts_with("reply from main (m_3):\nv2"), "{}", t);
-        let (ok, t) = render("wait", &json!({"ok": false, "error": "timeout", "hint": "end your turn"}));
+        let (ok, t) = render(
+            "wait",
+            &json!({"ok": false, "error": "timeout", "hint": "end your turn"}),
+        );
         assert!(!ok && t.contains("timeout") && t.contains("end your turn"));
     }
 }

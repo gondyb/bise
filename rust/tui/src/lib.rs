@@ -2834,6 +2834,19 @@ fn run_tui(app: &mut App) -> io::Result<()> {
         if app.should_quit {
             break;
         }
+        // switchboard Ctrl+O: a shell in the agent's directory; the TUI
+        // gives the terminal back when it exits
+        if let Some(dir) = sb::take_shell(app) {
+            let _ = crossterm::execute!(io::stdout(), DisableMouseCapture);
+            ratatui::restore();
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+            println!("shell dans {} — exit pour revenir à Switchboard", dir);
+            let _ = std::process::Command::new(shell).current_dir(&dir).status();
+            terminal = ratatui::init();
+            let _ = crossterm::execute!(io::stdout(), EnableMouseCapture);
+            let _ = crossterm::execute!(io::stdout(), EnableBracketedPaste);
+            let _ = terminal.clear();
+        }
         terminal.draw(|f| {
             if app.sb.is_some() {
                 sb::draw_sb(app, f)
