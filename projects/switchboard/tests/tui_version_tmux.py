@@ -31,10 +31,7 @@ def main():
     second = git("log", "-2", "--format=%h").splitlines()[-1]
     second_subject = git("log", "-1", "--format=%s", second)
     try:
-        envs = " ".join("%s=%s" % (k, subprocess.list2cmdline([v])) for k, v in E.env.items()
-                        if k.startswith(("SB_", "BEND_", "MISTRAL_")))
-        cmd = "cd %s && env %s %s switchboard --workspace %s; sleep 30" % (e2e.ROOT, envs, e2e.EXE, E.ws)
-        tmux("new-session", "-d", "-s", S, "-x", "160", "-y", "42", cmd)
+        tui_tmux.start_tui(E, 160, 42)
         wait_screen("Switchboard")
         wait_screen(" idle")
         # the popup: tree and the commits, with the current one marked

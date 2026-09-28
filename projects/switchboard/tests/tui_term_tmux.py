@@ -17,22 +17,12 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tmux, screen, keys, typed, wait_screen  # noqa: E402
+from tui_tmux import tmux, screen, keys, typed, wait_screen, wait_gone  # noqa: E402
 import tui_tmux  # noqa: E402
 
 S = "sbterm%d" % os.getpid()
 tui_tmux.S = S
 TITLE = "terminal · Ctrl+` hide"
-
-
-def wait_gone(needle, timeout=10):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        if needle not in screen():
-            return
-        time.sleep(0.1)
-    print(screen())
-    raise AssertionError("still on screen: %r" % needle)
 
 
 def alive(pid):
@@ -43,11 +33,7 @@ def main():
     E = e2e.Env()
     ok = False
     try:
-        envs = " ".join("%s=%s" % (k, subprocess.list2cmdline([v])) for k, v in E.env.items()
-                        if k.startswith(("SB_", "BEND_", "MISTRAL_")))
-        cmd = "cd %s && env SHELL=/bin/bash %s %s switchboard --workspace %s; sleep 30" % (
-            e2e.ROOT, envs, e2e.EXE, E.ws)
-        tmux("new-session", "-d", "-s", S, "-x", "150", "-y", "42", cmd)
+        tui_tmux.start_tui(E, 150, 42, "SHELL=/bin/bash")
         wait_screen("Switchboard")
         wait_screen(" idle")
         # show (legacy NUL), run a command

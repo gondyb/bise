@@ -41,14 +41,31 @@ def wait_screen(needle, timeout=40):
     raise AssertionError("not on screen: %r" % needle)
 
 
+def wait_gone(needle, timeout=10):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if needle not in screen():
+            return
+        time.sleep(0.1)
+    print(screen())
+    raise AssertionError("still on screen: %r" % needle)
+
+
+def start_tui(E, cols, rows, extra_env=""):
+    """Open the switchboard TUI of the throwaway hub E in the tmux session
+    S, with E's SB_/BEND_/MISTRAL_ env (+ extra_env, "K=V ...")."""
+    envs = " ".join("%s=%s" % (k, subprocess.list2cmdline([v])) for k, v in E.env.items()
+                    if k.startswith(("SB_", "BEND_", "MISTRAL_")))
+    cmd = "cd %s && env %s%s %s switchboard --workspace %s; sleep 30" % (
+        e2e.ROOT, extra_env + " " if extra_env else "", envs, e2e.EXE, E.ws)
+    tmux("new-session", "-d", "-s", S, "-x", str(cols), "-y", str(rows), cmd)
+
+
 def main():
     E = e2e.Env()
     ok = False
     try:
-        envs = " ".join("%s=%s" % (k, subprocess.list2cmdline([v])) for k, v in E.env.items()
-                        if k.startswith(("SB_", "BEND_", "MISTRAL_")))
-        cmd = "cd %s && env %s %s switchboard --workspace %s; sleep 30" % (e2e.ROOT, envs, e2e.EXE, E.ws)
-        tmux("new-session", "-d", "-s", S, "-x", "150", "-y", "42", cmd)
+        start_tui(E, 150, 42)
         sc = wait_screen("Switchboard")
         assert "Message to main…" in sc, sc
         wait_screen(" idle")

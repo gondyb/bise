@@ -10,7 +10,6 @@ too; the copies go to BEND_CLIPBOARD_FILE, never the real clipboard.
 python3 -u projects/switchboard/tests/tui_composer_tmux.py
 """
 import os
-import subprocess
 import sys
 import time
 
@@ -75,10 +74,7 @@ def main():
     E.env["BEND_CLIPBOARD_FILE"] = clip
     ok = False
     try:
-        envs = " ".join("%s=%s" % (k, subprocess.list2cmdline([v])) for k, v in E.env.items()
-                        if k.startswith(("SB_", "BEND_", "MISTRAL_")))
-        cmd = "cd %s && env %s %s switchboard --workspace %s; sleep 30" % (e2e.ROOT, envs, e2e.EXE, E.ws)
-        tmux("new-session", "-d", "-s", S, "-x", "150", "-y", "42", cmd)
+        tui_tmux.start_tui(E, 150, 42)
         wait_screen("Switchboard")
         wait_screen(" idle")
         # one entry in the history
