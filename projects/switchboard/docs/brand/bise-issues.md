@@ -1677,3 +1677,34 @@ Index:
     checks the dark ground in a `capture-pane -e`. Not checked by hand in
     Ghostty / Terminal.app (no screen here): the OSC 11 part is the one to
     look at there.
+
+### BISE-93 · the composer block
+
+- **status:** done · **owner:** bise-f-feed · **commits:** 2e317f5
+- **track:** F · **owns:** `ui.rs` `draw_bise` (layout) and `draw_composer`,
+  `ui::composer_block`; the composer tests and tmux readers
+- **spec:** book §13 "the composer block" (marketing 393dbd3; the foot of
+  every screen in site/book/screens.html)
+- **do:** status row, queued list, images strip, then the composer with the
+  bar on every row, blank bar rows around the text, text from column 3,
+  growth then scrolling, hints on their own row; small-terminal fallbacks.
+- **done when:** tests updated; gates green.
+- **notes:** Bottom up: hints row (dim, flush right, 2 columns of margin),
+  the composer block, the status row, the images strip, the queue. The bar
+  ` │ ` on every row of the block: faint while empty, accent with text or
+  while recording. Text from column 3, right margin 2, wrapped at
+  min(width − 5, 73) (your message's width in the history); at least 2
+  rows, up to min(12, 40% of the height), then it scrolls with the cursor
+  row. Empty: the cursor at column 3 and the placeholder; recording: the
+  meter at column 3. `ui::composer_block(h)`: < 24 drops the bottom blank
+  row, < 18 the top one (1 text row allowed), < 14 the hints go on the
+  status row. The solo client keeps its own layout. **Tests:**
+  `composer_wrap_tests` (the block ends the screen: text, blank row,
+  hints), chrome `first_run_screen`; tmux `tui_composer_tmux.composer()`
+  reads the bar rows, `tui_queue_tmux` reads the block (it no longer imports
+  tui_composer_tmux, whose import reset `tui_tmux.S`); the level-3 waits in
+  `tui_tmux`, `tui_archived_tmux`, `tui_at_files_tmux` accept `→ name`
+  (BISE-90 a5b841f shows the receiver, not the id). **Gates** (own target,
+  worktree of 106f7ae + this change): build, `cargo test --workspace`,
+  clippy 0 warnings, run_all.sh: every tmux test PASS (after the queue test
+  fix).
