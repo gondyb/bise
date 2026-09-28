@@ -75,6 +75,11 @@ out. also pull requests."** (Gabriel). Rejected: "your ideas. my hands. lots of
 them." (not our philosophy). Pro one-liner for README / bios: "i blow through
 backlogs." (not under the headline: "backlog" twice).
 
+Site subline candidate (Gabriel, kept in reserve, still exploring): "ramble.
+interrupt. change your mind. i run the agents. you stay in flow." Current
+subline "built for engineers who think faster than they type." is judged not
+strong enough.
+
 Name gloss, for English readers (site hero, README, launch posts):
 "bise /beez/ · french, n. 1. a quick kiss on the cheek. 2. a brisk north wind.
 3. a terminal where your agents ship while you think." One-line form: "bise
