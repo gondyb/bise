@@ -1591,13 +1591,15 @@ law retryable_err_table:
 # LAW: a transient network failure classifies as a retry with the
 # failure text carried for the final error if retries run out.
 law attempt_timeout_retries:
-  {Pv.attempt_err(Pv.NTimeout{})
-    == Pv.ARetry{0, "timeout"} : Pv.Attempt}
+  {Pv.attempt_err("api.example.com", Pv.NTimeout{})
+    == Pv.ARetry{0, "no answer from api.example.com after 120 s (timeout)"}
+    : Pv.Attempt}
 
 # LAW: a TLS failure classifies as final — no retry.
 law attempt_tls_fails:
-  {Pv.attempt_err(Pv.NTls{1, "handshake"})
-    == Pv.AFail{"provider unreachable: tls 1 handshake"} : Pv.Attempt}
+  {Pv.attempt_err("api.example.com", Pv.NTls{1, "handshake"})
+    == Pv.AFail{"TLS handshake with api.example.com failed (tls 1 handshake) — check your network or VPN"}
+    : Pv.Attempt}
 
 # LAW: the other transient statuses retry too - 529 (Anthropic
 # overloaded), 408, 425 - while auth and validation errors do not.
@@ -1655,11 +1657,58 @@ law provider_ok_passes_through:
   {Pv.attempt_status(200, "", "OK hi\nEND\n")
     == Pv.AOk{"OK hi\nEND\n"} : Pv.Attempt}
 
-# LAW: a client error is final: the style mapper already made it the
-# ERROR reply the turn fails on - retrying it only wastes the user's time.
+# LAW: a client error is final: the turn fails on the status and the
+# body the style mapper kept - retrying it only wastes the user's time.
 law provider_client_error_is_final:
   {Pv.attempt_status(400, "", "ERROR provider 400: bad\nEND\n")
-    == Pv.AOk{"ERROR provider 400: bad\nEND\n"} : Pv.Attempt}
+    == Pv.AFail{"provider 400: bad"} : Pv.Attempt}
+
+# LAW: an auth error says what to check.
+law provider_auth_error_hint:
+  {Pv.attempt_status(401, "", "ERROR provider 401: bad key\nEND\n")
+    == Pv.AFail{"provider 401: bad key — check the API key"} : Pv.Attempt}
+
+# LAW (BR-007): a refused connection names the host and the fix; it
+# retries (a VPN coming back ends the outage).
+law attempt_connect_names_host:
+  {Pv.attempt_err(Pv.url_host("https://foundry.example.net/anthropic/v1/messages"),
+      Pv.NConnect{61, "Connection refused"})
+    == Pv.ARetry{0, "cannot reach foundry.example.net (connect 61 Connection refused) — check your network or VPN"}
+    : Pv.Attempt}
+
+# LAW (BR-007): the cleared interrupt flag is an EMPTY file - it is not
+# an interrupt; neither is a missing file. Only content is.
+law interrupt_flag_needs_content:
+  {Bool.and(Bool.not(Pv.interrupt_requested(None{})),
+      Bool.and(Bool.not(Pv.interrupt_requested(Some{""})),
+        Bool.and(Bool.not(Pv.interrupt_requested(Some{"\n"})),
+          Pv.interrupt_requested(Some{"1"}))))
+    == True{} : Bool}
+
+# LAW (BR-007): an interrupted retry loop keeps the error that made it
+# retry - for every error text.
+law interrupted_keeps_last_error:
+  for +n: Nat
+  for +why: String
+  exs head: String
+  {Pv.interrupted_text(n, why) == String.append(head, why) : String}
+
+# LAW: retries exhausted: the final error ends with the last cause.
+law exhausted_keeps_last_error:
+  for +n: Nat
+  for +why: String
+  exs head: String
+  {Pv.exhausted_text(n, why) == String.append(head, why) : String}
+
+# LAW: a pause is slept in 1 s slices, the flag read before each one; an
+# interrupt empties what is left.
+law retry_wait_slices:
+  {Bool.and(Nat.is_eq(Pv.wait_slices(8000), 9n),
+      Bool.and(U32.is_eq(Pv.slice_ms(False{}, 2500), 1000),
+        Bool.and(U32.is_eq(Pv.left_after(False{}, 2500), 1500),
+          Bool.and(U32.is_eq(Pv.slice_ms(True{}, 2500), 0),
+            U32.is_eq(Pv.left_after(True{}, 2500), 0)))))
+    == True{} : Bool}
 
 # LAW: every retry shows the user where the call stands.
 law provider_retry_line:

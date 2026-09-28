@@ -3203,3 +3203,20 @@ def hub_pump_frame(-o: HM.St, +cx: HX.Cx<o>, +a: String, +n: String,
     +ne: {String.eq(a, n) == False{} : Bool}, +h: {HI.stuck(HX.d(o, cx), hub_rts(o, cx), n) == False{} : Bool})
     -> {HI.stuck(HX.d(o, HC.pump(o, cx, a)), hub_rts(o, HC.pump(o, cx, a)), n) == False{} : Bool}:
   hub_pf.agent(o, HM.get_agent(HC.st(o, cx), a), cx, a, n, ne, h)
+
+def hub_nsx(-o: HM.St, +cx: HX.Cx<o>, +xs: List<&2, String>) -> Type:
+  @n: String -> @e: {HM.str_in(xs, n) == False{} : Bool} -> {HI.stuck(HX.d(o, cx), hub_rts(o, cx), n) == False{} : Bool}
+
+def hub_pump_nsx.pick(-o: HM.St, c: Bool, +cx: HX.Cx<o>, +a: String, +xs: List<&2, String>, +n: String, +e: {String.eq(a, n) == c : Bool},
+    h: hub_nsx(o, cx, a <> xs), +nx: {HM.str_in(xs, n) == False{} : Bool})
+    -> {HI.stuck(HX.d(o, HC.pump(o, cx, a)), hub_rts(o, HC.pump(o, cx, a)), n) == False{} : Bool}:
+  match c:
+    case True{}:
+      %hub_str_eq_sound(a, n, e) : {HI.stuck(HX.d(o, HC.pump(o, cx, a)), hub_rts(o, HC.pump(o, cx, a)), _) == False{} : Bool}
+      hub_pump_wakes(o, cx, a)
+    case False{}:
+      hub_pump_frame(o, cx, a, n, e, h(n, hub_or_false(String.eq(a, n), HM.str_in(xs, n), e, nx)))
+
+# delivering to A clears A from the exceptions
+def hub_pump_nsx(-o: HM.St, +cx: HX.Cx<o>, +a: String, +xs: List<&2, String>, h: hub_nsx(o, cx, a <> xs)) -> hub_nsx(o, HC.pump(o, cx, a), xs):
+  +n => nx => hub_pump_nsx.pick(o, String.eq(a, n), cx, a, xs, n, {==}, h, nx)
