@@ -341,8 +341,9 @@ fn header(title: &str) -> Line<'static> {
 /// a header per section.
 pub(crate) fn table_lines(rows: &[&Row], width: usize) -> Vec<Line<'static>> {
     let width = width.max(20);
-    // the key column: the widest chips, capped at 45% of the width
-    let cap = (width * 45 / 100).max(10);
+    // the key column: its chips wrap at a third of the width (30 at
+    // most); one alternative wider than that widens the column
+    let cap = (width / 3).clamp(16, 30);
     let key_w = rows
         .iter()
         .filter(|r| !r.keys.is_empty())
@@ -350,7 +351,7 @@ pub(crate) fn table_lines(rows: &[&Row], width: usize) -> Vec<Line<'static>> {
         .map(|l| spans_width(&l))
         .max()
         .unwrap_or(0)
-        .min(cap);
+        .min(width.saturating_sub(10));
     let act_w = width.saturating_sub(key_w + 2).max(8);
     let mut out = Vec::new();
     let mut section = "";
