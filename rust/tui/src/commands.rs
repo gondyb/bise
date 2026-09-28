@@ -256,7 +256,7 @@ pub(crate) fn at_items(app: &App) -> Vec<PopItem> {
         PopItem {
             label: format!("{}{}", h.path, if h.dir { "/" } else { "" }),
             desc: String::new(),
-            mark: Some(if h.dir { (DIR_MARK, BRAND) } else { (FILE_MARK, DIM) }),
+            mark: Some(if h.dir { (DIR_MARK, theme::accent()) } else { (FILE_MARK, theme::dim()) }),
             fill,
             fill_cursor,
             run: None,
@@ -270,7 +270,7 @@ pub(crate) fn at_items(app: &App) -> Vec<PopItem> {
         PopItem {
             label: format!("{}/", h.path),
             desc: "this folder".into(),
-            mark: Some((DIR_MARK, BRAND)),
+            mark: Some((DIR_MARK, theme::accent())),
             fill,
             fill_cursor,
             run: None,
@@ -337,7 +337,7 @@ pub(crate) fn emoji_items(app: &App) -> Vec<PopItem> {
             PopItem {
                 label: format!(":{}:", name),
                 desc: e.desc.to_string(),
-                mark: Some((e.glyph, TEXT)),
+                mark: Some((e.glyph, theme::text())),
                 fill,
                 fill_cursor,
                 run: None,

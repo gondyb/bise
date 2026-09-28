@@ -32,14 +32,14 @@ pub(crate) fn recording_lines(lines: Vec<Line<'static>>, glyph: char) -> Vec<Lin
             let lead = if i == 0 {
                 Span::styled(
                     format!("{} ", glyph),
-                    Style::default().fg(RECORDING).add_modifier(Modifier::BOLD),
+                    Style::default().fg(theme::accent()).add_modifier(Modifier::BOLD),
                 )
             } else {
                 Span::raw("  ")
             };
             let mut spans = vec![lead];
             spans.extend(l.spans.into_iter().map(|s| {
-                let st = s.style.fg(DIM);
+                let st = s.style.fg(theme::dim());
                 Span::styled(s.content, st)
             }));
             Line::from(spans)
@@ -107,7 +107,7 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     draw_popup(app, frame, chunks[4]);
     let hint = if app.term.shown() { term::HINT } else { hint_text(app) };
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(DIM)))),
+        Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(theme::dim())))),
         chunks[6],
     );
     help::draw(app, frame);
@@ -296,7 +296,7 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect) {
                 }
                 // the feed selection on the selection background
                 match app.feed_sel.and_then(|s| s.cols(i, ri)) {
-                    Some((a, b)) => vis.push(feedsel::highlight(r, a, b, SELECTION)),
+                    Some((a, b)) => vis.push(feedsel::highlight(r, a, b, theme::selection_bg())),
                     None => vis.push(r.clone()),
                 }
                 vis_events.push(i);
@@ -384,45 +384,45 @@ fn draw_status(app: &mut App, frame: &mut Frame, area: Rect) -> u16 {
         let voice_note = fresh_note(&app.voice_note);
         let status = if let Some(t) = voice_note {
             Line::from(vec![
-                Span::styled("  ● ", Style::default().fg(RECORDING)),
-                Span::styled(t, Style::default().fg(TEXT)),
+                Span::styled("  ● ", Style::default().fg(theme::accent())),
+                Span::styled(t, Style::default().fg(theme::text())),
             ])
         } else if let Some(t) = flash {
             Line::from(vec![
-                Span::styled("  ✓ ", Style::default().fg(BRAND)),
-                Span::styled(t, Style::default().fg(TEXT)),
+                Span::styled("  ✓ ", Style::default().fg(theme::accent())),
+                Span::styled(t, Style::default().fg(theme::text())),
             ])
         } else if let Some(l) = sb::status_line(app) {
             l
         } else if app.pending && app.connected {
             Line::from(vec![
-                Span::styled(
-                    format!("  {}", spinner_frame(app.tick / 2)),
-                    Style::default().fg(BRAND),
-                ),
+                {
+                    let (g, color) = theme::working_frame(app.tick);
+                    Span::styled(format!("  {}", g), Style::default().fg(color))
+                },
                 Span::styled(
                     format!(" {} · generating…", app.info.model),
-                    Style::default().fg(DIM),
+                    Style::default().fg(theme::dim()),
                 ),
-                Span::styled(" · ", Style::default().fg(DIM)),
-                Span::styled("ctrl+c", Style::default().fg(TEXT)),
-                Span::styled(" interrompre", Style::default().fg(DIM)),
+                Span::styled(" · ", Style::default().fg(theme::dim())),
+                Span::styled("ctrl+c", Style::default().fg(theme::text())),
+                Span::styled(" interrompre", Style::default().fg(theme::dim())),
             ])
         } else {
             // idle: a static standby dot — the spinner only moves
             // while a turn runs; between turns nothing animates
             Line::from(vec![
-                Span::styled("  ● ", Style::default().fg(BRAND)),
+                Span::styled("  ● ", Style::default().fg(theme::accent())),
                 Span::styled(
                     format!(
                         " bend-harness · {}",
                         app.info.model
                     ),
-                    Style::default().fg(DIM),
+                    Style::default().fg(theme::dim()),
                 ),
-                Span::styled(" · ", Style::default().fg(DIM)),
-                Span::styled("/ commandes", Style::default().fg(TEXT)),
-                Span::styled(" · end: bottom · ctrl+c: quit", Style::default().fg(DIM)),
+                Span::styled(" · ", Style::default().fg(theme::dim())),
+                Span::styled("/ commandes", Style::default().fg(theme::text())),
+                Span::styled(" · end: bottom · ctrl+c: quit", Style::default().fg(theme::dim())),
             ])
         };
         let w = status.width() as u16;
@@ -452,7 +452,7 @@ fn draw_prompt(app: &mut App, frame: &mut Frame, area: Rect, voice_pad: usize) {
     } else if app.ed.is_empty() {
         input_lines.push(Line::from(Span::styled(
             sb::placeholder(app).unwrap_or_else(|| "ask anything…".to_string()),
-            Style::default().fg(DIM),
+            Style::default().fg(theme::dim()),
         )));
     } else {
         input_lines = typed_lines(app, inner, text_rows);
@@ -466,39 +466,39 @@ fn draw_prompt(app: &mut App, frame: &mut Frame, area: Rect, voice_pad: usize) {
     let meta = Line::from(vec![
         Span::styled(
             "◆ bend",
-            Style::default().fg(BRAND).add_modifier(Modifier::BOLD),
+            Style::default().fg(theme::accent()).add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" · ", Style::default().fg(DIM)),
+        Span::styled(" · ", Style::default().fg(theme::dim())),
         Span::styled(
             app.info.model.clone(),
-            Style::default().fg(TEXT),
+            Style::default().fg(theme::text()),
         ),
-        Span::styled(" · ", Style::default().fg(DIM)),
+        Span::styled(" · ", Style::default().fg(theme::dim())),
         Span::styled(
             if app.ed.text.contains('\n') {
                 "⏎ send · ⇧⏎ new line"
             } else {
                 "⇧⏎ new line"
             },
-            Style::default().fg(DIM),
+            Style::default().fg(theme::dim()),
         ),
-        Span::styled(" · ", Style::default().fg(DIM)),
+        Span::styled(" · ", Style::default().fg(theme::dim())),
         if app.connected {
-            Span::styled("●", Style::default().fg(DIM))
+            Span::styled("●", Style::default().fg(theme::dim()))
         } else {
-            Span::styled("○ disconnected", Style::default().fg(ERR))
+            Span::styled("○ disconnected", Style::default().fg(theme::error()))
         },
     ]);
     // one blank line between the typed text and the meta row
     input_lines.push(Line::from(""));
     input_lines.push(meta);
-    let border = if app.voice.active() { RECORDING } else { BRAND };
+    let border = theme::accent(); // recording or not: the accent
     let prompt = Paragraph::new(input_lines).block(
         Block::default()
             .borders(Borders::LEFT)
             .border_set(SPLIT)
             .border_style(Style::default().fg(border))
-            .style(Style::default().bg(ELEMENT))
+            .style(Style::default().bg(Color::Reset))
             .padding(Padding::new(3, 2, 2, 1)),
     );
     frame.render_widget(prompt, area);
@@ -520,8 +520,8 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
     // taller than the box: scroll so the cursor row stays visible
     let top = (cur_row + 1).saturating_sub(text_rows);
     app.composer.top = top;
-    let text_style = Style::default().fg(TEXT);
-    let sel_style = Style::default().fg(TEXT).bg(SELECTION);
+    let text_style = Style::default().fg(theme::text());
+    let sel_style = Style::default().fg(theme::text()).bg(theme::selection_bg());
     for row in rows.iter().take(drawn).skip(top) {
         let mut spans: Vec<Span> = Vec::new();
         let mut buf = String::new();
@@ -543,7 +543,7 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
                 buf_sel = in_sel;
                 let mut st = attach::chip_style();
                 if in_sel {
-                    st = st.bg(SELECTION);
+                    st = st.bg(theme::selection_bg());
                 }
                 if is_cursor {
                     st = st.add_modifier(Modifier::REVERSED);
@@ -563,7 +563,7 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
                 // before the cursor, like macOS; on a full row (no
                 // column left) it takes the cursor cell instead, so
                 // the row never overflows and the cursor stays seen
-                let marked = Style::default().fg(BRAND).add_modifier(Modifier::UNDERLINED);
+                let marked = Style::default().fg(theme::accent()).add_modifier(Modifier::UNDERLINED);
                 let row_w: usize = row.iter().map(|c| c.w).sum();
                 match app.ed.pending_dead() {
                     Some(acc) if row_w + 1 > inner => spans.push(Span::styled(
@@ -672,18 +672,18 @@ fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
                 let (name_style, desc_style) = if sel {
                     (
                         Style::default()
-                            .bg(BRAND)
-                            .fg(ON_BRAND)
+                            .bg(theme::accent())
+                            .fg(theme::on_accent())
                             .add_modifier(Modifier::BOLD),
-                        Style::default().bg(BRAND).fg(ON_BRAND),
+                        Style::default().bg(theme::accent()).fg(theme::on_accent()),
                     )
                 } else {
-                    (Style::default().fg(TEXT), Style::default().fg(DIM))
+                    (Style::default().fg(theme::text()), Style::default().fg(theme::dim()))
                 };
                 let mut spans = Vec::new();
                 if let Some((g, color)) = c.mark {
                     let st = if sel {
-                        Style::default().bg(BRAND).fg(ON_BRAND)
+                        Style::default().bg(theme::accent()).fg(theme::on_accent())
                     } else {
                         Style::default().fg(color)
                     };
@@ -704,8 +704,8 @@ fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
                 Block::default()
                     .borders(Borders::LEFT | Borders::RIGHT)
                     .border_set(SPLIT)
-                    .border_style(Style::default().fg(BORDER_ACTIVE))
-                    .style(Style::default().bg(ELEMENT)),
+                    .border_style(Style::default().fg(theme::faint()))
+                    .style(Style::default().bg(Color::Reset)),
             ),
             area,
         );

@@ -51,17 +51,17 @@ fn filter_versions<'a>(items: &'a [VersionItem], q: &str) -> Vec<&'a VersionItem
 fn version_marks(marks: &[String]) -> (String, (&'static str, Color)) {
     let has = |m: &str| marks.iter().any(|x| x == m);
     let glyph = if has("building") {
-        ("…", WARN)
+        ("…", theme::accent())
     } else if has("failed") && !has("current") {
-        ("✗", ERR)
+        ("✗", theme::error())
     } else if has("current") {
-        ("◉", BRAND)
+        ("◉", theme::accent())
     } else if has("good") {
-        ("✓", INFO)
+        ("✓", theme::dim())
     } else if has("built") {
-        ("●", TEXT)
+        ("●", theme::text())
     } else {
-        ("○", DIM)
+        ("○", theme::dim())
     };
     let words: Vec<&str> = marks
         .iter()

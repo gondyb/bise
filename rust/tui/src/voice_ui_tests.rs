@@ -143,8 +143,8 @@ fn recording_shows_the_meter_an_orange_border_and_dim_text() {
     let buf = render(&mut app);
     // the fake capture's peak is 0.5: '▅', then the text
     let (x, y) = find(&buf, "▅ dictated").expect("meter before the text");
-    assert_eq!(buf[(x, y)].fg, RECORDING);
-    assert_eq!(buf[(x + 2, y)].fg, DIM);
+    assert_eq!(buf[(x, y)].fg, theme::accent());
+    assert_eq!(buf[(x + 2, y)].fg, theme::dim());
     // the meter takes the place of the `›` prompt
     assert!(find(&buf, &format!("{} ", G_YOU)).is_none(), "no prompt while recording");
     assert!(find(&buf, "recording · any key stops").is_some());
@@ -153,7 +153,7 @@ fn recording_shows_the_meter_an_orange_border_and_dim_text() {
     let buf = render(&mut app);
     assert!(find(&buf, "▅").is_none());
     let (x, y) = find(&buf, "dictated").unwrap();
-    assert_eq!(buf[(x, y)].fg, TEXT);
+    assert_eq!(buf[(x, y)].fg, theme::text());
 }
 
 #[test]

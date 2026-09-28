@@ -5,7 +5,7 @@
 //! /shortcuts shows every row. Typing filters, Tab switches the page,
 //! Esc clears the filter, then closes.
 
-use crate::{App, BRAND, DIM};
+use crate::{theme, App};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -314,7 +314,7 @@ fn chip_rows(keys: &str, width: usize) -> Vec<Vec<Span<'static>>> {
         let mut u = Vec::new();
         for (i, step) in alt.split(" then ").enumerate() {
             if i > 0 {
-                u.push(Span::styled(" then ", Style::default().fg(DIM)));
+                u.push(Span::styled(" then ", Style::default().fg(theme::dim())));
             }
             u.push(Span::styled(format!(" {} ", step), CHIP));
         }
@@ -339,7 +339,7 @@ fn chip_rows(keys: &str, width: usize) -> Vec<Vec<Span<'static>>> {
 fn header(title: &str) -> Line<'static> {
     Line::from(Span::styled(
         title.to_string(),
-        Style::default().fg(BRAND).add_modifier(Modifier::BOLD),
+        Style::default().fg(theme::accent()).add_modifier(Modifier::BOLD),
     ))
 }
 
@@ -416,7 +416,7 @@ pub(crate) fn page_lines(
                 for (i, l) in wrap(d, desc_w).into_iter().enumerate() {
                     let name = if i == 0 { *n } else { "" };
                     out.push(Line::from(vec![
-                        Span::styled(format!("{:<w$}  ", name, w = name_w), Style::default().fg(BRAND)),
+                        Span::styled(format!("{:<w$}  ", name, w = name_w), Style::default().fg(theme::accent())),
                         Span::raw(l),
                     ]));
                 }
@@ -426,7 +426,7 @@ pub(crate) fn page_lines(
         if !rows.is_empty() {
             out.push(Line::from(Span::styled(
                 "essential keys · every key: /shortcuts (tab here)",
-                Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
+                Style::default().fg(theme::dim()).add_modifier(Modifier::ITALIC),
             )));
         }
     }
@@ -434,7 +434,7 @@ pub(crate) fn page_lines(
     if out.is_empty() {
         out.push(Line::from(Span::styled(
             format!("nothing matches “{}” · backspace or esc", filter),
-            Style::default().fg(DIM),
+            Style::default().fg(theme::dim()),
         )));
     }
     out
@@ -463,9 +463,9 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     o.scroll = o.scroll.min(o.max_scroll);
     let tab = |p: Page, name: &str| {
         let style = if o.page == p {
-            Style::default().fg(Color::Black).bg(BRAND).add_modifier(Modifier::BOLD)
+            Style::default().fg(Color::Black).bg(theme::accent()).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(DIM)
+            Style::default().fg(theme::dim())
         };
         Span::styled(format!(" {} ", name), style)
     };
@@ -477,7 +477,7 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
         Span::raw(" "),
     ];
     if !o.filter.is_empty() {
-        title.push(Span::styled(format!(" filter: {}▏ ", o.filter), Style::default().fg(BRAND)));
+        title.push(Span::styled(format!(" filter: {}▏ ", o.filter), Style::default().fg(theme::accent())));
     }
     let pos = if o.max_scroll > 0 {
         format!("{} ↑↓ PgUp/PgDn · ", rows_shown(o.scroll, visible, lines.len()))
@@ -485,7 +485,7 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
         String::new()
     };
     let foot = format!(" {}type to filter · tab switch · esc close ", pos);
-    scroll_box(frame, area, BRAND, Line::from(title), foot, lines, o.scroll);
+    scroll_box(frame, area, theme::accent(), Line::from(title), foot, lines, o.scroll);
 }
 
 /// "12–40/85": the rows a scrolled box shows, of how many.
@@ -508,7 +508,7 @@ pub(crate) fn scroll_box(
         .borders(Borders::ALL)
         .border_style(Style::default().fg(color))
         .title(title)
-        .title_bottom(Line::from(Span::styled(foot, Style::default().fg(DIM))).right_aligned())
+        .title_bottom(Line::from(Span::styled(foot, Style::default().fg(theme::dim()))).right_aligned())
         .padding(Padding::horizontal(1));
     frame.render_widget(Clear, area);
     frame.render_widget(Paragraph::new(lines).block(block).scroll((scroll as u16, 0)), area);
