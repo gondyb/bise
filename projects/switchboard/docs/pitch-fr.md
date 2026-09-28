@@ -56,6 +56,9 @@ flow), et *faire la bise*. Vérifié libre sur npm, crates.io, PyPI et Homebrew.
 et les paquets Linux ne sont pas encore vérifiés. Homonyme connu : BISE, le
 système d'information européen sur la biodiversité (autre domaine).
 
+**Signe du logo : `:*`** (Gabriel), le bisou ASCII : `bise :*`. Il marche
+dans tous les terminaux et toutes les polices, et fait tapé par un humain.
+
 **Marque : autonome** (décision de Gabriel). bise est sa propre marque pour
 l'instant, sans lien avec Mistral : pas d'identité visuelle Mistral, pas de
 mention de Mistral dans la copy. **⚠** Les sections 4 et 7 (cible = devs

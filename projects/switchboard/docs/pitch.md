@@ -56,6 +56,9 @@ Homebrew. **⚠** `bise.sh` and `bise.ai` are taken; `bise.dev`, GitHub org,
 trademarks and Linux packages not checked yet. Known namesake: BISE, the EU
 Biodiversity Information System for Europe (different field).
 
+**Logo mark: `:*`** (Gabriel), the ASCII kiss: `bise :*`. It works in any
+terminal and any font, and looks typed by a human.
+
 **Brand: standalone** (Gabriel's decision). bise is its own brand for now,
 unrelated to Mistral: no Mistral visual identity, no Mistral mention in the
 copy. **⚠** Sections 4 and 7 (wedge = Mistral devs, Vibe integration) predate
