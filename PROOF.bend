@@ -438,6 +438,12 @@ def Laws.bg_script_hash_deterministic():
 def Laws.bg_script_hash_distinguishes():
   {==}
 
+def Laws.bg_hash_fold_keeps_small():
+  {==}
+
+def Laws.bg_hash_pos_cycles():
+  {==}
+
 def Laws.bash_script_path_per_command():
   {==}
 def Laws.self_reload_acks():

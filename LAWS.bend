@@ -1494,6 +1494,19 @@ law bg_wrapper_has_both_guards:
 law bg_script_hash_deterministic:
   {Sh.bg_script_hash("ab") == 684n : Nat}
 
+# LAW (BR-006): the hash stays bounded - the runtime aborts on a Nat
+# past 2^48-1, and the unbounded sum killed the REPL on a ~20k-char
+# command. A small sum is kept as is (short inputs keep their hash)...
+law bg_hash_fold_keeps_small:
+  {Sh.bg_hash_fold(684n) == 684n : Nat}
+
+# ...and the position weight cycles back to 1 after BG_HASH_CYCLE, so
+# one step never adds more than 1.1M x (4096^2 + 1) < 2^45.
+law bg_hash_pos_cycles:
+  {Bool.and(Nat.is_eq(Sh.bg_hash_next_pos(7n), 8n),
+     Nat.is_eq(Sh.bg_hash_next_pos(Sh.BG_HASH_CYCLE()), 1n))
+    == True{} : Bool}
+
 # LAW: different scripts hash apart — two commands never share a
 # wrapper file, so an orphan can never re-read another command's
 # bytes when it wakes from a poll sleep.

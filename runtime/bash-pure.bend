@@ -191,10 +191,44 @@ def bg_poll_iters(+after: U32) -> U32:
 # can never re-read ANOTHER command's bytes when it wakes up. Re-running
 # the same command rewrites identical bytes, which is safe: the orphan
 # just continues its own script.
-# a positional weighted sum: each char's code times (pos^2 + 1). No
-# mod, no overflow (14 chars x 1.1M x ~200 << 2^48), deterministic,
-# and different orders of the same chars hash apart. Fuel-first (the
-# codebase idiom): the checker can normalize it in closed laws.
+# a positional weighted sum: each char's code times (pos^2 + 1),
+# deterministic, and different orders of the same chars hash apart.
+# BOUNDED (BR-006): the runtime aborts on a Nat past 2^48-1 ("a Nat
+# past the largest immediate", exit 1), and the plain sum grows like
+# n^3 - it passed the limit at ~20k chars and killed the REPL on a big
+# heredoc. So the position cycles in 1..4096 and the sum folds mod
+# the largest prime under 2^32 once it reaches it: a step adds at most
+# 1.1M x (4096^2 + 1) < 2^45 to a value under 2^32, far below 2^48.
+# Short inputs (sum < P, under 4096 chars) hash exactly as before.
+# Fuel-first (the codebase idiom): the checker can normalize it in
+# closed laws - the checker's Nat is unary, so the fold only compares
+# (cost ~ the small value) and never divides a small sum.
+def BG_HASH_MOD() -> Nat:
+  4294967291n
+
+def BG_HASH_CYCLE() -> Nat:
+  4096n
+
+def bg_hash_fold.pick(small: Bool, +acc: Nat) -> Nat:
+  match small:
+    case True{}:
+      acc
+    case False{}:
+      Nat.mod(acc, BG_HASH_MOD())
+
+def bg_hash_fold(+acc: Nat) -> Nat:
+  bg_hash_fold.pick(Nat.is_lt(acc, BG_HASH_MOD()), acc)
+
+def bg_hash_next_pos.pick(inside: Bool, +pos: Nat) -> Nat:
+  match inside:
+    case True{}:
+      Nat.add(pos, 1n)
+    case False{}:
+      1n
+
+def bg_hash_next_pos(+pos: Nat) -> Nat:
+  bg_hash_next_pos.pick(Nat.is_lt(pos, BG_HASH_CYCLE()), pos)
+
 def bg_script_hash.go(fuel: Nat, +s: String, +pos: Nat, acc: Nat) -> Nat:
   match fuel:
     case 0n:
@@ -204,9 +238,9 @@ def bg_script_hash.go(fuel: Nat, +s: String, +pos: Nat, acc: Nat) -> Nat:
         case SNil{}:
           acc
         case SCon{Chr{+c}, t}:
-          bg_script_hash.go(k, t, Nat.add(pos, 1n),
-            Nat.add(acc,
-              Nat.mul(U32.to_nat(c), Nat.add(Nat.mul(pos, pos), 1n))))
+          bg_script_hash.go(k, t, bg_hash_next_pos(pos),
+            bg_hash_fold(Nat.add(acc,
+              Nat.mul(U32.to_nat(c), Nat.add(Nat.mul(pos, pos), 1n)))))
 
 def bg_script_hash(+s: String) -> Nat:
   bg_script_hash.go(Nat.mul(String.length(s), 2n), s, 1n, 0n)
