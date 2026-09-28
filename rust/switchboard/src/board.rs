@@ -57,6 +57,18 @@ pub fn task_line(a: &Agent, now: u64) -> String {
     s
 }
 
+/// `/tasks`: the task board the user reads, then the open cards.
+pub fn user_board(st: &State, now: u64) -> String {
+    let mut lines: Vec<String> = st.tasks().map(|a| task_line(a, now)).collect();
+    if lines.is_empty() {
+        lines.push("no task".into());
+    }
+    lines.extend(st.open_cards().map(|c| {
+        format!("card #{} {} @{}: {}", c.id, c.kind, c.agent, clip(&one_line(&c.text), 100))
+    }));
+    lines.join("\n")
+}
+
 /// Threads between agents that the user is not part of, most recent
 /// first (RFC 0003 §9).
 pub fn agent_threads(st: &State, limit: usize) -> Vec<String> {

@@ -1104,24 +1104,7 @@ impl Hub {
                 let last = self.clients.get(&client).and_then(|v| v.last_route);
                 self.core(fx, env, c, json!({"t": "cancel", "last": last}))
             }
-            UserCmd::Tasks => {
-                let now = env.now();
-                let mut lines: Vec<String> =
-                    self.st.tasks().map(|a| board::task_line(a, now)).collect();
-                if lines.is_empty() {
-                    lines.push("no task".into());
-                }
-                for c in self.st.open_cards() {
-                    lines.push(format!(
-                        "card #{} {} @{}: {}",
-                        c.id,
-                        c.kind,
-                        c.agent,
-                        clip(&one_line(&c.text), 100)
-                    ));
-                }
-                fx.push(notice(client, &lines.join("\n")));
-            }
+            UserCmd::Tasks => fx.push(notice(client, &board::user_board(&self.st, env.now()))),
             UserCmd::Interrupt => {
                 self.core(fx, env, c, json!({"t": "interrupt", "agent": focus}))
             }
