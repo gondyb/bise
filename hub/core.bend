@@ -9,6 +9,8 @@ import ./model.bend as M
 
 import ./cx.bend as X
 
+import ./codec.bend as C
+
 type Snd is Data:
   Snd{from: String, to: String, text: String, expect: Bool,
     reply_to: Maybe<&2, Nat>, plain: Bool, auto: Bool, queued: Bool,
@@ -1104,18 +1106,11 @@ def restore.ans(-o: M.St, p: X.Cx<o> & Maybe<&2, J.Json>, +a: M.Agent) -> X.Cx<o
     case (+cx, Some{+ans}):
       restore.res(o, ans_ok(ans), cx, a)
 
-def jopt(m: Maybe<&2, String>) -> J.Json:
-  match m:
-    case None{}:
-      J.JNull{}
-    case Some{+x}:
-      J.JStr{x}
-
 def restore.wt(-o: M.St, dropped: Bool, +cx: X.Cx<o>, +a: M.Agent) -> X.Cx<o> & TaskR:
   match dropped:
     case True{}:
       restore.ans(o, ask(o, cx, J.obj([J.kv("q", J.JStr{"worktree_restore"}), J.kv("name", J.JStr{M.Agent.name(a)}), J.kv("ws", M.Agent.ws(a)),
-        J.kv("snapshot_ref", jopt(M.Agent.snap(a)))])), a)
+        J.kv("snapshot_ref", C.jmaybe_str(M.Agent.snap(a)))])), a)
     case False{}:
       restore.go(o, cx, a)
 
@@ -1471,29 +1466,6 @@ def focus(-o: M.St, +cx: X.Cx<o>, +f: String, note: Maybe<&2, String>, +direct: 
 
 # ---- the agents' `sb` requests (RFC 0003 §4, RFC 0001 §7.2, §7.5) ----
 
-def jnat(+j: J.Json, +k: String) -> Nat:
-  J.get_num_or(j, k, 0n)
-
-def jstr(+j: J.Json, +k: String) -> String:
-  J.get_str_or(j, k, "")
-
-def jbool(+j: J.Json, +k: String) -> Bool:
-  J.get_bool_or(j, k, False{})
-
-def jopt_nat(m: Maybe<&2, J.Json>) -> Maybe<&2, Nat>:
-  match m:
-    case Some{J.JNum{+n}}:
-      Some{n}
-    case _:
-      None{}
-
-def jopt_str(m: Maybe<&2, J.Json>) -> Maybe<&2, String>:
-  match m:
-    case Some{J.JStr{+s}}:
-      Some{s}
-    case _:
-      None{}
-
 def jstr_list.one(h: J.Json, +rest: List<&2, String>) -> List<&2, String>:
   match h:
     case J.JStr{+s}:
@@ -1549,12 +1521,12 @@ def open_question(+s: M.St, +asker: String, +me: String) -> Maybe<&2, Nat>:
   open_question.go(M.resolve(s, asker), s, me)
 
 def req_send(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) -> X.Cx<o>:
-  +to = jstr(q, "to")
-  +expect = jbool(q, "expect_reply")
+  +to = C.get_s(q, "to")
+  +expect = C.get_b(q, "expect_reply")
   # a plain message to an agent that asked us something answers it
-  +reply_to = Maybe.or(&2, Nat, jopt_nat(J.get(q, "reply_to")),
+  +reply_to = Maybe.or(&2, Nat, C.opt_nat(J.get(q, "reply_to")),
     Bool.pick(Maybe<&2, Nat>, expect, None{}, open_question(st(o, cx), to, from)))
-  req_send.res(o, send(o, cx, Snd{from, to, jstr(q, "text"), expect, reply_to, False{}, False{}, jbool(q, "queued"), None{}}), token)
+  req_send.res(o, send(o, cx, Snd{from, to, C.get_s(q, "text"), expect, reply_to, False{}, False{}, C.get_b(q, "queued"), None{}}), token)
 
 def wait.park(-o: M.St, +cx: X.Cx<o>, +w: X.Waiter) -> X.Cx<o>:
   +r = rr(o, cx)
@@ -1620,8 +1592,8 @@ def decl_of(+s: String) -> M.Decl:
   Bool.pick(M.Decl, String.eq(s, "done"), M.DDone{}, Bool.pick(M.Decl, String.eq(s, "blocked"), M.DBlocked{}, M.DWorking{}))
 
 def req_status(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +is_main: Bool, +q: J.Json) -> X.Cx<o>:
-  +status = jstr(q, "status")
-  +note = jstr(q, "note")
+  +status = C.get_s(q, "status")
+  +note = C.get_s(q, "note")
   +cx2 = emit(o, cx, M.EDeclared{from, Some{decl_of(status)}, note}, Unit{}, Unit{}, Unit{})
   +cx3 = Bool.pick(X.Cx<o>, String.eq(status, "blocked") && Bool.not(is_main),
     open_card(o, cx2, "blocked", from, Bool.pick(String, String.is_empty(note), "blocked", note), None{}), cx2)
@@ -1660,8 +1632,8 @@ def req_report.go(-o: M.St, is_main: Bool, +cx: X.Cx<o>, +token: Nat, +from: Str
     case True{}:
       reply_err(o, cx, token, "main reports to no one")
     case False{}:
-      +kind = jstr(q, "kind")
-      +summary = jstr(q, "summary")
+      +kind = C.get_s(q, "kind")
+      +summary = C.get_s(q, "summary")
       +decisions = jstr_list(Maybe.default(&2, List<&2, J.Json>, J.get_arr(q, "decisions"), Nil{}))
       +cx2 = emit(o, cx, M.EReported{from, J.obj([J.kv("at_ms", J.JNum{now(o, cx)}), J.kv("kind", J.JStr{kind}),
         J.kv("summary", J.JStr{summary}), J.kv("decisions", J.JArr{jstrs(decisions)}), J.kv("auto", J.JBool{False{}})])}, Unit{}, Unit{}, Unit{})
@@ -1691,8 +1663,8 @@ def req_spawn.res(-o: M.St, p: X.Cx<o> & TaskR, +token: Nat) -> X.Cx<o>:
       cx
 
 def new_task(+parent: String, +q: J.Json) -> NewTask:
-  NewTask{parent, jstr(q, "base"), Maybe.default(&2, J.Json, J.get(q, "brief"), J.JNull{}), jstr(q, "brief_text"),
-    jstr(q, "objective"), jbool(q, "worktree"), jbool(q, "with_changes")}
+  NewTask{parent, C.get_s(q, "base"), Maybe.default(&2, J.Json, J.get(q, "brief"), J.JNull{}), C.get_s(q, "brief_text"),
+    C.get_s(q, "objective"), C.get_b(q, "worktree"), C.get_b(q, "with_changes")}
 
 def req_spawn.pre(-o: M.St, pre: Maybe<&2, String>, +cx: X.Cx<o>, +token: Nat, +q: J.Json) -> X.Cx<o>:
   match pre:
@@ -1816,23 +1788,23 @@ def cmd_tag(+c: String) -> Cmd:
 def req.main.go(-o: M.St, c: Cmd, +cx: X.Cx<o>, +token: Nat, +q: J.Json) -> X.Cx<o>:
   match c:
     case CSpawn{}:
-      req_spawn.pre(o, jopt_str(J.get(q, "pre_err")), cx, token, q)
+      req_spawn.pre(o, C.opt_str(J.get(q, "pre_err")), cx, token, q)
     case CInterrupt{}:
-      req_interrupt(o, M.resolve(st(o, cx), jstr(q, "agent")), cx, token, jstr(q, "agent"))
+      req_interrupt(o, M.resolve(st(o, cx), C.get_s(q, "agent")), cx, token, C.get_s(q, "agent"))
     case CStop{}:
-      req_stop(o, M.resolve(st(o, cx), jstr(q, "agent")), cx, token, jstr(q, "agent"), jstr(q, "reason"))
+      req_stop(o, M.resolve(st(o, cx), C.get_s(q, "agent")), cx, token, C.get_s(q, "agent"), C.get_s(q, "reason"))
     case CDrop{}:
-      req_drop.res(o, drop_task(o, cx, jstr(q, "agent"), False{}), token, jstr(q, "agent"))
+      req_drop.res(o, drop_task(o, cx, C.get_s(q, "agent"), False{}), token, C.get_s(q, "agent"))
     case CClose{}:
-      req_close(o, M.card_of(M.St.cards(st(o, cx)), jnat(q, "card")), cx, token, jnat(q, "card"), jstr(q, "note"))
+      req_close(o, M.card_of(M.St.cards(st(o, cx)), C.get_nat(q, "card")), cx, token, C.get_nat(q, "card"), C.get_s(q, "note"))
     case CRename{}:
-      req_rename(o, M.resolve(st(o, cx), jstr(q, "agent")), cx, token, jstr(q, "agent"), jstr(q, "new_name"), jbool(q, "valid"))
+      req_rename(o, M.resolve(st(o, cx), C.get_s(q, "agent")), cx, token, C.get_s(q, "agent"), C.get_s(q, "new_name"), C.get_b(q, "valid"))
     case CRestore{}:
-      req_task.res(o, restore_task(o, cx, jstr(q, "agent")), token)
+      req_task.res(o, restore_task(o, cx, C.get_s(q, "agent")), token)
     case CIsolate{}:
-      req_task.res(o, isolate_task(o, cx, jstr(q, "agent")), token)
+      req_task.res(o, isolate_task(o, cx, C.get_s(q, "agent")), token)
     case _:
-      req_card(o, jopt_nat(J.get(q, "for")), cx, token, jstr(q, "text"))
+      req_card(o, C.opt_nat(J.get(q, "for")), cx, token, C.get_s(q, "text"))
 
 def req.main(-o: M.St, is_main: Bool, +cx: X.Cx<o>, +token: Nat, +c: Cmd, +q: J.Json) -> X.Cx<o>:
   match is_main:
@@ -1846,9 +1818,9 @@ def req.go(-o: M.St, c: Cmd, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Jso
     case CSend{}:
       req_send(o, cx, token, from, q)
     case CWait{}:
-      wait(o, cx, token, from, jnat(q, "msg"), jnat(q, "timeout_s"))
+      wait(o, cx, token, from, C.get_nat(q, "msg"), C.get_nat(q, "timeout_s"))
     case CAsk{}:
-      req_ask.res(o, send(o, cx, msg(from, jstr(q, "to"), jstr(q, "text"), True{}, None{}, False{}, False{})), token, from, jnat(q, "timeout_s"))
+      req_ask.res(o, send(o, cx, msg(from, C.get_s(q, "to"), C.get_s(q, "text"), True{}, None{}, False{}, False{})), token, from, C.get_nat(q, "timeout_s"))
     case CStatus{}:
       req_status(o, cx, token, from, String.eq(from, M.MAIN()), q)
     case CReport{}:
@@ -1861,7 +1833,7 @@ def req.from(-o: M.St, m: Maybe<&2, String>, +cx: X.Cx<o>, +token: Nat, +raw: St
     case None{}:
       reply_err(o, cx, token, String.append("agent inconnu : ", raw))
     case Some{+from}:
-      req.go(o, cmd_tag(jstr(q, "cmd")), cx, token, from, q)
+      req.go(o, cmd_tag(C.get_s(q, "cmd")), cx, token, from, q)
 
 def agent_req(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) -> X.Cx<o>:
   req.from(o, M.resolve(st(o, cx), from), cx, token, from, q)
@@ -1884,7 +1856,7 @@ def hub_new(+workspace: String) -> Hub:
 # the context of one input over the hub
 def start(+h: Hub, +i: J.Json) -> X.Cx<Hub.d(h)>:
   +r = Hub.r(h)
-  +r2 = X.R.with_need(X.R.with_ans(X.R.with_git(X.R.with_now(X.R.with_dirty(r, False{}), jnat(i, "now")), jbool(i, "git")),
+  +r2 = X.R.with_need(X.R.with_ans(X.R.with_git(X.R.with_now(X.R.with_dirty(r, False{}), C.get_nat(i, "now")), C.get_b(i, "git")),
     Maybe.default(&2, List<&2, J.Json>, J.get_arr(i, "ans"), Nil{})), None{})
   X.Cx{X.core_start(Hub.d(h)), r2}
 
@@ -2219,64 +2191,64 @@ def force_run_of(+r: String) -> M.Run:
 def dispatch.go(-o: M.St, tag: In, +cx: X.Cx<o>, +i: J.Json) -> X.Cx<o>:
   match tag:
     case IReq{}:
-      agent_req(o, cx, jnat(i, "token"), jstr(i, "from"), Maybe.default(&2, J.Json, J.get(i, "req"), J.JNull{}))
+      agent_req(o, cx, C.get_nat(i, "token"), C.get_s(i, "from"), Maybe.default(&2, J.Json, J.get(i, "req"), J.JNull{}))
     case ITick{}:
       tick(o, cx)
     case IIdle{}:
-      repl_idle(o, cx, jstr(i, "agent"), jbool(i, "leftover"))
+      repl_idle(o, cx, C.get_s(i, "agent"), C.get_b(i, "leftover"))
     case ITurnStarted{}:
-      turn_started(o, cx, jstr(i, "agent"))
+      turn_started(o, cx, C.get_s(i, "agent"))
     case ISteerRx{}:
-      steer_count(o, cx, jstr(i, "agent"), False{})
+      steer_count(o, cx, C.get_s(i, "agent"), False{})
     case ISteered{}:
-      steer_count(o, cx, jstr(i, "agent"), True{})
+      steer_count(o, cx, C.get_s(i, "agent"), True{})
     case IAssistant{}:
-      assistant(o, cx, jstr(i, "agent"), jstr(i, "text"))
+      assistant(o, cx, C.get_s(i, "agent"), C.get_s(i, "text"))
     case ITouch{}:
-      touch(o, cx, jstr(i, "agent"), jstr(i, "path"))
+      touch(o, cx, C.get_s(i, "agent"), C.get_s(i, "path"))
     case IReady{}:
-      repl_ready(o, cx, jstr(i, "agent"))
+      repl_ready(o, cx, C.get_s(i, "agent"))
     case IExited{}:
-      repl_exited(o, cx, jstr(i, "agent"), jbool(i, "crashed"), jstr(i, "reason"))
+      repl_exited(o, cx, C.get_s(i, "agent"), C.get_b(i, "crashed"), C.get_s(i, "reason"))
     case IBoot{}:
       boot(o, cx)
     case ISay{}:
-      user_says(o, cx, jstr(i, "focus"), jstr(i, "text"))
+      user_says(o, cx, C.get_s(i, "focus"), C.get_s(i, "text"))
     case IRoute{}:
-      route(o, cx, jstr(i, "target"), jstr(i, "text"), jstr(i, "focus"))
+      route(o, cx, C.get_s(i, "target"), C.get_s(i, "text"), C.get_s(i, "focus"))
     case INew{}:
       user_new.res(o, create_task(o, cx, new_task(M.USER(), i)))
     case IDrop{}:
-      user_drop.res(o, drop_task(o, cx, jstr(i, "name"), jbool(i, "force")), jstr(i, "name"))
+      user_drop.res(o, drop_task(o, cx, C.get_s(i, "name"), C.get_b(i, "force")), C.get_s(i, "name"))
     case IConfirmDrop{}:
-      user_confirm.res(o, drop_task(o, cx, jstr(i, "name"), True{}), jstr(i, "name"))
+      user_confirm.res(o, drop_task(o, cx, C.get_s(i, "name"), True{}), C.get_s(i, "name"))
     case IRestore{}:
-      user_restore.res(o, restore_task(o, cx, jstr(i, "name")))
+      user_restore.res(o, restore_task(o, cx, C.get_s(i, "name")))
     case IIsolate{}:
-      user_isolate.res(o, isolate_task(o, cx, jstr(i, "name")))
+      user_isolate.res(o, isolate_task(o, cx, C.get_s(i, "name")))
     case IRename{}:
-      rename.old(o, M.resolve(st(o, cx), jstr(i, "name")), cx, jstr(i, "name"), jstr(i, "new_name"), jbool(i, "valid"))
+      rename.old(o, M.resolve(st(o, cx), C.get_s(i, "name")), cx, C.get_s(i, "name"), C.get_s(i, "new_name"), C.get_b(i, "valid"))
     case IAnswer{}:
-      answer_card(o, cx, jnat(i, "card"), jstr(i, "text"))
+      answer_card(o, cx, C.get_nat(i, "card"), C.get_s(i, "text"))
     case ICancel{}:
-      cancel(o, jopt_nat(J.get(i, "last")), cx)
+      cancel(o, C.opt_nat(J.get(i, "last")), cx)
     case IInterrupt{}:
-      interrupt.go(o, M.resolve(st(o, cx), jstr(i, "agent")), cx)
+      interrupt.go(o, M.resolve(st(o, cx), C.get_s(i, "agent")), cx)
     case IPassthrough{}:
-      passthrough(o, cx, jstr(i, "focus"), jstr(i, "line"))
+      passthrough(o, cx, C.get_s(i, "focus"), C.get_s(i, "line"))
     case IFocus{}:
-      focus(o, cx, jstr(i, "focus"), jopt_str(J.get(i, "note")), jstr(i, "direct"))
+      focus(o, cx, C.get_s(i, "focus"), C.opt_str(J.get(i, "note")), C.get_s(i, "direct"))
     case IClose{}:
-      close_by_user(o, M.card_of(M.St.cards(st(o, cx)), jnat(i, "card")), cx, jnat(i, "card"))
+      close_by_user(o, M.card_of(M.St.cards(st(o, cx)), C.get_nat(i, "card")), cx, C.get_nat(i, "card"))
     case IForceRun{}:
       # tests only: put an agent's REPL in a given state (then deliver, like
       # any change of run: law L4)
-      pump(o, set_run(o, cx, jstr(i, "agent"), force_run_of(jstr(i, "run"))), jstr(i, "agent"))
+      pump(o, set_run(o, cx, C.get_s(i, "agent"), force_run_of(C.get_s(i, "run"))), C.get_s(i, "agent"))
     case INone{}:
       cx
 
 def dispatch(-o: M.St, +cx: X.Cx<o>, +i: J.Json) -> X.Cx<o>:
-  dispatch.go(o, in_tag(jstr(i, "t")), cx, i)
+  dispatch.go(o, in_tag(C.get_s(i, "t")), cx, i)
 
 # one input: the context after it (its state is the replay of its
 # journal over the hub's state: law replay_reproduces)
