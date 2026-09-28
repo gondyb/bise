@@ -143,7 +143,8 @@ fn a_long_script_renders_whole() {
     assert_eq!(rows.iter().filter(|l| l.starts_with(" │ const x")).count(), 200);
 }
 
-// other long code (a huge patch) still folds until clicked
+// other code (a patch, however long) stays behind its ▸ until opened,
+// then shows whole (BISE-12: the edit line is the fold)
 #[test]
 fn a_long_patch_folds_until_clicked() {
     let body: String = (1..=200).map(|i| format!("+line {}", i)).collect::<Vec<_>>().join("\n");
@@ -155,13 +156,10 @@ fn a_long_patch_folds_until_clicked() {
         "  obs: tool_finished #6 ok".to_string(),
     ]);
     let folded = rows_text(&ev_lines(&Ev::Tool(tool.clone()), 80));
-    // the first 40 source lines: the envelope, the file header, 38 added lines
-    assert_eq!(folded.iter().filter(|l| l.contains("│ +line")).count(), CODE_FOLD_SHOW - 2);
-    assert!(folded.iter().any(|l| l.contains("more lines")));
+    assert_eq!(folded, vec![" ± edit big.txt ✓ +200 ▸".to_string()]);
     tool.expanded = true;
     let whole = rows_text(&ev_lines(&Ev::Tool(tool), 80));
     assert_eq!(whole.iter().filter(|l| l.contains("│ +line")).count(), 200);
-    assert!(!whole.iter().any(|l| l.contains("more lines")));
 }
 
 #[test]
@@ -350,12 +348,15 @@ fn apply_patch_renders_a_diff_block() {
         "tool_result #6 ok : Done!".to_string(),
         "  obs: tool_finished #6 ok".to_string(),
     ]);
+    let mut tool = tool;
+    tool.expanded = true;
     let lines = ev_lines(&Ev::Tool(tool), 70);
     let rows = rows_text(&lines);
     for r in &rows {
         println!("{}", r);
     }
-    assert!(rows[0].contains("apply_patch") && rows[0].ends_with("· core/obs.bend +2 −1, notes.md +1"));
+    assert_eq!(rows[0], " ± edit 2 files ✓ +3 −1 ▾");
+    assert_eq!(patch_summary(&wire_decode(&wire_encode(patch))), "core/obs.bend +2 −1, notes.md +1");
     assert!(!rows.iter().any(|r| r.contains("Begin Patch") || r.contains("End Patch")));
     assert!(rows.iter().any(|r| r.starts_with(" │ ~ core/obs.bend")));
     assert!(rows.iter().any(|r| r.starts_with(" │ + notes.md · new")));
@@ -452,7 +453,7 @@ fn measure_feed() -> Vec<Ev> {
     vec![
         Ev::You(prose.clone()),
         Ev::Assistant(prose.clone()),
-        Ev::AgentMsg { from: "docs".into(), to: "main".into(), text: prose.clone(), level: 3, id: String::new() },
+        Ev::AgentMsg { from: "docs".into(), to: "main".into(), text: prose.clone(), level: 3, id: String::new(), open: false },
         Ev::Thinking { ms: 1200, text: prose.clone(), open: true },
         Ev::Tool(tool),
     ]
@@ -484,4 +485,160 @@ fn prose_wraps_at_76_and_code_at_100() {
         }
         assert!(code.iter().any(|r| r.starts_with(" │ ↪ ")), "code at {width}: {code:#?}");
     }
+}
+
+// ---- progressive disclosure (BISE-12, book §11) ----
+
+fn tool_with(id: u32, name: &str, code: Option<&str>, result: Option<(bool, &str)>, ok: bool) -> ToolData {
+    let mut lines = vec![format!("  obs: tool_started #{id}"), format!("tool #{id} {name} : x")];
+    if let Some(c) = code {
+        lines.push(format!("tool_code #{id} : {}", wire_encode(c)));
+    }
+    if let Some((rok, r)) = result {
+        lines.push(format!("tool_result #{id} {} : {r}", if rok { "ok" } else { "fail" }));
+    }
+    lines.push(format!("  obs: tool_finished #{id} {}", if ok { "ok" } else { "failed" }));
+    merged_tool(&lines)
+}
+
+fn text_of(ev: &Ev, width: usize) -> Vec<String> {
+    rows_text(&ev_rows(ev, 0, width))
+}
+
+#[test]
+fn an_output_is_one_line_until_opened() {
+    let out = "running 12 tests  test login ... FAILED  1 failed, 11 passed (6.1s)";
+    let mut td = tool_with(3, "bash", Some("npx playwright test"), Some((true, out)), true);
+    let closed = text_of(&Ev::Tool(td.clone()), 100);
+    // the script in full, then one line for the output
+    assert!(closed.iter().any(|r| r == " │ npx playwright test"), "{closed:#?}");
+    assert_eq!(closed.last().unwrap(), "   ▸ output · 1 failed", "{closed:#?}");
+    assert!(!closed.iter().any(|r| r.contains("11 passed")));
+    td.expanded = true;
+    let open = text_of(&Ev::Tool(td), 100);
+    assert!(open.iter().any(|r| r == "   ▾ output"), "{open:#?}");
+    assert!(open.iter().any(|r| r.starts_with(" │ running 12 tests") && r.contains("11 passed")), "{open:#?}");
+    // no count when the output does not say
+    let td = tool_with(4, "search", None, Some((true, "3 results")), true);
+    assert_eq!(text_of(&Ev::Tool(td), 100).last().unwrap(), "   ▸ output");
+}
+
+#[test]
+fn a_failure_is_one_line_with_its_reason() {
+    let reason = "error[E0425]: cannot find value `width` in this scope";
+    let long = format!("{reason}  {}", "--> tui/src/feed.rs:12:5 ".repeat(8));
+    let mut td = tool_with(5, "bash", Some("cargo test"), Some((false, &long)), false);
+    let closed = text_of(&Ev::Tool(td.clone()), 100);
+    let last = closed.last().unwrap();
+    assert!(last.starts_with(&format!("   {reason}")) && last.ends_with("… ▸"), "{closed:#?}");
+    td.expanded = true;
+    let open = text_of(&Ev::Tool(td), 100);
+    assert!(open.iter().any(|r| r == "   ▾ output"), "{open:#?}");
+    assert!(open.iter().any(|r| r.contains("feed.rs:12:5")));
+    // a short reason: nothing more to show, no ▸
+    let td = tool_with(6, "bash", Some("false"), Some((false, "exit 1")), false);
+    assert_eq!(text_of(&Ev::Tool(td), 100).last().unwrap(), "   exit 1");
+}
+
+#[test]
+fn an_edit_is_one_line_its_diff_when_opened() {
+    let patch = "*** Begin Patch\n*** Update File: web/src/auth/session.ts\n@@\n   cookie: {\n-    sameSite: \"none\",\n+    sameSite: \"none\",\n+    secure: true,\n*** End Patch\n";
+    let mut td = tool_with(7, "apply_patch", Some(patch), Some((true, "Done!")), true);
+    let closed = text_of(&Ev::Tool(td.clone()), 100);
+    assert_eq!(closed, vec![" ± edit web/src/auth/session.ts ✓ +2 −1 ▸".to_string()]);
+    td.expanded = true;
+    let open = text_of(&Ev::Tool(td), 100);
+    assert_eq!(open[0], " ± edit web/src/auth/session.ts ✓ +2 −1 ▾");
+    assert!(open.iter().any(|r| r == " │ +    secure: true,"), "{open:#?}");
+    // several files; a failure gives its reason
+    let two = "*** Begin Patch\n*** Update File: a.rs\n+x\n*** Add File: b.rs\n+y\n*** End Patch\n";
+    let td = tool_with(8, "apply_patch", Some(two), Some((false, "the patch doesn't apply: context not found")), false);
+    assert_eq!(
+        text_of(&Ev::Tool(td), 100),
+        vec![" ± edit 2 files ✗ the patch doesn't apply: context not found ▸".to_string()]
+    );
+}
+
+fn agent_msg(from: &str, text: &str) -> Ev {
+    Ev::AgentMsg { from: from.into(), to: String::new(), text: text.into(), level: 3, id: "m_3".into(), open: false }
+}
+
+#[test]
+fn a_report_is_one_line_until_opened() {
+    let mut ev = agent_msg("bench", "[report: done] p95 at 180 ms, nothing to fix.\n- ran 3 times on staging\n- p99 410 ms");
+    let closed: Vec<String> = text_of(&ev, 100).into_iter().filter(|r| !r.is_empty()).collect();
+    assert_eq!(closed, vec![" ♡ bench: p95 at 180 ms, nothing to fix. ▸ report".to_string()]);
+    let mut cache: Vec<Option<EventRows>> = vec![None];
+    assert!(toggle_event(std::slice::from_mut(&mut ev), &mut cache, 0));
+    let open: Vec<String> = text_of(&ev, 100).into_iter().filter(|r| !r.is_empty()).collect();
+    assert_eq!(open[0], " ♡ bench: p95 at 180 ms, nothing to fix. ▾ report");
+    assert!(open.iter().any(|r| r.starts_with(" │ ") && r.contains("p99 410 ms")), "{open:#?}");
+    // the kind gives the glyph; a one-line report has no ▸
+    let failed = text_of(&agent_msg("deploy", "[report: failed] the staging token expired."), 100);
+    assert!(failed.iter().any(|r| r == " ✗ deploy: the staging token expired."), "{failed:#?}");
+    let blocked = text_of(&agent_msg("docs", "[report: blocked] it needs the v2 schema file."), 100);
+    assert!(blocked.iter().any(|r| r.starts_with(" ? docs: ")), "{blocked:#?}");
+    // a long summary is cut to one line, the ▸ shows the rest
+    let long = text_of(&agent_msg("docs", &format!("[report: done] {}", "word ".repeat(40))), 76);
+    let row = long.iter().find(|r| !r.is_empty()).unwrap();
+    assert!(row.ends_with("… ▸ report") && row.width() <= 76, "{long:#?}");
+}
+
+#[test]
+fn the_brief_is_one_line_until_opened() {
+    let mut ev = agent_msg("main", "# Task `auth-fix`\n\nObjective: the login breaks on safari 18.");
+    assert_eq!(text_of(&ev, 100), vec![" ◇ brief ▸".to_string()]);
+    let mut cache: Vec<Option<EventRows>> = vec![None];
+    toggle_event(std::slice::from_mut(&mut ev), &mut cache, 0);
+    let open = text_of(&ev, 100);
+    assert_eq!(open[0], " ◇ brief ▾");
+    assert!(open.iter().any(|r| r == " │ Objective: the login breaks on safari 18."), "{open:#?}");
+    assert!(!open.iter().any(|r| r.contains("# Task")));
+}
+
+#[test]
+fn toggles_one_item_and_all_outputs() {
+    let mut app = crate::sb::bench::test_app();
+    let out = tool_with(1, "bash", Some("ls"), Some((true, "a b c")), true);
+    let quiet = tool_with(2, "bash", Some("true"), None, true);
+    app.events = vec![
+        Ev::Tool(out.clone()),
+        Ev::Thinking { ms: 10, text: "hm".into(), open: false },
+        Ev::Tool(out),
+        Ev::Tool(quiet),
+        Ev::Info("x".into()),
+    ];
+    app.cache = (0..5).map(|_| None).collect();
+    let expanded = |app: &App| -> Vec<bool> {
+        app.events.iter().filter_map(|e| match e { Ev::Tool(td) => Some(td.expanded), _ => None }).collect()
+    };
+    // no selection: nothing to toggle
+    assert!(!toggle_selected(&mut app));
+    // the selection on the thinking section opens it
+    app.feed_sel = Some(crate::feedsel::FeedSel { anchor: (1, 0, 0), head: (1, 0, 3) });
+    assert!(toggle_selected(&mut app));
+    assert!(matches!(app.events[1], Ev::Thinking { open: true, .. }));
+    // on an output
+    app.feed_sel = Some(crate::feedsel::FeedSel { anchor: (0, 0, 0), head: (0, 0, 0) });
+    ensure_rows(&app.events, &mut app.cache, 0, false, 80, 0);
+    assert!(toggle_selected(&mut app));
+    assert_eq!(expanded(&app), vec![true, false, false]);
+    assert!(app.cache[0].is_none(), "its rows rebuild");
+    // nothing behind a notice or a tool without output
+    app.feed_sel = Some(crate::feedsel::FeedSel { anchor: (4, 0, 0), head: (4, 0, 0) });
+    assert!(!toggle_selected(&mut app));
+    assert!(!toggle_event(&mut app.events, &mut app.cache, 3));
+    // all outputs: one is closed, so all open; again, all close
+    assert!(toggle_all_outputs(&mut app));
+    assert_eq!(expanded(&app), vec![true, true, false]);
+    assert!(!toggle_all_outputs(&mut app));
+    assert_eq!(expanded(&app), vec![false, false, false]);
+    // thinking is ctrl+t's, untouched
+    assert!(matches!(app.events[1], Ev::Thinking { open: true, .. }));
+}
+
+#[test]
+fn fit_chars_keeps_the_ellipsis_inside() {
+    assert_eq!(crate::render::fit_chars("abcdef", 6), "abcdef");
+    assert_eq!(crate::render::fit_chars("abcdefg", 6), "abcde…");
 }

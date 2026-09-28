@@ -31,6 +31,15 @@ pub(crate) fn truncate_chars(s: &str, max: usize) -> String {
     }
 }
 
+/// `s` in at most `room` chars, the `…` included when it is cut.
+pub(crate) fn fit_chars(s: &str, room: usize) -> String {
+    if s.chars().count() <= room {
+        return s.to_string();
+    }
+    let head: String = s.chars().take(room.saturating_sub(1)).collect();
+    format!("{}…", head)
+}
+
 // naive "field":"value" extractor for JSON-ish args (no parser needed:
 // the runtime caps the payload and the shape is known)
 pub(crate) fn json_str_field(s: &str, field: &str) -> Option<String> {
@@ -270,7 +279,12 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         ))],
         // BISE-04: the v2 variants in the v1 look (the F track restyles
         // them by level in BISE-14)
-        Ev::AgentMsg { from, to, text, level, id } => {
+        Ev::AgentMsg { from, text, open, .. } if is_brief(text) => brief_lines(text, *open, width),
+        Ev::AgentMsg { from, text, open, .. } if report_parts(text).is_some() => {
+            let (kind, body) = report_parts(text).unwrap_or_default();
+            report_lines(from, kind, body, *open, width)
+        }
+        Ev::AgentMsg { from, to, text, level, id, .. } => {
             let mut head = match (*level, to.as_str()) {
                 (2, _) => format!("{} to you", from),
                 (_, "") => from.clone(),
@@ -392,6 +406,11 @@ pub(crate) fn tool_meta(td: &ToolData) -> (String, String, Option<(CodeLang, Str
 // the tool line itself: the only part of a running tool that changes
 // from one frame to the next (spinner, elapsed)
 pub(crate) fn tool_head(td: &ToolData, tick: u32, name: &str, args: &str) -> Line<'static> {
+    if name == "apply_patch" {
+        if let Some(src) = td.code.as_deref().map(|raw| tool_source(CodeLang::Patch, wire_decode(raw))) {
+            return edit_head(td, tick, &src);
+        }
+    }
     let args_span = |st: Style| {
         Span::styled(
             if args.is_empty() {
@@ -425,53 +444,200 @@ pub(crate) fn tool_head(td: &ToolData, tick: u32, name: &str, args: &str) -> Lin
     }
 }
 
-// everything under the tool line: the result preview, the source block
+// everything under the tool line (book §11, progressive disclosure): a
+// bash or TypeScript script always in full (never folded, whatever its
+// length); an edit's diff only when opened (its line says the rest);
+// the output one line, `▸ output`, until opened
 pub(crate) fn tool_body(td: &ToolData, code: &Option<(CodeLang, String)>, width: usize) -> Vec<Line<'static>> {
     let mut ls = Vec::new();
-    if let Some((ok, preview)) = &td.result {
-        if !preview.trim().is_empty() {
-            ls.push(Line::from(vec![
-                Span::styled(format!("    {} ", GLYPH_BRANCH), Style::default().fg(TOOL)),
-                Span::styled(
-                    truncate_chars(bend_images::display(preview).trim(), 110),
-                    Style::default().fg(if *ok { TOOL } else { ERR }),
-                ),
-            ]));
+    match code {
+        Some((CodeLang::Patch, src)) => {
+            if td.expanded {
+                ls.extend(code_block_lines(src, CodeLang::Patch, &td.state, width));
+            }
+            // an edit's result is on its line (✓ +3 −1, or why it failed)
+            return ls;
         }
+        Some((lang, src)) => ls.extend(code_block_lines(src, *lang, &td.state, width)),
+        None => {}
     }
-    // the source block, highlighted, under its rail. A bash or
-    // TypeScript script always shows whole (book §11: scripts in full);
-    // only a long patch shows its first lines until opened (a huge
-    // patch would cost thousands of rows to build and scroll past)
-    if let Some((lang, src)) = code {
-        let total = src.lines().count();
-        if folds(*lang) && total > CODE_FOLD_AT && !td.expanded {
-            let head: String = src.lines().take(CODE_FOLD_SHOW).collect::<Vec<_>>().join("\n");
-            ls.extend(code_block_lines(&head, *lang, &td.state, width));
-            ls.push(Line::from(Span::styled(
-                format!("    … {} more lines · click to show all", total - CODE_FOLD_SHOW),
-                Style::default().fg(DIM),
-            )));
-        } else {
-            ls.extend(code_block_lines(src, *lang, &td.state, width));
-        }
-    }
+    ls.extend(output_lines(td, width));
     ls
 }
 
-/// A patch longer than this shows its first `CODE_FOLD_SHOW` lines.
-pub(crate) const CODE_FOLD_AT: usize = 60;
-pub(crate) const CODE_FOLD_SHOW: usize = 40;
+/// The output of a tool (the runtime's one-line preview): closed,
+/// `▸ output` (` · 3 failed` when the text says so); a failure shows its
+/// reason in the error color instead, `▸` when cut. Open, the whole
+/// text under the rail.
+pub(crate) fn output_lines(td: &ToolData, width: usize) -> Vec<Line<'static>> {
+    let Some((ok, preview)) = &td.result else { return Vec::new() };
+    let shown = bend_images::display(preview);
+    let text = shown.trim();
+    if text.is_empty() {
+        return Vec::new();
+    }
+    let faint_st = Style::default().fg(dim());
+    let text_st = Style::default().fg(if *ok { dim() } else { error() });
+    let mut ls = Vec::new();
+    if td.expanded {
+        ls.push(Line::from(Span::styled(format!("   {} output", G_OPEN), faint_st)));
+        let hl: Vec<Vec<Span<'static>>> = text
+            .split('\n')
+            .map(|l| vec![Span::styled(l.to_string(), text_st)])
+            .collect();
+        ls.extend(rail_rows(&hl, width));
+        return ls;
+    }
+    if *ok {
+        let mut label = format!("   {} output", G_CLOSED);
+        if let Some(k) = failed_count(text) {
+            label.push_str(&format!(" · {} failed", k));
+        }
+        ls.push(Line::from(Span::styled(label, faint_st)));
+        return ls;
+    }
+    // a failure: one line, its reason first; `▸` when there is more
+    let room = width.saturating_sub(3 + 2).max(8);
+    let first = text.lines().next().unwrap_or("");
+    let cut = first.chars().count() > room || text.lines().nth(1).is_some();
+    let mut row = vec![Span::styled(format!("   {}", fit_chars(first, room)), text_st)];
+    if cut {
+        row.push(Span::styled(format!(" {}", G_CLOSED), faint_st));
+    }
+    ls.push(Line::from(row));
+    ls
+}
 
-/// Scripts never fold (book §11); other code does.
-fn folds(lang: CodeLang) -> bool {
-    !matches!(lang, CodeLang::Bash | CodeLang::TypeScript)
+/// "3 failed" in a test runner's output: the first count above zero.
+pub(crate) fn failed_count(text: &str) -> Option<u64> {
+    let mut rest = text;
+    while let Some(k) = rest.find(" failed") {
+        let before = rest[..k].trim_end_matches(',');
+        let n: String = before.chars().rev().take_while(|c| c.is_ascii_digit()).collect();
+        let n: String = n.chars().rev().collect();
+        if let Ok(v) = n.parse::<u64>() {
+            if v > 0 && (before.len() == n.len() || !before[..before.len() - n.len()].ends_with(|c: char| c.is_alphanumeric())) {
+                return Some(v);
+            }
+        }
+        rest = &rest[k + " failed".len()..];
+    }
+    None
+}
+
+/// An edit's line (book §11): `± edit {path} ✓ +{a} −{d} ▸`; several
+/// files read `{n} files`; a failure gives its reason in the error color.
+pub(crate) fn edit_head(td: &ToolData, tick: u32, src: &str) -> Line<'static> {
+    let files = patch_files(src);
+    let target = match files.as_slice() {
+        [(p, _, _)] => p.clone(),
+        fs => format!("{} files", fs.len()),
+    };
+    let (adds, dels) = files.iter().fold((0, 0), |(a, d), f| (a + f.1, d + f.2));
+    let dim_st = Style::default().fg(dim());
+    let mut row = vec![
+        Span::styled(format!(" {} ", G_PATCH), Style::default().fg(text())),
+        Span::styled(format!("edit {}", target), Style::default().fg(text())),
+    ];
+    let mark = format!(" {}", if td.expanded { G_OPEN } else { G_CLOSED });
+    match td.state {
+        ToolState::Run => {
+            let (g, c) = working_frame(tick);
+            row.push(Span::styled(format!(" {}", g), Style::default().fg(c)));
+            row.push(Span::styled(format!(" {}", fmt_elapsed(td.started)), dim_st));
+        }
+        ToolState::Ok => {
+            let mut counts = format!(" {}", G_RECEIVED);
+            if adds > 0 {
+                counts.push_str(&format!(" +{}", adds));
+            }
+            if dels > 0 {
+                counts.push_str(&format!(" −{}", dels));
+            }
+            counts.push_str(&mark);
+            row.push(Span::styled(counts, dim_st));
+        }
+        ToolState::Fail => {
+            let reason = td
+                .result
+                .as_ref()
+                .map(|(_, r)| r.trim().to_string())
+                .filter(|r| !r.is_empty())
+                .unwrap_or_else(|| "failed".into());
+            row.push(Span::styled(format!(" {} {}", G_FAILED, reason), Style::default().fg(error())));
+            row.push(Span::styled(mark, dim_st));
+        }
+    }
+    Line::from(row)
 }
 
 pub(crate) fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
     let (name, args, code) = tool_meta(td);
     let mut ls = vec![tool_head(td, tick, &name, &args)];
     ls.extend(tool_body(td, &code, width));
+    ls
+}
+
+// ---- folded messages: reports in main, the brief inside an agent ----
+
+/// A report (`[report: done] summary…`): its kind and its text.
+pub(crate) fn report_parts(text: &str) -> Option<(&str, &str)> {
+    let rest = text.strip_prefix("[report: ")?;
+    let (kind, body) = rest.split_once(']')?;
+    Some((kind.trim(), body.trim_start()))
+}
+
+/// The brief an agent got from main (`# Task \`name\`` …).
+pub(crate) fn is_brief(text: &str) -> bool {
+    text.starts_with("# Task `")
+}
+
+/// A report is one line, `♡ bench: the summary ▸ report`; open, the rest
+/// of it under the rail. The glyph says the kind: `♡` done, `✗` failed,
+/// `?` blocked, `·` progress.
+fn report_lines(from: &str, kind: &str, body: &str, open: bool, width: usize) -> Vec<Line<'static>> {
+    let (glyph, color, st) = match kind {
+        "done" => (G_DONE, text(), text()),
+        k if k.contains("fail") => (G_FAILED, error(), text()),
+        "blocked" => (G_NEEDS_YOU, accent(), text()),
+        _ => (G_STARTING, dim(), dim()),
+    };
+    let first = body.lines().next().unwrap_or("").trim();
+    let rest = body.split_once('\n').map(|(_, r)| r.trim_matches('\n')).unwrap_or("");
+    let head = format!("{}: ", from);
+    let label = format!(" {} report", if open { G_OPEN } else { G_CLOSED });
+    let room = width.saturating_sub(3 + head.chars().count() + label.chars().count()).max(8);
+    let more = !rest.trim().is_empty() || first.chars().count() > room;
+    let shown = if open { first.to_string() } else { fit_chars(first, room) };
+    let mut row = vec![
+        Span::styled(format!(" {} ", glyph), Style::default().fg(color)),
+        Span::styled(head, Style::default().fg(st)),
+        Span::styled(shown, Style::default().fg(st)),
+    ];
+    if more {
+        row.push(Span::styled(label, Style::default().fg(dim())));
+    }
+    let mut ls = vec![Line::from(""), Line::from(row)];
+    if open && !rest.trim().is_empty() {
+        let bar = Span::styled(" │ ", Style::default().fg(faint()));
+        ls.extend(barred_rows(&bar, md_to_lines(rest), width));
+    }
+    ls
+}
+
+/// The brief inside an agent: `◇ brief ▸`; open, the brief under the
+/// rail (without its `# Task` title: the agent is the view).
+fn brief_lines(brief: &str, open: bool, width: usize) -> Vec<Line<'static>> {
+    let mut ls = vec![Line::from(vec![
+        Span::styled(format!(" {} ", G_BRIEF), Style::default().fg(text())),
+        Span::styled("brief", Style::default().fg(text())),
+        Span::styled(format!(" {}", if open { G_OPEN } else { G_CLOSED }), Style::default().fg(dim())),
+    ])];
+    if open {
+        let body = brief.split_once('\n').map(|(_, r)| r.trim_matches('\n')).unwrap_or("");
+        let bar = Span::styled(" │ ", Style::default().fg(faint()));
+        ls.extend(barred_rows(&bar, md_to_lines(body), width));
+    }
     ls
 }
 
@@ -518,7 +684,7 @@ mod multiline_tests {
     #[test]
     fn agent_message_wraps_behind_its_bar() {
         let text = format!("one\ntwo {}", "x ".repeat(30));
-        let s = screen(Ev::AgentMsg { from: "main".into(), to: String::new(), text, level: 3, id: String::new() }, 24);
+        let s = screen(Ev::AgentMsg { from: "main".into(), to: String::new(), text, level: 3, id: String::new(), open: false }, 24);
         let body: Vec<&String> = s.iter().filter(|r| r.starts_with(" │ ")).collect();
         assert_eq!(body[0].as_str(), " │ one", "{s:#?}");
         assert!(body[1].starts_with(" │ two x"), "{s:#?}");

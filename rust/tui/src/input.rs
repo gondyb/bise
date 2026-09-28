@@ -287,22 +287,7 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
             }
             // a plain click: expand/collapse the section
             let Some(i) = app.feed_sel.take().map(|s| s.anchor.0) else { return };
-            let toggled = match app.events.get_mut(i) {
-                Some(Ev::Thinking { open, .. }) => {
-                    *open = !*open;
-                    true
-                }
-                Some(Ev::Tool(td)) if td.code.is_some() => {
-                    td.expanded = !td.expanded;
-                    true
-                }
-                _ => false,
-            };
-            if toggled {
-                if let Some(c) = app.cache.get_mut(i) {
-                    *c = None;
-                }
-            }
+            crate::feed::toggle_event(&mut app.events, &mut app.cache, i);
         }
         _ => {}
     }

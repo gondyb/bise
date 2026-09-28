@@ -454,9 +454,9 @@ pub(crate) fn highlight_patch(src: &str) -> Vec<Vec<Span<'static>>> {
     lines
 }
 
-// the tool-line preview of a patch: each file with its line counts,
-// "core/obs.bend +3 −1, LAWS.bend +12"
-pub(crate) fn patch_summary(src: &str) -> String {
+/// The files a patch touches, each with its added and removed lines
+/// (a move reads `old → new`).
+pub(crate) fn patch_files(src: &str) -> Vec<(String, usize, usize)> {
     let mut files: Vec<(String, usize, usize)> = Vec::new();
     for l in src.split('\n') {
         let path = l
@@ -481,7 +481,13 @@ pub(crate) fn patch_summary(src: &str) -> String {
             }
         }
     }
-    let parts: Vec<String> = files
+    files
+}
+
+// the one-line summary of a patch: each file with its line counts,
+// "core/obs.bend +3 −1, LAWS.bend +12"
+pub(crate) fn patch_summary(src: &str) -> String {
+    let parts: Vec<String> = patch_files(src)
         .into_iter()
         .map(|(p, add, del)| {
             let mut s = p;
@@ -608,15 +614,19 @@ pub(crate) fn code_block_lines(
         CodeLang::Bash => highlight_bash(code),
         CodeLang::Patch => highlight_patch(code),
     };
-    if hl.is_empty() {
-        return Vec::new();
-    }
+    rail_rows(&hl, width)
+}
+
+/// Styled lines under the faint rail, `width` columns at most (rail
+/// included); a line too long wraps with a hanging indent and a faint
+/// `↪`, its continuation rows marked soft (the copy joins them).
+pub(crate) fn rail_rows(hl: &[Vec<Span<'static>>], width: usize) -> Vec<Line<'static>> {
     let rail = Span::styled(CODE_RAIL, Style::default().fg(faint()));
     let hang = Span::styled(format!("{} ", G_WRAP), Style::default().fg(faint()));
     let first = width.saturating_sub(CODE_RAIL.width()).max(8);
     let rest = first.saturating_sub(hang.content.width()).max(6);
     let mut rows: Vec<Line<'static>> = Vec::new();
-    for spans in &hl {
+    for spans in hl {
         for (r, (content, _)) in wrap_code_line_hanging(spans, first, rest).into_iter().enumerate() {
             let mut ls = vec![rail.clone()];
             if r > 0 {

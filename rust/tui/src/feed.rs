@@ -474,3 +474,72 @@ pub(crate) fn move_anchor(
     }
     (i, r)
 }
+
+// ---- progressive disclosure (book §11, BISE-12) ----
+
+/// A tool has something behind its `▸`: an output, or an edit's diff.
+fn tool_discloses(td: &ToolData) -> bool {
+    td.result.as_ref().is_some_and(|(_, r)| !r.trim().is_empty())
+        || (td.name.as_deref() == Some("apply_patch") && td.code.is_some())
+}
+
+/// Whether event `ev` opens and closes: a thinking section, a tool with
+/// an output or a diff, a report, a brief.
+pub(crate) fn discloses(ev: &Ev) -> bool {
+    match ev {
+        Ev::Thinking { .. } => true,
+        Ev::Tool(td) => tool_discloses(td),
+        Ev::AgentMsg { text, .. } => is_brief(text) || report_parts(text).is_some(),
+        _ => false,
+    }
+}
+
+/// Open or close event `i` in place (its rows rebuild). False when it
+/// has nothing to disclose.
+pub(crate) fn toggle_event(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize) -> bool {
+    let Some(ev) = events.get_mut(i).filter(|e| discloses(e)) else {
+        return false;
+    };
+    match ev {
+        Ev::Thinking { open, .. } | Ev::AgentMsg { open, .. } => *open = !*open,
+        Ev::Tool(td) => td.expanded = !td.expanded,
+        _ => return false,
+    }
+    if let Some(c) = cache.get_mut(i) {
+        *c = None;
+    }
+    true
+}
+
+/// Toggle the item the feed selection is on (`space`; the key is bound
+/// in BISE-42). False when there is no selection or nothing to toggle.
+#[cfg_attr(not(test), allow(dead_code))] // bound by BISE-42
+pub(crate) fn toggle_selected(app: &mut crate::app::App) -> bool {
+    let Some(i) = app.feed_sel.map(|s| s.head.0) else {
+        return false;
+    };
+    toggle_event(&mut app.events, &mut app.cache, i)
+}
+
+/// Open every tool output and edit diff when one is closed, else close
+/// them all. Returns whether they are open now.
+#[cfg_attr(not(test), allow(dead_code))] // bound by BISE-42
+pub(crate) fn toggle_all_outputs(app: &mut crate::app::App) -> bool {
+    set_all_outputs(&mut app.events, &mut app.cache)
+}
+
+#[cfg_attr(not(test), allow(dead_code))] // bound by BISE-42
+pub(crate) fn set_all_outputs(events: &mut [Ev], cache: &mut [Option<EventRows>]) -> bool {
+    let open = events.iter().any(|e| matches!(e, Ev::Tool(td) if tool_discloses(td) && !td.expanded));
+    for (i, e) in events.iter_mut().enumerate() {
+        if let Ev::Tool(td) = e {
+            if tool_discloses(td) && td.expanded != open {
+                td.expanded = open;
+                if let Some(c) = cache.get_mut(i) {
+                    *c = None;
+                }
+            }
+        }
+    }
+    open
+}

@@ -103,6 +103,9 @@ pub(crate) enum Ev {
         text: String,
         level: u8,
         id: String,
+        // in memory only (not on the wire): a folded message (a report,
+        // a brief) is disclosed (BISE-12, a click or feed::toggle_event)
+        open: bool,
     },
     // switchboard (C2 `answered`): main answered an agent's question for
     // the user (level 2); `why` may be empty.

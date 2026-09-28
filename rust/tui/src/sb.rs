@@ -828,6 +828,7 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
                     text: body.to_string(),
                     level: 2,
                     id: id.to_string(),
+                    open: false,
                 },
                 None => Ev::AgentMsg {
                     from: from.to_string(),
@@ -835,6 +836,7 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
                     text: body.to_string(),
                     level: 3,
                     id: id.to_string(),
+                    open: false,
                 },
             }
         }
@@ -847,6 +849,7 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
                 text: body.to_string(),
                 level: 3,
                 id: String::new(),
+                open: false,
             }
         }
         "msg-you" => {
@@ -857,6 +860,7 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
                 text: body.to_string(),
                 level: 2,
                 id: String::new(),
+                open: false,
             }
         }
         "answered" => {
@@ -900,7 +904,7 @@ mod hub_line_tests {
     /// `PartialEq`).
     fn p(line: &str) -> Option<String> {
         Some(match parse_hub_line(line)? {
-            Ev::AgentMsg { from, to, text, level, id } => format!("msg {from}|{to}|{text}|{level}|{id}"),
+            Ev::AgentMsg { from, to, text, level, id, .. } => format!("msg {from}|{to}|{text}|{level}|{id}"),
             Ev::Answered { agent, question, answer, why } => format!("answered {agent}|{question}|{answer}|{why}"),
             Ev::You(t) => format!("you {t}"),
             Ev::Card(t) => format!("card {t}"),
