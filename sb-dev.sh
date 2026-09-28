@@ -50,11 +50,11 @@ hub_pid() {
   if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then echo "$p"; fi
 }
 
-stop_hub() {
+stop_hub() {  # [--keep-agents]
   [ -n "$(hub_pid)" ] || return 0
   local exe="$ROOT/current/bend-harness"
   [ -x "$exe" ] || exe="$REPO/rust/target/debug/bend-harness"
-  "$exe" switchboard --stop --workspace "$WS" || true
+  "$exe" switchboard --stop "$@" --workspace "$WS" || true
   for _ in $(seq 50); do [ -z "$(hub_pid)" ] && return 0; sleep 0.1; done
 }
 
@@ -97,10 +97,13 @@ esac
 
 vdir="$(./versions.sh build --tree)"
 id="$(basename "$vdir")"
-running="$(basename "$(readlink "$ROOT/current" 2>/dev/null || echo none)")"
-if [ -n "$(hub_pid)" ] && [ "$running" != "$id" ]; then
-  say "le hub de dev tourne sur $running — redémarrage sur $id (journal rejoué, sessions reprises)"
-  stop_hub
+running="$(readlink "$ROOT/current" 2>/dev/null || echo none)"
+if [ -n "$(hub_pid)" ] && [ "$running" != "$vdir" ]; then
+  # a hot switch: the agents' REPLs keep running (their turns too); the
+  # new hub adopts them, and each moves to the new binary at its next
+  # idle, same session
+  say "switch du hub de dev : $(basename "$running") -> $id (agents gardés)"
+  stop_hub --keep-agents
 fi
 mkdir -p "$ROOT"; ln -sfn "$vdir" "$ROOT/current"
 init_ws

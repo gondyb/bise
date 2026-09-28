@@ -120,6 +120,17 @@ struct Shell {
     offsets: BTreeMap<String, u64>,
     /// True while `Input::Boot` runs: its spawns may adopt a REPL.
     booting: bool,
+    /// The binary and port of each live REPL (adopted ones may run
+    /// another version's binary: they switch at their next idle).
+    bins: BTreeMap<String, PathBuf>,
+    ports: BTreeMap<String, u16>,
+    /// REPLs switching to this hub's binary (asked to reload between
+    /// turns): the writes meant for them wait here until the new process
+    /// is connected, on the same port and session.
+    switching: BTreeMap<String, Vec<String>>,
+    /// Restarted by a switch: their greeting (restored history) is not
+    /// news for the feeds.
+    restored: std::collections::BTreeSet<String>,
 }
 
 fn log_line(paths: &Paths, s: &str) {
@@ -304,14 +315,72 @@ impl Shell {
         let Some(dir) = self.dir_of(agent) else {
             return false;
         };
+        if let Some(q) = self.switching.get_mut(&dir) {
+            q.push(line.to_string());
+            return true;
+        }
         match self.repls.get_mut(&dir) {
             Some(r) => r.stream.write_all(line.as_bytes()).is_ok(),
             None => false,
         }
     }
 
+    fn same_bin(a: &Path, b: &Path) -> bool {
+        let c = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+        c(a) == c(b)
+    }
+
+    /// Every idle REPL still on another version's binary is asked to
+    /// reload (a turn boundary: it checkpoints and exits); the hub then
+    /// restarts it on its own binary, same port, same session. Busy ones
+    /// wait for the end of their turn: an agent never loses a turn.
+    fn switch_idle_repls(&mut self) {
+        let stale: Vec<(String, String)> = self
+            .hub
+            .st
+            .agents
+            .values()
+            .filter(|a| a.run == crate::model::Run::Idle)
+            .filter(|a| !self.switching.contains_key(&a.dir) && self.repls.contains_key(&a.dir))
+            .filter(|a| {
+                self.bins
+                    .get(&a.dir)
+                    .is_some_and(|b| !Self::same_bin(b, &self.opts.repl_bin))
+            })
+            .map(|a| (a.name.clone(), a.dir.clone()))
+            .collect();
+        for (name, dir) in stale {
+            let Some(r) = self.repls.get_mut(&dir) else {
+                continue;
+            };
+            if r.stream.write_all(b"reload\n").is_ok() {
+                log_line(
+                    &self.opts.paths,
+                    &format!(
+                        "switching the REPL of {} to {}",
+                        name,
+                        self.opts.repl_bin.display()
+                    ),
+                );
+                self.switching.insert(dir, Vec::new());
+            }
+        }
+    }
+
     /// Start the REPL of `name` on a supervisor thread.
     fn spawn(&mut self, name: &str, resume: bool, crash_note: Option<String>) {
+        self.spawn_on(name, resume, crash_note, None)
+    }
+
+    /// `port`: the port of the process it replaces (a switch keeps the
+    /// port: background commands and steer files are keyed by it).
+    fn spawn_on(
+        &mut self,
+        name: &str,
+        resume: bool,
+        crash_note: Option<String>,
+        port: Option<u16>,
+    ) {
         let Some(a) = self.hub.st.agents.get(name).cloned() else {
             return;
         };
@@ -341,6 +410,8 @@ impl Shell {
                     ),
                 );
                 self.pids.insert(dir.clone(), (gen, r.pid));
+                self.bins.insert(dir.clone(), r.bin.clone());
+                self.ports.insert(dir.clone(), r.port);
                 let tx = self.tx.clone();
                 let paths = self.opts.paths.clone();
                 std::thread::spawn(move || adopt(r, dir, gen, adir, tx, paths));
@@ -351,7 +422,7 @@ impl Shell {
         let _ = std::fs::write(adir.join("wire.log"), "");
         let _ = std::fs::write(adir.join("wire.offset"), "0");
         let _ = std::fs::remove_file(adir.join("repl.json"));
-        let port = match free_port() {
+        let port = match port.map(Ok).unwrap_or_else(free_port) {
             Ok(p) => p,
             Err(e) => {
                 let _ = self.tx.send(Msg::ReplGone {
@@ -401,6 +472,8 @@ impl Shell {
         if let Some(n) = crash_note {
             cmd.env("BEND_CRASH_NOTE", n);
         }
+        self.bins.insert(dir.clone(), self.opts.repl_bin.clone());
+        self.ports.insert(dir.clone(), port);
         let tx = self.tx.clone();
         let paths = self.opts.paths.clone();
         std::thread::spawn(move || supervise(cmd, dir, gen, adir, port, tx, paths));
@@ -410,6 +483,19 @@ impl Shell {
         let Some(name) = self.agent_by_dir(dir).map(|a| a.name.clone()) else {
             return;
         };
+        if self.switching.contains_key(dir) {
+            // the reload acknowledgement of a switch: not the agent's news
+            return;
+        }
+        if self.restored.contains(dir) {
+            if line.contains("obs: session_restored") {
+                self.restored.remove(dir);
+            }
+            if line.starts_with("history ") || line.contains("obs: session_restored") {
+                return;
+            }
+            self.restored.remove(dir);
+        }
         if line.starts_with("history ") && self.buffers.get(&name).is_some_and(|b| !b.is_empty()) {
             // a restored session replays its history: the feed has it
             return;
@@ -620,6 +706,7 @@ impl Shell {
 struct ReplInfo {
     pid: u32,
     port: u16,
+    bin: PathBuf,
     steer: String,
     interrupt: String,
 }
@@ -649,6 +736,7 @@ fn adoptable(adir: &Path) -> Option<ReplInfo> {
     let r = ReplInfo {
         pid: v.get("pid")?.as_u64()? as u32,
         port: v.get("port")?.as_u64()? as u16,
+        bin: PathBuf::from(v.get("bin").and_then(|b| b.as_str()).unwrap_or("")),
         steer: v.get("steer")?.as_str()?.to_string(),
         interrupt: v.get("interrupt")?.as_str()?.to_string(),
     };
@@ -809,6 +897,7 @@ fn supervise(
 ) {
     let log_path = adir.join("repl.log");
     let err_path = adir.join("repl.err");
+    let bin = PathBuf::from(cmd.get_program());
     let gone = |ok_exit: bool, reason: String| {
         let _ = tx.send(Msg::ReplGone {
             dir: dir.clone(),
@@ -882,8 +971,9 @@ fn supervise(
     // what the next hub needs to adopt this REPL
     let _ = std::fs::write(
         adir.join("repl.json"),
-        json!({"pid": child.id(), "port": port, "steer": steer, "interrupt": interrupt})
-            .to_string(),
+        json!({"pid": child.id(), "port": port, "steer": steer, "interrupt": interrupt,
+               "bin": bin.to_string_lossy()})
+        .to_string(),
     );
     let _ = tx.send(Msg::ReplConnected {
         dir: dir.clone(),
@@ -1064,6 +1154,10 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         buffers: BTreeMap::new(),
         offsets: BTreeMap::new(),
         booting: false,
+        bins: BTreeMap::new(),
+        ports: BTreeMap::new(),
+        switching: BTreeMap::new(),
+        restored: std::collections::BTreeSet::new(),
     };
     // the feeds survive a hub restart through their transcripts
     for a in sh.hub.st.agents.values() {
@@ -1098,10 +1192,14 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     while let Ok(m) = rx.recv() {
         match m {
             Msg::In(i) => {
-                if matches!(i, Input::Tick) {
+                let tick = matches!(i, Input::Tick);
+                if tick {
                     sh.flush_offsets();
                 }
-                sh.step(i)
+                sh.step(i);
+                if tick {
+                    sh.switch_idle_repls();
+                }
             }
             Msg::ReplConnected {
                 dir,
@@ -1130,6 +1228,19 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                         interrupt,
                     },
                 );
+                if let Some(q) = sh.switching.remove(&dir) {
+                    // a switched REPL: same session, the core never saw
+                    // it go; the writes it missed go now
+                    log_line(&sh.opts.paths, &format!("switched the REPL of {}", dir));
+                    if let Some(r) = sh.repls.get_mut(&dir) {
+                        for l in &q {
+                            let _ = r.stream.write_all(l.as_bytes());
+                        }
+                    }
+                    if !q.is_empty() {
+                        continue;
+                    }
+                }
                 if let Some(name) = sh.agent_by_dir(&dir).map(|a| a.name.clone()) {
                     if busy {
                         // adopted mid-turn: busy until its `--- idle`
@@ -1180,6 +1291,17 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 sh.repls.remove(&dir);
                 sh.pids.remove(&dir);
                 let _ = ok_exit;
+                if sh.switching.contains_key(&dir) {
+                    // the reload a switch asked for: the same session on
+                    // this hub's binary, the same port
+                    let port = sh.ports.get(&dir).copied();
+                    if let Some(name) = sh.agent_by_dir(&dir).map(|a| a.name.clone()) {
+                        sh.restored.insert(dir.clone());
+                        sh.spawn_on(&name, true, None, port);
+                        continue;
+                    }
+                    sh.switching.remove(&dir);
+                }
                 if let Some(name) = sh.agent_by_dir(&dir).map(|a| a.name.clone()) {
                     sh.step(Input::ReplExited {
                         agent: name,
