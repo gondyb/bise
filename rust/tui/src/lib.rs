@@ -276,13 +276,22 @@ fn hide_replayed_elapsed(events: &mut [Ev], cache: &mut [Option<EventRows>], id:
 fn provider_retry_text(t: &str) -> String {
     let parts: Vec<&str> = t.split(" · ").collect();
     match parts.as_slice() {
-        [n, why, wait] => format!(
-            "model API error (attempt {}): {} — retry in {}",
-            n,
-            why,
-            wait.trim_start_matches("retry in ")
-        ),
-        _ => format!("model API error: {}", t),
+        // "2/10" failed: the plan is attempt 3/10 after the pause
+        [n, why, wait] => {
+            let next = n
+                .split_once('/')
+                .and_then(|(a, b)| Some((a.parse::<u32>().ok()? + 1, b)))
+                .map(|(a, b)| format!("retry {}/{}", a, b))
+                .unwrap_or_else(|| "retry".into());
+            format!(
+                "model call failed (attempt {}): {} · {} in {}",
+                n,
+                why,
+                next,
+                wait.trim_start_matches("retry in ")
+            )
+        }
+        _ => format!("model call failed: {}", t),
     }
 }
 
@@ -459,13 +468,13 @@ fn parse_line(line: &str) -> Option<Ev> {
             return Some(Ev::Err(format!("turn failed: {}", why)));
         }
         if t == "interrupted" {
-            return Some(Ev::Warn("tour interrompu".into()));
+            return Some(Ev::Warn("turn interrupted".into()));
         }
         return Some(Ev::Err(format!("turn stopped: {}", t)));
     }
     // the runtime ran out of execution budget mid-turn (never silent)
     if let Some(t) = o.strip_prefix("turn_stalled: ") {
-        return Some(Ev::Err(format!("tour interrompu : {}", t)));
+        return Some(Ev::Err(format!("turn stopped: {}", t)));
     }
     Some(Ev::Raw(o.to_string()))
 }
@@ -3870,7 +3879,7 @@ mod tests {
         match parse_line("  obs: provider_retry: 2/10 · provider 529 (transient) · retry in 4s") {
             Some(Ev::Warn(t)) => assert_eq!(
                 t,
-                "model API error (attempt 2/10): provider 529 (transient) — retry in 4s"
+                "model call failed (attempt 2/10): provider 529 (transient) · retry 3/10 in 4s"
             ),
             _ => panic!("provider_retry must render as a warning"),
         }
