@@ -132,11 +132,10 @@ struct Pty {
 }
 
 impl Pty {
-    fn spawn(cwd: &str, rows: u16, cols: u16) -> Result<Pty, String> {
+    fn spawn(shell: &str, cwd: &str, rows: u16, cols: u16) -> Result<Pty, String> {
         let pair = native_pty_system()
             .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| e.to_string())?;
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
         let mut cmd = CommandBuilder::new(shell);
         if std::path::Path::new(cwd).is_dir() {
             cmd.cwd(cwd);
@@ -247,7 +246,8 @@ impl Term {
                 p.kill();
             }
             // the real size comes with the first draw
-            match Pty::spawn(cwd, 10, 80) {
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+            match Pty::spawn(&shell, cwd, 10, 80) {
                 Ok(p) => {
                     self.pty = Some(p);
                     self.error = None;
@@ -490,22 +490,30 @@ mod tests {
 
     #[test]
     fn shell_runs_and_keeps_state_while_hidden() {
+        // a clean /bin/sh, not the user's $SHELL: rc files (zsh, prompts)
+        // can take seconds under load and zle may drop or bracket input
         let mut t = Term::default();
+        t.pty = Some(Pty::spawn("/bin/sh", "/tmp", 10, 80).unwrap());
         t.toggle("/tmp");
         assert!(t.shown());
+        let screen = |t: &Term| t.pty.as_ref().unwrap().parser.lock().unwrap().screen().contents();
+        // wait with a deadline (generous: the whole suite runs in parallel)
+        let wait_for = |t: &Term, what: &str| {
+            let t0 = std::time::Instant::now();
+            while !screen(t).contains(what) && t0.elapsed().as_secs() < 30 {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            let s = screen(t);
+            assert!(s.contains(what), "no {:?} on the screen:\n{}", what, s);
+        };
         t.paste("X=kept; echo hi-$((40+2))\n");
+        wait_for(&t, "\nhi-42");
         t.toggle("/tmp");
         assert!(!t.shown());
         t.toggle("/tmp");
+        assert!(t.shown());
         t.paste("echo $X\n");
-        let screen = |t: &Term| t.pty.as_ref().unwrap().parser.lock().unwrap().screen().contents();
-        let t0 = std::time::Instant::now();
-        while !(screen(&t).contains("hi-42") && screen(&t).contains("\nkept")) && t0.elapsed().as_secs() < 5 {
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        let s = screen(&t);
-        assert!(s.contains("hi-42"), "{}", s);
-        assert!(s.contains("\nkept"), "{}", s);
+        wait_for(&t, "\nkept");
         let pid = t.pty.as_ref().unwrap().child.process_id().unwrap();
         t.shutdown();
         let gone = !std::process::Command::new("kill")
