@@ -2336,6 +2336,10 @@ fn popup_items(app: &App) -> Vec<PopItem> {
             })
             .collect();
     }
+    let versions = sb::version_items(app);
+    if !versions.is_empty() {
+        return versions;
+    }
     let mentions = sb::mentions(app);
     if mentions.is_empty() {
         let skills = skill_items(app);

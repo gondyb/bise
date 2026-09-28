@@ -124,12 +124,24 @@ pub fn notice(paths: &Paths, kind: &str, text: &str) {
 /// The app root the running hub was started from (its executable's dir).
 pub fn running_root(paths: &Paths) -> Option<PathBuf> {
     let pid = hub_pid(paths)?;
+    // the hub writes its app root at start (`ps` may truncate the path)
+    if alive(pid) {
+        if let Ok(r) = std::fs::read_to_string(paths.state.join("hub.root")) {
+            let r = PathBuf::from(r.trim());
+            if r.join("repl-live").exists() {
+                return Some(r);
+            }
+        }
+    }
     let out = std::process::Command::new("ps")
         .args(["-p", &pid.to_string(), "-o", "comm="])
         .output()
         .ok()?;
     let exe = String::from_utf8_lossy(&out.stdout).trim().to_string();
     let root = Path::new(&exe).parent()?.to_path_buf();
+    if !root.is_absolute() {
+        return None;
+    }
     // the dev tree runs rust/target/debug/bend-harness from the repo
     if root.join("repl-live").exists() {
         Some(root)

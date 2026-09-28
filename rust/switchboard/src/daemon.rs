@@ -97,6 +97,10 @@ enum Msg {
         stream: UnixStream,
         v: Value,
     },
+    /// A `/version` build is over.
+    BuildEnded {
+        rev: String,
+    },
     /// A line for main's thread (the version switcher).
     Notice {
         kind: String,
@@ -151,6 +155,8 @@ struct Shell {
     /// Restarted by a switch: their greeting (restored history) is not
     /// news for the feeds.
     restored: std::collections::BTreeSet<String>,
+    /// Versions being built (`/version <commit>`), by revision.
+    building: std::collections::BTreeSet<String>,
 }
 
 /// `sb version` from an agent: every agent may list the versions; only
@@ -245,26 +251,7 @@ impl Shell {
                 .map(String::from)
                 .unwrap_or_else(|| p.to_string())
         };
-        let repo = me
-            .get("repo")
-            .and_then(|x| x.as_str())
-            .map(PathBuf::from)
-            .unwrap_or_else(|| root.clone());
-        let versions_dir = if root.join("VERSION").exists() {
-            root.parent().map(|p| p.to_path_buf())
-        } else {
-            None
-        }
-        .unwrap_or_else(|| {
-            let base = std::env::var("XDG_STATE_HOME")
-                .ok()
-                .filter(|d| !d.is_empty())
-                .map(PathBuf::from)
-                .unwrap_or_else(|| {
-                    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local/state")
-                });
-            base.join("switchboard/versions")
-        });
+        let (repo, versions_dir) = self.version_ctx();
         match s("do").as_str() {
             "" | "list" => {
                 let cur = me.get("id").and_then(|x| x.as_str()).unwrap_or("dev tree");
@@ -350,6 +337,29 @@ impl Shell {
                     return format!("versions.sh not found in {}", repo.display());
                 }
                 let rev = if to == "tree" { "--tree".to_string() } else { to.clone() };
+                if to != "tree" {
+                    let known = Command::new("git")
+                        .args(["rev-parse", "--verify", "--quiet", &format!("{}^{{commit}}", to)])
+                        .current_dir(&repo)
+                        .output()
+                        .map(|o| o.status.success())
+                        .unwrap_or(false);
+                    if !known {
+                        return format!(
+                            "unknown commit {} in {} — type /version and pick one in the list",
+                            to,
+                            repo.display()
+                        );
+                    }
+                }
+                if !self.building.insert(to.clone()) {
+                    return format!("{} is already being built", to);
+                }
+                self.feed(
+                    MAIN,
+                    &format!("sb info : {}", wire_escape(&format!("version {}: building…", to))),
+                );
+                self.broadcast_versions();
                 let exe = self.opts.exe.clone();
                 let tx = self.tx.clone();
                 let answer = format!(
@@ -368,9 +378,11 @@ impl Shell {
                             text,
                         });
                     };
+                    let _ = tx.send(Msg::BuildEnded { rev: to.clone() });
                     match out {
                         Ok(o) if o.status.success() => {
                             let dir = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                            note("info", format!("version {}: built, switching…", to));
                             spawn_switcher(&paths, &exe, Path::new(&dir));
                         }
                         Ok(o) => {
@@ -391,6 +403,115 @@ impl Shell {
                 answer
             }
             other => format!("version: unknown action {}", other),
+        }
+    }
+
+    /// The repository versions are built from, and the versions dir.
+    fn version_ctx(&self) -> (PathBuf, PathBuf) {
+        let root = &self.opts.app_root;
+        let repo = crate::switch::version_info(root)
+            .get("repo")
+            .and_then(|x| x.as_str())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| root.clone());
+        let versions_dir = if root.join("VERSION").exists() {
+            root.parent().map(|p| p.to_path_buf())
+        } else {
+            None
+        }
+        .unwrap_or_else(|| {
+            let base = std::env::var("XDG_STATE_HOME")
+                .ok()
+                .filter(|d| !d.is_empty())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local/state")
+                });
+            base.join("switchboard/versions")
+        });
+        (repo, versions_dir)
+    }
+
+    /// The `/version` picker: `back`, `tree`, then the recent commits,
+    /// each with its marks (current, good, built, building, failed, trial).
+    fn version_items(&self) -> Value {
+        use crate::switch;
+        let (repo, versions_dir) = self.version_ctx();
+        let st = switch::read_state(&self.opts.paths);
+        let me = switch::version_info(&self.opts.app_root);
+        let cur_id = me.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let id_at = |k: &str| -> String {
+            st.get(k)
+                .and_then(|x| x.as_str())
+                .filter(|p| !p.is_empty())
+                .map(|p| {
+                    switch::version_info(Path::new(p))
+                        .get("id")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("")
+                        .to_string()
+                })
+                .unwrap_or_default()
+        };
+        let good = id_at("good");
+        let failed = st
+            .pointer("/failed/version")
+            .and_then(|x| x.as_str())
+            .and_then(|p| Path::new(p).file_name())
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let trial = switch::on_probation(&self.opts.paths);
+        let mut items: Vec<Value> = Vec::new();
+        let back = [id_at("good"), id_at("previous")]
+            .into_iter()
+            .find(|i| !i.is_empty() && *i != cur_id);
+        if let Some(b) = back {
+            items.push(json!({"rev": "back", "subject": format!("roll back to {}", b), "marks": []}));
+        }
+        let mut tree_marks = vec![];
+        if cur_id.is_empty() {
+            tree_marks.push("current");
+        }
+        if self.building.contains("tree") {
+            tree_marks.push("building");
+        }
+        items.push(json!({"rev": "tree", "subject": "the working tree, uncommitted changes included", "marks": tree_marks}));
+        let log = Command::new("git")
+            .args(["log", "-40", "--format=%h %s"])
+            .current_dir(&repo)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default();
+        for l in log.lines() {
+            let (h, subject) = l.split_once(' ').unwrap_or((l, ""));
+            let mut marks = vec![];
+            if cur_id == h || cur_id.starts_with(&format!("{}-", h)) {
+                marks.push("current");
+                if trial {
+                    marks.push("trial");
+                }
+            }
+            if good == h {
+                marks.push("good");
+            }
+            if versions_dir.join(h).join("VERSION").exists() {
+                marks.push("built");
+            }
+            if self.building.contains(h) {
+                marks.push("building");
+            }
+            if failed == h {
+                marks.push("failed");
+            }
+            items.push(json!({"rev": h, "subject": subject, "marks": marks}));
+        }
+        json!({"ev": "versions", "current": cur_id, "items": items})
+    }
+
+    fn broadcast_versions(&mut self) {
+        if !self.clients.is_empty() {
+            let v = self.version_items();
+            self.broadcast(&v);
         }
     }
 
@@ -804,6 +925,12 @@ impl Shell {
     fn client_line(&mut self, id: ClientId, v: Value) {
         let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
         match s("op").as_str() {
+            "version" if s("do") == "items" => {
+                let items = self.version_items();
+                if let Some(c) = self.clients.get_mut(&id) {
+                    write_json(c, &items);
+                }
+            }
             "version" => {
                 let text = self.version_op(&v);
                 if let Some(c) = self.clients.get_mut(&id) {
@@ -1421,6 +1548,8 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     let listener = UnixListener::bind(paths.socket())?;
     std::fs::write(paths.pid_file(), std::process::id().to_string())?;
     write_shim(&paths, &opts.exe)?;
+    // the switcher reads where this hub runs from (to come back to it)
+    let _ = std::fs::write(paths.state.join("hub.root"), opts.app_root.to_string_lossy().as_bytes());
     log_line(
         &paths,
         &format!(
@@ -1471,6 +1600,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         switching: BTreeMap::new(),
         switch_spawned: std::collections::BTreeSet::new(),
         restored: std::collections::BTreeSet::new(),
+        building: std::collections::BTreeSet::new(),
     };
     // the feeds survive a hub restart through their transcripts
     for a in sh.hub.st.agents.values() {
@@ -1665,6 +1795,11 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
             Msg::Notice { kind, text } => {
                 let kind = if kind == "warn" { "warn" } else { "info" };
                 sh.feed(MAIN, &format!("sb {} : {}", kind, wire_escape(&text)));
+                sh.broadcast_versions();
+            }
+            Msg::BuildEnded { rev } => {
+                sh.building.remove(&rev);
+                sh.broadcast_versions();
             }
             Msg::Shutdown { keep } => {
                 keep_agents = keep;
