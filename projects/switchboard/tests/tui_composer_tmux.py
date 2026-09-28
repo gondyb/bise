@@ -23,14 +23,20 @@ tui_tmux.S = S
 
 
 def composer():
-    """The composer's text row(s): from the `› ` prompt row to the bottom
-    of the screen (continuation rows are indented), the key hints flush
-    right on the last row left out."""
+    """The composer's text row(s) (book §13, the composer block): the last
+    run of rows with the bar `│` in column 1 (under the status row), the
+    blank bar rows around the text left out, each row's text from column 3."""
     import re
     rows = screen().rstrip("\n").splitlines()
-    first = max(i for i, r in enumerate(rows) if r.startswith(" › ") or r.rstrip() == " ›")
+    bar = [i for i, r in enumerate(rows) if r.startswith(" │")]
+    if not bar:
+        return ""
+    last = bar[-1]
+    first = last
+    while first > 0 and rows[first - 1].startswith(" │"):
+        first -= 1
     out = []
-    for r in rows[first:]:
+    for r in rows[first:last + 1]:
         r = re.sub(r"\s{2,}(⏎|recording|transcribing|y yes|alt\+r|/restore).*$", "", r)
         out.append(r[3:].strip())
     return "\n".join(x for x in out if x)

@@ -97,7 +97,7 @@ def main():
         keys("Enter")
         sc = wait_re(panel_row(1, "t1"))
         wait_screen("new agent @t1")
-        wait_re(r"t1 +m_\d", 60)           # the automatic reply in main's feed (level 3: names in columns)
+        wait_re(r"t1 +(→ \S+|m_\d)", 60)           # the automatic reply in main's feed (level 3: names in columns)
         # select the task with Ctrl+K (next: main, then t1), enter it
         keys("C-k")
         keys("C-k")

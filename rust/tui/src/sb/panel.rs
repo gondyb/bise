@@ -1249,9 +1249,12 @@ mod chrome_tests {
         assert_eq!(FIRST_RUN[2], "try: \"fix the flaky login test, and draft the release note\"");
         let status = rows.iter().find(|r| r.starts_with(" main ·")).unwrap_or_else(|| panic!("{}", all));
         assert!(status.starts_with(" main · idle"), "{:?}", status);
-        let composer = rows.last().unwrap();
-        assert!(composer.starts_with(&format!(" {} ", G_YOU)), "{:?}", composer);
-        assert!(composer.ends_with("⏎ send · @ agent · / commands"), "{:?}", composer);
+        // the composer block (book §13): the bar on its rows, the hints on
+        // their own last row, flush right
+        let hints = rows.last().unwrap();
+        assert!(hints.trim_end().ends_with("⏎ send · @ agent · / commands"), "{:?}", hints);
+        let at = rows.iter().position(|r| r.starts_with(" main ·")).unwrap();
+        assert!(rows[at + 1..rows.len() - 1].iter().all(|r| r.starts_with(" │")), "{}", all);
         // a panel with main only
         assert!(rows.iter().any(|r| r.ends_with(&format!("0 {} main", G_MAIN))), "{}", all);
         // once there is an agent, the first-run text goes

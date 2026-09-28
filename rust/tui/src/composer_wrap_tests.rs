@@ -64,8 +64,15 @@ fn check_frame(app: &mut App, width: u16, height: u16, what: &str) {
         };
         assert_eq!(got, want.trim_end(), "{what}: row {i}");
     }
-    // the composer is the last block of the screen: nothing under it
-    assert_eq!(area.y as usize + drawn, height as usize, "{what}: the composer ends the screen");
+    // the composer block is the last of the screen: under its text, only
+    // its blank bar row and the key hints (book §13)
+    let b = ui::composer_block(height);
+    assert!(area.h >= drawn.max(b.min_text), "{what}: {} rows for {drawn}", area.h);
+    assert_eq!(
+        area.y as usize + area.h + b.pad_bottom as usize + usize::from(b.hints_row),
+        height as usize,
+        "{what}: the composer block ends the screen"
+    );
     let c = if accent.is_some() && fits { c + 1 } else { c };
     let cell = &buf[(area.x + c as u16, area.y + r as u16)];
     assert!(cell.modifier.contains(Modifier::REVERSED), "{what}: cursor at ({r}, {c})");

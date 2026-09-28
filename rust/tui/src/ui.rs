@@ -128,21 +128,29 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
 /// and the typed text, the key hints flush right on its last row (on
 /// the status row when the text leaves no room).
 fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect) {
-    // the composer: 1 column of margin, `› ` (or the voice meter), the
-    // text, 1 column of margin on the right
-    let inner_w = (area.width as usize).saturating_sub(4).max(1);
+    // the composer block (book §13 "the composer block"): a bar in
+    // column 1, the text from column 3, 2 columns of right margin, at
+    // most the width your message wraps at in the history
+    let th = frame.area().height;
+    let block = composer_block(th);
+    let inner_w = (area.width as usize).saturating_sub(5).clamp(1, crate::render::PROSE_MAX - 3);
+    // while recording, the meter takes 2 columns of the text's
+    let text_w = inner_w.saturating_sub(if app.voice.active() { 2 } else { 0 }).max(1);
     let composer_rows = {
-        let rows = editor::layout_input(&app.ed.text, inner_w);
+        let rows = editor::layout_input(&app.ed.text, text_w);
         editor::drawn_rows(&rows, app.ed.cursor)
     };
-    let input_h = (composer_rows.max(1) as u16).min((area.height / 2).max(1));
+    let max_rows = ((th as usize * 2) / 5).min(12).max(block.min_text);
+    let text_rows = composer_rows.clamp(block.min_text, max_rows) as u16;
+    let input_h = (block.pad_top + text_rows + block.pad_bottom).min(area.height.saturating_sub(4).max(1));
+    let hints_h = u16::from(block.hints_row);
     // the images strip (book §14): while images are attached, what the
     // composer and a 3-row feed leave
-    let strip_h = attach::strip_height(app).min(area.height.saturating_sub(input_h + 5));
-    // the card box: what the composer, the strip, a 3-row feed and the 2 fixed rows leave
+    let strip_h = attach::strip_height(app).min(area.height.saturating_sub(input_h + hints_h + 5));
     // the queued messages (BISE-89), above the strip
-    let queue_h = crate::queue::height(app).min(area.height.saturating_sub(input_h + strip_h + 5));
-    let card_h = sb::card_box_height(app, area, area.height.saturating_sub(input_h + strip_h + queue_h + 5));
+    let queue_h = crate::queue::height(app).min(area.height.saturating_sub(input_h + hints_h + strip_h + 5));
+    // the card box: what the composer, the strips, a 3-row feed and the fixed rows leave
+    let card_h = sb::card_box_height(app, area, area.height.saturating_sub(input_h + hints_h + strip_h + queue_h + 5));
     attach::set_model(&app.info.model);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -153,10 +161,12 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect) {
             Constraint::Length(queue_h), // the queued messages
             Constraint::Length(strip_h), // the images strip, above the status row
             Constraint::Length(1),       // status row
-            Constraint::Length(input_h), // composer
+            Constraint::Length(input_h), // the composer block
+            Constraint::Length(hints_h), // the key hints
         ])
         .split(area);
-    let (queue, strip, chunks) = (chunks[3], chunks[4], [chunks[0], chunks[1], chunks[2], chunks[5], chunks[6]]);
+    let (queue, strip, hints_row) = (chunks[3], chunks[4], chunks[7]);
+    let chunks = [chunks[0], chunks[1], chunks[2], chunks[5], chunks[6]];
     if queue.height > 0 {
         let r = Rect { x: queue.x, width: queue.width.saturating_sub(1), ..queue };
         frame.render_widget(Paragraph::new(crate::queue::lines(app, r.width as usize)), r);
@@ -171,7 +181,6 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect) {
     if let Some(p) = sb_panel {
         sb::draw_panel(app, frame, p);
     }
-    let blank = Rect { y: chunks[1].y, height: chunks[1].height, ..left };
     let mut feed = Rect { height: chunks[0].height, ..left };
     if let Some(l) = app.sb.as_ref().and_then(|sb| sb.feed_banner()) {
         if feed.height > 3 {
@@ -196,34 +205,50 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect) {
         frame.render_widget(Paragraph::new(lines), r);
     }
     let status_w = draw_status(app, frame, chunks[3]);
-    draw_composer(app, frame, chunks[4], inner_w);
+    draw_composer(app, frame, chunks[4], inner_w, block);
     if card_h > 0 {
         sb::draw_card(app, frame, chunks[2]);
     } else if sb::card_full(app) {
         sb::draw_card(app, frame, chunks[0]);
     }
     draw_popup(app, frame, chunks[4]);
-    // the key hints, flush right: on the composer's last row, else on
-    // the status row, else not at all
+    // the key hints, flush right with 2 columns of margin: their own
+    // last row; a small terminal puts them on the status row (if they fit)
     let hint = if app.term.shown() { term::HINT } else { hint_text(app) };
-    let hint_w = hint.width() as u16 + 1;
-    let last_w = composer_last_width(app, inner_w) as u16 + 3;
-    let fits = |used: u16, row: Rect| row.height > 0 && used + hint_w + 2 <= row.width;
-    let row = if fits(last_w, chunks[4]) {
-        Some(Rect { y: chunks[4].y + chunks[4].height - 1, ..chunks[4] })
-    } else if fits(status_w, chunks[3]) {
+    let hint_w = hint.width() as u16;
+    let row = if hints_row.height > 0 {
+        Some(hints_row)
+    } else if status_w + hint_w + 4 <= chunks[3].width {
         Some(chunks[3])
-    } else if blank.height > 0 {
-        // the blank row under the feed
-        Some(Rect { width: blank.width, ..blank })
     } else {
         None
     };
     if let Some(row) = row {
-        let w = hint_w.min(row.width);
-        let r = Rect { x: row.x + row.width - w, width: w, height: 1, ..row }.intersection(frame.area());
-        let hint = if hint.width() < w as usize { hint.to_string() } else { truncate_chars(hint, w.saturating_sub(2) as usize) };
+        let room = row.width.saturating_sub(2);
+        let w = hint_w.min(room);
+        let r = Rect { x: row.x + room - w, width: w, height: 1, ..row }.intersection(frame.area());
+        let hint = if hint.width() <= w as usize { hint.to_string() } else { truncate_chars(hint, w.saturating_sub(1) as usize) };
         frame.render_widget(Paragraph::new(Line::from(Span::styled(hint, Style::default().fg(dim())))), r);
+    }
+}
+
+/// The rows around the composer's text, by terminal height (book §13):
+/// < 24 drops the blank row under the text, < 18 the one above it too and
+/// the text may shrink to 1 row, < 14 the key hints go on the status row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ComposerBlock {
+    pub(crate) pad_top: u16,
+    pub(crate) pad_bottom: u16,
+    pub(crate) min_text: usize,
+    pub(crate) hints_row: bool,
+}
+
+pub(crate) fn composer_block(term_h: u16) -> ComposerBlock {
+    ComposerBlock {
+        pad_top: u16::from(term_h >= 18),
+        pad_bottom: u16::from(term_h >= 24),
+        min_text: if term_h >= 18 { 2 } else { 1 },
+        hints_row: term_h >= 14,
     }
 }
 
@@ -242,15 +267,6 @@ fn wrap_words(s: &str, w: usize) -> Vec<String> {
     }
     out.push(cur);
     out
-}
-
-/// The display width of the composer's last drawn row.
-fn composer_last_width(app: &App, inner_w: usize) -> usize {
-    let rows = editor::layout_input(&app.ed.text, inner_w);
-    let n = editor::drawn_rows(&rows, app.ed.cursor);
-    let w = rows.get(n.saturating_sub(1)).map_or(0, |r| r.iter().filter(|c| !c.newline).map(|c| c.w).sum());
-    // the cursor at the end of the row takes one more column
-    w + 1
 }
 
 fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect) {
@@ -613,52 +629,62 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
     out
 }
 
-/// The Switchboard composer: `› ` (dim) then the typed text, one row
-/// per wrapped row, continuation rows indented under the text; while
-/// recording, the level meter takes the place of `›`. An empty
-/// composer shows only the cursor (or a read-only note).
-fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize) {
-    let text_rows = (area.height as usize).max(1);
-    app.composer = ComposerArea {
-        x: area.x + 3,
-        y: area.y,
-        w: inner,
-        h: text_rows,
-        top: 0,
-    };
-    let mut rows = if app.ed.is_empty() && !app.voice.active() {
+/// The Switchboard composer block (book §13): a bar `│` in column 1 on
+/// every row (faint while empty, accent with text or while recording),
+/// a blank bar row above and below the text (`block`), the text from
+/// column 3 wrapped at `inner` columns and scrolled with the cursor row
+/// in view. Empty: the cursor at column 3 and the dim placeholder;
+/// recording: the meter glyph at column 3, the text after it.
+fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, block: ComposerBlock) {
+    let text_y = area.y + block.pad_top.min(area.height.saturating_sub(1));
+    let text_rows = (area.height.saturating_sub(block.pad_top + block.pad_bottom) as usize).max(1);
+    let voice = app.voice.active();
+    // recording: the meter takes 2 columns before the text
+    let lead = if voice { 2 } else { 0 };
+    let text_w = inner.saturating_sub(lead).max(1);
+    app.composer = ComposerArea { x: area.x + 3 + lead as u16, y: text_y, w: text_w, h: text_rows, top: 0 };
+    let empty = app.ed.is_empty();
+    let mut rows = if empty && !voice {
         let note = sb::placeholder(app).unwrap_or_default();
         let mut spans = vec![Span::styled(" ", Style::default().fg(text()).add_modifier(Modifier::REVERSED))];
         if !note.is_empty() {
             spans.push(Span::styled(format!(" {}", note), Style::default().fg(dim())));
         }
         vec![Line::from(spans)]
-    } else if app.ed.is_empty() {
+    } else if empty {
         vec![Line::from("")]
     } else {
-        typed_lines(app, inner, text_rows)
+        typed_lines(app, text_w, text_rows)
     };
-    let lead = if app.voice.active() {
-        Span::styled(
-            format!("{} ", voice_glyph(&app.voice)),
-            Style::default().fg(accent()).add_modifier(Modifier::BOLD),
-        )
-    } else {
-        Span::styled(format!("{} ", G_YOU), Style::default().fg(dim()))
-    };
-    for (i, l) in rows.iter_mut().enumerate() {
-        let mut spans = vec![Span::raw(" "), if i == 0 { lead.clone() } else { Span::raw("  ") }];
-        spans.extend(l.spans.drain(..).map(|s| {
-            if app.voice.active() {
+    if voice {
+        let meter = Span::styled(format!("{} ", voice_glyph(&app.voice)), Style::default().fg(accent()).add_modifier(Modifier::BOLD));
+        for (i, l) in rows.iter_mut().enumerate() {
+            let mut spans = vec![if i == 0 { meter.clone() } else { Span::raw("  ") }];
+            spans.extend(l.spans.drain(..).map(|s| {
                 let st = s.style.fg(dim());
                 Span::styled(s.content, st)
-            } else {
-                s
-            }
-        }));
-        *l = Line::from(spans);
+            }));
+            *l = Line::from(spans);
+        }
     }
-    frame.render_widget(Paragraph::new(rows), area);
+    let bar_st = Style::default().fg(if empty && !voice { faint() } else { accent() });
+    let bar = Span::styled(" │ ", bar_st);
+    let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
+    for _ in 0..block.pad_top.min(area.height) {
+        lines.push(Line::from(bar.clone()));
+    }
+    let mut body = rows.into_iter();
+    for _ in 0..text_rows {
+        let mut spans = vec![bar.clone()];
+        if let Some(l) = body.next() {
+            spans.extend(l.spans);
+        }
+        lines.push(Line::from(spans));
+    }
+    while lines.len() < area.height as usize {
+        lines.push(Line::from(bar.clone()));
+    }
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
