@@ -33,6 +33,9 @@
   .tsep { color:var(--faint); margin-top:10px; }
   .card { border:1px solid var(--acc); border-radius:6px; padding:6px 2ch; margin:6px 2ch 0; }
   .card .opts { color:var(--dim); }
+  #inp { flex:1; background:transparent; border:0; outline:0; color:var(--text); font:inherit; caret-color:var(--acc); }
+  #inp::placeholder { color:var(--faint); }
+  .mine { color:var(--acc); }
   .enter { animation:enter .35s ease-out; }
   @keyframes enter { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
   .pulse { display:inline-block; animation:pulse 1.6s ease-in-out infinite; }
@@ -60,7 +63,7 @@
   <div class="grid"><div class="feed" id="feed"><div class="tsep">· 14:02 ·</div><div id="intro"></div><div id="items"></div></div><div class="panel"><div style="margin-bottom:4px">agents <span class="faint">· ⌥ + number to switch</span></div><div id="rows"></div></div></div>
   <div id="cards"></div>
   <div class="foot"><div class="status"><span id="status"></span><span id="clock" class="faint"></span></div>
-    <div class="composer"><span id="composer"></span><span class="dim" id="hints">⏎ send · @ agent · / commands</span></div></div>
+    <div class="composer"><span style="flex:1;display:flex"><span class="dim">›&nbsp;</span><span id="composer"></span><input id="inp" autocomplete="off" spellcheck="false"></span><span class="dim" id="hints">⏎ send · @ agent · / commands</span></div></div>
 </div>
 
 <div class="controls">
@@ -140,7 +143,7 @@ at(65, { type: "report", g: "♡", html: '4 endpoints are done: users, orgs, key
 burst(66, 71, [["docs", "ep-billing", "invoice example when ready?"], ["ep-billing", "docs", "yes, with the schema."], ["mig-db", "main", "· backfill 60% done."]]);
 say(71.5, "where are we?", 1.5);
 at(74, { type: "main", html: "4 endpoints done, auth-fix done, nothing needs you. the 2 sdk agents wait on ep-billing for the invoice schema, about 20 min. docs and mig-db are working." });
-const END = 78;
+let END = 78;
 EV.sort((a, b) => a.t - b.t);
 
 // ---------- state is a pure function of the time ----------
@@ -156,7 +159,7 @@ function stateAt(now) {
     const sim = START + e.t * 12 + st.offset;
     switch (e.type) {
       case "type": if (now < e.t + e.dur) st.typing = e.text.slice(0, Math.floor(e.text.length * (now - e.t) / e.dur)); break;
-      case "you": push({ k: "you", html: e.text }); st.typing = null; break;
+      case "you": push({ k: "you", html: e.text, real: e.real }); if (!e.real) st.typing = null; break;
       case "main": push({ k: "main", html: e.html }); break;
       case "report": push({ k: "report", g: e.g, html: e.html }); break;
       case "msg":
@@ -191,7 +194,7 @@ function msgLine(m) {
 }
 function renderItem(it, st) {
   switch (it.k) {
-    case "you": return `<div class="b"><span class="who dim">›</span>${it.html}</div>`;
+    case "you": return `<div class="b"><span class="who ${it.real ? "mine" : "dim"}">›</span>${it.html}</div>`;
     case "main": return `<div class="b"><span class="who acc">:*</span>${it.html}</div>`;
     case "report": return `<div class="b"><span class="who">${it.g}</span>${it.html}</div>`;
     case "time": return `<div class="tsep">· ${hhmm(it.sim)} ·</div>`;
@@ -249,7 +252,10 @@ function render(now, force = false) {
     c("need") ? `<span class="acc">? ${c("need")} needs you</span>` : "", c("done") ? `♡ ${c("done")} done` : ""].filter(Boolean).join(" · ") : "no agents yet");
   setH(document.getElementById("cards"), st.cards.map((k) =>
     `<div class="card enter"><span class="acc">?</span> ${k.title} <span class="dim">· ${k.body}</span></div>`).join(""));
-  setH(document.getElementById("composer"), `<span class="dim">›</span> ${st.typing ?? ""}<span class="cur"></span>`);
+  // the scripted "you" types only while your own composer is empty
+  const inp = document.getElementById("inp"), mine = inp.value !== "" || document.activeElement === inp;
+  setH(document.getElementById("composer"), mine || st.typing == null ? "" : `${st.typing}<span class="cur"></span>`);
+  inp.placeholder = mine || st.typing != null ? "" : "type here, any time: a new request, @agent …, where are we?, an answer to a card";
   setH(document.getElementById("status"), `main · ${st.typing != null ? "you're typing" : "listening"} · ${st.agents.length} agents`);
   setH(document.getElementById("clock"), hhmm(st.sim));
   document.getElementById("prog").style.width = `${100 * now / END}%`;
@@ -258,11 +264,16 @@ function render(now, force = false) {
 
 // ---------- the timeline ----------
 const tl = document.getElementById("timeline");
-EV.forEach((e) => {
-  const lv = e.type === "card" ? "l1" : ["you", "main", "report"].includes(e.type) ? "l2" : e.type === "msg" ? "l3" : null;
-  if (!lv) return;
-  const i = document.createElement("i"); i.className = lv; i.style.left = `${100 * e.t / END}%`; tl.append(i);
-});
+function drawMarkers() {
+  tl.querySelectorAll("i").forEach((i) => i.remove());
+  EV.forEach((e) => {
+    const lv = e.type === "card" ? "l1" : ["you", "main", "report"].includes(e.type) ? "l2" : e.type === "msg" ? "l3" : null;
+    if (!lv) return;
+    const i = document.createElement("i"); i.className = lv; i.style.left = `${100 * e.t / END}%`;
+    if (e.real) i.style.background = "var(--acc)"; tl.append(i);
+  });
+}
+drawMarkers();
 tl.onclick = (ev) => { const r = tl.getBoundingClientRect(); now = END * (ev.clientX - r.left) / r.width; render(now, true); };
 
 // ---------- playback ----------
@@ -275,7 +286,10 @@ function frame(t) {
 }
 function setPlaying(p) { playing = p; document.getElementById("play").textContent = p ? "pause" : "play"; }
 document.getElementById("play").onclick = () => { if (now >= END) { now = 0; render(0, true); } setPlaying(!playing); };
-document.getElementById("restart").onclick = () => { now = 0; expanded.clear(); render(0, true); setPlaying(true); };
+document.getElementById("restart").onclick = () => {
+  for (let i = EV.length - 1; i >= 0; i--) if (EV[i].real) EV.splice(i, 1);
+  END = 78; drawMarkers(); now = 0; expanded.clear(); render(0, true); setPlaying(true);
+};
 document.getElementById("quiet").onclick = (e) => { quiet = !quiet; e.target.classList.toggle("on", quiet); render(now, true); };
 document.querySelectorAll("[data-speed]").forEach((b) => b.onclick = () => {
   speed = +b.dataset.speed; document.querySelectorAll("[data-speed]").forEach((x) => x.classList.toggle("on", x === b));
@@ -285,14 +299,72 @@ document.getElementById("feed").onclick = (e) => {
   const id = +f.dataset.run; expanded.has(id) ? expanded.delete(id) : expanded.add(id); render(now, true);
 };
 document.addEventListener("keydown", (e) => {
+  if (document.activeElement === document.getElementById("inp")) return;
   if (e.key === " ") { e.preventDefault(); document.getElementById("play").click(); }
   if (e.key === "q") document.getElementById("quiet").click();
   if (e.key === "r") document.getElementById("restart").click();
 });
+// ---------- you, typing for real ----------
+// your message is appended at the current time, in order, like any event;
+// main's reaction is scheduled right after it. nothing above moves.
+const STOP = new Set("the a an and or to of for on in it is be can you please oh also just my our this that with fix add make write do check look at".split(" "));
+function slug(text) {
+  const w = text.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((x) => x && !STOP.has(x));
+  return (w.slice(0, 2).join("-") || "task").slice(0, 14);
+}
+function send(text) {
+  const t0 = now, st = stateAt(now), add = (dt, e) => EV.push({ t: t0 + dt, real: true, ...e });
+  const low = text.toLowerCase().trim();
+  add(0, { type: "you", text: text.replace(/</g, "&lt;") });
+  const names = st.agents.map((a) => a.name);
+  const direct = low.match(/^@([\w-]+)\s*(.*)$/);
+  const card = st.cards[0];
+  if (direct && names.includes(direct[1])) {
+    // a direct message: main is not in the loop; the agent answers the traffic way
+    add(2.5, { type: "report", g: "✉", html: `${direct[1]} <span class="dim">to you:</span> got it, doing that next.` });
+  } else if (/where are we|status|how('s| is) it going|on en est|où en/.test(low)) {
+    const c = (s) => st.agents.filter((a) => a.status === s).length;
+    add(1.2, { type: "main", html: `${c("working") + c("starting")} working, ${c("done")} done${c("waiting") ? `, ${c("waiting")} waiting on another agent` : ""}${card ? `. ${card.agent} needs you: ${card.body}` : ", nothing needs you."}` });
+  } else if (card) {
+    add(1, { type: "main", html: `passed your answer to ${card.agent}.` });
+    add(1.1, { type: "msg", from: "main", to: card.agent, text });
+    add(1.2, { type: "answer", agent: card.agent });
+  } else {
+    const target = names.find((n) => low.includes(n));
+    if (target) {
+      add(1, { type: "main", html: `sent to ${target}. <span class="dim">ctrl+z undo</span>` });
+      add(1.1, { type: "msg", from: "main", to: target, text });
+      add(1.2, { type: "agent", name: target, status: "working" });
+      add(6, { type: "msg", from: target, to: "main", text: "· on it, adjusting my plan." });
+    } else {
+      let n = slug(text), k = 2; while (names.includes(n)) n = `${slug(text)}-${k++}`;
+      add(1, { type: "main", html: `on it: ${n} takes it. <span class="dim">ctrl+z undo</span>` });
+      add(1.3, { type: "agent", name: n, status: "starting" });
+      add(2.8, { type: "agent", name: n, status: "working" });
+      add(7, { type: "msg", from: n, to: "main", text: "· found where it lives, working on it." });
+      add(9, { type: "msg", from: n, to: names[1] ?? "main", text: "heads-up, i may touch files near yours." });
+      add(15, { type: "msg", from: n, to: "main", text: "♡ done, tests green." });
+      add(16, { type: "report", g: "♡", html: `${n} is done. <span class="dim">▸ report</span>` });
+      add(16.1, { type: "agent", name: n, status: "done" });
+    }
+  }
+  EV.sort((a, b) => a.t - b.t);
+  END = Math.max(END, t0 + 18);
+  drawMarkers();
+  if (!playing) setPlaying(true);
+  document.getElementById("feed").scrollTop = 1e9;
+}
+document.getElementById("inp").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.value.trim()) { send(e.target.value.trim()); e.target.value = ""; }
+  if (e.key === "Escape") e.target.blur();
+});
+
 // ?t=45 starts at 45 s; ?t=45&paused stops there (for screenshots)
 const q = new URLSearchParams(location.search);
 if (q.has("t")) { now = Math.min(END, +q.get("t")); render(now, true); }
 if (q.has("paused")) setPlaying(false);
+// test hook: ?t=45&paused&say=...&after=17 sends a message at 45 s and shows 17 s later
+if (q.has("say")) { send(q.get("say")); now = Math.min(END, now + +(q.get("after") ?? 0)); setPlaying(!q.has("paused")); render(now, true); }
 requestAnimationFrame(frame);
 </script>
 </body>
