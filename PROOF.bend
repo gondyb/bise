@@ -3499,3 +3499,32 @@ def hub_apart_ren_before(+x: List<&2, String>, +m: String, +al: List<&2, String>
               hub_str_eq_sym_false(xn, new, hub_or_false_l(String.eq(xn, new), HM.str_in(xa, new), fx)),
               hub_str_in_snoc_false(al, m, xn, hub_or_false_r(String.eq(m, xn), HM.str_in(al, xn), b1), hub_or_false_l(String.eq(m, xn), HM.str_in(al, xn), b1))),
             hub_or_false_r(String.eq(xn, new), HM.str_in(xa, new), fx)}
+
+def hub_aa_map_ren.top(+x: List<&2, String>, h: HM.Agent, +t: List<&2, HM.Agent>, +new: String, ah: HI.Apart(x, HI.names(h)), +fx: {HM.str_in(x, new) == False{} : Bool},
+    at: HI.ApartAll(x, HI.profile(t))) -> HI.ApartAll(x, HI.profile(HM.agent_op(h, HM.ORename{new}) <> t)):
+  match h:
+    case HM.Agent{name, im, pa, life, de, al, fi, ws, di, br, cr, fa, no, rp, sn}:
+      HX.Both{hub_apart_ren_before(x, name, al, new, ah, fx), at}
+
+def hub_aa_map_ren.pick(c: Bool, +x: List<&2, String>, +h: HM.Agent, +t: List<&2, HM.Agent>, +old: String, +new: String, +e: {String.eq(HM.Agent.name(h), old) == c : Bool},
+    ah: HI.Apart(x, HI.names(h)), +fx: {HM.str_in(x, new) == False{} : Bool},
+    at: HI.ApartAll(x, HI.profile(t)), ih: HI.ApartAll(x, HI.profile(HM.map_agent(t, old, HM.ORename{new}))))
+    -> HI.ApartAll(x, HI.profile(Bool.pick(List<&2, HM.Agent>, String.eq(HM.Agent.name(h), old), HM.agent_op(h, HM.ORename{new}) <> t, h <> HM.map_agent(t, old, HM.ORename{new})))):
+  match c:
+    case True{}:
+      %Equal.sym(Bool, String.eq(HM.Agent.name(h), old), True{}, e) : HI.ApartAll(x, HI.profile(Bool.pick(List<&2, HM.Agent>, _, HM.agent_op(h, HM.ORename{new}) <> t, h <> HM.map_agent(t, old, HM.ORename{new}))))
+      hub_aa_map_ren.top(x, h, t, new, ah, fx, at)
+    case False{}:
+      %Equal.sym(Bool, String.eq(HM.Agent.name(h), old), False{}, e) : HI.ApartAll(x, HI.profile(Bool.pick(List<&2, HM.Agent>, _, HM.agent_op(h, HM.ORename{new}) <> t, h <> HM.map_agent(t, old, HM.ORename{new}))))
+      HX.Both{ah, ih}
+
+# entries listed before a renamed one stay apart from the renamed list
+def hub_aa_map_ren(+x: List<&2, String>, +t: List<&2, HM.Agent>, +old: String, +new: String, a: HI.ApartAll(x, HI.profile(t)), +fx: {HM.str_in(x, new) == False{} : Bool})
+    -> HI.ApartAll(x, HI.profile(HM.map_agent(t, old, HM.ORename{new}))):
+  match t:
+    case Nil{}:
+      Unit{}
+    case Con{h, r}:
+      match a:
+        case HX.Both{+a1, +a2}:
+          hub_aa_map_ren.pick(String.eq(HM.Agent.name(h), old), x, h, r, old, new, {==}, a1, fx, a2, hub_aa_map_ren(x, r, old, new, a2, fx))
