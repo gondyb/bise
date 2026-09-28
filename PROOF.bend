@@ -3244,3 +3244,49 @@ def hub_pump_nsx.pick(-o: HM.St, c: Bool, +cx: HX.Cx<o>, +a: String, +xs: List<&
 # delivering to A clears A from the exceptions
 def hub_pump_nsx(-o: HM.St, +cx: HX.Cx<o>, +a: String, +xs: List<&2, String>, h: hub_nsx(o, cx, a <> xs)) -> hub_nsx(o, HC.pump(o, cx, a), xs):
   +n => nx => hub_pump_nsx.pick(o, String.eq(a, n), cx, a, xs, n, {==}, h, nx)
+
+def hub_is_rename(op: HM.AgentOp) -> Bool:
+  match op:
+    case HM.ORename{x}:
+      True{}
+    case _:
+      False{}
+
+def hub_names_op(h: HM.Agent, op: HM.AgentOp, nr: {hub_is_rename(op) == False{} : Bool}) -> {HI.names(HM.agent_op(h, op)) == HI.names(h) : List<&2, String>}:
+  match h:
+    case HM.Agent{name, im, pa, life, de, al, fi, ws, di, br, cr, fa, no, rp, sn}:
+      match op:
+        case HM.OLife{l, why}:
+          {==}
+        case HM.OWs{w}:
+          {==}
+        case HM.ODeclared{d, n}:
+          {==}
+        case HM.OFile{p}:
+          {==}
+        case HM.ORename{nn}:
+          hub_absurd_eq(hub_tf_absurd(nr), List<&2, String>, HI.names(HM.agent_op(HM.Agent{name, im, pa, life, de, al, fi, ws, di, br, cr, fa, no, rp, sn}, HM.ORename{nn})), HI.names(HM.Agent{name, im, pa, life, de, al, fi, ws, di, br, cr, fa, no, rp, sn}))
+        case HM.OSnap{x}:
+          {==}
+        case HM.OReport{x}:
+          {==}
+
+def hub_prof_map.pick(c: Bool, +h: HM.Agent, +t: List<&2, HM.Agent>, +n: String, +op: HM.AgentOp, +e: {String.eq(HM.Agent.name(h), n) == c : Bool},
+    +nr: {hub_is_rename(op) == False{} : Bool}, ih: {HI.profile(HM.map_agent(t, n, op)) == HI.profile(t) : List<&2, List<&2, String>>})
+    -> {HI.profile(Bool.pick(List<&2, HM.Agent>, String.eq(HM.Agent.name(h), n), HM.agent_op(h, op) <> t, h <> HM.map_agent(t, n, op))) == HI.profile(h <> t) : List<&2, List<&2, String>>}:
+  match c:
+    case True{}:
+      %Equal.sym(Bool, String.eq(HM.Agent.name(h), n), True{}, e) : {HI.profile(Bool.pick(List<&2, HM.Agent>, _, HM.agent_op(h, op) <> t, h <> HM.map_agent(t, n, op))) == HI.profile(h <> t) : List<&2, List<&2, String>>}
+      Equal.cong(List<&2, String>, List<&2, List<&2, String>>, x => x <> HI.profile(t), HI.names(HM.agent_op(h, op)), HI.names(h), hub_names_op(h, op, nr))
+    case False{}:
+      %Equal.sym(Bool, String.eq(HM.Agent.name(h), n), False{}, e) : {HI.profile(Bool.pick(List<&2, HM.Agent>, _, HM.agent_op(h, op) <> t, h <> HM.map_agent(t, n, op))) == HI.profile(h <> t) : List<&2, List<&2, String>>}
+      Equal.cong(List<&2, List<&2, String>>, List<&2, List<&2, String>>, x => HI.names(h) <> x, HI.profile(HM.map_agent(t, n, op)), HI.profile(t), ih)
+
+# an operation that is not a rename keeps every agent's names
+def hub_prof_map(+xs: List<&2, HM.Agent>, +n: String, +op: HM.AgentOp, +nr: {hub_is_rename(op) == False{} : Bool})
+    -> {HI.profile(HM.map_agent(xs, n, op)) == HI.profile(xs) : List<&2, List<&2, String>>}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      hub_prof_map.pick(String.eq(HM.Agent.name(h), n), h, t, n, op, {==}, nr, hub_prof_map(t, n, op, nr))
