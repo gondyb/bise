@@ -1174,23 +1174,9 @@ impl Hub {
                         .join("\n")
                 })
                 .unwrap_or_default();
-            let quoted: Vec<String> = prev
-                .sent
-                .iter()
-                .map(|m| format!("\"{}\"", one_line(m)))
-                .collect();
-            let n = prev.sent.len();
-            let s = if n > 1 { "s" } else { "" };
-            input["note"] = json!(format!(
-                "The user talked directly to @{} ({} message{}): {}. Last reply of @{}: \"{}\"",
-                prev.focus,
-                n,
-                s,
-                quoted.join(", "),
-                prev.focus,
-                clip_tail(&one_line(&reply), 2000)
-            ));
-            input["direct"] = json!(format!("You talked to @{} ({} message{})", prev.focus, n, s));
+            let (note, direct) = direct_exchange(&prev.focus, &prev.sent, &reply);
+            input["note"] = json!(note);
+            input["direct"] = json!(direct);
         }
         self.core(fx, env, Some(client), input);
     }
@@ -1305,6 +1291,25 @@ impl Hub {
             json!({"t": "req", "token": token, "from": from, "req": q}),
         );
     }
+}
+
+/// RFC 0001 §7.4: what main (`note`) and the user's own feed (`direct`)
+/// read after the user talked directly to `task`: the messages sent,
+/// and the end of the task's reply since.
+fn direct_exchange(task: &str, sent: &[String], reply: &str) -> (String, String) {
+    let quoted: Vec<String> = sent.iter().map(|m| format!("\"{}\"", one_line(m))).collect();
+    let n = sent.len();
+    let s = if n > 1 { "s" } else { "" };
+    let note = format!(
+        "The user talked directly to @{} ({} message{}): {}. Last reply of @{}: \"{}\"",
+        task,
+        n,
+        s,
+        quoted.join(", "),
+        task,
+        clip_tail(&one_line(reply), 2000)
+    );
+    (note, format!("You talked to @{} ({} message{})", task, n, s))
 }
 
 /// BR-007: the report a failed turn of a task sends to its parent, or
