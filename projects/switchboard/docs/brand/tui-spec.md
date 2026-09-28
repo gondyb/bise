@@ -2,7 +2,8 @@
 
 Design only, not implemented. Mockups: [tui-mockup.html](tui-mockup.html) (one
 screen, interactive) and [tui-screens.html](tui-screens.html) (every feature of
-today's TUI, 26 screens).
+today's TUI) and [tui-live.html](tui-live.html) (an 80-second live simulation
+with a timeline; `?t=45&paused` opens it at 45 s).
 Brand board: [board.html](board.html). Items marked **⚠** need a check or a
 decision.
 
