@@ -103,6 +103,18 @@ fn list_of(v: Option<&Value>) -> Vec<String> {
     }
 }
 
+/// The first positional word, an agent name (`@name` accepted).
+fn agent_arg(pos: &[String], usage: impl Into<String>) -> Result<String, String> {
+    pos.first()
+        .map(|a| a.trim_start_matches('@').to_string())
+        .ok_or_else(|| usage.into())
+}
+
+/// `--timeout <s>`, 20 s by default.
+fn timeout_of(opts: &Map<String, Value>) -> u64 {
+    str_of(opts, "timeout").parse::<u64>().unwrap_or(20)
+}
+
 fn str_of(opts: &Map<String, Value>, k: &str) -> String {
     match opts.get(k) {
         Some(Value::String(s)) => s.clone(),
@@ -128,8 +140,8 @@ pub fn build(args: &[String]) -> Result<Value, String> {
         }
         "send" => {
             let (pos, o) = parse_args(rest, &["reply-to", "mode"], &["expect-reply"])?;
-            let to = pos.first().ok_or("usage: sb send <agent> \"<text>\"")?;
-            req.insert("to".into(), json!(to.trim_start_matches('@')));
+            let to = agent_arg(&pos, "usage: sb send <agent> \"<text>\"")?;
+            req.insert("to".into(), json!(to));
             req.insert("text".into(), json!(text_of(&pos[1..])?));
             req.insert("expect_reply".into(), json!(o.contains_key("expect-reply")));
             if o.contains_key("mode") {
@@ -146,13 +158,10 @@ pub fn build(args: &[String]) -> Result<Value, String> {
         }
         "ask" => {
             let (pos, o) = parse_args(rest, &["timeout"], &[])?;
-            let to = pos.first().ok_or("usage: sb ask <agent> \"<question>\"")?;
-            req.insert("to".into(), json!(to.trim_start_matches('@')));
+            let to = agent_arg(&pos, "usage: sb ask <agent> \"<question>\"")?;
+            req.insert("to".into(), json!(to));
             req.insert("text".into(), json!(text_of(&pos[1..])?));
-            req.insert(
-                "timeout_s".into(),
-                json!(str_of(&o, "timeout").parse::<u64>().unwrap_or(20)),
-            );
+            req.insert("timeout_s".into(), json!(timeout_of(&o)));
         }
         "wait" => {
             let (pos, o) = parse_args(rest, &["timeout"], &[])?;
@@ -160,10 +169,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                 "msg".into(),
                 json!(pos.first().ok_or("usage : sb wait m_<n>")?),
             );
-            req.insert(
-                "timeout_s".into(),
-                json!(str_of(&o, "timeout").parse::<u64>().unwrap_or(20)),
-            );
+            req.insert("timeout_s".into(), json!(timeout_of(&o)));
         }
         "status" => {
             let (pos, o) = parse_args(rest, &["note"], &[])?;
@@ -217,23 +223,11 @@ pub fn build(args: &[String]) -> Result<Value, String> {
         }
         "interrupt" | "drop" | "restore" | "isolate" => {
             let (pos, _) = parse_args(rest, &[], &[])?;
-            req.insert(
-                "agent".into(),
-                json!(pos
-                    .first()
-                    .ok_or(format!("usage: sb {} <task>", cmd))?
-                    .trim_start_matches('@')),
-            );
+            req.insert("agent".into(), json!(agent_arg(&pos, format!("usage: sb {} <task>", cmd))?));
         }
         "stop" => {
             let (pos, _) = parse_args(rest, &[], &[])?;
-            req.insert(
-                "agent".into(),
-                json!(pos
-                    .first()
-                    .ok_or("usage: sb stop <task> \"<reason>\"")?
-                    .trim_start_matches('@')),
-            );
+            req.insert("agent".into(), json!(agent_arg(&pos, "usage: sb stop <task> \"<reason>\"")?));
             req.insert("reason".into(), json!(pos[1..].join(" ")));
         }
         "close" => {
@@ -268,13 +262,7 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                 &["last", "limit", "query", "before", "after", "around", "at"],
                 &["origin"],
             )?;
-            req.insert(
-                "agent".into(),
-                json!(pos
-                    .first()
-                    .ok_or("usage: sb inspect <agent>")?
-                    .trim_start_matches('@')),
-            );
+            req.insert("agent".into(), json!(agent_arg(&pos, "usage: sb inspect <agent>")?));
             let n = if o.contains_key("limit") {
                 str_of(&o, "limit")
             } else {
