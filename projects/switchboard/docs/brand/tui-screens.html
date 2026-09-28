@@ -109,9 +109,10 @@ npx playwright test login --project=webkit --reporter=line
 
 // ---------- the screens ----------
 const screens = [
-["first run", "the empty state. one sentence says what to do; no vocabulary to learn.",
+["first run", "the empty state. says what to do, and that bise stays available while the work runs in the background. no vocabulary to learn.",
  term({ h: head('<span class="dim">no agents yet</span>'),
-   feed: `<div class="b dim">what's on your mind? say it, and keep going. i start an agent for each thing, and tell you when something needs you.</div>
+   feed: `<div class="b dim">what's on your mind?</div>
+   <div class="b dim">say it, then keep talking. the work runs in the background, so i'm always listening: add more, change your mind, or ask where things are, anytime.</div>
    <div class="b dim">try: "fix the flaky login test, and draft the release note"</div>`,
    pan: panel([P.main]), f: foot('main · idle') })],
 
