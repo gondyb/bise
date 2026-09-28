@@ -33,3 +33,18 @@ def Below(ns: List<&2, Nat>, +n: Nat) -> Data:
 # id is below the next free one (so a new message can never take one)
 def Unique(+s: M.St) -> Data:
   X.Both<Distinct(ids(M.St.msgs(s))), Below(ids(M.St.msgs(s)), M.St.next_msg(s))>
+
+# `a` is the start of `b`
+def IsPrefix(a: List<&2, Nat>, b: List<&2, Nat>) -> Data:
+  match a b:
+    case Nil{} _:
+      Unit
+    case Con{+x, +t} Nil{}:
+      Empty
+    case Con{+x, +t} Con{+y, +u}:
+      X.Both<{x == y : Nat}, IsPrefix(t, u)>
+
+# law msgs_kept: the messages of a state, in order, start the messages
+# of any later state: a message once sent is never removed
+def Kept(+s1: M.St, +s2: M.St) -> Data:
+  IsPrefix(ids(M.St.msgs(s1)), ids(M.St.msgs(s2)))

@@ -1444,3 +1444,101 @@ def Laws.msgs_unique(ins, h, u):
     Laws.hub_run_replays(ins, h),
     hub_apply_all_unique(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h), u, Laws.msg_ids_fresh(ins, h)))
 
+
+# ---- L2: a message once sent is never removed (msgs_kept) ----
+
+def hub_prefix_refl(+a: List<&2, Nat>) -> HI.IsPrefix(a, a):
+  match a:
+    case Nil{}:
+      Unit{}
+    case Con{x, t}:
+      HX.Both{{==}, hub_prefix_refl(t)}
+
+def hub_prefix_snoc(+a: List<&2, Nat>, +b: List<&2, Nat>, -x: Nat, p: HI.IsPrefix(a, b)) -> HI.IsPrefix(a, HM.snoc(Nat, b, x)):
+  match a b:
+    case Nil{} _:
+      Unit{}
+    case Con{y, t} Nil{}:
+      match p:
+    case Con{y, t} Con{z, u}:
+      match p:
+        case HX.Both{e, pt}:
+          HX.Both{e, hub_prefix_snoc(t, u, x, pt)}
+
+def hub_prefix_trans(+a: List<&2, Nat>, +b: List<&2, Nat>, +c: List<&2, Nat>, p: HI.IsPrefix(a, b), q: HI.IsPrefix(b, c)) -> HI.IsPrefix(a, c):
+  match a b c:
+    case Nil{} _ _:
+      Unit{}
+    case Con{x, t} Nil{} _:
+      match p:
+    case Con{x, t} Con{y, u} Nil{}:
+      match q:
+    case Con{x, t} Con{y, u} Con{z, v}:
+      match p q:
+        case HX.Both{e1, pt} HX.Both{e2, qt}:
+          HX.Both{Equal.trans(Nat, x, y, z, e1, e2), hub_prefix_trans(t, u, v, pt, qt)}
+
+def hub_prefix_tr(-a: List<&2, Nat>, -x: List<&2, Nat>, -y: List<&2, Nat>, e: {x == y : List<&2, Nat>}, p: HI.IsPrefix(a, y)) -> HI.IsPrefix(a, x):
+  %Equal.sym(List<&2, Nat>, x, y, e) : HI.IsPrefix(a, _)
+  p
+
+# every event keeps the messages, in order (a new one comes last)
+def hub_apply_kept(s: HM.St, e: HM.Ev) -> HI.Kept(s, HM.apply(s, e)):
+  match s:
+    case HM.St{ag, od, +ms, ca, no, nm, nc}:
+      match e:
+        case HM.EMsgSent{+m}:
+          hub_prefix_tr(HI.ids(ms),
+            HI.ids(HM.apply.settle(HM.Msg.reply_to(m), HM.snoc(HM.MRec, ms, HM.MRec{m, HM.Queued{"new"}, False{}}), HM.Msg.from(m))),
+            HM.snoc(Nat, HI.ids(ms), HM.Msg.id(m)),
+            Equal.trans(List<&2, Nat>,
+              HI.ids(HM.apply.settle(HM.Msg.reply_to(m), HM.snoc(HM.MRec, ms, HM.MRec{m, HM.Queued{"new"}, False{}}), HM.Msg.from(m))),
+              HI.ids(HM.snoc(HM.MRec, ms, HM.MRec{m, HM.Queued{"new"}, False{}})), HM.snoc(Nat, HI.ids(ms), HM.Msg.id(m)),
+              hub_settle_ids(HM.Msg.reply_to(m), HM.snoc(HM.MRec, ms, HM.MRec{m, HM.Queued{"new"}, False{}}), HM.Msg.from(m)),
+              hub_ids_snoc(ms, HM.MRec{m, HM.Queued{"new"}, False{}})),
+            hub_prefix_snoc(HI.ids(ms), HI.ids(ms), HM.Msg.id(m), hub_prefix_refl(HI.ids(ms))))
+        case HM.EMsgState{+id, +x}:
+          hub_prefix_tr(HI.ids(ms), HI.ids(HM.map_msg(ms, id, HM.OSt{x})), HI.ids(ms), hub_ids_map(ms, id, HM.OSt{x}), hub_prefix_refl(HI.ids(ms)))
+        case HM.ESettled{+id}:
+          hub_prefix_tr(HI.ids(ms), HI.ids(HM.map_msg(ms, id, HM.OSettle{})), HI.ids(ms), hub_ids_map(ms, id, HM.OSettle{}), hub_prefix_refl(HI.ids(ms)))
+        case HM.ETaskCreated{a, b, c, d, f}:
+          hub_prefix_refl(HI.ids(ms))
+        case HM.ELifecycle{a, b, c}:
+          hub_prefix_refl(HI.ids(ms))
+        case HM.EWorkspace{a, b}:
+          hub_prefix_refl(HI.ids(ms))
+        case HM.ESnapshot{a, b}:
+          hub_prefix_refl(HI.ids(ms))
+        case HM.EDeclared{a, b, c}:
+          hub_prefix_refl(HI.ids(ms))
+        case HM.EReported{a, b}:
+          hub_prefix_refl(HI.ids(ms))
+        case HM.EFileTouched{a, b}:
+          hub_prefix_refl(HI.ids(ms))
+        case HM.ERenamed{a, b}:
+          hub_prefix_refl(HI.ids(ms))
+        case HM.ECardOpened{c}:
+          hub_prefix_refl(HI.ids(ms))
+        case HM.ECardClosed{a, b}:
+          hub_prefix_refl(HI.ids(ms))
+        case HM.EMainNote{a, b}:
+          hub_prefix_refl(HI.ids(ms))
+        case HM.ENotesFlushed{}:
+          hub_prefix_refl(HI.ids(ms))
+
+def hub_apply_all_kept(+evs: List<&2, HM.Ev>, +s: HM.St) -> HI.Kept(s, HM.apply_all(evs, s)):
+  match evs:
+    case Nil{}:
+      hub_prefix_refl(HI.ids(HM.St.msgs(s)))
+    case Con{e, t}:
+      hub_prefix_trans(HI.ids(HM.St.msgs(s)), HI.ids(HM.St.msgs(HM.apply(s, e))), HI.ids(HM.St.msgs(HM.apply_all(t, HM.apply(s, e)))),
+        hub_apply_kept(s, e), hub_apply_all_kept(t, HM.apply(s, e)))
+
+def hub_kept_tr(-a: HM.St, -x: HM.St, -y: HM.St, e: {x == y : HM.St}, k: HI.Kept(a, y)) -> HI.Kept(a, x):
+  %Equal.sym(HM.St, x, y, e) : HI.Kept(a, _)
+  k
+
+def Laws.msgs_kept(ins, h):
+  hub_kept_tr(HC.Hub.d(h), HC.Hub.d(HC.RunR.hub(HC.run(ins, h))), HM.apply_all(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h)),
+    Laws.hub_run_replays(ins, h), hub_apply_all_kept(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h)))
+

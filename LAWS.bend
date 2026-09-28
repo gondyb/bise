@@ -2388,3 +2388,11 @@ law msgs_unique:
   for u: HI.Unique(HC.Hub.d(h))
   HI.Unique(HC.Hub.d(HC.RunR.hub(HC.run(ins, h))))
 
+# LAW (L2): over any sequence of inputs, the messages of the first state
+# start, in order, the messages of the last: a message once sent is never
+# removed (its record, and so its state, stays).
+law msgs_kept:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  HI.Kept(HC.Hub.d(h), HC.Hub.d(HC.RunR.hub(HC.run(ins, h))))
+
