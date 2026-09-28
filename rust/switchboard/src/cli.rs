@@ -24,6 +24,7 @@ sb restore <task> | sb isolate <task>   (only on the user's explicit request)
 sb card \"<question for the user>\" [--for m_<n>]
 sb history \"<query>\"
 sb version [list | switch <commit|id|tree> | rollback]   (versions of Switchboard itself; list: everyone)
+sb restart [<commit>|latest]   (main only: restart the hub safely, agents kept)
 A text argument `-` reads the text from stdin.";
 
 /// Split flags from positional words. `flags` take a value, `switches`
@@ -390,6 +391,12 @@ fn version(args: &[String]) -> i32 {
 pub fn main(args: &[String]) -> i32 {
     if args.first().map(|s| s.as_str()) == Some("version") {
         return version(args);
+    }
+    if args.first().map(|s| s.as_str()) == Some("restart") {
+        // `sb restart [<commit>|latest]` (main only): the hub op
+        let mut a = vec!["version".to_string(), "restart".to_string()];
+        a.extend(args.get(1).cloned());
+        return version(&a);
     }
     let req = match build(args) {
         Ok(r) => r,

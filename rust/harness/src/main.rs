@@ -315,10 +315,12 @@ fn main() -> std::io::Result<()> {
                     .and_then(|s| s.parse().ok())
                     .map(std::time::Duration::from_secs)
                     .unwrap_or(switchboard::switch::PROBATION);
+                let restart = rest.iter().any(|a| a == "--restart");
                 std::process::exit(switchboard::switch::run(
                     &paths,
                     std::path::Path::new(&to),
                     period,
+                    restart,
                 ));
             }
             Some("switchboard") => {

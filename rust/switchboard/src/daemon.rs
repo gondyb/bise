@@ -157,7 +157,14 @@ struct Shell {
     restored: std::collections::BTreeSet<String>,
     /// Versions being built (`/version <commit>`), by revision.
     building: std::collections::BTreeSet<String>,
+    /// Agents whose REPL was found dead at boot in the middle of a turn
+    /// (killed by a restart, a crash): once respawned on their session,
+    /// they are told to continue where they left off.
+    resume_turn: std::collections::BTreeSet<String>,
 }
+
+/// What an agent whose turn was cut by a restart receives.
+const RESUME_TEXT: &str = "Your turn was interrupted by a restart of Switchboard; continue where you left off.";
 
 /// `sb version` from an agent: every agent may list the versions; only
 /// main switches or rolls back (the user does it from the TUI).
@@ -295,6 +302,38 @@ impl Shell {
                 switch::abort_probation(&paths);
                 "rolling back to the previous version (probation stopped)".into()
             }
+            "restart" if switch::switch_running(&paths) => {
+                "a version switch is in progress (probation): wait for it to end, or /version back".into()
+            }
+            "restart" => {
+                let to = s("to");
+                let (repo, versions_dir) = self.version_ctx();
+                let rev = match to.as_str() {
+                    "" => String::new(),
+                    "latest" | "head" | "HEAD" => Command::new("git")
+                        .args(["rev-parse", "--short", "HEAD"])
+                        .current_dir(&repo)
+                        .output()
+                        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                        .unwrap_or_default(),
+                    r => r.to_string(),
+                };
+                let cur = root.canonicalize().unwrap_or_else(|_| root.clone());
+                let same = rev.is_empty()
+                    || versions_dir
+                        .join(&rev)
+                        .canonicalize()
+                        .map(|d| d == cur)
+                        .unwrap_or(false);
+                if same {
+                    spawn_switcher(&paths, &self.opts.exe, &cur, true);
+                    return format!(
+                        "restarting the hub on the current version {} — the agents keep running",
+                        me.get("id").and_then(|x| x.as_str()).unwrap_or("(dev tree)")
+                    );
+                }
+                self.version_op(&json!({"do": "switch", "to": rev}))
+            }
             "switch" if switch::switch_running(&paths) => {
                 "a version switch is in progress (probation): wait for it to end, or /version back".into()
             }
@@ -383,7 +422,7 @@ impl Shell {
                         Ok(o) if o.status.success() => {
                             let dir = String::from_utf8_lossy(&o.stdout).trim().to_string();
                             note("info", format!("version {}: built, switching…", to));
-                            spawn_switcher(&paths, &exe, Path::new(&dir));
+                            spawn_switcher(&paths, &exe, Path::new(&dir), false);
                         }
                         Ok(o) => {
                             let err = String::from_utf8_lossy(&o.stderr).to_string();
@@ -516,7 +555,7 @@ impl Shell {
     }
 
     fn start_switch(&self, to: &Path) {
-        spawn_switcher(&self.opts.paths, &self.opts.exe, to);
+        spawn_switcher(&self.opts.paths, &self.opts.exe, to, false);
     }
 
     /// Save how far each wire log was processed: the next hub adopts
@@ -783,6 +822,16 @@ impl Shell {
                 std::thread::spawn(move || adopt(r, dir, gen, adir, tx, paths));
                 return;
             }
+            // not adoptable: dead. Was it in the middle of a turn?
+            let wire = adir.join("wire.log");
+            let len = std::fs::metadata(&wire).map(|m| m.len()).unwrap_or(0);
+            if len > 0 && busy_at(&wire, len) {
+                log_line(
+                    &self.opts.paths,
+                    &format!("{}: its REPL died mid-turn, the turn resumes", a.name),
+                );
+                self.resume_turn.insert(dir.clone());
+            }
         }
         // a fresh process: a fresh wire log
         let _ = std::fs::write(adir.join("wire.log"), "");
@@ -918,6 +967,7 @@ impl Shell {
             }
         }
         write_json(&mut stream, &json!({"ev": "ready"}));
+        write_json(&mut stream, &self.version_items());
         self.clients.insert(id, stream);
         self.step(Input::ClientHello { client: id });
     }
@@ -1107,7 +1157,7 @@ impl Shell {
 
 /// `exe sbswitch --to <dir>`: detached, from THIS (known good) binary;
 /// it outlives this hub, which it replaces.
-fn spawn_switcher(paths: &Paths, exe: &Path, to: &Path) {
+fn spawn_switcher(paths: &Paths, exe: &Path, to: &Path, restart: bool) {
     use std::os::unix::process::CommandExt;
     let err = std::fs::OpenOptions::new()
         .create(true)
@@ -1119,6 +1169,7 @@ fn spawn_switcher(paths: &Paths, exe: &Path, to: &Path) {
         .arg(&paths.workspace)
         .arg("--to")
         .arg(to)
+        .args(if restart { &["--restart"][..] } else { &[] })
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .process_group(0);
@@ -1601,6 +1652,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         switch_spawned: std::collections::BTreeSet::new(),
         restored: std::collections::BTreeSet::new(),
         building: std::collections::BTreeSet::new(),
+        resume_turn: std::collections::BTreeSet::new(),
     };
     // the feeds survive a hub restart through their transcripts
     for a in sh.hub.st.agents.values() {
@@ -1690,6 +1742,21 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                     }
                     if !q.is_empty() {
                         continue;
+                    }
+                }
+                if !adopted && sh.resume_turn.remove(&dir) {
+                    // its turn was cut: the first turn of the new process
+                    // continues it (queued writes of the core come after)
+                    if let Some(r) = sh.repls.get_mut(&dir) {
+                        let _ = r
+                            .stream
+                            .write_all(format!("say {}\n", wire_escape(RESUME_TEXT)).as_bytes());
+                    }
+                    if let Some(name) = sh.agent_by_dir(&dir).map(|a| a.name.clone()) {
+                        sh.feed(
+                            &name,
+                            "sb info : its turn was interrupted by a restart — it continues where it left off",
+                        );
                     }
                 }
                 if let Some(name) = sh.agent_by_dir(&dir).map(|a| a.name.clone()) {

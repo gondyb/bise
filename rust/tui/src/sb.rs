@@ -369,6 +369,11 @@ pub(super) static SB_MODE: std::sync::atomic::AtomicBool =
 
 pub(super) const SB_COMMANDS: &[Cmd] = &[
     Cmd {
+        name: "/restart",
+        desc: "restart the hub safely (agents kept): /restart [<commit>|latest]",
+        args: true,
+    },
+    Cmd {
         name: "/version",
         desc: "Switchboard versions: /version [<commit>|tree|back]",
         args: true,
@@ -856,6 +861,10 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     let first = typed.split_whitespace().next().unwrap_or("");
     match first {
         "/quit" | "/exit" => app.should_quit = true,
+        "/restart" => {
+            let arg = typed.split_whitespace().nth(1).unwrap_or("");
+            sb.send(json!({"op": "version", "do": "restart", "to": arg}));
+        }
         "/version" => {
             let arg = typed.split_whitespace().nth(1).unwrap_or("");
             let req = match arg {

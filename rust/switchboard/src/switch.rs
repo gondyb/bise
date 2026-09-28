@@ -278,7 +278,24 @@ pub fn abort_probation(paths: &Paths) {
 }
 
 /// `sbswitch --to <version dir> [--probation <s>]`: the whole switch.
-pub fn run(paths: &Paths, to: &Path, period: Duration) -> i32 {
+/// Copy the hub state (journal, sessions, transcripts) aside before a
+/// switch or a restart: `/tmp/sb-backup-<state dir name>-<ms>`.
+fn backup(paths: &Paths) -> Option<PathBuf> {
+    let name = paths.state.file_name()?.to_string_lossy().to_string();
+    let dest = PathBuf::from(format!("/tmp/sb-backup-{}-{}", name, now_ms()));
+    let ok = std::process::Command::new("rsync")
+        .args(["-a", "--exclude", "hub.sock"])
+        .arg(format!("{}/", paths.state.display()))
+        .arg(format!("{}/", dest.display()))
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    ok.then_some(dest)
+}
+
+/// `restart`: `to` may be the running version (a plain restart of the
+/// hub, e.g. a stuck one); the agents are kept the same way.
+pub fn run(paths: &Paths, to: &Path, period: Duration, restart: bool) -> i32 {
     let lock = paths.state.join("switch.pid");
     if let Some(p) = std::fs::read_to_string(&lock)
         .ok()
@@ -290,12 +307,12 @@ pub fn run(paths: &Paths, to: &Path, period: Duration) -> i32 {
         }
     }
     let _ = std::fs::write(&lock, std::process::id().to_string());
-    let code = run_locked(paths, to, period);
+    let code = run_locked(paths, to, period, restart);
     let _ = std::fs::remove_file(&lock);
     code
 }
 
-fn run_locked(paths: &Paths, to: &Path, period: Duration) -> i32 {
+fn run_locked(paths: &Paths, to: &Path, period: Duration, restart: bool) -> i32 {
     let to = to.canonicalize().unwrap_or_else(|_| to.to_path_buf());
     if !to.join("repl-live").exists() {
         notice(
@@ -319,7 +336,7 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration) -> i32 {
         );
         return 1;
     };
-    if from == to {
+    if from == to && !restart {
         notice(
             paths,
             "info",
@@ -329,16 +346,25 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration) -> i32 {
     }
     let (from_id, to_id) = (id_of(&from), id_of(&to));
     log(paths, &format!("{} -> {}", from.display(), to.display()));
+    let saved = backup(paths)
+        .map(|d| format!(" · state backed up: {}", d.display()))
+        .unwrap_or_default();
+    let what = if from == to {
+        format!("restarting the hub on version {}", to_id)
+    } else if restart {
+        format!("restarting the hub on version {} (from {})", to_id, from_id)
+    } else {
+        format!("switching to version {} (from {})", to_id, from_id)
+    };
     notice(
         paths,
         "info",
-        &format!(
-            "switching to version {} (from {}) — the agents keep running",
-            to_id, from_id
-        ),
+        &format!("{} — the agents keep running{}", what, saved),
     );
     let _ = std::fs::remove_file(fail_file(paths));
-    st["previous"] = json!(from.to_string_lossy());
+    if from != to {
+        st["previous"] = json!(from.to_string_lossy());
+    }
     st["current"] = json!(to.to_string_lossy());
     if st.get("good").is_none() {
         st["good"] = json!(from.to_string_lossy());
@@ -357,7 +383,11 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration) -> i32 {
             notice(
                 paths,
                 "info",
-                &format!("version {} validated (probation passed)", to_id),
+                &if from == to {
+                    format!("hub restarted on version {} (probation passed)", to_id)
+                } else {
+                    format!("version {} validated (probation passed)", to_id)
+                },
             );
             0
         }
@@ -366,8 +396,22 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration) -> i32 {
                 paths,
                 &format!("{} failed: {} — rollback to {}", to_id, reason, from_id),
             );
+            // a restart on the same version goes back to the last good
+            // one when there is another, else it tries that version again
+            let from = if from == to {
+                st.get("good")
+                    .and_then(|x| x.as_str())
+                    .map(PathBuf::from)
+                    .filter(|g| g.canonicalize().map(|c| c != to).unwrap_or(false))
+                    .unwrap_or_else(|| from.clone())
+            } else {
+                from
+            };
+            let from_id = id_of(&from);
             st["current"] = json!(from.to_string_lossy());
-            st["previous"] = json!(to.to_string_lossy());
+            if from != to {
+                st["previous"] = json!(to.to_string_lossy());
+            }
             st["failed"] =
                 json!({"version": to.to_string_lossy(), "reason": reason, "at": now_ms()});
             write_state(paths, &st);
