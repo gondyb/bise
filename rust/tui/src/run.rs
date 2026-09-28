@@ -92,6 +92,8 @@ fn init_terminal() -> io::Result<ratatui::DefaultTerminal> {
     use crossterm::terminal::{enable_raw_mode, EnterAlternateScreen};
     let setup = || -> io::Result<ratatui::DefaultTerminal> {
         enable_raw_mode()?;
+        // BISE-02: light or dark from the terminal background, before the alternate screen
+        crate::theme_detect::init();
         crossterm::execute!(io::stdout(), EnterAlternateScreen)?;
         let _ = crossterm::execute!(io::stdout(), EnableMouseCapture);
         let _ = crossterm::execute!(io::stdout(), EnableBracketedPaste);
