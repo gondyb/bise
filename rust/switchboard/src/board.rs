@@ -137,15 +137,7 @@ pub fn main_context(st: &State, now: u64) -> String {
         ));
     }
     s.push_str("</task_board>\n");
-    let threads = agent_threads(st, 8);
-    if !threads.is_empty() {
-        s.push_str("<agent_threads>\n");
-        for t in threads {
-            s.push_str(&t);
-            s.push('\n');
-        }
-        s.push_str("</agent_threads>\n");
-    }
+    push_block(&mut s, "agent_threads", &agent_threads(st, 8));
     let cards: Vec<String> = st
         .open_cards()
         .map(|c| {
@@ -163,34 +155,8 @@ pub fn main_context(st: &State, now: u64) -> String {
             )
         })
         .collect();
-    if !cards.is_empty() {
-        s.push_str("<open_cards>\n");
-        for c in cards {
-            s.push_str(&c);
-            s.push('\n');
-        }
-        s.push_str("</open_cards>\n");
-    }
-    let waiting: Vec<String> = st
-        .unanswered_for(MAIN)
-        .iter()
-        .map(|m| {
-            format!(
-                "m_{} from {}: \"{}\"",
-                m.id,
-                m.from,
-                clip(&one_line(&m.text), 80)
-            )
-        })
-        .collect();
-    if !waiting.is_empty() {
-        s.push_str("<questions_for_you>\n");
-        for w in waiting {
-            s.push_str(&w);
-            s.push('\n');
-        }
-        s.push_str("</questions_for_you>\n");
-    }
+    push_block(&mut s, "open_cards", &cards);
+    push_block(&mut s, "questions_for_you", &questions_for(st, MAIN));
     s.push_str("</switchboard_state>");
     s
 }
@@ -413,28 +379,30 @@ pub fn task_context(st: &State, name: &str, now: u64) -> String {
         s.push('\n');
     }
     s.push_str("</group>\n");
-    let waiting: Vec<String> = st
-        .unanswered_for(name)
-        .iter()
-        .map(|m| {
-            format!(
-                "m_{} from {}: \"{}\"",
-                m.id,
-                m.from,
-                clip(&one_line(&m.text), 80)
-            )
-        })
-        .collect();
-    if !waiting.is_empty() {
-        s.push_str("<questions_for_you>\n");
-        for w in waiting {
-            s.push_str(&w);
-            s.push('\n');
-        }
-        s.push_str("</questions_for_you>\n");
-    }
+    push_block(&mut s, "questions_for_you", &questions_for(st, name));
     s.push_str("</switchboard_state>");
     s
+}
+
+/// `<tag>` + one line each + `</tag>`, nothing when there is no line.
+fn push_block(s: &mut String, tag: &str, lines: &[String]) {
+    if lines.is_empty() {
+        return;
+    }
+    s.push_str(&format!("<{}>\n", tag));
+    for l in lines {
+        s.push_str(l);
+        s.push('\n');
+    }
+    s.push_str(&format!("</{}>\n", tag));
+}
+
+/// The delivered messages to `name` still waiting for its reply.
+fn questions_for(st: &State, name: &str) -> Vec<String> {
+    st.unanswered_for(name)
+        .iter()
+        .map(|m| format!("m_{} from {}: \"{}\"", m.id, m.from, clip(&one_line(&m.text), 80)))
+        .collect()
 }
 
 /// Queued messages, for the board shown to the user.
