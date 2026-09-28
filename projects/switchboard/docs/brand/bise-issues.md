@@ -301,7 +301,7 @@ Index:
 
 ### BISE-20 · agents panel
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-p-chrome · **commits:** 6159bb4
 - **track:** P · **owns:** `sb/panel.rs`
 - **spec:** book §8 (agents panel), §6 (status)
 - **already there:** the archived row from 85160ab (`▸ {n} archived`, `A`,
@@ -315,10 +315,41 @@ Index:
 - **done when:** tests for the row layout at panel widths 28 and 40; no
   wrap of the title at 28.
 - **notes:**
+  - **Row:** ` N G name[ •][ ⎇][ ✉n] …… right ` — number faint (blank after 9),
+    glyph from §6 via `G_*` (`∿`/`·` pulse through `working_frame`/`starting_frame`,
+    `?` accent for blocked *or* an open question/blocked card of that agent, `✗`
+    error, `○`/`–` dim, `:*` accent for main), name in text (accent + bold for
+    the agent in view), right side dim flush right with 1 column of margin:
+    working `12m · 21%` (turn duration · context), `you` (accent), `waiting`,
+    `starting`, `done`, `idle` (`idle · 21%` when the fill is known), `failed`,
+    `stopped`; main has no right side unless working/starting. Selected row on
+    `selection_bg()`, with its objective (and declared note) dim under it
+    (clickable too) — the only second row. Names are cut with `…` to keep the
+    marks and the right side.
+  - **Numbers** = the index Alt+N uses (live agents in the hub's order, main 0).
+    They do not change while agents live, but dropping/archiving agent 2
+    renumbers 3→2: making them truly stable needs `Goto` in `sb.rs` (K) and
+    the panel to share one slot map — left as is, flagged to main.
+  - **Differences with the mockup:** `waits {name}` shows `waiting` (the hub
+    snapshot has no "waits on" field: H would need to add `waiting_on`); the
+    queued-messages mark `✉n` (dim) kept from before; the panel no longer
+    lists cards (mockup: agents only; the header counts them as needs you and
+    the status row says `? n cards · ctrl+g` while the box is hidden); `+ {n}
+    more` counts the agents below the window (a folded archived section counts
+    its agents); no `· ctrl+k scroll` suffix (not in the copy deck).
+  - **Archived (85160ab) restyled:** `▸ {n} archived` / `▾` dim (hint "click or
+    /archived" dropped, copy deck), rows `  – name … 5h` (compact age, dim),
+    report under the selected/focused one; clicks, `A`, `/archived`, read-only,
+    `/restore` unchanged.
+  - **Tests:** `panel::tests::panel_rows_at_28_and_40` (every state, title on
+    one row at 28, flush right, no number after 9, no "task"), `panel_colors`,
+    `overflow_ends_with_more`, click tests and archived tests updated.
+  - `cards::ago` became unused (bise-c-cards keeps it with an allow, removes
+    it later). New string: `+ {n} more` as in the copy deck; `idle · 21%`.
 
 ### BISE-21 · header row
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-p-chrome · **commits:** 6159bb4
 - **track:** P · **owns:** `ui.rs`, `sb/panel.rs`
 - **spec:** book §8 (header)
 - **do:** one row on top: `bise :*` (`:*` accent) left; right, the non-zero
@@ -327,10 +358,26 @@ Index:
   counts shorten to `∿ 3 · ? 1 · ♡ 1`. Remove the old ` Switchboard ` title.
 - **done when:** render test of the header at 60 and 120 columns.
 - **notes:**
+  - ` bise :*` (`bise` bold text, `:*` accent) left; right the non-zero counts
+    `∿ 3 working · … 1 waiting · ? 1 needs you · ♡ 1 done` (dim, `? … needs
+    you` accent), 1 column of margin; under 70 columns `∿ 3 · … 1 · ? 1 · ♡ 1`;
+    `no agents yet` (dim) when no live agent besides main. Counts leave out
+    main and the archived; "needs you" wins over the status (same rule as the
+    panel). The counts drop when they would not fit next to `bise :*`.
+  - The header spans the whole width above feed and panel; the ` Switchboard `
+    title is gone. `Sb::header()` is a method so `ui.rs` reaches it through
+    `app.sb` without touching the re-exports of `sb.rs`.
+  - **Mockup difference:** the 30-agent screen writes `? 2 need you`; the copy
+    deck's `needs you` is used for every n.
+  - **Tests:** `chrome_tests::header_at_60_and_120`, `header_colors`.
+  - **Outside my files (main OK):** `app.rs` gets `feed_y`, `input.rs::feed_pos`
+    subtracts it (and the drag-scroll edges), since the feed no longer starts at
+    screen row 0; test `feed_clicks_land_on_the_row_under_the_header` (main and
+    inside an agent).
 
 ### BISE-22 · status row, composer, first run
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-p-chrome · **commits:** 6159bb4
 - **track:** P · **owns:** `ui.rs`, `sb/panel.rs`
 - **spec:** book §8 (status row, composer, first run), §17
 - **do:** status row starts with the agent in view in accent, the rest dim,
@@ -340,6 +387,54 @@ Index:
 - **done when:** screenshots match `tui-screens.html` screens "first run",
   "inside an agent"; strings match §17 exactly.
 - **notes:**
+  - **Layout (Switchboard only; the single-agent TUI keeps its old layout):**
+    header · feed | panel (the panel runs down to the blank row under the feed)
+    · then full width: card box · status row · composer. No meta row (`◆ bend
+    · model`), no padded prompt block, no separate hint row.
+  - **Status row:** ` {name} · {state} · {40s while working} · {210k / 1M tokens
+    · 21%} · {shared folder | ⎇ branch}` then notes: `read-only history ·
+    /restore brings it back`, `preview of {name}`, `? {n} cards · ctrl+g`
+    (accent, box hidden), `⧗ building {rev}`, `⧗ {rev} on trial`, `v {version}`,
+    `○ hub disconnected · reconnecting…` (error). Name in accent, the rest dim.
+    The scrolled-up row is now ` ↓ back to the bottom · end · {n} new lines`.
+  - **Composer:** ` › ` (dim) then the text, continuation rows indented; the
+    voice meter takes the `›` place; empty = the cursor only (archived: `{name}
+    is archived: read-only`). Hints flush right on the composer's last row;
+    when the text leaves no room, on the status row, else on the blank row
+    under the feed. Hints: main / in an agent `⏎ send · @ agent · / commands`,
+    during a turn `⏎ steer · ctrl+c interrupt` (copy deck); others lowercased:
+    `y yes · n no · esc cancel`, card `alt+r answer with text · ctrl+x later ·
+    ctrl+f full screen`, full card `alt+r answer · pgup/pgdn scroll · ctrl+f
+    back`, selection `⏎ enter · space preview · D drop · esc close`, archived
+    `/restore brings it back · esc back to main`, voice/popup hints lowercased.
+  - **First run:** the three §17 lines, dim, wrapped ≤ 76, in main's feed while
+    there are no agents and nothing visible in it yet.
+  - **Inside an agent:** `you're talking to {name} directly. main isn't in the
+    loop. esc back to main.` pinned (dim) on the first feed row, a blank row
+    under it; previewing: `preview · {name} · ⏎ enter · esc close` (mockup
+    string, not in the copy deck).
+  - **Mockup differences:** the mockup's `· ? help` after the main hints is not
+    in the copy deck: left out; the `.foot` top border is a blank row; no
+    blinking cursor (a reversed cell, as before). New strings for the book:
+    `{name} is archived: read-only`, `read-only history · /restore brings it
+    back`, `? {n} cards · ctrl+g`, `↓ back to the bottom · end`, the lowercased
+    hints above.
+  - **Tests:** `chrome_tests::first_run_screen`, `inside_an_agent_screen`,
+    `status_row_and_hints` (strings compared with §17 exactly). Updated with
+    main's OK: `composer_wrap_tests.rs`, `voice_ui_tests.rs`, `sb/bench.rs`
+    (layout), and the tmux tests `tui_tmux.py` (new helpers `wait_re`,
+    `panel_row`, `in_view`), `tui_panel_click_tmux.py`, `tui_archived_tmux.py`,
+    `tui_composer_tmux.py` (`composer()` reads the `› ` rows), and
+    `wait_screen("bise :*")` in the others.
+  - **Visual check:** tmux captures at 150×42 (dark palette); Ghostty / light
+    terminal not done (light needs BISE-02).
+  - **Gates** (private worktree HEAD 3c2b4ca + my files, shared
+    `CARGO_TARGET_DIR`): cargo build ok; `cargo test --workspace` all green
+    (bend-tui 199, switchboard 96); clippy `--workspace --all-targets` clean;
+    `run_all.sh`: ALL PROOFS CHECK, e2e and every tmux test PASS (+
+    `tui_panel_click_tmux` PASS). The shared tree did not compile its tests at
+    that time (bise-f-feed WIP `Ev::AgentMsg.open`). `input.rs` committed from
+    a private index: bise-f-feed's uncommitted hunk stays in the tree.
 
 ### BISE-30 · cards as level 1
 
