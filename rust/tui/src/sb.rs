@@ -1102,18 +1102,13 @@ mod nav_key_tests {
         let k = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::CONTROL);
         assert!(crate::editor::action(&k).is_none());
         assert_eq!(app.ed.text, "draft");
-        assert!(!SB_COMMANDS.iter().any(|c| c.name == "/cancel"));
-    }
-
-    /// Ctrl+R belongs to voice input: Alt+R (or '®', Option+R on a
-    /// macOS terminal) answers the card with the composer text.
         assert_eq!(infos(&app), vec![NO_UNDO.to_string()]);
         assert!(NO_UNDO.starts_with("no undo: an agent may already have acted."));
         let out = handle_input(&mut app, "/cancel");
         assert!(matches!(&out[..], [Ev::Info(t)] if t == NO_UNDO));
-    #[test]
-    fn alt_r_answers_the_card_and_ctrl_r_is_not_the_cards() {
-        let mut app = bench::test_app();
+        assert!(!SB_COMMANDS.iter().any(|c| c.name == "/cancel"));
+    }
+
     /// /theme switches the palette; /welcome and /theme are listed; the
     /// descriptions are lowercase and say "agent" (book §4).
     #[test]
@@ -1138,6 +1133,11 @@ mod nav_key_tests {
         }
     }
 
+    /// Ctrl+R belongs to voice input: Alt+R (or '®', Option+R on a
+    /// macOS terminal) answers the card with the composer text.
+    #[test]
+    fn alt_r_answers_the_card_and_ctrl_r_is_not_the_cards() {
+        let mut app = bench::test_app();
         app.sb.as_mut().unwrap().cards = vec![Card {
             id: 7,
             kind: "question".into(),
