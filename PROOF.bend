@@ -3136,3 +3136,33 @@ def hub_pb_rt(-o: HM.St, busy: Bool, +bb: List<&2, HM.Msg>, +cx2: HX.Cx<o>, +cx:
   +p1 = hub_p1(o, HC.deliver_each(o, bb, cx2, a, Nil{}))
   +ep = Equal.trans(List<&2, HX.Rt>, hub_rts(o, p1), hub_rts(o, cx2), hub_rts(o, cx), hub_rts_deliver(o, bb, cx2, a, Nil{}), e2)
   hub_pb_rt.go(o, busy, bb, cx2, cx, a, kvs, n, ne, ep)
+
+# a batch to A never makes another agent stuck
+def hub_pb_frame(-o: HM.St, +busy: Bool, b: List<&2, HM.Msg>, +cx: HX.Cx<o>, +a: String, +im: Bool, +n: String,
+    +ne: {String.eq(a, n) == False{} : Bool}, h: {HI.stuck(HX.d(o, cx), hub_rts(o, cx), n) == False{} : Bool})
+    -> {HI.stuck(HX.d(o, HC.pump.batch(o, b, cx, a, busy, im)), hub_rts(o, HC.pump.batch(o, b, cx, a, busy, im)), n) == False{} : Bool}:
+  match b:
+    case Nil{}:
+      h
+    case Con{m, t}:
+      +bb = {m <> t : List<&2, HM.Msg>}
+      +notes = Bool.pick(List<&2, String>, im, HM.St.notes(HC.st(o, cx)), Nil{})
+      +f = Bool.not(List.is_empty(&2, String, notes))
+      +cx2 = HC.pump.flush(o, f, cx)
+      +kvs = {[J.kv("agent", J.JStr{a}), J.kv("notes", J.JArr{HC.jstrs(notes)}), J.kv("status", J.JBool{im && HC.any_from_user(bb)})] : List<&2, Sigma<&2, &2, String, _ => J.Json>>}
+      +p1 = hub_p1(o, HC.deliver_each(o, bb, cx2, a, Nil{}))
+      +fin = HC.pump.send(o, busy, HC.deliver_each(o, bb, cx2, a, Nil{}), a, HC.ids_of(bb), kvs)
+      +edf = hub_d_send(o, busy, HC.deliver_each(o, bb, cx2, a, Nil{}), a, HC.ids_of(bb), kvs)
+      hub_frame(HX.d(o, cx), hub_rts(o, cx), HX.d(o, fin), hub_rts(o, fin), n,
+        hub_pb_rt(o, busy, bb, cx2, cx, a, kvs, n, ne, hub_rts_flush(o, f, cx)),
+        hub_ga_eq(o, fin, cx, n,
+          Equal.trans(List<&2, HM.Agent>, hub_ag(o, fin), hub_ag(o, p1), hub_ag(o, cx),
+            Equal.cong(HM.St, List<&2, HM.Agent>, s => HM.St.agents(s), HX.d(o, fin), HX.d(o, p1), edf),
+            Equal.trans(List<&2, HM.Agent>, hub_ag(o, p1), hub_ag(o, cx2), hub_ag(o, cx),
+              hub_ag_deliver(o, bb, cx2, a, Nil{}), hub_ag_flush(o, f, cx)))),
+        hub_qimp_trans(HX.d(o, cx), HX.d(o, cx2), HX.d(o, fin), n,
+          hub_qimp_flush_cx(o, f, cx, n),
+          hub_qimp_trans(HX.d(o, cx2), HX.d(o, p1), HX.d(o, fin), n,
+            hub_qimp_deliver(o, bb, cx2, a, Nil{}, n),
+            hub_qimp_eq(HX.d(o, p1), HX.d(o, fin), n, edf))),
+        h)
