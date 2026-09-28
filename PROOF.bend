@@ -7,6 +7,10 @@ import ./core/compaction.bend as C
 import ./core/checkpoint.bend as K
 import ./core/session.bend as S
 import ./core/program.bend as P
+import ./vendor/json.bend as J
+import ./hub/model.bend as HM
+import ./hub/cx.bend as HX
+import ./hub/core.bend as HC
 import ./LAWS.bend as Laws
 
 def Laws.checkpoint_roundtrip(s):
@@ -939,3 +943,203 @@ def Laws.extra_prompt_empty_keeps():
   {==}
 def Laws.steer_line_unescapes():
   {==}
+
+# ---- Switchboard hub ----
+
+# a step context's state is the replay of its journal: the proof it carries
+def hub_core_ok(-o: HM.St, c: HX.Core<o>) -> {HX.Core.d(o, c) == HM.apply_all(HX.journal(HX.Core.fx(o, c)), o) : HM.St}:
+  match c:
+    case HX.Core{d, fx, p, f, q}:
+      p
+
+def Laws.hub_step_replays(h, i):
+  hub_core_ok(HC.Hub.d(h), HX.Cx.c(HC.Hub.d(h), HC.step(h, i)))
+
+
+def hub_append(+a: List<&2, HM.Ev>, -b: List<&2, HM.Ev>, -s: HM.St)
+    -> {HM.apply_all(b, HM.apply_all(a, s)) == HM.apply_all(List.append(&2, HM.Ev, a, b), s) : HM.St}:
+  match a:
+    case Nil{}:
+      {==}
+    case Con{e, t}:
+      hub_append(t, b, HM.apply(s, e))
+
+def hub_commit_go(+h: HC.Hub, need: Maybe<&2, J.Json>, c: HX.Core<HC.Hub.d(h)>, +r: HX.R)
+    -> {HC.Hub.d(HC.Out.hub(HC.commit.go(HC.Hub.d(h), need, c, r, h)))
+        == HM.apply_all(HX.journal(HC.Out.fx(HC.commit.go(HC.Hub.d(h), need, c, r, h))), HC.Hub.d(h)) : HM.St}:
+  match need:
+    case Some{q}:
+      {==}
+    case None{}:
+      hub_core_ok(HC.Hub.d(h), c)
+
+def hub_commit_cx(+h: HC.Hub, cx: HX.Cx<HC.Hub.d(h)>)
+    -> {HC.Hub.d(HC.Out.hub(HC.commit.cx(HC.Hub.d(h), cx, h)))
+        == HM.apply_all(HX.journal(HC.Out.fx(HC.commit.cx(HC.Hub.d(h), cx, h))), HC.Hub.d(h)) : HM.St}:
+  match cx:
+    case HX.Cx{c, +r}:
+      hub_commit_go(h, HX.R.need(r), c, r)
+
+# what sb-core keeps of an input is the replay of its journal
+def hub_commit_ok(+h: HC.Hub, +i: J.Json)
+    -> {HC.Hub.d(HC.Out.hub(HC.commit(h, i))) == HM.apply_all(HX.journal(HC.Out.fx(HC.commit(h, i))), HC.Hub.d(h)) : HM.St}:
+  hub_commit_cx(h, HC.step(h, i))
+
+def Laws.hub_run_replays(ins, h):
+  match ins:
+    case Nil{}:
+      {==}
+    case Con{i, rest}:
+      Equal.trans(HM.St,
+        HC.Hub.d(HC.RunR.hub(HC.run(rest, HC.Out.hub(HC.commit(h, i))))),
+        HM.apply_all(HC.RunR.journal(HC.run(rest, HC.Out.hub(HC.commit(h, i)))), HC.Hub.d(HC.Out.hub(HC.commit(h, i)))),
+        HM.apply_all(List.append(&2, HM.Ev, HX.journal(HC.Out.fx(HC.commit(h, i))), HC.RunR.journal(HC.run(rest, HC.Out.hub(HC.commit(h, i))))), HC.Hub.d(h)),
+        Laws.hub_run_replays(rest, HC.Out.hub(HC.commit(h, i))),
+        Equal.trans(HM.St,
+          HM.apply_all(HC.RunR.journal(HC.run(rest, HC.Out.hub(HC.commit(h, i)))), HC.Hub.d(HC.Out.hub(HC.commit(h, i)))),
+          HM.apply_all(HC.RunR.journal(HC.run(rest, HC.Out.hub(HC.commit(h, i)))), HM.apply_all(HX.journal(HC.Out.fx(HC.commit(h, i))), HC.Hub.d(h))),
+          HM.apply_all(List.append(&2, HM.Ev, HX.journal(HC.Out.fx(HC.commit(h, i))), HC.RunR.journal(HC.run(rest, HC.Out.hub(HC.commit(h, i))))), HC.Hub.d(h)),
+          Equal.cong(HM.St, HM.St, x => HM.apply_all(HC.RunR.journal(HC.run(rest, HC.Out.hub(HC.commit(h, i)))), x),
+            HC.Hub.d(HC.Out.hub(HC.commit(h, i))), HM.apply_all(HX.journal(HC.Out.fx(HC.commit(h, i))), HC.Hub.d(h)),
+            hub_commit_ok(h, i)),
+          hub_append(HX.journal(HC.Out.fx(HC.commit(h, i))), HC.RunR.journal(HC.run(rest, HC.Out.hub(HC.commit(h, i)))), HC.Hub.d(h))))
+
+def hub_fresh_append(+a: List<&2, HM.Ev>, -b: List<&2, HM.Ev>, -s: HM.St, fa: HX.Fresh(a, s),
+    fb: HX.Fresh(b, HM.apply_all(a, s))) -> HX.Fresh(List.append(&2, HM.Ev, a, b), s):
+  match a:
+    case Nil{}:
+      fb
+    case Con{e, t}:
+      match fa:
+        case HX.Both{x, y}:
+          HX.Both{x, hub_fresh_append(t, b, HM.apply(s, e), y, fb)}
+
+def hub_quiet_append(+a: List<&2, HM.Ev>, -b: List<&2, HM.Ev>, qa: HX.Quiet(a), qb: HX.Quiet(b))
+    -> HX.Quiet(List.append(&2, HM.Ev, a, b)):
+  match a:
+    case Nil{}:
+      qb
+    case Con{e, t}:
+      match qa:
+        case HX.Both{x, y}:
+          HX.Both{x, hub_quiet_append(t, b, y, qb)}
+
+def hub_fresh_tr(-evs: List<&2, HM.Ev>, -x: HM.St, -y: HM.St, e: {x == y : HM.St}, f: HX.Fresh(evs, x)) -> HX.Fresh(evs, y):
+  %e : HX.Fresh(evs, _)
+  f
+
+def hub_commit_go_f(+h: HC.Hub, need: Maybe<&2, J.Json>, c: HX.Core<HC.Hub.d(h)>, +r: HX.R)
+    -> HX.Both<HX.Fresh(HX.journal(HC.Out.fx(HC.commit.go(HC.Hub.d(h), need, c, r, h))), HC.Hub.d(h)),
+               HX.Quiet(HX.journal(HC.Out.fx(HC.commit.go(HC.Hub.d(h), need, c, r, h))))>:
+  match need:
+    case Some{q}:
+      HX.Both{Unit{}, Unit{}}
+    case None{}:
+      match c:
+        case HX.Core{d, fx, p, f, q}:
+          HX.Both{f, q}
+
+def hub_commit_f.cx(+h: HC.Hub, cx: HX.Cx<HC.Hub.d(h)>)
+    -> HX.Both<HX.Fresh(HX.journal(HC.Out.fx(HC.commit.cx(HC.Hub.d(h), cx, h))), HC.Hub.d(h)),
+               HX.Quiet(HX.journal(HC.Out.fx(HC.commit.cx(HC.Hub.d(h), cx, h))))>:
+  match cx:
+    case HX.Cx{c, +r}:
+      hub_commit_go_f(h, HX.R.need(r), c, r)
+
+def hub_commit_f(+h: HC.Hub, +i: J.Json)
+    -> HX.Both<HX.Fresh(HX.journal(HC.Out.fx(HC.commit(h, i))), HC.Hub.d(h)), HX.Quiet(HX.journal(HC.Out.fx(HC.commit(h, i))))>:
+  hub_commit_f.cx(h, HC.step(h, i))
+
+def hub_fst(-A: Data, -B: Data, x: HX.Both<A, B>) -> A:
+  match x:
+    case HX.Both{a, b}:
+      a
+
+def hub_snd(-A: Data, -B: Data, x: HX.Both<A, B>) -> B:
+  match x:
+    case HX.Both{a, b}:
+      b
+
+def Laws.msg_ids_fresh(ins, h):
+  match ins:
+    case Nil{}:
+      Unit{}
+    case Con{i, rest}:
+      hub_fresh_append(HX.journal(HC.Out.fx(HC.commit(h, i))), HC.RunR.journal(HC.run(rest, HC.Out.hub(HC.commit(h, i)))), HC.Hub.d(h),
+        hub_fst(HX.Fresh(HX.journal(HC.Out.fx(HC.commit(h, i))), HC.Hub.d(h)), HX.Quiet(HX.journal(HC.Out.fx(HC.commit(h, i)))), hub_commit_f(h, i)),
+        hub_fresh_tr(HC.RunR.journal(HC.run(rest, HC.Out.hub(HC.commit(h, i)))),
+          HC.Hub.d(HC.Out.hub(HC.commit(h, i))), HM.apply_all(HX.journal(HC.Out.fx(HC.commit(h, i))), HC.Hub.d(h)),
+          hub_commit_ok(h, i), Laws.msg_ids_fresh(rest, HC.Out.hub(HC.commit(h, i)))))
+
+def Laws.auto_never_asks(ins, h):
+  match ins:
+    case Nil{}:
+      Unit{}
+    case Con{i, rest}:
+      hub_quiet_append(HX.journal(HC.Out.fx(HC.commit(h, i))), HC.RunR.journal(HC.run(rest, HC.Out.hub(HC.commit(h, i)))),
+        hub_snd(HX.Fresh(HX.journal(HC.Out.fx(HC.commit(h, i))), HC.Hub.d(h)), HX.Quiet(HX.journal(HC.Out.fx(HC.commit(h, i)))), hub_commit_f(h, i)),
+        Laws.auto_never_asks(rest, HC.Out.hub(HC.commit(h, i))))
+
+def hub_set_waiters(-o: HM.St, cx: HX.Cx<o>, +ws: List<&2, HX.Waiter>)
+    -> {HC.waiters_of_cx(o, HC.set_waiters(o, cx, ws)) == ws : List<&2, HX.Waiter>}:
+  match cx:
+    case HX.Cx{c, r}:
+      match r:
+        case HX.R{a, b, st, d, e, f, g, h, i, j, k, l}:
+          {==}
+
+def hub_later_tr(-x: List<&2, HX.Waiter>, -y: List<&2, HX.Waiter>, -now: Nat, e: {x == y : List<&2, HX.Waiter>},
+    l: HC.Later(y, now)) -> HC.Later(x, now):
+  %Equal.sym(List<&2, HX.Waiter>, x, y, e) : HC.Later(_, now)
+  l
+
+def hub_keep_later.pick(c: Bool, +w: HX.Waiter, -t: List<&2, HX.Waiter>, -now: Nat,
+    +e: {Nat.is_le(HX.Waiter.deadline(w), now) == c : Bool}, ih: HC.Later(HC.waiters_keep(t, now), now))
+    -> HC.Later(Bool.pick(List<&2, HX.Waiter>, Nat.is_le(HX.Waiter.deadline(w), now), HC.waiters_keep(t, now), w <> HC.waiters_keep(t, now)), now):
+  match c:
+    case True{}:
+      %Equal.sym(Bool, Nat.is_le(HX.Waiter.deadline(w), now), True{}, e) : HC.Later(Bool.pick(List<&2, HX.Waiter>, _, HC.waiters_keep(t, now), w <> HC.waiters_keep(t, now)), now)
+      ih
+    case False{}:
+      %Equal.sym(Bool, Nat.is_le(HX.Waiter.deadline(w), now), False{}, e) : HC.Later(Bool.pick(List<&2, HX.Waiter>, _, HC.waiters_keep(t, now), w <> HC.waiters_keep(t, now)), now)
+      HX.Both{e, ih}
+
+def hub_keep_later(+ws: List<&2, HX.Waiter>, +now: Nat) -> HC.Later(HC.waiters_keep(ws, now), now):
+  match ws:
+    case Nil{}:
+      Unit{}
+    case Con{w, t}:
+      hub_keep_later.pick(Nat.is_le(HX.Waiter.deadline(w), now), w, t, now, {==}, hub_keep_later(t, now))
+
+def Laws.tick_clears_late_waiters(o, cx):
+  hub_later_tr(HC.waiters_of_cx(o, HC.tick(o, cx)), HC.tick.keep(o, cx), HX.R.now(HX.Cx.r(o, cx)),
+    hub_set_waiters(o, HC.tick.go(o, cx), HC.tick.keep(o, cx)),
+    hub_keep_later(HX.R.waiters(HX.Cx.r(o, cx)), HX.R.now(HX.Cx.r(o, cx))))
+
+def hub_none_tr(-x: List<&2, HX.Waiter>, -y: List<&2, HX.Waiter>, -n: String, e: {x == y : List<&2, HX.Waiter>},
+    l: HC.NoneOf(y, n)) -> HC.NoneOf(x, n):
+  %Equal.sym(List<&2, HX.Waiter>, x, y, e) : HC.NoneOf(_, n)
+  l
+
+def hub_not_none.pick(c: Bool, +w: HX.Waiter, -t: List<&2, HX.Waiter>, -n: String,
+    +e: {String.eq(HX.Waiter.agent(w), n) == c : Bool}, ih: HC.NoneOf(HC.waiters_not(t, n), n))
+    -> HC.NoneOf(Bool.pick(List<&2, HX.Waiter>, String.eq(HX.Waiter.agent(w), n), HC.waiters_not(t, n), w <> HC.waiters_not(t, n)), n):
+  match c:
+    case True{}:
+      %Equal.sym(Bool, String.eq(HX.Waiter.agent(w), n), True{}, e) : HC.NoneOf(Bool.pick(List<&2, HX.Waiter>, _, HC.waiters_not(t, n), w <> HC.waiters_not(t, n)), n)
+      ih
+    case False{}:
+      %Equal.sym(Bool, String.eq(HX.Waiter.agent(w), n), False{}, e) : HC.NoneOf(Bool.pick(List<&2, HX.Waiter>, _, HC.waiters_not(t, n), w <> HC.waiters_not(t, n)), n)
+      HX.Both{e, ih}
+
+def hub_not_none(+ws: List<&2, HX.Waiter>, +n: String) -> HC.NoneOf(HC.waiters_not(ws, n), n):
+  match ws:
+    case Nil{}:
+      Unit{}
+    case Con{w, t}:
+      hub_not_none.pick(String.eq(HX.Waiter.agent(w), n), w, t, n, {==}, hub_not_none(t, n))
+
+def Laws.stop_leaves_no_waiter(o, cx, n, life, why):
+  hub_none_tr(HC.waiters_of_cx(o, HC.stop_task(o, cx, n, life, why)), HC.waiters_not(HX.R.waiters(HX.Cx.r(o, cx)), n), n,
+    hub_set_waiters(o, HC.stop_task.go(o, cx, n, life, why), HC.waiters_not(HX.R.waiters(HX.Cx.r(o, cx)), n)),
+    hub_not_none(HX.R.waiters(HX.Cx.r(o, cx)), n))

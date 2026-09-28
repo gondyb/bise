@@ -24,6 +24,9 @@ import ./runtime/mcp-pure.bend as Mc
 import ./runtime/skills-pure.bend as Sk
 import ./runtime/repl-core-pure.bend as Rp
 import ./vendor/json.bend as J
+import ./hub/model.bend as HM
+import ./hub/cx.bend as HX
+import ./hub/core.bend as HC
 
 # LAW: a checkpoint restores to exactly the session it exported.
 law checkpoint_roundtrip:
@@ -2313,3 +2316,59 @@ law extra_prompt_empty_keeps:
 # LAW: a drained steering line carries escaped newlines back as real ones.
 law steer_line_unescapes:
   {Rt.steer_cmd("a\\nb") == T.UserMsg{T.Steer{}, "a\nb"} : T.Cmd}
+
+# ---- Switchboard hub (hub/*.bend, the sb-core process) ----
+# The laws quantify over EVERY hub state, EVERY input (any JSON line the
+# daemon may send) and EVERY sequence of inputs: no test could enumerate
+# them. HC.step is the decision of one input, HC.commit what sb-core keeps
+# of it, HC.run its loop over a list of inputs.
+
+# LAW: after any input, the hub's state is exactly the replay of the
+# journal events it emitted over the state before (the journal is a
+# faithful log: a restart that replays it rebuilds the same state).
+law hub_step_replays:
+  for +h: HC.Hub
+  for +i: J.Json
+  {HX.Core.d(HC.Hub.d(h), HX.Cx.c(HC.Hub.d(h), HC.step(h, i)))
+    == HM.apply_all(HX.journal(HX.Core.fx(HC.Hub.d(h), HX.Cx.c(HC.Hub.d(h), HC.step(h, i)))), HC.Hub.d(h)) : HM.St}
+
+# LAW: over any sequence of inputs (git answers still missing included),
+# the final state is the replay of the whole journal over the first one.
+law hub_run_replays:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  {HC.Hub.d(HC.RunR.hub(HC.run(ins, h))) == HM.apply_all(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h)) : HM.St}
+
+# LAW: every message the hub ever sends, over any sequence of inputs,
+# takes the next free id of the state it is sent in: no id is reused, so
+# no message overwrites (loses) another.
+law msg_ids_fresh:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  HX.Fresh(HC.RunR.journal(HC.run(ins, h)), HC.Hub.d(h))
+
+# LAW: no message the hub ever sends is both an automatic reply and a
+# question (RFC 0003 §7): automatic replies can never start a chain.
+law auto_never_asks:
+  for +ins: List<&2, J.Json>
+  for +h: HC.Hub
+  HX.Quiet(HC.RunR.journal(HC.run(ins, h)))
+
+# LAW: after a tick, every wait still pending ends later than now: a wait
+# past its deadline always gets its timeout (with the 25 s cap of `sb
+# wait`, no set of agents waiting on each other blocks longer).
+law tick_clears_late_waiters:
+  for -o: HM.St
+  for +cx: HX.Cx<o>
+  HC.Later(HC.waiters_of_cx(o, HC.tick(o, cx)), HX.R.now(HX.Cx.r(o, cx)))
+
+# LAW: stopping or dropping a task leaves no wait of it behind (each got
+# its `stopped` error), whatever the state.
+law stop_leaves_no_waiter:
+  for -o: HM.St
+  for +cx: HX.Cx<o>
+  for +n: String
+  for +life: HM.Life
+  for +why: String
+  HC.NoneOf(HC.waiters_of_cx(o, HC.stop_task(o, cx, n, life, why)), n)
+

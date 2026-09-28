@@ -940,7 +940,10 @@ def reject_ids(-o: M.St, ids: List<&2, Nat>, +cx: X.Cx<o>) -> X.Cx<o>:
     case Con{+id, +rest}:
       reject_ids(o, rest, emit(o, cx, M.EMsgState{id, M.Rejected{"recipient_unavailable"}}, Unit{}, Unit{}))
 
-def stop_task(-o: M.St, +cx: X.Cx<o>, +name: String, +life: M.Life, +reason: String) -> X.Cx<o>:
+def set_waiters(-o: M.St, +cx: X.Cx<o>, +ws: List<&2, X.Waiter>) -> X.Cx<o>:
+  set_r(o, cx, X.R.with_waiters(rr(o, cx), ws))
+
+def stop_task.go(-o: M.St, +cx: X.Cx<o>, +name: String, +life: M.Life, +reason: String) -> X.Cx<o>:
   +cx1 = out(o, cx, [J.kv("fx", J.JStr{"kill"}), J.kv("agent", J.JStr{name})])
   +cx2 = fail_waiters(o, cx1, name, "stopped")
   +r = rr(o, cx2)
@@ -949,6 +952,10 @@ def stop_task(-o: M.St, +cx: X.Cx<o>, +name: String, +life: M.Life, +reason: Str
   +cx5 = emit(o, cx4, M.ELifecycle{name, life, Bool.pick(Maybe<&2, String>, String.is_empty(reason), None{}, Some{reason})}, Unit{}, Unit{})
   +cx6 = reject_ids(o, ids_of(M.queued_for(st(o, cx5), name)), cx5)
   close_cards(o, cx6, name, Nil{}, "tâche arrêtée")
+
+# no wait of the stopped task survives (law stop_leaves_no_waiter)
+def stop_task(-o: M.St, +cx: X.Cx<o>, +name: String, +life: M.Life, +reason: String) -> X.Cx<o>:
+  set_waiters(o, stop_task.go(o, cx, name, life, reason), waiters_not(X.R.waiters(rr(o, cx)), name))
 
 def plural(+n: Nat) -> String:
   Bool.pick(String, Nat.is_gt(n, 1n), "s", "")
@@ -1979,10 +1986,16 @@ def tick.each(-o: M.St, late: List<&2, X.Waiter>, +cx: X.Cx<o>) -> X.Cx<o>:
       +cx3 = dirty(o, upd_rt(o, cx2, X.Rt.with_waiting(rt(o, cx2, X.Waiter.agent(w)), still)))
       tick.each(o, rest, pump(o, cx3, X.Waiter.agent(w)))
 
+def tick.keep(-o: M.St, +cx: X.Cx<o>) -> List<&2, X.Waiter>:
+  waiters_keep(X.R.waiters(rr(o, cx)), X.R.now(rr(o, cx)))
+
+def tick.go(-o: M.St, +cx: X.Cx<o>) -> X.Cx<o>:
+  tick.each(o, waiters_late(X.R.waiters(rr(o, cx)), X.R.now(rr(o, cx))), set_waiters(o, cx, tick.keep(o, cx)))
+
+# the late waits get their timeout; the others stay (law
+# tick_clears_late_waiters; replies and pumps never add a wait)
 def tick(-o: M.St, +cx: X.Cx<o>) -> X.Cx<o>:
-  +r = rr(o, cx)
-  +late = waiters_late(X.R.waiters(r), X.R.now(r))
-  tick.each(o, late, set_r(o, cx, X.R.with_waiters(r, waiters_keep(X.R.waiters(r), X.R.now(r)))))
+  set_waiters(o, tick.go(o, cx), tick.keep(o, cx))
 
 def requeue(-o: M.St, ids: List<&2, Nat>, +cx: X.Cx<o>) -> X.Cx<o>:
   match ids:
@@ -2294,3 +2307,22 @@ def Out.need(x: Out) -> Maybe<&2, J.Json>:
   match x:
     case Out{_, _, +need}:
       need
+
+# every waiter's deadline is after `now`
+def Later(ws: List<&2, X.Waiter>, +now: Nat) -> Data:
+  match ws:
+    case Nil{}:
+      Unit
+    case Con{+w, +t}:
+      X.Both<{Nat.is_le(X.Waiter.deadline(w), now) == False{} : Bool}, Later(t, now)>
+
+# no waiter belongs to `n`
+def NoneOf(ws: List<&2, X.Waiter>, +n: String) -> Data:
+  match ws:
+    case Nil{}:
+      Unit
+    case Con{+w, +t}:
+      X.Both<{String.eq(X.Waiter.agent(w), n) == False{} : Bool}, NoneOf(t, n)>
+
+def waiters_of_cx(-o: M.St, +cx: X.Cx<o>) -> List<&2, X.Waiter>:
+  X.R.waiters(rr(o, cx))
