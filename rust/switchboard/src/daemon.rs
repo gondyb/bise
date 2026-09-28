@@ -48,6 +48,12 @@ enum Msg {
         interrupt: String,
         pid: u32,
     },
+    /// The process exists (before its banner): it must die with the hub.
+    ReplSpawned {
+        dir: String,
+        gen: u64,
+        pid: u32,
+    },
     ReplLine {
         dir: String,
         gen: u64,
@@ -82,7 +88,6 @@ struct Repl {
     stream: TcpStream,
     steer: String,
     interrupt: String,
-    pid: u32,
 }
 
 struct Shell {
@@ -96,6 +101,8 @@ struct Shell {
     /// older (killed) generation are ignored.
     gens: BTreeMap<String, u64>,
     next_gen: u64,
+    /// Every REPL process alive, connected or not: (generation, pid).
+    pids: BTreeMap<String, (u64, u32)>,
     clients: BTreeMap<ClientId, UnixStream>,
     replies: BTreeMap<Token, UnixStream>,
     buffers: BTreeMap<String, VecDeque<String>>,
@@ -215,7 +222,9 @@ impl Shell {
                     self.gens.remove(&dir);
                     if let Some(r) = self.repls.remove(&dir) {
                         let _ = r.stream.shutdown(std::net::Shutdown::Both);
-                        let _ = Command::new("kill").arg(r.pid.to_string()).status();
+                    }
+                    if let Some((_, pid)) = self.pids.remove(&dir) {
+                        let _ = Command::new("kill").arg(pid.to_string()).status();
                     }
                 }
             }
@@ -525,6 +534,11 @@ fn supervise(mut cmd: Command, dir: String, gen: u64, log_path: PathBuf, err_pat
         Ok(c) => c,
         Err(e) => return gone(false, format!("spawn : {}", e)),
     };
+    let _ = tx.send(Msg::ReplSpawned {
+        dir: dir.clone(),
+        gen,
+        pid: child.id(),
+    });
     let start = Instant::now();
     let info = loop {
         let content = std::fs::read_to_string(&log_path).unwrap_or_default();
@@ -644,6 +658,26 @@ fn accept_loop(listener: UnixListener, tx: Sender<Msg>) {
     }
 }
 
+/// A hub that died abruptly (killed, crashed) left its REPLs running:
+/// they still hold their sessions. Their pids are in `repl.pid`.
+fn kill_stale_repls(sh: &Shell) {
+    for a in sh.hub.st.agents.values() {
+        let f = sh.opts.paths.agent_dir(&a.dir).join("repl.pid");
+        let Ok(pid) = std::fs::read_to_string(&f) else { continue };
+        let pid = pid.trim().to_string();
+        let cmdline = Command::new("ps")
+            .args(["-p", &pid, "-o", "command="])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default();
+        if cmdline.contains("repl-live") {
+            log_line(&sh.opts.paths, &format!("killing a stale REPL of {} (pid {})", a.name, pid));
+            let _ = Command::new("kill").arg(&pid).status();
+        }
+        let _ = std::fs::remove_file(&f);
+    }
+}
+
 /// The `sb` shim: agents call `sb …` from their bash tool.
 fn write_shim(paths: &Paths, exe: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -694,6 +728,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         repls: BTreeMap::new(),
         gens: BTreeMap::new(),
         next_gen: 1,
+        pids: BTreeMap::new(),
         clients: BTreeMap::new(),
         replies: BTreeMap::new(),
         buffers: BTreeMap::new(),
@@ -722,6 +757,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
             }
         });
     }
+    kill_stale_repls(&sh);
     sh.step(Input::Boot);
 
     while let Ok(m) = rx.recv() {
@@ -742,9 +778,18 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 }
                 let _ = std::fs::write(&steer, "");
                 let _ = std::fs::write(&interrupt, "");
-                sh.repls.insert(dir.clone(), Repl { stream, steer, interrupt, pid });
+                let _ = pid;
+                sh.repls.insert(dir.clone(), Repl { stream, steer, interrupt });
                 if let Some(name) = sh.agent_by_dir(&dir).map(|a| a.name.clone()) {
                     sh.step(Input::ReplReady { agent: name });
+                }
+            }
+            Msg::ReplSpawned { dir, gen, pid } => {
+                let _ = std::fs::write(sh.opts.paths.agent_dir(&dir).join("repl.pid"), pid.to_string());
+                if sh.gens.get(&dir) == Some(&gen) {
+                    sh.pids.insert(dir, (gen, pid));
+                } else {
+                    let _ = Command::new("kill").arg(pid.to_string()).status();
                 }
             }
             Msg::ReplLine { dir, gen, line } => {
@@ -761,6 +806,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 }
                 sh.gens.remove(&dir);
                 sh.repls.remove(&dir);
+                sh.pids.remove(&dir);
                 let _ = ok_exit;
                 if let Some(name) = sh.agent_by_dir(&dir).map(|a| a.name.clone()) {
                     sh.step(Input::ReplExited {
@@ -782,8 +828,8 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         }
     }
     log_line(&paths, "hub stop");
-    for r in sh.repls.values() {
-        let _ = Command::new("kill").arg(r.pid.to_string()).status();
+    for (_, pid) in sh.pids.values() {
+        let _ = Command::new("kill").arg(pid.to_string()).status();
     }
     let _ = std::fs::remove_file(paths.socket());
     let _ = std::fs::remove_file(paths.pid_file());
