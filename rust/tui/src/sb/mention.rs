@@ -17,21 +17,10 @@ fn mention_query(input: &str) -> Option<&str> {
 /// case-insensitive prefix matches first, then substring matches, each
 /// group in panel order.
 pub(super) fn filter_mentions<'a>(agents: &'a [Agent], focus: &str, query: &str) -> Vec<&'a Agent> {
-    let q = query.to_lowercase();
     let live = agents
         .iter()
         .filter(|a| !a.archived() && a.name != focus && !a.name.is_empty());
-    let (mut prefix, mut inner) = (Vec::new(), Vec::new());
-    for a in live {
-        let n = a.name.to_lowercase();
-        if n.starts_with(&q) {
-            prefix.push(a);
-        } else if n.contains(&q) {
-            inner.push(a);
-        }
-    }
-    prefix.extend(inner);
-    prefix
+    crate::skills::prefix_first(live, query, |a| &a.name)
 }
 
 /// One entry of the `@` popup.

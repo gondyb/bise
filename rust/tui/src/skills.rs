@@ -96,18 +96,28 @@ pub(crate) fn token(input: &str, cursor: usize) -> Option<(usize, String)> {
 
 /// Case-insensitive prefix matches first, then substring matches.
 pub(crate) fn filter<'a>(skills: &'a [Skill], query: &str) -> Vec<&'a Skill> {
+    prefix_first(skills, query, |s| &s.name)
+}
+
+/// The items whose name matches `query`, case-insensitive: prefix
+/// matches first, then substring matches, each group in input order
+/// (the `$` skill popup, the `@` agent popup).
+pub(crate) fn prefix_first<'a, T>(
+    items: impl IntoIterator<Item = &'a T>,
+    query: &str,
+    name: impl Fn(&T) -> &str,
+) -> Vec<&'a T> {
     let q = query.to_lowercase();
-    let (mut prefix, mut inner) = (Vec::new(), Vec::new());
-    for s in skills {
-        let n = s.name.to_lowercase();
-        if n.starts_with(&q) {
-            prefix.push(s);
-        } else if n.contains(&q) {
-            inner.push(s);
-        }
-    }
-    prefix.extend(inner);
-    prefix
+    // (is a prefix match, item) of every match
+    let hits: Vec<(bool, &T)> = items
+        .into_iter()
+        .filter_map(|x| {
+            let n = name(x).to_lowercase();
+            n.contains(&q).then(|| (n.starts_with(&q), x))
+        })
+        .collect();
+    let group = |prefix: bool| hits.iter().filter(move |h| h.0 == prefix).map(|h| h.1);
+    group(true).chain(group(false)).collect()
 }
 
 /// The composer once `name` is picked for the token at `start..cursor`:
