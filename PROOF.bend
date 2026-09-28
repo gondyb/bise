@@ -3166,3 +3166,40 @@ def hub_pb_frame(-o: HM.St, +busy: Bool, b: List<&2, HM.Msg>, +cx: HX.Cx<o>, +a:
             hub_qimp_deliver(o, bb, cx2, a, Nil{}, n),
             hub_qimp_eq(HX.d(o, p1), HX.d(o, fin), n, edf))),
         h)
+
+def hub_pf.run(-o: HM.St, r: HM.Run, +cx: HX.Cx<o>, +a: String, +q: List<&2, HM.Msg>, +im: Bool, +n: String,
+    +ne: {String.eq(a, n) == False{} : Bool}, +h: {HI.stuck(HX.d(o, cx), hub_rts(o, cx), n) == False{} : Bool})
+    -> {HI.stuck(HX.d(o, HC.pump.run(o, r, cx, a, q, im)), hub_rts(o, HC.pump.run(o, r, cx, a, q, im)), n) == False{} : Bool}:
+  match r:
+    case HM.RDown{}:
+      h
+    case HM.RStarting{}:
+      h
+    case HM.RBusy{}:
+      hub_pb_frame(o, True{}, HC.not_queued_mode(q), cx, a, im, n, ne, h)
+    case HM.RIdle{}:
+      hub_pb_frame(o, False{}, q, cx, a, im, n, ne, h)
+
+def hub_pf.active(-o: HM.St, c: Bool, +cx: HX.Cx<o>, +a: String, +im: Bool, +n: String,
+    +ne: {String.eq(a, n) == False{} : Bool}, +h: {HI.stuck(HX.d(o, cx), hub_rts(o, cx), n) == False{} : Bool})
+    -> {HI.stuck(HX.d(o, HC.pump.active(o, c, cx, a, im)), hub_rts(o, HC.pump.active(o, c, cx, a, im)), n) == False{} : Bool}:
+  match c:
+    case True{}:
+      hub_pf.run(o, HX.Rt.run(HC.rt(o, cx, a)), cx, a, HM.queued_for(HC.st(o, cx), a), im, n, ne, h)
+    case False{}:
+      h
+
+def hub_pf.agent(-o: HM.St, m: Maybe<&2, HM.Agent>, +cx: HX.Cx<o>, +a: String, +n: String,
+    +ne: {String.eq(a, n) == False{} : Bool}, +h: {HI.stuck(HX.d(o, cx), hub_rts(o, cx), n) == False{} : Bool})
+    -> {HI.stuck(HX.d(o, HC.pump.agent(o, m, cx, a)), hub_rts(o, HC.pump.agent(o, m, cx, a)), n) == False{} : Bool}:
+  match m:
+    case None{}:
+      h
+    case Some{+ag}:
+      hub_pf.active(o, HC.is_active(HM.Agent.life(ag)), cx, a, HM.Agent.is_main(ag), n, ne, h)
+
+# a delivery attempt for A never makes another agent stuck
+def hub_pump_frame(-o: HM.St, +cx: HX.Cx<o>, +a: String, +n: String,
+    +ne: {String.eq(a, n) == False{} : Bool}, +h: {HI.stuck(HX.d(o, cx), hub_rts(o, cx), n) == False{} : Bool})
+    -> {HI.stuck(HX.d(o, HC.pump(o, cx, a)), hub_rts(o, HC.pump(o, cx, a)), n) == False{} : Bool}:
+  hub_pf.agent(o, HM.get_agent(HC.st(o, cx), a), cx, a, n, ne, h)
