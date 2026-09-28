@@ -54,12 +54,27 @@ pub(crate) enum Live {
     Tool { name: String, args: String },
     /// the fold of the last run of level-3 lines (its pulse)
     Fold { n: usize, agents: usize, open: bool },
+    /// a compaction still running (its `≡` pulses, BISE-90)
+    Compacting,
 }
 
 pub(crate) fn event_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> EventRows {
     if is_l3(&events[i]) && ev_visible(&events[i], debug) {
         let (rows, live) = l3_rows(events, i, debug, width, tick);
         return EventRows { width: width as u16, main: main_feed(), rows, live };
+    }
+    // a compaction runs until its summary arrives
+    if matches!(events[i], Ev::Compact) && !events[i + 1..].iter().any(|e| matches!(e, Ev::Compacted { .. })) {
+        let mut rows = build_rows(events, i, debug, width, tick);
+        let at = rows.len().saturating_sub(1);
+        rows.truncate(at);
+        rows.extend(compacting_line(tick, true));
+        return EventRows {
+            width: width as u16,
+            main: main_feed(),
+            rows,
+            live: Some(LiveHead { at, len: 1, what: Live::Compacting }),
+        };
     }
     let running = match &events[i] {
         Ev::Tool(td) if matches!(td.state, ToolState::Run) && ev_visible(&events[i], debug) => Some(td),
@@ -104,6 +119,7 @@ pub(crate) fn refresh_live(er: &mut EventRows, ev: &Ev, tick: u32) {
             wrap_line(tool_head(td, tick, name, args), code_width(er.width as usize))
         }
         (Live::Fold { n, agents, open }, _) => vec![fold_line(*n, *agents, *open, true, tick)],
+        (Live::Compacting, _) => compacting_line(tick, true),
         _ => return,
     };
     let n = head.len();
@@ -257,8 +273,8 @@ pub(crate) fn is_notice(ev: &Ev) -> bool {
             | Ev::Card { .. }
             | Ev::Err(_)
             | Ev::Info(_)
-            | Ev::Compact(_)
-            | Ev::Compacted(_)
+            | Ev::Compact
+            | Ev::Compacted { .. }
             | Ev::TurnDone
             | Ev::TimeMark(_)
     )
@@ -314,7 +330,59 @@ pub(crate) fn ev_visible(ev: &Ev, debug: bool) -> bool {
     )
 }
 
+/// BISE-90 (book §9, §12, mockup "reports in main"): an agent's report
+/// and the card the hub opens for it are one entry. Blocked keeps the
+/// card (level 1, it fades once answered); done and failed keep the
+/// report line (`♡ bench: … ▸ report`). Whichever comes second takes the
+/// place of the first, or is dropped; `Some(false)`: nothing appended.
+fn merge_report_and_card(events: &mut [Ev], cache: &mut [Option<EventRows>], ev: &Ev) -> Option<bool> {
+    fn kind_of(k: &str) -> Option<&'static str> {
+        match k {
+            "done" => Some("done"),
+            "blocked" => Some("blocked"),
+            k if k.contains("fail") => Some("failed"),
+            _ => None,
+        }
+    }
+    // (agent, kind, is_card) of a report or a card
+    fn key(ev: &Ev) -> Option<(String, &'static str, bool)> {
+        match ev {
+            Ev::AgentMsg { from, text, .. } => {
+                let (k, _) = report_parts(text)?;
+                Some((from.clone(), kind_of(k)?, false))
+            }
+            Ev::Card { text, .. } => {
+                let (k, name, _) = card_parts(text)?;
+                Some((name.to_string(), kind_of(k)?, true))
+            }
+            _ => None,
+        }
+    }
+    let (agent, kind, is_card) = key(ev)?;
+    // its twin: the other one, among the last few events
+    let twin = events
+        .iter()
+        .enumerate()
+        .rev()
+        .take(8)
+        .take_while(|(_, e)| !matches!(e, Ev::You(..)))
+        .find(|(_, e)| key(e).is_some_and(|(a, k, c)| a == agent && k == kind && c != is_card))
+        .map(|(i, _)| i)?;
+    // the card for blocked, the report line for done and failed
+    let keep_new = (kind == "blocked") == is_card;
+    if keep_new {
+        events[twin] = ev.clone();
+        if let Some(c) = cache.get_mut(twin) {
+            *c = None;
+        }
+    }
+    Some(false)
+}
+
 pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>>, ev: Ev) -> bool {
+    if let Some(appended) = merge_report_and_card(events, cache, &ev) {
+        return appended;
+    }
     // annotations enrich the matching tool event instead of stacking
     match &ev {
         Ev::ToolInfo { id, name, args } => {
@@ -411,7 +479,17 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
                     }
                     return false;
                 }
-                None => return push_event(events, cache, Ev::Info(format!("card #{} {}", id, res))),
+                // not in the feed (an older page, or a done card that
+                // became its report line, BISE-90): nothing to show
+                None => return false,
+            }
+        }
+        // the summary ends the compaction: its line stops pulsing
+        Ev::Compacted { .. } => {
+            if let Some(i) = events.iter().rposition(|e| matches!(e, Ev::Compact)) {
+                if let Some(c) = cache.get_mut(i) {
+                    *c = None;
+                }
             }
         }
         // a turn starts: the model reads what you sent since the last one
@@ -584,6 +662,7 @@ pub(crate) fn discloses(ev: &Ev) -> bool {
         Ev::AgentMsg { text, level: 3, .. } if !is_brief(text) && report_parts(text).is_none() => l3_long(text),
         Ev::AgentMsg { text, .. } => is_brief(text) || report_parts(text).is_some(),
         Ev::Answered { why, .. } => !why.trim().is_empty(),
+        Ev::Compacted { text, .. } => !text.trim().is_empty(),
         _ => false,
     }
 }
@@ -628,7 +707,10 @@ fn toggle_own(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize) -> b
         return false;
     };
     match ev {
-        Ev::Thinking { open, .. } | Ev::AgentMsg { open, .. } | Ev::Answered { open, .. } => *open = !*open,
+        Ev::Thinking { open, .. }
+        | Ev::AgentMsg { open, .. }
+        | Ev::Answered { open, .. }
+        | Ev::Compacted { open, .. } => *open = !*open,
         Ev::Tool(td) => td.expanded = !td.expanded,
         _ => return false,
     }
@@ -870,7 +952,10 @@ fn own_open(ev: &Ev) -> Option<bool> {
         return None;
     }
     match ev {
-        Ev::Thinking { open, .. } | Ev::AgentMsg { open, .. } | Ev::Answered { open, .. } => Some(*open),
+        Ev::Thinking { open, .. }
+        | Ev::AgentMsg { open, .. }
+        | Ev::Answered { open, .. }
+        | Ev::Compacted { open, .. } => Some(*open),
         Ev::Tool(td) => Some(td.expanded),
         _ => None,
     }

@@ -228,6 +228,25 @@ pub(crate) fn main_feed() -> bool {
     MAIN_FEED.with(|c| c.get())
 }
 
+thread_local! {
+    static FEED_OWNER: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// The agent whose feed is drawn: a message it received (no `to` on the
+/// wire) names it in the `to` column. The rows built under one owner
+/// rebuild under the other (the feed cache is per view).
+pub(crate) fn set_feed_owner(name: &str) {
+    FEED_OWNER.with(|c| {
+        if *c.borrow() != name {
+            *c.borrow_mut() = name.to_string();
+        }
+    });
+}
+
+fn feed_owner() -> String {
+    FEED_OWNER.with(|c| c.borrow().clone())
+}
+
 /// The faint rail in front of disclosed text (reasoning, a report, a
 /// brief, a message body).
 const RAIL: &str = " │ ";
@@ -238,11 +257,13 @@ const G_NOTE: &str = "·";
 
 /// One line in the feed's glyph column: the glyph at column 1, the text
 /// from column 3 (under the names of the tool lines).
-fn glyph_line(glyph: &str, glyph_st: Style, text: String, text_st: Style) -> Vec<Line<'static>> {
-    vec![Line::from(vec![
-        Span::styled(format!(" {} ", glyph), glyph_st),
-        Span::styled(text, text_st),
-    ])]
+// a glyph in the glyph column, the text from column 4; its wrapped rows
+// hang under the text, never at column 1 (BISE-90)
+fn glyph_line(glyph: &str, glyph_st: Style, text: String, text_st: Style, width: usize) -> Vec<Line<'static>> {
+    use unicode_width::UnicodeWidthStr;
+    let first = Span::styled(format!(" {} ", glyph), glyph_st);
+    let pad = Span::raw(" ".repeat(first.content.width()));
+    hung_rows(&first, &pad, [Line::from(Span::styled(text, text_st))], width)
 }
 
 pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
@@ -256,7 +277,7 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         // BISE-86 (book §13, §17): `✗ not delivered: {name} stopped.`, and
         // while it waits for an answer `⏎ send again · esc drop`
         Ev::Undelivered { name, open, .. } => {
-            let mut l = glyph_line(G_FAILED, err_st, format!("not delivered: {} stopped.", name), text_st);
+            let mut l = glyph_line(G_FAILED, err_st, format!("not delivered: {} stopped.", name), text_st, width);
             if *open {
                 l[0].spans.push(Span::styled(" ⏎ send again · esc drop", dim_st));
             }
@@ -269,7 +290,13 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             let rows = md_lines(&unescape_md(t), prose_width(width).saturating_sub(3), width.saturating_sub(3));
             hung_rows(&mark, &Span::raw("   "), rows, width)
         }
-        Ev::Assistant(t) => md_lines(&unescape_md(t), prose_width(width), width),
+        // inside an agent: the reply starts at the glyph column, like the
+        // mockup "inside an agent" (BISE-90; it was one column left of it)
+        Ev::Assistant(t) => {
+            let lead = Span::raw(" ");
+            let rows = md_lines(&unescape_md(t), prose_width(width).saturating_sub(1), width.saturating_sub(1));
+            hung_rows(&lead, &lead, rows, width)
+        }
         Ev::Thinking { ms, text, open } => thinking_lines(*ms, text, *open, width),
         Ev::Tool(td) => tool_lines(td, 0, width),
         Ev::Idle => vec![Line::from("")],
@@ -293,11 +320,14 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             Span::styled(" └─ ", Style::default().fg(faint())),
             Span::styled(G_RECEIVED, dim_st),
         ])],
-        Ev::Compact(t) => glyph_line(G_COMPACTING, dim_st, format!("compaction {}", t), dim_st),
-        Ev::Compacted(t) => glyph_line(G_SUMMARY, dim_st, format!("summary {}", unescape_md(t)), dim_st),
+        // book §6, §17 (BISE-90): `≡ compacting` (the glyph pulses while
+        // it runs: feed.rs Live::Compacting), then `≡ summary ▸`, the
+        // summary under the rail once opened
+        Ev::Compact => compacting_line(0, true),
+        Ev::Compacted { text, open } => summary_lines(text, *open, width),
         // an interrupted turn is dim; any other warning reads as text
-        Ev::Warn(t) if t == "turn interrupted" => glyph_line(G_INTERRUPTED, dim_st, t.clone(), dim_st),
-        Ev::Warn(t) => glyph_line(G_INTERRUPTED, dim_st, t.clone(), text_st),
+        Ev::Warn(t) if t == "turn interrupted" => glyph_line(G_INTERRUPTED, dim_st, t.clone(), dim_st, width),
+        Ev::Warn(t) => glyph_line(G_INTERRUPTED, dim_st, t.clone(), text_st, width),
         // a model without vision refused an image: say so, and the way out
         Ev::Err(t) => match crate::attach::no_vision(t) {
             Some(mut spans) => {
@@ -306,9 +336,9 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
                 }
                 vec![Line::from(spans)]
             }
-            None => glyph_line(G_FAILED, err_st, t.clone(), err_st),
+            None => glyph_line(G_FAILED, err_st, t.clone(), err_st, width),
         },
-        Ev::Info(t) => glyph_line(G_NOTE, Style::default().fg(faint()), bend_images::display(t), dim_st),
+        Ev::Info(t) => glyph_line(G_NOTE, Style::default().fg(faint()), bend_images::display(t), dim_st, width),
         Ev::ToolInfo { .. } | Ev::ToolResult { .. } | Ev::ToolCode { .. } => vec![],
         Ev::Usage(u) => vec![Line::from(Span::styled(
             format!("  usage: {} (in {} · out {})", u.label(), u.input, u.output),
@@ -348,8 +378,8 @@ pub(crate) fn l3_long(text: &str) -> bool {
 
 /// A message between agents (level 3): dim, under a faint rail, one line
 /// `@ from      → to        text`, `▸` when cut; open, the whole text
-/// under the rail. No `to` (what this feed's owner received): the
-/// message id sits in its column.
+/// under the rail. No `to` (what this feed's owner received): the owner's
+/// name (`main` in main's feed), else the message id (BISE-90).
 pub(crate) fn l3_lines(from: &str, to: &str, id: &str, text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
     let dim_st = Style::default().fg(dim());
     let faint_st = Style::default().fg(faint());
@@ -358,13 +388,18 @@ pub(crate) fn l3_lines(from: &str, to: &str, id: &str, text: &str, open: bool, w
     let cut = flat.chars().count() > width.saturating_sub(L3_HEAD) || text.trim().contains('\n');
     // room for the text, and for ` ▸` when it is cut and opens
     let room = width.saturating_sub(L3_HEAD + if cut && long { 2 } else { 0 }).max(8);
-    let (arrow, target) = if to.is_empty() { ("  ", id) } else { ("→ ", to) };
+    let owner = if main_feed() { "main".to_string() } else { feed_owner() };
+    let (arrow, target) = match (to.is_empty(), owner.is_empty()) {
+        (false, _) => ("→ ", to.to_string()),
+        (true, false) => ("→ ", owner),
+        (true, true) => ("  ", id.to_string()),
+    };
     let mut row = vec![
         Span::styled(RAIL, faint_st),
         Span::styled(format!("{} ", G_MSG), dim_st),
         Span::styled(name_col(from), dim_st),
         Span::styled(arrow, faint_st),
-        Span::styled(name_col(target), faint_st),
+        Span::styled(name_col(&target), faint_st),
         Span::styled(fit_chars(&flat, room), dim_st),
     ];
     if cut && long {
@@ -464,9 +499,9 @@ fn card_lines(t: &str, closed: &str, width: usize) -> Vec<Line<'static>> {
     let text_st = Style::default().fg(text());
     let (kind, name, body) = card_parts(t).unwrap_or(("question", "", t));
     match kind {
-        "done" => return glyph_line(G_DONE, text_st, format!("{} is done: {}", name, body), text_st),
+        "done" => return glyph_line(G_DONE, text_st, format!("{} is done: {}", name, body), text_st, width),
         k if k.contains("fail") => {
-            return glyph_line(G_FAILED, Style::default().fg(error()), format!("{} failed: {}", name, body), text_st)
+            return glyph_line(G_FAILED, Style::default().fg(error()), format!("{} failed: {}", name, body), text_st, width)
         }
         _ => {}
     }
@@ -520,14 +555,25 @@ pub(crate) fn user_block_lines(msg: &str, mark: Mark, width: usize) -> Vec<Line<
     if let (Some(last), Some(m)) = (lines.last_mut(), mark_span(mark)) {
         last.spans.push(m);
     }
-    let glyph = Span::styled(format!(" {} ", G_YOU), Style::default().fg(dim()));
-    let mut rows = hung_rows(&glyph, &Span::raw("   "), lines, width);
-    // the sizes of its images, dim, under it
+    // BISE-90 (user decision, marketing's look): a thin accent bar at
+    // column 0 on every row of your message, the text from column 3 (`›`
+    // stays the composer's prompt); the heavy `┃` is a card's
+    let bar = Span::styled(format!("{}  ", user_bar()), Style::default().fg(accent()));
+    let mut rows = hung_rows(&bar, &bar, lines, width);
+    // the sizes of its images, dim, under it (still behind the bar)
     if let Some(sizes) = crate::attach::sizes_line(msg) {
-        let pad = Span::raw("   ");
-        rows.extend(hung_rows(&pad, &pad, [Line::from(Span::styled(sizes, Style::default().fg(dim())))], width));
+        rows.extend(hung_rows(&bar, &bar, [Line::from(Span::styled(sizes, Style::default().fg(dim())))], width));
     }
     rows
+}
+
+/// The bar in front of your messages: `│`, `|` under `BISE_ASCII=1`.
+fn user_bar() -> &'static str {
+    if crate::theme::ascii_mode() {
+        "|"
+    } else {
+        "│"
+    }
 }
 
 /// The mark after your message (C3).
@@ -804,6 +850,37 @@ pub(crate) fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'st
     ls
 }
 
+// ---- compaction (book §6: `≡` dim, pulsing while it runs) ----
+
+/// `≡ compacting`, the glyph pulsing (dim / faint) while `running`.
+pub(crate) fn compacting_line(tick: u32, running: bool) -> Vec<Line<'static>> {
+    let glyph_c = if running && !(tick / 4).is_multiple_of(2) { faint() } else { dim() };
+    vec![Line::from(vec![
+        Span::styled(format!(" {} ", G_COMPACTING), Style::default().fg(glyph_c)),
+        Span::styled("compacting", Style::default().fg(dim())),
+    ])]
+}
+
+/// `≡ summary ▸`; open, the summary under the rail.
+fn summary_lines(summary: &str, open: bool, width: usize) -> Vec<Line<'static>> {
+    let dim_st = Style::default().fg(dim());
+    let body = unescape_md(summary);
+    let has = !body.trim().is_empty();
+    let mut head = vec![
+        Span::styled(format!(" {} ", G_SUMMARY), dim_st),
+        Span::styled("summary", dim_st),
+    ];
+    if has {
+        head.push(Span::styled(format!(" {}", if open { G_OPEN } else { G_CLOSED }), dim_st));
+    }
+    let mut ls = vec![Line::from(head)];
+    if open && has {
+        let bar = Span::styled(RAIL, Style::default().fg(faint()));
+        ls.extend(barred_rows(&bar, md_lines(&body, width.saturating_sub(3), width.saturating_sub(3)), width));
+    }
+    ls
+}
+
 // ---- folded messages: reports in main, the brief inside an agent ----
 
 /// A report (`[report: done] summary…`): its kind and its text.
@@ -893,13 +970,13 @@ mod multiline_tests {
         let long = "word ".repeat(12);
         let text = format!("first line\nsecond line\n{}end", long);
         let s = screen(Ev::You(text, crate::wire::Mark::Read), 30);
-        // `›` on the first row only, every row's text at column 3
-        assert_eq!(s[0].as_str(), " › first line", "{s:#?}");
-        assert_eq!(s[1].as_str(), "   second line", "{s:#?}");
+        // the bar on every row (BISE-90), every row's text at column 3
+        assert_eq!(s[0].as_str(), "│  first line", "{s:#?}");
+        assert_eq!(s[1].as_str(), "│  second line", "{s:#?}");
         // the long line wraps into several rows, all at the same column
         assert!(s.len() >= 5, "{s:#?}");
         for r in &s[2..] {
-            assert!(r.starts_with("   word") || r.starts_with("   end") || r.trim() == "✓✓", "{s:#?}");
+            assert!(r.starts_with("│  word") || r.starts_with("│  end") || r.trim_start_matches('│').trim() == "✓✓", "{s:#?}");
             assert!(r.chars().count() <= 30);
         }
         assert!(s.last().unwrap().ends_with("end ✓✓"), "{s:#?}");

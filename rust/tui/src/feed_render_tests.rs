@@ -251,7 +251,7 @@ fn resume_history_rebuilds_the_feed() {
     let kinds: Vec<String> = events
         .iter()
         .map(|e| match e {
-            Ev::Compacted(t) => format!("compacted {}", t),
+            Ev::Compacted { text: t, .. } => format!("compacted {}", t),
             Ev::You(t, _) => format!("you {}", t),
             Ev::Assistant(t) => format!("assistant {}", t),
             Ev::Tool(td) => format!(
@@ -701,7 +701,7 @@ fn inside_an_agent_matches_the_mockup() {
         "   ▸ output",
         "   ↳ github.search_issues ✓",
         " ± edit web/src/auth/session.ts ✓ +2 −1 ▸",
-        "found it: safari drops SameSite=None cookies without Secure. added secure:",
+        " found it: safari drops SameSite=None cookies without Secure. added secure:",
     ];
     for w in want {
         assert!(rows.iter().any(|r| r == w), "{w:?} missing:\n{}", rows.join("\n"));
@@ -791,9 +791,11 @@ fn an_answered_card_fades_in_place() {
     push_event(&mut events, &mut cache, card("#4 done @bench : p95 at 180 ms"));
     assert!(!push_event(&mut events, &mut cache, Ev::CardClosed { id: 4, res: "vue".into() }));
     assert_eq!(rows_text(&ev_rows(events.last().unwrap(), 0, 100)), vec![" ♡ bench is done: p95 at 180 ms".to_string()]);
-    // not in the feed: an info line
-    assert!(push_event(&mut events, &mut cache, Ev::CardClosed { id: 9, res: "answered".into() }));
-    assert!(matches!(events.last(), Some(Ev::Info(t)) if t == "card #9 answered"));
+    // not in the feed (an older page, or a done card that became its
+    // report line, BISE-90): nothing is appended
+    let n = events.len();
+    assert!(!push_event(&mut events, &mut cache, Ev::CardClosed { id: 9, res: "answered".into() }));
+    assert_eq!(events.len(), n);
 }
 
 // the other §6 entities of the feed
@@ -801,12 +803,13 @@ fn an_answered_card_fades_in_place() {
 fn feed_entities_use_the_book_glyphs() {
     let row = |ev: Ev| rows_text(&ev_rows(&ev, 0, 100)).join("\n");
     assert_eq!(row(Ev::Thinking { ms: 0, text: String::new(), open: false }), " ∴ thought ▸");
-    assert_eq!(row(Ev::Compact("12 messages".into())), format!(" {} compaction 12 messages", crate::theme::G_COMPACTING));
-    assert_eq!(row(Ev::Compacted("short".into())), " ≡ summary short");
+    assert_eq!(row(Ev::Compact), format!(" {} compacting", crate::theme::G_COMPACTING));
+    assert_eq!(row(Ev::Compacted { text: "short".into(), open: false }), " ≡ summary ▸");
+    assert_eq!(row(Ev::Compacted { text: "short".into(), open: true }), " ≡ summary ▾\n │ short");
     assert_eq!(row(Ev::Warn("turn interrupted".into())), " ▲ turn interrupted");
     assert_eq!(row(Ev::Err("boom".into())), " ✗ boom");
     assert_eq!(row(Ev::Sub { name: "gh.x".into(), ok: false, preview: "404".into() }), "   ↳ gh.x ✗ 404");
-    assert!(row(Ev::You("hi".into(), Mark::Read)).starts_with(" › hi"));
+    assert!(row(Ev::You("hi".into(), Mark::Read)).starts_with("│  hi"));
     // a tool the turn abandoned says so in English
     let mut events = vec![Ev::Tool(ToolData::bare(9, ToolState::Run))];
     let mut cache = vec![None];
@@ -864,7 +867,7 @@ fn a_run_of_twelve_folds() {
     let pulse = crate::theme::working_frame(0).0;
     assert_eq!(
         rows,
-        vec![" › ship it ✓✓".to_string(), String::new(), format!(" │ ▸ 12 messages between 5 agents {}", pulse)],
+        vec!["│  ship it ✓✓".to_string(), String::new(), format!(" │ ▸ 12 messages between 5 agents {}", pulse)],
         "the whole run is one line, live"
     );
     // opened in place, in order, each line in its columns
@@ -986,7 +989,7 @@ fn time_marks_after_a_pause() {
     assert!(!pause_mark(&mut events, &mut cache, PAUSE_MS, at));
     push_event(&mut events, &mut cache, Ev::Assistant("back".into()));
     let rows = cached_text(&events, &mut cache, 100);
-    assert_eq!(rows, vec![" › hi ✓✓", "", " · 14:31 ·", "", "back"], "{rows:#?}");
+    assert_eq!(rows, vec!["│  hi ✓✓", "", " · 14:31 ·", "", " back"], "{rows:#?}");
     // a mark ends a run of level 3: the run after it counts apart
     let mut evs = traffic(4, 2, 0);
     evs.push(Ev::TimeMark("15:02".into()));
@@ -1062,9 +1065,9 @@ fn whats_for_you_matches_the_mockup() {
     let rows = cached_text(&events, &mut cache, 100);
     println!("{}", rows.join("\n"));
     let want = [
-        " › the login breaks on safari. and the api docs, v2 please. ✓✓",
+        "│  the login breaks on safari. and the api docs, v2 please. ✓✓",
         "",
-        "on it: auth-fix takes safari, docs takes the api docs.",
+        " on it: auth-fix takes safari, docs takes the api docs.",
         "",
         " │ @ docs      → main      v1 or v2 for the examples?",
         " │ @ main      → docs      v2, the brief says so.",
@@ -1114,15 +1117,15 @@ fn a_busy_hour_matches_the_mockup() {
     let want = [
         " · 14:02 ·".to_string(),
         "".into(),
-        " › ship the v2 api: endpoints, docs, sdk, migration, the lot. ✓✓".into(),
+        "│  ship the v2 api: endpoints, docs, sdk, migration, the lot. ✓✓".into(),
         "".into(),
-        "that's 30 pieces. i split it: 12 endpoints, 8 sdk, 6 docs, 4 migration.".into(),
-        "starting them.".into(),
+        " that's 30 pieces. i split it: 12 endpoints, 8 sdk, 6 docs, 4 migration.".into(),
+        " starting them.".into(),
         "".into(),
         " │ ▸ 47 messages between 30 agents".into(),
         "".into(),
-        "the 12 endpoint agents agreed on one error format; i picked it for the sdk".into(),
-        "agents too.".into(),
+        " the 12 endpoint agents agreed on one error format; i picked it for the sdk".into(),
+        " agents too.".into(),
         "".into(),
         " │ ▸ 23 messages between 9 agents".into(),
         "".into(),
@@ -1175,13 +1178,13 @@ fn steering_moves_the_mark_of_your_line() {
         "sb you : skip firefox",
     ]);
     let rows = cached_text(&events, &mut cache, 100);
-    assert!(rows.contains(&format!(" › skip firefox {}", G_SENDING)), "{rows:#?}");
+    assert!(rows.contains(&format!("│  skip firefox {}", G_SENDING)), "{rows:#?}");
     push_event(&mut events, &mut cache, parse_line("  obs: steering_received: skip firefox").unwrap());
     let rows = cached_text(&events, &mut cache, 100);
-    assert!(rows.contains(&format!(" › skip firefox {}", G_RECEIVED)), "{rows:#?}");
+    assert!(rows.contains(&format!("│  skip firefox {}", G_RECEIVED)), "{rows:#?}");
     push_event(&mut events, &mut cache, parse_line("  obs: steered: skip firefox").unwrap());
     let rows = cached_text(&events, &mut cache, 100);
-    assert!(rows.contains(&format!(" › skip firefox {}", G_READ)), "{rows:#?}");
+    assert!(rows.contains(&format!("│  skip firefox {}", G_READ)), "{rows:#?}");
     // no info line for either: the mark says it
     assert!(!rows.iter().any(|r| r.contains("steer")), "{rows:#?}");
     // the colors: `·` dim, `✓` faint, `✓✓` accent
@@ -1244,7 +1247,7 @@ fn a_replayed_history_restores_the_marks() {
     // injected line marks it read and adds nothing
     let (events, mut cache) = ingest(&["sb you : skip firefox", "history injected : skip firefox"]);
     assert_eq!(marks(&events), vec![("skip firefox".into(), Mark::Read)]);
-    assert_eq!(cached_text(&events, &mut cache, 100), vec![format!(" › skip firefox {}", G_READ)]);
+    assert_eq!(cached_text(&events, &mut cache, 100), vec![format!("│  skip firefox {}", G_READ)]);
     // a steering typed live then replayed from the hub transcript: the
     // same obs lines give the same marks
     let (events, _) = ingest(&[
@@ -1277,5 +1280,5 @@ fn mains_replies_carry_its_glyph_in_its_feed_only() {
     crate::render::set_main_feed(false);
     let in_agent = cached_text(&events, &mut cache, 100);
     assert_eq!(in_main, vec![format!(" {} on it: auth-fix takes safari.", crate::theme::G_MAIN)]);
-    assert_eq!(in_agent, vec!["on it: auth-fix takes safari.".to_string()]);
+    assert_eq!(in_agent, vec![" on it: auth-fix takes safari.".to_string()]);
 }

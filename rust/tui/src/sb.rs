@@ -112,6 +112,11 @@ fn str_of(v: &Value, k: &str) -> String {
 
 impl Sb {
     /// The feed in view is main's (its replies carry `:*`, BISE-15).
+    /// The agent in view (whose feed is drawn).
+    pub(crate) fn focus_name(&self) -> &str {
+        &self.focus
+    }
+
     pub(crate) fn is_main_focus(&self) -> bool {
         match self.agents.iter().find(|a| a.name == self.focus) {
             Some(a) => a.main,

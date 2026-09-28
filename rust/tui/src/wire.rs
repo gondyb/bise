@@ -95,8 +95,15 @@ pub(crate) enum Ev {
     },
     Turn,
     TurnDone,
-    Compact(String),
-    Compacted(String),
+    // a compaction started (`≡ compacting`, BISE-90: the wire's count and
+    // cause are not shown)
+    Compact,
+    // the compaction summary; `open`, in memory only: shown under the
+    // rail (BISE-90: folded behind `▸` by default)
+    Compacted {
+        text: String,
+        open: bool,
+    },
     // token usage of the last model call (hidden; feeds the status row)
     Usage(usage::Usage),
     Warn(String),
@@ -373,8 +380,8 @@ pub(crate) fn parse_line(line: &str) -> Option<Ev> {
     if let Some(t) = o.strip_prefix("candidate_discarded: ") {
         return Some(Ev::Warn(format!("candidate discarded: {}", t)));
     }
-    if let Some(t) = o.strip_prefix("compaction_started #") {
-        return Some(Ev::Compact(t.to_string()));
+    if o.starts_with("compaction_started #") {
+        return Some(Ev::Compact);
     }
     if let Some(t) = o.strip_prefix("context_compaction_failed: ") {
         return Some(Ev::Err(format!("compaction failed: {}", t)));
@@ -386,7 +393,7 @@ pub(crate) fn parse_line(line: &str) -> Option<Ev> {
         )));
     }
     if let Some(t) = o.strip_prefix("compaction_done: ") {
-        return Some(Ev::Compacted(t.to_string()));
+        return Some(Ev::Compacted { text: t.to_string(), open: false });
     }
     if let Some(t) = o.strip_prefix("usage: ") {
         return usage::Usage::parse(t).map(Ev::Usage);

@@ -115,7 +115,7 @@ pub fn current(events: &[Ev]) -> Option<&Usage> {
     for e in events.iter().rev() {
         match e {
             Ev::Usage(u) => return Some(u),
-            Ev::Compacted(_) => return None,
+            Ev::Compacted { .. } => return None,
             _ => {}
         }
     }
@@ -169,9 +169,9 @@ mod tests {
         let u = |n| Ev::Usage(Usage { model: "claude-x".into(), input: n, ..Default::default() });
         let evs = vec![u(10), Ev::Info("x".into()), u(20)];
         assert_eq!(current(&evs).map(|u| u.input), Some(20));
-        let evs = vec![u(10), u(900), Ev::Compacted("sum...".into())];
+        let evs = vec![u(10), u(900), Ev::Compacted { text: "sum...".into(), open: false }];
         assert_eq!(current(&evs), None);
-        let evs = vec![u(900), Ev::Compacted("sum...".into()), u(30)];
+        let evs = vec![u(900), Ev::Compacted { text: "sum...".into(), open: false }, u(30)];
         assert_eq!(current(&evs).map(|u| u.input), Some(30));
         assert_eq!(current(&[]), None);
     }

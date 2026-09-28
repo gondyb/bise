@@ -277,6 +277,8 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect) {
     }
     // main's replies carry `:*` in main's feed only (BISE-15)
     crate::render::set_main_feed(app.sb.as_ref().is_some_and(|sb| sb.is_main_focus()));
+    // a message this feed's owner received names it in the `to` column (BISE-90)
+    crate::render::set_feed_owner(app.sb.as_ref().map_or("", |sb| sb.focus_name()));
     let (debug, tick) = (app.debug, app.tick);
     macro_rules! rows_of {
         () => {
@@ -334,15 +336,11 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect) {
         app.follow = true;
         app.unseen = 0;
     }
-    // nothing above the anchor: the view shows the top of the feed
-    let at_top = anchor.1 == 0
-        && !app.events[..anchor.0.min(n)]
-            .iter()
-            .rev()
-            .any(|e| ev_visible(e, app.debug));
     frame.render_widget(Paragraph::new(Text::from(vis)), text_area);
 
-    if !(at_top && tail_visible) && n > 0 {
+    // the scrollbar (BISE-90, main's call): only while scrolled up from
+    // the bottom, faint, one column, no arrows; never at the tail
+    if !tail_visible && n > 0 {
         // the scrollbar counts events, not rows: the rows of the whole
         // history are never summed
         let shown = vis_events.last().map_or(1, |l| l + 1 - anchor.0.min(*l));
@@ -351,7 +349,12 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect) {
             .position(pos)
             .viewport_content_length(shown);
         frame.render_stateful_widget(
-            Scrollbar::new(ScrollbarOrientation::VerticalRight),
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None)
+                .track_symbol(None)
+                .thumb_symbol("┃")
+                .thumb_style(Style::default().fg(crate::theme::faint())),
             area,
             &mut state,
         );
