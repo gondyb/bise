@@ -713,13 +713,41 @@ Index:
 
 ### BISE-31 · answered cards
 
-- **status:** todo (decided: the card fades in place, grey bar + `answered`; starts after F's BISE-14/15)
-- **owner:** — · **commits:** —
+- **status:** done (decided: the card fades in place, grey bar + `answered`; starts after F's BISE-14/15)
+- **owner:** bise-c-cards · **commits:** f040d1d
 - **track:** C · **owns:** `sb/cards.rs`, and the level-1 feed line style
   in `render.rs` **only after F's wave 2 is done**
 - **spec:** book §12 (open question), §10 (status marks)
 - **do:** once answered, the card's line in the history turns grey (dim bar, `answered`), the answer follows as a normal line; the box closes as today.
 - **notes:**
+  - **how:** `Ev::Card { text, closed }` (`closed` in memory only, empty:
+    open) and a new in-memory `Ev::CardClosed { id, res }`, parsed from
+    the hub's `sb card-closed : #N res` (was an info line). `push_event`
+    finds the last `Ev::Card` `#N …` of that feed, sets `closed`,
+    invalidates its rows and appends nothing (same pattern as F's
+    `MarkYou`). A closed question/blocker/drop/overlap card: bar, glyph,
+    title and body dim, not bold, title `? docs needs you · answered`.
+    The answer follows as the hub's own route line (`you → @docs (answer
+    to card #N) : v2`). The box closes as today (the snapshot drops it).
+  - **words** (`render::closed_word`): `answered`, `answered via @x` →
+    `answered by x`, `closed` (ctrl+x), `accepted` → `dropped`, `refused`
+    → `kept`, `vue` → `seen`, `reprise` → `resumed`, `task stopped` →
+    `agent stopped`.
+  - **done / failed cards** are level-2 lines (`♡`, `✗`): no fade, and
+    their close adds no line either.
+  - **limit:** a card whose close arrives while the card itself is not in
+    the loaded window (an older page, loaded later by scrolling up) stays
+    as it was; the close shows as the old info line `card #N answered`.
+  - **files outside `cards.rs`** (agreed with F, after BISE-15): `wire.rs`
+    (the two variants), `sb.rs` (`parse_hub_line` card / card-closed arms
+    + test helper), `feed.rs` (`push_event` arm, `is_notice`),
+    `render.rs` (Card arm, `card_lines`, `closed_word`),
+    `feed_render_tests.rs` (`an_answered_card_fades_in_place`).
+  - **gates:** private worktree of ca45c51 + the patch, shared target:
+    build, `cargo test --workspace`, clippy `--all-targets -D warnings`,
+    `run_all.sh` all green (one switchboard test failed once in a first
+    `run_all`, green on two reruns and the full rerun: the shared-target
+    mixing). No .bend change.
 
 ### BISE-41 · help and commands: words and case
 
