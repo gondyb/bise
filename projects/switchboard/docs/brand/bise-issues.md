@@ -1742,3 +1742,46 @@ Index:
   - Tests: the unit tests read phrases across wraps (`flat`); the gloss is
     dim; the folder note on its own row when the path is long.
     `tui_onboarding_tmux` asserts on the joined rows too.
+
+### BISE-90 · feed fixes from the visual QA
+
+- **status:** done · **owner:** bise-c-cards · **commits:** a5b841f,
+  7c032cd, 3510e00 (book §8), 1c13817 (QA shots); capture.py fix 557c52e
+- **track:** C · **files:** `render.rs`, `feed.rs`, `wire.rs`, `ui.rs`
+  (the scrollbar block + one line), `sb.rs` (`focus_name`), `usage.rs`,
+  `feed_render_tests.rs`
+- **spec:** BISE-82 list items 1, 2, 3, 4, 5, 7, 10 (main m_974), the
+  user bar (main m_988, marketing m_1004), book §8 spacing (m_1074)
+- **notes:**
+  - **1 report + card:** `feed::merge_report_and_card`: blocked keeps the
+    level-1 card (it fades when answered, BISE-31), done / failed keep the
+    report line (`♡ bench: … ▸ report`); whichever comes second takes the
+    first one's place (in place, near the tail) or is dropped. A card
+    close with no card in the feed adds nothing (the BISE-31 info
+    fallback is gone).
+  - **2 hang:** `glyph_line` takes the width and hangs its rows
+    (`hung_rows`): info (`· ✚ …`), warnings (`▲ …`), errors, done /
+    failed card lines; an opened report too (marketing's bug a).
+  - **3 scrollbar:** only while scrolled up from the bottom, faint `┃`
+    thumb, no arrows, no track, never at the tail; book §8 note.
+  - **4 reply inside an agent:** 1-space lead, so it starts at the glyph
+    column (mockup "inside an agent").
+  - **5 marks:** cause: the hub steered your message together with an
+    agent's message and the `<task_status>` block, so the steered text is
+    that block (your words on a later line) and never matched. An
+    unmatched steering mark now raises the marks of what you sent since
+    the turn started (`feed::mark_this_turn`). Verified in the QA
+    recapture (dark/17 `·`, dark/18 `✓✓`).
+  - **7 compaction:** `Ev::Compact` (unit) draws `≡ compacting`, its `≡`
+    pulsing dim / faint while it runs (`Live::Compacting`, stops at the
+    summary); `Ev::Compacted { text, open }` draws `≡ summary ▸`, the
+    summary under the rail once opened (ctrl+o, clicks).
+  - **10 `to` column:** a message the feed's owner received names it
+    (`→ main`; inside an agent, its name) via `render::set_feed_owner`
+    (set in `ui.rs` next to `set_main_feed`) and `Sb::focus_name`.
+  - **user bar:** your messages: `│` accent at column 0 on every row, text
+    from column 3, marks unchanged; `|` under `BISE_ASCII=1`.
+  - **gates:** build, `cargo test -p bend-tui` (295), clippy
+    `--workspace --all-targets -D warnings` on 44acc36 + the patches;
+    `run_all.sh` green on the same tree (the tmux waits for `→ main` were
+    already made tolerant by BISE-96).
