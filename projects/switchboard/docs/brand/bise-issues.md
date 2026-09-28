@@ -383,7 +383,7 @@ Index:
 
 ### BISE-50 · no undo in the hub, corrections by talking
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-m-main · **commits:** 1ba9ff7, c03071e
 - **track:** M · **owns:** `rust/switchboard/src/router.rs`, `prompts.rs`
 - **spec:** book §13 (no undo)
 - **do:** remove `/cancel` (`UserCmd::Cancel`) and its tests; in main's
@@ -394,6 +394,42 @@ Index:
   (`SB_DEV_ROOT=/tmp/…`): "no, v1 for docs" after main answered v2 produces
   the correction message and the one-line confirmation.
 - **notes:**
+  - **Ownership change (main's OK):** removing `Cancel` touched H's files
+    after BISE-04 landed: `core.rs` (match arm, `ClientView.last_route`,
+    the `routed` fx arm, the HELP line), `core_tests.rs` (the cancel test
+    becomes `there_is_no_undo_a_route_stays_sent`), `hub/core.bend`
+    (`ICancel`, `cancel.*`, the `"cancel"` input, the `routed` fx that only
+    fed `last_route`), `sb-core` rebuilt (not stripped). The TUI side
+    (`sb.rs` `/cancel` command entry, `ctrl+z`) is K's (BISE-40).
+  - `/cancel` and `/undo` now parse to `Invalid(router::NO_UNDO)`: the
+    notice `no undo: an agent may already have acted. say the change to
+    main instead ("no, v1 for docs").` (**new string**, for §17).
+  - Kept on purpose: `M.Cancelled{}` message state in `model.bend` and the
+    `"cancelled"` codec: old journals may hold it. Nothing produces it now.
+  - Main's prompt: a "There is no undo" rule: explicit correction
+    `sb send <task> "the user changed their mind: <new>, not <old>."`, then
+    one line to the user `told <task>: <new>, you changed your mind.`;
+    never offer an undo. Test `main_corrects_by_talking_never_by_undo`.
+  - PROOF: ALL PROOFS CHECK (no law mentioned cancel).
+  - **Live check** (real model, throwaway hub `/tmp/m-cq84g8tt`): docs
+    asked main `v1 or v2?`, main answered `v2` (`sb answered : docs : v1 or
+    v2? : v2 : `). Then `no, v1 for docs` →
+    `sb send docs "the user changed their mind: v1 for docs, not v2. Update
+    docs.txt … then report done."` and main said: `Told \`docs\` you changed
+    your mind: you want v1, not v2. It's working on \`docs.txt\` now and
+    hasn't reported back yet.` docs.txt ended as `version: v1`. Works;
+    the confirmation is capitalized and two sentences, not the one-line
+    `told docs: v1, you changed your mind.` (voice is BISE-51).
+  - **Gates** (private worktree of HEAD + my files, shared
+    `/tmp/bise-gate-target`, built from the worktree): cargo build, test
+    --workspace, clippy --workspace --all-targets (0 warnings),
+    run_all.sh (e2e + tmux all PASS), PROOF: all green.
+  - **Gotcha, sb-core:** my first local rebuild of `sb-core` was flagged
+    (likely the endpoint security): any process that read it (git add,
+    cmp, git status) got SIGKILLed. Removed it, put HEAD's back, rebuilt
+    once cleanly into /tmp (`bend hub/main.bend -o …`, unstripped),
+    readable, committed alone in c03071e. If `git status` dies with
+    exit 137, look for a flagged binary in the tree.
 
 ### BISE-51 · main's voice, summaries, "why"
 
