@@ -463,13 +463,10 @@ def Laws.exec_of_garbage_fails_closed():
 def Laws.exec_of_no_newline_fails_closed():
   {==}
 
-def Laws.bg_setup_guard_names_the_dir():
-  {==}
-
 def Laws.bg_rc_guard_names_the_dir():
   {==}
 
-def Laws.bg_wrapper_has_both_guards():
+def Laws.bg_wrapper_has_the_guard():
   {==}
 
 def Laws.bg_script_hash_deterministic():
@@ -544,7 +541,10 @@ def Laws.def_acks_suffix_carries_both():
 def Laws.bg_wrapper_runner_frees_slot():
   {==}
 
-def Laws.bg_wrapper_pid_wait_breaks_on_rc():
+def Laws.bg_wrapper_waits_on_runner():
+  {==}
+
+def Laws.bg_wrapper_reports_unwritable_files():
   {==}
 
 def Laws.steering_lands_in_history():

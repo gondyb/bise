@@ -94,8 +94,11 @@ def exec_of(+out: String) -> Xp.ExecRes:
 #   - stdin: a fifo held RDWR (never EOF, never blocks at open) — the
 #     agent feeds it with printf > <id>.in whenever the command reads
 #   - a detached RUNNER subshell is the command's real parent (a sibling
-#     cannot wait: 127); it records the pid, waits, and writes the exit
-#     code to <id>.rc — the wrapper polls the pid and reads the rc
+#     cannot wait: 127); it records the pid, waits, writes the exit
+#     code to <id>.rc and exits with it — the wrapper polls the RUNNER
+#     (its own child, $!) and takes the code from `wait`, never from a
+#     file: a file the runner could not write (full disk, read-only
+#     dir) can never hang the wrapper
 #   - within BEND_BG_AFTER seconds (default 30): the tool returns the
 #     output and the exit code, and cleans the slot
 #   - past the window: the wrapper prints the driving contract and
@@ -159,29 +162,48 @@ def bg_kill_cmd(+bg: String, +id: String) -> String:
   String.append("  kill: kill $(cat ",
     String.append(bg_slot(bg, id, ".pid"), ")"))
 
-# the two guards: if the agent deletes the bg dir under a running
-# wrapper (a legitimate cleanup), the waits must fail FAST with a
-# clear message, never hang the tool
-def bg_setup_guard(+bg: String) -> String:
-  String.append("  if [ ! -d ", String.append(bg,
-    String.append(" ]; then echo \"background: the bg dir vanished during setup: ",
-      String.append(bg, "\"; exit 1; fi"))))
-
+# the vanished-dir guard: if the agent deletes the bg dir under a
+# running wrapper (a legitimate cleanup), the tool fails with a clear
+# message instead of cat'ing files that are gone
 def bg_rc_guard(+bg: String) -> String:
-  String.append("  if [ ! -d ", String.append(bg,
+  String.append("if [ ! -d ", String.append(bg,
     String.append(" ]; then echo \"background: the bg dir vanished before the exit code was recorded: ",
-      String.append(bg, "\"; exit 1; fi"))))
+      String.append(bg, "\"; rm -f \"$0\"; exit 1; fi"))))
+
+# slot allocation is bounded: mkdir failing on an EXISTING slot moves to
+# the next id; failing for any other reason (full disk, read-only or
+# uncreatable bg dir) 20 times ends the call with this message (once:
+# the loop retried forever)
+def bg_slot_fail(+bg: String) -> String:
+  String.append("  if [ $f -ge 20 ]; then echo \"background: cannot create a slot in ",
+    String.append(bg, " (disk full or not writable?)\"; rm -f \"$0\"; exit 1; fi"))
+
+# the .cmd write can fail too (full disk): never run a truncated command
+def bg_cmd_fail(+bg: String) -> String:
+  String.append("if [ $? -ne 0 ]; then echo \"background: could not write ",
+    String.append(bg_slot(bg, "$i", ".cmd"),
+      " (disk full?)\"; rm -f $BG/$i.in $BG/$i.cmd; rmdir $BG/$i.slot 2>/dev/null; rm -f \"$0\"; exit 1; fi"))
+
+# a slot file the runner could not write: the call still returns, and
+# says why a file is missing (the output may be cut short)
+def bg_write_note(+test: String, +bg: String, +ext: String, +why: String)
+    -> String:
+  String.append("if [ ", String.append(test, String.append(" ",
+    String.append(bg_slot(bg, "$i", ext),
+      String.append(" ]; then echo \"background: could not write ",
+        String.append(bg_slot(bg, "$i", ext),
+          String.append(why, "\"; fi")))))))
 
 # 5 iterations at 20ms then 100ms steps: a trivial command costs
 # ~30ms of polling instead of ~120ms, and the window stays ~after secs
 def bg_poll_iters(+after: U32) -> U32:
   U32.add(U32.mul(after, 10), 5)
 
-# the pid-wait also breaks on an existing .rc: the runner frees the
-# slot (rm pid/cmd/in) as soon as the command ends, so for a fast
-# command the pid file is EPHEMERAL — the wrapper must not wait for a
-# file that already came and went. An empty pid then makes kill -0
-# fail cleanly and the rc-wait completes the sync path.
+# Every wait is TOTAL: the wrapper polls its own child, the runner
+# ($!), and reads the exit code from `wait`, so it never waits for a
+# file. (Once: on a full disk the runner could not write the .rc, the
+# wrapper waited for it forever, and a bash call hung 19 minutes.) The
+# .pid is still written for the agent's status/kill lines.
 # The wrapper goes to a file (the node_run pattern) and sh runs the
 # file: the command never travels as an argument.
 #
@@ -257,25 +279,26 @@ def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
   bg_wrap.seg(String.append("BG=", bg),
   bg_wrap.seg("mkdir -p $BG",
   bg_wrap.seg("i=0",
-  bg_wrap.seg("while ! mkdir $BG/$i.slot 2>/dev/null; do i=$((i+1)); done",
+  bg_wrap.seg("f=0",
+  bg_wrap.seg("while ! mkdir $BG/$i.slot 2>/dev/null; do",
+  bg_wrap.seg("  if [ -d $BG/$i.slot ]; then i=$((i+1)); else f=$((f+1)); fi",
+  bg_wrap.seg(bg_slot_fail(bg),
+  bg_wrap.seg("done",
   bg_wrap.seg("mkfifo $BG/$i.in 2>/dev/null",
   bg_wrap.seg("exec 9<>$BG/$i.in",
   bg_wrap.seg(String.append("cat > $BG/$i.cmd <<'", String.append(sent, "'")),
   bg_wrap.seg(command,
   bg_wrap.seg(sent,
+  bg_wrap.seg(bg_cmd_fail(bg),
     # the command runs FROM THE .cmd FILE, never inline: a heredoc in an
   # inline command would swallow the wrapper own following lines
   # (polling, handoff, result print) as its body - the wrapper then
   # exits before printing anything and the tool returns empty.
   bg_wrap.seg(String.append("( ulimit -f 102400; ( /bin/sh $BG/$i.cmd", String.append("",
-      " ) > $BG/$i.out 2>&1 <&9 & C=$!; echo $C > $BG/$i.pid; wait $C; R=$?; if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then echo $R > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in; rmdir $BG/$i.slot 2>/dev/null; fi ) >/dev/null 2>&1 &")),
-  bg_wrap.seg("while [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do",
-  bg_wrap.seg(bg_setup_guard(bg),
-  bg_wrap.seg("  sleep 0.05",
-  bg_wrap.seg("done",
-  bg_wrap.seg("c=$(cat $BG/$i.pid 2>/dev/null)",
+      " ) > $BG/$i.out 2>&1 <&9 & C=$!; echo $C > $BG/$i.pid; wait $C; R=$?; if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then echo $R > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in; rmdir $BG/$i.slot 2>/dev/null; fi; exit $R ) >/dev/null 2>&1 &")),
+  bg_wrap.seg("r=$!",
   bg_wrap.seg("e=0",
-  bg_wrap.seg("while kill -0 $c 2>/dev/null; do",
+  bg_wrap.seg("while kill -0 $r 2>/dev/null; do",
   bg_wrap.seg("  if [ $e -lt 5 ]; then sleep 0.02; else sleep 0.1; fi",
   bg_wrap.seg("  e=$((e+1))",
   bg_wrap.seg(String.append("  if [ $e -ge ",
@@ -287,17 +310,20 @@ def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
   bg_wrap.echo(bg_stdin_cmd(bg, "$i"),
   bg_wrap.echo(bg_status_cmd(bg, "$i"),
   bg_wrap.echo(bg_kill_cmd(bg, "$i"),
+  bg_wrap.seg(String.append("    ", bg_write_note("! -s", bg, ".pid",
+    " (disk full?) - the command runs under the runner pid $r")),
   bg_wrap.seg("    rm -f \"$0\"",
   bg_wrap.seg("    exit 0",
   bg_wrap.seg("  fi",
   bg_wrap.seg("done",
-  bg_wrap.seg("while [ ! -e $BG/$i.rc ]; do",
+  bg_wrap.seg("wait $r",
+  bg_wrap.seg("s=$?",
   bg_wrap.seg(bg_rc_guard(bg),
-  bg_wrap.seg("  sleep 0.05",
-  bg_wrap.seg("done",
-  bg_wrap.seg("s=$(cat $BG/$i.rc)",
-  bg_wrap.seg("cat $BG/$i.out",
-  bg_wrap.seg("rm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc",
+  bg_wrap.seg(bg_write_note("! -f", bg, ".out", " (disk full?)"),
+  bg_wrap.seg("cat $BG/$i.out 2>/dev/null",
+  bg_wrap.seg(bg_write_note("! -s", bg, ".rc",
+    " (disk full?) - the output above may be incomplete"),
+  bg_wrap.seg("rm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc 2>/dev/null",
   bg_wrap.seg("rmdir $BG/$i.slot 2>/dev/null",
   bg_wrap.seg("rm -f \"$0\"",
-  "exit $s")))))))))))))))))))))))))))))))))))))))
+  "exit $s")))))))))))))))))))))))))))))))))))))))))

@@ -1276,7 +1276,48 @@ law mcp_bootstrap_url_parity:
 # LAW: the wrapper script, byte for byte.
 law bg_wrapper_script:
   {Sh.bg_wrap("whoami", "/tmp/bend-bg-0", 30)
-    == "BG=/tmp/bend-bg-0\nmkdir -p $BG\ni=0\nwhile ! mkdir $BG/$i.slot 2>/dev/null; do i=$((i+1)); done\nmkfifo $BG/$i.in 2>/dev/null\nexec 9<>$BG/$i.in\ncat > $BG/$i.cmd <<'XQ-3131618372-EOF'\nwhoami\nXQ-3131618372-EOF\n( ulimit -f 102400; ( /bin/sh $BG/$i.cmd ) > $BG/$i.out 2>&1 <&9 & C=$!; echo $C > $BG/$i.pid; wait $C; R=$?; if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then echo $R > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in; rmdir $BG/$i.slot 2>/dev/null; fi ) >/dev/null 2>&1 &\nwhile [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished during setup: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\nc=$(cat $BG/$i.pid 2>/dev/null)\ne=0\nwhile kill -0 $c 2>/dev/null; do\n  if [ $e -lt 5 ]; then sleep 0.02; else sleep 0.1; fi\n  e=$((e+1))\n  if [ $e -ge 305 ]; then\n    printf '%s\\n' \"BEND-BG-HANDOFF-6f2c9e5b\"\n    printf '%s\\n' \"background: still running after 30s - id $i (dir /tmp/bend-bg-0)\"\n    printf '%s\\n' \"  output: tail -n 50 /tmp/bend-bg-0/$i.out\"\n    printf '%s\\n' \"  stdin (if it reads): printf '%s\\n' 'text' > /tmp/bend-bg-0/$i.in  (a command that reads stdin WAITS for input indefinitely: feed it or kill it)\"\n    printf '%s\\n' \"  status: kill -0 $(cat /tmp/bend-bg-0/$i.pid) && echo RUNNING || cat /tmp/bend-bg-0/$i.rc 2>/dev/null\"\n    printf '%s\\n' \"  kill: kill $(cat /tmp/bend-bg-0/$i.pid)\"\n    rm -f \"$0\"\n    exit 0\n  fi\ndone\nwhile [ ! -e $BG/$i.rc ]; do\n  if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; exit 1; fi\n  sleep 0.05\ndone\ns=$(cat $BG/$i.rc)\ncat $BG/$i.out\nrm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc\nrmdir $BG/$i.slot 2>/dev/null\nrm -f \"$0\"\nexit $s"
+    == "BG=/tmp/bend-bg-0
+mkdir -p $BG
+i=0
+f=0
+while ! mkdir $BG/$i.slot 2>/dev/null; do
+  if [ -d $BG/$i.slot ]; then i=$((i+1)); else f=$((f+1)); fi
+  if [ $f -ge 20 ]; then echo \"background: cannot create a slot in /tmp/bend-bg-0 (disk full or not writable?)\"; rm -f \"$0\"; exit 1; fi
+done
+mkfifo $BG/$i.in 2>/dev/null
+exec 9<>$BG/$i.in
+cat > $BG/$i.cmd <<'XQ-3131618372-EOF'
+whoami
+XQ-3131618372-EOF
+if [ $? -ne 0 ]; then echo \"background: could not write /tmp/bend-bg-0/$i.cmd (disk full?)\"; rm -f $BG/$i.in $BG/$i.cmd; rmdir $BG/$i.slot 2>/dev/null; rm -f \"$0\"; exit 1; fi
+( ulimit -f 102400; ( /bin/sh $BG/$i.cmd ) > $BG/$i.out 2>&1 <&9 & C=$!; echo $C > $BG/$i.pid; wait $C; R=$?; if [ \"$(cat $BG/$i.pid 2>/dev/null)\" = \"$C\" ]; then echo $R > $BG/$i.rc; rm -f $BG/$i.pid $BG/$i.cmd $BG/$i.in; rmdir $BG/$i.slot 2>/dev/null; fi; exit $R ) >/dev/null 2>&1 &
+r=$!
+e=0
+while kill -0 $r 2>/dev/null; do
+  if [ $e -lt 5 ]; then sleep 0.02; else sleep 0.1; fi
+  e=$((e+1))
+  if [ $e -ge 305 ]; then
+    printf '%s\\n' \"BEND-BG-HANDOFF-6f2c9e5b\"
+    printf '%s\\n' \"background: still running after 30s - id $i (dir /tmp/bend-bg-0)\"
+    printf '%s\\n' \"  output: tail -n 50 /tmp/bend-bg-0/$i.out\"
+    printf '%s\\n' \"  stdin (if it reads): printf '%s\\n' 'text' > /tmp/bend-bg-0/$i.in  (a command that reads stdin WAITS for input indefinitely: feed it or kill it)\"
+    printf '%s\\n' \"  status: kill -0 $(cat /tmp/bend-bg-0/$i.pid) && echo RUNNING || cat /tmp/bend-bg-0/$i.rc 2>/dev/null\"
+    printf '%s\\n' \"  kill: kill $(cat /tmp/bend-bg-0/$i.pid)\"
+    if [ ! -s /tmp/bend-bg-0/$i.pid ]; then echo \"background: could not write /tmp/bend-bg-0/$i.pid (disk full?) - the command runs under the runner pid $r\"; fi
+    rm -f \"$0\"
+    exit 0
+  fi
+done
+wait $r
+s=$?
+if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; rm -f \"$0\"; exit 1; fi
+if [ ! -f /tmp/bend-bg-0/$i.out ]; then echo \"background: could not write /tmp/bend-bg-0/$i.out (disk full?)\"; fi
+cat $BG/$i.out 2>/dev/null
+if [ ! -s /tmp/bend-bg-0/$i.rc ]; then echo \"background: could not write /tmp/bend-bg-0/$i.rc (disk full?) - the output above may be incomplete\"; fi
+rm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc 2>/dev/null
+rmdir $BG/$i.slot 2>/dev/null
+rm -f \"$0\"
+exit $s"
     : String}
 
 # LAW: the sync window defaults# LAW: the sync window defaults to 30 seconds and clamps into [0, 3600].
@@ -1368,13 +1409,29 @@ law bg_kill_cmd_concrete:
 
 # LAW: the fifo is held RDWR by the wrapper — never EOF for the
 # reader, never blocks at open.
-# LAW: the pid-wait also breaks on an existing rc — the runner frees
-# the slot when a fast command ends, so the pid file can be ephemeral
-# and the wrapper must never wait for a file that came and went.
-law bg_wrapper_pid_wait_breaks_on_rc:
-  {String.contains(Sh.bg_wrap("x", "/d", 5),
-     "while [ ! -s $BG/$i.pid ] && [ ! -e $BG/$i.rc ]; do") == True{}
-    : Bool}
+# LAW: every wait is total — the wrapper polls its own child, the
+# runner ($!), and takes the exit code from `wait` (the runner exits
+# with it), never from a file. Once: on a full disk the runner could
+# not write the .rc, the wrapper waited for it forever, and a bash call
+# hung 19 minutes.
+law bg_wrapper_waits_on_runner:
+  {Bool.and(
+     Bool.and(String.contains(Sh.bg_wrap("x", "/d", 5), "fi; exit $R ) >/dev/null 2>&1 &
+r=$!"),
+       String.contains(Sh.bg_wrap("x", "/d", 5), "while kill -0 $r 2>/dev/null; do")),
+     Bool.and(String.contains(Sh.bg_wrap("x", "/d", 5), "wait $r
+s=$?"),
+       Bool.not(String.contains(Sh.bg_wrap("x", "/d", 5), "while [ ! -e $BG/$i.rc ]"))))
+    == True{} : Bool}
+
+# LAW: a slot file the runner could not write is named to the model —
+# the call returns, and says why a file is missing.
+law bg_wrapper_reports_unwritable_files:
+  {Bool.and(
+     String.contains(Sh.bg_wrap("x", "/d", 5), Sh.bg_write_note("! -f", "/d", ".out", " (disk full?)")),
+     Bool.and(String.contains(Sh.bg_wrap("x", "/d", 5), "could not write /d/$i.rc (disk full?)"),
+       String.contains(Sh.bg_wrap("x", "/d", 5), Sh.bg_cmd_fail("/d"))))
+    == True{} : Bool}
 
 law bg_wrapper_fifo_rdrw:
   {String.contains(Sh.bg_wrap("x", "/d", 5), "exec 9<>$BG/$i.in")
@@ -1429,26 +1486,28 @@ law bg_wrapper_handoff_marker:
      Bool.not(String.contains(Sh.bg_wrap("x", "/d", 5), "exit 199")))
     == True{} : Bool}
 
-# LAW: both waits carry a vanished-dir guard — an agent that cleans
+# LAW: the wrapper carries a vanished-dir guard — an agent that cleans
 # its bg dir with rm -rf gets a FAST failure with the dir name, never
 # a hung tool.
-law bg_setup_guard_names_the_dir:
-  {String.contains(Sh.bg_setup_guard("/tmp/bend-bg-0"),
-     "the bg dir vanished during setup: /tmp/bend-bg-0") == True{} : Bool}
-
 law bg_rc_guard_names_the_dir:
   {String.contains(Sh.bg_rc_guard("/tmp/bend-bg-0"),
-     "if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; exit 1; fi")
+     "if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; rm -f \"$0\"; exit 1; fi")
     == True{} : Bool}
 
 # LAW: the wrapper embeds both guards (the waits are all bounded by
 # the dir check).
 # LAW: slot allocation is an atomic mkdir CAS — two wrappers starting
 # at the same instant can never take the same slot (once: concurrent
-# calls collided on id 0 and corrupted each other's out/rc).
+# calls collided on id 0 and corrupted each other's out/rc). It is
+# bounded: a mkdir failing for another reason than an existing slot
+# (full disk, read-only dir) ends the call after 20 tries (once: the
+# loop retried forever).
 law bg_wrapper_atomic_slot_allocation:
-  {String.contains(Sh.bg_wrap("x", "/d", 5),
-     "while ! mkdir $BG/$i.slot 2>/dev/null; do i=$((i+1)); done")
+  {Bool.and(
+     String.contains(Sh.bg_wrap("x", "/d", 5),
+       "while ! mkdir $BG/$i.slot 2>/dev/null; do
+  if [ -d $BG/$i.slot ]; then i=$((i+1)); else f=$((f+1)); fi"),
+     String.contains(Sh.bg_wrap("x", "/d", 5), Sh.bg_slot_fail("/d")))
     == True{} : Bool}
 
 # LAW: the runner caps the process's file writes (ulimit -f 102400 =
@@ -1490,9 +1549,8 @@ law bg_sentinel_derives_from_command:
      Bool.not(String.eq(Sh.bg_sentinel("whoami"),
        Sh.bg_sentinel("whoamiX")))) == True{} : Bool}
 
-law bg_wrapper_has_both_guards:
-  {Bool.and(String.contains(Sh.bg_wrap("x", "/d", 5), Sh.bg_setup_guard("/d")),
-     String.contains(Sh.bg_wrap("x", "/d", 5), Sh.bg_rc_guard("/d")))
+law bg_wrapper_has_the_guard:
+  {String.contains(Sh.bg_wrap("x", "/d", 5), Sh.bg_rc_guard("/d"))
     == True{} : Bool}
 
 # LAW: the wrapper filename derives from the script's own content:
