@@ -13,7 +13,7 @@ use crate::router::{self, UserCmd};
 use crate::util::{clip, clip_tail, one_line, wire_escape};
 use crate::wire::{self, Wire};
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::process::{Child, ChildStdout, Command, Stdio};
@@ -476,7 +476,7 @@ pub struct Hub {
     next_confirm: u64,
     /// (time, text) of recent assistant messages, for direct-exchange
     /// excerpts.
-    recent: BTreeMap<String, Vec<(u64, String)>>,
+    recent: BTreeMap<String, VecDeque<(u64, String)>>,
     contexts: BTreeMap<String, String>,
     /// The last thing each agent did (from its REPL lines, for the views).
     activity: BTreeMap<String, (u64, String)>,
@@ -965,9 +965,9 @@ impl Hub {
             Wire::Assistant(text) if !text.is_empty() => {
                 self.set_activity(agent, now, format!("wrote: {}", clip(&one_line(&text), 160)));
                 let r = self.recent.entry(agent.to_string()).or_default();
-                r.push((now, text.clone()));
+                r.push_back((now, text.clone()));
                 if r.len() > 20 {
-                    r.remove(0);
+                    r.pop_front();
                 }
                 self.core(
                     fx,

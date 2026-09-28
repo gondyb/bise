@@ -23,7 +23,7 @@ use crate::transcript::{self, Anchor};
 use crate::util::{now_ms, wire_escape};
 use crate::worktree::{Config, GitEnv};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -155,16 +155,16 @@ struct Shell {
     switching: BTreeMap<String, Vec<String>>,
     /// Of those, the ones whose new process is already spawned: its exit
     /// is a crash (of the new version), not the reload.
-    switch_spawned: std::collections::BTreeSet<String>,
+    switch_spawned: BTreeSet<String>,
     /// Restarted by a switch: their greeting (restored history) is not
     /// news for the feeds.
-    restored: std::collections::BTreeSet<String>,
+    restored: BTreeSet<String>,
     /// Versions being built (`/version <commit>`), by revision.
-    building: std::collections::BTreeSet<String>,
+    building: BTreeSet<String>,
     /// Agents whose REPL was found dead at boot in the middle of a turn
     /// (killed by a restart, a crash): once respawned on their session,
     /// they are told to continue where they left off.
-    resume_turn: std::collections::BTreeSet<String>,
+    resume_turn: BTreeSet<String>,
 }
 
 /// What an agent whose turn was cut by a restart receives.
@@ -959,10 +959,10 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         bins: BTreeMap::new(),
         ports: BTreeMap::new(),
         switching: BTreeMap::new(),
-        switch_spawned: std::collections::BTreeSet::new(),
-        restored: std::collections::BTreeSet::new(),
-        building: std::collections::BTreeSet::new(),
-        resume_turn: std::collections::BTreeSet::new(),
+        switch_spawned: BTreeSet::new(),
+        restored: BTreeSet::new(),
+        building: BTreeSet::new(),
+        resume_turn: BTreeSet::new(),
     };
     // the feeds survive a hub restart through their transcripts
     for a in sh.hub.st.agents.values() {
