@@ -69,6 +69,7 @@ mod usage;
 mod term;
 mod feedsel;
 mod keyprobe;
+pub mod timing;
 mod crash;
 mod help;
 mod voice;

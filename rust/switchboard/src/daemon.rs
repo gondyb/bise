@@ -548,7 +548,10 @@ impl Shell {
                 ),
             )
             .env_remove("BEND_CONTINUE")
-            .env_remove("BEND_CRASH_NOTE");
+            .env_remove("BEND_CRASH_NOTE")
+            // this hub's sb-core is not the agents' business (a hub an
+            // agent starts picks its own)
+            .env_remove("SB_CORE_BIN");
         if resume && session.exists() {
             cmd.env("BEND_CONTINUE", "1");
         }
@@ -632,9 +635,11 @@ impl Shell {
         }
         push(&json!({"ev": "ready"}));
         push(&self.version_items());
+        crate::util::timing(&format!("client hello built ({} bytes)", out.len()));
         if stream.write_all(out.as_bytes()).is_err() {
             return;
         }
+        crate::util::timing("client hello written");
         self.clients.insert(id, stream);
         self.step(Input::ClientHello { client: id });
     }
@@ -922,6 +927,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         ),
     );
 
+    crate::util::timing("start (socket bound)");
     let workspace = paths.workspace.to_string_lossy().to_string();
     let mut hub = Hub::new(&workspace);
     let events: Vec<Event> = std::fs::read_to_string(paths.journal())
@@ -929,7 +935,9 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         .lines()
         .filter_map(|l| serde_json::from_str(l).ok())
         .collect();
+    crate::util::timing(&format!("journal read ({} events)", events.len()));
     hub.replay(&events);
+    crate::util::timing("journal replayed");
     let journal = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -977,6 +985,10 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
             sh.buffers.insert(a.name.clone(), tail);
         }
     }
+    crate::util::timing(&format!(
+        "transcripts read ({} buffered lines)",
+        sh.buffers.values().map(|b| b.len()).sum::<usize>()
+    ));
 
     {
         let tx = tx.clone();
@@ -1001,6 +1013,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     sh.step(Input::Boot);
     sh.booting = false;
     kill_stale_repls(&sh);
+    crate::util::timing("boot done (REPLs spawned)");
 
     let mut keep_agents = false;
     while let Ok(m) = rx.recv() {
@@ -1043,6 +1056,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                     },
                 );
                 sh.switch_spawned.remove(&dir);
+                crate::util::timing(&format!("repl connected {} (adopted {})", dir, adopted));
                 if let Some(q) = sh.switching.remove(&dir) {
                     // a switched REPL: same session, the core never saw
                     // it go; the writes it missed go now

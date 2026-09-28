@@ -31,7 +31,7 @@ use client::{follow_hub_exe, HUB_DOWN, HUB_UP};
 #[cfg(test)]
 use client::{new_sb, sb_app};
 use feed::{
-    ingest_at, prepend_page, swap_draft, swap_feed, trim_window, want_older, with_feed, View,
+    clear_feed, ingest_at, prepend_page, swap_draft, swap_feed, trim_window, want_older, with_feed, View,
 };
 
 #[derive(Clone, Default)]
@@ -238,6 +238,22 @@ pub(super) const SB_COMMANDS: &[Cmd] = &[
         args: false,
     },
 ];
+
+/// Ctrl+L in the switchboard: the feed in focus is cleared, its lines
+/// stay reachable by scrolling up (`feed::clear_feed`).
+pub(super) fn clear_display(app: &mut App) {
+    clear_feed(app);
+}
+
+/// Startup timing: the hub's `ready` arrived (its replay is taken in).
+pub(super) fn is_ready(app: &App) -> bool {
+    app.sb.as_ref().is_some_and(|sb| sb.ready)
+}
+
+/// Startup timing: the events of the feeds not in focus.
+pub(super) fn background_events(app: &App) -> usize {
+    app.sb.as_ref().map_or(0, |sb| sb.views.values().map(|v| v.events.len()).sum())
+}
 
 /// The shell asked with Ctrl+O, if any.
 pub(super) fn take_shell(app: &mut App) -> Option<String> {
@@ -509,12 +525,8 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             out.push(Ev::Info(crate::plugins::command(&typed, &ws, None)));
         }
         "/clear" => {
-            app.events.clear();
-            app.cache.clear();
-            app.anchor = (0, 0);
-            app.scroll = 0;
-            app.follow = true;
-            out.push(Ev::Info("display cleared".into()));
+            clear_feed(app);
+            out.push(Ev::Info("display cleared — scroll up to see the earlier lines again".into()));
         }
         "/help" | "/shortcuts" | "/shortcut" | "/keys" => {
             app.help = crate::help::page_of(first).map(crate::help::Overlay::new);

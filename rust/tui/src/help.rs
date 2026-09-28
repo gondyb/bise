@@ -140,7 +140,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(FEED, "End", "back to the bottom"),
     r(FEED, "click ✦", "open / close one reasoning section"),
     r(FEED, "Ctrl+T", "open / close every reasoning section"),
-    r(FEED, "Ctrl+L", "clear the display (/clear)"),
+    r(FEED, "Ctrl+L", "clear the display (/clear); Switchboard: scroll up to see the lines again"),
     r(VOICE, "Ctrl+R", "speech-to-text into the composer (turn it on with /voice)").top(),
     r(VOICE, "any key", "while recording: stop, keep the text"),
     r(VOICE, "Esc|Ctrl+C", "while recording: cancel"),

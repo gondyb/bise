@@ -160,9 +160,72 @@ pub(crate) fn run_tui(app: &mut App) -> io::Result<()> {
     r
 }
 
+/// Startup timing (SB_TIMING): what the loop spent until the first
+/// usable frame (the hub's replay taken in, then drawn).
+#[derive(Default)]
+struct Startup {
+    on: bool,
+    done: bool,
+    frames: u32,
+    drain_ms: f64,
+    draw_ms: f64,
+    ready_seen: bool,
+    caught_up: bool,
+}
+
+impl Startup {
+    fn ready(app: &App) -> bool {
+        sb::is_ready(app)
+    }
+    fn after_drain(&mut self, app: &App, t: std::time::Instant, backlog: bool) {
+        if !self.on || self.done {
+            return;
+        }
+        self.drain_ms += t.elapsed().as_secs_f64() * 1000.0;
+        if !self.ready_seen && Self::ready(app) {
+            self.ready_seen = true;
+            crate::timing::mark(&format!(
+                "ready dispatched ({} frames, drain {:.1} ms, draw {:.1} ms so far)",
+                self.frames, self.drain_ms, self.draw_ms
+            ));
+        }
+        if self.ready_seen && !backlog && !self.caught_up {
+            self.caught_up = true;
+            let evs: usize = app.events.len()
+                + sb::background_events(app);
+            crate::timing::mark(&format!(
+                "caught up ({} events in all feeds, {} in focus, drain {:.1} ms)",
+                evs,
+                app.events.len(),
+                self.drain_ms
+            ));
+        }
+    }
+    fn after_draw(&mut self, t: std::time::Instant) {
+        if !self.on || self.done {
+            return;
+        }
+        let ms = t.elapsed().as_secs_f64() * 1000.0;
+        self.draw_ms += ms;
+        self.frames += 1;
+        if self.frames == 1 {
+            crate::timing::mark(&format!("first frame ({:.1} ms)", ms));
+        }
+        if self.caught_up {
+            self.done = true;
+            crate::timing::mark(&format!(
+                "usable frame ({:.1} ms; {} frames, drain {:.1} ms, draw {:.1} ms in all)",
+                ms, self.frames, self.drain_ms, self.draw_ms
+            ));
+        }
+    }
+}
+
 fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
     let mut draw_crashes = 0u32;
+    let mut startup = Startup { on: crate::timing::enabled(), ..Startup::default() };
     loop {
+        let t_drain = std::time::Instant::now();
         let backlog = match crash::guarded(|| drain_lines(app)) {
             Ok(b) => b,
             Err(c) => {
@@ -170,6 +233,7 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
                 true
             }
         };
+        startup.after_drain(app, t_drain, backlog);
         for note in crash::take_notes() {
             push_event(&mut app.events, &mut app.cache, Ev::Err(note));
         }
@@ -189,6 +253,7 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
             let _ = terminal.clear();
         }
         pump_voice(app);
+        let t_draw = std::time::Instant::now();
         let drawn = crash::guarded(|| {
             terminal.draw(|f| {
                 if app.sb.is_some() {
@@ -198,6 +263,7 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
                 }
             })
         });
+        startup.after_draw(t_draw);
         match drawn {
             Ok(r) => {
                 r?;

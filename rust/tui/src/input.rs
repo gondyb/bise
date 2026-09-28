@@ -406,6 +406,9 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
             app.cache.clear();
         }
         // ctrl+l: clear the local feed
+        (KeyCode::Char('l'), KeyModifiers::CONTROL) if app.sb.is_some() => {
+            sb::clear_display(app);
+        }
         (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
             app.events.clear();
             app.cache.clear();

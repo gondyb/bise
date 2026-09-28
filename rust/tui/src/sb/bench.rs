@@ -327,3 +327,63 @@ fn a_feed_out_of_focus_is_bounded_too() {
     assert!(app.events.len() <= MAX_EVENTS);
     assert!(app.win.first_pos.unwrap() > 1);
 }
+
+#[test]
+fn clear_empties_the_feed_and_scrolling_up_brings_it_back_in_order() {
+    let mut app = test_app();
+    let mut term = Terminal::new(TestBackend::new(80, 30)).unwrap();
+    for p in 1..=40 {
+        dispatch(&mut app, &line(p));
+    }
+    handle_input(&mut app, "/clear");
+    // only the notice is left
+    assert_eq!(app.events.len(), 1);
+    assert_eq!(app.win.first_pos, Some(41));
+    for p in 41..=42 {
+        dispatch(&mut app, &line(p));
+    }
+    term.draw(|f| draw_sb(&mut app, f)).unwrap();
+    assert!(!app.win.loading);
+    assert!(!screen(&term).iter().any(|l| l.contains("message 40")));
+    // scrolling up asks the lines before the clear
+    app.follow = false;
+    app.scroll -= 10;
+    term.draw(|f| draw_sb(&mut app, f)).unwrap();
+    assert!(app.win.loading);
+    let page: Vec<Value> = (1..41)
+        .map(|p| json!({"pos": p, "line": format!("  obs: assistant: message {}", p)}))
+        .collect();
+    dispatch(
+        &mut app,
+        &json!({"ev": "history", "agent": "main", "before": 41, "lines": page}).to_string(),
+    );
+    assert!(!app.win.loading);
+    assert_eq!(app.win.first_pos, Some(1));
+    // arrival order: the paged lines, the notice, the lines after it
+    let text: Vec<String> = app
+        .events
+        .iter()
+        .map(|e| match e {
+            Ev::Assistant(t) | Ev::Info(t) => t.clone(),
+            _ => String::new(),
+        })
+        .filter(|t| !t.is_empty())
+        .collect();
+    let at = |needle: &str| text.iter().position(|t| t.contains(needle)).unwrap();
+    assert!(at("message 1") < at("message 40"));
+    assert!(at("message 40") < at("display cleared"));
+    assert!(at("display cleared") < at("message 41"));
+    assert!(at("message 41") < at("message 42"));
+}
+
+#[test]
+fn ctrl_l_clears_like_clear() {
+    let mut app = test_app();
+    for p in 1..=10 {
+        dispatch(&mut app, &line(p));
+    }
+    clear_display(&mut app);
+    assert!(app.events.is_empty());
+    assert_eq!(app.win.first_pos, Some(11));
+    assert!(app.follow);
+}

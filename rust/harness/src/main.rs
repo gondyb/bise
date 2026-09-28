@@ -240,8 +240,13 @@ fn run_sbd(args: &[String]) -> std::io::Result<()> {
     let paths = switchboard::paths::Paths::for_workspace(&sb_workspace(args));
     let root = live_app_root_or_exit();
     // the hub's decisions (sb-core) come from the same app root as the
-    // REPLs: a version runs its own sb-core, not the dev tree's
-    if std::env::var_os("SB_CORE_BIN").is_none() && root.join("sb-core").exists() {
+    // REPLs: a version runs its own sb-core, not the dev tree's. An
+    // SB_CORE_BIN in the environment is not a choice: it was inherited
+    // from the hub that started this one (a version switch, a dev hub
+    // started by an agent) and names that hub's sb-core. Kept, a stale
+    // sb-core ran on every version after it (measured: a journal replay
+    // of 2000 events took 10.5 s instead of 0.2 s).
+    if root.join("sb-core").exists() {
         std::env::set_var("SB_CORE_BIN", root.join("sb-core"));
     }
     // the agents' REPLs load their MCP index like a normal session
@@ -275,7 +280,9 @@ fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
     }
     let root = live_app_root_or_exit();
     let exe = std::env::current_exe()?;
+    bend_tui::timing::mark("start (connecting)");
     let stream = switchboard::client::connect(&paths, &exe, &root)?;
+    bend_tui::timing::mark("connected, hello sent");
     bend_tui::run_switchboard(
         stream,
         paths.socket(),

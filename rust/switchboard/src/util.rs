@@ -8,6 +8,21 @@ pub fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// A startup timing mark: `<epoch ms> hub <what>` appended to the file
+/// named by `SB_TIMING` (unset: nothing). The TUI writes the same format,
+/// so the hub's and the TUI's phases line up on one clock.
+pub fn timing(what: &str) {
+    use std::io::Write;
+    let Some(path) = std::env::var_os("SB_TIMING") else { return };
+    let us = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_micros())
+        .unwrap_or(0);
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(f, "{:.1} hub {}", us as f64 / 1000.0, what);
+    }
+}
+
 /// The REPL wire carries one message per line: a real newline travels as
 /// the two chars backslash-n, and nothing else is escaped (the exact
 /// convention of core/api.bend `escape_nl` / `unescape_nl`).

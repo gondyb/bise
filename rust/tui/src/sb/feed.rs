@@ -26,6 +26,8 @@ pub(crate) struct FeedWindow {
     pub(super) first_pos: Option<usize>,
     /// A page was asked and has not arrived.
     pub(super) loading: bool,
+    /// The position of the newest line taken in.
+    pub(super) last_pos: Option<usize>,
 }
 
 /// Everything that belongs to one feed.
@@ -105,6 +107,7 @@ pub(super) fn ingest_at(app: &mut App, line: String, pos: Option<usize>) {
     ingest_line(app, line);
     if let Some(p) = pos {
         app.win.first_pos.get_or_insert(p);
+        app.win.last_pos = Some(app.win.last_pos.map_or(p, |l| l.max(p)));
         if app.events.len() > n0 {
             app.win.marks.push_back((n0, p));
         }
@@ -136,6 +139,26 @@ pub(super) fn trim_window(app: &mut App) {
     }
     app.win.first_pos = Some(pos);
     app.anchor.0 = app.anchor.0.saturating_sub(k);
+}
+
+/// `/clear` and Ctrl+L: the feed in focus shows nothing, like a
+/// terminal clear. Nothing is lost: the transcript keeps every line (and
+/// the agent its context); the feed now starts after the last line it
+/// took in, so scrolling up pages the cleared lines back from the hub,
+/// in their order.
+pub(super) fn clear_feed(app: &mut App) {
+    app.events.clear();
+    app.cache.clear();
+    app.win.marks.clear();
+    app.win.loading = false;
+    if let Some(p) = app.win.last_pos {
+        app.win.first_pos = Some(p + 1);
+    }
+    app.anchor = (0, 0);
+    app.scroll = 0;
+    app.follow = true;
+    app.unseen = 0;
+    app.feed_sel = None;
 }
 
 /// The view came close to the first event it holds: ask the hub for the
