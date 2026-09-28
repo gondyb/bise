@@ -205,7 +205,12 @@ fn log_line(paths: &Paths, s: &str) {
 }
 
 fn write_json(stream: &mut UnixStream, v: &Value) -> bool {
-    let mut s = v.to_string();
+    write_line(stream, &v.to_string())
+}
+
+fn write_line(stream: &mut UnixStream, line: &str) -> bool {
+    let mut s = String::with_capacity(line.len() + 1);
+    s.push_str(line);
     s.push('\n');
     stream.write_all(s.as_bytes()).is_ok()
 }
@@ -609,10 +614,12 @@ impl Shell {
         self.broadcast(&json!({"ev": "line", "agent": name, "line": line, "pos": pos}));
     }
 
+    /// One event to every client (serialized once).
     fn broadcast(&mut self, v: &Value) {
+        let line = v.to_string();
         let mut dead: Vec<ClientId> = Vec::new();
         for (id, s) in self.clients.iter_mut() {
-            if !write_json(s, v) {
+            if !write_line(s, &line) {
                 dead.push(*id);
             }
         }
