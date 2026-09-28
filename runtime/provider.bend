@@ -166,19 +166,37 @@ def wire_log(+text: String) -> IO(Unit):
     +path : String <- IO.pure(String, P.env_or(fr, ""))
     wire_log.when(String.is_empty(path), path, text)
 
-def note(n: Out, +line: String) -> IO(Out):
-  match n:
+def print_lines(lines: List<&2, String>) -> IO(Unit):
+  match lines:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case Con{l, rest}:
+      do IO<Unit>:
+        IO.print(l)
+        print_lines(rest)
+
+# send lines to the output: printed, or one socket write (wire log
+# first); a socket send hands the socket back, so the new Out is
+# returned for the next hop
+def send(o: Out, +lines: List<&2, String>) -> IO(Out):
+  match o:
     case OStd{}:
       do IO<Out>:
-        IO.print(line)
+        print_lines(lines)
         IO.pure(Out, OStd{})
     case ONet{sock}:
       do IO<Out>:
-        wire_log(String.append(line, "\n"))
-        sm : Socket & Result<&1, &1, U32 & String, Unit> <- TCP.send(sock,
-          String.append(line, "\n"))
+        +text : String <- IO.pure(String,
+          String.append(String.join(lines, "
+"), "
+"))
+        wire_log(text)
+        sm : Socket & Result<&1, &1, U32 & String, Unit> <- TCP.send(sock, text)
         s2 : Socket <- IO.pure(Socket, out.pair(sm))
         IO.pure(Out, ONet{s2})
+
+def note(n: Out, +line: String) -> IO(Out):
+  send(n, Con{line, Nil{}})
 
 # the token usage of a reply, as a feed line (runtime/usage-pure.bend);
 # a reply without usage, or a failed call, prints nothing
