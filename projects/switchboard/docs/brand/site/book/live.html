@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bise :* — live simulation v0</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#141211; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --line:#2a2623; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:#0b0a09; color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:13px; line-height:1.55; padding:24px; }
+  .lead { color:#8a8378; max-width:112ch; margin-bottom:14px; }
+  .lead b { color:var(--text); font-weight:400; }
+  .term { background:var(--bg); border-radius:8px; width:112ch; max-width:100%; box-shadow:0 12px 40px rgba(0,0,0,.45); display:flex; flex-direction:column; height:640px; }
+  .head { display:flex; justify-content:space-between; padding:8px 2ch 6px; }
+  .grid { display:grid; grid-template-columns:1fr 32ch; flex:1; min-height:0; }
+  .feed { padding:4px 2ch 10px; overflow-y:auto; scroll-behavior:smooth; }
+  .feed > * { max-width:76ch; }
+  .panel { border-left:1px solid var(--line); padding:4px 2ch; overflow:hidden; }
+  .row { display:flex; justify-content:space-between; white-space:nowrap; transition:background .4s; }
+  .row.new { background:#2e2926; }
+  .foot { border-top:1px solid var(--line); padding:6px 2ch 8px; }
+  .status, .composer { display:flex; justify-content:space-between; }
+  .status { color:var(--dim); }
+  .composer { margin-top:4px; }
+  .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)} .err{color:var(--err)}
+  .b { margin-top:1.6em; margin-top:1lh; } .who { display:inline-block; width:3ch; }
+  /* your message: a thin accent bar on the left (│), on every wrapped line; text at column 3 */
+  .you { border-left:1px solid var(--acc); padding-left:calc(3ch - 1px); }
+  .l3 { color:var(--dim); border-left:1px solid var(--faint); padding-left:2ch; margin-left:1ch; }
+  .l3 .to { color:var(--faint); } .l3 .nm { display:inline-block; width:10ch; overflow:hidden; vertical-align:bottom; white-space:nowrap; }
+  .l3.fold { cursor:pointer; } .l3.fold:hover { color:var(--text); }
+  .l1 { border-left:2px solid var(--acc); padding-left:2ch; }
+  .l1 .t { color:var(--acc); font-weight:700; }
+  .l1.answered { border-left-color:var(--faint); } .l1.answered .t { color:var(--dim); font-weight:400; }
+  .tsep { color:var(--faint); margin-top:10px; }
+  .card { border:1px solid var(--acc); border-radius:6px; padding:6px 2ch; margin:6px 2ch 0; }
+  .card .opts { color:var(--dim); }
+  #inp { flex:1; background:transparent; border:0; outline:0; color:var(--text); font:inherit; caret-color:var(--acc); }
+  #inp::placeholder { color:var(--faint); }
+  .mine { color:var(--acc); }
+  .tick { color:var(--faint); margin-left:1ch; } .tick.read { color:var(--acc); }
+  .enter { animation:enter .35s ease-out; }
+  @keyframes enter { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+  .pulse { display:inline-block; animation:pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity:.35 } }
+  .cur { display:inline-block; width:.6em; height:1.05em; background:var(--text); vertical-align:-.18em; animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0 } }
+  .controls { width:112ch; max-width:100%; margin-top:14px; display:flex; gap:8px; align-items:center; color:#8a8378; }
+  .controls button { font:inherit; background:#1f1c1a; color:var(--text); border:1px solid #3a3531; border-radius:4px; padding:3px 10px; cursor:pointer; }
+  .controls button.on { border-color:var(--acc); color:var(--acc); }
+  .timeline { width:112ch; max-width:100%; height:34px; margin-top:10px; position:relative; background:#141211; border-radius:6px; cursor:pointer; }
+  .timeline .prog { position:absolute; left:0; top:0; bottom:0; background:#221e1b; border-radius:6px 0 0 6px; }
+  .timeline i { position:absolute; bottom:6px; width:2px; border-radius:1px; }
+  .timeline i.l1 { height:22px; background:var(--acc); border:0; padding:0; }
+  .timeline i.l2 { height:14px; background:var(--text); }
+  .timeline i.l3 { height:6px; background:var(--faint); }
+  .timeline .head-mark { position:absolute; top:0; bottom:0; width:2px; background:var(--acc); }
+  .legend { margin-top:6px; color:#8a8378; font-size:12px; }
+  .gc { display:inline-block; width:1ch; text-align:center; }
+</style>
+</head>
+<body>
+<p class="lead"><b>bise :* — a live simulation.</b> ~80 seconds, scripted, played in real time: you type, main starts 10 agents, they talk to each other, one needs you, you answer, main sends unfinished work back. the history only grows at the bottom, in arrival order; only the last run of messages between agents can still grow. click a <span class="dim">▸ run</span> to open it. keys: space play/pause · r restart.</p>
+
+<div class="term">
+  <div class="head"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim" id="counts"></span></div>
+  <div class="grid"><div class="feed" id="feed"><div class="tsep">· 14:02 ·</div><div id="intro"></div><div id="items"></div></div><div class="panel"><div style="margin-bottom:4px">agents <span class="faint">· ⌥ + number</span></div><div id="rows"></div></div></div>
+  <div id="cards"></div>
+  <div class="foot"><div class="status"><span id="status"></span><span id="clock" class="faint"></span></div>
+    <div class="composer"><span style="flex:1;display:flex"><span class="dim">›&nbsp;</span><span id="composer"></span><input id="inp" autocomplete="off" spellcheck="false"></span><span class="dim" id="hints">⏎ send · @ agent · / commands</span></div></div>
+</div>
+
+<div class="controls">
+  <button id="play">pause</button>
+  <button data-speed="1" class="on">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button>
+  <button id="restart">restart</button>
+  <span id="tlabel"></span>
+</div>
+<div class="timeline" id="timeline"><div class="prog" id="prog"></div></div>
+<div class="legend"><span class="acc">▮</span> needs you · <span>▮</span> for you · <span class="faint">▮</span> between agents — click to jump</div>
+
+<script>
+// ---------- the scenario: every event at a time t (seconds at 1×) ----------
+const EV = [];
+const at = (t, e) => EV.push({ t, ...e });
+const say = (t, text, dur) => { at(t, { type: "type", text, dur }); at(t + dur, { type: "you", text }); };
+const burst = (t0, t1, msgs) => msgs.forEach((m, i) => at(t0 + (t1 - t0) * i / msgs.length, { type: "msg", from: m[0], to: m[1], text: m[2] }));
+
+say(0.5, "ship the v2 api: endpoints, sdk, docs and the db migration. oh and the safari login bug is back.", 5);
+at(6.2, { type: "main", html: "on it. 10 agents: auth-fix for safari, 5 endpoints, 2 sdk, docs, and mig-db for the migration." });
+["auth-fix", "ep-users", "ep-orgs", "ep-keys", "ep-audit", "ep-billing", "sdk-py", "sdk-ts", "docs", "mig-db"].forEach((n, i) => {
+  at(6.6 + i * 0.25, { type: "agent", name: n, status: "starting" });
+  at(8.2 + i * 0.3, { type: "agent", name: n, status: "working" });
+});
+burst(9.5, 17, [
+  ["ep-users", "main", "i take /users and /users/{id}."], ["ep-orgs", "main", "i take /orgs, /orgs/{id}/members."],
+  ["ep-keys", "ep-users", "do keys belong to users or orgs in v2?"], ["ep-users", "ep-keys", "orgs. users only own sessions."],
+  ["sdk-py", "sdk-ts", "same pagination shape as you?"], ["sdk-ts", "sdk-py", "cursor + limit, max 200."],
+  ["ep-audit", "main", "the audit log needs a new index, fine?"], ["main", "ep-audit", "yes, the brief allows migrations."],
+  ["ep-billing", "ep-orgs", "i need org ids in invoices, stable?"], ["ep-orgs", "ep-billing", "stable, uuid v7."],
+  ["ep-users", "ep-orgs", "error format: {code, message, details}?"], ["ep-orgs", "ep-users", "+1, same for all of us."],
+]);
+at(17.6, { type: "main", html: "the endpoint agents agreed on one error format. i told the sdk agents to use it too." });
+burst(18.2, 19.2, [["main", "sdk-py", "errors: {code, message, details}."], ["main", "sdk-ts", "errors: {code, message, details}."]]);
+burst(19.5, 25, [
+  ["docs", "ep-keys", "can i quote your error codes?"], ["ep-keys", "docs", "yes, final list in keys/errors.ts."],
+  ["mig-db", "ep-audit", "your index goes in migration 0042."], ["ep-audit", "mig-db", "ok, i'll wait for it."],
+  ["sdk-ts", "ep-billing", "invoice amounts: cents or decimals?"], ["ep-billing", "sdk-ts", "cents, integers."],
+]);
+at(25.6, { type: "msg", from: "auth-fix", to: "main", text: "♡ done: added Secure to the session cookie, webkit green." });
+at(26.6, { type: "main", html: "auth-fix said done, but the chrome login test is red now. i sent it back." });
+at(26.7, { type: "agent", name: "auth-fix", status: "working" });
+at(27.2, { type: "msg", from: "main", to: "auth-fix", text: "chrome login is red after your change. fix it, rerun both." });
+burst(28, 33.5, [
+  ["docs", "main", "? v1 or v2 for the examples?"], ["main", "docs", "v2, the brief says so."],
+  ["ep-keys", "main", "♡ /keys done, 14 tests green."], ["sdk-py", "ep-users", "is /users/{id} 404 or 410 when deleted?"], ["ep-users", "sdk-py", "410."],
+]);
+at(34.2, { type: "main", html: 'docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span>' });
+burst(35, 40, [
+  ["ep-orgs", "ep-billing", "members endpoint is live on my branch."], ["ep-billing", "ep-orgs", "thanks, wiring it."],
+  ["sdk-ts", "sdk-py", "retry policy: 3 tries, backoff 2^n?"], ["sdk-py", "sdk-ts", "same, with jitter."], ["docs", "ep-orgs", "example payload for /orgs?"],
+]);
+at(40.6, { type: "msg", from: "mig-db", to: "main", text: "? drop the v1 tables now, or keep them one release?" });
+at(41.2, { type: "msg", from: "main", to: "mig-db", text: "that's a product call, asking the user." });
+at(41.8, { type: "card", agent: "mig-db", title: "mig-db needs you", body: "drop the v1 tables now, or keep them one release?" });
+burst(42.5, 47.5, [
+  ["ep-orgs", "docs", "here: examples/orgs.json."], ["ep-audit", "mig-db", "0042 works on my side."],
+  ["sdk-ts", "main", "♡ ts client generated, 62 tests."], ["ep-billing", "sdk-ts", "invoice pdf url is signed, 15 min."], ["sdk-py", "sdk-ts", "matching your naming now."],
+]);
+say(48, "keep them one release, we drop them in 0.6", 3.4);
+at(51.5, { type: "answer", agent: "mig-db" });
+at(52, { type: "msg", from: "main", to: "mig-db", text: "keep v1 tables one release; drop in 0.6." });
+at(53, { type: "msg", from: "auth-fix", to: "main", text: "♡ done: Secure only on https. chrome and webkit green." });
+at(53.8, { type: "report", g: "♡", html: 'auth-fix is done. safari login fixed; chrome and webkit green. <span class="dim">▸ report</span>' });
+at(53.9, { type: "agent", name: "auth-fix", status: "done" });
+at(55, { type: "gap", minutes: 7 });
+burst(56, 64, [
+  ["ep-users", "main", "♡ /users done, 21 tests green."], ["ep-orgs", "main", "♡ /orgs done, 17 tests green."],
+  ["sdk-py", "ep-billing", "waiting on the invoice schema."], ["sdk-ts", "ep-billing", "same here."],
+  ["ep-billing", "sdk-py", "schema in ~20 min."], ["docs", "ep-users", "is the 410 in the changelog?"], ["ep-users", "docs", "yes, under breaking."],
+  ["mig-db", "ep-audit", "0042 merged."], ["ep-audit", "main", "♡ /audit done."],
+]);
+[["ep-users", "done"], ["ep-orgs", "done"], ["ep-keys", "done"], ["ep-audit", "done"], ["sdk-py", "waiting"], ["sdk-ts", "waiting"]]
+  .forEach(([n, s], i) => at(64.5 + i * 0.1, { type: "agent", name: n, status: s }));
+at(65, { type: "report", g: "♡", html: '4 endpoints are done: users, orgs, keys, audit. <span class="dim">▸ reports</span>' });
+burst(66, 71, [["docs", "ep-billing", "invoice example when ready?"], ["ep-billing", "docs", "yes, with the schema."], ["mig-db", "main", "· backfill 60% done."]]);
+say(71.5, "where are we?", 1.5);
+at(74, { type: "main", html: "4 endpoints done, auth-fix done, nothing needs you. the 2 sdk agents wait on ep-billing for the invoice schema, about 20 min. docs and mig-db are working." });
+let END = 78;
+EV.sort((a, b) => a.t - b.t);
+
+// ---------- state is a pure function of the time ----------
+const GLYPH = { starting: '<span class="pulse dim">·</span>', working: '<span class="pulse">∿</span>', waiting: "…", need: '<span class="acc">?</span>', done: "♡" };
+const START = 14 * 3600 + 2 * 60;
+function stateAt(now) {
+  const st = { items: [], agents: [], byName: {}, cards: [], offset: 0, typing: null };
+  let run = null; // the open run of level-3 lines (only the tail)
+  const closeRun = () => { run = null; };
+  const push = (it) => { closeRun(); st.items.push(it); };
+  for (const e of EV) {
+    if (e.t > now) break;
+    const sim = START + e.t * 12 + st.offset;
+    switch (e.type) {
+      case "type": if (now < e.t + e.dur) st.typing = e.text.slice(0, Math.floor(e.text.length * (now - e.t) / e.dur)); break;
+      case "you": push({ k: "you", html: e.text, real: e.real, t: e.t }); if (!e.real) st.typing = null; break;
+      case "main": push({ k: "main", html: e.html }); break;
+      case "report": push({ k: "report", g: e.g, html: e.html }); break;
+      case "msg":
+        if (!run) { run = { k: "run", msgs: [], id: st.items.length }; st.items.push(run); }
+        run.msgs.push(e); break;
+      case "agent": {
+        let a = st.byName[e.name];
+        if (!a) { a = st.byName[e.name] = { name: e.name, since: sim, born: e.t }; st.agents.push(a); }
+        a.status = e.status; if (e.status === "working" && !a.since) a.since = sim; break;
+      }
+      case "card": {
+        const it = { k: "need", ...e, open: true }; push(it); st.cards.push(it); st.byName[e.agent].status = "need"; break;
+      }
+      case "answer": {
+        const c = st.cards.find((c) => c.agent === e.agent); if (c) { c.open = false; st.cards = st.cards.filter((x) => x !== c); }
+        st.byName[e.agent].status = "working"; break;
+      }
+      case "gap": st.offset += e.minutes * 60; push({ k: "time", sim: START + e.t * 12 + st.offset }); break;
+    }
+  }
+  st.tailRun = run;
+  st.now = now;
+  st.sim = START + now * 12 + st.offset;
+  return st;
+}
+
+// ---------- rendering ----------
+const hhmm = (s) => `${String(Math.floor(s / 3600) % 24).padStart(2, "0")}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}`;
+const expanded = new Set();
+function msgLine(m) {
+  return `<div class="l3"><span class="who">@</span><span class="nm">${m.from}</span><span class="to">→ </span><span class="nm to">${m.to}</span>${m.text}</div>`;
+}
+function renderItem(it, st) {
+  switch (it.k) {
+    case "you": {
+      // WhatsApp-style marks: · sending, ✓ the agent got it, ✓✓ the model read it
+      const age = st.now - it.t;
+      const tick = age < 0.4 ? '<span class="tick">·</span>' : age < 1.4 ? '<span class="tick">✓</span>' : '<span class="tick read">✓✓</span>';
+      return `<div class="b you">${it.html}${tick}</div>`;
+    }
+    case "main": return `<div class="b"><span class="who acc">:*</span>${it.html}</div>`;
+    case "report": return `<div class="b"><span class="who">${it.g}</span>${it.html}</div>`;
+    case "time": return `<div class="tsep">· ${hhmm(it.sim)} ·</div>`;
+    case "need": return `<div class="b l1${it.open ? "" : " answered"}"><div class="t">? ${it.title}</div><div>${it.body}</div>${it.open ? '<div class="dim">type the answer · alt+r send · ctrl+x later</div>' : '<div class="dim">answered</div>'}</div>`;
+    case "run": {
+      const n = it.msgs.length, open = it === st.tailRun;
+      const agents = new Set(it.msgs.flatMap((m) => [m.from, m.to])).size;
+      const folded = n > 3 && !expanded.has(it.id);
+      if (!folded) return `<div class="b">${n > 3 ? `<div class="l3 fold" data-run="${it.id}">▾ ${n} messages between ${agents} agents</div>` : ""}${it.msgs.map(msgLine).join("")}</div>`;
+      return `<div class="b l3 fold" data-run="${it.id}">▸ ${n} message${n > 1 ? "s" : ""} between ${agents} agents${open ? ' <span class="pulse">∿</span>' : ""}</div>`;
+    }
+  }
+}
+// set innerHTML only when it changed: re-creating nodes would restart
+// their CSS animations (the pulse, the cursor)
+const setH = (el, h) => { if (el._h !== h) { el._h = h; el.innerHTML = h; } };
+let feedKeys = [];
+function render(now, force = false) {
+  const st = stateAt(now);
+  const feed = document.getElementById("feed");
+  const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
+  setH(document.getElementById("intro"), st.items.length ? "" :
+    '<div class="b dim">what\'s on your mind?</div><div class="b dim">say it and keep talking. the work runs in the background, i\'m always here.</div>');
+  // the history: append-only. existing items are only re-rendered when their
+  // html changed (the tail run growing, a card answered); new ones are appended
+  const box = document.getElementById("items");
+  if (force || st.items.length < feedKeys.length) { box.innerHTML = ""; feedKeys = []; }
+  st.items.forEach((it, i) => {
+    const h = renderItem(it, st);
+    if (i < feedKeys.length) {
+      if (feedKeys[i] !== h) { const n = document.createElement("div"); n.innerHTML = h; box.children[i].replaceWith(n); feedKeys[i] = h; }
+    } else {
+      const n = document.createElement("div"); n.innerHTML = h; if (!force && playing) n.className = "enter"; box.append(n); feedKeys.push(h);
+    }
+  });
+  if (atBottom || force) feed.scrollTop = feed.scrollHeight;
+  // panel: creation order, stable numbers
+  const rows = [{ name: "main", g: '<span class="acc">:*</span>', r: "" }, ...st.agents.map((a) => ({
+    name: a.name, g: GLYPH[a.status],
+    r: a.status === "need" ? '<span class="acc">you</span>' : a.status === "done" ? "done" : a.status === "waiting" ? "waits ep-billing" :
+      a.status === "starting" ? "starting" : `${Math.max(1, Math.round((st.sim - a.since) / 60))}m · ${Math.min(88, Math.round((now - a.born) * 1.1 + 3))}%`,
+  }))];
+  const panel = document.getElementById("rows");
+  while (panel.children.length > rows.length) panel.lastChild.remove();
+  rows.forEach((r, i) => {
+    let el = panel.children[i];
+    if (!el) { el = document.createElement("div"); el.className = "row"; el.innerHTML = "<span></span><span class=\"dim\"></span>"; panel.append(el); }
+    setH(el.children[0], `<span class="faint">${i <= 9 ? i : " "}</span> ${r.g} ${r.name}`);
+    setH(el.children[1], r.r);
+  });
+  const c = (s) => st.agents.filter((a) => a.status === s).length;
+  const work = c("working") + c("starting");
+  setH(document.getElementById("counts"), st.agents.length ? [
+    work ? `<span class="pulse">∿</span> ${work} working` : "", c("waiting") ? `… ${c("waiting")} waiting` : "",
+    c("need") ? `<span class="acc">? ${c("need")} needs you</span>` : "", c("done") ? `♡ ${c("done")} done` : ""].filter(Boolean).join(" · ") : "no agents yet");
+  setH(document.getElementById("cards"), st.cards.map((k) =>
+    `<div class="card enter"><span class="acc">?</span> ${k.title} <span class="dim">· ${k.body}</span></div>`).join(""));
+  // the scripted "you" types only while your own composer is empty
+  const inp = document.getElementById("inp"), mine = inp.value !== "" || document.activeElement === inp;
+  setH(document.getElementById("composer"), mine || st.typing == null ? "" : `${st.typing}<span class="cur"></span>`);
+  inp.placeholder = mine || st.typing != null ? "" : "type here, any time: a new request, @agent …, where are we?, no, …, an answer to a card";
+  setH(document.getElementById("status"), `<span class="acc">main</span> · ${st.typing != null ? "you're typing" : "listening"} · ${st.agents.length} agents`);
+  setH(document.getElementById("clock"), hhmm(st.sim));
+  document.getElementById("prog").style.width = `${100 * now / END}%`;
+  setH(document.getElementById("tlabel"), `${now.toFixed(0)}s / ${END}s`);
+}
+
+// ---------- the timeline ----------
+const tl = document.getElementById("timeline");
+function drawMarkers() {
+  tl.querySelectorAll("i").forEach((i) => i.remove());
+  EV.forEach((e) => {
+    const lv = e.type === "card" ? "l1" : ["you", "main", "report"].includes(e.type) ? "l2" : e.type === "msg" ? "l3" : null;
+    if (!lv) return;
+    const i = document.createElement("i"); i.className = lv; i.style.left = `${100 * e.t / END}%`;
+    if (e.real) i.style.background = "var(--acc)"; tl.append(i);
+  });
+}
+drawMarkers();
+tl.onclick = (ev) => { const r = tl.getBoundingClientRect(); now = END * (ev.clientX - r.left) / r.width; render(now, true); };
+
+// ---------- playback ----------
+let now = 0, speed = 1, playing = true, last = performance.now();
+function frame(t) {
+  const dt = (t - last) / 1000; last = t;
+  if (playing) { now = Math.min(END, now + dt * speed); if (now >= END) setPlaying(false); }
+  render(now);
+  setTimeout(() => requestAnimationFrame(frame), 90);
+}
+function setPlaying(p) { playing = p; document.getElementById("play").textContent = p ? "pause" : "play"; }
+document.getElementById("play").onclick = () => { if (now >= END) { now = 0; render(0, true); } setPlaying(!playing); };
+document.getElementById("restart").onclick = () => {
+  for (let i = EV.length - 1; i >= 0; i--) if (EV[i].real) EV.splice(i, 1);
+  END = 78; drawMarkers(); now = 0; expanded.clear(); render(0, true); setPlaying(true);
+};
+document.querySelectorAll("[data-speed]").forEach((b) => b.onclick = () => {
+  speed = +b.dataset.speed; document.querySelectorAll("[data-speed]").forEach((x) => x.classList.toggle("on", x === b));
+});
+document.getElementById("feed").onclick = (e) => {
+  const f = e.target.closest("[data-run]"); if (!f) return;
+  const id = +f.dataset.run; expanded.has(id) ? expanded.delete(id) : expanded.add(id); render(now, true);
+};
+document.addEventListener("keydown", (e) => {
+  if (document.activeElement === document.getElementById("inp")) return;
+  if (e.key === " ") { e.preventDefault(); document.getElementById("play").click(); }
+  if (e.key === "r") document.getElementById("restart").click();
+});
+// ---------- you, typing for real ----------
+// your message is appended at the current time, in order, like any event;
+// main's reaction is scheduled right after it. nothing above moves.
+const STOP = new Set("the a an and or to of for on in it is be can you please oh also just my our this that with fix add make write do check look at".split(" "));
+function slug(text) {
+  const w = text.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((x) => x && !STOP.has(x));
+  return (w.slice(0, 2).join("-") || "task").slice(0, 14);
+}
+function send(text) {
+  const t0 = now, st = stateAt(now), add = (dt, e) => EV.push({ t: t0 + dt, real: true, ...e });
+  const low = text.toLowerCase().trim();
+  add(0, { type: "you", text: text.replace(/</g, "&lt;") });
+  const names = st.agents.map((a) => a.name);
+  const direct = low.match(/^@([\w-]+)\s*(.*)$/);
+  const card = st.cards[0];
+  if (direct && names.includes(direct[1])) {
+    // a direct message: main is not in the loop; the agent answers the traffic way
+    add(2.5, { type: "report", g: "@", html: `${direct[1]} <span class="dim">to you:</span> got it, doing that next.` });
+  } else if (/where are we|status|how('s| is) it going|on en est|où en/.test(low)) {
+    const c = (s) => st.agents.filter((a) => a.status === s).length;
+    add(1.2, { type: "main", html: `${c("working") + c("starting")} working, ${c("done")} done${c("waiting") ? `, ${c("waiting")} waiting on another agent` : ""}${card ? `. ${card.agent} needs you: ${card.body}` : ", nothing needs you."}` });
+  } else if (/^(no|nope|actually|wait|non)\b/.test(low)) {
+    // no undo: a correction is a message. main tells the agent explicitly
+    const target = names.find((n) => low.includes(n)) ?? "docs";
+    add(1, { type: "main", html: `told ${target}: you changed your mind.` });
+    add(1.1, { type: "msg", from: "main", to: target, text: `the user changed their mind: "${text}".` });
+    add(3, { type: "msg", from: target, to: "main", text: "ok, redoing it that way." });
+  } else if (card) {
+    add(1, { type: "main", html: `passed your answer to ${card.agent}.` });
+    add(1.1, { type: "msg", from: "main", to: card.agent, text });
+    add(1.2, { type: "answer", agent: card.agent });
+  } else {
+    const target = names.find((n) => low.includes(n));
+    if (target) {
+      add(1, { type: "main", html: `sent to ${target}.` });
+      add(1.1, { type: "msg", from: "main", to: target, text });
+      add(1.2, { type: "agent", name: target, status: "working" });
+      add(6, { type: "msg", from: target, to: "main", text: "· on it, adjusting my plan." });
+    } else {
+      let n = slug(text), k = 2; while (names.includes(n)) n = `${slug(text)}-${k++}`;
+      add(1, { type: "main", html: `on it: ${n} takes it.` });
+      add(1.3, { type: "agent", name: n, status: "starting" });
+      add(2.8, { type: "agent", name: n, status: "working" });
+      add(7, { type: "msg", from: n, to: "main", text: "· found where it lives, working on it." });
+      add(9, { type: "msg", from: n, to: names[1] ?? "main", text: "heads-up, i may touch files near yours." });
+      add(15, { type: "msg", from: n, to: "main", text: "♡ done, tests green." });
+      add(16, { type: "report", g: "♡", html: `${n} is done. <span class="dim">▸ report</span>` });
+      add(16.1, { type: "agent", name: n, status: "done" });
+    }
+  }
+  EV.sort((a, b) => a.t - b.t);
+  END = Math.max(END, t0 + 18);
+  drawMarkers();
+  if (!playing) setPlaying(true);
+  document.getElementById("feed").scrollTop = 1e9;
+}
+document.getElementById("inp").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.value.trim()) { send(e.target.value.trim()); e.target.value = ""; }
+  if (e.key === "Escape") e.target.blur();
+});
+
+// ?t=45 starts at 45 s; ?t=45&paused stops there (for screenshots)
+const q = new URLSearchParams(location.search);
+if (q.has("t")) { now = Math.min(END, +q.get("t")); render(now, true); }
+if (q.has("paused")) setPlaying(false);
+// test hook: ?t=45&paused&say=...&after=17 sends a message at 45 s and shows 17 s later
+if (q.has("say")) { send(q.get("say")); now = Math.min(END, now + +(q.get("after") ?? 0)); setPlaying(!q.has("paused")); render(now, true); }
+requestAnimationFrame(frame);
+
+// ---- one fixed cell per symbol ----
+// glyphs missing from the web font (∿ ♡ ✓ ▸ …) are drawn by a fallback font
+// whose advance is not 1ch; that shifts every column after them. wrap each
+// symbol in a 1ch cell, now and whenever the page adds text.
+const GLYPH_RE = /[\u2010-\u2BFF\u2E00-\u2E7F]/;
+function cellify(root) {
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => GLYPH_RE.test(n.data) && !n.parentElement.closest(".gc, script, style, textarea, input")
+      ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+  const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+  for (const n of nodes) {
+    const f = document.createDocumentFragment();
+    for (const ch of n.data) {
+      if (GLYPH_RE.test(ch)) { const s = document.createElement("span"); s.className = "gc"; s.textContent = ch; f.append(s); }
+      else if (f.lastChild && f.lastChild.nodeType === 3) f.lastChild.data += ch;
+      else f.append(document.createTextNode(ch));
+    }
+    n.replaceWith(f);
+  }
+}
+cellify(document.body);
+new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) {
+  if (n.nodeType === 1 && !n.classList.contains("gc")) cellify(n);
+  else if (n.nodeType === 3 && GLYPH_RE.test(n.data) && n.parentElement && !n.parentElement.closest(".gc")) cellify(n.parentElement);
+} }).observe(document.body, { childList: true, subtree: true, characterData: false });
+</script>
+</body>
+</html>

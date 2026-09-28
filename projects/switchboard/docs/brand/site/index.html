@@ -3,595 +3,638 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>bise :* — the brand book</title>
+<title>bise :* · kiss your backlog goodbye.</title>
+<meta name="description" content="ramble. interrupt. change your mind. i run the agents. you stay in flow.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  :root, [data-theme="dark"] {
-    --bg:#141211; --bg2:#1b1816; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --line:#2a2623;
-    --acc:#f4a6b0; --tint:#2b1c21; --err:#ff5a52; --ok:#b9d99a;
-    --kw:#d7a6f0; --str:#b9d99a; --com:#857e74; --num:#f0b27a; --fn:#8fc4f0;
-  }
-  [data-theme="light"] {
-    --bg:#f7f4ee; --bg2:#efeae1; --text:#1b1917; --dim:#6b645a; --faint:#cfc8bd; --line:#e2dcd2;
-    --acc:#b8416b; --tint:#f6e3e8; --err:#b3261e; --ok:#3f7a2a;
-    --kw:#8a3fb0; --str:#3f7a2a; --com:#8a8378; --num:#a85a14; --fn:#1f5fa8;
-  }
+  :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --wind:#4a4540; --acc:#f4a6b0; --err:#ff5a52; }
+  [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --wind:#cbc3b6; --acc:#b8416b; --err:#b3261e; }
   * { box-sizing:border-box; margin:0; padding:0; }
   html { scroll-behavior:smooth; }
-  body { background:var(--bg); color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:15px; line-height:1.7; transition:background .3s, color .3s; }
-  a { color:var(--acc); text-decoration:none; } a:hover { text-decoration:underline; }
-  .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)} .err{color:var(--err)} .ok{color:var(--ok)}
-  .kw{color:var(--kw)} .str{color:var(--str)} .com{color:var(--com)} .num{color:var(--num)} .fn{color:var(--fn)}
+  body { background:var(--bg); color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:16px; line-height:1.75; transition:background .4s, color .4s; }
+  a { color:inherit; text-decoration:none; }
+  .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)}
+  .gc { display:inline-block; width:1ch; text-align:center; }
 
-  /* layout */
-  nav.side { position:fixed; top:0; left:0; bottom:0; width:250px; padding:28px 24px; border-right:1px solid var(--line); overflow-y:auto; font-size:13px; }
-  nav.side .logo { font-weight:700; font-size:18px; margin-bottom:4px; }
-  nav.side .sub { color:var(--dim); margin-bottom:22px; }
-  nav.side .grp { color:var(--faint); margin:16px 0 4px; }
-  nav.side a { display:block; color:var(--dim); padding:1px 0; }
-  nav.side a:hover, nav.side a.on { color:var(--text); text-decoration:none; }
-  nav.side a.on::before { content:"› "; color:var(--acc); }
-  .toggle { margin-top:24px; display:flex; gap:6px; }
-  .toggle button { font:inherit; font-size:12px; background:transparent; color:var(--dim); border:1px solid var(--line); border-radius:4px; padding:2px 10px; cursor:pointer; }
-  .toggle button.on { color:var(--acc); border-color:var(--acc); }
-  main { margin-left:250px; }
-  section { padding:88px 7vw 40px; max-width:calc(76ch + 14vw); border-bottom:1px solid var(--line); }
-  section.wide { max-width:none; }
-  h1 { font-size:13px; font-weight:400; color:var(--faint); letter-spacing:.06em; margin-bottom:18px; }
-  h2 { font-size:30px; line-height:1.25; font-weight:700; margin-bottom:22px; letter-spacing:-.01em; }
-  h3 { font-size:16px; font-weight:700; margin:34px 0 10px; }
-  p { max-width:76ch; margin-bottom:14px; }
-  .lead { font-size:18px; line-height:1.6; max-width:60ch; }
-  ul.list { list-style:none; max-width:76ch; margin-bottom:14px; }
-  ul.list li { padding-left:3ch; position:relative; margin-bottom:6px; }
-  ul.list li::before { content:"·"; position:absolute; left:1ch; color:var(--acc); }
-  code, .k { background:var(--bg2); border-radius:3px; padding:0 .4ch; font-size:.93em; }
-  .warn { color:var(--num); font-size:.9em; }
-  table { border-collapse:collapse; margin:10px 0 20px; font-size:14px; max-width:100%; }
-  th { text-align:left; font-weight:400; color:var(--faint); padding:6px 3ch 6px 0; border-bottom:1px solid var(--line); }
-  td { padding:7px 3ch 7px 0; border-bottom:1px solid var(--line); vertical-align:top; }
-  td.g { font-size:18px; width:5ch; }
+  /* only with ?draft: claims that are not true yet */
+  .tbd { cursor:help; }
+  body.draft .tbd { text-decoration:underline dotted var(--err); text-underline-offset:4px; }
+  .draftnote { display:none; position:fixed; bottom:12px; right:12px; z-index:9; font-size:12px; color:var(--dim); }
+  body.draft .draftnote { display:block; }
 
-  /* hero */
-  .hero { min-height:92vh; display:flex; flex-direction:column; justify-content:center; padding:0 7vw; border-bottom:1px solid var(--line); position:relative; overflow:hidden; }
-  .hero .big { font-size:clamp(64px, 11vw, 150px); font-weight:700; letter-spacing:-.04em; line-height:1; }
-  .kiss { display:inline-block; color:var(--acc); animation:kiss 1s .5s ease-out both; }
-  @keyframes kiss { 0% { opacity:0; transform:scale(.4) } 55% { opacity:1; transform:scale(1.4) rotate(-10deg) } 100% { opacity:1; transform:none } }
-  .hero .t1 { font-size:clamp(22px, 3vw, 34px); margin-top:34px; }
-  .hero .t2 { color:var(--dim); margin-top:8px; font-size:17px; }
-  .hero .def { color:var(--dim); margin-top:40px; font-size:14px; line-height:1.7; }
-  .hero .scroll { position:absolute; bottom:28px; color:var(--faint); font-size:13px; }
-  .cursors { position:absolute; inset:0; pointer-events:none; color:var(--faint); font-size:13px; }
-  .cursors div { position:absolute; white-space:nowrap; }
+  /* top: almost nothing */
+  header { position:fixed; top:0; left:0; right:0; z-index:5; display:flex; justify-content:space-between; align-items:center; padding:22px 5vw; font-size:14px; color:var(--dim); }
+  header .logo { color:var(--text); font-weight:700; opacity:0; transition:opacity .5s; }
+  header.scrolled .logo { opacity:1; }
+  header nav { display:flex; gap:3ch; align-items:center; }
+  header nav a:hover, header button:hover { color:var(--text); }
+  header button { font:inherit; background:none; border:0; color:inherit; cursor:pointer; }
+
+  /* the wind: an ASCII field that drifts behind the hero */
+  .sky { position:relative; overflow:hidden; }
+  pre.wind { position:absolute; inset:0; color:var(--wind); font:inherit; font-size:14px; line-height:1.4; pointer-events:none; user-select:none; white-space:pre; overflow:hidden;
+    -webkit-mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); }
+  .kisses { position:absolute; inset:0; pointer-events:none; font-size:14px; }
+  .kisses span { position:absolute; color:var(--acc); white-space:nowrap; transition:opacity 1.2s; }
+  .cursors { position:absolute; inset:0; pointer-events:none; color:var(--dim); font-size:13px; }
+  .cursors div { position:absolute; white-space:nowrap; opacity:.55; transition:opacity 1s; }
   .cur { display:inline-block; width:.6em; height:1.05em; background:currentColor; vertical-align:-.18em; animation:blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity:0 } }
+
+  .hero { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:0 6vw; position:relative; }
+  .big { font-size:clamp(76px, 13vw, 170px); font-weight:700; letter-spacing:-.045em; line-height:1; }
+  .kiss { display:inline-block; color:var(--acc); animation:kiss 1s .6s ease-out both; }
+  @keyframes kiss { 0% { opacity:0; transform:scale(.4) } 55% { opacity:1; transform:scale(1.35) rotate(-10deg) } 100% { opacity:1; transform:none } }
+  .t1 { font-size:clamp(24px, 3.2vw, 38px); font-weight:700; margin-top:42px; letter-spacing:-.02em; }
+  .t2 { color:var(--dim); margin-top:12px; font-size:clamp(15px, 1.4vw, 17px); max-width:none; }
+  .install { margin-top:44px; color:var(--text); font-size:15px; cursor:pointer; display:inline-flex; align-items:center; gap:2.5ch;
+    background:var(--soft); border:1px solid var(--faint); border-radius:10px; padding:11px 12px 11px 20px; transition:border-color .3s, background .3s; }
+  .install:hover { border-color:var(--acc); }
+  .install .p { color:var(--acc); }
+  .install .c { font-size:12px; color:var(--dim); border:1px solid var(--faint); border-radius:6px; padding:2px 10px; transition:color .3s, border-color .3s; }
+  .install:hover .c { color:var(--text); border-color:var(--dim); }
+  .install.done .c { color:var(--acc); border-color:var(--acc); }
+  .scroll { position:absolute; bottom:30px; color:var(--faint); font-size:13px; animation:breathe 3s ease-in-out infinite; }
+  @keyframes breathe { 50% { opacity:.4; transform:translateY(3px) } }
+
+  /* reveal: text arrives like a breeze */
+  .blow { opacity:0; transform:translateX(-14px); transition:opacity 1.1s ease, transform 1.4s ease; }
+  .blow.in { opacity:1; transform:none; }
+
+  section { padding:18vh 6vw; }
+  .inner { max-width:64ch; margin:0 auto; }
+  .kicker { color:var(--faint); font-size:13px; margin-bottom:18px; }
+  h2 { font-size:clamp(24px, 2.8vw, 34px); line-height:1.25; letter-spacing:-.02em; margin-bottom:28px; font-weight:700; }
+  p { margin-bottom:20px; }
+  p.soft { color:var(--dim); }
+  .turn { color:var(--acc); font-weight:700; }
+
+
+  /* the demo */
+  .demo { padding:12vh 5vw 10vh; display:flex; justify-content:center; }
+  .dhead { text-align:center; margin:0 auto 44px; max-width:64ch; }
+  .dhead p { margin:0 auto; }
+  .thead { display:flex; justify-content:space-between; padding:14px 3ch 0; font-weight:700; }
+  .thead .faint { font-weight:400; }
+  .term { width:104ch; max-width:100%; background:var(--soft); border-radius:12px; font-size:13.5px; line-height:1.6; overflow:hidden; text-align:left; }
+  .screen { display:grid; grid-template-columns:minmax(0,1fr) 28ch; height:420px; }
+  .feed { padding:18px 3ch 10px; overflow-y:auto; }
+  .feed > div { max-width:68ch; animation:enter .5s ease-out; }
+  @keyframes enter { from { opacity:0; transform:translateY(5px) } }
+  .feed .b { margin-top:1.6em; margin-top:1lh; }  /* one blank line between blocks, like the terminal */
+  /* your message: a thin accent bar on the left, like in the product */
+  .you { border-left:1px solid var(--acc); padding-left:calc(2ch - 1px); }
+  .tick { color:var(--faint); margin-left:1ch; } .tick.read { color:var(--acc); }
+  .l3 { color:var(--dim); opacity:.6; padding-left:2ch; }
+  .card { border-left:2px solid var(--acc); padding-left:2ch; }
+  .card .t { color:var(--acc); font-weight:700; }
+  .card.answered { border-left-color:var(--faint); } .card.answered .t { color:var(--dim); font-weight:400; }
+  .panel { padding:18px 2ch; }
+  .panel .h { color:var(--faint); margin-bottom:8px; white-space:nowrap; }
+  .panel .row { display:flex; justify-content:space-between; white-space:nowrap; animation:enter .5s ease-out; }
+  .foot { padding:8px 3ch 14px; }
+  .status { display:flex; justify-content:space-between; color:var(--dim); }
+  .composer { margin-top:4px; white-space:pre; }
+  .composer .cur { background:var(--acc); }
   .pulse { display:inline-block; animation:pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity:.35 } }
+  .caption { text-align:center; color:var(--faint); font-size:13px; margin-top:18px; }
 
-  /* blocks */
-  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px; margin:22px 0; max-width:1100px; }
-  .card { border:1px solid var(--line); border-radius:8px; padding:18px 20px; background:var(--bg2); }
-  .card .h { font-weight:700; margin-bottom:6px; }
-  .card .h .acc { margin-right:1ch; }
-  .card p { font-size:14px; color:var(--dim); margin:0; }
-  .term { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:14px 2ch; margin:14px 0 24px; font-size:13.5px; line-height:1.6; max-width:100ch; overflow-x:auto; box-shadow:0 10px 30px rgba(0,0,0,.18); }
-  [data-theme="dark"] .term { background:#0f0e0d; }
-  .term .row { white-space:pre; }
-  .who { display:inline-block; width:3ch; }
-  /* your message: a thin accent bar on the left (│), on every wrapped line; text at column 3 */
-  .you { border-left:1px solid var(--acc); padding-left:calc(3ch - 1px); }
-  .l3 { color:var(--dim); border-left:1px solid var(--faint); padding-left:2ch; margin-left:1ch; white-space:pre; }
-  .l1 { border-left:2px solid var(--acc); padding-left:2ch; }
-  .l1 .t { color:var(--acc); font-weight:700; }
-  .b { margin-top:1.6em; margin-top:1lh; }
-  .img { color:var(--acc); background:var(--tint); border-radius:3px; padding:0 .5ch; }
-  .tick { color:var(--faint); margin-left:1ch; } .tick.read { color:var(--acc); }
-  .dodont { display:grid; grid-template-columns:1fr 1fr; gap:16px; max-width:1000px; margin:16px 0 24px; }
-  .dodont > div { border-radius:8px; padding:14px 18px; border:1px solid var(--line); font-size:14px; }
-  .dodont .do { border-color:var(--acc); }
-  .dodont .lbl { font-size:12px; color:var(--faint); margin-bottom:6px; }
-  .dodont .do .lbl { color:var(--acc); }
-  .dodont p { margin-bottom:6px; }
-  .dodont s { color:var(--dim); }
-  .swatches { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:12px; max-width:1000px; margin:12px 0 26px; }
-  .sw { border:1px solid var(--line); border-radius:8px; overflow:hidden; font-size:12px; }
-  .sw .c { height:70px; display:flex; align-items:flex-end; padding:6px 10px; font-size:13px; }
-  .sw .m { padding:8px 10px; } .sw .m div:first-child { color:var(--text); }
-  .glyphs { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:8px 20px; max-width:1100px; margin:10px 0 24px; }
-  .glyphs div { display:flex; gap:1.5ch; align-items:baseline; font-size:14px; }
-  .glyphs b { font-size:20px; font-weight:400; width:3ch; text-align:center; }
-  .levels { display:grid; grid-template-columns:14ch 1fr; gap:14px 3ch; margin:14px 0 26px; max-width:100ch; align-items:start; }
-  iframe { width:100%; max-width:1100px; border:1px solid var(--line); border-radius:10px; background:#0b0a09; }
-  .measure { position:relative; max-width:100ch; }
-  .rule76 { border-left:1px dashed var(--acc); position:absolute; top:0; bottom:0; left:calc(76ch + 2ch); opacity:.6; }
-  .rule76::after { content:"76"; position:absolute; top:-2px; left:4px; font-size:11px; color:var(--acc); }
-  .term.screen { padding:0; }
-  .shead { display:flex; justify-content:space-between; padding:10px 2ch 8px; }
-  .sgrid { display:grid; grid-template-columns:minmax(0, 1fr) 30ch; }
-  .sfeed { padding:0 2ch 12px; } .sfeed > div { margin-top:6px; max-width:62ch; }
-  .spanel { border-left:1px solid var(--line); padding:0 2ch 12px; }
-  .prow { display:flex; justify-content:space-between; white-space:nowrap; }
-  .sfoot { border-top:1px solid var(--line); padding:8px 2ch 10px; }
-  .scomp { display:flex; justify-content:space-between; margin-top:4px; }
-  .l3 .nm { display:inline-block; width:10ch; white-space:nowrap; }
-  /* every symbol sits in one fixed cell: glyphs missing from the web font
-     are drawn by a fallback font whose width is not 1ch */
-  .gc { display:inline-block; width:1ch; text-align:center; }
-  .manifesto { font-size:clamp(20px, 2.4vw, 28px); font-weight:700; line-height:1.35; margin:30px 0; max-width:30ch; border-left:2px solid var(--acc); padding-left:2ch; }
-  footer { padding:40px 7vw 80px; color:var(--dim); font-size:13px; }
-  @media (max-width: 900px) { nav.side { display:none; } main { margin-left:0; } .dodont { grid-template-columns:1fr; } }
+  /* how: three lines, no boxes */
+  .how li { list-style:none; margin-bottom:34px; display:grid; grid-template-columns:4ch 1fr; }
+  .how .n { color:var(--acc); }
+  .how b { display:block; margin-bottom:4px; }
+  .how span.d { color:var(--dim); }
+
+  /* features: small animated terminals */
+  .features { max-width:1200px; margin:0 auto; }
+  .fgrid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:80px 48px; margin-top:20px; }
+  .feat h3 { font-size:17px; margin:20px 0 6px; }
+  .feat p { color:var(--dim); font-size:15px; margin:0; max-width:52ch; }
+  .mini { background:var(--soft); border-radius:10px; font-size:13.5px; line-height:1.6; padding:18px 2.5ch 14px; }
+  /* no overscroll-behavior: contain here. it makes the box swallow the wheel even
+     when there is nothing to scroll; at its ends the page scrolls on */
+  .mfeed { height:calc(13.5px * 1.6 * 10); overflow-y:auto; padding-right:1ch; }
+  .mfeed > div { animation:enter .45s ease-out; white-space:pre-wrap; }
+  .mfeed.still > div { animation:none; }
+  .mcomp { margin-top:8px; white-space:pre; overflow:hidden; color:var(--text); }
+  /* one demo plays at a time: the others rest on their last frame */
+  .mini { transition:opacity .6s ease; }
+  .fgrid.directed .mini:not(.active) { opacity:.42; }
+  .mini:not(.active) .cur, .mini:not(.active) .pulse { animation:none; }
+  .mini:not(.active) .cur { opacity:0; }
+  .feat { cursor:default; }
+  .mcomp .cur { background:var(--acc); }
+  .mini .err { color:var(--err); } .mini .ok { color:#b9d99a; } [data-theme="light"] .mini .ok { color:#3f7a2a; }
+  .mini .row { display:flex; justify-content:space-between; }
+  .mini .l3 { padding-left:1ch; border-left:1px solid var(--faint); margin-left:1ch; }
+  @media (max-width: 900px) { .fgrid { grid-template-columns:1fr; } }
+
+  /* quiet scrollbars, everywhere (Firefox, Chrome, Safari, Edge on Windows) */
+  .scrollbox { scrollbar-width:thin; scrollbar-color:var(--faint) transparent; }
+  .scrollbox::-webkit-scrollbar { width:6px; height:6px; }
+  .scrollbox::-webkit-scrollbar-track { background:transparent; }
+  .scrollbox::-webkit-scrollbar-thumb { background:var(--faint); border-radius:3px; }
+  .scrollbox::-webkit-scrollbar-thumb:hover { background:var(--dim); }
+
+  /* the little facts */
+  .facts li { list-style:none; margin-bottom:12px; display:grid; grid-template-columns:4ch 1fr; color:var(--dim); }
+  .facts li .gc { color:var(--acc); }
+  .facts li b { color:var(--text); font-weight:400; }
+
+  .word { text-align:center; }
+  .word .def { display:inline-block; text-align:left; color:var(--dim); line-height:2; }
+  .word .def b { color:var(--text); font-size:20px; }
+  .word { padding-top:8vh; }
+  .word .three { color:var(--text); font-weight:700; font-size:clamp(17px, 1.7vw, 21px); }
+  .word .three::before { content:""; }
+
+  .last { text-align:center; padding-bottom:10vh; }
+  .last .big { font-size:clamp(56px, 8vw, 110px); }
+
+  footer { padding:6vh 6vw 8vh; display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px; color:var(--faint); font-size:13px; }
+  footer a:hover { color:var(--text); }
+
+  @media (max-width: 900px) { .screen { grid-template-columns:1fr; } .panel { display:none; } header nav a.opt { display:none; } }
+  @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } .blow { opacity:1; transform:none; } }
 </style>
 </head>
 <body>
 
-<nav class="side" id="nav">
-  <div class="logo">bise <span class="acc">:*</span></div>
-  <div class="sub">the brand book</div>
-  <div class="grp">who we are</div>
-  <a href="#philosophy">philosophy</a>
-  <a href="#values">values</a>
-  <a href="#name">name and mark</a>
-  <a href="#voice">voice and tone</a>
-  <div class="grp">how we look</div>
-  <a href="#identity">visual identity</a>
-  <a href="#symbols">symbols</a>
-  <div class="grp">how it works</div>
-  <a href="#principles">ux principles</a>
-  <a href="#layout">the screen</a>
-  <a href="#levels">three levels</a>
-  <a href="#history">the history</a>
-  <a href="#reading">reading</a>
-  <a href="#cards">cards</a>
-  <a href="#talking">talking to agents</a>
-  <a href="#images">images</a>
-  <a href="#onboarding">onboarding</a>
-  <a href="#live">live</a>
-  <div class="grp">reference</div>
-  <a href="#keys">keys</a>
-  <a href="#copy">copy deck</a>
-  <a href="#resources">resources</a>
-  <div class="toggle"><button data-t="dark" class="on">dark</button><button data-t="light">light</button></div>
-</nav>
+<header id="top">
+  <a class="logo" href="#">bise <span class="acc">:*</span></a>
+  <nav>
+    <a class="opt" href="#why">why</a>
+    <a class="opt" href="#how">how</a>
+    <a class="opt" href="#faq">faq</a>
+    <a class="opt" href="book/">brand book</a>
+    <button id="theme" title="light / dark">◐</button>
+    <a class="tbd" title="⚠ repo URL not decided" href="#">GitHub</a>
+  </nav>
+</header>
 
-<main>
-
-<!-- hero -->
-<div class="hero" id="top">
-  <div class="cursors" id="cursors"></div>
-  <div class="big">bise <span class="kiss">:*</span></div>
-  <div class="t1">kiss your backlog goodbye.</div>
-  <div class="t2">ramble. interrupt. change your mind. i run the agents. you stay in flow.</div>
-  <div class="def"><b>bise</b> <span class="faint">/beez/ · french, n.</span><br>1. a quick kiss on the cheek. <span class="acc">:*</span><br>2. a brisk north wind.<br>3. a terminal where your agents ship while you think.</div>
-  <div class="scroll">the brand book · scroll ↓</div>
+<!-- hero, in the wind -->
+<div class="sky">
+  <pre class="wind" id="wind" aria-hidden="true"></pre>
+  <div class="kisses" id="kisses" aria-hidden="true"></div>
+  <div class="cursors" id="cursors" aria-hidden="true"></div>
+  <div class="hero">
+    <div class="big">bise <span class="kiss">:*</span></div>
+    <div class="t1">kiss your backlog goodbye.</div>
+    <div class="t2">ramble. interrupt. change your mind.<br>i run the agents. you stay in flow.</div>
+    <div class="install" id="install" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span class="tbd" id="cmd" title="⚠ no installer yet: today bise runs from a dev checkout (pitch §8.1)">curl -fsSL bise.dev/install | sh</span></span><span class="c" id="copied">copy</span></div>
+    <div class="scroll">↓</div>
+  </div>
 </div>
 
-<!-- philosophy -->
-<section id="philosophy">
-  <h1>01 · philosophy</h1>
-  <h2>a day with agents feels empty.</h2>
-  <p class="lead">you shipped more than ever. so why does it feel like you did nothing?</p>
-  <p>you spent the day watching progress bars. answering "v1 or v2?". switching tabs. reading what an agent did while you looked away. by evening a lot got merged, and you made none of it. you feel slow, a bit useless, and strangely out of control. you gave away the fun part, and got nothing back.</p>
-  <p>it's not you. it's the interruptions. every agent pulls you out of your head, every few minutes. and flow, the state where you think clearly and the hours disappear, needs quiet to start. with agents tapping your shoulder all day, you never get there.</p>
-  <h3>bise preserves your flow.</h3>
-  <p>you stay in your head. the agents work around you, quietly, in the same folder. the obvious questions get answered without you. what reaches you is only what's really yours, and it waits until you're ready.</p>
-  <p class="manifesto">built for humans piloting hundreds of robots, from a distance.</p>
-  <p>a <i>bise</i> is a little kiss, and a cold north wind. that's the whole idea: a light touch on the shoulder when something needs you, and the rest of the time, a breeze that keeps everything moving while you think.</p>
-  <h3>what we believe</h3>
-  <ul class="list">
-    <li>flow is the product. everything else is plumbing.</li>
-    <li>the human has the ideas. the tech keeps up, then gets out of the way.</li>
-    <li>more agents should mean more done, not more to watch.</li>
-    <li>a calm screen is a feature. attention is the scarcest thing we handle.</li>
-    <li>trust comes from honesty: say what happened, say what isn't built, never pretend.</li>
-  </ul>
-</section>
-
-<!-- values -->
-<section id="values" class="wide">
-  <h1>02 · values</h1>
-  <h2>five things we never trade away.</h2>
-  <div class="cards">
-    <div class="card"><div class="h"><span class="acc">∿</span>flow</div><p>you never wait on a turn. say it, keep talking. the work runs in the background and bise is always listening.</p></div>
-    <div class="card"><div class="h"><span class="acc">›</span>control</div><p>you decide. bise answers the obvious questions itself, shows why, and brings you only the real decisions.</p></div>
-    <div class="card"><div class="h"><span class="acc">:*</span>lightness</div><p>no project management, no vocabulary to learn, no worktrees to merge. many hands, light work.</p></div>
-    <div class="card"><div class="h"><span class="acc">♡</span>calm</div><p>color means attention. agents talk to each other quietly; what's for you stands out, the rest stays dim.</p></div>
-    <div class="card"><div class="h"><span class="acc">✓</span>honesty</div><p>no silent failure, no hidden limit, no feature we pretend to have. the history never lies: it only grows, in order.</p></div>
+<!-- the word -->
+<section class="word">
+  <div class="blow">
+    <div class="def">
+      <b>bise</b> <span class="faint">/beez/ · french, n.</span><br>
+      1. a quick kiss on the cheek. <span class="acc">:*</span><br>
+      2. a brisk north wind.<br>
+      <span class="three">3. a terminal where your agents ship while you think.</span>
+    </div>
   </div>
 </section>
 
-<!-- name -->
-<section id="name">
-  <h1>03 · name and mark</h1>
-  <h2>bise :*</h2>
-  <p><b>the name</b> is always lowercase, like a command you type: <code>bise</code>. four letters, easy to type a hundred times a day.</p>
-  <p><b>the mark</b> is <span class="acc">:*</span>, the kiss you type on a keyboard. it works in any terminal and any font, and looks typed by a human. inside the product it marks main's voice.</p>
-  <p><b>say it:</b> <i>beez</i>. in english the word is rare, so we explain it wherever a stranger meets it first (site hero, README, launch posts), with a dictionary entry: <i>bise /beez/ · french, n. 1. a quick kiss on the cheek. 2. a brisk north wind. 3. a terminal where your agents ship while you think.</i> short form, one line: <i>bise (say: beez): french for a kiss. also a wind.</i> not inside the product: there, the <span class="acc">:*</span> says it.</p>
-  <p><b>standalone.</b> bise is its own brand: no borrowed colors, no parent logo.</p>
-  <h3>taglines</h3>
-  <table>
-    <tr><th>where</th><th>line</th></tr>
-    <tr><td class="dim">site, headline</td><td><b>kiss your backlog goodbye.</b></td></tr>
-    <tr><td class="dim">site, subline</td><td>ramble. interrupt. change your mind. i run the agents. you stay in flow.</td></tr>
-    <tr><td class="dim">inside the product</td><td><b>ideas in. little kisses out. also pull requests.</b></td></tr>
-    <tr><td class="dim">in reserve</td><td>you, but with way more hands. · your team is as big as your ideas.</td></tr>
-  </table>
-  <p class="dim">retired, don't bring them back: "built for engineers who think faster than they type." (not strong enough) · "all the agents. none of the overhead." · "code like a team of ten." (a number is a cap) · "all your ideas. none of the juggling." (sounds like an LLM)</p>
-</section>
-
-<!-- voice -->
-<section id="voice">
-  <h1>04 · voice and tone</h1>
-  <h2>a human, typing fast.</h2>
-  <h3>lowercase, always</h3>
-  <p>no capital letter at the start of a word, anywhere: site, UI, messages. it reads like someone typing, not a company talking.</p>
-  <ul class="list">
-    <li>proper nouns keep their capitals: GitHub, Claude Code, Ghostty.</li>
-    <li>acronyms stay in caps: API, MCP, PR. "cli" in lowercase is fine.</li>
-    <li>ALL CAPS to shout: allowed, extremely rarely.</li>
-    <li>our name stays lowercase: bise.</li>
-  </ul>
-  <h3>who speaks</h3>
-  <p>inside the product, bise says <b>"i"</b>, and <b>"you"</b> is always the user. on the site, we talk to the reader as "you".</p>
-  <h3>four words, no more</h3>
-  <p>the user meets <b>you, main, agents, cards</b>. never "task", "sub-agent", "orchestrator", "hub" or "hands" in the UI.</p>
-  <h3>do / don't</h3>
-  <div class="dodont">
-    <div class="do"><div class="lbl">do</div><p>say it and keep talking. the work runs in the background, i'm always here.</p><p>docs asked v1 or v2; the brief says v2, so i answered.</p><p>glm-5 can't read images. pick a model that can, or describe the screen in words.</p></div>
-    <div><div class="lbl">don't</div><p><s>Welcome! Unleash the power of seamless multi-agent orchestration.</s></p><p><s>Task #3 (docs) has been resolved by the Orchestrator.</s></p><p><s>Error 400: invalid_request_error: image_url not supported.</s></p></div>
-  </div>
-  <ul class="list">
-    <li>short sentences. show the moment, don't name the feeling.</li>
-    <li>warm, a bit cheeky, never cute at the expense of clear.</li>
-    <li>no promise with a number. the real limits are tokens, cost and provider speed: say so.</li>
-    <li>no polished LLM patterns: "X. none of the Y.", "seamless", "supercharge", "unleash".</li>
-  </ul>
-</section>
-
-<!-- identity -->
-<section id="identity" class="wide">
-  <h1>05 · visual identity</h1>
-  <h2>terminal brut, with the soul of a bise.</h2>
-  <p>raw terminal credibility: monospace, calm, the product is the visual. plus one warm human touch: the pale pink accent, the <span class="acc">:*</span>, a heart for "done".</p>
-  <h3>the background is yours</h3>
-  <p>in the terminal we never paint the background: your terminal's color, transparency and blur show through. we only choose the colors of the text. two themes, light and dark, picked from your terminal's background at start. try the switch in the menu: this whole page follows it.</p>
-  <h3>palette · <span id="pal-name">dark</span></h3>
-  <div class="swatches" id="swatches"></div>
-  <ul class="list">
-    <li><b>color means attention.</b> only "needs you" and errors get a hue. the accent is pink, not red, so "needs you" never looks like an error.</li>
-    <li>every text you read is at least 4.5:1 on white, cream, black and a typical dark grey. faint is for rails and borders only.</li>
-  </ul>
-  <h3>type</h3>
-  <p>JetBrains Mono for the site and screenshots. in the terminal, the font is yours.</p>
-  <h3>motion</h3>
-  <p>only four things move: the working breeze <span class="pulse">∿</span>, the cursor <span class="cur" style="color:var(--text)"></span>, the typed welcome, and the <span class="acc">:*</span> pop. nothing bounces, nothing slides.</p>
-</section>
-
-<!-- symbols -->
-<section id="symbols" class="wide">
-  <h1>06 · symbols</h1>
-  <h2>one glyph per thing.</h2>
-  <p>status is a symbol, not a word and not a color. learn them once, read a screen of 30 agents at a glance.</p>
-  <h3>entities</h3>
-  <div class="glyphs">
-    <div><b class="acc">│</b>your message</div><div><b class="dim">›</b>the composer</div><div><b class="acc">:*</b>main</div><div><b>◇</b>a brief</div><div><b class="dim">∴</b>thinking</div>
-    <div><b>$</b>bash</div><div><b>λ</b>typescript</div><div><b>↳</b>a sub-call</div><div><b>±</b>a file edit</div>
-    <div><b>@</b>a message</div><div><b class="acc">▣</b>an image</div><div><b class="acc">?</b>a card: needs you</div><div><b class="dim pulse">≡</b>compacting (pulsing)</div>
-  </div>
-  <h3>agent status</h3>
-  <div class="glyphs">
-    <div><b class="pulse dim">·</b>starting</div><div><b class="pulse">∿</b>working</div><div><b>…</b>waiting on an agent</div><div><b class="acc">?</b>needs you</div>
-    <div><b>♡</b>done</div><div><b class="err">✗</b>failed</div><div><b class="dim">○</b>idle</div><div><b class="dim">–</b>stopped</div>
-  </div>
-  <h3>marks</h3>
-  <div class="glyphs">
-    <div><b class="faint">✓</b>the agent got your message</div><div><b class="acc">✓✓</b>the model read it</div><div><b class="acc">•</b>unread activity</div><div><b>ψ</b>own worktree</div>
-    <div><b>⇄</b>two agents, one file</div><div><b>▸</b>closed · open with a key</div>
-  </div>
-</section>
-
-<!-- principles -->
-<section id="principles">
-  <h1>07 · ux principles</h1>
-  <h2>seven rules for every screen.</h2>
-  <table>
-    <tr><td class="acc">1</td><td><b>you stay in control, the screen stays calm.</b> agents work quietly; only what needs you gets color.</td></tr>
-    <tr><td class="acc">2</td><td><b>everything is readable.</b> prose never wider than a novel line; contrast ≥ 4.5:1.</td></tr>
-    <tr><td class="acc">3</td><td><b>progressive disclosure.</b> one line per step, details one key away. scripts are the exception: always in full.</td></tr>
-    <tr><td class="acc">4</td><td><b>one symbol per thing.</b></td></tr>
-    <tr><td class="acc">5</td><td><b>the history never lies.</b> it only grows, in arrival order.</td></tr>
-    <tr><td class="acc">6</td><td><b>no new vocabulary.</b> you, main, agents, cards.</td></tr>
-    <tr><td class="acc">7</td><td><b>honest.</b> no silent failure, no hidden limit, nothing we pretend to have.</td></tr>
-  </table>
-</section>
-
-<!-- layout -->
-<section id="layout" class="wide">
-  <h1>08 · the screen</h1>
-  <h2>one conversation, all your agents.</h2>
-  <div class="term screen">
-    <div class="shead"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim"><span class="pulse">∿</span> 3 working · <span class="acc">? 1 needs you</span> · ♡ 1 done</span></div>
-    <div class="sgrid">
-      <div class="sfeed">
-        <div class="you">the login breaks on safari</div>
-        <div><span class="who acc">:*</span>on it: auth-fix takes it.</div>
-        <div class="l3"><span class="nm">@ docs</span><span class="nm">→ main</span>v1 or v2?</div>
-        <div class="l3"><span class="nm">@ main</span><span class="nm">→ docs</span>v2, the brief says so</div>
-        <div><span class="who acc">:*</span>docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span></div>
-        <div class="l1 b"><div class="t">? docs needs you</div><div>v2 removes /users. document v1 or v2?</div></div>
+<!-- demo -->
+<div class="demo blow">
+  <div>
+    <div class="dhead"><div class="kicker">watch</div><h2>this is what flow looks like.</h2><p class="soft">one conversation with main. the agents work on the side. you never stop typing.</p></div>
+    <div class="term" aria-label="a bise session, animated">
+      <div class="thead"><span>bise <span class="acc">:*</span></span><span class="faint">~/acme</span></div>
+      <div class="screen">
+        <div class="feed scrollbox" id="feed"></div>
+        <div class="panel"><div class="h">agents · ⌥ + number</div><div id="agents"></div></div>
       </div>
-      <div class="spanel">
-        <div>agents <span class="faint">· ⌥ + number</span></div>
-        <div class="prow"><span><span class="faint">0</span> <span class="acc">:*</span> main</span><span></span></div>
-        <div class="prow"><span><span class="faint">1</span> <span class="pulse">∿</span> auth-fix</span><span class="dim">12m · 21%</span></div>
-        <div class="prow"><span><span class="faint">2</span> <span class="pulse">∿</span> release</span><span class="dim">3m · 8%</span></div>
-        <div class="prow"><span><span class="faint">3</span> <span class="acc">?</span> docs</span><span class="acc">you</span></div>
-        <div class="prow"><span><span class="faint">4</span> … api-v2</span><span class="dim">waits docs</span></div>
-        <div class="prow"><span><span class="faint">5</span> ♡ bench</span><span class="dim">done</span></div>
+      <div class="foot">
+        <div class="status"><span>you → <span class="acc">main</span></span><span id="working" class="dim"></span></div>
+        <div class="composer"><span class="acc">›</span> <span id="typed"></span><span class="cur"></span></div>
       </div>
     </div>
-    <div class="sfoot"><div><span class="acc">main</span> <span class="dim">· idle · 210k / 1M tokens · 21%</span></div>
-      <div class="scomp"><span><span class="dim">›</span> <span class="cur"></span></span><span class="dim">⏎ send · @ agent · / commands</span></div></div>
+    <div class="caption">a session, sped up.</div>
   </div>
-  <table>
-    <tr><td class="dim">header</td><td><code>bise :*</code>, then only the non-zero counts. the pink one is the one that needs you.</td></tr>
-    <tr><td class="dim">feed</td><td>the conversation. prose ≤ 76 columns; extra width goes to the margin.</td></tr>
-    <tr><td class="dim">agents</td><td>one row each: number, status, name, age and context. <code>⌥ + number</code> jumps to it; numbers never change while an agent lives. hidden under 70 columns.</td></tr>
-    <tr><td class="dim">status row</td><td>who you're talking to, in pink, so you always know who gets your message.</td></tr>
-    <tr><td class="dim">composer</td><td><code>›</code> and a few dim hints.</td></tr>
-  </table>
-  <h3>the first run</h3>
-  <div class="term"><div class="dim">what's on your mind?</div><div class="b dim">say it and keep talking. the work runs in the background, i'm always here.</div><div class="b dim">try: "fix the flaky login test, and draft the release note"</div></div>
-</section>
+</div>
 
-<!-- levels -->
-<section id="levels" class="wide">
-  <h1>09 · three levels</h1>
-  <h2>what's for you, and what isn't.</h2>
-  <p>everything on screen belongs to one of three levels. the level decides the look, never the other way round.</p>
-  <div class="levels">
-    <div class="acc"><b>1 · needs you</b></div>
-    <div class="term" style="margin:0"><div class="l1"><div class="t">? api-v2 needs you</div><div>the v2 schema file isn't in the repo. where is it?</div><div class="dim">alt+r answer with text · ctrl+x later · ctrl+f full screen</div></div></div>
-    <div><b>2 · for you</b></div>
-    <div class="term" style="margin:0"><div><span class="who acc">:*</span>docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span></div><div class="b"><span class="who">♡</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div><div class="b"><span class="who">@</span>auth-fix <span class="dim">to you:</span> got it, i'll check logout next.</div></div>
-    <div class="dim">3 · between agents</div>
-    <div class="term" style="margin:0"><div class="l3">@ auth-fix  → release   heads-up, i'm touching web/src/auth.</div><div class="l3">@ release   → auth-fix  ok, i'll mention the fix.</div></div>
-  </div>
-  <ul class="list">
-    <li>level 1 gets the pink bar and stays until you answer.</li>
-    <li>levels 2 and 3 differ by brightness and the rail, never by color.</li>
-    <li>traffic between agents is always there, so the story stays readable. main's next line is the summary for you.</li>
-  </ul>
-</section>
-
-<!-- history -->
-<section id="history">
-  <h1>10 · the history</h1>
-  <h2>it only grows. in order.</h2>
-  <p>the history is append-only, in arrival order. nothing is grouped by agent, nothing moves later. what changes over time (status, age, open cards) lives outside it: the panel, the header, the card box.</p>
-  <ul class="list">
-    <li><b>content is frozen; small marks are not.</b> the only change on an existing line is its status mark, like <span class="faint">✓</span> becoming <span class="acc">✓✓</span>.</li>
-    <li><b>only the tail can grow.</b> more than 3 messages between agents fold into one dim line. only the last run, at the bottom, still grows; a line for you closes it forever.</li>
-    <li><b>time marks after a pause:</b> a faint <span class="faint">· 14:31 ·</span> after 5 minutes of silence.</li>
-  </ul>
-  <div class="term">
-    <div class="faint">· 14:02 ·</div>
-    <div class="b you">ship the v2 api: endpoints, sdk, docs, migration.</div>
-    <div class="b"><span class="who acc">:*</span>that's 30 pieces. i split it and started them.</div>
-    <div class="b l3">▸ 47 messages between 30 agents</div>
-    <div class="b"><span class="who acc">:*</span>the endpoint agents agreed on one error format; the sdk agents use it too.</div>
-    <div class="b l3">▸ 23 messages between 9 agents</div>
-    <div class="b"><span class="who">♡</span>4 endpoints are done: users, orgs, keys, audit. <span class="dim">▸ reports</span></div>
-    <div class="b faint">· 14:31 ·</div>
-    <div class="b l3">▸ 12 messages between 6 agents <span class="pulse">∿</span></div>
+<!-- why -->
+<section id="why">
+  <div class="inner blow">
+    <div class="kicker">why</div>
+    <h2 class="punch">you didn't become an engineer<br>to babysit robots.</h2>
+    <p>yet here you are.</p>
+    <p class="soft">today you started five things. you watched output scroll. you answered "should i continue?" eleven times. at 6pm you'd shipped more than ever, and felt like you did nothing.</p>
+    <p class="soft">that's not you. every few minutes, something pulled you out. you never got to think.</p>
+    <p class="turn">you lost your flow. bise gives it back.</p>
+    <p>you talk, whenever, however. i run the agents in the background, answer the obvious questions myself, and only tap your shoulder when it matters.</p>
   </div>
 </section>
 
-<!-- reading -->
-<section id="reading" class="wide">
-  <h1>11 · reading</h1>
-  <h2>a novel line, not a wall.</h2>
-  <p>prose wraps at 76 columns, whatever the terminal width. code goes up to 100, then wraps with a faint <span class="faint">»</span>.</p>
-  <div class="measure"><div class="term" style="position:relative"><div class="rule76"></div>found it: safari drops SameSite=None cookies that aren't Secure. the dev
-server sets the cookie without Secure, so the session is lost on the redirect.
-added secure: true; the webkit test passes now.</div></div>
-  <h3>scripts in full</h3>
-  <p>bash and TypeScript scripts are always shown whole, with colors. you should never wonder what an agent actually ran.</p>
-  <div class="term"><div><span class="who">λ</span>typescript <span class="dim">✓ 0.4s</span></div><pre style="font:inherit; border-left:1px solid var(--line); padding-left:2ch; margin:4px 0 0 1ch"><span class="kw">async function</span> <span class="fn">main</span>() {
-  <span class="kw">const</span> issues = <span class="kw">await</span> tools.github.<span class="fn">search_issues</span>({ query: <span class="str">"safari login"</span>, limit: <span class="num">5</span> });
-  <span class="com">// only the open ones</span>
-  <span class="kw">return</span> issues.<span class="fn">filter</span>((i) =&gt; i.state === <span class="str">"open"</span>);
-}</pre><div style="padding-left:3ch" class="dim">↳ github.search_issues ✓</div><div style="padding-left:3ch" class="dim">▸ result · 2 items</div></div>
-  <h3>tables</h3>
-  <p>no frame, no bars. two spaces between columns, a bold header, and a faint rule with one segment per column. numbers align right. too wide for the screen: the widest column wraps; still too wide: one block per row, key and value.</p>
-  <div class="term"><div><span class="who acc">:*</span>here's where the v2 endpoints stand:</div><pre style="font:inherit; margin:6px 0 0 3ch; white-space:pre"><b>endpoint</b>  <b>owner     </b>  <b>status </b>  <b>tests</b>  <b>coverage</b>
-<span class="faint">────────  ──────────  ───────  ─────  ────────</span>
-/users    ep-users    done        21       94%
-/orgs     ep-orgs     done        17       91%
-/keys     ep-keys     working      9       62%
-/billing  ep-billing  waiting</pre></div>
-  <h3>progressive disclosure</h3>
-  <table>
-    <tr><th>item</th><th>by default</th><th>open</th></tr>
-    <tr><td>thinking</td><td><span class="dim">∴ thought for 14s ▸</span></td><td>the full text</td></tr>
-    <tr><td>bash, typescript</td><td><b>always in full</b></td><td>—</td></tr>
-    <tr><td>output</td><td><span class="dim">▸ output · 42 lines · 1 failed</span></td><td>the output</td></tr>
-    <tr><td>file edit</td><td>± edit session.ts <span class="dim">✓ +3 −1 ▸</span></td><td>the diff</td></tr>
-    <tr><td>report</td><td>♡ bench is done. <span class="dim">▸ report</span></td><td>the report</td></tr>
-    <tr><td>brief</td><td>◇ brief <span class="dim">▸</span></td><td>the brief</td></tr>
-    <tr><td>agent traffic</td><td><span class="dim">▸ 12 messages between 8 agents</span></td><td>the messages, in order</td></tr>
-  </table>
+<!-- how -->
+<section id="how">
+  <div class="inner blow">
+    <div class="kicker">how</div>
+    <h2>you talk. bise runs the agents.<br>you stay in flow.</h2>
+    <ul class="how">
+      <li><span class="n">1</span><span><b>say it, and keep going.</b><span class="d">mid-thought, as often as you want. no prompt to craft, no workflow to design. bise is always listening.</span></span></li>
+      <li><span class="n">2</span><span><b>bise starts the agents.</b><span class="d">one per thing, in the background, in your folder. they know about each other and sort things out quietly.</span></span></li>
+      <li><span class="n">3</span><span><b>you only hear what matters.</b><span class="d">real decisions come to you as a card. when something ships, you get a <span class="acc">♡</span>.</span></span></li>
+    </ul>
+  </div>
 </section>
 
-<!-- cards -->
-<section id="cards">
-  <h1>12 · cards</h1>
-  <h2>only the decisions that are yours.</h2>
-  <p>main answers the obvious questions itself. what's left arrives as a card: a pink bar, who needs you, the question, the choices.</p>
-  <div class="term"><div class="l1"><div class="t">? docs needs you <span class="dim" style="font-weight:400">· 1 of 3 · 2m</span></div><div>the brief says "keep old clients working", but v2 removes /users. do we document v1 or v2?</div><div class="b"><span class="acc">1</span> v1   <span class="acc">2</span> v2   <span class="dim"><span class="acc">alt+r</span> answer with text · <span class="acc">ctrl+x</span> later · <span class="acc">ctrl+f</span> full screen</span></div></div></div>
-  <table>
-    <tr><td class="g acc">?</td><td>a question, or an agent blocked</td></tr>
-    <tr><td class="g err">✗</td><td>an agent failed</td></tr>
-    <tr><td class="g err">↻</td><td>a restart failed, rolled back</td></tr>
-    <tr><td class="g">–</td><td>confirm dropping an agent</td></tr>
-    <tr><td class="g">⇄</td><td>two agents changed the same file</td></tr>
-    <tr><td class="g">♡</td><td>done</td></tr>
-  </table>
-  <p><code>ctrl+f</code> opens a long card full screen, <code>pgup</code> / <code>pgdn</code> scroll it.</p>
+<!-- features, animated -->
+<section id="features">
+  <div class="features">
+    <div class="inner blow" style="margin-bottom:10px"><div class="kicker">what it feels like</div><h2>ten things you'll notice in the first hour.</h2></div>
+    <div class="fgrid">
+      <div class="feat blow"><div class="mini" data-play="talk"></div><h3>talk whenever. you never wait.</h3><p>say the next thing while the last one runs. your composer is never locked.</p></div>
+      <div class="feat blow"><div class="mini" data-play="direct"></div><h3>talk to any agent, anytime.</h3><p>⌥ + a number, or @name. ask it why, push it, then go back to main. nobody has to stop.</p></div>
+      <div class="feat blow"><div class="mini" data-play="steer"></div><h3>change your mind mid-run.</h3><p>a correction lands in the running agent. ✓ it got it, <span class="acc">✓✓</span> it read it.</p></div>
+      <div class="feat blow"><div class="mini" data-play="sync"></div><h3>agents sync on their own.</h3><p>every agent can talk to every other one. they ask, share and hand off quietly, folded out of your way.</p></div>
+      <div class="feat blow"><div class="mini" data-play="router"></div><h3>you're not the router.</h3><p>main answers the obvious questions itself, the way you would, and tells you why.</p></div>
+      <div class="feat blow"><div class="mini" data-play="card"></div><h3>only the real decisions reach you.</h3><p>one card, a couple of choices, one key. then back to what you were doing.</p></div>
+      <div class="feat blow"><div class="mini" data-play="resume"></div><h3>nothing gets dropped.</h3><p>when an agent stops half-way, main picks the work back up from where it was.</p></div>
+      <div class="feat blow"><div class="mini" data-play="worktree"></div><h3>worktrees, only when they help.</h3><p>agents share your folder. when one really needs isolation, it makes a worktree, and cleans it up after.</p></div>
+      <div class="feat blow"><div class="mini" data-play="mcp"></div><h3>plug in everything. leave it all on.</h3><p>GitHub, Linear, Sentry, Slack, your docs, your database: every tool and all your context, always on. you never pick what to enable. agents find the right tool when they need it and call it from code, so a hundred servers don't crowd their heads.</p></div>
+      <div class="feat blow"><div class="mini" data-play="plugins"></div><h3>bring your plugins.</h3><p class="tbd" title="⚠ which plugin and skill folders are picked up at launch: to confirm before release">your skills, plugins and MCP servers come with you. switching costs you an afternoon, not a month.</p></div>
+    </div>
+  </div>
 </section>
 
-<!-- talking -->
-<section id="talking">
-  <h1>13 · talking to agents</h1>
-  <h2>just talk. that's the whole interface.</h2>
-  <h3>to main</h3>
-  <p>say what you want, as many things as you want, one after the other. main says who takes what.</p>
-  <div class="term"><div class="you">the login breaks on safari. oh and draft the release note.</div><div class="b"><span class="who acc">:*</span>on it: auth-fix takes the bug, release takes the note.</div></div>
-  <h3>to one agent</h3>
-  <p><code>@name</code> sends a direct message without leaving main. <code>⌥ + number</code> or <code>⏎</code> on an agent takes you inside it; <code>esc</code> brings you back.</p>
-  <h3>did it get my message?</h3>
-  <p>while an agent works, what you send waits for its turn. the marks at the end of your line tell you where it is, like a text message.</p>
-  <div class="term"><div class="you">skip firefox, only webkit<span class="tick read">✓✓</span> <span class="faint" style="margin-left:4ch">the model read it</span></div><div class="b you">and log the cookie headers<span class="tick">✓</span> <span class="faint" style="margin-left:3ch">the agent got it, waiting for its turn</span></div><div class="b you">also the logout path<span class="tick">·</span> <span class="faint" style="margin-left:6ch">sending</span></div></div>
-  <h3>changing your mind</h3>
-  <p>you just say it, like you would to a person. main tells the agent, plainly, and confirms.</p>
-  <div class="term"><div><span class="who acc">:*</span>docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span></div><div class="b you">no, v1 for docs</div><div class="b"><span class="who acc">:*</span>told docs: v1, you changed your mind.</div><div class="b l3">@ main      → docs      the user changed their mind: use v1, not v2.</div></div>
+<!-- a few facts, quietly -->
+<section>
+  <div class="inner blow">
+    <div class="kicker">and also</div>
+    <ul class="facts">
+      <li><span class="gc">∿</span><span><b>as many agents as you have ideas.</b> no cap. your tokens are the limit.</span></li>
+            <li><span class="gc">✓</span><span><b>nothing hidden.</b> every script an agent runs is there, in full, in order.</span></li>
+      <li><span class="gc">♡</span><span><b>your terminal.</b> your colors, light or dark, text at a reading width.</span></li>
+    </ul>
+  </div>
 </section>
 
-<!-- images -->
-<section id="images">
-  <h1>14 · images</h1>
-  <h2>show it, don't describe it.</h2>
-  <p>drag a screenshot into the terminal, paste one with <code>ctrl+v</code>, or pick one with <code>@</code>. an image is one pink chip in your text; delete the chip, the image is gone.</p>
-  <div class="term"><div class="dim">attached · backspace on a chip removes it</div><div><span class="img">▣ 1</span> shots/login-mobile.png <span class="dim">· 1170×2532 · 310 kB</span></div><div><span class="img">▣ 2</span> clipboard <span class="dim">· 2048×1536 · resized to fit 2048</span></div><div class="b"><span class="dim">›</span> compare <span class="img">▣ 1</span> with the design <span class="img">▣ 2</span>, the button is off<span class="cur"></span></div></div>
-  <p>a model that can't read images says so in plain words, with a way out:</p>
-  <div class="term"><span class="err">✗ glm-5 can't read images.</span> <span class="dim">pick a model that can (/model), or describe the screen in words.</span></div>
-  <p class="warn">⚠ drawing the picture itself in the terminal comes later.</p>
+<!-- faq -->
+<section id="faq">
+  <div class="inner blow">
+    <div class="kicker">questions</div>
+    <p><b>how many agents can i run?</b><br><span class="dim">as many as you want. the real limits are your tokens, your budget and your provider.</span></p>
+    <p><b>which models?</b><br><span class="dim tbd" title="⚠ not decided for the public release">bring your own key. the list is coming.</span></p>
+    <p><b>do i need to learn anything?</b><br><span class="dim">four words: you, main, agents, cards. main is the one you talk to.</span></p>
+    <p><b>open source?</b><br><span class="dim">yes. read it, fork it, send a :*.</span><span class="tbd" title="⚠ license not decided (pitch §7.3)"></span></p>
+  </div>
 </section>
 
-<!-- onboarding -->
-<section id="onboarding" class="wide">
-  <h1>15 · onboarding</h1>
-  <h2>hi, i'm bise <span class="acc">:*</span></h2>
-  <p>six short steps, one choice each: the welcome, your theme, your model, your folder (and one honest thing), how it works in three lines, then the real thing. after that, no tour: each hint shows once, next to the thing, the first time it happens.</p>
-  <p class="dim">click inside, then press enter to go on.</p>
-  <iframe src="../tui-onboarding.html" height="660" loading="lazy"></iframe>
-</section>
+<!-- last breath -->
+<div class="sky">
+  <pre class="wind" id="wind2" aria-hidden="true"></pre>
+  <section class="last">
+    <div class="blow">
+      <div class="big acc">:*</div>
+      <p class="dim" style="margin-top:28px">ideas in. little kisses out. also pull requests.</p>
+      <div class="install" id="install2" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span class="tbd" title="⚠ no installer yet">curl -fsSL bise.dev/install | sh</span></span><span class="c">copy</span></div>
+    </div>
+  </section>
+</div>
 
-<!-- live -->
-<section id="live" class="wide">
-  <h1>16 · live</h1>
-  <h2>ten agents, one calm screen.</h2>
-  <p>an 80-second simulation of a real session: you ask, main starts ten agents, they talk, one needs you, you answer. type your own messages in it at any time.</p>
-  <iframe src="../tui-live.html" height="900" loading="lazy"></iframe>
-  <p class="dim">every screen, one by one: <a href="../tui-screens.html">tui-screens.html</a></p>
-</section>
+<footer>
+  <span>bise <span class="acc">:*</span> · open source<span class="tbd" title="⚠ license not decided">.</span></span>
+  <span><a class="tbd" title="⚠ repo URL not decided" href="#">GitHub</a> · <a href="book/">brand book</a></span>
+</footer>
 
-<!-- keys -->
-<section id="keys">
-  <h1>17 · keys</h1>
-  <h2>few keys, all shown where they're used.</h2>
-  <table>
-    <tr><th>keys</th><th>does</th></tr>
-    <tr><td><code>⏎</code></td><td>send to the agent in view; during a turn, steer it</td></tr>
-    <tr><td><code>@name</code></td><td>a direct message from main</td></tr>
-    <tr><td><code>⌥ + 0…9</code></td><td>go to main or agent n</td></tr>
-    <tr><td><code>ctrl+k</code> <code>ctrl+j</code></td><td>select the next / previous agent; <code>⏎</code> enters it, <code>space</code> previews it</td></tr>
-    <tr><td><code>esc</code></td><td>back to main</td></tr>
-    <tr><td><code>ctrl+c</code></td><td>interrupt; again to quit (agents keep running)</td></tr>
-    <tr><td><code>alt+r</code> <code>ctrl+x</code> <code>ctrl+f</code></td><td>answer a card · later · full screen</td></tr>
-    <tr><td><code>ctrl+g</code> <code>ctrl+n</code> <code>ctrl+p</code></td><td>show the cards · next · previous</td></tr>
-    <tr><td><code>ctrl+o</code></td><td>open or close everything folded: thinking, outputs, diffs, agent traffic</td></tr>
-    <tr><td><code>ctrl+v</code></td><td>paste an image</td></tr>
-    <tr><td><code>ctrl+r</code></td><td>voice</td></tr>
-    <tr><td><code>ctrl+`</code></td><td>a shell in the folder</td></tr>
-    <tr><td><code>/</code></td><td>commands</td></tr>
-  </table>
-</section>
-
-<!-- copy deck -->
-<section id="copy">
-  <h1>18 · copy deck</h1>
-  <h2>the words, exactly.</h2>
-  <p>every string the UI shows. when a string isn't here, write it in the same voice and add it.</p>
-  <table>
-    <tr><th>where</th><th>text</th></tr>
-    <tr><td class="dim">header</td><td>no agents yet · ∿ 3 working · … 1 waiting · ? 1 needs you · ♡ 1 done</td></tr>
-    <tr><td class="dim">panel</td><td>agents · ⌥ + number · + 21 more · ▸ 4 archived</td></tr>
-    <tr><td class="dim">first run</td><td>what's on your mind? · say it and keep talking. the work runs in the background, i'm always here.</td></tr>
-    <tr><td class="dim">inside an agent</td><td>you're talking to auth-fix directly. main isn't in the loop. esc back to main.</td></tr>
-    <tr><td class="dim">composer</td><td>⏎ send · @ agent · / commands · ⏎ steer · ctrl+c interrupt</td></tr>
-    <tr><td class="dim">history</td><td>▸ 12 messages between 8 agents · ∴ thought for 14s · ▸ output · 42 lines · ♡ turn done · 2m 10s</td></tr>
-    <tr><td class="dim">cards</td><td>? docs needs you · alt+r answer with text · ctrl+x later · ctrl+f full screen</td></tr>
-    <tr><td class="dim">direct</td><td>@ auth-fix to you: …</td></tr>
-    <tr><td class="dim">not delivered</td><td>✗ not delivered: auth-fix stopped. ⏎ send again · esc drop</td></tr>
-    <tr><td class="dim">provider down</td><td>✗ the model provider answered 503. retrying in 8s (2 of 5). · auth-fix and release are waiting on it; nothing is lost.</td></tr>
-    <tr><td class="dim">onboarding</td><td>hi, i'm bise :* · ideas in. little kisses out. also pull requests. · press enter ↵</td></tr>
-  </table>
-</section>
-
-<!-- resources -->
-<section id="resources">
-  <h1>19 · resources</h1>
-  <h2>everything else.</h2>
-  <table>
-    <tr><td><a href="../bise-book.md">bise-book.md</a></td><td>the full book: brand, spec, and the implementation plan</td></tr>
-    <tr><td><a href="../bise-issues.md">bise-issues.md</a></td><td>the work, issue by issue</td></tr>
-    <tr><td><a href="../tui-screens.html">tui-screens.html</a></td><td>every screen, 32 mockups</td></tr>
-    <tr><td><a href="../tui-live.html">tui-live.html</a></td><td>the live simulation</td></tr>
-    <tr><td><a href="../tui-onboarding.html">tui-onboarding.html</a></td><td>the onboarding</td></tr>
-    <tr><td><a href="../board.html">board.html</a></td><td>where the look came from</td></tr>
-  </table>
-</section>
-
-<footer>bise <span class="acc">:*</span> · the brand book · made with bise, by its own agents, 2026-09-28</footer>
-</main>
+<div class="draftnote">draft · dotted = not true yet (hover)</div>
 
 <script>
-// theme switch: the whole page follows the bise palettes
-const PAL = {
-  dark:  [["text","#ece6da","15:1"],["dim","#a39c90","6.9:1"],["faint","#4a4540","rails only"],["accent","#f4a6b0","9.7:1"],["error","#ff5a52","6.1:1"],["ok","#b9d99a","diff +"]],
-  light: [["text","#1b1917","17.5:1"],["dim","#6b645a","5.8:1"],["faint","#cfc8bd","rails only"],["accent","#b8416b","5.2:1"],["error","#b3261e","6.5:1"],["ok","#3f7a2a","5.2:1"]],
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const root = document.documentElement;
+root.dataset.theme = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+document.getElementById("theme").onclick = () => root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+if (new URLSearchParams(location.search).has("draft")) document.body.classList.add("draft");
+const hdr = document.getElementById("top");
+addEventListener("scroll", () => hdr.classList.toggle("scrolled", scrollY > innerHeight * .6));
+for (const id of ["install", "install2"]) document.getElementById(id).onclick = (e) => {
+  navigator.clipboard?.writeText(document.getElementById("cmd").textContent);
+  const box = e.currentTarget, c = box.querySelector(".c"); c.textContent = "copied :*"; box.classList.add("done"); setTimeout(() => { c.textContent = "copy"; box.classList.remove("done"); }, 1600);
 };
-function setTheme(t) {
-  document.documentElement.dataset.theme = t;
-  document.querySelectorAll(".toggle button").forEach((b) => b.classList.toggle("on", b.dataset.t === t));
-  document.getElementById("pal-name").textContent = t;
-  const bg = t === "dark" ? "#141211" : "#f7f4ee";
-  document.getElementById("swatches").innerHTML = PAL[t].map(([n, h, c]) =>
-    `<div class="sw"><div class="c" style="background:${bg}; color:${h}">${n}</div><div class="m"><div>${h}</div><div class="dim">${c}</div></div></div>`).join("");
-}
-document.querySelectorAll(".toggle button").forEach((b) => b.onclick = () => setTheme(b.dataset.t));
-setTheme(matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
 
-// hero: cursors appear and type, like agents at work
-const tasks = ["fixing the safari bug", "writing the release note", "running the tests", "drafting the landing page", "reviewing the auth PR", "profiling the slow query", "updating the docs", "migrating the db"];
+// ---- reveal: blow in when seen ----
+const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { threshold: .15 });
+document.querySelectorAll(".blow").forEach((b) => io.observe(b));
+
+// ---- the wind: soft streams of ASCII drifting to the right ----
+// a slow flow field; only its crests show, so most of the sky stays empty.
+const RAMP = " .·-~∼≈";
+function wind(pre, density) {
+  const probe = document.createElement("span"); probe.textContent = "M"; pre.append(probe);
+  const cw = probe.getBoundingClientRect().width || 8.4, lh = parseFloat(getComputedStyle(pre).lineHeight) || 19.6; probe.remove();
+  let cols = 0, rows = 0;
+  const size = () => { cols = Math.ceil(pre.clientWidth / cw) + 1; rows = Math.ceil(pre.clientHeight / lh) + 1; };
+  size(); addEventListener("resize", size);
+  let t = Math.random() * 100, visible = true;
+  new IntersectionObserver(([e]) => visible = e.isIntersecting).observe(pre);
+  const frame = () => {
+    if (visible && !document.hidden) {
+      let out = "";
+      for (let y = 0; y < rows; y++) {
+        const wy = Math.sin(y * .23 + t * .21) * 3.2;
+        for (let x = 0; x < cols; x++) {
+          const a = Math.sin(x * .045 - t * .9 + wy + Math.sin(y * .09 - t * .15) * 2.4);
+          const b = Math.sin(x * .013 + y * .19 - t * .33);
+          const v = a * .65 + b * .35 - density;
+          out += v <= 0 ? " " : RAMP[Math.min(RAMP.length - 1, 1 + Math.floor(v * 14))];
+        }
+        out += "\n";
+      }
+      pre.textContent = out;
+      t += .045;
+    }
+    if (!reduced) setTimeout(() => requestAnimationFrame(frame), 70);
+  };
+  frame();
+}
+wind(document.getElementById("wind"), .52);
+wind(document.getElementById("wind2"), .58);
+
+// ---- little kisses carried by the wind ----
+const kisses = document.getElementById("kisses");
+function kiss() {
+  if (document.hidden || reduced || kisses.children.length > 2) return;
+  const k = document.createElement("span"); k.textContent = ":*";
+  const y0 = 10 + Math.random() * 80, amp = 1.5 + Math.random() * 3, speed = .018 + Math.random() * .02;
+  let x = -3, ph = Math.random() * 6; k.style.opacity = 0; kisses.append(k);
+  requestAnimationFrame(() => k.style.opacity = .8);
+  const step = () => {
+    x += speed * 3; ph += .03;
+    k.style.left = x + "%"; k.style.top = (y0 + Math.sin(ph) * amp) + "%";
+    k.style.transform = `rotate(${Math.sin(ph * .7) * 14}deg)`;
+    if (x > 60 && k.style.opacity !== "0") k.style.opacity = 0;
+    if (x < 70) requestAnimationFrame(step); else k.remove();
+  };
+  step();
+}
+setTimeout(kiss, 1800); setInterval(kiss, 5200);
+
+// ---- agents typing, here and there (from the brand book) ----
+const tasks = ["fixing the flaky login test", "drafting the release note", "moving the api client to v3", "reading the auth module", "writing the migration", "asking main about the changelog", "running the tests", "renaming the config keys"];
 const box = document.getElementById("cursors");
 setInterval(() => {
-  if (document.hidden) return;
+  if (document.hidden || reduced || box.children.length > 2 || scrollY > innerHeight) return;
   const el = document.createElement("div");
-  el.style.left = (45 + Math.random() * 48) + "%"; el.style.top = (6 + Math.random() * 80) + "%";
+  const side = Math.random() < .5; el.style.left = (side ? 4 + Math.random() * 18 : 66 + Math.random() * 18) + "%"; el.style.top = (12 + Math.random() * 74) + "%";
   const txt = document.createElement("span"), cur = document.createElement("span"); cur.className = "cur";
   el.append(txt, cur); box.append(el);
   const s = tasks[Math.floor(Math.random() * tasks.length)]; let i = 0;
-  const t = setInterval(() => { txt.textContent = s.slice(0, ++i); if (i >= s.length) { clearInterval(t); setTimeout(() => el.remove(), 2200); } }, 55 + Math.random() * 50);
-}, 900);
+  const t = setInterval(() => { txt.textContent = s.slice(0, ++i); if (i >= s.length) { clearInterval(t); setTimeout(() => { el.style.opacity = 0; setTimeout(() => el.remove(), 1000); }, 1800); } }, 60 + Math.random() * 50);
+}, 2600);
 
-// the menu follows the scroll
-const links = [...document.querySelectorAll("nav.side a")];
-const obs = new IntersectionObserver((es) => es.forEach((e) => {
-  if (e.isIntersecting) links.forEach((a) => a.classList.toggle("on", a.getAttribute("href") === "#" + e.target.id));
-}), { rootMargin: "-40% 0px -55% 0px" });
-document.querySelectorAll("section[id]").forEach((s) => obs.observe(s));
+// ---- the demo: a scripted session that loops ----
+const feed = document.getElementById("feed"), agents = document.getElementById("agents"), typed = document.getElementById("typed"), working = document.getElementById("working");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// a feed follows its bottom, unless the reader scrolled up to read
+const follow = (box, stuck, instant) => { if (stuck) box.scrollTo({ top: box.scrollHeight, behavior: instant || reduced ? "auto" : "smooth" }); };
+const atBottom = (box) => box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+const add = (html, cls) => { const stuck = atBottom(feed); const d = document.createElement("div"); if (cls) d.className = cls; d.innerHTML = html; feed.append(d); follow(feed, stuck); return d; };
+const rows = {};
+function agent(n, mark, name, info) {
+  let r = rows[name];
+  if (!r) { r = rows[name] = document.createElement("div"); r.className = "row"; agents.append(r); }
+  r.innerHTML = `<span><span class="faint">${n}</span> ${mark} ${name}</span><span class="faint">${info}</span>`;
+  r.dataset.busy = mark === "∿" ? "1" : "";
+}
+function count() { const n = Object.values(rows).filter((r) => r.dataset.busy).length; working.innerHTML = n ? `<span class="pulse acc">∿</span> ${n} working` : ""; }
+async function type(text) { for (const ch of text) { typed.textContent += ch; await sleep(reduced ? 0 : 30 + Math.random() * 35); } await sleep(350); }
+async function send(text) {
+  await type(text); typed.textContent = "";
+  const d = add(`${text}<span class="tick">✓</span>`, "b you");
+  await sleep(550); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`;
+}
+const main = (t) => add(`<span class="acc">:*</span> ${t}`, "b");
+async function run() {
+  feed.innerHTML = ""; agents.innerHTML = ""; for (const k in rows) delete rows[k]; working.innerHTML = "";
+  agent(0, `<span class="acc">:*</span>`, "main", "");
+  await sleep(1200);
+  await send("fix the flaky login test, and draft the release note for 2.4");
+  await sleep(700);
+  main("on it. auth-fix takes the test, release takes the note.");
+  agent(1, "∿", "auth-fix", "0m"); await sleep(300); agent(2, "∿", "release", "0m"); count();
+  await sleep(1500);
+  await send("oh, and move the api client to v3 while we're at it");
+  await sleep(600);
+  main("got it. api-bump started.");
+  agent(3, "∿", "api-bump", "0m"); count();
+  await sleep(1400);
+  add(`▸ 7 messages between 3 agents`, "l3 b");
+  agent(1, "∿", "auth-fix", "2m"); agent(2, "∿", "release", "2m"); agent(3, "∿", "api-bump", "1m");
+  await sleep(1600);
+  main("auth-fix wanted to retry the test 3 times. i said no, fix the cause.");
+  await sleep(1900);
+  const card = add(`<div class="t">? release needs you</div><div>v3 changes two public types. call it 2.4 or 3.0?</div><div class="faint">1 · 2.4   2 · 3.0   alt+r answer with text</div>`, "card b");
+  await sleep(2000);
+  await type("2"); typed.textContent = "";
+  card.classList.add("answered"); card.querySelector(".t").textContent = "✓ release · you said 3.0";
+  await sleep(1400);
+  agent(1, `<span class="acc">♡</span>`, "auth-fix", "4m"); count();
+  add(`<span class="acc">♡</span> auth-fix done · the test waited on a timer; now it waits on the event.`, "b");
+  await sleep(1900);
+  agent(2, `<span class="acc">♡</span>`, "release", "5m"); agent(3, `<span class="acc">♡</span>`, "api-bump", "5m"); count();
+  add(`<span class="acc">♡</span> release and api-bump done · 3.0 notes drafted, client on v3.`, "b");
+  await sleep(1400);
+  await send("thanks");
+  await sleep(500); main(":*");
+  await sleep(4500);
+  run();
+}
+run();
 
-// ---- one fixed cell per symbol ----
-// glyphs missing from the web font (∿ ♡ ✓ ▸ …) are drawn by a fallback font
-// whose advance is not 1ch; that shifts every column after them. wrap each
-// symbol in a 1ch cell, now and whenever the page adds text.
+// ---- feature demos: tiny scripted terminals, played only while on screen ----
+const plays = {
+  async talk(m) {
+    await m.send("fix the flaky login test");
+    await m.main("on it. auth-fix started."); await m.wait(500);
+    await m.send("and draft the release note");
+    await m.main("release started."); await m.wait(400);
+    await m.send("oh, the docs page 404s too");
+    await m.main("docs started. 3 agents working, you're free."); await m.wait(600);
+    m.line(`<span class="pulse acc">∿</span> <span class="dim">3 working</span>`); await m.wait(3000);
+  },
+  async steer(m) {
+    m.line(`<span class="dim"><span class="pulse acc">∿</span> auth-fix · raising the test timeout to 30s…</span>`); await m.wait(1400);
+    const d = await m.send("@auth-fix actually, don't touch the timeout. wait on the event.", true);
+    await m.wait(1200); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`; await m.wait(700);
+    m.line(`<span class="dim">@ auth-fix to you:</span> got it. reverting the timeout, waiting on the login event instead.`, "b"); await m.wait(2200);
+    m.line(`<span class="acc">♡</span> auth-fix done · 3m 40s`, "b"); await m.wait(3200);
+  },
+  async router(m) {
+    m.line(`<span class="dim"><span class="pulse acc">∿</span> 4 working</span>`); await m.wait(900);
+    m.line(`<span class="faint">│ auth-fix → main: retry the test 3 times?</span>`, "l3"); await m.wait(1200);
+    m.line(`<span class="acc">:*</span> i answered auth-fix for you: no retries, fix the cause. <span class="faint">(you said so last week)</span>`, "b"); await m.wait(1800);
+    m.line(`<span class="faint">│ release → main: tag it on main or on a branch?</span>`, "l3"); await m.wait(1200);
+    m.line(`<span class="acc">:*</span> i told release: on main, like every release. <span class="faint">(it's in CONTRIBUTING.md)</span>`, "b"); await m.wait(3200);
+  },
+  async direct(m) {
+    m.line(`<span class="faint">you → </span><span class="acc">main</span>`); await m.wait(1000);
+    await m.type("⌥1"); m.clear();
+    m.line(`<span class="faint">you → </span><span class="acc">auth-fix</span>`, "b"); await m.wait(600);
+    await m.send("why did the test flake?");
+    m.line(`<span class="dim">@ auth-fix to you:</span> it raced the login event. i'm making it wait on the event, not a timer.`, "b"); await m.wait(1800);
+    await m.send("nice. add a test for the race too");
+    m.line(`<span class="dim">@ auth-fix to you:</span> on it.`, "b"); await m.wait(900);
+    await m.type("⌥0"); m.clear();
+    m.line(`<span class="faint">you → </span><span class="acc">main</span>`, "b"); await m.wait(3000);
+  },
+  async sync(m) {
+    const ls = [
+      "│ release → api-bump: changing public types?",
+      "│ api-bump → release: yes: Session and Token.",
+      "│ release → docs: need a 3.0 migration section",
+      "│ docs → release: done, docs/migrate.md",
+    ].map((t) => t.replace(/→ (\S+):/, `→ $1:`));
+    const els = [];
+    for (const t of ls) { els.push(m.line(`<span class="faint">${t}</span>`, "l3")); await m.wait(1000); }
+    await m.wait(500);
+    els.slice(1).forEach((e) => e.remove());
+    els[0].className = ""; els[0].innerHTML = `<span class="dim">▸ 4 messages between 3 agents</span>`;
+    await m.wait(1100);
+    m.line(`<span class="acc">:*</span> release has what it needs. nothing for you.`, "b"); await m.wait(3200);
+  },
+  async mcp(m) {
+    m.line(`<span class="acc">:*</span> 42 MCP servers on. all of them, all the time.`); await m.wait(700);
+    m.line(`<span class="faint">github · linear · sentry · slack · notion · postgres · datadog · +35</span>`); await m.wait(1000);
+    await m.send("why did signups drop yesterday?");
+    m.line(`<span class="dim">$ typescript · signups</span>`, "b"); await m.wait(400);
+    for (const l of [
+      `drop = <span class="acc">await</span> tools.datadog.query(<span class="ok">"signups"</span>)`,
+      `deploy = <span class="acc">await</span> tools.github.deployAt(drop.start)`,
+      `talk = <span class="acc">await</span> tools.slack.search(<span class="ok">"signup"</span>)`,
+    ]) { m.line(`<span class="dim">│</span> ${l}`); await m.wait(450); }
+    await m.wait(800);
+    m.line(`<span class="acc">:*</span> a deploy at 14:02 broke the email check. #support saw it at 14:30. want a fix?`, "b"); await m.wait(3600);
+  },
+  async plugins(m) {
+    await m.type("bise"); m.clear();
+    m.line(`<span class="acc">:*</span> hi. i found your setup:`, "b"); await m.wait(800);
+    for (const l of ["  ✓ 14 skills", "  ✓ 3 plugins", "  ✓ 6 MCP servers"]) { m.line(`<span class="dim">${l}</span>`); await m.wait(500); }
+    await m.wait(600);
+    m.line(`<span class="acc">:*</span> everything you had works here. nothing to port.`, "b"); await m.wait(3400);
+  },
+  async card(m) {
+    m.line(`<span class="dim">▸ 12 messages between 4 agents</span>`); await m.wait(900);
+    const c = m.line(`<div class="t acc" style="font-weight:700">? release needs you</div><div>v3 changes two public types. call it 2.4 or 3.0?</div><div class="faint">1 · 2.4   2 · 3.0   alt+r answer with text</div>`, "card b");
+    c.style.borderLeft = "2px solid var(--acc)"; c.style.paddingLeft = "2ch";
+    await m.wait(2200); await m.type("2"); m.clear();
+    c.style.borderLeftColor = "var(--faint)"; c.querySelector(".t").outerHTML = `<div class="t dim">✓ release · you said 3.0</div>`;
+    await m.wait(1400); m.line(`<span class="acc">:*</span> release is tagging 3.0. back to you.`, "b"); await m.wait(3200);
+  },
+  async resume(m) {
+    m.line(`<span class="dim"><span class="pulse acc">∿</span> api-bump · moving the client to v3 · 6 of 11 files</span>`); await m.wait(1500);
+    m.line(`<span class="err">✗</span> api-bump stopped: the provider answered 503.`, "b"); await m.wait(1600);
+    m.line(`<span class="acc">:*</span> api-bump stopped half-way. i started it again, from file 7.`, "b"); await m.wait(1400);
+    m.line(`<span class="dim"><span class="pulse acc">∿</span> api-bump · 7 of 11 files…</span>`); await m.wait(1800);
+    m.line(`<span class="acc">♡</span> api-bump done · client on v3, tests green.`, "b"); await m.wait(3200);
+  },
+  async worktree(m) {
+    const r = [`<span class="faint">0</span> <span class="acc">:*</span> main`, `<span class="faint">1</span> <span class="pulse acc">∿</span> auth-fix`, `<span class="faint">2</span> <span class="pulse acc">∿</span> release`];
+    const rows = r.map((h) => m.line(h)); await m.wait(1200);
+    m.line(`<span class="acc">:*</span> perf-bench needs a clean build. it gets its own worktree.`, "b"); await m.wait(900);
+    const p = m.line(`<span class="faint">3</span> <span class="pulse acc">∿</span> perf-bench <span class="acc">ψ</span>`); await m.wait(2600);
+    p.innerHTML = `<span class="faint">3</span> <span class="acc">♡</span> perf-bench`;
+    m.line(`<span class="acc">♡</span> perf-bench done · merged back. worktree cleaned up.`, "b"); await m.wait(3400);
+  },
+};
+// each demo is a tiny terminal. only one plays at a time (the director
+// below picks it); the others rest on their last frame, dimmed.
+let active = null, pinned = null;
+function mini(el, i) {
+  el.innerHTML = `<div class="mfeed scrollbox"></div><div class="mcomp"><span class="acc">›</span> <span class="ty"></span><span class="cur"></span></div>`;
+  const feedEl = el.querySelector(".mfeed"), ty = el.querySelector(".ty"), comp = el.querySelector(".mcomp");
+  const self = { el, feat: el.closest(".feat"), i, done: null };
+  let fast = false;
+  const turn = () => new Promise((r) => { const t = () => active === self && !document.hidden ? r() : setTimeout(t, 120); t(); });
+  const m = {
+    wait: async (ms) => { if (fast) return; await turn(); await sleep(reduced ? Math.min(ms, 400) : ms); await turn(); },
+    line(html, cls) {
+      const stuck = fast || atBottom(feedEl);
+      const d = document.createElement("div"); if (cls) d.className = cls; if (cls && cls.includes("b")) d.style.marginTop = "1lh";
+      d.innerHTML = html; feedEl.append(d); cellify(d); follow(feedEl, stuck, fast); return d;
+    },
+    async type(t) {
+      if (fast) { ty.textContent += t; return; }
+      for (const ch of t) { await turn(); ty.textContent += ch; comp.scrollLeft = comp.scrollWidth; await sleep(reduced ? 0 : 28 + Math.random() * 30); }
+      await sleep(300);
+    },
+    clear() { ty.textContent = ""; comp.scrollLeft = 0; },
+    async send(t, keep) { await m.type(t); m.clear(); const d = m.line(`${t}<span class="tick">✓</span>`, "b you"); if (!keep) { await m.wait(450); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`; } await m.wait(400); return d; },
+    async main(t) { m.line(`<span class="acc">:*</span> ${t}`); await m.wait(300); },
+  };
+  const play = () => plays[el.dataset.play](m);
+  // first, a still: the last frame, drawn at once
+  (async () => {
+    await sleep(0);   // let the whole script load first (cellify's regexp is defined below)
+    fast = true; feedEl.classList.add("still"); await play(); m.clear(); feedEl.classList.remove("still"); fast = false;
+    for (;;) {
+      await turn();
+      feedEl.innerHTML = ""; m.clear(); await sleep(350);
+      await play();
+      await sleep(900);
+      finished(self);
+    }
+  })();
+  return self;
+}
+
+// ---- the director: play the most relevant demo, one at a time ----
+// 1. the one under the pointer (or tapped) wins, and loops while it's there;
+// 2. otherwise the one nearest the middle of the screen;
+// 3. when a demo ends, the next visible one in reading order takes over,
+//    so a row plays left then right, like reading.
+const grid = document.querySelector(".fgrid");
+const minis = [...document.querySelectorAll("[data-play]")].map(mini);
+const seen = (el) => { const r = el.getBoundingClientRect(); const h = Math.min(r.bottom, innerHeight) - Math.max(r.top, 0); return Math.max(0, h) / r.height; };
+const off = (el) => { const r = el.getBoundingClientRect(); return Math.abs((r.top + r.bottom) / 2 - innerHeight / 2); };
+const rowOf = (m) => Math.round(m.el.getBoundingClientRect().top);
+function best() {
+  const vis = minis.filter((m) => seen(m.el) >= .6);
+  return vis.length ? vis.sort((a, b) => off(a.el) - off(b.el) || a.i - b.i)[0] : null;
+}
+function setActive(m) {
+  if (m === active) return;
+  active?.el.classList.remove("active");
+  active = m; m?.el.classList.add("active");
+  grid.classList.toggle("directed", !!m);
+}
+function finished(m) {
+  if (active !== m) return;
+  if (pinned === m) return;               // still under the pointer: play it again
+  const vis = minis.filter((x) => seen(x.el) >= .6);
+  if (!vis.includes(m)) return setActive(best());
+  const next = vis[(vis.indexOf(m) + 1) % vis.length];
+  setActive(next === m ? m : next);
+}
+function onView() {
+  if (pinned) return;
+  const b = best();
+  if (!b) return setActive(null);
+  if (!active || seen(active.el) < .6) return setActive(b);
+  // the reader moved on to another row: follow them, don't finish the old one
+  if (rowOf(b) !== rowOf(active) && off(active.el) - off(b.el) > 140) setActive(b);
+}
+let ticking = false;
+addEventListener("scroll", () => { if (!ticking) { ticking = true; requestAnimationFrame(() => { ticking = false; onView(); }); } }, { passive: true });
+addEventListener("resize", onView);
+for (const m of minis) {
+  m.feat.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") { pinned = m; setActive(m); } });
+  m.feat.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse" && pinned === m) pinned = null; });
+  m.feat.addEventListener("click", () => { pinned = null; setActive(m); });   // touch: tap to play
+}
+setTimeout(onView, 300);
+
+// ---- one fixed cell per symbol in the demo (fallback glyphs are not 1ch) ----
 const GLYPH_RE = /[\u2010-\u2BFF\u2E00-\u2E7F]/;
-function cellify(root) {
-  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => GLYPH_RE.test(n.data) && !n.parentElement.closest(".gc, script, style, textarea, input")
-      ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+function cellify(r) {
+  const w = document.createTreeWalker(r, NodeFilter.SHOW_TEXT, { acceptNode: (n) =>
+    GLYPH_RE.test(n.data) && !n.parentElement.closest(".gc, script, style, button, pre") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
   const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
   for (const n of nodes) {
     const f = document.createDocumentFragment();
@@ -603,11 +646,11 @@ function cellify(root) {
     n.replaceWith(f);
   }
 }
-cellify(document.body);
-new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) {
-  if (n.nodeType === 1 && !n.classList.contains("gc")) cellify(n);
-  else if (n.nodeType === 3 && GLYPH_RE.test(n.data) && n.parentElement && !n.parentElement.closest(".gc")) cellify(n.parentElement);
-} }).observe(document.body, { childList: true, subtree: true, characterData: false });
+const term = document.querySelector(".term");
+cellify(term);
+new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && !n.classList.contains("gc")) cellify(n); })
+  .observe(term, { childList: true, subtree: true });
+document.querySelectorAll(".feat p, .facts").forEach(cellify);
 </script>
 </body>
 </html>
