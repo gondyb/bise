@@ -50,11 +50,18 @@ limite dans le produit (RFC 0001 §10.1), mais les tokens, le coût et la
 vitesse du provider sont la vraie limite ; le dire.
 
 **Nom : `bise`** (choisi par Gabriel). Court à taper, avec un double sens : la
-bise est un vent froid du nord (la famille du Mistral, et le vent, c'est le
+bise est un vent froid du nord (le vent, c'est le
 flow), et *faire la bise*. Vérifié libre sur npm, crates.io, PyPI et Homebrew.
 **⚠** `bise.sh` et `bise.ai` sont pris ; `bise.dev`, l'org GitHub, les marques
 et les paquets Linux ne sont pas encore vérifiés. Homonyme connu : BISE, le
 système d'information européen sur la biodiversité (autre domaine).
+
+**Marque : autonome** (décision de Gabriel). bise est sa propre marque pour
+l'instant, sans lien avec Mistral : pas d'identité visuelle Mistral, pas de
+mention de Mistral dans la copy. **⚠** Les sections 4 et 7 (cible = devs
+Mistral, intégration Vibe) datent d'avant cette décision et sont à repenser.
+Question ouverte : le code tourne sur le Unified Harness et Vibe de Mistral ;
+qu'est-ce qui peut sortir sous une marque autonome ?
 
 Taglines :
 

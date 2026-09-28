@@ -50,11 +50,17 @@ cap, and the product has none. **⚠** No limit in the product (RFC 0001
 §10.1), but tokens, cost and provider speed are the real limit; say so.
 
 **Name: `bise`** (picked by Gabriel). Short to type, and a double meaning: the
-*bise* is a cold north wind (Mistral's family, and wind = flow), and *faire la
+*bise* is a cold north wind (wind = flow), and *faire la
 bise* is the French cheek kiss. Checked free on npm, crates.io, PyPI and
 Homebrew. **⚠** `bise.sh` and `bise.ai` are taken; `bise.dev`, GitHub org,
 trademarks and Linux packages not checked yet. Known namesake: BISE, the EU
 Biodiversity Information System for Europe (different field).
+
+**Brand: standalone** (Gabriel's decision). bise is its own brand for now,
+unrelated to Mistral: no Mistral visual identity, no Mistral mention in the
+copy. **⚠** Sections 4 and 7 (wedge = Mistral devs, Vibe integration) predate
+this decision and need a rethink. Open question: the code runs on Mistral's
+Unified Harness and Vibe; what can ship under a standalone brand?
 
 Taglines:
 
