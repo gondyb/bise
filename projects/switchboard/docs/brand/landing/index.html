@@ -229,7 +229,7 @@
       <div class="feat blow"><div class="mini" data-play="card"></div><h3>only the real decisions reach you.</h3><p>one card, a couple of choices, one key. then back to what you were doing.</p></div>
       <div class="feat blow"><div class="mini" data-play="resume"></div><h3>nothing gets dropped.</h3><p>when an agent stops half-way, main picks the work back up from where it was.</p></div>
       <div class="feat blow"><div class="mini" data-play="worktree"></div><h3>worktrees, only when they help.</h3><p>agents share your folder. when one really needs isolation, it makes a worktree, and cleans it up after.</p></div>
-      <div class="feat blow"><div class="mini" data-play="mcp"></div><h3>as many MCP servers as you want.</h3><p>agents call tools from code, and look them up only when they need them. a hundred servers cost your context about as much as one.</p></div>
+      <div class="feat blow"><div class="mini" data-play="mcp"></div><h3>plug in everything. leave it all on.</h3><p>GitHub, Linear, Sentry, Slack, your docs, your database: every tool and all your context, always on. you never pick what to enable. agents find the right tool when they need it and call it from code, so a hundred servers don't crowd their heads.</p></div>
       <div class="feat blow"><div class="mini" data-play="plugins"></div><h3>bring your plugins.</h3><p class="tbd" title="⚠ which plugin and skill folders are picked up at launch: to confirm before release">your skills, plugins and MCP servers come with you. switching costs you an afternoon, not a month.</p></div>
     </div>
   </div>
@@ -468,15 +468,17 @@ const plays = {
     m.line(`<span class="acc">:*</span> release has what it needs. nothing for you.`, "b"); await m.wait(3200);
   },
   async mcp(m) {
-    m.line(`<span class="acc">:*</span> 42 MCP servers connected. none of them in my context.`); await m.wait(1400);
-    m.line(`<span class="dim">$ typescript · triage</span>`, "b"); await m.wait(400);
+    m.line(`<span class="acc">:*</span> 42 MCP servers on. all of them, all the time.`); await m.wait(700);
+    m.line(`<span class="faint">github · linear · sentry · slack · notion · postgres · datadog · +35</span>`); await m.wait(1000);
+    await m.send("why did signups drop yesterday?");
+    m.line(`<span class="dim">$ typescript · signups</span>`, "b"); await m.wait(400);
     for (const l of [
-      `<span class="acc">const</span> bugs = <span class="acc">await</span> tools.sentry.issues({ since: <span class="ok">"24h"</span> })`,
-      `<span class="acc">for</span> (<span class="acc">const</span> b <span class="acc">of</span> bugs.slice(0, 5))`,
-      `  <span class="acc">await</span> tools.linear.create({ title: b.title })`,
+      `drop = <span class="acc">await</span> tools.datadog.query(<span class="ok">"signups"</span>)`,
+      `deploy = <span class="acc">await</span> tools.github.deployAt(drop.start)`,
+      `talk = <span class="acc">await</span> tools.slack.search(<span class="ok">"signup"</span>)`,
     ]) { m.line(`<span class="dim">│</span> ${l}`); await m.wait(450); }
-    await m.wait(700);
-    m.line(`<span class="acc">✓</span> 5 issues filed from 2 servers · 0.9s`, "b"); await m.wait(3400);
+    await m.wait(800);
+    m.line(`<span class="acc">:*</span> a deploy at 14:02 broke the email check. #support saw it at 14:30. want a fix?`, "b"); await m.wait(3600);
   },
   async plugins(m) {
     await m.type("bise"); m.clear();
