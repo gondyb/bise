@@ -1785,3 +1785,49 @@ Index:
     `--workspace --all-targets -D warnings` on 44acc36 + the patches;
     `run_all.sh` green on the same tree (the tmux waits for `→ main` were
     already made tolerant by BISE-96).
+
+### BISE-96 · bash and TypeScript: a box
+
+- **status:** done · **owner:** bise-k-keys · **commits:** 5461388, d7394b8
+  (shots)
+- **track:** K · **owns:** new `toolbox.rs`; `render.rs` tool_lines and
+  tool_head (split agreed with bise-c-cards); `feed.rs` build_rows /
+  event_rows / refresh_live / push_event hooks for tools, tool_discloses
+- **spec:** book §11 "Scripts: a box", §9 Emphasis;
+  site/book/screens.html "bash and typescript: a box"
+- **notes:**
+  - A bash or TypeScript call is a rounded box at `code_width(width)` (it
+    follows bise-f-feed's CODE_MAX of BISE-97). The title is in the top
+    border: `╭─ $ bash ∿ 12s ─╮`, `✓ 0.9s`, `✗ 0.8s`. The border is text
+    while running, faint when done, error when failed. The script shows
+    in full (highlighted, wrapped with `»`), then a faint `├──┤`, then the
+    output, dim. Closed: running and failed show `… n lines above` + the
+    last 15; done shows the first 5, `▸ n more lines`, the last 9; 15
+    lines or fewer show all. Opened (▸ via click, `space`, `ctrl+o`):
+    everything. `tool_discloses` is "more than 15 result lines", so
+    `toggle_event`, `set_everything` and `anything_closed` cover it.
+  - TypeScript sub-calls (`Ev::Sub`) are output lines inside their box,
+    shown in full before the result. A new Sub clears its box's cache, and
+    the Sub itself draws no row of its own.
+  - A running box redraws only its top border (the live head, 1 row), so
+    the per-frame work is as before.
+  - ASCII (`BISE_ASCII=1`): `+- $ bash ok 0.9s ---+`, `|`, `+---+`,
+    `> n more lines`, `... n lines above`.
+  - The separate `▸ output · n lines` line and the code rails are gone
+    for bash/ts. Other tools stay one line, now dim (§9 Emphasis: the
+    one-line tool calls). Edits keep their `±` line (edit_head is
+    bise-c-cards').
+  - **Tests:** `toolbox::tests` (title and width, head/tail fold, running
+    and failed tail, border colors, sub-calls inside, ASCII box).
+    `feed_render_tests` follow the box: the mockup tests compare rows
+    without the box padding (`unbox`); the output/failure tests now check
+    the box for bash and one line for other tools. `theme.rs` got a
+    `cfg(test)` `set_ascii_for_tests`.
+  - **Shots (d7394b8):** `qa/capture.py` dark, light and ascii on
+    5461388 (temp HOME and XDG_STATE_HOME). Every screen that shows a
+    bash/ts box was recaptured.
+  - **Gates:** lite (build, `cargo test -p bend-tui`, clippy
+    `--workspace --all-targets -D warnings`) on the committed tree after a
+    rebase on HEAD. One `at_popup_tests` timing flake passed on rerun.
+    Full gate on 5461388: `cargo test --workspace`, `run_all.sh` (PROOF,
+    e2e, 14 tmux tests): green.
