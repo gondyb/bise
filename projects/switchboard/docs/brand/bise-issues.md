@@ -44,7 +44,7 @@ Index:
 
 ### BISE-01 · theme tokens and the two palettes
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-t-theme · **commits:** c1de22a
 - **track:** T · **owns:** `rust/tui/src/theme.rs`
 - **spec:** book §5, §6, contract C1 (§21)
 - **do:**
@@ -66,6 +66,57 @@ Index:
   switches every role; a unit test checks every readable role ≥ 4.5:1
   against white / `#f7f4ee` (light) and black / `#141211` / `#282c34` (dark).
 - **notes:**
+  - **API (C1, as built):** `Mode { Dark, Light }`, `set_mode(Mode)`, `mode()`;
+    roles `text() dim() faint() accent() error() ok() on_accent() bg()
+    selection_bg() card_tint() syntax_keyword() syntax_string()
+    syntax_comment() syntax_number() syntax_call() syntax_type()`; the raw
+    palettes `DARK` / `LIGHT` / `palette_of(Mode)` / `palette()` (for tests).
+    `bg()` is always `Color::Reset`. Extra roles vs the book: `on_accent`
+    (text on an accent chip / selected popup row: `#1b1917` dark, white
+    light), `syntax_type`.
+  - **Glyphs §6:** `G_YOU G_MAIN G_BRIEF G_THINK G_BASH G_TS G_SUBCALL
+    G_PATCH G_MSG G_IMAGE G_CARD G_COMPACTING G_SUMMARY G_INTERRUPTED`,
+    status `G_STARTING G_WORKING G_WAITING G_NEEDS_YOU G_DONE G_FAILED G_IDLE
+    G_STOPPED`, marks `G_SENDING G_RECEIVED G_READ G_UNREAD G_WORKTREE
+    G_OVERLAP G_RESTART_FAILED G_BUILDING G_CLOSED G_OPEN`.
+    `working_frame(tick) -> (&str, Color)`: `∿` text/dim, one phase every 4
+    ticks; `starting_frame(tick)`: `·` dim/faint. `SPLIT` kept (not deprecated).
+  - **Light syntax colors (for the book §5):** keyword `#8a3fb0`, string
+    `#44782a`, comment `#726b60`, number `#9a4a0c`, call `#1f63a8`, type
+    `#7a5c00` (all ≥ 4.5:1 on white and `#f7f4ee`). Dark type: `#e8cf9a`.
+  - **Book correction:** the dark comment `#857e74` is only 3.5:1 on
+    `#282c34`; lifted to `#99928a` (4.56:1). Tints: selection `#33292c` dark /
+    `#faeef0` light, card `#211d1b` dark / `#f3eee6` light (text, dim and
+    accent ≥ 4.5:1 on them; on_accent ≥ 4.5:1 on accent).
+  - **Contrast test:** `theme::tests` (7 tests) — every readable role ≥ 4.5:1
+    on white/`#f7f4ee` (light) and black/`#141211`/`#282c34` (dark), the
+    tints, faint quieter than dim, `set_mode` switches every role, the pulse,
+    the aliases. All pass.
+  - **Deprecated aliases:** fixed to the **dark** palette (they do not follow
+    `set_mode`): `BRAND WARN RECORDING` → accent, `ERR` → error, `OK` → ok,
+    `TEXT` and also `ACCENT` (markdown headings) and `HEAD` (emphasis, bash
+    options, code types) → text, `DIM TOOL INFO` → dim, `FAINT BORDER_ACTIVE`
+    → faint, `SELECTION` → selection_bg, `ON_BRAND` → on_accent, `SYNTAX_*` →
+    syntax dark, `PANEL ELEMENT DIFF_ADD_BG DIFF_DEL_BG` → `Color::Reset`.
+    `SPINNER`/`spinner_frame` (braille) and the old `GLYPH_*` keep their values
+    and are deprecated too (BISE-13 moves the feed to §6). So the TUI already
+    wears the dark bise colors, with no panel/code/diff backgrounds.
+  - **Warnings:** one line outside my file — `#![allow(deprecated)]` at the
+    top of `rust/tui/src/lib.rs` (~250 use sites through `use theme::*`);
+    BISE-83 removes it. theme.rs has `#![allow(dead_code)]` until wave 1 uses
+    the roles/glyphs. Note: the crate-wide allow also hides other
+    deprecations until BISE-83.
+  - **For wave 1:** call the role functions, never the aliases (they stay
+    dark in light mode). Mode is a process-wide atomic; under `cargo test` it
+    is per thread, so a test may `set_mode(Mode::Light)` without repainting
+    its neighbours. BISE-02 only needs to call `set_mode`.
+  - **Gates:** cargo build ok; bend-tui tests 180 ok; clippy --workspace
+    --all-targets clean; PROOF ALL PROOFS CHECK. At commit time the shared
+    tree had 6 failing `switchboard core::tests` and 2 failing tmux tests
+    (`tui_tmux` `◀ t1 m_`, `tui_composer_tmux`) from BISE-04 in progress; in a
+    clean worktree (HEAD + my two files) all tmux tests and e2e pass.
+    Visual check in Ghostty/light terminal not done (light is reachable only
+    after BISE-02).
 
 ### BISE-03 · glyph audit
 
