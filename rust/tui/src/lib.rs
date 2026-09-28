@@ -3079,6 +3079,14 @@ fn draw(app: &mut App, frame: &mut Frame) {
                     buf_sel = in_sel;
                 }
                 if is_cursor {
+                    // a pending dead key (Option+e…): its accent, marked,
+                    // before the cursor, like macOS
+                    if let Some(acc) = app.ed.pending_dead() {
+                        spans.push(Span::styled(
+                            acc.to_string(),
+                            Style::default().fg(BRAND).add_modifier(Modifier::UNDERLINED),
+                        ));
+                    }
                     spans.push(Span::styled(
                         cell.text.to_string(),
                         text_style.add_modifier(Modifier::REVERSED),

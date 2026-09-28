@@ -337,6 +337,9 @@ pub(crate) enum Action {
     DeleteBack(Unit),
     DeleteForward(Unit),
     Insert(String),
+    /// A macOS dead key (Option+` ´ ˆ ¨ ˜): the accent waits for the
+    /// next typed letter.
+    Dead(char),
     Undo,
     Redo,
     SelectAll,
@@ -359,6 +362,8 @@ pub(crate) struct Editor {
     hist_idx: Option<usize>,
     draft: Option<Snap>,
     scratch: std::collections::HashMap<usize, String>,
+    /// a dead key waiting for its letter (its spacing accent)
+    dead: Option<char>,
 }
 
 impl Editor {
@@ -432,9 +437,26 @@ impl Editor {
         }
     }
 
-    /// Typed text at the cursor (replaces the selection).
+    /// Typed text at the cursor (replaces the selection); a pending dead
+    /// key composes with it.
     pub(crate) fn insert(&mut self, s: &str) {
-        self.insert_kind(s, Kind::Typing);
+        match self.dead.take() {
+            Some(a) => self.insert_kind(&compose(a, s), Kind::Typing),
+            None => self.insert_kind(s, Kind::Typing),
+        }
+    }
+
+    /// A dead key: the accent waits for the next typed text (a second
+    /// dead key types the first accent alone).
+    pub(crate) fn dead_key(&mut self, accent: char) {
+        if let Some(a) = self.dead.replace(accent) {
+            self.insert_kind(&a.to_string(), Kind::Typing);
+        }
+    }
+
+    /// The accent of a pending dead key (drawn at the cursor).
+    pub(crate) fn pending_dead(&self) -> Option<char> {
+        self.dead
     }
 
     /// A paste: its own undo step.
@@ -680,7 +702,15 @@ impl Editor {
     /// Applies an editing action. `Up`/`Down`/`Copy`/`Cut` need the
     /// caller (layout width, history, clipboard): they return false here.
     pub(crate) fn apply(&mut self, a: &Action) -> bool {
+        // a pending dead key: Backspace drops it, any other action too
+        if self.dead.is_some() && !matches!(a, Action::Insert(_) | Action::Dead(_)) {
+            self.dead = None;
+            if matches!(a, Action::DeleteBack(_)) {
+                return true;
+            }
+        }
         match a {
+            Action::Dead(c) => self.dead_key(*c),
             Action::Move(m, sel) => self.move_cursor(*m, *sel),
             Action::DeleteBack(u) => self.delete_back(*u),
             Action::DeleteForward(u) => self.delete_forward(*u),
@@ -705,10 +735,84 @@ impl Editor {
     }
 }
 
+// ---- the macOS Option layer ----
+//
+// Ghostty treats Option as Alt on the U.S. layouts by default
+// (`macos-option-as-alt` unset = true there): Option+` then e reaches
+// the app as Alt+` then e, never as "è". The composer rebuilds what
+// macOS would type: the dead keys compose with the next letter, the
+// other Option keys give their character. Word moves (Alt+b/f, what
+// Ghostty sends for Option+←/→), Alt+d, Alt+/ and Alt+digits keep
+// their app meaning.
+
+/// A key of the macOS U.S. Option layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OptionKey {
+    /// the spacing accent: ` ´ ˆ ¨ ˜
+    Dead(char),
+    Char(char),
+}
+
+/// The U.S. shifted symbol of an unshifted key (the kitty protocol
+/// reports Option+Shift+1 as '1' with Shift; the legacy one as '!').
+fn us_shift(c: char) -> char {
+    const BASE: &str = "`1234567890-=[]\\;',./";
+    const SHIFTED: &str = "~!@#$%^&*()_+{}||:\"<>?";
+    if c.is_ascii_lowercase() {
+        return c.to_ascii_uppercase();
+    }
+    match BASE.chars().position(|b| b == c) {
+        Some(i) => SHIFTED.chars().nth(i).unwrap_or(c),
+        None => c,
+    }
+}
+
+/// What Option + `c` types on the macOS U.S. layout.
+pub(crate) fn option_layer(c: char, shift: bool) -> Option<OptionKey> {
+    let c = if shift { us_shift(c) } else { c };
+    let dead = match c {
+        '`' => Some('`'),
+        'e' => Some('´'),
+        'i' => Some('ˆ'),
+        'u' => Some('¨'),
+        'n' => Some('˜'),
+        _ => None,
+    };
+    if let Some(a) = dead {
+        return Some(OptionKey::Dead(a));
+    }
+    const KEYS: &str = "1234567890-=qwrtyop[]\\asdfghjkl;'zxcvbm,./!@#$%^&*()_+QWERTYUIOP{}|ASDFGHJKL:\"ZXCVBNM<>?~";
+    const CHARS: &str = "¡™£¢∞§¶•ªº–≠œ∑®†¥øπ“‘«åß∂ƒ©˙∆˚¬…æΩ≈ç√∫µ≤≥÷⁄€‹›ﬁﬂ‡°·‚—±Œ„´‰ˇÁ¨ˆØ∏”’»ÅÍÎÏ˝ÓÔ\u{F8FF}ÒÚÆ¸˛Ç◊ı˜Â¯˘¿`";
+    KEYS.chars().position(|k| k == c).and_then(|i| CHARS.chars().nth(i)).map(OptionKey::Char)
+}
+
+/// A dead key's accent on the next typed text: the accented letter,
+/// the accent alone before a space, else the accent then the text
+/// (what macOS does).
+pub(crate) fn compose(accent: char, text: &str) -> String {
+    let mut it = text.chars();
+    let (Some(c), rest) = (it.next(), it.as_str()) else { return accent.to_string() };
+    if c == ' ' {
+        return format!("{}{}", accent, rest);
+    }
+    let (from, to) = match accent {
+        '`' => ("aeiouAEIOU", "àèìòùÀÈÌÒÙ"),
+        '´' => ("aeiouyAEIOUY", "áéíóúýÁÉÍÓÚÝ"),
+        'ˆ' => ("aeiouAEIOU", "âêîôûÂÊÎÔÛ"),
+        '¨' => ("aeiouyAEIOUY", "äëïöüÿÄËÏÖÜŸ"),
+        '˜' => ("anoANO", "ãñõÃÑÕ"),
+        _ => ("", ""),
+    };
+    match from.chars().position(|f| f == c).and_then(|i| to.chars().nth(i)) {
+        Some(x) => format!("{}{}", x, rest),
+        None => format!("{}{}", accent, text),
+    }
+}
+
 // ---- the help ----
 
 /// The composer's keys, for /help.
-pub(crate) const EDIT_HELP: &str = "composer: Option+←/→ word · Ctrl+Option+←/→ subword (camelCase, snake_case, kebab-case, digits) · Cmd+←/→ or Ctrl+A/E line start/end · Ctrl+Home/End text start/end · Option+Backspace or Ctrl+W delete a word · Ctrl+Option+Backspace/Delete delete a subword · Cmd+Backspace or Ctrl+U delete to the line start · Ctrl+K delete to the line end (outside Switchboard) · Shift + any move selects · Ctrl+/ undo · Alt+/ redo · ↑/↓ move between rows, then the history (↓ past the newest brings the draft back) · mouse: click, drag, double click (word), triple click; the release copies · Ctrl+Shift+C copy · Ctrl+Shift+X cut · Shift+drag: the terminal's own selection";
+pub(crate) const EDIT_HELP: &str = "composer: Option+←/→ word · Ctrl+Option+←/→ subword (camelCase, snake_case, kebab-case, digits) · Cmd+←/→ or Ctrl+A/E line start/end · Ctrl+Home/End text start/end · Option+Backspace or Ctrl+W delete a word · Ctrl+Option+Backspace/Delete delete a subword · Cmd+Backspace or Ctrl+U delete to the line start · Ctrl+K delete to the line end (outside Switchboard) · Shift + any move selects · Ctrl+/ undo · Alt+/ redo · ↑/↓ move between rows, then the history (↓ past the newest brings the draft back) · mouse: click, drag, double click (word), triple click; the release copies · Ctrl+Shift+C copy · Ctrl+Shift+X cut · Shift+drag: the terminal's own selection · accents as on macOS: Option+` e = è, Option+e e = é, Option+i o = ô, Option+u u = ü, Option+n n = ñ, Option+c = ç, Option+q = œ, Option+\\ = «, Option+Shift+\\ = »";
 
 /// Ghostty tips, for /help: the shortcuts Ghostty keeps unless unbound.
 pub(crate) const GHOSTTY_TIPS: &str = "Ghostty tips: Cmd+↑/↓, Cmd+Z and Cmd+C are Ghostty's by default. To get them in the composer, add to ~/Library/Application Support/com.mitchellh.ghostty/config: keybind = super+arrow_up=unbind · keybind = super+arrow_down=unbind · keybind = super+z=unbind · keybind = super+shift+z=unbind · keybind = super+c=performable:copy_to_clipboard (Cmd+C copies Ghostty's selection if any, else the app's). Check what reaches the app: bend-harness keyprobe";
@@ -790,7 +894,13 @@ pub(crate) fn action(k: &KeyEvent) -> Option<Action> {
             'F' => Move(WordRight, true),
             'd' => DeleteForward(Unit::Word),
             '/' => Redo,
-            _ => return None,
+            // the rest of the Option layer (Ghostty sends Option as Alt
+            // on U.S. layouts): dead keys and the Option characters
+            _ => match option_layer(c, shift) {
+                Some(OptionKey::Dead(a)) => Dead(a),
+                Some(OptionKey::Char(ch)) => Insert(ch.to_string()),
+                None => return None,
+            },
         },
         KeyCode::Char(c) if sup && !ctrl && !alt => match c.to_ascii_lowercase() {
             'z' if shift => Redo,
@@ -1075,6 +1185,51 @@ mod tests {
         assert_eq!(word_at(s, 5), (4, 9));
         assert_eq!(word_at(s, 9), (9, 10));
         assert_eq!(word_at(s, 3), (3, 4));
+    }
+
+    #[test]
+    fn option_dead_keys_compose_like_macos() {
+        use KeyCode::Char;
+        let (a, s) = (KeyModifiers::ALT, KeyModifiers::SHIFT);
+        let mut e = Editor::default();
+        // what Ghostty sends on a U.S. layout (Option as Alt), in the
+        // legacy encoding (ESC `) and the kitty one (CSI 96;3u): both
+        // parse to Alt+`
+        let seq = [
+            (Char('`'), a), (Char('e'), KeyModifiers::NONE),   // è
+            (Char('e'), a), (Char('e'), KeyModifiers::NONE),   // é
+            (Char('e'), a), (Char('E'), s),                    // É
+            (Char('i'), a), (Char('o'), KeyModifiers::NONE),   // ô
+            (Char('u'), a), (Char('u'), KeyModifiers::NONE),   // ü
+            (Char('n'), a), (Char('n'), KeyModifiers::NONE),   // ñ
+            (Char('c'), a),                                    // ç
+            (Char('q'), a),                                    // œ
+            (Char('\\'), a), (Char('|'), a | s),             // « »
+            (Char('`'), a), (Char('x'), KeyModifiers::NONE),   // `x (no composition)
+            (Char('e'), a), (Char(' '), KeyModifiers::NONE),   // ´ alone
+        ];
+        for (code, m) in seq {
+            let act = action(&KeyEvent::new(code, m)).expect("mapped");
+            e.apply(&act);
+        }
+        assert_eq!(e.text, "èéÉôüñçœ«»`x´");
+        // kitty reports Option+Shift+\ as '\\' + Shift: the same »
+        assert_eq!(key(Char('\\'), a | s), Some(Action::Insert("»".into())));
+        assert_eq!(key(Char('e'), a | s), Some(Action::Insert("´".into())));
+        // Backspace drops a pending accent, not the text
+        let mut e = ed("ab", 2);
+        e.apply(&Action::Dead('´'));
+        assert_eq!(e.pending_dead(), Some('´'));
+        e.apply(&Action::DeleteBack(Unit::Grapheme));
+        assert_eq!((e.text.as_str(), e.pending_dead()), ("ab", None));
+        // two dead keys: the first accent alone, the second waits
+        e.apply(&Action::Dead('`'));
+        e.apply(&Action::Dead('¨'));
+        e.apply(&Action::Insert("o".into()));
+        assert_eq!(e.text, "ab`ö");
+        // the app's Alt keys stay theirs
+        assert_eq!(key(Char('b'), a), Some(Action::Move(Motion::WordLeft, false)));
+        assert_eq!(key(Char('/'), a), Some(Action::Redo));
     }
 
     #[test]

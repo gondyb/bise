@@ -3,7 +3,7 @@ the fake provider: Up recalls the history and Down past the newest entry
 brings the draft back; Option+←/→ (ESC b / ESC f) jump words, Cmd+←/→
 (Ctrl+A / Ctrl+E in Ghostty) jump to the line ends, Option+Backspace and
 Cmd+Backspace (Ctrl+U) delete a word / to the line start, Ctrl+/ (0x1F)
-undoes. The mouse (SGR reports written to the pane): a drag in the feed
+undoes, Option+` then e (ESC ` e) types è. The mouse (SGR reports written to the pane): a drag in the feed
 selects and copies on release ("copied N chars"), a drag in the composer
 too; the copies go to BEND_CLIPBOARD_FILE, never the real clipboard.
 
@@ -141,7 +141,15 @@ def main():
         # typing replaces the selection
         typed("text")
         wait_composer("Ymy! text")
-        print("OK: composer (Up/Down keep the draft, word and line jumps, deletes, undo, mouse selection + copy in the feed and the composer)")
+        # macOS accents with Option as Alt (Ghostty on U.S. layouts):
+        # Option+` e = ESC ` e -> è; Option+e e -> é; Option+c -> ç
+        keys("M-`")
+        typed("e")
+        keys("M-e")
+        typed("e")
+        keys("M-c")
+        wait_composer("Ymy! textèéç")
+        print("OK: composer (Up/Down keep the draft, word and line jumps, deletes, undo, Option accents, mouse selection + copy in the feed and the composer)")
         ok = True
     finally:
         tmux("kill-session", "-t", S)
