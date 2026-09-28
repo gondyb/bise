@@ -78,7 +78,15 @@ def shot(name, note=""):
 
 
 def start(E, cols, rows, extra=""):
-    env = "BISE_THEME=%s COLORTERM=truecolor%s %s" % (MODE, " BISE_ASCII=1" if PASS == "ascii" else "", extra)
+    # never the real home: the TUI saves its theme (~/.bend-harness/tui.json),
+    # the onboarding flag and hints ($XDG_STATE_HOME/switchboard), crash
+    # reports under HOME; every capture gets its own temp HOME and state root
+    home = os.path.join(E.tmp, "home")
+    state_root = os.path.join(E.tmp, "state-root")
+    os.makedirs(home, exist_ok=True)
+    os.makedirs(state_root, exist_ok=True)
+    env = "HOME=%s XDG_STATE_HOME=%s BISE_THEME=%s COLORTERM=truecolor%s %s" % (
+        home, state_root, MODE, " BISE_ASCII=1" if PASS == "ascii" else "", extra)
     envs = " ".join("%s=%s" % (k, subprocess.list2cmdline([v])) for k, v in E.env.items()
                     if k.startswith(("SB_", "BEND_", "MISTRAL_")))
     cmd = "cd %s && env %s %s %s switchboard --workspace %s; sleep 600" % (ROOT, env, envs, e2e.EXE, E.ws)
@@ -89,6 +97,18 @@ def new_env():
     E = e2e.Env()
     E.env["SB_CORE_BIN"] = os.path.join(ROOT, "sb-core")
     return E
+
+
+def stop(E):
+    """The TUI started the hub itself: stop it (it stops its REPLs), then
+    the tmux session, then the fake provider and the temp dirs."""
+    try:
+        e2e.Client(os.path.join(E.state, "hub.sock")).send({"op": "stop_hub"})
+        time.sleep(2)
+    except Exception as e:  # noqa: BLE001
+        print("  (stop_hub: %s)" % e)
+    tmux("kill-session", "-t", S)
+    E.close()
 
 
 def onboarding():
@@ -106,8 +126,7 @@ def onboarding():
             time.sleep(2.5)
             shot("onboarding-%d" % i)
     finally:
-        tmux("kill-session", "-t", S)
-        E.close()
+        stop(E)
 
 
 def main():
@@ -249,8 +268,7 @@ def main():
         shot("provider-error", "fake provider killed")
     finally:
         open(os.path.join(OUT, "log.txt"), "w").write("\n".join(LOG) + "\n")
-        tmux("kill-session", "-t", S)
-        E.close()
+        stop(E)
 
 
 if __name__ == "__main__":
