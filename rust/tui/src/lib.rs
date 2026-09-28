@@ -20,6 +20,10 @@
 //! When stdin/stdout is not a TTY (piped), it falls back to line mode so
 //! the UI stays scriptable — the same convention as the Ink version.
 
+// BISE-01: the old theme constants (BRAND, DIM, …) are #[deprecated]
+// aliases until BISE-83, which migrates the last users and drops this.
+#![allow(deprecated)]
+
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
