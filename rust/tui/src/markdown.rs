@@ -1,7 +1,7 @@
 //! Markdown rendering of user and assistant messages.
 
-use crate::theme::*;
-use ratatui::style::{Modifier, Style};
+use crate::theme;
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use crate::wrap_line;
 
@@ -42,7 +42,7 @@ pub(crate) fn inline_spans(s: &str, base: Style) -> Vec<Span<'static>> {
                 }
                 spans.push(Span::styled(
                     cs[i + 1..j].iter().collect::<String>(),
-                    Style::default().fg(OK).add_modifier(Modifier::BOLD),
+                    Style::default().fg(theme::ok()).add_modifier(Modifier::BOLD),
                 ));
                 i = j + 1;
                 continue;
@@ -58,7 +58,7 @@ pub(crate) fn inline_spans(s: &str, base: Style) -> Vec<Span<'static>> {
                     }
                     spans.push(Span::styled(
                         cs[i + 2..j].iter().collect::<String>(),
-                        base.add_modifier(Modifier::BOLD).fg(WARN),
+                        base.add_modifier(Modifier::BOLD).fg(theme::accent()),
                     ));
                     i = j + 2;
                     continue;
@@ -71,7 +71,7 @@ pub(crate) fn inline_spans(s: &str, base: Style) -> Vec<Span<'static>> {
                 }
                 spans.push(Span::styled(
                     cs[i + 1..j].iter().collect::<String>(),
-                    base.add_modifier(Modifier::ITALIC).fg(HEAD),
+                    base.add_modifier(Modifier::ITALIC).fg(theme::text()),
                 ));
                 i = j + 1;
                 continue;
@@ -108,14 +108,14 @@ pub(crate) fn md_lines(text: &str, prose: usize, wide: usize) -> Vec<Line<'stati
             }
         }
         if line.starts_with("```") {
-            out.push(Line::from(Span::styled("  ", Style::default().bg(ELEMENT))));
+            out.push(Line::from(Span::styled("  ", Style::default().bg(Color::Reset))));
             in_code = !in_code;
             continue;
         }
         if in_code {
             out.push(Line::from(Span::styled(
                 format!("  {}", line),
-                Style::default().fg(TEXT).bg(ELEMENT),
+                Style::default().fg(theme::text()).bg(Color::Reset),
             )));
             continue;
         }
@@ -125,13 +125,13 @@ pub(crate) fn md_lines(text: &str, prose: usize, wide: usize) -> Vec<Line<'stati
         }
         let indent = line.len() - line.trim_start().len();
         let t = line.trim_start();
-        let base = Style::default().fg(TEXT);
+        let base = Style::default().fg(theme::text());
         if t.starts_with('#') {
             let level = t.chars().take_while(|c| *c == '#').count();
             let head = t[level..].trim_start();
             out.push(Line::from(Span::styled(
                 head.to_string(),
-                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                Style::default().fg(theme::text()).add_modifier(Modifier::BOLD),
             )));
             continue;
         }
@@ -144,7 +144,7 @@ pub(crate) fn md_lines(text: &str, prose: usize, wide: usize) -> Vec<Line<'stati
                 out.push(Line::from_iter(
                     std::iter::once(Span::styled(
                         format!("  {} ", &t[..i + 1]),
-                        Style::default().fg(INFO),
+                        Style::default().fg(theme::dim()),
                     ))
                     .chain(inline_spans(t[i + 1..].trim_start(), base)),
                 ));
@@ -153,15 +153,15 @@ pub(crate) fn md_lines(text: &str, prose: usize, wide: usize) -> Vec<Line<'stati
         }
         if indent == 0 && (t.starts_with("- ") || t.starts_with("* ")) {
             out.push(Line::from_iter(
-                std::iter::once(Span::styled("  - ", Style::default().fg(BRAND)))
+                std::iter::once(Span::styled("  - ", Style::default().fg(theme::accent())))
                     .chain(inline_spans(&t[2..], base)),
             ));
             continue;
         }
         if indent == 0 && t.starts_with("> ") {
             out.push(Line::from_iter(
-                std::iter::once(Span::styled("  | ", Style::default().fg(HEAD)))
-                    .chain(inline_spans(&t[2..], Style::default().fg(HEAD))),
+                std::iter::once(Span::styled("  | ", Style::default().fg(theme::text())))
+                    .chain(inline_spans(&t[2..], Style::default().fg(theme::text()))),
             ));
             continue;
         }

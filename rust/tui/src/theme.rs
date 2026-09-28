@@ -9,7 +9,7 @@
 //! everything else is text, dim or faint. `faint` is never for text you
 //! must read.
 //!
-//! The old OpenCode constants (`BRAND`, `DIM`, …) stay as `#[deprecated]`
+//! The old OpenCode constants (`BRAND`, `DIM`, …) were `#[deprecated]`
 //! aliases of the dark palette until BISE-83; new code calls the roles.
 
 // the roles and §6 glyphs land before their users (wave 1 migrates the
@@ -428,88 +428,6 @@ pub(crate) const SPLIT: border::Set = border::Set {
     horizontal_bottom: " ",
 };
 
-// ---- deprecated aliases (until BISE-83) ----
-// Fixed to the dark palette: they do not follow `set_mode`. Each names
-// the role to use instead.
-
-#[deprecated(note = "BISE-01: use theme::accent()")]
-pub(crate) const BRAND: Color = DARK.accent;
-#[deprecated(note = "BISE-01: headings are theme::text() + bold")]
-pub(crate) const ACCENT: Color = DARK.text;
-#[deprecated(note = "BISE-01: use theme::text() (emphasis) or theme::syntax_type() (code)")]
-pub(crate) const HEAD: Color = DARK.text;
-#[deprecated(note = "BISE-01: use theme::dim()")]
-pub(crate) const INFO: Color = DARK.dim;
-#[deprecated(note = "BISE-01: use theme::text()")]
-pub(crate) const TEXT: Color = DARK.text;
-#[deprecated(note = "BISE-01: use theme::dim()")]
-pub(crate) const DIM: Color = DARK.dim;
-#[deprecated(note = "BISE-01: use theme::dim()")]
-pub(crate) const TOOL: Color = DARK.dim;
-#[deprecated(note = "BISE-01: use theme::ok()")]
-pub(crate) const OK: Color = DARK.ok;
-#[deprecated(note = "BISE-01: use theme::accent() (needs you) or theme::dim()")]
-pub(crate) const WARN: Color = DARK.accent;
-#[deprecated(note = "BISE-01: use theme::error()")]
-pub(crate) const ERR: Color = DARK.error;
-#[deprecated(note = "BISE-01: never paint the background (theme::bg())")]
-pub(crate) const PANEL: Color = Color::Reset;
-#[deprecated(note = "BISE-01: use theme::on_accent()")]
-pub(crate) const ON_BRAND: Color = DARK.on_accent;
-#[deprecated(note = "BISE-01: never paint the background (theme::bg())")]
-pub(crate) const ELEMENT: Color = Color::Reset;
-#[deprecated(note = "BISE-01: use theme::accent()")]
-pub(crate) const RECORDING: Color = DARK.accent;
-#[deprecated(note = "BISE-01: use theme::selection_bg()")]
-pub(crate) const SELECTION: Color = DARK.selection_bg;
-#[deprecated(note = "BISE-01: use theme::faint()")]
-pub(crate) const BORDER_ACTIVE: Color = DARK.faint;
-#[deprecated(note = "BISE-01: use theme::faint()")]
-pub(crate) const FAINT: Color = DARK.faint;
-#[deprecated(note = "BISE-01: use theme::syntax_keyword()")]
-pub(crate) const SYNTAX_KEYWORD: Color = DARK.syntax_keyword;
-#[deprecated(note = "BISE-01: use theme::syntax_string()")]
-pub(crate) const SYNTAX_STRING: Color = DARK.syntax_string;
-#[deprecated(note = "BISE-01: use theme::syntax_comment()")]
-pub(crate) const SYNTAX_COMMENT: Color = DARK.syntax_comment;
-#[deprecated(note = "BISE-01: use theme::syntax_number()")]
-pub(crate) const SYNTAX_NUMBER: Color = DARK.syntax_number;
-#[deprecated(note = "BISE-01: use theme::syntax_call()")]
-pub(crate) const SYNTAX_FUNC: Color = DARK.syntax_call;
-#[deprecated(note = "BISE-01: never paint the background; additions are theme::ok()")]
-pub(crate) const DIFF_ADD_BG: Color = Color::Reset;
-#[deprecated(note = "BISE-01: never paint the background; deletions are theme::error()")]
-pub(crate) const DIFF_DEL_BG: Color = Color::Reset;
-
-#[deprecated(note = "BISE-01: use theme::working_frame()")]
-pub(crate) const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
-#[deprecated(note = "BISE-01: use theme::working_frame()")]
-#[allow(deprecated)]
-pub(crate) fn spinner_frame(tick: u32) -> &'static str {
-    SPINNER[(tick as usize) % SPINNER.len()]
-}
-
-// the old feed glyphs: kept as they are (BISE-13 moves the feed to §6)
-#[deprecated(note = "BISE-01: use theme::G_THINK")]
-pub(crate) const GLYPH_THINK: &str = "✦";
-#[deprecated(note = "BISE-01: use theme::G_RECEIVED / G_DONE")]
-pub(crate) const GLYPH_OK: &str = "✓";
-#[deprecated(note = "BISE-01: use theme::G_FAILED")]
-pub(crate) const GLYPH_ERR: &str = "✗";
-#[deprecated(note = "BISE-01: use theme::G_INTERRUPTED")]
-pub(crate) const GLYPH_WARN: &str = "▲";
-#[deprecated(note = "BISE-01: use a §6 glyph")]
-pub(crate) const GLYPH_INFO: &str = "·";
-#[deprecated(note = "BISE-01: use theme::G_COMPACTING")]
-pub(crate) const GLYPH_COMPACT: &str = "⟳";
-#[deprecated(note = "BISE-01: use theme::G_SUMMARY")]
-pub(crate) const GLYPH_SUMMARY: &str = "≡";
-#[deprecated(note = "BISE-01: use theme::G_SUBCALL")]
-pub(crate) const GLYPH_BRANCH: &str = "↳";
-#[deprecated(note = "BISE-01: use theme::faint() + '│'")]
-pub(crate) const GLYPH_RAIL: &str = "│";
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -741,16 +659,5 @@ mod tests {
             .filter(|c| !c.is_ascii() && !('\u{2500}'..='\u{257f}').contains(c))
             .collect();
         assert_eq!(non_ascii, "éñü漢字👍«“”", "only user text and box drawing survive");
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn aliases_follow_the_dark_roles() {
-        assert_eq!(BRAND, DARK.accent);
-        assert_eq!(WARN, DARK.accent);
-        assert_eq!(ERR, DARK.error);
-        assert_eq!(DIM, DARK.dim);
-        assert_eq!(PANEL, Color::Reset);
-        assert_eq!(ELEMENT, Color::Reset);
     }
 }
