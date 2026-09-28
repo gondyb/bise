@@ -93,11 +93,6 @@ def Waiter.token(x: Waiter) -> Nat:
     case Waiter{+token, _, _, _}:
       token
 
-def Waiter.with_token(x: Waiter, +v: Nat) -> Waiter:
-  match x:
-    case Waiter{_, +agent, +msg, +deadline}:
-      Waiter{v, agent, msg, deadline}
-
 def Waiter.agent(x: Waiter) -> String:
   match x:
     case Waiter{_, +agent, _, _}:
@@ -113,20 +108,10 @@ def Waiter.msg(x: Waiter) -> Nat:
     case Waiter{_, _, +msg, _}:
       msg
 
-def Waiter.with_msg(x: Waiter, +v: Nat) -> Waiter:
-  match x:
-    case Waiter{+token, +agent, _, +deadline}:
-      Waiter{token, agent, v, deadline}
-
 def Waiter.deadline(x: Waiter) -> Nat:
   match x:
     case Waiter{_, _, _, +deadline}:
       deadline
-
-def Waiter.with_deadline(x: Waiter, +v: Nat) -> Waiter:
-  match x:
-    case Waiter{+token, +agent, +msg, _}:
-      Waiter{token, agent, msg, v}
 
 def Steer.agent(x: Steer) -> String:
   match x:
@@ -238,11 +223,6 @@ def R.workspace(x: R) -> String:
     case R{_, _, _, _, _, _, +workspace, _, _, _, _, _}:
       workspace
 
-def R.with_workspace(x: R, +v: String) -> R:
-  match x:
-    case R{+rts, +waiters, +steered, +counts, +last, +crashes, _, +dirty, +now, +git, +ans, +need}:
-      R{rts, waiters, steered, counts, last, crashes, v, dirty, now, git, ans, need}
-
 def R.dirty(x: R) -> Bool:
   match x:
     case R{_, _, _, _, _, _, _, +dirty, _, _, _, _}:
@@ -304,13 +284,6 @@ def journal(fx: List<&2, Fx>) -> List<&2, M.Ev>:
           e <> journal(rest)
         case FO{_}:
           journal(rest)
-
-
-
-
-
-
-
 
 # ---- what every journal satisfies (laws msg_ids_fresh, auto_never_asks) ----
 
@@ -499,15 +472,6 @@ def out_ok(-o: M.St, +d: M.St, +fx: List<&2, Fx>, p: {d == M.apply_all(journal(f
     -> {d == M.apply_all(journal(M.snoc(Fx, fx, FO{x})), o) : M.St}:
   %journal_snoc_out(fx, x) : {d == M.apply_all(_, o) : M.St}
   p
-
-
-
-
-
-
-
-
-
 
 # ---- the core primitives ----
 

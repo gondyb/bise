@@ -55,17 +55,6 @@ def fxs_json(xs: List<&2, X.Fx>) -> List<&2, J.Json>:
     case Con{+h, +t}:
       fx_json(h) <> fxs_json(t)
 
-def done_or_need.go(-o: M.St, need: Maybe<&2, J.Json>, +c: X.Core<o>, +r: X.R, +h: H.Hub) -> H.Hub & String:
-  match need:
-    case Some{+q}:
-      (h, J.stringify(J.obj([J.kv("need", q)])))
-    case None{}:
-      +d = X.Core.d(o, c)
-      +fx = X.Core.fx(o, c)
-      (H.Hub{d, X.R.with_ans(r, Nil{})},
-        J.stringify(J.obj([J.kv("fx", J.JArr{fxs_json(fx)}), J.kv("dirty", J.JBool{X.R.dirty(r)}),
-          J.kv("view", V.view(d, X.R.rts(r), False{}, V.touched(X.journal(fx))))])))
-
 def answer.go(need: Maybe<&2, J.Json>, +h: H.Hub, +fx: List<&2, X.Fx>) -> H.Hub & String:
   match need:
     case Some{+q}:

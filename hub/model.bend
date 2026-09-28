@@ -391,14 +391,6 @@ def drop_card(xs: List<&2, Card>, +id: Nat) -> List<&2, Card>:
 def put_card(xs: List<&2, Card>, +c: Card) -> List<&2, Card>:
   snoc(Card, drop_card(xs, Card.id(c)), c)
 
-def with_agents(+st: St, +xs: List<&2, Agent>) -> St:
-  match st:
-    case St{_, +o, +m, +c, +n, +nm, +nc}:
-      St{xs, o, m, c, n, nm, nc}
-
-def apply.agent(+st: St, +n: String, +op: AgentOp) -> St:
-  with_agents(st, map_agent(St.agents(st), n, op))
-
 def apply.settle.if(ok: Bool, +msgs: List<&2, MRec>, +id: Nat) -> List<&2, MRec>:
   match ok:
     case True{}:

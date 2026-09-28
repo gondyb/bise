@@ -369,9 +369,6 @@ def set_rt(-o: M.St, +cx: X.Cx<o>, +x: X.Rt) -> X.Cx<o>:
 def set_run(-o: M.St, +cx: X.Cx<o>, +n: String, +run: M.Run) -> X.Cx<o>:
   set_rt(o, cx, X.Rt.with_run(rt(o, cx, n), run))
 
-def set_waiting(-o: M.St, +cx: X.Cx<o>, +n: String, +w: Bool) -> X.Cx<o>:
-  set_rt(o, cx, X.Rt.with_waiting(rt(o, cx, n), w))
-
 def set_turn(-o: M.St, +cx: X.Cx<o>, +n: String, +t: Maybe<&2, Nat>) -> X.Cx<o>:
   set_rt(o, cx, X.Rt.with_turn(rt(o, cx, n), t))
 
@@ -2297,73 +2294,6 @@ def dispatch(-o: M.St, +cx: X.Cx<o>, +i: J.Json) -> X.Cx<o>:
 # journal over the hub's state: law replay_reproduces)
 def step(+h: Hub, +i: J.Json) -> X.Cx<Hub.d(h)>:
   dispatch(Hub.d(h), start(h, i), i)
-
-# ---- the end of a turn ----
-
-def Snd.with_from(x: Snd, +v: String) -> Snd:
-  match x:
-    case Snd{_, +to, +text, +expect, +reply_to, +plain, +auto, +queued, +via}:
-      Snd{v, to, text, expect, reply_to, plain, auto, queued, via}
-
-def Snd.with_text(x: Snd, +v: String) -> Snd:
-  match x:
-    case Snd{+from, +to, _, +expect, +reply_to, +plain, +auto, +queued, +via}:
-      Snd{from, to, v, expect, reply_to, plain, auto, queued, via}
-
-def Snd.expect(x: Snd) -> Bool:
-  match x:
-    case Snd{_, _, _, +expect, _, _, _, _, _}:
-      expect
-
-def Snd.with_expect(x: Snd, +v: Bool) -> Snd:
-  match x:
-    case Snd{+from, +to, +text, _, +reply_to, +plain, +auto, +queued, +via}:
-      Snd{from, to, text, v, reply_to, plain, auto, queued, via}
-
-def Snd.with_reply_to(x: Snd, +v: Maybe<&2, Nat>) -> Snd:
-  match x:
-    case Snd{+from, +to, +text, +expect, _, +plain, +auto, +queued, +via}:
-      Snd{from, to, text, expect, v, plain, auto, queued, via}
-
-def Snd.plain(x: Snd) -> Bool:
-  match x:
-    case Snd{_, _, _, _, _, +plain, _, _, _}:
-      plain
-
-def Snd.with_plain(x: Snd, +v: Bool) -> Snd:
-  match x:
-    case Snd{+from, +to, +text, +expect, +reply_to, _, +auto, +queued, +via}:
-      Snd{from, to, text, expect, reply_to, v, auto, queued, via}
-
-def Snd.auto(x: Snd) -> Bool:
-  match x:
-    case Snd{_, _, _, _, _, _, +auto, _, _}:
-      auto
-
-def Snd.with_auto(x: Snd, +v: Bool) -> Snd:
-  match x:
-    case Snd{+from, +to, +text, +expect, +reply_to, +plain, _, +queued, +via}:
-      Snd{from, to, text, expect, reply_to, plain, v, queued, via}
-
-def Snd.queued(x: Snd) -> Bool:
-  match x:
-    case Snd{_, _, _, _, _, _, _, +queued, _}:
-      queued
-
-def Snd.with_queued(x: Snd, +v: Bool) -> Snd:
-  match x:
-    case Snd{+from, +to, +text, +expect, +reply_to, +plain, +auto, _, +via}:
-      Snd{from, to, text, expect, reply_to, plain, auto, v, via}
-
-def Snd.via(x: Snd) -> Maybe<&2, String>:
-  match x:
-    case Snd{_, _, _, _, _, _, _, _, +via}:
-      via
-
-def Snd.with_via(x: Snd, +v: Maybe<&2, String>) -> Snd:
-  match x:
-    case Snd{+from, +to, +text, +expect, +reply_to, +plain, +auto, +queued, _}:
-      Snd{from, to, text, expect, reply_to, plain, auto, queued, v}
 
 # ---- committing a step (what sb-core keeps) ----
 
