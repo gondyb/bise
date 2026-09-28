@@ -294,25 +294,13 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
     }
 }
 
-/// Whether a folded item is open (thinking, a report, a brief, an output).
-fn is_open(ev: &Ev) -> bool {
-    match ev {
-        Ev::Thinking { open, .. } | Ev::AgentMsg { open, .. } => *open,
-        Ev::Tool(td) => td.expanded,
-        _ => true,
-    }
-}
-
-/// `ctrl+t`: one state for everything folded. Anything closed: open
-/// them all; else close them all. New thinking sections follow it.
+/// `ctrl+t`: one state for everything folded (thinking, outputs, diffs,
+/// reports, briefs, runs of level 3, `▸ why`). Anything closed: open them
+/// all; else close them all. New thinking sections follow it.
 pub(crate) fn toggle_everything(app: &mut App) {
-    let open = app.events.iter().any(|e| crate::feed::discloses(e) && !is_open(e));
+    let open = crate::feed::anything_closed(&app.events);
     app.show_thinking = open;
-    for i in 0..app.events.len() {
-        if crate::feed::discloses(&app.events[i]) && is_open(&app.events[i]) != open {
-            crate::feed::toggle_event(&mut app.events, &mut app.cache, i);
-        }
-    }
+    crate::feed::set_everything(&mut app.events, &mut app.cache, open);
 }
 
 /// A bracketed paste: the terminal pane, else the composer.
@@ -600,7 +588,13 @@ mod keys_tests {
     }
 
     fn opens(app: &App) -> Vec<bool> {
-        app.events.iter().map(is_open).collect()
+        app.events
+            .iter()
+            .map(|e| match e {
+                Ev::Thinking { open, .. } | Ev::AgentMsg { open, .. } => *open,
+                _ => true,
+            })
+            .collect()
     }
 
     fn press(app: &mut App, code: KeyCode, m: KeyModifiers) {
