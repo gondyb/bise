@@ -92,3 +92,62 @@ impl FakeTranscriber {
     }
 }
 
+
+/// A scripted server: what the loop sent, and the replies to give. The
+/// server answers `transcription.done` only after it got flush + end;
+/// until then (and after the script) it is idle.
+#[derive(Default)]
+pub(crate) struct FakeSocket {
+    pub(crate) sent: Vec<String>,
+    /// replies given as soon as asked (deltas while recording)
+    pub(crate) script: std::collections::VecDeque<SocketRead>,
+    /// replies given once flush + end arrived
+    pub(crate) after_end: std::collections::VecDeque<SocketRead>,
+    pub(crate) closed: bool,
+    pub(crate) reads: usize,
+}
+
+impl FakeSocket {
+    /// The `type` of each sent message.
+    pub(crate) fn sent_types(&self) -> Vec<String> {
+        self.sent
+            .iter()
+            .map(|m| {
+                let v: Value = serde_json::from_str(m).unwrap();
+                v["type"].as_str().unwrap().to_string()
+            })
+            .collect()
+    }
+    fn got_end(&self) -> bool {
+        let t = self.sent_types();
+        t.iter().any(|x| x == "input_audio.flush") && t.iter().any(|x| x == "input_audio.end")
+    }
+}
+
+impl RealtimeSocket for FakeSocket {
+    fn send_text(&mut self, text: String) -> Result<(), String> {
+        self.sent.push(text);
+        Ok(())
+    }
+    fn read(&mut self, _wait: Duration) -> Result<SocketRead, String> {
+        self.reads += 1;
+        // a stuck loop fails the test instead of hanging it
+        assert!(self.reads < 10_000, "the session loop never ended");
+        if let Some(r) = self.script.pop_front() {
+            return Ok(r);
+        }
+        if self.got_end() {
+            if let Some(r) = self.after_end.pop_front() {
+                return Ok(r);
+            }
+        }
+        Ok(SocketRead::Idle)
+    }
+    fn close(&mut self) {
+        self.closed = true;
+    }
+}
+
+pub(crate) fn server_text(v: Value) -> SocketRead {
+    SocketRead::Text(v.to_string())
+}

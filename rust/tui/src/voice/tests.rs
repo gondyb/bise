@@ -2,6 +2,7 @@
 
 use super::fakes::*;
 use super::*;
+use std::sync::Mutex;
 
 fn voice(rec: &FakeRecorder, tr: &FakeTranscriber) -> Voice {
     Voice::new(true, Box::new(rec.clone()), Box::new(tr.clone()))
@@ -313,6 +314,126 @@ fn the_flush_times_out_after_ten_seconds() {
 }
 
 #[test]
+fn a_flush_timeout_after_text_keeps_the_text_without_a_failure() {
+    let (rec, tr) = (FakeRecorder::ok(true), FakeTranscriber::default());
+    let mut v = voice(&rec, &tr);
+    let t0 = Instant::now();
+    v.start(key(), t0).unwrap();
+    tr.send(TranscribeEvent::Delta("Hello".into()));
+    assert_eq!(v.poll(t0), vec![VoiceOutput::Insert("Hello".into())]);
+    v.stop(t0);
+    assert_eq!(
+        v.poll(t0 + Duration::from_secs(10)),
+        vec![VoiceOutput::Utterance, VoiceOutput::Notice(LATE_DONE_NOTICE.into())]
+    );
+    assert_eq!(v.state(), VoiceState::Idle);
+    assert!(tr.cancelled());
+}
+
+// ---- the session loop (fake socket) ----
+
+fn run_fake(socket: &mut FakeSocket, msgs: Vec<AudioMsg>) -> (Result<(), String>, Vec<TranscribeEvent>) {
+    let (atx, arx) = mpsc::channel();
+    // every message queued before the loop runs: End sits right behind
+    // the chunks, and the sender stays alive (as in Voice's Run)
+    for m in msgs {
+        atx.send(m).unwrap();
+    }
+    let (etx, erx) = mpsc::channel();
+    let r = stream_session(socket, &arx, &etx, &AtomicBool::new(false));
+    drop(atx);
+    (r, erx.try_iter().collect())
+}
+
+fn done_json() -> Value {
+    json!({"type": "transcription.done", "text": "hi there"})
+}
+
+#[test]
+fn end_queued_behind_chunks_still_flushes_and_ends_once() {
+    let mut ws = FakeSocket::default();
+    ws.after_end.push_back(server_text(json!({"type": "transcription.text.delta", "text": " there"})));
+    ws.after_end.push_back(server_text(done_json()));
+    let (r, events) = run_fake(
+        &mut ws,
+        vec![AudioMsg::Chunk(vec![1; 100]), AudioMsg::Chunk(vec![2; 100]), AudioMsg::End],
+    );
+    assert_eq!(r, Ok(()));
+    assert_eq!(
+        ws.sent_types(),
+        ["session.update", "input_audio.append", "input_audio.flush", "input_audio.end"]
+    );
+    assert_eq!(events, vec![TranscribeEvent::Delta(" there".into()), TranscribeEvent::Done]);
+    assert!(ws.closed);
+}
+
+#[test]
+fn flush_and_end_are_sent_once_while_waiting_for_done() {
+    let mut ws = FakeSocket::default();
+    // the server takes a while: many idle reads before done
+    for _ in 0..20 {
+        ws.after_end.push_back(SocketRead::Idle);
+    }
+    ws.after_end.push_back(server_text(done_json()));
+    let (r, events) = run_fake(&mut ws, vec![AudioMsg::Chunk(vec![1; SEND_BLOCK + 10]), AudioMsg::End]);
+    assert_eq!(r, Ok(()));
+    let types = ws.sent_types();
+    assert_eq!(types.iter().filter(|t| *t == "input_audio.flush").count(), 1);
+    assert_eq!(types.iter().filter(|t| *t == "input_audio.end").count(), 1);
+    // the whole block then the tail, all before the flush
+    assert_eq!(
+        types,
+        ["session.update", "input_audio.append", "input_audio.flush", "input_audio.end"]
+    );
+    assert_eq!(events, vec![TranscribeEvent::Done]);
+}
+
+#[test]
+fn a_closed_socket_after_the_end_is_done_before_it_a_failure() {
+    let mut ws = FakeSocket::default();
+    ws.after_end.push_back(SocketRead::Closed);
+    let (r, events) = run_fake(&mut ws, vec![AudioMsg::End]);
+    assert_eq!(r, Ok(()));
+    assert_eq!(events, vec![TranscribeEvent::Done]);
+
+    let mut ws = FakeSocket::default();
+    ws.script.push_back(SocketRead::Closed);
+    let (r, _) = run_fake(&mut ws, vec![AudioMsg::Chunk(vec![1; 10])]);
+    assert_eq!(r, Err("Connection closed before the recording finished".into()));
+}
+
+#[test]
+fn a_dropped_audio_sender_ends_the_stream() {
+    let mut ws = FakeSocket::default();
+    ws.after_end.push_back(server_text(done_json()));
+    let (atx, arx) = mpsc::channel();
+    atx.send(AudioMsg::Chunk(vec![3; 10])).unwrap();
+    drop(atx);
+    let (etx, erx) = mpsc::channel();
+    assert_eq!(stream_session(&mut ws, &arx, &etx, &AtomicBool::new(false)), Ok(()));
+    assert_eq!(
+        ws.sent_types(),
+        ["session.update", "input_audio.append", "input_audio.flush", "input_audio.end"]
+    );
+    assert_eq!(erx.try_iter().collect::<Vec<_>>(), vec![TranscribeEvent::Done]);
+}
+
+#[test]
+fn a_server_error_fails_and_cancel_closes() {
+    let mut ws = FakeSocket::default();
+    ws.after_end.push_back(server_text(json!({"type": "error", "error": {"message": "boom"}})));
+    let (r, _) = run_fake(&mut ws, vec![AudioMsg::Chunk(vec![1; 10]), AudioMsg::End]);
+    assert_eq!(r, Err("boom".into()));
+
+    let mut ws = FakeSocket::default();
+    let (_atx, arx) = mpsc::channel::<AudioMsg>();
+    let (etx, _erx) = mpsc::channel();
+    assert_eq!(stream_session(&mut ws, &arx, &etx, &AtomicBool::new(true)), Ok(()));
+    assert!(ws.closed);
+    assert_eq!(ws.sent_types(), ["session.update"]);
+}
+
+#[test]
 fn recording_stops_itself_after_five_minutes() {
     let (rec, tr) = (FakeRecorder::ok(true), FakeTranscriber::default());
     let mut v = voice(&rec, &tr);
@@ -338,49 +459,109 @@ fn start_while_active_is_a_no_op() {
 /// (`say -o x.aiff "…" && afconvert -f WAVE -d LEI16@16000 -c 1 x.aiff x.wav`)
 /// streamed in realtime blocks. `SB_STT_WAV=x.wav cargo test -p bend-tui
 /// real_api -- --ignored --nocapture`
-#[test]
-#[ignore]
-fn real_api_transcribes_a_wav() {
+fn wav_samples() -> Vec<i16> {
     let path = std::env::var("SB_STT_WAV").expect("SB_STT_WAV");
     let bytes = std::fs::read(path).unwrap();
     // skip the RIFF header: the "data" chunk
     let data = bytes.windows(4).position(|w| w == b"data").unwrap() + 8;
-    let samples: Vec<i16> = bytes[data..]
-        .chunks_exact(2)
-        .map(|b| i16::from_le_bytes([b[0], b[1]]))
-        .collect();
+    bytes[data..].chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect()
+}
+
+/// The real socket, recording the type of each message sent.
+struct Traced {
+    ws: WsSocket,
+    sent: Arc<Mutex<Vec<String>>>,
+}
+
+impl RealtimeSocket for Traced {
+    fn send_text(&mut self, text: String) -> Result<(), String> {
+        let v: Value = serde_json::from_str(&text).unwrap();
+        self.sent.lock().unwrap().push(v["type"].as_str().unwrap().to_string());
+        self.ws.send_text(text)
+    }
+    fn read(&mut self, wait: Duration) -> Result<SocketRead, String> {
+        self.ws.read(wait)
+    }
+    fn close(&mut self) {
+        self.ws.close()
+    }
+}
+
+/// Streams the WAV at realtime pace; `burst_tail` blocks at the end go
+/// at once with End right behind them (as when the microphone stops
+/// with audio still queued). Returns the text, the time from End to
+/// done, and the message types sent.
+fn stream_wav(burst_tail: usize) -> (String, Duration, Vec<String>) {
+    let samples = wav_samples();
     let (atx, arx) = mpsc::channel();
     let (etx, erx) = mpsc::channel();
-    let cancel = Arc::new(AtomicBool::new(false));
-    MistralRealtime::default().start(resolve_api_key().expect("key"), arx, etx, cancel);
-    let t0 = Instant::now();
+    let sent = Arc::new(Mutex::new(Vec::new()));
+    let url = realtime_url(API_BASE, MODEL);
+    let key = resolve_api_key().expect("key");
+    let trace = sent.clone();
+    std::thread::spawn(move || {
+        let r = WsSocket::connect(&url, &key).and_then(|ws| {
+            let mut t = Traced { ws, sent: trace };
+            stream_session(&mut t, &arx, &etx, &AtomicBool::new(false))
+        });
+        if let Err(e) = r {
+            let _ = etx.send(TranscribeEvent::Error(e));
+        }
+    });
     let mut text = String::new();
-    let mut first_delta = None;
-    for block in samples.chunks(320) {
+    let blocks: Vec<&[i16]> = samples.chunks(320).collect();
+    let n = blocks.len();
+    for (i, block) in blocks.into_iter().enumerate() {
         atx.send(AudioMsg::Chunk(block.to_vec())).unwrap();
-        std::thread::sleep(Duration::from_millis(20));
+        if i + burst_tail < n {
+            std::thread::sleep(Duration::from_millis(20));
+        }
         while let Ok(ev) = erx.try_recv() {
             if let TranscribeEvent::Delta(t) = ev {
-                first_delta.get_or_insert(t0.elapsed());
                 text.push_str(&t);
             }
         }
     }
-    let spoken = t0.elapsed();
+    // the sender stays alive, as in Voice's Run: only End ends the stream
     atx.send(AudioMsg::End).unwrap();
-    let mut done = false;
-    while let Ok(ev) = erx.recv_timeout(Duration::from_secs(10)) {
-        match ev {
-            TranscribeEvent::Delta(t) => text.push_str(&t),
-            TranscribeEvent::Done => {
-                done = true;
-                break;
-            }
-            TranscribeEvent::Error(e) => panic!("error: {}", e),
-            TranscribeEvent::SessionCreated => {}
+    let stopped = Instant::now();
+    loop {
+        match erx.recv_timeout(FLUSH_TIMEOUT) {
+            Ok(TranscribeEvent::Delta(t)) => text.push_str(&t),
+            Ok(TranscribeEvent::Done) => break,
+            Ok(TranscribeEvent::Error(e)) => panic!("error: {}", e),
+            Ok(TranscribeEvent::SessionCreated) => {}
+            Err(e) => panic!("no transcription.done within {:?}: {:?}", FLUSH_TIMEOUT, e),
         }
     }
-    eprintln!("audio {:?} · first delta at {:?} · text {:?}", spoken, first_delta, text);
-    assert!(done);
+    let end_latency = stopped.elapsed();
+    drop(atx);
+    let sent = sent.lock().unwrap().clone();
+    eprintln!("end → done {:?} · text {:?}", end_latency, text);
+    (text, end_latency, sent)
+}
+
+fn count(sent: &[String], ty: &str) -> usize {
+    sent.iter().filter(|t| *t == ty).count()
+}
+
+#[test]
+#[ignore]
+fn real_api_transcribes_a_wav() {
+    let (text, latency, sent) = stream_wav(0);
     assert!(!text.trim().is_empty());
+    assert!(latency < Duration::from_secs(2), "done took {:?}", latency);
+    assert_eq!((count(&sent, "input_audio.flush"), count(&sent, "input_audio.end")), (1, 1));
+}
+
+/// The bug: End queued right behind chunks was dropped, flush/end never
+/// went out, done never came, and the flush timed out after 10 s.
+#[test]
+#[ignore]
+fn real_api_done_arrives_quickly_when_end_follows_queued_audio() {
+    let (text, latency, sent) = stream_wav(10);
+    assert!(!text.trim().is_empty());
+    assert!(latency < Duration::from_secs(2), "done took {:?}", latency);
+    assert_eq!((count(&sent, "input_audio.flush"), count(&sent, "input_audio.end")), (1, 1));
+    assert_eq!(sent.last().map(String::as_str), Some("input_audio.end"));
 }

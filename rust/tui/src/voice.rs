@@ -29,6 +29,8 @@ const TARGET_STREAMING_DELAY_MS: u32 = 500;
 /// Audio sent per websocket message (Vibe's capture buffer is 200 ms).
 const SEND_BLOCK: usize = SAMPLE_RATE as usize / 5;
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(10);
+/// The flush timed out after some text arrived.
+pub const LATE_DONE_NOTICE: &str = "The last words may be missing (the transcription did not finish in time).";
 const MAX_DURATION: Duration = Duration::from_secs(300);
 /// Shorter than this, a recording has no audio blocks yet: silence then
 /// means "stopped too early", not "the microphone is muted".
@@ -529,10 +531,18 @@ impl Voice {
             (VoiceState::Flushing, Some(r))
                 if r.stopped.is_some_and(|s| now.duration_since(s) >= FLUSH_TIMEOUT) =>
             {
+                // text already landed: keep it, only the last words may
+                // be missing — a notice, not a failure
+                let had_text = r.text_len > 0;
                 self.cancel();
-                out.push(VoiceOutput::Error(
-                    "Voice transcription failed: Transcription timed out".into(),
-                ));
+                if had_text {
+                    out.push(VoiceOutput::Utterance);
+                    out.push(VoiceOutput::Notice(LATE_DONE_NOTICE.into()));
+                } else {
+                    out.push(VoiceOutput::Error(
+                        "Voice transcription failed: Transcription timed out".into(),
+                    ));
+                }
             }
             _ => {}
         }
@@ -678,7 +688,9 @@ impl Transcriber for MistralRealtime {
     ) {
         let url = realtime_url(&self.api_base, &self.model);
         std::thread::spawn(move || {
-            if let Err(e) = run_session(&url, &api_key, &audio, &events, &cancel) {
+            let result = WsSocket::connect(&url, &api_key)
+                .and_then(|mut ws| stream_session(&mut ws, &audio, &events, &cancel));
+            if let Err(e) = result {
                 if !cancel.load(Ordering::SeqCst) {
                     let _ = events.send(TranscribeEvent::Error(e));
                 }
@@ -687,63 +699,94 @@ impl Transcriber for MistralRealtime {
     }
 }
 
-type Ws = tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>;
+/// Waits of the session loop: while recording it alternates between
+/// the audio channel and the socket; once the audio ended only the
+/// socket is left.
+const AUDIO_WAIT: Duration = Duration::from_millis(20);
+const RECORDING_READ_WAIT: Duration = Duration::from_millis(20);
+const ENDED_READ_WAIT: Duration = Duration::from_millis(100);
 
-fn run_session(
-    url: &str,
-    api_key: &str,
+/// One read from the server.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SocketRead {
+    Text(String),
+    /// nothing arrived within the wait
+    Idle,
+    /// the server closed the connection
+    Closed,
+}
+
+/// The websocket as the session loop sees it, so the loop runs against
+/// a fake socket in the tests.
+pub trait RealtimeSocket {
+    fn send_text(&mut self, text: String) -> Result<(), String>;
+    fn read(&mut self, wait: Duration) -> Result<SocketRead, String>;
+    fn close(&mut self);
+}
+
+/// The audio channel drained without blocking past the first wait:
+/// every queued chunk, and whether the recording ended. `End` can sit
+/// right behind the last chunks (the capture stops, then End is sent):
+/// it must never be dropped with them, or flush/end are never sent and
+/// the server never answers `transcription.done`.
+fn drain_audio(audio: &Receiver<AudioMsg>, wait: Duration, pending: &mut Vec<i16>) -> bool {
+    let mut next = match audio.recv_timeout(wait) {
+        Ok(m) => Some(m),
+        Err(mpsc::RecvTimeoutError::Timeout) => None,
+        Err(mpsc::RecvTimeoutError::Disconnected) => return true,
+    };
+    while let Some(msg) = next {
+        match msg {
+            AudioMsg::Chunk(c) => pending.extend(c),
+            AudioMsg::End => return true,
+        }
+        next = match audio.try_recv() {
+            Ok(m) => Some(m),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => return true,
+        };
+    }
+    false
+}
+
+/// A session over an open socket (mistralai/extra/realtime
+/// transcribe_stream): session.update, the audio in blocks, then
+/// input_audio.flush + input_audio.end exactly once, then read until
+/// transcription.done (or the server closing the socket).
+pub fn stream_session(
+    ws: &mut dyn RealtimeSocket,
     audio: &Receiver<AudioMsg>,
     events: &Sender<TranscribeEvent>,
     cancel: &AtomicBool,
 ) -> Result<(), String> {
-    use tungstenite::client::IntoClientRequest;
-    use tungstenite::Message;
-    let mut req = url.into_client_request().map_err(|e| e.to_string())?;
-    let auth = format!("Bearer {}", api_key).parse().map_err(|_| "invalid API key".to_string())?;
-    req.headers_mut().insert("Authorization", auth);
-    req.headers_mut().insert(
-        "User-Agent",
-        tungstenite::http::HeaderValue::from_static("bend-harness-tui"),
-    );
-    let (mut ws, _) = tungstenite::connect(req).map_err(ws_error)?;
-    set_read_timeout(&mut ws, Some(Duration::from_millis(20)));
-    ws.send(Message::text(session_update_message(SAMPLE_RATE, TARGET_STREAMING_DELAY_MS)))
-        .map_err(ws_error)?;
+    ws.send_text(session_update_message(SAMPLE_RATE, TARGET_STREAMING_DELAY_MS))?;
     let mut pending: Vec<i16> = Vec::new();
     let mut ended = false;
     loop {
         if cancel.load(Ordering::SeqCst) {
-            let _ = ws.close(None);
+            ws.close();
             return Ok(());
         }
         // send side: the captured audio, in blocks
         if !ended {
-            match audio.recv_timeout(Duration::from_millis(20)) {
-                Ok(AudioMsg::Chunk(c)) => {
-                    pending.extend(c);
-                    while let Ok(AudioMsg::Chunk(c)) = audio.try_recv() {
-                        pending.extend(c);
-                    }
-                }
-                Ok(AudioMsg::End) | Err(mpsc::RecvTimeoutError::Disconnected) => ended = true,
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-            }
+            ended = drain_audio(audio, AUDIO_WAIT, &mut pending);
             if pending.len() >= SEND_BLOCK || (ended && !pending.is_empty()) {
-                ws.send(Message::text(append_message(&pending))).map_err(ws_error)?;
+                ws.send_text(append_message(&pending))?;
                 pending.clear();
             }
             if ended {
-                ws.send(Message::text(flush_message())).map_err(ws_error)?;
-                ws.send(Message::text(end_message())).map_err(ws_error)?;
+                ws.send_text(flush_message())?;
+                ws.send_text(end_message())?;
             }
         }
         // read side: every message already there
+        let wait = if ended { ENDED_READ_WAIT } else { RECORDING_READ_WAIT };
         loop {
-            match ws.read() {
-                Ok(Message::Text(t)) => match parse_server_event(t.as_str()) {
+            match ws.read(wait)? {
+                SocketRead::Text(t) => match parse_server_event(&t) {
                     Some(TranscribeEvent::Done) => {
                         let _ = events.send(TranscribeEvent::Done);
-                        let _ = ws.close(None);
+                        ws.close();
                         return Ok(());
                     }
                     Some(TranscribeEvent::Error(m)) => return Err(m),
@@ -752,41 +795,85 @@ fn run_session(
                     }
                     None => {}
                 },
-                Ok(Message::Close(_)) => {
-                    return if ended {
-                        let _ = events.send(TranscribeEvent::Done);
-                        Ok(())
-                    } else {
-                        Err("Connection closed before the recording finished".into())
-                    };
-                }
-                Ok(_) => {}
-                Err(tungstenite::Error::Io(e))
-                    if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) =>
-                {
-                    break
-                }
-                Err(tungstenite::Error::ConnectionClosed) if ended => {
+                SocketRead::Closed if ended => {
                     let _ = events.send(TranscribeEvent::Done);
                     return Ok(());
                 }
-                Err(e) => return Err(ws_error(e)),
+                SocketRead::Closed => {
+                    return Err("Connection closed before the recording finished".into())
+                }
+                SocketRead::Idle => break,
             }
-        }
-        if ended {
-            // only reading is left: wait on the socket, not the channel
-            set_read_timeout(&mut ws, Some(Duration::from_millis(100)));
         }
     }
 }
 
-fn set_read_timeout(ws: &mut Ws, t: Option<Duration>) {
-    use tungstenite::stream::MaybeTlsStream;
-    let _ = match ws.get_mut() {
-        MaybeTlsStream::Plain(s) => s.set_read_timeout(t),
-        MaybeTlsStream::Rustls(s) => s.get_mut().set_read_timeout(t),
-        _ => Ok(()),
-    };
+type Ws = tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>;
+
+/// The real socket (tungstenite, blocking, a read timeout per wait).
+pub struct WsSocket {
+    ws: Ws,
+    wait: Option<Duration>,
+}
+
+impl WsSocket {
+    pub fn connect(url: &str, api_key: &str) -> Result<WsSocket, String> {
+        use tungstenite::client::IntoClientRequest;
+        let mut req = url.into_client_request().map_err(|e| e.to_string())?;
+        let auth = format!("Bearer {}", api_key).parse().map_err(|_| "invalid API key".to_string())?;
+        req.headers_mut().insert("Authorization", auth);
+        req.headers_mut().insert(
+            "User-Agent",
+            tungstenite::http::HeaderValue::from_static("bend-harness-tui"),
+        );
+        let (ws, _) = tungstenite::connect(req).map_err(ws_error)?;
+        Ok(WsSocket { ws, wait: None })
+    }
+
+    fn set_read_timeout(&mut self, t: Duration) {
+        use tungstenite::stream::MaybeTlsStream;
+        if self.wait == Some(t) {
+            return;
+        }
+        self.wait = Some(t);
+        let _ = match self.ws.get_mut() {
+            MaybeTlsStream::Plain(s) => s.set_read_timeout(Some(t)),
+            MaybeTlsStream::Rustls(s) => s.get_mut().set_read_timeout(Some(t)),
+            _ => Ok(()),
+        };
+    }
+}
+
+impl RealtimeSocket for WsSocket {
+    fn send_text(&mut self, text: String) -> Result<(), String> {
+        self.ws.send(tungstenite::Message::text(text)).map_err(ws_error)
+    }
+
+    fn read(&mut self, wait: Duration) -> Result<SocketRead, String> {
+        use tungstenite::{Error, Message};
+        self.set_read_timeout(wait);
+        loop {
+            return match self.ws.read() {
+                Ok(Message::Text(t)) => Ok(SocketRead::Text(t.as_str().to_string())),
+                Ok(Message::Close(_)) | Err(Error::ConnectionClosed | Error::AlreadyClosed) => {
+                    Ok(SocketRead::Closed)
+                }
+                // pings are answered by tungstenite; binary frames are unused
+                Ok(_) => continue,
+                Err(Error::Io(e))
+                    if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) =>
+                {
+                    Ok(SocketRead::Idle)
+                }
+                Err(e) => Err(ws_error(e)),
+            };
+        }
+    }
+
+    fn close(&mut self) {
+        let _ = self.ws.close(None);
+        let _ = self.ws.flush();
+    }
 }
 
 fn ws_error(e: tungstenite::Error) -> String {
