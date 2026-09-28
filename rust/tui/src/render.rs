@@ -912,15 +912,14 @@ fn report_lines(from: &str, kind: &str, body: &str, open: bool, width: usize) ->
     let room = width.saturating_sub(3 + head.chars().count() + label.chars().count()).max(8);
     let more = !rest.trim().is_empty() || first.chars().count() > room;
     let shown = if open { first.to_string() } else { fit_chars(first, room) };
-    let mut row = vec![
-        Span::styled(format!(" {} ", glyph), Style::default().fg(color)),
-        Span::styled(head, Style::default().fg(st)),
-        Span::styled(shown, Style::default().fg(st)),
-    ];
+    let mut row = vec![Span::styled(head, Style::default().fg(st)), Span::styled(shown, Style::default().fg(st))];
     if more {
         row.push(Span::styled(label, Style::default().fg(dim())));
     }
-    let mut ls = vec![Line::from(row)];
+    // open, its first line may be longer than the row: its wrapped rows
+    // hang under the text, never at column 1 (BISE-90)
+    let mark = Span::styled(format!(" {} ", glyph), Style::default().fg(color));
+    let mut ls = hung_rows(&mark, &Span::raw("   "), [Line::from(row)], width);
     if open && !rest.trim().is_empty() {
         let bar = Span::styled(" │ ", Style::default().fg(faint()));
         ls.extend(barred_rows(&bar, md_lines(rest, width.saturating_sub(3), width.saturating_sub(3)), width));

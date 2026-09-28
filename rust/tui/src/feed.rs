@@ -460,6 +460,11 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
                 if let Some(ev) = or {
                     return push_event(events, cache, (**ev).clone());
                 }
+                // BISE-90: the hub steered your message together with an
+                // agent's message and the agents' status, so the steered
+                // text is that whole block (your words on a later line):
+                // it moves the marks of what you sent during this turn
+                mark_this_turn(events, cache, *mark);
             }
             return false;
         }
@@ -998,6 +1003,23 @@ fn words(t: &str) -> impl Iterator<Item = &str> {
 
 /// Move the mark of your last message with `text` up to `mark` (never
 /// down). False when there is no such message.
+/// Raise to `mark` the marks of your messages since the turn started
+/// (never lowers one; a message at idle started the turn itself).
+fn mark_this_turn(events: &mut [Ev], cache: &mut [Option<EventRows>], mark: Mark) {
+    for (i, e) in events.iter_mut().enumerate().rev() {
+        match e {
+            Ev::Turn => break,
+            Ev::You(_, m) if matches!(*m, Mark::Sent | Mark::Received) && mark > *m => {
+                *m = mark;
+                if let Some(c) = cache.get_mut(i) {
+                    *c = None;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 pub(crate) fn mark_you(events: &mut [Ev], cache: &mut [Option<EventRows>], text: &str, mark: Mark) -> bool {
     let plain = crate::markdown::unescape_md(text);
     let from = events.len().saturating_sub(MARK_LOOKBACK);

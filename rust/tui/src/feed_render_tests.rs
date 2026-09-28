@@ -1282,3 +1282,46 @@ fn mains_replies_carry_its_glyph_in_its_feed_only() {
     assert_eq!(in_main, vec![format!(" {} on it: auth-fix takes safari.", crate::theme::G_MAIN)]);
     assert_eq!(in_agent, vec![" on it: auth-fix takes safari.".to_string()]);
 }
+
+// BISE-90: the hub steered your message together with an agent's message
+// and the agents' status: the steered text is that block, not your
+// words; it still moves the marks of what you sent during this turn
+#[test]
+fn a_combined_steer_moves_the_marks_of_this_turn() {
+    let mut events: Vec<Ev> = Vec::new();
+    let mut cache: Vec<Option<EventRows>> = Vec::new();
+    push_event(&mut events, &mut cache, Ev::You("before".into(), Mark::Sent));
+    push_event(&mut events, &mut cache, Ev::Turn);
+    push_event(&mut events, &mut cache, Ev::You("also check the logs".into(), Mark::Sent));
+    let block = "<agent_message from=\"noisy\" relation=\"child\" id=\"m_4\">";
+    let mark = |m| Ev::MarkYou { text: block.into(), mark: m, or: None };
+    assert!(!push_event(&mut events, &mut cache, mark(Mark::Received)));
+    assert!(matches!(&events[2], Ev::You(_, Mark::Received)));
+    assert!(!push_event(&mut events, &mut cache, mark(Mark::Read)));
+    assert!(matches!(&events[2], Ev::You(_, Mark::Read)));
+    // a message of an earlier turn keeps its own mark (Turn read it)
+    assert!(matches!(&events[0], Ev::You(_, Mark::Read)));
+    assert_eq!(events.len(), 3);
+}
+
+// BISE-90: an opened report whose first line is longer than the row hangs
+// its continuation under the text, never at column 1
+#[test]
+fn an_open_report_hangs_its_rows() {
+    let long = "p95 at 180 ms, nothing to fix, the slow tail is the cold cache on the first request of each worker";
+    let ev = Ev::AgentMsg {
+        from: "bench".into(),
+        to: String::new(),
+        text: format!("[report: done] {}", long),
+        level: 3,
+        id: String::new(),
+        open: true,
+        fold: false,
+    };
+    let rows = rows_text(&ev_rows(&ev, 0, 60));
+    assert!(rows.len() >= 2, "{rows:#?}");
+    assert!(rows[0].starts_with(" ♡ bench: p95"), "{rows:#?}");
+    for r in &rows[1..] {
+        assert!(r.starts_with("   ") && !r.starts_with("    "), "{r:?} in {rows:#?}");
+    }
+}
