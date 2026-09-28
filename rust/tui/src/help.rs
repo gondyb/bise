@@ -64,98 +64,98 @@ impl Row {
     }
 }
 
-const TALK: &str = "Talk to agents";
-const CONV: &str = "Conversation";
-const TASKS: &str = "Tasks (empty composer)";
-const CARDS: &str = "Cards";
-const EDIT: &str = "Composer editing";
-const ACCENTS: &str = "Accents & symbols";
-const SELECT: &str = "Selection & copy";
-const FEED: &str = "Feed";
-const VOICE: &str = "Voice";
-const TERM: &str = "Terminal panel";
+const TALK: &str = "talk to agents";
+const CONV: &str = "conversation";
+const AGENTS: &str = "agents (empty composer)";
+const CARDS: &str = "cards";
+const EDIT: &str = "composer editing";
+const ACCENTS: &str = "accents & symbols";
+const SELECT: &str = "selection & copy";
+const FEED: &str = "feed";
+const VOICE: &str = "voice";
+const TERM: &str = "terminal panel";
 const GHOSTTY: &str = "Ghostty tips";
 
 /// Every shortcut, in display order (sections appear in first-row order).
+/// Lowercase, "agent" never "task" (book §4, §16).
 #[rustfmt::skip]
 pub(crate) const ROWS: &[Row] = &[
-    r(TALK, "⏎", "send to the agent in view (main, or the task you entered); while it works, steer its turn").sb().top(),
-    r(TALK, "@task …", "direct message to a task without leaving main; @main … from a task").sb().top(),
-    r(TALK, "Ctrl+C", "interrupt the turn of the agent in view; again (or at idle) quit — the agents keep running").sb().top(),
-    r(TALK, "Ctrl+O", "a shell in the folder of the agent in view (exit comes back)").sb(),
-    r(TALK, "/", "the commands: Tab completes, ⏎ runs").sb().top(),
+    r(TALK, "⏎", "send to the agent in view (main, or the agent you entered); while it works, steer its turn").sb().top(),
+    r(TALK, "@agent …", "a direct message to an agent without leaving main; @main … from inside an agent").sb().top(),
+    r(TALK, "ctrl+c", "interrupt the turn of the agent in view; again (or at idle) quit, the agents keep running").sb().top(),
+    r(TALK, "ctrl+o", "a shell in the folder of the agent in view (exit comes back)").sb(),
+    r(TALK, "/", "the commands: tab completes, ⏎ runs").sb().top(),
     r(CONV, "⏎", "send; during a turn, steer the model").solo().top(),
-    r(CONV, "Tab", "during a turn: queue the draft for after the turn").solo().top(),
-    r(CONV, "Ctrl+C", "interrupt the turn; again (or at idle) quit — the session survives").solo().top(),
-    r(CONV, "/", "the commands: Tab completes, ⏎ runs").solo().top(),
-    r(TASKS, "Ctrl+K|Alt+↓", "select the next task").sb().top(),
-    r(TASKS, "Ctrl+J|Alt+↑", "select the previous task").sb(),
-    r(TASKS, "⏎", "enter the selected task").sb().top(),
-    r(TASKS, "Space", "preview the selected task without entering it").sb(),
-    r(TASKS, "D", "drop the selected task").sb(),
-    r(TASKS, "A|/archived", "show / hide the archived tasks (read-only history, newest first)").sb(),
-    r(TASKS, "Esc", "close the selection; in a task, back to main").sb().top(),
-    r(TASKS, "Alt+1 … Alt+9", "go to task N").sb().top(),
-    r(TASKS, "Alt+0", "back to main").sb(),
-    r(TASKS, "click a task", "in the right panel: go to that task (main: back to main)").sb().top(),
-    r(TASKS, "click ▸ archived", "in the right panel: show / hide the archived tasks").sb(),
-    r(CARDS, "Ctrl+G|Ctrl+A", "show / hide the card box (Ctrl+A on an empty composer)").sb().top(),
-    r(CARDS, "Ctrl+N|Ctrl+P", "next / previous card").sb(),
-    r(CARDS, "Alt+R", "answer the card with the composer text (empty: acknowledge a done card)").sb().top(),
-    r(CARDS, "Ctrl+F", "card full screen, again (or Esc) to shrink").sb(),
-    r(CARDS, "Ctrl+X", "close the card without answering").sb(),
-    r(CARDS, "PgUp|PgDn", "scroll the card").sb(),
-    r(CARDS, "y|n|Esc", "a confirmation: yes / no / cancel").sb(),
-    r(EDIT, "Shift+⏎|Alt+⏎|Ctrl+J", "new line (Ctrl+J on an empty Switchboard composer selects a task)").top(),
-    r(EDIT, "Option+←|Option+→", "word left / right"),
-    r(EDIT, "Ctrl+Option+←|Ctrl+Option+→", "subword left / right (camelCase, snake_case, kebab-case, digits)"),
-    r(EDIT, "Cmd+←|Cmd+→|Ctrl+A|Ctrl+E|Home|End", "line start / end"),
-    r(EDIT, "Ctrl+Home|Ctrl+End|Cmd+↑|Cmd+↓", "text start / end (Cmd+↑/↓: see Ghostty tips)"),
+    r(CONV, "tab", "during a turn: queue the draft for after the turn").solo().top(),
+    r(CONV, "ctrl+c", "interrupt the turn; again (or at idle) quit, the session survives").solo().top(),
+    r(CONV, "/", "the commands: tab completes, ⏎ runs").solo().top(),
+    r(AGENTS, "⌥ + 0…9", "go to main (0) or to the agent with that number in the panel").sb().top(),
+    r(AGENTS, "ctrl+k|alt+↓", "select the next agent").sb().top(),
+    r(AGENTS, "ctrl+j|alt+↑", "select the previous agent").sb(),
+    r(AGENTS, "⏎", "enter the selected agent").sb().top(),
+    r(AGENTS, "space", "preview the selected agent without entering it").sb(),
+    r(AGENTS, "D", "drop the selected agent (stop it, archive its history)").sb(),
+    r(AGENTS, "A|/archived", "show or hide the archived agents (read-only history, newest first)").sb(),
+    r(AGENTS, "esc", "close the selection; in an agent, back to main").sb().top(),
+    r(AGENTS, "click an agent", "in the right panel: go to that agent (main: back to main)").sb().top(),
+    r(AGENTS, "click ▸ archived", "in the right panel: show or hide the archived agents").sb(),
+    r(CARDS, "ctrl+g|ctrl+a", "show or hide the card box (ctrl+a on an empty composer)").sb().top(),
+    r(CARDS, "ctrl+n|ctrl+p", "next / previous card").sb(),
+    r(CARDS, "alt+r", "answer the card with the composer text (empty: acknowledge a done card)").sb().top(),
+    r(CARDS, "ctrl+f", "the card full screen; again (or esc) to shrink it").sb().top(),
+    r(CARDS, "ctrl+x", "close the card without answering (later)").sb(),
+    r(CARDS, "pgup|pgdn", "scroll the card").sb(),
+    r(CARDS, "y|n|esc", "a confirmation: yes / no / not now").sb(),
+    r(FEED, "click ▸|space", "open or close one folded item: thinking, an output, a diff, a report (space: the item selected in the feed, composer empty)"),
+    r(FEED, "ctrl+t", "open or close everything folded").top(),
+    r(FEED, "pgup|pgdn|wheel", "scroll the feed (the card when it is shown)"),
+    r(FEED, "end", "back to the bottom"),
+    r(FEED, "ctrl+l", "clear the display (/clear); in switchboard, scroll up to see the lines again"),
+    r(EDIT, "shift+⏎|alt+⏎|ctrl+j", "new line (on an empty composer, ctrl+j selects an agent)").top(),
+    r(EDIT, "option+←|option+→", "word left / right"),
+    r(EDIT, "ctrl+option+←|ctrl+option+→", "subword left / right (camelCase, snake_case, kebab-case, digits)"),
+    r(EDIT, "cmd+←|cmd+→|ctrl+a|ctrl+e|home|end", "line start / end"),
+    r(EDIT, "ctrl+home|ctrl+end|cmd+↑|cmd+↓", "text start / end (cmd+↑/↓: see Ghostty tips)"),
     r(EDIT, "↑|↓", "move between rows, then through the history (↓ past the newest brings the draft back)"),
-    r(EDIT, "Option+Backspace|Ctrl+W", "delete the word before"),
-    r(EDIT, "Option+Delete", "delete the word after"),
-    r(EDIT, "Ctrl+Option+Backspace|Ctrl+Option+Delete", "delete a subword before / after"),
-    r(EDIT, "Cmd+Backspace|Ctrl+U", "delete to the line start"),
-    r(EDIT, "Ctrl+K", "delete to the line end (on an empty Switchboard composer: next task)"),
-    r(EDIT, "Ctrl+/|Cmd+Z", "undo"),
-    r(EDIT, "Alt+/|Ctrl+Shift+/|Cmd+Shift+Z", "redo"),
-    r(EDIT, "Esc", "put the draft away in the history (↑ brings it back)").sb(),
-    r(EDIT, "Tab|⏎", "pick from the / or @ popup (Esc closes it)"),
+    r(EDIT, "option+backspace|ctrl+w", "delete the word before"),
+    r(EDIT, "option+delete", "delete the word after"),
+    r(EDIT, "ctrl+option+backspace|ctrl+option+delete", "delete a subword before / after"),
+    r(EDIT, "cmd+backspace|ctrl+u", "delete to the line start"),
+    r(EDIT, "ctrl+k", "delete to the line end (on an empty composer: select the next agent)"),
+    r(EDIT, "ctrl+/|cmd+z", "undo your typing (only the composer: sent messages have no undo)"),
+    r(EDIT, "alt+/|ctrl+shift+/|cmd+shift+z", "redo"),
+    r(EDIT, "esc", "put the draft away in the history (↑ brings it back)").sb(),
+    r(EDIT, "tab|⏎", "pick from the / or @ popup (esc closes it)"),
     r(EDIT, ":name:", "typed, becomes its emoji (:tada: → 🎉)").top(),
-    r(ACCENTS, "Option+` then e", "è (grave)"),
-    r(ACCENTS, "Option+e then e", "é (acute)"),
-    r(ACCENTS, "Option+i then o", "ô (circumflex)"),
-    r(ACCENTS, "Option+u then u", "ü (umlaut)"),
-    r(ACCENTS, "Option+n then n", "ñ (tilde)"),
-    r(ACCENTS, "Option+c|Option+q|Option+\\|Option+Shift+\\", "ç œ « » — every macOS U.S. Option character works"),
-    r(SELECT, "Shift + any move", "extend the composer selection"),
-    r(SELECT, "Cmd+A", "select the whole composer text (see Ghostty tips)"),
-    r(SELECT, "click|drag|Shift+click", "composer: place the cursor, select, extend"),
+    r(ACCENTS, "option+` then e", "è (grave)"),
+    r(ACCENTS, "option+e then e", "é (acute)"),
+    r(ACCENTS, "option+i then o", "ô (circumflex)"),
+    r(ACCENTS, "option+u then u", "ü (umlaut)"),
+    r(ACCENTS, "option+n then n", "ñ (tilde)"),
+    r(ACCENTS, "option+c|option+q|option+\\|option+shift+\\", "ç œ « » — every macOS U.S. option character works"),
+    r(SELECT, "shift + any move", "extend the composer selection"),
+    r(SELECT, "cmd+a", "select the whole composer text (see Ghostty tips)"),
+    r(SELECT, "click|drag|shift+click", "composer: place the cursor, select, extend"),
     r(SELECT, "double click|triple click", "select a word / everything (feed: the word / the row)"),
     r(SELECT, "drag in the feed", "select; the release copies it"),
-    r(SELECT, "Ctrl+Shift+C|Cmd+C", "copy the composer selection, else the feed's").top(),
-    r(SELECT, "Ctrl+Shift+X|Cmd+X", "cut"),
-    r(SELECT, "Esc", "drop the selection"),
-    r(SELECT, "Shift+drag", "the terminal's own selection (outside the app)"),
-    r(FEED, "PgUp|PgDn|wheel", "scroll the feed (the card when it is shown)"),
-    r(FEED, "End", "back to the bottom"),
-    r(FEED, "click ✦", "open / close one reasoning section"),
-    r(FEED, "Ctrl+T", "open / close every reasoning section"),
-    r(FEED, "Ctrl+L", "clear the display (/clear); Switchboard: scroll up to see the lines again"),
-    r(VOICE, "Ctrl+R", "speech-to-text into the composer (turn it on with /voice)").top(),
+    r(SELECT, "ctrl+shift+c|cmd+c", "copy the composer selection, else the feed's").top(),
+    r(SELECT, "ctrl+shift+x|cmd+x", "cut"),
+    r(SELECT, "esc", "drop the selection"),
+    r(SELECT, "shift+drag", "the terminal's own selection (outside the app)"),
+    r(VOICE, "ctrl+r", "speech-to-text into the composer (turn it on with /voice)").top(),
     r(VOICE, "any key", "while recording: stop, keep the text"),
-    r(VOICE, "Esc|Ctrl+C", "while recording: cancel"),
-    r(TERM, "Ctrl+`|Ctrl+Space", "show / hide the terminal panel: a shell in the workspace, kept running while hidden").top(),
-    r(TERM, "any key", "while shown: goes to the shell, Ctrl+C included"),
-    r(TERM, "Shift+PgUp|Shift+PgDn|wheel", "scroll its history"),
+    r(VOICE, "esc|ctrl+c", "while recording: stop and drop the text"),
+    r(TERM, "ctrl+`|ctrl+space", "show or hide the terminal panel: a shell in the workspace, kept running while hidden").top(),
+    r(TERM, "any key", "while shown: goes to the shell, ctrl+c included"),
+    r(TERM, "shift+pgup|shift+pgdn|wheel", "scroll its history"),
     r(TERM, "drag the top border", "resize it"),
-    r(GHOSTTY, "", "Ghostty keeps Cmd+↑/↓, Cmd+A, Cmd+C and Cmd+Z by default. To get them in the composer, add to ~/Library/Application Support/com.mitchellh.ghostty/config:"),
+    r(GHOSTTY, "", "Ghostty keeps cmd+↑/↓, cmd+a, cmd+c and cmd+z by default. to get them in the composer, add to ~/Library/Application Support/com.mitchellh.ghostty/config:"),
     r(GHOSTTY, "", "keybind = super+arrow_up=unbind"),
     r(GHOSTTY, "", "keybind = super+arrow_down=unbind"),
     r(GHOSTTY, "", "keybind = super+z=unbind"),
     r(GHOSTTY, "", "keybind = super+shift+z=unbind"),
-    r(GHOSTTY, "", "keybind = super+c=performable:copy_to_clipboard (Cmd+C copies Ghostty's selection if any, else the app's)"),
-    r(GHOSTTY, "", "Check what reaches the app: bend-harness keyprobe"),
+    r(GHOSTTY, "", "keybind = super+c=performable:copy_to_clipboard (cmd+c copies Ghostty's selection if any, else the app's)"),
+    r(GHOSTTY, "", "check what reaches the app: bend-harness keyprobe"),
 ];
 
 // ---- the overlay state ----
@@ -410,7 +410,7 @@ pub(crate) fn page_lines(
             .filter(|(n, d)| f.is_empty() || n.contains(&f) || d.to_lowercase().contains(&f))
             .collect();
         if !cmds.is_empty() {
-            out.push(header("Commands"));
+            out.push(header("commands"));
             let name_w = cmds.iter().map(|(n, _)| n.width()).max().unwrap_or(0);
             let desc_w = width.saturating_sub(name_w + 2).max(8);
             for (n, d) in cmds {
@@ -426,7 +426,7 @@ pub(crate) fn page_lines(
         }
         if !rows.is_empty() {
             out.push(Line::from(Span::styled(
-                "Essential keys · every key: /shortcuts (Tab here)",
+                "essential keys · every key: /shortcuts (tab here)",
                 Style::default().fg(DIM).add_modifier(Modifier::ITALIC),
             )));
         }
@@ -434,7 +434,7 @@ pub(crate) fn page_lines(
     out.extend(table_lines(&rows, width));
     if out.is_empty() {
         out.push(Line::from(Span::styled(
-            format!("nothing matches “{}” · Backspace or Esc", filter),
+            format!("nothing matches “{}” · backspace or esc", filter),
             Style::default().fg(DIM),
         )));
     }
@@ -559,9 +559,30 @@ mod tests {
     fn help_is_commands_and_essentials() {
         let lines = page_lines(Page::Help, true, "", &[("/help", "commands and keys")], 80);
         let all = text(&lines);
-        assert!(all.contains("Commands") && all.contains("/help"));
-        assert!(all.contains(" Ctrl+G "), "a top row");
-        assert!(!all.contains(" Ctrl+X "), "a /shortcuts-only row");
+        assert!(all.contains("commands") && all.contains("/help"));
+        assert!(all.contains(" ctrl+g "), "a top row");
+        assert!(all.contains(" ⌥ + 0…9 "), "the panel numbers");
+        assert!(!all.contains(" ctrl+x "), "a /shortcuts-only row");
+    }
+
+    /// Book §4 and §16: lowercase words (keys may name a capital letter,
+    /// proper nouns keep theirs), "agent" never "task", no undo row.
+    #[test]
+    fn rows_read_lowercase_and_say_agent() {
+        let proper = ["Ghostty", "macOS", "U.S.", "Library/Application", "Support/com", "Camel", "D", "A"];
+        for r in ROWS {
+            for text in [r.section, r.keys, r.action] {
+                for w in text.split(|c: char| c.is_whitespace() || c == '|' || c == '(' || c == ',') {
+                    let first = w.chars().next().unwrap_or(' ');
+                    let ok = !first.is_uppercase() || proper.iter().any(|p| w.starts_with(p));
+                    assert!(ok, "capital in {:?}: {:?}", text, w);
+                }
+                assert!(!text.to_lowercase().contains("task"), "task in {:?}", text);
+            }
+        }
+        assert!(!ROWS.iter().any(|r| r.keys.contains("ctrl+z")), "no undo (book §13)");
+        let t = ROWS.iter().find(|r| r.keys == "ctrl+t").unwrap();
+        assert_eq!(t.action, "open or close everything folded");
     }
 
     #[test]

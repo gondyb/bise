@@ -27,28 +27,28 @@ def run(cols, rows):
         # /help: the commands and the essential keys
         typed("/help")
         keys("Enter")
-        sc = wait_screen("Essential keys")
-        assert "Commands" in sc and "/shortcuts" in sc, sc
+        sc = wait_screen("essential keys · every key")
+        assert "commands" in sc and "/shortcuts" in sc, sc
         print("---- /help at %d columns ----\n%s" % (cols, sc))
         # Tab: every key, sections
         keys("Tab")
-        sc = wait_screen("Tasks (empty composer)")
-        assert "Talk to agents" in sc, sc
+        sc = wait_screen("agents (empty composer)")
+        assert "talk to agents" in sc, sc
         print("---- Tab -> /shortcuts at %d columns ----\n%s" % (cols, sc))
         # type to filter
         typed("subword")
         sc = wait_screen("filter: subword")
-        assert "Ctrl+Option+←" in sc and "Tasks (empty" not in sc, sc
+        assert "ctrl+option+←" in sc and "agents (empty" not in sc, sc
         print("---- filter 'subword' at %d columns ----\n%s" % (cols, sc))
         # Esc clears the filter, Esc again closes
         keys("Escape")
         wait_gone("filter: subword")
         keys("Escape")
-        wait_gone("Talk to agents")
+        wait_gone("talk to agents")
         # /keys alias, then PgDn reaches the end (Ghostty tips)
         typed("/keys")
         keys("Enter")
-        wait_screen("Talk to agents")
+        wait_screen("talk to agents")
         keys("End")
         sc = wait_screen("keyprobe")
         print("---- /keys, End at %d columns ----\n%s" % (cols, sc))

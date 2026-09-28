@@ -293,6 +293,27 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
     }
 }
 
+/// Whether a folded item is open (thinking, a report, a brief, an output).
+fn is_open(ev: &Ev) -> bool {
+    match ev {
+        Ev::Thinking { open, .. } | Ev::AgentMsg { open, .. } => *open,
+        Ev::Tool(td) => td.expanded,
+        _ => true,
+    }
+}
+
+/// `ctrl+t`: one state for everything folded. Anything closed: open
+/// them all; else close them all. New thinking sections follow it.
+pub(crate) fn toggle_everything(app: &mut App) {
+    let open = app.events.iter().any(|e| crate::feed::discloses(e) && !is_open(e));
+    app.show_thinking = open;
+    for i in 0..app.events.len() {
+        if crate::feed::discloses(&app.events[i]) && is_open(&app.events[i]) != open {
+            crate::feed::toggle_event(&mut app.events, &mut app.cache, i);
+        }
+    }
+}
+
 /// A bracketed paste: the terminal pane, else the composer.
 pub(crate) fn on_paste(app: &mut App, text: &str) {
     if app.term.paste(text) {
@@ -382,15 +403,12 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
                 return true;
             }
         }
-        // ctrl+t: expand/collapse every thinking section
-        (KeyCode::Char('t'), KeyModifiers::CONTROL) => {
-            app.show_thinking = !app.show_thinking;
-            for e in app.events.iter_mut() {
-                if let Ev::Thinking { open, .. } = e {
-                    *open = app.show_thinking;
-                }
-            }
-            app.cache.clear();
+        // ctrl+t: open or close everything folded (book §11, §16)
+        (KeyCode::Char('t'), KeyModifiers::CONTROL) => toggle_everything(app),
+        // space on the item selected in the feed (composer empty; an
+        // agent selected in the panel keeps space for its preview)
+        (KeyCode::Char(' '), KeyModifiers::NONE) if app.ed.text.is_empty() && app.feed_sel.is_some() => {
+            crate::feed::toggle_selected(app);
         }
         // ctrl+l: clear the local feed
         (KeyCode::Char('l'), KeyModifiers::CONTROL) if app.sb.is_some() => {
@@ -564,4 +582,60 @@ fn pick(app: &mut App, c: &PopItem) {
     }
     app.ed.set(&c.fill, c.fill_cursor);
     app.popup_sel = 0;
+}
+
+#[cfg(test)]
+mod keys_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn thinking(open: bool) -> Ev {
+        Ev::Thinking { ms: 10, text: "hm".into(), open }
+    }
+
+    fn report(open: bool) -> Ev {
+        let text = "[report: done] p95 at 180 ms.\n- ran 3 times";
+        Ev::AgentMsg { from: "bench".into(), to: String::new(), text: text.into(), level: 3, id: "m_3".into(), open }
+    }
+
+    fn opens(app: &App) -> Vec<bool> {
+        app.events.iter().map(is_open).collect()
+    }
+
+    fn press(app: &mut App, code: KeyCode, m: KeyModifiers) {
+        on_key(app, &KeyEvent::new(code, m));
+    }
+
+    /// ctrl+t (book §16): one state for everything folded. Anything
+    /// closed: all open; again: all closed; new thinking follows.
+    #[test]
+    fn ctrl_t_opens_then_closes_everything_folded() {
+        let mut app = crate::sb::bench::test_app();
+        app.events = vec![thinking(true), report(false), Ev::Info("x".into()), thinking(false)];
+        app.cache = (0..4).map(|_| None).collect();
+        press(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL);
+        assert_eq!(opens(&app), vec![true, true, true, true]);
+        assert!(app.show_thinking);
+        press(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL);
+        assert_eq!(opens(&app), vec![false, false, true, false]);
+        assert!(!app.show_thinking);
+    }
+
+    /// space on the item selected in the feed toggles it, only with an
+    /// empty composer; with text it is a space.
+    #[test]
+    fn space_toggles_the_selected_feed_item() {
+        let mut app = crate::sb::bench::test_app();
+        app.events = vec![thinking(false), report(false)];
+        app.cache = (0..2).map(|_| None).collect();
+        app.feed_sel = Some(crate::feedsel::FeedSel { anchor: (1, 0, 0), head: (1, 0, 2) });
+        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE);
+        assert_eq!(opens(&app), vec![false, true]);
+        assert_eq!(app.ed.text, "");
+        app.ed.text = "hi".into();
+        app.ed.cursor = 2;
+        press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE);
+        assert_eq!(opens(&app), vec![false, true]);
+        assert_eq!(app.ed.text, "hi ");
+    }
 }

@@ -186,50 +186,74 @@ impl Sb {
 pub(super) static SB_MODE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// What `ctrl+z` and a typed `/cancel` say (book §13, §17).
+pub(super) const NO_UNDO: &str =
+    "no undo: an agent may already have acted. say the change to main instead (\"no, v1 for docs\").";
+
+/// `/theme [auto|light|dark]`: switch the palette now and keep it for
+/// the next launches (`choose`: `theme_detect::choose`, a fake in tests
+/// so they never write the real home). No argument: say which one is in
+/// use.
+fn theme_command(
+    arg: Option<&str>,
+    choose: impl Fn(crate::theme_detect::Choice) -> (crate::theme::Mode, Result<(), String>),
+) -> Ev {
+    use crate::theme_detect::Choice;
+    let name = |m| if m == crate::theme::Mode::Light { "light" } else { "dark" };
+    match arg.map(Choice::parse) {
+        None => Ev::Info(format!("theme: {}. /theme auto, light or dark to change it.", name(crate::theme::mode()))),
+        Some(Some(c)) => match choose(c) {
+            (m, Ok(())) => Ev::Info(format!("theme: {}.", name(m))),
+            (m, Err(e)) => Ev::Warn(format!("theme: {}, for now: i couldn't save it ({}).", name(m), e)),
+        },
+        Some(None) => Ev::Warn("/theme takes auto, light or dark.".into()),
+    }
+}
+
 pub(super) const SB_COMMANDS: &[Cmd] = &[
     Cmd {
         name: "/voice",
-        desc: "turn voice mode (Ctrl+R speech-to-text) on or off",
+        desc: "turn voice mode (ctrl+r speech-to-text) on or off",
         args: false,
     },
     Cmd {
         name: "/restart",
-        desc: "rebuild + restart the hub on the latest commit (agents kept): /restart [current|<commit>]",
+        desc: "rebuild and restart switchboard on the latest commit (agents kept): /restart [current|<commit>]",
         args: true,
     },
     Cmd {
         name: "/version",
-        desc: "Switchboard versions: /version [<commit>|tree|back]",
+        desc: "switchboard versions: /version [<commit>|tree|back]",
         args: true,
     },
     Cmd {
         name: "/new",
-        desc: "create a task: /new [-w] [name:] objective",
+        desc: "start an agent: /new [-w] [name:] objective",
         args: true,
     },
     Cmd {
         name: "/drop",
-        desc: "stop and archive a task (and its worktree)",
+        desc: "stop and archive an agent (and its worktree)",
         args: true,
     },
     Cmd {
         name: "/restore",
-        desc: "reopen an archived task",
+        desc: "reopen an archived agent",
         args: true,
     },
     Cmd {
         name: "/archived",
-        desc: "show or hide the archived tasks in the panel",
+        desc: "show or hide the archived agents in the panel",
         args: false,
     },
     Cmd {
         name: "/isolate",
-        desc: "give a task its own git worktree",
+        desc: "give an agent its own git worktree",
         args: true,
     },
     Cmd {
         name: "/rename",
-        desc: "rename a task",
+        desc: "rename an agent",
         args: true,
     },
     Cmd {
@@ -244,12 +268,12 @@ pub(super) const SB_COMMANDS: &[Cmd] = &[
     },
     Cmd {
         name: "/plugins",
-        desc: "the workspace's agent plugins (enable|disable NAME)",
+        desc: "the workspace's agent plugins (enable|disable name)",
         args: true,
     },
     Cmd {
         name: "/tasks",
-        desc: "the task board",
+        desc: "every agent: what it does, its last report, its questions",
         args: false,
     },
     Cmd {
@@ -260,6 +284,16 @@ pub(super) const SB_COMMANDS: &[Cmd] = &[
     Cmd {
         name: "/compact",
         desc: "compact the conversation of the agent in view",
+        args: false,
+    },
+    Cmd {
+        name: "/theme",
+        desc: "light, dark, or auto (your terminal's background): /theme [auto|light|dark]",
+        args: true,
+    },
+    Cmd {
+        name: "/welcome",
+        desc: "replay the welcome of the first launch",
         args: false,
     },
     Cmd {
@@ -549,6 +583,7 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         }
     }
     let first = typed.split_whitespace().next().unwrap_or("");
+    let recolor = first == "/theme";
     match first {
         "/quit" | "/exit" => app.should_quit = true,
         "/restart" => {
@@ -576,6 +611,9 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             app.help = crate::help::page_of(first).map(crate::help::Overlay::new);
         }
         "/archived" => sb.toggle_archived(),
+        "/theme" => out.push(theme_command(typed.split_whitespace().nth(1), crate::theme_detect::choose)),
+        "/welcome" => crate::onboarding::run(app),
+        "/cancel" => out.push(Ev::Info(NO_UNDO.into())),
         // an archived task reads nothing: its feed is history only
         _ if sb.focus_archived() && !typed.starts_with('/') => {
             out.push(Ev::Warn(format!(
@@ -586,6 +624,10 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         _ => {
             sb.send_input(typed);
         }
+    }
+    if recolor {
+        // the feed's rows carry their colors: build them again
+        app.cache.clear();
     }
     for ev in &out {
         push_event(&mut app.events, &mut app.cache, ev.clone());
@@ -778,6 +820,11 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
                 .filter(|p| !p.is_empty());
             let dir = dir.unwrap_or_else(|| sb.workspace.clone());
             sb.shell = Some(dir);
+            true
+        }
+        // no undo (book §13): say it, and how to change course
+        (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
+            push_event(&mut app.events, &mut app.cache, Ev::Info(NO_UNDO.into()));
             true
         }
         _ => false,
@@ -1040,13 +1087,18 @@ mod nav_key_tests {
         assert_eq!(app.sb.as_ref().unwrap().focus, "t1");
     }
 
-    /// No undo (book §13): Ctrl+Z is not a switchboard key, and the
-    /// composer's own undo (Cmd+Z, Ctrl+/) does not answer to it either.
+    fn infos(app: &App) -> Vec<String> {
+        app.events.iter().filter_map(|e| match e { Ev::Info(t) => Some(t.clone()), _ => None }).collect()
+    }
+
+    /// No undo (book §13, §17): ctrl+z and a typed /cancel only say so;
+    /// the draft stays, nothing goes to the hub, the composer's own undo
+    /// (cmd+z, ctrl+/) does not answer to ctrl+z.
     #[test]
-    fn ctrl_z_does_nothing() {
+    fn ctrl_z_and_cancel_say_no_undo() {
         let mut app = bench::test_app();
         app.ed.text = "draft".into();
-        assert!(!press(&mut app, KeyCode::Char('z'), KeyModifiers::CONTROL));
+        assert!(press(&mut app, KeyCode::Char('z'), KeyModifiers::CONTROL));
         let k = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::CONTROL);
         assert!(crate::editor::action(&k).is_none());
         assert_eq!(app.ed.text, "draft");
@@ -1055,9 +1107,37 @@ mod nav_key_tests {
 
     /// Ctrl+R belongs to voice input: Alt+R (or '®', Option+R on a
     /// macOS terminal) answers the card with the composer text.
+        assert_eq!(infos(&app), vec![NO_UNDO.to_string()]);
+        assert!(NO_UNDO.starts_with("no undo: an agent may already have acted."));
+        let out = handle_input(&mut app, "/cancel");
+        assert!(matches!(&out[..], [Ev::Info(t)] if t == NO_UNDO));
     #[test]
     fn alt_r_answers_the_card_and_ctrl_r_is_not_the_cards() {
         let mut app = bench::test_app();
+    /// /theme switches the palette; /welcome and /theme are listed; the
+    /// descriptions are lowercase and say "agent" (book §4).
+    #[test]
+    fn theme_and_welcome_commands() {
+        use crate::theme_detect::{apply, Choice};
+        let saved = |c: Choice| (apply(c), Ok(()));
+        let ev = theme_command(Some("light"), saved);
+        assert!(matches!(&ev, Ev::Info(t) if t == "theme: light."));
+        assert_eq!(crate::theme::mode(), crate::theme::Mode::Light);
+        let ev = theme_command(Some("dark"), saved);
+        assert!(matches!(&ev, Ev::Info(t) if t == "theme: dark."));
+        let ev = theme_command(Some("light"), |c| (apply(c), Err("disk full".into())));
+        assert!(matches!(&ev, Ev::Warn(t) if t.contains("couldn't save it (disk full)")));
+        assert!(matches!(theme_command(Some("blue"), saved), Ev::Warn(_)));
+        assert!(matches!(theme_command(None, saved), Ev::Info(t) if t.starts_with("theme: light.")));
+        for name in ["/theme", "/welcome"] {
+            assert!(SB_COMMANDS.iter().any(|c| c.name == name), "{name}");
+        }
+        for c in SB_COMMANDS {
+            assert!(!c.desc.chars().next().unwrap().is_uppercase(), "{}", c.desc);
+            assert!(!c.desc.contains("task"), "{}", c.desc);
+        }
+    }
+
         app.sb.as_mut().unwrap().cards = vec![Card {
             id: 7,
             kind: "question".into(),

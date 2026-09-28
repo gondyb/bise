@@ -31,7 +31,7 @@ pub(crate) const COMMANDS: &[Cmd] = &[
     },
     Cmd {
         name: "/plugins",
-        desc: "the agent plugins (enable|disable NAME)",
+        desc: "the agent plugins (enable|disable name)",
         args: true,
     },
     Cmd {
@@ -46,7 +46,7 @@ pub(crate) const COMMANDS: &[Cmd] = &[
     },
     Cmd {
         name: "/voice",
-        desc: "turn voice mode (Ctrl+R speech-to-text) on or off",
+        desc: "turn voice mode (ctrl+r speech-to-text) on or off",
         args: false,
     },
     Cmd {
