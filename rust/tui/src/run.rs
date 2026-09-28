@@ -411,7 +411,7 @@ pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: 
     let stream = match TcpStream::connect((host.as_str(), port)) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("connexion impossible : {}", e);
+            eprintln!("couldn't connect: {}", e);
             eprintln!("start the harness with ./run.sh");
             return Ok(());
         }

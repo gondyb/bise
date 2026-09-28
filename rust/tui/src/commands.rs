@@ -437,7 +437,7 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         // boundary and commits the text into the running turn (ADR 0005)
         let msg = v.strip_prefix("steer ").map(|s| s.trim()).unwrap_or(typed);
         if msg.is_empty() {
-            out.push(Ev::Info("steering vide".into()));
+            out.push(Ev::Info("nothing to steer with: type the text after steer".into()));
         } else {
             let path = app.info.steer_path.clone();
             let mut line = String::with_capacity(msg.len() + 1);
