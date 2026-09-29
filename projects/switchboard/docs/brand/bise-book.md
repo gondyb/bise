@@ -80,8 +80,8 @@ in the product, but tokens, cost and provider speed are the real limit.)
 | inside the product (onboarding) | **ideas in. little kisses out. also pull requests.** | picked (Gabriel; replaces "your ideas. my hands. lots of them.") |
 | in reserve | you, but with way more hands. · your team is as big as your ideas. | former headlines |
 
-**The name gloss**, outside the product only (site hero, README, launch
-posts); inside, the welcome screen has the short one (§15):
+**The name gloss**: site hero, README, launch posts, and the welcome
+screen of the TUI (§15, the meanings without final periods there):
 
 > **bise** /beez/ · french, n. 1. a quick kiss on the cheek. 2. a brisk north
 > wind. 3. a terminal where your agents ship while you think.
@@ -642,9 +642,11 @@ Vibe's (`vibe/setup/onboarding`). Six steps, `enter` to go on:
 
 1. **Welcome**, centered. Typed at ~70 ms per character: `hi, i'm bise`, then
    `:*` pops in accent (scale 0.4 → 1.5 → 1, 0.9 s), then, right under the
-   name, the short gloss fades in (faint): `bise /beez/ · french: a kiss on
-   the cheek. also a north wind.`, then `ideas in. little kisses out. also
-   pull requests.` (dim) is typed, then `press enter ↵` (faint).
+   name and a blank row, the name gloss (§1) comes line by line, 300 ms
+   apart: `bise /beez/ · french, n.` / `1. a quick kiss on the cheek :*` /
+   `2. a brisk north wind` / `3. a terminal where your agents ship while you
+   think`, then `ideas in. little kisses out. also pull requests.` is typed,
+   then `press enter ↵`. Any key but `enter` shows it all at once.
 2. **Theme.** `your terminal looks dark, so i picked dark.` / `you can change
    it any time with /theme.` When no detection was needed, it says why:
    `BISE_THEME is set to light, so i picked it.` or `you picked light last
@@ -654,10 +656,11 @@ Vibe's (`vibe/setup/onboarding`). Six steps, `enter` to go on:
 3. **Model.** `which model should do the work?` The keys bise finds
    (environment, `auth.json`, the old `.env` files), the model's provider
    first: `1 · use ANTHROPIC_FOUNDRY_API_KEY  found` / `foundry, already
-   set up. nothing to paste.`; `2 · paste another key` (`anthropic,
-   foundry, openai and 10 more.`: the catalog's providers that take a
-   key, 9 rows at a time); `3 · sign in with the browser` (**⚠** not
-   built). `↑↓` chooses. A pasted key goes in `auth.json` like `login`
+   set up. nothing to paste.`; `2 · paste another key` (its sub-line names
+   every provider that takes a key, `anthropic, foundry, openai, … and
+   cerebras`, so you know what you can paste; then the catalog's providers,
+   9 rows at a time). API keys only: no browser sign-in before launch.
+   `↑↓` chooses. A pasted key goes in `auth.json` like `login`
    (asks before replacing one); the agents started from then on use it.
 4. **Folder, and one honest thing.** `i'll work in ~/lab/app · a git repo ✓`
    / `all your agents share this folder and know about each other. no
@@ -684,7 +687,7 @@ Vibe's (`vibe/setup/onboarding`). Six steps, `enter` to go on:
 The onboarding runs once per user (a flag in the state directory); `/welcome`
 replays it (**⚠** proposed command).
 
-**Layout.** One content column for all steps: 64 columns (terminal width − 8 when narrower), horizontally centered. Welcome and theme center their lines inside it; model, folder and how-it-works are left-aligned inside it. Vertically, the block sits a bit above the middle: 2/5 of the free rows above it, 3/5 below; the step dots stay 2 rows above the bottom. **Emphasis** (a terminal has one font size, so "size" is weight, color and space): each step's first line is its title, bold, text color; then 2 blank rows; the body in text color, notes dim, 1 blank row between options or lines; then 2 blank rows and the key line. Key lines are read, so they are dim, never faint (§5), with the keys themselves in text color: `enter ok · o another folder`. Options: the selected one `›` accent + name bold, the others indented 2, their sub-line dim and indented 2 more. Welcome: `hi, i'm bise` bold + `:*` accent bold; the gloss dim (not faint: it is read); 2 blank rows; the tagline in text color; 2 blank rows; `press enter ↵` dim with `enter` in text. Where the terminal supports text sizing (kitty ≥ 0.40, OSC 66), `hi, i'm bise :*` is drawn at scale 2; elsewhere bold. Small terminals: height < 22 turns every 2 blank rows into 1; width < 50 makes the column width − 4.
+**Layout.** One content column for all steps: 64 columns (terminal width − 8 when narrower), horizontally centered. Welcome and theme center their lines inside it; model, folder and how-it-works are left-aligned inside it. Vertically, the block sits a bit above the middle: 2/5 of the free rows above it, 3/5 below; the step dots stay 2 rows above the bottom. **Emphasis** (a terminal has one font size, so "size" is weight, color and space): each step's first line is its title, bold, text color; then 2 blank rows; the body in text color, notes dim, 1 blank row between options or lines; then 2 blank rows and the key line. Key lines are read, so they are dim, never faint (§5), with the keys themselves in text color: `enter ok · o another folder`. Options: the selected one `›` accent + name bold, the others indented 2, their sub-line dim and indented 2 more. Welcome: `hi, i'm bise` bold + `:*` accent bold; 1 blank row; the gloss, a block centered as a whole with its lines left-aligned inside (a meaning too wide wraps with a 3-column hanging indent): `bise` bold, `/beez/ · french, n.` and meanings 1-2 dim (not faint: they are read), `:*` accent, meaning 3 (what bise is) in text color; 1 blank row; the tagline in text color; 2 blank rows; `press enter ↵` dim with `enter` in text. Where the terminal supports text sizing (kitty ≥ 0.40, OSC 66), `hi, i'm bise :*` is drawn at scale 2; elsewhere bold. Small terminals: height < 22 turns every 2 blank rows into 1; width < 50 makes the column width − 4.
 
 ## 16. Keys (final)
 

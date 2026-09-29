@@ -194,8 +194,6 @@ impl Step {
 pub(crate) enum Opt {
     Use(Provider),
     Paste,
-    /// sign in with the browser: not built, shown, never selected
-    Browser,
 }
 
 /// Where the model step is.
@@ -342,7 +340,6 @@ impl Onb {
     pub(crate) fn opts(&self) -> Vec<Opt> {
         let mut v: Vec<Opt> = self.found.iter().map(|p| Opt::Use(p.clone())).collect();
         v.push(Opt::Paste);
-        v.push(Opt::Browser);
         v
     }
 
@@ -403,7 +400,7 @@ impl Onb {
                 self.advance(now)
             }
             (Step::Model, KeyCode::Up | KeyCode::Down) => {
-                let n = self.opts().iter().filter(|o| **o != Opt::Browser).count();
+                let n = self.opts().len();
                 self.sel = if k.code == KeyCode::Down { (self.sel + 1) % n } else { (self.sel + n - 1) % n };
                 Out::Stay
             }
@@ -853,7 +850,6 @@ fn model_list(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
                 )],
                 paste_sub(&o.providers),
             ),
-            Opt::Browser => (vec![s(format!("{} · sign in with the browser", n), theme::dim())], "not built yet.".to_string()),
         };
         option(&mut v, i == o.sel, name, &sub, w);
     }
@@ -1324,8 +1320,6 @@ mod tests {
             "1 · use ANTHROPIC_FOUNDRY_API_KEY found",
             "foundry, already set up. nothing to paste.",
             "2 · paste another key",
-            "3 · sign in with the browser",
-            "not built yet.",
             "↑↓ choose · enter ok",
         ] {
             assert!(sc.contains(s), "{}\n{}", s, sc);
@@ -1335,7 +1329,8 @@ mod tests {
         assert!(all.starts_with("anthropic, foundry, openai, ") && !all.ends_with('.'), "{}", all);
         assert!(o.providers.iter().all(|p| all.contains(p.id.as_str())), "{}", all);
         assert!(flat(&sc).contains(&all) && !sc.contains(" more"), "{}", sc);
-        // ↑↓ skip the browser row
+        // API keys only: no browser sign-in row (BISE-215); ↑↓ wrap
+        assert!(!sc.contains("3 · ") && !sc.contains("browser"), "{}", sc);
         o.on_key(key(KeyCode::Down), 1, &e);
         assert_eq!(o.sel, 1);
         o.on_key(key(KeyCode::Down), 1, &e);

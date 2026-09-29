@@ -2625,3 +2625,11 @@ Index:
 - **spec:** user (via main): « il faut lister les "9 more" imo, sinon on sait pas ce qu'on peut paste? »
 - **what:** the sub-line of `paste a key` / `paste another key` names every provider you can paste a key for (`anthropic, foundry, openai, …, fireworks and cerebras`) instead of `anthropic, foundry, openai and 9 more.`. Dim, wrapped at the column like before (2 rows at 64 columns), no final period.
 - **notes:** test `onboarding::tests::step_3_model_lists_found_keys_and_saves_a_pasted_one` (every provider id on screen, no "more").
+
+### BISE-215 · onboarding: no browser sign-in option
+
+- **status:** done · **owner:** onboard-gloss · **commits:** `git log --grep BISE-215`
+- **owns:** `rust/tui/src/onboarding.rs` (`Opt`, `opts`, the model step's ↑↓)
+- **spec:** user (via main): OAuth subscription login is not planned before launch (API keys only); remove `sign in with the browser` from the onboarding entirely.
+- **what:** the model step shows the keys found, then `paste a key` / `paste another key`; the greyed `3 · sign in with the browser` / `not built yet.` row and `Opt::Browser` are gone, so ↑↓ wrap over every row. Book §15 and tui-spec updated (also for BISE-213/214: the welcome's gloss and the full provider list).
+- **notes:** test `onboarding::tests::step_3_model_lists_found_keys_and_saves_a_pasted_one` (no `3 · `, no "browser", ↑↓ wrap); `tui_onboarding_tmux.py` no longer waits for the row.

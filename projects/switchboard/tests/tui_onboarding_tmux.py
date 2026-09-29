@@ -97,7 +97,7 @@ def main():
         sc = t.wait("which model should do the work?")
         for s in ["i found a key in your environment.", "1 · use MISTRAL_API_KEY found",
                   "mistral, already set up. nothing to paste.", "2 · paste another key",
-                  "3 · sign in with the browser", "↑↓ choose · enter ok"]:
+                  "↑↓ choose · enter ok"]:
             assert s in flat(sc), sc
         shot("3-model", sc)
         # 4 folder and the honest line

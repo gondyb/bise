@@ -296,8 +296,9 @@ screen). Six steps, `enter` to go on:
 2. **Theme.** "your terminal looks dark, so i picked dark." Two live
    previews side by side; ←→ switches, `/theme` changes it later.
 3. **Model.** "which model should do the work?" A key found in the
-   environment comes first ("use ANTHROPIC_API_KEY · found"). **⚠** The list
-   depends on the providers bise ships with; browser sign-in is not built.
+   environment comes first ("use ANTHROPIC_API_KEY · found"), then "paste a
+   key" with every provider that takes one. API keys only: no browser
+   sign-in before launch.
 4. **Folder, and one honest thing.** "i'll work in ~/lab/app · a git repo ✓.
    all your agents share this folder." Then: "agents run commands here without
    asking you. git is your safety net." **⚠** No approval mode yet; it will
