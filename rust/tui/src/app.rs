@@ -37,6 +37,8 @@ pub(crate) struct App {
     pub(crate) unseen: usize,
     pub(crate) tail_visible: bool,
     pub(crate) bottom_bar_rect: Option<ratatui::layout::Rect>,
+    /// ctrl held alone: the key hints (ctrlhint.rs)
+    pub(crate) ctrl: crate::ctrlhint::Hold,
     // wrapped rows per event, keyed by event index (the codex layout
     // cache: rebuild on mutation, width change, or live-elapsed tools)
     pub(crate) cache: Vec<Option<EventRows>>,
@@ -184,6 +186,7 @@ impl App {
             unseen: 0,
             tail_visible: true,
             bottom_bar_rect: None,
+            ctrl: Default::default(),
             cache: Vec::new(),
             win: Default::default(),
             area_w,

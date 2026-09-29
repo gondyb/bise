@@ -134,6 +134,10 @@ pub(crate) fn mode(app: &App) -> Mode {
 pub(crate) fn line(app: &App, width: u16) -> Line<'static> {
     let agent = !app.sb.is_main_focus();
     let typing = !app.ed.text.is_empty();
+    // ctrl held (ctrlhint.rs): every ctrl key of the moment, same row
+    if crate::ctrlhint::on(app) && matches!(mode(app), Mode::Default | Mode::Steer | Mode::Selected | Mode::Archived | Mode::Images | Mode::Quote) {
+        return pairs_line(&crate::ctrlhint::pairs(app), usize::from(width)).0;
+    }
     render(mode(app), width, typing, agent, Some(current_tip(typing)))
 }
 
@@ -261,11 +265,27 @@ fn fit_agent(mut pairs: Vec<Pair>, width: usize) -> Vec<Pair> {
 /// keys.
 pub(crate) fn render(mode: Mode, width: u16, typing: bool, agent: bool, tip: Option<&str>) -> Line<'static> {
     let width = usize::from(width);
+    let dim = Style::default().fg(theme::dim());
+    let pairs = if agent { fit_agent(mode.agent_pairs(), width) } else { mode.pairs().to_vec() };
+    let (Line { mut spans, .. }, used) = pairs_line(&pairs, width);
+    if let Some(t) = tip.filter(|_| mode == Mode::Default && !agent && !typing).map(key_text) {
+        let t = if theme::ascii_mode() { format!("tip: {t}") } else { format!("tip · {t}") };
+        let tw = t.width();
+        if used + 3 + tw <= width {
+            spans.push(Span::raw(" ".repeat(width - used - tw)));
+            spans.push(Span::styled(t, dim));
+        }
+    }
+    Line::from(spans)
+}
+
+/// `pairs` in a row `width` columns wide, and the columns taken: the
+/// pairs that don't fit are dropped from the end (the first is cut).
+fn pairs_line(pairs: &[Pair], width: usize) -> (Line<'static>, usize) {
     let key = Style::default().fg(theme::text());
     let dim = Style::default().fg(theme::dim());
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut used = 0;
-    let pairs = if agent { fit_agent(mode.agent_pairs(), width) } else { mode.pairs().to_vec() };
     for (i, (k, l)) in pairs.iter().enumerate() {
         let (k, l) = (key_text(k), label_text(l));
         let gap = if i == 0 { 0 } else { 3 };
@@ -291,15 +311,7 @@ pub(crate) fn render(mode: Mode, width: u16, typing: bool, agent: bool, tip: Opt
         }
         used += gap + w;
     }
-    if let Some(t) = tip.filter(|_| mode == Mode::Default && !agent && !typing).map(key_text) {
-        let t = if theme::ascii_mode() { format!("tip: {t}") } else { format!("tip · {t}") };
-        let tw = t.width();
-        if used + 3 + tw <= width {
-            spans.push(Span::raw(" ".repeat(width - used - tw)));
-            spans.push(Span::styled(t, dim));
-        }
-    }
-    Line::from(spans)
+    (Line::from(spans), used)
 }
 
 /// `s` cut to `w` columns, ending with the ellipsis when cut.

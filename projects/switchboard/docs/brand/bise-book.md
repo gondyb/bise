@@ -664,6 +664,7 @@ replays it (**⚠** proposed command).
 | `ctrl+r` | voice: record, any key stops, then the clip is transcribed at once (`transcribing…`) | batch, not live (BISE-130): the full Voxtral model, `[voice]` in config.toml |
 | ``ctrl+` `` | terminal panel | — |
 | `ctrl+v` | paste an image | from the images work |
+| hold `ctrl` alone (~250 ms) | the ctrl keys show where they act: a fold's `▸ 12 more lines` reads `▸ ctrl+o expand`, the panel title `agents · ctrl+k/j select`, the divider's state `ctrl+c interrupt` while the agent works, the card box's keys, the key bar every ctrl key of the moment; key in accent, what it does dim; over cells already drawn, nothing moves; released or any other key: gone at once. Only in a terminal that confirms the kitty keyboard protocol's flags 8 + 16 (Ghostty, kitty, WezTerm…); tmux and the others: off | new (BISE-203) |
 | `ctrl+z` | ~~cancel the last route~~ | **removed** |
 | `typing` (composer) | zen: the edges fade while you type, back 5 s after your last key (or at once on ⏎, esc, a shortcut) | a row in /shortcuts (BISE-137) |
 | `/help`, `/shortcuts` | both end with the `symbols` legend (§6): every glyph, its ASCII form under `BISE_ASCII=1`, a few words | new (BISE-137) |

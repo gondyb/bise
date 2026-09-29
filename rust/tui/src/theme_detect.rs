@@ -259,6 +259,13 @@ fn channel(hex: &str) -> Option<f64> {
     Some(v as f64 / max as f64)
 }
 
+/// Ask the terminal `seq` then DA1; the answers until the DA1 reply or
+/// the timeout (the ctrl hints ask `CSI ? u`, ctrlhint.rs). None when
+/// stdin or stdout is not a terminal.
+pub(crate) fn query(seq: &[u8]) -> Option<Vec<u8>> {
+    tty::query_seq(seq, TIMEOUT)
+}
+
 /// True once `buf` holds a DA1 reply (`ESC [ ? … c`): the terminal has
 /// answered everything we asked.
 pub(crate) fn has_da1(buf: &[u8]) -> bool {
@@ -334,11 +341,17 @@ mod tty {
 
     /// The raw answers (the probe test prints them).
     pub(super) fn query_raw(timeout: Duration) -> Option<Vec<u8>> {
+        query_seq(b"\x1b]11;?\x07", timeout)
+    }
+
+    /// `seq` then DA1: the answers until the DA1 reply or the timeout.
+    pub(super) fn query_seq(seq: &[u8], timeout: Duration) -> Option<Vec<u8>> {
         if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
             return None;
         }
         let mut tty = OpenOptions::new().read(true).write(true).open("/dev/tty").ok()?;
-        tty.write_all(b"\x1b]11;?\x07\x1b[c").ok()?;
+        tty.write_all(seq).ok()?;
+        tty.write_all(b"\x1b[c").ok()?;
         tty.flush().ok()?;
         let fd = tty.as_raw_fd();
         let deadline = Instant::now() + timeout;
@@ -364,6 +377,9 @@ mod tty {
         None
     }
     pub(super) fn query_raw(_timeout: std::time::Duration) -> Option<Vec<u8>> {
+        None
+    }
+    pub(super) fn query_seq(_seq: &[u8], _timeout: std::time::Duration) -> Option<Vec<u8>> {
         None
     }
 }

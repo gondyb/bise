@@ -80,7 +80,9 @@ pub(crate) fn ingest_line(app: &mut App, line: String) {
 /// bracketed paste (a multi-line paste arrives as ONE Event::Paste
 /// instead of a keystroke storm where every Enter would send), and the
 /// kitty keyboard protocol (Shift+Enter reported distinctly; terminals
-/// without support ignore the push, Ctrl+J remains the fallback).
+/// without support ignore the push, Ctrl+J remains the fallback). Where
+/// the terminal confirms them, the flags of the ctrl hints too (ctrl
+/// alone, releases, the typed text: ctrlhint.rs).
 /// Fallible, unlike `ratatui::init` (which panics), and without its
 /// panic hook: `crash::install` restores every one of these modes.
 fn init_terminal() -> io::Result<ratatui::DefaultTerminal> {
@@ -94,13 +96,27 @@ fn init_terminal() -> io::Result<ratatui::DefaultTerminal> {
         let _ = crossterm::execute!(io::stdout(), EnableBracketedPaste);
         // BISE-107: the gust stops while the terminal is not focused
         let _ = crossterm::execute!(io::stdout(), crossterm::event::EnableFocusChange);
-        let _ = crossterm::execute!(
-            io::stdout(),
-            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
-        );
+        push_keyboard_flags();
         ratatui::Terminal::new(ratatui::backend::CrosstermBackend::new(io::stdout()))
     };
     setup().inspect_err(|_| crash::restore_terminal())
+}
+
+/// One push of the kitty keyboard flags (`crash::restore_terminal` pops
+/// one): the ctrl hints' [`crate::ctrlhint::FLAGS`] when the terminal's
+/// `CSI ? u` reply keeps them all, else flag 1 alone as before.
+fn push_keyboard_flags() {
+    use crossterm::event::PopKeyboardEnhancementFlags;
+    let basic = KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES;
+    if crate::ctrlhint::wanted() {
+        let _ = crossterm::execute!(io::stdout(), PushKeyboardEnhancementFlags(crate::ctrlhint::FLAGS));
+        let reply = crate::theme_detect::query(b"\x1b[?u").unwrap_or_default();
+        if crate::ctrlhint::confirmed(&reply) {
+            return;
+        }
+        let _ = crossterm::execute!(io::stdout(), PopKeyboardEnhancementFlags);
+    }
+    let _ = crossterm::execute!(io::stdout(), PushKeyboardEnhancementFlags(basic));
 }
 
 /// Takes the waiting wire lines for at most 12 ms. The hub replays whole
@@ -220,6 +236,7 @@ impl Startup {
 pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
     sb::draw_sb(app, f);
     crate::hints::draw(f); // BISE-61: one-time hints
+    crate::ctrlhint::draw(app, f.buffer_mut()); // ctrl held: the key hints
     crate::theme::paint(f.buffer_mut()); // BISE-92: bise paints its ground
     let depth = app.zen.depth(std::time::Instant::now());
     if depth > 0.0 {
@@ -381,8 +398,14 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
         } else {
             Duration::from_millis(80)
         };
+        // ctrl held: wake when its hints are due
+        let wait = app.ctrl.due(std::time::Instant::now()).map_or(wait, |d| wait.min(d));
         if poll(wait)? {
             let ev = read()?;
+            // ctrl alone, releases and repeats (ctrlhint.rs): the hold
+            // sees them all, the handlers only presses
+            app.ctrl.event(&ev, std::time::Instant::now());
+            let Some(ev) = crate::ctrlhint::for_handlers(ev) else { continue };
             let term_h = terminal.size().map(|s| s.height).unwrap_or(24);
             let before = Before::of(app);
             let zen_ev = ev.clone();

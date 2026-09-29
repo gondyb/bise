@@ -1129,6 +1129,12 @@ pub(crate) fn is_closed_at(events: &[Ev], i: usize) -> bool {
     own_open(ev) == Some(false) || (is_l3(ev) && !fold_open(ev) && folded_run(events, i, false) == Some(i))
 }
 
+/// Event `i` is open and ctrl+o would close it (the ctrl hints).
+pub(crate) fn is_open_at(events: &[Ev], i: usize) -> bool {
+    let ev = &events[i];
+    own_open(ev) == Some(true) || (is_l3(ev) && fold_open(ev) && folded_run(events, i, false) == Some(i))
+}
+
 /// Anything closed in the feed.
 pub(crate) fn anything_closed(events: &[Ev]) -> bool {
     (0..events.len()).any(|i| is_closed_at(events, i))

@@ -21,6 +21,7 @@ mod cards;
 pub(super) use cards::{card_box_height, card_full, card_mouse, card_choices, draw_card};
 use cards::{answer_card, Card, CardView};
 mod panel;
+pub(super) use panel::PANEL_TITLE;
 pub(super) use panel::{draw_panel, focus_model, key_mode, panel_mouse, placeholder, split, status_state, viewed_model, viewed_who, viewed_working, workspace};
 #[cfg(test)]
 pub(super) use panel::status_text;
@@ -38,6 +39,30 @@ pub use client::{run_switchboard, take_reexec};
 use client::{follow_hub_exe, follow_reload, HUB_DOWN, HUB_UP};
 #[cfg(test)]
 use client::{new_sb, sb_app};
+
+/// What the ctrl hints read of the switchboard (ctrlhint.rs): the
+/// agents, the open cards, the card box (shown, full screen, where the
+/// last frame drew it, whether it scrolls).
+pub(crate) struct CtrlView {
+    pub(crate) agents: usize,
+    pub(crate) cards: usize,
+    pub(crate) card_shown: bool,
+    pub(crate) card_full: bool,
+    pub(crate) card_area: Rect,
+    pub(crate) card_scrolls: bool,
+}
+
+pub(crate) fn ctrl_view(app: &App) -> CtrlView {
+    let sb = &app.sb;
+    CtrlView {
+        agents: sb.nav().len(),
+        cards: sb.cards.len(),
+        card_shown: sb.card.shown,
+        card_full: sb.card.full,
+        card_area: sb.card.area,
+        card_scrolls: sb.card.max_scroll > 0,
+    }
+}
 use feed::{
     clear_feed, ingest_at, prepend_page, swap_draft, swap_feed, trim_window, want_older, with_feed, View,
 };

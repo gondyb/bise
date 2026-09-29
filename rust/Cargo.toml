@@ -1,9 +1,16 @@
 [workspace]
 resolver = "2"
 members = ["harness", "tui", "switchboard", "plugins", "images", "catalog", "home", "session"]
+# vendor/crossterm: crossterm 0.28.1 with a patch (see its README), not a member
+exclude = ["vendor/crossterm"]
 
 # loop-speed: dependencies (ratatui, vt100, ...) optimised once; our crates
 # stay at opt-level 0 so an edit rebuilds in ~1 s. The fuzz test runs 7x faster.
 [profile.dev.package."*"]
 opt-level = 3
 debug = false
+
+# the kitty keyboard protocol's associated text (ctrl-hints): see
+# vendor/crossterm/README-bise.md
+[patch.crates-io]
+crossterm = { path = "vendor/crossterm" }

@@ -1009,13 +1009,14 @@ pub(crate) fn show(
                 continue;
             }
             let now = t0.elapsed().as_millis() as u64;
-            match read()? {
-                Event::Key(k) if k.kind == KeyEventKind::Press => {
+            // the ctrl hints' flags: a modifier alone or a release is no key
+            match crate::ctrlhint::for_handlers(read()?) {
+                Some(Event::Key(k)) if k.kind == KeyEventKind::Press => {
                     if o.on_key(k, now, &real_env) != Out::Stay {
                         return Ok(());
                     }
                 }
-                Event::Paste(p) => o.on_paste(&p),
+                Some(Event::Paste(p)) => o.on_paste(&p),
                 _ => {}
             }
         }

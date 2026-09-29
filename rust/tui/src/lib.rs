@@ -78,6 +78,7 @@ mod help;
 mod keybar;
 mod onboarding;
 mod hints;
+mod ctrlhint;
 mod queue;
 mod layout;
 mod chrome;

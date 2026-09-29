@@ -1,0 +1,2 @@
+# the crate tested alone (gate.sh) writes its own lock
+Cargo.lock

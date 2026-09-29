@@ -187,6 +187,7 @@ for f in $changed; do
     rust/plugins/*) add bend-plugins; add bend-tui; add bend-harness ;;
     rust/images/*) add bend-images; add bend-tui; add bend-harness ;;
     rust/tui/*) add bend-tui; add bend-harness ;;
+    rust/vendor/crossterm/*) add bend-tui; add bend-harness; crossterm_changed=1 ;;
     rust/switchboard/*) add switchboard; add bend-harness ;;
     rust/harness/*) add bend-harness ;;
     rust/session/*) add bise-session; add switchboard; add bend-harness ;;
@@ -215,6 +216,8 @@ if [ -n "$pkgs" ]; then
   fi
   step "test$(echo "$pkgs" | tr ' ' '_')" bash -c "cd rust && cargo test --offline -q $args"
   grep "test result" "$out"/test_*.log | grep -v " 0 passed" | sed 's/^.*test result/  test result/'
+  # our crossterm patch (not a workspace member): its parser's tests
+  [ "${crossterm_changed:-0}" = 1 ] && step test_crossterm bash -c "cd rust && cargo test --offline -q --manifest-path vendor/crossterm/Cargo.toml --lib event::sys::unix::parse"
 else
   echo "no Rust or hub change vs $base: no Rust tests run"
 fi
