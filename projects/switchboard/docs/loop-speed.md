@@ -8,9 +8,9 @@ free disk), HEAD 9b8ad22 (applied on 6bf6a86+), with other agents working at the
 
 1. Start a task with `projects/switchboard/tests/gate.sh new <name>` (from any tree; `<name>` defaults to `$SB_AGENT`): its folder `~/.bise/worktrees/<project-id>/<name>/` (BISE-230, like Codex's `~/.codex/worktrees`) holds a worktree of HEAD (`harness/`) and its own target (`target/`), an APFS clone of the warm seed for the current deps (~3-10 s, 0 bytes; the seed, `~/.bise/cache/gate-seed/<key>`, one at a time, ~7 GB of blocks the clones share, is built once per Cargo.lock/Cargo.toml/.cargo/config.toml/rustc change, ~2 min, by the first task that needs it). Run what it prints (`cd` + `export CARGO_TARGET_DIR`). End it with `gate.sh done <name>` (refused while the worktree has uncommitted changes or commits on no branch). The hub removes the folder too, at the task's /drop and, for an orphan (a task archived or unknown), at its start, never when the worktree has such work (it says so in main's thread). Never clone another task's target: they grow to 15 GB (see §8).
 2. Each commit: `projects/switchboard/tests/gate.sh` (quick), in the foreground. It runs clippy -D warnings (in `$CARGO_TARGET_DIR/clippy`, next to the tests) and the tests of the changed crates and their users; no `cargo build` any more (the full gate builds the binary). A change to a `.bend` file of core/ hub/ vendor/ or LAWS/PROOF runs PROOF.bend in 4 shards in parallel; a hub/ vendor/ change also builds a quick sb-core (-O1) for the tests (SB_CORE_BIN; ./sb-core is not touched). Both are cached by content in `$CARGO_TARGET_DIR/gate-cache`. Warm: **~5 s** for a Rust change, **~11 s** for a hub change, 16 s the first time in a new worktree with a cloned target.
-3. Once per task, on the last commit: `gate.sh full` (cargo build; ./repl-live ./repl-scripted ./sb-core put in place by `./bins.sh`, compiled when their sources changed; run_all.sh with FUZZ_RUNS=2000: every Rust test, the whole PROOF.bend, e2e and the 14 tmux tests, 4 jobs in parallel), ~55 s warm.
+3. Once per task, on the last commit: `gate.sh full` (one at a time on the machine, rule 5; cargo build; ./repl-live ./repl-scripted ./sb-core put in place by `./bins.sh`, compiled when their sources changed; run_all.sh with FUZZ_RUNS=2000: every Rust test, the whole PROOF.bend, e2e and the 14 tmux tests, 4 jobs in parallel), ~55 s warm.
 4. Never `sleep N; tail log`. A gate the bash tool put in the background: `gate.sh wait <its .out file or pid>` (blocks until it ends, at most 25 s, then shows the result).
-5. No run_all slot to ask for any more: two full gates can overlap; if one fails on a tmux timing, rerun that test alone (`python3 -u projects/switchboard/tests/<t>.py`) before blaming your change.
+5. One full gate at a time on the machine (BISE-244, §9): `gate.sh full` takes a lock; a second one prints `waiting for the gate: <agent>'s full gate runs` and sets your note to `waiting for the gate`, then runs. Do not kill it to retry, and do not run `run_all.sh` by hand to skip the queue: two full gates at once take as long as two in a row and load the machine for everyone. Quick gates never wait. Iterate with the quick gate; the full gate once, before the last commit. If a full gate fails on a tmux timing, rerun that test alone (`python3 -u projects/switchboard/tests/<t>.py`) before blaming your change.
 6. `run_all.sh --serial` runs e2e/tmux one by one (debugging a flake); `SB_TEST_JOBS=n` changes the parallelism; `FUZZ_RUNS=2000` for the long fuzz run.
 7. A red gate: fix forward, rerun the same gate; say in your report which gate you ran (quick/full) and its time.
 8. The Bend binaries (repl-live, repl-scripted, sb-core, harness-demo) are **not in git** (BISE-114, since 2026-09-30): never commit them, even with a hub/ or runtime/ change. `./bins.sh <name>...` puts the build of your tree's sources in place, from a cache keyed by the content of the sources and shared by every worktree and versions.sh (`${XDG_STATE_HOME:-~/.local/state}/switchboard/build/cache`): a hit is a copy (~0.3 s), a miss a compile (sb-core ~15 s, a REPL 1-2 min, once per source state for everyone). run.sh, run_all.sh, gate.sh (full, and quick without a hub change) and move-live.sh call it; a fresh worktree needs nothing else. A binary the EDR ate: `./bins.sh <name>` again. A version (versions.sh) gets the RELEASE engine of its sources, `bins.sh path bend-jsrt` (same cache, BISE-133). The V8 engine goes to the runtime as BEND_JSRT_BIN (the harness finds `bend-jsrt` in its app root, else rust/jsrt/target/debug, else release); run.sh rebuilds it when rust/jsrt or rust/images is newer, and always runs `cargo build` for bend-harness (~0.2 s when nothing changed).
@@ -332,3 +332,72 @@ variable is the cause. The other agents' runs pass it.
 - Start: `gate.sh new <name>`, then the printed `cd` + `export`; end:
   `gate.sh done <name>`. Never `cp -cR` another task's target.
 - The round-trip rules (§0 rule 9) and short commit subjects (rule 10).
+
+## 9. Round 4 (gate-sched, BISE-244): the gates share the machine
+
+The user, with 6+ tasks running: load 14 on 12 cores, two full gates at
+once, rustc at 60-90 % each. Measured on 2026-09-30 with 5-6 other agents
+working (their load alone 8-12), so the numbers are noisy.
+
+| what | before | after |
+|---|---:|---:|
+| two full gates started at the same second (worktrees at HEAD, warm) | both done at 237 s | first 199 s, second 433 s (it waits ~3 min) |
+| load1 during them (5 s samples; other agents' gates too) | avg 12.5, max 17.3 | avg 16.0, max 24.6 (an old-script full gate of another task ran at the same time) |
+| one full gate's CPU (`/usr/bin/time`, its tree) | | 172 s wall, 168 s user + 49 s sys: **1.3 cores on average**, ~7 at the peak (cargo build + test), 1-2 during e2e/tmux |
+| run_all's clippy in a task worktree | 99 units re-checked (~90 deps: not in the seed), 10 s | 11 units, 8 s (in `$target/clippy`, which the seed has warm) |
+| a gate killed (TERM, ctrl-c) | its test hubs, sb-core, REPLs and tmux shells kept running (found alive after 11 h) | all killed at once; a `kill -9`'s leftovers killed by the next gate run |
+
+What changed (`tests/gate.sh`, `tests/run_all.sh`):
+
+1. **One full gate at a time on the machine**: a `mkdir` lock,
+   `/tmp/bise-gate-full-<uid>.lock/owner` = `<pid> <start time> <agent>
+   <root>` (macOS has no flock). A second full gate prints `waiting for the
+   gate: <agent>'s full gate runs (pid, worktree)` and sets its task's note
+   (`sb status working --note "waiting for the gate …"`), polls every 2 s,
+   then says `got the gate after Ns`. A dead owner (pid gone, or reused: the
+   start time differs) is taken over, one taker at a time
+   (`<lock>.takeover`). Quick gates never wait. The cost: the second task
+   waits for the first (~3 min here); the gain: the CPU peaks of two full
+   gates no longer add up, and the tmux tests (timing-sensitive) do not run
+   next to another full gate's.
+2. **nice 10 and half the cores**: quick, full and new's seed build
+   `renice` themselves to 10 (`GATE_NICE`), so everything they start runs
+   below the hub, the TUIs and the agents' own work; `CARGO_BUILD_JOBS`
+   defaults to half the cores (6 here; a cold build of the workspace
+   crates takes 4.8 s with 6 jobs, 5.0 s with 12).
+3. **One seed build per deps key**: when Cargo.lock, a Cargo.toml or rustc
+   changed, the first `gate.sh new` builds the seed (`<seed>.building/pid`)
+   and the others print `another task builds the seed…`, wait, then clone
+   it, instead of each building its own cold target (~2 min on all cores
+   each).
+4. **What a run starts dies with it**: each quick/full run has its own
+   TMPDIR, `/tmp/bise-gate-<pid>/` (short: the hubs' sockets live under
+   it), so the tests' workspaces are there and a test hub names it in its
+   command line, even orphaned. On exit (green, red, ctrl-c, TERM, HUP) the
+   run kills its descendants, every process naming its TMPDIR and their
+   process groups (a hub's sb-core and REPLs), and in a task worktree the
+   orphans (ppid 1) of its own `repl-live`, `repl-scripted`, `sb-core` and
+   `target/debug/bise`. The tmux server is never killed (the user's
+   sessions may be in it; the tests use the default socket): the test's
+   shell in it is. Long steps run in the background with `wait`, so a TERM
+   reaches the trap at once. A `kill -9` skips the trap: the next gate run
+   kills what a dead run left (its pid gone), and removes a dead run's
+   folder after a day (a red run keeps it: the kept test dirs).
+5. **run_all's clippy** runs in `$CARGO_TARGET_DIR/clippy`, like the quick
+   gate, so it reuses the seed.
+
+Not done, measured: **one target dir shared by the worktrees**. Cargo's
+build-dir lock makes it safe, but it saves nothing: the workspace crates'
+metadata hash has the worktree's path in it, so a second worktree on the
+same target recompiled all 11 of them (11 s, the same as with its own
+clone of the seed), the deps are already shared by the APFS clone (0
+bytes), and `target/debug/bise` (the binary the e2e/tmux tests run) would
+be the last worktree's build. It would also serialize every cargo command
+of every task on one lock. The seed clone stays.
+
+What tasks do differently: iterate with the quick gate (it never waits);
+one full gate, before the last commit; when it says `waiting for the
+gate`, wait (`gate.sh wait <.out>`), do not kill it and do not run
+`run_all.sh` by hand to jump the queue; a test that failed during a full
+gate: rerun it alone before blaming the change (`tui_queue_tmux` failed
+once at load 24 and passed twice alone).

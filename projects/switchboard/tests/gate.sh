@@ -40,12 +40,31 @@
 # "Changed" = the tree vs GATE_BASE (default HEAD), untracked files included.
 # CARGO_TARGET_DIR is honoured (the e2e/tmux tests run its bise);
 # the bend results are cached in $CARGO_TARGET_DIR/gate-cache.
+# Sharing the machine (BISE-244, loop-speed.md §0): quick, full and new's
+# seed build run under nice 10 (GATE_NICE) with CARGO_BUILD_JOBS = half the
+# cores (unless set); one full gate at a time on the machine (a lock,
+# /tmp/bise-gate-full-<uid>.lock; the others print and set "waiting for the
+# gate"); one seed build per deps key (the other tasks wait, then clone it).
+# Each quick/full run has its own TMPDIR /tmp/bise-gate-<pid>/: at its end,
+# ctrl-c or kill included, it kills what it started (the test hubs, their
+# sb-core and REPLs, the tmux tests' shells), and each run first kills what
+# a dead run left.
 set -uo pipefail
 mode="${1:-quick}"
 # BISE-136: inside an agent, tell the hub where it works (the TUI's ψ):
 # new/quick/full in a private worktree say its path, done says none.
 # Best effort and silent (outside an agent, or an older hub).
 sb_place() { [ -n "${SB_AGENT:-}" ] && command -v sb >/dev/null 2>&1 && sb worktree "$1" >/dev/null 2>&1; return 0; }
+sb_note() { [ -n "${SB_AGENT:-}" ] && command -v sb >/dev/null 2>&1 && sb status working --note "$1" >/dev/null 2>&1; return 0; }
+# BISE-244: the hub, the TUIs and the other tasks stay responsive: this
+# script and all it starts at nice 10, cargo on half the cores
+share_machine() {
+  renice "${GATE_NICE:-10}" -p $$ >/dev/null 2>&1
+  local n; n="$(sysctl -n hw.ncpu 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+  export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$(( (n + 1) / 2 ))}"
+}
+proc_start() { ps -o lstart= -p "$1" 2>/dev/null | tr -s ' ' _; }
+older_than_a_minute() { [ -n "$(find "$1" -maxdepth 0 -mmin +1 2>/dev/null)" ]; }
 if [ "$mode" = wait ]; then
   arg="${2:?usage: gate.sh wait <bg .out file | pid>}"
   if [ -f "$arg" ]; then pid="$(cat "${arg%.out}.pid" 2>/dev/null)"; rcf="${arg%.out}.rc"; else pid="$arg"; rcf=; fi
@@ -118,8 +137,23 @@ PY
     rm -rf "$seed.tmp" && cp -cR "/tmp/sb-seed-$key" "$seed.tmp" && rm -rf "$seed.tmp"/sb-seed-* && mv "$seed.tmp" "$seed"
     rmdir "$seeds.lock"
   fi
+  # BISE-244: one seed build per key: the first task builds it
+  # ($seed.building holds its pid), the others wait for it and clone it
+  share_machine
+  said=
+  until [ -d "$seed" ] || mkdir "$seed.building" 2>/dev/null; do
+    bp="$(cat "$seed.building/pid" 2>/dev/null)"
+    if { [ -n "$bp" ] && ! kill -0 "$bp" 2>/dev/null; } || { [ -z "$bp" ] && older_than_a_minute "$seed.building"; }; then
+      rm -rf "$seed.building"; continue
+    fi
+    [ -n "$said" ] || { echo "another task builds the seed for these deps (pid ${bp:-?}): waiting for it, then a clone"; sb_note "waiting for the seed build"; said=1; }
+    sleep 3
+  done
+  [ -d "$seed.building" ] && [ ! -s "$seed.building/pid" ] && echo $$ >"$seed.building/pid"
+  building() { [ "$(cat "$seed.building/pid" 2>/dev/null)" = $$ ]; }
   s=$SECONDS
   if [ -d "$seed" ]; then
+    building && rm -rf "$seed.building"
     cp -cR "$seed" "$tgt" || exit 1
     echo "target: clone of the seed $seed ($((SECONDS - s))s)"
   else
@@ -138,6 +172,7 @@ PY
       for o in "$seeds"/*; do [ "$o" = "$seed" ] || rm -rf "$o"; done
       rmdir "$seeds.lock"
     fi
+    building && rm -rf "$seed.building"
     echo "target: built ($((SECONDS - s))s)$([ $rc = 0 ] || echo ', with errors: the gate shows them')"
   fi
   echo "now: cd $wt && export CARGO_TARGET_DIR=$tgt   (end: gate.sh done $name)"
@@ -148,6 +183,110 @@ cd "$(dirname "$0")/../../.."
 root="$PWD"
 # a linked worktree has a .git file (the shared checkout a directory)
 [ -f "$root/.git" ] && sb_place "$root"
+share_machine
+# ---- BISE-244: what a run starts dies with it. Its TMPDIR, /tmp/bise-gate-<pid>
+# (short: the hubs' sockets live under it), holds the tests' workspaces, so
+# a test hub names it in its command line even orphaned; its sb-core and
+# REPLs share its process group. The tmux server itself is never killed
+# (the user's sessions may live in it): the test's shell in it is.
+gate_procs() {  # <marker> <pid whose descendants go too | ""> <worktree binary prefixes... >: pids to kill
+  local m="$1" me="$2"; shift 2
+  # the marker goes through the environment: in awk's argv it would match awk
+  ps -axww -o pid=,ppid=,pgid=,command= | GATE_M="$m" GATE_BINS="$*" awk -v me="$me" -v self=$$ '
+    BEGIN { m = ENVIRON["GATE_M"]; bins = ENVIRON["GATE_BINS"] }
+    { p = $1 + 0; pp[p] = $2 + 0; pg[p] = $3 + 0; c = $0; sub(/^ *[0-9]+ +[0-9]+ +[0-9]+ /, "", c); cmd[p] = c; ids[++n] = p }
+    function tmux(c) { return c ~ /^([^ ]*\/)?tmux( |$)/ }
+    function orphan_bin(p,   i, k, b) {  # an orphan (ppid 1) of the worktree s binaries
+      if (pp[p] != 1 || bins == "") return 0
+      k = split(bins, b, " "); for (i = 1; i <= k; i++) if (cmd[p] == b[i] || index(cmd[p], b[i] " ") == 1) return 1
+      return 0
+    }
+    END {
+      for (p = self; p > 1 && !(p in anc); p = pp[p]) anc[p] = 1
+      # this snapshot: the ps, its subshell and the subshell s children (awk)
+      for (i = 1; i <= n; i++) if (cmd[ids[i]] == "ps -axww -o pid=,ppid=,pgid=,command=") sub_sh = pp[ids[i]]
+      for (i = 1; i <= n; i++) { p = ids[i]; if (p == sub_sh || pp[p] == sub_sh) anc[p] = 1 }
+      for (i = 1; i <= n; i++) { p = ids[i]
+        if (tmux(cmd[p])) continue
+        if (index(cmd[p], m) || (me != "" && pp[p] == me) || orphan_bin(p)) { k[p] = 1; if (pg[p] != pg[self]) g[pg[p]] = 1 }
+      }
+      for (i = 1; i <= n; i++) { p = ids[i]; if (pg[p] in g) k[p] = 1 }
+      do { ch = 0; for (i = 1; i <= n; i++) { p = ids[i]; if (!(p in k) && (pp[p] in k)) { k[p] = 1; ch = 1 } } } while (ch)
+      for (p in k) if (!(p in anc) && !tmux(cmd[p])) print p
+    }'
+}
+gate_kill() {  # <pids>: TERM, then KILL what is left half a second later
+  [ -n "$1" ] || return 0
+  kill -TERM $1 2>/dev/null; sleep 0.5
+  for p in $1; do kill -0 "$p" 2>/dev/null && kill -KILL "$p" 2>/dev/null; done
+  return 0
+}
+# in a task's worktree, its own binaries left alone by a dead parent
+wt_bins=""
+if [ -f "$root/.git" ]; then
+  t="$(cd "${CARGO_TARGET_DIR:-rust/target}" 2>/dev/null && pwd -P)"
+  wt_bins="$root/repl-live $root/repl-scripted $root/sb-core ${t:+$t/debug/bise}"
+fi
+# the leftovers of dead runs (a kill -9, a crash): their processes now; their
+# folder (the logs of a red run) after a day
+for d in /tmp/bise-gate-[0-9]*; do
+  [ -d "$d" ] || continue
+  p="${d##*-}"
+  kill -0 "$p" 2>/dev/null && [ "$(proc_start "$p")" = "$(cat "$d/.owner" 2>/dev/null)" ] && continue
+  gate_kill "$(gate_procs "/bise-gate-$p/" "")"
+  [ -n "$(find "$d" -maxdepth 0 -mtime +0 2>/dev/null)" ] && rm -rf "$d"
+done
+[ -n "$wt_bins" ] && gate_kill "$(gate_procs "/bise-gate-none/" "" $wt_bins)"
+run="/tmp/bise-gate-$$"
+rm -rf "$run"; mkdir -p "$run" && proc_start $$ >"$run/.owner"
+export TMPDIR="$run" BISE_GATE_RUN=$$
+LOCK="/tmp/bise-gate-full-$(id -u).lock"
+locked="" out=""
+on_exit() {
+  local rc=$?
+  trap - EXIT INT TERM HUP
+  kill $(jobs -p) 2>/dev/null
+  gate_kill "$(gate_procs "/bise-gate-$$/" $$ $wt_bins)"
+  [ -n "$out" ] && rm -rf "$out"
+  [ -n "$locked" ] && [ "$(cut -d' ' -f1 "$LOCK/owner" 2>/dev/null)" = $$ ] && rm -rf "$LOCK"
+  # a red run keeps its folder (run_all's logs) for a day
+  [ $rc = 0 ] && rm -rf "$run"
+  exit $rc
+}
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+# one full gate at a time on the machine: a mkdir lock, its owner file
+# "<pid> <start> <agent> <root>"; a dead owner's lock is taken over (one
+# taker at a time: $LOCK.takeover)
+lock_stale() {
+  local o; o="$(cat "$LOCK/owner" 2>/dev/null)"
+  [ -n "$o" ] || { older_than_a_minute "$LOCK"; return; }
+  set -- $o
+  ! kill -0 "$1" 2>/dev/null || [ "$(proc_start "$1")" != "$2" ]
+}
+gate_lock() {
+  local t0=$SECONDS said="" opid ostart oagent oroot
+  until mkdir "$LOCK" 2>/dev/null; do
+    if lock_stale && mkdir "$LOCK.takeover" 2>/dev/null; then
+      lock_stale && rm -rf "$LOCK"
+      rmdir "$LOCK.takeover"; continue
+    fi
+    older_than_a_minute "$LOCK.takeover" && rmdir "$LOCK.takeover" 2>/dev/null
+    if [ -z "$said" ]; then
+      read -r opid ostart oagent oroot <"$LOCK/owner" 2>/dev/null
+      echo "waiting for the gate: ${oagent:-another task}'s full gate runs (pid ${opid:-?}, ${oroot:-?}); one at a time"
+      sb_note "waiting for the gate (${oagent:-another task}'s full gate)"
+      said=1
+    fi
+    sleep 2
+  done
+  echo "$$ $(proc_start $$) ${SB_AGENT:-${USER:-?}} $root" >"$LOCK/owner"
+  locked=1
+  [ -z "$said" ] || { echo "got the gate after $((SECONDS - t0))s"; sb_note "full gate running"; }
+}
+[ "$mode" = full ] && gate_lock
 export PATH="$HOME/.bend/bin:$HOME/.cargo/bin:$PATH"
 unset SB_CORE_BIN
 # the oldest macOS the binaries run on (rust/.cargo/config.toml, BISE-164):
@@ -168,7 +307,7 @@ fi
 if [ "$mode" = full ]; then
   s=$SECONDS
   export FUZZ_RUNS="${FUZZ_RUNS:-2000}"
-  projects/switchboard/tests/run_all.sh; rc=$?
+  projects/switchboard/tests/run_all.sh & wait $!; rc=$?
   # every binary built runs on the macOS target (BISE-164): the Bend ones,
   # bise, and the engine when this tree has one
   bins=(./repl-live ./repl-scripted ./sb-core "${CARGO_TARGET_DIR:-rust/target}/debug/bise")
@@ -184,7 +323,6 @@ cache="${CARGO_TARGET_DIR:-$root/rust/target}/gate-cache"
 # no dot in its path (mktemp -t adds one): the PROOF shards import from it
 out="$(mktemp -d "${TMPDIR:-/tmp}/sbgateXXXXXX")"
 mkdir -p "$cache"
-trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$out"' EXIT
 fail() {  # <name> <log>: the failures, the log kept
   echo "FAIL $1"
   grep -E "^test .* FAILED|panicked|^error|^warning|^failures:|^Location|^Error" "$2" | head -30
@@ -245,7 +383,9 @@ for f in $changed; do
 done
 step() {  # <name> <cmd...>: one line when green, the failures and the log when red
   local n=$1 s=$SECONDS; shift
-  if "$@" >"$out/$n.log" 2>&1; then echo "ok   $n ($((SECONDS - s))s)"; else fail "$n" "$out/$n.log"; fi
+  # in the background: a kill or ctrl-c reaches the trap at once
+  "$@" >"$out/$n.log" 2>&1 & wait $!
+  if [ $? = 0 ]; then echo "ok   $n ($((SECONDS - s))s)"; else fail "$n" "$out/$n.log"; fi
 }
 # no `cargo build`: clippy checks every target, the tests compile and link
 # the changed crates; the binary itself is built by gate.sh full.
