@@ -185,7 +185,7 @@ One glyph per entity and per status. Color only for attention.
 | `∿` (pulsing) | working: a breeze |
 | `…` | waiting on another agent |
 | `?` (accent) | needs you (question or blocked) |
-| `♡` | done |
+| `✓` (accent) | done (Gabriel, 2026-09-29: the `✓` was not clear; a small pink check reads "finished"). It leads a panel row or a report; your read marks `✓` / `✓✓` sit at the end of your own lines, so the place tells them apart |
 | `✗` (error) | failed |
 | `○` (dim) | idle |
 | `–` (dim) | stopped |
@@ -203,7 +203,7 @@ One glyph per entity and per status. Color only for attention.
 | `▸` / `▾` | closed / open (progressive disclosure) |
 
 **Decided by Gabriel (2026-09-28), after the glyph audit (BISE-03,
-[glyph-audit.md](glyph-audit.md)):** keep the brand glyphs (`∿`, `♡`, `:*`) and
+[glyph-audit.md](glyph-audit.md)):** keep the brand glyphs (`∿`, `:*`; `♡` only outside the product since BISE-100) and
 every glyph a fallback font draws at width 1; replace only the ones that break:
 `✉` → `@` and `↪` → `»` (color-emoji risk), `⟳` → `≡` pulsing, `⧗` → `Δ`,
 `⎇` → `ψ` (BISE-84). `BISE_ASCII=1` switches every glyph to plain
@@ -220,7 +220,7 @@ cell each, and no two entities share one.
 | `◇` brief | `&` | | `·` starting, sending | `.` | | `•` unread | `!` |
 | `∴` thinking | `:` | | `∿` working | `~` | | `ψ` worktree | `Y` |
 | `λ` TypeScript | `\` | | `…` waiting | `;` | | `⇄` overlap | `/` |
-| `↳` sub-call | `L` | | `♡` done | `*` | | `↻` restart failed | `(` |
+| `↳` sub-call | `L` | | `✓` done | `*` | | `↻` restart failed | `(` |
 | `±` edit | `%` | | `✗` failed | `x` | | `Δ` building | `A` |
 | `▣` image | `#` | | `○` idle | `o` | | `▸` / `▾` | `+` / `-` |
 | `≡` compaction | `=` | | `–` stopped | `_` | | `$` `@` `?` | themselves |
@@ -253,14 +253,14 @@ outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their ta
 ## 8. Layout
 
 ```
- bise :*                              ∿ 3 working · ? 1 needs you · ♡ 1 done    ← header
+ bise :*                              ∿ 3 working · ? 1 needs you · ✓ 1 done    ← header
                                                     │ agents · ⌥ + number
   │  the login breaks on safari                     │ 0 :* main
   :* on it: auth-fix takes it.                      │ 1 ∿ auth-fix     12m · 21%
     │ @ docs      → main      v1 or v2?             │ 2 ∿ release       3m · 8%
     │ @ main      → docs      v2, the brief says so │ 3 ? docs              you
   :* docs asked v1 or v2; the brief says v2,        │ 4 … api-v2     waits docs
-     so i answered. ▸ why                           │ 5 ♡ bench            done
+     so i answered. ▸ why                           │ 5 ✓ bench            done
   ┃ ? docs needs you                                │
   ┃ the brief says "keep old clients working"…      │
  ┌ card box (when a card is open) ──────────────────┐
@@ -269,7 +269,7 @@ outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their ta
 ```
 
 - **Header:** `bise :*` on the left; live counts on the right, only the
-  non-zero ones: `∿ 3 working · … 1 waiting · ? 1 needs you · ♡ 1 done`.
+  non-zero ones: `∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done`.
   **⚠** No cost in $ until the usage work lands.
 - **Feed** on the left, prose ≤ 76 columns; extra width goes to the margin
   and the panel, never to longer lines.
@@ -303,7 +303,7 @@ outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their ta
 
 **Spacing, in cells** (user request, marketing 0e6e803). The rule is the landing demo, translated to whole cells.
 - **Outer margins:** 2 columns left and right, 1 row top and bottom; under 30 rows the top and bottom rows go.
-- **Header:** its own row: `bise :*` bold at the left margin, the summary (`∿ 3 working · ♡ 4 done`) flush right; then 1 blank row.
+- **Header:** its own row: `bise :*` bold at the left margin, the summary (`∿ 3 working · ✓ 4 done`) flush right; then 1 blank row.
 - **History:** the reading column above (79 wide, centered in the feed area = everything left of the panel).
 - **Between feed and panel:** 3 blank columns. No vertical rule: whitespace and alignment do the job.
 - **Scrollbar:** no arrows, no track: only a faint `┃` thumb in the last column of the feed area, and only while you are away from the bottom (the status row says `↓ back to the bottom`).
@@ -320,7 +320,7 @@ Exact layout (terminal F columns × H rows, 0-based; all lines faint; ASCII: `+ 
 
 Frame (when F ≥ 60 and H ≥ 16):
 - rounded frame on the terminal edge: row 0, row H−1, column 0, column F−1 (╭ ╮ ╰ ╯ ─ │).
-- row 0 = the header. `╭─ bise :* ───…─── ~/acme · ∿ 3 working · ? 1 needs you ─╮`: title from column 3 ("bise" bold text, ":*" accent), 1 space around it and the summary; the summary dim (its glyphs keep their colors), ending at column F−4. Not enough room: drop the path first, then use the short counts (∿ 3 · ? 1 · ♡ 2).
+- row 0 = the header. `╭─ bise :* ───…─── ~/acme · ∿ 3 working · ? 1 needs you ─╮`: title from column 3 ("bise" bold text, ":*" accent), 1 space around it and the summary; the summary dim (its glyphs keep their colors), ending at column F−4. Not enough room: drop the path first, then use the short counts (∿ 3 · ? 1 · ✓ 2).
 - row 1 blank. The history starts on row 2 and ends 1 blank row above the divider.
 - inside the frame: 2 blank columns each side. Text starts at column 3.
 - panel, F ≥ 100: a rule │ at column F−33, joined with ┬ on row 0 and ┴ on the divider; panel text from F−31 to F−4 (28 columns); the history ends at column F−36. F 90–99: panel 24 wide (rule at F−29). F < 90: no panel, no rule.
@@ -341,7 +341,7 @@ The same three levels everywhere, in main and inside an agent.
 | Level | What | Look |
 |---|---|---|
 | **1 · needs you** | a question or a blocker addressed to you | accent bar `┃` on the left, bold accent title `? docs needs you`, normal body; stays until answered; also in the card box |
-| **2 · for you** | what main or an agent says to you: replies, summaries, reports on your requests, main answering on your behalf | normal text, with `:*`, a status glyph (`♡` `✗`) or `@ name to you:` in front |
+| **2 · for you** | what main or an agent says to you: replies, summaries, reports on your requests, main answering on your behalf | normal text, with `:*`, a status glyph (`✓` `✗`) or `@ name to you:` in front |
 | **3 · between agents** | messages agents send each other and to main | dim text under a faint rail: `@ from → to  text`, names padded to 10 columns, one line each, `▸` when long |
 
 - **Your messages** carry a thin accent bar `│` on the left, on every wrapped line, text at column 3; marks `·` `✓` `✓✓` at the end. Thin bar = you, heavy bar `┃` = needs you, so you can tell at a glance what you said from what the agents said (decided by Gabriel, 2026-09-28).
@@ -393,7 +393,7 @@ The same three levels everywhere, in main and inside an agent.
 | other tool results | `▸ output · 42 lines · 1 failed` | the full output |
 | sub-calls | `↳ github.search_issues ✓` | — |
 | file edit | `± edit web/src/auth/session.ts ✓ +3 −1 ▸` | the diff |
-| report in main | `♡ bench is done. p95 at 180 ms ▸ report` | the report |
+| report in main | `✓ bench is done. p95 at 180 ms ▸ report` | the report |
 | brief (inside an agent) | `◇ brief ▸` | the brief |
 | a run of level 3 | `▸ 12 messages between 8 agents` | the messages, in order |
 | a card | open while it needs you | see §12 |
@@ -415,7 +415,7 @@ The same three levels everywhere, in main and inside an agent.
   choices when the agent gives some (`1 v1  2 v2`), and the keys, dim:
   `alt+r answer with text · ctrl+x later · ctrl+f full screen`.
 - **Kinds** reuse the glyphs: `?` question and blocked (accent), `✗` failed,
-  `↻` restart failed (error), `–` drop confirmation, `⇄` overlap, `♡` done.
+  `↻` restart failed (error), `–` drop confirmation, `⇄` overlap, `✓` done.
   Sorted by what blocks an agent first, then the oldest.
 - **Keep `ctrl+f`** (today): full screen and scrollable (`pgup` / `pgdn`);
   `ctrl+f` or `esc` brings it back.
@@ -577,7 +577,7 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | Where | Text |
 |---|---|
 | header, no agents | `no agents yet` |
-| header counts | `∿ {n} working · … {n} waiting · ? {n} needs you · ♡ {n} done` |
+| header counts | `∿ {n} working · … {n} waiting · ? {n} needs you · ✓ {n} done` |
 | panel title | `agents · ⌥ + number` |
 | panel, more rows | `+ {n} more` |
 | panel, archived | `▸ {n} archived` |
@@ -591,7 +591,7 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | thinking | `∴ thought for {s}s` |
 | output | `▸ output · {n} lines` (+ ` · {k} failed` when known) |
 | edit | `± edit {path} ✓ +{a} −{d}` |
-| turn done (inside an agent) | `♡ turn done · {duration}` |
+| turn done (inside an agent) | `✓ turn done · {duration}` |
 | card title | `? {name} needs you` |
 | card keys | `alt+r answer with text · ctrl+x later · ctrl+f full screen` |
 | direct reply | `@ {name} to you: {text}` |
@@ -617,7 +617,7 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | solo client (not bise) | `ask anything…` · `⏎ steer · tab queue · ctrl+c interrupt · / commands · end bottom` |
 | command descriptions | as in `/help` (lowercase, "agent"); `/agents`: `list the agents and what they do` |
 
-Not built yet (a feature, not wording): `♡ turn done · {duration}` and the two `provider down` lines.
+Not built yet (a feature, not wording): `✓ turn done · {duration}` and the two `provider down` lines.
 
 Onboarding strings: §15.
 
