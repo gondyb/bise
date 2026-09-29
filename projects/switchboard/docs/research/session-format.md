@@ -1,7 +1,9 @@
 # Research — the bise session format (JSONL event log)
 
-Status: design decided (§12). Implementation plan in §13. No code
-changed. Read at HEAD `6586f6d`.
+Status: design decided (§12). Implementation plan in §13, in progress:
+BISE-198 done; the normative union is now `spec/session-format.ts`
+(BISE-190, a few additions to §4 listed at its top) and the fixtures
+`tests/fixtures/session/`. Read at HEAD `6586f6d`.
 
 The goal, in the user's words: a JSONL file that is a log of structured
 events, typed by one precise discriminated union, so we can add new event
@@ -32,8 +34,9 @@ including what compaction removed from the context.
 - A `checkpoint` event holds the whole resumable state. It is written after
   each compaction and at the start of each file segment, so a resume reads
   one checkpoint plus the events after it, not the whole history.
-- Today's `.txt` checkpoints are converted once, checked by a round trip,
-  and kept on disk.
+- Today's `.txt` checkpoints are converted once, automatically, at the
+  first start of the new version, checked by a round trip, and kept on
+  disk as a backup (§10.2).
 
 ---
 
@@ -802,23 +805,31 @@ disk, so there is nothing to point at.
 
 ### 10.2 Steps
 
-1. **When:** at first resume of a `.txt` session (lazy), plus a
-   `bise sessions migrate` command for all of them. No big-bang migration
-   at startup.
-2. **Check:** rebuild the `T.Session` from the new log (§7 step 7) and
-   print it with `K.to_text`. It must be byte-equal to the `.txt`. If not,
-   keep using the `.txt` for that session and log why.
-3. **Keep:** the `.txt` is never deleted; `~/.bise/migrated.json` gets
-   `{sessions: {<txt path>: <session id>}}`. (Vibe deletes the old file;
-   we do not.)
-4. **Rollback safety:** `/version back` can start a bise that only knows
-   `.txt`. Until the first packaged release (BISE-170, the installer),
-   bise also writes the `.txt` checkpoint (tmp + rename, `0600`) after
-   each connection. Old binaries keep working; the new binary reads the
-   JSONL first. At BISE-170 the dual-write stops.
+User rule (2026-10): no backward compatibility for other users (there
+are none); only the user's own move must be seamless: every session of
+his live hub (main and every agent) and every solo session moves once,
+automatically, with no loss of context.
+
+1. **When:** once, at the first start of the new version (the harness
+   start, like BISE-161's home move, under the same lock): every
+   `sessions/*.txt` and every `agents/<name>/session.txt` of every hub
+   (a running hub's agents when that hub restarts on the new version:
+   the hub runs the migration of its agents before it starts them).
+   `bise sessions migrate [--dry-run]` runs the same code by hand.
+2. **Check:** project the new log back to `BEND-SESSION 2` (§7 step 7)
+   and compare it byte for byte with what today's loader keeps of the
+   `.txt` (`K.to_text(K.from_text(txt))`: the `.txt` itself, less the
+   lines the loader skips — a tool description's second line, a raw
+   newline in an old message; their count is in
+   `migrated_from.dropped_lines`). A mismatch keeps that session on its
+   `.txt` (the REPL reads it as today) and logs why.
+3. **Keep:** the `.txt` is never deleted or changed (the backup);
+   `~/.bise/sessions/migrated.json` lists `{<txt path>: <session id>}`.
+4. **No dual-write, no rollback path:** once moved, bise writes only the
+   JSONL. `/version back` to a pre-JSONL version is not supported
+   (the `.txt` it would read is the backup, frozen at the move).
 5. **Hub agents:** `agents/<name>/session.txt` → a session folder +
-   `agents/<name>/session` (the id). The hub keeps passing
-   `BEND_SESSION_FILE` to old REPLs during the transition.
+   `agents/<name>/session` (the id).
 6. **Human logs:** `wire.log` stays (it is the live channel the hub
    reads). `transcript.log` and `context.txt` stop once `bise session
    show` renders the same from the JSONL.
@@ -893,9 +904,9 @@ Decided by main for the user, except 3 and 10, decided by the user.
    bise has no undo today. Removed from the union (§5.9).
 4. **fsync** at the key points of §8.1.
 5. **Blob threshold:** 256 KiB per line.
-6. **Dual-write of the `.txt`** until the first packaged release
-   (BISE-170, the installer), then stop. While it lasts, `/version back`
-   to a version before the JSONL release keeps working.
+6. **No dual-write** (user, 2026-10: no other users to keep working):
+   a one-time automatic migration at the first start, checked by a byte
+   round trip, the `.txt` kept as a backup (§10.2). BISE-201 is dropped.
 7. **Rotation:** 32 MiB segments; scan, no offset index for now.
 8. **Request hash:** yes, `usage.request_sha256`.
 9. **Payload versions:** a `v` per type.
@@ -940,11 +951,11 @@ from a new home lookup.
 | 5 | **BISE-194** Resume + projection: §7 steps 2-8 (tail repair to `events.torn-*`, checkpoint, compaction replay, queue, crash closing), checkpoint writing after compaction, and projection to `BEND-SESSION 2` (parts → markers, thinking → `BENDSIG::`, blobs → `.b64` files for the image markers). | 8 h | 192 | every fixture's `.expect.json`; projection of fixture sessions equals golden `.txt` files |
 | 6 | **BISE-195** REPL facts on the wire (Bend): an `ev:` line for each event of §4 that the REPL knows (messages with parts, calls, tool results with call ids, usage with `request_sha256`, errors and retries, interruptions, compaction, queue). Check first: sha256 in Bend or through `bend-jsrt`. | 10 h | 190 | scripted REPL (`repl-scripted`) runs produce `ev:` lines that parse with 191 and match golden files |
 | 7 | **BISE-196** Hub wiring: create the session (id, folder, `agents/<n>/session`), `session_bound` hub event, tail `ev:` lines into the writer (own offset file), resume path through 194, `RESUME_TEXT` as `context_injected {kind: "resume_note"}`. Solo sessions, if any remain after BISE-113, use the same path. | 6 h | 192, 194, 195 | hub test: an agent's turn gives the expected events; a hub restart resumes it |
-| 8 | **BISE-197** Migration `.txt` → JSONL (§10): lazy at first resume, `bise sessions migrate [--dry-run]`, round-trip check (projection byte-equal to the `.txt`), `migrated.json`, `.txt` kept. | 6 h | 194 | synthetic `.txt` fixtures (thinking, images, queue, notifs, tool calls); a local run over the real `~/.bise` sessions, reported, never committed |
-| 9 | **BISE-198** Dual-write hardening, now: `persist.bend` writes the `.txt` to a temp file then renames it, mode `0600`. Independent of the rest. | 2 h | — | kill during save leaves the old or the new file, never a half file |
+| 8 | **BISE-197** Migration `.txt` → JSONL (§10.2): once, automatically, at the first start of the new version (solo sessions and every hub's agents), `bise sessions migrate [--dry-run]`, round-trip check (projection byte-equal to what today's loader keeps), `migrated.json`, `.txt` kept. | 6 h | 194 | synthetic `.txt` fixtures (thinking, images, queue, notifs, tool calls); a run over a copy of the user's real sessions in a temp HOME, reported, never committed |
+| 9 | **BISE-198** (done) `persist.bend` writes the `.txt` to a temp file then renames it, mode `0600`. Independent of the rest. | 2 h | — | kill during save leaves the old or the new file, never a half file |
 | 10 | **BISE-199** `bise session show [<id>] [--context] [--raw]`: the transcript, or what the model sees now. | 5 h | 194 | golden output for the fixtures |
 | 11 | **BISE-200** Stop writing `transcript.log` and `context.txt`; the TUI and docs point to `bise session show`. | 1 h | 199 | nothing reads the removed files (grep test) |
-| 12 | **BISE-201** End of dual-write: stop writing the `.txt`; keep the `.txt` reader for migration; `/version back` to a pre-JSONL version warns that newer sessions will not be seen. | 2 h | BISE-170, 196 | no `.txt` written after a turn; old `.txt` still migrate |
+| 12 | ~~BISE-201~~ End of dual-write: dropped (no dual-write, §12 decision 6). | — | — | — |
 | 13 | **BISE-202** End-to-end crash tests (`bend_client.py` / tmux): `kill -9` during a tool call, during a streamed answer, during a compaction; a torn last line; an unknown `must` event shown read-only in the TUI. | 5 h | 196 | this issue is tests |
 
 Total: about 62 h.
@@ -981,8 +992,6 @@ BISE-190 ─┬─ BISE-191 ─┬─ BISE-192 ── BISE-194 ─┬─ BISE-19
           │            └─ BISE-193               ├─ BISE-197
           │                                      └─ BISE-199 ── BISE-200
           └─ BISE-195 (Bend, in parallel with 191-194) ──┘ (into 196)
-
-BISE-170 (installer) + BISE-196 ── BISE-201
 ```
 
 - Two lanes can run at once after BISE-190: Rust (191 → 192 → 194) and
@@ -991,13 +1000,12 @@ BISE-170 (installer) + BISE-196 ── BISE-201
 - BISE-195 edits `runtime/*.bend`: check what BISE-118 and BISE-162 still
   change there before starting.
 
-### 13.5 Migration and dual-write steps
+### 13.5 Migration steps
 
-1. BISE-198: the `.txt` becomes crash safe (nothing else changes).
-2. BISE-196 lands: every new turn is in the JSONL **and** the `.txt`
-   (the REPL keeps saving it). Resume reads the JSONL; the `.txt` is the
-   fallback when the JSONL is missing or read-only.
-3. BISE-197 lands: old `.txt`-only sessions move to JSONL at first
-   resume, checked byte for byte; `bise sessions migrate` does the rest.
-4. BISE-170 ships the installer: BISE-201 stops the `.txt` writes in the
-   same release.
+1. BISE-198 (done): the `.txt` is crash safe and `0600`.
+2. BISE-196 and BISE-197 land together: at the first start of that
+   version every `.txt` session moves to JSONL once (§10.2), and from
+   then on bise writes only the JSONL; the resume projects it to the
+   `BEND-SESSION 2` text the REPL loads. The `.txt` files stay as the
+   backup. Proven before landing on a copy of the user's real sessions
+   in a temp HOME.
