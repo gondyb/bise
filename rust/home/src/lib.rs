@@ -110,7 +110,26 @@ impl Home {
         } else {
             PATH_VARS.iter().filter_map(|k| get(k).map(|v| (*k, PathBuf::from(v)))).collect()
         };
-        Home { layout, user, root, over, migrated }
+        let mut h = Home { layout, user, root, over, migrated };
+        h.drop_legacy_defaults();
+        h
+    }
+
+    /// In the bise layout, an inherited path equal to the legacy layout's
+    /// default for that variable is not an override: an older version
+    /// computed it (before BISE-160 no stamp came with it, e.g.
+    /// `BEND_MCP_INDEX=~/.bend-harness/mcp-index.txt`), and taking it would
+    /// re-export it with a valid stamp for good (the agents read an empty
+    /// connector index, not `<root>/cache/mcp-index.txt`).
+    fn drop_legacy_defaults(&mut self) {
+        if !self.is_bise() || self.over.is_empty() {
+            return;
+        }
+        for (k, v) in self.legacy().exports() {
+            if self.over.get(k).is_some_and(|o| o.as_os_str() == v.as_str()) {
+                self.over.remove(k);
+            }
+        }
     }
 
     /// A bise-layout home at `root` (tests, tools).

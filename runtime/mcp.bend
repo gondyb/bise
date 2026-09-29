@@ -205,37 +205,89 @@ def conn_lines.go(cs: List<&2, Jv.Val>, +seen: List<&2, String>) -> String:
 def conn_lines(cs: List<&2, Jv.Val>) -> String:
   conn_lines.go(cs, Nil{})
 
-def bootstrap_root(m: Maybe<&2, Jv.Val>) -> String:
+# the index lines of a bootstrap reply: only a 200 whose JSON has a
+# "connectors" array; anything else (the gateway answers 500 now and
+# then, a 401 without a Mistral key) is None, and the index on disk is
+# kept: writing "" there hid every connector until the next good start
+def bootstrap.conns(m: Maybe<&2, Jv.Val>) -> Maybe<&2, String>:
   match m:
     case None{}:
-      ""
+      None{}
+    case Some{+w}:
+      Some{conn_lines(jarr.w(w))}
+
+def bootstrap.body(m: Maybe<&2, Jv.Val>) -> Maybe<&2, String>:
+  match m:
+    case None{}:
+      None{}
     case Some{+v}:
-      conn_lines(jarr(v, "connectors"))
+      bootstrap.conns(Jv.get(v, "connectors"))
 
-def bootstrap_body(+body: String) -> String:
-  bootstrap_root(Jv.parse(body))
+def bootstrap.ok(ok: Bool, +res: Http.Res) -> Maybe<&2, String>:
+  match ok:
+    case True{}:
+      bootstrap.body(Jv.parse(Http.text(res)))
+    case False{}:
+      None{}
 
-def bootstrap.go(+path: String, r: Result<&2, &2, Http.Err, Http.Res>)
-    -> IO(Unit):
+def bootstrap.res(+res: Http.Res) -> Maybe<&2, String>:
+  match res:
+    case Http.Res{+status, _, _}:
+      bootstrap.ok(U32.is_eq(status, 200), res)
+
+def bootstrap.index(r: Result<&2, &2, Http.Err, Http.Res>)
+    -> Maybe<&2, String>:
   match r:
     case Fail{+e}:
-      do IO<Unit>:
-        IO.print("[mcp] bootstrap failed; MCP tools unavailable")
-        IO.pure(Unit, Unit{})
+      None{}
     case Done{+res}:
-      do IO<Unit>:
-        u : Unit <- P.write_file(path, bootstrap_body(Http.text(res)))
-        IO.print("[mcp] connector index written")
-        IO.pure(Unit, Unit{})
+      bootstrap.res(res)
 
+# BEND_MCP_BOOTSTRAP_URL: a test's fake gateway
+def bootstrap.fetch(+key: String) -> IO(Maybe<&2, String>):
+  do IO<Maybe<&2, String>>:
+    ur : Result<&1, &1, U32 & String, String> <- IO.get_env(
+      "BEND_MCP_BOOTSTRAP_URL")
+    +url : String <- IO.pure(String, P.env_or(ur, Mcp.bootstrap_url()))
+    +h : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
+      Http.set(Http.empty(), "Authorization", String.append("Bearer ", key)))
+    r : Result<&2, &2, Http.Err, Http.Res> <- Http.fetch("GET", url, h, "")
+    IO.pure(Maybe<&2, String>, bootstrap.index(r))
+
+# one more try: the gateway's 500s come and go
+def bootstrap.retry(+key: String, m: Maybe<&2, String>)
+    -> IO(Maybe<&2, String>):
+  match m:
+    case Some{+s}:
+      IO.pure(Maybe<&2, String>, Some{s})
+    case None{}:
+      bootstrap.fetch(key)
+
+def bootstrap.save(+path: String, m: Maybe<&2, String>) -> IO(Unit):
+  match m:
+    case None{}:
+      IO.print("[mcp] bootstrap failed twice; the connector index on disk is kept")
+    case Some{+s}:
+      do IO<Unit>:
+        u : Unit <- P.write_file(path, s)
+        IO.print("[mcp] connector index written")
+
+def bootstrap.keyed(empty: Bool, +key: String, +path: String) -> IO(Unit):
+  match empty:
+    case True{}:
+      IO.print("[mcp] no Mistral key (MISTRAL_API_KEY: env, auth.json or .env); the connector index on disk is kept")
+    case False{}:
+      do IO<Unit>:
+        m1 : Maybe<&2, String> <- bootstrap.fetch(key)
+        m2 : Maybe<&2, String> <- bootstrap.retry(key, m1)
+        bootstrap.save(path, m2)
+
+# the connectors always use the mistral provider's key, whatever model
+# the agent talks to (the harness exports every provider's key)
 def bootstrap(+key: String) -> IO(Unit):
   do IO<Unit>:
     +path : String <- index_path()
-    +h : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
-      Http.set(Http.empty(), "Authorization", String.append("Bearer ", key)))
-    r : Result<&2, &2, Http.Err, Http.Res> <- Http.fetch("GET",
-      Mcp.bootstrap_url(), h, "")
-    bootstrap.go(path, r)
+    bootstrap.keyed(String.is_empty(key), key, path)
 
 # ---- resolve "<cname>.<tool>" against the index lines ----
 

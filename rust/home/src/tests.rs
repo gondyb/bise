@@ -126,6 +126,37 @@ fn exported_paths_follow_the_same_home_and_only_it() {
 }
 
 #[test]
+fn an_inherited_legacy_default_is_not_an_override_in_the_bise_layout() {
+    // an older version exported BEND_MCP_INDEX=~/.bend-harness/mcp-index.txt
+    // (no stamp); the bise hub took it as an override and exported it again
+    // with its own stamp: the agents read an empty connector index
+    let d = tmp("legacy-default");
+    std::fs::create_dir_all(d.join(".bise")).unwrap();
+    std::fs::write(d.join(".bise").join(MIGRATED), "{}").unwrap();
+    let hs = d.to_string_lossy().to_string();
+    let old_index = d.join(".bend-harness/mcp-index.txt").to_string_lossy().to_string();
+    let old_skills = d.join(".bend-harness/skills-index.txt").to_string_lossy().to_string();
+    let new_index = d.join(".bise/cache/mcp-index.txt");
+    let no_stamp = home_of(&[("HOME", &hs), ("BEND_MCP_INDEX", &old_index), ("BEND_SKILLS_INDEX", &old_skills)]);
+    assert_eq!(no_stamp.mcp_index(), new_index);
+    assert_eq!(no_stamp.skills_index(), d.join(".bise/cache/skills-index.txt"));
+    // the poisoned export (a valid stamp) heals too
+    let mut env: HashMap<String, String> = no_stamp.exports().into_iter().map(|(k, v)| (k.into(), v)).collect();
+    env.insert("HOME".into(), hs.clone());
+    env.insert("BEND_MCP_INDEX".into(), old_index.clone());
+    let stamped = Home::from_lookup(&|k: &str| env.get(k).cloned());
+    assert_eq!(stamped.mcp_index(), new_index);
+    let ex: HashMap<_, _> = stamped.exports().into_iter().collect();
+    assert_eq!(ex["BEND_MCP_INDEX"], new_index.to_string_lossy());
+    // any other path is still a real override
+    let mine = home_of(&[("HOME", &hs), ("BEND_MCP_INDEX", "/elsewhere/idx.txt")]);
+    assert_eq!(mine.mcp_index(), PathBuf::from("/elsewhere/idx.txt"));
+    // the legacy layout keeps its own defaults as overrides (same value)
+    let legacy = home_of(&[("HOME", "/h"), ("BEND_MCP_INDEX", "/h/.bend-harness/mcp-index.txt")]);
+    assert_eq!(legacy.mcp_index(), PathBuf::from("/h/.bend-harness/mcp-index.txt"));
+}
+
+#[test]
 fn the_run_dir_is_private() {
     use std::os::unix::fs::PermissionsExt;
     let d = tmp("run");
