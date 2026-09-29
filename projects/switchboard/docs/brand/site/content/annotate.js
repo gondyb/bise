@@ -26,7 +26,8 @@
   .an-panel b{color:var(--text);font-weight:600}.an-panel .ok{color:var(--acc)}
   .an-sel{position:absolute;z-index:55;display:none;background:var(--acc);color:var(--bg);font:12px/1 "JetBrains Mono",monospace;padding:6px 9px}
   .an-flag{outline:1px dashed var(--faint);outline-offset:4px;border-radius:2px}
-  tr .an-notes{margin-top:6px}`;
+  tr .an-notes{margin-top:6px}
+  .an-ed,.an-notes{grid-column:1/-1;flex:1 0 100%;width:auto;min-width:min(100%,320px);max-width:760px}`;
   document.head.appendChild(Object.assign(document.createElement('style'), { textContent: css }));
 
   const blocks = () => [...document.querySelectorAll(SEL)].filter(el => !el.closest('.an-notes,.an-ed,.an-panel') && !(el.parentElement && el.parentElement.closest(SEL) && el.matches('main p, main li') && el.parentElement.closest('[data-a]') && !el.closest('[data-a]').isSameNode(el) && false));
