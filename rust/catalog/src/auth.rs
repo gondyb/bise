@@ -342,4 +342,24 @@ impl Resolution {
         }
         out
     }
+
+    /// The env of a REPL the hub spawns now (a `login` / `logout` since the
+    /// hub started reaches the next REPL, no hub restart): `ours` = the
+    /// names this process set itself at start (load_keys), so they do not
+    /// count as "the environment" in the resolution that made `self`.
+    /// Each export is set; a provider's key_env we set at start whose key
+    /// is gone now (logout) is removed. The real environment's keys are
+    /// inherited as they are.
+    pub fn spawn_env(&self, c: &Catalog, ours: &[String]) -> Vec<(String, Option<String>)> {
+        let ex = self.exports();
+        let mut out: Vec<(String, Option<String>)> =
+            ex.iter().map(|(k, v)| (k.clone(), Some(v.clone()))).collect();
+        for p in &c.providers {
+            let k = &p.key_env;
+            if !k.is_empty() && ours.contains(k) && !out.iter().any(|(n, _)| n == k) {
+                out.push((k.clone(), None));
+            }
+        }
+        out
+    }
 }

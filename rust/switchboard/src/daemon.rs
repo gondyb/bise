@@ -46,7 +46,15 @@ pub struct Opts {
     /// The bend-harness executable (the `sb` shim calls it).
     pub exe: PathBuf,
     pub repl_bin: PathBuf,
+    /// Extra env of each REPL, computed at its spawn: the API keys
+    /// resolved again (auth.json, .env), so a `login` since the hub
+    /// started applies to the next REPL. (name, None) = unset.
+    pub spawn_env: Option<SpawnEnv>,
 }
+
+/// The env a REPL gets at its spawn: (name, Some(value)) sets, (name,
+/// None) unsets.
+pub type SpawnEnv = fn() -> Vec<(String, Option<String>)>;
 
 enum Msg {
     In(Input),
@@ -592,6 +600,12 @@ impl Shell {
             // this hub's sb-core is not the agents' business (a hub an
             // agent starts picks its own)
             .env_remove("SB_CORE_BIN");
+        for (k, v) in self.opts.spawn_env.map(|f| f()).unwrap_or_default() {
+            match v {
+                Some(v) => cmd.env(k, v),
+                None => cmd.env_remove(k),
+            };
+        }
         if resume && session.exists() {
             cmd.env("BEND_CONTINUE", "1");
         }

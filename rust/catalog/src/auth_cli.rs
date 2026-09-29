@@ -127,7 +127,7 @@ pub fn login(paths: &Paths, p: &Provider, key: &str, env: &dyn Fn(&str) -> Optio
     if !p.needs.is_empty() {
         out.push(format!("note: {} is not usable yet ({})", p.id, p.needs));
     }
-    out.push("a running hub keeps the keys it started with: restart it for its new agents to use this one".into());
+    out.push("a running hub gives it to the agents it starts from now on (a running agent keeps the key it started with)".into());
     Ok(out)
 }
 

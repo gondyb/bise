@@ -187,16 +187,50 @@ fn load_keys() {
     let exports = Keys { env: &env, store: &store, files: &files }
         .resolve(&setup.catalog)
         .exports();
+    let mut ours: Vec<String> = Vec::new();
     for (k, v) in exports {
-        std::env::set_var(k, v);
+        std::env::set_var(&k, v);
+        ours.push(k);
     }
     for f in &files {
         for (k, v) in &f.vars {
             if !std::env::var_os(k).is_some_and(|x| !x.is_empty()) {
                 std::env::set_var(k, v);
+                ours.push(k.clone());
             }
         }
     }
+    let _ = KEYS_SET_AT_START.set(ours);
+}
+
+/// The variables load_keys set (not the user's environment).
+static KEYS_SET_AT_START: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+/// The keys of a REPL the hub spawns now (BISE-146 follow-up of BISE-143):
+/// resolved again, so a `login` / `logout` since the hub started reaches
+/// the next REPL (spawn, respawn, restart) without restarting the hub.
+/// The environment the hub started with wins as before; what load_keys
+/// set itself does not count as the environment. (name, None) = unset.
+fn keys_for_spawn() -> Vec<(String, Option<String>)> {
+    use bise_catalog::auth::{EnvFile, Keys, Store};
+    let ours = KEYS_SET_AT_START.get().cloned().unwrap_or_default();
+    let paths = auth_paths();
+    // a broken auth.json: the keys the hub started with
+    let Ok(store) = Store::read(&paths.auth_file) else {
+        return Vec::new();
+    };
+    let files = EnvFile::read_all(&paths.env_files);
+    let setup = bise_catalog::Setup::load(&paths.config);
+    let env = |k: &str| {
+        if ours.iter().any(|o| o == k) {
+            None
+        } else {
+            std::env::var(k).ok()
+        }
+    };
+    Keys { env: &env, store: &store, files: &files }
+        .resolve(&setup.catalog)
+        .spawn_env(&setup.catalog, &ours)
 }
 
 // ---- the model catalog (BISE-142, rust/catalog) ----
@@ -305,6 +339,7 @@ fn run_sbd(args: &[String]) -> std::io::Result<()> {
         repl_bin: root.join("repl-live"),
         app_root: root,
         exe: std::env::current_exe()?,
+        spawn_env: Some(keys_for_spawn),
     })
 }
 

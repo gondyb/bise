@@ -202,3 +202,31 @@ fn logout_says_when_another_source_still_has_a_key() {
     assert!(out.iter().any(|l| l == "openai still has a key: env OPENAI_API_KEY"), "{out:?}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_spawn_sees_a_login_or_logout_made_after_the_hub_started() {
+    let c = Catalog::builtin();
+    // at start: OPENAI_API_KEY came from auth.json (set by load_keys, so
+    // "ours"), MISTRAL_API_KEY from the user's real environment
+    let ours = vec!["OPENAI_API_KEY".to_string(), "SOME_DOTENV_VAR".to_string()];
+    let real = |k: &str| match k {
+        "MISTRAL_API_KEY" => Some("m-env".to_string()),
+        _ => None,
+    };
+    // later: `login groq`, `logout openai`
+    let mut store = Store::default();
+    store.set("groq", "q-new");
+    let keys = Keys { env: &real, store: &store, files: &[] };
+    let spawn = keys.resolve(&c).spawn_env(&c, &ours);
+    let get = |k: &str| spawn.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+    assert_eq!(get("GROQ_API_KEY"), Some(Some("q-new".into())), "a login reaches the next REPL");
+    assert_eq!(get("OPENAI_API_KEY"), Some(None), "a logout unsets what the hub set");
+    assert_eq!(get("MISTRAL_API_KEY"), None, "the real env is inherited, untouched");
+    assert_eq!(get("SOME_DOTENV_VAR"), None, "not a provider key: left as it is");
+    assert_eq!(get("DEEPSEEK_API_KEY"), None);
+    // a key replaced in auth.json: the new one
+    store.set("openai", "o-new");
+    let keys = Keys { env: &real, store: &store, files: &[] };
+    let spawn = keys.resolve(&c).spawn_env(&c, &ours);
+    assert!(spawn.contains(&("OPENAI_API_KEY".into(), Some("o-new".into()))));
+}
