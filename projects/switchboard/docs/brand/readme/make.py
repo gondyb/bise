@@ -59,17 +59,17 @@ def hero(c):
 # the team syncs, you change your mind, one card, everything ships.
 def demo(c):
     W, T = 960, 31
-    tl = TL(T); out = []
+    tl = TL(T); out = []; feed = []; marks = []  # marks: (time, baseline) of each feed row, for the scroll
     fx, lh = 40, 29
     acc = lambda t: f'<tspan fill="{c["acc"]}">{t}</tspan>'
     y = [76]
     def line(t, html, gap=0, color="text", size=14):
         y[0] += gap
-        k = tl.show(t); out.append(f'<text class="{k}" x="{fx}" y="{y[0]}" font-size="{size}" fill="{c[color]}" xml:space="preserve">{html}</text>'); y[0] += lh; return k
+        k = tl.show(t); marks.append((t, y[0])); feed.append(f'<text class="{k}" x="{fx}" y="{y[0]}" font-size="{size}" fill="{c[color]}" xml:space="preserve">{html}</text>'); y[0] += lh; return k
     def you(t, s, gap=14):
         y[0] += gap
-        k = tl.show(t); r = tl.show(t + 0.55, dur=0.1)
-        out.append(f'<g class="{k}"><rect x="{fx-16}" y="{y[0]-15}" width="3" height="19" fill="{c["acc"]}"/>'
+        k = tl.show(t); r = tl.show(t + 0.55, dur=0.1); marks.append((t, y[0]))
+        feed.append(f'<g class="{k}"><rect x="{fx-16}" y="{y[0]-15}" width="3" height="19" fill="{c["acc"]}"/>'
                    f'<text x="{fx}" y="{y[0]}" font-size="14" font-weight="700" fill="{c["text"]}" xml:space="preserve">{E(s)} <tspan font-weight="400" fill="{c["faint"]}">✓</tspan></text></g>'
                    f'<text class="{r}" x="{fx + int((len(s) + sum(ord(ch) > 0xFFFF for ch in s) + 1) * 8.45)}" y="{y[0]}" font-size="14" fill="{c["acc"]}">✓✓</text>')
         y[0] += lh
@@ -94,7 +94,8 @@ def demo(c):
     # the card: it asks, you press 2, it folds to one answered line
     y[0] += 18; cy0 = y[0]
     k = tl.show(17.8, 19.9, dur=0.2); a2 = tl.show(19.9, dur=0.2)
-    out.append(f'<g class="{k}"><rect x="{fx-16}" y="{cy0-16}" width="600" height="68" rx="4" fill="{c["raised"]}"/><rect x="{fx-16}" y="{cy0-16}" width="3" height="68" fill="{c["acc"]}"/>'
+    marks.append((17.8, cy0 + 44))
+    feed.append(f'<g class="{k}"><rect x="{fx-16}" y="{cy0-16}" width="600" height="68" rx="4" fill="{c["raised"]}"/><rect x="{fx-16}" y="{cy0-16}" width="3" height="68" fill="{c["acc"]}"/>'
                f'<text x="{fx}" y="{cy0}" font-size="14" font-weight="700" fill="{c["acc"]}">? perf needs you</text>'
                f'<text x="{fx}" y="{cy0+21}" font-size="14" fill="{c["text"]}">the hero image is 4.2 MB. compress it, or lazy-load it?</text>'
                f'<text x="{fx}" y="{cy0+42}" font-size="13" fill="{c["dim"]}" xml:space="preserve">1 · compress   2 · both   alt+r answer with text</text></g>'
@@ -109,7 +110,18 @@ def demo(c):
     say(25.4, 26.2, 26.4, "you're the best")
     main(27.0, ":*")
     # the frame, sized to the story
-    top = y[0] + 14; H = top + 150
+    H = 600; top = H - 150; view = top - 14  # the feed shows rows 49..view, then scrolls
+    css_scroll, cur, frames = [], 0, ["0%{transform:translateY(0)}"]
+    pc = lambda x: f"{x / T * 100:.2f}%"
+    for t, yb in sorted(marks):
+        need = max(0, yb + 8 - view)
+        if need > cur:
+            frames.append(f"{pc(t)}{{transform:translateY(-{cur}px);animation-timing-function:ease-out}}{pc(t + 0.45)}{{transform:translateY(-{need}px)}}")
+            cur = need
+    frames.append(f"{pc(T - 0.2)}{{transform:translateY(-{cur}px)}}100%{{transform:translateY(0)}}")
+    css_scroll = f"@keyframes scr{{{''.join(frames)}}}.scr{{animation:scr {T}s linear infinite}}"
+    out.append(f'<clipPath id="feedclip"><rect x="0" y="49" width="679" height="{top - 49}"/></clipPath>'
+               f'<g clip-path="url(#feedclip)"><g class="scr">{"".join(feed)}</g></g>')
     out.insert(0, f'<rect width="{W}" height="{H}" rx="14" fill="{c["bg"]}" stroke="{c["line"]}"/>'
                f'<text x="24" y="32" font-size="14" fill="{c["text"]}" font-weight="700">bise {acc(":*")}</text>'
                f'<text x="{W-24}" y="32" text-anchor="end" font-size="13" fill="{c["dim"]}">~/acme</text>'
@@ -141,7 +153,7 @@ def demo(c):
         out.append(f'<clipPath id="{cid}"><rect class="{r}" x="24" y="{top+40}" height="30" width="0"/></clipPath>'
                    f'<g class="{vis}"><text x="24" y="{top+62}" font-size="15" fill="{c["text"]}" clip-path="url(#{cid})">{E(text)}</text></g>')
     css_gust = "@keyframes g{0%{opacity:.3}50%{opacity:1}100%{opacity:.3}}.g{animation:g 1.2s infinite}"
-    return svg(W, H, "".join(out), "".join(tl.css) + css_gust,
+    return svg(W, H, "".join(out), "".join(tl.css) + css_gust + css_scroll,
                "a bise session: five ideas in a row to main, five agents start, they sync, you change your mind, one card asks you, everything ships.")
 
 # ---------- team ----------
