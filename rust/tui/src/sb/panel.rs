@@ -1624,11 +1624,13 @@ mod chrome_tests {
         assert_eq!(text(2), "");
     }
 
-    /// The raised pane (book §13, BISE-102, BISE-210): one grey block from
-    /// the divider's row down to the last row, edge to edge, the frame's
-    /// cells too; 5 rows at rest (the divider, a blank bar row, 1 text
-    /// row, the key bar, the frame), 4 under 20 rows; under 14 rows the
-    /// key bar takes the divider's right side.
+    /// The raised pane (book §13, BISE-102, BISE-212): the grey fills the
+    /// inside of the frame under the divider, edge to edge between the
+    /// side edges; the lines (the divider, the side and bottom edges) stay
+    /// on the history's ground, outside the grey. 5 rows at rest (the
+    /// divider, a blank bar row, 1 text row, the key bar, the frame), 4
+    /// under 20 rows; under 14 rows the key bar takes the divider's right
+    /// side.
     #[test]
     fn the_pane_under_the_divider_is_raised() {
         let mut app = with_main();
@@ -1642,21 +1644,36 @@ mod chrome_tests {
             let b = screen(&mut app, 120, h);
             let div = (0..h).find(|&y| row(&b, y).starts_with("├─ you → main")).unwrap_or_else(|| panic!("{h}: no divider"));
             assert_eq!(h - div, pane, "{h} rows: the pane takes {pane}");
-            for y in div..h {
-                for x in 0..120 {
+            // the history's ground, and the grey is another color
+            let ground = b[(60, div - 1)].bg;
+            assert_ne!(ground, raised(), "{h} rows");
+            for y in div + 1..h - 1 {
+                for x in 1..119 {
                     assert_eq!(b[(x, y)].bg, raised(), "{h} rows: ({x}, {y}) is raised");
                 }
+                // the side edges: on the ground, outside the grey
+                assert_eq!((b[(0, y)].symbol(), b[(0, y)].bg), ("│", ground), "{h} rows: the left edge");
+                assert_eq!((b[(119, y)].symbol(), b[(119, y)].bg), ("│", ground), "{h} rows: the right edge");
             }
-            // the history above stays on the ground
-            assert!((0..120).all(|x| b[(x, div - 1)].bg != raised()), "{h} rows: above the divider");
+            // the divider (its corners, labels and the panel's join) and
+            // the bottom edge: on the ground too, like the history above
+            for y in [div - 1, div, h - 1] {
+                assert!((0..120).all(|x| b[(x, y)].bg == ground), "{h} rows: row {y} is on the ground: {:?}", row(&b, y));
+            }
+            assert!(row(&b, h - 1).starts_with('╰'), "{h} rows: {:?}", row(&b, h - 1));
+            // the panel's rule stops at the divider: nothing under its join
+            let join = row(&b, div).chars().position(|c| c == '┴').unwrap_or_else(|| panic!("{h}: no join"));
+            assert!((div + 1..h - 1).all(|y| !["│", "┃"].contains(&b[(join as u16, y)].symbol())), "{h} rows: under the join");
             // the text keeps its colors on the tint: the bar faint, the placeholder dim
             let t = (div + 1..h).find(|&y| row(&b, y).contains(PLACEHOLDER_MAIN)).unwrap();
             assert_eq!((b[(3, t)].symbol(), b[(3, t)].fg), ("│", faint()));
         }
-        // bare (under 16 rows): the full width down to the last row
+        // bare (under 16 rows): the full width under the divider, down
+        // to the last row
         let b = screen(&mut app, 120, 15);
         let div = (0..15).find(|&y| row(&b, y).contains("you → main")).unwrap();
-        assert!((div..15).all(|y| (0..120).all(|x| b[(x, y)].bg == raised())));
+        assert!((div + 1..15).all(|y| (0..120).all(|x| b[(x, y)].bg == raised())));
+        assert!((0..120).all(|x| b[(x, div)].bg != raised()), "the divider stays on the ground");
         // under 14 rows the key bar is on the divider's right, no row of its own
         let b = screen(&mut app, 120, 13);
         let div = (0..13).find(|&y| row(&b, y).contains("you → main")).unwrap();
