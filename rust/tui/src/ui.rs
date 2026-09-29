@@ -195,7 +195,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     if let Some(p) = cols.panel {
         let h = divider_y.saturating_sub(body.y + 1);
         let r = Rect { x: area.x + p.x, width: p.w, y: body.y, height: h }.intersection(area);
-        sb::draw_panel(app, frame, r, p.name_cut);
+        sb::draw_panel(app, frame, r);
     }
     // the history: from the column's x to the feed area's right edge
     // (tables and code may run there)

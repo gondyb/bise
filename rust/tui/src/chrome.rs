@@ -188,8 +188,8 @@ const STEPS: [Step; 8] = {
         Step { state: false, words: false, size: Three, ..full },
         Step { state: false, words: false, size: One, ..full },
         Step { state: false, words: false, size: One, age: false, name_cut: None },
+        Step { state: false, words: false, size: One, age: false, name_cut: Some(20) },
         Step { state: false, words: false, size: One, age: false, name_cut: Some(12) },
-        Step { state: false, words: false, size: One, age: false, name_cut: Some(8) },
     ]
 };
 
@@ -383,11 +383,13 @@ mod tests {
         assert_eq!(divider_row(24, Some(&w), state), " you → marketing ≈ 42s ─");
         // (5) the seconds
         assert_eq!(divider_row(22, Some(&w), state), " you → marketing ≈ ───");
-        // (6) the name at 12, then 8
-        let name = "release-notes-writer";
-        assert!(divider_row_of(30, name, Some(&w), state).starts_with(" you → release-notes-writer ≈ "));
-        assert_eq!(divider_row_of(25, name, Some(&w), state), " you → release-not… ≈ ───");
-        assert_eq!(divider_row_of(19, name, Some(&w), state), " you → release… ≈ ─");
+        // (6) last: the name at 20, then 12 (BISE-109, was 12 then 8)
+        let name = "release-notes-writer-v2";
+        assert!(divider_row_of(33, name, Some(&w), state).starts_with(" you → release-notes-writer-v2 ≈ "));
+        assert!(divider_row_of(32, name, Some(&w), state).starts_with(" you → release-notes-write… ≈ ─"));
+        assert!(divider_row_of(30, name, Some(&w), state).starts_with(" you → release-notes-write… ≈ "));
+        assert_eq!(divider_row_of(29, name, Some(&w), state), format!(" you → release-not… ≈ {}", "─".repeat(7)));
+        assert_eq!(divider_row_of(22, name, Some(&w), state), " you → release-not… ≈ ");
     }
 
     #[test]

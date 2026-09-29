@@ -369,10 +369,11 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
 /// The envelope of a level-3 chip: `✉` in text presentation (U+2709
 /// U+FE0E: one column; book §9).
 pub(crate) const G_ENVELOPE: &str = "\u{2709}\u{FE0E}";
-/// Where a level-3 line group starts: x0+2 (the fold line too).
-const L3_X: &str = "  ";
-/// Where its text goes when there is no room beside the chip: x0+4.
-const L3_UNDER: &str = "    ";
+/// Where a level-3 line group starts: x0, flush with the text's left
+/// edge (the fold line too; BISE-109, was x0+2).
+const L3_X: &str = "";
+/// Where its text goes when there is no room beside the chip: x0+2.
+const L3_UNDER: &str = "  ";
 /// Less room than this beside the chip: the text goes under it.
 const L3_MIN_TEXT: usize = 30;
 /// A closed level-3 text shows at most this many rows, then `… ▸`.
@@ -552,11 +553,11 @@ fn l3_text_rows(text: &str, open: bool, room: usize) -> Vec<Line<'static>> {
     rows
 }
 
-/// A message between agents (level 3, book §9): at x0+2 the chip
+/// A message between agents (level 3, book §9): at x0 the chip
 /// ` ✉︎ sender → receiver ` on the `chip` tint, 1 ground space, then the
 /// dim text hung under its own first column, 2 rows at most then `… ▸`;
 /// open, the whole text. Less than 30 columns beside the chip: the text
-/// goes on the next rows at x0+4. No `to` (what this feed's owner
+/// goes on the next rows at x0+2. No `to` (what this feed's owner
 /// received): the owner's name (`main` in main's feed), else the
 /// message id (BISE-90).
 pub(crate) fn l3_lines(from: &str, to: &str, id: &str, text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
@@ -573,19 +574,20 @@ pub(crate) fn l3_lines_as(
     width: usize,
 ) -> Vec<Line<'static>> {
     use unicode_width::UnicodeWidthStr;
-    // W: the reading width from x0+2 (book §9 'Short on room')
+    // W: the reading width from x0 (book §9 'Short on room'); names cut
+    // at 24 / 16 / 10, and then only as the row's room asks (BISE-109)
     let w = width.saturating_sub(L3_X.len());
     let (cap, compact) = match w {
-        60.. => (12, false),
-        40..=59 => (8, false),
-        _ => (6, true),
+        60.. => (24, false),
+        40..=59 => (16, false),
+        _ => (10, true),
     };
     let (s, r) = chip_names(from, &l3_receiver(to, id), cap, chip_frame(compact, form), w);
     let mut head = vec![Span::raw(L3_X)];
     head.extend(chip_spans(&s, &r, form, compact));
     let beside = head.iter().map(|sp| sp.content.width()).sum::<usize>() + 1;
     if w < 60 || width.saturating_sub(beside) < L3_MIN_TEXT {
-        // the chip alone, the text under it: at x0+4, at x0+2 when compact
+        // the chip alone, the text under it: at x0+2, at x0 when compact
         let under = if compact { L3_X } else { L3_UNDER };
         let mut ls = vec![Line::from(head)];
         for r in l3_text_rows(text, open, width.saturating_sub(under.len())) {
@@ -665,7 +667,7 @@ fn answered_lines(agent: &str, question: &str, answer: &str, why: &str, open: bo
 }
 
 /// The fold of a run of level-3 lines (book §10): `▸ 47 messages
-/// between 30 agents`, dim at x0+2 like the chips, no chip (§9), cut
+/// between 30 agents`, dim at x0 like the chips, no chip (§9), cut
 /// from the right with `…` to fit `width`; the last run, still growing,
 /// carries the working pulse.
 pub(crate) fn fold_line(n: usize, agents: usize, open: bool, live: bool, tick: u32, width: usize) -> Line<'static> {
@@ -1210,9 +1212,9 @@ mod multiline_tests {
         // first column (BISE-106)
         let text = format!("one{}two {}", '\n', "x ".repeat(30));
         let s = screen(Ev::AgentMsg { from: "main".into(), to: "docs".into(), text, level: 3, id: String::new(), open: true, fold: false }, 70);
-        let head = format!("   {} main → docs  one", super::G_ENVELOPE);
+        let head = format!(" {} main → docs  one", super::G_ENVELOPE);
         assert_eq!(s[0], head, "{s:#?}");
-        let hang = " ".repeat(18);
+        let hang = " ".repeat(16);
         assert!(s[1].starts_with(&format!("{hang}two x")), "{s:#?}");
         assert!(s.len() >= 3 && s[1..].iter().all(|r| r.starts_with(&hang)), "{s:#?}");
         assert!(s.last().unwrap().ends_with(crate::theme::G_OPEN), "{s:#?}");
@@ -1361,10 +1363,11 @@ mod chip_tests {
     #[test]
     fn the_chip_is_tinted_with_a_bold_sender() {
         let ls = l3_lines_as(ChipForm::Tinted, "auth-fix", "release", "", "heads-up", false, 100);
-        assert_eq!(texts(&ls), [format!("   {G_ENVELOPE} auth-fix → release  heads-up")]);
+        assert_eq!(texts(&ls), [format!(" {G_ENVELOPE} auth-fix → release  heads-up")]);
         let spans = &ls[0].spans;
-        // x0+2 on the ground, then the chip: every cell tinted, 1 each side
-        assert_eq!(spans[0].content, "  ");
+        // the chip at x0, flush with the text (BISE-109): every cell
+        // tinted, 1 each side; nothing on the ground before it
+        assert_eq!(spans[0].content, "");
         assert_eq!(spans[0].style.bg, None);
         let chip: Vec<&Span> = spans[1..6].iter().collect();
         assert!(chip.iter().all(|s| s.style.bg == Some(chip_bg())), "{spans:?}");
@@ -1382,9 +1385,12 @@ mod chip_tests {
     }
 
     #[test]
-    fn names_are_cut_at_12() {
+    fn names_are_cut_at_24_only_when_longer() {
+        // BISE-109: room for real names (was 12)
         let ls = l3_lines_as(ChipForm::Tinted, "a-very-long-sender", "a-very-long-receiver", "", "hi", false, 100);
-        assert_eq!(texts(&ls), [format!("   {G_ENVELOPE} a-very-long… → a-very-long…  hi")]);
+        assert_eq!(texts(&ls), [format!(" {G_ENVELOPE} a-very-long-sender → a-very-long-receiver  hi")]);
+        let ls = l3_lines_as(ChipForm::Tinted, "a-very-long-sender-for-web", "a-very-long-receiver-of-news", "", "hi", false, 100);
+        assert_eq!(texts(&ls), [format!(" {G_ENVELOPE} a-very-long-sender-for-… → a-very-long-receiver-of…  hi")]);
     }
 
     #[test]
@@ -1392,7 +1398,7 @@ mod chip_tests {
         let long = "word ".repeat(60);
         let ls = l3_lines_as(ChipForm::Tinted, "docs", "main", "", &long, false, 80);
         let t = texts(&ls);
-        let at = format!("   {G_ENVELOPE} docs → main  ").width();
+        let at = format!(" {G_ENVELOPE} docs → main  ").width();
         assert_eq!(t.len(), 2, "{t:#?}");
         assert!(t[1].starts_with(&" ".repeat(at)) && t[1][at..].starts_with("word"), "{t:#?}");
         assert!(t[1].ends_with("word… ▸"), "{t:#?}");
@@ -1409,28 +1415,32 @@ mod chip_tests {
 
     #[test]
     fn short_on_room_the_text_goes_under_the_chip() {
-        // W ≥ 60 but less than 30 columns beside the chip: under, at x0+4
+        // W ≥ 60 but less than 30 columns beside the chip: under, at x0+2
         let ls = l3_lines_as(ChipForm::Tinted, "a-long-sender", "a-long-receiv", "", "hello there", false, 63);
         let t = texts(&ls);
-        assert_eq!(t, [format!("   {G_ENVELOPE} a-long-send… → a-long-rece…"), "    hello there".to_string()]);
-        // 40 ≤ W < 60: names at 8, the text always under at x0+4
+        assert_eq!(t, [format!(" {G_ENVELOPE} a-long-sender → a-long-receiv"), "  hello there".to_string()]);
+        // 40 ≤ W < 60: names up to 16, the text always under at x0+2
         let ls = l3_lines_as(ChipForm::Tinted, "auth-fix-web", "release", "", &"word ".repeat(30), false, 50);
         let t = texts(&ls);
-        assert_eq!(t[0], format!("   {G_ENVELOPE} auth-fi… → release"));
+        assert_eq!(t[0], format!(" {G_ENVELOPE} auth-fix-web → release"));
         assert_eq!(t.len(), 3, "{t:#?}");
-        assert!(t[1..].iter().all(|r| r.starts_with("    word")), "{t:#?}");
+        assert!(t[1..].iter().all(|r| r.starts_with("  word")), "{t:#?}");
         assert!(t[2].ends_with("… ▸"), "{t:#?}");
-        // W < 40: compact, still tinted, names at 6, the text at x0+2
+        let ls = l3_lines_as(ChipForm::Tinted, "the-auth-fix-for-web", "release", "", "ok", false, 50);
+        assert_eq!(texts(&ls)[0], format!(" {G_ENVELOPE} the-auth-fix-fo… → release"));
+        // W < 40: compact, still tinted, names up to 10, the text at x0
         let ls = l3_lines_as(ChipForm::Tinted, "auth-fix", "release", "", "ok", false, 30);
-        assert_eq!(texts(&ls), [format!("  {G_ENVELOPE}auth-…→relea…"), "  ok".to_string()]);
+        assert_eq!(texts(&ls), [format!("{G_ENVELOPE}auth-fix→release"), "ok".to_string()]);
         assert!(ls[0].spans[1..].iter().all(|s| s.style.bg == Some(chip_bg())), "{:?}", ls[0]);
+        let ls = l3_lines_as(ChipForm::Tinted, "auth-fix-web", "release", "", "ok", false, 30);
+        assert_eq!(texts(&ls)[0], format!("{G_ENVELOPE}auth-fix-…→release"));
         // tighter still: the receiver is cut before the sender, never
         // the envelope nor the arrow
         let ls = l3_lines_as(ChipForm::Tinted, "auth-fix", "release", "", "ok", false, 12);
         let head = texts(&ls)[0].clone();
-        assert_eq!(head, format!("  {G_ENVELOPE}auth-…→r…"));
+        assert_eq!(head, format!("{G_ENVELOPE}auth-fix→r…"));
         let ls = l3_lines_as(ChipForm::Tinted, "auth-fix", "release", "", "ok", false, 8);
-        assert_eq!(texts(&ls)[0], format!("  {G_ENVELOPE}au…→…"));
+        assert_eq!(texts(&ls)[0], format!("{G_ENVELOPE}auth…→…"));
         for w in 1..120 {
             let ls = l3_lines_as(ChipForm::Tinted, "auth-fix-web", "release-notes", "", &"word ".repeat(40), false, w);
             let t = texts(&ls);
@@ -1443,18 +1453,18 @@ mod chip_tests {
     fn no_tint_and_ascii_use_brackets() {
         // NO_COLOR / 16 colors: no tint, `[✉︎ sender → receiver]`
         let ls = l3_lines_as(ChipForm::Bracketed, "auth-fix", "release", "", "heads-up", false, 100);
-        assert_eq!(texts(&ls), [format!("  [{G_ENVELOPE} auth-fix → release] heads-up")]);
+        assert_eq!(texts(&ls), [format!("[{G_ENVELOPE} auth-fix → release] heads-up")]);
         assert!(ls[0].spans.iter().all(|s| s.style.bg.is_none()), "{:?}", ls[0]);
         assert!(ls[0].spans.iter().any(|s| s.content == "auth-fix" && s.style.add_modifier.contains(Modifier::BOLD)));
         // the same cut rules
         let ls = l3_lines_as(ChipForm::Bracketed, "auth-fix", "release", "", "ok", false, 30);
-        assert_eq!(texts(&ls), [format!("  [{G_ENVELOPE}auth-…→relea…]"), "  ok".to_string()]);
+        assert_eq!(texts(&ls), [format!("[{G_ENVELOPE}auth-fix→release]"), "ok".to_string()]);
         // ASCII: `[@ sender > receiver]`, whatever the colors
         crate::theme::set_ascii_for_tests(true);
         let ls = l3_lines("auth-fix", "release", "", "heads-up", false, 100);
         let long = l3_lines("a", "b", "", &"word ".repeat(60), false, 80);
         crate::theme::set_ascii_for_tests(false);
-        assert_eq!(texts(&ls), ["  [@ auth-fix > release] heads-up"]);
+        assert_eq!(texts(&ls), ["[@ auth-fix > release] heads-up"]);
         assert!(ls[0].spans.iter().all(|s| s.style.bg.is_none()));
         assert!(texts(&long)[1].ends_with("word... +"), "{:#?}", texts(&long));
         assert!(texts(&long).iter().all(|r| r.is_ascii()));
@@ -1477,14 +1487,14 @@ mod chip_tests {
     }
 
     #[test]
-    fn the_fold_line_sits_at_x0_2_and_is_cut_from_the_right() {
+    fn the_fold_line_sits_at_x0_and_is_cut_from_the_right() {
         let l = fold_line(47, 30, false, false, 0, 100);
-        assert_eq!(text_of(&l), format!("  {G_CLOSED} 47 messages between 30 agents"));
+        assert_eq!(text_of(&l), format!("{G_CLOSED} 47 messages between 30 agents"));
         assert!(l.spans.iter().all(|s| s.style.bg.is_none()));
         let l = fold_line(47, 30, false, true, 0, 20);
         let t = text_of(&l);
         assert_eq!(t.width(), 20, "{t:?}");
-        assert!(t.starts_with(&format!("  {G_CLOSED} 47 messages")) && t.contains('…'), "{t:?}");
+        assert!(t.starts_with(&format!("{G_CLOSED} 47 messages")) && t.contains('…'), "{t:?}");
         // the pulse stays
         assert!(t.ends_with(crate::theme::working_frame(0).0), "{t:?}");
     }

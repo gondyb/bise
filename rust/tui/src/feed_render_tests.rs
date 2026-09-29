@@ -855,9 +855,9 @@ fn cached_text(events: &[Ev], cache: &mut Vec<Option<EventRows>>, width: usize) 
 }
 
 /// A level-3 message drawn beside its chip (BISE-106), as `cached_text`
-/// gives it: at x0+2, ` ✉︎ from → to `, 1 space, the text.
+/// gives it: at x0, ` ✉︎ from → to `, 1 space, the text.
 fn chip_row(from: &str, to: &str, text: &str) -> String {
-    format!("   {} {} → {}  {}", crate::render::G_ENVELOPE, from, to, text).trim_end().to_string()
+    format!(" {} {} → {}  {}", crate::render::G_ENVELOPE, from, to, text).trim_end().to_string()
 }
 
 /// `n` level-3 lines among `k` agents, numbered from `from`.
@@ -879,14 +879,14 @@ fn a_run_of_twelve_folds() {
     let pulse = crate::theme::working_frame(0).0;
     assert_eq!(
         rows,
-        vec!["│  ship it ✓✓".to_string(), String::new(), format!("  ▸ 12 messages between 5 agents {}", pulse)],
+        vec!["│  ship it ✓✓".to_string(), String::new(), format!("▸ 12 messages between 5 agents {}", pulse)],
         "the whole run is one line, live"
     );
     // opened in place, in order, each line a chip; every line is a new
     // pair here, so a blank row between them (BISE-106)
     assert!(toggle_event(&mut events, &mut cache, 1));
     let rows = cached_text(&events, &mut cache, 100);
-    assert_eq!(rows[2], format!("  ▾ 12 messages between 5 agents {}", pulse));
+    assert_eq!(rows[2], format!("▾ 12 messages between 5 agents {}", pulse));
     assert_eq!(rows.len(), 3 + 12 + 11, "{rows:#?}");
     for (j, r) in rows[3..].iter().enumerate() {
         let want = if j % 2 == 1 { String::new() } else { chip_row(&format!("a{}", j / 2 % 5), &format!("a{}", (j / 2 + 1) % 5), &format!("message {}", j / 2)) };
@@ -904,7 +904,7 @@ fn a_level_two_line_closes_the_run() {
     evs.extend(traffic(2, 3, 5));
     let (mut events, mut cache) = arrive(evs);
     let rows = cached_text(&events, &mut cache, 100);
-    assert_eq!(rows[0], "  ▸ 5 messages between 3 agents", "closed: no pulse");
+    assert_eq!(rows[0], "▸ 5 messages between 3 agents", "closed: no pulse");
     assert_eq!(rows[1], "");
     assert_eq!(rows[2], format!(" {} docs to you: the v2 docs are up.", crate::theme::G_MSG));
     assert_eq!(rows[3], "");
@@ -916,15 +916,15 @@ fn a_level_two_line_closes_the_run() {
     }
     let rows = cached_text(&events, &mut cache, 100);
     let pulse = crate::theme::working_frame(0).0;
-    assert_eq!(rows[0], "  ▸ 5 messages between 3 agents");
-    assert_eq!(rows[4], format!("  ▸ 4 messages between 3 agents {}", pulse));
+    assert_eq!(rows[0], "▸ 5 messages between 3 agents");
+    assert_eq!(rows[4], format!("▸ 4 messages between 3 agents {}", pulse));
     assert_eq!(rows.len(), 5, "{rows:#?}");
     // a main line (level 2) and a card (level 1) close it too
     for closer in [Ev::Assistant("done.".into()), Ev::Card { text: "#1 question @docs : v1 or v2?".into(), closed: String::new() }] {
         let mut evs = traffic(4, 3, 0);
         evs.push(closer);
         let (events, mut cache) = arrive(evs);
-        assert_eq!(cached_text(&events, &mut cache, 100)[0], "  ▸ 4 messages between 3 agents");
+        assert_eq!(cached_text(&events, &mut cache, 100)[0], "▸ 4 messages between 3 agents");
     }
 }
 
@@ -1009,9 +1009,9 @@ fn time_marks_after_a_pause() {
     evs.extend(traffic(4, 2, 4));
     let (events, mut cache) = arrive(evs);
     let rows = cached_text(&events, &mut cache, 100);
-    assert_eq!(rows[0], "  ▸ 4 messages between 2 agents");
+    assert_eq!(rows[0], "▸ 4 messages between 2 agents");
     assert_eq!(rows[2], " · 15:02 ·");
-    assert!(rows[4].starts_with("  ▸ 4 messages between 2 agents "));
+    assert!(rows[4].starts_with("▸ 4 messages between 2 agents "));
     assert!(local_hhmm().len() == 5 && local_hhmm().as_bytes()[2] == b':');
 }
 
@@ -1140,15 +1140,15 @@ fn a_busy_hour_matches_the_mockup() {
         "".into(),
         " that's 30 pieces. i split it: 12 endpoints, 8 sdk, 6 docs, 4 migration. starting them.".into(),
         "".into(),
-        "  ▸ 47 messages between 30 agents".into(),
+        "▸ 47 messages between 30 agents".into(),
         "".into(),
         " the 12 endpoint agents agreed on one error format; i picked it for the sdk agents too.".into(),
         "".into(),
-        "  ▸ 23 messages between 9 agents".into(),
+        "▸ 23 messages between 9 agents".into(),
         "".into(),
         " ✓ ep-users: 4 endpoints are done: users, orgs, keys, audit. ▸ report".into(),
         "".into(),
-        "  ▾ 5 messages between 6 agents".into(),
+        "▾ 5 messages between 6 agents".into(),
         chip_row("sdk-py", "sdk-ts", "same pagination shape as you?"),
         chip_row("sdk-ts", "sdk-py", "yes: cursor + limit, max 200."),
         "".into(),
@@ -1160,7 +1160,7 @@ fn a_busy_hour_matches_the_mockup() {
     assert_eq!(rows[..want.len()], want[..], "{rows:#?}");
     let tail: Vec<&String> = rows[want.len()..].iter().collect();
     assert!(tail.iter().any(|r| r.contains("mig-db needs you")), "{rows:#?}");
-    assert_eq!(tail[tail.len() - 3..], [&" · 14:31 ·".to_string(), &String::new(), &format!("  ▸ 12 messages between 6 agents {}", pulse)]);
+    assert_eq!(tail[tail.len() - 3..], [&" · 14:31 ·".to_string(), &String::new(), &format!("▸ 12 messages between 6 agents {}", pulse)]);
 }
 
 // ---- BISE-15: message marks (C3, book §13) ----

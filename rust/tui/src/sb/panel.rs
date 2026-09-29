@@ -168,7 +168,7 @@ fn fit(s: &str, max: usize) -> String {
 
 /// The row of live agent `a`, entry `i` of the panel, number `num`
 /// (0 main; blank after 9).
-fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usize, name_cut: usize) -> Line<'static> {
+fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usize) -> Line<'static> {
     let focused = a.name == sb.focus;
     let selected = sb.selected == Some(i);
     let g = if a.main {
@@ -199,9 +199,9 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usi
         marks.push(Span::styled(format!(" · {} queued", mine), Style::default().fg(faint())));
     }
     let bg = selected.then(selection_bg);
-    // names cut at 16 columns (12 in a narrow panel), book §8
-    let name = fit(&a.name, name_cut.max(1));
-    row(num, g, &name, name_style, marks, right_of(app, sb, a), w, bg)
+    // the name takes all the room left of the marks and the state; it is
+    // cut only there (BISE-109: no fixed cap)
+    row(num, g, &a.name, name_style, marks, right_of(app, sb, a), w, bg)
 }
 
 /// The live agents (main and the archived left out) by what the header
@@ -337,7 +337,7 @@ fn home_path(path: &str) -> String {
     }
 }
 
-pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect, name_cut: usize) {
+pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     let Some(sb) = app.sb.as_ref() else { return };
     // no rule on its left: whitespace and alignment do the job (book §8)
     let w = area.width as usize;
@@ -358,7 +358,7 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect, name_cut: usi
         }
         owners.push((lines.len(), Hit::Agent(a.name.clone())));
         let n = numbers.iter().find(|(name, _)| *name == a.name).map(|(_, n)| *n);
-        lines.push(agent_row(app, sb, a, i, n, w, name_cut));
+        lines.push(agent_row(app, sb, a, i, n, w));
         // the selected agent: what it is for and its last note, under its row
         if sb.selected == Some(i) && !a.main {
             for t in [&a.objective, &a.note].into_iter().filter(|t| !t.is_empty()) {
@@ -896,7 +896,7 @@ mod tests {
     /// The panel alone, `w` columns wide, `h` rows high.
     fn panel_rows(app: &App, w: u16, h: u16) -> Vec<String> {
         let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
-        term.draw(|f| draw_panel(app, f, f.area(), 16)).unwrap();
+        term.draw(|f| draw_panel(app, f, f.area())).unwrap();
         screen(&term)
     }
 
@@ -943,13 +943,16 @@ mod tests {
             assert!(row("eleventh").starts_with(&format!("   {} eleventh", G_IDLE)), "{:?}", row("eleventh"));
             assert!(!t.iter().any(|r| r.to_lowercase().contains("task")), "no \"task\" in the panel");
         }
-        // 28 columns: a long name is cut, the worktree mark kept
+        // 28 columns: the whole name when it fits; narrower, it is cut
+        // only there, the worktree mark kept
         let t = trimmed(&panel_rows(&app, 28, 16));
+        assert!(t.iter().any(|r| r.contains(&format!("big-refactor-of-auth {}", G_WORKTREE))), "{t:?}");
+        let t = trimmed(&panel_rows(&app, 22, 16));
         let big = t.iter().find(|r| r.contains("big-")).unwrap();
         assert!(big.contains("…") && big.contains(G_WORKTREE), "{:?}", big);
-        // names are cut at 16 even with room (book §8)
+        // with room, the whole name: no fixed cap (BISE-109)
         let t = trimmed(&panel_rows(&app, 40, 16));
-        assert!(t.iter().any(|r| r.contains(&format!("big-refactor-of… {}", G_WORKTREE))), "{}", t.join("\n"));
+        assert!(t.iter().any(|r| r.contains(&format!("big-refactor-of-auth {}", G_WORKTREE))), "{}", t.join("\n"));
     }
 
     /// Colors: the number faint, the agent in view in accent, "needs
@@ -959,7 +962,7 @@ mod tests {
         let mut app = every_state();
         app.sb.as_mut().unwrap().focus = "bench".into();
         let mut term = Terminal::new(TestBackend::new(40, 16)).unwrap();
-        term.draw(|f| draw_panel(&app, f, f.area(), 16)).unwrap();
+        term.draw(|f| draw_panel(&app, f, f.area())).unwrap();
         let rows = screen(&term);
         let buf = term.backend().buffer();
         let at = |n: &str, what: &str| {

@@ -28,12 +28,11 @@ const BARE: u16 = 1;
 struct Tier {
     from: u16,
     w: u16,
-    name_cut: usize,
     bare_gap: u16,
 }
 const TIERS: [Tier; 2] = [
-    Tier { from: 100, w: 28, name_cut: 16, bare_gap: 3 },
-    Tier { from: 90, w: 24, name_cut: 12, bare_gap: 2 },
+    Tier { from: 100, w: 28, bare_gap: 3 },
+    Tier { from: 90, w: 24, bare_gap: 2 },
 ];
 /// Framed: 1 blank column between the rule and the panel's text, 2
 /// between the history's last column and the rule.
@@ -56,13 +55,12 @@ const MAX_TEXT: u16 = 12;
 /// is `SHORT_BODY` rows or fewer.
 const SHORT_BODY: u16 = 8;
 
-/// The agents panel: its x, its width, where names are cut, and the x of
-/// its rule (framed only).
+/// The agents panel: its x, its width (names take the room its rows
+/// leave, BISE-109) and the x of its rule (framed only).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Panel {
     pub(crate) x: u16,
     pub(crate) w: u16,
-    pub(crate) name_cut: usize,
     pub(crate) rule: Option<u16>,
 }
 
@@ -93,9 +91,9 @@ pub(crate) fn framed(width: u16, height: u16) -> bool {
 }
 
 /// The columns of a `width` × `height` screen. Framed: text from column
-/// 3 to F − 4; F ≥ 100 a 28-column panel (text F − 31 .. F − 4, names cut
-/// at 16) behind a rule at F − 33, the history ending at F − 36; 90–99 a
-/// 24-column panel (rule at F − 29, names cut at 12); < 90 none.
+/// 3 to F − 4; F ≥ 100 a 28-column panel (text F − 31 .. F − 4) behind
+/// a rule at F − 33, the history ending at F − 36; 90–99 a 24-column
+/// panel (rule at F − 29); < 90 none.
 /// Unframed: margins of 1, the same panels 3 (2) columns from the feed,
 /// no rule. The column is 91 wide at most, centered in the feed area when
 /// that is at least 95 wide, else at its left.
@@ -112,11 +110,11 @@ pub(crate) fn cols(width: u16, height: u16) -> Cols {
             let x = width - margin - t.w;
             let rule = x - RULE_TO_TEXT;
             let feed_w = (rule - FEED_TO_RULE + 1).saturating_sub(margin).max(1);
-            (feed_w, Some(Panel { x, w: t.w, name_cut: t.name_cut, rule: Some(rule) }))
+            (feed_w, Some(Panel { x, w: t.w, rule: Some(rule) }))
         }
         Some(t) => {
             let feed_w = inner.saturating_sub(t.w + t.bare_gap).max(1);
-            (feed_w, Some(Panel { x: margin + feed_w + t.bare_gap, w: t.w, name_cut: t.name_cut, rule: None }))
+            (feed_w, Some(Panel { x: margin + feed_w + t.bare_gap, w: t.w, rule: None }))
         }
     };
     let feed_x = margin;
@@ -190,7 +188,7 @@ mod tests {
         let c = cols(160, 40);
         assert!(c.framed);
         assert_eq!((c.margin, c.feed_x, c.pane_w), (3, 3, 154));
-        assert_eq!(c.panel, Some(Panel { x: 129, w: 28, name_cut: 16, rule: Some(127) }));
+        assert_eq!(c.panel, Some(Panel { x: 129, w: 28, rule: Some(127) }));
         assert_eq!(c.panel.unwrap().x + 28 - 1, 160 - 4);
         assert_eq!(c.feed_x + c.feed_w - 1, 160 - 36);
         assert_eq!((c.feed_w, c.col_w, c.x0), (122, 91, 3 + (122 - 91) / 2));
@@ -205,9 +203,9 @@ mod tests {
         let c = cols(100, 40);
         assert_eq!((c.feed_w, c.x0, c.col_w), (62, 3, 62));
         assert_eq!(c.panel.unwrap().rule, Some(67));
-        // 95: panel 24, rule at F-29, names cut at 12
+        // 95: panel 24, rule at F-29
         let c = cols(95, 40);
-        assert_eq!(c.panel, Some(Panel { x: 68, w: 24, name_cut: 12, rule: Some(66) }));
+        assert_eq!(c.panel, Some(Panel { x: 68, w: 24, rule: Some(66) }));
         assert_eq!(c.feed_x + c.feed_w - 1, 95 - 32);
         // 80: no panel, column 74 (3..76)
         let c = cols(80, 40);
@@ -224,7 +222,7 @@ mod tests {
         assert_eq!((c.framed, c.margin, c.x0, c.col_w), (false, 1, 1, 57));
         let c = cols(120, 15);
         assert!(!c.framed);
-        assert_eq!(c.panel, Some(Panel { x: 91, w: 28, name_cut: 16, rule: None }));
+        assert_eq!(c.panel, Some(Panel { x: 91, w: 28, rule: None }));
         assert_eq!(c.panel.unwrap().x + 28 + 1, 120);
         // tiny: never zero
         assert!(cols(3, 3).col_w >= 1);
