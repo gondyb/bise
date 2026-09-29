@@ -15,7 +15,7 @@
         "content": [
           {
             "kind": "text",
-            "text": "interrupted by a restart"
+            "text": "tool bash failed: no result: bise restarted while this ran"
           }
         ]
       }

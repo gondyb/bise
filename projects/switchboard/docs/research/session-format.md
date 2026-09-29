@@ -637,11 +637,15 @@ plus the UI history.
    A `checkpoint` lists context events by `seq`: load those lines (they
    are in this segment or an older one, found by scanning; no offset
    index for now).
-5. **Close what the crash left open.** If the last `turn_started` has no
-   `turn_ended`:
-   - for each `ToolCall` of the last `assistant_message` with no
-     `tool_result`: write `tool_result {ok: false, content: "interrupted
-     by a restart"}` (the provider needs a result for every call);
+5. **Close what the crash left open.** Every `ToolCall` of the context
+   with no `tool_result` gets `tool_result {ok: false, content: "tool
+   <name> failed: no result: bise restarted while this ran"}`, wherever it
+   is (BISE-242: the provider needs a result for every call, right after
+   its assistant message, or it refuses every later request). A call cut
+   inside the context (a hub restart lost its result, and a later turn
+   went on) gets `after: <seq>`: the state puts the result right after
+   that context event (its assistant message or the group's last result)
+   instead of at the end. If the last `turn_started` has no `turn_ended`:
    - write `interrupted {by: "restart"}` and `turn_ended {outcome:
      "crashed"}`;
    - if it is a hub agent, write `context_injected {kind: "resume_note"}`

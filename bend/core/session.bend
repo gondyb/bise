@@ -13,6 +13,7 @@ import ./types.bend as T
 import ./estimate.bend as E
 import ./compaction.bend as C
 import ./wire.bend as W
+import ./history.bend as H
 
 # ---- dispatch result (internal) ----
 type DRes is Data:
@@ -53,11 +54,13 @@ def head_role(input: List<&2, T.Msg>) -> Maybe<&2, T.Role>:
         case T.Msg{role, _, _, _}:
           Some{role}
 
-# the projected model input: system message + canonical history
+# the projected model input: system message + canonical history, every
+# call answered before the next message (H.pair_calls, BISE-242: a
+# history cut by a restart never reaches the provider unpaired)
 def model_input(+cfg: T.Cfg, +history: List<&2, T.Msg>) -> List<&2, T.Msg>:
   match cfg:
     case T.Cfg{_, _, _, system, _}:
-      Con{T.sys(system), history}
+      Con{T.sys(system), H.pair_calls(history)}
 
 def calls_count(calls: List<&2, T.Call>) -> Nat:
   match calls:
@@ -877,12 +880,13 @@ def apply.interrupt(+s: T.Session) -> T.Res:
 
 def apply.fail(+error: String, +s: T.Session) -> T.Res:
   match s:
-    case T.Sess{_, _, _, _, +turn, _, _, _}:
+    case T.Sess{_, _, _, _, +turn, +pending, _, _}:
       match turn:
         case Some{t}:
-          # the turn dies: what it was still holding is committed
+          # the turn dies: what it was still holding is committed, and
+          # the calls it waited for are answered first (BR-001, BISE-242)
           T.Accepted{Con{T.TurnDone{String.append("failed: ", error)}, Nil{}},
-            Nil{}, bump_inputs(finish_turn(s))}
+            Nil{}, bump_inputs(finish_turn(with_msgs(s, interrupt_closes(pending))))}
         case None{}:
           T.Rejected{"no active turn"}
 

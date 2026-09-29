@@ -6,6 +6,7 @@
 //! 1-based positions in the current context list; an assistant `model`
 //! "" is the current model; a config fact equal to the state is skipped.
 //! A checkpoint follows each compaction; rotation happens at a turn end.
+use crate::pairing;
 use crate::project::{materialize_images, project};
 use crate::reader::{read_dir, Log};
 use crate::resume::resume;
@@ -25,7 +26,25 @@ pub struct Recorder {
     queued: BTreeMap<u64, (String, Value)>,
     /// the repair a resume appended (§7 step 5)
     pub repaired: Vec<u64>,
+    /// the calls of the last assistant message still waiting for their
+    /// result: (call id, tool name) (BISE-242)
+    owed: Vec<(String, String)>,
 }
+
+/// The events that may not come while a call waits for its result: the
+/// Core writes a call's result before any of them, so one of them with
+/// a call still owed means the result was lost (the hub was down while
+/// an adopted REPL sent it) or the turn was cut.
+const CUTS: &[&str] = &[
+    "turn_started",
+    "turn_ended",
+    "user_message",
+    "agent_message",
+    "context_injected",
+    "assistant_message",
+    "compaction_started",
+    "compaction_done",
+];
 
 fn session_of(log: &Log) -> String {
     log.events
@@ -51,7 +70,7 @@ impl Recorder {
     pub fn create(dir: &Path, blobs: &Path, start: Value, writer: &str) -> Result<Recorder, OpenError> {
         let session = start.get("session").and_then(Value::as_str).unwrap_or("").to_string();
         let w = Writer::create(dir, blobs, start, writer)?;
-        Ok(Recorder { w, st: State::default(), session, in_turn: false, queued: BTreeMap::new(), repaired: Vec::new() })
+        Ok(Recorder { w, st: State::default(), session, in_turn: false, queued: BTreeMap::new(), repaired: Vec::new(), owed: Vec::new() })
     }
 
     /// An existing session, for a fresh REPL: resumed (§7: the crash
@@ -59,17 +78,59 @@ impl Recorder {
     pub fn resume(dir: &Path, blobs: &Path, writer: &str) -> Result<Recorder, OpenError> {
         let r = resume(dir, blobs, writer)?;
         let queued = queued_of(&r.log, &r.state);
-        Ok(Recorder { session: session_of(&r.log), queued, st: r.state, w: r.writer, in_turn: false, repaired: r.repaired })
+        Ok(Recorder { session: session_of(&r.log), queued, st: r.state, w: r.writer, in_turn: false, repaired: r.repaired, owed: Vec::new() })
     }
 
     /// An existing session whose REPL still runs (a hub restarted and
-    /// adopted it): no repair, the open turn goes on.
+    /// adopted it): no crash repair, the open turn goes on. A call cut
+    /// inside the context (its result lost for good) is closed now; the
+    /// calls of the last assistant message may still get their result:
+    /// they are closed only if a cut event comes first (BISE-242).
     pub fn attach(dir: &Path, blobs: &Path) -> Result<Recorder, OpenError> {
         let (w, log) = Writer::open(dir, blobs)?;
         let st = State::rebuild(&log);
         let queued = queued_of(&log, &st);
         let in_turn = st.open_turn.is_some();
-        Ok(Recorder { session: session_of(&log), queued, st, w, in_turn, repaired: Vec::new() })
+        let mut groups = pairing::owed(&log, &st);
+        let owed = match groups.last() {
+            Some(g) if g.trailing => groups.pop().map(|g| g.calls).unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        let mut r = Recorder { session: session_of(&log), queued, st, w, in_turn, repaired: Vec::new(), owed };
+        let turn = r.st.open_turn;
+        for data in pairing::closing(&groups, r.w.last_seq() + 1) {
+            let seq = r.append_fact("tool_result", data, turn)?;
+            r.repaired.push(seq);
+        }
+        Ok(r)
+    }
+
+    /// Append one fact the recorder itself writes; its seq.
+    fn append_fact(&mut self, typ: &str, data: Value, turn: Option<u64>) -> std::io::Result<u64> {
+        let (seq, data) = self.w.append_data(typ, data, turn)?;
+        let p = Payload::parse(typ, 1, &data).and_then(Result::ok);
+        self.st.apply(seq, turn, p.as_ref());
+        Ok(seq)
+    }
+
+    /// Before a cut event: every owed call gets a failed result and a
+    /// turn that never ended ends (crashed), so the context stays paired
+    /// whatever the REPL's lost lines were (BISE-242).
+    fn close_cut(&mut self, typ: &str) -> Result<(), String> {
+        if !CUTS.contains(&typ) {
+            return Ok(());
+        }
+        let turn = self.in_turn.then(|| self.st.counters.turn.max(1));
+        for (call, name) in std::mem::take(&mut self.owed) {
+            eprintln!("session {}: call {call} had no result before {typ}: closed", self.session);
+            self.append_fact("tool_result", pairing::no_result(&call, &name, None), turn).map_err(|e| e.to_string())?;
+        }
+        if typ == "turn_started" && self.in_turn {
+            eprintln!("session {}: turn {} never ended: closed", self.session, self.st.counters.turn);
+            self.append_fact("turn_ended", json!({"outcome": "crashed"}), turn).map_err(|e| e.to_string())?;
+            self.in_turn = false;
+        }
+        Ok(())
     }
 
     pub fn state(&self) -> &State {
@@ -107,6 +168,16 @@ impl Recorder {
         if !self.resolve(&typ, &mut data)? {
             return Ok(None);
         }
+        self.close_cut(&typ)?;
+        if typ == "tool_result" {
+            let call = data.get("call").and_then(Value::as_str).unwrap_or("");
+            if !self.owed.iter().any(|(c, _)| c == call) {
+                // its call is not in the log (lost) or already closed: in
+                // the context it would follow no call (BISE-242)
+                eprintln!("session {}: result of {call} with no call waiting: not written", self.session);
+                return Ok(None);
+            }
+        }
         let turn = match typ.as_str() {
             "turn_started" => {
                 self.in_turn = true;
@@ -126,6 +197,11 @@ impl Recorder {
             self.queued.insert(seq, (kind, serde_json::to_value(&q.content).unwrap_or(Value::Null)));
         }
         self.st.apply(seq, turn, payload.as_ref());
+        match &payload {
+            Some(Payload::AssistantMessage(m)) => self.owed = m.calls.iter().map(|c| (c.id.clone(), c.name.clone())).collect(),
+            Some(Payload::ToolResult(r)) => self.owed.retain(|(c, _)| *c != r.call),
+            _ => {}
+        }
         self.queued.retain(|s, _| self.st.queue.contains(s));
         if typ == "compaction_done" {
             let cp = self.st.checkpoint(seq);

@@ -279,6 +279,10 @@ pub struct ToolResult {
     pub ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit: Option<i64>,
+    /// a synthetic result closing a call cut before its result (BISE-242):
+    /// the context seq it goes right after (absent: the context's end)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -19,3 +19,4 @@ pub mod legacy;
 pub mod migrate;
 pub mod show;
 pub mod recorder;
+pub mod pairing;

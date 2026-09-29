@@ -116,7 +116,14 @@ impl State {
                 self.counters.req = self.counters.req.max(m.req);
                 self.context.push(seq);
             }
-            Payload::ToolResult(_) => self.context.push(seq),
+            Payload::ToolResult(r) => {
+                // a synthetic result goes right after its call's group
+                // (BISE-242), else at the end like every context event
+                match r.after.and_then(|a| self.context.iter().position(|&s| s == a)) {
+                    Some(p) => self.context.insert(p + 1, seq),
+                    None => self.context.push(seq),
+                }
+            }
             Payload::Usage(u) => {
                 self.counters.req = self.counters.req.max(u.req);
                 self.usage_total.input += u.input;

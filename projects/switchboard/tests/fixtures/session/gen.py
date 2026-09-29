@@ -132,7 +132,7 @@ def _():
         base_state([7, 8, 11], counters={"req": 1, "turn": 1},
                    usage={"input": 12400, "output": 230, "cache_read": 5200, "cache_write": 7200}),
         repair=[
-            {"type": "tool_result", "turn": 1, "data": {"call": "call_1", "ok": False, "content": text("interrupted by a restart")}},
+            {"type": "tool_result", "turn": 1, "data": {"call": "call_1", "ok": False, "content": text("tool bash failed: no result: bise restarted while this ran")}},
             {"type": "interrupted", "turn": 1, "data": {"by": "restart", "during": "tool", "pending_calls": ["call_1"]}},
             {"type": "turn_ended", "turn": 1, "data": {"outcome": "crashed"}},
         ])

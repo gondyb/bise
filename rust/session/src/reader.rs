@@ -137,8 +137,11 @@ pub fn read_bytes(parts: &[(String, Vec<u8>)]) -> Log {
             }
         }
         let mut first = true;
+        // counted once: counting it per line made a read quadratic (a 2 MB
+        // log took 21 s in a debug build)
+        let lines = body.split(|&b| b == b'\n').count();
         for (k, line) in body.split(|&b| b == b'\n').enumerate() {
-            if k + 1 == body.split(|&b| b == b'\n').count() && line.is_empty() {
+            if k + 1 == lines && line.is_empty() {
                 break; // after the last newline
             }
             let loc = Loc { file: name.clone(), line: k + 1 };

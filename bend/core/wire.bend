@@ -803,3 +803,97 @@ def reply_err(+status: U32, +body: String) -> String:
 def is_structured(+name: String) -> Bool:
   Bool.or(String.eq(name, "run_typescript"),
     String.eq(name, "search_tool_functions"))
+# ---- the last guard before a provider request (BISE-242) ----
+# Every family (core/api.bend) builds its body from this WReq: a call
+# with no tool message right after its assistant message gets a failed
+# one, and a tool message no call waits for is dropped, so the provider
+# never sees an unpaired tool call (Anthropic answers 400 to it). The
+# Core already pairs its input (H.pair_calls); this covers the rest
+# (compaction requests, the context file, a runtime bug).
+
+type WTag is Data:
+  WTag{tool: Bool, m: WMsg}
+
+def wtag(+m: WMsg) -> WTag:
+  match m:
+    case WMsg{+role, +content, +calls}:
+      WTag{String.eq(role, "tool"), WMsg{role, content, calls}}
+
+def wtags(ms: List<&2, WMsg>) -> List<&2, WTag>:
+  match ms:
+    case Nil{}:
+      Nil{}
+    case Con{+m, rest}:
+      Con{wtag(m), wtags(rest)}
+
+def wcalls(+m: WMsg) -> List<&2, WCall>:
+  match m:
+    case WMsg{_, _, +calls}:
+      calls
+
+def wno_result(+name: String) -> WMsg:
+  WMsg{"tool", String.append("tool ", String.append(name,
+    " failed: no result: bise restarted while this ran")), Nil{}}
+
+def wcloses(owed: List<&2, WCall>) -> List<&2, WMsg>:
+  match owed:
+    case Nil{}:
+      Nil{}
+    case Con{c, rest}:
+      match c:
+        case WCall{_, +name, _}:
+          Con{wno_result(name), wcloses(rest)}
+
+def pair_tagged(ts: List<&2, WTag>, owed: List<&2, WCall>) -> List<&2, WMsg>:
+  match ts:
+    case Nil{}:
+      wcloses(owed)
+    case Con{t, rest}:
+      match t:
+        case WTag{tool, +m}:
+          match tool:
+            case True{}:
+              match owed:
+                case Nil{}:
+                  pair_tagged(rest, Nil{})
+                case Con{_, ow}:
+                  Con{m, pair_tagged(rest, ow)}
+            case False{}:
+              List.append(&2, WMsg, wcloses(owed),
+                Con{m, pair_tagged(rest, wcalls(m))})
+
+def wowes(owed: List<&2, WCall>) -> Bool:
+  match owed:
+    case Nil{}:
+      False{}
+    case Con{_, _}:
+      True{}
+
+def paired_tagged(ts: List<&2, WTag>, owed: List<&2, WCall>) -> Bool:
+  match ts:
+    case Nil{}:
+      Bool.not(wowes(owed))
+    case Con{t, rest}:
+      match t:
+        case WTag{tool, +m}:
+          match tool:
+            case True{}:
+              match owed:
+                case Nil{}:
+                  False{}
+                case Con{_, ow}:
+                  paired_tagged(rest, ow)
+            case False{}:
+              Bool.and(Bool.not(wowes(owed)), paired_tagged(rest, wcalls(m)))
+
+# the request with every call answered
+def pair_wire(req: WReq) -> WReq:
+  match req:
+    case WReq{+tools, +msgs, +cur}:
+      WReq{tools, pair_tagged(wtags(msgs), Nil{}), cur}
+
+# whether pair_wire changes the request (the runtime logs it)
+def wire_unpaired(req: WReq) -> Bool:
+  match req:
+    case WReq{_, +msgs, _}:
+      Bool.not(paired_tagged(wtags(msgs), Nil{}))

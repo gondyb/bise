@@ -194,3 +194,86 @@ def all_user(ms: List<&2, T.Msg>) -> Bool:
       True{}
     case Con{+m, rest}:
       all_user.put(is_user(m), m, all_user(rest))
+
+# ---- calls and results stay paired (BISE-242) ----
+# The provider contract: the calls of an assistant message are answered,
+# one tool message each, before any other message. The Core's tool
+# message carries no call id: the wire pairs them by position. A cut
+# (a restart, a lost event) can leave a call with no answer; pair_calls
+# gives it a failed one, and drops a tool message no call waits for.
+
+def no_result(+name: String) -> T.Msg:
+  T.tool_res(String.append("tool ", String.append(name,
+    " failed: no result: bise restarted while this ran")))
+
+# the failed answer of every call still owed, in call order
+def closes(owed: List<&2, T.Call>) -> List<&2, T.Msg>:
+  match owed:
+    case Nil{}:
+      Nil{}
+    case Con{c, rest}:
+      match c:
+        case T.Call{_, +name, _}:
+          Con{no_result(name), closes(rest)}
+
+# `ms` with every call answered: `owed` are the calls of the last
+# assistant message still waiting for their tool message
+def pair_calls.go(ms: List<&2, T.Msg>, owed: List<&2, T.Call>) -> List<&2, T.Msg>:
+  match ms:
+    case Nil{}:
+      closes(owed)
+    case Con{m, rest}:
+      match m:
+        case T.Msg{role, +text, +calls, +inj}:
+          match role:
+            case T.RTool{}:
+              match owed:
+                case Nil{}:
+                  pair_calls.go(rest, Nil{})
+                case Con{_, ow}:
+                  Con{T.Msg{T.RTool{}, text, calls, inj}, pair_calls.go(rest, ow)}
+            case T.RAsst{}:
+              List.append(&2, T.Msg, closes(owed),
+                Con{T.Msg{T.RAsst{}, text, calls, inj}, pair_calls.go(rest, calls)})
+            case T.RUser{}:
+              List.append(&2, T.Msg, closes(owed),
+                Con{T.Msg{T.RUser{}, text, calls, inj}, pair_calls.go(rest, Nil{})})
+            case T.RSys{}:
+              List.append(&2, T.Msg, closes(owed),
+                Con{T.Msg{T.RSys{}, text, calls, inj}, pair_calls.go(rest, Nil{})})
+
+def pair_calls(ms: List<&2, T.Msg>) -> List<&2, T.Msg>:
+  pair_calls.go(ms, Nil{})
+
+def owes(owed: List<&2, T.Call>) -> Bool:
+  match owed:
+    case Nil{}:
+      False{}
+    case Con{_, _}:
+      True{}
+
+# whether `ms` keeps the contract, `owed` being the calls still waiting
+def paired(ms: List<&2, T.Msg>, owed: List<&2, T.Call>) -> Bool:
+  match ms:
+    case Nil{}:
+      Bool.not(owes(owed))
+    case Con{m, rest}:
+      match m:
+        case T.Msg{role, _, +calls, _}:
+          match role:
+            case T.RTool{}:
+              match owed:
+                case Nil{}:
+                  False{}
+                case Con{_, ow}:
+                  paired(rest, ow)
+            case T.RAsst{}:
+              Bool.and(Bool.not(owes(owed)), paired(rest, calls))
+            case T.RUser{}:
+              Bool.and(Bool.not(owes(owed)), paired(rest, Nil{}))
+            case T.RSys{}:
+              Bool.and(Bool.not(owes(owed)), paired(rest, Nil{}))
+
+# a history the guard must change (the runtime logs it)
+def unpaired(ms: List<&2, T.Msg>) -> Bool:
+  Bool.not(paired(ms, Nil{}))

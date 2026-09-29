@@ -460,7 +460,7 @@ def t_session_crashes(E, c):
     after = evs()[n:]
     types = [e["type"] for e in after]
     check(types[:3] == ["tool_result", "interrupted", "turn_ended"], "the repair: %r" % types)
-    check(after[0]["data"]["ok"] is False and "interrupted by a restart" in after[0]["data"]["content"][0]["text"], "%r" % after[0])
+    check(after[0]["data"]["ok"] is False and "no result: bise restarted while this ran" in after[0]["data"]["content"][0]["text"], "%r" % after[0])
     check(after[2]["data"]["outcome"] == "crashed", "%r" % after[2])
     c.wait_status("main", ["idle", "done", "blocked"], 60)
     # a torn last line (a write cut by the machine dying)

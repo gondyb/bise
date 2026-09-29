@@ -1,5 +1,6 @@
 //! Resume (§7): open the log to append, rebuild the state, close what a
 //! crash left open, write process_opened.
+use crate::pairing;
 use crate::reader::Log;
 use crate::state::State;
 use crate::types::*;
@@ -18,31 +19,20 @@ pub struct Resumed {
 }
 
 /// The repair a crash needs (§7 step 5), as (type, data, turn), for
-/// the state rebuilt from `log`.
-pub fn repair_plan(log: &Log, st: &State) -> Vec<(&'static str, serde_json::Value, Option<u64>)> {
+/// the state rebuilt from `log`; `next` is the seq the first repair
+/// event gets. Every call of the context left without its result gets
+/// a failed one (BISE-242), wherever it is: a call cut inside an older
+/// turn (a hub restart that lost the result) goes right after its
+/// assistant message (`after`), so the context stays paired.
+pub fn repair_plan(log: &Log, st: &State, next: u64) -> Vec<(&'static str, serde_json::Value, Option<u64>)> {
     let mut out = Vec::new();
+    let groups = pairing::owed(log, st);
+    for data in pairing::closing(&groups, next) {
+        out.push(("tool_result", data, st.open_turn));
+    }
     if let Some(turn) = st.open_turn {
-        // the calls of the last assistant message of the open turn with no result
-        let start = log
-            .events
-            .iter()
-            .rposition(|e| matches!(e.payload, Some(Payload::TurnStarted { .. })))
-            .unwrap_or(0);
-        let mut pending: Vec<String> = Vec::new();
-        for e in &log.events[start..] {
-            match &e.payload {
-                Some(Payload::AssistantMessage(m)) => pending = m.calls.iter().map(|c| c.id.clone()).collect(),
-                Some(Payload::ToolResult(r)) => pending.retain(|c| *c != r.call),
-                _ => {}
-            }
-        }
-        for c in &pending {
-            out.push((
-                "tool_result",
-                json!({"call": c, "ok": false, "content": [{"kind": "text", "text": INTERRUPTED_BY_RESTART}]}),
-                Some(turn),
-            ));
-        }
+        let pending: Vec<String> =
+            groups.iter().filter(|g| g.trailing).flat_map(|g| g.calls.iter().map(|(c, _)| c.clone())).collect();
         let during = if !pending.is_empty() {
             "tool"
         } else if st.open_compaction.is_some() {
@@ -72,7 +62,7 @@ pub fn resume(dir: &Path, blobs: &Path, writer: &str) -> Result<Resumed, OpenErr
     let (mut w, log) = Writer::open(dir, blobs)?;
     let mut state = State::rebuild(&log);
     let mut repaired = Vec::new();
-    for (typ, data, turn) in repair_plan(&log, &state) {
+    for (typ, data, turn) in repair_plan(&log, &state, w.last_seq() + 1) {
         let seq = w.append(typ, data.clone(), turn)?;
         let p = Payload::parse(typ, 1, &data).and_then(Result::ok);
         state.apply(seq, turn, p.as_ref());

@@ -17,6 +17,7 @@ import ./settings.bend as St
 import ./provider-pure.bend as Pvp
 import ../core/image.bend as Im
 import ./debug.bend as Dbg
+import ./debug-pure.bend as Dp
 import ./usage-pure.bend as Us
 import ./oneshot-pure.bend as Osp
 import ../core/ev.bend as Ev
@@ -552,6 +553,22 @@ def img_req.pick(has: Bool, +request: String) -> IO(ImgReq):
 def img_req(+request: String) -> IO(ImgReq):
   img_req.pick(Im.has_image(request), request)
 
+# a request whose tool calls were not all answered (a history cut by a
+# restart): the guard answered them; one line in the debug log and one
+# on stderr, so the repair is never silent
+def unpaired_log(bad: Bool, +call: Nat, +req: U32) -> IO(Unit):
+  match bad:
+    case False{}:
+      IO.pure(Unit, Unit{})
+    case True{}:
+      do IO<Unit>:
+        IO.print_err(String.append("bise: request ", String.append(U32.show(req),
+          ": a tool call had no result; it got a failed one (no result: bise restarted while this ran)")))
+        +d : String <- Dbg.dir()
+        +ts : Nat <- Dbg.now(d)
+        Dbg.append(d, Dp.ev_line(ts, "unpaired_calls_answered",
+          Con{Dp.FNat{"call", call}, Con{Dp.FNat{"req", U32.to_nat(req)}, Nil{}}}) ++ "\n")
+
 # one call = up to max_attempts attempts; `call` (its start time, ms)
 # names the call in the debug log
 @unsafe
@@ -570,10 +587,14 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
             # a one-shot call (BISE_ONESHOT, BISE-126) goes out light:
             # no thinking / effort keys (runtime/oneshot-pure.bend)
             osr : Result<&1, &1, U32 & String, String> <- IO.get_env("BISE_ONESHOT")
+            # the last guard (BISE-242): every call answered, logged
+            # when it had to answer one
+            +wreq : W.WReq <- IO.pure(W.WReq, W.parse_wire(request))
+            og : Unit <- unpaired_log(W.wire_unpaired(wreq), call, req)
             +json : String <- IO.pure(String,
               Osp.light_if(Bool.not(String.is_empty(P.env_or(osr, ""))),
                 Api.wire_body(st,
-                  Api.api_body_for(st, model, facts, W.parse_wire(request)))))
+                  Api.api_body_for(st, model, facts, W.pair_wire(wreq)))))
             +body : String <- IO.pure(String, Enc.utf8.encode(Im.img_splice(json, imgs)))
             dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
             dump_dbg : Unit <- dump_wire(P.env_or(dr, ""), body)

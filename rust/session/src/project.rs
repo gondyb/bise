@@ -176,11 +176,34 @@ pub fn project(log: &Log, st: &State, blobs: &Path) -> Result<String, String> {
         }
     }
     o.push_str(&notifs);
+    // the last resort of BISE-242 (resume and the recorder already wrote
+    // a result for every cut call): a call with no result gets a failed
+    // one before the next message, a result no call waits for is left
+    // out, so the REPL never loads an unpaired history
+    let mut owed: Vec<(String, String)> = Vec::new();
+    let close = |owed: &mut Vec<(String, String)>, o: &mut String| {
+        for (c, name) in owed.drain(..) {
+            eprintln!("session projection: call {c} has no result: a failed one is projected");
+            o.push_str(&format!("MSG False tool : {}\n", escape_nl(&crate::pairing::no_result_text(&name))));
+        }
+    };
     for &s in &st.context {
         let e = log.by_seq(s).ok_or(format!("context seq {s} not in the log"))?;
         let p = e.payload.as_ref().ok_or(format!("context seq {s} is not readable"))?;
+        match p {
+            Payload::ToolResult(r) if !owed.iter().any(|(c, _)| *c == r.call) => {
+                eprintln!("session projection: seq {s}: result of {} with no call waiting: left out", r.call);
+                continue;
+            }
+            Payload::ToolResult(r) => owed.retain(|(c, _)| *c != r.call),
+            _ => close(&mut owed, &mut o),
+        }
+        if let Payload::AssistantMessage(m) = p {
+            owed = m.calls.iter().map(|c| (c.id.clone(), c.name.clone())).collect();
+        }
         o.push_str(&msg(p, blobs).map_err(|w| format!("seq {s}: {w}"))?);
     }
+    close(&mut owed, &mut o);
     Ok(o)
 }
 

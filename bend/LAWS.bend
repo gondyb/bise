@@ -3458,3 +3458,35 @@ law anth_budget_follows_the_effort:
       Nat.show(Anth.budget_for("high", 64000n)), Nat.show(Anth.budget_for("max", 64000n)),
       Nat.show(Anth.budget_for("", 64000n)), Nat.show(Anth.budget_for("low", 6000n))]
     == ["4000", "8000", "16000", "32000", "16000", "3000"] : List<&2, String>}
+
+# ---- calls and results stay paired (BISE-242) ----
+
+# LAW: whatever the history (a call cut by a restart, a lost result, a
+# stray result), the guard answers every call before any other message.
+law pair_calls_paired:
+  for +ms: List<&2, T.Msg>
+  {H.paired(H.pair_calls(ms), Nil{}) == True{} : Bool}
+
+# LAW: so every model input the Core sends is paired: the provider never
+# sees a tool call without its result right after it.
+law model_input_paired:
+  for +cfg: T.Cfg
+  for +h: List<&2, T.Msg>
+  {H.paired(S.model_input(cfg, h), Nil{}) == True{} : Bool}
+
+# LAW: on a history that is already paired, the guard changes nothing.
+law pair_calls_keeps_paired:
+  for +ms: List<&2, T.Msg>
+  for p: {H.paired(ms, Nil{}) == True{} : Bool}
+  {H.pair_calls(ms) == ms : List<&2, T.Msg>}
+
+# LAW: the wire guard: a call cut before its result gets a failed one,
+# right after its assistant message.
+law pair_wire_answers_the_cut:
+  {W.pair_wire(W.WReq{Nil{}, [W.WMsg{"user", "q", Nil{}},
+      W.WMsg{"assistant", "", [W.WCall{"call_7", "bash", "{}"}]},
+      W.WMsg{"user", "next", Nil{}}], None{}})
+    == W.WReq{Nil{}, [W.WMsg{"user", "q", Nil{}},
+      W.WMsg{"assistant", "", [W.WCall{"call_7", "bash", "{}"}]},
+      W.WMsg{"tool", "tool bash failed: no result: bise restarted while this ran", Nil{}},
+      W.WMsg{"user", "next", Nil{}}], None{}} : W.WReq}

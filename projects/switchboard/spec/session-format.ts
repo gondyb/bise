@@ -193,6 +193,8 @@ export type ToolResult = Ev<"tool_result", 1, {        // must: true
   content: Part[];          // what the model sees; big text → a blob part
   ms?: number;
   exit?: number;            // bash exit code, when there is one
+  after?: number;           // a synthetic result closing a cut call (BISE-242):
+                            // the context seq it goes right after (absent: the end)
 }>;
 
 // ---------- facts that do not enter the context ----------
