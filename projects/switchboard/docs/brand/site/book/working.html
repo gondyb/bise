@@ -119,5 +119,12 @@ function tick() {
 tick();
 document.getElementById("theme").onclick = () => { const l = document.body.classList.toggle("light"); document.querySelectorAll(".term").forEach((t) => t.dataset.theme = l ? "light" : "dark"); };
 </script>
+<script>/* notes: ⌥⇧A turns the annotation layer on or off (remembered); ?annotate works too */
+(() => { const K = "bise-annotate", load = () => document.head.append(Object.assign(document.createElement("script"), { src: "/annotate.js" }));
+  if (/[?&]annotate\b/.test(location.search)) localStorage.setItem(K, "on");
+  if (localStorage.getItem(K) === "on") load();
+  addEventListener("keydown", (e) => { if (!(e.altKey && e.shiftKey && e.code === "KeyA")) return; e.preventDefault();
+    if (localStorage.getItem(K) === "on") { localStorage.removeItem(K); location.reload(); } else { localStorage.setItem(K, "on"); load(); } });
+})();</script>
 </body>
 </html>

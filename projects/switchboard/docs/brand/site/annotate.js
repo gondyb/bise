@@ -1,28 +1,30 @@
-// annotations for content drafts. hover a block: ♡ ~ ✗ +. select text: note on it.
-// with serve.py: notes are saved to content/notes/<page>.json (+ .md). without: localStorage + copy.
+// annotations on any page of the site. drafts load it always; the other pages load it on ⌥⇧A (or ?annotate).
+// hover a block: ♡ ~ ✗ +. select text: note on it.
+// with serve.py: notes are saved to content/notes/<page>.json (+ .md). without (bise.dev): localStorage + copy all.
 (() => {
-  const PAGE = document.body.dataset.page || location.pathname.split('/').pop().replace(/\.html$/, '') || 'index';
+  if (window.__biseNotes) return; window.__biseNotes = true;
+  const PAGE = document.body.dataset.page || location.pathname.replace(/^\/+|\/+$/g, '').replace(/\.html$/, '').replace(/\/index$/, '').replace(/^content\//, '').replace(/\//g, '-') || 'index';
   const API = '/__notes/' + PAGE;
   const LS = 'bise-notes:' + PAGE;
-  const SEL = '[data-a], main h1, main h2, main h3, main p, main li, main tr, main blockquote';
+  const SEL = '[data-a], h1, h2, h3, h4, p, li, tr, blockquote, figcaption, pre, .feat, .mini';
   const MARK = { love: '♡', meh: '~', no: '✗' };
   let notes = [], server = false, showNotes = true;
 
   const css = `
-  .an-bar{position:absolute;z-index:50;display:none;gap:2px;background:var(--raised);border:1px solid var(--faint);border-radius:8px;padding:2px;font:13px/1 "JetBrains Mono",monospace}
+  .an-bar{position:absolute;z-index:50;display:none;gap:2px;background:var(--raised, #1f1c1a);border:1px solid var(--faint);border-radius:8px;padding:2px;font:13px/1 "JetBrains Mono",monospace}
   .an-bar button,.an-panel button,.an-ed button,.an-sel{all:unset;cursor:pointer;padding:5px 7px;border-radius:6px;color:var(--dim)}
-  .an-bar button:hover,.an-panel button:hover,.an-ed button:hover{background:var(--chip);color:var(--text)}
+  .an-bar button:hover,.an-panel button:hover,.an-ed button:hover{background:var(--chip, var(--raised, #26211f));color:var(--text)}
   .an-bar button.on{color:var(--acc)}
   .an-notes{display:block;margin:8px 0 4px;font:13px/1.6 "JetBrains Mono",monospace;letter-spacing:0;text-transform:none;font-weight:400}
   .an-hide .an-notes{display:none}
-  .an-note{border-left:2px solid var(--acc);background:var(--raised);padding:6px 10px;margin:4px 0;border-radius:0 6px 6px 0;color:var(--text);white-space:pre-wrap}
+  .an-note{border-left:2px solid var(--acc);background:var(--raised, #1f1c1a);padding:6px 10px;margin:4px 0;border-radius:0 6px 6px 0;color:var(--text);white-space:pre-wrap}
   .an-note .q{color:var(--dim);font-style:italic}
   .an-note .r{color:var(--dim);margin-top:4px}
   .an-note .x{float:right;color:var(--faint);cursor:pointer;margin-left:8px}.an-note .x:hover{color:var(--acc)}
   .an-ed{margin:6px 0;display:block}
-  .an-ed textarea{width:100%;box-sizing:border-box;min-height:64px;background:var(--raised);color:var(--text);border:1px solid var(--acc);border-radius:6px;padding:8px 10px;font:13px/1.6 "JetBrains Mono",monospace;resize:vertical;outline:none}
+  .an-ed textarea{width:100%;box-sizing:border-box;min-height:64px;background:var(--raised, #1f1c1a);color:var(--text);border:1px solid var(--acc);border-radius:6px;padding:8px 10px;font:13px/1.6 "JetBrains Mono",monospace;resize:vertical;outline:none}
   .an-ed .row{display:flex;gap:6px;justify-content:flex-end;font-size:12px}
-  .an-panel{position:fixed;right:16px;bottom:16px;z-index:60;background:var(--raised);border:1px solid var(--faint);border-radius:10px;padding:8px 10px;font:12px/1.5 "JetBrains Mono",monospace;color:var(--dim);display:flex;gap:4px;align-items:center;max-width:calc(100vw - 32px);flex-wrap:wrap}
+  .an-panel{position:fixed;right:16px;bottom:16px;z-index:60;background:var(--raised, #1f1c1a);border:1px solid var(--faint);border-radius:10px;padding:8px 10px;font:12px/1.5 "JetBrains Mono",monospace;color:var(--dim);display:flex;gap:4px;align-items:center;max-width:calc(100vw - 32px);flex-wrap:wrap}
   .an-panel b{color:var(--text);font-weight:600}.an-panel .ok{color:var(--acc)}
   .an-sel{position:absolute;z-index:55;display:none;background:var(--acc);color:var(--bg);font:12px/1 "JetBrains Mono",monospace;padding:6px 9px}
   .an-flag{outline:1px dashed var(--faint);outline-offset:4px;border-radius:2px}
@@ -80,7 +82,7 @@
   }
   function noteEl(n) {
     const d = document.createElement('div'); d.className = 'an-note';
-    d.innerHTML = `<span class="x" title="delete">×</span>${n.verdict ? `<span style="color:var(--acc)">${MARK[n.verdict]}</span> ` : ''}${n.sel ? `<span class="q">“${esc(n.quote)}”</span>${n.text ? '\n' : ''}` : ''}${esc(n.text)}${n.reply ? `<div class="r">↳ marketing: ${esc(n.reply)}</div>` : ''}`;
+    d.innerHTML = `<span class="x" title="delete">×</span>${n.verdict ? `<span style="color:var(--acc)">${MARK[n.verdict]}</span> ` : ''}${n.sel ? `<span class="q">“${esc(n.quote)}”</span>${n.text ? '\n' : ''}` : ''}${esc(n.text)}${n.reply ? `<div class="r">↳ designer: ${esc(n.reply)}</div>` : ''}`;
     d.querySelector('.x').onclick = () => { notes = notes.filter(m => m.id !== n.id); save(); render(); };
     return d;
   }
@@ -159,7 +161,7 @@
   // panel
   const pn = document.createElement('div'); pn.className = 'an-panel'; document.body.appendChild(pn);
   function panel() {
-    pn.innerHTML = `<span><b>${notes.length}</b> note${notes.length === 1 ? '' : 's'} · ${server ? '<span class="ok">saved for marketing ✓</span>' : 'local only · copy &amp; paste'}</span><button data-k="g">+ general</button><button data-k="c">copy all</button><button data-k="h">${showNotes ? 'hide' : 'show'}</button>`;
+    pn.innerHTML = `<span><b>${notes.length}</b> note${notes.length === 1 ? '' : 's'} · ${server ? '<span class="ok">saved for designer ✓</span>' : 'local only · copy &amp; paste'}</span><button data-k="g">+ general</button><button data-k="c">copy all</button><button data-k="h">${showNotes ? 'hide' : 'show'}</button>`;
     pn.querySelector('[data-k=g]').onclick = () => editor(null);
     pn.querySelector('[data-k=h]').onclick = () => { showNotes = !showNotes; document.body.classList.toggle('an-hide', !showNotes); panel(); };
     pn.querySelector('[data-k=c]').onclick = async e => {
@@ -169,7 +171,7 @@
   }
 
   load();
-  setInterval(async () => { // pick up marketing's replies
+  setInterval(async () => { // pick up the designer's replies
     if (!server || document.querySelector('.an-ed')) return;
     try { const r = await fetch(API, { cache: 'no-store' }); if (r.ok) { const fresh = await r.json(); if (JSON.stringify(fresh) !== JSON.stringify(notes)) { notes = fresh; render(); } } } catch (e) {}
   }, 5000);
