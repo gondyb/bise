@@ -115,7 +115,9 @@ bise doctor     # checks your install, keys and running hubs
 | | |
 |---|---|
 | [`rust/`](rust/) | the app: the terminal UI, the agent harness, plugins, sessions |
-| [`hub/`](hub/) | the Switchboard hub, written in [Bend](https://github.com/HigherOrderCO/Bend) |
+| [`bend/`](bend/) | the agent runtime and the Switchboard hub, written in [Bend](https://github.com/HigherOrderCO/Bend), and their laws (`LAWS.bend`, `PROOF.bend`) |
+| [`prompts/`](prompts/) | the system prompts and tool descriptions the agents read |
+| [`scripts/`](scripts/) | dev scripts: build the Bend binaries, build and switch versions |
 | [`projects/switchboard/`](projects/switchboard/) | design docs, packaging, tests |
 | [`projects/switchboard/docs/brand/`](projects/switchboard/docs/brand/) | the brand book, the site, these images |
 

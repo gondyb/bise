@@ -100,7 +100,7 @@ def main():
 
 def atomic_script():
     """The shell line runtime/persist.bend saves the checkpoint with."""
-    src = open(os.path.join(ROOT, "runtime", "persist.bend")).read()
+    src = open(os.path.join(ROOT, "bend", "runtime", "persist.bend")).read()
     m = re.search(r'def ATOMIC_SCRIPT\(\) -> String:\n  "((?:[^"\\]|\\.)*)"', src)
     if not m:
         sys.exit("FAIL no ATOMIC_SCRIPT in runtime/persist.bend")

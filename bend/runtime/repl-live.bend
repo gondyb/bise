@@ -74,9 +74,9 @@ def extra_prompt() -> IO(String):
 # unset or blank: nothing is added
 def live_prompt() -> IO(String):
   do IO<String>:
-    +tu : String <- prompt_read("prompt-tool-use.txt")
-    +ct : String <- prompt_read("prompt-current-time.txt")
-    +tone : String <- prompt_read("prompt-tone.txt")
+    +tu : String <- prompt_read("prompts/prompt-tool-use.txt")
+    +ct : String <- prompt_read("prompts/prompt-current-time.txt")
+    +tone : String <- prompt_read("prompts/prompt-tone.txt")
     tn : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_TOOLS_NOTE")
     +note : String <- IO.pure(String, P.env_or(tn, ""))
     +content : String <- Sk.prompt_content()

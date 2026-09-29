@@ -5,12 +5,12 @@
 # its sources into a cache keyed by the CONTENT of those sources, shared
 # by every worktree and by versions.sh, then copied where it is run.
 #
-#   ./bins.sh [--src <dir>] <name>...      <dir>/<name> = the build of <dir>'s
+#   scripts/bins.sh [--src <dir>] <name>...      <dir>/<name> = the build of <dir>'s
 #                                          sources (default <dir>: this repo)
-#   ./bins.sh path [--src <dir>] <name>    build if needed, print the cache file
-#   ./bins.sh key [--src <dir>] <name>     the cache key (hash of the sources)
-#   ./bins.sh macos-target                 the oldest macOS every binary runs on
-#   ./bins.sh minos <file>...              check each binary against it: exit 1
+#   scripts/bins.sh path [--src <dir>] <name>    build if needed, print the cache file
+#   scripts/bins.sh key [--src <dir>] <name>     the cache key (hash of the sources)
+#   scripts/bins.sh macos-target                 the oldest macOS every binary runs on
+#   scripts/bins.sh minos <file>...              check each binary against it: exit 1
 #                                          when one needs a newer macOS (or says
 #                                          nothing); no-op off macOS
 #
@@ -28,7 +28,7 @@
 # (BISE-164) comes from rust/.cargo/config.toml, the one place for it:
 # exported for the compile (bend -o calls cc) and part of the key.
 set -euo pipefail
-REPO="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
 # the same dirs as bise_home (rust/home): $BISE_HOME/dev, ~/.bise/dev once
 # migrated, else today's ~/.local/state/switchboard (XDG_STATE_HOME unread)
 if [ -n "${BISE_HOME:-}" ]; then STATE="$BISE_HOME/dev"
@@ -72,13 +72,20 @@ check_minos() {
   return $bad
 }
 
-# <name> -> "<main .bend> <source dirs...>"
+# the Bend sources of <src>: bend/ since the root cleanup, the root
+# before it (an old commit built by versions.sh)
+bend_dir() {  # <src>
+  if [ -d "$1/bend/runtime" ]; then echo bend/; fi
+}
+
+# <name> <src> -> "<main .bend> <source dirs...>"
 recipe() {
+  local b; b="$(bend_dir "$2")"
   case "$1" in
-    repl-live) echo "runtime/repl-live.bend runtime core vendor" ;;
-    repl-scripted) echo "runtime/repl.bend runtime core vendor" ;;
-    harness-demo) echo "runtime/demo.bend runtime core vendor" ;;
-    sb-core) echo "hub/main.bend hub vendor" ;;
+    repl-live) echo "${b}runtime/repl-live.bend ${b}runtime ${b}core ${b}vendor" ;;
+    repl-scripted) echo "${b}runtime/repl.bend ${b}runtime ${b}core ${b}vendor" ;;
+    harness-demo) echo "${b}runtime/demo.bend ${b}runtime ${b}core ${b}vendor" ;;
+    sb-core) echo "${b}hub/main.bend ${b}hub ${b}vendor" ;;
     # a cargo build (release): the crate and its path dependencies
     bend-jsrt) echo "cargo rust/jsrt rust/images rust/home" ;;
     *) say "unknown binary: $1 (repl-live repl-scripted sb-core harness-demo bend-jsrt)"; exit 2 ;;
@@ -90,7 +97,7 @@ recipe() {
 # binary built for another one is another binary). Packages (0x…) are
 # immutable.
 key() {  # <src> <name>
-  local r; r="$(recipe "$2")"
+  local r; r="$(recipe "$2" "$1")"
   if [ "${r%% *}" = cargo ]; then jsrt_key "$1" ${r#cargo }; return; fi
   set -- "$1" $r
   # only the dirs <src> has (find exits 1 on a missing one: pipefail)
@@ -122,7 +129,7 @@ copy() { cp -c "$1" "$2" 2>/dev/null || cp "$1" "$2"; }
 
 # compile <name> of <src> into <out>
 compile() {  # <src> <name> <out>
-  local src="$1" name="$2" out="$3" r; r="$(recipe "$name")"
+  local src="$1" name="$2" out="$3" r; r="$(recipe "$name" "$src")"
   if [ "${r%% *}" != cargo ]; then
     (cd "$src" && bend "${r%% *}" -o "$out" >/dev/null); return
   fi

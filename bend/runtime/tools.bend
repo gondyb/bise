@@ -12,24 +12,24 @@ import ../vendor/json.bend as J
 import ./tools-pure.bend as Xtp
 
 def search_desc() -> IO(String):
-  P.read_or("tool-desc-search.txt",
+  P.read_or("prompts/tool-desc-search.txt",
     "Discover callable tool functions for run_typescript.")
 
 def rt_desc() -> IO(String):
-  P.read_or("tool-desc-run-typescript.txt",
+  P.read_or("prompts/tool-desc-run-typescript.txt",
     "Executes TypeScript code in a sandbox environment.")
 
 def bash_desc() -> IO(String):
-  P.read_or("tool-desc-bash.txt",
+  P.read_or("prompts/tool-desc-bash.txt",
     "Run a real shell command and return its output. Args: the command.")
 
 def skill_desc() -> IO(String):
-  P.read_or("tool-desc-skill.txt",
+  P.read_or("prompts/tool-desc-skill.txt",
     "Load a specialized skill that provides domain-specific instructions and workflows.")
 
 def patch_desc() -> IO(String):
   do IO<String>:
-    m : Maybe<&2, String> <- P.read_file("tool-desc-apply-patch.txt")
+    m : Maybe<&2, String> <- P.read_file("prompts/tool-desc-apply-patch.txt")
     IO.pure(String, Xtp.patch_desc.read(m))
 
 def catalog() -> IO(List<&2, T.ToolDef>):

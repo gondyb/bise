@@ -47,10 +47,10 @@ else
   cp "${CARGO_TARGET_DIR:-$REPO/rust/target}/release/bise" "$src/bise"
   ln -s bise "$src/bend-harness"
   for b in repl-live repl-scripted sb-core; do
-    p="$("$REPO/bins.sh" path "$b" | tail -n 1)" && [ -x "$p" ] || { echo "bins.sh path $b failed"; exit 1; }
+    p="$("$REPO/scripts/bins.sh" path "$b" | tail -n 1)" && [ -x "$p" ] || { echo "bins.sh path $b failed"; exit 1; }
     cp "$p" "$src/$b"
   done
-  cp "$REPO"/tool-desc-*.txt "$REPO"/prompt-*.txt "$src/"
+  cp -R "$REPO/prompts" "$src/prompts"
   cp "$REPO"/LICENSE "$REPO"/NOTICE "$REPO"/THIRD_PARTY_NOTICES "$src/"
   printf '#!/bin/sh\necho "bend-jsrt stub (test-release.sh)" >&2; exit 1\n' > "$src/bend-jsrt"; chmod 755 "$src/bend-jsrt"
   ID1="t1$(git -C "$REPO" rev-parse --short HEAD | cut -c1-5)"

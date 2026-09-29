@@ -37,7 +37,7 @@ import subprocess
 import sys
 import time
 
-REPO = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUN = os.path.join(REPO, "run.sh")
 SESSIONS_DIR = "/tmp/bend-sessions"
 IDLE = "--- idle"

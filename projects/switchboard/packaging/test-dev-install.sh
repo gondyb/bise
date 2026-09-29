@@ -45,7 +45,7 @@ cp -cR "$V1" "$T/.bise/dev/versions/v1"
 if [ "$V2" != "$V1" ]; then cp -cR "$V2" "$T/.bise/dev/versions/v2"; else cp -cR "$V1" "$T/.bise/dev/versions/v2"; fi
 touch "$T/.bise/dev/versions/v2"   # the newest
 R1="$(cd "$T/.bise/dev/versions/v1" && pwd -P)"; R2="$(cd "$T/.bise/dev/versions/v2" && pwd -P)"
-(cd "$REPO" && git init -q && printf '#!/bin/sh\n' > versions.sh && chmod +x versions.sh)
+(cd "$REPO" && git init -q && mkdir scripts && printf '#!/bin/sh\n' > scripts/versions.sh && chmod +x scripts/versions.sh)
 PREPO="$(cd "$REPO" && pwd -P)"   # /tmp is /private/tmp
 trap cleanup EXIT
 

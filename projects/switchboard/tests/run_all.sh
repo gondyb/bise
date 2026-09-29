@@ -23,7 +23,7 @@ echo "== Rust: build, unit and scenario tests, clippy"
 unset SB_CORE_BIN
 # the Bend binaries the e2e/tmux tests run (./repl-live, ./repl-scripted,
 # ./sb-core; not in git): from bins.sh's cache, compiled on a miss
-./bins.sh repl-live repl-scripted sb-core || exit 1
+scripts/bins.sh repl-live repl-scripted sb-core || exit 1
 log="$(mktemp -t sb-run-all)"
 (cd rust && cargo build --offline -q) || exit 1
 # every test binary's summary; a failure stops here with cargo's report
@@ -46,7 +46,7 @@ out="$(mktemp -d -t sb-run-all)"
 one() {  # <test>: its last line; its whole output kept on failure
   local s=$SECONDS rc=0
   if [ "$1" = PROOF ]; then
-    bend PROOF.bend >"$out/$1.log" 2>&1 && grep -q "ALL PROOFS CHECK" "$out/$1.log" || rc=1
+    bend bend/PROOF.bend >"$out/$1.log" 2>&1 && grep -q "ALL PROOFS CHECK" "$out/$1.log" || rc=1
   else
     python3 -u "projects/switchboard/tests/$1.py" >"$out/$1.log" 2>&1 || rc=$?
   fi

@@ -117,7 +117,7 @@ if [ "$DEV" = 1 ]; then
   [ -n "$REPO" ] || REPO="$(cd "$(dirname "$0")" && git rev-parse --show-toplevel 2>/dev/null)" \
     || die "no repo: pass --repo <the dev repo>"
   REPO="$(cd "$REPO" 2>/dev/null && pwd -P)" || die "no such repo: $REPO"
-  [ -x "$REPO/versions.sh" ] || die "$REPO is not the bise dev repo (no versions.sh)"
+  [ -x "$REPO/scripts/versions.sh" ] || [ -x "$REPO/versions.sh" ] || die "$REPO is not the bise dev repo (no scripts/versions.sh)"
   VERSIONS="${SB_VERSIONS_DIR:-$DEV_DIR/versions}"
   # a built version, newest first: to name the repo's hub (its id is a
   # hash of the path the binary computes: `switchboard --state-dir`)
@@ -128,7 +128,7 @@ if [ "$DEV" = 1 ]; then
       [ -x "$VERSIONS/$d/$b" ] && { any="$VERSIONS/$d/$b"; break 2; }
     done
   done
-  [ -n "$any" ] || die "no version built in $VERSIONS: run '$REPO/versions.sh build' first"
+  [ -n "$any" ] || die "no version built in $VERSIONS: run '$REPO/scripts/versions.sh build' first"
   state="$(cd "$REPO" && env -u SB_STATE_DIR BISE_NO_MIGRATE=1 SB_LAUNCH_DIR="$REPO" \
     "$any" switchboard --state-dir --workspace "$REPO" 2>/dev/null)" || die "$any cannot name the hub of $REPO"
   HUB="$(basename "$state")"
@@ -178,7 +178,7 @@ pick() {
     case "$d" in .*) continue ;; esac
     runnable "$versions/$d" && { echo "$versions/$d"; return 0; }
   done
-  echo "$CMD: no version built in $versions; run '$REPO/versions.sh build'" >&2; return 1
+  echo "$CMD: no version built in $versions; run '$REPO/scripts/versions.sh build'" >&2; return 1
 }
 root="$(pick)" || exit 1
 root="$(cd "$root" && pwd -P)"

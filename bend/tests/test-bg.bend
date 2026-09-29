@@ -25,12 +25,12 @@
 #
 # Gates: no FAIL line (21 checks, s01-s21).
 import Base
-import runtime/main.bend as Rt
-import runtime/bash.bend as Sh
-import runtime/bash-pure.bend as Shp
-import runtime/tools.bend as X
-import runtime/tools-pure.bend as Xp
-import runtime/persist.bend as P
+import ../runtime/main.bend as Rt
+import ../runtime/bash.bend as Sh
+import ../runtime/bash-pure.bend as Shp
+import ../runtime/tools.bend as X
+import ../runtime/tools-pure.bend as Xp
+import ../runtime/persist.bend as P
 
 def bg() -> String:
   "/tmp/bgtest/bend-bg-0"

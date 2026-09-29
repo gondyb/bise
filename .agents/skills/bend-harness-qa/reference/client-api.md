@@ -74,7 +74,7 @@ t.join()
 ## CLI of bend_client.py
 
 ```
-python3 -u bend_client.py --message "hello" [--continue] [--bg-after 3]
+python3 -u scripts/bend_client.py --message "hello" [--continue] [--bg-after 3]
 ```
 
 ## Session files and side files

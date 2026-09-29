@@ -1,4 +1,4 @@
-# dbg/canon-probe.bend — what the Core keeps of a BEND-SESSION file:
+# bend/tests/canon-probe.bend — what the Core keeps of a BEND-SESSION file:
 # CANON_IN=<file> prints K.to_text(K.from_text(<file>)) (read like the
 # REPL reads it, runtime/persist.bend). The BISE-197 migration proof diffs
 # it against bise-session's legacy::to_text(parse()).

@@ -19,7 +19,7 @@ Design :
 - [`docs/ux-notes.md`](docs/ux-notes.md) : questions UX à trancher, pour le
   brainstorming.
 - [`docs/bend-laws-report.md`](docs/bend-laws-report.md) : les interactions
-  du hub en Bend (`hub/*.bend`) et leurs lois.
+  du hub en Bend (`bend/hub/*.bend`) et leurs lois.
 
 Distribution et produit :
 

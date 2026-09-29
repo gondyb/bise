@@ -14,7 +14,7 @@ import shutil
 import sys
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-sys.path.insert(0, REPO)
+sys.path.insert(0, os.path.join(REPO, "scripts"))
 from bend_client import BendSession  # noqa: E402
 
 base = "/tmp/plugins-live-%d" % os.getpid()

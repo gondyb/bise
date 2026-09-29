@@ -20,7 +20,7 @@ python3 -u projects/switchboard/tests/bins_path.py
 import os, re, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-BINS = os.path.join(ROOT, "bins.sh")
+BINS = os.path.join(ROOT, "scripts", "bins.sh")
 
 
 def check(ok, what):

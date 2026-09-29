@@ -441,7 +441,7 @@ def case_queue():
 
 def main():
     if not os.path.exists(REPL):
-        fail("no ./repl-scripted: ./bins.sh repl-scripted")
+        fail("no ./repl-scripted: scripts/bins.sh repl-scripted")
     case_short()
     case_compaction()
     case_queue()

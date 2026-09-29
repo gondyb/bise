@@ -1,8 +1,8 @@
 # Build artifacts (Bend native binaries), never committed (BISE-114):
-# ./bins.sh builds them from a cache keyed by the content of their sources
+# scripts/bins.sh builds them from a cache keyed by the content of their sources
 # (run.sh, versions.sh, gate.sh call it). A binary the EDR quarantined:
-# ./bins.sh <name> puts it back.
-# harness-demo: runtime/demo.bend (bend-harness-qa skill); repl: legacy name
+# scripts/bins.sh <name> puts it back.
+# harness-demo: bend/runtime/demo.bend (bend-harness-qa skill); repl: legacy name
 /repl-live
 /repl-scripted
 /sb-core

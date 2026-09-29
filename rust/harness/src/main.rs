@@ -968,8 +968,8 @@ fn crash_reason(err_path: &std::path::Path, from: u64, status: &str) -> String {
 // latest code; on failure the caller keeps the previous binary
 fn recompile(repl_name: &str, repl_bin: &std::path::Path) -> bool {
     let source = match repl_name {
-        "repl-scripted" => "runtime/repl.bend",
-        _ => "runtime/repl-live.bend",
+        "repl-scripted" => "bend/runtime/repl.bend",
+        _ => "bend/runtime/repl-live.bend",
     };
     let Some(src) = std::env::current_dir()
         .ok()

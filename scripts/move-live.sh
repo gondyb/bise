@@ -7,9 +7,9 @@
 # Run it from a PLAIN TERMINAL (not from an agent: the hub stops and
 # every agent REPL is restarted).
 #
-#   ./move-live.sh --to <new folder> [--from <old folder>] [--branch <br>]
+#   scripts/move-live.sh --to <new folder> [--from <old folder>] [--branch <br>]
 #                  [--no-push] [--no-tui] [--wait <s>] [--allow-dirty]
-#   ./move-live.sh --remove-old <old folder>     # the last step, separate
+#   scripts/move-live.sh --remove-old <old folder>     # the last step, separate
 #
 # Steps of the move:
 #  1. back up any uncommitted change of the old folder (diff + untracked
@@ -42,7 +42,7 @@ set -euo pipefail
 say() { echo "move-live: $*" >&2; }
 die() { say "$*"; exit 1; }
 
-FROM="$(cd "$(dirname "$0")" && pwd)"
+FROM="$(cd "$(dirname "$0")/.." && pwd)"
 TO=""
 BRANCH=""
 push=1
@@ -171,7 +171,7 @@ if [ -n "$(git -C "$NEW" rev-list "$NEW_BRANCH..$BRANCH" 2>/dev/null)" ]; then
     || { git -C "$mwt" merge --abort || true; die "merge conflict: resolve it by hand in $NEW, then run again"; }
   say "gates: cargo build + switchboard/tui unit tests"
   # ./sb-core is not in git (BISE-114): the switchboard tests spawn it
-  gates="${SB_MOVE_GATES:-./bins.sh sb-core && cd rust && CARGO_TARGET_DIR=$STATE_ROOT/build/target-move cargo build -q -p bend-harness && CARGO_TARGET_DIR=$STATE_ROOT/build/target-move cargo test -q -p switchboard -p bend-tui >/dev/null}"
+  gates="${SB_MOVE_GATES:-scripts/bins.sh sb-core && cd rust && CARGO_TARGET_DIR=$STATE_ROOT/build/target-move cargo build -q -p bend-harness && CARGO_TARGET_DIR=$STATE_ROOT/build/target-move cargo test -q -p switchboard -p bend-tui >/dev/null}"
   (cd "$mwt" && bash -c "$gates") \
     || die "gates failed: $NEW_BRANCH not moved (the merge was only in $mwt)"
   merged="$(git -C "$mwt" rev-parse HEAD)"
@@ -187,7 +187,8 @@ fi
 if [ -n "${SB_VERSION_DIR:-}" ]; then
   vdir="$SB_VERSION_DIR"
 else
-  vdir="$("$NEW/versions.sh" build HEAD)"
+  vs="$NEW/scripts/versions.sh"; [ -x "$vs" ] || vs="$NEW/versions.sh"
+  vdir="$("$vs" build HEAD)"
 fi
 exe="$vdir/bise"   # BISE-165; a version built before: bend-harness
 [ -x "$exe" ] || exe="$vdir/bend-harness"

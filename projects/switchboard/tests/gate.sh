@@ -104,17 +104,17 @@ export PATH="$HOME/.bend/bin:$HOME/.cargo/bin:$PATH"
 unset SB_CORE_BIN
 # the oldest macOS the binaries run on (rust/.cargo/config.toml, BISE-164):
 # for the quick sb-core's cc too
-export MACOSX_DEPLOYMENT_TARGET; MACOSX_DEPLOYMENT_TARGET="$(./bins.sh macos-target)"
+export MACOSX_DEPLOYMENT_TARGET; MACOSX_DEPLOYMENT_TARGET="$(scripts/bins.sh macos-target)"
 base="${GATE_BASE:-HEAD}"
 changed="$( { git diff --name-only "$base"; git ls-files --others --exclude-standard; } | sort -u)"
 hub_changed=0 bend_changed=0
-printf '%s\n' "$changed" | grep -qE '^(hub|vendor)/' && hub_changed=1
-printf '%s\n' "$changed" | grep -qE '^((core|hub|vendor)/.*|LAWS|PROOF)\.bend$' && bend_changed=1
+printf '%s\n' "$changed" | grep -qE '^bend/(hub|vendor)/' && hub_changed=1
+printf '%s\n' "$changed" | grep -qE '^bend/((core|hub|vendor)/.*|LAWS|PROOF)\.bend$' && bend_changed=1
 # ./sb-core (not in git, BISE-114): the build of this tree's hub/ vendor/,
 # from bins.sh's cache shared by every worktree (a copy; ~15 s on a miss).
 # quick with a hub/ change: the tests run a -O1 build instead (below)
 if [ $hub_changed = 0 ] || [ "$mode" = full ]; then
-  ./bins.sh sb-core || { echo "FAIL sb-core build"; exit 1; }
+  scripts/bins.sh sb-core || { echo "FAIL sb-core build"; exit 1; }
 fi
 
 if [ "$mode" = full ]; then
@@ -125,7 +125,7 @@ if [ "$mode" = full ]; then
   # bise, and the engine when this tree has one
   bins=(./repl-live ./repl-scripted ./sb-core "${CARGO_TARGET_DIR:-rust/target}/debug/bise")
   for f in ./harness-demo rust/jsrt/target/debug/bend-jsrt; do [ -e "$f" ] && bins+=("$f"); done
-  if [ $rc = 0 ]; then ./bins.sh minos "${bins[@]}" || rc=1; fi
+  if [ $rc = 0 ]; then scripts/bins.sh minos "${bins[@]}" || rc=1; fi
   [ $rc = 0 ] && echo "GATE full GREEN ($((SECONDS - s))s)" || echo "GATE full FAILED"
   exit $rc
 fi
@@ -146,25 +146,25 @@ hash_of() {  # <dirs/files...>: one hash of the .bend files' names and contents
 }
 # the bend part, in the background (it takes longer than cargo)
 proof_job() {
-  local h; h="$(hash_of core hub vendor LAWS.bend PROOF.bend)"
+  local h; h="$(hash_of bend/core bend/hub bend/vendor bend/LAWS.bend bend/PROOF.bend)"
   [ -f "$cache/proof-ok-$h" ] && { echo "ok   PROOF (cached)"; return 0; }
   local d="$out/proof" n=4 s=$SECONDS i pids=()
   mkdir -p "$d"
-  python3 projects/switchboard/tests/proof_shards.py "$root" $n "$d" || { echo "FAIL PROOF (split)"; return 1; }
+  python3 projects/switchboard/tests/proof_shards.py "$root/bend" $n "$d" || { echo "FAIL PROOF (split)"; return 1; }
   for i in $(seq 0 $((n - 1))); do bend "$d/P$i.bend" --check-only >"$d/P$i.log" 2>&1 & pids+=($!); done
   wait "${pids[@]}"
   for i in $(seq 0 $((n - 1))); do
     grep -q "ALL PROOFS CHECK" "$d/P$i.log" && continue
     grep -qx "Error: $(cat "$d/P$i.expect") TODOs found." "$d/P$i.log" && continue
     echo "FAIL PROOF ($((SECONDS - s))s): shard $i of $n"; grep -v '^- ' "$d/P$i.log" | head -20
-    echo "(rerun whole: bend PROOF.bend)"; return 1
+    echo "(rerun whole: bend bend/PROOF.bend)"; return 1
   done
   touch "$cache/proof-ok-$h"; echo "ok   PROOF ($((SECONDS - s))s, $n shards)"
 }
 sbcore_job() {  # a quick sb-core (-O1: half the compile of bend -o's -O3)
-  local h s=$SECONDS; h="$(hash_of hub vendor)"
+  local h s=$SECONDS; h="$(hash_of bend/hub bend/vendor)"
   [ -x "$cache/sb-core-$h" ] && { echo "ok   sb-core (cached)"; return 0; }
-  bend hub/main.bend -o "$out/sb-core.c" >"$out/sb-core.log" 2>&1 \
+  bend bend/hub/main.bend -o "$out/sb-core.c" >"$out/sb-core.log" 2>&1 \
     && cc -std=c11 -O1 -fno-inline "$out/sb-core.c" -lpthread -lm -o "$out/sb-core" >>"$out/sb-core.log" 2>&1 \
     || { echo "FAIL sb-core build"; tail -20 "$out/sb-core.log"; return 1; }
   rm -f "$cache"/sb-core-*; mv "$out/sb-core" "$cache/sb-core-$h"
@@ -174,7 +174,7 @@ sbcore_job() {  # a quick sb-core (-O1: half the compile of bend -o's -O3)
 if [ $hub_changed = 1 ]; then
   { sbcore_job >"$out/sbcore.res" 2>&1; echo $? >"$out/sbcore.rc"; } &
   sbcore_pid=$!
-  export SB_CORE_BIN="$cache/sb-core-$(hash_of hub vendor)"
+  export SB_CORE_BIN="$cache/sb-core-$(hash_of bend/hub bend/vendor)"
 fi
 # the crates to test: changed ones and the crates depending on them
 pkgs=""
@@ -191,7 +191,7 @@ for f in $changed; do
     rust/switchboard/*) add switchboard; add bend-harness ;;
     rust/harness/*) add bend-harness ;;
     rust/session/*) add bise-session; add switchboard; add bend-harness ;;
-    hub/*|vendor/*) add switchboard ;;
+    bend/hub/*|bend/vendor/*) add switchboard ;;
   esac
 done
 step() {  # <name> <cmd...>: one line when green, the failures and the log when red

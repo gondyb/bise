@@ -12,11 +12,11 @@
 #   ./run.sh switchboard --stop  # stop the hub of the current folder
 #   ./run.sh switchboard --dev   # test Switchboard next to the live one: build
 #                                # isolated in /tmp/sb-dev, separate hub
-#                                # (see sb-dev.sh: --no-tui, --stop, --status, --reset)
+#                                # (see scripts/sb-dev.sh: --no-tui, --stop, --status, --reset)
 #   ./run.sh --headless [--scripted] [--model NAME] [--port N]
 #            [--continue | --resume ID]
 #                                # one session without a TUI, for a program
-#                                # (bend_client.py): prints READY, lives
+#                                # (scripts/bend_client.py): prints READY, lives
 #                                # until its stdin closes
 
 set -euo pipefail
@@ -25,7 +25,7 @@ if [ $# -eq 0 ]; then set -- switchboard; fi
 # the dev switchboard builds elsewhere: never the live tree's binaries
 if [ "${1:-}" = "switchboard" ] && [[ " $* " == *" --dev "* ]]; then
   shift
-  exec "$(dirname "$0")/sb-dev.sh" "$@"
+  exec "$(dirname "$0")/scripts/sb-dev.sh" "$@"
 fi
 # switchboard: the workspace is where the user launched from
 export SB_LAUNCH_DIR="${SB_LAUNCH_DIR:-$PWD}"
@@ -65,9 +65,9 @@ elif [ -n "$(find rust/jsrt/src rust/jsrt/Cargo.toml rust/jsrt/Cargo.lock rust/i
     || echo "building bend-jsrt failed — the existing engine is kept" >&2
 fi
 
-# the Bend binaries (not in git): ./bins.sh copies each one from a cache
+# the Bend binaries (not in git): scripts/bins.sh copies each one from a cache
 # keyed by the content of its sources, and compiles it on a miss (sb-core
 # ~15 s, a REPL 1-2 min). A failed compile keeps the existing binary.
-./bins.sh repl-live repl-scripted sb-core
+scripts/bins.sh repl-live repl-scripted sb-core
 
 exec "$BIN" "$@"

@@ -24,9 +24,9 @@ When `expects_reply=\"true\"`, answer with `sb send <from> --reply-to <id> \"…
 
 /// How every agent talks to the user: tasks and main (their roles below)
 /// and solo sessions (runtime/repl-live.bend reads the same file when it
-/// has no role). One source: prompt-tone.txt at the repo root, shipped
+/// has no role). One source: prompts/prompt-tone.txt, shipped
 /// next to the binaries like the other prompt-*.txt.
-pub const TONE: &str = include_str!("../../../prompt-tone.txt");
+pub const TONE: &str = include_str!("../../../prompts/prompt-tone.txt");
 
 /// The role of `main` (appended to its system prompt).
 pub fn main_role(workspace: &str) -> String {

@@ -12,7 +12,8 @@ import sys
 import threading
 import time
 
-sys.path.insert(0, "/Users/gabrielvergnaud/lab/bend-lab/harness")
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "scripts"))
 from bend_client import BendSession
 
 # one precise instruction: exact tool args, one expected behavior

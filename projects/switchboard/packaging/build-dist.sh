@@ -69,7 +69,7 @@ name="bise-$id-$target"
 
 # 1. the app root of this commit (cached by versions.sh)
 say "versions.sh build $id..."
-vdir="$("$REPO/versions.sh" build "$id")"
+vdir="$("$REPO/scripts/versions.sh" build "$id")"
 h="$(sed -n 's/^bend_hash=//p' "$vdir/VERSION")"
 
 # 2. repl-scripted (versions.sh does not build it): bins.sh's cache,
@@ -79,7 +79,7 @@ if [ ! -x "$scripted" ]; then
   wt="/tmp/bise-dist-src-$id-$$"
   git worktree add -q --detach "$wt" "$commit"
   trap 'git -C "$REPO" worktree remove --force "$wt" 2>/dev/null || true' EXIT
-  scripted="$("$REPO/bins.sh" path --src "$wt" repl-scripted)"
+  scripted="$("$REPO/scripts/bins.sh" path --src "$wt" repl-scripted)"
   git worktree remove --force "$wt"; trap - EXIT
 fi
 
@@ -90,7 +90,7 @@ fi
 if grep -q '^jsrt=release' "$vdir/VERSION"; then
   js="$vdir/bend-jsrt"
 else
-  js="$("$REPO/bins.sh" path bend-jsrt)"
+  js="$("$REPO/scripts/bins.sh" path bend-jsrt)"
   if ! git diff --quiet "$commit" -- rust/jsrt/src rust/jsrt/Cargo.toml rust/jsrt/Cargo.lock; then
     say "WARNING: rust/jsrt differs between $id and the working tree; the shipped engine is the tree's"
   fi
@@ -103,7 +103,8 @@ app="$stage/$name/app"
 # where this commit's runtime looks for the engine: BEND_JSRT_BIN (set by
 # the harness to app/bend-jsrt) since BISE-114, a fixed path before
 jsrt_at=bend-jsrt
-git show "$commit:runtime/main.bend" | grep -c BEND_JSRT_BIN >/dev/null || jsrt_at=rust/jsrt/target/debug/bend-jsrt
+{ git show "$commit:bend/runtime/main.bend" 2>/dev/null || git show "$commit:runtime/main.bend"; } \
+  | grep -c BEND_JSRT_BIN >/dev/null || jsrt_at=rust/jsrt/target/debug/bend-jsrt
 mkdir -p "$app/$(dirname "$jsrt_at")"
 # the command (BISE-165): bise, or the bend-harness of a version dir
 # built before the rename; the old name stays as a link one release
@@ -113,7 +114,9 @@ ln -s bise "$app/bend-harness"
 ln -s bise "$app/sb"
 for f in repl-live sb-core; do cp "$vdir/$f" "$app/$f"; done
 cp "$scripted" "$app/repl-scripted"
-cp "$vdir"/tool-desc-*.txt "$vdir"/prompt-*.txt "$app/"
+# the prompts: prompts/ since the root cleanup, at the top of an older version
+if [ -d "$vdir/prompts" ]; then cp -R "$vdir/prompts" "$app/prompts"; pr=prompts/
+else cp "$vdir"/tool-desc-*.txt "$vdir"/prompt-*.txt "$app/"; pr=""; fi
 cp "$js" "$app/$jsrt_at"
 # VERSION: the dev repo path means nothing on the user's machine (the
 # daemon would look for versions.sh there); the target says what it runs on
@@ -146,16 +149,16 @@ fi
 #    (wait a moment: a quarantine by security software is not instant)
 sleep 2
 for f in bise bend-harness sb repl-live repl-scripted sb-core "$jsrt_at" \
-         tool-desc-bash.txt prompt-tool-use.txt prompt-tone.txt VERSION \
+         "${pr}tool-desc-bash.txt" "${pr}prompt-tool-use.txt" "${pr}prompt-tone.txt" VERSION \
          LICENSE NOTICE THIRD_PARTY_NOTICES; do
   [ -e "$app/$f" ] || { say "INCOMPLETE: app/$f missing"; exit 1; }
 done
 # ... and no binary needs a macOS newer than the target (a version dir
 # built before BISE-164 has Bend binaries for the build machine's macOS:
 # remove it and run again)
-"$REPO/bins.sh" minos "$app/bise" "$app/repl-live" "$app/repl-scripted" \
+"$REPO/scripts/bins.sh" minos "$app/bise" "$app/repl-live" "$app/repl-scripted" \
   "$app/sb-core" "$app/$jsrt_at" >&2 \
-  || { say "a binary needs a newer macOS than $("$REPO/bins.sh" macos-target): rm -rf $vdir and run again"; exit 1; }
+  || { say "a binary needs a newer macOS than $("$REPO/scripts/bins.sh" macos-target): rm -rf $vdir and run again"; exit 1; }
 
 # 7. pack
 mkdir -p "$out"

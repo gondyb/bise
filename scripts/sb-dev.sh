@@ -20,7 +20,7 @@
 #   state/             the dev hub state (SB_STATE_DIR): hub.sock, journal...
 
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 REPO="$PWD"
 ROOT="${SB_DEV_ROOT:-/tmp/sb-dev}"
 WS="${SB_DEV_WS:-$ROOT/ws}"
@@ -99,7 +99,7 @@ case "$action" in
     exit 0 ;;
 esac
 
-vdir="$(./versions.sh build --tree)"
+vdir="$(scripts/versions.sh build --tree)"
 id="$(basename "$vdir")"
 running="$(readlink "$ROOT/current" 2>/dev/null || echo none)"
 if [ -n "$(hub_pid)" ] && [ "$running" != "$vdir" ]; then

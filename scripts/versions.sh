@@ -5,8 +5,9 @@
 # the working tree, uncommitted changes included):
 #   $SB_VERSIONS_DIR/<id>/  bise (+ bend-harness -> bise, one release;
 #                           sb -> bise, the agents' command),
-#                           repl-live, tool-desc-*.txt,
-#                           prompt-*.txt, sb-core (when hub/ exists),
+#                           repl-live, prompts/ (tool-desc-*.txt,
+#                           prompt-*.txt; at the top before the root
+#                           cleanup), sb-core (when bend/hub/ exists),
 #                           bend-jsrt (release, + a hard link at the old path
 #                           rust/jsrt/target/debug/bend-jsrt),
 #                           VERSION (id, commit, subject, built, bend_hash,
@@ -15,10 +16,10 @@
 # A hub runs FROM a version dir: rebuilding the tree never changes a
 # running system, only an explicit switch does.
 #
-#   ./versions.sh build [<rev>|--tree]   # build (cached), print the version dir
-#   ./versions.sh id [<rev>|--tree]      # the id a build would get
-#   ./versions.sh list                   # built versions, newest first
-#   ./versions.sh prune [<n>]            # keep the n (3) newest versions and
+#   scripts/versions.sh build [<rev>|--tree]   # build (cached), print the version dir
+#   scripts/versions.sh id [<rev>|--tree]      # the id a build would get
+#   scripts/versions.sh list                   # built versions, newest first
+#   scripts/versions.sh prune [<n>]            # keep the n (3) newest versions and
 #                                        # those a hub marks or runs (after
 #                                        # each new build too)
 #
@@ -29,7 +30,7 @@
 # Commits are built in a temporary git worktree under /tmp (removed after).
 
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 REPO="$PWD"
 # the same dirs as bise_home (rust/home): $BISE_HOME/dev, ~/.bise/dev once
 # migrated, else today's ~/.local/state/switchboard (XDG_STATE_HOME unread)
@@ -42,7 +43,7 @@ export PATH="$HOME/.cargo/bin:$HOME/.bend/bin:$PATH"
 # the oldest macOS the binaries run on (BISE-164), this repo's value
 # (rust/.cargo/config.toml) for every commit: an old one has no
 # rust/.cargo/config.toml, cargo takes it from the environment
-export MACOSX_DEPLOYMENT_TARGET; MACOSX_DEPLOYMENT_TARGET="$("$REPO/bins.sh" macos-target)"
+export MACOSX_DEPLOYMENT_TARGET; MACOSX_DEPLOYMENT_TARGET="$("$REPO/scripts/bins.sh" macos-target)"
 
 say() { echo "versions: $*" >&2; }
 
@@ -50,7 +51,7 @@ say() { echo "versions: $*" >&2; }
 # needed; exits (loudly) when bins.sh fails or prints no executable file
 # (bug-bins-path: an empty path gave `cp: : No such file or directory`)
 bin_path() {
-  local p; p="$("$REPO/bins.sh" path --src "$1" "$2")" || { say "bins.sh path $2 failed"; exit 1; }
+  local p; p="$("$REPO/scripts/bins.sh" path --src "$1" "$2")" || { say "bins.sh path $2 failed"; exit 1; }
   [ -n "$p" ] && [ -x "$p" ] || { say "bins.sh path $2: no binary ('$p')"; exit 1; }
   echo "$p"
 }
@@ -114,13 +115,17 @@ build_from() {
   # BISE-114, are never used: a version always compiles its own sources)
   # (an assignment, not `cp "$(...)"`: set -e sees a failed bins.sh only
   # there; bin_path also refuses an empty or missing path)
-  local h; h="$("$REPO/bins.sh" key --src "$src" repl-live)"
+  local h; h="$("$REPO/scripts/bins.sh" key --src "$src" repl-live)"
   local b; b="$(bin_path "$src" repl-live)"; cp "$b" "$tmp/repl-live"
   # sb-core: the hub's decisions in Bend (hub/*.bend), when the version has them
-  if [ -f "$src/hub/main.bend" ]; then
+  if [ -f "$src/bend/hub/main.bend" ] || [ -f "$src/hub/main.bend" ]; then
     b="$(bin_path "$src" sb-core)"; cp "$b" "$tmp/sb-core"
   fi
-  cp "$src"/tool-desc-*.txt "$src"/prompt-*.txt "$tmp/"
+  # the prompts and tool descriptions, read at run time from the app root:
+  # in prompts/ since the root cleanup, at the top before it (the old
+  # commit's REPL reads them there)
+  if [ -d "$src/prompts" ]; then cp -R "$src/prompts" "$tmp/prompts"
+  else cp "$src"/tool-desc-*.txt "$src"/prompt-*.txt "$tmp/"; fi
 
   # the V8 engine: the RELEASE build of this source's rust/jsrt (BISE-133:
   # ~60 MB, the debug one was 110 MB, 93% of a version), from bins.sh's
@@ -128,7 +133,7 @@ build_from() {
   # engine share it. $tmp/bend-jsrt: the harness passes it to the runtime
   # (BEND_JSRT_BIN); the same file at the old path too: a runtime before
   # BISE-114 (an old commit) runs rust/jsrt/target/debug/bend-jsrt
-  local js jk; jk="$("$REPO/bins.sh" key --src "$src" bend-jsrt)"
+  local js jk; jk="$("$REPO/scripts/bins.sh" key --src "$src" bend-jsrt)"
   js="$(bin_path "$src" bend-jsrt)"
   ln -f "$js" "$tmp/bend-jsrt" 2>/dev/null || cp -c "$js" "$tmp/bend-jsrt" 2>/dev/null || cp "$js" "$tmp/bend-jsrt"
   ln -f "$tmp/bend-jsrt" "$tmp/rust/jsrt/target/debug/bend-jsrt"

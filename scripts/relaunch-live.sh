@@ -4,9 +4,9 @@
 # work in it; the version is built from the commit, in a temporary git
 # worktree, by versions.sh).
 #
-#   ./relaunch-live.sh              # the last commit (HEAD), not the tree
-#   ./relaunch-live.sh a0d3c54      # a given commit
-#   ./relaunch-live.sh --no-tui ... # do not open the TUI afterwards
+#   scripts/relaunch-live.sh              # the last commit (HEAD), not the tree
+#   scripts/relaunch-live.sh a0d3c54      # a given commit
+#   scripts/relaunch-live.sh --no-tui ... # do not open the TUI afterwards
 #
 # Steps: build the version (cached), back up the hub state (journal,
 # sessions, transcripts), stop the running hub keeping its agents (a hub
@@ -18,7 +18,7 @@
 # SB_LIVE_WS overrides the workspace (default: this repo), SB_STATE_DIR
 # the state dir (default: the workspace's) - for tests on a throwaway hub.
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 REPO="$PWD"
 WS="${SB_LIVE_WS:-$REPO}"
 
@@ -33,7 +33,7 @@ for a in "$@"; do
 done
 
 # 1. the version (built from the commit, never from the working tree)
-vdir="$(./versions.sh build "$rev")"
+vdir="$(scripts/versions.sh build "$rev")"
 id="$(basename "$vdir")"
 exe="$vdir/bise"   # BISE-165; a version built before: bend-harness
 [ -x "$exe" ] || exe="$vdir/bend-harness"
