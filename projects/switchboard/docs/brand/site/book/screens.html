@@ -116,6 +116,12 @@
   .cfocus .bb { position:absolute; bottom:-.55lh; left:1.5ch; right:1.5ch; display:flex; gap:2ch; background:transparent; white-space:nowrap; overflow:hidden; }
   .cfocus .bb span { background:var(--bg); padding:0 .5ch; color:var(--dim); } .cfocus .bb b { color:var(--text); font-weight:400; }
   .cfocus .o > span { margin-right:3ch; } .cfocus .cmd { background:var(--raised); padding:0 1ch; }
+  .cfocus .scroll { max-height:7lh; overflow:hidden; position:relative; }
+  .cfocus .more { color:var(--dim); } .cfocus .ol { margin-top:.4lh; } .cfocus .ol div b { color:var(--acc); font-weight:400; }
+  .cfocus pre.cmdb { background:var(--raised); padding:.3lh 1ch; margin:.3lh 0; white-space:pre-wrap; }
+  .cfocus .dp { color:var(--acc); } .cfocus .dm { color:var(--dim); text-decoration:line-through; text-decoration-color:var(--faint); }
+  .cfocus.full { margin-top:0; min-height:24lh; } .cfocus.full .scroll { max-height:none; }
+  .seqk { color:var(--acc); font-weight:700; }
   .att-d { position:relative; display:inline-block; min-width:44ch; max-width:91ch; box-sizing:border-box; border:1px solid var(--dim); border-radius:4px; padding:.35lh 2ch .3lh; margin:1lh 0 .6lh 0; }
   .att-d + .cbox, .att-b + .cbox { padding-top:0; }
   .att-d .row > span:first-child { margin-right:4ch; }
@@ -289,27 +295,81 @@ const STRIP3 = `<div class="cstrip">` +
   crow(true, "deploy wants to run", `<span style="color:var(--text)">npm publish --tag next</span>`, [["1", "allow"], ["2", "always"], ["3", "deny"]]) +
   crow(false, "perf", "the hero image is 4.2 MB. compress it, or lazy-load it?", [["1", "compress"], ["2", "both"]]) +
   crow(false, "docs", "v1 or v2 for the api docs?", [["1", "v1"], ["2", "v2"]]) + `</div>`;
-const cfoot = (right, hints) => foot(`main · ${right}`, "", hints);
+const cfoot = (right, hints, text = "") => foot(`main · ${right}`, text, hints);
 const CKEYS = "⏎ send · ctrl+g open card · ctrl+n next card · @ agent · / commands";
-const focusBox = (title, body, opts, keys) => `<div class="cfocus"><span class="bt"><span class="acc">?</span> ${title}</span>${body}<div class="o" style="margin-top:.4lh">${opts}</div><div class="bb">${keys.map(([k, l]) => `<span><b>${k}</b> ${l}</span>`).join("")}</div></div>`;
+// an open card: the composer now answers it (the divider says so); keys in its bottom border
+const cardFoot = (who, text, hints) => foot(`<span class="dim">you →</span> <span class="acc">? ${who}</span> <span class="dim">· your answer</span>`, text, hints);
+const OPEN_KEYS = (n, agent, num) => [[`1-${n}`, "pick (empty composer)"], ["⏎", "send your text as the answer"], ["ctrl+x", "close"], ["ctrl+f", "full"], [`⌥${num}`, `open ${agent}`], ["esc", "back"]];
+const focusBox = (title, body, opts, keys, cls = "") => `<div class="cfocus${cls}"><span class="bt"><span class="acc">?</span> ${title}</span>${body}${opts ? `<div class="o" style="margin-top:.4lh">${opts}</div>` : ""}<div class="bb">${keys.map(([k, l]) => `<span><b>${k}</b> ${l}</span>`).join("")}</div></div>`;
+const LONG_Q = `<div class="scroll"><div>the brief says "keep old clients working", but v2 removes /users and /teams. i read the three open issues about it.</div>
+<div style="margin-top:.4lh">#412 wants v1 kept for a year. #418 says nobody calls /teams since march (the logs agree: 0 calls in 30 days). #431 asks for a migration guide either way.</div>
+<div style="margin-top:.4lh">so: do we document v1, v2, or both with a deprecation banner? and does the guide go in this PR?</div></div>
+<div class="more">▸ 9 more lines · pgdn scroll · ctrl+f full screen</div>`;
+const OPTS9 = `<div class="ol">${["v1 only", "v2 only", "both, v1 marked deprecated", "both, v1 in its own page", "v2, plus a migration guide", "v2, guide in a follow-up PR", "ask the api team first", "wait for #431", "skip the docs for now"].map((t, i) => `<div><b>${i + 1}</b> ${t}</div>`).join("")}</div>`;
+const CMD_HEAD = `<pre class="cmdb"><span class="kw">set</span> -euo pipefail
+./scripts/build.sh --release --target aarch64-apple-darwin
+./scripts/sign.sh dist/bise-0.9.0 --identity <span class="str">"Developer ID Application"</span>
+gh release create v0.9.0 dist/*.tar.gz --notes-file NOTES.md
+npm publish --tag next`;
+const CMD_TAIL = `
+git tag -f latest-release &amp;&amp; git push -f origin latest-release
+./scripts/notify.sh <span class="str">"#releases"</span> <span class="str">"0.9.0 is out"</span>
+./scripts/bump.sh 0.9.1-dev
+git commit -am <span class="str">"chore: 0.9.1-dev"</span>
+git push origin main
+rm -rf dist/
+echo done`;
+const WHY = `<div class="dim">publishes 0.9.0 to npm and GitHub, under your name</div>`;
+const CMD = CMD_HEAD + `</pre><div class="more">▸ 8 more lines · ctrl+f full screen</div>` + WHY;
+const CMD_FULL = CMD_HEAD + CMD_TAIL + `</pre>` + WHY;
+const PATCH = `<pre class="cmdb"><span class="dim">src/auth/session.ts</span>
+<span class="dm">-  const ttl = 60 * 60;</span>
+<span class="dp">+  const ttl = Number(process.env.SESSION_TTL ?? 3600);</span>
+<span class="dp">+  if (!Number.isFinite(ttl)) throw new Error("bad SESSION_TTL");</span>
+<span class="dim">   return sign(user, { expiresIn: ttl });</span></pre><div class="more">▸ 3 files · +42 −7 · ctrl+f full screen</div><div class="dim">edits outside the files auth-fix said it would touch</div>`;
+const APPROVE = `<span><b>1</b> allow once</span><span><b>2</b> always here</span><span><b>3</b> deny</span>`;
+const APPROVE_KEYS = (agent, num) => OPEN_KEYS(3, agent, num).map(([k, l]) => k === "⏎" ? ["⏎", "deny with your text as a note"] : [k, l]);
+const NOTE_HINT = "type a note to deny with it, or pick 1-3 · esc back to main";
+const CUR = '<span class="cur"></span>';
+const STRIP_LONG = `<div class="cstrip">` +
+  crow(true, "deploy wants to run", `<span style="color:var(--text)">set -euo pipefail; ./scripts/build.sh --release --tar…</span> <span class="faint">13 lines</span>`, [["1", "allow"], ["2", "always"], ["3", "deny"]]) +
+  crow(false, "auth-fix wants to edit", `src/auth/session.ts <span class="faint">+2 files · +42 −7</span>`, [["1", "allow"], ["2", "always"], ["3", "deny"]]) +
+  crow(false, "docs", `the brief says "keep old clients working", but v2 removes /users and /teams. i read the three…`, [["1", "v1 only"], ["2", "v2 only"], ["+7", ""]]) +
+  `<div class="cr"><span class="dim">+ 2 more · ctrl+n</span><span></span></div></div>`;
+const ROW_DEPLOY = crow(false, "deploy wants to run", `<span style="color:var(--text)">npm publish --tag next</span>`, [["1", "allow"], ["2", "always"], ["3", "deny"]]);
+const ROW_PERF = (on) => crow(on, "perf", "the hero image is 4.2 MB. compress it, or lazy-load it?", [["1", "compress"], ["2", "both"]]);
+const ROW_DOCS = crow(false, "docs", "v1 or v2 for the api docs?", [["1", "v1"], ["2", "v2"]]);
+const STRIP_SEQ = `<div class="cstrip">${ROW_DEPLOY}${ROW_PERF(false)}${ROW_DOCS}</div>`;
+const STRIP_SEQ_PERF = `<div class="cstrip">${ROW_DEPLOY}${ROW_PERF(true)}${ROW_DOCS}</div>`;
+const STRIP_AFTER = `<div class="cstrip">${ROW_PERF(true)}${ROW_DOCS}</div>`;
 const CARD_SCREENS = [
 ["cards · a · the strip above the divider", "<span class='optk'>(a) designer's pick.</span> every open card is one row right above the divider, most blocking first (approvals, then questions). the selected row is raised. click a row to open it, click an option to answer, click × to close. from the composer: ctrl+g opens the selected card, ctrl+n / ctrl+p move the selection. your queued messages (if any) sit between the strip and the divider: they are yours, closest to where you type.",
  term({ feed: CFEED, above: STRIP3, f: cfoot("3 working", CKEYS) })],
-["cards · a · a card open", "ctrl+g (or a click) opens the selected card and gives it the keys: bare keys work, because the composer is not taking text while a card is open. its bottom border lists them. esc gives the keys back to the composer, the card stays in the strip.",
- term({ feed: CFEED, above: focusBox("perf needs you <span class='dim'>· 2 of 3 · 4m</span>",
-   `<div>the hero image is 4.2 MB. compress it, or lazy-load it?</div>`,
-   `<span><b>1</b> compress</span><span><b>2</b> both</span>`,
-   [["1-2", "pick"], ["r", "reply"], ["x", "close"], ["l", "later"], ["o", "open perf"], ["c", "copy"], ["f", "full"], ["n/p", "next"], ["esc", "back"]]),
-   f: cfoot("3 working", "type r to reply with text · esc back to the composer") })],
-["cards · a · an approval open", "an approval uses the same keys; its options are allow, always (this repo), deny. r is deny with a note. no allow-all. an approval never opens by itself while you type: its row pulses once in the strip.",
- term({ feed: CFEED, above: focusBox("deploy wants to run <span class='dim'>· 1 of 3 · now</span>",
-   `<div><span class="cmd">npm publish --tag next</span></div><div class="dim" style="margin-top:.3lh">why: you said "ship the next tag when it's green". tests are green.</div>`,
-   `<span><b>1</b> allow</span><span><b>2</b> always in this repo</span><span><b>3</b> deny</span>`,
-   [["1-3", "pick"], ["r", "deny with a note"], ["o", "open deploy"], ["c", "copy"], ["n/p", "next"], ["esc", "back"]]),
-   f: cfoot("3 working", "type r to deny with a note · esc back to the composer") })],
-["cards · a · small height (16-23 rows)", "one row for all the cards: the selected one, cut with …, and the count. below 16 rows: no strip, the divider says '? 3 · ctrl+g'.",
+["cards · long content · the strip", "one row per card, whatever the size. a long question is cut with …; a command shows its first line and its length ('13 lines'); a patch shows its first file and '+2 files · +42 −7'; many options show the first two, then '+7'. past 3 rows: '+ 2 more · ctrl+n'. approvals that come in together from several agents group into one row: '? 3 agents want to run'.",
+ term({ feed: CFEED, above: STRIP_LONG, f: cfoot("5 working", CKEYS) })],
+["cards · long content · A · a box that scrolls (pick)", "<span class='optk'>(A) pick.</span> the open card grows up to 7 rows of text; past that the text scrolls (pgup/pgdn, the wheel), and '▸ 9 more lines' says how much is left. the options and the keys stay pinned under the text: you never scroll to find how to answer. 4 options or more, or one longer than 20 columns: one per row, up to 9.",
+ term({ feed: CFEED, above: focusBox("docs needs you <span class='dim'>· 3 of 5 · 6m</span>", LONG_Q + OPTS9, "", OPEN_KEYS(9, "docs", 5)), f: cardFoot("docs", CUR, "type an answer, or pick 1-9 · esc back to main") })],
+["cards · long content · A · a long command", "an approval shows the command in the code colors: 6 rows, then '▸ 8 more lines'. never cut inside a line: long lines wrap. the reason is one dim line under it. options pinned.",
+ term({ feed: CFEED, above: focusBox("deploy wants to run <span class='dim'>· 1 of 5 · now</span>", CMD, APPROVE, APPROVE_KEYS("deploy", 4)), f: cardFoot("deploy", CUR, NOTE_HINT) })],
+["cards · long content · A · a patch", "a patch: the first file's first 6 diff lines (+ in blush, − dim and struck), then '▸ 3 files · +42 −7'. ctrl+f shows every file.",
+ term({ feed: CFEED, above: focusBox("auth-fix wants to edit <span class='dim'>· 2 of 5 · 1m</span>", PATCH, APPROVE, APPROVE_KEYS("auth-fix", 1)), f: cardFoot("auth-fix", CUR, NOTE_HINT) })],
+["cards · long content · A · full screen", "ctrl+f: the card takes the whole history area, the composer stays under it, the options stay pinned. esc or ctrl+f again: back to the box.",
+ term({ feed: focusBox("deploy wants to run <span class='dim'>· 1 of 5 · full screen</span>", CMD_FULL, APPROVE, [["1-3", "pick"], ["pgup/pgdn", "scroll"], ["ctrl+f", "back to the box"], ["esc", "back"]], " full"), f: cardFoot("deploy", CUR, NOTE_HINT) })],
+["cards · long content · B · a fixed preview", "<span class='optk'>(B)</span> the box never grows: 3 rows of text, then '▸ ctrl+f to read it all'. calm, but you open the full screen for almost every real question.",
+ term({ feed: CFEED, above: focusBox("docs needs you <span class='dim'>· 3 of 5</span>", `<div>the brief says "keep old clients working", but v2 removes /users and /teams. i read the three open issues about it. #412 wants v1 kept for a year…</div><div class="more">▸ ctrl+f to read it all</div>`, `<span><b>1</b> v1 only</span><span><b>2</b> v2 only</span><span class="dim">+7 · ctrl+f</span>`, OPEN_KEYS(9, "docs", 5)), f: cardFoot("docs", CUR, "type an answer, or pick 1-9 · esc back to main") })],
+["cards · long content · C · the side pane", "<span class='optk'>(C)</span> on a wide terminal the open card takes the agents panel's place, full height. lots of room, but it hides the panel, and a narrow terminal needs another form anyway.",
+ term({ feed: CFEED, pan: `<div class="panel" style="min-width:44ch;border-left:1px solid var(--acc);white-space:normal"><div><span class="acc">?</span> docs needs you <span class="dim">· 3 of 5</span></div><div class="dim" style="margin-top:.4lh">the brief says "keep old clients working", but v2 removes /users and /teams. #412 wants v1 kept for a year. #418 says nobody calls /teams…</div>${OPTS9}</div>`, f: cardFoot("docs", CUR, "type an answer, or pick 1-9 · esc back to main") })],
+["cards never block · 1 · three cards wait, you keep typing", "<span class='seqk'>1/4</span> three cards wait in the strip. the composer is yours as usual: you type to main and ⏎ sends. the cards don't move and don't take a key.",
+ term({ feed: CFEED, above: STRIP_SEQ, f: cfoot("3 working", CKEYS, "and bump the version to 0.9 while you're at it" + CUR) })],
+["cards never block · 2 · another agent, a command, the shell", "<span class='seqk'>2/4</span> ⌥2 opens perf's view: the strip follows you (cards are global). / commands, ctrl+` (the shell), the wheel and pgup/pgdn on the history: all as usual, because no card is open.",
+ term({ feed: you("how far along are you?") + `<div class="b"><span class="who acc">∿</span>profiling done: the hero image is the cost (4.2 MB). i asked main how to fix it.</div>`, above: STRIP_SEQ_PERF, f: foot("perf · profiling", "/mod" + CUR, "⏎ run · ctrl+g open card") })],
+["cards never block · 3 · open one, answer it", "<span class='seqk'>3/4</span> later, ctrl+g (or a click) opens the approval. the composer now answers it: the divider says 'you → ? deploy · your answer'. 1-3 pick on an empty composer; any other key types, and ⏎ sends the text as a note (here: deny with a note). esc: back to main; the card stays, and your half-typed note stays with the card.",
+ term({ feed: CFEED, above: focusBox("deploy wants to run <span class='dim'>· 1 of 3 · 4m</span>", `<pre class="cmdb">npm publish --tag next</pre><div class="dim">publishes 0.9.0 to npm, under your name</div>`, APPROVE, [["1-3", "pick"], ["⏎", "deny with your text as a note"], ["ctrl+x", "close"], ["⌥4", "open deploy"], ["esc", "back"]]), f: cardFoot("deploy", "not on a friday. monday 10am" + CUR, "⏎ deny with this note · esc back to main (the note stays)") })],
+["cards never block · 4 · two left", "<span class='seqk'>4/4</span> the answer lands in the history as one dim line; the row leaves the strip; the composer is back on main, empty. two cards still wait.",
+ term({ feed: CFEED + `<div class="b dim"><span class="acc">✗</span> deploy · you denied: "not on a friday. monday 10am"</div>`, above: STRIP_AFTER, f: cfoot("3 working", CKEYS) })],
+["cards · a · small height (16-23 rows)", "one row for all the cards: the selected one, cut with …, then '+2 cards'. below 16 rows: no strip, the divider says '? 3 · ctrl+g'. an open card at a small height takes the history area; the composer stays.",
  term({ feed: CFEED, above: `<div class="cstrip">` + crow(true, "deploy wants to run", `<span style="color:var(--text)">npm publish --tag next</span>`, [["1", "allow"], ["3", "deny"], ["+2", "cards"]]) + `</div>`, f: cfoot("3 working", CKEYS), narrow: true })],
-["cards · b · chips on the divider", "<span class='optk'>(b)</span> zero rows: the divider carries one chip per card; click one to open it. cheap, but you don't see the question until you open it.",
+["cards · b · chips on the divider", "<span class='optk'>(b)</span> zero rows: the divider carries one chip per card; click one to open it. cheap, but you don't see the question until you open it. used as the form under 16 rows.",
  term({ feed: CFEED, f: cfoot("3 working", CKEYS).replace('<span class="acc">main</span></span>', `<span class="acc">main</span></span> <span class="dim">·</span> <span class="qp on"><b>?</b> deploy</span> <span class="qp"><b>?</b> perf</span> <span class="qp"><b>?</b> docs</span>`) })],
 ];
 // ---------- the screens ----------
