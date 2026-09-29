@@ -277,7 +277,7 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
     let err_st = Style::default().fg(error());
     match ev {
         // an image marker is an accent chip `▣ login.png` (book §14)
-        Ev::You(t, mark) => user_block_lines(t, *mark, width),
+        Ev::You(t, mark, open) => user_block_lines(t, *mark, *open, width),
         Ev::MarkYou { .. } => vec![],
         // BISE-86 (book §13, §17): `✗ not delivered: {name} stopped.`, and
         // while it waits for an answer `⏎ send again · esc drop`
@@ -765,7 +765,23 @@ pub(crate) fn closed_word(res: &str) -> String {
 // your message (book §6, mockups): `›` dim in the glyph column, the text
 // from column 3, each of its lines (Shift+Enter, paste) on its own rows.
 // No bar, no background: the terminal's own shows through.
-pub(crate) fn user_block_lines(msg: &str, mark: Mark, width: usize) -> Vec<Line<'static>> {
+/// A longer message of yours folds to this many rows in the history
+/// (BISE-239), then `▸ n more lines`; ctrl+o, a click on that row or space
+/// opens it whole.
+pub(crate) const YOU_ROWS: usize = 8;
+
+/// Whether your message folds: more than [`YOU_ROWS`] lines (a quote, a
+/// chip count one), or as many rows at 80 columns (one long paragraph).
+/// Width-free, so ctrl+o and find know it without the feed's width; at
+/// the feed's width a message that still fits shows whole.
+pub(crate) fn you_folds(msg: &str) -> bool {
+    use unicode_width::UnicodeWidthStr;
+    let (quotes, body) = crate::quote::split(msg);
+    let rows: usize = quotes.len() + body.split('\n').map(|l| l.width().div_ceil(77).max(1)).sum::<usize>();
+    rows > YOU_ROWS
+}
+
+pub(crate) fn user_block_lines(msg: &str, mark: Mark, open: bool, width: usize) -> Vec<Line<'static>> {
     let style = Style::default().fg(text());
     // BISE-134: the quotes in front (quote.rs), one dim line each:
     // `❝ the selected words… · main · 3 lines`
@@ -780,25 +796,49 @@ pub(crate) fn user_block_lines(msg: &str, mark: Mark, width: usize) -> Vec<Line<
             Line::from(Span::styled(format!("{g} {}{about}", crate::quote::preview(&q.text, room)), d))
         })
         .collect();
+    let folds = you_folds(msg);
     let msg = body;
     let mut lines: Vec<Line<'static>> = msg
         .split('\n')
         .map(|l| Line::from(crate::attach::chip_spans(l.trim_end_matches('\r'), style)))
         .collect();
-    // its mark at the end (C3): `·` sent, `✓` got, `✓✓` read (accent)
-    if let (Some(last), Some(m)) = (lines.last_mut(), mark_span(mark)) {
-        last.spans.push(m);
+    // opened whole: `▾` after its last line (click it, or ctrl+o, to fold)
+    if folds && open {
+        if let Some(last) = lines.last_mut() {
+            last.spans.push(Span::styled(format!(" {}", glyph(G_OPEN)), d));
+        }
     }
     // BISE-90 (user decision, marketing's look): a thin accent bar at
     // column 0 on every row of your message, the text from column 3 (`›`
     // stays the composer's prompt); the heavy `┃` is a card's
     let bar = Span::styled(format!("{}  ", user_bar()), Style::default().fg(accent()));
-    let mut rows = hung_rows(&bar, &bar, quote_lines, width);
-    if !(msg.is_empty() && !quotes.is_empty()) {
-        rows.extend(hung_rows(&bar, &bar, lines, width));
-    } else if let (Some(last), Some(m)) = (rows.last_mut(), mark_span(mark)) {
-        // only quotes: the mark after the last one
-        last.spans.push(m);
+    // each line (a quote, a line of text) and its rows
+    let only_quotes = msg.is_empty() && !quotes.is_empty();
+    let mut all: Vec<Line<'static>> = quote_lines.into_iter().chain(if only_quotes { vec![] } else { lines }).collect();
+    let units: Vec<Vec<Line<'static>>> = all.iter().map(|l| hung_rows(&bar, &bar, [l.clone()], width)).collect();
+    let total: usize = units.iter().map(Vec::len).sum();
+    let mut rows: Vec<Line<'static>> = Vec::new();
+    if folds && !open && total > YOU_ROWS {
+        // BISE-239: closed, YOU_ROWS rows then `▸ n more lines` (a line
+        // cut to fit counts as hidden), its mark after the hint
+        let mut shown = 0;
+        for u in &units {
+            let room = YOU_ROWS - rows.len();
+            rows.extend(u.iter().take(room).cloned());
+            if u.len() > room {
+                break;
+            }
+            shown += 1;
+        }
+        let mut hint = vec![bar.clone(), Span::styled(crate::toolbox::more_label(units.len() - shown), d)];
+        hint.extend(mark_span(mark));
+        rows.push(Line::from(hint));
+    } else {
+        // its mark at the end (C3): `·` sent, `✓` got, `✓✓` read (accent)
+        if let (Some(last), Some(m)) = (all.last_mut(), mark_span(mark)) {
+            last.spans.push(m);
+        }
+        rows = hung_rows(&bar, &bar, all, width);
     }
     // the sizes of its images, dim, under it (still behind the bar)
     if let Some(sizes) = crate::attach::sizes_line(msg) {
@@ -1219,7 +1259,7 @@ mod multiline_tests {
     fn user_message_keeps_its_line_breaks() {
         let long = "word ".repeat(12);
         let text = format!("first line\nsecond line\n{}end", long);
-        let s = screen(Ev::You(text, crate::wire::Mark::Read), 30);
+        let s = screen(Ev::You(text, crate::wire::Mark::Read, false), 30);
         // the bar on every row (BISE-90), every row's text at column 3
         assert_eq!(s[0].as_str(), "│  first line", "{s:#?}");
         assert_eq!(s[1].as_str(), "│  second line", "{s:#?}");

@@ -416,7 +416,7 @@ mod tests {
         assert_eq!(rest, "why?");
         assert_eq!(qs.len(), 1);
         assert!(app.attachments.is_empty());
-        let rows: Vec<String> = crate::render::user_block_lines(&sent, crate::wire::Mark::Sent, 60)
+        let rows: Vec<String> = crate::render::user_block_lines(&sent, crate::wire::Mark::Sent, false, 60)
             .iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect();
@@ -436,7 +436,7 @@ mod tests {
         let mut app = crate::sb::bench::test_app();
         app.sb.focus = "docs".into();
         app.events = vec![
-            Ev::You("hi".into(), crate::wire::Mark::Read),
+            Ev::You("hi".into(), crate::wire::Mark::Read, false),
             Ev::Assistant("a".into()),
             Ev::TimeMark("14:02".into()),
             Ev::Assistant("b".into()),

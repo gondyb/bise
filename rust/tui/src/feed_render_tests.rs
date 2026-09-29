@@ -275,7 +275,7 @@ fn resume_history_rebuilds_the_feed() {
         .iter()
         .map(|e| match e {
             Ev::Compacted { text: t, .. } => format!("compacted {}", t),
-            Ev::You(t, _) => format!("you {}", t),
+            Ev::You(t, ..) => format!("you {}", t),
             Ev::Assistant(t) => format!("assistant {}", t),
             Ev::Tool(td) => format!(
                 "tool {} {} ok={} code={} elapsed={:?}",
@@ -478,7 +478,7 @@ fn measure_feed() -> Vec<Ev> {
     let mut tool = tool;
     tool.opened = true;
     vec![
-        Ev::You(prose.clone(), Mark::Read),
+        Ev::You(prose.clone(), Mark::Read, false),
         Ev::Assistant(prose.clone()),
         Ev::AgentMsg { from: "docs".into(), to: "main".into(), text: prose.clone(), level: 3, id: String::new(), open: false, fold: false },
         Ev::Thinking { ms: 1200, text: prose.clone(), open: true },
@@ -849,7 +849,7 @@ fn feed_entities_use_the_book_glyphs() {
     assert_eq!(row(Ev::Warn("turn interrupted".into())), " ▲ turn interrupted");
     assert_eq!(row(Ev::Err("boom".into())), " ✗ boom");
     assert_eq!(row(Ev::Sub { name: "gh.x".into(), ok: false, preview: "404".into() }), "   ↳ gh.x ✗ 404");
-    assert!(row(Ev::You("hi".into(), Mark::Read)).starts_with("│  hi"));
+    assert!(row(Ev::You("hi".into(), Mark::Read, false)).starts_with("│  hi"));
     // a tool the turn abandoned says so in English
     let mut events = vec![Ev::Tool(ToolData::bare(9, ToolState::Run))];
     let mut cache = vec![None];
@@ -911,7 +911,7 @@ fn traffic(n: usize, k: usize, from: usize) -> Vec<Ev> {
 
 #[test]
 fn a_run_of_twelve_folds() {
-    let mut evs = vec![Ev::You("ship it".into(), Mark::Read)];
+    let mut evs = vec![Ev::You("ship it".into(), Mark::Read, false)];
     evs.extend(traffic(12, 5, 0));
     let (mut events, mut cache) = arrive(evs);
     let rows = cached_text(&events, &mut cache, 100);
@@ -974,7 +974,7 @@ fn a_level_two_line_closes_the_run() {
 
 #[test]
 fn a_closed_run_never_changes() {
-    let mut evs = vec![Ev::You("go".into(), Mark::Read)];
+    let mut evs = vec![Ev::You("go".into(), Mark::Read, false)];
     evs.extend(traffic(6, 4, 0));
     evs.push(Ev::Assistant("the agents agreed.".into()));
     let (mut events, mut cache) = arrive(evs);
@@ -1038,7 +1038,7 @@ fn time_marks_after_a_pause() {
     let at = || "14:31".to_string();
     // not at the top of a feed
     assert!(!pause_mark(&mut events, &mut cache, PAUSE_MS * 2, at));
-    push_event(&mut events, &mut cache, Ev::You("hi".into(), Mark::Read));
+    push_event(&mut events, &mut cache, Ev::You("hi".into(), Mark::Read, false));
     // a short pause: nothing
     assert!(!pause_mark(&mut events, &mut cache, PAUSE_MS - 1, at));
     assert!(pause_mark(&mut events, &mut cache, PAUSE_MS, at));
@@ -1096,7 +1096,7 @@ fn level_two_and_answered_lines() {
 #[test]
 fn the_first_line_of_an_open_fold_toggles_by_row() {
     let long = format!("heads-up: {}", "x ".repeat(40));
-    let mut evs = vec![Ev::You("go".into(), Mark::Read), l3("a", "b", &long)];
+    let mut evs = vec![Ev::You("go".into(), Mark::Read, false), l3("a", "b", &long)];
     evs.extend(traffic(4, 3, 0));
     let (mut events, mut cache) = arrive(evs);
     // row 1 (after the gap) is the fold line
@@ -1113,7 +1113,7 @@ fn the_first_line_of_an_open_fold_toggles_by_row() {
 #[test]
 fn whats_for_you_matches_the_mockup() {
     let evs = vec![
-        Ev::You("the login breaks on safari. and the api docs, v2 please.".into(), Mark::Read),
+        Ev::You("the login breaks on safari. and the api docs, v2 please.".into(), Mark::Read, false),
         Ev::Assistant("on it: auth-fix takes safari, docs takes the api docs.".into()),
         l3("docs", "main", "v1 or v2 for the examples?"),
         l3("main", "docs", "v2, the brief says so."),
@@ -1162,7 +1162,7 @@ fn whats_for_you_matches_the_mockup() {
 fn a_busy_hour_matches_the_mockup() {
     let mut evs = vec![
         Ev::TimeMark("14:02".into()),
-        Ev::You("ship the v2 api: endpoints, docs, sdk, migration, the lot.".into(), Mark::Read),
+        Ev::You("ship the v2 api: endpoints, docs, sdk, migration, the lot.".into(), Mark::Read, false),
         Ev::Assistant("that's 30 pieces. i split it: 12 endpoints, 8 sdk, 6 docs, 4 migration. starting them.".into()),
     ];
     evs.extend(traffic(47, 30, 0));
@@ -1239,7 +1239,7 @@ fn marks(events: &[Ev]) -> Vec<(String, Mark)> {
     events
         .iter()
         .filter_map(|e| match e {
-            Ev::You(t, m) => Some((t.clone(), *m)),
+            Ev::You(t, m, ..) => Some((t.clone(), *m)),
             _ => None,
         })
         .collect()
@@ -1268,7 +1268,7 @@ fn steering_moves_the_mark_of_your_line() {
         let rows = build_rows(evs, evs.len() - 1, false, 100, 0);
         rows.iter().flat_map(|r| r.spans.clone()).last().unwrap().style
     };
-    let one = |m| vec![Ev::You("x".into(), m)];
+    let one = |m| vec![Ev::You("x".into(), m, false)];
     assert_eq!(last(&one(Mark::Sent)).fg, Some(crate::theme::dim()));
     assert_eq!(last(&one(Mark::Received)).fg, Some(crate::theme::faint()));
     assert_eq!(last(&one(Mark::Read)).fg, Some(crate::theme::accent()));
@@ -1366,17 +1366,17 @@ fn mains_replies_carry_its_glyph_in_its_feed_only() {
 fn a_combined_steer_moves_the_marks_of_this_turn() {
     let mut events: Vec<Ev> = Vec::new();
     let mut cache: Vec<Option<EventRows>> = Vec::new();
-    push_event(&mut events, &mut cache, Ev::You("before".into(), Mark::Sent));
+    push_event(&mut events, &mut cache, Ev::You("before".into(), Mark::Sent, false));
     push_event(&mut events, &mut cache, Ev::Turn);
-    push_event(&mut events, &mut cache, Ev::You("also check the logs".into(), Mark::Sent));
+    push_event(&mut events, &mut cache, Ev::You("also check the logs".into(), Mark::Sent, false));
     let block = "<agent_message from=\"noisy\" relation=\"child\" id=\"m_4\">";
     let mark = |m| Ev::MarkYou { text: block.into(), mark: m, or: None };
     assert!(!push_event(&mut events, &mut cache, mark(Mark::Received)));
-    assert!(matches!(&events[2], Ev::You(_, Mark::Received)));
+    assert!(matches!(&events[2], Ev::You(_, Mark::Received, ..)));
     assert!(!push_event(&mut events, &mut cache, mark(Mark::Read)));
-    assert!(matches!(&events[2], Ev::You(_, Mark::Read)));
+    assert!(matches!(&events[2], Ev::You(_, Mark::Read, ..)));
     // a message of an earlier turn keeps its own mark (Turn read it)
-    assert!(matches!(&events[0], Ev::You(_, Mark::Read)));
+    assert!(matches!(&events[0], Ev::You(_, Mark::Read, ..)));
     assert_eq!(events.len(), 3);
 }
 
@@ -1636,4 +1636,72 @@ fn the_ascii_rows() {
             " $ waiting                        ~ T",
         ]
     );
+}
+
+// ---- a long message of yours folds (BISE-239) ----
+
+#[test]
+fn a_long_message_of_yours_folds_to_eight_rows_and_its_hint() {
+    let text = (1..=20).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+    let (mut events, mut cache) = arrive(vec![Ev::You(text, Mark::Read, false)]);
+    let rows = cached_text(&events, &mut cache, 60);
+    let body: Vec<&String> = rows.iter().filter(|r| !r.trim().is_empty()).collect();
+    // 8 rows of text, then the hint on its own row, the bar through it
+    assert_eq!(body.len(), YOU_ROWS + 1, "{rows:#?}");
+    assert_eq!(body[0].as_str(), "│  line 1", "{rows:#?}");
+    assert_eq!(body[7].as_str(), "│  line 8", "{rows:#?}");
+    assert_eq!(body[8].as_str(), "│  ▸ 12 more lines ✓✓", "{rows:#?}");
+    assert!(crate::feed::is_closed_at(&events, 0) && crate::feed::anything_closed(&events));
+    // ctrl+o opens it whole, `▾` after its last line; again folds it
+    crate::feed::set_everything(&mut events, &mut cache, true);
+    let open = cached_text(&events, &mut cache, 60);
+    assert!(open.iter().any(|r| r == "│  line 20 ▾ ✓✓") && !open.iter().any(|r| r.contains("more line")), "{open:#?}");
+    assert_eq!(open.iter().filter(|r| r.starts_with("│  line")).count(), 20);
+    crate::feed::set_everything(&mut events, &mut cache, false);
+    assert!(cached_text(&events, &mut cache, 60).iter().any(|r| r.contains("▸ 12 more lines")));
+}
+
+#[test]
+fn a_line_cut_to_fit_counts_as_hidden() {
+    // 7 short lines then one that wraps over rows 8-10: rows 1-8 show,
+    // the 8th line is cut, so 1 more line (and the 2 after it: 3)
+    let mut lines: Vec<String> = (1..=7).map(|n| format!("l{n}")).collect();
+    lines.push("word ".repeat(30));
+    lines.push("a".into());
+    lines.push("b".into());
+    let (events, mut cache) = arrive(vec![Ev::You(lines.join("\n"), Mark::Read, false)]);
+    let rows = cached_text(&events, &mut cache, 60);
+    let body: Vec<&String> = rows.iter().filter(|r| !r.trim().is_empty()).collect();
+    assert_eq!(body.len(), YOU_ROWS + 1, "{rows:#?}");
+    assert!(body[7].starts_with("│  word"), "{rows:#?}");
+    assert_eq!(body[8].as_str(), "│  ▸ 3 more lines ✓✓", "{rows:#?}");
+}
+
+#[test]
+fn a_short_message_of_yours_stays_whole() {
+    let text = (1..=8).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+    let (events, mut cache) = arrive(vec![Ev::You(text, Mark::Read, false)]);
+    let rows = cached_text(&events, &mut cache, 60);
+    assert_eq!(rows.iter().filter(|r| r.starts_with("│  line")).count(), 8, "{rows:#?}");
+    assert!(rows.iter().any(|r| r == "│  line 8 ✓✓") && !rows.iter().any(|r| r.contains("more line") || r.contains('▾')), "{rows:#?}");
+    assert!(!crate::feed::discloses(&events[0]) && !crate::feed::anything_closed(&events));
+}
+
+#[test]
+fn a_click_on_the_hint_row_opens_just_that_message() {
+    let long = (1..=12).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+    let (mut events, mut cache) = arrive(vec![Ev::You(long.clone(), Mark::Read, false), Ev::You(long, Mark::Read, false)]);
+    let rows = cached_text(&events, &mut cache, 60);
+    let n = cache[1].as_ref().unwrap().rows.len();
+    assert!(rows.iter().filter(|r| r.contains("▸ 4 more lines")).count() == 2, "{rows:#?}");
+    // a click on a text row does nothing; on the hint row it opens
+    assert!(!toggle_at(&mut events, &mut cache, 1, n - 3));
+    assert!(matches!(events[1], Ev::You(_, _, false)));
+    assert!(toggle_at(&mut events, &mut cache, 1, n - 1));
+    assert!(matches!(events[1], Ev::You(_, _, true)) && matches!(events[0], Ev::You(_, _, false)));
+    // open: its last row (the `▾` one) folds it again
+    let _ = cached_text(&events, &mut cache, 60);
+    let n = cache[1].as_ref().unwrap().rows.len();
+    assert!(toggle_at(&mut events, &mut cache, 1, n - 1));
+    assert!(matches!(events[1], Ev::You(_, _, false)));
 }

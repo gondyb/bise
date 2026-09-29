@@ -93,7 +93,8 @@ pub(crate) enum Mark {
 
 #[derive(Clone)]
 pub(crate) enum Ev {
-    You(String, Mark),
+    // your message; the bool: opened whole (a long one folds, BISE-239)
+    You(String, Mark, bool),
     Assistant(String),
     // the model's reasoning for the message that follows: rendered
     // collapsed as "thought for Ns"; ctrl+o expands every section, a
@@ -267,7 +268,7 @@ pub(crate) fn strip_history(line: &str) -> (&str, bool) {
 pub(crate) fn parse_history_line(line: &str) -> Option<Ev> {
     // a replayed message was committed: the model read it
     if let Some(t) = line.strip_prefix("you : ") {
-        return Some(Ev::You(unescape_md(t), Mark::Read));
+        return Some(Ev::You(unescape_md(t), Mark::Read, false));
     }
     // steering the Core committed: your message with this text was read;
     // none (a notification): the old info line

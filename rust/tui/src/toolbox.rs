@@ -318,7 +318,7 @@ fn split(s_rows: usize, o_rows: Option<usize>) -> (usize, Option<usize>) {
 }
 
 /// The marker on the last row of a closed box: `▸ n more lines`.
-fn more_label(n: usize) -> String {
+pub(crate) fn more_label(n: usize) -> String {
     let mark = if theme::ascii_mode() { ">" } else { G_CLOSED };
     format!("{} {} more line{}", mark, n, if n == 1 { "" } else { "s" })
 }

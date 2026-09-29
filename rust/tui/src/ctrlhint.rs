@@ -271,6 +271,8 @@ fn folds(app: &App, buf: &mut Buffer) {
         let t = after.trim_start();
         let lead = after.len() - t.len();
         let words = t.split("  ").next().unwrap_or("").trim_end();
+        // your folded message has its mark after: `▸ 12 more lines ✓✓`
+        let words = more_lines_head(words).unwrap_or(words);
         if more_lines(words) {
             let w = words.width();
             let x = x0 + (at + 1 + lead) as u16;
@@ -290,6 +292,13 @@ fn folds(app: &App, buf: &mut Buffer) {
             put(buf, x0 + (end + 1) as u16, y, pair.0, s.trim_end());
         }
     }
+}
+
+/// `12 more lines ✓✓` (a folded message of yours, BISE-239): its
+/// `12 more lines`.
+fn more_lines_head(s: &str) -> Option<&str> {
+    let end = s.match_indices(' ').nth(2).map(|(i, _)| i)?;
+    more_lines(&s[..end]).then(|| &s[..end])
 }
 
 /// `12 more lines`, `1 more line` (a closed box's last row).
@@ -431,6 +440,9 @@ mod tests {
         assert_eq!(fit(p, 8).as_deref(), Some("ctrl+o  "));
         assert_eq!(fit(p, 5), None);
         assert!(more_lines("12 more lines") && more_lines("1 more line") && !more_lines("more lines") && !more_lines("12 more lines x"));
+        assert_eq!(more_lines_head("12 more lines ✓✓"), Some("12 more lines"));
+        assert_eq!(more_lines_head("12 more lines"), None);
+        assert_eq!(more_lines_head("12 more things ✓"), None);
     }
 }
 

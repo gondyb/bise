@@ -1,5 +1,5 @@
 """BISE-237: ctrl+f finds in the history. Two messages carry `needle`,
-a long one between them pushes the first off the screen. ctrl+f, type
+a long one between them (opened with ctrl+o) pushes the first off the screen. ctrl+f, type
 `needle`: the newest match is current (`4 of 4`); ↑ goes up match by
 match and the view scrolls to the old one; ↓ comes back; esc closes and
 the draft is back. NO_COLOR: the current match is reversed, the others
@@ -30,6 +30,10 @@ def main():
         send(t, "the needle one", "ack: the needle one")
         send(t, FILLER, "ack: filler filler")
         send(t, "the needle two", "ack: the needle two")
+        # a long message of yours folds to 8 rows (BISE-239): opened
+        # (ctrl+o), the filler pushes the first needle off the screen
+        t.keys("C-o")
+        t.wait("filler ▾")
         assert "needle one" not in t.screen(), t.screen()
         t.typed("my draft")
         t.keys("C-f")

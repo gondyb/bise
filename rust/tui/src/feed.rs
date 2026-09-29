@@ -540,7 +540,7 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
                         *open = false;
                         cache[i] = None;
                     }
-                    Ev::You(t, m) if !found && yours(t) && *m != Mark::Failed => {
+                    Ev::You(t, m, ..) if !found && yours(t) && *m != Mark::Failed => {
                         *m = Mark::Failed;
                         cache[i] = None;
                         found = true;
@@ -552,7 +552,7 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
             // only once delivered): your line comes back, marked
             if !found {
                 let t = format!("@{} {}", name, text);
-                push_event(events, cache, Ev::You(t, Mark::Failed));
+                push_event(events, cache, Ev::You(t, Mark::Failed, false));
             }
         }
         // C3: a steering line moves the mark of your message
@@ -604,7 +604,7 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
             for (i, e) in events.iter_mut().enumerate().rev() {
                 match e {
                     Ev::Turn => break,
-                    Ev::You(_, m) if matches!(*m, Mark::Sent | Mark::Received) => {
+                    Ev::You(_, m, ..) if matches!(*m, Mark::Sent | Mark::Received) => {
                         *m = Mark::Read;
                         if let Some(c) = cache.get_mut(i) {
                             *c = None;
@@ -861,6 +861,8 @@ pub(crate) fn discloses(ev: &Ev) -> bool {
         Ev::Answered { why, .. } => !why.trim().is_empty(),
         Ev::Compacted { text, .. } => !text.trim().is_empty(),
         Ev::Release(r) => r.discloses(),
+        // a long message of yours folds (BISE-239)
+        Ev::You(t, ..) => crate::render::you_folds(t),
         _ => false,
     }
 }
@@ -909,6 +911,14 @@ pub(crate) fn toggle_at(events: &mut [Ev], cache: &mut [Option<EventRows>], i: u
             return toggle_own(events, cache, i);
         }
     }
+    // a message of yours: only its last row (`▸ n more lines`, or the one
+    // ending in `▾`) folds it; its other rows stay for reading (BISE-239)
+    if let (Some(Ev::You(t, ..)), Some(Some(c))) = (events.get(i), cache.get(i)) {
+        let sizes = usize::from(crate::attach::sizes_line(t).is_some());
+        if row + 1 + sizes != c.rows.len() {
+            return false;
+        }
+    }
     toggle_event(events, cache, i)
 }
 
@@ -921,7 +931,8 @@ fn toggle_own(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize) -> b
         Ev::Thinking { open, .. }
         | Ev::AgentMsg { open, .. }
         | Ev::Answered { open, .. }
-        | Ev::Compacted { open, .. } => *open = !*open,
+        | Ev::Compacted { open, .. }
+        | Ev::You(_, _, open) => *open = !*open,
         Ev::Tool(td) if crate::toolbox::is_boxed(td) => {
             // BISE-223: the row opens into its box (15 rows), a box that
             // hides lines opens whole, then back to the row
@@ -1304,7 +1315,8 @@ fn own_open(ev: &Ev) -> Option<bool> {
         Ev::Thinking { open, .. }
         | Ev::AgentMsg { open, .. }
         | Ev::Answered { open, .. }
-        | Ev::Compacted { open, .. } => Some(*open),
+        | Ev::Compacted { open, .. }
+        | Ev::You(_, _, open) => Some(*open),
         // a row, or an open box that still hides lines, is closed
         Ev::Tool(td) if crate::toolbox::is_boxed(td) => {
             Some(td.opened && (td.expanded || !crate::toolbox::box_folds(td)))
@@ -1380,7 +1392,7 @@ fn mark_this_turn(events: &mut [Ev], cache: &mut [Option<EventRows>], mark: Mark
     for (i, e) in events.iter_mut().enumerate().rev() {
         match e {
             Ev::Turn => break,
-            Ev::You(_, m) if matches!(*m, Mark::Sent | Mark::Received) && mark > *m => {
+            Ev::You(_, m, ..) if matches!(*m, Mark::Sent | Mark::Received) && mark > *m => {
                 *m = mark;
                 if let Some(c) = cache.get_mut(i) {
                     *c = None;
@@ -1395,7 +1407,7 @@ pub(crate) fn mark_you(events: &mut [Ev], cache: &mut [Option<EventRows>], text:
     let plain = crate::markdown::unescape_md(text);
     let from = events.len().saturating_sub(MARK_LOOKBACK);
     for i in (from..events.len()).rev() {
-        if let Ev::You(t, m) = &mut events[i] {
+        if let Ev::You(t, m, ..) = &mut events[i] {
             if words(t).eq(words(&plain)) {
                 if mark > *m {
                     *m = mark;

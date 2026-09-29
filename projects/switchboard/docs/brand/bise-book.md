@@ -370,7 +370,7 @@ The same three levels everywhere, in main and inside an agent.
 | **2 · for you** | what main or an agent says to you: replies, summaries, reports on your requests, main answering on your behalf | normal text, with `:*`, a status glyph (`✓` `✗`) or `@ name to you:` in front |
 | **3 · between agents** | messages agents send each other and to main | dim text under a faint rail: `@ from → to  text`, names padded to 10 columns, one line each, `▸` when long |
 
-- **Your messages** carry a thin accent bar `│` on the left, on every wrapped line, text at column 3; marks `·` `✓` `✓✓` at the end. Thin bar = you, heavy bar `┃` = needs you, so you can tell at a glance what you said from what the agents said (decided by Gabriel, 2026-09-28).
+- **Your messages** carry a thin accent bar `│` on the left, on every wrapped line, text at column 3; marks `·` `✓` `✓✓` at the end. Thin bar = you, heavy bar `┃` = needs you, so you can tell at a glance what you said from what the agents said (decided by Gabriel, 2026-09-28). A long one folds (BISE-239, user: « Le user message devrait avoir un max line count dans l'historique avec ctrl+o pour l'afficher en entier. », designer's picks): more than 8 lines (a quote, an image chip: one line each; or as many rows at 80 columns) shows its first 8 rows, then its own dim row `▸ n more lines` at the text column, the bar through it, the mark after it (`▸ 12 more lines ✓✓`); n = every line not shown whole (a line cut to fit counts as hidden). A click on that row, or `space` on the message, opens it whole in place, `▾` after its last line (a click on that row folds it back); `ctrl+o` opens and folds every one with the rest. Every view: main's and each agent's. Its other rows stay for reading and selecting (a click there does nothing). Search (ctrl+f) finds text in the hidden part and opens it. ASCII: `> 12 more lines`.
 
 - Traffic between agents is **always in the history** (including between two
   agents that aren't main), so what happened stays understandable. Main's
@@ -448,6 +448,7 @@ The same three levels everywhere, in main and inside an agent.
 | report in main | `✓ bench is done. p95 at 180 ms ▸ report` | the report |
 | brief (inside an agent) | `◇ brief ▸` | the brief |
 | a run of level 3 | `▸ 12 messages between 8 agents` | the messages, in order |
+| a long message of yours (BISE-239) | its first 8 rows, `▸ 12 more lines` | the whole message |
 | a card | open while it needs you | see §12 |
 
   Keys: click or `space` on the selected item toggles it; `ctrl+o` opens or
@@ -754,7 +755,7 @@ replays it (**⚠** proposed command).
 | `esc` | close selection; in an agent, back to main | — |
 | `ctrl+g` | cards: open the card view, and back (§12) | the only card key from the thread |
 | `1-9`, `⏎`, `ctrl+n` / `ctrl+p`, `ctrl+x`, `esc` | in the card view: pick, answer, next / previous, close, back (§12) | `alt+r`, `ctrl+f` full screen, `ctrl+a` on an empty composer: removed (BISE-236) |
-| `ctrl+o` | open or close everything folded (thinking, outputs, diffs, reports, runs, `▸ why`) | was `ctrl+t` (removed, no alias); the `ctrl+o` shell is gone: the terminal panel is the one shell |
+| `ctrl+o` | open or close everything folded (thinking, outputs, diffs, reports, runs, `▸ why`, your long messages) | was `ctrl+t` (removed, no alias); the `ctrl+o` shell is gone: the terminal panel is the one shell |
 | `ctrl+f` | find in the history (main or the agent in view): the field takes the composer's place (the draft waits), the divider reads `find in {agent}`, `find in the history` dim when empty, the counter right-aligned and dim (`3 of 12`, `12+` while older lines are not loaded, `no match`); every edit searches again and goes to the newest match (your messages and the replies first, then the calls), 3 rows of context above it; `⏎` / `↑` / `ctrl+f` older, `shift+⏎` / `↓` newer, wrapping with `back to the newest` / `back to the oldest` for 1.5 s; matches on the pill tint, the current one on the accent, bold (NO_COLOR: underlined / reversed); smart-case; a match hidden in a call's box, a `▸ n commands` fold, a report opens it while current, closes it after; thinking is not searched; `esc` closes, the view stays on the match; key bar `⏎ older   ↑↓ move   esc close` | new (BISE-237); was the emacs forward char (`→` does it) and the card full screen |
 | `ctrl+r` | voice: record, any key stops, then the clip is transcribed at once; the voice chip at the cursor meanwhile, you keep typing while it is transcribed (BISE-222) | batch, not live (BISE-130): the full Voxtral model, `[voice]` in config.toml |
 | ``ctrl+` `` | terminal panel | — |

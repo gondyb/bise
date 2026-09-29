@@ -759,7 +759,7 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
     let text = unescape_md(raw);
     let field = |s: &str| unescape_md(&s.replace(" \\: ", " : "));
     Some(match kind {
-        "you" => Ev::You(text, Mark::Sent),
+        "you" => Ev::You(text, Mark::Sent, false),
         // BISE-86: `undelivered : {name} : {text}` (fields escaped)
         "undelivered" => {
             let (name, t) = raw.split_once(" : ").unwrap_or((raw, ""));
@@ -872,7 +872,7 @@ mod hub_line_tests {
         Some(match parse_hub_line(line)? {
             Ev::AgentMsg { from, to, text, level, id, .. } => format!("msg {from}|{to}|{text}|{level}|{id}"),
             Ev::Answered { agent, question, answer, why, .. } => format!("answered {agent}|{question}|{answer}|{why}"),
-            Ev::You(t, _) => format!("you {t}"),
+            Ev::You(t, ..) => format!("you {t}"),
             Ev::Card { text, .. } => format!("card {text}"),
             Ev::CardClosed { id, res } => format!("card-closed {id}|{res}"),
             Ev::Info(t) => format!("info {t}"),
@@ -1116,9 +1116,9 @@ mod nav_key_tests {
         };
         let ev = parse_hub_line("undelivered : fix : d'abord \\: les tests").unwrap();
         assert!(matches!(&ev, Ev::Undelivered { name, text, open: true } if name == "fix" && text == "d'abord : les tests"));
-        push_event(&mut app.events, &mut app.cache, Ev::You("d'abord : les tests".into(), Mark::Sent));
+        push_event(&mut app.events, &mut app.cache, Ev::You("d'abord : les tests".into(), Mark::Sent, false));
         push_event(&mut app.events, &mut app.cache, ev.clone());
-        assert!(matches!(&app.events[0], Ev::You(_, Mark::Failed)));
+        assert!(matches!(&app.events[0], Ev::You(_, Mark::Failed, ..)));
         let rows = |app: &App| -> Vec<String> {
             app.events
                 .iter()
@@ -1134,20 +1134,20 @@ mod nav_key_tests {
         assert_eq!(sent(), "");
         assert_eq!(rows(&app)[1].trim(), "✗ not delivered: fix stopped.");
         // a second one, from main's view: ⏎ sends it again to @fix
-        push_event(&mut app.events, &mut app.cache, Ev::You("encore".into(), Mark::Sent));
+        push_event(&mut app.events, &mut app.cache, Ev::You("encore".into(), Mark::Sent, false));
         push_event(&mut app.events, &mut app.cache, parse_hub_line("undelivered : fix : encore").unwrap());
         assert!(press(&mut app, KeyCode::Enter, KeyModifiers::NONE));
         let out = sent();
         assert!(out.contains(r#""op":"input""#) && out.contains("@fix encore"), "{out}");
-        assert!(matches!(app.events.last(), Some(Ev::You(t, Mark::Sent)) if t == "@fix encore"));
+        assert!(matches!(app.events.last(), Some(Ev::You(t, Mark::Sent, ..)) if t == "@fix encore"));
         // `@fix encore` is the line the user wrote in main's view: marked
         push_event(&mut app.events, &mut app.cache, parse_hub_line("undelivered : fix : encore").unwrap());
-        assert!(matches!(app.events.iter().rev().nth(1), Some(Ev::You(t, Mark::Failed)) if t == "@fix encore"));
+        assert!(matches!(app.events.iter().rev().nth(1), Some(Ev::You(t, Mark::Failed, ..)) if t == "@fix encore"));
         // a message the feed does not show (an `@fix` line from another
         // view): it comes back, marked, before the question
         let n = app.events.len();
         push_event(&mut app.events, &mut app.cache, parse_hub_line("undelivered : fix : où ?").unwrap());
-        assert!(matches!(&app.events[n], Ev::You(t, Mark::Failed) if t == "@fix où ?"));
+        assert!(matches!(&app.events[n], Ev::You(t, Mark::Failed, ..) if t == "@fix où ?"));
         assert!(matches!(&app.events[n + 1], Ev::Undelivered { open: true, .. }));
         // not with a draft: ⏎ sends the draft as usual
         push_event(&mut app.events, &mut app.cache, parse_hub_line("undelivered : fix : x").unwrap());
