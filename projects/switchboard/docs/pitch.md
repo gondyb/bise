@@ -217,8 +217,9 @@ teams). The edge is a permanent main plus agents that talk to each other, not
 
 ## 8. What to fix before anyone else uses it
 
-1. **Install.** Today: `run.sh` from a dev worktree, with a Rust binary and a
-   Bend REPL to build. It needs a binary (brew / curl | sh) or, better, to
+1. **Install.** Today: `bise`, from the dev channel (`install.sh --dev`: it
+   runs the version the dev repo's hub runs), so still a dev tree with a
+   Rust binary and a Bend REPL to build. It needs a binary (brew / curl | sh) or, better, to
    ship inside Vibe.
 2. **Onboarding.** A guided first run: what main is, what a task is,
    `Enter`/`Esc`, cards. A 60-second played-out example.

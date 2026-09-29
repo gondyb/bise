@@ -142,6 +142,18 @@ the current one nor one a running process uses.
   first-run onboarding when a terminal session starts with no key
   anywhere, `uninstall`, `update` (stub), then sets `SB_LAUNCH_DIR` and
   `BEND_WORKDIR` to the user's folder and execs the binary.
+- **the dev channel** (`install.sh --dev [--repo <dir>]`, BISE-129) — no
+  bundle: `~/.local/bin/bise` -> `<dev dir>/bin/bise` (`~/.bise/dev`, or
+  `~/.local/state/switchboard` before the move), a launcher that, at each
+  run, runs the version the dev repo's hub runs: its `versions.json`
+  `current` (what `/restart` and `sb restart` switch to), else its
+  `hub.root`, else the newest built version. So a restart in the dev repo
+  updates `bise` everywhere; `bise` in the dev repo attaches to its running
+  hub. `BISE_DEV_VERSION=<id|dir>` runs another built version;
+  `--launcher-root` prints the chosen dir (doctor's PATH line uses it);
+  `--uninstall --dev` removes link and launcher only.
+  `test-dev-install.sh <version dir> [<version dir>]` checks it in a fake
+  HOME with throwaway hubs (tmux).
 - **`test-install.sh <tarball>`** — installs into a clean fake HOME
   (`env -i HOME=/tmp/pk-home PATH=/usr/bin:/bin:/usr/sbin:/sbin
   SHELL=/bin/zsh`), never touching the real `~/.bend-harness`, state or

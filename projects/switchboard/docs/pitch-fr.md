@@ -216,8 +216,9 @@ des équipes). L'avance tient à main permanent + agents qui se parlent, pas à
 
 ## 8. À corriger avant que quelqu'un d'autre l'utilise
 
-1. **Installation.** Aujourd'hui : `run.sh` depuis un worktree de dev,
-   binaire Rust + REPL Bend à compiler. Il faut un binaire (brew / curl |
+1. **Installation.** Aujourd'hui : `bise`, par le canal dev
+   (`install.sh --dev` : il lance la version du hub du dépôt de dev), donc
+   toujours un dépôt de dev, binaire Rust + REPL Bend à compiler. Il faut un binaire (brew / curl |
    sh) ou, mieux, livré dans Vibe.
 2. **Onboarding.** Premier lancement guidé : ce qu'est main, ce qu'est une
    tâche, `Enter`/`Esc`, les cartes. Un exemple joué en 60 secondes.

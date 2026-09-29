@@ -38,5 +38,9 @@ Code et tests :
 
 ## État
 
+Lancer : `bise` dans n'importe quel dossier (installé une fois avec
+`sh projects/switchboard/packaging/install.sh --dev` sur la machine de dev ;
+voir [`IMPLEMENTATION.md`](IMPLEMENTATION.md) § Lancer).
+
 Implémenté dans le harness (branche `main`) : voir
 [`IMPLEMENTATION.md`](IMPLEMENTATION.md) (lancer, tester, touches, limites).

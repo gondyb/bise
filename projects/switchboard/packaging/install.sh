@@ -4,6 +4,13 @@
 #   sh install.sh [--from <tarball|bundle dir>] [--prefix <dir>] [--bin-dir <dir>]
 #                 [--no-modify-path] [--keep <n>]
 #   sh install.sh --uninstall [--prefix <dir>] [--bin-dir <dir>] [--purge]
+#   sh install.sh --dev [--repo <dir>] [--bin-dir <dir>]   (dev channel)
+#   sh install.sh --uninstall --dev [--bin-dir <dir>]
+#
+# --dev (BISE-129): no bundle; $BIN_DIR/bise runs the version the hub of
+# the dev repo (--repo, default: the repo this script is in) runs now:
+# its versions.json 'current', what /restart and `sb restart` switch
+# to. Every restart there updates `bise` everywhere.
 #
 # Run from an extracted bundle (app/ next to this file), it installs that
 # bundle; --from takes a tarball or a bundle dir. (The published form
@@ -35,6 +42,8 @@ MODIFY_PATH=1
 KEEP=3
 ACTION=install
 PURGE=0
+DEV=0
+REPO=""
 MARK="# added by the $CMD installer"
 OLD_MARK="# added by the $OLD_CMD installer"   # before BISE-165: same PATH line
 
@@ -50,7 +59,9 @@ while [ $# -gt 0 ]; do
     --keep) KEEP="$2"; shift ;;
     --uninstall) ACTION=uninstall ;;
     --purge) PURGE=1 ;;
-    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --dev) DEV=1 ;;
+    --repo) REPO="$2"; shift ;;
+    -h|--help) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
   shift
@@ -70,6 +81,129 @@ rc_files() {
 running_hubs() {
   ps -axo pid=,command= 2>/dev/null | grep -F "$PREFIX/versions/" | grep -F " sbd " | grep -v grep || true
 }
+
+# ---- the dev channel (--dev): a launcher that follows a dev hub ----
+# The dev state dir, the rule of versions.sh and bise_home: $BISE_HOME/dev,
+# ~/.bise/dev once migrated, else ~/.local/state/switchboard.
+dev_dir() {
+  if [ -n "${BISE_HOME:-}" ]; then echo "$BISE_HOME/dev"
+  elif [ -e "$HOME/.bise/migrated.json" ]; then echo "$HOME/.bise/dev"
+  else echo "$HOME/.local/state/switchboard"; fi
+}
+if [ "$DEV" = 1 ]; then
+  DEV_DIR="$(dev_dir)"
+  LAUNCHER="$DEV_DIR/bin/$CMD"
+  if [ "$ACTION" = uninstall ]; then
+    [ -L "$BIN_DIR/$CMD" ] && [ "$(readlink "$BIN_DIR/$CMD")" = "$LAUNCHER" ] && rm -f "$BIN_DIR/$CMD"
+    rm -f "$LAUNCHER"
+    say "dev channel removed ($BIN_DIR/$CMD); versions, hubs and your data are kept"
+    exit 0
+  fi
+  [ -n "$REPO" ] || REPO="$(cd "$(dirname "$0")" && git rev-parse --show-toplevel 2>/dev/null)" \
+    || die "no repo: pass --repo <the dev repo>"
+  REPO="$(cd "$REPO" 2>/dev/null && pwd -P)" || die "no such repo: $REPO"
+  [ -x "$REPO/versions.sh" ] || die "$REPO is not the bise dev repo (no versions.sh)"
+  VERSIONS="${SB_VERSIONS_DIR:-$DEV_DIR/versions}"
+  # a built version, newest first: to name the repo's hub (its id is a
+  # hash of the path the binary computes: `switchboard --state-dir`)
+  any=""
+  for d in $(ls -t "$VERSIONS/" 2>/dev/null); do
+    case "$d" in .*) continue ;; esac
+    for b in bise bend-harness; do
+      [ -x "$VERSIONS/$d/$b" ] && { any="$VERSIONS/$d/$b"; break 2; }
+    done
+  done
+  [ -n "$any" ] || die "no version built in $VERSIONS: run '$REPO/versions.sh build' first"
+  state="$(cd "$REPO" && env -u SB_STATE_DIR BISE_NO_MIGRATE=1 SB_LAUNCH_DIR="$REPO" \
+    "$any" switchboard --state-dir --workspace "$REPO" 2>/dev/null)" || die "$any cannot name the hub of $REPO"
+  HUB="$(basename "$state")"
+  case "$HUB" in *-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;; *) die "odd hub id: $HUB" ;; esac
+  mkdir -p "$DEV_DIR/bin"
+  q() { printf '%s' "$1" | sed "s/'/'\\\\''/g"; }
+  cat > "$LAUNCHER.tmp" <<EOF
+#!/bin/sh
+# $CMD launcher, dev channel (BISE-129), written by install.sh --dev.
+# Runs the version the hub of REPO runs now: its versions.json 'current'
+# (what /restart and 'sb restart' switch to; a hub that never switched:
+# its hub.root), so a restart there updates '$CMD' everywhere. No hub
+# yet: the newest built version.
+# BISE_DEV_VERSION=<id|dir> runs another built version.
+REPO='$(q "$REPO")'
+HUB='$HUB'
+EOF
+  cat >> "$LAUNCHER.tmp" <<'EOF'
+CMD="$(basename "$0")"
+if [ -n "${BISE_HOME:-}" ]; then home="$BISE_HOME"; dev="$BISE_HOME/dev"
+elif [ -e "$HOME/.bise/migrated.json" ]; then home="$HOME/.bise"; dev="$HOME/.bise/dev"
+else home=""; dev="$HOME/.local/state/switchboard"; fi
+versions="${SB_VERSIONS_DIR:-$dev/versions}"
+runnable() { [ -x "$1/bise" ] || [ -x "$1/bend-harness" ]; }
+pick() {
+  if [ -n "${BISE_DEV_VERSION:-}" ]; then
+    for v in "$BISE_DEV_VERSION" "$versions/$BISE_DEV_VERSION"; do
+      runnable "$v" && { echo "$v"; return 0; }
+    done
+    echo "$CMD: BISE_DEV_VERSION=$BISE_DEV_VERSION: no such version in $versions" >&2; return 1
+  fi
+  # the hub's folder: ~/.bise/hubs, else the old place (a hub that has
+  # not moved yet: it was running when ~/.bise was made)
+  for d in ${home:+"$home/hubs/$HUB"} "$HOME/.local/state/switchboard/$HUB"; do
+    [ -f "$d/versions.json" ] || continue
+    for k in current good; do
+      v="$(sed -n "s/.*\"$k\" *: *\"\([^\"]*\)\".*/\1/p" "$d/versions.json")"
+      [ -n "$v" ] && runnable "$v" && { echo "$v"; return 0; }
+    done
+  done
+  # a hub that never switched has no versions.json: the root it runs
+  for d in ${home:+"$home/hubs/$HUB"} "$HOME/.local/state/switchboard/$HUB"; do
+    v="$(cat "$d/hub.root" 2>/dev/null)"
+    [ -n "$v" ] && runnable "$v" && { echo "$v"; return 0; }
+  done
+  for d in $(ls -t "$versions/" 2>/dev/null); do
+    case "$d" in .*) continue ;; esac
+    runnable "$versions/$d" && { echo "$versions/$d"; return 0; }
+  done
+  echo "$CMD: no version built in $versions; run '$REPO/versions.sh build'" >&2; return 1
+}
+root="$(pick)" || exit 1
+root="$(cd "$root" && pwd -P)"
+ver() { sed -n "s/^$1=//p" "$root/VERSION" 2>/dev/null; }
+case "${1:-}" in
+  --launcher-root) echo "$root"; exit 0 ;;
+  --version|-V|version)
+    os="$(uname -s | tr '[:upper:]' '[:lower:]')"; arch="$(uname -m)"; [ "$arch" = aarch64 ] && arch=arm64
+    echo "$CMD $(ver id) (${os}-${arch}, commit $(ver commit | cut -c1-12), built $(ver built))"
+    echo "dev channel: the version the hub of $REPO runs ($root)"
+    exit 0 ;;
+esac
+# the user's folder: the workspace, and a single session's directory
+# (never an inherited one: an agent's shell has the hub's)
+export SB_LAUNCH_DIR="$PWD"
+export BEND_WORKDIR="$PWD"
+export BISE_APP_ROOT="$root"
+[ -x "$root/bise" ] && exec "$root/bise" "$@"
+# a version before BISE-163/165: bend-harness, its app root from the cwd
+cd "$root" || exit 1
+exec "$root/bend-harness" "$@"
+EOF
+  chmod 755 "$LAUNCHER.tmp"
+  mv -f "$LAUNCHER.tmp" "$LAUNCHER"
+  mkdir -p "$BIN_DIR"
+  if [ -e "$BIN_DIR/$CMD" ] && [ ! -L "$BIN_DIR/$CMD" ]; then
+    die "$BIN_DIR/$CMD exists and is not a link; remove it or pass --bin-dir"
+  fi
+  if [ -L "$BIN_DIR/$CMD" ] && [ "$(readlink "$BIN_DIR/$CMD")" != "$LAUNCHER" ]; then
+    say "replacing $BIN_DIR/$CMD -> $(readlink "$BIN_DIR/$CMD")"
+  fi
+  ln -sfn "$LAUNCHER" "$BIN_DIR/$CMD"
+  case ":$PATH:" in
+    *":$BIN_DIR:"*) ;;
+    *) say "$BIN_DIR is not on your PATH: add  export PATH=\"$BIN_DIR:\$PATH\"  to your shell's rc" ;;
+  esac
+  say "dev channel: $BIN_DIR/$CMD -> $LAUNCHER"
+  say "it runs the version the hub of $REPO runs ($HUB), now: $("$LAUNCHER" --launcher-root)"
+  exit 0
+fi
 
 # ---- uninstall ----
 if [ "$ACTION" = uninstall ]; then
@@ -209,6 +343,7 @@ init() {
 }
 
 case "${1:-}" in
+  --launcher-root) echo "$root"; exit 0 ;;
   --version|-V|version)
     echo "$CMD $(ver id) ($(ver target), commit $(ver commit | cut -c1-12), built $(ver built))"
     exit 0 ;;

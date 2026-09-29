@@ -55,9 +55,24 @@ Ce fichier sert aussi de mémoire de travail : il dit où en est le code.
 
 ```sh
 cd ~/mon-projet
-~/lab/bend-lab/harness/run.sh switchboard        # TUI ; lance le hub si besoin
-~/lab/bend-lab/harness/run.sh switchboard --stop # arrête le hub et les agents
+bise                      # TUI ; lance le hub si besoin, ou rejoint celui qui tourne
+bise switchboard --stop   # arrête le hub et les agents
+bise doctor               # vérifie le Mac, l'install, les clés, les hubs
 ```
+
+`bise` est dans `~/.local/bin` (BISE-129). Sur la machine de dev, le canal
+dev l'installe une fois :
+
+```sh
+sh ~/lab/bend-lab/harness/projects/switchboard/packaging/install.sh --dev
+```
+
+Ce `bise` lance la version que fait tourner le hub du dépôt de dev
+(`versions.json` 'current' : ce que `/restart` et `sb restart` choisissent),
+donc chaque restart là-bas met à jour `bise` partout. `bise --version` dit
+laquelle ; `BISE_DEV_VERSION=<id> bise` en lance une autre ;
+`install.sh --uninstall --dev` l'enlève. `./run.sh` reste pour compiler et
+lancer depuis les sources (un worktree, un test).
 
 Fermer le TUI (`/quit`, Ctrl+C) laisse le hub et les agents tourner. Le
 relancer dans le même dossier retrouve tout (fils, tâches, cartes).

@@ -287,20 +287,52 @@ fn rg() -> Check {
 fn on_path() -> Check {
     let me = std::env::current_exe().ok().and_then(|e| std::fs::canonicalize(e).ok());
     let path = std::env::var("PATH").unwrap_or_default();
-    match tools_env::which(bise_catalog::CLI, &path) {
-        Some(p) => {
-            let real = std::fs::canonicalize(&p).ok();
-            if real.is_some() && real == me {
-                ok("PATH", format!("{} is this bise", p.display()))
-            } else {
-                warn(
-                    "PATH",
-                    format!("{} is another bise ({})", p.display(), real.map(|r| r.display().to_string()).unwrap_or_default()),
-                    "fine in the dev tree; else put ~/.local/bin first in PATH",
-                )
-            }
-        }
-        None => warn("PATH", "`bise` is not on PATH", "add ~/.local/bin to PATH (the installer does it; open a new terminal)"),
+    let Some(p) = tools_env::which(bise_catalog::CLI, &path) else {
+        return warn("PATH", "`bise` is not on PATH", "add ~/.local/bin to PATH (the installer does it; open a new terminal)");
+    };
+    let real = std::fs::canonicalize(&p).ok();
+    // a launcher (install.sh, install.sh --dev) names the version it runs
+    let launched = real.as_deref().filter(|r| is_launcher(r)).and_then(|r| {
+        Command::new(r)
+            .arg("--launcher-root")
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()))
+    });
+    let mine = root().ok().map(|(r, _)| std::fs::canonicalize(&r).unwrap_or(r));
+    path_check(&p, real.as_deref(), me.as_deref(), launched.as_deref(), mine.as_deref())
+}
+
+/// A shell script written by install.sh (a launcher), not a binary.
+fn is_launcher(p: &Path) -> bool {
+    let mut head = [0u8; 256];
+    let n = std::fs::File::open(p).and_then(|mut f| std::io::Read::read(&mut f, &mut head)).unwrap_or(0);
+    let head = String::from_utf8_lossy(&head[..n]);
+    head.starts_with("#!") && head.contains("launcher")
+}
+
+/// The PATH line: `found` is `bise` on PATH (`real`: its target); `me` this
+/// executable; `launched`: the app root the launcher runs, when `found` is
+/// one; `mine`: this process's app root.
+pub(crate) fn path_check(found: &Path, real: Option<&Path>, me: Option<&Path>, launched: Option<&Path>, mine: Option<&Path>) -> Check {
+    if real.is_some() && real == me {
+        return ok("PATH", format!("{} is this bise", found.display()));
+    }
+    match launched {
+        Some(l) if Some(l) == mine => ok("PATH", format!("{} is a launcher that runs this bise ({})", found.display(), l.display())),
+        Some(l) => warn(
+            "PATH",
+            format!("{} is a launcher that runs {}, not this bise", found.display(), l.display()),
+            "fine for a version you run by hand; `bise doctor` checks the one the launcher runs",
+        ),
+        None => warn(
+            "PATH",
+            format!("{} is another bise ({})", found.display(), real.map(|r| r.display().to_string()).unwrap_or_default()),
+            "fine in the dev tree; else put ~/.local/bin first in PATH",
+        ),
     }
 }
 
@@ -488,6 +520,24 @@ mod tests {
         assert_eq!(migration_check(Some(&waiting), false, false).mark, Mark::Warn);
         assert_eq!(migration_check(None, true, false).mark, Mark::Ok);
         assert_eq!(migration_check(None, false, false).mark, Mark::Warn);
+    }
+
+    #[test]
+    fn a_launcher_on_path_that_runs_this_bise_is_fine() {
+        let (found, launcher) = (Path::new("/h/.local/bin/bise"), Path::new("/h/.bise/dev/bin/bise"));
+        let (exe, root) = (Path::new("/v/abc/bise"), Path::new("/v/abc"));
+        // the binary itself on PATH
+        assert_eq!(path_check(found, Some(exe), Some(exe), None, Some(root)).mark, Mark::Ok);
+        // a launcher that runs this version (the dev channel, an install)
+        let c = path_check(found, Some(launcher), Some(exe), Some(root), Some(root));
+        assert_eq!(c.mark, Mark::Ok, "{c:?}");
+        assert!(c.detail.contains("launcher that runs this bise"), "{c:?}");
+        // a launcher that runs another version: a warning, never a failure
+        let c = path_check(found, Some(launcher), Some(exe), Some(Path::new("/v/old")), Some(root));
+        assert_eq!(c.mark, Mark::Warn);
+        assert!(c.detail.contains("/v/old"), "{c:?}");
+        // another binary
+        assert_eq!(path_check(found, Some(Path::new("/x/bise")), Some(exe), None, Some(root)).mark, Mark::Warn);
     }
 
     #[test]
