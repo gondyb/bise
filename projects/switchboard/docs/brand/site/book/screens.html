@@ -104,6 +104,18 @@
   .att-a .lab { color:var(--faint); }
   .att-b { background:#2a2522; border-left:1px dashed var(--dim); padding:0 2ch 0 calc(2ch - 1px); max-width:91ch; box-sizing:border-box; }
   .optk { color:var(--acc); font-weight:700; }
+  /* open cards near the composer (proposal): one row per card, right above the divider */
+  .cstrip { padding:0 2ch; margin:.3lh 0 .5lh; max-width:95ch; }
+  .cstrip .cr { display:flex; justify-content:space-between; white-space:nowrap; overflow:hidden; padding:0 1ch; margin:0 -1ch; }
+  .cstrip .cr.on { background:var(--raised); }
+  .cstrip .cr .q { overflow:hidden; text-overflow:ellipsis; }
+  .cstrip .o b, .cfocus .o b { color:var(--acc); font-weight:400; } .cstrip .o > span + span { margin-left:2ch; }
+  .cstrip .x { color:var(--faint); margin-left:2ch; }
+  .cfocus { position:relative; border:1px solid var(--acc); border-radius:6px; padding:.5lh 2ch .6lh; margin:.6lh 2ch .7lh; max-width:91ch; }
+  .cfocus .bt { position:absolute; top:-.55lh; left:1.5ch; background:var(--bg); padding:0 1ch; }
+  .cfocus .bb { position:absolute; bottom:-.55lh; left:1.5ch; right:1.5ch; display:flex; gap:2ch; background:transparent; white-space:nowrap; overflow:hidden; }
+  .cfocus .bb span { background:var(--bg); padding:0 .5ch; color:var(--dim); } .cfocus .bb b { color:var(--text); font-weight:400; }
+  .cfocus .o > span { margin-right:3ch; } .cfocus .cmd { background:var(--raised); padding:0 1ch; }
   .att-d { position:relative; display:inline-block; min-width:44ch; max-width:91ch; box-sizing:border-box; border:1px solid var(--dim); border-radius:4px; padding:.35lh 2ch .3lh; margin:1lh 0 .6lh 0; }
   .att-d + .cbox, .att-b + .cbox { padding-top:0; }
   .att-d .row > span:first-child { margin-right:4ch; }
@@ -269,8 +281,40 @@ const ATT_SCREENS = [
 ["attachments · c · narrow", "(c) at 60 columns the divider keeps the chips and drops \"attached\", then the state on the right.",
  optC(`${QP(1)} ${QP(2)} ${IP(3)}`, MSG3, "", true)],
 ];
+// ---------- open cards near the composer: proposal for the user ----------
+const CFEED = you("signup is slow on mobile, and ship the next tag when it's green") + bise("perf is on signup. deploy waits for green, then publishes.") +
+  `<div class="b"><span class="acc">✓</span> api-v3 done <span class="dim">· the client is on v3.</span></div>`;
+const crow = (on, who, q, opts) => `<div class="cr${on ? " on" : ""}"><span class="q"><span class="acc">?</span> <span>${who}</span> <span class="dim">· ${q}</span></span><span class="o">${opts.map(([k, l]) => `<span><b>${k}</b> <span class="dim">${l}</span></span>`).join("")}<span class="x">×</span></span></div>`;
+const STRIP3 = `<div class="cstrip">` +
+  crow(true, "deploy wants to run", `<span style="color:var(--text)">npm publish --tag next</span>`, [["1", "allow"], ["2", "always"], ["3", "deny"]]) +
+  crow(false, "perf", "the hero image is 4.2 MB. compress it, or lazy-load it?", [["1", "compress"], ["2", "both"]]) +
+  crow(false, "docs", "v1 or v2 for the api docs?", [["1", "v1"], ["2", "v2"]]) + `</div>`;
+const cfoot = (right, hints) => foot(`main · ${right}`, "", hints);
+const CKEYS = "⏎ send · ctrl+g open card · ctrl+n next card · @ agent · / commands";
+const focusBox = (title, body, opts, keys) => `<div class="cfocus"><span class="bt"><span class="acc">?</span> ${title}</span>${body}<div class="o" style="margin-top:.4lh">${opts}</div><div class="bb">${keys.map(([k, l]) => `<span><b>${k}</b> ${l}</span>`).join("")}</div></div>`;
+const CARD_SCREENS = [
+["cards · a · the strip above the divider", "<span class='optk'>(a) designer's pick.</span> every open card is one row right above the divider, most blocking first (approvals, then questions). the selected row is raised. click a row to open it, click an option to answer, click × to close. from the composer: ctrl+g opens the selected card, ctrl+n / ctrl+p move the selection. your queued messages (if any) sit between the strip and the divider: they are yours, closest to where you type.",
+ term({ feed: CFEED, above: STRIP3, f: cfoot("3 working", CKEYS) })],
+["cards · a · a card open", "ctrl+g (or a click) opens the selected card and gives it the keys: bare keys work, because the composer is not taking text while a card is open. its bottom border lists them. esc gives the keys back to the composer, the card stays in the strip.",
+ term({ feed: CFEED, above: focusBox("perf needs you <span class='dim'>· 2 of 3 · 4m</span>",
+   `<div>the hero image is 4.2 MB. compress it, or lazy-load it?</div>`,
+   `<span><b>1</b> compress</span><span><b>2</b> both</span>`,
+   [["1-2", "pick"], ["r", "reply"], ["x", "close"], ["l", "later"], ["o", "open perf"], ["c", "copy"], ["f", "full"], ["n/p", "next"], ["esc", "back"]]),
+   f: cfoot("3 working", "type r to reply with text · esc back to the composer") })],
+["cards · a · an approval open", "an approval uses the same keys; its options are allow, always (this repo), deny. r is deny with a note. no allow-all. an approval never opens by itself while you type: its row pulses once in the strip.",
+ term({ feed: CFEED, above: focusBox("deploy wants to run <span class='dim'>· 1 of 3 · now</span>",
+   `<div><span class="cmd">npm publish --tag next</span></div><div class="dim" style="margin-top:.3lh">why: you said "ship the next tag when it's green". tests are green.</div>`,
+   `<span><b>1</b> allow</span><span><b>2</b> always in this repo</span><span><b>3</b> deny</span>`,
+   [["1-3", "pick"], ["r", "deny with a note"], ["o", "open deploy"], ["c", "copy"], ["n/p", "next"], ["esc", "back"]]),
+   f: cfoot("3 working", "type r to deny with a note · esc back to the composer") })],
+["cards · a · small height (16-23 rows)", "one row for all the cards: the selected one, cut with …, and the count. below 16 rows: no strip, the divider says '? 3 · ctrl+g'.",
+ term({ feed: CFEED, above: `<div class="cstrip">` + crow(true, "deploy wants to run", `<span style="color:var(--text)">npm publish --tag next</span>`, [["1", "allow"], ["3", "deny"], ["+2", "cards"]]) + `</div>`, f: cfoot("3 working", CKEYS), narrow: true })],
+["cards · b · chips on the divider", "<span class='optk'>(b)</span> zero rows: the divider carries one chip per card; click one to open it. cheap, but you don't see the question until you open it.",
+ term({ feed: CFEED, f: cfoot("3 working", CKEYS).replace('<span class="acc">main</span></span>', `<span class="acc">main</span></span> <span class="dim">·</span> <span class="qp on"><b>?</b> deploy</span> <span class="qp"><b>?</b> perf</span> <span class="qp"><b>?</b> docs</span>`) })],
+];
 // ---------- the screens ----------
 const screens = [
+...CARD_SCREENS,
 ...ATT_SCREENS,
 ["first run", "the empty state. says what to do, and that bise stays available while the work runs in the background. no vocabulary to learn.",
  term({ h: head('<span class="dim">no agents yet</span>'),
