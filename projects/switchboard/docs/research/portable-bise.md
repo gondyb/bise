@@ -11,7 +11,7 @@ folder, for any project, on every supported macOS (not Windows yet). The
 CLIs the agents need and the session files are portable. The state of
 bise lives in `~/.bise/`, like `~/.codex/` and `~/.claude/`.
 
-Issue ids: this plan uses **BISE-120..BISE-133**. research-providers uses
+Issue ids: this plan uses **BISE-160..BISE-173**. research-providers uses
 BISE-140..153 and agrees on the same `~/.bise/` layout (§3.2).
 
 ---
@@ -302,28 +302,28 @@ start now in its own worktree without touching files another task owns.
 
 | # | Issue | Size | Owns | When |
 |---|---|---|---|---|
-| 1 | **BISE-120** `bise_home()`: new crate `rust/home` (home, hub dir, prefs, run dir, the list of exported env paths); every Rust lookup of §1.3 goes through it; `XDG_STATE_HOME` dropped; tests with a fake HOME | 5 h | `rust/home/` (new), `rust/Cargo.toml`, `switchboard/src/paths.rs`, `daemon/versions.rs:259-280`, `tui/src/{onboarding,hints,keybar,voice,theme_detect,crash,plugins,skills}.rs`, `plugins/src/{state,resolve}.rs`, `images/src/lib.rs`, `harness/src/main.rs` (env loading, sessions, exports) | must wait for BISE-113 (debt-solo edits `main.rs` and the tui) |
-| 2 | **BISE-121** Migration once (§3.3): copy user files, move idle hubs + `git worktree repair`, keep running hubs in place, `migrated.json`, export `SB_STATE_DIR`/`BEND_*` so old versions follow; tests: old layout in a fake HOME, running-hub case, rollback to a pre-120 binary finds the hub | 6 h | `rust/home/src/migrate.rs`, `switchboard/src/paths.rs` (old-dir rule), `switch.rs` (env for the switcher) | must wait for BISE-120 |
-| 3 | **BISE-122** Side channels out of `/tmp`: `BEND_RUN_DIR` (0700, `~/.bise/run/<port>`), switch backups in `hubs/<id>/backups` with a Rust copy (no rsync) | 3 h | `runtime/{main,main-pure,provider-pure,bash-pure,skills,plugins}.bend`, `tui/src/commands.rs` (steer/interrupt paths), `switchboard/src/switch.rs:297-305` | must wait for BISE-118 (debt-ts is in `runtime/main.bend`) and BISE-120 |
-| 4 | **BISE-123** App root never from the cwd (C1), no `CARGO_MANIFEST_DIR` fallback in release (C4), `BISE_APP_ROOT` | 2 h | `harness/src/main.rs:191-233`, `switchboard/src/core.rs:382-386` | must wait for BISE-113 |
-| 5 | **BISE-124** Minimum macOS: `MACOSX_DEPLOYMENT_TARGET` (one value in one file) for cargo and bend in every build path; `release.sh` deleted in favour of `build-dist.sh` (C12); gate check "no binary has `minos` above the target" | 2 h | `bins.sh`, `versions.sh`, `packaging/build-dist.sh`, `release.sh`, `gate.sh` (one check), `rust/.cargo/config.toml` | must wait for debt-bins (owns `bins.sh`, `versions.sh`, `gate.sh` now) |
-| 6 | **BISE-125** Rename the command to `bise`: cargo bin name, `bise --version` from `VERSION` (C5), usage text; `bend-harness` kept as a symlink one release; scripts' `CMD=` | 3 h | `rust/harness/Cargo.toml`, `main.rs` (arg parsing), `run.sh`, `packaging/*`, `versions.sh` (file name in the version dir), `switch.rs:173-176` (exe name) | must wait for BISE-123 and BISE-124 |
-| 7 | **BISE-126** Agents' tools: build the agents' PATH (§3.4), bundle `rg` (pinned release, per arch) in `<app root>/tools`, `git` checked with `git --version`, English errors (C11: `worktree.rs:106`, others) | 3 h | `switchboard/src/daemon.rs:580-586`, `worktree.rs`, `packaging/build-dist.sh` (fetch rg), `versions.sh` (copy rg) | parallel now for `daemon.rs`/`worktree.rs`; the packaging half waits for BISE-124 |
-| 8 | **BISE-127** `bise doctor` (§3.5) | 3 h | `rust/harness/src/doctor.rs` (new), one dispatch line in `main.rs` | must wait for BISE-120 |
-| 9 | **BISE-128** CI: GitHub Actions, darwin-arm64 (macos-15) + darwin-x86_64 (macos-15-intel), pinned bend, caches, `build-dist.sh`, `test-install.sh` on both, draft release + `latest.json` | 6 h | `.github/workflows/release.yml` (new), `packaging/test-install.sh` | parallel now (new files); green only after BISE-124 |
-| 10 | **BISE-129** Signing + notarization in `build-dist.sh`: entitlements files, `codesign --options runtime --timestamp`, `notarytool submit --wait`, `spctl --assess` check; secrets in CI | 4 h | `packaging/build-dist.sh`, `packaging/entitlements/*.plist` (new), the workflow's sign step | must wait for decision 1 (the certificate) and BISE-128 |
-| 11 | **BISE-130** Installer v1: `bise` names, prefix `~/.local/share/bise`, Rosetta check, download from the release URL, the launcher shrinks to "exec current" (logic moves into `bise`) | 3 h | `packaging/install.sh`, `packaging/test-install.sh` | must wait for BISE-125 |
-| 12 | **BISE-131** `bise update` + daily background check; brew detection | 4 h | `rust/harness/src/update.rs` (new), `main.rs` dispatch | must wait for BISE-128 (a `latest.json` to read) and BISE-125 |
-| 13 | **BISE-132** Installed-mode `/version` and `/restart latest`: versions from installed + `latest.json`; the hub announces a ready update; dev mode unchanged when `VERSION` has `repo=` (C9) | 5 h | `switchboard/src/daemon/versions.rs`, `switch.rs` | must wait for BISE-131 |
-| 14 | **BISE-133** Portability test on clean macOS (CI VMs, both arches, macOS 13 if a runner exists, else the oldest available): install, launch in a non-git folder, a git repo, a path with spaces and accents, a deep path; PATH without Homebrew; an agent runs `sb list` and `rg`; `bise doctor` green; uninstall | 4 h | `packaging/test-install.sh`, `projects/switchboard/tests/portable_*.sh` (new) | must wait for BISE-126, BISE-130 |
-| — | Homebrew cask (tap repo) | 2 h | the tap repo | after BISE-129 |
+| 1 | **BISE-160** `bise_home()`: new crate `rust/home` (home, hub dir, prefs, run dir, the list of exported env paths); every Rust lookup of §1.3 goes through it; `XDG_STATE_HOME` dropped; tests with a fake HOME | 5 h | `rust/home/` (new), `rust/Cargo.toml`, `switchboard/src/paths.rs`, `daemon/versions.rs:259-280`, `tui/src/{onboarding,hints,keybar,voice,theme_detect,crash,plugins,skills}.rs`, `plugins/src/{state,resolve}.rs`, `images/src/lib.rs`, `harness/src/main.rs` (env loading, sessions, exports) | must wait for BISE-113 (debt-solo edits `main.rs` and the tui) |
+| 2 | **BISE-161** Migration once (§3.3): copy user files, move idle hubs + `git worktree repair`, keep running hubs in place, `migrated.json`, export `SB_STATE_DIR`/`BEND_*` so old versions follow; tests: old layout in a fake HOME, running-hub case, rollback to a pre-120 binary finds the hub | 6 h | `rust/home/src/migrate.rs`, `switchboard/src/paths.rs` (old-dir rule), `switch.rs` (env for the switcher) | must wait for BISE-160 |
+| 3 | **BISE-162** Side channels out of `/tmp`: `BEND_RUN_DIR` (0700, `~/.bise/run/<port>`), switch backups in `hubs/<id>/backups` with a Rust copy (no rsync) | 3 h | `runtime/{main,main-pure,provider-pure,bash-pure,skills,plugins}.bend`, `tui/src/commands.rs` (steer/interrupt paths), `switchboard/src/switch.rs:297-305` | must wait for BISE-118 (debt-ts is in `runtime/main.bend`) and BISE-160 |
+| 4 | **BISE-163** App root never from the cwd (C1), no `CARGO_MANIFEST_DIR` fallback in release (C4), `BISE_APP_ROOT` | 2 h | `harness/src/main.rs:191-233`, `switchboard/src/core.rs:382-386` | must wait for BISE-113 |
+| 5 | **BISE-164** Minimum macOS: `MACOSX_DEPLOYMENT_TARGET` (one value in one file) for cargo and bend in every build path; `release.sh` deleted in favour of `build-dist.sh` (C12); gate check "no binary has `minos` above the target" | 2 h | `bins.sh`, `versions.sh`, `packaging/build-dist.sh`, `release.sh`, `gate.sh` (one check), `rust/.cargo/config.toml` | must wait for debt-bins (owns `bins.sh`, `versions.sh`, `gate.sh` now) |
+| 6 | **BISE-165** Rename the command to `bise`: cargo bin name, `bise --version` from `VERSION` (C5), usage text; `bend-harness` kept as a symlink one release; scripts' `CMD=` | 3 h | `rust/harness/Cargo.toml`, `main.rs` (arg parsing), `run.sh`, `packaging/*`, `versions.sh` (file name in the version dir), `switch.rs:173-176` (exe name) | must wait for BISE-163 and BISE-164 |
+| 7 | **BISE-166** Agents' tools: build the agents' PATH (§3.4), bundle `rg` (pinned release, per arch) in `<app root>/tools`, `git` checked with `git --version`, English errors (C11: `worktree.rs:106`, others) | 3 h | `switchboard/src/daemon.rs:580-586`, `worktree.rs`, `packaging/build-dist.sh` (fetch rg), `versions.sh` (copy rg) | parallel now for `daemon.rs`/`worktree.rs`; the packaging half waits for BISE-164 |
+| 8 | **BISE-167** `bise doctor` (§3.5) | 3 h | `rust/harness/src/doctor.rs` (new), one dispatch line in `main.rs` | must wait for BISE-160 |
+| 9 | **BISE-168** CI: GitHub Actions, darwin-arm64 (macos-15) + darwin-x86_64 (macos-15-intel), pinned bend, caches, `build-dist.sh`, `test-install.sh` on both, draft release + `latest.json` | 6 h | `.github/workflows/release.yml` (new), `packaging/test-install.sh` | parallel now (new files); green only after BISE-164 |
+| 10 | **BISE-169** Signing + notarization in `build-dist.sh`: entitlements files, `codesign --options runtime --timestamp`, `notarytool submit --wait`, `spctl --assess` check; secrets in CI | 4 h | `packaging/build-dist.sh`, `packaging/entitlements/*.plist` (new), the workflow's sign step | must wait for decision 1 (the certificate) and BISE-168 |
+| 11 | **BISE-170** Installer v1: `bise` names, prefix `~/.local/share/bise`, Rosetta check, download from the release URL, the launcher shrinks to "exec current" (logic moves into `bise`) | 3 h | `packaging/install.sh`, `packaging/test-install.sh` | must wait for BISE-165 |
+| 12 | **BISE-171** `bise update` + daily background check; brew detection | 4 h | `rust/harness/src/update.rs` (new), `main.rs` dispatch | must wait for BISE-168 (a `latest.json` to read) and BISE-165 |
+| 13 | **BISE-172** Installed-mode `/version` and `/restart latest`: versions from installed + `latest.json`; the hub announces a ready update; dev mode unchanged when `VERSION` has `repo=` (C9) | 5 h | `switchboard/src/daemon/versions.rs`, `switch.rs` | must wait for BISE-171 |
+| 14 | **BISE-173** Portability test on clean macOS (CI VMs, both arches, macOS 13 if a runner exists, else the oldest available): install, launch in a non-git folder, a git repo, a path with spaces and accents, a deep path; PATH without Homebrew; an agent runs `sb list` and `rg`; `bise doctor` green; uninstall | 4 h | `packaging/test-install.sh`, `projects/switchboard/tests/portable_*.sh` (new) | must wait for BISE-166, BISE-170 |
+| — | Homebrew cask (tap repo) | 2 h | the tap repo | after BISE-169 |
 
-Order in short: **now** BISE-126 (hub half) and BISE-128 in parallel;
-**after debt-solo/debt-bins** BISE-120, 123, 124; then 121, 122, 125,
+Order in short: **now** BISE-166 (hub half) and BISE-168 in parallel;
+**after debt-solo/debt-bins** BISE-160, 123, 124; then 121, 122, 125,
 127; then 129, 130, 131; then 132, 133, the cask. Total ≈ 55 h.
 
 Coordination: research-providers' BISE-14x (config.toml, auth.json,
-cache/models.json) use `bise_home()` from BISE-120; whichever lands first,
+cache/models.json) use `bise_home()` from BISE-160; whichever lands first,
 the other adapts one call.
 
 ---
@@ -332,7 +332,7 @@ the other adapts one call.
 
 1. **Who signs and where it is published.** Apple Developer ID
    (Mistral's or yours) and the release host (public GitHub Releases, a
-   private bucket). Blocks BISE-129 and any install outside this Mac; the
+   private bucket). Blocks BISE-169 and any install outside this Mac; the
    EDR makes unsigned builds a non-starter.
 2. **Oldest macOS.** Recommendation: **13 Ventura** (Apple still patches
    14+; 13 costs nothing but a test runner). Options: 14 (fewer to test),
@@ -349,3 +349,20 @@ the other adapts one call.
 
 Already decided by the brief, not asked again: state in `~/.bise/`,
 macOS only, old state imported once and still readable.
+
+
+## Decisions (user, 2026-09-29)
+
+Numbering: this plan's issues are renumbered BISE-160..179 (BISE-120..122
+were taken by other work in the meantime).
+
+1. **No Developer ID for now.** Ship a standard CLI, ad-hoc signed (the
+   linker's default on arm64), installed with `curl … | sh` and a Homebrew
+   tap: files fetched by curl or brew carry no quarantine flag, so
+   Gatekeeper does not block them. Developer ID signing + notarization
+   only later, if we offer browser downloads. Releases on GitHub Releases.
+2. **Recent macOS only:** macOS 14 (Sonoma) and newer, arm64 and x86_64
+   (`MACOSX_DEPLOYMENT_TARGET=14.0`). Cover most machines, don't overdo it.
+3. **rg is not shipped:** agents use it when it is on PATH, else fall back
+   (grep); the tool descriptions and the doctor say so.
+4. **Auto-update on by default** (with a way to turn it off).
