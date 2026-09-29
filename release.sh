@@ -24,22 +24,23 @@ mkdir -p "$DIST"
 echo "== cargo release (bend-harness)"
 (cd rust && cargo build --release -p bend-harness)
 
-# 2. the Bend REPLs, native binaries (self-contained, no bend needed at runtime)
+# 2. the Bend REPLs, native binaries (self-contained, no bend needed at
+#    runtime): bins.sh's cache (compiled when the sources changed)
 echo "== bend native binaries"
-export PATH="$HOME/.bend/bin:$PATH"
-bend runtime/repl-live.bend -o "$DIST/repl-live"
-bend runtime/repl.bend -o "$DIST/repl-scripted"
-bend runtime/demo.bend -o "$DIST/harness-demo"
+for b in repl-live repl-scripted harness-demo; do
+  cp "$(./bins.sh path "$b")" "$DIST/$b"
+done
 
 # 3. the V8 engine (bend-jsrt), release mode - skipped when already built
 #    (the release link is >50MiB: build it outside any ulimit -f)
 if [ ! -x rust/jsrt/target/release/bend-jsrt ]; then
   echo "== jsrt release build (long)"
-  (cd rust/jsrt && cargo build --release)
+  (cd rust/jsrt && CARGO_TARGET_DIR=target cargo build --release)
 fi
-# the runtime looks the engine up at this exact relative path
-mkdir -p "$DIST/rust/jsrt/target/debug"
-cp rust/jsrt/target/release/bend-jsrt "$DIST/rust/jsrt/target/debug/bend-jsrt"
+# next to bend-harness: the harness hands its path to the runtime
+# (BEND_JSRT_BIN); the old rust/jsrt/target/debug path is gone
+rm -rf "$DIST/rust"
+cp rust/jsrt/target/release/bend-jsrt "$DIST/bend-jsrt"
 
 # 4. the sources (the reload recompiles them) + the text assets
 echo "== sources and assets"
@@ -51,7 +52,7 @@ cp LAWS.bend PROOF.bend tool-desc-*.txt prompt-*.txt "$DIST/"
 echo "== assemble + strip"
 cp rust/target/release/bend-harness "$DIST/bend-harness"
 strip "$DIST/bend-harness" "$DIST/repl-live" "$DIST/repl-scripted" "$DIST/harness-demo" 2>/dev/null || true
-strip -x "$DIST/rust/jsrt/target/debug/bend-jsrt" 2>/dev/null || true
+strip -x "$DIST/bend-jsrt" 2>/dev/null || true
 # a stable ad-hoc signature per artifact: EDR ML scoring is less
 # suspicious of signed binaries, and the identifier is allowlistable
 codesign -s - --force "$DIST/bend-harness" "$DIST/repl-live" \
@@ -75,7 +76,7 @@ EOF
 #    bundle that dies on "REPL Bend introuvable" at the user's machine.
 echo "== verify"
 for f in bend-harness repl-live repl-scripted harness-demo \
-          rust/jsrt/target/debug/bend-jsrt runtime/repl-live.bend LAWS.bend; do
+          bend-jsrt runtime/repl-live.bend LAWS.bend; do
   if [ ! -e "$DIST/$f" ]; then
     echo "RELEASE INCOMPLETE: $DIST/$f is missing (build step failed or the file was removed post-build)" >&2
     exit 1

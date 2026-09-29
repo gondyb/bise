@@ -34,54 +34,37 @@ export SB_LAUNCH_DIR="${SB_LAUNCH_DIR:-$PWD}"
 cd "$(dirname "$0")"
 export PATH="$HOME/.cargo/bin:$PATH"
 
-# rebuild when the binary is missing OR stale (a source file is newer
-# than it — a stale debug binary once showed a model the runtime no
-# longer used)
+# the Rust binary: cargo decides what is stale (every crate, every
+# Cargo.toml / Cargo.lock; a no-op build is ~0.2 s). A stale debug binary
+# once showed a model the runtime no longer used.
 # switchboard runs the RELEASE build: its TUI draws ~10x faster
 # than the debug one (the sb shim of the agents points to it too)
 profile=debug
 if [ "${1:-}" = "switchboard" ]; then profile=release; fi
-BIN="rust/target/$profile/bend-harness"
-if [ ! -x "$BIN" ] \
-   || [ -n "$(find rust/harness/src rust/tui/src rust/switchboard/src -newer "$BIN" -print -quit 2>/dev/null)" ]; then
-  echo "bend-harness ($profile) missing or outdated — cargo build..." >&2
-  if [ "$profile" = release ]; then
-    (cd rust && cargo build --release -p bend-harness)
-  else
-    (cd rust && cargo build -p bend-harness)
-  fi
+# (an agent's CARGO_TARGET_DIR is honoured: the binary run is the one built)
+BIN="${CARGO_TARGET_DIR:-$PWD/rust/target}/$profile/bend-harness"
+[ -x "$BIN" ] || echo "bend-harness ($profile) missing — cargo build (first time: a few minutes)..." >&2
+if [ "$profile" = release ]; then
+  (cd rust && cargo build -q --release -p bend-harness)
+else
+  (cd rust && cargo build -q -p bend-harness)
 fi
 
-if [ ! -x rust/jsrt/target/debug/bend-jsrt ]; then
+# the V8 engine (its own cargo workspace): built when missing OR older
+# than its sources (rust/jsrt, rust/images). The harness hands its path
+# to the runtime (BEND_JSRT_BIN).
+JS=rust/jsrt/target/debug/bend-jsrt
+if [ ! -x "$JS" ]; then
   echo "bend-jsrt missing — building the V8 engine (first time: a few minutes)...">&2
-  (cd rust/jsrt && cargo build)
+  (cd rust/jsrt && CARGO_TARGET_DIR=target cargo build)
+elif [ -n "$(find rust/jsrt/src rust/jsrt/Cargo.toml rust/jsrt/Cargo.lock rust/images/src rust/images/Cargo.toml -newer "$JS" -print -quit 2>/dev/null)" ]; then
+  echo "bend-jsrt outdated — cargo build (rust/jsrt)...">&2
+  (cd rust/jsrt && CARGO_TARGET_DIR=target cargo build)
 fi
 
-# the Bend binaries: rebuilt when absent OR older than any of their
-# sources. A failed rebuild keeps the existing binary when there is one
-# (no toolchain: still runnable).
-export PATH="$HOME/.bend/bin:$PATH"
-build_bend() {  # <out> <main .bend> <source paths...>
-  local out="$1" src="$2"
-  shift 2
-  if [ -x "$out" ] && [ -z "$(find "$@" -newer "$out" -print -quit 2>/dev/null)" ]; then
-    return 0
-  fi
-  echo "$out missing or outdated — compiling with bend (1-2 min)..." >&2
-  if ! bend "$src" -o "$out" >/dev/null; then
-    if [ -x "$out" ]; then
-      echo "compiling $out failed — existing binary kept" >&2
-    else
-      echo "compiling $out failed" >&2
-      exit 1
-    fi
-  fi
-}
-# the REPLs: runtime/, core/, vendor/, the tool descriptions
-build_bend repl-live runtime/repl-live.bend runtime core vendor tool-desc-*.txt
-build_bend repl-scripted runtime/repl.bend runtime core vendor tool-desc-*.txt
-# sb-core: the Switchboard hub's decisions (hub/*.bend), a child of the
-# switchboard daemon
-build_bend sb-core hub/main.bend hub vendor
+# the Bend binaries (not in git): ./bins.sh copies each one from a cache
+# keyed by the content of its sources, and compiles it on a miss (sb-core
+# ~15 s, a REPL 1-2 min). A failed compile keeps the existing binary.
+./bins.sh repl-live repl-scripted sb-core
 
-exec "./$BIN" "$@"
+exec "$BIN" "$@"

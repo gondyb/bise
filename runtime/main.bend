@@ -202,8 +202,10 @@ def node_split.sp(sp: Maybe<&2, Nat>, +out: String) -> NR:
 def node_split(sp: Maybe<&2, Nat>, +out: String) -> NR:
   node_split.sp(sp, out)
 
+# the engine: BEND_JSRT_BIN (the harness sets it from its app root), else
+# the dev tree's debug build, relative to the app root (the cwd)
 def node_cmd(+path: String, +res_path: String, +err_path: String) -> String:
-  String.append("rust/jsrt/target/debug/bend-jsrt ",
+  String.append("\"${BEND_JSRT_BIN:-rust/jsrt/target/debug/bend-jsrt}\" ",
     String.append(path,
       String.append(" ", String.append(res_path,
         String.append(" 2>", err_path)))))

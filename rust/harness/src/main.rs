@@ -211,6 +211,26 @@ fn live_app_root_or_exit() -> std::path::PathBuf {
     })
 }
 
+/// The V8 engine the runtime runs `run_typescript` with, handed to it as
+/// BEND_JSRT_BIN (its REPLs inherit it): `bend-jsrt` in the app root (a
+/// version dir, a bundle), else the dev tree's debug build (./run.sh builds
+/// it), else its release build. An inherited value is not a choice (it
+/// names another hub's version): the app root's own engine wins.
+fn export_jsrt_bin(root: &std::path::Path) {
+    let found = [
+        "bend-jsrt",
+        "rust/jsrt/target/debug/bend-jsrt",
+        "rust/jsrt/target/release/bend-jsrt",
+    ]
+    .iter()
+    .map(|rel| root.join(rel))
+    .find(|p| p.exists());
+    if let Some(p) = found {
+        let p = std::path::absolute(&p).unwrap_or(p);
+        std::env::set_var("BEND_JSRT_BIN", p);
+    }
+}
+
 /// `$HOME/<rel>`, or `fallback` (relative to the cwd) without a HOME.
 fn home_path(rel: &str, fallback: &str) -> String {
     std::env::var("HOME")
@@ -249,6 +269,7 @@ fn run_sbd(args: &[String]) -> std::io::Result<()> {
     if root.join("sb-core").exists() {
         std::env::set_var("SB_CORE_BIN", root.join("sb-core"));
     }
+    export_jsrt_bin(&root);
     // the agents' REPLs load their MCP index like a normal session
     if std::env::var_os("BEND_MCP_INDEX").is_none() {
         if let Ok(h) = std::env::var("HOME") {
@@ -402,6 +423,7 @@ fn main() -> std::io::Result<()> {
             let _ = std::env::set_current_dir(root);
         }
     }
+    export_jsrt_bin(&std::env::current_dir()?);
     // ONE location for the REPL: the app root, which the cwd now is in
     // both layouts (the dev tree, where ./run.sh builds ./repl-live, and
     // the bundle, where we just moved next to the executable). The old

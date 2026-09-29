@@ -1,8 +1,12 @@
-# Build artifacts (Bend native binaries) — repl-live, repl-scripted and
-# sb-core are COMMITTED: a fresh clone runs ./run.sh without a rebuild, and
-# `git checkout -- repl-live` restores a binary the EDR quarantined
-# (CrowdStrike Falcon eats freshly built ones intermittently).
+# Build artifacts (Bend native binaries), never committed (BISE-114):
+# ./bins.sh builds them from a cache keyed by the content of their sources
+# (run.sh, versions.sh, gate.sh call it). A binary the EDR quarantined:
+# ./bins.sh <name> puts it back.
 # harness-demo: runtime/demo.bend (bend-harness-qa skill); repl: legacy name
+/repl-live
+/repl-scripted
+/sb-core
+/bend-jsrt
 harness-demo
 repl
 

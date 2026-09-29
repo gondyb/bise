@@ -122,9 +122,12 @@ if [ -f "$FROM" ]; then
   FROM="$(find "$tmp" -mindepth 2 -maxdepth 2 -type d -name app | head -n 1 | xargs dirname)"
 fi
 app="$FROM/app"
-for f in bend-harness repl-live sb-core rust/jsrt/target/debug/bend-jsrt VERSION; do
+for f in bend-harness repl-live sb-core VERSION; do
   [ -e "$app/$f" ] || die "incomplete bundle: app/$f missing in $FROM (a download cut short, or removed by security software)"
 done
+# the V8 engine: app/bend-jsrt, or its path before BISE-114
+[ -e "$app/bend-jsrt" ] || [ -e "$app/rust/jsrt/target/debug/bend-jsrt" ] \
+  || die "incomplete bundle: app/bend-jsrt missing in $FROM (a download cut short, or removed by security software)"
 
 id="$(sed -n 's/^id=//p' "$app/VERSION")"
 target="$(sed -n 's/^target=//p' "$app/VERSION")"

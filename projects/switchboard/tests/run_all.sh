@@ -21,6 +21,9 @@ echo "== Rust: build, unit and scenario tests, clippy"
 # an agent's shell points SB_CORE_BIN at its hub's (older) sb-core: the
 # core tests must spawn this tree's
 unset SB_CORE_BIN
+# the Bend binaries the e2e/tmux tests run (./repl-live, ./repl-scripted,
+# ./sb-core; not in git): from bins.sh's cache, compiled on a miss
+./bins.sh repl-live repl-scripted sb-core || exit 1
 log="$(mktemp -t sb-run-all)"
 (cd rust && cargo build --offline -q) || exit 1
 # every test binary's summary; a failure stops here with cargo's report

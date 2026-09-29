@@ -6,10 +6,12 @@
 #                     tests of the changed crates and of the crates using them; if a .bend file of core/ hub/ vendor/
 #                     or LAWS/PROOF changed: PROOF.bend (4 shards in parallel)
 #                     and, for hub/ vendor/, a quick sb-core for the tests
-#                     (-O1, cached by content; the committed ./sb-core is not
-#                     touched). The bend part runs next to cargo.
-#   gate.sh full      everything: cargo build, ./sb-core rebuilt (bend -o) if
-#                     hub/ vendor/ changed, run_all.sh with FUZZ_RUNS=2000
+#                     (-O1, cached by content; ./sb-core is not touched).
+#                     The bend part runs next to cargo.
+#   gate.sh full      everything: cargo build, run_all.sh (it puts ./repl-live
+#                     ./repl-scripted ./sb-core in place with bins.sh: a copy
+#                     from the cache, a compile when their sources changed;
+#                     never commit them) with FUZZ_RUNS=2000
 #                     (~60 s warm; e2e + tmux tests in parallel, SB_TEST_JOBS).
 #   gate.sh wait <bg .out file | pid>
 #                     the bash tool put a gate in the background: block until
@@ -38,22 +40,15 @@ changed="$( { git diff --name-only "$base"; git ls-files --others --exclude-stan
 hub_changed=0 bend_changed=0
 printf '%s\n' "$changed" | grep -qE '^(hub|vendor)/' && hub_changed=1
 printf '%s\n' "$changed" | grep -qE '^((core|hub|vendor)/.*|LAWS|PROOF)\.bend$' && bend_changed=1
-# the committed ./sb-core, when this tree has none (a fresh worktree)
-if [ ! -x sb-core ]; then
-  main_tree="$(git worktree list --porcelain | sed -n '1s/^worktree //p')"
-  if [ -x "$main_tree/sb-core" ] && git diff --quiet "$(git -C "$main_tree" rev-parse HEAD)" -- hub vendor; then
-    cp "$main_tree/sb-core" sb-core
-  elif [ $hub_changed = 0 ]; then
-    echo "no sb-core: building it (~15 s)"; bend hub/main.bend -o sb-core >/dev/null || { echo "FAIL sb-core build"; exit 1; }
-  fi
+# ./sb-core (not in git, BISE-114): the build of this tree's hub/ vendor/,
+# from bins.sh's cache shared by every worktree (a copy; ~15 s on a miss).
+# quick with a hub/ change: the tests run a -O1 build instead (below)
+if [ $hub_changed = 0 ] || [ "$mode" = full ]; then
+  ./bins.sh sb-core || { echo "FAIL sb-core build"; exit 1; }
 fi
 
 if [ "$mode" = full ]; then
   s=$SECONDS
-  if [ $hub_changed = 1 ]; then
-    echo "hub/ changed: ./sb-core rebuilt (bend -o, ~15 s; commit it with your hub change)"
-    bend hub/main.bend -o sb-core >/dev/null || { echo "FAIL sb-core build"; exit 1; }
-  fi
   export FUZZ_RUNS="${FUZZ_RUNS:-2000}"
   projects/switchboard/tests/run_all.sh; rc=$?
   [ $rc = 0 ] && echo "GATE full GREEN ($((SECONDS - s))s)" || echo "GATE full FAILED"

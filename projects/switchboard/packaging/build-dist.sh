@@ -17,8 +17,9 @@
 #       repl-scripted        native Bend REPL, no provider (runtime/repl.bend)
 #       sb-core              native Bend hub core (hub/main.bend)
 #       tool-desc-*.txt prompt-*.txt   read at run time (relative paths)
-#       rust/jsrt/target/debug/bend-jsrt   the V8 engine (RELEASE build,
-#                            at the debug path runtime/main.bend expects)
+#       bend-jsrt            the V8 engine (RELEASE build; a commit before
+#                            BISE-114: at rust/jsrt/target/debug/bend-jsrt,
+#                            the path its runtime expects)
 #       VERSION              id, commit, subject, built, bend_hash, target
 #
 # It reuses versions.sh (its caches: cargo target dir, Bend compiles per
@@ -59,16 +60,14 @@ say "versions.sh build $id..."
 vdir="$("$REPO/versions.sh" build "$id")"
 h="$(sed -n 's/^bend_hash=//p' "$vdir/VERSION")"
 
-# 2. repl-scripted (versions.sh does not build it): same Bend sources,
-#    same cache key scheme (content hash of runtime/ core/ vendor/)
+# 2. repl-scripted (versions.sh does not build it): bins.sh's cache,
+#    same key as repl-live (content hash of runtime/ core/ vendor/)
 scripted="$BUILD/cache/repl-scripted-$h"
 if [ ! -x "$scripted" ]; then
   wt="/tmp/bise-dist-src-$id-$$"
   git worktree add -q --detach "$wt" "$commit"
   trap 'git -C "$REPO" worktree remove --force "$wt" 2>/dev/null || true' EXIT
-  say "bend runtime/repl.bend (1-2 min)..."
-  (cd "$wt" && bend runtime/repl.bend -o "$scripted.tmp" >/dev/null)
-  mv "$scripted.tmp" "$scripted"
+  scripted="$("$REPO/bins.sh" path --src "$wt" repl-scripted)"
   git worktree remove --force "$wt"; trap - EXIT
 fi
 
@@ -78,7 +77,7 @@ fi
 js="$REPO/rust/jsrt/target/release/bend-jsrt"
 if [ ! -x "$js" ]; then
   say "bend-jsrt release missing — cargo build --release (long, once)..."
-  (cd "$REPO/rust/jsrt" && cargo build --release)
+  (cd "$REPO/rust/jsrt" && CARGO_TARGET_DIR=target cargo build --release)
 fi
 if ! git diff --quiet "$commit" -- rust/jsrt/src rust/jsrt/Cargo.toml rust/jsrt/Cargo.lock; then
   say "WARNING: rust/jsrt differs between $id and the working tree; the shipped engine is the tree's"
@@ -88,11 +87,15 @@ fi
 stage="$(mktemp -d /tmp/bise-stage.XXXXXX)"
 trap 'rm -rf "$stage"' EXIT
 app="$stage/$name/app"
-mkdir -p "$app/rust/jsrt/target/debug"
+# where this commit's runtime looks for the engine: BEND_JSRT_BIN (set by
+# the harness to app/bend-jsrt) since BISE-114, a fixed path before
+jsrt_at=bend-jsrt
+git show "$commit:runtime/main.bend" | grep -c BEND_JSRT_BIN >/dev/null || jsrt_at=rust/jsrt/target/debug/bend-jsrt
+mkdir -p "$app/$(dirname "$jsrt_at")"
 for f in bend-harness repl-live sb-core; do cp "$vdir/$f" "$app/$f"; done
 cp "$scripted" "$app/repl-scripted"
 cp "$vdir"/tool-desc-*.txt "$vdir"/prompt-*.txt "$app/"
-cp "$js" "$app/rust/jsrt/target/debug/bend-jsrt"
+cp "$js" "$app/$jsrt_at"
 # VERSION: the dev repo path means nothing on the user's machine (the
 # daemon would look for versions.sh there); the target says what it runs on
 grep -v '^repo=' "$vdir/VERSION" > "$app/VERSION"
@@ -110,7 +113,7 @@ chmod +x "$stage/$name/install.sh"
 #    runtime + timestamp (entitlements still to add: JIT for bend-jsrt,
 #    audio-input for bend-harness).
 if [ "$os" = darwin ]; then
-  for b in bend-harness repl-live repl-scripted sb-core rust/jsrt/target/debug/bend-jsrt; do
+  for b in bend-harness repl-live repl-scripted sb-core "$jsrt_at"; do
     codesign -s "${BISE_SIGN_ID:--}" --force ${BISE_SIGN_ID:+--options runtime --timestamp} "$app/$b" 2>/dev/null
   done
 fi
@@ -118,7 +121,7 @@ fi
 # 6. verify: a missing piece must fail here, not on the user's machine
 #    (wait a moment: a quarantine by security software is not instant)
 sleep 2
-for f in bend-harness repl-live repl-scripted sb-core rust/jsrt/target/debug/bend-jsrt \
+for f in bend-harness repl-live repl-scripted sb-core "$jsrt_at" \
          tool-desc-bash.txt prompt-tool-use.txt VERSION; do
   [ -e "$app/$f" ] || { say "INCOMPLETE: app/$f missing"; exit 1; }
 done

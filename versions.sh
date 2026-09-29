@@ -5,7 +5,8 @@
 # the working tree, uncommitted changes included):
 #   $SB_VERSIONS_DIR/<id>/  bend-harness, repl-live, tool-desc-*.txt,
 #                           prompt-*.txt, sb-core (when hub/ exists),
-#                           rust/jsrt/target/debug/bend-jsrt,
+#                           bend-jsrt (+ a hard link at the old path
+#                           rust/jsrt/target/debug/bend-jsrt),
 #                           VERSION (id, commit, subject, built, bend_hash)
 # id = <short commit>, or <short commit>-dirty-<hash of the changes>.
 # A hub runs FROM a version dir: rebuilding the tree never changes a
@@ -16,8 +17,9 @@
 #   ./versions.sh list                   # built versions, newest first
 #
 # Defaults: SB_VERSIONS_DIR=~/.local/state/switchboard/versions; the
-# cargo target dir and the repl-live cache (one per Bend-source hash, a
-# Bend compile is 1-2 min) live in SB_BUILD_DIR=~/.local/state/switchboard/build.
+# cargo target dir and bins.sh's cache of the Bend binaries (one per
+# source hash, a Bend compile is 1-2 min) live in
+# SB_BUILD_DIR=~/.local/state/switchboard/build.
 # Commits are built in a temporary git worktree under /tmp (removed after).
 
 set -euo pipefail
@@ -54,14 +56,6 @@ tree_id() {
 
 rev_id() { git rev-parse --short "$1^{commit}"; }
 
-# hash of the *.bend files under the given dirs (run inside the source
-# dir): the cache key of a Bend compile. The CONTENT decides, never a
-# date: a fresh checkout has fresh mtimes, and the binaries committed in
-# the repo may predate their sources - a version always compiles its own.
-bend_src_hash() {
-  find "$@" -type f -name '*.bend' -print0 | sort -z | xargs -0 cat | shasum | cut -c1-12
-}
-
 # build the source dir $1 into version $2 (subject/commit from $3)
 build_from() {
   local src="$1" id="$2" rev="$3" vdir="$VERSIONS/$2"
@@ -82,23 +76,15 @@ build_from() {
   (cd "$src/rust" && CARGO_TARGET_DIR="$target" cargo build -q --release -p bend-harness)
   cp "$target/release/bend-harness" "$tmp/bend-harness"
 
-  local h; h="$(cd "$src" && bend_src_hash runtime core vendor)"
-  if [ ! -x "$BUILD/cache/repl-live-$h" ]; then
-    say "bend runtime/repl-live.bend $id (1-2 min)..."
-    (cd "$src" && bend runtime/repl-live.bend -o "$BUILD/cache/repl-live-$h.tmp" >/dev/null)
-    mv "$BUILD/cache/repl-live-$h.tmp" "$BUILD/cache/repl-live-$h"
-  fi
-  cp "$BUILD/cache/repl-live-$h" "$tmp/repl-live"
-
+  # the Bend binaries: bins.sh's cache (one per source hash, shared with
+  # run.sh and the gate; a Bend compile is 1-2 min). This repo's bins.sh
+  # builds any commit, old ones included (their committed binaries, up to
+  # BISE-114, are never used: a version always compiles its own sources)
+  local h; h="$("$REPO/bins.sh" key --src "$src" repl-live)"
+  cp "$("$REPO/bins.sh" path --src "$src" repl-live)" "$tmp/repl-live"
   # sb-core: the hub's decisions in Bend (hub/*.bend), when the version has them
   if [ -f "$src/hub/main.bend" ]; then
-    local hc; hc="$(cd "$src" && bend_src_hash hub vendor)"
-    if [ ! -x "$BUILD/cache/sb-core-$hc" ]; then
-      say "bend hub/main.bend $id..."
-      (cd "$src" && bend hub/main.bend -o "$BUILD/cache/sb-core-$hc.tmp" >/dev/null)
-      mv "$BUILD/cache/sb-core-$hc.tmp" "$BUILD/cache/sb-core-$hc"
-    fi
-    cp "$BUILD/cache/sb-core-$hc" "$tmp/sb-core"
+    cp "$("$REPO/bins.sh" path --src "$src" sb-core)" "$tmp/sb-core"
   fi
   cp "$src"/tool-desc-*.txt "$src"/prompt-*.txt "$tmp/"
 
@@ -108,10 +94,13 @@ build_from() {
   [ -x "$js" ] || js="$(git rev-parse --path-format=absolute --git-common-dir)/../rust/jsrt/target/debug/bend-jsrt"
   if [ ! -x "$js" ]; then
     say "bend-jsrt missing — building the V8 engine..."
-    (cd "$REPO/rust/jsrt" && cargo build)
+    (cd "$REPO/rust/jsrt" && CARGO_TARGET_DIR=target cargo build)
   fi
-  ln -f "$js" "$tmp/rust/jsrt/target/debug/bend-jsrt" 2>/dev/null \
-    || cp "$js" "$tmp/rust/jsrt/target/debug/bend-jsrt"
+  # $tmp/bend-jsrt: the harness passes it to the runtime (BEND_JSRT_BIN);
+  # the same file at the old path too: a runtime before BISE-114 (an old
+  # commit) runs rust/jsrt/target/debug/bend-jsrt, relative to its root
+  ln -f "$js" "$tmp/bend-jsrt" 2>/dev/null || cp "$js" "$tmp/bend-jsrt"
+  ln -f "$tmp/bend-jsrt" "$tmp/rust/jsrt/target/debug/bend-jsrt"
 
   {
     echo "id=$id"
@@ -155,5 +144,5 @@ case "${1:-}" in
       printf '%s\t%s\t%s\n' "$d" "$(sed -n 's/^built=//p' "$VERSIONS/$d/VERSION")" \
         "$(sed -n 's/^subject=//p' "$VERSIONS/$d/VERSION")"
     done ;;
-  *) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

@@ -169,7 +169,8 @@ if [ -n "$(git -C "$NEW" rev-list "$NEW_BRANCH..$BRANCH" 2>/dev/null)" ]; then
   git -C "$mwt" merge --no-ff -q "$BRANCH" -m "Merge branch '$BRANCH' into $NEW_BRANCH (move of the live Switchboard)" \
     || { git -C "$mwt" merge --abort || true; die "merge conflict: resolve it by hand in $NEW, then run again"; }
   say "gates: cargo build + switchboard/tui unit tests"
-  gates="${SB_MOVE_GATES:-cd rust && CARGO_TARGET_DIR=$STATE_ROOT/build/target-move cargo build -q -p bend-harness && CARGO_TARGET_DIR=$STATE_ROOT/build/target-move cargo test -q -p switchboard -p bend-tui >/dev/null}"
+  # ./sb-core is not in git (BISE-114): the switchboard tests spawn it
+  gates="${SB_MOVE_GATES:-./bins.sh sb-core && cd rust && CARGO_TARGET_DIR=$STATE_ROOT/build/target-move cargo build -q -p bend-harness && CARGO_TARGET_DIR=$STATE_ROOT/build/target-move cargo test -q -p switchboard -p bend-tui >/dev/null}"
   (cd "$mwt" && bash -c "$gates") \
     || die "gates failed: $NEW_BRANCH not moved (the merge was only in $mwt)"
   merged="$(git -C "$mwt" rev-parse HEAD)"
