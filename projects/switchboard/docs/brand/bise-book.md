@@ -166,7 +166,7 @@ One glyph per entity and per status. Color only for attention.
 |---|---|
 | `›` | the composer prompt, and queued messages above it |
 | `│` (accent) | your message in the history: a thin bar in column 1, on every wrapped line (heavy `┃` is for cards). ASCII: `|` |
-| `:*` (accent) | main, the agent you talk to by default |
+| `:*` (accent) | main, the agent you talk to by default; it never moves: while main works, the panel's breathing gust sits 1 space after its name (`0 :* main ≈`, BISE-116) |
 | `◇` | an agent's brief |
 | `∴` (dim) | thinking |
 | `$` | a bash call |
@@ -379,7 +379,7 @@ The same three levels everywhere, in main and inside an agent.
 
 **Working = a gust blowing by** (user pick, site/book/working.html variant I; BISE-107).
 - Header and divider: 5 cells. A gust crosses left to right, 110 ms a frame, 9-frame cycle: head `≈` (text), tail `∿` (text) `~` (dim) `·` (faint), then 5 empty frames. Cell k at frame i = ramp[(i − k) mod 9], ramp = `≈ ∿ ~ · _ _ _ _ _` (`_` = space).
-- Panel status (1 cell): the gust breathes in place: `· ~ ∿ ≈ ∿ ~`, 110 ms a frame, same colors. main's `:*` in the panel never moves.
+- Panel status (1 cell): the gust breathes in place: `· ~ ∿ ≈ ∿ ~`, 110 ms a frame, same colors. main's `:*` in the panel never moves; while main works, its row gets the same breathing cell 1 space after the name: ` 0 :* main ≈      42s` (BISE-116); idle main: no cell.
 - Divider (BISE-105): `you → marketing <5-cell gust> working · 42s` (1 space around the gust; `working · 42s` dim). Idle: nothing after the name. Header: `<gust> 3 working · ? 1 needs you · ✓ 2 done`.
 - ASCII: ramp `. - ~ =` (head `=`), same motion.
 - Cost: redraw only those cells; ≤ 10 fps; stop when no agent works or the terminal loses focus.

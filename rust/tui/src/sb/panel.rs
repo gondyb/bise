@@ -184,6 +184,13 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usi
         Style::default().fg(text())
     };
     let mut marks = Vec::new();
+    // BISE-116: main keeps `:*`; while it works, the breath 1 space after
+    // its name (as the divider's `you → main ≈`), the only cell that moves
+    if a.main && a.status == "working" {
+        let (g, c) = crate::gust::cell(app.motion);
+        marks.push(Span::raw(" "));
+        marks.push(Span::styled(g, Style::default().fg(c)));
+    }
     if sb.activity.contains(&a.name) && !focused {
         marks.push(Span::styled(format!(" {}", G_UNREAD), Style::default().fg(accent())));
     }
@@ -979,6 +986,51 @@ mod tests {
         assert_eq!(at("deploy", G_FAILED), error());
         assert_eq!(at("deploy", "failed"), dim());
         assert_eq!(at("auth-fix", G_UNREAD), accent());
+    }
+
+    /// BISE-116: main keeps `:*`; while it works, the breath 1 space after
+    /// its name, and a new frame rewrites that one cell only; idle, the
+    /// row stands still; no motion, one static `∿`.
+    #[test]
+    fn main_working_breathes_after_its_name() {
+        use crate::gust::{Motion, W1};
+        let mut app = bench::test_app_drained();
+        let sb = app.sb.as_mut().unwrap();
+        sb.agents.push(Agent { name: "main".into(), main: true, status: "working".into(), ..Agent::default() });
+        sb.agents.push(agent("ideas", "idle"));
+        let mut term = Terminal::new(TestBackend::new(28, 6)).unwrap();
+        let mut draw = |app: &mut App, m: Motion| {
+            app.motion = m;
+            term.draw(|f| draw_panel(app, f, f.area())).unwrap();
+            (screen(&term), term.backend().buffer().clone())
+        };
+        let main_row = |rows: &[String]| rows.iter().find(|r| r.contains("main")).unwrap().trim_end().to_string();
+        let mut last = None;
+        for i in 0..W1.breath.len() as u64 {
+            let (rows, buf) = draw(&mut app, Motion::Frame(i));
+            let breath = W1.breath[i as usize];
+            assert_eq!(main_row(&rows), format!(" 0 {} main {}", G_MAIN, breath), "frame {i}");
+            let y = rows.iter().position(|r| r.contains("main")).unwrap() as u16;
+            let x = " 0 :* main ".chars().count() as u16;
+            assert_eq!(buf.cell((x, y)).unwrap().fg, crate::gust::cell(Motion::Frame(i)).1, "frame {i}");
+            assert_eq!(buf.cell((3, y)).unwrap().fg, accent(), "`:*` stays accent");
+            // the next frame rewrites main's gust cell, nothing else
+            if let Some(prev) = last.replace(buf.clone()) {
+                let d = prev.diff(&buf);
+                assert_eq!(d.iter().map(|(x, y, _)| (*x, *y)).collect::<Vec<_>>(), vec![(x, y)], "frame {i}");
+            }
+        }
+        // no motion (focus lost, BISE_REDUCE_MOTION, a slow draw): one still `∿`
+        let (rows, a) = draw(&mut app, Motion::Still);
+        assert_eq!(main_row(&rows), format!(" 0 {} main {}", G_MAIN, W1.still.0));
+        let (_, b) = draw(&mut app, Motion::Still);
+        assert!(a.diff(&b).is_empty());
+        // idle: the row as before, and the frames change no cell
+        app.sb.as_mut().unwrap().agents[0].status = "idle".into();
+        let (rows, a) = draw(&mut app, Motion::Frame(0));
+        assert_eq!(main_row(&rows), format!(" 0 {} main", G_MAIN));
+        let (_, b) = draw(&mut app, Motion::Frame(1));
+        assert!(a.diff(&b).is_empty());
     }
 
     /// Numbers stay while an agent lives: a drop does not renumber the

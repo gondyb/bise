@@ -2060,3 +2060,11 @@ Index:
 - **what:** a key-bar tip `$ calls a skill, tab completes` (second in `help::TIPS`, after ctrl+o); the `?` help gets a `$` row in "talk to agents" (switchboard) and "conversation" (solo), shown on /help too: `a skill: the popup lists them, tab completes; the agent reads the $name mention` (as today: `$` at a word start opens the skills popup, tab or ⏎ inserts `$name `, the model reads the mention, nothing loads client side); the tab|⏎ row names the `$` popup.
 - **notes:** tests unchanged and green: `keybar::tests::every_tip_names_a_key_of_the_help` (needs the `$` row), `help::tests::every_row_renders`, `rows_read_lowercase_and_say_agent`.
 >>>>>>> /tmp/skt-fix/bise-issues.md.mine
+
+### BISE-116 · main working shows in the panel
+
+- **status:** done · **owner:** bise-main-gust · **commits:** the commit that marks it done (`git log --grep BISE-116`)
+- **track:** P · **owns:** `sb/panel.rs` (`agent_row`), tests
+- **spec:** book §6 (`:*`), §9 "Working = a gust blowing by" (panel line). User, verbatim: « quand main travaille actuellement on ne voit pas que c'est le cas en haut à droite dans la side bar, il y a que le bisou d'affiché. Je pense qu'il faudrait le petit loading indicateur là aussi. »
+- **what:** main's row kept its `:*` (brand, still, accent) and showed no motion while main worked. Now, when main's status is `working` (the hub's, as the divider reads it), the 1-cell breath (`gust::cell`, `· ~ ∿ ≈ ∿ ~`, same colors) sits 1 space after its name, like the divider's `you → main ≈`: ` 0 :* main ≈ …… 42s`. Idle main: the row as before. No motion (focus lost, `BISE_REDUCE_MOTION`, a slow draw): one static `∿`.
+- **notes:** a frame rewrites that one cell only (ratatui's diff); idle main draws no gust, so no change and no cost. Test: `sb::panel::tests::main_working_breathes_after_its_name` (each breath frame: the row text, the cell's color, `:*` accent, the buffer diff between frames = main's gust cell only; still: `∿` and no diff; idle: the old row, no diff between frames).
