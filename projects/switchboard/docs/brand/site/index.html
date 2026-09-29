@@ -8,8 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --wind:#4a4540; --acc:#f4a6b0; --err:#ff5a52; }
-  [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --wind:#cbc3b6; --acc:#b8416b; --err:#b3261e; }
+  :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --wind:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --raised:#221e1c; }
+  [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --wind:#cbc3b6; --acc:#b8416b; --err:#b3261e; --raised:#fbf8f3; }
   * { box-sizing:border-box; margin:0; padding:0; }
   html { scroll-behavior:smooth; }
   body { background:var(--bg); color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:16px; line-height:1.75; transition:background .4s, color .4s; }
@@ -80,7 +80,7 @@
   .term { width:104ch; max-width:100%; background:var(--soft); border-radius:12px; font-size:13.5px; line-height:1.6; overflow:hidden; text-align:left; }
   .screen { display:grid; grid-template-columns:minmax(0,1fr) 28ch; height:420px; }
   .feed { padding:18px 3ch 10px; overflow-y:auto; }
-  .feed > div { max-width:68ch; animation:enter .5s ease-out; }
+  .feed > div { max-width:91ch; animation:enter .5s ease-out; }
   @keyframes enter { from { opacity:0; transform:translateY(5px) } }
   .feed .b { margin-top:1.6em; margin-top:1lh; }  /* one blank line between blocks, like the terminal */
   /* your message: a thin accent bar on the left, like in the product */
@@ -93,10 +93,17 @@
   .panel { padding:18px 2ch; }
   .panel .h { color:var(--faint); margin-bottom:8px; white-space:nowrap; }
   .panel .row { display:flex; justify-content:space-between; white-space:nowrap; animation:enter .5s ease-out; }
-  .foot { padding:8px 3ch 14px; }
-  .status { display:flex; justify-content:space-between; color:var(--dim); }
-  .composer { margin-top:4px; white-space:pre; }
+  /* the composer pane, like the product: a divider with "you → main" and the state, a blank row,
+     a raised block (1 tinted row above and below the text, the bar on its left), the key bar under it */
+  .foot { border-top:1px solid var(--faint); position:relative; padding:1lh 3ch 10px; }
+  .status { position:absolute; top:-.8lh; left:2ch; right:2ch; display:flex; justify-content:space-between; color:var(--dim); }
+  .status > span { background:var(--soft); padding:0 1ch; }
+  .composer, .mcomp { background:var(--raised); border-left:1px solid var(--faint); padding:1lh 2ch 1lh calc(2ch - 1px); white-space:pre; overflow:hidden; max-width:91ch; }
+  .composer.typing, .mcomp.typing { border-left-color:var(--acc); }
   .composer .cur { background:var(--acc); }
+  .ph { color:var(--dim); }
+  .keys { color:var(--dim); font-size:.92em; margin-top:2px; white-space:nowrap; overflow:hidden; }
+  .keys .k { color:var(--text); } .keys span + span { margin-left:3ch; }
   .pulse { display:inline-block; animation:pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity:.35 } }
   .caption { text-align:center; color:var(--faint); font-size:13px; margin-top:18px; }
@@ -118,7 +125,7 @@
   .mfeed { height:calc(13.5px * 1.6 * 10); overflow-y:auto; padding-right:1ch; }
   .mfeed > div { animation:enter .45s ease-out; white-space:pre-wrap; }
   .mfeed.still > div { animation:none; }
-  .mcomp { margin-top:8px; white-space:pre; overflow:hidden; color:var(--text); }
+  .mcomp { margin-top:8px; color:var(--text); }
   /* one demo plays at a time: the others rest on their last frame */
   .mini { transition:opacity .6s ease; }
   .fgrid.directed .mini:not(.active) { opacity:.42; }
@@ -212,7 +219,8 @@
       </div>
       <div class="foot">
         <div class="status"><span>you → <span class="acc">main</span></span><span id="working" class="dim"></span></div>
-        <div class="composer"><span class="acc">›</span> <span id="typed"></span><span class="cur"></span></div>
+        <div class="composer" id="comp"><span id="typed"></span><span class="cur"></span><span class="ph" id="ph">what's on your mind?</span></div>
+        <div class="keys"><span><span class="k">⏎</span> send</span><span><span class="k">@</span> agent</span><span><span class="k">⌥0-9</span> switch</span><span><span class="k">?</span> help</span></div>
       </div>
     </div>
     <div class="caption">a session, sped up.</div>
@@ -404,9 +412,12 @@ function agent(n, mark, name, info) {
   r.dataset.busy = mark === "∿" ? "1" : "";
 }
 function count() { const n = Object.values(rows).filter((r) => r.dataset.busy).length; working.innerHTML = n ? `<span class="pulse acc">∿</span> ${n} working` : ""; }
-async function type(text) { for (const ch of text) { typed.textContent += ch; await sleep(reduced ? 0 : 30 + Math.random() * 35); } await sleep(350); }
+// the composer: the bar turns blush while there is text, the placeholder shows when it's empty
+const comp = document.getElementById("comp"), ph = document.getElementById("ph");
+function setTyped(t) { typed.textContent = t; comp.classList.toggle("typing", t !== ""); ph.style.display = t ? "none" : ""; }
+async function type(text) { for (const ch of text) { setTyped(typed.textContent + ch); await sleep(reduced ? 0 : 30 + Math.random() * 35); } await sleep(350); }
 async function send(text) {
-  await type(text); typed.textContent = "";
+  await type(text); setTyped("");
   const d = add(`${text}<span class="tick">✓</span>`, "b you");
   await sleep(550); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`;
 }
@@ -432,7 +443,7 @@ async function run() {
   await sleep(1900);
   const card = add(`<div class="t">? release needs you</div><div>v3 changes two public types. call it 2.4 or 3.0?</div><div class="faint">1 · 2.4   2 · 3.0   alt+r answer with text</div>`, "card b");
   await sleep(2000);
-  await type("2"); typed.textContent = "";
+  await type("2"); setTyped("");
   card.classList.add("answered"); card.querySelector(".t").textContent = "✓ release · you said 3.0";
   await sleep(1400);
   agent(1, `<span class="acc">✓</span>`, "auth-fix", "4m"); count();
@@ -547,8 +558,9 @@ const plays = {
 // below picks it); the others rest on their last frame, dimmed.
 let active = null, pinned = null;
 function mini(el, i) {
-  el.innerHTML = `<div class="mfeed scrollbox"></div><div class="mcomp"><span class="acc">›</span> <span class="ty"></span><span class="cur"></span></div>`;
-  const feedEl = el.querySelector(".mfeed"), ty = el.querySelector(".ty"), comp = el.querySelector(".mcomp");
+  el.innerHTML = `<div class="mfeed scrollbox"></div><div class="mcomp"><span class="ty"></span><span class="cur"></span><span class="ph">what's on your mind?</span></div>`;
+  const feedEl = el.querySelector(".mfeed"), ty = el.querySelector(".ty"), comp = el.querySelector(".mcomp"), mph = el.querySelector(".ph");
+  const mark = () => { comp.classList.toggle("typing", ty.textContent !== ""); mph.style.display = ty.textContent ? "none" : ""; };
   const self = { el, feat: el.closest(".feat"), i, done: null };
   let fast = false;
   const turn = () => new Promise((r) => { const t = () => active === self && !document.hidden ? r() : setTimeout(t, 120); t(); });
@@ -560,11 +572,11 @@ function mini(el, i) {
       d.innerHTML = html; feedEl.append(d); cellify(d); follow(feedEl, stuck, fast); return d;
     },
     async type(t) {
-      if (fast) { ty.textContent += t; return; }
-      for (const ch of t) { await turn(); ty.textContent += ch; comp.scrollLeft = comp.scrollWidth; await sleep(reduced ? 0 : 28 + Math.random() * 30); }
+      if (fast) { ty.textContent += t; mark(); return; }
+      for (const ch of t) { await turn(); ty.textContent += ch; mark(); comp.scrollLeft = comp.scrollWidth; await sleep(reduced ? 0 : 28 + Math.random() * 30); }
       await sleep(300);
     },
-    clear() { ty.textContent = ""; comp.scrollLeft = 0; },
+    clear() { ty.textContent = ""; mark(); comp.scrollLeft = 0; },
     async send(t, keep) { await m.type(t); m.clear(); const d = m.line(`${t}<span class="tick">✓</span>`, "b you"); if (!keep) { await m.wait(450); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`; } await m.wait(400); return d; },
     async main(t) { m.line(`<span class="acc">:*</span> ${t}`); await m.wait(300); },
   };

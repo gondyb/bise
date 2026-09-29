@@ -5,7 +5,7 @@
 <title>bise :* — onboarding v0</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#141211; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --acc:#f4a6b0; --line:#2a2623; }
+  :root { --bg:#141211; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --acc:#f4a6b0; --line:#2a2623; --raised:#1f1c1a; }
   * { box-sizing:border-box; margin:0; padding:0; }
   body { background:#0b0a09; color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:14px; line-height:1.6; padding:24px; }
   .lead { color:#8a8378; max-width:100ch; margin-bottom:14px; font-size:13px; }
@@ -51,7 +51,9 @@
   .app .head { grid-column:1 / -1; display:flex; justify-content:space-between; padding:8px 2ch 4px; }
   .app .feed { padding:4px 2ch; overflow:hidden; }
   .app .panel { border-left:1px solid var(--line); padding:4px 2ch; position:relative; }
-  .app .foot { grid-column:1 / -1; border-top:1px solid var(--line); padding:6px 2ch 10px; position:relative; }
+  .app .foot { grid-column:1 / -1; border-top:1px solid var(--line); padding:1lh 2ch 8px; position:relative; }
+  .app .foot .fc { background:var(--raised); border-left:1px solid var(--faint); padding:1lh 2ch 1lh calc(2ch - 1px); min-height:4lh; max-width:91ch; }
+  .app .foot .fk { color:var(--dim); } .app .foot .fk b { color:var(--text); font-weight:400; } .app .foot .fk span + span { margin-left:3ch; }
   .row { display:flex; justify-content:space-between; white-space:nowrap; }
   .b { margin-top:1.6em; margin-top:1lh; }
   .l3 { color:var(--dim); border-left:1px solid var(--faint); padding-left:2ch; margin-left:1ch; }
@@ -138,7 +140,7 @@
       <div class="head"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim" id="fcount">no agents yet</span></div>
       <div class="feed" id="ffeed"><div class="b dim">what's on your mind?</div><div class="b dim">say it and keep talking. the work runs in the background, i'm always here.</div></div>
       <div class="panel"><div>agents <span class="faint">· ⌥ + number</span></div><div id="frows"><div class="row"><span><span class="faint">0</span> <span class="acc">:*</span> main</span></div></div></div>
-      <div class="foot"><span class="dim">›</span> <span id="fin"></span><span class="cur"></span></div>
+      <div class="foot"><div class="fc"><span id="fin"></span><span class="cur"></span></div><div class="fk"><span><b>⏎</b> send</span><span><b>@</b> agent</span><span><b>⌥0-9</b> switch</span><span><b>?</b> help</span></div></div>
       <div class="tip" id="tip1" style="right:31ch; top:48px">new: your agents. they work in the background. <b>⌥ 1</b> to look inside, <b>esc</b> to come back. →</div>
       <div class="tip" id="tip2" style="left:4ch; top:210px">agents talk to each other. it stays dim: you can ignore it, or <b>▸</b> to read.</div>
       <div class="tip" id="tip3" style="left:4ch; bottom:60px">a card: someone needs you. type your answer, <b>alt+r</b> sends it. ↓</div>

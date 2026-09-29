@@ -9,12 +9,12 @@
 <style>
   :root, [data-theme="dark"] {
     --bg:#141211; --bg2:#1b1816; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --line:#2a2623;
-    --acc:#f4a6b0; --tint:#2b1c21; --err:#ff5a52; --ok:#b9d99a;
+    --acc:#f4a6b0; --raised:#1f1c1a; --tint:#2b1c21; --err:#ff5a52; --ok:#b9d99a;
     --kw:#d7a6f0; --str:#b9d99a; --com:#857e74; --num:#f0b27a; --fn:#8fc4f0;
   }
   [data-theme="light"] {
     --bg:#f7f4ee; --bg2:#efeae1; --text:#1b1917; --dim:#6b645a; --faint:#cfc8bd; --line:#e2dcd2;
-    --acc:#b8416b; --tint:#f6e3e8; --err:#b3261e; --ok:#3f7a2a;
+    --acc:#b8416b; --raised:#f4f0e8; --tint:#f6e3e8; --err:#b3261e; --ok:#3f7a2a;
     --kw:#8a3fb0; --str:#3f7a2a; --com:#8a8378; --num:#a85a14; --fn:#1f5fa8;
   }
   * { box-sizing:border-box; margin:0; padding:0; }
@@ -103,17 +103,22 @@
   .glyphs b { font-size:20px; font-weight:400; width:3ch; text-align:center; }
   .levels { display:grid; grid-template-columns:14ch 1fr; gap:14px 3ch; margin:14px 0 26px; max-width:100ch; align-items:start; }
   iframe { width:100%; max-width:1100px; border:1px solid var(--line); border-radius:10px; background:#0b0a09; }
-  .measure { position:relative; max-width:100ch; }
-  .rule76 { border-left:1px dashed var(--acc); position:absolute; top:0; bottom:0; left:calc(76ch + 2ch); opacity:.6; }
-  .rule76::after { content:"76"; position:absolute; top:-2px; left:4px; font-size:11px; color:var(--acc); }
+  .measure { position:relative; max-width:112ch; }
+  .rule76 { border-left:1px dashed var(--acc); position:absolute; top:0; bottom:0; left:calc(88ch + 2ch); opacity:.6; }
+  .rule76::after { content:"88"; position:absolute; top:-2px; left:4px; font-size:11px; color:var(--acc); }
   .term.screen { padding:0; }
   .shead { display:flex; justify-content:space-between; padding:10px 2ch 8px; }
   .sgrid { display:grid; grid-template-columns:minmax(0, 1fr) 30ch; }
   .sfeed { padding:0 2ch 12px; } .sfeed > div { margin-top:6px; max-width:62ch; }
   .spanel { border-left:1px solid var(--line); padding:0 2ch 12px; }
   .prow { display:flex; justify-content:space-between; white-space:nowrap; }
-  .sfoot { border-top:1px solid var(--line); padding:8px 2ch 10px; }
-  .scomp { display:flex; justify-content:space-between; margin-top:4px; }
+  /* the composer pane (§14): a divider with "you → main" and the state, a blank row, the raised block
+     (dark #1f1c1a, light #f4f0e8; 1 tinted row above and below the text, the bar on its left), the key bar */
+  .sfoot { border-top:1px solid var(--line); padding:1lh 2ch 10px; position:relative; }
+  .sfoot .lbl { position:absolute; top:-.8lh; left:1ch; right:1ch; display:flex; justify-content:space-between; }
+  .sfoot .lbl > span { background:var(--bg2); padding:0 1ch; }
+  .scomp { background:var(--raised); border-left:1px solid var(--faint); padding:1lh 2ch 1lh calc(2ch - 1px); min-height:4lh; max-width:91ch; }
+  .skeys { color:var(--dim); } .skeys .k { color:var(--text); } .skeys span + span { margin-left:3ch; }
   .l3 .nm { display:inline-block; width:10ch; white-space:nowrap; }
   /* every symbol sits in one fixed cell: glyphs missing from the web font
      are drawn by a fallback font whose width is not 1ch */
@@ -274,14 +279,14 @@
   <p>status is a symbol, not a word and not a color. learn them once, read a screen of 30 agents at a glance.</p>
   <h3>entities</h3>
   <div class="glyphs">
-    <div><b class="acc">│</b>your message</div><div><b class="dim">›</b>the composer</div><div><b class="acc">:*</b>main</div><div><b>◇</b>a brief</div><div><b class="dim">∴</b>thinking</div>
+    <div><b class="acc">│</b>your message</div><div><b class="dim">│</b>the composer</div><div><b class="acc">:*</b>main</div><div><b>◇</b>a brief</div><div><b class="dim">∴</b>thinking</div>
     <div><b>$</b>bash</div><div><b>λ</b>typescript</div><div><b>↳</b>a sub-call</div><div><b>±</b>a file edit</div>
     <div><b>@</b>a message</div><div><b class="acc">▣</b>an image</div><div><b class="acc">?</b>a card: needs you</div><div><b class="dim pulse">≡</b>compacting (pulsing)</div>
   </div>
   <h3>agent status</h3>
   <div class="glyphs">
     <div><b class="pulse dim">·</b>starting</div><div><b class="pulse">∿</b>working</div><div><b>…</b>waiting on an agent</div><div><b class="acc">?</b>needs you</div>
-    <div><b>♡</b>done</div><div><b class="err">✗</b>failed</div><div><b class="dim">○</b>idle</div><div><b class="dim">–</b>stopped</div>
+    <div><b class="acc">✓</b>done</div><div><b class="err">✗</b>failed</div><div><b class="dim">○</b>idle</div><div><b class="dim">–</b>stopped</div>
   </div>
   <h3>marks</h3>
   <div class="glyphs">
@@ -310,7 +315,7 @@
   <h1>08 · the screen</h1>
   <h2>one conversation, all your agents.</h2>
   <div class="term screen">
-    <div class="shead"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim"><span class="pulse">∿</span> 3 working · <span class="acc">? 1 needs you</span> · ♡ 1 done</span></div>
+    <div class="shead"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim"><span class="pulse">∿</span> 3 working · <span class="acc">? 1 needs you</span> · <span class="acc">✓</span> 1 done</span></div>
     <div class="sgrid">
       <div class="sfeed">
         <div class="you">the login breaks on safari</div>
@@ -327,18 +332,20 @@
         <div class="prow"><span><span class="faint">2</span> <span class="pulse">∿</span> release</span><span class="dim">3m · 8%</span></div>
         <div class="prow"><span><span class="faint">3</span> <span class="acc">?</span> docs</span><span class="acc">you</span></div>
         <div class="prow"><span><span class="faint">4</span> … api-v2</span><span class="dim">waits docs</span></div>
-        <div class="prow"><span><span class="faint">5</span> ♡ bench</span><span class="dim">done</span></div>
+        <div class="prow"><span><span class="faint">5</span> <span class="acc">✓</span> bench</span><span class="dim">done</span></div>
       </div>
     </div>
-    <div class="sfoot"><div><span class="acc">main</span> <span class="dim">· idle · 210k / 1M tokens · 21%</span></div>
-      <div class="scomp"><span><span class="dim">›</span> <span class="cur"></span></span><span class="dim">⏎ send · @ agent · / commands</span></div></div>
+    <div class="sfoot"><div class="lbl"><span><span class="dim">you →</span> <span class="acc">main</span></span><span class="dim">idle · 210k / 1M tokens · 21%</span></div>
+      <div class="scomp"><span class="cur"></span><span class="dim">what's on your mind?</span></div>
+      <div class="skeys"><span><span class="k">⏎</span> send</span><span><span class="k">@</span> agent</span><span><span class="k">⌥0-9</span> switch</span><span><span class="k">/</span> commands</span><span><span class="k">?</span> help</span></div></div>
   </div>
   <table>
     <tr><td class="dim">header</td><td><code>bise :*</code>, then only the non-zero counts. the pink one is the one that needs you.</td></tr>
-    <tr><td class="dim">feed</td><td>the conversation. prose ≤ 76 columns; extra width goes to the margin.</td></tr>
+    <tr><td class="dim">feed</td><td>the conversation. prose ≤ 88 columns, in a 91-column reading column; extra width goes to the margin.</td></tr>
     <tr><td class="dim">agents</td><td>one row each: number, status, name, age and context. <code>⌥ + number</code> jumps to it; numbers never change while an agent lives. hidden under 70 columns.</td></tr>
-    <tr><td class="dim">status row</td><td>who you're talking to, in pink, so you always know who gets your message.</td></tr>
-    <tr><td class="dim">composer</td><td><code>›</code> and a few dim hints.</td></tr>
+    <tr><td class="dim">divider</td><td>who you're talking to (<code>you → main</code>, the name in pink) and, on the right, what they're doing.</td></tr>
+    <tr><td class="dim">composer</td><td>a slightly raised block: one tinted row above your text, one below, the thin bar on its left (faint while empty, pink once you type). at least 2 rows; it grows with you.</td></tr>
+    <tr><td class="dim">key bar</td><td>right under the composer: keys in the text color, what they do dim, a tip on the right when you're idle. in an agent's view it starts with <code>esc back to main</code>.</td></tr>
   </table>
   <h3>the first run</h3>
   <div class="term"><div class="dim">what's on your mind?</div><div class="b dim">say it and keep talking. the work runs in the background, i'm always here.</div><div class="b dim">try: "fix the flaky login test, and draft the release note"</div></div>
@@ -381,7 +388,7 @@
     <div class="b l3">▸ 47 messages between 30 agents</div>
     <div class="b"><span class="who acc">:*</span>the endpoint agents agreed on one error format; the sdk agents use it too.</div>
     <div class="b l3">▸ 23 messages between 9 agents</div>
-    <div class="b"><span class="who">♡</span>4 endpoints are done: users, orgs, keys, audit. <span class="dim">▸ reports</span></div>
+    <div class="b"><span class="who acc">✓</span>4 endpoints are done: users, orgs, keys, audit. <span class="dim">▸ reports</span></div>
     <div class="b faint">· 14:31 ·</div>
     <div class="b l3">▸ 12 messages between 6 agents <span class="pulse">∿</span></div>
   </div>
@@ -391,7 +398,7 @@
 <section id="reading" class="wide">
   <h1>11 · reading</h1>
   <h2>a novel line, not a wall.</h2>
-  <p>prose wraps at 76 columns, whatever the terminal width. code goes up to 100, then wraps with a faint <span class="faint">»</span>.</p>
+  <p>prose wraps at 88 columns, whatever the terminal width. code goes up to 100, then wraps with a faint <span class="faint">»</span>.</p>
   <div class="measure"><div class="term" style="position:relative"><div class="rule76"></div>found it: safari drops SameSite=None cookies that aren't Secure. the dev
 server sets the cookie without Secure, so the session is lost on the redirect.
 added secure: true; the webkit test passes now.</div></div>
@@ -417,7 +424,7 @@ added secure: true; the webkit test passes now.</div></div>
     <tr><td>bash, typescript</td><td><b>always in full</b></td><td>—</td></tr>
     <tr><td>output</td><td><span class="dim">▸ output · 42 lines · 1 failed</span></td><td>the output</td></tr>
     <tr><td>file edit</td><td>± edit session.ts <span class="dim">✓ +3 −1 ▸</span></td><td>the diff</td></tr>
-    <tr><td>report</td><td>♡ bench is done. <span class="dim">▸ report</span></td><td>the report</td></tr>
+    <tr><td>report</td><td><span class="acc">✓</span> bench is done. <span class="dim">▸ report</span></td><td>the report</td></tr>
     <tr><td>brief</td><td>◇ brief <span class="dim">▸</span></td><td>the brief</td></tr>
     <tr><td>agent traffic</td><td><span class="dim">▸ 12 messages between 8 agents</span></td><td>the messages, in order</td></tr>
   </table>
@@ -435,7 +442,7 @@ added secure: true; the webkit test passes now.</div></div>
     <tr><td class="g err">↻</td><td>a restart failed, rolled back</td></tr>
     <tr><td class="g">–</td><td>confirm dropping an agent</td></tr>
     <tr><td class="g">⇄</td><td>two agents changed the same file</td></tr>
-    <tr><td class="g">♡</td><td>done</td></tr>
+    <tr><td class="g acc">✓</td><td>done</td></tr>
   </table>
   <p><code>ctrl+f</code> opens a long card full screen, <code>pgup</code> / <code>pgdn</code> scroll it.</p>
 </section>
@@ -515,12 +522,12 @@ added secure: true; the webkit test passes now.</div></div>
   <p>every string the UI shows. when a string isn't here, write it in the same voice and add it.</p>
   <table>
     <tr><th>where</th><th>text</th></tr>
-    <tr><td class="dim">header</td><td>no agents yet · ∿ 3 working · … 1 waiting · ? 1 needs you · ♡ 1 done</td></tr>
+    <tr><td class="dim">header</td><td>no agents yet · ∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done</td></tr>
     <tr><td class="dim">panel</td><td>agents · ⌥ + number · + 21 more · ▸ 4 archived</td></tr>
     <tr><td class="dim">first run</td><td>what's on your mind? · say it and keep talking. the work runs in the background, i'm always here.</td></tr>
     <tr><td class="dim">inside an agent</td><td>you're talking to auth-fix directly. main isn't in the loop. esc back to main.</td></tr>
     <tr><td class="dim">composer</td><td>⏎ send · @ agent · / commands · ⏎ steer · ctrl+c interrupt</td></tr>
-    <tr><td class="dim">history</td><td>▸ 12 messages between 8 agents · ∴ thought for 14s · ▸ output · 42 lines · ♡ turn done · 2m 10s</td></tr>
+    <tr><td class="dim">history</td><td>▸ 12 messages between 8 agents · ∴ thought for 14s · ▸ output · 42 lines · ✓ turn done · 2m 10s</td></tr>
     <tr><td class="dim">cards</td><td>? docs needs you · alt+r answer with text · ctrl+x later · ctrl+f full screen</td></tr>
     <tr><td class="dim">direct</td><td>@ auth-fix to you: …</td></tr>
     <tr><td class="dim">not delivered</td><td>✗ not delivered: auth-fix stopped. ⏎ send again · esc drop</td></tr>
