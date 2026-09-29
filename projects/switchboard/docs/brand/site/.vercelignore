@@ -1,0 +1,6 @@
+content/
+*.py
+README.md
+.gitignore
+.env*
+.vercel
