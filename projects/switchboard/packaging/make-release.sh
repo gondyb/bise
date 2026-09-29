@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# make-release.sh — lay out a release channel (BISE-170/171): the folder
+# a host serves as is, and what `curl -fsSL <url>/install.sh | sh` and
+# `bise update` read.
+#
+#   make-release.sh --out <dir> [--url <base url>] [--version <name>] <tarball>...
+#
+#   <tarball>   build-dist.sh archives, one per target (darwin-arm64,
+#               darwin-x86_64), all of the same version
+#   --url       the channel's public base URL, stamped into install.sh
+#               (DIST_URL_DEFAULT); default file://<out> (local tests)
+#   --version   the release's name (a tag without v); default: the id
+#
+# Output in <out> (existing tarballs of other versions are kept, so an
+# update can still find its version; latest.json names only these):
+#   install.sh                    packaging/install.sh, channel stamped
+#   latest.json                   {version, id, commit, built, published,
+#                                  targets: {<os-arch>: {url, file, sha256,
+#                                  size, macos, id, commit, built}}}
+#   bise-<id>-<os-arch>.tar.gz    + .sha256
+# The tarball URLs are relative to the channel (bise_home::release
+# resolves them), so the same folder works at any URL. Nothing is
+# uploaded: publishing is copying <out> to the host.
+
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+out="" url="" version=""
+tarballs=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --out) out="$2"; shift ;;
+    --url) url="$2"; shift ;;
+    --version) version="$2"; shift ;;
+    -h|--help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -*) echo "make-release: unknown argument $1" >&2; exit 2 ;;
+    *) tarballs+=("$1") ;;
+  esac
+  shift
+done
+[ -n "$out" ] && [ ${#tarballs[@]} -gt 0 ] || { echo "usage: make-release.sh --out <dir> [--url <url>] [--version <name>] <tarball>..." >&2; exit 2; }
+mkdir -p "$out"
+out="$(cd "$out" && pwd)"
+url="${url:-file://$out}"
+url="${url%/}"
+
+json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"; }
+
+targets="" id="" commit="" built=""
+for t in "${tarballs[@]}"; do
+  f="$(basename "$t")"
+  name="${f%.tar.gz}"
+  v="$(tar -xzOf "$t" "$name/app/VERSION")" || { echo "make-release: $f has no $name/app/VERSION" >&2; exit 1; }
+  get() { printf '%s\n' "$v" | sed -n "s/^$1=//p" | head -n 1; }
+  target="$(get target)"
+  [ -n "$target" ] || { echo "make-release: $f: VERSION has no target=" >&2; exit 1; }
+  [ -z "$id" ] || [ "$id" = "$(get id)" ] || { echo "make-release: $f is $(get id), not $id" >&2; exit 1; }
+  id="$(get id)"; commit="$(get commit)"; built="$(get built)"
+  [ "$(cd "$(dirname "$t")" && pwd)" = "$out" ] || cp "$t" "$out/$f"
+  sum="$(shasum -a 256 "$out/$f" | cut -d' ' -f1)"
+  (cd "$out" && printf '%s  %s\n' "$sum" "$f" > "$f.sha256")
+  size="$(stat -f %z "$out/$f" 2>/dev/null || stat -c %s "$out/$f")"
+  entry="$(json_str "$target"): {\"url\": $(json_str "$f"), \"file\": $(json_str "$f"), \"sha256\": $(json_str "$sum"), \"size\": $size, \"macos\": $(json_str "$(get macos)"), \"id\": $(json_str "$id"), \"commit\": $(json_str "$commit"), \"built\": $(json_str "$built")}"
+  targets="${targets:+$targets,
+    }$entry"
+done
+version="${version:-$id}"
+cat > "$out/latest.json.tmp" <<EOF
+{
+  "version": $(json_str "$version"),
+  "id": $(json_str "$id"),
+  "commit": $(json_str "$commit"),
+  "built": $(json_str "$built"),
+  "published": $(json_str "$(date -u +%Y-%m-%dT%H:%M:%SZ)"),
+  "targets": {
+    $targets
+  }
+}
+EOF
+plutil -lint -s "$out/latest.json.tmp" 2>/dev/null || python3 -m json.tool "$out/latest.json.tmp" >/dev/null
+mv "$out/latest.json.tmp" "$out/latest.json"
+# the installer, with this channel as its default
+q="$(printf '%s' "$url" | sed "s/'/'\\\\''/g; s/[&|]/\\\\&/g")"
+sed "s|^DIST_URL_DEFAULT=''|DIST_URL_DEFAULT='$q'|" "$HERE/install.sh" > "$out/install.sh.tmp"
+grep -q "^DIST_URL_DEFAULT='$q'" "$out/install.sh.tmp" || { echo "make-release: cannot stamp the URL into install.sh" >&2; exit 1; }
+chmod 644 "$out/install.sh.tmp"
+mv "$out/install.sh.tmp" "$out/install.sh"
+echo "release $version ($id) in $out: curl -fsSL $url/install.sh | sh" >&2
+echo "$out"

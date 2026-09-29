@@ -34,6 +34,7 @@ mod approot;
 mod debuglog;
 mod doctor;
 mod info;
+mod update;
 mod version;
 
 // ---- session ids and resolution (codex-style) ----
@@ -398,6 +399,8 @@ usage:
   {cmd} auth list               each provider's key source (never the key)
   {cmd} plugins [list|enable|disable]  agent plugins
   {cmd} doctor                  check this Mac, the install, keys, model, hubs
+  {cmd} update [--check]        install the latest release (an installed bise)
+  {cmd} uninstall [--purge]     remove the installed bise (--purge: your data too)
   {cmd} --version               this version
   {cmd} --headless              one session without a TUI, for a program:
       --scripted                  the scripted session (no API)
@@ -454,6 +457,11 @@ fn main() -> std::io::Result<()> {
             if let Err(e) = home.ensure_run_dir() {
                 eprintln!("warning: {}: {}", home.run_dir().display(), e);
             }
+            // an installed bise: the daily update check, detached (BISE-171);
+            // not the hub (a TUI or a session starts it)
+            if args.first().map(String::as_str) != Some("sbd") {
+                update::check_in_background();
+            }
         }
         match args.first().map(|s| s.as_str()) {
             Some("sb") => std::process::exit(switchboard::cli::main(&args[1..])),
@@ -496,6 +504,9 @@ fn main() -> std::io::Result<()> {
             }
             // read-only checks, one line each (BISE-167)
             Some("doctor") => std::process::exit(doctor::main()),
+            // an installed bise (install.sh, BISE-170/171)
+            Some("update") => std::process::exit(update::main(&args[1..])),
+            Some("uninstall") => std::process::exit(update::uninstall(&args[1..])),
             Some("--help" | "-h" | "help") => {
                 println!("{}", usage(&version::cmd_name()));
                 return Ok(());

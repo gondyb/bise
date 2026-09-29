@@ -7,7 +7,7 @@
 #
 # Checks: install (from the extracted bundle, like curl | sh would),
 # the command on PATH in a new login shell, --version (this Mac's arch),
-# init (key file), a single-agent session start (--headless, scripted
+# login (key file), a single-agent session start (--headless, scripted
 # and live), one headless turn answered by tests/fake_provider.py (the
 # installed REPL calls a provider and answers; needs python3, nothing
 # leaves the machine), the Switchboard hub start / sb list / stop on a
@@ -61,11 +61,11 @@ v="$(cd "$WORK" && E /bin/zsh -ic "$CMD --version" 2>&1 | tail -n 1)"
 echo "     $v"
 case "$v" in "$CMD "*"darwin-$arch"*) ok "--version (darwin-$arch)" ;; *) ko "--version: want '$CMD <id> (darwin-$arch, ...)'" ;; esac
 
-echo "== init (non-interactive)"
-(cd "$WORK" && E MISTRAL_API_KEY=test-key-not-real "$BIN" init) 2>&1 | sed 's/^/     /'
-check "~/.bend-harness/.env holds the key" grep -q '^MISTRAL_API_KEY=test-key-not-real' "$T/.bend-harness/.env"
-[ "$(stat -f %Lp "$T/.bend-harness/.env")" = 600 ] && ok ".env is mode 600" || ko ".env is mode 600"
-check "config.toml sets a public model" grep -q '^model = "mistral' "$T/.bend-harness/config.toml"
+echo "== login (a key from stdin, BISE-170: no init in the launcher)"
+(cd "$WORK" && printf 'test-key-not-real\n' | E "$BIN" login mistral) 2>&1 | sed 's/^/     /'
+check "~/.bise/auth.json holds the key" grep -q 'test-key-not-real' "$T/.bise/auth.json"
+[ "$(stat -f %Lp "$T/.bise/auth.json")" = 600 ] && ok "auth.json is mode 600" || ko "auth.json is mode 600"
+check "the launcher only execs current (no logic left in it)" sh -c "[ \$(grep -vc '^#' '$T/.local/share/bise/bin/$CMD') -le 5 ]"
 
 # a headless session: READY on stdout, then close stdin to end it
 session() {
@@ -91,7 +91,7 @@ session() {
 }
 echo "== single-agent session"
 session "scripted session" --scripted
-session "live session (model from config.toml)" 
+session "live session (default model)"
 check "sessions dir created in ~/.bise (BISE-161: a fresh HOME starts there)" test -d "$T/.bise/sessions"
 
 # one turn through the installed REPL: the provider is the tests' fake
@@ -146,7 +146,7 @@ done
 if [ -n "$state" ] && [ -S "$state/hub.sock" ]; then
   ok "hub started (state $state)"
   root="$(cat "$state/hub.root" 2>/dev/null)"
-  case "$root" in "$(cd "$T" && pwd -P)/.local/share/bend-harness/versions/"*) ok "hub runs from the installed version ($root)" ;; *) ko "hub root: $root" ;; esac
+  case "$root" in "$(cd "$T" && pwd -P)/.local/share/bise/versions/"*) ok "hub runs from the installed version ($root)" ;; *) ko "hub root: $root" ;; esac
   sleep 2
   out="$(E SB_SOCKET="$state/hub.sock" SB_AGENT=main "$state/bin/sb" list 2>&1)"
   echo "$out" | sed 's/^/     /' | head -n 5
@@ -168,11 +168,11 @@ E sh "$bundle/install.sh" 2>&1 | sed 's/^/     /'
 
 echo "== uninstall"
 E "$BIN" uninstall 2>&1 | sed 's/^/     /'
-check "prefix removed" test ! -e "$T/.local/share/bend-harness"
+check "prefix removed" test ! -e "$T/.local/share/bise"
 check "command link removed" test ! -e "$BIN"
 check "old-name link removed" test ! -e "$T/.local/bin/bend-harness"
 check "PATH line removed" sh -c "! grep -q '$MARK' '$T/.zshrc'"
-check "user data kept (~/.bend-harness/.env)" test -f "$T/.bend-harness/.env"
+check "user data kept (~/.bise/auth.json)" test -f "$T/.bise/auth.json"
 
 echo "== $pass passed, $fail failed"
 [ "$fail" = 0 ]

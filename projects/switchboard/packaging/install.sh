@@ -1,41 +1,50 @@
 #!/bin/sh
-# install.sh — PROTOTYPE installer of the harness + Switchboard.
+# install.sh — the installer of bise (the harness + Switchboard), BISE-170.
 #
-#   sh install.sh [--from <tarball|bundle dir>] [--prefix <dir>] [--bin-dir <dir>]
-#                 [--no-modify-path] [--keep <n>]
+#   curl -fsSL <channel>/install.sh | sh          (the published form)
+#   sh install.sh [--from <tarball|bundle dir>] [--dist-url <url>]
+#                 [--prefix <dir>] [--bin-dir <dir>] [--no-modify-path] [--keep <n>]
 #   sh install.sh --uninstall [--prefix <dir>] [--bin-dir <dir>] [--purge]
 #   sh install.sh --dev [--repo <dir>] [--bin-dir <dir>]   (dev channel)
 #   sh install.sh --uninstall --dev [--bin-dir <dir>]
+#
+# Where the build comes from, in order: --from; the bundle this file sits
+# in (app/ next to it); the release channel: <url>/latest.json names the
+# tarball of this Mac (darwin-arm64 or darwin-x86_64; an x86_64 shell
+# under Rosetta gets arm64) and its sha256. The channel is ONE value:
+# --dist-url, else $BISE_DIST_URL, else DIST_URL_DEFAULT below (stamped
+# by make-release.sh in the install.sh it publishes). file:// works (the
+# tests). The channel is recorded in $PREFIX/dist-url: `bise update`
+# reads it.
 #
 # --dev (BISE-129): no bundle; $BIN_DIR/bise runs the version the hub of
 # the dev repo (--repo, default: the repo this script is in) runs now:
 # its versions.json 'current', what /restart and `sb restart` switch
 # to. Every restart there updates `bise` everywhere.
 #
-# Run from an extracted bundle (app/ next to this file), it installs that
-# bundle; --from takes a tarball or a bundle dir. (The published form
-# would be `curl -fsSL <url>/install.sh | sh`: it downloads the tarball
-# of the platform from BISE_DIST_URL - nothing is published yet.)
-#
-# Layout (the command is `bise` since BISE-165; the prefix moves to
-# ~/.local/share/bise with BISE-170):
+# Layout:
 #   $PREFIX/versions/<id>/   immutable app roots (the versions.sh layout)
 #   $PREFIX/current -> versions/<id>
-#   $PREFIX/bin/bise         the launcher (sh): --version, init, uninstall,
-#                            then exec the current app root's binary
-#   $PREFIX/install.sh       a copy of this file (uninstall, reinstall)
+#   $PREFIX/bin/bise         the launcher: exec current/bise (the rest,
+#                            --version, update, uninstall, is in bise)
+#   $PREFIX/install.sh       the installer of the current version (uninstall)
+#   $PREFIX/dist-url         the release channel it came from
 #   $BIN_DIR/bise -> $PREFIX/bin/bise
 #   $BIN_DIR/bend-harness -> $PREFIX/bin/bise   (the old name, one release)
-# Defaults: PREFIX=~/.local/share/bend-harness, BIN_DIR=~/.local/bin.
-# User data is never inside $PREFIX: ~/.bend-harness (keys, config,
-# sessions) and ~/.local/state/switchboard (hubs) survive an uninstall
-# unless --purge.
+# Defaults: PREFIX=~/.local/share/bise, BIN_DIR=~/.local/bin.
+# Your data is never inside $PREFIX: ~/.bise (keys, config, hubs,
+# sessions) and the older ~/.bend-harness, ~/.local/state/switchboard
+# survive an uninstall unless --purge.
 
 set -eu
 
 CMD=bise                  # the command name (BISE-165)
 OLD_CMD=bend-harness      # its old name: a second link, kept one release
-PREFIX="${BISE_PREFIX:-$HOME/.local/share/bend-harness}"
+# the release channel, stamped by make-release.sh ('' = none published)
+DIST_URL_DEFAULT=''
+DIST_URL="${BISE_DIST_URL:-$DIST_URL_DEFAULT}"
+PREFIX="${BISE_PREFIX:-$HOME/.local/share/bise}"
+OLD_PREFIX="$HOME/.local/share/bend-harness"   # before BISE-170
 BIN_DIR="${BISE_BIN_DIR:-$HOME/.local/bin}"
 FROM=""
 MODIFY_PATH=1
@@ -53,6 +62,7 @@ die() { say "error: $*"; exit 1; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --from) FROM="$2"; shift ;;
+    --dist-url) DIST_URL="$2"; shift ;;
     --prefix) PREFIX="$2"; shift ;;
     --bin-dir) BIN_DIR="$2"; shift ;;
     --no-modify-path) MODIFY_PATH=0 ;;
@@ -61,7 +71,7 @@ while [ $# -gt 0 ]; do
     --purge) PURGE=1 ;;
     --dev) DEV=1 ;;
     --repo) REPO="$2"; shift ;;
-    -h|--help) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,39p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
   shift
@@ -225,40 +235,54 @@ if [ "$ACTION" = uninstall ]; then
     fi
   done
   if [ "$PURGE" = 1 ]; then
-    rm -rf "$HOME/.bend-harness" "${XDG_STATE_HOME:-$HOME/.local/state}/switchboard"
-    say "purged ~/.bend-harness (keys, config, sessions) and the Switchboard state"
+    rm -rf "${BISE_HOME:-$HOME/.bise}" "$HOME/.bend-harness" "$HOME/.local/state/switchboard"
+    say "purged ~/.bise, ~/.bend-harness and ~/.local/state/switchboard (keys, config, hubs, sessions)"
   else
-    say "kept your data: ~/.bend-harness and ~/.local/state/switchboard (--purge removes them)"
+    say "kept your data: ~/.bise (and ~/.bend-harness, ~/.local/state/switchboard if any; --purge removes them)"
   fi
   say "uninstalled"
   exit 0
 fi
 
 # ---- install: find the bundle ----
-here="$(cd "$(dirname "$0")" && pwd)"
+os="$(uname -s | tr '[:upper:]' '[:lower:]')"; arch="$(uname -m)"; [ "$arch" = aarch64 ] && arch=arm64
+# an x86_64 shell on an M-series Mac (Rosetta): the native build
+if [ "$os" = darwin ] && [ "$arch" = x86_64 ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = 1 ]; then
+  arch=arm64
+fi
+target="$os-$arch"
+# the bundle this file is in; never when piped (`curl | sh`: $0 is sh)
+here=""
+[ -f "$0" ] && here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/$CMD-install.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT INT TERM
+DIST_URL="${DIST_URL%/}"
 if [ -z "$FROM" ]; then
-  if [ -d "$here/app" ]; then
+  if [ -n "$here" ] && [ -f "$here/app/VERSION" ]; then
     FROM="$here"
-  elif [ -n "${BISE_DIST_URL:-}" ]; then
-    os="$(uname -s | tr '[:upper:]' '[:lower:]')"; arch="$(uname -m)"
-    [ "$arch" = aarch64 ] && arch=arm64
-    say "downloading $BISE_DIST_URL/latest-$os-$arch.tar.gz"
-    curl -fsSL "$BISE_DIST_URL/latest-$os-$arch.tar.gz" -o "$tmp/dl.tar.gz" || die "download failed"
-    curl -fsSL "$BISE_DIST_URL/latest-$os-$arch.tar.gz.sha256" -o "$tmp/dl.sha" || die "checksum download failed"
-    [ "$(shasum -a 256 "$tmp/dl.tar.gz" | cut -d' ' -f1)" = "$(cut -d' ' -f1 "$tmp/dl.sha")" ] || die "checksum mismatch"
+  elif [ -n "$DIST_URL" ]; then
+    say "reading $DIST_URL/latest.json"
+    curl -fsSL "$DIST_URL/latest.json" -o "$tmp/latest.json" || die "cannot read $DIST_URL/latest.json"
+    get() { plutil -extract "targets.$target.$1" raw -o - "$tmp/latest.json" 2>/dev/null || true; }
+    url="$(get url)"; sum="$(get sha256)"
+    [ -n "$url" ] || url="$(get file)"
+    { [ -n "$url" ] && [ -n "$sum" ]; } || die "the release has no build for $target"
+    case "$url" in *://*) ;; *) url="$DIST_URL/$url" ;; esac
+    say "downloading $url"
+    curl -fsSL "$url" -o "$tmp/dl.tar.gz" || die "download failed: $url"
+    [ "$(shasum -a 256 "$tmp/dl.tar.gz" | cut -d' ' -f1)" = "$sum" ] || die "checksum mismatch: $url"
     FROM="$tmp/dl.tar.gz"
   else
-    die "no bundle: run from an extracted bundle, or pass --from <tarball|dir>"
+    die "no bundle and no release channel: pass --from <tarball|dir>, or --dist-url <url> (or BISE_DIST_URL)"
   fi
 fi
 if [ -f "$FROM" ]; then
   if [ -f "$FROM.sha256" ]; then
     [ "$(shasum -a 256 "$FROM" | cut -d' ' -f1)" = "$(cut -d' ' -f1 "$FROM.sha256")" ] || die "checksum mismatch: $FROM"
   fi
-  tar -C "$tmp" -xzf "$FROM" || die "cannot extract $FROM"
-  FROM="$(find "$tmp" -mindepth 2 -maxdepth 2 -type d -name app | head -n 1 | xargs dirname)"
+  mkdir -p "$tmp/x"
+  tar -C "$tmp/x" -xzf "$FROM" || die "cannot extract $FROM"
+  FROM="$(find "$tmp/x" -mindepth 2 -maxdepth 2 -type d -name app | head -n 1 | xargs dirname)"
 fi
 app="$FROM/app"
 # the command: bise, or bend-harness in a bundle built before BISE-165
@@ -272,9 +296,8 @@ done
   || die "incomplete bundle: app/bend-jsrt missing in $FROM (a download cut short, or removed by security software)"
 
 id="$(sed -n 's/^id=//p' "$app/VERSION")"
-target="$(sed -n 's/^target=//p' "$app/VERSION")"
-os="$(uname -s | tr '[:upper:]' '[:lower:]')"; arch="$(uname -m)"; [ "$arch" = aarch64 ] && arch=arm64
-[ -z "$target" ] || [ "$target" = "$os-$arch" ] || die "this bundle is for $target, this machine is $os-$arch"
+bundle_target="$(sed -n 's/^target=//p' "$app/VERSION")"
+[ -z "$bundle_target" ] || [ "$bundle_target" = "$target" ] || die "this bundle is for $bundle_target, this Mac wants $target"
 command -v git >/dev/null 2>&1 || say "warning: git not found (Switchboard needs it for worktrees and /version)"
 
 # ---- the version dir: immutable, written once, then the pointer flips ----
@@ -293,78 +316,26 @@ fi
 # rm + ln; the launcher resolves 'current' once, at start)
 rm -f "$PREFIX/current"
 ln -s "versions/$id" "$PREFIX/current"
-cp "$0" "$PREFIX/install.sh" 2>/dev/null || true
+# the installer uninstall runs: the bundle's, else this file
+if [ -f "$FROM/install.sh" ]; then cp "$FROM/install.sh" "$PREFIX/install.sh"
+elif [ -n "$here" ]; then cp "$0" "$PREFIX/install.sh"; fi
+# the channel `bise update` reads (an earlier install's is kept when none now)
+if [ -n "$DIST_URL" ]; then printf '%s\n' "$DIST_URL" > "$PREFIX/dist-url"; fi
 
-# ---- the launcher ----
+# ---- the launcher: exec the current version ----
 q_prefix="$(printf '%s' "$PREFIX" | sed "s/'/'\\\\''/g")"
 cat > "$PREFIX/bin/$CMD.tmp" <<EOF
 #!/bin/sh
-# $CMD launcher, written by install.sh. Runs the CURRENT version from
-# its real (immutable) dir: a hub records that dir, and an update that
-# flips 'current' never changes a running hub under it.
+# $CMD launcher, written by install.sh: runs the CURRENT version from its
+# real (immutable) dir, so an update that flips 'current' never changes
+# a running hub under it. The rest (--version, update, uninstall) is $CMD's.
 PREFIX='$q_prefix'
 EOF
 cat >> "$PREFIX/bin/$CMD.tmp" <<'EOF'
-CMD="$(basename "$0")"
-root="$(cd "$PREFIX/current" 2>/dev/null && pwd -P)" || { echo "$CMD: no version installed in $PREFIX" >&2; exit 1; }
-ver() { sed -n "s/^$1=//p" "$root/VERSION"; }
-
-has_key() {
-  for k in MISTRAL_API_KEY ANTHROPIC_FOUNDRY_API_KEY; do
-    eval "v=\${$k:-}"; [ -n "$v" ] && return 0
-    for f in "$HOME/.bend-harness/.env" "$HOME/.vibe/.env"; do
-      [ -f "$f" ] && grep -Eq "^(export )?$k=.+" "$f" && return 0
-    done
-  done
-  return 1
-}
-
-# first run: the API key, in ~/.bend-harness/.env (mode 600), and a
-# public default model (the built-in default is a private proxy)
-init() {
-  mkdir -p "$HOME/.bend-harness"; chmod 700 "$HOME/.bend-harness"
-  env_file="$HOME/.bend-harness/.env"
-  key="${MISTRAL_API_KEY:-}"
-  if [ -z "$key" ]; then
-    [ -t 0 ] || { echo "$CMD init: no terminal; run: MISTRAL_API_KEY=... $CMD init" >&2; return 1; }
-    printf 'Mistral API key (https://console.mistral.ai/api-keys): ' >&2
-    stty -echo 2>/dev/null; read -r key; stty echo 2>/dev/null; echo >&2
-  fi
-  [ -n "$key" ] || { echo "$CMD init: no key given" >&2; return 1; }
-  touch "$env_file"; chmod 600 "$env_file"
-  grep -vE '^(export )?MISTRAL_API_KEY=' "$env_file" > "$env_file.tmp" || true
-  printf 'MISTRAL_API_KEY=%s\n' "$key" >> "$env_file.tmp"
-  mv "$env_file.tmp" "$env_file"; chmod 600 "$env_file"
-  cfg="$HOME/.bend-harness/config.toml"
-  if [ ! -f "$cfg" ]; then
-    printf '# written by %s init\nmodel = "%s"\n' "$CMD" "${BISE_DEFAULT_MODEL:-mistral-medium-latest}" > "$cfg"
-  fi
-  echo "$CMD: key saved in $env_file; config in $cfg" >&2
-}
-
-case "${1:-}" in
-  --launcher-root) echo "$root"; exit 0 ;;
-  --version|-V|version)
-    echo "$CMD $(ver id) ($(ver target), commit $(ver commit | cut -c1-12), built $(ver built))"
-    exit 0 ;;
-  init) init; exit $? ;;
-  uninstall) shift; exec sh "$PREFIX/install.sh" --uninstall --prefix "$PREFIX" "$@" ;;
-  update) echo "$CMD update: no release channel is published yet (see docs/packaging.md)" >&2; exit 1 ;;
-  sb|sbd|sbswitch|keyprobe|--headless|--scripted) ;;
-  *)
-    # interactive first run without any key: onboard, then go on
-    if [ -t 0 ] && [ -t 1 ] && ! has_key; then
-      echo "$CMD: no API key found (env, ~/.bend-harness/.env, ~/.vibe/.env) - first-run setup" >&2
-      init || exit 1
-    fi ;;
-esac
-# the user's folder: the workspace of `switchboard`, and the bash/patch
-# tools' directory of a single session (the binary moves to its app root)
-export SB_LAUNCH_DIR="${SB_LAUNCH_DIR:-$PWD}"
-export BEND_WORKDIR="${BEND_WORKDIR:-$PWD}"
-# bise; a version installed before BISE-165 has bend-harness only
-[ -x "$root/bise" ] && exec "$root/bise" "$@"
-exec "$root/bend-harness" "$@"
+root="$(cd "$PREFIX/current" 2>/dev/null && pwd -P)" || { echo "$(basename "$0"): no version installed in $PREFIX" >&2; exit 1; }
+# the user's folder (never one inherited from an agent's shell)
+export SB_LAUNCH_DIR="$PWD"
+exec "$root/bise" "$@"
 EOF
 chmod 755 "$PREFIX/bin/$CMD.tmp"
 mv -f "$PREFIX/bin/$CMD.tmp" "$PREFIX/bin/$CMD"
@@ -413,4 +384,7 @@ case ":$PATH:" in
 esac
 
 say "installed $CMD $id in $PREFIX ($(du -sh "$PREFIX/versions/$id" | cut -f1))"
-say "next: '$CMD init' (API key), then '$CMD' (a session) or '$CMD switchboard' (in a project folder)"
+if [ "$PREFIX" != "$OLD_PREFIX" ] && [ -d "$OLD_PREFIX/versions" ]; then
+  say "an older install is in $OLD_PREFIX (no longer used): remove it with  rm -rf '$OLD_PREFIX'"
+fi
+say "next: '$CMD' in a project folder (it asks for an API key the first time; '$CMD login' stores one)"

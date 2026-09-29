@@ -231,8 +231,8 @@ jobs:
             echo "$sum  $f" | sha256sum -c -
             targets="$(jq -c --arg t "$(get target)" --arg url "$BASE/$f" --arg file "$f" \
               --arg sha "$sum" --argjson size "$(stat -c %s "$f")" --arg macos "$(get macos)" \
-              --arg id "$(get id)" --arg commit "$(get commit)" \
-              '. + {($t): {url: $url, file: $file, sha256: $sha, size: $size, macos: $macos, id: $id, commit: $commit}}' \
+              --arg id "$(get id)" --arg commit "$(get commit)" --arg built "$(get built)" \
+              '. + {($t): {url: $url, file: $file, sha256: $sha, size: $size, macos: $macos, id: $id, commit: $commit, built: $built}}' \
               <<< "$targets")"
           done
           jq -n --arg version "${TAG#v}" --arg tag "$TAG" --arg channel stable \
