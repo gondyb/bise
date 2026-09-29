@@ -61,6 +61,7 @@
   @keyframes kiss { 0% { opacity:0; transform:scale(.4) } 55% { opacity:1; transform:scale(1.35) rotate(-10deg) } 100% { opacity:1; transform:none } }
   .t1 { font-size:clamp(24px, 3.2vw, 38px); font-weight:700; margin-top:42px; letter-spacing:-.02em; }
   .t2 { color:var(--dim); margin-top:12px; font-size:clamp(15px, 1.4vw, 17px); max-width:none; }
+  .then { margin:14px 0 0; font-size:13px; color:var(--dim); } .then code { color:var(--text); background:var(--chip); padding:1px 6px; border-radius:4px; }
   .install { margin-top:44px; color:var(--text); font-size:15px; cursor:pointer; display:inline-flex; align-items:center; gap:2.5ch;
     background:var(--soft); border:1px solid var(--faint); border-radius:10px; padding:11px 12px 11px 20px; transition:border-color .3s, background .3s; }
   .install:hover { border-color:var(--acc); }
@@ -213,6 +214,7 @@
     <div class="t1">multi-agent coding, made human.</div>
     <div class="t2">ramble. interrupt. change your mind.<br>i run the agents. you stay in flow.</div>
     <div class="install" id="install" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span id="cmd">curl -fsSL bise.dev/install | sh</span></span><span class="c" id="copied">copy</span></div>
+    <p class="then">then, in the repo you want to work on: <code>cd your-repo &amp;&amp; bise</code></p>
     <div class="scroll">↓</div>
   </div>
 </div>
@@ -358,6 +360,7 @@
       <div class="big acc">:*</div>
       <p class="dim" style="margin-top:28px">ideas in. little kisses out. also pull requests.</p>
       <div class="install" id="install2" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span>curl -fsSL bise.dev/install | sh</span></span><span class="c">copy</span></div>
+      <p class="then">then, in the repo you want to work on: <code>cd your-repo &amp;&amp; bise</code></p>
     </div>
   </section>
 </div>
