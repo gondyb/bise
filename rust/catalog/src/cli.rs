@@ -85,7 +85,8 @@ fn voice_line(s: &Setup) -> String {
 }
 
 /// The providers that transcribe and their voice models.
-fn voice_list(o: &mut String, c: &Catalog, hit: &dyn Fn(&str) -> bool, keys: &Keys, home: Option<&Path>) {
+/// Whether it listed a provider.
+fn voice_list(o: &mut String, c: &Catalog, hit: &dyn Fn(&str) -> bool, keys: &Keys, home: Option<&Path>) -> bool {
     let mut block = String::new();
     for p in c.stt_providers() {
         let p_hit = hit(&p.id) || hit(&p.name) || hit("voice") || hit("stt");
@@ -107,6 +108,7 @@ fn voice_list(o: &mut String, c: &Catalog, hit: &dyn Fn(&str) -> bool, keys: &Ke
         o.push_str("\nvoice (speech to text, ctrl+r; [voice] in config.toml)\n");
         o.push_str(&block);
     }
+    !block.is_empty()
 }
 
 /// The whole listing, pure (tests).
@@ -125,6 +127,7 @@ pub fn render(s: &Setup, filter: Option<&str>, keys: &Keys, home: Option<&Path>)
     };
     o.push_str(&choice_line("small_model", c, &s.small_model, small_from));
     o.push_str(&voice_line(s));
+    let mut listed = false;
     for p in c.providers.iter().filter(|p| !p.stt_only) {
         let models: Vec<_> = c.models.iter().filter(|m| m.provider == p.id && !m.stt).collect();
         let p_hit = hit(&p.id) || hit(&p.name);
@@ -132,6 +135,7 @@ pub fn render(s: &Setup, filter: Option<&str>, keys: &Keys, home: Option<&Path>)
         if !p_hit && shown.is_empty() {
             continue;
         }
+        listed = true;
         let custom = if p.source == Source::Config { ", from config.toml" } else { "" };
         o.push_str(&format!(
             "\n{}  {} · {} · {}{}\n",
@@ -152,7 +156,10 @@ pub fn render(s: &Setup, filter: Option<&str>, keys: &Keys, home: Option<&Path>)
         };
         o.push_str(&format!("  {:<52} {}\n", format!("{}/<any other>", p.id), caps_text(&base)));
     }
-    voice_list(&mut o, c, &hit, keys, home);
+    listed |= voice_list(&mut o, c, &hit, keys, home);
+    if let (Some(f), false) = (filter, listed) {
+        o.push_str(&format!("\nno provider or model matches '{}' (`{} models` lists them all)\n", f, CLI));
+    }
     if !c.warnings.is_empty() {
         o.push('\n');
         for w in &c.warnings {

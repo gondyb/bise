@@ -356,6 +356,10 @@ fn the_listing_shows_keys_choices_and_warnings() {
     let out = cli::render(&s, Some("gpt-oss"), &keys, None);
     assert!(out.contains("groq/openai/gpt-oss-120b") && out.contains("cerebras/gpt-oss-120b"), "{out}");
     assert!(!out.contains("anthropic/claude-opus-4-5"), "{out}");
+    assert!(!out.contains("no provider or model matches"), "{out}");
+    // qa-explore D: a filter with no match says so
+    let out = cli::render(&s, Some("zzz"), &keys, None);
+    assert!(out.contains("no provider or model matches 'zzz'"), "{out}");
     let s = setup("model = \"nowhere/x\"\n");
     let empty = crate::auth::Store::default();
     let keys = crate::auth::Keys { env: &no_env, store: &empty, files: &[] };
