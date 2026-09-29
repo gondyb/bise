@@ -24,7 +24,7 @@
   .tbox { border:1px solid var(--faint); border-radius:5px; padding:.45lh 1.5ch .35lh; margin-top:1.3lh; max-width:91ch; position:relative; }
   .tbox.run { border-color:var(--text); } .tbox.fail { border-color:var(--err); }
   .tl { display:flex; max-width:79ch; color:var(--dim); } .tl .d { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .tl.run .d { color:var(--text); } .tl .st { flex:none; margin-left:2ch; } .tl .who { flex:none; }
+  .tl.t-run .d { color:var(--text); } .tl .st { flex:none; margin-left:2ch; } .tl .who { flex:none; }
   .tle { padding-left:3ch; max-width:79ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .tbox .ttl { position:absolute; top:-.8lh; left:1ch; background:var(--bg); padding:0 1ch; }
   .tbox .sep { border-top:1px solid var(--faint); margin:.35lh -1.5ch; }
@@ -384,7 +384,7 @@ const TST = {
 };
 // kind: "$" bash, "λ" typescript. state: run | ok | fail. code: no description (fallback = the script's first line)
 const tl = (kind, desc, state, t, { first, code, err } = {}) =>
-  `<div class="tl ${state}${first ? " b" : ""}"><span class="who ${state === "fail" ? "err" : "dim"}">${kind}</span><span class="d${code ? " code" : ""}">${desc}</span><span class="st">${TST[state](t)}</span></div>` +
+  `<div class="tl t-${state}${first ? " b" : ""}"><span class="who ${state === "fail" ? "err" : "dim"}">${kind}</span><span class="d${code ? " code" : ""}">${desc}</span><span class="st">${TST[state](t)}</span></div>` +
   (err ? `<div class="tle"><span class="err">${err}</span></div>` : "");
 const tbx = (kind, desc, state, t, script, out) =>
   `<div class="tbox${state === "run" ? " run" : state === "fail" ? " fail" : ""}"><span class="ttl">${kind} ${desc} ${state === "fail" ? `<span class="err">✗ ${t}</span>` : state === "run" ? `<span class="pulse">∿</span> <span class="dim">${t}</span>` : `<span class="dim">✓ ${t}</span>`}</span><pre>${script}</pre><div class="sep"></div><pre class="o">${out}</pre></div>`;
