@@ -93,8 +93,10 @@ key() {  # <src> <name>
   local r; r="$(recipe "$2")"
   if [ "${r%% *}" = cargo ]; then jsrt_key "$1" ${r#cargo }; return; fi
   set -- "$1" $r
-  (cd "$1" && shift 2 && { find "$@" -type f -name '*.bend' -print0 | sort -z | xargs -0 cat
-                           echo "MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET"; } | shasum | cut -c1-12)
+  # only the dirs <src> has (find exits 1 on a missing one: pipefail)
+  local d dirs=(); for d in "${@:3}"; do if [ -e "$1/$d" ]; then dirs+=("$d"); fi; done
+  (cd "$1" && { find "${dirs[@]}" -type f -name '*.bend' -print0 | sort -z | xargs -0 cat
+                echo "MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET"; } | shasum | cut -c1-12)
 }
 
 # the key of a cargo binary: every file (path and content) of its crate
@@ -102,7 +104,7 @@ key() {  # <src> <name>
 # the macOS target and the release profile below
 jsrt_key() {  # <src> <dir>...
   local src="$1"; shift
-  (cd "$src" && { local d; for d in "$@"; do [ -d "$d" ] && echo "$d"; done; } \
+  (cd "$src" && { local d; for d in "$@"; do if [ -d "$d" ]; then echo "$d"; fi; done; } \
      | xargs -I{} find {} -path '*/target' -prune -o -type f -print | LC_ALL=C sort \
      | while read -r f; do printf '%s %s\n' "$(shasum < "$f" | cut -c1-40)" "$f"; done
    echo "MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET $JSRT_PROFILE") | shasum | cut -c1-12
@@ -134,6 +136,19 @@ compile() {  # <src> <name> <out>
     && cargo build -q --release) && copy "$t/release/bend-jsrt" "$out"
 }
 
+# keep the 3 newest of <name>, and those used in the last hour (the
+# agents' worktrees each have their own sources). Always returns 0: its
+# loop used to end on `[ -n "" ] && rm` (a recent one kept), so under
+# pipefail `bins.sh path` exited 1 before printing the path of a build
+# (a cache miss), and versions.sh copied from "" (bug-bins-path)
+prune() {  # <name>
+  local old
+  ls -t "$CACHE/$1-"* 2>/dev/null | grep -v '\.tmp\.' | tail -n +4 \
+    | while read -r old; do
+        if [ -n "$(find "$old" -mmin +60)" ]; then rm -f "$old"; fi
+      done || true
+}
+
 # build <name> of <src> into the cache if absent; print the cache file
 cached() {  # <src> <name>
   local src="$1" name="$2" k f
@@ -145,10 +160,7 @@ cached() {  # <src> <name>
     compile "$src" "$name" "$f.tmp.$$" || { rm -f "$f.tmp.$$"; return 1; }
     mv "$f.tmp.$$" "$f"
     say "$name: built in $((SECONDS - s)) s ($f)"
-    # keep the 3 newest of this name, and those used in the last hour
-    # (the agents' worktrees each have their own sources)
-    ls -t "$CACHE/$name-"* 2>/dev/null | grep -v '\.tmp\.' | tail -n +4 \
-      | while read -r old; do [ -n "$(find "$old" -mmin +60)" ] && rm -f "$old"; done
+    prune "$name"
   else
     touch "$f"
   fi

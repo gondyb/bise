@@ -46,6 +46,15 @@ export MACOSX_DEPLOYMENT_TARGET; MACOSX_DEPLOYMENT_TARGET="$("$REPO/bins.sh" mac
 
 say() { echo "versions: $*" >&2; }
 
+# bin_path <src> <name>: bins.sh's cache file of <name> for <src>, built if
+# needed; exits (loudly) when bins.sh fails or prints no executable file
+# (bug-bins-path: an empty path gave `cp: : No such file or directory`)
+bin_path() {
+  local p; p="$("$REPO/bins.sh" path --src "$1" "$2")" || { say "bins.sh path $2 failed"; exit 1; }
+  [ -n "$p" ] && [ -x "$p" ] || { say "bins.sh path $2: no binary ('$p')"; exit 1; }
+  echo "$p"
+}
+
 # what to remove when the script exits, built or failed: a RETURN trap
 # does not run when set -e exits, and the /tmp/sb-build-* worktrees leaked
 CLEAN_TMP="" CLEAN_WT=""
@@ -103,11 +112,13 @@ build_from() {
   # run.sh and the gate; a Bend compile is 1-2 min). This repo's bins.sh
   # builds any commit, old ones included (their committed binaries, up to
   # BISE-114, are never used: a version always compiles its own sources)
+  # (an assignment, not `cp "$(...)"`: set -e sees a failed bins.sh only
+  # there; bin_path also refuses an empty or missing path)
   local h; h="$("$REPO/bins.sh" key --src "$src" repl-live)"
-  cp "$("$REPO/bins.sh" path --src "$src" repl-live)" "$tmp/repl-live"
+  local b; b="$(bin_path "$src" repl-live)"; cp "$b" "$tmp/repl-live"
   # sb-core: the hub's decisions in Bend (hub/*.bend), when the version has them
   if [ -f "$src/hub/main.bend" ]; then
-    cp "$("$REPO/bins.sh" path --src "$src" sb-core)" "$tmp/sb-core"
+    b="$(bin_path "$src" sb-core)"; cp "$b" "$tmp/sb-core"
   fi
   cp "$src"/tool-desc-*.txt "$src"/prompt-*.txt "$tmp/"
 
@@ -118,7 +129,7 @@ build_from() {
   # (BEND_JSRT_BIN); the same file at the old path too: a runtime before
   # BISE-114 (an old commit) runs rust/jsrt/target/debug/bend-jsrt
   local js jk; jk="$("$REPO/bins.sh" key --src "$src" bend-jsrt)"
-  js="$("$REPO/bins.sh" path --src "$src" bend-jsrt)"
+  js="$(bin_path "$src" bend-jsrt)"
   ln -f "$js" "$tmp/bend-jsrt" 2>/dev/null || cp -c "$js" "$tmp/bend-jsrt" 2>/dev/null || cp "$js" "$tmp/bend-jsrt"
   ln -f "$tmp/bend-jsrt" "$tmp/rust/jsrt/target/debug/bend-jsrt"
 
