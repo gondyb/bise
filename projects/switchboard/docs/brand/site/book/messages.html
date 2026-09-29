@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bise — messages between agents, variations</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#141211; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --acc:#f4a6b0; --line:#2a2623;
+          --bub:#1d1a18; --bub2:#231f1d; }
+  [data-theme="light"] { --bg:#fdfbf7; --text:#1b1917; --dim:#6b645a; --faint:#cfc8bd; --acc:#b8416b; --line:#e2dcd2;
+          --bub:#f5f1ea; --bub2:#efe9df; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:#0b0a09; color:#ece6da; font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:13px; line-height:1.55; padding:28px; }
+  body.light { background:#e9e4dc; color:#1b1917; }
+  h1 { font-size:15px; } .lead { color:#8a8378; max-width:110ch; margin:6px 0 10px; }
+  .top { display:flex; gap:3ch; align-items:center; margin-bottom:26px; color:#8a8378; }
+  .top a, .top button { color:#8a8378; font:inherit; background:none; border:0; cursor:pointer; text-decoration:none; }
+  .top a:hover, .top button:hover { color:var(--acc); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(88ch, 1fr)); gap:40px 36px; }
+  figure { margin:0; }
+  figcaption { margin-bottom:10px; max-width:88ch; }
+  figcaption b { font-weight:700; } figcaption .n { color:#f4a6b0; margin-right:1ch; }
+  figcaption p { color:#8a8378; margin-top:2px; }
+  figcaption .rec { color:#f4a6b0; }
+  .term { background:var(--bg); color:var(--text); border-radius:8px; padding:1lh 3ch 1.2lh; box-shadow:0 12px 40px rgba(0,0,0,.35); max-width:88ch; }
+  .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)} b { font-weight:700; }
+  .gc { display:inline-block; width:1ch; text-align:center; }
+  .b { margin-top:1lh; } .who { display:inline-block; width:2ch; }
+  .you { border-left:1px solid var(--acc); padding-left:calc(2ch - 1px); }
+  .tick { color:var(--acc); margin-left:1ch; }
+  .fold { color:var(--dim); }
+  /* ---- the variants ---- */
+  /* A · bubble: a tinted block, a header row, the text */
+  .A { background:var(--bub); padding:0 2ch; margin-left:2ch; max-width:74ch; }
+  .A .h { color:var(--dim); } .A .h .s { color:var(--text); font-weight:700; } .A .t { color:var(--dim); }
+  .A + .A { margin-top:1px; }
+  /* B · chat: first speaker left, the other right; each bubble tinted */
+  .B { display:flex; margin-left:2ch; max-width:76ch; }
+  .B.r { justify-content:flex-end; }
+  .B > div { background:var(--bub); padding:0 2ch; max-width:56ch; }
+  .B.r > div { background:var(--bub2); }
+  .B .h { color:var(--dim); } .B .h .s { color:var(--text); font-weight:700; } .B .t { color:var(--dim); }
+  .B + .B { margin-top:1px; }
+  /* C · chip: a tinted envelope chip with the names, the text after it */
+  .C { margin-left:2ch; display:grid; grid-template-columns:auto 1fr; gap:0 1ch; max-width:80ch; }
+  .C .chip { background:var(--bub2); padding:0 1ch; white-space:nowrap; color:var(--dim); align-self:start; }
+  .C .chip .s { color:var(--text); font-weight:700; } .C .t { color:var(--dim); }
+  /* D · thread: one tinted block per pair while it's the last thing in the history */
+  .D { background:var(--bub); padding:0 2ch; margin-left:2ch; max-width:76ch; }
+  .D .h { color:var(--dim); border-bottom:1px solid var(--line); margin:0 -2ch 2px; padding:0 2ch; }
+  .D .h .s { color:var(--text); font-weight:700; }
+  .D .l { display:grid; grid-template-columns:10ch 1fr; color:var(--dim); } .D .l .nm { color:var(--text); }
+  /* E · letter: no tint; "from · to" small above the text, the envelope in the gutter */
+  .E { display:grid; grid-template-columns:2ch 1fr; margin-left:2ch; max-width:76ch; }
+  .E .h { color:var(--faint); } .E .h .s, .E .h .r { color:var(--dim); } .E .t { color:var(--dim); }
+  /* F · colored names: bubble A, each agent's name in its own muted hue */
+  .F { background:var(--bub); padding:0 2ch; margin-left:2ch; max-width:74ch; }
+  .F .h { color:var(--dim); } .F .t { color:var(--dim); } .F .h b { font-weight:700; }
+  .c1{color:#8fc4f0} .c2{color:#e8cf9a} .c3{color:#b9d99a} .c4{color:#d7a6f0}
+  [data-theme="light"] .c1{color:#1f63a8} [data-theme="light"] .c2{color:#7a5c00} [data-theme="light"] .c3{color:#44782a} [data-theme="light"] .c4{color:#8a3fb0}
+  /* G · bubble A, framed: a thin rounded border instead of the tint (the calmest bubble) */
+  .G { border:1px solid var(--line); border-radius:6px; padding:0 2ch; margin-left:2ch; max-width:74ch; }
+  .G .h { color:var(--dim); } .G .h .s { color:var(--text); font-weight:700; } .G .t { color:var(--dim); }
+  .G + .G { margin-top:4px; }
+</style>
+</head>
+<body>
+<h1>bise :* — messages between agents, variations</h1>
+<p class="lead">the same moment in every variant: auth-fix and release talk back and forth, then docs asks main and main answers. it's level 3 (between agents): it should read like a message app, make the sender and the receiver obvious, and still stay quieter than what's for you. ✉ is the envelope (in a terminal, write it with the text selector ✉︎ so it stays one column).</p>
+<div class="top"><a href="screens.html">← every screen</a><a href="index.html">brand book</a><button id="theme">light / dark</button></div>
+<div class="grid" id="v"></div>
+<script>
+const E = '<span class="acc">✉</span>', Ed = '<span class="dim">✉</span>';
+const X = [ // [from, to, text]
+  ["auth-fix", "release", "heads-up: i'm changing web/src/auth. the session cookie gets Secure."],
+  ["release", "auth-fix", "ok, i'll put it in the note. do users see anything?"],
+  ["auth-fix", "release", "only on safari: logins stop failing after the redirect."],
+  ["docs", "main", "v1 or v2 for the api examples?"],
+  ["main", "docs", "v2, the brief says so."],
+];
+const pre = `<div class="you">fix the flaky login test, and draft the release note<span class="tick">✓✓</span></div>
+<div class="b"><span class="who acc">:*</span>on it. auth-fix takes the test, release takes the note.</div>`;
+const post = `<div class="b"><span class="who acc">:*</span>docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span></div>`;
+const hdr = (f, t, env = Ed) => `${env} <span class="s">${f}</span> <span class="faint">→</span> ${t}`;
+// consecutive messages of the same pair stay together; the header repeats only when the sender changes
+function groups(render) {
+  let out = "", last = null;
+  X.forEach(([f, t, m], i) => {
+    const pair = [f, t].sort().join("|"), newPair = !last || last.pair !== pair;
+    out += render(f, t, m, { first: newPair, i, sameSender: last && last.f === f && !newPair });
+    last = { pair, f };
+  });
+  return out;
+}
+const V = [
+  ["A", "bubble", "a tinted block per message, inset 2 columns. first row: ✉ sender → receiver (sender bold, text color; receiver dim); then the text, dim. a new pair starts after a blank row; the same pair stacks with no blank row, like a chat.",
+    "terminal: tint #1d1a18 dark / #f5f1ea light (dim on it ≥ 6:1 / 5.3:1), 2 tinted columns each side, the block as wide as its longest line (max 74).", true,
+    () => groups((f, t, m, o) => `<div class="A${o.first ? " b" : ""}"><div class="h">${hdr(f, t)}</div><div class="t">${m}</div></div>`)],
+  ["B", "chat, left and right", "like a phone: in a pair, the one who spoke first sits on the left, the other on the right, a shade lighter. the direction reads at a glance. main's answers to an agent sit on the right, like 'you' in an app.",
+    "terminal: right bubbles end at the reading column's right edge; max 56 wide. with 3+ agents talking at once, left/right only means 'who opened this pair'.", false,
+    () => { const opener = {}; return groups((f, t, m, o) => { const k = [f, t].sort().join("|"); opener[k] ??= f; const r = opener[k] !== f;
+      return `<div class="B${r ? " r" : ""}${o.first ? " b" : ""}"><div><div class="h">${hdr(f, t)}</div><div class="t">${m}</div></div></div>`; }); }],
+  ["C", "envelope chip", "one line per message: a small tinted chip with ✉ sender → receiver, then the text, which wraps under itself. the most compact; a long run stays easy to scan.",
+    "terminal: chip = tinted cells around the names, 1 column of padding; names cut at 12 with …", false,
+    () => groups((f, t, m, o) => `<div class="C${o.first ? " b" : ""}"><span class="chip">${hdr(f, t)}</span><span class="t">${m}</span></div>`)],
+  ["D", "thread", "a pair talking back and forth becomes one small thread: a header ✉ auth-fix ⇄ release with a faint rule, then one line per message with the speaker's name in a column. it only grows while it's the last thing in the history; anything else in between starts a new thread (the history stays in arrival order).",
+    "terminal: names column 10 wide; the header uses ⇄ (both ways). same tint as A.", true,
+    () => { let out = "", cur = null;
+      for (const [f, t, m] of X) { const k = [f, t].sort().join("|");
+        if (cur !== k) { if (cur) out += "</div>"; cur = k; out += `<div class="D b"><div class="h">${Ed} <span class="s">${f}</span> <span class="faint">⇄</span> <span class="s">${t}</span></div>`; }
+        out += `<div class="l"><span class="nm">${f}</span><span>${m}</span></div>`; }
+      return out + "</div>"; }],
+  ["E", "letter, no tint", "the calmest: no background. a faint 'from sender · to receiver' line with the envelope in the gutter, the text under it. clear names, but it looks less like an app.",
+    "terminal: nothing painted; works the same on every terminal and in 16 colors.", false,
+    () => groups((f, t, m, o) => `<div class="E${o.first || !o.sameSender ? " b" : ""}"><span>${o.first || !o.sameSender ? Ed : ""}</span><div>${o.first || !o.sameSender ? `<div class="h">from <span class="s">${f}</span> · to <span class="r">${t}</span></div>` : ""}<div class="t">${m}</div></div></div>`)],
+  ["F", "bubble + a color per agent", "bubble A, and every agent keeps a muted color of its own (the syntax hues), in the panel too. who's who becomes instant. but pink stops being the only color that means something: to weigh against the one-accent rule.",
+    "terminal: 4–6 hues from the syntax palette, given in creation order; main keeps blush.", false,
+    () => { const col = { "auth-fix": "c1", release: "c2", docs: "c3", main: "acc" }; const n = (x) => `<b class="${col[x]}">${x}</b>`;
+      return groups((f, t, m, o) => `<div class="F${o.first ? " b" : ""}"><div class="h">${Ed} ${n(f)} <span class="faint">→</span> ${n(t)}</div><div class="t">${m}</div></div>`); }],
+  ["G", "bubble, outlined", "bubble A with a thin rounded border instead of a background. still an app look, a little lighter; it looks the same on a terminal whose background isn't ours.",
+    "terminal: a box of ╭╮╰╯ in the line color costs 2 rows per message; so a pair's messages share one box (header rows inside).", false,
+    () => groups((f, t, m, o) => `<div class="G${o.first ? " b" : ""}"><div class="h">${hdr(f, t)}</div><div class="t">${m}</div></div>`)],
+];
+document.getElementById("v").innerHTML = V.map(([k, name, what, term, rec, f]) =>
+  `<figure><figcaption><b><span class="n">${k}</span>${name}</b>${rec ? ' <span class="rec">· my pick</span>' : ""}<p>${what}</p><p>${term}</p></figcaption><div class="term">${pre}${f()}${post}</div></figure>`).join("");
+document.getElementById("theme").onclick = () => { const l = document.body.classList.toggle("light"); document.querySelectorAll(".term").forEach((t) => t.dataset.theme = l ? "light" : "dark"); };
+// one fixed cell per symbol (fallback glyphs are not 1ch wide)
+const GLYPH_RE = /[\u2010-\u2BFF]/;
+const w = document.createTreeWalker(document.getElementById("v"), NodeFilter.SHOW_TEXT);
+const nodes = []; while (w.nextNode()) if (GLYPH_RE.test(w.currentNode.data)) nodes.push(w.currentNode);
+for (const n of nodes) { const f = document.createDocumentFragment();
+  for (const ch of n.data) { if (GLYPH_RE.test(ch)) { const s = document.createElement("span"); s.className = "gc"; s.textContent = ch; f.append(s); } else f.append(ch); }
+  n.replaceWith(f); }
+</script>
+</body>
+</html>
