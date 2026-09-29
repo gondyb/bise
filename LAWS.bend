@@ -7,7 +7,6 @@ import ./core/history.bend as H
 import ./core/compaction.bend as C
 import ./core/checkpoint.bend as K
 import ./core/session.bend as S
-import ./core/program.bend as P
 import ./core/patch.bend as Pa
 import ./core/config.bend as Cf
 import ./core/commands.bend as Cm
@@ -82,66 +81,6 @@ law compaction_request_ends_with_prompt:
       Con{T.user("bonjour"), Con{T.asst("réponse", Nil{}),
       Con{T.injected_user(C.compaction_prompt("")), Nil{}}}}}}
     : C.PRes}
-
-# LAW: replay consumes recorded results in order and completes the program
-# (D1: a resumed program can never diverge from the original run).
-law run_consumes_in_order:
-  for +n1: String
-  for +a1: String
-  for +n2: String
-  for +a2: String
-  for +r1: String
-  for +r2: String
-  {P.run(Con{T.SConst{"x", T.ECall{n1, a1}},
-      Con{T.SConst{"y", T.ECall{n2, a2}},
-      Con{T.SRet{T.ERef{"x", Nil{}}}, Nil{}}}},
-    Con{r1, Con{r2, Nil{}}})
-    == P.PDone{r1} : P.PR}
-
-# LAW: the program stops exactly at the missing tool result: the durable
-# effect boundary.
-law run_waits_at_the_missing_result:
-  for +n1: String
-  for +a1: String
-  for +n2: String
-  for +a2: String
-  for +r1: String
-  {P.run(Con{T.SConst{"x", T.ECall{n1, a1}},
-      Con{T.SConst{"y", T.ECall{n2, a2}},
-      Con{T.SRet{T.ERef{"x", Nil{}}}, Nil{}}}},
-    Con{r1, Nil{}})
-    == P.PWait{n2, a2} : P.PR}
-
-# LAW: the parser reads the program source into the same statements the
-# interpreter runs.
-law parse_roundtrip:
-  {P.parse("const me = github_app.get_me({}); return me.login;")
-    == Some{Con{T.SConst{"me", T.ECall{"github_app.get_me", "{}"}},
-      Con{T.SRet{T.ERef{"me", Con{"login", Nil{}}}}, Nil{}}}}
-    : Maybe<&2, List<&2, T.Stmt>>}
-
-# LAW: TypeScript type annotations are skipped, not parsed — the
-# type-blind parser: models may write TS, the interpreter runs the JS.
-law parse_ignores_types:
-  {P.parse("const me: UserInfo = github_app.get_me({}); return me;")
-    == Some{Con{T.SConst{"me", T.ECall{"github_app.get_me", "{}"}},
-      Con{T.SRet{T.ERef{"me", Nil{}}}, Nil{}}}}
-    : Maybe<&2, List<&2, T.Stmt>>}
-
-# LAW: malformed programs are refused whole.
-law parse_rejects_garbage:
-  {P.parse("frobnicate") == None{} : Maybe<&2, List<&2, T.Stmt>>}
-
-# LAW: a branch not taken requests none of its calls — control flow is
-# respected across the durable boundary, so replay stays consistent.
-law branch_skips_untaken_calls:
-  {P.run(Con{T.SConst{"c", T.ECall{"t.c", "{}"}},
-      Con{T.SIf{T.CTruth{T.ERef{"c", Con{"ok", Nil{}}}},
-        Con{T.SConst{"a", T.ECall{"t.a", "{}"}}, Nil{}},
-        Con{T.SConst{"b", T.ECall{"t.b", "{}"}}, Nil{}}},
-      Con{T.SRet{T.EStr{"z"}}, Nil{}}}},
-    Con{"{\"ok\":true}", Nil{}})
-    == P.PWait{"t.a", "{}"} : P.PR}
 
 # ---- the commit convention ----
 
@@ -1025,26 +964,14 @@ law renumber_keeps_length:
   for +base: U32
   {S.calls_count(S.renumber(Con{c1, Con{c2, Nil{}}}, base)) == 2n : Nat}
 
-# ---- the node_program rename never reaches the model ----
-# The runtime renames run_typescript to node_program for routing; every
-# model-visible surface translates it back (a leak once left the model
-# reading a tool it never called).
+# ---- tool results carry the name the model called ----
 
-# LAW: the wire echo of a past call says run_typescript.
-law wire_echo_renames_node_program:
-  {Rm.ser_call(T.Call{7, "node_program", "{\"code\": \"x\"}"})
-    == "\n  CALL 7 run_typescript : {\"code\": \"x\"}" : String}
-
-# LAW: ordinary names pass through the wire echo untouched.
+# LAW: the wire echo of a past call carries its name as the model wrote it.
 law wire_echo_keeps_names:
   {Rm.ser_call(T.Call{7, "bash", "ls -la"}) == "\n  CALL 7 bash : ls -la"
     : String}
 
 # LAW: tool results are attributed to the name the model called.
-law result_text_renames_node_program:
-  {S.tool_result_msg("node_program", "out", True{})
-    == T.tool_res("tool run_typescript ok: out") : T.Msg}
-
 law result_text_keeps_names:
   {S.tool_result_msg("bash", "out", False{})
     == T.tool_res("tool bash failed: out") : T.Msg}
@@ -1196,11 +1123,6 @@ law best_match_connectors_filter:
 law tool_ann_format:
   {Rt.call_ann(T.Call{12, "bash", "ls -la"}) == "tool #12 bash : ls -la"
     : String}
-
-# LAW: node_program is translated on the feed too.
-law tool_ann_renames_node_program:
-  {Rt.call_ann(T.Call{3, "node_program", "{\"code\": \"x\"}"})
-    == "tool #3 run_typescript : {\"code\": \"x\"}" : String}
 
 # LAW: results annotate with the outcome and a preview.
 law tool_res_ann_ok:
@@ -1988,17 +1910,96 @@ law interrupt_closes_waiting_calls:
       Con{T.Msg{T.RUser{}, "penguins", Nil{}, True{}}, Nil{}}}}}
     : List<&2, T.Msg>}
 
-# LAW: the interrupt answers exactly the waiting calls - a program
-# call is answered as one run_typescript result, an agent pending
-# (nothing in history yet) answers nothing.
-law interrupt_closes_prog_pending:
-  {S.interrupt_closes(Some{T.PProg{Nil{}, Nil{}, 0, 0}})
-    == Con{T.tool_res("tool run_typescript failed: interrupted"), Nil{}}
-    : List<&2, T.Msg>}
-
+# LAW: an agent pending (nothing in history yet) answers nothing on an
+# interrupt.
 law interrupt_closes_agent_pending:
   {S.interrupt_closes(Some{T.PAgent{9}}) == Nil{}
     : List<&2, T.Msg>}
+
+# ---- run_typescript: one engine, an ordinary tool (BISE-118) ----
+# The Core runs no program: a run_typescript call goes out as a tool act
+# like bash; the runtime runs it in V8 (bend-jsrt), live and scripted
+# alike, and the program's one result comes back as the tool result.
+# The program's own tool calls stay inside the runtime (record and
+# re-run), the Core never sees them.
+
+def ts_args() -> String:
+  "{\"code\": \"return 1\"}"
+
+def ts_flow.called(+cfg: T.Cfg) -> T.Session:
+  S.res_next(S.apply(steer_flow.started(cfg),
+      T.CompletionOk{0, "", Con{T.Call{1, "run_typescript", ts_args()},
+        Nil{}}}),
+    steer_flow.started(cfg))
+
+# LAW: the call goes out: one tool act, name and args as the model wrote
+# them (the completion renumbers Call{1} to 2, like any tool call).
+law run_typescript_goes_out_as_a_tool:
+  {drain_flow.acts(S.apply(steer_flow.started(law_cfg()),
+      T.CompletionOk{0, "", Con{T.Call{1, "run_typescript", ts_args()},
+        Nil{}}}))
+    == Con{T.ToolAct{2, T.Call{2, "run_typescript", ts_args()}}, Nil{}}
+    : List<&2, T.Act>}
+
+# LAW: a program batches with other calls in one completion (the live
+# behavior; the old scripted core refused "run_typescript must be the
+# only call").
+law run_typescript_batches_with_other_calls:
+  {drain_flow.acts(S.apply(steer_flow.started(law_cfg()),
+      T.CompletionOk{0, "", Con{T.Call{1, "run_typescript", ts_args()},
+        Con{T.Call{2, "bash", "ls"}, Nil{}}}}))
+    == Con{T.ToolAct{2, T.Call{2, "run_typescript", ts_args()}},
+      Con{T.ToolAct{3, T.Call{3, "bash", "ls"}}, Nil{}}}
+    : List<&2, T.Act>}
+
+# LAW: the result comes back: the program's value is the run_typescript
+# tool result, right after its call.
+law run_typescript_result_comes_back:
+  {S.sess_history(S.res_next(S.apply(ts_flow.called(law_cfg()),
+      T.ToolOk{2, "1"}), ts_flow.called(law_cfg())))
+    == Con{T.user("hi"),
+      Con{T.asst("", Con{T.Call{2, "run_typescript", ts_args()}, Nil{}}),
+      Con{T.tool_res("tool run_typescript ok: 1"), Nil{}}}}
+    : List<&2, T.Msg>}
+
+# LAW: a program that fails (a throw, a failed inner call, a bad
+# program) comes back as a failed run_typescript result.
+law run_typescript_failure_comes_back:
+  {S.sess_history(S.res_next(S.apply(ts_flow.called(law_cfg()),
+      T.ToolFail{2, "program error"}), ts_flow.called(law_cfg())))
+    == Con{T.user("hi"),
+      Con{T.asst("", Con{T.Call{2, "run_typescript", ts_args()}, Nil{}}),
+      Con{T.tool_res("tool run_typescript failed: program error"), Nil{}}}}
+    : List<&2, T.Msg>}
+
+# LAW: an interrupt answers the running program like any waiting call.
+law run_typescript_interrupted:
+  {S.sess_history(S.res_next(S.apply(ts_flow.called(law_cfg()),
+      T.Interrupt{}), ts_flow.called(law_cfg())))
+    == Con{T.user("hi"),
+      Con{T.asst("", Con{T.Call{2, "run_typescript", ts_args()}, Nil{}}),
+      Con{T.tool_res("tool run_typescript failed: interrupted"), Nil{}}}}
+    : List<&2, T.Msg>}
+
+# LAW: the runtime runs run_typescript on the V8 engine (bend-jsrt).
+# The dispatch has no mode: live and scripted sessions run the same code.
+law run_typescript_runs_on_jsrt:
+  {Rt.tool_of("run_typescript") == Rt.TNode{} : Rt.Tool}
+
+# LAW: the old routing name node_program is no tool of its own any more
+# (an unknown name goes to the MCP lookup, which fails it by name).
+law node_program_is_not_a_tool:
+  {Rt.tool_of("node_program") == Rt.TMcp{} : Rt.Tool}
+
+# LAW: a session saved before BISE-118 holds live programs under the old
+# routing name node_program: they load as run_typescript.
+law checkpoint_loads_node_program_as_run_typescript:
+  {K.fcall("  CALL 7 node_program : x")
+    == T.Call{7, "run_typescript", "x"} : T.Call}
+
+# LAW: every other call name loads untouched.
+law checkpoint_keeps_call_names:
+  {K.fcall("  CALL 7 bash : ls") == T.Call{7, "bash", "ls"} : T.Call}
 
 # ---- BR-004: the deferred scan trusts only standalone tool acks ----
 
@@ -2042,7 +2043,7 @@ law deferred_reads_prefixed_ack:
 # the escaped tool text (a literal backslash-n line boundary).
 law deferred_reads_program_acked_result:
   {Sf.deferred_of(Con{T.user("hi"),
-      Con{S.tool_result_msg("node_program",
+      Con{S.tool_result_msg("run_typescript",
           String.append("prog out\n", Sf.COMPACT_ACK()), True{}),
         Nil{}}})
     == Sf.Def{True{}, False{}} : Sf.Def}

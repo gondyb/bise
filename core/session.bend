@@ -12,7 +12,6 @@ import Base
 import ./types.bend as T
 import ./estimate.bend as E
 import ./compaction.bend as C
-import ./program.bend as P
 import ./api.bend as Api
 
 # ---- dispatch result (internal) ----
@@ -96,48 +95,18 @@ def tool_start_obs(+calls: List<&2, T.Call>) -> List<&2, T.Obs>:
         case T.Call{cid, _, _}:
           Con{T.ToolStarted{cid}, tool_start_obs(rest)}
 
-# node_program is the runtime's internal name for the live V8 engine
-# (run_typescript renamed on the way in); the model called run_typescript,
-# so every model-visible surface says run_typescript
-def result_name.pick(is_np: Bool, +name: String) -> String:
-  match is_np:
-    case True{}:
-      "run_typescript"
-    case False{}:
-      name
-
-def result_name(+name: String) -> String:
-  result_name.pick(String.eq(name, "node_program"), name)
-
 def tool_result_msg(+name: String, +out: String, ok: Bool) -> T.Msg:
   match ok:
     case True{}:
-      T.tool_res(String.append("tool ", String.append(result_name(name),
+      T.tool_res(String.append("tool ", String.append(name,
         String.append(" ok: ", Api.escape_nl(out)))))
     case False{}:
-      T.tool_res(String.append("tool ", String.append(result_name(name),
+      T.tool_res(String.append("tool ", String.append(name,
         String.append(" failed: ", Api.escape_nl(out)))))
 
 # one tool call taken out of the waiting list, with the remainder
 type Taken is Data:
   Got{c: T.Call, rest: List<&2, T.Call>}
-
-# ---- programmatic tool calling (D1) ----
-
-def call_name(c: T.Call) -> String:
-  match c:
-    case T.Call{_, name, _}:
-      name
-
-def call_is_prog(c: T.Call) -> Bool:
-  String.eq(call_name(c), "run_typescript")
-
-def contains_run_program(calls: List<&2, T.Call>) -> Bool:
-  match calls:
-    case Nil{}:
-      False{}
-    case Con{c, rest}:
-      Bool.or(call_is_prog(c), contains_run_program(rest))
 
 def take_call.put(hit: Bool, +c: T.Call, +rest: List<&2, T.Call>,
     tail: Maybe<&2, Taken>) -> Maybe<&2, Taken>:
@@ -564,215 +533,6 @@ def apply.completion.tools(+text: String, +calls: List<&2, T.Call>,
           U32.add(actions, U32.from_nat(Nat.add(calls_count(calls), 1n))),
           turn, Some{T.PTools{renumber(calls, U32.add(actions, 1))}}, queued, notifs}}
 
-# a program that failed to parse, or finished with no calls: the assistant
-# message and the failed result commit together, then the turn continues
-def apply.prog.fail.body(+id: U32, +text: String, +c: T.Call, +why: String,
-    +s: T.Session) -> T.Res:
-  match s:
-    case T.Sess{+cfg, +history, +inputs, +actions, +turn, _, +queued, +notifs}:
-      +s2 : T.Session = T.Sess{cfg,
-        List.append(&2, T.Msg, List.append(&2, T.Msg, history,
-          Con{T.asst(text, Con{c, Nil{}}), Nil{}}),
-          Con{tool_result_msg("run_typescript", why, False{}), Nil{}}),
-        Nat.add(inputs, 1n), actions, turn, None{}, queued, notifs}
-      d = dispatch(s2)
-      dispatch_result(d,
-        Con{T.Assistant{text}, Con{T.ToolStarted{id},
-        Con{T.ToolFinished{id, False{}},
-        Con{T.ToolCommitted{id}, Nil{}}}}}, s2)
-
-def apply.prog.fail(+text: String, +c: T.Call, +why: String,
-    +s: T.Session) -> T.Res:
-  match c:
-    case T.Call{+id, _, _}:
-      apply.prog.fail.body(id, text, c, why, s)
-
-# the program finished: its result is the run_program tool result
-def apply.prog.done.body(+id: U32, +text: String, +c: T.Call, +out: String,
-    +s: T.Session) -> T.Res:
-  match s:
-    case T.Sess{+cfg, +history, +inputs, +actions, +turn, _, +queued, +notifs}:
-      +s2 : T.Session = T.Sess{cfg,
-        List.append(&2, T.Msg, List.append(&2, T.Msg, history,
-          Con{T.asst(text, Con{c, Nil{}}), Nil{}}),
-          Con{tool_result_msg("run_typescript", out, True{}), Nil{}}),
-        Nat.add(inputs, 1n), actions, turn, None{}, queued, notifs}
-      d = dispatch(s2)
-      dispatch_result(d,
-        Con{T.Assistant{text}, Con{T.ToolStarted{id},
-        Con{T.ToolFinished{id, True{}},
-        Con{T.ToolCommitted{id}, Nil{}}}}}, s2)
-
-def apply.prog.done(+text: String, +c: T.Call, +out: String,
-    +s: T.Session) -> T.Res:
-  match c:
-    case T.Call{+id, _, _}:
-      apply.prog.done.body(id, text, c, out, s)
-
-# the program stopped at its first call: emit it and keep the program
-def apply.prog.first.wait2(+id: U32, +name: String, +args: String,
-    +text: String, +c: T.Call, +prog: List<&2, T.Stmt>, +s: T.Session)
-    -> T.Res:
-  match s:
-    case T.Sess{+cfg, +history, +inputs, +actions, +turn, _, +queued, +notifs}:
-      +fresh = U32.add(actions, 1)
-      T.Accepted{
-        Con{T.Assistant{text}, Con{T.ToolStarted{id},
-          Con{T.ToolStarted{fresh}, Nil{}}}},
-        Con{T.ToolAct{fresh, T.Call{fresh, name, args}}, Nil{}},
-        T.Sess{cfg, List.append(&2, T.Msg, history,
-          Con{T.asst(text, Con{c, Nil{}}), Nil{}}),
-          Nat.add(inputs, 1n), U32.add(fresh, 1), turn,
-          Some{T.PProg{prog, Nil{}, id, fresh}}, queued, notifs}}
-
-def apply.prog.first.wait(+name: String, +args: String, +text: String,
-    +c: T.Call, +prog: List<&2, T.Stmt>, +s: T.Session) -> T.Res:
-  match c:
-    case T.Call{+id, _, _}:
-      apply.prog.first.wait2(id, name, args, text, c, prog, s)
-
-# the first interpreter verdict: wait on a call, or finish immediately
-def apply.prog.first(pr: P.PR, +text: String, +c: T.Call,
-    +prog: List<&2, T.Stmt>, +s: T.Session) -> T.Res:
-  match pr:
-    case P.PDone{+out}:
-      apply.prog.done(text, c, out, s)
-    case P.PWait{+name, +args}:
-      apply.prog.first.wait(name, args, text, c, prog, s)
-    case P.PFail{+why}:
-      apply.prog.fail(text, c, why, s)
-
-def apply.prog.start.parsed(p: Maybe<&2, List<&2, T.Stmt>>, +text: String,
-    +c: T.Call, +s: T.Session) -> T.Res:
-  match p:
-    case None{}:
-      apply.prog.fail(text, c, "bad program", s)
-    case Some{+prog}:
-      apply.prog.first(P.run(prog, Nil{}), text, c, prog, s)
-
-# the model asked to run a program: parse it and interpret to the first
-# missing tool result
-def apply.prog.start(+text: String, +c: T.Call, +s: T.Session) -> T.Res:
-  match c:
-    case T.Call{_, _, +args}:
-      apply.prog.start.parsed(P.parse(Api.call_code(args)), text, c, s)
-
-# a tool result arrived for a program in flight: replay with the record
-def apply.prog.resume.pfail(+call: U32, +run: U32, +why: String,
-    +s: T.Session) -> T.Res:
-  match s:
-    case T.Sess{+cfg, +history, +inputs, +actions, +turn, _, +queued, +notifs}:
-      +s2 : T.Session = T.Sess{cfg,
-        List.append(&2, T.Msg, history,
-          Con{tool_result_msg("run_typescript", why, False{}), Nil{}}),
-        Nat.add(inputs, 1n), actions, turn, None{}, queued, notifs}
-      d = dispatch(s2)
-      dispatch_result(d,
-        Con{T.ToolFinished{call, True{}},
-        Con{T.ToolCommitted{call},
-        Con{T.ToolFinished{run, False{}},
-        Con{T.ToolCommitted{run}, Nil{}}}}}, s2)
-
-def apply.prog.resume(pr: P.PR, +call: U32, +out: String,
-    +prog: List<&2, T.Stmt>, +results: List<&2, String>, +run: U32,
-    +s: T.Session) -> T.Res:
-  match pr:
-    case P.PFail{+why}:
-      apply.prog.resume.pfail(call, run, why, s)
-    case P.PWait{+name, +args}:
-      # still orchestral: emit the next call and keep the program pending
-      match s:
-        case T.Sess{+cfg, +history, +inputs, +actions, +turn, _, +queued, +notifs}:
-          +fresh = U32.add(actions, 1)
-          T.Accepted{
-            Con{T.ToolFinished{call, True{}},
-              Con{T.ToolCommitted{call},
-              Con{T.ToolStarted{fresh}, Nil{}}}},
-            Con{T.ToolAct{fresh, T.Call{fresh, name, args}}, Nil{}},
-            T.Sess{cfg, history, Nat.add(inputs, 1n), U32.add(fresh, 1),
-              turn, Some{T.PProg{prog, results, run, fresh}}, queued, notifs}}
-    case P.PDone{+out2}:
-      # the program returned: commit its output as the run_program result
-      match s:
-        case T.Sess{+cfg, +history, +inputs, +actions, +turn, _, +queued, +notifs}:
-          +s2 : T.Session = T.Sess{cfg,
-            List.append(&2, T.Msg, history,
-              Con{tool_result_msg("run_typescript", out2, True{}), Nil{}}),
-            Nat.add(inputs, 1n), actions, turn, None{}, queued, notifs}
-          d = dispatch(s2)
-          dispatch_result(d,
-            Con{T.ToolFinished{call, True{}},
-            Con{T.ToolCommitted{call},
-            Con{T.ToolFinished{run, True{}},
-            Con{T.ToolCommitted{run}, Nil{}}}}}, s2)
-
-def apply.prog.matched(matched: Bool, +call: U32, +out: String,
-    +prog: List<&2, T.Stmt>, +results: List<&2, String>, +run: U32,
-    +wait: U32, +s: T.Session) -> T.Res:
-  match matched:
-    case False{}:
-      # a late result cannot complete the current program step
-      T.Rejected{"stale tool call id"}
-    case True{}:
-      +results2 = List.append(&2, String, results, Con{out, Nil{}})
-      apply.prog.resume(P.run(prog, results2), call, out, prog, results2,
-        run, s)
-
-def apply.prog.mismatch(matched: Bool, +call: U32, +run: U32,
-    +s: T.Session) -> T.Res:
-  match matched:
-    case False{}:
-      T.Rejected{"stale tool call id"}
-    case True{}:
-      # a failed program call fails the program
-      match s:
-        case T.Sess{+cfg, +history, +inputs, +actions, +turn, _, +queued, +notifs}:
-          +s2 : T.Session = T.Sess{cfg,
-            List.append(&2, T.Msg, history,
-              Con{tool_result_msg("run_typescript", "a program call failed",
-                False{}), Nil{}}),
-            Nat.add(inputs, 1n), actions, turn, None{}, queued, notifs}
-          d = dispatch(s2)
-          dispatch_result(d,
-            Con{T.ToolFinished{call, False{}},
-            Con{T.ToolCommitted{call},
-            Con{T.ToolFinished{run, False{}},
-            Con{T.ToolCommitted{run}, Nil{}}}}}, s2)
-
-def apply.prog.result(ok: Bool, +call: U32, +out: String,
-    +prog: List<&2, T.Stmt>, +results: List<&2, String>, +run: U32,
-    +wait: U32, +s: T.Session) -> T.Res:
-  match ok:
-    case True{}:
-      apply.prog.matched(U32.is_eq(call, wait), call, out, prog, results,
-        run, wait, s)
-    case False{}:
-      apply.prog.mismatch(U32.is_eq(call, wait), call, run, s)
-
-# a completion carries either an ordinary tool batch, or a single program
-def apply.completion.sole.pick(is_prog: Bool, +c: T.Call, +text: String,
-    +s: T.Session) -> T.Res:
-  match is_prog:
-    case True{}:
-      apply.prog.start(text, c, s)
-    case False{}:
-      apply.completion.tools(text, Con{c, Nil{}}, s)
-
-def apply.completion.sole(+c: T.Call, +text: String, +s: T.Session) -> T.Res:
-  apply.completion.sole.pick(call_is_prog(c), c, text, s)
-
-def apply.completion.multi.pick(has_prog: Bool,
-    +calls: List<&2, T.Call>, +text: String, +s: T.Session) -> T.Res:
-  match has_prog:
-    case True{}:
-      T.Rejected{"run_typescript must be the only call"}
-    case False{}:
-      apply.completion.tools(text, calls, s)
-
-def apply.completion.multi(+calls: List<&2, T.Call>, +text: String,
-    +s: T.Session) -> T.Res:
-  apply.completion.multi.pick(contains_run_program(calls), calls, text, s)
-
 def apply.completion.null2(over: Bool, +nulls: Nat, +s: T.Session) -> T.Res:
   match over:
     case True{}:
@@ -830,10 +590,10 @@ def apply.completion.agent(matched: Bool, +text: String,
       match calls:
         case Nil{}:
           apply.completion.plain2(String.is_empty(String.trim(text)), text, s)
-        case Con{c, Nil{}}:
-          apply.completion.sole(c, text, s)
-        case Con{_, Con{_, _}}:
-          apply.completion.multi(calls, text, s)
+        case Con{_, _}:
+          # run_typescript is an ordinary tool: the runtime runs it in
+          # V8 (bend-jsrt) and answers one tool result
+          apply.completion.tools(text, calls, s)
 
 def apply.completion.pending(action: U32, +text: String,
     +calls: List<&2, T.Call>, +s: T.Session, +p: T.Pending) -> T.Res:
@@ -845,8 +605,6 @@ def apply.completion.pending(action: U32, +text: String,
     case T.PComp{+compaction, +attempt, a, +extra, +auto}:
       apply.completion.comp(U32.is_eq(a, action), text, calls, compaction,
         attempt, extra, auto, s)
-    case T.PProg{_, _, _, _}:
-      T.Rejected{"program pending, not a completion"}
 
 def apply.completion(action: U32, +text: String, +calls: List<&2, T.Call>,
     +s: T.Session) -> T.Res:
@@ -889,8 +647,6 @@ def apply.completion_fail.pending(action: U32, +error: String,
       T.Rejected{"completion while tools pending"}
     case T.PComp{+compaction, +attempt, a, +extra, +auto}:
       apply.completion_fail.comp(U32.is_eq(a, action), error, auto, s)
-    case T.PProg{_, _, _, _}:
-      T.Rejected{"program pending, not a completion"}
 
 def apply.completion_fail(action: U32, +error: String, +s: T.Session) -> T.Res:
   match s:
@@ -951,8 +707,6 @@ def apply.tool.pending(+call: U32, +out: String, +ok: Bool, +s: T.Session,
       T.Rejected{"completion pending, not tools"}
     case T.PComp{_, _, _, _, _}:
       T.Rejected{"compaction pending, not tools"}
-    case T.PProg{+prog, +results, +run, +wait}:
-      apply.prog.result(ok, call, out, prog, results, run, wait, s)
 
 def apply.tool(+call: U32, +out: String, +ok: Bool, +s: T.Session) -> T.Res:
   match s:
@@ -1088,9 +842,6 @@ def interrupt_closes.kind(pp: T.Pending) -> List<&2, T.Msg>:
   match pp:
     case T.PTools{+waiting}:
       interrupt_closes.calls(waiting, Nil{})
-    case T.PProg{_, _, _, _}:
-      # the program call is the turn's only unanswered call
-      Con{tool_result_msg("node_program", "interrupted", False{}), Nil{}}
     case T.PAgent{_}:
       # the completion is not in history yet: nothing is orphaned
       Nil{}

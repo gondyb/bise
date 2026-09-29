@@ -43,7 +43,6 @@ Core (pure, law-checked):
 - `core/history.bend` — history queries: paired drop-oldest, middle-truncate.
 - `core/compaction.bend` — ADR 0011: projection fit, summary validation, replacement.
 - `core/discovery.bend` — search_tool_functions.
-- `core/program.bend` — D1 JS-lite interpreter (scripted mode only; live mode runs run_typescript in bend-jsrt).
 - `core/session.bend` — `apply`, the step-protocol state machine.
 - `core/checkpoint.bend` — export/restore, the on-disk text form.
 - `core/api.bend` — provider JSON (OpenAI-style and Anthropic) from/to the wire lines.
@@ -400,7 +399,9 @@ parametrized (Out: stdout or socket) and returns the final session, so
 the REPL threads one session through the whole conversation.
 
 Deviation notes:
-- run_typescript (D1): IMPLEMENTED in Bend itself (core/program.bend).
+- run_typescript (D1): since BISE-118 one engine, V8 (bend-jsrt), live and
+  scripted; core/program.bend (below, historical) is deleted.
+- run_typescript (D1), historical: IMPLEMENTED in Bend itself (core/program.bend).
   Where the Unified Harness hosts a V8 isolate, here the orchestration
   language is Bend: `run_program` parses a tiny program
   ("call <tool> <args>; ...; ret"), the Core interprets it until the next

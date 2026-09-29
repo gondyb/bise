@@ -11,7 +11,8 @@
 #   tool exec) and recurses with less fuel, so the Runtime terminates
 #   like the Core.
 #
-# Also here: tool dispatch (exec_tool), run_typescript through bend-jsrt,
+# Also here: tool dispatch (exec_tool), run_typescript through bend-jsrt
+# (live and scripted alike),
 # the --resume history replay, and the steering/interrupt side-channels.
 # The tools themselves live in their own modules (bash, patch-tool,
 # selftools, mcp, skills), the provider call in provider.bend. Live mode
@@ -96,8 +97,9 @@ def emit_res_ann(out: Pv.Out, +id: U32, +r: Xp.ExecRes, live: Bool) -> IO(Pv.Out
 # deno_ast) runs it in a FRESH isolate per round with heap limits and a
 # watchdog. Tool calls print a request and exit 42; the runtime executes
 # the tool through the same exec paths (bash, search, MCP) and RE-RUNS
-# the program with the extended results — replay by re-execution, the
-# same durable-boundary semantics as the in-house interpreter.
+# the program with the extended results — replay by re-execution, with
+# a durable boundary at every tool call. Live and scripted sessions run
+# the same engine (BISE-118); the Core only sees the program's one result.
 
 type NR is Data:
   NRDone{out: String}
@@ -280,7 +282,7 @@ def exec_program.call.sleep(is_sleep: Bool, +name: String, +args: String,
         +secs : U32 <- IO.pure(U32, Rtp.prog_sleep.secs(pr, args))
         exec_program.call.sleep.valid(secs)
     case False{}:
-      exec_program.call.node(String.eq(name, "node_program"), name, args,
+      exec_program.call.node(String.eq(name, "run_typescript"), name, args,
         live)
 
 def exec_program.call.self(is_self: Bool, +name: String, +args: String,
@@ -430,26 +432,6 @@ def exec_program(fuel: Nat, pr0: Pv.Out & (Sfp.Def & EpAct), +prog: String,
     case (out, (d, act)):
       exec_program.go(fuel, out, d, act, prog, results, live)
 
-# tool dispatch: which executor a call's name selects (checked in this
-# order; anything unknown is an MCP connector tool). The comparisons are
-# a handful of short String.eq: evaluating them all is cheap.
-type Tool is Data:
-  TNode{}
-  TBash{}
-  TSearch{}
-  TSelf{}
-  TSkill{}
-  TPatch{}
-  TMcp{}
-
-def tool_of(+name: String) -> Tool:
-  Bool.pick(Tool, String.eq(name, "node_program"), TNode{},
-  Bool.pick(Tool, String.eq(name, "bash"), TBash{},
-  Bool.pick(Tool, String.eq(name, "search_tool_functions"), TSearch{},
-  Bool.pick(Tool, Sfp.is_self_tool(name), TSelf{},
-  Bool.pick(Tool, String.eq(name, "skill"), TSkill{},
-  Bool.pick(Tool, String.eq(name, "apply_patch"), TPatch{}, TMcp{}))))))
-
 def exec_tool.with(out: Pv.Out, act: IO(Xp.ExecRes)) -> IO(Pv.Out & Xp.ExecRes):
   do IO<Pv.Out & Xp.ExecRes>:
     r : Xp.ExecRes <- act
@@ -462,29 +444,29 @@ def exec_tool.skill(+args: String, +live: Bool) -> IO(Xp.ExecRes):
     r : Mcp.MR <- Sk.exec_skill(args, live)
     IO.pure(Xp.ExecRes, Sh.exec_mr(r))
 
-def exec_tool.run(t: Tool, out: Pv.Out, +name: String, +args: String,
+def exec_tool.run(t: Rtp.Tool, out: Pv.Out, +name: String, +args: String,
     +live: Bool) -> IO(Pv.Out & Xp.ExecRes):
   match t:
-    case TNode{}:
+    case Rtp.TNode{}:
       exec_program(1000n, (out, (Sfp.def_none(), EpRun{})),
         Api.call_code(args), Nil{}, live)
-    case TBash{}:
+    case Rtp.TBash{}:
       exec_tool.with(out, Sh.bash_exec(args))
-    case TSearch{}:
+    case Rtp.TSearch{}:
       exec_tool.with(out, Sh.exec_search(args, live))
-    case TSelf{}:
+    case Rtp.TSelf{}:
       IO.pure(Pv.Out & Xp.ExecRes, (out, Sfp.self_exec(name)))
-    case TSkill{}:
+    case Rtp.TSkill{}:
       exec_tool.with(out, exec_tool.skill(args, live))
-    case TPatch{}:
+    case Rtp.TPatch{}:
       exec_tool.with(out, Ptl.exec_patch(args, live))
-    case TMcp{}:
+    case Rtp.TMcp{}:
       exec_tool.with(out, Sh.exec_mcp(name, args, live))
 
 def exec_tool(out: Pv.Out, +call: T.Call, +live: Bool) -> IO(Pv.Out & Xp.ExecRes):
   match call:
     case T.Call{_, +name, +args}:
-      exec_tool.run(tool_of(name), out, name, args, live)
+      exec_tool.run(Rtp.tool_of(name), out, name, args, live)
 
 def emit_code_ann.pick(is_code: Bool, out: Pv.Out, +call: T.Call) -> IO(Pv.Out):
   match is_code:
@@ -499,19 +481,6 @@ def emit_code_ann(out: Pv.Out, +call: T.Call, live: Bool) -> IO(Pv.Out):
       emit_code_ann.pick(Rtp.is_code_call(Rtp.call_name(call)), out, call)
     case False{}:
       IO.pure(Pv.Out, out)
-
-# live completions: run_typescript becomes node_program so the V8 engine
-# executes it (the Core's law-checked interpreter stays for scripted runs)
-def rename_cmd.ok(+action: U32, +text: String, calls: List<&2, T.Call>)
-    -> T.Cmd:
-  T.CompletionOk{action, text, Rtp.rename_calls(True{}, calls)}
-
-def rename_cmd(cmd: T.Cmd) -> T.Cmd:
-  match cmd:
-    case T.CompletionOk{+action, +text, calls}:
-      rename_cmd.ok(action, text, calls)
-    case _:
-      cmd
 
 def steer_path() -> IO(String):
   do IO<String>:
@@ -673,7 +642,7 @@ def model_done(pd: Pv.Out & Rtp.Rt, k: Nat, +res: Rem.RemoteRes, +action: U32,
   match pd:
     case (out3, +rt3):
       do IO<RtEnd>:
-        +cmd : T.Cmd <- IO.pure(T.Cmd, rename_cmd(Rem.remote_cmd(res, action)))
+        +cmd : T.Cmd <- IO.pure(T.Cmd, Rem.remote_cmd(res, action))
         next(k)(out3)(rt3)(cmd)
 
 # the checkpoint before every provider call: the history is coherent

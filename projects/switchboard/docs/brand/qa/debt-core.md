@@ -105,6 +105,8 @@ dump the JSON instead). Do it after #5 (the tool table feeds the schema).
 
 ### 7. Two engines for `run_typescript` (decision first, then 1–2 days)
 
+**Done (BISE-118, option (a)):** one engine, V8; `core/program.bend`, the rename and `result_name`/`wire_name` are gone.
+
 Live sessions run V8 (`bend-jsrt`, via the `node_program` rename in
 `main-pure.bend:68-90` and `main.bend:501`); scripted sessions and all
 laws run `core/program.bend`, a 1341-line JS-lite interpreter (its `px`

@@ -70,38 +70,12 @@ type Cfg is Data:
   Cfg{threshold: Nat, select_budget: Nat, max_nulls: Nat,
       system: String, tools: List<&2, ToolDef>}
 
-# ---- programmatic tool calling (D1): JS-lite statements ----
-# A program is a value; the interpreter is pure and total (fuel-bounded),
-# pauses at the first missing tool result, and replays deterministically.
-type Expr is Data:
-  ECall{name: String, args: String}
-  EStr{text: String}
-  ERef{name: String, path: List<&2, String>}
-  ECat{left: Expr, right: Expr}
-
-type Cond is Data:
-  CTruth{expr: Expr}
-  CNot{cond: Cond}
-  CEq{left: Expr, right: Expr}
-  CNe{left: Expr, right: Expr}
-  CAnd{left: Cond, right: Cond}
-  COr{left: Cond, right: Cond}
-
-type Stmt is Data:
-  SConst{name: String, expr: Expr}
-  SIf{cond: Cond, thn: List<&2, Stmt>, els: List<&2, Stmt>}
-  SRet{value: Expr}
-
 # ---- pending work the Runtime owes results for ----
 type Pending is Data:
   PAgent{action: U32}
   PTools{waiting: List<&2, Call>}
   # ADR 0011: stable compaction id, one-based attempt, per-request action id.
   PComp{compaction: U32, attempt: Nat, action: U32, extra: String, auto: Bool}
-  # D1: a program in flight. `results` are the recorded tool outputs (the
-  # replay log), `run` is the run_program call awaiting the program result,
-  # `wait` is the inner call the interpreter stopped at.
-  PProg{prog: List<&2, Stmt>, results: List<&2, String>, run: U32, wait: U32}
 
 # ---- active turn state ----
 type Turn is Data:

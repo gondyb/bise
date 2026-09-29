@@ -12,6 +12,7 @@ import ../core/session.bend as S
 import ../core/types.bend as T
 import ../core/text.bend as Tx
 import ./tools-pure.bend as Xp
+import ./selftools-pure.bend as Sfp
 
 # ---- runtime state and loop vocabulary ----
 
@@ -65,41 +66,13 @@ def trans.tool(+rt: Rt, +rest: List<&2, T.Act>, +call: T.Call) -> Trans:
     case T.Call{_, _, _}:
       Tr{EExec{call, rest, rt_live(rt)}, rt, JIdle{}}
 
-# live only: run_typescript flows to the runtime as node_program, so the
-# V8 engine (bend-jsrt) executes it instead of the in-house interpreter;
-# scripted sessions keep the Core's law-checked interpreter
-def rename_call.go(hit: Bool, +id: U32, +name: String, +args: String)
-    -> T.Call:
-  match hit:
-    case True{}:
-      T.Call{id, "node_program", args}
-    case False{}:
-      T.Call{id, name, args}
-
-def rename_call(live: Bool, +c: T.Call) -> T.Call:
-  match live:
-    case True{}:
-      match c:
-        case T.Call{+id, +name, +args}:
-          rename_call.go(String.eq(name, "run_typescript"), id, name, args)
-    case False{}:
-      c
-
-def rename_calls(+live: Bool, +calls: List<&2, T.Call>)
-    -> List<&2, T.Call>:
-  match calls:
-    case Nil{}:
-      Nil{}
-    case Con{+c, +rest}:
-      Con{rename_call(live, c), rename_calls(live, rest)}
-
 def trans.model.ok(+rt: Rt, +rest: List<&2, T.Act>, +action: U32,
     +text: String, +calls: List<&2, T.Call>, +script2: List<&2, M.Reply>)
     -> Trans:
   match rt:
     case Rt{+sess, _, +cmds, +live}:
       Tr{ENone{}, Rt{sess, script2, cmds, live},
-        JCmd{T.CompletionOk{action, text, rename_calls(live, calls)},
+        JCmd{T.CompletionOk{action, text, calls},
           rest}}
 
 def trans.model.fail(+rt: Rt, +rest: List<&2, T.Act>, +action: U32,
@@ -335,7 +308,7 @@ def call_ann(+call: T.Call) -> String:
   match call:
     case T.Call{+id, +name, +args}:
       String.append("tool #", String.append(U32.show(id),
-        String.append(" ", String.append(Rem.wire_name(name),
+        String.append(" ", String.append(name,
           String.append(" : ", ann_flat(args))))))
 
 def res_ann(+id: U32, +r: Xp.ExecRes) -> String:
@@ -427,6 +400,27 @@ def sub_ann(+name: String, +r: Xp.ExecRes) -> String:
         String.append(" ", String.append(ok_label(ok),
           String.append(" : ", ann_flat(out))))))
 
+# tool dispatch: which executor a call's name selects (checked in this
+# order; anything unknown is an MCP connector tool). run_typescript runs
+# in V8 (bend-jsrt), live and scripted alike (BISE-118). The comparisons
+# are a handful of short String.eq: evaluating them all is cheap.
+type Tool is Data:
+  TNode{}
+  TBash{}
+  TSearch{}
+  TSelf{}
+  TSkill{}
+  TPatch{}
+  TMcp{}
+
+def tool_of(+name: String) -> Tool:
+  Bool.pick(Tool, String.eq(name, "run_typescript"), TNode{},
+  Bool.pick(Tool, String.eq(name, "bash"), TBash{},
+  Bool.pick(Tool, String.eq(name, "search_tool_functions"), TSearch{},
+  Bool.pick(Tool, Sfp.is_self_tool(name), TSelf{},
+  Bool.pick(Tool, String.eq(name, "skill"), TSkill{},
+  Bool.pick(Tool, String.eq(name, "apply_patch"), TPatch{}, TMcp{}))))))
+
 def call_name(c: T.Call) -> String:
   match c:
     case T.Call{_, +name, _}:
@@ -452,12 +446,9 @@ def code_ann(+call: T.Call) -> String:
   String.append("tool_code #", String.append(U32.show(call_id(call)),
     String.append(" : ", Api.wire_encode(call_args(call)))))
 
-def is_code_call.wire(+w: String) -> Bool:
-  Bool.or(String.eq(w, "run_typescript"),
-    Bool.or(String.eq(w, "bash"), String.eq(w, "apply_patch")))
-
 def is_code_call(+name: String) -> Bool:
-  is_code_call.wire(Rem.wire_name(name))
+  Bool.or(String.eq(name, "run_typescript"),
+    Bool.or(String.eq(name, "bash"), String.eq(name, "apply_patch")))
 
 # ---- --resume / --continue: replay the restored history to the client ----
 # A client's feed starts empty: a fresh TUI after --resume, and after a
@@ -546,7 +537,7 @@ def replay.res.ok(is_ok: Bool, +id: U32, +text: String, +pok: String,
 def replay.res(+c: T.Call, +text: String) -> List<&2, String>:
   match c:
     case T.Call{+id, +name, _}:
-      +base = String.append("tool ", S.result_name(name))
+      +base = String.append("tool ", name)
       replay.res.ok(String.starts_with(text, String.append(base, " ok: ")),
         id, text, String.append(base, " ok: "),
         String.append(base, " failed: "))

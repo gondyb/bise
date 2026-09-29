@@ -46,18 +46,18 @@ def s_tools() -> IO(Unit):
       Con{reply("Searched twice and reported the bogus tool."), Nil{}}}}})
 
 def s_program() -> IO(Unit):
-  scenario("programmatic tool calling (D1)",
+  scenario("programmatic tool calling (D1, V8: bend-jsrt)",
     R.cfg(600n, 3n),
     Con{say("Orchestrate: search the catalog and look up a tool's details, then report."), Nil{}},
     Con{call(1, "run_typescript",
-        "const s = search_tool_functions(best_match: catalog); const d = search_tool_functions(details: bash); return s;"),
+        "{\"code\": \"const s = await search_tool_functions({query: 'catalog'}); const d = await search_tool_functions({mode: 'details', functions: ['bash']}); return s;\"}"),
       Con{reply("The program searched the catalog and looked up the details."), Nil{}}})
 
 def s_program_fail() -> IO(Unit):
   scenario("a failing program call fails the program",
     R.cfg(600n, 3n),
     Con{say("Run a program that calls a missing tool."), Nil{}},
-    Con{call(1, "run_typescript", "const s = no_such_tool(oops); return s;"),
+    Con{call(1, "run_typescript", "{\"code\": \"const s = await no_such_tool({}); return s;\"}"),
       Con{reply("The program failed on the missing tool as expected."), Nil{}}})
 
 def s_steering() -> IO(Unit):

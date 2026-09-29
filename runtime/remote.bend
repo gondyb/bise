@@ -45,23 +45,11 @@ def role_str(role: T.Role) -> String:
     case T.RTool{}:
       "tool"
 
-# the runtime's internal node_program name never reaches the model: the
-# wire echo of a past call says run_typescript (what the model called)
-def wire_name.pick(is_np: Bool, +name: String) -> String:
-  match is_np:
-    case True{}:
-      "run_typescript"
-    case False{}:
-      name
-
-def wire_name(+name: String) -> String:
-  wire_name.pick(String.eq(name, "node_program"), name)
-
 def ser_call(+c: T.Call) -> String:
   match c:
     case T.Call{+id, +name, +args}:
       String.append("\n  CALL ", String.append(U32.show(id),
-        String.append(" ", String.append(wire_name(name),
+        String.append(" ", String.append(name,
           String.append(" : ", Api.wire_encode(args))))))
 
 def ser_calls(calls: List<&2, T.Call>) -> String:

@@ -189,10 +189,24 @@ def u32_of(m: Maybe<&2, U32>) -> U32:
     case None{}:
       0
 
+# a session saved before BISE-118 holds live run_typescript calls under
+# the runtime's old routing name node_program: they load as
+# run_typescript, the name the model called (and the one the runtime
+# dispatches now)
+def call_name.pick(is_old: Bool, +name: String) -> String:
+  match is_old:
+    case True{}:
+      "run_typescript"
+    case False{}:
+      name
+
+def call_name(+name: String) -> String:
+  call_name.pick(String.eq(name, "node_program"), name)
+
 def fcall.name(sp: Maybe<&2, Nat>, +id_str: String, +tail: String) -> T.Call:
   match sp:
     case Some{+q}:
-      T.Call{u32_of(U32.read(id_str)), String.take(tail, q),
+      T.Call{u32_of(U32.read(id_str)), call_name(String.take(tail, q)),
         Api.wire_decode(String.drop(tail, Nat.add(q, 3n)))}
     case None{}:
       T.Call{0, tail, ""}

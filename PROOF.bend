@@ -12,8 +12,6 @@ import ./core/checkpoint.bend as K
 
 import ./core/session.bend as S
 
-import ./core/program.bend as P
-
 import ./vendor/json.bend as J
 
 import ./hub/model.bend as HM
@@ -50,24 +48,6 @@ def Laws.model_input_leads_with_system(cfg, h):
       {==}
 
 def Laws.compaction_request_ends_with_prompt():
-  {==}
-
-def Laws.run_consumes_in_order(n1, a1, n2, a2, r1, r2):
-  {==}
-
-def Laws.run_waits_at_the_missing_result(n1, a1, n2, a2, r1):
-  {==}
-
-def Laws.parse_roundtrip():
-  {==}
-
-def Laws.parse_ignores_types():
-  {==}
-
-def Laws.parse_rejects_garbage():
-  {==}
-
-def Laws.branch_skips_untaken_calls():
   {==}
 
 def Laws.commits_append_at_tail():
@@ -195,13 +175,7 @@ def Laws.renumber_keeps_length(c1, c2, base):
         case T.Call{i2, n2, a2}:
           {==}
 
-def Laws.wire_echo_renames_node_program():
-  {==}
-
 def Laws.wire_echo_keeps_names():
-  {==}
-
-def Laws.result_text_renames_node_program():
   {==}
 
 def Laws.result_text_keeps_names():
@@ -247,9 +221,6 @@ def Laws.best_match_connectors_filter():
   {==}
 
 def Laws.tool_ann_format():
-  {==}
-
-def Laws.tool_ann_renames_node_program():
   {==}
 
 def Laws.tool_res_ann_ok():
@@ -805,10 +776,34 @@ def Laws.patch_parse_glm_variant():
 def Laws.interrupt_closes_waiting_calls():
   {==}
 
-def Laws.interrupt_closes_prog_pending():
+def Laws.interrupt_closes_agent_pending():
   {==}
 
-def Laws.interrupt_closes_agent_pending():
+def Laws.run_typescript_goes_out_as_a_tool():
+  {==}
+
+def Laws.run_typescript_batches_with_other_calls():
+  {==}
+
+def Laws.run_typescript_result_comes_back():
+  {==}
+
+def Laws.run_typescript_failure_comes_back():
+  {==}
+
+def Laws.run_typescript_interrupted():
+  {==}
+
+def Laws.run_typescript_runs_on_jsrt():
+  {==}
+
+def Laws.node_program_is_not_a_tool():
+  {==}
+
+def Laws.checkpoint_loads_node_program_as_run_typescript():
+  {==}
+
+def Laws.checkpoint_keeps_call_names():
   {==}
 
 def Laws.deferred_ignores_assistant_prose():
