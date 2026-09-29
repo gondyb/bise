@@ -232,10 +232,6 @@
   /* the problem, then the switch (landing v6 draft) */
   .prob { padding:40px 5vw 110px; }
   .prob .inner { max-width:64ch; }
-  .prob .flip { display:inline-flex; position:relative; background:var(--chip); border-radius:999px; padding:4px; margin:6px 0 26px; font-size:14px; user-select:none; }
-  .prob .flip button { all:unset; cursor:pointer; position:relative; z-index:1; padding:7px 18px; border-radius:999px; color:var(--dim); transition:color .3s; }
-  .prob .flip button.on { color:var(--text); }
-  .prob .flip .knob { position:absolute; top:4px; bottom:4px; left:4px; border-radius:999px; background:var(--raised); box-shadow:0 1px 0 var(--faint) inset, 0 4px 14px rgba(0,0,0,.25); transition:transform .55s cubic-bezier(.34,1.56,.64,1), width .55s cubic-bezier(.34,1.56,.64,1); }
   .stage { position:relative; max-width:980px; height:430px; margin:0 auto; border-radius:14px; background:var(--soft); overflow:hidden; }
   .win { position:absolute; width:300px; background:var(--bg); border:1px solid var(--faint); border-radius:10px; font-size:12.5px; line-height:1.6; box-shadow:0 10px 30px rgba(0,0,0,.28); transition:transform .7s cubic-bezier(.34,1.4,.64,1), opacity .5s, left .7s cubic-bezier(.34,1.3,.64,1), top .7s cubic-bezier(.34,1.3,.64,1); }
   .win .bar { display:flex; gap:6px; align-items:center; padding:6px 10px; border-bottom:1px solid var(--faint); color:var(--dim); font-size:11.5px; }
@@ -323,7 +319,6 @@
     <div class="kicker">the problem</div>
     <h2>five agents. five tabs.<br>one very tired you.</h2>
     <p class="soft">every session waits for you. you're the router, the memory, and the merge tool. you ship a lot, and you never get to think.</p>
-    <div class="flip" id="flip"><span class="knob" id="knob"></span><button data-s="today" class="on">today</button><button data-s="bise">with bise <span class="acc">:*</span></button></div>
   </div>
   <div class="stage" id="stage" aria-label="today: many agent sessions waiting for you. with bise: one thread.">
     <div class="you" id="you" style="left:46%;top:80%"><svg width="16" height="20" viewBox="0 0 16 20" aria-hidden="true"><path d="M2 2 L2 16 L5.8 12.6 L8.4 18.4 L11 17.2 L8.5 11.6 L13.6 11.6 Z" fill="var(--acc)" stroke="var(--bg)" stroke-width="1.4" stroke-linejoin="round"/></svg><span class="lb">you</span></div>
@@ -339,6 +334,7 @@
   </div>
   <div class="stats" id="stats"></div>
   <p class="cap" id="cap"></p>
+  <p class="cap"><button class="replay" id="replay" style="visibility:hidden">↺ play it again</button></p>
 </section>
 
 <!-- demo -->
@@ -919,7 +915,7 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
 // ---- the problem (today: sessions pile up) → the switch (with bise: one thread) ----
 (() => {
   const stage = document.getElementById("stage"), you = document.getElementById("you"), bub = document.getElementById("bub");
-  const stats = document.getElementById("stats"), cap = document.getElementById("cap"), flip = document.getElementById("flip"), knob = document.getElementById("knob");
+  const stats = document.getElementById("stats"), cap = document.getElementById("cap"), replay = document.getElementById("replay");
   const onefeed = document.getElementById("onefeed"), onepan = document.getElementById("onepan"), onecomp = document.getElementById("onecomp");
   const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const S = [
@@ -1008,16 +1004,11 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
     })();
   }
   let pinned = false;
-  function setFlip() {
-    const bs = flip.querySelectorAll("button"), on = state === "today" ? bs[0] : bs[1];
-    bs.forEach((b) => b.classList.toggle("on", b === on));
-    knob.style.width = on.offsetWidth + "px"; knob.style.transform = `translateX(${on.offsetLeft - 4}px)`;
-  }
-  flip.addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; pinned = true; b.dataset.s === "today" ? today() : calm(); });
+  function setFlip() { replay.style.visibility = state === "bise" ? "visible" : "hidden"; }
+  replay.addEventListener("click", () => today());
   let started = false;
   new IntersectionObserver((es) => { if (es[0].isIntersecting && !started) { started = true; today(); } }, { threshold: .35 }).observe(stage);
-  setFlip(); setStats();
-  addEventListener("resize", setFlip);
+  setStats();
 })();
 </script>
 <script src="/annotate.js"></script>
