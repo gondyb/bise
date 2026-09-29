@@ -54,12 +54,28 @@ def write_file(+path: String, +content: String) -> IO(Unit):
     f : Result<&1, &1, U32 & String, File> <- File.open(path, "w")
     write.opened(f, content)
 
+# BISE-198: the session file is written to a temp file next to it, then
+# renamed over it, so a kill during a save leaves the old file or the new
+# one, never a half file; umask 077 makes both 0600 (a checkpoint is a
+# whole conversation). One /bin/sh runs it all: Base has no rename or
+# chmod. The text goes through stdin; a failure (disk full) removes the
+# temp file and keeps the old checkpoint.
+def ATOMIC_SCRIPT() -> String:
+  "umask 077; t=\"$0.tmp.$$\"; cat > \"$t\" && mv -f \"$t\" \"$0\" || { rm -f \"$t\"; exit 1; }"
+
+def write_atomic(+path: String, +content: String) -> IO(Unit):
+  do IO<Unit>:
+    r : Result<&1, &1, U32 & String, U32 & (String & String)> <- Process.run(
+      "/bin/sh", Con{"-c", Con{ATOMIC_SCRIPT(), Con{path, Nil{}}}}, content,
+      65536, 600000)
+    IO.pure(Unit, Unit{})
+
 def save.when(skip: Bool, +path: String, +sess: T.Session) -> IO(Unit):
   match skip:
     case True{}:
       IO.pure(Unit, Unit{})
     case False{}:
-      write_file(path, K.to_text(K.export(sess)))
+      write_atomic(path, K.to_text(K.export(sess)))
 
 def save(+sess: T.Session) -> IO(Unit):
   do IO<Unit>:

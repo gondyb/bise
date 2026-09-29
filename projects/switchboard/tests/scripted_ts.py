@@ -9,7 +9,7 @@ reads back: a value, a typed program that calls a tool (the call goes
 out through the runtime and its result comes back into the re-run), a
 failed inner call, a throw.
 """
-import glob, os, socket, subprocess, sys, tempfile
+import glob, os, re, signal, socket, stat, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
@@ -96,6 +96,37 @@ def main():
     if bad or len(results) != len(PROGRAMS):
         sys.exit("FAIL %d of %d programs (%d results)" % (bad, len(PROGRAMS), len(results)))
     print("scripted run_typescript: %d programs on V8 (bend-jsrt)" % len(PROGRAMS))
+    check_atomic_save(home, sessions[0])
+
+def atomic_script():
+    """The shell line runtime/persist.bend saves the checkpoint with."""
+    src = open(os.path.join(ROOT, "runtime", "persist.bend")).read()
+    m = re.search(r'def ATOMIC_SCRIPT\(\) -> String:\n  "((?:[^"\\]|\\.)*)"', src)
+    if not m:
+        sys.exit("FAIL no ATOMIC_SCRIPT in runtime/persist.bend")
+    return m.group(1).replace('\\"', '"')
+
+def check_atomic_save(home, session):
+    """BISE-198: the checkpoint is 0600 and no temp file is left; a kill
+    in the middle of a save leaves the old file whole."""
+    mode = stat.S_IMODE(os.stat(session).st_mode)
+    if mode != 0o600:
+        sys.exit("FAIL session file mode %o, want 600" % mode)
+    left = [p for p in os.listdir(os.path.dirname(session)) if ".tmp." in p]
+    if left:
+        sys.exit("FAIL temp files left: %r" % left)
+    old = open(session, "rb").read()
+    proc = subprocess.Popen(["/bin/sh", "-c", atomic_script(), session], stdin=subprocess.PIPE)
+    proc.stdin.write(b"BEND-SESSION 2\n" + b"x" * 65536)
+    proc.stdin.flush()
+    time.sleep(0.2)
+    proc.send_signal(signal.SIGKILL)
+    proc.wait()
+    proc.stdin.close()
+    time.sleep(0.2)
+    if open(session, "rb").read() != old:
+        sys.exit("FAIL a killed save changed the session file")
+    print("atomic save: 0600, a killed save keeps the old checkpoint")
 
 if __name__ == "__main__":
     main()
