@@ -63,6 +63,12 @@ pub(crate) const TIPS: &[&str] = &[
     "/theme switches between light and dark",
 ];
 
+/// ctrl+f; once a cmd key reached us (the terminal passes them,
+/// `App::cmd_keys`) the help shows [`FIND_CMD`] in its place.
+const FIND: Row = r(FEED, "ctrl+f", FIND_WHAT).top();
+const FIND_CMD: Row = r(FEED, "cmd+f|ctrl+f", FIND_WHAT).top();
+const FIND_WHAT: &str = "find in the history: ⏎ or ↑ older, shift+⏎ or ↓ newer, esc close (the view stays on the match)";
+
 /// Every shortcut, in display order (sections appear in first-row order).
 /// Lowercase, "agent" never "task" (book §4, §16).
 #[rustfmt::skip]
@@ -93,7 +99,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(CARDS, "y|n|esc", "a confirmation: yes / no / not now"),
     r(FEED, "click ▸|space", "open or close one folded item: thinking, an output, a diff, a report (space: the item selected in the feed, composer empty)"),
     r(FEED, "ctrl+o", "open or close everything folded").top(),
-    r(FEED, "ctrl+f", "find in the history: ⏎ or ↑ older, shift+⏎ or ↓ newer, esc close (the view stays on the match)").top(),
+    FIND,
     r(FEED, "pgup|pgdn|wheel", "scroll the feed"),
     r(FEED, "end", "back to the bottom"),
     r(FEED, "ctrl+l", "clear the display (/clear); scroll up to see the lines again"),
@@ -143,6 +149,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(GHOSTTY, "", "keybind = super+z=unbind"),
     r(GHOSTTY, "", "keybind = super+shift+z=unbind"),
     r(GHOSTTY, "", "keybind = super+c=performable:copy_to_clipboard (cmd+c copies Ghostty's selection if any, else the app's)"),
+    r(GHOSTTY, "", "keybind = super+f=unbind (cmd+f finds in the history; Ghostty's own find keeps its menu item, not cmd+f)"),
     r(GHOSTTY, "", "check what reaches the app: bise keyprobe"),
 ];
 
@@ -247,10 +254,12 @@ fn code() -> Style {
 }
 
 /// The rows of a page, filtered (case-insensitive, over the
-/// section, the keys and the action).
-pub(crate) fn rows(page: Page, filter: &str) -> Vec<&'static Row> {
+/// section, the keys and the action). `cmd`: the terminal passes cmd
+/// keys, find reads cmd+f.
+pub(crate) fn rows(page: Page, filter: &str, cmd: bool) -> Vec<&'static Row> {
     let f = filter.to_lowercase();
     ROWS.iter()
+        .map(|r| if cmd && r.keys == FIND.keys { &FIND_CMD } else { r })
         .filter(|r| page == Page::Shortcuts || r.top)
         .filter(|r| {
             f.is_empty()
@@ -441,8 +450,9 @@ pub(crate) fn page_lines(
     filter: &str,
     commands: &[(&'static str, &'static str)],
     width: usize,
+    cmd: bool,
 ) -> Vec<Line<'static>> {
-    let rows = rows(page, filter);
+    let rows = rows(page, filter, cmd);
     let mut out = Vec::new();
     if page == Page::Help {
         let f = filter.to_lowercase();
@@ -492,6 +502,7 @@ pub(crate) fn page_lines(
 /// The overlay, over the whole frame, when open.
 pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     let dev_cmds = crate::sb::release::dev_commands(app);
+    let cmd = app.cmd_keys;
     let Some(o) = app.help.as_mut() else { return };
     let full = frame.area();
     if full.width < 24 || full.height < 6 {
@@ -505,7 +516,7 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
         .chain(dev_cmds)
         .map(|c| (c.name, c.desc))
         .collect();
-    let lines = page_lines(o.page, &o.filter, &commands, (w as usize).saturating_sub(4));
+    let lines = page_lines(o.page, &o.filter, &commands, (w as usize).saturating_sub(4), cmd);
     let visible = (h as usize).saturating_sub(2).max(1);
     o.visible = visible;
     o.max_scroll = lines.len().saturating_sub(visible);
@@ -581,7 +592,7 @@ mod tests {
     fn every_row_renders() {
         for width in [40usize, 76, 106] {
             {
-                let lines = page_lines(Page::Shortcuts, "", &[], width);
+                let lines = page_lines(Page::Shortcuts, "", &[], width, false);
                 let all = text(&lines);
                 for l in &lines {
                     let w = spans_width(&l.spans);
@@ -605,7 +616,7 @@ mod tests {
 
     #[test]
     fn help_is_commands_and_essentials() {
-        let lines = page_lines(Page::Help, "", &[("/help", "commands and keys")], 80);
+        let lines = page_lines(Page::Help, "", &[("/help", "commands and keys")], 80, false);
         let all = text(&lines);
         assert!(all.contains("commands") && all.contains("/help"));
         assert!(all.contains(" ctrl+g "), "a top row");
@@ -643,7 +654,7 @@ mod tests {
             theme::set_ascii_for_tests(ascii);
             for page in [Page::Help, Page::Shortcuts] {
                 for width in [40usize, 106] {
-                    let lines = page_lines(page, "", &[], width);
+                    let lines = page_lines(page, "", &[], width, false);
                     for l in &lines {
                         assert!(spans_width(&l.spans) <= width, "overflow at {width}: {l:?}");
                     }
@@ -664,16 +675,16 @@ mod tests {
         }
         theme::set_ascii_for_tests(false);
         // the filter finds a symbol by its meaning, its glyph or its ASCII form
-        let only = text(&page_lines(Page::Help, "worktree", &[], 80));
+        let only = text(&page_lines(Page::Help, "worktree", &[], 80, false));
         assert!(only.contains("symbols") && only.contains("ψ"), "{only}");
-        assert!(text(&page_lines(Page::Shortcuts, "symbols", &[], 80)).contains("✓✓"));
+        assert!(text(&page_lines(Page::Shortcuts, "symbols", &[], 80, false)).contains("✓✓"));
     }
 
     #[test]
     fn filter_keeps_matching_rows() {
-        let r = rows(Page::Shortcuts, "subword");
+        let r = rows(Page::Shortcuts, "subword", false);
         assert!(r.len() >= 2 && r.iter().all(|r| r.action.contains("subword")));
-        assert!(rows(Page::Shortcuts, "zzzz").is_empty());
+        assert!(rows(Page::Shortcuts, "zzzz", false).is_empty());
     }
 
     #[test]

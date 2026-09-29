@@ -285,3 +285,45 @@ fn a_match_in_the_folded_part_of_your_message_opens_it() {
     let s = screen(&draw(&mut app));
     assert!(!s.contains("zebra") && s.contains("more lines"), "{s}");
 }
+
+/// cmd+f that the terminal passes through (SUPER under the kitty
+/// keyboard protocol) opens the field like ctrl+f and goes older in it;
+/// ctrl+f still works; cmd+shift+f and cmd alone do not open it.
+#[test]
+fn cmd_f_opens_the_field_like_ctrl_f() {
+    let mut app = app_with(vec![Ev::You("ship the signup page".into(), Mark::Sent, false)]);
+    press(&mut app, KeyCode::Modifier(crossterm::event::ModifierKeyCode::LeftSuper), KeyModifiers::SUPER);
+    assert!(app.find.is_none());
+    assert!(!app.cmd_keys, "cmd alone (cmd+tab) says nothing about cmd+f");
+    press(&mut app, KeyCode::Char('f'), KeyModifiers::SUPER | KeyModifiers::SHIFT);
+    assert!(app.find.is_none());
+    press(&mut app, KeyCode::Char('f'), KeyModifiers::SUPER);
+    assert!(app.find.is_some());
+    assert!(app.find.as_ref().unwrap().query.is_empty(), "no 'f' typed");
+    press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(app.find.is_none());
+    press(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL);
+    assert!(app.find.is_some(), "ctrl+f stays");
+}
+
+/// The key bar's ctrl hints and the help say ctrl+f until a cmd key
+/// arrives (the terminal passes them), then cmd+f.
+#[test]
+fn the_hints_say_cmd_f_once_a_cmd_key_arrived() {
+    let mut app = app_with(vec![Ev::You("ship the signup page".into(), Mark::Sent, false)]);
+    let find_key = |app: &App| crate::ctrlhint::pairs(app).into_iter().find(|p| p.1 == "find").map(|p| p.0);
+    let help_keys = |app: &App| {
+        let r = crate::help::rows(crate::help::Page::Help, "find in the history", app.cmd_keys);
+        r.iter().map(|r| r.keys).collect::<Vec<_>>()
+    };
+    assert_eq!(find_key(&app), Some("ctrl+f"));
+    assert_eq!(help_keys(&app), ["ctrl+f"]);
+    // any cmd key, e.g. cmd+c that Ghostty passes on without a selection
+    press(&mut app, KeyCode::Char('c'), KeyModifiers::SUPER);
+    assert!(app.cmd_keys);
+    assert_eq!(find_key(&app), Some("cmd+f"));
+    assert_eq!(help_keys(&app), ["cmd+f|ctrl+f"]);
+    let lines = crate::help::page_lines(crate::help::Page::Shortcuts, "find in", &[], 80, true);
+    let all: String = lines.iter().flat_map(|l| l.spans.iter().map(|s| s.content.to_string())).collect();
+    assert!(all.contains(" cmd+f ") && all.contains(" ctrl+f "), "{all}");
+}

@@ -446,6 +446,10 @@ fn flash(app: &mut App, note: String) {
 pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
     // zen (BISE-128): only the composer's own arms below set it
     app.key_in_composer = false;
+    // a cmd+key reached us: the hints say cmd+f from now on (find.rs)
+    if k.modifiers.contains(KeyModifiers::SUPER) && !matches!(k.code, KeyCode::Modifier(_)) {
+        app.cmd_keys = true;
+    }
     if help::on_key(app, k) {
         return false;
     }

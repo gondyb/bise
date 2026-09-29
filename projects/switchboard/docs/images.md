@@ -159,6 +159,8 @@ tool results), not the raw tag.
     pastes text as before and passes Cmd+V through when the clipboard has
     no text: it arrives as SUPER+V (kitty keyboard protocol) and attaches
     the image;
+    (the same kind of line passes cmd+f to find in the history:
+    `keybind = super+f=unbind`, book §16 "cmd+f");
   - iTerm2 3.7: asks "Paste Image"; "Save to Temp File and Paste Path"
     pastes the temp file's path, which attaches like a dropped file;
   - kitty and Ghostty tip: nothing, unless the app enables the paste

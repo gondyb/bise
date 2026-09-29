@@ -38,6 +38,9 @@ pub(crate) struct App {
     pub(crate) quote_hint: bool,
     /// ctrl+f: the find field, open (find.rs)
     pub(crate) find: Option<crate::find::Find>,
+    /// a cmd key (SUPER, not cmd alone) reached us this session: the
+    /// terminal passes cmd keys, the key bar and the help say cmd+f
+    pub(crate) cmd_keys: bool,
     // activity that arrived while pinned (shown by the back-to-bottom bar)
     pub(crate) unseen: usize,
     pub(crate) tail_visible: bool,
@@ -198,6 +201,7 @@ impl App {
             feed_sel: None,
             quote_hint: false,
             find: None,
+            cmd_keys: false,
             unseen: 0,
             tail_visible: true,
             bottom_bar_rect: None,

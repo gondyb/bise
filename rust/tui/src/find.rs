@@ -503,9 +503,11 @@ fn edited(app: &mut App) {
     crate::feed::unreveal(&mut app.events, &mut app.cache, undo);
 }
 
-/// The keys of the find field; `true` when handled. ctrl+f opens it.
+/// The keys of the find field; `true` when handled. ctrl+f opens it;
+/// so does cmd+f when the terminal passes it through (SUPER under the
+/// kitty keyboard protocol, e.g. Ghostty `keybind = super+f=unbind`).
 pub(crate) fn on_key(app: &mut App, k: &KeyEvent) -> bool {
-    let ctrl_f = k.code == KeyCode::Char('f') && k.modifiers == KeyModifiers::CONTROL;
+    let ctrl_f = k.code == KeyCode::Char('f') && (k.modifiers == KeyModifiers::CONTROL || k.modifiers == KeyModifiers::SUPER);
     let Some(f) = app.find.as_mut() else {
         if ctrl_f {
             open(app);

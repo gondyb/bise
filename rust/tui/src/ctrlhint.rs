@@ -146,7 +146,7 @@ pub(crate) fn pairs(app: &App) -> Vec<Pair> {
     }
     // BISE-237: find in the history
     if !app.events.is_empty() {
-        p.push(("ctrl+f", "find"));
+        p.push((if app.cmd_keys { "cmd+f" } else { "ctrl+f" }, "find"));
     }
     let v = crate::sb::ctrl_view(app);
     if v.cards > 0 {
