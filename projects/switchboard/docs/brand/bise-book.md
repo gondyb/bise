@@ -531,7 +531,14 @@ The same three levels everywhere, in main and inside an agent.
   l'agent »). Select text in the history (the release still copies it);
   the key bar says `type ask about it   cmd+c copy   esc drop`, `type ask
   about it` in the accent, `type` bold, so you notice you can just type
-  (the only accent of the bar; `NO_COLOR`: the pair bold). The first
+  (the only accent of the bar; `NO_COLOR`: the pair bold). Once the
+  drag ends, a one-row pill says it where the eyes are too (BISE-229):
+  ` type ask about it · cmd+c copy ` on the pink pill, on the row right
+  above the selection, at its first column (pushed left to stay in the
+  history's column; never over the panel, the divider or the composer).
+  No room above: under the last row; no room either: none. Narrow: only
+  ` type ask about it `. A press, a scroll, typing or esc puts it away;
+  `NO_COLOR`: `[ type ask about it · cmd+c copy ]`, no tint. The first
   key you type puts the selection in the composer as a quote chip `❝ 1`
   at the cursor (BISE-207), and ends the selection; the key types right
   after it. A chip, quote or image (paste, drop, `@`), always goes in at
