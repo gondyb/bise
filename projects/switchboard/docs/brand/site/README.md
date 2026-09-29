@@ -10,6 +10,7 @@ Netlify, Cloudflare Pages, `python3 -m http.server`).
 | `book/screens.html` | every screen of the product |
 | `book/live.html` | the live simulation (`?t=45&paused` to jump) |
 | `book/onboarding.html` | the first launch |
+| `install.sh` | `bise.dev/install`: the installer, a copy of the one the latest release carries (`packaging/publish-release.sh` says when it is stale) |
 
 Old paths (`brand/tui-screens.html`, `brand/tui-live.html`,
 `brand/tui-onboarding.html`, `brand/landing/index.html`) are small redirects

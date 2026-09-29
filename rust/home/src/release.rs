@@ -10,18 +10,23 @@
 //!   <prefix>/install.sh       the installer (uninstall, reinstall)
 //!   <prefix>/dist-url         the release channel it was installed from
 //!
-//! The release host is not decided yet: [`DIST_URL`] is the one place
-//! to set it; `BISE_DIST_URL` (env) and `<prefix>/dist-url` win over it,
-//! and a `file://` URL works the same (the tests).
+//! The releases are GitHub Releases of gvergnaud/bise (BISE-217):
+//! [`DIST_URL`] is the latest release's download URL; `BISE_DIST_URL`
+//! (env) and `<prefix>/dist-url` win over it, and a `file://` URL works
+//! the same (the tests). A private repo answers 404 to a plain download:
+//! [`github_asset`] names the asset, so the update can ask the GitHub CLI
+//! or the API with a token for it (bise's `update.rs`).
 
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// The default release channel: a base URL that serves `install.sh`,
-/// `latest.json` and the tarballs. Empty until the host is decided:
-/// then only an install made with `BISE_DIST_URL` has a channel.
-pub const DIST_URL: &str = "";
+/// `latest.json` and the tarballs: the assets of the latest GitHub
+/// release (`packaging/publish-release.sh` makes it).
+pub const DIST_URL: &str = "https://github.com/gvergnaud/bise/releases/latest/download";
+/// The GitHub API base (tests: a stub server); default from the host.
+pub const GITHUB_API_ENV: &str = "BISE_GITHUB_API";
 /// Overrides the channel (and the one an install recorded).
 pub const DIST_URL_ENV: &str = "BISE_DIST_URL";
 /// `1`: no background update check.
@@ -197,6 +202,87 @@ pub fn is_update(release: &Release, current_id: &str, current_built: Option<&str
     }
 }
 
+/// A GitHub release asset, named by its download URL:
+/// `<scheme>://<host>/<owner>/<repo>/releases/latest/download/<name>` or
+/// `.../releases/download/<tag>/<name>` (any host: GitHub Enterprise, a
+/// test server).
+#[derive(Clone, Debug, PartialEq)]
+pub struct GithubAsset {
+    /// `https://github.com`
+    pub origin: String,
+    pub host: String,
+    /// `owner/repo`
+    pub repo: String,
+    /// None: the latest release
+    pub tag: Option<String>,
+    pub name: String,
+}
+
+/// The asset a release download URL names; None for any other URL.
+pub fn github_asset(url: &str) -> Option<GithubAsset> {
+    let (scheme, rest) = url.split_once("://")?;
+    if !matches!(scheme, "http" | "https") {
+        return None;
+    }
+    let (host, path) = rest.split_once('/')?;
+    let p: Vec<&str> = path.split('/').collect();
+    let tag = match p.as_slice() {
+        [_, _, "releases", "latest", "download", _] => None,
+        [_, _, "releases", "download", tag, _] => Some(tag.to_string()),
+        _ => return None,
+    };
+    if p.iter().any(|s| s.is_empty()) || host.is_empty() {
+        return None;
+    }
+    Some(GithubAsset {
+        origin: format!("{}://{}", scheme, host),
+        host: host.to_string(),
+        repo: format!("{}/{}", p[0], p[1]),
+        tag,
+        name: p[5].to_string(),
+    })
+}
+
+impl GithubAsset {
+    /// The `-R` of `gh`: `owner/repo` on github.com, else `host/owner/repo`.
+    pub fn gh_repo(&self) -> String {
+        if self.host == "github.com" {
+            self.repo.clone()
+        } else {
+            format!("{}/{}", self.host, self.repo)
+        }
+    }
+
+    /// The API URL of its release: `BISE_GITHUB_API`, else api.github.com
+    /// for github.com, else `<origin>/api/v3` (GitHub Enterprise).
+    pub fn release_api(&self, env: crate::Lookup) -> String {
+        let api = env(GITHUB_API_ENV).map(|a| a.trim_end_matches('/').to_string()).unwrap_or_else(|| {
+            if self.host == "github.com" {
+                "https://api.github.com".into()
+            } else {
+                format!("{}/api/v3", self.origin)
+            }
+        });
+        match &self.tag {
+            None => format!("{}/repos/{}/releases/latest", api, self.repo),
+            Some(t) => format!("{}/repos/{}/releases/tags/{}", api, self.repo, t),
+        }
+    }
+}
+
+/// In the API's JSON of a release: the API URL of the asset `name` (it
+/// answers the file with `Accept: application/octet-stream`).
+pub fn asset_api_url(release_json: &str, name: &str) -> Result<String, String> {
+    let v: Value = serde_json::from_str(release_json).map_err(|e| format!("the GitHub API answered no JSON: {}", e))?;
+    let assets = v.get("assets").and_then(|a| a.as_array()).ok_or("the GitHub API answered no release")?;
+    assets
+        .iter()
+        .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(name))
+        .and_then(|a| a.get("url").and_then(|u| u.as_str()))
+        .map(str::to_string)
+        .ok_or_else(|| format!("the release has no asset {}", name))
+}
+
 impl crate::Home {
     /// The last `latest.json` read by `bise update` (the hub reads it).
     pub fn release_manifest(&self) -> PathBuf {
@@ -245,6 +331,28 @@ mod tests {
     fn urls_are_relative_to_the_channel_unless_absolute() {
         assert_eq!(resolve_url("file:///tmp/rel/", "a.tar.gz"), "file:///tmp/rel/a.tar.gz");
         assert_eq!(resolve_url("https://x.dev", "https://gh/a.tar.gz"), "https://gh/a.tar.gz");
+    }
+
+    #[test]
+    fn a_github_download_url_names_its_asset() {
+        let a = github_asset(&resolve_url(DIST_URL, "latest.json")).unwrap();
+        assert_eq!(a.repo, "gvergnaud/bise");
+        assert_eq!(a.gh_repo(), "gvergnaud/bise");
+        assert_eq!((a.tag.clone(), a.name.as_str()), (None, "latest.json"));
+        let none = |_: &str| None;
+        assert_eq!(a.release_api(&none), "https://api.github.com/repos/gvergnaud/bise/releases/latest");
+        let t = github_asset("http://127.0.0.1:8080/o/r/releases/download/v1.2/bise-x.tar.gz").unwrap();
+        assert_eq!((t.tag.as_deref(), t.name.as_str(), t.gh_repo()), (Some("v1.2"), "bise-x.tar.gz", "127.0.0.1:8080/o/r".into()));
+        let env = |k: &str| (k == GITHUB_API_ENV).then(|| "http://127.0.0.1:8080/api/".to_string());
+        assert_eq!(t.release_api(&env), "http://127.0.0.1:8080/api/repos/o/r/releases/tags/v1.2");
+        assert_eq!(t.release_api(&none), "http://127.0.0.1:8080/api/v3/repos/o/r/releases/tags/v1.2");
+        for u in ["file:///o/r/releases/latest/download/x", "https://bise.dev/latest.json", "https://github.com/o/r/releases/latest/download/", "https://github.com/o/r/releases/tag/v1/x"] {
+            assert_eq!(github_asset(u), None, "{u}");
+        }
+        let json = r#"{"tag_name":"v1","assets":[{"name":"a","url":"https://api/1"},{"name":"latest.json","url":"https://api/2"}]}"#;
+        assert_eq!(asset_api_url(json, "latest.json").unwrap(), "https://api/2");
+        assert!(asset_api_url(json, "b").unwrap_err().contains("no asset b"));
+        assert!(asset_api_url(r#"{"message":"Not Found"}"#, "a").unwrap_err().contains("no release"));
     }
 
     #[test]

@@ -335,3 +335,39 @@ the default paths.
 8. **Telemetry / crash reports**: none, opt-in, opt-out?
 9. `bise` on Homebrew / npm: check the names are free before the rename
    (the pitch notes open checks).
+
+## 11. The channel: GitHub Releases of gvergnaud/bise (BISE-217)
+
+User decision: the releases are GitHub Releases of `gvergnaud/bise`; the
+repo stays private for now (friends are collaborators), public later.
+
+- **The channel** is the latest release's download URL,
+  `https://github.com/gvergnaud/bise/releases/latest/download` (the
+  Rust const `release::DIST_URL`, stamped into install.sh by
+  make-release.sh). A new release is what every install reads next.
+- **Publish** (the user; an agent's shell cannot write the bundle):
+  `projects/switchboard/packaging/publish-release.sh [vX.Y.Z]` builds
+  this Mac's archive (build-dist.sh), lays out the release
+  (make-release.sh: install.sh, latest.json, tarballs + .sha256) and runs
+  `gh release create <tag> --target <commit>` (the commit must be pushed).
+  `--add <tarball>` adds an archive of the same commit (the x86_64 one of
+  CI), `--dry-run` stops before publishing. The tag also starts
+  release.yml (if Actions run on the repo): it rebuilds both arches and
+  uploads them and a latest.json for both over the release's assets.
+- **Private repo**: a plain download of an asset answers 404. install.sh
+  and `bise update` (the daily check, `/restart latest`) then ask
+  `gh release download` (the GitHub CLI, `gh auth login`), else the API
+  with `GH_TOKEN`/`GITHUB_TOKEN` (the asset's API URL with
+  `Accept: application/octet-stream`; the token goes to curl on stdin,
+  never in `ps`). Neither: an error that says to run `gh auth login`.
+  `BISE_GITHUB_API` changes the API base (tests; GitHub Enterprise gets
+  `<host>/api/v3`).
+- **Public repo**: the plain downloads work; nothing to change.
+- **Install line**: `curl -fsSL https://bise.dev/install | sh`: the site
+  serves a copy of the stamped install.sh (`docs/brand/site/install.sh`;
+  publish-release.sh says when it is stale). Private: `gh auth login`
+  first. Without the site: `gh release download -R gvergnaud/bise -p
+  install.sh -O - | sh`.
+- **Test**: `packaging/test-release-gh.sh` (a python stand-in for GitHub
+  and a stub `gh`, fake HOMEs, ~9 s): public, private without auth,
+  with gh, with a token, a bad token.

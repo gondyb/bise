@@ -13,6 +13,11 @@
 //! seconds), a detached `bise update --background` when an installed bise
 //! opens Switchboard or a session; never blocks the start; off with
 //! `BISE_NO_UPDATE=1`.
+//!
+//! A private GitHub repo (BISE-217): a plain download of a release asset
+//! gets a 404, so [`fetch_file`] asks `gh release download` (the GitHub
+//! CLI, logged in), then the API with `GH_TOKEN`/`GITHUB_TOKEN`; neither:
+//! the error says to run `gh auth login`. A public repo needs neither.
 
 use bise_home::release::{self, Install, Release};
 use std::path::{Path, PathBuf};
@@ -65,26 +70,96 @@ fn this_install() -> Result<Install, String> {
     ))
 }
 
-fn curl(url: &str) -> Command {
+/// curl `url` into `to`; `headers`: curl config lines given on stdin
+/// (a token never shows in `ps`).
+fn curl(url: &str, to: &Path, headers: &[String]) -> Result<(), String> {
+    use std::io::Write;
     let mut c = Command::new("curl");
-    c.args(["-fsSL", "--connect-timeout", "15", "--retry", "2", url]).stdin(Stdio::null());
-    c
+    c.args(["-fsSL", "--connect-timeout", "15", "--retry", "2", "-K", "-", "-o"])
+        .arg(to)
+        .arg(url)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    let mut p = c.spawn().map_err(|e| format!("curl: {}", e))?;
+    if let Some(mut i) = p.stdin.take() {
+        let cfg: String = headers.iter().map(|h| format!("header = \"{}\"\n", h.replace('\\', "\\\\").replace('"', "\\\""))).collect();
+        let _ = i.write_all(cfg.as_bytes());
+    }
+    let o = p.wait_with_output().map_err(|e| format!("curl: {}", e))?;
+    if !o.status.success() {
+        let _ = std::fs::remove_file(to);
+        return Err(String::from_utf8_lossy(&o.stderr).trim().to_string());
+    }
+    Ok(())
+}
+
+/// `gh release download` of the asset (the CLI's own login).
+fn gh_download(a: &release::GithubAsset, to: &Path) -> Result<(), String> {
+    let mut c = Command::new("gh");
+    c.args(["release", "download"]);
+    if let Some(t) = &a.tag {
+        c.arg(t);
+    }
+    c.args(["-R", &a.gh_repo(), "-p", &a.name, "--clobber", "-O"])
+        .arg(to)
+        .env("GH_PROMPT_DISABLED", "1")
+        .env("GH_NO_UPDATE_NOTIFIER", "1")
+        .stdin(Stdio::null());
+    let o = c.output().map_err(|e| format!("gh: {}", e))?;
+    if !o.status.success() {
+        let _ = std::fs::remove_file(to);
+        let e = String::from_utf8_lossy(&o.stderr);
+        return Err(format!("gh: {}", e.lines().find(|l| !l.trim().is_empty()).unwrap_or("failed").trim()));
+    }
+    Ok(())
+}
+
+/// The API with a token: the release's JSON, then the asset's file.
+fn api_download(a: &release::GithubAsset, token: &str, to: &Path) -> Result<(), String> {
+    let auth = format!("Authorization: Bearer {}", token);
+    let json = to.with_extension("release.json");
+    let r = curl(&a.release_api(&env), &json, &[auth.clone(), "Accept: application/vnd.github+json".into()])
+        .and_then(|_| std::fs::read_to_string(&json).map_err(|e| e.to_string()));
+    let _ = std::fs::remove_file(&json);
+    let asset = release::asset_api_url(&r.map_err(|e| format!("GitHub API: {}", e))?, &a.name)?;
+    curl(&asset, to, &[auth, "Accept: application/octet-stream".into()]).map_err(|e| format!("GitHub API: {}", e))
+}
+
+/// Download `url` into `to`: plain curl (https, file://); a GitHub
+/// release asset it cannot read (a private repo): `gh`, then a token.
+fn fetch_file(url: &str, to: &Path) -> Result<(), String> {
+    let plain = match curl(url, to, &[]) {
+        Ok(()) => return Ok(()),
+        Err(e) => e,
+    };
+    let Some(a) = release::github_asset(url) else {
+        return Err(format!("cannot read {}: {}", url, plain));
+    };
+    let mut why = vec![plain];
+    match gh_download(&a, to) {
+        Ok(()) => return Ok(()),
+        Err(e) => why.push(e),
+    }
+    if let Some(t) = env("GH_TOKEN").or_else(|| env("GITHUB_TOKEN")) {
+        match api_download(&a, &t, to) {
+            Ok(()) => return Ok(()),
+            Err(e) => why.push(e),
+        }
+    }
+    Err(format!(
+        "cannot read {} ({}): if {} is private, install the GitHub CLI and run 'gh auth login' with an account that can read it (or set GH_TOKEN)",
+        url,
+        why.join("; "),
+        a.repo
+    ))
 }
 
 fn fetch_text(url: &str) -> Result<String, String> {
-    let o = curl(url).arg("--max-time").arg("60").output().map_err(|e| format!("curl: {}", e))?;
-    if !o.status.success() {
-        return Err(format!("cannot read {}: {}", url, String::from_utf8_lossy(&o.stderr).trim()));
-    }
-    Ok(String::from_utf8_lossy(&o.stdout).into_owned())
-}
-
-fn fetch_file(url: &str, to: &Path) -> Result<(), String> {
-    let o = curl(url).arg("-o").arg(to).output().map_err(|e| format!("curl: {}", e))?;
-    if !o.status.success() {
-        return Err(format!("download of {} failed: {}", url, String::from_utf8_lossy(&o.stderr).trim()));
-    }
-    Ok(())
+    let tmp = std::env::temp_dir().join(format!("bise-fetch-{}.json", std::process::id()));
+    let r = fetch_file(url, &tmp).and_then(|_| std::fs::read_to_string(&tmp).map_err(|e| e.to_string()));
+    let _ = std::fs::remove_file(&tmp);
+    r
 }
 
 fn sha256(file: &Path) -> Result<String, String> {

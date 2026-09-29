@@ -46,7 +46,7 @@ set -eu
 CMD=bise                  # the command name (BISE-165)
 OLD_CMD=bend-harness      # its old name: a second link, kept one release
 # the release channel, stamped by make-release.sh ('' = none published)
-DIST_URL_DEFAULT=''
+DIST_URL_DEFAULT='https://github.com/gvergnaud/bise/releases/latest/download'
 DIST_URL="${BISE_DIST_URL:-$DIST_URL_DEFAULT}"
 PREFIX="${BISE_PREFIX:-$HOME/.local/share/bise}"
 OLD_PREFIX="$HOME/.local/share/bend-harness"   # before BISE-170
