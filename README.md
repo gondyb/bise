@@ -74,7 +74,7 @@ bise is a terminal app. you talk to **main**, bise's main agent. main splits you
 <summary><b>and so much more</b></summary>
 
 - **your token bill can relax** · bise starts an agent when a job needs one. that's the whole rule.
-- **it's quiet. open it up whenever** · the rest is folded, never deleted. `ctrl+o` opens it all, every script in full.
+- **it's quiet. open it up whenever** · what matters to you shows. the rest is one key away: `ctrl+o` opens it all, every script in full.
 - **or just talk** · `/voice`, then `ctrl+r`.
 - **show it a screenshot** · paste it with `ctrl+v` or drag it in.
 - **ask about anything on screen** · select lines in the history and start typing: they come along as a quote.
