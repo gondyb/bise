@@ -1705,3 +1705,31 @@ fn a_click_on_the_hint_row_opens_just_that_message() {
     assert!(toggle_at(&mut events, &mut cache, 1, n - 1));
     assert!(matches!(events[1], Ev::You(_, _, false)));
 }
+
+/// BISE-240: a long paste in your message is its chip in the line and
+/// one dim row under it; a click on that row (or ctrl+o) opens the
+/// message and shows the full text there, never by default.
+#[test]
+fn a_long_paste_in_your_message_is_a_chip_and_opens_like_a_fold() {
+    let body: String = (1..=40).map(|n| format!("row {n}\n")).collect();
+    let msg = format!("see {} ok", crate::pasted::tag(1, body.trim_end()));
+    let (mut events, mut cache) = arrive(vec![Ev::You(msg, Mark::Read, false)]);
+    assert!(crate::feed::discloses(&events[0]) && crate::feed::anything_closed(&events));
+    let rows = cached_text(&events, &mut cache, 80);
+    let mine: Vec<&String> = rows.iter().filter(|r| r.starts_with('│')).collect();
+    assert_eq!(mine.len(), 2, "{rows:#?}");
+    assert_eq!(mine[0].as_str(), "│  see ▤ 1 ok ✓✓", "{rows:#?}");
+    assert!(mine[1].starts_with("│  ▤ 1 “row 1 row 2") && mine[1].ends_with("” · 40 lines"), "{rows:#?}");
+    assert!(!rows.iter().any(|r| r.contains("row 40")), "{rows:#?}");
+    // a click on the paste row opens it: the full text under the line
+    let n = cache[0].as_ref().unwrap().rows.len();
+    assert!(toggle_at(&mut events, &mut cache, 0, n - 1));
+    assert!(matches!(events[0], Ev::You(_, _, true)));
+    let rows = cached_text(&events, &mut cache, 80);
+    assert!(rows.iter().any(|r| r == "│  ▤ 1 · 40 lines"), "{rows:#?}");
+    assert!(rows.iter().any(|r| r == "│  row 40"), "{rows:#?}");
+    // its last row closes it again
+    let n = cache[0].as_ref().unwrap().rows.len();
+    assert!(toggle_at(&mut events, &mut cache, 0, n - 1));
+    assert!(matches!(events[0], Ev::You(_, _, false)));
+}

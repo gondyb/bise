@@ -333,10 +333,11 @@ fn snapshot(app: &App) -> Saved {
     Saved { drafts, attachments, history, queues }
 }
 
-/// An attachment still usable: a quote (its text is its marker), an
-/// image whose file the image store still has.
+/// An attachment still usable: a quote or a paste (its text is its
+/// marker), an image whose file the image store still has.
 fn still_there(a: &crate::attach::Attachment) -> bool {
     crate::quote::is_quote(&a.label)
+        || crate::pasted::is_paste(&a.label)
         || bend_images::markers(&a.marker).first().is_some_and(|m| Path::new(&m.b64).is_file())
 }
 

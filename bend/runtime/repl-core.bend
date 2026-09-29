@@ -330,18 +330,22 @@ def repl_lines.go(+live: Bool, +lines: List<&2, String>, s: Socket, +sess: T.Ses
           s2 => sess2 => repl_lines.go(live, rest, s2, sess2, next))
         IO.pure(Flow, f)
 
+# `data`: the line the last chunk left unfinished, then this chunk; the
+# lines a newline ends run, the rest waits for the next chunk (`next`
+# gets it: a message longer than one recv stays one message, BISE-240)
 def repl_data(+live: Bool, closed: Bool, s: Socket, +data: String, +sess: T.Session,
-    next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
+    next: String -> Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match closed:
     case True{}:
       do IO<Flow>:
         Socket.close(s)
         IO.pure(Flow, Go{sess})
     case False{}:
-      repl_lines.go(live, Rcp.cmd_lines(data), s, sess, next)
+      repl_lines.go(live, Rcp.cmd_whole(data), s, sess,
+        s2 => sess2 => next(Rcp.cmd_tail(data))(s2)(sess2))
 
 def repl_after(+live: Bool, rm: Socket & Result<&1, &1, U32 & String, String>,
-    +sess: T.Session, next: Socket -> T.Session -> IO(Flow))
+    +carry: String, +sess: T.Session, next: String -> Socket -> T.Session -> IO(Flow))
     -> IO(Flow):
   match rm:
     case (s, Fail{_}):
@@ -349,13 +353,13 @@ def repl_after(+live: Bool, rm: Socket & Result<&1, &1, U32 & String, String>,
         Socket.close(s)
         IO.pure(Flow, Go{sess})
     case (s, Done{+data}):
-      repl_data(live, String.is_empty(data), s, data, sess, next)
+      repl_data(live, String.is_empty(data), s, String.append(carry, data), sess, next)
 
 @unsafe
-def repl_conn(+live: Bool, sock: Socket, sess: T.Session) -> IO(Flow):
+def repl_conn(+live: Bool, sock: Socket, +carry: String, sess: T.Session) -> IO(Flow):
   do IO<Flow>:
     rm : Socket & Result<&1, &1, U32 & String, String> <- TCP.recv(sock, 4096)
-    repl_after(live, rm, sess, s2 => sess2 => repl_conn(live, s2, sess2))
+    repl_after(live, rm, carry, sess, c => s2 => sess2 => repl_conn(live, s2, c, sess2))
 
 # ---- the accept loop: one connection at a time, session survives ----
 
@@ -433,7 +437,7 @@ def greet_conn(+live: Bool, out: Pv.Out, +sess: T.Session) -> IO(Flow):
       IO.pure(Flow, Go{sess})
     case Pv.ONet{s2}:
       resume_queued(live, List.is_empty(&2, String, S.sess_queued(sess)), s2,
-        sess, s3 => sess3 => repl_conn(live, s3, sess3))
+        sess, s3 => sess3 => repl_conn(live, s3, "", sess3))
 
 
 

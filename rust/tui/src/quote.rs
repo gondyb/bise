@@ -156,10 +156,8 @@ pub(crate) fn add(app: &mut App, from: &str, text: &str) -> Result<String, Strin
         Some((b, _)) => format!("{}…", &text[..b]),
         None => text.to_string(),
     };
-    // forget the quotes whose chip left the text; the lowest free number
-    let t = app.ed.text.clone();
-    app.attachments.retain(|a| !is_quote(&a.label) || t.contains(&a.label));
-    let n = (1..).find(|n| !app.attachments.iter().any(|a| a.label == label(*n))).unwrap_or(1);
+    // the lowest free number, shared with images and pastes (BISE-240)
+    let n = crate::attach::next_number(app);
     let l = label(n);
     app.attachments.push(Attachment { label: l.clone(), marker: tag(from, &text), info: Default::default() });
     crate::attach::insert_chip(&mut app.ed, &l);

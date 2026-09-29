@@ -188,6 +188,47 @@ def cmd_lines.go(lines: List<&2, String>) -> List<&2, String>:
 def cmd_lines(+data: String) -> List<&2, String>:
   cmd_lines.go(String.split(data, Tx.newline()))
 
+# a line longer than one recv (a long paste, BISE-240: an 8 kB `say`)
+# arrives in several chunks: only the lines a newline ends are commands,
+# the tail after the last newline waits for the next chunk. `parts` is
+# the chunk split at its newlines: every part but the last is whole.
+def cmd_whole.init(+rest: List<&2, String>, +first: String) -> List<&2, String>:
+  match rest:
+    case Nil{}:
+      Nil{}
+    case Con{+h, +t}:
+      Con{first, cmd_whole.init(t, h)}
+
+def cmd_whole.of(+parts: List<&2, String>) -> List<&2, String>:
+  match parts:
+    case Nil{}:
+      Nil{}
+    case Con{+h, +t}:
+      cmd_lines.go(cmd_whole.init(t, h))
+
+# the commands of `data` that a newline ends
+def cmd_whole(+data: String) -> List<&2, String>:
+  cmd_whole.of(String.split(data, Tx.newline()))
+
+def cmd_tail.last(+rest: List<&2, String>, +first: String) -> String:
+  match rest:
+    case Nil{}:
+      first
+    case Con{+h, +t}:
+      cmd_tail.last(t, h)
+
+def cmd_tail.of(+parts: List<&2, String>) -> String:
+  match parts:
+    case Nil{}:
+      ""
+    case Con{+h, +t}:
+      cmd_tail.last(t, h)
+
+# what `data` has after its last newline: the start of a line the next
+# chunk goes on with ("" when `data` ends with a newline)
+def cmd_tail(+data: String) -> String:
+  cmd_tail.of(String.split(data, Tx.newline()))
+
 # ---- BEND_EXTRA_PROMPT: a role appended to the system prompt ----
 # A switchboard hub gives each agent its role (main, or a task with its
 # brief rules) as a file; the live prompt ends with it. Empty: the

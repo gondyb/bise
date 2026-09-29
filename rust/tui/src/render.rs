@@ -777,8 +777,30 @@ pub(crate) const YOU_ROWS: usize = 8;
 pub(crate) fn you_folds(msg: &str) -> bool {
     use unicode_width::UnicodeWidthStr;
     let (quotes, body) = crate::quote::split(msg);
+    // a long paste (BISE-240) is its chip in the line; it always
+    // folds: its full text shows only open
+    let (body, pastes) = crate::pasted::fold(body);
     let rows: usize = quotes.len() + body.split('\n').map(|l| l.width().div_ceil(77).max(1)).sum::<usize>();
-    rows > YOU_ROWS
+    !pastes.is_empty() || rows > YOU_ROWS
+}
+
+/// The rows of your message's long pastes, under its text (behind its
+/// bar): one dim row each, the full text when the message is open
+/// (pasted.rs).
+fn paste_rows(pastes: &[crate::pasted::Pasted], open: bool, width: usize) -> Vec<Line<'static>> {
+    let bar = Span::styled(format!("{}  ", user_bar()), Style::default().fg(accent()));
+    hung_rows(&bar, &bar, crate::pasted::rows(pastes, open, width.saturating_sub(3)), width)
+}
+
+/// How many rows [`paste_rows`] takes in `msg` (feed::toggle_at: a
+/// click there opens or closes the message).
+pub(crate) fn you_paste_rows(msg: &str, open: bool, width: usize) -> usize {
+    let (_, body) = crate::quote::split(msg);
+    let (_, pastes) = crate::pasted::fold(body);
+    if pastes.is_empty() {
+        return 0;
+    }
+    paste_rows(&pastes, open, width).len()
 }
 
 pub(crate) fn user_block_lines(msg: &str, mark: Mark, open: bool, width: usize) -> Vec<Line<'static>> {
@@ -797,7 +819,9 @@ pub(crate) fn user_block_lines(msg: &str, mark: Mark, open: bool, width: usize) 
         })
         .collect();
     let folds = you_folds(msg);
-    let msg = body;
+    // BISE-240: each long paste is its chip in the line (pasted.rs)
+    let (folded, pastes) = crate::pasted::fold(body);
+    let msg = folded.as_str();
     let mut lines: Vec<Line<'static>> = msg
         .split('\n')
         .map(|l| Line::from(crate::attach::chip_spans(l.trim_end_matches('\r'), style)))
@@ -840,6 +864,8 @@ pub(crate) fn user_block_lines(msg: &str, mark: Mark, open: bool, width: usize) 
         }
         rows = hung_rows(&bar, &bar, all, width);
     }
+    // its long pastes, one dim row each (the full text when open)
+    rows.extend(paste_rows(&pastes, open, width));
     // the sizes of its images, dim, under it (still behind the bar)
     if let Some(sizes) = crate::attach::sizes_line(msg) {
         rows.extend(hung_rows(&bar, &bar, [Line::from(Span::styled(sizes, Style::default().fg(dim())))], width));

@@ -912,10 +912,13 @@ pub(crate) fn toggle_at(events: &mut [Ev], cache: &mut [Option<EventRows>], i: u
         }
     }
     // a message of yours: only its last row (`▸ n more lines`, or the one
-    // ending in `▾`) folds it; its other rows stay for reading (BISE-239)
-    if let (Some(Ev::You(t, ..)), Some(Some(c))) = (events.get(i), cache.get(i)) {
+    // ending in `▾`) folds it; its other rows stay for reading (BISE-239).
+    // Its long pastes' rows under it too (BISE-240: `▤ 1 “…” · 240
+    // lines` opens it, the open text closes it)
+    if let (Some(Ev::You(t, _, open)), Some(Some(c))) = (events.get(i), cache.get(i)) {
         let sizes = usize::from(crate::attach::sizes_line(t).is_some());
-        if row + 1 + sizes != c.rows.len() {
+        let pastes = crate::render::you_paste_rows(t, *open, usize::from(c.width));
+        if row + 1 + sizes + pastes < c.rows.len() || row + sizes >= c.rows.len() {
             return false;
         }
     }

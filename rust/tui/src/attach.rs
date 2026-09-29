@@ -10,7 +10,7 @@
 //! panics on any input.
 
 use crate::app::App;
-use crate::theme::{accent, dim, error, glyph, text, G_FAILED, G_IMAGE, G_QUOTE};
+use crate::theme::{accent, dim, error, glyph, text, G_FAILED, G_IMAGE, G_PASTE, G_QUOTE};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use std::cell::RefCell;
@@ -45,14 +45,21 @@ pub(crate) fn label(n: usize) -> String {
     format!("[Image #{n}]")
 }
 
-/// Forget the attachments whose label left the text; the next number.
-fn next_number(atts: &mut Vec<Attachment>, text: &str) -> usize {
-    atts.retain(|a| text.contains(&a.label));
-    let mut n = 1usize;
-    while atts.iter().any(|a| a.label == label(n)) {
-        n += 1;
-    }
-    n
+/// The number of a chip label: 3 for `[Image #3]`, `[Quote #3]`,
+/// `[Paste #3]`.
+fn label_number(label: &str) -> Option<usize> {
+    label.rsplit_once('#')?.1.strip_suffix(']')?.parse().ok()
+}
+
+/// Forget the attachments whose chip left the composer text; the lowest
+/// number no chip uses. Images, quotes and pastes share one sequence
+/// (BISE-240, designer): `❝ 1`, `❝ 2`, `▣ 3`, so a number always points
+/// at one row of the box.
+pub(crate) fn next_number(app: &mut App) -> usize {
+    let text = &app.ed.text;
+    app.attachments.retain(|a| text.contains(&a.label));
+    let used: Vec<usize> = app.attachments.iter().filter_map(|a| label_number(&a.label)).collect();
+    (1..).find(|n| !used.contains(n)).unwrap_or(1)
 }
 
 /// Put `path` in the image store and its label at the cursor; the
@@ -78,7 +85,7 @@ fn info_of(shown: &str, original_bytes: u64, stored: &bend_images::Stored) -> In
 }
 
 fn add(app: &mut App, source: &str, shown: &str, original: u64, stored: &bend_images::Stored) -> String {
-    let n = next_number(&mut app.attachments, &app.ed.text);
+    let n = next_number(app);
     let l = label(n);
     let marker = bend_images::marker(&l, source, stored);
     let info = info_of(shown, original, stored);
@@ -227,13 +234,14 @@ pub(crate) fn pick_image(app: &mut App, rel: &str) -> Option<Result<String, Stri
 /// What a clipboard image is called in the strip and the history.
 const CLIPBOARD: &str = "clipboard";
 
-/// The labels `[Image #N]`, `[Quote #N]` (quote.rs) and the voice chip
-/// (voice/chip.rs) in `text`: (first char index, char index past it, N),
-/// in text order. The composer draws each as one chip, the cursor steps
-/// over it, a delete takes it whole.
+/// The labels `[Image #N]`, `[Quote #N]` (quote.rs), `[Paste #N]`
+/// (pasted.rs) and the voice chip (voice/chip.rs) in `text`: (first char
+/// index, char index past it, N), in text order. The composer draws each
+/// as one chip, the cursor steps over it, a delete takes it whole.
 pub(crate) fn chips(text: &str) -> Vec<(usize, usize, usize)> {
     let mut v = image_chips(text);
     v.extend(crate::quote::chips(text));
+    v.extend(crate::pasted::chips(text));
     v.extend(find_labels(text, crate::voice::chip::OPEN));
     v.sort_unstable();
     v
@@ -288,11 +296,14 @@ pub(crate) fn chip_widen(text: &str, a: usize, b: usize) -> (usize, usize) {
     })
 }
 
-/// A chip's glyph (`▣` or `❝`) and number, from its label `[Image #N]`
-/// or `[Quote #N]`.
+/// A chip's glyph (`▣`, `❝` or `▤`) and number, from its label
+/// `[Image #N]`, `[Quote #N]` or `[Paste #N]`.
 fn chip_parts(label: &str) -> (&'static str, &str) {
     if let Some(n) = label.strip_prefix(crate::quote::OPEN) {
         return (glyph(G_QUOTE), n.trim_end_matches(']'));
+    }
+    if let Some(n) = label.strip_prefix(crate::pasted::OPEN) {
+        return (glyph(G_PASTE), n.trim_end_matches(']'));
     }
     (G_IMAGE, label.trim_start_matches("[Image #").trim_end_matches(']'))
 }
@@ -407,6 +418,32 @@ fn wxh((w, h): (u32, u32)) -> String {
 /// `text` as spans in `style`, each image marker an accent chip
 /// `▣ login.png` (a user line of the history; one line, no `\n`).
 pub(crate) fn chip_spans(text: &str, style: Style) -> Vec<Span<'static>> {
+    // a paste's chip mark (pasted::fold): `▤ 1`, accent
+    let marks = crate::pasted::marks(text);
+    if marks.is_empty() {
+        return image_spans(text, style);
+    }
+    let g = glyph(G_PASTE);
+    let mut out = Vec::new();
+    let mut last = 0usize;
+    for (a, b, n) in marks {
+        let before = text.get(last..a).unwrap_or("");
+        if !before.is_empty() {
+            out.extend(image_spans(before, style));
+        }
+        out.push(Span::styled(format!("{g} {n}"), chip_style()));
+        last = b;
+    }
+    let rest = text.get(last..).unwrap_or("");
+    if !rest.is_empty() {
+        out.extend(image_spans(rest, style));
+    }
+    out
+}
+
+/// [`chip_spans`] for a text with no paste mark: each image marker
+/// drawn `▣ name`.
+fn image_spans(text: &str, style: Style) -> Vec<Span<'static>> {
     let mut out = Vec::new();
     let mut last = 0usize;
     for m in bend_images::markers(text) {
@@ -616,10 +653,24 @@ fn shown_quotes(app: &App) -> Vec<(usize, crate::quote::Quote)> {
 /// How many rows the attachments box takes (0: nothing attached): its
 /// two borders and one row per attachment.
 pub(crate) fn strip_height(app: &App) -> u16 {
-    match shown_quotes(app).len() + shown(app).len() {
+    match shown_quotes(app).len() + shown(app).len() + shown_pastes(app).len() {
         0 => 0,
         n => n as u16 + 2,
     }
+}
+
+/// The pastes still in the composer text, by number (pasted.rs).
+fn shown_pastes(app: &App) -> Vec<crate::pasted::Pasted> {
+    let mut v: Vec<crate::pasted::Pasted> = crate::pasted::chips(&app.ed.text)
+        .into_iter()
+        .filter_map(|(_, _, n)| {
+            let l = crate::pasted::label(n);
+            app.attachments.iter().find(|a| a.label == l).and_then(crate::pasted::of)
+        })
+        .collect();
+    v.sort_by_key(|p| p.n);
+    v.dedup_by_key(|p| p.n);
+    v
 }
 
 /// What the strip names an image by: the file name of a dropped or
@@ -684,7 +735,8 @@ impl Preview {
     }
 }
 
-/// The attachments in the text, by number: the quotes, then the images.
+/// The attachments in the text, by number (quotes, images and pastes
+/// share one sequence).
 fn box_rows(app: &App) -> Vec<BoxRow> {
     let mut rows: Vec<(usize, BoxRow)> = shown_quotes(app)
         .into_iter()
@@ -696,6 +748,11 @@ fn box_rows(app: &App) -> Vec<BoxRow> {
     rows.extend(shown(app).into_iter().map(|(n, a)| {
         let (_, source) = strip_row(n, &a.info);
         (n, BoxRow { label: a.label.clone(), preview: Preview::File(file_name(&a.info.source).to_string()), source })
+    }));
+    // a paste: its first words like a quote's, `240 lines · 9.8 kB`
+    rows.extend(shown_pastes(app).into_iter().map(|p| {
+        let source = crate::pasted::about(&p.text);
+        (p.n, BoxRow { label: crate::pasted::label(p.n), preview: Preview::Quote(p.text), source })
     }));
     rows.sort_by_key(|(n, _)| *n);
     rows.into_iter().map(|(_, r)| r).collect()
@@ -897,12 +954,83 @@ mod tests {
 
     #[test]
     fn numbers_reuse_freed_labels() {
-        let mut atts = vec![att(1, "m1"), att(2, "m2")];
+        let mut app = composer("hello [Image #2]", 0);
+        app.attachments = vec![att(1, "m1"), att(2, "m2")];
         // [Image #1] was deleted from the text: it is forgotten, 1 is free
-        assert_eq!(next_number(&mut atts, "hello [Image #2]"), 1);
-        assert_eq!(atts.len(), 1);
-        assert_eq!(next_number(&mut atts, ""), 1);
-        assert!(atts.is_empty());
+        assert_eq!(next_number(&mut app), 1);
+        assert_eq!(app.attachments.len(), 1);
+        app.ed.set("", 0);
+        assert_eq!(next_number(&mut app), 1);
+        assert!(app.attachments.is_empty());
+    }
+
+    /// BISE-240 (designer): quotes, images and pastes count in one
+    /// sequence, so a number points at one row of the box.
+    #[test]
+    fn quotes_images_and_pastes_share_one_number_sequence() {
+        let mut app = composer("", 0);
+        crate::quote::add(&mut app, "main", "a quote").unwrap();
+        clip();
+        attach_clipboard(&mut app).unwrap();
+        crate::pasted::add(&mut app, &long(20));
+        let labels: Vec<&str> = app.attachments.iter().map(|a| a.label.as_str()).collect();
+        assert_eq!(labels, ["[Quote #1]", "[Image #2]", "[Paste #3]"]);
+        assert_eq!(app.ed.text, "[Quote #1] [Image #2] [Paste #3] ");
+        // the image's chip goes: 2 is free for the next one, of any kind
+        app.ed.set("[Quote #1] [Paste #3] ", 22);
+        crate::pasted::add(&mut app, &long(20));
+        assert!(app.ed.text.ends_with("[Paste #2] "), "{}", app.ed.text);
+    }
+
+    fn long(n: usize) -> String {
+        (1..=n).map(|i| format!("line {i}\n")).collect()
+    }
+
+    /// A long bracketed paste: a chip at the cursor, replacing the
+    /// selection, its text an attachment; one undo puts the text inline,
+    /// a second takes it away.
+    #[test]
+    fn a_long_paste_is_a_chip_and_undo_gives_the_text_back() {
+        let text = long(300);
+        let mut app = composer("see XX now", 4);
+        app.ed.select_range(4, 6);
+        crate::input::on_paste(&mut app, &text);
+        assert_eq!(app.ed.text, "see [Paste #1]  now");
+        assert_eq!(app.attachments.len(), 1);
+        assert!(app.flash.as_ref().is_some_and(|(f, _)| f == "attached \u{25a4} 1"), "{:?}", app.flash);
+        // the box row: its first words, lines and size
+        let rows: Vec<String> =
+            strip_lines(&app, 100).iter().map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect()).collect();
+        assert_eq!(rows.len(), 3, "{rows:?}");
+        assert!(rows[1].contains("\u{25a4} 1  \u{201c}line 1 line 2"), "{rows:?}");
+        assert!(rows[1].contains("300 lines \u{b7} 3 kB"), "{rows:?}");
+        // sent: the whole text, in its tag, where the chip was
+        let mut sent = composer("", 0);
+        sent.attachments = app.attachments.clone();
+        let out = expand(&mut sent, &app.ed.text);
+        assert_eq!(out, format!("see {}  now", crate::pasted::tag(1, text.trim_end())));
+        assert!(out.contains("line 300\n</pasted>"));
+        // undo: the text inline; again: the text before the paste
+        assert!(app.ed.undo());
+        assert_eq!(app.ed.text, format!("see {text} now"));
+        assert!(app.ed.undo());
+        assert_eq!(app.ed.text, "see XX now");
+    }
+
+    #[test]
+    fn a_short_paste_and_typed_text_stay_inline() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut app = composer("", 0);
+        crate::input::on_paste(&mut app, &long(11));
+        assert_eq!(app.ed.text, long(11));
+        assert!(app.attachments.is_empty());
+        // typed, even a lot: never a chip
+        let mut app = composer("", 0);
+        for c in "x".repeat(1300).chars() {
+            crate::input::on_key(&mut app, &KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+        assert_eq!(app.ed.text.len(), 1300);
+        assert!(app.attachments.is_empty());
     }
 
     #[test]

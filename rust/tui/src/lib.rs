@@ -68,6 +68,7 @@ mod editor;
 mod clipboard;
 mod attach;
 mod quote;
+mod pasted;
 mod usage;
 mod models;
 mod term;

@@ -427,6 +427,12 @@ pub(crate) fn on_paste(app: &mut App, text: &str) {
             app.ed.paste(&text);
         }
         Some(Err(_)) => {}
+        // a long text: a chip and an attachment, not a flooded composer
+        // (BISE-240, pasted.rs)
+        None if crate::pasted::is_long(&text) => {
+            let chip = crate::pasted::add(app, &text);
+            flash(app, format!("attached {chip}"));
+        }
         None => app.ed.paste(&text),
     }
     app.popup_sel = 0;
