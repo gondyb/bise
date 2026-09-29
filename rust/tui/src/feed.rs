@@ -347,6 +347,10 @@ pub(crate) fn ev_visible(ev: &Ev, debug: bool) -> bool {
     if debug {
         return true;
     }
+    // BISE-110: a box that only sent the messages drawn below it
+    if let Ev::Tool(td) = ev {
+        return !td.quiet || td.expanded;
+    }
     !matches!(
         ev,
         Ev::Turn
@@ -427,6 +431,7 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
             if let Some((i, td)) = last_tool_mut(events, |td| td.id == *id) {
                 td.result = Some((*ok, preview.clone()));
                 cache[i] = None;
+                settle_quiet(events, cache, i);
             }
             return false;
         }
@@ -434,6 +439,7 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
             if let Some((i, td)) = last_tool_mut(events, |td| td.id == *id) {
                 td.code = Some(code.clone());
                 cache[i] = None;
+                settle_quiet(events, cache, i);
             }
             return false;
         }
@@ -447,6 +453,7 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
                     td.result = done.result.clone();
                 }
                 cache[i] = None;
+                settle_quiet(events, cache, i);
                 return false;
             }
             events.push(ev);
@@ -575,7 +582,64 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
     events.push(ev);
     cache.push(None);
     after_append(events, cache);
+    // BISE-110: the message a box sent shows: the box can hide
+    if let Some(Ev::AgentMsg { id, .. }) = events.last().filter(|e| matches!(e, Ev::AgentMsg { id, .. } if !id.is_empty())) {
+        let id = id.clone();
+        quiet_back(events, cache, &id);
+    }
     true
+}
+
+// ---- a box that only sends a message (BISE-110, book §9) ----
+
+/// How far back a message looks for the box that sent it.
+const QUIET_BACK: usize = 64;
+
+/// Message `id` is drawn in this feed after event `i`.
+fn drawn_after(events: &[Ev], i: usize, id: &str) -> bool {
+    events[i + 1..].iter().take(QUIET_BACK).any(|e| matches!(e, Ev::AgentMsg { id: m, .. } if m == id) && ev_visible(e, false))
+}
+
+/// Box `i` hides iff it only sent messages that are drawn below it
+/// (toolbox::sent_ids); when that changes, the rows around it rebuild
+/// (the gap after it, the run of level-3 lines it joins or splits).
+fn settle_quiet(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize) {
+    let Some(Ev::Tool(td)) = events.get(i) else { return };
+    let ids = crate::toolbox::sent_ids(td);
+    let quiet = !ids.is_empty() && ids.iter().all(|id| drawn_after(events, i, id));
+    if td.quiet == quiet {
+        return;
+    }
+    if let Some(Ev::Tool(td)) = events.get_mut(i) {
+        td.quiet = quiet;
+    }
+    forget_around(events, cache, i);
+}
+
+/// Event `i` shows or hides: its rows, the rows after it and the run of
+/// level-3 lines before it rebuild.
+fn forget_around(events: &[Ev], cache: &mut [Option<EventRows>], i: usize) {
+    let start = match prev_visible(events, i, false) {
+        Some(p) if is_l3(&events[p]) => run_back(events, p, false).0,
+        _ => i,
+    };
+    forget(cache, start..=events.len().saturating_sub(1));
+}
+
+/// A message with id `id` was appended: the box that sent it, among the
+/// last events, may hide.
+fn quiet_back(events: &mut [Ev], cache: &mut [Option<EventRows>], id: &str) {
+    let n = events.len();
+    let found = (n.saturating_sub(QUIET_BACK)..n).rev().find(|&j| {
+        // the output names the id (a substring test) before the script
+        // is read: replaying a long feed stays as fast
+        matches!(&events[j], Ev::Tool(td) if !td.quiet
+            && td.result.as_ref().is_some_and(|(ok, out)| *ok && out.contains(id))
+            && crate::toolbox::sent_ids(td).iter().any(|s| s == id))
+    });
+    if let Some(j) = found {
+        settle_quiet(events, cache, j);
+    }
 }
 
 /// The bash / TypeScript box that event `i` (a sub-call) belongs to: the
@@ -715,7 +779,8 @@ pub(crate) fn move_anchor(
 /// A tool has something behind its `▸`: an output, or an edit's diff.
 fn tool_discloses(td: &ToolData) -> bool {
     if crate::toolbox::is_boxed(td) {
-        return crate::toolbox::box_folds(td);
+        // a hidden box (BISE-110) opens like a fold: ctrl+o shows it
+        return td.quiet || crate::toolbox::box_folds(td);
     }
     td.result.as_ref().is_some_and(|(_, r)| !r.trim().is_empty())
         || (td.name.as_deref() == Some("apply_patch") && td.code.is_some())
@@ -784,6 +849,10 @@ fn toggle_own(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize) -> b
     }
     if let Some(c) = cache.get_mut(i) {
         *c = None;
+    }
+    // a hidden box shows or hides again (BISE-110)
+    if matches!(&events[i], Ev::Tool(td) if td.quiet) {
+        forget_around(events, cache, i);
     }
     true
 }

@@ -28,6 +28,10 @@ pub(crate) struct ToolData {
     pub(crate) elapsed: Option<String>,
     // a long source block shows whole (a click on the tool toggles it)
     pub(crate) expanded: bool,
+    // in memory only (BISE-110): a bash box that only sent messages drawn
+    // below it in this feed (toolbox::sent_ids); hidden while not
+    // `expanded` (ctrl+o shows it)
+    pub(crate) quiet: bool,
 }
 
 impl ToolData {
@@ -40,7 +44,7 @@ impl ToolData {
             ToolState::Run => None,
             _ => Some(fmt_elapsed(started)),
         };
-        ToolData { id, name: None, args: None, code: None, state, result: None, started, elapsed, expanded: false }
+        ToolData { id, name: None, args: None, code: None, state, result: None, started, elapsed, expanded: false, quiet: false }
     }
 }
 

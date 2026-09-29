@@ -89,6 +89,8 @@ mod voice_ui_tests;
 mod composer_wrap_tests;
 #[cfg(test)]
 mod feed_render_tests;
+#[cfg(test)]
+mod quiet_send_tests;
 pub use keyprobe::keyprobe;
 pub use sb::{run_switchboard, take_reexec};
 pub use crash::install as install_crash_hook;

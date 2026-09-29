@@ -212,6 +212,153 @@ pub(crate) fn box_lines(
     out
 }
 
+// ---- a box that only sends a message (BISE-110, book §9) ----
+
+/// A shell token of a script this module reads: a word (quotes removed)
+/// or `&&`.
+#[derive(PartialEq)]
+enum Tok {
+    Word(String),
+    And,
+}
+
+/// The tokens of a script made of plain words and `&&`: None when it
+/// holds anything else a shell would act on (`;`, `|`, `&`, a newline,
+/// a redirection, `$(`, a backtick, a glob, a group, a comment, an open
+/// quote).
+fn plain_tokens(src: &str) -> Option<Vec<Tok>> {
+    let cs: Vec<char> = src.trim().chars().collect();
+    let mut toks = Vec::new();
+    let mut word: Option<String> = None;
+    let mut i = 0;
+    while i < cs.len() {
+        let c = cs[i];
+        match c {
+            ' ' | '\t' => {
+                toks.extend(word.take().map(Tok::Word));
+            }
+            '&' if cs.get(i + 1) == Some(&'&') => {
+                toks.extend(word.take().map(Tok::Word));
+                toks.push(Tok::And);
+                i += 1;
+            }
+            '\\' => {
+                match *cs.get(i + 1)? {
+                    // a line continuation
+                    '\n' => toks.extend(word.take().map(Tok::Word)),
+                    n => word.get_or_insert_with(String::new).push(n),
+                }
+                i += 1;
+            }
+            '\'' => {
+                let w = word.get_or_insert_with(String::new);
+                let end = cs[i + 1..].iter().position(|&q| q == '\'')?;
+                w.extend(&cs[i + 1..i + 1 + end]);
+                i += end + 1;
+            }
+            '"' => {
+                let w = word.get_or_insert_with(String::new);
+                i += 1;
+                loop {
+                    match *cs.get(i)? {
+                        '"' => break,
+                        '`' => return None,
+                        '$' if cs.get(i + 1) == Some(&'(') => return None,
+                        '\\' => {
+                            let n = *cs.get(i + 1)?;
+                            if !matches!(n, '"' | '\\' | '$' | '`' | '\n') {
+                                w.push('\\');
+                            }
+                            if n != '\n' {
+                                w.push(n);
+                            }
+                            i += 1;
+                        }
+                        q => w.push(q),
+                    }
+                    i += 1;
+                }
+            }
+            '$' if cs.get(i + 1) == Some(&'(') => return None,
+            ';' | '|' | '&' | '<' | '>' | '(' | ')' | '`' | '\n' | '\r' | '{' | '}' | '*' | '?' | '[' => return None,
+            '#' if word.is_none() => return None,
+            c => word.get_or_insert_with(String::new).push(c),
+        }
+        i += 1;
+    }
+    toks.extend(word.take().map(Tok::Word));
+    Some(toks)
+}
+
+/// The `sb` command of a script that is only one `sb send|ask|report`
+/// (any flags), after one optional `cd <dir> &&`.
+fn lone_sb_send(src: &str) -> Option<&'static str> {
+    let toks = plain_tokens(src)?;
+    let word = |t: &Tok, w: &str| matches!(t, Tok::Word(x) if x == w);
+    let rest = match toks.as_slice() {
+        [cd, Tok::Word(_), Tok::And, rest @ ..] if word(cd, "cd") => rest,
+        all => all,
+    };
+    let [sb, Tok::Word(cmd), args @ ..] = rest else { return None };
+    if !word(sb, "sb") || args.contains(&Tok::And) {
+        return None;
+    }
+    ["send", "ask", "report"].into_iter().find(|c| c == cmd)
+}
+
+/// The message id at the start of `s` (`m_12`), and what follows it.
+fn lead_id(s: &str) -> Option<(&str, &str)> {
+    let n = s.strip_prefix("m_")?;
+    let d = n.bytes().take_while(u8::is_ascii_digit).count();
+    (d > 0).then(|| s.split_at(2 + d))
+}
+
+/// BISE-110: the ids of the messages a bash box only sends: its script
+/// is one `sb send|ask|report` (after one optional `cd <dir> &&`), it
+/// succeeded, and its output names them (`sent m_12 to …`, `reported
+/// (m_12)`, an ask's `reply from x (m_13, answers m_12…)`: the question
+/// and the reply). Empty for any other box: it always shows.
+pub(crate) fn sent_ids(td: &ToolData) -> Vec<String> {
+    let none = Vec::new();
+    if td.name.as_deref() != Some("bash") || !matches!(td.state, ToolState::Ok) {
+        return none;
+    }
+    let (Some(raw), Some((true, out))) = (&td.code, &td.result) else { return none };
+    // the preview is one line (the runtime flattens it): the whole of it
+    // must be the command's own words, nothing after. Read first: most
+    // outputs are not an sb one, and then the script is never decoded.
+    let out = out.trim();
+    let kind = ["sent ", "reported (", "reply from "].into_iter().position(|p| out.starts_with(p));
+    let Some(kind) = kind else { return none };
+    let Some(cmd) = lone_sb_send(&wire_decode(raw)) else { return none };
+    if ["send", "report", "ask"][kind] != cmd {
+        return none;
+    }
+    let ids = match cmd {
+        // `sent m_12 to docs (delivered, thread t_12)`
+        "send" => out
+            .strip_prefix("sent ")
+            .and_then(lead_id)
+            .filter(|(_, r)| {
+                let tail = r.strip_prefix(" to ").and_then(|r| r.split_once(" (")).and_then(|(to, st)| Some((to, st.strip_suffix(')')?)));
+                tail.is_some_and(|(to, st)| !to.is_empty() && !to.contains(' ') && !st.contains(['(', ')']) && st.contains(", thread t_"))
+            })
+            .map(|(id, _)| vec![id]),
+        "report" => out
+            .strip_prefix("reported (")
+            .and_then(lead_id)
+            .filter(|(_, r)| *r == ")")
+            .map(|(id, _)| vec![id]),
+        _ => out.strip_prefix("reply from ").and_then(|r| {
+            let head = r.split_once("):")?.0;
+            let (reply, r) = lead_id(head.rsplit_once(" (")?.1)?;
+            let (asked, _) = lead_id(r.strip_prefix(", answers ")?)?;
+            Some(vec![asked, reply])
+        }),
+    };
+    ids.map(|v| v.into_iter().map(str::to_string).collect()).unwrap_or(none)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
