@@ -87,6 +87,7 @@
 
   /* the demo */
   .demo { padding:12vh 5vw 10vh; display:flex; justify-content:center; }
+  .demo > div { width:100%; max-width:104ch; min-width:0; }
   .dhead { text-align:center; margin:0 auto 44px; max-width:64ch; }
   .dhead p { margin:0 auto; }
   .thead { display:flex; justify-content:space-between; padding:14px 3ch 0; font-weight:700; }
@@ -124,8 +125,17 @@
   .caption { text-align:center; color:var(--faint); font-size:13px; margin-top:18px; }
 
   /* how: three lines, no boxes */
-  .chart { white-space:pre; font-size:14px; line-height:1.7; color:var(--dim); background:var(--soft); border:1px solid var(--faint); border-radius:12px; padding:18px 22px; margin:26px 0 40px; overflow-x:auto; }
+  .chart { white-space:pre; font-size:14px; line-height:1.7; color:var(--dim); background:var(--soft); border:1px solid var(--faint); border-radius:12px; padding:18px 18px; margin:26px 0 40px; overflow-x:auto; }
   .chart b { color:var(--text); }
+  .chart.m { display:none; }
+  /* phones: the chart puts each description under its name; the demo's composer wraps */
+  @media (max-width: 640px) {
+    .chart { display:none; } .chart.m { display:block; font-size:12px; padding:16px 18px; }
+    .fgrid > * { min-width:0; }
+    .term { font-size:12px; }
+    .composer { white-space:pre-wrap; }
+  }
+  @media (max-width: 400px) { .mfeed { font-size:11px; } .keys span:nth-child(n+4) { display:none; } }
   .how .line { display:block; color:var(--acc); margin-bottom:4px; }
   .me p { max-width:62ch; }
     .me h2.hi { display:flex; align-items:center; gap:28px; }
@@ -174,7 +184,7 @@
   .facts li .gc { color:var(--acc); }
   .facts li b { color:var(--text); font-weight:400; }
   /* the small things: a card each, a tiny static screen on top (4 rows max), the line under it */
-  .minis { display:grid; grid-template-columns:repeat(auto-fill, minmax(290px, 1fr)); gap:34px 30px; margin-top:26px; }
+  .minis { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(290px, 100%), 1fr)); gap:34px 30px; margin-top:26px; }
   .mini p { color:var(--dim); font-size:14px; line-height:1.65; margin-top:12px; }
   .mini p b { display:block; color:var(--text); font-weight:700; font-size:15px; margin-bottom:4px; }
   .mv { background:var(--soft); border:1px solid var(--faint); border-radius:6px; padding:10px 2ch; font-size:12.5px; line-height:1.7;
@@ -299,6 +309,22 @@
    ├── ∿ toggle      the switch in settings, remembered per user
    ├── ∿ docs        new screenshots, a changelog line
    └── ∿ api-v3      the client upgrade. unrelated, so it runs too.</div>
+<div class="chart m"><b>you</b>  "add dark mode. and the
+      api client moves to v3."
+ │
+ ▼
+<span class="acc">:*</span> <b>main</b>  always listening.
+         knows the whole repo.
+ │
+ ├── ∿ <b>theme</b>
+ │     dark colors, in one place
+ ├── ∿ <b>toggle</b>
+ │     the switch in settings
+ ├── ∿ <b>docs</b>
+ │     new screenshots, changelog
+ └── ∿ <b>api-v3</b>
+       the client upgrade.
+       unrelated, so it runs too.</div>
     <ul class="how">
       <li><span class="n">1</span><span><b>one thread per repo</b><span class="line">one thread to talk to. peek into any agent when you feel like it</span><span class="d">no tabs to juggle, no "wait, which session was that?". main knows everything going on in the repo, even what you did last month.</span></span></li>
       <li><span class="n">2</span><span><b>main is always listening</b><span class="line">the team is busy. main never is</span><span class="d">ask, add a thing, change your mind while the agents work. main answers right away.</span></span></li>
