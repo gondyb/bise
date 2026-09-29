@@ -1024,16 +1024,16 @@ mod tests {
 
     #[test]
     fn image_chips_are_atomic() {
-        // `[Image #1]` is chars 4..14: one cell `▣ 1`, one step, one delete
+        // `[Image #1]` is chars 4..14: one cell ` ▣ 1 `, one step, one delete
         let t = "see [Image #1] ok";
         let rows = layout_input(t, 40);
         let chip: Vec<_> = rows[0].iter().filter(|c| c.chip).collect();
         assert_eq!(chip.len(), 1);
-        assert_eq!((chip[0].ci, chip[0].text, chip[0].w), (4, "[Image #1]", 3));
-        assert_eq!(rows[0].iter().filter(|c| !c.newline).map(|c| c.w).sum::<usize>(), 4 + 3 + 3);
+        assert_eq!((chip[0].ci, chip[0].text, chip[0].w), (4, "[Image #1]", 5));
+        assert_eq!(rows[0].iter().filter(|c| !c.newline).map(|c| c.w).sum::<usize>(), 4 + 5 + 3);
         assert_eq!(next_grapheme(t, 4), 14);
         assert_eq!(prev_grapheme(t, 14), 4);
-        assert_eq!(row_col(&rows, 14), (0, 7));
+        assert_eq!(row_col(&rows, 14), (0, 9));
         let mut e = ed(t, 14);
         e.delete_back(Unit::Grapheme);
         assert_eq!((e.text.as_str(), e.cursor), ("see  ok", 4));

@@ -85,8 +85,8 @@ fn add(app: &mut App, source: &str, shown: &str, original: u64, stored: &bend_im
     let before = app.ed.text.chars().nth(app.ed.cursor.wrapping_sub(1));
     let pad = if app.ed.cursor > 0 && before.is_some_and(|c| !c.is_whitespace()) { " " } else { "" };
     app.ed.paste(&format!("{pad}{l} "));
-    // the flash names the chip as the composer draws it
-    chip_text(&l)
+    // the flash names the chip
+    chip_name(&l)
 }
 
 /// The clipboard image. Unit tests (the fuzzers press Ctrl+V and paste
@@ -254,17 +254,56 @@ pub(crate) fn chip_widen(text: &str, a: usize, b: usize) -> (usize, usize) {
     })
 }
 
-/// How the composer draws the label `[Image #N]` (`▣ N`) or `[Quote
-/// #N]` (`❝ N`).
-pub(crate) fn chip_text(label: &str) -> String {
+/// A chip's glyph (`▣` or `❝`) and number, from its label `[Image #N]`
+/// or `[Quote #N]`.
+fn chip_parts(label: &str) -> (&'static str, &str) {
     if let Some(n) = label.strip_prefix(crate::quote::OPEN) {
-        return format!("{} {}", glyph(G_QUOTE), n.trim_end_matches(']'));
+        return (glyph(G_QUOTE), n.trim_end_matches(']'));
     }
-    let n = label.trim_start_matches("[Image #").trim_end_matches(']');
-    format!("{G_IMAGE} {n}")
+    (G_IMAGE, label.trim_start_matches("[Image #").trim_end_matches(']'))
 }
 
-/// The style of a chip: accent (the background stays the terminal's).
+/// A chip named in a sentence (the flash): `▣ 1`, `❝ 1`.
+pub(crate) fn chip_name(label: &str) -> String {
+    let (g, n) = chip_parts(label);
+    format!("{g} {n}")
+}
+
+/// How the composer and the strip draw a chip (BISE-205): a pill
+/// ` ❝ 1 ` (one padding cell each side, on the `pill` tint), or, with no
+/// tint (`NO_COLOR`, `BISE_ASCII=1`), `[❝ 1]`. Same width both ways.
+pub(crate) fn chip_text(label: &str) -> String {
+    let (g, n) = chip_parts(label);
+    match crate::render::chip_form() {
+        crate::render::ChipForm::Tinted => format!(" {g} {n} "),
+        crate::render::ChipForm::Bracketed => format!("[{g} {n}]"),
+    }
+}
+
+/// The spans of [`chip_text`]: the glyph accent, the number in the text
+/// color, all on the pill tint (the brackets dim); `over` is patched on
+/// every span (the selection's background, the cursor's REVERSED), so
+/// the whole pill takes it.
+pub(crate) fn chip_pill(label: &str, over: Style) -> Vec<Span<'static>> {
+    let (g, n) = chip_parts(label);
+    let (open, close, bg) = match crate::render::chip_form() {
+        crate::render::ChipForm::Tinted => (" ", " ", Some(crate::theme::pill_bg())),
+        crate::render::ChipForm::Bracketed => ("[", "]", None),
+    };
+    let st = |fg| {
+        let s = Style::default().fg(fg);
+        bg.map_or(s, |b| s.bg(b)).patch(over)
+    };
+    vec![
+        Span::styled(open.to_string(), st(dim())),
+        Span::styled(g.to_string(), st(accent())),
+        Span::styled(format!(" {n}"), st(text())),
+        Span::styled(close.to_string(), st(dim())),
+    ]
+}
+
+/// The style of a chip in the history: accent (the background stays the
+/// terminal's).
 pub(crate) fn chip_style() -> Style {
     Style::default().fg(accent())
 }
@@ -568,30 +607,33 @@ pub(crate) fn strip_lines(app: &App, width: usize) -> Vec<Line<'static>> {
     // the quotes first (they go first in the message): `❝ 1 “words…”`
     // and, dim on the right, `main · 3 lines`
     for (n, q) in quotes {
-        let chip = chip_text(&crate::quote::label(n));
+        let label = crate::quote::label(n);
+        let chip = chip_text(&label);
         let right = crate::quote::about(&q);
         let room = width.saturating_sub(chip.width() + 3 + right.width() + 2).max(1);
         let words = format!(" “{}”", crate::quote::preview(&q.text, room));
         let pad = width.saturating_sub(chip.width() + words.width() + right.width()).max(2);
-        out.push(Line::from(vec![
-            Span::styled(chip, chip_style()),
+        let mut spans = chip_pill(&label, Style::default());
+        spans.extend([
             Span::styled(words, Style::default().fg(text())),
             Span::styled(" ".repeat(pad), d),
             Span::styled(right, d),
-        ]));
+        ]);
+        out.push(Line::from(spans));
     }
     for (n, a) in rows {
         let (_, right) = strip_row(n, &a.info);
-        let chip = format!("{G_IMAGE} {n}");
+        let chip = chip_text(&a.label);
         let room = width.saturating_sub(chip.width() + 1 + right.width() + 2);
         let src = cut_end(file_name(&a.info.source), room);
         let pad = width.saturating_sub(chip.width() + 1 + src.width() + right.width()).max(2);
-        out.push(Line::from(vec![
-            Span::styled(chip, chip_style()),
+        let mut spans = chip_pill(&a.label, Style::default());
+        spans.extend([
             Span::styled(format!(" {src}"), Style::default().fg(text())),
             Span::styled(" ".repeat(pad), d),
             Span::styled(right, d),
-        ]));
+        ]);
+        out.push(Line::from(spans));
     }
     out
 }
@@ -627,7 +669,8 @@ mod tests {
         assert_eq!(chip_widen(t, 11, 12), (2, 12));
         assert_eq!(chip_widen(t, 0, 3), (0, 12));
         assert_eq!(chip_widen(t, 12, 13), (12, 13));
-        assert_eq!(chip_text("[Image #12]"), "▣ 12");
+        assert_eq!(chip_name("[Image #12]"), "▣ 12");
+        assert_eq!(chip_name("[Quote #3]"), "❝ 3");
     }
 
     #[test]
@@ -665,8 +708,8 @@ mod tests {
         assert_eq!(strip_height(&app), 3);
         let ls: Vec<String> = strip_lines(&app, 60).iter().map(line_text).collect();
         assert_eq!(ls[0], STRIP_TITLE);
-        assert!(ls[1].starts_with("▣ 1 a.png ") && ls[1].ends_with("10×20 · 300 B"), "{ls:?}");
-        assert!(ls[2].starts_with("▣ 2 clipboard") && ls[2].ends_with("→ resized to fit 2048"), "{ls:?}");
+        assert!(ls[1].starts_with(" ▣ 1  a.png ") && ls[1].ends_with("10×20 · 300 B"), "{ls:?}");
+        assert!(ls[2].starts_with(" ▣ 2  clipboard") && ls[2].ends_with("→ resized to fit 2048"), "{ls:?}");
         // the size stays flush right
         assert_eq!(unicode_width::UnicodeWidthStr::width(ls[1].as_str()), 60);
         app.ed.set("no images", 0);
@@ -683,11 +726,11 @@ mod tests {
         app.attachments = vec![Attachment { info: Info { source: deep.into(), width: 1788, height: 542, bytes: 83_000, resized: false }, ..att(1, "m1") }];
         app.ed.set("look [Image #1] ", 0);
         let ls: Vec<String> = strip_lines(&app, 88).iter().map(line_text).collect();
-        assert!(ls[1].starts_with("▣ 1 Screenshot 2026-09-29 at 09.56.06.png  "), "{ls:?}");
+        assert!(ls[1].starts_with(" ▣ 1  Screenshot 2026-09-29 at 09.56.06.png  "), "{ls:?}");
         assert!(!ls[1].contains('/') && ls[1].ends_with("1788×542 · 83 kB"), "{ls:?}");
         // short on room: the name is cut at its end, the size stays whole
         let narrow: Vec<String> = strip_lines(&app, 40).iter().map(line_text).collect();
-        assert!(narrow[1].starts_with("▣ 1 Screenshot 2026") && narrow[1].contains('…'), "{narrow:?}");
+        assert!(narrow[1].starts_with(" ▣ 1  Screenshot 2026") && narrow[1].contains('…'), "{narrow:?}");
         assert!(narrow[1].ends_with("1788×542 · 83 kB") && !narrow[1].contains('/'), "{narrow:?}");
         assert_eq!(unicode_width::UnicodeWidthStr::width(narrow[1].as_str()), 40);
         assert_eq!(file_name("shots/a.png"), "a.png");

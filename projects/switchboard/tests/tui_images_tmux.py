@@ -59,7 +59,8 @@ def main():
         t.typed("look @red-bl")
         t.wait("shots/red-blue.png")
         t.keys("Tab")
-        wait_composer(t, "look ▣ 1")
+        # the chip is a pill ` ▣ 1 ` (BISE-205): its padding cells are blanks
+        wait_composer(t, "look  ▣ 1")
         # the strip above the composer says what the chip is
         t.wait("attached · backspace on a chip removes it")
         # the file name only, never its path (book §13), in the strip and
@@ -69,20 +70,20 @@ def main():
         t.wait("1×1 · 70 B")
         # a dropped file: the terminal pastes its shell-escaped path
         paste(t, drop.replace(" ", "\\ ") + " ")
-        wait_composer(t, "look ▣ 1 ▣ 2")
+        wait_composer(t, "look  ▣ 1   ▣ 2")
         # a paste that is not an image path stays text
         paste(t, "and")
-        wait_composer(t, "look ▣ 1 ▣ 2 and")
+        wait_composer(t, "look  ▣ 1   ▣ 2  and")
         # Ctrl+V: the clipboard image
         t.keys("C-v")
-        wait_composer(t, "look ▣ 1 ▣ 2 and ▣ 3")
-        t.wait("▣ 3 clipboard")
+        wait_composer(t, "look  ▣ 1   ▣ 2  and  ▣ 3")
+        t.wait("▣ 3  clipboard")  # the strip row: the pill, a blank, the name
         # backspace on a chip removes it whole (and its strip row)
         t.keys("BSpace")
         t.keys("BSpace")
-        wait_composer(t, "look ▣ 1 ▣ 2 and")
+        wait_composer(t, "look  ▣ 1   ▣ 2  and")
         t.keys("C-v")
-        wait_composer(t, "look ▣ 1 ▣ 2 and ▣ 3")
+        wait_composer(t, "look  ▣ 1   ▣ 2  and  ▣ 3")
         t.typed("colors?")
         t.keys("Enter")
         # the feed names the image: `[Image #1 shots/red-blue.png]`, or

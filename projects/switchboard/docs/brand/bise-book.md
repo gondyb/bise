@@ -144,6 +144,7 @@ is ≥ 4.5:1 (WCAG AA) on white, our cream, black and a typical dark grey
 | ground (`bg`) | `#141211` | `#fdfbf7` | every cell (BISE-92); tints on it: selection `#33292c` / `#fdeef2`, card `#211d1b` / `#f1eee6` |
 | raised | `#1f1c1a` (1.10:1 on the ground; text 13.6, dim 6.2, accent 8.8, error 5.5) | `#f4f0e8` (1.10:1; text 15.4, dim 5.1, accent 4.6, error 5.8) | the composer pane: everything under the divider (BISE-102, user request). Ground not ours (`BISE_TERM_BG=0`, or OSC 11 answers another color): the ground mixed 5% toward the text color. Not truecolor: 234 / 255. 16 colors or `NO_COLOR`: no tint, the bar alone |
 | chip | `#231f1d` (text 13:1, dim 5.9:1) | `#efe9df` (dim ≈ 4.8:1) | the level-3 message chip only (BISE-106). 16 colors / `NO_COLOR`: no tint |
+| pill | `#3a2530` (text 11.4:1, accent 7.3:1; 1.20:1 on raised) | `#f0d3dc` (text 12.6:1, accent 3.8:1, a glyph: ≥ 3:1; 1.23:1 on raised) | a quote or image chip in the composer and the strip: ` ❝ 1 ` (BISE-205). 16 colors / `NO_COLOR`: no tint, `[❝ 1]` |
 
 - **Color means attention.** Only "needs you" and errors get a hue. Everything
   else is text, dim or faint. The accent is pink, not red, so "needs you"
@@ -515,7 +516,18 @@ The same three levels everywhere, in main and inside an agent.
   copy, and a quote you did not ask for would ride along with your next
   message. The attachments section lists it: `❝ 1 “the login breaks on
   safari…”  main · 3 lines`; a backspace on the chip removes it, like an
-  image. Several selections, several quotes (4 at most, 8 000 characters
+  image.
+- **A chip is a pill** (BISE-205; user: « elles ne sont pas assez
+  clairement définies … on dirait trop du texte »; designer's pick). In
+  the composer and at the start of each strip row, a quote or image chip
+  is drawn ` ❝ 1 ` / ` ▣ 2 `: 5 tinted cells on the pink `pill` tint
+  (§5), one padding cell each side, the glyph accent, the number in the
+  text color. No space is added around it: your spaces stay yours. The
+  cursor on it reverses the whole pill; a selection covers the whole
+  pill. 16 colors / `NO_COLOR`: no tint, `[❝ 1]` (brackets dim); ASCII:
+  `[" 1]`, `[# 2]`. Same width in every form, so nothing moves. Zen keeps
+  it as is (the typed text is never faded). Half-block caps (`▐…▌`) were
+  turned down: they leave seams in many fonts. Several selections, several quotes (4 at most, 8 000 characters
   each). A `/` typed in an empty composer stays a command (no quote). The
   draft keeps its quotes like its images. On send, each quote leaves the
   text and goes in front as a tag, then your words:
@@ -574,8 +586,8 @@ Built on the technical work of the `screenshots` task
 ([../images.md](../images.md)): sources are a dragged file (its path is
 pasted), `ctrl+v` (clipboard image) and an image picked in the `@` popup.
 
-- **Chip:** an image is one atomic accent chip in the text: `▣ 1` in the
-  composer, `▣ login.png` in the history. Deleting the chip drops the image.
+- **Chip:** an image is one atomic accent chip in the text: the pill
+  ` ▣ 1 ` in the composer (§13 "A chip is a pill"), `▣ login.png` in the history. Deleting the chip drops the image.
   (The label underneath can stay `[Image #1]`.)
 - **Strip above the composer** (the attachments section, §13) while
   images are attached, the file name only (never the path; cut at its end

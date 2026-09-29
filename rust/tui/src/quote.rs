@@ -181,7 +181,7 @@ pub(crate) fn add(app: &mut App, from: &str, text: &str) -> Result<String, Strin
     let cursor = app.ed.cursor + if app.ed.cursor >= at { ins.chars().count() } else { 0 };
     let pad = if at > 0 && !head.ends_with(' ') { " " } else { "" };
     app.ed.set(&format!("{head}{pad}{ins}{tail}"), cursor + pad.len());
-    Ok(crate::attach::chip_text(&l))
+    Ok(crate::attach::chip_name(&l))
 }
 
 /// Who wrote the events `from..=to` of the feed in view: `you`, the
@@ -274,7 +274,7 @@ mod tests {
             .iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect();
-        assert!(rows[1].starts_with("❝ 1 “") && rows[1].ends_with("main · 1 line"), "{rows:?}");
+        assert!(rows[1].starts_with(" ❝ 1  “") && rows[1].ends_with("main · 1 line"), "{rows:?}");
         // the next key just types; a second selection is quote 2, after 1
         press(&mut app, KeyCode::Char('h'));
         assert_eq!(app.ed.text, "[Quote #1] wh");

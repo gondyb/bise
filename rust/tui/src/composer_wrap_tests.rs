@@ -206,9 +206,9 @@ fn the_composer_wraps_at_word_boundaries() {
     // a space that doesn't fit takes the word before it along
     assert_eq!(row_texts("abc def ", 7), vec!["abc", "def"]);
     // chips are words too
-    // chips are words too (a chip `[Image #1]` is drawn `▣ 1`, 3 columns)
-    assert_eq!(row_texts("look [Image #1] here", 9), vec!["look [Image #1]", "here"]);
-    assert_eq!(row_texts("look [Image #1] here", 8), vec!["look", "[Image #1] here", ""]);
+    // chips are words too (a chip `[Image #1]` is drawn ` ▣ 1 `, 5 columns)
+    assert_eq!(row_texts("look [Image #1] here", 11), vec!["look [Image #1]", "here"]);
+    assert_eq!(row_texts("look [Image #1] here", 10), vec!["look", "[Image #1] here", ""]);
 }
 
 /// A composer with `n` images from deep folders and `text` after them.
@@ -272,7 +272,7 @@ fn two_sections_the_attachments_then_the_body_behind_its_bar() {
                 let first = divider + 1;
                 assert!(row(first).starts_with("   attached"), "{what}: {:?}", row(first));
                 let img = row(first + 1);
-                assert!(img.starts_with("   ▣ 1 Screenshot 1.png") && !img.contains('/'), "{what}: {img:?}");
+                assert!(img.starts_with("    ▣ 1  Screenshot 1.png") && !img.contains('/'), "{what}: {img:?}");
                 if height >= 20 {
                     assert_eq!(row(top - 1), "", "{what}: the blank row between the sections");
                 }
@@ -307,4 +307,86 @@ fn the_divider_state_never_runs_past_the_frame() {
             assert!(matches!(buf[(width - 1, y)].symbol(), "│" | "┤" | "┃"), "{width}: right side at {y}");
         }
     }
+}
+
+/// The 5 cells of the first chip on screen: from the cell before its
+/// glyph (`▣`, `❝`, `"` in ASCII) to the cell 3 after it.
+fn pill_cells(buf: &ratatui::buffer::Buffer, glyph: &str) -> Vec<ratatui::buffer::Cell> {
+    let a = buf.area;
+    for y in a.top()..a.bottom() {
+        for x in a.left() + 1..a.right().saturating_sub(3) {
+            if buf[(x, y)].symbol() == glyph && buf[(x + 1, y)].symbol() == " " {
+                return (x - 1..x + 4).map(|cx| buf[(cx, y)].clone()).collect();
+            }
+        }
+    }
+    panic!("no chip {glyph} on screen");
+}
+
+fn composer_with(app: &mut App, text: &str, cursor: usize) {
+    app.ed.set(text, cursor);
+}
+
+#[test]
+fn a_chip_is_a_pink_pill_in_the_composer() {
+    // BISE-205 (user: « on dirait trop du texte »): ` ❝ 1 ` on the pill
+    // tint, glyph accent, number text, one padding cell each side, in
+    // dark and light; the whole pill reversed under the cursor
+    use ratatui::style::Modifier;
+    for mode in [theme::Mode::Dark, theme::Mode::Light] {
+        theme::set_mode(mode);
+        let p = theme::palette_of(mode);
+        let mut app = sb::bench::test_app();
+        composer_with(&mut app, "[Quote #1] fix this [Image #2] ok", 33);
+        let buf = draw(&mut app, 100, 30);
+        for g in [theme::G_QUOTE, theme::G_IMAGE] {
+            let cells = pill_cells(&buf, g);
+            let s: String = cells.iter().map(|c| c.symbol()).collect();
+            let n = if g == theme::G_QUOTE { "1" } else { "2" };
+            assert_eq!(s, format!(" {g} {n} "), "{mode:?}");
+            assert!(cells.iter().all(|c| c.bg == p.pill), "{mode:?} {g}: {cells:?}");
+            assert_eq!(cells[1].fg, p.accent, "{mode:?} {g}");
+            assert_eq!(cells[3].fg, p.text, "{mode:?} {g}");
+            assert!(cells.iter().all(|c| !c.modifier.contains(Modifier::REVERSED)));
+        }
+        // the text right after a pill is back on the composer's tint
+        let mut app = sb::bench::test_app();
+        composer_with(&mut app, "[Quote #1] fix", 0);
+        let buf = draw(&mut app, 100, 30);
+        let cells = pill_cells(&buf, theme::G_QUOTE);
+        assert!(cells.iter().all(|c| c.modifier.contains(Modifier::REVERSED)), "{mode:?}: the cursor takes the pill");
+    }
+    theme::set_mode(theme::Mode::Dark);
+}
+
+#[test]
+fn a_selected_chip_takes_the_selection_tint_whole() {
+    let mut app = sb::bench::test_app();
+    composer_with(&mut app, "see [Quote #1] ok", 17);
+    app.ed.anchor = Some(0);
+    app.ed.cursor = 16;
+    let buf = draw(&mut app, 100, 30);
+    let cells = pill_cells(&buf, theme::G_QUOTE);
+    assert!(cells.iter().all(|c| c.bg == theme::selection_bg()), "{cells:?}");
+}
+
+#[test]
+fn without_a_tint_the_chip_is_bracketed_same_width() {
+    // ASCII (and NO_COLOR, the same form): `[" 1]`, no pill tint, 5
+    // columns like the pill, so nothing moves between the forms
+    theme::set_ascii_for_tests(true);
+    let mut app = sb::bench::test_app();
+    composer_with(&mut app, "[Quote #1] fix", 14);
+    let buf = draw(&mut app, 100, 30);
+    theme::set_ascii_for_tests(false);
+    let a = buf.area;
+    let found = (a.top()..a.bottom()).find_map(|y| {
+        let row = screen_row(&buf, 0, y, a.width as usize);
+        row.find("[\" 1] fix").map(|i| (y, row[..i].width() as u16))
+    });
+    let (y, x) = found.expect("no bracketed chip on screen");
+    for cx in x..x + 5 {
+        assert_ne!(buf[(cx, y)].bg, theme::palette().pill, "col {cx}");
+    }
+    assert_eq!(attach::chip_text("[Quote #1]").width(), 5);
 }

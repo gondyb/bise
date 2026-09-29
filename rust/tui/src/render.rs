@@ -408,7 +408,7 @@ pub(crate) enum ChipForm {
     Bracketed,
 }
 
-fn chip_form() -> ChipForm {
+pub(crate) fn chip_form() -> ChipForm {
     if ascii_mode() || chip_bg() == ratatui::style::Color::Reset {
         ChipForm::Bracketed
     } else {

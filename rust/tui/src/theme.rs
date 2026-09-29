@@ -98,6 +98,8 @@ pub(crate) struct Palette {
     pub raised: Color,
     /// the level-3 message chip (BISE-106)
     pub chip: Color,
+    /// the pill of a quote or image chip in the composer (BISE-205)
+    pub pill: Color,
     /// the ground every cell is painted with (BISE-92)
     pub bg: Color,
     pub syntax_keyword: Color,
@@ -121,6 +123,7 @@ pub(crate) const DARK: Palette = Palette {
     card_tint: rgb(0x211d1b),
     raised: rgb(0x1f1c1a),
     chip: rgb(0x231f1d),
+    pill: rgb(0x3a2530),
     bg: rgb(0x141211),
     syntax_keyword: rgb(0xd7a6f0),
     syntax_string: rgb(0xb9d99a),
@@ -147,6 +150,7 @@ pub(crate) const LIGHT: Palette = Palette {
     card_tint: rgb(0xf1eee6),
     raised: rgb(0xf4f0e8),
     chip: rgb(0xefe9df),
+    pill: rgb(0xf0d3dc),
     bg: rgb(0xfdfbf7),
     syntax_keyword: rgb(0x8a3fb0),
     syntax_string: rgb(0x44782a),
@@ -242,6 +246,16 @@ pub(crate) fn chip_bg() -> Color {
         Color::Reset
     } else {
         palette().chip
+    }
+}
+/// The pink pill under a quote or image chip in the composer and the
+/// strip (book §5 `pill`, §13; BISE-205). Under `NO_COLOR`, none
+/// (`Reset`): the chip is drawn in brackets.
+pub(crate) fn pill_bg() -> Color {
+    if std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()) {
+        Color::Reset
+    } else {
+        palette().pill
     }
 }
 pub(crate) fn syntax_keyword() -> Color {
@@ -738,6 +752,21 @@ mod tests {
                 assert!(r >= 1.08, "{name} tint vs ground: {r:.3}");
             }
             assert!(contrast(p.selection_bg, p.card_tint) >= 1.03);
+        }
+    }
+
+    #[test]
+    fn the_pill_reads_and_stands_out_on_the_composer() {
+        // on the pill: the number (text) and the glyph (accent, a symbol:
+        // 3:1 for graphics); it must stand out from the raised pane and
+        // from the selection
+        for p in [&DARK, &LIGHT] {
+            let r = contrast(p.text, p.pill);
+            assert!(r >= 4.5, "text on the pill: {r:.2}");
+            let r = contrast(p.accent, p.pill);
+            assert!(r >= 3.0, "accent on the pill: {r:.2}");
+            let r = contrast(p.pill, p.raised);
+            assert!(r >= 1.15, "pill vs raised: {r:.3}");
         }
     }
 

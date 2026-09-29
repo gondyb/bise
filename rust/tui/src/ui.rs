@@ -424,20 +424,22 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
             };
             let in_sel = selection.is_some_and(|(a, b)| a <= cell.ci && cell.ci < b);
             if cell.chip {
-                // an image chip `▣ N` (accent, atomic): its own span
+                // a chip `▣ N` / `❝ N` (atomic): its own spans
                 if !buf.is_empty() {
                     let st = if buf_sel { sel_style } else { text_style };
                     spans.push(Span::styled(std::mem::take(&mut buf), st));
                 }
                 buf_sel = in_sel;
-                let mut st = attach::chip_style();
+                // the pill ` ❝ 1 ` (BISE-205): selected or under the
+                // cursor, the whole pill shows it
+                let mut over = Style::default();
                 if in_sel {
-                    st = st.bg(theme::selection_bg());
+                    over = over.bg(theme::selection_bg());
                 }
                 if is_cursor {
-                    st = st.add_modifier(Modifier::REVERSED);
+                    over = over.add_modifier(Modifier::REVERSED);
                 }
-                spans.push(Span::styled(attach::chip_text(cell.text), st));
+                spans.extend(attach::chip_pill(cell.text, over).into_iter().filter(|s| !s.content.is_empty()));
                 continue;
             }
             if is_cursor || buf_sel != in_sel {
