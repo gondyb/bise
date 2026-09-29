@@ -80,16 +80,17 @@ if [ ! -x "$scripted" ]; then
   git worktree remove --force "$wt"; trap - EXIT
 fi
 
-# 3. the V8 engine, release build. It is NOT versioned yet (versions.sh
-#    hard-links the live tree's debug build): warn when the commit's
-#    rust/jsrt differs from the tree the engine was built from.
-js="$REPO/rust/jsrt/target/release/bend-jsrt"
-if [ ! -x "$js" ]; then
-  say "bend-jsrt release missing — cargo build --release (long, once)..."
-  (cd "$REPO/rust/jsrt" && CARGO_TARGET_DIR=target cargo build --release)
-fi
-if ! git diff --quiet "$commit" -- rust/jsrt/src rust/jsrt/Cargo.toml rust/jsrt/Cargo.lock; then
-  say "WARNING: rust/jsrt differs between $id and the working tree; the shipped engine is the tree's"
+# 3. the V8 engine, release build: the version's own (versions.sh builds
+#    it from the commit's rust/jsrt since BISE-133, VERSION has jsrt=),
+#    else (an older version dir: its engine is the debug one) the tree's,
+#    from bins.sh's cache: warn when the commit's rust/jsrt differs.
+if grep -q '^jsrt=release' "$vdir/VERSION"; then
+  js="$vdir/bend-jsrt"
+else
+  js="$("$REPO/bins.sh" path bend-jsrt)"
+  if ! git diff --quiet "$commit" -- rust/jsrt/src rust/jsrt/Cargo.toml rust/jsrt/Cargo.lock; then
+    say "WARNING: rust/jsrt differs between $id and the working tree; the shipped engine is the tree's"
+  fi
 fi
 
 # 4. stage

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # bins.sh — the Bend native binaries (repl-live, repl-scripted, sb-core,
-# harness-demo). They are NOT in git (BISE-114): each one is built from
+# harness-demo) and the V8 engine of a version (bend-jsrt, RELEASE build,
+# BISE-133). They are NOT in git (BISE-114): each one is built from
 # its sources into a cache keyed by the CONTENT of those sources, shared
 # by every worktree and by versions.sh, then copied where it is run.
 #
@@ -14,10 +15,14 @@
 #                                          nothing); no-op off macOS
 #
 # A hit is a copy (~0.3 s); a miss is a bend compile (sb-core ~15 s,
-# the REPLs 1-2 min). Cache: $SB_BUILD_DIR/cache/<name>-<key> (default
+# the REPLs 1-2 min, bend-jsrt a cargo build --release: ~1 min warm,
+# ~5 min cold). Cache: $SB_BUILD_DIR/cache/<name>-<key> (default
 # SB_BUILD_DIR=<bise dev dir>/build: ~/.local/state/switchboard/build
-# until the state moves to ~/.bise, BISE-160), the
-# 12 newest of each name are kept. A failed compile keeps an existing
+# until the state moves to ~/.bise, BISE-160); of each name, the 3 newest
+# and those used in the last hour are kept (BISE-133; a hit touches its
+# file). bend-jsrt: `path` and `key` only (a dev tree runs its debug
+# build, run.sh keeps it fresh; a bend-jsrt at the root would win over
+# it), its cargo target is $SB_BUILD_DIR/target-jsrt. A failed compile keeps an existing
 # <dir>/<name> (no toolchain: still runnable). A binary the EDR ate is
 # rebuilt the same way: run the script again. MACOSX_DEPLOYMENT_TARGET
 # (BISE-164) comes from rust/.cargo/config.toml, the one place for it:
@@ -29,7 +34,9 @@ REPO="$(cd "$(dirname "$0")" && pwd)"
 if [ -n "${BISE_HOME:-}" ]; then STATE="$BISE_HOME/dev"
 elif [ -e "$HOME/.bise/migrated.json" ]; then STATE="$HOME/.bise/dev"
 else STATE="$HOME/.local/state/switchboard"; fi
-CACHE="${SB_BUILD_DIR:-$STATE/build}/cache"
+BUILD="${SB_BUILD_DIR:-$STATE/build}"
+CACHE="$BUILD/cache"
+export PATH="$HOME/.cargo/bin:$PATH"
 export PATH="$HOME/.bend/bin:$PATH"
 
 say() { echo "bins: $*" >&2; }
@@ -72,7 +79,9 @@ recipe() {
     repl-scripted) echo "runtime/repl.bend runtime core vendor" ;;
     harness-demo) echo "runtime/demo.bend runtime core vendor" ;;
     sb-core) echo "hub/main.bend hub vendor" ;;
-    *) say "unknown binary: $1 (repl-live repl-scripted sb-core harness-demo)"; exit 2 ;;
+    # a cargo build (release): the crate and its path dependencies
+    bend-jsrt) echo "cargo rust/jsrt rust/images rust/home" ;;
+    *) say "unknown binary: $1 (repl-live repl-scripted sb-core harness-demo bend-jsrt)"; exit 2 ;;
   esac
 }
 
@@ -82,25 +91,64 @@ recipe() {
 # immutable.
 key() {  # <src> <name>
   local r; r="$(recipe "$2")"
+  if [ "${r%% *}" = cargo ]; then jsrt_key "$1" ${r#cargo }; return; fi
   set -- "$1" $r
   (cd "$1" && shift 2 && { find "$@" -type f -name '*.bend' -print0 | sort -z | xargs -0 cat
                            echo "MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET"; } | shasum | cut -c1-12)
 }
 
+# the key of a cargo binary: every file (path and content) of its crate
+# dirs that exist in <src> (an old commit has fewer), without target/,
+# the macOS target and the release profile below
+jsrt_key() {  # <src> <dir>...
+  local src="$1"; shift
+  (cd "$src" && { local d; for d in "$@"; do [ -d "$d" ] && echo "$d"; done; } \
+     | xargs -I{} find {} -path '*/target' -prune -o -type f -print | LC_ALL=C sort \
+     | while read -r f; do printf '%s %s\n' "$(shasum < "$f" | cut -c1-40)" "$f"; done
+   echo "MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET $JSRT_PROFILE") | shasum | cut -c1-12
+}
+# the engine's release profile (BISE-133, measured): plain release 68.1 MB
+# (a rebuild of the local crates 2 s), thin LTO 68.1 MB, fat LTO + 1
+# codegen unit 63.5 MB (rebuild 38 s, cold ~4 min): a new engine is rare.
+# Never stripped (-25 MB, but the EDR deletes stripped binaries,
+# build-dist.sh step 5). The debug build of a dev tree: 110 MB.
+JSRT_PROFILE="CARGO_PROFILE_RELEASE_LTO=fat CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1"
+
+# a file copy that shares the blocks when it can (APFS clone): the engine
+# is ~60 MB
+copy() { cp -c "$1" "$2" 2>/dev/null || cp "$1" "$2"; }
+
+# compile <name> of <src> into <out>
+compile() {  # <src> <name> <out>
+  local src="$1" name="$2" out="$3" r; r="$(recipe "$name")"
+  if [ "${r%% *}" != cargo ]; then
+    (cd "$src" && bend "${r%% *}" -o "$out" >/dev/null); return
+  fi
+  # one target dir for every source: cargo decides freshness by mtime, and
+  # a tree edited before a worktree was built would look fresh - the local
+  # crates are always recompiled (the dependencies are kept)
+  local t="$BUILD/target-jsrt"
+  (cd "$src/rust/jsrt" && export CARGO_TARGET_DIR="$t" $JSRT_PROFILE \
+    && { cargo clean -q --release -p bend-jsrt -p bend-images -p bise-home 2>/dev/null \
+         || cargo clean -q --release -p bend-jsrt 2>/dev/null || true; } \
+    && cargo build -q --release) && copy "$t/release/bend-jsrt" "$out"
+}
+
 # build <name> of <src> into the cache if absent; print the cache file
 cached() {  # <src> <name>
-  local src="$1" name="$2" r k f main
-  r="$(recipe "$name")"; main="${r%% *}"
+  local src="$1" name="$2" k f
   k="$(key "$src" "$name")"; f="$CACHE/$name-$k"
   if [ ! -x "$f" ]; then
     mkdir -p "$CACHE"
-    say "$name: compiling $main (sb-core ~15 s, a REPL 1-2 min)..."
+    say "$name: compiling (sb-core ~15 s, a REPL 1-2 min, bend-jsrt 1-5 min)..."
     local s=$SECONDS
-    (cd "$src" && bend "$main" -o "$f.tmp.$$" >/dev/null) || { rm -f "$f.tmp.$$"; return 1; }
+    compile "$src" "$name" "$f.tmp.$$" || { rm -f "$f.tmp.$$"; return 1; }
     mv "$f.tmp.$$" "$f"
     say "$name: built in $((SECONDS - s)) s ($f)"
-    # keep the 12 newest of this name
-    ls -t "$CACHE/$name-"* 2>/dev/null | grep -v '\.tmp\.' | tail -n +13 | while read -r old; do rm -f "$old"; done
+    # keep the 3 newest of this name, and those used in the last hour
+    # (the agents' worktrees each have their own sources)
+    ls -t "$CACHE/$name-"* 2>/dev/null | grep -v '\.tmp\.' | tail -n +4 \
+      | while read -r old; do [ -n "$(find "$old" -mmin +60)" ] && rm -f "$old"; done
   else
     touch "$f"
   fi
@@ -123,12 +171,15 @@ case "${1:-}" in
   macos-target) echo "$MACOSX_DEPLOYMENT_TARGET"; exit 0 ;;
   minos) shift; check_minos "$@"; exit ;;
 esac
-case "${1:-}" in path|key) cmd="$1"; shift ;; ""|-h|--help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;; esac
+case "${1:-}" in path|key) cmd="$1"; shift ;; ""|-h|--help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;; esac
 src="$REPO"
 if [ "${1:-}" = --src ]; then src="$(cd "$2" && pwd)"; shift 2; fi
 [ $# -gt 0 ] || { say "which binary? (repl-live repl-scripted sb-core harness-demo)"; exit 2; }
 case "$cmd" in
   key) key "$src" "$1" ;;
   path) cached "$src" "$1" ;;
-  place) for n in "$@"; do place "$src" "$n"; done ;;
+  place) for n in "$@"; do
+           [ "$n" = bend-jsrt ] && { say "bend-jsrt: 'bins.sh path bend-jsrt' (a dev tree runs its debug build)"; exit 2; }
+           place "$src" "$n"
+         done ;;
 esac

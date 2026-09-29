@@ -6,10 +6,10 @@
 #   $SB_VERSIONS_DIR/<id>/  bise (+ bend-harness -> bise, one release),
 #                           repl-live, tool-desc-*.txt,
 #                           prompt-*.txt, sb-core (when hub/ exists),
-#                           bend-jsrt (+ a hard link at the old path
+#                           bend-jsrt (release, + a hard link at the old path
 #                           rust/jsrt/target/debug/bend-jsrt),
 #                           VERSION (id, commit, subject, built, bend_hash,
-#                           macos: the oldest macOS it runs on)
+#                           jsrt, macos: the oldest macOS it runs on)
 # id = <short commit>, or <short commit>-dirty-<hash of the changes>.
 # A hub runs FROM a version dir: rebuilding the tree never changes a
 # running system, only an explicit switch does.
@@ -17,6 +17,9 @@
 #   ./versions.sh build [<rev>|--tree]   # build (cached), print the version dir
 #   ./versions.sh id [<rev>|--tree]      # the id a build would get
 #   ./versions.sh list                   # built versions, newest first
+#   ./versions.sh prune [<n>]            # keep the n (3) newest versions and
+#                                        # those a hub marks or runs (after
+#                                        # each new build too)
 #
 # Defaults: SB_VERSIONS_DIR=~/.local/state/switchboard/versions; the
 # cargo target dir and bins.sh's cache of the Bend binaries (one per
@@ -105,18 +108,15 @@ build_from() {
   fi
   cp "$src"/tool-desc-*.txt "$src"/prompt-*.txt "$tmp/"
 
-  # the V8 engine: rarely changes, 100 MB - a hard link of the live tree's
-  local js="$REPO/rust/jsrt/target/debug/bend-jsrt"
-  # a linked git worktree: the main checkout's engine
-  [ -x "$js" ] || js="$(git rev-parse --path-format=absolute --git-common-dir)/../rust/jsrt/target/debug/bend-jsrt"
-  if [ ! -x "$js" ]; then
-    say "bend-jsrt missing — building the V8 engine..."
-    (cd "$REPO/rust/jsrt" && CARGO_TARGET_DIR=target cargo build)
-  fi
-  # $tmp/bend-jsrt: the harness passes it to the runtime (BEND_JSRT_BIN);
-  # the same file at the old path too: a runtime before BISE-114 (an old
-  # commit) runs rust/jsrt/target/debug/bend-jsrt, relative to its root
-  ln -f "$js" "$tmp/bend-jsrt" 2>/dev/null || cp "$js" "$tmp/bend-jsrt"
+  # the V8 engine: the RELEASE build of this source's rust/jsrt (BISE-133:
+  # ~60 MB, the debug one was 110 MB, 93% of a version), from bins.sh's
+  # cache (one per jsrt source hash): a hard link, so the versions of one
+  # engine share it. $tmp/bend-jsrt: the harness passes it to the runtime
+  # (BEND_JSRT_BIN); the same file at the old path too: a runtime before
+  # BISE-114 (an old commit) runs rust/jsrt/target/debug/bend-jsrt
+  local js jk; jk="$("$REPO/bins.sh" key --src "$src" bend-jsrt)"
+  js="$("$REPO/bins.sh" path --src "$src" bend-jsrt)"
+  ln -f "$js" "$tmp/bend-jsrt" 2>/dev/null || cp -c "$js" "$tmp/bend-jsrt" 2>/dev/null || cp "$js" "$tmp/bend-jsrt"
   ln -f "$tmp/bend-jsrt" "$tmp/rust/jsrt/target/debug/bend-jsrt"
 
   {
@@ -125,12 +125,55 @@ build_from() {
     echo "subject=$(git log -1 --format=%s "$rev")"
     echo "built=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "bend_hash=$h"
+    echo "jsrt=release-$jk"
     echo "macos=$MACOSX_DEPLOYMENT_TARGET"
     echo "repo=$REPO"
   } > "$tmp/VERSION"
   rm -rf "$vdir"; mv "$tmp" "$vdir"
   CLEAN_TMP=""
-  say "version $id built: $vdir"
+  say "version $id built: $vdir ($(du -sh "$vdir" | cut -f1))"
+}
+
+# the ids of the versions the hubs name: their marks (versions.json:
+# current, good, previous, failed) and the root each one runs (hub.root),
+# in the legacy state dir and in ~/.bise/hubs; one per line (the last
+# component of every path in them)
+marks() {
+  local h="${BISE_HOME:-$HOME/.bise}" f
+  for f in "$HOME/.local/state/switchboard"/*/versions.json "$HOME/.local/state/switchboard"/*/hub.root \
+           "$h"/hubs/*/versions.json "$h"/hubs/*/hub.root "$STATE"/*/versions.json "$STATE"/*/hub.root; do
+    [ -f "$f" ] && { cat "$f"; echo; }
+  done | tr '",{}' '\n\n\n\n' | sed -n 's|^.*/\([^/]*\)/*$|\1|p'
+}
+
+# the built versions, newest first (by built=; in-progress *.tmp.* skipped)
+by_age() {
+  local d
+  for d in "$VERSIONS"/*/; do
+    d="${d%/}"; d="${d##*/}"
+    case "$d" in *.tmp.*) continue ;; esac
+    [ -f "$VERSIONS/$d/VERSION" ] || continue
+    printf '%s %s\n' "$(sed -n 's/^built=//p' "$VERSIONS/$d/VERSION")" "$d"
+  done | sort -r | cut -d' ' -f2
+}
+
+# prune [<keep>]: keep the <keep> (default SB_KEEP_VERSIONS, 3) newest
+# versions (by built=), and any version a hub marks (marks) or a running
+# process runs from (its command line); remove the others (BISE-133)
+prune() {
+  local keep="${1:-${SB_KEEP_VERSIONS:-3}}" d n=0 in_use m real
+  [ -d "$VERSIONS" ] || return 0
+  real="$(cd "$VERSIONS" && pwd -P)"
+  in_use="$(ps -axo command= 2>/dev/null || true)"
+  m="$(marks)"
+  for d in $(by_age); do
+    n=$((n + 1))
+    [ "$n" -le "$keep" ] && continue
+    printf '%s\n' "$m" | grep -qxF -- "$d" && continue
+    printf '%s' "$in_use" | grep -qF -e "$VERSIONS/$d/" -e "$real/$d/" && continue
+    say "prune: $d"
+    rm -rf "${VERSIONS:?}/$d"
+  done
 }
 
 # (a version built before BISE-165 has bend-harness only: still valid)
@@ -140,7 +183,7 @@ build() {
   local what="${1:---tree}" id
   if [ "$what" = "--tree" ]; then
     id="$(tree_id)"
-    built "$id" || build_from "$REPO" "$id" HEAD
+    built "$id" || { build_from "$REPO" "$id" HEAD; prune; }
   else
     id="$(rev_id "$what")"
     if ! built "$id"; then
@@ -148,6 +191,7 @@ build() {
       git worktree add -q --detach "$wt" "$id"
       CLEAN_WT="$wt"
       build_from "$wt" "$id" "$id"
+      prune
     fi
   fi
   echo "$VERSIONS/$id"
@@ -155,6 +199,7 @@ build() {
 
 case "${1:-}" in
   build) build "${2:---tree}" ;;
+  prune) prune "${2:-}" ;;
   id) if [ "${2:---tree}" = "--tree" ]; then tree_id; else rev_id "$2"; fi ;;
   list)
     [ -d "$VERSIONS" ] || exit 0
@@ -163,5 +208,5 @@ case "${1:-}" in
       printf '%s\t%s\t%s\n' "$d" "$(sed -n 's/^built=//p' "$VERSIONS/$d/VERSION")" \
         "$(sed -n 's/^subject=//p' "$VERSIONS/$d/VERSION")"
     done ;;
-  *) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
