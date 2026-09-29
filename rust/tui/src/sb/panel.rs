@@ -1256,6 +1256,46 @@ mod chrome_tests {
         assert_eq!(text(2), "");
     }
 
+    /// The raised pane (book §13, BISE-102): every cell under the divider
+    /// inside the frame is on the `raised` tint, the divider and the frame
+    /// stay on the ground; 7 rows at rest, fewer on shorter screens; under
+    /// 14 rows the key bar takes the divider's right side.
+    #[test]
+    fn the_pane_under_the_divider_is_raised() {
+        let mut app = with_main();
+        let screen = |app: &mut App, w: u16, h: u16| {
+            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+            term.draw(|f| super::super::draw_sb(app, f)).unwrap();
+            term.backend().buffer().clone()
+        };
+        let row = |b: &ratatui::buffer::Buffer, y: u16| (0..b.area.width).map(|x| b[(x, y)].symbol()).collect::<String>();
+        for (h, pane) in [(30u16, 7u16), (24, 7), (23, 6), (20, 6), (19, 4), (16, 4)] {
+            let b = screen(&mut app, 120, h);
+            let div = (0..h).find(|&y| row(&b, y).starts_with("├─ you → main")).unwrap_or_else(|| panic!("{h}: no divider"));
+            assert_eq!(h - div, pane, "{h} rows: the pane takes {pane}");
+            for y in div + 1..h - 1 {
+                for x in 1..119 {
+                    assert_eq!(b[(x, y)].bg, raised(), "{h} rows: ({x}, {y}) is raised");
+                }
+                assert_ne!(b[(0, y)].bg, raised(), "{h} rows: the frame's edge is not");
+            }
+            assert!((0..120).all(|x| b[(x, div)].bg != raised()), "{h} rows: the divider stays on the ground");
+            assert!((0..120).all(|x| b[(x, h - 1)].bg != raised()), "{h} rows: the frame's bottom too");
+            // the text keeps its colors on the tint: the bar faint, the placeholder dim
+            let t = (div + 1..h).find(|&y| row(&b, y).contains(PLACEHOLDER_MAIN)).unwrap();
+            assert_eq!((b[(3, t)].symbol(), b[(3, t)].fg), ("│", faint()));
+        }
+        // bare (under 16 rows): the full width down to the last row
+        let b = screen(&mut app, 120, 15);
+        let div = (0..15).find(|&y| row(&b, y).contains("you → main")).unwrap();
+        assert!((div + 1..15).all(|y| (0..120).all(|x| b[(x, y)].bg == raised())));
+        // under 14 rows the key bar is on the divider's right, no row of its own
+        let b = screen(&mut app, 120, 13);
+        let div = (0..13).find(|&y| row(&b, y).contains("you → main")).unwrap();
+        assert!(row(&b, div).contains("⏎ send   @ agent"), "{:?}", row(&b, div));
+        assert_eq!(13 - div, 2, "the divider and 1 text row");
+    }
+
     #[test]
     fn header_at_60_and_120() {
         let mut app = busy();
@@ -1328,9 +1368,13 @@ mod chrome_tests {
         let at = rows.iter().position(|r| r.starts_with("├─ you → main ─")).unwrap_or_else(|| panic!("{}", all));
         assert!(rows[at].ends_with(" idle ─┤"), "{:?}", rows[at]);
         assert!(rows[at].contains('┴'), "the panel's rule joins it: {:?}", rows[at]);
-        // then 1 blank bar row, the text, 1 blank bar row: the bar at
-        // column 3; the key bar from column 3; the frame's bottom edge
-        assert!(rows[at + 1..rows.len() - 2].iter().all(|r| r.starts_with("│  │")), "{}", all);
+        // then the raised pane (book §13): a tinted row, the text behind
+        // the bar at x0 (column 3 here), a tinted row, the key bar from
+        // x0, the frame's bottom edge
+        assert_eq!(rows.len() - at, 7, "7 rows at rest: {}", all);
+        assert_eq!(rows[at + 1].trim_end_matches(['│', ' ']), "", "{:?}", rows[at + 1]);
+        assert!(rows[at + 2..at + 4].iter().all(|r| r.starts_with("│  │")), "{}", all);
+        assert_eq!(rows[at + 4].trim_end_matches(['│', ' ']), "", "{:?}", rows[at + 4]);
         // empty, the composer asks
         assert!(rows[at + 2].starts_with(&format!("│  │   {}", PLACEHOLDER_MAIN)), "{:?}", rows[at + 2]);
         let keys = &rows[rows.len() - 2];

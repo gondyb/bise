@@ -39,8 +39,9 @@ const TIERS: [Tier; 2] = [
 /// between the history's last column and the rule.
 const RULE_TO_TEXT: u16 = 2;
 const FEED_TO_RULE: u16 = 3;
-/// The blank rows around the composer's text: the one under it goes
-/// under `PAD_BOTTOM_FROM` rows, the one above under `PAD_TOP_FROM`.
+/// The tinted rows of the raised pane: the one between the text and the
+/// key bar goes under `PAD_BOTTOM_FROM` rows, the one under the divider
+/// under `PAD_TOP_FROM`.
 const PAD_BOTTOM_FROM: u16 = 24;
 const PAD_TOP_FROM: u16 = 20;
 /// The composer's text: at least `MIN_TEXT` rows (1 under
@@ -128,9 +129,14 @@ pub(crate) struct Rows {
     pub(crate) header: u16,
     /// the history's first row: 1 blank row under the header
     pub(crate) body: u16,
-    /// the key bar's row: above the frame's bottom border, or the last
+    /// the key bar's row: above the frame's bottom border, or the last;
+    /// `height` when it goes into the divider (`keys_in_divider`)
     pub(crate) keybar: u16,
-    /// the blank rows above and under the composer's text
+    /// under `KEYS_OWN_ROW_FROM` rows the key bar takes the divider's
+    /// right side instead of the state
+    pub(crate) keys_in_divider: bool,
+    /// the tinted rows of the raised pane (book §13): one right under the
+    /// divider, one between the text and the key bar
     pub(crate) pad_top: u16,
     pub(crate) pad_bottom: u16,
     /// the composer's text rows: at least `min_text`, at most `max_text`
@@ -138,19 +144,24 @@ pub(crate) struct Rows {
     pub(crate) max_text: u16,
 }
 
-/// The rows by height (book §8 "The frame", composer pane): the header
-/// on row 0, 1 blank row, the history; bottom up: the frame (framed),
-/// the key bar, 1 blank (from 24 rows), the text (2 rows, 1 under 20,
-/// up to min(12, 40%)), 1 blank (from 20 rows); the queue, the strip and
-/// the divider go above (ui.rs).
+/// Under this height the key bar has no row of its own.
+const KEYS_OWN_ROW_FROM: u16 = 14;
+
+/// The rows by height (book §8 "The frame", §13 "The composer pane"): the
+/// header on row 0, 1 blank row, the history; the divider, then the raised
+/// pane: 1 tinted row (from 20 rows), the queue and the strip, the text (2
+/// rows, 1 under 20, up to min(12, 40%)), 1 tinted row (from 24 rows), the
+/// key bar (its own row from 14 rows), the frame's bottom edge (framed).
 pub(crate) fn rows(width: u16, height: u16) -> Rows {
     let framed = framed(width, height);
     let gap = u16::from(framed || height > SHORT_BODY);
     let min_text = if height >= PAD_TOP_FROM { MIN_TEXT } else { 1 };
+    let keys_in_divider = height < KEYS_OWN_ROW_FROM;
     Rows {
         header: 0,
         body: 1 + gap,
-        keybar: height.saturating_sub(1 + u16::from(framed)),
+        keybar: if keys_in_divider { height } else { height.saturating_sub(1 + u16::from(framed)) },
+        keys_in_divider,
         pad_top: u16::from(height >= PAD_TOP_FROM),
         pad_bottom: u16::from(height >= PAD_BOTTOM_FROM),
         min_text,
@@ -220,8 +231,12 @@ mod tests {
         assert_eq!((rows(100, 23).pad_top, rows(100, 23).pad_bottom), (1, 0));
         let r = rows(100, 19);
         assert_eq!((r.pad_top, r.pad_bottom, r.min_text), (0, 0, 1));
-        // unframed: the key bar on the last row
+        // unframed: the key bar on the last row; under 14 rows, in the divider
         assert_eq!(rows(100, 15).keybar, 14);
+        assert!(!rows(100, 14).keys_in_divider);
+        let r = rows(100, 13);
+        assert!(r.keys_in_divider);
+        assert_eq!(r.keybar, 13);
         assert_eq!(rows(100, 8).body, 1);
     }
 }

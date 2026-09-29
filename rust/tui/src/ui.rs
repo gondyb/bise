@@ -135,10 +135,11 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         editor::drawn_rows(&r, app.ed.cursor) as u16
     };
     // the rows that are always there: header and gap, the blank row and
-    // the divider, the blank rows around the text, the key bar and the
-    // frame's bottom edge
-    let foot = area.height.saturating_sub(rows.keybar);
-    let fixed = rows.body + 2 + rows.pad_top + rows.pad_bottom + foot;
+    // the divider, the tinted rows, the key bar (its own row from 14
+    // rows) and the frame's bottom edge
+    let keys_h = u16::from(!rows.keys_in_divider);
+    let edge_h = u16::from(cols.framed);
+    let fixed = rows.body + 2 + rows.pad_top + rows.pad_bottom + keys_h + edge_h;
     // what is left keeps a 3-row history
     let left = |used: u16| area.height.saturating_sub(fixed + used + 3);
     let text_rows = composer_rows.clamp(rows.min_text, rows.max_text).min(left(0).max(1));
@@ -152,22 +153,25 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(rows.body),                                   // header, 1 blank row
-            Constraint::Min(1),                                              // history | panel
-            Constraint::Length(card_gap),                                    // a blank row above the card box
-            Constraint::Length(card_h),                                      // the card box (ctrl+g)
-            Constraint::Length(1),                                           // a blank row above the divider
-            Constraint::Length(1),                                           // the divider
-            Constraint::Length(queue_h),                                     // the queued messages
-            Constraint::Length(strip_h),                                     // the images strip
-            Constraint::Length(rows.pad_top + text_rows + rows.pad_bottom), // the composer
-            Constraint::Length(1),                                           // the key bar
-            Constraint::Length(foot.saturating_sub(1)),                      // the frame's bottom edge
+            Constraint::Length(rows.body),       // header, 1 blank row
+            Constraint::Min(1),                  // history | panel
+            Constraint::Length(card_gap),        // a blank row above the card box
+            Constraint::Length(card_h),          // the card box (ctrl+g)
+            Constraint::Length(1),               // a blank row above the divider
+            Constraint::Length(1),               // the divider
+            Constraint::Length(rows.pad_top),    // the raised pane: a tinted row
+            Constraint::Length(queue_h),         // the queued messages
+            Constraint::Length(strip_h),         // the images strip
+            Constraint::Length(text_rows),       // the composer's text
+            Constraint::Length(rows.pad_bottom), // a tinted row
+            Constraint::Length(keys_h),          // the key bar
+            Constraint::Length(edge_h),          // the frame's bottom edge
         ])
         .split(area);
     let (body, card, divider_y) = (chunks[1], chunks[3], chunks[5].y);
-    // the composer pane: from the margin to the right margin
-    let pane = |r: Rect| Rect { x: area.x + cols.margin, width: cols.pane_w.min(area.width.saturating_sub(cols.margin)), ..r };
+    // the composer pane: from the reading column's x to the right margin
+    let pane_end = (cols.margin + cols.pane_w).min(area.width);
+    let pane = |r: Rect| Rect { x: area.x + cols.x0, width: pane_end.saturating_sub(cols.x0), ..r };
     let col = |r: Rect| Rect { x: area.x + cols.x0, width: cols.col_w.min(area.width.saturating_sub(cols.x0)), ..r };
     let short = cols.panel.is_none();
     // the frame (or the bare header row)
@@ -232,34 +236,51 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         let r = Rect { x: feed.x + 3, width: cols.col_w.saturating_sub(3).min(feed.width.saturating_sub(3)), ..feed };
         frame.render_widget(Paragraph::new(lines), r);
     }
-    // the divider: who you talk to, what it does (was the status row)
+    // the raised pane (book §13): every cell under the divider inside the
+    // frame (bare: the full width down to the last row)
+    let (tx, tw) = if cols.framed { (area.x + 1, area.width.saturating_sub(2)) } else { (area.x, area.width) };
+    let tint = Rect {
+        x: tx,
+        y: divider_y + 1,
+        width: tw,
+        height: area.bottom().saturating_sub(divider_y + 1 + edge_h),
+    }
+    .intersection(area);
+    frame.buffer_mut().set_style(tint, Style::default().bg(theme::raised()));
+    // the divider: who you talk to, what it does (was the status row); on
+    // a short screen the key bar takes the state's place
     let (name, state) = divider_text(app);
+    let state = if rows.keys_in_divider {
+        crate::keybar::line(app, chrome::divider_room(area.width, cols, &name)).spans
+    } else {
+        state
+    };
     let state_rect = chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, state);
-    app.bottom_bar_rect = (!app.tail_visible).then_some(state_rect);
+    app.bottom_bar_rect = (!app.tail_visible && !rows.keys_in_divider).then_some(state_rect);
     // the queued messages: ` › text`, the `›` under the composer's bar
-    let queue = pane(chunks[6]);
+    let queue = pane(chunks[7]);
     if queue.height > 0 {
         let r = Rect { x: queue.x.saturating_sub(1), width: queue.width + 1, ..queue }.intersection(area);
         frame.render_widget(Paragraph::new(crate::queue::lines(app, r.width as usize)), r);
     }
     // the images strip, at the composer's text
-    let strip = pane(chunks[7]);
+    let strip = pane(chunks[8]);
     if strip.height > 0 {
         let r = Rect { x: strip.x + 2, width: strip.width.saturating_sub(2), ..strip };
         frame.render_widget(Paragraph::new(attach::strip_lines(app, r.width as usize)), r);
     }
-    // the composer: its ` │ ` starts 1 column before the margin
-    let composer = pane(chunks[8]);
-    let composer = Rect { x: composer.x.saturating_sub(1), width: (inner_w as u16 + 3).min(composer.width + 1), ..composer };
-    draw_composer(app, frame, composer, inner_w, rows.pad_top, rows.pad_bottom);
+    // the composer: its ` │ ` starts 1 column before x0 (the bar at x0)
+    let text = pane(chunks[9]);
+    let composer = Rect { x: text.x.saturating_sub(1), width: (inner_w as u16 + 3).min(text.width + 1), ..text };
+    draw_composer(app, frame, composer, inner_w, 0, 0);
     if card_h > 0 {
         sb::draw_card(app, frame, col(card));
     } else if sb::card_full(app) {
         sb::draw_card(app, frame, body);
     }
-    draw_popup(app, frame, pane(chunks[8]));
-    // the key bar, from the margin to the right margin
-    let kb = pane(chunks[9]);
+    draw_popup(app, frame, text);
+    // the key bar, from x0 to the right margin
+    let kb = pane(chunks[11]);
     if kb.height > 0 {
         frame.render_widget(Paragraph::new(crate::keybar::line(app, kb.width)), kb);
     }

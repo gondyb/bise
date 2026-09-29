@@ -158,6 +158,26 @@ pub(crate) fn draw_frame(
     }
 }
 
+/// The divider's label: ` you → name `.
+fn label(name: &str) -> Vec<Span<'static>> {
+    let arrow = if theme::ascii_mode() { "->" } else { "→" };
+    vec![
+        Span::raw(" "),
+        Span::styled(format!("you {} ", arrow), Style::default().fg(dim())),
+        Span::styled(name.to_string(), Style::default().fg(accent())),
+        Span::raw(" "),
+    ]
+}
+
+/// The columns the divider leaves for its right side on a screen `width`
+/// wide: from 1 rule cell and a space after the label to the state's end.
+pub(crate) fn divider_room(width: u16, cols: Cols, name: &str) -> u16 {
+    let label_w: u16 = label(name).iter().map(|s| s.content.width() as u16).sum();
+    let start = cols.margin - 1 + label_w + 2;
+    let end = width.saturating_sub(cols.margin);
+    end.saturating_sub(start)
+}
+
 /// The divider on row `y` (book §8): framed, a rule joining the frame
 /// (`├ … ┤`, `┴` under the panel's rule); bare, a plain rule. The label
 /// ` you → name ` from the margin, the `state` (cut to fit) ending 1
@@ -181,21 +201,13 @@ pub(crate) fn draw_divider(buf: &mut Buffer, area: Rect, cols: Cols, y: u16, nam
             buf[(x, y)].set_symbol(p.bottom_join).set_style(st);
         }
     }
-    let arrow = if theme::ascii_mode() { "->" } else { "→" };
-    let label = vec![
-        Span::raw(" "),
-        Span::styled(format!("you {} ", arrow), Style::default().fg(dim())),
-        Span::styled(name.to_string(), Style::default().fg(accent())),
-        Span::raw(" "),
-    ];
+    let label = label(name);
     let lx = l + cols.margin - 1;
     // the state's end: framed F − 4 (F − 3 its space), bare the last column
     let end = r + 1 - cols.margin;
     put(buf, lx, y, &label, end + 1);
-    let label_w: u16 = label.iter().map(|s| s.content.width() as u16).sum();
-    let start = lx + label_w + 2;
-    let room = end.saturating_sub(start) as usize;
-    let state = fit(state, room);
+    let room = divider_room(area.width, cols, name);
+    let state = fit(state, room as usize);
     let w: u16 = state.iter().map(|s| s.content.width() as u16).sum();
     if w == 0 {
         return Rect::default();

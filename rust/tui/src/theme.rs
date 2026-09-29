@@ -5,7 +5,8 @@
 //! on every cell, so the text reads whatever the terminal's colors or a
 //! wrong theme pick: [`paint`] turns every cell left at `Color::Reset`
 //! into the theme's ground and text, once per frame. The tints on that
-//! ground are [`selection_bg`] and [`card_tint`].
+//! ground are [`selection_bg`], [`card_tint`] and [`raised`] (the
+//! composer pane, BISE-102).
 //!
 //! Color means attention: only "needs you" (accent) and errors get a hue;
 //! everything else is text, dim or faint. `faint` is never for text you
@@ -93,6 +94,8 @@ pub(crate) struct Palette {
     pub on_accent: Color,
     pub selection_bg: Color,
     pub card_tint: Color,
+    /// the composer pane, raised a little above the ground (BISE-102)
+    pub raised: Color,
     /// the ground every cell is painted with (BISE-92)
     pub bg: Color,
     pub syntax_keyword: Color,
@@ -114,6 +117,7 @@ pub(crate) const DARK: Palette = Palette {
     on_accent: rgb(0x1b1917),
     selection_bg: rgb(0x33292c),
     card_tint: rgb(0x211d1b),
+    raised: rgb(0x1f1c1a),
     bg: rgb(0x141211),
     syntax_keyword: rgb(0xd7a6f0),
     syntax_string: rgb(0xb9d99a),
@@ -138,6 +142,7 @@ pub(crate) const LIGHT: Palette = Palette {
     // a sand card
     selection_bg: rgb(0xfdeef2),
     card_tint: rgb(0xf1eee6),
+    raised: rgb(0xf4f0e8),
     bg: rgb(0xfdfbf7),
     syntax_keyword: rgb(0x8a3fb0),
     syntax_string: rgb(0x44782a),
@@ -216,6 +221,15 @@ pub(crate) fn selection_bg() -> Color {
 /// The light tint of the card box.
 pub(crate) fn card_tint() -> Color {
     palette().card_tint
+}
+/// The composer pane's tint (book §5 `raised`, §13): everything under the
+/// divider. Under `NO_COLOR`, none (`Reset`: the ground).
+pub(crate) fn raised() -> Color {
+    if std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()) {
+        Color::Reset
+    } else {
+        palette().raised
+    }
 }
 pub(crate) fn syntax_keyword() -> Color {
     palette().syntax_keyword
@@ -542,7 +556,7 @@ mod tests {
     #[test]
     fn text_reads_on_the_tints() {
         for p in [&DARK, &LIGHT] {
-            for (tint_name, tint) in [("selection", p.selection_bg), ("card", p.card_tint)] {
+            for (tint_name, tint) in [("selection", p.selection_bg), ("card", p.card_tint), ("raised", p.raised)] {
                 for (name, fg) in [("text", p.text), ("dim", p.dim), ("accent", p.accent)] {
                     let r = contrast(fg, tint);
                     assert!(r >= 4.5, "{name} on {tint_name} tint: {r:.2}");
@@ -559,7 +573,7 @@ mod tests {
             let fails = check(p, &[("ground", p.bg)]);
             assert!(fails.is_empty(), "below 4.5:1 on the ground: {fails:?}");
             // a tint must be seen on the ground, and apart from the other one
-            for (name, tint) in [("selection", p.selection_bg), ("card", p.card_tint)] {
+            for (name, tint) in [("selection", p.selection_bg), ("card", p.card_tint), ("raised", p.raised)] {
                 let r = contrast(tint, p.bg);
                 assert!(r >= 1.08, "{name} tint vs ground: {r:.3}");
             }
