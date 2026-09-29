@@ -47,7 +47,7 @@ const breathe = (i) => paint(["·", "~", "∿", "≈", "∿", "~"][i % 6]);
 // each variant: [key, name, what, ms per frame, frames(i) → cells html, ascii form, pick?]
 const V = [
   // ---- the wind, in variations (the user picked the gust; these explore its pattern) ----
-  ["W1", "gust · today's pick", "a puff crosses 5 cells (≈ head, ∿ ~ · tail), then a short calm, then the next.", 110,
+  ["W1", "gust · picked", "a puff crosses 5 cells (≈ head, ∿ ~ · tail), then a short calm, then the next.", 110,
     (i) => cells(5, (k) => at(["≈", "∿", "~", "·", " ", " ", " ", " ", " "], i - k)), "=~-. crossing", true, breathe],
   ["W2", "steady breeze", "no calm between puffs: the wind never stops while the agent works. the most 'busy', and the easiest to spot from afar.", 120,
     (i) => cells(6, (k) => at(["≈", "∿", "~", "·", " "], i - k)), "=~-.  repeating", false, breathe],
