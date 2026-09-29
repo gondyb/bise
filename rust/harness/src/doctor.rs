@@ -357,12 +357,46 @@ pub(crate) fn path_check(found: &Path, real: Option<&Path>, me: Option<&Path>, l
     }
 }
 
-fn keys_and_model(home: &bise_home::Home) -> (Check, Check) {
+/// The voice input's model (`[voice]`, BISE-130): optional, so a problem
+/// is a warning (ctrl+r fails, nothing else does). `key`: its provider's
+/// key is set (None: the provider needs none).
+fn voice_check(v: &bise_catalog::voice::VoiceSetup, r: &bise_catalog::voice::SttResolved, key: Option<bool>) -> Check {
+    let what = format!("{} ({})", r.name, v.from);
+    let fix_model = format!("set [voice] model to a listed one (`{} models voice`)", bise_catalog::CLI);
+    if r.known == bise_catalog::Known::NoProvider {
+        return warn("voice", format!("{}: unknown provider '{}'", what, r.provider), fix_model);
+    }
+    if r.api.is_empty() {
+        return warn("voice", format!("{}: {} does not transcribe", what, r.provider), fix_model);
+    }
+    if !r.needs.is_empty() {
+        return warn("voice", format!("{}: not usable yet ({})", what, r.needs), fix_model);
+    }
+    if key == Some(false) {
+        return warn(
+            "voice",
+            format!("{}: no {} key", what, r.provider),
+            format!("`{} login {}` (or set {})", bise_catalog::CLI, r.provider, r.key_env),
+        );
+    }
+    ok("voice", format!("{} · language {}", what, v.language.as_deref().unwrap_or("auto")))
+}
+
+/// config.toml's warnings (what `bise models` prints under its list).
+fn config_check(path: &Path, warnings: &[String]) -> Check {
+    match warnings {
+        [] => ok("config", if path.exists() { path.display().to_string() } else { format!("{} (none: the defaults)", path.display()) }),
+        ws => warn("config", ws.join(" · "), format!("fix {} (`{} models` shows the same)", path.display(), bise_catalog::CLI)),
+    }
+}
+
+/// The keys, model and voice lines.
+fn keys_and_model(home: &bise_home::Home) -> (Check, Check, Check) {
     let store = match Store::read(&home.auth_file()) {
         Ok(s) => s,
         Err(e) => {
             let f = fail("keys", format!("auth.json unreadable: {}", e), format!("fix or remove {}", home.auth_file().display()));
-            return (f.clone(), fail("model", "keys unknown", "fix auth.json first"));
+            return (f.clone(), fail("model", "keys unknown", "fix auth.json first"), warn("voice", "keys unknown", "fix auth.json first"));
         }
     };
     let files = EnvFile::read_all(&home.env_files());
@@ -407,7 +441,9 @@ fn keys_and_model(home: &bise_home::Home) -> (Check, Check) {
         Some((detail, fix)) => fail("model", detail.clone(), fix.clone()),
         None => ok("model", lines.iter().filter_map(|l| l.as_ref().ok().cloned()).collect::<Vec<_>>().join(" · ")),
     };
-    (keys_line, model_line)
+    let stt = setup.catalog.resolve_stt(&setup.voice.model);
+    let stt_key = (!stt.key_env.is_empty()).then(|| keys.find(&stt.provider, &stt.key_env).is_some());
+    (keys_line, model_line, voice_check(&setup.voice, &stt, stt_key))
 }
 
 fn hubs(home: &bise_home::Home) -> Check {
@@ -464,7 +500,8 @@ fn disk(home: &bise_home::Home) -> Check {
 /// `bise doctor`: the report on stdout; 1 when a check failed.
 pub(crate) fn main() -> i32 {
     let home = bise_home::Home::from_env();
-    let (keys, model) = keys_and_model(&home);
+    let (keys, model, voice) = keys_and_model(&home);
+    let config = config_check(&home.config_file(), &bise_catalog::Setup::load(&home.config_file()).catalog.warnings);
     let checks = vec![
         macos(),
         bise(),
@@ -474,8 +511,10 @@ pub(crate) fn main() -> i32 {
         migration(&home),
         git(),
         rg(),
+        config,
         keys,
         model,
+        voice,
         hubs(&home),
         disk(&home),
     ];
@@ -529,6 +568,30 @@ mod tests {
         let none = keys_check(&[]);
         assert_eq!(none.mark, Mark::Fail);
         assert!(none.fix.unwrap().contains("bise login"));
+    }
+
+    /// qa G: doctor reads `[voice]` and shows config.toml's warnings.
+    #[test]
+    fn voice_and_config_lines() {
+        let d = std::env::temp_dir().join(format!("doctor-voice-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let cfg = d.join("config.toml");
+        std::fs::write(&cfg, "[voice]\nmodel = \"nosuch/whisper\"\nlanguage = 42\nbogus = true\n").unwrap();
+        let s = bise_catalog::Setup::load(&cfg);
+        let r = s.catalog.resolve_stt(&s.voice.model);
+        let v = voice_check(&s.voice, &r, None);
+        assert_eq!(v.mark, Mark::Warn);
+        assert!(v.detail.contains("unknown provider 'nosuch'"), "{v:?}");
+        let c = config_check(&cfg, &s.catalog.warnings);
+        assert_eq!(c.mark, Mark::Warn);
+        assert!(c.detail.contains("voice."), "{c:?}");
+        std::fs::write(&cfg, "").unwrap();
+        let s = bise_catalog::Setup::load(&cfg);
+        let r = s.catalog.resolve_stt(&s.voice.model);
+        assert_eq!(voice_check(&s.voice, &r, Some(true)).mark, Mark::Ok);
+        assert_eq!(voice_check(&s.voice, &r, Some(false)).mark, Mark::Warn, "no key");
+        assert_eq!(config_check(&cfg, &s.catalog.warnings).mark, Mark::Ok);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// qa C: a fresh HOME is not an "old layout".
