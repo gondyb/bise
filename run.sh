@@ -59,7 +59,8 @@ if [ ! -x "$JS" ]; then
   (cd rust/jsrt && CARGO_TARGET_DIR=target cargo build)
 elif [ -n "$(find rust/jsrt/src rust/jsrt/Cargo.toml rust/jsrt/Cargo.lock rust/images/src rust/images/Cargo.toml -newer "$JS" -print -quit 2>/dev/null)" ]; then
   echo "bend-jsrt outdated — cargo build (rust/jsrt)...">&2
-  (cd rust/jsrt && CARGO_TARGET_DIR=target cargo build)
+  (cd rust/jsrt && CARGO_TARGET_DIR=target cargo build) \
+    || echo "building bend-jsrt failed — the existing engine is kept" >&2
 fi
 
 # the Bend binaries (not in git): ./bins.sh copies each one from a cache
