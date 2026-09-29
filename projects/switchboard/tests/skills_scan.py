@@ -77,6 +77,8 @@ def main():
         check("no temp file is left next to it", os.path.isdir(cache) and os.listdir(cache) == ["skills-index.txt"],
               repr(os.listdir(cache)))
         sidx = os.path.join(tmp, "run", str(port), "skills-index.txt")
+        while not os.path.exists(sidx) and time.time() - t0 < 30:
+            time.sleep(0.1)  # the scan writes it after the shared index
         check("the session's index is under $BEND_RUN_DIR/<port>",
               os.path.exists(sidx) and not os.path.exists(os.path.join(tmp, ".bend-harness")),
               repr(os.listdir(tmp)))
