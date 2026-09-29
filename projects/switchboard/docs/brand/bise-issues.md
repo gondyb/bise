@@ -1984,7 +1984,9 @@ Index:
 
 ### BISE-104 · the tip changes every 5 minutes
 
-- **status:** todo · **owner:** bise-k-keys · **commits:** —
+- **status:** done · **owner:** bise-k-keys · **commits:** 9771632
 - **track:** K · **owns:** `keybar.rs`, `help.rs` TIPS, the timer (in the app state, redraw on change only)
 - **spec:** book §8 "The frame" (key bar line). User request 2026-09-29.
 - **what:** the tip on the right of the key bar changes every 5 minutes (was: one per session), going through `help::TIPS` in order (start where the last session stopped, saved with the hints if cheap, else start at a random one); never changes while you type; still hidden in an agent's view and when there is no room. No extra redraws beyond the change.
+- **notes (bise-k-keys):** `keybar::TipClock` (pure: `start(saved, seed, now)`, `tick(now, typing)`) goes through `help::TIPS` in order; the tip changes 5 minutes after the last change, never while you type (it waits for an empty composer, then changes). It is read at each draw (the UI loop draws every 80 ms anyway): no timer, no redraw of its own. Saved in a file `tip` next to `hints.json` (the index shown; written at the start and at each change); a session starts at the next tip, else at a random one. `hints::store_path` became `pub(crate)` for it (so `SB_ONBOARDING=off` and tests don't save). Still hidden in an agent's view, while typing and without room. Gates (new rule): build, clippy `-p bend-tui --all-targets -D warnings`, `cargo test -p bend-tui keybar help hints` (23, test the_tip_changes_every_5_minutes_in_order). No QA shot: nothing new on screen.
+
