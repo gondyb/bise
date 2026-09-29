@@ -20,6 +20,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 EXE = os.path.join(ROOT, "rust", "target", "debug", "bend-harness")
 
+# An agent's shell carries its hub's identity and sb-core (an older
+# version): a throwaway hub must not inherit them. It picks the tree's
+# sb-core and gives its own agents their SB_ variables.
+AGENT_VARS = ("SB_CORE_BIN", "SB_SOCKET", "SB_AGENT", "SB_TASK", "SB_PORT_OFFSET")
+
+
+def host_env():
+    """os.environ without the calling agent's SB_ variables."""
+    return {k: v for k, v in os.environ.items() if k not in AGENT_VARS}
+
 
 class Env:
     def __init__(self):
@@ -31,10 +41,10 @@ class Env:
         self.fake_log = os.path.join(self.tmp, "fake.log")
         self.fake = subprocess.Popen(
             [sys.executable, "-u", os.path.join(HERE, "fake_provider.py")],
-            stdout=subprocess.PIPE, text=True, env={**os.environ, "FAKE_LOG": self.fake_log})
+            stdout=subprocess.PIPE, text=True, env={**host_env(), "FAKE_LOG": self.fake_log})
         port = self.fake.stdout.readline().split()[1]
         self.env = {
-            **os.environ,
+            **host_env(),
             "SB_STATE_DIR": self.state,
             "BEND_PROVIDER_URL": "http://127.0.0.1:%s/v1/chat/completions" % port,
             "BEND_MODEL": "mistral-small-latest",

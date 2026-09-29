@@ -105,8 +105,9 @@ def start_tui(E, cols, rows, extra_env=""):
     S, with E's SB_/BEND_/MISTRAL_ env (+ extra_env, "K=V ...")."""
     envs = " ".join("%s=%s" % (k, subprocess.list2cmdline([v])) for k, v in E.env.items()
                     if k.startswith(("SB_", "BEND_", "MISTRAL_")))
-    cmd = "cd %s && env %s%s %s switchboard --workspace %s; sleep 30" % (
-        e2e.ROOT, extra_env + " " if extra_env else "", envs, e2e.EXE, E.ws)
+    unset = " ".join("-u " + k for k in e2e.AGENT_VARS)   # tmux's server env may carry them
+    cmd = "cd %s && env %s %s%s %s switchboard --workspace %s; sleep 30" % (
+        e2e.ROOT, unset, extra_env + " " if extra_env else "", envs, e2e.EXE, E.ws)
     tmux("new-session", "-d", "-s", S, "-x", str(cols), "-y", str(rows), cmd)
 
 
