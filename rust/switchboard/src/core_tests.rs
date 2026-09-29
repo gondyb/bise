@@ -1905,6 +1905,9 @@ fn an_agent_says_where_it_works() {
     assert_eq!(r("none"), Ok(AgentReq::Worktree { path: String::new() }));
     assert_eq!(r("/tmp/x-wt/"), Ok(AgentReq::Worktree { path: "/tmp/x-wt".into() }));
     assert!(r("x-wt").is_err());
+    // qa-explore B: main works in the workspace, it cannot mark itself
+    let (tok, fx) = t.req(MAIN, AgentReq::Worktree { path: "/tmp/docs-wt".into() });
+    assert!(fx.iter().any(|e| matches!(e, Effect::Reply { token, body } if *token == tok && body["ok"] == false)), "{:?}", fx);
     let _ = std::fs::remove_dir_all(&wt);
 }
 

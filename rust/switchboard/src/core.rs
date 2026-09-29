@@ -1494,6 +1494,11 @@ impl Hub {
                     reply(fx, json!({"ok": false, "error": format!("unknown agent: {}", from)}));
                     return;
                 };
+                if name == MAIN && !path.is_empty() {
+                    let e = "sb worktree: main works in the workspace, not in a worktree";
+                    reply(fx, json!({"ok": false, "error": e}));
+                    return;
+                }
                 self.set_place(&name, path.clone(), true);
                 reply(fx, json!({"ok": true, "path": path}));
                 return;

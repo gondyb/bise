@@ -142,6 +142,17 @@ pub fn usage() -> String {
 
 /// Split flags from positional words. `flags` take a value, `switches`
 /// do not; a repeated flag accumulates.
+/// `sb worktree <path>`: an absolute path must be a git worktree (a
+/// `.git` in it) on this machine; the hub checks the rest (absolute,
+/// not main). This process runs where the agent works, the hub may not.
+fn worktree_exists(p: &str) -> Result<(), String> {
+    let p = p.trim();
+    if p.starts_with('/') && !std::path::Path::new(p).join(".git").exists() {
+        return Err(format!("sb worktree: {} is not a git worktree (no .git in it)", p));
+    }
+    Ok(())
+}
+
 fn parse_args(
     args: &[String],
     flags: &[&str],
@@ -302,7 +313,9 @@ pub fn build(args: &[String]) -> Result<Value, String> {
         "worktree" => {
             // BISE-136: gate.sh new/done tell the hub where the agent works
             let (pos, _) = parse_args(rest, &[], &[])?;
-            req.insert("path".into(), json!(pos.first().ok_or("usage: sb worktree <path>|none")?));
+            let p = pos.first().ok_or("usage: sb worktree <path>|none")?;
+            worktree_exists(p)?;
+            req.insert("path".into(), json!(p));
         }
         "report" => {
             let (pos, o) = parse_args(rest, &["decision"], &[])?;
@@ -636,6 +649,19 @@ mod tests {
         let q = build(&a(&["send", "docs", "later", "--mode", "queued"])).unwrap();
         assert_eq!(q["mode"], "queued");
         assert!(build(&a(&["send", "docs", "x", "--mode", "soon"])).is_err());
+    }
+
+    /// qa-explore B: `sb worktree` refused a relative path only.
+    #[test]
+    fn worktree_must_exist() {
+        let e = build(&a(&["worktree", "/does/not/exist"])).unwrap_err();
+        assert!(e.contains("not a git worktree"), "{}", e);
+        let d = std::env::temp_dir().join(format!("sb-cli-wt-{}", std::process::id()));
+        std::fs::create_dir_all(d.join(".git")).unwrap();
+        let p = d.to_string_lossy().into_owned();
+        assert_eq!(build(&a(&["worktree", &p])).unwrap()["path"], p.as_str());
+        assert_eq!(build(&a(&["worktree", "none"])).unwrap()["path"], "none");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
