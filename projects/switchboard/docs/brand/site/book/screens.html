@@ -507,19 +507,19 @@ const TOOL_SCREENS = [
 ["tool calls · ctrl+o", "ctrl+o opens everything folded, as today: every call becomes its box, full height, the description in the box's top border (the word bash or typescript goes: $ and ƒ say it). the ▸ 6 commands fold opens into its 6 boxes. ctrl+o again: back to the rows. a click or space on one row opens only that box, in place, with the 15-row cap.",
  term({ feed: T_FEED_HEAD + T_BOXES + T_REPLY, pan: TP_PANEL })],
 
-["tool calls · an agent's view · open boxes (designer's pick)", "<span class='optk'>pick.</span> in an agent's view (⌥1), the boxes stay open, as today: you opened that agent to see how it works. the box gets the description as its title, and keeps the 15-row cap (▸ n more lines). ctrl+o shows every line.",
+["tool calls · an agent's view · one row each", "<span class='optk'>the default (BISE-227, the user's call).</span> an agent's view draws its calls like main: one row each, $ or ƒ, the description, the state; 4 done in a row fold into ▸ n commands. click or space opens one box, ctrl+o opens them all.",
+ term({ feed: T_AGENT_HEAD +
+   tl("$", "weighing the hero image", "ok", "0.1s", { first: true }) +
+   tl("$", "running the signup test on a slow phone profile", "run", "12s"),
+   pan: TP_PANEL.replace('<div class="row"><span><span class="faint">1', '<div class="row sel"><span><span class="faint">1'),
+   f: foot("perf · working · 12s") })],
+
+["tool calls · an agent's view · ctrl+o or an opened call", "the boxes of an agent's view, after ctrl+o (every call) or a click / space on one row (that call only). the description is the box's title, with the 15-row cap (▸ n more lines).",
  term({ feed: T_AGENT_HEAD +
    tbx("$", "weighing the hero image", "ok", "0.1s", T_SCRIPT.size, `4.2M  web/public/hero.png`) +
    tbx("$", "running the signup test on a slow phone profile", "run", "12s", T_SCRIPT.test, `<span class="faint">… 18 lines above</span>
   signup › first paint    3.8s
   signup › interactive    4.1s`),
-   pan: TP_PANEL.replace('<div class="row"><span><span class="faint">1', '<div class="row sel"><span><span class="faint">1'),
-   f: foot("perf · working · 12s") })],
-
-["tool calls · an agent's view · one line too (compare)", "<span class='optk'>alternative.</span> the same view with the rows. calmer, but an agent's view is where you go to watch the work: one more key for each command you came to see. my pick stays the open boxes.",
- term({ feed: T_AGENT_HEAD +
-   tl("$", "weighing the hero image", "ok", "0.1s", { first: true }) +
-   tl("$", "running the signup test on a slow phone profile", "run", "12s"),
    pan: TP_PANEL.replace('<div class="row"><span><span class="faint">1', '<div class="row sel"><span><span class="faint">1'),
    f: foot("perf · working · 12s") })],
 
