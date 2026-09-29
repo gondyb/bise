@@ -430,6 +430,10 @@ impl Sb {
         if path.is_empty() || path.width() + 3 + whole_w > room {
             return fitted(room);
         }
+        // only idle agents: no counts, so no separator after the path (QA F)
+        if whole.is_empty() {
+            return vec![Span::styled(path, Style::default().fg(dim()))];
+        }
         let mut out = vec![Span::styled(format!("{} · ", path), Style::default().fg(dim()))];
         out.extend(whole);
         out
@@ -1681,6 +1685,21 @@ mod chrome_tests {
         assert!(rows[0].starts_with("╭─ bise :*") && rows[0].ends_with("no agents yet ─╮"), "{:?}", rows[0]);
         let rows = draw(&mut app, 59, 20);
         assert!(rows[0].ends_with("no agents yet"), "{:?}", rows[0]);
+    }
+
+    /// QA F: only idle agents, no count to show: the path ends the header,
+    /// with no lone ` · ` after it.
+    #[test]
+    fn idle_agents_leave_no_lone_separator_in_the_header() {
+        let mut app = busy();
+        for a in app.sb.agents.iter_mut().filter(|a| !a.main) {
+            a.status = "idle".into();
+        }
+        app.sb.cards.clear();
+        let rows = draw(&mut app, 120, 20);
+        assert!(rows[0].ends_with(" bench ─╮"), "{:?}", rows[0]);
+        let rows = draw(&mut app, 59, 20);
+        assert!(!rows[0].trim_end().ends_with('·'), "{:?}", rows[0]);
     }
 
     /// BISE-126: viewing a task, its role line follows the title, dim;
