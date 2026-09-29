@@ -26,6 +26,9 @@ fi
 # switchboard: the workspace is where the user launched from
 export SB_LAUNCH_DIR="${SB_LAUNCH_DIR:-$PWD}"
 cd "$(dirname "$0")"
+# the binary finds its files here, never in the cwd (BISE-163): the
+# release build may live in an agent's own CARGO_TARGET_DIR
+export BISE_APP_ROOT="$PWD"
 export PATH="$HOME/.cargo/bin:$PATH"
 
 # the Rust binary: cargo decides what is stale (every crate, every

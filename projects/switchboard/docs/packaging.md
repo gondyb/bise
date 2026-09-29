@@ -56,9 +56,9 @@ installer warns when `git` is missing.
 
 | Path | Who | Notes |
 |---|---|---|
-| app root = cwd if it holds `repl-live`, else the exe's dir (and 3 parents) | `app_root()` in `harness/src/main.rs` | cwd **first**: see code change C1 |
+| app root = `BISE_APP_ROOT`, else the exe's dir when it holds `VERSION`, else (dev) the exe's dir and 3 parents, then a debug build's source tree; never the cwd | `harness/src/approot.rs` | C1 done (BISE-163) |
 | relative `tool-desc-*.txt`, `prompt-*.txt`, `rust/jsrt/target/debug/bend-jsrt` | runtime (`tools.bend`, `repl-live.bend`, `main.bend`) | the binary `chdir`s to the app root in single-session mode |
-| `sb-core` | `SB_CORE_BIN`, set from the app root by `sbd`; fallback `CARGO_MANIFEST_DIR/../../sb-core` (a build-machine path baked in) | C4 |
+| `sb-core` | `SB_CORE_BIN`, set from the app root by `sbd`; else `sb-core` next to the exe; `CARGO_MANIFEST_DIR/../../sb-core` in debug builds only | C4 done (BISE-163) |
 | `~/.bend-harness/.env`, then `~/.vibe/.env` | keys (`MISTRAL_API_KEY`, `ANTHROPIC_FOUNDRY_API_KEY`) | real env wins |
 | `~/.bend-harness/config.toml` | model, threshold (template written on first run) | |
 | `~/.bend-harness/sessions/`, `tui.json`, `mcp-index.txt`, `skills-index.txt` | sessions, voice setting, connectors, skills | |
@@ -261,7 +261,7 @@ the default paths.
 
 ## 9. Code changes needed (not made — only new files in this task)
 
-- **C1** `app_root()`: an installed binary must use its own dir, never a
+- **C1** (done, BISE-163) `app_root()`: an installed binary must use its own dir, never a
   `repl-live` found in the cwd (running `bise` inside the dev repo would
   pick the dev tree's REPL). Prefer an explicit `BISE_APP_ROOT` (set by
   the launcher), else the exe dir when it holds `VERSION`, else today's
@@ -274,7 +274,7 @@ the default paths.
 - **C3** default model/provider: no private endpoint as the built-in
   default; public default = a Mistral model; the foundry proxy only via
   config/env.
-- **C4** `core_bin()` fallback: drop `CARGO_MANIFEST_DIR` (a build-machine
+- **C4** (done, BISE-163) `core_bin()` fallback: drop `CARGO_MANIFEST_DIR` (a build-machine
   path) outside dev builds; look next to the exe.
 - **C5** `--version` / `version` in the binary (reads `VERSION`, else the
   crate version + commit via `env!`), and `init`/`update`/`uninstall`

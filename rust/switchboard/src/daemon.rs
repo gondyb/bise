@@ -643,7 +643,9 @@ impl Shell {
             .env_remove("BEND_CRASH_NOTE")
             // this hub's sb-core is not the agents' business (a hub an
             // agent starts picks its own)
-            .env_remove("SB_CORE_BIN");
+            .env_remove("SB_CORE_BIN")
+            // nor its app root: a harness an agent runs finds its own
+            .env_remove("BISE_APP_ROOT");
         for (k, v) in self.opts.spawn_env.map(|f| f()).unwrap_or_default() {
             match v {
                 Some(v) => cmd.env(k, v),

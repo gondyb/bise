@@ -181,6 +181,8 @@ fn start_hub(paths: &Paths, root: &Path) -> std::io::Result<std::process::Child>
         .arg("sbd")
         .arg("--workspace")
         .arg(&paths.workspace)
+        // the new version's own files, not the old hub's inherited root
+        .env("BISE_APP_ROOT", root)
         .current_dir(root)
         .stdin(Stdio::null())
         .stdout(Stdio::null())

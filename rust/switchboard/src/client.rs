@@ -22,6 +22,8 @@ pub fn start_hub(paths: &Paths, exe: &Path, app_root: &Path) -> std::io::Result<
         .arg("sbd")
         .arg("--workspace")
         .arg(&paths.workspace)
+        // the hub uses the TUI's app root, never its own lookup's
+        .env("BISE_APP_ROOT", app_root)
         .current_dir(app_root)
         .stdin(Stdio::null())
         .stdout(Stdio::null())

@@ -392,13 +392,28 @@ pub enum Effect {
     },
 }
 
-/// The sb-core executable: `SB_CORE_BIN`, else `sb-core` at the root of
-/// the repository this crate was built from.
+/// The sb-core executable: `SB_CORE_BIN` (the harness sets it from its
+/// app root), else `sb-core` next to the executable; a debug build (the
+/// tests) also tries the root of the repository it was built from. No
+/// build-machine path in a release build (BISE-163, packaging.md C4).
 pub fn core_bin() -> std::path::PathBuf {
-    match std::env::var("SB_CORE_BIN") {
-        Ok(p) if !p.is_empty() => p.into(),
-        _ => std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sb-core"),
+    if let Ok(p) = std::env::var("SB_CORE_BIN") {
+        if !p.is_empty() {
+            return p.into();
+        }
     }
+    let next_to_exe = std::env::current_exe()
+        .ok()
+        .map(|e| std::fs::canonicalize(&e).unwrap_or(e))
+        .and_then(|e| e.parent().map(|d| d.join("sb-core")));
+    #[cfg(debug_assertions)]
+    {
+        let dev = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sb-core");
+        if !next_to_exe.as_ref().is_some_and(|p| p.exists()) {
+            return dev;
+        }
+    }
+    next_to_exe.unwrap_or_else(|| "sb-core".into())
 }
 
 /// One sb-core process and its connection.

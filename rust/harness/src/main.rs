@@ -42,6 +42,7 @@ use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+mod approot;
 mod debuglog;
 mod info;
 
@@ -255,27 +256,16 @@ fn export_models_file() {
 
 // ---- switchboard (projects/switchboard): one main agent, task agents ----
 
-/// The app root: the directory holding the Bend REPL binaries (the dev
-/// tree's repo root, or the bundle next to the executable).
-fn app_root(repl_name: &str) -> Option<std::path::PathBuf> {
-    let cwd = std::env::current_dir().ok();
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
-    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-    candidates.extend(cwd);
-    if let Some(d) = exe_dir {
-        // the bundle, then the dev tree (rust/target/debug -> repo root)
-        candidates.push(d.clone());
-        candidates.extend(d.ancestors().skip(1).take(3).map(|p| p.to_path_buf()));
-    }
-    candidates.into_iter().find(|d| d.join(repl_name).exists())
+/// The app root of the live REPL (approot.rs: BISE_APP_ROOT, the version
+/// dir of the executable, the dev tree; never the cwd), or exit with how
+/// to fix it.
+fn live_app_root_or_exit() -> std::path::PathBuf {
+    app_root_or_exit("repl-live")
 }
 
-/// The app root of the live REPL, or exit with how to build it.
-fn live_app_root_or_exit() -> std::path::PathBuf {
-    app_root("repl-live").unwrap_or_else(|| {
-        eprintln!("repl-live not found (compile it with `bend runtime/repl-live.bend -o repl-live`)");
+fn app_root_or_exit(repl: &str) -> std::path::PathBuf {
+    approot::locate(repl).map(|(root, _)| root).unwrap_or_else(|msg| {
+        eprintln!("{}", msg);
         std::process::exit(1);
     })
 }
@@ -381,6 +371,7 @@ fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
         cmd.arg("switchboard")
             .arg("--workspace")
             .arg(&paths.workspace)
+            .env(approot::ENV, &root)
             .current_dir(&root);
         if debug {
             cmd.arg("--debug");
@@ -497,49 +488,18 @@ fn main() -> std::io::Result<()> {
     }
     export_models_file();
 
-    // locate the Bend REPL binary next to this executable, then in cwd
+    // run FROM ANYWHERE: every runtime path (the bend sources, the tool
+    // descriptions, the jsrt engine, the reload recompile) is relative to
+    // the app root (approot.rs: BISE_APP_ROOT, the executable's version
+    // dir, the dev tree; never the user's cwd, BISE-163). Move the process
+    // there once, so neither the cwd nor a launcher location can break it.
+    // ONE location for the REPL: in the dev tree the repo's ./repl-live
+    // (the one ./bins.sh builds), never a stale copy in rust/target/debug.
     let repl_name = if scripted { "repl-scripted" } else { "repl-live" };
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
-
-    // run FROM ANYWHERE: the bundle is self-contained, every runtime
-    // path (the bend sources, the tool descriptions, the jsrt engine,
-    // the reload recompile) is relative to the application root - the
-    // directory this executable lives in. Move the process there once,
-    // so neither the user cwd nor a launcher location can break it.
-    // The DEV tree is the opposite case: the launch cwd IS the app
-    // root (./run.sh from the repo), and the executable lives in
-    // rust/target/debug - moving there would break every relative
-    // path. Skip the move when the cwd already has the REPL.
-    let cwd_has_repl = std::env::current_dir()
-        .ok()
-        .is_some_and(|d| d.join(repl_name).exists());
-    if !cwd_has_repl {
-        if let Some(root) = exe_dir.as_ref() {
-            let _ = std::env::set_current_dir(root);
-        }
-    }
-    export_jsrt_bin(&std::env::current_dir()?);
-    // ONE location for the REPL: the app root, which the cwd now is in
-    // both layouts (the dev tree, where ./run.sh builds ./repl-live, and
-    // the bundle, where we just moved next to the executable). The old
-    // lookup tried next-to-the-executable FIRST: in the dev tree that is
-    // rust/target/debug/, where a stale repl-live had landed (a /reload
-    // recompiled into whatever path was found, perpetuating it) - the
-    // TUI ran an old runtime while ./repl-live, the one built, tested
-    // and committed, sat unused.
-    let repl_bin = Some(std::env::current_dir()?.join(repl_name))
-        .filter(|p| p.exists())
-        .unwrap_or_else(|| {
-            eprintln!(
-                "Bend REPL not found: {} (compile it with `bend runtime/{} -o {}`)",
-                repl_name,
-                if scripted { "repl.bend" } else { "repl-live.bend" },
-                repl_name
-            );
-            std::process::exit(1);
-        });
+    let root = app_root_or_exit(repl_name);
+    std::env::set_current_dir(&root)?;
+    export_jsrt_bin(&root);
+    let repl_bin = root.join(repl_name);
 
     // REPL port: forced, or pick a free one (bind 0, drop, hand over)
     let repl_port = match forced_port {
