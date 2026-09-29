@@ -436,6 +436,56 @@ def t_session_log(E, c):
     return c2
 
 
+def t_session_crashes(E, c):
+    """BISE-202: kill -9 during a tool call closes the cut turn in the
+    log (a result for the call, interrupted, turn_ended crashed) and the
+    agent resumes; a torn last line is cut and saved; an event from a
+    newer bise makes the log read-only (the REPL's own checkpoint then)."""
+    c.wait_idle("main")
+    adir = os.path.join(E.state, "agents", "main")
+    sessions = E.env["BEND_SESSIONS_DIR"]
+    sid = open(os.path.join(adir, "session")).read().strip()
+    log = os.path.join(sessions, sid, "events.jsonl")
+    evs = lambda: [json.loads(l) for l in open(log) if l.strip()]
+    c.say("[[bash: sleep 30; echo late]]")
+    c.wait(lambda: any(e["type"] == "tool_started" or (e["type"] == "assistant_message" and e["data"]["calls"]
+                       and "sleep 30" in e["data"]["calls"][0]["args"]) for e in evs()), 60, "the call in the log")
+    time.sleep(0.5)
+    n = len(evs())
+    os.kill(int(open(os.path.join(adir, "repl.pid")).read().strip()), 9)
+    c.wait(lambda: any(e["type"] == "process_opened" and e["data"]["resume"] for e in evs()[n:]), 60, "resumed")
+    after = evs()[n:]
+    types = [e["type"] for e in after]
+    check(types[:3] == ["tool_result", "interrupted", "turn_ended"], "the repair: %r" % types)
+    check(after[0]["data"]["ok"] is False and "interrupted by a restart" in after[0]["data"]["content"][0]["text"], "%r" % after[0])
+    check(after[2]["data"]["outcome"] == "crashed", "%r" % after[2])
+    c.wait_status("main", ["idle", "done", "blocked"], 60)
+    # a torn last line (a write cut by the machine dying)
+    E.stop_hub()
+    with open(log, "a") as f:
+        f.write('{"seq":99999,"type":"user_mess')
+    c2 = E.start_hub()
+    c2.wait(lambda: c2.state is not None, 30, "state")
+    c2.wait_status("main", "idle", 60)
+    check(any(x.startswith("events.torn-") for x in os.listdir(os.path.dirname(log))), "the torn tail saved")
+    c2.say("après la coupure")
+    c2.wait_line("main", "ack: après la coupure", 60)
+    check(evs()[-1]["type"] != "user_mess" and all("seq" in e for e in evs()), "the log reads whole again")
+    # an event from a newer bise that the context needs: read-only
+    E.stop_hub()
+    with open(log, "a") as f:
+        f.write(json.dumps({"seq": 10 ** 6, "type": "voice_message", "v": 1, "must": True, "data": {}}) + "\n")
+    size = os.path.getsize(log)
+    c3 = E.start_hub()
+    c3.wait(lambda: c3.state is not None, 30, "state")
+    c3.wait_status("main", "idle", 60)
+    c3.say("toujours là ?")
+    c3.wait_line("main", "ack: toujours là ?", 60)
+    check(os.path.getsize(log) == size, "a read-only log is not appended to")
+    check("read-only" in open(os.path.join(E.state, "hub.log")).read(), "hub.log says why")
+    return c3
+
+
 def t_cli_errors(E, c):
     # the CLI refuses tasks' main-only commands, through the real bin/sb link
     c.wait_idle("main")
@@ -520,6 +570,7 @@ SCENARIOS = [
     t_model_and_reasoning,
     t_restart_keeps_everything,
     t_session_log,
+    t_session_crashes,
     t_choices_survive_a_restart,
 ]
 

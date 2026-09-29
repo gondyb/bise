@@ -86,3 +86,22 @@ fn a_crash_mid_turn_is_repaired_at_resume_but_not_at_attach() {
     let r = Recorder::resume(&dir, &t.join("blobs"), "t").unwrap();
     assert_eq!(r.repaired.len(), 3, "tool_result for call_4, interrupted, turn_ended");
 }
+
+#[test]
+fn a_crash_during_an_answer_or_a_compaction_is_closed() {
+    let t = tmp("crash2");
+    let dir = t.join("s");
+    let mut r = Recorder::create(&dir, &t.join("blobs"), json!({"session": "s-z", "format": 1, "created_by": "t", "cwd": "/"}), "t").unwrap();
+    ev(&mut r, "turn_started", json!({"cause": "user"}));
+    ev(&mut r, "user_message", json!({"content": txt("go"), "delivery": "prompt"}));
+    ev(&mut r, "compaction_started", json!({"id": 4, "trigger": "auto"}));
+    drop(r);
+    let r = Recorder::resume(&dir, &t.join("blobs"), "t").unwrap();
+    let log = read_dir(&dir).unwrap();
+    let got: Vec<_> = r.repaired.iter().map(|s| log.by_seq(*s).unwrap()).map(|e| (e.typ.clone(), e.data.clone())).collect();
+    assert_eq!(got[0], ("interrupted".into(), json!({"by": "restart", "during": "compaction"})));
+    assert_eq!(got[1].0, "turn_ended");
+    assert_eq!(got[2].0, "compaction_failed");
+    assert_eq!(got[2].1["id"], 4);
+    assert!(r.state().open_turn.is_none() && r.state().open_compaction.is_none());
+}
