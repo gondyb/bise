@@ -17,7 +17,7 @@ mod versions;
 use repl::{adopt, adoptable, busy_at, kill_pid, supervise};
 use versions::version_allowed;
 use crate::core::{AgentReq, ClientId, Effect, Hub, Input, Token};
-use crate::model::{Agent, MAIN};
+use crate::model::{Agent, Lifecycle, MAIN};
 use crate::paths::Paths;
 use crate::prompts;
 use crate::transcript::{self, Anchor};
@@ -198,6 +198,9 @@ struct Shell {
     setup: Option<(Option<std::time::SystemTime>, bise_catalog::Setup)>,
     /// Each live REPL's session log writer (BISE-196), by agent dir.
     recorders: BTreeMap<String, bise_session::recorder::Recorder>,
+    /// The archived agents (dirs): one more is a /drop, whose worktree
+    /// folders the hub cleans (BISE-230, `sweep`).
+    archived: BTreeSet<String>,
 }
 
 /// What an agent whose turn was cut by a restart receives.
@@ -498,6 +501,73 @@ impl Shell {
         for e in fx {
             self.run(e);
         }
+        // a /drop: the dropped task's worktree folders (gate.sh's too)
+        if !self.booting && self.hub.st.agents.values().any(|a| a.lifecycle == Lifecycle::Archived && !self.archived.contains(&a.dir)) {
+            let now = self.archived_dirs();
+            let names: BTreeSet<String> = self
+                .hub
+                .st
+                .agents
+                .values()
+                .filter(|a| now.contains(&a.dir) && !self.archived.contains(&a.dir))
+                .flat_map(|a| [a.name.clone(), a.dir.clone()].into_iter().chain(a.aliases.iter().cloned()))
+                .collect();
+            self.archived = now;
+            self.sweep_worktrees(Some(names));
+        }
+    }
+
+    fn archived_dirs(&self) -> BTreeSet<String> {
+        self.hub.st.agents.values().filter(|a| a.lifecycle == Lifecycle::Archived).map(|a| a.dir.clone()).collect()
+    }
+
+    /// Clean the task worktree folders (BISE-230, `sweep`) off the loop
+    /// (a target is GBs of files): the dropped tasks' (`only`), or every
+    /// orphan (the hub's start, the old place too). What is kept for its
+    /// work goes to main's thread, for the user to decide.
+    fn sweep_worktrees(&self, only: Option<BTreeSet<String>>) {
+        let mut owners = crate::sweep::Owners::default();
+        for a in self.hub.st.agents.values() {
+            let names = [a.name.clone(), a.dir.clone()].into_iter().chain(a.aliases.iter().cloned());
+            if a.lifecycle == Lifecycle::Archived {
+                owners.archived.extend(names);
+                continue;
+            }
+            owners.live.extend(names);
+            owners.paths.insert(PathBuf::from(&a.ws.path));
+            owners.paths.extend(a.place.iter().map(PathBuf::from));
+        }
+        let paths = self.opts.paths.clone();
+        let prefix = self.env.config.branch_prefix.clone();
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            let now = crate::util::now_ms();
+            let mut out = crate::sweep::sweep(&paths.worktrees, &owners, only.as_ref(), now, &prefix);
+            if only.is_none() {
+                let legacy = paths.legacy_worktrees();
+                if legacy != paths.worktrees {
+                    out.extend(crate::sweep::sweep(&legacy, &owners, None, now, &prefix));
+                    crate::sweep::drop_empty(&legacy);
+                }
+            }
+            for o in out {
+                match o {
+                    crate::sweep::Outcome::Removed(d) => log_line(&paths, &format!("worktree folder removed: {}", d.display())),
+                    crate::sweep::Outcome::Kept(d, why) => {
+                        log_line(&paths, &format!("worktree folder kept: {}: {}", d.display(), why));
+                        let _ = tx.send(Msg::Notice {
+                            kind: "warn".into(),
+                            text: format!(
+                                "the worktree {} of task @{} is not deleted: {}. Delete it yourself when it is not needed any more",
+                                d.display(),
+                                crate::sweep::owner_of(&d),
+                                why
+                            ),
+                        });
+                    }
+                }
+            }
+        });
     }
 
     fn run(&mut self, e: Effect) {
@@ -1297,7 +1367,18 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     crate::util::timing("start (socket bound)");
     let workspace = paths.workspace.to_string_lossy().to_string();
     let mut hub = Hub::new(&workspace);
-    let (events, unreadable) = read_journal(&std::fs::read_to_string(paths.journal()).unwrap_or_default());
+    let (mut events, unreadable) = read_journal(&std::fs::read_to_string(paths.journal()).unwrap_or_default());
+    // BISE-230: the task worktrees of the old place (<state>/worktrees/)
+    // move to <home>/worktrees/<id>/<task>/, and the journal follows
+    let legacy = paths.legacy_worktrees();
+    let (moved, errors) = crate::sweep::migrate(&legacy, &paths.worktrees, &crate::sweep::repo_name(&paths.workspace));
+    for (old, new) in &moved {
+        log_line(&paths, &format!("worktree moved: {} -> {}", old.display(), new.display()));
+    }
+    for e in &errors {
+        log_line(&paths, &format!("worktree not moved: {}", e));
+    }
+    crate::sweep::follow_moves(&mut events, &paths.worktrees);
     crate::util::timing(&format!("journal read ({} events)", events.len()));
     if !unreadable.is_empty() {
         log_line(&paths, &format!("journal: {} unreadable lines (not replayed), at line {}", unreadable.len(), lines_list(&unreadable)));
@@ -1354,6 +1435,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         reload_repls: BTreeSet::new(),
         small_broken: Default::default(),
         setup: None,
+        archived: BTreeSet::new(),
     };
     // the role lines of an earlier hub (BISE-126)
     let dirs: Vec<String> = sh.hub.st.agents.values().map(|a| a.dir.clone()).collect();
@@ -1407,6 +1489,8 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     sh.booting = false;
     kill_stale_repls(&sh);
     sh.migrate_the_rest();
+    sh.archived = sh.archived_dirs();
+    sh.sweep_worktrees(None);
     crate::util::timing("boot done (REPLs spawned)");
 
     let mut keep_agents = false;

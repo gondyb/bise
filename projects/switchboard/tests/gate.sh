@@ -15,17 +15,23 @@
 #                     (~60 s warm; e2e + tmux tests in parallel, SB_TEST_JOBS),
 #                     then no binary built needs a macOS newer than the
 #                     target (./bins.sh minos, BISE-164).
-#   gate.sh new <name>
-#                     start a task: a worktree of HEAD in /tmp/<name>-wt and
-#                     its own target /tmp/<name>-target, an APFS clone (0 bytes,
-#                     ~3 s) of the warm seed of the current deps; prints the
-#                     cd/export to run. No seed for these deps (Cargo.lock,
-#                     a Cargo.toml, rust/.cargo/config.toml or rustc changed):
-#                     builds one on top of the newest seed (the changed deps
-#                     only; ~2 min cold) and keeps it for the next tasks.
-#   gate.sh done <name>
-#                     end a task: remove its worktree (refused when it has
-#                     uncommitted changes) and its target.
+#   gate.sh new [name]
+#                     start a task (name: default $SB_AGENT): its folder
+#                     ~/.bise/worktrees/<project-id>/<name>/ holds a worktree
+#                     of HEAD (<repo>/, e.g. harness/) and its own target
+#                     (target/), an APFS clone (0 bytes, ~3 s) of the warm
+#                     seed of the current deps (~/.bise/cache/gate-seed/,
+#                     one at a time); prints the cd/export to run. No seed
+#                     for these deps (Cargo.lock, a Cargo.toml,
+#                     rust/.cargo/config.toml or rustc changed): builds one
+#                     on top of the newest seed (the changed deps only;
+#                     ~2 min cold) and keeps it for the next tasks.
+#   gate.sh done [name]
+#                     end a task: remove its folder, worktree and target
+#                     (refused when the worktree has uncommitted changes or
+#                     commits on no branch). The hub does it too at the
+#                     task's /drop and, for an orphan, at its start (never
+#                     with such work: it says so in main's thread).
 #                     Inside an agent, new/done/quick/full tell the hub where
 #                     it works (sb worktree <path>|none: the TUI's ψ, BISE-136).
 #   gate.sh wait <bg .out file | pid>
@@ -50,52 +56,94 @@ if [ "$mode" = wait ]; then
   exit 0
 fi
 if [ "$mode" = new ] || [ "$mode" = done ]; then
-  name="${2:?usage: gate.sh $mode <name>}"
-  wt="/tmp/$name-wt" tgt="/tmp/$name-target"
-  if [ "$mode" = done ]; then
-    if [ -d "$wt" ] && [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
-      echo "$wt has uncommitted changes: commit them, or git -C $wt stash / checkout, then again"; exit 1
-    fi
-    [ -d "$wt" ] && git -C "$wt" worktree remove --force "$wt"
-    rm -rf "$tgt"; sb_place none; echo "removed $wt and $tgt"; exit 0
-  fi
-  { [ -e "$wt" ] || [ -e "$tgt" ]; } && { echo "$wt or $tgt exists: another name, or gate.sh done $name"; exit 1; }
+  # BISE-230: a task's folder <home>/worktrees/<project-id>/<name>/, like
+  # the hub's own task worktrees: the worktree (<repo>/), its cargo target
+  # (target/) and the task it belongs to (owner). The hub removes the
+  # folder at the task's /drop and at its start (an orphan), never when
+  # the worktree has uncommitted changes or commits on no branch.
+  name="${2:-${SB_AGENT:-}}"
+  [ -n "$name" ] || { echo "usage: gate.sh $mode <name>" >&2; exit 2; }
   # the repo of the cwd (gate.sh may run from a copy: bash <(git show HEAD:...)),
   # else this script's
   cd "$(git rev-parse --show-toplevel 2>/dev/null || echo "$(dirname "$0")/../../..")" || exit 1
-  # HEAD of the main worktree (the shared tree), even from a task's detached one
-  git worktree add -q --detach "$wt" "$(git -C "$(git worktree list --porcelain | sed -n '1s/^worktree //p')" rev-parse HEAD)" || exit 1
+  # the main worktree (the shared tree), even from a task's detached one
+  main="$(git worktree list --porcelain | sed -n '1s/^worktree //p')"
+  if [ -n "${BISE_HOME:-}" ]; then home="$BISE_HOME"
+  elif [ -f "$HOME/.bise/migrated.json" ]; then home="$HOME/.bise"
+  else home=""; fi
+  wtroot="${home:-$HOME/.local/state/switchboard}/worktrees"
+  seeds="${home:-$HOME/.bend-harness}/cache/gate-seed"
+  # the project's id, as the hub computes it (switchboard::paths::workspace_id)
+  pid="$(python3 - "$main" <<'PY'
+import os, sys
+p = os.path.realpath(sys.argv[1]); h = 0xcbf29ce484222325
+for b in p.encode(): h = ((h ^ b) * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF
+base = os.path.basename(p) or "root"
+base = "".join(c if c.isascii() and (c.isalnum() or c in "-_") else "-" for c in base)[:32]
+print("%s-%08x" % (base, h & 0xFFFFFFFF))
+PY
+)"
+  dir="$wtroot/$pid/$name" repo="$(basename "$main")"
+  [ "$repo" = target ] || [ "$repo" = owner ] && repo=repo
+  wt="$dir/$repo" tgt="$dir/target"
+  if [ "$mode" = done ]; then
+    # the layout before BISE-230: /tmp/<name>-wt and /tmp/<name>-target
+    [ -d "$dir" ] || { wt="/tmp/$name-wt"; tgt="/tmp/$name-target"; dir=; }
+    if [ -e "$wt/.git" ]; then
+      if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
+        echo "$wt has uncommitted changes: commit them, or git -C $wt stash / checkout, then again"; exit 1
+      fi
+      mine="$(git -C "$wt" rev-list HEAD --not --branches --remotes 2>/dev/null | wc -l | tr -d ' ')"
+      [ "$mine" = 0 ] || { echo "$wt has $mine commit(s) on no branch: put them on main (or a branch), then again"; exit 1; }
+      git -C "$main" worktree remove --force "$wt"
+    fi
+    rm -rf "$tgt" ${dir:+"$dir"}; sb_place none; echo "removed ${dir:-$wt and $tgt}"; exit 0
+  fi
+  [ -e "$dir" ] && { echo "$dir exists: another name, or gate.sh done $name"; exit 1; }
+  mkdir -p "$dir" && echo "${SB_AGENT:-$name}" >"$dir/owner" || exit 1
+  git worktree add -q --detach "$wt" "$(git -C "$main" rev-parse HEAD)" || { rm -rf "$dir"; exit 1; }
   cd "$wt" || exit 1
   sb_place "$wt"
   export PATH="$HOME/.cargo/bin:$PATH"
   # the seed: a warm target (tests + clippy of every crate) for exactly
-  # these deps; the workspace crates recompile in the task anyway (a new
-  # checkout's mtimes), incrementally
+  # these deps, one at a time (<home>/cache/gate-seed/<key>, ~7 GB of
+  # blocks every clone shares); the workspace crates recompile in the task
+  # anyway (a new checkout's mtimes), incrementally
   key="$( { cat rust/Cargo.lock rust/.cargo/config.toml $(git ls-files 'rust/Cargo.toml' 'rust/*/Cargo.toml'); rustc -vV; } | shasum | cut -c1-12)"
-  seed="/tmp/sb-seed-$key"
+  seed="$seeds/$key"
+  mkdir -p "$seeds"
+  # the seed of the old layout (/tmp/sb-seed-<key>): a clone, without the
+  # older seed an earlier `mv` nested in it
+  if [ ! -d "$seed" ] && [ -d "/tmp/sb-seed-$key" ] && mkdir "$seeds.lock" 2>/dev/null; then
+    rm -rf "$seed.tmp" && cp -cR "/tmp/sb-seed-$key" "$seed.tmp" && rm -rf "$seed.tmp"/sb-seed-* && mv "$seed.tmp" "$seed"
+    rmdir "$seeds.lock"
+  fi
   s=$SECONDS
   if [ -d "$seed" ]; then
     cp -cR "$seed" "$tgt" || exit 1
     echo "target: clone of the seed $seed ($((SECONDS - s))s)"
   else
-    newest="$(ls -dt /tmp/sb-seed-* 2>/dev/null | grep -v '\.tmp' | head -1)"
+    newest="$(ls -dt "$seeds"/* 2>/dev/null | grep -v '\.tmp$' | head -1)"
     [ -n "$newest" ] && cp -cR "$newest" "$tgt"
     echo "no seed for these deps: building one${newest:+ on top of $newest} (~2 min cold, once)"
     (cd rust && CARGO_TARGET_DIR="$tgt" cargo clippy --offline -q --workspace --all-targets --target-dir "$tgt/clippy") >/dev/null 2>&1 &
     (cd rust && CARGO_TARGET_DIR="$tgt" cargo test --offline -q --workspace --no-run) >/dev/null 2>&1; rc=$?
     wait $! || rc=1
-    if [ $rc = 0 ] && mkdir /tmp/sb-seed.lock 2>/dev/null; then
-      # one seed: the new one replaces the older ones (0 bytes: a clone)
-      rm -rf "$seed.tmp" && cp -cR "$tgt" "$seed.tmp" && mv "$seed.tmp" "$seed" \
-        && for o in /tmp/sb-seed-*; do [ "$o" = "$seed" ] || rm -rf "$o"; done
-      rmdir /tmp/sb-seed.lock
+    if [ $rc = 0 ] && mkdir "$seeds.lock" 2>/dev/null; then
+      # one seed: the new one replaces the older ones (0 bytes: a clone);
+      # never `mv` onto an existing seed (it would nest the new one in it)
+      if [ ! -e "$seed" ]; then
+        rm -rf "$seed.tmp" && cp -cR "$tgt" "$seed.tmp" && mv "$seed.tmp" "$seed"
+      fi
+      for o in "$seeds"/*; do [ "$o" = "$seed" ] || rm -rf "$o"; done
+      rmdir "$seeds.lock"
     fi
     echo "target: built ($((SECONDS - s))s)$([ $rc = 0 ] || echo ', with errors: the gate shows them')"
   fi
   echo "now: cd $wt && export CARGO_TARGET_DIR=$tgt   (end: gate.sh done $name)"
   exit 0
 fi
-case "$mode" in quick|full) ;; *) echo "usage: gate.sh [quick|full|new <name>|done <name>|wait <file|pid>]" >&2; exit 2 ;; esac
+case "$mode" in quick|full) ;; *) echo "usage: gate.sh [quick|full|new [name]|done [name]|wait <file|pid>]" >&2; exit 2 ;; esac
 cd "$(dirname "$0")/../../.."
 root="$PWD"
 # a linked worktree has a .git file (the shared checkout a directory)

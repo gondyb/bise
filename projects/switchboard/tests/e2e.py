@@ -287,7 +287,9 @@ def t_worktree_drop_restore(E, c):
     a = c.agent("t4")
     check(a["mode"] == "worktree" and a["branch"] == "sb/t4", "worktree mode: %r" % a)
     wt = a["path"]
-    check(wt.startswith(E.state), "the worktree lives in the state dir: " + wt)
+    # BISE-230: the task's folder <worktrees>/<task>/<repo> (SB_STATE_DIR: in it)
+    check(wt == os.path.join(os.path.realpath(E.state), "worktrees", "t4", "ws"), "the worktree's place: " + wt)
+    check(open(os.path.join(os.path.dirname(wt), "owner")).read().strip() == "t4", "the folder names its task")
     c.wait_line("t4", "done: tool bash ok: committed", 90)
     c.wait_idle("t4")
     check(out(wt, "git log -1 --format=%s") == "wt", "the commit is on the task's branch")
@@ -299,6 +301,7 @@ def t_worktree_drop_restore(E, c):
     c.send({"op": "confirm", "id": conf["id"], "yes": True})
     c.wait_status("t4", "archived", 30)
     check(not os.path.exists(wt), "worktree removed")
+    check(not os.path.exists(os.path.dirname(wt)), "and its folder")
     refs = out(E.ws, "git for-each-ref --format='%(refname)' refs/switchboard")
     check("refs/switchboard/trash/t4/" in refs, "snapshot ref: " + refs)
     c.say("@t4 encore ?")

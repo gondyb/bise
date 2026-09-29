@@ -1,6 +1,8 @@
 //! Where a workspace's hub keeps its state (RFC 0001 §5):
 //! `$SB_STATE_DIR`, else `<hubs dir>/<name>-<hash>` (`bise_home::Home::hub_dir`:
 //! `~/.bise/hubs/`, or `~/.local/state/switchboard/` in the old layout).
+//! Its task worktrees: `<home>/worktrees/<name>-<hash>/<task>/` (the
+//! `sweep` module), or `$SB_STATE_DIR/worktrees/<task>/`.
 
 use std::path::{Path, PathBuf};
 
@@ -8,6 +10,11 @@ use std::path::{Path, PathBuf};
 pub struct Paths {
     pub workspace: PathBuf,
     pub state: PathBuf,
+    /// This workspace's task worktrees, one folder per task:
+    /// `<home>/worktrees/<id>` (`bise_home::Home::worktrees_dir`), or
+    /// `<state>/worktrees` when `SB_STATE_DIR` is set (tests: nothing
+    /// outside the state dir).
+    pub worktrees: PathBuf,
 }
 
 /// FNV-1a, 64 bits: a stable id for a workspace path.
@@ -48,11 +55,15 @@ impl Paths {
         let workspace = workspace
             .canonicalize()
             .unwrap_or_else(|_| workspace.to_path_buf());
-        let state = match std::env::var("SB_STATE_DIR") {
-            Ok(d) if !d.is_empty() => PathBuf::from(d),
-            _ => bise_home::Home::from_env().hub_dir(&workspace_id(&workspace)),
+        let (state, worktrees) = match std::env::var("SB_STATE_DIR") {
+            Ok(d) if !d.is_empty() => (PathBuf::from(&d), PathBuf::from(d).join("worktrees")),
+            _ => {
+                let home = bise_home::Home::from_env();
+                let id = workspace_id(&workspace);
+                (home.hub_dir(&id), home.worktrees_dir().join(id))
+            }
         };
-        Paths { workspace, state }
+        Paths { workspace, state, worktrees }
     }
 
     pub fn socket(&self) -> PathBuf {
@@ -73,8 +84,10 @@ impl Paths {
     pub fn agent_dir(&self, name: &str) -> PathBuf {
         self.state.join("agents").join(name)
     }
-    pub fn worktree(&self, name: &str) -> PathBuf {
-        self.state.join("worktrees").join(name)
+    /// Where the hub put task worktrees before BISE-230 (`<state>/worktrees/<task>`):
+    /// moved to [`Paths::worktrees`] at the hub's start (`sweep::migrate`).
+    pub fn legacy_worktrees(&self) -> PathBuf {
+        self.state.join("worktrees")
     }
     pub fn config(&self) -> PathBuf {
         self.workspace.join(".switchboard").join("config.toml")

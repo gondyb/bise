@@ -26,6 +26,7 @@ fn the_old_layout_keeps_todays_paths() {
     assert_eq!(h.sessions_dir(), p("/h/.bend-harness/sessions"));
     // XDG_STATE_HOME is not read any more
     assert_eq!(h.hub_dir("ws-12345678"), p("/h/.local/state/switchboard/ws-12345678"));
+    assert_eq!(h.worktrees_dir(), p("/h/.local/state/switchboard/worktrees"));
     assert_eq!(h.images_dir(), p("/h/.bend-harness/images"));
     assert_eq!(h.crashes_dir(), p("/h/.bend-harness/crashes"));
     assert_eq!(h.mcp_index(), p("/h/.bend-harness/mcp-index.txt"));
@@ -55,6 +56,7 @@ fn bise_home_moves_everything() {
     assert_eq!(h.env_files(), vec![p("/b/.env"), p("/h/.bend-harness/.env"), p("/h/.vibe/.env")]);
     assert_eq!(h.sessions_dir(), p("/b/sessions"));
     assert_eq!(h.hub_dir("ws-1"), p("/b/hubs/ws-1"));
+    assert_eq!(h.worktrees_dir(), p("/b/worktrees"));
     assert_eq!(h.mcp_index(), p("/b/cache/mcp-index.txt"));
     assert_eq!(h.skills_index(), p("/b/cache/skills-index.txt"));
     assert_eq!(h.run_dir(), p("/b/run"));

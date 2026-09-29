@@ -241,6 +241,17 @@ impl Home {
         new
     }
 
+    /// Every project's task worktrees (BISE-230): `<root>/worktrees`,
+    /// legacy `~/.local/state/switchboard/worktrees`; one folder per
+    /// project (`<id>`, like [`Home::hub_dir`]), one per task in it.
+    pub fn worktrees_dir(&self) -> PathBuf {
+        if self.is_bise() {
+            self.root.join("worktrees")
+        } else {
+            self.legacy_state().join("worktrees")
+        }
+    }
+
     /// The old places (`~/.bend-harness`, `~/.local/state/switchboard`)
     /// of this HOME: what [`migrate`] reads.
     pub fn legacy(&self) -> Home {

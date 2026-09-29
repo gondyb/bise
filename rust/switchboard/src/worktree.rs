@@ -170,13 +170,14 @@ impl GitEnv {
             .unwrap()
     }
 
+    /// `[worktree] root` = <root>/<name>; else the task's own folder
+    /// (`<worktrees>/<name>/<repo>`, the `sweep` module), the next free
+    /// name when taken.
     fn free_path(&self, name: &str) -> PathBuf {
-        let root = self
-            .config
-            .root
-            .clone()
-            .map(|r| r.join(name))
-            .unwrap_or_else(|| self.paths.worktree(name));
+        let Some(root) = self.config.root.clone().map(|r| r.join(name)) else {
+            let dir = crate::sweep::free_task_dir(&self.paths.worktrees, name);
+            return dir.join(crate::sweep::repo_name(&self.paths.workspace));
+        };
         if !root.exists() {
             return root;
         }
@@ -222,7 +223,13 @@ impl GitEnv {
         Ok(())
     }
 
-    fn remove(&self, path: &Path, branch: &str) {
+    /// The task's folder (`<worktrees>/<task>/`) of a worktree there.
+    fn task_dir(&self, path: &Path) -> Option<PathBuf> {
+        let dir = path.parent()?;
+        (dir.parent()? == self.paths.worktrees).then(|| dir.to_path_buf())
+    }
+
+    fn remove(&mut self, path: &Path, branch: &str) {
         let _ = git(
             self.ws(),
             &["worktree", "remove", "--force", &path.to_string_lossy()],
@@ -230,6 +237,19 @@ impl GitEnv {
         let _ = git(self.ws(), &["worktree", "prune"]);
         if !branch.is_empty() {
             let _ = git(self.ws(), &["branch", "-D", branch]);
+        }
+        // the rest of its folder (the owner file, a cache) goes too
+        if let Some(d) = self.task_dir(path) {
+            if let crate::sweep::Outcome::Kept(_, why) = crate::sweep::remove_task_dir(&d, "") {
+                (self.log)(&format!("worktree folder {} kept: {}", d.display(), why));
+            }
+        }
+    }
+
+    /// The folder's owner: the task (its name may differ, `fix-2`).
+    fn own(&self, path: &Path, name: &str) {
+        if let Some(d) = self.task_dir(path) {
+            let _ = std::fs::write(d.join(crate::sweep::OWNER), format!("{}\n", name));
         }
     }
 }
@@ -262,6 +282,7 @@ impl Env for GitEnv {
             self.ws(),
             &["worktree", "add", "-q", "-b", &branch, &ps, &base],
         )?;
+        self.own(&path, name);
         let result = (|| {
             if with_changes {
                 let stash = git(self.ws(), &["stash", "create"])?;
@@ -400,6 +421,7 @@ impl Env for GitEnv {
                 )?;
             }
         }
+        self.own(&path, name);
         self.prepare(&path)?;
         Ok(Workspace {
             mode: Mode::Worktree,
@@ -442,6 +464,7 @@ mod tests {
         let paths = Paths {
             workspace: ws.canonicalize().unwrap(),
             state: root.join("state"),
+            worktrees: root.canonicalize().unwrap().join("worktrees"),
         };
         let config = Config {
             copy: vec![".env".into()],
@@ -476,6 +499,9 @@ mod tests {
         let ws = env.worktree_create("fix", false).unwrap();
         let p = PathBuf::from(&ws.path);
         assert_eq!(ws.branch.as_deref(), Some("sb/fix"));
+        // BISE-230: <worktrees>/<task>/<repo>, the task named in its folder
+        assert_eq!(p, env.paths.worktrees.join("fix/repo"));
+        assert_eq!(crate::sweep::owner_of(&env.paths.worktrees.join("fix")), "fix");
         assert!(p.join("f").exists() && p.join(".env").exists() && p.join(".prepared").exists());
         assert_eq!(
             env.worktree_loss(&ws),
@@ -485,6 +511,8 @@ mod tests {
         // a second task with the same name gets the next branch
         let ws2 = env.worktree_create("fix", false).unwrap();
         assert_eq!(ws2.branch.as_deref(), Some("sb/fix-2"));
+        assert_eq!(PathBuf::from(&ws2.path), env.paths.worktrees.join("fix-2/repo"));
+        assert_eq!(crate::sweep::owner_of(&env.paths.worktrees.join("fix-2")), "fix");
         assert_eq!(
             env.worktree_drop("fix", &ws2, &Loss::default()).unwrap(),
             None
@@ -507,6 +535,8 @@ mod tests {
             .unwrap()
             .expect("saved");
         assert!(!p.exists());
+        assert!(!env.paths.worktrees.join("fix").exists(), "a drop removes the task's folder");
+        assert!(!env.paths.worktrees.join("fix-2").exists());
         assert!(git(
             &env.paths.workspace,
             &["show-ref", "--verify", "--quiet", "refs/heads/sb/fix"]
@@ -547,7 +577,7 @@ mod tests {
         env.config.setup = "exit 3".into();
         let e = env.worktree_create("t", false).unwrap_err();
         assert!(e.contains("setup"), "{}", e);
-        assert!(!env.paths.worktree("t").exists());
+        assert!(!env.paths.worktrees.join("t").exists(), "its folder too");
         assert!(git(
             &env.paths.workspace,
             &["show-ref", "--verify", "--quiet", "refs/heads/sb/t"]

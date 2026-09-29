@@ -6,7 +6,7 @@ free disk), HEAD 9b8ad22 (applied on 6bf6a86+), with other agents working at the
 
 ## 0. Gating rules for agents (applied)
 
-1. Start a task with `projects/switchboard/tests/gate.sh new <name>` (from any tree): a worktree of HEAD in /tmp/<name>-wt and its own target /tmp/<name>-target, an APFS clone of the warm seed for the current deps (~3 s, 0 bytes; the seed is ~1.2 GB, built once per Cargo.lock/Cargo.toml/.cargo/config.toml/rustc change, ~2 min, by the first task that needs it). Run what it prints (`cd` + `export CARGO_TARGET_DIR`). End it with `gate.sh done <name>` (refused while the worktree has uncommitted changes). Never clone another task's target: they grow to 15 GB (see §8) and the disk has a few GB free.
+1. Start a task with `projects/switchboard/tests/gate.sh new <name>` (from any tree; `<name>` defaults to `$SB_AGENT`): its folder `~/.bise/worktrees/<project-id>/<name>/` (BISE-230, like Codex's `~/.codex/worktrees`) holds a worktree of HEAD (`harness/`) and its own target (`target/`), an APFS clone of the warm seed for the current deps (~3-10 s, 0 bytes; the seed, `~/.bise/cache/gate-seed/<key>`, one at a time, ~7 GB of blocks the clones share, is built once per Cargo.lock/Cargo.toml/.cargo/config.toml/rustc change, ~2 min, by the first task that needs it). Run what it prints (`cd` + `export CARGO_TARGET_DIR`). End it with `gate.sh done <name>` (refused while the worktree has uncommitted changes or commits on no branch). The hub removes the folder too, at the task's /drop and, for an orphan (a task archived or unknown), at its start, never when the worktree has such work (it says so in main's thread). Never clone another task's target: they grow to 15 GB (see §8).
 2. Each commit: `projects/switchboard/tests/gate.sh` (quick), in the foreground. It runs clippy -D warnings (in `$CARGO_TARGET_DIR/clippy`, next to the tests) and the tests of the changed crates and their users; no `cargo build` any more (the full gate builds the binary). A change to a `.bend` file of core/ hub/ vendor/ or LAWS/PROOF runs PROOF.bend in 4 shards in parallel; a hub/ vendor/ change also builds a quick sb-core (-O1) for the tests (SB_CORE_BIN; ./sb-core is not touched). Both are cached by content in `$CARGO_TARGET_DIR/gate-cache`. Warm: **~5 s** for a Rust change, **~11 s** for a hub change, 16 s the first time in a new worktree with a cloned target.
 3. Once per task, on the last commit: `gate.sh full` (cargo build; ./repl-live ./repl-scripted ./sb-core put in place by `./bins.sh`, compiled when their sources changed; run_all.sh with FUZZ_RUNS=2000: every Rust test, the whole PROOF.bend, e2e and the 14 tmux tests, 4 jobs in parallel), ~55 s warm.
 4. Never `sleep N; tail log`. A gate the bash tool put in the background: `gate.sh wait <its .out file or pid>` (blocks until it ends, at most 25 s, then shows the result).
@@ -272,7 +272,8 @@ Changes:
    backtraces keep full debug info). One rebuild of the deps per target
    when it lands (~60 s), then targets are ~1.2 GB instead of 8-15.
 2. `gate.sh new <name>` / `gate.sh done <name>` (§0 rule 1). The seed is
-   `/tmp/sb-seed-<key>`, key = hash of Cargo.lock, every Cargo.toml,
+   `~/.bise/cache/gate-seed/<key>` (`/tmp/sb-seed-<key>` before BISE-230:
+   an `mv` onto an existing seed had nested the older one in it, 12 GB), key = hash of Cargo.lock, every Cargo.toml,
    rust/.cargo/config.toml and `rustc -vV`; it holds the test build and
    the clippy build of every crate. A missing key builds on top of the
    newest seed (only the changed deps rebuild) and replaces it: one seed
