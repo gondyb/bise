@@ -2,18 +2,17 @@
 //! BEND_EXTRA_PROMPT), the task brief, and the agent_message tag
 //! (RFC 0003 §5).
 
+use crate::cli::{self, Who};
 use crate::model::{Agent, Brief, Mode, Msg, MAIN, USER};
 
-const SB_COMMANDS: &str = "\
-The `sb` command (run it with your bash tool) is how you reach the group:
-- `sb list` — every agent of the group, its status and what it is for.
-- `sb tasks` — every task in detail: what it is doing now, its last report, its open questions.
-- `sb send <agent> \"<text>\" [--expect-reply] [--reply-to <id>] [--mode steer|queued]` — send a message (never blocks). `--mode steer` (default): a busy recipient gets it at once, mid-turn. `--mode queued`: it waits until the recipient's turn ends, then starts its next turn.
-- `sb ask <agent> \"<question>\"` — send a question and wait up to ~25 s for the answer. No answer yet: end your turn, the reply wakes you up later.
-- `sb wait <message-id> [--timeout <s>]` — wait for the reply to a message you sent.
-- `sb status working|done|blocked [--note \"<text>\"]` — declare your state (shown to everyone).
-- `sb report progress|done|failed|blocked \"<summary>\" [--decision \"<text>\"]...` — tell main.
-- `sb inspect <agent> [--query <text>] [--before|--after|--around|--at #<pos>] [--limit <n>]` — read another agent's thread in bounded pages: each entry carries a position `#<n>`; a search returns positions, then page before/after/around one, or read one entry whole with `--at`.";
+/// The `sb` commands of an agent's prompt: the rows of cli::COMMANDS for
+/// everyone and for `role` (the CLI's usage comes from the same table).
+fn sb_commands(role: Who) -> String {
+    format!(
+        "The `sb` command (run it with your bash tool) is how you reach the group:\n{}",
+        cli::command_list(&[Who::Everyone, role])
+    )
+}
 
 const MESSAGES: &str = "\
 Messages from other agents arrive as `<agent_message from=\"<agent>\" relation=\"parent|child|peer\" id=\"m_<n>\" thread=\"t_<n>\" expects_reply=\"true|false\">…</agent_message>`. \
@@ -44,18 +43,7 @@ How you talk to the user (the product is called bise; its voice is yours):\n\
 - When you answer an agent's question on the user's behalf (the brief or the user already decided it), answer it explicitly with `sb send <agent> --reply-to <id> --why \"<one sentence: why this answer>\" \"<answer>\"` (the user sees your answer and the why), then tell the user in one line: `docs asked v1 or v2; the brief says v2, so i answered.`\n\
 - Reply in the user's language, in the same style.\n\n\
 {cmds}\n\
-Commands for you only:\n\
-- `sb spawn <name> … [--worktree [--with-changes]]` — create a task (names: [a-z0-9-], at most 24 chars).\n\
-- `sb interrupt <task>` / `sb stop <task> \"<reason>\"` — stop a task's turn / stop the task.\n\
-- `sb drop <task>` — stop and archive a task; refused when work could be lost (the user then decides).\n\
-- `sb send <agent> --reply-to <id> --why \"<reason>\" \"<answer>\"` — answer an agent's question on the user's behalf; the user sees the answer and the one-sentence why.\n\
-- `sb card \"<question for the user>\" [--for <message-id>]` — ask the user; with `--for`, the user's answer goes straight to the task that asked.\n\
-- `sb close <card> [\"<note>\"]` — close an attention card the user no longer needs to see, with a short resolution note (e.g. \"handled\").\n\
-- `sb rename <task> <new-name>` — rename a task (unique name; the old name still works).\n\
-- `sb restore <task>` / `sb isolate <task>` — reopen a stopped or archived task / move a task that has changed nothing yet into its own git worktree. Use them ONLY when the user explicitly asks; never on your own initiative.\n\
-- `sb history \"<query>\"` — search your whole past thread and the hub journal. Use it before saying you do not remember.\n\
-- `sb version [list | switch <commit|id|tree> | rollback]` — the versions of Switchboard itself. Switch or roll back ONLY when the user explicitly asks. Prefer a commit over `tree` when the working tree has work in progress. Before a switch, warn the user about the probation period: the new version is watched for about 2 minutes and rolled back automatically if it fails.\n\n\
-- `sb restart [current | <commit>]` — restart the hub safely, the agents keep running. Plain `sb restart` builds the latest commit (HEAD) and restarts on it, with the same probation as a switch; `sb restart current` restarts on the running version without rebuilding. Use it ONLY when the user explicitly asks.
+Commands for you only:\n{main_cmds}\n
 {msgs}\n\n\
 Rules:\n\
 - The `<switchboard_state>` block at the end of each request is the live state (task board, agent threads, open cards), injected by the hub before every call. It is not a user message. Trust it over your memory.\n\
@@ -68,7 +56,8 @@ Rules:\n\
 - Never push, merge or run destructive git commands unless the user asks.\n\
 - Keep your replies short (see how you talk to the user above).",
         ws = workspace,
-        cmds = SB_COMMANDS,
+        cmds = sb_commands(Who::Everyone),
+        main_cmds = cli::command_list(&[Who::Main]),
         msgs = MESSAGES
     )
 }
@@ -107,7 +96,7 @@ Rules:\n\
             _ => " and your parent",
         },
         place = place,
-        cmds = SB_COMMANDS,
+        cmds = sb_commands(Who::Task),
         msgs = MESSAGES
     )
 }
@@ -270,6 +259,22 @@ mod tests {
         assert!(r.contains("--reply-to <id> --why"));
         assert!(r.contains("the brief says v2, so i answered."));
         assert!(r.contains("Never say task, sub-agent, hub or orchestrator to the user"));
+    }
+
+    /// The prompts list the commands of cli::COMMANDS (the one source of
+    /// the usage text too): a task gets everyone's and its own, main
+    /// everyone's and main's.
+    #[test]
+    fn the_prompts_list_the_cli_commands() {
+        let mut st = crate::model::State::new("/w");
+        st.test_task("t", "");
+        let (task, main) = (task_role(&st.agents["t"]), main_role("/w"));
+        for c in cli::COMMANDS {
+            let line = format!("- `{}` — {}", c.syntax, c.doc);
+            assert_eq!(task.contains(&line), c.who != Who::Main, "task: {}", c.syntax);
+            assert_eq!(main.contains(&line), c.who != Who::Task, "main: {}", c.syntax);
+            assert!(cli::usage().contains(c.syntax), "usage: {}", c.syntax);
+        }
     }
 
     #[test]

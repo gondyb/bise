@@ -6,26 +6,139 @@ use serde_json::{json, Map, Value};
 use std::io::Read;
 use std::time::Duration;
 
-pub const USAGE: &str = "\
-sb list
-sb tasks
-sb send <agent> \"<text>\" [--expect-reply] [--reply-to m_<n>] [--mode steer|queued] [--why \"<reason>\"]
-sb ask <agent> \"<question>\" [--timeout <s>]
-sb wait m_<n> [--timeout <s>]
-sb status working|done|blocked [--note \"<text>\"]
-sb report progress|done|failed|blocked \"<summary>\" [--decision \"<text>\"]...
-sb inspect <agent> [--query <text>] [--before|--after|--around|--at #<pos>] [--limit <n>]
-sb inspect main --origin
-main only:
-sb spawn <name> --objective \"…\" [--context \"…\"] [--constraint \"…\"]... [--done-when \"…\"] [--report-format \"…\"] [--worktree [--with-changes]]
-sb interrupt <agent> | sb stop <agent> \"<reason>\" | sb drop <agent>
-sb close <card> [\"<note>\"] | sb rename <agent> <new-name>
-sb restore <agent> | sb isolate <agent>   (only on the user's explicit request)
-sb card \"<question for the user>\" [--for m_<n>]
-sb history \"<query>\"
-sb version [list | switch <commit|id|tree> | rollback]   (versions of Switchboard itself; list: everyone)
-sb restart [current|<commit>]   (main only: restart the hub safely, agents kept; default: build + restart on the latest commit; current: the running version, no rebuild)
-A text argument `-` reads the text from stdin.";
+/// Who may run a command (and whose system prompt lists it).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Who {
+    Everyone,
+    /// A task (not main): listed in the task prompt only.
+    Task,
+    Main,
+}
+
+/// One `sb` command: its syntax, what it does, who runs it. The one
+/// source of the CLI's usage text and of the command lists in the agents'
+/// system prompts (prompts.rs): a flag changes here only.
+pub struct CmdDoc {
+    pub syntax: &'static str,
+    pub doc: &'static str,
+    pub who: Who,
+}
+
+const fn cmd(syntax: &'static str, who: Who, doc: &'static str) -> CmdDoc {
+    CmdDoc { syntax, doc, who }
+}
+
+pub const COMMANDS: &[CmdDoc] = &[
+    cmd("sb list", Who::Everyone, "every agent of the group, its status and what it is for."),
+    cmd("sb tasks", Who::Everyone, "every task in detail: what it is doing now, its last report, its open questions."),
+    cmd(
+        "sb send <agent> \"<text>\" [--expect-reply] [--reply-to <id>] [--mode steer|queued]",
+        Who::Everyone,
+        "send a message (never blocks). `--mode steer` (default): a busy recipient gets it at once, mid-turn. `--mode queued`: it waits until the recipient's turn ends, then starts its next turn.",
+    ),
+    cmd(
+        "sb ask <agent> \"<question>\" [--timeout <s>]",
+        Who::Everyone,
+        "send a question and wait up to ~25 s for the answer. No answer yet: end your turn, the reply wakes you up later.",
+    ),
+    cmd("sb wait <id> [--timeout <s>]", Who::Everyone, "wait for the reply to a message you sent."),
+    cmd(
+        "sb status working|done|blocked [--note \"<text>\"]",
+        Who::Everyone,
+        "declare your state (shown to everyone).",
+    ),
+    cmd(
+        "sb report progress|done|failed|blocked \"<summary>\" [--decision \"<text>\"]...",
+        Who::Everyone,
+        "tell main.",
+    ),
+    cmd(
+        "sb inspect <agent> [--query <text>] [--before|--after|--around|--at #<pos>] [--limit <n>]",
+        Who::Everyone,
+        "read another agent's thread in bounded pages: each entry carries a position `#<n>`; a search returns positions, then page before/after/around one, or read one entry whole with `--at`.",
+    ),
+    cmd(
+        "sb inspect main --origin",
+        Who::Task,
+        "the user message that led to your creation, verbatim, and main's turn up to the spawn.",
+    ),
+    cmd(
+        "sb spawn <name> --objective \"…\" [--context \"…\"] [--constraint \"…\"]... [--done-when \"…\"] [--report-format \"…\"] [--worktree [--with-changes]]",
+        Who::Main,
+        "create a task (names: [a-z0-9-], at most 24 chars).",
+    ),
+    cmd("sb interrupt <task>", Who::Main, "stop a task's current turn."),
+    cmd("sb stop <task> \"<reason>\"", Who::Main, "stop the task."),
+    cmd(
+        "sb drop <task>",
+        Who::Main,
+        "stop and archive a task; refused when work could be lost (the user then decides).",
+    ),
+    cmd(
+        "sb send <agent> --reply-to <id> --why \"<reason>\" \"<answer>\"",
+        Who::Main,
+        "answer an agent's question on the user's behalf; the user sees the answer and the one-sentence why.",
+    ),
+    cmd(
+        "sb card \"<question for the user>\" [--for <id>]",
+        Who::Main,
+        "ask the user; with `--for`, the user's answer goes straight to the task that asked.",
+    ),
+    cmd(
+        "sb close <card> [\"<note>\"]",
+        Who::Main,
+        "close an attention card the user no longer needs to see, with a short resolution note (e.g. \"handled\").",
+    ),
+    cmd("sb rename <task> <new-name>", Who::Main, "rename a task (unique name; the old name still works)."),
+    cmd(
+        "sb restore <task> | sb isolate <task>",
+        Who::Main,
+        "reopen a stopped or archived task / move a task that has changed nothing yet into its own git worktree. Use them ONLY when the user explicitly asks; never on your own initiative.",
+    ),
+    cmd(
+        "sb history \"<query>\"",
+        Who::Main,
+        "search your whole past thread and the hub journal. Use it before saying you do not remember.",
+    ),
+    cmd(
+        "sb version [list | switch <commit|id|tree> | rollback]",
+        Who::Main,
+        "the versions of Switchboard itself. Switch or roll back ONLY when the user explicitly asks. Prefer a commit over `tree` when the working tree has work in progress. Before a switch, warn the user about the probation period: the new version is watched for about 2 minutes and rolled back automatically if it fails.",
+    ),
+    cmd(
+        "sb restart [current | <commit>]",
+        Who::Main,
+        "restart the hub safely, the agents keep running. Plain `sb restart` builds the latest commit (HEAD) and restarts on it, with the same probation as a switch; `sb restart current` restarts on the running version without rebuilding. Use it ONLY when the user explicitly asks.",
+    ),
+];
+
+/// The command list of a system prompt: `- `syntax` — doc` per line.
+pub fn command_list(who: &[Who]) -> String {
+    COMMANDS
+        .iter()
+        .filter(|c| who.contains(&c.who))
+        .map(|c| format!("- `{}` — {}", c.syntax, c.doc))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// `sb help`: the syntax of every command, main's last.
+pub fn usage() -> String {
+    let line = |w: Who| {
+        COMMANDS
+            .iter()
+            .filter(move |c| c.who == w)
+            .map(|c| c.syntax)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    format!(
+        "{}\ntasks only:\n{}\nmain only:\n{}\nA text argument `-` reads the text from stdin; <id> is a message id (m_<n>).",
+        line(Who::Everyone),
+        line(Who::Task),
+        line(Who::Main)
+    )
+}
 
 /// Split flags from positional words. `flags` take a value, `switches`
 /// do not; a repeated flag accumulates.
@@ -126,7 +239,7 @@ fn str_of(opts: &Map<String, Value>, k: &str) -> String {
 /// The JSON request for `sb <args>`.
 pub fn build(args: &[String]) -> Result<Value, String> {
     let Some(cmd) = args.first() else {
-        return Err(USAGE.into());
+        return Err(usage());
     };
     let rest = &args[1..];
     let mut req = Map::new();
@@ -286,8 +399,8 @@ pub fn build(args: &[String]) -> Result<Value, String> {
             }
             req.insert("origin".into(), json!(o.contains_key("origin")));
         }
-        "help" | "--help" | "-h" => return Err(USAGE.into()),
-        other => return Err(format!("unknown command: {}\n{}", other, USAGE)),
+        "help" | "--help" | "-h" => return Err(usage()),
+        other => return Err(format!("unknown command: {}\n{}", other, usage())),
     }
     Ok(Value::Object(req))
 }
@@ -447,6 +560,26 @@ mod tests {
 
     fn a(s: &[&str]) -> Vec<String> {
         s.iter().map(|x| x.to_string()).collect()
+    }
+
+    /// Every command of the table (usage, prompts) is one `build` knows.
+    #[test]
+    fn every_documented_command_is_known() {
+        for c in COMMANDS {
+            for alt in c.syntax.split(" | sb ") {
+                let name = alt.trim_start_matches("sb ").split(' ').next().unwrap();
+                if matches!(name, "version" | "restart") {
+                    continue; // main() runs them, not a hub request
+                }
+                let r = build(&a(&[name]));
+                assert!(
+                    !matches!(&r, Err(e) if e.starts_with("unknown command")),
+                    "{}: {:?}",
+                    c.syntax,
+                    r
+                );
+            }
+        }
     }
 
     #[test]
