@@ -827,11 +827,16 @@ pub(crate) fn status_state(app: &App) -> Option<Line<'static>> {
     let a = sb.agent(&sb.focus).cloned().unwrap_or_default();
     let d = |t: String| Span::styled(format!(" · {}", t), Style::default().fg(dim()));
     let mut spans: Vec<Span<'static>> = Vec::new();
-    if !a.status.is_empty() {
-        spans.push(d(a.status.clone()));
-    }
-    if let Some(ms) = a.turn_ms.filter(|_| app.pending) {
-        spans.push(d(short_age(ms)));
+    // working: the label says `working · 42s` already (viewed_working),
+    // one status and one timer (QA N); else the state, and the turn's age
+    // as it moves on
+    if a.status != "working" {
+        if !a.status.is_empty() {
+            spans.push(d(a.status.clone()));
+        }
+        if let Some(ms) = a.turn_age_ms().filter(|_| app.pending) {
+            spans.push(d(short_age(ms)));
+        }
     }
     if let Some(u) = crate::usage::current(&app.events) {
         spans.push(d(u.label()));
@@ -1902,6 +1907,31 @@ mod chrome_tests {
         sb.preview = true;
         let text = status_text(&app);
         assert!(text.ends_with("preview of auth-fix"), "{:?}", text);
+    }
+
+    /// QA N: viewing a working agent, the label says `working · 12m`; the
+    /// right side does not say `working · 0s` again. Another state keeps
+    /// its word and the turn's age.
+    #[test]
+    fn a_working_agent_has_one_status_and_one_timer() {
+        let mut app = busy();
+        app.sb.agents.retain(|a| a.name != "auth-fix");
+        app.sb.agents.push(Agent {
+            name: "auth-fix".into(),
+            status: "working".into(),
+            turn_ms: Some(12 * 60_000),
+            ..Agent::default()
+        });
+        app.sb.focus = "auth-fix".into();
+        app.pending = true;
+        assert_eq!(viewed_working(&app).and_then(|w| w.age).as_deref(), Some("12m"));
+        let state: String = status_state(&app).unwrap().spans.iter().map(|s| s.content.to_string()).collect();
+        assert!(!state.contains("working") && !state.contains("12m") && !state.contains("0s"), "{state:?}");
+        for a in app.sb.agents.iter_mut().filter(|a| a.name == "auth-fix") {
+            a.status = "blocked".into();
+        }
+        let state: String = status_state(&app).unwrap().spans.iter().map(|s| s.content.to_string()).collect();
+        assert!(state.starts_with("blocked · 12m"), "{state:?}");
     }
 }
 
