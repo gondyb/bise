@@ -25,7 +25,7 @@
 
 | # | severity | title |
 |---|---|---|
-| A | medium | A message that arrives while the agent is busy shows twice in its feed |
+| A | medium | A message that arrives while the agent is busy shows twice in its feed (**fixed in 3c3cd47**) |
 | I | medium | `skill` with an unknown name says "skills index unreadable" (**fixed in 6586f6d**) |
 | J | medium | The runtime writes the session's skills/plugins index under `~/.bend-harness/run/<port>` in the bise layout (ignores `BEND_RUN_DIR`) |
 | H | low | `/restart ` offers bise commits outside bise's source tree, then refuses them |
@@ -53,7 +53,7 @@ relevant parts).
 
 ---
 
-## A · A message that arrives while the agent is busy shows twice in its feed
+## A · A message that arrives while the agent is busy shows twice in its feed (fixed in 3c3cd47)
 
 - **Severity:** medium. Every busy hour doubles the lines. It hits the
   reports most (`✓ bench: …` twice). The model gets each message once.
@@ -90,6 +90,12 @@ relevant parts).
   and handed over again at `--- idle` gives two lines. Or `mark_delivered`
   does not stop the second pass. The TUI does not dedupe by `m_<id>` either
   (`rust/tui/src/sb.rs:708`).
+- **Cause (3c3cd47):** the message is steered into the busy turn, and
+  `deliver_each` writes its `msg-in` line. The turn ends before the model reads
+  it (`--- idle` with `leftover`), so `repl_idle` requeues it as a
+  `steer_leftover`, and the next pump runs `deliver_each` again: a second line.
+  The model gets it once, in the new turn. Now `deliver.line` writes no line for
+  a `steer_leftover`. Test: `core_tests::a_steer_leftover_shows_once_in_the_feed`.
 
 ## I · `skill` with an unknown name says "skills index unreadable" (fixed in 6586f6d)
 
