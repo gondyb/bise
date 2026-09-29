@@ -363,6 +363,7 @@ The same three levels everywhere, in main and inside an agent.
 - 16 colors / `NO_COLOR`: no tint, the chip reads `[✉ sender → receiver]`. ASCII: `[@ sender > receiver]`.
 - Text: dim, wraps under its own first column (hanging indent after the chip); at most 2 lines, then `… ▸` opens it whole. Chip + text < 30 columns wide: the text goes on the next row at x0+4.
 - Spacing: messages of the same pair stack with no blank row; a new pair after a blank row. The fold line `▸ n messages between k agents` stays dim at x0+2, no chip. Levels 1 and 2 unchanged.
+- **Short on room (the chip)** (W = reading width at x0+2): W ≥ 60: names cut at 12 with `…`; the text starts after the chip if at least 30 columns are left, else on the next row at x0+4. 40 ≤ W < 60: names cut at 8; the text always on the next row at x0+4 (hanging), still ≤ 2 lines then `… ▸`. W < 40: the chip without inner padding and spaces, `✉auth-fix→release`, still tinted, names cut at 6; text on the next row at x0+2. Never cut the arrow or the envelope; cut the receiver before the sender. 16 colors / `NO_COLOR` and ASCII forms follow the same cut rules. The fold line is cut from the right with `…` when narrow. Level 3 stays the quietest thing on screen: the chip tint is its only background, no accent anywhere in it (main included).
 
 **Working = a gust blowing by** (user pick, site/book/working.html variant I; BISE-107).
 - Header and divider: 5 cells. A gust crosses left to right, 110 ms a frame, 9-frame cycle: head `≈` (text), tail `∿` (text) `~` (dim) `·` (faint), then 5 empty frames. Cell k at frame i = ramp[(i − k) mod 9], ramp = `≈ ∿ ~ · _ _ _ _ _` (`_` = space).
@@ -370,6 +371,7 @@ The same three levels everywhere, in main and inside an agent.
 - Divider (BISE-105): `you → marketing <5-cell gust> working · 42s` (1 space around the gust; `working · 42s` dim). Idle: nothing after the name. Header: `<gust> 3 working · ? 1 needs you · ✓ 2 done`.
 - ASCII: ramp `. - ~ =` (head `=`), same motion.
 - Cost: redraw only those cells; ≤ 10 fps; stop when no agent works or the terminal loses focus.
+- **Short on room (the gust):** divider label, full: `you → marketing ≈∿~·  working · 42s` on the left, the state (tokens, %) on the right. Not enough room: drop in this order, one step at a time, until it fits with ≥ 3 columns between left and right: (1) the right-side state; (2) the word `working · ` (keep `42s`); (3) the gust 5 cells → 3 cells (same ramp, cycle 7: `≈ ∿ ~ · _ _ _`); (4) the gust → the 1-cell breathing form (`· ~ ∿ ≈ ∿ ~`); (5) the seconds; (6) last, cut the agent name at 12, then at 8, with `…`. The gust never disappears while the agent works: it's the last thing kept after `you → name`. Header: F ≥ 90: `<5-cell gust> 3 working · ? 1 needs you · ✓ 2 done`; 70–89: 3-cell gust + short counts `3 · ? 1 · ✓ 2`; < 70: 1-cell breathing + short counts. Panel: always the 1-cell breathing form. No motion (the terminal loses focus, the redraw budget is hit, or a reduce-motion env is set): a static `∿` in text color everywhere (`BISE_ASCII=1` keeps the motion with `. - ~ =`).
 
 ## 10. The history (invariant)
 
