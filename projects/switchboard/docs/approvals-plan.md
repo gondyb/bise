@@ -27,6 +27,15 @@ Full table in [approvals.md §9](approvals.md). Two fixes before launch:
 - **Memory file:** the spec puts it in `~/.bend-harness/approvals.toml`;
   use the bise home (`~/.bise/`) unless there is a reason not to.
 
+- **UI changes to approvals.md §7** (designer, cards round 2, mocks 1b6627d):
+  approvals are cards in the same strip + box as every card (see the cards
+  proposal, all-screens top 14). (a) no alt+1/2/3 (⌥0-9 switches agents):
+  digits 1/2/3 answer on an empty composer while the card is open;
+  (b) the note is "type + ⏎" in the open card (⏎ with text = deny with that
+  note), alt+r stays as a shortcut from the composer. An approval never
+  opens by itself while you type (its row pulses once); it may open by
+  itself when the composer is empty and idle.
+
 Order: rules core + runtime gate in parallel → classifier + hub plumbing →
 card kind in sb-core → TUI card, TUI signals, settings, away notice in
 parallel → eval + e2e last (its eval part can start after the classifier).
