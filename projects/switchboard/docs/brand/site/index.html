@@ -17,11 +17,6 @@
   .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)}
   .gc { display:inline-block; width:1ch; text-align:center; }
 
-  /* only with ?draft: claims that are not true yet */
-  .tbd { cursor:help; }
-  body.draft .tbd { text-decoration:underline dotted var(--err); text-underline-offset:4px; }
-  .draftnote { display:none; position:fixed; bottom:12px; right:12px; z-index:9; font-size:12px; color:var(--dim); }
-  body.draft .draftnote { display:block; }
 
   /* top: almost nothing */
   header { position:fixed; top:0; left:0; right:0; z-index:5; display:flex; justify-content:space-between; align-items:center; padding:22px 5vw; font-size:14px; color:var(--dim); }
@@ -184,7 +179,7 @@
     <a class="opt" href="#faq">faq</a>
     <a class="opt" href="book/index.html">brand book</a>
     <button id="theme" title="light / dark">◐</button>
-    <a class="tbd" title="⚠ repo URL not decided" href="#">GitHub</a>
+    <a href="#">GitHub</a>
   </nav>
 </header>
 
@@ -197,7 +192,7 @@
     <div class="big">bise <span class="kiss">:*</span></div>
     <div class="t1">multi-agent coding, made human.</div>
     <div class="t2">ramble. interrupt. change your mind.<br>i run the agents. you stay in flow.</div>
-    <div class="install" id="install" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span class="tbd" id="cmd" title="⚠ no installer yet: today bise runs from a dev checkout (pitch §8.1)">curl -fsSL bise.dev/install | sh</span></span><span class="c" id="copied">copy</span></div>
+    <div class="install" id="install" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span id="cmd">curl -fsSL bise.dev/install | sh</span></span><span class="c" id="copied">copy</span></div>
     <div class="scroll">↓</div>
   </div>
 </div>
@@ -309,9 +304,9 @@
     <p><b>i already have Claude Code.</b><br><span class="dim">keep your models, MCP servers and skills. bise changes how you work with them: one thread, and a team behind it.</span></p>
     <p><b>won't the agents step on each other?</b><br><span class="dim">they tell each other what they touch before they touch it. worktrees only when one needs its own copy, cleaned up after.</span></p>
     <p><b>how many agents can i run?</b><br><span class="dim">as many as you want. the real limits are your tokens, your budget and your provider.</span></p>
-    <p><b>which models?</b><br><span class="dim tbd" title="⚠ not decided for the public release">bring your own key. the list is coming.</span></p>
+    <p><b>which models?</b><br><span class="dim">bring your own key. the list is coming.</span></p>
     <p><b>do i need to learn anything?</b><br><span class="dim">four words: you, main, agents, cards. main is the one you talk to. the rest you pick up in the first hour.</span></p>
-    <p><b>open source?</b><br><span class="dim">yes. read it, fork it, send a :*.</span><span class="tbd" title="⚠ license not decided (pitch §7.3)"></span></p>
+    <p><b>open source?</b><br><span class="dim">yes. read it, fork it, send a :*.</span></p>
   </div>
 </section>
 
@@ -324,7 +319,7 @@
     <p class="soft">agents made me faster. they also made my days feel empty. i was switching tabs, answering "should i continue?", pasting context around. i shipped more than ever and i didn't enjoy it.</p>
     <p class="soft">so i built the tool i wanted: one thread, a team behind it, and me in flow. most of bise was built with bise.</p>
     <p>i want everyone to ship like a team of a hundred, and to love building again. bise is open source and indie. i read every issue.</p>
-    <p class="dim">— Gabriel Vergnaud · <a class="tbd" title="⚠ links not decided" href="#">GitHub</a> · <a class="tbd" title="⚠ links not decided" href="#">X</a></p>
+    <p class="dim">— Gabriel Vergnaud · <a href="#">GitHub</a> · <a href="#">X</a></p>
   </div>
 </section>
 
@@ -335,24 +330,22 @@
     <div class="blow">
       <div class="big acc">:*</div>
       <p class="dim" style="margin-top:28px">ideas in. little kisses out. also pull requests.</p>
-      <div class="install" id="install2" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span class="tbd" title="⚠ no installer yet">curl -fsSL bise.dev/install | sh</span></span><span class="c">copy</span></div>
+      <div class="install" id="install2" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span>curl -fsSL bise.dev/install | sh</span></span><span class="c">copy</span></div>
     </div>
   </section>
 </div>
 
 <footer>
-  <span>bise <span class="acc">:*</span> · open source<span class="tbd" title="⚠ license not decided">.</span></span>
-  <span><a class="tbd" title="⚠ repo URL not decided" href="#">GitHub</a> · <a href="book/index.html">brand book</a></span>
+  <span>bise <span class="acc">:*</span> · open source.</span>
+  <span><a href="#">GitHub</a> · <a href="book/index.html">brand book</a></span>
 </footer>
 
-<div class="draftnote">draft · dotted = not true yet (hover)</div>
 
 <script>
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const root = document.documentElement;
 root.dataset.theme = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 document.getElementById("theme").onclick = () => root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
-if (new URLSearchParams(location.search).has("draft")) document.body.classList.add("draft");
 const hdr = document.getElementById("top");
 addEventListener("scroll", () => hdr.classList.toggle("scrolled", scrollY > innerHeight * .6));
 for (const id of ["install", "install2"]) document.getElementById(id).onclick = (e) => {
