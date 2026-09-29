@@ -419,10 +419,11 @@ fn main() -> std::io::Result<()> {
         let args: Vec<String> = std::env::args().skip(1).collect();
         // the move to ~/.bise (BISE-161): by the commands that open a hub
         // or a session, before any path is computed; never by `sb` (an
-        // agent's tool) nor the switcher (mid-switch)
+        // agent's tool) nor the switcher (mid-switch). login/logout too:
+        // a key stored on a fresh HOME goes straight to ~/.bise (qa C)
         let opens = matches!(args.first().map(String::as_str), None | Some("switchboard" | "sbd"))
             || args.iter().any(|a| a == "--headless");
-        if opens {
+        if opens || matches!(args.first().map(String::as_str), Some("login" | "logout")) {
             migrate_home();
         }
         // every state path, decided once (bise_home) and exported before any
