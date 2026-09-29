@@ -191,9 +191,38 @@ commandes.
   ils réutilisent `close_card`, `rename.apply`, `restore_task`,
   `isolate_task`. `sb version switch|rollback` : réservé à main dans le
   daemon (`version_allowed`), `list` pour tous. `sb restart` / `/restart`
-  (réservé à main) : `restart_target` dans le daemon ; sans argument (ou
-  `latest`) il construit HEAD et relance dessus (un switch, avec
-  probation) ; `current` relance sur la version en cours sans rien
-  reconstruire ; `<commit>` relance sur ce commit.
+  (réservé à main), BISE-131 :
+  - **hors des sources de bise** (le workspace n'a pas `versions.sh` +
+    `rust/switchboard/Cargo.toml`, `switch::dev_workspace`) : un
+    **reload**, comme « Reload Window » de VS Code, sans rien construire.
+    Un autre argument que `current` est refusé (`/version` change de
+    version).
+  - **dans les sources de bise** (mode dev) : inchangé (`restart_plan`,
+    test `restart_is_unchanged_in_dev_and_a_reload_elsewhere`) : sans
+    argument (ou `latest`) il construit HEAD puis switche dessus
+    (probation) ; `<commit>` switche sur ce commit ; `current`, ou un HEAD
+    déjà en cours, relance le hub seul sur la version en cours (les
+    agents continuent).
+  - **mécanique du reload** : le même switcher (`sbswitch --restart
+    --reload`, même probation de 2 min et même rollback) relance le hub
+    sur la version en cours (le binaire de sa racine, sinon celui du hub
+    en cours : un arbre de dev construit dans un CARGO_TARGET_DIR). Il laisse `reload` (un id en ms) dans le state dir ;
+    le nouveau hub le prend au boot (`switch::take_reload`), relance
+    chaque REPL adopté à son prochain idle (`reload_repls` →
+    `switch_idle_repls` : `reload`, checkpoint, même session, même port)
+    et met l'id dans son `hello` ; une TUI qui a connu un autre id
+    s'exec à nouveau (`follow_reload`, même binaire, même app root).
+  - **rien de perdu** : le journal (agents, cartes, messages en attente
+    côté hub, rôles), les transcripts (les fils), la session de chaque
+    agent (son historique : le REPL repart de son checkpoint), les ports
+    (commandes en arrière-plan, steer), les brouillons de chaque agent et
+    leurs images, les prompts envoyés (`↑`), les messages en file de la
+    TUI (sauvés avec les brouillons, rendus au `ready`), le focus. Une
+    sauvegarde du state dir part dans `/tmp/sb-backup-…` comme pour un
+    switch.
+  - **agent en plein tour** : son REPL n'est pas tué ; le nouveau hub
+    l'adopte, le tour finit sur l'ancien processus, puis il est relancé
+    à son idle (jamais de tour coupé). Un REPL déjà mort en plein tour
+    repart sur sa session avec « continue where you left off ».
 - Dossiers par agent : `agents/<dir>/` où `dir` = nom à la création
   (un rename ne déplace rien).

@@ -108,7 +108,7 @@ pub const COMMANDS: &[CmdDoc] = &[
     cmd(
         "sb restart [current | <commit>]",
         Who::Main,
-        "restart the hub safely, the agents keep running. Plain `sb restart` builds the latest commit (HEAD) and restarts on it, with the same probation as a switch; `sb restart current` restarts on the running version without rebuilding. Use it ONLY when the user explicitly asks.",
+        "reload bise safely, like an editor's \"Reload Window\": the hub, every agent's REPL (at its next idle, same session) and the TUI restart on the running version, nothing built, nothing lost. Only when the workspace is bise's own source tree (dev mode), it is unchanged: plain `sb restart` builds the latest commit (HEAD) and restarts on it with the same probation as a switch, `sb restart <commit>` that commit, `sb restart current` restarts the hub on the running version without rebuilding (the agents keep running). Use it ONLY when the user explicitly asks.",
     ),
 ];
 

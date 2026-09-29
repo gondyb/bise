@@ -8,7 +8,15 @@
 //!   never on each keystroke of a burst;
 //! - at once when a prompt is sent ([`save_now`]): the sent draft is gone
 //!   from the file, the prompt is in the history;
-//! - when the UI ends ([`flush`]): /quit, a version switch (re-exec).
+//! - when the UI ends ([`flush`]): /quit, a version switch or a reload
+//!   (re-exec, BISE-131).
+//!
+//! The queued messages (BISE-89) go in the same file (BISE-131), with
+//! when it was written: a TUI started within [`QUEUE_KEPT`] (a reload,
+//! a version switch: a re-exec) takes them back once the hub's replay is
+//! over ([`requeue`], on `ready`); an agent idle by then gets the oldest
+//! at once (its turn ended while the TUI was away). Later, they are
+//! dropped: old lines never fire at an idle agent (book §8).
 //!
 //! A crash or a killed terminal loses at most the last [`DEBOUNCE`].
 //! [`restore`] reads it back at start. Writes are atomic (a temp file,
@@ -28,6 +36,9 @@ use std::time::{Duration, Instant};
 
 /// The sent prompts kept, per workspace.
 pub(crate) const HISTORY_MAX: usize = 50;
+/// Queued messages come back only in a TUI started this soon after they
+/// were written (a re-exec), never after a real restart.
+pub(crate) const QUEUE_KEPT: Duration = Duration::from_secs(60);
 /// A change is written when it has not moved for this long.
 pub(crate) const DEBOUNCE: Duration = Duration::from_millis(300);
 
@@ -47,11 +58,13 @@ struct Saved {
     attachments: Vec<crate::attach::Attachment>,
     /// newest first
     history: Vec<String>,
+    /// agent → its queued messages, oldest first (the non-empty queues)
+    queues: BTreeMap<String, Vec<crate::queue::Queued>>,
 }
 
 impl Saved {
     fn is_empty(&self) -> bool {
-        self.drafts.is_empty() && self.attachments.is_empty() && self.history.is_empty()
+        self.drafts.is_empty() && self.attachments.is_empty() && self.history.is_empty() && self.queues.is_empty()
     }
 }
 
@@ -70,6 +83,8 @@ struct State {
 
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
+    /// The queues read at start, until the hub's `ready` ([`requeue`]).
+    static QUEUES: RefCell<BTreeMap<String, Vec<crate::queue::Queued>>> = const { RefCell::new(BTreeMap::new()) };
     #[cfg(test)]
     static DIR: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
 }
@@ -118,16 +133,31 @@ fn to_json(workspace: &str, s: &Saved) -> Value {
         .iter()
         .map(|(a, d)| (a.clone(), json!({"text": d.text, "cursor": d.cursor})))
         .collect();
-    let atts: Vec<Value> = s
-        .attachments
-        .iter()
-        .map(|a| {
-            json!({"label": a.label, "marker": a.marker, "source": a.info.source,
-                   "width": a.info.width, "height": a.info.height,
-                   "bytes": a.info.bytes, "resized": a.info.resized})
-        })
-        .collect();
-    json!({"workspace": workspace, "drafts": drafts, "attachments": atts, "history": s.history})
+    let atts_json = |l: &[crate::attach::Attachment]| -> Vec<Value> {
+        l.iter()
+            .map(|a| {
+                json!({"label": a.label, "marker": a.marker, "source": a.info.source,
+                       "width": a.info.width, "height": a.info.height,
+                       "bytes": a.info.bytes, "resized": a.info.resized})
+            })
+            .collect()
+    };
+    let atts = atts_json(&s.attachments);
+    let mut v = json!({"workspace": workspace, "drafts": drafts, "attachments": atts, "history": s.history});
+    if !s.queues.is_empty() {
+        let queues: serde_json::Map<String, Value> = s
+            .queues
+            .iter()
+            .map(|(a, q)| {
+                let l: Vec<Value> =
+                    q.iter().map(|m| json!({"text": m.text, "attachments": atts_json(&m.attachments)})).collect();
+                (a.clone(), Value::Array(l))
+            })
+            .collect();
+        v["queues"] = Value::Object(queues);
+        v["queues_ms"] = json!(now_ms());
+    }
+    v
 }
 
 fn from_json(v: &Value) -> Saved {
@@ -143,8 +173,8 @@ fn from_json(v: &Value) -> Saved {
                 .collect()
         })
         .unwrap_or_default();
-    let attachments = v
-        .get("attachments")
+    let atts_of = |v: &Value| -> Vec<crate::attach::Attachment> {
+        v.get("attachments")
         .and_then(|a| a.as_array())
         .map(|l| {
             l.iter()
@@ -161,6 +191,32 @@ fn from_json(v: &Value) -> Saved {
                 })
                 .collect()
         })
+        .unwrap_or_default()
+    };
+    let attachments = atts_of(v);
+    let fresh = v
+        .get("queues_ms")
+        .and_then(|x| x.as_u64())
+        .is_some_and(|t| now_ms().saturating_sub(t) <= QUEUE_KEPT.as_millis() as u64);
+    let queues = v
+        .get("queues")
+        .filter(|_| fresh)
+        .and_then(|q| q.as_object())
+        .map(|m| {
+            m.iter()
+                .map(|(a, l)| {
+                    let q: Vec<crate::queue::Queued> = l
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .map(|x| crate::queue::Queued { text: str_of(x, "text"), attachments: atts_of(x) })
+                        .filter(|x| !x.text.is_empty())
+                        .collect();
+                    (a.clone(), q)
+                })
+                .filter(|(_, q)| !q.is_empty())
+                .collect()
+        })
         .unwrap_or_default();
     let mut history: Vec<String> = v
         .get("history")
@@ -168,7 +224,11 @@ fn from_json(v: &Value) -> Saved {
         .map(|l| l.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
         .unwrap_or_default();
     history.truncate(HISTORY_MAX);
-    Saved { drafts, attachments, history }
+    Saved { drafts, attachments, history, queues }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
 /// Write `text` to `path` atomically, mode 0600 (the folder 0700).
@@ -254,7 +314,22 @@ fn snapshot(app: &App) -> Saved {
         .collect();
     let mut history = app.history.clone();
     history.truncate(HISTORY_MAX);
-    Saved { drafts, attachments, history }
+    let mut queues = BTreeMap::new();
+    if !app.queued.is_empty() {
+        queues.insert(app.sb.focus.clone(), app.queued.clone());
+    }
+    for (a, v) in &app.sb.views {
+        if !v.queued.is_empty() {
+            queues.insert(a.clone(), v.queued.clone());
+        }
+    }
+    // read at start, not back yet (no `ready`): still to keep
+    QUEUES.with(|q| {
+        for (a, l) in q.borrow().iter() {
+            queues.entry(a.clone()).or_insert_with(Vec::new).splice(0..0, l.iter().cloned());
+        }
+    });
+    Saved { drafts, attachments, history, queues }
 }
 
 /// An attachment still usable: the image store still has its file.
@@ -296,7 +371,28 @@ pub(crate) fn restore(app: &mut App) {
     if app.history.is_empty() {
         app.history = s.history;
     }
+    QUEUES.with(|q| *q.borrow_mut() = std::mem::take(&mut s.queues));
     STATE.with(|st| *st.borrow_mut() = State { file: Some(file), written: Some(saved), seen: None, failed: false });
+}
+
+/// The hub's replay is over (`ready`): the queues read at start go back
+/// to their feeds, before what was queued since; an agent that is idle
+/// now gets its oldest queued message (its turn ended meanwhile).
+pub(crate) fn requeue(app: &mut App) {
+    let queues = QUEUES.with(|q| std::mem::take(&mut *q.borrow_mut()));
+    for (agent, q) in queues {
+        let mut next = None;
+        super::with_feed(app, &agent, |app| {
+            app.queued.splice(0..0, q);
+            next = crate::queue::next(app);
+            if next.is_some() {
+                app.pending = true;
+            }
+        });
+        if let Some(m) = next {
+            app.sb.send_input_to(&agent, m);
+        }
+    }
 }
 
 /// The UI loop, once per turn: a state that has not moved for
@@ -416,6 +512,37 @@ mod tests {
         assert_eq!(b.ed.cursor, 8);
         focus(&mut b, "docs");
         assert_eq!(b.ed.text, "for docs");
+    }
+
+    #[test]
+    fn the_queues_survive_a_reload_and_an_idle_agent_gets_the_oldest() {
+        let q = |t: &str| crate::queue::Queued { text: t.into(), attachments: Vec::new() };
+        let (_d, mut app) = setup();
+        app.queued = vec![q("main one"), q("main two")];
+        focus(&mut app, "docs");
+        app.queued = vec![q("docs one")];
+        flush(&app);
+        assert_eq!(on_disk(&app)["queues"]["main"], json!([{"text": "main one", "attachments": []}, {"text": "main two", "attachments": []}]));
+        let mut b = restarted(&app);
+        // before the hub's replay is over: nowhere yet, still saved
+        assert!(b.queued.is_empty());
+        assert_eq!(snapshot(&b).queues.len(), 2, "not lost before ready");
+        // ready: main is busy (it keeps both), docs is idle (it gets its one)
+        b.pending = true;
+        requeue(&mut b);
+        assert_eq!(b.queued, vec![q("main one"), q("main two")]);
+        focus(&mut b, "docs");
+        assert!(b.queued.is_empty(), "sent at once: its turn ended meanwhile");
+        assert!(b.pending);
+        assert!(!snapshot(&b).queues.contains_key("docs"));
+        // a real restart, later: the old queue is dropped
+        let f = dir().unwrap().join(file_name(&app.sb.workspace));
+        let mut v = on_disk(&app);
+        v["queues_ms"] = json!(now_ms() - QUEUE_KEPT.as_millis() as u64 - 1000);
+        std::fs::write(&f, v.to_string()).unwrap();
+        let c = restarted(&app);
+        assert!(snapshot(&c).queues.is_empty(), "stale queues never come back");
+        assert_eq!(c.ed.text, "", "the drafts still do (none here)");
     }
 
     #[test]

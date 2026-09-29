@@ -25,6 +25,19 @@ pub(super) fn follow_hub_exe(exe: &str) -> bool {
     false
 }
 
+/// The hub was started by a reload (BISE-131): this TUI re-executes
+/// its own binary. Only in a terminal, like `follow_hub_exe`.
+pub(super) fn follow_reload() -> bool {
+    let Ok(me) = std::env::current_exe() else { return false };
+    if !io::stdout().is_terminal() {
+        return false;
+    }
+    if let Ok(mut r) = REEXEC.lock() {
+        *r = Some(me.to_string_lossy().to_string());
+    }
+    true
+}
+
 /// After `run_switchboard` returned: the binary to exec to follow the
 /// hub's version, if it asked for one.
 pub fn take_reexec() -> Option<String> {
@@ -99,6 +112,7 @@ pub(super) fn new_sb(writer: std::sync::Arc<std::sync::Mutex<UnixStream>>, works
         version: String::new(),
         versions: Vec::new(),
         versions_asked: std::cell::Cell::new(None),
+        reload_seen: None,
         panel_hits: Default::default(),
         archived_open: false,
         calls: 0,

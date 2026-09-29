@@ -179,6 +179,12 @@ struct Shell {
     /// (killed by a restart, a crash): once respawned on their session,
     /// they are told to continue where they left off.
     resume_turn: BTreeSet<String>,
+    /// The id of the reload that started this hub ("" when none,
+    /// BISE-131): in the hello, the TUIs that knew another re-exec.
+    reload_id: String,
+    /// Adopted REPLs a reload relaunches at their next idle (same
+    /// session, same port), like a switch to their own binary.
+    reload_repls: BTreeSet<String>,
     /// The small model failed and agent_model answered: role lines use
     /// agent_model for the rest of this hub's life (BISE-126).
     small_broken: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -504,10 +510,11 @@ impl Shell {
         c(a) == c(b)
     }
 
-    /// Every idle REPL still on another version's binary is asked to
-    /// reload (a turn boundary: it checkpoints and exits); the hub then
-    /// restarts it on its own binary, same port, same session. Busy ones
-    /// wait for the end of their turn: an agent never loses a turn.
+    /// Every idle REPL still on another version's binary, or adopted by
+    /// a reload (BISE-131), is asked to reload (a turn boundary: it
+    /// checkpoints and exits); the hub then restarts it on its own
+    /// binary, same port, same session. Busy ones wait for the end of
+    /// their turn: an agent never loses a turn.
     fn switch_idle_repls(&mut self) {
         let stale: Vec<(String, String)> = self
             .hub
@@ -517,9 +524,11 @@ impl Shell {
             .filter(|a| a.run == crate::model::Run::Idle)
             .filter(|a| !self.switching.contains_key(&a.dir) && self.repls.contains_key(&a.dir))
             .filter(|a| {
-                self.bins
-                    .get(&a.dir)
-                    .is_some_and(|b| !Self::same_bin(b, &self.opts.repl_bin))
+                self.reload_repls.contains(&a.dir)
+                    || self
+                        .bins
+                        .get(&a.dir)
+                        .is_some_and(|b| !Self::same_bin(b, &self.opts.repl_bin))
             })
             .map(|a| (a.name.clone(), a.dir.clone()))
             .collect();
@@ -528,6 +537,7 @@ impl Shell {
                 continue;
             };
             if r.stream.write_all(b"reload\n").is_ok() {
+                self.reload_repls.remove(&dir);
                 log_line(
                     &self.opts.paths,
                     &format!(
@@ -579,6 +589,9 @@ impl Shell {
                     ),
                 );
                 self.pids.insert(dir.clone(), (gen, r.pid));
+                if !self.reload_id.is_empty() {
+                    self.reload_repls.insert(dir.clone());
+                }
                 self.bins.insert(dir.clone(), r.bin.clone());
                 self.ports.insert(dir.clone(), r.port);
                 let tx = self.tx.clone();
@@ -735,6 +748,7 @@ impl Shell {
             "state_dir": self.opts.paths.state.to_string_lossy(),
             "exe": self.opts.exe.to_string_lossy(),
             "version": crate::switch::version_info(&self.opts.app_root),
+            "reload": self.reload_id,
         }));
         push(&self.hub.snapshot(now_ms()));
         for name in &self.hub.st.order {
@@ -1164,6 +1178,8 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         restored: BTreeSet::new(),
         building: BTreeSet::new(),
         resume_turn: BTreeSet::new(),
+        reload_id: String::new(),
+        reload_repls: BTreeSet::new(),
         small_broken: Default::default(),
     };
     // the role lines of an earlier hub (BISE-126)
@@ -1207,6 +1223,11 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     if let Ok(t) = std::fs::read_to_string(&notice) {
         let _ = std::fs::remove_file(&notice);
         sh.feed(MAIN, &format!("sb warn : {}", wire_escape(&t)));
+    }
+    // a reload started this hub: every REPL it adopts is relaunched
+    sh.reload_id = crate::switch::take_reload(&paths).unwrap_or_default();
+    if !sh.reload_id.is_empty() {
+        log_line(&paths, &format!("reload {}: every REPL relaunches at its next idle", sh.reload_id));
     }
     sh.booting = true;
     sh.step(Input::Boot);

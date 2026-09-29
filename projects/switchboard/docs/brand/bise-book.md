@@ -480,7 +480,7 @@ The same three levels everywhere, in main and inside an agent.
   sent prompts (`↑`/`↓`, the newest 50) are kept per workspace on disk,
   in the Switchboard state root (`drafts/<folder>-<hash>.json`, mode 600).
   A draft is written once it has not moved for 300 ms, and when the UI
-  ends (quit, `/restart`, a version switch); a crash loses at most those
+  ends (quit, `/restart`'s reload, a version switch); a crash loses at most those
   300 ms. At the next launch every draft is back in its composer and `↑`
   recalls the prompts sent before. Sending a draft takes it off the disk
   at once. No message about it: it just works.
@@ -495,8 +495,11 @@ The same three levels everywhere, in main and inside an agent.
   out as a normal message (marks `·` → `✓✓`) and starts the next turn; the
   next one waits for that turn to end. One queue per agent (main and each
   agent), kept even out of view; the panel row shows `· {n} queued`. A
-  restart of the TUI drops the queue (old lines never fire at an idle
-  agent after a restart).
+  reload or a version switch (the TUI re-executes itself) keeps the queue:
+  it is saved with the drafts and comes back when the hub's replay ends;
+  an agent idle by then gets the oldest at once (BISE-131). A later
+  restart of the TUI (over 60 s) drops it: old lines never fire at an idle
+  agent after a restart.
 - **No undo.** Agents may already have acted, so an undo promises too much.
   To change something, you say it ("no, v1 for docs"). Main sends the agent an
   explicit correction (`the user changed their mind: use v1, not v2.`) and

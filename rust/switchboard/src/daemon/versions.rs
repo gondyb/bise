@@ -20,7 +20,8 @@ pub(super) fn version_allowed(from: &str, what: &str) -> Result<(), String> {
     }
 }
 
-/// What `/restart [<arg>]` restarts the hub on.
+/// What `/restart [<arg>]` restarts the hub on, in bise's source tree
+/// (dev mode: unchanged by BISE-131).
 #[derive(Debug, PartialEq)]
 enum RestartTarget {
     /// `current`: the running version, nothing rebuilt.
@@ -29,6 +30,28 @@ enum RestartTarget {
     Latest,
     /// `<commit>`: that commit, built if needed.
     Rev(String),
+}
+
+/// What `/restart [<arg>]` does (BISE-131).
+#[derive(Debug, PartialEq)]
+enum RestartPlan {
+    /// bise's source tree (dev mode): exactly as before BISE-131, build
+    /// that target then switch (probation), or restart the hub on the
+    /// running version (`current`, or the target already running).
+    Dev(RestartTarget),
+    /// any other workspace, an installed bise: reload the running
+    /// version (hub, REPLs, TUIs), nothing built.
+    Reload,
+    /// any other workspace with a commit: refused, `/version` switches.
+    Refuse,
+}
+
+fn restart_plan(dev: bool, arg: &str) -> RestartPlan {
+    match (dev, arg.trim()) {
+        (true, a) => RestartPlan::Dev(restart_target(a)),
+        (false, "" | "current") => RestartPlan::Reload,
+        (false, _) => RestartPlan::Refuse,
+    }
 }
 
 fn restart_target(arg: &str) -> RestartTarget {
@@ -119,8 +142,18 @@ impl Shell {
                 "a version switch is in progress (probation): wait for it to end, or /version back".into()
             }
             "restart" => {
+                // not bise's source tree: a reload, like VS Code's
+                // "Reload Window" (BISE-131); nothing to build
+                let target = match restart_plan(switch::dev_workspace(&self.opts.paths.workspace), &s("to")) {
+                    RestartPlan::Reload => return self.reload(),
+                    RestartPlan::Refuse => {
+                        return "/restart reloads bise on the version running now (this workspace is not bise's source tree): nothing to build; /version switches versions".into()
+                    }
+                    RestartPlan::Dev(t) => t,
+                };
+                let latest = target == RestartTarget::Latest;
                 let (repo, versions_dir) = self.version_ctx();
-                let rev = match restart_target(&s("to")) {
+                let rev = match target {
                     RestartTarget::Current => String::new(),
                     RestartTarget::Latest => crate::tools_env::git_command()
                         .ok()
@@ -129,7 +162,7 @@ impl Shell {
                         .unwrap_or_default(),
                     RestartTarget::Rev(r) => r,
                 };
-                if rev.is_empty() && restart_target(&s("to")) == RestartTarget::Latest {
+                if rev.is_empty() && latest {
                     return format!(
                         "no latest commit found in {}: /restart current restarts on the running version",
                         repo.display()
@@ -143,7 +176,7 @@ impl Shell {
                         .map(|d| d == cur)
                         .unwrap_or(false);
                 if same {
-                    spawn_switcher(&paths, &self.opts.exe, &cur, true);
+                    spawn_switcher(&paths, &self.opts.exe, &cur, Switcher::Restart);
                     return format!(
                         "restarting the hub on the current version {} — the agents keep running",
                         me.get("id").and_then(|x| x.as_str()).unwrap_or("(dev tree)")
@@ -247,7 +280,7 @@ impl Shell {
                         Ok(o) if o.status.success() => {
                             let dir = String::from_utf8_lossy(&o.stdout).trim().to_string();
                             note("info", format!("version {}: built, switching…", to));
-                            spawn_switcher(&paths, &exe, Path::new(&dir), false);
+                            spawn_switcher(&paths, &exe, Path::new(&dir), Switcher::Switch);
                         }
                         Ok(o) => {
                             let err = String::from_utf8_lossy(&o.stderr).to_string();
@@ -360,13 +393,38 @@ impl Shell {
     }
 
     fn start_switch(&self, to: &Path) {
-        spawn_switcher(&self.opts.paths, &self.opts.exe, to, false);
+        spawn_switcher(&self.opts.paths, &self.opts.exe, to, Switcher::Switch);
     }
+
+    /// Reload bise on the version running now (BISE-131): the switcher
+    /// restarts the hub on it (same probation), the new hub relaunches
+    /// every agent's REPL at its next idle (same session, same port) and
+    /// tells the TUIs to re-exec. Nothing is built.
+    fn reload(&self) -> String {
+        let root = &self.opts.app_root;
+        let cur = root.canonicalize().unwrap_or_else(|_| root.clone());
+        spawn_switcher(&self.opts.paths, &self.opts.exe, &cur, Switcher::Reload);
+        format!(
+            "reloading bise on the running version {}: the hub, every agent and the TUI restart on it, nothing lost (an agent in a turn reloads when its turn ends)",
+            crate::switch::version_id(root).unwrap_or_else(|| "(dev tree)".into())
+        )
+    }
+}
+
+/// What the switcher does.
+#[derive(Clone, Copy)]
+pub(super) enum Switcher {
+    /// to another version
+    Switch,
+    /// the hub again on `to` (maybe the running version), agents kept
+    Restart,
+    /// the running version again: hub, every REPL and TUI (BISE-131)
+    Reload,
 }
 
 /// `exe sbswitch --to <dir>`: detached, from THIS (known good) binary;
 /// it outlives this hub, which it replaces.
-pub(super) fn spawn_switcher(paths: &Paths, exe: &Path, to: &Path, restart: bool) {
+pub(super) fn spawn_switcher(paths: &Paths, exe: &Path, to: &Path, how: Switcher) {
     use std::os::unix::process::CommandExt;
     let err = std::fs::OpenOptions::new()
         .create(true)
@@ -378,7 +436,11 @@ pub(super) fn spawn_switcher(paths: &Paths, exe: &Path, to: &Path, restart: bool
         .arg(&paths.workspace)
         .arg("--to")
         .arg(to)
-        .args(if restart { &["--restart"][..] } else { &[] })
+        .args(match how {
+            Switcher::Switch => &[][..],
+            Switcher::Restart => &["--restart"][..],
+            Switcher::Reload => &["--restart", "--reload"][..],
+        })
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .process_group(0);
@@ -418,6 +480,22 @@ mod tests {
             assert!(e.contains("reserved for main"), "{}", e);
             assert!(version_allowed("", what).is_err());
         }
+    }
+
+    #[test]
+    fn restart_is_unchanged_in_dev_and_a_reload_elsewhere() {
+        use super::{restart_plan, RestartPlan::*, RestartTarget::*};
+        // bise's source tree: exactly as before (build + switch, or the hub
+        // again on the running version); never a reload
+        assert_eq!(restart_plan(true, ""), Dev(Latest));
+        assert_eq!(restart_plan(true, "latest"), Dev(Latest));
+        assert_eq!(restart_plan(true, "current"), Dev(Current));
+        assert_eq!(restart_plan(true, "021b8a1"), Dev(Rev("021b8a1".into())));
+        // anywhere else: a reload, nothing built
+        assert_eq!(restart_plan(false, ""), Reload);
+        assert_eq!(restart_plan(false, " current "), Reload);
+        assert_eq!(restart_plan(false, "latest"), Refuse);
+        assert_eq!(restart_plan(false, "021b8a1"), Refuse);
     }
 
     #[test]

@@ -5,7 +5,8 @@
 //! pops the newest back to edit. When the turn ends, the oldest goes out
 //! as a normal message (it starts the next turn; the next one waits for
 //! that turn to end). One queue per feed (the `App` fields are swapped
-//! with the view); a restart of the TUI drops it.
+//! with the view); it is saved with the drafts (sb/drafts.rs), so a
+//! reload or a restart of the TUI keeps it (BISE-131).
 
 use crate::app::App;
 use crate::attach::Attachment;

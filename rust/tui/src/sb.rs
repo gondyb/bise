@@ -35,7 +35,7 @@ pub(crate) use keys::{scene, Scene};
 #[cfg(test)]
 use keys::{nav_key, Nav};
 pub use client::{run_switchboard, take_reexec};
-use client::{follow_hub_exe, HUB_DOWN, HUB_UP};
+use client::{follow_hub_exe, follow_reload, HUB_DOWN, HUB_UP};
 #[cfg(test)]
 use client::{new_sb, sb_app};
 use feed::{
@@ -116,6 +116,10 @@ pub(super) struct Sb {
     /// was last asked for.
     versions: Vec<VersionItem>,
     versions_asked: std::cell::Cell<Option<std::time::Instant>>,
+    /// The reload id of the first hub this TUI met (None before its
+    /// first hello): a hub with another one was started by a reload
+    /// (BISE-131), which this TUI follows by re-executing itself.
+    reload_seen: Option<String>,
     /// The card box above the composer (Ctrl+G), never opened by the hub.
     card: CardView,
     /// Set by the last draw: the panel rows and their agents (clicks).
@@ -392,13 +396,26 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
                 .to_string();
             // the hub runs another version: this TUI follows it
             let exe = s("exe");
+            let reload = s("reload");
+            let first = sb.reload_seen.is_none();
+            let reloaded = !first && !reload.is_empty() && sb.reload_seen.as_deref() != Some(reload.as_str());
+            if first {
+                sb.reload_seen = Some(reload);
+            }
             if !exe.is_empty() && follow_hub_exe(&exe) {
+                app.should_quit = true;
+            } else if reloaded && follow_reload() {
+                // a reload (BISE-131): the same binary starts again; the
+                // drafts and queues are written when the UI ends
                 app.should_quit = true;
             }
         }
         "ready" => {
             let sb = &mut app.sb;
             sb.ready = true;
+            // the queues saved by the TUI before this one (a reload, a
+            // restart): back now that the feeds say who is busy
+            drafts::requeue(app);
         }
         _ => {}
     }

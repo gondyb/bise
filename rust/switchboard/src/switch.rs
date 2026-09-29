@@ -175,14 +175,19 @@ pub fn exe_of(root: &Path) -> Option<PathBuf> {
 
 /// `root/bise sbd`, detached (its own process group), like
 /// `client::start_hub`; the child handle tells a hub that died at once.
-fn start_hub(paths: &Paths, root: &Path) -> std::io::Result<std::process::Child> {
+/// `same`: the version running now (a restart, a reload): when `root`
+/// has no binary (a dev tree built in a CARGO_TARGET_DIR), the running
+/// hub's own, this switcher's; else the root's, as before (a dev tree's
+/// fresh `rust/target/debug/bise`).
+fn start_hub(paths: &Paths, root: &Path, same: bool) -> std::io::Result<std::process::Child> {
     use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
     let err = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(paths.state.join("hub.err"))?;
-    let exe = exe_of(root).unwrap_or_else(|| root.join(EXE));
+    let mine = || std::env::current_exe().ok().filter(|_| same);
+    let exe = exe_of(root).or_else(mine).unwrap_or_else(|| root.join(EXE));
     Command::new(exe)
         .arg("sbd")
         .arg("--workspace")
@@ -199,7 +204,7 @@ fn start_hub(paths: &Paths, root: &Path) -> std::io::Result<std::process::Child>
 
 /// Stop the hub, agents kept; then start the hub of `root`. Err: why
 /// the new hub is not up.
-fn replace_hub(paths: &Paths, root: &Path) -> Result<(), String> {
+fn replace_hub(paths: &Paths, root: &Path, same: bool) -> Result<(), String> {
     let old = hub_pid(paths);
     let _ = client::stop(paths, true);
     if let Some(p) = old {
@@ -216,7 +221,7 @@ fn replace_hub(paths: &Paths, root: &Path) -> Result<(), String> {
         }
     }
     let _ = std::fs::remove_file(paths.socket());
-    let mut child = start_hub(paths, root).map_err(|e| e.to_string())?;
+    let mut child = start_hub(paths, root, same).map_err(|e| e.to_string())?;
     let t0 = Instant::now();
     while t0.elapsed() < Duration::from_secs(20) {
         if ping(paths) {
@@ -320,9 +325,33 @@ fn backup(paths: &Paths) -> Option<PathBuf> {
     ok.then_some(dest)
 }
 
+/// The workspace is bise's own source tree (dev mode, BISE-131): there
+/// `/restart` builds the latest commit, then switches to it; anywhere
+/// else it reloads the running version (nothing built).
+pub fn dev_workspace(ws: &Path) -> bool {
+    ws.join("versions.sh").is_file() && ws.join("rust/switchboard/Cargo.toml").is_file()
+}
+
+/// Left by a reload's switcher for the hub it starts (BISE-131): that hub
+/// reloads every REPL it adopts and tells the TUIs to re-exec. It holds
+/// the reload's id (ms), the hub takes it at boot.
+pub fn reload_file(paths: &Paths) -> PathBuf {
+    paths.state.join("reload")
+}
+
+/// At boot: the id of the reload that started this hub, if one did.
+pub fn take_reload(paths: &Paths) -> Option<String> {
+    let f = reload_file(paths);
+    let id = std::fs::read_to_string(&f).ok()?.trim().to_string();
+    let _ = std::fs::remove_file(&f);
+    (!id.is_empty()).then_some(id)
+}
+
 /// `restart`: `to` may be the running version (a plain restart of the
-/// hub, e.g. a stuck one); the agents are kept the same way.
-pub fn run(paths: &Paths, to: &Path, period: Duration, restart: bool) -> i32 {
+/// hub, e.g. a stuck one); the agents are kept the same way. `reload`
+/// (BISE-131, implies `restart`): the new hub also relaunches every
+/// agent's REPL (at its next idle, same session) and the TUIs.
+pub fn run(paths: &Paths, to: &Path, period: Duration, restart: bool, reload: bool) -> i32 {
     let lock = paths.state.join("switch.pid");
     if let Some(p) = std::fs::read_to_string(&lock)
         .ok()
@@ -334,12 +363,12 @@ pub fn run(paths: &Paths, to: &Path, period: Duration, restart: bool) -> i32 {
         }
     }
     let _ = std::fs::write(&lock, std::process::id().to_string());
-    let code = run_locked(paths, to, period, restart);
+    let code = run_locked(paths, to, period, restart || reload, reload);
     let _ = std::fs::remove_file(&lock);
     code
 }
 
-fn run_locked(paths: &Paths, to: &Path, period: Duration, restart: bool) -> i32 {
+fn run_locked(paths: &Paths, to: &Path, period: Duration, restart: bool, reload: bool) -> i32 {
     let to = to.canonicalize().unwrap_or_else(|_| to.to_path_buf());
     if !to.join("repl-live").exists() {
         notice(
@@ -376,7 +405,9 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration, restart: bool) -> i32 
     let saved = backup(paths)
         .map(|d| format!(" · state backed up: {}", d.display()))
         .unwrap_or_default();
-    let what = if from == to {
+    let what = if reload {
+        format!("reloading bise on version {}: the hub, every agent and the TUI restart, nothing lost", to_id)
+    } else if from == to {
         format!("restarting the hub on version {}", to_id)
     } else if restart {
         format!("restarting the hub on version {} (from {})", to_id, from_id)
@@ -386,7 +417,7 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration, restart: bool) -> i32 
     notice(
         paths,
         "info",
-        &format!("{} — the agents keep running{}", what, saved),
+        &format!("{}{}{}", what, if reload { "" } else { " — the agents keep running" }, saved),
     );
     let _ = std::fs::remove_file(fail_file(paths));
     if from != to {
@@ -398,8 +429,11 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration, restart: bool) -> i32 
     }
     st["probation_until"] = json!(now_ms() + period.as_millis() as u64);
     write_state(paths, &st);
+    if reload {
+        let _ = std::fs::write(reload_file(paths), now_ms().to_string());
+    }
 
-    let outcome = replace_hub(paths, &to).and_then(|_| probation(paths, period));
+    let outcome = replace_hub(paths, &to, from == to).and_then(|_| probation(paths, period));
     let mut st = read_state(paths);
     st["probation_until"] = json!(0);
     match outcome {
@@ -410,7 +444,9 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration, restart: bool) -> i32 
             notice(
                 paths,
                 "info",
-                &if from == to {
+                &if reload {
+                    format!("bise reloaded on version {} (probation passed)", to_id)
+                } else if from == to {
                     format!("hub restarted on version {} (probation passed)", to_id)
                 } else {
                     format!("version {} validated (probation passed)", to_id)
@@ -443,7 +479,7 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration, restart: bool) -> i32 
                 json!({"version": to.to_string_lossy(), "reason": reason, "at": now_ms()});
             write_state(paths, &st);
             let _ = std::fs::remove_file(fail_file(paths));
-            let back = replace_hub(paths, &from);
+            let back = replace_hub(paths, &from, from == to);
             let text = format!(
                 "version {} failed ({}) — rollback to version {}{}",
                 to_id,
@@ -464,6 +500,31 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration, restart: bool) -> i32 
 
 #[cfg(test)]
 mod state_tests {
+    #[test]
+    fn dev_mode_is_bise_source_tree() {
+        let d = std::env::temp_dir().join(format!("sb-devws-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("rust/switchboard")).unwrap();
+        assert!(!super::dev_workspace(&d), "any workspace: a reload");
+        std::fs::write(d.join("versions.sh"), "").unwrap();
+        assert!(!super::dev_workspace(&d));
+        std::fs::write(d.join("rust/switchboard/Cargo.toml"), "").unwrap();
+        assert!(super::dev_workspace(&d), "bise's sources: build then switch");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn the_reload_file_is_taken_once() {
+        let d = std::env::temp_dir().join(format!("sb-reload-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let paths = crate::paths::Paths { workspace: d.clone(), state: d.clone() };
+        assert_eq!(super::take_reload(&paths), None);
+        std::fs::write(super::reload_file(&paths), "123\n").unwrap();
+        assert_eq!(super::take_reload(&paths).as_deref(), Some("123"));
+        assert_eq!(super::take_reload(&paths), None);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     #[test]
     fn a_non_object_state_file_reads_as_empty() {
         for t in [None, Some(""), Some("[1]"), Some("3"), Some("null"), Some("{\"good\": \"x\"")] {

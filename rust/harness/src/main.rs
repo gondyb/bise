@@ -353,10 +353,14 @@ fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
     // version's TUI (the terminal is restored; the new one reconnects)
     if let Some(next) = bend_tui::take_reexec() {
         use std::os::unix::process::CommandExt;
-        let root = std::path::Path::new(&next)
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or(root);
+        // a reload (BISE-131) re-execs this same binary: same app root
+        let canon = |p: &std::path::Path| p.canonicalize().ok();
+        let same = canon(std::path::Path::new(&next)).is_some() && canon(std::path::Path::new(&next)) == canon(&exe);
+        let root = if same {
+            root
+        } else {
+            std::path::Path::new(&next).parent().map(|p| p.to_path_buf()).unwrap_or(root)
+        };
         let mut cmd = Command::new(&next);
         cmd.arg("switchboard")
             .arg("--workspace")
@@ -451,11 +455,13 @@ fn main() -> std::io::Result<()> {
                     .map(std::time::Duration::from_secs)
                     .unwrap_or(switchboard::switch::PROBATION);
                 let restart = rest.iter().any(|a| a == "--restart");
+                let reload = rest.iter().any(|a| a == "--reload");
                 std::process::exit(switchboard::switch::run(
                     &paths,
                     std::path::Path::new(&to),
                     period,
                     restart,
+                    reload,
                 ));
             }
             Some("--version" | "-V" | "version") => {

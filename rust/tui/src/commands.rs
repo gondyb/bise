@@ -45,8 +45,8 @@ pub(crate) const COMMANDS: &[Cmd] = &[
     Cmd { name: "/voice", desc: "turn voice mode (ctrl+r speech-to-text) on or off", args: &[] },
     Cmd {
         name: "/restart",
-        desc: "rebuild and restart switchboard on the latest commit (agents kept): /restart [current|<commit>]",
-        args: &[Arg::Version(&[("current", "rebuild the version running now")])],
+        desc: "reload bise, nothing lost (bise's own sources: build HEAD, switch): /restart [current|<commit>]",
+        args: &[Arg::Version(&[("current", "the version running now, nothing built")])],
     },
     Cmd {
         name: "/version",
