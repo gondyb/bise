@@ -537,7 +537,7 @@ fn run_of(s: &str) -> Run {
 impl Hub {
     pub fn new(workspace: &str) -> Hub {
         let mut link = CoreLink::start().unwrap_or_else(|e| {
-            panic!("sb-core introuvable ({}): {}", core_bin().display(), e)
+            panic!("sb-core not found ({}): {}", core_bin().display(), e)
         });
         link.call(&json!({"t": "init", "workspace": workspace}));
         let mut hub = Hub {

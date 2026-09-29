@@ -97,19 +97,20 @@ pub fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
 }
 
 fn git_env(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Result<String, String> {
-    let mut cmd = Command::new("git");
+    // never the macOS installer stub: it would pop a dialog per call
+    let mut cmd = crate::tools_env::git_command()?;
     cmd.arg("-C").arg(dir).args(args);
     for (k, v) in env {
         cmd.env(k, v);
     }
     let out = cmd
         .output()
-        .map_err(|e| format!("git introuvable : {}", e))?;
+        .map_err(|e| format!("git could not start: {}", e))?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).trim_end().to_string())
     } else {
         Err(format!(
-            "git {} : {}",
+            "git {}: {}",
             args.join(" "),
             String::from_utf8_lossy(&out.stderr).trim()
         ))

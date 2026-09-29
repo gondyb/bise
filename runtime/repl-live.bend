@@ -66,13 +66,18 @@ def extra_prompt() -> IO(String):
     +path : String <- IO.pure(String, P.env_or(er, ""))
     extra_prompt.read(String.is_empty(path), path)
 
+# BEND_TOOLS_NOTE: whether rg and git are on this machine (BISE-166,
+# written by bend-harness / the hub), after the current-time section;
+# unset or blank: nothing is added
 def live_prompt() -> IO(String):
   do IO<String>:
     +tu : String <- prompt_read("prompt-tool-use.txt")
     +ct : String <- prompt_read("prompt-current-time.txt")
+    tn : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_TOOLS_NOTE")
+    +note : String <- IO.pure(String, P.env_or(tn, ""))
     +content : String <- Sk.prompt_content()
     +extra : String <- extra_prompt()
-    IO.pure(String, Rcp.prompt_extra(live_prompt.go(prompt_join(tu, ct), content), extra))
+    IO.pure(String, Rcp.prompt_extra(live_prompt.go(prompt_join(tu, Rcp.prompt_extra(ct, note)), content), extra))
 
 def live_cfg(+threshold: Nat) -> IO(T.Cfg):
   do IO<T.Cfg>:

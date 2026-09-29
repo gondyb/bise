@@ -587,14 +587,6 @@ impl Shell {
                     .unwrap_or(0)
                     .to_string(),
             )
-            .env(
-                "PATH",
-                format!(
-                    "{}:{}",
-                    self.opts.paths.bin_dir().display(),
-                    std::env::var("PATH").unwrap_or_default()
-                ),
-            )
             .env_remove("BEND_CONTINUE")
             .env_remove("BEND_CRASH_NOTE")
             // this hub's sb-core is not the agents' business (a hub an
@@ -616,7 +608,16 @@ impl Shell {
         self.ports.insert(dir.clone(), port);
         let tx = self.tx.clone();
         let paths = self.opts.paths.clone();
-        std::thread::spawn(move || supervise(cmd, dir, gen, adir, port, tx, paths));
+        std::thread::spawn(move || {
+            // sb, the hub's PATH, the user's login-shell PATH, the
+            // standard dirs; the model is told once whether rg and git
+            // are there (BISE-166). Here, off the hub's loop: the first
+            // spawn may wait for the login shell (read once, at most 3 s)
+            let agent_path = crate::tools_env::hub_agent_path(&paths.bin_dir());
+            cmd.env("BEND_TOOLS_NOTE", crate::tools_env::tools_note_for(&agent_path))
+                .env("PATH", agent_path);
+            supervise(cmd, dir, gen, adir, port, tx, paths)
+        });
     }
 
     fn on_repl_line(&mut self, dir: &str, line: &str) {
@@ -981,6 +982,23 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         ),
     );
 
+    // the agents' tools, once, off the start path (the login shell may
+    // take a moment; the first REPL spawn waits for it)
+    let tools_paths = paths.clone();
+    std::thread::spawn(move || {
+        let p = crate::tools_env::hub_agent_path(&tools_paths.bin_dir());
+        let rg = crate::tools_env::which("rg", &p);
+        log_line(
+            &tools_paths,
+            &format!(
+                "agents' tools: git {}; rg {}; login-shell PATH {}; PATH={}",
+                crate::tools_env::git().describe(),
+                rg.map(|r| r.display().to_string()).unwrap_or_else(|| "not installed (agents use grep)".into()),
+                if crate::tools_env::login_path().is_some() { "read" } else { "unavailable" },
+                p
+            ),
+        );
+    });
     crate::util::timing("start (socket bound)");
     let workspace = paths.workspace.to_string_lossy().to_string();
     let mut hub = Hub::new(&workspace);

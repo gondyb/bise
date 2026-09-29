@@ -40,14 +40,22 @@ fn restart_target(arg: &str) -> RestartTarget {
 }
 
 /// `git log -<n>` of the repository versions are built from: one
-/// `<short hash> <subject>` per line (empty when git fails).
+/// `<short hash> <subject>` per line (empty when git fails), each line
+/// cut to SUBJECT_MAX chars: the TUI never shows more, and a hello
+/// with 40 subjects of 2 KB filled a client's socket buffer (the hub
+/// blocked on a client that did not read yet).
 fn recent_commits(repo: &Path, n: usize) -> String {
-    Command::new("git")
-        .args(["log", &format!("-{}", n), "--format=%h %s"])
-        .current_dir(repo)
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+    crate::tools_env::git_command()
+        .ok()
+        .and_then(|mut c| c.args(["log", &format!("-{}", n), "--format=%h %s"]).current_dir(repo).output().ok())
+        .map(|o| clip_lines(&String::from_utf8_lossy(&o.stdout)))
         .unwrap_or_default()
+}
+
+const SUBJECT_MAX: usize = 100;
+
+fn clip_lines(log: &str) -> String {
+    log.lines().map(|l| crate::util::clip(l, SUBJECT_MAX) + "\n").collect()
 }
 
 impl Shell {
@@ -114,10 +122,9 @@ impl Shell {
                 let (repo, versions_dir) = self.version_ctx();
                 let rev = match restart_target(&s("to")) {
                     RestartTarget::Current => String::new(),
-                    RestartTarget::Latest => Command::new("git")
-                        .args(["rev-parse", "--short", "HEAD"])
-                        .current_dir(&repo)
-                        .output()
+                    RestartTarget::Latest => crate::tools_env::git_command()
+                        .ok()
+                        .and_then(|mut c| c.args(["rev-parse", "--short", "HEAD"]).current_dir(&repo).output().ok())
                         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
                         .unwrap_or_default(),
                     RestartTarget::Rev(r) => r,
@@ -187,12 +194,15 @@ impl Shell {
                 }
                 let rev = if to == "tree" { "--tree".to_string() } else { to.clone() };
                 if to != "tree" {
-                    let known = Command::new("git")
-                        .args(["rev-parse", "--verify", "--quiet", &format!("{}^{{commit}}", to)])
-                        .current_dir(&repo)
-                        .output()
-                        .map(|o| o.status.success())
-                        .unwrap_or(false);
+                    let known = crate::tools_env::git_command()
+                        .ok()
+                        .and_then(|mut c| {
+                            c.args(["rev-parse", "--verify", "--quiet", &format!("{}^{{commit}}", to)])
+                                .current_dir(&repo)
+                                .output()
+                                .ok()
+                        })
+                        .is_some_and(|o| o.status.success());
                     if !known {
                         return format!(
                             "unknown commit {} in {} — type /version and pick one in the list",
@@ -382,6 +392,17 @@ pub(super) fn spawn_switcher(paths: &Paths, exe: &Path, to: &Path, restart: bool
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn commit_lines_are_cut_to_100_chars() {
+        let long = format!("abc1234 {}", "é".repeat(3000));
+        let out = super::clip_lines(&format!("{}\ndef5678 short\n", long));
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].chars().count(), 100);
+        assert!(lines[0].starts_with("abc1234 é") && lines[0].ends_with('…'));
+        assert_eq!(lines[1], "def5678 short");
+    }
+
     use super::version_allowed;
 
     #[test]

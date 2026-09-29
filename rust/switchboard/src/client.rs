@@ -64,10 +64,19 @@ pub fn stop(paths: &Paths, keep_agents: bool) -> std::io::Result<bool> {
         Ok(mut s) => {
             let req = json!({"op": "stop_hub", "keep_agents": keep_agents});
             s.write_all(format!("{{\"op\":\"hello\"}}\n{}\n", req).as_bytes())?;
-            // wait for the socket to go away
+            // wait for the socket to go away, reading what the hub
+            // writes: its hello (the versions list alone is tens of KB
+            // with long commit subjects) must not fill the socket
+            // buffer, or the hub blocks on it and never stops
+            let _ = s.set_read_timeout(Some(Duration::from_millis(100)));
+            let mut sink = [0u8; 65536];
             let t0 = Instant::now();
             while paths.socket().exists() && t0.elapsed() < Duration::from_secs(5) {
-                std::thread::sleep(Duration::from_millis(100));
+                match std::io::Read::read(&mut s, &mut sink) {
+                    Ok(0) => std::thread::sleep(Duration::from_millis(50)),
+                    Ok(_) => {}
+                    Err(_) => {}
+                }
             }
             Ok(true)
         }

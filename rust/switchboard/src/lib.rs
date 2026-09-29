@@ -9,6 +9,7 @@
 //!   `hub/*.bend`): `Hub::handle(input) -> effects`, plus the read-only
 //!   state mirror the views read; tested without REPLs or sockets;
 //! - `worktree`: the git operations of RFC 0002;
+//! - `tools_env`: the agents' PATH, git and rg (BISE-166);
 //! - `daemon`: the imperative shell (sockets, journal, feeds), with
 //!   `daemon/repl` (REPL processes) and `daemon/versions` (`/version`);
 //! - `transcript`: reading a thread (positions, cursors, origin);
@@ -25,6 +26,7 @@ pub mod paths;
 pub mod prompts;
 pub mod router;
 pub mod switch;
+pub mod tools_env;
 pub mod transcript;
 pub mod util;
 pub mod wire;

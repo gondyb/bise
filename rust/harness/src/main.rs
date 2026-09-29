@@ -136,7 +136,7 @@ fn resolve_session(sessions_dir: &str, id: &str) -> Result<String, String> {
         .filter(|s| s.starts_with(id))
         .collect();
     match hits.len() {
-        0 => Err(format!("session {} introuvable", id)),
+        0 => Err(format!("session {} not found", id)),
         1 => Ok(format!("{}/{}.txt", sessions_dir, hits[0])),
         _ => Err(format!("ambiguous prefix {} ({} sessions)", id, hits.len())),
     }
@@ -666,6 +666,7 @@ fn main() -> std::io::Result<()> {
     // screen; appended here, it survives every generation.
     let err_path = log_dir.join(format!("harness-{}.err", std::process::id()));
 
+    let tools_note = switchboard::tools_env::tools_note_for(&std::env::var("PATH").unwrap_or_default());
     let mut reloads = 0usize;
     // a crashed REPL respawns on the checkpointed session (written
     // before every provider call, so the turn's history up to its last
@@ -694,6 +695,8 @@ fn main() -> std::io::Result<()> {
         cmd.env("BEND_REPL_PORT", repl_port.to_string())
             // the REPL starts its plugins bridge with this binary
             .env("BEND_HARNESS_BIN", std::env::current_exe().unwrap_or_default())
+            // whether rg and git are there, told once (BISE-166)
+            .env("BEND_TOOLS_NOTE", &tools_note)
             .stdout(Stdio::from(log_file))
             .stderr(Stdio::from(err_file));
         match crash_note.take() {

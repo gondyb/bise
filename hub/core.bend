@@ -968,7 +968,7 @@ def ans_ok.go(m: Maybe<&2, J.Json>, +j: J.Json) -> Result<&2, &2, String, J.Json
     case Some{+v}:
       Done{v}
     case None{}:
-      Fail{J.get_str_or(j, "err", "erreur git")}
+      Fail{J.get_str_or(j, "err", "git error")}
 
 def ans_ok(+j: J.Json) -> Result<&2, &2, String, J.Json>:
   ans_ok.go(J.get(j, "ok"), j)
