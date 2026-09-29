@@ -304,9 +304,9 @@ pub(crate) fn is_notice(ev: &Ev) -> bool {
 }
 
 // the breathing rules: one blank line when the content kind switches
-// (message / tool block / notice). Two exceptions: a reply never
-// detaches from its thinking section, and the first event of the feed
-// starts flush at the top.
+// (message / tool block / notice), and always above and below what's
+// for you (level 2, book §9 'Emphasis'). A reply after anything but its
+// thinking; the first event of the feed starts flush at the top.
 pub(crate) fn wants_gap_before(ev: &Ev, prev: Option<&Ev>) -> bool {
     let Some(p) = prev else {
         return false;
@@ -317,6 +317,12 @@ pub(crate) fn wants_gap_before(ev: &Ev, prev: Option<&Ev>) -> bool {
         return false;
     }
     if matches!(ev, Ev::TimeMark(_)) {
+        return true;
+    }
+    // what's for you (level 2) has room above and below, even between
+    // two level-2 blocks and after the reply's thinking (book §9
+    // 'Emphasis')
+    if is_l2(ev) || is_l2(p) {
         return true;
     }
     let prev_message = is_message(p);
@@ -822,6 +828,16 @@ pub(crate) const PAUSE_MS: u128 = 5 * 60 * 1000;
 
 /// A message between agents (level 3), not a brief or a report (they
 /// have their own lines).
+/// What's for you (level 2, book §9): a reply, main answering for you,
+/// an agent writing to you, a report (not a brief, not level 3).
+pub(crate) fn is_l2(ev: &Ev) -> bool {
+    match ev {
+        Ev::Assistant(_) | Ev::Answered { .. } => true,
+        Ev::AgentMsg { text, .. } => !is_brief(text) && !is_l3(ev),
+        _ => false,
+    }
+}
+
 pub(crate) fn is_l3(ev: &Ev) -> bool {
     matches!(ev, Ev::AgentMsg { level: 3, text, .. } if !is_brief(text) && report_parts(text).is_none())
 }

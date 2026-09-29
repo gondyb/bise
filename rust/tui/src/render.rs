@@ -286,7 +286,7 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         // in main's feed, main's reply carries `:*` (book §6), its text at
         // column 3; inside an agent, the reply is the view's own voice
         Ev::Assistant(t) if main_feed() => {
-            let mark = Span::styled(format!(" {} ", G_MAIN), Style::default().fg(accent()));
+            let mark = Span::styled(format!(" {} ", G_MAIN), main_mark_st());
             // wrapped once, at the text's own width: the rows under the
             // first one line up with its text (BISE-97: at 80 columns a
             // row 1 cell too wide wrapped again, leaving one-word rows)
@@ -419,20 +419,31 @@ pub(crate) fn l3_lines(from: &str, to: &str, id: &str, text: &str, open: bool, w
     ls
 }
 
+/// The speaker of a level-2 block is bold (book §9 'Emphasis'): main's
+/// `:*` in accent bold.
+fn main_mark_st() -> Style {
+    Style::default().fg(accent()).add_modifier(Modifier::BOLD)
+}
+
 /// An agent writing to you (level 2): normal text, `@ name to you: …`
-/// (from main: `:* …`).
+/// with its speaker in bold (from main: `:* …`, `:*` accent bold).
 fn l2_lines(from: &str, body: &str, width: usize) -> Vec<Line<'static>> {
     let text_st = Style::default().fg(text());
+    let bold_st = text_st.add_modifier(Modifier::BOLD);
     let (glyph, glyph_st, lead) = if from == "main" {
-        (G_MAIN, Style::default().fg(accent()), String::new())
+        (G_MAIN, main_mark_st(), String::new())
     } else {
-        (G_MSG, text_st, format!("{} to you: ", from))
+        (G_MSG, bold_st, format!("{} to you:", from))
     };
     let mut lines = md_lines(&unescape_md(body.trim()), width.saturating_sub(3), width.saturating_sub(3));
     if lines.is_empty() {
         lines.push(Line::from(""));
     }
-    lines[0].spans.insert(0, Span::styled(lead, text_st));
+    if !lead.is_empty() {
+        // the speaker bold, the space after it plain
+        lines[0].spans.insert(0, Span::styled(" ", text_st));
+        lines[0].spans.insert(0, Span::styled(lead, bold_st));
+    }
     let mark = Span::styled(format!(" {} ", glyph), glyph_st);
     hung_rows(&mark, &Span::raw("   "), lines, width)
 }
@@ -450,7 +461,7 @@ fn answered_lines(agent: &str, question: &str, answer: &str, why: &str, open: bo
     if !why.trim().is_empty() {
         line.push(Span::styled(format!(" {} why", if open { G_OPEN } else { G_CLOSED }), Style::default().fg(dim())));
     }
-    let mark = Span::styled(format!(" {} ", G_MAIN), Style::default().fg(accent()));
+    let mark = Span::styled(format!(" {} ", G_MAIN), main_mark_st());
     let mut ls = hung_rows(&mark, &Span::raw("   "), [Line::from(line)], width);
     if open && !why.trim().is_empty() {
         let bar = Span::styled(RAIL, Style::default().fg(faint()));
@@ -921,7 +932,14 @@ fn report_lines(from: &str, kind: &str, body: &str, open: bool, width: usize) ->
     let room = width.saturating_sub(3 + head.chars().count() + label.chars().count()).max(8);
     let more = !rest.trim().is_empty() || first.chars().count() > room;
     let shown = if open { first.to_string() } else { fit_chars(first, room) };
-    let mut row = vec![Span::styled(head, Style::default().fg(st)), Span::styled(shown, Style::default().fg(st))];
+    // the speaker of a report on your request is bold (level 2, book §9
+    // 'Emphasis'); a progress line stays dim, unbold
+    let head_st = match kind {
+        "done" | "blocked" => Style::default().fg(st).add_modifier(Modifier::BOLD),
+        k if k.contains("fail") => Style::default().fg(st).add_modifier(Modifier::BOLD),
+        _ => Style::default().fg(st),
+    };
+    let mut row = vec![Span::styled(head, head_st), Span::styled(shown, Style::default().fg(st))];
     if more {
         row.push(Span::styled(label, Style::default().fg(dim())));
     }
@@ -1003,5 +1021,98 @@ mod multiline_tests {
         assert!(body[1].starts_with(" │   two x"), "{s:#?}");
         assert!(body.len() >= 3, "{s:#?}");
         assert!(body.iter().all(|r| r.starts_with(" │   ")), "{s:#?}");
+    }
+}
+
+// BISE-95 (book §9 'Emphasis'): what's for you reads bigger through
+// contrast and room
+#[cfg(test)]
+mod emphasis_tests {
+    use super::set_main_feed;
+    use crate::feed::build_rows;
+    use crate::theme::*;
+    use crate::wire::Ev;
+    use ratatui::style::Modifier;
+    use ratatui::text::Line;
+
+    fn rows(events: &[Ev], i: usize) -> Vec<Line<'static>> {
+        build_rows(events, i, false, 80, 0)
+    }
+
+    fn text_of(l: &Line) -> String {
+        l.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    fn msg(from: &str, text: &str, level: u8) -> Ev {
+        Ev::AgentMsg {
+            from: from.into(),
+            to: if level == 2 { "you".into() } else { "main".into() },
+            text: text.into(),
+            level,
+            id: String::new(),
+            open: false,
+            fold: false,
+        }
+    }
+
+    fn bold(l: &Line, needle: &str) -> bool {
+        l.spans.iter().any(|s| s.content.contains(needle) && s.style.add_modifier.contains(Modifier::BOLD))
+    }
+
+    #[test]
+    fn the_speaker_of_level_2_is_bold() {
+        set_main_feed(true);
+        let reply = rows(&[Ev::Assistant("found it.".into())], 0);
+        let mark = reply[0].spans.iter().find(|s| s.content.contains(G_MAIN)).expect("the :* mark");
+        assert!(mark.style.add_modifier.contains(Modifier::BOLD), "{reply:?}");
+        assert_eq!(mark.style.fg, Some(accent()));
+        let to_you = rows(&[msg("auth-fix", "want me to fix the other two?", 2)], 0);
+        assert!(bold(&to_you[0], "auth-fix to you:"), "{to_you:?}");
+        assert!(text_of(&to_you[0]).contains("auth-fix to you: want me"), "{to_you:?}");
+        // the body stays plain text
+        assert!(!bold(&to_you[0], "want me"), "{to_you:?}");
+        let done = rows(&[msg("bench", "[report: done] 3 ops faster", 3)], 0);
+        assert!(bold(&done[0], "bench:"), "{done:?}");
+        let progress = rows(&[msg("bench", "[report: progress] halfway", 3)], 0);
+        assert!(!bold(&progress[0], "bench:"), "{progress:?}");
+        let answered = rows(
+            &[Ev::Answered {
+                agent: "docs".into(),
+                question: "v1 or v2?".into(),
+                answer: "v2".into(),
+                why: String::new(),
+                open: false,
+            }],
+            0,
+        );
+        assert!(bold(&answered[0], G_MAIN), "{answered:?}");
+        set_main_feed(false);
+    }
+
+    #[test]
+    fn the_agents_own_work_is_dim() {
+        let t = rows(&[Ev::Thinking { ms: 6000, text: "hm".into(), open: false }], 0);
+        assert!(t[0].spans.iter().all(|s| s.style.fg == Some(dim())), "{t:?}");
+        let l3 = rows(&[msg("auth-fix", "found it: the test races the login event", 3)], 0);
+        assert!(l3[0].spans.iter().all(|s| matches!(s.style.fg, Some(c) if c == dim() || c == faint())), "{l3:?}");
+    }
+
+    #[test]
+    fn level_2_has_a_blank_row_above_and_below() {
+        set_main_feed(true);
+        let evs = vec![
+            Ev::Thinking { ms: 6000, text: String::new(), open: false },
+            Ev::Assistant("auth-fix found it.".into()),
+            msg("auth-fix", "want me to fix the other two?", 2),
+            msg("auth-fix", "found it", 3),
+            msg("docs", "v2 is out", 3),
+        ];
+        // after the thinking, between two level-2 blocks, before level 3
+        for i in 1..=3 {
+            assert_eq!(text_of(&rows(&evs, i)[0]), "", "event {i}: {:?}", rows(&evs, i));
+        }
+        // the lines of a level-3 run still sit together
+        assert_ne!(text_of(&rows(&evs, 4)[0]), "", "{:?}", rows(&evs, 4));
+        set_main_feed(false);
     }
 }
