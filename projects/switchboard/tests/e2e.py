@@ -18,7 +18,9 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
-EXE = os.path.join(ROOT, "rust", "target", "debug", "bend-harness")
+# the binary cargo built: $CARGO_TARGET_DIR (a gate's own target) or rust/target
+EXE = os.path.join(os.path.abspath(os.environ.get("CARGO_TARGET_DIR") or os.path.join(ROOT, "rust", "target")),
+                   "debug", "bend-harness")
 
 # An agent's shell carries its hub's identity and sb-core (an older
 # version): a throwaway hub must not inherit them. It picks the tree's
