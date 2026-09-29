@@ -148,6 +148,8 @@
   .scrollbox::-webkit-scrollbar-thumb:hover { background:var(--dim); }
 
   /* the little facts */
+  #more .inner { max-width:100ch; }
+  .facts.more { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:6px 36px; padding:0; margin-top:22px; }
   .facts li { list-style:none; margin-bottom:12px; display:grid; grid-template-columns:4ch 1fr; color:var(--dim); }
   .facts li .gc { color:var(--acc); }
   .facts li b { color:var(--text); font-weight:400; }
@@ -271,27 +273,34 @@
     <div class="inner blow" style="margin-bottom:10px"><div class="kicker">what it feels like</div><h2>kiss your backlog goodbye.</h2><p class="soft">ten things you'll notice in the first hour.</p></div>
     <div class="fgrid">
       <div class="feat blow"><div class="mini" data-play="talk"></div><h3>talk whenever. you never wait.</h3><p>say the next thing while the last one runs. your composer is never locked.</p></div>
+      <div class="feat blow"><div class="mini" data-play="sync"></div><h3>agents sync on their own.</h3><p>every agent can talk to every other one. they ask, share and hand off quietly, folded out of your way.</p></div>
+      <div class="feat blow"><div class="mini" data-play="mcp"></div><h3>all your MCPs. all your skills. always on.</h3><p>GitHub, Linear, Sentry, Slack, your docs, your database: connect as many MCP servers as you want, and never pick which ones to turn on. bise calls tools through code, so a hundred servers don't fill its context.</p></div>
+      <div class="feat blow"><div class="mini" data-play="card"></div><h3>only the real decisions reach you.</h3><p>one card, a couple of choices, one key. then back to what you were doing.</p></div>
+      <div class="feat blow"><div class="mini" data-play="router"></div><h3>you're not the router.</h3><p>main answers the obvious questions itself, the way you would, and tells you why.</p></div>
       <div class="feat blow"><div class="mini" data-play="direct"></div><h3>talk to any agent, anytime.</h3><p>⌥ + a number, or @name. ask it why, push it, then go back to main. nobody has to stop.</p></div>
       <div class="feat blow"><div class="mini" data-play="steer"></div><h3>change your mind mid-run.</h3><p>a correction lands in the running agent. ✓ it got it, <span class="acc">✓✓</span> it read it.</p></div>
-      <div class="feat blow"><div class="mini" data-play="sync"></div><h3>agents sync on their own.</h3><p>every agent can talk to every other one. they ask, share and hand off quietly, folded out of your way.</p></div>
-      <div class="feat blow"><div class="mini" data-play="router"></div><h3>you're not the router.</h3><p>main answers the obvious questions itself, the way you would, and tells you why.</p></div>
-      <div class="feat blow"><div class="mini" data-play="card"></div><h3>only the real decisions reach you.</h3><p>one card, a couple of choices, one key. then back to what you were doing.</p></div>
       <div class="feat blow"><div class="mini" data-play="resume"></div><h3>nothing gets dropped.</h3><p>when an agent stops half-way, main picks the work back up from where it was.</p></div>
       <div class="feat blow"><div class="mini" data-play="worktree"></div><h3>worktrees, only when they help.</h3><p>agents share your folder. when one really needs isolation, it makes a worktree, and cleans it up after.</p></div>
-      <div class="feat blow"><div class="mini" data-play="mcp"></div><h3>all your MCPs. all your skills. always on.</h3><p>GitHub, Linear, Sentry, Slack, your docs, your database: connect as many MCP servers as you want, and never pick which ones to turn on. bise calls tools through code, so a hundred servers don't fill its context.</p></div>
       <div class="feat blow"><div class="mini" data-play="plugins"></div><h3>bring your Agent Plugins.</h3><p>skills, MCP servers, hooks: plugins in the Agent Plugins format load as they are, from ~/.agents/plugins or your repo. Vibe plugins too.</p></div>
     </div>
   </div>
 </section>
 
-<!-- a few facts, quietly -->
-<section>
+<!-- so much more -->
+<section id="more">
   <div class="inner blow">
-    <div class="kicker">and also</div>
-    <ul class="facts">
+    <div class="kicker">and so much more</div>
+    <h2>the small things add up.</h2>
+    <ul class="facts more">
       <li><span class="gc">∿</span><span><b>your token bill can relax.</b> bise starts an agent when a job needs one. that's the whole rule. there's no committee of agents reviewing each other in circles.</span></li>
       <li><span class="gc">✓</span><span><b>it's quiet. open it up whenever.</b> what matters to you shows. the rest is folded, never deleted: every message between agents, every tool call, every script, in full. ctrl+o opens it all.</span></li>
       <li><span class="gc">●</span><span><b>or just talk.</b> turn on /voice, press ctrl+r, say it.</span></li>
+      <li><span class="gc">▣</span><span><b>show it a screenshot.</b> paste it with ctrl+v or drag it in. an image is one chip in your text.</span></li>
+      <li><span class="gc">❝</span><span><b>ask about anything on screen.</b> select a few lines in the history and start typing: they come along as a quote.</span></li>
+      <li><span class="gc">·</span><span><b>a model per agent.</b> the big one for the hard job, a fast one for the chores. /model and /reasoning.</span></li>
+      <li><span class="gc">$</span><span><b>a real shell, one key away.</b> ctrl+` opens a terminal in your repo. it keeps running while hidden.</span></li>
+      <li><span class="gc">⌃</span><span><b>hold ctrl to see the shortcuts.</b> each one shows up where it works. in Ghostty and kitty.</span></li>
+      <li><span class="gc">▦</span><span><b>tables that fit.</b> markdown tables are drawn to the width of your terminal, and wrap when they must.</span></li>
       <li><span class="gc">♡</span><span><b>your terminal.</b> your colors, light or dark, text at a reading width.</span></li>
     </ul>
   </div>
