@@ -31,11 +31,6 @@ pub(super) fn parse_versions(v: &Value) -> Vec<VersionItem> {
         .unwrap_or_default()
 }
 
-/// The text after `/version ` when the composer holds a version query.
-fn version_query(input: &str) -> Option<&str> {
-    input.strip_prefix("/version ").filter(|q| !q.contains('\n'))
-}
-
 /// The items matching `q` (in the revision or the subject).
 fn filter_versions<'a>(items: &'a [VersionItem], q: &str) -> Vec<&'a VersionItem> {
     let q = q.trim().to_lowercase();
@@ -78,17 +73,11 @@ fn version_marks(marks: &[String]) -> (String, (&'static str, Color)) {
     (words.join(", "), glyph)
 }
 
-/// `/version <query>`: the picker of versions (commits, tree, back).
-/// Enter builds if needed, then switches; Tab fills the composer.
-pub(crate) fn version_items(app: &App) -> Vec<PopItem> {
+/// The versions matching `q` (the `/version` and `/restart` arguments):
+/// a note while the list loads. Asks the hub for a fresh list (at most
+/// every 3 s while a popup shows them).
+pub(crate) fn version_choices(app: &App, q: &str) -> Vec<Choice> {
     let sb = &app.sb;
-    if !popup_open(app) {
-        return Vec::new();
-    }
-    let Some(q) = version_query(&app.ed.text) else {
-        return Vec::new();
-    };
-    // ask the hub for a fresh list (at most every 3 s while it is open)
     let stale = sb
         .versions_asked
         .get()
@@ -100,24 +89,14 @@ pub(crate) fn version_items(app: &App) -> Vec<PopItem> {
         }
     }
     if sb.versions.is_empty() {
-        return vec![PopItem {
-            label: "…".into(),
-            desc: "loading the versions".into(),
-            mark: None,
-            fill: app.ed.text.clone(),
-            fill_cursor: app.ed.cursor,
-            run: None,
-            closable: true,
-            path: None,
-            folder: false,
-        }];
+        return vec![Choice { value: String::new(), label: "…".into(), desc: "loading the versions".into(), mark: None }];
     }
     filter_versions(&sb.versions, q)
         .into_iter()
         .map(|i| {
             let (words, glyph) = version_marks(&i.marks);
-            let line = format!("/version {}", i.rev);
-            PopItem {
+            Choice {
+                value: i.rev.clone(),
                 label: i.rev.clone(),
                 desc: if words.is_empty() {
                     i.subject.clone()
@@ -125,12 +104,6 @@ pub(crate) fn version_items(app: &App) -> Vec<PopItem> {
                     format!("[{}] {}", words, i.subject)
                 },
                 mark: Some(glyph),
-                fill_cursor: line.chars().count(),
-                fill: line.clone(),
-                run: Some(line),
-                closable: true,
-                path: None,
-                folder: false,
             }
         })
         .collect()
@@ -146,14 +119,6 @@ mod tests {
             subject: subject.into(),
             marks: marks.iter().map(|m| m.to_string()).collect(),
         }
-    }
-
-    #[test]
-    fn the_query_is_the_text_after_version() {
-        assert_eq!(version_query("/version "), Some(""));
-        assert_eq!(version_query("/version ab1"), Some("ab1"));
-        assert_eq!(version_query("/version"), None);
-        assert_eq!(version_query("/versions x"), None);
     }
 
     #[test]

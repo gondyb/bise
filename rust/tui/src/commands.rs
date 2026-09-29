@@ -8,116 +8,86 @@ use crate::*;
 
 pub(crate) struct Cmd {
     pub(crate) name: &'static str,
+    /// what it does, then its usage after `: ` when it takes arguments
     pub(crate) desc: &'static str,
-    pub(crate) args: bool,
+    /// its arguments in order, each with what completes it (BISE-117):
+    /// the `/` popup offers them after the command's name
+    pub(crate) args: &'static [Arg],
 }
+
+/// What completes one argument of a command (BISE-117).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Arg {
+    /// one of these words, and what each does
+    Words(&'static [(&'static str, &'static str)]),
+    /// a live agent (not main)
+    Task,
+    /// an archived agent
+    Archived,
+    /// an open card, by its number
+    Card,
+    /// a version of switchboard (the hub's list: the commits, tree,
+    /// back), after these words
+    Version(&'static [(&'static str, &'static str)]),
+    /// a plugin of the workspace
+    Plugin,
+    /// free text, required: the rest of the line (nothing to complete)
+    Text,
+    /// free text, optional: the value before it can already run
+    Note,
+}
+
+const THEMES: &[(&str, &str)] =
+    &[("auto", "your terminal's background"), ("light", "the light palette"), ("dark", "the dark palette")];
 
 /// The slash commands the popup offers and `/help` lists.
 pub(crate) const COMMANDS: &[Cmd] = &[
-    Cmd {
-        name: "/voice",
-        desc: "turn voice mode (ctrl+r speech-to-text) on or off",
-        args: false,
-    },
+    Cmd { name: "/voice", desc: "turn voice mode (ctrl+r speech-to-text) on or off", args: &[] },
     Cmd {
         name: "/restart",
         desc: "rebuild and restart switchboard on the latest commit (agents kept): /restart [current|<commit>]",
-        args: true,
+        args: &[Arg::Version(&[("current", "rebuild the version running now")])],
     },
     Cmd {
         name: "/version",
         desc: "switchboard versions: /version [<commit>|tree|back]",
-        args: true,
+        // the hub's list holds tree and back
+        args: &[Arg::Version(&[])],
     },
     Cmd {
         name: "/new",
         desc: "start an agent: /new [-w] [name:] objective",
-        args: true,
+        args: &[Arg::Words(&[("-w", "in its own git worktree")]), Arg::Text],
     },
-    Cmd {
-        name: "/drop",
-        desc: "stop and archive an agent (and its worktree)",
-        args: true,
-    },
-    Cmd {
-        name: "/restore",
-        desc: "reopen an archived agent",
-        args: true,
-    },
-    Cmd {
-        name: "/archived",
-        desc: "show or hide the archived agents in the panel",
-        args: false,
-    },
-    Cmd {
-        name: "/isolate",
-        desc: "give an agent its own git worktree",
-        args: true,
-    },
-    Cmd {
-        name: "/rename",
-        desc: "rename an agent",
-        args: true,
-    },
-    Cmd {
-        name: "/answer",
-        desc: "answer a card: /answer N text",
-        args: true,
-    },
-    Cmd {
-        name: "/close",
-        desc: "close a card without answering: /close N",
-        args: true,
-    },
+    Cmd { name: "/drop", desc: "stop and archive an agent (and its worktree): /drop <agent>", args: &[Arg::Task] },
+    Cmd { name: "/restore", desc: "reopen an archived agent: /restore <agent>", args: &[Arg::Archived] },
+    Cmd { name: "/archived", desc: "show or hide the archived agents in the panel", args: &[] },
+    Cmd { name: "/isolate", desc: "give an agent its own git worktree: /isolate <agent>", args: &[Arg::Task] },
+    Cmd { name: "/rename", desc: "rename an agent: /rename <agent> <new-name>", args: &[Arg::Task, Arg::Text] },
+    Cmd { name: "/answer", desc: "answer a card: /answer N text", args: &[Arg::Card, Arg::Text] },
+    Cmd { name: "/close", desc: "close a card without answering: /close N [note]", args: &[Arg::Card, Arg::Note] },
     Cmd {
         name: "/plugins",
-        desc: "the workspace's agent plugins (enable|disable name)",
-        args: true,
+        desc: "the workspace's agent plugins: /plugins [list|enable|disable] [<name>]",
+        args: &[
+            Arg::Words(&[("list", "the plugins and their state"), ("enable", "turn a plugin on"), ("disable", "turn a plugin off")]),
+            Arg::Plugin,
+        ],
     },
-    Cmd {
-        name: "/agents",
-        desc: "list the agents and what they do",
-        args: false,
-    },
-    Cmd {
-        name: "/interrupt",
-        desc: "interrupt the turn of the agent in view",
-        args: false,
-    },
-    Cmd {
-        name: "/compact",
-        desc: "compact the conversation of the agent in view",
-        args: false,
-    },
+    Cmd { name: "/agents", desc: "list the agents and what they do", args: &[] },
+    Cmd { name: "/interrupt", desc: "interrupt the turn of the agent in view", args: &[] },
+    Cmd { name: "/compact", desc: "compact the conversation of the agent in view", args: &[] },
     Cmd {
         name: "/theme",
         desc: "light, dark, or auto (your terminal's background): /theme [auto|light|dark]",
-        args: true,
+        args: &[Arg::Words(THEMES)],
     },
-    Cmd {
-        name: "/welcome",
-        desc: "replay the welcome of the first launch",
-        args: false,
-    },
-    Cmd {
-        name: "/help",
-        desc: "the commands and the essential keys",
-        args: false,
-    },
-    Cmd {
-        name: "/shortcuts",
-        desc: "every keyboard shortcut (also /keys)",
-        args: false,
-    },
-    Cmd {
-        name: "/quit",
-        desc: "quit (the agents keep running)",
-        args: false,
-    },
+    Cmd { name: "/welcome", desc: "replay the welcome of the first launch", args: &[] },
+    Cmd { name: "/help", desc: "the commands and the essential keys", args: &[] },
+    Cmd { name: "/shortcuts", desc: "every keyboard shortcut (also /keys)", args: &[] },
+    Cmd { name: "/quit", desc: "quit (the agents keep running)", args: &[] },
 ];
 
-// BR-002/BR-003: the interrupt side-channel flag, shared by the Ctrl+C
-// key and the /interrupt command
 pub(crate) fn popup_matches(input: &str) -> Vec<&'static Cmd> {
     if !input.starts_with('/') || input.contains(' ') {
         return Vec::new();
@@ -159,20 +129,16 @@ pub(crate) fn popup_items(app: &App) -> Vec<PopItem> {
                 mark: None,
                 fill: format!("{} ", c.name),
                 fill_cursor: c.name.chars().count() + 1,
-                run: (!c.args).then(|| c.name.to_string()),
+                run: c.args.is_empty().then(|| c.name.to_string()),
                 closable: false,
                 path: None,
                 folder: false,
             })
             .collect();
     }
-    let versions = sb::version_items(app);
-    if !versions.is_empty() {
-        return versions;
-    }
-    let cards = sb::close_items(app);
-    if !cards.is_empty() {
-        return cards;
+    let args = arg_items(app);
+    if !args.is_empty() {
+        return args;
     }
     let at = at_items(app);
     if !at.is_empty() {
@@ -186,7 +152,106 @@ pub(crate) fn popup_items(app: &App) -> Vec<PopItem> {
     }
 }
 
-/// A `@`, `$`, `:` or `/version` popup may complete the draft: not while
+/// One value an argument can take, as the popup shows it. An empty
+/// `value` is a note that picks nothing ("loading the versions").
+pub(crate) struct Choice {
+    pub(crate) value: String,
+    pub(crate) label: String,
+    pub(crate) desc: String,
+    pub(crate) mark: Option<(&'static str, Color)>,
+}
+
+impl Choice {
+    fn word(value: &str, desc: &str) -> Choice {
+        Choice { value: value.into(), label: value.into(), desc: desc.into(), mark: None }
+    }
+}
+
+/// `q` is in one of `fields` (case-insensitive); an empty `q` matches.
+pub(crate) fn matches(q: &str, fields: &[&str]) -> bool {
+    let q = q.to_lowercase();
+    q.is_empty() || fields.iter().any(|f| f.to_lowercase().contains(&q))
+}
+
+/// The argument being typed after a command's name: the command, the
+/// line before the word being typed, the argument's index and that word.
+/// None past a text argument (it takes the rest of the line).
+pub(crate) fn arg_slot(text: &str) -> Option<(&'static Cmd, &str, usize, &str)> {
+    if text.contains('\n') {
+        return None;
+    }
+    let (name, rest) = text.split_once(' ')?;
+    let cmd = COMMANDS.iter().find(|c| c.name == name)?;
+    let idx = rest.split(' ').count() - 1;
+    let word = rest.rsplit(' ').next().unwrap_or("");
+    if cmd.args.iter().take(idx).any(|a| matches!(a, Arg::Text | Arg::Note)) {
+        return None;
+    }
+    Some((cmd, &text[..text.len() - word.len()], idx, word))
+}
+
+/// The values of `arg` matching `q`.
+fn choices(app: &App, arg: Arg, q: &str) -> Vec<Choice> {
+    let words = |ws: &[(&str, &str)]| -> Vec<Choice> {
+        ws.iter().filter(|(w, _)| matches(q, &[w])).map(|(w, d)| Choice::word(w, d)).collect()
+    };
+    match arg {
+        Arg::Words(ws) => words(ws),
+        Arg::Version(ws) => {
+            let mut out = words(ws);
+            out.extend(sb::version_choices(app, q));
+            out
+        }
+        Arg::Task => sb::agent_choices(app, false, q),
+        Arg::Archived => sb::agent_choices(app, true, q),
+        Arg::Card => sb::card_choices(app, q),
+        Arg::Plugin => crate::plugins::choices(std::path::Path::new(&sb::workspace(app).unwrap_or_default()), q),
+        Arg::Text | Arg::Note => Vec::new(),
+    }
+}
+
+/// `/command <args>`: the popup of the argument being typed (BISE-117),
+/// like the `/` one: tab completes (the next argument follows), ⏎ runs
+/// the line when nothing required is left, else completes.
+pub(crate) fn arg_items(app: &App) -> Vec<PopItem> {
+    if !popup_open(app) {
+        return Vec::new();
+    }
+    let Some((cmd, head, idx, word)) = arg_slot(&app.ed.text) else {
+        return Vec::new();
+    };
+    let Some(&arg) = cmd.args.get(idx) else {
+        return Vec::new();
+    };
+    let next = cmd.args.get(idx + 1);
+    let runs = matches!(next, None | Some(Arg::Note));
+    choices(app, arg, word)
+        .into_iter()
+        .map(|c| {
+            let line = format!("{head}{}", c.value);
+            let (fill, run) = if c.value.is_empty() {
+                (app.ed.text.clone(), None)
+            } else if next.is_none() {
+                (line.clone(), Some(line))
+            } else {
+                (format!("{line} "), runs.then_some(line))
+            };
+            PopItem {
+                label: c.label,
+                desc: c.desc,
+                mark: c.mark,
+                fill_cursor: fill.chars().count(),
+                fill,
+                run,
+                closable: true,
+                path: None,
+                folder: false,
+            }
+        })
+        .collect()
+}
+
+/// A `@`, `$`, `:` or argument popup may complete the draft: not while
 /// a history line is recalled, nor after Esc closed the list on this text.
 pub(crate) fn popup_open(app: &App) -> bool {
     !app.ed.browsing() && app.popup_dismissed.as_deref() != Some(app.ed.text.as_str())
@@ -371,5 +436,88 @@ mod popup_tests {
         assert_eq!(popup_top(8, 12, 8), 1);
         assert_eq!(popup_top(11, 12, 8), 4);
         assert_eq!(popup_top(99, 12, 8), 4); // clamped like the selection
+    }
+}
+
+#[cfg(test)]
+mod arg_tests {
+    use super::*;
+    use crate::sb::bench::{add_agent, set_status, test_app};
+
+    /// The usage after `: /name ` in a command's description, as words.
+    fn usage(c: &Cmd) -> Vec<&'static str> {
+        c.desc
+            .split_once(&format!(": {}", c.name))
+            .map(|(_, u)| u.split_whitespace().collect())
+            .unwrap_or_default()
+    }
+
+    /// BISE-117: a command that takes a parameter completes it. Its usage
+    /// (in `desc`, what /help shows) and its `args` agree: one completer
+    /// per parameter (free text last, several words allowed), the first
+    /// one never free text, and the literal words of a `[a|b|<x>]` choice
+    /// all offered by it (a version's words come from the hub's list).
+    #[test]
+    fn every_parameter_has_a_completer() {
+        for c in COMMANDS {
+            let u = usage(c);
+            assert_eq!(u.is_empty(), c.args.is_empty(), "{}: usage {:?} vs args {:?}", c.name, u, c.args);
+            let Some(first) = c.args.first() else { continue };
+            assert!(!matches!(first, Arg::Text | Arg::Note), "{}: its first parameter completes", c.name);
+            let text_last = matches!(c.args.last(), Some(Arg::Text | Arg::Note));
+            if text_last {
+                assert!(u.len() >= c.args.len(), "{}: {:?}", c.name, u);
+            } else {
+                assert_eq!(u.len(), c.args.len(), "{}: {:?}", c.name, u);
+            }
+            for (a, w) in c.args.iter().zip(&u) {
+                let offered: Vec<&str> = match a {
+                    Arg::Words(ws) => ws.iter().map(|(w, _)| *w).collect(),
+                    _ => Vec::new(),
+                };
+                let literal = w.trim_matches(|ch| ch == '[' || ch == ']');
+                if matches!(a, Arg::Words(_)) {
+                    for alt in literal.split('|').filter(|x| !x.starts_with('<') && *x != "name:") {
+                        assert!(offered.contains(&alt), "{}: {} not offered", c.name, alt);
+                    }
+                }
+            }
+        }
+    }
+
+    fn items(app: &mut App, text: &str) -> Vec<PopItem> {
+        app.ed.text = text.into();
+        app.ed.cursor = text.chars().count();
+        popup_items(app)
+    }
+
+    /// Each kind of argument offers its values after the command's name,
+    /// filtered by the word typed; tab fills (a space when an argument
+    /// follows), ⏎ runs when nothing required is left.
+    #[test]
+    fn the_arguments_complete() {
+        let mut app = test_app();
+        add_agent(&mut app, "auth-fix", "fix the login");
+        add_agent(&mut app, "docs", "the release note");
+        set_status(&mut app, "docs", "archived");
+        let labels = |v: &[PopItem]| v.iter().map(|i| i.label.clone()).collect::<Vec<_>>();
+        assert_eq!(labels(&items(&mut app, "/theme ")), ["auto", "light", "dark"]);
+        let t = items(&mut app, "/theme li");
+        assert_eq!((t[0].fill.as_str(), t[0].run.as_deref()), ("/theme light", Some("/theme light")));
+        assert_eq!(labels(&items(&mut app, "/drop ")), ["auth-fix"], "live tasks only");
+        assert_eq!(labels(&items(&mut app, "/isolate log")), ["auth-fix"], "the objective matches");
+        assert_eq!(labels(&items(&mut app, "/restore ")), ["docs"], "archived only");
+        let r = items(&mut app, "/rename a");
+        assert_eq!((r[0].fill.as_str(), r[0].run.as_deref()), ("/rename auth-fix ", None), "a new name follows");
+        assert!(items(&mut app, "/rename auth-fix x").is_empty(), "free text: nothing to complete");
+        let n = items(&mut app, "/new ");
+        assert_eq!((labels(&n), n[0].fill.as_str()), (vec!["-w".to_string()], "/new -w "));
+        assert!(items(&mut app, "/new fix the tests").is_empty());
+        assert_eq!(labels(&items(&mut app, "/plugins ")), ["list", "enable", "disable"]);
+        let v = items(&mut app, "/restart ");
+        assert_eq!(v[0].label, "current");
+        assert!(v.iter().any(|i| i.label == "…" && i.run.is_none()), "the versions load");
+        assert!(items(&mut app, "/agents ").is_empty(), "no argument, no popup");
+        assert!(items(&mut app, "/theme light\nx").is_empty());
     }
 }

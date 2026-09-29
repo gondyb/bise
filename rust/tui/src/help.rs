@@ -69,7 +69,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(TALK, "⏎", "send to the agent in view (main, or the agent you entered); while it works, steer its turn").top(),
     r(TALK, "@agent …", "a direct message to an agent without leaving main; @main … from inside an agent").top(),
     r(TALK, "ctrl+c", "interrupt the turn of the agent in view; again (or at idle) quit, the agents keep running").top(),
-    r(TALK, "/", "the commands: tab completes, ⏎ runs").top(),
+    r(TALK, "/", "the commands, then their arguments (agents, cards, versions…): tab completes, ⏎ runs").top(),
     r(TALK, "$", "a skill: the popup lists them, tab completes; the agent reads the $name mention").top(),
     r(AGENTS, "⌥ + 0…9", "go to main (0) or to the agent with that number in the panel").top(),
     r(AGENTS, "ctrl+k|alt+↓", "select the next agent").top(),

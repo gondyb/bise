@@ -13,12 +13,12 @@ use std::collections::HashMap;
 use std::os::unix::net::UnixStream;
 
 mod versions;
-pub(super) use versions::version_items;
+pub(super) use versions::version_choices;
 use versions::{parse_versions, VersionItem};
 mod mention;
 pub(super) use mention::mentions;
 mod cards;
-pub(super) use cards::{card_box_height, card_full, card_mouse, close_items, draw_card};
+pub(super) use cards::{card_box_height, card_full, card_mouse, card_choices, draw_card};
 use cards::{answer_card, Card, CardView};
 mod panel;
 pub(super) use panel::{draw_panel, key_mode, panel_mouse, placeholder, split, status_state, viewed_working, workspace};
@@ -245,6 +245,26 @@ fn theme_command(
 /// stay reachable by scrolling up (`feed::clear_feed`).
 pub(super) fn clear_display(app: &mut App) {
     clear_feed(app);
+}
+
+/// The agents matching `q` (name or objective): the live tasks (not
+/// main), or the archived ones, newest first (BISE-117).
+pub(super) fn agent_choices(app: &App, archived: bool, q: &str) -> Vec<Choice> {
+    let sb = &app.sb;
+    let list: Vec<&Agent> = if archived {
+        sb.archived()
+    } else {
+        sb.agents.iter().filter(|a| !a.main && !a.archived()).collect()
+    };
+    list.into_iter()
+        .filter(|a| crate::commands::matches(q, &[&a.name, &a.objective]))
+        .map(|a| Choice {
+            value: a.name.clone(),
+            label: a.name.clone(),
+            desc: format!("{} · {}", a.status, truncate_chars(&a.objective, 80)),
+            mark: None,
+        })
+        .collect()
 }
 
 /// Startup timing: the hub's `ready` arrived (its replay is taken in).

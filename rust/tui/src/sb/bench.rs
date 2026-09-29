@@ -44,6 +44,13 @@ pub(crate) fn add_agent(app: &mut App, name: &str, objective: &str) {
     });
 }
 
+/// Test setup: the status of an agent (`archived`, `idle`…).
+pub(crate) fn set_status(app: &mut App, name: &str, status: &str) {
+    for a in app.sb.agents.iter_mut().filter(|a| a.name == name) {
+        a.status = status.into();
+    }
+}
+
 fn ms(t: Instant) -> f64 {
     t.elapsed().as_secs_f64() * 1000.0
 }

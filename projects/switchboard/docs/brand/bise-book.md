@@ -582,6 +582,7 @@ replays it (**⚠** proposed command).
 | `tab` | during a turn: queue the message for after it | shown above the composer (BISE-89) |
 | `↑` in an empty composer | edit the newest queued message (then the history) | new (BISE-89) |
 | `@name …` | direct message from main | — |
+| `/` | the commands, then each argument of a command (`/theme` light · dark · auto, the agents of `/drop` `/rename` `/isolate`, the archived ones of `/restore`, the cards of `/close` `/answer`, the versions of `/version` `/restart`, `/plugins` and its plugins): tab completes, ⏎ runs once nothing required is left | arguments new (BISE-117) |
 | `ctrl+c` | interrupt; again (or idle) quit, agents keep running | — |
 | `⌥ + 0…9` | go to main / agent N | now shown in the panel |
 | `ctrl+k` / `ctrl+j`, `alt+↓` / `alt+↑` | select next / previous agent | — |

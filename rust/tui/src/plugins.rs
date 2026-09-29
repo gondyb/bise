@@ -6,6 +6,39 @@
 
 use std::path::Path;
 
+/// The plugins of `workspace` matching `q` (the `/plugins enable|disable`
+/// argument, BISE-117). Resolved again at most every 5 s: the popup asks
+/// at every frame.
+pub(crate) fn choices(workspace: &Path, q: &str) -> Vec<crate::commands::Choice> {
+    use std::cell::RefCell;
+    use std::time::{Duration, Instant};
+    type Cached = Option<(std::path::PathBuf, Instant, Vec<(String, String)>)>;
+    thread_local! {
+        static CACHE: RefCell<Cached> = const { RefCell::new(None) };
+    }
+    let all = CACHE.with(|c| {
+        let mut c = c.borrow_mut();
+        let fresh = c.as_ref().is_some_and(|(w, t, _)| w == workspace && t.elapsed() < Duration::from_secs(5));
+        if !fresh {
+            let res = bend_plugins::resolve::resolve(&bend_plugins::resolve::Roots::standard(Some(workspace)));
+            let list = res
+                .plugins
+                .iter()
+                .map(|p| {
+                    let what = p.description.clone().unwrap_or_default();
+                    (p.name.clone(), format!("{} · {}", p.state.as_str(), what).trim_end_matches(" · ").to_string())
+                })
+                .collect();
+            *c = Some((workspace.to_path_buf(), Instant::now(), list));
+        }
+        c.as_ref().map(|(_, _, l)| l.clone()).unwrap_or_default()
+    });
+    all.into_iter()
+        .filter(|(n, _)| crate::commands::matches(q, &[n]))
+        .map(|(n, d)| crate::commands::Choice { value: n.clone(), label: n, desc: d, mark: None })
+        .collect()
+}
+
 /// The text `/plugins [args]` prints.
 pub(crate) fn command(typed: &str, workspace: &Path) -> String {
     let mut words = typed.split_whitespace().skip(1);

@@ -4,7 +4,6 @@
 //! question wrapped at 88, the choices, the keys dim.
 
 use super::*;
-use crate::commands::PopItem;
 use crate::theme;
 use ratatui::layout::Margin;
 use ratatui::symbols::border;
@@ -503,44 +502,20 @@ pub(crate) fn card_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> boo
     true
 }
 
-/// `/close <query>`: the open cards whose id, kind, agent or text match;
-/// picked, the composer holds `/close <id> ` (Enter sends it).
-pub(crate) fn close_items(app: &App) -> Vec<PopItem> {
-    let sb = &app.sb;
-    if !crate::commands::popup_open(app) {
-        return Vec::new();
-    }
-    let Some(q) = app.ed.text.strip_prefix("/close ") else {
-        return Vec::new();
-    };
-    // the id is typed (a space after it: the note follows)
-    if q.contains(' ') || q.contains('\n') {
-        return Vec::new();
-    }
-    let q = q.to_lowercase();
-    sb.sorted_cards()
+/// The open cards matching `q` (their number, kind, agent or text):
+/// the card argument of `/close` and `/answer`.
+pub(crate) fn card_choices(app: &App, q: &str) -> Vec<Choice> {
+    app.sb
+        .sorted_cards()
         .into_iter()
-        .filter(|c| {
-            q.is_empty()
-                || c.id.to_string().starts_with(&q)
-                || c.kind.to_lowercase().contains(&q)
-                || c.agent.to_lowercase().contains(&q)
-                || c.text.to_lowercase().contains(&q)
-        })
+        .filter(|c| crate::commands::matches(q, &[&c.id.to_string(), &c.kind, &c.agent, &c.text]))
         .map(|c| {
             let (_, icon, _) = kind_look(&c.kind);
-            let color = glyph_color(&c.kind);
-            let fill = format!("/close {} ", c.id);
-            PopItem {
+            Choice {
+                value: c.id.to_string(),
                 label: format!("#{}", c.id),
                 desc: format!("{} @{} · {}", c.kind, c.agent, truncate_chars(&one_line(&c.text), 80)),
-                mark: Some((icon, color)),
-                fill_cursor: fill.chars().count(),
-                fill,
-                run: None,
-                closable: true,
-                path: None,
-                folder: false,
+                mark: Some((icon, glyph_color(&c.kind))),
             }
         })
         .collect()
@@ -860,7 +835,8 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].fill, "/close 12 ");
         assert!(items[0].desc.contains("done @t1") && items[0].desc.contains("shipped"));
-        assert!(items[0].run.is_none());
+        // BISE-117: ⏎ runs (the note is optional), tab leaves room for it
+        assert_eq!(items[0].run.as_deref(), Some("/close 12"));
         app.ed.text = "/close 12 ".into();
         assert!(labels(&app).is_empty(), "the id is typed: Enter sends");
         app.sb.cards.clear();
