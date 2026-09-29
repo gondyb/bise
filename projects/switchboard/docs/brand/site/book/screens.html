@@ -95,6 +95,14 @@
   .l1 .t { color:var(--acc); font-weight:700; }
   .lv { display:grid; grid-template-columns:18ch 1fr; gap:6px 3ch; max-width:112ch; margin-top:8px; }
   .tsep { color:var(--faint); margin-top:10px; }
+  /* attachments vs your message (3 options for the user, BISE-134 follow-up) */
+  .qp { background:#3a2530; padding:0 1ch; border-radius:2px; color:var(--text); }
+  .qp b { color:var(--acc); font-weight:400; }
+  .qp.on { background:var(--acc); color:var(--bg); } .qp.on b { color:var(--bg); }
+  .att-a { display:grid; grid-template-columns:auto 1fr; gap:0 2ch; padding:0 2ch; margin:.4lh 0 .7lh; max-width:95ch; }
+  .att-a .lab { color:var(--faint); }
+  .att-b { background:#2a2522; border-left:1px dashed var(--dim); padding:0 2ch 0 calc(2ch - 1px); max-width:91ch; box-sizing:border-box; }
+  .optk { color:var(--acc); font-weight:700; }
   .img { color:var(--acc); background:#2b1c21; border-radius:3px; padding:0 .5ch; }
   .thumb { margin:4px 0 0 3ch; width:34ch; height:9em; border:1px solid var(--line); border-radius:4px; background:
     linear-gradient(#e9e4dc 0 18%, transparent 18%), linear-gradient(90deg, #d8d2c8 0 22%, #f6f3ee 22%); position:relative; }
@@ -203,8 +211,51 @@ const bash = `<span class="kw">cd</span> web
 npx playwright test login --project=webkit --reporter=line
 <span class="kw">grep</span> -rn <span class="str">"SameSite"</span> src/auth/`;
 
+
+// ---------- attachments vs your message: 3 options (the user compares them) ----------
+const QP = (n, on) => `<span class="qp${on ? " on" : ""}"><b>❝</b> ${n}</span>`;
+const IP = (n) => `<span class="img">▣ ${n}</span>`;
+const ATT = {
+  q1: `<div class="row"><span>${QP(1)} <span class="dim">“la licence du repo,”</span></span><span class="faint">main · 1 line</span></div>`,
+  q2: `<div class="row"><span>${QP(2)} <span class="dim">“le README n'est pas prêt”</span></span><span class="faint">main · 1 line</span></div>`,
+  i3: `<div class="row"><span>${IP(3)} shots/readme-dark.png</span><span class="faint">1600×900 · 240 kB</span></div>`,
+};
+const ATT_FEED = you("on passe le repo en public demain, il manque quoi?") +
+  bise("deux choses : la licence du repo, et le README n'est pas prêt. le reste est bon.");
+const MSG1 = `${QP(1)} tu recommande quoi?<span class="cur"></span>`;
+const MSG3 = `${QP(1)} ${QP(2)} ${IP(3)} tu recommande quoi? et le README ressemble à ça pour l'instant<span class="cur"></span>`;
+const HINTS_A = "⏎ send · ctrl+v image · @ file · backspace on a chip removes it";
+const optA = (rows, msg, narrow) => term({ feed: ATT_FEED, narrow,
+  above: `<div class="att-a">${rows.map((r, i) => `<span class="lab">${i ? "" : "attached"}</span>${r}`).join("")}</div>`,
+  f: foot(undefined, msg, HINTS_A) });
+const optB = (rows, msg, narrow) => term({ feed: ATT_FEED, narrow,
+  f: foot(undefined, msg, HINTS_A).replace('<div class="cbox', `<div class="att-b">${rows.join("")}</div><div class="cbox`) });
+const optC = (n, msg, preview, narrow) => term({ feed: ATT_FEED, narrow,
+  f: foot(undefined, msg, preview ? `<span class="dim">${preview}</span>` : HINTS_A)
+    .replace('<span class="acc">main</span></span>', `<span class="acc">main</span> <span class="faint">·</span> ${n}</span>`) });
+const ATT_SCREENS = [
+["attachments · a · above the divider", "<span class='optk'>(a) designer's pick.</span> under the divider is only your message; above it, on the history background, is what comes with it. \"attached\" faint on the first row, no blank row, the backspace tip moves to the key bar.",
+ optA([ATT.q1], MSG1)],
+["attachments · a · 2 quotes + 1 image", "(a) the strip grows upward, one row per attachment. the composer doesn't move.",
+ optA([ATT.q1, ATT.q2, ATT.i3], MSG3)],
+["attachments · a · narrow", "(a) at 60 columns the preview is cut with …, the source on the right goes first.",
+ optA([ATT.q1, ATT.q2, ATT.i3], MSG3, true)],
+["attachments · b · a tight tray", "<span class='optk'>(b)</span> the strip stays in the composer pane, but as its own block: chip tint, a dashed faint edge where the message has its bar, no blank row.",
+ optB([ATT.q1], MSG1)],
+["attachments · b · 2 quotes + 1 image", "(b) the tray grows downward, pushing the message down.",
+ optB([ATT.q1, ATT.q2, ATT.i3], MSG3)],
+["attachments · b · narrow", "(b) at 60 columns.",
+ optB([ATT.q1, ATT.q2, ATT.i3], MSG3, true)],
+["attachments · c · on the divider", "<span class='optk'>(c)</span> no strip: the divider says what comes with the message. the preview shows in the key bar row only while the cursor is on a chip (here: on ❝ 1).",
+ optC(`${QP(1)} <span class="faint">attached</span>`, `${QP(1, true)} tu recommande quoi?`, "❝ 1 “la licence du repo,” · main · 1 line")],
+["attachments · c · 2 quotes + 1 image", "(c) the divider lists the chips; the key bar shows the one under the cursor (here the cursor is at the end, so the normal keys).",
+ optC(`${QP(1)} ${QP(2)} ${IP(3)} <span class="faint">attached</span>`, MSG3)],
+["attachments · c · narrow", "(c) at 60 columns the divider keeps the chips and drops \"attached\", then the state on the right.",
+ optC(`${QP(1)} ${QP(2)} ${IP(3)}`, MSG3, "", true)],
+];
 // ---------- the screens ----------
 const screens = [
+...ATT_SCREENS,
 ["first run", "the empty state. says what to do, and that bise stays available while the work runs in the background. no vocabulary to learn.",
  term({ h: head('<span class="dim">no agents yet</span>'),
    feed: `<div class="b dim">what's on your mind?</div>
