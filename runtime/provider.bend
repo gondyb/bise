@@ -253,7 +253,7 @@ def model_call.step(a: Pvp.Attempt, n: Out, +k: Nat, +tries: Nat,
       model_call.step.retry(Nat.is_lt(0n, k), n, k, tries,
         Pvp.retry_delay_ms(after_ms, tries), why, next)
 
-# ---- the streamed call (Anthropic): Server-Sent Events ----
+# ---- the streamed call (every family): Server-Sent Events ----
 # The body arrives in pieces (raw bytes; decoded once, whole). Between
 # two pieces the interrupt flag is read, so a Ctrl+C lands during a
 # long generation instead of after it; a read that waits longer than
@@ -557,11 +557,11 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
         (n, Rem.RRErr{"provider unreachable: retries exhausted"}))
     case 1n+k:
       match pv:
-        case Pvp.Prov{_, +model, +st, +url, _}:
+        case Pvp.Prov{_, +model, +st, +url, _, +facts}:
           do IO<Out & Rem.RemoteRes>:
             +json : String <- IO.pure(String,
               Api.wire_body(st,
-                Api.api_body_for(st, model, W.parse_wire(request))))
+                Api.api_body_for(st, model, facts, W.parse_wire(request))))
             +body : String <- IO.pure(String, Enc.utf8.encode(Im.img_splice(json, imgs)))
             dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
             dump_dbg : Unit <- dump_wire(P.env_or(dr, ""), body)
@@ -602,7 +602,7 @@ def model_call.key(missing: Bool, n: Out, +request: String, +key: String,
 def model_call.env(n: Out, +request: String, +pv: Pvp.Prov)
     -> IO(Out & Rem.RemoteRes):
   match pv:
-    case Pvp.Prov{_, _, _, _, +key_env}:
+    case Pvp.Prov{_, _, _, _, +key_env, _}:
       do IO<Out & Rem.RemoteRes>:
         kr : Result<&1, &1, U32 & String, String> <- IO.get_env(key_env)
         +key : String <- IO.pure(String, P.env_or(kr, ""))

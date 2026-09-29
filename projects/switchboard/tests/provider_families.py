@@ -265,8 +265,10 @@ def part_d():
         n = len(recs)
         out = turn("fakeoai/m2", "[[bash: echo b1]]")
         recs = [json.loads(l) for l in open(F.LOG)][n:]
-        check([r["family"] for r in recs] == ["openai-chat"] * 2 and "tool bash ok: b1" in open(session).read(),
-              "a config.toml model switch goes to openai-chat at the next call (stream=%s)" % recs[0]["stream"])
+        check([r["family"] for r in recs] == ["openai-chat"] * 2 and all(r["stream"] for r in recs)
+              and "tool bash ok: b1" in open(session).read(),
+              "a config.toml model switch goes to openai-chat at the next call, streamed (BISE-144): %r"
+              % [(r["family"], r["stream"]) for r in recs])
         n += len(recs)
         out = turn("fakegem/g", "hello")
         recs = [json.loads(l) for l in open(F.LOG)][n:]

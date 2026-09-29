@@ -16,6 +16,7 @@ import ./core/oai-chat.bend as Oai
 import ./core/anthropic.bend as Anth
 import ./core/image.bend as Im
 import ./core/anth-stream.bend as As
+import ./core/oai-stream.bend as Os
 import ./core/obs.bend as O
 import ./runtime/remote.bend as Rm
 import ./runtime/tools-pure.bend as Xt
@@ -2105,31 +2106,31 @@ law provider_default_is_foundry:
   {Pv.resolve("", "", "", "", "", "", "")
     == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
       "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
-      "ANTHROPIC_FOUNDRY_API_KEY"}} : Pv.Resolved}
+      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{False{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
 
 law provider_resolves_alias:
   {Pv.resolve("", "", "", "", "model = \"opus-5.5\"", "", "")
     == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
       "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
-      "ANTHROPIC_FOUNDRY_API_KEY"}} : Pv.Resolved}
+      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{False{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
 
 law provider_legacy_claude_is_foundry:
   {Pv.resolve("", "claude-opus-5-5", "", "", "", "", "")
     == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
       "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
-      "ANTHROPIC_FOUNDRY_API_KEY"}} : Pv.Resolved}
+      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{False{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
 
 law provider_legacy_glm_is_mistral:
   {Pv.resolve("", "zai-glm-5-3", "", "", "", "", "")
     == Pv.ROk{Pv.Prov{"mistral", "zai-glm-5-3", Api.OpenAI{},
-      "https://api.mistral.ai/v1/chat/completions", "MISTRAL_API_KEY"}} : Pv.Resolved}
+      "https://api.mistral.ai/v1/chat/completions", "MISTRAL_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
 
 # LAW: a model the registry does not list works on its provider's
 # defaults.
 law provider_unlisted_model_works:
   {Pv.resolve("", "", "", "", "model = \"mistral/brand-new-7b\"", "", "")
     == Pv.ROk{Pv.Prov{"mistral", "brand-new-7b", Api.OpenAI{},
-      "https://api.mistral.ai/v1/chat/completions", "MISTRAL_API_KEY"}} : Pv.Resolved}
+      "https://api.mistral.ai/v1/chat/completions", "MISTRAL_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
 
 # LAW: the choice order (as rust/catalog's Setup): main = BISE_MODEL >
 # BEND_MODEL > config model; a sub-agent (BISE_ROLE=agent) =
@@ -2170,7 +2171,7 @@ law provider_from_models_file:
       "[providers.work]\napi = \"openai-chat\"\nbase_url = \"https://llm.corp.example/v1/\"\nkey_env = \"CORP_KEY\"\nneeds = \"\"",
       "")
     == Pv.ROk{Pv.Prov{"work", "qwen/q3-coder", Api.OpenAI{},
-      "https://llm.corp.example/v1/chat/completions", "CORP_KEY"}}
+      "https://llm.corp.example/v1/chat/completions", "CORP_KEY", Api.MFacts{False{}, 0n, "max_tokens", "", ""}}}
     : Pv.Resolved}
 
 # LAW: a model's own key wins over its provider's (a model on another
@@ -2180,7 +2181,7 @@ law provider_model_key_wins:
       "[providers.local]\napi = \"openai-chat\"\nbase_url = \"http://localhost:1234/v1\"\nkey_env = \"\"\n[models.\"local/m\"]\napi = \"anthropic\"",
       "")
     == Pv.ROk{Pv.Prov{"local", "m", Api.Anthropic{},
-      "http://localhost:1234/v1/messages", ""}} : Pv.Resolved}
+      "http://localhost:1234/v1/messages", "", Api.MFacts{False{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
 
 # LAW: the models file wins over the built-in entries, key by key; its
 # aliases and default_model are used.
@@ -2190,14 +2191,14 @@ law provider_file_over_builtin:
       "")
     == Pv.ROk{Pv.Prov{"foundry", "claude-x", Api.Anthropic{},
       "https://api.anthropic.com/v1/messages",
-      "ANTHROPIC_FOUNDRY_API_KEY"}} : Pv.Resolved}
+      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{False{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
 
 # LAW: BEND_PROVIDER_URL (the tests' fake provider) wins over the URL.
 law provider_url_env_wins:
   {Pv.resolve("", "mistral-small-latest", "", "", "", "",
       "http://127.0.0.1:9/v1/chat/completions")
     == Pv.ROk{Pv.Prov{"mistral", "mistral-small-latest", Api.OpenAI{},
-      "http://127.0.0.1:9/v1/chat/completions", "MISTRAL_API_KEY"}}
+      "http://127.0.0.1:9/v1/chat/completions", "MISTRAL_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", ""}}}
     : Pv.Resolved}
 
 # LAW: a long file is read to its end (a pair line takes 3 steps of the
@@ -2248,17 +2249,17 @@ law family_headers_no_key:
   {Api.headers(Api.OpenAI{}, "")
     == [Api.Hdr{"Content-Type", "application/json"}] : List<&2, Api.Hdr>}
 
-# LAW: the Messages API streams, OpenAI Chat answers whole (for now).
+# LAW: every family streams: the Messages API and OpenAI Chat (BISE-144).
 law family_anthropic_streams:
   {Api.streams(Api.Anthropic{}) == True{} : Bool}
 
-law family_openai_whole:
-  {Api.streams(Api.OpenAI{}) == False{} : Bool}
+law family_openai_streams:
+  {Api.streams(Api.OpenAI{}) == True{} : Bool}
 
 # LAW: the style dispatch routes the body and the reply to the right
 # adapter - the OpenAI side byte-identical to api_body/reply_of.
 law style_routes_body:
-  {Api.api_body_for(Api.OpenAI{}, "m",
+  {Api.api_body_for(Api.OpenAI{}, "m", Api.facts0(),
       W.parse_wire("MODEL default\nMSG user : hi\nEND\n"))
     == Oai.api_body("m",
       W.parse_wire("MODEL default\nMSG user : hi\nEND\n"))
@@ -2273,7 +2274,7 @@ law style_routes_reply:
 # block, the thinking config the vibe CLI sends for opus-5.5 (adaptive,
 # summarized, effort high, the adaptive max_tokens budget).
 law api_body_anth_maps:
-  {Api.api_body_for(Api.Anthropic{}, "claude-opus-5-5",
+  {Api.api_body_for(Api.Anthropic{}, "claude-opus-5-5", Api.facts0(),
       W.parse_wire("MODEL default\nMSG system : You are precise.\nMSG user : bonjour\nEND\n"))
     == "{\"system\":[{\"type\":\"text\",\"text\":\"You are precise.\"}],\"model\":\"claude-opus-5-5\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"bonjour\"}]}]}"
     : String}
@@ -2281,7 +2282,7 @@ law api_body_anth_maps:
 # LAW: an Anthropic compaction call (no TOOL lines) omits tools and
 # tool_choice - the model cannot even offer a tool call.
 law api_body_anth_bare_omits_tools:
-  {Api.api_body_for(Api.Anthropic{}, "m",
+  {Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
       W.parse_wire("MODEL default\nMSG user : salut\nEND\n"))
     == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"salut\"}]}]}"
     : String}
@@ -2289,7 +2290,7 @@ law api_body_anth_bare_omits_tools:
 # LAW: the Anthropic tools carry the {name, description, input_schema}
 # shape and tool_choice is the auto object.
 law api_body_anth_tools_shape:
-  {Api.api_body_for(Api.Anthropic{}, "m",
+  {Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
       W.parse_wire("MODEL default\nTOOL echo : Returns text.\nMSG user : bonjour\nEND\n"))
     == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"bonjour\"}]}],\"tools\":[{\"name\":\"echo\",\"description\":\"Returns text.\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"}},\"required\":[\"arg\"]}}],\"tool_choice\":{\"type\":\"auto\"}}"
     : String}
@@ -2298,7 +2299,7 @@ law api_body_anth_tools_shape:
 # OpenAI adapter pairs them - the tool_use id and the tool_use_id of
 # the result agree, and the result rides a USER message.
 law anth_tool_result_pairs:
-  {Api.api_body_for(Api.Anthropic{}, "m",
+  {Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
       W.parse_wire("MODEL default\nMSG user : go\nMSG assistant : thinking\n  CALL 7 echo : hi\nMSG tool : tool echo ok: out\nEND\n"))
     == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"go\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"thinking\"},{\"type\":\"tool_use\",\"id\":\"call_7\",\"name\":\"echo\",\"input\":{\"arg\":\"hi\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_7\",\"content\":\"tool echo ok: out\"}]}]}"
     : String}
@@ -2306,7 +2307,7 @@ law anth_tool_result_pairs:
 # LAW: consecutive tool results merge into ONE user message - the
 # vibe mapper's shape (the ids pair FIFO).
 law anth_tool_results_merge:
-  {String.contains(Api.api_body_for(Api.Anthropic{}, "m",
+  {String.contains(Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
       W.parse_wire("MODEL default\nMSG user : go\nMSG assistant : thinking\n  CALL 7 echo : hi\n  CALL 8 bash : ls\nMSG tool : out1\nMSG tool : out2\nEND\n")),
     "\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_8\",\"content\":\"out2\"}")
     == False{} : Bool}
@@ -2322,7 +2323,7 @@ law oai_parallel_results_pair_in_order:
 
 # LAW: the same pairing on the Anthropic adapter.
 law anth_parallel_results_pair_in_order:
-  {String.contains(Api.api_body_for(Api.Anthropic{}, "m",
+  {String.contains(Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
       W.parse_wire("MODEL default\nMSG user : go\nMSG assistant : x\n  CALL 7 echo : hi\n  CALL 8 bash : ls\nMSG tool : out1\nMSG tool : out2\nEND\n")),
     "{\"type\":\"tool_result\",\"tool_use_id\":\"call_7\",\"content\":\"out1\"},{\"type\":\"tool_result\",\"tool_use_id\":\"call_8\",\"content\":\"out2\"}")
     == True{} : Bool}
@@ -2332,7 +2333,7 @@ law anth_parallel_results_pair_in_order:
 # API (probed), so no \"type\":\"thinking\" block ever rides an
 # assistant message.
 law anth_unsigned_thinking_stays_stripped:
-  {Bool.not(String.contains(Api.api_body_for(Api.Anthropic{}, "m",
+  {Bool.not(String.contains(Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
        W.parse_wire("MODEL default
 MSG assistant : <think>2+2 = 4</think>\\n4
 END
@@ -2345,7 +2346,7 @@ END
 # Messages API needs across tool calls; the model no longer re-thinks
 # after every tool result.
 law anth_signed_thinking_replays:
-  {String.contains(Api.api_body_for(Api.Anthropic{}, "m",
+  {String.contains(Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
        W.parse_wire("MODEL default
 MSG assistant : <think>2+2 = 4\\nBENDSIG::sig</think>\\n4
 END
@@ -2358,7 +2359,7 @@ END
 # text (a span riding as plain text is refused as reasoning
 # extraction, probed).
 law anth_multi_span_replays:
-  {Api.api_body_for(Api.Anthropic{}, "m",
+  {Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
        W.parse_wire("MODEL default
 MSG assistant : <think>a\\nBENDSIG::s1</think>\\n<think>b\\nBENDSIG::s2</think>\\nok
 END
@@ -2369,7 +2370,7 @@ END
 # LAW: a long tool run keeps every message - 20 tool results still
 # reach the body (the walk fuel covers the three hops of a tool message).
 law anth_long_tool_run_keeps_messages:
-  {String.contains(Api.api_body_for(Api.Anthropic{}, "m",
+  {String.contains(Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
       W.parse_wire("MODEL default\nMSG user : go\nMSG assistant : x\n  CALL 1 echo : hi\nMSG tool : out1\nMSG assistant : x\n  CALL 2 echo : hi\nMSG tool : out2\nMSG assistant : x\n  CALL 3 echo : hi\nMSG tool : out3\nMSG assistant : x\n  CALL 4 echo : hi\nMSG tool : out4\nMSG assistant : x\n  CALL 5 echo : hi\nMSG tool : out5\nMSG assistant : x\n  CALL 6 echo : hi\nMSG tool : out6\nMSG assistant : x\n  CALL 7 echo : hi\nMSG tool : out7\nMSG assistant : x\n  CALL 8 echo : hi\nMSG tool : out8\nMSG assistant : x\n  CALL 9 echo : hi\nMSG tool : out9\nMSG assistant : x\n  CALL 10 echo : hi\nMSG tool : out10\nMSG assistant : x\n  CALL 11 echo : hi\nMSG tool : out11\nMSG assistant : x\n  CALL 12 echo : hi\nMSG tool : out12\nMSG assistant : x\n  CALL 13 echo : hi\nMSG tool : out13\nMSG assistant : x\n  CALL 14 echo : hi\nMSG tool : out14\nMSG assistant : x\n  CALL 15 echo : hi\nMSG tool : out15\nMSG assistant : x\n  CALL 16 echo : hi\nMSG tool : out16\nMSG assistant : x\n  CALL 17 echo : hi\nMSG tool : out17\nMSG assistant : x\n  CALL 18 echo : hi\nMSG tool : out18\nMSG assistant : x\n  CALL 19 echo : hi\nMSG tool : out19\nMSG assistant : x\n  CALL 20 echo : hi\nMSG tool : out20\nEND\n")),
     "\"content\":\"out20\"")
     == True{} : Bool}
@@ -2613,6 +2614,209 @@ law anth_sse_refusal:
 law anth_stream_json_error_body:
   {As.reply_any("{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}")
     == "ERROR provider 200: Overloaded\nEND\n" : String}
+
+# ---- the OpenAI Chat stream (core/oai-stream.bend, BISE-144) ----
+
+# LAW: a streamed OpenAI Chat request is the same body with "stream":
+# true and the usage asked for (stream_options.include_usage) first.
+law oai_stream_body:
+  {Os.stream_body("{\"model\":\"m\"}")
+    == "{\"stream\":true,\"stream_options\":{\"include_usage\":true},\"model\":\"m\"}" : String}
+
+# LAW: text split over many chunks is rebuilt whole: the streamed reply
+# maps to what the same message sent whole maps to (reasoning_content
+# rides along as the whole message carries it).
+law oai_stream_text_split:
+  {Os.reply("data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"reasoning_content\":\"Think\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hel\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"lo wor\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ld\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"prompt_tokens_details\":{\"cached_tokens\":2}}}
+
+data: [DONE]
+
+")
+    == Oai.reply_of(200, "{\"object\":\"chat.completion\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Hello world\",\"reasoning_content\":\"Think\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"prompt_tokens_details\":{\"cached_tokens\":2}}}") : String}
+
+law oai_stream_text_split_is:
+  {Os.reply("data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"reasoning_content\":\"Think\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hel\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"lo wor\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ld\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"prompt_tokens_details\":{\"cached_tokens\":2}}}
+
+data: [DONE]
+
+")
+    == "OK Hello world
+END
+" : String}
+
+# LAW: tool_calls deltas are gathered by index, even interleaved: the
+# first piece of an index has id + name, the next ones argument text.
+law oai_stream_interleaved_tools:
+  {Os.reply("data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"a\",\"type\":\"function\",\"function\":{\"name\":\"bash\",\"arguments\":\"\"}}]},\"finish_reason\":null}]}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":1,\"id\":\"b\",\"type\":\"function\",\"function\":{\"name\":\"bash\",\"arguments\":\"{\\\"arg\\\"\"}}]},\"finish_reason\":null}]}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"arg\\\": \\\"l\"}}]},\"finish_reason\":null}]}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":1,\"function\":{\"arguments\":\": \\\"pwd\\\"}\"}}]},\"finish_reason\":null}]}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"s\\\"}\"}}]},\"finish_reason\":null}]}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}
+
+data: [DONE]
+
+")
+    == "OK 
+CALL 1 bash : ls
+CALL 2 bash : pwd
+END
+" : String}
+
+# LAW: the usage comes in the last chunk (choices []): the usage line a
+# whole reply prints (prompt_tokens counts the cached ones).
+law oai_stream_usage_line:
+  {Us.usage_line(Api.OpenAI{}, "m", 200, "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null,\"reasoning_content\":\"Think\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hel\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"lo wor\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ld\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"prompt_tokens_details\":{\"cached_tokens\":2}}}
+
+data: [DONE]
+
+")
+    == "  obs: usage: model=m in=10 out=5 cache_read=2 cache_write=0" : String}
+
+# LAW: Mistral sends a whole tool call in one delta, in the chunk that
+# also carries finish_reason and the usage.
+law oai_stream_mistral_one_delta:
+  {Os.reply("data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}
+
+data: {\"object\":\"chat.completion.chunk\",\"p\":\"abc\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"id\":\"wBvFpU1Qf\",\"type\":\"function\",\"function\":{\"name\":\"bash\",\"arguments\":\"{\\\"arg\\\": \\\"echo ok\\\"}\"},\"index\":0}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":115,\"total_tokens\":133,\"completion_tokens\":18,\"prompt_tokens_details\":{\"cached_tokens\":0}}}
+
+data: [DONE]
+
+")
+    == "OK 
+CALL 1 bash : echo ok
+END
+" : String}
+
+law oai_stream_mistral_usage:
+  {Us.usage_line(Api.OpenAI{}, "m", 200, "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}
+
+data: {\"object\":\"chat.completion.chunk\",\"p\":\"abc\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"id\":\"wBvFpU1Qf\",\"type\":\"function\",\"function\":{\"name\":\"bash\",\"arguments\":\"{\\\"arg\\\": \\\"echo ok\\\"}\"},\"index\":0}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":115,\"total_tokens\":133,\"completion_tokens\":18,\"prompt_tokens_details\":{\"cached_tokens\":0}}}
+
+data: [DONE]
+
+")
+    == "  obs: usage: model=m in=115 out=18 cache_read=0 cache_write=0" : String}
+
+# LAW: Mistral's reasoning models stream content as blocks (thinking,
+# text): rebuilt as the whole reply's blocks, pieces joined.
+law oai_stream_thinking_blocks:
+  {Os.reply("data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"2+2\"}]}]},\"finish_reason\":null}]}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\" = 4\"}]}]},\"finish_reason\":null}]}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":[{\"type\":\"text\",\"text\":\"4\"}]},\"finish_reason\":null}]}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"!\"},\"finish_reason\":null}]}
+
+data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}
+
+data: [DONE]
+
+")
+    == Oai.reply_of(200, "{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"2+2 = 4\"}]},{\"type\":\"text\",\"text\":\"4!\"}]},\"finish_reason\":\"stop\"}]}") : String}
+
+# LAW: an error chunk mid-stream (OpenRouter) is the reply: a 200 error
+# body, which the retry policy retries.
+law oai_stream_error_chunk:
+  {Os.reply("data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}],\"usage\":null}
+
+data: {\"object\":\"chat.completion.chunk\",\"error\":{\"code\":\"server_error\",\"message\":\"Internal server error\"},\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"},\"finish_reason\":\"error\"}]}
+
+")
+    == "ERROR provider 200: {\"error\":{\"code\":\"server_error\",\"message\":\"Internal server error\"}}
+END
+" : String}
+
+# LAW: a 200 that is one JSON body (a server ignoring "stream") maps as
+# a whole reply.
+law oai_stream_json_body:
+  {Api.stream_reply(Api.OpenAI{}, "{\"choices\":[{\"message\":{\"content\":\"hi\"}}]}")
+    == Oai.reply_of(200, "{\"choices\":[{\"message\":{\"content\":\"hi\"}}]}") : String}
+
+# LAW: the catalog drives the body (BISE-145): a model that does not
+# reason gets no reasoning_effort; its max_output is the cap, named
+# max_completion_tokens on OpenAI, max_tokens elsewhere.
+law oai_body_no_reasoning_cap:
+  {Api.api_body_for(Api.OpenAI{}, "m", Api.MFacts{False{}, 4096n, "max_tokens", "", ""},
+      W.parse_wire("MODEL default
+MSG user : hi
+END
+"))
+    == "{\"model\":\"m\",\"max_tokens\":4096,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" : String}
+
+law oai_body_openai_cap:
+  {Api.api_body_for(Api.OpenAI{}, "m", Api.MFacts{True{}, 128000n, "max_completion_tokens", "", ""},
+      W.parse_wire("MODEL default
+MSG user : hi
+END
+"))
+    == "{\"model\":\"m\",\"reasoning_effort\":\"high\",\"max_completion_tokens\":128000,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" : String}
+
+# LAW: the facts come from the models file, a model's key over its
+# provider's; the OpenAI provider names its cap max_completion_tokens.
+# (a small max_output: a Nat literal past 256n is too deep to check)
+law provider_facts_from_file:
+  {Pv.resolve("", "", "", "", "model = \"openai/gpt-4.1\"",
+      "[providers.openai]
+api = \"openai-chat\"
+base_url = \"https://api.openai.com/v1\"
+key_env = \"OPENAI_API_KEY\"
+max_output = 128000
+reasoning = true
+[models.\"openai/gpt-4.1\"]
+max_output = 200
+reasoning = false",
+      "")
+    == Pv.ROk{Pv.Prov{"openai", "gpt-4.1", Api.OpenAI{},
+      "https://api.openai.com/v1/chat/completions", "OPENAI_API_KEY",
+      Api.MFacts{False{}, 200n, "max_completion_tokens", "", ""}}}
+    : Pv.Resolved}
 
 # LAW: only a non-empty flag is a Ctrl+C - the runtime clears the flag to
 # "" at every turn end, and that must never read as an interrupt.
@@ -2873,7 +3077,7 @@ law image_split_refuses_bad_marker:
 # LAW: OpenAI style - a user message with a marker becomes content
 # parts, the Codex frame around a data-url placeholder.
 law api_body_image_user_parts:
-  {Api.api_body_for(Api.OpenAI{}, "m", W.parse_wire("MODEL default
+  {Api.api_body_for(Api.OpenAI{}, "m", Api.facts0(), W.parse_wire("MODEL default
 MSG user : see <image name=\"[Image #1]\" path=\"p.png\" mime=\"image/png\" b64=\"/s/x.b64\">
 END
 "))
@@ -2882,7 +3086,7 @@ END
 
 # LAW: Anthropic - a tool result with a marker carries image blocks.
 law api_body_image_anth_tool_result:
-  {Api.api_body_for(Api.Anthropic{}, "m", W.parse_wire("MODEL default
+  {Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(), W.parse_wire("MODEL default
 MSG user : go
 MSG assistant : 
   CALL 1 run_typescript : {}

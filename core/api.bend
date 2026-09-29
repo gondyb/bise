@@ -7,6 +7,7 @@
 # response back to the OK/CALL/END reply the Core parses:
 #   core/wire.bend       the wire, shared by every family
 #   core/oai-chat.bend   OpenAI Chat Completions (and compatibles)
+#   core/oai-stream.bend OpenAI Chat, streamed
 #   core/anthropic.bend  Anthropic Messages (+ core/anth-stream.bend)
 #
 # The family is one of the two registries of the provider arc (the
@@ -18,6 +19,7 @@
 #   endpoint                  the path appended to a provider's base_url
 #   headers                   the HTTP headers (the key, when there is one)
 #   streams / wire_body       whether the call streams (SSE), its body
+#   MFacts                    what the catalog says of the model
 #   api_body_for              the request body
 #   reply_of_for              a whole reply -> OK/CALL/END
 #   stream_reply              a streamed reply -> OK/CALL/END
@@ -30,6 +32,7 @@ import ./wire.bend as W
 import ./oai-chat.bend as Oai
 import ./anthropic.bend as Anth
 import ./anth-stream.bend as As
+import ./oai-stream.bend as Os
 import ../vendor/json.bend as J
 
 type Style is Data:
@@ -105,28 +108,47 @@ def headers(st: Style, +key: String) -> List<&2, Hdr>:
             "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31,context-1m-2025-08-07"},
           Hdr{"Content-Type", "application/json"}])
 
-# ---- streaming: the Messages API streams, the others answer whole ----
+# ---- streaming: every family streams (Server-Sent Events) ----
 
 def streams(st: Style) -> Bool:
   match st:
     case OpenAI{}:
-      False{}
+      True{}
     case Anthropic{}:
       True{}
 
 def wire_body(st: Style, +body: String) -> String:
   match st:
     case OpenAI{}:
-      body
+      Os.stream_body(body)
     case Anthropic{}:
       As.stream_body(body)
 
+# ---- what the catalog says of the model ----
+# runtime/provider-pure.bend fills it from the models file (a key of
+# models."p/id", else of providers.p): reasoning = `reasoning = true`;
+# output = `max_output` (0n: not set); max_key = the name of the output
+# cap in an OpenAI Chat body ("max_completion_tokens" for OpenAI itself,
+# whose reasoning models refuse max_tokens; "max_tokens" elsewhere);
+# thinking / betas: the raw keys (Anthropic, BISE-146; "" = not set).
+
+type MFacts is Data:
+  MFacts{reasoning: Bool, output: Nat, max_key: String, thinking: String,
+    betas: String}
+
+# no catalog entry: today's body (reasoning_effort on, no output cap)
+def facts0() -> MFacts:
+  MFacts{True{}, 0n, "max_tokens", "", ""}
+
 # ---- the body and the reply ----
 
-def api_body_for(st: Style, +model: String, +req: W.WReq) -> String:
+def api_body_for(st: Style, +model: String, +facts: MFacts, +req: W.WReq)
+    -> String:
   match st:
     case OpenAI{}:
-      Oai.api_body(model, req)
+      match facts:
+        case MFacts{+reasoning, +output, +max_key, _, _}:
+          Oai.api_body_with(model, Oai.Opts{reasoning, output, max_key}, req)
     case Anthropic{}:
       Anth.api_body_anth(model, req)
 
@@ -141,7 +163,7 @@ def reply_of_for(st: Style, +status: U32, +body: String) -> String:
 def stream_reply(st: Style, +text: String) -> String:
   match st:
     case OpenAI{}:
-      Oai.reply_of(200, text)
+      Os.reply_any(text)
     case Anthropic{}:
       As.reply_any(text)
 
@@ -168,12 +190,10 @@ def usage_of(st: Style, +u: J.Json) -> Usage:
       Usage{Nat.add(J.get_num_or(u, "input_tokens", 0n), Nat.add(cr, cw)),
         J.get_num_or(u, "output_tokens", 0n), cr, cw}
 
-# the "usage" object a streamed body spreads over its events (OpenAI
-# Chat does not stream yet: BISE-144 gives it its own fold; until then
-# it reads as today)
+# the "usage" object a streamed body spreads over its events
 def stream_usage(st: Style, +text: String) -> J.Json:
   match st:
     case OpenAI{}:
-      As.usage(text)
+      Os.usage(text)
     case Anthropic{}:
       As.usage(text)

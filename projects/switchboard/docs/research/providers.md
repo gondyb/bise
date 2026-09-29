@@ -612,6 +612,25 @@ finds the keys with `auth::Keys` (env, auth.json, the old .env files),
 and saves a pasted key with `auth_cli::login` (auth.json, 0600; asks
 before replacing a stored one). It no longer writes `<root>/.env`.
 
+### 7.5 BISE-144 as built: OpenAI Chat streams
+
+- Every `openai-chat` call streams (`Api.streams` is True for both
+  families): the body gets `"stream":true` and
+  `"stream_options":{"include_usage":true}` in front
+  (`Os.stream_body`), the SSE reader of `runtime/provider.bend` reads
+  it, `core/oai-stream.bend` folds the chunks into the message a whole
+  reply carries (`Os.whole` gives the whole body) and `Oai.reply_ok`
+  maps it: the same OK/CALL/END as a non-streamed reply.
+- Fold: text pieces; Mistral content blocks (thinking/text);
+  `reasoning_content` / `reasoning` kept in the message (not surfaced
+  yet); `tool_calls` by index (interleaved; first id/name kept; no
+  index = new call when it has an id or name); `finish_reason`; the last
+  `usage` (Groq: `x_groq.usage`); an `error` chunk = `ERROR provider
+  200: …` (retried); a JSON 200 = the whole mapping.
+- Per model (`Api.MFacts`, from the models file): `reasoning_effort`
+  only when `reasoning = true`; `max_output` as `max_completion_tokens`
+  (provider `openai`) or `max_tokens`; no file = today's body.
+
 ## 8. BISE-153 as built: the fake provider, fixtures, live tests
 
 ### 8.1 The fake provider (`tests/fake_provider.py`)

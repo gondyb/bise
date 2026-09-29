@@ -238,29 +238,66 @@ def msgs_json(+msgs: List<&2, W.WMsg>) -> List<&2, J.Json>:
   msgs_go(Nat.add(Nat.mul(List.length(&2, W.WMsg, msgs), 2n), 16n),
     MNext{msgs, Nil{}, Nil{}})
 
-# reasoning_effort rides EVERY call, the vibe CLI parity: the active
-# model zai-glm-5-3 runs with thinking "high", and the vibe CLI maps
-# thinking medium/high/max to reasoning_effort "high" on the Mistral
-# API (core/llm/backend/mistral.py _THINKING_TO_REASONING_EFFORT)
-def api_body.pick(empty_tools: Bool, +model: String, +tools: List<&2, W.WTool>,
-    +msgs: List<&2, W.WMsg>) -> String:
+# what the catalog says of the model (core/api.bend MFacts): whether it
+# reasons, its output cap (0n: none sent) and the cap's field name
+type Opts is Data:
+  Opts{reasoning: Bool, output: Nat, max_key: String}
+
+# reasoning_effort "high" rides every call of a reasoning model, the
+# vibe CLI parity: the active model zai-glm-5-3 runs with thinking
+# "high", and the vibe CLI maps thinking medium/high/max to
+# reasoning_effort "high" on the Mistral API (core/llm/backend/
+# mistral.py _THINKING_TO_REASONING_EFFORT). A model the catalog marks
+# as not reasoning gets none (OpenAI gpt-4.1, Groq's llama: a 400).
+def body.effort(reasoning: Bool, +rest: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
+    -> List<&2, Sigma<&2, &2, String, _ => J.Json>>:
+  match reasoning:
+    case True{}:
+      Con{J.kv("reasoning_effort", J.str("high")), rest}
+    case False{}:
+      rest
+
+# the output cap: max_tokens, or max_completion_tokens (OpenAI's name,
+# the only one its reasoning models take); none when the catalog has none
+def body.cap(none: Bool, +output: Nat, +key: String,
+    +rest: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
+    -> List<&2, Sigma<&2, &2, String, _ => J.Json>>:
+  match none:
+    case True{}:
+      rest
+    case False{}:
+      Con{J.kv(key, J.JNum{output}), rest}
+
+def body.head(o: Opts, +rest: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
+    -> List<&2, Sigma<&2, &2, String, _ => J.Json>>:
+  match o:
+    case Opts{+reasoning, +output, +max_key}:
+      body.effort(reasoning,
+        body.cap(Nat.is_eq(output, 0n), output, max_key, rest))
+
+def api_body.pick(empty_tools: Bool, +model: String, +o: Opts,
+    +tools: List<&2, W.WTool>, +msgs: List<&2, W.WMsg>) -> String:
   match empty_tools:
     case True{}:
       # a compaction call offers no tools at all
       J.stringify(J.obj(Con{J.kv("model", J.str(model)),
-        Con{J.kv("reasoning_effort", J.str("high")),
-        Con{J.kv("messages", J.arr(msgs_json(msgs))), Nil{}}}}))
+        body.head(o,
+          Con{J.kv("messages", J.arr(msgs_json(msgs))), Nil{}})}))
     case False{}:
       J.stringify(J.obj(Con{J.kv("model", J.str(model)),
-        Con{J.kv("reasoning_effort", J.str("high")),
-        Con{J.kv("messages", J.arr(msgs_json(msgs))),
-          Con{J.kv("tools", tools_json(tools)),
-            Con{J.kv("tool_choice", J.str("auto")), Nil{}}}}}}))
+        body.head(o,
+          Con{J.kv("messages", J.arr(msgs_json(msgs))),
+            Con{J.kv("tools", tools_json(tools)),
+              Con{J.kv("tool_choice", J.str("auto")), Nil{}}}})}))
 
-def api_body(+model: String, +req: W.WReq) -> String:
+def api_body_with(+model: String, +o: Opts, +req: W.WReq) -> String:
   match req:
     case W.WReq{+tools, +msgs, _}:
-      api_body.pick(W.is_empty_tools(tools), model, tools, msgs)
+      api_body.pick(W.is_empty_tools(tools), model, o, tools, msgs)
+
+# no catalog facts: reasoning_effort on, no output cap (today's body)
+def api_body(+model: String, +req: W.WReq) -> String:
+  api_body_with(model, Opts{True{}, 0n, "max_tokens"}, req)
 
 def fn_of(tc: J.Json) -> J.Json:
   W.field_or(tc, "function", J.JNull{})

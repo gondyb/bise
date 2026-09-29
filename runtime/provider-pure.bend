@@ -43,7 +43,8 @@ def builtin() -> List<&2, Cf.KV>:
     Cf.KV{"providers.foundry.key_env", "ANTHROPIC_FOUNDRY_API_KEY"},
     Cf.KV{"providers.mistral.api", "openai-chat"},
     Cf.KV{"providers.mistral.base_url", "https://api.mistral.ai/v1"},
-    Cf.KV{"providers.mistral.key_env", "MISTRAL_API_KEY"}]
+    Cf.KV{"providers.mistral.key_env", "MISTRAL_API_KEY"},
+    Cf.KV{"providers.mistral.reasoning", "true"}]
 
 # the models file's entries win over the built-in ones (first match)
 def registry(+file: String) -> List<&2, Cf.KV>:
@@ -155,10 +156,11 @@ def model_key(+reg: List<&2, Cf.KV>, +prov: String, +id: String,
 # ---- the resolution ----
 
 # what a call needs: the provider id, the model id sent on the wire,
-# the family, the URL and the env var holding the key ("": none)
+# the family, the URL, the env var holding the key ("": none) and what
+# the catalog says of the model (Api.MFacts)
 type Prov is Data:
   Prov{provider: String, model: String, st: Api.Style, url: String,
-    key_env: String}
+    key_env: String, facts: Api.MFacts}
 
 # an error names the full id it was about (what the clients show)
 type Resolved is Data:
@@ -196,23 +198,54 @@ def unknown_provider(+prov: String, +id: String) -> Resolved:
     quoted(id), "): add a [providers.", prov,
     "] table (base_url, key_env, api) to config.toml"])}
 
+# ---- the model's facts (core/api.bend MFacts) ----
+
+def fact_nat.read(m: Maybe<&2, Nat>) -> Nat:
+  match m:
+    case Some{+n}:
+      n
+    case None{}:
+      0n
+
+def fact_nat(m: Maybe<&2, String>) -> Nat:
+  match m:
+    case Some{+s}:
+      fact_nat.read(Nat.read(s))
+    case None{}:
+      0n
+
+def max_key.pick(is_openai: Bool) -> String:
+  match is_openai:
+    case True{}:
+      "max_completion_tokens"
+    case False{}:
+      "max_tokens"
+
+def facts(+reg: List<&2, Cf.KV>, +prov: String, +id: String) -> Api.MFacts:
+  Api.MFacts{String.eq(Cf.cfg_or(model_key(reg, prov, id, "reasoning"), ""),
+      "true"),
+    fact_nat(model_key(reg, prov, id, "max_output")),
+    max_key.pick(String.eq(prov, "openai")),
+    Cf.cfg_or(model_key(reg, prov, id, "thinking"), ""),
+    Cf.cfg_or(model_key(reg, prov, id, "betas"), "")}
+
 def resolve.family(m: Maybe<&2, Api.Style>, +api: String, +prov: String,
     +model: String, +id: String, +base: String, +key_env: String,
-    +url_env: String) -> Resolved:
+    +url_env: String, +fs: Api.MFacts) -> Resolved:
   match m:
     case Some{+st}:
-      ROk{Prov{prov, model, st, call_url(url_env, base, st), key_env}}
+      ROk{Prov{prov, model, st, call_url(url_env, base, st), key_env, fs}}
     case None{}:
       RErr{id, String.concat(["model ", quoted(id), ": api ", quoted(api),
         " of provider ", quoted(prov), " is not supported yet"])}
 
 def resolve.needs(ok: Bool, +needs: String, +api: String, +prov: String,
     +model: String, +id: String, +base: String, +key_env: String,
-    +url_env: String) -> Resolved:
+    +url_env: String, +fs: Api.MFacts) -> Resolved:
   match ok:
     case True{}:
       resolve.family(Api.style_of_api(api), api, prov, model, id, base,
-        key_env, url_env)
+        key_env, url_env, fs)
     case False{}:
       RErr{id, String.concat(["model ", quoted(id), ": provider ", quoted(prov),
         " is not supported yet (needs ", needs, ")"])}
@@ -225,7 +258,7 @@ def resolve.base(m: Maybe<&2, String>, +reg: List<&2, Cf.KV>, +prov: String,
       resolve.needs(String.is_empty(needs), needs,
         Cf.cfg_or(model_key(reg, prov, id, "api"), "openai-chat"), prov,
         model, id, base, Cf.cfg_or(model_key(reg, prov, id, "key_env"), ""),
-        url_env)
+        url_env, facts(reg, prov, id))
     case None{}:
       unknown_provider(prov, id)
 
@@ -254,7 +287,7 @@ def resolve(+bise: String, +bend: String, +agent: String, +role: String,
 # the wire, or the full id asked for when it does not resolve
 def shown_model(r: Resolved) -> String:
   match r:
-    case ROk{Prov{_, +model, _, _, _}}:
+    case ROk{Prov{_, +model, _, _, _, _}}:
       model
     case RErr{+id, _}:
       id

@@ -901,7 +901,7 @@ def Laws.family_headers_no_key():
 def Laws.family_anthropic_streams():
   {==}
 
-def Laws.family_openai_whole():
+def Laws.family_openai_streams():
   {==}
 
 def Laws.family_name_roundtrip(st):
@@ -1050,6 +1050,45 @@ def Laws.anth_sse_refusal():
   {==}
 
 def Laws.anth_stream_json_error_body():
+  {==}
+
+def Laws.oai_stream_body():
+  {==}
+
+def Laws.oai_stream_text_split():
+  {==}
+
+def Laws.oai_stream_text_split_is():
+  {==}
+
+def Laws.oai_stream_interleaved_tools():
+  {==}
+
+def Laws.oai_stream_usage_line():
+  {==}
+
+def Laws.oai_stream_mistral_one_delta():
+  {==}
+
+def Laws.oai_stream_mistral_usage():
+  {==}
+
+def Laws.oai_stream_thinking_blocks():
+  {==}
+
+def Laws.oai_stream_error_chunk():
+  {==}
+
+def Laws.oai_stream_json_body():
+  {==}
+
+def Laws.oai_body_no_reasoning_cap():
+  {==}
+
+def Laws.oai_body_openai_cap():
+  {==}
+
+def Laws.provider_facts_from_file():
   {==}
 
 def Laws.interrupt_flag_semantics():

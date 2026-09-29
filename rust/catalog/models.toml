@@ -129,6 +129,10 @@ context = 256000
 [models."mistral/magistral-medium-latest"]
 reasoning = true
 
+# the vibe CLI's model: reasoning_effort "high" rides its calls (BISE-145)
+[models."mistral/zai-glm-5-3"]
+reasoning = true
+
 # ---- OpenRouter (one key, many vendors) ----
 
 [providers.openrouter]
