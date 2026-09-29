@@ -26,8 +26,11 @@ Les agents de code sont bons. Les travailler en parallèle, non.
 
 Taglines (choisies par Gabriel, gardées en anglais) :
 
-> **kiss your backlog goodbye.**
+> **multi-agent coding, made human.**
 > *ramble. interrupt. change your mind. i run the agents. you stay in flow.*
+
+« kiss your backlog goodbye. » descend dans la page : c'est le titre de la
+section qui montre ce que bise sait faire (landing, features).
 
 **Règle de style (Gabriel) : jamais de majuscule en début de mot, sur tous
 les supports marketing et tous les textes du site.** Ça fait humain qui tape
@@ -79,7 +82,8 @@ Taglines :
 | trop d'idées ? tant mieux. | too many ideas? good. |
 | dis-le une fois. oublie. c'est fait. | say it once. forget about it. it's done. |
 | enfin un truc qui suit mon cerveau. | finally, something that keeps up with my brain. |
-| dis adieu à ton backlog (et un bisou au passage). | kiss your backlog goodbye. (tagline principale, choisie par Gabriel) |
+| le multi-agent, version humaine. | multi-agent coding, made human. (tagline principale, choisie par Gabriel) |
+| dis adieu à ton backlog (et un bisou au passage). | kiss your backlog goodbye. (titre de la section features) |
 | toi, mais avec beaucoup plus de mains. | you, but with way more hands. (ancienne principale, en réserve) |
 | Ne jamais attendre un agent. | Never wait on an agent again. |
 | Un interlocuteur. Autant d'agents que tu veux. | One conversation. As many agents as you want. |

@@ -27,8 +27,11 @@ Coding agents are good. Running several of them in parallel is not.
 
 Taglines (picked by Gabriel):
 
-> **kiss your backlog goodbye.**
+> **multi-agent coding, made human.**
 > *ramble. interrupt. change your mind. i run the agents. you stay in flow.*
+
+"kiss your backlog goodbye." moves down the page: it titles the section that
+shows what bise can do (landing, features).
 
 **Style rule (Gabriel): no capital letter at the start of any word, ever,
 on every marketing piece and all website text.** It reads like a human typing
