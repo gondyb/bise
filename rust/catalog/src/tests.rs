@@ -367,3 +367,34 @@ fn token_counts_read_short() {
     assert_eq!(cli::tokens(950), "950");
     assert_eq!(cli::tokens(32_768), "32k");
 }
+
+#[test]
+fn small_model_order() {
+    // the agents' provider's small model by default
+    let s = setup("model = \"anthropic/claude-opus-4-5\"\n");
+    assert_eq!(s.small_model, "anthropic/claude-haiku-4-5");
+    assert_eq!(s.small_model_from, "provider");
+    // it follows agent_model's provider, not model's
+    let s = setup("model = \"anthropic/claude-opus-4-5\"\nagent_model = \"openai/gpt-5\"\n");
+    assert_eq!(s.small_model, "openai/gpt-5-mini");
+    // the default setup (foundry) has one
+    let s = setup("");
+    assert_eq!(s.small_model, "foundry/claude-haiku-4-5");
+    // a provider without one: agent_model
+    let s = setup("model = \"groq/openai/gpt-oss-120b\"\n");
+    assert_eq!(s.small_model, "groq/openai/gpt-oss-120b");
+    assert_eq!(s.small_model_from, "agent_model");
+    // config, then env, win
+    let s = setup("small_model = \"openai/gpt-5-mini\"\n");
+    assert_eq!(s.small_model, "openai/gpt-5-mini");
+    assert_eq!(s.small_model_from, "config");
+    let s = Setup::from_text(Some("small_model = \"openai/gpt-5-mini\"\n"), &|k| {
+        (k == "BISE_SMALL_MODEL").then(|| "opus-5.5".to_string())
+    });
+    assert_eq!(s.small_model, "foundry/claude-opus-5-5");
+    assert_eq!(s.small_model_from, "BISE_SMALL_MODEL");
+    // a provider of the config may name its own
+    let s = setup("model = \"acme/big\"\n[providers.acme]\nbase_url = \"http://x\"\nsmall_model = \"tiny\"\n");
+    assert_eq!(s.small_model, "acme/tiny");
+    assert!(s.catalog.warnings.is_empty(), "{:?}", s.catalog.warnings);
+}

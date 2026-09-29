@@ -65,6 +65,12 @@ pub fn render(s: &Setup, filter: Option<&str>, keys: &Keys, home: Option<&Path>)
     o.push_str(&choice_line("model", c, &s.model, s.model_from));
     let agent_from = if s.agent_model_from == "model" { "same as model" } else { s.agent_model_from };
     o.push_str(&choice_line("agent_model", c, &s.agent_model, agent_from));
+    let small_from = match s.small_model_from {
+        "provider" => "the provider's small model",
+        "agent_model" => "same as agent_model",
+        f => f,
+    };
+    o.push_str(&choice_line("small_model", c, &s.small_model, small_from));
     for p in &c.providers {
         let models: Vec<_> = c.models.iter().filter(|m| m.provider == p.id).collect();
         let p_hit = hit(&p.id) || hit(&p.name);
@@ -107,7 +113,7 @@ fn usage() -> String {
   Lists the providers and models bise knows (built in, plus config.toml's
   [providers.<id>] and [models.\"<provider>/<model>\"]), where each
   provider's key comes from (env, auth.json, an old .env file), and the
-  models in use (model, agent_model).
+  models in use (model, agent_model, small_model).
   Any \"<provider>/<model>\" works, listed or not.",
         CLI
     )

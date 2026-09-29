@@ -118,6 +118,12 @@ enum Msg {
         kind: String,
         text: String,
     },
+    /// A role-line call is over (BISE-126).
+    RoleLine {
+        dir: String,
+        key: String,
+        line: Option<String>,
+    },
     /// `keep`: leave the REPLs running for the next hub to adopt.
     Shutdown {
         keep: bool,
@@ -173,6 +179,9 @@ struct Shell {
     /// (killed by a restart, a crash): once respawned on their session,
     /// they are told to continue where they left off.
     resume_turn: BTreeSet<String>,
+    /// The small model failed and agent_model answered: role lines use
+    /// agent_model for the rest of this hub's life (BISE-126).
+    small_broken: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// What an agent whose turn was cut by a restart receives.
@@ -430,7 +439,50 @@ impl Shell {
                 let snap = self.hub.snapshot(now_ms());
                 self.broadcast(&snap);
             }
+            Effect::AskRole { dir, key, request } => self.ask_role(dir, key, request),
         }
+    }
+
+    /// One role-line call in a thread (BISE-126): never waits in the
+    /// hub's loop nor in the task's turn; the answer comes back as
+    /// `Msg::RoleLine`.
+    fn ask_role(&mut self, dir: String, key: String, request: String) {
+        let adir = self.opts.paths.agent_dir(&dir);
+        let req_file = adir.join("role-request.txt");
+        if std::fs::create_dir_all(&adir).and_then(|_| std::fs::write(&req_file, request)).is_err() {
+            let _ = self.tx.send(Msg::RoleLine { dir, key, line: None });
+            return;
+        }
+        let setup = bise_catalog::Setup::load(&bise_home::Home::from_env().config_file());
+        let broken = self.small_broken.clone();
+        let (repl, root) = (self.opts.repl_bin.clone(), self.opts.app_root.clone());
+        let (tx, paths) = (self.tx.clone(), self.opts.paths.clone());
+        std::thread::spawn(move || {
+            use std::sync::atomic::Ordering;
+            let small = setup.small_model.clone();
+            let agent = setup.agent_model.clone();
+            let first = if broken.load(Ordering::Relaxed) { agent.clone() } else { small.clone() };
+            let mut got = oneshot(&repl, &root, &req_file, &first);
+            if let Err(e) = &got {
+                log_line(&paths, &format!("role line of {}: {} failed: {}", dir, first, e));
+                if first != agent {
+                    got = oneshot(&repl, &root, &req_file, &agent);
+                    match &got {
+                        Ok(_) => {
+                            broken.store(true, Ordering::Relaxed);
+                            log_line(&paths, &format!("role lines: {} failed, {} from now on", small, agent));
+                        }
+                        Err(e) => log_line(&paths, &format!("role line of {}: {} failed: {}", dir, agent, e)),
+                    }
+                }
+            }
+            let _ = std::fs::remove_file(&req_file);
+            let line = got.ok().and_then(|t| crate::role::clean(&t));
+            if let Some(l) = &line {
+                write_role(&paths.agent_dir(&dir), l, &key);
+            }
+            let _ = tx.send(Msg::RoleLine { dir, key, line });
+        });
     }
 
     fn repl_write(&mut self, agent: &str, line: &str) -> bool {
@@ -922,6 +974,64 @@ fn accept_loop(listener: UnixListener, tx: Sender<Msg>) {
 
 /// A hub that died abruptly (killed, crashed) left its REPLs running:
 /// they still hold their sessions. Their pids are in `repl.pid`.
+/// The longest a role-line call may take.
+const ONESHOT_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// One provider call through `repl-live`'s one-shot mode (BISE_ONESHOT,
+/// runtime/oneshot.bend) with `model`: the reply's text, or why not.
+/// The provider's error text never holds a key.
+fn oneshot(repl: &Path, root: &Path, req_file: &Path, model: &str) -> Result<String, String> {
+    let mut cmd = Command::new(repl);
+    cmd.current_dir(root)
+        .env("BISE_ONESHOT", req_file)
+        .env("BISE_MODEL", model)
+        // the main order of the resolution, BISE_MODEL first
+        .env_remove("BISE_ROLE")
+        .env_remove("BISE_AGENT_MODEL")
+        .env_remove("BEND_MODEL")
+        .env_remove("BEND_REPL_PORT")
+        .env_remove("BEND_SESSION_FILE")
+        .env_remove("BEND_WIRE_LOG")
+        .env_remove("BEND_CONTEXT_FILE")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    let mut child = cmd.spawn().map_err(|e| format!("cannot start {}: {}", repl.display(), e))?;
+    let mut out = child.stdout.take().ok_or("no stdout")?;
+    let reader = std::thread::spawn(move || {
+        let mut s = String::new();
+        let _ = std::io::Read::read_to_string(&mut out, &mut s);
+        s
+    });
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if start.elapsed() < ONESHOT_TIMEOUT => std::thread::sleep(Duration::from_millis(100)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("no answer in {} s", ONESHOT_TIMEOUT.as_secs()));
+            }
+        }
+    }
+    crate::role::oneshot_reply(&reader.join().unwrap_or_default())
+}
+
+/// `<agent dir>/role.json`: the last role line and its key (BISE-126).
+fn read_role(adir: &Path) -> Option<(String, String)> {
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(adir.join("role.json")).ok()?).ok()?;
+    let line = v["line"].as_str().filter(|l| !l.is_empty())?.to_string();
+    Some((line, v["key"].as_str().unwrap_or("").to_string()))
+}
+
+fn write_role(adir: &Path, line: &str, key: &str) {
+    let tmp = adir.join("role.json.tmp");
+    if std::fs::write(&tmp, json!({"line": line, "key": key}).to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, adir.join("role.json"));
+    }
+}
+
 fn kill_stale_repls(sh: &Shell) {
     for a in sh.hub.st.agents.values() {
         if sh.pids.contains_key(&a.dir) {
@@ -1052,7 +1162,15 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         restored: BTreeSet::new(),
         building: BTreeSet::new(),
         resume_turn: BTreeSet::new(),
+        small_broken: Default::default(),
     };
+    // the role lines of an earlier hub (BISE-126)
+    let dirs: Vec<String> = sh.hub.st.agents.values().map(|a| a.dir.clone()).collect();
+    for dir in dirs {
+        if let Some((line, key)) = read_role(&sh.opts.paths.agent_dir(&dir)) {
+            sh.hub.load_role(&dir, line, key);
+        }
+    }
     // the feeds survive a hub restart through their transcripts
     for a in sh.hub.st.agents.values() {
         let all = transcript::read(&sh.transcript(&a.dir));
@@ -1267,6 +1385,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 sh.feed(MAIN, &format!("sb {} : {}", kind, wire_escape(&text)));
                 sh.broadcast_versions();
             }
+            Msg::RoleLine { dir, key, line } => sh.step(Input::RoleLine { dir, key, line }),
             Msg::BuildEnded { rev } => {
                 sh.building.remove(&rev);
                 sh.broadcast_versions();

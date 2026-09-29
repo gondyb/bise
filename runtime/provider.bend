@@ -18,6 +18,7 @@ import ./provider-pure.bend as Pvp
 import ../core/image.bend as Im
 import ./debug.bend as Dbg
 import ./usage-pure.bend as Us
+import ./oneshot-pure.bend as Osp
 # ---- the live provider call, fully in Bend (hub HTTP client) ----
 # The wire request (MODEL/TOOL/MSG/CALL lines) becomes the provider
 # JSON in core/api.bend, is POSTed by the hub HTTP client, and the reply
@@ -559,9 +560,13 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
       match pv:
         case Pvp.Prov{_, +model, +st, +url, _, +facts}:
           do IO<Out & Rem.RemoteRes>:
+            # a one-shot call (BISE_ONESHOT, BISE-126) goes out light:
+            # no thinking / effort keys (runtime/oneshot-pure.bend)
+            osr : Result<&1, &1, U32 & String, String> <- IO.get_env("BISE_ONESHOT")
             +json : String <- IO.pure(String,
-              Api.wire_body(st,
-                Api.api_body_for(st, model, facts, W.parse_wire(request))))
+              Osp.light_if(Bool.not(String.is_empty(P.env_or(osr, ""))),
+                Api.wire_body(st,
+                  Api.api_body_for(st, model, facts, W.parse_wire(request)))))
             +body : String <- IO.pure(String, Enc.utf8.encode(Im.img_splice(json, imgs)))
             dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
             dump_dbg : Unit <- dump_wire(P.env_or(dr, ""), body)

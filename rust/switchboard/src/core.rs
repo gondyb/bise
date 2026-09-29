@@ -9,6 +9,7 @@
 use crate::board;
 use crate::model::*;
 use crate::prompts;
+use crate::role;
 use crate::router::{self, UserCmd};
 use crate::util::{clip, clip_tail, one_line, wire_escape};
 use crate::wire::{self, Wire};
@@ -315,6 +316,13 @@ pub enum Input {
         req: AgentReq,
     },
     Tick,
+    /// The end of a role-line call (BISE-126) for the task in `dir`,
+    /// asked with `key`: the new line, or None (failed: the old one stays).
+    RoleLine {
+        dir: String,
+        key: String,
+        line: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -375,6 +383,13 @@ pub enum Effect {
     },
     /// The state changed: broadcast a snapshot.
     State,
+    /// Ask a small model for a task's role line (BISE-126), off the hub's
+    /// loop; the answer comes back as `Input::RoleLine`.
+    AskRole {
+        dir: String,
+        key: String,
+        request: String,
+    },
 }
 
 /// The sb-core executable: `SB_CORE_BIN`, else `sb-core` at the root of
@@ -485,11 +500,31 @@ pub struct Hub {
     contexts: BTreeMap<String, String>,
     /// The last thing each agent did (from its REPL lines, for the views).
     activity: BTreeMap<String, (u64, String)>,
+    /// The role line of each task, by dir (BISE-126).
+    roles: BTreeMap<String, Role>,
     dirty: bool,
     link: CoreLink,
 }
 
 type Fx = Vec<Effect>;
+
+/// A task's role line (BISE-126) and its calls.
+#[derive(Clone, Debug, Default)]
+struct Role {
+    /// The last line a model gave; None: the objective's first sentence.
+    line: Option<String>,
+    /// What `line` was made from (role::key).
+    key: String,
+    /// The key of the call in flight.
+    asking: Option<String>,
+    /// A turn ended during the call: look again when it is over.
+    pending: bool,
+    /// The last failed call: no new one for ROLE_RETRY_MS.
+    failed_ms: Option<u64>,
+}
+
+/// After a failed role-line call, the next one waits this long.
+const ROLE_RETRY_MS: u64 = 5 * 60 * 1000;
 
 fn line(agent: &str, kind: &str, text: &str) -> Effect {
     Effect::Line {
@@ -549,6 +584,7 @@ impl Hub {
             recent: BTreeMap::new(),
             contexts: BTreeMap::new(),
             activity: BTreeMap::new(),
+            roles: BTreeMap::new(),
             dirty: false,
             link,
         };
@@ -673,6 +709,8 @@ impl Hub {
                     "main": a.is_main,
                     "status": a.status().as_str(),
                     "objective": a.description(),
+                    // what it is doing now, one line (BISE-126); "" for main
+                    "role": self.role_line(a),
                     "parent": a.parent,
                     "mode": match a.ws.mode { Mode::Worktree => "worktree", Mode::Shared => "shared" },
                     "path": a.ws.path,
@@ -731,6 +769,76 @@ impl Hub {
     }
 
 
+    /// The role line the views show (BISE-126): the model's, else the
+    /// objective's first sentence; none for main.
+    pub fn role_line(&self, a: &Agent) -> String {
+        if a.is_main {
+            return String::new();
+        }
+        match self.roles.get(&a.dir).and_then(|r| r.line.clone()) {
+            Some(l) => l,
+            None => role::default_line(&a.brief.objective),
+        }
+    }
+
+    /// A line saved by an earlier hub (`<agent dir>/role.json`).
+    pub fn load_role(&mut self, dir: &str, line: String, key: String) {
+        let r = self.roles.entry(dir.to_string()).or_default();
+        r.line = Some(line);
+        r.key = key;
+    }
+
+    /// A task's turn ended: one call for a new line when what it is made
+    /// of changed, none while one is in flight (it looks again at its
+    /// end), none for a while after a failure. Never main, never a task
+    /// that is not active.
+    fn ask_role(&mut self, fx: &mut Fx, now: u64, agent: &str) {
+        let Some(a) = self.st.agents.get(agent) else { return };
+        if a.is_main || a.lifecycle != Lifecycle::Active {
+            return;
+        }
+        let report = a.last_report.as_ref().map(|r| r.summary.clone()).unwrap_or_default();
+        let note = a.declared.as_ref().map(|(_, n)| n.clone()).unwrap_or_default();
+        let key = role::key(&a.brief.objective, &report, &note);
+        let current = self.role_line(a);
+        let (objective, dir) = (a.brief.objective.clone(), a.dir.clone());
+        let r = self.roles.entry(dir.clone()).or_default();
+        if r.asking.is_some() {
+            r.pending = true;
+            return;
+        }
+        if r.key == key || r.failed_ms.is_some_and(|t| now.saturating_sub(t) < ROLE_RETRY_MS) {
+            return;
+        }
+        r.asking = Some(key.clone());
+        fx.push(Effect::AskRole {
+            dir,
+            key,
+            request: role::request(&objective, &report, &note, &current),
+        });
+    }
+
+    fn role_answer(&mut self, fx: &mut Fx, now: u64, dir: &str, key: String, line: Option<String>) {
+        let r = self.roles.entry(dir.to_string()).or_default();
+        r.asking = None;
+        match line {
+            Some(l) => {
+                if r.line.as_deref() != Some(l.as_str()) {
+                    self.dirty = true;
+                }
+                r.line = Some(l);
+                r.key = key;
+                r.failed_ms = None;
+            }
+            None => r.failed_ms = Some(now),
+        }
+        if std::mem::take(&mut r.pending) {
+            if let Some(name) = self.st.agents.values().find(|a| a.dir == dir).map(|a| a.name.clone()) {
+                self.ask_role(fx, now, &name);
+            }
+        }
+    }
+
     pub fn handle(&mut self, input: Input, env: &mut dyn Env) -> Fx {
         let mut fx = Fx::new();
         match input {
@@ -739,12 +847,16 @@ impl Hub {
                 self.core(&mut fx, env, None, json!({"t": "ready", "agent": agent}))
             }
             Input::ReplLine { agent, line } => self.repl_line(&mut fx, env, &agent, &line),
-            Input::ReplIdle { agent, leftover } => self.core(
-                &mut fx,
-                env,
-                None,
-                json!({"t": "idle", "agent": agent, "leftover": leftover}),
-            ),
+            Input::ReplIdle { agent, leftover } => {
+                self.core(
+                    &mut fx,
+                    env,
+                    None,
+                    json!({"t": "idle", "agent": agent, "leftover": leftover}),
+                );
+                self.ask_role(&mut fx, env.now(), &agent);
+            }
+            Input::RoleLine { dir, key, line } => self.role_answer(&mut fx, env.now(), &dir, key, line),
             Input::ReplExited {
                 agent,
                 crashed,

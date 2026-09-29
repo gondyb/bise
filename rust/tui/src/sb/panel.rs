@@ -295,14 +295,32 @@ impl Sb {
         spans.extend(self.title());
         let left_w: usize = spans.iter().map(|s| s.content.width()).sum();
         // one column of margin on the right, two of gap after `bise :*`
-        let right = self.summary((width as usize).saturating_sub(left_w + 3), short, gust);
+        let room = (width as usize).saturating_sub(left_w + 3);
+        let (role, right) = chrome::share_room(room, self.role_spans(), |r| self.summary(r, short, gust));
         let right_w: usize = right.iter().map(|s| s.content.width()).sum();
+        spans.extend(role);
+        let left_w: usize = spans.iter().map(|s| s.content.width()).sum();
         let pad = (width as usize).saturating_sub(left_w + right_w + 1);
         if pad >= 2 {
             spans.push(Span::raw(" ".repeat(pad)));
             spans.extend(right);
         }
         Line::from(spans)
+    }
+
+    /// The role line of the task you view (BISE-126), dim, after the
+    /// title: ` · fixing the safari login`; nothing in main's view or
+    /// before the hub sends one.
+    pub(crate) fn role_spans(&self) -> Vec<Span<'static>> {
+        let Some(a) = self.agents.iter().find(|a| a.name == self.focus && !a.main) else {
+            return Vec::new();
+        };
+        let role = a.role.split_whitespace().collect::<Vec<_>>().join(" ");
+        if role.is_empty() {
+            return Vec::new();
+        }
+        let st = Style::default().fg(dim());
+        vec![Span::styled(format!(" {} ", crate::theme::glyph("·")), st), Span::styled(role, st)]
     }
 
     /// The title: `bise` bold in the text color, `:*` in accent.
@@ -1477,6 +1495,52 @@ mod chrome_tests {
         assert!(rows[0].starts_with("╭─ bise :*") && rows[0].ends_with("no agents yet ─╮"), "{:?}", rows[0]);
         let rows = draw(&mut app, 59, 20);
         assert!(rows[0].ends_with("no agents yet"), "{:?}", rows[0]);
+    }
+
+    /// BISE-126: viewing a task, its role line follows the title, dim;
+    /// the path goes before the line is cut under ROLE_KEEP; too narrow,
+    /// it is cut, then it goes; main's view shows none.
+    #[test]
+    fn the_viewed_task_s_role_line_follows_the_title() {
+        let mut app = busy();
+        for a in app.sb.agents.iter_mut().filter(|a| a.name == "auth-fix") {
+            a.role = "fixing the safari login redirect".into();
+        }
+        let rows = draw(&mut app, 120, 20);
+        assert!(!rows[0].contains("safari"), "main's view: {:?}", rows[0]);
+        app.sb.focus = "auth-fix".into();
+        let rows = draw(&mut app, 120, 20);
+        let full = "∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done";
+        assert!(rows[0].starts_with("╭─ bise :* · fixing the safari login redirect ─"), "{:?}", rows[0]);
+        assert!(rows[0].ends_with(&format!(" {} ─╮", full)), "the path went first: {:?}", rows[0]);
+        assert_eq!(rows[0].chars().count(), 120);
+        // dim, like the summary
+        let line = app.sb.header(200, false, &super::still_gust());
+        let role = line.spans.iter().find(|s| s.content.contains("safari")).unwrap();
+        assert_eq!(role.style.fg, Some(crate::theme::dim()));
+        // wide: the path comes back
+        let rows = draw(&mut app, 160, 20);
+        assert!(rows[0].contains("redirect ─") && rows[0].contains("bench · ∿ 3 working"), "{:?}", rows[0]);
+        // narrow: the counts shorten, the line is cut with …
+        let rows = draw(&mut app, 60, 20);
+        assert!(rows[0].starts_with("╭─ bise :* · fixing"), "{:?}", rows[0]);
+        assert!(rows[0].contains('…') && rows[0].ends_with("∿ 3 · … 1 · ? 1 · ✓ 1 ─╮"), "{:?}", rows[0]);
+        assert_eq!(rows[0].chars().count(), 60);
+        // no frame: the header row, the same order
+        let rows = draw(&mut app, 59, 20);
+        assert!(rows[0].starts_with(" bise :* · fixing"), "{:?}", rows[0]);
+        assert!(rows[0].ends_with("∿ 3 · … 1 · ? 1 · ✓ 1"), "{:?}", rows[0]);
+        // no room left: no line at all, never a lone "·"
+        let rows = draw(&mut app, 44, 20);
+        assert!(rows[0].starts_with(" bise :* · fixing t…  ∿ 3"), "at least 12 columns: {:?}", rows[0]);
+        let rows = draw(&mut app, 40, 20);
+        assert!(!rows[0].contains("fix") && !rows[0].contains(" · f"), "{:?}", rows[0]);
+        // a task without a line yet (an old hub): nothing
+        for a in app.sb.agents.iter_mut() {
+            a.role.clear();
+        }
+        let rows = draw(&mut app, 120, 20);
+        assert!(rows[0].starts_with("╭─ bise :* ─"), "{:?}", rows[0]);
     }
 
     /// The summary drops the path first, then the words.

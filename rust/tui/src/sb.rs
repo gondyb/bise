@@ -60,6 +60,9 @@ pub(super) struct Agent {
     /// task: what it did, and about when it stopped).
     report: String,
     report_ms: Option<u64>,
+    /// What it is doing now, one line (BISE-126): the hub's role line, ""
+    /// for main.
+    role: String,
     created_ms: u64,
     /// Who it waits on (`sb wait` / `sb ask`), "" when no one.
     waiting_on: String,
@@ -449,6 +452,7 @@ fn apply_state(app: &mut App, v: &Value) {
                     turn_ms: x.get("turn_ms").and_then(|q| q.as_u64()),
                     turn_seen: Some(std::time::Instant::now()),
                     report: s(x, "report"),
+                    role: s(x, "role"),
                     report_ms: x.get("report_ms").and_then(|q| q.as_u64()),
                     created_ms: x.get("created_ms").and_then(|q| q.as_u64()).unwrap_or(0),
                     waiting_on: s(x, "waiting_on"),

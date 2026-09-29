@@ -13,6 +13,8 @@
 #   and anthropic; the others come with BISE-147/148/149.
 # key_env = "" : no key needed (local servers).
 # needs = "BISE-149" : listed, not usable yet (cloud auth).
+# small_model = "<id>" : a cheap model of the provider for short labels
+#   (the agents' role lines, BISE-126); config `small_model` wins.
 # A model field not set comes from its provider, then from the defaults:
 #   context 128000, max_output 16384, vision false, reasoning false,
 #   tools true.
@@ -35,6 +37,7 @@ name = "Anthropic"
 api = "anthropic"
 base_url = "https://api.anthropic.com/v1"
 key_env = "ANTHROPIC_API_KEY"
+small_model = "claude-haiku-4-5"
 context = 200000
 max_output = 32000
 vision = true
@@ -56,6 +59,7 @@ name = "Anthropic (foundry proxy)"
 api = "anthropic"
 base_url = "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1"
 key_env = "ANTHROPIC_FOUNDRY_API_KEY"
+small_model = "claude-haiku-4-5"
 context = 1000000
 max_output = 32768
 vision = true
@@ -70,6 +74,7 @@ name = "OpenAI"
 api = "openai-chat"
 base_url = "https://api.openai.com/v1"
 key_env = "OPENAI_API_KEY"
+small_model = "gpt-5-mini"
 context = 400000
 max_output = 128000
 vision = true
@@ -95,6 +100,7 @@ name = "Google AI Studio"
 api = "openai-chat"
 base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
 key_env = "GEMINI_API_KEY"
+small_model = "gemini-2.5-flash"
 context = 1048576
 max_output = 65536
 vision = true
@@ -113,6 +119,7 @@ name = "Mistral"
 api = "openai-chat"
 base_url = "https://api.mistral.ai/v1"
 key_env = "MISTRAL_API_KEY"
+small_model = "mistral-small-latest"
 context = 128000
 
 [models."mistral/mistral-large-latest"]
@@ -199,6 +206,7 @@ name = "xAI"
 api = "openai-chat"
 base_url = "https://api.x.ai/v1"
 key_env = "XAI_API_KEY"
+small_model = "grok-4-fast"
 context = 256000
 reasoning = true
 
@@ -218,6 +226,7 @@ name = "DeepSeek"
 api = "openai-chat"
 base_url = "https://api.deepseek.com/v1"
 key_env = "DEEPSEEK_API_KEY"
+small_model = "deepseek-chat"
 
 [models."deepseek/deepseek-chat"]
 max_output = 8192

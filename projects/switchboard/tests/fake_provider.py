@@ -181,6 +181,9 @@ def family_of(path):
 def agent_of(conv):
     for m in conv:
         if m["role"] == "system":
+            # the hub's one-shot call for a task's role line (BISE-126)
+            if m["text"].startswith("# bise role line"):
+                return "(role line)"
             g = re.search(r"# Your role: task `([^`]+)`", m["text"])
             if g:
                 return g.group(1)
@@ -218,6 +221,10 @@ def reply_for(conv, seen=0):
     [{"id", "name", "args"}], "error", "fixture"}. `seen`: how many
     requests for the same user message came before this one."""
     turn = {"text": "", "reasoning": "", "calls": [], "error": None, "fixture": None}
+    if agent_of(conv) == "(role line)":
+        # a fixed line (the tests read it in the snapshot), never a script
+        turn["text"] = "Fake Role Line."
+        return turn
     idx = last_user(conv)
     if idx is None:
         turn["text"] = "ack: (nothing)"

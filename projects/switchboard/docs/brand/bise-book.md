@@ -326,6 +326,7 @@ Exact layout (terminal F columns × H rows, 0-based; all lines faint; ASCII: `+ 
 Frame (when F ≥ 60 and H ≥ 16):
 - rounded frame on the terminal edge: row 0, row H−1, column 0, column F−1 (╭ ╮ ╰ ╯ ─ │).
 - row 0 = the header. `╭─ bise :* ───…─── ~/acme · ∿ 3 working · ? 1 needs you ─╮`: title from column 3 ("bise" bold text, ":*" accent), 1 space around it and the summary; the summary dim (its glyphs keep their colors), ending at column F−4. Not enough room: drop the path first, then use the short counts (∿ 3 · ? 1 · ✓ 2).
+- viewing a task, its **role line** follows the title, dim: `╭─ bise :* · fixing the safari login redirect ──── ∿ 3 working ─╮` (BISE-126, user request): what the task is doing now, ≤ 60 characters, lowercase, written by a small model after each of its turns that changed something (its first value: the objective's first sentence). Room: the counts come first, then the line (the path goes before the line is cut under 27 columns), cut with `…`, gone under 12. Main's view: no line. The unframed header row shows it the same way.
 - row 1 blank. The history starts on row 2 and ends 1 blank row above the divider.
 - inside the frame: 2 blank columns each side. Text starts at column 3.
 - panel, F ≥ 100: a rule │ at column F−33, joined with ┬ on row 0 and ┴ on the divider; panel text from F−31 to F−4 (28 columns); the history ends at column F−36. F 90–99: panel 24 wide (rule at F−29). F < 90: no panel, no rule.

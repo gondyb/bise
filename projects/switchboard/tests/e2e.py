@@ -203,6 +203,15 @@ def t_spawn_and_auto_reply(E, c):
     board = open(os.path.join(E.state, "agents", "main", "context.txt")).read()
     check("t1" in board and "<task_board>" in board, "main's context has the board: " + board)
     check(any("<switchboard_state>" in r["last_user"] for r in reqs), "the board is injected as the last message")
+    # BISE-126: after t1's turn, one one-shot call gives its role line
+    # (the fake provider answers "Fake Role Line."; the hub cleans it)
+    c.wait(lambda: c.agent("t1")["role"] == "fake role line", 60, "t1's role line (now %r)" % c.agent("t1").get("role"))
+    check(c.agent("main")["role"] == "", "main has no role line")
+    roles = [r for r in E.fake_requests() if r["agent"] == "(role line)"]
+    check(len(roles) == 1, "one role-line call for t1's turn: %d" % len(roles))
+    check("hello-from-t1" in roles[0]["user"], "the call reads the objective: " + roles[0]["user"][:300])
+    saved = json.load(open(os.path.join(E.state, "agents", "t1", "role.json")))
+    check(saved["line"] == "fake role line", "the line is kept for the next hub: %r" % saved)
 
 
 def t_direct_message_and_note(E, c):

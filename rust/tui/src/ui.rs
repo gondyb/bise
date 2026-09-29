@@ -99,7 +99,8 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let sb = &app.sb;
     if cols.framed {
         let title = sb.title();
-        chrome::draw_frame(frame.buffer_mut(), area, cols, title, |room| sb.summary(room, short, &gust), divider_y);
+        let role = sb.role_spans();
+        chrome::draw_frame(frame.buffer_mut(), area, cols, title, role, |room| sb.summary(room, short, &gust), divider_y);
     } else if chunks[0].height > 0 {
         let r = Rect { height: 1, ..chunks[0] };
         frame.render_widget(Paragraph::new(sb.header(r.width, short, &gust)), r);

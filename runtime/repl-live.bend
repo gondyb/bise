@@ -24,6 +24,7 @@ import ../runtime/settings.bend as St
 import ./repl-core.bend as Rc
 import ./debug.bend as Dbg
 import ./repl-core-pure.bend as Rcp
+import ./oneshot.bend as Os
 
 # the compaction threshold for real conversations: BEND_THRESHOLD env
 # (approximate tokens). Default 800000, tuned for 1M-context models
@@ -85,7 +86,7 @@ def live_cfg(+threshold: Nat) -> IO(T.Cfg):
     +cat : List<&2, T.ToolDef> <- X.catalog()
     IO.pure(T.Cfg, T.Cfg{threshold, 20000n, 3n, p, cat})
 
-def main() -> IO(Unit):
+def live_main() -> IO(Unit):
   do IO<Unit>:
     # the config template lands on disk on first run, before anything
     # reads it
@@ -122,3 +123,20 @@ def main() -> IO(Unit):
     # The marker line lets the parent tell a reload from a crash.
     u2 : Unit <- Rc.flow_note(f)
     IO.pure(Unit, Unit{})
+
+# BISE_ONESHOT=<request file> (BISE-126): one provider call, its answer on
+# stdout, exit (runtime/oneshot.bend); else the live REPL
+@unsafe
+def main.pick(empty: Bool, +path: String) -> IO(Unit):
+  match empty:
+    case True{}:
+      live_main()
+    case False{}:
+      Os.run(path)
+
+@unsafe
+def main() -> IO(Unit):
+  do IO<Unit>:
+    r : Result<&1, &1, U32 & String, String> <- IO.get_env("BISE_ONESHOT")
+    +path : String <- IO.pure(String, P.env_or(r, ""))
+    main.pick(String.is_empty(path), path)

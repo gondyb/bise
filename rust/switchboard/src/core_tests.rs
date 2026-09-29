@@ -1772,3 +1772,70 @@ fn a_message_the_user_cannot_deliver_says_so() {
     );
     assert!(fx.iter().all(|e| !matches!(e, Effect::Line { line, .. } if line.starts_with("sb undelivered"))), "{:?}", fx);
 }
+
+fn ask_role(fx: &[Effect]) -> Option<(String, String, String)> {
+    fx.iter().find_map(|e| match e {
+        Effect::AskRole { dir, key, request } => Some((dir.clone(), key.clone(), request.clone())),
+        _ => None,
+    })
+}
+
+fn role_of(t: &T, name: &str) -> String {
+    let snap = t.hub.snapshot(t.env.now);
+    let a = snap["agents"].as_array().unwrap().iter().find(|a| a["name"] == name).unwrap().clone();
+    a["role"].as_str().unwrap().to_string()
+}
+
+/// BISE-126: a task's role line starts as its objective's first
+/// sentence; a turn that changed its report asks once; a turn that
+/// changed nothing, main, and a turn during a call do not.
+#[test]
+fn a_role_line_is_asked_once_per_changed_turn() {
+    let mut t = T::new();
+    t.spawn_task("docs");
+    assert_eq!(role_of(&t, "docs"), "objective of docs");
+    assert_eq!(role_of(&t, MAIN), "");
+    // main's turns never ask
+    assert!(ask_role(&t.turn(MAIN, "hello")).is_none());
+    // the task's first turn ends with a report: one call
+    let fx = t.turn("docs", "drafted the outline");
+    let (dir, key, request) = ask_role(&fx).expect("a call after the turn");
+    assert!(request.contains("objective of docs") && request.contains("drafted the outline"), "{}", request);
+    // a turn that ends while the call runs: no second call now...
+    let fx = t.turn("docs", "wrote chapter one");
+    assert!(ask_role(&fx).is_none(), "one call in flight at most: {:?}", fx);
+    // ...but one when the first call is over (the inputs changed since)
+    let fx = t.go(Input::RoleLine { dir: dir.clone(), key, line: Some("drafting the docs outline".into()) });
+    assert_eq!(role_of(&t, "docs"), "drafting the docs outline");
+    assert!(fx.contains(&Effect::State), "the views get the new line: {:?}", fx);
+    let (_, key2, request2) = ask_role(&fx).expect("the pending look");
+    assert!(request2.contains("wrote chapter one"), "{}", request2);
+    assert!(request2.contains("drafting the docs outline"), "the line now is in the prompt");
+    t.go(Input::RoleLine { dir: dir.clone(), key: key2, line: Some("writing chapter one".into()) });
+    // nothing changed since: no call
+    t.go(Input::ReplLine { agent: "docs".into(), line: "  obs: turn_started".into() });
+    let fx = t.go(Input::ReplIdle { agent: "docs".into(), leftover: false });
+    assert!(ask_role(&fx).is_none(), "{:?}", fx);
+    // a failed call keeps the old line and waits before the next one
+    let fx = t.turn("docs", "wrote chapter two");
+    let (_, key3, _) = ask_role(&fx).unwrap();
+    t.go(Input::RoleLine { dir: dir.clone(), key: key3, line: None });
+    assert_eq!(role_of(&t, "docs"), "writing chapter one");
+    assert!(ask_role(&t.turn("docs", "wrote chapter three")).is_none());
+    t.env.now += ROLE_RETRY_MS;
+    assert!(ask_role(&t.turn("docs", "wrote chapter four")).is_some());
+}
+
+/// A line saved by an earlier hub comes back, and its key spares a call.
+#[test]
+fn a_saved_role_line_is_kept() {
+    let mut t = T::new();
+    t.spawn_task("docs");
+    let fx = t.turn("docs", "drafted the outline");
+    let (dir, key, _) = ask_role(&fx).unwrap();
+    let mut t2 = T::new();
+    t2.spawn_task("docs");
+    t2.hub.load_role(&dir, "drafting the outline".into(), key);
+    assert_eq!(role_of(&t2, "docs"), "drafting the outline");
+    assert!(ask_role(&t2.turn("docs", "drafted the outline")).is_none());
+}

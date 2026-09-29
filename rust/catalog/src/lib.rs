@@ -101,6 +101,9 @@ pub struct Provider {
     pub key_env: String,
     /// "" = usable; else the issue that makes it usable ("BISE-149")
     pub needs: String,
+    /// a cheap model of this provider for short labels (BISE-126: the
+    /// agents' role lines), its id without the provider; "" = none
+    pub small_model: String,
     /// the defaults of its models
     pub caps: PartialCaps,
     pub source: Source,
@@ -224,6 +227,15 @@ impl Catalog {
         }
     }
 
+    /// The cheap model of `name`'s provider (its `small_model`), as
+    /// "provider/id"; None when it has none.
+    pub fn small_of(&self, name: &str) -> Option<String> {
+        let full = self.canonical(name);
+        let (pid, _) = split_name(&full)?;
+        let p = self.provider(pid)?;
+        (!p.small_model.is_empty()).then(|| format!("{}/{}", p.id, p.small_model))
+    }
+
     /// The caps of a provider's unlisted models.
     pub fn provider_caps(&self, p: &Provider) -> Caps {
         p.caps.over(&DEFAULT_CAPS)
@@ -317,6 +329,7 @@ impl Catalog {
                                 base_url: String::new(),
                                 key_env: String::new(),
                                 needs: String::new(),
+                                small_model: String::new(),
                                 caps: PartialCaps::default(),
                                 source: src,
                             });
@@ -343,6 +356,7 @@ impl Catalog {
                                     ),
                                     "key_env" => set_str(&mut p.key_env, s(), &where_, fk, &mut warn),
                                     "needs" => set_str(&mut p.needs, s(), &where_, fk, &mut warn),
+                                    "small_model" => set_str(&mut p.small_model, s(), &where_, fk, &mut warn),
                                     _ => cap_field(&mut caps, fk, fv, &where_, &mut warn),
                                 }
                             }
@@ -473,6 +487,11 @@ pub struct Setup {
     /// where each choice came from ("BISE_MODEL", "config", "default", ...)
     pub model_from: &'static str,
     pub agent_model_from: &'static str,
+    /// the model of short labels (BISE-126), canonical:
+    /// BISE_SMALL_MODEL > config `small_model` > the agents' provider's
+    /// `small_model` > agent_model
+    pub small_model: String,
+    pub small_model_from: &'static str,
 }
 
 /// A string key of the config, even when the file is not valid TOML (the
@@ -506,7 +525,7 @@ impl Setup {
     /// are still read.
     pub fn from_text(config: Option<&str>, env: &dyn Fn(&str) -> Option<String>) -> Setup {
         let mut catalog = Catalog::builtin();
-        let (mut model_cfg, mut agent_cfg) = (None, None);
+        let (mut model_cfg, mut agent_cfg, mut small_cfg) = (None, None, None);
         if let Some(text) = config {
             match text.parse::<toml::Table>() {
                 Ok(t) => {
@@ -519,6 +538,7 @@ impl Setup {
                     };
                     model_cfg = s("model");
                     agent_cfg = s("agent_model");
+                    small_cfg = s("small_model");
                 }
                 Err(e) => {
                     let first = e.to_string().lines().next().unwrap_or("").to_string();
@@ -528,6 +548,7 @@ impl Setup {
                     ));
                     model_cfg = loose_key(text, "model");
                     agent_cfg = loose_key(text, "agent_model");
+                    small_cfg = loose_key(text, "small_model");
                 }
             }
         }
@@ -549,12 +570,24 @@ impl Setup {
         } else {
             (model.clone(), "model")
         };
+        let (small_model, small_model_from) = if let Some(m) = envv("BISE_SMALL_MODEL") {
+            (catalog.canonical(&m), "BISE_SMALL_MODEL")
+        } else if let Some(m) = small_cfg {
+            (catalog.canonical(&m), "config")
+        } else {
+            match catalog.small_of(&agent_model) {
+                Some(m) => (m, "provider"),
+                None => (agent_model.clone(), "agent_model"),
+            }
+        };
         Setup {
             catalog,
             model,
             agent_model,
             model_from,
             agent_model_from,
+            small_model,
+            small_model_from,
         }
     }
 
