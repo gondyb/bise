@@ -125,4 +125,8 @@ agents made me faster. they also made my days feel empty. so i built the tool i 
 
 i want everyone to ship like a team of a hundred, and to love building again. bise is open source and indie. i read every issue.
 
+## license
+
+Apache-2.0, see [LICENSE](LICENSE). third-party components: [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES).
+
 <p align="center"><br><b>ideas in. little kisses out. also pull requests.</b> :*</p>
