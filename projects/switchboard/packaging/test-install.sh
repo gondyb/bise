@@ -150,7 +150,8 @@ if [ -n "$state" ] && [ -S "$state/hub.sock" ]; then
   sleep 2
   out="$(E SB_SOCKET="$state/hub.sock" SB_AGENT=main "$state/bin/sb" list 2>&1)"
   echo "$out" | sed 's/^/     /' | head -n 5
-  echo "$out" | grep -q main && ok "sb list (through the agents' shim) answers" || ko "sb list"
+  echo "$out" | grep -q main && ok "sb list (through the agents' link) answers" || ko "sb list"
+  if [ -L "$state/bin/sb" ]; then ok "bin/sb is a link to bise"; else ko "bin/sb is not a link"; fi
   ps -axo command= | grep -F "$root/repl-live" | grep -v grep >/dev/null && ok "main agent's repl-live runs from the version dir" || ko "main agent's repl-live not running"
   (cd "$WS" && E "$BIN" switchboard --stop --workspace "$WS") 2>&1 | sed 's/^/     /'
   i=0; while [ -e "$state/hub.sock" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done

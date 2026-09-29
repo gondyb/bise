@@ -221,6 +221,10 @@ fn replace_hub(paths: &Paths, root: &Path, same: bool) -> Result<(), String> {
         }
     }
     let _ = std::fs::remove_file(paths.socket());
+    if !same {
+        // an older version's hub would write its sb script through the link
+        crate::daemon::drop_sb_link(&paths.bin_dir());
+    }
     let mut child = start_hub(paths, root, same).map_err(|e| e.to_string())?;
     let t0 = Instant::now();
     while t0.elapsed() < Duration::from_secs(20) {

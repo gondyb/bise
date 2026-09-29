@@ -9,8 +9,9 @@ Ce fichier sert aussi de mémoire de travail : il dit où en est le code.
   - `bend-harness switchboard` : client (TUI ou mode ligne), lance le hub
     si besoin ;
   - `bend-harness sbd --workspace DIR` : le hub (daemon, un par workspace) ;
-  - `bend-harness sb …` : la CLI des agents (appelée via le shim
-    `<state>/bin/sb`, dans le PATH de chaque REPL).
+  - `bise sb …` : la CLI des agents ; `<state>/bin/sb`, dans le PATH de
+    chaque REPL, est un lien vers le binaire, qui fait `sb` quand il est
+    appelé sous ce nom (comme busybox).
 - **Une REPL Bend (`repl-live`) par agent** (main + chaque tâche), lancée
   par le hub. Le hub est le seul client TCP de chaque REPL.
   - message à un agent inactif : `say <texte>` sur le socket ;

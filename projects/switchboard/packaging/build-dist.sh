@@ -14,6 +14,7 @@
 #     app/                 the app root, exactly as versions.sh builds it:
 #       bise                 Rust: TUI + Switchboard daemon + sb CLI
 #       bend-harness         -> bise (the old name, kept one release)
+#       sb                   -> bise (the agents' command: bise called as sb)
 #       repl-live            native Bend REPL (runtime/repl-live.bend)
 #       repl-scripted        native Bend REPL, no provider (runtime/repl.bend)
 #       sb-core              native Bend hub core (hub/main.bend)
@@ -106,6 +107,8 @@ mkdir -p "$app/$(dirname "$jsrt_at")"
 # built before the rename; the old name stays as a link one release
 if [ -e "$vdir/bise" ]; then cp "$vdir/bise" "$app/bise"; else cp "$vdir/bend-harness" "$app/bise"; fi
 ln -s bise "$app/bend-harness"
+# sb: the agents' command, the same binary called by that name
+ln -s bise "$app/sb"
 for f in repl-live sb-core; do cp "$vdir/$f" "$app/$f"; done
 cp "$scripted" "$app/repl-scripted"
 cp "$vdir"/tool-desc-*.txt "$vdir"/prompt-*.txt "$app/"
@@ -135,7 +138,7 @@ fi
 # 6. verify: a missing piece must fail here, not on the user's machine
 #    (wait a moment: a quarantine by security software is not instant)
 sleep 2
-for f in bise bend-harness repl-live repl-scripted sb-core "$jsrt_at" \
+for f in bise bend-harness sb repl-live repl-scripted sb-core "$jsrt_at" \
          tool-desc-bash.txt prompt-tool-use.txt VERSION; do
   [ -e "$app/$f" ] || { say "INCOMPLETE: app/$f missing"; exit 1; }
 done

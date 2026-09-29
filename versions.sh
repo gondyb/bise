@@ -3,7 +3,8 @@
 #
 # A version is an immutable app root built from one git commit (or from
 # the working tree, uncommitted changes included):
-#   $SB_VERSIONS_DIR/<id>/  bise (+ bend-harness -> bise, one release),
+#   $SB_VERSIONS_DIR/<id>/  bise (+ bend-harness -> bise, one release;
+#                           sb -> bise, the agents' command),
 #                           repl-live, tool-desc-*.txt,
 #                           prompt-*.txt, sb-core (when hub/ exists),
 #                           bend-jsrt (release, + a hard link at the old path
@@ -95,6 +96,8 @@ build_from() {
   grep -q '^name = "bise"' "$src/rust/harness/Cargo.toml" && exe=bise
   cp "$target/release/$exe" "$tmp/bise"
   ln -s bise "$tmp/bend-harness"
+  # sb: the agents' command, the same binary called by that name
+  ln -s bise "$tmp/sb"
 
   # the Bend binaries: bins.sh's cache (one per source hash, shared with
   # run.sh and the gate; a Bend compile is 1-2 min). This repo's bins.sh

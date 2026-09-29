@@ -404,11 +404,28 @@ usage:
       --model NAME                the model
       --port N                    the REPL port (default: a free one)
       --continue | --resume ID    the latest session | one session (an id prefix works)
-  internal: sb, sbd, sbswitch, keyprobe
+  {cmd} sb <command> ...         the agents' tool; `sb` is a link to this binary (sb help)
+  internal: sbd, sbswitch, keyprobe
 state: ~/.bise (BISE_HOME moves it); its files: BISE_APP_ROOT, else next to the executable";
 
 fn usage(cmd: &str) -> String {
     USAGE.replace("{cmd}", cmd)
+}
+
+/// The arguments after the command. Called as `sb` (the agents' link to
+/// this binary, busybox style), `sb send …` is `bise sb send …`.
+fn cli_args() -> Vec<String> {
+    let argv0 = std::env::args_os().next();
+    with_applet(argv0.as_deref(), std::env::args().skip(1).collect())
+}
+
+fn with_applet(argv0: Option<&std::ffi::OsStr>, rest: Vec<String>) -> Vec<String> {
+    let name = argv0.and_then(|a| std::path::Path::new(a).file_name());
+    if name == Some(std::ffi::OsStr::new("sb")) {
+        std::iter::once("sb".to_string()).chain(rest).collect()
+    } else {
+        rest
+    }
 }
 
 fn main() -> std::io::Result<()> {
@@ -416,7 +433,7 @@ fn main() -> std::io::Result<()> {
     // backtrace, and a TUI gives the terminal back before it reports
     bend_tui::install_crash_hook();
     {
-        let args: Vec<String> = std::env::args().skip(1).collect();
+        let args: Vec<String> = cli_args();
         // the move to ~/.bise (BISE-161): by the commands that open a hub
         // or a session, before any path is computed; never by `sb` (an
         // agent's tool) nor the switcher (mid-switch). login/logout too:
@@ -504,7 +521,7 @@ fn main() -> std::io::Result<()> {
         }
     }
     load_keys();
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = cli_args();
     let CliArgs {
         scripted,
         headless,
@@ -1016,6 +1033,24 @@ mod tests {
 
     fn argv(xs: &[&str]) -> Vec<String> {
         xs.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn called_as_sb_is_bise_sb() {
+        use std::ffi::OsStr;
+        let rest = || argv(&["send", "main", "hi"]);
+        for a0 in ["sb", "/h/bin/sb", "./sb"] {
+            assert_eq!(with_applet(Some(OsStr::new(a0)), rest()), argv(&["sb", "send", "main", "hi"]), "{}", a0);
+        }
+        for a0 in ["bise", "/v/bise", "bend-harness", "sbd", "xsb"] {
+            assert_eq!(with_applet(Some(OsStr::new(a0)), rest()), rest(), "{}", a0);
+        }
+        assert_eq!(with_applet(None, rest()), rest());
+    }
+
+    #[test]
+    fn help_lists_sb() {
+        assert!(usage("bise").contains("bise sb <command>"));
     }
 
     #[test]

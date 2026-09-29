@@ -63,7 +63,7 @@ installer warns when `git` is missing.
 | `~/.bend-harness/config.toml` | model, threshold (template written on first run) | |
 | `~/.bend-harness/sessions/`, `tui.json`, `mcp-index.txt`, `skills-index.txt` | sessions, voice setting, connectors, skills | |
 | `~/.agents/skills`, `~/.vibe/skills`, `$PWD/.agents/skills` | skills scan | `$PWD` is the app root in single-session mode (C2) |
-| `~/.local/state/switchboard/<ws-id>/` (`SB_STATE_DIR`, `XDG_STATE_HOME`) | hub socket, journal, agents, worktrees, `bin/sb` shim | |
+| `~/.local/state/switchboard/<ws-id>/` (`SB_STATE_DIR`, `XDG_STATE_HOME`) | hub socket, journal, agents, worktrees, `bin/sb` (a link to the hub's `bise`: `sb` = `bise sb`) | |
 | `~/.local/state/switchboard/{versions,build}` | `versions.sh`, `/version` | dev-only today (needs the repo) |
 | `/tmp/bend-{prog,res,steer,interrupt}-<port>.*` | runtime side channels | world-readable `/tmp`: move under the state dir (C8) |
 | `BEND_WORKDIR` | bash + apply_patch tools' dir | set per agent by the hub; **not set** in single-session mode (C2) |
@@ -166,7 +166,7 @@ found by a new `zsh -i`; `--version` → `bend-harness df748eb
 public model); single-agent sessions `--headless --scripted` and live
 (READY, `model=mistral-medium-latest`), both exit when stdin closes;
 Switchboard hub on a throwaway git workspace: started, `hub.root` = the
-installed version dir, `sb list` through the agents' shim shows `main`,
+installed version dir, `sb list` through the agents' `bin/sb` link shows `main`,
 main's `repl-live` runs from the version dir, `switchboard --stop` stops
 hub and REPLs; reinstall is idempotent (one PATH line); uninstall
 removes prefix, link and PATH line, keeps data.

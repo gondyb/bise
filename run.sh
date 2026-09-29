@@ -39,7 +39,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # Cargo.toml / Cargo.lock; a no-op build is ~0.2 s). A stale debug binary
 # once showed a model the runtime no longer used.
 # switchboard runs the RELEASE build: its TUI draws ~10x faster
-# than the debug one (the sb shim of the agents points to it too)
+# than the debug one (the agents' sb link points to it too)
 profile=debug
 if [ "${1:-}" = "switchboard" ]; then profile=release; fi
 # (an agent's CARGO_TARGET_DIR is honoured: the binary run is the one built)

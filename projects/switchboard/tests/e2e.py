@@ -380,7 +380,7 @@ def t_restart_keeps_everything(E, c):
 
 
 def t_cli_errors(E, c):
-    # the CLI refuses tasks' main-only commands, through the real shim
+    # the CLI refuses tasks' main-only commands, through the real bin/sb link
     c.wait_idle("main")
     c.say('@t1 [[bash: sb spawn nope --objective x; echo rc=$?]]')
     c.wait_line("t1", "reserved for main", 90)

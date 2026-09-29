@@ -1221,14 +1221,29 @@ fn kill_stale_repls(sh: &Shell) {
     }
 }
 
-/// The `sb` shim: agents call `sb …` from their bash tool.
-fn write_shim(paths: &Paths, exe: &Path) -> std::io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::create_dir_all(paths.bin_dir())?;
-    let p = paths.bin_dir().join("sb");
-    let q = exe.to_string_lossy().replace('\'', "'\\''");
-    std::fs::write(&p, format!("#!/bin/sh\nexec '{}' sb \"$@\"\n", q))?;
-    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755))
+/// `sb` for the agents' bash tool: `bin/sb`, a link to this hub's
+/// executable, which runs `sb` when called by that name (busybox style).
+/// Replaced in one rename: an agent of the previous hub calling `sb`
+/// meanwhile finds the old one or the new one, never none.
+pub fn write_sb_link(bin_dir: &Path, exe: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(bin_dir)?;
+    let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
+    let tmp = bin_dir.join(format!(".sb.{}.tmp", std::process::id()));
+    let _ = std::fs::remove_file(&tmp);
+    std::os::unix::fs::symlink(&exe, &tmp)?;
+    std::fs::rename(&tmp, bin_dir.join("sb")).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
+}
+
+/// Before a hub of another version starts: a hub older than the link
+/// writes its `sb` script with a plain write, which would go through the
+/// link into this executable. Without `bin/sb`, it writes a new file.
+pub fn drop_sb_link(bin_dir: &Path) {
+    let p = bin_dir.join("sb");
+    if p.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
+        let _ = std::fs::remove_file(p);
+    }
 }
 
 pub fn run(opts: Opts) -> std::io::Result<()> {
@@ -1242,7 +1257,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     let _ = std::fs::remove_file(paths.socket());
     let listener = UnixListener::bind(paths.socket())?;
     std::fs::write(paths.pid_file(), std::process::id().to_string())?;
-    write_shim(&paths, &opts.exe)?;
+    write_sb_link(&paths.bin_dir(), &opts.exe)?;
     // the switcher reads where this hub runs from (to come back to it)
     let _ = std::fs::write(paths.state.join("hub.root"), opts.app_root.to_string_lossy().as_bytes());
     log_line(
@@ -1583,6 +1598,33 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `bin/sb` of an older hub (a script) becomes a link to the exe, in
+    /// one rename (no temp file left); only a link is dropped for an
+    /// older version's hub.
+    #[test]
+    fn the_sb_link_replaces_the_script() {
+        let d = std::env::temp_dir().join(format!("sb-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let bin = d.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let exe = d.join("bise");
+        std::fs::write(&exe, "exe").unwrap();
+        std::fs::write(bin.join("sb"), "#!/bin/sh\nexec old sb \"$@\"\n").unwrap();
+        write_sb_link(&bin, &exe).unwrap();
+        write_sb_link(&bin, &exe).unwrap();
+        let sb = bin.join("sb");
+        assert!(sb.symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read_link(&sb).unwrap(), std::fs::canonicalize(&exe).unwrap());
+        let names: Vec<_> = std::fs::read_dir(&bin).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("sb")]);
+        drop_sb_link(&bin);
+        assert!(!sb.exists() && std::fs::read_to_string(&exe).unwrap() == "exe");
+        std::fs::write(&sb, "a file").unwrap();
+        drop_sb_link(&bin);
+        assert!(sb.exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     /// A line that is not a JSON object (a half-written last line) is
     /// counted with its number, never dropped in silence; a kind the Rust
