@@ -417,27 +417,7 @@ const T_BOXES =
 const T_AGENT_HEAD = `<div class="dim">you're talking to perf directly. main isn't in the loop. esc back to main.</div>` +
   `<div class="b"><span class="who acc">:*</span><span class="dim">brief from main:</span> signup is slow on mobile. the hero image is 4.2 MB since tuesday.</div>`;
 
-const TS_OPTS = [
-  ["λ", "$", "today. short, but you have to know that λ means code."],
-  ["ts", "$", "the plain word, dim. reads at once; same as the ASCII form."],
-  ["TS", "$", "the TypeScript logo letters. clear, but caps shout a little next to $."],
-  ["{}", "$", "code in braces. clear, calm, 2 cells."],
-  ["&lt;/&gt;", "$", "the web's code mark. clear, but 3 cells, and it reads 'HTML'."],
-  ["ƒ", "$", "a function. 1 cell like $, soft, a bit obscure too."],
-];
-const tsFeed = (k, b) => `<div class="tlabel" style="margin-left:0">${k} · ${TS_OPTS.find((o) => o[0] === k)[2]}</div>` +
-  tl(b, "checking what changed in signup this week", "ok", "0.3s") +
-  tl(k, "looking for signup timeouts in Sentry", "ok", "1.1s") +
-  tl(b, "weighing the hero image", "ok", "0.1s") +
-  tl(k, "asking GitHub which PRs merged since 2.4", "run", "3s") +
-  `<div style="margin-top:.6lh"></div>` +
-  tbx(k, "looking for signup timeouts in Sentry", "ok", "1.1s", T_SCRIPT.ts, `↳ sentry.search_issues ✓ 0.9s`);
 const TOOL_SCREENS = [
-["typescript mark · options (1 of 2)", "the same rows, with each mark for a typescript call. bash keeps $ in every option. the box title below each group shows the mark in the top border.",
- term({ feed: TS_OPTS.slice(0, 3).map(([k, b]) => tsFeed(k, b)).join(`<div class="b"></div>`), pan: TP_PANEL })],
-["typescript mark · options (2 of 2)", "<span class='optk'>the user's pick: ƒ.</span> a function: 1 cell like $, soft next to it. ASCII: f.",
- term({ feed: TS_OPTS.slice(3).map(([k, b]) => tsFeed(k, b)).join(`<div class="b"></div>`), pan: TP_PANEL })],
-
 ["tool calls · main · one line each (designer's pick)", "<span class='optk'>the user's idea, designer's reco.</span> in main, each bash or typescript call is one dim row: its kind in the lead column ($ bash, ƒ typescript), then what the model says it is doing (the new <b>description</b> parameter, written for you, in your language), then its state on the right. calls in a row stack with no blank row between them. ctrl+o, or a click on a row, shows the box.",
  term({ feed: T_FEED_HEAD + T_LINES_DONE + T_REPLY, pan: TP_PANEL })],
 
