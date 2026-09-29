@@ -6,8 +6,7 @@ ranking, `@` token), `commands.rs::at_items` (the popup rows),
 
 ## Goal
 
-Typing `@` in the composer (line start or inline, Switchboard TUI and
-single-agent TUI) opens one popup: the live agents first, then the files
+Typing `@` in the composer (line start or inline) opens one popup: the live agents first, then the files
 and directories of the workspace. A file index built in the background
 answers each keystroke in a few milliseconds, even on a large repo.
 Picking a file puts a reference in the text that the model understands.

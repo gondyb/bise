@@ -8,9 +8,9 @@ Status: implemented, 2026-09-28 (task `plugins`). Code: `rust/plugins`
 
 Load [Agent Plugins 1.0](https://agent-plugins.org/specification)
 packages: a folder with a `plugin.json`, optional `skills/` and an
-optional `mcp.json`. The same plugin works in a single-agent session
-(`bend-harness`) and in every Switchboard task, because both run the same
-Bend REPL (`repl-live`).
+optional `mcp.json`. The same plugin works in every Switchboard task and in a
+`bend-harness --headless` session, because both run the same Bend REPL
+(`repl-live`).
 
 Supported now (the portable base of the spec):
 
@@ -173,7 +173,7 @@ tests use temp dirs.
   (`$BEND_HARNESS_BIN`, else `./bend-harness`, else the dev build under
   `rust/target`), wait for `D/ready` (at most 15 s). No binary: no
   plugins, no error. Scripted runs never start it (hermetic suites).
-- `BEND_HARNESS_BIN` is set on the REPL by `bend-harness` (single agent)
+- `BEND_HARNESS_BIN` is set on the REPL by `bend-harness --headless`
   and by the hub (`Opts.exe`).
 - Skills: the scan keeps the user roots in the shared index (the TUI
   `$` popup reads it). The workspace root (`$BEND_WORKDIR/.agents/skills`,
@@ -194,9 +194,9 @@ tests use temp dirs.
 - `bend-harness plugins enable|disable <name>`: edits
   `~/.bend-harness/plugins.json`; applies at the next session start or
   `/reload`.
-- `/plugins` in both TUIs prints the same report. When the session's
-  `D/report.txt` exists (single agent: the REPL port), it is shown, so
-  MCP connection failures and tool counts appear too.
+- `/plugins` in the TUI prints the workspace's static listing (the
+  single-agent TUI, gone with BISE-113, also showed its session's
+  `D/report.txt`).
 
 ## Tests
 

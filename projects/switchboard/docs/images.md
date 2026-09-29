@@ -183,9 +183,6 @@ parts with the PNG data at the fake provider, the feed shows
 - bend-jsrt is a 110 MB debug binary: an agent shell (50 MB file cap)
   cannot link it; rebuild it from a terminal (`cd rust/jsrt && cargo
   build`) after a change in `rust/jsrt` or `rust/images`.
-- In the single-agent TUI the `@` popup searches the app root (the repo,
-  where `bend-harness` moves), not the launch folder: drop or Ctrl+V
-  images from elsewhere.
 - Downscaling needs macOS `sips`; elsewhere an image over 2048 px or
   3.75 MB is refused with a message.
 

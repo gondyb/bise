@@ -640,7 +640,6 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | queued messages | ` › {text}…` (one per line, dim) · hint `queued · sent when this turn ends · ↑ edit` · panel row `· {n} queued` |
 | connect failed | `couldn't connect: {err}` |
 | voice | `voice mode on. press ctrl+r to start recording.` / `voice mode off.` / `voice mode is off: /voice turns it on` / `no speech detected` / `voice transcription failed: {err}` / `voice transcription needs an API key: set {VAR}` / `no audio input device found.` / `audio backend is unavailable: {err}` / `the last words may be missing (the transcription did not finish in time).` / `no audio detected from the microphone — check your terminal has mic access.` (+ ` grant access in System Settings → Privacy & Security → Microphone.`) |
-| solo client (not bise) | `ask anything…` · `⏎ steer · tab queue · ctrl+c interrupt · / commands · end bottom` |
 | command descriptions | as in `/help` (lowercase, "agent"); `/agents`: `list the agents and what they do` |
 
 Not built yet (a feature, not wording): `✓ turn done · {duration}` and the two `provider down` lines.
