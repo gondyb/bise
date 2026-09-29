@@ -91,6 +91,9 @@ fn ctrl_r_with_voice_off_says_how_to_enable() {
     assert!(ctrl_r(&mut app), "Ctrl+R is the voice key even when off");
     assert_eq!(app.voice.state(), VoiceState::Idle);
     assert_eq!(app.voice_note.as_ref().map(|(t, _)| t.as_str()), Some(voice::OFF_HINT));
+    // qa-explore P: and the screen shows it
+    let buf = render(&mut app);
+    assert!(find(&buf, voice::OFF_HINT).is_some(), "the hint is drawn");
 }
 
 #[test]
