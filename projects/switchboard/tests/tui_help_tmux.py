@@ -37,15 +37,22 @@ def check(cols, rows):
         t.wait_gone("filter: subword")
         t.keys("Escape")
         t.wait_gone("talk to agents")
-        # /keys alias, then PgDn reaches the end (Ghostty tips)
+        # /keys alias, then End reaches the end: the symbols (BISE-137)
         t.typed("/keys")
         t.keys("Enter")
         t.wait("talk to agents")
         t.keys("End")
-        sc = t.wait("keyprobe")
+        sc = t.wait("folded lines: click, space or ctrl+o")
         print("---- /keys, End at %d columns ----\n%s" % (cols, sc))
+        # the filter finds a symbol by its words
+        t.typed("worktree")
+        sc = t.wait("has its own worktree")
+        assert "ψ" in sc and "symbols" in sc, sc
+        print("---- filter 'worktree' at %d columns ----\n%s" % (cols, sc))
         t.keys("Escape")
-        t.wait_gone("keyprobe")
+        t.wait_gone("filter: worktree")
+        t.keys("Escape")
+        t.wait_gone("talk to agents")
         # the composer works again
         t.typed("still typing")
         t.wait("still typing")
@@ -54,7 +61,7 @@ def check(cols, rows):
 def main():
     check(80, 30)
     check(200, 50)
-    print("OK: /help and /shortcuts overlay at 80 and 200 columns (open, Tab, filter, Esc, /keys, End)")
+    print("OK: /help and /shortcuts overlay at 80 and 200 columns (open, Tab, filter, Esc, /keys, End, symbols)")
 
 
 if __name__ == "__main__":
