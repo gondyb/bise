@@ -1,7 +1,7 @@
 # Research — the bise session format (JSONL event log)
 
-Status: design decided (§12). Implementation plan in §13, in progress:
-BISE-198 done; the normative union is now `spec/session-format.ts`
+Status: implemented (§13): BISE-190..199 and 202 done, 200 and 201
+dropped (see their rows). The normative union is now `spec/session-format.ts`
 (BISE-190, a few additions to §4 listed at its top) and the fixtures
 `tests/fixtures/session/`. Read at HEAD `6586f6d`.
 
@@ -954,7 +954,7 @@ from a new home lookup.
 | 8 | **BISE-197** Migration `.txt` → JSONL (§10.2): once, automatically, at the first start of the new version (solo sessions and every hub's agents), `bise sessions migrate [--dry-run]`, round-trip check (projection byte-equal to what today's loader keeps), `migrated.json`, `.txt` kept. | 6 h | 194 | synthetic `.txt` fixtures (thinking, images, queue, notifs, tool calls); a run over a copy of the user's real sessions in a temp HOME, reported, never committed |
 | 9 | **BISE-198** (done) `persist.bend` writes the `.txt` to a temp file then renames it, mode `0600`. Independent of the rest. | 2 h | — | kill during save leaves the old or the new file, never a half file |
 | 10 | **BISE-199** `bise session show [<id>] [--context] [--raw]`: the transcript, or what the model sees now. | 5 h | 194 | golden output for the fixtures |
-| 11 | **BISE-200** Stop writing `transcript.log` and `context.txt`; the TUI and docs point to `bise session show`. | 1 h | 199 | nothing reads the removed files (grep test) |
+| 11 | ~~BISE-200~~ Stop writing `transcript.log` and `context.txt`: dropped. Both are inputs, not human logs: `context.txt` is the ephemeral context the hub rewrites and the REPL re-reads before each request (`BEND_CONTEXT_FILE`, the `<switchboard_state>` block), `transcript.log` is the feed the hub pages to the TUI (`history`). `bise session show` is the human view of the log. | — | — | — |
 | 12 | ~~BISE-201~~ End of dual-write: dropped (no dual-write, §12 decision 6). | — | — | — |
 | 13 | **BISE-202** End-to-end crash tests (`bend_client.py` / tmux): `kill -9` during a tool call, during a streamed answer, during a compaction; a torn last line; an unknown `must` event shown read-only in the TUI. | 5 h | 196 | this issue is tests |
 

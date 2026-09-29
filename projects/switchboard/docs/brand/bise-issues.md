@@ -2562,3 +2562,8 @@ Index:
 - **status:** done · **owner:** session-log · **commits:** `git log --grep BISE-202`
 - **owns:** `tests/e2e.py` (`t_session_crashes`), `rust/session/tests/recorder.rs` (`a_crash_during_an_answer_or_a_compaction_is_closed`)
 - **what:** a real hub, real REPL, fake provider: `kill -9` of main's REPL during a `sleep 30` tool call → the respawn's log has `tool_result {ok: false, "interrupted by a restart"}`, `interrupted`, `turn_ended {crashed}`, `process_opened {resume: true}`, and main answers again; a torn last line (hub stopped, half a JSON line appended) → saved to `events.torn-*`, cut, the next turn works and the log reads whole; an unknown `must` event → the log is read-only (hub.log says so), never appended to, the agent goes on from its REPL's own checkpoint. A cut during an answer (`during: request`) or a compaction (`during: compaction` + `compaction_failed`) is closed the same way (unit test). Not done: the TUI showing a read-only session (the TUI has no session view; `bise session show` names the newer event).
+
+### BISE-200 · stop transcript.log and context.txt — dropped
+
+- **status:** dropped · **owner:** session-log
+- **why:** both files are inputs, not human logs: `context.txt` is the ephemeral context the hub rewrites (`core.rs` "Rewrite the agent's BEND_CONTEXT_FILE") and the REPL re-reads before each request (`runtime/main.bend`), `transcript.log` is the feed the hub pages to the TUI (`transcript_page`, `history`). Removing them would break the agents' `<switchboard_state>` and the TUI's scroll-back. The human view of a session is `bise session show` (BISE-199). session-format.md §13.2 row 11 says the same.
