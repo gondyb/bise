@@ -206,20 +206,23 @@
 <!-- philosophy -->
 <section id="philosophy">
   <h1>01 · philosophy</h1>
-  <h2>a day with agents feels empty.</h2>
-  <p class="lead">you shipped more than ever. so why does it feel like you did nothing?</p>
-  <p>you spent the day watching progress bars. answering "v1 or v2?". switching tabs. reading what an agent did while you looked away. by evening a lot got merged, and you made none of it. you feel slow, a bit useless, and strangely out of control. you gave away the fun part, and got nothing back.</p>
-  <p>it's not you. it's the interruptions. every agent pulls you out of your head, every few minutes. and flow, the state where you think clearly and the hours disappear, needs quiet to start. with agents tapping your shoulder all day, you never get there.</p>
-  <h3>bise preserves your flow.</h3>
-  <p>you stay in your head. the agents work around you, quietly, in the same folder. the obvious questions get answered without you. what reaches you is only what's really yours, and it waits until you're ready.</p>
+  <h2>one thread. a whole team. you, in flow.</h2>
+  <p class="lead">agents made us fast. they also made our days feel empty.</p>
+  <p>you start five things in five tabs, and each one waits for you: "should i continue?", "which gray?", "v1 or v2?". you're the router, the memory and the merge tool. at 6pm a lot got merged, and you feel like you did nothing. you gave away the fun part, and got nothing back.</p>
+  <p>it's not you. it's the switching. forty times a day something pulls you out of your head, and flow, the state where you think clearly and the hours disappear, never gets a chance to start.</p>
+  <h3>so bise gives you one thread.</h3>
+  <p>one thread per repo, for good: compaction keeps the context, you never start over. you talk to main, bise's main agent. main splits your ideas into jobs, starts agents in the background, answers the obvious questions the way you would, and taps your shoulder only when a decision is really yours. and main is always listening: say the next thing while the last one runs.</p>
+  <p>behind it, the team runs itself. agents message each other before they collide, make a worktree only when one helps and clean it up after, and commit their own work. you don't design a workflow: bise has opinions, so you don't need any. after a day you forget there are agents at all.</p>
   <p class="manifesto">built for humans piloting hundreds of robots, from a distance.</p>
   <p>a <i>bise</i> is a little kiss, and a cold north wind. that's the whole idea: a light touch on the shoulder when something needs you, and the rest of the time, a breeze that keeps everything moving while you think.</p>
   <h3>what we believe</h3>
   <ul class="list">
     <li>flow is the product. everything else is plumbing.</li>
+    <li>one conversation beats ten tabs. you talk; the orchestration is our job.</li>
     <li>the human has the ideas. the tech keeps up, then gets out of the way.</li>
-    <li>more agents should mean more done, not more to watch.</li>
-    <li>a calm screen is a feature. attention is the scarcest thing we handle.</li>
+    <li>more agents should mean more done, never more to watch.</li>
+    <li>an agent starts when a job needs one. that's the whole rule: no committee of agents checking each other, no tokens burned for show.</li>
+    <li>a calm screen is a feature. what's for you stands out; the rest is folded, one key away.</li>
     <li>trust comes from honesty: say what happened, say what isn't built, never pretend.</li>
   </ul>
 </section>
@@ -231,7 +234,7 @@
   <div class="cards">
     <div class="card"><div class="h"><span class="acc">∿</span>flow</div><p>you never wait on a turn. say it, keep talking. the work runs in the background and bise is always listening.</p></div>
     <div class="card"><div class="h"><span class="acc">›</span>control</div><p>you decide. bise answers the obvious questions itself, shows why, and brings you only the real decisions.</p></div>
-    <div class="card"><div class="h"><span class="acc">:*</span>lightness</div><p>no project management, no vocabulary to learn, no worktrees to merge. many hands, light work.</p></div>
+    <div class="card"><div class="h"><span class="acc">:*</span>lightness</div><p>no project management, no workflow to design, four words to learn. worktrees and conflicts are handled for you. many hands, light work.</p></div>
     <div class="card"><div class="h"><span class="acc">♡</span>calm</div><p>color means attention. agents talk to each other quietly; what's for you stands out, the rest stays dim.</p></div>
     <div class="card"><div class="h"><span class="acc">✓</span>honesty</div><p>no silent failure, no hidden limit, no feature we pretend to have. the history never lies: it only grows, in order.</p></div>
   </div>
@@ -544,7 +547,7 @@ added secure: true; the webkit test passes now.</div></div>
     <tr><td><code>ctrl+k</code> <code>ctrl+j</code></td><td>select the next / previous agent; <code>⏎</code> enters it, <code>space</code> previews it</td></tr>
     <tr><td><code>esc</code></td><td>back to main</td></tr>
     <tr><td><code>ctrl+c</code></td><td>interrupt; again to quit (agents keep running)</td></tr>
-    <tr><td><code>ctrl+g</code></td><td>the card view, and back (then <code>1-9</code> pick · <code>⏎</code> answer · <code>ctrl+x</code> close · <code>ctrl+n</code>/<code>ctrl+p</code> next/previous · <code>esc</code> back)</td></tr>
+    <tr><td><code>alt+r</code> <code>ctrl+x</code> <code>ctrl+f</code></td><td>answer a card · later · full screen</td></tr>
     <tr><td><code>ctrl+g</code> <code>ctrl+n</code> <code>ctrl+p</code></td><td>show the cards · next · previous</td></tr>
     <tr><td><code>ctrl+o</code></td><td>open or close everything folded: thinking, outputs, diffs, agent traffic</td></tr>
     <tr><td><code>ctrl+v</code></td><td>paste an image</td></tr>
@@ -567,7 +570,7 @@ added secure: true; the webkit test passes now.</div></div>
     <tr><td class="dim">inside an agent</td><td>you're talking to auth-fix directly. main isn't in the loop. esc back to main.</td></tr>
     <tr><td class="dim">composer</td><td>⏎ send · @ agent · / commands · ⏎ steer · ctrl+c interrupt</td></tr>
     <tr><td class="dim">history</td><td>▸ 12 messages between 8 agents · ∴ thought for 14s · ▸ output · 42 lines · ✓ turn done · 2m 10s</td></tr>
-    <tr><td class="dim">cards</td><td>1-2 pick · ⏎ answer · ctrl+x close · ctrl+n next · esc back</td></tr>
+    <tr><td class="dim">cards</td><td>? docs needs you · alt+r answer with text · ctrl+x later · ctrl+f full screen</td></tr>
     <tr><td class="dim">direct</td><td>@ auth-fix to you: …</td></tr>
     <tr><td class="dim">not delivered</td><td>✗ not delivered: auth-fix stopped. ⏎ send again · esc drop</td></tr>
     <tr><td class="dim">provider down</td><td>✗ the model provider answered 503. retrying in 8s (2 of 5). · auth-fix and release are waiting on it; nothing is lost.</td></tr>
