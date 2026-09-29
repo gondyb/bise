@@ -20,20 +20,20 @@ import ./tools-pure.bend as Xp
 import ./main.bend as R
 import ../runtime/bash.bend as Sh
 import ../runtime/provider.bend as Pv
+import ../runtime/provider-pure.bend as Pvp
 import ../runtime/settings.bend as St
 import ./repl-core.bend as Rc
 import ./debug.bend as Dbg
 import ./repl-core-pure.bend as Rcp
 import ./oneshot.bend as Os
 
-# the compaction threshold for real conversations: BEND_THRESHOLD env
-# (approximate tokens). Default 800000, tuned for 1M-context models
-# (e.g. glm-5.3): compaction starts near 80% of the window, with the
-# ADR 0011 selection budget (20000) for preserved user messages
-# the threshold answers the same precedence as everything else:
-# BEND_THRESHOLD env > config.toml threshold > 800000
-def thr_of_cfg(+envv: String, +cfgt: String) -> Nat:
-  U32.to_nat(St.env_cfg_u32(envv, cfgt, "threshold", 800000))
+# the compaction threshold for real conversations, in approximate
+# tokens, with the ADR 0011 selection budget (20000) for preserved user
+# messages. The same precedence as everything else: BEND_THRESHOLD env
+# > config.toml threshold > 80 % of the model's context window (from
+# bise's catalog, BISE-150: runtime/provider-pure.bend `threshold`)
+def thr_of_cfg(+envv: String, +cfgt: String, +window: U32) -> Nat:
+  U32.to_nat(Pvp.threshold(envv, cfgt, window))
 
 # the live system prompt = identity + the exact vibe_sdk sections
 # (tool_use_prompt + current_time_prompt), loaded from prompt-*.txt
@@ -95,7 +95,8 @@ def live_main() -> IO(Unit):
     env : Result<&1, &1, U32 & String, String> <- IO.get_env(
       "BEND_THRESHOLD")
     +cfgt : String <- St.read_cfg()
-    +threshold : Nat <- IO.pure(Nat, thr_of_cfg(P.env_or(env, ""), cfgt))
+    +window : U32 <- Pv.resolved_window()
+    +threshold : Nat <- IO.pure(Nat, thr_of_cfg(P.env_or(env, ""), cfgt, window))
     +p : U32 <- Rc.repl_port(7702)
     l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", p))
     # the single source of truth for every client: printed BEFORE the
@@ -106,7 +107,7 @@ def live_main() -> IO(Unit):
     IO.print(String.append("bend-harness LIVE REPL on 127.0.0.1:",
       String.append(U32.show(p),
         String.append(" (real model, FS tools, bash) — compaction threshold: ",
-          String.append(Nat.show(threshold), " tokens (BEND_THRESHOLD or ~/.bend-harness/config.toml to change)")))))
+          String.append(Nat.show(threshold), " tokens (80% of the model's context; BEND_THRESHOLD or config.toml threshold to change)")))))
     # the plugins bridge, then the skills scan (it reads the plugin
     # skills), then the prompt (it lists the skills)
     u5 : Unit <- Pl.start()

@@ -675,6 +675,23 @@ before replacing a stored one). It no longer writes `<root>/.env`.
   `anth_thinking_default_reasons_adaptive`, `anth_thinking_words`,
   `family_headers_anthropic_betas`, `api_body_anth_follows_facts`.
 
+### 7.6 BISE-150 as built: the model's limits and prices
+
+- Threshold: `BEND_THRESHOLD` > config `threshold` > 80 % of the
+  context window of the model the REPL starts with (the models file:
+  the model's `context`, else its provider's; nothing: 128000).
+  `runtime/provider-pure.bend` `window` / `threshold`, laws
+  `threshold_*` / `window_*`; Rust mirror `Catalog::default_threshold`.
+  The config template no longer writes `threshold = 800000`.
+- harness-info and the usage line carry the full `provider/model` id.
+- Prices: `input_price`, `output_price`, `cache_read_price`,
+  `cache_write_price` (USD per 1M tokens) on models or providers;
+  `Resolved.price`, `Price::cost`. Not in the hand-off (Bend does not
+  use them).
+- TUI (`rust/tui/src/models.rs`): gauge window, cost at the end of the
+  usage line, and a message with images to a listed model with
+  `vision = false` is stopped before sending (the no-vision line).
+
 ## 8. BISE-153 as built: the fake provider, fixtures, live tests
 
 ### 8.1 The fake provider (`tests/fake_provider.py`)

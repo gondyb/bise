@@ -74,6 +74,40 @@ pub struct PartialCaps {
     pub tools: Option<bool>,
     pub thinking: Option<String>,
     pub betas: Option<String>,
+    /// prices (BISE-150), in [`Price`]'s unit
+    pub input_price: Option<u64>,
+    pub output_price: Option<u64>,
+    pub cache_read_price: Option<u64>,
+    pub cache_write_price: Option<u64>,
+}
+
+/// What a model costs, per million tokens, in millionths of a dollar
+/// (`input_price = 3.0` in models.toml = 3 USD per million = 3_000_000
+/// here: integers keep the catalog `Eq`). None: not known.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Price {
+    pub input: Option<u64>,
+    pub output: Option<u64>,
+    /// a cached input token read back; unset: the input price
+    pub cache_read: Option<u64>,
+    /// an input token written to the cache; unset: the input price
+    pub cache_write: Option<u64>,
+}
+
+impl Price {
+    /// The cost in USD of one call, None without the input and output
+    /// prices. `input` counts every input token, the cached ones
+    /// included (runtime/usage-pure.bend): the cached ones are taken
+    /// out and billed at their own price.
+    pub fn cost(&self, input: u64, output: u64, cache_read: u64, cache_write: u64) -> Option<f64> {
+        let (pi, po) = (self.input?, self.output?);
+        let pr = self.cache_read.unwrap_or(pi);
+        let pw = self.cache_write.unwrap_or(pi);
+        let plain = input.saturating_sub(cache_read).saturating_sub(cache_write);
+        let micro = |n: u64, p: u64| n as f64 * p as f64;
+        let total = micro(plain, pi) + micro(output, po) + micro(cache_read, pr) + micro(cache_write, pw);
+        Some(total / 1e12)
+    }
 }
 
 impl PartialCaps {
@@ -88,6 +122,14 @@ impl PartialCaps {
             betas: self.betas.clone().unwrap_or_else(|| base.betas.clone()),
         }
     }
+    fn price_over(&self, base: &Price) -> Price {
+        Price {
+            input: self.input_price.or(base.input),
+            output: self.output_price.or(base.output),
+            cache_read: self.cache_read_price.or(base.cache_read),
+            cache_write: self.cache_write_price.or(base.cache_write),
+        }
+    }
     fn merge(&mut self, o: &PartialCaps) {
         self.context = o.context.or(self.context);
         self.max_output = o.max_output.or(self.max_output);
@@ -96,6 +138,10 @@ impl PartialCaps {
         self.tools = o.tools.or(self.tools);
         self.thinking = o.thinking.clone().or(self.thinking.take());
         self.betas = o.betas.clone().or(self.betas.take());
+        self.input_price = o.input_price.or(self.input_price);
+        self.output_price = o.output_price.or(self.output_price);
+        self.cache_read_price = o.cache_read_price.or(self.cache_read_price);
+        self.cache_write_price = o.cache_write_price.or(self.cache_write_price);
     }
 }
 
@@ -167,6 +213,8 @@ pub struct Resolved {
     pub key_env: String,
     pub needs: String,
     pub caps: Caps,
+    /// its prices (BISE-150): the model's, else its provider's
+    pub price: Price,
     pub known: Known,
 }
 
@@ -273,17 +321,20 @@ impl Catalog {
                 key_env: String::new(),
                 needs: String::new(),
                 caps: DEFAULT_CAPS,
+                price: Price::default(),
                 known: Known::NoProvider,
             };
         };
         let base = self.provider_caps(p);
-        let (caps, api, known) = match self.models.iter().find(|m| m.provider == pid && m.id == mid) {
+        let base_price = p.caps.price_over(&Price::default());
+        let (caps, price, api, known) = match self.models.iter().find(|m| m.provider == pid && m.id == mid) {
             Some(m) => (
                 m.caps.over(&base),
+                m.caps.price_over(&base_price),
                 m.api.clone().unwrap_or_else(|| p.api.clone()),
                 Known::Listed,
             ),
-            None => (base, p.api.clone(), Known::Unlisted),
+            None => (base, base_price, p.api.clone(), Known::Unlisted),
         };
         Resolved {
             name: full.clone(),
@@ -294,6 +345,7 @@ impl Catalog {
             key_env: p.key_env.clone(),
             needs: p.needs.clone(),
             caps,
+            price,
             known,
         }
     }
@@ -302,6 +354,14 @@ impl Catalog {
     /// provider's default; the default one when nothing knows it).
     pub fn context_window(&self, name: &str) -> u64 {
         self.resolve(name).caps.context
+    }
+
+    /// The compaction threshold a model gets when neither
+    /// BEND_THRESHOLD nor config `threshold` says (BISE-150): 80 % of
+    /// its context window. The Bend runtime computes the same
+    /// (runtime/provider-pure.bend, `default_threshold`).
+    pub fn default_threshold(&self, name: &str) -> u64 {
+        threshold_of(self.context_window(name))
     }
 
     /// Merge one TOML layer (the built-in list, then the config).
@@ -459,6 +519,11 @@ impl Catalog {
     }
 }
 
+/// 80 % of a context window, in tokens.
+pub fn threshold_of(context: u64) -> u64 {
+    context / 5 * 4 + context % 5 * 4 / 5
+}
+
 fn set_str(slot: &mut String, v: Option<String>, where_: &str, k: &str, warn: &mut dyn FnMut(String)) {
     match v {
         Some(v) => *slot = v,
@@ -479,6 +544,22 @@ fn cap_field(caps: &mut PartialCaps, k: &str, v: &toml::Value, where_: &str, war
             Some(n) => caps.max_output = Some(n),
             None => warn(bad("a number of tokens > 0")),
         },
+        "input_price" | "output_price" | "cache_read_price" | "cache_write_price" => {
+            // USD per million tokens, stored in millionths of a dollar
+            let usd = v.as_float().or_else(|| v.as_integer().map(|n| n as f64));
+            match usd.filter(|x| x.is_finite() && *x >= 0.0 && *x < 1e6) {
+                Some(x) => {
+                    let n = Some((x * 1e6).round() as u64);
+                    match k {
+                        "input_price" => caps.input_price = n,
+                        "output_price" => caps.output_price = n,
+                        "cache_read_price" => caps.cache_read_price = n,
+                        _ => caps.cache_write_price = n,
+                    }
+                }
+                None => warn(bad("USD per million tokens, a number >= 0")),
+            }
+        }
         "vision" | "reasoning" | "tools" => match bool_() {
             Some(b) => match k {
                 "vision" => caps.vision = Some(b),

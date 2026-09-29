@@ -43,7 +43,17 @@ fn caps_text(r: &Resolved) -> String {
             s.push_str(w);
         }
     }
+    // prices, USD per million tokens in / out (BISE-150)
+    if let (Some(i), Some(o)) = (r.price.input, r.price.output) {
+        s.push_str(&format!(" ${}/${}", usd(i), usd(o)));
+    }
     s
+}
+
+/// Millionths of a dollar as a short USD amount: 3, 0.25, 0.075.
+fn usd(micro: u64) -> String {
+    let t = format!("{}.{:06}", micro / 1_000_000, micro % 1_000_000);
+    t.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 fn choice_line(label: &str, c: &Catalog, name: &str, from: &str) -> String {

@@ -7,7 +7,10 @@
 //! the context the model saw. The context after the call is `in + out`
 //! (the reply joins the history). A compaction resets it: the last
 //! usage before a `compaction_done` no longer describes the context.
+//! `model` is the full `provider/model` id: its window and prices come
+//! from bise's catalog (models.rs, BISE-150).
 
+use crate::models::context_window;
 use crate::Ev;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -66,23 +69,19 @@ impl Usage {
             None => fmt_tokens(used),
         }
     }
-}
 
-/// The context window of a model, in tokens (None: unknown model).
-/// The harness sends Anthropic's 1M-context beta header on every call
-/// (runtime/provider.bend), so Claude models get 1M.
-pub fn context_window(model: &str) -> Option<u64> {
-    let m = model.to_ascii_lowercase();
-    if m.starts_with("claude") {
-        return Some(1_000_000);
+    /// What the call cost in USD; None when the model's prices are not
+    /// in the catalog.
+    pub fn cost(&self) -> Option<f64> {
+        crate::models::cost(&self.model, self.input, self.output, self.cache_read, self.cache_write)
     }
-    if m.contains("glm") {
-        return Some(200_000);
+
+    /// The feed's usage line: `usage: 42k / 200k tokens · 21% (in 42000
+    /// · out 500 · $0.0132)`, the cost when it is known.
+    pub fn line(&self) -> String {
+        let cost = self.cost().map(|c| format!(" · {}", crate::models::fmt_cost(c))).unwrap_or_default();
+        format!("  usage: {} (in {} · out {}{})", self.label(), self.input, self.output, cost)
     }
-    if m.starts_with("mistral-large") || m.starts_with("mistral-medium") || m.starts_with("devstral") {
-        return Some(128_000);
-    }
-    None
 }
 
 fn percent(used: u64, window: u64) -> u64 {
@@ -138,14 +137,31 @@ mod tests {
 
     #[test]
     fn labels() {
-        let u = Usage { model: "claude-opus-5-5".into(), input: 209_500, output: 500, ..Default::default() };
+        let u = Usage { model: "foundry/claude-opus-5-5".into(), input: 209_500, output: 500, ..Default::default() };
         assert_eq!(u.label(), "210k / 1M tokens · 21%");
         assert_eq!(u.short(), "21%");
-        let g = Usage { model: "zai-glm-5-3".into(), input: 42_000, output: 0, ..Default::default() };
+        // the window is the model's, not a guess from its name
+        let s = Usage { model: "anthropic/claude-sonnet-4-5".into(), input: 42_000, ..Default::default() };
+        assert_eq!(s.label(), "42k / 200k tokens · 21%");
+        let g = Usage { model: "mistral/zai-glm-5-3".into(), input: 42_000, output: 0, ..Default::default() };
         assert_eq!(g.label(), "42k / 200k tokens · 21%");
-        let x = Usage { model: "some-model".into(), input: 950, output: 0, ..Default::default() };
-        assert_eq!(x.label(), "950 tokens");
-        assert_eq!(x.short(), "950");
+        // an old bare id: the legacy rule
+        let o = Usage { model: "claude-opus-5-5".into(), input: 209_500, output: 500, ..Default::default() };
+        assert_eq!(o.short(), "21%");
+        // an unlisted model: its provider's default
+        let x = Usage { model: "groq/some-model".into(), input: 13_107, output: 0, ..Default::default() };
+        assert_eq!(x.label(), "13k / 131k tokens · 10%");
+        let n = Usage { model: "nowhere/some-model".into(), input: 950, output: 0, ..Default::default() };
+        assert_eq!(n.label(), "950 tokens");
+        assert_eq!(n.short(), "950");
+    }
+
+    #[test]
+    fn the_usage_line_shows_the_cost_when_prices_are_known() {
+        let u = Usage { model: "anthropic/claude-haiku-4-5".into(), input: 10_000, output: 1_000, ..Default::default() };
+        assert_eq!(u.line(), "  usage: 11k / 200k tokens · 6% (in 10000 · out 1000 · $0.0150)");
+        let f = Usage { model: "foundry/claude-opus-5-5".into(), input: 10_000, output: 1_000, ..Default::default() };
+        assert_eq!(f.line(), "  usage: 11k / 1M tokens · 1% (in 10000 · out 1000)");
     }
 
     #[test]

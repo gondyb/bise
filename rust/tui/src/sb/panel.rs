@@ -24,6 +24,11 @@ pub(super) fn glyph(status: &str, tick: u32, motion: crate::gust::Motion) -> (&'
 }
 
 /// The workspace folder (the embedded terminal starts there).
+/// The model of the agent in view (the no-vision check, BISE-150).
+pub(crate) fn focus_model(app: &App) -> String {
+    app.sb.focus_model(app)
+}
+
 pub(crate) fn workspace(app: &App) -> Option<String> {
     Some(app.sb.workspace.clone()).filter(|w| !w.is_empty())
 }

@@ -440,6 +440,11 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
                 } else {
                     pick(app, c);
                 }
+            } else if let Some(model) = crate::attach::refused_images(app) {
+                // BISE-150: the catalog says this model reads no images:
+                // the no-vision line now, the message stays in the composer
+                push_event(&mut app.events, &mut app.cache, Ev::Err(crate::attach::no_vision_error(&model)));
+                app.follow = true;
             } else {
                 let v = app.ed.take().trim().to_string();
                 let v = if v.starts_with('/') { v } else { crate::attach::expand(app, &v) };

@@ -357,6 +357,25 @@ pub(crate) fn set_model(model: &str) {
     });
 }
 
+/// The composer holds images (their labels) and the agent in view runs
+/// a model the catalog lists without vision (BISE-150): its name, so the
+/// message is not sent. A slash command, or a model the catalog does not
+/// list: None (the provider decides).
+pub(crate) fn refused_images(app: &App) -> Option<String> {
+    let text = app.ed.text.trim_start();
+    if text.starts_with('/') || !app.attachments.iter().any(|a| text.contains(&a.label)) {
+        return None;
+    }
+    let model = crate::sb::focus_model(app);
+    crate::models::lacks_vision(&model).then_some(model)
+}
+
+/// The error the no-vision line is drawn from when the catalog refused
+/// the images before sending ([`is_no_vision`] matches it).
+pub(crate) fn no_vision_error(model: &str) -> String {
+    format!("{model} does not support image input (bise's model catalog): not sent")
+}
+
 /// The provider refused images: its error says image (or vision) and
 /// that it is not supported. Anthropic, Mistral and OpenAI-style
 /// providers each word it their way.

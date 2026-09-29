@@ -21,7 +21,7 @@ mod cards;
 pub(super) use cards::{card_box_height, card_full, card_mouse, card_choices, draw_card};
 use cards::{answer_card, Card, CardView};
 mod panel;
-pub(super) use panel::{draw_panel, key_mode, panel_mouse, placeholder, split, status_state, viewed_working, workspace};
+pub(super) use panel::{draw_panel, focus_model, key_mode, panel_mouse, placeholder, split, status_state, viewed_working, workspace};
 #[cfg(test)]
 pub(super) use panel::status_text;
 use panel::glyph;
@@ -200,6 +200,20 @@ impl Sb {
             return crate::usage::current(&app.events);
         }
         crate::usage::current(&self.views.get(name)?.events)
+    }
+
+    /// The model of the agent in focus (BISE-150): the one its last
+    /// usage line names, else the one its role starts with (main's or
+    /// the sub-agents', from the catalog's setup).
+    fn focus_model(&self, app: &App) -> String {
+        let used = app.events.iter().rev().find_map(|e| match e {
+            crate::Ev::Usage(u) if !u.model.is_empty() => Some(u.model.clone()),
+            _ => None,
+        });
+        used.unwrap_or_else(|| {
+            let main = self.agent(&self.focus).is_none_or(|a| a.main);
+            crate::models::model_for(main)
+        })
     }
 
     fn agent(&self, name: &str) -> Option<&Agent> {
@@ -886,6 +900,40 @@ mod nav_key_tests {
 
     fn press(app: &mut App, code: KeyCode, m: KeyModifiers) -> bool {
         key(app, &KeyEvent::new(code, m), false)
+    }
+
+    /// BISE-150: a message with an image to a model the catalog lists
+    /// without vision is not sent: the no-vision line, the text stays.
+    #[test]
+    fn images_to_a_model_without_vision_are_refused_before_sending() {
+        let mut app = bench::test_app();
+        app.sb.agents = vec![agent("main")];
+        let usage = |m: &str| Ev::Usage(crate::usage::Usage { model: m.into(), input: 10, ..Default::default() });
+        app.events.push(usage("mistral/codestral-latest"));
+        app.cache.push(None);
+        app.attachments.push(crate::attach::Attachment {
+            label: "[Image #1]".into(),
+            marker: "<image name=\"[Image #1]\" b64=\"/x.b64\">".into(),
+            info: Default::default(),
+        });
+        app.ed.insert("look at [Image #1]");
+        let n = app.events.len();
+        crate::input::on_key(&mut app, &KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.ed.text, "look at [Image #1]", "kept in the composer");
+        assert_eq!(app.attachments.len(), 1);
+        match app.events.get(n) {
+            Some(Ev::Err(e)) => {
+                assert!(crate::attach::is_no_vision(e), "{e}");
+                assert!(e.contains("mistral/codestral-latest"), "{e}");
+            }
+            _ => panic!("no no-vision line"),
+        }
+        // a model that reads images: sent as before
+        app.events.push(usage("mistral/mistral-medium-latest"));
+        app.cache.push(None);
+        crate::input::on_key(&mut app, &KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.ed.text, "");
+        assert!(app.attachments.is_empty());
     }
 
     /// The panel path of tui_tmux.py: from no selection, Ctrl+K selects

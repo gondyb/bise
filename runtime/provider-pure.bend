@@ -42,10 +42,12 @@ def builtin() -> List<&2, Cf.KV>:
       "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1"},
     Cf.KV{"providers.foundry.key_env", "ANTHROPIC_FOUNDRY_API_KEY"},
     Cf.KV{"providers.foundry.reasoning", "true"},
+    Cf.KV{"providers.foundry.context", "1000000"},
     Cf.KV{"providers.mistral.api", "openai-chat"},
     Cf.KV{"providers.mistral.base_url", "https://api.mistral.ai/v1"},
     Cf.KV{"providers.mistral.key_env", "MISTRAL_API_KEY"},
-    Cf.KV{"providers.mistral.reasoning", "true"}]
+    Cf.KV{"providers.mistral.reasoning", "true"},
+    Cf.KV{"providers.mistral.context", "128000"}]
 
 # the models file's entries win over the built-in ones (first match)
 def registry(+file: String) -> List<&2, Cf.KV>:
@@ -284,14 +286,85 @@ def resolve(+bise: String, +bend: String, +agent: String, +role: String,
   resolve_id(full_id(model_name(bise, bend, agent, role, Cf.parse_toml(cfg),
     reg), reg), reg, url_env)
 
-# the model the clients show (the harness-info line): the id sent on
-# the wire, or the full id asked for when it does not resolve
+# the full id of a resolved call, "provider/model" (BISE-150: the name
+# the clients look up in bise's catalog)
+def prov_name(p: Prov) -> String:
+  match p:
+    case Prov{+provider, +model, _, _, _, _}:
+      String.concat([provider, "/", model])
+
+# the model the clients show (the harness-info line): the full id,
+# resolved or not
 def shown_model(r: Resolved) -> String:
   match r:
-    case ROk{Prov{_, +model, _, _, _, _}}:
-      model
+    case ROk{+p}:
+      prov_name(p)
     case RErr{+id, _}:
       id
+
+# ---- the context window and the compaction threshold (BISE-150) ----
+# The window of the model a REPL starts with: its `context` in the
+# models file, else its provider's; a model nothing describes gets
+# DEFAULT_CONTEXT (rust/catalog's DEFAULT_CAPS). The compaction starts
+# at 80 % of it unless BEND_THRESHOLD or config `threshold` says.
+
+def DEFAULT_CONTEXT() -> U32:
+  128000
+
+def u32_or.read(m: Maybe<&2, U32>) -> U32:
+  match m:
+    case Some{+n}:
+      n
+    case None{}:
+      0
+
+# a number key of the registry; missing or not a number: 0
+def u32_or(m: Maybe<&2, String>) -> U32:
+  match m:
+    case Some{+s}:
+      u32_or.read(U32.read(s))
+    case None{}:
+      0
+
+def window.known(zero: Bool, +n: U32) -> U32:
+  match zero:
+    case True{}:
+      DEFAULT_CONTEXT()
+    case False{}:
+      n
+
+def window.split(pm: String & String, +reg: List<&2, Cf.KV>, +id: String)
+    -> U32:
+  match pm:
+    case (+prov, _):
+      +n = u32_or(model_key(reg, prov, id, "context"))
+      window.known(U32.is_eq(n, 0), n)
+
+# the context window, in tokens, of the model the same inputs as
+# `resolve` pick (never 0)
+def window(+bise: String, +bend: String, +agent: String, +role: String,
+    +cfg: String, +file: String) -> U32:
+  +reg = registry(file)
+  +id = full_id(model_name(bise, bend, agent, role, Cf.parse_toml(cfg),
+    reg), reg)
+  window.split(split_id(id), reg, id)
+
+# 80 % of a window, rounded down (no overflow: n / 5 first)
+def threshold_of(+n: U32) -> U32:
+  ((n / 5) * 4 + ((n % 5) * 4) / 5 : U32)
+
+def threshold.pick(empty: Bool, +envv: String, +cfgt: String,
+    +dflt: U32) -> U32:
+  match empty:
+    case True{}:
+      Cf.cfg_u32(cfgt, "threshold", dflt)
+    case False{}:
+      Maybe.default(&2, U32, U32.read(envv), dflt)
+
+# the compaction threshold: BEND_THRESHOLD (envv) > config.toml
+# `threshold` > 80 % of the model's window
+def threshold(+envv: String, +cfgt: String, +window: U32) -> U32:
+  threshold.pick(String.is_empty(envv), envv, cfgt, threshold_of(window))
 
 def interrupt_path_of(+port: String) -> String:
   String.append("/tmp/bend-interrupt-", String.append(port, ".txt"))

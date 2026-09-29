@@ -2138,30 +2138,75 @@ law provider_unlisted_model_works:
 law provider_bise_model_first:
   {Pv.shown_model(Pv.resolve("mistral/a", "mistral/b", "mistral/e", "main",
       "model = \"mistral/c\"\nagent_model = \"mistral/d\"", "", ""))
-    == "a" : String}
+    == "mistral/a" : String}
 
 law provider_bend_model_over_config:
   {Pv.shown_model(Pv.resolve("", "mistral/b", "mistral/e", "main",
       "model = \"mistral/c\"\nagent_model = \"mistral/d\"", "", ""))
-    == "b" : String}
+    == "mistral/b" : String}
 
 law provider_agent_env_first:
   {Pv.shown_model(Pv.resolve("mistral/a", "mistral/b", "mistral/e", "agent",
       "model = \"mistral/c\"\nagent_model = \"mistral/d\"", "", ""))
-    == "e" : String}
+    == "mistral/e" : String}
 
 law provider_agent_model_for_agents:
   {Pv.shown_model(Pv.resolve("mistral/a", "mistral/b", "", "agent",
       "model = \"mistral/c\"\nagent_model = \"mistral/d\"", "", ""))
-    == "d" : String}
+    == "mistral/d" : String}
 
 law provider_agent_follows_main:
   {Pv.shown_model(Pv.resolve("", "mistral/b", "", "agent", "model = \"mistral/c\"", "", ""))
-    == "b" : String}
+    == "mistral/b" : String}
 
 law provider_agent_model_not_for_main:
   {Pv.shown_model(Pv.resolve("", "", "mistral/e", "main", "model = \"mistral/c\"\nagent_model = \"mistral/d\"", "", ""))
-    == "c" : String}
+    == "mistral/c" : String}
+
+# LAW (BISE-150): the compaction threshold defaults to 80 % of the
+# model's context window: its `context` in the models file, else its
+# provider's; nothing says (an unknown provider, no models file for a
+# provider the built-in table lacks): 128000, as rust/catalog's
+# DEFAULT_CAPS. BEND_THRESHOLD > config threshold > that default.
+law threshold_is_80_percent_of_the_window:
+  {(Pv.threshold_of(1000000), Pv.threshold_of(200000), Pv.threshold_of(128000),
+      Pv.threshold_of(131072), Pv.threshold_of(0))
+    == (800000, 160000, 102400, 104857, 0) : U32 & U32 & U32 & U32 & U32}
+
+law window_builtin_setups:
+  {(Pv.window("", "", "", "", "", ""),
+      Pv.window("", "", "", "", "model = \"zai-glm-5-3\"", ""))
+    == (1000000, 128000) : U32 & U32}
+
+law window_model_over_provider:
+  {(Pv.window("", "", "", "", "model = \"work/big\"",
+        "[providers.work]\nbase_url = \"http://x\"\ncontext = 32768\n\n[models.\"work/big\"]\ncontext = 262144\n"),
+      Pv.window("", "", "", "", "model = \"work/small\"",
+        "[providers.work]\nbase_url = \"http://x\"\ncontext = 32768\n"))
+    == (262144, 32768) : U32 & U32}
+
+law window_of_the_agent_model:
+  {Pv.window("", "", "", "agent", "model = \"a/x\"\nagent_model = \"b/y\"",
+      "[providers.a]\ncontext = 1000\n\n[providers.b]\ncontext = 2000\n")
+    == 2000 : U32}
+
+law window_unknown_model_default:
+  {(Pv.window("nowhere/m", "", "", "", "", ""),
+      Pv.window("", "", "", "", "model = \"work/m\"",
+        "[providers.work]\ncontext = lots\n"))
+    == (128000, 128000) : U32 & U32}
+
+law threshold_precedence:
+  {(Pv.threshold("5000", "threshold = 7000", 1000000),
+      Pv.threshold("", "threshold = 7000", 1000000),
+      Pv.threshold("", "model = \"x\"", 200000),
+      Pv.threshold("oops", "threshold = 7000", 200000))
+    == (5000, 7000, 160000, 160000) : U32 & U32 & U32 & U32}
+
+# LAW (BISE-150): the config template leaves the threshold to the model
+law config_template_threshold_unset:
+  {Cf.cfg_get(St.CONFIG_TEMPLATE(), "threshold") == None{}
+    : Maybe<&2, String>}
 
 # LAW: a provider of the models file: its family, base_url (a trailing
 # slash dropped) + the family's endpoint, its key env; the model id

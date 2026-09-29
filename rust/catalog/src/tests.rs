@@ -427,3 +427,40 @@ fn thinking_and_betas_per_model_reach_the_handoff() {
     assert!(!foundry.contains("thinking") && !foundry.contains("betas"), "{foundry}");
     assert!(h.contains("[models.\"anthropic/claude-opus-4-6\"]\nthinking = \"adaptive\"\n"), "{h}");
 }
+
+#[test]
+fn prices_come_from_the_model_then_its_provider() {
+    let c = Catalog::builtin();
+    let p = c.resolve("anthropic/claude-sonnet-4-5").price;
+    assert_eq!(p, Price { input: Some(3_000_000), output: Some(15_000_000), cache_read: Some(300_000), cache_write: Some(3_750_000) });
+    // nothing listed: no price, no cost
+    assert_eq!(c.resolve("foundry/claude-opus-5-5").price, Price::default());
+    assert_eq!(c.resolve("nowhere/m").price.cost(10, 10, 0, 0), None);
+    // a config provider's prices are its models' defaults; a model's win
+    let s = setup(
+        "[providers.acme]\nbase_url = \"http://x\"\ninput_price = 1\noutput_price = 2.5\n\
+         [models.\"acme/big\"]\noutput_price = 10\n",
+    );
+    assert!(s.catalog.warnings.is_empty(), "{:?}", s.catalog.warnings);
+    let small = s.catalog.resolve("acme/small").price;
+    assert_eq!((small.input, small.output), (Some(1_000_000), Some(2_500_000)));
+    let big = s.catalog.resolve("acme/big").price;
+    assert_eq!((big.input, big.output), (Some(1_000_000), Some(10_000_000)));
+    // cost: cached tokens at their price, the rest at the input price
+    let c = big.cost(1_000_000, 100_000, 0, 0).unwrap();
+    assert!((c - 2.0).abs() < 1e-9, "{c}");
+    // bad prices are warnings
+    let s = setup("[models.\"acme/x\"]\ninput_price = -1\noutput_price = \"cheap\"\n");
+    assert_eq!(s.catalog.warnings.len(), 2, "{:?}", s.catalog.warnings);
+}
+
+#[test]
+fn the_default_threshold_is_80_percent_of_the_window() {
+    let c = Catalog::builtin();
+    assert_eq!(c.default_threshold("foundry/claude-opus-5-5"), 800_000);
+    assert_eq!(c.default_threshold("anthropic/claude-sonnet-4-5"), 160_000);
+    assert_eq!(c.default_threshold("nowhere/m"), 102_400);
+    // the same rounding as runtime/provider-pure.bend threshold_of
+    assert_eq!(threshold_of(131_072), 104_857);
+    assert_eq!(threshold_of(0), 0);
+}

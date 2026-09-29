@@ -67,8 +67,8 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // the card box: what the rest leaves, with 1 blank row above it
     let card_h = sb::card_box_height(app, area, left(text_rows + strip_h + strip_gap + queue_h + 1));
     let card_gap = u16::from(card_h > 0);
-    // the no-vision line names this (not the agent's model yet)
-    attach::set_model("switchboard");
+    // the no-vision line names the model of the agent in view
+    attach::set_model(&crate::sb::focus_model(app));
     let composer_h = rows.pad_top + text_rows + rows.pad_bottom;
     let chunks = Layout::default()
         .direction(Direction::Vertical)

@@ -22,6 +22,10 @@
 #   "none" (unset: adaptive when the model reasons, none otherwise);
 #   betas = the anthropic-beta header (unset: the foundry proxy's list).
 #   max_output is the body's max_tokens.
+# Prices (BISE-150), USD per million tokens: input_price, output_price,
+#   cache_read_price, cache_write_price (the two cache ones default to
+#   input_price). Unset: the cost is not shown. The list prices, short
+#   prompts (a long-context tier costs more).
 # Any "<provider>/<model>" works even when the model is not listed here:
 # it gets its provider's defaults. Model ids may hold '/': the provider
 # is the part before the FIRST '/'.
@@ -54,12 +58,24 @@ betas = "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"
 
 [models."anthropic/claude-opus-4-5"]
 max_output = 64000
+input_price = 5
+output_price = 25
+cache_read_price = 0.5
+cache_write_price = 6.25
 
 [models."anthropic/claude-sonnet-4-5"]
 max_output = 64000
+input_price = 3
+output_price = 15
+cache_read_price = 0.3
+cache_write_price = 3.75
 
 [models."anthropic/claude-haiku-4-5"]
 max_output = 64000
+input_price = 1
+output_price = 5
+cache_read_price = 0.1
+cache_write_price = 1.25
 
 # the user's Anthropic proxy (the setup before BISE-142); the harness
 # sends the 1M-context beta header, so 1M
@@ -76,6 +92,19 @@ reasoning = true
 
 [models."foundry/claude-opus-5-5"]
 
+# the proxy bills Anthropic's list prices
+[models."foundry/claude-sonnet-4-5"]
+input_price = 3
+output_price = 15
+cache_read_price = 0.3
+cache_write_price = 3.75
+
+[models."foundry/claude-haiku-4-5"]
+input_price = 1
+output_price = 5
+cache_read_price = 0.1
+cache_write_price = 1.25
+
 # ---- OpenAI ----
 
 [providers.openai]
@@ -90,17 +119,32 @@ vision = true
 reasoning = true
 
 [models."openai/gpt-5.1"]
+input_price = 1.25
+output_price = 10
+cache_read_price = 0.125
 
 [models."openai/gpt-5"]
+input_price = 1.25
+output_price = 10
+cache_read_price = 0.125
 
 [models."openai/gpt-5-mini"]
+input_price = 0.25
+output_price = 2
+cache_read_price = 0.025
 
 [models."openai/gpt-5-codex"]
+input_price = 1.25
+output_price = 10
+cache_read_price = 0.125
 
 [models."openai/gpt-4.1"]
 context = 1047576
 max_output = 32768
 reasoning = false
+input_price = 2
+output_price = 8
+cache_read_price = 0.5
 
 # ---- Google (OpenAI-compatible endpoint until the gemini family, BISE-148) ----
 
@@ -116,10 +160,19 @@ vision = true
 reasoning = true
 
 [models."google/gemini-3-pro-preview"]
+input_price = 2
+output_price = 12
+cache_read_price = 0.2
 
 [models."google/gemini-2.5-pro"]
+input_price = 1.25
+output_price = 10
+cache_read_price = 0.125
 
 [models."google/gemini-2.5-flash"]
+input_price = 0.3
+output_price = 2.5
+cache_read_price = 0.03
 
 # ---- Mistral ----
 
@@ -136,18 +189,27 @@ vision = true
 
 [models."mistral/mistral-medium-latest"]
 vision = true
+input_price = 0.4
+output_price = 2
 
 [models."mistral/devstral-medium-latest"]
+input_price = 0.4
+output_price = 2
 
 [models."mistral/codestral-latest"]
 context = 256000
+input_price = 0.3
+output_price = 0.9
 
 [models."mistral/magistral-medium-latest"]
 reasoning = true
+input_price = 2
+output_price = 5
 
 # the vibe CLI's model: reasoning_effort "high" rides its calls (BISE-145)
 [models."mistral/zai-glm-5-3"]
 reasoning = true
+context = 200000
 
 # ---- OpenRouter (one key, many vendors) ----
 
@@ -162,18 +224,24 @@ context = 1000000
 max_output = 64000
 vision = true
 reasoning = true
+input_price = 3
+output_price = 15
 
 [models."openrouter/openai/gpt-5"]
 context = 400000
 max_output = 128000
 vision = true
 reasoning = true
+input_price = 1.25
+output_price = 10
 
 [models."openrouter/google/gemini-2.5-pro"]
 context = 1048576
 max_output = 65536
 vision = true
 reasoning = true
+input_price = 1.25
+output_price = 10
 
 [models."openrouter/moonshotai/kimi-k2-0905"]
 context = 262144
@@ -196,17 +264,25 @@ context = 131072
 
 [models."groq/moonshotai/kimi-k2-instruct-0905"]
 context = 262144
+input_price = 1
+output_price = 3
 
 [models."groq/openai/gpt-oss-120b"]
 max_output = 65536
 reasoning = true
+input_price = 0.15
+output_price = 0.75
 
 [models."groq/qwen/qwen3-32b"]
 max_output = 40960
 reasoning = true
+input_price = 0.29
+output_price = 0.59
 
 [models."groq/llama-3.3-70b-versatile"]
 max_output = 32768
+input_price = 0.59
+output_price = 0.79
 
 # ---- xAI ----
 
@@ -221,12 +297,21 @@ reasoning = true
 
 [models."xai/grok-4"]
 vision = true
+input_price = 3
+output_price = 15
+cache_read_price = 0.75
 
 [models."xai/grok-4-fast"]
 context = 2000000
 vision = true
+input_price = 0.2
+output_price = 0.5
+cache_read_price = 0.05
 
 [models."xai/grok-code-fast-1"]
+input_price = 0.2
+output_price = 1.5
+cache_read_price = 0.02
 
 # ---- DeepSeek ----
 
@@ -239,10 +324,16 @@ small_model = "deepseek-chat"
 
 [models."deepseek/deepseek-chat"]
 max_output = 8192
+input_price = 0.28
+output_price = 0.42
+cache_read_price = 0.028
 
 [models."deepseek/deepseek-reasoner"]
 max_output = 65536
 reasoning = true
+input_price = 0.28
+output_price = 0.42
+cache_read_price = 0.028
 
 # ---- Together ----
 

@@ -559,7 +559,7 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
         (n, Rem.RRErr{"provider unreachable: retries exhausted"}))
     case 1n+k:
       match pv:
-        case Pvp.Prov{_, +model, +st, +url, _, +facts}:
+        case Pvp.Prov{+prov, +model, +st, +url, _, +facts}:
           do IO<Out & Rem.RemoteRes>:
             # a one-shot call (BISE_ONESHOT, BISE-126) goes out light:
             # no thinking / effort keys (runtime/oneshot-pure.bend)
@@ -575,7 +575,8 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
               model_headers(st, Api.facts_betas(facts), key))
             +g : Got <- call.by_style(st, url, hdrs, body)
             lg : Unit <- model_call.log(call, tries, model, url, json, g)
-            nu : Out <- usage_note(g, n, st, model)
+            # the usage line names the full id (the TUI's catalog key)
+            nu : Out <- usage_note(g, n, st, String.concat([prov, "/", model]))
             model_call.step(got_attempt(g), nu, k, tries,
               k2 => n2 => model_call.try(k2, Nat.add(tries, 1n), n2, request,
                 key, pv, call, imgs))
@@ -657,11 +658,24 @@ def resolution() -> IO(Pvp.Resolved):
       Pvp.resolve(P.env_or(br, ""), P.env_or(mr, ""), P.env_or(ar, ""),
         P.env_or(rr, ""), cfgt, file, P.env_or(ur, "")))
 
-# the model the clients show: the id sent on the wire
+# the model the clients show: its full id, provider/model
 def resolved_model() -> IO(String):
   do IO<String>:
     r : Pvp.Resolved <- resolution()
     IO.pure(String, Pvp.shown_model(r))
+
+# the context window of the model this REPL starts with (BISE-150): the
+# same inputs as resolution(); the compaction threshold's default
+def resolved_window() -> IO(U32):
+  do IO<U32>:
+    br : Result<&1, &1, U32 & String, String> <- IO.get_env("BISE_MODEL")
+    mr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_MODEL")
+    ar : Result<&1, &1, U32 & String, String> <- IO.get_env("BISE_AGENT_MODEL")
+    rr : Result<&1, &1, U32 & String, String> <- IO.get_env("BISE_ROLE")
+    +cfgt : String <- St.read_cfg()
+    +file : String <- models_file()
+    IO.pure(U32, Pvp.window(P.env_or(br, ""), P.env_or(mr, ""),
+      P.env_or(ar, ""), P.env_or(rr, ""), cfgt, file))
 
 @unsafe
 def model_call(n: Out, +request: String) -> IO(Out & Rem.RemoteRes):

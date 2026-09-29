@@ -865,6 +865,27 @@ def Laws.provider_agent_follows_main():
 def Laws.provider_agent_model_not_for_main():
   {==}
 
+def Laws.threshold_is_80_percent_of_the_window():
+  {==}
+
+def Laws.window_builtin_setups():
+  {==}
+
+def Laws.window_model_over_provider():
+  {==}
+
+def Laws.window_of_the_agent_model():
+  {==}
+
+def Laws.window_unknown_model_default():
+  {==}
+
+def Laws.threshold_precedence():
+  {==}
+
+def Laws.config_template_threshold_unset():
+  {==}
+
 def Laws.provider_from_models_file():
   {==}
 

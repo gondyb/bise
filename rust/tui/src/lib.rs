@@ -67,6 +67,7 @@ mod editor;
 mod clipboard;
 mod attach;
 mod usage;
+mod models;
 mod term;
 mod feedsel;
 mod keyprobe;
