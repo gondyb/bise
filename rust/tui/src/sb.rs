@@ -23,7 +23,7 @@ use cards::{answer_card, Card, CardView};
 mod panel;
 pub(super) use panel::{draw_panel, key_mode, panel_mouse, placeholder, split, status_state, workspace};
 #[cfg(test)]
-pub(super) use panel::{hint, status_text};
+pub(super) use panel::status_text;
 use panel::glyph;
 mod feed;
 pub(super) use feed::FeedWindow;
@@ -1199,7 +1199,7 @@ mod nav_key_tests {
         // D: the question, nothing sent
         assert!(press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT));
         assert_eq!(status(&app).trim(), "drop docs? its history stays in archived. y / n");
-        assert_eq!(hint(&app), Some("y drop · n or esc keep"));
+        assert_eq!(key_mode(&app), Some(crate::keybar::Mode::DropAsk));
         assert_eq!(sent(), "");
         // n keeps it, the composer stays empty
         assert!(press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE));

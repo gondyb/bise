@@ -672,31 +672,8 @@ pub(crate) fn drop_question(name: &str) -> String {
     format!("drop {}? its history stays in archived. y / n", name)
 }
 
-/// The key hints, flush right on the composer row (copy deck §17).
-/// Replaced by the key bar (BISE-98/99); bise-k-keys deletes it.
-#[cfg(test)]
-pub(crate) fn hint(app: &App) -> Option<&'static str> {
-    let sb = app.sb.as_ref()?;
-    Some(if sb.drop_ask.is_some() {
-        "y drop · n or esc keep"
-    } else if sb.confirm.is_some() {
-        "y yes · n no · esc cancel"
-    } else if sb.card.full {
-        "alt+r answer · pgup/pgdn scroll · ctrl+f back"
-    // a shown card box carries its own keys (QA 11): no repeat here
-    } else if sb.selected.is_some() {
-        "⏎ enter · space preview · D drop · esc close"
-    } else if sb.focus_archived() {
-        "/restore brings it back · esc back to main"
-    } else if app.pending {
-        "tab queue · ⏎ steer · ctrl+c interrupt"
-    } else {
-        "⏎ send · @ agent · / commands"
-    })
-}
-
-/// The key bar's mode in switchboard (BISE-99): the same order as
-/// [`hint`], which it replaces once the key bar row is placed (BISE-98).
+/// The key bar's mode in switchboard (BISE-99, [`crate::keybar`]); `None`
+/// without switchboard.
 pub(crate) fn key_mode(app: &App) -> Option<crate::keybar::Mode> {
     use crate::keybar::Mode;
     let sb = app.sb.as_ref()?;
@@ -1441,9 +1418,9 @@ mod chrome_tests {
     fn status_row_and_hints() {
         let mut app = busy();
         assert_eq!(status_text(&app), "main · idle");
-        assert_eq!(hint(&app), Some("⏎ send · @ agent · / commands"));
+        assert_eq!(key_mode(&app), Some(crate::keybar::Mode::Default));
         app.pending = true;
-        assert_eq!(hint(&app), Some("tab queue · ⏎ steer · ctrl+c interrupt"));
+        assert_eq!(key_mode(&app), Some(crate::keybar::Mode::Steer));
         app.pending = false;
         let sb = app.sb.as_mut().unwrap();
         sb.selected = Some(1);

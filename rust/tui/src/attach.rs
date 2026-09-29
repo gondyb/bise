@@ -432,10 +432,6 @@ pub(crate) fn strip_row(n: usize, info: &Info) -> (String, String) {
 /// The strip header (book §17).
 pub(crate) const STRIP_TITLE: &str = "attached · backspace on a chip removes it";
 
-/// The key hints while images are attached (tui-screens.html).
-#[allow(dead_code)] // the key bar (BISE-98/99) replaced the hint row; bise-k-keys deletes it
-pub(crate) const STRIP_HINT: &str = "ctrl+v paste image · @ file";
-
 /// The attachments still in the composer text, by number.
 fn shown(app: &App) -> Vec<(usize, &Attachment)> {
     let mut v: Vec<(usize, &Attachment)> = chips(&app.ed.text)
