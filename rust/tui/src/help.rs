@@ -488,6 +488,7 @@ pub(crate) fn page_lines(
 
 /// The overlay, over the whole frame, when open.
 pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
+    let dev_cmds = crate::sb::release::dev_commands(app);
     let Some(o) = app.help.as_mut() else { return };
     let full = frame.area();
     if full.width < 24 || full.height < 6 {
@@ -496,8 +497,11 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     let w = full.width.saturating_sub(2).min(110);
     let h = full.height.saturating_sub(2);
     let area = Rect { x: full.x + (full.width - w) / 2, y: full.y + 1, width: w, height: h };
-    let commands: Vec<(&'static str, &'static str)> =
-        crate::commands::COMMANDS.iter().map(|c| (c.name, c.desc)).collect();
+    let commands: Vec<(&'static str, &'static str)> = crate::commands::COMMANDS
+        .iter()
+        .chain(dev_cmds)
+        .map(|c| (c.name, c.desc))
+        .collect();
     let lines = page_lines(o.page, &o.filter, &commands, (w as usize).saturating_sub(4));
     let visible = (h as usize).saturating_sub(2).max(1);
     o.visible = visible;

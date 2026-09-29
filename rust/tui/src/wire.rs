@@ -215,6 +215,9 @@ pub(crate) enum Ev {
         text: String,
         open: bool,
     },
+    // in memory only (BISE-235): a row of a `/release-bise` in main's
+    // feed; a `Running` one is replaced by the next release row
+    Release(crate::release_row::Row),
 }
 
 // the wire carries the model's reasoning wrapped in think markers inside

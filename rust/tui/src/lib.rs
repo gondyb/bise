@@ -47,6 +47,7 @@ mod sanitize;
 mod render;
 mod toolbox;
 mod toolrow;
+mod release_row;
 use render::*;
 mod feed;
 use feed::*;

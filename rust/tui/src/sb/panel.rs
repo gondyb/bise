@@ -417,6 +417,21 @@ impl Sb {
     /// workspace (`~/acme`, dim) then the counts; not enough room, the
     /// path goes first, then the counts shorten (`∿ 3 · ? 1`).
     pub(crate) fn summary(&self, room: usize, short: bool, gust: &[Span<'static>]) -> Vec<Span<'static>> {
+        // a release running (BISE-235): one more item after the counts
+        let item = super::release::header_item(self, gust);
+        let item_w: usize = item.iter().map(|s| s.content.width()).sum();
+        if item.is_empty() || item_w + 3 > room {
+            return self.counts_summary(room, short, gust);
+        }
+        let mut out = self.counts_summary(room - item_w - 3, short, gust);
+        if !out.is_empty() {
+            out.push(Span::styled(" · ", Style::default().fg(dim())));
+        }
+        out.extend(item);
+        out
+    }
+
+    fn counts_summary(&self, room: usize, short: bool, gust: &[Span<'static>]) -> Vec<Span<'static>> {
         let fitted = |room: usize| -> Vec<Span<'static>> {
             match counts(self) {
                 None => vec![Span::styled("no agents yet", Style::default().fg(dim()))],

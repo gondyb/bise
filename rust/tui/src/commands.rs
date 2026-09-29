@@ -135,7 +135,11 @@ pub(crate) struct PopItem {
 }
 
 pub(crate) fn popup_items(app: &App) -> Vec<PopItem> {
-    let cmds = popup_matches(&app.ed.text);
+    let mut cmds = popup_matches(&app.ed.text);
+    // the dev build's own (BISE-235): nowhere else
+    if app.ed.text.starts_with('/') && !app.ed.text.contains(' ') {
+        cmds.extend(sb::release::dev_commands(app).iter().filter(|c| c.name.starts_with(app.ed.text.as_str())));
+    }
     if !cmds.is_empty() {
         return cmds
             .into_iter()
@@ -197,7 +201,7 @@ pub(crate) fn arg_slot(text: &str) -> Option<(&'static Cmd, &str, usize, &str)> 
         return None;
     }
     let (name, rest) = text.split_once(' ')?;
-    let cmd = COMMANDS.iter().find(|c| c.name == name)?;
+    let cmd = COMMANDS.iter().chain(sb::release::DEV_COMMANDS).find(|c| c.name == name)?;
     let idx = rest.split(' ').count() - 1;
     let word = rest.rsplit(' ').next().unwrap_or("");
     if cmd.args.iter().take(idx).any(|a| matches!(a, Arg::Text | Arg::Note)) {
@@ -321,6 +325,9 @@ pub(crate) fn arg_items(app: &App) -> Vec<PopItem> {
     let Some((cmd, head, idx, word)) = arg_slot(&app.ed.text) else {
         return Vec::new();
     };
+    if sb::release::DEV_COMMANDS.iter().any(|c| c.name == cmd.name) && !sb::release::dev(app) {
+        return Vec::new();
+    }
     let Some(&arg) = cmd.args.get(idx) else {
         return Vec::new();
     };

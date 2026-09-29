@@ -151,8 +151,12 @@ fn hub_line(rng: &mut Rng) -> String {
         7 => format!("  obs: assistant: <think>{t}</think>{t}"),
         _ => t.clone(),
     };
-    match rng.below(10) {
+    match rng.below(11) {
         0 => json!({"ev": "notice", "text": t}).to_string(),
+        // BISE-235: a release's plan, steps and result
+        4 => json!({"ev": "release", "state": *rng.pick(&["plan", "step", "running", "done", "failed", "error"]),
+            "tag": t, "text": t, "commits": [[t, t]], "count": rng.below(30), "tail": [t], "elapsed": rng.below(5000)})
+        .to_string(),
         1 => json!({"ev": "confirm", "id": rng.below(3), "text": t}).to_string(),
         2 => json!({"ev": "focus", "focus": agent}).to_string(),
         3 => json!({"ev": "state", "agents": [

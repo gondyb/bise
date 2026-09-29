@@ -16,6 +16,8 @@
 #              `bise update` read it next); with a tag already built, only
 #              that: publish-release.sh <tag> --publish
 #   --dry-run  say what would be done, change nothing
+#   --next-tag print the tag a release would take now (default above),
+#              change nothing (/release-bise's preview, BISE-235)
 #   --url      the channel (default below; tests use a stand-in)
 #
 # Steps: tag <rev> and push the tag -> .github/workflows/release.yml
@@ -47,7 +49,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$HERE" && git rev-parse --show-toplevel)"
 SITE_INSTALL="$REPO_DIR/projects/switchboard/docs/brand/site/install.sh"
-repo=gvergnaud/bise channel="" tag="" rev=HEAD notes="" draft=0 dry=0 local=0 publish=0 remote=""
+repo=gvergnaud/bise channel="" tag="" rev=HEAD notes="" draft=0 dry=0 local=0 publish=0 remote="" next=0
 adds=() froms=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -62,7 +64,8 @@ while [ $# -gt 0 ]; do
     --local) local=1 ;;
     --publish) publish=1 ;;
     --dry-run) dry=1 ;;
-    -h|--help) sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --next-tag) next=1 ;;
+    -h|--help) sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "publish-release: unknown argument $1" >&2; exit 2 ;;
     *) tag="$1" ;;
   esac
@@ -93,7 +96,7 @@ state() {
 
 # the tag: given, else today's (the first one free)
 if [ -z "$tag" ]; then
-  [ "$publish" = 0 ] || [ "$local" = 1 ] || die "--publish needs the tag"
+  [ "$publish" = 0 ] || [ "$local" = 1 ] || [ "$next" = 1 ] || die "--publish needs the tag"
   base="v$(date -u +%Y.%-m.%-d)" tag="$base" n=1
   while gh release view "$tag" -R "$repo" >/dev/null 2>&1 \
      || gh api "repos/$repo/git/ref/tags/$tag" >/dev/null 2>&1; do
@@ -101,6 +104,7 @@ if [ -z "$tag" ]; then
   done
 fi
 case "$tag" in v?*) ;; *) die "a release tag is v<version> (release.yml runs on v* tags), not $tag" ;; esac
+[ "$next" = 0 ] || { echo "$tag"; exit 0; }
 version="${tag#v}"
 work="${TMPDIR:-/tmp}/bise-publish-$tag"
 

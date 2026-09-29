@@ -11,6 +11,7 @@
 //!   `sb history`.
 
 mod repl;
+mod release;
 mod session_log;
 mod versions;
 
@@ -115,6 +116,11 @@ enum Msg {
     BuildEnded {
         rev: String,
     },
+    /// A `/release-bise` event (BISE-235): to that client, or to all.
+    Release {
+        client: Option<ClientId>,
+        v: Value,
+    },
     /// A line for main's thread (the version switcher).
     Notice {
         kind: String,
@@ -179,6 +185,8 @@ struct Shell {
     restored: BTreeSet<String>,
     /// Versions being built (`/version <commit>`), by revision.
     building: BTreeSet<String>,
+    /// The `/release-bise` running (BISE-235).
+    release: Option<release::ReleaseRun>,
     /// An installed bise (BISE-172): when `current` was last looked at,
     /// and the version already announced as ready.
     update_checked: Option<std::time::Instant>,
@@ -996,6 +1004,9 @@ impl Shell {
         }
         push(&json!({"ev": "ready"}));
         push(&self.version_items());
+        if let Some(r) = self.release_hello() {
+            push(&r);
+        }
         crate::util::timing(&format!("client hello built ({} bytes)", out.len()));
         if stream.write_all(out.as_bytes()).is_err() {
             return;
@@ -1052,6 +1063,7 @@ impl Shell {
                 client: id,
                 focus: s("focus"),
             }),
+            "release" => self.release_op(id, &v),
             "confirm" => self.step(Input::ClientConfirm {
                 client: id,
                 id: v.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
@@ -1493,6 +1505,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         switch_spawned: BTreeSet::new(),
         restored: BTreeSet::new(),
         building: BTreeSet::new(),
+        release: None,
         update_checked: None,
         update_told: None,
         resume_turn: BTreeSet::new(),
@@ -1737,6 +1750,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 sh.feed(MAIN, &format!("sb {} : {}", kind, wire_escape(&text)));
                 sh.broadcast_versions();
             }
+            Msg::Release { client, v } => sh.release_event(client, v),
             Msg::RoleLine { dir, key, line } => sh.step(Input::RoleLine { dir, key, line }),
             Msg::BuildEnded { rev } => {
                 sh.building.remove(&rev);

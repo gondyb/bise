@@ -342,7 +342,7 @@ pub(crate) fn is_notice(ev: &Ev) -> bool {
             | Ev::Compacted { .. }
             | Ev::TurnDone
             | Ev::TimeMark(_)
-    )
+    ) || matches!(ev, Ev::Release(r) if !r.is_l2())
 }
 
 // the breathing rules: one blank line when the content kind switches
@@ -515,6 +515,15 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
             cache.push(None);
             after_append(events, cache);
             return true;
+        }
+        // BISE-235: a running release row gives its place to the next one
+        Ev::Release(_) => {
+            let last = events.iter().rposition(|e| matches!(e, Ev::Release(_)));
+            if let Some(i) = last.filter(|&i| matches!(events[i], Ev::Release(crate::release_row::Row::Running(_)))) {
+                events[i] = ev;
+                cache[i] = None;
+                return false;
+            }
         }
         // BISE-86: the hub could not deliver your message: its line gets
         // `✗`; only the newest `not delivered` line keeps its question
@@ -851,6 +860,7 @@ pub(crate) fn discloses(ev: &Ev) -> bool {
         Ev::AgentMsg { text, .. } => is_brief(text) || report_parts(text).is_some(),
         Ev::Answered { why, .. } => !why.trim().is_empty(),
         Ev::Compacted { text, .. } => !text.trim().is_empty(),
+        Ev::Release(r) => r.discloses(),
         _ => false,
     }
 }
@@ -926,6 +936,10 @@ fn toggle_own(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize) -> b
             }
         }
         Ev::Tool(td) => td.expanded = !td.expanded,
+        Ev::Release(r) => match r.open_mut() {
+            Some(open) => *open = !*open,
+            None => return false,
+        },
         _ => return false,
     }
     if let Some(c) = cache.get_mut(i) {
@@ -964,6 +978,7 @@ pub(crate) const PAUSE_MS: u128 = 5 * 60 * 1000;
 pub(crate) fn is_l2(ev: &Ev) -> bool {
     match ev {
         Ev::Assistant(_) | Ev::Answered { .. } => true,
+        Ev::Release(r) => r.is_l2(),
         Ev::AgentMsg { text, .. } => !is_brief(text) && !is_l3(ev),
         _ => false,
     }
@@ -1221,6 +1236,7 @@ fn own_open(ev: &Ev) -> Option<bool> {
             Some(td.opened && (td.expanded || !crate::toolbox::box_folds(td)))
         }
         Ev::Tool(td) => Some(td.expanded),
+        Ev::Release(crate::release_row::Row::Failed { open, .. }) => Some(*open),
         _ => None,
     }
 }

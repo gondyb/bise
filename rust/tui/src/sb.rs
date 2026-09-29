@@ -31,6 +31,7 @@ pub(super) use feed::FeedWindow;
 mod client;
 pub(crate) mod drafts;
 mod keys;
+pub(crate) mod release;
 pub(super) use keys::key;
 pub(crate) use keys::{scene, Scene};
 #[cfg(test)]
@@ -140,6 +141,10 @@ pub(super) struct Sb {
     selected: Option<usize>,
     preview: bool,
     confirm: Option<(u64, String)>,
+    /// `/release-bise`'s plan waiting for your y/n (BISE-235).
+    release_ask: Option<release::Ask>,
+    /// The release running: its tag, since when (the header's item).
+    release: Option<(String, std::time::Instant)>,
     /// `D` on an agent asks first (book §16): the agent to drop on `y`.
     drop_ask: Option<String>,
     /// The feeds out of view where lines arrived since their last visit.
@@ -371,6 +376,8 @@ fn hub_reconnected(app: &mut App) {
     sb.activity.clear();
     sb.ready = false;
     sb.confirm = None;
+    sb.release_ask = None;
+    sb.release = None;
     sb.send_focus();
 }
 
@@ -417,6 +424,7 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
             sb.confirm = Some((id, text));
             sb.calls += 1;
         }
+        "release" => release::event(app, &v),
         "focus" => focus(app, &s("focus")),
         "renamed" => {
             let (old, new) = (s("old"), s("new"));
@@ -658,10 +666,15 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             return out;
         }
     }
+    if release::answer(app, &typed) {
+        return out;
+    }
+    let sb = &mut app.sb;
     let first = typed.split_whitespace().next().unwrap_or("");
     let recolor = first == "/theme";
     match first {
         "/quit" | "/exit" => app.should_quit = true,
+        "/release-bise" => release::command(sb, &typed),
         "/restart" => {
             let arg = typed.split_whitespace().nth(1).unwrap_or("");
             sb.send(json!({"op": "version", "do": "restart", "to": arg}));
