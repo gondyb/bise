@@ -110,6 +110,11 @@
   .l1 { border-left:2px solid var(--acc); padding-left:2ch; }
   .l1 .t { color:var(--acc); font-weight:700; }
   .b { margin-top:1.6em; margin-top:1lh; }
+  .attbox { position:relative; display:inline-block; min-width:44ch; max-width:91ch; box-sizing:border-box; border:1px solid var(--dim); border-radius:4px; padding:.4lh 2ch .35lh; margin:.5lh 0 .7lh; }
+  .attbox .r { display:flex; justify-content:space-between; gap:4ch; white-space:nowrap; }
+  .attbox .bt, .attbox .bb { position:absolute; background:var(--bg); padding:0 1ch; }
+  .attbox .bt { top:-.8lh; left:1.5ch; color:var(--dim); } .attbox .bb { bottom:-.8lh; right:1.5ch; color:var(--faint); }
+  .msgbar { border-left:1px solid var(--acc); padding-left:2ch; }
   .img { color:var(--acc); background:var(--tint); border-radius:3px; padding:0 .5ch; }
   .tick { color:var(--faint); margin-left:1ch; } .tick.read { color:var(--acc); }
   .dodont { display:grid; grid-template-columns:1fr 1fr; gap:16px; max-width:1000px; margin:16px 0 24px; }
@@ -493,7 +498,8 @@ added secure: true; the webkit test passes now.</div></div>
   <h1>14 · images</h1>
   <h2>show it, don't describe it.</h2>
   <p>drag a screenshot into the terminal, paste one with <code>ctrl+v</code>, or pick one with <code>@</code>. an image is one pink chip in your text; delete the chip, the image is gone.</p>
-  <div class="term"><div class="dim">attached · backspace on a chip removes it</div><div><span class="img">▣ 1</span> shots/login-mobile.png <span class="dim">· 1170×2532 · 310 kB</span></div><div><span class="img">▣ 2</span> clipboard <span class="dim">· 2048×1536 · resized to fit 2048</span></div><div class="b"><span class="dim">›</span> compare <span class="img">▣ 1</span> with the design <span class="img">▣ 2</span>, the button is off<span class="cur"></span></div></div>
+  <div class="term"><div class="attbox"><span class="bt">attached</span><div class="r"><span><span class="img">▣ 1</span> shots/login-mobile.png</span><span class="faint">1170×2532 · 310 kB</span></div><div class="r"><span><span class="img">▣ 2</span> clipboard</span><span class="faint">2048×1536 · resized to fit 2048</span></div><span class="bb">backspace on a chip removes it</span></div><div class="msgbar">compare <span class="img">▣ 1</span> with the design <span class="img">▣ 2</span>, the button is off<span class="cur"></span></div></div>
+  <p>the attachments sit in their own small box, under the divider and above your message: <code>attached</code> in its top border, one row per chip. the chips stay in your text, wherever you put them, with the same number.</p>
   <p>a model that can't read images says so in plain words, with a way out:</p>
   <div class="term"><span class="err">✗ glm-5 can't read images.</span> <span class="dim">pick a model that can (/model), or describe the screen in words.</span></div>
   <p class="warn">⚠ drawing the picture itself in the terminal comes later.</p>

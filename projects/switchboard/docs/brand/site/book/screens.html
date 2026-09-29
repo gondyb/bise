@@ -542,13 +542,10 @@ test result: ok. 42 passed; 0 failed</pre></div>` +
    <div class="row"><span class="dim">📄 web/src/auth/session.ts</span><span class="dim">file ⚠</span></div></div>`,
    f: foot(undefined, '<span class="dim">›</span> @au<span class="cur"></span>', "tab pick · esc close") })],
 
-["images: attaching", "three ways in, same result: drag a file into the terminal (its path becomes an image), ctrl+v pastes the clipboard image, or pick an image in the @ popup. an image is one atomic chip in the text; the strip above the composer says what each chip is. delete the chip, the image is gone.",
+["images: attaching", "three ways in, same result: drag a file into the terminal (its path becomes an image), ctrl+v pastes the clipboard image, or pick an image in the @ popup. an image is one atomic chip in your text, wherever you put it; the small box under the divider says what each chip is (the attachments box, option d). delete the chip, the image is gone.",
  term({ feed: you("the login page looks broken on mobile"),
-   above: `<div class="pop" style="max-width:76ch"><div class="dim">attached · backspace on a chip removes it</div>
-   <div class="row"><span><span class="img">▣ 1</span> shots/login-mobile.png</span><span class="dim">1170×2532 · 310 kB</span></div>
-   <div class="row"><span><span class="img">▣ 2</span> clipboard</span><span class="dim">2048×1536 · 1.1 MB → resized to fit 2048</span></div></div>`,
-   f: foot(undefined, '<span class="dim">›</span> compare <span class="img">▣ 1</span> with the design <span class="img">▣ 2</span>, the button is off<span class="cur"></span>', "ctrl+v paste image · @ file") })],
-
+   f: foot(undefined, `compare ${IP(1)} with the design ${IP(2)}, the button is off<span class="cur"></span>`, HINTS_D)
+     .replace('<div class="cbox', `<div class="att-d"><span class="bt">attached</span><div class="row"><span>${IP(1)} shots/login-mobile.png</span><span class="faint">1170×2532 · 310 kB</span></div><div class="row"><span>${IP(2)} clipboard</span><span class="faint">2048×1536 · 1.1 MB → resized to fit 2048</span></div><span class="bb">backspace on a chip removes it</span></div><div class="cbox`) })],
 ["images in the history", "your message keeps its chips, with the file name and size. no picture drawn in the terminal for now (later). main passes the images on with the work (⚠ to check: the marker must travel in the brief).",
  term({ feed: you('compare <span class="img">▣ login-mobile.png</span> with the design <span class="img">▣ clipboard</span>, the button is off') +
    `<div class="ind dim">▣ login-mobile.png 1170×2532 · ▣ clipboard 2048×1536</div>` +
