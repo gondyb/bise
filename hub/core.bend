@@ -367,9 +367,6 @@ def set_rt(-o: M.St, +cx: X.Cx<o>, +x: X.Rt) -> X.Cx<o>:
 def set_run(-o: M.St, +cx: X.Cx<o>, +n: String, +run: M.Run) -> X.Cx<o>:
   set_rt(o, cx, X.Rt.with_run(rt(o, cx, n), run))
 
-def set_turn(-o: M.St, +cx: X.Cx<o>, +n: String, +t: Maybe<&2, Nat>) -> X.Cx<o>:
-  set_rt(o, cx, X.Rt.with_turn(rt(o, cx, n), t))
-
 def has_agent(-o: M.St, +cx: X.Cx<o>, +n: String) -> Bool:
   Maybe.is_some(&2, M.Agent, M.get_agent(st(o, cx), n))
 
@@ -2248,6 +2245,7 @@ def in_tag(+t: String) -> In:
   Bool.pick(In, String.eq(t, "passthrough"), IPassthrough{},
   Bool.pick(In, String.eq(t, "focus"), IFocus{},
   Bool.pick(In, String.eq(t, "close"), IClose{},
+  # force_run: tests only (core_tests.rs, Hub::force_run), never sent by the daemon
   Bool.pick(In, String.eq(t, "force_run"), IForceRun{},
   INone{})))))))))))))))))))))))))
 
