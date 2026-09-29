@@ -33,6 +33,9 @@ pub(crate) struct App {
     pub(crate) feed_y: u16,
     /// the in-app selection in the feed
     pub(crate) feed_sel: Option<feedsel::FeedSel>,
+    /// the "type ask about it" popup over the selection is up: set when
+    /// a drag ends, dropped by a press or a scroll (quote.rs)
+    pub(crate) quote_hint: bool,
     // activity that arrived while pinned (shown by the back-to-bottom bar)
     pub(crate) unseen: usize,
     pub(crate) tail_visible: bool,
@@ -191,6 +194,7 @@ impl App {
             feed_x: 0,
             feed_y: 0,
             feed_sel: None,
+            quote_hint: false,
             unseen: 0,
             tail_visible: true,
             bottom_bar_rect: None,

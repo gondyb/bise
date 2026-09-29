@@ -228,6 +228,8 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     if kb.height > 0 {
         frame.render_widget(Paragraph::new(crate::keybar::line(app, kb.width)), kb);
     }
+    // last: the "type ask about it" popup over a selection in the history
+    crate::quote::draw_hint(app, frame);
 }
 
 /// The divider's text: the name of the agent you talk to, and on the
@@ -309,6 +311,10 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect, bar: Option<Rect>) {
         };
     }
     let down = app.scroll > 0;
+    // a scroll puts the "type ask about it" popup away (quote.rs)
+    if app.scroll != 0 {
+        app.quote_hint = false;
+    }
     let mut anchor = if app.follow {
         bottom_anchor(n, area_h, rows_of!())
     } else {

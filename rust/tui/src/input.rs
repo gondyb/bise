@@ -321,6 +321,7 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
             // click selects the word, a triple the row); the
             // release copies it, or toggles the section when
             // the mouse did not move
+            app.quote_hint = false;
             let Some(pos) = feed_pos(app, m.column, m.row, false) else {
                 app.feed_sel = None;
                 return;
@@ -359,6 +360,7 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
         MouseEventKind::Up(MouseButton::Left) if matches!(app.mouse.drag, Some(DragIn::Feed { .. })) => {
             let moved = matches!(app.mouse.drag, Some(DragIn::Feed { moved: true }));
             app.mouse.drag = None;
+            app.quote_hint = moved;
             if moved {
                 if let Some(t) = feed_selection_text(app).filter(|t| !t.is_empty()) {
                     copy_text(app, &t);
