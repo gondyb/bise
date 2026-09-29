@@ -270,7 +270,7 @@ pub(crate) const G_STARTING: &str = "·"; // dim, pulsing
 pub(crate) const G_WORKING: &str = "∿"; // pulsing: a breeze
 pub(crate) const G_WAITING: &str = "…"; // waiting on another agent
 pub(crate) const G_NEEDS_YOU: &str = "?"; // accent
-pub(crate) const G_DONE: &str = "♡";
+pub(crate) const G_DONE: &str = "✓"; // accent (BISE-100, was ♡); draw it with [`done_glyph`]
 pub(crate) const G_FAILED: &str = "✗"; // error
 pub(crate) const G_IDLE: &str = "○"; // dim
 pub(crate) const G_STOPPED: &str = "–"; // dim
@@ -308,7 +308,6 @@ pub(crate) const ASCII: &[(&str, &str)] = &[
     ("·", "."),
     ("∿", "~"),
     ("…", ";"),
-    ("♡", "*"),
     ("✗", "x"),
     ("○", "o"),
     ("–", "_"),
@@ -327,6 +326,7 @@ pub(crate) const ASCII: &[(&str, &str)] = &[
     ("⧗", "A"),
     ("⎇", "Y"),
     ("↪", "}"),
+    ("♡", "*"),
     // chrome and hints drawn outside the G_* constants (BISE-83 moves them)
     ("✦", "*"),
     ("◀", "<"),
@@ -406,6 +406,17 @@ pub(crate) fn glyph(g: &'static str) -> &'static str {
         return g;
     }
     ASCII.iter().find(|(u, _)| *u == g).map_or(g, |(_, a)| *a)
+}
+
+/// The done glyph: `✓` (accent), `*` under `BISE_ASCII=1`. Not
+/// `glyph(G_DONE)`: the table's `✓` is your read mark (`v`), and done
+/// keeps its own ASCII form (BISE-100; book §6).
+pub(crate) fn done_glyph() -> &'static str {
+    if ascii_mode() {
+        "*"
+    } else {
+        G_DONE
+    }
 }
 
 /// The mark of a cut text: `…`, or `...` under `BISE_ASCII=1` (QA 12: the
@@ -700,8 +711,12 @@ mod tests {
                 assert_eq!(other, *g, "{other:?} and {g:?} both read {:?}", glyph(g));
             }
         }
+        // done is the read mark's `✓`, drawn `*` in ASCII (BISE-100)
+        assert_eq!(done_glyph(), "*");
+        assert!(ALL_GLYPHS.iter().all(|g| glyph(g) != "*"), "* is done's");
         assert_eq!(ellipsis(), "...");
         ascii_cell::set(false);
+        assert_eq!(done_glyph(), "✓");
         assert_eq!(ellipsis(), "…");
     }
 

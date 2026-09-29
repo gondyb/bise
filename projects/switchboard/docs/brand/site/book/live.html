@@ -12,21 +12,21 @@
   .lead b { color:var(--text); font-weight:400; }
   /* framed app look (book §8): a faint frame on the terminal's edge, title and summary in its top border,
      the panel behind a faint rule, a divider above the composer pane with "you → main" and the state */
-  .term { background:var(--bg); border-radius:8px; width:124ch; max-width:100%; box-shadow:0 12px 40px rgba(0,0,0,.45); height:640px; padding:.5lh 1ch; }
+  .term { background:var(--bg); border-radius:8px; width:112ch; max-width:100%; box-shadow:0 12px 40px rgba(0,0,0,.45); height:640px; padding:.5lh 1ch; }
   .app { border:1px solid var(--faint); border-radius:7px; position:relative; display:flex; flex-direction:column; height:100%; }
   .head { position:absolute; top:-.55lh; left:1ch; right:1ch; display:flex; justify-content:space-between; }
   .head > span, .flabel > span { background:var(--bg); padding:0 1ch; }
   .grid { display:grid; grid-template-columns:1fr 32ch; flex:1; min-height:0; }
   .feed { padding:1lh 2ch 1lh 2ch; overflow-y:auto; scroll-behavior:smooth; }
-  .feed > * { max-width:91ch; }
+  .feed > * { max-width:76ch; }
   .panel { padding:1lh 2ch 0 2ch; overflow:hidden; border-left:1px solid var(--faint); }
   .row { display:flex; justify-content:space-between; white-space:nowrap; transition:background .4s; }
   .row.new { background:#2e2926; }
   .foot { border-top:1px solid var(--faint); position:relative; padding:1lh 2ch 0 2ch; }
   .flabel { position:absolute; top:-.55lh; left:1ch; right:1ch; display:flex; justify-content:space-between; color:var(--dim); }
-  .composer { display:flex; background:#1f1c1a; border-left:1px solid var(--faint); padding:1lh 2ch 1lh calc(2ch - 1px); min-height:4lh; max-width:91ch; box-sizing:border-box; align-items:flex-start; }
+  .composer { display:flex; border-left:1px solid var(--faint); padding-left:calc(2ch - 1px); min-height:2lh; align-items:flex-start; }
   .composer.typing { border-left-color:var(--acc); }
-  .hintrow { display:flex; justify-content:space-between; color:var(--dim); margin:0 0 .1lh; }
+  .hintrow { display:flex; justify-content:space-between; color:var(--dim); margin:1lh 0 .1lh; }
   .hintrow .k { color:var(--text); } .hintrow .ks > span + span { margin-left:3ch; }
   .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)} .err{color:var(--err)}
   .b { margin-top:1.6em; margin-top:1lh; } .who { display:inline-block; width:3ch; }
@@ -114,13 +114,13 @@ burst(19.5, 25, [
   ["mig-db", "ep-audit", "your index goes in migration 0042."], ["ep-audit", "mig-db", "ok, i'll wait for it."],
   ["sdk-ts", "ep-billing", "invoice amounts: cents or decimals?"], ["ep-billing", "sdk-ts", "cents, integers."],
 ]);
-at(25.6, { type: "msg", from: "auth-fix", to: "main", text: "done: added Secure to the session cookie, webkit green." });
+at(25.6, { type: "msg", from: "auth-fix", to: "main", text: "♡ done: added Secure to the session cookie, webkit green." });
 at(26.6, { type: "main", html: "auth-fix said done, but the chrome login test is red now. i sent it back." });
 at(26.7, { type: "agent", name: "auth-fix", status: "working" });
 at(27.2, { type: "msg", from: "main", to: "auth-fix", text: "chrome login is red after your change. fix it, rerun both." });
 burst(28, 33.5, [
   ["docs", "main", "? v1 or v2 for the examples?"], ["main", "docs", "v2, the brief says so."],
-  ["ep-keys", "main", "/keys done, 14 tests green."], ["sdk-py", "ep-users", "is /users/{id} 404 or 410 when deleted?"], ["ep-users", "sdk-py", "410."],
+  ["ep-keys", "main", "♡ /keys done, 14 tests green."], ["sdk-py", "ep-users", "is /users/{id} 404 or 410 when deleted?"], ["ep-users", "sdk-py", "410."],
 ]);
 at(34.2, { type: "main", html: 'docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span>' });
 burst(35, 40, [
@@ -132,24 +132,24 @@ at(41.2, { type: "msg", from: "main", to: "mig-db", text: "that's a product call
 at(41.8, { type: "card", agent: "mig-db", title: "mig-db needs you", body: "drop the v1 tables now, or keep them one release?" });
 burst(42.5, 47.5, [
   ["ep-orgs", "docs", "here: examples/orgs.json."], ["ep-audit", "mig-db", "0042 works on my side."],
-  ["sdk-ts", "main", "ts client generated, 62 tests."], ["ep-billing", "sdk-ts", "invoice pdf url is signed, 15 min."], ["sdk-py", "sdk-ts", "matching your naming now."],
+  ["sdk-ts", "main", "♡ ts client generated, 62 tests."], ["ep-billing", "sdk-ts", "invoice pdf url is signed, 15 min."], ["sdk-py", "sdk-ts", "matching your naming now."],
 ]);
 say(48, "keep them one release, we drop them in 0.6", 3.4);
 at(51.5, { type: "answer", agent: "mig-db" });
 at(52, { type: "msg", from: "main", to: "mig-db", text: "keep v1 tables one release; drop in 0.6." });
-at(53, { type: "msg", from: "auth-fix", to: "main", text: "done: Secure only on https. chrome and webkit green." });
-at(53.8, { type: "report", g: '<span class="acc">✓</span>', html: 'auth-fix is done. safari login fixed; chrome and webkit green. <span class="dim">▸ report</span>' });
+at(53, { type: "msg", from: "auth-fix", to: "main", text: "♡ done: Secure only on https. chrome and webkit green." });
+at(53.8, { type: "report", g: "♡", html: 'auth-fix is done. safari login fixed; chrome and webkit green. <span class="dim">▸ report</span>' });
 at(53.9, { type: "agent", name: "auth-fix", status: "done" });
 at(55, { type: "gap", minutes: 7 });
 burst(56, 64, [
-  ["ep-users", "main", "/users done, 21 tests green."], ["ep-orgs", "main", "/orgs done, 17 tests green."],
+  ["ep-users", "main", "♡ /users done, 21 tests green."], ["ep-orgs", "main", "♡ /orgs done, 17 tests green."],
   ["sdk-py", "ep-billing", "waiting on the invoice schema."], ["sdk-ts", "ep-billing", "same here."],
   ["ep-billing", "sdk-py", "schema in ~20 min."], ["docs", "ep-users", "is the 410 in the changelog?"], ["ep-users", "docs", "yes, under breaking."],
-  ["mig-db", "ep-audit", "0042 merged."], ["ep-audit", "main", "/audit done."],
+  ["mig-db", "ep-audit", "0042 merged."], ["ep-audit", "main", "♡ /audit done."],
 ]);
 [["ep-users", "done"], ["ep-orgs", "done"], ["ep-keys", "done"], ["ep-audit", "done"], ["sdk-py", "waiting"], ["sdk-ts", "waiting"]]
   .forEach(([n, s], i) => at(64.5 + i * 0.1, { type: "agent", name: n, status: s }));
-at(65, { type: "report", g: '<span class="acc">✓</span>', html: '4 endpoints are done: users, orgs, keys, audit. <span class="dim">▸ reports</span>' });
+at(65, { type: "report", g: "♡", html: '4 endpoints are done: users, orgs, keys, audit. <span class="dim">▸ reports</span>' });
 burst(66, 71, [["docs", "ep-billing", "invoice example when ready?"], ["ep-billing", "docs", "yes, with the schema."], ["mig-db", "main", "· backfill 60% done."]]);
 say(71.5, "where are we?", 1.5);
 at(74, { type: "main", html: "4 endpoints done, auth-fix done, nothing needs you. the 2 sdk agents wait on ep-billing for the invoice schema, about 20 min. docs and mig-db are working." });
@@ -157,7 +157,7 @@ let END = 78;
 EV.sort((a, b) => a.t - b.t);
 
 // ---------- state is a pure function of the time ----------
-const GLYPH = { starting: '<span class="pulse dim">·</span>', working: '<span class="pulse">∿</span>', waiting: "…", need: '<span class="acc">?</span>', done: '<span class="acc">✓</span>' };
+const GLYPH = { starting: '<span class="pulse dim">·</span>', working: '<span class="pulse">∿</span>', waiting: "…", need: '<span class="acc">?</span>', done: "♡" };
 const START = 14 * 3600 + 2 * 60;
 function stateAt(now) {
   const st = { items: [], agents: [], byName: {}, cards: [], offset: 0, typing: null };
@@ -264,7 +264,7 @@ function render(now, force = false) {
   const work = c("working") + c("starting");
   setH(document.getElementById("counts"), st.agents.length ? [
     work ? `<span class="pulse">∿</span> ${work} working` : "", c("waiting") ? `… ${c("waiting")} waiting` : "",
-    c("need") ? `<span class="acc">? ${c("need")} needs you</span>` : "", c("done") ? `<span class="acc">✓</span> ${c("done")} done` : ""].filter(Boolean).join(" · ") : "no agents yet");
+    c("need") ? `<span class="acc">? ${c("need")} needs you</span>` : "", c("done") ? `♡ ${c("done")} done` : ""].filter(Boolean).join(" · ") : "no agents yet");
   setH(document.getElementById("cards"), st.cards.map((k) =>
     `<div class="card enter"><span class="acc">?</span> ${k.title} <span class="dim">· ${k.body}</span></div>`).join(""));
   // the scripted "you" types only while your own composer is empty
@@ -363,8 +363,8 @@ function send(text) {
       add(2.8, { type: "agent", name: n, status: "working" });
       add(7, { type: "msg", from: n, to: "main", text: "· found where it lives, working on it." });
       add(9, { type: "msg", from: n, to: names[1] ?? "main", text: "heads-up, i may touch files near yours." });
-      add(15, { type: "msg", from: n, to: "main", text: "done, tests green." });
-      add(16, { type: "report", g: '<span class="acc">✓</span>', html: `${n} is done. <span class="dim">▸ report</span>` });
+      add(15, { type: "msg", from: n, to: "main", text: "♡ done, tests green." });
+      add(16, { type: "report", g: "♡", html: `${n} is done. <span class="dim">▸ report</span>` });
       add(16.1, { type: "agent", name: n, status: "done" });
     }
   }

@@ -6,7 +6,7 @@
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root { --bg:#141211; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --ok:#b9d99a;
-          --kw:#d7a6f0; --str:#b9d99a; --com:#857e74; --num:#f0b27a; --fn:#8fc4f0; --line:#2a2623; --raised:#1f1c1a; }
+          --kw:#d7a6f0; --str:#b9d99a; --com:#857e74; --num:#f0b27a; --fn:#8fc4f0; --line:#2a2623; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background:#0b0a09; color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:13px; line-height:1.55; padding:28px; }
   h1 { font-size:15px; } .lead { color:#8a8378; max-width:100ch; margin:6px 0 18px; }
@@ -17,11 +17,11 @@
   figcaption b { font-weight:700; } figcaption .n { color:var(--acc); margin-right:1ch; }
   figcaption p { color:#8a8378; margin-top:2px; }
   figcaption .warn { color:#f0b27a; }
-  .term { background:var(--bg); border-radius:8px; width:124ch; max-width:100%; overflow:hidden; box-shadow:0 12px 40px rgba(0,0,0,.45); position:relative; }
+  .term { background:var(--bg); border-radius:8px; width:112ch; max-width:100%; overflow:hidden; box-shadow:0 12px 40px rgba(0,0,0,.45); position:relative; }
   .term.narrow { width:64ch; }
   .term.wide { width:150ch; }
-  .ccol { width:91ch; max-width:100%; margin:0 auto; }            /* the centered reading column (book §8) */
-  .tbox { border:1px solid var(--faint); border-radius:5px; padding:.45lh 1.5ch .35lh; margin-top:1.3lh; max-width:91ch; position:relative; }
+  .ccol { width:79ch; max-width:100%; margin:0 auto; }            /* the centered reading column (book §8) */
+  .tbox { border:1px solid var(--faint); border-radius:5px; padding:.45lh 1.5ch .35lh; margin-top:1.3lh; max-width:79ch; position:relative; }
   .tbox.run { border-color:var(--text); } .tbox.fail { border-color:var(--err); }
   .tbox .ttl { position:absolute; top:-.8lh; left:1ch; background:var(--bg); padding:0 1ch; }
   .tbox .sep { border-top:1px solid var(--faint); margin:.35lh -1.5ch; }
@@ -37,7 +37,7 @@
   .grid { display:grid; grid-template-columns:1fr 32ch; }
   .term.narrow .grid { grid-template-columns:1fr; }
   .feed { padding:1lh 2ch 1lh 2ch; min-height:120px; }
-  .feed > * { max-width:91ch; }
+  .feed > * { max-width:76ch; }
   .feed pre.code, .feed pre.out { max-width:100ch; }
   .panel { padding:1lh 2ch 1lh 2ch; border-left:1px solid var(--faint); }
   .row { display:flex; justify-content:space-between; white-space:nowrap; }
@@ -49,13 +49,11 @@
   .flabel > span { background:var(--bg); padding:0 1ch; }
   .status { display:none; }
   .composer { display:flex; justify-content:space-between; margin-top:4px; }
-  /* the composer is raised: a tinted block (dark #1f1c1a, light #f4f0e8) from column 3 to F−4, the bar │ in
-     its first column, 2 tinted columns before the text and 2 after, 1 tinted row above and below the text */
-  .cbox { background:var(--raised); border-left:1px solid var(--faint); padding:1lh 2ch 1lh calc(2ch - 1px); max-width:91ch; box-sizing:border-box; }
+  .cbox { border-left:1px solid var(--faint); padding:0 0 0 calc(2ch - 1px); }
   .cbox.typing { border-left-color:var(--acc); }
   .cbox .ctext { min-height:2lh; white-space:pre-wrap; }
   .ph { color:var(--dim); }
-  .hintrow { display:flex; justify-content:space-between; color:var(--dim); margin-top:0; min-height:1lh; }
+  .hintrow { display:flex; justify-content:space-between; color:var(--dim); margin-top:1lh; min-height:1lh; }
   .hintrow .k { color:var(--text); }
   .hintrow .ks span + span { margin-left:3ch; }
   .queue { margin-top:4px; }
@@ -67,7 +65,7 @@
   pre { font:inherit; white-space:pre-wrap; }
   pre.code { border-left:1px solid var(--line); padding-left:2ch; margin:3px 0 0 1ch; }
   pre.out { border-left:1px solid var(--line); padding-left:2ch; margin:3px 0 0 1ch; color:var(--dim); }
-  .card { border:1px solid var(--acc); border-radius:6px; padding:6px 2ch; margin:8px 2ch 0; max-width:91ch; }
+  .card { border:1px solid var(--acc); border-radius:6px; padding:6px 2ch; margin:8px 2ch 0; max-width:80ch; }
   .card.soft { border-color:var(--line); }
   .card .opts span { margin-right:3ch; } .card .opts b { color:var(--acc); font-weight:400; }
   .pop { border:1px solid var(--line); border-radius:6px; margin:0 2ch 4px; padding:4px 1ch; background:#1b1816; max-width:70ch; }
@@ -112,11 +110,11 @@
 <script>
 // ---------- helpers ----------
 const S = {
-  work: '<span class="pulse">∿</span>', wait: '…', need: '<span class="acc">?</span>', done: '<span class="acc">✓</span>',
+  work: '<span class="pulse">∿</span>', wait: '…', need: '<span class="acc">?</span>', done: '♡',
   fail: '<span class="err">✗</span>', idle: '<span class="dim">○</span>', start: '<span class="pulse dim">·</span>', stop: '<span class="dim">–</span>',
 };
 function head(right) {
-  return `<div class="head"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim">~/acme · ${right ?? `${S.work} 3 working · <span class="acc">? 1 needs you</span> · <span class="acc">✓</span> 1 done`}</span></div>`;
+  return `<div class="head"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim">~/acme · ${right ?? `${S.work} 3 working · <span class="acc">? 1 needs you</span> · ♡ 1 done`}</span></div>`;
 }
 function panel(rows, extra = "") {
   return `<div class="panel"><div style="margin-bottom:4px">agents <span class="faint">· ⌥ + number</span></div>${rows.map((r, i) =>
@@ -151,10 +149,7 @@ function foot(status, composer, hints, queue = "") {
   const left = m ? `<span class="dim">you →</span> <span class="acc">${m[1]}</span>` : who(st);
   const right = m ? `<span class="dim">${m[2]}</span>` : "";
   const dflt = hints === undefined || hints === "";
-  // in an agent's view, the way back to main always comes first
-  const agentView = m && m[1] !== "main";
-  let h = dflt ? "⏎ send · @ agent · ⌥0-9 switch · / commands · ? help" : hints;
-  if (agentView && !/esc/.test(h)) h = "esc back to main · " + h.replace(" · / commands", "");
+  const h = dflt ? "⏎ send · @ agent · ⌥0-9 switch · / commands · ? help" : hints;
   const tip = dflt && !typing ? '<span class="dim">tip · ctrl+o opens everything folded</span>' : "";
   return `<div class="foot"><div class="flabel"><span>${left}</span>${right ? `<span>${right}</span>` : ""}</div>
   ${queue ? `<div class="queue">${queue}</div>` : ""}
@@ -202,8 +197,8 @@ const screens = [
    bise("on it: auth-fix takes safari, docs takes the api docs.") +
    bgs(bg("docs", "main", "v1 or v2 for the examples?"), bg("main", "docs", "v2, the brief says so.")) +
    bise(`docs asked v1 or v2; the brief says v2, so i answered. <span class="dim">▸ why</span>`) +
-   bgs(bg("auth-fix", "release", "heads-up, i'm touching web/src/auth."), bg("release", "auth-fix", "ok, i'll mention the fix."), bg("bench", "main", "done. p95 180 ms, 3 runs.")) +
-   `<div class="b"><span class="who acc">✓</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div>` +
+   bgs(bg("auth-fix", "release", "heads-up, i'm touching web/src/auth."), bg("release", "auth-fix", "ok, i'll mention the fix."), bg("bench", "main", "♡ done. p95 180 ms, 3 runs.")) +
+   `<div class="b"><span class="who">♡</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div>` +
    bgs(bg("api-v2", "main", "? i need the v2 schema file, it isn't in the repo.")) +
    need("api-v2 needs you", "the v2 schema file isn't in the repo. where is it?", "type the answer · alt+r send · ctrl+x later") })],
 
@@ -214,14 +209,14 @@ const screens = [
    bgs(bg("main", "docs", "the user changed their mind: use v1, not v2."), bg("docs", "main", "ok, switching the examples to v1.")) })],
 
 ["a busy hour, 30 agents", "the history is append-only and in arrival order: nothing is grouped by agent, nothing moves later. density comes from three things only: (1) a run of messages between agents folds into one dim line with its count; only the last run, at the bottom, can still grow; once a line for you arrives, the run is closed and never changes. (2) names sit in a fixed column, so the eye scans. (3) a faint time mark only after a pause. what's for you (levels 1 and 2) is never folded, so it stays readable at any volume.",
- term({ h: head(`${S.work} 27 working · <span class="acc">? 2 need you</span> · <span class="acc">✓</span> 11 done`),
+ term({ h: head(`${S.work} 27 working · <span class="acc">? 2 need you</span> · ♡ 11 done`),
    feed: `<div class="tsep">· 14:02 ·</div>` +
    you("ship the v2 api: endpoints, docs, sdk, migration, the lot.") +
    bise("that's 30 pieces. i split it: 12 endpoints, 8 sdk, 6 docs, 4 migration. starting them.") +
    fold(47, 30) +
    bise("the 12 endpoint agents agreed on one error format; i picked it for the sdk agents too.") +
    fold(23, 9) +
-   `<div class="b"><span class="who acc">✓</span>4 endpoints are done: users, orgs, keys, audit. <span class="dim">▸ reports</span></div>` +
+   `<div class="b"><span class="who">♡</span>4 endpoints are done: users, orgs, keys, audit. <span class="dim">▸ reports</span></div>` +
    `<div class="b l3">▾ 5 messages between 3 agents</div>` +
    bgc("sdk-py", "sdk-ts", "same pagination shape as you?") + bgc("sdk-ts", "sdk-py", "yes: cursor + limit, max 200.") +
    bgc("mig-db", "main", "? drop the v1 tables now or after a release?") + bgc("main", "mig-db", "asking the user.") +
@@ -232,8 +227,8 @@ const screens = [
    pan: panel([P.main, ...["ep-users","ep-orgs","ep-keys","ep-audit","ep-billing","ep-teams","sdk-py","sdk-ts","mig-db"].map((n, i) =>
      ({ g: i < 4 ? S.done : n === "mig-db" ? S.need : S.work, name: n, r: i < 4 ? "done" : n === "mig-db" ? '<span class="acc">you</span>' : `${20 - i}m` }))], '<div class="dim b">+ 21 more · ctrl+k scroll</div>') })],
 
-["reports in main", "each agent's report is one line; ▸ discloses it. ✓ done, ✗ failed, ? blocked, · progress.",
- term({ feed: `<div class="b"><span class="who acc">✓</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div>
+["reports in main", "each agent's report is one line; ▸ discloses it. ♡ done, ✗ failed, ? blocked, · progress.",
+ term({ feed: `<div class="b"><span class="who">♡</span>bench is done. p95 at 180 ms, nothing to fix. <span class="dim">▸ report</span></div>
    <pre class="out">ran the load test 3 times on staging.
 p50 42 ms · p95 180 ms · p99 410 ms (budget: p95 &lt; 250 ms)
 the slow tail is the cold cache on the first request.</pre>
@@ -242,7 +237,7 @@ the slow tail is the cold cache on the first request.</pre>
    <div class="b"><span class="who acc">?</span>docs is blocked: it needs the v2 schema file. <span class="dim">▸ card</span></div>` })],
 
 ["main sends work back", "main reads a \"done\", sees it isn't, and sends the agent back before bothering you.",
- term({ feed: bgs(bg("auth-fix", "main", "done: added Secure to the session cookie.")) +
+ term({ feed: bgs(bg("auth-fix", "main", "♡ done: added Secure to the session cookie.")) +
    bise(`auth-fix said done, but the webkit test still fails. i sent it back. <span class="dim">▸ report</span>`) +
    bgs(bg("main", "auth-fix", "the webkit test is red. fix it and rerun it.")) })],
 
@@ -261,7 +256,7 @@ the slow tail is the cold cache on the first request.</pre>
     ['<span class="err">↻</span>', "restart failed", "version 7f3a2c crashed on start; back on 81986cd."],
     ['–', "drop ideas?", "it has uncommitted work in notes/ideas.md.  y drop · n keep"],
     ['⇄', "overlap", "auth-fix and release both changed web/CHANGELOG.md."],
-    ['<span class="acc">✓</span>', "bench is done", "p95 at 180 ms, nothing to fix.  alt+r got it"],
+    ['♡', "bench is done", "p95 at 180 ms, nothing to fix.  alt+r got it"],
    ].map(([g, t, x]) => `<div class="card soft"><span class="${g.includes("acc") ? "" : ""}">${g}</span> ${t} <span class="dim">· ${x}</span></div>`).join("") })],
 
 ["a card, full screen", "kept as today (Gabriel): ctrl+f opens the card full screen, pgup/pgdn scroll it, ctrl+f or esc brings it back. prose still wraps at 76 columns.",
@@ -298,7 +293,7 @@ the slow tail is the cold cache on the first request.</pre>
    <div class="ind dim">▸ result · 2 items</div>
    <div class="b"><span class="who">±</span>edit web/src/auth/session.ts <span class="dim">✓ +3 −1 ▸</span></div>
    <div class="b">found it: safari drops SameSite=None cookies without Secure. added secure: true; the webkit test passes now.</div>
-   <div class="b"><span class="who acc">✓</span><span class="dim">turn done · 2m 10s</span></div>`,
+   <div class="b"><span class="who">♡</span><span class="dim">turn done · 2m 10s</span></div>`,
    pan: PANEL("auth-fix"), f: foot('auth-fix · idle · 210k / 1M tokens · 21% · shared folder') })],
 
 ["everything disclosed", "the same turn with every ▸ open: ctrl+o opens or closes everything folded at once (thinking, outputs, diffs), like Claude Code.",
@@ -336,7 +331,7 @@ src/auth/session.ts:31:  sameSite: "none",</pre>
 /billing  ep-billing  waiting</pre>` })],
 
 ["a table in a narrow terminal", "wider than 76 columns, a table may use up to 100 (the code width). still too wide: the widest column shrinks first, never below 8 columns or its longest word, and its text wraps inside the cell. when any row wraps, one empty line separates the rows, so each row stays one block.",
- term({ narrow: true, h: head(`${S.work} 1 · <span class="acc">✓</span> 2`), feed: bise("what they did today:") + `<pre class="tbl"><b>agent   </b>  <b>what it did           </b>  <b>status   </b>
+ term({ narrow: true, h: head(`${S.work} 1 · ♡ 2`), feed: bise("what they did today:") + `<pre class="tbl"><b>agent   </b>  <b>what it did           </b>  <b>status   </b>
 <span class="faint">────────  ──────────────────────  ─────────</span>
 auth-fix  added Secure to the     done
           session cookie; webkit
@@ -349,7 +344,7 @@ docs      waiting for your call   needs you
           on v1 or v2 examples</pre>`, f: foot("main · idle", undefined, "") })],
 
 ["a table that can't fit", "when the columns still can't fit (a column would drop under 8), the table turns into one block per row: the first cell is the title in bold, then each other column as a dim key and its value, keys padded to the longest; long values wrap under the value column.",
- term({ narrow: true, h: head(`${S.work} 1 · <span class="acc">✓</span> 1`), feed: bise("the agents, in detail:") + `<pre class="tbl"><b>auth-fix</b>
+ term({ narrow: true, h: head(`${S.work} 1 · ♡ 1`), feed: bise("the agents, in detail:") + `<pre class="tbl"><b>auth-fix</b>
   <span class="dim">status     </span>  done
   <span class="dim">age        </span>  12m
   <span class="dim">context    </span>  21%
@@ -380,7 +375,7 @@ docs      waiting for your call   needs you
  term({ feed: `<div class="ccol">` + you('the login breaks on safari. oh and draft the release note for 2.4<span class="tick read">✓✓</span>') +
    bise('on it: auth-fix takes the bug, release takes the note.') +
    bgs(bg("release", "auth-fix", "which version gets the fix?"), bg("auth-fix", "release", "2.4, landing in 10 min")) +
-   `<div class="b"><span class="who acc">✓</span>auth-fix is done · 6m · the cookie had SameSite=None without Secure; safari drops it.</div></div>`,
+   `<div class="b"><span class="who">♡</span>auth-fix is done · 6m · the cookie had SameSite=None without Secure; safari drops it.</div></div>`,
    pan: PANEL("main"), h: head(), f: foot(undefined, 'and ask docs to update the cookie page<span class="cur"></span>').replace(/<div class="cbox[\s\S]*$/, (m) => `<div class="grid" style="grid-template-columns:1fr 32ch"><div class="ccol">${m.replace(/<\/div>$/, "")}</div><div></div></div></div>`) }).replace('<div class="term">', '<div class="term wide">')],
 
 ["bash and typescript: a box", "each bash or typescript call is a box with its title in the top border. running: border in text color, ∿ pulsing, the script in full (BISE-11), then the last 15 lines of output as they stream. done: border faint; the output keeps its first 5 and last 9 lines around ▸ n more lines (15 rows); ▸ (or ctrl+o) opens all of it in place. failed: border and ✗ in the error color, the output keeps its last 15 lines (the error is at the end). other tools (edit, read) stay one line.",
@@ -533,7 +528,7 @@ shell     ctrl+\` show / hide</pre></div>` })],
    f: foot('main · idle', undefined, "y yes · n no · esc cancel") })],
 
 ["a narrow terminal", "under 70 columns the panel hides; the header keeps the counts.",
- term({ narrow: true, h: head(`${S.work} 3 · <span class="acc">? 1</span> · <span class="acc">✓</span> 1`), feed: you("where are we?") + bise("3 agents working. docs needs you: v1 or v2 for the api docs?"), f: foot("main · idle", undefined, "") })],
+ term({ narrow: true, h: head(`${S.work} 3 · <span class="acc">? 1</span> · ♡ 1`), feed: you("where are we?") + bise("3 agents working. docs needs you: v1 or v2 for the api docs?"), f: foot("main · idle", undefined, "") })],
 
 ["a long history", "older pages load when you scroll up; the feed never slows down (tested at 50k lines).",
  term({ feed: `<div class="dim">↑ loading older messages…</div>` + you("where are we?") + bise("same as an hour ago, plus release is done."), pan: PANEL() })],
@@ -550,7 +545,7 @@ document.getElementById("screens").innerHTML = screens.map(([t, p, html], i) =>
     ["›", "the composer prompt"], ['<span class="acc">│</span>', "your message (bar)"], ['<span class="acc">:*</span>', "main"], ["◇", "brief"], ['<span class="dim">∴</span>', "thinking"], ["$", "bash"], ["λ", "typescript"],
     ["↳", "a sub-call"], ['<span class="faint">✓</span>', "your message: the agent got it"], ['<span class="acc">✓✓</span>', "your message: read by the model"], ['<span class="img">▣</span>', "an image"], ["±", "file edit"], ["@", "agent to agent"], ['<span class="dim">≡</span>', "compacting"], ['<span class="dim">≡</span>', "compaction summary"], ['<span class="dim">▲</span>', "interrupted"],
     ['<span class="pulse">∿</span>', "working"], ['<span class="pulse dim">·</span>', "starting"], ["…", "waiting on an agent"], ['<span class="acc">?</span>', "needs you / blocked"],
-    ['<span class="acc">✓</span>', "done"], ['<span class="err">✗</span>', "failed"], ['<span class="dim">○</span>', "idle"], ['<span class="dim">–</span>', "stopped / drop"], ["⇄", "overlap"], ['<span class="err">↻</span>', "restart failed"],
+    ["♡", "done"], ['<span class="err">✗</span>', "failed"], ['<span class="dim">○</span>', "idle"], ['<span class="dim">–</span>', "stopped / drop"], ["⇄", "overlap"], ['<span class="err">↻</span>', "restart failed"],
     ['<span class="acc">•</span>', "unread"], ["ψ", "own worktree"], ['<span style="color:#f0b27a">Δ</span>', "building / on trial"],
   ].map(([g, t]) => `<div><span>${g}</span>${t}</div>`).join("")}</div></figure>`;
 document.getElementById("toc").innerHTML = screens.map(([t], i) => `<a href="#s${i + 1}">${String(i + 1).padStart(2, "0")} ${t}</a>`).join("");

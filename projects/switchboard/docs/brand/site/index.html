@@ -240,7 +240,7 @@
     <ul class="how">
       <li><span class="n">1</span><span><b>say it, and keep going.</b><span class="d">mid-thought, as often as you want. no prompt to craft, no workflow to design. bise is always listening.</span></span></li>
       <li><span class="n">2</span><span><b>bise starts the agents.</b><span class="d">one per thing, in the background, in your folder. they know about each other and sort things out quietly.</span></span></li>
-      <li><span class="n">3</span><span><b>you only hear what matters.</b><span class="d">real decisions come to you as a card. when something ships, you get a <span class="acc">✓</span>.</span></span></li>
+      <li><span class="n">3</span><span><b>you only hear what matters.</b><span class="d">real decisions come to you as a card. when something ships, you get a <span class="acc">♡</span>.</span></span></li>
     </ul>
   </div>
 </section>
@@ -435,11 +435,11 @@ async function run() {
   await type("2"); typed.textContent = "";
   card.classList.add("answered"); card.querySelector(".t").textContent = "✓ release · you said 3.0";
   await sleep(1400);
-  agent(1, `<span class="acc">✓</span>`, "auth-fix", "4m"); count();
-  add(`<span class="acc">✓</span> auth-fix done · the test waited on a timer; now it waits on the event.`, "b");
+  agent(1, `<span class="acc">♡</span>`, "auth-fix", "4m"); count();
+  add(`<span class="acc">♡</span> auth-fix done · the test waited on a timer; now it waits on the event.`, "b");
   await sleep(1900);
-  agent(2, `<span class="acc">✓</span>`, "release", "5m"); agent(3, `<span class="acc">✓</span>`, "api-bump", "5m"); count();
-  add(`<span class="acc">✓</span> release and api-bump done · 3.0 notes drafted, client on v3.`, "b");
+  agent(2, `<span class="acc">♡</span>`, "release", "5m"); agent(3, `<span class="acc">♡</span>`, "api-bump", "5m"); count();
+  add(`<span class="acc">♡</span> release and api-bump done · 3.0 notes drafted, client on v3.`, "b");
   await sleep(1400);
   await send("thanks");
   await sleep(500); main(":*");
@@ -464,7 +464,7 @@ const plays = {
     const d = await m.send("@auth-fix actually, don't touch the timeout. wait on the event.", true);
     await m.wait(1200); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`; await m.wait(700);
     m.line(`<span class="dim">@ auth-fix to you:</span> got it. reverting the timeout, waiting on the login event instead.`, "b"); await m.wait(2200);
-    m.line(`<span class="acc">✓</span> auth-fix done · 3m 40s`, "b"); await m.wait(3200);
+    m.line(`<span class="acc">♡</span> auth-fix done · 3m 40s`, "b"); await m.wait(3200);
   },
   async router(m) {
     m.line(`<span class="dim"><span class="pulse acc">∿</span> 4 working</span>`); await m.wait(900);
@@ -532,15 +532,15 @@ const plays = {
     m.line(`<span class="err">✗</span> api-bump stopped: the provider answered 503.`, "b"); await m.wait(1600);
     m.line(`<span class="acc">:*</span> api-bump stopped half-way. i started it again, from file 7.`, "b"); await m.wait(1400);
     m.line(`<span class="dim"><span class="pulse acc">∿</span> api-bump · 7 of 11 files…</span>`); await m.wait(1800);
-    m.line(`<span class="acc">✓</span> api-bump done · client on v3, tests green.`, "b"); await m.wait(3200);
+    m.line(`<span class="acc">♡</span> api-bump done · client on v3, tests green.`, "b"); await m.wait(3200);
   },
   async worktree(m) {
     const r = [`<span class="faint">0</span> <span class="acc">:*</span> main`, `<span class="faint">1</span> <span class="pulse acc">∿</span> auth-fix`, `<span class="faint">2</span> <span class="pulse acc">∿</span> release`];
     const rows = r.map((h) => m.line(h)); await m.wait(1200);
     m.line(`<span class="acc">:*</span> perf-bench needs a clean build. it gets its own worktree.`, "b"); await m.wait(900);
     const p = m.line(`<span class="faint">3</span> <span class="pulse acc">∿</span> perf-bench <span class="acc">ψ</span>`); await m.wait(2600);
-    p.innerHTML = `<span class="faint">3</span> <span class="acc">✓</span> perf-bench`;
-    m.line(`<span class="acc">✓</span> perf-bench done · merged back. worktree cleaned up.`, "b"); await m.wait(3400);
+    p.innerHTML = `<span class="faint">3</span> <span class="acc">♡</span> perf-bench`;
+    m.line(`<span class="acc">♡</span> perf-bench done · merged back. worktree cleaned up.`, "b"); await m.wait(3400);
   },
 };
 // each demo is a tiny terminal. only one plays at a time (the director

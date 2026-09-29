@@ -136,8 +136,17 @@ fn kind_look(kind: &str) -> (u8, &'static str, Color) {
         "restart" => (2, theme::G_RESTART_FAILED, theme::error()),
         "drop" => (3, theme::G_STOPPED, theme::text()),
         "overlap" => (4, theme::G_OVERLAP, theme::text()),
-        "done" => (5, theme::G_DONE, theme::text()),
+        "done" => (5, theme::done_glyph(), theme::text()),
         _ => (5, theme::G_CARD, theme::accent()),
+    }
+}
+
+/// The color of a card kind's glyph: its hue, except done's check, in
+/// accent on a plain title (BISE-100, book §6).
+fn glyph_color(kind: &str) -> Color {
+    match kind {
+        "done" => theme::accent(),
+        k => kind_look(k).2,
     }
 }
 
@@ -387,7 +396,8 @@ fn scroll_hint_short(scroll: usize, max_scroll: usize) -> String {
 fn title_line(c: &Card, pos: usize, count: usize, full: bool, width: usize) -> Line<'static> {
     use unicode_width::UnicodeWidthStr;
     let (_, glyph, color) = kind_look(&c.kind);
-    let head = format!(" {} {}", glyph, kind_title(&c.kind, &c.agent));
+    let mark = Span::styled(format!(" {} ", glyph), Style::default().fg(glyph_color(&c.kind)).add_modifier(Modifier::BOLD));
+    let head = kind_title(&c.kind, &c.agent);
     let mut meta: Vec<String> = Vec::new();
     if count > 1 {
         meta.push(format!("{} of {}", pos, count));
@@ -399,13 +409,14 @@ fn title_line(c: &Card, pos: usize, count: usize, full: bool, width: usize) -> L
     }
     let meta = format!(" · {} ", meta.join(" · "));
     let bold = Style::default().fg(color).add_modifier(Modifier::BOLD);
-    if head.width() + meta.width() <= width {
-        Line::from(vec![Span::styled(head, bold), Span::styled(meta, Style::default().fg(theme::dim()))])
+    let mark_w = mark.content.width();
+    if mark_w + head.width() + meta.width() <= width {
+        Line::from(vec![mark, Span::styled(head, bold), Span::styled(meta, Style::default().fg(theme::dim()))])
     } else {
-        Line::from(Span::styled(
-            format!("{} ", truncate_chars(&head, width.saturating_sub(2))),
-            bold,
-        ))
+        Line::from(vec![
+            mark,
+            Span::styled(format!("{} ", truncate_chars(&head, width.saturating_sub(2 + mark_w))), bold),
+        ])
     }
 }
 
@@ -531,7 +542,8 @@ pub(crate) fn close_items(app: &App) -> Vec<PopItem> {
                 || c.text.to_lowercase().contains(&q)
         })
         .map(|c| {
-            let (_, icon, color) = kind_look(&c.kind);
+            let (_, icon, _) = kind_look(&c.kind);
+            let color = glyph_color(&c.kind);
             let fill = format!("/close {} ", c.id);
             PopItem {
                 label: format!("#{}", c.id),
@@ -760,7 +772,7 @@ mod tests {
             ("restart", "↻ restart failed", Some(theme::error())),
             ("drop", "– drop t1?", None),
             ("overlap", "⇄ overlap", None),
-            ("done", "♡ t1 is done", None),
+            ("done", "✓ t1 is done", None),
         ];
         for (kind, title, hue) in cases {
             let mut app = bench::test_app();
@@ -777,7 +789,9 @@ mod tests {
                 }
                 None => {
                     assert_eq!(border, theme::faint(), "{} border", kind);
-                    assert_eq!(glyph, theme::text(), "{} glyph", kind);
+                    // done's check is accent on a plain title (BISE-100)
+                    let g = if kind == "done" { theme::accent() } else { theme::text() };
+                    assert_eq!(glyph, g, "{} glyph", kind);
                 }
             }
             let answer = if matches!(kind, "done" | "overlap") { "alt+r got it" } else { "alt+r answer with text" };

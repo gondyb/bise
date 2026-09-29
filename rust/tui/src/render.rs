@@ -507,7 +507,7 @@ pub(crate) fn card_parts(t: &str) -> Option<(&str, &str, &str)> {
 
 // a card in the history (book §9): a question or a blocker is level 1,
 // an accent bar `┃`, the bold accent title `? {name} needs you`, the
-// body in text; a done or failed card is one line for you (`♡`, `✗`).
+// body in text; a done or failed card is one line for you (`✓` accent, `✗`).
 // Answered (`closed`: the hub's word, book §10, §12), a level-1 card
 // fades in place: dim bar, dim title with ` · answered`, dim body; the
 // answer follows as its own line.
@@ -515,7 +515,10 @@ fn card_lines(t: &str, closed: &str, width: usize) -> Vec<Line<'static>> {
     let text_st = Style::default().fg(text());
     let (kind, name, body) = card_parts(t).unwrap_or(("question", "", t));
     match kind {
-        "done" => return glyph_line(G_DONE, text_st, format!("{} is done: {}", name, body), text_st, width),
+        "done" => {
+            let check = Style::default().fg(accent());
+            return glyph_line(done_glyph(), check, format!("{} is done: {}", name, body), text_st, width);
+        }
         k if k.contains("fail") => {
             return glyph_line(G_FAILED, Style::default().fg(error()), format!("{} failed: {}", name, body), text_st, width)
         }
@@ -915,12 +918,12 @@ pub(crate) fn is_brief(text: &str) -> bool {
     text.starts_with("# Task `")
 }
 
-/// A report is one line, `♡ bench: the summary ▸ report`; open, the rest
-/// of it under the rail. The glyph says the kind: `♡` done, `✗` failed,
+/// A report is one line, `✓ bench: the summary ▸ report`; open, the rest
+/// of it under the rail. The glyph says the kind: `✓` done (accent), `✗` failed,
 /// `?` blocked, `·` progress.
 fn report_lines(from: &str, kind: &str, body: &str, open: bool, width: usize) -> Vec<Line<'static>> {
     let (glyph, color, st) = match kind {
-        "done" => (G_DONE, text(), text()),
+        "done" => (done_glyph(), accent(), text()),
         k if k.contains("fail") => (G_FAILED, error(), text()),
         "blocked" => (G_NEEDS_YOU, accent(), text()),
         _ => (G_STARTING, dim(), dim()),

@@ -7,14 +7,14 @@ use unicode_width::UnicodeWidthStr;
 
 /// The status glyph of an agent and its color (book §6): `∿` pulses
 /// while it works, `·` while it starts; only "needs you" and a failure
-/// get a hue.
+/// get a hue, and done's check is accent (BISE-100).
 pub(super) fn glyph(status: &str, tick: u32) -> (&'static str, Color) {
     match status {
         "working" => working_frame(tick),
         "starting" => starting_frame(tick),
         "waiting" => (G_WAITING, text()),
         "blocked" => (G_NEEDS_YOU, accent()),
-        "done" => (G_DONE, text()),
+        "done" => (crate::theme::done_glyph(), accent()),
         "failed" => (G_FAILED, error()),
         "idle" => (G_IDLE, dim()),
         "stopped" | "archived" => (G_STOPPED, dim()),
@@ -232,11 +232,13 @@ fn counts(sb: &Sb) -> Option<[usize; 4]> {
 /// too wide, the least important counts go first ("needs you" stays, then
 /// working, waiting, done), shown in the §8 order.
 fn fit_counts(n: [usize; 4], short: bool, room: usize) -> Vec<Span<'static>> {
+    // (glyph, word, glyph color, text color): done's check is accent on
+    // dim words (BISE-100)
     let parts = [
-        (G_WORKING, "working", dim()),
-        (G_WAITING, "waiting", dim()),
-        (G_NEEDS_YOU, "needs you", accent()),
-        (G_DONE, "done", dim()),
+        (G_WORKING, "working", dim(), dim()),
+        (G_WAITING, "waiting", dim(), dim()),
+        (G_NEEDS_YOU, "needs you", accent(), accent()),
+        (crate::theme::done_glyph(), "done", accent(), dim()),
     ];
     let spans = |keep: &[usize], words: bool| -> Vec<Span<'static>> {
         let mut out: Vec<Span<'static>> = Vec::new();
@@ -244,8 +246,9 @@ fn fit_counts(n: [usize; 4], short: bool, room: usize) -> Vec<Span<'static>> {
             if !out.is_empty() {
                 out.push(Span::styled(" · ", Style::default().fg(dim())));
             }
-            let (g, word, color) = parts[k];
-            let t = if words { format!("{} {} {}", g, n[k], word) } else { format!("{} {}", g, n[k]) };
+            let (g, word, g_color, color) = parts[k];
+            let t = if words { format!(" {} {}", n[k], word) } else { format!(" {}", n[k]) };
+            out.push(Span::styled(g, Style::default().fg(g_color)));
             out.push(Span::styled(t, Style::default().fg(color)));
         }
         out
@@ -269,7 +272,7 @@ fn fit_counts(n: [usize; 4], short: bool, room: usize) -> Vec<Span<'static>> {
 
 impl Sb {
     /// The header row (book §8): `bise :*` on the left; on the right the
-    /// non-zero counts `∿ 3 working · … 1 waiting · ? 1 needs you · ♡ 1
+    /// non-zero counts `∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1
     /// done` (`? … needs you` in accent), shortened to `∿ 3 · ? 1` when
     /// `short` (no panel), or `no agents yet`. A method, so `ui.rs` reaches
     /// it through `app.sb` (the `panel` module is private to `sb`).
@@ -1261,19 +1264,19 @@ mod chrome_tests {
         // top edge, the path and the counts ending at F - 4
         let head = &rows[0];
         assert!(head.starts_with("╭─ bise :* ─"), "{:?}", head);
-        let right = "bench · ∿ 3 working · … 1 waiting · ? 1 needs you · ♡ 1 done";
+        let right = "bench · ∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done";
         assert!(head.ends_with(&format!(" {} ─╮", right)), "{:?}", head);
         assert_eq!(head.chars().count(), 120, "{:?}", head);
         assert!(!rows.iter().any(|r| r.contains("Switchboard")));
         // 60 columns, no panel: the short counts
         let rows = draw(&mut app, 60, 20);
-        assert!(rows[0].ends_with(" bench · ∿ 3 · … 1 · ? 1 · ♡ 1 ─╮"), "{:?}", rows[0]);
+        assert!(rows[0].ends_with(" bench · ∿ 3 · … 1 · ? 1 · ✓ 1 ─╮"), "{:?}", rows[0]);
         // too narrow for the path: it goes first
         let rows = draw(&mut app, 60, 20);
         assert!(rows[0].starts_with("╭─ bise :* ─"), "{:?}", rows[0]);
         // under 60 columns: no frame, the header row with margins of 1
         let rows = draw(&mut app, 59, 20);
-        let summary = "bench · ∿ 3 · … 1 · ? 1 · ♡ 1";
+        let summary = "bench · ∿ 3 · … 1 · ? 1 · ✓ 1";
         assert_eq!(rows[0], format!(" bise :*{}{}", " ".repeat(59 - 8 - summary.chars().count() - 1), summary));
         // no agents: the words
         let mut app = with_main();
@@ -1289,10 +1292,10 @@ mod chrome_tests {
         let app = busy();
         let sb = app.sb.as_ref().unwrap();
         let text = |room: usize, short: bool| sb.summary(room, short).iter().map(|s| s.content.to_string()).collect::<String>();
-        let full = "∿ 3 working · … 1 waiting · ? 1 needs you · ♡ 1 done";
+        let full = "∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done";
         assert_eq!(text(100, false), format!("bench · {}", full));
         assert_eq!(text(full.chars().count() + 7, false), full);
-        assert_eq!(text(full.chars().count() - 1, false), "∿ 3 · … 1 · ? 1 · ♡ 1");
+        assert_eq!(text(full.chars().count() - 1, false), "∿ 3 · … 1 · ? 1 · ✓ 1");
     }
 
     /// Colors of the header: `:*` and "needs you" in accent, the rest dim.

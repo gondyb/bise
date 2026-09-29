@@ -701,7 +701,7 @@ fn preview_lines(p: &Palette, m: Mode) -> Vec<Line<'static>> {
             ps(&format!("{} auth-fix → main  found it", theme::glyph(theme::G_MSG)), p.dim),
         ]),
         Line::raw(""),
-        Line::from(vec![ps(&who(theme::glyph(theme::G_DONE)), p.text), ps("auth-fix is done.", p.text)]),
+        Line::from(vec![ps(&who(theme::done_glyph()), p.accent), ps("auth-fix is done.", p.text)]),
     ]
 }
 

@@ -362,7 +362,7 @@ pub(crate) fn ev_visible(ev: &Ev, debug: bool) -> bool {
 /// BISE-90 (book §9, §12, mockup "reports in main"): an agent's report
 /// and the card the hub opens for it are one entry. Blocked keeps the
 /// card (level 1, it fades once answered); done and failed keep the
-/// report line (`♡ bench: … ▸ report`). Whichever comes second takes the
+/// report line (`✓ bench: … ▸ report`). Whichever comes second takes the
 /// place of the first, or is dropped; `Some(false)`: nothing appended.
 fn merge_report_and_card(events: &mut [Ev], cache: &mut [Option<EventRows>], ev: &Ev) -> Option<bool> {
     fn kind_of(k: &str) -> Option<&'static str> {

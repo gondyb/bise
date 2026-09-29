@@ -578,11 +578,11 @@ fn agent_msg(from: &str, text: &str) -> Ev {
 fn a_report_is_one_line_until_opened() {
     let mut ev = agent_msg("bench", "[report: done] p95 at 180 ms, nothing to fix.\n- ran 3 times on staging\n- p99 410 ms");
     let closed: Vec<String> = text_of(&ev, 100).into_iter().filter(|r| !r.is_empty()).collect();
-    assert_eq!(closed, vec![" ♡ bench: p95 at 180 ms, nothing to fix. ▸ report".to_string()]);
+    assert_eq!(closed, vec![" ✓ bench: p95 at 180 ms, nothing to fix. ▸ report".to_string()]);
     let mut cache: Vec<Option<EventRows>> = vec![None];
     assert!(toggle_event(std::slice::from_mut(&mut ev), &mut cache, 0));
     let open: Vec<String> = text_of(&ev, 100).into_iter().filter(|r| !r.is_empty()).collect();
-    assert_eq!(open[0], " ♡ bench: p95 at 180 ms, nothing to fix. ▾ report");
+    assert_eq!(open[0], " ✓ bench: p95 at 180 ms, nothing to fix. ▾ report");
     assert!(open.iter().any(|r| r.starts_with(" │ ") && r.contains("p99 410 ms")), "{open:#?}");
     // the kind gives the glyph; a one-line report has no ▸
     let failed = text_of(&agent_msg("deploy", "[report: failed] the staging token expired."), 100);
@@ -756,7 +756,7 @@ fn a_card_is_level_one() {
     let blocked = rows_text(&ev_rows(&Ev::Card { text: "#4 blocked @api-v2 : the schema file isn't in the repo".into(), closed: String::new() }, 0, 100));
     assert_eq!(blocked[0], " ┃ ? api-v2 needs you");
     let done = rows_text(&ev_rows(&Ev::Card { text: "#3 done @bench : p95 at 180 ms".into(), closed: String::new() }, 0, 100));
-    assert_eq!(done, vec![" ♡ bench is done: p95 at 180 ms".to_string()]);
+    assert_eq!(done, vec![" ✓ bench is done: p95 at 180 ms".to_string()]);
 }
 
 // BISE-31 (book §10, §12): an answered card fades in place — dim bar,
@@ -800,7 +800,7 @@ fn an_answered_card_fades_in_place() {
     // a done card is a line for you: it does not fade
     push_event(&mut events, &mut cache, card("#4 done @bench : p95 at 180 ms"));
     assert!(!push_event(&mut events, &mut cache, Ev::CardClosed { id: 4, res: "vue".into() }));
-    assert_eq!(rows_text(&ev_rows(events.last().unwrap(), 0, 100)), vec![" ♡ bench is done: p95 at 180 ms".to_string()]);
+    assert_eq!(rows_text(&ev_rows(events.last().unwrap(), 0, 100)), vec![" ✓ bench is done: p95 at 180 ms".to_string()]);
     // not in the feed (an older page, or a done card that became its
     // report line, BISE-90): nothing is appended
     let n = events.len();
@@ -1066,7 +1066,7 @@ fn whats_for_you_matches_the_mockup() {
         Ev::Answered { agent: "docs".into(), question: "v1 or v2 for the examples?".into(), answer: "v2".into(), why: "the brief says v2.".into(), open: false },
         l3("auth-fix", "release", "heads-up, i'm touching web/src/auth."),
         l3("release", "auth-fix", "ok, i'll mention the fix."),
-        l3("bench", "main", "♡ done. p95 180 ms, 3 runs."),
+        l3("bench", "main", "✓ done. p95 180 ms, 3 runs."),
         Ev::AgentMsg { from: "bench".into(), to: String::new(), text: "[report: done] p95 at 180 ms, nothing to fix.\nran it 3 times".into(), level: 3, id: String::new(), open: false, fold: false },
         l3("api-v2", "main", "? i need the v2 schema file, it isn't in the repo."),
         Ev::Card { text: "#4 question @api-v2 : the v2 schema file isn't in the repo. where is it?".into(), closed: String::new() },
@@ -1086,9 +1086,9 @@ fn whats_for_you_matches_the_mockup() {
         "",
         " │ @ auth-fix  → release   heads-up, i'm touching web/src/auth.",
         " │ @ release   → auth-fix  ok, i'll mention the fix.",
-        " │ @ bench     → main      ♡ done. p95 180 ms, 3 runs.",
+        " │ @ bench     → main      ✓ done. p95 180 ms, 3 runs.",
         "",
-        " ♡ bench: p95 at 180 ms, nothing to fix. ▸ report",
+        " ✓ bench: p95 at 180 ms, nothing to fix. ▸ report",
         "",
         " │ @ api-v2    → main      ? i need the v2 schema file, it isn't in the repo.",
     ];
@@ -1139,7 +1139,7 @@ fn a_busy_hour_matches_the_mockup() {
         "".into(),
         " │ ▸ 23 messages between 9 agents".into(),
         "".into(),
-        " ♡ ep-users: 4 endpoints are done: users, orgs, keys, audit. ▸ report".into(),
+        " ✓ ep-users: 4 endpoints are done: users, orgs, keys, audit. ▸ report".into(),
         "".into(),
         " │ ▾ 5 messages between 6 agents".into(),
         " │ @ sdk-py    → sdk-ts    same pagination shape as you?".into(),
@@ -1330,7 +1330,7 @@ fn an_open_report_hangs_its_rows() {
     };
     let rows = rows_text(&ev_rows(&ev, 0, 60));
     assert!(rows.len() >= 2, "{rows:#?}");
-    assert!(rows[0].starts_with(" ♡ bench: p95"), "{rows:#?}");
+    assert!(rows[0].starts_with(" ✓ bench: p95"), "{rows:#?}");
     for r in &rows[1..] {
         assert!(r.starts_with("   ") && !r.starts_with("    "), "{r:?} in {rows:#?}");
     }
