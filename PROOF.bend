@@ -536,6 +536,15 @@ def Laws.exec_of_real_199_fails():
 def Laws.bg_wrapper_atomic_slot_allocation():
   {==}
 
+def Laws.bg_wrapper_keeps_finished_results():
+  {==}
+
+def Laws.bg_wrapper_output_back_bounded():
+  {==}
+
+def Laws.bg_wrapper_unsets_repl_env():
+  {==}
+
 def Laws.bg_wrapper_output_capped():
   {==}
 

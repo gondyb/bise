@@ -12,9 +12,12 @@ import Base
 
 # generous bounds: the bash tool hands long commands to the background
 # itself, and the tools cap what they show the model; these only stop a
-# runaway child from holding the REPL forever
+# runaway child from holding the REPL forever. The output bound stays
+# well under what the REPL can hold as one String: a 100 MiB output
+# crashed it ("bend: memory fault"), 75 MB passed; past 32 MiB the call
+# fails cleanly instead (the bash tool itself hands back at most 1 MiB)
 def max_output() -> U32:
-  268435456
+  33554432
 
 def timeout_ms() -> U32:
   86400000

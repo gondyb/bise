@@ -1202,11 +1202,12 @@ law mcp_bootstrap_url_parity:
 law bg_wrapper_script:
   {Sh.bg_wrap("whoami", "/tmp/bend-bg-0", 30)
     == "BG=/tmp/bend-bg-0
+unset BEND_SESSION_FILE BEND_CONTEXT_FILE BEND_WIRE_LOG BEND_REPL_PORT BEND_EXTRA_PROMPT BEND_CONTINUE BEND_CRASH_NOTE BEND_DEBUG_DIR
 mkdir -p $BG
 i=0
 f=0
-while ! mkdir $BG/$i.slot 2>/dev/null; do
-  if [ -d $BG/$i.slot ]; then i=$((i+1)); else f=$((f+1)); fi
+while [ -e $BG/$i.out ] || [ -e $BG/$i.rc ] || ! mkdir $BG/$i.slot 2>/dev/null; do
+  if [ -e $BG/$i.slot ] || [ -e $BG/$i.out ] || [ -e $BG/$i.rc ]; then i=$((i+1)); else f=$((f+1)); fi
   if [ $f -ge 20 ]; then echo \"background: cannot create a slot in /tmp/bend-bg-0 (disk full or not writable?)\"; rm -f \"$0\"; exit 1; fi
 done
 mkfifo $BG/$i.in 2>/dev/null
@@ -1237,7 +1238,7 @@ wait $r
 s=$?
 if [ ! -d /tmp/bend-bg-0 ]; then echo \"background: the bg dir vanished before the exit code was recorded: /tmp/bend-bg-0\"; rm -f \"$0\"; exit 1; fi
 if [ ! -f /tmp/bend-bg-0/$i.out ]; then echo \"background: could not write /tmp/bend-bg-0/$i.out (disk full?)\"; fi
-cat $BG/$i.out 2>/dev/null
+n=$(wc -c < $BG/$i.out 2>/dev/null); n=$((${n:-0}+0)); if [ $n -gt 1048576 ]; then echo \"[bash: the output is $n bytes; only its first 1048576 follow. The rest is lost: redirect a big output to a file and read it in parts]\"; head -c 1048576 $BG/$i.out; echo; else cat $BG/$i.out 2>/dev/null; fi
 if [ ! -s /tmp/bend-bg-0/$i.rc ]; then echo \"background: could not write /tmp/bend-bg-0/$i.rc (disk full?) - the output above may be incomplete\"; fi
 rm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc 2>/dev/null
 rmdir $BG/$i.slot 2>/dev/null
@@ -1430,9 +1431,37 @@ law bg_rc_guard_names_the_dir:
 law bg_wrapper_atomic_slot_allocation:
   {Bool.and(
      String.contains(Sh.bg_wrap("x", "/d", 5),
-       "while ! mkdir $BG/$i.slot 2>/dev/null; do
-  if [ -d $BG/$i.slot ]; then i=$((i+1)); else f=$((f+1)); fi"),
+       "|| ! mkdir $BG/$i.slot 2>/dev/null; do
+  if [ -e $BG/$i.slot ] || [ -e $BG/$i.out ] || [ -e $BG/$i.rc ]; then i=$((i+1)); else f=$((f+1)); fi"),
      String.contains(Sh.bg_wrap("x", "/d", 5), Sh.bg_slot_fail("/d")))
+    == True{} : Bool}
+
+# LAW: a slot that still holds a finished job's results (.out, .rc) is
+# never handed to the next command: recycling it truncated the job's
+# output, and a next command that cat'd that .out fed its own output
+# back into itself up to the ulimit (a 100 MiB result: "bend: memory
+# fault" in three agents).
+law bg_wrapper_keeps_finished_results:
+  {String.starts_with(Sh.bg_slot_loop(),
+     "while [ -e $BG/$i.out ] || [ -e $BG/$i.rc ] || ")
+    == True{} : Bool}
+
+# LAW: what the REPL reads back is bounded at 1 MiB, with a line that
+# gives the real size (the REPL died on a 100 MiB String).
+law bg_wrapper_output_back_bounded:
+  {Bool.and(String.eq(Sh.bg_out_max(), "1048576"),
+     Bool.and(String.contains(Sh.bg_cat_out("/d"), "head -c 1048576 $BG/$i.out"),
+       String.contains(Sh.bg_wrap("x", "/d", 5), Sh.bg_cat_out("/d"))))
+    == True{} : Bool}
+
+# LAW: the command never inherits the REPL's private environment (its
+# session file, wire log, context file, port): a REPL started from an
+# agent's shell wrote its turns into the live agent's wire log.
+law bg_wrapper_unsets_repl_env:
+  {Bool.and(String.contains(Sh.bg_wrap("x", "/d", 5),
+       "
+unset BEND_SESSION_FILE BEND_CONTEXT_FILE BEND_WIRE_LOG BEND_REPL_PORT "),
+     Bool.not(String.contains(Sh.bg_unset_private(), "SB_SOCKET")))
     == True{} : Bool}
 
 # LAW: the runner caps the process's file writes (ulimit -f 102400 =

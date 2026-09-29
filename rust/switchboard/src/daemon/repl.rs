@@ -87,6 +87,15 @@ fn err_tail(err_path: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// The stderr file of a new REPL process. The previous process's goes
+/// to `repl.err.1`: an exit reason reads the last line of `repl.err`,
+/// and an old crash line there was reported again for every later exit
+/// ("signal: 15 (SIGTERM) · bend: memory fault", BISE-122).
+fn fresh_err(err_path: &Path) -> std::io::Result<std::fs::File> {
+    let _ = std::fs::rename(err_path, err_path.with_extension("err.1"));
+    std::fs::File::create(err_path)
+}
+
 /// The REPL's output, from its wire log (the REPL appends every batch
 /// there before sending it): complete lines from `offset` on, until the
 /// connection closes (the REPL died, or was killed). The socket is only
@@ -222,10 +231,7 @@ pub(super) fn supervise(
         Ok(f) => f,
         Err(e) => return gone(format!("log : {}", e)),
     };
-    let err = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&err_path);
+    let err = fresh_err(&err_path);
     cmd.stdin(Stdio::null()).stdout(Stdio::from(log));
     match err {
         Ok(f) => cmd.stderr(Stdio::from(f)),
@@ -316,4 +322,24 @@ pub(super) fn supervise(
     };
     log_line(&paths, &format!("repl {} exited: {}", dir, reason));
     gone(reason);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_new_repl_does_not_inherit_the_last_crash_line() {
+        let d = std::env::temp_dir().join(format!("sb-err-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&d);
+        let err = d.join("repl.err");
+        std::fs::write(&err, "bend: memory fault (machine stack overflow?)\n").unwrap();
+        drop(fresh_err(&err).unwrap());
+        assert_eq!(err_tail(&err), "");
+        assert_eq!(
+            std::fs::read_to_string(d.join("repl.err.1")).unwrap(),
+            "bend: memory fault (machine stack overflow?)\n"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }

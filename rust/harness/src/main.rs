@@ -590,6 +590,13 @@ fn main() -> std::io::Result<()> {
             .open(&err_path)?;
         let err_start = std::fs::metadata(&err_path).map(|m| m.len()).unwrap_or(0);
         let mut cmd = Command::new(&repl_bin);
+        // a harness started from an agent's shell (a scripted test) must
+        // not write into that agent: its wire log, context, role, sb
+        // identity belong to the agent's own REPL (once: a scripted REPL
+        // wrote "Program complete." turns into a live agent's wire log)
+        for v in HUB_ONLY_VARS {
+            cmd.env_remove(v);
+        }
         cmd.env("BEND_REPL_PORT", repl_port.to_string())
             // the REPL starts its plugins bridge with this binary
             .env("BEND_HARNESS_BIN", std::env::current_exe().unwrap_or_default())
@@ -780,6 +787,22 @@ fn main() -> std::io::Result<()> {
         }
     }
 }
+
+/// The variables the Switchboard hub gives an agent's REPL: they name
+/// that agent (its wire log, context file, role, workdir, sb identity).
+/// The harness's own REPL never inherits them from the shell that
+/// started it (BISE-122); it sets BEND_SESSION_FILE and BEND_REPL_PORT
+/// itself (and BEND_CONTINUE, from its own --continue: not in this list).
+const HUB_ONLY_VARS: [&str; 8] = [
+    "BEND_WIRE_LOG",
+    "BEND_CONTEXT_FILE",
+    "BEND_EXTRA_PROMPT",
+    "BEND_WORKDIR",
+    "SB_SOCKET",
+    "SB_AGENT",
+    "SB_TASK",
+    "SB_PORT_OFFSET",
+];
 
 const MAX_CRASH_RESTARTS: usize = 5;
 // a generation that lived longer than this was not a crash loop

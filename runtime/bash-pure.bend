@@ -263,6 +263,50 @@ def with_workdir.pick(empty: Bool, +dir: String, +command: String)
 def with_workdir(+dir: String, +command: String) -> String:
   with_workdir.pick(String.is_empty(dir), dir, command)
 
+# ---- the REPL's private environment stays in the REPL ----
+# The hub (and the harness) hand the REPL its session file, wire log,
+# context file, port...: they belong to THIS process. A command that
+# inherits them and starts another REPL (a scripted test run from an
+# agent's shell) makes that REPL write its turns into the live agent's
+# wire log and session (once: the scripted plan's "Program complete."
+# and "scripted provider failure" landed in a live agent's transcript).
+# The command runs without them; SB_SOCKET/SB_AGENT stay (the sb CLI
+# needs them), and a harness drops those itself for its child.
+def bg_unset_private() -> String:
+  "unset BEND_SESSION_FILE BEND_CONTEXT_FILE BEND_WIRE_LOG BEND_REPL_PORT BEND_EXTRA_PROMPT BEND_CONTINUE BEND_CRASH_NOTE BEND_DEBUG_DIR"
+
+# ---- slot allocation never recycles a slot that still holds results ----
+# A background command that ends frees its .slot but KEEPS its .out and
+# .rc for the agent to read. A slot is free only once those are gone:
+# recycling it earlier truncated the job's output (the next command's
+# own > <id>.out), and a next command that cat'd <id>.out after printing
+# anything read its own output file back into itself until ulimit -f
+# stopped it: a 100 MiB tool result that killed the REPL ("bend: memory
+# fault", three agents in one hour, each cat'ing the .out of a finished
+# background cp).
+def bg_slot_loop() -> String:
+  "while [ -e $BG/$i.out ] || [ -e $BG/$i.rc ] || ! mkdir $BG/$i.slot 2>/dev/null; do"
+
+def bg_slot_skip() -> String:
+  "  if [ -e $BG/$i.slot ] || [ -e $BG/$i.out ] || [ -e $BG/$i.rc ]; then i=$((i+1)); else f=$((f+1)); fi"
+
+# ---- what the REPL reads back is bounded ----
+# The REPL turns the whole output into a String before it caps what the
+# model sees (Xp.cap_out, 20000 chars); a 100 MiB output crashes it
+# (measured: 75 MB passes, 100 MiB is "bend: memory fault"). The
+# wrapper hands back at most bg_out_max() bytes, after a line that says
+# how big the output was.
+def bg_out_max() -> String:
+  "1048576"
+
+def bg_cat_out(+bg: String) -> String:
+  String.append("n=$(wc -c < $BG/$i.out 2>/dev/null); n=$((${n:-0}+0)); if [ $n -gt ",
+    String.append(bg_out_max(),
+      String.append(" ]; then echo \"[bash: the output is $n bytes; only its first ",
+        String.append(bg_out_max(),
+          String.append(" follow. The rest is lost: redirect a big output to a file and read it in parts]\"; head -c ",
+            String.append(bg_out_max(), " $BG/$i.out; echo; else cat $BG/$i.out 2>/dev/null; fi"))))))
+
 # ---- the wrapper: one line per generated shell statement ----
 def bg_wrap.seg(+a: String, +b: String) -> String:
   String.append(a, String.append("\n", b))
@@ -277,11 +321,12 @@ def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
   +niter = bg_poll_iters(after)
   +sent = bg_sentinel(command)
   bg_wrap.seg(String.append("BG=", bg),
+  bg_wrap.seg(bg_unset_private(),
   bg_wrap.seg("mkdir -p $BG",
   bg_wrap.seg("i=0",
   bg_wrap.seg("f=0",
-  bg_wrap.seg("while ! mkdir $BG/$i.slot 2>/dev/null; do",
-  bg_wrap.seg("  if [ -d $BG/$i.slot ]; then i=$((i+1)); else f=$((f+1)); fi",
+  bg_wrap.seg(bg_slot_loop(),
+  bg_wrap.seg(bg_slot_skip(),
   bg_wrap.seg(bg_slot_fail(bg),
   bg_wrap.seg("done",
   bg_wrap.seg("mkfifo $BG/$i.in 2>/dev/null",
@@ -320,10 +365,10 @@ def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
   bg_wrap.seg("s=$?",
   bg_wrap.seg(bg_rc_guard(bg),
   bg_wrap.seg(bg_write_note("! -f", bg, ".out", " (disk full?)"),
-  bg_wrap.seg("cat $BG/$i.out 2>/dev/null",
+  bg_wrap.seg(bg_cat_out(bg),
   bg_wrap.seg(bg_write_note("! -s", bg, ".rc",
     " (disk full?) - the output above may be incomplete"),
   bg_wrap.seg("rm -f $BG/$i.in $BG/$i.out $BG/$i.pid $BG/$i.cmd $BG/$i.rc 2>/dev/null",
   bg_wrap.seg("rmdir $BG/$i.slot 2>/dev/null",
   bg_wrap.seg("rm -f \"$0\"",
-  "exit $s")))))))))))))))))))))))))))))))))))))))))
+  "exit $s"))))))))))))))))))))))))))))))))))))))))))
