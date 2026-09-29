@@ -567,6 +567,28 @@ def any_from_user(xs: List<&2, M.Msg>) -> Bool:
     case Con{+h, +t}:
       String.eq(M.Msg.from(h), M.USER()) || any_from_user(t)
 
+def leftover_at.go(m: Maybe<&2, M.MSt>) -> Bool:
+  match m:
+    case Some{M.Queued{+r}}:
+      String.eq(r, "steer_leftover")
+    case _:
+      False{}
+
+# a steer_leftover was steered in a turn that never read it: its feed line
+# was written then (qa-explore bug A)
+def leftover_at(+s: M.St, +id: Nat) -> Bool:
+  leftover_at.go(M.state_of(s, id))
+
+# the feed line of a delivered message: once, when it is first handed over
+def deliver.line(-o: M.St, again: Bool, you: Bool, +cx: X.Cx<o>, +name: String, +m: M.Msg) -> X.Cx<o>:
+  match again you:
+    case True{} _:
+      cx
+    case False{} True{}:
+      line(o, cx, name, "you", M.Msg.text(m))
+    case False{} False{}:
+      line(o, cx, name, "msg-in", cat([M.Msg.from(m), " ", mid(M.Msg.id(m)), " : ", M.Msg.text(m)]))
+
 def deliver_each(-o: M.St, batch: List<&2, M.Msg>, +cx: X.Cx<o>, +name: String, +acc: List<&2, J.Json>) -> X.Cx<o> & List<&2, J.Json>:
   match batch:
     case Nil{}:
@@ -575,9 +597,7 @@ def deliver_each(-o: M.St, batch: List<&2, M.Msg>, +cx: X.Cx<o>, +name: String, 
       +s = st(o, cx)
       +rel = relation(M.Msg.from(m), M.Msg.to(m), parent_of(M.get_agent(s, M.Msg.from(m))), parent_of(M.get_agent(s, M.Msg.to(m))))
       +cx2 = mark_delivered(o, cx, M.Msg.id(m))
-      +cx3 = Bool.pick(X.Cx<o>, M.Msg.plain(m) || Maybe.is_some(&2, String, M.Msg.via(m)),
-        line(o, cx2, name, "you", M.Msg.text(m)),
-        line(o, cx2, name, "msg-in", cat([M.Msg.from(m), " ", mid(M.Msg.id(m)), " : ", M.Msg.text(m)])))
+      +cx3 = deliver.line(o, leftover_at(s, M.Msg.id(m)), M.Msg.plain(m) || Maybe.is_some(&2, String, M.Msg.via(m)), cx2, name, m)
       deliver_each(o, rest, cx3, name, M.snoc(J.Json, acc, J.obj([J.kv("id", J.JNum{M.Msg.id(m)}), J.kv("rel", J.JStr{rel})])))
 
 def pump.flush(-o: M.St, flush: Bool, +cx: X.Cx<o>) -> X.Cx<o>:

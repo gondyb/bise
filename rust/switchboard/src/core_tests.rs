@@ -1665,6 +1665,26 @@ fn main_traffic_in_mains_feed_once() {
     assert!(main.iter().any(|l| l.starts_with("sb msg-in : docs m_") && l.ends_with(" : done")), "{:?}", main);
 }
 
+/// qa-explore bug A: a message steered into a turn that never read it
+/// (`leftover`) goes again as a new turn, but its `msg-in` line was
+/// written when it was steered: the feed shows it once.
+#[test]
+fn a_steer_leftover_shows_once_in_the_feed() {
+    let mut t = T::new();
+    t.spawn_task("talk");
+    t.user(MAIN, "go");
+    let fx = send_v2(&mut t, "talk", MAIN, "two", false, None, "");
+    assert!(steer_to(&fx, MAIN).is_some(), "{:?}", fx);
+    let first: Vec<_> = lines_of(&fx, MAIN).into_iter().filter(|l| l.starts_with("sb msg-in : talk m_")).collect();
+    assert_eq!(first.len(), 1, "{:?}", fx);
+    let fx = t.go(Input::ReplIdle {
+        agent: MAIN.into(),
+        leftover: true,
+    });
+    assert!(say_to(&fx, MAIN).is_some_and(|s| s.contains("two")), "sent again: {:?}", fx);
+    assert!(!has_line(&fx, MAIN, "sb msg-in : "), "no second msg-in line: {:?}", fx);
+}
+
 /// Main answering a task's question: `answered : agent : question :
 /// answer : why` in main's feed (level 2), instead of the `msg` line;
 /// a " : " inside a field is escaped.

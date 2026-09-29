@@ -2016,6 +2016,17 @@ def hub_d_line(-o: HM.St, +cx: HX.Cx<o>, +a: String, +k: String, +t: String) -> 
         case HX.Core{d, fx, p, f, q, v}:
           {==}
 
+# a delivered message's feed line (or none, for a steer_leftover) keeps the state
+def hub_d_dline(-o: HM.St, again: Bool, you: Bool, +cx: HX.Cx<o>, +name: String, +m: HM.Msg)
+    -> {HX.d(o, HC.deliver.line(o, again, you, cx, name, m)) == HX.d(o, cx) : HM.St}:
+  match again you:
+    case True{} _:
+      {==}
+    case False{} True{}:
+      hub_d_line(o, cx, name, "you", HM.Msg.text(m))
+    case False{} False{}:
+      hub_d_line(o, cx, name, "msg-in", HC.cat([HM.Msg.from(m), " ", HC.mid(HM.Msg.id(m)), " : ", HM.Msg.text(m)]))
+
 # closing cards keeps the messages
 def hub_msgs_close_ids(-o: HM.St, +ids: List<&2, Nat>, +cx: HX.Cx<o>, +res: String)
     -> {HM.St.msgs(HX.d(o, HC.close_ids(o, ids, cx, res))) == HM.St.msgs(HX.d(o, cx)) : List<&2, HM.MRec>}:
@@ -2587,18 +2598,16 @@ def hub_ag_deliver(-o: HM.St, +b: List<&2, HM.Msg>, +cx: HX.Cx<o>, +name: String
       {==}
     case Con{m, rest}:
       +cx2 = HC.mark_delivered(o, cx, HM.Msg.id(m))
-      +l1 = HC.line(o, cx2, name, "you", HM.Msg.text(m))
-      +l2 = HC.line(o, cx2, name, "msg-in", HC.cat([HM.Msg.from(m), " ", HC.mid(HM.Msg.id(m)), " : ", HM.Msg.text(m)]))
-      +cx3 = Bool.pick(HX.Cx<o>, HM.Msg.plain(m) || Maybe.is_some(&2, String, HM.Msg.via(m)), l1, l2)
       +s = HC.st(o, cx)
+      +again = HC.leftover_at(s, HM.Msg.id(m))
+      +you = HM.Msg.plain(m) || Maybe.is_some(&2, String, HM.Msg.via(m))
+      +cx3 = HC.deliver.line(o, again, you, cx2, name, m)
       +rel = HC.relation(HM.Msg.from(m), HM.Msg.to(m), HC.parent_of(HM.get_agent(s, HM.Msg.from(m))), HC.parent_of(HM.get_agent(s, HM.Msg.to(m))))
       Equal.trans(List<&2, HM.Agent>, hub_ag(o, hub_p1(o, HC.deliver_each(o, rest, cx3, name, HM.snoc(J.Json, acc, J.obj([J.kv("id", J.JNum{HM.Msg.id(m)}), J.kv("rel", J.JStr{rel})]))))),
         hub_ag(o, cx3), hub_ag(o, cx),
         hub_ag_deliver(o, rest, cx3, name, HM.snoc(J.Json, acc, J.obj([J.kv("id", J.JNum{HM.Msg.id(m)}), J.kv("rel", J.JStr{rel})]))),
         Equal.trans(List<&2, HM.Agent>, hub_ag(o, cx3), hub_ag(o, cx2), hub_ag(o, cx),
-          hub_ag_pick(o, HM.Msg.plain(m) || Maybe.is_some(&2, String, HM.Msg.via(m)), l1, l2, cx2,
-            hub_ag_line(o, cx2, name, "you", HM.Msg.text(m)),
-            hub_ag_line(o, cx2, name, "msg-in", HC.cat([HM.Msg.from(m), " ", HC.mid(HM.Msg.id(m)), " : ", HM.Msg.text(m)]))),
+          Equal.cong(HM.St, List<&2, HM.Agent>, s2 => HM.St.agents(s2), HX.d(o, cx3), HX.d(o, cx2), hub_d_dline(o, again, you, cx2, name, m)),
           hub_ag_mark(o, cx, HM.Msg.id(m))))
 
 def hub_rts(-o: HM.St, +cx: HX.Cx<o>) -> List<&2, HX.Rt>:
@@ -2675,6 +2684,16 @@ def hub_rts_line(-o: HM.St, cx: HX.Cx<o>, +a: String, +k: String, +t: String) ->
     case HX.Cx{c, r}:
       {==}
 
+def hub_rts_dline(-o: HM.St, again: Bool, you: Bool, +cx: HX.Cx<o>, +name: String, +m: HM.Msg)
+    -> {hub_rts(o, HC.deliver.line(o, again, you, cx, name, m)) == hub_rts(o, cx) : List<&2, HX.Rt>}:
+  match again you:
+    case True{} _:
+      {==}
+    case False{} True{}:
+      hub_rts_line(o, cx, name, "you", HM.Msg.text(m))
+    case False{} False{}:
+      hub_rts_line(o, cx, name, "msg-in", HC.cat([HM.Msg.from(m), " ", HC.mid(HM.Msg.id(m)), " : ", HM.Msg.text(m)]))
+
 def hub_rts_mark.go(-o: HM.St, +cx: HX.Cx<o>, +id: Nat, c: Bool, +e: {HX.queued_at(HX.d(o, cx), id) == c : Bool})
     -> {hub_rts(o, HC.mark_delivered.go(o, cx, id, c, e)) == hub_rts(o, cx) : List<&2, HX.Rt>}:
   match c:
@@ -2705,18 +2724,16 @@ def hub_rts_deliver(-o: HM.St, +b: List<&2, HM.Msg>, +cx: HX.Cx<o>, +name: Strin
       {==}
     case Con{m, rest}:
       +cx2 = HC.mark_delivered(o, cx, HM.Msg.id(m))
-      +l1 = HC.line(o, cx2, name, "you", HM.Msg.text(m))
-      +l2 = HC.line(o, cx2, name, "msg-in", HC.cat([HM.Msg.from(m), " ", HC.mid(HM.Msg.id(m)), " : ", HM.Msg.text(m)]))
-      +cx3 = Bool.pick(HX.Cx<o>, HM.Msg.plain(m) || Maybe.is_some(&2, String, HM.Msg.via(m)), l1, l2)
       +s = HC.st(o, cx)
+      +again = HC.leftover_at(s, HM.Msg.id(m))
+      +you = HM.Msg.plain(m) || Maybe.is_some(&2, String, HM.Msg.via(m))
+      +cx3 = HC.deliver.line(o, again, you, cx2, name, m)
       +rel = HC.relation(HM.Msg.from(m), HM.Msg.to(m), HC.parent_of(HM.get_agent(s, HM.Msg.from(m))), HC.parent_of(HM.get_agent(s, HM.Msg.to(m))))
       Equal.trans(List<&2, HX.Rt>, hub_rts(o, hub_p1(o, HC.deliver_each(o, rest, cx3, name, HM.snoc(J.Json, acc, J.obj([J.kv("id", J.JNum{HM.Msg.id(m)}), J.kv("rel", J.JStr{rel})]))))),
         hub_rts(o, cx3), hub_rts(o, cx),
         hub_rts_deliver(o, rest, cx3, name, HM.snoc(J.Json, acc, J.obj([J.kv("id", J.JNum{HM.Msg.id(m)}), J.kv("rel", J.JStr{rel})]))),
         Equal.trans(List<&2, HX.Rt>, hub_rts(o, cx3), hub_rts(o, cx2), hub_rts(o, cx),
-          hub_rts_pick(o, HM.Msg.plain(m) || Maybe.is_some(&2, String, HM.Msg.via(m)), l1, l2, cx2,
-            hub_rts_line(o, cx2, name, "you", HM.Msg.text(m)),
-            hub_rts_line(o, cx2, name, "msg-in", HC.cat([HM.Msg.from(m), " ", HC.mid(HM.Msg.id(m)), " : ", HM.Msg.text(m)]))),
+          hub_rts_dline(o, again, you, cx2, name, m),
           hub_rts_mark.go(o, cx, HM.Msg.id(m), HX.queued_at(HX.d(o, cx), HM.Msg.id(m)), {==})))
 
 def hub_rts_steer(-o: HM.St, p: HX.Cx<o> & List<&2, J.Json>, +n: String, +ids: List<&2, Nat>, +kvs0: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
@@ -3264,18 +3281,16 @@ def hub_qimp_deliver(-o: HM.St, +b: List<&2, HM.Msg>, +cx: HX.Cx<o>, +name: Stri
       hub_qimp_refl(HX.d(o, cx), n)
     case Con{m, rest}:
       +cx2 = HC.mark_delivered(o, cx, HM.Msg.id(m))
-      +l1 = HC.line(o, cx2, name, "you", HM.Msg.text(m))
-      +l2 = HC.line(o, cx2, name, "msg-in", HC.cat([HM.Msg.from(m), " ", HC.mid(HM.Msg.id(m)), " : ", HM.Msg.text(m)]))
-      +cx3 = Bool.pick(HX.Cx<o>, HM.Msg.plain(m) || Maybe.is_some(&2, String, HM.Msg.via(m)), l1, l2)
       +s = HC.st(o, cx)
+      +again = HC.leftover_at(s, HM.Msg.id(m))
+      +you = HM.Msg.plain(m) || Maybe.is_some(&2, String, HM.Msg.via(m))
+      +cx3 = HC.deliver.line(o, again, you, cx2, name, m)
       +rel = HC.relation(HM.Msg.from(m), HM.Msg.to(m), HC.parent_of(HM.get_agent(s, HM.Msg.from(m))), HC.parent_of(HM.get_agent(s, HM.Msg.to(m))))
       +acc2 = HM.snoc(J.Json, acc, J.obj([J.kv("id", J.JNum{HM.Msg.id(m)}), J.kv("rel", J.JStr{rel})]))
       hub_qimp_trans(HX.d(o, cx), HX.d(o, cx3), HX.d(o, hub_p1(o, HC.deliver_each(o, rest, cx3, name, acc2))), n,
         hub_qimp_trans(HX.d(o, cx), HX.d(o, cx2), HX.d(o, cx3), n,
           hub_qimp_mark.go(o, cx, HM.Msg.id(m), n, HX.queued_at(HX.d(o, cx), HM.Msg.id(m)), {==}),
-          hub_qimp_pick(o, HM.Msg.plain(m) || Maybe.is_some(&2, String, HM.Msg.via(m)), l1, l2, cx2, n,
-            hub_d_line(o, cx2, name, "you", HM.Msg.text(m)),
-            hub_d_line(o, cx2, name, "msg-in", HC.cat([HM.Msg.from(m), " ", HC.mid(HM.Msg.id(m)), " : ", HM.Msg.text(m)])))),
+          hub_qimp_eq(HX.d(o, cx2), HX.d(o, cx3), n, hub_d_dline(o, again, you, cx2, name, m))),
         hub_qimp_deliver(o, rest, cx3, name, acc2, n))
 
 def hub_qimp_flush_cx(-o: HM.St, f: Bool, +cx: HX.Cx<o>, +n: String) -> {hub_qimp(HX.d(o, cx), HX.d(o, HC.pump.flush(o, f, cx)), n) == True{} : Bool}:
