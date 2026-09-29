@@ -11,6 +11,8 @@
 //! from the clock ([`clock`]), or [`Motion::Still`] (the terminal lost the
 //! focus, a draw took longer than the budget, `BISE_REDUCE_MOTION` is set;
 //! and in tests): then every form is one static `∿` in the text color.
+//! While you type (zen, BISE-121) it is [`Motion::Calm`]: half the speed,
+//! each tone one step down (text → dim → faint).
 //! Ratatui only rewrites changed cells: with 110 ms a frame, at most ~9
 //! cell updates a second, and none when no agent works (no gust drawn).
 
@@ -24,6 +26,8 @@ use std::time::Duration;
 pub(crate) enum Motion {
     Still,
     Frame(u64),
+    /// zen (BISE-121): the frame at half speed, the tones one step down
+    Calm(u64),
 }
 
 /// The gust's form: the whole strip, the short one, or the breath.
@@ -106,12 +110,22 @@ pub(crate) fn reduce_motion() -> bool {
 
 /// The motion for the next frame: moving unless the terminal lost the
 /// focus, the last draw took longer than [`DRAW_BUDGET`] or the user
-/// asked for less motion.
-pub(crate) fn motion(focus_lost: bool, last_draw: Duration, reduce: bool) -> Motion {
+/// asked for less motion; calm while you type (`zen`).
+pub(crate) fn motion(focus_lost: bool, last_draw: Duration, reduce: bool, zen: bool) -> Motion {
     if focus_lost || reduce || last_draw > DRAW_BUDGET {
         Motion::Still
+    } else if zen {
+        Motion::Calm(clock() / 2)
     } else {
         Motion::Frame(clock())
+    }
+}
+
+/// One tone down (zen): text → dim → faint.
+fn calmer(t: Tone) -> Tone {
+    match t {
+        Tone::Text => Tone::Dim,
+        Tone::Dim | Tone::Faint => Tone::Faint,
     }
 }
 
@@ -126,8 +140,10 @@ fn look(m: &Motif, g: &str, ascii: bool) -> (&'static str, Tone) {
 
 /// The cells of the `size` form at `motion`.
 pub(crate) fn cells(m: &Motif, motion: Motion, size: Size, ascii: bool) -> Vec<(&'static str, Tone)> {
-    let Motion::Frame(i) = motion else {
-        return vec![(if ascii { m.still.1 } else { m.still.0 }, Tone::Text)];
+    let (i, calm) = match motion {
+        Motion::Frame(i) => (i, false),
+        Motion::Calm(i) => (i, true),
+        Motion::Still => return vec![(if ascii { m.still.1 } else { m.still.0 }, Tone::Text)],
     };
     let frames = match size {
         Size::Five => m.strip,
@@ -139,7 +155,10 @@ pub(crate) fn cells(m: &Motif, motion: Motion, size: Size, ascii: bool) -> Vec<(
     }
     let f = frames[(i % frames.len() as u64) as usize];
     let mut buf = [0u8; 4];
-    f.chars().map(|c| look(m, c.encode_utf8(&mut buf), ascii)).collect()
+    f.chars()
+        .map(|c| look(m, c.encode_utf8(&mut buf), ascii))
+        .map(|(g, t)| (g, if calm { calmer(t) } else { t }))
+        .collect()
 }
 
 fn color(t: Tone) -> Color {
@@ -227,10 +246,27 @@ mod tests {
     #[test]
     fn motion_stops_on_focus_loss_slow_draws_and_the_env() {
         let fast = Duration::from_millis(5);
-        assert!(matches!(motion(false, fast, false), Motion::Frame(_)));
-        assert_eq!(motion(true, fast, false), Motion::Still);
-        assert_eq!(motion(false, fast, true), Motion::Still);
-        assert_eq!(motion(false, DRAW_BUDGET + Duration::from_millis(1), false), Motion::Still);
+        assert!(matches!(motion(false, fast, false, false), Motion::Frame(_)));
+        assert_eq!(motion(true, fast, false, false), Motion::Still);
+        assert_eq!(motion(false, fast, true, false), Motion::Still);
+        assert_eq!(motion(false, DRAW_BUDGET + Duration::from_millis(1), false, false), Motion::Still);
+        // zen (BISE-121): calm, and still wins over it
+        assert!(matches!(motion(false, fast, false, true), Motion::Calm(_)));
+        assert_eq!(motion(false, fast, true, true), Motion::Still);
+    }
+
+    #[test]
+    fn calm_is_the_same_frames_one_tone_down() {
+        for i in 0..18u64 {
+            for size in [Size::Five, Size::Three, Size::One] {
+                let (f, c) = (cells(&W1, Motion::Frame(i), size, false), cells(&W1, Motion::Calm(i), size, false));
+                assert_eq!(text_of(&f), text_of(&c));
+                for ((_, a), (_, b)) in f.iter().zip(&c) {
+                    assert_eq!(*b, calmer(*a));
+                    assert_ne!(*b, Tone::Text, "no full-text cell in zen");
+                }
+            }
+        }
     }
 
     #[test]

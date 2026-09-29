@@ -246,7 +246,7 @@ pub(crate) fn divider_room(width: u16, cols: Cols, name: &str, working: Option<&
 /// working · 42s `) and keeps its gust: short on room, the state goes
 /// whole first, then the label shrinks step by step ([`STEPS`]). The
 /// state's rect is returned (a click on `↓ back to the bottom` jumps to
-/// the tail).
+/// the tail), then the label's (zen keeps it, BISE-121).
 pub(crate) fn draw_divider(
     buf: &mut Buffer,
     area: Rect,
@@ -255,10 +255,10 @@ pub(crate) fn draw_divider(
     name: &str,
     working: Option<&Working>,
     state: Vec<Span<'static>>,
-) -> Rect {
+) -> (Rect, Rect) {
     let area = area.intersection(buf.area);
     if area.width < 4 || y < area.y || y >= area.bottom() {
-        return Rect::default();
+        return (Rect::default(), Rect::default());
     }
     let p = pieces();
     let st = line_style();
@@ -296,9 +296,10 @@ pub(crate) fn draw_divider(
         }
     };
     put(buf, lx, y, &label, end + 1);
+    let label_rect = Rect { x: lx, y, width: width_of(&label).min((end + 1).saturating_sub(lx)), height: 1 };
     let w = width_of(&state);
     if w == 0 {
-        return Rect::default();
+        return (Rect::default(), label_rect);
     }
     let x = end - w;
     put(buf, x - 1, y, &[Span::raw(" ")], end);
@@ -306,7 +307,7 @@ pub(crate) fn draw_divider(
     if end <= r {
         put(buf, end, y, &[Span::raw(" ")], end + 1);
     }
-    Rect { x, y, width: w, height: 1 }
+    (Rect { x, y, width: w, height: 1 }, label_rect)
 }
 
 #[cfg(test)]

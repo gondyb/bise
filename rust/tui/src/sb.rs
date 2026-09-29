@@ -119,6 +119,9 @@ pub(super) struct Sb {
     /// The archived section of the panel is expanded (`A`, a click on
     /// its header, `/archived`).
     archived_open: bool,
+    /// Things that asked for you since the start (a new card, a message
+    /// to you, a confirm): a change leaves zen (BISE-121).
+    calls: u64,
 }
 
 /// The string field `k` of `v` ("" when absent).
@@ -138,6 +141,11 @@ impl Sb {
             Some(a) => a.main,
             None => self.focus == "main",
         }
+    }
+
+    /// How many things asked for you so far (zen, BISE-121).
+    pub(crate) fn calls(&self) -> u64 {
+        self.calls
     }
 
     fn send(&mut self, v: Value) {
@@ -339,6 +347,7 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
             );
             let sb = &mut app.sb;
             sb.confirm = Some((id, text));
+            sb.calls += 1;
         }
         "focus" => focus(app, &s("focus")),
         "renamed" => {
@@ -385,6 +394,10 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>) {
         && (line.starts_with("sb msg : ") || line.starts_with("sb msg-in : "));
     // BISE-15: the first steering the model read (its line turns ✓✓)
     let steered = sb.ready && sb.focus == agent && line.contains("obs: steered: ");
+    // zen (BISE-121): a live card or message to you, in any feed
+    if sb.ready && (line.starts_with("sb card : ") || line.starts_with("sb msg-you : ") || line.starts_with("sb msg-in : @")) {
+        sb.calls += 1;
+    }
     if sb.focus != agent {
         let visible = line.contains("obs: assistant:") || line.starts_with("sb ");
         if visible && sb.ready {
@@ -416,6 +429,7 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>) {
 fn apply_state(app: &mut App, v: &Value) {
     let sb = &mut app.sb;
     let s = str_of;
+    let known: Vec<u64> = sb.cards.iter().map(|c| c.id).collect();
     sb.agents = v
         .get("agents")
         .and_then(|a| a.as_array())
@@ -458,6 +472,10 @@ fn apply_state(app: &mut App, v: &Value) {
                 .collect()
         })
         .unwrap_or_default();
+    // zen (BISE-121): a card that was not there
+    if sb.cards.iter().any(|c| !known.contains(&c.id)) {
+        sb.calls += 1;
+    }
     if sb.cards.is_empty() {
         sb.card.shown = false;
         sb.card.full = false;

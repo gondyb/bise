@@ -101,6 +101,7 @@ pub(super) fn new_sb(writer: std::sync::Arc<std::sync::Mutex<UnixStream>>, works
         versions_asked: std::cell::Cell::new(None),
         panel_hits: Default::default(),
         archived_open: false,
+        calls: 0,
     }
 }
 

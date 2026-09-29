@@ -76,6 +76,8 @@ pub(crate) struct App {
     pub(crate) motion: crate::gust::Motion,
     /// the terminal lost the focus (focus reporting): the gust stands still
     pub(crate) focus_lost: bool,
+    /// zen while you type (BISE-121): fed by the loop, read by the draw
+    pub(crate) zen: crate::zen::Zen,
     pub(crate) session_id: String,
     pub(crate) rx: Receiver<String>,
     pub(crate) should_quit: bool,
@@ -196,6 +198,7 @@ impl App {
             tick: 0,
             motion: crate::gust::Motion::Still,
             focus_lost: false,
+            zen: crate::zen::Zen::default(),
             session_id,
             rx,
             should_quit: false,

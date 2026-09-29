@@ -176,7 +176,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     } else {
         state
     };
-    let state_rect = chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, working.as_ref(), state);
+    let (state_rect, label_rect) = chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, working.as_ref(), state);
     app.bottom_bar_rect = (!app.tail_visible && !rows.keys_in_divider).then_some(state_rect);
     // the queued messages: ` › text`, the `›` under the composer's bar
     let queue = pane(chunks[6]);
@@ -197,10 +197,16 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let composer = Rect { width: (inner_w as u16 + TEXT_AT).min(body_rect.width), ..body_rect };
     draw_composer(app, frame, composer, inner_w, rows.pad_top.min(composer_h), rows.pad_bottom);
     let text = Rect { y: app.composer.y, height: app.composer.h as u16, ..body_rect };
+    // zen (BISE-121) keeps the composer's text, the divider's label and
+    // the card box as they are
+    let typed = Rect { x: app.composer.x, y: app.composer.y, width: app.composer.w as u16, height: app.composer.h as u16 };
+    app.zen.keep = vec![typed.intersection(area), label_rect];
     if card_h > 0 {
         sb::draw_card(app, frame, col(card));
+        app.zen.keep.push(col(card).intersection(area));
     } else if sb::card_full(app) {
         sb::draw_card(app, frame, body);
+        app.zen.keep.push(body.intersection(area));
     }
     draw_popup(app, frame, text);
     // the key bar, from x0 to the right margin

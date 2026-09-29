@@ -80,6 +80,7 @@ mod queue;
 mod layout;
 mod chrome;
 mod gust;
+mod zen;
 mod voice;
 #[cfg(test)]
 mod voice_ui_tests;

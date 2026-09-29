@@ -215,12 +215,32 @@ impl Startup {
 }
 
 /// One frame of the UI: the view, the one-time hints, then the frame
-/// passes: the theme's ground on every cell (BISE-92), `BISE_ASCII`.
+/// passes: the theme's ground on every cell (BISE-92), zen's fade while
+/// you type (BISE-121), `BISE_ASCII`.
 pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
     sb::draw_sb(app, f);
     crate::hints::draw(f); // BISE-61: one-time hints
     crate::theme::paint(f.buffer_mut()); // BISE-92: bise paints its ground
+    let depth = app.zen.depth(std::time::Instant::now());
+    if depth > 0.0 {
+        let attention = [crate::theme::accent(), crate::theme::error()];
+        crate::zen::fade(f.buffer_mut(), depth, &app.zen.keep, &attention, app.zen.no_color);
+    }
     crate::theme::asciify(f.buffer_mut()); // BISE-84: BISE_ASCII=1
+}
+
+/// What an input event is for zen (BISE-121), from the composer's text
+/// before it and the state after it.
+fn zen_input(app: &App, ev: &Event, before: &str) -> crate::zen::Input {
+    use crate::zen::Input;
+    let changed = app.ed.text != before;
+    let popup = || !crate::commands::popup_items(app).is_empty();
+    match ev {
+        Event::Key(k) => crate::zen::key_input(k, changed, changed && popup()),
+        Event::Paste(_) if changed && !popup() => Input::Typing,
+        Event::Paste(_) | Event::Mouse(_) | Event::FocusLost => Input::Other,
+        _ => Input::Neutral,
+    }
 }
 
 fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
@@ -228,6 +248,11 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
     // the gust's motion (BISE-107): the last draw's time, the env once
     let mut last_draw = Duration::ZERO;
     let reduce_motion = crate::gust::reduce_motion();
+    // zen (BISE-121): no ramp with less motion, the dim attribute under NO_COLOR
+    if reduce_motion {
+        app.zen.fade = Duration::ZERO;
+    }
+    app.zen.no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
     let mut startup = Startup { on: crate::timing::enabled(), ..Startup::default() };
     loop {
         let t_drain = std::time::Instant::now();
@@ -241,7 +266,10 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
         startup.after_drain(app, t_drain, backlog);
         for note in crash::take_notes() {
             push_event(&mut app.events, &mut app.cache, Ev::Err(note));
+            app.zen.leave(std::time::Instant::now());
         }
+        // a card, a message to you, a confirm: zen steps aside (BISE-121)
+        app.zen.calls(app.sb.calls(), std::time::Instant::now());
         if app.should_quit {
             break;
         }
@@ -261,7 +289,8 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
             continue;
         }
         pump_voice(app);
-        app.motion = crate::gust::motion(app.focus_lost, last_draw, reduce_motion);
+        let zen = app.zen.active(std::time::Instant::now());
+        app.motion = crate::gust::motion(app.focus_lost, last_draw, reduce_motion, zen);
         let t_draw = std::time::Instant::now();
         let drawn = crash::guarded(|| {
             // BISE-92: the terminal's own background follows the theme
@@ -302,6 +331,8 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
         if poll(wait)? {
             let ev = read()?;
             let term_h = terminal.size().map(|s| s.height).unwrap_or(24);
+            let before = app.ed.text.clone();
+            let zen_ev = ev.clone();
             let handled = crash::guarded(|| match ev {
                 Event::Mouse(m) => {
                     on_mouse(app, &m, term_h);
@@ -324,15 +355,189 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
             });
             match handled {
                 Ok(true) => break,
-                Ok(false) => {}
-                Err(c) => report_crash(app, &c, "an input event"),
+                Ok(false) => {
+                    let i = zen_input(app, &zen_ev, &before);
+                    app.zen.input(i, std::time::Instant::now());
+                }
+                Err(c) => {
+                    report_crash(app, &c, "an input event");
+                    app.zen.leave(std::time::Instant::now());
+                }
             }
         }
         // BISE-120a: the drafts on disk, once they stop moving
         sb::drafts::tick(app);
-        app.tick = app.tick.wrapping_add(1);
+        // the tick pulses (`∿` of a running tool, `·` starting) hold
+        // still while you type (zen, BISE-121)
+        if !app.zen.active(std::time::Instant::now()) {
+            app.tick = app.tick.wrapping_add(1);
+        }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod zen_tests {
+    //! BISE-121: zen enters and leaves on the loop's real events, and
+    //! fades the screen but the composer's text, the label, what needs you.
+    use super::*;
+    use crate::zen::Input;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+    use ratatui::backend::TestBackend;
+    use ratatui::buffer::Buffer;
+    use ratatui::Terminal;
+    use serde_json::json;
+    use std::time::Instant;
+
+    /// One event through the loop's handlers and zen, at `now`.
+    fn event(app: &mut App, ev: Event, now: Instant) -> Input {
+        let before = app.ed.text.clone();
+        match &ev {
+            Event::Key(k) => {
+                on_key(app, k);
+            }
+            Event::Paste(t) => on_paste(app, t),
+            Event::Mouse(m) => on_mouse(app, m, 36),
+            _ => {}
+        }
+        let i = zen_input(app, &ev, &before);
+        app.zen.input(i, now);
+        i
+    }
+
+    fn key(c: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(c, KeyModifiers::NONE))
+    }
+
+    fn screen(app: &mut App) -> Buffer {
+        let mut t = Terminal::new(TestBackend::new(120, 36)).unwrap();
+        t.draw(|f| draw_frame(app, f)).unwrap();
+        t.backend().buffer().clone()
+    }
+
+    fn app_with_agents() -> App {
+        let mut app = crate::sb::bench::test_app();
+        let state = json!({"ev": "state", "agents": [
+            {"name": "main", "main": true, "status": "idle"},
+            {"name": "docs", "status": "working", "objective": "write the docs"},
+        ], "cards": []});
+        sb::dispatch(&mut app, &state.to_string());
+        sb::dispatch(&mut app, &json!({"ev": "ready"}).to_string());
+        sb::dispatch(&mut app, &json!({"ev": "line", "agent": "main", "line": "sb you : ship it"}).to_string());
+        app
+    }
+
+    #[test]
+    fn typing_enters_and_every_other_input_leaves() {
+        let t = Instant::now();
+        let mut app = app_with_agents();
+        assert_eq!(event(&mut app, key(KeyCode::Char('h')), t), Input::Typing);
+        assert_eq!(event(&mut app, key(KeyCode::Char('i')), t), Input::Typing);
+        assert!(app.zen.active(t));
+        assert_eq!(event(&mut app, key(KeyCode::Backspace), t), Input::Typing);
+        // the cursor moves: out
+        assert_eq!(event(&mut app, key(KeyCode::Left), t), Input::Other);
+        assert!(!app.zen.active(t));
+        event(&mut app, key(KeyCode::Char('x')), t);
+        assert!(app.zen.active(t));
+        // a mouse move, click or scroll: out
+        let m = MouseEvent { kind: MouseEventKind::Moved, column: 3, row: 3, modifiers: KeyModifiers::NONE };
+        assert_eq!(event(&mut app, Event::Mouse(m), t), Input::Other);
+        assert!(!app.zen.active(t));
+        // ctrl+…, esc, tab: out
+        event(&mut app, key(KeyCode::Char('y')), t);
+        assert_eq!(event(&mut app, Event::Key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL)), t), Input::Other);
+        event(&mut app, key(KeyCode::Char('y')), t);
+        assert_eq!(event(&mut app, key(KeyCode::Esc), t), Input::Other);
+        // a paste types; the focus lost leaves; a resize is neutral
+        assert_eq!(event(&mut app, Event::Paste("more".into()), t), Input::Typing);
+        assert_eq!(event(&mut app, Event::Resize(80, 20), t), Input::Neutral);
+        assert!(app.zen.active(t));
+        assert_eq!(event(&mut app, Event::FocusLost, t), Input::Other);
+        // a popup (`/` in an empty composer) is not zen
+        app.ed.clear();
+        assert_eq!(event(&mut app, key(KeyCode::Char('/')), t), Input::Other);
+        assert!(!app.zen.active(t));
+    }
+
+    #[test]
+    fn a_card_or_a_message_to_you_leaves_zen() {
+        let t = Instant::now();
+        let mut app = app_with_agents();
+        let calls = |app: &mut App| {
+            let n = app.sb.calls();
+            app.zen.calls(n, t);
+        };
+        calls(&mut app);
+        event(&mut app, key(KeyCode::Char('h')), t);
+        calls(&mut app);
+        assert!(app.zen.active(t), "nothing new");
+        // a new card
+        let state = json!({"ev": "state", "agents": [{"name": "main", "main": true, "status": "idle"}],
+            "cards": [{"id": 7, "kind": "question", "agent": "docs", "text": "v1 or v2?", "age_ms": 0}]});
+        sb::dispatch(&mut app, &state.to_string());
+        calls(&mut app);
+        assert!(!app.zen.active(t));
+        // the same card again: zen holds
+        event(&mut app, key(KeyCode::Char('e')), t);
+        sb::dispatch(&mut app, &state.to_string());
+        calls(&mut app);
+        assert!(app.zen.active(t));
+        // a message to you, in a feed out of view
+        let l = json!({"ev": "line", "agent": "docs", "line": "sb msg-you : docs : la v2 est prête"});
+        sb::dispatch(&mut app, &l.to_string());
+        calls(&mut app);
+        assert!(!app.zen.active(t));
+    }
+
+    #[test]
+    fn zen_fades_all_but_the_typed_text_the_label_and_the_accent() {
+        let mut app = app_with_agents();
+        let calm = screen(&mut app);
+        let t = Instant::now() - std::time::Duration::from_secs(1);
+        for c in "hello".chars() {
+            event(&mut app, key(KeyCode::Char(c)), t);
+        }
+        // the same screen out of zen, then in zen for 1 s (the fade done)
+        app.zen = crate::zen::Zen::default();
+        let plain = screen(&mut app);
+        app.zen.input(Input::Typing, t);
+        let zen = screen(&mut app);
+        let (ground, accent, depth) = (crate::theme::bg(), crate::theme::accent(), crate::zen::DEPTH);
+        // the typed text: same cells, same colors
+        let (cx, cy) = (app.composer.x, app.composer.y);
+        for x in cx..cx + 5 {
+            assert_eq!(zen[(x, cy)], plain[(x, cy)], "composer cell {x}");
+        }
+        // the divider's label (`you → main`) as it was
+        let label_y = (0..36).find(|&y| (0..120).map(|x| zen[(x, y)].symbol()).collect::<String>().contains("you → main")).unwrap();
+        let lx = (0..120).find(|&x| zen[(x, label_y)].symbol() == "y").unwrap();
+        let row = |b: &Buffer| (lx - 1..lx + 11).map(|x| b[(x, label_y)].clone()).collect::<Vec<_>>();
+        assert_eq!(row(&zen), row(&plain));
+        // the history's text: 45 % toward its ground
+        let (hx, hy) = (0..36)
+            .flat_map(|y| (0..120).map(move |x| (x, y)))
+            .find(|&(x, y)| plain[(x, y)].symbol() == "s" && y < label_y)
+            .unwrap();
+        assert_eq!(Some(zen[(hx, hy)].fg), crate::zen::toward(plain[(hx, hy)].fg, plain[(hx, hy)].bg, depth));
+        assert_ne!(zen[(hx, hy)].fg, plain[(hx, hy)].fg);
+        // every accent cell (what needs you, the agent you talk to) kept;
+        // no ground moves; nothing else changed but colors
+        let mut faded = 0;
+        for (a, b) in plain.content.iter().zip(&zen.content) {
+            assert_eq!(a.symbol(), b.symbol());
+            assert_eq!(a.bg, b.bg);
+            if a.fg == accent {
+                assert_eq!(b.fg, accent);
+            }
+            faded += usize::from(a.fg != b.fg);
+        }
+        assert!(faded > 50, "{faded} cells faded");
+        assert!(calm.content.iter().all(|c| c.bg != ground || c.fg != crate::zen::toward(crate::theme::text(), ground, depth).unwrap()));
+        // out: the same screen as before zen, once the fade is over
+        app.zen.leave(t + std::time::Duration::from_millis(10));
+        assert_eq!(screen(&mut app), plain);
+    }
 }
 
 #[cfg(test)]
