@@ -49,6 +49,10 @@ pub(crate) enum Mode {
 /// A key and what it does; an empty key is a plain dim label.
 type Pair = (&'static str, &'static str);
 
+/// The way home from an agent's view (book §13, BISE-103): the first
+/// pair there, never dropped.
+const BACK: Pair = ("esc", "back to main");
+
 impl Mode {
     fn pairs(self) -> &'static [Pair] {
         match self {
@@ -72,7 +76,7 @@ impl Mode {
             Mode::Confirm => &[("y", "yes"), ("n", "no"), ("esc", "cancel")],
             Mode::CardFull => &[("alt+r", "answer"), ("pgup/pgdn", "scroll"), ("ctrl+f", "back")],
             Mode::Selected => &[("⏎", "enter"), ("space", "preview"), ("D", "drop"), ("esc", "close")],
-            Mode::Archived => &[("/restore", "brings it back"), ("esc", "back to main")],
+            Mode::Archived => &[BACK, ("/restore", "brings it back")],
             Mode::Steer => &[("tab", "queue"), ("⏎", "steer"), ("ctrl+c", "interrupt")],
             Mode::Default => &[
                 ("⏎", "send"),
@@ -95,6 +99,17 @@ impl Mode {
                 ("ctrl+o", "open/close all"),
                 ("ctrl+c", "quit"),
             ],
+        }
+    }
+
+    /// The keys of this mode in an agent's view (book §13 "Key bar in an
+    /// agent's view"): `esc back to main` first; working, the book's set
+    /// `esc back to main   ⏎ steer   ctrl+c interrupt`.
+    fn agent_pairs(self) -> Vec<Pair> {
+        match self {
+            Mode::Default => std::iter::once(BACK).chain(self.pairs().iter().copied()).collect(),
+            Mode::Steer => vec![BACK, ("⏎", "steer"), ("ctrl+c", "interrupt")],
+            m => m.pairs().to_vec(),
         }
     }
 }
@@ -121,9 +136,10 @@ pub(crate) fn mode(app: &App) -> Mode {
 }
 
 /// The key bar of `app` for a row `width` columns wide: the mode's keys,
-/// the session's tip.
+/// the session's tip (none in an agent's view).
 pub(crate) fn line(app: &App, width: u16) -> Line<'static> {
-    render(mode(app), width, !app.ed.text.is_empty(), Some(session_tip()))
+    let agent = app.sb.as_ref().is_some_and(|sb| !sb.is_main_focus());
+    render(mode(app), width, !app.ed.text.is_empty(), agent, Some(session_tip()))
 }
 
 /// The tip of this session: one of [`help::TIPS`], chosen at the first draw.
@@ -164,17 +180,40 @@ fn label_text(l: &str) -> String {
     l.replace('…', theme::ellipsis())
 }
 
+/// The width of a pair drawn: the key, a space, what it does.
+fn pair_width((k, l): Pair) -> usize {
+    let (k, l) = (key_text(k), label_text(l));
+    k.width() + l.width() + usize::from(!k.is_empty() && !l.is_empty())
+}
+
+/// The pairs of an agent's view that fit in `width` (book §13): `esc back
+/// to main` stays; the others drop from the right, `/ commands` first.
+fn fit_agent(mut pairs: Vec<Pair>, width: usize) -> Vec<Pair> {
+    let total = |p: &[Pair]| p.iter().map(|&x| pair_width(x)).sum::<usize>() + 3 * p.len().saturating_sub(1);
+    while pairs.len() > 1 && total(&pairs) > width {
+        match pairs.iter().position(|&(k, _)| k == "/") {
+            Some(i) => pairs.remove(i),
+            None => pairs.pop().unwrap_or(BACK),
+        };
+    }
+    pairs
+}
+
 /// The key bar for `mode` in a row `width` columns wide. Pairs that don't
 /// fit are dropped from the end (the first is cut if it alone doesn't
-/// fit). The tip shows only in [`Mode::Default`], while not `typing`,
-/// right-aligned, with at least 3 columns between it and the keys.
-pub(crate) fn render(mode: Mode, width: u16, typing: bool, tip: Option<&str>) -> Line<'static> {
+/// fit). In an agent's view (`agent`), `esc back to main` comes first and
+/// stays, the others drop from the right, `/ commands` first. The tip
+/// shows only in [`Mode::Default`] out of an agent's view, while not
+/// `typing`, right-aligned, with at least 3 columns between it and the
+/// keys.
+pub(crate) fn render(mode: Mode, width: u16, typing: bool, agent: bool, tip: Option<&str>) -> Line<'static> {
     let width = usize::from(width);
     let key = Style::default().fg(theme::text());
     let dim = Style::default().fg(theme::dim());
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut used = 0;
-    for (i, (k, l)) in mode.pairs().iter().enumerate() {
+    let pairs = if agent { fit_agent(mode.agent_pairs(), width) } else { mode.pairs().to_vec() };
+    for (i, (k, l)) in pairs.iter().enumerate() {
         let (k, l) = (key_text(k), label_text(l));
         let gap = if i == 0 { 0 } else { 3 };
         let w = k.width() + l.width() + usize::from(!k.is_empty() && !l.is_empty());
@@ -199,7 +238,7 @@ pub(crate) fn render(mode: Mode, width: u16, typing: bool, tip: Option<&str>) ->
         }
         used += gap + w;
     }
-    if let Some(t) = tip.filter(|_| mode == Mode::Default && !typing).map(key_text) {
+    if let Some(t) = tip.filter(|_| mode == Mode::Default && !agent && !typing).map(key_text) {
         let t = if theme::ascii_mode() { format!("tip: {t}") } else { format!("tip · {t}") };
         let tw = t.width();
         if used + 3 + tw <= width {
@@ -242,7 +281,7 @@ mod tests {
 
     #[test]
     fn default_bar_and_tip_at_the_right_edge() {
-        let l = render(Mode::Default, 100, false, Some(TIP));
+        let l = render(Mode::Default, 100, false, false, Some(TIP));
         let s = text(&l);
         assert!(s.starts_with("⏎ send   @ agent   ⌥0-9 switch   / commands   ? help"), "{s}");
         assert!(s.ends_with("tip · ctrl+o opens everything folded"), "{s}");
@@ -251,7 +290,7 @@ mod tests {
 
     #[test]
     fn keys_in_text_color_what_they_do_dim() {
-        let l = render(Mode::Default, 100, false, Some(TIP));
+        let l = render(Mode::Default, 100, false, false, Some(TIP));
         let key = l.spans.iter().find(|s| s.content == "⏎").unwrap();
         assert_eq!(key.style.fg, Some(theme::text()));
         let what = l.spans.iter().find(|s| s.content == " send").unwrap();
@@ -262,34 +301,34 @@ mod tests {
 
     #[test]
     fn no_tip_while_typing_or_in_another_mode() {
-        assert!(!text(&render(Mode::Default, 100, true, Some(TIP))).contains("tip"));
-        assert!(!text(&render(Mode::Steer, 100, false, Some(TIP))).contains("tip"));
+        assert!(!text(&render(Mode::Default, 100, true, false, Some(TIP))).contains("tip"));
+        assert!(!text(&render(Mode::Steer, 100, false, false, Some(TIP))).contains("tip"));
     }
 
     #[test]
     fn no_tip_under_3_free_columns() {
-        let keys = text(&render(Mode::Default, 200, false, None)).width();
+        let keys = text(&render(Mode::Default, 200, false, false, None)).width();
         let tip = "tip · ".width() + TIP.width();
-        let fits = render(Mode::Default, (keys + 3 + tip) as u16, false, Some(TIP));
+        let fits = render(Mode::Default, (keys + 3 + tip) as u16, false, false, Some(TIP));
         assert!(text(&fits).ends_with(TIP));
-        let close = render(Mode::Default, (keys + 2 + tip) as u16, false, Some(TIP));
+        let close = render(Mode::Default, (keys + 2 + tip) as u16, false, false, Some(TIP));
         assert!(!text(&close).contains("tip"));
     }
 
     #[test]
     fn narrow_drops_pairs_from_the_end() {
-        let s = text(&render(Mode::Default, 30, false, Some(TIP)));
+        let s = text(&render(Mode::Default, 30, false, false, Some(TIP)));
         assert_eq!(s, "⏎ send   @ agent   ⌥0-9 switch");
-        let s = text(&render(Mode::Default, 4, false, None));
+        let s = text(&render(Mode::Default, 4, false, false, None));
         assert!(s.width() <= 4 && s.ends_with('…'), "{s:?}");
     }
 
     #[test]
     fn ascii_forms() {
         theme::set_ascii_for_tests(true);
-        let s = text(&render(Mode::Default, 100, false, Some(TIP)));
-        let f = text(&render(Mode::FilePopup, 100, false, None));
-        let t = text(&render(Mode::Transcribing, 100, false, None));
+        let s = text(&render(Mode::Default, 100, false, false, Some(TIP)));
+        let f = text(&render(Mode::FilePopup, 100, false, false, None));
+        let t = text(&render(Mode::Transcribing, 100, false, false, None));
         theme::set_ascii_for_tests(false);
         assert!(s.starts_with("enter send   @ agent   alt+0-9 switch"), "{s}");
         assert!(s.ends_with("tip: ctrl+o opens everything folded"), "{s}");
@@ -301,10 +340,42 @@ mod tests {
     }
 
     #[test]
+    fn an_agents_view_starts_with_esc_back_to_main() {
+        let idle = render(Mode::Default, 120, false, true, Some(TIP));
+        let s = text(&idle);
+        assert_eq!(s, "esc back to main   ⏎ send   @ agent   ⌥0-9 switch   / commands   ? help");
+        let esc = idle.spans.iter().find(|x| x.content == "esc").unwrap();
+        assert_eq!(esc.style.fg, Some(theme::text()));
+        let what = idle.spans.iter().find(|x| x.content == " back to main").unwrap();
+        assert_eq!(what.style.fg, Some(theme::dim()));
+        assert!(!s.contains("tip"), "no tip in an agent's view");
+        let working = text(&render(Mode::Steer, 120, false, true, None));
+        assert_eq!(working, "esc back to main   ⏎ steer   ctrl+c interrupt");
+        let archived = text(&render(Mode::Archived, 120, false, true, None));
+        assert!(archived.starts_with("esc back to main   /restore"), "{archived}");
+    }
+
+    #[test]
+    fn in_an_agents_view_commands_drop_first_and_esc_never() {
+        let all = "esc back to main   ⏎ send   @ agent   ⌥0-9 switch   / commands   ? help".width();
+        let s = text(&render(Mode::Default, (all - 1) as u16, false, true, None));
+        assert_eq!(s, "esc back to main   ⏎ send   @ agent   ⌥0-9 switch   ? help");
+        let s = text(&render(Mode::Default, 40, false, true, None));
+        assert_eq!(s, "esc back to main   ⏎ send   @ agent");
+        let s = text(&render(Mode::Steer, 20, false, true, None));
+        assert_eq!(s, "esc back to main");
+        let s = text(&render(Mode::Default, 10, false, true, None));
+        assert!(s.starts_with("esc") && s.width() <= 10, "{s:?}");
+        // other modes keep their own keys (esc does something else there)
+        let s = text(&render(Mode::Selected, 120, false, true, None));
+        assert!(s.starts_with("⏎ enter"), "{s}");
+    }
+
+    #[test]
     fn every_tip_names_a_key_of_the_help() {
         for t in help::TIPS {
             theme::set_ascii_for_tests(true);
-            let a = text(&render(Mode::Default, 200, false, Some(t)));
+            let a = text(&render(Mode::Default, 200, false, false, Some(t)));
             theme::set_ascii_for_tests(false);
             assert!(a.is_ascii() && a.contains("tip: "), "{a}");
             let k = t.split(' ').next().unwrap();
