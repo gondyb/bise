@@ -38,7 +38,7 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
 /// is one), the agents panel on its right behind the rule; the card box;
 /// 1 blank row; the divider `you → main … state`; the queued messages,
 /// the images strip; the composer (bar at the margin, text 2 columns
-/// after it, 1 blank row each side by height); the key bar; the frame's
+/// after it, 1 blank bar row above and under the text from 20 rows); the key bar; the frame's
 /// bottom edge.
 fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::Cols, rows: crate::layout::Rows) {
     // the composer's text wraps like your message in the history: the

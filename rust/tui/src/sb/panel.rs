@@ -1627,9 +1627,9 @@ mod chrome_tests {
     /// The raised pane (book §13, BISE-102, BISE-212): the grey fills the
     /// inside of the frame under the divider, edge to edge between the
     /// side edges; the lines (the divider, the side and bottom edges) stay
-    /// on the history's ground, outside the grey. 5 rows at rest (the
-    /// divider, a blank bar row, 1 text row, the key bar, the frame), 4
-    /// under 20 rows; under 14 rows the key bar takes the divider's right
+    /// on the history's ground, outside the grey. 6 rows at rest (the
+    /// divider, a blank bar row, 1 text row, a blank bar row, the key
+    /// bar, the frame; BISE-219), 4 under 20 rows; under 14 rows the key bar takes the divider's right
     /// side.
     #[test]
     fn the_pane_under_the_divider_is_raised() {
@@ -1640,7 +1640,7 @@ mod chrome_tests {
             term.backend().buffer().clone()
         };
         let row = |b: &ratatui::buffer::Buffer, y: u16| (0..b.area.width).map(|x| b[(x, y)].symbol()).collect::<String>();
-        for (h, pane) in [(40u16, 5u16), (30, 5), (24, 5), (20, 5), (19, 4), (16, 4)] {
+        for (h, pane) in [(40u16, 6u16), (30, 6), (24, 6), (20, 6), (19, 4), (16, 4)] {
             let b = screen(&mut app, 120, h);
             let div = (0..h).find(|&y| row(&b, y).starts_with("├─ you → main")).unwrap_or_else(|| panic!("{h}: no divider"));
             assert_eq!(h - div, pane, "{h} rows: the pane takes {pane}");
@@ -1815,11 +1815,12 @@ mod chrome_tests {
         assert!(rows[at].ends_with(" idle ─┤"), "{:?}", rows[at]);
         assert!(rows[at].contains('┴'), "the panel's rule joins it: {:?}", rows[at]);
         // then the raised pane (book §13): the composer, its bar at x0
-        // (column 3 here) on a blank row, the text row, then the key bar
-        // right under it (BISE-210) from x0, the frame's bottom edge
-        assert_eq!(rows.len() - at, 5, "5 rows at rest: {}", all);
-        assert!(rows[at + 1..at + 3].iter().all(|r| r.starts_with("│  │")), "{}", all);
+        // (column 3 here) on a blank row, the text row, a blank row
+        // (BISE-219), then the key bar from x0, the frame's bottom edge
+        assert_eq!(rows.len() - at, 6, "6 rows at rest: {}", all);
+        assert!(rows[at + 1..at + 4].iter().all(|r| r.starts_with("│  │")), "{}", all);
         assert_eq!(rows[at + 1].trim_end_matches(['│', ' ']), "", "{:?}", rows[at + 1]);
+        assert_eq!(rows[at + 3].trim_end_matches(['│', ' ']), "", "{:?}", rows[at + 3]);
         // empty, the composer asks; the text at x0 + 3 (the history's)
         assert!(rows[at + 2].starts_with(&format!("│  │    {}", PLACEHOLDER_MAIN)), "{:?}", rows[at + 2]);
         let keys = &rows[rows.len() - 2];

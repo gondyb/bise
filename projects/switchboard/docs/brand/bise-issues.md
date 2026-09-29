@@ -2657,3 +2657,11 @@ Index:
 - **spec:** designer: `switchboard` is not a command users know; the command is `bise`, and this line (with the landing) is where we say to run it in the folder you work in.
 - **what:** `o` on the folder step shows `another folder? cd into it, then run bise.` (was `another folder? start me there: cd into it, then run switchboard.`).
 - **notes:** tests `onboarding::tests::step_4_folder_and_who_handles_worktrees`, `tui_onboarding_tmux.py`.
+
+### BISE-219 · the composer pane: a blank bar row above and under the text
+
+- **status:** done · **owner:** composer-pad · **commits:** `git log --grep BISE-219`
+- **owns:** `rust/tui/src/layout.rs` (`rows`: `pad_bottom`)
+- **spec:** user: « il faut du padding top et bottom sur la partie dans laquelle je peux taper pour que ça ait l'air plus spacieux ». Designer's rows: from 20 rows, divider · blank bar row · text · blank bar row · key bar · edge (6 at rest, was 5); with the attachments box, its blank row and the box take the top one (no row between box and text); 16–19 rows, both pads dropped, never one alone; under 16 unchanged; the pads stay while the text grows to its max and scrolls; they keep the tint.
+- **what:** replaces part (1) of BISE-210 (no blank row under the text). The row under the frame's bottom edge: none, the edge is the screen's last row. At 40 rows the top bar row was already there; a screenshot without it was under 20 rows.
+- **notes:** tests `composer_wrap_tests::the_typing_area_has_a_blank_bar_row_above_and_under_its_text` (40 and 18 rows, with and without the box, long text), `layout::tests::the_rows`, `sb::panel::chrome_tests::the_pane_under_the_divider_is_raised`, `first_run_screen`.

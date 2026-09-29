@@ -59,7 +59,7 @@ fn check_frame(app: &mut App, width: u16, height: u16, what: &str) {
         assert_eq!(got, want.trim_end(), "{what}: row {i}");
     }
     // the composer is the last of the screen: under its text, only its
-    // blank bar row, the key bar and the frame's edge (book §8 "The frame")
+    // blank bar row (from 20 rows), the key bar and the frame's edge (book §8 "The frame")
     let lr = crate::layout::rows(width, height);
     assert!(area.h >= drawn.max(lr.min_text as usize), "{what}: {} rows for {drawn}", area.h);
     assert_eq!(area.y as usize + area.h + lr.pad_bottom as usize, lr.keybar as usize, "{what}: the key bar under the composer");
@@ -239,7 +239,7 @@ fn two_sections_the_attachments_then_the_body_behind_its_bar() {
     // (the user's pick "d"): 1 blank tinted row under the divider, the
     // box (a dim rounded frame, its rows at x0 + 3, no bar), then the
     // body right under it: the bar at x0 on every row of it (a blank bar
-    // row under the text by height, and above it when there is no box),
+    // row under the text from 20 rows, and above it when there is no box),
     // in accent with text or images, faint when empty; the text at x0 + 3
     for (width, height) in [(200u16, 50u16), (120, 40), (120, 29), (80, 30), (80, 22), (80, 18)] {
         for (n, text, empty) in [(0, "", true), (0, "hello", false), (1, "one line", false), (2, &"word ".repeat(60)[..], false)] {
@@ -258,8 +258,8 @@ fn two_sections_the_attachments_then_the_body_behind_its_bar() {
             let pad_top = if n > 0 { 0 } else { rows.pad_top };
             let (top, bottom) = (a.y - pad_top, a.y + a.h as u16 + rows.pad_bottom);
             assert_eq!(bottom, rows.keybar, "{what}");
-            // no blank row under the text: the key bar right under it (BISE-210)
-            assert_eq!(rows.pad_bottom, 0, "{what}");
+            // a blank bar row under the text from 20 rows (BISE-219)
+            assert_eq!(rows.pad_bottom, u16::from(height >= 20), "{what}");
             let want = if empty { crate::theme::faint() } else { crate::theme::accent() };
             for y in top..bottom {
                 let c = &buf[(x0, y)];
@@ -396,4 +396,61 @@ fn without_a_tint_the_chip_is_bracketed_same_width() {
         assert_ne!(buf[(cx, y)].bg, theme::palette().pill, "col {cx}");
     }
     assert_eq!(attach::chip_text("[Quote #1]").width(), 5);
+}
+
+
+/// The pane's rows under the divider, as text from column 0 (trailing
+/// blanks trimmed).
+fn pane_rows(width: u16, height: u16, images: usize, text: &str) -> Vec<String> {
+    let mut app = sb::bench::test_app();
+    if images > 0 {
+        with_images(&mut app, images, text);
+    } else {
+        app.ed.insert(text);
+    }
+    let buf = draw(&mut app, width, height);
+    let divider = (0..height).rev().find(|&y| buf[(0, y)].symbol() == "├" || buf[(0, y)].symbol() == "─").unwrap();
+    (divider..height).map(|y| screen_row(&buf, 0, y, 40)).collect()
+}
+
+#[test]
+fn the_typing_area_has_a_blank_bar_row_above_and_under_its_text() {
+    // BISE-219 (user request: room around what you type; designer's
+    // rows): from 20 rows, divider · bar row · text · bar row · key bar ·
+    // edge; with the box, its blank row and the box take the top one;
+    // 16-19 rows, neither (one alone looks like a bug); the pads stay
+    // while the text grows to its max and scrolls
+    let bar = "│  │";
+    let rest = pane_rows(120, 40, 0, "");
+    assert_eq!(rest.len(), 6, "{rest:#?}");
+    assert!(rest[0].starts_with("├─ you → main"), "{rest:#?}");
+    assert_eq!(rest[1], bar);
+    assert!(rest[2].starts_with("│  │    what's on your mind?"), "{rest:#?}");
+    assert_eq!(rest[3], bar);
+    assert!(rest[4].starts_with("│  ⏎ send"), "{rest:#?}");
+    assert!(rest[5].starts_with("╰─"), "{rest:#?}");
+    let boxed = pane_rows(120, 40, 1, "hi");
+    assert_eq!(boxed.len(), 9, "{boxed:#?}");
+    assert_eq!(boxed[1], "│");
+    assert!(boxed[2].starts_with("│  ╭─ attached"), "{boxed:#?}");
+    assert!(boxed[4].starts_with("│  ╰─"), "{boxed:#?}");
+    assert!(boxed[5].starts_with("│  │   ▣ 1  hi"), "{boxed:#?}");
+    assert_eq!(boxed[6], bar);
+    assert!(boxed[7].starts_with("│  ⏎ send"), "{boxed:#?}");
+    let small = pane_rows(120, 18, 0, "");
+    assert_eq!(small.len(), 4, "{small:#?}");
+    assert!(small[1].starts_with("│  │    what's on your mind?"), "{small:#?}");
+    assert!(small[2].starts_with("│  ⏎ send"), "{small:#?}");
+    let small_boxed = pane_rows(120, 18, 1, "hi");
+    assert!(small_boxed[1].starts_with("│  ╭─ attached"), "{small_boxed:#?}");
+    assert!(small_boxed[4].starts_with("│  │   ▣ 1  hi"), "{small_boxed:#?}");
+    assert!(small_boxed[5].starts_with("│  ⏎ send"), "{small_boxed:#?}");
+    // long text: 12 text rows at most, the pads still there
+    let long = pane_rows(120, 40, 0, &"word ".repeat(400));
+    assert_eq!(long.len(), 1 + 1 + 12 + 1 + 2, "{long:#?}");
+    assert_eq!(long[1], bar);
+    assert!(long[2].starts_with("│  │  word"), "{long:#?}");
+    assert!(long[13].starts_with("│  │  word"), "{long:#?}");
+    assert_eq!(long[14], bar);
+    assert!(long[15].starts_with("│  ⏎ send"), "{long:#?}");
 }
