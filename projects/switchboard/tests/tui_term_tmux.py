@@ -47,9 +47,17 @@ def main():
         # colors reach the screen
         typed("printf '\\033[31mRED\\033[0m\\n'")
         keys("Enter")
-        wait_screen("RED")
-        colored = tmux("capture-pane", "-p", "-e", "-t", S)
-        assert re.search(r"\x1b\[[0-9;]*(31|38;5;1)[0-9;]*mRED", colored), repr(colored[-2000:])
+        # "RED" is on screen as soon as the command is typed: wait for the
+        # red output itself (under load the shell runs it later)
+        red = r"\x1b\[[0-9;]*(31|38;5;1)[0-9;]*mRED"
+        t0 = time.time()
+        colored = ""
+        while time.time() - t0 < 20:
+            colored = tmux("capture-pane", "-p", "-e", "-t", S)
+            if re.search(red, colored):
+                break
+            time.sleep(0.1)
+        assert re.search(red, colored), repr(colored[-2000:])
         # Ctrl+C goes to the shell: the sleep dies, the app stays
         typed("sleep 100")
         keys("Enter")

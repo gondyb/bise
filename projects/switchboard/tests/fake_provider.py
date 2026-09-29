@@ -71,6 +71,10 @@ def reply_for(messages):
     results = [text_of(m.get("content")) for m in after if m.get("role") == "tool"]
     if results:
         return {"content": "done: " + results[-1].strip()[:400]}
+    # an image comes framed as text `<image name=[Image #1] path="…">`, the
+    # image, text `</image>` (docs/images.md): a model says `[Image #1]`,
+    # it does not echo the framing
+    user = re.sub(r'<image name=(\[[^\]]*\])[^>]*>\s*</image>', r"\1", user)
     one = " ".join(user.split())
     return {"content": "ack: " + one[:300]}
 

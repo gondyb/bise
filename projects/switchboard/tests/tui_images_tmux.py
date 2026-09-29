@@ -104,6 +104,9 @@ def main():
                 break
             time.sleep(0.2)
         assert "red-blue.png" in sc and "attached ·" not in sc, sc
+        # the reply names the images as the model saw them; no marker
+        # (neither the user's nor the request's framing) on screen
+        sc = wait_screen("ack: look [Image #1] [Image #2] and [Image #3] colors?", 40)
         assert "<image name=" not in sc, sc
         t0 = time.time()
         reqs = []
