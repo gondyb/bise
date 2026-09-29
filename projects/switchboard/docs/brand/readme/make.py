@@ -60,22 +60,22 @@ def hero(c):
 def demo(c):
     W, T = 960, 31
     tl = TL(T); out = []
-    fx, lh = 40, 21
+    fx, lh = 40, 25
     acc = lambda t: f'<tspan fill="{c["acc"]}">{t}</tspan>'
     y = [76]
     def line(t, html, gap=0, color="text", size=14):
         y[0] += gap
         k = tl.show(t); out.append(f'<text class="{k}" x="{fx}" y="{y[0]}" font-size="{size}" fill="{c[color]}" xml:space="preserve">{html}</text>'); y[0] += lh; return k
-    def you(t, s, gap=6):
+    def you(t, s, gap=10):
         y[0] += gap
         k = tl.show(t); r = tl.show(t + 0.55, dur=0.1)
         out.append(f'<g class="{k}"><rect x="{fx-16}" y="{y[0]-15}" width="3" height="19" fill="{c["acc"]}"/>'
                    f'<text x="{fx}" y="{y[0]}" font-size="14" font-weight="700" fill="{c["text"]}" xml:space="preserve">{E(s)} <tspan font-weight="400" fill="{c["faint"]}">✓</tspan></text></g>'
-                   f'<text class="{r}" x="{fx + int((len(s) + 1) * 8.45)}" y="{y[0]}" font-size="14" fill="{c["acc"]}">✓✓</text>')
+                   f'<text class="{r}" x="{fx + int((len(s) + sum(ord(ch) > 0xFFFF for ch in s) + 1) * 8.45)}" y="{y[0]}" font-size="14" fill="{c["acc"]}">✓✓</text>')
         y[0] += lh
     main = lambda t, s: line(t, f'{acc(":*")} {E(s)}')
     msgs = []  # (typing start, typing end, send, text): drawn in the composer once its y is known
-    def say(t, t2, send, text, gap=6):
+    def say(t, t2, send, text, gap=10):
         msgs.append((t, t2, send, text)); you(send, text, gap)
     say(0.8, 2.6, 2.8, "signup is slow on mobile. can you look?", gap=0)
     main(3.4, "on it. perf is profiling it on a mid-range phone.")
@@ -87,12 +87,12 @@ def demo(c):
     main(9.6, "emoji-csv is on it. it's always unicode.")
     say(9.9, 10.6, 10.8, "OK LAST ONE. release notes for all of this")
     main(11.3, "release waits for the others, then writes them. go get a coffee.")
-    line(12.8, "▸ 9 messages between 5 agents", gap=6, color="dim", size=13)
+    line(12.8, "▸ 9 messages between 5 agents", gap=10, color="dim", size=13)
     main(13.6, "dark-mode asked which gray. i said the one in tokens.css.")
     say(14.4, 15.8, 16.0, "actually keep the sad dog on the 404. just give it a hat")
     main(16.6, "told sad-404. the dog keeps its job. now with a hat.")
     # the card: it asks, you press 2, it folds to one answered line
-    y[0] += 10; cy0 = y[0]
+    y[0] += 14; cy0 = y[0]
     k = tl.show(17.8, 19.9, dur=0.2); a2 = tl.show(19.9, dur=0.2)
     out.append(f'<g class="{k}"><rect x="{fx-16}" y="{cy0-16}" width="600" height="68" rx="4" fill="{c["raised"]}"/><rect x="{fx-16}" y="{cy0-16}" width="3" height="68" fill="{c["acc"]}"/>'
                f'<text x="{fx}" y="{cy0}" font-size="14" font-weight="700" fill="{c["acc"]}">? perf needs you</text>'
@@ -105,7 +105,7 @@ def demo(c):
             (23.4, "sad-404 and dark-mode done", "the dog has a hat. settings is dark."),
             (24.8, "release done", "2.5 notes drafted. five things, zero tabs.")]
     for i, (t, a, b) in enumerate(done):
-        line(t, f'{acc("✓")} {a} <tspan fill="{c["dim"]}">· {E(b)}</tspan>', gap=6 if i == 0 else 0)
+        line(t, f'{acc("✓")} {a} <tspan fill="{c["dim"]}">· {E(b)}</tspan>', gap=10 if i == 0 else 0)
     say(25.4, 26.2, 26.4, "you're the best")
     main(27.0, ":*")
     # the frame, sized to the story
@@ -123,7 +123,7 @@ def demo(c):
         yy = 102 + n * 24; k = tl.show(t0)
         out.append(f'<text class="{k}" x="700" y="{yy}" font-size="14" fill="{c["dim"]}" xml:space="preserve">{n} <tspan class="g" fill="{c["acc"]}">∿</tspan> <tspan fill="{c["text"]}">{name}</tspan></text>')
         d = tl.show(t1)
-        out.append(f'<rect class="{d}" x="712" y="{yy-14}" width="12" height="18" fill="{c["bg"]}"/><text class="{d}" x="713" y="{yy}" font-size="14" fill="{c["acc"]}">✓</text>')
+        out.append(f'<rect class="{d}" x="709" y="{yy-15}" width="17" height="20" fill="{c["bg"]}"/><text class="{d}" x="713" y="{yy}" font-size="14" fill="{c["acc"]}">✓</text>')
     # the composer
     out.append(f'<rect x="1" y="{top}" width="{W-2}" height="{H-top-1}" fill="{c["raised"]}"/>'
                f'<path d="M1 {top} H{W-1}" stroke="{c["faint"]}"/>'
