@@ -26,8 +26,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --wind:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --raised:#221e1c; --chip:#262220; }
-  [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --wind:#cbc3b6; --acc:#b8416b; --err:#b3261e; --raised:#fbf8f3; --chip:#e8e2d8; }
+  :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --kick:#6f685f; --wind:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --raised:#221e1c; --chip:#262220; }
+  [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --kick:#9d958a; --wind:#cbc3b6; --acc:#b8416b; --err:#b3261e; --raised:#fbf8f3; --chip:#e8e2d8; }
   * { box-sizing:border-box; margin:0; padding:0; }
   html { scroll-behavior:smooth; }
   body { background:var(--bg); color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:16px; line-height:1.75; transition:background .4s, color .4s; }
@@ -77,7 +77,7 @@
 
   section { padding:18vh 6vw; }
   .inner { max-width:64ch; margin:0 auto; }
-  .kicker { color:var(--faint); font-size:13px; margin-bottom:18px; }
+  .kicker { color:var(--kick); font-size:13px; margin-bottom:18px; }
   h2 { font-size:clamp(24px, 2.8vw, 34px); line-height:1.25; letter-spacing:-.02em; margin-bottom:28px; font-weight:700; }
   p { margin-bottom:20px; }
   p.soft { color:var(--dim); }
@@ -92,7 +92,7 @@
   .thead .faint { font-weight:400; }
   .term { width:104ch; max-width:100%; background:var(--soft); border-radius:12px; font-size:13.5px; line-height:1.6; overflow:hidden; text-align:left; }
   .screen { display:grid; grid-template-columns:minmax(0,1fr) 28ch; height:420px; }
-  .feed { padding:18px 3ch 10px; overflow-y:auto; }
+  .feed { padding:18px 3ch 2.2lh; overflow-y:auto; scroll-padding-bottom:2.2lh; }  /* room under the last line: the divider label "you → main" overlaps the frame edge */
   .feed > div { max-width:91ch; animation:enter .5s ease-out; }
   @keyframes enter { from { opacity:0; transform:translateY(5px) } }
   .feed .b { margin-top:1.6em; margin-top:1lh; }  /* one blank line between blocks, like the terminal */
