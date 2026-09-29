@@ -32,8 +32,16 @@ fn while_recording_any_key_stops_and_ctrl_c_or_esc_cancel() {
     assert_eq!(key_action(r, true, KeyCode::Char('c'), KeyModifiers::CONTROL), KeyAction::Cancel);
     assert_eq!(key_action(r, true, KeyCode::Esc, KeyModifiers::NONE), KeyAction::Cancel);
     let f = VoiceState::Flushing;
-    assert_eq!(key_action(f, true, KeyCode::Char('a'), KeyModifiers::NONE), KeyAction::Swallow);
+    // BISE-222: while transcribing you keep typing; what would send the
+    // text or record again is eaten
+    assert_eq!(key_action(f, true, KeyCode::Char('a'), KeyModifiers::NONE), KeyAction::Pass);
+    assert_eq!(key_action(f, true, KeyCode::Backspace, KeyModifiers::NONE), KeyAction::Pass);
+    assert_eq!(key_action(f, true, KeyCode::Enter, KeyModifiers::SHIFT), KeyAction::Pass);
+    assert_eq!(key_action(f, true, KeyCode::Enter, KeyModifiers::NONE), KeyAction::Swallow);
+    assert_eq!(key_action(f, true, KeyCode::Tab, KeyModifiers::NONE), KeyAction::Swallow);
+    assert_eq!(key_action(f, true, KeyCode::Char('r'), KeyModifiers::CONTROL), KeyAction::Swallow);
     assert_eq!(key_action(f, true, KeyCode::Esc, KeyModifiers::NONE), KeyAction::Cancel);
+    assert_eq!(key_action(f, true, KeyCode::Char('c'), KeyModifiers::CONTROL), KeyAction::Cancel);
     // voice mode switched off mid-recording: the keys still end it
     assert_eq!(key_action(r, false, KeyCode::Char('a'), KeyModifiers::NONE), KeyAction::Stop);
 }
@@ -88,9 +96,6 @@ fn samples_clip_and_peak_is_normalized() {
     assert_eq!(peak_glyph(0.0), '▁');
     assert_eq!(peak_glyph(1.0), '█');
     assert_eq!(peak_glyph(0.5), '▅');
-    assert_eq!(flush_glyph(0), '▏');
-    assert_eq!(flush_glyph(250), '▍');
-    assert_eq!(flush_glyph(800), '▏');
 }
 
 // ---- settings ----
@@ -152,7 +157,7 @@ fn deltas_are_inserted_live_then_stop_flushes_and_done_ends() {
     let t0 = Instant::now();
     v.start(key(), t0).unwrap();
     assert_eq!(v.state(), VoiceState::Recording);
-    assert_eq!(v.peak(), 0.5);
+    assert_eq!(v.levels(), [0.5; chip::BARS]);
     assert_eq!(tr.session.lock().unwrap().as_ref().unwrap().3, job());
     tr.send(TranscribeEvent::Delta("Hello".into()));
     tr.send(TranscribeEvent::Delta(" world".into()));
@@ -161,11 +166,13 @@ fn deltas_are_inserted_live_then_stop_flushes_and_done_ends() {
         vec![VoiceOutput::Insert("Hello".into()), VoiceOutput::Insert(" world".into())]
     );
     assert_eq!(v.state(), VoiceState::Recording);
+    assert_eq!(v.clip_len(t0 + Duration::from_secs(1)), Duration::from_secs(1));
     let t1 = t0 + Duration::from_secs(2);
     v.stop(t1);
     assert_eq!(v.state(), VoiceState::Flushing);
     assert!(*rec.stopped.borrow(), "the microphone is released at stop");
-    assert_eq!(v.flushing_since(), Some(t1));
+    // the timer holds the clip's length once stopped
+    assert_eq!(v.clip_len(t1 + Duration::from_secs(9)), Duration::from_secs(2));
     assert_eq!(tr.audio(), vec![AudioMsg::End]);
     tr.send(TranscribeEvent::Delta("!".into()));
     tr.send(TranscribeEvent::Done);

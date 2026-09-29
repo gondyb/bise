@@ -100,6 +100,14 @@ pub(crate) fn insert_chip(ed: &mut crate::editor::Editor, label: &str) {
     ed.paste(&format!("{pad}{label} "));
 }
 
+/// Puts the voice chip (BISE-222) at the cursor: like [`insert_chip`]
+/// but bare (no space around it: the transcript that replaces it gets
+/// its own, voice.rs) and not an undo step (the transcript is; see
+/// [`crate::editor::Editor::put_mark`]).
+pub(crate) fn insert_live_chip(ed: &mut crate::editor::Editor) {
+    ed.put_mark(crate::voice::chip::LABEL);
+}
+
 /// The clipboard image. Unit tests (the fuzzers press Ctrl+V and paste
 /// empty text) never touch the real clipboard: one osascript each would
 /// take seconds.
@@ -219,12 +227,14 @@ pub(crate) fn pick_image(app: &mut App, rel: &str) -> Option<Result<String, Stri
 /// What a clipboard image is called in the strip and the history.
 const CLIPBOARD: &str = "clipboard";
 
-/// The labels `[Image #N]` and `[Quote #N]` (quote.rs) in `text`: (first
-/// char index, char index past it, N), in text order. The composer draws
-/// each as one chip, the cursor steps over it, a delete takes it whole.
+/// The labels `[Image #N]`, `[Quote #N]` (quote.rs) and the voice chip
+/// (voice/chip.rs) in `text`: (first char index, char index past it, N),
+/// in text order. The composer draws each as one chip, the cursor steps
+/// over it, a delete takes it whole.
 pub(crate) fn chips(text: &str) -> Vec<(usize, usize, usize)> {
     let mut v = image_chips(text);
     v.extend(crate::quote::chips(text));
+    v.extend(find_labels(text, crate::voice::chip::OPEN));
     v.sort_unstable();
     v
 }
@@ -302,6 +312,21 @@ pub(crate) fn chip_text(label: &str) -> String {
         crate::render::ChipForm::Tinted => format!(" {g} {n} "),
         crate::render::ChipForm::Bracketed => format!("[{g} {n}]"),
     }
+}
+
+/// The columns the chip `label` takes in `inner` columns of text.
+pub(crate) fn chip_width(label: &str, inner: usize) -> usize {
+    use unicode_width::UnicodeWidthStr;
+    if is_voice(label) {
+        crate::voice::chip::width(inner)
+    } else {
+        chip_text(label).width()
+    }
+}
+
+/// `label` is the voice chip.
+pub(crate) fn is_voice(label: &str) -> bool {
+    label.starts_with(crate::voice::chip::OPEN)
 }
 
 /// The spans of [`chip_text`]: the glyph accent, the number in the text

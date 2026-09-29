@@ -66,9 +66,11 @@ pub(crate) fn copy_text(app: &mut App, text: &str) {
 }
 
 /// Speech-to-text keys (Vibe's text_area._handle_voice_key): Ctrl+R
-/// starts; while recording any key stops, Ctrl+C / Esc cancel; nothing
-/// else sees those keys. `true` when the key was the voice's. `job`
-/// resolves the voice model and its key (only when a recording starts).
+/// starts, the voice chip at the cursor (BISE-222); while recording any
+/// key stops, Ctrl+C / Esc cancel; while transcribing the composer takes
+/// the keys again (voice::key_action). `true` when the key was the
+/// voice's. `job` resolves the voice model and its key (only when a
+/// recording starts).
 pub(crate) fn voice_key(
     app: &mut App,
     k: &crossterm::event::KeyEvent,
@@ -78,32 +80,51 @@ pub(crate) fn voice_key(
     let now = std::time::Instant::now();
     match voice::key_action(app.voice.state(), app.voice.enabled, k.code, k.modifiers) {
         KeyAction::Pass => return false,
-        KeyAction::Start => {
-            if let Err(m) = app.voice.start(job(), now) {
+        KeyAction::Start => match app.voice.start(job(), now) {
+            Ok(()) => {
+                app.voice_text.clear();
+                crate::attach::insert_live_chip(&mut app.ed);
+            }
+            Err(m) => {
                 push_event(&mut app.events, &mut app.cache, Ev::Warn(m));
             }
-        }
+        },
         KeyAction::Stop => app.voice.stop(now),
-        KeyAction::Cancel => app.voice.cancel(),
+        KeyAction::Cancel => {
+            app.voice.cancel();
+            end_chip(app, None);
+        }
         KeyAction::Swallow => {}
         KeyAction::OffHint => app.voice_note = Some((voice::OFF_HINT.into(), now)),
     }
     true
 }
 
-/// The transcription events of this tick: the text lands at the
-/// composer cursor as it arrives.
+/// The transcription events of this tick: the transcript replaces the
+/// voice chip at the end of the clip. A chip gone from the text (a
+/// delete, an undo, the history) cancels the transcription; a chip left
+/// with no voice at work (voice mode turned off, a restored draft) goes.
 pub(crate) fn pump_voice(app: &mut App) {
     let now = std::time::Instant::now();
     for out in app.voice.poll(now) {
         apply_voice(app, out, now);
     }
+    let chip = app.ed.mark_at(voice::chip::LABEL).is_some();
+    if app.voice.active() && !chip {
+        app.voice.cancel();
+        end_chip(app, None);
+    } else if !app.voice.active() && chip {
+        end_chip(app, None);
+    }
 }
 
 pub(crate) fn apply_voice(app: &mut App, out: voice::VoiceOutput, now: std::time::Instant) {
+    let chip = app.ed.mark_at(voice::chip::LABEL).is_some();
     match out {
+        // the transcript waits for the end of the clip, in the chip's place
+        voice::VoiceOutput::Insert(t) if chip => app.voice_text.push_str(&t),
         voice::VoiceOutput::Insert(t) => {
-            // the clip's text after a word: a space between them
+            // no chip (a test's direct call): at the cursor, a space after a word
             let before = app.ed.cursor.checked_sub(1).and_then(|i| app.ed.text.chars().nth(i));
             let t = if before.is_some_and(|c| !c.is_whitespace())
                 && t.starts_with(|c: char| c.is_alphanumeric())
@@ -115,12 +136,38 @@ pub(crate) fn apply_voice(app: &mut App, out: voice::VoiceOutput, now: std::time
             app.ed.insert_voice(&t);
             app.popup_sel = 0;
         }
-        voice::VoiceOutput::Utterance => app.ed.break_undo(),
+        voice::VoiceOutput::Utterance => {
+            let t = std::mem::take(&mut app.voice_text);
+            end_chip(app, Some(&t));
+            app.ed.break_undo();
+        }
         voice::VoiceOutput::Error(m) => {
+            end_chip(app, None);
             push_event(&mut app.events, &mut app.cache, Ev::Err(m));
         }
-        voice::VoiceOutput::Notice(m) => app.voice_note = Some((m, now)),
+        voice::VoiceOutput::Notice(m) => {
+            end_chip(app, None);
+            app.voice_note = Some((m, now));
+        }
     }
+}
+
+/// The voice chip's end: `transcript` replaces it in place (one undo
+/// step, the cursor at its end), else it goes and the text around it
+/// stays. Nothing when there is no chip.
+fn end_chip(app: &mut App, transcript: Option<&str>) {
+    app.voice_text.clear();
+    let label = voice::chip::LABEL;
+    let t = transcript.map(str::trim).unwrap_or("");
+    let Some(at) = app.ed.mark_at(label) else {
+        app.ed.swap_mark(label, "", 0);
+        return;
+    };
+    let before = at.checked_sub(1).and_then(|i| app.ed.text.chars().nth(i));
+    let after = app.ed.text.chars().nth(at + label.chars().count());
+    let (with, cursor) = voice::chip::landing(before, t, after);
+    app.ed.swap_mark(label, &with, cursor);
+    app.popup_sel = 0;
 }
 
 /// /voice: voice mode on or off, saved in ~/.bend-harness/tui.json.

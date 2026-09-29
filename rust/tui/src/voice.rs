@@ -9,7 +9,9 @@
 //! Mistral Voxtral by default; OpenAI, Groq, ElevenLabs, Deepgram, any
 //! OpenAI-compatible server), the key from the chat keys' resolution.
 //! While recording, Ctrl+C or Esc cancels. Off by default: `/voice`
-//! toggles it, saved in bise's prefs.
+//! toggles it, saved in bise's prefs. The state shows as one chip in
+//! the composer text at the cursor ([`chip`], BISE-222); the transcript
+//! replaces it.
 //!
 //! Layout: pure parts first (key decisions, resampling, settings), then
 //! the controller [`Voice`] driven through two ports ([`Recorder`],
@@ -37,19 +39,12 @@ const MIN_SIGNAL_DURATION: Duration = Duration::from_millis(500);
 /// A denied or muted microphone gives pure silence: any peak above this
 /// floor means a real signal reached us.
 const SILENCE_PEAK: f32 = 0.001;
-/// The level meter shown in place of the prompt while recording.
+/// The levels of the voice chip's meter ([`chip`]).
 pub const PEAK_BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-/// The spinner shown while the clip is transcribed.
-pub const FILL_BLOCKS: [char; 8] = ['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
 
 pub fn peak_glyph(peak: f32) -> char {
     let i = (peak.clamp(0.0, 1.0) * PEAK_BLOCKS.len() as f32) as usize;
     PEAK_BLOCKS[i.min(PEAK_BLOCKS.len() - 1)]
-}
-
-/// `ms` since the flush started → the spinner frame (100 ms a frame).
-pub fn flush_glyph(ms: u128) -> char {
-    FILL_BLOCKS[(ms / 100) as usize % FILL_BLOCKS.len()]
 }
 
 fn mic_access_hint() -> &'static str {
@@ -71,8 +66,6 @@ fn no_audio_detected_message() -> String {
 
 pub const ENABLED_MESSAGE: &str = "voice mode on. press ctrl+r to start recording.";
 pub const DISABLED_MESSAGE: &str = "voice mode off.";
-/// Shown in the empty composer while the clip is transcribed.
-pub const TRANSCRIBING: &str = "transcribing…";
 pub const OFF_HINT: &str = "voice mode is off: /voice turns it on";
 
 // ---- keys ----
@@ -92,24 +85,30 @@ pub enum KeyAction {
     Start,
     Stop,
     Cancel,
-    /// eaten while the last words are flushed
+    /// eaten while the clip is transcribed (sending, a new recording)
     Swallow,
     /// Ctrl+R with voice mode off
     OffHint,
 }
 
-/// Vibe's text_area._handle_voice_key: while not idle every key is
-/// taken (Ctrl+C / Esc cancel, any other key stops a recording); at
-/// idle, Ctrl+R starts.
+/// Vibe's text_area._handle_voice_key: while recording every key is
+/// taken (Ctrl+C / Esc cancel, any other key stops); while the clip is
+/// transcribed you keep typing (BISE-222), Ctrl+C / Esc cancel, and
+/// the keys that would send the text or record again are eaten (Enter,
+/// Tab, Ctrl+R); at idle, Ctrl+R starts.
 pub fn key_action(state: VoiceState, enabled: bool, code: KeyCode, mods: KeyModifiers) -> KeyAction {
     let ctrl_c = code == KeyCode::Char('c') && mods == KeyModifiers::CONTROL;
+    let ctrl_r = code == KeyCode::Char('r') && mods == KeyModifiers::CONTROL;
     match state {
         VoiceState::Recording | VoiceState::Flushing if ctrl_c || code == KeyCode::Esc => {
             KeyAction::Cancel
         }
         VoiceState::Recording => KeyAction::Stop,
-        VoiceState::Flushing => KeyAction::Swallow,
-        VoiceState::Idle if code == KeyCode::Char('r') && mods == KeyModifiers::CONTROL => {
+        VoiceState::Flushing if ctrl_r || code == KeyCode::Tab || (code == KeyCode::Enter && mods == KeyModifiers::NONE) => {
+            KeyAction::Swallow
+        }
+        VoiceState::Flushing => KeyAction::Pass,
+        VoiceState::Idle if ctrl_r => {
             if enabled {
                 KeyAction::Start
             } else {
@@ -288,6 +287,10 @@ pub enum StartError {
 pub trait Capture {
     fn peak(&self) -> f32;
     fn has_signal(&self) -> bool;
+    /// The last live levels, oldest first ([`chip::Meter`]).
+    fn levels(&self) -> [f32; chip::BARS] {
+        [self.peak(); chip::BARS]
+    }
 }
 
 pub trait Recorder {
@@ -359,17 +362,21 @@ impl Voice {
         self.state != VoiceState::Idle
     }
 
-    pub fn peak(&self) -> f32 {
+    /// The meter's levels while recording, oldest first (else silence).
+    pub fn levels(&self) -> [f32; chip::BARS] {
         self.run
             .as_ref()
             .and_then(|r| r.capture.as_ref())
-            .map(|c| c.peak())
-            .unwrap_or(0.0)
+            .map(|c| c.levels())
+            .unwrap_or([0.0; chip::BARS])
     }
 
-    /// When the transcription started (the spinner's time base).
-    pub fn flushing_since(&self) -> Option<Instant> {
-        self.run.as_ref().and_then(|r| r.stopped)
+    /// The recording's length at `now`; once stopped, the clip's.
+    pub fn clip_len(&self, now: Instant) -> Duration {
+        self.run
+            .as_ref()
+            .map(|r| r.stopped.unwrap_or(now).saturating_duration_since(r.started))
+            .unwrap_or_default()
     }
 
     /// Start recording; Err is the warning to show (no model or key,
@@ -494,6 +501,7 @@ fn stop_capture(run: &mut Run, now: Instant) {
 struct Level {
     peak_bits: AtomicU32,
     signal: AtomicBool,
+    meter: std::sync::Mutex<chip::Meter>,
 }
 
 impl Level {
@@ -502,6 +510,9 @@ impl Level {
         self.peak_bits.store(p.to_bits(), Ordering::Relaxed);
         if p > SILENCE_PEAK {
             self.signal.store(true, Ordering::Relaxed);
+        }
+        if let Ok(mut m) = self.meter.lock() {
+            m.push(samples);
         }
     }
 }
@@ -517,6 +528,9 @@ impl Capture for CpalCapture {
     }
     fn has_signal(&self) -> bool {
         self.level.signal.load(Ordering::Relaxed)
+    }
+    fn levels(&self) -> [f32; chip::BARS] {
+        self.level.meter.lock().map(|m| m.levels()).unwrap_or_default()
     }
 }
 
@@ -643,6 +657,7 @@ pub fn transcribe_clip(
 pub use bise_catalog::voice::VoiceJob;
 
 pub mod http;
+pub(crate) mod chip;
 pub mod stt;
 
 #[cfg(test)]

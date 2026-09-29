@@ -363,7 +363,8 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
         let frame = app.anim.gust(now);
         // the tick pulses (`∿` of a running tool, `·` starting) hold
         // still while you type (zen, BISE-121)
-        app.tick = app.anim.pulse(now, zen, app.zen.end());
+        app.pulse_ms = app.anim.pulse_ms(now, zen, app.zen.end());
+        app.tick = (app.pulse_ms / crate::anim::PULSE_MS) as u32;
         app.motion = crate::gust::motion(app.focus_lost, last_draw, reduce_motion, zen, frame);
         // zen (BISE-132): the other agents' gusts stand still, their `∿`
         // pulsing slowly in color (a hush: it still works)
@@ -397,7 +398,8 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
                 let _ = terminal.clear();
             }
         }
-        // the level meter moves every 50 ms while recording (Vibe's poll)
+        // the voice chip moves every 50 ms while recording or
+        // transcribing (its meter, blink and wave; Vibe's poll)
         let wait = if backlog {
             Duration::ZERO
         } else if app.voice.active() {

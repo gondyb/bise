@@ -10,17 +10,6 @@ use ratatui::Frame;
 use std::time::Duration;
 use unicode_width::UnicodeWidthStr;
 
-/// The meter glyph: the level while recording, the fill spinner while
-/// the last words are flushed.
-pub(crate) fn voice_glyph(v: &voice::Voice) -> char {
-    match v.flushing_since() {
-        Some(at) if v.state() == voice::VoiceState::Flushing => {
-            voice::flush_glyph(at.elapsed().as_millis())
-        }
-        _ => voice::peak_glyph(v.peak()),
-    }
-}
-
 pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     let full = app.term.draw(frame, frame.area());
     // book §8 "The frame": the frame, the history and the panel, the
@@ -44,8 +33,8 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // the composer's text wraps like your message in the history: the
     // column less its 3 lead columns
     let inner_w = (cols.col_w as usize).saturating_sub(3).min((cols.pane_w as usize).saturating_sub(3)).max(1);
-    // while recording, the meter takes 2 columns of the text's
-    let text_w = inner_w.saturating_sub(if app.voice.active() { 2 } else { 0 }).max(1);
+    // the voice chip is in the text (BISE-222): no columns of its own
+    let text_w = inner_w;
     let composer_rows = {
         let r = editor::layout_input(&app.ed.text, text_w);
         editor::drawn_rows(&r, app.ed.cursor) as u16
@@ -425,6 +414,23 @@ fn fresh_note(note: &Option<(String, std::time::Instant)>) -> Option<String> {
 /// The composer's typed text as drawn rows, `inner` columns wide, at
 /// most `text_rows` of them (scrolled to keep the cursor row in view;
 /// sets `app.composer.top`).
+/// The voice chip's frame at `now` (BISE-222): the phase, the live
+/// levels, the timer, the clock's pulse time (held in zen); still when
+/// the gust is (`BISE_REDUCE_MOTION`, a slow draw, no focus).
+pub(crate) fn voice_look(app: &App, now: std::time::Instant) -> voice::chip::Look {
+    voice::chip::Look {
+        phase: if app.voice.state() == voice::VoiceState::Flushing {
+            voice::chip::Phase::Transcribing
+        } else {
+            voice::chip::Phase::Recording
+        },
+        levels: app.voice.levels(),
+        secs: app.voice.clip_len(now).as_secs(),
+        ms: app.pulse_ms,
+        still: matches!(app.motion, crate::gust::Motion::Still),
+    }
+}
+
 fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'static>> {
     let mut out: Vec<Line<'static>> = Vec::new();
     // rows by display width (emojis are 2 columns); the cursor is
@@ -440,6 +446,8 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
     app.composer.top = top;
     let text_style = Style::default().fg(theme::text());
     let sel_style = Style::default().fg(theme::text()).bg(theme::selection_bg());
+    let voice_look = voice_look(app, std::time::Instant::now());
+    let voice_form = voice::chip::Form::now();
     for row in rows.iter().take(drawn).skip(top) {
         let mut spans: Vec<Span> = Vec::new();
         let mut buf = String::new();
@@ -468,7 +476,11 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
                 if is_cursor {
                     over = over.add_modifier(Modifier::REVERSED);
                 }
-                spans.extend(attach::chip_pill(cell.text, over).into_iter().filter(|s| !s.content.is_empty()));
+                if attach::is_voice(cell.text) {
+                    spans.extend(voice::chip::spans(&voice_look, voice::chip::fit(inner), voice_form, over));
+                } else {
+                    spans.extend(attach::chip_pill(cell.text, over).into_iter().filter(|s| !s.content.is_empty()));
+                }
                 continue;
             }
             if is_cursor || buf_sel != in_sel {
@@ -523,43 +535,24 @@ const TEXT_AT: u16 = 3;
 /// the area's column 0 on every row (faint while empty, accent with text
 /// or while recording), `pad_top` / `pad_bottom` blank bar rows around
 /// the text, the text from the area's column 3 wrapped at `inner` columns and scrolled with the cursor row
-/// in view. Empty: the cursor at column 3 and the dim placeholder;
-/// recording: the meter glyph at column 3, the text after it.
+/// in view. Empty: the cursor at column 3 and the dim placeholder.
+/// Recording or transcribing: the voice chip in the text (BISE-222).
 fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, pad_top: u16, pad_bottom: u16) {
     let text_y = area.y + pad_top.min(area.height.saturating_sub(1));
     let text_rows = (area.height.saturating_sub(pad_top + pad_bottom) as usize).max(1);
-    let voice = app.voice.active();
-    // recording: the meter takes 2 columns before the text
-    let lead = if voice { 2 } else { 0 };
-    let text_w = inner.saturating_sub(lead).max(1);
-    app.composer = ComposerArea { x: area.x + TEXT_AT + lead as u16, y: text_y, w: text_w, h: text_rows, top: 0 };
+    let text_w = inner.max(1);
+    app.composer = ComposerArea { x: area.x + TEXT_AT, y: text_y, w: text_w, h: text_rows, top: 0 };
     let empty = app.ed.is_empty();
-    let mut rows = if empty && !voice {
+    let rows = if empty {
         let note = sb::placeholder(app).unwrap_or_default();
         let mut spans = vec![Span::styled(" ", Style::default().fg(text()).add_modifier(Modifier::REVERSED))];
         if !note.is_empty() {
             spans.push(Span::styled(format!(" {}", note), Style::default().fg(dim())));
         }
         vec![Line::from(spans)]
-    } else if empty && app.voice.state() == voice::VoiceState::Flushing {
-        // BISE-130: the clip is sent once stopped; the text lands here
-        vec![Line::from(Span::styled(voice::TRANSCRIBING.replace('…', crate::theme::ellipsis()), Style::default().fg(dim())))]
-    } else if empty {
-        vec![Line::from("")]
     } else {
         typed_lines(app, text_w, text_rows)
     };
-    if voice {
-        let meter = Span::styled(format!("{} ", voice_glyph(&app.voice)), Style::default().fg(accent()).add_modifier(Modifier::BOLD));
-        for (i, l) in rows.iter_mut().enumerate() {
-            let mut spans = vec![if i == 0 { meter.clone() } else { Span::raw("  ") }];
-            spans.extend(l.spans.drain(..).map(|s| {
-                let st = s.style.fg(dim());
-                Span::styled(s.content, st)
-            }));
-            *l = Line::from(spans);
-        }
-    }
     let bar_st = Style::default().fg(composer_bar_color(app));
     let bar = Span::styled("│  ", bar_st);
     let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);

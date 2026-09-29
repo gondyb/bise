@@ -8,12 +8,15 @@
 //!   every [`crate::gust::MOTIF`]`.frame_ms`, [`Clock::gust`];
 //! - the tick pulses (`∿` of a running tool, fold and compacting rows,
 //!   `·` of a starting agent; [`crate::theme::working_frame`]): a tick
-//!   every [`PULSE_MS`], [`Clock::pulse`]. They hold still while you
+//!   every [`PULSE_MS`] of [`Clock::pulse_ms`]. They hold still while you
 //!   type (zen, BISE-121): the held time is left out, so the pulse goes
 //!   on where it stopped.
 //!
-//! The zen fade, the ctrl hints' delay, the voice spinner, the tips and
-//! the onboarding read `Instant`s of their own.
+//! - the voice chip's blink and wave (voice/chip.rs, BISE-222): the
+//!   pulses' time in ms, [`Clock::pulse_ms`]; they hold in zen too.
+//!
+//! The zen fade, the ctrl hints' delay, the voice chip's timer, the tips
+//! and the onboarding read `Instant`s of their own.
 
 use std::time::{Duration, Instant};
 
@@ -44,7 +47,16 @@ impl Clock {
     /// `ended` is when the hold stopped (zen's end, [`crate::zen::Zen::end`]):
     /// the first reading after it may come a loop turn later, the held
     /// time does not count that turn.
+    /// (The draw loop reads [`Clock::pulse_ms`] and divides.)
+    #[cfg(test)]
     pub(crate) fn pulse(&mut self, now: Instant, hold: bool, ended: Option<Instant>) -> u32 {
+        (self.pulse_ms(now, hold, ended) / PULSE_MS) as u32
+    }
+
+    /// The pulses' time at `now` in ms, the held time left out (the
+    /// voice chip's blink and wave, voice/chip.rs); same `hold` and
+    /// `ended` as [`Clock::pulse`], which reads it.
+    pub(crate) fn pulse_ms(&mut self, now: Instant, hold: bool, ended: Option<Instant>) -> u64 {
         let run = self.since_start(now);
         match (hold, self.hold_from) {
             (true, None) => self.hold_from = Some(now),
@@ -59,8 +71,7 @@ impl Clock {
             Some(h) => h.saturating_duration_since(self.start.unwrap_or(h)),
             None => run,
         };
-        let moving = at.saturating_sub(self.held);
-        (moving.as_millis() as u64 / PULSE_MS) as u32
+        at.saturating_sub(self.held).as_millis() as u64
     }
 }
 
@@ -116,5 +127,21 @@ mod tests {
         assert_eq!(c.pulse(ms(t, 1800), false, Some(ms(t, 1400))), 10);
         // the gust does not hold (zen calms it instead, gust::motion)
         assert_eq!(c.gust(ms(t, 1800)), 1800 / crate::gust::MOTIF.frame_ms);
+    }
+
+    #[test]
+    fn the_voice_chip_reads_the_pulse_time_and_holds_in_zen() {
+        let t = Instant::now();
+        let mut c = Clock::default();
+        assert_eq!(c.pulse_ms(t, false, None), 0);
+        // the wave's 120 ms and the blink's 600 ms, not a count of turns
+        assert_eq!(c.pulse_ms(ms(t, 121), false, None), 121);
+        assert_eq!(c.pulse_ms(ms(t, 600), false, None), 600);
+        // typing (zen) from 600 ms to 1000 ms: held, then on where it was
+        assert_eq!(c.pulse_ms(ms(t, 600), true, None), 600);
+        assert_eq!(c.pulse_ms(ms(t, 900), true, None), 600);
+        assert_eq!(c.pulse_ms(ms(t, 1100), false, Some(ms(t, 1000))), 700);
+        // the pulse is the same time in ticks
+        assert_eq!(c.pulse(ms(t, 1100), false, None), (700 / PULSE_MS) as u32);
     }
 }

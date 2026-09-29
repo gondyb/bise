@@ -62,8 +62,9 @@ impl Mode {
                 ("wheel/shift+pgup", "scroll"),
                 ("drag", "the border to resize"),
             ],
-            Mode::Recording => &[("", "recording"), ("any key", "stops"), ("esc/ctrl+c", "cancel")],
-            Mode::Transcribing => &[("", "transcribing…"), ("esc/ctrl+c", "cancel")],
+            // BISE-222: the chip in the text says recording / transcribing
+            Mode::Recording => &[("any key", "stop"), ("esc", "cancel")],
+            Mode::Transcribing => &[("esc", "cancel")],
             Mode::FilePopup => &[
                 ("⏎/tab", "insert"),
                 ("⏎/tab/→", "open a folder"),
@@ -398,7 +399,7 @@ mod tests {
         assert!(s.starts_with("enter send   @ agent   alt+0-9 switch"), "{s}");
         assert!(s.ends_with("tip: ctrl+o opens everything folded"), "{s}");
         assert!(f.contains("enter/tab/right open a folder   left up   up/down select"), "{f}");
-        assert!(t.contains("transcribing..."), "{t}");
+        assert!(t.starts_with("esc cancel"), "{t}");
         for x in [s, f, t] {
             assert!(x.is_ascii(), "{x}");
         }

@@ -17,6 +17,11 @@ pub(crate) fn byte_at_char(s: &str, ci: usize) -> usize {
     s.char_indices().nth(ci).map(|(b, _)| b).unwrap_or(s.len())
 }
 
+/// The char index of the first `needle` in `s`.
+fn char_find(s: &str, needle: &str) -> Option<usize> {
+    s.find(needle).map(|b| s[..b].chars().count())
+}
+
 /// The char index of the grapheme before the one at `cursor`. An image
 /// chip `[Image #N]` is one step (attach.rs).
 pub(crate) fn prev_grapheme(s: &str, cursor: usize) -> usize {
@@ -281,7 +286,7 @@ pub(crate) fn layout_input(input: &str, inner: usize) -> Vec<Vec<InputCell<'_>>>
         }
         if let Some(&(a, b, _)) = chips.get(chip_i).filter(|c| c.0 == ci) {
             let label = &input[bi..bi + (b - a)]; // ASCII: chars = bytes
-            let w = crate::attach::chip_text(label).width();
+            let w = crate::attach::chip_width(label, inner);
             place(inner, &mut rows, &mut row, &mut col, &mut brk, InputCell { ci, text: label, w, newline: false, chip: true }, false);
             skip_to = b;
             ci += n;
@@ -563,6 +568,65 @@ impl Editor {
     /// Voice deltas: consecutive ones undo together.
     pub(crate) fn insert_voice(&mut self, s: &str) {
         self.insert_kind(s, Kind::Voice);
+    }
+
+    /// The char index of the live mark `label` (the voice chip) in the text.
+    pub(crate) fn mark_at(&self, label: &str) -> Option<usize> {
+        char_find(&self.text, label)
+    }
+
+    /// Puts the live mark `label` (the voice chip, BISE-222) at the
+    /// cursor, the cursor after it; a selection just ends. Not an undo
+    /// step: the mark is transient, what replaces it is the step
+    /// ([`Editor::swap_mark`]).
+    pub(crate) fn put_mark(&mut self, label: &str) {
+        self.anchor = None;
+        let at = self.cursor;
+        let b = byte_at_char(&self.text, at);
+        self.text.insert_str(b, label);
+        self.cursor = at + label.chars().count();
+        self.break_undo();
+    }
+
+    /// Replaces the live mark `label` with `with`, the cursor `cursor`
+    /// chars into it: one undo step back to the text without the mark.
+    /// An empty `with` takes the mark away, the cursor stays by the
+    /// text around it. The mark leaves every saved state too (undo,
+    /// redo, the history draft): no undo brings a dead chip back. False
+    /// when the text has no mark.
+    pub(crate) fn swap_mark(&mut self, label: &str, with: &str, cursor: usize) -> bool {
+        let n = label.chars().count();
+        let strip = |s: &mut Snap| {
+            if let Some(p) = char_find(&s.text, label) {
+                let b = byte_at_char(&s.text, p);
+                s.text.replace_range(b..b + label.len(), "");
+                if s.cursor > p {
+                    s.cursor = s.cursor.saturating_sub(n).max(p);
+                }
+            }
+        };
+        self.undo.iter_mut().chain(self.redo.iter_mut()).chain(self.draft.iter_mut()).for_each(strip);
+        for t in self.scratch.values_mut() {
+            *t = t.replacen(label, "", 1);
+        }
+        let Some(p) = self.mark_at(label) else { return false };
+        let mut before = self.snap();
+        strip(&mut before);
+        let b = byte_at_char(&self.text, p);
+        self.text.replace_range(b..b + label.len(), with);
+        self.anchor = None;
+        self.last = None;
+        if with.is_empty() {
+            self.cursor = before.cursor;
+        } else {
+            self.undo.push(before);
+            if self.undo.len() > 200 {
+                self.undo.remove(0);
+            }
+            self.redo.clear();
+            self.cursor = p + cursor.min(with.chars().count());
+        }
+        true
     }
 
     /// Replaces the whole text (a popup completion), one undo step.

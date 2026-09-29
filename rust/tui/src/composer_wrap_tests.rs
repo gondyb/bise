@@ -133,7 +133,7 @@ fn the_cursor_back_in_the_text_hides_the_end_slot_row() {
 }
 
 #[test]
-fn recording_meter_narrows_the_rows_and_the_height_follows() {
+fn recording_with_the_voice_chip_the_height_follows() {
     for width in [30u16, 80, 81] {
         let mut app = sb::bench::test_app();
         let (rec, tr) = (FakeRecorder::ok(true), FakeTranscriber::default());

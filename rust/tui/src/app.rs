@@ -67,6 +67,9 @@ pub(crate) struct App {
     pub(crate) voice: voice::Voice,
     /// a voice notice in the status row ("no speech detected") and when
     pub(crate) voice_note: Option<(String, std::time::Instant)>,
+    /// the transcript received so far: it replaces the voice chip at
+    /// the end of the clip (BISE-222)
+    pub(crate) voice_text: String,
     pub(crate) popup_sel: usize,
     /// The composer text the user closed the `@` popup on (Esc): the
     /// popup stays closed until the text changes.
@@ -74,6 +77,8 @@ pub(crate) struct App {
     pub(crate) history: Vec<String>,
     /// the tick pulses' tick (BISE-204): set by the draw loop from `anim`
     pub(crate) tick: u32,
+    /// the pulses' time in ms (BISE-204; the voice chip's blink and wave)
+    pub(crate) pulse_ms: u64,
     /// the animation clock: the frames of the gust and the pulses
     pub(crate) anim: crate::anim::Clock,
     /// the working gust's motion (BISE-107): set by the draw loop, still
@@ -204,11 +209,13 @@ impl App {
             flash: None,
             voice,
             voice_note: None,
+            voice_text: String::new(),
             mouse: MouseState::default(),
             popup_sel: 0,
             popup_dismissed: None,
             history: Vec::new(),
             tick: 0,
+            pulse_ms: 0,
             anim: crate::anim::Clock::default(),
             motion: crate::gust::Motion::Still,
             motion_away: crate::gust::Motion::Still,
