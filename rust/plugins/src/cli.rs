@@ -1,13 +1,13 @@
-//! `bend-harness plugins ...`
+//! `bise plugins ...`
 
 use std::path::PathBuf;
 
 use crate::{bridge, report, resolve, state};
 
 pub const USAGE: &str = "usage:
-  bend-harness plugins [list] [--workspace DIR] [--json]
-  bend-harness plugins enable|disable NAME
-  bend-harness plugins serve --dir DIR [--workspace DIR] [--parent PID]   (internal: the session bridge)
+  bise plugins [list] [--workspace DIR] [--json]
+  bise plugins enable|disable NAME
+  bise plugins serve --dir DIR [--workspace DIR] [--parent PID]   (internal: the session bridge)
 
 Roots: ~/.agents/plugins (or $BEND_PLUGINS_HOME) and <workspace>/.agents/plugins.
 Enable state: ~/.bend-harness/plugins.json. Changes apply at the next session start or /reload.";

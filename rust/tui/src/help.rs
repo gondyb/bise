@@ -137,7 +137,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(GHOSTTY, "", "keybind = super+z=unbind"),
     r(GHOSTTY, "", "keybind = super+shift+z=unbind"),
     r(GHOSTTY, "", "keybind = super+c=performable:copy_to_clipboard (cmd+c copies Ghostty's selection if any, else the app's)"),
-    r(GHOSTTY, "", "check what reaches the app: bend-harness keyprobe"),
+    r(GHOSTTY, "", "check what reaches the app: bise keyprobe"),
 ];
 
 // ---- the overlay state ----

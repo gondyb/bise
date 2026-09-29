@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Convenience wrapper: everything starts from the single executable
-# rust/target/<profile>/bend-harness. The TUI is Switchboard's (there is
+# rust/target/<profile>/bise (BISE-165: was bend-harness). The TUI is Switchboard's (there is
 # no single-agent TUI any more, BISE-113).
 #
 #   ./run.sh                     # Switchboard: main + tasks, in the current folder
@@ -39,8 +39,8 @@ export PATH="$HOME/.cargo/bin:$PATH"
 profile=debug
 if [ "${1:-}" = "switchboard" ]; then profile=release; fi
 # (an agent's CARGO_TARGET_DIR is honoured: the binary run is the one built)
-BIN="${CARGO_TARGET_DIR:-$PWD/rust/target}/$profile/bend-harness"
-[ -x "$BIN" ] || echo "bend-harness ($profile) missing — cargo build (first time: a few minutes)..." >&2
+BIN="${CARGO_TARGET_DIR:-$PWD/rust/target}/$profile/bise"
+[ -x "$BIN" ] || echo "bise ($profile) missing — cargo build (first time: a few minutes)..." >&2
 if [ "$profile" = release ]; then
   (cd rust && cargo build -q --release -p bend-harness)
 else

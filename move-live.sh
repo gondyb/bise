@@ -65,7 +65,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-# the state dir of a workspace, from paths.rs (`bend-harness switchboard
+# the state dir of a workspace, from paths.rs (`bise switchboard
 # --state-dir`): the first binary that knows the flag (versions built
 # before it do not; they would open a TUI)
 state_dir_of() {
@@ -82,8 +82,9 @@ state_dir_of() {
 # the new folder have two states)
 state_of() {
   SB_STATE_DIR="" SD_WS="$1" state_dir_of \
+    "$FROM/rust/target/debug/bise" "$FROM/rust/target/release/bise" \
     "$FROM/rust/target/debug/bend-harness" "$FROM/rust/target/release/bend-harness" \
-    || die "no bend-harness with --state-dir in $FROM (build it: cd rust && cargo build)"
+    || die "no bise with --state-dir in $FROM (build it: cd rust && cargo build)"
 }
 
 TS="$(date +%Y%m%d-%H%M%S)"
@@ -188,8 +189,9 @@ if [ -n "${SB_VERSION_DIR:-}" ]; then
 else
   vdir="$("$NEW/versions.sh" build HEAD)"
 fi
-exe="$vdir/bend-harness"
-[ -x "$exe" ] || die "no bend-harness in $vdir"
+exe="$vdir/bise"   # BISE-165; a version built before: bend-harness
+[ -x "$exe" ] || exe="$vdir/bend-harness"
+[ -x "$exe" ] || die "no bise in $vdir"
 say "version: $(basename "$vdir")"
 
 sbc() { SB_SOCKET="$1/hub.sock" SB_AGENT=main "$exe" sb "${@:2}"; }

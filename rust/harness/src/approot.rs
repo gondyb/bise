@@ -7,10 +7,11 @@
 //!   1. `BISE_APP_ROOT` (run.sh, a hub started by a TUI, a version switch);
 //!   2. the executable's folder when it holds `VERSION` (a version dir, an
 //!      installed bundle);
-//!   3. dev only: the executable's folder or one of its 3 parents that
-//!      holds the REPL (`rust/target/<profile>/` -> the repo), then, in a
-//!      debug build, the source tree it was built from (a test binary in
-//!      an agent's own CARGO_TARGET_DIR).
+//!   3. dev only: a source tree (it holds `rust/Cargo.toml` and the REPL):
+//!      one of the executable's 3 parents (`rust/target/<profile>/` -> the
+//!      repo), then, in a debug build, the tree it was built from (a test
+//!      binary in an agent's own CARGO_TARGET_DIR). Never the executable's
+//!      own folder: a stale repl-live lands in rust/target/debug.
 
 use std::path::{Path, PathBuf};
 
@@ -82,11 +83,11 @@ pub(crate) fn find(
     }
     let dev = exe_dir
         .iter()
-        .flat_map(|d| d.ancestors().take(4))
+        .flat_map(|d| d.ancestors().skip(1).take(3))
         .map(Path::to_path_buf)
         .chain(inp.dev_tree.clone());
     for d in dev {
-        if has(&d, repl) {
+        if has(&d, "rust/Cargo.toml") && has(&d, repl) {
             return Ok((d, Via::DevTree));
         }
     }
@@ -141,12 +142,16 @@ mod tests {
 
     #[test]
     fn the_dev_tree_is_found_from_the_executable_never_the_cwd() {
-        let has = fs(&["/repo/repl-live"]);
-        let got = find(&inp(None, "/repo/rust/target/release/bise", None), "repl-live", &has);
+        // a stale repl-live next to the dev binary is not the tree's
+        let has = fs(&["/repo/repl-live", "/repo/rust/Cargo.toml", "/repo/rust/target/debug/repl-live"]);
+        let got = find(&inp(None, "/repo/rust/target/debug/bise", None), "repl-live", &has);
         assert_eq!(got, Ok(("/repo".into(), Via::DevTree)));
         // an agent's own CARGO_TARGET_DIR: the source tree of a debug build
-        let got = find(&inp(None, "/tmp/t/debug/bise", Some("/wt")), "repl-live", &fs(&["/wt/repl-live"]));
+        let has = fs(&["/wt/repl-live", "/wt/rust/Cargo.toml", "/tmp/t/debug/repl-live"]);
+        let got = find(&inp(None, "/tmp/t/debug/bise", Some("/wt")), "repl-live", &has);
         assert_eq!(got, Ok(("/wt".into(), Via::DevTree)));
+        // a folder with a REPL but no sources is not a dev tree
+        assert!(find(&inp(None, "/x/bin/bise", None), "repl-live", &fs(&["/x/repl-live"])).is_err());
     }
 
     #[test]

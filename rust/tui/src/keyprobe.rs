@@ -1,4 +1,4 @@
-//! `bend-harness keyprobe`: prints the key and mouse events this
+//! `bise keyprobe`: prints the key and mouse events this
 //! terminal delivers with the flags the TUI uses, and the composer
 //! action each key maps to. Checks which macOS shortcuts reach the app
 //! (Ghostty keeps some for itself unless unbound).

@@ -43,7 +43,7 @@ pub struct Opts {
     pub paths: Paths,
     /// Where repl-live and the runtime's relative files live.
     pub app_root: PathBuf,
-    /// The bend-harness executable (the `sb` shim calls it).
+    /// The bise executable (the `sb` shim calls it).
     pub exe: PathBuf,
     pub repl_bin: PathBuf,
     /// Extra env of each REPL, computed at its spawn: the API keys
@@ -620,7 +620,7 @@ impl Shell {
             .env("BEND_CONTEXT_FILE", adir.join("context.txt"))
             .env("BEND_WORKDIR", &a.ws.path)
             // the REPL starts its plugins bridge with this binary
-            // (`bend-harness plugins serve`, docs/plugins.md)
+            // (`bise plugins serve`, docs/plugins.md)
             .env("BEND_HARNESS_BIN", &self.opts.exe)
             .env("SB_SOCKET", self.opts.paths.socket())
             .env("BEND_WIRE_LOG", adir.join("wire.log"))

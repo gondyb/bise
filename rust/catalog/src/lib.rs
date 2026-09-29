@@ -18,8 +18,8 @@ pub mod auth;
 pub mod auth_cli;
 pub mod cli;
 
-/// The command's name in messages and usages (`bise` with BISE-165).
-pub const CLI: &str = "bend-harness";
+/// The command's name in messages and usages (BISE-165: was `bend-harness`).
+pub const CLI: &str = "bise";
 
 /// The built-in list, shipped in the binary.
 pub const BUILTIN: &str = include_str!("../models.toml");

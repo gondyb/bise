@@ -7,7 +7,7 @@
 //! - `report`: the human and JSON listings;
 //! - `stdio`: a stdio MCP client (one child process, JSON-RPC lines);
 //! - `bridge`: the per-session loopback HTTP bridge the Bend REPL calls;
-//! - `cli`: the `bend-harness plugins ...` subcommand.
+//! - `cli`: the `bise plugins ...` subcommand.
 
 pub mod bridge;
 pub mod cli;

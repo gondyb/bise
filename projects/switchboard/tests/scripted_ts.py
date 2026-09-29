@@ -2,7 +2,7 @@
 """run_typescript in a scripted session runs on V8 (bend-jsrt), like a
 live one (BISE-118: one engine; the Core's JS-lite interpreter is gone).
 
-Drives `bend-harness --headless --scripted` over its wire socket: each `prog: <code>` line
+Drives `bise --headless --scripted` over its wire socket: each `prog: <code>` line
 makes the scripted model call run_typescript with that code. The session
 checkpoint then holds each program's one tool result, what the model
 reads back: a value, a typed program that calls a tool (the call goes
@@ -14,7 +14,7 @@ import glob, os, socket, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 EXE = os.path.join(os.path.abspath(os.environ.get("CARGO_TARGET_DIR") or os.path.join(ROOT, "rust", "target")),
-                   "debug", "bend-harness")
+                   "debug", "bise")
 
 def jsrt_env():
     """The harness finds this tree's rust/jsrt build; a fresh worktree has
@@ -43,7 +43,7 @@ PROGRAMS = [
 ]
 
 def run_session(env, codes):
-    """`bend-harness --headless --scripted`: READY, then one `prog:` turn
+    """`bise --headless --scripted`: READY, then one `prog:` turn
     per program over the wire socket (each ends at `--- idle`)."""
     proc = subprocess.Popen([EXE, "--headless", "--scripted"], cwd=ROOT, env=env,
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,

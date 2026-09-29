@@ -1,7 +1,7 @@
 //! Version switch of a workspace's hub, with a probation period and an
 //! automatic rollback (the `sbswitch` subcommand).
 //!
-//! A version is an app root built by `versions.sh` (bend-harness,
+//! A version is an app root built by `versions.sh` (bise,
 //! repl-live, sb-core, VERSION). A switch never stops an agent: the old
 //! hub exits with `keep_agents`, the new one adopts the running REPLs
 //! (each moves to the new binary at its next idle, same session). The
@@ -148,7 +148,7 @@ pub fn running_root(paths: &Paths) -> Option<PathBuf> {
     if !root.is_absolute() {
         return None;
     }
-    // the dev tree runs rust/target/debug/bend-harness from the repo
+    // the dev tree runs rust/target/debug/bise from the repo
     if root.join("repl-live").exists() {
         Some(root)
     } else {
@@ -160,7 +160,20 @@ pub fn running_root(paths: &Paths) -> Option<PathBuf> {
     }
 }
 
-/// `root/bend-harness sbd`, detached (its own process group), like
+/// The command's file in a version dir (BISE-165; was `bend-harness`).
+pub const EXE: &str = "bise";
+
+/// The executable of an app root: a version dir's `bise` (or the
+/// `bend-harness` of a version built before the rename), the dev tree's
+/// debug build.
+pub fn exe_of(root: &Path) -> Option<PathBuf> {
+    [EXE, "bend-harness", "rust/target/debug/bise", "rust/target/debug/bend-harness"]
+        .iter()
+        .map(|f| root.join(f))
+        .find(|p| p.exists())
+}
+
+/// `root/bise sbd`, detached (its own process group), like
 /// `client::start_hub`; the child handle tells a hub that died at once.
 fn start_hub(paths: &Paths, root: &Path) -> std::io::Result<std::process::Child> {
     use std::os::unix::process::CommandExt;
@@ -169,14 +182,7 @@ fn start_hub(paths: &Paths, root: &Path) -> std::io::Result<std::process::Child>
         .create(true)
         .append(true)
         .open(paths.state.join("hub.err"))?;
-    // a version dir has bend-harness at its root; the dev tree in rust/target
-    let exe = [
-        root.join("bend-harness"),
-        root.join("rust/target/debug/bend-harness"),
-    ]
-    .into_iter()
-    .find(|p| p.exists())
-    .unwrap_or_else(|| root.join("bend-harness"));
+    let exe = exe_of(root).unwrap_or_else(|| root.join(EXE));
     Command::new(exe)
         .arg("sbd")
         .arg("--workspace")

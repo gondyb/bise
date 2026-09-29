@@ -3,7 +3,8 @@
 #
 # A version is an immutable app root built from one git commit (or from
 # the working tree, uncommitted changes included):
-#   $SB_VERSIONS_DIR/<id>/  bend-harness, repl-live, tool-desc-*.txt,
+#   $SB_VERSIONS_DIR/<id>/  bise (+ bend-harness -> bise, one release),
+#                           repl-live, tool-desc-*.txt,
 #                           prompt-*.txt, sb-core (when hub/ exists),
 #                           bend-jsrt (+ a hard link at the old path
 #                           rust/jsrt/target/debug/bend-jsrt),
@@ -83,7 +84,14 @@ build_from() {
   local target="$BUILD/target-commits"
   [ "$src" = "$REPO" ] && target="$BUILD/target-tree"
   (cd "$src/rust" && CARGO_TARGET_DIR="$target" cargo build -q --release -p bend-harness)
-  cp "$target/release/bend-harness" "$tmp/bend-harness"
+  # the command is bise since BISE-165: a commit before it builds
+  # bend-harness (decided by its sources: the shared target dir may hold
+  # both names); either way the version dir has bise, and a bend-harness
+  # link for the switchers and scripts that still look for it
+  local exe=bend-harness
+  grep -q '^name = "bise"' "$src/rust/harness/Cargo.toml" && exe=bise
+  cp "$target/release/$exe" "$tmp/bise"
+  ln -s bise "$tmp/bend-harness"
 
   # the Bend binaries: bins.sh's cache (one per source hash, shared with
   # run.sh and the gate; a Bend compile is 1-2 min). This repo's bins.sh
@@ -125,7 +133,8 @@ build_from() {
   say "version $id built: $vdir"
 }
 
-built() { [ -x "$VERSIONS/$1/bend-harness" ] && [ -x "$VERSIONS/$1/repl-live" ] && [ -f "$VERSIONS/$1/VERSION" ]; }
+# (a version built before BISE-165 has bend-harness only: still valid)
+built() { { [ -x "$VERSIONS/$1/bise" ] || [ -x "$VERSIONS/$1/bend-harness" ]; } && [ -x "$VERSIONS/$1/repl-live" ] && [ -f "$VERSIONS/$1/VERSION" ]; }
 
 build() {
   local what="${1:---tree}" id

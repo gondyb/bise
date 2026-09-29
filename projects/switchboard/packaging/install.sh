@@ -10,13 +10,15 @@
 # would be `curl -fsSL <url>/install.sh | sh`: it downloads the tarball
 # of the platform from BISE_DIST_URL - nothing is published yet.)
 #
-# Layout (future name bise: prefix ~/.bise-style, command `bise`):
+# Layout (the command is `bise` since BISE-165; the prefix moves to
+# ~/.local/share/bise with BISE-170):
 #   $PREFIX/versions/<id>/   immutable app roots (the versions.sh layout)
 #   $PREFIX/current -> versions/<id>
-#   $PREFIX/bin/bend-harness the launcher (sh): --version, init, uninstall,
+#   $PREFIX/bin/bise         the launcher (sh): --version, init, uninstall,
 #                            then exec the current app root's binary
 #   $PREFIX/install.sh       a copy of this file (uninstall, reinstall)
-#   $BIN_DIR/bend-harness -> $PREFIX/bin/bend-harness
+#   $BIN_DIR/bise -> $PREFIX/bin/bise
+#   $BIN_DIR/bend-harness -> $PREFIX/bin/bise   (the old name, one release)
 # Defaults: PREFIX=~/.local/share/bend-harness, BIN_DIR=~/.local/bin.
 # User data is never inside $PREFIX: ~/.bend-harness (keys, config,
 # sessions) and ~/.local/state/switchboard (hubs) survive an uninstall
@@ -24,8 +26,9 @@
 
 set -eu
 
-CMD=bend-harness          # the command name (bise later)
-PREFIX="${BISE_PREFIX:-$HOME/.local/share/$CMD}"
+CMD=bise                  # the command name (BISE-165)
+OLD_CMD=bend-harness      # its old name: a second link, kept one release
+PREFIX="${BISE_PREFIX:-$HOME/.local/share/bend-harness}"
 BIN_DIR="${BISE_BIN_DIR:-$HOME/.local/bin}"
 FROM=""
 MODIFY_PATH=1
@@ -33,6 +36,7 @@ KEEP=3
 ACTION=install
 PURGE=0
 MARK="# added by the $CMD installer"
+OLD_MARK="# added by the $OLD_CMD installer"   # before BISE-165: same PATH line
 
 say() { printf '%s\n' "$CMD install: $*" >&2; }
 die() { say "error: $*"; exit 1; }
@@ -75,12 +79,13 @@ if [ "$ACTION" = uninstall ]; then
     printf '%s\n' "$hubs" >&2
     printf '%s\n' "$hubs" | while read -r pid _; do kill "$pid" 2>/dev/null || true; done
   fi
-  [ -L "$BIN_DIR/$CMD" ] && rm -f "$BIN_DIR/$CMD"
+  for c in "$CMD" "$OLD_CMD"; do [ -L "$BIN_DIR/$c" ] && rm -f "$BIN_DIR/$c"; done
+  rm -f "$PREFIX/bin/$OLD_CMD"
   rm -rf "$PREFIX"
   for f in $(rc_files); do
     [ -f "$f" ] || continue
-    if grep -qF "$MARK" "$f"; then
-      { grep -vF "$MARK" "$f" || true; } > "$f.tmp.$$"
+    if grep -qF -e "$MARK" -e "$OLD_MARK" "$f"; then
+      { grep -vF -e "$MARK" -e "$OLD_MARK" "$f" || true; } > "$f.tmp.$$"
       mv "$f.tmp.$$" "$f"
       say "PATH line removed from $f"
     fi
@@ -122,7 +127,10 @@ if [ -f "$FROM" ]; then
   FROM="$(find "$tmp" -mindepth 2 -maxdepth 2 -type d -name app | head -n 1 | xargs dirname)"
 fi
 app="$FROM/app"
-for f in bend-harness repl-live sb-core VERSION; do
+# the command: bise, or bend-harness in a bundle built before BISE-165
+[ -e "$app/bise" ] || [ -e "$app/bend-harness" ] \
+  || die "incomplete bundle: app/bise missing in $FROM (a download cut short, or removed by security software)"
+for f in repl-live sb-core VERSION; do
   [ -e "$app/$f" ] || die "incomplete bundle: app/$f missing in $FROM (a download cut short, or removed by security software)"
 done
 # the V8 engine: app/bend-jsrt, or its path before BISE-114
@@ -137,7 +145,7 @@ command -v git >/dev/null 2>&1 || say "warning: git not found (Switchboard needs
 
 # ---- the version dir: immutable, written once, then the pointer flips ----
 mkdir -p "$PREFIX/versions" "$PREFIX/bin"
-if [ -x "$PREFIX/versions/$id/bend-harness" ]; then
+if [ -x "$PREFIX/versions/$id/bise" ] || [ -x "$PREFIX/versions/$id/bend-harness" ]; then
   say "version $id already installed"
 else
   rm -rf "$PREFIX/versions/.$id.tmp"
@@ -219,6 +227,8 @@ esac
 # tools' directory of a single session (the binary moves to its app root)
 export SB_LAUNCH_DIR="${SB_LAUNCH_DIR:-$PWD}"
 export BEND_WORKDIR="${BEND_WORKDIR:-$PWD}"
+# bise; a version installed before BISE-165 has bend-harness only
+[ -x "$root/bise" ] && exec "$root/bise" "$@"
 exec "$root/bend-harness" "$@"
 EOF
 chmod 755 "$PREFIX/bin/$CMD.tmp"
@@ -229,6 +239,12 @@ if [ -e "$BIN_DIR/$CMD" ] && [ ! -L "$BIN_DIR/$CMD" ]; then
   die "$BIN_DIR/$CMD exists and is not our link; remove it or pass --bin-dir"
 fi
 ln -sfn "$PREFIX/bin/$CMD" "$BIN_DIR/$CMD"
+# the old name, for one release: the same launcher (it prints the name it
+# was called by); an install before BISE-165 left a launcher file there
+rm -f "$PREFIX/bin/$OLD_CMD"
+if [ ! -e "$BIN_DIR/$OLD_CMD" ] || [ -L "$BIN_DIR/$OLD_CMD" ]; then
+  ln -sfn "$PREFIX/bin/$CMD" "$BIN_DIR/$OLD_CMD"
+fi
 
 # ---- keep the last $KEEP versions, never the current one nor one a hub runs ----
 in_use="$(ps -axo command= 2>/dev/null | grep -F "$PREFIX/versions/" | grep -v grep || true)"
@@ -249,7 +265,7 @@ case ":$PATH:" in
     if [ "$MODIFY_PATH" = 1 ]; then
       for f in $(rc_files); do
         mkdir -p "$(dirname "$f")"
-        grep -qF "$MARK" "$f" 2>/dev/null && continue
+        grep -qF -e "$MARK" -e "$OLD_MARK" "$f" 2>/dev/null && continue
         case "$f" in
           *.fish) printf 'fish_add_path %s %s\n' "$BIN_DIR" "$MARK" >> "$f" ;;
           *) printf 'export PATH="%s:$PATH" %s\n' "$BIN_DIR" "$MARK" >> "$f" ;;

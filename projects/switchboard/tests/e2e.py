@@ -1,4 +1,4 @@
-"""End-to-end tests of Switchboard: the real hub (bend-harness sbd), real
+"""End-to-end tests of Switchboard: the real hub (bise sbd), real
 Bend REPLs (repl-live), the real `sb` CLI through the agents' bash tool,
 real git worktrees, a scripted provider (fake_provider.py).
 
@@ -20,7 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 # the binary cargo built: $CARGO_TARGET_DIR (a gate's own target) or rust/target
 EXE = os.path.join(os.path.abspath(os.environ.get("CARGO_TARGET_DIR") or os.path.join(ROOT, "rust", "target")),
-                   "debug", "bend-harness")
+                   "debug", "bise")
 
 # An agent's shell carries its hub's identity and sb-core (an older
 # version): a throwaway hub must not inherit them. It picks the tree's

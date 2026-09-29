@@ -177,9 +177,9 @@ impl Shell {
                 }
                 // a version dir, a built id, else a git revision to build
                 let dir = PathBuf::from(&to);
-                let target = if dir.join("bend-harness").exists() {
+                let target = if switch::exe_of(&dir).is_some() {
                     Some(dir)
-                } else if versions_dir.join(&to).join("bend-harness").exists() {
+                } else if switch::exe_of(&versions_dir.join(&to)).is_some() {
                     Some(versions_dir.join(&to))
                 } else {
                     None

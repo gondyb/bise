@@ -19,7 +19,7 @@
 #                     the bash tool put a gate in the background: block until
 #                     it ends (at most 25 s), then show its end and exit code.
 # "Changed" = the tree vs GATE_BASE (default HEAD), untracked files included.
-# CARGO_TARGET_DIR is honoured (the e2e/tmux tests run its bend-harness);
+# CARGO_TARGET_DIR is honoured (the e2e/tmux tests run its bise);
 # the bend results are cached in $CARGO_TARGET_DIR/gate-cache.
 set -uo pipefail
 mode="${1:-quick}"
@@ -57,8 +57,8 @@ if [ "$mode" = full ]; then
   export FUZZ_RUNS="${FUZZ_RUNS:-2000}"
   projects/switchboard/tests/run_all.sh; rc=$?
   # every binary built runs on the macOS target (BISE-164): the Bend ones,
-  # bend-harness, and the engine when this tree has one
-  bins=(./repl-live ./repl-scripted ./sb-core "${CARGO_TARGET_DIR:-rust/target}/debug/bend-harness")
+  # bise, and the engine when this tree has one
+  bins=(./repl-live ./repl-scripted ./sb-core "${CARGO_TARGET_DIR:-rust/target}/debug/bise")
   for f in ./harness-demo rust/jsrt/target/debug/bend-jsrt; do [ -e "$f" ] && bins+=("$f"); done
   if [ $rc = 0 ]; then ./bins.sh minos "${bins[@]}" || rc=1; fi
   [ $rc = 0 ] && echo "GATE full GREEN ($((SECONDS - s))s)" || echo "GATE full FAILED"

@@ -8,11 +8,12 @@
 #   <rev>   a commit (default HEAD; uncommitted changes are NOT shipped)
 #   --out   where the tarball lands (default /tmp/bise-dist)
 #
-# Output: <out>/bend-harness-<id>-<os>-<arch>.tar.gz (+ .sha256), with
-#   bend-harness-<id>-<os>-<arch>/
+# Output: <out>/bise-<id>-<os>-<arch>.tar.gz (+ .sha256), with
+#   bise-<id>-<os>-<arch>/
 #     install.sh           the installer (the same file curl | sh fetches)
 #     app/                 the app root, exactly as versions.sh builds it:
-#       bend-harness         Rust: TUI + Switchboard daemon + sb CLI
+#       bise                 Rust: TUI + Switchboard daemon + sb CLI
+#       bend-harness         -> bise (the old name, kept one release)
 #       repl-live            native Bend REPL (runtime/repl-live.bend)
 #       repl-scripted        native Bend REPL, no provider (runtime/repl.bend)
 #       sb-core              native Bend hub core (hub/main.bend)
@@ -61,7 +62,7 @@ target="$os-$arch"
 cd "$REPO"
 commit="$(git rev-parse "$rev^{commit}")"
 id="$(git rev-parse --short "$commit")"
-name="bend-harness-$id-$target"
+name="bise-$id-$target"
 
 # 1. the app root of this commit (cached by versions.sh)
 say "versions.sh build $id..."
@@ -100,7 +101,11 @@ app="$stage/$name/app"
 jsrt_at=bend-jsrt
 git show "$commit:runtime/main.bend" | grep -c BEND_JSRT_BIN >/dev/null || jsrt_at=rust/jsrt/target/debug/bend-jsrt
 mkdir -p "$app/$(dirname "$jsrt_at")"
-for f in bend-harness repl-live sb-core; do cp "$vdir/$f" "$app/$f"; done
+# the command (BISE-165): bise, or the bend-harness of a version dir
+# built before the rename; the old name stays as a link one release
+if [ -e "$vdir/bise" ]; then cp "$vdir/bise" "$app/bise"; else cp "$vdir/bend-harness" "$app/bise"; fi
+ln -s bise "$app/bend-harness"
+for f in repl-live sb-core; do cp "$vdir/$f" "$app/$f"; done
 cp "$scripted" "$app/repl-scripted"
 cp "$vdir"/tool-desc-*.txt "$vdir"/prompt-*.txt "$app/"
 cp "$js" "$app/$jsrt_at"
@@ -119,9 +124,9 @@ chmod +x "$stage/$name/install.sh"
 #    with Developer ID signing + notarization (docs/packaging.md §6).
 #    Ad-hoc (-) by default; BISE_SIGN_ID=<Developer ID> adds the hardened
 #    runtime + timestamp (entitlements still to add: JIT for bend-jsrt,
-#    audio-input for bend-harness).
+#    audio-input for bise).
 if [ "$os" = darwin ]; then
-  for b in bend-harness repl-live repl-scripted sb-core "$jsrt_at"; do
+  for b in bise repl-live repl-scripted sb-core "$jsrt_at"; do
     codesign -s "${BISE_SIGN_ID:--}" --force ${BISE_SIGN_ID:+--options runtime --timestamp} "$app/$b" 2>/dev/null
   done
 fi
@@ -129,14 +134,14 @@ fi
 # 6. verify: a missing piece must fail here, not on the user's machine
 #    (wait a moment: a quarantine by security software is not instant)
 sleep 2
-for f in bend-harness repl-live repl-scripted sb-core "$jsrt_at" \
+for f in bise bend-harness repl-live repl-scripted sb-core "$jsrt_at" \
          tool-desc-bash.txt prompt-tool-use.txt VERSION; do
   [ -e "$app/$f" ] || { say "INCOMPLETE: app/$f missing"; exit 1; }
 done
 # ... and no binary needs a macOS newer than the target (a version dir
 # built before BISE-164 has Bend binaries for the build machine's macOS:
 # remove it and run again)
-"$REPO/bins.sh" minos "$app/bend-harness" "$app/repl-live" "$app/repl-scripted" \
+"$REPO/bins.sh" minos "$app/bise" "$app/repl-live" "$app/repl-scripted" \
   "$app/sb-core" "$app/$jsrt_at" >&2 \
   || { say "a binary needs a newer macOS than $("$REPO/bins.sh" macos-target): rm -rf $vdir and run again"; exit 1; }
 

@@ -344,7 +344,7 @@ fn the_listing_shows_keys_choices_and_warnings() {
     assert!(out.contains("key: env ANTHROPIC_API_KEY"), "{out}");
     assert!(out.contains("key: auth.json"), "{out}");
     assert!(!out.contains("gsk-secret-1") && !out.contains("sk\n"), "{out}");
-    assert!(out.contains("no key (OPENAI_API_KEY or 'bend-harness login openai')"), "{out}");
+    assert!(out.contains("no key (OPENAI_API_KEY or 'bise login openai')"), "{out}");
     assert!(out.contains("ollama  Ollama (local) · openai-chat · no key needed"), "{out}");
     assert!(out.contains("not usable yet (BISE-149)"), "{out}");
     assert!(out.contains("from config.toml"), "{out}");

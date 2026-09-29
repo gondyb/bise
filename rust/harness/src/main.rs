@@ -1,8 +1,9 @@
-//! bend-harness — the single-executable entry point.
+//! bise — the single-executable entry point (BISE-165: the command was
+//! `bend-harness`; a `bend-harness` link to it is kept for one release).
 //!
-//! The TUI is Switchboard's (`bend-harness` alone, or `bend-harness
-//! switchboard`): the hub (`sbd`) runs the agents' REPLs. There is no
-//! single-agent TUI any more (BISE-113).
+//! The TUI is Switchboard's (`bise` alone, or `bise switchboard`): the hub
+//! (`sbd`) runs the agents' REPLs. There is no single-agent TUI any more
+//! (BISE-113).
 //!
 //! `--headless` runs ONE session without a TUI, for programs
 //! (bend_client.py, the plugins tests): the Bend REPL (repl-live /
@@ -12,20 +13,7 @@
 //! automatically, so several sessions run side by side; the child REPL
 //! dies with this process.
 //!
-//! Usage:
-//!   bend-harness                # Switchboard in the current folder
-//!   bend-harness switchboard    # the same, with its flags (--stop, --workspace)
-//!   bend-harness models [filter] # the models bise knows, keys set (BISE-142)
-//!   bend-harness --headless     # one session for a program, flags:
-//!     --scripted                # scripted session (no API)
-//!     --model NAME              # BEND_MODEL for the provider call
-//!     --port N                  # force the REPL port (default: pick free)
-//!     --debug                   # accepted, no effect without a TUI
-//!     --continue                # resume the MOST RECENT session (by
-//!                               # last activity — the file that got the
-//!                               # latest save, not a fixed path)
-//!     --resume ID               # resume one session by id (a unique
-//!                               # prefix of the id is accepted)
+//! Usage: see USAGE below (`bise help`).
 //!
 //! BEND_SESSIONS_DIR overrides the sessions directory (default
 //! ~/.bend-harness/sessions) - the ONLY thing the programmatic client
@@ -45,6 +33,7 @@ use std::time::{Duration, Instant};
 mod approot;
 mod debuglog;
 mod info;
+mod version;
 
 // ---- session ids and resolution (codex-style) ----
 //
@@ -394,6 +383,28 @@ fn migrate_home() {
     let _ = bise_home::migrate(&user, &switchboard::switch::hub_busy);
 }
 
+/// `bise help`; `{cmd}` is the name it was called by.
+const USAGE: &str = "\
+usage:
+  {cmd}                         Switchboard in the current folder: main + tasks
+  {cmd} switchboard [--stop]    the same, with its flags (--workspace DIR, --debug)
+  {cmd} models [filter]         the models bise knows, and which keys are set
+  {cmd} login|logout [provider] store or remove a provider's key
+  {cmd} auth list               each provider's key source (never the key)
+  {cmd} plugins [list|enable|disable]  agent plugins
+  {cmd} --version               this version
+  {cmd} --headless              one session without a TUI, for a program:
+      --scripted                  the scripted session (no API)
+      --model NAME                the model
+      --port N                    the REPL port (default: a free one)
+      --continue | --resume ID    the latest session | one session (an id prefix works)
+  internal: sb, sbd, sbswitch, keyprobe
+state: ~/.bise (BISE_HOME moves it); its files: BISE_APP_ROOT, else next to the executable";
+
+fn usage(cmd: &str) -> String {
+    USAGE.replace("{cmd}", cmd)
+}
+
 fn main() -> std::io::Result<()> {
     // every mode (TUI, hub daemon, sb CLI): a panic leaves a log with its
     // backtrace, and a TUI gives the terminal back before it reports
@@ -445,6 +456,14 @@ fn main() -> std::io::Result<()> {
                     restart,
                 ));
             }
+            Some("--version" | "-V" | "version") => {
+                version::print();
+                return Ok(());
+            }
+            Some("--help" | "-h" | "help") => {
+                println!("{}", usage(&version::cmd_name()));
+                return Ok(());
+            }
             // the key/mouse events this terminal delivers (macOS shortcuts)
             Some("keyprobe") => return bend_tui::keyprobe(),
             // agent plugins: list, enable/disable, and the per-session
@@ -476,11 +495,14 @@ fn main() -> std::io::Result<()> {
         model,
         forced_port,
     } = parse_args(&args).unwrap_or_else(|msg| {
-        eprintln!("{}", msg);
-        std::process::exit(1);
+        eprintln!("{}\n{}", msg, usage(&version::cmd_name()));
+        std::process::exit(2);
     });
     if !headless {
-        eprintln!("the single-agent TUI is gone: `bend-harness` (or `./run.sh`) opens Switchboard; --headless runs one session for a program");
+        eprintln!(
+            "the single-agent TUI is gone: `{}` alone (or `./run.sh`) opens Switchboard; --headless runs one session for a program",
+            bise_catalog::CLI
+        );
         std::process::exit(2);
     }
     if let Some(m) = model {
@@ -960,7 +982,7 @@ fn parse_args(args: &[String]) -> Result<CliArgs, String> {
             "--resume" if has_value => out.resume_id = it.next().cloned(),
             "--model" if has_value => out.model = it.next().cloned(),
             "--port" if has_value => out.forced_port = it.next().and_then(|p| p.parse().ok()),
-            other => return Err(format!("argument inconnu : {}", other)),
+            other => return Err(format!("unknown argument: {}", other)),
         }
     }
     if out.resume && out.resume_id.is_some() {

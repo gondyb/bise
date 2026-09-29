@@ -1,4 +1,4 @@
-//! The per-session bridge (`bend-harness plugins serve`): starts the
+//! The per-session bridge (`bise plugins serve`): starts the
 //! stdio MCP servers of the enabled plugins, writes the index files the
 //! Bend REPL reads, then serves each server over loopback HTTP (the
 //! JSON-response subset of MCP Streamable HTTP) until the REPL is gone.

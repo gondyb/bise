@@ -50,10 +50,14 @@ hub_pid() {
   if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then echo "$p"; fi
 }
 
+# the command of a version dir: bise (BISE-165), or the bend-harness of
+# a version built before the rename
+exe_in() { if [ -x "$1/bise" ]; then echo "$1/bise"; else echo "$1/bend-harness"; fi; }
+
 stop_hub() {  # [--keep-agents]
   [ -n "$(hub_pid)" ] || return 0
-  local exe="$ROOT/current/bend-harness"
-  [ -x "$exe" ] || exe="$REPO/rust/target/debug/bend-harness"
+  local exe; exe="$(exe_in "$ROOT/current")"
+  [ -x "$exe" ] || exe="$REPO/rust/target/debug/bise"
   "$exe" switchboard --stop "$@" --workspace "$WS" || true
   for _ in $(seq 50); do [ -z "$(hub_pid)" ] && return 0; sleep 0.1; done
 }
@@ -69,7 +73,7 @@ init_ws() {
 start_hub() {
   mkdir -p "$SB_STATE_DIR"
   (cd "$ROOT/current" && exec python3 -c 'import os,sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' \
-     "$ROOT/current/bend-harness" sbd --workspace "$WS" \
+     "$(exe_in "$ROOT/current")" sbd --workspace "$WS" \
      </dev/null >/dev/null 2>>"$SB_STATE_DIR/hub.err" &)
   for _ in $(seq 150); do
     [ -S "$SB_STATE_DIR/hub.sock" ] && [ -n "$(hub_pid)" ] && return 0
@@ -111,5 +115,5 @@ init_ws
 say "dev hub pid $(hub_pid), version $id, workspace $WS"
 if [ "$tui" = 1 ]; then
   cd "$ROOT/current"
-  exec ./bend-harness switchboard --workspace "$WS" ${tui_args[@]+"${tui_args[@]}"}
+  exec "$(exe_in .)" switchboard --workspace "$WS" ${tui_args[@]+"${tui_args[@]}"}
 fi

@@ -36,16 +36,18 @@ echo "== install"
 tar -C "$DL" -xzf "$tarball"
 bundle="$(ls -d "$DL"/*/)"
 E sh "$bundle/install.sh" 2>&1 | sed 's/^/     /'
-BIN="$T/.local/bin/bend-harness"
+CMD="${BISE_CMD:-bise}"   # the command (BISE-165); bend-harness is its old-name link
+BIN="$T/.local/bin/$CMD"
 check "launcher linked in ~/.local/bin" test -x "$BIN"
-check "PATH line in ~/.zshrc" grep -q 'added by the bend-harness installer' "$T/.zshrc"
-found="$(E /bin/zsh -ic 'command -v bend-harness' 2>/dev/null | tail -n 1)"
-[ "$found" = "$BIN" ] && ok "new shell finds bend-harness ($found)" || ko "new shell finds bend-harness (got '$found')"
+check "old name linked too (bend-harness)" test -x "$T/.local/bin/bend-harness"
+check "PATH line in ~/.zshrc" grep -q "added by the $CMD installer" "$T/.zshrc"
+found="$(E /bin/zsh -ic "command -v $CMD" 2>/dev/null | tail -n 1)"
+[ "$found" = "$BIN" ] && ok "new shell finds $CMD ($found)" || ko "new shell finds $CMD (got '$found')"
 
 echo "== --version"
-v="$(cd "$WORK" && E /bin/zsh -ic 'bend-harness --version' 2>&1 | tail -n 1)"
+v="$(cd "$WORK" && E /bin/zsh -ic "$CMD --version" 2>&1 | tail -n 1)"
 echo "     $v"
-case "$v" in "bend-harness "*darwin-arm64*) ok "--version" ;; *) ko "--version" ;; esac
+case "$v" in "$CMD "*darwin-arm64*) ok "--version" ;; *) ko "--version" ;; esac
 
 echo "== init (non-interactive)"
 (cd "$WORK" && E MISTRAL_API_KEY=test-key-not-real "$BIN" init) 2>&1 | sed 's/^/     /'
@@ -110,13 +112,14 @@ fi
 
 echo "== reinstall (same version: idempotent)"
 E sh "$bundle/install.sh" 2>&1 | sed 's/^/     /'
-[ "$(grep -c 'added by the bend-harness installer' "$T/.zshrc")" = 1 ] && ok "one PATH line only" || ko "PATH line duplicated"
+[ "$(grep -c "added by the $CMD installer" "$T/.zshrc")" = 1 ] && ok "one PATH line only" || ko "PATH line duplicated"
 
 echo "== uninstall"
 E "$BIN" uninstall 2>&1 | sed 's/^/     /'
 check "prefix removed" test ! -e "$T/.local/share/bend-harness"
-check "command link removed" test ! -e "$T/.local/bin/bend-harness"
-check "PATH line removed" sh -c "! grep -q 'bend-harness installer' '$T/.zshrc'"
+check "command link removed" test ! -e "$T/.local/bin/$CMD"
+check "old-name link removed" test ! -e "$T/.local/bin/bend-harness"
+check "PATH line removed" sh -c "! grep -q '$CMD installer' '$T/.zshrc'"
 check "user data kept (~/.bend-harness/.env)" test -f "$T/.bend-harness/.env"
 
 echo "== $pass passed, $fail failed"

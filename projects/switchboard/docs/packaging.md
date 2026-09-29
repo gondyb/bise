@@ -276,7 +276,7 @@ the default paths.
   config/env.
 - **C4** (done, BISE-163) `core_bin()` fallback: drop `CARGO_MANIFEST_DIR` (a build-machine
   path) outside dev builds; look next to the exe.
-- **C5** `--version` / `version` in the binary (reads `VERSION`, else the
+- **C5** (`--version` done, BISE-165: `bise --version` reads `VERSION`) `--version` / `version` in the binary (reads `VERSION`, else the
   crate version + commit via `env!`), and `init`/`update`/`uninstall`
   subcommands (the launcher implements them today).
 - **C6** `bend-jsrt`: look it up next to the exe (`bend-jsrt`), keep

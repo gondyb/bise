@@ -118,7 +118,7 @@ pub(super) fn sb_app(
     App::new(sb, rx, debug, area_w, voice, session_id)
 }
 
-/// `bend-harness switchboard`: the client of a workspace's hub.
+/// `bise switchboard`: the client of a workspace's hub.
 pub fn run_switchboard(
     stream: UnixStream,
     socket: std::path::PathBuf,

@@ -35,10 +35,11 @@ done
 # 1. the version (built from the commit, never from the working tree)
 vdir="$(./versions.sh build "$rev")"
 id="$(basename "$vdir")"
-exe="$vdir/bend-harness"
+exe="$vdir/bise"   # BISE-165; a version built before: bend-harness
+[ -x "$exe" ] || exe="$vdir/bend-harness"
 echo "version: $id ($vdir)"
 
-# the state dir of a workspace, from paths.rs (`bend-harness switchboard
+# the state dir of a workspace, from paths.rs (`bise switchboard
 # --state-dir`): the first binary that knows the flag (versions built
 # before it do not; they would open a TUI)
 state_dir_of() {
@@ -56,7 +57,7 @@ state_dir_of() {
 if [ -n "${SB_STATE_DIR:-}" ]; then
   state="$SB_STATE_DIR"
 else
-  state="$(SD_WS="$WS" state_dir_of "$exe" "$REPO/rust/target/debug/bend-harness" "$REPO/rust/target/release/bend-harness" || true)"
+  state="$(SD_WS="$WS" state_dir_of "$exe" "$REPO/rust/target/debug/bise" "$REPO/rust/target/release/bise" "$REPO/rust/target/debug/bend-harness" "$REPO/rust/target/release/bend-harness" || true)"
 fi
 [ -n "$state" ] || { echo "relaunch-live: state dir not found for $WS" >&2; exit 1; }
 mkdir -p "$state"

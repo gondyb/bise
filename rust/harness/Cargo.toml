@@ -3,6 +3,13 @@ name = "bend-harness"
 version = "0.1.0"
 edition = "2021"
 
+# the command is `bise` (BISE-165); the package keeps its name (cargo -p
+# bend-harness). Version dirs and installs also get a `bend-harness` link
+# to it, for one release.
+[[bin]]
+name = "bise"
+path = "src/main.rs"
+
 [dependencies]
 bise-catalog = { path = "../catalog" }
 bise-home = { path = "../home" }
