@@ -1936,10 +1936,11 @@ Index:
 
 ### BISE-101 · a wider reading column (+15%)
 
-- **status:** todo · **owner:** bise-f-feed · **commits:** —
+- **status:** done · **owner:** bise-f-feed · **commits:** 7ba4146
 - **track:** F · **owns:** `layout.rs` (COLUMN, CENTER_FROM), `render.rs` PROSE_MAX, the composer wrap width, tests
 - **spec:** book §8 "The reading column", §11 "Measure" (user request, Gabriel 2026-09-29: the text in the history ~15% wider).
 - **what:** the reading column goes from 79 (3 + 76) to 91 (3 + 88); it centers when the feed area is ≥ 95; prose wraps at min(width − margins, 88); your message in the composer wraps at the same width as in the history (as today, so it follows). Code and tables keep their widths (up to 100 / 103). Narrow tiers unchanged (column = min(91, width − 4)). Bench not slower.
+- **notes (F):** `layout.rs` COLUMN 91, CENTER_FROM 95 (the tests: 160 centered at x0 18, 130 not centered, 133 centered; tables and code still capped at 103 from x0); `render.rs` PROSE_MAX 91 (3 + 88); the composer wraps at the column less its lead, so it follows. Mockup tests: the replies that fit in 88 stay on one row. Gates: build, clippy 0 warnings, cargo test --workspace (worktree), run_all.sh green on 4e050e8 (bise-k-keys' run, m_1236). Bench (50k, release): HEAD 1534 / 1549 ms windowed PageUp to the top vs 1555 ms before (c945f17), frames ≤ 0.45 ms, steady 0.24–0.29 ms. Left: `sb/cards.rs` READ_WIDTH is still 76 (card prose; C's file), told main.
 
 ### BISE-102 · the raised composer (tint + padding)
 
