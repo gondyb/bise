@@ -984,6 +984,27 @@ fn fold_open(ev: &Ev) -> bool {
 /// The rows of level-3 line `i`: its own line in a short run; in a
 /// folded one the first line carries the fold (`▸ 12 messages between 5
 /// agents`), the others show only when it is open, in place, in order.
+/// The sender and receiver of a level-3 message, in that order.
+fn l3_way(ev: &Ev) -> Option<(&str, String)> {
+    match ev {
+        Ev::AgentMsg { from, to, id, .. } => Some((from.as_str(), crate::render::l3_receiver(to, id))),
+        _ => None,
+    }
+}
+
+/// The rows of level-3 line `i`: its chip then its text; right after a
+/// line with the same sender and receiver, its text alone (the run
+/// shares one chip, book §9, BISE-127).
+fn l3_ev_rows(events: &[Ev], i: usize, debug: bool, tick: u32, width: usize) -> Vec<Line<'static>> {
+    let ev = &events[i];
+    let same = prev_visible(events, i, debug).is_some_and(|p| is_l3(&events[p]) && l3_way(&events[p]) == l3_way(ev));
+    if same {
+        crate::render::l3_text_only_rows(ev, width)
+    } else {
+        ev_rows(ev, tick, width)
+    }
+}
+
 fn l3_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> (Vec<Line<'static>>, Option<LiveHead>) {
     let ev = &events[i];
     let mut rows: Vec<Line<'static>> = Vec::new();
@@ -992,7 +1013,7 @@ fn l3_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> (Ve
         if wants_gap_before(ev, prev) {
             rows.push(Line::from(""));
         }
-        rows.extend(ev_rows(ev, tick, width));
+        rows.extend(l3_ev_rows(events, i, debug, tick, width));
         return (rows, None);
     };
     let open = fold_open(&events[start]);
@@ -1002,7 +1023,7 @@ fn l3_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> (Ve
             if wants_gap_before(ev, prev) {
                 rows.push(Line::from(""));
             }
-            rows.extend(ev_rows(ev, tick, width));
+            rows.extend(l3_ev_rows(events, i, debug, tick, width));
         }
         return (rows, None);
     }
@@ -1014,7 +1035,7 @@ fn l3_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> (Ve
     let at = rows.len();
     rows.push(fold_line(run.n, run.agents, open, run.live, tick, code_width(width)));
     if open {
-        rows.extend(ev_rows(ev, tick, width));
+        rows.extend(l3_ev_rows(events, i, debug, tick, width));
     }
     let live = run.live.then_some(LiveHead {
         at,

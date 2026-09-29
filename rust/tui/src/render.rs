@@ -372,10 +372,11 @@ pub(crate) const G_ENVELOPE: &str = "\u{2709}\u{FE0E}";
 /// Where a level-3 line group starts: x0, flush with the text's left
 /// edge (the fold line too; BISE-109, was x0+2).
 const L3_X: &str = "";
-/// Where its text goes when there is no room beside the chip: x0+2.
+/// Where its text goes, under the chip (BISE-127): x0+2.
 const L3_UNDER: &str = "  ";
-/// Less room than this beside the chip: the text goes under it.
-const L3_MIN_TEXT: usize = 30;
+/// A level-3 text wider than this (2 rows of 30 columns) may be cut: it
+/// opens.
+const L3_LONG: usize = 60;
 /// A closed level-3 text shows at most this many rows, then `… ▸`.
 const L3_ROWS: usize = 2;
 
@@ -418,12 +419,12 @@ fn chip_form() -> ChipForm {
     }
 }
 
-/// A level-3 text that may be cut (more than 2 rows of the narrowest
-/// room beside a chip, or several lines): it opens (`▸`).
+/// A level-3 text that may be cut (wider than 2 rows of 30 columns, or
+/// several lines): it opens (`▸`).
 pub(crate) fn l3_long(text: &str) -> bool {
     use unicode_width::UnicodeWidthStr;
     let t = text.trim();
-    t.contains('\n') || t.width() > L3_ROWS * L3_MIN_TEXT
+    t.contains('\n') || t.width() > L3_LONG
 }
 
 /// The chip ` ✉︎ sender → receiver `: envelope dim, sender bold text,
@@ -553,13 +554,11 @@ fn l3_text_rows(text: &str, open: bool, room: usize) -> Vec<Line<'static>> {
     rows
 }
 
-/// A message between agents (level 3, book §9): at x0 the chip
-/// ` ✉︎ sender → receiver ` on the `chip` tint, 1 ground space, then the
-/// dim text hung under its own first column, 2 rows at most then `… ▸`;
-/// open, the whole text. Less than 30 columns beside the chip: the text
-/// goes on the next rows at x0+2. No `to` (what this feed's owner
-/// received): the owner's name (`main` in main's feed), else the
-/// message id (BISE-90).
+/// A message between agents (level 3, book §9, BISE-127): at x0 the
+/// chip ` ✉︎ sender → receiver ` on the `chip` tint, alone on its row;
+/// under it, at x0+2, the dim text, 2 rows at most then `… ▸`; open,
+/// the whole text. No `to` (what this feed's owner received): the
+/// owner's name (`main` in main's feed), else the message id (BISE-90).
 pub(crate) fn l3_lines(from: &str, to: &str, id: &str, text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
     l3_lines_as(chip_form(), from, to, id, text, open, width)
 }
@@ -573,9 +572,15 @@ pub(crate) fn l3_lines_as(
     open: bool,
     width: usize,
 ) -> Vec<Line<'static>> {
-    use unicode_width::UnicodeWidthStr;
-    // W: the reading width from x0 (book §9 'Short on room'); names cut
-    // at 24 / 16 / 10, and then only as the row's room asks (BISE-109)
+    let mut ls = vec![l3_chip_row(form, from, to, id, width)];
+    ls.extend(l3_under(text, open, width));
+    ls
+}
+
+/// The chip row of a level-3 message. W, the reading width from x0
+/// (book §9 'Short on room'): names cut at 24 / 16 / 10, and then only
+/// as the row's room asks (BISE-109); under 40, the compact chip.
+fn l3_chip_row(form: ChipForm, from: &str, to: &str, id: &str, width: usize) -> Line<'static> {
     let w = width.saturating_sub(L3_X.len());
     let (cap, compact) = match w {
         60.. => (24, false),
@@ -585,34 +590,33 @@ pub(crate) fn l3_lines_as(
     let (s, r) = chip_names(from, &l3_receiver(to, id), cap, chip_frame(compact, form), w);
     let mut head = vec![Span::raw(L3_X)];
     head.extend(chip_spans(&s, &r, form, compact));
-    let beside = head.iter().map(|sp| sp.content.width()).sum::<usize>() + 1;
-    if w < 60 || width.saturating_sub(beside) < L3_MIN_TEXT {
-        // the chip alone, the text under it: at x0+2, at x0 when compact
-        let under = if compact { L3_X } else { L3_UNDER };
-        let mut ls = vec![Line::from(head)];
-        for r in l3_text_rows(text, open, width.saturating_sub(under.len())) {
-            let mut spans = vec![Span::raw(under)];
-            let soft = r.alignment;
-            spans.extend(r.spans);
-            let mut row = Line::from(spans);
-            row.alignment = soft;
-            ls.push(row);
-        }
-        return ls;
-    }
-    head.push(Span::raw(" "));
-    let indent = " ".repeat(beside);
-    l3_text_rows(text, open, width - beside)
+    Line::from(head)
+}
+
+/// The text of a level-3 message under its chip, at x0+2 (BISE-127:
+/// at every width, so the texts of a run start on one column).
+fn l3_under(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
+    l3_text_rows(text, open, width.saturating_sub(L3_UNDER.len()))
         .into_iter()
-        .enumerate()
-        .map(|(k, r)| {
-            let mut spans = if k == 0 { head.clone() } else { vec![Span::raw(indent.clone())] };
+        .map(|r| {
+            let mut spans = vec![Span::raw(L3_UNDER)];
             spans.extend(r.spans);
             let mut row = Line::from(spans);
             row.alignment = r.alignment;
             row
         })
         .collect()
+}
+
+/// A level-3 message right after one with the same sender and receiver
+/// (book §9, BISE-127): no chip, its text alone at x0+2, like
+/// [`ev_rows`] would draw it under the chip.
+pub(crate) fn l3_text_only_rows(ev: &Ev, width: usize) -> Vec<Line<'static>> {
+    let Ev::AgentMsg { text, open, .. } = ev else {
+        return Vec::new();
+    };
+    let w = code_width(width);
+    l3_under(text, *open, w).into_iter().flat_map(|l| wrap_line(l, w)).collect()
 }
 
 /// The speaker of a level-2 block is bold (book §9 'Emphasis'): main's
@@ -1208,15 +1212,16 @@ mod multiline_tests {
 
     #[test]
     fn agent_message_opens_under_its_chip() {
-        // a level-3 message opens whole: every line hung under the text's
-        // first column (BISE-106)
+        // a level-3 message opens whole: every line under the chip at
+        // x0+2 (BISE-127)
         let text = format!("one{}two {}", '\n', "x ".repeat(30));
         let s = screen(Ev::AgentMsg { from: "main".into(), to: "docs".into(), text, level: 3, id: String::new(), open: true, fold: false }, 70);
-        let head = format!(" {} main → docs  one", super::G_ENVELOPE);
+        let head = format!(" {} main → docs", super::G_ENVELOPE);
         assert_eq!(s[0], head, "{s:#?}");
-        let hang = " ".repeat(16);
-        assert!(s[1].starts_with(&format!("{hang}two x")), "{s:#?}");
-        assert!(s.len() >= 3 && s[1..].iter().all(|r| r.starts_with(&hang)), "{s:#?}");
+        let hang = "  ";
+        assert_eq!(s[1], "  one", "{s:#?}");
+        assert!(s[2].starts_with(&format!("{hang}two x")), "{s:#?}");
+        assert!(s.len() >= 3 && s[1..].iter().all(|r| r.starts_with(hang)), "{s:#?}");
         assert!(s.last().unwrap().ends_with(crate::theme::G_OPEN), "{s:#?}");
     }
 }
@@ -1323,8 +1328,8 @@ mod emphasis_tests {
 }
 
 // BISE-106 (book §5 `chip`, §9 'Level 3 is an envelope chip', 'Short on
-// room'): a message between agents is a tinted envelope chip, then its
-// dim text hung under its own first column
+// room'): a message between agents is a tinted envelope chip; BISE-127:
+// its dim text under it at x0+2, at every width
 #[cfg(test)]
 mod chip_tests {
     use super::*;
@@ -1363,7 +1368,7 @@ mod chip_tests {
     #[test]
     fn the_chip_is_tinted_with_a_bold_sender() {
         let ls = l3_lines_as(ChipForm::Tinted, "auth-fix", "release", "", "heads-up", false, 100);
-        assert_eq!(texts(&ls), [format!(" {G_ENVELOPE} auth-fix → release  heads-up")]);
+        assert_eq!(texts(&ls), [format!(" {G_ENVELOPE} auth-fix → release"), "  heads-up".to_string()]);
         let spans = &ls[0].spans;
         // the chip at x0, flush with the text (BISE-109): every cell
         // tinted, 1 each side; nothing on the ground before it
@@ -1372,15 +1377,17 @@ mod chip_tests {
         let chip: Vec<&Span> = spans[1..6].iter().collect();
         assert!(chip.iter().all(|s| s.style.bg == Some(chip_bg())), "{spans:?}");
         assert_eq!(chip.iter().map(|s| s.content.width()).sum::<usize>(), " ✉ auth-fix → release ".width());
+        assert_eq!(spans.len(), 6, "the chip is alone on its row: {spans:?}");
         let st = |needle: &str| spans.iter().find(|s| s.content.trim() == needle).unwrap().style;
         assert_eq!(st("auth-fix").fg, Some(text()));
         assert!(st("auth-fix").add_modifier.contains(Modifier::BOLD));
         assert_eq!(st("→").fg, Some(faint()));
         assert_eq!(st("release").fg, Some(dim()));
         assert_eq!(st(G_ENVELOPE).fg, Some(dim()));
-        // 1 ground space, then the dim text
-        assert_eq!((spans[6].content.as_ref(), spans[6].style.bg), (" ", None));
-        assert_eq!((spans[7].style.fg, spans[7].style.bg), (Some(dim()), None));
+        // under it at x0+2, on the ground, the dim text (BISE-127)
+        let under = &ls[1].spans;
+        assert_eq!((under[0].content.as_ref(), under[0].style.bg), ("  ", None));
+        assert_eq!((under[1].style.fg, under[1].style.bg), (Some(dim()), None));
         assert_ne!(chip_bg(), Color::Reset);
     }
 
@@ -1388,25 +1395,27 @@ mod chip_tests {
     fn names_are_cut_at_24_only_when_longer() {
         // BISE-109: room for real names (was 12)
         let ls = l3_lines_as(ChipForm::Tinted, "a-very-long-sender", "a-very-long-receiver", "", "hi", false, 100);
-        assert_eq!(texts(&ls), [format!(" {G_ENVELOPE} a-very-long-sender → a-very-long-receiver  hi")]);
+        assert_eq!(texts(&ls)[0], format!(" {G_ENVELOPE} a-very-long-sender → a-very-long-receiver"));
         let ls = l3_lines_as(ChipForm::Tinted, "a-very-long-sender-for-web", "a-very-long-receiver-of-news", "", "hi", false, 100);
-        assert_eq!(texts(&ls), [format!(" {G_ENVELOPE} a-very-long-sender-for-… → a-very-long-receiver-of…  hi")]);
+        assert_eq!(texts(&ls)[0], format!(" {G_ENVELOPE} a-very-long-sender-for-… → a-very-long-receiver-of…"));
     }
 
     #[test]
-    fn the_text_hangs_and_stops_after_2_rows() {
+    fn the_text_goes_under_and_stops_after_2_rows() {
         let long = "word ".repeat(60);
         let ls = l3_lines_as(ChipForm::Tinted, "docs", "main", "", &long, false, 80);
         let t = texts(&ls);
-        let at = format!(" {G_ENVELOPE} docs → main  ").width();
-        assert_eq!(t.len(), 2, "{t:#?}");
-        assert!(t[1].starts_with(&" ".repeat(at)) && t[1][at..].starts_with("word"), "{t:#?}");
-        assert!(t[1].ends_with("word… ▸"), "{t:#?}");
+        assert_eq!(t.len(), 3, "{t:#?}");
+        assert_eq!(t[0], format!(" {G_ENVELOPE} docs → main"));
+        assert!(t[1..].iter().all(|r| r.starts_with("  word")), "{t:#?}");
+        assert!(t[2].ends_with("word… ▸"), "{t:#?}");
         assert!(ls.iter().all(|l| cols(l) <= 80), "{t:#?}");
-        // open: the whole text, still hung, `▾` at the end
+        // the text uses the width under the chip, not the room beside it
+        assert!(t[1].width() > 70, "{t:#?}");
+        // open: the whole text, still at x0+2, `▾` at the end
         let ls = l3_lines_as(ChipForm::Tinted, "docs", "main", "", &long, true, 80);
         let t = texts(&ls);
-        assert!(t.len() > 2 && t[1..].iter().all(|r| r.starts_with(&" ".repeat(at))), "{t:#?}");
+        assert!(t.len() > 3 && t[1..].iter().all(|r| r.starts_with("  word")), "{t:#?}");
         assert!(t.last().unwrap().ends_with("word ▾") && !t.iter().any(|r| r.contains('…')), "{t:#?}");
         assert_eq!(t.iter().map(|r| r.matches("word").count()).sum::<usize>(), 60);
         // a short text that is cut (not long enough to open): `…` alone
@@ -1414,12 +1423,20 @@ mod chip_tests {
     }
 
     #[test]
-    fn short_on_room_the_text_goes_under_the_chip() {
-        // W ≥ 60 but less than 30 columns beside the chip: under, at x0+2
+    fn two_chips_of_different_widths_start_their_texts_on_one_column() {
+        // the user's screenshot (BISE-127): texts beside chips started at
+        // the chip's width
+        let a = texts(&l3_lines_as(ChipForm::Tinted, "main", "docs", "", "use v2", false, 100));
+        let b = texts(&l3_lines_as(ChipForm::Tinted, "the-auth-fix-agent", "release-notes", "", "heads-up", false, 100));
+        assert_eq!((a[1].as_str(), b[1].as_str()), ("  use v2", "  heads-up"));
+    }
+
+    #[test]
+    fn short_on_room_the_chip_shrinks_and_the_text_stays_at_x0_plus_2() {
         let ls = l3_lines_as(ChipForm::Tinted, "a-long-sender", "a-long-receiv", "", "hello there", false, 63);
         let t = texts(&ls);
         assert_eq!(t, [format!(" {G_ENVELOPE} a-long-sender → a-long-receiv"), "  hello there".to_string()]);
-        // 40 ≤ W < 60: names up to 16, the text always under at x0+2
+        // 40 ≤ W < 60: names up to 16
         let ls = l3_lines_as(ChipForm::Tinted, "auth-fix-web", "release", "", &"word ".repeat(30), false, 50);
         let t = texts(&ls);
         assert_eq!(t[0], format!(" {G_ENVELOPE} auth-fix-web → release"));
@@ -1428,9 +1445,10 @@ mod chip_tests {
         assert!(t[2].ends_with("… ▸"), "{t:#?}");
         let ls = l3_lines_as(ChipForm::Tinted, "the-auth-fix-for-web", "release", "", "ok", false, 50);
         assert_eq!(texts(&ls)[0], format!(" {G_ENVELOPE} the-auth-fix-fo… → release"));
-        // W < 40: compact, still tinted, names up to 10, the text at x0
+        // W < 40: compact, still tinted, names up to 10; the text still
+        // at x0+2 (BISE-127: at every width)
         let ls = l3_lines_as(ChipForm::Tinted, "auth-fix", "release", "", "ok", false, 30);
-        assert_eq!(texts(&ls), [format!("{G_ENVELOPE}auth-fix→release"), "ok".to_string()]);
+        assert_eq!(texts(&ls), [format!("{G_ENVELOPE}auth-fix→release"), "  ok".to_string()]);
         assert!(ls[0].spans[1..].iter().all(|s| s.style.bg == Some(chip_bg())), "{:?}", ls[0]);
         let ls = l3_lines_as(ChipForm::Tinted, "auth-fix-web", "release", "", "ok", false, 30);
         assert_eq!(texts(&ls)[0], format!("{G_ENVELOPE}auth-fix-…→release"));
@@ -1445,6 +1463,7 @@ mod chip_tests {
             let ls = l3_lines_as(ChipForm::Tinted, "auth-fix-web", "release-notes", "", &"word ".repeat(40), false, w);
             let t = texts(&ls);
             assert!(t[0].contains(G_ENVELOPE) && t[0].contains('→'), "{w}: {t:#?}");
+            assert!(t.len() <= 3 && t[1..].iter().all(|r| r.starts_with("  ")), "{w}: {t:#?}");
             assert!(w < 8 || ls.iter().all(|l| cols(l) <= w), "{w}: {t:#?}");
         }
     }
@@ -1453,20 +1472,20 @@ mod chip_tests {
     fn no_tint_and_ascii_use_brackets() {
         // NO_COLOR / 16 colors: no tint, `[✉︎ sender → receiver]`
         let ls = l3_lines_as(ChipForm::Bracketed, "auth-fix", "release", "", "heads-up", false, 100);
-        assert_eq!(texts(&ls), [format!("[{G_ENVELOPE} auth-fix → release] heads-up")]);
-        assert!(ls[0].spans.iter().all(|s| s.style.bg.is_none()), "{:?}", ls[0]);
+        assert_eq!(texts(&ls), [format!("[{G_ENVELOPE} auth-fix → release]"), "  heads-up".to_string()]);
+        assert!(ls.iter().flat_map(|l| l.spans.iter()).all(|s| s.style.bg.is_none()), "{ls:?}");
         assert!(ls[0].spans.iter().any(|s| s.content == "auth-fix" && s.style.add_modifier.contains(Modifier::BOLD)));
         // the same cut rules
         let ls = l3_lines_as(ChipForm::Bracketed, "auth-fix", "release", "", "ok", false, 30);
-        assert_eq!(texts(&ls), [format!("[{G_ENVELOPE}auth-fix→release]"), "ok".to_string()]);
+        assert_eq!(texts(&ls), [format!("[{G_ENVELOPE}auth-fix→release]"), "  ok".to_string()]);
         // ASCII: `[@ sender > receiver]`, whatever the colors
         crate::theme::set_ascii_for_tests(true);
         let ls = l3_lines("auth-fix", "release", "", "heads-up", false, 100);
         let long = l3_lines("a", "b", "", &"word ".repeat(60), false, 80);
         crate::theme::set_ascii_for_tests(false);
-        assert_eq!(texts(&ls), ["[@ auth-fix > release] heads-up"]);
+        assert_eq!(texts(&ls), ["[@ auth-fix > release]", "  heads-up"]);
         assert!(ls[0].spans.iter().all(|s| s.style.bg.is_none()));
-        assert!(texts(&long)[1].ends_with("word... +"), "{:#?}", texts(&long));
+        assert!(texts(&long)[2].ends_with("word... +"), "{:#?}", texts(&long));
         assert!(texts(&long).iter().all(|r| r.is_ascii()));
     }
 
@@ -1484,6 +1503,20 @@ mod chip_tests {
         let rows = build_rows(&evs, 1, false, 100, 0);
         assert!(!text_of(&rows[0]).contains(G_MAIN));
         assert!(rows.iter().flat_map(|l| l.spans.iter()).all(|s| s.style.fg != Some(accent()) && s.style.bg != Some(accent())));
+    }
+
+    #[test]
+    fn one_sender_and_receiver_in_a_row_share_one_chip() {
+        // BISE-127: the chip once, then each text on its own rows at x0+2
+        let evs = vec![msg("main", "docs", "use v2"), msg("main", "docs", "and the api"), msg("main", "docs", &"word ".repeat(40))];
+        let all: Vec<String> = (0..evs.len()).flat_map(|i| texts(&build_rows(&evs, i, false, 60, 0))).collect();
+        assert_eq!(all.len(), 5, "{all:#?}");
+        assert_eq!(all[..3], [format!(" {G_ENVELOPE} main → docs"), "  use v2".into(), "  and the api".into()]);
+        assert!(all[3].starts_with("  word") && all[4].starts_with("  word") && all[4].ends_with("… ▸"), "{all:#?}");
+        // the way back is its own chip (no blank row: the same pair)
+        let evs = vec![msg("main", "docs", "use v2"), msg("docs", "main", "ok")];
+        let all: Vec<String> = (0..2).flat_map(|i| texts(&build_rows(&evs, i, false, 60, 0))).collect();
+        assert_eq!(all, [format!(" {G_ENVELOPE} main → docs"), "  use v2".into(), format!(" {G_ENVELOPE} docs → main"), "  ok".into()]);
     }
 
     #[test]

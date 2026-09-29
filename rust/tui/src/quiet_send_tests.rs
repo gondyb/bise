@@ -54,7 +54,8 @@ fn has_box(rows: &[String]) -> bool {
 }
 
 fn has_chip(rows: &[String], text: &str) -> bool {
-    rows.iter().any(|r| r.contains("main → docs") && r.contains(text))
+    // the chip, its text under it (BISE-127)
+    rows.windows(2).any(|w| w[0].contains("main → docs") && w[1] == format!("  {text}"))
 }
 
 const SEND: &str = r#"sb send docs "use v2""#;

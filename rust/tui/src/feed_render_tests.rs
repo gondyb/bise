@@ -483,10 +483,10 @@ fn prose_wraps_at_91_and_code_at_103() {
             // the text fills its measure: it is not wrapped narrower
             assert!(w >= pm.min(width) - 12, "event {i} at {width}: only {w} columns\n{rs:#?}");
         }
-        // a message between agents: a chip, 2 rows of text at most (the
-        // chip alone on its row under 60 columns), the code measure
+        // a message between agents: a chip alone on its row, 2 rows of
+        // text at most under it (BISE-127), the code measure
         let msg: Vec<&String> = rows[2].iter().filter(|r| !r.is_empty()).collect();
-        assert!(msg.len() <= if width < 62 { 3 } else { 2 }, "{width}: {msg:#?}");
+        assert!(msg.len() <= 3 && msg[1..].iter().all(|r| r.starts_with("  ")), "{width}: {msg:#?}");
         assert!(msg.iter().all(|r| r.trim_end().width() <= cm.min(width)), "{width}: {msg:#?}");
         // the user block's panel stops at the measure too (a wrapped
         // row keeps the blank after its last word, as before)
@@ -864,8 +864,13 @@ fn cached_text(events: &[Ev], cache: &mut Vec<Option<EventRows>>, width: usize) 
 
 /// A level-3 message drawn beside its chip (BISE-106), as `cached_text`
 /// gives it: at x0, ` ✉︎ from → to `, 1 space, the text.
-fn chip_row(from: &str, to: &str, text: &str) -> String {
-    format!(" {} {} → {}  {}", crate::render::G_ENVELOPE, from, to, text).trim_end().to_string()
+fn chip_row(from: &str, to: &str) -> String {
+    format!(" {} {} → {}", crate::render::G_ENVELOPE, from, to)
+}
+
+/// A level-3 text under its chip, at x0+2 (BISE-127).
+fn under(text: &str) -> String {
+    format!("  {}", text)
 }
 
 /// `n` level-3 lines among `k` agents, numbered from `from`.
@@ -895,14 +900,19 @@ fn a_run_of_twelve_folds() {
     assert!(toggle_event(&mut events, &mut cache, 1));
     let rows = cached_text(&events, &mut cache, 100);
     assert_eq!(rows[2], format!("▾ 12 messages between 5 agents {}", pulse));
-    assert_eq!(rows.len(), 3 + 12 + 11, "{rows:#?}");
+    assert_eq!(rows.len(), 3 + 12 * 2 + 11, "{rows:#?}");
     for (j, r) in rows[3..].iter().enumerate() {
-        let want = if j % 2 == 1 { String::new() } else { chip_row(&format!("a{}", j / 2 % 5), &format!("a{}", (j / 2 + 1) % 5), &format!("message {}", j / 2)) };
+        let k = j / 3;
+        let want = match j % 3 {
+            0 => chip_row(&format!("a{}", k % 5), &format!("a{}", (k + 1) % 5)),
+            1 => under(&format!("message {}", k)),
+            _ => String::new(),
+        };
         assert_eq!(*r, want);
     }
     // three lines or fewer never fold
     let (events, mut cache) = arrive(traffic(3, 5, 0));
-    assert_eq!(cached_text(&events, &mut cache, 100).iter().filter(|r| !r.is_empty()).count(), 3);
+    assert_eq!(cached_text(&events, &mut cache, 100).iter().filter(|r| r.contains('→')).count(), 3);
 }
 
 #[test]
@@ -917,7 +927,7 @@ fn a_level_two_line_closes_the_run() {
     assert_eq!(rows[2], format!(" {} docs to you: the v2 docs are up.", crate::theme::G_MSG));
     assert_eq!(rows[3], "");
     // a2 → a0 then a0 → a1: two pairs, a blank row between
-    assert!(rows[4].ends_with("message 5") && rows[5].is_empty() && rows[6].ends_with("message 6"), "{rows:#?}");
+    assert_eq!(rows[4..9], [chip_row("a2", "a0"), under("message 5"), String::new(), chip_row("a0", "a1"), under("message 6")], "{rows:#?}");
     // the new run grows past three: it folds; the closed one stays
     for ev in traffic(2, 3, 7) {
         push_event(&mut events, &mut cache, ev);
@@ -1043,15 +1053,17 @@ fn level_two_and_answered_lines() {
     let long = format!("heads-up: {}", "i'm touching web/src/auth ".repeat(8));
     let (mut events, mut cache) = arrive(vec![l3("auth-fix", "release", &long)]);
     let rows = cached_text(&events, &mut cache, 100);
-    let hang = " ".repeat(chip_row("auth-fix", "release", "").width() + 2);
-    assert_eq!(rows.len(), 2, "{rows:#?}");
-    assert!(rows[0].starts_with(&chip_row("auth-fix", "release", "heads-up")) && rows[1].starts_with(&hang), "{rows:#?}");
-    assert!(!rows[1][hang.len()..].starts_with(' '), "the text hangs under its first column: {rows:#?}");
-    assert!(rows[1].ends_with("… ▸"), "{rows:#?}");
+    // BISE-127: the chip alone, the text under it at x0+2
+    let hang = "  ";
+    assert_eq!(rows.len(), 3, "{rows:#?}");
+    assert_eq!(rows[0], chip_row("auth-fix", "release"));
+    assert!(rows[1].starts_with("  heads-up") && rows[2].starts_with(hang), "{rows:#?}");
+    assert!(!rows[2][hang.len()..].starts_with(' '), "the text starts at x0+2: {rows:#?}");
+    assert!(rows[2].ends_with("… ▸"), "{rows:#?}");
     assert!(rows.iter().all(|r| r.width() <= CODE_MAX), "{rows:#?}");
     assert!(toggle_event(&mut events, &mut cache, 0));
     let rows = cached_text(&events, &mut cache, 100);
-    assert!(rows.len() > 2 && rows[1..].iter().all(|r| r.starts_with(&hang)), "{rows:#?}");
+    assert!(rows.len() > 2 && rows[1..].iter().all(|r| r.starts_with(hang)), "{rows:#?}");
     assert!(rows.last().unwrap().ends_with("auth ▾") && !rows.iter().any(|r| r.contains('…')), "{rows:#?}");
 }
 
@@ -1090,24 +1102,30 @@ fn whats_for_you_matches_the_mockup() {
     let (events, mut cache) = arrive(evs);
     let rows = cached_text(&events, &mut cache, 100);
     println!("{}", rows.join("\n"));
-    let want: [&str; 17] = [
+    let want: [&str; 23] = [
         "│  the login breaks on safari. and the api docs, v2 please. ✓✓",
         "",
         " on it: auth-fix takes safari, docs takes the api docs.",
         "",
-        &chip_row("docs", "main", "v1 or v2 for the examples?"),
-        &chip_row("main", "docs", "v2, the brief says so."),
+        &chip_row("docs", "main"),
+        &under("v1 or v2 for the examples?"),
+        &chip_row("main", "docs"),
+        &under("v2, the brief says so."),
         "",
         " :* docs asked: v1 or v2 for the examples? i answered: v2 ▸ why",
         "",
-        &chip_row("auth-fix", "release", "heads-up, i'm touching web/src/auth."),
-        &chip_row("release", "auth-fix", "ok, i'll mention the fix."),
+        &chip_row("auth-fix", "release"),
+        &under("heads-up, i'm touching web/src/auth."),
+        &chip_row("release", "auth-fix"),
+        &under("ok, i'll mention the fix."),
         "",
-        &chip_row("bench", "main", "✓ done. p95 180 ms, 3 runs."),
+        &chip_row("bench", "main"),
+        &under("✓ done. p95 180 ms, 3 runs."),
         "",
         " ✓ bench: p95 at 180 ms, nothing to fix. ▸ report",
         "",
-        &chip_row("api-v2", "main", "? i need the v2 schema file, it isn't in the repo."),
+        &chip_row("api-v2", "main"),
+        &under("? i need the v2 schema file, it isn't in the repo."),
     ];
     assert_eq!(rows[..want.len()], want[..], "{rows:#?}");
     assert!(rows[want.len()..].iter().any(|r| r.contains("api-v2 needs you")), "{rows:#?}");
@@ -1157,13 +1175,18 @@ fn a_busy_hour_matches_the_mockup() {
         " ✓ ep-users: 4 endpoints are done: users, orgs, keys, audit. ▸ report".into(),
         "".into(),
         "▾ 5 messages between 6 agents".into(),
-        chip_row("sdk-py", "sdk-ts", "same pagination shape as you?"),
-        chip_row("sdk-ts", "sdk-py", "yes: cursor + limit, max 200."),
+        chip_row("sdk-py", "sdk-ts"),
+        under("same pagination shape as you?"),
+        chip_row("sdk-ts", "sdk-py"),
+        under("yes: cursor + limit, max 200."),
         "".into(),
-        chip_row("mig-db", "main", "? drop the v1 tables now or after a release?"),
-        chip_row("main", "mig-db", "asking the user."),
+        chip_row("mig-db", "main"),
+        under("? drop the v1 tables now or after a release?"),
+        chip_row("main", "mig-db"),
+        under("asking the user."),
         "".into(),
-        chip_row("docs-auth", "ep-keys", "heads-up, i'm quoting your error codes."),
+        chip_row("docs-auth", "ep-keys"),
+        under("heads-up, i'm quoting your error codes."),
     ];
     assert_eq!(rows[..want.len()], want[..], "{rows:#?}");
     let tail: Vec<&String> = rows[want.len()..].iter().collect();
