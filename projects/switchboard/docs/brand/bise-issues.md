@@ -1946,7 +1946,8 @@ Index:
 - **status:** todo · **owner:** bise-f-feed · **commits:** —
 - **track:** F · **owns:** `theme.rs` (new palette role `raised`, its fallbacks), `layout.rs` / `chrome.rs` / `ui.rs` (the composer pane rows and tiers, the tinted block)
 - **spec:** book §5 (raised), §13 "The composer pane" (exact); mockups screens.html / live.html (marketing e71ec74, 7bca11e). User request 2026-09-29.
-- **what:** the composer is a raised block (tint `#1f1c1a` / `#f4f0e8`) with a tinted row above and below the text, bar at x0, 1 tinted column, text, 2 tinted columns; 1 blank row under the divider; key bar right under the block; 8 rows at rest, the tiers by height/width; contrast tests on `raised`; after BISE-101.
+- **update (user, marketing 685220f):** the whole pane under the divider is raised (every cell inside the frame, H−2 up to the row under the divider); no blank ground row under the divider; 7 rows at rest; tiers per book §13. The rest of this entry is superseded where it differs.
+- **what (first version):** the composer is a raised block (tint `#1f1c1a` / `#f4f0e8`) with a tinted row above and below the text, bar at x0, 1 tinted column, text, 2 tinted columns; 1 blank row under the divider; key bar right under the block; 8 rows at rest, the tiers by height/width; contrast tests on `raised`; after BISE-101.
 
 ### BISE-103 · `esc back to main` in an agent's view
 
