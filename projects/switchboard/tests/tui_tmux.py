@@ -19,16 +19,29 @@ def tmux(*a):
     return subprocess.run(["tmux", *a], capture_output=True, text=True).stdout
 
 
+def load_factor():
+    """How much slower than an idle machine this one is now: the load
+    average per core, at least 1, at most 4 (5 agents building at once
+    reach 3-4)."""
+    try:
+        return max(1.0, min(4.0, os.getloadavg()[0] / (os.cpu_count() or 1)))
+    except OSError:
+        return 1.0
+
+
 def wait_until(fn, timeout, what, poll=0.2):
     """Call `fn` until it returns a truthy value, and return it; after
     `timeout` s: AssertionError(what()). The one poll loop of the tmux
-    tests (the screen, the fake provider's log, a file)."""
+    tests (the screen, the fake provider's log, a file). `timeout` is for
+    an idle machine: a loaded one gets it times load_factor() (read at
+    each poll), so a test that passes returns as soon as it would, and
+    only a broken one waits longer before failing."""
     t0 = time.time()
     while True:
         got = fn()
         if got:
             return got
-        if time.time() - t0 >= timeout:
+        if time.time() - t0 >= timeout * load_factor():
             raise AssertionError(what())
         time.sleep(poll)
 
@@ -74,6 +87,12 @@ class Tui:
 
         def missing():
             print(last[0])
+            if not last[0].strip():
+                # an empty screen: the session is gone (tmux said why)
+                r = subprocess.run(["tmux", "capture-pane", "-p", "-t", self.name],
+                                   capture_output=True, text=True)
+                print("[empty screen: tmux %r; the TUI's exit is on its screen while it lives]"
+                      % r.stderr.strip())
             return "not on screen: %s" % " | ".join(
                 "/%s/" % c.pattern if isinstance(c, re.Pattern) else
                 repr(c) if isinstance(c, str) else getattr(c, "__doc__", None) or c.__name__
@@ -185,7 +204,9 @@ def start_tui(E, cols, rows, extra_env, session):
     envs = " ".join("%s=%s" % (k, subprocess.list2cmdline([v])) for k, v in E.env.items()
                     if k.startswith(("SB_", "BEND_", "MISTRAL_")))
     unset = " ".join("-u " + k for k in e2e.AGENT_VARS)   # tmux's server env may carry them
-    cmd = "cd %s && env %s %s%s %s switchboard --workspace %s; sleep 30" % (
+    # a TUI that exits early leaves its last screen and its exit code
+    # until close() kills the session (the timeout print shows them)
+    cmd = "cd %s && env %s %s%s %s switchboard --workspace %s; echo \"[switchboard exited: $?]\"; sleep 600" % (
         e2e.ROOT, unset, extra_env + " " if extra_env else "", envs, e2e.EXE, E.ws)
     tmux("new-session", "-d", "-s", session, "-x", str(cols), "-y", str(rows), cmd)
 

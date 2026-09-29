@@ -46,14 +46,18 @@ def main():
     with tui_session(COLS, ROWS) as t:
         t.wait("bise :*")
         t.wait(" idle")
-        t.typed('[[bash: sb spawn t1 --objective "first-objective"]] [[bash: sb spawn t2 --objective "second-objective"]]')
+        # one after the other: the archived rows are sorted by the last
+        # report (newest first), so t2 must report after t1 (spawned in
+        # one message, their report order was up to the load)
+        t.typed('[[bash: sb spawn t1 --objective "first-objective"]]')
         t.keys("Enter")
         t.wait_re(panel_row(1, "t1"))
-        t.wait_re(panel_row(2, "t2"))
         t.wait_re(r"t1 +(→ \S+|m_\d)", 60)
+        t.typed('[[bash: sb spawn t2 --objective "second-objective"]]')
+        t.keys("Enter")
+        t.wait_re(panel_row(2, "t2"))
         t.wait_re(r"t2 +(→ \S+|m_\d)", 60)
         drop(t, "t1")
-        time.sleep(1.1)
         drop(t, "t2")
         t.wait("▸ 2 archived")
         p = panel(t)

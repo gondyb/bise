@@ -15,6 +15,17 @@
 #                     (~60 s warm; e2e + tmux tests in parallel, SB_TEST_JOBS),
 #                     then no binary built needs a macOS newer than the
 #                     target (./bins.sh minos, BISE-164).
+#   gate.sh new <name>
+#                     start a task: a worktree of HEAD in /tmp/<name>-wt and
+#                     its own target /tmp/<name>-target, an APFS clone (0 bytes,
+#                     ~3 s) of the warm seed of the current deps; prints the
+#                     cd/export to run. No seed for these deps (Cargo.lock,
+#                     a Cargo.toml, rust/.cargo/config.toml or rustc changed):
+#                     builds one on top of the newest seed (the changed deps
+#                     only; ~2 min cold) and keeps it for the next tasks.
+#   gate.sh done <name>
+#                     end a task: remove its worktree (refused when it has
+#                     uncommitted changes) and its target.
 #   gate.sh wait <bg .out file | pid>
 #                     the bash tool put a gate in the background: block until
 #                     it ends (at most 25 s), then show its end and exit code.
@@ -32,7 +43,49 @@ if [ "$mode" = wait ]; then
   [ -n "$rcf" ] && [ -f "$rcf" ] && echo "exit code: $(cat "$rcf")"
   exit 0
 fi
-case "$mode" in quick|full) ;; *) echo "usage: gate.sh [quick|full|wait <file|pid>]" >&2; exit 2 ;; esac
+if [ "$mode" = new ] || [ "$mode" = done ]; then
+  name="${2:?usage: gate.sh $mode <name>}"
+  wt="/tmp/$name-wt" tgt="/tmp/$name-target"
+  if [ "$mode" = done ]; then
+    if [ -d "$wt" ] && [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
+      echo "$wt has uncommitted changes: commit them, or git -C $wt stash / checkout, then again"; exit 1
+    fi
+    [ -d "$wt" ] && git -C "$wt" worktree remove --force "$wt"
+    rm -rf "$tgt"; echo "removed $wt and $tgt"; exit 0
+  fi
+  { [ -e "$wt" ] || [ -e "$tgt" ]; } && { echo "$wt or $tgt exists: another name, or gate.sh done $name"; exit 1; }
+  cd "$(dirname "$0")/../../.." || exit 1
+  git worktree add -q --detach "$wt" HEAD || exit 1
+  cd "$wt" || exit 1
+  export PATH="$HOME/.cargo/bin:$PATH"
+  # the seed: a warm target (tests + clippy of every crate) for exactly
+  # these deps; the workspace crates recompile in the task anyway (a new
+  # checkout's mtimes), incrementally
+  key="$( { cat rust/Cargo.lock rust/.cargo/config.toml $(git ls-files 'rust/Cargo.toml' 'rust/*/Cargo.toml'); rustc -vV; } | shasum | cut -c1-12)"
+  seed="/tmp/sb-seed-$key"
+  s=$SECONDS
+  if [ -d "$seed" ]; then
+    cp -cR "$seed" "$tgt" || exit 1
+    echo "target: clone of the seed $seed ($((SECONDS - s))s)"
+  else
+    newest="$(ls -dt /tmp/sb-seed-* 2>/dev/null | grep -v '\.tmp' | head -1)"
+    [ -n "$newest" ] && cp -cR "$newest" "$tgt"
+    echo "no seed for these deps: building one${newest:+ on top of $newest} (~2 min cold, once)"
+    (cd rust && CARGO_TARGET_DIR="$tgt" cargo clippy --offline -q --workspace --all-targets --target-dir "$tgt/clippy") >/dev/null 2>&1 &
+    (cd rust && CARGO_TARGET_DIR="$tgt" cargo test --offline -q --workspace --no-run) >/dev/null 2>&1; rc=$?
+    wait $! || rc=1
+    if [ $rc = 0 ] && mkdir /tmp/sb-seed.lock 2>/dev/null; then
+      # one seed: the new one replaces the older ones (0 bytes: a clone)
+      rm -rf "$seed.tmp" && cp -cR "$tgt" "$seed.tmp" && mv "$seed.tmp" "$seed" \
+        && for o in /tmp/sb-seed-*; do [ "$o" = "$seed" ] || rm -rf "$o"; done
+      rmdir /tmp/sb-seed.lock
+    fi
+    echo "target: built ($((SECONDS - s))s)$([ $rc = 0 ] || echo ', with errors: the gate shows them')"
+  fi
+  echo "now: cd $wt && export CARGO_TARGET_DIR=$tgt   (end: gate.sh done $name)"
+  exit 0
+fi
+case "$mode" in quick|full) ;; *) echo "usage: gate.sh [quick|full|new <name>|done <name>|wait <file|pid>]" >&2; exit 2 ;; esac
 cd "$(dirname "$0")/../../.."
 root="$PWD"
 export PATH="$HOME/.bend/bin:$HOME/.cargo/bin:$PATH"

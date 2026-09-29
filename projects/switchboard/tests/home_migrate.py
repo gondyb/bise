@@ -15,7 +15,7 @@
 
 python3 -u projects/switchboard/tests/home_migrate.py
 """
-import json, os, subprocess, sys, tempfile, time
+import json, os, socket, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -70,8 +70,32 @@ def main():
             time.sleep(0.1)
         sys.exit("FAIL hub did not start in %s (%s)" % (sd, os.path.join(tmp, "hub.err")))
 
-    def stop(env, w):
+    def stop(env, w, sd):
+        """Stop the hub of `w` and wait until it is gone as the migration
+        sees it (switch::hub_busy: no socket answers, the pid in hub.pid is
+        dead): `--stop` may return before the hub process exits, and
+        under load a fixed 0.5 s was not enough (B stayed "busy")."""
         run(env, "switchboard", "--stop", "--workspace", w)
+        sock, pidf = os.path.join(sd, "hub.sock"), os.path.join(sd, "hub.pid")
+
+        def busy():
+            try:
+                c = socket.socket(socket.AF_UNIX)
+                c.connect(sock)
+                c.close()
+                return True
+            except OSError:
+                pass
+            try:
+                os.kill(int(open(pidf).read().strip()), 0)
+                return True
+            except (OSError, ValueError):
+                return False
+        for _ in range(300):
+            if not busy():
+                return
+            time.sleep(0.1)
+        sys.exit("FAIL the hub of %s still runs 30 s after --stop" % w)
 
     def sb(env, sd, *args):
         e = dict(env, SB_SOCKET=os.path.join(sd, "hub.sock"), SB_AGENT="main")
@@ -89,8 +113,7 @@ def main():
         sb(old_env, sa, "status", "working", "--note", "note-of-a")
         sb(old_env, sbd_, "status", "working", "--note", "note-of-b")
         check("note-of-b" in note_of(old_env, sbd_), "hub B has its note")
-        stop(old_env, B)
-        time.sleep(0.5)
+        stop(old_env, B, sbd_)
         check(not os.path.exists(os.path.join(home, ".bise")), "BISE_NO_MIGRATE: nothing migrated")
 
         # 2. the next start migrates: B moves, A (running) stays
@@ -107,24 +130,22 @@ def main():
         # 3. B restarts from ~/.bise/hubs with its state
         start(base, B, nb)
         check("note-of-b" in note_of(base, nb), "B restarted in ~/.bise/hubs with its note")
-        stop(base, B)
-        time.sleep(0.5)
+        stop(base, B, nb)
 
         # 4. rollback: an older binary opens the old path, finds the same hub
         rb = dict(base, SB_STATE_DIR=sbd_, BISE_NO_MIGRATE="1")
         start(rb, B, sbd_)
         check("note-of-b" in note_of(rb, sbd_), "an older binary on the old path gets the same hub, not an empty one")
         check(os.path.exists(os.path.join(nb, "hub.pid")), "its files are in ~/.bise/hubs")
-        stop(rb, B)
+        stop(rb, B, sbd_)
 
         # 5. A stops; the next start moves it
-        stop(base, A)
-        time.sleep(0.5)
+        stop(base, A, sa)
         na2 = state_dir(base, A)
         check(na2 == os.path.join(hubs, os.path.basename(sa)), "A moved at the start after it stopped")
         start(base, A, na2)
         check("note-of-a" in note_of(base, na2), "A restarted with its note")
-        stop(base, A)
+        stop(base, A, na2)
         print("PASS home migrate")
     finally:
         for w in (A, B):

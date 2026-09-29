@@ -45,9 +45,12 @@ def main():
         red = r"\x1b\[[0-9;]*(31|38;5;1)[0-9;]*mRED"
         t.wait_any([re.compile(red)], 20, poll=0.1, colors=True)
         # Ctrl+C goes to the shell: the sleep dies, the app stays
-        t.typed("sleep 100")
+        nap = "100.%d" % os.getpid()     # a sleep of our own, to see it run
+        t.typed("sleep " + nap)
         t.keys("Enter")
-        time.sleep(0.5)
+        wait_until(lambda: subprocess.run(["pgrep", "-f", "^sleep %s$" % nap],
+                                          capture_output=True).returncode == 0,
+                   20, lambda: "the shell never ran sleep %s" % nap, poll=0.1)
         t.keys("C-c")
         t.typed("echo after-int")
         t.keys("Enter")
