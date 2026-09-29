@@ -33,11 +33,9 @@ impl Mention {
     }
 }
 
-/// The agents for the `@query` being typed (none outside Switchboard).
+/// The agents for the `@query` being typed.
 pub(crate) fn mentions(app: &App, q: &str) -> Vec<Mention> {
-    let Some(sb) = app.sb.as_ref() else {
-        return Vec::new();
-    };
+    let sb = &app.sb;
     filter_mentions(&sb.agents, &sb.focus, q)
         .into_iter()
         .map(|a| Mention {

@@ -218,7 +218,7 @@ fn split_choices(text: &str) -> (String, Vec<String>) {
 /// acknowledges the cards that need no words (done, overlap).
 pub(super) fn answer_card(app: &mut App) {
     let text = app.ed.text.trim().to_string();
-    let Some(sb) = app.sb.as_mut() else { return };
+    let sb = &mut app.sb;
     let Some((id, kind, agent)) = sb
         .current_card()
         .map(|c| (c.id, c.kind.clone(), c.agent.clone()))
@@ -249,7 +249,7 @@ pub(super) fn answer_card(app: &mut App) {
 /// to 70% of the screen, within `room` (what the composer and the
 /// fixed rows leave).
 pub(crate) fn card_box_height(app: &App, area: Rect, room: u16) -> u16 {
-    let Some(sb) = app.sb.as_ref() else { return 0 };
+    let sb = &app.sb;
     if !sb.card.shown || sb.card.full {
         return 0;
     }
@@ -267,9 +267,8 @@ fn text_width(width: u16) -> usize {
 }
 
 pub(crate) fn card_full(app: &App) -> bool {
-    app.sb
-        .as_ref()
-        .is_some_and(|sb| sb.card.shown && sb.card.full && !sb.cards.is_empty())
+    let sb = &app.sb;
+    sb.card.shown && sb.card.full && !sb.cards.is_empty()
 }
 
 fn card_lines(c: &Card, width: usize) -> Vec<Line<'static>> {
@@ -410,7 +409,7 @@ fn title_line(c: &Card, pos: usize, count: usize, full: bool, width: usize) -> L
 /// The card box: the whole text, wrapped, scrolled by PgUp/PgDn, the
 /// arrows (empty composer) or the mouse wheel.
 pub(crate) fn draw_card(app: &mut App, frame: &mut Frame, area: Rect) {
-    let Some(sb) = app.sb.as_mut() else { return };
+    let sb = &mut app.sb;
     // never outside the frame (ratatui panics outside its buffer)
     let area = area.intersection(frame.area());
     if area.height < 3 || area.width < 5 {
@@ -484,7 +483,7 @@ pub(crate) fn draw_card(app: &mut App, frame: &mut Frame, area: Rect) {
 /// screen) scrolls it; `true` when handled.
 pub(crate) fn card_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bool {
     use crossterm::event::MouseEventKind;
-    let Some(sb) = app.sb.as_mut() else { return false };
+    let sb = &mut app.sb;
     if !sb.card.shown || sb.cards.is_empty() {
         return false;
     }
@@ -507,7 +506,7 @@ pub(crate) fn card_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> boo
 /// `/close <query>`: the open cards whose id, kind, agent or text match;
 /// picked, the composer holds `/close <id> ` (Enter sends it).
 pub(crate) fn close_items(app: &App) -> Vec<PopItem> {
-    let Some(sb) = app.sb.as_ref() else { return Vec::new() };
+    let sb = &app.sb;
     if !crate::commands::popup_open(app) {
         return Vec::new();
     }
@@ -596,11 +595,11 @@ mod tests {
         let mut app = bench::test_app();
         let (w, h) = (140u16, 40u16);
         let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
-        app.sb.as_mut().unwrap().cards = vec![card(3, "question", long_text()), card(4, "done", "ok".into())];
-        app.sb.as_mut().unwrap().toggle_card();
+        app.sb.cards = vec![card(3, "question", long_text()), card(4, "done", "ok".into())];
+        app.sb.toggle_card();
         term.draw(|f| draw_sb(&mut app, f)).unwrap();
         let s = screen(&term);
-        let area = app.sb.as_ref().unwrap().card.area;
+        let area = app.sb.card.area;
         assert!(area.height >= h * 6 / 10, "box height {} of {}", area.height, h);
         assert!(s.contains("line 01 of the card"));
         // the box takes the reading column (≤ 91, book §8): with every key
@@ -626,7 +625,7 @@ mod tests {
                     seen.insert(i);
                 }
             }
-            let sb = app.sb.as_ref().unwrap();
+            let sb = &app.sb;
             if sb.card.scroll == sb.card.max_scroll && step > 0 {
                 break;
             }
@@ -651,7 +650,7 @@ mod tests {
         assert!(press(&mut app, KeyCode::PageUp));
         assert!(press(&mut app, KeyCode::Up));
         assert!(press(&mut app, KeyCode::Esc));
-        assert!(!app.sb.as_ref().unwrap().card.shown);
+        assert!(!app.sb.card.shown);
     }
 
     /// The box never hides the composer, even on a short screen, and
@@ -661,13 +660,13 @@ mod tests {
         for (w, h) in [(20u16, 8u16), (40, 12), (80, 24), (200, 60), (4, 3)] {
             let mut app = bench::test_app();
             let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
-            app.sb.as_mut().unwrap().cards = vec![card(1, "blocked", long_text())];
-            app.sb.as_mut().unwrap().toggle_card();
+            app.sb.cards = vec![card(1, "blocked", long_text())];
+            app.sb.toggle_card();
             term.draw(|f| draw_sb(&mut app, f)).unwrap();
-            let a = app.sb.as_ref().unwrap().card.area;
+            let a = app.sb.card.area;
             // at least the status row and one composer row stay under it
             assert!(a.y.saturating_add(a.height) <= h.saturating_sub(2) || a.height == 0, "{}x{}: {:?}", w, h, a);
-            app.sb.as_mut().unwrap().card.full = true;
+            app.sb.card.full = true;
             term.draw(|f| draw_sb(&mut app, f)).unwrap();
         }
     }
@@ -677,8 +676,8 @@ mod tests {
     fn a_short_card_fits_and_wraps_at_a_readable_width() {
         let mut app = bench::test_app();
         let long_line = "word ".repeat(60);
-        app.sb.as_mut().unwrap().cards = vec![card(1, "done", long_line)];
-        app.sb.as_mut().unwrap().toggle_card();
+        app.sb.cards = vec![card(1, "done", long_line)];
+        app.sb.toggle_card();
         let h = card_box_height(&app, Rect::new(0, 0, 200, 50), 40);
         // 300 chars wrapped at 88 columns: 4 rows, plus the borders
         assert_eq!(h, 6, "height {}", h);
@@ -688,11 +687,11 @@ mod tests {
     /// on a 100x30 screen; returns the screen and the box's area.
     fn draw_cards(app: &mut App, cards: Vec<Card>) -> (String, Rect, Terminal<TestBackend>) {
         let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
-        app.sb.as_mut().unwrap().cards = cards;
-        app.sb.as_mut().unwrap().toggle_card();
+        app.sb.cards = cards;
+        app.sb.toggle_card();
         term.draw(|f| draw_sb(app, f)).unwrap();
         let s = screen(&term);
-        let a = app.sb.as_ref().unwrap().card.area;
+        let a = app.sb.card.area;
         (s, a, term)
     }
 
@@ -790,10 +789,10 @@ mod tests {
         // reading order: what blocks first, then the oldest
         let mut app = bench::test_app();
         let kinds = ["done", "overlap", "drop", "restart", "failed", "blocked", "question"];
-        app.sb.as_mut().unwrap().cards =
+        app.sb.cards =
             kinds.iter().enumerate().map(|(i, k)| card(i as u64 + 1, k, "x".into())).collect();
         let order: Vec<String> =
-            app.sb.as_ref().unwrap().sorted_cards().iter().map(|c| c.kind.clone()).collect();
+            app.sb.sorted_cards().iter().map(|c| c.kind.clone()).collect();
         assert_eq!(order, vec!["question", "blocked", "restart", "failed", "drop", "overlap", "done"]);
     }
 
@@ -811,18 +810,18 @@ mod tests {
         assert!(card_full(&app));
         term.draw(|f| draw_sb(&mut app, f)).unwrap();
         let s = screen(&term);
-        let a = app.sb.as_ref().unwrap().card.area;
+        let a = app.sb.card.area;
         assert!(a.height > 15, "full screen: {:?}", a);
         assert!(s.contains("? release needs you · full screen · ctrl+f back"), "{}", s);
         assert!(s.contains("more lines · pgdn"), "{}", s);
         assert!(!s.contains("ctrl+f full screen"), "{}", s);
         assert!(press(&mut app, KeyCode::PageDown));
-        assert!(app.sb.as_ref().unwrap().card.scroll > 0);
+        assert!(app.sb.card.scroll > 0);
         assert!(ctrl(&mut app, 'f'));
-        assert!(!card_full(&app) && app.sb.as_ref().unwrap().card.shown);
+        assert!(!card_full(&app) && app.sb.card.shown);
         assert!(ctrl(&mut app, 'f'));
         assert!(press(&mut app, KeyCode::Esc));
-        assert!(!card_full(&app) && app.sb.as_ref().unwrap().card.shown);
+        assert!(!card_full(&app) && app.sb.card.shown);
     }
 
     /// Choices: only a numbered run (1, 2, …) at the end of the text.
@@ -844,7 +843,7 @@ mod tests {
     #[test]
     fn close_completes_the_open_cards() {
         let mut app = bench::test_app();
-        app.sb.as_mut().unwrap().cards = vec![
+        app.sb.cards = vec![
             card(3, "question", "which db?".into()),
             card(12, "done", "shipped the parser".into()),
         ];
@@ -864,7 +863,7 @@ mod tests {
         assert!(items[0].run.is_none());
         app.ed.text = "/close 12 ".into();
         assert!(labels(&app).is_empty(), "the id is typed: Enter sends");
-        app.sb.as_mut().unwrap().cards.clear();
+        app.sb.cards.clear();
         app.ed.text = "/close ".into();
         assert!(labels(&app).is_empty());
     }

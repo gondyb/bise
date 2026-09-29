@@ -91,7 +91,7 @@ pub(super) fn swap_draft(app: &mut App, v: &mut View) {
 /// Run `f` on the feed of `agent`, swapped into the `App` fields when it
 /// is not the one in focus.
 pub(super) fn with_feed(app: &mut App, agent: &str, f: impl FnOnce(&mut App)) {
-    let Some(sb) = app.sb.as_mut() else { return };
+    let sb = &mut app.sb;
     if sb.focus == agent {
         f(app);
         return;
@@ -100,9 +100,8 @@ pub(super) fn with_feed(app: &mut App, agent: &str, f: impl FnOnce(&mut App)) {
     swap_feed(app, &mut view);
     f(app);
     swap_feed(app, &mut view);
-    if let Some(sb) = app.sb.as_mut() {
-        sb.views.insert(agent.to_string(), view);
-    }
+    let sb = &mut app.sb;
+    sb.views.insert(agent.to_string(), view);
 }
 
 /// One line of the feed, at transcript position `pos`.
@@ -151,13 +150,21 @@ pub(super) fn trim_window(app: &mut App) {
 /// took in, so scrolling up pages the cleared lines back from the hub,
 /// in their order.
 pub(super) fn clear_feed(app: &mut App) {
-    app.events.clear();
-    app.cache.clear();
+    empty_feed(app);
     app.win.marks.clear();
     app.win.loading = false;
     if let Some(p) = app.win.last_pos {
         app.win.first_pos = Some(p + 1);
     }
+}
+
+/// The feed in focus holds nothing and follows the tail: no event, no
+/// cached row, no scroll, no unseen count, no selection. The one place
+/// that empties it (`clear_feed`, a hub reconnection): a new per-feed
+/// field is reset here.
+pub(super) fn empty_feed(app: &mut App) {
+    app.events.clear();
+    app.cache.clear();
     app.anchor = (0, 0);
     app.scroll = 0;
     app.follow = true;
@@ -172,7 +179,7 @@ pub(super) fn want_older(app: &mut App) {
         return;
     }
     let Some(before) = app.win.first_pos.filter(|p| *p > 1) else { return };
-    let Some(sb) = app.sb.as_mut() else { return };
+    let sb = &mut app.sb;
     let agent = sb.focus.clone();
     sb.send(json!({"op": "history", "agent": agent, "before": before, "count": PAGE_LINES}));
     app.win.loading = true;

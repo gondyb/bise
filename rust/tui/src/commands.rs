@@ -1,8 +1,7 @@
 //! Slash commands and the composer autocomplete popup (commands,
-//! skills, emoji), plus the startup harness-info of the REPL.
+//! agents, files, skills, emoji).
 
 use crate::app::*;
-use crate::feed::*;
 use crate::*;
 
 // ---- slash commands (codex-style) ----
@@ -13,40 +12,91 @@ pub(crate) struct Cmd {
     pub(crate) args: bool,
 }
 
+/// The slash commands the popup offers and `/help` lists.
 pub(crate) const COMMANDS: &[Cmd] = &[
     Cmd {
-        name: "/compact",
-        desc: "compact the conversation (summary)",
+        name: "/voice",
+        desc: "turn voice mode (ctrl+r speech-to-text) on or off",
+        args: false,
+    },
+    Cmd {
+        name: "/restart",
+        desc: "rebuild and restart switchboard on the latest commit (agents kept): /restart [current|<commit>]",
+        args: true,
+    },
+    Cmd {
+        name: "/version",
+        desc: "switchboard versions: /version [<commit>|tree|back]",
+        args: true,
+    },
+    Cmd {
+        name: "/new",
+        desc: "start an agent: /new [-w] [name:] objective",
+        args: true,
+    },
+    Cmd {
+        name: "/drop",
+        desc: "stop and archive an agent (and its worktree)",
+        args: true,
+    },
+    Cmd {
+        name: "/restore",
+        desc: "reopen an archived agent",
+        args: true,
+    },
+    Cmd {
+        name: "/archived",
+        desc: "show or hide the archived agents in the panel",
+        args: false,
+    },
+    Cmd {
+        name: "/isolate",
+        desc: "give an agent its own git worktree",
+        args: true,
+    },
+    Cmd {
+        name: "/rename",
+        desc: "rename an agent",
+        args: true,
+    },
+    Cmd {
+        name: "/answer",
+        desc: "answer a card: /answer N text",
+        args: true,
+    },
+    Cmd {
+        name: "/close",
+        desc: "close a card without answering: /close N",
+        args: true,
+    },
+    Cmd {
+        name: "/plugins",
+        desc: "the workspace's agent plugins (enable|disable name)",
+        args: true,
+    },
+    Cmd {
+        name: "/agents",
+        desc: "list the agents and what they do",
         args: false,
     },
     Cmd {
         name: "/interrupt",
-        desc: "interrupt the current turn",
+        desc: "interrupt the turn of the agent in view",
         args: false,
     },
     Cmd {
-        name: "/reload",
-        desc: "restart the harness with the latest code (session kept)",
+        name: "/compact",
+        desc: "compact the conversation of the agent in view",
         args: false,
     },
     Cmd {
-        name: "/plugins",
-        desc: "the agent plugins (enable|disable name)",
+        name: "/theme",
+        desc: "light, dark, or auto (your terminal's background): /theme [auto|light|dark]",
         args: true,
     },
     Cmd {
-        name: "/status",
-        desc: "model, connection, compaction threshold",
-        args: false,
-    },
-    Cmd {
-        name: "/clear",
-        desc: "clear the local display",
-        args: false,
-    },
-    Cmd {
-        name: "/voice",
-        desc: "turn voice mode (ctrl+r speech-to-text) on or off",
+        name: "/welcome",
+        desc: "replay the welcome of the first launch",
         args: false,
     },
     Cmd {
@@ -61,75 +111,22 @@ pub(crate) const COMMANDS: &[Cmd] = &[
     },
     Cmd {
         name: "/quit",
-        desc: "quit the client (the session survives)",
+        desc: "quit (the agents keep running)",
         args: false,
     },
 ];
 
 // BR-002/BR-003: the interrupt side-channel flag, shared by the Ctrl+C
 // key and the /interrupt command
-/// What the Bend REPL announces at startup (its `harness-info` line):
-/// the REPL is the single source of truth, the TUI never recomputes
-/// the model, the threshold or the side-channel paths.
-#[derive(Clone, Debug, Default)]
-pub struct HarnessInfo {
-    pub model: String,
-    pub threshold: String,
-    pub steer_path: String,
-    pub interrupt_path: String,
-}
-
-impl HarnessInfo {
-    /// Parse `harness-info model=M threshold=N steer=P interrupt=Q`.
-    pub fn parse(line: &str) -> Option<HarnessInfo> {
-        let rest = line.trim().strip_prefix("harness-info ")?;
-        let mut info = HarnessInfo::default();
-        for kv in rest.split_whitespace() {
-            let (k, v) = kv.split_once('=')?;
-            match k {
-                "model" => info.model = v.to_string(),
-                "threshold" => info.threshold = v.to_string(),
-                "steer" => info.steer_path = v.to_string(),
-                "interrupt" => info.interrupt_path = v.to_string(),
-                _ => {}
-            }
-        }
-        if info.model.is_empty() || info.steer_path.is_empty() || info.interrupt_path.is_empty() {
-            return None;
-        }
-        Some(info)
-    }
-
-    /// Find the line in a REPL log.
-    pub fn from_log(log: &str) -> Option<HarnessInfo> {
-        log.lines().find_map(HarnessInfo::parse)
-    }
-}
-
-pub(crate) fn write_interrupt_flag(path: &str) -> bool {
-    std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(path)
-        .and_then(|mut f| f.write_all(b"1"))
-        .is_ok()
-}
-
 pub(crate) fn popup_matches(input: &str) -> Vec<&'static Cmd> {
     if !input.starts_with('/') || input.contains(' ') {
         return Vec::new();
     }
-    let list = if sb::SB_MODE.load(std::sync::atomic::Ordering::SeqCst) {
-        sb::SB_COMMANDS
-    } else {
-        COMMANDS
-    };
-    list.iter().filter(|c| c.name.starts_with(input)).collect()
+    COMMANDS.iter().filter(|c| c.name.starts_with(input)).collect()
 }
 
 /// One entry of the composer popup: a slash command, or an agent name
-/// after `@` (switchboard mode).
+/// after `@`.
 pub(crate) struct PopItem {
     pub(crate) label: String,
     pub(crate) desc: String,
@@ -359,143 +356,8 @@ pub(crate) fn popup_top(sel: usize, len: usize, rows: usize) -> usize {
     }
 }
 
-// interprets one user line: slash command, raw protocol word, or plain
-// message (implicit "say"). Returns the local events produced (echo
-// included) so line mode can print them.
-// Interprets one user line. The COMMAND LANGUAGE lives in the Bend REPL
-// (core/commands.bend, pinned by LAWS.bend): plain text is an implicit
-// "say", /commands map to protocol words, unknown ones get a server-side
-// warning. This client only handles its own lifecycle and display.
-pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
-    if v.trim() == "/voice" {
-        let ev = toggle_voice(app);
-        push_event(&mut app.events, &mut app.cache, ev.clone());
-        return vec![ev];
-    }
-    if app.sb.is_some() {
-        return sb::handle_input(app, v);
-    }
-    // the steer/say wrappers are transport, not what the user typed
-    let typed = v
-        .strip_prefix("steer ")
-        .or_else(|| v.strip_prefix("say "))
-        .unwrap_or(v);
-    let mut out = vec![Ev::You(typed.to_string(), Mark::Sent)];
-    app.history.insert(0, v.to_string());
-    app.popup_sel = 0;
-
-    let first = v.split_whitespace().next().unwrap_or("");
-    let first = if first == "/exit" { "/quit" } else { first };
-
-    if first == "/quit" {
-        // client lifecycle: closing here, no server round-trip
-        app.should_quit = true;
-    } else if first == "/clear" {
-        app.events.clear();
-        app.cache.clear();
-        app.anchor = (0, 0);
-        app.scroll = 0;
-        app.follow = true;
-        app.unseen = 0;
-        out.push(Ev::Info("display cleared".into()));
-    } else if first == "/plugins" {
-        let ws = crate::plugins::single_workspace();
-        let rep = crate::plugins::session_report(app.port);
-        out.push(Ev::Info(crate::plugins::command(v, &ws, Some(&rep))));
-    } else if first == "/status" {
-        out.push(Ev::Info(format!(
-            "model {} · {}:{} · compaction threshold {} · session {}",
-            app.info.model,
-            app.host,
-            app.port,
-            app.info.threshold,
-            app.session_id
-        )));
-    } else if let Some(page) = help::page_of(first) {
-        app.help = Some(help::Overlay::new(page));
-    } else if first == "/interrupt" {
-        // BR-003: the socket is only read between turns, so sending the
-        // line to the harness could never interrupt anything - the
-        // command goes through the same flag file as Ctrl+C while a
-        // turn runs, and says so at idle
-        if app.pending {
-            let ok = write_interrupt_flag(&app.info.interrupt_path);
-            app.pending = false;
-            app.interrupt_requested = true;
-            out.push(Ev::Info(if ok {
-                "interrupted — the current turn stops at the next safe point".into()
-            } else {
-                "interrupt not written (side channel unreachable)".into()
-            }));
-        } else {
-            out.push(Ev::Info("no turn in progress to interrupt".into()));
-        }
-    } else if first == "steer" && app.pending {
-        // mid-turn steering goes through the FILE side-channel: the
-        // harness reads the socket only between turns, but the runtime
-        // drains the announced steer file at every model/tool safe
-        // boundary and commits the text into the running turn (ADR 0005)
-        let msg = v.strip_prefix("steer ").map(|s| s.trim()).unwrap_or(typed);
-        if msg.is_empty() {
-            out.push(Ev::Info("nothing to steer with: type the text after steer".into()));
-        } else {
-            let path = app.info.steer_path.clone();
-            let mut line = String::with_capacity(msg.len() + 1);
-            line.push_str(msg);
-            line.push('\n');
-            let ok = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&path)
-                .and_then(|mut f| f.write_all(line.as_bytes()))
-                .is_ok();
-            out.push(Ev::Info(if ok {
-                format!("steering queued: {}", msg)
-            } else {
-                "steering not written (side channel unreachable)".to_string()
-            }));
-        }
-    } else {
-        // everything else — plain text, /commands, raw protocol words —
-        // goes to the harness verbatim; it interprets
-        app.send(v.trim());
-    }
-
-    for ev in &out {
-        push_event(&mut app.events, &mut app.cache, ev.clone());
-    }
-    out
-}
-
-#[cfg(test)]
-mod harness_info_tests {
-    use super::HarnessInfo;
-
-    // the exact string LAWS.bend pins for Rt.info_line (law
-    // info_line_format): the two sides of the contract agree
-    const BEND_LINE: &str = "harness-info model=claude-opus-5-5 threshold=800000 steer=/tmp/bend-steer-7.txt interrupt=/tmp/bend-interrupt-7.txt";
-
-    #[test]
-    fn parses_the_line_bend_prints() {
-        let info = HarnessInfo::parse(BEND_LINE).expect("parses");
-        assert_eq!(info.model, "claude-opus-5-5");
-        assert_eq!(info.threshold, "800000");
-        assert_eq!(info.steer_path, "/tmp/bend-steer-7.txt");
-        assert_eq!(info.interrupt_path, "/tmp/bend-interrupt-7.txt");
-    }
-
-    #[test]
-    fn finds_the_line_in_a_repl_log() {
-        let log = format!("{}\nbend-harness LIVE REPL on 127.0.0.1:7 ...\n[mcp] connector index written\n", BEND_LINE);
-        assert_eq!(HarnessInfo::from_log(&log).expect("found").model, "claude-opus-5-5");
-    }
-
-    #[test]
-    fn rejects_an_incomplete_line() {
-        assert!(HarnessInfo::parse("harness-info model=m threshold=1").is_none());
-        assert!(HarnessInfo::parse("bend-harness LIVE REPL on 127.0.0.1:7").is_none());
-    }
-}
+/// One line typed by the user: `sb::handle_input` (the hub interprets it).
+pub(crate) use crate::sb::handle_input;
 
 #[cfg(test)]
 mod popup_tests {

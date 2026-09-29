@@ -81,9 +81,7 @@ fn version_marks(marks: &[String]) -> (String, (&'static str, Color)) {
 /// `/version <query>`: the picker of versions (commits, tree, back).
 /// Enter builds if needed, then switches; Tab fills the composer.
 pub(crate) fn version_items(app: &App) -> Vec<PopItem> {
-    let Some(sb) = app.sb.as_ref() else {
-        return Vec::new();
-    };
+    let sb = &app.sb;
     if !popup_open(app) {
         return Vec::new();
     }

@@ -33,9 +33,7 @@ pub(crate) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
     let empty = app.ed.text.is_empty();
     let pending = app.pending;
     let interrupt_requested = app.interrupt_requested;
-    let Some(sb) = app.sb.as_mut() else {
-        return false;
-    };
+    let sb = &mut app.sb;
     // `D` asked "drop {name}?": y drops, n or esc keeps it; any other
     // key drops the question and does its usual job
     if let Some(name) = sb.drop_ask.take() {

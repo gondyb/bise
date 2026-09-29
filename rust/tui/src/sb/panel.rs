@@ -25,14 +25,11 @@ pub(super) fn glyph(status: &str, tick: u32, motion: crate::gust::Motion) -> (&'
 
 /// The workspace folder (the embedded terminal starts there).
 pub(crate) fn workspace(app: &App) -> Option<String> {
-    app.sb.as_ref().map(|sb| sb.workspace.clone()).filter(|w| !w.is_empty())
+    Some(app.sb.workspace.clone()).filter(|w| !w.is_empty())
 }
 
 /// The feed and composer area, and the panel on the right when it fits.
-pub(crate) fn split(app: &App, full: Rect) -> (Rect, Option<Rect>) {
-    if app.sb.is_none() {
-        return (full, None);
-    }
+pub(crate) fn split(full: Rect) -> (Rect, Option<Rect>) {
     // the screen's layout (book §8, layout.rs): under the header and its
     // blank row, above the composer pane (the divider and what the
     // smallest composer takes)
@@ -345,7 +342,7 @@ fn home_path(path: &str) -> String {
 }
 
 pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
-    let Some(sb) = app.sb.as_ref() else { return };
+    let sb = &app.sb;
     // no rule on its left: whitespace and alignment do the job (book §8)
     let w = area.width as usize;
     let title = Line::from(vec![
@@ -578,7 +575,7 @@ pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bo
     if m.kind != MouseEventKind::Down(MouseButton::Left) {
         return false;
     }
-    let Some(sb) = app.sb.as_ref() else { return false };
+    let sb = &app.sb;
     let target = {
         let Ok(hits) = sb.panel_hits.try_borrow() else { return false };
         if !hits.contains(m.column, m.row) {
@@ -589,9 +586,8 @@ pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bo
     match target {
         Some(Hit::Agent(name)) if sb.agent(&name).is_some() => focus(app, &name),
         Some(Hit::Archived) => {
-            if let Some(sb) = app.sb.as_mut() {
-                sb.toggle_archived();
-            }
+            let sb = &mut app.sb;
+            sb.toggle_archived();
         }
         _ => {}
     }
@@ -602,7 +598,7 @@ pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bo
 /// The agent you view, when it works (book §8, BISE-105): the gust's
 /// motion and the current turn's age, for the divider's label.
 pub(crate) fn viewed_working(app: &App) -> Option<crate::chrome::Working> {
-    let sb = app.sb.as_ref()?;
+    let sb = &app.sb;
     let a = sb.agent(&sb.focus).filter(|a| a.status == "working")?;
     Some(crate::chrome::Working { motion: app.motion, age: a.turn_age_ms().map(short_age) })
 }
@@ -613,7 +609,7 @@ pub(crate) fn viewed_working(app: &App) -> Option<crate::chrome::Working> {
 /// (preview, read-only, cards, the hub's version); or the `D` question,
 /// in accent. `idle · 210k / 1M tokens · 21%`.
 pub(crate) fn status_state(app: &App) -> Option<Line<'static>> {
-    let sb = app.sb.as_ref()?;
+    let sb = &app.sb;
     if let Some(name) = &sb.drop_ask {
         return Some(Line::from(Span::styled(drop_question(name), Style::default().fg(accent()))));
     }
@@ -688,7 +684,7 @@ fn still_gust() -> Vec<Span<'static>> {
 
 #[cfg(test)]
 pub(crate) fn status_text(app: &App) -> String {
-    let sb = app.sb.as_ref().unwrap();
+    let sb = &app.sb;
     let state: String = status_state(app).unwrap().spans.iter().map(|s| s.content.as_ref()).collect();
     if sb.drop_ask.is_some() {
         state
@@ -704,12 +700,12 @@ pub(crate) fn drop_question(name: &str) -> String {
     format!("drop {}? its history stays in archived. y / n", name)
 }
 
-/// The key bar's mode in switchboard (BISE-99, [`crate::keybar`]); `None`
-/// without switchboard.
-pub(crate) fn key_mode(app: &App) -> Option<crate::keybar::Mode> {
+/// The key bar's mode once no overlay or popup has it (BISE-99,
+/// [`crate::keybar`]).
+pub(crate) fn key_mode(app: &App) -> crate::keybar::Mode {
     use crate::keybar::Mode;
-    let sb = app.sb.as_ref()?;
-    Some(if sb.drop_ask.is_some() {
+    let sb = &app.sb;
+    if sb.drop_ask.is_some() {
         Mode::DropAsk
     } else if sb.confirm.is_some() {
         Mode::Confirm
@@ -724,14 +720,14 @@ pub(crate) fn key_mode(app: &App) -> Option<crate::keybar::Mode> {
         Mode::Steer
     } else {
         Mode::Default
-    })
+    }
 }
 
 /// What the empty composer shows after the cursor, dim (book §8 "The
 /// frame"): `what's on your mind?` to main, `talk to auth-fix directly`
 /// inside an agent, a read-only note in an archived agent's history.
 pub(crate) fn placeholder(app: &App) -> Option<String> {
-    let sb = app.sb.as_ref()?;
+    let sb = &app.sb;
     Some(if sb.focus_archived() {
         format!("{} is archived: read-only", sb.focus)
     } else if sb.is_main_focus() {
@@ -823,9 +819,8 @@ mod tests {
     #[test]
     fn a_click_on_an_agent_row_focuses_it() {
         let mut app = bench::test_app_drained();
-        if let Some(sb) = app.sb.as_mut() {
-            sb.agents.push(Agent { name: "main".into(), main: true, status: "idle".into(), ..Agent::default() });
-        }
+        let sb = &mut app.sb;
+        sb.agents.push(Agent { name: "main".into(), main: true, status: "idle".into(), ..Agent::default() });
         bench::add_agent(&mut app, "alpha", "first objective");
         bench::add_agent(&mut app, "beta", "second objective");
         bench::add_agent(&mut app, "gamma", "third objective");
@@ -834,30 +829,29 @@ mod tests {
             term.draw(|f| super::super::draw_sb(app, f)).unwrap();
         };
         draw(&mut app, &mut term);
-        let panel_x = app.sb.as_ref().unwrap().panel_hits.borrow().area.x;
+        let panel_x = app.sb.panel_hits.borrow().area.x;
         for (label, name) in [("alpha", "alpha"), ("beta", "beta")] {
             let (x, y) = find(&screen(&term), panel_x, label);
             click(&mut app, x, y);
-            assert_eq!(app.sb.as_ref().unwrap().focus, name, "click on {:?}", label);
+            assert_eq!(app.sb.focus, name, "click on {:?}", label);
             draw(&mut app, &mut term);
         }
         // the selected agent shows its objective under its row
-        if let Some(sb) = app.sb.as_mut() {
-            sb.selected = Some(3);
-        }
+        let sb = &mut app.sb;
+        sb.selected = Some(3);
         draw(&mut app, &mut term);
         let (x, y) = find(&screen(&term), panel_x, "third objective");
         click(&mut app, x, y);
-        assert_eq!(app.sb.as_ref().unwrap().focus, "gamma");
+        assert_eq!(app.sb.focus, "gamma");
         draw(&mut app, &mut term);
         let (x, y) = find(&screen(&term), panel_x, "main");
         click(&mut app, x, y);
-        assert_eq!(app.sb.as_ref().unwrap().focus, "main");
+        assert_eq!(app.sb.focus, "main");
         // the title row: nothing happens
         draw(&mut app, &mut term);
         let (x, y) = find(&screen(&term), panel_x, PANEL_TITLE.0);
         click(&mut app, x, y);
-        assert_eq!(app.sb.as_ref().unwrap().focus, "main");
+        assert_eq!(app.sb.focus, "main");
         // a click in the feed is not the panel's
         let m = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
@@ -875,7 +869,7 @@ mod tests {
     /// main and one agent in every state, as in the mockup.
     fn every_state() -> App {
         let mut app = bench::test_app_drained();
-        let sb = app.sb.as_mut().unwrap();
+        let sb = &mut app.sb;
         sb.agents.push(Agent { name: "main".into(), main: true, status: "idle".into(), ..Agent::default() });
         sb.agents.push(Agent { turn_ms: Some(12 * 60_000), ..agent("auth-fix", "working") });
         sb.agents.push(agent("tests", "starting"));
@@ -967,7 +961,7 @@ mod tests {
     #[test]
     fn panel_colors() {
         let mut app = every_state();
-        app.sb.as_mut().unwrap().focus = "bench".into();
+        app.sb.focus = "bench".into();
         let mut term = Terminal::new(TestBackend::new(40, 16)).unwrap();
         term.draw(|f| draw_panel(&app, f, f.area())).unwrap();
         let rows = screen(&term);
@@ -995,7 +989,7 @@ mod tests {
     fn main_working_breathes_after_its_name() {
         use crate::gust::{Motion, W1};
         let mut app = bench::test_app_drained();
-        let sb = app.sb.as_mut().unwrap();
+        let sb = &mut app.sb;
         sb.agents.push(Agent { name: "main".into(), main: true, status: "working".into(), ..Agent::default() });
         sb.agents.push(agent("ideas", "idle"));
         let mut term = Terminal::new(TestBackend::new(28, 6)).unwrap();
@@ -1026,7 +1020,7 @@ mod tests {
         let (_, b) = draw(&mut app, Motion::Still);
         assert!(a.diff(&b).is_empty());
         // idle: the row as before, and the frames change no cell
-        app.sb.as_mut().unwrap().agents[0].status = "idle".into();
+        app.sb.agents[0].status = "idle".into();
         let (rows, a) = draw(&mut app, Motion::Frame(0));
         assert_eq!(main_row(&rows), format!(" 0 {} main", G_MAIN));
         let (_, b) = draw(&mut app, Motion::Frame(1));
@@ -1041,36 +1035,36 @@ mod tests {
         use crossterm::event::{KeyCode, KeyEvent};
         let mut app = bench::test_app_drained();
         {
-            let sb = app.sb.as_mut().unwrap();
+            let sb = &mut app.sb;
             sb.agents.push(Agent { name: "main".into(), main: true, status: "idle".into(), ..Agent::default() });
             for n in ["a", "b", "c"] {
                 sb.agents.push(agent(n, "working"));
             }
         }
-        let num = |app: &App, n: &str| app.sb.as_ref().unwrap().numbers().into_iter().find(|(x, _)| x == n).map(|(_, k)| k);
+        let num = |app: &App, n: &str| app.sb.numbers().into_iter().find(|(x, _)| x == n).map(|(_, k)| k);
         let t = trimmed(&panel_rows(&app, 28, 10));
         assert!(t.iter().any(|r| r.starts_with(&format!(" 3 {} c", G_WORKING))), "{}", t.join("\n"));
         assert_eq!((num(&app, "a"), num(&app, "b"), num(&app, "c")), (Some(1), Some(2), Some(3)));
         // a is dropped (archived): b and c keep 2 and 3
-        app.sb.as_mut().unwrap().agents[1].status = "archived".into();
+        app.sb.agents[1].status = "archived".into();
         let t = trimmed(&panel_rows(&app, 28, 10));
         assert!(t.iter().any(|r| r.starts_with(&format!(" 2 {} b", G_WORKING))), "{}", t.join("\n"));
         assert!(t.iter().any(|r| r.starts_with(&format!(" 3 {} c", G_WORKING))), "{}", t.join("\n"));
         assert_eq!(num(&app, "a"), None);
         // Alt+3 goes to c, Alt+1 to no one, Alt+0 to main
         key(&mut app, &KeyEvent::new(KeyCode::Char('3'), KeyModifiers::ALT), false);
-        assert_eq!(app.sb.as_ref().unwrap().focus, "c");
+        assert_eq!(app.sb.focus, "c");
         key(&mut app, &KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT), false);
-        assert_eq!(app.sb.as_ref().unwrap().focus, "c", "no agent 1 any more");
+        assert_eq!(app.sb.focus, "c", "no agent 1 any more");
         key(&mut app, &KeyEvent::new(KeyCode::Char('0'), KeyModifiers::ALT), false);
-        assert_eq!(app.sb.as_ref().unwrap().focus, "main");
+        assert_eq!(app.sb.focus, "main");
         // a newcomer takes the free number 1; the others keep theirs
-        app.sb.as_mut().unwrap().agents.push(agent("d", "starting"));
+        app.sb.agents.push(agent("d", "starting"));
         assert_eq!((num(&app, "d"), num(&app, "b"), num(&app, "c")), (Some(1), Some(2), Some(3)));
         key(&mut app, &KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT), false);
-        assert_eq!(app.sb.as_ref().unwrap().focus, "d");
+        assert_eq!(app.sb.focus, "d");
         // restored, a comes back with a free number (4)
-        app.sb.as_mut().unwrap().agents[1].status = "idle".into();
+        app.sb.agents[1].status = "idle".into();
         assert_eq!(num(&app, "a"), Some(4));
     }
 
@@ -1080,7 +1074,7 @@ mod tests {
     fn overflow_ends_with_more() {
         let mut app = bench::test_app_drained();
         {
-            let sb = app.sb.as_mut().unwrap();
+            let sb = &mut app.sb;
             sb.agents.push(Agent { name: "main".into(), main: true, status: "idle".into(), ..Agent::default() });
             for i in 1..=30 {
                 sb.agents.push(agent(&format!("a{:02}", i), "working"));
@@ -1089,11 +1083,11 @@ mod tests {
         let t = trimmed(&panel_rows(&app, 28, 10));
         // title + 1 blank row + 7 agents + the more row
         assert_eq!(t[9], " + 24 more", "{}", t.join("\n"));
-        app.sb.as_mut().unwrap().selected = Some(30);
+        app.sb.selected = Some(30);
         let t = trimmed(&panel_rows(&app, 28, 10));
         assert!(t.iter().any(|r| r.contains("a30")), "{}", t.join("\n"));
         assert!(!t.iter().any(|r| r.contains("more")), "nothing left below");
-        app.sb.as_mut().unwrap().selected = Some(15);
+        app.sb.selected = Some(15);
         let t = trimmed(&panel_rows(&app, 28, 10));
         assert!(t.iter().any(|r| r.contains("a15")), "{}", t.join("\n"));
         assert!(t[9].contains("more"), "{}", t.join("\n"));
@@ -1118,21 +1112,19 @@ mod archived_tests {
     fn app() -> App {
         let mut app = bench::test_app_drained();
         let now = now_ms();
-        if let Some(sb) = app.sb.as_mut() {
-            sb.agents.push(Agent { name: "main".into(), main: true, status: "idle".into(), ..Agent::default() });
-        }
+        let sb = &mut app.sb;
+        sb.agents.push(Agent { name: "main".into(), main: true, status: "idle".into(), ..Agent::default() });
         bench::add_agent(&mut app, "alpha", "live objective");
-        if let Some(sb) = app.sb.as_mut() {
-            for (name, h_ago) in [("old", 300u64), ("new", 10), ("mid", 120)] {
-                sb.agents.push(Agent {
-                    name: name.into(),
-                    status: "archived".into(),
-                    objective: format!("{} objective", name),
-                    report: format!("{} did its job", name),
-                    report_ms: Some(now - h_ago * 60_000),
-                    ..Agent::default()
-                });
-            }
+        let sb = &mut app.sb;
+        for (name, h_ago) in [("old", 300u64), ("new", 10), ("mid", 120)] {
+            sb.agents.push(Agent {
+                name: name.into(),
+                status: "archived".into(),
+                objective: format!("{} objective", name),
+                report: format!("{} did its job", name),
+                report_ms: Some(now - h_ago * 60_000),
+                ..Agent::default()
+            });
         }
         app
     }
@@ -1179,7 +1171,7 @@ mod archived_tests {
         let mut app = app();
         let mut term = Terminal::new(TestBackend::new(120, 30)).unwrap();
         let rows = draw(&mut app, &mut term);
-        let x = app.sb.as_ref().unwrap().panel_hits.borrow().area.x;
+        let x = app.sb.panel_hits.borrow().area.x;
         let p = panel(&rows, x);
         let head = row_of(&p, "▸ 3 archived").unwrap_or_else(|| panic!("{}", p.join("\n")));
         for n in [&format!("{} old", G_STOPPED), &format!("{} mid", G_STOPPED), &format!("{} new", G_STOPPED)] {
@@ -1205,7 +1197,7 @@ mod archived_tests {
         assert_eq!(buf.cell((name_x, m as u16)).unwrap().fg, dim(), "archived names are dim");
 
         click(&mut app, x + 5, m as u16);
-        assert_eq!(app.sb.as_ref().unwrap().focus, "mid");
+        assert_eq!(app.sb.focus, "mid");
         let rows = draw(&mut app, &mut term);
         let all = rows.join("\n");
         assert!(all.contains("read-only history"), "{}", all);
@@ -1231,23 +1223,23 @@ mod archived_tests {
         let mut app = app();
         let mut term = Terminal::new(TestBackend::new(120, 30)).unwrap();
         press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL);
-        assert_eq!(app.sb.as_ref().unwrap().nav().len(), 2);
+        assert_eq!(app.sb.nav().len(), 2);
         press(&mut app, KeyCode::Char('A'), KeyModifiers::SHIFT);
-        assert!(app.sb.as_ref().unwrap().archived_open);
-        assert_eq!(app.sb.as_ref().unwrap().selected, Some(0), "selection kept");
+        assert!(app.sb.archived_open);
+        assert_eq!(app.sb.selected, Some(0), "selection kept");
         press(&mut app, KeyCode::Char('j'), KeyModifiers::CONTROL);
-        let sb = app.sb.as_ref().unwrap();
+        let sb = &app.sb;
         assert_eq!(sb.selected_agent().map(|a| a.name.as_str()), Some("old"));
         let x = sb.panel_hits.borrow().area.x;
         let p = panel(&draw(&mut app, &mut term), x.max(90));
         assert!(row_of(&p, "old did its job").is_some(), "{}", p.join("\n"));
         press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT);
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        assert_eq!(app.sb.as_ref().unwrap().focus, "old");
+        assert_eq!(app.sb.focus, "old");
         press(&mut app, KeyCode::Char('2'), KeyModifiers::ALT);
-        assert_eq!(app.sb.as_ref().unwrap().focus, "old", "Alt+2: no live task 2");
+        assert_eq!(app.sb.focus, "old", "Alt+2: no live task 2");
         press(&mut app, KeyCode::Char('1'), KeyModifiers::ALT);
-        assert_eq!(app.sb.as_ref().unwrap().focus, "alpha");
+        assert_eq!(app.sb.focus, "alpha");
     }
 
     /// Hundreds of archived tasks, expanded: the panel scrolls to keep
@@ -1255,26 +1247,25 @@ mod archived_tests {
     #[test]
     fn a_long_archived_list_scrolls_to_the_selection() {
         let mut app = app();
-        if let Some(sb) = app.sb.as_mut() {
-            for i in 0..300u64 {
-                sb.agents.push(Agent {
-                    name: format!("t{:03}", i),
-                    status: "archived".into(),
-                    report_ms: Some(1_000 + i),
-                    ..Agent::default()
-                });
-            }
-            sb.archived_open = true;
-            // the oldest: t000, last of the list
-            sb.selected = sb.nav().iter().position(|a| a.name == "t000");
+        let sb = &mut app.sb;
+        for i in 0..300u64 {
+            sb.agents.push(Agent {
+                name: format!("t{:03}", i),
+                status: "archived".into(),
+                report_ms: Some(1_000 + i),
+                ..Agent::default()
+            });
         }
+        sb.archived_open = true;
+        // the oldest: t000, last of the list
+        sb.selected = sb.nav().iter().position(|a| a.name == "t000");
         let mut term = Terminal::new(TestBackend::new(120, 30)).unwrap();
         let rows = draw(&mut app, &mut term);
-        let x = app.sb.as_ref().unwrap().panel_hits.borrow().area.x;
+        let x = app.sb.panel_hits.borrow().area.x;
         let p = panel(&rows, x);
         let y = row_of(&p, &format!("{} t000", G_STOPPED)).unwrap_or_else(|| panic!("{}", p.join("\n")));
         click(&mut app, x + 5, y as u16);
-        assert_eq!(app.sb.as_ref().unwrap().focus, "t000");
+        assert_eq!(app.sb.focus, "t000");
     }
 }
 
@@ -1296,7 +1287,7 @@ mod chrome_tests {
 
     fn with_main() -> App {
         let mut app = bench::test_app_drained();
-        app.sb.as_mut().unwrap().agents.push(Agent {
+        app.sb.agents.push(Agent {
             name: "main".into(),
             main: true,
             status: "idle".into(),
@@ -1307,7 +1298,7 @@ mod chrome_tests {
 
     fn busy() -> App {
         let mut app = with_main();
-        let sb = app.sb.as_mut().unwrap();
+        let sb = &mut app.sb;
         for (n, st) in [("auth-fix", "working"), ("release", "working"), ("big", "working"), ("api-v2", "waiting"), ("docs", "blocked"), ("bench", "done"), ("ideas", "idle")] {
             sb.agents.push(Agent { name: n.into(), status: st.into(), ..Agent::default() });
         }
@@ -1409,7 +1400,7 @@ mod chrome_tests {
     #[test]
     fn summary_drops_the_path_first() {
         let app = busy();
-        let sb = app.sb.as_ref().unwrap();
+        let sb = &app.sb;
         let text = |room: usize, short: bool| sb.summary(room, short, &super::still_gust()).iter().map(|s| s.content.to_string()).collect::<String>();
         let full = "∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done";
         assert_eq!(text(100, false), format!("bench · {}", full));
@@ -1421,7 +1412,7 @@ mod chrome_tests {
     #[test]
     fn header_colors() {
         let app = busy();
-        let line = app.sb.as_ref().unwrap().header(120, false, &super::still_gust());
+        let line = app.sb.header(120, false, &super::still_gust());
         let color_of = |t: &str| line.spans.iter().find(|s| s.content.contains(t)).map(|s| s.style.fg);
         assert_eq!(color_of(":*"), Some(Some(accent())));
         assert_eq!(color_of("needs you"), Some(Some(accent())));
@@ -1474,7 +1465,7 @@ mod chrome_tests {
     #[test]
     fn inside_an_agent_screen() {
         let mut app = with_main();
-        app.sb.as_mut().unwrap().agents.push(Agent {
+        app.sb.agents.push(Agent {
             name: "auth-fix".into(),
             status: "idle".into(),
             mode: "shared".into(),
@@ -1545,11 +1536,11 @@ mod chrome_tests {
     fn status_row_and_hints() {
         let mut app = busy();
         assert_eq!(status_text(&app), "main · idle");
-        assert_eq!(key_mode(&app), Some(crate::keybar::Mode::Default));
+        assert_eq!(key_mode(&app), crate::keybar::Mode::Default);
         app.pending = true;
-        assert_eq!(key_mode(&app), Some(crate::keybar::Mode::Steer));
+        assert_eq!(key_mode(&app), crate::keybar::Mode::Steer);
         app.pending = false;
-        let sb = app.sb.as_mut().unwrap();
+        let sb = &mut app.sb;
         sb.selected = Some(1);
         sb.preview = true;
         let text = status_text(&app);

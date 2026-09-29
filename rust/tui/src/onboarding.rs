@@ -6,9 +6,6 @@
 //! then the normal UI (step 6: the real first run; its one-time hints are
 //! BISE-61).
 //!
-//! Switchboard only: bise is the Switchboard UI; the single-agent client
-//! never shows it.
-//!
 //! It runs once per user: the flag is `onboarded` in the Switchboard state
 //! root (`$XDG_STATE_HOME/switchboard`, else `~/.local/state/switchboard`,
 //! the root `switchboard::paths` uses). `esc` / `ctrl+c` skip it and mark
@@ -89,7 +86,7 @@ pub(crate) fn run(_app: &mut App) {
 
 /// The first launch of the Switchboard UI: request it when it is due.
 pub(crate) fn request_if_due(app: &mut App) {
-    if app.sb.is_some() && due(&real_env) {
+    if due(&real_env) {
         run(app);
     }
 }

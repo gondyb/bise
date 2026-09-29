@@ -42,10 +42,6 @@ pub(crate) enum Mode {
     Steer,
     /// switchboard, idle: the default bar (with the tip)
     Default,
-    /// without switchboard, the turn runs
-    SoloSteer,
-    /// without switchboard, idle
-    Solo,
 }
 
 /// A key and what it does; an empty key is a plain dim label.
@@ -96,20 +92,6 @@ impl Mode {
                 ("/", "commands"),
                 ("?", "help"),
             ],
-            Mode::SoloSteer => &[
-                ("⏎", "steer"),
-                ("tab", "queue"),
-                ("ctrl+c", "interrupt"),
-                ("/", "commands"),
-                ("end", "bottom"),
-            ],
-            Mode::Solo => &[
-                ("⏎", "send"),
-                ("shift+⏎/ctrl+j", "new line"),
-                ("/", "commands"),
-                ("ctrl+o", "open/close all"),
-                ("ctrl+c", "quit"),
-            ],
         }
     }
 
@@ -135,21 +117,17 @@ pub(crate) fn mode(app: &App) -> Mode {
         Mode::Transcribing
     } else if commands::popup_open(app) && files::token(&app.ed.text, app.ed.cursor).is_some() {
         Mode::FilePopup
-    } else if !app.pending && app.sb.is_some() && attach::strip_height(app) > 0 {
+    } else if !app.pending && attach::strip_height(app) > 0 {
         Mode::Images
-    } else if let Some(m) = crate::sb::key_mode(app) {
-        m
-    } else if app.pending {
-        Mode::SoloSteer
     } else {
-        Mode::Solo
+        crate::sb::key_mode(app)
     }
 }
 
 /// The key bar of `app` for a row `width` columns wide: the mode's keys,
 /// the tip of the moment (none in an agent's view).
 pub(crate) fn line(app: &App, width: u16) -> Line<'static> {
-    let agent = app.sb.as_ref().is_some_and(|sb| !sb.is_main_focus());
+    let agent = !app.sb.is_main_focus();
     let typing = !app.ed.text.is_empty();
     render(mode(app), width, typing, agent, Some(current_tip(typing)))
 }

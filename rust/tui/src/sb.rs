@@ -2,8 +2,8 @@
 //! ux-notes.md): one feed per agent, main in focus by default, a task
 //! panel on the right, checkout / Esc, preview, attention cards.
 //!
-//! The feeds are the same wire lines as a plain session (the hub relays
-//! each agent's REPL), so every event renders with the code of lib.rs.
+//! The feeds are the wire lines of each agent's REPL (the hub relays
+//! them), so every event renders with the code of lib.rs.
 //! The focused feed lives in the `App` fields; the other feeds wait in
 //! `Sb::views` and are swapped in on focus change.
 
@@ -216,9 +216,6 @@ impl Sb {
     }
 }
 
-pub(super) static SB_MODE: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
 /// What `ctrl+z` and a typed `/cancel` say (book §13, §17).
 pub(super) const NO_UNDO: &str =
     "no undo: an agent may already have acted. say the change to main instead (\"no, v1 for docs\").";
@@ -243,108 +240,6 @@ fn theme_command(
     }
 }
 
-pub(super) const SB_COMMANDS: &[Cmd] = &[
-    Cmd {
-        name: "/voice",
-        desc: "turn voice mode (ctrl+r speech-to-text) on or off",
-        args: false,
-    },
-    Cmd {
-        name: "/restart",
-        desc: "rebuild and restart switchboard on the latest commit (agents kept): /restart [current|<commit>]",
-        args: true,
-    },
-    Cmd {
-        name: "/version",
-        desc: "switchboard versions: /version [<commit>|tree|back]",
-        args: true,
-    },
-    Cmd {
-        name: "/new",
-        desc: "start an agent: /new [-w] [name:] objective",
-        args: true,
-    },
-    Cmd {
-        name: "/drop",
-        desc: "stop and archive an agent (and its worktree)",
-        args: true,
-    },
-    Cmd {
-        name: "/restore",
-        desc: "reopen an archived agent",
-        args: true,
-    },
-    Cmd {
-        name: "/archived",
-        desc: "show or hide the archived agents in the panel",
-        args: false,
-    },
-    Cmd {
-        name: "/isolate",
-        desc: "give an agent its own git worktree",
-        args: true,
-    },
-    Cmd {
-        name: "/rename",
-        desc: "rename an agent",
-        args: true,
-    },
-    Cmd {
-        name: "/answer",
-        desc: "answer a card: /answer N text",
-        args: true,
-    },
-    Cmd {
-        name: "/close",
-        desc: "close a card without answering: /close N",
-        args: true,
-    },
-    Cmd {
-        name: "/plugins",
-        desc: "the workspace's agent plugins (enable|disable name)",
-        args: true,
-    },
-    Cmd {
-        name: "/agents",
-        desc: "list the agents and what they do",
-        args: false,
-    },
-    Cmd {
-        name: "/interrupt",
-        desc: "interrupt the turn of the agent in view",
-        args: false,
-    },
-    Cmd {
-        name: "/compact",
-        desc: "compact the conversation of the agent in view",
-        args: false,
-    },
-    Cmd {
-        name: "/theme",
-        desc: "light, dark, or auto (your terminal's background): /theme [auto|light|dark]",
-        args: true,
-    },
-    Cmd {
-        name: "/welcome",
-        desc: "replay the welcome of the first launch",
-        args: false,
-    },
-    Cmd {
-        name: "/help",
-        desc: "the commands and the essential keys",
-        args: false,
-    },
-    Cmd {
-        name: "/shortcuts",
-        desc: "every keyboard shortcut (also /keys)",
-        args: false,
-    },
-    Cmd {
-        name: "/quit",
-        desc: "quit (the agents keep running)",
-        args: false,
-    },
-];
 
 /// Ctrl+L in the switchboard: the feed in focus is cleared, its lines
 /// stay reachable by scrolling up (`feed::clear_feed`).
@@ -354,28 +249,23 @@ pub(super) fn clear_display(app: &mut App) {
 
 /// Startup timing: the hub's `ready` arrived (its replay is taken in).
 pub(super) fn is_ready(app: &App) -> bool {
-    app.sb.as_ref().is_some_and(|sb| sb.ready)
+    app.sb.ready
 }
 
 /// Startup timing: the events of the feeds not in focus.
 pub(super) fn background_events(app: &App) -> usize {
-    app.sb.as_ref().map_or(0, |sb| sb.views.values().map(|v| v.events.len()).sum())
+    app.sb.views.values().map(|v| v.events.len()).sum()
 }
 
 /// The hub is back (a new connection, `hello` sent): it replays every
 /// feed, so the feeds start empty again. The focus and the drafts stay.
 fn hub_reconnected(app: &mut App) {
     app.connected = true;
-    app.events.clear();
-    app.cache.clear();
+    feed::empty_feed(app);
     app.win = FeedWindow::default();
     app.pending = false;
     app.interrupt_requested = false;
-    app.follow = true;
-    app.anchor = (0, 0);
-    app.scroll = 0;
-    app.unseen = 0;
-    let Some(sb) = app.sb.as_mut() else { return };
+    let sb = &mut app.sb;
     for v in sb.views.values_mut() {
         let draft = std::mem::take(&mut v.ed);
         *v = View::new();
@@ -426,36 +316,32 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
                 &mut app.cache,
                 Ev::Info("answer y (yes) or n (no), then ⏎".into()),
             );
-            if let Some(sb) = app.sb.as_mut() {
-                sb.confirm = Some((id, text));
-            }
+            let sb = &mut app.sb;
+            sb.confirm = Some((id, text));
         }
         "focus" => focus(app, &s("focus")),
         "renamed" => {
             let (old, new) = (s("old"), s("new"));
-            if let Some(sb) = app.sb.as_mut() {
-                if let Some(view) = sb.views.remove(&old) {
-                    sb.views.insert(new.clone(), view);
-                }
-                if sb.focus == old {
-                    sb.focus = new;
-                }
+            let sb = &mut app.sb;
+            if let Some(view) = sb.views.remove(&old) {
+                sb.views.insert(new.clone(), view);
+            }
+            if sb.focus == old {
+                sb.focus = new;
             }
         }
         "versions" => {
-            if let Some(sb) = app.sb.as_mut() {
-                sb.versions = parse_versions(&v);
-            }
+            let sb = &mut app.sb;
+            sb.versions = parse_versions(&v);
         }
         "hello" => {
-            if let Some(sb) = app.sb.as_mut() {
-                sb.workspace = s("workspace");
-                sb.version = v
-                    .pointer("/version/id")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("")
-                    .to_string();
-            }
+            let sb = &mut app.sb;
+            sb.workspace = s("workspace");
+            sb.version = v
+                .pointer("/version/id")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
             // the hub runs another version: this TUI follows it
             let exe = s("exe");
             if !exe.is_empty() && follow_hub_exe(&exe) {
@@ -463,16 +349,15 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
             }
         }
         "ready" => {
-            if let Some(sb) = app.sb.as_mut() {
-                sb.ready = true;
-            }
+            let sb = &mut app.sb;
+            sb.ready = true;
         }
         _ => {}
     }
 }
 
 fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>) {
-    let Some(sb) = app.sb.as_mut() else { return };
+    let sb = &mut app.sb;
     // BISE-61: the first live message between agents in view
     let level3 = sb.ready
         && sb.focus == agent
@@ -496,8 +381,8 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>) {
             app.pending = true;
         }
     });
-    if let (Some(m), Some(sb)) = (queued, app.sb.as_mut()) {
-        sb.send_input_to(agent, m);
+    if let Some(m) = queued {
+        app.sb.send_input_to(agent, m);
     }
     if level3 {
         crate::hints::once(app, crate::hints::Hint::FirstLevel3);
@@ -508,7 +393,7 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>) {
 }
 
 fn apply_state(app: &mut App, v: &Value) {
-    let Some(sb) = app.sb.as_mut() else { return };
+    let sb = &mut app.sb;
     let s = str_of;
     sb.agents = v
         .get("agents")
@@ -573,7 +458,7 @@ fn apply_state(app: &mut App, v: &Value) {
         app.interrupt_requested = false;
     }
     // BISE-61: the first agent, the first card (one-time hints)
-    let Some(sb) = app.sb.as_ref() else { return };
+    let sb = &app.sb;
     let (agent, card) = (sb.agents.iter().any(|a| !a.main && !a.archived()), !sb.cards.is_empty());
     if agent {
         crate::hints::once(app, crate::hints::Hint::FirstAgent);
@@ -587,7 +472,7 @@ fn apply_state(app: &mut App, v: &Value) {
 
 /// Change the feed in focus (checkout / return).
 pub(super) fn focus(app: &mut App, name: &str) {
-    let Some(sb) = app.sb.as_mut() else { return };
+    let sb = &mut app.sb;
     // BISE-61: looking inside an agent is what the first-agent hint asks
     if sb.agents.iter().any(|a| a.name == name && !a.main) {
         crate::hints::used(crate::hints::Hint::FirstAgent);
@@ -606,15 +491,20 @@ pub(super) fn focus(app: &mut App, name: &str) {
     // a feed selection belongs to the feed we left
     app.feed_sel = None;
     // `incoming` now holds the feed we left
-    if let Some(sb) = app.sb.as_mut() {
-        sb.views.insert(old, incoming);
-    }
+    let sb = &mut app.sb;
+    sb.views.insert(old, incoming);
     app.follow = true;
     app.unseen = 0;
 }
 
-/// One line typed by the user (the hub interprets it).
-pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
+/// One line typed by the user: the client's own commands (/voice,
+/// /quit, /clear, /help, /theme…) here, the rest goes to the hub.
+pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
+    if v.trim() == "/voice" {
+        let ev = crate::input::toggle_voice(app);
+        push_event(&mut app.events, &mut app.cache, ev.clone());
+        return vec![ev];
+    }
     let typed = v
         .strip_prefix("steer ")
         .or_else(|| v.strip_prefix("say "))
@@ -624,9 +514,7 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     app.history.insert(0, typed.clone());
     app.popup_sel = 0;
     let mut out: Vec<Ev> = Vec::new();
-    let Some(sb) = app.sb.as_mut() else {
-        return out;
-    };
+    let sb = &mut app.sb;
     if let Some((id, _)) = sb.confirm.clone() {
         let t = typed.to_lowercase();
         let yes = matches!(t.as_str(), "y" | "yes" | "o" | "oui");
@@ -656,7 +544,7 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         }
         "/plugins" => {
             let ws = std::path::PathBuf::from(&sb.workspace);
-            out.push(Ev::Info(crate::plugins::command(&typed, &ws, None)));
+            out.push(Ev::Info(crate::plugins::command(&typed, &ws)));
         }
         "/clear" => {
             clear_feed(app);
@@ -694,14 +582,12 @@ pub(super) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
 
 /// Draw, with the previewed feed swapped in when a preview is open.
 pub(super) fn draw_sb(app: &mut App, frame: &mut Frame) {
-    let target = app.sb.as_ref().and_then(|sb| {
-        if !sb.preview {
-            return None;
-        }
-        sb.selected_agent()
-            .map(|a| a.name.clone())
-            .filter(|n| *n != sb.focus)
-    });
+    let sb = &app.sb;
+    let target = sb
+        .selected_agent()
+        .filter(|_| sb.preview)
+        .map(|a| a.name.clone())
+        .filter(|n| *n != sb.focus);
     match target {
         Some(name) => with_feed(app, &name, |app| draw(app, frame)),
         None => {
@@ -960,13 +846,13 @@ mod nav_key_tests {
     #[test]
     fn ctrl_k_then_enter_enters_the_selected_task() {
         let mut app = bench::test_app();
-        app.sb.as_mut().unwrap().agents = vec![agent("main"), agent("t1")];
+        app.sb.agents = vec![agent("main"), agent("t1")];
         assert!(press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL));
-        assert_eq!(app.sb.as_ref().unwrap().selected, Some(0));
+        assert_eq!(app.sb.selected, Some(0));
         assert!(press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL));
-        assert_eq!(app.sb.as_ref().unwrap().selected, Some(1));
+        assert_eq!(app.sb.selected, Some(1));
         assert!(press(&mut app, KeyCode::Enter, KeyModifiers::NONE));
-        let sb = app.sb.as_ref().unwrap();
+        let sb = &app.sb;
         assert_eq!(sb.focus, "t1");
         assert_eq!(sb.selected, None);
     }
@@ -975,13 +861,13 @@ mod nav_key_tests {
     #[test]
     fn ctrl_j_from_nothing_selects_the_last_agent() {
         let mut app = bench::test_app();
-        app.sb.as_mut().unwrap().agents = vec![agent("main"), agent("t1"), agent("t2")];
+        app.sb.agents = vec![agent("main"), agent("t1"), agent("t2")];
         press(&mut app, KeyCode::Char('j'), KeyModifiers::CONTROL);
-        assert_eq!(app.sb.as_ref().unwrap().selected, Some(2));
+        assert_eq!(app.sb.selected, Some(2));
         press(&mut app, KeyCode::Char('j'), KeyModifiers::CONTROL);
-        assert_eq!(app.sb.as_ref().unwrap().selected, Some(1));
+        assert_eq!(app.sb.selected, Some(1));
         press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-        assert_eq!(app.sb.as_ref().unwrap().focus, "t1");
+        assert_eq!(app.sb.focus, "t1");
     }
 
 /// D asks first (book §16, BISE-43): the status row says
@@ -1001,13 +887,13 @@ mod nav_key_tests {
                 Err(_) => String::new(),
             }
         };
-        app.sb.as_mut().unwrap().agents = vec![agent("main"), agent("docs")];
-        app.sb.as_mut().unwrap().selected = Some(1);
+        app.sb.agents = vec![agent("main"), agent("docs")];
+        app.sb.selected = Some(1);
         let status = |app: &App| status_text(app);
         // D: the question, nothing sent
         assert!(press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT));
         assert_eq!(status(&app).trim(), "drop docs? its history stays in archived. y / n");
-        assert_eq!(key_mode(&app), Some(crate::keybar::Mode::DropAsk));
+        assert_eq!(key_mode(&app), crate::keybar::Mode::DropAsk);
         assert_eq!(sent(), "");
         // n keeps it, the composer stays empty
         assert!(press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE));
@@ -1016,7 +902,7 @@ mod nav_key_tests {
         // esc keeps it too
         press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT);
         assert!(press(&mut app, KeyCode::Esc, KeyModifiers::NONE));
-        assert_eq!(app.sb.as_ref().unwrap().drop_ask, None);
+        assert_eq!(app.sb.drop_ask, None);
         assert_eq!(sent(), "");
         // y drops it
         press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT);
@@ -1025,9 +911,9 @@ mod nav_key_tests {
         assert!(out.contains(r#""op":"input""#) && out.contains("/drop docs"), "{out}");
         assert_eq!(app.ed.text, "");
         // main is never asked about
-        app.sb.as_mut().unwrap().selected = Some(0);
+        app.sb.selected = Some(0);
         press(&mut app, KeyCode::Char('D'), KeyModifiers::SHIFT);
-        assert_eq!(app.sb.as_ref().unwrap().drop_ask, None);
+        assert_eq!(app.sb.drop_ask, None);
     }
 
     /// BISE-86 (C2 `undelivered`, book §13, §17): the hub could not
@@ -1112,7 +998,7 @@ mod nav_key_tests {
         assert!(NO_UNDO.starts_with("no undo: an agent may already have acted."));
         let out = handle_input(&mut app, "/cancel");
         assert!(matches!(&out[..], [Ev::Info(t)] if t == NO_UNDO));
-        assert!(!SB_COMMANDS.iter().any(|c| c.name == "/cancel"));
+        assert!(!crate::commands::COMMANDS.iter().any(|c| c.name == "/cancel"));
     }
 
     /// /theme switches the palette; /welcome and /theme are listed; the
@@ -1131,9 +1017,9 @@ mod nav_key_tests {
         assert!(matches!(theme_command(Some("blue"), saved), Ev::Warn(_)));
         assert!(matches!(theme_command(None, saved), Ev::Info(t) if t.starts_with("theme: light.")));
         for name in ["/theme", "/welcome"] {
-            assert!(SB_COMMANDS.iter().any(|c| c.name == name), "{name}");
+            assert!(crate::commands::COMMANDS.iter().any(|c| c.name == name), "{name}");
         }
-        for c in SB_COMMANDS {
+        for c in crate::commands::COMMANDS {
             assert!(!c.desc.chars().next().unwrap().is_uppercase(), "{}", c.desc);
             assert!(!c.desc.contains("task"), "{}", c.desc);
         }
@@ -1144,7 +1030,7 @@ mod nav_key_tests {
     #[test]
     fn alt_r_answers_the_card_and_ctrl_r_is_not_the_cards() {
         let mut app = bench::test_app();
-        app.sb.as_mut().unwrap().cards = vec![Card {
+        app.sb.cards = vec![Card {
             id: 7,
             kind: "question".into(),
             agent: "t1".into(),
@@ -1167,11 +1053,11 @@ mod nav_key_tests {
     #[test]
     fn enter_with_text_does_not_enter_the_selection() {
         let mut app = bench::test_app();
-        app.sb.as_mut().unwrap().agents = vec![agent("main"), agent("t1")];
-        app.sb.as_mut().unwrap().selected = Some(1);
+        app.sb.agents = vec![agent("main"), agent("t1")];
+        app.sb.selected = Some(1);
         app.ed.text = "hello".into();
         assert!(!press(&mut app, KeyCode::Enter, KeyModifiers::NONE));
-        assert_eq!(app.sb.as_ref().unwrap().focus, "main");
+        assert_eq!(app.sb.focus, "main");
     }
 
     #[test]

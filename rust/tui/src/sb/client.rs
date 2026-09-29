@@ -114,11 +114,7 @@ pub(super) fn sb_app(
     voice: crate::voice::Voice,
     session_id: String,
 ) -> App {
-    App {
-        info: HarnessInfo { model: "switchboard".into(), ..Default::default() },
-        sb: Some(sb),
-        ..App::new(rx, debug, area_w, voice, session_id)
-    }
+    App::new(sb, rx, debug, area_w, voice, session_id)
 }
 
 /// `bend-harness switchboard`: the client of a workspace's hub.
@@ -128,7 +124,6 @@ pub fn run_switchboard(
     workspace: String,
     debug: bool,
 ) -> io::Result<()> {
-    SB_MODE.store(true, std::sync::atomic::Ordering::SeqCst);
     let reader = stream.try_clone()?;
     let (tx, rx) = mpsc::channel::<String>();
     let writer = std::sync::Arc::new(std::sync::Mutex::new(stream));
@@ -185,13 +180,7 @@ fn line_mode(app: &mut App) -> io::Result<()> {
                 None => stdin_open = false,
             }
         }
-        let busy = app
-            .sb
-            .as_ref()
-            .map(|sb| {
-                sb.agents.iter().any(|a| a.busy() || a.status == "starting")
-            })
-            .unwrap_or(false);
+        let busy = app.sb.agents.iter().any(|a| a.busy() || a.status == "starting");
         if !stdin_open && !busy {
             let t = *quiet_since.get_or_insert_with(std::time::Instant::now);
             if t.elapsed() > Duration::from_secs(3) {

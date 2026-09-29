@@ -284,7 +284,7 @@ pub(crate) fn place(h: Hint, y: u16, lines: u16, area: Rect, feed: Rect, panel: 
 /// Draw the hint up, else the first waiting one whose thing is on screen
 /// (after the frame is drawn: the anchor is read from it). Coming up marks
 /// it seen; a hint up whose thing left the screen goes away.
-pub(crate) fn draw(app: &App, f: &mut Frame) {
+pub(crate) fn draw(f: &mut Frame) {
     let (active, pending) = STATE.with(|s| {
         let st = s.borrow();
         (st.active, st.pending.clone())
@@ -293,7 +293,7 @@ pub(crate) fn draw(app: &App, f: &mut Frame) {
         return;
     }
     let area = f.area();
-    let (feed, panel) = crate::sb::split(app, area);
+    let (feed, panel) = crate::sb::split(area);
     let found = match active {
         Some(h) => match anchor(f.buffer_mut(), h, feed, panel) {
             Some(y) => Some((h, y)),
@@ -383,7 +383,6 @@ mod tests {
         use ratatui::Terminal;
         let p = tmp("draw");
         use_store(Some(p.clone()));
-        let app = crate::sb::bench::test_app();
         request(Hint::FirstLevel3);
         request(Hint::FirstCard);
         let mut t = Terminal::new(TestBackend::new(120, 30)).unwrap();
@@ -392,13 +391,13 @@ mod tests {
             (0..30).map(|y| row_text(b, y, 0, 120)).collect::<Vec<_>>().join("\n")
         };
         // nothing to point at: nothing shows
-        t.draw(|f| draw(&app, f)).unwrap();
+        t.draw(draw).unwrap();
         assert_eq!(active(), None);
         // a card title in the feed: its hint comes up above it
         let card = format!("  ┃ {} t1 needs you", theme::glyph(theme::G_CARD));
         t.draw(|f| {
             f.render_widget(Paragraph::new(card.as_str()), Rect::new(3, 18, 80, 1));
-            draw(&app, f)
+            draw(f)
         })
         .unwrap();
         assert_eq!(active(), Some(Hint::FirstCard));
@@ -406,12 +405,12 @@ mod tests {
         assert!(sc.contains("a card: someone needs you."), "{sc}");
         assert!(seen_in(&std::fs::read_to_string(&p).unwrap())["first_card"]);
         // the card is gone: so is the hint; the level-3 one waits its turn
-        t.draw(|f| draw(&app, f)).unwrap();
+        t.draw(draw).unwrap();
         assert_eq!(active(), None);
         let l3 = format!("   {} t1 → t2  v1 or v2?", crate::render::envelope());
         t.draw(|f| {
             f.render_widget(Paragraph::new(l3.as_str()), Rect::new(3, 5, 80, 1));
-            draw(&app, f)
+            draw(f)
         })
         .unwrap();
         assert_eq!(active(), Some(Hint::FirstLevel3));

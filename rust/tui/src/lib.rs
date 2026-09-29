@@ -1,6 +1,7 @@
-//! bend-tui — Ratatui terminal UI for the Bend Unified Harness.
+//! bend-tui — the Switchboard terminal UI (ratatui): the client of a
+//! workspace's hub (`sb::run_switchboard`), one feed per agent.
 //!
-//! Rust port of repl-tui (Ink). Same wire protocol; the presentation is
+//! Born as a Rust port of repl-tui (Ink). The presentation is
 //! modeled on the REAL OpenCode TUI (packages/tui in the opencode repo):
 //! no header bar — the screen is the conversation. Blocks breathe: a
 //! blank line at every content transition, one column of margin on
@@ -17,8 +18,8 @@
 //! in an OpenCode autocomplete popup (split border, primary selection).
 //! The status row carries the spinner + ctrl+c-to-interrupt hints.
 //!
-//! When stdin/stdout is not a TTY (piped), it falls back to line mode so
-//! the UI stays scriptable — the same convention as the Ink version.
+//! When stdin/stdout is not a TTY (piped), it falls back to line mode
+//! (`sb/client.rs`) so the UI stays scriptable.
 
 
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -30,7 +31,6 @@ use ratatui::widgets::{
 };
 use ratatui::Frame;
 use std::io::{self, IsTerminal, Write};
-use std::net::TcpStream;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Duration;
@@ -51,14 +51,12 @@ use feed::*;
 mod app;
 use app::*;
 mod commands;
-pub use commands::HarnessInfo;
 use commands::*;
 mod ui;
 use ui::*;
 mod input;
 use input::*;
 mod run;
-pub use run::run;
 use run::*;
 mod sb;
 mod skills;

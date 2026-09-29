@@ -1,8 +1,7 @@
-//! The single-agent client state: `App` (feed, composer, connection)
-//! and the composer / mouse geometry of the last frame.
+//! The client state: `App` (the feed in focus, the composer, the hub
+//! connection) and the composer / mouse geometry of the last frame.
 
 use crate::feed::*;
-use crate::wire::*;
 use crate::*;
 
 // ---- app state ----
@@ -14,9 +13,6 @@ pub(crate) struct App {
     // the /help or /shortcuts overlay, when open
     pub(crate) help: Option<help::Overlay>,
     pub(crate) debug: bool,
-    // line mode holds running tools until they finish so the printed
-    // line carries the merged annotations (name, args, result)
-    pub(crate) line_tools: std::collections::HashMap<u32, ToolData>,
     // feed scrollback: follow means stick to the bottom (any scroll up
     // turns it off, End/enter turn it back on). A pinned view is anchored
     // on its first row, (event, row in the event): new content never
@@ -80,16 +76,12 @@ pub(crate) struct App {
     pub(crate) motion: crate::gust::Motion,
     /// the terminal lost the focus (focus reporting): the gust stands still
     pub(crate) focus_lost: bool,
-    pub(crate) info: HarnessInfo,
-    pub(crate) host: String,
-    pub(crate) port: u16,
     pub(crate) session_id: String,
-    pub(crate) stream: Option<TcpStream>,
     pub(crate) rx: Receiver<String>,
     pub(crate) should_quit: bool,
-    /// Switchboard mode (projects/switchboard): the hub connection and
-    /// the feeds out of focus.
-    pub(crate) sb: Option<sb::Sb>,
+    /// Switchboard (projects/switchboard): the hub connection, the
+    /// agents, the cards and the feeds out of focus.
+    pub(crate) sb: sb::Sb,
     /// the images attached in the composer (`[Image #N]`, attach.rs)
     pub(crate) attachments: Vec<crate::attach::Attachment>,
     /// messages queued for after the turn (BISE-89), this feed's
@@ -157,10 +149,10 @@ impl ComposerArea {
 }
 
 impl App {
-    /// A fresh screen: empty feed following the tail, empty composer.
-    /// The connection fields (`info`, `host`, `port`, `stream`, `sb`)
-    /// start empty; callers set theirs with struct update syntax.
+    /// A fresh screen: empty feed following the tail, empty composer,
+    /// main in focus, fed by the hub lines of `rx`.
     pub(crate) fn new(
+        sb: sb::Sb,
         rx: std::sync::mpsc::Receiver<String>,
         debug: bool,
         area_w: usize,
@@ -172,7 +164,6 @@ impl App {
             term: crate::term::Term::default(),
             help: None,
             debug,
-            line_tools: std::collections::HashMap::new(),
             follow: true,
             anchor: (0, 0),
             scroll: 0,
@@ -205,117 +196,12 @@ impl App {
             tick: 0,
             motion: crate::gust::Motion::Still,
             focus_lost: false,
-            info: HarnessInfo::default(),
-            host: String::new(),
-            port: 0,
             session_id,
-            stream: None,
             rx,
             should_quit: false,
-            sb: None,
+            sb,
             attachments: Vec::new(),
             queued: Vec::new(),
-        }
-    }
-
-    pub(crate) fn send(&mut self, line: &str) {
-        self.pending = true;
-        // the socket protocol is line-oriented: real newlines in the
-        // composer escape to a literal backslash-n (the REPL unescapes
-        // the say/steer text; the message carries the real newlines)
-        let wire = line.replace('\n', "\\n");
-        if let Some(s) = self.stream.as_mut() {
-            let _ = s.write_all(format!("{}\n", wire).as_bytes());
-        }
-    }
-
-    // line mode: one printed line per finished tool, carrying the merged
-    // annotations; sub-calls print live as they complete
-    pub(crate) fn feed_line(&mut self, line: &str) {
-        if line == "--- idle" {
-            self.pending = false;
-        }
-        // every wire line moves the timing reference: a thinking
-        // duration is the delta from the previous line's arrival
-        let now = std::time::Instant::now();
-        let ms = self
-            .last_line_at
-            .map_or(0, |t0| now.duration_since(t0).as_millis());
-        self.last_line_at = Some(now);
-        let (line, replayed) = strip_history(line);
-        let parsed = if replayed {
-            parse_history_line(line)
-        } else {
-            parse_line(line)
-        };
-        let Some(ev) = parsed else { return };
-        match ev {
-            Ev::Tool(td) if matches!(td.state, ToolState::Run) => {
-                self.line_tools.insert(td.id, td);
-            }
-            Ev::ToolInfo { id, name, args } => {
-                if let Some(td) = self.line_tools.get_mut(&id) {
-                    td.name = Some(name);
-                    td.args = Some(args);
-                }
-            }
-            Ev::ToolResult { id, ok, preview } => {
-                if let Some(td) = self.line_tools.get_mut(&id) {
-                    td.result = Some((ok, preview));
-                }
-            }
-            Ev::ToolCode { id, code } => {
-                if let Some(td) = self.line_tools.get_mut(&id) {
-                    td.code = Some(code);
-                }
-            }
-            Ev::Tool(td) => {
-                if let Some(mut held) = self.line_tools.remove(&td.id) {
-                    held.state = td.state;
-                    if held.elapsed.is_none() {
-                        held.elapsed = Some(fmt_elapsed(held.started));
-                    }
-                    print_ev_of(&Ev::Tool(held), self.debug, self.area_w);
-                } else {
-                    print_ev_of(&Ev::Tool(td), self.debug, self.area_w);
-                }
-            }
-            ev2 @ (Ev::TurnDone | Ev::Idle) => {
-                // abandoned running tools get one final line
-                let mut held: Vec<ToolData> = self.line_tools.drain().map(|(_, td)| td).collect();
-                held.sort_by_key(|td| td.id);
-                for mut td in held {
-                    td.state = ToolState::Fail;
-                    td.elapsed = Some(fmt_elapsed(td.started));
-                    if td.result.is_none() {
-                        td.result = Some((false, "interrompu".to_string()));
-                    }
-                    print_ev_of(&Ev::Tool(td), self.debug, self.area_w);
-                }
-                print_ev_of(&ev2, self.debug, self.area_w);
-            }
-            Ev::Assistant(t) => {
-                // the line mode shows the same collapsed section: the
-                // raw reasoning never prints (unless --debug)
-                match split_thinking(&t) {
-                    Some((think, vis)) => {
-                        print_ev_of(
-                            &Ev::Thinking {
-                                ms,
-                                text: think.to_string(),
-                                open: self.debug,
-                            },
-                            self.debug,
-                            self.area_w,
-                        );
-                        if !vis.trim().is_empty() {
-                            print_ev_of(&Ev::Assistant(vis.to_string()), self.debug, self.area_w);
-                        }
-                    }
-                    None => print_ev_of(&Ev::Assistant(t), self.debug, self.area_w),
-                }
-            }
-            other => print_ev_of(&other, self.debug, self.area_w),
         }
     }
 }

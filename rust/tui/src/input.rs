@@ -1,4 +1,4 @@
-//! Input of the single-agent screen: key, mouse and paste handlers,
+//! Input of the screen: key, mouse and paste handlers,
 //! the composer editor keys, voice keys, and the feed selection copy.
 
 use crate::*;
@@ -167,7 +167,7 @@ pub(crate) fn composer_key(app: &mut App, k: &crossterm::event::KeyEvent) {
     }
 }
 
-/// A mouse event of the single-agent screen: help overlay, terminal
+/// A mouse event: help overlay, terminal
 /// pane, then the feed (scroll, selection, section toggles) and the
 /// composer (cursor, selection).
 pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: u16) {
@@ -355,43 +355,16 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
     let matches = popup_items(app);
     let popup_open = !matches.is_empty();
     let sel = matches.get(app.popup_sel.min(matches.len().saturating_sub(1)));
-    if app.sb.is_some() && sb::key(app, k, popup_open) {
+    if sb::key(app, k, popup_open) {
         return false;
     }
     if at_nav(app, k, sel) {
         return false;
     }
     match (k.code, k.modifiers) {
-        // ctrl+c: INTERRUPT the running turn — the UI is
-        // free immediately (local abort); the runtime kills
-        // the turn at the next safe boundary (the blocking
-        // model/tool call in flight cannot be cancelled),
-        // and the dying turn's wire lines still render.
-        // The SECOND press quits the CLI; at idle, one press
-        // quits.
-        (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-            if app.interrupt_requested {
-                return true;
-            } else if app.pending {
-                let ok = write_interrupt_flag(&app.info.interrupt_path);
-                // the local abort: the composer frees and the
-                // user can type right away; the flag clears
-                // when the interrupted turn's idle arrives
-                app.pending = false;
-                app.interrupt_requested = true;
-                push_event(
-                    &mut app.events,
-                    &mut app.cache,
-                    Ev::Info(if ok {
-                        "interrupted — the current turn stops at the next safe point · ctrl+c again to quit".to_string()
-                    } else {
-                        "interrupt not written (side channel unreachable) — ctrl+c again to quit".to_string()
-                    }),
-                );
-            } else {
-                return true;
-            }
-        }
+        // ctrl+c: quit (the agents keep running). A running turn is
+        // interrupted by `sb::key` first; a second press quits.
+        (KeyCode::Char('c'), KeyModifiers::CONTROL) => return true,
         // ctrl+o: open or close everything folded (book §11, §16)
         (KeyCode::Char('o'), KeyModifiers::CONTROL) => toggle_everything(app),
         // space on the item selected in the feed (composer empty; an
@@ -400,17 +373,7 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
             crate::feed::toggle_selected(app);
         }
         // ctrl+l: clear the local feed
-        (KeyCode::Char('l'), KeyModifiers::CONTROL) if app.sb.is_some() => {
-            sb::clear_display(app);
-        }
-        (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
-            app.events.clear();
-            app.cache.clear();
-            app.anchor = (0, 0);
-        app.scroll = 0;
-            app.follow = true;
-            app.unseen = 0;
-        }
+        (KeyCode::Char('l'), KeyModifiers::CONTROL) => sb::clear_display(app),
         // esc: close the popup, else drop the selection — it
         // never interrupts (Ctrl+C does, through the flag
         // side-channel)

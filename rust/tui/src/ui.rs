@@ -1,11 +1,11 @@
-//! The single-agent screen: feed slice, status row, prompt, popup and
-//! hint row, drawn from `App` each frame.
+//! The screen (book §8 "The frame"): the history, the divider, the
+//! composer pane, the popup and the key bar, drawn from `App` each frame.
 
 use crate::*;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState};
 use ratatui::Frame;
 use std::time::Duration;
 use unicode_width::UnicodeWidthStr;
@@ -21,97 +21,13 @@ pub(crate) fn voice_glyph(v: &voice::Voice) -> char {
     }
 }
 
-/// The composer's text rows while recording: the meter before the first
-/// row, the rows indented after it, the text dimmed (Vibe's `recording`
-/// input class).
-pub(crate) fn recording_lines(lines: Vec<Line<'static>>, glyph: char) -> Vec<Line<'static>> {
-    lines
-        .into_iter()
-        .enumerate()
-        .map(|(i, l)| {
-            let lead = if i == 0 {
-                Span::styled(
-                    format!("{} ", glyph),
-                    Style::default().fg(theme::accent()).add_modifier(Modifier::BOLD),
-                )
-            } else {
-                Span::raw("  ")
-            };
-            let mut spans = vec![lead];
-            spans.extend(l.spans.into_iter().map(|s| {
-                let st = s.style.fg(theme::dim());
-                Span::styled(s.content, st)
-            }));
-            Line::from(spans)
-        })
-        .collect()
-}
-
 pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     let full = app.term.draw(frame, frame.area());
-    // Switchboard (book §8 "The frame"): the frame, the history and the
-    // panel, the divider, the composer pane
-    if app.sb.is_some() {
-        let cols = crate::layout::cols(full.width, full.height);
-        let rows = crate::layout::rows(full.width, full.height);
-        draw_bise(app, frame, full, cols, rows);
-        help::draw(app, frame);
-        return;
-    }
-    let area = full;
-    // OpenCode layout: no header. Feed grows to fill, a blank row, the
-    // status row, another blank row, the prompt block, a blank row,
-    // then the hint row — the composer never touches the history.
-    // the composer grows with its content (a pasted multi-line block),
-    // capped at half the screen so the feed always survives
-    // recording: the level meter takes the first 2 columns (Vibe puts
-    // it in place of the prompt), the text is indented after it
-    let voice_pad = if app.voice.active() { 2 } else { 0 };
-    let inner_w = ((area.width as usize).saturating_sub(6 + voice_pad)).max(1);
-    // rows as drawn (same width, same end-slot rule as the draw below):
-    // wrapped by display width (emojis are 2 columns)
-    let composer_rows = {
-        let rows = editor::layout_input(&app.ed.text, inner_w);
-        editor::drawn_rows(&rows, app.ed.cursor)
-    };
-    // the prompt block holds: 2 rows of top padding, the typed text,
-    // one blank line, the meta row, 1 row of bottom padding
-    let input_h = ((composer_rows + 5) as u16).min((area.height / 2).max(7));
-    // the images strip (book §14) above the status row, while images are attached
-    let strip_h = attach::strip_height(app).min(area.height.saturating_sub(input_h + 7));
-    // the queued messages (BISE-89), above the strip
-    let queue_h = crate::queue::height(app).min(area.height.saturating_sub(input_h + strip_h + 7));
-    attach::set_model(&app.info.model);
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(3), // feed
-            Constraint::Length(queue_h), // the queued messages
-            Constraint::Length(strip_h), // the images strip
-            Constraint::Length(1), // respiration sous le feed
-            Constraint::Length(1), // status row
-            Constraint::Length(1), // respiration au-dessus du composeur
-            Constraint::Length(input_h), // prompt
-            Constraint::Length(1), // respiration au-dessus de l'aide
-            Constraint::Length(1), // hint row
-        ])
-        .split(area);
-
-    let (queue, strip, chunks) =
-        (chunks[1], chunks[2], [chunks[0], chunks[3], chunks[4], chunks[5], chunks[6], chunks[7], chunks[8]]);
-    draw_feed(app, frame, chunks[0], None);
-    if queue.height > 0 {
-        let r = Rect { x: queue.x + 1, width: queue.width.saturating_sub(2), ..queue };
-        frame.render_widget(Paragraph::new(crate::queue::lines(app, r.width as usize)), r);
-    }
-    if strip.height > 0 {
-        let r = Rect { x: strip.x + 4, width: strip.width.saturating_sub(6), ..strip };
-        frame.render_widget(Paragraph::new(attach::strip_lines(app, r.width as usize)), r);
-    }
-    draw_status(app, frame, chunks[2]);
-    draw_prompt(app, frame, chunks[4], voice_pad);
-    draw_popup(app, frame, chunks[4]);
-    frame.render_widget(Paragraph::new(crate::keybar::line(app, chunks[6].width)), chunks[6]);
+    // book §8 "The frame": the frame, the history and the panel, the
+    // divider, the composer pane
+    let cols = crate::layout::cols(full.width, full.height);
+    let rows = crate::layout::rows(full.width, full.height);
+    draw_bise(app, frame, full, cols, rows);
     help::draw(app, frame);
 }
 
@@ -151,7 +67,8 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // the card box: what the rest leaves, with 1 blank row above it
     let card_h = sb::card_box_height(app, area, left(text_rows + strip_h + strip_gap + queue_h + 1));
     let card_gap = u16::from(card_h > 0);
-    attach::set_model(&app.info.model);
+    // the no-vision line names this (not the agent's model yet)
+    attach::set_model("switchboard");
     let composer_h = rows.pad_top + text_rows + rows.pad_bottom;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -179,14 +96,13 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // the working count's gust: 5 cells, 3 or 1 as the screen narrows (book §9)
     let gust = crate::gust::mark(app.motion, crate::gust::header_size(area.width));
     // the frame (or the bare header row)
-    if let Some(sb) = app.sb.as_ref() {
-        if cols.framed {
-            let title = sb.title();
-            chrome::draw_frame(frame.buffer_mut(), area, cols, title, |room| sb.summary(room, short, &gust), divider_y);
-        } else if chunks[0].height > 0 {
-            let r = Rect { height: 1, ..chunks[0] };
-            frame.render_widget(Paragraph::new(sb.header(r.width, short, &gust)), r);
-        }
+    let sb = &app.sb;
+    if cols.framed {
+        let title = sb.title();
+        chrome::draw_frame(frame.buffer_mut(), area, cols, title, |room| sb.summary(room, short, &gust), divider_y);
+    } else if chunks[0].height > 0 {
+        let r = Rect { height: 1, ..chunks[0] };
+        frame.render_widget(Paragraph::new(sb.header(r.width, short, &gust)), r);
     }
     // the panel: from the history's first row down to the blank row
     // above the divider
@@ -203,7 +119,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         width: feed_right.saturating_sub(cols.x0).min(area.width.saturating_sub(cols.x0)),
         ..body
     };
-    if let Some(l) = app.sb.as_ref().and_then(|sb| sb.feed_banner()) {
+    if let Some(l) = app.sb.feed_banner() {
         // the pinned line wraps in the column (2 rows at most)
         let rows: Vec<Line> = crate::wrap_line(l, cols.col_w.min(feed.width).max(1) as usize).into_iter().take(2).collect();
         let n = rows.len() as u16;
@@ -227,7 +143,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         app.vis_rows.clear();
     }
     // no agents yet, nothing said: the first-run text, dim, in the feed
-    let first_run = app.sb.as_ref().and_then(|sb| sb.first_run());
+    let first_run = app.sb.first_run();
     if let Some(text) = first_run.filter(|_| !app.events.iter().any(|e| ev_visible(e, app.debug))) {
         let w = (cols.col_w as usize).saturating_sub(3).max(1);
         let mut lines: Vec<Line> = Vec::new();
@@ -298,7 +214,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
 /// right what it does (the old status row): back to the bottom while
 /// scrolled up, a fresh voice or flash note, else its state.
 fn divider_text(app: &App) -> (String, Vec<Span<'static>>) {
-    let name = app.sb.as_ref().map_or_else(String::new, |sb| sb.focus.clone());
+    let name = app.sb.focus.clone();
     let d = Style::default().fg(dim());
     let state = if !app.tail_visible {
         let mut spans = vec![
@@ -363,9 +279,9 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect, bar: Option<Rect>) {
         app.cache.resize_with(n, || None);
     }
     // main's replies carry `:*` in main's feed only (BISE-15)
-    crate::render::set_main_feed(app.sb.as_ref().is_some_and(|sb| sb.is_main_focus()));
+    crate::render::set_main_feed(app.sb.is_main_focus());
     // a message this feed's owner received names it in the `to` column (BISE-90)
-    crate::render::set_feed_owner(app.sb.as_ref().map_or("", |sb| sb.focus_name()));
+    crate::render::set_feed_owner(app.sb.focus_name());
     let (debug, tick) = (app.debug, app.tick);
     macro_rules! rows_of {
         () => {
@@ -461,150 +377,6 @@ fn fresh_note(note: &Option<(String, std::time::Instant)>) -> Option<String> {
     note.as_ref()
         .filter(|(_, at)| at.elapsed() < Duration::from_secs(2))
         .map(|(t, _)| t.clone())
-}
-
-/// Draw the status row; the width of what it shows.
-fn draw_status(app: &mut App, frame: &mut Frame, area: Rect) -> u16 {
-    // ---- the status row (the OpenCode prompt status row): back to
-    // bottom when pinned, else spinner + cwd while idle
-    if !app.tail_visible {
-        app.bottom_bar_rect = Some(area);
-        let mut spans = vec![
-            Span::styled(" ↓ back to the bottom", Style::default().fg(text())),
-            Span::styled(" · end", Style::default().fg(dim())),
-        ];
-        if app.unseen > 0 {
-            spans.push(Span::styled(
-                format!(" · {} new lines", app.unseen),
-                Style::default().fg(text()),
-            ));
-        }
-        let line = Line::from(spans);
-        let w = line.width() as u16;
-        frame.render_widget(Paragraph::new(line), area);
-        w
-    } else {
-        app.bottom_bar_rect = None;
-        let flash = fresh_note(&app.flash);
-        let voice_note = fresh_note(&app.voice_note);
-        let status = if let Some(t) = voice_note {
-            Line::from(vec![
-                Span::styled("  ● ", Style::default().fg(theme::accent())),
-                Span::styled(t, Style::default().fg(theme::text())),
-            ])
-        } else if let Some(t) = flash {
-            Line::from(vec![
-                Span::styled("  ✓ ", Style::default().fg(theme::accent())),
-                Span::styled(t, Style::default().fg(theme::text())),
-            ])
-        } else if app.pending && app.connected {
-            Line::from(vec![
-                {
-                    let (g, color) = theme::working_frame(app.tick);
-                    Span::styled(format!("  {}", g), Style::default().fg(color))
-                },
-                Span::styled(
-                    format!(" {} · generating…", app.info.model),
-                    Style::default().fg(theme::dim()),
-                ),
-                Span::styled(" · ", Style::default().fg(theme::dim())),
-                Span::styled("ctrl+c", Style::default().fg(theme::text())),
-                Span::styled(" interrompre", Style::default().fg(theme::dim())),
-            ])
-        } else {
-            // idle: a static standby dot — the spinner only moves
-            // while a turn runs; between turns nothing animates
-            Line::from(vec![
-                Span::styled("  ● ", Style::default().fg(theme::accent())),
-                Span::styled(
-                    format!(
-                        " bend-harness · {}",
-                        app.info.model
-                    ),
-                    Style::default().fg(theme::dim()),
-                ),
-                Span::styled(" · ", Style::default().fg(theme::dim())),
-                Span::styled("/ commandes", Style::default().fg(theme::text())),
-                Span::styled(" · end: bottom · ctrl+c: quit", Style::default().fg(theme::dim())),
-            ])
-        };
-        let w = status.width() as u16;
-        frame.render_widget(Paragraph::new(status), area);
-        w
-    }
-}
-
-fn draw_prompt(app: &mut App, frame: &mut Frame, area: Rect, voice_pad: usize) {
-    // ---- the prompt: OpenCode prompt (left border ┃, element bg, meta row)
-    // multi-line: newlines break rows, long rows wrap at the inner
-    // width (layout_input)
-    let inner = ((area.width as usize).saturating_sub(6 + voice_pad)).max(1);
-    // the text area inside the block: left border + padding 3, padding
-    // 2 right, 2 top; the rows above the meta row and its blank line
-    let text_rows = (area.height as usize).saturating_sub(5).max(1);
-    app.composer = ComposerArea {
-        x: area.x + 4 + voice_pad as u16,
-        y: area.y + 2,
-        w: inner,
-        h: text_rows,
-        top: 0,
-    };
-    let mut input_lines: Vec<Line> = Vec::new();
-    if app.ed.is_empty() && app.voice.active() {
-        input_lines.push(Line::from(""));
-    } else if app.ed.is_empty() {
-        input_lines.push(Line::from(Span::styled(
-            sb::placeholder(app).unwrap_or_else(|| "ask anything…".to_string()),
-            Style::default().fg(theme::dim()),
-        )));
-    } else {
-        input_lines = typed_lines(app, inner, text_rows);
-    }
-    if app.voice.active() {
-        input_lines = recording_lines(input_lines, voice_glyph(&app.voice));
-    }
-    // the meta row speaks glyphs: ◆ the harness, ● connected (quiet),
-    // ○ déconnecté (loud) — the normal state stays muted, only the
-    // broken one raises its voice
-    let meta = Line::from(vec![
-        Span::styled(
-            "◆ bend",
-            Style::default().fg(theme::accent()).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" · ", Style::default().fg(theme::dim())),
-        Span::styled(
-            app.info.model.clone(),
-            Style::default().fg(theme::text()),
-        ),
-        Span::styled(" · ", Style::default().fg(theme::dim())),
-        Span::styled(
-            if app.ed.text.contains('\n') {
-                "⏎ send · ⇧⏎ new line"
-            } else {
-                "⇧⏎ new line"
-            },
-            Style::default().fg(theme::dim()),
-        ),
-        Span::styled(" · ", Style::default().fg(theme::dim())),
-        if app.connected {
-            Span::styled("●", Style::default().fg(theme::dim()))
-        } else {
-            Span::styled(format!("{} disconnected", theme::glyph(theme::G_IDLE)), Style::default().fg(theme::error()))
-        },
-    ]);
-    // one blank line between the typed text and the meta row
-    input_lines.push(Line::from(""));
-    input_lines.push(meta);
-    let border = theme::accent(); // recording or not: the accent
-    let prompt = Paragraph::new(input_lines).block(
-        Block::default()
-            .borders(Borders::LEFT)
-            .border_set(SPLIT)
-            .border_style(Style::default().fg(border))
-            .style(Style::default().bg(Color::Reset))
-            .padding(Padding::new(3, 2, 2, 1)),
-    );
-    frame.render_widget(prompt, area);
 }
 
 /// The composer's typed text as drawn rows, `inner` columns wide, at

@@ -30,20 +30,18 @@ pub(crate) fn test_app_drained() -> App {
 
 /// Test setup: the workspace of the `@` popup, and a live agent.
 pub(crate) fn set_workspace(app: &mut App, ws: &str) {
-    if let Some(sb) = app.sb.as_mut() {
-        sb.workspace = ws.to_string();
-    }
+    let sb = &mut app.sb;
+    sb.workspace = ws.to_string();
 }
 
 pub(crate) fn add_agent(app: &mut App, name: &str, objective: &str) {
-    if let Some(sb) = app.sb.as_mut() {
-        sb.agents.push(Agent {
-            name: name.into(),
-            status: "working".into(),
-            objective: objective.into(),
-            ..Agent::default()
-        });
-    }
+    let sb = &mut app.sb;
+    sb.agents.push(Agent {
+        name: name.into(),
+        status: "working".into(),
+        objective: objective.into(),
+        ..Agent::default()
+    });
 }
 
 fn ms(t: Instant) -> f64 {

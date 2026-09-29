@@ -1,15 +1,12 @@
-//! The single-agent client: connect to the REPL, ingest its wire lines,
-//! and run either the interactive loop (ratatui) or line mode (piped).
+//! The interactive loop (ratatui) of the Switchboard client, and the
+//! ingestion of one agent's wire lines into the feed in focus.
 
 use crate::*;
 use crossterm::event::{
     poll, read, EnableBracketedPaste, EnableMouseCapture, Event, KeyboardEnhancementFlags,
     PushKeyboardEnhancementFlags,
 };
-use std::io::{self, BufRead, IsTerminal, Read, Write};
-use std::net::TcpStream;
-use std::sync::mpsc;
-use std::thread;
+use std::io;
 use std::time::Duration;
 
 // one wire line into the feed of the app (the focused view)
@@ -17,12 +14,6 @@ pub(crate) fn ingest_line(app: &mut App, line: String) {
     if line == "--- idle" {
         app.pending = false;
         app.interrupt_requested = false;
-        // BR-002: a flag that outlived its turn must
-        // not kill the next one
-        let _ = std::fs::write(
-            &app.info.interrupt_path,
-            "",
-        );
     }
     // thinking duration: the model's reply arrives one
     // batch after the previous wire line
@@ -123,23 +114,11 @@ fn drain_lines(app: &mut App) -> bool {
             return true;
         }
         match app.rx.try_recv() {
-            Ok(line) => {
-                if app.sb.is_some() {
-                    sb::dispatch(app, &line);
-                } else {
-                    ingest_line(app, line);
-                    // the turn ended: the oldest queued message goes (BISE-89)
-                    if let Some(m) = crate::queue::next(app) {
-                        handle_input(app, &format!("say {}", m));
-                    }
-                }
-            }
+            Ok(line) => sb::dispatch(app, &line),
             Err(std::sync::mpsc::TryRecvError::Empty) => return false,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                // the REPL process is gone: a /reload exits it (the
-                // parent respawns and reconnects), a crash does not.
-                // Either way this UI is dead — stop, let the parent
-                // decide.
+                // the hub reader is gone for good: stop, the caller
+                // decides (a version switch re-executes the TUI)
                 app.connected = false;
                 app.should_quit = true;
                 return false;
@@ -238,12 +217,8 @@ impl Startup {
 /// One frame of the UI: the view, the one-time hints, then the frame
 /// passes: the theme's ground on every cell (BISE-92), `BISE_ASCII`.
 pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
-    if app.sb.is_some() {
-        sb::draw_sb(app, f)
-    } else {
-        draw(app, f)
-    }
-    crate::hints::draw(app, f); // BISE-61: one-time hints
+    sb::draw_sb(app, f);
+    crate::hints::draw(f); // BISE-61: one-time hints
     crate::theme::paint(f.buffer_mut()); // BISE-92: bise paints its ground
     crate::theme::asciify(f.buffer_mut()); // BISE-84: BISE_ASCII=1
 }
@@ -358,172 +333,6 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
     Ok(())
 }
 
-// ---- line mode (non-interactive stdin) ----
-
-pub(crate) fn print_ev_of(ev: &Ev, debug: bool, width: usize) {
-    if !ev_visible(ev, debug) {
-        return;
-    }
-    let mut out = io::stdout();
-    for l in ev_lines(ev, width) {
-        for span in l.spans.iter() {
-            let _ = write!(out, "{}", span.content);
-        }
-        let _ = writeln!(out);
-    }
-}
-
-// waits for the turn to finish ("--- idle") or the channel to close,
-// printing every event as it arrives; gives up after `max`
-pub(crate) fn wait_idle(app: &mut App, max: Duration) {
-    let start = std::time::Instant::now();
-    loop {
-        match app.rx.recv_timeout(Duration::from_millis(200)) {
-            Ok(line) => {
-                app.feed_line(&line);
-                if line == "--- idle" {
-                    return;
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                if start.elapsed() > max {
-                    return;
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                app.connected = false;
-                return;
-            }
-        }
-    }
-}
-
-pub(crate) fn run_line_mode(app: &mut App) -> io::Result<()> {
-    let stdin = io::stdin();
-    for line in stdin.lock().lines() {
-        // show anything the harness sent since the last command
-        // (the --continue greeting arrives at connect)
-        while let Ok(l) = app.rx.try_recv() {
-            app.feed_line(&l);
-        }
-        let line = line?;
-        let v = line.trim().to_string();
-        if v.is_empty() {
-            continue;
-        }
-        let local = handle_input(app, &v);
-        for ev in &local {
-            print_ev_of(ev, app.debug, app.area_w);
-        }
-        if app.should_quit {
-            break;
-        }
-        // a sent command runs a turn: wait for it to finish
-        if app.pending {
-            wait_idle(app, Duration::from_secs(120));
-        } else {
-            while let Ok(line) = app.rx.try_recv() {
-                app.feed_line(&line);
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Connect to the REPL and run the UI (interactive ratatui when stdin and
-/// stdout are TTYs, line mode otherwise). `info` is what the REPL
-/// announced (model, threshold, side-channel paths).
-pub fn run(host: String, port: u16, info: HarnessInfo, debug: bool, session_id: String) -> io::Result<()> {
-    let stream = match TcpStream::connect((host.as_str(), port)) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("couldn't connect: {}", e);
-            eprintln!("start the harness with ./run.sh");
-            return Ok(());
-        }
-    };
-    let reader = stream.try_clone()?;
-    let (tx, rx) = mpsc::channel::<String>();
-    thread::spawn(move || forward_lines(reader, tx));
-    let _ = stream.set_nodelay(true);
-
-    // line mode renders without a frame: the terminal width (or a sane
-    // default) sizes the code blocks; interactive mode overwrites this
-    // every frame
-    let area_w = crossterm::terminal::size().map(|(w, _)| w as usize).unwrap_or(100).max(40);
-    let voice = voice::Voice::live(voice::load_voice_enabled());
-    let mut app = App {
-        info,
-        host,
-        port,
-        stream: Some(stream),
-        ..App::new(rx, debug, area_w, voice, session_id)
-    };
-
-    if io::stdout().is_terminal() && io::stdin().is_terminal() {
-        run_tui(&mut app)
-    } else {
-        run_line_mode(&mut app)
-    }
-}
-
-/// Forwards each `\n`-terminated line of the REPL socket, trailing
-/// whitespace trimmed, until EOF, an error, or the receiver is gone. A
-/// last line without its `\n` is dropped (the REPL died mid-write).
-fn forward_lines(reader: impl Read, tx: mpsc::Sender<String>) {
-    let mut r = io::BufReader::new(reader);
-    let mut buf = Vec::new();
-    loop {
-        buf.clear();
-        match r.read_until(b'\n', &mut buf) {
-            Ok(_) if buf.pop() == Some(b'\n') => {
-                let line = String::from_utf8_lossy(&buf).trim_end().to_string();
-                if tx.send(line).is_err() {
-                    return;
-                }
-            }
-            // EOF (possibly after an unterminated tail) or a read error
-            _ => return,
-        }
-    }
-}
-
-#[cfg(test)]
-mod forward_lines_tests {
-    use super::*;
-
-    fn lines_of(input: &[u8]) -> Vec<String> {
-        let (tx, rx) = mpsc::channel();
-        forward_lines(input, tx);
-        rx.into_iter().collect()
-    }
-
-    #[test]
-    fn splits_trims_and_drops_an_unterminated_tail() {
-        let got = lines_of(b"a b  \r\n\nsecond\xff\npartial");
-        assert_eq!(got, vec!["a b".to_string(), String::new(), "second\u{fffd}".to_string()]);
-    }
-
-    /// `cargo test --release -p bend-tui bench_forward_lines -- --ignored --nocapture`
-    #[test]
-    #[ignore]
-    fn bench_forward_lines() {
-        let mut input = Vec::new();
-        for i in 0..20_000 {
-            input.extend_from_slice(format!("[tool] {} some ordinary wire line of text\n", i).as_bytes());
-        }
-        for _ in 0..4 {
-            input.extend(std::iter::repeat_n(b'x', 256 * 1024));
-            input.push(b'\n');
-        }
-        let t = std::time::Instant::now();
-        let n = lines_of(&input).len();
-        eprintln!("forward_lines: {} lines, {} bytes: {:.1} ms", n, input.len(), t.elapsed().as_secs_f64() * 1000.0);
-    }
-}
-
-/// BISE-92: bise paints its own ground: no cell of a frame keeps the
-/// terminal's default background, in any view, in both themes.
 #[cfg(test)]
 mod paint_tests {
     use super::*;

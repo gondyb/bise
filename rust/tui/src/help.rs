@@ -14,15 +14,6 @@ use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
 use ratatui::Frame;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-/// Where a row applies: both clients, the Switchboard only, or the
-/// single-agent client only.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Scope {
-    All,
-    Sb,
-    Solo,
-}
-
 /// One line of the table. `keys` holds the alternatives separated by
 /// `|`; ` then ` inside one alternative is a sequence (Option+e then e).
 /// Empty `keys`: a note written across the whole width.
@@ -31,33 +22,15 @@ pub(crate) struct Row {
     pub section: &'static str,
     pub keys: &'static str,
     pub action: &'static str,
-    pub scope: Scope,
     /// shown by /help too, not only by /shortcuts
     pub top: bool,
 }
 
 const fn r(section: &'static str, keys: &'static str, action: &'static str) -> Row {
-    Row { section, keys, action, scope: Scope::All, top: false }
+    Row { section, keys, action, top: false }
 }
 
 impl Row {
-    /// The row exists in this client (Switchboard or the single agent).
-    fn applies(&self, sb: bool) -> bool {
-        match self.scope {
-            Scope::All => true,
-            Scope::Sb => sb,
-            Scope::Solo => !sb,
-        }
-    }
-
-    const fn sb(mut self) -> Row {
-        self.scope = Scope::Sb;
-        self
-    }
-    const fn solo(mut self) -> Row {
-        self.scope = Scope::Solo;
-        self
-    }
     const fn top(mut self) -> Row {
         self.top = true;
         self
@@ -65,7 +38,6 @@ impl Row {
 }
 
 const TALK: &str = "talk to agents";
-const CONV: &str = "conversation";
 const AGENTS: &str = "agents (empty composer)";
 const CARDS: &str = "cards";
 const EDIT: &str = "composer editing";
@@ -94,38 +66,33 @@ pub(crate) const TIPS: &[&str] = &[
 /// Lowercase, "agent" never "task" (book §4, §16).
 #[rustfmt::skip]
 pub(crate) const ROWS: &[Row] = &[
-    r(TALK, "⏎", "send to the agent in view (main, or the agent you entered); while it works, steer its turn").sb().top(),
-    r(TALK, "@agent …", "a direct message to an agent without leaving main; @main … from inside an agent").sb().top(),
-    r(TALK, "ctrl+c", "interrupt the turn of the agent in view; again (or at idle) quit, the agents keep running").sb().top(),
-    r(TALK, "/", "the commands: tab completes, ⏎ runs").sb().top(),
-    r(TALK, "$", "a skill: the popup lists them, tab completes; the agent reads the $name mention").sb().top(),
-    r(CONV, "⏎", "send; during a turn, steer the model").solo().top(),
-    r(CONV, "tab", "during a turn: queue the draft for after the turn").solo().top(),
-    r(CONV, "ctrl+c", "interrupt the turn; again (or at idle) quit, the session survives").solo().top(),
-    r(CONV, "/", "the commands: tab completes, ⏎ runs").solo().top(),
-    r(CONV, "$", "a skill: the popup lists them, tab completes; the model reads the $name mention").solo().top(),
-    r(AGENTS, "⌥ + 0…9", "go to main (0) or to the agent with that number in the panel").sb().top(),
-    r(AGENTS, "ctrl+k|alt+↓", "select the next agent").sb().top(),
-    r(AGENTS, "ctrl+j|alt+↑", "select the previous agent").sb(),
-    r(AGENTS, "⏎", "enter the selected agent").sb().top(),
-    r(AGENTS, "space", "preview the selected agent without entering it").sb(),
-    r(AGENTS, "D", "drop the selected agent (stop it, archive its history)").sb(),
-    r(AGENTS, "A|/archived", "show or hide the archived agents (read-only history, newest first)").sb(),
-    r(AGENTS, "esc", "close the selection; in an agent, back to main").sb().top(),
-    r(AGENTS, "click an agent", "in the right panel: go to that agent (main: back to main)").sb().top(),
-    r(AGENTS, "click ▸ archived", "in the right panel: show or hide the archived agents").sb(),
-    r(CARDS, "ctrl+g|ctrl+a", "show or hide the card box (ctrl+a on an empty composer)").sb().top(),
-    r(CARDS, "ctrl+n|ctrl+p", "next / previous card").sb(),
-    r(CARDS, "alt+r", "answer the card with the composer text (empty: acknowledge a done card)").sb().top(),
-    r(CARDS, "ctrl+f", "the card full screen; again (or esc) to shrink it").sb().top(),
-    r(CARDS, "ctrl+x", "close the card without answering (later)").sb(),
-    r(CARDS, "pgup|pgdn", "scroll the card").sb(),
-    r(CARDS, "y|n|esc", "a confirmation: yes / no / not now").sb(),
+    r(TALK, "⏎", "send to the agent in view (main, or the agent you entered); while it works, steer its turn").top(),
+    r(TALK, "@agent …", "a direct message to an agent without leaving main; @main … from inside an agent").top(),
+    r(TALK, "ctrl+c", "interrupt the turn of the agent in view; again (or at idle) quit, the agents keep running").top(),
+    r(TALK, "/", "the commands: tab completes, ⏎ runs").top(),
+    r(TALK, "$", "a skill: the popup lists them, tab completes; the agent reads the $name mention").top(),
+    r(AGENTS, "⌥ + 0…9", "go to main (0) or to the agent with that number in the panel").top(),
+    r(AGENTS, "ctrl+k|alt+↓", "select the next agent").top(),
+    r(AGENTS, "ctrl+j|alt+↑", "select the previous agent"),
+    r(AGENTS, "⏎", "enter the selected agent").top(),
+    r(AGENTS, "space", "preview the selected agent without entering it"),
+    r(AGENTS, "D", "drop the selected agent (stop it, archive its history)"),
+    r(AGENTS, "A|/archived", "show or hide the archived agents (read-only history, newest first)"),
+    r(AGENTS, "esc", "close the selection; in an agent, back to main").top(),
+    r(AGENTS, "click an agent", "in the right panel: go to that agent (main: back to main)").top(),
+    r(AGENTS, "click ▸ archived", "in the right panel: show or hide the archived agents"),
+    r(CARDS, "ctrl+g|ctrl+a", "show or hide the card box (ctrl+a on an empty composer)").top(),
+    r(CARDS, "ctrl+n|ctrl+p", "next / previous card"),
+    r(CARDS, "alt+r", "answer the card with the composer text (empty: acknowledge a done card)").top(),
+    r(CARDS, "ctrl+f", "the card full screen; again (or esc) to shrink it").top(),
+    r(CARDS, "ctrl+x", "close the card without answering (later)"),
+    r(CARDS, "pgup|pgdn", "scroll the card"),
+    r(CARDS, "y|n|esc", "a confirmation: yes / no / not now"),
     r(FEED, "click ▸|space", "open or close one folded item: thinking, an output, a diff, a report (space: the item selected in the feed, composer empty)"),
     r(FEED, "ctrl+o", "open or close everything folded").top(),
     r(FEED, "pgup|pgdn|wheel", "scroll the feed (the card when it is shown)"),
     r(FEED, "end", "back to the bottom"),
-    r(FEED, "ctrl+l", "clear the display (/clear); in switchboard, scroll up to see the lines again"),
+    r(FEED, "ctrl+l", "clear the display (/clear); scroll up to see the lines again"),
     r(EDIT, "shift+⏎|alt+⏎|ctrl+j", "new line (on an empty composer, ctrl+j selects an agent)").top(),
     r(EDIT, "option+←|option+→", "word left / right"),
     r(EDIT, "ctrl+option+←|ctrl+option+→", "subword left / right (camelCase, snake_case, kebab-case, digits)"),
@@ -139,7 +106,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(EDIT, "ctrl+k", "delete to the line end (on an empty composer: select the next agent)"),
     r(EDIT, "ctrl+/|cmd+z", "undo your typing (only the composer: sent messages have no undo)"),
     r(EDIT, "alt+/|ctrl+shift+/|cmd+shift+z", "redo"),
-    r(EDIT, "esc", "put the draft away in the history (↑ brings it back)").sb(),
+    r(EDIT, "esc", "put the draft away in the history (↑ brings it back)"),
     r(EDIT, "tab|⏎", "pick from the /, @ or $ popup (esc closes it)"),
     r(EDIT, ":name:", "typed, becomes its emoji (:tada: → 🎉)").top(),
     r(ACCENTS, "option+` then e", "è (grave)"),
@@ -273,12 +240,11 @@ fn code() -> Style {
     Style::new().fg(theme::syntax_string())
 }
 
-/// The rows of a page for a client, filtered (case-insensitive, over the
+/// The rows of a page, filtered (case-insensitive, over the
 /// section, the keys and the action).
-pub(crate) fn rows(page: Page, sb: bool, filter: &str) -> Vec<&'static Row> {
+pub(crate) fn rows(page: Page, filter: &str) -> Vec<&'static Row> {
     let f = filter.to_lowercase();
     ROWS.iter()
-        .filter(|r| r.applies(sb))
         .filter(|r| page == Page::Shortcuts || r.top)
         .filter(|r| {
             f.is_empty()
@@ -426,12 +392,11 @@ pub(crate) fn table_lines(rows: &[&Row], width: usize) -> Vec<Line<'static>> {
 /// /shortcuts = the full table.
 pub(crate) fn page_lines(
     page: Page,
-    sb: bool,
     filter: &str,
     commands: &[(&'static str, &'static str)],
     width: usize,
 ) -> Vec<Line<'static>> {
-    let rows = rows(page, sb, filter);
+    let rows = rows(page, filter);
     let mut out = Vec::new();
     if page == Page::Help {
         let f = filter.to_lowercase();
@@ -473,7 +438,6 @@ pub(crate) fn page_lines(
 
 /// The overlay, over the whole frame, when open.
 pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
-    let sb = app.sb.is_some();
     let Some(o) = app.help.as_mut() else { return };
     let full = frame.area();
     if full.width < 24 || full.height < 6 {
@@ -482,12 +446,9 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     let w = full.width.saturating_sub(2).min(110);
     let h = full.height.saturating_sub(2);
     let area = Rect { x: full.x + (full.width - w) / 2, y: full.y + 1, width: w, height: h };
-    let commands: Vec<(&'static str, &'static str)> = if sb {
-        crate::sb::SB_COMMANDS.iter().map(|c| (c.name, c.desc)).collect()
-    } else {
-        crate::COMMANDS.iter().map(|c| (c.name, c.desc)).collect()
-    };
-    let lines = page_lines(o.page, sb, &o.filter, &commands, (w as usize).saturating_sub(4));
+    let commands: Vec<(&'static str, &'static str)> =
+        crate::commands::COMMANDS.iter().map(|c| (c.name, c.desc)).collect();
+    let lines = page_lines(o.page, &o.filter, &commands, (w as usize).saturating_sub(4));
     let visible = (h as usize).saturating_sub(2).max(1);
     o.visible = visible;
     o.max_scroll = lines.len().saturating_sub(visible);
@@ -557,19 +518,19 @@ mod tests {
             .join("\n")
     }
 
-    /// Every entry of the table renders in each client where it applies,
+    /// Every entry of the table renders,
     /// narrow and wide, and no line overflows the width.
     #[test]
     fn every_row_renders() {
         for width in [40usize, 76, 106] {
-            for sb in [true, false] {
-                let lines = page_lines(Page::Shortcuts, sb, "", &[], width);
+            {
+                let lines = page_lines(Page::Shortcuts, "", &[], width);
                 let all = text(&lines);
                 for l in &lines {
                     let w = spans_width(&l.spans);
                     assert!(w <= width, "overflow {} > {}: {:?}", w, width, l);
                 }
-                for r in ROWS.iter().filter(|r| r.applies(sb)) {
+                for r in ROWS.iter() {
                     assert!(all.contains(r.section), "section {}", r.section);
                     for alt in r.keys.split('|').filter(|k| !k.is_empty()) {
                         for step in alt.split(" then ") {
@@ -587,7 +548,7 @@ mod tests {
 
     #[test]
     fn help_is_commands_and_essentials() {
-        let lines = page_lines(Page::Help, true, "", &[("/help", "commands and keys")], 80);
+        let lines = page_lines(Page::Help, "", &[("/help", "commands and keys")], 80);
         let all = text(&lines);
         assert!(all.contains("commands") && all.contains("/help"));
         assert!(all.contains(" ctrl+g "), "a top row");
@@ -619,10 +580,9 @@ mod tests {
 
     #[test]
     fn filter_keeps_matching_rows() {
-        let r = rows(Page::Shortcuts, true, "subword");
+        let r = rows(Page::Shortcuts, "subword");
         assert!(r.len() >= 2 && r.iter().all(|r| r.action.contains("subword")));
-        assert!(rows(Page::Shortcuts, true, "zzzz").is_empty());
-        assert!(rows(Page::Shortcuts, false, "ctrl+g").is_empty(), "no cards outside Switchboard");
+        assert!(rows(Page::Shortcuts, "zzzz").is_empty());
     }
 
     #[test]
