@@ -137,6 +137,7 @@ pub(crate) fn restore_terminal() {
     let _ = crossterm::execute!(out, PopKeyboardEnhancementFlags);
     let _ = crossterm::execute!(out, DisableBracketedPaste);
     let _ = crossterm::execute!(out, DisableMouseCapture);
+    let _ = crossterm::execute!(out, crossterm::event::DisableFocusChange);
     let _ = crossterm::execute!(out, LeaveAlternateScreen);
     let _ = crossterm::execute!(out, crossterm::cursor::Show);
     let _ = disable_raw_mode();

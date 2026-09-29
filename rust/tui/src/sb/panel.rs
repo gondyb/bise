@@ -5,12 +5,13 @@
 use super::*;
 use unicode_width::UnicodeWidthStr;
 
-/// The status glyph of an agent and its color (book §6): `∿` pulses
-/// while it works, `·` while it starts; only "needs you" and a failure
-/// get a hue, and done's check is accent (BISE-100).
-pub(super) fn glyph(status: &str, tick: u32) -> (&'static str, Color) {
+/// The status glyph of an agent and its color (book §6): the gust
+/// breathes in its cell while it works (BISE-107), `·` pulses while it
+/// starts; only "needs you" and a failure get a hue, and done's check is
+/// accent (BISE-100).
+pub(super) fn glyph(status: &str, tick: u32, motion: crate::gust::Motion) -> (&'static str, Color) {
     match status {
-        "working" => working_frame(tick),
+        "working" => crate::gust::cell(motion),
         "starting" => starting_frame(tick),
         "waiting" => (G_WAITING, text()),
         "blocked" => (G_NEEDS_YOU, accent()),
@@ -175,7 +176,7 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usi
     } else if needs_you(sb, a) {
         (G_NEEDS_YOU, accent())
     } else {
-        glyph(&a.status, app.tick)
+        glyph(&a.status, app.tick, app.motion)
     };
     let name_style = if focused {
         Style::default().fg(accent()).add_modifier(Modifier::BOLD)
@@ -230,8 +231,9 @@ fn counts(sb: &Sb) -> Option<[usize; 4]> {
 /// The header counts that fit in `room` columns (QA 14): all of them with
 /// their words when they fit (not `short`), else the numbers only; still
 /// too wide, the least important counts go first ("needs you" stays, then
-/// working, waiting, done), shown in the §8 order.
-fn fit_counts(n: [usize; 4], short: bool, room: usize) -> Vec<Span<'static>> {
+/// working, waiting, done), shown in the §8 order. `gust` leads the
+/// working count (BISE-107).
+fn fit_counts(n: [usize; 4], short: bool, room: usize, gust: &[Span<'static>]) -> Vec<Span<'static>> {
     // (glyph, word, glyph color, text color): done's check is accent on
     // dim words (BISE-100)
     let parts = [
@@ -248,7 +250,11 @@ fn fit_counts(n: [usize; 4], short: bool, room: usize) -> Vec<Span<'static>> {
             }
             let (g, word, g_color, color) = parts[k];
             let t = if words { format!(" {} {}", n[k], word) } else { format!(" {}", n[k]) };
-            out.push(Span::styled(g, Style::default().fg(g_color)));
+            if k == 0 {
+                out.extend(gust.iter().cloned());
+            } else {
+                out.push(Span::styled(g, Style::default().fg(g_color)));
+            }
             out.push(Span::styled(t, Style::default().fg(color)));
         }
         out
@@ -275,13 +281,14 @@ impl Sb {
     /// non-zero counts `∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1
     /// done` (`? … needs you` in accent), shortened to `∿ 3 · ? 1` when
     /// `short` (no panel), or `no agents yet`. A method, so `ui.rs` reaches
-    /// it through `app.sb` (the `panel` module is private to `sb`).
-    pub(crate) fn header(&self, width: u16, short: bool) -> Line<'static> {
+    /// it through `app.sb` (the `panel` module is private to `sb`). `gust`
+    /// leads the working count (BISE-107).
+    pub(crate) fn header(&self, width: u16, short: bool, gust: &[Span<'static>]) -> Line<'static> {
         let mut spans = vec![Span::raw(" ")];
         spans.extend(self.title());
         let left_w: usize = spans.iter().map(|s| s.content.width()).sum();
         // one column of margin on the right, two of gap after `bise :*`
-        let right = self.summary((width as usize).saturating_sub(left_w + 3), short);
+        let right = self.summary((width as usize).saturating_sub(left_w + 3), short, gust);
         let right_w: usize = right.iter().map(|s| s.content.width()).sum();
         let pad = (width as usize).saturating_sub(left_w + right_w + 1);
         if pad >= 2 {
@@ -302,11 +309,11 @@ impl Sb {
     /// The summary in at most `room` columns (book §8 "The frame"): the
     /// workspace (`~/acme`, dim) then the counts; not enough room, the
     /// path goes first, then the counts shorten (`∿ 3 · ? 1`).
-    pub(crate) fn summary(&self, room: usize, short: bool) -> Vec<Span<'static>> {
+    pub(crate) fn summary(&self, room: usize, short: bool, gust: &[Span<'static>]) -> Vec<Span<'static>> {
         let fitted = |room: usize| -> Vec<Span<'static>> {
             match counts(self) {
                 None => vec![Span::styled("no agents yet", Style::default().fg(dim()))],
-                Some(n) => fit_counts(n, short, room),
+                Some(n) => fit_counts(n, short, room, gust),
             }
         };
         // the path only beside the counts as they are when nothing is short
@@ -585,14 +592,12 @@ pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bo
 }
 
 /// The state of the agent you talk to (book §8 "The frame": the right of
-/// The agent you view, when it works (book §8, BISE-105): its working
-/// mark (the panel's pulse) and the current turn's age, for the
-/// divider's label.
+/// The agent you view, when it works (book §8, BISE-105): the gust's
+/// motion and the current turn's age, for the divider's label.
 pub(crate) fn viewed_working(app: &App) -> Option<crate::chrome::Working> {
     let sb = app.sb.as_ref()?;
     let a = sb.agent(&sb.focus).filter(|a| a.status == "working")?;
-    let (g, color) = glyph(&a.status, app.tick);
-    Some(crate::chrome::Working { mark: vec![Span::styled(g, Style::default().fg(color))], age: a.turn_age_ms().map(short_age) })
+    Some(crate::chrome::Working { motion: app.motion, age: a.turn_age_ms().map(short_age) })
 }
 
 /// The state of the agent you talk to (book §8 "The frame": the right of
@@ -668,6 +673,12 @@ pub(crate) fn status_state(app: &App) -> Option<Line<'static>> {
 }
 
 /// The divider's text as one string, `name · state` (tests).
+/// The header's gust without motion: one `∿` (tests draw still).
+#[cfg(test)]
+fn still_gust() -> Vec<Span<'static>> {
+    crate::gust::mark(crate::gust::Motion::Still, crate::gust::Size::Five)
+}
+
 #[cfg(test)]
 pub(crate) fn status_text(app: &App) -> String {
     let sb = app.sb.as_ref().unwrap();
@@ -1255,7 +1266,7 @@ mod chrome_tests {
     #[test]
     fn a_narrow_header_keeps_needs_you_first() {
         let n = [3, 1, 1, 2];
-        let text = |room| fit_counts(n, false, room).iter().map(|s| s.content.to_string()).collect::<String>();
+        let text = |room| fit_counts(n, false, room, &super::still_gust()).iter().map(|s| s.content.to_string()).collect::<String>();
         let all = text(200);
         assert!(all.contains("working") && all.contains("needs you"), "{all}");
         let numbers = text(30);
@@ -1342,7 +1353,7 @@ mod chrome_tests {
     fn summary_drops_the_path_first() {
         let app = busy();
         let sb = app.sb.as_ref().unwrap();
-        let text = |room: usize, short: bool| sb.summary(room, short).iter().map(|s| s.content.to_string()).collect::<String>();
+        let text = |room: usize, short: bool| sb.summary(room, short, &super::still_gust()).iter().map(|s| s.content.to_string()).collect::<String>();
         let full = "∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done";
         assert_eq!(text(100, false), format!("bench · {}", full));
         assert_eq!(text(full.chars().count() + 7, false), full);
@@ -1353,7 +1364,7 @@ mod chrome_tests {
     #[test]
     fn header_colors() {
         let app = busy();
-        let line = app.sb.as_ref().unwrap().header(120, false);
+        let line = app.sb.as_ref().unwrap().header(120, false, &super::still_gust());
         let color_of = |t: &str| line.spans.iter().find(|s| s.content.contains(t)).map(|s| s.style.fg);
         assert_eq!(color_of(":*"), Some(Some(accent())));
         assert_eq!(color_of("needs you"), Some(Some(accent())));

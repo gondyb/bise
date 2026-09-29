@@ -174,14 +174,16 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let pane = |r: Rect| Rect { x: area.x + cols.x0, width: pane_end.saturating_sub(cols.x0), ..r };
     let col = |r: Rect| Rect { x: area.x + cols.x0, width: cols.col_w.min(area.width.saturating_sub(cols.x0)), ..r };
     let short = cols.panel.is_none();
+    // the working count's gust: 5 cells, 3 or 1 as the screen narrows (book §9)
+    let gust = crate::gust::mark(app.motion, crate::gust::header_size(area.width));
     // the frame (or the bare header row)
     if let Some(sb) = app.sb.as_ref() {
         if cols.framed {
             let title = sb.title();
-            chrome::draw_frame(frame.buffer_mut(), area, cols, title, |room| sb.summary(room, short), divider_y);
+            chrome::draw_frame(frame.buffer_mut(), area, cols, title, |room| sb.summary(room, short, &gust), divider_y);
         } else if chunks[0].height > 0 {
             let r = Rect { height: 1, ..chunks[0] };
-            frame.render_widget(Paragraph::new(sb.header(r.width, short)), r);
+            frame.render_widget(Paragraph::new(sb.header(r.width, short, &gust)), r);
         }
     }
     // the panel: from the history's first row down to the blank row
@@ -250,12 +252,12 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // the divider: who you talk to, what it does (was the status row); on
     // a short screen the key bar takes the state's place
     let (name, state) = divider_text(app);
+    let working = sb::viewed_working(app);
     let state = if rows.keys_in_divider {
-        crate::keybar::line(app, chrome::divider_room(area.width, cols, &name)).spans
+        crate::keybar::line(app, chrome::divider_room(area.width, cols, &name, working.as_ref())).spans
     } else {
         state
     };
-    let working = sb::viewed_working(app);
     let state_rect = chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, working.as_ref(), state);
     app.bottom_bar_rect = (!app.tail_visible && !rows.keys_in_divider).then_some(state_rect);
     // the queued messages: ` › text`, the `›` under the composer's bar

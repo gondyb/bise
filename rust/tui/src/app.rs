@@ -75,6 +75,11 @@ pub(crate) struct App {
     pub(crate) popup_dismissed: Option<String>,
     pub(crate) history: Vec<String>,
     pub(crate) tick: u32,
+    /// the working gust's motion (BISE-107): set by the draw loop, still
+    /// until then (and in tests)
+    pub(crate) motion: crate::gust::Motion,
+    /// the terminal lost the focus (focus reporting): the gust stands still
+    pub(crate) focus_lost: bool,
     pub(crate) info: HarnessInfo,
     pub(crate) host: String,
     pub(crate) port: u16,
@@ -198,6 +203,8 @@ impl App {
             popup_dismissed: None,
             history: Vec::new(),
             tick: 0,
+            motion: crate::gust::Motion::Still,
+            focus_lost: false,
             info: HarnessInfo::default(),
             host: String::new(),
             port: 0,

@@ -28,8 +28,8 @@ impl Mention {
         format!("@{}", self.name)
     }
 
-    pub(crate) fn glyph(&self, tick: u32) -> (&'static str, Color) {
-        glyph(&self.status, tick)
+    pub(crate) fn glyph(&self, tick: u32, motion: crate::gust::Motion) -> (&'static str, Color) {
+        glyph(&self.status, tick, motion)
     }
 }
 

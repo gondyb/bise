@@ -221,7 +221,7 @@ pub(crate) fn at_items(app: &App) -> Vec<PopItem> {
             } else {
                 format!("{} · {}", m.status, m.objective)
             },
-            mark: Some(m.glyph(app.tick)),
+            mark: Some(m.glyph(app.tick, app.motion)),
             fill,
             fill_cursor,
             run: None,

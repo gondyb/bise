@@ -81,6 +81,7 @@ mod hints;
 mod queue;
 mod layout;
 mod chrome;
+mod gust;
 mod voice;
 #[cfg(test)]
 mod voice_ui_tests;

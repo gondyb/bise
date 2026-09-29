@@ -4,6 +4,7 @@
 //! ─…─ state ─┤` over the composer pane. Lines only: no background of
 //! their own (the theme ground stays, BISE-92).
 
+use crate::gust;
 use crate::layout::Cols;
 use crate::theme::{self, accent, dim, faint};
 use ratatui::buffer::Buffer;
@@ -159,37 +160,64 @@ pub(crate) fn draw_frame(
 }
 
 /// What the divider says of the agent you view while it works (book §8,
-/// BISE-105): its working mark (drawn in its own colors) and the current
-/// turn's age (`42s`).
+/// BISE-105): the gust's motion and the current turn's age (`42s`).
 pub(crate) struct Working {
-    pub(crate) mark: Vec<Span<'static>>,
+    pub(crate) motion: gust::Motion,
     pub(crate) age: Option<String>,
 }
 
-/// The divider's label: ` you → name `, and while the agent works
-/// ` you → name ∿ working · 42s ` (the mark 1 space after the name,
-/// `working · 42s` dim). The working part shrinks to fit `room` columns
-/// more than the bare label: the mark alone, then nothing.
-fn label(name: &str, working: Option<&Working>, room: usize) -> Vec<Span<'static>> {
+/// How much of the label the divider shows, while the agent works (book
+/// §9 "Short on room (the gust)"): the steps in the order they are
+/// dropped, the right-side state first.
+#[derive(Clone, Copy)]
+struct Step {
+    state: bool,
+    words: bool,
+    size: gust::Size,
+    age: bool,
+    name_cut: Option<usize>,
+}
+
+const STEPS: [Step; 8] = {
+    use gust::Size::{Five, One, Three};
+    let full = Step { state: true, words: true, size: Five, age: true, name_cut: None };
+    [
+        full,
+        Step { state: false, ..full },
+        Step { state: false, words: false, ..full },
+        Step { state: false, words: false, size: Three, ..full },
+        Step { state: false, words: false, size: One, ..full },
+        Step { state: false, words: false, size: One, age: false, name_cut: None },
+        Step { state: false, words: false, size: One, age: false, name_cut: Some(12) },
+        Step { state: false, words: false, size: One, age: false, name_cut: Some(8) },
+    ]
+};
+
+/// The divider's label: ` you → name `; while the agent works, the gust
+/// 1 space after the name, then `working · 42s` dim (as much of it as
+/// `step` keeps).
+fn label(name: &str, working: Option<(&Working, Step)>) -> Vec<Span<'static>> {
     let arrow = if theme::ascii_mode() { "->" } else { "→" };
+    let name = match working.and_then(|(_, s)| s.name_cut) {
+        Some(n) => fit(vec![Span::raw(name.to_string())], n).into_iter().map(|s| s.content.into_owned()).collect(),
+        None => name.to_string(),
+    };
     let mut out = vec![
         Span::raw(" "),
         Span::styled(format!("you {} ", arrow), Style::default().fg(dim())),
-        Span::styled(name.to_string(), Style::default().fg(accent())),
+        Span::styled(name, Style::default().fg(accent())),
     ];
-    if let Some(w) = working {
-        let words = match &w.age {
-            Some(age) => format!(" working · {}", age),
-            None => " working".to_string(),
+    if let Some((w, step)) = working {
+        out.push(Span::raw(" "));
+        out.extend(gust::mark(w.motion, step.size));
+        let words = match (step.words, step.age.then_some(w.age.as_deref()).flatten()) {
+            (true, Some(age)) => format!(" working · {}", age),
+            (true, None) => " working".to_string(),
+            (false, Some(age)) => format!(" {}", age),
+            (false, None) => String::new(),
         };
-        let mark_w: usize = w.mark.iter().map(|s| s.content.width()).sum();
-        let mut extra = vec![Span::raw(" ")];
-        extra.extend(w.mark.iter().cloned());
-        if mark_w > 0 && 1 + mark_w + words.width() <= room {
-            extra.push(Span::styled(words, Style::default().fg(dim())));
-            out.extend(extra);
-        } else if mark_w > 0 && mark_w < room {
-            out.extend(extra);
+        if !words.is_empty() {
+            out.push(Span::styled(words, Style::default().fg(dim())));
         }
     }
     out.push(Span::raw(" "));
@@ -202,10 +230,9 @@ fn width_of(spans: &[Span]) -> u16 {
 
 /// The columns the divider leaves for its right side on a screen `width`
 /// wide: from 1 rule cell and a space after the label to the state's end.
-/// The bare label counts: the working part only takes what the state
-/// leaves.
-pub(crate) fn divider_room(width: u16, cols: Cols, name: &str) -> u16 {
-    let label_w = width_of(&label(name, None, 0));
+/// While the agent works, the label is the whole one (its first step).
+pub(crate) fn divider_room(width: u16, cols: Cols, name: &str, working: Option<&Working>) -> u16 {
+    let label_w = width_of(&label(name, working.map(|w| (w, STEPS[0]))));
     let start = cols.margin - 1 + label_w + 2;
     let end = width.saturating_sub(cols.margin);
     end.saturating_sub(start)
@@ -213,10 +240,13 @@ pub(crate) fn divider_room(width: u16, cols: Cols, name: &str) -> u16 {
 
 /// The divider on row `y` (book §8): framed, a rule joining the frame
 /// (`├ … ┤`, `┴` under the panel's rule); bare, a plain rule. The label
-/// ` you → name ` from the margin (with what the agent does while it
-/// works, in the room the state leaves), the `state` (cut to fit) ending
-/// 1 column before the right margin's space. The state's rect is returned
-/// (a click on `↓ back to the bottom` jumps to the tail).
+/// ` you → name ` from the margin, the `state` (cut to fit) ending 1
+/// column before the right margin's space, 3 columns at least between
+/// them. While the agent works, the label says it (` you → name ≈∿~·
+/// working · 42s `) and keeps its gust: short on room, the state goes
+/// whole first, then the label shrinks step by step ([`STEPS`]). The
+/// state's rect is returned (a click on `↓ back to the bottom` jumps to
+/// the tail).
 pub(crate) fn draw_divider(
     buf: &mut Buffer,
     area: Rect,
@@ -246,11 +276,27 @@ pub(crate) fn draw_divider(
     let lx = l + cols.margin - 1;
     // the state's end: framed F − 4 (F − 3 its space), bare the last column
     let end = r + 1 - cols.margin;
-    let room = divider_room(area.width, cols, name);
-    let state = fit(state, room as usize);
-    let w = width_of(&state);
-    let label = label(name, working, usize::from(room.saturating_sub(w)));
+    let (label, state) = match working {
+        None => {
+            let room = divider_room(area.width, cols, name, None);
+            (label(name, None), fit(state, room as usize))
+        }
+        Some(wk) => {
+            let state_w = width_of(&state);
+            let fits = |label: &[Span], with_state: bool| {
+                let w = u32::from(lx) + u32::from(width_of(label));
+                if with_state && state_w > 0 {
+                    w + 2 + u32::from(state_w) <= u32::from(end)
+                } else {
+                    w <= u32::from(end) + 1
+                }
+            };
+            let pick = STEPS.iter().find(|s| fits(&label(name, Some((wk, **s))), s.state)).unwrap_or(&STEPS[STEPS.len() - 1]);
+            (label(name, Some((wk, *pick))), if pick.state { state } else { Vec::new() })
+        }
+    };
     put(buf, lx, y, &label, end + 1);
+    let w = width_of(&state);
     if w == 0 {
         return Rect::default();
     }
@@ -277,27 +323,37 @@ mod tests {
         assert_eq!(out.width(), 10);
     }
 
-    fn divider_row(width: u16, working: Option<&Working>, state: &str) -> String {
+    fn divider_row_of(width: u16, name: &str, working: Option<&Working>, state: &str) -> String {
         let area = Rect::new(0, 0, width, 1);
         let mut buf = Buffer::empty(area);
         let cols = crate::layout::cols(width, 40);
-        draw_divider(&mut buf, area, cols, 0, "marketing", working, vec![Span::raw(state.to_string())]);
+        draw_divider(&mut buf, area, cols, 0, name, working, vec![Span::raw(state.to_string())]);
         (0..width).map(|x| buf[(x, 0)].symbol().to_string()).collect()
     }
 
+    fn divider_row(width: u16, working: Option<&Working>, state: &str) -> String {
+        divider_row_of(width, "marketing", working, state)
+    }
+
+    /// Frame 3 of the gust: 5 cells `·~∿≈ `, 3 cells `·~∿`, 1 cell `≈`.
     fn working(age: Option<&str>) -> Working {
-        Working { mark: vec![Span::raw("∿")], age: age.map(String::from) }
+        Working { motion: gust::Motion::Frame(3), age: age.map(String::from) }
     }
 
     #[test]
     fn the_divider_says_the_viewed_agent_works() {
-        // BISE-105: working, with the turn's age; the right side unchanged
+        // BISE-105: the gust 1 space after the name, then the words; the
+        // right side unchanged
         let row = divider_row(100, Some(&working(Some("42s"))), "working · 42s · 18k tokens");
-        assert!(row.starts_with("├─ you → marketing ∿ working · 42s ─"), "{row}");
+        assert!(row.starts_with("├─ you → marketing ·~∿≈  working · 42s ─"), "{row}");
         assert!(row.ends_with("─ working · 42s · 18k tokens ─┤"), "{row}");
         // no age yet: the word alone
         let row = divider_row(100, Some(&working(None)), "");
-        assert!(row.starts_with("├─ you → marketing ∿ working ─"), "{row}");
+        assert!(row.starts_with("├─ you → marketing ·~∿≈  working ─"), "{row}");
+        // no motion: one static wave
+        let still = Working { motion: gust::Motion::Still, age: Some("42s".into()) };
+        let row = divider_row(100, Some(&still), "idle");
+        assert!(row.starts_with("├─ you → marketing ∿ working · 42s ─"), "{row}");
     }
 
     #[test]
@@ -308,24 +364,41 @@ mod tests {
     }
 
     #[test]
-    fn a_narrow_divider_keeps_the_state_and_drops_the_words_then_the_mark() {
+    fn short_on_room_the_divider_drops_in_the_book_order() {
+        // book §9 "Short on room (the gust)"; bare rows (F < 60) start at
+        // column 0 and end at the last one
         let w = working(Some("42s"));
-        let state = "working · 42s";
-        // bare (F < 60): the state's room is F − 20, the full working part
-        // takes 16 more than the state's 13, the mark alone 2
-        let row = divider_row(45, Some(&w), state);
-        assert!(row.starts_with(" you → marketing ∿ ─"), "{row}");
-        assert!(row.ends_with("─ working · 42s "), "{row}");
+        let state = "18k tokens";
+        let row = divider_row(50, Some(&w), state);
+        assert!(row.starts_with(" you → marketing ·~∿≈  working · 42s ─") && row.ends_with("─ 18k tokens "), "{row}");
+        // (1) the state
         let row = divider_row(49, Some(&w), state);
-        assert!(row.starts_with(" you → marketing ∿ working · 42s ─"), "{row}");
-        // the mark alone doesn't fit either: nothing after the name
-        let row = divider_row(34, Some(&w), state);
-        assert!(row.starts_with(" you → marketing ─"), "{row}");
-        assert!(!row.contains('∿'), "{row}");
-        // at any width the label never runs into the state
-        for width in 20..120 {
-            let row = divider_row(width, Some(&w), state);
-            assert!(row.chars().count() == width as usize, "{width}: {row}");
+        assert!(row.starts_with(" you → marketing ·~∿≈  working · 42s ─") && !row.contains("18k"), "{row}");
+        // (2) the word
+        let row = divider_row(36, Some(&w), state);
+        assert_eq!(row, format!(" you → marketing ·~∿≈  42s {}", "─".repeat(9)));
+        // (3) 5 cells → 3
+        assert_eq!(divider_row(26, Some(&w), state), " you → marketing ·~∿ 42s ─");
+        // (4) → the breath
+        assert_eq!(divider_row(24, Some(&w), state), " you → marketing ≈ 42s ─");
+        // (5) the seconds
+        assert_eq!(divider_row(22, Some(&w), state), " you → marketing ≈ ───");
+        // (6) the name at 12, then 8
+        let name = "release-notes-writer";
+        assert!(divider_row_of(30, name, Some(&w), state).starts_with(" you → release-notes-writer ≈ "));
+        assert_eq!(divider_row_of(25, name, Some(&w), state), " you → release-not… ≈ ───");
+        assert_eq!(divider_row_of(19, name, Some(&w), state), " you → release… ≈ ─");
+    }
+
+    #[test]
+    fn the_gust_stays_while_the_agent_works_at_any_width() {
+        let w = working(Some("42s"));
+        for width in 20..130 {
+            let row = divider_row(width, Some(&w), "working · 42s · 18k / 1M tokens · 2%");
+            assert_eq!(row.chars().count(), width as usize, "{width}: {row}");
+            assert!(row.contains("marketing ≈") || row.contains("marketing ·~∿"), "{width}: {row}");
+            // the state is whole or gone, never cut
+            assert!(row.contains("2%") || !row.contains("tokens"), "{width}: {row}");
         }
     }
 }

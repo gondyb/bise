@@ -101,6 +101,8 @@ fn init_terminal() -> io::Result<ratatui::DefaultTerminal> {
         crossterm::execute!(io::stdout(), EnterAlternateScreen)?;
         let _ = crossterm::execute!(io::stdout(), EnableMouseCapture);
         let _ = crossterm::execute!(io::stdout(), EnableBracketedPaste);
+        // BISE-107: the gust stops while the terminal is not focused
+        let _ = crossterm::execute!(io::stdout(), crossterm::event::EnableFocusChange);
         let _ = crossterm::execute!(
             io::stdout(),
             PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
@@ -248,6 +250,9 @@ pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
 
 fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
     let mut draw_crashes = 0u32;
+    // the gust's motion (BISE-107): the last draw's time, the env once
+    let mut last_draw = Duration::ZERO;
+    let reduce_motion = crate::gust::reduce_motion();
     let mut startup = Startup { on: crate::timing::enabled(), ..Startup::default() };
     loop {
         let t_drain = std::time::Instant::now();
@@ -281,6 +286,7 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
             continue;
         }
         pump_voice(app);
+        app.motion = crate::gust::motion(app.focus_lost, last_draw, reduce_motion);
         let t_draw = std::time::Instant::now();
         let drawn = crash::guarded(|| {
             // BISE-92: the terminal's own background follows the theme
@@ -288,6 +294,7 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
             terminal.draw(|f| draw_frame(app, f))
         });
         startup.after_draw(t_draw);
+        last_draw = t_draw.elapsed();
         match drawn {
             Ok(r) => {
                 r?;
@@ -330,6 +337,14 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
                     false
                 }
                 Event::Key(k) => on_key(app, &k),
+                Event::FocusLost => {
+                    app.focus_lost = true;
+                    false
+                }
+                Event::FocusGained => {
+                    app.focus_lost = false;
+                    false
+                }
                 _ => false,
             });
             match handled {
