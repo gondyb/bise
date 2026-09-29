@@ -2,7 +2,7 @@
 # no IO, no @unsafe and no foreign code in its closure (the
 # PROOF gate refuses any in the import closure since Bend 2.0.32).
 import Base
-import ../core/api.bend as Api
+import ../core/wire.bend as W
 import ../core/compaction.bend as C
 import ../vendor/json.bend as J
 import ./model.bend as M
@@ -444,7 +444,7 @@ def call_args(c: T.Call) -> String:
 # stays capped at 200
 def code_ann(+call: T.Call) -> String:
   String.append("tool_code #", String.append(U32.show(call_id(call)),
-    String.append(" : ", Api.wire_encode(call_args(call)))))
+    String.append(" : ", W.wire_encode(call_args(call)))))
 
 def is_code_call(+name: String) -> Bool:
   Bool.or(String.eq(name, "run_typescript"),
@@ -515,7 +515,7 @@ def replay.abandon(cs: List<&2, T.Call>) -> List<&2, String>:
 # a committed result: "tool <name> ok: <out>" / "tool <name> failed: <out>"
 # (session.tool_result_msg), the out newline-escaped
 def replay.res.lines(+id: U32, +ok: Bool, +out: String) -> List<&2, String>:
-  Con{hist(res_ann(id, Xp.Ex{ok, Api.unescape_nl(out)})),
+  Con{hist(res_ann(id, Xp.Ex{ok, W.unescape_nl(out)})),
     Con{replay.fin(id, ok), Nil{}}}
 
 def replay.res.fail(is_fail: Bool, +id: U32, +text: String, +pfail: String)
@@ -548,7 +548,7 @@ def replay.injected.other(is_preamble: Bool, +text: String)
     case True{}:
       Nil{}
     case False{}:
-      Con{hist(String.append("injected : ", Api.escape_nl(text))), Nil{}}
+      Con{hist(String.append("injected : ", W.escape_nl(text))), Nil{}}
 
 def replay.injected.summary(is_summary: Bool, +text: String)
     -> List<&2, String>:
@@ -565,7 +565,7 @@ def replay.user(inj: Bool, +text: String, +rest: List<&2, T.Msg>,
     +pend: List<&2, T.Call>, +out: List<&2, String>) -> Rp:
   match inj:
     case False{}:
-      Rp{Con{hist(String.append("you : ", Api.escape_nl(text))), out},
+      Rp{Con{hist(String.append("you : ", W.escape_nl(text))), out},
         rest, pend}
     case True{}:
       Rp{rev_onto(replay.injected.summary(
@@ -579,7 +579,7 @@ def replay.asst(empty: Bool, +text: String) -> List<&2, String>:
     case False{}:
       # the restored text may carry real newlines: escaped, the line stays
       # one wire line (live replies arrive escaped already)
-      Con{hist(O.show_obs(T.Assistant{Api.escape_nl(text)})), Nil{}}
+      Con{hist(O.show_obs(T.Assistant{W.escape_nl(text)})), Nil{}}
 
 def replay.tool(pend: List<&2, T.Call>, +text: String,
     +rest: List<&2, T.Msg>, +out: List<&2, String>) -> Rp:
@@ -686,7 +686,7 @@ def drain_steer.next_of(+sess: T.Session, res: T.Res) -> T.Session:
 # wire convention as a socket "steer"), so a multi-line message fits the
 # one-line-per-steer file format
 def steer_cmd(+l: String) -> T.Cmd:
-  T.UserMsg{T.Steer{}, Api.unescape_nl(l)}
+  T.UserMsg{T.Steer{}, W.unescape_nl(l)}
 
 # the drained content becomes steering lines; blank lines never steer
 def drain_steer.push(empty: Bool, +l: String, +rest: List<&2, String>)

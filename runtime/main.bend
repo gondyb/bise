@@ -21,7 +21,7 @@ import Base
 import ../core/types.bend as T
 import ../core/session.bend as S
 import ../core/obs.bend as O
-import ../core/api.bend as Api
+import ../core/wire.bend as W
 import ../core/compaction.bend as C
 import ../core/text.bend as Tx
 import ./model.bend as M
@@ -449,7 +449,7 @@ def exec_tool.run(t: Rtp.Tool, out: Pv.Out, +name: String, +args: String,
   match t:
     case Rtp.TNode{}:
       exec_program(1000n, (out, (Sfp.def_none(), EpRun{})),
-        Api.call_code(args), Nil{}, live)
+        W.call_code(args), Nil{}, live)
     case Rtp.TBash{}:
       exec_tool.with(out, Sh.bash_exec(args))
     case Rtp.TSearch{}:

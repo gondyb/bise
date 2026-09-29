@@ -1,7 +1,8 @@
 import Base
 import ../core/types.bend as T 
 import ../core/session.bend as S
-import ../core/api.bend as Api
+import ../core/wire.bend as W
+import ../core/oai-chat.bend as Oai
 import ../runtime/remote.bend as Rem
 
 def cfg() -> T.Cfg:
@@ -49,6 +50,6 @@ def main() -> IO(Unit):
     IO.print(wire)
     IO.print("=== api body ===")
     +body : String <- IO.pure(String,
-      Api.api_body("m", Api.parse_wire(wire)))
+      Oai.api_body("m", W.parse_wire(wire)))
     IO.print(body)
     IO.pure(Unit, Unit{})

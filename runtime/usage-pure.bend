@@ -8,6 +8,7 @@
 # the reply (or an error status): no line (""). Pure: no IO.
 import Base
 import ../core/api.bend as Api
+import ../core/wire.bend as W
 import ../core/anth-stream.bend as As
 import ../vendor/json.bend as J
 
@@ -29,7 +30,7 @@ def usage_line.anth(+u: J.Json, +model: String) -> String:
 def usage_line.oai(+u: J.Json, +model: String) -> String:
   usage_line.fields(J.get_num_or(u, "prompt_tokens", 0n),
     J.get_num_or(u, "completion_tokens", 0n),
-    J.get_num_or(Api.field_or(u, "prompt_tokens_details", J.JNull{}),
+    J.get_num_or(W.field_or(u, "prompt_tokens_details", J.JNull{}),
       "cached_tokens", 0n),
     0n, model)
 
@@ -52,7 +53,7 @@ def usage_line.usage(u: J.Json, st: Api.Style, +model: String) -> String:
 def usage_line.body(is_json: Bool, +body: String) -> J.Json:
   match is_json:
     case True{}:
-      Api.field_or(Api.parse_json(body), "usage", J.JNull{})
+      W.field_or(W.parse_json(body), "usage", J.JNull{})
     case False{}:
       As.usage(body)
 

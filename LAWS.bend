@@ -11,6 +11,9 @@ import ./core/patch.bend as Pa
 import ./core/config.bend as Cf
 import ./core/commands.bend as Cm
 import ./core/api.bend as Api
+import ./core/wire.bend as W
+import ./core/oai-chat.bend as Oai
+import ./core/anthropic.bend as Anth
 import ./core/image.bend as Im
 import ./core/anth-stream.bend as As
 import ./core/obs.bend as O
@@ -170,23 +173,23 @@ law interrupt_path_is_per_port:
 # commands and JSON text, and a lossy escape would corrupt them
 # (escape_nl cannot tell an encoded newline from a literal backslash-n).
 law wire_args_reversible:
-  {Api.wire_decode(Api.wire_encode("one
+  {W.wire_decode(W.wire_encode("one
 two")) == "one
 two" : String}
 
 # LAW: a literal backslash-n in the arg survives the round-trip (the
 # python -c one-liners are full of them).
 law wire_args_keep_backslash_n:
-  {Api.wire_decode(Api.wire_encode("a\\nb")) == "a\\nb" : String}
+  {W.wire_decode(W.wire_encode("a\\nb")) == "a\\nb" : String}
 
 # LAW: a literal capital-N sentinel sequence survives too - encoding
 # doubles its backslash, decoding restores it exactly.
 law wire_args_keep_sentinel:
-  {Api.wire_decode(Api.wire_encode("a\\Nb")) == "a\\Nb" : String}
+  {W.wire_decode(W.wire_encode("a\\Nb")) == "a\\Nb" : String}
 
 # LAW: the reply wire carries a multi-line arg encoded, on one line.
 law reply_encodes_multiline_args:
-  {Api.reply_of(200, "{\"choices\":[{\"message\":{\"content\":\"\",\"tool_calls\":[{\"function\":{\"name\":\"bash\",\"arguments\":\"{\\\"arg\\\": \\\"one\\\\ntwo\\\"}\"}}]}}]}")
+  {Oai.reply_of(200, "{\"choices\":[{\"message\":{\"content\":\"\",\"tool_calls\":[{\"function\":{\"name\":\"bash\",\"arguments\":\"{\\\"arg\\\": \\\"one\\\\ntwo\\\"}\"}}]}}]}")
     == "OK 
 CALL 1 bash : one\\Ntwo
 END
@@ -213,15 +216,15 @@ b"})
 
 # LAW: the request parse decodes the args the history carries.
 law api_wire_decodes_args:
-  {Api.parse_wire("MODEL default
+  {W.parse_wire("MODEL default
 MSG assistant : 
   CALL 1 bash : one\\Ntwo
 END
 ")
-    == Api.WReq{Nil{}, Con{Api.WMsg{"assistant", "",
-      Con{Api.WCall{"1", "bash", "one
+    == W.WReq{Nil{}, Con{W.WMsg{"assistant", "",
+      Con{W.WCall{"1", "bash", "one
 two"}, Nil{}}}, Nil{}}, None{}}
-    : Api.WReq}
+    : W.WReq}
 # ---- session-level rejections (the Core accepts nothing uninvited) ----
 
 # LAW: a tool result with no tools pending is rejected — a late or
@@ -794,16 +797,16 @@ law self_compact_desc_says_when:
 # LAW: the wire request parses into exactly the tools and messages it
 # was built from (oldest-first, calls attached to their message).
 law api_wire_parses:
-  {Api.parse_wire("MODEL default\nTOOL echo : Returns text.\nMSG user : bonjour\nEND\n")
-    == Api.WReq{Con{Api.WTool{"echo", "Returns text."}, Nil{}},
-      Con{Api.WMsg{"user", "bonjour", Nil{}}, Nil{}}, None{}}
-    : Api.WReq}
+  {W.parse_wire("MODEL default\nTOOL echo : Returns text.\nMSG user : bonjour\nEND\n")
+    == W.WReq{Con{W.WTool{"echo", "Returns text."}, Nil{}},
+      Con{W.WMsg{"user", "bonjour", Nil{}}, Nil{}}, None{}}
+    : W.WReq}
 
 # LAW: the API body carries the model, the messages, the tools with the
 # flat arg schema, and tool_choice auto — byte-for-byte.
 law api_body_maps:
-  {Api.api_body("zai-glm-5-3",
-      Api.parse_wire("MODEL default\nTOOL echo : Returns text.\nMSG user : bonjour\nEND\n"))
+  {Oai.api_body("zai-glm-5-3",
+      W.parse_wire("MODEL default\nTOOL echo : Returns text.\nMSG user : bonjour\nEND\n"))
     == "{\"model\":\"zai-glm-5-3\",\"reasoning_effort\":\"high\",\"messages\":[{\"role\":\"user\",\"content\":\"bonjour\"}],\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"echo\",\"description\":\"Returns text.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"}},\"required\":[\"arg\"]}}}],\"tool_choice\":\"auto\"}"
     : String}
 
@@ -812,42 +815,42 @@ law api_body_maps:
 # on the Mistral API, mistral.py _THINKING_TO_REASONING_EFFORT), and
 # the compaction call carries it too.
 law api_body_high_reasoning:
-  {String.contains(Api.api_body("zai-glm-5-3",
-      Api.parse_wire("MODEL default\nMSG user : bonjour\nEND\n")),
+  {String.contains(Oai.api_body("zai-glm-5-3",
+      W.parse_wire("MODEL default\nMSG user : bonjour\nEND\n")),
     "\"reasoning_effort\":\"high\"") == True{} : Bool}
 
 # LAW: the way back — an assistant message whose history text carries
 # marked reasoning is re-sent as the vibe CLI ThinkChunk shape: the
 # thinking block first, the text block second.
 law asst_think_roundtrip:
-  {J.stringify(Api.asst_content_json(
-      Api.unescape_nl("<think>2+2 = 4\\n</think>\\n4")))
+  {J.stringify(Oai.asst_content_json(
+      W.unescape_nl("<think>2+2 = 4\\n</think>\\n4")))
     == "[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"2+2 = 4\"}]},{\"type\":\"text\",\"text\":\"4\"}]"
     : String}
 
 # LAW: a thinking-only assistant message carries no text block.
 law asst_think_only_no_text_block:
-  {J.stringify(Api.asst_content_json(
-      Api.unescape_nl("<think>R\\n</think>")))
+  {J.stringify(Oai.asst_content_json(
+      W.unescape_nl("<think>R\\n</think>")))
     == "[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"R\"}]}]"
     : String}
 
 # LAW: a plain assistant message is sent as a plain string, exactly as
 # before — the conversion only fires on marked reasoning.
 law asst_plain_content_stays_plain:
-  {J.stringify(Api.asst_content_json("hello")) == "\"hello\"" : String}
+  {J.stringify(Oai.asst_content_json("hello")) == "\"hello\"" : String}
 
 # LAW: end to end on the request path — a wire carrying a marked
 # assistant message produces an API body with the thinking block.
 law api_body_returns_thinking_block:
-  {String.contains(Api.api_body("m",
-      Api.parse_wire("MODEL default\nMSG assistant : <think>2+2 = 4\\n</think>\\n4\nEND\n")),
+  {String.contains(Oai.api_body("m",
+      W.parse_wire("MODEL default\nMSG assistant : <think>2+2 = 4\\n</think>\\n4\nEND\n")),
     "\"type\":\"thinking\"") == True{} : Bool}
 
 # LAW: GLM content blocks become separate lines; the wire carries them
 # escaped, the client sees real newlines after unescape.
 law glm_blocks_join_lines:
-  {Api.unescape_nl(Api.reply_of(200,
+  {W.unescape_nl(Oai.reply_of(200,
       "{\"choices\":[{\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"a\"},{\"type\":\"text\",\"text\":\"b\"}]}}]}"))
     == "OK a\nb\nEND\n" : String}
 
@@ -857,7 +860,7 @@ law glm_blocks_join_lines:
 # reasoning; the common harness bug dropped it here, so every later
 # hop of a multi-tool turn reasoned blind.
 law glm_thinking_surfaces:
-  {Api.unescape_nl(Api.reply_of(200,
+  {W.unescape_nl(Oai.reply_of(200,
       "{\"choices\":[{\"message\":{\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"2+2 = 4\"}],\"closed\":true},{\"type\":\"text\",\"text\":\"4\"}]}}]}"))
     == "OK <think>2+2 = 4\n</think>\n4\nEND\n" : String}
 
@@ -865,7 +868,7 @@ law glm_thinking_surfaces:
 # last line - the same signed transport the Anthropic adapter uses, so
 # one extraction serves both providers.
 law glm_thinking_signature_surfaces:
-  {Api.unescape_nl(Api.reply_of(200,
+  {W.unescape_nl(Oai.reply_of(200,
       "{\"choices\":[{\"message\":{\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"2+2 = 4\"}],\"signature\":\"sig\"},{\"type\":\"text\",\"text\":\"4\"}]}}]}"))
     == "OK <think>2+2 = 4
 BENDSIG::sig</think>
@@ -877,8 +880,8 @@ END
 # at block level (mistral.py _build_mistral_think_chunk: the metadata
 # rides the block, the thinking array stays the nested text parts).
 law glm_signed_think_signature_replays:
-  {J.stringify(Api.asst_content_json(
-      Api.unescape_nl("<think>2+2 = 4
+  {J.stringify(Oai.asst_content_json(
+      W.unescape_nl("<think>2+2 = 4
 BENDSIG::sig</think>
 4")))
     == "[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"2+2 = 4\"}],\"signature\":\"sig\"},{\"type\":\"text\",\"text\":\"4\"}]"
@@ -887,14 +890,14 @@ BENDSIG::sig</think>
 # LAW: tool calls map onto the CALL reply lines the Core parses (1-based
 # ids, the flat arg rehydrated from the arguments JSON string).
 law api_tool_calls_map:
-  {Api.reply_of(200,
+  {Oai.reply_of(200,
       "{\"choices\":[{\"message\":{\"content\":\"\",\"tool_calls\":[{\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"arg\\\": \\\"hi\\\"}\"}}]}}]}")
     == "OK \nCALL 1 echo : hi\nEND\n" : String}
 
 # LAW: a provider error becomes the ERROR reply line, flattened and
 # capped at 300 chars, with the status.
 law api_error_maps:
-  {Api.reply_of(401, "{\"error\":\"bad key\"}")
+  {Oai.reply_of(401, "{\"error\":\"bad key\"}")
     == "ERROR provider 401: {\"error\":\"bad key\"}\nEND\n" : String}
 
 # ---- permissive compaction + newline transport ----
@@ -907,16 +910,16 @@ law unclosed_summary_falls_back:
 
 # LAW: escaping keeps every wire line single-line, whatever the text.
 law escape_keeps_lines_single:
-  {String.contains(Api.escape_nl("x\ny\nz"), "\n") == False{} : Bool}
+  {String.contains(W.escape_nl("x\ny\nz"), "\n") == False{} : Bool}
 
 # LAW: escaping then unescaping is the identity (concrete).
 law escape_roundtrip:
-  {Api.unescape_nl(Api.escape_nl("a\nb\n\nc")) == "a\nb\n\nc" : String}
+  {W.unescape_nl(W.escape_nl("a\nb\n\nc")) == "a\nb\n\nc" : String}
 
 # LAW: a compaction request (no TOOL lines) produces a body WITHOUT
 # tools or tool_choice — the model cannot even offer a tool call.
 law api_bare_body_omits_tools:
-  {Api.api_body("m", Api.parse_wire("MODEL default\nMSG user : salut\nEND\n"))
+  {Oai.api_body("m", W.parse_wire("MODEL default\nMSG user : salut\nEND\n"))
     == "{\"model\":\"m\",\"reasoning_effort\":\"high\",\"messages\":[{\"role\":\"user\",\"content\":\"salut\"}]}"
     : String}
 
@@ -982,27 +985,27 @@ law result_text_keeps_names:
 
 # LAW: run_typescript args pass through as the JSON the model wrote.
 law args_json_passes_structured:
-  {Api.args_json("run_typescript", "{\"code\": \"x\"}") == "{\"code\": \"x\"}"
+  {Oai.args_json("run_typescript", "{\"code\": \"x\"}") == "{\"code\": \"x\"}"
     : String}
 
 # LAW: search args pass through too.
 law args_json_passes_search:
-  {Api.args_json("search_tool_functions", "{\"mode\": \"details\"}")
+  {Oai.args_json("search_tool_functions", "{\"mode\": \"details\"}")
     == "{\"mode\": \"details\"}" : String}
 
 # LAW: ordinary tools keep the flat {"arg": ...} wrapper.
 law args_json_wraps_plain:
-  {Api.args_json("bash", "ls -la") == "{\"arg\":\"ls -la\"}" : String}
+  {Oai.args_json("bash", "ls -la") == "{\"arg\":\"ls -la\"}" : String}
 
 # LAW: call_code extracts the code field from run_typescript args.
 law call_code_extracts:
-  {Api.call_code("{\"code\": \"async function main() { return 1; }\"}")
+  {W.call_code("{\"code\": \"async function main() { return 1; }\"}")
     == "async function main() { return 1; }" : String}
 
 # LAW: args with no code field pass through — the engine fails
 # readably instead of the runtime guessing.
 law call_code_passthrough:
-  {Api.call_code("just text") == "just text" : String}
+  {W.call_code("just text") == "just text" : String}
 
 # ---- the structured search (runtime/tools.bend) ----
 # best_match returns ranked names without declarations, details returns
@@ -2090,14 +2093,14 @@ law provider_openai_key_env:
 # adapter - the OpenAI side byte-identical to api_body/reply_of.
 law style_routes_body:
   {Api.api_body_for(Api.OpenAI{}, "m",
-      Api.parse_wire("MODEL default\nMSG user : hi\nEND\n"))
-    == Api.api_body("m",
-      Api.parse_wire("MODEL default\nMSG user : hi\nEND\n"))
+      W.parse_wire("MODEL default\nMSG user : hi\nEND\n"))
+    == Oai.api_body("m",
+      W.parse_wire("MODEL default\nMSG user : hi\nEND\n"))
     : String}
 
 law style_routes_reply:
   {Api.reply_of_for(Api.OpenAI{}, 401, "{\"error\":\"bad key\"}")
-    == Api.reply_of(401, "{\"error\":\"bad key\"}") : String}
+    == Oai.reply_of(401, "{\"error\":\"bad key\"}") : String}
 
 # LAW: an Anthropic body maps a simple wire byte-for-byte: the system
 # prompt becomes the top-level system field, the user message a text
@@ -2105,7 +2108,7 @@ law style_routes_reply:
 # summarized, effort high, the adaptive max_tokens budget).
 law api_body_anth_maps:
   {Api.api_body_for(Api.Anthropic{}, "claude-opus-5-5",
-      Api.parse_wire("MODEL default\nMSG system : You are precise.\nMSG user : bonjour\nEND\n"))
+      W.parse_wire("MODEL default\nMSG system : You are precise.\nMSG user : bonjour\nEND\n"))
     == "{\"system\":[{\"type\":\"text\",\"text\":\"You are precise.\"}],\"model\":\"claude-opus-5-5\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"bonjour\"}]}]}"
     : String}
 
@@ -2113,7 +2116,7 @@ law api_body_anth_maps:
 # tool_choice - the model cannot even offer a tool call.
 law api_body_anth_bare_omits_tools:
   {Api.api_body_for(Api.Anthropic{}, "m",
-      Api.parse_wire("MODEL default\nMSG user : salut\nEND\n"))
+      W.parse_wire("MODEL default\nMSG user : salut\nEND\n"))
     == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"salut\"}]}]}"
     : String}
 
@@ -2121,7 +2124,7 @@ law api_body_anth_bare_omits_tools:
 # shape and tool_choice is the auto object.
 law api_body_anth_tools_shape:
   {Api.api_body_for(Api.Anthropic{}, "m",
-      Api.parse_wire("MODEL default\nTOOL echo : Returns text.\nMSG user : bonjour\nEND\n"))
+      W.parse_wire("MODEL default\nTOOL echo : Returns text.\nMSG user : bonjour\nEND\n"))
     == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"bonjour\"}]}],\"tools\":[{\"name\":\"echo\",\"description\":\"Returns text.\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"}},\"required\":[\"arg\"]}}],\"tool_choice\":{\"type\":\"auto\"}}"
     : String}
 
@@ -2130,7 +2133,7 @@ law api_body_anth_tools_shape:
 # the result agree, and the result rides a USER message.
 law anth_tool_result_pairs:
   {Api.api_body_for(Api.Anthropic{}, "m",
-      Api.parse_wire("MODEL default\nMSG user : go\nMSG assistant : thinking\n  CALL 7 echo : hi\nMSG tool : tool echo ok: out\nEND\n"))
+      W.parse_wire("MODEL default\nMSG user : go\nMSG assistant : thinking\n  CALL 7 echo : hi\nMSG tool : tool echo ok: out\nEND\n"))
     == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"go\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"thinking\"},{\"type\":\"tool_use\",\"id\":\"call_7\",\"name\":\"echo\",\"input\":{\"arg\":\"hi\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_7\",\"content\":\"tool echo ok: out\"}]}]}"
     : String}
 
@@ -2138,7 +2141,7 @@ law anth_tool_result_pairs:
 # vibe mapper's shape (the ids pair FIFO).
 law anth_tool_results_merge:
   {String.contains(Api.api_body_for(Api.Anthropic{}, "m",
-      Api.parse_wire("MODEL default\nMSG user : go\nMSG assistant : thinking\n  CALL 7 echo : hi\n  CALL 8 bash : ls\nMSG tool : out1\nMSG tool : out2\nEND\n")),
+      W.parse_wire("MODEL default\nMSG user : go\nMSG assistant : thinking\n  CALL 7 echo : hi\n  CALL 8 bash : ls\nMSG tool : out1\nMSG tool : out2\nEND\n")),
     "\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_8\",\"content\":\"out2\"}")
     == False{} : Bool}
 
@@ -2146,15 +2149,15 @@ law anth_tool_results_merge:
 # CALL line takes the first tool result (the calls of one message
 # were once reversed, so each result went to the other call).
 law oai_parallel_results_pair_in_order:
-  {String.contains(Api.api_body("m",
-      Api.parse_wire("MODEL default\nMSG user : go\nMSG assistant : x\n  CALL 7 echo : hi\n  CALL 8 bash : ls\nMSG tool : out1\nMSG tool : out2\nEND\n")),
+  {String.contains(Oai.api_body("m",
+      W.parse_wire("MODEL default\nMSG user : go\nMSG assistant : x\n  CALL 7 echo : hi\n  CALL 8 bash : ls\nMSG tool : out1\nMSG tool : out2\nEND\n")),
     "{\"role\":\"tool\",\"content\":\"out1\",\"tool_call_id\":\"call_7\"},{\"role\":\"tool\",\"content\":\"out2\",\"tool_call_id\":\"call_8\"}")
     == True{} : Bool}
 
 # LAW: the same pairing on the Anthropic adapter.
 law anth_parallel_results_pair_in_order:
   {String.contains(Api.api_body_for(Api.Anthropic{}, "m",
-      Api.parse_wire("MODEL default\nMSG user : go\nMSG assistant : x\n  CALL 7 echo : hi\n  CALL 8 bash : ls\nMSG tool : out1\nMSG tool : out2\nEND\n")),
+      W.parse_wire("MODEL default\nMSG user : go\nMSG assistant : x\n  CALL 7 echo : hi\n  CALL 8 bash : ls\nMSG tool : out1\nMSG tool : out2\nEND\n")),
     "{\"type\":\"tool_result\",\"tool_use_id\":\"call_7\",\"content\":\"out1\"},{\"type\":\"tool_result\",\"tool_use_id\":\"call_8\",\"content\":\"out2\"}")
     == True{} : Bool}
 
@@ -2164,7 +2167,7 @@ law anth_parallel_results_pair_in_order:
 # assistant message.
 law anth_unsigned_thinking_stays_stripped:
   {Bool.not(String.contains(Api.api_body_for(Api.Anthropic{}, "m",
-       Api.parse_wire("MODEL default
+       W.parse_wire("MODEL default
 MSG assistant : <think>2+2 = 4</think>\\n4
 END
 ")),
@@ -2177,7 +2180,7 @@ END
 # after every tool result.
 law anth_signed_thinking_replays:
   {String.contains(Api.api_body_for(Api.Anthropic{}, "m",
-       Api.parse_wire("MODEL default
+       W.parse_wire("MODEL default
 MSG assistant : <think>2+2 = 4\\nBENDSIG::sig</think>\\n4
 END
 ")),
@@ -2190,7 +2193,7 @@ END
 # extraction, probed).
 law anth_multi_span_replays:
   {Api.api_body_for(Api.Anthropic{}, "m",
-       Api.parse_wire("MODEL default
+       W.parse_wire("MODEL default
 MSG assistant : <think>a\\nBENDSIG::s1</think>\\n<think>b\\nBENDSIG::s2</think>\\nok
 END
 "))
@@ -2201,7 +2204,7 @@ END
 # reach the body (the walk fuel covers the three hops of a tool message).
 law anth_long_tool_run_keeps_messages:
   {String.contains(Api.api_body_for(Api.Anthropic{}, "m",
-      Api.parse_wire("MODEL default\nMSG user : go\nMSG assistant : x\n  CALL 1 echo : hi\nMSG tool : out1\nMSG assistant : x\n  CALL 2 echo : hi\nMSG tool : out2\nMSG assistant : x\n  CALL 3 echo : hi\nMSG tool : out3\nMSG assistant : x\n  CALL 4 echo : hi\nMSG tool : out4\nMSG assistant : x\n  CALL 5 echo : hi\nMSG tool : out5\nMSG assistant : x\n  CALL 6 echo : hi\nMSG tool : out6\nMSG assistant : x\n  CALL 7 echo : hi\nMSG tool : out7\nMSG assistant : x\n  CALL 8 echo : hi\nMSG tool : out8\nMSG assistant : x\n  CALL 9 echo : hi\nMSG tool : out9\nMSG assistant : x\n  CALL 10 echo : hi\nMSG tool : out10\nMSG assistant : x\n  CALL 11 echo : hi\nMSG tool : out11\nMSG assistant : x\n  CALL 12 echo : hi\nMSG tool : out12\nMSG assistant : x\n  CALL 13 echo : hi\nMSG tool : out13\nMSG assistant : x\n  CALL 14 echo : hi\nMSG tool : out14\nMSG assistant : x\n  CALL 15 echo : hi\nMSG tool : out15\nMSG assistant : x\n  CALL 16 echo : hi\nMSG tool : out16\nMSG assistant : x\n  CALL 17 echo : hi\nMSG tool : out17\nMSG assistant : x\n  CALL 18 echo : hi\nMSG tool : out18\nMSG assistant : x\n  CALL 19 echo : hi\nMSG tool : out19\nMSG assistant : x\n  CALL 20 echo : hi\nMSG tool : out20\nEND\n")),
+      W.parse_wire("MODEL default\nMSG user : go\nMSG assistant : x\n  CALL 1 echo : hi\nMSG tool : out1\nMSG assistant : x\n  CALL 2 echo : hi\nMSG tool : out2\nMSG assistant : x\n  CALL 3 echo : hi\nMSG tool : out3\nMSG assistant : x\n  CALL 4 echo : hi\nMSG tool : out4\nMSG assistant : x\n  CALL 5 echo : hi\nMSG tool : out5\nMSG assistant : x\n  CALL 6 echo : hi\nMSG tool : out6\nMSG assistant : x\n  CALL 7 echo : hi\nMSG tool : out7\nMSG assistant : x\n  CALL 8 echo : hi\nMSG tool : out8\nMSG assistant : x\n  CALL 9 echo : hi\nMSG tool : out9\nMSG assistant : x\n  CALL 10 echo : hi\nMSG tool : out10\nMSG assistant : x\n  CALL 11 echo : hi\nMSG tool : out11\nMSG assistant : x\n  CALL 12 echo : hi\nMSG tool : out12\nMSG assistant : x\n  CALL 13 echo : hi\nMSG tool : out13\nMSG assistant : x\n  CALL 14 echo : hi\nMSG tool : out14\nMSG assistant : x\n  CALL 15 echo : hi\nMSG tool : out15\nMSG assistant : x\n  CALL 16 echo : hi\nMSG tool : out16\nMSG assistant : x\n  CALL 17 echo : hi\nMSG tool : out17\nMSG assistant : x\n  CALL 18 echo : hi\nMSG tool : out18\nMSG assistant : x\n  CALL 19 echo : hi\nMSG tool : out19\nMSG assistant : x\n  CALL 20 echo : hi\nMSG tool : out20\nEND\n")),
     "\"content\":\"out20\"")
     == True{} : Bool}
 
@@ -2215,7 +2218,7 @@ law anth_refusal_maps:
 # comment header preserved below
 # LAW: Anthropic text blocks become separate lines (the GLM parity).
 law anth_blocks_join_lines:
-  {Api.unescape_nl(Api.reply_of_for(Api.Anthropic{}, 200,
+  {W.unescape_nl(Api.reply_of_for(Api.Anthropic{}, 200,
       "{\"type\":\"message\",\"content\":[{\"type\":\"text\",\"text\":\"a\"},{\"type\":\"text\",\"text\":\"b\"}]}"))
     == "OK a\nb\nEND\n" : String}
 
@@ -2223,7 +2226,7 @@ law anth_blocks_join_lines:
 # think markers - the same transport the GLM adapter uses, so the TUI
 # and the history are unchanged.
 law anth_thinking_surfaces:
-  {Api.unescape_nl(Api.reply_of_for(Api.Anthropic{}, 200,
+  {W.unescape_nl(Api.reply_of_for(Api.Anthropic{}, 200,
       "{\"type\":\"message\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"2+2 = 4\",\"signature\":\"sig\"},{\"type\":\"text\",\"text\":\"4\"}]}"))
     == "OK <think>2+2 = 4
 BENDSIG::sig</think>
@@ -2261,10 +2264,10 @@ law anth_status_error_maps:
 # names (the proxy rejects "self.reload" with invalid_request_error).
 law anth_tool_name_roundtrip:
   {Bool.and(
-     String.eq(Api.anth_tool_name_out("self.reload"), "self_reload"),
+     String.eq(Anth.anth_tool_name_out("self.reload"), "self_reload"),
      Bool.and(
-       String.eq(Api.anth_tool_name_in("self_reload"), "self.reload"),
-       String.eq(Api.anth_tool_name_out("bash"), "bash")))
+       String.eq(Anth.anth_tool_name_in("self_reload"), "self.reload"),
+       String.eq(Anth.anth_tool_name_out("bash"), "bash")))
     == True{} : Bool}
 
 # ---- the config file (core/config.bend) ----
@@ -2704,7 +2707,7 @@ law image_split_refuses_bad_marker:
 # LAW: OpenAI style - a user message with a marker becomes content
 # parts, the Codex frame around a data-url placeholder.
 law api_body_image_user_parts:
-  {Api.api_body_for(Api.OpenAI{}, "m", Api.parse_wire("MODEL default
+  {Api.api_body_for(Api.OpenAI{}, "m", W.parse_wire("MODEL default
 MSG user : see <image name=\"[Image #1]\" path=\"p.png\" mime=\"image/png\" b64=\"/s/x.b64\">
 END
 "))
@@ -2713,7 +2716,7 @@ END
 
 # LAW: Anthropic - a tool result with a marker carries image blocks.
 law api_body_image_anth_tool_result:
-  {Api.api_body_for(Api.Anthropic{}, "m", Api.parse_wire("MODEL default
+  {Api.api_body_for(Api.Anthropic{}, "m", W.parse_wire("MODEL default
 MSG user : go
 MSG assistant : 
   CALL 1 run_typescript : {}

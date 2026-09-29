@@ -12,7 +12,7 @@ import Base
 import ./types.bend as T
 import ./estimate.bend as E
 import ./compaction.bend as C
-import ./api.bend as Api
+import ./wire.bend as W
 
 # ---- dispatch result (internal) ----
 type DRes is Data:
@@ -99,10 +99,10 @@ def tool_result_msg(+name: String, +out: String, ok: Bool) -> T.Msg:
   match ok:
     case True{}:
       T.tool_res(String.append("tool ", String.append(name,
-        String.append(" ok: ", Api.escape_nl(out)))))
+        String.append(" ok: ", W.escape_nl(out)))))
     case False{}:
       T.tool_res(String.append("tool ", String.append(name,
-        String.append(" failed: ", Api.escape_nl(out)))))
+        String.append(" failed: ", W.escape_nl(out)))))
 
 # one tool call taken out of the waiting list, with the remainder
 type Taken is Data:

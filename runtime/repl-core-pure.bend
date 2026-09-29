@@ -2,7 +2,7 @@
 # no IO, no @unsafe and no foreign code in its closure (the
 # PROOF gate refuses any in the import closure since Bend 2.0.32).
 import Base
-import ../core/api.bend as Api
+import ../core/wire.bend as W
 import ./model.bend as M
 import ../core/types.bend as T
 import ../core/text.bend as Tx
@@ -79,8 +79,8 @@ def plan_notify(eq: Bool, +op: String, +rest: String) -> Plan:
 def plan_steer(eq: Bool, +op: String, +rest: String) -> Plan:
   match eq:
     case True{}:
-      PRun{Con{T.UserMsg{T.Steer{}, Api.unescape_nl(rest)}, Nil{}},
-        script_for_entry(Api.unescape_nl(rest))}
+      PRun{Con{T.UserMsg{T.Steer{}, W.unescape_nl(rest)}, Nil{}},
+        script_for_entry(W.unescape_nl(rest))}
     case False{}:
       plan_notify(String.eq(op, "notify"), op, rest)
 
@@ -89,8 +89,8 @@ def plan_say(eq: Bool, +op: String, +rest: String) -> Plan:
     case True{}:
       # the client escapes real newlines to keep the socket line
       # single-line; the message text carries the real newlines
-      PRun{Con{T.UserMsg{T.Queue{}, Api.unescape_nl(rest)}, Nil{}},
-        script_for_entry(Api.unescape_nl(rest))}
+      PRun{Con{T.UserMsg{T.Queue{}, W.unescape_nl(rest)}, Nil{}},
+        script_for_entry(W.unescape_nl(rest))}
     case False{}:
       plan_steer(String.eq(op, "steer"), op, rest)
 

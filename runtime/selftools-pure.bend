@@ -2,7 +2,7 @@
 # no IO, no @unsafe and no foreign code in its closure (the
 # PROOF gate refuses any in the import closure since Bend 2.0.32).
 import Base
-import ../core/api.bend as Api
+import ../core/wire.bend as W
 import ../core/types.bend as T
 import ./tools-pure.bend as Xp
 
@@ -72,8 +72,8 @@ def def_ack.hit.ends(hit: Bool, +text: String, +ack: String) -> Bool:
       True{}
     case False{}:
       String.contains(text,
-        String.append(Api.escape_nl("\n"),
-          String.append(ack, Api.escape_nl("\n"))))
+        String.append(W.escape_nl("\n"),
+          String.append(ack, W.escape_nl("\n"))))
 
 def def_ack.hit(+text: String, +ack: String) -> Bool:
   def_ack.hit.ends(String.ends_with(text, ack), text, ack)

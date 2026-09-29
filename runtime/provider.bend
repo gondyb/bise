@@ -7,6 +7,7 @@
 # only maps the Http values onto that policy and runs the effects.
 import Base
 import ../core/api.bend as Api
+import ../core/wire.bend as W
 import ./persist.bend as P
 import ./remote.bend as Rem
 import ../core/config.bend as Cf
@@ -568,7 +569,7 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
       do IO<Out & Rem.RemoteRes>:
         +json : String <- IO.pure(String,
           wire_body(st,
-            Api.api_body_for(st, model, Api.parse_wire(request))))
+            Api.api_body_for(st, model, W.parse_wire(request))))
         +body : String <- IO.pure(String, Enc.utf8.encode(Im.img_splice(json, imgs)))
         dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
         dump_dbg : Unit <- dump_wire(P.env_or(dr, ""), body)

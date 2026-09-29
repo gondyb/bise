@@ -9,7 +9,7 @@
 #
 # This module is the pure half: the request body with "stream": true,
 # and the fold that rebuilds the final message from the events - the
-# exact JSON a non-streaming reply carries - so Api.reply_anth maps it
+# exact JSON a non-streaming reply carries - so Anth.reply_anth maps it
 # to the same OK/CALL/END lines, byte for byte.
 #
 # The events (https://docs.anthropic.com/en/api/messages-streaming):
@@ -25,6 +25,8 @@
 # belongs to the block started last.
 import Base
 import ./api.bend as Api
+import ./wire.bend as W
+import ./anthropic.bend as Anth
 import ./text.bend as Tx
 import ../vendor/json.bend as J
 
@@ -221,16 +223,16 @@ def step(k: EKind, +e: J.Json, +a: Acc) -> Acc:
     case EStart{}:
       match a:
         case Acc{+blocks, +fin, +err}:
-          Acc{Con{block_of(Api.field_or(e, "content_block", J.JNull{})), blocks},
+          Acc{Con{block_of(W.field_or(e, "content_block", J.JNull{})), blocks},
             fin, err}
     case EDelta{}:
       match a:
         case Acc{+blocks, +fin, +err}:
-          Acc{step.delta(Api.field_or(e, "delta", J.JNull{}), blocks), fin, err}
+          Acc{step.delta(W.field_or(e, "delta", J.JNull{}), blocks), fin, err}
     case EFin{}:
       match a:
         case Acc{+blocks, _, +err}:
-          Acc{blocks, Api.field_or(e, "delta", J.JNull{}), err}
+          Acc{blocks, W.field_or(e, "delta", J.JNull{}), err}
     case EErr{}:
       match a:
         case Acc{+blocks, +fin, _}:
@@ -312,7 +314,7 @@ def message.of(+blocks: List<&2, Blk>, +fin: J.Json) -> J.Json:
   J.obj(Con{J.kv("type", J.str("message")),
     Con{J.kv("content", J.arr(blocks_json(List.reverse(&2, Blk, blocks)))),
     Con{J.kv("stop_reason", J.str(str_of(fin, "stop_reason"))),
-    Con{J.kv("stop_details", Api.field_or(fin, "stop_details", J.JNull{})),
+    Con{J.kv("stop_details", W.field_or(fin, "stop_details", J.JNull{})),
       Nil{}}}}})
 
 # the message a non-streaming reply would have carried; an error event
@@ -326,10 +328,10 @@ def message(+a: Acc) -> J.Json:
         case None{}:
           message.of(blocks, fin)
 
-# the whole SSE body -> the OK/CALL/END reply (Api.reply_anth, as for a
+# the whole SSE body -> the OK/CALL/END reply (Anth.reply_anth, as for a
 # non-streaming body)
 def reply(+sse: String) -> String:
-  Api.reply_anth(message(fold(String.split(sse, Tx.newline()), acc0())))
+  Anth.reply_anth(message(fold(String.split(sse, Tx.newline()), acc0())))
 
 # a 200 is not always a stream: the proxy answers an overload with a
 # whole JSON error body. JSON in, the whole-reply mapping; events in,
@@ -360,7 +362,7 @@ def use.delta(hit: Bool, +e: J.Json, +u: Use) -> Use:
     case True{}:
       match u:
         case Use{+s, _}:
-          Use{s, Api.field_or(e, "usage", J.JNull{})}
+          Use{s, W.field_or(e, "usage", J.JNull{})}
     case False{}:
       u
 
@@ -369,7 +371,7 @@ def use.start(hit: Bool, +t: String, +e: J.Json, +u: Use) -> Use:
     case True{}:
       match u:
         case Use{_, +d}:
-          Use{Api.field_or(Api.field_or(e, "message", J.JNull{}), "usage",
+          Use{W.field_or(W.field_or(e, "message", J.JNull{}), "usage",
             J.JNull{}), d}
     case False{}:
       use.delta(String.eq(t, "message_delta"), e, u)

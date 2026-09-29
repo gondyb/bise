@@ -5,7 +5,7 @@
 import Base
 import ./types.bend as T
 import ./text.bend as Tx
-import ./api.bend as Api
+import ./wire.bend as W
 
 # The current checkpoint version. Evolve backward-compatibly; treat a
 # version bump as an intentional compatibility break.
@@ -96,7 +96,7 @@ def calls_text(calls: List<&2, T.Call>) -> String:
         case T.Call{+id, +name, +args}:
           String.append("\n  CALL ", String.append(U32.show(id),
             String.append(" ", String.append(name,
-              String.append(" : ", String.append(Api.wire_encode(args), calls_text(rest)))))))
+              String.append(" : ", String.append(W.wire_encode(args), calls_text(rest)))))))
 
 def msg_text(m: T.Msg) -> String:
   match m:
@@ -105,7 +105,7 @@ def msg_text(m: T.Msg) -> String:
       # a paragraph) is escaped exactly like the wire carries it
       String.append("MSG ", String.append(inj_text(injected),
         String.append(" ", String.append(role_text(role),
-          String.append(" : ", String.append(Api.escape_nl(text),
+          String.append(" : ", String.append(W.escape_nl(text),
             calls_text(calls)))))))
 
 def msgs_text(ms: List<&2, T.Msg>) -> String:
@@ -129,7 +129,7 @@ def tools_text(ts: List<&2, T.ToolDef>) -> String:
 def to_text.cfg(+cfg: T.Cfg) -> String:
   match cfg:
     case T.Cfg{+threshold, +select_budget, +max_nulls, +system, +tools}:
-      String.append(tools_text(tools), String.append("CFG ", String.append(Nat.show(threshold), String.append(" ", String.append(Nat.show(select_budget), String.append(" ", String.append(Nat.show(max_nulls), String.append(" ", String.append(Api.escape_nl(system), "\n")))))))))
+      String.append(tools_text(tools), String.append("CFG ", String.append(Nat.show(threshold), String.append(" ", String.append(Nat.show(select_budget), String.append(" ", String.append(Nat.show(max_nulls), String.append(" ", String.append(W.escape_nl(system), "\n")))))))))
 
 # ---- the queue and the held notifications ride the checkpoint (v2) ----
 # A message the user queued mid-turn used to vanish at a reload, so
@@ -141,7 +141,7 @@ def queued_text.go(qs: List<&2, String>) -> String:
       ""
     case Con{+t, rest}:
       String.append("QUEUE ",
-        String.append(Api.wire_encode(t),
+        String.append(W.wire_encode(t),
           String.append("
 ", queued_text.go(rest))))
 
@@ -154,7 +154,7 @@ def notifs_text.go(ns: List<&2, String>) -> String:
       ""
     case Con{+t, rest}:
       String.append("NOTIF ",
-        String.append(Api.wire_encode(t),
+        String.append(W.wire_encode(t),
           String.append("
 ", notifs_text.go(rest))))
 
@@ -207,7 +207,7 @@ def fcall.name(sp: Maybe<&2, Nat>, +id_str: String, +tail: String) -> T.Call:
   match sp:
     case Some{+q}:
       T.Call{u32_of(U32.read(id_str)), call_name(String.take(tail, q)),
-        Api.wire_decode(String.drop(tail, Nat.add(q, 3n)))}
+        W.wire_decode(String.drop(tail, Nat.add(q, 3n)))}
     case None{}:
       T.Call{0, tail, ""}
 
@@ -256,13 +256,13 @@ def step_queue(st: FS, +line: String) -> FS:
   match st:
     case FS{+tools, +cur, +msgs, +cfg, +inputs, +actions, +queued, +notifs, +ok}:
       FS{tools, cur, msgs, cfg, inputs, actions,
-        Con{Api.wire_decode(String.drop(line, 6n)), queued}, notifs, ok}
+        Con{W.wire_decode(String.drop(line, 6n)), queued}, notifs, ok}
 
 def step_notif(st: FS, +line: String) -> FS:
   match st:
     case FS{+tools, +cur, +msgs, +cfg, +inputs, +actions, +queued, +notifs, +ok}:
       FS{tools, cur, msgs, cfg, inputs, actions, queued,
-        Con{Api.wire_decode(String.drop(line, 6n)), notifs}, ok}
+        Con{W.wire_decode(String.drop(line, 6n)), notifs}, ok}
 
 def add_call(st: FS, +line: String) -> FS:
   match st:
@@ -296,7 +296,7 @@ def step_msg.build(role: Maybe<&2, T.Role>, injected: Bool, +text: String,
 
 def step_msg.role(role: Maybe<&2, T.Role>, injected: Bool, +text: String,
     st: FS) -> FS:
-  step_msg.build(role, injected, Api.unescape_nl(text), push_cur(st))
+  step_msg.build(role, injected, W.unescape_nl(text), push_cur(st))
 
 def step_msg.cut(sp: Maybe<&2, Nat>, injected: Bool, +r: String, st: FS) -> FS:
   match sp:
@@ -340,7 +340,7 @@ def step_cfg.sys(threshold: Nat, select: Nat, max_nulls: Nat, +sys: String,
   match st:
     case FS{+tools, +cur, +msgs, _, +inputs, +actions, +queued, +notifs, +ok}:
       FS{tools, cur, msgs,
-        Some{T.Cfg{threshold, select, max_nulls, Api.unescape_nl(sys),
+        Some{T.Cfg{threshold, select, max_nulls, W.unescape_nl(sys),
           List.reverse(&2, T.ToolDef, tools)}},
         inputs, actions, queued, notifs, ok}
 

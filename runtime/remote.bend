@@ -23,7 +23,7 @@
 import Base
 import ../core/types.bend as T
 import ../core/text.bend as Tx
-import ../core/api.bend as Api
+import ../core/wire.bend as W
 
 # ---- the parsed reply ----
 
@@ -50,7 +50,7 @@ def ser_call(+c: T.Call) -> String:
     case T.Call{+id, +name, +args}:
       String.append("\n  CALL ", String.append(U32.show(id),
         String.append(" ", String.append(name,
-          String.append(" : ", Api.wire_encode(args))))))
+          String.append(" : ", W.wire_encode(args))))))
 
 def ser_calls(calls: List<&2, T.Call>) -> String:
   match calls:
@@ -66,7 +66,7 @@ def ser_msg(m: T.Msg) -> String:
       # sees them back after parse_wire's unescape - flattening turned
       # a pasted multi-line block into one space-joined line)
       String.append("MSG ", String.append(role_str(role),
-        String.append(" : ", String.append(Api.escape_nl(text),
+        String.append(" : ", String.append(W.escape_nl(text),
           ser_calls(calls)))))
 
 def ser_msgs(ms: List<&2, T.Msg>) -> String:
@@ -158,7 +158,7 @@ def with_context.put(inject: Bool, +ctx: String, +request: String)
     case True{}:
       with_context.swap(request,
         String.append("MSG user : ",
-          String.append(Api.escape_nl(ctx), "
+          String.append(W.escape_nl(ctx), "
 END
 ")),
         with_context.last(request))
@@ -186,7 +186,7 @@ def parse_call.b(sp2: Maybe<&2, Nat>, +id_str: String, +rest: String)
     case Some{+q}:
       # the separator is " : " (space, colon, space) after the name
       T.Call{u32_or(U32.read(id_str)), String.take(rest, q),
-        Api.wire_decode(String.drop(rest, Nat.add(Nat.add(q, 2n), 1n)))}
+        W.wire_decode(String.drop(rest, Nat.add(Nat.add(q, 2n), 1n)))}
 
 def parse_call.a(sp: Maybe<&2, Nat>, +line: String) -> T.Call:
   match sp:
