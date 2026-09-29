@@ -115,6 +115,16 @@ pub(crate) fn locate(repl: &str) -> Result<(PathBuf, Via), String> {
     find(&Inputs::from_env(), repl, &|d, f| d.join(f).exists())
 }
 
+/// The app root of another executable (the TUI re-execs as the hub's
+/// version): a version dir, or the source tree of a dev build
+/// (`<tree>/rust/target/<profile>/bise` -> `<tree>`, never
+/// `rust/target/<profile>`). Neither the environment nor our own dev tree
+/// count: they are ours, not `exe`'s.
+pub(crate) fn of_exe(exe: &Path, repl: &str, has: &dyn Fn(&Path, &str) -> bool) -> Option<PathBuf> {
+    let inp = Inputs { env_root: None, exe: Some(exe.to_path_buf()), dev_tree: None };
+    find(&inp, repl, has).ok().map(|(root, _)| root)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,5 +179,15 @@ mod tests {
     fn nothing_found_says_how_to_fix() {
         let err = find(&inp(None, "/usr/local/bin/bise", None), "repl-live", &fs(&[])).unwrap_err();
         assert!(err.contains("set BISE_APP_ROOT"), "{err}");
+    }
+
+    #[test]
+    fn another_executables_root_is_its_version_dir_or_its_source_tree() {
+        let has = fs(&["/v/VERSION", "/v/repl-live", "/repo/repl-live", "/repo/rust/Cargo.toml"]);
+        assert_eq!(of_exe(Path::new("/v/bise"), "repl-live", &has), Some("/v".into()));
+        // a dev tree's debug build: the tree, not rust/target/debug
+        let got = of_exe(Path::new("/repo/rust/target/debug/bise"), "repl-live", &has);
+        assert_eq!(got, Some("/repo".into()));
+        assert_eq!(of_exe(Path::new("/x/bise"), "repl-live", &has), None);
     }
 }

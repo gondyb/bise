@@ -355,13 +355,19 @@ fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
     // version's TUI (the terminal is restored; the new one reconnects)
     if let Some(next) = bend_tui::take_reexec() {
         use std::os::unix::process::CommandExt;
-        // a reload (BISE-131) re-execs this same binary: same app root
+        // a reload (BISE-131) re-execs this same binary: same app root;
+        // another binary: its own (a version dir, or the source tree of a
+        // dev build: never its rust/target/<profile>, which has no REPL)
         let canon = |p: &std::path::Path| p.canonicalize().ok();
         let same = canon(std::path::Path::new(&next)).is_some() && canon(std::path::Path::new(&next)) == canon(&exe);
         let root = if same {
             root
         } else {
-            std::path::Path::new(&next).parent().map(|p| p.to_path_buf()).unwrap_or(root)
+            let next = std::path::Path::new(&next);
+            let next = canon(next).unwrap_or_else(|| next.to_path_buf());
+            approot::of_exe(&next, "repl-live", &|d, f| d.join(f).exists())
+                .or_else(|| next.parent().map(|p| p.to_path_buf()))
+                .unwrap_or(root)
         };
         let mut cmd = Command::new(&next);
         cmd.arg("switchboard")
