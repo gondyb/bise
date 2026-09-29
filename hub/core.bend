@@ -518,6 +518,7 @@ def waiter_reply(-o: M.St, +cx: X.Cx<o>, +w: X.Waiter, +m: M.Msg, +kind: String)
     J.kv("message_id", J.JStr{mid(M.Msg.id(m))}),
     J.kv("thread", J.JStr{String.append("t_", ns(M.Msg.thread(m)))}),
     J.kv("expects_reply", J.JBool{M.Msg.expect(m)}), J.kv("auto", J.JBool{M.Msg.auto(m)}),
+    J.kv("asked", J.JStr{mid(X.Waiter.msg(w))}),
     J.kv("message", J.JStr{M.Msg.text(m)})]))
   +cx4 = line(o, cx3, X.Waiter.agent(w), "msg-in", cat([M.Msg.from(m), " ", mid(M.Msg.id(m)), " : ", M.Msg.text(m)]))
   +still = any_waiter(X.R.waiters(rr(o, cx4)), X.Waiter.agent(w))
@@ -906,7 +907,9 @@ def question_text(q: Maybe<&2, M.Msg>) -> String:
       M.Msg.text(x)
 
 # main's feed shows every message between agents (including between two
-# tasks), so what happened stays readable: `msg : from → to : text`.
+# tasks), so what happened stays readable: `msg : from → to m_<n> : text`
+# (the id, BISE-110: the TUI hides main's `sb send` box when its message
+# shows; an older TUI reads `to m_<n>` as the receiver's name).
 # What main receives already shows as `msg-in` when delivered; main
 # answering a task's question shows as `answered` (level 2) instead.
 def feed_main(-o: M.St, +cx: X.Cx<o>, +m: M.Msg, +why: String) -> X.Cx<o>:
@@ -918,7 +921,7 @@ def feed_main(-o: M.St, +cx: X.Cx<o>, +m: M.Msg, +why: String) -> X.Cx<o>:
   pick_lazy(X.Cx<o>, answered,
     u => line_fields(o, cx, M.MAIN(), "answered", [to, question_text(q), M.Msg.text(m), why]),
     u => pick_lazy(X.Cx<o>, agents,
-      v => line(o, cx, M.MAIN(), "msg", cat([from, " → ", to, " : ", M.Msg.text(m)])),
+      v => line(o, cx, M.MAIN(), "msg", cat([from, " → ", to, " ", mid(M.Msg.id(m)), " : ", M.Msg.text(m)])),
       v => cx))
 
 def send.fed(-o: M.St, p: X.Cx<o> & SendR, +why: String) -> X.Cx<o> & SendR:

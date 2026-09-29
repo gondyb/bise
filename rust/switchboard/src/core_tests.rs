@@ -324,6 +324,8 @@ fn ask_waits_for_the_reply() {
     let r = reply(&fx, tok).expect("the wait ends");
     assert_eq!(r["type"], "reply");
     assert_eq!(r["message"], "v2");
+    // the question's id (BISE-110)
+    assert_eq!(r["asked"], format!("m_{}", id));
     assert_eq!(reply(&fx, tok2).unwrap()["delivery"], "delivered");
     assert_eq!(t.status("docs"), Status::Working);
     // main answered: no automatic reply at the end of its turn
@@ -1623,7 +1625,7 @@ fn peer_traffic_reaches_mains_feed() {
     t.spawn_task("b");
     let fx = send_v2(&mut t, "a", "b", "can you check logout?\nafter the fix", false, None, "");
     assert!(
-        lines_of(&fx, MAIN).contains(&"sb msg : a → b : can you check logout?\\nafter the fix"),
+        lines_of(&fx, MAIN).iter().any(|l| l.starts_with("sb msg : a → b m_") && l.ends_with(" : can you check logout?\\nafter the fix")),
         "{:?}",
         fx
     );
@@ -1642,7 +1644,7 @@ fn main_traffic_in_mains_feed_once() {
         leftover: false,
     });
     let fx = send_v2(&mut t, MAIN, "docs", "use v2", false, None, "");
-    assert!(lines_of(&fx, MAIN).contains(&"sb msg : main → docs : use v2"), "{:?}", fx);
+    assert!(lines_of(&fx, MAIN).iter().any(|l| l.starts_with("sb msg : main → docs m_") && l.ends_with(" : use v2")), "{:?}", fx);
     t.turn(MAIN, "ok");
     let fx = send_v2(&mut t, "docs", MAIN, "done", false, None, "");
     let main = lines_of(&fx, MAIN);
@@ -1708,7 +1710,7 @@ fn main_replying_to_a_non_question_is_msg() {
     t.turn(MAIN, "noted");
     let id = t.hub.st.msgs.values().filter(|m| m.from == "docs").map(|m| m.id).max().unwrap();
     let fx = send_v2(&mut t, MAIN, "docs", "thanks", false, Some(id), "");
-    assert!(lines_of(&fx, MAIN).contains(&"sb msg : main → docs : thanks"), "{:?}", fx);
+    assert!(lines_of(&fx, MAIN).iter().any(|l| l.starts_with("sb msg : main → docs m_") && l.ends_with(" : thanks")), "{:?}", fx);
 }
 
 #[test]

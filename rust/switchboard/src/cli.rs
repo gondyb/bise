@@ -306,10 +306,13 @@ pub fn render(cmd: &str, v: &Value) -> (bool, String) {
         "list" | "tasks" | "inspect" | "history" => s("text"),
         "send" => format!("sent {} to {} ({}, thread {})", s("message_id"), s("to"), s("delivery"), s("thread")),
         "ask" | "wait" => match s("type").as_str() {
+            // `answers m_8`: the question's id (BISE-110: the TUI hides
+            // an `sb ask` box whose question and reply both show)
             "reply" => format!(
-                "reply from {} ({}{}):\n{}",
+                "reply from {} ({}{}{}):\n{}",
                 s("from"),
                 s("message_id"),
+                if s("asked").is_empty() { String::new() } else { format!(", answers {}", s("asked")) },
                 if v.get("auto") == Some(&json!(true)) { ", automatic: the end of its turn" } else { "" },
                 s("message")
             ),
@@ -558,6 +561,11 @@ mod tests {
             &json!({"ok": true, "type": "reply", "from": "main", "message_id": "m_3", "message": "v2", "auto": false}),
         );
         assert!(ok && t.starts_with("reply from main (m_3):\nv2"), "{}", t);
+        let (_, t) = render(
+            "ask",
+            &json!({"ok": true, "type": "reply", "from": "docs", "message_id": "m_9", "asked": "m_8", "message": "v2", "auto": true}),
+        );
+        assert!(t.starts_with("reply from docs (m_9, answers m_8, automatic: the end of its turn):\nv2"), "{}", t);
         let (ok, t) = render(
             "wait",
             &json!({"ok": false, "error": "timeout", "hint": "end your turn"}),

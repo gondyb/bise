@@ -711,6 +711,11 @@ pub(super) fn draw_sb(app: &mut App, frame: &mut Frame) {
     }
 }
 
+/// A message id: `m_<digits>`.
+pub(crate) fn is_msg_id(s: &str) -> bool {
+    s.strip_prefix("m_").is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
 /// The synthetic lines of the hub (`sb <kind> : <text>`) as feed events.
 /// A hub line `sb <kind> : <text>` (hub line protocol, contract C2).
 /// v1 kinds keep working (an old transcript still renders); v2 adds:
@@ -756,15 +761,21 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
                 },
             }
         }
+        // `{from} → {to} m_<n> : {text}` (the id since BISE-110; an older
+        // line has none)
         "msg" => {
             let (head, body) = text.split_once(" : ").unwrap_or(("", text.as_str()));
             let (from, to) = head.split_once(" → ").unwrap_or((head, ""));
+            let (to, id) = match to.rsplit_once(' ') {
+                Some((t, id)) if is_msg_id(id) => (t, id),
+                _ => (to, ""),
+            };
             Ev::AgentMsg {
                 from: from.to_string(),
                 to: to.to_string(),
                 text: body.to_string(),
                 level: 3,
-                id: String::new(),
+                id: id.to_string(),
                 open: false,
                 fold: false,
             }
@@ -843,6 +854,9 @@ mod hub_line_tests {
     #[test]
     fn v2_kinds() {
         assert_eq!(p("msg : a → b : hi : there"), Some(msg("a", "b", "hi : there", 3, "")));
+        // BISE-110: the id after the receiver
+        assert_eq!(p("msg : main → docs m_12 : use v2"), Some(msg("main", "docs", "use v2", 3, "m_12")));
+        assert_eq!(p("msg : a → b m_x : hi"), Some(msg("a", "b m_x", "hi", 3, "")));
         assert_eq!(p("msg : a → b : one\\ntwo"), Some(msg("a", "b", "one\ntwo", 3, "")));
         assert_eq!(p("msg-you : docs : la v2"), Some(msg("docs", "you", "la v2", 2, "")));
         assert_eq!(
