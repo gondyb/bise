@@ -316,7 +316,8 @@ mv "$OLD_STATE" "$OLD_STATE.moved-$TS"
 say "state moved: $NEW_STATE (the old one is now $OLD_STATE.moved-$TS)"
 
 # 7. the hub on the new folder
-(cd "$vdir" && exec python3 -c 'import os,sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' \
+# the live hub is nobody's: an agent's stop or /drop never kills it (BISE-243)
+(cd "$vdir" && export BISE_OWNERS= && exec python3 -c 'import os,sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' \
    "$exe" sbd --workspace "$NEW" </dev/null >/dev/null 2>>"$NEW_STATE/hub.err" &)
 for _ in $(seq 1 100); do
   [ -S "$NEW_STATE/hub.sock" ] && [ -n "$(hub_pid "$NEW_STATE")" ] && break

@@ -88,7 +88,8 @@ fi
 
 # 4. start the hub from the version's app root, detached (own session)
 rm -f "$state/hub.sock"
-(cd "$vdir" && exec python3 -c 'import os,sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' \
+# the live hub is nobody's: an agent's stop or /drop never kills it (BISE-243)
+(cd "$vdir" && export BISE_OWNERS= && exec python3 -c 'import os,sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' \
    "$exe" sbd --workspace "$WS" </dev/null >/dev/null 2>>"$state/hub.err" &)
 for _ in $(seq 1 100); do
   [ -S "$state/hub.sock" ] && [ -n "$(hub_pid)" ] && break

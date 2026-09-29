@@ -212,6 +212,11 @@ struct Shell {
     /// The archived agents (dirs): one more is a /drop, whose worktree
     /// folders the hub cleans (BISE-230, `sweep`).
     archived: BTreeSet<String>,
+    /// This hub's id in the agents' process tags (BISE-243, `procs`).
+    proc_hub: String,
+    /// The stopped and archived agents (dirs): one more gets its
+    /// processes killed (BISE-243).
+    down: BTreeSet<String>,
 }
 
 /// What an agent whose turn was cut by a restart receives.
@@ -526,10 +531,71 @@ impl Shell {
             self.archived = now;
             self.sweep_worktrees(Some(names));
         }
+        // a stop or a /drop: the processes the agent started (BISE-243)
+        if !self.booting {
+            let now = self.down_dirs();
+            let new: BTreeSet<String> = now.difference(&self.down).cloned().collect();
+            self.down = now;
+            if !new.is_empty() {
+                self.reap_procs(Some(new));
+            }
+        }
     }
 
     fn archived_dirs(&self) -> BTreeSet<String> {
         self.hub.st.agents.values().filter(|a| a.lifecycle == Lifecycle::Archived).map(|a| a.dir.clone()).collect()
+    }
+
+    fn down_dirs(&self) -> BTreeSet<String> {
+        self.hub
+            .st
+            .agents
+            .values()
+            .filter(|a| matches!(a.lifecycle, Lifecycle::Archived | Lifecycle::Stopped))
+            .map(|a| a.dir.clone())
+            .collect()
+    }
+
+    /// Kill, off the loop, the processes of the agents in `dirs` started
+    /// until now (a REPL restored after this is not hit); `None`, at the
+    /// start: those of every agent that is not live (stopped, archived,
+    /// unknown), left by an earlier hub (BISE-243, `procs`).
+    fn reap_procs(&self, dirs: Option<BTreeSet<String>>) {
+        let hub = self.proc_hub.clone();
+        let live: BTreeSet<String> = self
+            .hub
+            .st
+            .agents
+            .values()
+            .filter(|a| !matches!(a.lifecycle, Lifecycle::Archived | Lifecycle::Stopped))
+            .map(|a| a.dir.clone())
+            .collect();
+        let paths = self.opts.paths.clone();
+        let before = crate::util::now_ms();
+        // their REPLs' sessions until now, forgotten once reaped
+        let reaped: Vec<String> = match &dirs {
+            Some(d) => d.iter().cloned().collect(),
+            None => self.hub.st.agents.values().filter(|a| !live.contains(&a.dir)).map(|a| a.dir.clone()).collect(),
+        };
+        let mut sessions = BTreeSet::new();
+        for d in reaped {
+            let f = paths.agent_dir(&d).join("repl.sids");
+            sessions.extend(crate::procs::read_sids(&f));
+            let _ = std::fs::remove_file(f);
+        }
+        std::thread::spawn(move || {
+            let (want, what) = match &dirs {
+                Some(d) => (
+                    crate::procs::Want::Dirs { dirs: d, before },
+                    d.iter().cloned().collect::<Vec<_>>().join(", "),
+                ),
+                None => (crate::procs::Want::NotLive(&live), "agents gone before this start".to_string()),
+            };
+            let hit = crate::procs::reap(&hub, &want, &sessions, Duration::from_secs(3));
+            if !hit.is_empty() {
+                log_line(&paths, &format!("processes of {} killed: {}", what, crate::procs::describe(&hit)));
+            }
+        });
     }
 
     /// Clean the task worktree folders (BISE-230, `sweep`) off the loop
@@ -877,6 +943,16 @@ impl Shell {
             .env(bise_catalog::CHOICE_ENV, adir.join("choice.toml"))
             // RFC 0002 §9: two dev servers must not fight for one port
             .env("SB_TASK", &a.name)
+            // what it starts is its: killed at its stop or /drop (BISE-243)
+            .env(
+                crate::procs::ENV,
+                crate::procs::for_repl(
+                    std::env::var(crate::procs::ENV).ok().as_deref(),
+                    &self.proc_hub,
+                    &dir,
+                    crate::util::now_ms(),
+                ),
+            )
             .env(
                 "SB_PORT_OFFSET",
                 self.hub
@@ -900,6 +976,9 @@ impl Shell {
                 None => cmd.env_remove(k),
             };
         }
+        // its own session: what it starts is found by session id too,
+        // even a macOS binary whose environment is hidden (BISE-243)
+        crate::procs::own_session(&mut cmd);
         if resume && cont && session.exists() {
             cmd.env("BEND_CONTINUE", "1");
         }
@@ -1412,6 +1491,12 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     let _ = std::fs::remove_file(paths.socket());
     let listener = UnixListener::bind(paths.socket())?;
     std::fs::write(paths.pid_file(), std::process::id().to_string())?;
+    // a hub one of its own agents relaunched is not that agent's: its
+    // sb-core, builds and REPLs do not carry that tag (BISE-243)
+    let proc_hub = crate::procs::hub_id(&paths.socket());
+    if let Ok(l) = std::env::var(crate::procs::ENV) {
+        std::env::set_var(crate::procs::ENV, crate::procs::without_hub(&l, &proc_hub));
+    }
     write_sb_link(&paths.bin_dir(), &opts.exe)?;
     // the switcher reads where this hub runs from (to come back to it)
     let _ = std::fs::write(paths.state.join("hub.root"), opts.app_root.to_string_lossy().as_bytes());
@@ -1515,6 +1600,8 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         small_broken: Default::default(),
         setup: None,
         archived: BTreeSet::new(),
+        proc_hub,
+        down: BTreeSet::new(),
     };
     // the role lines of an earlier hub (BISE-126)
     let dirs: Vec<String> = sh.hub.st.agents.values().map(|a| a.dir.clone()).collect();
@@ -1578,6 +1665,8 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     sh.migrate_the_rest();
     sh.archived = sh.archived_dirs();
     sh.sweep_worktrees(None);
+    sh.down = sh.down_dirs();
+    sh.reap_procs(None);
     crate::util::timing("boot done (REPLs spawned)");
 
     let mut keep_agents = false;
@@ -1669,6 +1758,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                     sh.opts.paths.agent_dir(&dir).join("repl.pid"),
                     pid.to_string(),
                 );
+                crate::procs::add_sid(&sh.opts.paths.agent_dir(&dir).join("repl.sids"), pid);
                 if sh.gens.get(&dir) == Some(&gen) {
                     sh.pids.insert(dir, (gen, pid));
                 } else {
@@ -1778,6 +1868,18 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         log_line(&paths, "hub stop");
         for (_, pid) in sh.pids.values() {
             kill_pid(*pid);
+        }
+        // for good: what every agent started goes with it (BISE-243)
+        let none = BTreeSet::new();
+        let mut sessions = BTreeSet::new();
+        for a in sh.hub.st.agents.values() {
+            let f = paths.agent_dir(&a.dir).join("repl.sids");
+            sessions.extend(crate::procs::read_sids(&f));
+            let _ = std::fs::remove_file(f);
+        }
+        let hit = crate::procs::reap(&sh.proc_hub, &crate::procs::Want::NotLive(&none), &sessions, Duration::from_secs(3));
+        if !hit.is_empty() {
+            log_line(&paths, &format!("processes of the agents killed: {}", crate::procs::describe(&hit)));
         }
     }
     let _ = std::fs::remove_file(paths.socket());

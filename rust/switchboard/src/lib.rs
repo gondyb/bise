@@ -26,6 +26,7 @@ pub mod core;
 pub mod daemon;
 pub mod model;
 pub mod paths;
+pub mod procs;
 pub mod prompts;
 pub mod role;
 pub mod router;
