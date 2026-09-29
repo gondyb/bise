@@ -67,7 +67,8 @@
   .controls { margin-top:12px; color:#8a8378; font-size:13px; }
   .controls button { font:inherit; background:#1f1c1a; color:var(--text); border:1px solid #3a3531; border-radius:4px; padding:3px 10px; cursor:pointer; margin-right:6px; }
   .gc { display:inline-block; width:1ch; text-align:center; }
-  .gloss { margin-top:6px; opacity:0; transition:opacity .8s; } .gloss.go { opacity:1; }
+  .gloss { margin-top:1lh; text-align:left; display:inline-block; } .gloss div { opacity:0; transition:opacity .5s; } .gloss.go div { opacity:1; }
+  .gloss div:nth-child(2) { transition-delay:.3s } .gloss div:nth-child(3) { transition-delay:.6s } .gloss div:nth-child(4) { transition-delay:.9s }
 </style>
 </head>
 <body>
@@ -77,7 +78,7 @@
   <!-- 1 welcome -->
   <div class="screen center on" data-s="0">
     <div class="big"><span id="w1"></span><span class="kiss" id="wk">:*</span></div>
-    <div class="dim gloss" id="wg">bise /beez/ · french: a kiss on the cheek. also a north wind.</div>
+    <div class="gloss" id="wg"><div><b>bise</b> <span class="dim">/beez/ · french, n.</span></div><div class="dim">1. a quick kiss on the cheek <span class="acc">:*</span></div><div class="dim">2. a brisk north wind</div><div>3. a terminal where your agents ship while you think</div></div>
     <div style="margin-top:2lh; min-height:1.6em" id="w2"></div>
     <div class="hint" id="w3"></div>
   </div>
@@ -107,18 +108,16 @@
     <div class="title">which model should do the work?</div>
     <div class="dim" style="margin:-1lh 0 1lh">i found a key in your environment.</div>
     <div class="opt sel" data-o>1 · use ANTHROPIC_API_KEY <span class="tag">found</span><div class="sub">claude, already set up. nothing to paste.</div></div>
-    <div class="opt" data-o>2 · paste another key<div class="sub">mistral, openai, anthropic, z.ai… ⚠ list depends on what ships</div></div>
-    <div class="opt" data-o>3 · sign in with the browser<div class="sub">⚠ not built</div></div>
+    <div class="opt" data-o>2 · paste another key<div class="sub">any provider: anthropic, openai, mistral, z.ai and the rest, all in the list.</div></div>
     <div class="hint"><span class="k">↑↓</span> choose · <span class="k">enter</span> ok</div>
     </div>
   </div>
 
-  <!-- 4 folder + honesty -->
+  <!-- 4 folder -->
   <div class="screen" data-s="3">
     <div class="col">
     <div class="title">i'll work in ~/lab/app <span class="dim" style="font-weight:400">· a git repo ✓</span></div>
-    <div class="b dim">all your agents share this folder and know about each other. no worktrees to merge.</div>
-    <div class="b">one honest thing: <span class="acc">agents run commands here without asking you.</span> <span class="dim">git is your safety net, so commit often. ⚠ an approval mode is not built yet.</span></div>
+    <div class="b dim">your agents share this folder and talk to each other. worktrees and conflicts: i handle them for you.</div>
     <div class="hint"><span class="k">enter</span> ok · <span class="k">o</span> another folder</div>
     </div>
   </div>
