@@ -525,7 +525,7 @@ pasted), `ctrl+v` (clipboard image) and an image picked in the `@` popup.
   (The label underneath can stay `[Image #1]`.)
 - **Strip above the composer** (the attachments section, §13) while
   images are attached, the file name only (never the path; cut at its end
-  with `…`; BISE-108): `▣ 1 login-mobile.png · 1170×2532 · 310 kB`, `▣ 2 clipboard · 2048×1536 ·
+  with `…`; BISE-108; the divider's flash too: `✓ attached ▣ 1 login-mobile.png`): `▣ 1 login-mobile.png · 1170×2532 · 310 kB`, `▣ 2 clipboard · 2048×1536 ·
   1.1 MB → resized to fit 2048`, and `backspace on a chip removes it`.
 - **History:** your line keeps the chips; one dim line under it gives each
   image's size. No picture drawn in the terminal for now (**later**: kitty /

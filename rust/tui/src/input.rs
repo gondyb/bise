@@ -561,7 +561,7 @@ fn pick(app: &mut App, c: &PopItem) {
         // an image is attached, not inserted as a path
         match crate::attach::pick_image(app, p) {
             Some(Ok(l)) => {
-                flash(app, format!("attached {l} {p}"));
+                flash(app, format!("attached {l} {}", crate::attach::file_name(p)));
                 app.popup_sel = 0;
                 return;
             }

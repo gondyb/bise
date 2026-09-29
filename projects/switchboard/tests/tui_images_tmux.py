@@ -75,10 +75,10 @@ def main():
         wait_composer("look ▣ 1")
         # the strip above the composer says what the chip is
         wait_screen("attached · backspace on a chip removes it")
-        # the file name only, never its path (book §13; the divider's
-        # flash '✓ attached ▣ 1 shots/red-blue.png' may still name the path)
-        strip = [r for r in wait_screen("▣ 1 red-blue.png").splitlines() if "▣ 1 red-blue.png" in r]
-        assert strip and "shots/" not in strip[0], strip
+        # the file name only, never its path (book §13), in the strip and
+        # in the divider's flash '✓ attached ▣ 1 red-blue.png'
+        sc = wait_screen("▣ 1 red-blue.png")
+        assert "shots/red-blue" not in sc, sc
         wait_screen("1×1 · 70 B")
         # a dropped file: the terminal pastes its shell-escaped path
         paste(drop.replace(" ", "\\ ") + " ")
