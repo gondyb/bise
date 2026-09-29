@@ -17,12 +17,18 @@
 //!   the bottom, a key while the help or the terminal pane is up), a
 //!   `/` `@` `$` popup, and anything that needs you (a card, a message
 //!   to you, a confirm, an error).
-//! - In zen, every cell's text is mixed [`DEPTH`] (45 %) toward its own
+//! - In zen, the chrome's text is mixed [`DEPTH`] (45 %) toward its own
 //!   background, over [`FADE`] (250 ms) in [`STEPS`] steps, out the same
-//!   way. Kept as they are: the composer's text and cursor, the
-//!   divider's label, the card box, and every cell in the accent or the
-//!   error color (what needs you). The gust slows to half speed and each
-//!   of its tones drops one step; the tick pulses hold still.
+//!   way: the header (frame title, counts), the frame lines, the agents
+//!   panel (agents, cards list), the divider's rule and right side, the
+//!   queue and attachments, the key bar. Kept as they are: the history
+//!   you read (BISE-132: the feed area, from its first row to the
+//!   divider; its new lines still come), the composer's text and cursor,
+//!   the divider's label, the card box, and every cell in the accent or
+//!   the error color (what needs you). The other agents' gusts (panel,
+//!   header) stand still (BISE-132); the gust of the agent in view (the
+//!   divider's label) slows to half speed, each tone one step down; the
+//!   tick pulses hold still.
 //! - `BISE_REDUCE_MOTION`: no ramp (one step in, one out). `NO_COLOR`: no
 //!   mixed colors: the terminal's dim attribute on the faded cells.
 //!   `BISE_ASCII` changes nothing here.
@@ -59,8 +65,8 @@ pub(crate) struct Zen {
     pub(crate) no_color: bool,
     /// the "needs you" count last seen (a change breaks zen)
     calls: u64,
-    /// what the last frame keeps as is (composer text, divider label,
-    /// card box); set by the draw
+    /// what the last frame keeps as is (the history, composer text,
+    /// divider label, card box); set by the draw
     pub(crate) keep: Vec<Rect>,
 }
 

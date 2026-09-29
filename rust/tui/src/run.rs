@@ -338,6 +338,8 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
         pump_voice(app);
         let zen = app.zen.active(std::time::Instant::now());
         app.motion = crate::gust::motion(app.focus_lost, last_draw, reduce_motion, zen);
+        // zen (BISE-132): the other agents' gusts stand still
+        app.motion_away = if zen { crate::gust::Motion::Still } else { app.motion };
         let t_draw = std::time::Instant::now();
         let drawn = crash::guarded(|| {
             // BISE-92: the terminal's own background follows the theme
@@ -426,7 +428,8 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
 #[cfg(test)]
 mod zen_tests {
     //! BISE-121: zen enters and leaves on the loop's real events, and
-    //! fades the screen but the composer's text, the label, what needs you.
+    //! fades the chrome but the history (BISE-132), the composer's text,
+    //! the label, what needs you.
     use super::*;
     use crate::zen::Input;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
@@ -613,6 +616,9 @@ mod zen_tests {
         };
         let in_docs: Setup = |app| crate::sb::focus(app, "docs");
         let pending: Setup = |app| app.pending = true;
+        // the `$` popup lists the skills index: one skill, whatever the
+        // machine's index holds
+        crate::skills::TEST_INDEX.with(|t| *t.borrow_mut() = Some(crate::skills::parse_index("bend\tthe Bend guide\t/x/SKILL.md\n")));
         let cases: Vec<(&str, KeyCode, KeyModifiers, bool, bool, Setup)> = vec![
             // (name, code, mods, with cards, text in the composer, setup)
             ("⏎ send", KeyCode::Enter, n, false, true, none),
@@ -714,7 +720,7 @@ mod zen_tests {
     }
 
     #[test]
-    fn zen_fades_all_but_the_typed_text_the_label_and_the_accent() {
+    fn zen_fades_the_chrome_but_the_history_the_typed_text_the_label_and_the_accent() {
         let mut app = app_with_agents();
         let calm = screen(&mut app);
         let t = Instant::now() - std::time::Duration::from_secs(1);
@@ -737,13 +743,30 @@ mod zen_tests {
         let lx = (0..120).find(|&x| zen[(x, label_y)].symbol() == "y").unwrap();
         let row = |b: &Buffer| (lx - 1..lx + 11).map(|x| b[(x, label_y)].clone()).collect::<Vec<_>>();
         assert_eq!(row(&zen), row(&plain));
-        // the history's text: 45 % toward its ground
-        let (hx, hy) = (0..36)
-            .flat_map(|y| (0..120).map(move |x| (x, y)))
-            .find(|&(x, y)| plain[(x, y)].symbol() == "s" && y < label_y)
-            .unwrap();
-        assert_eq!(Some(zen[(hx, hy)].fg), crate::zen::toward(plain[(hx, hy)].fg, plain[(hx, hy)].bg, depth));
-        assert_ne!(zen[(hx, hy)].fg, plain[(hx, hy)].fg);
+        // BISE-132: the history you read, as it was: every cell of the
+        // feed area, from the history's first row to the divider
+        let cols = crate::layout::cols(120, 36);
+        let rows = crate::layout::rows(120, 36);
+        let feed = |b: &Buffer| {
+            (rows.body..label_y).flat_map(|y| (cols.feed_x..cols.feed_x + cols.feed_w).map(move |x| (x, y))).map(|p| b[p].clone()).collect::<Vec<_>>()
+        };
+        assert_eq!(feed(&zen), feed(&plain));
+        assert!(feed(&plain).iter().map(|c| c.symbol()).collect::<String>().contains("ship it"));
+        // the chrome: 45 % toward its ground (the panel's rows, the header,
+        // the key bar)
+        let fades = |x: u16, y: u16| zen[(x, y)].fg == crate::zen::toward(plain[(x, y)].fg, plain[(x, y)].bg, depth).unwrap() && zen[(x, y)].fg != plain[(x, y)].fg;
+        let find = |s: &str, from_x: u16| {
+            (0..36)
+                .flat_map(|y| (from_x..120).map(move |x| (x, y)))
+                .find(|&(x, y)| (x..(x + s.chars().count() as u16).min(120)).map(|x| plain[(x, y)].symbol()).collect::<String>() == s)
+                .unwrap()
+        };
+        let panel_x = cols.panel.unwrap().x;
+        let (dx, dy) = find("docs", panel_x);
+        assert!(fades(dx, dy), "the panel's agent row");
+        assert!((0..120).any(|x| fades(x, 0)), "the header");
+        let keybar = (label_y + 1..36).rev().find(|&y| (0..120).any(|x| plain[(x, y)].symbol() != " ")).unwrap();
+        assert!((0..120).any(|x| fades(x, keybar)), "the key bar");
         // every accent cell (what needs you, the agent you talk to) kept;
         // no ground moves; nothing else changed but colors
         let mut faded = 0;

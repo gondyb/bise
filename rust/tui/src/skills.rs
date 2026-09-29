@@ -56,8 +56,19 @@ fn index_path() -> Option<PathBuf> {
 type Cache = Option<(PathBuf, Option<SystemTime>, Vec<Skill>)>;
 static CACHE: Mutex<Cache> = Mutex::new(None);
 
+#[cfg(test)]
+thread_local! {
+    /// A test's own index (this thread only): the real one is the
+    /// machine's, maybe empty.
+    pub(crate) static TEST_INDEX: std::cell::RefCell<Option<Vec<Skill>>> = const { std::cell::RefCell::new(None) };
+}
+
 /// The skills of the index, re-read when the file changes.
 pub(crate) fn index() -> Vec<Skill> {
+    #[cfg(test)]
+    if let Some(list) = TEST_INDEX.with(|t| t.borrow().clone()) {
+        return list;
+    }
     let Some(path) = index_path() else {
         return Vec::new();
     };

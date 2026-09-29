@@ -94,7 +94,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let col = |r: Rect| Rect { x: area.x + cols.x0, width: cols.col_w.min(area.width.saturating_sub(cols.x0)), ..r };
     let short = cols.panel.is_none();
     // the working count's gust: 5 cells, 3 or 1 as the screen narrows (book §9)
-    let gust = crate::gust::mark(app.motion, crate::gust::header_size(area.width));
+    let gust = crate::gust::mark(app.motion_away, crate::gust::header_size(area.width));
     // the frame (or the bare header row)
     let sb = &app.sb;
     if cols.framed {
@@ -199,9 +199,11 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     draw_composer(app, frame, composer, inner_w, rows.pad_top.min(composer_h), rows.pad_bottom);
     let text = Rect { y: app.composer.y, height: app.composer.h as u16, ..body_rect };
     // zen (BISE-121) keeps the composer's text, the divider's label and
-    // the card box as they are
+    // the card box as they are, and the history you read (BISE-132): the
+    // feed area, from the history's first row to the divider
     let typed = Rect { x: app.composer.x, y: app.composer.y, width: app.composer.w as u16, height: app.composer.h as u16 };
-    app.zen.keep = vec![typed.intersection(area), label_rect];
+    let history = Rect { x: area.x + cols.feed_x, width: cols.feed_w, y: body.y, height: divider_y.saturating_sub(body.y) };
+    app.zen.keep = vec![typed.intersection(area), label_rect, history.intersection(area)];
     if card_h > 0 {
         sb::draw_card(app, frame, col(card));
         app.zen.keep.push(col(card).intersection(area));

@@ -181,7 +181,7 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usi
     let g = if !a.main && needs_you(sb, a) {
         (G_NEEDS_YOU, accent())
     } else {
-        glyph(&a.status, app.tick, app.motion)
+        glyph(&a.status, app.tick, app.motion_away)
     };
     let name_style = if focused {
         Style::default().fg(accent()).add_modifier(Modifier::BOLD)
@@ -1096,7 +1096,7 @@ mod tests {
         sb.agents.push(agent("ideas", "idle"));
         let mut term = Terminal::new(TestBackend::new(28, 6)).unwrap();
         let mut draw = |app: &mut App, m: Motion| {
-            app.motion = m;
+            (app.motion, app.motion_away) = (m, m);
             term.draw(|f| draw_panel(app, f, f.area())).unwrap();
             (screen(&term), term.backend().buffer().clone())
         };
@@ -1131,6 +1131,15 @@ mod tests {
         assert!(row_of(&rows, "ideas").starts_with(&format!(" 1 {} ideas", G_IDLE)));
         let (_, b) = draw(&mut app, Motion::Frame(1));
         assert!(a.diff(&b).is_empty());
+        // zen (BISE-132): the panel's gust stands still while the one of
+        // the agent in view (the divider's label) is calm
+        app.sb.agents[0].status = "working".into();
+        app.motion = Motion::Calm(3);
+        app.motion_away = Motion::Still;
+        term.draw(|f| draw_panel(&app, f, f.area())).unwrap();
+        assert_eq!(row_of(&screen(&term), "main"), format!(" 0 {} main {}", W1.still.0, G_MAIN));
+        app.sb.focus = "main".into();
+        assert_eq!(viewed_working(&app).map(|w| w.motion), Some(Motion::Calm(3)));
     }
 
     /// Numbers stay while an agent lives: a drop does not renumber the

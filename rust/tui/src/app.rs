@@ -74,6 +74,9 @@ pub(crate) struct App {
     /// the working gust's motion (BISE-107): set by the draw loop, still
     /// until then (and in tests)
     pub(crate) motion: crate::gust::Motion,
+    /// the motion of what is not the agent in view (the panel's gusts,
+    /// the header's): still in zen (BISE-132), else `motion`
+    pub(crate) motion_away: crate::gust::Motion,
     /// the terminal lost the focus (focus reporting): the gust stands still
     pub(crate) focus_lost: bool,
     /// zen while you type (BISE-121): fed by the loop, read by the draw
@@ -201,6 +204,7 @@ impl App {
             history: Vec::new(),
             tick: 0,
             motion: crate::gust::Motion::Still,
+            motion_away: crate::gust::Motion::Still,
             focus_lost: false,
             zen: crate::zen::Zen::default(),
             key_in_composer: false,
