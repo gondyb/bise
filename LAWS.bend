@@ -2091,32 +2091,169 @@ law deferred_reads_program_acked_result:
 # reasoning continuity across tool calls); an unsigned one stays
 # stripped.
 
-# LAW: the alias resolves and the style follows the model name.
+# The provider registry (runtime/provider-pure.bend, BISE-141): a model
+# id is "provider/model"; the provider gives the family, the base_url
+# and the key env; the models file Rust writes (BISE_MODELS_FILE) sits
+# over the entries built in; a bare name is an alias, else the legacy
+# guess (claude* -> foundry, else mistral). Pv.resolve(BISE_MODEL,
+# BEND_MODEL, BISE_ROLE, config.toml, models file, BEND_PROVIDER_URL).
+
+# LAW: today's two setups resolve as before, with no models file: the
+# default and the opus-5.5 alias go to the foundry proxy (Messages API,
+# its key), a bare non-claude name to Mistral (Chat, its key).
+law provider_default_is_foundry:
+  {Pv.resolve("", "", "", "", "", "", "")
+    == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
+      "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
+      "ANTHROPIC_FOUNDRY_API_KEY"}} : Pv.Resolved}
+
 law provider_resolves_alias:
-  {Pv.resolve_model("opus-5.5") == "claude-opus-5-5" : String}
+  {Pv.resolve("", "", "", "", "model = \"opus-5.5\"", "", "")
+    == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
+      "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
+      "ANTHROPIC_FOUNDRY_API_KEY"}} : Pv.Resolved}
 
-law provider_opus_is_anthropic:
-  {Pv.model_style("claude-opus-5-5") == Api.Anthropic{} : Api.Style}
+law provider_legacy_claude_is_foundry:
+  {Pv.resolve("", "claude-opus-5-5", "", "", "", "", "")
+    == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
+      "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
+      "ANTHROPIC_FOUNDRY_API_KEY"}} : Pv.Resolved}
 
-law provider_glm_is_openai:
-  {Pv.model_style("zai-glm-5-3") == Api.OpenAI{} : Api.Style}
+law provider_legacy_glm_is_mistral:
+  {Pv.resolve("", "zai-glm-5-3", "", "", "", "", "")
+    == Pv.ROk{Pv.Prov{"mistral", "zai-glm-5-3", Api.OpenAI{},
+      "https://api.mistral.ai/v1/chat/completions", "MISTRAL_API_KEY"}} : Pv.Resolved}
 
-# LAW: the provider table carries the right api_base and key env.
-law provider_anthropic_base:
-  {Pv.model_url(Api.Anthropic{})
-    == "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages"
-    : String}
+# LAW: a model the registry does not list works on its provider's
+# defaults.
+law provider_unlisted_model_works:
+  {Pv.resolve("", "", "", "", "model = \"mistral/brand-new-7b\"", "", "")
+    == Pv.ROk{Pv.Prov{"mistral", "brand-new-7b", Api.OpenAI{},
+      "https://api.mistral.ai/v1/chat/completions", "MISTRAL_API_KEY"}} : Pv.Resolved}
 
-law provider_openai_base:
-  {Pv.model_url(Api.OpenAI{})
-    == "https://api.mistral.ai/v1/chat/completions" : String}
+# LAW: the choice order (as rust/catalog's Setup): main = BISE_MODEL >
+# BEND_MODEL > config model; a sub-agent (BISE_ROLE=agent) =
+# BISE_AGENT_MODEL > config agent_model > the main order.
+law provider_bise_model_first:
+  {Pv.shown_model(Pv.resolve("mistral/a", "mistral/b", "mistral/e", "main",
+      "model = \"mistral/c\"\nagent_model = \"mistral/d\"", "", ""))
+    == "a" : String}
 
-law provider_anthropic_key_env:
-  {Pv.model_key_env(Api.Anthropic{}) == "ANTHROPIC_FOUNDRY_API_KEY"
-    : String}
+law provider_bend_model_over_config:
+  {Pv.shown_model(Pv.resolve("", "mistral/b", "mistral/e", "main",
+      "model = \"mistral/c\"\nagent_model = \"mistral/d\"", "", ""))
+    == "b" : String}
 
-law provider_openai_key_env:
-  {Pv.model_key_env(Api.OpenAI{}) == "MISTRAL_API_KEY" : String}
+law provider_agent_env_first:
+  {Pv.shown_model(Pv.resolve("mistral/a", "mistral/b", "mistral/e", "agent",
+      "model = \"mistral/c\"\nagent_model = \"mistral/d\"", "", ""))
+    == "e" : String}
+
+law provider_agent_model_for_agents:
+  {Pv.shown_model(Pv.resolve("mistral/a", "mistral/b", "", "agent",
+      "model = \"mistral/c\"\nagent_model = \"mistral/d\"", "", ""))
+    == "d" : String}
+
+law provider_agent_follows_main:
+  {Pv.shown_model(Pv.resolve("", "mistral/b", "", "agent", "model = \"mistral/c\"", "", ""))
+    == "b" : String}
+
+law provider_agent_model_not_for_main:
+  {Pv.shown_model(Pv.resolve("", "", "mistral/e", "main", "model = \"mistral/c\"\nagent_model = \"mistral/d\"", "", ""))
+    == "c" : String}
+
+# LAW: a provider of the models file: its family, base_url (a trailing
+# slash dropped) + the family's endpoint, its key env; the model id
+# keeps every '/' after the first.
+law provider_from_models_file:
+  {Pv.resolve("", "", "", "", "model = \"work/qwen/q3-coder\"",
+      "[providers.work]\napi = \"openai-chat\"\nbase_url = \"https://llm.corp.example/v1/\"\nkey_env = \"CORP_KEY\"\nneeds = \"\"",
+      "")
+    == Pv.ROk{Pv.Prov{"work", "qwen/q3-coder", Api.OpenAI{},
+      "https://llm.corp.example/v1/chat/completions", "CORP_KEY"}}
+    : Pv.Resolved}
+
+# LAW: a model's own key wins over its provider's (a model on another
+# family), and key_env = "" (a local server) needs no key.
+law provider_model_key_wins:
+  {Pv.resolve("", "", "", "", "model = \"local/m\"",
+      "[providers.local]\napi = \"openai-chat\"\nbase_url = \"http://localhost:1234/v1\"\nkey_env = \"\"\n[models.\"local/m\"]\napi = \"anthropic\"",
+      "")
+    == Pv.ROk{Pv.Prov{"local", "m", Api.Anthropic{},
+      "http://localhost:1234/v1/messages", ""}} : Pv.Resolved}
+
+# LAW: the models file wins over the built-in entries, key by key; its
+# aliases and default_model are used.
+law provider_file_over_builtin:
+  {Pv.resolve("", "", "", "", "",
+      "default_model = \"big\"\n[aliases]\n\"big\" = \"foundry/claude-x\"\n[providers.foundry]\nbase_url = \"https://api.anthropic.com/v1\"",
+      "")
+    == Pv.ROk{Pv.Prov{"foundry", "claude-x", Api.Anthropic{},
+      "https://api.anthropic.com/v1/messages",
+      "ANTHROPIC_FOUNDRY_API_KEY"}} : Pv.Resolved}
+
+# LAW: BEND_PROVIDER_URL (the tests' fake provider) wins over the URL.
+law provider_url_env_wins:
+  {Pv.resolve("", "mistral-small-latest", "", "", "", "",
+      "http://127.0.0.1:9/v1/chat/completions")
+    == Pv.ROk{Pv.Prov{"mistral", "mistral-small-latest", Api.OpenAI{},
+      "http://127.0.0.1:9/v1/chat/completions", "MISTRAL_API_KEY"}}
+    : Pv.Resolved}
+
+# LAW: a long file is read to its end (a pair line takes 3 steps of the
+# walk: the fuel counts them; the models file has ~350 lines).
+law config_reads_long_file:
+  {Cf.cfg_get("[providers.p0]\nbase_url = \"u0\"\n[providers.p1]\nbase_url = \"u1\"\n[providers.p2]\nbase_url = \"u2\"\n[providers.p3]\nbase_url = \"u3\"\n[providers.p4]\nbase_url = \"u4\"\n[providers.p5]\nbase_url = \"u5\"\n[providers.p6]\nbase_url = \"u6\"\n[providers.p7]\nbase_url = \"u7\"\n[providers.p8]\nbase_url = \"u8\"\n[providers.p9]\nbase_url = \"u9\"\n[providers.p10]\nbase_url = \"u10\"\n[providers.p11]\nbase_url = \"u11\"", "providers.p11.base_url")
+    == Some{"u11"} : Maybe<&2, String>}
+
+# LAW: what does not resolve is an error at call time, with its reason.
+law provider_unknown_is_error:
+  {Pv.resolve("nope/m", "", "", "", "", "", "")
+    == Pv.RErr{"nope/m", "unknown provider \"nope\" (model \"nope/m\"): add a [providers.nope] table (base_url, key_env, api) to config.toml"}
+    : Pv.Resolved}
+
+law provider_needs_is_error:
+  {Pv.resolve("az/m", "", "", "", "",
+      "[providers.az]\napi = \"openai-chat\"\nbase_url = \"https://x\"\nneeds = \"BISE-149\"", "")
+    == Pv.RErr{"az/m", "model \"az/m\": provider \"az\" is not supported yet (needs BISE-149)"}
+    : Pv.Resolved}
+
+law provider_unknown_family_is_error:
+  {Pv.resolve("g/m", "", "", "", "",
+      "[providers.g]\napi = \"gemini\"\nbase_url = \"https://x\"", "")
+    == Pv.RErr{"g/m", "model \"g/m\": api \"gemini\" of provider \"g\" is not supported yet"}
+    : Pv.Resolved}
+
+# LAW: a family's api name reads back as that family.
+law family_name_roundtrip:
+  for st: Api.Style
+  {Api.style_of_api(Api.api_name(st)) == Some{st} : Maybe<&2, Api.Style>}
+
+# LAW: the headers of each family, in order (the bytes of today's
+# calls); no key, no auth header.
+law family_headers_anthropic:
+  {Api.headers(Api.Anthropic{}, "k")
+    == [Api.Hdr{"x-api-key", "k"},
+      Api.Hdr{"anthropic-version", "2023-06-01"},
+      Api.Hdr{"anthropic-beta",
+        "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31,context-1m-2025-08-07"},
+      Api.Hdr{"Content-Type", "application/json"}] : List<&2, Api.Hdr>}
+
+law family_headers_openai:
+  {Api.headers(Api.OpenAI{}, "k")
+    == [Api.Hdr{"Authorization", "Bearer k"},
+      Api.Hdr{"Content-Type", "application/json"}] : List<&2, Api.Hdr>}
+
+law family_headers_no_key:
+  {Api.headers(Api.OpenAI{}, "")
+    == [Api.Hdr{"Content-Type", "application/json"}] : List<&2, Api.Hdr>}
+
+# LAW: the Messages API streams, OpenAI Chat answers whole (for now).
+law family_anthropic_streams:
+  {Api.streams(Api.Anthropic{}) == True{} : Bool}
+
+law family_openai_whole:
+  {Api.streams(Api.OpenAI{}) == False{} : Bool}
 
 # LAW: the style dispatch routes the body and the reply to the right
 # adapter - the OpenAI side byte-identical to api_body/reply_of.

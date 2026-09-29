@@ -24,7 +24,6 @@
 # Blocks stream one at a time (start, deltas, stop), so a delta always
 # belongs to the block started last.
 import Base
-import ./api.bend as Api
 import ./wire.bend as W
 import ./anthropic.bend as Anth
 import ./text.bend as Tx
@@ -339,7 +338,7 @@ def reply(+sse: String) -> String:
 def reply_any.pick(is_json: Bool, +body: String) -> String:
   match is_json:
     case True{}:
-      Api.reply_of_for(Api.Anthropic{}, 200, body)
+      Anth.reply_anth_of(200, body)
     case False{}:
       reply(body)
 

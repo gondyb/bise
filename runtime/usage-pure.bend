@@ -9,7 +9,6 @@
 import Base
 import ../core/api.bend as Api
 import ../core/wire.bend as W
-import ../core/anth-stream.bend as As
 import ../vendor/json.bend as J
 
 def usage_line.fields(+inp: Nat, +out: Nat, +cr: Nat, +cw: Nat,
@@ -18,51 +17,34 @@ def usage_line.fields(+inp: Nat, +out: Nat, +cr: Nat, +cw: Nat,
     " out=", Nat.show(out), " cache_read=", Nat.show(cr),
     " cache_write=", Nat.show(cw)])
 
-# Anthropic Messages: input_tokens counts only the uncached part
-def usage_line.anth(+u: J.Json, +model: String) -> String:
-  +cr = J.get_num_or(u, "cache_read_input_tokens", 0n)
-  +cw = J.get_num_or(u, "cache_creation_input_tokens", 0n)
-  usage_line.fields(
-    Nat.add(J.get_num_or(u, "input_tokens", 0n), Nat.add(cr, cw)),
-    J.get_num_or(u, "output_tokens", 0n), cr, cw, model)
-
-# OpenAI-compatible: prompt_tokens already counts the cached part
-def usage_line.oai(+u: J.Json, +model: String) -> String:
-  usage_line.fields(J.get_num_or(u, "prompt_tokens", 0n),
-    J.get_num_or(u, "completion_tokens", 0n),
-    J.get_num_or(W.field_or(u, "prompt_tokens_details", J.JNull{}),
-      "cached_tokens", 0n),
-    0n, model)
-
-def usage_line.style(st: Api.Style, +u: J.Json, +model: String) -> String:
-  match st:
-    case Api.OpenAI{}:
-      usage_line.oai(u, model)
-    case Api.Anthropic{}:
-      usage_line.anth(u, model)
+# the family reads its own usage object (core/api.bend, Api.usage_of)
+def usage_line.of(u: Api.Usage, +model: String) -> String:
+  match u:
+    case Api.Usage{+inp, +out, +cr, +cw}:
+      usage_line.fields(inp, out, cr, cw, model)
 
 def usage_line.usage(u: J.Json, st: Api.Style, +model: String) -> String:
   match u:
     case J.JObj{+kvs}:
-      usage_line.style(st, J.JObj{kvs}, model)
+      usage_line.of(Api.usage_of(st, J.JObj{kvs}), model)
     case _:
       ""
 
-# the body: a whole JSON reply carries "usage"; an Anthropic stream
-# (Server-Sent Events) spreads it over its events (As.usage)
-def usage_line.body(is_json: Bool, +body: String) -> J.Json:
+# the body: a whole JSON reply carries "usage"; a stream (Server-Sent
+# Events) spreads it over its events (the family's Api.stream_usage)
+def usage_line.body(is_json: Bool, st: Api.Style, +body: String) -> J.Json:
   match is_json:
     case True{}:
       W.field_or(W.parse_json(body), "usage", J.JNull{})
     case False{}:
-      As.usage(body)
+      Api.stream_usage(st, body)
 
-def usage_line.ok(ok: Bool, st: Api.Style, +model: String, +body: String)
+def usage_line.ok(ok: Bool, +st: Api.Style, +model: String, +body: String)
     -> String:
   match ok:
     case True{}:
       usage_line.usage(
-        usage_line.body(String.starts_with(String.trim(body), "{"), body),
+        usage_line.body(String.starts_with(String.trim(body), "{"), st, body),
         st, model)
     case False{}:
       ""

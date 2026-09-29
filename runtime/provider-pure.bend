@@ -7,59 +7,257 @@
 import Base
 import ../core/api.bend as Api
 import ../core/text.bend as Tx
+import ../core/config.bend as Cf
 
-# ---- the provider table (the vibe config.toml mirror) ----
-# A provider carries an api_base, a key env and an api_style; a model
-# points at one. The active model today is opus-5.5: alias
-# "opus-5.5" -> name "claude-opus-5-5" on foundry-anthropic (the
-# Messages API through the foundry proxy); the Mistral provider keeps
-# the OpenAI-compatible mapping the laws pinned with GLM.
+# ---- the provider registry ----
+# A model id is "provider/model" (the model may hold '/' itself:
+# "openrouter/anthropic/claude-x"). A provider carries its family
+# (`api`, core/api.bend: every per-family fact lives there), a base_url
+# and the env var of its key (`key_env`, "" = no key: a local server).
+#
+# The entries come from the models file Rust writes before it spawns
+# the REPL (BISE_MODELS_FILE: bise's built-in catalog merged with the
+# user's config.toml, rust/catalog, BISE-142), over the entries built
+# in below (so an old binary without the file keeps today's two
+# setups). The file's shape (core/config.bend paths, quotes kept):
+#   default_model = "foundry/claude-opus-5-5"
+#   [aliases]            "opus-5.5" = "foundry/claude-opus-5-5"
+#   [providers.<p>]      api, base_url, key_env, needs (+ limits)
+#   [models."<p>/<id>"]  only the keys that differ from its provider
+# A key of a model is models."p/id".<k>, else providers.p.<k>.
+#
+# The model of a call (the same order as the Rust side, rust/catalog's
+# Setup; an empty env var counts as unset):
+#   main:  BISE_MODEL > BEND_MODEL > model (config.toml) > default_model
+#   agent: BISE_AGENT_MODEL > agent_model (config.toml) > the main order
+# (agent: BISE_ROLE=agent, the hub's sub-agent REPLs). A name without
+# '/' is an alias, else the legacy guess: claude* -> foundry/<name>,
+# anything else -> mistral/<name>.
 
-def resolve_model.pick(is_alias: Bool, +name: String) -> String:
-  match is_alias:
-    case True{}:
-      "claude-opus-5-5"
-    case False{}:
-      name
+def builtin() -> List<&2, Cf.KV>:
+  [Cf.KV{"default_model", "foundry/claude-opus-5-5"},
+    Cf.KV{"aliases.\"opus-5.5\"", "foundry/claude-opus-5-5"},
+    Cf.KV{"providers.foundry.api", "anthropic"},
+    Cf.KV{"providers.foundry.base_url",
+      "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1"},
+    Cf.KV{"providers.foundry.key_env", "ANTHROPIC_FOUNDRY_API_KEY"},
+    Cf.KV{"providers.mistral.api", "openai-chat"},
+    Cf.KV{"providers.mistral.base_url", "https://api.mistral.ai/v1"},
+    Cf.KV{"providers.mistral.key_env", "MISTRAL_API_KEY"}]
 
-def resolve_model(+name: String) -> String:
-  resolve_model.pick(String.eq(name, "opus-5.5"), name)
+# the models file's entries win over the built-in ones (first match)
+def registry(+file: String) -> List<&2, Cf.KV>:
+  List.append(&2, Cf.KV, Cf.parse_toml(file), builtin())
 
-def model_style.pick(is_claude: Bool) -> Api.Style:
-  match is_claude:
-    case True{}:
-      Api.Anthropic{}
-    case False{}:
-      Api.OpenAI{}
+# ---- the model name ----
 
-def model_style(+model: String) -> Api.Style:
-  model_style.pick(String.starts_with(model, "claude"))
-
-def model_url(st: Api.Style) -> String:
-  match st:
-    case Api.Anthropic{}:
-      "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages"
-    case Api.OpenAI{}:
-      "https://api.mistral.ai/v1/chat/completions"
-
-# BEND_PROVIDER_URL=<url> points the call elsewhere (a local fault
-# injector in the tests); unset, the provider table decides
-def provider_url.pick(empty: Bool, +env: String, st: Api.Style) -> String:
+def first_set.pick(empty: Bool, +x: String, +later: String) -> String:
   match empty:
     case True{}:
-      model_url(st)
+      later
+    case False{}:
+      x
+
+# the first non-empty string of the list ("" when none is)
+def first_set(xs: List<&2, String>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case Con{+x, +rest}:
+      first_set.pick(String.is_empty(x), x, first_set(rest))
+
+def cfg_str(kvs: List<&2, Cf.KV>, +key: String) -> String:
+  Cf.cfg_or(Cf.cfg_find(kvs, key), "")
+
+def agent_only(is_agent: Bool, +v: String) -> String:
+  match is_agent:
+    case True{}:
+      v
+    case False{}:
+      ""
+
+# the name the user asked for, before any alias or provider lookup
+def model_name(+bise: String, +bend: String, +agent: String, +role: String,
+    +cfg: List<&2, Cf.KV>, +reg: List<&2, Cf.KV>) -> String:
+  +is_agent = String.eq(role, "agent")
+  first_set([agent_only(is_agent, agent),
+    agent_only(is_agent, cfg_str(cfg, "agent_model")), bise, bend,
+    cfg_str(cfg, "model"), cfg_str(reg, "default_model"),
+    "foundry/claude-opus-5-5"])
+
+# ---- the full id: provider/model ----
+
+def has_slash(+s: String) -> Bool:
+  String.contains(s, "/")
+
+def legacy_id.pick(is_claude: Bool, +name: String) -> String:
+  match is_claude:
+    case True{}:
+      String.append("foundry/", name)
+    case False{}:
+      String.append("mistral/", name)
+
+# a bare name from before the registry: the family was guessed from it
+def legacy_id(+name: String) -> String:
+  legacy_id.pick(String.starts_with(name, "claude"), name)
+
+def bare_id.pick(slash: Bool, +name: String) -> String:
+  match slash:
+    case True{}:
+      name
+    case False{}:
+      legacy_id(name)
+
+def bare_id(+name: String) -> String:
+  bare_id.pick(has_slash(name), name)
+
+def alias_of(m: Maybe<&2, String>, +name: String) -> String:
+  match m:
+    case Some{+a}:
+      bare_id(a)
+    case None{}:
+      legacy_id(name)
+
+def alias_key(+name: String) -> String:
+  String.concat(["aliases.\"", name, "\""])
+
+def full_id.pick(slash: Bool, +name: String, +reg: List<&2, Cf.KV>)
+    -> String:
+  match slash:
+    case True{}:
+      name
+    case False{}:
+      alias_of(Maybe.or(&2, String, Cf.cfg_find(reg, alias_key(name)),
+        Cf.cfg_find(reg, String.append("aliases.", name))), name)
+
+def full_id(+name: String, +reg: List<&2, Cf.KV>) -> String:
+  full_id.pick(has_slash(name), name, reg)
+
+# "p/a/b" -> ("p", "a/b"): the provider is the text before the FIRST '/'
+def split_id.parts(parts: List<&2, String>) -> String & String:
+  match parts:
+    case Nil{}:
+      ("", "")
+    case Con{+p, +rest}:
+      (p, String.join(rest, "/"))
+
+def split_id(+id: String) -> String & String:
+  split_id.parts(String.split(id, '/'))
+
+# ---- a key of a model: its own, else its provider's ----
+
+def model_key(+reg: List<&2, Cf.KV>, +prov: String, +id: String,
+    +k: String) -> Maybe<&2, String>:
+  Maybe.or(&2, String,
+    Cf.cfg_find(reg, String.concat(["models.\"", id, "\".", k])),
+    Cf.cfg_find(reg, String.concat(["providers.", prov, ".", k])))
+
+# ---- the resolution ----
+
+# what a call needs: the provider id, the model id sent on the wire,
+# the family, the URL and the env var holding the key ("": none)
+type Prov is Data:
+  Prov{provider: String, model: String, st: Api.Style, url: String,
+    key_env: String}
+
+# an error names the full id it was about (what the clients show)
+type Resolved is Data:
+  ROk{p: Prov}
+  RErr{id: String, msg: String}
+
+def strip_slash.pick(ends: Bool, +s: String) -> String:
+  match ends:
+    case True{}:
+      String.take(s, Nat.sub(String.length(s), 1n))
+    case False{}:
+      s
+
+def strip_slash(+s: String) -> String:
+  strip_slash.pick(String.ends_with(s, "/"), s)
+
+# BEND_PROVIDER_URL=<url> points the call elsewhere (a local fault
+# injector in the tests); unset, base_url + the family's endpoint
+def call_url.pick(empty: Bool, +env: String, +base: String, st: Api.Style)
+    -> String:
+  match empty:
+    case True{}:
+      String.append(strip_slash(base), Api.endpoint(st))
     case False{}:
       env
 
-def provider_url(+env: String, st: Api.Style) -> String:
-  provider_url.pick(String.is_empty(env), env, st)
+def call_url(+env: String, +base: String, st: Api.Style) -> String:
+  call_url.pick(String.is_empty(env), env, base, st)
 
-def model_key_env(st: Api.Style) -> String:
-  match st:
-    case Api.Anthropic{}:
-      "ANTHROPIC_FOUNDRY_API_KEY"
-    case Api.OpenAI{}:
-      "MISTRAL_API_KEY"
+def quoted(+s: String) -> String:
+  String.concat(["\"", s, "\""])
+
+def unknown_provider(+prov: String, +id: String) -> Resolved:
+  RErr{id, String.concat(["unknown provider ", quoted(prov), " (model ",
+    quoted(id), "): add a [providers.", prov,
+    "] table (base_url, key_env, api) to config.toml"])}
+
+def resolve.family(m: Maybe<&2, Api.Style>, +api: String, +prov: String,
+    +model: String, +id: String, +base: String, +key_env: String,
+    +url_env: String) -> Resolved:
+  match m:
+    case Some{+st}:
+      ROk{Prov{prov, model, st, call_url(url_env, base, st), key_env}}
+    case None{}:
+      RErr{id, String.concat(["model ", quoted(id), ": api ", quoted(api),
+        " of provider ", quoted(prov), " is not supported yet"])}
+
+def resolve.needs(ok: Bool, +needs: String, +api: String, +prov: String,
+    +model: String, +id: String, +base: String, +key_env: String,
+    +url_env: String) -> Resolved:
+  match ok:
+    case True{}:
+      resolve.family(Api.style_of_api(api), api, prov, model, id, base,
+        key_env, url_env)
+    case False{}:
+      RErr{id, String.concat(["model ", quoted(id), ": provider ", quoted(prov),
+        " is not supported yet (needs ", needs, ")"])}
+
+def resolve.base(m: Maybe<&2, String>, +reg: List<&2, Cf.KV>, +prov: String,
+    +model: String, +id: String, +url_env: String) -> Resolved:
+  match m:
+    case Some{+base}:
+      +needs = Cf.cfg_or(model_key(reg, prov, id, "needs"), "")
+      resolve.needs(String.is_empty(needs), needs,
+        Cf.cfg_or(model_key(reg, prov, id, "api"), "openai-chat"), prov,
+        model, id, base, Cf.cfg_or(model_key(reg, prov, id, "key_env"), ""),
+        url_env)
+    case None{}:
+      unknown_provider(prov, id)
+
+def resolve.split(pm: String & String, +reg: List<&2, Cf.KV>, +id: String,
+    +url_env: String) -> Resolved:
+  match pm:
+    case (+prov, +model):
+      resolve.base(model_key(reg, prov, id, "base_url"), reg, prov, model,
+        id, url_env)
+
+# a full id against the registry
+def resolve_id(+id: String, +reg: List<&2, Cf.KV>, +url_env: String)
+    -> Resolved:
+  resolve.split(split_id(id), reg, id, url_env)
+
+# THE resolution, pure: the env values (BISE_MODEL, BEND_MODEL,
+# BISE_AGENT_MODEL, BISE_ROLE, BEND_PROVIDER_URL), the user's
+# config.toml text and the models file text ("" when absent)
+def resolve(+bise: String, +bend: String, +agent: String, +role: String,
+    +cfg: String, +file: String, +url_env: String) -> Resolved:
+  +reg = registry(file)
+  resolve_id(full_id(model_name(bise, bend, agent, role, Cf.parse_toml(cfg),
+    reg), reg), reg, url_env)
+
+# the model the clients show (the harness-info line): the id sent on
+# the wire, or the full id asked for when it does not resolve
+def shown_model(r: Resolved) -> String:
+  match r:
+    case ROk{Prov{_, +model, _, _, _}}:
+      model
+    case RErr{+id, _}:
+      id
 
 def interrupt_path_of(+port: String) -> String:
   String.append("/tmp/bend-interrupt-", String.append(port, ".txt"))

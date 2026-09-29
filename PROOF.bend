@@ -22,6 +22,8 @@ import ./hub/core.bend as HC
 
 import ./hub/inv.bend as HI
 
+import ./core/api.bend as Api
+
 import ./LAWS.bend as Laws
 
 def Laws.checkpoint_roundtrip(s):
@@ -830,26 +832,84 @@ def Laws.deferred_reads_prefixed_ack():
 def Laws.deferred_reads_program_acked_result():
   {==}
 
+def Laws.provider_default_is_foundry():
+  {==}
+
 def Laws.provider_resolves_alias():
   {==}
 
-def Laws.provider_opus_is_anthropic():
+def Laws.provider_legacy_claude_is_foundry():
   {==}
 
-def Laws.provider_glm_is_openai():
+def Laws.provider_legacy_glm_is_mistral():
   {==}
 
-def Laws.provider_anthropic_base():
+def Laws.provider_unlisted_model_works():
   {==}
 
-def Laws.provider_openai_base():
+def Laws.provider_bise_model_first():
   {==}
 
-def Laws.provider_anthropic_key_env():
+def Laws.provider_bend_model_over_config():
   {==}
 
-def Laws.provider_openai_key_env():
+def Laws.provider_agent_env_first():
   {==}
+
+def Laws.provider_agent_model_for_agents():
+  {==}
+
+def Laws.provider_agent_follows_main():
+  {==}
+
+def Laws.provider_agent_model_not_for_main():
+  {==}
+
+def Laws.provider_from_models_file():
+  {==}
+
+def Laws.provider_model_key_wins():
+  {==}
+
+def Laws.provider_file_over_builtin():
+  {==}
+
+def Laws.provider_url_env_wins():
+  {==}
+
+def Laws.config_reads_long_file():
+  {==}
+
+def Laws.provider_unknown_is_error():
+  {==}
+
+def Laws.provider_needs_is_error():
+  {==}
+
+def Laws.provider_unknown_family_is_error():
+  {==}
+
+def Laws.family_headers_anthropic():
+  {==}
+
+def Laws.family_headers_openai():
+  {==}
+
+def Laws.family_headers_no_key():
+  {==}
+
+def Laws.family_anthropic_streams():
+  {==}
+
+def Laws.family_openai_whole():
+  {==}
+
+def Laws.family_name_roundtrip(st):
+  match st:
+    case Api.OpenAI{}:
+      {==}
+    case Api.Anthropic{}:
+      {==}
 
 def Laws.style_routes_body():
   {==}

@@ -124,7 +124,7 @@ def cwalk_go(fuel: Nat, w: CWalk) -> List<&2, KV>:
 
 def parse_toml(+text: String) -> List<&2, KV>:
   +lines = String.split(text, Char.from_u32(10))
-  cwalk_go(Nat.add(Nat.mul(List.length(&2, String, lines), 2n), 16n),
+  cwalk_go(Nat.add(Nat.mul(List.length(&2, String, lines), 3n), 16n),
     CN{lines, "", Nil{}})
 
 # ---- the lookups ----
