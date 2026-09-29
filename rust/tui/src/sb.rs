@@ -18,8 +18,10 @@ use versions::{parse_versions, VersionItem};
 mod mention;
 pub(super) use mention::mentions;
 mod cards;
-pub(super) use cards::{card_box_height, card_full, card_mouse, card_choices, draw_card};
-use cards::{answer_card, Card, CardView};
+pub(super) use cards::{card_choices, card_mouse};
+use cards::{Card, CardView};
+mod card_draw;
+pub(super) use card_draw::{card_frame, card_view_open, divider_label as card_divider_label, draw_strip, draw_view as draw_card_view, key_pairs as card_key_pairs, strip_height};
 mod panel;
 pub(super) use panel::PANEL_TITLE;
 pub(super) use panel::{draw_panel, focus_model, key_mode, panel_mouse, placeholder, split, status_state, viewed_model, viewed_who, viewed_working, workspace};
@@ -42,26 +44,19 @@ use client::{follow_hub_exe, follow_reload, HUB_DOWN, HUB_UP};
 use client::{new_sb, sb_app};
 
 /// What the ctrl hints read of the switchboard (ctrlhint.rs): the
-/// agents, the open cards, the card box (shown, full screen, where the
-/// last frame drew it, whether it scrolls).
+/// agents, the open cards, the card view open or not.
 pub(crate) struct CtrlView {
     pub(crate) agents: usize,
     pub(crate) cards: usize,
-    pub(crate) card_shown: bool,
-    pub(crate) card_full: bool,
-    pub(crate) card_area: Rect,
-    pub(crate) card_scrolls: bool,
+    pub(crate) card_open: bool,
 }
 
 pub(crate) fn ctrl_view(app: &App) -> CtrlView {
     let sb = &app.sb;
     CtrlView {
         agents: sb.nav().len(),
-        cards: sb.cards.len(),
-        card_shown: sb.card.shown,
-        card_full: sb.card.full,
-        card_area: sb.card.area,
-        card_scrolls: sb.card.max_scroll > 0,
+        cards: sb.sorted_cards().len(),
+        card_open: sb.card.open,
     }
 }
 use feed::{
@@ -163,7 +158,7 @@ pub(super) struct Sb {
     /// first hello): a hub with another one was started by a reload
     /// (BISE-131), which this TUI follows by re-executing itself.
     reload_seen: Option<String>,
-    /// The card box above the composer (Ctrl+G), never opened by the hub.
+    /// The strip and the card view (ctrl+g), never opened by the hub.
     card: CardView,
     /// Set by the last draw: the panel rows and their agents (clicks).
     panel_hits: std::cell::RefCell<panel::PanelHits>,
@@ -575,10 +570,8 @@ fn apply_state(app: &mut App, v: &Value) {
     if sb.cards.iter().any(|c| !known.contains(&c.id)) {
         sb.calls += 1;
     }
-    if sb.cards.is_empty() {
-        sb.card.shown = false;
-        sb.card.full = false;
-    }
+    cards::sync(app);
+    let sb = &mut app.sb;
     // the spinner of every feed follows the agent, whoever started the turn
     let busy: HashMap<String, bool> = sb.agents.iter().map(|a| (a.name.clone(), a.busy())).collect();
     for (name, view) in sb.views.iter_mut() {
@@ -610,6 +603,8 @@ fn apply_state(app: &mut App, v: &Value) {
 
 /// Change the feed in focus (checkout / return).
 pub(super) fn focus(app: &mut App, name: &str) {
+    // the card view goes: the thread you go to takes its place
+    cards::close_view(app);
     let sb = &mut app.sb;
     // BISE-61: looking inside an agent is what the first-agent hint asks
     if sb.agents.iter().any(|a| a.name == name && !a.main) {
@@ -1205,28 +1200,17 @@ mod nav_key_tests {
         }
     }
 
-    /// Ctrl+R belongs to voice input: Alt+R (or '®', Option+R on a
-    /// macOS terminal) answers the card with the composer text.
+    /// Ctrl+R belongs to voice input; alt+r is gone (cards v2: typing
+    /// in the card view is answering): neither touches a card.
     #[test]
-    fn alt_r_answers_the_card_and_ctrl_r_is_not_the_cards() {
+    fn alt_r_and_ctrl_r_are_not_the_cards() {
         let mut app = bench::test_app();
-        app.sb.cards = vec![Card {
-            id: 7,
-            kind: "question".into(),
-            agent: "t1".into(),
-            text: "which one?".into(),
-            age_ms: 0,
-            seen_at: std::time::Instant::now(),
-            note: String::new(),
-        }];
+        app.sb.cards = vec![Card { id: 7, kind: "question".into(), agent: "t1".into(), text: "which one?".into(), ..Card::default() }];
         app.ed.text = "the first".into();
         assert!(!press(&mut app, KeyCode::Char('r'), KeyModifiers::CONTROL));
+        assert!(!press(&mut app, KeyCode::Char('r'), KeyModifiers::ALT));
         assert_eq!(app.ed.text, "the first");
-        assert!(press(&mut app, KeyCode::Char('r'), KeyModifiers::ALT));
-        assert_eq!(app.ed.text, "", "the answer left the composer");
-        app.ed.text = "again".into();
-        assert!(press(&mut app, KeyCode::Char('®'), KeyModifiers::NONE));
-        assert_eq!(app.ed.text, "");
+        assert!(!app.sb.card.open);
     }
 
     /// A non-empty composer keeps Enter for sending: no view change.

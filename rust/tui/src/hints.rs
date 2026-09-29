@@ -60,7 +60,7 @@ impl Hint {
                 "new: your agents. they work in the background. {⌥ 1} to look inside, {esc} to come back. →"
             }
             Hint::FirstLevel3 => "agents talk to each other. it stays dim: you can ignore it, or {▸} to read.",
-            Hint::FirstCard => "a card: someone needs you. type your answer, {alt+r} sends it. ↓",
+            Hint::FirstCard => "a card: someone needs you. {ctrl+g} opens it. ↓",
             Hint::FirstSteer => "{✓} the agent got it · {✓✓} it read it.",
         }
     }
@@ -439,7 +439,7 @@ mod tests {
         let l3: Vec<String> = wrap(Hint::FirstLevel3.text(), TEXT_W).iter().map(text_of).collect();
         assert_eq!(l3.join(" "), "agents talk to each other. it stays dim: you can ignore it, or ▸ to read.");
         let card: Vec<String> = wrap(Hint::FirstCard.text(), TEXT_W).iter().map(text_of).collect();
-        assert_eq!(card.join(" "), "a card: someone needs you. type your answer, alt+r sends it. ↓");
+        assert_eq!(card.join(" "), "a card: someone needs you. ctrl+g opens it. ↓");
     }
 
     #[test]

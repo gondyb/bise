@@ -3,7 +3,7 @@
 //! While you hold ctrl alone for [`DELAY`], the places where a ctrl
 //! shortcut changes something show it: the folds (`▸ 12 more lines` →
 //! `▸ ctrl+o expand`), the panel title (`ctrl+k/j`), the divider's state
-//! while the agent works (`ctrl+c interrupt`), the card box's keys, and
+//! while the agent works (`ctrl+c interrupt`), and
 //! the key bar (every ctrl key of the moment). Released, or any other key:
 //! back at once. A hint only writes over cells the frame already drew
 //! (text it replaces, padded with spaces, or the blank cells after a
@@ -146,14 +146,14 @@ pub(crate) fn pairs(app: &App) -> Vec<Pair> {
     }
     let v = crate::sb::ctrl_view(app);
     if v.cards > 0 {
-        p.push(("ctrl+g", if v.card_shown { "hide card" } else { "cards" }));
-        if v.cards > 1 {
-            p.push(("ctrl+n/p", "next card"));
+        // from the thread only ctrl+g; the rest in the card view
+        p.push(("ctrl+g", if v.card_open { "back" } else { "open cards" }));
+        if v.card_open {
+            if v.cards > 1 {
+                p.push(("ctrl+n/p", "next card"));
+            }
+            p.push(("ctrl+x", "close card"));
         }
-        if v.card_shown {
-            p.push(("ctrl+f", "full screen"));
-        }
-        p.push(("ctrl+x", "close card"));
     }
     if app.ed.text.is_empty() && v.agents > 1 {
         p.push(("ctrl+k/j", "agents"));
@@ -231,7 +231,7 @@ fn row(buf: &Buffer, y: u16, x0: u16, x1: u16) -> Vec<String> {
 }
 
 /// The hints over the drawn frame (after the one-time hints, before the
-/// frame passes): the folds, the panel title, the divider, the card box.
+/// frame passes): the folds, the panel title, the divider.
 /// The key bar draws its own ([`pairs`]).
 pub(crate) fn draw(app: &App, buf: &mut Buffer) {
     if !on(app) {
@@ -239,7 +239,6 @@ pub(crate) fn draw(app: &App, buf: &mut Buffer) {
     }
     folds(app, buf);
     panel(app, buf);
-    card(app, buf);
 }
 
 /// Each fold in view: `▸ n more lines` becomes `▸ ctrl+o expand`; another
@@ -319,47 +318,6 @@ fn panel(app: &App, buf: &mut Buffer) {
             put(buf, p.x + (start + sep) as u16, y, "ctrl+k/j", &s);
         }
         return;
-    }
-}
-
-/// The card box's bottom-left keys become its ctrl keys, over the keys
-/// and the border up to the scroll hint.
-fn card(app: &App, buf: &mut Buffer) {
-    let v = crate::sb::ctrl_view(app);
-    let a = v.card_area.intersection(buf.area);
-    if !v.card_shown || v.cards == 0 || a.width < 12 || a.height < 2 {
-        return;
-    }
-    let y = a.bottom() - 1;
-    let (x0, x1) = (a.x + 1, a.right() - 1);
-    let cells = row(buf, y, x0, x1);
-    let border = |c: &str| c.chars().all(|ch| ('\u{2500}'..='\u{257f}').contains(&ch) || ch == '-');
-    // the scroll hint on the right, when the card scrolls
-    let mut end = cells.len();
-    if v.card_scrolls {
-        let tail = cells.iter().rposition(|c| !border(c)).map_or(0, |e| e + 1);
-        let head = cells[..tail].iter().rposition(|c| border(c)).map_or(0, |e| e + 1);
-        end = head.saturating_sub(1);
-    }
-    let mut keys: Vec<Pair> = vec![("ctrl+g", "hide")];
-    if v.cards > 1 {
-        keys.push(("ctrl+n/p", "next"));
-    }
-    keys.push(("ctrl+f", if v.card_full { "back" } else { "full" }));
-    keys.push(("ctrl+x", "close"));
-    let mut x = 0usize;
-    for (i, &(k, l)) in keys.iter().enumerate() {
-        let gap = if i == 0 { 1 } else { 3 };
-        let w = k.width() + 1 + l.width();
-        if x + gap + w + 1 > end {
-            break;
-        }
-        // the border cells around the hint become blanks (` ctrl+g hide `)
-        let s = format!("{}{k} {l} ", " ".repeat(gap));
-        put(buf, x0 + x as u16, y, "", &" ".repeat(gap));
-        put(buf, x0 + (x + gap) as u16, y, k, &format!("{k} {l}"));
-        put(buf, x0 + (x + gap + w) as u16, y, "", " ");
-        x += s.width() - 1;
     }
 }
 
@@ -530,10 +488,9 @@ mod frame_tests {
             .collect()
     }
 
-    /// What the last frame placed: the feed rows, the composer, the card box.
+    /// What the last frame placed: the feed rows, the composer.
     fn geometry(app: &App) -> String {
-        let v = crate::sb::ctrl_view(app);
-        format!("{:?} {:?} {} {} {:?} {:?}", app.vis_events, app.vis_rows, app.feed_x, app.feed_y, app.composer, v.card_area)
+        format!("{:?} {:?} {} {} {:?}", app.vis_events, app.vis_rows, app.feed_x, app.feed_y, app.composer)
     }
 
     fn row_of(t: &[String], s: &str) -> usize {
@@ -543,11 +500,7 @@ mod frame_tests {
     #[test]
     fn the_hints_replace_cells_and_move_nothing() {
         let mut app = busy_app();
-        for card in [false, true] {
-            if card {
-                crate::input::on_key(&mut app, &KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL));
-                assert!(crate::sb::ctrl_view(&app).card_shown);
-            }
+        {
             app.ctrl = Hold::default();
             let off = screen(&mut app, 120, 40);
             let g_off = geometry(&app);
@@ -559,7 +512,7 @@ mod frame_tests {
             assert_eq!(off.area, on.area);
             assert_eq!(skeleton(&off), skeleton(&on), "\n{}\n---\n{}", a.join("\n"), b.join("\n"));
             // the rows that change: the fold, the panel title, the divider,
-            // the key bar (and the card box's keys), nothing else
+            // the key bar, nothing else
             let fold = row_of(&a, "▸ 46 more lines");
             assert!(b[fold].contains("│ ▸ ctrl+o expand          "), "{}", b[fold]);
             let title = row_of(&a, "agents · ");
@@ -569,17 +522,11 @@ mod frame_tests {
             // (designer: cut the label, keep the key), no state no hint
             let hinted = a[div] != b[div];
             assert!(!hinted || b[div].contains(" ctrl+c "), "{}", b[div]);
-            assert!(card || b[div].contains(" ctrl+c interrupt "), "{}", b[div]);
             let bar = a.len() - 2;
             assert!(b[bar].contains("ctrl+c interrupt   ctrl+o expand   ctrl+g "), "{}", b[bar]);
             let mut changed = vec![fold, title, bar];
             if hinted {
                 changed.push(div);
-            }
-            if card {
-                let y = crate::sb::ctrl_view(&app).card_area.bottom() as usize - 1;
-                assert!(b[y].contains(" ctrl+g hide ") && b[y].contains(" ctrl+x close "), "{}", b[y]);
-                changed.push(y);
             }
             changed.sort();
             let diff: Vec<usize> = (0..a.len()).filter(|&y| a[y] != b[y]).collect();

@@ -26,9 +26,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{
-    Block, Borders, Paragraph,
-};
+use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 use std::io::{self, IsTerminal, Write};
 use std::sync::mpsc::{self, Receiver};

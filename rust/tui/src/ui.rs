@@ -61,9 +61,11 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let queue_h = crate::queue::height(app).min(left(text_rows + strip_h + strip_gap));
     let queue_gap = if queue_h > 0 { rows.pad_top.min(left(text_rows + strip_h + strip_gap + queue_h)) } else { 0 };
     let pane_h = text_rows + strip_h + strip_gap + queue_h + queue_gap;
-    // the card box: what the rest leaves, with 1 blank row above it
-    let card_h = sb::card_box_height(app, area, left(pane_h + 1));
-    let card_gap = u16::from(card_h > 0);
+    // the cards' strip (cards v2): what the rest leaves, with 1 blank
+    // row above it from 24 rows; none while the card view is open
+    sb::card_frame(app);
+    let card_h = sb::strip_height(app, area.height, left(pane_h + 1));
+    let card_gap = u16::from(card_h > 0 && area.height >= 24 && left(pane_h + 1 + card_h) > 0);
     // the no-vision line names the model of the agent in view
     attach::set_model(&crate::sb::focus_model(app));
     let composer_h = pad_top + text_rows + rows.pad_bottom;
@@ -72,8 +74,8 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         .constraints([
             Constraint::Length(rows.body),   // header, 1 blank row
             Constraint::Min(1),              // history | panel
-            Constraint::Length(card_gap),    // a blank row above the card box
-            Constraint::Length(card_h),      // the card box (ctrl+g)
+            Constraint::Length(card_gap),    // a blank row above the strip
+            Constraint::Length(card_h),      // the cards' strip
             Constraint::Length(1),           // a blank row above the divider
             Constraint::Length(1),           // the divider
             Constraint::Length(queue_gap),   // a tinted row above the queue
@@ -133,16 +135,25 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         let x = cols.panel.and_then(|p| p.rule).unwrap_or(area.width.saturating_sub(1));
         Rect { x: area.x + x, width: 1, ..feed }
     });
-    // a screen too small for a feed: nothing to draw (a scrollbar on an
-    // empty area panics)
-    if feed.width > 1 && feed.height > 0 {
+    // the card view (ctrl+g) takes the history's place, in the column
+    let view = sb::card_view_open(app);
+    if view {
+        let r = Rect { x: area.x + cols.x0, width: cols.col_w.min(area.width.saturating_sub(cols.x0)), ..body };
+        let r = Rect { height: divider_y.saturating_sub(r.y + 1).min(r.height), ..r };
+        sb::draw_card_view(app, frame, r);
+        app.vis_events.clear();
+        app.vis_rows.clear();
+        app.zen.aside.clear();
+    } else if feed.width > 1 && feed.height > 0 {
+        // a screen too small for a feed: nothing to draw (a scrollbar on
+        // an empty area panics)
         draw_feed(app, frame, feed, bar);
     } else {
         app.vis_events.clear();
         app.vis_rows.clear();
     }
     // no agents yet, nothing said: the first-run text, dim, in the feed
-    let first_run = app.sb.first_run();
+    let first_run = app.sb.first_run().filter(|_| !view);
     if let Some(text) = first_run.filter(|_| !app.events.iter().any(|e| ev_visible(e, app.debug))) {
         let w = (cols.col_w as usize).saturating_sub(3).max(1);
         let mut lines: Vec<Line> = Vec::new();
@@ -179,8 +190,11 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     } else {
         state
     };
-    let (state_rect, label_rect) =
-        chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, &who, working.as_ref(), state);
+    let (state_rect, label_rect) = match sb::card_divider_label(app) {
+        // the card view: `you → ? perf's card · your answer`
+        Some(label) => chrome::draw_divider_label(frame.buffer_mut(), area, cols, divider_y, label),
+        None => chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, &who, working.as_ref(), state),
+    };
     if !rows.keys_in_divider {
         crate::ctrlhint::divider(app, frame.buffer_mut(), state_rect);
     }
@@ -214,14 +228,10 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let history = Rect { x: area.x + cols.feed_x, width: cols.feed_w, y: body.y, height: divider_y.saturating_sub(body.y) };
     app.zen.keep = vec![typed.intersection(area), label_rect, history.intersection(area)];
     if card_h > 0 {
-        sb::draw_card(app, frame, col(card));
+        sb::draw_strip(app, frame, col(card));
         app.zen.keep.push(col(card).intersection(area));
         let c = col(card);
         app.zen.aside.retain(|r| r.intersection(c).is_empty());
-    } else if sb::card_full(app) {
-        sb::draw_card(app, frame, body);
-        app.zen.keep.push(body.intersection(area));
-        app.zen.aside.clear();
     }
     draw_popup(app, frame, text);
     // the key bar, from x0 to the right margin (from 60 columns, from

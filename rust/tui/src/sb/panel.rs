@@ -583,7 +583,7 @@ fn cards_lines(
     }
     let mut cards: Vec<&Card> = sb.cards.iter().collect();
     cards.sort_by_key(|c| std::cmp::Reverse(c.id));
-    let shown = sb.card.shown.then(|| sb.current_card().map(|c| c.id)).flatten();
+    let shown = sb.card.open.then(|| sb.current_card().map(|c| c.id)).flatten();
     lines.push(Line::from(""));
     owners.push((lines.len(), Hit::Cards));
     lines.push(Line::from(vec![
@@ -785,8 +785,9 @@ pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bo
             let sb = &mut app.sb;
             sb.toggle_archived();
         }
-        Some(Hit::Card(id)) => app.sb.open_card(id),
-        Some(Hit::Cards) => app.sb.toggle_card(),
+        Some(Hit::Card(id)) => super::cards::open_view(app, Some(id)),
+        Some(Hit::Cards) if app.sb.card.open => super::cards::close_view(app),
+        Some(Hit::Cards) => super::cards::open_view(app, None),
         _ => {}
     }
     true
@@ -864,14 +865,6 @@ pub(crate) fn status_state(app: &App) -> Option<Line<'static>> {
             spans.push(d(format!("preview of {}", sel)));
         }
     }
-    if !sb.cards.is_empty() && !sb.card.shown {
-        let n = sb.cards.len();
-        spans.push(Span::styled(" · ", Style::default().fg(dim())));
-        spans.push(Span::styled(
-            format!("{} {} card{} · ctrl+g", G_CARD, n, if n > 1 { "s" } else { "" }),
-            Style::default().fg(accent()),
-        ));
-    }
     for i in &sb.versions {
         if i.marks.iter().any(|m| m == "building") {
             spans.push(d(format!("{} building {}", G_BUILDING, i.rev)));
@@ -935,9 +928,8 @@ pub(crate) fn key_mode(app: &App) -> crate::keybar::Mode {
         Mode::DropAsk
     } else if sb.confirm.is_some() {
         Mode::Confirm
-    } else if sb.card.full {
-        Mode::CardFull
-    // a shown card box carries its own keys (QA 11): no repeat here
+    } else if sb.card.open {
+        Mode::Card
     } else if sb.selected.is_some() {
         Mode::Selected
     } else if sb.focus_archived() {
@@ -2058,7 +2050,7 @@ mod cards_tests {
         assert_eq!(t[13], " + 27 more", "{}", t.join("\n"));
         assert!(t.iter().any(|r| r.contains("#1029")), "newest first");
         // the oldest card shown in the box: the panel scrolls to it
-        app.sb.open_card(12);
+        super::super::cards::open_view(&mut app, Some(12));
         let t = rows(&app, 28, 14);
         assert!(t.iter().any(|r| r.contains("#12 ")), "{}", t.join("\n"));
         let mut term = Terminal::new(TestBackend::new(28, 14)).unwrap();
@@ -2072,8 +2064,9 @@ mod cards_tests {
         panel_mouse(app, &m)
     }
 
-    /// A click on a card row shows that card in the box (like ctrl+g on
-    /// it); again on it hides the box; the title toggles like ctrl+g.
+    /// A click on a card row opens the card view on it (cards v2); on
+    /// another card the view follows; the section title toggles the view
+    /// like ctrl+g.
     #[test]
     fn a_click_on_a_card_opens_it() {
         let mut app = app();
@@ -2086,23 +2079,22 @@ mod cards_tests {
         let screen = draw(&mut app);
         let x = app.sb.panel_hits.borrow().area.x;
         let y_of = |s: &[String], l: &str| s.iter().position(|r| r.chars().skip(x as usize).collect::<String>().contains(l)).unwrap() as u16;
-        assert!(!app.sb.card.shown);
+        assert!(!app.sb.card.open);
         assert!(click(&mut app, x + 3, y_of(&screen, "#40")));
-        assert!(app.sb.card.shown);
+        assert!(app.sb.card.open);
         assert_eq!(app.sb.current_card().map(|c| c.id), Some(40));
         let screen = draw(&mut app);
-        assert!(screen.iter().any(|r| r.contains("docs is blocked")), "the box shows #40:\n{}", screen.join("\n"));
-        // another card: the box follows
+        assert!(screen.iter().any(|r| r.contains("docs is blocked")), "the view shows #40:\n{}", screen.join("\n"));
+        // another card: the view follows
         click(&mut app, x + 3, y_of(&screen, "#153"));
-        assert_eq!((app.sb.card.shown, app.sb.current_card().map(|c| c.id)), (true, Some(153)));
-        // the same one again: hidden
-        let screen = draw(&mut app);
-        click(&mut app, x + 3, y_of(&screen, "#153"));
-        assert!(!app.sb.card.shown);
-        // the section title: ctrl+g
+        assert_eq!((app.sb.card.open, app.sb.current_card().map(|c| c.id)), (true, Some(153)));
+        // the section title: back to the thread, then the view again
         let screen = draw(&mut app);
         click(&mut app, x + 3, y_of(&screen, " cards · ctrl+g"));
-        assert!(app.sb.card.shown);
+        assert!(!app.sb.card.open);
+        let screen = draw(&mut app);
+        click(&mut app, x + 3, y_of(&screen, " cards · ctrl+g"));
+        assert!(app.sb.card.open);
         assert_eq!(app.sb.focus, "main", "a card click does not change the view");
     }
 

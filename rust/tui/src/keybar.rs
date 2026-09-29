@@ -34,8 +34,8 @@ pub(crate) enum Mode {
     DropAsk,
     /// a yes / no question in the status row
     Confirm,
-    /// the card full screen
-    CardFull,
+    /// the card view (ctrl+g): the composer answers the card
+    Card,
     /// an agent is selected in the panel
     Selected,
     /// in an archived agent
@@ -89,7 +89,8 @@ impl Mode {
             Mode::Quote => &[ASK, ("cmd+c", "copy"), ("esc", "drop")],
             Mode::DropAsk => &[("y", "drop"), ("n or esc", "keep")],
             Mode::Confirm => &[("y", "yes"), ("n", "no"), ("esc", "cancel")],
-            Mode::CardFull => &[("alt+r", "answer"), ("pgup/pgdn", "scroll"), ("ctrl+f", "back")],
+            // the view's own keys come from `sb::card_key_pairs` (`1-2 pick`…)
+            Mode::Card => &[("⏎", "answer"), ("ctrl+x", "close"), ("esc", "back")],
             Mode::Selected => &[("⏎", "enter"), ("space", "preview"), ("D", "drop"), ("esc", "close")],
             Mode::Archived => &[BACK, ("/restore", "brings it back")],
             Mode::Steer => &[("tab", "queue"), ("⏎", "steer"), ("ctrl+c", "interrupt")],
@@ -140,8 +141,11 @@ pub(crate) fn line(app: &App, width: u16) -> Line<'static> {
     let agent = !app.sb.is_main_focus();
     let typing = !app.ed.text.is_empty();
     // ctrl held (ctrlhint.rs): every ctrl key of the moment, same row
-    if crate::ctrlhint::on(app) && matches!(mode(app), Mode::Default | Mode::Steer | Mode::Selected | Mode::Archived | Mode::Images | Mode::Quote) {
+    if crate::ctrlhint::on(app) && matches!(mode(app), Mode::Default | Mode::Steer | Mode::Selected | Mode::Archived | Mode::Images | Mode::Quote | Mode::Card) {
         return pairs_line(&crate::ctrlhint::pairs(app), usize::from(width)).0;
+    }
+    if mode(app) == Mode::Card {
+        return pairs_line(&crate::sb::card_key_pairs(app), usize::from(width)).0;
     }
     render(mode(app), width, typing, agent, Some(current_tip(typing)))
 }

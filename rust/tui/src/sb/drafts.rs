@@ -296,7 +296,8 @@ fn snapshot(app: &App) -> Saved {
         Draft { text: t.to_string(), cursor: c }
     };
     let mut drafts = BTreeMap::new();
-    let focused = own(&app.ed);
+    // the card view holds the thread's draft aside (cards v2)
+    let focused = own(app.sb.card.thread.as_ref().filter(|_| app.sb.card.open).unwrap_or(&app.ed));
     if !focused.text.is_empty() {
         drafts.insert(app.sb.focus.clone(), focused);
     }

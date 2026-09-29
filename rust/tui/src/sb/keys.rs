@@ -40,7 +40,7 @@ pub(crate) struct Scene {
     archived_open: bool,
     drop_ask: bool,
     confirm: bool,
-    card: (bool, bool, Option<u64>, usize),
+    card: (bool, Option<u64>, usize),
 }
 
 pub(crate) fn scene(app: &App) -> Scene {
@@ -52,7 +52,7 @@ pub(crate) fn scene(app: &App) -> Scene {
         archived_open: sb.archived_open,
         drop_ask: sb.drop_ask.is_some(),
         confirm: sb.confirm.is_some(),
-        card: (sb.card.shown, sb.card.full, sb.card.sel, sb.card.scroll),
+        card: (sb.card.open, sb.card.sel, sb.card.scroll),
     }
 }
 
@@ -76,6 +76,12 @@ pub(crate) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             _ => {}
         }
     }
+    // the cards (cards v2): ctrl+g from the thread, the rest in the
+    // card view
+    if super::cards::key(app, k, popup_open) {
+        return true;
+    }
+    let sb = &mut app.sb;
     // BISE-86: `✗ not delivered: {name} stopped. ⏎ send again · esc drop`
     // is the last line and the composer is empty: ⏎ sends it again, esc
     // drops it; the question goes away either way
@@ -145,10 +151,6 @@ pub(crate) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             true
         }
         (KeyCode::Esc, _) if !popup_open => {
-            if sb.card.full {
-                sb.card.full = false;
-                return true;
-            }
             if let Some((id, _)) = sb.confirm.take() {
                 sb.send(json!({"op": "confirm", "id": id, "yes": false}));
                 return true;
@@ -156,10 +158,6 @@ pub(crate) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             if sb.selected.is_some() || sb.preview {
                 sb.selected = None;
                 sb.preview = false;
-                return true;
-            }
-            if sb.card.shown && empty {
-                sb.card.shown = false;
                 return true;
             }
             if !empty {
@@ -179,65 +177,6 @@ pub(crate) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             if let Some(t) = nav.and_then(|n| if let Nav::Goto(i) = n { sb.agent_numbered(i) } else { None }) {
                 focus(app, &t);
             }
-            true
-        }
-        (KeyCode::Char('g'), KeyModifiers::CONTROL) if !sb.cards.is_empty() => {
-            sb.toggle_card();
-            true
-        }
-        // on an empty composer, Ctrl+A (line start) has nothing to do
-        (KeyCode::Char('a'), KeyModifiers::CONTROL) if empty && !sb.cards.is_empty() => {
-            sb.toggle_card();
-            true
-        }
-        (KeyCode::Char('f'), KeyModifiers::CONTROL) if sb.card.shown => {
-            sb.card.full = !sb.card.full;
-            true
-        }
-        (KeyCode::Char('n'), KeyModifiers::CONTROL) if !sb.cards.is_empty() => {
-            sb.step_card(1);
-            true
-        }
-        (KeyCode::Char('p'), KeyModifiers::CONTROL) if !sb.cards.is_empty() => {
-            sb.step_card(-1);
-            true
-        }
-        (KeyCode::PageUp, _) if sb.card.shown && !popup_open => {
-            let page = sb.card.page.max(1) as isize;
-            sb.card.scroll_by(-page);
-            true
-        }
-        (KeyCode::PageDown, _) if sb.card.shown && !popup_open => {
-            let page = sb.card.page.max(1) as isize;
-            sb.card.scroll_by(page);
-            true
-        }
-        // an empty composer: the arrows scroll a card longer than its box
-        (KeyCode::Up, KeyModifiers::NONE)
-            if empty && sb.card.shown && sb.card.max_scroll > 0 && !popup_open =>
-        {
-            sb.card.scroll_by(-1);
-            true
-        }
-        (KeyCode::Down, KeyModifiers::NONE)
-            if empty && sb.card.shown && sb.card.max_scroll > 0 && !popup_open =>
-        {
-            sb.card.scroll_by(1);
-            true
-        }
-        (KeyCode::Char('x'), KeyModifiers::CONTROL) if !sb.cards.is_empty() => {
-            if let Some(id) = sb.current_card().map(|c| c.id) {
-                sb.send_input(format!("/close {}", id));
-                sb.card.scroll = 0;
-            }
-            true
-        }
-        // Alt+R; '®' is Option+R on a macOS terminal that does not send
-        // Option as Alt
-        (KeyCode::Char('r'), KeyModifiers::ALT) | (KeyCode::Char('®'), KeyModifiers::NONE)
-            if !sb.cards.is_empty() =>
-        {
-            answer_card(app);
             true
         }
         // no undo (book §13): say it, and how to change course

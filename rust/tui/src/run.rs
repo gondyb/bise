@@ -684,12 +684,9 @@ mod zen_tests {
             ("esc close the selection", KeyCode::Esc, n, false, false, select),
             ("esc back to main", KeyCode::Esc, n, false, false, in_docs),
             ("esc draft away", KeyCode::Esc, n, false, true, none),
-            ("ctrl+g card box", KeyCode::Char('g'), c, true, true, none),
-            ("ctrl+a card box", KeyCode::Char('a'), c, true, false, none),
+            ("ctrl+g card view", KeyCode::Char('g'), c, true, true, none),
             ("ctrl+n next card", KeyCode::Char('n'), c, true, true, none),
             ("ctrl+p previous card", KeyCode::Char('p'), c, true, true, none),
-            ("alt+r answer the card", KeyCode::Char('r'), a, true, true, none),
-            ("ctrl+f card full screen", KeyCode::Char('f'), c, true, true, none),
             ("ctrl+x close the card", KeyCode::Char('x'), c, true, true, none),
             ("pgup the card", KeyCode::PageUp, n, true, true, none),
             ("ctrl+o open everything", KeyCode::Char('o'), c, false, true, none),
@@ -711,11 +708,10 @@ mod zen_tests {
                 sb::dispatch(&mut app, &card.to_string());
                 let calls = app.sb.calls();
                 app.zen.calls(calls, t);
-                let area = ratatui::layout::Rect::new(0, 0, 120, 36);
-                if crate::sb::card_box_height(&app, area, 20) == 0 {
+                if !crate::sb::card_view_open(&app) {
                     on_key(&mut app, &KeyEvent::new(KeyCode::Char('g'), c));
                 }
-                assert!(crate::sb::card_box_height(&app, area, 20) > 0, "{what}: the card box is up");
+                assert!(crate::sb::card_view_open(&app), "{what}: the card view is up");
             }
             setup(&mut app);
             event(&mut app, key(KeyCode::Char('h')), t);

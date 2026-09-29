@@ -355,6 +355,44 @@ pub(crate) fn divider_room(width: u16, cols: Cols, name: &str, who: &Who, workin
     end.saturating_sub(start)
 }
 
+/// The divider's rule on row `y` (its joins when framed); false when
+/// there is no room.
+fn divider_rule(buf: &mut Buffer, area: Rect, cols: Cols, y: u16) -> bool {
+    if area.width < 4 || y < area.y || y >= area.bottom() {
+        return false;
+    }
+    let p = pieces();
+    let st = line_style();
+    let (l, r) = (area.x, area.right() - 1);
+    for x in l..=r {
+        buf[(x, y)].set_symbol(p.set.horizontal_top).set_style(st);
+    }
+    if cols.framed {
+        buf[(l, y)].set_symbol(p.left_join).set_style(st);
+        buf[(r, y)].set_symbol(p.right_join).set_style(st);
+        if let Some(x) = cols.panel.and_then(|p| p.rule).map(|x| area.x + x).filter(|x| *x > l && *x < r) {
+            buf[(x, y)].set_symbol(p.bottom_join).set_style(st);
+        }
+    }
+    true
+}
+
+/// The divider with a label of its own and no state (the card view:
+/// `you → ? perf's card · your answer`); returns (no state, the label).
+pub(crate) fn draw_divider_label(buf: &mut Buffer, area: Rect, cols: Cols, y: u16, label: Vec<Span<'static>>) -> (Rect, Rect) {
+    let area = area.intersection(buf.area);
+    if !divider_rule(buf, area, cols, y) {
+        return (Rect::default(), Rect::default());
+    }
+    let (l, r) = (area.x, area.right() - 1);
+    let lx = l + cols.margin - 1;
+    let end = r + 1 - cols.margin;
+    let label = fit(label, (end + 1).saturating_sub(lx) as usize);
+    put(buf, lx, y, &label, end + 1);
+    let label_rect = Rect { x: lx, y, width: width_of(&label).min((end + 1).saturating_sub(lx)), height: 1 };
+    (Rect::default(), label_rect)
+}
+
 /// The divider on row `y` (book §8): framed, a rule joining the frame
 /// (`├ … ┤`, `┴` under the panel's rule); bare, a plain rule. The label
 /// ` you → name ` from the margin, the `state` (cut to fit) ending 1
@@ -376,22 +414,10 @@ pub(crate) fn draw_divider(
     state: Vec<Span<'static>>,
 ) -> (Rect, Rect) {
     let area = area.intersection(buf.area);
-    if area.width < 4 || y < area.y || y >= area.bottom() {
+    if !divider_rule(buf, area, cols, y) {
         return (Rect::default(), Rect::default());
     }
-    let p = pieces();
-    let st = line_style();
     let (l, r) = (area.x, area.right() - 1);
-    for x in l..=r {
-        buf[(x, y)].set_symbol(p.set.horizontal_top).set_style(st);
-    }
-    if cols.framed {
-        buf[(l, y)].set_symbol(p.left_join).set_style(st);
-        buf[(r, y)].set_symbol(p.right_join).set_style(st);
-        if let Some(x) = cols.panel.and_then(|p| p.rule).map(|x| area.x + x).filter(|x| *x > l && *x < r) {
-            buf[(x, y)].set_symbol(p.bottom_join).set_style(st);
-        }
-    }
     let lx = l + cols.margin - 1;
     // the state's end: framed F − 4 (F − 3 its space), bare the last column
     let end = r + 1 - cols.margin;

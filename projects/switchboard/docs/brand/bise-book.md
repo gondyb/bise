@@ -283,7 +283,7 @@ a symbol row (designer).
   ┃ the brief says "keep old clients working"…      │ cards · ctrl+g
                                                     │ #153 ✓ bench  p95 down 1…
                                                     │ #152 ? docs  keep old cl…
- ┌ card box (when a card is open) ──────────────────┐
+ ┌ cards' strip (while cards are open, ctrl+g) ─────┐
  main · idle · 210k / 1M tokens · 21%                                             ← status row
  › _                                          ⏎ send · @ agent · / commands       ← composer
 ```
@@ -477,18 +477,57 @@ The same three levels everywhere, in main and inside an agent.
 
 ## 12. Cards
 
-- A card is level 1: accent bar, `? <agent> needs you`, the question, then the
-  choices when the agent gives some (`1 v1  2 v2`), and the keys, dim:
-  `alt+r answer with text · ctrl+x later · ctrl+f full screen`.
-- **Kinds** reuse the glyphs: `?` question and blocked (accent), `✗` failed,
-  `↻` restart failed (error), `–` drop confirmation, `⇄` overlap, `✓` done.
-  Sorted by what blocks an agent first, then the oldest.
-- **Keep `ctrl+f`** (today): full screen and scrollable (`pgup` / `pgdn`);
-  `ctrl+f` or `esc` brings it back.
-- Other keys as today: `ctrl+g` show/hide the box, `ctrl+n` / `ctrl+p` next /
-  previous, `alt+r` answer with the composer text (empty: acknowledge a done
-  card), `ctrl+x` close without answering, `y` / `n` / `esc` on a
-  confirmation.
+Cards v2 (BISE-236; designer's round 2, mocks `cards v2 · 1-5` in the
+screens page). Two levels:
+
+- **The quick look: the strip.** Right above the divider (1 blank row
+  above it from 24 rows), while cards are open: a faint top row `3 cards`,
+  `ctrl+g open` on the right (the key in text color, the label dim), then
+  one row per card, most blocking first (approvals, questions, the rest):
+  `? perf · the hero image is 4.2 MB…   1 compress  2 both  ×` (the digits
+  in accent, the short labels dim, `×` faint; the top row on the raised
+  tint). A command shows its first line and `n lines`; a patch its first
+  file and `+2 files · +42 −7`; more than 3 options: `n options`; more
+  than 3 cards: `+ n more`; approvals that open together (5 s): one row,
+  `? 3 agents want to run`. Under 24 rows: one row, the top card and
+  `+ n`. Mouse: an option answers at once, a row opens the card view on
+  it, `×` closes. From the thread **only `ctrl+g`** acts on the cards.
+- **The card view** (`ctrl+g`, a row click, a click in the panel's cards
+  section): it takes the history's place; the panel, the divider and the
+  composer stay. The tabs on top (`? release  ? perf  ? dark-mode`, the
+  current one on the raised tint, `[ ]` under NO_COLOR; `ctrl+n / ctrl+p`
+  faint on the right); the card: an accent bar `┃` (ASCII `|`) and its
+  gap, `? perf needs you` bold accent with `2 of 3 · 6m · ⌥1 perf` dim on
+  the right, the whole text at the reading width (88), the options one per
+  row (digit in accent). An approval: the command or patch in the code
+  colors on the raised tint, the reason dim, `allow once / always here /
+  deny`. Longer than the area: it scrolls (wheel, `pgup` / `pgdn`, `↑↓` on
+  an empty composer), `▾ 12 more lines · pgdn` dim on its last row. The
+  divider reads `you → ? perf's card · your answer`: the composer answers
+  this card, never main.
+- **Keys in the card view:** `1-9` pick (an empty composer only: once you
+  typed, digits are text), `⏎` sends the text as the answer (an approval:
+  denies, the text as a note; a done card: `⏎` on an empty composer
+  acknowledges it), `ctrl+n` / `ctrl+p` next / previous, `ctrl+x` close
+  without answering, `esc` (or `ctrl+g`) back to the thread. Each card
+  keeps its draft; the thread's draft waits for the way back. `⌥0-9` goes
+  to an agent (the view closes). Key bar: `1-2 pick   ⏎ answer   ctrl+x
+  close   ctrl+n next   esc back` (typing: `esc back, draft kept`).
+- **Removed:** `ctrl+f` card full screen (the view is already full;
+  `ctrl+f` is find in the history), `alt+r` (typing is answering), `ctrl+a`
+  on an empty composer (line start only), `ctrl+x` / `ctrl+n` / `ctrl+p`
+  from the thread (they acted on a card you could not see), the divider's
+  `? n cards · ctrl+g` (the strip says it).
+- A new card never takes the focus: a strip row, or a tab. Answering moves
+  to the next card, or back to the thread when none are left, with a dim
+  `✓ perf · you said both` in the history.
+- **Kinds** reuse the glyphs: `?` approval, question and blocked (accent),
+  `✗` failed, `↻` restart failed (error), `–` drop confirmation, `⇄`
+  overlap, `✓` done.
+- **Approvals** (docs/approvals.md §7) plug in as the kind `approval`: the
+  text is the command (or a unified diff), a blank line, the reason; an
+  option answers `/answer N allow once|always here|deny`, `⏎` with text
+  `/answer N deny: <note>`. The gate itself is not built yet.
 - **Answered cards fade in place** (decided by Gabriel, 2026-09-28): once
   answered, the card in the history turns grey (dim bar, `answered`), your
   answer follows as a normal line. BISE-31.
@@ -688,8 +727,7 @@ Vibe's (`vibe/setup/onboarding`). Six steps, `enter` to go on:
      inside, esc to come back. →`
    - first run of level 3: `agents talk to each other. it stays dim: you can
      ignore it, or ▸ to read.`
-   - first card: `a card: someone needs you. type your answer, alt+r sends
-     it. ↓`
+   - first card: `a card: someone needs you. ctrl+g opens it. ↓`
    - (**⚠** proposed) first steer: `✓ the agent got it · ✓✓ it read it.`
 
 The onboarding runs once per user (a flag in the state directory); `/welcome`
@@ -714,12 +752,13 @@ replays it (**⚠** proposed command).
 | `space` | preview the selected agent; in the feed, toggle the selected item | feed toggle new |
 | `D` | drop the selected agent (asks first) | — |
 | `esc` | close selection; in an agent, back to main | — |
-| `ctrl+g`, `ctrl+n` / `ctrl+p`, `alt+r`, `ctrl+f`, `ctrl+x`, `y` / `n` | cards | hints on the card |
+| `ctrl+g` | cards: open the card view, and back (§12) | the only card key from the thread |
+| `1-9`, `⏎`, `ctrl+n` / `ctrl+p`, `ctrl+x`, `esc` | in the card view: pick, answer, next / previous, close, back (§12) | `alt+r`, `ctrl+f` full screen, `ctrl+a` on an empty composer: removed (BISE-236) |
 | `ctrl+o` | open or close everything folded (thinking, outputs, diffs, reports, runs, `▸ why`) | was `ctrl+t` (removed, no alias); the `ctrl+o` shell is gone: the terminal panel is the one shell |
 | `ctrl+r` | voice: record, any key stops, then the clip is transcribed at once; the voice chip at the cursor meanwhile, you keep typing while it is transcribed (BISE-222) | batch, not live (BISE-130): the full Voxtral model, `[voice]` in config.toml |
 | ``ctrl+` `` | terminal panel | — |
 | `ctrl+v` | paste an image | from the images work |
-| hold `ctrl` alone (~80 ms, BISE-231) | the ctrl keys show where they act: a fold's `▸ 12 more lines` reads `▸ ctrl+o expand`, the panel title `agents · ctrl+k/j select`, the divider's state `ctrl+c interrupt` while the agent works, the card box's keys, the key bar every ctrl key of the moment; key in accent, what it does dim; over cells already drawn, nothing moves; released or any other key: gone at once. Only in a terminal that confirms the kitty keyboard protocol's flags 8 + 16 (Ghostty, kitty, WezTerm…); tmux and the others: off | new (BISE-203) |
+| hold `ctrl` alone (~80 ms, BISE-231) | the ctrl keys show where they act: a fold's `▸ 12 more lines` reads `▸ ctrl+o expand`, the panel title `agents · ctrl+k/j select`, the divider's state `ctrl+c interrupt` while the agent works, the key bar every ctrl key of the moment; key in accent, what it does dim; over cells already drawn, nothing moves; released or any other key: gone at once. Only in a terminal that confirms the kitty keyboard protocol's flags 8 + 16 (Ghostty, kitty, WezTerm…); tmux and the others: off | new (BISE-203) |
 | `ctrl+z` | ~~cancel the last route~~ | **removed** |
 | `typing` (composer) | zen: the edges fade while you type, back 5 s after your last key (or at once on ⏎, esc, a shortcut) | a row in /shortcuts (BISE-137) |
 | `/help`, `/shortcuts` | both end with the `symbols` legend (§6): every glyph, its ASCII form under `BISE_ASCII=1`, a few words | new (BISE-137) |
@@ -747,7 +786,10 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | edit | `± edit {path} ✓ +{a} −{d}` |
 | turn done (inside an agent) | `✓ turn done · {duration}` |
 | card title | `? {name} needs you` |
-| card keys | `alt+r answer with text · ctrl+x later · ctrl+f full screen` |
+| strip label | `3 cards · ctrl+g open` |
+| card view keys | `1-2 pick · ⏎ answer · ctrl+x close · ctrl+n next · esc back` (approval: `⏎ deny with a note`) |
+| card view divider | `you → ? {name}'s card · your answer` |
+| answered | `✓ {name} · you said {answer}` |
 | direct reply | `@ {name} to you: {text}` |
 | not delivered | `✗ not delivered: {name} stopped. ⏎ send again · esc drop` |
 | no vision | `✗ {model} can't read images. pick a model that can (/model), or describe the screen in words.` |
