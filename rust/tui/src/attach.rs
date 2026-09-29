@@ -4,8 +4,10 @@
 //! stands for. On send, every label still in the text becomes its
 //! marker (`<image name=… b64=…>`, see the `bend-images` crate) and the
 //! attachments start over. Sources: a picked `@` image, a paste that is
-//! only image paths (a file dragged into the terminal), Ctrl+V (the
-//! clipboard image). Nothing here panics on any input.
+//! only image paths (a file dragged into the terminal, iTerm2's "save to
+//! temp file and paste path"), Ctrl+V, Cmd+V passed through and an empty
+//! paste (the clipboard image, see `input::on_paste`). Nothing here
+//! panics on any input.
 
 use crate::app::App;
 use crate::theme::{accent, dim, error, glyph, text, G_FAILED, G_IMAGE, G_QUOTE};
@@ -108,8 +110,21 @@ fn clipboard_bytes() -> Result<Vec<u8>, String> {
     bend_images::clipboard_image()
 }
 
-/// Ctrl+V: the clipboard image, stored as PNG.
+// A unit test's clipboard image, already stored (`tests::clip`): no
+// osascript, nothing written to the image store.
+#[cfg(test)]
+thread_local! {
+    static TEST_CLIP: RefCell<Option<bend_images::Stored>> = const { RefCell::new(None) };
+}
+
+/// Ctrl+V, Cmd+V, an empty paste: the clipboard image, stored as PNG,
+/// its chip at the cursor (it replaces the selection).
 pub(crate) fn attach_clipboard(app: &mut App) -> Result<String, String> {
+    #[cfg(test)]
+    if let Some(stored) = TEST_CLIP.with(|c| c.borrow_mut().take()) {
+        let source = stored.file.to_string_lossy().to_string();
+        return Ok(add(app, &source, CLIPBOARD, 0, &stored));
+    }
     let bytes = clipboard_bytes()?;
     let original = bytes.len() as u64;
     let stored = bend_images::store_bytes(bytes)?;
@@ -762,6 +777,97 @@ mod tests {
 
     fn att(n: usize, m: &str) -> Attachment {
         Attachment { label: label(n), marker: m.into(), info: Info::default() }
+    }
+
+    /// The clipboard holds an image until the next read.
+    fn clip() {
+        let stored = bend_images::Stored {
+            kind: bend_images::Kind::Png,
+            width: 2048,
+            height: 1536,
+            file: "/nowhere/clip.png".into(),
+            b64: "/nowhere/clip.b64".into(),
+        };
+        TEST_CLIP.with(|c| *c.borrow_mut() = Some(stored));
+    }
+
+    fn clip_left() -> bool {
+        TEST_CLIP.with(|c| c.borrow_mut().take().is_some())
+    }
+
+    /// The composer holds `text`, the cursor at `at`.
+    fn composer(text: &str, at: usize) -> App {
+        let mut app = crate::sb::bench::test_app();
+        app.ed.paste(text);
+        app.ed.cursor = at;
+        app
+    }
+
+    #[test]
+    fn an_empty_paste_puts_the_clipboard_image_at_the_cursor() {
+        // Cmd+V on an image in a terminal that sends an empty paste
+        let mut app = composer("hello world", 5);
+        clip();
+        crate::input::on_paste(&mut app, "");
+        assert_eq!(app.ed.text, "hello [Image #1]  world");
+        assert_eq!(app.ed.cursor, 17, "past the chip and its space");
+        assert_eq!(shown(&app).len(), 1);
+        assert_eq!(app.attachments[0].info.source, "clipboard");
+        assert!(app.flash.as_ref().is_some_and(|(f, _)| f == "attached ▣ 1"), "{:?}", app.flash);
+        // one undo takes the chip and its attachment away
+        assert!(app.ed.undo());
+        assert_eq!(app.ed.text, "hello world");
+        assert!(shown(&app).is_empty());
+        // a paste of blanks is empty too
+        clip();
+        crate::input::on_paste(&mut app, " \r\n");
+        assert_eq!(app.ed.text, "hello [Image #1]  world");
+    }
+
+    #[test]
+    fn a_pasted_image_replaces_the_selection() {
+        let mut app = composer("hello world", 0);
+        app.ed.select_range(6, 11);
+        clip();
+        crate::input::on_paste(&mut app, "");
+        assert_eq!(app.ed.text, "hello [Image #1] ");
+        assert_eq!(app.ed.selection(), None);
+        assert!(app.ed.undo());
+        assert_eq!(app.ed.text, "hello world");
+    }
+
+    #[test]
+    fn a_text_paste_never_reads_the_clipboard() {
+        let mut app = composer("", 0);
+        clip();
+        crate::input::on_paste(&mut app, "abc");
+        assert_eq!(app.ed.text, "abc");
+        assert!(app.attachments.is_empty());
+        assert!(clip_left(), "the clipboard was not read");
+    }
+
+    #[test]
+    fn an_empty_paste_without_an_image_does_nothing() {
+        let mut app = composer("hello", 5);
+        crate::input::on_paste(&mut app, "");
+        assert_eq!(app.ed.text, "hello");
+        assert!(app.attachments.is_empty());
+        assert_eq!(app.flash, None, "a silent no-op, like the terminal's own empty paste");
+    }
+
+    #[test]
+    fn ctrl_v_and_a_passed_through_cmd_v_attach_the_clipboard_image() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        for m in [KeyModifiers::CONTROL, KeyModifiers::SUPER] {
+            let mut app = composer("see", 3);
+            clip();
+            crate::input::on_key(&mut app, &KeyEvent::new(KeyCode::Char('v'), m));
+            assert_eq!(app.ed.text, "see [Image #1] ", "{m:?}");
+            // no image: the key says so
+            crate::input::on_key(&mut app, &KeyEvent::new(KeyCode::Char('v'), m));
+            assert_eq!(app.ed.text, "see [Image #1] ", "{m:?}");
+            assert!(app.flash.as_ref().is_some_and(|(f, _)| f.contains("clipboard")), "{m:?} {:?}", app.flash);
+        }
     }
 
     #[test]

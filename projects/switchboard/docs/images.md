@@ -149,7 +149,21 @@ tool results), not the raw tag.
 - Drag a file from Finder into the terminal (the terminal pastes
   `/path/Screen\ Shot.png `): `[Image #N]`; several files at once work.
 - Ctrl+V: the clipboard image (a screenshot copied with Cmd+Ctrl+Shift+4).
-  An empty paste (Cmd+V on an image in some terminals) does the same.
+  Its chip goes at the cursor and replaces the selection; one undo takes
+  chip and attachment away.
+- Cmd+V on an image-only clipboard, per terminal (the terminal owns
+  Cmd+V; a text paste never reads the clipboard):
+  - an empty or blank bracketed paste: the clipboard image, like Ctrl+V;
+  - Ghostty 1.3: sends nothing by default. With
+    `keybind = performable:super+v=paste_from_clipboard` in its config it
+    pastes text as before and passes Cmd+V through when the clipboard has
+    no text: it arrives as SUPER+V (kitty keyboard protocol) and attaches
+    the image;
+  - iTerm2 3.7: asks "Paste Image"; "Save to Temp File and Paste Path"
+    pastes the temp file's path, which attaches like a dropped file;
+  - kitty and Ghostty tip: nothing, unless the app enables the paste
+    events mode 5522 (OSC 5522, not done: crossterm cannot parse an OSC
+    in input); Ctrl+V works everywhere.
 - Deleting `[Image #N]` from the text drops the attachment; the next
   image reuses the free number.
 - `run_typescript`: `return [{type:'image', path:'/tmp/s.png'}]` or

@@ -1,7 +1,7 @@
 """Images in the composer (docs/images.md), in a real terminal (tmux),
 against the fake provider: an image picked in the `@` popup, a file
-path pasted like a Finder drag-and-drop, and Ctrl+V (the clipboard
-image) each become `[Image #N]`, drawn as the chip `▣ N` (BISE-70) with
+path pasted like a Finder drag-and-drop, Ctrl+V and an empty paste
+(the clipboard image) each become `[Image #N]`, drawn as the chip `▣ N` (BISE-70) with
 the strip above the composer; on send the request to the provider
 carries each one as an image_url part with the PNG data, and the feed
 shows the image by name, not the marker.
@@ -84,7 +84,9 @@ def main():
         t.keys("BSpace")
         t.keys("BSpace")
         wait_composer(t, "look  ▣ 1   ▣ 2  and")
-        t.keys("C-v")
+        # Cmd+V on an image in a terminal that sends an empty bracketed
+        # paste: the clipboard image too
+        tmux("send-keys", "-t", t.name, "-l", "\x1b[200~\x1b[201~")
         wait_composer(t, "look  ▣ 1   ▣ 2  and  ▣ 3")
         t.typed("colors?")
         t.keys("Enter")

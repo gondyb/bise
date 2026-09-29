@@ -356,8 +356,13 @@ pub(crate) fn on_paste(app: &mut App, text: &str) {
     // typed newline, then insert at the cursor
     let text = text.replace("\r\n", "\n").replace('\r', "\n");
     // a paste that is only image paths (a file dragged into the
-    // terminal) attaches the images; an empty paste (Cmd+V on an image
-    // in some terminals) tries the clipboard image
+    // terminal, iTerm2's "Save to Temp File and Paste Path" on an image)
+    // attaches the images; an empty or blank paste (Cmd+V on an image in
+    // a terminal that sends one) tries the clipboard image, its chip at
+    // the cursor. A text paste never reads the clipboard (osascript is
+    // ~0.1 s). Ghostty and kitty send nothing on an image-only clipboard:
+    // there Cmd+V reaches us as a key only with a `performable:` binding
+    // (the arm below), else Ctrl+V (docs/images.md).
     let attached = if text.trim().is_empty() {
         Some(crate::attach::attach_clipboard(app).map(|l| vec![l]))
     } else {
@@ -468,8 +473,11 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         // the kitty keyboard protocol), Ctrl+J (LF, the one
         // binding EVERY terminal transmits), or alt+enter;
         // plain Enter sends
-        // ctrl+v: attach the clipboard image (terminals paste text only)
-        (KeyCode::Char('v'), KeyModifiers::CONTROL) => match crate::attach::attach_clipboard(app) {
+        // ctrl+v: attach the clipboard image (terminals paste text
+        // only); cmd+v arrives here only when the terminal did not paste
+        // (Ghostty `keybind = performable:super+v=paste_from_clipboard`
+        // passes it through on an image-only clipboard)
+        (KeyCode::Char('v'), KeyModifiers::CONTROL) | (KeyCode::Char('v'), KeyModifiers::SUPER) => match crate::attach::attach_clipboard(app) {
             Ok(l) => flash(app, format!("attached {l}")),
             Err(e) => flash(app, e),
         },
