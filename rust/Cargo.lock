@@ -1331,6 +1331,7 @@ version = "0.1.0"
 dependencies = [
  "bise-catalog",
  "bise-home",
+ "bise-session",
  "serde",
  "serde_json",
 ]

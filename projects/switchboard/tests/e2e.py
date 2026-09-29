@@ -58,6 +58,9 @@ class Env:
             "BEND_MCP_INDEX": os.path.join(self.tmp, "mcp-index.txt"),
             "BEND_SKILLS_INDEX": os.path.join(self.tmp, "skills-index.txt"),
             "BEND_BG_ROOT": os.path.join(self.tmp, "bg"),
+            # the agents' session logs (BISE-196) and their blobs: never
+            # the real ~/.bise
+            "BEND_SESSIONS_DIR": os.path.join(self.tmp, "bise", "sessions"),
             "BEND_BG_AFTER": "30",
             # the tmux tests start on the normal UI (tui_onboarding_tmux turns it on)
             "SB_ONBOARDING": "off",
@@ -379,6 +382,60 @@ def t_restart_keeps_everything(E, c):
     return c2
 
 
+def t_session_log(E, c):
+    """BISE-196/197: the hub writes each agent's session log from its
+    REPL's ev lines; a restart resumes from the log (the model gets the
+    earlier messages); an agent still on a session.txt moves to a log at
+    its next REPL, checked, the .txt kept."""
+    c.wait_idle("main")
+    adir = os.path.join(E.state, "agents", "main")
+    sessions = E.env["BEND_SESSIONS_DIR"]
+    sid = open(os.path.join(adir, "session")).read().strip()
+    log = os.path.join(sessions, sid, "events.jsonl")
+    evs = [json.loads(l) for l in open(log)]
+    types = [e["type"] for e in evs]
+    for t in ("session_start", "process_opened", "context_set", "turn_started", "user_message",
+              "assistant_message", "turn_ended"):
+        check(t in types, "%s in main's log: %r" % (t, sorted(set(types))))
+    check([e["seq"] for e in evs] == list(range(1, len(evs) + 1)), "seq 1..n")
+    check(oct(os.stat(log).st_mode & 0o777) == "0o600", "the log is 0600")
+    # the restart before resumed from the log: its request had the history
+    call = [r for r in E.fake_requests() if r["agent"] == "main" and r["user"].endswith("après redémarrage")][-1]
+    check(len(call["users"]) > 1, "the resumed request has the earlier messages: %r" % call["users"])
+    # an agent on a legacy session.txt: moved at its next REPL
+    E.stop_hub()
+    legacy = open(os.path.join(adir, "session.resume.txt")).read()
+    legacy += "MSG False user : MARKER-legacy-42\nMSG False assistant : noted\n"
+    txt = os.path.join(adir, "session.txt")
+    open(txt, "w").write(legacy)
+    os.remove(os.path.join(adir, "session"))
+    # a solo session and an agent with no REPL (done, archived): moved
+    # in the background after the boot
+    solo = os.path.join(sessions, "20260926-233616-43603.txt")
+    open(solo, "w").write("BEND-SESSION 2\nCFG 1 2 3 s\nCOUNT 1 0\nMSG False user : solo\n")
+    ghost = os.path.join(E.state, "agents", "ghost")
+    os.makedirs(ghost, exist_ok=True)
+    open(os.path.join(ghost, "session.txt"), "w").write("BEND-SESSION 2\nCFG 1 2 3 s\nCOUNT 1 0\nMSG False user : ghost\n")
+    c2 = E.start_hub()
+    c2.wait(lambda: c2.state is not None, 30, "state")
+    c2.wait_status("main", "idle", 60)
+    c2.say("après migration")
+    c2.wait_line("main", "ack: après migration", 60)
+    call = [r for r in E.fake_requests() if r["agent"] == "main" and r["user"].endswith("après migration")][-1]
+    check("MARKER-legacy-42" in call["users"], "the migrated context reaches the model: %r" % call["users"])
+    sid2 = open(os.path.join(adir, "session")).read().strip()
+    check(sid2 != sid, "a new session id")
+    moved = json.load(open(os.path.join(sessions, "migrated.json")))
+    check(moved.get(txt) == sid2, "migrated.json: %r" % moved)
+    check(open(txt).read() == legacy, "the .txt is kept as it was")
+    first = json.loads(open(os.path.join(sessions, sid2, "events.jsonl")).readline())
+    check(first["data"]["migrated_from"]["path"] == txt, "migrated_from: %r" % first)
+    c2.wait(lambda: {solo, os.path.join(ghost, "session.txt")} <= set(json.load(open(os.path.join(sessions, "migrated.json")))),
+            30, "the solo session and the ghost agent moved")
+    check(open(os.path.join(ghost, "session")).read().strip() == json.load(open(os.path.join(sessions, "migrated.json")))[os.path.join(ghost, "session.txt")], "ghost's id")
+    return c2
+
+
 def t_cli_errors(E, c):
     # the CLI refuses tasks' main-only commands, through the real bin/sb link
     c.wait_idle("main")
@@ -462,6 +519,7 @@ SCENARIOS = [
     t_crash_status_and_tasks,
     t_model_and_reasoning,
     t_restart_keeps_everything,
+    t_session_log,
     t_choices_survive_a_restart,
 ]
 

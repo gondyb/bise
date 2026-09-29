@@ -11,6 +11,7 @@
 //!   `sb history`.
 
 mod repl;
+mod session_log;
 mod versions;
 
 use repl::{adopt, adoptable, busy_at, kill_pid, supervise};
@@ -195,6 +196,8 @@ struct Shell {
     /// The catalog and config.toml (BISE-135: the model and effort each
     /// agent runs with), re-read when config.toml changes.
     setup: Option<(Option<std::time::SystemTime>, bise_catalog::Setup)>,
+    /// Each live REPL's session log writer (BISE-196), by agent dir.
+    recorders: BTreeMap<String, bise_session::recorder::Recorder>,
 }
 
 /// What an agent whose turn was cut by a restart receives.
@@ -723,7 +726,6 @@ impl Shell {
         if !adir.join("context.txt").exists() {
             let _ = std::fs::write(adir.join("context.txt"), "");
         }
-        let session = adir.join("session.txt");
         let gen = self.next_gen;
         self.next_gen += 1;
         self.gens.insert(dir.clone(), gen);
@@ -742,6 +744,7 @@ impl Shell {
                 }
                 self.bins.insert(dir.clone(), r.bin.clone());
                 self.ports.insert(dir.clone(), r.port);
+                self.attach_session(&a, &dir, &adir);
                 let tx = self.tx.clone();
                 let paths = self.opts.paths.clone();
                 std::thread::spawn(move || adopt(r, dir, gen, adir, tx, paths));
@@ -773,6 +776,7 @@ impl Shell {
                 return;
             }
         };
+        let (session, cont) = self.prepare_session(&a, &dir, &adir, resume);
         let mut cmd = Command::new(&self.opts.repl_bin);
         cmd.current_dir(&self.opts.app_root)
             .env("BEND_REPL_PORT", port.to_string())
@@ -815,7 +819,7 @@ impl Shell {
                 None => cmd.env_remove(k),
             };
         }
-        if resume && session.exists() {
+        if resume && cont && session.exists() {
             cmd.env("BEND_CONTINUE", "1");
         }
         if let Some(n) = crash_note {
@@ -1345,6 +1349,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         update_checked: None,
         update_told: None,
         resume_turn: BTreeSet::new(),
+        recorders: BTreeMap::new(),
         reload_id: String::new(),
         reload_repls: BTreeSet::new(),
         small_broken: Default::default(),
@@ -1401,6 +1406,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     sh.step(Input::Boot);
     sh.booting = false;
     kill_stale_repls(&sh);
+    sh.migrate_the_rest();
     crate::util::timing("boot done (REPLs spawned)");
 
     let mut keep_agents = false;
@@ -1504,7 +1510,9 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 offset,
             } => {
                 if sh.gens.get(&dir) == Some(&gen) {
-                    sh.on_repl_line(&dir, &line);
+                    if !sh.on_ev_line(&dir, &line, offset) {
+                        sh.on_repl_line(&dir, &line);
+                    }
                     sh.offsets.insert(dir, offset);
                 }
             }
@@ -1522,6 +1530,8 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 sh.gens.remove(&dir);
                 sh.repls.remove(&dir);
                 sh.pids.remove(&dir);
+                // its writer's lock goes with it (a respawn resumes the log)
+                sh.recorders.remove(&dir);
                 if sh.switching.contains_key(&dir) && !sh.switch_spawned.contains(&dir) {
                     // the reload a switch asked for: the same session on
                     // this hub's binary, the same port

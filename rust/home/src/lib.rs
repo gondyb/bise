@@ -207,9 +207,14 @@ impl Home {
         self.or("BEND_SESSIONS_DIR", self.root.join("sessions"))
     }
 
-    /// The session logs' shared blob store (BISE-192): `<root>/blobs`.
+    /// The session logs' shared blob store (BISE-192): next to the
+    /// sessions folder (`<root>/blobs`; a test's `BEND_SESSIONS_DIR`
+    /// takes its blobs along).
     pub fn blobs_dir(&self) -> PathBuf {
-        self.root.join("blobs")
+        match self.sessions_dir().parent() {
+            Some(p) => p.join("blobs"),
+            None => self.root.join("blobs"),
+        }
     }
 
     /// The folder of every hub: `<root>/hubs`, legacy `~/.local/state/switchboard`.

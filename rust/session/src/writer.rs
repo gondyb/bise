@@ -188,7 +188,12 @@ impl Writer {
     }
 
     /// Append one event; its seq. `must` comes from the type (§4).
-    pub fn append(&mut self, typ: &str, mut data: Value, turn: Option<u64>) -> std::io::Result<u64> {
+    pub fn append(&mut self, typ: &str, data: Value, turn: Option<u64>) -> std::io::Result<u64> {
+        self.append_data(typ, data, turn).map(|(seq, _)| seq)
+    }
+
+    /// `append`, with the data as written (redacted, big texts in blobs).
+    pub fn append_data(&mut self, typ: &str, mut data: Value, turn: Option<u64>) -> std::io::Result<(u64, Value)> {
         if let Some(r) = &self.redactor {
             r.value(&mut data);
         }
@@ -205,7 +210,7 @@ impl Writer {
         if must_of(typ) {
             o.insert("must".into(), true.into());
         }
-        o.insert("data".into(), data);
+        o.insert("data".into(), data.clone());
         let mut line = serde_json::to_string(&Value::Object(o)).map_err(std::io::Error::other)?;
         line.push('\n');
         // one write call: O_APPEND puts the whole line at the end
@@ -215,7 +220,7 @@ impl Writer {
         }
         self.seq = seq;
         self.size += line.len() as u64;
-        Ok(seq)
+        Ok((seq, data))
     }
 
     /// fsync now (before the hub is told a message was delivered).

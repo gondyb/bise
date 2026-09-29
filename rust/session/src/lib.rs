@@ -18,3 +18,4 @@ pub use redact::Redactor;
 pub mod legacy;
 pub mod migrate;
 pub mod show;
+pub mod recorder;
