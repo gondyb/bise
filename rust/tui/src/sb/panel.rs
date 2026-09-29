@@ -130,7 +130,10 @@ fn row(
     let pad = w.saturating_sub(used + right_w + 1);
     let mut spans = vec![
         Span::styled(lead, Style::default().fg(faint())),
-        Span::styled(gl, Style::default().fg(g.1)),
+        // the glyph cell alone takes its color: a new gust frame rewrites
+        // that one cell, not the space after it
+        Span::styled(g.0.to_string(), Style::default().fg(g.1)),
+        Span::raw(" "),
         Span::styled(name, name_style),
     ];
     spans.extend(marks);
@@ -168,9 +171,9 @@ fn fit(s: &str, max: usize) -> String {
 fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usize) -> Line<'static> {
     let focused = a.name == sb.focus;
     let selected = sb.selected == Some(i);
-    let g = if a.main {
-        (G_MAIN, accent())
-    } else if needs_you(sb, a) {
+    // BISE-119: main's status sits in the same column as every agent's
+    // (the breathing gust while it works, `○` idle); its `:*` follows its name
+    let g = if !a.main && needs_you(sb, a) {
         (G_NEEDS_YOU, accent())
     } else {
         glyph(&a.status, app.tick, app.motion)
@@ -181,12 +184,8 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usi
         Style::default().fg(text())
     };
     let mut marks = Vec::new();
-    // BISE-116: main keeps `:*`; while it works, the breath 1 space after
-    // its name (as the divider's `you → main ≈`), the only cell that moves
-    if a.main && a.status == "working" {
-        let (g, c) = crate::gust::cell(app.motion);
-        marks.push(Span::raw(" "));
-        marks.push(Span::styled(g, Style::default().fg(c)));
+    if a.main {
+        marks.push(Span::styled(format!(" {}", G_MAIN), Style::default().fg(accent())));
     }
     if sb.activity.contains(&a.name) && !focused {
         marks.push(Span::styled(format!(" {}", G_UNREAD), Style::default().fg(accent())));
@@ -916,7 +915,7 @@ mod tests {
             let t = trimmed(&rows);
             let row = |n: &str| t.iter().find(|r| r.contains(n)).unwrap_or_else(|| panic!("{} missing:\n{}", n, t.join("\n"))).clone();
             assert_eq!(t[0], format!(" {}{}", PANEL_TITLE.0, PANEL_TITLE.1), "the title on one row at {}", w);
-            assert_eq!(row("main"), format!(" 0 {} main", G_MAIN));
+            assert_eq!(row("main"), format!(" 0 {} main {}", G_IDLE, G_MAIN));
             let flush = |n: &str, right: &str| {
                 let r = row(n);
                 assert!(r.ends_with(right), "{:?} ends with {:?} at {}", r, right, w);
@@ -982,11 +981,12 @@ mod tests {
         assert_eq!(at("auth-fix", G_UNREAD), accent());
     }
 
-    /// BISE-116: main keeps `:*`; while it works, the breath 1 space after
-    /// its name, and a new frame rewrites that one cell only; idle, the
-    /// row stands still; no motion, one static `∿`.
+    /// BISE-119: main's row lines up with the others: its status in the
+    /// agents' glyph column (the breath while it works, a new frame
+    /// rewrites that one cell only; `○` idle; no motion, one static `∿`),
+    /// its name in their name column, `:*` (accent, still) after it.
     #[test]
-    fn main_working_breathes_after_its_name() {
+    fn main_status_sits_in_the_glyph_column() {
         use crate::gust::{Motion, W1};
         let mut app = bench::test_app_drained();
         let sb = &mut app.sb;
@@ -998,31 +998,35 @@ mod tests {
             term.draw(|f| draw_panel(app, f, f.area())).unwrap();
             (screen(&term), term.backend().buffer().clone())
         };
-        let main_row = |rows: &[String]| rows.iter().find(|r| r.contains("main")).unwrap().trim_end().to_string();
+        let row_of = |rows: &[String], n: &str| rows.iter().find(|r| r.contains(n)).unwrap().trim_end().to_string();
+        let mark_x = " 0 ∿ main ".chars().count() as u16;
         let mut last = None;
         for i in 0..W1.breath.len() as u64 {
             let (rows, buf) = draw(&mut app, Motion::Frame(i));
             let breath = W1.breath[i as usize];
-            assert_eq!(main_row(&rows), format!(" 0 {} main {}", G_MAIN, breath), "frame {i}");
+            assert_eq!(row_of(&rows, "main"), format!(" 0 {} main {}", breath, G_MAIN), "frame {i}");
+            // the same columns as an agent's glyph and name
+            let ideas = row_of(&rows, "ideas");
+            assert_eq!(ideas.chars().position(|c| c == 'i'), row_of(&rows, "main").chars().position(|c| c == 'm'));
             let y = rows.iter().position(|r| r.contains("main")).unwrap() as u16;
-            let x = " 0 :* main ".chars().count() as u16;
-            assert_eq!(buf.cell((x, y)).unwrap().fg, crate::gust::cell(Motion::Frame(i)).1, "frame {i}");
-            assert_eq!(buf.cell((3, y)).unwrap().fg, accent(), "`:*` stays accent");
+            assert_eq!(buf.cell((3, y)).unwrap().fg, crate::gust::cell(Motion::Frame(i)).1, "frame {i}");
+            assert_eq!(buf.cell((mark_x, y)).unwrap().fg, accent(), "`:*` stays accent");
             // the next frame rewrites main's gust cell, nothing else
             if let Some(prev) = last.replace(buf.clone()) {
                 let d = prev.diff(&buf);
-                assert_eq!(d.iter().map(|(x, y, _)| (*x, *y)).collect::<Vec<_>>(), vec![(x, y)], "frame {i}");
+                assert_eq!(d.iter().map(|(x, y, _)| (*x, *y)).collect::<Vec<_>>(), vec![(3, y)], "frame {i}");
             }
         }
         // no motion (focus lost, BISE_REDUCE_MOTION, a slow draw): one still `∿`
         let (rows, a) = draw(&mut app, Motion::Still);
-        assert_eq!(main_row(&rows), format!(" 0 {} main {}", G_MAIN, W1.still.0));
+        assert_eq!(row_of(&rows, "main"), format!(" 0 {} main {}", W1.still.0, G_MAIN));
         let (_, b) = draw(&mut app, Motion::Still);
         assert!(a.diff(&b).is_empty());
-        // idle: the row as before, and the frames change no cell
+        // idle: an idle agent's glyph, and the frames change no cell
         app.sb.agents[0].status = "idle".into();
         let (rows, a) = draw(&mut app, Motion::Frame(0));
-        assert_eq!(main_row(&rows), format!(" 0 {} main", G_MAIN));
+        assert_eq!(row_of(&rows, "main"), format!(" 0 {} main {}", G_IDLE, G_MAIN));
+        assert!(row_of(&rows, "ideas").starts_with(&format!(" 1 {} ideas", G_IDLE)));
         let (_, b) = draw(&mut app, Motion::Frame(1));
         assert!(a.diff(&b).is_empty());
     }
@@ -1452,7 +1456,7 @@ mod chrome_tests {
         assert!(keys.starts_with("│  ⏎ send   @ agent"), "{:?}", keys);
         assert!(rows.last().unwrap().starts_with("╰─"), "{}", all);
         // a panel with main only
-        assert!(rows.iter().any(|r| r.contains(&format!("│  0 {} main", G_MAIN))), "{}", all);
+        assert!(rows.iter().any(|r| r.contains(&format!("│  0 {} main {}", G_IDLE, G_MAIN))), "{}", all);
         // once there is an agent, the first-run text goes
         bench::add_agent(&mut app, "auth-fix", "the safari login");
         let rows = draw(&mut app, 120, 24);
