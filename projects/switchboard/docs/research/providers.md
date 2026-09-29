@@ -506,8 +506,8 @@ Rules:
 
 `bise models [filter]` (`bend-harness models`): the model and
 agent_model in use (with where they come from and whether they are
-listed), then per provider: family, whether its key env var is set
-(`.env` files included; `auth.json` with BISE-143), its models with
+listed), then per provider: family, where its key comes from (§7.4:
+env, `auth.json`, an old `.env` file; never the key), its models with
 context / output / vision / reasoning, and `<provider>/<any other>`
 with the defaults; the warnings last.
 
@@ -543,3 +543,57 @@ Caps { context, max_output, vision, reasoning, tools }, known }`;
   `providers.<p>.<k>`; unknown provider, `needs` set, or a family not
   built yet: an error at call time. A new `[providers]` / `[models]`
   table in config.toml needs a restart (the file is written at start).
+
+### 7.4 BISE-143 as built: API keys (`auth.json`, login)
+
+API keys only (§6.2; OAuth later). Code: `rust/catalog/src/auth.rs`
+(store + resolution, pure), `auth_cli.rs` (the commands), wired in
+`rust/harness/src/main.rs` (`auth_paths`, `load_keys`). The command
+name is `bise_catalog::CLI` (`bend-harness` until BISE-165: one line).
+
+Commands (`bend-harness …`, later `bise …`):
+- `login [provider]`: asks the key with the terminal echo off (no
+  provider: a numbered list of the providers that take a key); without
+  a terminal it reads the key from stdin (`printf %s "$K" | … login
+  openai`). The key is trimmed; empty, or holding a space or a control
+  character: refused, nothing saved. Says when the provider's env var
+  is set (it wins) and that a running hub keeps the keys it started
+  with. Unknown provider / one with no key (ollama): an error. Custom
+  providers of config.toml (`key_env`) work.
+- `logout [provider]` (no provider: the only stored one); says when
+  another source still has a key.
+- `auth list` (`auth`, `auth login|logout` too): per provider that
+  takes a key, its `key_env` and where the key comes from (`env
+  OPENAI_API_KEY`, `auth.json`, `~/.vibe/.env (MISTRAL_API_KEY)`, `-`);
+  warns on entries for unknown providers, non-API entries, and an
+  auth.json readable by others.
+- `models` shows the same source per provider.
+
+`auth.json` = `bise_home::Home::auth_file()` (`<root>/auth.json`:
+`~/.bise` in the bise layout, `~/.bend-harness` in the legacy one),
+the OpenCode layout `{"<provider>": {"type": "api", "key": "…"}}`;
+other entries are kept as they are. Written atomically (temp file in
+the same dir, 0600, renamed); its directory created 0700 when missing
+(an existing one keeps its mode). A file that is not a JSON object is
+an error without its content and is never overwritten.
+
+**Resolution, per provider** (its `key_env` from the catalog, config
+included):
+1. the environment: `key_env`, then its aliases (`GEMINI_API_KEY` ←
+   `GOOGLE_API_KEY`; `auth::ALIASES`); empty = unset;
+2. `auth.json` (the provider id);
+3. the old `.env` files (`Home::env_files()`: `<root>/.env`, in the
+   bise layout `~/.bend-harness/.env`, then `~/.vibe/.env`), first file
+   first, `key_env` then its aliases.
+
+**Hand-off.** The Bend runtime reads `getenv(key_env)` on each call
+(BISE-141). At start (sbd, `--headless`), `load_keys()` resolves every
+provider and sets `key_env` in the process env when the key is not
+already there under that name (an alias, auth.json, a .env file); then
+the rest of the .env lines as before. The REPLs inherit it. No key is
+written to any other file (not the models file, not the session) or
+printed; `Found`'s Debug hides it. Limit: a REPL's env is fixed at
+spawn, so a `login` reaches a running hub's agents only after the hub
+restarts (`bend-harness switchboard --stop`). Later: onboarding's model
+step (`rust/tui/src/onboarding.rs`, today it writes `<root>/.env`) can
+call `auth::Store` + `auth_cli::login` instead.

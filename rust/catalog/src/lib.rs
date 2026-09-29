@@ -14,7 +14,12 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod auth;
+pub mod auth_cli;
 pub mod cli;
+
+/// The command's name in messages and usages (`bise` with BISE-165).
+pub const CLI: &str = "bend-harness";
 
 /// The built-in list, shipped in the binary.
 pub const BUILTIN: &str = include_str!("../models.toml");
@@ -682,3 +687,5 @@ pub fn export_handoff(config: &Path, cache_dir: &Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod auth_tests;

@@ -154,29 +154,47 @@ fn list_sessions(sessions_dir: &str) {
     }
 }
 
-// API keys the vibe way: KEY=VALUE lines from bise's .env
-// (~/.bend-harness/.env; ~/.bise/.env then it in the new layout), then
-// ~/.vibe/.env (where the vibe CLI keeps ANTHROPIC_FOUNDRY_API_KEY and
-// friends): bise_home::Home::env_files. A variable already set in the
-// real environment always wins; an earlier file wins over a later one.
-// Loaded here, in the one entry point, so the TUI and --headless
-// (bend_client) see the same keys.
-fn load_env_files() {
-    for path in bise_home::Home::from_env().env_files() {
-        let Ok(text) = std::fs::read_to_string(&path) else { continue };
-        for line in text.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
+// ---- API keys (BISE-143, bise_catalog::auth) ----
+
+fn auth_paths() -> bise_catalog::auth_cli::Paths {
+    let h = bise_home::Home::from_env();
+    bise_catalog::auth_cli::Paths {
+        auth_file: h.auth_file(),
+        config: h.config_file(),
+        env_files: h.env_files(),
+        home: Some(h.user_home().to_path_buf()),
+    }
+}
+
+/// Every provider's key where the Bend runtime reads it: getenv(key_env)
+/// (the REPLs inherit this process's env). Per provider: the env var
+/// (and its aliases), then auth.json, then the old .env files
+/// (Home::env_files: bise's .env, then ~/.vibe/.env, where the vibe CLI
+/// keeps ANTHROPIC_FOUNDRY_API_KEY). Then the rest of the .env files' lines
+/// (a variable already set always wins; an earlier file wins). Called in
+/// each entry point that starts REPLs, so the hub and --headless see the
+/// same keys. No key is written anywhere or printed.
+fn load_keys() {
+    use bise_catalog::auth::{EnvFile, Keys, Store};
+    let paths = auth_paths();
+    let store = Store::read(&paths.auth_file).unwrap_or_else(|e| {
+        eprintln!("warning: {} (its keys are ignored)", e);
+        Store::default()
+    });
+    let files = EnvFile::read_all(&paths.env_files);
+    let setup = bise_catalog::Setup::load(&paths.config);
+    let env = |k: &str| std::env::var(k).ok();
+    let exports = Keys { env: &env, store: &store, files: &files }
+        .resolve(&setup.catalog)
+        .exports();
+    for (k, v) in exports {
+        std::env::set_var(k, v);
+    }
+    for f in &files {
+        for (k, v) in &f.vars {
+            if !std::env::var_os(k).is_some_and(|x| !x.is_empty()) {
+                std::env::set_var(k, v);
             }
-            let line = line.strip_prefix("export ").unwrap_or(line);
-            let Some((k, v)) = line.split_once('=') else { continue };
-            let k = k.trim();
-            let v = v.trim().trim_matches('"').trim_matches('\'');
-            if k.is_empty() || std::env::var_os(k).is_some_and(|x| !x.is_empty()) {
-                continue;
-            }
-            std::env::set_var(k, v);
         }
     }
 }
@@ -351,7 +369,7 @@ fn main() -> std::io::Result<()> {
         match args.first().map(|s| s.as_str()) {
             Some("sb") => std::process::exit(switchboard::cli::main(&args[1..])),
             Some("sbd") => {
-                load_env_files();
+                load_keys();
                 export_models_file();
                 return run_sbd(&args[1..]);
             }
@@ -386,10 +404,11 @@ fn main() -> std::io::Result<()> {
             // agent plugins: list, enable/disable, and the per-session
             // bridge the REPL starts (projects/switchboard/docs/plugins.md)
             Some("plugins") => std::process::exit(bend_plugins::cli::main(&args[1..])),
-            Some("models") => {
-                load_env_files();
-                std::process::exit(bise_catalog::cli::main(&args[1..], &config_file()));
-            }
+            // no load_keys(): the listings tell each key's source
+            Some("models") => std::process::exit(bise_catalog::cli::main(&args[1..], &auth_paths())),
+            Some("login") => std::process::exit(bise_catalog::auth_cli::login_main(&args[1..], &auth_paths())),
+            Some("logout") => std::process::exit(bise_catalog::auth_cli::logout_main(&args[1..], &auth_paths())),
+            Some("auth") => std::process::exit(bise_catalog::auth_cli::auth_main(&args[1..], &auth_paths())),
             Some("switchboard") => {
                 let debug = args.iter().any(|a| a == "--debug");
                 return run_switchboard(&args[1..], debug);
@@ -400,7 +419,7 @@ fn main() -> std::io::Result<()> {
             _ => {}
         }
     }
-    load_env_files();
+    load_keys();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let CliArgs {
         scripted,

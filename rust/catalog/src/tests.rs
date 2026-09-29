@@ -335,21 +335,28 @@ fn write_handoff_is_atomic_and_export_falls_back() {
 fn the_listing_shows_keys_choices_and_warnings() {
     let s = setup("model = \"anthropic/claude-sonnet-4-5\"\nagent_model = \"work/x\"\n[providers.work]\nbase_url = \"http://w\"\n[models.\"z\"]\n");
     let env = |k: &str| (k == "ANTHROPIC_API_KEY").then(|| "sk".to_string());
-    let out = cli::render(&s, None, &env);
+    let mut store = crate::auth::Store::default();
+    store.set("groq", "gsk-secret-1");
+    let keys = crate::auth::Keys { env: &env, store: &store, files: &[] };
+    let out = cli::render(&s, None, &keys, None);
     assert!(out.contains("model        anthropic/claude-sonnet-4-5  (config; listed)"), "{out}");
     assert!(out.contains("agent_model  work/x  (config; not listed: work's defaults)"), "{out}");
-    assert!(out.contains("ANTHROPIC_API_KEY set"), "{out}");
-    assert!(out.contains("OPENAI_API_KEY not set"), "{out}");
+    assert!(out.contains("key: env ANTHROPIC_API_KEY"), "{out}");
+    assert!(out.contains("key: auth.json"), "{out}");
+    assert!(!out.contains("gsk-secret-1") && !out.contains("sk\n"), "{out}");
+    assert!(out.contains("no key (OPENAI_API_KEY or 'bend-harness login openai')"), "{out}");
     assert!(out.contains("ollama  Ollama (local) · openai-chat · no key needed"), "{out}");
     assert!(out.contains("not usable yet (BISE-149)"), "{out}");
     assert!(out.contains("from config.toml"), "{out}");
     assert!(out.contains("warning: config.toml: models.\"z\""), "{out}");
     // a filter keeps matching providers and models
-    let out = cli::render(&s, Some("gpt-oss"), &env);
+    let out = cli::render(&s, Some("gpt-oss"), &keys, None);
     assert!(out.contains("groq/openai/gpt-oss-120b") && out.contains("cerebras/gpt-oss-120b"), "{out}");
     assert!(!out.contains("anthropic/claude-opus-4-5"), "{out}");
     let s = setup("model = \"nowhere/x\"\n");
-    assert!(cli::render(&s, None, &no_env).contains("unknown provider 'nowhere'"));
+    let empty = crate::auth::Store::default();
+    let keys = crate::auth::Keys { env: &no_env, store: &empty, files: &[] };
+    assert!(cli::render(&s, None, &keys, None).contains("unknown provider 'nowhere'"));
 }
 
 #[test]

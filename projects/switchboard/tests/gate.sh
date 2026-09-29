@@ -116,7 +116,9 @@ pkgs=""
 add() { case " $pkgs " in *" $1 "*) ;; *) pkgs="$pkgs $1" ;; esac; }
 for f in $changed; do
   case "$f" in
-    rust/Cargo.toml|rust/Cargo.lock|rust/.cargo/*) add bend-plugins; add bend-images; add bend-tui; add switchboard; add bend-harness ;;
+    rust/Cargo.toml|rust/Cargo.lock|rust/.cargo/*) add bise-home; add bise-catalog; add bend-plugins; add bend-images; add bend-tui; add switchboard; add bend-harness ;;
+    rust/home/*) add bise-home; add bend-plugins; add bend-images; add bend-tui; add switchboard; add bise-catalog; add bend-harness ;;
+    rust/catalog/*) add bise-catalog; add bend-harness ;;
     rust/plugins/*) add bend-plugins; add bend-tui; add bend-harness ;;
     rust/images/*) add bend-images; add bend-tui; add bend-harness ;;
     rust/tui/*) add bend-tui; add bend-harness ;;

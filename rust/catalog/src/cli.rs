@@ -2,7 +2,8 @@
 
 use std::path::Path;
 
-use crate::{Catalog, Known, Provider, Resolved, Setup, Source};
+use crate::auth::{EnvFile, Keys, Store};
+use crate::{Catalog, Known, Provider, Resolved, Setup, Source, CLI};
 
 /// "128k", "1M", "1.04M"
 pub fn tokens(n: u64) -> String {
@@ -18,16 +19,19 @@ pub fn tokens(n: u64) -> String {
     }
 }
 
-/// The state of a provider's key, for the list.
-pub fn key_state(p: &Provider, env: &dyn Fn(&str) -> Option<String>) -> String {
+/// The state of a provider's key, for the list (where it comes from,
+/// never the key).
+pub fn key_state(p: &Provider, keys: &Keys, home: Option<&Path>) -> String {
     if !p.needs.is_empty() {
         return format!("not usable yet ({})", p.needs);
     }
     if p.key_env.is_empty() {
         return "no key needed".into();
     }
-    let set = env(&p.key_env).is_some_and(|v| !v.trim().is_empty());
-    format!("{} {}", p.key_env, if set { "set" } else { "not set" })
+    match keys.for_provider(p) {
+        Some(f) => format!("key: {}", f.from.describe(home)),
+        None => format!("no key ({} or '{} login {}')", p.key_env, CLI, p.id),
+    }
 }
 
 fn caps_text(r: &Resolved) -> String {
@@ -53,7 +57,7 @@ fn choice_line(label: &str, c: &Catalog, name: &str, from: &str) -> String {
 }
 
 /// The whole listing, pure (tests).
-pub fn render(s: &Setup, filter: Option<&str>, env: &dyn Fn(&str) -> Option<String>) -> String {
+pub fn render(s: &Setup, filter: Option<&str>, keys: &Keys, home: Option<&Path>) -> String {
     let c = &s.catalog;
     let f = filter.map(|f| f.to_ascii_lowercase());
     let hit = |x: &str| f.as_deref().is_none_or(|f| x.to_ascii_lowercase().contains(f));
@@ -74,7 +78,7 @@ pub fn render(s: &Setup, filter: Option<&str>, env: &dyn Fn(&str) -> Option<Stri
             p.id,
             p.name,
             p.api,
-            key_state(p, env),
+            key_state(p, keys, home),
             custom
         ));
         for m in shown {
@@ -97,30 +101,44 @@ pub fn render(s: &Setup, filter: Option<&str>, env: &dyn Fn(&str) -> Option<Stri
     o
 }
 
-const USAGE: &str = "usage: bise models [filter]
+fn usage() -> String {
+    format!(
+        "usage: {} models [filter]
   Lists the providers and models bise knows (built in, plus config.toml's
-  [providers.<id>] and [models.\"<provider>/<model>\"]), whether each
-  provider's key is set, and the models in use (model, agent_model).
-  Any \"<provider>/<model>\" works, listed or not.";
+  [providers.<id>] and [models.\"<provider>/<model>\"]), where each
+  provider's key comes from (env, auth.json, an old .env file), and the
+  models in use (model, agent_model).
+  Any \"<provider>/<model>\" works, listed or not.",
+        CLI
+    )
+}
 
-/// `bise models [filter]`, reading `config`; returns the exit code.
-pub fn main(args: &[String], config: &Path) -> i32 {
+/// `bise models [filter]`, reading `paths.config` and the keys; returns
+/// the exit code.
+pub fn main(args: &[String], paths: &crate::auth_cli::Paths) -> i32 {
     let mut filter = None;
     for a in args {
         match a.as_str() {
             "-h" | "--help" => {
-                println!("{}", USAGE);
+                println!("{}", usage());
                 return 0;
             }
             s if s.starts_with('-') || filter.is_some() => {
-                eprintln!("{}", USAGE);
+                eprintln!("{}", usage());
                 return 2;
             }
             s => filter = Some(s.to_string()),
         }
     }
-    let setup = Setup::load(config);
-    print!("{}", render(&setup, filter.as_deref(), &|k| std::env::var(k).ok()));
-    println!("\nconfig: {}", config.display());
+    let setup = Setup::load(&paths.config);
+    let store = Store::read(&paths.auth_file).unwrap_or_else(|e| {
+        eprintln!("warning: {} (its keys are ignored)", e);
+        Store::default()
+    });
+    let files = EnvFile::read_all(&paths.env_files);
+    let env = |k: &str| std::env::var(k).ok();
+    let keys = Keys { env: &env, store: &store, files: &files };
+    print!("{}", render(&setup, filter.as_deref(), &keys, paths.home.as_deref()));
+    println!("\nconfig: {}", paths.config.display());
     0
 }
