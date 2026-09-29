@@ -9,15 +9,10 @@ python3 -u projects/switchboard/tests/tui_queue_tmux.py
 """
 import os
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import e2e  # noqa: E402
-from tui_tmux import tmux, keys, typed, wait_screen, wait_re, wait_gone, in_view  # noqa: E402
-import tui_tmux  # noqa: E402
+from tui_tmux import tui_session, run, in_view, pane_rows, wait_until  # noqa: E402
 
-S = "sbqueue%d" % os.getpid()
-tui_tmux.S = S
 HINT = "queued · sent when this turn ends · ↑ edit"
 
 
@@ -33,74 +28,55 @@ def sent(E):
     return out
 
 
-def composer_row():
+def composer_row(t):
     """The composer's text (book §8 "The frame"): the rows with the bar
     under the divider, their text after the bar."""
-    return " ".join(x for x in tui_tmux.pane_rows(tui_tmux.screen().splitlines()) if x)
+    return " ".join(x for x in pane_rows(t.screen().splitlines()) if x)
 
 
 def main():
-    E = e2e.Env()
-    ok = False
-    try:
-        tui_tmux.start_tui(E, 150, 42)
-        wait_screen("bise :*")
-        wait_re(in_view("main"))
+    with tui_session(150, 42) as t:
+        t.wait("bise :*")
+        t.wait_re(in_view("main"))
         # a slow turn: main runs `sleep 8`
-        typed("[[bash: sleep 8]]")
-        keys("Enter")
-        wait_screen("tab queue   ⏎ steer", 20)
+        t.typed("[[bash: sleep 8]]")
+        t.keys("Enter")
+        t.wait("tab queue   ⏎ steer", 20)
         # tab queues: nothing goes to the hub
-        typed("queued-one")
-        keys("Tab")
-        wait_screen(" › queued-one", 10)
-        typed("queued-two")
-        keys("Tab")
-        wait_screen(" › queued-two", 10)
-        sc = wait_screen("· 2 queued", 5)
+        t.typed("queued-one")
+        t.keys("Tab")
+        t.wait(" › queued-one", 10)
+        t.typed("queued-two")
+        t.keys("Tab")
+        t.wait(" › queued-two", 10)
+        sc = t.wait("· 2 queued", 5)
         assert HINT in sc, sc
         assert sc.index(" › queued-one") < sc.index(" › queued-two"), sc
-        assert not any("queued-" in m for m in sent(E)), sent(E)
+        assert not any("queued-" in m for m in sent(t.E)), sent(t.E)
         # ↑ in an empty composer: the newest back to edit; tab queues it again
-        keys("Up")
-        wait_screen("· 1 queued", 5)
-        assert "queued-two" in composer_row(), tui_tmux.screen()
-        typed(" edited")
-        keys("Tab")
-        sc = wait_screen(" › queued-two edited", 5)
-        wait_screen("· 2 queued", 5)
-        assert "queued" not in composer_row(), tui_tmux.screen()
-        assert not any("queued-" in m for m in sent(E)), sent(E)
+        t.keys("Up")
+        t.wait("· 1 queued", 5)
+        assert "queued-two" in composer_row(t), t.screen()
+        t.typed(" edited")
+        t.keys("Tab")
+        sc = t.wait(" › queued-two edited", 5)
+        t.wait("· 2 queued", 5)
+        assert "queued" not in composer_row(t), t.screen()
+        assert not any("queued-" in m for m in sent(t.E)), sent(t.E)
         # the turn ends: the queue goes out in order, one per turn
-        t0 = time.time()
-        while time.time() - t0 < 60:
-            got = [m for m in sent(E) if "queued-" in m]
-            if len(got) >= 2:
-                break
-            time.sleep(0.3)
-        got = [m for m in sent(E) if "queued-" in m]
+        def queued():
+            return [m for m in sent(t.E) if "queued-" in m]
+        got = wait_until(lambda: len(queued()) >= 2 and queued(), 60,
+                         lambda: "the queue did not go out: %r" % queued(), poll=0.3)
         assert got[:1] == ["queued-one"], got
         assert any(m == "queued-two edited" for m in got), got
-        wait_screen("ack: queued-two edited", 30)
-        wait_gone(HINT, 10)
-        sc = tui_tmux.screen()
+        t.wait("ack: queued-two edited", 30)
+        t.wait_gone(HINT, 10)
+        sc = t.screen()
         print(sc)
         assert "· 2 queued" not in sc and "· 1 queued" not in sc, sc
-        ok = True
         print("PASS tui queue")
-    finally:
-        tmux("kill-session", "-t", S)
-        try:
-            c = e2e.Client(os.path.join(E.state, "hub.sock"))
-            c.send({"op": "stop_hub"})
-            time.sleep(1)
-        except Exception:
-            pass
-        if not ok:
-            os.environ["SB_KEEP"] = "1"
-        E.close()
-    sys.exit(0 if ok else 1)
 
 
 if __name__ == "__main__":
-    main()
+    run(main)
