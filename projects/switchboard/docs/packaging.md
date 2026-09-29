@@ -316,7 +316,7 @@ the default paths.
 
 ## 10. Questions for the user
 
-1. **Open source or not?** The repo (`gvergnaud/bend-harness`) license,
+1. **Open source or not?** The repo (`gvergnaud/bise`) license,
    and Bend's (`bendlang/bend`): can the binaries be redistributed? This
    decides public GitHub Releases vs a private bucket/CDN.
 2. **Mistral green light**: is this a Mistral product (Mistral's Apple

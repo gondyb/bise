@@ -4,7 +4,25 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>bise :* · multi-agent coding, made human.</title>
-<meta name="description" content="ramble. interrupt. change your mind. i run the agents. you stay in flow.">
+<meta name="description" content="bise is an open-source terminal app for multi-agent coding. you talk to one agent, it runs a whole team of coding agents for you, and you stay in flow.">
+<link rel="canonical" href="https://bise.dev/">
+<meta name="theme-color" content="#141211">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="bise">
+<meta property="og:url" content="https://bise.dev/">
+<meta property="og:title" content="bise :* · multi-agent coding, made human.">
+<meta property="og:description" content="bise is an open-source terminal app for multi-agent coding. you talk to one agent, it runs a whole team of coding agents for you, and you stay in flow.">
+<meta property="og:image" content="https://bise.dev/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="bise :* · multi-agent coding, made human.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="bise :* · multi-agent coding, made human.">
+<meta name="twitter:description" content="bise is an open-source terminal app for multi-agent coding. you talk to one agent, it runs a whole team of coding agents for you, and you stay in flow.">
+<meta name="twitter:image" content="https://bise.dev/og.png">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"bise","url":"https://bise.dev","applicationCategory":"DeveloperApplication","operatingSystem":"macOS","description":"bise is an open-source terminal app for multi-agent coding. you talk to one agent, it runs a whole team of coding agents for you, and you stay in flow.","author":{"@type":"Person","name":"Gabriel Vergnaud"},"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -214,7 +232,7 @@
 <!-- demo -->
 <div class="demo blow">
   <div>
-    <div class="dhead"><div class="kicker">watch</div><h2>this is what flow looks like.</h2><p class="soft">one conversation with main. the agents work on the side. you never stop typing.</p></div>
+    <div class="dhead"><div class="kicker">watch</div><h2>this is what flow looks like.</h2><p class="soft">five ideas in two minutes. one conversation with main. you never stop typing.</p></div>
     <div class="term" aria-label="a bise session, animated">
       <div class="thead"><span>bise <span class="acc">:*</span></span><span class="faint">~/acme</span></div>
       <div class="screen">
@@ -450,9 +468,9 @@ function count() { const n = Object.values(rows).filter((r) => r.dataset.busy).l
 // the composer: the bar turns blush while there is text, the placeholder shows when it's empty
 const comp = document.getElementById("comp"), ph = document.getElementById("ph");
 function setTyped(t) { typed.textContent = t; comp.classList.toggle("typing", t !== ""); ph.style.display = t ? "none" : ""; }
-async function type(text) { for (const ch of text) { setTyped(typed.textContent + ch); await sleep(reduced ? 0 : 30 + Math.random() * 35); } await sleep(350); }
-async function send(text) {
-  await type(text); setTyped("");
+async function type(text, fast = 1) { for (const ch of text) { setTyped(typed.textContent + ch); await sleep(reduced ? 0 : (30 + Math.random() * 35) / fast); } await sleep(350 / fast); }
+async function send(text, fast = 1) {
+  await type(text, fast); setTyped("");
   const d = add(`${text}<span class="tick">✓</span>`, "b you");
   await sleep(550); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`;
 }
@@ -461,33 +479,63 @@ async function run() {
   feed.innerHTML = ""; agents.innerHTML = ""; for (const k in rows) delete rows[k]; working.innerHTML = "";
   agent(0, `<span class="acc">:*</span>`, "main", "");
   await sleep(1200);
-  await send("fix the flaky login test, and draft the release note for 2.4");
-  await sleep(700);
-  main("on it. auth-fix takes the test, release takes the note.");
-  agent(1, "∿", "auth-fix", "0m"); await sleep(300); agent(2, "∿", "release", "0m"); count();
-  await sleep(1500);
-  await send("oh, and move the api client to v3 while we're at it");
+  // one idea...
+  await send("signup is slow on mobile. can you look?");
   await sleep(600);
-  main("got it. api-bump started.");
-  agent(3, "∿", "api-bump", "0m"); count();
-  await sleep(1400);
-  add(`▸ 7 messages between 3 agents`, "l3 b");
-  agent(1, "∿", "auth-fix", "2m"); agent(2, "∿", "release", "2m"); agent(3, "∿", "api-bump", "1m");
+  main("on it. perf is profiling it on a mid-range phone.");
+  agent(1, "∿", "perf", "0m"); count();
+  await sleep(900);
+  // ...then they come faster
+  await send("oh and dark mode. people keep asking", 1.4);
+  await sleep(450);
+  main("dark-mode started. settings page first, then the rest.");
+  agent(2, "∿", "dark-mode", "0m"); count();
+  await sleep(500);
+  await send("and the 404 page is so sad. make it less sad", 1.8);
+  await sleep(400);
+  main("cheering it up. sad-404 started.");
+  agent(3, "∿", "sad-404", "0m"); count();
+  await sleep(300);
+  await send("wait also the csv export crashes on emoji 😭", 2.4);
+  await sleep(350);
+  main("emoji-csv is on it. it's always unicode.");
+  agent(4, "∿", "emoji-csv", "0m"); count();
+  await sleep(250);
+  await send("OK LAST ONE. release notes for all of this", 3);
+  await sleep(500);
+  main("release waits for the others, then writes them. go get a coffee.");
+  agent(5, "∿", "release", "0m"); count();
   await sleep(1600);
-  main("auth-fix wanted to retry the test 3 times. i said no, fix the cause.");
+  // the team sorts itself out
+  add(`▸ 9 messages between 5 agents`, "l3 b");
+  for (const [n, a] of [[1, "perf"], [2, "dark-mode"], [3, "sad-404"], [4, "emoji-csv"], [5, "release"]]) agent(n, "∿", a, "2m");
+  await sleep(1500);
+  main("dark-mode asked which gray. i said the one in tokens.css, like everywhere else.");
+  await sleep(1800);
+  // change your mind mid-run
+  await send("actually keep the sad dog on the 404. just give it a hat");
+  await sleep(700);
+  main("told sad-404. the dog keeps its job. now with a hat.");
+  await sleep(1500);
+  const card = add(`<div class="t">? perf needs you</div><div>the hero image is 4.2 MB. compress it, or lazy-load it?</div><div class="faint">1 · compress   2 · both   alt+r answer with text</div>`, "card b");
   await sleep(1900);
-  const card = add(`<div class="t">? release needs you</div><div>v3 changes two public types. call it 2.4 or 3.0?</div><div class="faint">1 · 2.4   2 · 3.0   alt+r answer with text</div>`, "card b");
-  await sleep(2000);
   await type("2"); setTyped("");
-  card.classList.add("answered"); card.querySelector(".t").textContent = "✓ release · you said 3.0";
-  await sleep(1400);
-  agent(1, `<span class="acc">✓</span>`, "auth-fix", "4m"); count();
-  add(`<span class="acc">✓</span> auth-fix done · the test waited on a timer; now it waits on the event.`, "b");
-  await sleep(1900);
-  agent(2, `<span class="acc">✓</span>`, "release", "5m"); agent(3, `<span class="acc">✓</span>`, "api-bump", "5m"); count();
-  add(`<span class="acc">✓</span> release and api-bump done · 3.0 notes drafted, client on v3.`, "b");
-  await sleep(1400);
-  await send("thanks");
+  card.classList.add("answered"); card.querySelector(".t").textContent = "✓ perf · you said both";
+  await sleep(1300);
+  // everything ships
+  agent(4, `<span class="acc">✓</span>`, "emoji-csv", "3m"); count();
+  add(`<span class="acc">✓</span> emoji-csv done · 🦄 exports fine now. the file was read as latin-1.`, "b");
+  await sleep(1300);
+  agent(1, `<span class="acc">✓</span>`, "perf", "4m"); count();
+  add(`<span class="acc">✓</span> perf done · signup: 4.1 s → 0.9 s on a mid-range phone.`, "b");
+  await sleep(1200);
+  agent(3, `<span class="acc">✓</span>`, "sad-404", "4m"); agent(2, `<span class="acc">✓</span>`, "dark-mode", "5m"); count();
+  add(`<span class="acc">✓</span> sad-404 and dark-mode done · the dog has a hat. settings is dark.`, "b");
+  await sleep(1500);
+  agent(5, `<span class="acc">✓</span>`, "release", "6m"); count();
+  add(`<span class="acc">✓</span> release done · 2.5 notes drafted. five things, zero tabs.`, "b");
+  await sleep(1300);
+  await send("you're the best");
   await sleep(500); main(":*");
   await sleep(4500);
   run();
