@@ -4,6 +4,10 @@ members = ["harness", "tui", "switchboard", "plugins", "images", "catalog", "hom
 # vendor/crossterm: crossterm 0.28.1 with a patch (see its README), not a member
 exclude = ["vendor/crossterm"]
 
+# every member: license.workspace = true (LICENSE, NOTICE at the repo root)
+[workspace.package]
+license = "Apache-2.0"
+
 # loop-speed: dependencies (ratatui, vt100, ...) optimised once; our crates
 # stay at opt-level 0 so an edit rebuilds in ~1 s. The fuzz test runs 7x faster.
 [profile.dev.package."*"]

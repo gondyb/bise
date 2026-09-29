@@ -51,6 +51,7 @@ else
     cp "$p" "$src/$b"
   done
   cp "$REPO"/tool-desc-*.txt "$REPO"/prompt-*.txt "$src/"
+  cp "$REPO"/LICENSE "$REPO"/NOTICE "$REPO"/THIRD_PARTY_NOTICES "$src/"
   printf '#!/bin/sh\necho "bend-jsrt stub (test-release.sh)" >&2; exit 1\n' > "$src/bend-jsrt"; chmod 755 "$src/bend-jsrt"
   ID1="t1$(git -C "$REPO" rev-parse --short HEAD | cut -c1-5)"
   printf 'id=%s\ncommit=%s\nsubject=test-release %s\nbuilt=2026-01-01T00:00:01Z\nmacos=14.0\ntarget=%s\nchannel=test\n' \
@@ -78,6 +79,7 @@ echo "== curl | sh (file:// channel)"
 P="$T/.local/share/bise" BIN="$T/.local/bin/bise"
 check "prefix ~/.local/share/bise" test -d "$P/versions/$ID1"
 check "current -> versions/$ID1" test "$(readlink "$P/current")" = "versions/$ID1"
+check "LICENSE, NOTICE, THIRD_PARTY_NOTICES installed" sh -c "grep -q 'Apache License' '$P/versions/$ID1/LICENSE' && grep -q 'Gabriel Vergnaud' '$P/versions/$ID1/NOTICE' && grep -q 'third-party notices' '$P/versions/$ID1/THIRD_PARTY_NOTICES'"
 check "~/.local/bin/bise -> the launcher" test "$(readlink "$BIN")" = "$P/bin/bise"
 check "the channel is recorded" test "$(cat "$P/dist-url")" = "file://$REL"
 check "the launcher only execs current" sh -c "[ \$(grep -vc '^#' '$P/bin/bise') -le 5 ]"

@@ -26,8 +26,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --kick:#6f685f; --wind:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --raised:#221e1c; --chip:#262220; }
-  [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --kick:#9d958a; --wind:#cbc3b6; --acc:#b8416b; --err:#b3261e; --raised:#fbf8f3; --chip:#e8e2d8; }
+  :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --wind:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --raised:#221e1c; --chip:#262220; }
+  [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --wind:#cbc3b6; --acc:#b8416b; --err:#b3261e; --raised:#fbf8f3; --chip:#e8e2d8; }
   * { box-sizing:border-box; margin:0; padding:0; }
   html { scroll-behavior:smooth; }
   body { background:var(--bg); color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:16px; line-height:1.75; transition:background .4s, color .4s; }
@@ -77,7 +77,7 @@
 
   section { padding:18vh 6vw; }
   .inner { max-width:64ch; margin:0 auto; }
-  .kicker { color:var(--kick); font-size:13px; margin-bottom:18px; }
+  .kicker { color:var(--faint); font-size:13px; margin-bottom:18px; }
   h2 { font-size:clamp(24px, 2.8vw, 34px); line-height:1.25; letter-spacing:-.02em; margin-bottom:28px; font-weight:700; }
   p { margin-bottom:20px; }
   p.soft { color:var(--dim); }

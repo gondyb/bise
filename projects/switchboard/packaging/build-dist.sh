@@ -24,6 +24,8 @@
 #                            the path its runtime expects)
 #       VERSION              id, commit, subject, built, bend_hash, macos,
 #                            target
+#       LICENSE NOTICE THIRD_PARTY_NOTICES   Apache-2.0 + what we ship of
+#                            others (the commit's; the tree's before them)
 #
 # Every binary must run on the macOS target (rust/.cargo/config.toml,
 # BISE-164): checked before packing (./bins.sh minos).
@@ -118,6 +120,11 @@ cp "$js" "$app/$jsrt_at"
 grep -v '^repo=' "$vdir/VERSION" > "$app/VERSION"
 echo "target=$target" >> "$app/VERSION"
 echo "channel=${BISE_CHANNEL:-dev}" >> "$app/VERSION"
+# the license and the third-party notices (Apache-2.0 4(a)/(d)): the
+# commit's; a commit before them gets the working tree's
+for f in LICENSE NOTICE THIRD_PARTY_NOTICES; do
+  git show "$commit:$f" > "$app/$f" 2>/dev/null || cp "$REPO/$f" "$app/$f"
+done
 cp "$HERE/install.sh" "$stage/$name/install.sh"
 chmod +x "$stage/$name/install.sh"
 
@@ -139,7 +146,8 @@ fi
 #    (wait a moment: a quarantine by security software is not instant)
 sleep 2
 for f in bise bend-harness sb repl-live repl-scripted sb-core "$jsrt_at" \
-         tool-desc-bash.txt prompt-tool-use.txt prompt-tone.txt VERSION; do
+         tool-desc-bash.txt prompt-tool-use.txt prompt-tone.txt VERSION \
+         LICENSE NOTICE THIRD_PARTY_NOTICES; do
   [ -e "$app/$f" ] || { say "INCOMPLETE: app/$f missing"; exit 1; }
 done
 # ... and no binary needs a macOS newer than the target (a version dir

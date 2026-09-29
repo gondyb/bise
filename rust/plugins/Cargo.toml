@@ -2,6 +2,7 @@
 name = "bend-plugins"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 description = "Agent Plugins 1.0 for the Bend harness: resolver, diagnostics, stdio MCP bridge."
 
 [dependencies]

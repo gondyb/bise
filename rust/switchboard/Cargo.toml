@@ -2,6 +2,7 @@
 name = "switchboard"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 description = "Switchboard: one main agent that routes to task sub-agents (hub, agent CLI, client protocol)."
 
 [dependencies]

@@ -2,6 +2,7 @@
 name = "bend-tui"
 version = "1.0.0"
 edition = "2021"
+license.workspace = true
 description = "Ratatui terminal UI for the Bend Unified Harness (Rust port of repl-tui)."
 
 [dependencies]

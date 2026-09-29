@@ -2,6 +2,7 @@
 name = "bend-images"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 description = "Image attachments: sniffing, the image store, the text marker (docs/images.md)."
 
 # no dependencies on purpose: bend-jsrt (its own workspace) and the TUI

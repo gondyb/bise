@@ -2,6 +2,7 @@
 name = "bend-jsrt"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
 
 # A standalone project on purpose: deno_core/deno_ast resolve in their own
 # lockfile, away from the TUI's ratatui pin (unicode-width conflict).

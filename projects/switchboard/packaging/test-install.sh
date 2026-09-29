@@ -65,6 +65,11 @@ echo "== login (a key from stdin, BISE-170: no init in the launcher)"
 (cd "$WORK" && printf 'test-key-not-real\n' | E "$BIN" login mistral) 2>&1 | sed 's/^/     /'
 check "~/.bise/auth.json holds the key" grep -q 'test-key-not-real' "$T/.bise/auth.json"
 [ "$(stat -f %Lp "$T/.bise/auth.json")" = 600 ] && ok "auth.json is mode 600" || ko "auth.json is mode 600"
+# Apache-2.0 4(a)/(d): the license and the notices go with the binaries
+cur="$T/.local/share/bise/current"
+check "LICENSE (Apache-2.0) installed" grep -q 'Apache License' "$cur/LICENSE"
+check "NOTICE installed" grep -q 'Gabriel Vergnaud' "$cur/NOTICE"
+check "THIRD_PARTY_NOTICES installed" grep -q 'third-party notices' "$cur/THIRD_PARTY_NOTICES"
 check "the launcher only execs current (no logic left in it)" sh -c "[ \$(grep -vc '^#' '$T/.local/share/bise/bin/$CMD') -le 5 ]"
 
 # a headless session: READY on stdout, then close stdin to end it

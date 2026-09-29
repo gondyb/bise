@@ -2,6 +2,7 @@
 name = "bise-session"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 description = "The bise session log: typed events, reader, writer, resume (BISE-191..194)."
 
 [dependencies]

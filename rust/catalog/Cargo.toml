@@ -2,6 +2,7 @@
 name = "bise-catalog"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 description = "bise's own model catalog: the built-in provider/model list (models.toml) merged with the user's config.toml."
 
 [dependencies]

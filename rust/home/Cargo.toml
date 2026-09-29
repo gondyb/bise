@@ -2,6 +2,7 @@
 name = "bise-home"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 description = "Where bise keeps its state: one Home, every path (BISE-160)."
 
 [dependencies]
