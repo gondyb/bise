@@ -83,19 +83,42 @@ fn letters(inner: usize) -> String {
     (0..inner * 3 + inner / 2).map(|i| (b'a' + (i % 26) as u8) as char).collect()
 }
 
+/// One test per width (a fresh app each, as before): they run in parallel.
+fn typing_across_the_wrap_at(width: u16) {
+    let mut app = sb::bench::test_app();
+    let inner = width as usize - 6;
+    type_and_check(&mut app, &letters(inner), width, 40);
+    // words with spaces: the rows still break by width
+    let words: String = "lorem ipsum dolor sit amet ".repeat(inner / 6);
+    type_and_check(&mut app, &words, width, 40);
+    // 2-column emojis: an odd width leaves a blank column at the end
+    type_and_check(&mut app, &"👏".repeat(inner * 2), width, 40);
+    type_and_check(&mut app, &"a👍🏽".repeat(inner), width, 40);
+}
+
 #[test]
-fn typing_across_the_wrap_keeps_every_row_and_the_cursor() {
-    for width in [30u16, 47, 80, 81, 120] {
-        let mut app = sb::bench::test_app();
-        let inner = width as usize - 6;
-        type_and_check(&mut app, &letters(inner), width, 40);
-        // words with spaces: the rows still break by width
-        let words: String = "lorem ipsum dolor sit amet ".repeat(inner / 6);
-        type_and_check(&mut app, &words, width, 40);
-        // 2-column emojis: an odd width leaves a blank column at the end
-        type_and_check(&mut app, &"👏".repeat(inner * 2), width, 40);
-        type_and_check(&mut app, &"a👍🏽".repeat(inner), width, 40);
-    }
+fn typing_across_the_wrap_keeps_every_row_and_the_cursor_30() {
+    typing_across_the_wrap_at(30);
+}
+
+#[test]
+fn typing_across_the_wrap_keeps_every_row_and_the_cursor_47() {
+    typing_across_the_wrap_at(47);
+}
+
+#[test]
+fn typing_across_the_wrap_keeps_every_row_and_the_cursor_80() {
+    typing_across_the_wrap_at(80);
+}
+
+#[test]
+fn typing_across_the_wrap_keeps_every_row_and_the_cursor_81() {
+    typing_across_the_wrap_at(81);
+}
+
+#[test]
+fn typing_across_the_wrap_keeps_every_row_and_the_cursor_120() {
+    typing_across_the_wrap_at(120);
 }
 
 #[test]

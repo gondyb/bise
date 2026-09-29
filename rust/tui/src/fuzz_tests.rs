@@ -246,15 +246,38 @@ fn env_num(k: &str, default: u64) -> u64 {
 
 /// Random sequences (FUZZ_RUNS, default 300, 60 events each; the full
 /// gate runs FUZZ_RUNS=2000) from FUZZ_SEED (default: fixed, so CI is reproducible).
-#[test]
-fn fuzz_random_input_never_panics() {
+/// Run i goes to shard i % FUZZ_SHARDS: the shards are separate tests, so
+/// the test runner spreads them over the cores (loop-speed).
+fn fuzz_shard(shard: u64) {
     let runs = env_num("FUZZ_RUNS", 300);
     let base = env_num("FUZZ_SEED", 0x5eed);
     let steps = env_num("FUZZ_STEPS", 60) as usize;
-    for i in 0..runs {
+    for i in (shard..runs).step_by(FUZZ_SHARDS as usize) {
         run_one(base.wrapping_add(i), steps);
     }
 }
+
+const FUZZ_SHARDS: u64 = 8;
+
+macro_rules! fuzz_shards {
+    ($($name:ident = $k:literal),*) => {$(
+        #[test]
+        fn $name() {
+            fuzz_shard($k);
+        }
+    )*};
+}
+
+fuzz_shards!(
+    fuzz_random_input_never_panics_0 = 0,
+    fuzz_random_input_never_panics_1 = 1,
+    fuzz_random_input_never_panics_2 = 2,
+    fuzz_random_input_never_panics_3 = 3,
+    fuzz_random_input_never_panics_4 = 4,
+    fuzz_random_input_never_panics_5 = 5,
+    fuzz_random_input_never_panics_6 = 6,
+    fuzz_random_input_never_panics_7 = 7
+);
 
 // ---- one regression test per panic class fixed ----
 

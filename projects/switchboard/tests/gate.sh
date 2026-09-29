@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 # The agents' gate (projects/switchboard/docs/loop-speed.md), run in the
 # foreground, never `sleep N; tail` in a loop:
-#   gate.sh [quick]   what the tree's changes touch: build, clippy, the tests
-#                     of the changed crates and of the crates using them;
-#                     PROOF + sb-core rebuild if hub/*.bend changed. ~5-20 s warm.
-#   gate.sh full      everything: run_all.sh with FUZZ_RUNS=2000 (~60 s warm);
-#                     e2e + tmux tests in parallel (SB_TEST_JOBS, default 4).
+#   gate.sh [quick]   what the tree's changes touch, ~5-10 s warm: clippy -D
+#                     warnings (next to the tests, in $target/clippy), the
+#                     tests of the changed crates and of the crates using them; if a .bend file of core/ hub/ vendor/
+#                     or LAWS/PROOF changed: PROOF.bend (4 shards in parallel)
+#                     and, for hub/ vendor/, a quick sb-core for the tests
+#                     (-O1, cached by content; the committed ./sb-core is not
+#                     touched). The bend part runs next to cargo.
+#   gate.sh full      everything: cargo build, ./sb-core rebuilt (bend -o) if
+#                     hub/ vendor/ changed, run_all.sh with FUZZ_RUNS=2000
+#                     (~60 s warm; e2e + tmux tests in parallel, SB_TEST_JOBS).
 #   gate.sh wait <bg .out file | pid>
 #                     the bash tool put a gate in the background: block until
 #                     it ends (at most 25 s), then show its end and exit code.
 # "Changed" = the tree vs GATE_BASE (default HEAD), untracked files included.
-# CARGO_TARGET_DIR is honoured (the e2e/tmux tests run its bend-harness).
+# CARGO_TARGET_DIR is honoured (the e2e/tmux tests run its bend-harness);
+# the bend results are cached in $CARGO_TARGET_DIR/gate-cache.
 set -uo pipefail
 mode="${1:-quick}"
 if [ "$mode" = wait ]; then
@@ -22,32 +28,84 @@ if [ "$mode" = wait ]; then
   [ -n "$rcf" ] && [ -f "$rcf" ] && echo "exit code: $(cat "$rcf")"
   exit 0
 fi
+case "$mode" in quick|full) ;; *) echo "usage: gate.sh [quick|full|wait <file|pid>]" >&2; exit 2 ;; esac
 cd "$(dirname "$0")/../../.."
+root="$PWD"
 export PATH="$HOME/.bend/bin:$HOME/.cargo/bin:$PATH"
 unset SB_CORE_BIN
-# sb-core (hub/*.bend) at the tree's root: the core tests spawn it
 base="${GATE_BASE:-HEAD}"
 changed="$( { git diff --name-only "$base"; git ls-files --others --exclude-standard; } | sort -u)"
-if printf '%s\n' "$changed" | grep -qE '^(hub|vendor)/'; then
-  echo "hub/ changed: PROOF + sb-core rebuild (1-2 min)"
-  bend PROOF.bend | grep -q "ALL PROOFS CHECK" || { bend PROOF.bend | tail -20; echo "FAIL PROOF"; exit 1; }
-  bend hub/main.bend -o sb-core >/dev/null || { echo "FAIL sb-core build"; exit 1; }
-elif [ ! -x sb-core ]; then
+hub_changed=0 bend_changed=0
+printf '%s\n' "$changed" | grep -qE '^(hub|vendor)/' && hub_changed=1
+printf '%s\n' "$changed" | grep -qE '^((core|hub|vendor)/.*|LAWS|PROOF)\.bend$' && bend_changed=1
+# the committed ./sb-core, when this tree has none (a fresh worktree)
+if [ ! -x sb-core ]; then
   main_tree="$(git worktree list --porcelain | sed -n '1s/^worktree //p')"
   if [ -x "$main_tree/sb-core" ] && git diff --quiet "$(git -C "$main_tree" rev-parse HEAD)" -- hub vendor; then
     cp "$main_tree/sb-core" sb-core
-  else
-    echo "no sb-core: building it (1-2 min)"; bend hub/main.bend -o sb-core >/dev/null || { echo "FAIL sb-core build"; exit 1; }
+  elif [ $hub_changed = 0 ]; then
+    echo "no sb-core: building it (~15 s)"; bend hub/main.bend -o sb-core >/dev/null || { echo "FAIL sb-core build"; exit 1; }
   fi
 fi
+
 if [ "$mode" = full ]; then
-  export FUZZ_RUNS="${FUZZ_RUNS:-2000}"
   s=$SECONDS
+  if [ $hub_changed = 1 ]; then
+    echo "hub/ changed: ./sb-core rebuilt (bend -o, ~15 s; commit it with your hub change)"
+    bend hub/main.bend -o sb-core >/dev/null || { echo "FAIL sb-core build"; exit 1; }
+  fi
+  export FUZZ_RUNS="${FUZZ_RUNS:-2000}"
   projects/switchboard/tests/run_all.sh; rc=$?
   [ $rc = 0 ] && echo "GATE full GREEN ($((SECONDS - s))s)" || echo "GATE full FAILED"
   exit $rc
 fi
-[ "$mode" = quick ] || { echo "usage: gate.sh [quick|full|wait <file|pid>]" >&2; exit 2; }
+
+# ---- quick
+t0=$SECONDS
+cache="${CARGO_TARGET_DIR:-$root/rust/target}/gate-cache"
+out="$(mktemp -d -t sb-gate)"
+mkdir -p "$cache"
+trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$out"' EXIT
+fail() {  # <name> <log>: the failures, the log kept
+  echo "FAIL $1"
+  grep -E "^test .* FAILED|panicked|^error|^warning|^failures:|^Location|^Error" "$2" | head -30
+  cp "$2" "/tmp/sb-gate-$1.log"; echo "log: /tmp/sb-gate-$1.log"; exit 1
+}
+hash_of() {  # <dirs/files...>: one hash of the .bend files' names and contents
+  (cd "$root" && find "$@" -name '*.bend' -type f 2>/dev/null | sort | while read -r f; do echo "$f"; cat "$f"; done) | shasum | cut -c1-16
+}
+# the bend part, in the background (it takes longer than cargo)
+proof_job() {
+  local h; h="$(hash_of core hub vendor LAWS.bend PROOF.bend)"
+  [ -f "$cache/proof-ok-$h" ] && { echo "ok   PROOF (cached)"; return 0; }
+  local d="$out/proof" n=4 s=$SECONDS i pids=()
+  mkdir -p "$d"
+  python3 projects/switchboard/tests/proof_shards.py "$root" $n "$d" || { echo "FAIL PROOF (split)"; return 1; }
+  for i in $(seq 0 $((n - 1))); do bend "$d/P$i.bend" --check-only >"$d/P$i.log" 2>&1 & pids+=($!); done
+  wait "${pids[@]}"
+  for i in $(seq 0 $((n - 1))); do
+    grep -q "ALL PROOFS CHECK" "$d/P$i.log" && continue
+    grep -qx "Error: $(cat "$d/P$i.expect") TODOs found." "$d/P$i.log" && continue
+    echo "FAIL PROOF ($((SECONDS - s))s): shard $i of $n"; grep -v '^- ' "$d/P$i.log" | head -20
+    echo "(rerun whole: bend PROOF.bend)"; return 1
+  done
+  touch "$cache/proof-ok-$h"; echo "ok   PROOF ($((SECONDS - s))s, $n shards)"
+}
+sbcore_job() {  # a quick sb-core (-O1: half the compile of bend -o's -O3)
+  local h s=$SECONDS; h="$(hash_of hub vendor)"
+  [ -x "$cache/sb-core-$h" ] && { echo "ok   sb-core (cached)"; return 0; }
+  bend hub/main.bend -o "$out/sb-core.c" >"$out/sb-core.log" 2>&1 \
+    && cc -std=c11 -O1 -fno-inline "$out/sb-core.c" -lpthread -lm -o "$out/sb-core" >>"$out/sb-core.log" 2>&1 \
+    || { echo "FAIL sb-core build"; tail -20 "$out/sb-core.log"; return 1; }
+  rm -f "$cache"/sb-core-*; mv "$out/sb-core" "$cache/sb-core-$h"
+  echo "ok   sb-core ($((SECONDS - s))s, quick -O1 build for the tests)"
+}
+[ $bend_changed = 1 ] && { proof_job >"$out/proof.res" 2>&1; echo $? >"$out/proof.rc"; } &
+if [ $hub_changed = 1 ]; then
+  { sbcore_job >"$out/sbcore.res" 2>&1; echo $? >"$out/sbcore.rc"; } &
+  sbcore_pid=$!
+  export SB_CORE_BIN="$cache/sb-core-$(hash_of hub vendor)"
+fi
 # the crates to test: changed ones and the crates depending on them
 pkgs=""
 add() { case " $pkgs " in *" $1 "*) ;; *) pkgs="$pkgs $1" ;; esac; }
@@ -62,25 +120,35 @@ for f in $changed; do
     hub/*|vendor/*) add switchboard ;;
   esac
 done
-t0=$SECONDS
-out="$(mktemp -d -t sb-gate)"
 step() {  # <name> <cmd...>: one line when green, the failures and the log when red
   local n=$1 s=$SECONDS; shift
-  if "$@" >"$out/$n.log" 2>&1; then echo "ok   $n ($((SECONDS - s))s)"
-  else
-    echo "FAIL $n ($((SECONDS - s))s)"
-    grep -E "^test .* FAILED|panicked|^error|^warning|^failures:" "$out/$n.log" | head -30
-    echo "log: $out/$n.log"; exit 1
-  fi
+  if "$@" >"$out/$n.log" 2>&1; then echo "ok   $n ($((SECONDS - s))s)"; else fail "$n" "$out/$n.log"; fi
 }
-step build bash -c 'cd rust && cargo build --offline -q'
-step clippy bash -c 'cd rust && cargo clippy --offline -q --workspace --all-targets -- -D warnings'
+# no `cargo build`: clippy checks every target, the tests compile and link
+# the changed crates; the binary itself is built by gate.sh full.
+# clippy runs next to the tests in its own target dir ($target/clippy: its
+# own cargo lock; ~300 MB, 30-40 s the first time)
+target="${CARGO_TARGET_DIR:-$root/rust/target}"
+{ s=$SECONDS
+  if (cd rust && cargo clippy --offline -q --workspace --all-targets --target-dir "$target/clippy" -- -D warnings) >"$out/clippy.log" 2>&1
+  then echo "ok   clippy ($((SECONDS - s))s)" >"$out/clippy.res"; echo 0 >"$out/clippy.rc"
+  else echo 1 >"$out/clippy.rc"; fi; } &
+clippy_pid=$!
 if [ -n "$pkgs" ]; then
   args=""; for p in $pkgs; do args="$args -p $p"; done
+  if [ -n "${sbcore_pid:-}" ]; then
+    step test-build bash -c "cd rust && cargo test --offline -q --no-run $args"
+    wait "$sbcore_pid"; cat "$out/sbcore.res"; [ "$(cat "$out/sbcore.rc")" = 0 ] || exit 1
+  fi
   step "test$(echo "$pkgs" | tr ' ' '_')" bash -c "cd rust && cargo test --offline -q $args"
-  grep "test result" "$out"/test*.log | grep -v " 0 passed" | sed 's/^.*test result/  test result/'
+  grep "test result" "$out"/test_*.log | grep -v " 0 passed" | sed 's/^.*test result/  test result/'
 else
-  echo "no Rust or hub change vs $base: no tests run"
+  echo "no Rust or hub change vs $base: no Rust tests run"
 fi
-rm -rf "$out"
-echo "GATE quick GREEN ($((SECONDS - t0))s):${pkgs:- nothing to test} (full: gate.sh full)"
+wait "$clippy_pid"
+[ "$(cat "$out/clippy.rc")" = 0 ] || fail clippy "$out/clippy.log"
+cat "$out/clippy.res"
+if [ $bend_changed = 1 ]; then
+  wait; cat "$out/proof.res"; [ "$(cat "$out/proof.rc")" = 0 ] || exit 1
+fi
+echo "GATE quick GREEN ($((SECONDS - t0))s):${pkgs:- no Rust tests}$([ $bend_changed = 1 ] && echo ' + PROOF') (full: gate.sh full)"

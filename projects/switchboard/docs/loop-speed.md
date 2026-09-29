@@ -6,9 +6,9 @@ free disk), HEAD 9b8ad22 (applied on 6bf6a86+), with other agents working at the
 
 ## 0. Gating rules for agents (applied)
 
-1. Gate in a private worktree of HEAD + your patch, `CARGO_TARGET_DIR=/tmp/<you>-target` (APFS-clone a warm one when there is: `cp -cR <warm> /tmp/<you>-target`, 0 bytes); delete it when the task is done.
-2. Each commit: `projects/switchboard/tests/gate.sh` (quick: build, clippy -D warnings, the tests of the changed crates and their users; PROOF + sb-core rebuild when hub/ changed). Warm: 5-20 s, in the foreground.
-3. Once per task, on the last commit: `gate.sh full` (= run_all.sh with FUZZ_RUNS=2000: every Rust test, PROOF, e2e and the 14 tmux tests, 4 jobs in parallel), ~60 s warm.
+1. Gate in a private worktree of HEAD + your patch, `CARGO_TARGET_DIR=/tmp/<you>-target`: APFS-clone a warm target of a recent HEAD (`cp -cR <warm> /tmp/<you>-target`, 0 bytes; ~30 s for a big one); delete it when the task is done. A stale target (built before a Cargo.toml/profile change) rebuilds the deps: ~60 s once.
+2. Each commit: `projects/switchboard/tests/gate.sh` (quick), in the foreground. It runs clippy -D warnings (in `$CARGO_TARGET_DIR/clippy`, next to the tests) and the tests of the changed crates and their users; no `cargo build` any more (the full gate builds the binary). A change to a `.bend` file of core/ hub/ vendor/ or LAWS/PROOF runs PROOF.bend in 4 shards in parallel; a hub/ vendor/ change also builds a quick sb-core (-O1) for the tests (SB_CORE_BIN; the committed ./sb-core is not touched). Both are cached by content in `$CARGO_TARGET_DIR/gate-cache`. Warm: **~5 s** for a Rust change, **~11 s** for a hub change, 16 s the first time in a new worktree with a cloned target.
+3. Once per task, on the last commit: `gate.sh full` (cargo build; ./sb-core rebuilt with `bend -o` when hub/ vendor/ changed, **commit it**; run_all.sh with FUZZ_RUNS=2000: every Rust test, the whole PROOF.bend, e2e and the 14 tmux tests, 4 jobs in parallel), ~55 s warm.
 4. Never `sleep N; tail log`. A gate the bash tool put in the background: `gate.sh wait <its .out file or pid>` (blocks until it ends, at most 25 s, then shows the result).
 5. No run_all slot to ask for any more: two full gates can overlap; if one fails on a tmux timing, rerun that test alone (`python3 -u projects/switchboard/tests/<t>.py`) before blaming your change.
 6. `run_all.sh --serial` runs e2e/tmux one by one (debugging a flake); `SB_TEST_JOBS=n` changes the parallelism; `FUZZ_RUNS=2000` for the long fuzz run.
@@ -168,4 +168,67 @@ gate, and 25 that never ran there now do (the 24 Rust tests, tui_panel_click_tmu
    the parallel batch.
 3. Split e2e.py across 2-3 processes: it is the long pole of the full gate
    (23 s in parallel).
+
+## 7. Round 2 (loop-speed-2): a quick gate in ~5 s
+
+Measured on 2026-09-29, HEAD 59b3a03, warm private target, one-line edit,
+old gate.sh vs new, interleaved (load average in brackets: other agents
+were working).
+
+| change                          | before              | after              |
+|---------------------------------|--------------------:|-------------------:|
+| one file in rust/tui            | 7.9-8.8 s (13); 15-19 s (26-30) | **5.1 s** (6-13); 11.3 s (25) |
+| one file in rust/switchboard    | 7.1-9.7 s (13)      | **5.5-5.9 s** (13) |
+| one file in hub/ (PROOF + sb-core + switchboard tests) | 27-31 s (7-9) | **11.5 s** (7) |
+| PROOF.bend/LAWS/core only       | nothing checked (the gate only looked at hub/ vendor/) | 5 s |
+| same hub content, gate again    | 27-31 s             | cached: like a Rust change |
+| new worktree, cloned warm target | 56 s (no clone)    | 16 s |
+| full gate                       | 58-69 s             | 53 s (green) |
+
+What changed:
+
+1. **The slow Rust tests run in parallel shards** (same work, same seeds):
+   `fuzz_random_input_never_panics` is 8 tests (run i in shard i % 8; the
+   filter `fuzz_random_input_never_panics` still runs them all), and
+   `typing_across_the_wrap_keeps_every_row_and_the_cursor` is one test per
+   width (it already made a fresh app per width). bend-tui's test run:
+   3.2-5.5 s -> 1.4 s. `every_key_on_every_row_never_panics` stays whole:
+   split in two it raced with the other at_popup tests on the process-wide
+   recent picks (2 failures in one run).
+2. **clippy runs next to the tests** in its own target dir
+   (`$CARGO_TARGET_DIR/clippy`, ~300 MB, 30-40 s the first time): -2 s.
+3. **No `cargo build` in quick**: clippy checks every target and the tests
+   compile and link the changed crates; only a link error of the
+   bend-harness binary alone is left to the full gate (-1.3 s).
+4. **PROOF.bend in 4 shards** (`tests/proof_shards.py`): 629 defs, of
+   which 350 laws are split; each shard has every helper and reports the
+   laws of the other shards as TODOs, and passes only with exactly that
+   TODO count, so a wrong proof (its Location is printed) or a new
+   unproven law fails. 11 s -> 5 s. The whole PROOF.bend still runs in the
+   full gate.
+5. **A quick sb-core**: `bend hub/main.bend -o x.c` (2.3 s) + `cc -O1
+   -fno-inline` (5 s) instead of `bend -o` (-O3: 10-16 s). -O0 crashes
+   clang ("live register clobbered"). The switchboard tests run as fast
+   with it. It goes to the cache, not to ./sb-core: the committed binary
+   only changes in the full gate (-O3, as before).
+6. The bend part runs in the background next to cargo; PROOF and sb-core
+   results are cached by the content hash of the .bend files.
+
+Why a hub change is not under 10 s: its floor is the C compile of the
+5 MB sb-core.c (5 s at best) + the C generation (2.3 s) + the switchboard
+tests that need it (1.3-3 s). Running sb-core through `bend hub/main.bend`
+(no compile) makes the switchboard tests 18 s. Under load (15-30), every
+number above is 1.5-2x.
+
+Lost: none of the tests; the quick gate no longer builds the
+bend-harness binary (the full gate does). Measured and dropped: nextest
+(no gain once no test is long), -Og (slower than -O3 for the C).
+
+Found on the way: `tui_images_tmux` failed on 4f1ff2d (the strip rows of
+BISE-108 had the bar, so the test read them as composer text; 11d8613
+fixed the product). At HEAD it passed only because the divider's flash
+names the path; it now pins the strip (the file name, never the path),
+and its traceback is no longer swallowed by a `sys.exit` in `finally`.
+`tui_term_tmux` still fails sometimes right after the parallel batch
+(Ctrl+U lost; passes alone): unchanged, runs alone.
 
