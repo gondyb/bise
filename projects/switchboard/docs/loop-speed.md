@@ -240,3 +240,94 @@ and its traceback is no longer swallowed by a `sys.exit` in `finally`.
 `tui_term_tmux` still fails sometimes right after the parallel batch
 (Ctrl+U lost; passes alone): unchanged, runs alone.
 
+
+## 8. Round 3 (loop-speed-3): a new task is green in ~13 s, and the disk stays free
+
+Measured on 2026-09-29, HEAD c4aeb47 → 045d705, 5-6 other agents building
+(load average 20-60 on 12 cores; "burners" = 8 extra busy loops, the load
+of ~4 more builds).
+
+### 8.1 Task start
+
+| step | before | after |
+|------|-------:|------:|
+| target of a new task | `cp -cR` of another task's target: 15 GB apparent, 70k files (69 404 `.o`), **47 s** (load 20) | `gate.sh new <name>`: clone of the seed, 1.2 GB, 2.1k `.o`, **3 s** (load 40) |
+| first quick gate (one-line edit in rust/tui) | 38 s (load 20) | 9 s (load 40) |
+| **new task → first green quick gate** | **~85 s** | **13 s** |
+| a seed for new deps (once per Cargo.lock/Cargo.toml/config/rustc change, by the first `gate.sh new` that needs it) | — | 72 s cold (load 30-47) |
+| disk written by a first gate in the clone | ~2.5 GB | ~0.5 GB |
+
+Why the targets were 15 GB: (1) on macOS the dev profile keeps the object
+files of every crate for the debugger (split-debuginfo unpacked): 69 k
+`.o` files, 1 GB, mostly the deps' (nobody debugs into ratatui); (2)
+targets were cloned task to task, so each carried the incremental data
+(6.3 GB) and old artifacts of all its previous owners, never pruned. With
+5 of them the disk went down to 0.1 GiB free during this round and a link
+failed ("linking with cc failed").
+
+Changes:
+
+1. `rust/Cargo.toml`: `[profile.dev.package."*"] debug = false`. The deps
+   carry no debug info (their panics still have a location, our crates'
+   backtraces keep full debug info). One rebuild of the deps per target
+   when it lands (~60 s), then targets are ~1.2 GB instead of 8-15.
+2. `gate.sh new <name>` / `gate.sh done <name>` (§0 rule 1). The seed is
+   `/tmp/sb-seed-<key>`, key = hash of Cargo.lock, every Cargo.toml,
+   rust/.cargo/config.toml and `rustc -vV`; it holds the test build and
+   the clippy build of every crate. A missing key builds on top of the
+   newest seed (only the changed deps rebuild) and replaces it: one seed
+   on disk. The workspace crates recompile in each task (a new checkout's
+   mtimes), incrementally: that is the 9 s.
+
+Measured and not taken:
+
+- **One shared CARGO_TARGET_DIR for all tasks**: unsafe, not only slow.
+  Two worktrees of the same commit share the artifacts of the workspace
+  crates (cargo's hash of a path package is relative to the workspace, so
+  it is the same in every worktree) and cargo decides "fresh" by mtime.
+  Measured: worktree B adds `compile_error!` to bend-tui, then A edits and
+  builds, then B builds: **0.6 s, fresh, no error**: B's gate would have
+  tested A's code. Lock contention never showed up because of that.
+- **sccache**: not installed; it would copy (write) each dep's output into
+  each target where the clone shares it for 0 bytes, and it cannot cache
+  our crates (incremental). The seed gives the same reuse for free.
+- `debug = "line-tables-only"` for our crates: not needed once the deps
+  are out (a gate's clone writes ~0.5 GB); keeps full debugging of our code.
+
+### 8.2 The tmux / e2e flakes
+
+From the failed run_all logs of the agents (the last 70 min, 12 failures):
+
+| test | cause | fix |
+|------|-------|-----|
+| tui_version_tmux (3 of 3 recent failures; failed again in the "before" run below) | not load: the agents' env (and the tmux server's, which the TUI inherits) has `SB_BUILD_DIR`; versions.sh then built in the real build dir, so "build of tree failed" never came | e2e.AGENT_VARS also drops SB_BUILD_DIR, SB_VERSIONS_DIR, SB_LAUNCH_DIR, BISE_ROLE, BISE_EXPORTS_FOR (host_env and `env -u` for the TUI) |
+| tui_archived_tmux "newest first" | the archived rows sort by last report; t1 and t2 were spawned in one message, so their report order was up to the load (the 1.1 s sleep between the drops did nothing) | t2 is spawned after t1 reported; the sleep is gone |
+| tui_archived, tui_tmux, tui_waits, tui_onboarding: an **empty screen** at the timeout | the TUI exited early and `sleep 30` closed the pane before the 40 s timeout: the cause was lost. 3 of them failed in the same second, at a disk-full moment | the pane stays until the test's teardown with `[switchboard exited: N]`; an empty screen prints what tmux says |
+| all waits under load | a 40 s bound meant for an idle machine | `wait_until`'s bound is × the load per core (1-4, read at each poll): a passing test returns as early as before, only a broken one waits longer |
+| tui_term_tmux Ctrl+C | sent 0.5 s after `sleep 100`: under load it could reach the shell before the sleep ran | waits until `pgrep` sees its own `sleep 100.<pid>` |
+| home_migrate "idle hub B now in ~/.bise/hubs" | `switchboard --stop` returns before the hub exits; 0.5 s later the migration still saw B busy | stop() waits until the hub is gone as `hub_busy` sees it (no socket answers, the pid is dead), up to 30 s |
+| tui_queue_tmux "No such file" for /tmp/bend-sh-*.sh | the disk-full moment (13:38) | disk (8.1) |
+
+Full gate, same load (agents + 8 burners, load 40-60), before/after:
+
+| | before (HEAD tests) | after |
+|--|--|--|
+| failures | tui_version_tmux | repl_bash_env (below) |
+| e2e / PROOF / onboarding / queue | 32 / 33 / 19 / 14 s | 39 / 63 / 29 / 25 s (heavier moment) |
+| without burners | 53-69 s (§7) | 97 s in the gate, green (load 15-40) |
+
+Not fixed: **repl_bash_env** fails under heavy load (1 of 3 runs at load
+60, also before this round): the first command (`sleep 3; echo job-done`,
+window 2 s) comes back finished instead of handed off to slot 0, so the
+third one gets slot 0 and reads its own output. Widening the margins
+(window 5 s, job 10 s) did not change it, so it is not the margin: the
+REPL's hand-off under load needs a look (the product, not the test).
+Also seen: from this agent's shell `scripted_ts` fails ("0 session
+files") and passes with the BEND_/BISE_/SB_ variables unset; no single
+variable is the cause. The other agents' runs pass it.
+
+### 8.3 What agents do differently
+
+- Start: `gate.sh new <name>`, then the printed `cd` + `export`; end:
+  `gate.sh done <name>`. Never `cp -cR` another task's target.
+- The round-trip rules (§0 rule 9) and short commit subjects (rule 10).

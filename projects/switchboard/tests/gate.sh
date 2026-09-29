@@ -54,8 +54,11 @@ if [ "$mode" = new ] || [ "$mode" = done ]; then
     rm -rf "$tgt"; echo "removed $wt and $tgt"; exit 0
   fi
   { [ -e "$wt" ] || [ -e "$tgt" ]; } && { echo "$wt or $tgt exists: another name, or gate.sh done $name"; exit 1; }
-  cd "$(dirname "$0")/../../.." || exit 1
-  git worktree add -q --detach "$wt" HEAD || exit 1
+  # the repo of the cwd (gate.sh may run from a copy: bash <(git show HEAD:...)),
+  # else this script's
+  cd "$(git rev-parse --show-toplevel 2>/dev/null || echo "$(dirname "$0")/../../..")" || exit 1
+  # HEAD of the main worktree (the shared tree), even from a task's detached one
+  git worktree add -q --detach "$wt" "$(git -C "$(git worktree list --porcelain | sed -n '1s/^worktree //p')" rev-parse HEAD)" || exit 1
   cd "$wt" || exit 1
   export PATH="$HOME/.cargo/bin:$PATH"
   # the seed: a warm target (tests + clippy of every crate) for exactly
