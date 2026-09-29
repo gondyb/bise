@@ -1,0 +1,22 @@
+BEND-SESSION 2
+TOOL bash : Run a shell command.
+TOOL run_typescript : Run TypeScript.
+Second line of a description (today's loader skips it).
+CFG 800000 20000 3 You are bise.\nBe brief.
+COUNT 4 3
+QUEUE and lint\Nplease
+NOTIF job 3 done
+MSG True user : # Your role: task `fix-login`\nFix it.
+MSG False user : <agent_message from="main" relation="parent" id="m_12" thread="t_12" expects_reply="true">Fix the login.</agent_message>
+MSG False assistant : <think>Look first.\nBENDSIG::c2ln</think>On it.
+  CALL 1 bash : ls \\tmp\Necho a\Rb
+  CALL 2 node_program : return 1
+MSG False tool : tool bash ok: a.txt
+MSG False tool : tool run_typescript ok: 1
+MSG True user : <agent_message from="qa" relation="peer" id="m_15" expects_reply="false">still fails</agent_message>
+MSG False user : Look: <image name="[Image #1]" path="shot.png" mime="image/png" b64="/Users/ada/.bise/images/0455.b64">
+MSG False assistant : <think>no signature</think>Seen.
+MSG True user : Summary of the earlier conversation:
+<summary>a raw newline: today's loader drops this line</summary>
+MSG False system : a system note
+MSG False user : [switchboard] The messages above were sent while you were away.

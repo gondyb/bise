@@ -1,0 +1,5 @@
+{"seq":1,"at":"2026-10-01T09:14:01.001Z","type":"session_start","v":1,"data":{"session":"s-20261001-091403-7f3a9c","format":2,"created_by":"bise 0.9.4 (a1b2c3d)","cwd":"/Users/ada/code/shop"}}
+{"seq":2,"at":"2026-10-01T09:14:02.002Z","type":"process_opened","v":1,"data":{"writer":"bise 0.9.4 (a1b2c3d)","pid":4242,"resume":false}}
+{"seq":3,"at":"2026-10-01T09:14:03.003Z","type":"context_set","v":1,"must":true,"data":{"system":{"text":"You are bise."},"tools":[{"name":"bash","description":"Run a shell command."}]}}
+{"seq":4,"at":"2026-10-01T09:14:04.004Z","type":"limits_set","v":1,"data":{"compact_threshold":800000,"select_budget":20000,"max_nulls":3}}
+{"seq":5,"at":"2026-10-01T09:14:05.005Z","type":"model_set","v":1,"data":{"model":"anthropic/claude-sonnet-x","effort":"medium","provider":"anthropic","context_window":1000000,"source":"config"}}

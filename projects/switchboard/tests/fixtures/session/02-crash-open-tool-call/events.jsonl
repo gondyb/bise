@@ -1,0 +1,10 @@
+{"seq":1,"at":"2026-10-01T09:14:01.001Z","type":"session_start","v":1,"data":{"session":"s-20261001-091403-7f3a9c","format":1,"created_by":"bise 0.9.4 (a1b2c3d)","cwd":"/Users/ada/code/shop"}}
+{"seq":2,"at":"2026-10-01T09:14:02.002Z","type":"process_opened","v":1,"data":{"writer":"bise 0.9.4 (a1b2c3d)","pid":4242,"resume":false}}
+{"seq":3,"at":"2026-10-01T09:14:03.003Z","type":"context_set","v":1,"must":true,"data":{"system":{"text":"You are bise."},"tools":[{"name":"bash","description":"Run a shell command."}]}}
+{"seq":4,"at":"2026-10-01T09:14:04.004Z","type":"limits_set","v":1,"data":{"compact_threshold":800000,"select_budget":20000,"max_nulls":3}}
+{"seq":5,"at":"2026-10-01T09:14:05.005Z","type":"model_set","v":1,"data":{"model":"anthropic/claude-sonnet-x","effort":"medium","provider":"anthropic","context_window":1000000,"source":"config"}}
+{"seq":6,"at":"2026-10-01T09:14:06.006Z","turn":1,"type":"turn_started","v":1,"data":{"cause":"user"}}
+{"seq":7,"at":"2026-10-01T09:14:07.007Z","turn":1,"type":"user_message","v":1,"must":true,"data":{"content":[{"kind":"text","text":"How many tests are in this repo?"}],"delivery":"prompt"}}
+{"seq":8,"at":"2026-10-01T09:14:08.008Z","turn":1,"type":"assistant_message","v":1,"must":true,"data":{"req":1,"model":"anthropic/claude-sonnet-x","parts":[{"kind":"thinking","text":"Count the test files.","signature":"EqQBCkYI","provider":"anthropic"}],"calls":[{"id":"call_1","name":"bash","args":"rg -c '^def test_' tests | wc -l"}],"stop":"tool_use"}}
+{"seq":9,"at":"2026-10-01T09:14:09.009Z","turn":1,"type":"usage","v":1,"data":{"req":1,"model":"anthropic/claude-sonnet-x","input":12400,"output":230,"cache_read":5200,"cache_write":7200}}
+{"seq":10,"at":"2026-10-01T09:14:10.010Z","turn":1,"type":"tool_started","v":1,"data":{"call":"call_1"}}

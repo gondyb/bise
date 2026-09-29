@@ -1,0 +1,77 @@
+{
+  "open": "ok",
+  "bad_lines": [],
+  "torn": null,
+  "unknown": [],
+  "others": [],
+  "seq_errors": [],
+  "repair": [
+    {
+      "type": "tool_result",
+      "turn": 1,
+      "data": {
+        "call": "call_1",
+        "ok": false,
+        "content": [
+          {
+            "kind": "text",
+            "text": "interrupted by a restart"
+          }
+        ]
+      }
+    },
+    {
+      "type": "interrupted",
+      "turn": 1,
+      "data": {
+        "by": "restart",
+        "during": "tool",
+        "pending_calls": [
+          "call_1"
+        ]
+      }
+    },
+    {
+      "type": "turn_ended",
+      "turn": 1,
+      "data": {
+        "outcome": "crashed"
+      }
+    }
+  ],
+  "state": {
+    "context": [
+      7,
+      8,
+      11
+    ],
+    "queue": [],
+    "system": "You are bise.",
+    "tools": [
+      "bash"
+    ],
+    "model": {
+      "model": "anthropic/claude-sonnet-x",
+      "effort": "medium",
+      "provider": "anthropic"
+    },
+    "limits": {
+      "compact_threshold": 800000,
+      "select_budget": 20000,
+      "max_nulls": 3
+    },
+    "counters": {
+      "req": 1,
+      "turn": 1,
+      "compaction": 0,
+      "inputs": 0,
+      "actions": 0
+    },
+    "usage_total": {
+      "input": 12400,
+      "output": 230,
+      "cache_read": 5200,
+      "cache_write": 7200
+    }
+  }
+}

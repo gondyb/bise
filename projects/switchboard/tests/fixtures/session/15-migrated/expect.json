@@ -1,0 +1,55 @@
+{
+  "open": "ok",
+  "bad_lines": [],
+  "torn": null,
+  "unknown": [],
+  "others": [],
+  "seq_errors": [],
+  "repair": [],
+  "projection": "projection.txt",
+  "state": {
+    "context": [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18
+    ],
+    "queue": [
+      6,
+      7
+    ],
+    "system": "You are bise.\nBe brief.",
+    "tools": [
+      "bash",
+      "run_typescript"
+    ],
+    "model": {
+      "model": "unknown"
+    },
+    "limits": {
+      "compact_threshold": 800000,
+      "select_budget": 20000,
+      "max_nulls": 3
+    },
+    "counters": {
+      "req": 2,
+      "turn": 0,
+      "compaction": 0,
+      "inputs": 4,
+      "actions": 3
+    },
+    "usage_total": {
+      "input": 0,
+      "output": 0,
+      "cache_read": 0,
+      "cache_write": 0
+    }
+  }
+}

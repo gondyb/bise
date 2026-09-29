@@ -1,0 +1,8 @@
+BEND-SESSION 2
+TOOL bash : Run a shell command.
+CFG 800000 20000 3 You are bise.
+COUNT 3 2
+MSG True user : Summary: 37 test files.
+MSG False user : How many tests are in this repo?
+MSG False user : Thanks.
+MSG False assistant : You're welcome.

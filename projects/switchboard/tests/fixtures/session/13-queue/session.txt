@@ -1,0 +1,12 @@
+BEND-SESSION 2
+TOOL bash : Run a shell command.
+CFG 800000 20000 3 You are bise.
+COUNT 2 1
+QUEUE and lint\Nplease
+NOTIF job 3 done
+MSG False user : How many tests are in this repo?
+MSG False assistant : <think>Count the test files.\nBENDSIG::EqQBCkYI</think>
+  CALL 1 bash : rg -c '^def test_' tests | wc -l
+MSG False tool : tool bash ok: 37\n
+MSG False assistant : There are 37 test files.
+MSG False user : then run them
