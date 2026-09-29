@@ -15,6 +15,7 @@
 //! Usage:
 //!   bend-harness                # Switchboard in the current folder
 //!   bend-harness switchboard    # the same, with its flags (--stop, --workspace)
+//!   bend-harness models [filter] # the models bise knows, keys set (BISE-142)
 //!   bend-harness --headless     # one session for a program, flags:
 //!     --scripted                # scripted session (no API)
 //!     --model NAME              # BEND_MODEL for the provider call
@@ -179,6 +180,30 @@ fn load_env_files() {
     }
 }
 
+// ---- the model catalog (BISE-142, rust/catalog) ----
+// TODO(BISE-160): bise_home::Home::from_env().config_file() / .cache_dir()
+
+/// config.toml: $BEND_CONFIG, else ~/.bend-harness/config.toml (the file
+/// runtime/settings.bend reads).
+fn config_file() -> std::path::PathBuf {
+    match std::env::var_os("BEND_CONFIG").filter(|v| !v.is_empty()) {
+        Some(p) => p.into(),
+        None => home_path(".bend-harness/config.toml", "/tmp/bend-harness-config.toml").into(),
+    }
+}
+
+fn cache_dir() -> std::path::PathBuf {
+    home_path(".bend-harness/cache", "/tmp/bend-harness-cache").into()
+}
+
+/// The merged catalog for the REPLs this process starts: BISE_MODELS_FILE
+/// (providers.md §7). Never stops a start.
+fn export_models_file() {
+    if let Some(p) = bise_catalog::export_handoff(&config_file(), &cache_dir()) {
+        std::env::set_var("BISE_MODELS_FILE", p);
+    }
+}
+
 // ---- switchboard (projects/switchboard): one main agent, task agents ----
 
 /// The app root: the directory holding the Bend REPL binaries (the dev
@@ -337,6 +362,7 @@ fn main() -> std::io::Result<()> {
             Some("sb") => std::process::exit(switchboard::cli::main(&args[1..])),
             Some("sbd") => {
                 load_env_files();
+                export_models_file();
                 return run_sbd(&args[1..]);
             }
             Some("sbswitch") => {
@@ -370,6 +396,10 @@ fn main() -> std::io::Result<()> {
             // agent plugins: list, enable/disable, and the per-session
             // bridge the REPL starts (projects/switchboard/docs/plugins.md)
             Some("plugins") => std::process::exit(bend_plugins::cli::main(&args[1..])),
+            Some("models") => {
+                load_env_files();
+                std::process::exit(bise_catalog::cli::main(&args[1..], &config_file()));
+            }
             Some("switchboard") => {
                 let debug = args.iter().any(|a| a == "--debug");
                 return run_switchboard(&args[1..], debug);
@@ -401,6 +431,7 @@ fn main() -> std::io::Result<()> {
     if let Some(m) = model {
         std::env::set_var("BEND_MODEL", m);
     }
+    export_models_file();
 
     // locate the Bend REPL binary next to this executable, then in cwd
     let repl_name = if scripted { "repl-scripted" } else { "repl-live" };

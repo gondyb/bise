@@ -1,0 +1,8 @@
+[package]
+name = "bise-catalog"
+version = "0.1.0"
+edition = "2021"
+description = "bise's own model catalog: the built-in provider/model list (models.toml) merged with the user's config.toml."
+
+[dependencies]
+toml = { version = "1", features = ["preserve_order"] }

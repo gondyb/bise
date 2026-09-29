@@ -417,3 +417,129 @@ What the user gets, by step:
    (e.g. `model = "…"` and `agent_model = "…"`; unset = same as main).
 5. **Cloud auth, the simple way**: Azure key, Vertex through `gcloud`,
    Bedrock API key; no SigV4 / service-account signing for now.
+
+## 7. BISE-142 as built: the catalog, the config, the hand-off to Bend
+
+### 7.1 The built-in list
+
+`rust/catalog/models.toml`, compiled into the binary (no network, no
+third-party service). Edit it by hand; `cargo test -p bise-catalog`
+checks it (every provider has a known family, no duplicate, no trailing
+`/`). 17 providers: anthropic, foundry (the setup before BISE-142),
+openai, google, mistral, openrouter, groq, xai, deepseek, together,
+fireworks, cerebras, ollama, lmstudio (local, no key), azure, vertex,
+bedrock (`needs = "BISE-149"`: listed, not usable yet), ~50 models.
+
+```toml
+default_model = "foundry/claude-opus-5-5"   # nothing configured
+
+[aliases]
+"opus-5.5" = "foundry/claude-opus-5-5"
+
+[providers.anthropic]
+name = "Anthropic"
+api = "anthropic"          # openai-chat | anthropic | openai-responses | gemini | bedrock-converse
+base_url = "https://api.anthropic.com/v1"
+key_env = "ANTHROPIC_API_KEY"   # "" = no key (local)
+needs = ""                      # "BISE-149" = not usable yet
+context = 200000                # the defaults of its models
+max_output = 32000
+vision = true
+reasoning = true
+
+[models."anthropic/claude-sonnet-4-5"]
+max_output = 64000              # only what differs from the provider
+```
+
+A model field not set comes from its provider, then from the defaults:
+context 128000, max_output 16384, vision false, reasoning false, tools
+true. A model may set its own `api` (a Responses-only model of a chat
+provider).
+
+### 7.2 The user's config (`config.toml`)
+
+The same tables, merged key by key over the built-in list; the file
+today is `$BEND_CONFIG`, else `~/.bend-harness/config.toml` (the file
+runtime/settings.bend reads; `~/.bise/config.toml` once BISE-160's
+`bise_home` is wired: one line in `main.rs`, `config_file()`).
+
+```toml
+model = "anthropic/claude-sonnet-4-5"     # main
+agent_model = "groq/openai/gpt-oss-120b"  # sub-agents; unset = model
+
+# a model the list does not know, or other limits for a known one
+[models."anthropic/claude-sonnet-4-5"]
+context = 1000000
+
+[models."ollama/qwen3-coder:30b"]
+context = 65536
+reasoning = true
+
+# a whole OpenAI-compatible provider
+[providers.work]
+base_url = "https://llm.corp.example/v1"
+key_env = "CORP_LLM_KEY"
+# api = "openai-chat" (default), context = 131072 (defaults of its models)
+
+[aliases]
+fast = "groq/openai/gpt-oss-120b"
+```
+
+Rules:
+- **Names.** `provider/model`, split at the first `/` (ids may hold `/`:
+  `openrouter/anthropic/claude-sonnet-4.5`). A name with no `/`: an
+  alias, else the old rule (`claude*` → `foundry/<name>`, anything else
+  → `mistral/<name>`), so old configs keep working.
+- **Any name works.** A listed model takes its fields; an unlisted one
+  its provider's defaults; an unknown provider resolves too (no base
+  URL): the provider call says "add a [providers.<p>] table". Nothing
+  about a model stops bise from starting.
+- **Precedence, per key: env > config > default.**
+  `model` = `BISE_MODEL` > `BEND_MODEL` > config `model` > `default_model`;
+  `agent_model` = `BISE_AGENT_MODEL` > config `agent_model` > the
+  effective `model`. Empty env values are unset.
+- **Bad entries are warnings.** An unknown key, a wrong type, a family
+  that does not exist, a model name without `/`, `[provider.x]`
+  (singular): ignored, listed by `bise models`. A config that is not
+  valid TOML (the Bend reader accepts bare words): its tables are
+  ignored, `model` / `agent_model` are still read.
+
+`bise models [filter]` (`bend-harness models`): the model and
+agent_model in use (with where they come from and whether they are
+listed), then per provider: family, whether its key env var is set
+(`.env` files included; `auth.json` with BISE-143), its models with
+context / output / vision / reasoning, and `<provider>/<any other>`
+with the defaults; the warnings last.
+
+Rust API (`bise_catalog`, for BISE-150/151/152): `Setup::load(path)` /
+`Setup::from_text(text, env)` → `setup.model`, `setup.agent_model`,
+`setup.model_for("main" | "agent")`; `Catalog::resolve(name)` →
+`Resolved { name, provider, id, api, base_url, key_env, needs, caps:
+Caps { context, max_output, vision, reasoning, tools }, known }`;
+`catalog.context_window(name)` (usage.rs / compaction, BISE-150).
+
+### 7.3 The hand-off to Bend (BISE-141)
+
+- Before it starts REPLs (`sbd`, the hub, and `--headless`), bise
+  writes the merged catalog (built-in + config.toml) to
+  `<cache>/models.toml` (`~/.bend-harness/cache/models.toml` today; the
+  temp dir if that fails; atomic) and exports its path as
+  **`BISE_MODELS_FILE`**. No file (an old binary): the runtime keeps its
+  built-in foundry + mistral table.
+- The hub sets **`BISE_ROLE=main|agent`** on each REPL
+  (`rust/switchboard/src/daemon.rs`, the spawn's env).
+- Format: the config's own tables, flat for `core/config.bend` (one
+  `key = value` per line, strings quoted, ints and `true`/`false` bare, a
+  key's path keeps the quotes: `models."openai/gpt-5".context`):
+  `version = 1`, `default_model`, `[aliases]`, `[providers.<id>]` with
+  every key (name, api, base_url, key_env, needs, context, max_output,
+  vision, reasoning, tools), `[models."<p>/<id>"]` with only the keys
+  that differ from the provider. ~300 lines today. The model choice is
+  **not** in it.
+- Per call, the runtime: name = the precedence of §7.2 (config read
+  fresh, so an edited `model` line applies at the next call; the role
+  from `BISE_ROLE`); alias / old rule for a bare name; provider = before
+  the first `/`; each key = `models."<p>/<id>".<k>`, else
+  `providers.<p>.<k>`; unknown provider, `needs` set, or a family not
+  built yet: an error at call time. A new `[providers]` / `[models]`
+  table in config.toml needs a restart (the file is written at start).

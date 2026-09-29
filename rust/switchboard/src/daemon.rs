@@ -565,6 +565,8 @@ impl Shell {
             .env("SB_SOCKET", self.opts.paths.socket())
             .env("BEND_WIRE_LOG", adir.join("wire.log"))
             .env("SB_AGENT", &a.name)
+            // which model: config.toml `model`, or `agent_model` (BISE-142)
+            .env("BISE_ROLE", if a.is_main { "main" } else { "agent" })
             // RFC 0002 §9: two dev servers must not fight for one port
             .env("SB_TASK", &a.name)
             .env(

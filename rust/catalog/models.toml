@@ -1,0 +1,340 @@
+# bise's built-in model catalog (BISE-142). Read by Rust (rust/catalog),
+# compiled into the binary: no network, no third-party service.
+#
+# Edit by hand. The same two tables work in ~/.bise/config.toml, where
+# they add or override entries key by key:
+#
+#   [providers.<id>]      name, api, base_url, key_env, needs,
+#                         + defaults for its models (the fields below)
+#   [models."<id>/<model>"]  context, max_output, vision, reasoning, tools
+#
+# api (the wire family): openai-chat | anthropic | openai-responses |
+#   gemini | bedrock-converse. Today the Bend runtime speaks openai-chat
+#   and anthropic; the others come with BISE-147/148/149.
+# key_env = "" : no key needed (local servers).
+# needs = "BISE-149" : listed, not usable yet (cloud auth).
+# A model field not set comes from its provider, then from the defaults:
+#   context 128000, max_output 16384, vision false, reasoning false,
+#   tools true.
+# Any "<provider>/<model>" works even when the model is not listed here:
+# it gets its provider's defaults. Model ids may hold '/': the provider
+# is the part before the FIRST '/'.
+# Checked by hand against the providers' docs; last update 2025-11.
+
+# no model in config.toml and no BISE_MODEL / BEND_MODEL: this one
+default_model = "foundry/claude-opus-5-5"
+
+# names without a provider (the old config lines keep working)
+[aliases]
+"opus-5.5" = "foundry/claude-opus-5-5"
+
+# ---- Anthropic ----
+
+[providers.anthropic]
+name = "Anthropic"
+api = "anthropic"
+base_url = "https://api.anthropic.com/v1"
+key_env = "ANTHROPIC_API_KEY"
+context = 200000
+max_output = 32000
+vision = true
+reasoning = true
+
+[models."anthropic/claude-opus-4-5"]
+max_output = 64000
+
+[models."anthropic/claude-sonnet-4-5"]
+max_output = 64000
+
+[models."anthropic/claude-haiku-4-5"]
+max_output = 64000
+
+# the user's Anthropic proxy (the setup before BISE-142); the harness
+# sends the 1M-context beta header, so 1M
+[providers.foundry]
+name = "Anthropic (foundry proxy)"
+api = "anthropic"
+base_url = "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1"
+key_env = "ANTHROPIC_FOUNDRY_API_KEY"
+context = 1000000
+max_output = 32768
+vision = true
+reasoning = true
+
+[models."foundry/claude-opus-5-5"]
+
+# ---- OpenAI ----
+
+[providers.openai]
+name = "OpenAI"
+api = "openai-chat"
+base_url = "https://api.openai.com/v1"
+key_env = "OPENAI_API_KEY"
+context = 400000
+max_output = 128000
+vision = true
+reasoning = true
+
+[models."openai/gpt-5.1"]
+
+[models."openai/gpt-5"]
+
+[models."openai/gpt-5-mini"]
+
+[models."openai/gpt-5-codex"]
+
+[models."openai/gpt-4.1"]
+context = 1047576
+max_output = 32768
+reasoning = false
+
+# ---- Google (OpenAI-compatible endpoint until the gemini family, BISE-148) ----
+
+[providers.google]
+name = "Google AI Studio"
+api = "openai-chat"
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+key_env = "GEMINI_API_KEY"
+context = 1048576
+max_output = 65536
+vision = true
+reasoning = true
+
+[models."google/gemini-3-pro-preview"]
+
+[models."google/gemini-2.5-pro"]
+
+[models."google/gemini-2.5-flash"]
+
+# ---- Mistral ----
+
+[providers.mistral]
+name = "Mistral"
+api = "openai-chat"
+base_url = "https://api.mistral.ai/v1"
+key_env = "MISTRAL_API_KEY"
+context = 128000
+
+[models."mistral/mistral-large-latest"]
+vision = true
+
+[models."mistral/mistral-medium-latest"]
+vision = true
+
+[models."mistral/devstral-medium-latest"]
+
+[models."mistral/codestral-latest"]
+context = 256000
+
+[models."mistral/magistral-medium-latest"]
+reasoning = true
+
+# ---- OpenRouter (one key, many vendors) ----
+
+[providers.openrouter]
+name = "OpenRouter"
+api = "openai-chat"
+base_url = "https://openrouter.ai/api/v1"
+key_env = "OPENROUTER_API_KEY"
+
+[models."openrouter/anthropic/claude-sonnet-4.5"]
+context = 1000000
+max_output = 64000
+vision = true
+reasoning = true
+
+[models."openrouter/openai/gpt-5"]
+context = 400000
+max_output = 128000
+vision = true
+reasoning = true
+
+[models."openrouter/google/gemini-2.5-pro"]
+context = 1048576
+max_output = 65536
+vision = true
+reasoning = true
+
+[models."openrouter/moonshotai/kimi-k2-0905"]
+context = 262144
+
+[models."openrouter/qwen/qwen3-coder"]
+context = 262144
+
+[models."openrouter/z-ai/glm-4.6"]
+context = 202752
+reasoning = true
+
+# ---- Groq ----
+
+[providers.groq]
+name = "Groq"
+api = "openai-chat"
+base_url = "https://api.groq.com/openai/v1"
+key_env = "GROQ_API_KEY"
+context = 131072
+
+[models."groq/moonshotai/kimi-k2-instruct-0905"]
+context = 262144
+
+[models."groq/openai/gpt-oss-120b"]
+max_output = 65536
+reasoning = true
+
+[models."groq/qwen/qwen3-32b"]
+max_output = 40960
+reasoning = true
+
+[models."groq/llama-3.3-70b-versatile"]
+max_output = 32768
+
+# ---- xAI ----
+
+[providers.xai]
+name = "xAI"
+api = "openai-chat"
+base_url = "https://api.x.ai/v1"
+key_env = "XAI_API_KEY"
+context = 256000
+reasoning = true
+
+[models."xai/grok-4"]
+vision = true
+
+[models."xai/grok-4-fast"]
+context = 2000000
+vision = true
+
+[models."xai/grok-code-fast-1"]
+
+# ---- DeepSeek ----
+
+[providers.deepseek]
+name = "DeepSeek"
+api = "openai-chat"
+base_url = "https://api.deepseek.com/v1"
+key_env = "DEEPSEEK_API_KEY"
+
+[models."deepseek/deepseek-chat"]
+max_output = 8192
+
+[models."deepseek/deepseek-reasoner"]
+max_output = 65536
+reasoning = true
+
+# ---- Together ----
+
+[providers.together]
+name = "Together AI"
+api = "openai-chat"
+base_url = "https://api.together.xyz/v1"
+key_env = "TOGETHER_API_KEY"
+context = 131072
+
+[models."together/Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8"]
+context = 262144
+
+[models."together/moonshotai/Kimi-K2-Instruct-0905"]
+context = 262144
+
+[models."together/openai/gpt-oss-120b"]
+reasoning = true
+
+[models."together/deepseek-ai/DeepSeek-V3.1"]
+
+# ---- Fireworks ----
+
+[providers.fireworks]
+name = "Fireworks AI"
+api = "openai-chat"
+base_url = "https://api.fireworks.ai/inference/v1"
+key_env = "FIREWORKS_API_KEY"
+context = 131072
+
+[models."fireworks/accounts/fireworks/models/kimi-k2-instruct-0905"]
+context = 262144
+
+[models."fireworks/accounts/fireworks/models/qwen3-coder-480b-a35b-instruct"]
+context = 262144
+
+[models."fireworks/accounts/fireworks/models/glm-4p6"]
+context = 202752
+reasoning = true
+
+[models."fireworks/accounts/fireworks/models/deepseek-v3p1"]
+context = 163840
+
+# ---- Cerebras ----
+
+[providers.cerebras]
+name = "Cerebras"
+api = "openai-chat"
+base_url = "https://api.cerebras.ai/v1"
+key_env = "CEREBRAS_API_KEY"
+context = 131072
+
+[models."cerebras/qwen-3-coder-480b"]
+
+[models."cerebras/gpt-oss-120b"]
+reasoning = true
+
+[models."cerebras/zai-glm-4.6"]
+reasoning = true
+
+# ---- local (no key): any model name the server has ----
+
+[providers.ollama]
+name = "Ollama (local)"
+api = "openai-chat"
+base_url = "http://localhost:11434/v1"
+key_env = ""
+context = 32768
+max_output = 8192
+
+[providers.lmstudio]
+name = "LM Studio (local)"
+api = "openai-chat"
+base_url = "http://localhost:1234/v1"
+key_env = ""
+context = 32768
+max_output = 8192
+
+# ---- cloud wrappers: listed, usable with BISE-149 ----
+# {resource} {project} {location} {region}: filled from the env by BISE-149
+
+[providers.azure]
+name = "Azure OpenAI"
+api = "openai-responses"
+base_url = "https://{resource}.openai.azure.com/openai/v1"
+key_env = "AZURE_API_KEY"
+needs = "BISE-149"
+context = 400000
+max_output = 128000
+vision = true
+reasoning = true
+
+[providers.vertex]
+name = "Google Vertex AI (gcloud auth)"
+api = "gemini"
+base_url = "https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}"
+key_env = ""
+needs = "BISE-149"
+context = 1048576
+max_output = 65536
+vision = true
+reasoning = true
+
+[models."vertex/gemini-2.5-pro"]
+
+[providers.bedrock]
+name = "Amazon Bedrock"
+api = "anthropic"
+base_url = "https://bedrock-runtime.{region}.amazonaws.com"
+key_env = "AWS_BEARER_TOKEN_BEDROCK"
+needs = "BISE-149"
+context = 200000
+max_output = 64000
+vision = true
+reasoning = true
+
+[models."bedrock/anthropic.claude-sonnet-4-5-20250929-v1:0"]

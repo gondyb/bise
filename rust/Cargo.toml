@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["harness", "tui", "switchboard", "plugins", "images"]
+members = ["harness", "tui", "switchboard", "plugins", "images", "catalog"]
 
 # loop-speed: dependencies (ratatui, vt100, ...) optimised once; our crates
 # stay at opt-level 0 so an edit rebuilds in ~1 s. The fuzz test runs 7x faster.

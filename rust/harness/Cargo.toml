@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bise-catalog = { path = "../catalog" }
 bend-plugins = { path = "../plugins" }
 bend-tui = { path = "../tui" }
 switchboard = { path = "../switchboard" }
