@@ -264,6 +264,10 @@ def step_notif(st: FS, +line: String) -> FS:
       FS{tools, cur, msgs, cfg, inputs, actions, queued,
         Con{W.wire_decode(String.drop(line, 6n)), notifs}, ok}
 
+# a CALL line goes at the END of the message's calls: they were written
+# in order, and results pair with calls by position (prepending reversed
+# a multi-call message at every reload: 40 of 243 such messages in the
+# user's sessions had flipped, BISE-197)
 def add_call(st: FS, +line: String) -> FS:
   match st:
     case FS{+tools, +cur, +msgs, +cfg, +inputs, +actions, +queued, +notifs, +ok}:
@@ -271,7 +275,8 @@ def add_call(st: FS, +line: String) -> FS:
         case Some{+m}:
           match m:
             case T.Msg{+role, +text, +calls, +injected}:
-              FS{tools, Some{T.Msg{role, text, Con{fcall(line), calls},
+              FS{tools, Some{T.Msg{role, text,
+                List.append(&2, T.Call, calls, Con{fcall(line), Nil{}}),
                 injected}}, msgs, cfg, inputs, actions, queued, notifs, ok}
         case None{}:
           st

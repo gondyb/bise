@@ -111,13 +111,28 @@ def read_all(f: File, acc: String) -> IO(String):
     fr : File & Result<&1, &1, U32 & String, String> <- File.read(f, 65536)
     read.more(fr, acc, f2 => a2 => read_all(f2, a2))
 
+# the whole file in ONE read when its size is known: File.read decodes
+# each chunk on its own, so a UTF-8 character cut by a 64 KiB chunk
+# boundary came back as two U+FFFD (4 of the user's 175 sessions lost a
+# character at each resume, BISE-197); the chunked loop stays for the rest
+def read.sized(fs: File & Result<&1, &1, U32 & String, U32>) -> IO(String):
+  match fs:
+    case (f2, Fail{_}):
+      read_all(f2, "")
+    case (f2, Done{+n}):
+      do IO<String>:
+        fr : File & Result<&1, &1, U32 & String, String> <- File.read(f2,
+          (n + 1 : U32))
+        read.more(fr, "", f3 => a3 => read_all(f3, a3))
+
 def read.opened(f: Result<&1, &1, U32 & String, File>) -> IO(Maybe<&2, String>):
   match f:
     case Fail{_}:
       IO.pure(Maybe<&2, String>, None{})
     case Done{file}:
       do IO<Maybe<&2, String>>:
-        content : String <- read_all(file, "")
+        fs : File & Result<&1, &1, U32 & String, U32> <- File.size(file)
+        content : String <- read.sized(fs)
         IO.pure(Maybe<&2, String>, Some{content})
 
 def read_file(+path: String) -> IO(Maybe<&2, String>):

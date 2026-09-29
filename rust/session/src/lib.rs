@@ -15,3 +15,4 @@ pub mod state;
 pub use state::State;
 pub mod redact;
 pub use redact::Redactor;
+pub mod legacy;
