@@ -592,11 +592,18 @@ provider and sets `key_env` in the process env when the key is not
 already there under that name (an alias, auth.json, a .env file); then
 the rest of the .env lines as before. The REPLs inherit it. No key is
 written to any other file (not the models file, not the session) or
-printed; `Found`'s Debug hides it. Limit: a REPL's env is fixed at
-spawn, so a `login` reaches a running hub's agents only after the hub
-restarts (`bend-harness switchboard --stop`). Later: onboarding's model
-step (`rust/tui/src/onboarding.rs`, today it writes `<root>/.env`) can
-call `auth::Store` + `auth_cli::login` instead.
+printed; `Found`'s Debug hides it.
+
+**At each REPL spawn** (BISE-146 follow-up (a)): the hub resolves the
+keys again (`keys_for_spawn` in `rust/harness/src/main.rs`, handed to
+the daemon as `Opts::spawn_env`; pure part `Resolution::spawn_env`):
+auth.json, the .env files and config.toml read again, the environment
+the hub started with still first, but the variables `load_keys` set
+itself do not count as "the environment". Each export is set on the
+new REPL; a key_env the hub set at start whose key is gone now
+(`logout`) is removed. So a `login` / `logout` reaches the next agent
+(spawn, respawn, restart) without restarting the hub; a REPL already
+running keeps the env it started with.
 
 ## 8. BISE-153 as built: the fake provider, fixtures, live tests
 
