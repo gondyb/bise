@@ -114,6 +114,13 @@
   .cstrip .cr .q { overflow:hidden; text-overflow:ellipsis; }
   .cstrip .o b, .cfocus .o b { color:var(--acc); font-weight:400; } .cstrip .o > span + span { margin-left:2ch; }
   .cstrip .x { color:var(--faint); margin-left:2ch; }
+  .cstrip .cr.lab { padding-bottom:0; }
+  .ctabs { display:flex; gap:3ch; white-space:nowrap; overflow:hidden; margin:.2lh 0 .6lh; color:var(--dim); }
+  .ctabs > span.on { color:var(--text); background:var(--raised); padding:0 1ch; margin:0 -1ch; } .ctabs > span:last-child { margin-left:auto; }
+  .cview { border-left:2px solid var(--acc); padding:.2lh 0 .2lh 2ch; max-width:79ch; }
+  .cview .cvh { display:flex; justify-content:space-between; gap:2ch; margin-bottom:.5lh; } .cview .cvb { max-width:76ch; }
+  .cview .ol { margin-top:.6lh; } .cview .ol div b { color:var(--acc); font-weight:400; display:inline-block; width:2ch; }
+  .cview pre.cmdb { background:var(--raised); padding:.3lh 1ch; margin:.3lh 0; white-space:pre-wrap; }
   .cfocus { position:relative; border:1px solid var(--acc); border-radius:6px; padding:.5lh 2ch .6lh; margin:.6lh 2ch .7lh; max-width:91ch; }
   .cfocus .bt { position:absolute; top:-.55lh; left:1.5ch; background:var(--bg); padding:0 1ch; }
   .cfocus .bb { position:absolute; bottom:-.55lh; left:1.5ch; right:1.5ch; display:flex; gap:2ch; background:transparent; white-space:nowrap; overflow:hidden; }
@@ -345,6 +352,67 @@ const ROW_DOCS = crow(false, "docs", "v1 or v2 for the api docs?", [["1", "v1"],
 const STRIP_SEQ = `<div class="cstrip">${ROW_DEPLOY}${ROW_PERF(false)}${ROW_DOCS}</div>`;
 const STRIP_SEQ_PERF = `<div class="cstrip">${ROW_DEPLOY}${ROW_PERF(true)}${ROW_DOCS}</div>`;
 const STRIP_AFTER = `<div class="cstrip">${ROW_PERF(true)}${ROW_DOCS}</div>`;
+// ---------- cards v2: a quick look (the strip) and a card view (ctrl+g) ----------
+const C2FEED = you('signup is slow on mobile. and ship the next tag when it\'s green<span class="tick read">✓✓</span>') +
+  bise("perf is on signup. release waits for green, then publishes.") +
+  `<div class="b"><span class="who acc">✓</span>sad-404 done <span class="dim">· the dog has a hat.</span></div>`;
+const C2_LAB = (n) => `<div class="cr lab"><span class="faint">${n} cards</span><span><span style="color:var(--text)">ctrl+g</span> <span class="dim">open</span></span></div>`;
+const C2_REL = (on) => crow(on, "release wants to run", `<span style="color:var(--text)">npm publish --tag next</span>`, [["1", "allow"], ["2", "always"], ["3", "deny"]]);
+const C2_PERF = (on) => crow(on, "perf", "the hero image is 4.2 MB. compress it, or lazy-load it?", [["1", "compress"], ["2", "both"]]);
+const C2_DARK = (on) => crow(on, "dark-mode", "the settings page has 3 grays in tokens.css and 2 hardcoded ones. i found them because…", [["9 options", ""]]);
+const C2_STRIP = `<div class="cstrip">${C2_LAB(3)}${C2_REL(true)}${C2_PERF(false)}${C2_DARK(false)}</div>`;
+const C2_KEYS_THREAD = "⏎ send · ctrl+g open cards · @ agent · / commands";
+const ctabs = (cur) => `<div class="ctabs">${[["release", "wants to run"], ["perf", ""], ["dark-mode", ""]].map(([a], i) =>
+  `<span class="${i === cur ? "on" : ""}"><span class="acc">?</span> ${a}</span>`).join("")}<span class="faint">ctrl+n / ctrl+p</span></div>`;
+const cview = (cur, title, meta, body, opts) => ctabs(cur) +
+  `<div class="cview"><div class="cvh"><b class="acc">? ${title}</b><span class="dim">${meta}</span></div><div class="cvb">${body}</div>${opts ? `<div class="ol">${opts}</div>` : ""}</div>`;
+const optl = (xs) => xs.map((t, i) => `<div><b>${i + 1}</b> ${t}</div>`).join("");
+const cvFoot = (who, text, hints) => foot(`<span class="dim">you →</span> <span class="acc">? ${who}'s card</span> <span class="dim">· your answer</span>`, text, hints);
+const C2_DARK_BODY = `<div>the settings page has 3 grays in tokens.css and 2 hardcoded ones. i found them because the dark toggle left two borders white.</div>
+<div style="margin-top:.4lh">the hardcoded ones are #e5e5e5 (the table rules) and #ddd (the input borders). the closest tokens are --gray-2 and --gray-3, but --gray-3 is a bit darker than #ddd, so the inputs will look heavier in light mode.</div>
+<div style="margin-top:.4lh">i can map them, add two new tokens, or leave light mode alone and only fix dark.</div>`;
+const C2_DARK_OPTS = optl(["map both to --gray-2", "map to --gray-2 and --gray-3", "two new tokens", "new tokens, light mode unchanged", "only fix dark", "fix dark, open an issue for light", "ask the design channel", "show me both side by side", "skip it for now"]);
+const C2_CMD = `<pre class="cmdb"><span class="kw">set</span> -euo pipefail
+npm run build
+npm test -- --reporter=dot
+npm version 2.5.0 --no-git-tag-version
+npm publish --tag next
+git tag v2.5.0 &amp;&amp; git push origin v2.5.0</pre><div class="dim">publishes 2.5.0 to npm under your name, then tags it</div>`;
+
+const CARD2_SCREENS = [
+["cards v2 · 1 · the quick look", "<span class='optk'>round 2, designer's pick.</span> the cards you haven't answered sit right above the divider, one row each, the most blocking first. a faint top row says how many, and <b>ctrl+g open</b>. read it, and if it's simple, click an option: done, you never left your message. anything more (reading it all, typing an answer, the keyboard): ctrl+g. no other card key works from here, so nothing can close a card you can't see.",
+ term({ feed: C2FEED, above: C2_STRIP, f: cfoot("3 working", C2_KEYS_THREAD) })],
+["cards v2 · 2 · ctrl+g: the card view", "ctrl+g opens the card view: it takes the history's place, so the card has all the room it needs. the cards are tabs at the top (ctrl+n / ctrl+p, or click). the composer under it now answers this card, and its divider says so: <b>you → ? perf's card</b>. 1-9 picks an option (only in an empty composer), text + ⏎ answers in your own words. esc or ctrl+g: back to your thread, your draft kept.",
+ term({ feed: cview(1, "perf needs you", "2 of 3 · 6m · ⌥1 perf", `<div>the hero image is 4.2 MB. on a mid-range phone that's 3 s before anything shows. compress it, or lazy-load it?</div>`, optl(["compress it (webp, ~300 kB)", "both: compress, and lazy-load below the fold"])),
+   f: cvFoot("perf", CUR, "1-2 pick · ⏎ answer · ctrl+x close · ctrl+n next · esc back") })],
+["cards v2 · 3 · a long card, 9 options", "the card scrolls in its view (the wheel, pgup/pgdn, ↑↓ in an empty composer); the options are one per row and stay under the text. still 1-9 to pick, still ⏎ for your own words.",
+ term({ feed: cview(2, "dark-mode needs you", "3 of 3 · 2m · ⌥2 dark-mode", C2_DARK_BODY, C2_DARK_OPTS),
+   f: cvFoot("dark-mode", CUR, "1-9 pick · ⏎ answer · ctrl+x close · ctrl+p previous · esc back") })],
+["cards v2 · 4 · an approval", "a command to approve is a card like the others: the whole command in the code colors, why it runs, then allow once / always here / deny. text + ⏎ denies with your text as a note for the agent.",
+ term({ feed: cview(0, "release wants to run", "1 of 3 · now · ⌥5 release", C2_CMD, optl(["allow once", "always here", "deny"])),
+   f: cvFoot("release", CUR, "1-3 pick · ⏎ deny with a note · ctrl+x close · ctrl+n next · esc back") })],
+["cards v2 · 5 · typing an answer", "you type, and it goes to the card, never to main by mistake: the divider says who reads it, and 1-9 are letters again as soon as the composer isn't empty. the agents keep working meanwhile; a new card only adds a tab.",
+ term({ feed: cview(1, "perf needs you", "2 of 3 · 7m · ⌥1 perf", `<div>the hero image is 4.2 MB. on a mid-range phone that's 3 s before anything shows. compress it, or lazy-load it?</div>`, optl(["compress it (webp, ~300 kB)", "both: compress, and lazy-load below the fold"])),
+   f: cvFoot("perf", `both, and keep the png for retina screens${CUR}`, "⏎ answer · ctrl+x close · ctrl+n next · esc back, draft kept") })],
+["cards v2 · the keys, checked", "every card key, where it works, and what it could clash with. only ctrl+g works from your thread; the rest only in the card view.",
+ `<pre class="code" style="margin-left:0">key            in your thread         in the card view             clash check
+ctrl+g         open the card view     back to the thread           free (not an editor key)
+click a row    open that card         —                            —
+click option   answer at once         answer at once               —
+1-9            letters, as always     pick (empty composer only)   typed text wins
+⏎              send to main           send your text as the answer the divider says who reads it
+ctrl+n/ctrl+p  —                      next / previous card         free
+ctrl+x         —                      close without answering      cut stays ctrl+shift+x
+esc            as today               back to the thread           —
+⌥0-9           go to an agent         go to an agent               unchanged
+↑↓ pgup/pgdn   as today               scroll the card              ↑↓ only in an empty composer
+
+<span class="err">removed</span>
+ctrl+f         full screen            the card view is already full; ctrl+f is the editor's → again
+alt+r          answer with text       typing in the card view is answering
+ctrl+a         open cards (empty)     ctrl+a is line start, only
+ctrl+x/n/p     from the thread        they acted on a card you couldn't see</pre>`],
+];
 const CARD_SCREENS = [
 ["cards · a · the strip above the divider", "<span class='optk'>(a) designer's pick.</span> every open card is one row right above the divider, most blocking first (approvals, then questions). the selected row is raised. click a row to open it, click an option to answer, click × to close. from the composer: ctrl+g opens the selected card, ctrl+n / ctrl+p move the selection. your queued messages (if any) sit between the strip and the divider: they are yours, closest to where you type.",
  term({ feed: CFEED, above: STRIP3, f: cfoot("3 working", CKEYS) })],
@@ -475,6 +543,7 @@ $  running the export tests                          ~ 12s</pre>`],
 ];
 
 const screens = [
+...CARD2_SCREENS,
 ...TOOL_SCREENS,
 ...CARD_SCREENS,
 ...ATT_SCREENS,
