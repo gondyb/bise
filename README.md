@@ -31,7 +31,7 @@
 
 today you started five things. you watched output scroll. you answered "should i continue?" eleven times.
 
-two agents edited the same file, and you found out from the red tests. you pasted the same context into three tabs. you had a great idea at 2pm, and you let it go, because one more tab was one too many.
+two agents edited the same file. the red tests told you. you had a great idea at 2pm, and let it go: one more tab was one too many.
 
 at 6pm you'd shipped more than ever, and you felt like you did nothing.
 
