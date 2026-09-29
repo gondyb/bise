@@ -2706,3 +2706,11 @@ Index:
 - **spec:** user: « léger manque de padding top au-dessus des prompts queued, fix ».
 - **what:** the queued lines (` › text` and the faint `queued · sent when this turn ends · ↑ edit`) sat on the row right under the divider. Now 1 blank tinted row between the divider and the first queued line, from 20 rows like the other pads (16-19: none). Under the hint nothing changes: the body's blank bar row, or with attachments the box's blank row, then the box. The gap takes a row from the history, never from the text.
 - **notes:** test `composer_wrap_tests::the_queued_messages_have_a_blank_row_above_them` (40 rows, 40 rows with a box, 18 rows).
+
+### BISE-225 · a selection pops `type ask about it` in the accent
+
+- **status:** done · **owner:** quote-hint · **commits:** `git log --grep BISE-225`
+- **owns:** `rust/tui/src/keybar.rs` (`ASK`, `ask_styles`, `pairs_line`); book §13 "Ask about a selection"
+- **spec:** user: « J'ai vu qu'on a un petit hint "type to ask about it" en bas quand je sélectionne du texte, c'est bien mais pas assez visible je trouve, je le mettrais peut-être en rose quand j'ai du texte sélectionné pour le faire poper plus? » designer: the whole pair in the accent, the key bold, the label regular; the other pairs unchanged; `NO_COLOR`: the whole pair bold.
+- **what:** in Quote mode the key bar draws `type ask about it` in the accent (`type` bold), the only accent of the bar; `cmd+c copy   esc drop` keep keys in the text color and labels dim. Under `NO_COLOR`, the pair is bold in the text color. The ctrl-hold hints (BISE-203) are unchanged.
+- **notes:** test `keybar::tests::a_selection_pops_type_ask_about_it_in_the_accent` (the pair's style, the others', the `NO_COLOR` form).

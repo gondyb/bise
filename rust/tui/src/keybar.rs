@@ -9,7 +9,7 @@
 //! order of [`help::TIPS`] (BISE-104, [`TipClock`]).
 
 use crate::{attach, commands, files, help, theme, voice, App};
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
@@ -53,6 +53,10 @@ type Pair = (&'static str, &'static str);
 /// pair there, never dropped.
 const BACK: Pair = ("esc", "back to main");
 
+/// The first pair while text is selected (BISE-134): the one pair of the
+/// bar in the accent, so you notice you can just type (book §13).
+const ASK: Pair = ("type", "ask about it");
+
 impl Mode {
     fn pairs(self) -> &'static [Pair] {
         match self {
@@ -82,7 +86,7 @@ impl Mode {
                 ("/", "commands"),
                 ("?", "help"),
             ],
-            Mode::Quote => &[("type", "ask about it"), ("cmd+c", "copy"), ("esc", "drop")],
+            Mode::Quote => &[ASK, ("cmd+c", "copy"), ("esc", "drop")],
             Mode::DropAsk => &[("y", "drop"), ("n or esc", "keep")],
             Mode::Confirm => &[("y", "yes"), ("n", "no"), ("esc", "cancel")],
             Mode::CardFull => &[("alt+r", "answer"), ("pgup/pgdn", "scroll"), ("ctrl+f", "back")],
@@ -280,22 +284,39 @@ pub(crate) fn render(mode: Mode, width: u16, typing: bool, agent: bool, tip: Opt
     Line::from(spans)
 }
 
+fn no_color() -> bool {
+    std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty())
+}
+
+/// The styles of [`ASK`], key and label: the accent, the key bold; under
+/// `NO_COLOR`, the whole pair bold in the text color.
+fn ask_styles(no_color: bool) -> (Style, Style) {
+    if no_color {
+        let s = Style::default().fg(theme::text()).add_modifier(Modifier::BOLD);
+        return (s, s);
+    }
+    let label = Style::default().fg(theme::accent());
+    (label.add_modifier(Modifier::BOLD), label)
+}
+
 /// `pairs` in a row `width` columns wide, and the columns taken: the
 /// pairs that don't fit are dropped from the end (the first is cut).
+/// Keys in the text color, labels dim, [`ASK`] in the accent.
 fn pairs_line(pairs: &[Pair], width: usize) -> (Line<'static>, usize) {
-    let key = Style::default().fg(theme::text());
-    let dim = Style::default().fg(theme::dim());
+    let (text, dim) = (Style::default().fg(theme::text()), Style::default().fg(theme::dim()));
+    let ask = ask_styles(no_color());
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut used = 0;
-    for (i, (k, l)) in pairs.iter().enumerate() {
-        let (k, l) = (key_text(k), label_text(l));
+    for (i, &pair) in pairs.iter().enumerate() {
+        let (key, what) = if pair == ASK { ask } else { (text, dim) };
+        let (k, l) = (key_text(pair.0), label_text(pair.1));
         let gap = if i == 0 { 0 } else { 3 };
         let w = k.width() + l.width() + usize::from(!k.is_empty() && !l.is_empty());
         if used + gap + w > width {
             if i == 0 {
                 // not even the first pair: cut it, as dim text
                 let s = if k.is_empty() { l } else { format!("{k} {l}") };
-                spans.push(Span::styled(cut(&s, width), dim));
+                spans.push(Span::styled(cut(&s, width), what));
                 used = spans[0].width();
             }
             break;
@@ -308,7 +329,7 @@ fn pairs_line(pairs: &[Pair], width: usize) -> (Line<'static>, usize) {
         }
         if !l.is_empty() {
             let sep = if k.is_empty() { "" } else { " " };
-            spans.push(Span::styled(format!("{sep}{l}"), dim));
+            spans.push(Span::styled(format!("{sep}{l}"), what));
         }
         used += gap + w;
     }
@@ -363,6 +384,29 @@ mod tests {
         assert_eq!(what.style.fg, Some(theme::dim()));
         let tip = l.spans.last().unwrap();
         assert_eq!(tip.style.fg, Some(theme::dim()));
+    }
+
+    #[test]
+    fn a_selection_pops_type_ask_about_it_in_the_accent() {
+        let l = render(Mode::Quote, 100, false, false, None);
+        assert_eq!(text(&l), "type ask about it   cmd+c copy   esc drop");
+        let style = |c: &str| l.spans.iter().find(|s| s.content == c).unwrap().style;
+        // the pair drawn with ask_styles (NO_COLOR read from the env)
+        assert_eq!((style("type"), style(" ask about it")), ask_styles(no_color()));
+        // the others keep their style
+        assert_eq!(style("cmd+c").fg, Some(theme::text()));
+        assert_eq!(style(" copy").fg, Some(theme::dim()));
+        assert!(!style("cmd+c").add_modifier.contains(Modifier::BOLD));
+        // color: the whole pair in the accent, the key bold
+        let (k, w) = ask_styles(false);
+        assert_eq!((k.fg, w.fg), (Some(theme::accent()), Some(theme::accent())));
+        assert!(k.add_modifier.contains(Modifier::BOLD) && !w.add_modifier.contains(Modifier::BOLD));
+        // NO_COLOR: no accent, the whole pair bold
+        let (k, w) = ask_styles(true);
+        for s in [k, w] {
+            assert_eq!(s.fg, Some(theme::text()));
+            assert!(s.add_modifier.contains(Modifier::BOLD));
+        }
     }
 
     #[test]

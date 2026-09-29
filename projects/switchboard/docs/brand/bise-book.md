@@ -529,7 +529,9 @@ The same three levels everywhere, in main and inside an agent.
   this"; user: « si je sélectionne du texte dans le thread et que je me
   mets à taper … ça met le texte que j'ai sélectionné en contexte pour
   l'agent »). Select text in the history (the release still copies it);
-  the key bar says `type ask about it   cmd+c copy   esc drop`. The first
+  the key bar says `type ask about it   cmd+c copy   esc drop`, `type ask
+  about it` in the accent, `type` bold, so you notice you can just type
+  (the only accent of the bar; `NO_COLOR`: the pair bold). The first
   key you type puts the selection in the composer as a quote chip `❝ 1`
   at the cursor (BISE-207), and ends the selection; the key types right
   after it. A chip, quote or image (paste, drop, `@`), always goes in at
