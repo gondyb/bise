@@ -35,7 +35,9 @@ two agents edited the same file, and you found out from the red tests. you paste
 
 at 6pm you'd shipped more than ever, and you felt like you did nothing.
 
-**you can build a whole product on your own now. you just need your head back.**
+that feeling has a name: context switching. forty times a day. it makes the best job in the world feel miserable.
+
+**bise does the switching for you. you stay in flow.**
 
 ## one thread. a whole team.
 
