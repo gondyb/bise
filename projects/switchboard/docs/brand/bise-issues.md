@@ -1887,3 +1887,42 @@ Index:
   `tui_version_tmux` fails when HEAD is already built in the shared
   `~/.local/state/switchboard/versions` (it switches with no "building"
   line): run it with `XDG_STATE_HOME` set to a temp dir.
+
+### BISE-95 · level 2 reads bigger (emphasis)
+
+- **status:** done · **owner:** bise-c-cards · **commits:** 1daa2f7
+  (shots: a qa/ commit after this one)
+- **track:** C · **owns:** `render.rs` l2_lines, answered_lines,
+  report_lines, thinking_lines, the style of the `Ev::Assistant` arms
+  (their widths and wrapping are bise-f-feed's, BISE-97); `feed.rs`
+  wants_gap_before, new is_l2
+- **spec:** book §9 "Emphasis" (marketing 82f1742);
+  site/book/screens.html "what's for you reads bigger"
+- **notes:**
+  - The speaker of level 2 is bold: main's `:*` in accent bold (replies
+    in main's feed, `:* …` messages, `:* docs asked … i answered …`);
+    `@ name to you:` in text bold, the body plain text; a report's
+    `name:` bold when done, failed or blocked (a progress line stays dim
+    and not bold).
+  - A blank row above and below every level-2 block (reply, answered,
+    message to you, report), even between two of them and after the
+    reply's thinking `∴` (it used to stick to it). The lines of a
+    level-3 run still sit together.
+  - Already dim before this issue, now tested: thinking `∴`, level 3.
+    The one-line tool calls were made dim by bise-k-keys in BISE-96.
+    Cards (level 1) unchanged.
+  - Differs from the mockup: the book makes `@ name to you:` bold
+    including the `@`; the mockup leaves the `@` plain. The book wins
+    (text color either way). The mockup's `♡ auth-fix is done` line in
+    "a wide terminal" is not bold; the book's rule (the speaker of level
+    2 is bold) makes `auth-fix:` bold.
+  - **Tests:** `render::emphasis_tests` (the speaker bold, the agent's
+    own work dim, the blank rows around level 2).
+  - **Gates:** on 4b98b7c + the patch: build, `cargo test -p bend-tui`,
+    clippy `--workspace --all-targets -D warnings`, `run_all.sh` green
+    (`tui_term_tmux` failed once: the shell's printf output was not
+    there yet when it checked; it passed alone). Rebased cleanly on
+    d744bee (BISE-98): build, `cargo test -p bend-tui` (317), clippy
+    green on that exact tree.
+  - **Shots:** `qa/capture.py` dark, light, ascii on 1daa2f7 (the new
+    frame of BISE-98 and this emphasis), temp HOME and XDG_STATE_HOME.
