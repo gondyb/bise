@@ -3,6 +3,7 @@
 //! and the detached switcher that replaces this hub.
 
 use super::{log_line, Msg, Shell};
+use bise_home::release::Install;
 use crate::model::MAIN;
 use crate::paths::Paths;
 use crate::util::{clip, wire_escape};
@@ -44,14 +45,48 @@ enum RestartPlan {
     Reload,
     /// any other workspace with a commit: refused, `/version` switches.
     Refuse,
+    /// an installed bise, `latest` (BISE-172): `bise update`, then the
+    /// hub switches to the version `current` points at (probation).
+    InstalledLatest,
+    /// an installed bise, an id: switch to that installed version.
+    InstalledSwitch(String),
 }
 
-fn restart_plan(dev: bool, arg: &str) -> RestartPlan {
-    match (dev, arg.trim()) {
-        (true, a) => RestartPlan::Dev(restart_target(a)),
-        (false, "" | "current") => RestartPlan::Reload,
-        (false, _) => RestartPlan::Refuse,
+/// `installed`: the running version is an install (install.sh; its
+/// VERSION has no `repo=`): that decides, whatever the workspace. A dev
+/// version (`repo=`): as before BISE-172.
+fn restart_plan(dev: bool, installed: bool, arg: &str) -> RestartPlan {
+    match (installed, dev, arg.trim()) {
+        (true, _, "" | "current") => RestartPlan::Reload,
+        (true, _, "latest") => RestartPlan::InstalledLatest,
+        (true, _, id) => RestartPlan::InstalledSwitch(id.to_string()),
+        (false, true, a) => RestartPlan::Dev(restart_target(a)),
+        (false, false, "" | "current") => RestartPlan::Reload,
+        (false, false, _) => RestartPlan::Refuse,
     }
+}
+
+/// How often an installed hub looks at `current` (an update installed
+/// by `bise update` or the daily check).
+const UPDATE_LOOK: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The release `bise update` last read (`~/.bise/cache/latest.json`),
+/// in words, with what to do: None when it is the running version.
+fn release_line(inst: &Install, running_id: &str) -> Option<String> {
+    let home = bise_home::Home::from_env();
+    let text = std::fs::read_to_string(home.release_manifest()).ok()?;
+    let v: Value = serde_json::from_str(&text).ok()?;
+    let id = v.get("id").and_then(|x| x.as_str())?.to_string();
+    let name = v.get("version").and_then(|x| x.as_str()).unwrap_or(&id).to_string();
+    if id == running_id {
+        return None;
+    }
+    let installed = inst.find(&id).is_some();
+    Some(if installed {
+        format!("latest release: {} ({}), installed — /restart latest switches to it", name, id)
+    } else {
+        format!("latest release: {} ({}) — /restart latest downloads it and switches", name, id)
+    })
 }
 
 fn restart_target(arg: &str) -> RestartTarget {
@@ -76,6 +111,31 @@ fn recent_commits(repo: &Path, n: usize) -> String {
 }
 
 const SUBJECT_MAX: usize = 100;
+
+/// `/version` in an installed bise (BISE-172): the installed versions
+/// (● running, ★ what `current` points at, new sessions run it) and the
+/// latest release `bise update` saw.
+fn installed_lines(inst: &Install, root: &Path, running_id: &str) -> Vec<String> {
+    let running = root.canonicalize().ok();
+    let current = inst.current();
+    let mut out = vec![format!("installed ({}) — ● running · ★ current (new sessions):", inst.prefix.display())];
+    for i in inst.installed() {
+        let mark = match (Some(&i.dir) == running.as_ref(), Some(&i.dir) == current.as_ref()) {
+            (true, true) => "●★",
+            (true, false) => "● ",
+            (false, true) => " ★",
+            (false, false) => "  ",
+        };
+        out.push(format!("  {} {} {} ({})", mark, i.id, clip(&i.subject, 80), i.built));
+    }
+    if let Some(l) = release_line(inst, running_id) {
+        out.push(l);
+    } else if current.is_some() && current != running {
+        out.push("a newer version is installed: /restart latest switches to it".into());
+    }
+    out.push("/version <id>: switch to an installed version · /version back: roll back · /restart latest: the newest release".into());
+    out
+}
 
 fn clip_lines(log: &str) -> String {
     log.lines().map(|l| crate::util::clip(l, SUBJECT_MAX) + "\n").collect()
@@ -120,6 +180,10 @@ impl Shell {
                         f.get("reason").and_then(|x| x.as_str()).unwrap_or("")
                     ));
                 }
+                if let Some(inst) = Install::of_root(root) {
+                    out.extend(installed_lines(&inst, root, cur));
+                    return out.join("\n");
+                }
                 let log = recent_commits(&repo, 12);
                 out.push(format!("commits ({}) — ● built:", repo.display()));
                 for l in log.lines() {
@@ -144,8 +208,20 @@ impl Shell {
             "restart" => {
                 // not bise's source tree: a reload, like VS Code's
                 // "Reload Window" (BISE-131); nothing to build
-                let target = match restart_plan(switch::dev_workspace(&self.opts.paths.workspace), &s("to")) {
+                let installed = Install::of_root(root);
+                let target = match restart_plan(
+                    switch::dev_workspace(&self.opts.paths.workspace),
+                    installed.is_some(),
+                    &s("to"),
+                ) {
                     RestartPlan::Reload => return self.reload(),
+                    RestartPlan::InstalledLatest => match installed {
+                        Some(inst) => return self.restart_latest(inst),
+                        None => return self.reload(),
+                    },
+                    RestartPlan::InstalledSwitch(id) => {
+                        return self.version_op(&json!({"do": "switch", "to": id}));
+                    }
                     RestartPlan::Refuse => {
                         return "/restart reloads bise on the version running now (this workspace is not bise's source tree): nothing to build; /version switches versions".into()
                     }
@@ -220,6 +296,12 @@ impl Shell {
                 if let Some(t) = target {
                     self.start_switch(&t);
                     return format!("switching to version {}", id_of(&t.to_string_lossy()));
+                }
+                if Install::of_root(root).is_some() {
+                    return format!(
+                        "{} is not an installed version: /version lists them; /restart latest installs the newest release",
+                        to
+                    );
                 }
                 let script = repo.join("versions.sh");
                 if !script.exists() {
@@ -350,6 +432,31 @@ impl Shell {
         if let Some(b) = back {
             items.push(json!({"rev": "back", "subject": format!("roll back to {}", b), "marks": []}));
         }
+        if let Some(inst) = Install::of_root(&self.opts.app_root) {
+            let running = self.opts.app_root.canonicalize().ok();
+            let current = inst.current();
+            for i in inst.installed() {
+                let mut marks = vec![];
+                if Some(&i.dir) == running.as_ref() {
+                    marks.push("current");
+                    if trial {
+                        marks.push("trial");
+                    }
+                }
+                if good == i.id {
+                    marks.push("good");
+                }
+                if Some(&i.dir) == current.as_ref() && Some(&i.dir) != running.as_ref() {
+                    marks.push("latest");
+                }
+                marks.push("built");
+                if failed == i.id {
+                    marks.push("failed");
+                }
+                items.push(json!({"rev": i.id, "subject": i.subject, "marks": marks}));
+            }
+            return json!({"ev": "versions", "current": cur_id, "dev": false, "installed": true, "items": items});
+        }
         let mut tree_marks = vec![];
         if cur_id.is_empty() {
             tree_marks.push("current");
@@ -393,6 +500,70 @@ impl Shell {
             let v = self.version_items();
             self.broadcast(&v);
         }
+    }
+
+    /// `/restart latest` in an installed bise (BISE-172): `bise update`
+    /// (the running binary's), then a switch to the version `current`
+    /// points at when it is not this one. Never blocks the hub.
+    fn restart_latest(&mut self, inst: Install) -> String {
+        if !self.building.insert("latest".into()) {
+            return "already looking for the latest release".into();
+        }
+        self.broadcast_versions();
+        let (paths, exe, tx) = (self.opts.paths.clone(), self.opts.exe.clone(), self.tx.clone());
+        let root = &self.opts.app_root;
+        let running = root.canonicalize().unwrap_or_else(|_| root.clone());
+        std::thread::spawn(move || {
+            let out = Command::new(&exe).arg("update").stdin(Stdio::null()).output();
+            let said = out
+                .as_ref()
+                .map(|o| {
+                    let t = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+                    t.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").to_string()
+                })
+                .unwrap_or_else(|e| format!("bise update: {}", e));
+            let _ = tx.send(Msg::BuildEnded { rev: "latest".into() });
+            let note = |kind: &str, text: String| {
+                let _ = tx.send(Msg::Notice { kind: kind.into(), text });
+            };
+            match inst.current() {
+                Some(c) if c != running => {
+                    note("info", format!("switching to the latest installed version {}", crate::switch::id_of(&c)));
+                    spawn_switcher(&paths, &exe, &c, Switcher::Switch);
+                }
+                _ => {
+                    let ok = out.as_ref().is_ok_and(|o| o.status.success());
+                    note(
+                        if ok { "info" } else { "warn" },
+                        format!("no newer version to switch to ({}); /restart reloads this one", clip(&said, 200)),
+                    );
+                }
+            }
+        });
+        "looking for the latest release (bise update), then switching to it — nothing is interrupted".into()
+    }
+
+    /// An installed hub, on its tick (BISE-172): when `current` points at
+    /// another version than this hub runs (`bise update`, the daily
+    /// check), tell main and the user once: `/restart latest` switches.
+    pub(super) fn announce_update(&mut self) {
+        if self.update_checked.is_some_and(|t| t.elapsed() < UPDATE_LOOK) {
+            return;
+        }
+        self.update_checked = Some(std::time::Instant::now());
+        let Some(inst) = Install::of_root(&self.opts.app_root) else { return };
+        let running = self.opts.app_root.canonicalize().ok();
+        let Some(cur) = inst.current() else { return };
+        if Some(&cur) == running.as_ref() || self.update_told.as_ref() == Some(&cur) {
+            return;
+        }
+        self.update_told = Some(cur.clone());
+        let text = format!(
+            "bise {} is installed and ready: /restart latest switches this hub to it (agents kept)",
+            crate::switch::id_of(&cur)
+        );
+        self.feed(MAIN, &format!("sb info : {}", wire_escape(&text)));
+        self.broadcast_versions();
     }
 
     fn start_switch(&self, to: &Path) {
@@ -490,15 +661,23 @@ mod tests {
         use super::{restart_plan, RestartPlan::*, RestartTarget::*};
         // bise's source tree: exactly as before (build + switch, or the hub
         // again on the running version); never a reload
-        assert_eq!(restart_plan(true, ""), Dev(Latest));
-        assert_eq!(restart_plan(true, "latest"), Dev(Latest));
-        assert_eq!(restart_plan(true, "current"), Dev(Current));
-        assert_eq!(restart_plan(true, "021b8a1"), Dev(Rev("021b8a1".into())));
+        assert_eq!(restart_plan(true, false, ""), Dev(Latest));
+        assert_eq!(restart_plan(true, false, "latest"), Dev(Latest));
+        assert_eq!(restart_plan(true, false, "current"), Dev(Current));
+        assert_eq!(restart_plan(true, false, "021b8a1"), Dev(Rev("021b8a1".into())));
         // anywhere else: a reload, nothing built
-        assert_eq!(restart_plan(false, ""), Reload);
-        assert_eq!(restart_plan(false, " current "), Reload);
-        assert_eq!(restart_plan(false, "latest"), Refuse);
-        assert_eq!(restart_plan(false, "021b8a1"), Refuse);
+        assert_eq!(restart_plan(false, false, ""), Reload);
+        assert_eq!(restart_plan(false, false, " current "), Reload);
+        assert_eq!(restart_plan(false, false, "latest"), Refuse);
+        assert_eq!(restart_plan(false, false, "021b8a1"), Refuse);
+        // an installed bise (BISE-172), in any workspace (the dev repo too):
+        // latest = the newest release; an id = an installed version
+        for dev in [true, false] {
+            assert_eq!(restart_plan(dev, true, ""), Reload);
+            assert_eq!(restart_plan(dev, true, "current"), Reload);
+            assert_eq!(restart_plan(dev, true, "latest"), InstalledLatest);
+            assert_eq!(restart_plan(dev, true, "abc1234"), InstalledSwitch("abc1234".into()));
+        }
     }
 
     #[test]
@@ -511,5 +690,24 @@ mod tests {
         assert_eq!(restart_target("HEAD"), Latest);
         assert_eq!(restart_target("current"), Current);
         assert_eq!(restart_target("021b8a1"), Rev("021b8a1".into()));
+    }
+
+    #[test]
+    fn an_installed_version_list_marks_running_and_current() {
+        let t = std::env::temp_dir().join(format!("sb-installed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        for (id, built) in [("aaa1111", "2026-10-01"), ("bbb2222", "2026-10-02")] {
+            let d = t.join("versions").join(id);
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join("VERSION"), format!("id={}\nsubject=s {}\nbuilt={}\n", id, id, built)).unwrap();
+        }
+        std::os::unix::fs::symlink("versions/bbb2222", t.join("current")).unwrap();
+        let root = t.join("versions/aaa1111");
+        let inst = super::Install::of_root(&root).unwrap();
+        let lines = super::installed_lines(&inst, &root, "aaa1111").join("\n");
+        assert!(lines.contains(" ★ bbb2222 s bbb2222"), "{lines}");
+        assert!(lines.contains("●  aaa1111 s aaa1111"), "{lines}");
+        assert!(lines.contains("/restart latest"), "{lines}");
+        let _ = std::fs::remove_dir_all(&t);
     }
 }

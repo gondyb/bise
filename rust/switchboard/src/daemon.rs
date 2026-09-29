@@ -175,6 +175,10 @@ struct Shell {
     restored: BTreeSet<String>,
     /// Versions being built (`/version <commit>`), by revision.
     building: BTreeSet<String>,
+    /// An installed bise (BISE-172): when `current` was last looked at,
+    /// and the version already announced as ready.
+    update_checked: Option<std::time::Instant>,
+    update_told: Option<std::path::PathBuf>,
     /// Agents whose REPL was found dead at boot in the middle of a turn
     /// (killed by a restart, a crash): once respawned on their session,
     /// they are told to continue where they left off.
@@ -1338,6 +1342,8 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         switch_spawned: BTreeSet::new(),
         restored: BTreeSet::new(),
         building: BTreeSet::new(),
+        update_checked: None,
+        update_told: None,
         resume_turn: BTreeSet::new(),
         reload_id: String::new(),
         reload_repls: BTreeSet::new(),
@@ -1408,6 +1414,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 sh.step(i);
                 if tick {
                     sh.switch_idle_repls();
+                    sh.announce_update();
                 }
             }
             Msg::ReplConnected {
