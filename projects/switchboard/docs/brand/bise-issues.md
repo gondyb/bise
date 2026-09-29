@@ -1997,3 +1997,16 @@ Index:
 - **track:** F · **owns:** `chrome.rs` (the divider label), the turn start time from the feed/app state, tests
 - **spec:** book §8 "The frame" (divider line). User request via marketing (m_1285, 2026-09-29).
 - **what:** when the viewed agent (main or another) is working, the divider label reads `you → name ∿ working · 42s`: the indicator 1 space after the name (today's `∿`, pulsing as in the panel), `working · 42s` dim, seconds of the current turn, updated each second; idle: nothing after the name. Right side unchanged. The indicator glyph will change once the user picks among site/book/working.html (5f68a5c): keep it one constant.
+
+### BISE-106 · level 3 is an envelope chip
+
+- **status:** todo · **owner:** bise-chip · **commits:** —
+- **track:** F · **owns:** `render.rs` (level-3 lines and folds), `theme.rs` (new role `chip`, ASCII / 16-color forms), tests, QA shots of level 3
+- **spec:** book §5 (chip), §9 "Level 3 is an envelope chip" (user pick, marketing 346dacb, site/book/messages.html variant C).
+- **what:** each agent-to-agent message = chip ` ✉︎ sender → receiver ` on the `chip` tint, then the dim text with a hanging indent, 2 lines max then `… ▸`; same pair stacks, new pair after a blank row; fold line unchanged; fallbacks per §9. Replaces today's ` │ @ from → to text` line.
+
+### BISE-107 · working = a gust blowing by
+
+- **status:** todo · **owner:** bise-divider · **commits:** —
+- **track:** F · **owns:** a small pure `gust` module (frame → cells, ASCII ramp), `chrome.rs` header + divider, `sb/panel.rs` status cell, the animation tick (≤ 10 fps, only those cells, stop when nothing works or focus is lost)
+- **spec:** book §6 (working row), §9 "Working = a gust blowing by" (user pick, site/book/working.html variant I). Together with BISE-105 (the divider shows the viewed agent working).

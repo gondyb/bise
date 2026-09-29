@@ -143,6 +143,7 @@ is ≥ 4.5:1 (WCAG AA) on white, our cream, black and a typical dark grey
 | ok | `#b9d99a` | `#3f7a2a` | diff additions only |
 | ground (`bg`) | `#141211` | `#fdfbf7` | every cell (BISE-92); tints on it: selection `#33292c` / `#fdeef2`, card `#211d1b` / `#f1eee6` |
 | raised | `#1f1c1a` (1.10:1 on the ground; text 13.6, dim 6.2, accent 8.8, error 5.5) | `#f4f0e8` (1.10:1; text 15.4, dim 5.1, accent 4.6, error 5.8) | the composer pane: everything under the divider (BISE-102, user request). Ground not ours (`BISE_TERM_BG=0`, or OSC 11 answers another color): the ground mixed 5% toward the text color. Not truecolor: 234 / 255. 16 colors or `NO_COLOR`: no tint, the bar alone |
+| chip | `#231f1d` (text 13:1, dim 5.9:1) | `#efe9df` (dim ≈ 4.8:1) | the level-3 message chip only (BISE-106). 16 colors / `NO_COLOR`: no tint |
 
 - **Color means attention.** Only "needs you" and errors get a hue. Everything
   else is text, dim or faint. The accent is pink, not red, so "needs you"
@@ -183,7 +184,7 @@ One glyph per entity and per status. Color only for attention.
 | Glyph | Status |
 |---|---|
 | `·` (dim, pulsing) | starting |
-| `∿` (pulsing) | working: a breeze |
+| `∿` → a gust blowing by (`≈∿~·`), animated; one breathing cell in the panel | working: a breeze (user pick, site/book/working.html variant I; BISE-107) |
 | `…` | waiting on another agent |
 | `?` (accent) | needs you (question or blocked) |
 | `✓` (accent) | done (Gabriel, 2026-09-29: the `✓` was not clear; a small pink check reads "finished"). It leads a panel row or a report; your read marks `✓` / `✓✓` sit at the end of your own lines, so the place tells them apart |
@@ -356,6 +357,19 @@ The same three levels everywhere, in main and inside an agent.
 - No "quiet" mode: the levels and the folding (§10) already keep it calm.
 
 **Emphasis** (user request, marketing 82f1742). A terminal has one font size, so what's for you reads bigger through contrast and room: level 2 in text color with its speaker in bold (`:*` accent bold, `@ name to you:` text bold) and a blank row above and below, even between two level-2 blocks; the agent's own work (thinking `∴`, the one-line tool calls, level 3) is dim; cards (level 1) unchanged. OSC 66 text sizing is never used in the history (§15 may use it for the welcome line only, where detected).
+
+**Level 3 is an envelope chip** (user pick, site/book/messages.html variant C, marketing 346dacb; BISE-106). Between agents, a message looks like a message: a small tinted chip with an envelope says who writes to whom (✉ auth-fix → release, the sender in bold), and the text follows, dim. You can follow the conversation at a glance, and it never shouts.
+- One message = one line group at x0+2: the chip, 1 ground space, the text. Chip = tinted cells ` ✉︎ sender → receiver ` (1 tinted column each side; palette role `chip`, §5). `✉︎` = U+2709 U+FE0E (text presentation, 1 column; if a terminal still draws it 2 wide, fall back to `@`). Envelope dim, sender bold text, `→` faint, receiver dim. Names cut at 12 with `…`. `main` is a plain name here (no `:*`, no accent): it's level 3.
+- 16 colors / `NO_COLOR`: no tint, the chip reads `[✉ sender → receiver]`. ASCII: `[@ sender > receiver]`.
+- Text: dim, wraps under its own first column (hanging indent after the chip); at most 2 lines, then `… ▸` opens it whole. Chip + text < 30 columns wide: the text goes on the next row at x0+4.
+- Spacing: messages of the same pair stack with no blank row; a new pair after a blank row. The fold line `▸ n messages between k agents` stays dim at x0+2, no chip. Levels 1 and 2 unchanged.
+
+**Working = a gust blowing by** (user pick, site/book/working.html variant I; BISE-107).
+- Header and divider: 5 cells. A gust crosses left to right, 110 ms a frame, 9-frame cycle: head `≈` (text), tail `∿` (text) `~` (dim) `·` (faint), then 5 empty frames. Cell k at frame i = ramp[(i − k) mod 9], ramp = `≈ ∿ ~ · _ _ _ _ _` (`_` = space).
+- Panel status (1 cell): the gust breathes in place: `· ~ ∿ ≈ ∿ ~`, 110 ms a frame, same colors. main's `:*` in the panel never moves.
+- Divider (BISE-105): `you → marketing <5-cell gust> working · 42s` (1 space around the gust; `working · 42s` dim). Idle: nothing after the name. Header: `<gust> 3 working · ? 1 needs you · ✓ 2 done`.
+- ASCII: ramp `. - ~ =` (head `=`), same motion.
+- Cost: redraw only those cells; ≤ 10 fps; stop when no agent works or the terminal loses focus.
 
 ## 10. The history (invariant)
 
