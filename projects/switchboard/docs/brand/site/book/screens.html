@@ -485,6 +485,91 @@ const T_BOXES =
 const T_AGENT_HEAD = `<div class="dim">you're talking to perf directly. main isn't in the loop. esc back to main.</div>` +
   `<div class="b"><span class="who acc">:*</span><span class="dim">brief from main:</span> signup is slow on mobile. the hero image is 4.2 MB since tuesday.</div>`;
 
+// ---------- onboarding v2: two screens, then a setup turn in the real thread ----------
+const obCenter = (html) => `<div style="display:flex;justify-content:center;padding:4lh 0 3lh"><div style="max-width:64ch">${html}</div></div>`;
+const obDots = (n, of) => `<div class="faint" style="text-align:center;margin-top:2lh">${Array.from({ length: of }, (_, i) => i === n ? '<span class="acc">●</span>' : "○").join(" ")}</div>`;
+const chk = (g, what, t, cls = "") => `<div class="${cls}" style="display:grid;grid-template-columns:3ch 12ch 1fr"><span>${g}</span><span class="dim">${what}</span><span>${t}</span></div>`;
+const OK = '<span class="dim">✓</span>', TODO = '<span class="acc">?</span>', SKIP = '<span class="faint">–</span>';
+const OB_CHECKS = `<div class="b dim" style="padding-left:3ch">` +
+  chk(OK, "terminal", "Ghostty 1.2 · true color · every glyph fits") +
+  chk(TODO, "keys", "cmd+v and cmd+f stop at Ghostty: no image paste, no find") +
+  chk(OK, "repo", "acme · git · main · clean") +
+  chk(TODO, "AGENTS.md", "none yet. i found how you build and test") +
+  chk(OK, "GitHub", "gh signed in as gvergnaud") +
+  chk(TODO, "tools", "no connectors: web search, Slack, Linear need a key") +
+  chk(SKIP, "voice", "i'll ask for the mic the first time you use it") + `</div>`;
+const OB_HEAD = you('<span class="dim">(first run)</span>') ;
+const OB_INTRO = bise("hi. before we start, let me look around. 20 seconds, and nothing changes without your yes.");
+const OB_PROPOSE = bise('3 small things would make me better here. each one is a card: <span style="color:var(--text)">1</span> yes, <span style="color:var(--text)">2</span> no. <span class="dim">esc skips the setup · /setup runs it again</span>');
+const otabs = (tabs, cur) => `<div class="ctabs">${tabs.map((a, i) => `<span class="${i === cur ? "on" : ""}"><span class="acc">?</span> ${a}</span>`).join("")}<span class="faint">setup · ${cur + 1} of ${tabs.length}</span></div>`;
+const OTABS = ["the keys", "AGENTS.md", "connectors"];
+const ocard = (cur, title, meta, body, opts) => otabs(OTABS, cur) +
+  `<div class="cview"><div class="cvh"><b class="acc">? ${title}</b><span class="dim">${meta}</span></div><div class="cvb">${body}</div>${opts ? `<div class="ol">${opts}</div>` : ""}</div>`;
+const obFoot = (text, hints) => foot(`<span class="dim">you →</span> <span class="acc">? setup</span> <span class="dim">· your answer</span>`, text, hints);
+const OB_PANEL = panel([{ g: '<span class="acc">:*</span>', name: "main", r: "setup" }]);
+const GHOSTTY = `<pre class="cmdb"><span class="dim">~/.config/ghostty/config</span>
+<span class="dp">+ # bise: let cmd+v (images) and cmd+f (find) reach terminal apps</span>
+<span class="dp">+ keybind = super+v=text:\\x1b[118;9u</span>
+<span class="dp">+ keybind = super+f=text:\\x1b[102;9u</span></pre><div class="dim">a copy goes to config.bise-backup first. Ghostty reloads it by itself. <span class="faint">(the exact lines come from the check.)</span></div>`;
+const AGENTSMD = `<pre class="cmdb"><span class="dim">AGENTS.md · new file · 14 lines</span>
+<span class="dp">+ # acme</span>
+<span class="dp">+ a Next.js app with a small API in api/.</span>
+<span class="dp">+ </span>
+<span class="dp">+ build: npm run build · test: npm test (vitest, ~12 s)</span>
+<span class="dp">+ lint: npm run lint (eslint + prettier, runs in CI)</span>
+<span class="dp">+ colors live in tokens.css. never hardcode a gray.</span></pre><div class="more">▸ 8 more lines</div><div class="dim">read from package.json, the CI file and 30 recent commits. every agent reads it; yours to edit.</div>`;
+const CONNECT = `<div>with a Mistral API key, your agents can use about 500 tools: web search, GitHub, Slack, Linear, Gmail, Notion… one key, all of them on, all the time.</div><div class="dim" style="margin-top:.4lh">free to skip. /connect adds it later.</div>`;
+
+const OB2_SCREENS = [
+["onboarding v2 · 1 · hi", "<span class='optk'>designer's reco.</span> two screens before the thread, not six. the welcome keeps its gloss, typed, then 'press enter ↵'. any key shows it all at once. the theme is detected, never asked (/theme changes it); the folder shows in the header and main says it, never asked (bise runs where you typed it).",
+ term({ h: "", pan: "", feed: obCenter(`<div style="text-align:center"><b style="font-size:1.4em">hi, i'm bise</b> <span class="acc" style="font-size:1.4em">:*</span></div>
+<div class="b"><b>bise</b> <span class="faint">/beez/ · french, n.</span></div>
+<div class="dim">1. a quick kiss on the cheek <span class="acc">:*</span></div><div class="dim">2. a brisk north wind</div><div class="dim">3. a terminal where your agents ship while you think</div>
+<div class="b" style="text-align:center">ideas in. little kisses out. also pull requests.</div>
+<div class="b faint" style="text-align:center">press enter ↵</div>`) + obDots(0, 2), f: "" })],
+
+["onboarding v2 · 2 · a model", "only if no key is found. a key found: this screen shows one line for a second ('using ANTHROPIC_API_KEY · found ✓') and goes on by itself. same list as today, API keys only. then straight into the thread: no 'how it works' screen, the setup shows it.",
+ term({ h: "", pan: "", feed: obCenter(`<div><b>which model should do the work?</b></div>
+<div class="b"><span class="acc">› 1</span>  use ANTHROPIC_API_KEY <span class="dim">found</span></div><div class="dim" style="padding-left:5ch">anthropic, already set up. nothing to paste.</div>
+<div class="b">  2  paste another key</div><div class="dim" style="padding-left:5ch">anthropic, openai, mistral, foundry, … and cerebras</div>
+<div class="b faint">↑↓ choose · enter go</div>`) + obDots(1, 2), f: "" })],
+
+["onboarding v2 · 3 · main looks around", "the thread, for real. main's first message says what it does and that nothing changes without a yes; the checks run in code and stream in, one row each: ✓ fine (dim), ? something to offer (accent), – nothing to do now (faint). no model call until the proposals.",
+ term({ h: head(`<span class="pulse">∿</span> setting up`), pan: OB_PANEL, feed: OB_INTRO + OB_CHECKS, f: foot(`main · setup · 8s`, CUR, "esc skip the setup · ⏎ send") })],
+
+["onboarding v2 · 4 · the first card opens by itself", "the one time a card opens without ctrl+g: it's how you meet cards. the card view, as in cards v2: tabs on top ('setup · 1 of 3'), the exact diff, 1 yes / 2 no. the key bar teaches the rest. after this one, the others follow in the same view.",
+ term({ h: head(`<span class="pulse">∿</span> setting up`), pan: OB_PANEL, feed: ocard(0, "let cmd+v and cmd+f reach me", "ghostty config · 2 lines", GHOSTTY, optl(["yes, add the 2 lines", "no, leave my config alone"])),
+   f: obFoot(CUR, "1-2 pick · ⏎ answer · esc later: the rest waits in the strip") })],
+
+["onboarding v2 · 5 · a starter AGENTS.md", "the second proposal: a file written from the repo (the build, the tests, the rules it could see). a patch preview, 'yes' writes it, 'show me all' opens it full. if a CLAUDE.md exists, the card offers to link it instead of writing a new one.",
+ term({ h: head(`<span class="pulse">∿</span> setting up`), pan: OB_PANEL, feed: ocard(1, "a starter AGENTS.md", "new file · 14 lines", AGENTSMD, optl(["yes, write it", "no", "show me all of it first"])),
+   f: obFoot(CUR, "1-3 pick · ⏎ answer · ctrl+p back · esc later") })],
+
+["onboarding v2 · 6 · connectors (optional)", "the last one only when no MISTRAL_API_KEY is found. no push: what you get, one line; skip is fine. 1 opens a masked paste field in the card.",
+ term({ h: head(`<span class="pulse">∿</span> setting up`), pan: OB_PANEL, feed: ocard(2, "give your agents every tool", "optional", CONNECT, optl(["paste a Mistral API key", "not now"])),
+   f: obFoot(CUR, "1-2 pick · ⏎ answer · ctrl+p back · esc later") })],
+
+["onboarding v2 · 7 · done, and a first task", "the answers land in the thread, dim, one row each (what changed, where the backup is). then main offers ONE real task, found in the repo: a failed CI run, a failing test, an issue assigned to you; nothing found: a read-only tour of the repo. a card like the others, but its yes starts your first agent.",
+ term({ h: head(`<span class="acc">? 1 needs you</span>`), pan: OB_PANEL, feed: OB_INTRO + `<div class="b dim" style="padding-left:3ch">▸ 7 checks · 3 things to offer</div>` +
+   `<div class="b dim"><span class="who">✓</span>ghostty config · 2 lines added · backup in config.bise-backup</div>` +
+   `<div class="dim"><span class="who">✓</span>AGENTS.md written · 14 lines</div>` +
+   `<div class="dim"><span class="who">–</span>connectors · not now · /connect later</div>` +
+   bise("all set. one thing i noticed: the last CI run on main failed, in lint. want me to look at it?"),
+   above: `<div class="cstrip">${C2_LAB(1)}${crow(true, "main", "the last CI run on main failed (lint). want me to look?", [["1", "yes"], ["2", "something else"]])}</div>`,
+   f: foot("main · idle", CUR, "⏎ send · ctrl+g open cards · @ agent · / commands") })],
+
+["onboarding v2 · 8 · your first agent", "yes: main starts the first agent, and the one-time hint shows next to it in the panel. from here it's a normal day. 'something else': 'tell me what's on your mind.' the whole setup: under 2 minutes, 4 keys if you say yes to everything.",
+ term({ h: head(), pan: panel([{ g: '<span class="acc">:*</span>', name: "main" }, { g: S.work, name: "lint-fix", r: "0m", sel: true }],
+   `<div class="b dim" style="white-space:normal">new: your agents. they work in the background. <span style="color:var(--text)">⌥ 1</span> to look inside, <span style="color:var(--text)">esc</span> to come back. →</div>`),
+   feed: `<div class="dim" style="padding-left:3ch">▸ setup · 3 cards answered</div>` +
+   bise("lint-fix is on it: prettier changed its defaults in the last bump. i'll tell you when it's green.") +
+   `<div class="b"><span class="who">${S.work}</span><span class="dim">lint-fix started</span></div>`,
+   f: foot("main · idle", CUR) })],
+
+["onboarding v2 · esc: skipped", "esc at any time during the setup: the cards close, nothing is written, one dim row says how to come back. the thread is yours.",
+ term({ h: head(""), pan: OB_PANEL, feed: OB_INTRO + OB_CHECKS + `<div class="b dim"><span class="who">–</span>setup skipped · nothing changed · /setup runs it again</div>` + bise("what's on your mind?"),
+   f: foot("main · idle", CUR) })],
+];
 const TOOL_SCREENS = [
 ["tool calls · main · one line each (designer's pick)", "<span class='optk'>the user's idea, designer's reco.</span> in main, each bash or typescript call is one dim row: its kind in the lead column ($ bash, ƒ typescript), then what the model says it is doing (the new <b>description</b> parameter, written for you, in your language), then its state on the right. calls in a row stack with no blank row between them. ctrl+o, or a click on a row, shows the box.",
  term({ feed: T_FEED_HEAD + T_LINES_DONE + T_REPLY, pan: TP_PANEL })],
@@ -543,6 +628,7 @@ $  running the export tests                          ~ 12s</pre>`],
 ];
 
 const screens = [
+...OB2_SCREENS,
 ...CARD2_SCREENS,
 ...TOOL_SCREENS,
 ...CARD_SCREENS,
