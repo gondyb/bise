@@ -16,7 +16,7 @@ mod versions;
 use repl::{adopt, adoptable, busy_at, kill_pid, supervise};
 use versions::version_allowed;
 use crate::core::{AgentReq, ClientId, Effect, Hub, Input, Token};
-use crate::model::{Agent, Event, MAIN};
+use crate::model::{Agent, MAIN};
 use crate::paths::Paths;
 use crate::prompts;
 use crate::transcript::{self, Anchor};
@@ -170,6 +170,34 @@ struct Shell {
 /// What an agent whose turn was cut by a restart receives.
 const RESUME_TEXT: &str = "Your turn was interrupted by a restart of Switchboard; continue where you left off.";
 
+/// The journal's events, and the (1-based) numbers of the lines that are
+/// not a JSON object (a half-written last line...): they are never dropped
+/// in silence, the caller logs them. The Rust side does not decode the
+/// events (hub/codec.bend does), so a kind it does not know still reaches
+/// sb-core.
+fn read_journal(text: &str) -> (Vec<Value>, Vec<usize>) {
+    let mut events = Vec::new();
+    let mut bad = Vec::new();
+    for (i, l) in text.lines().enumerate() {
+        if l.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<Value>(l) {
+            Ok(v) if v.is_object() => events.push(v),
+            _ => bad.push(i + 1),
+        }
+    }
+    (events, bad)
+}
+
+fn lines_list(ns: &[usize]) -> String {
+    let mut s: Vec<String> = ns.iter().take(10).map(|n| n.to_string()).collect();
+    if ns.len() > 10 {
+        s.push("...".into());
+    }
+    s.join(", ")
+}
+
 fn log_line(paths: &Paths, s: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
@@ -310,10 +338,8 @@ impl Shell {
     fn run(&mut self, e: Effect) {
         match e {
             Effect::Journal(ev) => {
-                if let Ok(s) = serde_json::to_string(&ev) {
-                    let _ = writeln!(self.journal, "{}", s);
-                    let _ = self.journal.flush();
-                }
+                let _ = writeln!(self.journal, "{}", ev);
+                let _ = self.journal.flush();
             }
             Effect::Spawn {
                 agent,
@@ -942,13 +968,20 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     crate::util::timing("start (socket bound)");
     let workspace = paths.workspace.to_string_lossy().to_string();
     let mut hub = Hub::new(&workspace);
-    let events: Vec<Event> = std::fs::read_to_string(paths.journal())
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|l| serde_json::from_str(l).ok())
-        .collect();
+    let (events, unreadable) = read_journal(&std::fs::read_to_string(paths.journal()).unwrap_or_default());
     crate::util::timing(&format!("journal read ({} events)", events.len()));
-    hub.replay(&events);
+    if !unreadable.is_empty() {
+        log_line(&paths, &format!("journal: {} unreadable lines (not replayed), at line {}", unreadable.len(), lines_list(&unreadable)));
+    }
+    let skipped = hub.replay(&events);
+    if !skipped.is_empty() {
+        let mut kinds: Vec<String> = skipped.iter().map(|e| e["type"].to_string()).collect();
+        kinds.dedup();
+        log_line(
+            &paths,
+            &format!("journal: {} events of a kind this hub does not know (not applied; a newer hub wrote them?): {}", skipped.len(), kinds.join(", ")),
+        );
+    }
     crate::util::timing("journal replayed");
     let journal = std::fs::OpenOptions::new()
         .create(true)
@@ -1227,6 +1260,19 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A line that is not a JSON object (a half-written last line) is
+    /// counted with its number, never dropped in silence; a kind the Rust
+    /// side does not know is kept (sb-core decodes the events).
+    #[test]
+    fn the_journal_keeps_unknown_kinds_and_counts_unreadable_lines() {
+        let text = "{\"type\":\"main_notes_flushed\"}\n{\"type\":\"from_a_newer_hub\",\"x\":1}\n\n42\n{\"type\":\"main_no";
+        let (events, bad) = read_journal(text);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[1]["type"], "from_a_newer_hub");
+        assert_eq!(bad, vec![4, 5]);
+        assert_eq!(lines_list(&(1..=12).collect::<Vec<_>>()), "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, ...");
+    }
 
     /// A `history` page carries each line's transcript time as `ts`
     /// (C2 amendment); a line whose stamp does not parse has no `ts`.

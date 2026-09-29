@@ -242,80 +242,6 @@ pub struct Card {
     pub created_ms: u64,
 }
 
-/// Every durable change, one JSON object per journal line.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum Event {
-    TaskCreated {
-        name: String,
-        parent: String,
-        brief: Brief,
-        ws: Workspace,
-        at_ms: u64,
-    },
-    Lifecycle {
-        name: String,
-        lifecycle: Lifecycle,
-        #[serde(default)]
-        reason: Option<String>,
-    },
-    WorkspaceChanged {
-        name: String,
-        ws: Workspace,
-    },
-    Snapshot {
-        name: String,
-        #[serde(default)]
-        snapshot_ref: Option<String>,
-    },
-    Declared {
-        name: String,
-        #[serde(default)]
-        status: Option<Declared>,
-        #[serde(default)]
-        note: String,
-    },
-    Reported {
-        name: String,
-        report: Report,
-    },
-    FileTouched {
-        name: String,
-        path: String,
-    },
-    Renamed {
-        name: String,
-        new_name: String,
-    },
-    MessageSent {
-        msg: Msg,
-    },
-    MessageState {
-        id: u64,
-        #[serde(flatten)]
-        state: MsgState,
-    },
-    /// The message got its first reply, or will never get an automatic
-    /// one (main escalated it to the user).
-    MessageSettled {
-        id: u64,
-    },
-    CardOpened {
-        card: Card,
-    },
-    CardClosed {
-        id: u64,
-        #[serde(default)]
-        resolution: String,
-    },
-    /// What main sees about the user's direct exchanges and routes.
-    MainNote {
-        text: String,
-        at_ms: u64,
-    },
-    MainNotesFlushed,
-}
-
 /// The durable state, as sb-core last sent it.
 #[derive(Clone, Debug, Default)]
 pub struct State {
@@ -426,44 +352,6 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn created(name: &str) -> Event {
-        Event::TaskCreated {
-            name: name.to_string(),
-            parent: MAIN.to_string(),
-            brief: Brief {
-                objective: "do it".into(),
-                ..Brief::default()
-            },
-            ws: Workspace {
-                mode: Mode::Shared,
-                path: "/w".into(),
-                branch: None,
-                base_commit: None,
-                dropped: false,
-            },
-            at_ms: 5,
-        }
-    }
-
-    #[test]
-    fn events_roundtrip_through_json() {
-        let evs = vec![
-            created("a"),
-            Event::MessageState {
-                id: 3,
-                state: MsgState::Queued {
-                    reason: "busy".into(),
-                },
-            },
-            Event::MainNotesFlushed,
-        ];
-        for ev in evs {
-            let line = serde_json::to_string(&ev).unwrap();
-            let back: Event = serde_json::from_str(&line).unwrap();
-            assert_eq!(back, ev, "{}", line);
-        }
-    }
 
     #[test]
     fn status_follows_lifecycle_then_run_then_declared() {

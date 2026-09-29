@@ -320,8 +320,10 @@ pub enum Input {
 #[derive(Clone, Debug, PartialEq)]
 #[allow(clippy::large_enum_variant)] // short-lived, one list per input
 pub enum Effect {
-    /// Append to the journal (already applied to the state).
-    Journal(Event),
+    /// Append to the journal (already applied to the state). The event is
+    /// sb-core's JSON as is: the Rust side never decodes it (hub/codec.bend
+    /// does), so a new event kind needs no Rust change.
+    Journal(Value),
     Spawn {
         agent: String,
         resume: bool,
@@ -569,12 +571,19 @@ impl Hub {
     }
 
     /// Rebuild the durable state from the journal: sb-core replays it,
-    /// then sends the whole state.
-    pub fn replay(&mut self, events: &[Event]) {
+    /// then sends the whole state. Returns the events sb-core did not
+    /// apply (a kind it does not know: the journal was written by a newer
+    /// hub before a /version rollback), for the caller to log.
+    pub fn replay(&mut self, events: &[Value]) -> Vec<Value> {
+        let mut skipped = Vec::new();
         for ev in events {
-            self.link.call(&json!({"t": "replay", "ev": ev}));
+            let out = self.link.call(&json!({"t": "replay", "ev": ev}));
+            if out["skipped"].as_bool() == Some(true) {
+                skipped.push(ev.clone());
+            }
         }
         self.view_all();
+        skipped
     }
 
     fn view_all(&mut self) {
@@ -859,9 +868,8 @@ impl Hub {
         let agent = jstr(f, "agent");
         match jstr(f, "fx").as_str() {
             "journal" => {
-                let ev: Event = serde_json::from_value(f["ev"].clone())
-                    .unwrap_or_else(|e| panic!("sb-core: bad event {}: {}", f["ev"], e));
-                fx.push(Effect::Journal(ev));
+                assert!(f["ev"].is_object(), "sb-core: bad event {}", f["ev"]);
+                fx.push(Effect::Journal(f["ev"].clone()));
             }
             // the runtime state comes with the view
             "rt" => {}

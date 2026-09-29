@@ -877,7 +877,7 @@ fn journal_replay_rebuilds_the_same_state() {
     let mut t = T::new();
     t.spawn_task("a");
     let fx = t.user(MAIN, "/new -w b: autre");
-    let mut journal: Vec<Event> = Vec::new();
+    let mut journal: Vec<Value> = Vec::new();
     // collect every journal event the hub emitted so far, by replaying
     // the scenario with a recorder
     let _ = fx;
@@ -904,10 +904,23 @@ fn journal_replay_rebuilds_the_same_state() {
     record(fx);
     record(t2.user(MAIN, "/new -w b: autre"));
     let mut h = Hub::new("/w");
-    h.replay(&journal);
+    assert!(h.replay(&journal).is_empty(), "sb-core knows every kind it wrote");
     assert_eq!(h.st.order, t2.hub.st.order);
     assert_eq!(h.st.msgs, t2.hub.st.msgs);
     assert_eq!(h.st.agents["b"].ws, t2.hub.st.agents["b"].ws);
+}
+
+/// After a /version rollback, the journal can hold an event kind this
+/// sb-core does not know: it is not applied, and replay names it (the
+/// daemon logs it) instead of losing it in silence.
+#[test]
+fn replay_returns_the_events_sb_core_does_not_know() {
+    let mut h = Hub::new("/w");
+    let known = json!({"type": "main_note", "text": "hello", "at_ms": 1});
+    let newer = json!({"type": "from_a_newer_hub", "name": "a"});
+    let skipped = h.replay(&[known, newer.clone()]);
+    assert_eq!(skipped, vec![newer]);
+    assert_eq!(h.st.main_notes.len(), 1, "the known event is applied");
 }
 
 #[test]
@@ -1396,7 +1409,7 @@ fn question_then_reply(t: &mut T, queued: bool) -> (u64, u64) {
 fn delivered_events(fx: &[Effect], id: u64) -> usize {
     fx.iter()
         .filter(|e| {
-            matches!(e, Effect::Journal(Event::MessageState { id: i, state: MsgState::Delivered }) if *i == id)
+            matches!(e, Effect::Journal(ev) if ev["type"] == "message_state" && ev["id"] == id && ev["state"] == "delivered")
         })
         .count()
 }

@@ -9,7 +9,8 @@
 #                                  sends the same input again with the answer
 #                                  appended to "ans" (nothing was committed)
 # Special inputs: {"t":"init","workspace":..} resets the hub, {"t":"replay",
-# "ev":..} applies one journal event (boot), {"t":"ping"} answers {}.
+# "ev":..} applies one journal event (boot; answers {"skipped":true} for a
+# kind it does not know), {"t":"ping"} answers {}.
 # The state lives across connections.
 import Base
 
@@ -67,12 +68,14 @@ def answer.go(need: Maybe<&2, J.Json>, +h: H.Hub, +fx: List<&2, X.Fx>) -> H.Hub 
 def answer(+o: H.Out) -> H.Hub & String:
   answer.go(H.Out.need(o), H.Out.hub(o), H.Out.fx(o))
 
-def replay(+h: H.Hub, m: Maybe<&2, M.Ev>) -> H.Hub:
+# an event this hub does not know (written by a newer hub, before a
+# /version rollback) is not applied: the answer says so, the Rust side logs it
+def replay(+h: H.Hub, m: Maybe<&2, M.Ev>) -> H.Hub & String:
   match m:
     case None{}:
-      h
+      (h, J.stringify(J.obj([J.kv("skipped", J.JBool{True{}})])))
     case Some{+e}:
-      H.Hub{M.apply(H.Hub.d(h), e), H.Hub.r(h)}
+      (H.Hub{M.apply(H.Hub.d(h), e), H.Hub.r(h)}, "{}")
 
 def tag_of(+t: String) -> Tag:
   Bool.pick(Tag, String.eq(t, "init"), TInit{},
@@ -85,7 +88,7 @@ def handle.tag(tag: Tag, +h: H.Hub, +i: J.Json) -> H.Hub & String:
     case TInit{}:
       (H.hub_new(J.get_str_or(i, "workspace", "")), "{}")
     case TReplay{}:
-      (replay(h, C.ev_of(Maybe.default(&2, J.Json, J.get(i, "ev"), J.JNull{}))), "{}")
+      replay(h, C.ev_of(Maybe.default(&2, J.Json, J.get(i, "ev"), J.JNull{})))
     case TPing{}:
       (h, "{}")
     case TView{}:
