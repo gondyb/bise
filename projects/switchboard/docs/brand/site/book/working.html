@@ -40,13 +40,37 @@
 <div class="grid" id="v"></div>
 <script>
 const c = (cls, ch) => `<span class="${cls}">${ch === " " ? "&nbsp;" : ch}</span>`;
+const paint = (ch) => { const col = { "≈": "tx", "∿": "tx", "~": "dim", "·": "faint", ".": "faint", " ": "faint" }; return c(col[ch] ?? "tx", ch); };
+const at = (ramp, j) => ramp[((j % ramp.length) + ramp.length) % ramp.length];
+const cells = (n, f) => Array.from({ length: n }, (_, k) => { const x = f(k); return x.startsWith("<") ? `<span>${x}</span>`.replace(/^<span><span class="([^"]+)">(.*)<\/span><\/span>$/, '<span class="$1">$2</span>') : paint(x); }).join("");
+const breathe = (i) => paint(["·", "~", "∿", "≈", "∿", "~"][i % 6]);
 // each variant: [key, name, what, ms per frame, frames(i) → cells html, ascii form, pick?]
 const V = [
-  ["I", "a gust blowing by · picked", "C's pattern (a puff that leaves and drifts away) in A's material, without the kiss: a gust enters on the left, a ≈ head with a ∿ ~ · tail, crosses 5 cells and fades, then the next one comes. in the header and the divider: 5 cells. in the panel, where the status is one cell, the gust breathes in place (· ~ ∿ ≈ ∿ ~).", 110,
-    (i) => { const ramp = ["≈", "∿", "~", "·", " ", " ", " ", " ", " "]; const col = { "≈": "tx", "∿": "tx", "~": "dim", "·": "faint", " ": "faint" };
-      return [0, 1, 2, 3, 4].map((k) => { const ch = ramp[((i - k) % ramp.length + ramp.length) % ramp.length]; return c(col[ch], ch); }).join(""); },
-    "'=~-.' travelling over 5 cells; panel: . - ~ = ~ -", true,
-    (i) => { const r = ["·", "~", "∿", "≈", "∿", "~"]; const ch = r[i % r.length]; return c(ch === "·" ? "faint" : ch === "~" ? "dim" : "tx", ch); }],
+  // ---- the wind, in variations (the user picked the gust; these explore its pattern) ----
+  ["W1", "gust · today's pick", "a puff crosses 5 cells (≈ head, ∿ ~ · tail), then a short calm, then the next.", 110,
+    (i) => cells(5, (k) => at(["≈", "∿", "~", "·", " ", " ", " ", " ", " "], i - k)), "=~-. crossing", true, breathe],
+  ["W2", "steady breeze", "no calm between puffs: the wind never stops while the agent works. the most 'busy', and the easiest to spot from afar.", 120,
+    (i) => cells(6, (k) => at(["≈", "∿", "~", "·", " "], i - k)), "=~-.  repeating", false, breathe],
+  ["W3", "two gusts", "a big puff, then a small one right behind it, like real wind: irregular, so it feels alive, not mechanical.", 105,
+    (i) => cells(6, (k) => at(["≈", "∿", "~", "·", " ", "∿", "~", " ", " ", " ", " ", " "], i - k)), "=~-. ~-", false, breathe],
+  ["W4", "breath", "anchored on the left, the wind grows out of the label, then pulls back: in, out. calm, stays next to the name.", 130,
+    (i) => { const f = ["·", "~·", "∿~·", "≈∿~·", "≈≈∿~·", "≈∿~·", "∿~·", "~·", "·", ""][i % 10]; return cells(5, (k) => f[k] ?? " "); }, ". -. ~-. =~-.", false, breathe],
+  ["W5", "wind field", "the landing page's wind field in 6 cells: every cell is a bit of noise that drifts right. textured, the most 'ASCII art'.", 120,
+    (i) => cells(6, (k) => { const r = [" ", "·", "·", "~", "~", "∿", "≈"]; const v = Math.sin(k * 0.9 - i * 0.55) * 0.6 + Math.sin(k * 0.37 - i * 0.21 + 1.3) * 0.4;
+      return r[Math.max(0, Math.min(6, Math.round((v + 1) * 3)))]; }), "' .-~=' noise drifting", false,
+    (i) => { const r = ["·", "~", "∿", "≈"]; return paint(r[Math.max(0, Math.min(3, Math.round((Math.sin(i * 0.5) + 1) * 1.5)))]); }],
+  ["W6", "a leaf in the wind", "a little leaf (, ' .) carried across, bobbing, with a breeze behind it. playful; the leaf could turn blush for main.", 150,
+    (i) => { const n = 7, p = i % (n + 3), bob = [",", "'", ".", "'"][i % 4];
+      return cells(n, (k) => k === p ? `<span class="tx">${bob}</span>` : k === p - 1 ? "~" : k === p - 2 ? "·" : " "); }, ", ' . with -. behind", false,
+    (i) => `<span class="tx">${[",", "'", ".", "'"][i % 4]}</span>`],
+  ["W7", "ripple", "a ribbon in the wind: ‿⁀ alternating, with the light running along it. smooth, reads as 'flowing'.", 140,
+    (i) => cells(6, (k) => `<span class="${["tx", "dim", "faint", "faint"][((k - i) % 4 + 4) % 4]}">${(k + i) % 2 ? "‿" : "⁀"}</span>`), "_-_- with the bright one moving", false,
+    (i) => `<span class="tx">${i % 2 ? "‿" : "⁀"}</span>`],
+  ["W8", "gust and dust", "the gust crosses 8 cells and leaves a little dust (· .) that settles behind it. the longest, the most narrative.", 100,
+    (i) => cells(8, (k) => at(["≈", "∿", "~", "·", " ", "·", " ", " ", ".", " ", " ", " ", " "], i - k)), "=~-. . .", false, breathe],
+  ["W9", "the wind shows the work", "W2's breeze, but its speed follows the agent: fast while it writes (tokens coming), slow while it waits on a tool. you can tell 'thinking hard' from 'waiting' without reading.", 0,
+    (i) => { const fast = Math.floor(i / 3000) % 2 === 0, ms = fast ? 70 : 240; return cells(6, (k) => at(["≈", "∿", "~", "·", " "], Math.floor(i / ms) - k)) + `<span class="faint"> ${fast ? "writing" : "tool"}</span>`; },
+    "same as W2", false, breathe],
   ["A", "gust", "a little wind blowing through 5 cells: the landing page's ASCII wind, shrunk to fit. unmistakably 'something is moving', and it's the brand.", 110,
     (i) => { const ramp = [" ", "·", "~", "∿", "≈", "∿", "~", "·", " ", " "]; const col = { "≈": "tx", "∿": "tx", "~": "dim", "·": "faint", " ": "faint" };
       return [0, 1, 2, 3, 4].map((k) => { const ch = ramp[((i - k) % ramp.length + ramp.length) % ramp.length]; return c(col[ch], ch); }).join(""); },
@@ -82,12 +106,13 @@ document.getElementById("v").innerHTML = V.map(([k, name, what, ms, f, ascii, pi
   <div class="pane"><div class="lbl"><span><span class="dim">you →</span> <span class="acc">marketing</span> <span class="ind" data-v="${n}"></span> <span class="dim">working · <span class="sec">42</span>s</span></span><span class="dim">ctrl+c interrupt</span></div>
     <div class="cmp">tell marketing…</div></div>
 </div>
-<div class="spec">${ms} ms a frame · ASCII: ${ascii}</div></figure>`).join("");
+<div class="spec">${ms ? ms + " ms a frame" : "70 ms writing / 240 ms on a tool"} · ASCII: ${ascii}</div></figure>`).join("");
 let i = 0, t0 = Date.now();
 const inds = [...document.querySelectorAll(".ind")];
 function tick() {
   const now = Date.now();
-  inds.forEach((el) => { const [, , , ms, f, , , pf] = V[+el.dataset.v]; el.innerHTML = (el.dataset.p && pf ? pf : f)(Math.floor(now / ms)); });
+  inds.forEach((el) => { const [, , , ms, f, , , pf] = V[+el.dataset.v]; const g = el.dataset.p && pf ? pf : f;
+    el.innerHTML = ms ? g(Math.floor(now / ms)) : el.dataset.p ? g(Math.floor(now / 110)) : g(now); });
   document.querySelectorAll(".sec").forEach((s) => s.textContent = 42 + Math.floor((now - t0) / 1000));
   requestAnimationFrame(tick);
 }
