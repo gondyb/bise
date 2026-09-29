@@ -167,6 +167,17 @@
   .mini:not(.active) .cur, .mini:not(.active) .pulse { animation:none; }
   .mini:not(.active) .cur { opacity:0; }
   .feat { cursor:default; }
+  /* spotlight: the card under the mouse lifts a little, a soft blush light follows the pointer, the other texts step back */
+  .mini { transition:opacity .6s ease, transform .35s ease, box-shadow .35s ease; }
+  .feat h3, .feat p { transition:opacity .35s ease; }
+  @media (hover: hover) {
+    .feat:hover .mini { transform:translateY(-3px); box-shadow:0 0 0 1px var(--faint), 0 22px 60px -24px rgba(244,166,176,.28);
+      background:radial-gradient(360px circle at var(--mx, 50%) var(--my, 30%), rgba(244,166,176,.07), transparent 65%), var(--soft); }
+    [data-theme="light"] .feat:hover .mini { box-shadow:0 0 0 1px var(--faint), 0 22px 60px -24px rgba(184,65,107,.25);
+      background:radial-gradient(360px circle at var(--mx, 50%) var(--my, 30%), rgba(184,65,107,.06), transparent 65%), var(--soft); }
+    .fgrid:has(.feat:hover) .feat:not(:hover) h3, .fgrid:has(.feat:hover) .feat:not(:hover) p { opacity:.45; }
+  }
+  @media (prefers-reduced-motion: reduce) { .feat:hover .mini { transform:none; } }
   .mcomp .cur { background:var(--acc); }
   .mini .err { color:var(--err); } .mini .ok { color:#b9d99a; } [data-theme="light"] .mini .ok { color:#3f7a2a; }
   .mini .row { display:flex; justify-content:space-between; }
@@ -770,6 +781,12 @@ function mini(el, i) {
 // 3. when a demo ends, the next visible one in reading order takes over,
 //    so a row plays left then right, like reading.
 const grid = document.querySelector(".fgrid");
+// the spotlight follows the pointer inside the hovered card
+grid.addEventListener("pointermove", (e) => {
+  const mini = e.target.closest && e.target.closest(".feat")?.querySelector(".mini"); if (!mini) return;
+  const r = mini.getBoundingClientRect();
+  mini.style.setProperty("--mx", `${e.clientX - r.left}px`); mini.style.setProperty("--my", `${e.clientY - r.top}px`);
+});
 const minis = [...document.querySelectorAll("[data-play]")].map(mini);
 const seen = (el) => { const r = el.getBoundingClientRect(); const h = Math.min(r.bottom, innerHeight) - Math.max(r.top, 0); return Math.max(0, h) / r.height; };
 const off = (el) => { const r = el.getBoundingClientRect(); return Math.abs((r.top + r.bottom) / 2 - innerHeight / 2); };
