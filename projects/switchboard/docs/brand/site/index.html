@@ -229,6 +229,38 @@
   footer a:hover { color:var(--text); }
 
   @media (max-width: 900px) { .screen { grid-template-columns:1fr; } .panel { display:none; } header nav a.opt { display:none; } }
+  /* the problem, then the switch (landing v6 draft) */
+  .prob { padding:40px 5vw 110px; }
+  .prob .inner { max-width:64ch; }
+  .stage { position:relative; width:104ch; max-width:100%; font-size:13.5px; margin:0 auto; border-radius:12px; background:var(--soft); overflow:hidden; }
+  .stage > .term { opacity:0; transform:scale(.94); transition:opacity .5s .3s, transform .8s .3s cubic-bezier(.34,1.4,.64,1); }
+  .stage.calm > .term { opacity:1; transform:none; }
+  .stage .win, .stage .bub { font-size:12.5px; }
+  .swap { transition:opacity .35s, transform .45s cubic-bezier(.34,1.56,.64,1); } .swap.out { opacity:0; transform:translateY(-6px); }
+  .win { position:absolute; width:300px; background:var(--bg); border:1px solid var(--faint); border-radius:10px; font-size:12.5px; line-height:1.6; box-shadow:0 10px 30px rgba(0,0,0,.28); transition:transform .7s cubic-bezier(.34,1.4,.64,1), opacity .5s, left .7s cubic-bezier(.34,1.3,.64,1), top .7s cubic-bezier(.34,1.3,.64,1); }
+  .win .bar { display:flex; gap:6px; align-items:center; padding:6px 10px; border-bottom:1px solid var(--faint); color:var(--dim); font-size:11.5px; }
+  .win .bar i { width:8px; height:8px; border-radius:50%; background:var(--faint); display:inline-block; }
+  .win .bar span { margin-left:6px; }
+  .win .bd { padding:8px 12px 10px; color:var(--dim); min-height:74px; }
+  .win .ask { display:inline-block; margin-top:4px; padding:0 8px; border-radius:6px; background:var(--chip); color:var(--text); }
+  .win .ask.err { color:var(--err); }
+  .win.nag .ask { animation:nag 1.1s ease-in-out infinite; }
+  @keyframes nag { 0%,100% { transform:none } 20% { transform:translateX(-2px) rotate(-1deg) } 40% { transform:translateX(2px) rotate(1deg) } 60% { transform:none } }
+  .win:hover { z-index:30 !important; }
+  .me { position:absolute; z-index:40; width:0; height:0; pointer-events:none; transition:left .45s cubic-bezier(.34,1.56,.64,1), top .45s cubic-bezier(.34,1.56,.64,1), opacity .4s; }
+  .me svg { position:absolute; left:-2px; top:-2px; filter:drop-shadow(0 3px 6px rgba(0,0,0,.35)); transform-origin:2px 2px; }
+  .me .lb { position:absolute; left:13px; top:17px; white-space:nowrap; padding:1px 9px 1px 8px; border-left:2px solid var(--acc); background:var(--raised); border-radius:0 6px 6px 0; font-size:12px; font-weight:700; color:var(--text); box-shadow:0 6px 18px rgba(0,0,0,.3); }
+  .me.tap svg { animation:metap .35s ease; } @keyframes metap { 40% { transform:scale(.8) } }
+  .bub { position:absolute; z-index:41; padding:4px 10px; border-radius:10px; background:var(--raised); border:1px solid var(--faint); font-size:12.5px; color:var(--text); opacity:0; transform:scale(.6); transition:opacity .3s, transform .45s cubic-bezier(.34,1.56,.64,1); pointer-events:none; }
+  .bub.on { opacity:1; transform:none; }
+  .pulse2 { animation:pl 1.6s ease-in-out infinite; } @keyframes pl { 50% { opacity:.35 } }
+  .stats { max-width:980px; margin:16px auto 0; display:flex; gap:3ch; flex-wrap:wrap; justify-content:center; font-size:14px; color:var(--dim); }
+  .stats b { color:var(--text); font-weight:700; font-variant-numeric:tabular-nums; }
+  .stats .hot b { color:var(--err); } .stats .good b { color:var(--acc); }
+  .prob .cap { text-align:center; margin-top:22px; color:var(--dim); }
+  .prob .cap b { color:var(--text); }
+  .replay { all:unset; cursor:pointer; color:var(--dim); font-size:13px; margin-left:2ch; } .replay:hover { color:var(--acc); }
+  @media (max-width:700px) { .stage .win { width:220px; font-size:11.5px; } }
   @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } .blow { opacity:1; transform:none; } }
 </style>
 </head>
@@ -254,7 +286,7 @@
   <div class="hero">
     <div class="big">bise <span class="kiss">:*</span></div>
     <div class="t1">multi-agent coding, made human.</div>
-    <div class="t2">ramble. interrupt. change your mind.<br>i run the agents. you stay in flow.</div>
+    <div class="t2" data-a="t2">one thread per repo. you talk, i run the agents.<br>no tabs. no babysitting. you stay in flow.</div>
     <div class="install" id="install" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span id="cmd">curl -fsSL bise.dev/install | sh</span></span><span class="c" id="copied">copy</span></div>
     <div class="scroll">↓</div>
   </div>
@@ -272,11 +304,19 @@
   </div>
 </section>
 
-<!-- demo -->
-<div class="demo blow">
-  <div>
-    <div class="dhead"><div class="kicker">watch</div><h2>this is what flow looks like</h2><p class="soft">five ideas in two minutes. one conversation with main. you never stop typing.</p></div>
-    <div class="term" aria-label="a bise session, animated">
+<!-- the problem, then the switch -->
+<section class="prob" id="problem">
+  <div class="inner blow" data-a="prob-head">
+    <div class="swap" id="swap">
+    <div class="kicker" id="pk">the problem</div>
+    <h2 id="ph2">five agents. five tabs.<br>one very tired you.</h2>
+    <p class="soft" id="pp">every session waits for you. you're the router, the memory, and the merge tool. you ship a lot, but you never get to think.</p>
+    </div>
+  </div>
+  <div class="stage" id="stage" aria-label="today: many agent sessions waiting for you. with bise: one thread.">
+    <div class="me" id="ptr" style="left:46%;top:80%"><svg width="16" height="20" viewBox="0 0 16 20" aria-hidden="true"><path d="M2 2 L2 16 L5.8 12.6 L8.4 18.4 L11 17.2 L8.5 11.6 L13.6 11.6 Z" fill="var(--acc)" stroke="var(--bg)" stroke-width="1.4" stroke-linejoin="round"/></svg><span class="lb">you</span></div>
+    <div class="bub" id="bub"></div>
+    <div class="term" id="term" aria-label="a bise session, animated">
       <div class="thead"><span>bise <span class="acc">:*</span></span><span class="faint">~/acme</span></div>
       <div class="screen">
         <div class="feed scrollbox" id="feed"></div>
@@ -288,17 +328,17 @@
         <div class="keys"><span><span class="k">⏎</span> send</span><span><span class="k">@</span> agent</span><span><span class="k">⌥0-9</span> switch</span><span><span class="k">?</span> help</span></div>
       </div>
     </div>
-    <div class="caption">a session, sped up.</div>
   </div>
-</div>
+  <div class="stats" id="stats"></div>
+  <p class="cap" id="cap"></p>
+  <p class="cap"><button class="replay" id="replay" style="visibility:hidden">↺ play it again</button></p>
+</section>
 
 <!-- why -->
 <section id="why">
   <div class="inner blow">
     <div class="kicker">why</div>
     <h2 class="punch">you didn't become an engineer<br>to babysit robots.</h2>
-    <p class="soft">today you started five things. you watched output scroll. you answered "should i continue?" eleven times.</p>
-    <p class="soft">two agents edited the same file. the red tests told you. you had a great idea at 2pm, and let it go: one more tab was one too many.</p>
     <p class="soft">at 6pm you'd shipped more than ever, and you felt like you did nothing.</p>
     <p class="soft">that feeling has a name: context switching. forty times a day. it makes the best job in the world feel miserable.</p>
     <p class="turn">bise does the switching for you.<br>you stay in flow.</p>
@@ -636,7 +676,8 @@ async function run() {
   await sleep(4500);
   run();
 }
-run();
+let flowOn = false;
+window.startFlow = () => { if (!flowOn) { flowOn = true; run(); } };
 
 // ---- feature demos: tiny scripted terminals, played only while on screen ----
 const plays = {
@@ -850,5 +891,87 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
   addEventListener("keydown", (e) => { if (!(e.altKey && e.shiftKey && e.code === "KeyA")) return; e.preventDefault();
     if (localStorage.getItem(K) === "on") { localStorage.removeItem(K); location.reload(); } else { localStorage.setItem(K, "on"); load(); } });
 })();</script>
+<script>
+// ---- the problem (today: sessions pile up) → the switch (with bise: one thread) ----
+(() => {
+  const stage = document.getElementById("stage"), you = document.getElementById("ptr"), bub = document.getElementById("bub");
+  const stats = document.getElementById("stats"), cap = document.getElementById("cap"), replay = document.getElementById("replay");
+  const swap = document.getElementById("swap"), pk = document.getElementById("pk"), ph2 = document.getElementById("ph2"), pp = document.getElementById("pp");
+  const head = async (k, h, t) => { swap.classList.add("out"); await sleep(350); pk.textContent = k; ph2.innerHTML = h; pp.textContent = t; swap.classList.remove("out"); };
+  const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const S = [
+    ["perf", "profiling signup on a phone…", "should i continue? (y/n)"],
+    ["dark-mode", "edited 14 files in settings/", "which gray? (again)"],
+    ["sad-404", "drew a new 404 page", "waiting for your review"],
+    ["emoji-csv", "npm test", "✗ 3 tests failed", true],
+    ["release", "drafting notes for 2.5", "what did perf change?"],
+    ["perf (2)", "wait, which session was it?", "context lost. paste it again?"],
+    ["dark-mode (2)", "conflict in tokens.css", "✗ merge conflict", true],
+  ];
+  let wins = [], run = 0, state = "today", switches = 0, waiting = 0;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, RM ? Math.min(ms, 60) : ms));
+  const pos = (i) => {
+    const w = stage.clientWidth, h = stage.clientHeight, ww = w < 700 ? 220 : 300, cols = w < 700 ? 1 : 3;
+    const c = i % cols, r = Math.floor(i / cols);
+    return { x: (w - ww) * (cols === 1 ? .15 + (i % 3) * .2 : .04 + c * .45) + (r % 2) * 26 + Math.random() * 16, y: 18 + r * (w < 700 ? 64 : 118) + Math.random() * 14 };
+  };
+  const setStats = () => {
+    stats.innerHTML = state === "today"
+      ? `<span><b>${wins.length}</b> sessions</span><span class="hot"><b>${waiting}</b> waiting for you</span><span><b>${switches}</b> context switches</span><span><b>0</b> minutes of flow</span>`
+      : `<span><b>1</b> thread</span><span><b>5</b> agents working</span><span class="good"><b>0</b> waiting for you</span><span class="good"><b>∞</b> flow</span>`;
+  };
+  const say = (t, x, y) => { bub.textContent = t; bub.style.left = x + "px"; bub.style.top = y + "px"; bub.classList.add("on"); };
+  function spawn(i) {
+    const [name, line, ask, err] = S[i], p = pos(i), d = document.createElement("div");
+    d.className = "win"; d.style.left = p.x + "px"; d.style.top = p.y + "px"; d.style.zIndex = 10 + i;
+    const rot = (Math.random() * 3 - 1.5).toFixed(2);
+    d.style.transform = `scale(.6) rotate(${rot}deg)`; d.style.opacity = "0";
+    d.innerHTML = `<div class="bar"><i></i><i></i><i></i><span>agent · ${name}</span></div><div class="bd">$ ${line}<br><span class="ask${err ? " err" : ""}">${ask}</span></div>`;
+    stage.appendChild(d); wins.push(d);
+    requestAnimationFrame(() => requestAnimationFrame(() => { d.style.opacity = "1"; d.style.transform = `rotate(${rot}deg)`; }));
+    setTimeout(() => { d.classList.add("nag"); waiting++; setStats(); }, 700);
+    return d;
+  }
+  async function visit(d, id) {
+    const r = d.getBoundingClientRect(), s = stage.getBoundingClientRect();
+    you.style.left = (r.left - s.left + 40) + "px"; you.style.top = (r.top - s.top + r.height - 16) + "px";
+    await sleep(520); if (id !== run) return;
+    you.classList.remove("tap"); void you.offsetWidth; you.classList.add("tap");
+    d.classList.remove("nag"); switches++; waiting = Math.max(0, waiting - 1); setStats();
+    d.querySelector(".ask").textContent = "…"; await sleep(260);
+    setTimeout(() => { if (id === run && state === "today") { d.querySelector(".ask").textContent = "waiting for you"; d.classList.add("nag"); waiting++; setStats(); } }, 2600);
+  }
+  async function today() {
+    const id = ++run; state = "today"; stage.classList.remove("calm"); setFlip();
+    wins.forEach((w) => w.remove()); wins = []; switches = 0; waiting = 0; bub.classList.remove("on"); you.style.opacity = "1";
+    if (id > 1) head("the problem", "five agents. five tabs.<br>one very tired you.", "every session waits for you. you're the router, the memory, and the merge tool. you ship a lot, but you never get to think.");
+    cap.innerHTML = "you started five things. now you're the one they all wait for.";
+    setStats();
+    for (let i = 0; i < S.length; i++) {
+      if (id !== run) return;
+      const d = spawn(i); await sleep(i < 5 ? 900 : 700);
+      if (i >= 1) { await visit(wins[Math.floor(Math.random() * wins.length)], id); }
+      if (i === 4) { say("wait, what was i doing?", stage.clientWidth * .52, stage.clientHeight * .78); }
+    }
+    for (let k = 0; k < 5 && id === run; k++) { await visit(wins[Math.floor(Math.random() * wins.length)], id); await sleep(150); }
+    await sleep(1400); if (id === run && !pinned) calm();
+  }
+  function calm() {
+    const id = ++run; state = "bise"; setFlip(); bub.classList.remove("on"); you.style.opacity = "0";
+    const w = stage.clientWidth, h = stage.clientHeight;
+    wins.forEach((d, i) => { d.classList.remove("nag"); d.style.left = (w / 2 - 150) + "px"; d.style.top = (h / 2 - 60) + "px"; d.style.transform = "scale(.35) rotate(0deg)"; d.style.opacity = "0"; });
+    stage.classList.add("calm"); waiting = 0; setStats();
+    cap.innerHTML = "<b>one thread per repo.</b> you talk to main. main runs the agents, and only taps your shoulder when it matters.";
+    head("with bise", "this is what flow looks like", "one thread. five ideas in two minutes. you never stop typing.");
+    window.startFlow && window.startFlow();
+  }
+  let pinned = false;
+  function setFlip() { replay.style.visibility = state === "bise" ? "visible" : "hidden"; }
+  replay.addEventListener("click", () => today());
+  let started = false;
+  new IntersectionObserver((es) => { if (es[0].isIntersecting && !started) { started = true; today(); } }, { threshold: .35 }).observe(stage);
+  setStats();
+})();
+</script>
 </body>
 </html>
