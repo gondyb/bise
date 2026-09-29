@@ -201,8 +201,11 @@ the old `release.sh` ("an EDR quarantine … must FAIL LOUDLY"). Consequences:
 
 ## 7. Build matrix / CI (GitHub Actions)
 
-Targets: `darwin-arm64` (macos-14), `darwin-x86_64` (macos-13),
-`linux-x86_64` (ubuntu-24.04), `linux-arm64` (ubuntu-24.04-arm). Per job:
+Done for macOS (BISE-168): `.github/workflows/release.yml`, `darwin-arm64`
+(macos-15) and `darwin-x86_64` (macos-15-intel), ad-hoc signed, draft
+release + `latest.json` on a `v*` tag; the plan below still holds for
+Linux (`linux-x86_64` ubuntu-24.04, `linux-arm64` ubuntu-24.04-arm) and
+signing (BISE-169). Per job:
 
 1. checkout the tag/commit; install a **pinned** Bend (`bend update`
    is `curl | sh`: pin the version/hash instead) and the Rust toolchain;

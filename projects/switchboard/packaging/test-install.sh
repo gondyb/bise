@@ -6,12 +6,20 @@
 #   projects/switchboard/packaging/test-install.sh <tarball>
 #
 # Checks: install (from the extracted bundle, like curl | sh would),
-# the command on PATH in a new login shell, --version, init (key file),
-# a single-agent session start (--headless, scripted and live), the
-# Switchboard hub start / sb list / stop on a throwaway git workspace,
-# a reinstall (idempotent), then uninstall (data kept).
+# the command on PATH in a new login shell, --version (this Mac's arch),
+# init (key file), a single-agent session start (--headless, scripted
+# and live), one headless turn answered by tests/fake_provider.py (the
+# installed REPL calls a provider and answers; needs python3, nothing
+# leaves the machine), the Switchboard hub start / sb list / stop on a
+# throwaway git workspace, a reinstall (idempotent), then uninstall
+# (data kept). Exit 0 when every check passed (CI runs it on each arch).
+#
+# BISE_CMD: the command to test (the CI workflow's one variable for the
+# name, BISE-165); default: bise when the bundle ships it, else
+# bend-harness.
 
 set -uo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
 tarball="${1:?usage: test-install.sh <tarball>}"
 tarball="$(cd "$(dirname "$tarball")" && pwd)/$(basename "$tarball")"
 T=/tmp/pk-home
@@ -35,19 +43,23 @@ rm -rf "$T" "$WS" "$DL" "$WORK"; mkdir -p "$T" "$DL" "$WORK"
 echo "== install"
 tar -C "$DL" -xzf "$tarball"
 bundle="$(ls -d "$DL"/*/)"
+CMD="${BISE_CMD:-}"
+if [ -z "$CMD" ]; then if [ -e "$bundle/app/bise" ]; then CMD=bise; else CMD=bend-harness; fi; fi
+arch="$(uname -m)"; [ "$arch" = aarch64 ] && arch=arm64
+# the installer's PATH line: "# added by the <name> installer"
+MARK='added by the [a-z-]* installer'
 E sh "$bundle/install.sh" 2>&1 | sed 's/^/     /'
-CMD="${BISE_CMD:-bise}"   # the command (BISE-165); bend-harness is its old-name link
 BIN="$T/.local/bin/$CMD"
 check "launcher linked in ~/.local/bin" test -x "$BIN"
 check "old name linked too (bend-harness)" test -x "$T/.local/bin/bend-harness"
-check "PATH line in ~/.zshrc" grep -q "added by the $CMD installer" "$T/.zshrc"
+check "PATH line in ~/.zshrc" grep -q "$MARK" "$T/.zshrc"
 found="$(E /bin/zsh -ic "command -v $CMD" 2>/dev/null | tail -n 1)"
 [ "$found" = "$BIN" ] && ok "new shell finds $CMD ($found)" || ko "new shell finds $CMD (got '$found')"
 
 echo "== --version"
 v="$(cd "$WORK" && E /bin/zsh -ic "$CMD --version" 2>&1 | tail -n 1)"
 echo "     $v"
-case "$v" in "$CMD "*darwin-arm64*) ok "--version" ;; *) ko "--version" ;; esac
+case "$v" in "$CMD "*"darwin-$arch"*) ok "--version (darwin-$arch)" ;; *) ko "--version: want '$CMD <id> (darwin-$arch, ...)'" ;; esac
 
 echo "== init (non-interactive)"
 (cd "$WORK" && E MISTRAL_API_KEY=test-key-not-real "$BIN" init) 2>&1 | sed 's/^/     /'
@@ -82,6 +94,45 @@ session "scripted session" --scripted
 session "live session (model from config.toml)" 
 check "sessions dir created in ~/.bise (BISE-161: a fresh HOME starts there)" test -d "$T/.bise/sessions"
 
+# one turn through the installed REPL: the provider is the tests' fake
+# (openai-chat), which answers "ack: <the message>"
+echo "== a headless turn (fake provider)"
+turn() {
+  local d fpid port pid i line got="" msg="hello from test-install"
+  d="$(mktemp -d /tmp/pk-turn.XXXXXX)"
+  FAKE_LOG="$d/fake.log" python3 -u "$HERE/../tests/fake_provider.py" > "$d/fake.out" 2> "$d/fake.err" &
+  fpid=$!
+  i=0; while [ $i -lt 100 ] && ! grep -q '^PORT ' "$d/fake.out" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
+  port="$(sed -n 's/^PORT //p' "$d/fake.out")"
+  [ -n "$port" ] || { ko "fake provider did not start"; tail -n 3 "$d/fake.err"; kill $fpid 2>/dev/null; rm -rf "$d"; return; }
+  mkfifo "$d/in"
+  (cd "$WORK" && E BEND_PROVIDER_URL="http://127.0.0.1:$port/v1/chat/completions" \
+     MISTRAL_API_KEY=fake-key "$BIN" --headless --model mistral-small-latest \
+     < "$d/in" > "$d/out" 2> "$d/err") &
+  pid=$!
+  exec 3> "$d/in"
+  i=0; while [ $i -lt 300 ] && ! grep -q '^READY' "$d/out" 2>/dev/null; do
+    kill -0 $pid 2>/dev/null || break; sleep 0.1; i=$((i + 1)); done
+  port="$(sed -n 's/^READY port=\([0-9]*\).*/\1/p' "$d/out")"
+  if [ -n "$port" ] && exec 4<>"/dev/tcp/127.0.0.1/$port"; then
+    printf '%s\n' "$msg" >&4
+    while IFS= read -r -t 60 line <&4; do
+      echo "$line" >> "$d/turn"
+      case "$line" in *"ack: $msg"*) got=1 ;; "--- idle"*) break ;; esac
+    done
+    exec 4<&-
+    [ -n "$got" ] && ok "turn answered: ack: $msg" || { ko "turn: no 'ack: $msg'"; tail -n 8 "$d/turn" 2>/dev/null | sed 's/^/     /'; }
+    [ "$(wc -l < "$d/fake.log" 2>/dev/null | tr -d ' ')" = 1 ] && ok "the fake provider got one request" || ko "the fake provider got $(wc -l < "$d/fake.log" 2>/dev/null | tr -d ' ') requests (want 1)"
+  else
+    ko "turn: no READY"; tail -n 5 "$d/err" | sed 's/^/     /'
+  fi
+  exec 3>&-
+  i=0; while kill -0 $pid 2>/dev/null && [ $i -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  kill $pid $fpid 2>/dev/null
+  rm -rf "$d"
+}
+turn
+
 echo "== Switchboard hub on a throwaway workspace"
 mkdir -p "$WS" && (cd "$WS" && git init -q && echo x > README.md && git add README.md \
   && git -c user.name=t -c user.email=t@t commit -qm init)
@@ -112,14 +163,14 @@ fi
 
 echo "== reinstall (same version: idempotent)"
 E sh "$bundle/install.sh" 2>&1 | sed 's/^/     /'
-[ "$(grep -c "added by the $CMD installer" "$T/.zshrc")" = 1 ] && ok "one PATH line only" || ko "PATH line duplicated"
+[ "$(grep -c "$MARK" "$T/.zshrc")" = 1 ] && ok "one PATH line only" || ko "PATH line duplicated"
 
 echo "== uninstall"
 E "$BIN" uninstall 2>&1 | sed 's/^/     /'
 check "prefix removed" test ! -e "$T/.local/share/bend-harness"
-check "command link removed" test ! -e "$T/.local/bin/$CMD"
+check "command link removed" test ! -e "$BIN"
 check "old-name link removed" test ! -e "$T/.local/bin/bend-harness"
-check "PATH line removed" sh -c "! grep -q '$CMD installer' '$T/.zshrc'"
+check "PATH line removed" sh -c "! grep -q '$MARK' '$T/.zshrc'"
 check "user data kept (~/.bend-harness/.env)" test -f "$T/.bend-harness/.env"
 
 echo "== $pass passed, $fail failed"

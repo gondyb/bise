@@ -1,0 +1,258 @@
+# BISE-168: build the installable archive on both Mac arches, install it
+# in a clean fake HOME and run it (packaging/test-install.sh), and on a
+# v* tag publish a DRAFT GitHub Release with both archives + latest.json
+# (what `bise update`, BISE-171, will read). Same build path as /version
+# on a dev Mac: build-dist.sh -> versions.sh -> bins.sh.
+#
+# Signing: ad-hoc only (build-dist.sh; user decision, no Developer ID):
+# files fetched by curl or brew carry no quarantine flag, so Gatekeeper
+# lets them run. BISE-169 adds Developer ID + notarization later.
+#
+# Triggers: a v* tag (build + draft release) and the Actions tab (build
+# only). Not every push to main: macOS minutes cost 10x on a private
+# repo and a cold build is long (the V8 engine); add `branches: [main]`
+# under `push` to build each push.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  # THE command name (BISE-165): what test-install.sh installs and runs
+  # (bend-harness is its old-name link, one release)
+  BISE_CMD: bise
+  # pinned Bend: the release archive and its sha256 per arch (the values
+  # of https://bend-lang.com/install.sh for this version)
+  BEND_VERSION: "2.0.32"
+  BEND_SHA256_ARM64: d7debc002f59264f648dc94e45c2a9fab23e4b1ee0a390bf2acd8b1673e0cf55
+  BEND_SHA256_X64: 6c3fea18ade9912e3015472fe76a2b1372acbf72b82404b3dea1a1243c5ed09e
+  RUST_VERSION: "1.97.1"
+  CARGO_TERM_COLOR: never
+  # bend asks bend-lang.com for a newer version once a day: not on CI
+  BEND_NO_TELEMETRY: "1"
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-15
+            bend_arch: arm64
+          - target: darwin-x86_64
+            runner: macos-15-intel
+            bend_arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Environment
+        run: |
+          # the build dirs of versions.sh / bins.sh (cached below), out of ~/.bise
+          {
+            echo "SB_BUILD_DIR=$HOME/sb-build"
+            echo "SB_VERSIONS_DIR=$HOME/sb-versions"
+            echo "BISE_CHANNEL=${{ startsWith(github.ref, 'refs/tags/v') && 'stable' || 'dev' }}"
+          } >> "$GITHUB_ENV"
+          echo "$HOME/.bend/bin" >> "$GITHUB_PATH"
+          uname -a; sw_vers
+
+      - name: Rust ${{ env.RUST_VERSION }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+          rustc --version
+
+      - name: Restore Bend ${{ env.BEND_VERSION }}
+        id: bend-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bend/bin
+            ~/.bend/bend2
+            ~/.bend/guide
+          key: bend-${{ env.BEND_VERSION }}-${{ matrix.target }}
+
+      - name: Install Bend ${{ env.BEND_VERSION }} (pinned, sha256 checked)
+        if: steps.bend-cache.outputs.cache-hit != 'true'
+        env:
+          BEND_ARCH: ${{ matrix.bend_arch }}
+        run: |
+          name="bend-$BEND_VERSION-darwin-$BEND_ARCH.tar.gz"
+          if [ "$BEND_ARCH" = arm64 ]; then sum="$BEND_SHA256_ARM64"; else sum="$BEND_SHA256_X64"; fi
+          curl --proto '=https' --tlsv1.2 -fsSL -o "$RUNNER_TEMP/$name" \
+            "https://github.com/bendlang/bend/releases/download/v$BEND_VERSION/$name"
+          echo "$sum  $RUNNER_TEMP/$name" | shasum -a 256 -c -
+          tar -xzf "$RUNNER_TEMP/$name" -C "$RUNNER_TEMP"
+          mkdir -p ~/.bend/bin
+          rm -rf ~/.bend/bend2 ~/.bend/guide
+          mv "$RUNNER_TEMP/bend/bend2" "$RUNNER_TEMP/bend/guide" ~/.bend/
+          mv -f "$RUNNER_TEMP/bend/bin/bend" ~/.bend/bin/bend
+
+      - name: Check Bend
+        run: bend version | grep -F "$BEND_VERSION"
+
+      # cargo: the registry + the release target of versions.sh (it builds
+      # a commit in a worktree, into $SB_BUILD_DIR/target-commits)
+      - name: Restore cargo
+        id: cargo-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/sb-build/target-commits
+          key: cargo-${{ matrix.target }}-${{ env.RUST_VERSION }}-${{ hashFiles('rust/Cargo.lock', 'rust/.cargo/config.toml') }}
+          restore-keys: cargo-${{ matrix.target }}-${{ env.RUST_VERSION }}-
+
+      # the V8 engine (rust/jsrt): the long build, rarely changed
+      - name: Restore jsrt
+        id: jsrt-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: rust/jsrt/target
+          key: jsrt-${{ matrix.target }}-${{ env.RUST_VERSION }}-${{ hashFiles('rust/jsrt/Cargo.lock', 'rust/jsrt/Cargo.toml', 'rust/jsrt/src/**', 'rust/.cargo/config.toml') }}
+          restore-keys: jsrt-${{ matrix.target }}-${{ env.RUST_VERSION }}-
+
+      # bins.sh's cache: one Bend binary per content hash of its sources
+      # (+ the macOS target); the Bend version is in this key, not in
+      # bins.sh's. ~/.bend/lib: the packages the compiles fetched.
+      - name: Restore Bend binaries
+        id: bins-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/sb-build/cache
+            ~/.bend/lib
+          key: bins-${{ matrix.target }}-bend${{ env.BEND_VERSION }}-${{ hashFiles('runtime/**/*.bend', 'core/**/*.bend', 'vendor/**/*.bend', 'hub/**/*.bend', 'rust/.cargo/config.toml') }}
+          restore-keys: bins-${{ matrix.target }}-bend${{ env.BEND_VERSION }}-
+
+      - name: Build the V8 engine (release)
+        run: |
+          (cd rust/jsrt && CARGO_TARGET_DIR=target cargo build --release --locked)
+          # versions.sh links the engine from target/debug (the dev path);
+          # build-dist.sh ships the release one: give versions.sh that one
+          # too instead of a second (debug) V8 build
+          mkdir -p rust/jsrt/target/debug
+          ln -f rust/jsrt/target/release/bend-jsrt rust/jsrt/target/debug/bend-jsrt
+
+      - name: build-dist.sh
+        id: dist
+        run: |
+          tarball="$(projects/switchboard/packaging/build-dist.sh HEAD --out "$RUNNER_TEMP/dist")"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          ls -la "$RUNNER_TEMP/dist"
+          cat "$tarball.sha256"
+
+      - name: test-install.sh
+        run: projects/switchboard/packaging/test-install.sh "${{ steps.dist.outputs.tarball }}"
+
+      - name: Upload the archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: |
+            ${{ runner.temp }}/dist/*.tar.gz
+            ${{ runner.temp }}/dist/*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      # saved even when a later step failed: the next run starts warm
+      - name: Save cargo
+        if: always() && steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/sb-build/target-commits
+          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
+
+      - name: Save jsrt
+        if: always() && steps.jsrt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: rust/jsrt/target
+          key: ${{ steps.jsrt-cache.outputs.cache-primary-key }}
+
+      - name: Save Bend binaries
+        if: always() && steps.bins-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/sb-build/cache
+            ~/.bend/lib
+          key: ${{ steps.bins-cache.outputs.cache-primary-key }}
+
+  release:
+    name: draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+
+      # latest.json: the manifest `bise update` reads (BISE-171). One entry
+      # per target, from the archive itself (its app/VERSION) and its
+      # .sha256; the URL is the release asset's once the draft is published.
+      - name: latest.json
+        env:
+          TAG: ${{ github.ref_name }}
+          BASE: ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          cd dist
+          targets='{}'
+          for f in *.tar.gz; do
+            v="$(tar -xzOf "$f" --wildcards '*/app/VERSION')"
+            get() { printf '%s\n' "$v" | sed -n "s/^$1=//p" | head -n 1; }
+            sum="$(cut -d' ' -f1 "$f.sha256")"
+            echo "$sum  $f" | sha256sum -c -
+            targets="$(jq -c --arg t "$(get target)" --arg url "$BASE/$f" --arg file "$f" \
+              --arg sha "$sum" --argjson size "$(stat -c %s "$f")" --arg macos "$(get macos)" \
+              --arg id "$(get id)" --arg commit "$(get commit)" \
+              '. + {($t): {url: $url, file: $file, sha256: $sha, size: $size, macos: $macos, id: $id, commit: $commit}}' \
+              <<< "$targets")"
+          done
+          jq -n --arg version "${TAG#v}" --arg tag "$TAG" --arg channel stable \
+            --arg published "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson targets "$targets" \
+            '{version: $version, tag: $tag, channel: $channel, published: $published,
+              id: ($targets | to_entries[0].value.id), commit: ($targets | to_entries[0].value.commit),
+              targets: $targets}' > latest.json
+          cat latest.json
+          # both arches, built from the same commit
+          jq -e '(.targets | length) == 2 and ([.targets[].commit] | unique | length) == 1' latest.json
+
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          notes="Draft built by CI from $GITHUB_SHA. Archives for macOS 14+ (arm64, x86_64), ad-hoc signed; latest.json is the update manifest."
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" dist/* --draft --verify-tag --title "$TAG" --notes "$notes" -R "$GITHUB_REPOSITORY"
+          fi

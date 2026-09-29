@@ -98,6 +98,9 @@ dependencies = [
 [[package]]
 name = "bend-images"
 version = "0.1.0"
+dependencies = [
+ "bise-home",
+]
 
 [[package]]
 name = "bend-jsrt"
@@ -144,6 +147,13 @@ dependencies = [
  "rustc-hash",
  "shlex 1.3.0",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "bise-home"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
