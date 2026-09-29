@@ -399,3 +399,21 @@ What the user gets, by step:
   8 279 models, adapter counts computed from the `npm` field).
 - OpenCode `packages/opencode/src/provider/transform.ts` (quirks list in
   §2, from memory of the source, not re-read today).
+
+## 6. Decisions (user, 2026-09-29)
+
+1. **Catalog: our own list, no third-party fetch.** bise ships a curated
+   built-in model list (a TOML file in the repo, updated by us; no
+   models.dev download at runtime). Any model name must also work
+   without waiting for us: `model = "provider/any-model-name"` is
+   accepted even when it is not in the list (sensible defaults), and the
+   user can add or override a model in `~/.bise/config.toml` (e.g. a
+   `[models."provider/name"]` table: context window, vision, reasoning).
+   Custom providers (an OpenAI-compatible base URL + key env) the same way.
+2. **API keys only in this arc**; subscriptions (OAuth) later, provider by
+   provider, whatever is most convenient.
+3. **TOML** (`~/.bise/config.toml`).
+4. **One model for main, and optionally another one for the sub-agents**
+   (e.g. `model = "…"` and `agent_model = "…"`; unset = same as main).
+5. **Cloud auth, the simple way**: Azure key, Vertex through `gcloud`,
+   Bedrock API key; no SigV4 / service-account signing for now.
