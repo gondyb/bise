@@ -382,8 +382,17 @@ def anth_thinking_json() -> J.Json:
   J.obj(Con{J.kv("type", J.str("adaptive")),
     Con{J.kv("display", J.str("summarized")), Nil{}}})
 
-def anth_effort_json() -> J.Json:
-  J.obj(Con{J.kv("effort", J.str("high")), Nil{}})
+# output_config.effort: the call's effort (BISE-135; "" = high, today's)
+def anth_effort_word.pick(empty: Bool, +effort: String) -> String:
+  match empty:
+    case True{}:
+      "high"
+    case False{}:
+      effort
+
+def anth_effort_json(+effort: String) -> J.Json:
+  J.obj(Con{J.kv("effort",
+    J.str(anth_effort_word.pick(String.is_empty(effort), effort))), Nil{}})
 
 # ---- thinking, per model (BISE-146) ----
 # The catalog's `thinking` key (rust/catalog, BISE_MODELS_FILE):
@@ -450,6 +459,33 @@ def max_tokens_of(+out: Nat) -> Nat:
 def budget_of(+max: Nat) -> Nat:
   Nat.min(16000n, Nat.div(max, 2n))
 
+# the budget of an effort (BISE-135): low 4000, medium 8000, high (and
+# "", or a word it does not know) 16000 = budget_of, max = half the
+# output cap
+def budget_cap.medium(is_medium: Bool, +max: Nat) -> Nat:
+  match is_medium:
+    case True{}:
+      Nat.min(8000n, Nat.div(max, 2n))
+    case False{}:
+      budget_of(max)
+
+def budget_cap.low(is_low: Bool, +effort: String, +max: Nat) -> Nat:
+  match is_low:
+    case True{}:
+      Nat.min(4000n, Nat.div(max, 2n))
+    case False{}:
+      budget_cap.medium(String.eq(effort, "medium"), max)
+
+def budget_cap.max(is_max: Bool, +effort: String, +max: Nat) -> Nat:
+  match is_max:
+    case True{}:
+      Nat.div(max, 2n)
+    case False{}:
+      budget_cap.low(String.eq(effort, "low"), effort, max)
+
+def budget_for(+effort: String, +max: Nat) -> Nat:
+  budget_cap.max(String.eq(effort, "max"), effort, max)
+
 def anth_budget_json(+budget: Nat) -> J.Json:
   J.obj(Con{J.kv("type", J.str("enabled")),
     Con{J.kv("budget_tokens", J.num(budget)), Nil{}}})
@@ -464,16 +500,16 @@ def thinking_kvs.budget(too_small: Bool, +budget: Nat,
       Con{J.kv("thinking", anth_budget_json(budget)), rest}
 
 # the thinking fields of the body, before `rest`
-def thinking_kvs(tm: TMode, +max: Nat,
+def thinking_kvs(tm: TMode, +max: Nat, +effort: String,
     +rest: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
     -> List<&2, Sigma<&2, &2, String, _ => J.Json>>:
   match tm:
     case TAdaptive{}:
       Con{J.kv("thinking", anth_thinking_json()),
-        Con{J.kv("output_config", anth_effort_json()), rest}}
+        Con{J.kv("output_config", anth_effort_json(effort)), rest}}
     case TBudget{}:
-      thinking_kvs.budget(Nat.is_lt(budget_of(max), 1024n), budget_of(max),
-        rest)
+      thinking_kvs.budget(Nat.is_lt(budget_for(effort, max), 1024n),
+        budget_for(effort, max), rest)
     case TNone{}:
       rest
 
@@ -561,26 +597,37 @@ def api_body_anth.tools(empty_tools: Bool, +tools: List<&2, W.WTool>)
           J.obj(Con{J.kv("type", J.str("auto")), Nil{}})), Nil{}}}
 
 def api_body_anth.fields(+model: String, +max: Nat, tm: TMode,
-    +tools: List<&2, W.WTool>, +msgs: List<&2, W.WMsg>) -> String:
+    +effort: String, +tools: List<&2, W.WTool>, +msgs: List<&2, W.WMsg>)
+    -> String:
   J.stringify(J.obj(api_body_anth.with_sys(wire_sys(msgs),
     Con{J.kv("model", J.str(model)),
     Con{J.kv("max_tokens", J.num(max)),
-    thinking_kvs(tm, max,
+    thinking_kvs(tm, max, effort,
       Con{J.kv("messages", J.arr(amsgs(msgs))),
         api_body_anth.tools(W.is_empty_tools(tools), tools)})}})))
 
+# effort "none" (BISE-135: /reasoning none) turns thinking off
+def thinking_mode_for(is_none: Bool, +t: String, reasoning: Bool) -> TMode:
+  match is_none:
+    case True{}:
+      TNone{}
+    case False{}:
+      thinking_mode(t, reasoning)
+
 # the body of a model: its max output (0n: unknown), its catalog
-# thinking word and whether it reasons (BISE-146)
+# thinking word, whether it reasons (BISE-146) and the call's effort
+# (BISE-135: "none" = no thinking; "" = high)
 def api_body_anth_for(+model: String, +out: Nat, +thinking: String,
-    reasoning: Bool, +req: W.WReq) -> String:
+    reasoning: Bool, +effort: String, +req: W.WReq) -> String:
   match req:
     case W.WReq{+tools, +msgs, _}:
       api_body_anth.fields(model, max_tokens_of(out),
-        thinking_mode(thinking, reasoning), tools, msgs)
+        thinking_mode_for(String.eq(effort, "none"), thinking, reasoning),
+        effort, tools, msgs)
 
 # a model the catalog does not describe: today's foundry body
 def api_body_anth(+model: String, +req: W.WReq) -> String:
-  api_body_anth_for(model, 0n, "", True{}, req)
+  api_body_anth_for(model, 0n, "", True{}, "high", req)
 
 # ---- Anthropic: the reply ----
 # A Messages response carries content blocks: text blocks surface

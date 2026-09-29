@@ -140,12 +140,35 @@ def load.greeted(+sess: T.Session) -> IO(Load):
     +n : Nat <- IO.pure(Nat, List.length(&2, T.Msg, history_of(sess)))
     IO.pure(Load, load.greeted.put(Nat.is_eq(n, 0n), sess, n))
 
+# a restored session keeps what it saved, but the compaction threshold
+# of this start (BISE-135: /model may have changed the model, so its
+# window, since the save: the fresh config's threshold follows it)
+def cfg_threshold(+c: T.Cfg) -> Nat:
+  match c:
+    case T.Cfg{+threshold, _, _, _, _}:
+      threshold
+
+def with_threshold.cfg(+c: T.Cfg, +n: Nat) -> T.Cfg:
+  match c:
+    case T.Cfg{_, +sel, +nulls, +sys, +tools}:
+      T.Cfg{n, sel, nulls, sys, tools}
+
+def with_threshold(+s: T.Session, +n: Nat) -> T.Session:
+  match s:
+    case T.Sess{+cfg, +h, +i, +a, +t, +p, +q, +no}:
+      T.Sess{with_threshold.cfg(cfg, n), h, i, a, t, p, q, no}
+
+def fresh_threshold(+fresh: T.Session) -> Nat:
+  match fresh:
+    case T.Sess{+cfg, _, _, _, _, _, _, _}:
+      cfg_threshold(cfg)
+
 def load.chk(c: Maybe<&2, K.Checkpoint>, +fresh: T.Session) -> IO(Load):
   match c:
     case None{}:
       IO.pure(Load, LD{fresh, None{}})
     case Some{+chk}:
-      load.greeted(K.restore(chk))
+      load.greeted(with_threshold(K.restore(chk), fresh_threshold(fresh)))
 
 def load.content(m: Maybe<&2, String>, +fresh: T.Session) -> IO(Load):
   match m:

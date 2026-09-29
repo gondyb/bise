@@ -48,10 +48,44 @@ pub struct Caps {
     /// Anthropic family: the `anthropic-beta` header; "" = the family's
     /// default list (the foundry proxy's)
     pub betas: String,
+    /// the reasoning efforts the model takes (BISE-135), comma-separated;
+    /// "" = its family's list ([`Resolved::efforts`])
+    pub efforts: String,
+    /// the effort it gets when nobody picks one; "" = high
+    pub effort: String,
 }
 
 /// The thinking modes of the Anthropic family.
 pub const THINKING: [&str; 3] = ["adaptive", "budget", "none"];
+
+/// The reasoning efforts of the Anthropic family (BISE-135): `none` turns
+/// thinking off; the others are output_config.effort (adaptive) or the
+/// size of the thinking budget (budget).
+pub const ANTHROPIC_EFFORTS: [&str; 5] = ["none", "low", "medium", "high", "max"];
+
+/// The reasoning efforts of the OpenAI-compatible families
+/// (`reasoning_effort`, sent as is).
+pub const CHAT_EFFORTS: [&str; 4] = ["none", "low", "medium", "high"];
+
+/// The effort a reasoning model gets when nobody picks one: today's.
+pub const DEFAULT_EFFORT: &str = "high";
+
+/// An effort word: letters, digits, '-' or '_' (a provider may take its
+/// own, "minimal", "xhigh"...).
+pub fn is_effort_word(w: &str) -> bool {
+    !w.is_empty() && w.len() <= 20 && w.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// "none, low,high" -> ["none", "low", "high"]; empty when a word is not
+/// an effort word.
+pub fn effort_list(s: &str) -> Vec<String> {
+    let l: Vec<String> = s.split(',').map(|w| w.trim().to_string()).filter(|w| !w.is_empty()).collect();
+    if l.iter().all(|w| is_effort_word(w)) {
+        l
+    } else {
+        Vec::new()
+    }
+}
 
 /// The defaults of a model nothing describes.
 pub const DEFAULT_CAPS: Caps = Caps {
@@ -62,6 +96,8 @@ pub const DEFAULT_CAPS: Caps = Caps {
     tools: true,
     thinking: String::new(),
     betas: String::new(),
+    efforts: String::new(),
+    effort: String::new(),
 };
 
 /// Caps as written in a table: a missing field comes from the level below
@@ -75,6 +111,8 @@ pub struct PartialCaps {
     pub tools: Option<bool>,
     pub thinking: Option<String>,
     pub betas: Option<String>,
+    pub efforts: Option<String>,
+    pub effort: Option<String>,
     /// prices (BISE-150), in [`Price`]'s unit
     pub input_price: Option<u64>,
     pub output_price: Option<u64>,
@@ -121,6 +159,8 @@ impl PartialCaps {
             tools: self.tools.unwrap_or(base.tools),
             thinking: self.thinking.clone().unwrap_or_else(|| base.thinking.clone()),
             betas: self.betas.clone().unwrap_or_else(|| base.betas.clone()),
+            efforts: self.efforts.clone().unwrap_or_else(|| base.efforts.clone()),
+            effort: self.effort.clone().unwrap_or_else(|| base.effort.clone()),
         }
     }
     fn price_over(&self, base: &Price) -> Price {
@@ -139,6 +179,8 @@ impl PartialCaps {
         self.tools = o.tools.or(self.tools);
         self.thinking = o.thinking.clone().or(self.thinking.take());
         self.betas = o.betas.clone().or(self.betas.take());
+        self.efforts = o.efforts.clone().or(self.efforts.take());
+        self.effort = o.effort.clone().or(self.effort.take());
         self.input_price = o.input_price.or(self.input_price);
         self.output_price = o.output_price.or(self.output_price);
         self.cache_read_price = o.cache_read_price.or(self.cache_read_price);
@@ -225,6 +267,50 @@ pub struct Resolved {
     /// its prices (BISE-150): the model's, else its provider's
     pub price: Price,
     pub known: Known,
+}
+
+impl Resolved {
+    /// The reasoning efforts the model takes (BISE-135), in order: its
+    /// `efforts` key, else its family's ([`ANTHROPIC_EFFORTS`],
+    /// [`CHAT_EFFORTS`]); none for a model that does not reason (an
+    /// Anthropic one with `thinking = "none"` included). The Bend
+    /// runtime computes the same (runtime/provider-pure.bend `efforts`).
+    pub fn efforts(&self) -> Vec<String> {
+        if !self.caps.reasoning || (self.api == "anthropic" && self.caps.thinking == "none") {
+            return Vec::new();
+        }
+        let own = effort_list(&self.caps.efforts);
+        if !own.is_empty() {
+            return own;
+        }
+        let family: &[&str] = if self.api == "anthropic" { &ANTHROPIC_EFFORTS } else { &CHAT_EFFORTS };
+        family.iter().map(|w| w.to_string()).collect()
+    }
+
+    /// The effort nobody picked: its `effort` key when it takes it, else
+    /// high, else the last of its list; "" when it takes none.
+    pub fn default_effort(&self) -> String {
+        let l = self.efforts();
+        let has = |w: &str| l.iter().any(|x| x == w);
+        if has(&self.caps.effort) {
+            self.caps.effort.clone()
+        } else if has(DEFAULT_EFFORT) {
+            DEFAULT_EFFORT.into()
+        } else {
+            l.last().cloned().unwrap_or_default()
+        }
+    }
+
+    /// The effort a call runs with when `asked` is asked ("" = nothing
+    /// asked): `asked` when the model takes it, else its default.
+    pub fn effort_for(&self, asked: &str) -> String {
+        let asked = asked.trim();
+        if self.efforts().iter().any(|w| w == asked) {
+            asked.to_string()
+        } else {
+            self.default_effort()
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -627,6 +713,14 @@ fn cap_field(caps: &mut PartialCaps, k: &str, v: &toml::Value, where_: &str, war
             Some(b) => caps.betas = Some(b.trim().to_string()),
             None => warn(bad("a string (comma-separated anthropic-beta flags)")),
         },
+        "efforts" => match v.as_str().map(effort_list) {
+            Some(l) if !l.is_empty() => caps.efforts = Some(l.join(",")),
+            _ => warn(bad("a string of effort words, comma-separated (\"none,low,medium,high\")")),
+        },
+        "effort" => match v.as_str().map(str::trim) {
+            Some(e) if is_effort_word(e) => caps.effort = Some(e.to_string()),
+            _ => warn(bad("an effort word (low, medium, high, ...)")),
+        },
         _ => warn(format!("{}: unknown key {}", where_, k)),
     }
 }
@@ -649,6 +743,11 @@ pub struct Setup {
     /// `small_model` > agent_model
     pub small_model: String,
     pub small_model_from: &'static str,
+    /// the reasoning effort asked for (BISE-135): config
+    /// `reasoning_effort`; "" = the model's default
+    pub effort: String,
+    /// the sub-agents': config `agent_reasoning_effort`, else `effort`
+    pub agent_effort: String,
     /// the voice input's choices (BISE-130): `[voice]` in config.toml
     pub voice: voice::VoiceSetup,
 }
@@ -685,6 +784,7 @@ impl Setup {
     pub fn from_text(config: Option<&str>, env: &dyn Fn(&str) -> Option<String>) -> Setup {
         let mut catalog = Catalog::builtin();
         let (mut model_cfg, mut agent_cfg, mut small_cfg) = (None, None, None);
+        let (mut effort_cfg, mut agent_effort_cfg) = (None, None);
         let mut voice_cfg = voice::VoiceConfig::default();
         if let Some(text) = config {
             match text.parse::<toml::Table>() {
@@ -700,6 +800,8 @@ impl Setup {
                     model_cfg = s("model");
                     agent_cfg = s("agent_model");
                     small_cfg = s("small_model");
+                    effort_cfg = s("reasoning_effort");
+                    agent_effort_cfg = s("agent_reasoning_effort");
                 }
                 Err(e) => {
                     let first = e.to_string().lines().next().unwrap_or("").to_string();
@@ -710,6 +812,8 @@ impl Setup {
                     model_cfg = loose_key(text, "model");
                     agent_cfg = loose_key(text, "agent_model");
                     small_cfg = loose_key(text, "small_model");
+                    effort_cfg = loose_key(text, "reasoning_effort");
+                    agent_effort_cfg = loose_key(text, "agent_reasoning_effort");
                 }
             }
         }
@@ -742,7 +846,11 @@ impl Setup {
             }
         };
         let voice = voice::VoiceSetup::of(&catalog, voice_cfg, &envv);
+        let effort = effort_cfg.unwrap_or_default();
+        let agent_effort = agent_effort_cfg.unwrap_or_else(|| effort.clone());
         Setup {
+            effort,
+            agent_effort,
             catalog,
             model,
             agent_model,
@@ -766,6 +874,33 @@ impl Setup {
             "agent" => self.catalog.resolve(&self.agent_model),
             _ => self.catalog.resolve(&self.model),
         }
+    }
+
+    /// What a session of `role` runs with (BISE-135): its own choice
+    /// (`/model`, `/reasoning`) over the role's model and effort.
+    ///   model  = choice > the role's ([`Setup::model_for`])
+    ///   effort = choice > config (agent: `agent_reasoning_effort` >
+    ///            `reasoning_effort`) > the model's default; a word the
+    ///            model does not take falls to its default
+    /// The Bend runtime resolves the same (runtime/provider-pure.bend).
+    pub fn in_use(&self, role: &str, c: &Choice) -> InUse {
+        let (model, model_from) = if c.model.trim().is_empty() {
+            let from = if role == "agent" { self.agent_model_from } else { self.model_from };
+            (self.model_for(role), from)
+        } else {
+            (self.catalog.resolve(&c.model), "session")
+        };
+        let role_effort = if role == "agent" { &self.agent_effort } else { &self.effort };
+        let (asked, from) = if !c.effort.trim().is_empty() {
+            (c.effort.trim(), "session")
+        } else if !role_effort.is_empty() {
+            (role_effort.as_str(), "config")
+        } else {
+            ("", "model")
+        };
+        let effort = model.effort_for(asked);
+        let effort_from = if effort == asked { from } else { "model" };
+        InUse { model, effort, model_from, effort_from }
     }
 
     /// The hand-off to the Bend runtime: the merged catalog in the
@@ -827,6 +962,8 @@ impl Setup {
             for (k, x, y) in [
                 ("thinking", a.thinking.clone(), b.thinking.clone()),
                 ("betas", a.betas.clone(), b.betas.clone()),
+                ("efforts", a.efforts.clone(), b.efforts.clone()),
+                ("effort", a.effort.clone(), b.effort.clone()),
             ] {
                 if x != y {
                     o.push_str(&format!("{} = {}\n", k, q(&x)));
@@ -849,6 +986,101 @@ impl Setup {
     }
 }
 
+/// The env var that gives a REPL the path of its session's [`Choice`].
+pub const CHOICE_ENV: &str = "BISE_SESSION_CHOICE";
+
+/// A session's own model and effort (BISE-135): what `/model` and
+/// `/reasoning` picked, over every config and env value. A small TOML
+/// file in the agent's state dir (its REPL gets the path in
+/// [`CHOICE_ENV`] and reads it before each call):
+/// `model = "provider/id"`, `reasoning_effort = "high"`; "" = not picked.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Choice {
+    pub model: String,
+    pub effort: String,
+}
+
+impl Choice {
+    pub fn parse(text: &str) -> Choice {
+        Choice {
+            model: loose_key(text, "model").unwrap_or_default(),
+            effort: loose_key(text, "reasoning_effort").unwrap_or_default(),
+        }
+    }
+
+    /// A missing or unreadable file: nothing picked.
+    pub fn read(path: &Path) -> Choice {
+        std::fs::read_to_string(path).map(|t| Choice::parse(&t)).unwrap_or_default()
+    }
+
+    pub fn to_toml(&self) -> String {
+        let mut o = String::from("# this session's model (BISE-135: /model, /reasoning); written by bise\n");
+        for (k, v) in [("model", &self.model), ("reasoning_effort", &self.effort)] {
+            if !v.is_empty() {
+                o.push_str(&format!("{} = {}\n", k, q(v)));
+            }
+        }
+        o
+    }
+
+    /// Write it atomically (temp file + rename): a REPL reading it
+    /// mid-write sees the old choice or the new one.
+    pub fn write(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(d) = path.parent() {
+            std::fs::create_dir_all(d)?;
+        }
+        let tmp: PathBuf = path.with_extension(format!("tmp.{}", std::process::id()));
+        std::fs::write(&tmp, self.to_toml())?;
+        std::fs::rename(&tmp, path).inspect_err(|_| {
+            let _ = std::fs::remove_file(&tmp);
+        })
+    }
+}
+
+/// What a session runs with ([`Setup::in_use`]) and where each part
+/// came from: "session", "BISE_MODEL", "config", "default", "model"...
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InUse {
+    pub model: Resolved,
+    /// "" when the model takes no effort
+    pub effort: String,
+    pub model_from: &'static str,
+    pub effort_from: &'static str,
+}
+
+/// Set one top-level key of config.toml (BISE-135: `/model ... default`),
+/// keeping the rest of the file as it is: the key's line is replaced, or
+/// a new line goes before the first table.
+pub fn set_config_key(text: &str, key: &str, value: &str) -> String {
+    let line = format!("{} = {}", key, q(value));
+    let mut out: Vec<String> = Vec::new();
+    let mut done = false;
+    let mut in_table = false;
+    for l in text.lines() {
+        let t = l.trim();
+        if t.starts_with('[') {
+            if !done {
+                out.push(line.clone());
+                done = true;
+            }
+            in_table = true;
+        }
+        let is_key = !in_table && t.split_once('=').is_some_and(|(k, _)| k.trim() == key) && !t.starts_with('#');
+        if is_key && !done {
+            out.push(line.clone());
+            done = true;
+        } else if !is_key {
+            out.push(l.to_string());
+        }
+    }
+    if !done {
+        out.push(line);
+    }
+    let mut s = out.join("\n");
+    s.push('\n');
+    s
+}
+
 fn caps_lines(o: &mut String, c: &Caps) {
     o.push_str(&format!(
         "context = {}\nmax_output = {}\nvision = {}\nreasoning = {}\ntools = {}\n",
@@ -859,6 +1091,12 @@ fn caps_lines(o: &mut String, c: &Caps) {
     }
     if !c.betas.is_empty() {
         o.push_str(&format!("betas = {}\n", q(&c.betas)));
+    }
+    if !c.efforts.is_empty() {
+        o.push_str(&format!("efforts = {}\n", q(&c.efforts)));
+    }
+    if !c.effort.is_empty() {
+        o.push_str(&format!("effort = {}\n", q(&c.effort)));
     }
 }
 

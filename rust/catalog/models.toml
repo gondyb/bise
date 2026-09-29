@@ -22,6 +22,11 @@
 #   "none" (unset: adaptive when the model reasons, none otherwise);
 #   betas = the anthropic-beta header (unset: the foundry proxy's list).
 #   max_output is the body's max_tokens.
+# Reasoning effort (BISE-135), for a model that reasons: efforts = the
+#   words it takes, comma-separated (unset: its family's: anthropic
+#   none,low,medium,high,max; the others none,low,medium,high);
+#   effort = the one it gets when nobody picks (unset: high). /reasoning
+#   and config.toml's reasoning_effort / agent_reasoning_effort pick.
 # Prices (BISE-150), USD per million tokens: input_price, output_price,
 #   cache_read_price, cache_write_price (the two cache ones default to
 #   input_price). Unset: the cost is not shown. The list prices, short
@@ -193,6 +198,9 @@ key_env = "MISTRAL_API_KEY"
 stt = "mistral"
 small_model = "mistral-small-latest"
 context = 128000
+# the Mistral API's reasoning_effort takes these two (the vibe CLI maps
+# its thinking levels onto them)
+efforts = "none,high"
 
 [models."mistral/mistral-large-latest"]
 vision = true

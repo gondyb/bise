@@ -241,7 +241,7 @@ def msgs_json(+msgs: List<&2, W.WMsg>) -> List<&2, J.Json>:
 # what the catalog says of the model (core/api.bend MFacts): whether it
 # reasons, its output cap (0n: none sent) and the cap's field name
 type Opts is Data:
-  Opts{reasoning: Bool, output: Nat, max_key: String}
+  Opts{reasoning: Bool, output: Nat, max_key: String, effort: String}
 
 # reasoning_effort "high" rides every call of a reasoning model, the
 # vibe CLI parity: the active model zai-glm-5-3 runs with thinking
@@ -249,11 +249,24 @@ type Opts is Data:
 # reasoning_effort "high" on the Mistral API (core/llm/backend/
 # mistral.py _THINKING_TO_REASONING_EFFORT). A model the catalog marks
 # as not reasoning gets none (OpenAI gpt-4.1, Groq's llama: a 400).
-def body.effort(reasoning: Bool, +rest: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
+# BISE-135: the word is the call's effort (the session's choice, the
+# config, the model's default, runtime/provider-pure.bend effort_of),
+# sent as is; "" sends none.
+def body.effort.word(empty: Bool, +effort: String,
+    +rest: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
+    -> List<&2, Sigma<&2, &2, String, _ => J.Json>>:
+  match empty:
+    case True{}:
+      rest
+    case False{}:
+      Con{J.kv("reasoning_effort", J.str(effort)), rest}
+
+def body.effort(reasoning: Bool, +effort: String,
+    +rest: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
     -> List<&2, Sigma<&2, &2, String, _ => J.Json>>:
   match reasoning:
     case True{}:
-      Con{J.kv("reasoning_effort", J.str("high")), rest}
+      body.effort.word(String.is_empty(effort), effort, rest)
     case False{}:
       rest
 
@@ -271,8 +284,8 @@ def body.cap(none: Bool, +output: Nat, +key: String,
 def body.head(o: Opts, +rest: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
     -> List<&2, Sigma<&2, &2, String, _ => J.Json>>:
   match o:
-    case Opts{+reasoning, +output, +max_key}:
-      body.effort(reasoning,
+    case Opts{+reasoning, +output, +max_key, +effort}:
+      body.effort(reasoning, effort,
         body.cap(Nat.is_eq(output, 0n), output, max_key, rest))
 
 def api_body.pick(empty_tools: Bool, +model: String, +o: Opts,
@@ -297,7 +310,7 @@ def api_body_with(+model: String, +o: Opts, +req: W.WReq) -> String:
 
 # no catalog facts: reasoning_effort on, no output cap (today's body)
 def api_body(+model: String, +req: W.WReq) -> String:
-  api_body_with(model, Opts{True{}, 0n, "max_tokens"}, req)
+  api_body_with(model, Opts{True{}, 0n, "max_tokens", "high"}, req)
 
 def fn_of(tc: J.Json) -> J.Json:
   W.field_or(tc, "function", J.JNull{})

@@ -143,18 +143,27 @@ def wire_body(st: Style, +body: String) -> String:
 # whose reasoning models refuse max_tokens; "max_tokens" elsewhere);
 # thinking / betas: the raw keys (Anthropic, BISE-146; "" = not set).
 
+# effort: the reasoning effort of the call (BISE-135: the session's
+# choice, config, the model's default; "" = none sent), already checked
+# against the model's words (runtime/provider-pure.bend effort_of).
+
 type MFacts is Data:
   MFacts{reasoning: Bool, output: Nat, max_key: String, thinking: String,
-    betas: String}
+    betas: String, effort: String}
 
 def facts_betas(f: MFacts) -> String:
   match f:
-    case MFacts{_, _, _, _, +betas}:
+    case MFacts{_, _, _, _, +betas, _}:
       betas
 
-# no catalog entry: today's body (reasoning_effort on, no output cap)
+def facts_effort(f: MFacts) -> String:
+  match f:
+    case MFacts{_, _, _, _, _, +effort}:
+      effort
+
+# no catalog entry: today's body (reasoning_effort high, no output cap)
 def facts0() -> MFacts:
-  MFacts{True{}, 0n, "max_tokens", "", ""}
+  MFacts{True{}, 0n, "max_tokens", "", "", "high"}
 
 # ---- the body and the reply ----
 
@@ -163,12 +172,14 @@ def api_body_for(st: Style, +model: String, +facts: MFacts, +req: W.WReq)
   match st:
     case OpenAI{}:
       match facts:
-        case MFacts{+reasoning, +output, +max_key, _, _}:
-          Oai.api_body_with(model, Oai.Opts{reasoning, output, max_key}, req)
+        case MFacts{+reasoning, +output, +max_key, _, _, +effort}:
+          Oai.api_body_with(model, Oai.Opts{reasoning, output, max_key, effort},
+            req)
     case Anthropic{}:
       match facts:
-        case MFacts{+reasoning, +output, _, +thinking, _}:
-          Anth.api_body_anth_for(model, output, thinking, reasoning, req)
+        case MFacts{+reasoning, +output, _, +thinking, _, +effort}:
+          Anth.api_body_anth_for(model, output, thinking, reasoning, effort,
+            req)
 
 def reply_of_for(st: Style, +status: U32, +body: String) -> String:
   match st:

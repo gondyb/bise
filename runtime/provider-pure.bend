@@ -224,13 +224,111 @@ def max_key.pick(is_openai: Bool) -> String:
     case False{}:
       "max_tokens"
 
-def facts(+reg: List<&2, Cf.KV>, +prov: String, +id: String) -> Api.MFacts:
+# ---- the reasoning effort (BISE-135) ----
+# The words a model takes: its `efforts` key (comma-separated, the
+# models file has them normalized by Rust), else its family's; none
+# when it does not reason (an Anthropic one with thinking = "none"
+# included). The same rule as rust/catalog's Resolved::efforts.
+
+def anth_efforts() -> List<&2, String>:
+  ["none", "low", "medium", "high", "max"]
+
+def chat_efforts() -> List<&2, String>:
+  ["none", "low", "medium", "high"]
+
+def efforts.family(is_anth: Bool) -> List<&2, String>:
+  match is_anth:
+    case True{}:
+      anth_efforts()
+    case False{}:
+      chat_efforts()
+
+def efforts.own(empty: Bool, +own: List<&2, String>, is_anth: Bool)
+    -> List<&2, String>:
+  match empty:
+    case True{}:
+      efforts.family(is_anth)
+    case False{}:
+      own
+
+def non_empty(s: String) -> Bool:
+  Bool.not(String.is_empty(s))
+
+def efforts.words(+s: String) -> List<&2, String>:
+  List.filter(~String, ~non_empty, String.split(s, ','))
+
+def efforts.on(on: Bool, +own: String, is_anth: Bool) -> List<&2, String>:
+  match on:
+    case True{}:
+      +ws = efforts.words(own)
+      efforts.own(List.is_empty(&2, String, ws), ws, is_anth)
+    case False{}:
+      Nil{}
+
+def is_anthropic(+reg: List<&2, Cf.KV>, +prov: String, +id: String) -> Bool:
+  String.eq(Cf.cfg_or(model_key(reg, prov, id, "api"), "openai-chat"),
+    "anthropic")
+
+def efforts(+reg: List<&2, Cf.KV>, +prov: String, +id: String)
+    -> List<&2, String>:
+  +is_anth = is_anthropic(reg, prov, id)
+  +reasons = String.eq(Cf.cfg_or(model_key(reg, prov, id, "reasoning"), ""),
+    "true")
+  +off = Bool.and(is_anth,
+    String.eq(Cf.cfg_or(model_key(reg, prov, id, "thinking"), ""), "none"))
+  efforts.on(Bool.and(reasons, Bool.not(off)),
+    Cf.cfg_or(model_key(reg, prov, id, "efforts"), ""), is_anth)
+
+def has_word(+xs: List<&2, String>, +w: String) -> Bool:
+  List.contains(~String, ~String.eq, xs, w)
+
+def last_word(xs: List<&2, String>) -> String:
+  Maybe.default(&2, String, List.last(&2, String, xs), "")
+
+def effort_default.high(has_high: Bool, +xs: List<&2, String>) -> String:
+  match has_high:
+    case True{}:
+      "high"
+    case False{}:
+      last_word(xs)
+
+def effort_default.pick(has_own: Bool, +own: String, +xs: List<&2, String>)
+    -> String:
+  match has_own:
+    case True{}:
+      own
+    case False{}:
+      effort_default.high(has_word(xs, "high"), xs)
+
+# the effort nobody picked: the model's `effort` key when it takes it,
+# else high, else the last word of its list ("" when it takes none)
+def effort_default(+xs: List<&2, String>, +own: String) -> String:
+  effort_default.pick(has_word(xs, own), own, xs)
+
+def effort_pick(has: Bool, +asked: String, +dflt: String) -> String:
+  match has:
+    case True{}:
+      asked
+    case False{}:
+      dflt
+
+# the effort of a call: the word asked when the model takes it, else
+# its default
+def effort_of(+reg: List<&2, Cf.KV>, +prov: String, +id: String,
+    +asked: String) -> String:
+  +xs = efforts(reg, prov, id)
+  effort_pick(has_word(xs, asked), asked,
+    effort_default(xs, Cf.cfg_or(model_key(reg, prov, id, "effort"), "")))
+
+def facts(+reg: List<&2, Cf.KV>, +prov: String, +id: String, +asked: String)
+    -> Api.MFacts:
   Api.MFacts{String.eq(Cf.cfg_or(model_key(reg, prov, id, "reasoning"), ""),
       "true"),
     fact_nat(model_key(reg, prov, id, "max_output")),
     max_key.pick(String.eq(prov, "openai")),
     Cf.cfg_or(model_key(reg, prov, id, "thinking"), ""),
-    Cf.cfg_or(model_key(reg, prov, id, "betas"), "")}
+    Cf.cfg_or(model_key(reg, prov, id, "betas"), ""),
+    effort_of(reg, prov, id, asked)}
 
 def resolve.family(m: Maybe<&2, Api.Style>, +api: String, +prov: String,
     +model: String, +id: String, +base: String, +key_env: String,
@@ -254,37 +352,73 @@ def resolve.needs(ok: Bool, +needs: String, +api: String, +prov: String,
         " is not supported yet (needs ", needs, ")"])}
 
 def resolve.base(m: Maybe<&2, String>, +reg: List<&2, Cf.KV>, +prov: String,
-    +model: String, +id: String, +url_env: String) -> Resolved:
+    +model: String, +id: String, +url_env: String, +asked: String)
+    -> Resolved:
   match m:
     case Some{+base}:
       +needs = Cf.cfg_or(model_key(reg, prov, id, "needs"), "")
       resolve.needs(String.is_empty(needs), needs,
         Cf.cfg_or(model_key(reg, prov, id, "api"), "openai-chat"), prov,
         model, id, base, Cf.cfg_or(model_key(reg, prov, id, "key_env"), ""),
-        url_env, facts(reg, prov, id))
+        url_env, facts(reg, prov, id, asked))
     case None{}:
       unknown_provider(prov, id)
 
 def resolve.split(pm: String & String, +reg: List<&2, Cf.KV>, +id: String,
-    +url_env: String) -> Resolved:
+    +url_env: String, +asked: String) -> Resolved:
   match pm:
     case (+prov, +model):
       resolve.base(model_key(reg, prov, id, "base_url"), reg, prov, model,
-        id, url_env)
+        id, url_env, asked)
+
+# a full id against the registry, with the effort asked ("": none)
+def resolve_id_effort(+id: String, +reg: List<&2, Cf.KV>, +url_env: String,
+    +asked: String) -> Resolved:
+  resolve.split(split_id(id), reg, id, url_env, asked)
 
 # a full id against the registry
 def resolve_id(+id: String, +reg: List<&2, Cf.KV>, +url_env: String)
     -> Resolved:
-  resolve.split(split_id(id), reg, id, url_env)
+  resolve_id_effort(id, reg, url_env, "")
+
+# ---- the session's choice (BISE-135) ----
+# /model and /reasoning write the session's choice file (its path in
+# BISE_SESSION_CHOICE, rust/catalog Choice): `model = "..."`,
+# `reasoning_effort = "..."`. It comes before every other source:
+#   model:  choice > the role's order above
+#   effort: choice > agent_reasoning_effort (agent) > reasoning_effort
+#           (config.toml) > the model's default; a word the model does
+#           not take falls to its default (effort_of)
+
+def chosen_name(+choice: List<&2, Cf.KV>, +role_name: String) -> String:
+  first_set([cfg_str(choice, "model"), role_name])
+
+def effort_asked(+choice: List<&2, Cf.KV>, +role: String,
+    +cfg: List<&2, Cf.KV>) -> String:
+  first_set([cfg_str(choice, "reasoning_effort"),
+    agent_only(String.eq(role, "agent"),
+      cfg_str(cfg, "agent_reasoning_effort")),
+    cfg_str(cfg, "reasoning_effort")])
+
+# THE resolution with the session's choice (its file's text, "" when
+# none), pure
+def resolve_chosen(+choice: String, +bise: String, +bend: String,
+    +agent: String, +role: String, +cfg: String, +file: String,
+    +url_env: String) -> Resolved:
+  +reg = registry(file)
+  +ch = Cf.parse_toml(choice)
+  +ckv = Cf.parse_toml(cfg)
+  resolve_id_effort(full_id(chosen_name(ch,
+    model_name(bise, bend, agent, role, ckv, reg)), reg), reg, url_env,
+    effort_asked(ch, role, ckv))
 
 # THE resolution, pure: the env values (BISE_MODEL, BEND_MODEL,
 # BISE_AGENT_MODEL, BISE_ROLE, BEND_PROVIDER_URL), the user's
-# config.toml text and the models file text ("" when absent)
+# config.toml text and the models file text ("" when absent); no
+# session choice
 def resolve(+bise: String, +bend: String, +agent: String, +role: String,
     +cfg: String, +file: String, +url_env: String) -> Resolved:
-  +reg = registry(file)
-  resolve_id(full_id(model_name(bise, bend, agent, role, Cf.parse_toml(cfg),
-    reg), reg), reg, url_env)
+  resolve_chosen("", bise, bend, agent, role, cfg, file, url_env)
 
 # the full id of a resolved call, "provider/model" (BISE-150: the name
 # the clients look up in bise's catalog)
@@ -301,6 +435,16 @@ def shown_model(r: Resolved) -> String:
       prov_name(p)
     case RErr{+id, _}:
       id
+
+# the reasoning effort of a resolved call ("": none, BISE-135)
+def shown_effort(r: Resolved) -> String:
+  match r:
+    case ROk{+p}:
+      match p:
+        case Prov{_, _, _, _, _, +fs}:
+          Api.facts_effort(fs)
+    case RErr{_, _}:
+      ""
 
 # ---- the context window and the compaction threshold (BISE-150) ----
 # The window of the model a REPL starts with: its `context` in the
@@ -342,12 +486,16 @@ def window.split(pm: String & String, +reg: List<&2, Cf.KV>, +id: String)
 
 # the context window, in tokens, of the model the same inputs as
 # `resolve` pick (never 0)
+def window_chosen(+choice: String, +bise: String, +bend: String,
+    +agent: String, +role: String, +cfg: String, +file: String) -> U32:
+  +reg = registry(file)
+  +id = full_id(chosen_name(Cf.parse_toml(choice),
+    model_name(bise, bend, agent, role, Cf.parse_toml(cfg), reg)), reg)
+  window.split(split_id(id), reg, id)
+
 def window(+bise: String, +bend: String, +agent: String, +role: String,
     +cfg: String, +file: String) -> U32:
-  +reg = registry(file)
-  +id = full_id(model_name(bise, bend, agent, role, Cf.parse_toml(cfg),
-    reg), reg)
-  window.split(split_id(id), reg, id)
+  window_chosen("", bise, bend, agent, role, cfg, file)
 
 # 80 % of a window, rounded down (no overflow: n / 5 first)
 def threshold_of(+n: U32) -> U32:

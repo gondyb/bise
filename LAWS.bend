@@ -2106,31 +2106,31 @@ law provider_default_is_foundry:
   {Pv.resolve("", "", "", "", "", "", "")
     == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
       "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
-      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
+      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", "", "high"}}} : Pv.Resolved}
 
 law provider_resolves_alias:
   {Pv.resolve("", "", "", "", "model = \"opus-5.5\"", "", "")
     == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
       "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
-      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
+      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", "", "high"}}} : Pv.Resolved}
 
 law provider_legacy_claude_is_foundry:
   {Pv.resolve("", "claude-opus-5-5", "", "", "", "", "")
     == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
       "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
-      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
+      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", "", "high"}}} : Pv.Resolved}
 
 law provider_legacy_glm_is_mistral:
   {Pv.resolve("", "zai-glm-5-3", "", "", "", "", "")
     == Pv.ROk{Pv.Prov{"mistral", "zai-glm-5-3", Api.OpenAI{},
-      "https://api.mistral.ai/v1/chat/completions", "MISTRAL_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
+      "https://api.mistral.ai/v1/chat/completions", "MISTRAL_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", "", "high"}}} : Pv.Resolved}
 
 # LAW: a model the registry does not list works on its provider's
 # defaults.
 law provider_unlisted_model_works:
   {Pv.resolve("", "", "", "", "model = \"mistral/brand-new-7b\"", "", "")
     == Pv.ROk{Pv.Prov{"mistral", "brand-new-7b", Api.OpenAI{},
-      "https://api.mistral.ai/v1/chat/completions", "MISTRAL_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
+      "https://api.mistral.ai/v1/chat/completions", "MISTRAL_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", "", "high"}}} : Pv.Resolved}
 
 # LAW: the choice order (as rust/catalog's Setup): main = BISE_MODEL >
 # BEND_MODEL > config model; a sub-agent (BISE_ROLE=agent) =
@@ -2216,7 +2216,7 @@ law provider_from_models_file:
       "[providers.work]\napi = \"openai-chat\"\nbase_url = \"https://llm.corp.example/v1/\"\nkey_env = \"CORP_KEY\"\nneeds = \"\"",
       "")
     == Pv.ROk{Pv.Prov{"work", "qwen/q3-coder", Api.OpenAI{},
-      "https://llm.corp.example/v1/chat/completions", "CORP_KEY", Api.MFacts{False{}, 0n, "max_tokens", "", ""}}}
+      "https://llm.corp.example/v1/chat/completions", "CORP_KEY", Api.MFacts{False{}, 0n, "max_tokens", "", "", ""}}}
     : Pv.Resolved}
 
 # LAW: a model's own key wins over its provider's (a model on another
@@ -2226,7 +2226,7 @@ law provider_model_key_wins:
       "[providers.local]\napi = \"openai-chat\"\nbase_url = \"http://localhost:1234/v1\"\nkey_env = \"\"\n[models.\"local/m\"]\napi = \"anthropic\"",
       "")
     == Pv.ROk{Pv.Prov{"local", "m", Api.Anthropic{},
-      "http://localhost:1234/v1/messages", "", Api.MFacts{False{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
+      "http://localhost:1234/v1/messages", "", Api.MFacts{False{}, 0n, "max_tokens", "", "", ""}}} : Pv.Resolved}
 
 # LAW: the models file wins over the built-in entries, key by key; its
 # aliases and default_model are used.
@@ -2236,14 +2236,14 @@ law provider_file_over_builtin:
       "")
     == Pv.ROk{Pv.Prov{"foundry", "claude-x", Api.Anthropic{},
       "https://api.anthropic.com/v1/messages",
-      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
+      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", "", "high"}}} : Pv.Resolved}
 
 # LAW: BEND_PROVIDER_URL (the tests' fake provider) wins over the URL.
 law provider_url_env_wins:
   {Pv.resolve("", "mistral-small-latest", "", "", "", "",
       "http://127.0.0.1:9/v1/chat/completions")
     == Pv.ROk{Pv.Prov{"mistral", "mistral-small-latest", Api.OpenAI{},
-      "http://127.0.0.1:9/v1/chat/completions", "MISTRAL_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", ""}}}
+      "http://127.0.0.1:9/v1/chat/completions", "MISTRAL_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", "", "high"}}}
     : Pv.Resolved}
 
 # LAW: a long file is read to its end (a pair line takes 3 steps of the
@@ -2828,7 +2828,7 @@ law oai_stream_json_body:
 # reason gets no reasoning_effort; its max_output is the cap, named
 # max_completion_tokens on OpenAI, max_tokens elsewhere.
 law oai_body_no_reasoning_cap:
-  {Api.api_body_for(Api.OpenAI{}, "m", Api.MFacts{False{}, 4096n, "max_tokens", "", ""},
+  {Api.api_body_for(Api.OpenAI{}, "m", Api.MFacts{False{}, 4096n, "max_tokens", "", "", ""},
       W.parse_wire("MODEL default
 MSG user : hi
 END
@@ -2836,7 +2836,7 @@ END
     == "{\"model\":\"m\",\"max_tokens\":4096,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" : String}
 
 law oai_body_openai_cap:
-  {Api.api_body_for(Api.OpenAI{}, "m", Api.MFacts{True{}, 128000n, "max_completion_tokens", "", ""},
+  {Api.api_body_for(Api.OpenAI{}, "m", Api.MFacts{True{}, 128000n, "max_completion_tokens", "", "", "high"},
       W.parse_wire("MODEL default
 MSG user : hi
 END
@@ -2860,7 +2860,7 @@ reasoning = false",
       "")
     == Pv.ROk{Pv.Prov{"openai", "gpt-4.1", Api.OpenAI{},
       "https://api.openai.com/v1/chat/completions", "OPENAI_API_KEY",
-      Api.MFacts{False{}, 200n, "max_completion_tokens", "", ""}}}
+      Api.MFacts{False{}, 200n, "max_completion_tokens", "", "", ""}}}
     : Pv.Resolved}
 
 # LAW: only a non-empty flag is a Ctrl+C - the runtime clears the flag to
@@ -3167,7 +3167,7 @@ law image_splice_data:
 # maximum: the system block, the last tool, and the last block of each
 # of the two newest messages; the older messages carry none.
 law anth_cache_breakpoints:
-  {Anth.api_body_anth_for("m", 0n, "", True{}, W.parse_wire("MODEL default
+  {Anth.api_body_anth_for("m", 0n, "", True{}, "high", W.parse_wire("MODEL default
 MSG system : S
 TOOL echo : Returns text.
 TOOL bash : Runs.
@@ -3185,7 +3185,7 @@ END
 # sends no thinking field, even for a model that reasons; max_tokens is
 # the catalog's max output.
 law anth_thinking_none_and_no_cache_on_thinking:
-  {Anth.api_body_anth_for("m", 64000n, "none", True{}, W.parse_wire("MODEL default
+  {Anth.api_body_anth_for("m", 64000n, "none", True{}, "high", W.parse_wire("MODEL default
 MSG user : a
 MSG assistant : <think>t\\nBENDSIG::s1</think>
 MSG user : b
@@ -3198,7 +3198,7 @@ END
 # extended thinking with budget_tokens = half the max output, at most
 # 16000; no output_config.
 law anth_thinking_budget:
-  {Anth.api_body_anth_for("claude-haiku-4-5", 64000n, "budget", True{},
+  {Anth.api_body_anth_for("claude-haiku-4-5", 64000n, "budget", True{}, "high",
       W.parse_wire("MODEL default
 MSG user : salut
 END
@@ -3208,7 +3208,7 @@ END
 
 # LAW: a budget under the API's 1024 minimum: no thinking at all.
 law anth_thinking_budget_too_small:
-  {String.contains(Anth.api_body_anth_for("m", 1500n, "budget", True{},
+  {String.contains(Anth.api_body_anth_for("m", 1500n, "budget", True{}, "high",
       W.parse_wire("MODEL default
 MSG user : salut
 END
@@ -3218,7 +3218,7 @@ END
 # LAW: no thinking word: a model that does not reason thinks not; one
 # that reasons gets adaptive thinking (the foundry body).
 law anth_thinking_default_follows_reasoning:
-  {Anth.api_body_anth_for("m", 8192n, "", False{}, W.parse_wire("MODEL default
+  {Anth.api_body_anth_for("m", 8192n, "", False{}, "", W.parse_wire("MODEL default
 MSG user : salut
 END
 "))
@@ -3248,12 +3248,128 @@ law family_headers_anthropic_betas:
 # (the dispatch passes max output, thinking word and reasoning through).
 law api_body_anth_follows_facts:
   {Api.api_body_for(Api.Anthropic{}, "m",
-      Api.MFacts{False{}, 200n, "max_tokens", "", ""},
+      Api.MFacts{False{}, 200n, "max_tokens", "", "", ""},
       W.parse_wire("MODEL default
 MSG user : salut
 END
 "))
-    == Anth.api_body_anth_for("m", 200n, "", False{}, W.parse_wire("MODEL default
+    == Anth.api_body_anth_for("m", 200n, "", False{}, "", W.parse_wire("MODEL default
 MSG user : salut
 END
 ")) : String}
+
+# ---- the model and the effort in use, and the session's choice (BISE-135) ----
+# /model and /reasoning write the session's choice file
+# (BISE_SESSION_CHOICE); Pv.resolve_chosen(choice, BISE_MODEL,
+# BEND_MODEL, BISE_AGENT_MODEL, BISE_ROLE, config.toml, models file,
+# BEND_PROVIDER_URL). The same order as rust/catalog's Setup::in_use.
+
+# LAW: the session's model comes first, over every env var and config
+# key, for main and for a sub-agent; an alias of the choice resolves.
+law choice_model_first:
+  {(Pv.shown_model(Pv.resolve_chosen("model = \"mistral/s\"", "mistral/a",
+        "mistral/b", "mistral/e", "main", "model = \"mistral/c\"", "", "")),
+      Pv.shown_model(Pv.resolve_chosen("model = \"mistral/s\"", "mistral/a",
+        "", "mistral/e", "agent", "agent_model = \"mistral/d\"", "", "")),
+      Pv.shown_model(Pv.resolve_chosen("model = \"opus-5.5\"", "mistral/a",
+        "", "", "main", "", "", "")))
+    == ("mistral/s", "mistral/s", "foundry/claude-opus-5-5")
+    : String & String & String}
+
+# LAW: no choice (or a choice of the effort alone): the role's order,
+# as before.
+law choice_empty_keeps_the_role_order:
+  {(Pv.shown_model(Pv.resolve_chosen("", "", "", "mistral/e", "agent",
+        "model = \"mistral/c\"", "", "")),
+      Pv.shown_model(Pv.resolve_chosen("reasoning_effort = \"low\"", "", "",
+        "", "main", "model = \"mistral/c\"", "", "")))
+    == ("mistral/e", "mistral/c") : String & String}
+
+# LAW: the effort order: the session's choice > agent_reasoning_effort
+# (sub-agents) > reasoning_effort (config.toml) > the model's default
+# (high, today's).
+law effort_order:
+  {(Pv.shown_effort(Pv.resolve_chosen("reasoning_effort = \"max\"", "", "",
+        "", "agent", "reasoning_effort = \"low\"
+agent_reasoning_effort = \"medium\"", "", "")),
+      Pv.shown_effort(Pv.resolve_chosen("", "", "", "", "agent",
+        "reasoning_effort = \"low\"
+agent_reasoning_effort = \"medium\"", "", "")),
+      Pv.shown_effort(Pv.resolve_chosen("", "", "", "", "main",
+        "reasoning_effort = \"low\"
+agent_reasoning_effort = \"medium\"", "", "")),
+      Pv.shown_effort(Pv.resolve_chosen("", "", "", "", "main", "", "", "")))
+    == ("max", "medium", "low", "high") : String & String & String & String}
+
+# LAW: an effort the model does not take falls to its default: max is
+# an Anthropic word, not a chat one; a model's own list and default
+# (efforts, effort keys of the models file) win over its family's.
+law effort_outside_the_list_falls_to_the_default:
+  {(Pv.shown_effort(Pv.resolve_chosen("reasoning_effort = \"max\"", "",
+        "zai-glm-5-3", "", "", "", "", "")),
+      Pv.shown_effort(Pv.resolve_chosen("reasoning_effort = \"low\"", "",
+        "", "", "", "model = \"work/m\"", "[providers.work]
+base_url = \"http://x\"
+reasoning = true
+efforts = \"none,high\"", "")),
+      Pv.shown_effort(Pv.resolve_chosen("", "", "", "", "",
+        "model = \"work/m\"", "[providers.work]
+base_url = \"http://x\"
+reasoning = true
+efforts = \"minimal,low\"
+effort = \"minimal\"", "")))
+    == ("high", "high", "minimal") : String & String & String}
+
+# LAW: a model that does not reason (or an Anthropic one whose thinking
+# is none) has no effort: none is sent, whatever was asked.
+law effort_none_without_reasoning:
+  {(Pv.shown_effort(Pv.resolve_chosen("reasoning_effort = \"high\"", "", "",
+        "", "", "model = \"work/m\"", "[providers.work]
+base_url = \"http://x\"", "")),
+      Pv.shown_effort(Pv.resolve_chosen("reasoning_effort = \"high\"", "", "",
+        "", "", "model = \"work/m\"", "[providers.work]
+base_url = \"http://x\"
+api = \"anthropic\"
+reasoning = true
+thinking = \"none\"", "")))
+    == ("", "") : String & String}
+
+# LAW: the window (so the compaction threshold) follows the session's
+# model.
+law window_follows_the_choice:
+  {Pv.window_chosen("model = \"zai-glm-5-3\"", "", "", "", "", "", "")
+    == 128000 : U32}
+
+# LAW: the chat body sends the call's effort word as is.
+law oai_body_sends_the_effort:
+  {Api.api_body_for(Api.OpenAI{}, "m", Api.MFacts{True{}, 0n, "max_tokens", "", "", "low"},
+      W.parse_wire("MODEL default
+MSG user : hi
+END
+"))
+    == "{\"model\":\"m\",\"reasoning_effort\":\"low\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" : String}
+
+# LAW: Anthropic adaptive thinking carries the effort in
+# output_config; effort none turns thinking off (no thinking, no
+# output_config).
+law anth_adaptive_effort:
+  {(String.contains(Anth.api_body_anth_for("m", 0n, "adaptive", True{}, "low",
+        W.parse_wire("MODEL default
+MSG user : salut
+END
+")), "\"output_config\":{\"effort\":\"low\"}"),
+      String.contains(Anth.api_body_anth_for("m", 0n, "adaptive", True{}, "none",
+        W.parse_wire("MODEL default
+MSG user : salut
+END
+")), "thinking"))
+    == (True{}, False{}) : Bool & Bool}
+
+# LAW: a thinking budget follows the effort: low 4000, medium 8000,
+# high 16000, max half the output cap (each at most half of it).
+law anth_budget_follows_the_effort:
+# (shown: a Nat compared past 256n is too deep to check)
+  {[Nat.show(Anth.budget_for("low", 64000n)), Nat.show(Anth.budget_for("medium", 64000n)),
+      Nat.show(Anth.budget_for("high", 64000n)), Nat.show(Anth.budget_for("max", 64000n)),
+      Nat.show(Anth.budget_for("", 64000n)), Nat.show(Anth.budget_for("low", 6000n))]
+    == ["4000", "8000", "16000", "32000", "16000", "3000"] : List<&2, String>}

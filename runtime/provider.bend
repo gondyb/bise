@@ -640,6 +640,16 @@ def models_file() -> IO(String):
     m : Maybe<&2, String> <- models_file.read(String.is_empty(path), path)
     IO.pure(String, Maybe.default(&2, String, m, ""))
 
+# the session's choice (BISE-135: /model, /reasoning): the file the hub
+# writes (BISE_SESSION_CHOICE, rust/catalog Choice), re-read before
+# each call; unset or unreadable: "" (nothing picked)
+def choice_file() -> IO(String):
+  do IO<String>:
+    cr : Result<&1, &1, U32 & String, String> <- IO.get_env("BISE_SESSION_CHOICE")
+    +path : String <- IO.pure(String, P.env_or(cr, ""))
+    m : Maybe<&2, String> <- models_file.read(String.is_empty(path), path)
+    IO.pure(String, Maybe.default(&2, String, m, ""))
+
 # THE model resolution (runtime/provider-pure.bend, Pvp.resolve) - the
 # one function every surface uses: the provider call below AND the
 # harness-info line the clients (TUI, bend_client) display. Re-read on
@@ -654,15 +664,22 @@ def resolution() -> IO(Pvp.Resolved):
     ur : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_PROVIDER_URL")
     +cfgt : String <- St.read_cfg()
     +file : String <- models_file()
+    +choice : String <- choice_file()
     IO.pure(Pvp.Resolved,
-      Pvp.resolve(P.env_or(br, ""), P.env_or(mr, ""), P.env_or(ar, ""),
-        P.env_or(rr, ""), cfgt, file, P.env_or(ur, "")))
+      Pvp.resolve_chosen(choice, P.env_or(br, ""), P.env_or(mr, ""),
+        P.env_or(ar, ""), P.env_or(rr, ""), cfgt, file, P.env_or(ur, "")))
 
 # the model the clients show: its full id, provider/model
 def resolved_model() -> IO(String):
   do IO<String>:
     r : Pvp.Resolved <- resolution()
     IO.pure(String, Pvp.shown_model(r))
+
+# the reasoning effort the next call runs with ("": none, BISE-135)
+def resolved_effort() -> IO(String):
+  do IO<String>:
+    r : Pvp.Resolved <- resolution()
+    IO.pure(String, Pvp.shown_effort(r))
 
 # the context window of the model this REPL starts with (BISE-150): the
 # same inputs as resolution(); the compaction threshold's default
@@ -674,8 +691,9 @@ def resolved_window() -> IO(U32):
     rr : Result<&1, &1, U32 & String, String> <- IO.get_env("BISE_ROLE")
     +cfgt : String <- St.read_cfg()
     +file : String <- models_file()
-    IO.pure(U32, Pvp.window(P.env_or(br, ""), P.env_or(mr, ""),
-      P.env_or(ar, ""), P.env_or(rr, ""), cfgt, file))
+    +choice : String <- choice_file()
+    IO.pure(U32, Pvp.window_chosen(choice, P.env_or(br, ""),
+      P.env_or(mr, ""), P.env_or(ar, ""), P.env_or(rr, ""), cfgt, file))
 
 @unsafe
 def model_call(n: Out, +request: String) -> IO(Out & Rem.RemoteRes):

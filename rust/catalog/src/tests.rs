@@ -59,7 +59,7 @@ fn a_listed_model_takes_its_own_fields_then_its_providers() {
     let c = Catalog::builtin();
     let r = c.resolve("anthropic/claude-sonnet-4-5");
     assert_eq!(r.known, Known::Listed);
-    assert_eq!(r.caps, Caps { context: 200_000, max_output: 64_000, vision: true, reasoning: true, tools: true, thinking: "budget".into(), betas: ANTH_BETAS.into() });
+    assert_eq!(r.caps, Caps { context: 200_000, max_output: 64_000, vision: true, reasoning: true, tools: true, thinking: "budget".into(), betas: ANTH_BETAS.into(), efforts: String::new(), effort: String::new() });
     let r = c.resolve("openai/gpt-4.1");
     assert_eq!((r.caps.context, r.caps.reasoning, r.caps.vision), (1_047_576, false, true));
 }
@@ -567,4 +567,104 @@ fn voice_entries_stay_out_of_the_chat_list_and_the_handoff() {
     assert!(out.contains("openai/gpt-4o-transcribe") && !out.contains("anthropic  Anthropic"), "{out}");
     // elevenlabs and deepgram take a key through 'bise login'
     assert!(crate::auth_cli::check_provider(&s.catalog, "deepgram").is_ok());
+}
+
+// ---- BISE-135: the effort, the session's choice ----
+
+#[test]
+fn efforts_follow_the_family_and_the_model() {
+    let s = setup("");
+    let c = &s.catalog;
+    let opus = c.resolve("foundry/claude-opus-5-5");
+    assert_eq!(opus.efforts(), ANTHROPIC_EFFORTS.map(String::from).to_vec());
+    assert_eq!(opus.default_effort(), "high");
+    assert_eq!(c.resolve("openai/gpt-5").efforts(), CHAT_EFFORTS.map(String::from).to_vec());
+    // the provider's own list
+    let glm = c.resolve("mistral/zai-glm-5-3");
+    assert_eq!(glm.efforts(), ["none", "high"]);
+    assert_eq!(glm.effort_for("low"), "high", "a word it does not take: its default");
+    assert_eq!(glm.effort_for("none"), "none");
+    // no reasoning, no effort
+    let gpt41 = c.resolve("openai/gpt-4.1");
+    assert!(gpt41.efforts().is_empty());
+    assert_eq!(gpt41.effort_for("high"), "");
+    // config: a model's own list and default
+    let s = setup(
+        "[models.\"openai/o9\"]\nefforts = \"minimal, low,high\"\neffort = \"low\"\n\
+         [models.\"anthropic/claude-x\"]\nthinking = \"none\"\n",
+    );
+    let o9 = s.catalog.resolve("openai/o9");
+    assert_eq!(o9.efforts(), ["minimal", "low", "high"]);
+    assert_eq!(o9.default_effort(), "low");
+    assert!(s.catalog.resolve("anthropic/claude-x").efforts().is_empty(), "thinking none: no effort");
+    assert!(s.catalog.warnings.is_empty(), "{:?}", s.catalog.warnings);
+    let bad = setup("[models.\"openai/o9\"]\nefforts = \"a b\"\neffort = \"\"\n");
+    assert_eq!(bad.catalog.warnings.len(), 2, "{:?}", bad.catalog.warnings);
+}
+
+#[test]
+fn a_session_choice_wins_over_config_and_env() {
+    let env = |k: &str| (k == "BISE_MODEL").then(|| "openai/gpt-5".to_string());
+    let s = Setup::from_text(Some("agent_model = \"mistral/zai-glm-5-3\"\nreasoning_effort = \"medium\"\n"), &env);
+    let none = Choice::default();
+    let main = s.in_use("main", &none);
+    assert_eq!((main.model.name.as_str(), main.model_from), ("openai/gpt-5", "BISE_MODEL"));
+    assert_eq!((main.effort.as_str(), main.effort_from), ("medium", "config"));
+    // the agent's model does not take medium: its default
+    let agent = s.in_use("agent", &none);
+    assert_eq!((agent.model.name.as_str(), agent.model_from), ("mistral/zai-glm-5-3", "config"));
+    assert_eq!((agent.effort.as_str(), agent.effort_from), ("high", "model"));
+    // the session's choice first, aliases resolved
+    let c = Choice { model: "opus-5.5".into(), effort: "max".into() };
+    let u = s.in_use("agent", &c);
+    assert_eq!((u.model.name.as_str(), u.model_from), ("foundry/claude-opus-5-5", "session"));
+    assert_eq!((u.effort.as_str(), u.effort_from), ("max", "session"));
+    // an effort alone keeps the role's model
+    let e = s.in_use("main", &Choice { model: String::new(), effort: "low".into() });
+    assert_eq!((e.model.name.as_str(), e.effort.as_str()), ("openai/gpt-5", "low"));
+    // agent_reasoning_effort for the sub-agents only
+    let s = setup("reasoning_effort = \"low\"\nagent_reasoning_effort = \"max\"\n");
+    assert_eq!(s.in_use("main", &none).effort, "low");
+    assert_eq!(s.in_use("agent", &none).effort, "max");
+}
+
+#[test]
+fn a_choice_round_trips_through_its_file() {
+    let dir = std::env::temp_dir().join(format!("bise-choice-{}", std::process::id()));
+    let path = dir.join("agent/choice.toml");
+    assert_eq!(Choice::read(&path), Choice::default(), "no file: nothing picked");
+    let c = Choice { model: "anthropic/claude-sonnet-4-5".into(), effort: "low".into() };
+    c.write(&path).unwrap();
+    assert_eq!(Choice::read(&path), c);
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("model = \"anthropic/claude-sonnet-4-5\"\nreasoning_effort = \"low\"\n"), "{text}");
+    Choice { model: String::new(), effort: "max".into() }.write(&path).unwrap();
+    assert_eq!(Choice::read(&path), Choice { model: String::new(), effort: "max".into() });
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn set_config_key_keeps_the_rest_of_the_file() {
+    let t = "# mine\nmodel = \"a/b\" # old\nthreshold = 5\n\n[models.\"x/y\"]\nmodel = \"not top\"\n";
+    assert_eq!(
+        set_config_key(t, "model", "c/d"),
+        "# mine\nmodel = \"c/d\"\nthreshold = 5\n\n[models.\"x/y\"]\nmodel = \"not top\"\n"
+    );
+    assert_eq!(
+        set_config_key(t, "agent_model", "e/f"),
+        "# mine\nmodel = \"a/b\" # old\nthreshold = 5\n\nagent_model = \"e/f\"\n[models.\"x/y\"]\nmodel = \"not top\"\n"
+    );
+    assert_eq!(set_config_key("", "model", "c/d"), "model = \"c/d\"\n");
+    // what the Setup reads back
+    let s = setup(&set_config_key(t, "agent_model", "e/f"));
+    assert_eq!(s.agent_model, "e/f");
+}
+
+#[test]
+fn efforts_reach_the_handoff() {
+    let s = setup("[models.\"openai/o9\"]\nefforts = \"low,high\"\neffort = \"low\"\n");
+    let h = s.handoff_toml();
+    assert!(h.contains("[providers.mistral]") && h.contains("efforts = \"none,high\""), "{h}");
+    let o9 = h.split("[models.\"openai/o9\"]").nth(1).unwrap();
+    assert!(o9.contains("efforts = \"low,high\"\neffort = \"low\"\n"), "{o9}");
 }

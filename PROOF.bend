@@ -3912,3 +3912,30 @@ def Laws.family_headers_anthropic_betas():
 
 def Laws.api_body_anth_follows_facts():
   {==}
+
+def Laws.choice_model_first():
+  {==}
+
+def Laws.choice_empty_keeps_the_role_order():
+  {==}
+
+def Laws.effort_order():
+  {==}
+
+def Laws.effort_outside_the_list_falls_to_the_default():
+  {==}
+
+def Laws.effort_none_without_reasoning():
+  {==}
+
+def Laws.window_follows_the_choice():
+  {==}
+
+def Laws.oai_body_sends_the_effort():
+  {==}
+
+def Laws.anth_adaptive_effort():
+  {==}
+
+def Laws.anth_budget_follows_the_effort():
+  {==}
