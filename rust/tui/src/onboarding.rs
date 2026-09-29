@@ -233,6 +233,8 @@ pub(crate) struct Onb {
     pub step: Step,
     /// when the step started (ms): its animations count from there
     pub since: u64,
+    /// a key other than enter on the welcome: it shows all of it at once
+    pub rushed: bool,
     pub detected: Option<Mode>,
     /// where the mode at start came from
     pub theme_from: ThemeFrom,
@@ -307,6 +309,7 @@ impl Onb {
         let mut o = Onb {
             step: Step::Welcome,
             since: 0,
+            rushed: false,
             detected: crate::theme_detect::detected(),
             theme_from: theme_from(env, &home),
             start: theme::mode(),
@@ -362,6 +365,7 @@ impl Onb {
     fn go(&mut self, step: Step, now: u64) {
         self.step = step;
         self.since = now;
+        self.rushed = false;
     }
 
     /// Go on: the next step, or done after the last.
@@ -411,6 +415,11 @@ impl Onb {
                 }
                 _ => self.advance(now),
             },
+            // any other key: no waiting for the typing
+            (Step::Welcome, k) if k != KeyCode::Enter => {
+                self.rushed = true;
+                Out::Stay
+            }
             (Step::Folder, KeyCode::Char('o')) => {
                 self.other_folder = true;
                 Out::Stay
@@ -503,9 +512,11 @@ const TAGLINE: &str = "ideas in. little kisses out. also pull requests.";
 const PRESS: &str = "press enter ↵";
 const HI_AT: u64 = 300;
 const KISS_AT: u64 = HI_AT + 12 * 70 + 250;
-/// the name gloss, faint, under the first line, just after the pop
+/// the name's definition, a blank row under the first line, just after the
+/// pop: its four lines one by one, `GLOSS_STEP` ms apart
 const GLOSS_AT: u64 = KISS_AT + 900;
-const TAG_AT: u64 = KISS_AT + 1900;
+const GLOSS_STEP: u64 = 300;
+const TAG_AT: u64 = GLOSS_AT + 3 * GLOSS_STEP + 1000;
 const PRESS_AT: u64 = TAG_AT + (TAGLINE.len() as u64 - 1) * 35 + 500;
 /// when the welcome is fully written
 #[cfg(test)]
@@ -571,10 +582,49 @@ fn kiss(t: u64) -> Span<'static> {
     }
 }
 
-/// `bise /beez/ · french: a kiss on the cheek. also a north wind.` (the
-/// `·` follows BISE_ASCII)
-fn gloss() -> String {
-    format!("bise /beez/ {} french: a kiss on the cheek. also a north wind.", theme::glyph("·"))
+/// The meanings of the definition, the third (what bise is) in text color.
+const MEANINGS: [&str; 3] =
+    ["a quick kiss on the cheek :*", "a brisk north wind", "a terminal where your agents ship while you think"];
+
+/// The name's definition, as on the landing and the README: `bise` bold,
+/// `/beez/ · french, n.` dim (the `·` follows BISE_ASCII), then the three
+/// numbered meanings, dim, `:*` in accent. A block centered as a whole, its
+/// lines left-aligned inside (padded to the widest); a meaning wider than
+/// `w` wraps with a 3-column hanging indent. Line `i` shows from
+/// `GLOSS_AT + i * GLOSS_STEP`; before, a blank row holds its place.
+fn gloss(t: u64, w: u16) -> Vec<Line<'static>> {
+    let mut rows: Vec<(usize, Vec<Span<'static>>)> = vec![(
+        0,
+        vec![
+            bold("bise", theme::text()),
+            s(format!(" /beez/ {} french, n.", theme::glyph("·")), theme::dim()),
+        ],
+    )];
+    for (i, m) in MEANINGS.iter().enumerate() {
+        let c = if i == 2 { theme::text() } else { theme::dim() };
+        for (k, r) in words_in(m, (w as usize).saturating_sub(3)).into_iter().enumerate() {
+            let r = format!("{}{}", if k == 0 { format!("{}. ", i + 1) } else { "   ".to_string() }, r);
+            let spans = match r.strip_suffix(":*") {
+                Some(head) => vec![s(head.to_string(), c), bold(theme::glyph(theme::G_MAIN), theme::accent())],
+                None => vec![s(r, c)],
+            };
+            rows.push((i + 1, spans));
+        }
+    }
+    let width = |sp: &[Span]| sp.iter().map(|x| x.content.width()).sum::<usize>();
+    let block = rows.iter().map(|(_, sp)| width(sp)).max().unwrap_or(0);
+    rows.into_iter()
+        .map(|(i, mut sp)| {
+            if t < GLOSS_AT + i as u64 * GLOSS_STEP {
+                return Line::raw("");
+            }
+            let pad = block - width(&sp);
+            if pad > 0 {
+                sp.push(Span::raw(" ".repeat(pad)));
+            }
+            Line::from(sp)
+        })
+        .collect()
 }
 
 /// `press enter ↵` typed, dim, `enter` in text color.
@@ -593,12 +643,13 @@ fn press(t: u64) -> Line<'static> {
     Line::from(spans)
 }
 
-fn welcome(t: u64, gap: usize) -> Vec<Line<'static>> {
-    let mut v = vec![
-        Line::from(vec![bold(typed(HI, HI_AT, 70, t).to_string(), theme::text()), kiss(t)]),
-        Line::from(s(if t >= GLOSS_AT { gloss() } else { String::new() }, theme::dim())),
-    ];
-    blanks(&mut v, gap);
+/// The welcome in a column `w` wide: hi, a blank row, the definition, a
+/// blank row, the tagline, `gap` rows, the hint.
+fn welcome(t: u64, gap: usize, w: u16) -> Vec<Line<'static>> {
+    let mut v = vec![Line::from(vec![bold(typed(HI, HI_AT, 70, t).to_string(), theme::text()), kiss(t)])];
+    blanks(&mut v, 1);
+    v.extend(gloss(t, w));
+    blanks(&mut v, 1);
     v.push(Line::from(s(typed(TAGLINE, TAG_AT, 35, t), theme::text())));
     blanks(&mut v, gap);
     v.push(press(t));
@@ -945,7 +996,7 @@ pub(crate) fn draw(f: &mut Frame, o: &Onb, now: u64) {
     let col = column(body);
     let centered = matches!(o.step, Step::Welcome | Step::Theme);
     let (lines, extra) = match o.step {
-        Step::Welcome => (welcome(t, gap), 0),
+        Step::Welcome => (welcome(if o.rushed { u64::MAX } else { t }, gap, col.width), 0),
         // the previews (1 blank row above), then the key line after a gap
         Step::Theme => (theme_text(o), 1 + PREVIEW_H + gap as u16 + 1),
         Step::Model => (model_lines(o, col.width, gap), 0),
@@ -1165,16 +1216,57 @@ mod tests {
         let o = onb(&h, "/w");
         let sc = screen(&o, 1000, 100, 30);
         assert!(sc.contains("hi, i'm b") && !sc.contains(":*"), "{}", sc);
-        // the gloss comes after the pop, before the tagline, right under the name
-        let gloss = "bise /beez/ · french: a kiss on the cheek. also a north wind.";
+        // the definition comes after the pop, line by line, before the
+        // tagline, a blank row under the name
+        let gloss = [
+            "bise /beez/ · french, n.",
+            "1. a quick kiss on the cheek :*",
+            "2. a brisk north wind",
+            "3. a terminal where your agents ship while you think",
+        ];
         let sc = screen(&o, KISS_AT + 700, 100, 30);
-        assert!(sc.contains("hi, i'm bise :*") && !sc.contains(gloss), "{}", sc);
-        let sc = screen(&o, GLOSS_AT, 100, 30);
-        assert!(sc.contains(gloss) && !sc.contains("ideas in."), "{}", sc);
-        let rows: Vec<&str> = sc.lines().collect();
+        assert!(sc.contains("hi, i'm bise :*") && !sc.contains("bise /beez/"), "{}", sc);
+        let sc = screen(&o, GLOSS_AT + GLOSS_STEP, 100, 30);
+        assert!(sc.contains(gloss[1]) && !sc.contains(gloss[2]), "one line at a time: {}", sc);
+        let rows_at = |t: u64| {
+            let sc = screen(&o, t, 100, 30);
+            let rows: Vec<String> = sc.lines().map(str::to_string).collect();
+            (sc, rows)
+        };
+        let (sc, rows) = rows_at(GLOSS_AT + 3 * GLOSS_STEP);
+        assert!(!sc.contains("ideas in."), "{}", sc);
         let hi = rows.iter().position(|r| r.contains("hi, i'm bise :*")).unwrap();
-        assert!(rows[hi + 1].contains(gloss), "{}", sc);
-        assert_eq!(welcome(GLOSS_AT, 2)[1].spans[0].style.fg, Some(theme::dim()), "the gloss is read: dim");
+        assert!(rows[hi + 1].trim().is_empty(), "{}", sc);
+        // a block centered as a whole, its lines left-aligned inside
+        let left = rows[hi + 2].find("bise /beez/").unwrap();
+        for (k, g) in gloss.iter().enumerate() {
+            assert_eq!(rows[hi + 2 + k].find(g), Some(left), "{}\n{}", g, sc);
+        }
+        let right = left + gloss[3].len();
+        assert!(left.abs_diff(100 - right) <= 1, "centered: {}", sc);
+        // the layout does not move when the lines come
+        let (_, before) = rows_at(GLOSS_AT - 1);
+        assert_eq!(before.iter().position(|r| r.contains("hi, i'm bise :*")), Some(hi));
+        let w = welcome(GLOSS_AT + 3 * GLOSS_STEP, 2, 64);
+        let fg = |l: usize, sp: usize| w[l].spans[sp].style.fg;
+        assert!(w[2].spans[0].style.add_modifier.contains(Modifier::BOLD), "bise: bold");
+        assert_eq!((fg(2, 1), fg(3, 0), fg(4, 0)), (Some(theme::dim()), Some(theme::dim()), Some(theme::dim())), "read: dim");
+        assert_eq!(fg(3, 1), Some(theme::accent()), ":* in accent");
+        assert_eq!(fg(5, 0), Some(theme::text()), "what bise is: text");
+        // narrow: the meanings wrap with a hanging indent, the block still aligned
+        let sc = screen(&o, WELCOME_END, 36, 30);
+        assert!(flat(&sc).contains("3. a terminal where your agents ship while you think"), "{}", sc);
+        let r3 = sc.lines().position(|r| r.contains("3. a terminal")).unwrap();
+        let rows: Vec<&str> = sc.lines().collect();
+        let x = rows[r3].find("3.").unwrap();
+        assert_eq!(rows[r3 + 1].find(|c: char| c != ' '), Some(x + 3), "hanging indent: {}", sc);
+        assert_eq!(rows[r3 - 1].find("2."), Some(x), "{}", sc);
+        // any key but enter shows it all at once
+        let mut r = onb(&h, "/w");
+        assert_eq!(r.on_key(key(KeyCode::Char('x')), 5, &env_of(HashMap::new())), Out::Stay);
+        assert_eq!(r.step, Step::Welcome);
+        let sc = screen(&r, 10, 100, 30);
+        assert!(sc.contains(gloss[3]) && sc.contains("press enter ↵"), "{}", sc);
         let sc = screen(&o, WELCOME_END, 100, 30);
         for s in ["hi, i'm bise :*", "ideas in. little kisses out. also pull requests.", "press enter ↵", "● ○ ○ ○ ○ ○"] {
             assert!(sc.contains(s), "{}\n{}", s, sc);

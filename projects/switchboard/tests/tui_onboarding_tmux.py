@@ -74,12 +74,13 @@ def main():
         sc = t.wait("press enter ↵", 30)
         time.sleep(0.5)
         sc = t.screen()
-        for s in ["hi, i'm bise :*", "bise /beez/ · french: a kiss on the cheek. also a north wind.",
+        for s in ["hi, i'm bise :*", "bise /beez/ · french, n.", "1. a quick kiss on the cheek :*",
+                  "2. a brisk north wind", "3. a terminal where your agents ship while you think",
                   "ideas in. little kisses out. also pull requests.", "● ○ ○ ○ ○ ○"]:
             assert s in flat(sc), sc
         rows = sc.splitlines()
         hi = next(i for i, r in enumerate(rows) if "hi, i'm bise :*" in r)
-        assert "bise /beez/" in rows[hi + 1], sc      # the gloss, right under the name
+        assert "bise /beez/" in rows[hi + 2], sc      # the definition, a blank row under the name
         shot("1-welcome", sc)
         # 2 theme: two previews, ←→ switches live
         t.keys("Enter")
