@@ -85,9 +85,9 @@ pub(crate) fn ingest_line(app: &mut App, line: String) {
 /// alone, releases, the typed text: ctrlhint.rs).
 /// Fallible, unlike `ratatui::init` (which panics), and without its
 /// panic hook: `crash::install` restores every one of these modes.
-fn init_terminal() -> io::Result<ratatui::DefaultTerminal> {
+fn init_terminal() -> io::Result<crate::links::Tui> {
     use crossterm::terminal::{enable_raw_mode, EnterAlternateScreen};
-    let setup = || -> io::Result<ratatui::DefaultTerminal> {
+    let setup = || -> io::Result<crate::links::Tui> {
         enable_raw_mode()?;
         // BISE-02: light or dark from the terminal background, before the alternate screen
         crate::theme_detect::init();
@@ -97,7 +97,7 @@ fn init_terminal() -> io::Result<ratatui::DefaultTerminal> {
         // BISE-107: the gust stops while the terminal is not focused
         let _ = crossterm::execute!(io::stdout(), crossterm::event::EnableFocusChange);
         push_keyboard_flags();
-        ratatui::Terminal::new(ratatui::backend::CrosstermBackend::new(io::stdout()))
+        ratatui::Terminal::new(crate::links::LinkBackend::new(io::stdout()))
     };
     setup().inspect_err(|_| crash::restore_terminal())
 }
@@ -234,6 +234,7 @@ impl Startup {
 /// passes: the theme's ground on every cell (BISE-92), zen's fade while
 /// you type (BISE-121), `BISE_ASCII`.
 pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
+    crate::links::begin_frame(); // the feed says where its links are
     sb::draw_sb(app, f);
     crate::hints::draw(f); // BISE-61: one-time hints
     crate::ctrlhint::draw(app, f.buffer_mut()); // ctrl held: the key hints
@@ -310,7 +311,7 @@ fn zen_input(app: &App, ev: &Event, before: &Before) -> crate::zen::Input {
     }
 }
 
-fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result<()> {
+fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
     let mut draw_crashes = 0u32;
     // the gust's motion (BISE-107): the last draw's time, the env once
     let mut last_draw = Duration::ZERO;

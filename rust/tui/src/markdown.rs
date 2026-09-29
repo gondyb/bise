@@ -25,16 +25,108 @@ pub(crate) fn unescape_md(s: &str) -> String {
     out
 }
 
+/// A markdown link `[label](url "title")` at `cs[i]` (`[`): the label,
+/// the url and where the link ends.
+fn md_link_at(cs: &[char], i: usize) -> Option<(String, String, usize)> {
+    let close = (i + 1..cs.len()).find(|k| cs[*k] == ']' || cs[*k] == '[')?;
+    if cs[close] != ']' || close == i + 1 || cs.get(close + 1) != Some(&'(') {
+        return None;
+    }
+    // the url's parentheses may nest: `(https://en.wikipedia.org/wiki/A_(b))`
+    let mut depth = 0usize;
+    let mut end = None;
+    for (k, c) in cs.iter().enumerate().skip(close + 2) {
+        match c {
+            '(' => depth += 1,
+            ')' if depth == 0 => {
+                end = Some(k);
+                break;
+            }
+            ')' => depth -= 1,
+            _ => {}
+        }
+    }
+    let end = end?;
+    let inner: String = cs[close + 2..end].iter().collect();
+    let url = inner.split_whitespace().next().unwrap_or("");
+    let url = url.strip_prefix('<').and_then(|u| u.strip_suffix('>')).unwrap_or(url);
+    let label: String = cs[i + 1..close].iter().collect();
+    crate::links::linkable(url).then(|| (label, url.to_string(), end + 1))
+}
+
+/// An autolink `<https://…>` at `cs[i]` (`<`): the url and where it ends.
+fn autolink_at(cs: &[char], i: usize) -> Option<(String, usize)> {
+    let close = (i + 1..cs.len()).find(|k| cs[*k] == '>' || cs[*k] == '<' || cs[*k].is_whitespace())?;
+    if cs[close] != '>' {
+        return None;
+    }
+    let url: String = cs[i + 1..close].iter().collect();
+    crate::links::linkable(&url).then_some((url, close + 1))
+}
+
+/// The spans of a link: its label (inline styles kept), each span tagged
+/// and underlined; with OSC 8 off, ` (url)` dim after a label that is not
+/// the url.
+fn link_spans(spans: &mut Vec<Span<'static>>, label: &str, url: &str, fg: Color, base: Style) {
+    let tag = crate::links::add(url);
+    let st = crate::links::link_style(base, fg, tag);
+    for sp in spans_of(label, st, false) {
+        let s = crate::links::link_style(sp.style, sp.style.fg.unwrap_or(fg), tag);
+        spans.push(Span::styled(sp.content, s));
+    }
+    if !crate::links::osc8() && label != url {
+        spans.push(Span::styled(format!(" ({})", url), base.fg(theme::dim())));
+    }
+}
+
 // inline styles in the OpenCode markdown colors: **strong** is
 // markdownStrong (orange), *emph* is markdownEmph (yellow), `code` is
-// markdownCode (green)
+// markdownCode (green); links (`[label](url)`, `<url>`, a bare
+// http(s) url) underlined, tagged for the click and OSC 8 (links.rs)
 pub(crate) fn inline_spans(s: &str, base: Style) -> Vec<Span<'static>> {
+    spans_of(s, base, true)
+}
+
+/// The inline spans of `s`; `links`: false inside a link's label.
+fn spans_of(s: &str, base: Style, links: bool) -> Vec<Span<'static>> {
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut plain = String::new();
     let cs: Vec<char> = s.chars().collect();
     let mut i = 0;
     while i < cs.len() {
         let c = cs[i];
+        if c == '[' && links {
+            if let Some((label, url, end)) = md_link_at(&cs, i) {
+                if !plain.is_empty() {
+                    spans.push(Span::styled(std::mem::take(&mut plain), base));
+                }
+                link_spans(&mut spans, &label, &url, base.fg.unwrap_or(theme::text()), base);
+                i = end;
+                continue;
+            }
+        }
+        if c == '<' && links {
+            if let Some((url, end)) = autolink_at(&cs, i) {
+                if !plain.is_empty() {
+                    spans.push(Span::styled(std::mem::take(&mut plain), base));
+                }
+                link_spans(&mut spans, &url, &url, base.fg.unwrap_or(theme::text()), base);
+                i = end;
+                continue;
+            }
+        }
+        if links && (c == 'h' || c == 'H') {
+            if let Some(n) = crate::links::bare_at(&cs, i) {
+                if !plain.is_empty() {
+                    spans.push(Span::styled(std::mem::take(&mut plain), base));
+                }
+                let url: String = cs[i..i + n].iter().collect();
+                let tag = crate::links::add(&url);
+                spans.push(Span::styled(url, crate::links::link_style(base, theme::dim(), tag)));
+                i += n;
+                continue;
+            }
+        }
         if c == '`' {
             if let Some(j) = (i + 1..cs.len()).find(|k| cs[*k] == '`') {
                 if !plain.is_empty() {

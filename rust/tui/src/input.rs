@@ -28,15 +28,30 @@ pub(crate) fn feed_selection_text(app: &mut App) -> Option<String> {
     let sel = app.feed_sel?;
     let ((e0, r0, c0), (e1, r1, c1)) = sel.range();
     let (debug, w, tick) = (app.debug, app.area_w, app.tick);
-    let mut rows: Vec<Line<'static>> = Vec::new();
-    for i in e0..=e1.min(app.events.len().saturating_sub(1)) {
+    let last = e1.min(app.events.len().saturating_sub(1));
+    for i in e0..=last {
         ensure_rows(&app.events, &mut app.cache, i, debug, w, tick);
+    }
+    let mut rows: Vec<Line<'static>> = Vec::new();
+    // per event: the rows taken, the first one, its rows and urls (the copy
+    // writes a link's url after its label, links.rs)
+    let mut evs: Vec<(usize, usize, &[Line<'static>], &[String])> = Vec::new();
+    for i in e0..=last {
         let Some(er) = app.cache.get(i).and_then(|c| c.as_ref()) else { continue };
         let from = if i == e0 { r0 } else { 0 };
         let to = if i == e1 { (r1 + 1).min(er.rows.len()) } else { er.rows.len() };
-        rows.extend(er.rows.get(from..to).unwrap_or(&[]).iter().cloned());
+        let taken = er.rows.get(from..to).unwrap_or(&[]);
+        rows.extend(taken.iter().cloned());
+        evs.push((taken.len(), from, &er.rows, &er.urls));
     }
-    Some(feedsel::selection_text(&rows, c0, c1.saturating_add(1)))
+    let (rows, to) = crate::links::with_urls(rows, &evs, c0, c1.saturating_add(1));
+    Some(feedsel::selection_text(&rows, c0, to))
+}
+
+/// The url of the link at column `col` of row `row` of event `i`.
+pub(crate) fn feed_link_at(app: &App, i: usize, row: usize, col: usize) -> Option<String> {
+    let er = app.cache.get(i)?.as_ref()?;
+    crate::links::url_at(&er.rows, &er.urls, row, col)
 }
 
 /// Copies to the system clipboard and says so in the status row.
@@ -305,7 +320,18 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
             }
             // a plain click: expand/collapse the section (on the first
             // line of an open fold, its row says which: the fold or the line)
-            let Some((i, row, _)) = app.feed_sel.take().map(|s| s.anchor) else { return };
+            // a plain click on a link opens it (links.rs); cmd+click is
+            // the terminal's own (Ghostty keeps the release)
+            let Some((i, row, col)) = app.feed_sel.take().map(|s| s.anchor) else { return };
+            if let Some(url) = feed_link_at(app, i, row, col) {
+                let note = if crate::links::open(&url) {
+                    format!("opening {}", url)
+                } else {
+                    format!("could not open {}", url)
+                };
+                flash(app, note);
+                return;
+            }
             crate::feed::toggle_at(&mut app.events, &mut app.cache, i, row);
         }
         _ => {}

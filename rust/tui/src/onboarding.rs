@@ -984,7 +984,7 @@ pub(crate) fn draw(f: &mut Frame, o: &Onb, now: u64) {
 /// skipped; `pump` keeps the hub lines flowing meanwhile. Marks it seen.
 pub(crate) fn show(
     app: &mut App,
-    terminal: &mut ratatui::DefaultTerminal,
+    terminal: &mut crate::links::Tui,
     pump: &mut dyn FnMut(&mut App),
 ) -> io::Result<()> {
     let t0 = Instant::now();

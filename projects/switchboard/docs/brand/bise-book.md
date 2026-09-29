@@ -460,6 +460,19 @@ The same three levels everywhere, in main and inside an agent.
   width (`---:`, `:---:`); up to the code measure, then the widest column
   shrinks and wraps inside it (a blank line between rows once one wraps);
   too many columns: one `title` + `  key  value` block per row.
+- **Links** in messages (BISE-211): `[label](url)` shows the label,
+  `<https://…>` and a bare `http(s)://…` the url (trailing `.,;:!?` and
+  an unbalanced `)` stay text); http, https, mailto, file only; never
+  inside `code`. Look: the label in the text color (a bare url dim),
+  underlined, the underline in the accent (SGR 58; light theme: the
+  light accent); `NO_COLOR` and ASCII: a plain underline. Each cell is an
+  OSC 8 hyperlink (Ghostty, kitty, iTerm2, WezTerm, tmux 3.4+ with the
+  `hyperlinks` feature), a wrapped link is one link on each of its rows.
+  A plain click (press and release, no drag) opens it (`open`,
+  `xdg-open`, or `BISE_OPEN`) and says `opening <url>`; the terminal's
+  own cmd+click works too. The copy of a selection writes
+  `label (url)`. `BISE_HYPERLINKS=0`: no OSC 8, and a label shows
+  `label (url)`, the url dim.
 
 ## 12. Cards
 

@@ -71,6 +71,7 @@ mod usage;
 mod models;
 mod term;
 mod feedsel;
+mod links;
 mod keyprobe;
 pub mod timing;
 mod crash;
@@ -102,3 +103,5 @@ pub use crash::install as install_crash_hook;
 mod at_popup_tests;
 #[cfg(test)]
 mod fuzz_tests;
+#[cfg(test)]
+mod links_tests;

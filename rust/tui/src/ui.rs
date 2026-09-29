@@ -354,6 +354,28 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect, bar: Option<Rect>) {
         app.unseen = 0;
     }
     frame.render_widget(Paragraph::new(Text::from(vis)), text_area);
+    // the visible links, for the OSC 8 of the backend (links.rs)
+    for (y, (&i, &ri)) in vis_events.iter().zip(&vis_rows).enumerate() {
+        let Some(er) = app.cache.get(i).and_then(|c| c.as_ref()) else { continue };
+        if er.urls.is_empty() {
+            continue;
+        }
+        for (a, b, k) in crate::links::row_links(&er.rows, &er.urls, ri) {
+            let x0 = text_area.x as usize + a;
+            let x1 = (text_area.x as usize + b).min(text_area.right() as usize);
+            if x0 >= x1 {
+                continue;
+            }
+            crate::links::push_hit(crate::links::Hit {
+                y: text_area.y + y as u16,
+                x0: x0 as u16,
+                x1: x1 as u16,
+                tag: (k % 127 + 1) as u8,
+                url: er.urls[k].clone(),
+                id: format!("bise{}-{}", i, k),
+            });
+        }
+    }
 
     // the scrollbar (BISE-90, main's call): only while scrolled up from
     // the bottom, faint, one column, no arrows; never at the tail
