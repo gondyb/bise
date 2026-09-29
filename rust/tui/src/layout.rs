@@ -5,12 +5,13 @@
 //! row, the queue, the strip, the composer block and the hints take their
 //! x and width from here.
 
-/// The reading column: 3 columns of lead (the glyph column) + 76 of text.
-pub(crate) const COLUMN: u16 = 79;
+/// The reading column: 3 columns of lead (the glyph column) + 88 of text
+/// (79 until BISE-101: +15%).
+pub(crate) const COLUMN: u16 = 91;
 /// Tables and code start at the column's x and may run this wide.
 pub(crate) const WIDE: u16 = 103;
 /// The feed area must be at least this wide for the column to center.
-const CENTER_FROM: u16 = 83;
+const CENTER_FROM: u16 = 95;
 /// The frame (book §8 "The frame") shows from this size up; under it a
 /// header row, a plain divider and margins of `BARE`.
 const FRAME_W: u16 = 60;
@@ -91,8 +92,8 @@ pub(crate) fn framed(width: u16, height: u16) -> bool {
 /// at 16) behind a rule at F − 33, the history ending at F − 36; 90–99 a
 /// 24-column panel (rule at F − 29, names cut at 12); < 90 none.
 /// Unframed: margins of 1, the same panels 3 (2) columns from the feed,
-/// no rule. The column is 79 wide at most, centered in the feed area when
-/// that is at least 83 wide, else at its left.
+/// no rule. The column is 91 wide at most, centered in the feed area when
+/// that is at least 95 wide, else at its left.
 pub(crate) fn cols(width: u16, height: u16) -> Cols {
     let framed = framed(width, height);
     let margin = if framed { PAD } else { BARE };
@@ -171,8 +172,14 @@ mod tests {
         assert_eq!(c.panel, Some(Panel { x: 129, w: 28, name_cut: 16, rule: Some(127) }));
         assert_eq!(c.panel.unwrap().x + 28 - 1, 160 - 4);
         assert_eq!(c.feed_x + c.feed_w - 1, 160 - 36);
-        assert_eq!((c.feed_w, c.col_w, c.x0), (122, 79, 3 + (122 - 79) / 2));
-        assert_eq!(c.wide_w, 3 + 122 - c.x0);
+        assert_eq!((c.feed_w, c.col_w, c.x0), (122, 91, 3 + (122 - 91) / 2));
+        // tables and code: to the feed area's edge, 103 at most
+        assert_eq!(c.wide_w, (3 + 122 - c.x0).min(WIDE));
+        // 130: feed area 92, too narrow to center (BISE-101: from 95)
+        let c = cols(130, 40);
+        assert_eq!((c.feed_w, c.col_w, c.x0), (92, 91, 3));
+        let c = cols(133, 40);
+        assert_eq!((c.feed_w, c.col_w, c.x0), (95, 91, 3 + 2));
         // 100: feed area 62, not centered
         let c = cols(100, 40);
         assert_eq!((c.feed_w, c.x0, c.col_w), (62, 3, 62));

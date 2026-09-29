@@ -131,7 +131,7 @@ pub(crate) fn ev_lines_t(ev: &Ev, tick: u32, width: usize) -> Vec<Line<'static>>
 // ---- the measure (book §11) ----
 
 /// Prose (messages, reports, notices) wraps at this many columns.
-pub(crate) const PROSE_MAX: usize = 79;
+pub(crate) const PROSE_MAX: usize = 91;
 /// Code (scripts, diffs, outputs) runs up to this many columns.
 pub(crate) const CODE_MAX: usize = 103;
 

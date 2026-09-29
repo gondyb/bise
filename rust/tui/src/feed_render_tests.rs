@@ -461,8 +461,8 @@ fn measure_feed() -> Vec<Ev> {
 }
 
 #[test]
-fn prose_wraps_at_79_and_code_at_103() {
-    // the reading column (book §8): 3 lead + 76 of text; code to 103
+fn prose_wraps_at_91_and_code_at_103() {
+    // the reading column (book §8, BISE-101): 3 lead + 88 of text; code to 103
     let (pm, cm) = (crate::render::PROSE_MAX, crate::render::CODE_MAX);
     for width in [60usize, 100, 160] {
         let events = measure_feed();
@@ -707,7 +707,7 @@ fn inside_an_agent_matches_the_mockup() {
         "│ async function main() {",
         "│ ↳ github.search_issues ✓",
         " ± edit web/src/auth/session.ts ✓ +2 −1 ▸",
-        " found it: safari drops SameSite=None cookies without Secure. added secure:",
+        " found it: safari drops SameSite=None cookies without Secure. added secure: true; the",
     ];
     for w in want {
         assert!(rows.iter().any(|r| r == w), "{w:?} missing:\n{}", rows.join("\n"));
@@ -1124,13 +1124,11 @@ fn a_busy_hour_matches_the_mockup() {
         "".into(),
         "│  ship the v2 api: endpoints, docs, sdk, migration, the lot. ✓✓".into(),
         "".into(),
-        " that's 30 pieces. i split it: 12 endpoints, 8 sdk, 6 docs, 4 migration.".into(),
-        " starting them.".into(),
+        " that's 30 pieces. i split it: 12 endpoints, 8 sdk, 6 docs, 4 migration. starting them.".into(),
         "".into(),
         " │ ▸ 47 messages between 30 agents".into(),
         "".into(),
-        " the 12 endpoint agents agreed on one error format; i picked it for the sdk".into(),
-        " agents too.".into(),
+        " the 12 endpoint agents agreed on one error format; i picked it for the sdk agents too.".into(),
         "".into(),
         " │ ▸ 23 messages between 9 agents".into(),
         "".into(),
