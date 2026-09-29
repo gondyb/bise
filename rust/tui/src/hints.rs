@@ -78,7 +78,7 @@ pub(crate) fn store_path() -> Option<PathBuf> {
         if env(crate::onboarding::ENV).is_some_and(|v| matches!(v.trim(), "off" | "0" | "no")) {
             return None;
         }
-        Some(crate::onboarding::flag_path(&env).with_file_name("hints.json"))
+        Some(crate::onboarding::state_path(&env, "hints.json"))
     }
 }
 

@@ -463,6 +463,15 @@ The same three levels everywhere, in main and inside an agent.
   the model: …". A message at idle goes straight to `✓✓`. If the agent is
   gone: `✗ not delivered: auth-fix stopped. ⏎ send again · esc drop` (**⚠**
   new).
+- **Nothing typed is lost** (BISE-120a). Each agent's draft (its text,
+  its cursor, the images it names while their stored copy exists) and the
+  sent prompts (`↑`/`↓`, the newest 50) are kept per workspace on disk,
+  in the Switchboard state root (`drafts/<folder>-<hash>.json`, mode 600).
+  A draft is written once it has not moved for 300 ms, and when the UI
+  ends (quit, `/restart`, a version switch); a crash loses at most those
+  300 ms. At the next launch every draft is back in its composer and `↑`
+  recalls the prompts sent before. Sending a draft takes it off the disk
+  at once. No message about it: it just works.
 - **Queued messages** (BISE-89, after Codex). During a turn, `tab` keeps
   the composer text for after the turn instead of steering: it stays in
   the TUI, **nothing goes to the hub** until it leaves the queue. The queue
@@ -581,6 +590,7 @@ replays it (**⚠** proposed command).
 | `⏎` | send to the agent in view; during a turn, steer | — |
 | `tab` | during a turn: queue the message for after it | shown above the composer (BISE-89) |
 | `↑` in an empty composer | edit the newest queued message (then the history) | new (BISE-89) |
+| `↑` / `↓` at the composer's first / last row | the sent prompts, newest first (50 per workspace, kept across launches) | kept on disk (BISE-120a) |
 | `@name …` | direct message from main | — |
 | `/` | the commands, then each argument of a command (`/theme` light · dark · auto, the agents of `/drop` `/rename` `/isolate`, the archived ones of `/restore`, the cards of `/close` `/answer`, the versions of `/version` `/restart`, `/plugins` and its plugins): tab completes, ⏎ runs once nothing required is left | arguments new (BISE-117) |
 | `ctrl+c` | interrupt; again (or idle) quit, agents keep running | — |

@@ -328,6 +328,8 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
                 Err(c) => report_crash(app, &c, "an input event"),
             }
         }
+        // BISE-120a: the drafts on disk, once they stop moving
+        sb::drafts::tick(app);
         app.tick = app.tick.wrapping_add(1);
     }
     Ok(())

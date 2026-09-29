@@ -195,6 +195,12 @@ pub(crate) fn set_ui_thread(active: bool) {
     *lock(&UI_THREAD) = active.then(|| std::thread::current().id());
 }
 
+/// A line for the feed from outside the UI flow (a draft not saved,
+/// sb/drafts.rs): shown with the background panics.
+pub(crate) fn note(line: String) {
+    lock(&NOTES).push(line);
+}
+
 /// The background panics since the last call, as feed lines.
 pub(crate) fn take_notes() -> Vec<String> {
     std::mem::take(&mut *lock(&NOTES))

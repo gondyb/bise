@@ -140,7 +140,11 @@ pub fn run_switchboard(
     let mut app = sb_app(sb, rx, debug, area_w, voice, workspace);
     let interactive = io::stdout().is_terminal() && io::stdin().is_terminal();
     if interactive {
-        run_tui(&mut app)
+        // BISE-120a: the drafts and the sent prompts come back
+        super::drafts::restore(&mut app);
+        let r = run_tui(&mut app);
+        super::drafts::flush(&app);
+        r
     } else {
         line_mode(&mut app)
     }

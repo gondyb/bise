@@ -58,6 +58,13 @@ pub(crate) fn flag_path(env: Env) -> PathBuf {
     root.join("switchboard").join("onboarded")
 }
 
+/// A file of the TUI's own state, next to the flag (`hints.json`, the
+/// drafts): the one place to change when the state root moves (~/.bise).
+#[cfg_attr(test, allow(dead_code))] // its callers read a test folder under cargo test
+pub(crate) fn state_path(env: Env, name: &str) -> PathBuf {
+    flag_path(env).with_file_name(name)
+}
+
 /// Show it at this launch: `SB_ONBOARDING` decides, else the flag.
 pub(crate) fn due(env: Env) -> bool {
     match env(ENV).map(|v| v.trim().to_ascii_lowercase()).as_deref() {

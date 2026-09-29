@@ -471,6 +471,15 @@ impl Editor {
         Some(self.text.chars().skip(a).take(b - a).collect())
     }
 
+    /// The user's own draft (BISE-120a, saved on disk): the text, or
+    /// while browsing the history the draft kept on the first Up.
+    pub(crate) fn own_draft(&self) -> (&str, usize) {
+        match (self.hist_idx, &self.draft) {
+            (Some(_), Some(d)) => (&d.text, d.cursor),
+            _ => (&self.text, self.cursor),
+        }
+    }
+
     pub(crate) fn browsing(&self) -> bool {
         self.hist_idx.is_some()
     }

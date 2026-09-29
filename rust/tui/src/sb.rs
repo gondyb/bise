@@ -28,6 +28,7 @@ use panel::glyph;
 mod feed;
 pub(super) use feed::FeedWindow;
 mod client;
+pub(crate) mod drafts;
 mod keys;
 pub(super) use keys::key;
 #[cfg(test)]
@@ -532,6 +533,9 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         .trim()
         .to_string();
     app.history.insert(0, typed.clone());
+    app.history.truncate(drafts::HISTORY_MAX);
+    // BISE-120a: the sent draft leaves the file at once
+    drafts::save_now(app);
     app.popup_sel = 0;
     let mut out: Vec<Ev> = Vec::new();
     let sb = &mut app.sb;
