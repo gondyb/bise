@@ -62,7 +62,7 @@ fn check_frame(app: &mut App, width: u16, height: u16, what: &str) {
     // blank bar row, the key bar and the frame's edge (book §8 "The frame")
     let lr = crate::layout::rows(width, height);
     assert!(area.h >= drawn.max(lr.min_text as usize), "{what}: {} rows for {drawn}", area.h);
-    assert_eq!(area.y as usize + area.h + lr.pad_bottom as usize, lr.keybar as usize, "{what}: the key bar under the composer");
+    assert_eq!(area.y as usize + area.h + (lr.pad_bottom + lr.edge) as usize, lr.keybar as usize, "{what}: the key bar under the composer");
     let c = if accent.is_some() && fits { c + 1 } else { c };
     let cell = &buf[(area.x + c as u16, area.y + r as u16)];
     assert!(cell.modifier.contains(Modifier::REVERSED), "{what}: cursor at ({r}, {c})");
@@ -211,8 +211,12 @@ fn draw(app: &mut App, width: u16, height: u16) -> ratatui::buffer::Buffer {
 }
 
 #[test]
-fn the_bar_runs_the_whole_block_in_accent_with_text_or_images() {
-    for (width, height) in [(200u16, 50u16), (120, 40), (80, 30), (80, 22)] {
+fn two_sections_the_attachments_then_the_body_behind_its_bar() {
+    // BISE-108 and the user's feedback on it: the attachments (file
+    // names), 1 blank tinted row, then the body: the bar at x0 on every
+    // row of it (a blank bar row above and under the text by height), in
+    // accent with text or images, faint when empty; the text at x0 + 3
+    for (width, height) in [(200u16, 50u16), (120, 40), (120, 29), (80, 30), (80, 22), (80, 18)] {
         for (n, text, empty) in [(0, "", true), (0, "hello", false), (1, "one line", false), (2, &"word ".repeat(60)[..], false)] {
             let mut app = sb::bench::test_app();
             if n > 0 || !text.is_empty() {
@@ -222,28 +226,40 @@ fn the_bar_runs_the_whole_block_in_accent_with_text_or_images() {
             let cols = crate::layout::cols(width, height);
             let rows = crate::layout::rows(width, height);
             let x0 = cols.x0;
-            // the divider: the row whose first cell is `├` (framed) or `─`
-            let divider = (0..height).rev().find(|&y| matches!(buf[(0, y)].symbol(), "├" | "─")).unwrap();
             let what = format!("{width}x{height} {n} images {text:?}");
-            // every row from under the divider to above the key bar: the bar
-            for y in divider + 1..rows.keybar {
-                let c = &buf[(x0, y)];
-                assert_eq!(c.symbol(), "│", "{what}: row {y}");
-                let want = if empty { crate::theme::faint() } else { crate::theme::accent() };
-                assert_eq!(c.fg, want, "{what}: row {y}");
-            }
-            // the text, the strip at x0 + 2
+            let divider = (0..height).rev().find(|&y| matches!(buf[(0, y)].symbol(), "├" | "─")).unwrap();
             let a = app.composer;
-            assert_eq!(a.x, x0 + 2, "{what}");
-            // the key bar keeps ⏎ send first
-            let kb: String = (x0..x0 + 6).map(|x| buf[(x, rows.keybar)].symbol().to_string()).collect();
-            assert!(kb.starts_with("⏎ send"), "{what}: {kb:?}");
+            assert_eq!(a.x, x0 + 3, "{what}");
+            let (top, bottom) = (a.y - rows.pad_top, a.y + a.h as u16 + rows.pad_bottom);
+            assert_eq!(bottom + rows.edge, rows.keybar, "{what}");
+            let want = if empty { crate::theme::faint() } else { crate::theme::accent() };
+            for y in top..bottom {
+                let c = &buf[(x0, y)];
+                assert_eq!((c.symbol(), c.fg), ("│", want), "{what}: row {y}");
+            }
+            let end = cols.margin + cols.pane_w;
+            let row = |y: u16| -> String { (x0..end).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string() };
+            // above the body: no bar; the attachments at x0 + 3, then a blank row
+            for y in divider + 1..top {
+                assert_ne!(buf[(x0, y)].symbol(), "│", "{what}: row {y}");
+            }
             if n > 0 {
-                let keys: String = (x0..width).map(|x| buf[(x, rows.keybar)].symbol().to_string()).collect();
+                let first = divider + 1 + rows.edge;
+                assert!(row(first).starts_with("   attached"), "{what}: {:?}", row(first));
+                let img = row(first + 1);
+                assert!(img.starts_with("   ▣ 1 Screenshot 1.png") && !img.contains('/'), "{what}: {img:?}");
+                if height >= 20 {
+                    assert_eq!(row(top - 1), "", "{what}: the blank row between the sections");
+                }
+                let keys = row(rows.keybar);
                 assert!(keys.contains("ctrl+v paste image"), "{what}: {keys:?}");
-                // the strip names the file, not its path
-                let strip: String = (x0..width).map(|x| buf[(x, divider + 1 + rows.pad_top + 1)].symbol().to_string()).collect();
-                assert!(strip.contains("Screenshot 1.png") && !strip.contains('/'), "{what}: {strip:?}");
+            }
+            // the key bar keeps ⏎ send first
+            assert!(row(rows.keybar).starts_with("⏎ send"), "{what}: {:?}", row(rows.keybar));
+            // tall screens: a plain tinted row under the divider and above the key bar
+            if height >= 30 {
+                assert_eq!(row(divider + 1), "", "{what}");
+                assert_eq!(row(rows.keybar - 1), "", "{what}");
             }
         }
     }

@@ -397,7 +397,7 @@ mod tests {
         // a card title in the feed: its hint comes up above it
         let card = format!("  ┃ {} t1 needs you", theme::glyph(theme::G_CARD));
         t.draw(|f| {
-            f.render_widget(Paragraph::new(card.as_str()), Rect::new(3, 20, 80, 1));
+            f.render_widget(Paragraph::new(card.as_str()), Rect::new(3, 18, 80, 1));
             draw(&app, f)
         })
         .unwrap();

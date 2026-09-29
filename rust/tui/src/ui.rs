@@ -127,7 +127,7 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
 fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::Cols, rows: crate::layout::Rows) {
     // the composer's text wraps like your message in the history: the
     // column less its 3 lead columns
-    let inner_w = (cols.col_w as usize).saturating_sub(3).min((cols.pane_w as usize).saturating_sub(2)).max(1);
+    let inner_w = (cols.col_w as usize).saturating_sub(3).min((cols.pane_w as usize).saturating_sub(3)).max(1);
     // while recording, the meter takes 2 columns of the text's
     let text_w = inner_w.saturating_sub(if app.voice.active() { 2 } else { 0 }).max(1);
     let composer_rows = {
@@ -135,37 +135,41 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         editor::drawn_rows(&r, app.ed.cursor) as u16
     };
     // the rows that are always there: header and gap, the blank row and
-    // the divider, the tinted rows, the key bar (its own row from 14
-    // rows) and the frame's bottom edge
+    // the divider, the composer's bar rows and the pane's tinted rows,
+    // the key bar (its own row from 14 rows) and the frame's bottom edge
     let keys_h = u16::from(!rows.keys_in_divider);
     let edge_h = u16::from(cols.framed);
-    let fixed = rows.body + 2 + rows.pad_top + rows.pad_bottom + keys_h + edge_h;
+    let fixed = rows.body + 2 + 2 * rows.edge + rows.pad_top + rows.pad_bottom + keys_h + edge_h;
     // what is left keeps a 3-row history
     let left = |used: u16| area.height.saturating_sub(fixed + used + 3);
     let text_rows = composer_rows.clamp(rows.min_text, rows.max_text).min(left(0).max(1));
-    // the images strip (book §14) and the queued messages (BISE-89)
+    // the attachments (book §14) and 1 blank row between them and the
+    // composer (from 20 rows), then the queued messages (BISE-89)
     let strip_h = attach::strip_height(app).min(left(text_rows));
-    let queue_h = crate::queue::height(app).min(left(text_rows + strip_h));
+    let strip_gap = if strip_h > 0 { rows.pad_top.min(left(text_rows + strip_h)) } else { 0 };
+    let queue_h = crate::queue::height(app).min(left(text_rows + strip_h + strip_gap));
     // the card box: what the rest leaves, with 1 blank row above it
-    let card_h = sb::card_box_height(app, area, left(text_rows + strip_h + queue_h + 1));
+    let card_h = sb::card_box_height(app, area, left(text_rows + strip_h + strip_gap + queue_h + 1));
     let card_gap = u16::from(card_h > 0);
     attach::set_model(&app.info.model);
+    let composer_h = rows.pad_top + text_rows + rows.pad_bottom;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(rows.body),       // header, 1 blank row
-            Constraint::Min(1),                  // history | panel
-            Constraint::Length(card_gap),        // a blank row above the card box
-            Constraint::Length(card_h),          // the card box (ctrl+g)
-            Constraint::Length(1),               // a blank row above the divider
-            Constraint::Length(1),               // the divider
-            Constraint::Length(rows.pad_top),    // the raised pane: a tinted row
-            Constraint::Length(queue_h),         // the queued messages
-            Constraint::Length(strip_h),         // the images strip
-            Constraint::Length(text_rows),       // the composer's text
-            Constraint::Length(rows.pad_bottom), // a tinted row
-            Constraint::Length(keys_h),          // the key bar
-            Constraint::Length(edge_h),          // the frame's bottom edge
+            Constraint::Length(rows.body),   // header, 1 blank row
+            Constraint::Min(1),              // history | panel
+            Constraint::Length(card_gap),    // a blank row above the card box
+            Constraint::Length(card_h),      // the card box (ctrl+g)
+            Constraint::Length(1),           // a blank row above the divider
+            Constraint::Length(1),           // the divider
+            Constraint::Length(rows.edge),   // the raised pane: a tinted row
+            Constraint::Length(queue_h),     // the queued messages
+            Constraint::Length(strip_h),     // the attachments
+            Constraint::Length(strip_gap),   // a tinted row under them
+            Constraint::Length(composer_h),  // the composer: bar rows, its text
+            Constraint::Length(rows.edge),   // a tinted row
+            Constraint::Length(keys_h),      // the key bar
+            Constraint::Length(edge_h),      // the frame's bottom edge
         ])
         .split(area);
     let (body, card, divider_y) = (chunks[1], chunks[3], chunks[5].y);
@@ -266,29 +270,19 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         let r = Rect { x: queue.x.saturating_sub(1), width: queue.width + 1, ..queue }.intersection(area);
         frame.render_widget(Paragraph::new(crate::queue::lines(app, r.width as usize)), r);
     }
-    // the images strip, at the composer's text
+    // the attachments, at the composer's text (x0 + 3), no bar: the bar
+    // marks the body
     let strip = pane(chunks[8]);
     if strip.height > 0 {
-        let r = Rect { x: strip.x + 2, width: strip.width.saturating_sub(2), ..strip };
+        let r = Rect { x: strip.x + TEXT_AT, width: strip.width.saturating_sub(TEXT_AT), ..strip };
         frame.render_widget(Paragraph::new(attach::strip_lines(app, r.width as usize)), r);
     }
-    // the composer: its ` │ ` starts 1 column before x0 (the bar at x0)
-    let text = pane(chunks[9]);
-    let composer = Rect { x: text.x.saturating_sub(1), width: (inner_w as u16 + 3).min(text.width + 1), ..text };
-    draw_composer(app, frame, composer, inner_w, 0, 0);
-    // the bar runs the whole block (book §13, BISE-108): the tinted row
-    // under the divider (the queue's `›` has that column when there is
-    // one), the strip, the text, the tinted row above the key bar
-    let bar_st = Style::default().fg(composer_bar_color(app));
-    let bar_x = area.x + cols.x0;
-    let block = [(chunks[6], queue_h == 0), (chunks[8], true), (chunks[10], true)];
-    for (r, on) in block {
-        for y in r.y..r.bottom() {
-            if on && bar_x < area.right() && y < area.bottom() {
-                frame.buffer_mut().set_string(bar_x, y, "│", bar_st);
-            }
-        }
-    }
+    // the composer: its bar at x0 on every row (the blank bar rows
+    // around the text too), the text from x0 + 3 like the history's
+    let body_rect = pane(chunks[10]);
+    let composer = Rect { width: (inner_w as u16 + TEXT_AT).min(body_rect.width), ..body_rect };
+    draw_composer(app, frame, composer, inner_w, rows.pad_top.min(composer_h), rows.pad_bottom);
+    let text = Rect { y: app.composer.y, height: app.composer.h as u16, ..body_rect };
     if card_h > 0 {
         sb::draw_card(app, frame, col(card));
     } else if sb::card_full(app) {
@@ -296,7 +290,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     }
     draw_popup(app, frame, text);
     // the key bar, from x0 to the right margin
-    let kb = pane(chunks[11]);
+    let kb = pane(chunks[12]);
     if kb.height > 0 {
         frame.render_widget(Paragraph::new(crate::keybar::line(app, kb.width)), kb);
     }
@@ -706,8 +700,12 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
     out
 }
 
+/// Where the composer's text starts from its bar: x0 + 3, the history's
+/// text column (BISE-108, user request: more room after the bar).
+const TEXT_AT: u16 = 3;
+
 /// The Switchboard composer (book §8 "The frame", §13): a bar `│` at
-/// the area's column 1 on every row (faint while empty, accent with text
+/// the area's column 0 on every row (faint while empty, accent with text
 /// or while recording), `pad_top` / `pad_bottom` blank bar rows around
 /// the text, the text from the area's column 3 wrapped at `inner` columns and scrolled with the cursor row
 /// in view. Empty: the cursor at column 3 and the dim placeholder;
@@ -719,7 +717,7 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, pad
     // recording: the meter takes 2 columns before the text
     let lead = if voice { 2 } else { 0 };
     let text_w = inner.saturating_sub(lead).max(1);
-    app.composer = ComposerArea { x: area.x + 3 + lead as u16, y: text_y, w: text_w, h: text_rows, top: 0 };
+    app.composer = ComposerArea { x: area.x + TEXT_AT + lead as u16, y: text_y, w: text_w, h: text_rows, top: 0 };
     let empty = app.ed.is_empty();
     let mut rows = if empty && !voice {
         let note = sb::placeholder(app).unwrap_or_default();
@@ -745,7 +743,7 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, pad
         }
     }
     let bar_st = Style::default().fg(composer_bar_color(app));
-    let bar = Span::styled(" │ ", bar_st);
+    let bar = Span::styled("│  ", bar_st);
     let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
     for _ in 0..pad_top.min(area.height) {
         lines.push(Line::from(bar.clone()));
