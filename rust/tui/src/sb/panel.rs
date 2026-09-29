@@ -38,7 +38,7 @@ pub(crate) fn split(app: &App, full: Rect) -> (Rect, Option<Rect>) {
     // smallest composer takes)
     let c = crate::layout::cols(full.width, full.height);
     let r = crate::layout::rows(full.width, full.height);
-    let pane = 2 + 2 * r.edge + r.pad_top + r.min_text + r.pad_bottom;
+    let pane = 2 + r.pad_top + r.min_text + r.pad_bottom;
     let bottom = r.keybar.saturating_sub(pane);
     let body = Rect { y: full.y + r.body, height: bottom.saturating_sub(r.body), ..full };
     let feed = Rect { x: full.x + c.feed_x, width: c.feed_w, ..body }.intersection(full);
@@ -1283,9 +1283,10 @@ mod chrome_tests {
 
     /// The raised pane (book §13, BISE-102): every cell under the divider
     /// inside the frame is on the `raised` tint, the divider and the frame
-    /// stay on the ground; 7 rows at rest (9 from 30 rows: a plain tinted
-    /// row each side of the composer, BISE-108), fewer on shorter screens;
-    /// under 14 rows the key bar takes the divider's right side.
+    /// stay on the ground; 6 rows at rest (BISE-111: the divider, a blank
+    /// bar row, 1 text row, a blank bar row, the key bar, the frame), 4
+    /// under 20 rows; under 14 rows the key bar takes the divider's right
+    /// side.
     #[test]
     fn the_pane_under_the_divider_is_raised() {
         let mut app = with_main();
@@ -1295,7 +1296,7 @@ mod chrome_tests {
             term.backend().buffer().clone()
         };
         let row = |b: &ratatui::buffer::Buffer, y: u16| (0..b.area.width).map(|x| b[(x, y)].symbol()).collect::<String>();
-        for (h, pane) in [(30u16, 9u16), (29, 7), (24, 7), (23, 6), (20, 6), (19, 4), (16, 4)] {
+        for (h, pane) in [(40u16, 6u16), (30, 6), (24, 6), (20, 6), (19, 4), (16, 4)] {
             let b = screen(&mut app, 120, h);
             let div = (0..h).find(|&y| row(&b, y).starts_with("├─ you → main")).unwrap_or_else(|| panic!("{h}: no divider"));
             assert_eq!(h - div, pane, "{h} rows: the pane takes {pane}");
@@ -1395,12 +1396,13 @@ mod chrome_tests {
         assert!(rows[at].ends_with(" idle ─┤"), "{:?}", rows[at]);
         assert!(rows[at].contains('┴'), "the panel's rule joins it: {:?}", rows[at]);
         // then the raised pane (book §13): the composer, its bar at x0
-        // (column 3 here) on a blank row, the 2 text rows and a blank row
-        // (BISE-108), the key bar from x0, the frame's bottom edge
-        assert_eq!(rows.len() - at, 7, "7 rows at rest: {}", all);
-        assert!(rows[at + 1..at + 5].iter().all(|r| r.starts_with("│  │")), "{}", all);
+        // (column 3 here) on a blank row, the text row, a blank row
+        // (BISE-111: symmetric, the empty composer centered), the key bar
+        // from x0, the frame's bottom edge
+        assert_eq!(rows.len() - at, 6, "6 rows at rest: {}", all);
+        assert!(rows[at + 1..at + 4].iter().all(|r| r.starts_with("│  │")), "{}", all);
         assert_eq!(rows[at + 1].trim_end_matches(['│', ' ']), "", "{:?}", rows[at + 1]);
-        assert_eq!(rows[at + 4].trim_end_matches(['│', ' ']), "", "{:?}", rows[at + 4]);
+        assert_eq!(rows[at + 3].trim_end_matches(['│', ' ']), "", "{:?}", rows[at + 3]);
         // empty, the composer asks; the text at x0 + 3 (the history's)
         assert!(rows[at + 2].starts_with(&format!("│  │    {}", PLACEHOLDER_MAIN)), "{:?}", rows[at + 2]);
         let keys = &rows[rows.len() - 2];

@@ -135,11 +135,11 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         editor::drawn_rows(&r, app.ed.cursor) as u16
     };
     // the rows that are always there: header and gap, the blank row and
-    // the divider, the composer's bar rows and the pane's tinted rows,
-    // the key bar (its own row from 14 rows) and the frame's bottom edge
+    // the divider, the composer's bar rows, the key bar (its own row
+    // from 14 rows) and the frame's bottom edge
     let keys_h = u16::from(!rows.keys_in_divider);
     let edge_h = u16::from(cols.framed);
-    let fixed = rows.body + 2 + 2 * rows.edge + rows.pad_top + rows.pad_bottom + keys_h + edge_h;
+    let fixed = rows.body + 2 + rows.pad_top + rows.pad_bottom + keys_h + edge_h;
     // what is left keeps a 3-row history
     let left = |used: u16| area.height.saturating_sub(fixed + used + 3);
     let text_rows = composer_rows.clamp(rows.min_text, rows.max_text).min(left(0).max(1));
@@ -162,12 +162,10 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
             Constraint::Length(card_h),      // the card box (ctrl+g)
             Constraint::Length(1),           // a blank row above the divider
             Constraint::Length(1),           // the divider
-            Constraint::Length(rows.edge),   // the raised pane: a tinted row
             Constraint::Length(queue_h),     // the queued messages
             Constraint::Length(strip_h),     // the attachments
             Constraint::Length(strip_gap),   // a tinted row under them
             Constraint::Length(composer_h),  // the composer: bar rows, its text
-            Constraint::Length(rows.edge),   // a tinted row
             Constraint::Length(keys_h),      // the key bar
             Constraint::Length(edge_h),      // the frame's bottom edge
         ])
@@ -265,21 +263,21 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let state_rect = chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, working.as_ref(), state);
     app.bottom_bar_rect = (!app.tail_visible && !rows.keys_in_divider).then_some(state_rect);
     // the queued messages: ` › text`, the `›` under the composer's bar
-    let queue = pane(chunks[7]);
+    let queue = pane(chunks[6]);
     if queue.height > 0 {
         let r = Rect { x: queue.x.saturating_sub(1), width: queue.width + 1, ..queue }.intersection(area);
         frame.render_widget(Paragraph::new(crate::queue::lines(app, r.width as usize)), r);
     }
     // the attachments, at the composer's text (x0 + 3), no bar: the bar
     // marks the body
-    let strip = pane(chunks[8]);
+    let strip = pane(chunks[7]);
     if strip.height > 0 {
         let r = Rect { x: strip.x + TEXT_AT, width: strip.width.saturating_sub(TEXT_AT), ..strip };
         frame.render_widget(Paragraph::new(attach::strip_lines(app, r.width as usize)), r);
     }
     // the composer: its bar at x0 on every row (the blank bar rows
     // around the text too), the text from x0 + 3 like the history's
-    let body_rect = pane(chunks[10]);
+    let body_rect = pane(chunks[9]);
     let composer = Rect { width: (inner_w as u16 + TEXT_AT).min(body_rect.width), ..body_rect };
     draw_composer(app, frame, composer, inner_w, rows.pad_top.min(composer_h), rows.pad_bottom);
     let text = Rect { y: app.composer.y, height: app.composer.h as u16, ..body_rect };
@@ -290,7 +288,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     }
     draw_popup(app, frame, text);
     // the key bar, from x0 to the right margin
-    let kb = pane(chunks[12]);
+    let kb = pane(chunks[10]);
     if kb.height > 0 {
         frame.render_widget(Paragraph::new(crate::keybar::line(app, kb.width)), kb);
     }

@@ -62,7 +62,7 @@ fn check_frame(app: &mut App, width: u16, height: u16, what: &str) {
     // blank bar row, the key bar and the frame's edge (book §8 "The frame")
     let lr = crate::layout::rows(width, height);
     assert!(area.h >= drawn.max(lr.min_text as usize), "{what}: {} rows for {drawn}", area.h);
-    assert_eq!(area.y as usize + area.h + (lr.pad_bottom + lr.edge) as usize, lr.keybar as usize, "{what}: the key bar under the composer");
+    assert_eq!(area.y as usize + area.h + lr.pad_bottom as usize, lr.keybar as usize, "{what}: the key bar under the composer");
     let c = if accent.is_some() && fits { c + 1 } else { c };
     let cell = &buf[(area.x + c as u16, area.y + r as u16)];
     assert!(cell.modifier.contains(Modifier::REVERSED), "{what}: cursor at ({r}, {c})");
@@ -231,7 +231,9 @@ fn two_sections_the_attachments_then_the_body_behind_its_bar() {
             let a = app.composer;
             assert_eq!(a.x, x0 + 3, "{what}");
             let (top, bottom) = (a.y - rows.pad_top, a.y + a.h as u16 + rows.pad_bottom);
-            assert_eq!(bottom + rows.edge, rows.keybar, "{what}");
+            assert_eq!(bottom, rows.keybar, "{what}");
+            // symmetric: as many blank bar rows above the text as under it
+            assert_eq!(rows.pad_top, rows.pad_bottom, "{what}");
             let want = if empty { crate::theme::faint() } else { crate::theme::accent() };
             for y in top..bottom {
                 let c = &buf[(x0, y)];
@@ -244,7 +246,7 @@ fn two_sections_the_attachments_then_the_body_behind_its_bar() {
                 assert_ne!(buf[(x0, y)].symbol(), "│", "{what}: row {y}");
             }
             if n > 0 {
-                let first = divider + 1 + rows.edge;
+                let first = divider + 1;
                 assert!(row(first).starts_with("   attached"), "{what}: {:?}", row(first));
                 let img = row(first + 1);
                 assert!(img.starts_with("   ▣ 1 Screenshot 1.png") && !img.contains('/'), "{what}: {img:?}");
@@ -256,11 +258,6 @@ fn two_sections_the_attachments_then_the_body_behind_its_bar() {
             }
             // the key bar keeps ⏎ send first
             assert!(row(rows.keybar).starts_with("⏎ send"), "{what}: {:?}", row(rows.keybar));
-            // tall screens: a plain tinted row under the divider and above the key bar
-            if height >= 30 {
-                assert_eq!(row(divider + 1), "", "{what}");
-                assert_eq!(row(rows.keybar - 1), "", "{what}");
-            }
         }
     }
 }
