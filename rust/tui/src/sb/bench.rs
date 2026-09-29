@@ -44,6 +44,17 @@ pub(crate) fn add_agent(app: &mut App, name: &str, objective: &str) {
     });
 }
 
+/// Test setup: the model and effort the hub says an agent runs
+/// (BISE-135), and the efforts its model takes.
+pub(crate) fn set_model(app: &mut App, name: &str, model: &str, effort: &str) {
+    let efforts = crate::models::efforts(model).0;
+    for a in app.sb.agents.iter_mut().filter(|a| a.name == name) {
+        a.model = model.into();
+        a.effort = effort.into();
+        a.efforts = efforts.clone();
+    }
+}
+
 /// Test setup: the status of an agent (`archived`, `idle`…).
 pub(crate) fn set_status(app: &mut App, name: &str, status: &str) {
     for a in app.sb.agents.iter_mut().filter(|a| a.name == name) {

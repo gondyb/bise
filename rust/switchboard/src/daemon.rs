@@ -188,6 +188,9 @@ struct Shell {
     /// The small model failed and agent_model answered: role lines use
     /// agent_model for the rest of this hub's life (BISE-126).
     small_broken: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// The catalog and config.toml (BISE-135: the model and effort each
+    /// agent runs with), re-read when config.toml changes.
+    setup: Option<(Option<std::time::SystemTime>, bise_catalog::Setup)>,
 }
 
 /// What an agent whose turn was cut by a restart receives.
@@ -306,6 +309,138 @@ impl Shell {
 
     fn dir_of(&self, name: &str) -> Option<String> {
         self.hub.st.agents.get(name).map(|a| a.dir.clone())
+    }
+
+    // ---- the model and effort of each agent (BISE-135) ----
+
+    /// The catalog merged with config.toml, re-read when the file
+    /// changes (a `/model ... default`, the user's editor).
+    fn setup(&mut self) -> &bise_catalog::Setup {
+        let path = bise_home::Home::from_env().config_file();
+        let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+        if self.setup.as_ref().is_none_or(|(t, _)| *t != mtime) {
+            self.setup = Some((mtime, bise_catalog::Setup::load(&path)));
+        }
+        &self.setup.as_ref().expect("just set").1
+    }
+
+    /// The agent's own choice (`/model`, `/reasoning`): a file of its
+    /// state dir, its REPL reads it before each call.
+    fn choice_path(&self, dir: &str) -> PathBuf {
+        self.opts.paths.agent_dir(dir).join("choice.toml")
+    }
+
+    /// What an agent runs with: the same resolution as its REPL's
+    /// (rust/catalog Setup::in_use = runtime/provider-pure.bend).
+    fn in_use(&mut self, dir: &str, is_main: bool) -> bise_catalog::InUse {
+        let choice = bise_catalog::Choice::read(&self.choice_path(dir));
+        self.setup().in_use(if is_main { "main" } else { "agent" }, &choice)
+    }
+
+    /// The client snapshot with each agent's model and effort: its full
+    /// id, the effort ("" when the model takes none), and the words it
+    /// takes (the `/reasoning` list).
+    fn snapshot(&mut self) -> Value {
+        let mut snap = self.hub.snapshot(now_ms());
+        let who: Vec<(String, String, bool)> =
+            self.hub.st.agents.values().map(|a| (a.name.clone(), a.dir.clone(), a.is_main)).collect();
+        if let Some(list) = snap["agents"].as_array_mut() {
+            for v in list {
+                let Some((_, dir, main)) = who.iter().find(|(n, _, _)| v["name"] == n.as_str()) else {
+                    continue;
+                };
+                let u = self.in_use(dir, *main);
+                v["model"] = json!(u.model.name);
+                v["effort"] = json!(u.effort);
+                v["efforts"] = json!(u.model.efforts());
+                v["model_from"] = json!(u.model_from);
+            }
+        }
+        snap
+    }
+
+    /// `/model`, `/reasoning` for `agent`: check, write its choice (and
+    /// config.toml for `default`), and say what it runs with now. A
+    /// model with another context window: its REPL reloads at its next
+    /// idle (same session), so the compaction threshold follows.
+    fn choose(&mut self, agent: &str, model: Option<String>, effort: Option<String>, default: bool) -> String {
+        let Some(a) = self.hub.st.agents.get(agent) else {
+            return format!("no agent {}", agent);
+        };
+        let (dir, is_main) = (a.dir.clone(), a.is_main);
+        let before = self.in_use(&dir, is_main);
+        let short = |u: &bise_catalog::InUse| match u.effort.as_str() {
+            "" => u.model.name.clone(),
+            e => format!("{} · {}", u.model.name, e),
+        };
+        if model.is_none() && effort.is_none() {
+            let words = before.model.efforts();
+            let takes = if words.is_empty() {
+                "no reasoning setting".to_string()
+            } else {
+                format!("efforts: {}", words.join(", "))
+            };
+            return format!(
+                "{} runs {} (model from {}, {}) · /model <model>, /reasoning <effort>",
+                agent,
+                short(&before),
+                before.model_from,
+                takes
+            );
+        }
+        let path = self.choice_path(&dir);
+        let mut choice = bise_catalog::Choice::read(&path);
+        if let Some(m) = &model {
+            let setup = self.setup();
+            let r = setup.catalog.resolve(m);
+            if r.known == bise_catalog::Known::NoProvider {
+                return format!(
+                    "unknown provider for {}: pick a listed model, or add [providers.{}] to config.toml",
+                    m, r.provider
+                );
+            }
+            if !r.needs.is_empty() {
+                return format!("{} is not usable yet (needs {})", r.name, r.needs);
+            }
+            choice.model = r.name.clone();
+        }
+        if let Some(e) = &effort {
+            let target = match &model {
+                Some(_) => self.setup().catalog.resolve(&choice.model),
+                None => before.model.clone(),
+            };
+            let words = target.efforts();
+            if words.is_empty() {
+                return format!("{} has no reasoning setting", target.name);
+            }
+            if !words.iter().any(|w| w == e) {
+                return format!("{} takes: {}", target.name, words.join(", "));
+            }
+            choice.effort = e.clone();
+        }
+        if let Err(e) = choice.write(&path) {
+            return format!("could not save the choice of {}: {}", agent, e);
+        }
+        let mut said = String::new();
+        if default {
+            let key = if is_main { "model" } else { "agent_model" };
+            let cfg = bise_home::Home::from_env().config_file();
+            let text = std::fs::read_to_string(&cfg).unwrap_or_default();
+            let new = bise_catalog::set_config_key(&text, key, &choice.model);
+            let tmp = cfg.with_extension("toml.tmp");
+            match std::fs::write(&tmp, new).and_then(|_| std::fs::rename(&tmp, &cfg)) {
+                Ok(()) => said = format!(" · config.toml {} = {}", key, choice.model),
+                Err(e) => said = format!(" · config.toml not written: {}", e),
+            }
+        }
+        let after = self.in_use(&dir, is_main);
+        if after.model.caps.context != before.model.caps.context && self.repls.contains_key(&dir) {
+            // the compaction threshold is 80 % of the window: a reload
+            // at the next idle takes the new one (nothing lost)
+            self.reload_repls.insert(dir.clone());
+        }
+        log_line(&self.opts.paths, &format!("{}: now on {} (was {})", agent, short(&after), short(&before)));
+        format!("✓ {} now on {} from its next call{}", agent, short(&after), said)
     }
 
     fn transcript(&self, dir: &str) -> PathBuf {
@@ -442,10 +577,19 @@ impl Shell {
                 self.broadcast(&json!({"ev": "renamed", "old": old, "new": new}));
             }
             Effect::State => {
-                let snap = self.hub.snapshot(now_ms());
+                let snap = self.snapshot();
                 self.broadcast(&snap);
             }
             Effect::AskRole { dir, key, request } => self.ask_role(dir, key, request),
+            Effect::Choose { client, agent, model, effort, default } => {
+                let text = self.choose(&agent, model, effort, default);
+                if let Some(s) = self.clients.get_mut(&client) {
+                    write_json(s, &json!({"ev": "notice", "text": text}));
+                }
+                let snap = self.snapshot();
+                self.broadcast(&snap);
+                self.switch_idle_repls();
+            }
         }
     }
 
@@ -640,6 +784,8 @@ impl Shell {
             .env("SB_AGENT", &a.name)
             // which model: config.toml `model`, or `agent_model` (BISE-142)
             .env("BISE_ROLE", if a.is_main { "main" } else { "agent" })
+            // its own model and effort, over both (BISE-135: /model)
+            .env(bise_catalog::CHOICE_ENV, adir.join("choice.toml"))
             // RFC 0002 §9: two dev servers must not fight for one port
             .env("SB_TASK", &a.name)
             .env(
@@ -750,7 +896,7 @@ impl Shell {
             "version": crate::switch::version_info(&self.opts.app_root),
             "reload": self.reload_id,
         }));
-        push(&self.hub.snapshot(now_ms()));
+        push(&self.snapshot());
         for name in &self.hub.st.order {
             for (pos, l) in self.buffers.get(name).into_iter().flatten() {
                 push(&json!({"ev": "line", "agent": name, "line": l, "pos": pos}));
@@ -1181,6 +1327,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         reload_id: String::new(),
         reload_repls: BTreeSet::new(),
         small_broken: Default::default(),
+        setup: None,
     };
     // the role lines of an earlier hub (BISE-126)
     let dirs: Vec<String> = sh.hub.st.agents.values().map(|a| a.dir.clone()).collect();

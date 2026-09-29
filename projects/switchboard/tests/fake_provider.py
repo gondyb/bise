@@ -652,7 +652,24 @@ class H(http.server.BaseHTTPRequestHandler):
                                 "users": [m["text"][:200] for m in last],
                                 "images": [i[:200] for m in conv for i in m["images"]],
                                 "family": family, "path": self.path, "stream": stream, "status": status,
-                                "error": turn["error"], "fixture": turn["fixture"]}) + "\n")
+                                "error": turn["error"], "fixture": turn["fixture"],
+                                # BISE-135: the model and effort the call asked for
+                                "model": model, "effort": effort_of(body)}) + "\n")
+
+
+def effort_of(body):
+    """the reasoning effort a request asks for (BISE-135): Chat's
+    reasoning_effort, Anthropic's output_config.effort or thinking
+    budget, "" when none"""
+    if body.get("reasoning_effort"):
+        return body["reasoning_effort"]
+    oc = body.get("output_config") or {}
+    if oc.get("effort"):
+        return oc["effort"]
+    th = body.get("thinking") or {}
+    if th.get("budget_tokens"):
+        return "budget:%d" % th["budget_tokens"]
+    return ""
 
 
 def serve(port=0):

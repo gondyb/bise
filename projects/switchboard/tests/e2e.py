@@ -307,6 +307,62 @@ def t_worktree_drop_restore(E, c):
     check(out(a["path"], "git log -1 --format=%s") == "wt", "restored branch has the commit")
 
 
+def t_model_and_reasoning(E, c):
+    """BISE-135: every agent's model and effort in the state; /model and
+    /reasoning switch the agent in view from its next call, main and a
+    sub-agent apart, nothing lost (a model with another window reloads
+    the REPL at its next idle, on the same session)."""
+    c.wait_idle("main", "t1")
+    main = c.agent("main")
+    check(main["model"] == "mistral/mistral-small-latest" and main["effort"] == "", "main before: %r" % main)
+    n = len(c.notices())
+    c.say("/model mistral/zai-glm-5-3")
+    c.wait(lambda: c.agent("main")["model"] == "mistral/zai-glm-5-3", 30, "main on glm")
+    check(c.agent("main")["effort"] == "high" and c.agent("main")["efforts"] == ["none", "high"], "%r" % c.agent("main"))
+    c.wait(lambda: any("main now on mistral/zai-glm-5-3 · high" in x.get("text", "") for x in c.notices()[n:]), 10,
+           "the switch notice")
+    check(c.agent("t1")["model"] != "mistral/zai-glm-5-3", "t1 keeps its model")
+    c.say("/reasoning max")
+    c.wait(lambda: any("takes: none, high" in x.get("text", "") for x in c.notices()[n:]), 10, "max refused")
+    # the next call runs the new model (after the reload: another window)
+    c.say("premier appel glm")
+    c.wait_line("main", "ack: premier appel glm", 90)
+    call = [r for r in E.fake_requests() if r["agent"] == "main" and "premier appel glm" in r["user"]][-1]
+    check((call["model"], call["effort"]) == ("zai-glm-5-3", "high"), "the call: %r" % call)
+    check(len(call["users"]) > 1, "the history stays: %r" % call["users"])
+    c.wait_idle("main")
+    c.say("/reasoning none")
+    c.wait(lambda: c.agent("main")["effort"] == "none", 30, "effort none")
+    c.say("deuxième appel")
+    c.wait_line("main", "ack: deuxième appel", 90)
+    call = [r for r in E.fake_requests() if r["agent"] == "main" and "deuxième appel" in r["user"]][-1]
+    check((call["model"], call["effort"]) == ("zai-glm-5-3", "none"), "the call: %r" % call)
+    # a sub-agent, from its own view
+    c.wait_idle("main")
+    c.say("/model mistral/magistral-medium-latest", focus="t1")
+    c.wait(lambda: c.agent("t1")["model"] == "mistral/magistral-medium-latest", 30, "t1 on magistral")
+    check(c.agent("main")["model"] == "mistral/zai-glm-5-3", "main keeps its choice")
+    c.say("@t1 bonjour magistral")
+    c.wait(lambda: any(r["agent"] == "t1" and "bonjour magistral" in r["user"] for r in E.fake_requests()), 90,
+           "t1's call")
+    call = [r for r in E.fake_requests() if r["agent"] == "t1" and "bonjour magistral" in r["user"]][-1]
+    check((call["model"], call["effort"]) == ("magistral-medium-latest", "high"), "t1's call: %r" % call)
+    c.wait_idle("main", "t1")
+
+
+def t_choices_survive_a_restart(E, c):
+    """BISE-135: the choices live in the agents' state dirs: a hub
+    restart (t_restart_keeps_everything) keeps them."""
+    c.wait(lambda: c.agent("main") is not None, 30, "state")
+    check((c.agent("main")["model"], c.agent("main")["effort"]) == ("mistral/zai-glm-5-3", "none"), "%r" % c.agent("main"))
+    check(c.agent("t1")["model"] == "mistral/magistral-medium-latest", "%r" % c.agent("t1"))
+    c.wait_idle("main")
+    c.say("après le redémarrage, glm ?")
+    c.wait_line("main", "ack: après le redémarrage, glm ?", 90)
+    call = [r for r in E.fake_requests() if r["agent"] == "main" and "après le redémarrage, glm ?" in r["user"]][-1]
+    check((call["model"], call["effort"]) == ("zai-glm-5-3", "none"), "the call: %r" % call)
+
+
 def t_restart_keeps_everything(E, c):
     c.wait_idle("main")
     n_main = len(c.lines("main"))
@@ -404,7 +460,9 @@ SCENARIOS = [
     t_main_controls,
     t_origin_and_cursors,
     t_crash_status_and_tasks,
+    t_model_and_reasoning,
     t_restart_keeps_everything,
+    t_choices_survive_a_restart,
 ]
 
 

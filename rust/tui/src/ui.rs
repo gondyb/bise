@@ -172,12 +172,14 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // a short screen the key bar takes the state's place
     let (name, state) = divider_text(app);
     let working = sb::viewed_working(app);
+    let who = sb::viewed_who(app);
     let state = if rows.keys_in_divider {
-        crate::keybar::line(app, chrome::divider_room(area.width, cols, &name, working.as_ref())).spans
+        crate::keybar::line(app, chrome::divider_room(area.width, cols, &name, &who, working.as_ref())).spans
     } else {
         state
     };
-    let (state_rect, label_rect) = chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, working.as_ref(), state);
+    let (state_rect, label_rect) =
+        chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, &who, working.as_ref(), state);
     app.bottom_bar_rect = (!app.tail_visible && !rows.keys_in_divider).then_some(state_rect);
     // the queued messages: ` › text`, the `›` under the composer's bar
     let queue = pane(chunks[6]);

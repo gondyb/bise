@@ -405,6 +405,14 @@ pub(crate) fn page_lines(
             .iter()
             .filter(|(n, d)| f.is_empty() || n.contains(&f) || d.to_lowercase().contains(&f))
             .collect();
+        // where every key is, first: the list below outgrows a small
+        // screen (BISE-135 added /model and /reasoning)
+        if !rows.is_empty() {
+            out.push(Line::from(Span::styled(
+                "essential keys · every key: /shortcuts (tab here)",
+                Style::default().fg(theme::dim()).add_modifier(Modifier::ITALIC),
+            )));
+        }
         if !cmds.is_empty() {
             out.push(header("commands"));
             let name_w = cmds.iter().map(|(n, _)| n.width()).max().unwrap_or(0);
@@ -419,12 +427,6 @@ pub(crate) fn page_lines(
                 }
             }
             out.push(Line::default());
-        }
-        if !rows.is_empty() {
-            out.push(Line::from(Span::styled(
-                "essential keys · every key: /shortcuts (tab here)",
-                Style::default().fg(theme::dim()).add_modifier(Modifier::ITALIC),
-            )));
         }
     }
     out.extend(table_lines(&rows, width));

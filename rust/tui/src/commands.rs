@@ -31,6 +31,10 @@ pub(crate) enum Arg {
     Version(&'static [(&'static str, &'static str)]),
     /// a plugin of the workspace
     Plugin,
+    /// a model of the catalog, or an alias (BISE-135)
+    Model,
+    /// an effort the model of the agent in view takes (BISE-135)
+    Effort,
     /// free text, required: the rest of the line (nothing to complete)
     Text,
     /// free text, optional: the value before it can already run
@@ -75,6 +79,15 @@ pub(crate) const COMMANDS: &[Cmd] = &[
         ],
     },
     Cmd { name: "/agents", desc: "list the agents and what they do", args: &[] },
+    Cmd {
+        name: "/model",
+        desc: "the model of the agent in view: /model [<model>] [default]",
+        args: &[
+            Arg::Model,
+            Arg::Words(&[("default", "also for new sessions (config.toml: model for main, agent_model for an agent)")]),
+        ],
+    },
+    Cmd { name: "/reasoning", desc: "its reasoning effort: /reasoning [<effort>]", args: &[Arg::Effort] },
     Cmd { name: "/interrupt", desc: "interrupt the turn of the agent in view", args: &[] },
     Cmd { name: "/compact", desc: "compact the conversation of the agent in view", args: &[] },
     Cmd {
@@ -206,8 +219,84 @@ fn choices(app: &App, arg: Arg, q: &str) -> Vec<Choice> {
         Arg::Archived => sb::agent_choices(app, true, q),
         Arg::Card => sb::card_choices(app, q),
         Arg::Plugin => crate::plugins::choices(std::path::Path::new(&sb::workspace(app).unwrap_or_default()), q),
+        Arg::Model => model_choices(app, q),
+        Arg::Effort => effort_choices(app, q),
         Arg::Text | Arg::Note => Vec::new(),
     }
+}
+
+/// The note that heads `/model` and `/reasoning`: which agent they are
+/// for (not global), and when it takes effect.
+fn for_note(what: &str, agent: &str) -> Choice {
+    Choice {
+        value: String::new(),
+        label: format!("{} for {}", what, agent),
+        desc: "applies from its next call · esc cancels".into(),
+        mark: None,
+    }
+}
+
+/// `/model`: the catalog's chat models (built in and config.toml's),
+/// then its aliases; the one the agent in view runs is marked ✓.
+fn model_choices(app: &App, q: &str) -> Vec<Choice> {
+    let (agent, current, _, _) = sb::viewed_model(app);
+    let mut out = vec![for_note("model", &agent)];
+    for p in crate::models::picks() {
+        if !matches(q, &[&p.value, &p.desc]) {
+            continue;
+        }
+        let on = p.value == current;
+        out.push(Choice {
+            label: p.value.clone(),
+            value: p.value,
+            desc: p.desc,
+            mark: on.then(|| ("✓", theme::accent())),
+        });
+    }
+    out
+}
+
+/// What each effort does, on its row of `/reasoning`.
+fn effort_hint(e: &str) -> &'static str {
+    match e {
+        "none" => "no reasoning, the fastest",
+        "minimal" => "barely any reasoning",
+        "low" => "faster, cheaper",
+        "medium" => "balanced",
+        "high" => "deeper, slower",
+        "max" | "xhigh" => "the hard stuff",
+        _ => "",
+    }
+}
+
+/// `/reasoning`: the efforts the model of the agent in view takes, its
+/// default and the current one marked; a model with none: one note.
+fn effort_choices(app: &App, q: &str) -> Vec<Choice> {
+    let (agent, model, current, efforts) = sb::viewed_model(app);
+    let mut out = vec![for_note("reasoning", &agent)];
+    if efforts.is_empty() {
+        out.push(Choice {
+            value: String::new(),
+            label: "this model has no reasoning setting.".into(),
+            desc: crate::models::long_name(&model),
+            mark: None,
+        });
+        return out;
+    }
+    let default = crate::models::efforts(&model).1;
+    for e in efforts.iter().filter(|e| matches(q, &[e])) {
+        let mut desc = effort_hint(e).to_string();
+        if *e == default {
+            desc = if desc.is_empty() { "default".into() } else { format!("{} · default", desc) };
+        }
+        out.push(Choice {
+            value: e.clone(),
+            label: e.clone(),
+            desc,
+            mark: (*e == current).then(|| ("✓", theme::accent())),
+        });
+    }
+    out
 }
 
 /// `/command <args>`: the popup of the argument being typed (BISE-117),
@@ -224,7 +313,9 @@ pub(crate) fn arg_items(app: &App) -> Vec<PopItem> {
         return Vec::new();
     };
     let next = cmd.args.get(idx + 1);
-    let runs = matches!(next, None | Some(Arg::Note));
+    // a note, or words after the value (`/model <m> [default]`), are
+    // optional: ⏎ runs the line
+    let runs = matches!(next, None | Some(Arg::Note) | Some(Arg::Words(_)));
     choices(app, arg, word)
         .into_iter()
         .map(|c| {
@@ -442,7 +533,7 @@ mod popup_tests {
 #[cfg(test)]
 mod arg_tests {
     use super::*;
-    use crate::sb::bench::{add_agent, set_status, test_app};
+    use crate::sb::bench::{add_agent, set_model, set_status, test_app};
 
     /// The usage after `: /name ` in a command's description, as words.
     fn usage(c: &Cmd) -> Vec<&'static str> {
@@ -518,6 +609,36 @@ mod arg_tests {
         assert_eq!(v[0].label, "current");
         assert!(v.iter().any(|i| i.label == "…" && i.run.is_none()), "the versions load");
         assert!(items(&mut app, "/agents ").is_empty(), "no argument, no popup");
+        // BISE-135: /model and /reasoning, for the agent in view
+        app.sb.focus = "auth-fix".into();
+        set_model(&mut app, "auth-fix", "foundry/claude-opus-5-5", "high");
+        let m = items(&mut app, "/model ");
+        assert_eq!((m[0].label.as_str(), m[0].run.as_deref()), ("model for auth-fix", None), "a note: which agent");
+        let opus = m.iter().find(|i| i.label == "foundry/claude-opus-5-5").unwrap();
+        assert_eq!(opus.mark.map(|x| x.0), Some("✓"), "the current one");
+        assert_eq!(opus.fill, "/model foundry/claude-opus-5-5 ");
+        assert_eq!(opus.run.as_deref(), Some("/model foundry/claude-opus-5-5"), "default is optional: ⏎ runs");
+        assert!(m.iter().any(|i| i.label == "opus-5.5"), "the aliases");
+        let s = items(&mut app, "/model sonnet");
+        assert!(s.len() > 1 && s[1..].iter().all(|i| i.label.contains("sonnet")), "{:?}", labels(&s));
+        assert!(s[1..].iter().all(|i| i.mark.is_none()));
+        assert_eq!(labels(&items(&mut app, "/model anthropic/claude-sonnet-4-5 ")), ["default"]);
+        let r = items(&mut app, "/reasoning ");
+        assert_eq!(labels(&r), ["reasoning for auth-fix", "none", "low", "medium", "high", "max"]);
+        let high = r.iter().find(|i| i.label == "high").unwrap();
+        assert_eq!((high.mark.map(|x| x.0), high.desc.as_str()), (Some("✓"), "deeper, slower · default"));
+        assert_eq!(items(&mut app, "/reasoning lo")[1].run.as_deref(), Some("/reasoning low"));
+        // main, on a model with two words; one without reasoning
+        add_agent(&mut app, "main", "");
+        app.sb.focus = "main".into();
+        set_model(&mut app, "main", "mistral/zai-glm-5-3", "none");
+        let r = items(&mut app, "/reasoning ");
+        assert_eq!(labels(&r), ["reasoning for main", "none", "high"]);
+        assert_eq!(r[1].mark.map(|x| x.0), Some("✓"));
+        set_model(&mut app, "main", "openai/gpt-4.1", "");
+        let r = items(&mut app, "/reasoning ");
+        assert_eq!(labels(&r), ["reasoning for main", "this model has no reasoning setting."]);
+        assert!(r.iter().all(|i| i.run.is_none()));
         assert!(items(&mut app, "/theme light\nx").is_empty());
     }
 }

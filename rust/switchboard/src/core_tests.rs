@@ -1887,3 +1887,30 @@ fn an_agent_says_where_it_works() {
     assert!(r("x-wt").is_err());
     let _ = std::fs::remove_dir_all(&wt);
 }
+
+
+/// BISE-135: `/model` and `/reasoning` choose for the agent in view; the
+/// daemon checks and writes (Effect::Choose), nothing goes to a REPL.
+#[test]
+fn model_and_reasoning_choose_for_the_agent_in_view() {
+    let mut t = T::new();
+    t.spawn_task("docs");
+    let fx = t.user("docs", "/model anthropic/claude-sonnet-4-5 default");
+    let chosen: Vec<_> = fx
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Choose { agent, model, effort, default, .. } => {
+                Some((agent.clone(), model.clone(), effort.clone(), *default))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(chosen, [("docs".to_string(), Some("anthropic/claude-sonnet-4-5".to_string()), None, true)]);
+    let fx = t.user(MAIN, "/reasoning low");
+    assert!(
+        fx.iter().any(|e| matches!(e, Effect::Choose { agent, effort: Some(x), model: None, .. } if agent == MAIN && x == "low")),
+        "{:?}",
+        fx
+    );
+    assert!(!fx.iter().any(|e| matches!(e, Effect::Passthrough { .. } | Effect::Say { .. })));
+}

@@ -403,6 +403,17 @@ pub enum Effect {
         key: String,
         request: String,
     },
+    /// `/model`, `/reasoning` (BISE-135): the daemon checks the words
+    /// against the catalog, writes the agent's choice (and config.toml
+    /// for `default`), answers the client and broadcasts the state. No
+    /// model and no effort: it says what the agent runs with.
+    Choose {
+        client: ClientId,
+        agent: String,
+        model: Option<String>,
+        effort: Option<String>,
+        default: bool,
+    },
 }
 
 /// The sb-core executable: `SB_CORE_BIN` (the harness sets it from its
@@ -1357,6 +1368,20 @@ impl Hub {
                     json!({"t": "passthrough", "focus": focus, "line": l}),
                 )
             }
+            UserCmd::Model { model, default } => fx.push(Effect::Choose {
+                client,
+                agent: focus,
+                model,
+                effort: None,
+                default,
+            }),
+            UserCmd::Reasoning { effort } => fx.push(Effect::Choose {
+                client,
+                agent: focus,
+                model: None,
+                effort,
+                default: false,
+            }),
             UserCmd::Help => fx.push(notice(client, HELP)),
             UserCmd::Invalid(e) => fx.push(notice(client, &e)),
         }
@@ -1585,7 +1610,9 @@ plain text        message to the agent in view (main by default)
 /answer N text    answer card N
 /agents           list the agents and what they do
 /interrupt        interrupt the turn of the agent in view
-/compact          compact the conversation of the agent in view";
+/compact          compact the conversation of the agent in view
+/model [m] [default]  the model of the agent in view (default: also config.toml's)
+/reasoning [effort]   its reasoning effort (none, low, medium, high, max...)";
 
 #[cfg(test)]
 #[path = "core_tests.rs"]

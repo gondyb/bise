@@ -21,7 +21,7 @@ mod cards;
 pub(super) use cards::{card_box_height, card_full, card_mouse, card_choices, draw_card};
 use cards::{answer_card, Card, CardView};
 mod panel;
-pub(super) use panel::{draw_panel, focus_model, key_mode, panel_mouse, placeholder, split, status_state, viewed_working, workspace};
+pub(super) use panel::{draw_panel, focus_model, key_mode, panel_mouse, placeholder, split, status_state, viewed_model, viewed_who, viewed_working, workspace};
 #[cfg(test)]
 pub(super) use panel::status_text;
 use panel::glyph;
@@ -69,6 +69,13 @@ pub(super) struct Agent {
     /// BISE-136: the private git worktree it works in (`gate.sh new`),
     /// "" when it works in its own workspace.
     place: String,
+    /// The model it runs (the full `provider/id`) and its reasoning
+    /// effort ("" = the model takes none), as the hub resolves them
+    /// (BISE-135: its `/model`, `/reasoning` choice first); the efforts
+    /// its model takes (the `/reasoning` list).
+    model: String,
+    effort: String,
+    efforts: Vec<String>,
 }
 
 impl Agent {
@@ -213,6 +220,10 @@ impl Sb {
     /// usage line names, else the one its role starts with (main's or
     /// the sub-agents', from the catalog's setup).
     fn focus_model(&self, app: &App) -> String {
+        // the hub says what it runs now (BISE-135: a /model switch)
+        if let Some(m) = self.agent(&self.focus).map(|a| a.model.clone()).filter(|m| !m.is_empty()) {
+            return m;
+        }
         let used = app.events.iter().rev().find_map(|e| match e {
             crate::Ev::Usage(u) if !u.model.is_empty() => Some(u.model.clone()),
             _ => None,
@@ -491,6 +502,13 @@ fn apply_state(app: &mut App, v: &Value) {
                     created_ms: x.get("created_ms").and_then(|q| q.as_u64()).unwrap_or(0),
                     waiting_on: s(x, "waiting_on"),
                     place: s(x, "place"),
+                    model: s(x, "model"),
+                    effort: s(x, "effort"),
+                    efforts: x
+                        .get("efforts")
+                        .and_then(|e| e.as_array())
+                        .map(|e| e.iter().filter_map(|w| w.as_str().map(String::from)).collect())
+                        .unwrap_or_default(),
                 })
                 .collect()
         })

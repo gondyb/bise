@@ -216,6 +216,68 @@ pub(crate) struct Working {
     pub(crate) age: Option<String>,
 }
 
+/// What the divider says after the name (BISE-135, BISE-136): the model
+/// the agent runs and its reasoning effort (dim, ` · ` faint), then `ψ
+/// place` when it does not work in the shared checkout. Short on room,
+/// before the state loses anything: the place's name goes (ψ stays),
+/// then the long `opus 5.5 · high` becomes the tag `opus·hi`, then the
+/// tag goes ([`Who::tails`]).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Who {
+    /// the long name, `opus 5.5`; "" = not known yet
+    pub(crate) model: String,
+    /// "" = the model takes none
+    pub(crate) effort: String,
+    /// the short form, `opus·hi`
+    pub(crate) tag: String,
+    pub(crate) place: Option<String>,
+}
+
+impl Who {
+    /// The tails the label may end with, richest first.
+    fn tails(&self) -> Vec<Vec<Span<'static>>> {
+        let sep = || Span::styled(" · ", Style::default().fg(faint()));
+        let d = |t: &str| Span::styled(t.to_string(), Style::default().fg(dim()));
+        let psi = theme::glyph(theme::G_WORKTREE);
+        let place = |full: bool| -> Vec<Span<'static>> {
+            match &self.place {
+                Some(p) if full => vec![sep(), d(&format!("{} {}", psi, p))],
+                Some(_) => vec![sep(), d(psi)],
+                None => Vec::new(),
+            }
+        };
+        let long = || -> Vec<Span<'static>> {
+            if self.model.is_empty() {
+                return Vec::new();
+            }
+            let mut v = vec![sep(), d(&self.model)];
+            if !self.effort.is_empty() {
+                v.extend([sep(), d(&self.effort)]);
+            }
+            v
+        };
+        let short = || -> Vec<Span<'static>> {
+            if self.tag.is_empty() {
+                Vec::new()
+            } else {
+                vec![sep(), d(&self.tag)]
+            }
+        };
+        let mut out: Vec<Vec<Span<'static>>> = Vec::new();
+        for t in [
+            [long(), place(true)].concat(),
+            [long(), place(false)].concat(),
+            [short(), place(false)].concat(),
+            place(false),
+        ] {
+            if out.last().is_none_or(|l| width_of(l) != width_of(&t)) {
+                out.push(t);
+            }
+        }
+        out
+    }
+}
+
 /// How much of the label the divider shows, while the agent works (book
 /// §9 "Short on room (the gust)"): the steps in the order they are
 /// dropped, the right-side state first.
@@ -246,7 +308,7 @@ const STEPS: [Step; 8] = {
 /// The divider's label: ` you → name `; while the agent works, the gust
 /// 1 space after the name, then `working · 42s` dim (as much of it as
 /// `step` keeps).
-fn label(name: &str, working: Option<(&Working, Step)>) -> Vec<Span<'static>> {
+fn label(name: &str, tail: &[Span<'static>], working: Option<(&Working, Step)>) -> Vec<Span<'static>> {
     let arrow = if theme::ascii_mode() { "->" } else { "→" };
     let name = match working.and_then(|(_, s)| s.name_cut) {
         Some(n) => fit(vec![Span::raw(name.to_string())], n).into_iter().map(|s| s.content.into_owned()).collect(),
@@ -257,6 +319,7 @@ fn label(name: &str, working: Option<(&Working, Step)>) -> Vec<Span<'static>> {
         Span::styled(format!("you {} ", arrow), Style::default().fg(dim())),
         Span::styled(name, Style::default().fg(accent())),
     ];
+    out.extend(tail.iter().cloned());
     if let Some((w, step)) = working {
         out.push(Span::raw(" "));
         out.extend(gust::mark(w.motion, step.size));
@@ -281,8 +344,12 @@ fn width_of(spans: &[Span]) -> u16 {
 /// The columns the divider leaves for its right side on a screen `width`
 /// wide: from 1 rule cell and a space after the label to the state's end.
 /// While the agent works, the label is the whole one (its first step).
-pub(crate) fn divider_room(width: u16, cols: Cols, name: &str, working: Option<&Working>) -> u16 {
-    let label_w = width_of(&label(name, working.map(|w| (w, STEPS[0]))));
+/// With the key bar in the divider, the label keeps the short tail
+/// (`· opus·hi · ψ`).
+pub(crate) fn divider_room(width: u16, cols: Cols, name: &str, who: &Who, working: Option<&Working>) -> u16 {
+    let tails = who.tails();
+    let tail = tails.get(2).or(tails.last()).cloned().unwrap_or_default();
+    let label_w = width_of(&label(name, &tail, working.map(|w| (w, STEPS[0]))));
     let start = cols.margin - 1 + label_w + 2;
     let end = width.saturating_sub(cols.margin);
     end.saturating_sub(start)
@@ -297,12 +364,14 @@ pub(crate) fn divider_room(width: u16, cols: Cols, name: &str, working: Option<&
 /// whole first, then the label shrinks step by step ([`STEPS`]). The
 /// state's rect is returned (a click on `↓ back to the bottom` jumps to
 /// the tail), then the label's (zen keeps it, BISE-121).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_divider(
     buf: &mut Buffer,
     area: Rect,
     cols: Cols,
     y: u16,
     name: &str,
+    who: &Who,
     working: Option<&Working>,
     state: Vec<Span<'static>>,
 ) -> (Rect, Rect) {
@@ -326,23 +395,32 @@ pub(crate) fn draw_divider(
     let lx = l + cols.margin - 1;
     // the state's end: framed F − 4 (F − 3 its space), bare the last column
     let end = r + 1 - cols.margin;
+    let state_w = width_of(&state);
+    let fits = |label: &[Span], with_state: bool| {
+        let w = u32::from(lx) + u32::from(width_of(label));
+        if with_state && state_w > 0 {
+            w + 2 + u32::from(state_w) <= u32::from(end)
+        } else {
+            w <= u32::from(end) + 1
+        }
+    };
+    // the richest tail that leaves the state whole (the label at its
+    // first step), else the last one
+    let tails = who.tails();
+    let first = working.map(|w| (w, STEPS[0]));
+    let tail = tails.iter().find(|t| fits(&label(name, t, first), true)).or(tails.last()).cloned().unwrap_or_default();
     let (label, state) = match working {
         None => {
-            let room = divider_room(area.width, cols, name, None);
-            (label(name, None), fit(state, room as usize))
+            let lw = width_of(&label(name, &tail, None));
+            let room = end.saturating_sub(lx + lw + 2);
+            (label(name, &tail, None), fit(state, room as usize))
         }
         Some(wk) => {
-            let state_w = width_of(&state);
-            let fits = |label: &[Span], with_state: bool| {
-                let w = u32::from(lx) + u32::from(width_of(label));
-                if with_state && state_w > 0 {
-                    w + 2 + u32::from(state_w) <= u32::from(end)
-                } else {
-                    w <= u32::from(end) + 1
-                }
-            };
-            let pick = STEPS.iter().find(|s| fits(&label(name, Some((wk, **s))), s.state)).unwrap_or(&STEPS[STEPS.len() - 1]);
-            (label(name, Some((wk, *pick))), if pick.state { state } else { Vec::new() })
+            let pick = STEPS
+                .iter()
+                .find(|s| fits(&label(name, &tail, Some((wk, **s))), s.state))
+                .unwrap_or(&STEPS[STEPS.len() - 1]);
+            (label(name, &tail, Some((wk, *pick))), if pick.state { state } else { Vec::new() })
         }
     };
     put(buf, lx, y, &label, end + 1);
@@ -375,11 +453,50 @@ mod tests {
     }
 
     fn divider_row_of(width: u16, name: &str, working: Option<&Working>, state: &str) -> String {
+        divider_row_who(width, name, &Who::default(), working, state)
+    }
+
+    fn divider_row_who(width: u16, name: &str, who: &Who, working: Option<&Working>, state: &str) -> String {
         let area = Rect::new(0, 0, width, 1);
         let mut buf = Buffer::empty(area);
         let cols = crate::layout::cols(width, 40);
-        draw_divider(&mut buf, area, cols, 0, name, working, vec![Span::raw(state.to_string())]);
+        draw_divider(&mut buf, area, cols, 0, name, who, working, vec![Span::raw(state.to_string())]);
         (0..width).map(|x| buf[(x, 0)].symbol().to_string()).collect()
+    }
+
+    /// BISE-135: the model and effort after the name, `ψ place` after
+    /// them (BISE-136); short on room, the place's name goes first (ψ
+    /// stays), then the long form becomes the tag, then the tag goes,
+    /// all before the state loses anything.
+    #[test]
+    fn the_divider_names_the_model_and_the_effort() {
+        let who = Who {
+            model: "opus 5.5".into(),
+            effort: "high".into(),
+            tag: "opus·hi".into(),
+            place: Some("fix-login".into()),
+        };
+        let state = "idle · 42k";
+        let row = |w| divider_row_who(w, "auth-fix", &who, None, state);
+        assert!(row(90).contains("you → auth-fix · opus 5.5 · high · ψ fix-login ─"), "{}", row(90));
+        assert!(row(90).ends_with(" idle · 42k ─┤"), "{}", row(90));
+        assert!(row(58).contains("you → auth-fix · opus 5.5 · high · ψ ─"), "{}", row(58));
+        assert!(row(58).contains(" idle · 42k "), "{}", row(58));
+        assert!(row(46).contains("you → auth-fix · opus·hi · ψ ─"), "{}", row(46));
+        assert!(row(46).contains(" idle · 42k "), "{}", row(46));
+        assert!(row(36).contains("you → auth-fix · ψ ─"), "{}", row(36));
+        assert!(row(36).contains(" idle · 42k "), "{}", row(36));
+        // the shared checkout: nothing after the effort
+        let main = Who { place: None, ..who.clone() };
+        let r = divider_row_who(90, "main", &main, None, state);
+        assert!(r.contains("you → main · opus 5.5 · high ─"), "{r}");
+        // a model with no effort: the model alone
+        let plain = Who { model: "gpt-4.1".into(), effort: String::new(), tag: "gpt-4.1".into(), place: None };
+        assert!(divider_row_who(90, "docs", &plain, None, state).contains("you → docs · gpt-4.1 ─"));
+        // while it works, the tail goes before the gust's steps
+        let w = Working { motion: crate::gust::Motion::Still, age: Some("42s".into()) };
+        let r = divider_row_who(90, "auth-fix", &who, Some(&w), "31%");
+        assert!(r.contains("auth-fix · opus 5.5 · high · ψ fix-login ") && r.contains("working · 42s"), "{r}");
     }
 
     fn divider_row(width: u16, working: Option<&Working>, state: &str) -> String {

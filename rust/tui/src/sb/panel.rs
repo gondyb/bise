@@ -189,7 +189,7 @@ pub(crate) fn place_label(a: &Agent) -> Option<String> {
 
 /// The row of live agent `a`, entry `i` of the panel, number `num`
 /// (0 main; blank after 9).
-fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usize) -> Line<'static> {
+fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usize, tag: &Tag) -> Line<'static> {
     let focused = a.name == sb.focus;
     let selected = sb.selected == Some(i);
     // BISE-119: main's status sits in the same column as every agent's
@@ -223,9 +223,70 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usi
         marks.push(Span::styled(format!(" · {} queued", mine), Style::default().fg(faint())));
     }
     let bg = selected.then(selection_bg);
+    // BISE-135: the model·effort tag in its column, before the state;
+    // it goes first when the row is narrow (the name keeps 6 columns)
+    let right = right_of(app, sb, a);
+    if tag.width > 0 && w >= TAG_MIN_PANEL {
+        let right_w = if right.0.is_empty() { 0 } else { right.0.width() + 1 };
+        let marks_w: usize = marks.iter().map(|s| s.content.width()).sum();
+        // ` N G ` + marks + `  tag` + the widest right side + the margin:
+        // every row's tag starts in the same column
+        let fixed = 5 + marks_w + 2 + tag.width + tag.right + 1;
+        if w >= fixed + a.name.width().min(6) {
+            let t = tag.of(a);
+            let color = if tag.differs(a) { dim() } else { faint() };
+            let pad = (w - fixed).saturating_sub(a.name.width());
+            let after = tag.width.saturating_sub(t.width()) + tag.right.saturating_sub(right_w);
+            marks.push(Span::raw(" ".repeat(pad + 2)));
+            marks.push(Span::styled(t, Style::default().fg(color)));
+            marks.push(Span::raw(" ".repeat(after)));
+        }
+    }
     // the name takes all the room left of the marks and the state; it is
     // cut only there (BISE-109: no fixed cap)
-    row(num, g, &a.name, name_style, marks, right_of(app, sb, a), w, bg)
+    row(num, g, &a.name, name_style, marks, right, w, bg)
+}
+
+/// The panel is at least this wide to show the tags (the designer's
+/// layout: narrower, the state keeps the room).
+const TAG_MIN_PANEL: usize = 44;
+
+/// The tags of the panel's rows (BISE-135): `opus·hi`, aligned in one
+/// column (the longest tag, at most 12 columns); a tag that differs
+/// from main's is dim, the others faint.
+pub(super) struct Tag {
+    width: usize,
+    /// the widest right side of the rows (its leading space included)
+    right: usize,
+    main: String,
+    models: Vec<String>,
+}
+
+impl Tag {
+    fn new(app: &App, sb: &Sb, agents: &[&Agent]) -> Tag {
+        let models: Vec<String> = agents.iter().map(|a| a.model.clone()).collect();
+        let main = agents.iter().find(|a| a.main).map(|a| a.model.clone() + "|" + &a.effort).unwrap_or_default();
+        let right = agents
+            .iter()
+            .map(|a| right_of(app, sb, a).0.width())
+            .filter(|w| *w > 0)
+            .map(|w| w + 1)
+            .max()
+            .unwrap_or(0);
+        let mut t = Tag { width: 0, right, main, models };
+        t.width = agents.iter().map(|a| t.of(a).width()).max().unwrap_or(0).min(12);
+        t
+    }
+
+    pub(super) fn of(&self, a: &Agent) -> String {
+        let others: Vec<&str> = self.models.iter().map(String::as_str).collect();
+        let t = crate::models::tag(&a.model, &a.effort, &others);
+        fit(&t, 12)
+    }
+
+    fn differs(&self, a: &Agent) -> bool {
+        !a.main && a.model.clone() + "|" + &a.effort != self.main
+    }
 }
 
 /// The live agents (main and the archived left out) by what the header
@@ -395,6 +456,7 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     let numbers = sb.numbers();
     let nav = sb.nav();
     let live = nav.iter().filter(|a| !a.archived()).count();
+    let tags = Tag::new(app, sb, &nav[..live]);
     let mut owners: Vec<(usize, Hit)> = Vec::new();
     // the first row of the selected entry (the panel scrolls to it)
     let mut sel_row = None;
@@ -404,7 +466,7 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
         }
         owners.push((lines.len(), Hit::Agent(a.name.clone())));
         let n = numbers.iter().find(|(name, _)| *name == a.name).map(|(_, n)| *n);
-        lines.push(agent_row(app, sb, a, i, n, w));
+        lines.push(agent_row(app, sb, a, i, n, w, &tags));
         // the selected agent: what it is for and its last note, under its row
         if sb.selected == Some(i) && !a.main {
             for t in [&a.objective, &a.note].into_iter().filter(|t| !t.is_empty()) {
@@ -712,6 +774,33 @@ pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bo
 }
 
 /// The state of the agent you talk to (book §8 "The frame": the right of
+/// What the divider says after the name of the agent you view
+/// (BISE-135, BISE-136): its model and effort, where it works.
+pub(crate) fn viewed_who(app: &App) -> crate::chrome::Who {
+    let sb = &app.sb;
+    let Some(a) = sb.agent(&sb.focus) else {
+        return crate::chrome::Who::default();
+    };
+    let others: Vec<&str> = sb.agents.iter().filter(|x| !x.archived()).map(|x| x.model.as_str()).collect();
+    crate::chrome::Who {
+        model: if a.model.is_empty() { String::new() } else { crate::models::long_name(&a.model) },
+        effort: a.effort.clone(),
+        tag: crate::models::tag(&a.model, &a.effort, &others),
+        place: place_label(a),
+    }
+}
+
+/// The model of the agent in view, its effort and the efforts its model
+/// takes (the `/model` and `/reasoning` popups, BISE-135): (name,
+/// model, effort, efforts).
+pub(crate) fn viewed_model(app: &App) -> (String, String, String, Vec<String>) {
+    let sb = &app.sb;
+    let a = sb.agent(&sb.focus).cloned().unwrap_or_default();
+    let model = if a.model.is_empty() { sb.focus_model(app) } else { a.model.clone() };
+    let efforts = if a.efforts.is_empty() && a.model.is_empty() { crate::models::efforts(&model).0 } else { a.efforts.clone() };
+    (sb.focus.clone(), model, a.effort, efforts)
+}
+
 /// The agent you view, when it works (book §8, BISE-105): the gust's
 /// motion and the current turn's age, for the divider's label.
 pub(crate) fn viewed_working(app: &App) -> Option<crate::chrome::Working> {
@@ -722,8 +811,8 @@ pub(crate) fn viewed_working(app: &App) -> Option<crate::chrome::Working> {
 
 /// The state of the agent you talk to (book §8 "The frame": the right of
 /// the divider; it was the status row), dim: its state, the turn's
-/// duration, its context, `ψ branch` or `ψ worktree` when it does not
-/// work in the shared checkout (BISE-136: nothing then), then the notes
+/// duration, its context (`ψ branch` moved to the label, with the
+/// model: [`viewed_who`]), then the notes
 /// (preview, read-only, cards, the hub's version); or the `D` question,
 /// in accent. `idle · 210k / 1M tokens · 21%`.
 pub(crate) fn status_state(app: &App) -> Option<Line<'static>> {
@@ -742,9 +831,6 @@ pub(crate) fn status_state(app: &App) -> Option<Line<'static>> {
     }
     if let Some(u) = crate::usage::current(&app.events) {
         spans.push(d(u.label()));
-    }
-    if let Some(l) = place_label(&a) {
-        spans.push(d(format!("{} {}", G_WORKTREE, l)));
     }
     if a.archived() {
         spans.push(d("read-only history · /restore brings it back".into()));
@@ -1072,6 +1158,49 @@ mod tests {
         assert!(t.iter().any(|r| r.contains(&format!("big-refactor-of-auth {}", G_WORKTREE))), "{}", t.join("\n"));
     }
 
+    /// BISE-135: each row shows its model·effort tag in one column,
+    /// before the state; a tag unlike main's is dim, the others faint;
+    /// under 44 columns, no tag (the state keeps its room).
+    #[test]
+    fn each_row_names_its_model() {
+        let mut app = bench::test_app_drained();
+        let with = |a: Agent, m: &str, e: &str| Agent { model: m.into(), effort: e.into(), ..a };
+        app.sb.agents = vec![
+            with(Agent { main: true, ..agent("main", "idle") }, "foundry/claude-opus-5-5", "high"),
+            with(agent("auth-fix", "working"), "foundry/claude-opus-5-5", "high"),
+            with(agent("release", "working"), "anthropic/claude-sonnet-4-5", "low"),
+            with(agent("docs", "done"), "openai/gpt-4.1", ""),
+        ];
+        let t = trimmed(&panel_rows(&app, 50, 8));
+        let row = |n: &str| t.iter().find(|r| r.contains(n)).cloned().unwrap_or_default();
+        assert!(row("main").contains("opus·hi"), "{t:?}");
+        assert!(row("auth-fix").contains("opus·hi"), "{t:?}");
+        assert!(row("release").contains("sonnet·lo"), "{t:?}");
+        assert!(row("docs").contains("gpt-4.1"), "{t:?}");
+        // one column: the tags start at the same x
+        let col = |n: &str, tag: &str| row(n).find(tag).map(|i| row(n)[..i].chars().count());
+        assert_eq!(col("auth-fix", "opus"), col("release", "sonnet"), "{t:?}");
+        assert_eq!(col("main", "opus"), col("docs", "gpt"), "{t:?}");
+        // colors: the one unlike main's is dim
+        let mut term = Terminal::new(TestBackend::new(50, 8)).unwrap();
+        term.draw(|f| draw_panel(&app, f, f.area())).unwrap();
+        let buf = term.backend().buffer().clone();
+        let color_of = |n: &str, tag: &str| {
+            let y = t.iter().position(|r| r.contains(n))? as u16;
+            let x = col(n, tag)? as u16;
+            Some(buf[(x, y)].fg)
+        };
+        assert_eq!(color_of("release", "sonnet"), Some(dim()));
+        assert_eq!(color_of("auth-fix", "opus"), Some(faint()));
+        // narrow: no tag, the state stays
+        let t = trimmed(&panel_rows(&app, 40, 8));
+        assert!(!t.iter().any(|r| r.contains("opus") || r.contains("sonnet")), "{t:?}");
+        // the divider: main's long form
+        app.sb.focus = "release".into();
+        let w = viewed_who(&app);
+        assert_eq!((w.model.as_str(), w.effort.as_str(), w.tag.as_str()), ("sonnet 4.5", "low", "sonnet·lo"));
+    }
+
     /// BISE-136: ψ marks an agent out of the shared checkout (a hub
     /// worktree or a private one), with its branch or worktree name in
     /// the divider; the shared checkout shows nothing.
@@ -1088,10 +1217,14 @@ mod tests {
         let t = trimmed(&panel_rows(&app, 40, 8));
         assert!(t.iter().any(|r| r.contains(&format!("fix {}", G_WORKTREE))), "{t:?}");
         assert!(!t.iter().any(|r| r.contains("docs") && r.contains(G_WORKTREE)), "{t:?}");
+        // the place is in the divider's label (BISE-135: after the model),
+        // not in the state
         app.sb.focus = "fix".into();
+        assert_eq!(viewed_who(&app).place.as_deref(), Some("fix-wt"));
         let state: String = status_state(&app).unwrap().spans.iter().map(|s| s.content.to_string()).collect();
-        assert!(state.contains(&format!("{} fix-wt", G_WORKTREE)), "{state:?}");
+        assert!(!state.contains(G_WORKTREE), "{state:?}");
         app.sb.focus = "docs".into();
+        assert_eq!(viewed_who(&app).place, None);
         let state: String = status_state(&app).unwrap().spans.iter().map(|s| s.content.to_string()).collect();
         assert!(!state.contains(G_WORKTREE) && !state.contains("shared"), "{state:?}");
     }

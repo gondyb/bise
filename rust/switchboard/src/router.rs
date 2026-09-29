@@ -50,6 +50,18 @@ pub enum UserCmd {
     /// Any other `/command`: for the REPL of the agent in focus
     /// (`/compact`, `/status`...).
     Passthrough(String),
+    /// `/model [<model>] [default]` (BISE-135): the model of the agent
+    /// in focus from its next call; `default`: also config.toml's
+    /// (`model` for main, `agent_model` for a sub-agent). No model: say
+    /// which one it runs.
+    Model {
+        model: Option<String>,
+        default: bool,
+    },
+    /// `/reasoning [<effort>]` (BISE-135): its reasoning effort.
+    Reasoning {
+        effort: Option<String>,
+    },
     Help,
     Invalid(String),
 }
@@ -245,6 +257,21 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
         // `/agents`, the board of every agent (`/tasks`: the old name)
         "/agents" | "/tasks" => UserCmd::Tasks,
         "/interrupt" => UserCmd::Interrupt,
+        "/model" => {
+            let default = words.contains(&"default");
+            let rest: Vec<&str> = words.iter().copied().filter(|w| *w != "default").collect();
+            match rest.as_slice() {
+                [] if default => UserCmd::Invalid("usage: /model <model> default".into()),
+                [] => UserCmd::Model { model: None, default },
+                [m] => UserCmd::Model { model: Some(m.to_string()), default },
+                _ => UserCmd::Invalid("usage: /model [<model>] [default]".into()),
+            }
+        }
+        "/reasoning" | "/effort" => match words.as_slice() {
+            [] => UserCmd::Reasoning { effort: None },
+            [e] => UserCmd::Reasoning { effort: Some(e.to_ascii_lowercase()) },
+            _ => UserCmd::Invalid("usage: /reasoning [<effort>]".into()),
+        },
         "/help" => UserCmd::Help,
         _ => UserCmd::Passthrough(line.to_string()),
     }
@@ -253,6 +280,21 @@ pub fn parse(line: &str, focus: &str) -> UserCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_and_reasoning() {
+        assert_eq!(parse("/model", MAIN), UserCmd::Model { model: None, default: false });
+        assert_eq!(
+            parse("/model anthropic/claude-sonnet-4-5 default", MAIN),
+            UserCmd::Model { model: Some("anthropic/claude-sonnet-4-5".into()), default: true }
+        );
+        assert_eq!(parse("/model default opus-5.5", "docs"), UserCmd::Model { model: Some("opus-5.5".into()), default: true });
+        assert!(matches!(parse("/model default", MAIN), UserCmd::Invalid(_)));
+        assert!(matches!(parse("/model a b", MAIN), UserCmd::Invalid(_)));
+        assert_eq!(parse("/reasoning", MAIN), UserCmd::Reasoning { effort: None });
+        assert_eq!(parse("/reasoning High", MAIN), UserCmd::Reasoning { effort: Some("high".into()) });
+        assert_eq!(parse("/effort low", MAIN), UserCmd::Reasoning { effort: Some("low".into()) });
+    }
 
     #[test]
     fn plain_text_goes_to_the_focus() {
