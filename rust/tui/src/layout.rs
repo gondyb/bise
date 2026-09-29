@@ -133,9 +133,9 @@ pub(crate) struct Rows {
     /// under `KEYS_OWN_ROW_FROM` rows the key bar takes the divider's
     /// right side instead of the state
     pub(crate) keys_in_divider: bool,
-    /// the composer's blank bar rows (book §13): one above its text (also
-    /// the blank row between the attachments and the body), one under it;
-    /// always the same
+    /// the composer's blank bar row above its text (book §13; with the
+    /// attachments box, the blank row above the box instead); none under
+    /// it: the text, then the key bar (user request, designer's OK)
     pub(crate) pad_top: u16,
     pub(crate) pad_bottom: u16,
     /// the composer's text rows: at least `min_text`, at most `max_text`
@@ -149,8 +149,8 @@ const KEYS_OWN_ROW_FROM: u16 = 14;
 /// The rows by height (book §8 "The frame", §13 "The composer pane"): the
 /// header on row 0, 1 blank row, the history; the divider, then the raised
 /// pane: the queue, the attachments and 1 blank row (from 20 rows), the
-/// composer: 1 bar row, the text (1 row, up to min(12, 40%)), 1 bar row
-/// (the bar rows from 20 rows); the key bar (its own row from 14 rows),
+/// composer: 1 bar row (from 20 rows), the text (1 row, up to min(12,
+/// 40%)); the key bar (its own row from 14 rows),
 /// the frame's bottom edge (framed).
 pub(crate) fn rows(width: u16, height: u16) -> Rows {
     let framed = framed(width, height);
@@ -164,7 +164,7 @@ pub(crate) fn rows(width: u16, height: u16) -> Rows {
         keybar: if keys_in_divider { height } else { height.saturating_sub(1 + u16::from(framed)) },
         keys_in_divider,
         pad_top: pad,
-        pad_bottom: pad,
+        pad_bottom: 0,
         min_text,
         max_text: (height * 2 / 5).min(MAX_TEXT).max(min_text),
     }
@@ -224,15 +224,15 @@ mod tests {
     #[test]
     fn the_rows() {
         // framed, tall: header on the border, 1 blank row, key bar above
-        // the bottom border, 1 blank row each side of the text, 1 text
-        // row at rest (BISE-111)
+        // the bottom border, 1 blank row above the text and none under it
+        // (BISE-210), 1 text row at rest
         let r = rows(100, 40);
-        assert_eq!((r.header, r.body, r.keybar, r.pad_top, r.pad_bottom), (0, 2, 38, 1, 1));
+        assert_eq!((r.header, r.body, r.keybar, r.pad_top, r.pad_bottom), (0, 2, 38, 1, 0));
         assert_eq!((r.min_text, r.max_text), (1, 12));
-        // the padding is symmetric at every height; under 20 rows both go
+        // the blank row above the text from 20 rows; never one under it
         for h in 1..60 {
             let r = rows(100, h);
-            assert_eq!(r.pad_top, r.pad_bottom, "{h}");
+            assert_eq!(r.pad_bottom, 0, "{h}");
             assert_eq!(r.pad_top, u16::from(h >= 20), "{h}");
             assert_eq!(r.min_text, 1, "{h}");
         }

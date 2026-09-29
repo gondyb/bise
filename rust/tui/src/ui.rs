@@ -160,16 +160,12 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         let r = Rect { x: feed.x + 3, width: cols.col_w.saturating_sub(3).min(feed.width.saturating_sub(3)), ..feed };
         frame.render_widget(Paragraph::new(lines), r);
     }
-    // the raised pane (book §13): every cell under the divider inside the
-    // frame (bare: the full width down to the last row)
-    let (tx, tw) = if cols.framed { (area.x + 1, area.width.saturating_sub(2)) } else { (area.x, area.width) };
-    let tint = Rect {
-        x: tx,
-        y: divider_y + 1,
-        width: tw,
-        height: area.bottom().saturating_sub(divider_y + 1 + edge_h),
-    }
-    .intersection(area);
+    // the raised pane (book §13, BISE-210): one grey block from the
+    // divider's row down to the last row, edge to edge, the frame's cells
+    // too (the side edges, the bottom edge, the divider and its labels):
+    // no ground between the grey and the lines
+    let tint = Rect { x: area.x, y: divider_y, width: area.width, height: area.bottom().saturating_sub(divider_y) }
+        .intersection(area);
     frame.buffer_mut().set_style(tint, Style::default().bg(theme::raised()));
     // the divider: who you talk to, what it does (was the status row); on
     // a short screen the key bar takes the state's place

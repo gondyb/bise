@@ -258,8 +258,8 @@ fn two_sections_the_attachments_then_the_body_behind_its_bar() {
             let pad_top = if n > 0 { 0 } else { rows.pad_top };
             let (top, bottom) = (a.y - pad_top, a.y + a.h as u16 + rows.pad_bottom);
             assert_eq!(bottom, rows.keybar, "{what}");
-            // symmetric at rest: as many blank bar rows above the text as under it
-            assert_eq!(rows.pad_top, rows.pad_bottom, "{what}");
+            // no blank row under the text: the key bar right under it (BISE-210)
+            assert_eq!(rows.pad_bottom, 0, "{what}");
             let want = if empty { crate::theme::faint() } else { crate::theme::accent() };
             for y in top..bottom {
                 let c = &buf[(x0, y)];
@@ -397,4 +397,3 @@ fn without_a_tint_the_chip_is_bracketed_same_width() {
     }
     assert_eq!(attach::chip_text("[Quote #1]").width(), 5);
 }
-
