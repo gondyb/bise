@@ -744,12 +744,14 @@ fn auth_shown(o: &Onb) -> String {
     bise_catalog::auth::tilde(&o.home.auth_file(), Some(o.home.user_home()))
 }
 
-/// "anthropic, openai, mistral and 10 more."
+/// Every provider you can paste a key for: "anthropic, openai, … and zai"
+/// (all of them: "and 9 more" does not say what you can paste).
 fn paste_sub(ps: &[Provider]) -> String {
-    let first: Vec<&str> = ps.iter().take(3).map(|p| p.id.as_str()).collect();
-    match ps.len().saturating_sub(3) {
-        0 => format!("{}.", first.join(", ")),
-        more => format!("{} and {} more.", first.join(", "), more),
+    let ids: Vec<&str> = ps.iter().map(|p| p.id.as_str()).collect();
+    match ids.split_last() {
+        None => String::new(),
+        Some((last, [])) => last.to_string(),
+        Some((last, rest)) => format!("{} and {}", rest.join(", "), last),
     }
 }
 
@@ -1322,13 +1324,17 @@ mod tests {
             "1 · use ANTHROPIC_FOUNDRY_API_KEY found",
             "foundry, already set up. nothing to paste.",
             "2 · paste another key",
-            "anthropic, foundry, openai and ",
             "3 · sign in with the browser",
             "not built yet.",
             "↑↓ choose · enter ok",
         ] {
             assert!(sc.contains(s), "{}\n{}", s, sc);
         }
+        // every provider you can paste a key for, by name, no "and 9 more"
+        let all = paste_sub(&o.providers);
+        assert!(all.starts_with("anthropic, foundry, openai, ") && !all.ends_with('.'), "{}", all);
+        assert!(o.providers.iter().all(|p| all.contains(p.id.as_str())), "{}", all);
+        assert!(flat(&sc).contains(&all) && !sc.contains(" more"), "{}", sc);
         // ↑↓ skip the browser row
         o.on_key(key(KeyCode::Down), 1, &e);
         assert_eq!(o.sel, 1);

@@ -2618,3 +2618,10 @@ Index:
 - **what:** under `hi, i'm bise :*`, a blank row, then `bise /beez/ · french, n.` / `1. a quick kiss on the cheek :*` / `2. a brisk north wind` / `3. a terminal where your agents ship while you think`, then a blank row and the tagline. `bise` bold, the rest of the header dim (read: not faint), meanings 1-2 dim, `:*` in accent, meaning 3 (what bise is) in text color. A block centered as a whole, lines left-aligned inside (padded to the widest). The lines come one by one, 300 ms apart, from 900 ms after the pop; the tagline starts 1 s after the last (TAG_AT moved from KISS_AT+1900 to +2800). Blank rows hold their places, so nothing moves. Narrow columns: a meaning wraps at the column with a 3-column hanging indent. Any key but enter shows the whole welcome at once (enter still goes on, esc still skips). The `·` follows BISE_ASCII.
 - **notes:** test `onboarding::tests::step_1_welcome_types_then_pops` (one line at a time, the blank row, the block's left edge and centering at 100 cols, styles, the hanging indent at 36 cols, any key); `tui_onboarding_tmux.py` checks the four lines.
 
+### BISE-214 · the paste option lists every provider
+
+- **status:** done · **owner:** onboard-gloss · **commits:** `git log --grep BISE-214`
+- **owns:** `rust/tui/src/onboarding.rs` (`paste_sub`)
+- **spec:** user (via main): « il faut lister les "9 more" imo, sinon on sait pas ce qu'on peut paste? »
+- **what:** the sub-line of `paste a key` / `paste another key` names every provider you can paste a key for (`anthropic, foundry, openai, …, fireworks and cerebras`) instead of `anthropic, foundry, openai and 9 more.`. Dim, wrapped at the column like before (2 rows at 64 columns), no final period.
+- **notes:** test `onboarding::tests::step_3_model_lists_found_keys_and_saves_a_pasted_one` (every provider id on screen, no "more").
