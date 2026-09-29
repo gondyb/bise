@@ -8,8 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --wind:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --raised:#221e1c; }
-  [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --wind:#cbc3b6; --acc:#b8416b; --err:#b3261e; --raised:#fbf8f3; }
+  :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --wind:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --raised:#221e1c; --chip:#262220; }
+  [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --wind:#cbc3b6; --acc:#b8416b; --err:#b3261e; --raised:#fbf8f3; --chip:#e8e2d8; }
   * { box-sizing:border-box; margin:0; padding:0; }
   html { scroll-behavior:smooth; }
   body { background:var(--bg); color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:16px; line-height:1.75; transition:background .4s, color .4s; }
@@ -136,7 +136,8 @@
   .mcomp .cur { background:var(--acc); }
   .mini .err { color:var(--err); } .mini .ok { color:#b9d99a; } [data-theme="light"] .mini .ok { color:#3f7a2a; }
   .mini .row { display:flex; justify-content:space-between; }
-  .mini .l3 { padding-left:1ch; border-left:1px solid var(--faint); margin-left:1ch; }
+  .mini .l3 { margin-left:2ch; }
+  .chip { background:var(--chip); padding:0 1ch; color:var(--dim); } .chip .s { color:var(--text); font-weight:700; } .chip .ar { color:var(--faint); }
   @media (max-width: 900px) { .fgrid { grid-template-columns:1fr; } }
 
   /* quiet scrollbars, everywhere (Firefox, Chrome, Safari, Edge on Windows) */
@@ -480,9 +481,9 @@ const plays = {
   },
   async router(m) {
     m.line(`<span class="dim"><span class="pulse acc">∿</span> 4 working</span>`); await m.wait(900);
-    m.line(`<span class="faint">│ auth-fix → main: retry the test 3 times?</span>`, "l3"); await m.wait(1200);
+    m.line(`<span class="chip">✉ <span class="s">auth-fix</span> <span class="ar">→</span> main</span> <span class="dim">retry the test 3 times?</span>`, "l3"); await m.wait(1200);
     m.line(`<span class="acc">:*</span> i answered auth-fix for you: no retries, fix the cause. <span class="faint">(you said so last week)</span>`, "b"); await m.wait(1800);
-    m.line(`<span class="faint">│ release → main: tag it on main or on a branch?</span>`, "l3"); await m.wait(1200);
+    m.line(`<span class="chip">✉ <span class="s">release</span> <span class="ar">→</span> main</span> <span class="dim">tag it on main or on a branch?</span>`, "l3"); await m.wait(1200);
     m.line(`<span class="acc">:*</span> i told release: on main, like every release. <span class="faint">(it's in CONTRIBUTING.md)</span>`, "b"); await m.wait(3200);
   },
   async direct(m) {
@@ -498,13 +499,13 @@ const plays = {
   },
   async sync(m) {
     const ls = [
-      "│ release → api-bump: changing public types?",
-      "│ api-bump → release: yes: Session and Token.",
-      "│ release → docs: need a 3.0 migration section",
-      "│ docs → release: done, docs/migrate.md",
-    ].map((t) => t.replace(/→ (\S+):/, `→ $1:`));
+      ["release", "api-bump", "changing public types?"],
+      ["api-bump", "release", "yes: Session and Token."],
+      ["release", "docs", "need a 3.0 migration section"],
+      ["docs", "release", "done, docs/migrate.md"],
+    ];
     const els = [];
-    for (const t of ls) { els.push(m.line(`<span class="faint">${t}</span>`, "l3")); await m.wait(1000); }
+    for (const [f, t, x] of ls) { els.push(m.line(`<span class="chip">✉ <span class="s">${f}</span> <span class="ar">→</span> ${t}</span> <span class="dim">${x}</span>`, "l3")); await m.wait(1000); }
     await m.wait(500);
     els.slice(1).forEach((e) => e.remove());
     els[0].className = ""; els[0].innerHTML = `<span class="dim">▸ 4 messages between 3 agents</span>`;

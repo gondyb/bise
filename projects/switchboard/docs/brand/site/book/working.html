@@ -42,12 +42,17 @@
 const c = (cls, ch) => `<span class="${cls}">${ch === " " ? "&nbsp;" : ch}</span>`;
 // each variant: [key, name, what, ms per frame, frames(i) → cells html, ascii form, pick?]
 const V = [
+  ["I", "a gust blowing by · picked", "C's pattern (a puff that leaves and drifts away) in A's material, without the kiss: a gust enters on the left, a ≈ head with a ∿ ~ · tail, crosses 5 cells and fades, then the next one comes. in the header and the divider: 5 cells. in the panel, where the status is one cell, the gust breathes in place (· ~ ∿ ≈ ∿ ~).", 110,
+    (i) => { const ramp = ["≈", "∿", "~", "·", " ", " ", " ", " ", " "]; const col = { "≈": "tx", "∿": "tx", "~": "dim", "·": "faint", " ": "faint" };
+      return [0, 1, 2, 3, 4].map((k) => { const ch = ramp[((i - k) % ramp.length + ramp.length) % ramp.length]; return c(col[ch], ch); }).join(""); },
+    "'=~-.' travelling over 5 cells; panel: . - ~ = ~ -", true,
+    (i) => { const r = ["·", "~", "∿", "≈", "∿", "~"]; const ch = r[i % r.length]; return c(ch === "·" ? "faint" : ch === "~" ? "dim" : "tx", ch); }],
   ["A", "gust", "a little wind blowing through 5 cells: the landing page's ASCII wind, shrunk to fit. unmistakably 'something is moving', and it's the brand.", 110,
     (i) => { const ramp = [" ", "·", "~", "∿", "≈", "∿", "~", "·", " ", " "]; const col = { "≈": "tx", "∿": "tx", "~": "dim", "·": "faint", " ": "faint" };
       return [0, 1, 2, 3, 4].map((k) => { const ch = ramp[((i - k) % ramp.length + ramp.length) % ramp.length]; return c(col[ch], ch); }).join(""); },
-    "  .-~=~-.  (same ramp in ASCII)", true],
+    "  .-~=~-.  (same ramp in ASCII)", false],
   ["B", "typing dots", "the message-app 'is typing…': three dots, one lit at a time. everyone reads it instantly; it matches the messages between agents.", 260,
-    (i) => [0, 1, 2].map((k) => (i % 4) === k ? c("tx", "•") : c("faint", "·")).join(""), ".oo  o.o  oo.", true],
+    (i) => [0, 1, 2].map((k) => (i % 4) === k ? c("tx", "•") : c("faint", "·")).join(""), ".oo  o.o  oo.", false],
   ["C", "blowing a kiss", "main's own indicator: :* blows a breeze that drifts away. for main only (in the header and main's panel row); the agents use A or B.", 140,
     (i) => { const trail = ["", "·", "~", "~∿", " ∿~", "  ~·", "   ·", ""]; const t = trail[i % trail.length].padEnd(4, " ");
       return c("acc", ":") + c("acc", "*") + [...t].map((ch) => c(ch === "∿" ? "tx" : ch === "~" ? "dim" : "faint", ch)).join(""); },
@@ -65,13 +70,13 @@ const V = [
     (i) => c("tx", "◜◠◝◞◡◟"[i % 6]), "( - ) turning", false],
 ];
 const els = [];
-document.getElementById("v").innerHTML = V.map(([k, name, what, ms, f, ascii, pick], n) => `<figure><figcaption><b><span class="n">${k}</span>${name}</b>${pick ? ' <span class="pick">· my pick</span>' : ""}<p>${what}</p></figcaption>
+document.getElementById("v").innerHTML = V.map(([k, name, what, ms, f, ascii, pick, pf], n) => `<figure><figcaption><b><span class="n">${k}</span>${name}</b>${pick ? ' <span class="pick">· my pick</span>' : ""}<p>${what}</p></figcaption>
 <div class="term">
   <div class="hdr"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim"><span class="ind" data-v="${n}"></span> 3 working · <span class="acc">? 1 needs you</span></span></div>
   <div class="panel">
     <div class="row"><span><span class="faint">0</span> <span class="acc">:*</span> main</span><span></span></div>
-    <div class="row"><span><span class="faint">1</span> <span class="ind" data-v="${n}"></span> auth-fix</span><span class="dim">12m · 21%</span></div>
-    <div class="row"><span><span class="faint">2</span> <span class="ind" data-v="${n}"></span> marketing</span><span class="dim">3m · 8%</span></div>
+    <div class="row"><span><span class="faint">1</span> <span class="ind" data-v="${n}" data-p="1"></span> auth-fix</span><span class="dim">12m · 21%</span></div>
+    <div class="row"><span><span class="faint">2</span> <span class="ind" data-v="${n}" data-p="1"></span> marketing</span><span class="dim">3m · 8%</span></div>
     <div class="row"><span><span class="faint">3</span> <span class="acc">?</span> docs</span><span class="acc">you</span></div>
   </div>
   <div class="pane"><div class="lbl"><span><span class="dim">you →</span> <span class="acc">marketing</span> <span class="ind" data-v="${n}"></span> <span class="dim">working · <span class="sec">42</span>s</span></span><span class="dim">ctrl+c interrupt</span></div>
@@ -82,7 +87,7 @@ let i = 0, t0 = Date.now();
 const inds = [...document.querySelectorAll(".ind")];
 function tick() {
   const now = Date.now();
-  inds.forEach((el) => { const [, , , ms, f] = V[+el.dataset.v]; el.innerHTML = f(Math.floor(now / ms)); });
+  inds.forEach((el) => { const [, , , ms, f, , , pf] = V[+el.dataset.v]; el.innerHTML = (el.dataset.p && pf ? pf : f)(Math.floor(now / ms)); });
   document.querySelectorAll(".sec").forEach((s) => s.textContent = 42 + Math.floor((now - t0) / 1000));
   requestAnimationFrame(tick);
 }

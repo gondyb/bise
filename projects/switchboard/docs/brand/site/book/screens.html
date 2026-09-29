@@ -6,7 +6,7 @@
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root { --bg:#141211; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --ok:#b9d99a;
-          --kw:#d7a6f0; --str:#b9d99a; --com:#857e74; --num:#f0b27a; --fn:#8fc4f0; --line:#2a2623; --raised:#1f1c1a; }
+          --kw:#d7a6f0; --str:#b9d99a; --com:#857e74; --num:#f0b27a; --fn:#8fc4f0; --line:#2a2623; --raised:#1f1c1a; --chip:#231f1d; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background:#0b0a09; color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:13px; line-height:1.55; padding:28px; }
   h1 { font-size:15px; } .lead { color:#8a8378; max-width:100ch; margin:6px 0 18px; }
@@ -81,14 +81,16 @@
   .rec { color:var(--acc); }
   .legend { display:grid; grid-template-columns:repeat(3, 38ch); gap:2px 3ch; max-width:120ch; }
   .legend span:first-child { display:inline-block; width:3ch; }
-  .l3 { color:var(--dim); border-left:1px solid var(--faint); padding-left:2ch; margin-left:1ch; }
-  .l3 + .l3 { margin-top:0; }
-  .l3 .to { color:var(--faint); }
+  /* level 3, the envelope chip (user pick, messages.html C): at x0+2, a tinted chip " ✉ sender → receiver "
+     (sender bold text, arrow faint, receiver dim), 1 space, the text dim, wrapping under itself */
+  .l3 { color:var(--dim); margin-left:2ch; display:grid; grid-template-columns:auto 1fr; gap:0 1ch; max-width:89ch; }
+  .l3 .chip { background:var(--chip); padding:0 1ch; white-space:nowrap; align-self:start; }
+  .l3 .chip .s { color:var(--text); font-weight:700; } .l3 .chip .ar { color:var(--faint); }
+  .l3.fold, .l3:not(:has(.chip)) { display:block; }
   .l1 { border-left:2px solid var(--acc); padding-left:2ch; margin-left:0; }
   .l1 .t { color:var(--acc); font-weight:700; }
   .lv { display:grid; grid-template-columns:18ch 1fr; gap:6px 3ch; max-width:112ch; margin-top:8px; }
   .tsep { color:var(--faint); margin-top:10px; }
-  .l3 .nm { display:inline-block; width:10ch; overflow:hidden; white-space:nowrap; vertical-align:bottom; }
   .img { color:var(--acc); background:#2b1c21; border-radius:3px; padding:0 .5ch; }
   .thumb { margin:4px 0 0 3ch; width:34ch; height:9em; border:1px solid var(--line); border-radius:4px; background:
     linear-gradient(#e9e4dc 0 18%, transparent 18%), linear-gradient(90deg, #d8d2c8 0 22%, #f6f3ee 22%); position:relative; }
@@ -165,8 +167,9 @@ function foot(status, composer, hints, queue = "") {
 function term({ h, feed, pan, above = "", f, narrow, overlay = "" }) {
   return `<div class="term${narrow ? " narrow" : ""}"><div class="app">${h ?? head()}<div class="grid"><div class="feed">${feed}</div>${narrow ? "" : (pan ?? PANEL())}</div>${above}${f ?? foot()}</div>${overlay}</div>`;
 }
-const bg = (from, to, t) => `<div class="l3"><span class="who">@</span>${from} <span class="to">→ ${to}</span>  ${t}</div>`;
-const bgc = (from, to, t) => `<div class="l3"><span class="who">@</span><span class="nm">${from}</span><span class="to">→ </span><span class="nm to">${to}</span>${t}</div>`;
+const chip = (from, to) => `<span class="chip">✉ <span class="s">${from}</span> <span class="ar">→</span> ${to}</span>`;
+const bg = (from, to, t) => `<div class="l3">${chip(from, to)}<span>${t}</span></div>`;
+const bgc = bg;
 const fold = (n, a, extra = "") => `<div class="b l3">▸ ${n} messages between ${a} agents${extra}</div>`;
 const bgs = (...ls) => `<div class="b">${ls.join("")}</div>`;
 const need = (title, body, opts) => `<div class="b l1"><div class="t">? ${title}</div><div>${body}</div>${opts ? `<div class="dim">${opts}</div>` : ""}</div>`;
@@ -545,7 +548,7 @@ document.getElementById("screens").innerHTML = screens.map(([t, p, html], i) =>
   `<hr><figure><figcaption><b>the 3 levels</b><p>brightness, a bar and a rail carry the hierarchy; color is only for what needs you.</p></figcaption><div class="lv">
    <div class="acc"><b>1 · needs you</b></div><div class="l1"><div class="t">? api-v2 needs you</div><div>the v2 schema file isn't in the repo. where is it?</div></div>
    <div><b>2 · for you</b></div><div><span class="who acc">:*</span>docs asked v1 or v2; the brief says v2, so i answered.</div>
-   <div class="dim">3 · between agents</div><div class="l3"><span class="who">@</span>auth-fix <span class="to">→ release</span>  heads-up, i'm touching web/src/auth.</div>
+   <div class="dim">3 · between agents</div><div class="l3">${chip("auth-fix", "release")}<span>heads-up, i'm touching web/src/auth.</span></div>
   </div></figure>
   <figure><figcaption><b>the symbols</b></figcaption><div class="legend">${[
     ["›", "the composer prompt"], ['<span class="acc">│</span>', "your message (bar)"], ['<span class="acc">:*</span>', "main"], ["◇", "brief"], ['<span class="dim">∴</span>', "thinking"], ["$", "bash"], ["λ", "typescript"],

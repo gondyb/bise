@@ -5,7 +5,7 @@
 <title>bise :* — live simulation v0</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#141211; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --line:#2a2623; }
+  :root { --bg:#141211; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --line:#2a2623; --chip:#231f1d; }
   * { box-sizing:border-box; margin:0; padding:0; }
   body { background:#0b0a09; color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:13px; line-height:1.55; padding:24px; }
   .lead { color:#8a8378; max-width:112ch; margin-bottom:14px; }
@@ -32,8 +32,10 @@
   .b { margin-top:1.6em; margin-top:1lh; } .who { display:inline-block; width:3ch; }
   /* your message: a thin accent bar on the left (│), on every wrapped line; text at column 3 */
   .you { border-left:1px solid var(--acc); padding-left:calc(3ch - 1px); }
-  .l3 { color:var(--dim); border-left:1px solid var(--faint); padding-left:2ch; margin-left:1ch; }
-  .l3 .to { color:var(--faint); } .l3 .nm { display:inline-block; width:10ch; overflow:hidden; vertical-align:bottom; white-space:nowrap; }
+  .l3 { color:var(--dim); margin-left:2ch; display:grid; grid-template-columns:auto 1fr; gap:0 1ch; max-width:89ch; }
+  .l3 .chip { background:var(--chip); padding:0 1ch; white-space:nowrap; align-self:start; }
+  .l3 .chip .s { color:var(--text); font-weight:700; } .l3 .chip .ar { color:var(--faint); }
+  .l3.fold, .l3:not(:has(.chip)) { display:block; }
   .l3.fold { cursor:pointer; } .l3.fold:hover { color:var(--text); }
   .l1 { border-left:2px solid var(--acc); padding-left:2ch; }
   .l1 .t { color:var(--acc); font-weight:700; }
@@ -200,7 +202,7 @@ function stateAt(now) {
 const hhmm = (s) => `${String(Math.floor(s / 3600) % 24).padStart(2, "0")}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}`;
 const expanded = new Set();
 function msgLine(m) {
-  return `<div class="l3"><span class="who">@</span><span class="nm">${m.from}</span><span class="to">→ </span><span class="nm to">${m.to}</span>${m.text}</div>`;
+  return `<div class="l3"><span class="chip">✉ <span class="s">${m.from}</span> <span class="ar">→</span> ${m.to}</span><span>${m.text}</span></div>`;
 }
 function renderItem(it, st) {
   switch (it.k) {
