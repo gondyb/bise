@@ -17,31 +17,36 @@ fn app_with_voice(enabled: bool) -> (App, FakeRecorder, FakeTranscriber) {
 }
 
 fn press(app: &mut App, code: KeyCode, m: KeyModifiers) -> bool {
-    voice_key(app, &KeyEvent::new(code, m), || Some("sk-test".into()))
+    voice_key(app, &KeyEvent::new(code, m), || Ok(voice::fakes::job()))
 }
 
 fn ctrl_r(app: &mut App) -> bool {
     press(app, KeyCode::Char('r'), KeyModifiers::CONTROL)
 }
 
-/// The user's hard requirement: the words show up while talking, each
-/// delta on the next tick, before any stop.
+/// BISE-130: the clip is transcribed once stopped; its text lands at
+/// the cursor, a space after a word.
 #[test]
-fn deltas_land_in_the_composer_while_recording() {
+fn the_text_lands_at_the_cursor_once_transcribed() {
     let (mut app, _rec, tr) = app_with_voice(true);
-    app.ed.text = "Note: ".into();
-    app.ed.cursor = 6;
+    app.ed.text = "Note:".into();
+    app.ed.cursor = 5;
     assert!(ctrl_r(&mut app));
     assert_eq!(app.voice.state(), VoiceState::Recording);
-    tr.send(TranscribeEvent::SessionCreated);
-    tr.send(TranscribeEvent::Delta("Hello".into()));
-    pump_voice(&mut app);
-    assert_eq!(app.ed.text, "Note: Hello");
-    tr.send(TranscribeEvent::Delta(" world".into()));
+    assert!(press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE));
+    assert_eq!(app.voice.state(), VoiceState::Flushing);
+    tr.send(TranscribeEvent::Delta("Hello world".into()));
+    tr.send(TranscribeEvent::Done);
     pump_voice(&mut app);
     assert_eq!(app.ed.text, "Note: Hello world");
-    assert_eq!(app.voice.state(), VoiceState::Recording, "no stop needed");
+    assert_eq!(app.voice.state(), VoiceState::Idle);
     assert_eq!(app.ed.cursor, "Note: Hello world".chars().count());
+    // after a space or before punctuation: nothing added
+    app.ed.text = "a ".into();
+    app.ed.cursor = 2;
+    apply_voice(&mut app, voice::VoiceOutput::Insert("b".into()), std::time::Instant::now());
+    apply_voice(&mut app, voice::VoiceOutput::Insert(".".into()), std::time::Instant::now());
+    assert_eq!(app.ed.text, "a b.");
 }
 
 #[test]
@@ -91,11 +96,13 @@ fn ctrl_r_with_voice_off_says_how_to_enable() {
 #[test]
 fn a_start_error_is_a_warning_in_the_feed() {
     let (mut app, _rec, _tr) = app_with_voice(true);
-    assert!(voice_key(&mut app, &KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL), || None));
+    assert!(voice_key(&mut app, &KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL), || {
+        Err("voice transcription needs an API key: set MISTRAL_API_KEY or run 'bise login mistral'".into())
+    }));
     assert_eq!(app.voice.state(), VoiceState::Idle);
     assert!(matches!(
         app.events.last(),
-        Some(Ev::Warn(m)) if m == "voice transcription needs an API key: set MISTRAL_API_KEY"
+        Some(Ev::Warn(m)) if m == "voice transcription needs an API key: set MISTRAL_API_KEY or run 'bise login mistral'"
     ));
 }
 
@@ -163,5 +170,9 @@ fn flushing_shows_the_fill_spinner() {
     press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE);
     let buf = render(&mut app);
     assert!(voice::FILL_BLOCKS.iter().any(|g| find(&buf, &g.to_string()).is_some()));
-    assert!(find(&buf, "transcribing the last words").is_some());
+    // the key bar and the empty composer both say it
+    let rows: Vec<u16> = (0..buf.area.height)
+        .filter(|&y| (0..buf.area.width).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().contains("transcribing…"))
+        .collect();
+    assert_eq!(rows.len(), 2, "{rows:?}");
 }

@@ -52,19 +52,19 @@ pub(crate) fn copy_text(app: &mut App, text: &str) {
 
 /// Speech-to-text keys (Vibe's text_area._handle_voice_key): Ctrl+R
 /// starts; while recording any key stops, Ctrl+C / Esc cancel; nothing
-/// else sees those keys. `true` when the key was the voice's. `api_key`
-/// finds MISTRAL_API_KEY (read only when a recording starts).
+/// else sees those keys. `true` when the key was the voice's. `job`
+/// resolves the voice model and its key (only when a recording starts).
 pub(crate) fn voice_key(
     app: &mut App,
     k: &crossterm::event::KeyEvent,
-    api_key: impl FnOnce() -> Option<String>,
+    job: impl FnOnce() -> Result<voice::VoiceJob, String>,
 ) -> bool {
     use voice::KeyAction;
     let now = std::time::Instant::now();
     match voice::key_action(app.voice.state(), app.voice.enabled, k.code, k.modifiers) {
         KeyAction::Pass => return false,
         KeyAction::Start => {
-            if let Err(m) = app.voice.start(api_key(), now) {
+            if let Err(m) = app.voice.start(job(), now) {
                 push_event(&mut app.events, &mut app.cache, Ev::Warn(m));
             }
         }
@@ -88,6 +88,15 @@ pub(crate) fn pump_voice(app: &mut App) {
 pub(crate) fn apply_voice(app: &mut App, out: voice::VoiceOutput, now: std::time::Instant) {
     match out {
         voice::VoiceOutput::Insert(t) => {
+            // the clip's text after a word: a space between them
+            let before = app.ed.cursor.checked_sub(1).and_then(|i| app.ed.text.chars().nth(i));
+            let t = if before.is_some_and(|c| !c.is_whitespace())
+                && t.starts_with(|c: char| c.is_alphanumeric())
+            {
+                format!(" {}", t)
+            } else {
+                t
+            };
             app.ed.insert_voice(&t);
             app.popup_sel = 0;
         }
@@ -348,7 +357,7 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
     if k.kind != KeyEventKind::Press {
         return false;
     }
-    if voice_key(app, k, voice::resolve_api_key) {
+    if voice_key(app, k, voice::resolve_job) {
         return false;
     }
     if app.popup_dismissed.as_deref() != Some(app.ed.text.as_str()) {

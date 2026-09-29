@@ -22,7 +22,7 @@ pub(crate) enum Mode {
     Terminal,
     /// voice: recording
     Recording,
-    /// voice: the last words are being transcribed
+    /// voice: the clip is being transcribed
     Transcribing,
     /// the `@` file popup
     FilePopup,
@@ -61,7 +61,7 @@ impl Mode {
                 ("drag", "the border to resize"),
             ],
             Mode::Recording => &[("", "recording"), ("any key", "stops"), ("esc/ctrl+c", "cancel")],
-            Mode::Transcribing => &[("", "transcribing the last words…"), ("esc/ctrl+c", "cancel")],
+            Mode::Transcribing => &[("", "transcribing…"), ("esc/ctrl+c", "cancel")],
             Mode::FilePopup => &[
                 ("⏎/tab", "insert"),
                 ("⏎/tab/→", "open a folder"),
@@ -381,7 +381,7 @@ mod tests {
         assert!(s.starts_with("enter send   @ agent   alt+0-9 switch"), "{s}");
         assert!(s.ends_with("tip: ctrl+o opens everything folded"), "{s}");
         assert!(f.contains("enter/tab/right open a folder   left up   up/down select"), "{f}");
-        assert!(t.contains("words..."), "{t}");
+        assert!(t.contains("transcribing..."), "{t}");
         for x in [s, f, t] {
             assert!(x.is_ascii(), "{x}");
         }

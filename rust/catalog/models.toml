@@ -29,10 +29,18 @@
 # Any "<provider>/<model>" works even when the model is not listed here:
 # it gets its provider's defaults. Model ids may hold '/': the provider
 # is the part before the FIRST '/'.
+# Speech to text (BISE-130): stt = "<family>" on a provider that
+#   transcribes (mistral | openai | elevenlabs | deepgram: the wire
+#   format), kind = "stt" on a provider or a model that only transcribes
+#   (not a chat model). config.toml's [voice] picks one: model,
+#   language (unset: detected), vocabulary (words to spell right).
 # Checked by hand against the providers' docs; last update 2025-11.
 
 # no model in config.toml and no BISE_MODEL / BEND_MODEL: this one
 default_model = "foundry/claude-opus-5-5"
+
+# the voice input's model (BISE-130) when config.toml's [voice] has none
+default_voice_model = "mistral/voxtral-mini-latest"
 
 # names without a provider (the old config lines keep working)
 [aliases]
@@ -112,6 +120,7 @@ name = "OpenAI"
 api = "openai-chat"
 base_url = "https://api.openai.com/v1"
 key_env = "OPENAI_API_KEY"
+stt = "openai"
 small_model = "gpt-5-mini"
 context = 400000
 max_output = 128000
@@ -181,6 +190,7 @@ name = "Mistral"
 api = "openai-chat"
 base_url = "https://api.mistral.ai/v1"
 key_env = "MISTRAL_API_KEY"
+stt = "mistral"
 small_model = "mistral-small-latest"
 context = 128000
 
@@ -260,6 +270,7 @@ name = "Groq"
 api = "openai-chat"
 base_url = "https://api.groq.com/openai/v1"
 key_env = "GROQ_API_KEY"
+stt = "openai"
 context = 131072
 
 [models."groq/moonshotai/kimi-k2-instruct-0905"]
@@ -451,3 +462,54 @@ vision = true
 reasoning = true
 
 [models."bedrock/anthropic.claude-sonnet-4-5-20250929-v1:0"]
+
+# ---- speech to text (BISE-130): the voice input, ctrl+r ----
+# The chat providers above that transcribe have stt = ...; their voice
+# models are here. Checked against the docs and /v1/models, 2026-09.
+
+# Voxtral Mini Transcribe 2 (voxtral-mini-2602): the documented one
+[models."mistral/voxtral-mini-latest"]
+kind = "stt"
+
+# in Mistral's /v1/models (audio_transcription), not in the docs yet
+[models."mistral/voxtral-transcribe-3"]
+kind = "stt"
+
+[models."openai/gpt-4o-transcribe"]
+kind = "stt"
+
+[models."openai/gpt-4o-mini-transcribe"]
+kind = "stt"
+
+[models."openai/whisper-1"]
+kind = "stt"
+
+[models."groq/whisper-large-v3-turbo"]
+kind = "stt"
+
+[models."groq/whisper-large-v3"]
+kind = "stt"
+
+[providers.elevenlabs]
+name = "ElevenLabs"
+kind = "stt"
+stt = "elevenlabs"
+base_url = "https://api.elevenlabs.io/v1"
+key_env = "ELEVENLABS_API_KEY"
+
+[models."elevenlabs/scribe_v2"]
+kind = "stt"
+
+[models."elevenlabs/scribe_v1"]
+kind = "stt"
+
+[providers.deepgram]
+name = "Deepgram"
+kind = "stt"
+stt = "deepgram"
+base_url = "https://api.deepgram.com/v1"
+key_env = "DEEPGRAM_API_KEY"
+
+# no language set: language=multi (code-switching, French and English)
+[models."deepgram/nova-3"]
+kind = "stt"

@@ -56,8 +56,21 @@ impl Recorder for FakeRecorder {
 }
 
 /// The ends of a started session: the audio it receives, the event
-/// sender, the cancel flag, the API key.
-pub(crate) type Session = (Receiver<AudioMsg>, Sender<TranscribeEvent>, Arc<AtomicBool>, String);
+/// sender, the cancel flag, the voice job.
+pub(crate) type Session = (Receiver<AudioMsg>, Sender<TranscribeEvent>, Arc<AtomicBool>, VoiceJob);
+
+/// A Mistral job with a fake key.
+pub(crate) fn job() -> VoiceJob {
+    VoiceJob {
+        name: "mistral/voxtral-mini-latest".into(),
+        api: "mistral".into(),
+        base_url: "https://api.mistral.ai/v1".into(),
+        model: "voxtral-mini-latest".into(),
+        key: "sk-test".into(),
+        language: None,
+        vocabulary: Vec::new(),
+    }
+}
 
 /// Hands the test the session's ends.
 #[derive(Clone, Default)]
@@ -66,8 +79,8 @@ pub(crate) struct FakeTranscriber {
 }
 
 impl Transcriber for FakeTranscriber {
-    fn start(&self, api_key: String, audio: Receiver<AudioMsg>, events: Sender<TranscribeEvent>, cancel: Arc<AtomicBool>) {
-        *self.session.lock().unwrap() = Some((audio, events, cancel, api_key));
+    fn start(&self, job: VoiceJob, audio: Receiver<AudioMsg>, events: Sender<TranscribeEvent>, cancel: Arc<AtomicBool>) {
+        *self.session.lock().unwrap() = Some((audio, events, cancel, job));
     }
 }
 
@@ -93,61 +106,42 @@ impl FakeTranscriber {
 }
 
 
-/// A scripted server: what the loop sent, and the replies to give. The
-/// server answers `transcription.done` only after it got flush + end;
-/// until then (and after the script) it is idle.
-#[derive(Default)]
-pub(crate) struct FakeSocket {
-    pub(crate) sent: Vec<String>,
-    /// replies given as soon as asked (deltas while recording)
-    pub(crate) script: std::collections::VecDeque<SocketRead>,
-    /// replies given once flush + end arrived
-    pub(crate) after_end: std::collections::VecDeque<SocketRead>,
-    pub(crate) closed: bool,
-    pub(crate) reads: usize,
-}
-
-impl FakeSocket {
-    /// The `type` of each sent message.
-    pub(crate) fn sent_types(&self) -> Vec<String> {
-        self.sent
-            .iter()
-            .map(|m| {
-                let v: Value = serde_json::from_str(m).unwrap();
-                v["type"].as_str().unwrap().to_string()
-            })
-            .collect()
-    }
-    fn got_end(&self) -> bool {
-        let t = self.sent_types();
-        t.iter().any(|x| x == "input_audio.flush") && t.iter().any(|x| x == "input_audio.end")
-    }
-}
-
-impl RealtimeSocket for FakeSocket {
-    fn send_text(&mut self, text: String) -> Result<(), String> {
-        self.sent.push(text);
-        Ok(())
-    }
-    fn read(&mut self, _wait: Duration) -> Result<SocketRead, String> {
-        self.reads += 1;
-        // a stuck loop fails the test instead of hanging it
-        assert!(self.reads < 10_000, "the session loop never ended");
-        if let Some(r) = self.script.pop_front() {
-            return Ok(r);
-        }
-        if self.got_end() {
-            if let Some(r) = self.after_end.pop_front() {
-                return Ok(r);
+/// A one-shot HTTP server on 127.0.0.1: reads one request (head +
+/// Content-Length body), answers `status` with `body`, hands the raw
+/// request to the test. Returns its base URL (".../v1") and the request.
+pub(crate) fn serve_once(status: u16, body: &str) -> (String, Receiver<Vec<u8>>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/v1", listener.local_addr().unwrap());
+    let (tx, rx) = mpsc::channel();
+    let body = body.to_string();
+    std::thread::spawn(move || {
+        let (mut s, _) = listener.accept().unwrap();
+        let mut req = Vec::new();
+        let mut buf = [0u8; 8192];
+        loop {
+            let n = s.read(&mut buf).unwrap();
+            req.extend_from_slice(&buf[..n]);
+            if let Some(end) = req.windows(4).position(|w| w == b"\r\n\r\n") {
+                let head = String::from_utf8_lossy(&req[..end]).to_lowercase();
+                let len = head
+                    .lines()
+                    .find_map(|l| l.strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap()))
+                    .unwrap_or(0);
+                if req.len() >= end + 4 + len || n == 0 {
+                    break;
+                }
             }
         }
-        Ok(SocketRead::Idle)
-    }
-    fn close(&mut self) {
-        self.closed = true;
-    }
-}
-
-pub(crate) fn server_text(v: Value) -> SocketRead {
-    SocketRead::Text(v.to_string())
+        // chunked, to test the client's decoding
+        let reply = format!(
+            "HTTP/1.1 {} X\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+            status,
+            body.len(),
+            body
+        );
+        s.write_all(reply.as_bytes()).unwrap();
+        let _ = tx.send(req);
+    });
+    (url, rx)
 }

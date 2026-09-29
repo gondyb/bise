@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 pub mod auth;
 pub mod auth_cli;
 pub mod cli;
+pub mod voice;
 
 /// The command's name in messages and usages (BISE-165: was `bend-harness`).
 pub const CLI: &str = "bise";
@@ -167,6 +168,12 @@ pub struct Provider {
     /// a cheap model of this provider for short labels (BISE-126: the
     /// agents' role lines), its id without the provider; "" = none
     pub small_model: String,
+    /// its speech-to-text wire family (BISE-130), one of
+    /// [`voice::STT_FAMILIES`]; "" = it does not transcribe
+    pub stt: String,
+    /// `kind = "stt"`: it only transcribes (no chat models: not in the
+    /// chat list, not in the runtime's hand-off)
+    pub stt_only: bool,
     /// the defaults of its models
     pub caps: PartialCaps,
     pub source: Source,
@@ -179,6 +186,8 @@ pub struct Model {
     /// its own wire family when it differs from its provider's (a
     /// Responses-only model of a chat provider); None: the provider's
     pub api: Option<String>,
+    /// `kind = "stt"`: a speech-to-text model (BISE-130), not a chat one
+    pub stt: bool,
     pub caps: PartialCaps,
     pub source: Source,
 }
@@ -226,6 +235,8 @@ pub struct Catalog {
     pub aliases: Vec<(String, String)>,
     /// "provider/id" when no model is configured
     pub default_model: String,
+    /// the speech-to-text model when `[voice] model` is not set (BISE-130)
+    pub default_voice_model: String,
     /// what was ignored while reading, one line each
     pub warnings: Vec<String>,
 }
@@ -254,6 +265,7 @@ impl Catalog {
             models: Vec::new(),
             aliases: Vec::new(),
             default_model: String::new(),
+            default_voice_model: String::new(),
             warnings: Vec::new(),
         }
     }
@@ -372,8 +384,13 @@ impl Catalog {
         let mut models: Vec<Model> = Vec::new();
         let mut aliases: Vec<(String, String)> = Vec::new();
         let mut default_model = None;
+        let mut default_voice_model = None;
         for (k, v) in t {
             match k.as_str() {
+                "default_voice_model" => match v.as_str() {
+                    Some(s) if split_name(s.trim()).is_some() => default_voice_model = Some(s.trim().to_string()),
+                    _ => warn("default_voice_model: not a \"provider/model\" name".into()),
+                },
                 "default_model" => match v.as_str() {
                     Some(s) if !s.trim().is_empty() => default_model = Some(s.trim().to_string()),
                     _ => warn("default_model: not a model name".into()),
@@ -407,6 +424,8 @@ impl Catalog {
                                 key_env: String::new(),
                                 needs: String::new(),
                                 small_model: String::new(),
+                                stt: String::new(),
+                                stt_only: false,
                                 caps: PartialCaps::default(),
                                 source: src,
                             });
@@ -434,6 +453,18 @@ impl Catalog {
                                     "key_env" => set_str(&mut p.key_env, s(), &where_, fk, &mut warn),
                                     "needs" => set_str(&mut p.needs, s(), &where_, fk, &mut warn),
                                     "small_model" => set_str(&mut p.small_model, s(), &where_, fk, &mut warn),
+                                    "stt" => match s() {
+                                        Some(a) if a.is_empty() || voice::STT_FAMILIES.contains(&a.as_str()) => p.stt = a,
+                                        _ => warn(format!(
+                                            "{}.stt: one of {}",
+                                            where_,
+                                            voice::STT_FAMILIES.join(", ")
+                                        )),
+                                    },
+                                    "kind" => match kind_of(fv) {
+                                        Some(stt) => p.stt_only = stt,
+                                        None => warn(format!("{}.kind: \"chat\" or \"stt\"", where_)),
+                                    },
                                     _ => cap_field(&mut caps, fk, fv, &where_, &mut warn),
                                 }
                             }
@@ -460,11 +491,17 @@ impl Catalog {
                             };
                             let mut caps = PartialCaps::default();
                             let mut api = None;
+                            let mut stt = None;
                             for (fk, fv) in mt {
                                 if fk == "api" {
                                     match fv.as_str().map(str::trim) {
                                         Some(a) if FAMILIES.contains(&a) => api = Some(a.to_string()),
                                         _ => warn(format!("{}.api: one of {}", where_, FAMILIES.join(", "))),
+                                    }
+                                } else if fk == "kind" {
+                                    match kind_of(fv) {
+                                        Some(k) => stt = Some(k),
+                                        None => warn(format!("{}.kind: \"chat\" or \"stt\"", where_)),
                                     }
                                 } else {
                                     cap_field(&mut caps, fk, fv, &where_, &mut warn);
@@ -474,11 +511,13 @@ impl Catalog {
                                 provider: pid.to_string(),
                                 id: mid.to_string(),
                                 api: None,
+                                stt: false,
                                 caps: PartialCaps::default(),
                                 source: src,
                             });
                             m.source = src;
                             m.api = api.or(m.api);
+                            m.stt = stt.unwrap_or(m.stt);
                             m.caps.merge(&caps);
                             models.push(m);
                         }
@@ -489,7 +528,7 @@ impl Catalog {
                     warn("[provider.<id>] is not read: write [providers.<id>]".into())
                 }
                 "model" if src == Source::Builtin => {}
-                _ => {} // the config's other keys (threshold, bg_after, ...)
+                _ => {} // the config's other keys (threshold, bg_after, [voice], ...)
             }
         }
         for (id, p) in providers {
@@ -515,7 +554,19 @@ impl Catalog {
         if let Some(d) = default_model {
             self.default_model = d;
         }
+        if let Some(d) = default_voice_model {
+            self.default_voice_model = d;
+        }
         self.warnings.extend(warnings);
+    }
+}
+
+/// `kind = "chat" | "stt"` → Some(is stt).
+fn kind_of(v: &toml::Value) -> Option<bool> {
+    match v.as_str().map(str::trim) {
+        Some("stt") => Some(true),
+        Some("chat") => Some(false),
+        _ => None,
     }
 }
 
@@ -598,6 +649,8 @@ pub struct Setup {
     /// `small_model` > agent_model
     pub small_model: String,
     pub small_model_from: &'static str,
+    /// the voice input's choices (BISE-130): `[voice]` in config.toml
+    pub voice: voice::VoiceSetup,
 }
 
 /// A string key of the config, even when the file is not valid TOML (the
@@ -632,10 +685,12 @@ impl Setup {
     pub fn from_text(config: Option<&str>, env: &dyn Fn(&str) -> Option<String>) -> Setup {
         let mut catalog = Catalog::builtin();
         let (mut model_cfg, mut agent_cfg, mut small_cfg) = (None, None, None);
+        let mut voice_cfg = voice::VoiceConfig::default();
         if let Some(text) = config {
             match text.parse::<toml::Table>() {
                 Ok(t) => {
                     catalog.apply(&t, Source::Config, "config.toml");
+                    voice_cfg = voice::VoiceConfig::read(&t, &mut catalog.warnings);
                     let s = |k: &str| {
                         t.get(k)
                             .and_then(|v| v.as_str())
@@ -686,6 +741,7 @@ impl Setup {
                 None => (agent_model.clone(), "agent_model"),
             }
         };
+        let voice = voice::VoiceSetup::of(&catalog, voice_cfg, &envv);
         Setup {
             catalog,
             model,
@@ -694,6 +750,7 @@ impl Setup {
             agent_model_from,
             small_model,
             small_model_from,
+            voice,
         }
     }
 
@@ -729,7 +786,9 @@ impl Setup {
         for (a, to) in &c.aliases {
             o.push_str(&format!("{} = {}\n", q(a), q(to)));
         }
-        for p in &c.providers {
+        // the runtime only calls chat models: the speech-to-text entries
+        // (BISE-130) stay out, the file is the same as before them
+        for p in c.providers.iter().filter(|p| !p.stt_only) {
             o.push_str(&format!("\n[providers.{}]\n", key(&p.id)));
             o.push_str(&format!("name = {}\n", q(&p.name)));
             o.push_str(&format!("api = {}\n", q(&p.api)));
@@ -738,7 +797,7 @@ impl Setup {
             o.push_str(&format!("needs = {}\n", q(&p.needs)));
             caps_lines(&mut o, &c.provider_caps(p));
         }
-        for m in &c.models {
+        for m in c.models.iter().filter(|m| !m.stt) {
             let r = c.resolve(&m.name());
             o.push_str(&format!("\n[models.{}]\n", q(&m.name())));
             let Some(p) = c.provider(&m.provider) else {

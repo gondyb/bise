@@ -130,7 +130,8 @@ pub(crate) fn key_providers(setup: &bise_catalog::Setup) -> Vec<Provider> {
         .catalog
         .providers
         .iter()
-        .filter(|p| !p.key_env.is_empty() && p.needs.is_empty())
+        // the voice-only ones (BISE-130: elevenlabs, deepgram) run no agent
+        .filter(|p| !p.key_env.is_empty() && p.needs.is_empty() && !p.stt_only)
         .map(|p| Provider { id: p.id.clone(), name: p.name.clone(), key_env: p.key_env.clone() })
         .collect()
 }

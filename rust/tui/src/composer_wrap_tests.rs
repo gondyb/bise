@@ -141,7 +141,7 @@ fn recording_meter_narrows_the_rows_and_the_height_follows() {
         assert!(voice_key(
             &mut app,
             &crossterm::event::KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL),
-            || Some("sk-test".into())
+            || Ok(voice::fakes::job())
         ));
         assert!(app.voice.active());
         let inner = width as usize - 8;

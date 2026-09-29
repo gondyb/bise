@@ -2,14 +2,13 @@
 
 use super::fakes::*;
 use super::*;
-use std::sync::Mutex;
 
 fn voice(rec: &FakeRecorder, tr: &FakeTranscriber) -> Voice {
     Voice::new(true, Box::new(rec.clone()), Box::new(tr.clone()))
 }
 
-fn key() -> Option<String> {
-    Some("sk-test".into())
+fn key() -> Result<VoiceJob, String> {
+    Ok(job())
 }
 
 // ---- keys ----
@@ -94,57 +93,6 @@ fn samples_clip_and_peak_is_normalized() {
     assert_eq!(flush_glyph(800), '▏');
 }
 
-// ---- protocol ----
-
-#[test]
-fn server_events_parse() {
-    assert_eq!(
-        parse_server_event(r#"{"type":"session.created","session":{"request_id":"r"}}"#),
-        Some(TranscribeEvent::SessionCreated)
-    );
-    assert_eq!(
-        parse_server_event(r#"{"type":"transcription.text.delta","text":" hello"}"#),
-        Some(TranscribeEvent::Delta(" hello".into()))
-    );
-    assert_eq!(parse_server_event(r#"{"type":"transcription.done","text":"x"}"#), Some(TranscribeEvent::Done));
-    assert_eq!(
-        parse_server_event(r#"{"type":"error","error":{"message":"bad key","code":401}}"#),
-        Some(TranscribeEvent::Error("bad key".into()))
-    );
-    // a message object is shown as JSON, not dropped
-    assert_eq!(
-        parse_server_event(r#"{"type":"error","error":{"message":{"detail":"x"}}}"#),
-        Some(TranscribeEvent::Error(r#"{"detail":"x"}"#.into()))
-    );
-    // the empty-recording error is a normal end
-    assert_eq!(
-        parse_server_event(r#"{"type":"error","error":{"message":"flush before sending any audio bytes"}}"#),
-        Some(TranscribeEvent::Done)
-    );
-    assert_eq!(parse_server_event(r#"{"type":"transcription.language","audio_language":"en"}"#), None);
-    assert_eq!(parse_server_event(r#"{"type":"session.updated"}"#), None);
-    assert_eq!(parse_server_event("not json"), None);
-}
-
-#[test]
-fn client_messages_match_the_sdk() {
-    let v: Value = serde_json::from_str(&session_update_message(16_000, 500)).unwrap();
-    assert_eq!(v["type"], "session.update");
-    assert_eq!(v["session"]["audio_format"]["encoding"], "pcm_s16le");
-    assert_eq!(v["session"]["audio_format"]["sample_rate"], 16_000);
-    assert_eq!(v["session"]["target_streaming_delay_ms"], 500);
-    let v: Value = serde_json::from_str(&append_message(&[1, -2])).unwrap();
-    assert_eq!(v["type"], "input_audio.append");
-    // little-endian s16: 01 00 fe ff
-    assert_eq!(v["audio"], "AQD+/w==");
-    assert_eq!(flush_message(), r#"{"type":"input_audio.flush"}"#);
-    assert_eq!(end_message(), r#"{"type":"input_audio.end"}"#);
-    assert_eq!(
-        realtime_url("wss://api.mistral.ai/", "voxtral-mini-transcribe-realtime-2602"),
-        "wss://api.mistral.ai/v1/audio/transcriptions/realtime?model=voxtral-mini-transcribe-realtime-2602"
-    );
-}
-
 // ---- settings ----
 
 #[test]
@@ -169,28 +117,20 @@ fn saving_keeps_the_other_settings() {
     std::fs::write(&tui, r#"{"theme": "dark"}"#).unwrap();
     h.pref(bise_home::Pref::Voice).set(true.into()).unwrap();
     let v: Value = serde_json::from_str(&std::fs::read_to_string(&tui).unwrap()).unwrap();
-    assert_eq!(v, json!({"theme": "dark", "voice_mode_enabled": true}));
+    assert_eq!(v, serde_json::json!({"theme": "dark", "voice_mode_enabled": true}));
     let _ = std::fs::remove_dir_all(&d);
-}
-
-#[test]
-fn env_file_values() {
-    let t = "# c\nexport MISTRAL_API_KEY=\"abc\"\nOTHER=1\n";
-    assert_eq!(env_file_value(t, "MISTRAL_API_KEY"), Some("abc".into()));
-    assert_eq!(env_file_value("MISTRAL_API_KEY=\n", "MISTRAL_API_KEY"), None);
-    assert_eq!(env_file_value(t, "MISSING"), None);
 }
 
 // ---- the controller ----
 
 #[test]
-fn start_needs_an_api_key() {
+fn start_without_a_model_or_key_warns_and_stays_idle() {
     let (rec, tr) = (FakeRecorder::ok(true), FakeTranscriber::default());
     let mut v = voice(&rec, &tr);
-    let e = v.start(None, Instant::now()).unwrap_err();
-    assert_eq!(e, "voice transcription needs an API key: set MISTRAL_API_KEY");
-    assert_eq!(v.start(Some("  ".into()), Instant::now()).unwrap_err(), e);
+    let e = "voice transcription needs an API key: set MISTRAL_API_KEY or run 'bise login mistral'";
+    assert_eq!(v.start(Err(e.into()), Instant::now()).unwrap_err(), e);
     assert_eq!(v.state(), VoiceState::Idle);
+    assert!(tr.session.lock().unwrap().is_none(), "no transcription started");
 }
 
 #[test]
@@ -213,8 +153,7 @@ fn deltas_are_inserted_live_then_stop_flushes_and_done_ends() {
     v.start(key(), t0).unwrap();
     assert_eq!(v.state(), VoiceState::Recording);
     assert_eq!(v.peak(), 0.5);
-    assert_eq!(tr.session.lock().unwrap().as_ref().unwrap().3, "sk-test");
-    tr.send(TranscribeEvent::SessionCreated);
+    assert_eq!(tr.session.lock().unwrap().as_ref().unwrap().3, job());
     tr.send(TranscribeEvent::Delta("Hello".into()));
     tr.send(TranscribeEvent::Delta(" world".into()));
     assert_eq!(
@@ -304,139 +243,19 @@ fn no_text_but_a_signal_or_a_short_press_is_no_speech() {
 }
 
 #[test]
-fn the_flush_times_out_after_ten_seconds() {
+fn the_transcription_times_out_after_two_minutes() {
     let (rec, tr) = (FakeRecorder::ok(true), FakeTranscriber::default());
     let mut v = voice(&rec, &tr);
     let t0 = Instant::now();
     v.start(key(), t0).unwrap();
     v.stop(t0);
-    assert!(v.poll(t0 + Duration::from_secs(9)).is_empty());
+    assert!(v.poll(t0 + Duration::from_secs(119)).is_empty());
     assert_eq!(
-        v.poll(t0 + Duration::from_secs(10)),
+        v.poll(t0 + Duration::from_secs(120)),
         vec![VoiceOutput::Error("voice transcription failed: the transcription timed out".into())]
     );
     assert_eq!(v.state(), VoiceState::Idle);
     assert!(tr.cancelled());
-}
-
-#[test]
-fn a_flush_timeout_after_text_keeps_the_text_without_a_failure() {
-    let (rec, tr) = (FakeRecorder::ok(true), FakeTranscriber::default());
-    let mut v = voice(&rec, &tr);
-    let t0 = Instant::now();
-    v.start(key(), t0).unwrap();
-    tr.send(TranscribeEvent::Delta("Hello".into()));
-    assert_eq!(v.poll(t0), vec![VoiceOutput::Insert("Hello".into())]);
-    v.stop(t0);
-    assert_eq!(
-        v.poll(t0 + Duration::from_secs(10)),
-        vec![VoiceOutput::Utterance, VoiceOutput::Notice(LATE_DONE_NOTICE.into())]
-    );
-    assert_eq!(v.state(), VoiceState::Idle);
-    assert!(tr.cancelled());
-}
-
-// ---- the session loop (fake socket) ----
-
-fn run_fake(socket: &mut FakeSocket, msgs: Vec<AudioMsg>) -> (Result<(), String>, Vec<TranscribeEvent>) {
-    let (atx, arx) = mpsc::channel();
-    // every message queued before the loop runs: End sits right behind
-    // the chunks, and the sender stays alive (as in Voice's Run)
-    for m in msgs {
-        atx.send(m).unwrap();
-    }
-    let (etx, erx) = mpsc::channel();
-    let r = stream_session(socket, &arx, &etx, &AtomicBool::new(false));
-    drop(atx);
-    (r, erx.try_iter().collect())
-}
-
-fn done_json() -> Value {
-    json!({"type": "transcription.done", "text": "hi there"})
-}
-
-#[test]
-fn end_queued_behind_chunks_still_flushes_and_ends_once() {
-    let mut ws = FakeSocket::default();
-    ws.after_end.push_back(server_text(json!({"type": "transcription.text.delta", "text": " there"})));
-    ws.after_end.push_back(server_text(done_json()));
-    let (r, events) = run_fake(
-        &mut ws,
-        vec![AudioMsg::Chunk(vec![1; 100]), AudioMsg::Chunk(vec![2; 100]), AudioMsg::End],
-    );
-    assert_eq!(r, Ok(()));
-    assert_eq!(
-        ws.sent_types(),
-        ["session.update", "input_audio.append", "input_audio.flush", "input_audio.end"]
-    );
-    assert_eq!(events, vec![TranscribeEvent::Delta(" there".into()), TranscribeEvent::Done]);
-    assert!(ws.closed);
-}
-
-#[test]
-fn flush_and_end_are_sent_once_while_waiting_for_done() {
-    let mut ws = FakeSocket::default();
-    // the server takes a while: many idle reads before done
-    for _ in 0..20 {
-        ws.after_end.push_back(SocketRead::Idle);
-    }
-    ws.after_end.push_back(server_text(done_json()));
-    let (r, events) = run_fake(&mut ws, vec![AudioMsg::Chunk(vec![1; SEND_BLOCK + 10]), AudioMsg::End]);
-    assert_eq!(r, Ok(()));
-    let types = ws.sent_types();
-    assert_eq!(types.iter().filter(|t| *t == "input_audio.flush").count(), 1);
-    assert_eq!(types.iter().filter(|t| *t == "input_audio.end").count(), 1);
-    // the whole block then the tail, all before the flush
-    assert_eq!(
-        types,
-        ["session.update", "input_audio.append", "input_audio.flush", "input_audio.end"]
-    );
-    assert_eq!(events, vec![TranscribeEvent::Done]);
-}
-
-#[test]
-fn a_closed_socket_after_the_end_is_done_before_it_a_failure() {
-    let mut ws = FakeSocket::default();
-    ws.after_end.push_back(SocketRead::Closed);
-    let (r, events) = run_fake(&mut ws, vec![AudioMsg::End]);
-    assert_eq!(r, Ok(()));
-    assert_eq!(events, vec![TranscribeEvent::Done]);
-
-    let mut ws = FakeSocket::default();
-    ws.script.push_back(SocketRead::Closed);
-    let (r, _) = run_fake(&mut ws, vec![AudioMsg::Chunk(vec![1; 10])]);
-    assert_eq!(r, Err("the connection closed before the recording finished".into()));
-}
-
-#[test]
-fn a_dropped_audio_sender_ends_the_stream() {
-    let mut ws = FakeSocket::default();
-    ws.after_end.push_back(server_text(done_json()));
-    let (atx, arx) = mpsc::channel();
-    atx.send(AudioMsg::Chunk(vec![3; 10])).unwrap();
-    drop(atx);
-    let (etx, erx) = mpsc::channel();
-    assert_eq!(stream_session(&mut ws, &arx, &etx, &AtomicBool::new(false)), Ok(()));
-    assert_eq!(
-        ws.sent_types(),
-        ["session.update", "input_audio.append", "input_audio.flush", "input_audio.end"]
-    );
-    assert_eq!(erx.try_iter().collect::<Vec<_>>(), vec![TranscribeEvent::Done]);
-}
-
-#[test]
-fn a_server_error_fails_and_cancel_closes() {
-    let mut ws = FakeSocket::default();
-    ws.after_end.push_back(server_text(json!({"type": "error", "error": {"message": "boom"}})));
-    let (r, _) = run_fake(&mut ws, vec![AudioMsg::Chunk(vec![1; 10]), AudioMsg::End]);
-    assert_eq!(r, Err("boom".into()));
-
-    let mut ws = FakeSocket::default();
-    let (_atx, arx) = mpsc::channel::<AudioMsg>();
-    let (etx, _erx) = mpsc::channel();
-    assert_eq!(stream_session(&mut ws, &arx, &etx, &AtomicBool::new(true)), Ok(()));
-    assert!(ws.closed);
-    assert_eq!(ws.sent_types(), ["session.update"]);
 }
 
 #[test]
@@ -457,117 +276,250 @@ fn start_while_active_is_a_no_op() {
     let (rec, tr) = (FakeRecorder::ok(true), FakeTranscriber::default());
     let mut v = voice(&rec, &tr);
     v.start(key(), Instant::now()).unwrap();
-    assert_eq!(v.start(None, Instant::now()), Ok(()));
+    assert_eq!(v.start(Err("x".into()), Instant::now()), Ok(()));
     assert_eq!(v.state(), VoiceState::Recording);
 }
 
-/// The real API, by hand only (network + key): a 16 kHz mono s16 WAV
-/// (`say -o x.aiff "…" && afconvert -f WAVE -d LEI16@16000 -c 1 x.aiff x.wav`)
-/// streamed in realtime blocks. `SB_STT_WAV=x.wav cargo test -p bend-tui
-/// real_api -- --ignored --nocapture`
-fn wav_samples() -> Vec<i16> {
-    let path = std::env::var("SB_STT_WAV").expect("SB_STT_WAV");
-    let bytes = std::fs::read(path).unwrap();
-    // skip the RIFF header: the "data" chunk
-    let data = bytes.windows(4).position(|w| w == b"data").unwrap() + 8;
-    bytes[data..].chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect()
+// ---- the batch transcription ----
+
+#[test]
+fn a_wav_header_says_16k_mono_s16() {
+    let w = wav_bytes(&[1, -2], 16_000);
+    assert_eq!(w.len(), 48);
+    assert_eq!(&w[..4], b"RIFF");
+    assert_eq!(u32::from_le_bytes(w[4..8].try_into().unwrap()), 40);
+    assert_eq!(&w[8..16], b"WAVEfmt ");
+    assert_eq!(u16::from_le_bytes([w[22], w[23]]), 1, "mono");
+    assert_eq!(u32::from_le_bytes(w[24..28].try_into().unwrap()), 16_000);
+    assert_eq!(&w[36..40], b"data");
+    assert_eq!(&w[44..], &[1, 0, 0xfe, 0xff]);
 }
 
-/// The real socket, recording the type of each message sent.
-struct Traced {
-    ws: WsSocket,
-    sent: Arc<Mutex<Vec<String>>>,
+#[test]
+fn the_clip_is_every_chunk_until_end_even_queued_behind_them() {
+    let (tx, rx) = mpsc::channel();
+    tx.send(AudioMsg::Chunk(vec![1, 2])).unwrap();
+    tx.send(AudioMsg::Chunk(vec![3])).unwrap();
+    tx.send(AudioMsg::End).unwrap();
+    tx.send(AudioMsg::Chunk(vec![9])).unwrap();
+    assert_eq!(collect_clip(&rx, &AtomicBool::new(false)), Some(vec![1, 2, 3]));
+    // the recorder gone is the end too; cancel drops the clip
+    let (tx, rx) = mpsc::channel();
+    tx.send(AudioMsg::Chunk(vec![4])).unwrap();
+    drop(tx);
+    assert_eq!(collect_clip(&rx, &AtomicBool::new(false)), Some(vec![4]));
+    let (_tx, rx) = mpsc::channel::<AudioMsg>();
+    assert_eq!(collect_clip(&rx, &AtomicBool::new(true)), None);
 }
 
-impl RealtimeSocket for Traced {
-    fn send_text(&mut self, text: String) -> Result<(), String> {
-        let v: Value = serde_json::from_str(&text).unwrap();
-        self.sent.lock().unwrap().push(v["type"].as_str().unwrap().to_string());
-        self.ws.send_text(text)
-    }
-    fn read(&mut self, wait: Duration) -> Result<SocketRead, String> {
-        self.ws.read(wait)
-    }
-    fn close(&mut self) {
-        self.ws.close()
-    }
+fn speech() -> Vec<i16> {
+    (0..16_000).map(|i| ((i as f32 / 8.0).sin() * 8000.0) as i16).collect()
 }
 
-/// Streams the WAV at realtime pace; `burst_tail` blocks at the end go
-/// at once with End right behind them (as when the microphone stops
-/// with audio still queued). Returns the text, the time from End to
-/// done, and the message types sent.
-fn stream_wav(burst_tail: usize) -> (String, Duration, Vec<String>) {
-    let samples = wav_samples();
+#[test]
+fn silence_or_a_slip_sends_nothing() {
+    let never = |_: &http::Request| -> Result<http::Response, String> { panic!("no request") };
+    let no = AtomicBool::new(false);
+    assert_eq!(transcribe_clip(&job(), &[0; 16_000], &no, &never), Ok(String::new()));
+    assert_eq!(transcribe_clip(&job(), &speech()[..1000], &no, &never), Ok(String::new()));
+    assert_eq!(transcribe_clip(&job(), &speech(), &AtomicBool::new(true), &never), Ok(String::new()));
+}
+
+#[test]
+fn one_request_per_clip_and_the_text_trimmed() {
+    let seen = std::cell::RefCell::new(Vec::new());
+    let send = |r: &http::Request| {
+        seen.borrow_mut().push(r.clone());
+        Ok(http::Response { status: 200, body: br#"{"model":"voxtral-mini-latest","text":" Salut, lance cargo clippy. "}"#.to_vec() })
+    };
+    let t = transcribe_clip(&job(), &speech(), &AtomicBool::new(false), &send);
+    assert_eq!(t, Ok("Salut, lance cargo clippy.".into()));
+    let seen = seen.borrow();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].url, "https://api.mistral.ai/v1/audio/transcriptions");
+    // the WAV is in the body: 44-byte header + 2 bytes a sample
+    assert!(seen[0].body.windows(4).any(|w| w == b"RIFF"));
+    assert!(seen[0].body.len() > 32_044);
+    let fail = |_: &http::Request| Ok(http::Response { status: 401, body: br#"{"message":"Unauthorized"}"#.to_vec() });
+    assert_eq!(transcribe_clip(&job(), &speech(), &AtomicBool::new(false), &fail), Err("HTTP 401: Unauthorized".into()));
+}
+
+/// The real thread end to end: BatchTranscriber against a local fake
+/// server (plain HTTP), the Voice controller on top.
+#[test]
+fn the_batch_transcriber_talks_to_a_fake_server() {
+    let (url, got) = fakes::serve_once(200, r#"{"text":"bonjour le crate bise-catalog"}"#);
+    let job = VoiceJob { base_url: url, ..job() };
     let (atx, arx) = mpsc::channel();
     let (etx, erx) = mpsc::channel();
-    let sent = Arc::new(Mutex::new(Vec::new()));
-    let url = realtime_url(API_BASE, MODEL);
-    let key = resolve_api_key().expect("key");
-    let trace = sent.clone();
-    std::thread::spawn(move || {
-        let r = WsSocket::connect(&url, &key).and_then(|ws| {
-            let mut t = Traced { ws, sent: trace };
-            stream_session(&mut t, &arx, &etx, &AtomicBool::new(false))
-        });
-        if let Err(e) = r {
-            let _ = etx.send(TranscribeEvent::Error(e));
-        }
-    });
-    let mut text = String::new();
-    let blocks: Vec<&[i16]> = samples.chunks(320).collect();
-    let n = blocks.len();
-    for (i, block) in blocks.into_iter().enumerate() {
-        atx.send(AudioMsg::Chunk(block.to_vec())).unwrap();
-        if i + burst_tail < n {
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        while let Ok(ev) = erx.try_recv() {
-            if let TranscribeEvent::Delta(t) = ev {
-                text.push_str(&t);
-            }
-        }
-    }
-    // the sender stays alive, as in Voice's Run: only End ends the stream
+    BatchTranscriber.start(job, arx, etx, Arc::new(AtomicBool::new(false)));
+    atx.send(AudioMsg::Chunk(speech())).unwrap();
     atx.send(AudioMsg::End).unwrap();
-    let stopped = Instant::now();
-    loop {
-        match erx.recv_timeout(FLUSH_TIMEOUT) {
-            Ok(TranscribeEvent::Delta(t)) => text.push_str(&t),
-            Ok(TranscribeEvent::Done) => break,
-            Ok(TranscribeEvent::Error(e)) => panic!("error: {}", e),
-            Ok(TranscribeEvent::SessionCreated) => {}
-            Err(e) => panic!("no transcription.done within {:?}: {:?}", FLUSH_TIMEOUT, e),
-        }
-    }
-    let end_latency = stopped.elapsed();
-    drop(atx);
-    let sent = sent.lock().unwrap().clone();
-    eprintln!("end → done {:?} · text {:?}", end_latency, text);
-    (text, end_latency, sent)
+    let t = Duration::from_secs(10);
+    assert_eq!(erx.recv_timeout(t), Ok(TranscribeEvent::Delta("bonjour le crate bise-catalog".into())));
+    assert_eq!(erx.recv_timeout(t), Ok(TranscribeEvent::Done));
+    let req = got.recv_timeout(t).unwrap();
+    let head = String::from_utf8_lossy(&req[..req.windows(4).position(|w| w == b"\r\n\r\n").unwrap()]).to_string();
+    assert!(head.starts_with("POST /v1/audio/transcriptions HTTP/1.1\r\n"), "{head}");
+    assert!(head.contains("Authorization: Bearer sk-test\r\n"), "{head}");
+    assert!(head.contains("Content-Type: multipart/form-data; boundary="), "{head}");
+    let body = String::from_utf8_lossy(&req);
+    assert!(body.contains("name=\"model\"\r\n\r\nvoxtral-mini-latest\r\n"), "{body}");
+    // an error comes back in one line
+    let (url, _got) = fakes::serve_once(400, "{\"detail\": \"invalid model:\\n  nope\"}");
+    let job = VoiceJob { base_url: url, ..fakes::job() };
+    let (atx, arx) = mpsc::channel();
+    let (etx, erx) = mpsc::channel();
+    BatchTranscriber.start(job, arx, etx, Arc::new(AtomicBool::new(false)));
+    atx.send(AudioMsg::Chunk(speech())).unwrap();
+    atx.send(AudioMsg::End).unwrap();
+    assert_eq!(erx.recv_timeout(t), Ok(TranscribeEvent::Error("HTTP 400: invalid model: nope".into())));
 }
 
-fn count(sent: &[String], ty: &str) -> usize {
-    sent.iter().filter(|t| *t == ty).count()
-}
-
+/// The real API, by hand only (network + key: the chat keys'
+/// resolution, `[voice]` from config.toml): a WAV
+/// (`say -v Thomas -o x.wav --data-format=LEI16@16000 "…"`).
+/// `SB_STT_WAV=x.wav cargo test -p bend-tui real_api -- --ignored --nocapture`
 #[test]
 #[ignore]
 fn real_api_transcribes_a_wav() {
-    let (text, latency, sent) = stream_wav(0);
-    assert!(!text.trim().is_empty());
-    assert!(latency < Duration::from_secs(2), "done took {:?}", latency);
-    assert_eq!((count(&sent, "input_audio.flush"), count(&sent, "input_audio.end")), (1, 1));
+    let path = std::env::var("SB_STT_WAV").expect("SB_STT_WAV");
+    let bytes = std::fs::read(path).unwrap();
+    let data = bytes.windows(4).position(|w| w == b"data").unwrap() + 8;
+    let samples: Vec<i16> = bytes[data..].chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
+    let job = resolve_job().expect("a voice model and its key");
+    let t0 = Instant::now();
+    let text = transcribe_clip(&job, &samples, &AtomicBool::new(false), &|r| http::send(r, TRANSCRIBE_TIMEOUT));
+    eprintln!("{} in {:?}: {:?}", job.name, t0.elapsed(), text);
+    assert!(!text.unwrap().is_empty());
 }
 
-/// The bug: End queued right behind chunks was dropped, flush/end never
-/// went out, done never came, and the flush timed out after 10 s.
+// ---- the providers' wire formats (stt.rs) and the HTTP client ----
+
+fn job_for(api: &str, base: &str, model: &str) -> VoiceJob {
+    VoiceJob {
+        name: format!("x/{}", model),
+        api: api.into(),
+        base_url: base.into(),
+        model: model.into(),
+        key: "k-1".into(),
+        language: Some("fr".into()),
+        vocabulary: vec!["bise-catalog".into(), "GitHub".into()],
+    }
+}
+
+fn header<'a>(r: &'a http::Request, k: &str) -> Option<&'a str> {
+    r.headers.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str())
+}
+
+fn field(body: &[u8], name: &str) -> Vec<String> {
+    let b = String::from_utf8_lossy(body);
+    let tag = format!("name=\"{}\"", name);
+    b.split("--bise-voice-")
+        .filter(|p| p.contains(&format!("{}\r\n", tag)))
+        .map(|p| p.split("\r\n\r\n").nth(1).unwrap_or("").trim_end_matches("\r\n").to_string())
+        .collect()
+}
+
 #[test]
-#[ignore]
-fn real_api_done_arrives_quickly_when_end_follows_queued_audio() {
-    let (text, latency, sent) = stream_wav(10);
-    assert!(!text.trim().is_empty());
-    assert!(latency < Duration::from_secs(2), "done took {:?}", latency);
-    assert_eq!((count(&sent, "input_audio.flush"), count(&sent, "input_audio.end")), (1, 1));
-    assert_eq!(sent.last().map(String::as_str), Some("input_audio.end"));
+fn each_family_builds_its_request() {
+    let wav = wav_bytes(&[1, 2, 3], 16_000);
+    // mistral: multipart, context_bias per word, Bearer
+    let r = stt::request(&job_for("mistral", "https://api.mistral.ai/v1/", "voxtral-mini-latest"), &wav);
+    assert_eq!(r.url, "https://api.mistral.ai/v1/audio/transcriptions");
+    assert_eq!(header(&r, "Authorization"), Some("Bearer k-1"));
+    assert_eq!(field(&r.body, "model"), vec!["voxtral-mini-latest"]);
+    assert_eq!(field(&r.body, "language"), vec!["fr"]);
+    assert_eq!(field(&r.body, "context_bias"), vec!["bise-catalog", "GitHub"]);
+    assert!(field(&r.body, "prompt").is_empty());
+    assert!(String::from_utf8_lossy(&r.body).contains("name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav"));
+    assert!(r.body.ends_with(b"--bise-voice-7d1f3c9a2e5b--\r\n"));
+    // openai / groq: the vocabulary is the prompt
+    let r = stt::request(&job_for("openai", "https://api.groq.com/openai/v1", "whisper-large-v3-turbo"), &wav);
+    assert_eq!(r.url, "https://api.groq.com/openai/v1/audio/transcriptions");
+    assert_eq!(field(&r.body, "prompt"), vec!["bise-catalog, GitHub"]);
+    assert_eq!(field(&r.body, "response_format"), vec!["json"]);
+    // elevenlabs: model_id, language_code, keyterms, xi-api-key
+    let r = stt::request(&job_for("elevenlabs", "https://api.elevenlabs.io/v1", "scribe_v2"), &wav);
+    assert_eq!(r.url, "https://api.elevenlabs.io/v1/speech-to-text");
+    assert_eq!((header(&r, "xi-api-key"), header(&r, "Authorization")), (Some("k-1"), None));
+    assert_eq!(field(&r.body, "model_id"), vec!["scribe_v2"]);
+    assert_eq!(field(&r.body, "language_code"), vec!["fr"]);
+    assert_eq!(field(&r.body, "keyterms"), vec!["bise-catalog", "GitHub"]);
+    // deepgram: the WAV as the body, the options in the query
+    let mut j = job_for("deepgram", "https://api.deepgram.com/v1", "nova-3");
+    j.language = None;
+    j.vocabulary = vec!["config.toml".into(), "pull request".into()];
+    let r = stt::request(&j, &wav);
+    assert_eq!(
+        r.url,
+        "https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&punctuate=true&language=multi&keyterm=config.toml&keyterm=pull%20request"
+    );
+    assert_eq!((header(&r, "Authorization"), header(&r, "Content-Type")), (Some("Token k-1"), Some("audio/wav")));
+    assert_eq!(r.body, wav);
+    // no language: the field is not sent (detected)
+    let mut j = job_for("mistral", "https://m/v1", "m");
+    j.language = None;
+    assert!(field(&stt::request(&j, &wav).body, "language").is_empty());
+    // the key never shows in Debug
+    assert!(!format!("{:?}", stt::request(&j, &wav)).contains("k-1"));
+}
+
+#[test]
+fn responses_parse_and_errors_are_one_line() {
+    let ok = |b: &str| http::Response { status: 200, body: b.as_bytes().to_vec() };
+    let err = |s: u16, b: &str| http::Response { status: s, body: b.as_bytes().to_vec() };
+    assert_eq!(stt::parse("mistral", &ok(r#"{"text":"salut"}"#)), Ok("salut".into()));
+    assert_eq!(stt::parse("elevenlabs", &ok(r#"{"language_code":"fra","text":"x"}"#)), Ok("x".into()));
+    let dg = r#"{"results":{"channels":[{"alternatives":[{"transcript":"hello","confidence":0.9}]}]}}"#;
+    assert_eq!(stt::parse("deepgram", &ok(dg)), Ok("hello".into()));
+    assert_eq!(stt::parse("openai", &ok("{}")), Err("the response has no text".into()));
+    assert_eq!(stt::parse("openai", &ok("<html>")), Err("the response is not JSON".into()));
+    for (body, want) in [
+        (r#"{"error":{"message":"Incorrect API key","type":"x"}}"#, "HTTP 401: Incorrect API key"),
+        (r#"{"message":"Unauthorized"}"#, "HTTP 401: Unauthorized"),
+        (r#"{"detail":{"status":"invalid_api_key","message":"Invalid API key"}}"#, "HTTP 401: Invalid API key"),
+        (r#"{"detail":[{"loc":["body"],"msg":"field required"}]}"#, "HTTP 401: field required"),
+        (r#"{"err_code":"INVALID_AUTH","err_msg":"Invalid credentials."}"#, "HTTP 401: Invalid credentials."),
+        ("Bad\n  gateway\n", "HTTP 401: Bad gateway"),
+        ("", "HTTP 401"),
+    ] {
+        assert_eq!(stt::parse("mistral", &err(401, body)), Err(want.into()), "{body}");
+    }
+    let long = "x ".repeat(300);
+    assert_eq!(stt::one_line(&long).chars().count(), 201);
+}
+
+#[test]
+fn http_responses_frame_by_length_chunks_or_close() {
+    let r = http::parse_response(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhel", false).unwrap();
+    assert_eq!(r, None, "more bytes to come");
+    let r = http::parse_response(b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\n\r\nhello", false).unwrap();
+    assert_eq!(r, Some(http::Response { status: 200, body: b"hello".to_vec() }));
+    let chunked = b"HTTP/1.1 400 Bad\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n2;x=1\r\nde\r\n0\r\n\r\n";
+    assert_eq!(http::parse_response(chunked, false).unwrap().unwrap().body, b"abcde");
+    assert_eq!(http::parse_response(&chunked[..chunked.len() - 7], false).unwrap(), None);
+    let close = b"HTTP/1.0 200 OK\r\n\r\n{}";
+    assert_eq!(http::parse_response(close, false).unwrap(), None);
+    assert_eq!(http::parse_response(close, true).unwrap().unwrap().body, b"{}");
+    let cont = b"HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n";
+    assert_eq!(http::parse_response(cont, false).unwrap().unwrap().status, 201);
+    assert!(http::parse_response(b"garbage\r\n\r\n", false).is_err());
+    assert_eq!(
+        http::split_url("https://api.groq.com/openai/v1/audio/transcriptions").unwrap(),
+        (true, "api.groq.com".into(), 443, "/openai/v1/audio/transcriptions".into())
+    );
+    assert_eq!(http::split_url("http://127.0.0.1:8080").unwrap(), (false, "127.0.0.1".into(), 8080, "/".into()));
+    assert!(http::split_url("wss://x").is_err());
+}
+
+#[test]
+fn a_dead_server_is_an_error_not_a_hang() {
+    // a port nothing listens on
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/v1/x", l.local_addr().unwrap());
+    drop(l);
+    let req = http::Request { url, headers: Vec::new(), body: Vec::new() };
+    let e = http::send(&req, Duration::from_secs(2)).unwrap_err();
+    assert!(e.starts_with("cannot connect to 127.0.0.1"), "{e}");
 }

@@ -505,6 +505,9 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, pad
             spans.push(Span::styled(format!(" {}", note), Style::default().fg(dim())));
         }
         vec![Line::from(spans)]
+    } else if empty && app.voice.state() == voice::VoiceState::Flushing {
+        // BISE-130: the clip is sent once stopped; the text lands here
+        vec![Line::from(Span::styled(voice::TRANSCRIBING.replace('…', crate::theme::ellipsis()), Style::default().fg(dim())))]
     } else if empty {
         vec![Line::from("")]
     } else {

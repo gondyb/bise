@@ -618,7 +618,7 @@ replays it (**⚠** proposed command).
 | `esc` | close selection; in an agent, back to main | — |
 | `ctrl+g`, `ctrl+n` / `ctrl+p`, `alt+r`, `ctrl+f`, `ctrl+x`, `y` / `n` | cards | hints on the card |
 | `ctrl+o` | open or close everything folded (thinking, outputs, diffs, reports, runs, `▸ why`) | was `ctrl+t` (removed, no alias); the `ctrl+o` shell is gone: the terminal panel is the one shell |
-| `ctrl+r` | voice | — |
+| `ctrl+r` | voice: record, any key stops, then the clip is transcribed at once (`transcribing…`) | batch, not live (BISE-130): the full Voxtral model, `[voice]` in config.toml |
 | ``ctrl+` `` | terminal panel | — |
 | `ctrl+v` | paste an image | from the images work |
 | `ctrl+z` | ~~cancel the last route~~ | **removed** |
@@ -666,7 +666,7 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | steer with nothing | `nothing to steer with: type the text after steer` |
 | queued messages | ` › {text}…` (one per line, dim) · hint `queued · sent when this turn ends · ↑ edit` · panel row `· {n} queued` |
 | connect failed | `couldn't connect: {err}` |
-| voice | `voice mode on. press ctrl+r to start recording.` / `voice mode off.` / `voice mode is off: /voice turns it on` / `no speech detected` / `voice transcription failed: {err}` / `voice transcription needs an API key: set {VAR}` / `no audio input device found.` / `audio backend is unavailable: {err}` / `the last words may be missing (the transcription did not finish in time).` / `no audio detected from the microphone — check your terminal has mic access.` (+ ` grant access in System Settings → Privacy & Security → Microphone.`) |
+| voice | `voice mode on. press ctrl+r to start recording.` / `voice mode off.` / `voice mode is off: /voice turns it on` / `no speech detected` / `voice transcription failed: {err}` / `voice transcription needs an API key: set {VAR} or run 'bise login {provider}'` / `voice model {model}: unknown provider '{p}' ('bise models' lists the voice ones)` / `transcribing…` (key bar and empty composer while the clip is sent, BISE-130) / `no audio input device found.` / `audio backend is unavailable: {err}` / `no audio detected from the microphone — check your terminal has mic access.` (+ ` grant access in System Settings → Privacy & Security → Microphone.`) |
 | command descriptions | as in `/help` (lowercase, "agent"); `/agents`: `list the agents and what they do` |
 
 Not built yet (a feature, not wording): `✓ turn done · {duration}` and the two `provider down` lines.

@@ -464,3 +464,107 @@ fn the_default_threshold_is_80_percent_of_the_window() {
     assert_eq!(threshold_of(131_072), 104_857);
     assert_eq!(threshold_of(0), 0);
 }
+
+// ---- voice (BISE-130) ----
+
+#[test]
+fn the_voice_model_defaults_to_voxtral_and_the_config_picks_another() {
+    let s = Setup::from_text(None, &no_env);
+    assert_eq!(s.voice.model, "mistral/voxtral-mini-latest");
+    assert_eq!((s.voice.from, s.voice.language.clone()), ("default", None));
+    let r = s.catalog.resolve_stt(&s.voice.model);
+    assert_eq!((r.api.as_str(), r.base_url.as_str(), r.key_env.as_str()), ("mistral", "https://api.mistral.ai/v1", "MISTRAL_API_KEY"));
+    assert_eq!(r.known, Known::Listed);
+    let s = setup("[voice]\nmodel = \"groq/whisper-large-v3-turbo\"\nlanguage = \"fr\"\nvocabulary = [\"bise\", \" config.toml \", \"\"]\n");
+    assert_eq!(s.voice.model, "groq/whisper-large-v3-turbo");
+    assert_eq!(s.voice.language.as_deref(), Some("fr"));
+    assert_eq!(s.voice.vocabulary, vec!["bise".to_string(), "config.toml".into()]);
+    assert_eq!(s.catalog.resolve_stt(&s.voice.model).api, "openai");
+    // a comma-separated string works too; "auto" is no language
+    let s = setup("[voice]\nlanguage = \"auto\"\nvocabulary = \"a, b\"\n");
+    assert_eq!((s.voice.language.clone(), s.voice.vocabulary.len()), (None, 2));
+    // the env wins; a bare name goes to the default's provider
+    let env = |k: &str| (k == "BISE_VOICE_MODEL").then(|| "voxtral-transcribe-3".to_string());
+    let s = Setup::from_text(Some("[voice]\nmodel = \"openai/whisper-1\"\n"), &env);
+    assert_eq!((s.voice.model.as_str(), s.voice.from), ("mistral/voxtral-transcribe-3", "BISE_VOICE_MODEL"));
+    // the main model is not the voice one (sections are separate)
+    let s = setup("model = \"openai/gpt-5\"\n[voice]\nmodel = \"deepgram/nova-3\"\n");
+    assert_eq!((s.model.as_str(), s.voice.model.as_str()), ("openai/gpt-5", "deepgram/nova-3"));
+}
+
+#[test]
+fn a_bad_voice_table_is_a_warning() {
+    let s = setup("[voice]\nmodel = 3\nlanguage = [1]\nvocabulary = 2\nspeed = 1\n");
+    let w = s.catalog.warnings.join("\n");
+    for k in ["voice.model", "voice.language", "voice.vocabulary", "voice.speed: unknown key"] {
+        assert!(w.contains(k), "{k}: {w}");
+    }
+    assert_eq!(s.voice.model, "mistral/voxtral-mini-latest");
+    let s = setup("voice = \"x\"\n");
+    assert!(s.catalog.warnings.join("\n").contains("voice: not a table"));
+    let s = setup("[providers.x]\nstt = \"nope\"\nkind = \"tts\"\n");
+    let w = s.catalog.warnings.join("\n");
+    assert!(w.contains("providers.x.stt: one of mistral, openai, elevenlabs, deepgram") && w.contains("providers.x.kind"), "{w}");
+}
+
+#[test]
+fn the_voice_job_takes_the_chat_keys_resolution() {
+    let mut store = crate::auth::Store::default();
+    store.set("elevenlabs", "xi-secret");
+    let files = vec![crate::auth::EnvFile::parse("/h/.vibe/.env".into(), "MISTRAL_API_KEY=m-file\n")];
+    let env = |k: &str| (k == "OPENAI_API_KEY").then(|| "sk-env".to_string());
+    let keys = crate::auth::Keys { env: &env, store: &store, files: &files };
+    let job = setup("[voice]\nlanguage = \"fr\"\nvocabulary = [\"bise\"]\n").voice_job(&keys).unwrap();
+    assert_eq!(
+        (job.api.as_str(), job.base_url.as_str(), job.model.as_str(), job.key.as_str()),
+        ("mistral", "https://api.mistral.ai/v1", "voxtral-mini-latest", "m-file")
+    );
+    assert_eq!((job.language.as_deref(), job.vocabulary.clone()), (Some("fr"), vec!["bise".to_string()]));
+    assert!(!format!("{:?}", job).contains("m-file"));
+    let job = setup("[voice]\nmodel = \"openai/gpt-4o-transcribe\"\n").voice_job(&keys).unwrap();
+    assert_eq!((job.api.as_str(), job.key.as_str()), ("openai", "sk-env"));
+    let job = setup("[voice]\nmodel = \"elevenlabs/scribe_v2\"\n").voice_job(&keys).unwrap();
+    assert_eq!((job.api.as_str(), job.base_url.as_str(), job.key.as_str()), ("elevenlabs", "https://api.elevenlabs.io/v1", "xi-secret"));
+    // the failures say what to do, never with a key
+    let e = setup("[voice]\nmodel = \"deepgram/nova-3\"\n").voice_job(&keys).unwrap_err();
+    assert_eq!(e, "voice transcription needs an API key: set DEEPGRAM_API_KEY or run 'bise login deepgram'");
+    let e = setup("[voice]\nmodel = \"nowhere/x\"\n").voice_job(&keys).unwrap_err();
+    assert!(e.contains("unknown provider 'nowhere'"), "{e}");
+    let e = setup("[voice]\nmodel = \"anthropic/claude-haiku-4-5\"\n").voice_job(&keys).unwrap_err();
+    assert!(e.contains("anthropic does not transcribe"), "{e}");
+    // a custom OpenAI-compatible server is data
+    let s = setup("[providers.local]\nbase_url = \"http://127.0.0.1:9/v1/\"\nstt = \"openai\"\n[models.\"local/whisper\"]\nkind = \"stt\"\n[voice]\nmodel = \"local/whisper\"\n");
+    let job = s.voice_job(&keys).unwrap();
+    assert_eq!((job.api.as_str(), job.base_url.as_str(), job.key.as_str()), ("openai", "http://127.0.0.1:9/v1", ""));
+    assert_eq!(s.catalog.resolve_stt("local/whisper").known, Known::Listed);
+}
+
+#[test]
+fn voice_entries_stay_out_of_the_chat_list_and_the_handoff() {
+    let s = Setup::from_text(None, &no_env);
+    let h = s.handoff_toml();
+    assert!(!h.contains("elevenlabs") && !h.contains("deepgram") && !h.contains("voxtral") && !h.contains("whisper"), "{h}");
+    assert!(h.contains("[providers.mistral]") && h.contains("[providers.groq]"));
+    let env = |k: &str| (k == "MISTRAL_API_KEY").then(|| "m".to_string());
+    let store = crate::auth::Store::default();
+    let keys = crate::auth::Keys { env: &env, store: &store, files: &[] };
+    let out = cli::render(&s, None, &keys, None);
+    assert!(out.contains("voice        mistral/voxtral-mini-latest  (default; listed)"), "{out}");
+    assert!(out.contains("language auto"), "{out}");
+    let (chat, voice) = out.split_once("\nvoice (speech to text").unwrap();
+    assert!(!chat.contains("whisper") && !chat.contains("elevenlabs  ElevenLabs"), "{chat}");
+    for l in [
+        "  mistral  Mistral · mistral · key: env MISTRAL_API_KEY",
+        "    mistral/voxtral-mini-latest",
+        "  elevenlabs  ElevenLabs · elevenlabs · no key (ELEVENLABS_API_KEY or 'bise login elevenlabs')",
+        "    deepgram/nova-3",
+        "    groq/whisper-large-v3-turbo",
+    ] {
+        assert!(voice.contains(l), "{l}: {voice}");
+    }
+    // 'voice' as the filter: only the voice providers
+    let out = cli::render(&s, Some("voice"), &keys, None);
+    assert!(out.contains("openai/gpt-4o-transcribe") && !out.contains("anthropic  Anthropic"), "{out}");
+    // elevenlabs and deepgram take a key through 'bise login'
+    assert!(crate::auth_cli::check_provider(&s.catalog, "deepgram").is_ok());
+}

@@ -66,6 +66,49 @@ fn choice_line(label: &str, c: &Catalog, name: &str, from: &str) -> String {
     format!("{:<12} {}  ({}; {})\n             {}\n", label, r.name, from, what, caps_text(&r))
 }
 
+/// The voice input's model (BISE-130), as the choice lines.
+fn voice_line(s: &Setup) -> String {
+    let v = &s.voice;
+    let r = s.catalog.resolve_stt(&v.model);
+    let what = match (r.known, r.api.is_empty()) {
+        (Known::NoProvider, _) => format!("unknown provider '{}'", r.provider),
+        (_, true) => format!("{} does not transcribe", r.provider),
+        (Known::Listed, _) => "listed".into(),
+        (_, false) => format!("not listed: {} speaks {}", r.provider, r.api),
+    };
+    let mut extra = Vec::new();
+    extra.push(format!("language {}", v.language.as_deref().unwrap_or("auto")));
+    if !v.vocabulary.is_empty() {
+        extra.push(format!("vocabulary: {}", v.vocabulary.len()));
+    }
+    format!("{:<12} {}  ({}; {})\n             {}\n", "voice", r.name, v.from, what, extra.join(" · "))
+}
+
+/// The providers that transcribe and their voice models.
+fn voice_list(o: &mut String, c: &Catalog, hit: &dyn Fn(&str) -> bool, keys: &Keys, home: Option<&Path>) {
+    let mut block = String::new();
+    for p in c.stt_providers() {
+        let p_hit = hit(&p.id) || hit(&p.name) || hit("voice") || hit("stt");
+        let models: Vec<_> = c
+            .models
+            .iter()
+            .filter(|m| m.provider == p.id && m.stt && (p_hit || hit(&m.name())))
+            .collect();
+        if !p_hit && models.is_empty() {
+            continue;
+        }
+        block.push_str(&format!("  {}  {} · {} · {}\n", p.id, p.name, p.stt, key_state(p, keys, home)));
+        for m in models {
+            let mark = if m.source == Source::Config { "  (config)" } else { "" };
+            block.push_str(&format!("    {}{}\n", m.name(), mark));
+        }
+    }
+    if !block.is_empty() {
+        o.push_str("\nvoice (speech to text, ctrl+r; [voice] in config.toml)\n");
+        o.push_str(&block);
+    }
+}
+
 /// The whole listing, pure (tests).
 pub fn render(s: &Setup, filter: Option<&str>, keys: &Keys, home: Option<&Path>) -> String {
     let c = &s.catalog;
@@ -81,8 +124,9 @@ pub fn render(s: &Setup, filter: Option<&str>, keys: &Keys, home: Option<&Path>)
         f => f,
     };
     o.push_str(&choice_line("small_model", c, &s.small_model, small_from));
-    for p in &c.providers {
-        let models: Vec<_> = c.models.iter().filter(|m| m.provider == p.id).collect();
+    o.push_str(&voice_line(s));
+    for p in c.providers.iter().filter(|p| !p.stt_only) {
+        let models: Vec<_> = c.models.iter().filter(|m| m.provider == p.id && !m.stt).collect();
         let p_hit = hit(&p.id) || hit(&p.name);
         let shown: Vec<_> = models.iter().filter(|m| p_hit || hit(&m.name())).collect();
         if !p_hit && shown.is_empty() {
@@ -108,6 +152,7 @@ pub fn render(s: &Setup, filter: Option<&str>, keys: &Keys, home: Option<&Path>)
         };
         o.push_str(&format!("  {:<52} {}\n", format!("{}/<any other>", p.id), caps_text(&base)));
     }
+    voice_list(&mut o, c, &hit, keys, home);
     if !c.warnings.is_empty() {
         o.push('\n');
         for w in &c.warnings {
@@ -123,7 +168,8 @@ fn usage() -> String {
   Lists the providers and models bise knows (built in, plus config.toml's
   [providers.<id>] and [models.\"<provider>/<model>\"]), where each
   provider's key comes from (env, auth.json, an old .env file), and the
-  models in use (model, agent_model, small_model).
+  models in use (model, agent_model, small_model), and the voice input's
+  speech-to-text providers ('voice' as the filter lists only them).
   Any \"<provider>/<model>\" works, listed or not.",
         CLI
     )

@@ -1,36 +1,35 @@
 //! Speech-to-text in the composer, the Vibe CLI way (vibe/cli/voice_manager,
 //! vibe/cli/transcribe, vibe/cli/audio_recorder).
 //!
-//! Ctrl+R records from the default microphone and streams 16 kHz mono
-//! PCM to Mistral's realtime transcription websocket; the text deltas
-//! land in the composer as they arrive. While recording, any key stops
-//! (the last words are flushed), Ctrl+C or Esc cancels. Off by default:
-//! `/voice` toggles it, saved in ~/.bend-harness/tui.json.
+//! Ctrl+R records from the default microphone (16 kHz mono PCM); any
+//! key stops, then the whole clip goes to the voice model in one
+//! request (BISE-130: batch, the full model, not the realtime mini one)
+//! and the text lands in the composer. The model, the language and a
+//! vocabulary come from `[voice]` in ~/.bise/config.toml (bise_catalog:
+//! Mistral Voxtral by default; OpenAI, Groq, ElevenLabs, Deepgram, any
+//! OpenAI-compatible server), the key from the chat keys' resolution.
+//! While recording, Ctrl+C or Esc cancels. Off by default: `/voice`
+//! toggles it, saved in bise's prefs.
 //!
-//! Layout: pure parts first (key decisions, resampling, the wire
-//! protocol, settings), then the controller [`Voice`] driven through
-//! two ports ([`Recorder`], [`Transcriber`]) so the tests run without a
-//! microphone or a network, then the real adapters (cpal, tungstenite).
+//! Layout: pure parts first (key decisions, resampling, settings), then
+//! the controller [`Voice`] driven through two ports ([`Recorder`],
+//! [`Transcriber`]) so the tests run without a microphone or a network,
+//! then the real adapters (cpal; [`BatchTranscriber`] over `stt` and
+//! `http`). The audio stays in memory: it is never written to a file.
 
 use crossterm::event::{KeyCode, KeyModifiers};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-// ---- configuration (Vibe's defaults: vibe/core/config/vibe_schema.py) ----
+// ---- configuration ----
 
-pub const API_KEY_ENV: &str = "MISTRAL_API_KEY";
-const API_BASE: &str = "wss://api.mistral.ai";
-const MODEL: &str = "voxtral-mini-transcribe-realtime-2602";
 pub const SAMPLE_RATE: u32 = 16_000;
-const TARGET_STREAMING_DELAY_MS: u32 = 500;
-/// Audio sent per websocket message (Vibe's capture buffer is 200 ms).
-const SEND_BLOCK: usize = SAMPLE_RATE as usize / 5;
-const FLUSH_TIMEOUT: Duration = Duration::from_secs(10);
-/// The flush timed out after some text arrived.
-pub const LATE_DONE_NOTICE: &str = "the last words may be missing (the transcription did not finish in time).";
+/// The request: a 5-minute clip takes Voxtral ~10-20 s; past this the
+/// transcription failed.
+const TRANSCRIBE_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_DURATION: Duration = Duration::from_secs(300);
 /// Shorter than this, a recording has no audio blocks yet: silence then
 /// means "stopped too early", not "the microphone is muted".
@@ -38,13 +37,9 @@ const MIN_SIGNAL_DURATION: Duration = Duration::from_millis(500);
 /// A denied or muted microphone gives pure silence: any peak above this
 /// floor means a real signal reached us.
 const SILENCE_PEAK: f32 = 0.001;
-/// The server rejects the end-of-stream flush of a recording without
-/// audio: a benign empty recording, not a failure.
-const EMPTY_RECORDING_MARKER: &str = "before sending any audio bytes";
-
 /// The level meter shown in place of the prompt while recording.
 pub const PEAK_BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-/// The spinner shown while the last words are flushed.
+/// The spinner shown while the clip is transcribed.
 pub const FILL_BLOCKS: [char; 8] = ['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
 
 pub fn peak_glyph(peak: f32) -> char {
@@ -76,6 +71,8 @@ fn no_audio_detected_message() -> String {
 
 pub const ENABLED_MESSAGE: &str = "voice mode on. press ctrl+r to start recording.";
 pub const DISABLED_MESSAGE: &str = "voice mode off.";
+/// Shown in the empty composer while the clip is transcribed.
+pub const TRANSCRIBING: &str = "transcribing…";
 pub const OFF_HINT: &str = "voice mode is off: /voice turns it on";
 
 // ---- keys ----
@@ -191,86 +188,35 @@ pub fn peak(samples: &[i16]) -> f32 {
     (m as f32 / i16::MAX as f32).min(1.0)
 }
 
-fn pcm_bytes(samples: &[i16]) -> Vec<u8> {
-    samples.iter().flat_map(|s| s.to_le_bytes()).collect()
+/// The clip as a WAV file (PCM 16-bit mono), in memory.
+pub fn wav_bytes(samples: &[i16], sample_rate: u32) -> Vec<u8> {
+    let data = samples.len() as u32 * 2;
+    let mut w = Vec::with_capacity(44 + data as usize);
+    w.extend_from_slice(b"RIFF");
+    w.extend_from_slice(&(36 + data).to_le_bytes());
+    w.extend_from_slice(b"WAVEfmt ");
+    w.extend_from_slice(&16u32.to_le_bytes()); // the fmt chunk's size
+    w.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    w.extend_from_slice(&1u16.to_le_bytes()); // mono
+    w.extend_from_slice(&sample_rate.to_le_bytes());
+    w.extend_from_slice(&(sample_rate * 2).to_le_bytes()); // bytes per second
+    w.extend_from_slice(&2u16.to_le_bytes()); // bytes per frame
+    w.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    w.extend_from_slice(b"data");
+    w.extend_from_slice(&data.to_le_bytes());
+    for s in samples {
+        w.extend_from_slice(&s.to_le_bytes());
+    }
+    w
 }
 
-// ---- the realtime protocol (pure) ----
-// mistralai/extra/realtime: session.created, then session.update, then
-// input_audio.append blocks, input_audio.flush + input_audio.end.
-
+/// What the transcription thread tells the controller.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TranscribeEvent {
-    SessionCreated,
+    /// the text (a batch model sends it once)
     Delta(String),
     Done,
     Error(String),
-}
-
-/// One server message → an event (None: an event we do not use).
-pub fn parse_server_event(text: &str) -> Option<TranscribeEvent> {
-    let v: Value = match serde_json::from_str(text) {
-        Ok(v) => v,
-        Err(_) => return None,
-    };
-    match v.get("type").and_then(|t| t.as_str())? {
-        "session.created" => Some(TranscribeEvent::SessionCreated),
-        "transcription.text.delta" => Some(TranscribeEvent::Delta(
-            v.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string(),
-        )),
-        "transcription.done" => Some(TranscribeEvent::Done),
-        "error" => {
-            let msg = error_message(&v);
-            if msg.contains(EMPTY_RECORDING_MARKER) {
-                Some(TranscribeEvent::Done)
-            } else {
-                Some(TranscribeEvent::Error(msg))
-            }
-        }
-        _ => None,
-    }
-}
-
-fn error_message(v: &Value) -> String {
-    let e = v.get("error").unwrap_or(v);
-    match e.get("message") {
-        Some(Value::String(s)) => s.clone(),
-        Some(other) => other.to_string(),
-        None => e.to_string(),
-    }
-}
-
-pub fn session_update_message(sample_rate: u32, delay_ms: u32) -> String {
-    json!({
-        "type": "session.update",
-        "session": {
-            "audio_format": {"encoding": "pcm_s16le", "sample_rate": sample_rate},
-            "target_streaming_delay_ms": delay_ms,
-        }
-    })
-    .to_string()
-}
-
-pub fn append_message(samples: &[i16]) -> String {
-    use base64::Engine;
-    let audio = base64::engine::general_purpose::STANDARD.encode(pcm_bytes(samples));
-    json!({"type": "input_audio.append", "audio": audio}).to_string()
-}
-
-pub fn flush_message() -> String {
-    json!({"type": "input_audio.flush"}).to_string()
-}
-
-pub fn end_message() -> String {
-    json!({"type": "input_audio.end"}).to_string()
-}
-
-pub fn realtime_url(api_base: &str, model: &str) -> String {
-    format!(
-        "{}/v1/audio/transcriptions/realtime?model={}",
-        api_base.trim_end_matches('/'),
-        model
-    )
 }
 
 // ---- settings (the `voice` preference: bise_home, prefs.json or ~/.bend-harness/tui.json) ----
@@ -308,28 +254,17 @@ pub fn save_voice_enabled(enabled: bool) -> Result<(), String> {
     settings().set(Value::Bool(enabled)).map_err(|e| e.to_string())
 }
 
-/// KEY=VALUE lines of a .env text (the harness's load_env_files rules).
-pub fn env_file_value(text: &str, key: &str) -> Option<String> {
-    text.lines().find_map(|line| {
-        let line = line.trim();
-        let line = line.strip_prefix("export ").unwrap_or(line);
-        let (k, v) = line.split_once('=')?;
-        let v = v.trim().trim_matches('"').trim_matches('\'');
-        (k.trim() == key && !v.is_empty()).then(|| v.to_string())
-    })
-}
-
-/// MISTRAL_API_KEY from the environment, else the env files the harness
-/// loads (`bise_home::Home::env_files`: bise's .env, then ~/.vibe/.env;
-/// the switchboard client does not load them itself).
-pub fn resolve_api_key() -> Option<String> {
-    if let Some(v) = std::env::var(API_KEY_ENV).ok().filter(|v| !v.trim().is_empty()) {
-        return Some(v);
-    }
-    bise_home::Home::from_env().env_files().iter().find_map(|f| {
-        let text = std::fs::read_to_string(f).ok()?;
-        env_file_value(&text, API_KEY_ENV)
-    })
+/// The voice model's call from `[voice]` in config.toml and the key
+/// (env > auth.json > the old .env files), read when a recording starts
+/// so a config edit applies at once. Err: the one-line warning.
+pub fn resolve_job() -> Result<VoiceJob, String> {
+    use bise_catalog::auth::{EnvFile, Keys, Store};
+    let home = bise_home::Home::from_env();
+    let setup = bise_catalog::Setup::load(&home.config_file());
+    let store = Store::read(&home.auth_file()).unwrap_or_default();
+    let files = EnvFile::read_all(&home.env_files());
+    let env = |k: &str| std::env::var(k).ok();
+    setup.voice_job(&Keys { env: &env, store: &store, files: &files })
 }
 
 // ---- ports ----
@@ -359,13 +294,13 @@ pub trait Recorder {
     fn start(&mut self, sample_rate: u32, audio: Sender<AudioMsg>) -> Result<Box<dyn Capture>, StartError>;
 }
 
-/// Starts a transcription session on its own thread: reads `audio` until
+/// Starts a transcription on its own thread: reads `audio` until
 /// [`AudioMsg::End`], sends the events to `events`, stops when `cancel`
 /// is set.
 pub trait Transcriber {
     fn start(
         &self,
-        api_key: String,
+        job: VoiceJob,
         audio: Receiver<AudioMsg>,
         events: Sender<TranscribeEvent>,
         cancel: Arc<AtomicBool>,
@@ -411,9 +346,9 @@ impl Voice {
         Voice { enabled, recorder, transcriber, state: VoiceState::Idle, run: None }
     }
 
-    /// The real microphone and the Mistral realtime API.
+    /// The real microphone and the configured voice model.
     pub fn live(enabled: bool) -> Self {
-        Voice::new(enabled, Box::new(CpalRecorder), Box::new(MistralRealtime::default()))
+        Voice::new(enabled, Box::new(CpalRecorder), Box::new(BatchTranscriber))
     }
 
     pub fn state(&self) -> VoiceState {
@@ -432,20 +367,18 @@ impl Voice {
             .unwrap_or(0.0)
     }
 
-    /// When the flush started (the spinner's time base).
+    /// When the transcription started (the spinner's time base).
     pub fn flushing_since(&self) -> Option<Instant> {
         self.run.as_ref().and_then(|r| r.stopped)
     }
 
-    /// Start recording; Err is the warning to show (Vibe's
-    /// RecordingStartError messages).
-    pub fn start(&mut self, api_key: Option<String>, now: Instant) -> Result<(), String> {
+    /// Start recording; Err is the warning to show (no model or key,
+    /// Vibe's RecordingStartError messages).
+    pub fn start(&mut self, job: Result<VoiceJob, String>, now: Instant) -> Result<(), String> {
         if self.state != VoiceState::Idle {
             return Ok(());
         }
-        let Some(key) = api_key.filter(|k| !k.trim().is_empty()) else {
-            return Err(format!("voice transcription needs an API key: set {}", API_KEY_ENV));
-        };
+        let job = job?;
         let (audio_tx, audio_rx) = mpsc::channel();
         let capture = self.recorder.start(SAMPLE_RATE, audio_tx.clone()).map_err(|e| match e {
             StartError::NoInputDevice => format!("no audio input device found.{}", mic_access_hint()),
@@ -453,7 +386,7 @@ impl Voice {
         })?;
         let (ev_tx, ev_rx) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
-        self.transcriber.start(key, audio_rx, ev_tx, cancel.clone());
+        self.transcriber.start(job, audio_rx, ev_tx, cancel.clone());
         self.run = Some(Run {
             capture: Some(capture),
             audio: audio_tx,
@@ -468,7 +401,7 @@ impl Voice {
         Ok(())
     }
 
-    /// Stop the microphone; the last words are flushed.
+    /// Stop the microphone; the clip is transcribed.
     pub fn stop(&mut self, now: Instant) {
         if self.state != VoiceState::Recording {
             return;
@@ -501,7 +434,6 @@ impl Voice {
                         out.push(VoiceOutput::Insert(t));
                     }
                 }
-                Ok(TranscribeEvent::SessionCreated) => {}
                 Ok(TranscribeEvent::Error(m)) => {
                     self.cancel();
                     out.push(VoiceOutput::Error(format!("voice transcription failed: {}", m)));
@@ -517,20 +449,12 @@ impl Voice {
                 self.stop(now)
             }
             (VoiceState::Flushing, Some(r))
-                if r.stopped.is_some_and(|s| now.duration_since(s) >= FLUSH_TIMEOUT) =>
+                if r.stopped.is_some_and(|s| now.duration_since(s) >= TRANSCRIBE_TIMEOUT) =>
             {
-                // text already landed: keep it, only the last words may
-                // be missing — a notice, not a failure
-                let had_text = r.text_len > 0;
                 self.cancel();
-                if had_text {
-                    out.push(VoiceOutput::Utterance);
-                    out.push(VoiceOutput::Notice(LATE_DONE_NOTICE.into()));
-                } else {
-                    out.push(VoiceOutput::Error(
-                        "voice transcription failed: the transcription timed out".into(),
-                    ));
-                }
+                out.push(VoiceOutput::Error(
+                    "voice transcription failed: the transcription timed out".into(),
+                ));
             }
             _ => {}
         }
@@ -653,33 +577,27 @@ where
         .map_err(|e| StartError::Backend(e.to_string()))
 }
 
-// ---- the Mistral realtime websocket (tungstenite, one thread) ----
+// ---- the batch transcription (one HTTP request per clip) ----
 
-pub struct MistralRealtime {
-    pub api_base: String,
-    pub model: String,
-}
+/// Collects the clip, then sends it to the voice model in one request.
+pub struct BatchTranscriber;
 
-impl Default for MistralRealtime {
-    fn default() -> Self {
-        MistralRealtime { api_base: API_BASE.into(), model: MODEL.into() }
-    }
-}
-
-impl Transcriber for MistralRealtime {
-    fn start(
-        &self,
-        api_key: String,
-        audio: Receiver<AudioMsg>,
-        events: Sender<TranscribeEvent>,
-        cancel: Arc<AtomicBool>,
-    ) {
-        let url = realtime_url(&self.api_base, &self.model);
+impl Transcriber for BatchTranscriber {
+    fn start(&self, job: VoiceJob, audio: Receiver<AudioMsg>, events: Sender<TranscribeEvent>, cancel: Arc<AtomicBool>) {
         std::thread::spawn(move || {
-            let result = WsSocket::connect(&url, &api_key)
-                .and_then(|mut ws| stream_session(&mut ws, &audio, &events, &cancel));
-            if let Err(e) = result {
-                if !cancel.load(Ordering::SeqCst) {
+            let Some(samples) = collect_clip(&audio, &cancel) else { return };
+            let result = transcribe_clip(&job, &samples, &cancel, &|req| http::send(req, TRANSCRIBE_TIMEOUT));
+            if cancel.load(Ordering::SeqCst) {
+                return;
+            }
+            match result {
+                Ok(t) => {
+                    if !t.is_empty() {
+                        let _ = events.send(TranscribeEvent::Delta(t));
+                    }
+                    let _ = events.send(TranscribeEvent::Done);
+                }
+                Err(e) => {
                     let _ = events.send(TranscribeEvent::Error(e));
                 }
             }
@@ -687,201 +605,45 @@ impl Transcriber for MistralRealtime {
     }
 }
 
-/// Waits of the session loop: while recording it alternates between
-/// the audio channel and the socket; once the audio ended only the
-/// socket is left.
-const AUDIO_WAIT: Duration = Duration::from_millis(20);
-const RECORDING_READ_WAIT: Duration = Duration::from_millis(20);
-const ENDED_READ_WAIT: Duration = Duration::from_millis(100);
-
-/// One read from the server.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SocketRead {
-    Text(String),
-    /// nothing arrived within the wait
-    Idle,
-    /// the server closed the connection
-    Closed,
-}
-
-/// The websocket as the session loop sees it, so the loop runs against
-/// a fake socket in the tests.
-pub trait RealtimeSocket {
-    fn send_text(&mut self, text: String) -> Result<(), String>;
-    fn read(&mut self, wait: Duration) -> Result<SocketRead, String>;
-    fn close(&mut self);
-}
-
-/// The audio channel drained without blocking past the first wait:
-/// every queued chunk, and whether the recording ended. `End` can sit
-/// right behind the last chunks (the capture stops, then End is sent):
-/// it must never be dropped with them, or flush/end are never sent and
-/// the server never answers `transcription.done`.
-fn drain_audio(audio: &Receiver<AudioMsg>, wait: Duration, pending: &mut Vec<i16>) -> bool {
-    let mut next = match audio.recv_timeout(wait) {
-        Ok(m) => Some(m),
-        Err(mpsc::RecvTimeoutError::Timeout) => None,
-        Err(mpsc::RecvTimeoutError::Disconnected) => return true,
-    };
-    while let Some(msg) = next {
-        match msg {
-            AudioMsg::Chunk(c) => pending.extend(c),
-            AudioMsg::End => return true,
-        }
-        next = match audio.try_recv() {
-            Ok(m) => Some(m),
-            Err(TryRecvError::Empty) => None,
-            Err(TryRecvError::Disconnected) => return true,
-        };
-    }
-    false
-}
-
-/// A session over an open socket (mistralai/extra/realtime
-/// transcribe_stream): session.update, the audio in blocks, then
-/// input_audio.flush + input_audio.end exactly once, then read until
-/// transcription.done (or the server closing the socket).
-pub fn stream_session(
-    ws: &mut dyn RealtimeSocket,
-    audio: &Receiver<AudioMsg>,
-    events: &Sender<TranscribeEvent>,
-    cancel: &AtomicBool,
-) -> Result<(), String> {
-    ws.send_text(session_update_message(SAMPLE_RATE, TARGET_STREAMING_DELAY_MS))?;
-    let mut pending: Vec<i16> = Vec::new();
-    let mut ended = false;
+/// The whole recording: every chunk until [`AudioMsg::End`] (or the
+/// recorder gone). None: cancelled.
+pub fn collect_clip(audio: &Receiver<AudioMsg>, cancel: &AtomicBool) -> Option<Vec<i16>> {
+    let mut clip = Vec::new();
     loop {
         if cancel.load(Ordering::SeqCst) {
-            ws.close();
-            return Ok(());
+            return None;
         }
-        // send side: the captured audio, in blocks
-        if !ended {
-            ended = drain_audio(audio, AUDIO_WAIT, &mut pending);
-            if pending.len() >= SEND_BLOCK || (ended && !pending.is_empty()) {
-                ws.send_text(append_message(&pending))?;
-                pending.clear();
-            }
-            if ended {
-                ws.send_text(flush_message())?;
-                ws.send_text(end_message())?;
-            }
-        }
-        // read side: every message already there
-        let wait = if ended { ENDED_READ_WAIT } else { RECORDING_READ_WAIT };
-        loop {
-            match ws.read(wait)? {
-                SocketRead::Text(t) => match parse_server_event(&t) {
-                    Some(TranscribeEvent::Done) => {
-                        let _ = events.send(TranscribeEvent::Done);
-                        ws.close();
-                        return Ok(());
-                    }
-                    Some(TranscribeEvent::Error(m)) => return Err(m),
-                    Some(ev) => {
-                        let _ = events.send(ev);
-                    }
-                    None => {}
-                },
-                SocketRead::Closed if ended => {
-                    let _ = events.send(TranscribeEvent::Done);
-                    return Ok(());
-                }
-                SocketRead::Closed => {
-                    return Err("the connection closed before the recording finished".into())
-                }
-                SocketRead::Idle => break,
-            }
+        match audio.recv_timeout(Duration::from_millis(50)) {
+            Ok(AudioMsg::Chunk(c)) => clip.extend(c),
+            Ok(AudioMsg::End) | Err(mpsc::RecvTimeoutError::Disconnected) => return Some(clip),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
     }
 }
 
-type Ws = tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>;
+/// A clip shorter than this is a slip of the key: no request.
+const MIN_CLIP: usize = SAMPLE_RATE as usize / 5;
 
-/// The real socket (tungstenite, blocking, a read timeout per wait).
-pub struct WsSocket {
-    ws: Ws,
-    wait: Option<Duration>,
+/// One clip → its text (trimmed; "" when there was nothing to send:
+/// too short, or pure silence). `send` is the HTTP call.
+pub fn transcribe_clip(
+    job: &VoiceJob,
+    samples: &[i16],
+    cancel: &AtomicBool,
+    send: &dyn Fn(&http::Request) -> Result<http::Response, String>,
+) -> Result<String, String> {
+    if samples.len() < MIN_CLIP || peak(samples) <= SILENCE_PEAK || cancel.load(Ordering::SeqCst) {
+        return Ok(String::new());
+    }
+    let req = stt::request(job, &wav_bytes(samples, SAMPLE_RATE));
+    let resp = send(&req)?;
+    stt::parse(&job.api, &resp).map(|t| t.trim().to_string())
 }
 
-impl WsSocket {
-    pub fn connect(url: &str, api_key: &str) -> Result<WsSocket, String> {
-        use tungstenite::client::IntoClientRequest;
-        let mut req = url.into_client_request().map_err(|e| e.to_string())?;
-        let auth = format!("Bearer {}", api_key).parse().map_err(|_| "invalid API key".to_string())?;
-        req.headers_mut().insert("Authorization", auth);
-        req.headers_mut().insert(
-            "User-Agent",
-            tungstenite::http::HeaderValue::from_static("bend-harness-tui"),
-        );
-        let (ws, _) = tungstenite::connect(req).map_err(ws_error)?;
-        Ok(WsSocket { ws, wait: None })
-    }
+pub use bise_catalog::voice::VoiceJob;
 
-    fn set_read_timeout(&mut self, t: Duration) {
-        use tungstenite::stream::MaybeTlsStream;
-        if self.wait == Some(t) {
-            return;
-        }
-        self.wait = Some(t);
-        let _ = match self.ws.get_mut() {
-            MaybeTlsStream::Plain(s) => s.set_read_timeout(Some(t)),
-            MaybeTlsStream::Rustls(s) => s.get_mut().set_read_timeout(Some(t)),
-            _ => Ok(()),
-        };
-    }
-}
-
-impl RealtimeSocket for WsSocket {
-    fn send_text(&mut self, text: String) -> Result<(), String> {
-        self.ws.send(tungstenite::Message::text(text)).map_err(ws_error)
-    }
-
-    fn read(&mut self, wait: Duration) -> Result<SocketRead, String> {
-        use tungstenite::{Error, Message};
-        self.set_read_timeout(wait);
-        loop {
-            return match self.ws.read() {
-                Ok(Message::Text(t)) => Ok(SocketRead::Text(t.as_str().to_string())),
-                Ok(Message::Close(_)) | Err(Error::ConnectionClosed | Error::AlreadyClosed) => {
-                    Ok(SocketRead::Closed)
-                }
-                // pings are answered by tungstenite; binary frames are unused
-                Ok(_) => continue,
-                Err(Error::Io(e))
-                    if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) =>
-                {
-                    Ok(SocketRead::Idle)
-                }
-                Err(e) => Err(ws_error(e)),
-            };
-        }
-    }
-
-    fn close(&mut self) {
-        let _ = self.ws.close(None);
-        let _ = self.ws.flush();
-    }
-}
-
-fn ws_error(e: tungstenite::Error) -> String {
-    match e {
-        tungstenite::Error::Http(r) => {
-            let body = r
-                .body()
-                .as_ref()
-                .map(|b| String::from_utf8_lossy(b).to_string())
-                .unwrap_or_default();
-            let status = r.status();
-            if body.is_empty() {
-                format!("HTTP {}", status)
-            } else {
-                format!("HTTP {}: {}", status, body.trim())
-            }
-        }
-        other => other.to_string(),
-    }
-}
+pub mod http;
+pub mod stt;
 
 #[cfg(test)]
 pub(crate) mod fakes;
