@@ -12,7 +12,9 @@
 //! focus, a draw took longer than the budget, `BISE_REDUCE_MOTION` is set;
 //! and in tests): then every form is one static `∿` in the text color.
 //! While you type (zen, BISE-121) it is [`Motion::Calm`]: half the speed,
-//! each tone one step down (text → dim → faint).
+//! each tone one step down (text → dim → faint); the other agents' gusts
+//! are a [`Motion::Hush`]: one `∿` whose tone goes dim, faint, dim… every
+//! ~1.3 s ([`away`]).
 //! Ratatui only rewrites changed cells: with 110 ms a frame, at most ~9
 //! cell updates a second, and none when no agent works (no gust drawn).
 
@@ -28,6 +30,26 @@ pub(crate) enum Motion {
     Frame(u64),
     /// zen (BISE-121): the frame at half speed, the tones one step down
     Calm(u64),
+    /// zen, the other agents: the still glyph, its tone slowly between dim
+    /// and faint (a step every [`HUSH_FRAMES`] frames): it still works,
+    /// and the motion does not catch the eye
+    Hush(u64),
+}
+
+/// Frames of one hush step: 12 × 110 ms ≈ 1.3 s.
+pub(crate) const HUSH_FRAMES: u64 = 12;
+
+/// The motion of what happens elsewhere (the panel's and the header's
+/// gusts) at frame `now`: `motion` itself out of zen; in zen a hush, or
+/// still when `motion` is (focus lost, redraw budget, reduce motion) or
+/// under `NO_COLOR` (the hush is a color).
+pub(crate) fn away(motion: Motion, zen: bool, no_color: bool, now: u64) -> Motion {
+    match motion {
+        _ if !zen => motion,
+        Motion::Still => Motion::Still,
+        _ if no_color => Motion::Still,
+        _ => Motion::Hush(now / HUSH_FRAMES),
+    }
 }
 
 /// The gust's form: the whole strip, the short one, or the breath.
@@ -144,6 +166,10 @@ pub(crate) fn cells(m: &Motif, motion: Motion, size: Size, ascii: bool) -> Vec<(
         Motion::Frame(i) => (i, false),
         Motion::Calm(i) => (i, true),
         Motion::Still => return vec![(if ascii { m.still.1 } else { m.still.0 }, Tone::Text)],
+        Motion::Hush(i) => {
+            let tone = if i.is_multiple_of(2) { Tone::Dim } else { Tone::Faint };
+            return vec![(if ascii { m.still.1 } else { m.still.0 }, tone)];
+        }
     };
     let frames = match size {
         Size::Five => m.strip,
@@ -189,6 +215,28 @@ pub(crate) fn cell(motion: Motion) -> (&'static str, Color) {
 mod tests {
     use super::*;
     use unicode_width::UnicodeWidthStr;
+
+    /// Zen: the other agents' `∿` keeps a slow color pulse, same glyph,
+    /// dim then faint, one step every HUSH_FRAMES; still when the motion
+    /// is (reduce motion, focus lost) or under NO_COLOR; out of zen, the
+    /// motion itself.
+    #[test]
+    fn zen_hushes_the_other_gusts_to_a_slow_color_pulse() {
+        let f = Motion::Frame(40);
+        assert_eq!(away(f, false, false, 40), f);
+        assert_eq!(away(Motion::Still, true, false, 40), Motion::Still);
+        assert_eq!(away(f, true, true, 40), Motion::Still);
+        assert_eq!(away(Motion::Calm(20), true, false, 40), Motion::Hush(40 / HUSH_FRAMES));
+        // the same step for HUSH_FRAMES frames: no repaint in between
+        assert_eq!(away(f, true, false, 36), away(f, true, false, 47));
+        for size in [Size::Five, Size::Three, Size::One] {
+            for ascii in [false, true] {
+                let (a, b) = (cells(&W1, Motion::Hush(0), size, ascii), cells(&W1, Motion::Hush(1), size, ascii));
+                let g = if ascii { "~" } else { "∿" };
+                assert_eq!((a, b), (vec![(g, Tone::Dim)], vec![(g, Tone::Faint)]));
+            }
+        }
+    }
 
     fn text_of(cells: &[(&str, Tone)]) -> String {
         cells.iter().map(|(g, _)| *g).collect()

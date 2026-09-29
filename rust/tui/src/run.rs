@@ -341,8 +341,9 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
         pump_voice(app);
         let zen = app.zen.active(std::time::Instant::now());
         app.motion = crate::gust::motion(app.focus_lost, last_draw, reduce_motion, zen);
-        // zen (BISE-132): the other agents' gusts stand still
-        app.motion_away = if zen { crate::gust::Motion::Still } else { app.motion };
+        // zen (BISE-132): the other agents' gusts stand still, their `∿`
+        // pulsing slowly in color (a hush: it still works)
+        app.motion_away = crate::gust::away(app.motion, zen, app.zen.no_color, crate::gust::clock());
         let t_draw = std::time::Instant::now();
         let drawn = crash::guarded(|| {
             // BISE-92: the terminal's own background follows the theme
