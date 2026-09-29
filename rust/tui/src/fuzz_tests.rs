@@ -244,11 +244,11 @@ fn env_num(k: &str, default: u64) -> u64 {
     std::env::var(k).ok().and_then(|s| s.parse().ok()).unwrap_or(default)
 }
 
-/// Thousands of random sequences (FUZZ_RUNS, default 2000, 60 events
-/// each) from FUZZ_SEED (default: fixed, so CI is reproducible).
+/// Random sequences (FUZZ_RUNS, default 300, 60 events each; the full
+/// gate runs FUZZ_RUNS=2000) from FUZZ_SEED (default: fixed, so CI is reproducible).
 #[test]
 fn fuzz_random_input_never_panics() {
-    let runs = env_num("FUZZ_RUNS", 2000);
+    let runs = env_num("FUZZ_RUNS", 300);
     let base = env_num("FUZZ_SEED", 0x5eed);
     let steps = env_num("FUZZ_STEPS", 60) as usize;
     for i in 0..runs {
