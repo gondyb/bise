@@ -176,7 +176,7 @@
   /* the small things: a card each, a tiny static screen on top (4 rows max), the line under it */
   .minis { display:grid; grid-template-columns:repeat(auto-fill, minmax(290px, 1fr)); gap:34px 30px; margin-top:26px; }
   .mini p { color:var(--dim); font-size:14px; line-height:1.65; margin-top:12px; }
-  .mini p b { color:var(--text); font-weight:400; }
+  .mini p b { display:block; color:var(--text); font-weight:700; font-size:15px; margin-bottom:4px; }
   .mv { background:var(--soft); border:1px solid var(--faint); border-radius:6px; padding:10px 2ch; font-size:12.5px; line-height:1.7;
         height:calc(4 * 1.7em + 22px); white-space:pre; overflow:hidden; color:var(--dim); }
   .mv .t { color:var(--text); } .mv .k { color:var(--text); } .mv .hl { background:#3a2530; color:var(--text); }
@@ -334,8 +334,8 @@
     <h2>the small things add up</h2>
     <div class="minis">
       <div class="mini"><div class="mv"><span class="t">you</span>  fix the typo in the footer
-<span class="acc">:*</span>   done. too small for an agent,
-     i did it myself.
+<span class="acc">:*</span>   done, i did it myself.
+     too small for an agent.
 <span class="faint">     0 agents started</span></div><p><b>your token bill can relax</b> · bise starts an agent when a job needs one. that's the whole rule. there's no committee of agents reviewing each other in circles.</p></div>
       <div class="mini"><div class="mv"><span class="acc">:*</span> ▸ 14 messages between 3 agents
    ▸ ran 6 tools · 2 scripts
