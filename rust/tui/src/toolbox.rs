@@ -1,7 +1,8 @@
 //! The bash / TypeScript box (book §11 "Scripts: a box", BISE-96): a
 //! rounded box the width of the code measure, its title in the top border
-//! (`╭─ $ bash ∿ 12s ───╮`), the script in full, a faint rule, then the
-//! output, dim, 15 rows at most while closed. Other tools stay one line.
+//! (`╭─ $ bash ∿ 12s ───╮`), the script, a faint rule, then the output,
+//! dim. Closed, the inside is 15 rows at most (BISE-123), its last row
+//! `▸ n more lines` when lines are hidden. Other tools stay one line.
 
 use crate::code::*;
 use crate::render::{elapsed_label, fmt_elapsed};
@@ -11,11 +12,11 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
-/// Output rows kept while the box is closed.
-pub(crate) const CLOSED_ROWS: usize = 15;
-/// A done box keeps its first rows and its last ones around `▸ n more`.
-const HEAD_ROWS: usize = 5;
-const TAIL_ROWS: usize = 9;
+/// The rows inside a closed box, script + rule + output + marker
+/// (BISE-123): a longer box shows `▸ n more lines` on its last row.
+pub(crate) const BOX_ROWS: usize = 15;
+/// The script's share of a closed box whose output needs the room.
+const SCRIPT_ROWS: usize = 5;
 
 /// A tool drawn as a box: bash and TypeScript.
 pub(crate) fn is_boxed(td: &ToolData) -> bool {
@@ -69,9 +70,11 @@ fn result_lines(td: &ToolData) -> (Option<Vec<Span<'static>>>, Vec<String>) {
     (images, lines)
 }
 
-/// The box has more output than it shows closed (`▸` / ctrl+o / click).
+/// The closed box hides lines (`▸` / ctrl+o / click open it): as last
+/// drawn (the rows depend on the width and the sub-calls), or before any
+/// draw, a result that alone passes the cap (its rows + the rule).
 pub(crate) fn box_folds(td: &ToolData) -> bool {
-    result_lines(td).1.len() > CLOSED_ROWS
+    td.clips.get() || result_lines(td).1.len() >= BOX_ROWS
 }
 
 /// The top border with the title, the only row a running box redraws.
@@ -122,29 +125,97 @@ fn inner_row(content: Vec<Span<'static>>, inner: usize, bst: Style, soft: bool) 
     l
 }
 
-/// Styled logical lines wrapped inside the box (a hanging `»` on the
+/// One styled logical line wrapped inside the box (a hanging `»` on the
 /// continuation rows, like the code blocks).
-fn wrapped(lines: &[Vec<Span<'static>>], inner: usize, bst: Style, out: &mut Vec<Line<'static>>) {
+fn wrap_one(spans: &[Span<'static>], inner: usize, bst: Style) -> Vec<Line<'static>> {
+    if spans.iter().all(|s| s.content.is_empty()) {
+        return vec![inner_row(Vec::new(), inner, bst, false)];
+    }
     let hang = Span::styled(format!("{} ", glyph(G_WRAP)), Style::default().fg(faint()));
     let rest = inner.saturating_sub(hang.content.width()).max(4);
-    for spans in lines {
-        if spans.iter().all(|s| s.content.is_empty()) {
-            out.push(inner_row(Vec::new(), inner, bst, false));
-            continue;
-        }
-        for (r, (content, _)) in wrap_code_line_hanging(spans, inner.max(4), rest).into_iter().enumerate() {
+    wrap_code_line_hanging(spans, inner.max(4), rest)
+        .into_iter()
+        .enumerate()
+        .map(|(r, (content, _))| {
             let mut c = Vec::new();
             if r > 0 {
                 c.push(hang.clone());
             }
             c.extend(content);
-            out.push(inner_row(c, inner, bst, r > 0));
+            inner_row(c, inner, bst, r > 0)
+        })
+        .collect()
+}
+
+/// Logical lines wrapped on demand: a closed box wraps only the rows it
+/// counts or shows, never a long output in full.
+struct Wrapped<'a> {
+    lines: &'a [Vec<Span<'static>>],
+    rows: Vec<Option<Vec<Line<'static>>>>,
+    inner: usize,
+    bst: Style,
+}
+
+impl<'a> Wrapped<'a> {
+    fn new(lines: &'a [Vec<Span<'static>>], inner: usize, bst: Style) -> Self {
+        Wrapped { lines, rows: vec![None; lines.len()], inner, bst }
+    }
+
+    fn get(&mut self, i: usize) -> &Vec<Line<'static>> {
+        let (lines, inner, bst) = (self.lines, self.inner, self.bst);
+        self.rows[i].get_or_insert_with(|| wrap_one(&lines[i], inner, bst))
+    }
+
+    /// The rows of all the lines, counted up to `cap` (then `cap + 1`).
+    fn count_upto(&mut self, cap: usize) -> usize {
+        let mut n = 0;
+        for i in 0..self.lines.len() {
+            n += self.get(i).len();
+            if n > cap {
+                return cap + 1;
+            }
         }
+        n
+    }
+
+    fn all(mut self) -> Vec<Line<'static>> {
+        (0..self.lines.len())
+            .flat_map(|i| {
+                self.get(i);
+                self.rows[i].take().unwrap_or_default()
+            })
+            .collect()
+    }
+
+    /// Whole lines from the start (or the end) within `budget` rows, and
+    /// how many lines show whole. When not even one fits, the first (the
+    /// last) line cut to the budget, not counted as shown.
+    fn pick(&mut self, budget: usize, from_end: bool) -> (Vec<Line<'static>>, usize) {
+        let n = self.lines.len();
+        let (mut used, mut k) = (0, 0);
+        while k < n {
+            let i = if from_end { n - 1 - k } else { k };
+            let h = self.get(i).len();
+            if used + h > budget {
+                break;
+            }
+            used += h;
+            k += 1;
+        }
+        if k == 0 && n > 0 && budget > 0 {
+            let rows = self.get(if from_end { n - 1 } else { 0 });
+            let cut = if from_end { rows[rows.len() - budget..].to_vec() } else { rows[..budget].to_vec() };
+            return (cut, 0);
+        }
+        let idx: Vec<usize> = if from_end { (n - k..n).collect() } else { (0..k).collect() };
+        (idx.into_iter().flat_map(|i| self.get(i).clone()).collect(), k)
     }
 }
 
 /// The whole box: top border, script, rule, output, bottom border.
-/// `subs` are the TypeScript sub-calls (shown in full, before the result).
+/// `subs` are the TypeScript sub-calls (before the result). Closed, the
+/// inside (script, rule, output) is BOX_ROWS rows at most, the last one
+/// `▸ n more lines` when lines are hidden (see [`split`]).
 pub(crate) fn box_lines(
     td: &ToolData,
     code: &Option<(CodeLang, String)>,
@@ -159,7 +230,7 @@ pub(crate) fn box_lines(
     let dim_st = Style::default().fg(dim());
     let faint_st = Style::default().fg(faint());
     let mut out = vec![box_top(td, tick, width)];
-    // the script, in full, highlighted
+    // the script, highlighted
     let script: Vec<Vec<Span<'static>>> = match code {
         Some((CodeLang::Bash, src)) => highlight_bash(src),
         Some((CodeLang::TypeScript, src)) => highlight_ts(src),
@@ -169,8 +240,7 @@ pub(crate) fn box_lines(
             .map(|a| vec![vec![Span::styled(crate::render::args_preview(td.name.as_deref().unwrap_or(""), a), dim_st)]])
             .unwrap_or_default(),
     };
-    wrapped(&script, inner, bst, &mut out);
-    // the output: sub-calls, then the result, 15 rows while closed
+    // the output: sub-calls, the image chip, then the result
     let mut shown: Vec<Vec<Span<'static>>> = subs
         .iter()
         .map(|s| {
@@ -188,28 +258,60 @@ pub(crate) fn box_lines(
     if let Some(chip) = images {
         shown.push(chip);
     }
-    let line = |t: &str| vec![Span::styled(t.to_string(), dim_st)];
-    let n = lines.len();
-    if td.expanded || n <= CLOSED_ROWS {
-        shown.extend(lines.iter().map(|t| line(t)));
-    } else if matches!(td.state, ToolState::Ok) {
-        let more = n - HEAD_ROWS - TAIL_ROWS;
-        let mark = if theme::ascii_mode() { ">" } else { G_CLOSED };
-        shown.extend(lines[..HEAD_ROWS].iter().map(|t| line(t)));
-        shown.push(vec![Span::styled(format!("{} {} more lines", mark, more), dim_st)]);
-        shown.extend(lines[n - TAIL_ROWS..].iter().map(|t| line(t)));
+    shown.extend(lines.iter().map(|t| vec![Span::styled(t.clone(), dim_st)]));
+    let rule = || Line::from(Span::styled(format!("{}{}{}", f.lj, f.h.repeat(width - 2), f.rj), faint_st));
+    let mut sw = Wrapped::new(&script, inner, bst);
+    let mut ow = Wrapped::new(&shown, inner, bst);
+    let s_rows = sw.count_upto(BOX_ROWS);
+    let o_rows = ow.count_upto(BOX_ROWS);
+    let whole = s_rows + if shown.is_empty() { 0 } else { 1 + o_rows };
+    td.clips.set(whole > BOX_ROWS);
+    if td.expanded || whole <= BOX_ROWS {
+        out.extend(sw.all());
+        if !shown.is_empty() {
+            out.push(rule());
+            out.extend(ow.all());
+        }
     } else {
-        // running or failed: the end is what matters
-        let above = n - CLOSED_ROWS;
-        shown.push(vec![Span::styled(format!("{} {} lines above", theme::ellipsis(), above), faint_st)]);
-        shown.extend(lines[above..].iter().map(|t| line(t)));
-    }
-    if !shown.is_empty() {
-        out.push(Line::from(Span::styled(format!("{}{}{}", f.lj, f.h.repeat(width - 2), f.rj), faint_st)));
-        wrapped(&shown, inner, bst, &mut out);
+        let (s_budget, o_budget) = split(s_rows, if shown.is_empty() { None } else { Some(o_rows) });
+        let (s_part, s_whole) = sw.pick(s_budget, false);
+        let o_budget = o_budget.map(|b| b + s_budget - s_part.len());
+        out.extend(s_part);
+        let mut hidden = script.len() - s_whole;
+        if let Some(b) = o_budget {
+            // done: from the top, the rest is below; running or failed:
+            // the latest lines, where the news (or the error) is
+            let (o_part, o_whole) = ow.pick(b, !matches!(td.state, ToolState::Ok));
+            out.push(rule());
+            out.extend(o_part);
+            hidden += shown.len() - o_whole;
+        }
+        out.push(inner_row(vec![Span::styled(more_label(hidden), dim_st)], inner, bst, false));
     }
     out.push(Line::from(Span::styled(format!("{}{}{}", f.bl, f.h.repeat(width - 2), f.br), bst)));
     out
+}
+
+/// The rows of a closed box that does not fit, from the rows its script
+/// and its output (None: no output, no rule) would take: the script
+/// gets up to SCRIPT_ROWS (more when the output is short), the rule 1,
+/// the output the rest, the marker the last row. Script + rule + output
+/// + marker is BOX_ROWS.
+fn split(s_rows: usize, o_rows: Option<usize>) -> (usize, Option<usize>) {
+    let room = BOX_ROWS - 1;
+    match o_rows {
+        None => (s_rows.min(room), None),
+        Some(o) => {
+            let s = s_rows.min(SCRIPT_ROWS.max((room - 1).saturating_sub(o)));
+            (s, Some(room - 1 - s))
+        }
+    }
+}
+
+/// The marker on the last row of a closed box: `▸ n more lines`.
+fn more_label(n: usize) -> String {
+    let mark = if theme::ascii_mode() { ">" } else { G_CLOSED };
+    format!("{} {} more line{}", mark, n, if n == 1 { "" } else { "s" })
 }
 
 // ---- a box that only sends a message (BISE-110, book §9) ----
@@ -395,41 +497,134 @@ mod tests {
         assert!(rows[1].starts_with("│ cargo test"), "{rows:#?}");
         assert!(rows[2].starts_with('├') && rows.last().unwrap().starts_with('╰'), "{rows:#?}");
         assert!(rows.iter().all(|r| r.width() == 60), "{rows:#?}");
-        assert!(!box_folds(&tool("bash", ToolState::Ok, 15)));
-        assert!(box_folds(&tool("bash", ToolState::Ok, 16)));
+        assert!(!box_folds(&tool("bash", ToolState::Ok, 14)));
+        assert!(box_folds(&tool("bash", ToolState::Ok, 15)));
     }
 
-    /// Done: the first 5, `▸ n more lines`, the last 9; open: everything.
+    fn text_of(td: &ToolData, script: &str, width: usize) -> Vec<String> {
+        let code = Some((CodeLang::Bash, script.to_string()));
+        let rows: Vec<String> = box_lines(td, &code, &[], 0, width)
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .collect();
+        inner(&rows)
+    }
+
+    fn script(n: usize) -> String {
+        (1..=n).map(|i| format!("echo {i}")).collect::<Vec<_>>().join("\n")
+    }
+
+    /// The inside rows (script, rule, output, marker), borders aside.
+    fn inside(rows: &[String]) -> &[String] {
+        &rows[1..rows.len() - 1]
+    }
+
+    /// Done, long output: the script, the rule, the first lines, and
+    /// `▸ n more lines` on the last row; 15 inside rows. Open: all.
     #[test]
-    fn a_done_box_keeps_its_head_and_tail() {
+    fn a_long_output_keeps_its_head_and_says_the_rest_at_the_bottom() {
         let mut td = tool("bash", ToolState::Ok, 42);
-        let rows = inner(&text(&td, &[]));
-        let out: Vec<&String> = rows.iter().skip_while(|r| !r.starts_with('├')).skip(1).collect();
-        assert_eq!(out.len(), 5 + 1 + 9 + 1, "{out:#?}");
-        assert_eq!(out[0], "line 1");
-        assert_eq!(out[5], "▸ 28 more lines");
-        assert_eq!(out[14], "line 42");
+        let rows = text_of(&td, "cargo test", 60);
+        let ins = inside(&rows);
+        assert_eq!(ins.len(), BOX_ROWS, "{rows:#?}");
+        assert_eq!(ins[0], "cargo test");
+        assert!(ins[1].starts_with('├'), "{rows:#?}");
+        assert_eq!(ins[2], "line 1");
+        assert_eq!(ins[13], "line 12");
+        assert_eq!(ins[14], "▸ 30 more lines");
+        assert!(box_folds(&td));
         td.expanded = true;
-        let open = inner(&text(&td, &[]));
-        assert!(open.iter().any(|r| r == "line 20") && !open.iter().any(|r| r.contains("more lines")));
+        let open = text_of(&td, "cargo test", 60);
+        assert_eq!(inside(&open).len(), 1 + 1 + 42, "{open:#?}");
+        assert!(open.iter().any(|r| r == "line 42") && !open.iter().any(|r| r.contains("more line")));
+        // opened, it still folds: the click closes it again
+        assert!(box_folds(&td));
     }
 
-    /// Running or failed: the last 15 under `… n lines above`; the border
-    /// is the error color when it failed.
+    /// A long script, no output: its first 14 rows and the marker.
+    #[test]
+    fn a_long_script_alone_is_cut_too() {
+        let td = tool("bash", ToolState::Run, 0);
+        let rows = text_of(&td, &script(30), 60);
+        let ins = inside(&rows);
+        assert_eq!(ins.len(), BOX_ROWS, "{rows:#?}");
+        assert_eq!(ins[0], "echo 1");
+        assert_eq!(ins[13], "echo 14");
+        assert_eq!(ins[14], "▸ 16 more lines");
+        assert!(box_folds(&td));
+    }
+
+    /// A long script and a short output: the output shows whole, the
+    /// script takes the rest; one marker counts the script's hidden lines.
+    #[test]
+    fn a_long_script_leaves_room_for_a_short_output() {
+        let td = tool("bash", ToolState::Ok, 2);
+        let rows = text_of(&td, &script(30), 60);
+        let ins = inside(&rows);
+        assert_eq!(ins.len(), BOX_ROWS, "{rows:#?}");
+        assert_eq!(ins[10], "echo 11");
+        assert!(ins[11].starts_with('├'));
+        assert_eq!(&ins[12..14], ["line 1", "line 2"]);
+        assert_eq!(ins[14], "▸ 19 more lines");
+    }
+
+    /// Both long: 5 script rows, the rule, 8 output rows, the marker
+    /// counting both.
+    #[test]
+    fn both_long_split_five_and_eight() {
+        let td = tool("bash", ToolState::Ok, 40);
+        let rows = text_of(&td, &script(20), 60);
+        let ins = inside(&rows);
+        assert_eq!(ins.len(), BOX_ROWS, "{rows:#?}");
+        assert_eq!(ins[4], "echo 5");
+        assert!(ins[5].starts_with('├'));
+        assert_eq!(ins[6], "line 1");
+        assert_eq!(ins[13], "line 8");
+        assert_eq!(ins[14], "▸ 47 more lines");
+    }
+
+    /// Running or failed: the latest output lines, the marker at the
+    /// bottom; the border is the error color when it failed.
     #[test]
     fn a_running_or_failed_box_keeps_its_end() {
         for state in [ToolState::Run, ToolState::Fail] {
             let td = tool("bash", state, 40);
-            let rows = inner(&text(&td, &[]));
-            let out: Vec<&String> = rows.iter().skip_while(|r| !r.starts_with('├')).skip(1).collect();
-            assert_eq!(out[0], "… 25 lines above", "{out:#?}");
-            assert_eq!(out[1], "line 26");
-            assert_eq!(out[15], "line 40");
+            let rows = text_of(&td, &script(8), 60);
+            let ins = inside(&rows);
+            assert_eq!(ins.len(), BOX_ROWS, "{rows:#?}");
+            assert_eq!(ins[4], "echo 5");
+            assert_eq!(ins[6], "line 33");
+            assert_eq!(ins[13], "line 40");
+            assert_eq!(ins[14], "▸ 35 more lines");
         }
         let lines = box_lines(&tool("bash", ToolState::Fail, 1), &None, &[], 0, 40);
         assert_eq!(lines[0].spans[0].style.fg, Some(error()));
         let lines = box_lines(&tool("bash", ToolState::Ok, 1), &None, &[], 0, 40);
         assert_eq!(lines[0].spans[0].style.fg, Some(faint()));
+    }
+
+    /// Exactly 15 inside rows: no marker, no fold; one more: the fold.
+    /// Rows, not lines: a short output that wraps past the cap folds.
+    #[test]
+    fn the_cap_counts_wrapped_rows() {
+        let td = tool("bash", ToolState::Ok, 13);
+        let rows = text_of(&td, "cargo test", 60);
+        assert_eq!(inside(&rows).len(), 15);
+        assert!(!rows.iter().any(|r| r.contains("more line")) && !box_folds(&td));
+        let td = tool("bash", ToolState::Ok, 14);
+        let rows = text_of(&td, "cargo test", 60);
+        assert_eq!(inside(&rows).len(), 15);
+        assert_eq!(inside(&rows)[14], "▸ 2 more lines");
+        let mut td = tool("bash", ToolState::Ok, 0);
+        td.result = Some((true, "word ".repeat(300)));
+        assert!(!box_folds(&td), "not drawn yet: one line");
+        let rows = text_of(&td, "cargo test", 60);
+        assert_eq!(inside(&rows).len(), 15, "{rows:#?}");
+        assert_eq!(inside(&rows)[14], "▸ 1 more line");
+        assert!(box_folds(&td), "drawn: it clips");
+        // wide enough, nothing hidden
+        let rows = text_of(&td, "cargo test", 2000);
+        assert!(!rows.iter().any(|r| r.contains("more line")) && !box_folds(&td));
     }
 
     /// TypeScript sub-calls are output lines inside the box.
@@ -452,7 +647,8 @@ mod tests {
         theme::set_ascii_for_tests(false);
         assert!(rows[0].starts_with("+- $ bash ok 0.9s -") && rows[0].ends_with('+'), "{rows:#?}");
         assert!(rows[1].starts_with("| cargo test") && rows[1].ends_with(" |"));
-        assert!(rows.iter().any(|r| r.starts_with("| > 6 more lines")), "{rows:#?}");
+        assert!(rows.last().is_some_and(|r| r.starts_with("+-")), "{rows:#?}");
+        assert!(rows[rows.len() - 2].starts_with("| > 8 more lines"), "{rows:#?}");
         assert!(rows.iter().all(|r| r.is_ascii()), "{rows:#?}");
     }
 }

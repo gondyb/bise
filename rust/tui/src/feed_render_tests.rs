@@ -117,9 +117,10 @@ fn rows_text(rows: &[Line<'static>]) -> Vec<String> {
         .collect()
 }
 
-// BISE-11: a script always shows whole (book §11), whatever its length
+// BISE-11 then BISE-123: a long script is cut to the box's 15 inside
+// rows while closed (`▸ n more lines` on the last one), whole once opened
 #[test]
-fn a_long_script_renders_whole() {
+fn a_long_script_renders_whole_once_opened() {
     let cmd: String = (1..=200).map(|i| format!("echo {}", i)).collect::<Vec<_>>().join("\n");
     let bash = merged_tool(&[
         "  obs: tool_started #4".to_string(),
@@ -127,6 +128,11 @@ fn a_long_script_renders_whole() {
         format!("tool_code #4 : {}", wire_encode(&cmd)),
         "  obs: tool_finished #4 ok".to_string(),
     ]);
+    let closed = rows_text(&ev_lines(&Ev::Tool(bash.clone()), 80));
+    assert_eq!(closed.iter().filter(|l| l.starts_with("│ echo")).count(), 14, "{closed:#?}");
+    assert!(closed[closed.len() - 2].starts_with("│ ▸ 186 more lines"), "{closed:#?}");
+    let mut bash = bash;
+    bash.expanded = true;
     let rows = rows_text(&ev_lines(&Ev::Tool(bash), 80));
     assert_eq!(rows.iter().filter(|l| l.starts_with("│ echo")).count(), 200);
     assert!(rows.iter().any(|l| l.starts_with("│ echo 200 ")));
@@ -140,6 +146,8 @@ fn a_long_script_renders_whole() {
         format!("tool_code #5 : {}", wire_encode(&args)),
         "  obs: tool_finished #5 ok".to_string(),
     ]);
+    let mut ts = ts;
+    ts.expanded = true;
     let rows = rows_text(&ev_lines(&Ev::Tool(ts), 80));
     assert_eq!(rows.iter().filter(|l| l.starts_with("│ const x")).count(), 200);
 }

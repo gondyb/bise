@@ -32,6 +32,10 @@ pub(crate) struct ToolData {
     // below it in this feed (toolbox::sent_ids); hidden while not
     // `expanded` (ctrl+o shows it)
     pub(crate) quiet: bool,
+    // in memory only (BISE-123): a bash/ts box that, closed, hides rows
+    // at the width it was last drawn (toolbox::box_lines sets it; the
+    // feed's disclosure reads it through toolbox::box_folds)
+    pub(crate) clips: std::cell::Cell<bool>,
 }
 
 impl ToolData {
@@ -44,7 +48,19 @@ impl ToolData {
             ToolState::Run => None,
             _ => Some(fmt_elapsed(started)),
         };
-        ToolData { id, name: None, args: None, code: None, state, result: None, started, elapsed, expanded: false, quiet: false }
+        ToolData {
+            id,
+            name: None,
+            args: None,
+            code: None,
+            state,
+            result: None,
+            started,
+            elapsed,
+            expanded: false,
+            quiet: false,
+            clips: std::cell::Cell::new(false),
+        }
     }
 }
 
