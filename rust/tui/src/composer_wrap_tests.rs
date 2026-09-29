@@ -235,10 +235,12 @@ fn draw(app: &mut App, width: u16, height: u16) -> ratatui::buffer::Buffer {
 
 #[test]
 fn two_sections_the_attachments_then_the_body_behind_its_bar() {
-    // BISE-108 and the user's feedback on it: the attachments (file
-    // names), 1 blank tinted row, then the body: the bar at x0 on every
-    // row of it (a blank bar row above and under the text by height), in
-    // accent with text or images, faint when empty; the text at x0 + 3
+    // BISE-108 and the user's feedback on it, then the attachments box
+    // (the user's pick "d"): 1 blank tinted row under the divider, the
+    // box (a dim rounded frame, its rows at x0 + 3, no bar), then the
+    // body right under it: the bar at x0 on every row of it (a blank bar
+    // row under the text by height, and above it when there is no box),
+    // in accent with text or images, faint when empty; the text at x0 + 3
     for (width, height) in [(200u16, 50u16), (120, 40), (120, 29), (80, 30), (80, 22), (80, 18)] {
         for (n, text, empty) in [(0, "", true), (0, "hello", false), (1, "one line", false), (2, &"word ".repeat(60)[..], false)] {
             let mut app = sb::bench::test_app();
@@ -253,9 +255,10 @@ fn two_sections_the_attachments_then_the_body_behind_its_bar() {
             let divider = (0..height).rev().find(|&y| matches!(buf[(0, y)].symbol(), "├" | "─")).unwrap();
             let a = app.composer;
             assert_eq!(a.x, x0 + 3, "{what}");
-            let (top, bottom) = (a.y - rows.pad_top, a.y + a.h as u16 + rows.pad_bottom);
+            let pad_top = if n > 0 { 0 } else { rows.pad_top };
+            let (top, bottom) = (a.y - pad_top, a.y + a.h as u16 + rows.pad_bottom);
             assert_eq!(bottom, rows.keybar, "{what}");
-            // symmetric: as many blank bar rows above the text as under it
+            // symmetric at rest: as many blank bar rows above the text as under it
             assert_eq!(rows.pad_top, rows.pad_bottom, "{what}");
             let want = if empty { crate::theme::faint() } else { crate::theme::accent() };
             for y in top..bottom {
@@ -264,18 +267,22 @@ fn two_sections_the_attachments_then_the_body_behind_its_bar() {
             }
             let end = cols.margin + cols.pane_w;
             let row = |y: u16| -> String { (x0..end).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>().trim_end().to_string() };
-            // above the body: no bar; the attachments at x0 + 3, then a blank row
+            // above the body: no bar (the box's edge is dim)
             for y in divider + 1..top {
-                assert_ne!(buf[(x0, y)].symbol(), "│", "{what}: row {y}");
+                let c = &buf[(x0, y)];
+                assert!(c.symbol() != "│" || c.fg == crate::theme::dim(), "{what}: row {y}");
             }
             if n > 0 {
-                let first = divider + 1;
-                assert!(row(first).starts_with("   attached"), "{what}: {:?}", row(first));
-                let img = row(first + 1);
-                assert!(img.starts_with("    ▣ 1  Screenshot 1.png") && !img.contains('/'), "{what}: {img:?}");
+                let first = divider + 1 + u16::from(height >= 20);
                 if height >= 20 {
-                    assert_eq!(row(top - 1), "", "{what}: the blank row between the sections");
+                    assert_eq!(row(divider + 1), "", "{what}: the blank row above the box");
                 }
+                assert!(row(first).starts_with("╭─ attached ─"), "{what}: {:?}", row(first));
+                let img = row(first + 1);
+                assert!(img.starts_with("│   ▣ 1  Screenshot 1.png") && !img.contains('/'), "{what}: {img:?}");
+                assert!(img.ends_with("  │"), "{what}: {img:?}");
+                // no blank row between the box and your message
+                assert!(row(top - 1).starts_with('╰'), "{what}: {:?}", row(top - 1));
                 let keys = row(rows.keybar);
                 assert!(keys.contains("ctrl+v paste image"), "{what}: {keys:?}");
             }
@@ -390,3 +397,4 @@ fn without_a_tint_the_chip_is_bracketed_same_width() {
     }
     assert_eq!(attach::chip_text("[Quote #1]").width(), 5);
 }
+

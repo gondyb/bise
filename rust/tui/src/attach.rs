@@ -534,8 +534,19 @@ pub(crate) fn strip_row(n: usize, info: &Info) -> (String, String) {
     (left, right)
 }
 
-/// The strip header (book §17).
-pub(crate) const STRIP_TITLE: &str = "attached · backspace on a chip removes it";
+/// The box's title, in its top border (book §13 "The attachments box").
+pub(crate) const BOX_TITLE: &str = "attached";
+/// The box's tip, in its bottom border on the right.
+pub(crate) const BOX_TIP: &str = "backspace on a chip removes it";
+/// The box's width bounds: as wide as its longest row, at least 44
+/// columns, at most the reading width (full width when narrower).
+const BOX_MIN: usize = 44;
+const BOX_MAX: usize = 91;
+/// A preview keeps at least this many columns before the source on its
+/// right goes.
+const PREVIEW_MIN: usize = 16;
+/// Between the preview and the source, at least.
+const ROW_GAP: usize = 4;
 
 /// The images still in the composer text, by number.
 fn shown(app: &App) -> Vec<(usize, &Attachment)> {
@@ -562,11 +573,12 @@ fn shown_quotes(app: &App) -> Vec<(usize, crate::quote::Quote)> {
     v
 }
 
-/// How many rows the strip takes (0: nothing attached).
+/// How many rows the attachments box takes (0: nothing attached): its
+/// two borders and one row per attachment.
 pub(crate) fn strip_height(app: &App) -> u16 {
     match shown_quotes(app).len() + shown(app).len() {
         0 => 0,
-        n => n as u16 + 1,
+        n => n as u16 + 2,
     }
 }
 
@@ -601,49 +613,146 @@ fn cut_end(s: &str, max: usize) -> String {
     out
 }
 
-/// The strip rows at `width` columns: the dim title, then one row per
-/// image, its chip in accent, its file name (cut at its end with `…`),
-/// its size flush right (dim).
-pub(crate) fn strip_lines(app: &App, width: usize) -> Vec<Line<'static>> {
+/// One row of the box before it is cut: its chip label, its preview
+/// (a quote's words in `“”`, an image's file name), its source (`main ·
+/// 1 line`, `1170×2532 · 310 kB`).
+struct BoxRow {
+    label: String,
+    preview: Preview,
+    source: String,
+}
+
+enum Preview {
+    Quote(String),
+    File(String),
+}
+
+impl Preview {
+    fn natural(&self) -> String {
+        match self {
+            Preview::Quote(t) => format!("“{}”", t.split_whitespace().collect::<Vec<_>>().join(" ")),
+            Preview::File(f) => f.clone(),
+        }
+    }
+    /// At most `max` columns, cut with `…`.
+    fn cut(&self, max: usize) -> String {
+        match self {
+            Preview::Quote(t) if max >= 3 => format!("“{}”", crate::quote::preview(t, max - 2)),
+            Preview::Quote(_) => String::new(),
+            Preview::File(f) => cut_end(f, max),
+        }
+    }
+}
+
+/// The attachments in the text, by number: the quotes, then the images.
+fn box_rows(app: &App) -> Vec<BoxRow> {
+    let mut rows: Vec<(usize, BoxRow)> = shown_quotes(app)
+        .into_iter()
+        .map(|(n, q)| {
+            let source = crate::quote::about(&q);
+            (n, BoxRow { label: crate::quote::label(n), preview: Preview::Quote(q.text), source })
+        })
+        .collect();
+    rows.extend(shown(app).into_iter().map(|(n, a)| {
+        let (_, source) = strip_row(n, &a.info);
+        (n, BoxRow { label: a.label.clone(), preview: Preview::File(file_name(&a.info.source).to_string()), source })
+    }));
+    rows.sort_by_key(|(n, _)| *n);
+    rows.into_iter().map(|(_, r)| r).collect()
+}
+
+/// A row's content in `iw` columns: the pill, a blank, the preview (dim)
+/// and, flush right, the source (faint). Short on room, the preview is
+/// cut with `…` down to [`PREVIEW_MIN`]; then the source goes and the
+/// preview takes the whole row.
+fn box_row(r: &BoxRow, iw: usize) -> Vec<Span<'static>> {
     use unicode_width::UnicodeWidthStr;
-    let rows = shown(app);
-    let quotes = shown_quotes(app);
-    if rows.is_empty() && quotes.is_empty() {
+    let chip = chip_text(&r.label).width() + 1;
+    let natural = r.preview.natural();
+    let with_source = iw.saturating_sub(chip + ROW_GAP + r.source.width());
+    let (preview, source) = if natural.width() <= with_source {
+        (natural, r.source.clone())
+    } else if with_source >= PREVIEW_MIN {
+        (r.preview.cut(with_source), r.source.clone())
+    } else {
+        (r.preview.cut(iw.saturating_sub(chip)), String::new())
+    };
+    let pad = iw.saturating_sub(chip + preview.width() + source.width());
+    let mut spans = chip_pill(&r.label, Style::default());
+    spans.extend([
+        Span::styled(format!(" {preview}"), Style::default().fg(dim())),
+        Span::raw(" ".repeat(pad)),
+        Span::styled(source, Style::default().fg(crate::theme::faint())),
+    ]);
+    spans
+}
+
+/// The box's width in at most `room` columns: its longest row and its
+/// frame (2 borders, 2 blank columns each side), at least [`BOX_MIN`],
+/// at most [`BOX_MAX`]; all of `room` when narrower.
+fn box_width(rows: &[BoxRow], room: usize) -> usize {
+    use unicode_width::UnicodeWidthStr;
+    let longest = rows
+        .iter()
+        .map(|r| chip_text(&r.label).width() + 1 + r.preview.natural().width() + ROW_GAP + r.source.width())
+        .max()
+        .unwrap_or(0);
+    (longest + 6).clamp(BOX_MIN, BOX_MAX).min(room)
+}
+
+/// The attachments box (book §13, the user's pick "d"), in at most
+/// `room` columns, drawn from the composer's bar column: a thin rounded
+/// frame (dim), `attached` in its top border (dim), one row per
+/// attachment in number order at the text's column, the backspace tip
+/// in its bottom border on the right (faint; dropped first when short).
+/// No bar: the bar marks your message. `NO_COLOR` keeps the frame (it
+/// is glyphs); `BISE_ASCII=1` turns it to `+ - |` (asciify).
+pub(crate) fn strip_lines(app: &App, room: usize) -> Vec<Line<'static>> {
+    use unicode_width::UnicodeWidthStr;
+    let rows = box_rows(app);
+    if rows.is_empty() || room < 2 {
         return Vec::new();
     }
-    let d = Style::default().fg(dim());
-    let mut out = vec![Line::from(Span::styled(STRIP_TITLE.to_string(), d))];
-    // the quotes first (they go first in the message): `❝ 1 “words…”`
-    // and, dim on the right, `main · 3 lines`
-    for (n, q) in quotes {
-        let label = crate::quote::label(n);
-        let chip = chip_text(&label);
-        let right = crate::quote::about(&q);
-        let room = width.saturating_sub(chip.width() + 3 + right.width() + 2).max(1);
-        let words = format!(" “{}”", crate::quote::preview(&q.text, room));
-        let pad = width.saturating_sub(chip.width() + words.width() + right.width()).max(2);
-        let mut spans = chip_pill(&label, Style::default());
-        spans.extend([
-            Span::styled(words, Style::default().fg(text())),
-            Span::styled(" ".repeat(pad), d),
-            Span::styled(right, d),
-        ]);
+    let w = box_width(&rows, room);
+    let iw = w.saturating_sub(6);
+    let edge = Style::default().fg(dim());
+    let line = |n: usize| "─".repeat(n);
+    // ╭─ attached ───╮
+    let top = if w >= BOX_TITLE.width() + 5 {
+        vec![
+            Span::styled("╭─ ", edge),
+            Span::styled(BOX_TITLE, edge),
+            Span::styled(format!(" {}╮", line(w - BOX_TITLE.width() - 5)), edge),
+        ]
+    } else {
+        vec![Span::styled(format!("╭{}╮", line(w - 2)), edge)]
+    };
+    // ╰──── backspace on a chip removes it ─╯
+    let tip = crate::theme::faint();
+    let bottom = if w >= BOX_TIP.width() + 7 {
+        vec![
+            Span::styled(format!("╰{} ", line(w - BOX_TIP.width() - 5)), edge),
+            Span::styled(BOX_TIP, Style::default().fg(tip)),
+            Span::styled(" ─╯", edge),
+        ]
+    } else {
+        vec![Span::styled(format!("╰{}╯", line(w - 2)), edge)]
+    };
+    let mut out = vec![Line::from(top)];
+    for r in &rows {
+        let (lead, trail) = if w >= 6 { ("│  ", "  │") } else { ("│", "│") };
+        let inner = if w >= 6 { iw } else { w.saturating_sub(2) };
+        let mut spans = vec![Span::styled(lead, edge)];
+        if inner > chip_text(&r.label).width() {
+            spans.extend(box_row(r, inner));
+        } else {
+            // no room for the pill: the frame stays whole
+            spans.push(Span::raw(" ".repeat(inner)));
+        }
+        spans.push(Span::styled(trail, edge));
         out.push(Line::from(spans));
     }
-    for (n, a) in rows {
-        let (_, right) = strip_row(n, &a.info);
-        let chip = chip_text(&a.label);
-        let room = width.saturating_sub(chip.width() + 1 + right.width() + 2);
-        let src = cut_end(file_name(&a.info.source), room);
-        let pad = width.saturating_sub(chip.width() + 1 + src.width() + right.width()).max(2);
-        let mut spans = chip_pill(&a.label, Style::default());
-        spans.extend([
-            Span::styled(format!(" {src}"), Style::default().fg(text())),
-            Span::styled(" ".repeat(pad), d),
-            Span::styled(right, d),
-        ]);
-        out.push(Line::from(spans));
-    }
+    out.push(Line::from(bottom));
     out
 }
 
@@ -698,15 +807,25 @@ mod tests {
             strip_row(2, &clip),
             ("▣ 2 clipboard".to_string(), "2048×1536 · 1.1 MB → resized to fit 2048".to_string())
         );
-        assert_eq!(STRIP_TITLE, "attached · backspace on a chip removes it");
     }
 
     fn line_text(l: &Line) -> String {
         l.spans.iter().map(|s| s.content.as_ref()).collect()
     }
 
+    fn width(s: &str) -> usize {
+        unicode_width::UnicodeWidthStr::width(s)
+    }
+
+    fn quote(n: usize, text: &str) -> Attachment {
+        Attachment { label: crate::quote::label(n), marker: crate::quote::tag("main", text), info: Info::default() }
+    }
+
+    /// The box (the user's pick "d"): a rounded frame, `attached` in its
+    /// top border, one row per attachment in number order, the tip in
+    /// its bottom border; as wide as its longest row, at least 44.
     #[test]
-    fn strip_lists_the_chips_still_in_the_text() {
+    fn the_box_lists_the_chips_still_in_the_text() {
         let mut app = crate::sb::bench::test_app();
         app.attachments = vec![
             Attachment { info: Info { source: "clipboard".into(), width: 2048, height: 1536, bytes: 1_100_000, resized: true }, ..att(2, "m2") },
@@ -714,40 +833,97 @@ mod tests {
             Attachment { info: Info { source: "gone.png".into(), ..Info::default() }, ..att(3, "m3") },
         ];
         app.ed.set("compare [Image #1] with [Image #2]", 0);
-        assert_eq!(strip_height(&app), 3);
-        let ls: Vec<String> = strip_lines(&app, 60).iter().map(line_text).collect();
-        assert_eq!(ls[0], STRIP_TITLE);
-        assert!(ls[1].starts_with(" ▣ 1  a.png ") && ls[1].ends_with("10×20 · 300 B"), "{ls:?}");
-        assert!(ls[2].starts_with(" ▣ 2  clipboard") && ls[2].ends_with("→ resized to fit 2048"), "{ls:?}");
-        // the size stays flush right
-        assert_eq!(unicode_width::UnicodeWidthStr::width(ls[1].as_str()), 60);
+        assert_eq!(strip_height(&app), 4);
+        let ls: Vec<String> = strip_lines(&app, 91).iter().map(line_text).collect();
+        assert_eq!(ls.len(), 4, "{ls:?}");
+        let w = width(&ls[0]);
+        // the longest row: pill 5, blank, `clipboard`, 4 blanks, the size
+        assert_eq!(w, 6 + 5 + 1 + 9 + 4 + width("2048×1536 · 1.1 MB → resized to fit 2048"));
+        assert!(ls.iter().all(|l| width(l) == w), "{ls:?}");
+        assert_eq!(ls[0], format!("╭─ attached {}╮", "─".repeat(w - 13)));
+        assert!(ls[1].starts_with("│   ▣ 1  a.png ") && ls[1].ends_with("10×20 · 300 B  │"), "{ls:?}");
+        assert!(ls[2].starts_with("│   ▣ 2  clipboard    2048×1536") && ls[2].ends_with("→ resized to fit 2048  │"), "{ls:?}");
+        assert_eq!(ls[3], format!("╰{} backspace on a chip removes it ─╯", "─".repeat(w - 35)));
+        // short rows: the box is 44 wide
+        app.ed.set("[Image #1]", 0);
+        let ls: Vec<String> = strip_lines(&app, 91).iter().map(line_text).collect();
+        assert!(ls.iter().all(|l| width(l) == 44), "{ls:?}");
         app.ed.set("no images", 0);
         assert_eq!(strip_height(&app), 0);
         assert!(strip_lines(&app, 60).is_empty());
     }
 
+    /// The styles: the frame and `attached` dim, the tip and the sources
+    /// faint, the previews dim, the pill on its tint; no bar.
     #[test]
-    fn strip_names_the_file_never_its_path() {
-        // BISE-108: a dropped file from a deep folder shows its file
-        // name only (the user saw `…ar/folders/…/Screenshot … .png`)
+    fn the_box_styles() {
         let mut app = crate::sb::bench::test_app();
-        let deep = "/var/folders/c5/kw86k5nx0zg2xnbzpnrwsk8h0000gn/T/TemporaryItems/NSIRD_screencaptureui_iClIqj/Screenshot 2026-09-29 at 09.56.06.png";
-        app.attachments = vec![Attachment { info: Info { source: deep.into(), width: 1788, height: 542, bytes: 83_000, resized: false }, ..att(1, "m1") }];
+        app.attachments = vec![quote(1, "la licence du repo,")];
+        app.ed.set("pour [Quote #1] tu recommande quoi?", 0);
+        let ls = strip_lines(&app, 91);
+        let find = |l: &Line<'static>, t: &str| l.spans.iter().find(|s| s.content.as_ref() == t).map(|s| s.style.fg);
+        assert_eq!(find(&ls[0], "attached"), Some(Some(dim())));
+        assert_eq!(find(&ls[0], "╭─ "), Some(Some(dim())));
+        assert_eq!(find(&ls[2], BOX_TIP), Some(Some(crate::theme::faint())));
+        assert_eq!(find(&ls[1], " “la licence du repo,”"), Some(Some(dim())));
+        assert_eq!(find(&ls[1], "main · 1 line"), Some(Some(crate::theme::faint())));
+        assert!(line_text(&ls[1]).starts_with("│   ❝ 1  “la licence du repo,”"), "{:?}", line_text(&ls[1]));
+    }
+
+    /// Quotes and images in number order, whatever their kind.
+    #[test]
+    fn the_box_rows_go_in_number_order() {
+        let mut app = crate::sb::bench::test_app();
+        app.attachments = vec![
+            Attachment { info: Info { source: "shots/readme-dark.png".into(), width: 1600, height: 900, bytes: 240_000, resized: false }, ..att(3, "m3") },
+            quote(2, "le README n'est pas prêt"),
+            quote(1, "la licence du repo,"),
+        ];
+        app.ed.set("pour [Quote #1] tu recommande quoi? et pour [Quote #2], voilà : [Image #3] c'est trop long non?", 0);
+        let ls: Vec<String> = strip_lines(&app, 91).iter().map(line_text).collect();
+        assert!(ls[1].contains("❝ 1  “la licence du repo,”") && ls[1].ends_with("main · 1 line  │"), "{ls:?}");
+        assert!(ls[2].contains("❝ 2  “le README n'est pas prêt”"), "{ls:?}");
+        assert!(ls[3].contains("▣ 3  readme-dark.png") && ls[3].ends_with("1600×900 · 240 kB  │"), "{ls:?}");
+        // the longest row: pill, blank, the 2nd quote's 26 columns, 4, source
+        assert_eq!(width(&ls[0]), 6 + 5 + 1 + 26 + 4 + 13);
+    }
+
+    /// Narrow: the box takes the full width; a long preview is cut with
+    /// `…` next to its source, then the source goes first; the tip
+    /// goes before the title.
+    #[test]
+    fn the_box_when_narrow() {
+        let mut app = crate::sb::bench::test_app();
+        let deep = "/var/folders/c5/T/TemporaryItems/NSIRD_screencaptureui_iClIqj/Screenshot 2026-09-29 at 09.56.06.png";
+        app.attachments = vec![
+            Attachment { info: Info { source: deep.into(), width: 1788, height: 542, bytes: 83_000, resized: false }, ..att(1, "m1") },
+        ];
         app.ed.set("look [Image #1] ", 0);
-        let ls: Vec<String> = strip_lines(&app, 88).iter().map(line_text).collect();
-        assert!(ls[1].starts_with(" ▣ 1  Screenshot 2026-09-29 at 09.56.06.png  "), "{ls:?}");
-        assert!(!ls[1].contains('/') && ls[1].ends_with("1788×542 · 83 kB"), "{ls:?}");
-        // short on room: the name is cut at its end, the size stays whole
-        let narrow: Vec<String> = strip_lines(&app, 40).iter().map(line_text).collect();
-        assert!(narrow[1].starts_with(" ▣ 1  Screenshot 2026") && narrow[1].contains('…'), "{narrow:?}");
-        assert!(narrow[1].ends_with("1788×542 · 83 kB") && !narrow[1].contains('/'), "{narrow:?}");
-        assert_eq!(unicode_width::UnicodeWidthStr::width(narrow[1].as_str()), 40);
+        // wide: the file name only, never its path
+        let ls: Vec<String> = strip_lines(&app, 91).iter().map(line_text).collect();
+        assert!(ls[1].starts_with("│   ▣ 1  Screenshot 2026-09-29 at 09.56.06.png    1788×542 · 83 kB  │"), "{ls:?}");
+        assert!(!ls[1].contains('/'), "{ls:?}");
+        // 50: the name cut, the size whole, full width
+        let ls: Vec<String> = strip_lines(&app, 50).iter().map(line_text).collect();
+        assert!(ls.iter().all(|l| width(l) == 50), "{ls:?}");
+        assert!(ls[1].starts_with("│   ▣ 1  Screenshot 20") && ls[1].contains('…') && ls[1].ends_with("1788×542 · 83 kB  │"), "{ls:?}");
+        // 36: no room for the size: it goes, the name takes the row;
+        // the tip goes too, the title stays
+        let ls: Vec<String> = strip_lines(&app, 36).iter().map(line_text).collect();
+        assert!(ls.iter().all(|l| width(l) == 36), "{ls:?}");
+        assert!(ls[1].starts_with("│   ▣ 1  Screenshot 2026-09-29 a…  │"), "{ls:?}");
+        assert!(!ls[1].contains("83 kB"), "{ls:?}");
+        assert!(ls[0].starts_with("╭─ attached ─"), "{ls:?}");
+        assert_eq!(ls[2], format!("╰{}╯", "─".repeat(34)));
+        // tiny: nothing panics, the frame stays whole
+        for w in 0..20 {
+            for l in strip_lines(&app, w) {
+                assert_eq!(width(&line_text(&l)), w, "{w}");
+            }
+        }
         assert_eq!(file_name("shots/a.png"), "a.png");
         assert_eq!(file_name("C:\\shots\\a.png"), "a.png");
         assert_eq!(file_name("clipboard"), "clipboard");
-        app.ed.set("no images", 0);
-        assert_eq!(strip_height(&app), 0);
-        assert!(strip_lines(&app, 60).is_empty());
     }
 
     #[test]

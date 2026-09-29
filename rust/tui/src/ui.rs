@@ -59,17 +59,20 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // what is left keeps a 3-row history
     let left = |used: u16| area.height.saturating_sub(fixed + used + 3);
     let text_rows = composer_rows.clamp(rows.min_text, rows.max_text).min(left(0).max(1));
-    // the attachments (book §14) and 1 blank row between them and the
-    // composer (from 20 rows), then the queued messages (BISE-89)
+    // the attachments box (book §13) and 1 blank row between it and the
+    // divider (from 20 rows; the composer's blank bar row moves there:
+    // your message starts right under the box), then the queued
+    // messages (BISE-89)
     let strip_h = attach::strip_height(app).min(left(text_rows));
     let strip_gap = if strip_h > 0 { rows.pad_top.min(left(text_rows + strip_h)) } else { 0 };
+    let pad_top = if strip_h > 0 { 0 } else { rows.pad_top };
     let queue_h = crate::queue::height(app).min(left(text_rows + strip_h + strip_gap));
     // the card box: what the rest leaves, with 1 blank row above it
     let card_h = sb::card_box_height(app, area, left(text_rows + strip_h + strip_gap + queue_h + 1));
     let card_gap = u16::from(card_h > 0);
     // the no-vision line names the model of the agent in view
     attach::set_model(&crate::sb::focus_model(app));
-    let composer_h = rows.pad_top + text_rows + rows.pad_bottom;
+    let composer_h = pad_top + text_rows + rows.pad_bottom;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -80,8 +83,8 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
             Constraint::Length(1),           // a blank row above the divider
             Constraint::Length(1),           // the divider
             Constraint::Length(queue_h),     // the queued messages
-            Constraint::Length(strip_h),     // the attachments
-            Constraint::Length(strip_gap),   // a tinted row under them
+            Constraint::Length(strip_gap),   // a tinted row above the box
+            Constraint::Length(strip_h),     // the attachments box
             Constraint::Length(composer_h),  // the composer: bar rows, its text
             Constraint::Length(keys_h),      // the key bar
             Constraint::Length(edge_h),      // the frame's bottom edge
@@ -190,18 +193,19 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         let r = Rect { x: queue.x.saturating_sub(1), width: queue.width + 1, ..queue }.intersection(area);
         frame.render_widget(Paragraph::new(crate::queue::lines(app, r.width as usize)), r);
     }
-    // the attachments, at the composer's text (x0 + 3), no bar: the bar
-    // marks the body
-    let strip = pane(chunks[7]);
+    // the attachments box: from the bar's column, its rows at the
+    // composer's text (x0 + 3), at most the composer's width; no bar:
+    // the bar marks your message
+    let strip = pane(chunks[8]);
     if strip.height > 0 {
-        let r = Rect { x: strip.x + TEXT_AT, width: strip.width.saturating_sub(TEXT_AT), ..strip };
+        let r = Rect { width: (inner_w as u16 + TEXT_AT).min(strip.width), ..strip };
         frame.render_widget(Paragraph::new(attach::strip_lines(app, r.width as usize)), r);
     }
     // the composer: its bar at x0 on every row (the blank bar rows
     // around the text too), the text from x0 + 3 like the history's
     let body_rect = pane(chunks[9]);
     let composer = Rect { width: (inner_w as u16 + TEXT_AT).min(body_rect.width), ..body_rect };
-    draw_composer(app, frame, composer, inner_w, rows.pad_top.min(composer_h), rows.pad_bottom);
+    draw_composer(app, frame, composer, inner_w, pad_top.min(composer_h), rows.pad_bottom);
     let text = Rect { y: app.composer.y, height: app.composer.h as u16, ..body_rect };
     // zen (BISE-121) keeps the composer's text, the divider's label and
     // the card box as they are, and the history you read (BISE-132): the

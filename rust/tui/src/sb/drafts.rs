@@ -636,7 +636,7 @@ mod tests {
         let b = restarted(&app);
         assert_eq!(b.ed.text, "[Quote #1] why?");
         assert_eq!(b.attachments, vec![q]);
-        assert_eq!(crate::attach::strip_height(&b), 2);
+        assert_eq!(crate::attach::strip_height(&b), 3);
     }
 
     #[test]

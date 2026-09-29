@@ -251,12 +251,12 @@ mod tests {
         let q = of(&app.attachments[0]).unwrap();
         assert_eq!(q.from, "main");
         assert!(q.text.contains("the login breaks on safari"), "{q:?}");
-        assert_eq!(crate::attach::strip_height(&app), 2);
+        assert_eq!(crate::attach::strip_height(&app), 3);
         let rows: Vec<String> = crate::attach::strip_lines(&app, 70)
             .iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect();
-        assert!(rows[1].starts_with(" ❝ 1  “") && rows[1].ends_with("main · 1 line"), "{rows:?}");
+        assert!(rows[1].starts_with("│   ❝ 1  “") && rows[1].ends_with("main · 1 line  │"), "{rows:?}");
         // the next key just types; a second selection is quote 2, at the
         // cursor
         press(&mut app, KeyCode::Char('h'));

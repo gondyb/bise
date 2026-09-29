@@ -585,7 +585,17 @@ Rows: 1 status + 1 + 2 text + 1 + 1 hints = 6 at minimum (+ the blank row under 
 
 Exact (BISE-102, BISE-103):
 - **The raised pane** (palette role `raised`, §5; user request on marketing 685220f, replaces the raised block of e71ec74): every cell from the row under the divider to the row above the frame's bottom border (H−2), columns 1..F−2 (the whole inside of the frame, the margin columns included). No frame (H < 16 or F < 60): full width, from the row under the divider down to H−1. The divider row itself stays on the ground (its label and state too).
-- **On the tint, top down** (H ≥ 20; BISE-108 two sections, BISE-111 symmetric padding, user requests): [queued lines] · [the attachments section: its title and one row per image at x0+3 (file names, §14), no bar, then 1 blank tinted row] · the body: the bar `│` at x0 on each of its rows (faint empty, accent with text, an image or recording): 1 blank bar row, the text from x0+3 (the history's text column, wrapped at word boundaries), ≥ 1 row, grows to min(12, 40% of H), then scrolls, 1 blank bar row (always as many above the text as under it) · the key bar (from x0; in an agent's view `esc back to main` first) · frame bottom. No blank ground row under the divider (the blank bar row does that job). Height at rest: divider + 1 + 1 + 1 + key bar + frame = 6 rows. H 16–19: drop both bar rows together and the blank row under the attachments (4). H < 16 or F < 60: no frame, same as 16–19. H < 14: the key bar goes into the divider's right side instead of the state.
+- **On the tint, top down** (H ≥ 20; BISE-108 two sections, BISE-111 symmetric padding, user requests): [queued lines] · [the attachments box, BISE-209: 1 blank tinted row, then the box, see "The attachments box" below; no blank row between it and the body, whose blank bar row above the text goes (the bar starts at the first text row)] · the body: the bar `│` at x0 on each of its rows (faint empty, accent with text, an image or recording): 1 blank bar row (none under the box), the text from x0+3 (the history's text column, wrapped at word boundaries), ≥ 1 row, grows to min(12, 40% of H), then scrolls, 1 blank bar row (always as many above the text as under it) · the key bar (from x0; in an agent's view `esc back to main` first) · frame bottom. No blank ground row under the divider (the blank bar row does that job). Height at rest: divider + 1 + 1 + 1 + key bar + frame = 6 rows. H 16–19: drop both bar rows together and the blank row above the attachments box (4). H < 16 or F < 60: no frame, same as 16–19. H < 14: the key bar goes into the divider's right side instead of the state.
+- **The attachments box** (BISE-209; the user's pick "d", designer's spec; the attachments must stop reading as part of your message). Under the divider, inside the composer pane, above your message: a thin rounded frame `╭╮╰╯─│` in dim from the bar's column x0; `attached` in its top border (`╭─ attached ───╮`, dim); `backspace on a chip removes it` in its bottom border on the right (`╰──── backspace on a chip removes it ─╯`, faint), dropped first when the box is short. As wide as its longest row plus its frame (2 blank columns each side, so the rows sit at x0+3 like your text), at least 44 columns, at most the reading width (the composer's, ≤ 91); full width when narrower. One row per attachment, in number order (quotes and images alike): the pill (§13 "A chip is a pill"), a blank, the preview dim (a quote's words in `“”`, an image's file name), the source faint flush right (`main · 1 line`, `1600×900 · 240 kB`), at least 4 blanks between them. Short on room the preview is cut with `…` down to 16 columns, then the source goes and the preview takes the row. The box has no bar; your message keeps its pink bar, and the chips stay inline where you put them (same number as in the box). `NO_COLOR`: the same frame (glyphs), pills in brackets. ASCII: `+ - |` corners and edges, `[" 1]` / `[# 3]`.
+```
+╭─ attached ──────────────────────────────────────────╮
+│   ❝ 1  “la licence du repo,”         main · 1 line  │
+│   ❝ 2  “le README n'est pas prêt”    main · 1 line  │
+│   ▣ 3  readme-dark.png           1600×900 · 240 kB  │
+╰──────────────────── backspace on a chip removes it ─╯
+│  pour  ❝ 1  tu recommande quoi? et pour  ❝ 2 , voilà à quoi il ressemble :
+│   ▣ 3  c'est trop long non?
+```
 - **Placeholder:** dim, `what's on your mind?` (to an agent: `talk to auth-fix directly`).
 - **Key bar in an agent's view:** `esc back to main` is always the first pair, from x0, on every key set of that view (idle; working: `esc back to main   ⏎ steer   ctrl+c interrupt`). `esc` in the text color like every key, `back to main` dim. Never dropped for lack of room: pairs drop from the right, `/ commands` first. The right-side tip is hidden in an agent's view. The divider says `you → auth-fix`.
 
@@ -598,10 +608,10 @@ pasted), `ctrl+v` (clipboard image) and an image picked in the `@` popup.
 - **Chip:** an image is one atomic accent chip in the text: the pill
   ` ▣ 1 ` in the composer (§13 "A chip is a pill"), `▣ login.png` in the history. Deleting the chip drops the image.
   (The label underneath can stay `[Image #1]`.)
-- **Strip above the composer** (the attachments section, §13) while
+- **Attachments box above your message** (§13 "The attachments box", BISE-209) while
   images are attached, the file name only (never the path; cut at its end
   with `…`; BISE-108; the divider's flash too: `✓ attached ▣ 1 login-mobile.png`): `▣ 1 login-mobile.png · 1170×2532 · 310 kB`, `▣ 2 clipboard · 2048×1536 ·
-  1.1 MB → resized to fit 2048`, and `backspace on a chip removes it`.
+  1.1 MB → resized to fit 2048`; `backspace on a chip removes it` in the box's bottom border.
 - **History:** your line keeps the chips; one dim line under it gives each
   image's size. No picture drawn in the terminal for now (**later**: kitty /
   iTerm2 image protocols).

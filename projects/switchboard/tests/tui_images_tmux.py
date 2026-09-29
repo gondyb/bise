@@ -61,8 +61,10 @@ def main():
         t.keys("Tab")
         # the chip is a pill ` ▣ 1 ` (BISE-205): its padding cells are blanks
         wait_composer(t, "look  ▣ 1")
-        # the strip above the composer says what the chip is
-        t.wait("attached · backspace on a chip removes it")
+        # the attachments box above your message says what the chip is:
+        # `attached` in its top border, the tip in its bottom border
+        t.wait("╭─ attached ─")
+        t.wait("backspace on a chip removes it ─╯")
         # the file name only, never its path (book §13), in the strip and
         # in the divider's flash '✓ attached ▣ 1 red-blue.png'
         sc = t.wait("▣ 1 red-blue.png")
@@ -77,8 +79,8 @@ def main():
         # Ctrl+V: the clipboard image
         t.keys("C-v")
         wait_composer(t, "look  ▣ 1   ▣ 2  and  ▣ 3")
-        t.wait("▣ 3  clipboard")  # the strip row: the pill, a blank, the name
-        # backspace on a chip removes it whole (and its strip row)
+        t.wait("│   ▣ 3  clipboard")  # the box row: its edge, the pill, a blank, the name
+        # backspace on a chip removes it whole (and its box row)
         t.keys("BSpace")
         t.keys("BSpace")
         wait_composer(t, "look  ▣ 1   ▣ 2  and")
@@ -89,7 +91,7 @@ def main():
         # the feed names the image: `[Image #1 shots/red-blue.png]`, or
         # the chip `▣ red-blue.png` once render.rs draws the chips
         sc = t.wait_any(["[Image #1 shots/red-blue.png]", "▣ red-blue.png"], 40)[1]
-        assert "red-blue.png" in sc and "attached ·" not in sc, sc
+        assert "red-blue.png" in sc and "╭─ attached" not in sc, sc
         # the reply names the images as the model saw them; no marker
         # (neither the user's nor the request's framing) on screen
         sc = t.wait("ack: look [Image #1] [Image #2] and [Image #3] colors?", 40)
