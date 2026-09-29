@@ -13,21 +13,27 @@
 //!   files and the dev versions. `XDG_STATE_HOME` is no longer read.
 //!
 //! The bise layout is on when `$BISE_HOME` is set or `~/.bise/migrated.json`
-//! exists (the migration, BISE-161, writes it). Otherwise the legacy
-//! layout: the live user's hubs are never swapped for empty ones.
+//! exists. The harness writes it at its first start ([`migrate`],
+//! BISE-161: user files copied, idle hubs moved and linked back, running
+//! hubs kept in the old place until they stop; `BISE_NO_MIGRATE=1` never
+//! migrates). Until then the legacy layout: a hub is never swapped for an
+//! empty one.
 //!
 //! Each path keeps its env override (`BEND_CONFIG`, `BEND_SESSIONS_DIR`,
 //! ...). The harness exports them all at its start ([`Home::exports`]),
-//! so the Bend runtime and older versions read the same paths. The
-//! export carries a stamp (`BISE_EXPORTS_FOR` = the HOME and BISE_HOME
-//! it was computed for): a process started with another HOME or
-//! BISE_HOME (a test with a temp HOME, from an agent's shell) ignores
-//! the inherited paths instead of writing into the real state.
+//! so the Bend runtime and older versions (a rollback) read the same
+//! paths. The export carries a stamp (`BISE_EXPORTS_FOR` = the HOME,
+//! BISE_HOME and root it was computed for): a process started with another
+//! HOME or BISE_HOME (a test with a temp HOME, from an agent's shell), or
+//! after the migration, ignores the inherited paths instead of writing into
+//! the wrong state.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+pub mod migrate;
 pub mod prefs;
+pub use migrate::migrate;
 pub use prefs::{Pref, Slot};
 
 /// Moves the whole state (the bise layout, at this path).
@@ -68,6 +74,9 @@ pub struct Home {
     root: PathBuf,
     /// The single-path overrides from the environment that apply.
     over: BTreeMap<&'static str, PathBuf>,
+    /// `~/.bise` after the migration (not an explicit `$BISE_HOME`): a hub
+    /// still running in the old place is used there until it moves.
+    migrated: bool,
 }
 
 /// An environment lookup: the real one, or a map in tests. Empty = unset.
@@ -87,26 +96,27 @@ impl Home {
     pub fn from_lookup(env: Lookup) -> Home {
         let get = |k: &str| env(k).filter(|v| !v.is_empty());
         let user = PathBuf::from(get("HOME").unwrap_or_else(|| "/tmp".into()));
-        let (layout, root) = match get(BISE_HOME) {
-            Some(b) => (Layout::Bise, PathBuf::from(b)),
-            None if user.join(".bise").join(MIGRATED).exists() => (Layout::Bise, user.join(".bise")),
-            None => (Layout::Legacy, user.join(".bend-harness")),
+        let (layout, root, migrated) = match get(BISE_HOME) {
+            Some(b) => (Layout::Bise, PathBuf::from(b), false),
+            None if user.join(".bise").join(MIGRATED).exists() => (Layout::Bise, user.join(".bise"), true),
+            None => (Layout::Legacy, user.join(".bend-harness"), false),
         };
-        // inherited paths computed for another HOME/BISE_HOME do not apply
-        let stamp = stamp_of(get("HOME").as_deref(), get(BISE_HOME).as_deref());
+        // inherited paths computed for another HOME/BISE_HOME/root (before
+        // the migration) do not apply
+        let stamp = stamp_of(get("HOME").as_deref(), get(BISE_HOME).as_deref(), &root);
         let stale = get(EXPORTS_FOR).is_some_and(|s| s != stamp);
         let over = if stale {
             BTreeMap::new()
         } else {
             PATH_VARS.iter().filter_map(|k| get(k).map(|v| (*k, PathBuf::from(v)))).collect()
         };
-        Home { layout, user, root, over }
+        Home { layout, user, root, over, migrated }
     }
 
     /// A bise-layout home at `root` (tests, tools).
     pub fn at(root: impl Into<PathBuf>) -> Home {
         let root = root.into();
-        Home { layout: Layout::Bise, user: root.clone(), root, over: BTreeMap::new() }
+        Home { layout: Layout::Bise, user: root.clone(), root, over: BTreeMap::new(), migrated: false }
     }
 
     fn or(&self, var: &str, default: PathBuf) -> PathBuf {
@@ -177,9 +187,30 @@ impl Home {
     }
 
     /// One workspace's hub (`id` = `<name>-<hash>`). `SB_STATE_DIR` is the
-    /// caller's business (switchboard::paths).
+    /// caller's business (switchboard::paths). After the migration, a hub
+    /// not moved yet (it was running, BISE-161) is still used in the old
+    /// place: a real folder there, and none in `hubs/`.
     pub fn hub_dir(&self, id: &str) -> PathBuf {
-        self.hubs_dir().join(id)
+        let new = self.hubs_dir().join(id);
+        if self.migrated && !new.exists() {
+            let old = self.legacy_state().join(id);
+            if std::fs::symlink_metadata(&old).is_ok_and(|m| m.is_dir()) {
+                return old;
+            }
+        }
+        new
+    }
+
+    /// The old places (`~/.bend-harness`, `~/.local/state/switchboard`)
+    /// of this HOME: what [`migrate`] reads.
+    pub fn legacy(&self) -> Home {
+        Home {
+            layout: Layout::Legacy,
+            user: self.user.clone(),
+            root: self.user.join(".bend-harness"),
+            over: BTreeMap::new(),
+            migrated: false,
+        }
     }
 
     /// The image store (`$BEND_IMAGE_DIR`).
@@ -309,12 +340,14 @@ impl Home {
             ("SB_VERSIONS_DIR", s(self.versions_dir())),
             ("SB_BUILD_DIR", s(self.build_dir())),
         ];
-        let bise = self.is_bise().then(|| s(self.root.clone()));
+        // an explicit home only: after the migration ~/.bise is found by
+        // its marker, and a BISE_HOME would turn the old-place rule off
+        let bise = (self.is_bise() && !self.migrated).then(|| s(self.root.clone()));
         if let Some(b) = &bise {
             v.push((BISE_HOME, b.clone()));
         }
         let home = (self.user != Path::new("/tmp")).then(|| s(self.user.clone()));
-        v.push((EXPORTS_FOR, stamp_of(home.as_deref(), bise.as_deref())));
+        v.push((EXPORTS_FOR, stamp_of(home.as_deref(), bise.as_deref(), &self.root)));
         v
     }
 
@@ -327,9 +360,9 @@ impl Home {
     }
 }
 
-/// The stamp of an export: the HOME and BISE_HOME it was computed for.
-fn stamp_of(home: Option<&str>, bise: Option<&str>) -> String {
-    format!("{}\n{}", home.unwrap_or(""), bise.unwrap_or(""))
+/// The stamp of an export: the HOME, BISE_HOME and root it was computed for.
+fn stamp_of(home: Option<&str>, bise: Option<&str>, root: &Path) -> String {
+    format!("{}\n{}\n{}", home.unwrap_or(""), bise.unwrap_or(""), root.display())
 }
 
 #[cfg(test)]

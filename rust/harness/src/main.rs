@@ -356,16 +356,36 @@ fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Once: the old places (~/.bend-harness, ~/.local/state/switchboard) to
+/// ~/.bise; every start: the hubs that stopped since (bise_home::migrate).
+/// What happened goes in ~/.bise/migrated.json; a failure never stops a start.
+fn migrate_home() {
+    let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    if !bise_home::migrate::wanted(&env) {
+        return;
+    }
+    let user = bise_home::Home::from_env().user_home().to_path_buf();
+    let _ = bise_home::migrate(&user, &switchboard::switch::hub_busy);
+}
+
 fn main() -> std::io::Result<()> {
     // every mode (TUI, hub daemon, sb CLI): a panic leaves a log with its
     // backtrace, and a TUI gives the terminal back before it reports
     bend_tui::install_crash_hook();
-    // every state path, decided once (bise_home) and exported before any
-    // thread or child: the Bend runtime, the hub, the agents and older
-    // versions read these variables instead of computing their own
-    bise_home::Home::from_env().export();
     {
         let args: Vec<String> = std::env::args().skip(1).collect();
+        // the move to ~/.bise (BISE-161): by the commands that open a hub
+        // or a session, before any path is computed; never by `sb` (an
+        // agent's tool) nor the switcher (mid-switch)
+        if matches!(args.first().map(String::as_str), None | Some("switchboard" | "sbd"))
+            || args.iter().any(|a| a == "--headless")
+        {
+            migrate_home();
+        }
+        // every state path, decided once (bise_home) and exported before any
+        // thread or child: the Bend runtime, the hub, the agents and older
+        // versions read these variables instead of computing their own
+        bise_home::Home::from_env().export();
         match args.first().map(|s| s.as_str()) {
             Some("sb") => std::process::exit(switchboard::cli::main(&args[1..])),
             Some("sbd") => {

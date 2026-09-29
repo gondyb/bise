@@ -35,7 +35,7 @@ fi
 grep "test result" "$log"
 rm -f "$log"
 (cd rust && cargo clippy --offline -q --workspace --all-targets -- -D warnings)
-TESTS="e2e PROOF scripted_ts repl_bash_env provider_families tui_tmux tui_help_tmux tui_composer_tmux tui_version_tmux tui_at_files_tmux
+TESTS="e2e PROOF scripted_ts repl_bash_env provider_families home_migrate tui_tmux tui_help_tmux tui_composer_tmux tui_version_tmux tui_at_files_tmux
 tui_images_tmux tui_clear_tmux tui_archived_tmux tui_waits_tmux tui_undelivered_tmux tui_queue_tmux
 tui_onboarding_tmux tui_panel_click_tmux tui_drafts_tmux"
 # alone, after the others: under parallel load its Ctrl+U sometimes leaves

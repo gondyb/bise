@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test-install.sh — install a tarball from build-dist.sh into a CLEAN
 # fake HOME and check it runs. Everything happens under /tmp: the real
-# ~/.bend-harness, ~/.local/state/switchboard and live hubs are never touched.
+# ~/.bend-harness, ~/.bise, ~/.local/state/switchboard and live hubs are never touched.
 #
 #   projects/switchboard/packaging/test-install.sh <tarball>
 #
@@ -78,7 +78,7 @@ session() {
 echo "== single-agent session"
 session "scripted session" --scripted
 session "live session (model from config.toml)" 
-check "sessions dir created in ~/.bend-harness" test -d "$T/.bend-harness/sessions"
+check "sessions dir created in ~/.bise (BISE-161: a fresh HOME starts there)" test -d "$T/.bise/sessions"
 
 echo "== Switchboard hub on a throwaway workspace"
 mkdir -p "$WS" && (cd "$WS" && git init -q && echo x > README.md && git add README.md \
@@ -86,7 +86,7 @@ mkdir -p "$WS" && (cd "$WS" && git init -q && echo x > README.md && git add READ
 (cd "$WS" && E "$BIN" sbd --workspace "$WS" </dev/null >/dev/null 2>"$DL/hub.err" &)
 state=""; i=0
 while [ $i -lt 150 ]; do
-  state="$(ls -d "$T"/.local/state/switchboard/pk-ws-* 2>/dev/null | head -n 1)"
+  state="$(ls -d "$T"/.bise/hubs/pk-ws-* 2>/dev/null | head -n 1)"
   [ -n "$state" ] && [ -S "$state/hub.sock" ] && break
   sleep 0.1; i=$((i + 1))
 done

@@ -276,6 +276,13 @@ fn probation(paths: &Paths, period: Duration) -> Result<(), String> {
     Ok(())
 }
 
+/// The hub whose state is `state` runs (a live socket or pid) or is being
+/// switched: the migration to ~/.bise leaves it in place (BISE-161).
+pub fn hub_busy(state: &Path) -> bool {
+    let paths = Paths { workspace: PathBuf::new(), state: state.to_path_buf() };
+    UnixStream::connect(paths.socket()).is_ok() || hub_pid(&paths).is_some_and(alive) || switch_running(&paths)
+}
+
 /// A switcher is running (a switch on probation).
 pub fn switch_running(paths: &Paths) -> bool {
     std::fs::read_to_string(paths.state.join("switch.pid"))

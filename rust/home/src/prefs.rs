@@ -82,7 +82,7 @@ impl Slot {
     }
 }
 
-fn write_atomic(path: &Path, text: &str) -> io::Result<()> {
+pub(crate) fn write_atomic(path: &Path, text: &str) -> io::Result<()> {
     if let Some(d) = path.parent() {
         std::fs::create_dir_all(d)?;
     }
