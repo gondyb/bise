@@ -1495,7 +1495,8 @@ Index:
 
 ### BISE-88 · code quality pass (last, with a budget)
 
-- **status:** todo · **owner:** — · **commits:** —
+- **status:** done · **owner:** bise-quality · **commits:** c1cdc16,
+  5b8b550, ef2f8e1, 5be38a0, fd88a3a, f138fc3, c945f17
 - **track:** S · **owns:** the code the bise work touched (`rust/tui`,
   `rust/switchboard`, `hub/*.bend`), one area at a time
 - **when:** after BISE-80–83 and BISE-82's fixes, before main's final
@@ -1514,6 +1515,27 @@ Index:
   (build, test --workspace, clippy --all-targets -D warnings, run_all.sh,
   PROOF if a `.bend` changed); the rest listed with a cost estimate.
 - **notes:**
+  - Findings: `docs/brand/qa/code-quality.md` (F1–F10, ranked by risk ×
+    cost). Fixed, one commit each: F1 `run_all.sh` checks every test
+    binary of `switchboard` **and `bend-tui`** (its tests never ran there),
+    clippy `--workspace --all-targets`, `SB_CORE_BIN` unset (ef2f8e1); F2
+    the throwaway hubs and TUIs drop the agent's `SB_CORE_BIN`,
+    `SB_SOCKET`, `SB_AGENT`, `SB_TASK`, `SB_PORT_OFFSET` (5b8b550); F3
+    `tui_version_tmux` on its own `XDG_STATE_HOME`, no real build
+    (fd88a3a); F4 `tui_composer_tmux` waits for the reply (5be38a0); F5
+    dead code and the module-wide allow in `theme.rs` (c945f17); F6
+    `sb::key` moved to `sb/keys.rs` as is (f138fc3).
+  - Listed with a cost (for main): F7 tmux flakes under load (1–2 h);
+    F8 `feed::push_event` / `render::ev_lines` split (300–600 lines +
+    bench, half a day); F9 `onboarding.rs`, `sb/panel.rs`, `editor.rs`
+    (500+ lines each); F10 `versions.sh` leaks `/tmp/sb-build-*`
+    worktrees (50 registered: an `EXIT` trap + `git worktree prune`).
+  - Used ~690 changed lines of 1500, ~1 h 45 of 3 h. Gates: each commit
+    build + `test -p bend-tui` (317) + clippy `--workspace --all-targets
+    -D warnings`; `run_all.sh` on 4e050e8 green (PROOF, Rust 317 + 100,
+    e2e, every tmux test); bench 50k not slower (a60735a 0.24 / 0.46 /
+    1575 ms, c945f17 0.24 / 0.43 / 1555 ms, bise-f-feed's runs). No
+    `.bend` changed.
 
 ### BISE-80/81 · hub side (vocabulary, lowercase)
 

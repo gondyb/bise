@@ -11,15 +11,25 @@ things that can hide a real bug come first.
 
 | # | finding | risk | cost | status |
 |---|---------|------|------|--------|
-| F1 | `run_all.sh` hides Rust test results | high | ~15 lines | see below |
-| F2 | the tests inherit the agent's `SB_*` env (old sb-core) | high | ~15 lines | see below |
-| F3 | `tui_version_tmux` depends on `~/.local/state`, starts a real build | medium | ~20 lines | see below |
-| F4 | `tui_composer_tmux` reads the reply from one snapshot | medium | ~3 lines | see below |
-| F5 | dead code behind `allow(dead_code)` | low | ~60 lines | see below |
-| F6 | `sb::key` is a 195-line match in a 1.4k-line `sb.rs` | medium | ~450 lines (move) | see below |
+| F1 | `run_all.sh` hides Rust test results | high | ~15 lines | fixed ef2f8e1 |
+| F2 | the tests inherit the agent's `SB_*` env (old sb-core) | high | ~15 lines | fixed 5b8b550 |
+| F3 | `tui_version_tmux` depends on `~/.local/state`, starts a real build | medium | ~20 lines | fixed fd88a3a |
+| F4 | `tui_composer_tmux` reads the reply from one snapshot | medium | ~3 lines | fixed 5be38a0 |
+| F5 | dead code behind `allow(dead_code)` | low | ~60 lines | fixed c945f17 |
+| F6 | `sb::key` is a 195-line match in a 1.4k-line `sb.rs` | medium | ~450 lines (move) | fixed f138fc3 |
 | F7 | `tui_tmux`, `tui_at_files_tmux`, `tui_archived_tmux` flaky under load | medium | 1–2 h, unknown lines | listed |
 | F8 | long functions in `feed.rs` / `render.rs` | medium | 300–600 lines + bench | listed |
 | F9 | big modules: `onboarding.rs`, `sb/panel.rs`, `editor.rs` | low | 500+ lines each | listed |
+| F10 | `versions.sh` leaks `/tmp/sb-build-*` worktrees | medium (disk) | ~3 lines + a cleanup | listed (for main) |
+
+Used: ~690 changed lines of the ~1500 (the F6 move is 448 of them),
+about 1 h 45 of the 3 h. Each fix is its own commit, gated (build,
+`cargo test -p bend-tui`, clippy `--workspace --all-targets -D
+warnings`; the test fixes by running the test), `run_all.sh` once at the
+end. No `.bend` changed. Bench (`bench_long_feed`, 50k lines, release,
+run by bise-f-feed): a60735a (before) steady 0.24 ms, PageUp frames
+0.46 ms, windowed PageUp to the top 1575 ms; c945f17 (after) 0.24 /
+0.43 / 1555 ms: not slower.
 
 ## F1 · `run_all.sh` hides Rust test results (high × cheap)
 
@@ -116,6 +126,17 @@ lines, a bench run before and after, half a day.
 seams (onboarding: the `.env` writer is the only effectful part and
 deserves its own module and tests). **Cost:** 500+ lines each, not in
 this budget.
+
+## F10 · `versions.sh` leaks `/tmp/sb-build-*` worktrees (listed, for main)
+
+`build <rev>` checks the commit out in `/tmp/sb-build-<id>-<pid>` and
+removes it with a `RETURN` trap; under `set -e` a failed build exits the
+shell and a `RETURN` trap does not run on exit. 50 such worktrees are
+registered on this repo (`git worktree list`), each a full checkout, on a
+disk with ~10 GB free. Fix: an `EXIT` trap (or `trap … RETURN EXIT`),
+then `git worktree remove --force` the stale ones and `git worktree
+prune`. **Cost:** ~3 lines + the cleanup; outside BISE-88's scope
+(`versions.sh`, other agents' build dirs), so main decides.
 
 ## Checked, nothing to fix
 
