@@ -1320,7 +1320,7 @@ mod tests {
 
     /// Numbers stay while an agent lives: a drop does not renumber the
     /// others, Alt+N follows the number shown; a newcomer takes the free
-    /// number.
+    /// number, and the rows go in number order (QA M).
     #[test]
     fn numbers_survive_a_drop() {
         use crossterm::event::{KeyCode, KeyEvent};
@@ -1352,6 +1352,10 @@ mod tests {
         // a newcomer takes the free number 1; the others keep theirs
         app.sb.agents.push(agent("d", "starting"));
         assert_eq!((num(&app, "d"), num(&app, "b"), num(&app, "c")), (Some(1), Some(2), Some(3)));
+        // QA M: its row is at its number, before b and c (not last)
+        let t = trimmed(&panel_rows(&app, 28, 10));
+        let row_of = |p: &str| t.iter().position(|r| r.starts_with(p)).unwrap_or(usize::MAX);
+        assert!(row_of(" 1 ") < row_of(" 2 ") && row_of(" 2 ") < row_of(" 3 "), "{}", t.join("\n"));
         key(&mut app, &KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT), false);
         assert_eq!(app.sb.focus, "d");
         // restored, a comes back with a free number (4)

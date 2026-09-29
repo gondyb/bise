@@ -177,10 +177,14 @@ impl Sb {
         }
     }
 
-    /// What the panel navigates: main, then the live tasks, then (the
-    /// section expanded) the archived ones, newest first.
+    /// What the panel navigates: main, then the live tasks in the order
+    /// of their numbers (QA M: a newcomer that takes a dropped agent's
+    /// number sits at that number's row, not last), then (the section
+    /// expanded) the archived ones, newest first.
     fn nav(&self) -> Vec<&Agent> {
         let mut out: Vec<&Agent> = self.agents.iter().filter(|a| !a.archived()).collect();
+        let numbers = self.numbers();
+        out.sort_by_key(|a| numbers.iter().find(|(n, _)| *n == a.name).map_or(usize::MAX, |(_, k)| *k));
         if self.archived_open {
             out.extend(self.archived());
         }

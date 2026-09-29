@@ -1211,8 +1211,8 @@ Index:
     keeps its number while it lives (stopped/failed too, archived frees it);
     a newcomer takes the smallest free number, so a fresh session numbers in
     creation order. `Nav::Goto` (sb.rs) uses `Sb::agent_numbered(n)`. Rows
-    stay in the hub's order: after a drop and a newcomer, the panel can read
-    `2 b, 3 c, 1 d` (the number is the key, not the rank).
+    go in number order (QA M; they were in the hub's order, so after a drop
+    and a newcomer the panel read `2 b, 3 c, 1 d`).
   - **waiting_on:** in sb-core's view (`hub/view.bend` `waits_on`: the
     recipient of the message behind the agent's first waiter, i.e. its `sb
     wait` / `sb ask`; `view()` now takes the waiters, `hub/main.bend` passes
