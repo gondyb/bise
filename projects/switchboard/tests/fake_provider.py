@@ -1,27 +1,72 @@
-"""A scripted OpenAI-style chat-completions provider for the switchboard
-end-to-end tests (BEND_PROVIDER_URL points here).
+"""A scripted provider for the switchboard tests, one server for the four
+wire families (BISE-153). BEND_PROVIDER_URL, or a `[providers.fake]`
+base_url, points here; the URL path picks the family:
 
-The script lives in the conversation itself:
-- a user message holding `[[bash: CMD]]` markers makes the agent call its
-  bash tool with each CMD, in order, one call per model request;
-- when it holds no `[[...]]` marker, `{{bash: CMD}}` markers are used
-  instead (so main's message can carry the script of a task's brief);
+  .../messages                          anthropic         (Messages API)
+  .../responses                         openai-responses  (Responses API)
+  .../models/<m>:generateContent        gemini            (whole reply)
+  .../models/<m>:streamGenerateContent  gemini            (?alt=sse: SSE, else a JSON array)
+  anything else                         openai-chat       (Chat Completions)
+
+A request with "stream": true (Gemini: the stream path) gets a
+Server-Sent Events reply shaped like the real API's; otherwise the whole
+JSON reply (the old tests: openai-chat, not streamed, unchanged).
+
+The script lives in the conversation itself (the last real user message:
+the injected <switchboard_state> block is not one):
+- `[[bash: CMD]]` markers make the agent call its bash tool with each
+  CMD, in order, one call per model request; when there is no `[[...]]`
+  marker, `{{bash: CMD}}` markers are used instead (so main's message can
+  carry the script of a task's brief);
 - once every marker ran (or there is none), the agent answers
-  "done: <last tool result>" or "ack: <the message>".
+  "done: <last tool result>" or "ack: <the message>";
+- `[[think: TEXT]]`: every reply to that message starts with reasoning
+  TEXT (Anthropic thinking + signature, reasoning_content, a Responses
+  reasoning item, Gemini thought parts + thoughtSignature);
+- `[[error: KIND]]` / `[[error: KIND xN]]`: the first N requests for
+  that message fail (N = 1), then the script goes on. KIND: 429, 500,
+  overloaded (Anthropic 529, the others 503), stream (a 200 stream that
+  breaks with the family's error event; a whole reply gets a 500).
+  Several markers fail in their order. `retry=S` sets Retry-After (1);
+- `[[fixture: NAME]]`: the first request for that message is answered
+  with the recorded file tests/providers/<family>/NAME.sse (streamed) or
+  NAME.json (whole), or NAME.<status>.json (an error with that status),
+  byte for byte.
 
 Each request is logged to $FAKE_LOG (one JSON line: agent, last user
-message, reply) for the assertions.
+message, reply as {content, tool_calls}, images, family, stream, status)
+for the assertions.
+
+Not a server: `fake_provider.py render FAMILY [--whole] TURN.json`
+prints what the server would send for a turn ({"text", "reasoning",
+"calls": [{"name", "args"}], "error"}); `fake_provider.py bend FILE`
+prints FILE as a Bend string literal (a LAWS fixture).
+Shapes: docs/research/providers.md §8 (the docs each one follows).
 """
 import http.server
 import json
 import os
 import re
 import sys
+import threading
+import time
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+FIXTURES = os.path.join(HERE, "providers")
 LOG = os.environ.get("FAKE_LOG", "/tmp/sb-fake.log")
+FAMILIES = ("anthropic", "openai-chat", "openai-responses", "gemini")
 MARK = re.compile(r"\[\[bash: (.*?)\]\]", re.S)
 INNER = re.compile(r"\{\{bash: (.*?)\}\}", re.S)
+THINK = re.compile(r"\[\[think: (.*?)\]\]", re.S)
+ERROR = re.compile(r"\[\[error: (\w+)(?: x(\d+))?(?: retry=(\d+))?\]\]")
+FIXTURE = re.compile(r"\[\[fixture: ([\w.-]+)\]\]")
+USAGE = {"input": 10, "cached": 2, "output": 5, "reasoning": 3}
 
+
+# ---------------------------------------------------------------- requests
+# Each family's request becomes one neutral conversation: a list of
+# {"role": system|user|assistant|tool, "text", "calls" (tool calls made),
+#  "images" (data urls)}.
 
 def text_of(content):
     if isinstance(content, str):
@@ -31,96 +76,660 @@ def text_of(content):
     return ""
 
 
-def agent_of(messages):
-    for m in messages:
-        if m.get("role") == "system":
-            t = text_of(m.get("content"))
-            g = re.search(r"# Your role: task `([^`]+)`", t)
+def msg(role, text="", calls=0, images=None):
+    return {"role": role, "text": text, "calls": calls, "images": images or []}
+
+
+def conv_openai_chat(body):
+    out = []
+    for m in body.get("messages", []):
+        c = m.get("content")
+        imgs = [p.get("image_url", {}).get("url", "") for p in (c if isinstance(c, list) else [])
+                if isinstance(p, dict) and p.get("type") == "image_url"]
+        out.append(msg(m.get("role", "user"), text_of(c), len(m.get("tool_calls") or []), imgs))
+    return out
+
+
+def conv_anthropic(body):
+    out = []
+    sysm = body.get("system")
+    if sysm:
+        out.append(msg("system", text_of(sysm)))
+    for m in body.get("messages", []):
+        c = m.get("content")
+        blocks = [{"type": "text", "text": c}] if isinstance(c, str) else (c or [])
+        if m.get("role") == "assistant":
+            out.append(msg("assistant", text_of([b for b in blocks if b.get("type") == "text"]),
+                           sum(1 for b in blocks if b.get("type") == "tool_use")))
+            continue
+        for b in blocks:
+            if b.get("type") == "tool_result":
+                out.append(msg("tool", text_of(b.get("content"))))
+        texts = [b for b in blocks if b.get("type") == "text"]
+        imgs = ["data:%s;base64,%s" % (b["source"].get("media_type", ""), b["source"].get("data", ""))
+                for b in blocks if b.get("type") == "image" and isinstance(b.get("source"), dict)]
+        if texts or imgs:
+            out.append(msg("user", text_of(texts), 0, imgs))
+    return out
+
+
+def conv_responses(body):
+    out = []
+    if body.get("instructions"):
+        out.append(msg("system", body["instructions"]))
+    items = body.get("input", [])
+    if isinstance(items, str):
+        items = [{"role": "user", "content": items}]
+    for it in items:
+        kind = it.get("type", "message")
+        if kind == "function_call":
+            out.append(msg("assistant", "", 1))
+        elif kind == "function_call_output":
+            o = it.get("output")
+            out.append(msg("tool", o if isinstance(o, str) else text_of(o)))
+        elif kind == "message":
+            role = {"developer": "system"}.get(it.get("role"), it.get("role", "user"))
+            c = it.get("content")
+            imgs = [p.get("image_url", "") for p in (c if isinstance(c, list) else [])
+                    if isinstance(p, dict) and p.get("type") == "input_image"]
+            out.append(msg(role, text_of(c), 0, imgs))
+    return out
+
+
+def conv_gemini(body):
+    out = []
+    si = body.get("systemInstruction") or body.get("system_instruction")
+    if si:
+        out.append(msg("system", text_of(si.get("parts"))))
+    for c in body.get("contents", []):
+        parts = c.get("parts", [])
+        texts = [p for p in parts if "text" in p and not p.get("thought")]
+        if c.get("role") == "model":
+            out.append(msg("assistant", text_of(texts), sum(1 for p in parts if "functionCall" in p)))
+            continue
+        for p in parts:
+            r = p.get("functionResponse") or p.get("function_response")
+            if r:
+                resp = r.get("response", {})
+                t = resp.get("output", resp.get("content", resp.get("result")))
+                out.append(msg("tool", t if isinstance(t, str) else json.dumps(resp)))
+        imgs = []
+        for p in parts:
+            d = p.get("inlineData") or p.get("inline_data")
+            if d:
+                imgs.append("data:%s;base64,%s" % (d.get("mimeType", d.get("mime_type", "")), d.get("data", "")))
+        if texts or imgs:
+            out.append(msg("user", text_of(texts), 0, imgs))
+    return out
+
+
+CONV = {"openai-chat": conv_openai_chat, "anthropic": conv_anthropic,
+        "openai-responses": conv_responses, "gemini": conv_gemini}
+
+
+def family_of(path):
+    p = path.split("?")[0].rstrip("/")
+    if p.endswith("/messages"):
+        return "anthropic"
+    if p.endswith("/responses"):
+        return "openai-responses"
+    if ":generateContent" in p or ":streamGenerateContent" in p:
+        return "gemini"
+    return "openai-chat"
+
+
+def agent_of(conv):
+    for m in conv:
+        if m["role"] == "system":
+            g = re.search(r"# Your role: task `([^`]+)`", m["text"])
             if g:
                 return g.group(1)
-            if "# Your role: `main`" in t:
+            if "# Your role: `main`" in m["text"]:
                 return "main"
     return "?"
 
 
-def reply_for(messages):
-    # the last real user message: the injected state block is not one
+def last_user(conv):
+    """index of the last real user message (the state block is not one)"""
     idx = None
-    for i, m in enumerate(messages):
-        if m.get("role") == "user" and not text_of(m.get("content")).lstrip().startswith("<switchboard_state>"):
+    for i, m in enumerate(conv):
+        if m["role"] == "user" and not m["text"].lstrip().startswith("<switchboard_state>"):
             idx = i
-    if idx is None:
-        return {"content": "ack: (nothing)"}
-    user = text_of(messages[idx]["content"])
+    return idx
+
+
+# ------------------------------------------------------------------ script
+
+def script_of(user):
     # the hub's notes about the past are not a script to run
     user = re.sub(r"<switchboard_notes>.*?</switchboard_notes>", "", user, flags=re.S)
-    user = re.sub(r"<task_status>.*?</task_status>", "", user, flags=re.S).strip()
-    after = messages[idx + 1:]
-    calls_done = sum(len(m.get("tool_calls") or []) for m in after if m.get("role") == "assistant")
+    return re.sub(r"<task_status>.*?</task_status>", "", user, flags=re.S).strip()
+
+
+def errors_of(user):
+    out = []
+    for kind, n, retry in ERROR.findall(user):
+        out += [{"kind": kind, "retry": int(retry or 1)}] * int(n or 1)
+    return out
+
+
+def reply_for(conv, seen=0):
+    """The turn for this conversation: {"text", "reasoning", "calls":
+    [{"id", "name", "args"}], "error", "fixture"}. `seen`: how many
+    requests for the same user message came before this one."""
+    turn = {"text": "", "reasoning": "", "calls": [], "error": None, "fixture": None}
+    idx = last_user(conv)
+    if idx is None:
+        turn["text"] = "ack: (nothing)"
+        return turn
+    user = script_of(conv[idx]["text"])
+    errs = errors_of(user)
+    if seen < len(errs):
+        turn["error"] = errs[seen]
+        return turn
+    fx = FIXTURE.search(user)
+    if fx and seen == len(errs):
+        turn["fixture"] = fx.group(1)
+        return turn
+    think = THINK.search(user)
+    turn["reasoning"] = think.group(1).strip() if think else ""
+    after = conv[idx + 1:]
+    calls_done = sum(m["calls"] for m in after if m["role"] == "assistant")
     marks = MARK.findall(user) or INNER.findall(user)
     if calls_done < len(marks):
-        cmd = marks[calls_done].strip()
-        return {
-            "content": "",
-            "tool_calls": [{
-                "id": "call_%d_%d" % (idx, calls_done),
-                "type": "function",
-                "function": {"name": "bash", "arguments": json.dumps({"arg": cmd})},
-            }],
-        }
-    results = [text_of(m.get("content")) for m in after if m.get("role") == "tool"]
+        turn["calls"] = [{"id": "call_%d_%d" % (idx, calls_done), "name": "bash",
+                          "args": {"arg": marks[calls_done].strip()}}]
+        return turn
+    results = [m["text"] for m in after if m["role"] == "tool"]
     if results:
-        return {"content": "done: " + results[-1].strip()[:400]}
+        turn["text"] = "done: " + results[-1].strip()[:400]
+        return turn
     # an image comes framed as text `<image name=[Image #1] path="…">`, the
     # image, text `</image>` (docs/images.md): a model says `[Image #1]`,
     # it does not echo the framing
     user = re.sub(r'<image name=(\[[^\]]*\])[^>]*>\s*</image>', r"\1", user)
-    one = " ".join(user.split())
-    return {"content": "ack: " + one[:300]}
+    turn["text"] = "ack: " + " ".join(user.split())[:300]
+    return turn
+
+
+def pieces(s, n=3):
+    """s in n pieces (at least one): the deltas a real stream sends"""
+    if not s:
+        return [""]
+    k = max(1, -(-len(s) // n))
+    return [s[i:i + k] for i in range(0, len(s), k)]
+
+
+# ------------------------------------------------------------------ errors
+# (status, headers, body) of an error reply, per family.
+
+def error_reply(family, err):
+    kind = err["kind"]
+    status = {"429": 429, "500": 500, "stream": 500}.get(kind, 529 if family == "anthropic" else 503)
+    hdr = {"retry-after": str(err.get("retry", 1))} if status in (429, 503, 529) else {}
+    if family == "anthropic":
+        t, m = {429: ("rate_limit_error", "Number of request tokens has exceeded your per-minute rate limit"),
+                500: ("api_error", "Internal server error"),
+                529: ("overloaded_error", "Overloaded")}[status]
+        body = {"type": "error", "error": {"type": t, "message": m}, "request_id": "req_fake"}
+    elif family == "gemini":
+        s, m = {429: ("RESOURCE_EXHAUSTED", "Resource has been exhausted (e.g. check quota)."),
+                500: ("INTERNAL", "An internal error has occurred."),
+                503: ("UNAVAILABLE", "The model is overloaded. Please try again later.")}[status]
+        body = {"error": {"code": status, "message": m, "status": s}}
+    else:
+        t, c, m = {429: ("requests", "rate_limit_exceeded", "Rate limit reached for requests"),
+                   500: ("server_error", None, "The server had an error while processing your request. Sorry about that!"),
+                   503: ("server_error", None, "The engine is currently overloaded, please try again later")}[status]
+        body = {"error": {"message": m, "type": t, "param": None, "code": c}}
+    return status, hdr, body
+
+
+# --------------------------------------------------------------- renderers
+# A turn as the whole JSON reply (whole_*) or as SSE events (sse_*: a list
+# of (event name or None, data dict or "[DONE]")). `mid_error`: the stream
+# breaks with the family's error event after its start.
+
+def whole_openai_chat(turn, model):
+    m = {"role": "assistant", "content": turn["text"]}
+    if turn["reasoning"]:
+        m["reasoning_content"] = turn["reasoning"]
+    if turn["calls"]:
+        m["tool_calls"] = [{"id": c["id"], "type": "function",
+                            "function": {"name": c["name"], "arguments": json.dumps(c["args"])}}
+                           for c in turn["calls"]]
+    return {"id": "fake", "object": "chat.completion", "created": 0, "model": model,
+            "choices": [{"index": 0, "message": m,
+                         "finish_reason": "tool_calls" if turn["calls"] else "stop"}],
+            "usage": {"prompt_tokens": USAGE["input"], "completion_tokens": USAGE["output"],
+                      "total_tokens": USAGE["input"] + USAGE["output"],
+                      "prompt_tokens_details": {"cached_tokens": USAGE["cached"]},
+                      "completion_tokens_details": {"reasoning_tokens": USAGE["reasoning"]}}}
+
+
+def sse_openai_chat(turn, model, include_usage=False, mid_error=False):
+    base = {"id": "chatcmpl-fake", "object": "chat.completion.chunk", "created": 0, "model": model,
+            "system_fingerprint": "fp_fake"}
+
+    def chunk(delta, finish=None):
+        d = dict(base, choices=[{"index": 0, "delta": delta, "logprobs": None, "finish_reason": finish}])
+        if include_usage:
+            d["usage"] = None
+        return (None, d)
+    ev = [chunk({"role": "assistant", "content": "", "refusal": None})]
+    if mid_error:
+        # OpenRouter's documented mid-stream error: a chunk with "error"
+        # and finish_reason "error" (openai.com sends no event for it)
+        ev.append((None, dict(base, error={"code": "server_error", "message": "Internal server error"},
+                              choices=[{"index": 0, "delta": {"content": ""}, "finish_reason": "error"}])))
+        return ev
+    for p in pieces(turn["reasoning"]) if turn["reasoning"] else []:
+        ev.append(chunk({"content": None, "reasoning_content": p}))
+    for p in pieces(turn["text"]) if turn["text"] else []:
+        ev.append(chunk({"content": p}))
+    for i, c in enumerate(turn["calls"]):
+        ev.append(chunk({"tool_calls": [{"index": i, "id": c["id"], "type": "function",
+                                         "function": {"name": c["name"], "arguments": ""}}]}))
+        for p in pieces(json.dumps(c["args"])):
+            ev.append(chunk({"tool_calls": [{"index": i, "function": {"arguments": p}}]}))
+    ev.append(chunk({}, "tool_calls" if turn["calls"] else "stop"))
+    if include_usage:
+        u = whole_openai_chat(turn, model)["usage"]
+        ev.append((None, dict(base, choices=[], usage=u)))
+    ev.append((None, "[DONE]"))
+    return ev
+
+
+def anth_blocks(turn):
+    out = []
+    if turn["reasoning"]:
+        out.append({"type": "thinking", "thinking": turn["reasoning"], "signature": "fake-sig"})
+    if turn["text"] or not turn["calls"]:
+        out.append({"type": "text", "text": turn["text"]})
+    for c in turn["calls"]:
+        out.append({"type": "tool_use", "id": "toolu_" + c["id"], "name": c["name"], "input": c["args"]})
+    return out
+
+
+def anth_usage(output):
+    return {"input_tokens": USAGE["input"] - USAGE["cached"], "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": USAGE["cached"], "output_tokens": output}
+
+
+def whole_anthropic(turn, model):
+    return {"id": "msg_fake", "type": "message", "role": "assistant", "model": model,
+            "content": anth_blocks(turn), "stop_reason": "tool_use" if turn["calls"] else "end_turn",
+            "stop_sequence": None, "usage": anth_usage(USAGE["output"])}
+
+
+def sse_anthropic(turn, model, mid_error=False):
+    start = dict(whole_anthropic(turn, model), content=[], stop_reason=None, usage=anth_usage(1))
+    ev = [("message_start", {"type": "message_start", "message": start}), ("ping", {"type": "ping"})]
+    if mid_error:
+        ev.append(("error", {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}))
+        return ev
+    for i, b in enumerate(anth_blocks(turn)):
+        if b["type"] == "thinking":
+            first = {"type": "thinking", "thinking": ""}
+            deltas = [{"type": "thinking_delta", "thinking": p} for p in pieces(b["thinking"])]
+            deltas.append({"type": "signature_delta", "signature": b["signature"]})
+        elif b["type"] == "text":
+            first = {"type": "text", "text": ""}
+            deltas = [{"type": "text_delta", "text": p} for p in pieces(b["text"])]
+        else:
+            first = dict(b, input={})
+            deltas = [{"type": "input_json_delta", "partial_json": p}
+                      for p in [""] + pieces(json.dumps(b["input"]))]
+        ev.append(("content_block_start", {"type": "content_block_start", "index": i, "content_block": first}))
+        for d in deltas:
+            ev.append(("content_block_delta", {"type": "content_block_delta", "index": i, "delta": d}))
+        ev.append(("content_block_stop", {"type": "content_block_stop", "index": i}))
+    ev.append(("message_delta", {"type": "message_delta",
+                                 "delta": {"stop_reason": "tool_use" if turn["calls"] else "end_turn",
+                                           "stop_sequence": None},
+                                 "usage": {"output_tokens": USAGE["output"]}}))
+    ev.append(("message_stop", {"type": "message_stop"}))
+    return ev
+
+
+def resp_items(turn, encrypted):
+    out = []
+    if turn["reasoning"]:
+        it = {"id": "rs_fake", "type": "reasoning",
+              "summary": [{"type": "summary_text", "text": turn["reasoning"]}]}
+        if encrypted:
+            it["encrypted_content"] = "fake-enc"
+        out.append(it)
+    if turn["text"] or not turn["calls"]:
+        out.append({"id": "msg_fake", "type": "message", "status": "completed", "role": "assistant",
+                    "content": [{"type": "output_text", "text": turn["text"], "annotations": []}]})
+    for c in turn["calls"]:
+        out.append({"id": "fc_" + c["id"], "type": "function_call", "status": "completed",
+                    "call_id": c["id"], "name": c["name"], "arguments": json.dumps(c["args"])})
+    return out
+
+
+def whole_responses(turn, model, encrypted=False, status="completed"):
+    return {"id": "resp_fake", "object": "response", "created_at": 0, "status": status,
+            "error": None, "incomplete_details": None, "model": model,
+            "output": resp_items(turn, encrypted) if status == "completed" else [],
+            "usage": {"input_tokens": USAGE["input"], "input_tokens_details": {"cached_tokens": USAGE["cached"]},
+                      "output_tokens": USAGE["output"],
+                      "output_tokens_details": {"reasoning_tokens": USAGE["reasoning"]},
+                      "total_tokens": USAGE["input"] + USAGE["output"]} if status == "completed" else None}
+
+
+def sse_responses(turn, model, encrypted=False, mid_error=False):
+    ev = []
+
+    def add(t, **d):
+        ev.append((t, dict({"type": t, "sequence_number": len(ev)}, **d)))
+    add("response.created", response=whole_responses(turn, model, status="in_progress"))
+    add("response.in_progress", response=whole_responses(turn, model, status="in_progress"))
+    if mid_error:
+        add("error", code="server_error", message="The server had an error while processing your request.",
+            param=None)
+        return ev
+    for oi, it in enumerate(resp_items(turn, encrypted)):
+        iid = it["id"]
+        if it["type"] == "reasoning":
+            add("response.output_item.added", output_index=oi, item=dict(it, summary=[]))
+            text = it["summary"][0]["text"]
+            add("response.reasoning_summary_part.added", item_id=iid, output_index=oi, summary_index=0,
+                part={"type": "summary_text", "text": ""})
+            for p in pieces(text):
+                add("response.reasoning_summary_text.delta", item_id=iid, output_index=oi, summary_index=0,
+                    delta=p)
+            add("response.reasoning_summary_text.done", item_id=iid, output_index=oi, summary_index=0, text=text)
+            add("response.reasoning_summary_part.done", item_id=iid, output_index=oi, summary_index=0,
+                part={"type": "summary_text", "text": text})
+        elif it["type"] == "message":
+            add("response.output_item.added", output_index=oi,
+                item=dict(it, status="in_progress", content=[]))
+            text = it["content"][0]["text"]
+            add("response.content_part.added", item_id=iid, output_index=oi, content_index=0,
+                part={"type": "output_text", "text": "", "annotations": []})
+            for p in pieces(text):
+                add("response.output_text.delta", item_id=iid, output_index=oi, content_index=0, delta=p,
+                    logprobs=[])
+            add("response.output_text.done", item_id=iid, output_index=oi, content_index=0, text=text,
+                logprobs=[])
+            add("response.content_part.done", item_id=iid, output_index=oi, content_index=0,
+                part=it["content"][0])
+        else:
+            add("response.output_item.added", output_index=oi,
+                item=dict(it, status="in_progress", arguments=""))
+            for p in pieces(it["arguments"]):
+                add("response.function_call_arguments.delta", item_id=iid, output_index=oi, delta=p)
+            add("response.function_call_arguments.done", item_id=iid, output_index=oi,
+                arguments=it["arguments"])
+        add("response.output_item.done", output_index=oi, item=it)
+    add("response.completed", response=whole_responses(turn, model, encrypted))
+    return ev
+
+
+def gem_usage(final):
+    u = {"promptTokenCount": USAGE["input"], "totalTokenCount": USAGE["input"]}
+    if final:
+        u.update(candidatesTokenCount=USAGE["output"], thoughtsTokenCount=USAGE["reasoning"],
+                 cachedContentTokenCount=USAGE["cached"],
+                 totalTokenCount=USAGE["input"] + USAGE["output"] + USAGE["reasoning"])
+    return u
+
+
+def gem_chunk(parts, model, finish=None):
+    cand = {"content": {"parts": parts, "role": "model"}, "index": 0}
+    if finish:
+        cand["finishReason"] = finish
+    return {"candidates": [cand], "usageMetadata": gem_usage(bool(finish)),
+            "modelVersion": model, "responseId": "fake-response"}
+
+
+def gem_parts(turn):
+    """the parts in stream order: thoughts, text, then whole function calls
+    (Gemini never splits a functionCall); the first functionCall of a step
+    carries the thoughtSignature (Gemini 3)"""
+    out = [[{"text": p, "thought": True}] for p in pieces(turn["reasoning"])] if turn["reasoning"] else []
+    out += [[{"text": p}] for p in pieces(turn["text"])] if turn["text"] else []
+    calls = [{"functionCall": {"name": c["name"], "args": c["args"]}} for c in turn["calls"]]
+    if calls:
+        calls[0]["thoughtSignature"] = "fake-thought-sig"
+        out.append(calls)
+    return out or [[{"text": ""}]]
+
+
+def whole_gemini(turn, model):
+    return gem_chunk([p for ps in gem_parts(turn) for p in ps], model, "STOP")
+
+
+def sse_gemini(turn, model, mid_error=False):
+    ps = gem_parts(turn)
+    if mid_error:
+        return [(None, gem_chunk(ps[0], model)),
+                (None, {"error": {"code": 503, "message": "The model is overloaded. Please try again later.",
+                                  "status": "UNAVAILABLE"}})]
+    return [(None, gem_chunk(p, model, "STOP" if i == len(ps) - 1 else None)) for i, p in enumerate(ps)]
+
+
+def render(family, turn, model="fake", stream=True, body=None, mid_error=False):
+    """the events (stream) or the JSON body (whole) for a turn"""
+    body = body or {}
+    enc = "reasoning.encrypted_content" in (body.get("include") or [])
+    if not stream:
+        return {"openai-chat": whole_openai_chat, "anthropic": whole_anthropic,
+                "gemini": whole_gemini}.get(family, lambda t, m: whole_responses(t, m, enc))(turn, model)
+    if family == "openai-chat":
+        inc = bool((body.get("stream_options") or {}).get("include_usage"))
+        return sse_openai_chat(turn, model, inc, mid_error)
+    if family == "anthropic":
+        return sse_anthropic(turn, model, mid_error)
+    if family == "openai-responses":
+        return sse_responses(turn, model, enc, mid_error)
+    return sse_gemini(turn, model, mid_error)
+
+
+def sse_bytes(family, events):
+    # Gemini ends its events with CRLF CRLF (captured from the live API);
+    # the others with LF LF. Named events for Anthropic and Responses.
+    sep = "\r\n\r\n" if family == "gemini" else "\n\n"
+    out = []
+    for name, data in events:
+        d = data if isinstance(data, str) else json.dumps(data, separators=(",", ":"))
+        out.append(("event: %s\n" % name if name else "") + "data: " + d + sep)
+    return "".join(out).encode()
+
+
+def openai_view(turn):
+    """the turn as the old log's {content, tool_calls} (tui_queue reads it)"""
+    if turn["calls"]:
+        return {"content": "", "tool_calls": [
+            {"id": c["id"], "type": "function",
+             "function": {"name": c["name"], "arguments": json.dumps(c["args"])}} for c in turn["calls"]]}
+    return {"content": turn["text"]}
+
+
+# ------------------------------------------------------------------ server
+
+class State:
+    lock = threading.Lock()
+    seen = {}  # (family, agent, user message) -> requests so far
+
+
+def fixture_reply(family, name, stream):
+    d = os.path.join(FIXTURES, family)
+    want = [name + ".sse"] if stream else []
+    want.append(name + ".json")
+    for f in want:
+        p = os.path.join(d, f)
+        if os.path.exists(p):
+            return 200, open(p, "rb").read(), f.endswith(".sse")
+    for f in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+        g = re.fullmatch(re.escape(name) + r"\.(\d{3})\.json", f)
+        if g:
+            return int(g.group(1)), open(os.path.join(d, f), "rb").read(), False
+    return 404, json.dumps({"error": "no fixture %s/%s" % (family, name)}).encode(), False
 
 
 class H(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def log_message(self, *a):
         pass
+
+    def send(self, status, data, ctype="application/json", headers=None):
+        self.send_response(status)
+        self.send_header("content-type", ctype)
+        self.send_header("content-length", str(len(data)))
+        self.send_header("connection", "close")
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(data)
+        self.close_connection = True
+
+    def send_sse(self, data_chunks):
+        # chunked, as the real APIs do over HTTP/1.1
+        self.send_response(200)
+        self.send_header("content-type", "text/event-stream")
+        self.send_header("cache-control", "no-cache")
+        self.send_header("transfer-encoding", "chunked")
+        self.send_header("connection", "close")
+        self.end_headers()
+        for c in data_chunks:
+            if c:
+                self.wfile.write(b"%x\r\n%s\r\n" % (len(c), c))
+                self.wfile.flush()
+        self.wfile.write(b"0\r\n\r\n")
+        self.close_connection = True
 
     def do_POST(self):
         n = int(self.headers.get("content-length", "0"))
         body = json.loads(self.rfile.read(n) or b"{}")
-        msgs = body.get("messages", [])
-        msg = reply_for(msgs)
-        agent = agent_of(msgs)
-        last_user = ""
-        user = ""
-        for m in msgs:
-            if m.get("role") == "user":
-                last_user = text_of(m.get("content"))
-                if not last_user.lstrip().startswith("<switchboard_state>"):
-                    user = last_user
-        # the image parts of the request (docs/images.md): their data urls
-        images = [p.get("image_url", {}).get("url", "")
-                  for m in msgs if isinstance(m.get("content"), list)
-                  for p in m["content"] if isinstance(p, dict) and p.get("type") == "image_url"]
+        family = family_of(self.path)
+        stream = (":streamGenerateContent" in self.path) if family == "gemini" else body.get("stream") is True
+        sse = stream and (family != "gemini" or "alt=sse" in self.path)
+        conv = CONV[family](body)
+        agent = agent_of(conv)
+        idx = last_user(conv)
+        key = (family, agent, conv[idx]["text"] if idx is not None else "")
+        with State.lock:
+            seen = State.seen.get(key, 0)
+            State.seen[key] = seen + 1
+        turn = reply_for(conv, seen)
+        model = body.get("model") or self.path.split("/models/")[-1].split(":")[0] or "fake"
+        status = 200
+        if turn["fixture"]:
+            status, data, is_sse = fixture_reply(family, turn["fixture"], sse)
+            if is_sse:
+                self.send_sse([data])
+            else:
+                self.send(status, data)
+        elif turn["error"] and not (turn["error"]["kind"] == "stream" and stream):
+            status, hdr, err = error_reply(family, turn["error"])
+            self.send(status, json.dumps(err).encode(), headers=hdr)
+        else:
+            mid = bool(turn["error"])
+            out = render(family, turn, model, stream, body, mid)
+            if not stream:
+                self.send(200, json.dumps(out).encode())
+            elif sse:
+                self.send_sse([sse_bytes(family, [e]) for e in out])
+            else:  # Gemini without alt=sse: one JSON array
+                self.send(200, json.dumps([d for _, d in out]).encode())
+        u = conv[idx] if idx is not None else msg("user")
+        last = [m for m in conv if m["role"] == "user"]
         with open(LOG, "a") as f:
-            f.write(json.dumps({"agent": agent, "last_user": last_user[:3000], "user": user[:3000],
-                                "reply": msg, "images": [u[:200] for u in images]}) + "\n")
-        out = {
-            "id": "fake",
-            "object": "chat.completion",
-            "model": body.get("model", "fake"),
-            "choices": [{"index": 0, "message": {"role": "assistant", **msg},
-                         "finish_reason": "tool_calls" if msg.get("tool_calls") else "stop"}],
-            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-        }
-        data = json.dumps(out).encode()
-        self.send_response(200)
-        self.send_header("content-type", "application/json")
-        self.send_header("content-length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+            f.write(json.dumps({"agent": agent, "last_user": (last[-1]["text"] if last else "")[:3000],
+                                "user": u["text"][:3000], "reply": openai_view(turn),
+                                "images": [i[:200] for m in conv for i in m["images"]],
+                                "family": family, "path": self.path, "stream": stream, "status": status,
+                                "error": turn["error"], "fixture": turn["fixture"]}) + "\n")
+
+
+def serve(port=0):
+    """a server in this process (a thread): (server, port)"""
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, srv.server_address[1]
+
+
+def bend_literal(text):
+    """a Bend string literal (LAWS fixtures): escapes like LAWS.bend's"""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "\\r").replace("\n", "\\n") + '"'
+
+
+# the fixtures this server writes itself (`fake_provider.py fixtures`):
+# the shapes above, as files a family's laws can start from before a
+# recorded reply exists. provider_families.py fails when one is stale.
+FAKE_TURN = {"text": "I'll list /tmp.", "reasoning": "The user wants a listing.",
+             "calls": [{"id": "call_1_0", "name": "bash", "args": {"arg": "ls -la /tmp | head"}},
+                       {"id": "call_1_1", "name": "bash", "args": {"arg": "pwd"}}],
+             "error": None, "fixture": None}
+FAKE_BODY = {"stream_options": {"include_usage": True}, "include": ["reasoning.encrypted_content"]}
+
+
+def fake_fixtures(family):
+    """{file name: (bytes, index entry)}"""
+    src = "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)"
+    t = FAKE_TURN
+    exp = {"text": t["text"], "reasoning": t["reasoning"],
+           "calls": [{"name": c["name"], "args": c["args"]} for c in t["calls"]]}
+    out = {
+        "fake-tool-call.sse": (sse_bytes(family, render(family, t, "fake-model", True, FAKE_BODY)),
+                               {"source": src, "expect": exp}),
+        "fake-tool-call.json": ((json.dumps(render(family, t, "fake-model", False, FAKE_BODY), indent=1) + "\n")
+                                .encode(), {"source": src, "expect": exp}),
+    }
+    ev = render(family, t, "fake-model", True, FAKE_BODY, mid_error=True)
+    out["fake-stream-error.sse"] = (sse_bytes(family, ev), {"source": src, "expect": {"error": True}})
+    for name, kind in (("fake-rate-limit", "429"), ("fake-overloaded", "overloaded"), ("fake-server-error", "500")):
+        st, _, body = error_reply(family, {"kind": kind})
+        out["%s.%d.json" % (name, st)] = ((json.dumps(body) + "\n").encode(),
+                                          {"source": src, "expect": {"error": True}})
+    return out
+
+
+def write_fixtures():
+    for fam in FAMILIES:
+        d = os.path.join(FIXTURES, fam)
+        os.makedirs(d, exist_ok=True)
+        ip = os.path.join(d, "index.json")
+        index = json.load(open(ip)) if os.path.exists(ip) else {}
+        for name, (data, entry) in fake_fixtures(fam).items():
+            open(os.path.join(d, name), "wb").write(data)
+            index[name] = entry
+        open(ip, "w").write(json.dumps(dict(sorted(index.items())), indent=1, ensure_ascii=False) + "\n")
+
+
+def main(argv):
+    if argv[:1] == ["fixtures"]:
+        write_fixtures()
+        return
+    if argv[:1] == ["render"]:
+        whole = "--whole" in argv
+        fam, path = [a for a in argv[1:] if a != "--whole"]
+        t = json.load(open(path))
+        turn = {"text": t.get("text", ""), "reasoning": t.get("reasoning", ""), "error": None, "fixture": None,
+                "calls": [{"id": "call_%d" % i, "name": c["name"], "args": c["args"]}
+                          for i, c in enumerate(t.get("calls", []))]}
+        if t.get("error"):
+            st, _, err = error_reply(fam, {"kind": t["error"]})
+            if t["error"] != "stream" or whole:
+                sys.stdout.write(json.dumps(err) + "\n")
+                return
+        out = render(fam, turn, t.get("model", "fake"), not whole, t.get("body"), bool(t.get("error")))
+        sys.stdout.write(json.dumps(out, indent=1) + "\n" if whole else sse_bytes(fam, out).decode())
+        return
+    if argv[:1] == ["bend"]:
+        sys.stdout.write(bend_literal(open(argv[1]).read()) + "\n")
+        return
+    port = int(argv[0]) if argv else 0
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
+    srv.daemon_threads = True
+    print("PORT", srv.server_address[1], flush=True)
+    srv.serve_forever()
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 0
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
-    print("PORT", srv.server_address[1], flush=True)
-    srv.serve_forever()
+    main(sys.argv[1:])

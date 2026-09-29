@@ -1,0 +1,68 @@
+{
+ "fake-overloaded.503.json": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "error": true
+  }
+ },
+ "fake-rate-limit.429.json": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "error": true
+  }
+ },
+ "fake-server-error.500.json": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "error": true
+  }
+ },
+ "fake-stream-error.sse": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "error": true
+  }
+ },
+ "fake-tool-call.json": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "text": "I'll list /tmp.",
+   "reasoning": "The user wants a listing.",
+   "calls": [
+    {
+     "name": "bash",
+     "args": {
+      "arg": "ls -la /tmp | head"
+     }
+    },
+    {
+     "name": "bash",
+     "args": {
+      "arg": "pwd"
+     }
+    }
+   ]
+  }
+ },
+ "fake-tool-call.sse": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "text": "I'll list /tmp.",
+   "reasoning": "The user wants a listing.",
+   "calls": [
+    {
+     "name": "bash",
+     "args": {
+      "arg": "ls -la /tmp | head"
+     }
+    },
+    {
+     "name": "bash",
+     "args": {
+      "arg": "pwd"
+     }
+    }
+   ]
+  }
+ }
+}

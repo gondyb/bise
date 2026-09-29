@@ -1,0 +1,88 @@
+{
+ "fake-overloaded.503.json": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "error": true
+  }
+ },
+ "fake-rate-limit.429.json": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "error": true
+  }
+ },
+ "fake-server-error.500.json": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "error": true
+  }
+ },
+ "fake-stream-error.sse": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "error": true
+  }
+ },
+ "fake-tool-call.json": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "text": "I'll list /tmp.",
+   "reasoning": "The user wants a listing.",
+   "calls": [
+    {
+     "name": "bash",
+     "args": {
+      "arg": "ls -la /tmp | head"
+     }
+    },
+    {
+     "name": "bash",
+     "args": {
+      "arg": "pwd"
+     }
+    }
+   ]
+  }
+ },
+ "fake-tool-call.sse": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "text": "I'll list /tmp.",
+   "reasoning": "The user wants a listing.",
+   "calls": [
+    {
+     "name": "bash",
+     "args": {
+      "arg": "ls -la /tmp | head"
+     }
+    },
+    {
+     "name": "bash",
+     "args": {
+      "arg": "pwd"
+     }
+    }
+   ]
+  }
+ },
+ "mistral-bad-key.401.json": {
+  "source": "recorded 2026-09-29: api.mistral.ai with a wrong key. Quirk: {\"detail\": ...}, not OpenAI's {\"error\": {...}}",
+  "expect": {
+   "error": "Invalid API Key"
+  }
+ },
+ "mistral-tool-call.sse": {
+  "source": "recorded 2026-09-29: mistral/mistral-small-latest, live_providers.py --record (stream_options.include_usage). Quirks: the tool call comes whole in ONE delta (id, name and all the arguments), in the same chunk as finish_reason and usage (no separate usage chunk with choices: []), a 'p' padding field, 9-char tool-call ids",
+  "expect": {
+   "text": "",
+   "calls": [
+    {
+     "name": "bash",
+     "args": {
+      "arg": "echo live-ok-79782"
+     }
+    }
+   ]
+  }
+ }
+}

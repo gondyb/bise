@@ -1,0 +1,62 @@
+{
+ "id": "resp_fake",
+ "object": "response",
+ "created_at": 0,
+ "status": "completed",
+ "error": null,
+ "incomplete_details": null,
+ "model": "fake-model",
+ "output": [
+  {
+   "id": "rs_fake",
+   "type": "reasoning",
+   "summary": [
+    {
+     "type": "summary_text",
+     "text": "The user wants a listing."
+    }
+   ],
+   "encrypted_content": "fake-enc"
+  },
+  {
+   "id": "msg_fake",
+   "type": "message",
+   "status": "completed",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "I'll list /tmp.",
+     "annotations": []
+    }
+   ]
+  },
+  {
+   "id": "fc_call_1_0",
+   "type": "function_call",
+   "status": "completed",
+   "call_id": "call_1_0",
+   "name": "bash",
+   "arguments": "{\"arg\": \"ls -la /tmp | head\"}"
+  },
+  {
+   "id": "fc_call_1_1",
+   "type": "function_call",
+   "status": "completed",
+   "call_id": "call_1_1",
+   "name": "bash",
+   "arguments": "{\"arg\": \"pwd\"}"
+  }
+ ],
+ "usage": {
+  "input_tokens": 10,
+  "input_tokens_details": {
+   "cached_tokens": 2
+  },
+  "output_tokens": 5,
+  "output_tokens_details": {
+   "reasoning_tokens": 3
+  },
+  "total_tokens": 15
+ }
+}

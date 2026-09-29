@@ -1,0 +1,9 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_fake","object":"response","created_at":0,"status":"in_progress","error":null,"incomplete_details":null,"model":"fake-model","output":[],"usage":null}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_fake","object":"response","created_at":0,"status":"in_progress","error":null,"incomplete_details":null,"model":"fake-model","output":[],"usage":null}}
+
+event: error
+data: {"type":"error","sequence_number":2,"code":"server_error","message":"The server had an error while processing your request.","param":null}
+

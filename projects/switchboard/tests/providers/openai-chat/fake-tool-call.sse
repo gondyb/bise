@@ -1,0 +1,36 @@
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"role":"assistant","content":"","refusal":null},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"content":null,"reasoning_content":"The user "},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"content":null,"reasoning_content":"wants a l"},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"content":null,"reasoning_content":"isting."},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"content":"I'll "},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"content":"list "},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"content":"/tmp."},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1_0","type":"function","function":{"name":"bash","arguments":""}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"arg\": \"l"}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"s -la /tmp"}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":" | head\"}"}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_1_1","type":"function","function":{"name":"bash","arguments":""}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"arg"}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"\": \"p"}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"wd\"}"}}]},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"tool_calls"}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":3}}}
+
+data: [DONE]
+

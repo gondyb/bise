@@ -1,0 +1,41 @@
+{
+ "id": "msg_fake",
+ "type": "message",
+ "role": "assistant",
+ "model": "fake-model",
+ "content": [
+  {
+   "type": "thinking",
+   "thinking": "The user wants a listing.",
+   "signature": "fake-sig"
+  },
+  {
+   "type": "text",
+   "text": "I'll list /tmp."
+  },
+  {
+   "type": "tool_use",
+   "id": "toolu_call_1_0",
+   "name": "bash",
+   "input": {
+    "arg": "ls -la /tmp | head"
+   }
+  },
+  {
+   "type": "tool_use",
+   "id": "toolu_call_1_1",
+   "name": "bash",
+   "input": {
+    "arg": "pwd"
+   }
+  }
+ ],
+ "stop_reason": "tool_use",
+ "stop_sequence": null,
+ "usage": {
+  "input_tokens": 8,
+  "cache_creation_input_tokens": 0,
+  "cache_read_input_tokens": 2,
+  "output_tokens": 5
+ }
+}

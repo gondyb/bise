@@ -1,0 +1,4 @@
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","choices":[{"index":0,"delta":{"role":"assistant","content":"","refusal":null},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-fake","object":"chat.completion.chunk","created":0,"model":"fake-model","system_fingerprint":"fp_fake","error":{"code":"server_error","message":"Internal server error"},"choices":[{"index":0,"delta":{"content":""},"finish_reason":"error"}]}
+

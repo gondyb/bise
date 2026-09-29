@@ -1,0 +1,14 @@
+data: {"candidates":[{"content":{"parts":[{"text":"The user ","thought":true}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":10,"totalTokenCount":10},"modelVersion":"fake-model","responseId":"fake-response"}
+
+data: {"candidates":[{"content":{"parts":[{"text":"wants a l","thought":true}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":10,"totalTokenCount":10},"modelVersion":"fake-model","responseId":"fake-response"}
+
+data: {"candidates":[{"content":{"parts":[{"text":"isting.","thought":true}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":10,"totalTokenCount":10},"modelVersion":"fake-model","responseId":"fake-response"}
+
+data: {"candidates":[{"content":{"parts":[{"text":"I'll "}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":10,"totalTokenCount":10},"modelVersion":"fake-model","responseId":"fake-response"}
+
+data: {"candidates":[{"content":{"parts":[{"text":"list "}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":10,"totalTokenCount":10},"modelVersion":"fake-model","responseId":"fake-response"}
+
+data: {"candidates":[{"content":{"parts":[{"text":"/tmp."}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":10,"totalTokenCount":10},"modelVersion":"fake-model","responseId":"fake-response"}
+
+data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"bash","args":{"arg":"ls -la /tmp | head"}},"thoughtSignature":"fake-thought-sig"},{"functionCall":{"name":"bash","args":{"arg":"pwd"}}}],"role":"model"},"index":0,"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"totalTokenCount":18,"candidatesTokenCount":5,"thoughtsTokenCount":3,"cachedContentTokenCount":2},"modelVersion":"fake-model","responseId":"fake-response"}
+

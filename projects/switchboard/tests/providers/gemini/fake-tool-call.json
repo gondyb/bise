@@ -1,0 +1,60 @@
+{
+ "candidates": [
+  {
+   "content": {
+    "parts": [
+     {
+      "text": "The user ",
+      "thought": true
+     },
+     {
+      "text": "wants a l",
+      "thought": true
+     },
+     {
+      "text": "isting.",
+      "thought": true
+     },
+     {
+      "text": "I'll "
+     },
+     {
+      "text": "list "
+     },
+     {
+      "text": "/tmp."
+     },
+     {
+      "functionCall": {
+       "name": "bash",
+       "args": {
+        "arg": "ls -la /tmp | head"
+       }
+      },
+      "thoughtSignature": "fake-thought-sig"
+     },
+     {
+      "functionCall": {
+       "name": "bash",
+       "args": {
+        "arg": "pwd"
+       }
+      }
+     }
+    ],
+    "role": "model"
+   },
+   "index": 0,
+   "finishReason": "STOP"
+  }
+ ],
+ "usageMetadata": {
+  "promptTokenCount": 10,
+  "totalTokenCount": 18,
+  "candidatesTokenCount": 5,
+  "thoughtsTokenCount": 3,
+  "cachedContentTokenCount": 2
+ },
+ "modelVersion": "fake-model",
+ "responseId": "fake-response"
+}

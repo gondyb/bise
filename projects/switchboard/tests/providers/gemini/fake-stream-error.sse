@@ -1,0 +1,4 @@
+data: {"candidates":[{"content":{"parts":[{"text":"The user ","thought":true}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":10,"totalTokenCount":10},"modelVersion":"fake-model","responseId":"fake-response"}
+
+data: {"error":{"code":503,"message":"The model is overloaded. Please try again later.","status":"UNAVAILABLE"}}
+

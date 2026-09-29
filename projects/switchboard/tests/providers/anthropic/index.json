@@ -1,0 +1,82 @@
+{
+ "fake-overloaded.529.json": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "error": true
+  }
+ },
+ "fake-rate-limit.429.json": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "error": true
+  }
+ },
+ "fake-server-error.500.json": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "error": true
+  }
+ },
+ "fake-stream-error.sse": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "error": true
+  }
+ },
+ "fake-tool-call.json": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "text": "I'll list /tmp.",
+   "reasoning": "The user wants a listing.",
+   "calls": [
+    {
+     "name": "bash",
+     "args": {
+      "arg": "ls -la /tmp | head"
+     }
+    },
+    {
+     "name": "bash",
+     "args": {
+      "arg": "pwd"
+     }
+    }
+   ]
+  }
+ },
+ "fake-tool-call.sse": {
+  "source": "fake_provider.py fixtures (the shape of the docs in providers.md §8, not a recorded reply)",
+  "expect": {
+   "text": "I'll list /tmp.",
+   "reasoning": "The user wants a listing.",
+   "calls": [
+    {
+     "name": "bash",
+     "args": {
+      "arg": "ls -la /tmp | head"
+     }
+    },
+    {
+     "name": "bash",
+     "args": {
+      "arg": "pwd"
+     }
+    }
+   ]
+  }
+ },
+ "foundry-tool-call.sse": {
+  "source": "recorded 2026-09-29: foundry/claude-opus-5-5 (the foundry proxy), live_providers.py --record; no thinking asked. Quirks: trailing spaces after message_start's JSON, usage.cache_creation/inference_geo/diagnostics fields, the first input_json_delta is empty",
+  "expect": {
+   "text": "",
+   "calls": [
+    {
+     "name": "bash",
+     "args": {
+      "arg": "echo live-ok-79777"
+     }
+    }
+   ]
+  }
+ }
+}

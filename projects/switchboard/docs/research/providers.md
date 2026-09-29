@@ -597,3 +597,113 @@ spawn, so a `login` reaches a running hub's agents only after the hub
 restarts (`bend-harness switchboard --stop`). Later: onboarding's model
 step (`rust/tui/src/onboarding.rs`, today it writes `<root>/.env`) can
 call `auth::Store` + `auth_cli::login` instead.
+
+## 8. BISE-153 as built: the fake provider, fixtures, live tests
+
+### 8.1 The fake provider (`tests/fake_provider.py`)
+
+One server, four families; the URL path picks the family:
+
+| path | family | streamed when | shapes from |
+|---|---|---|---|
+| `…/messages` | `anthropic` | `"stream": true` | docs.anthropic.com/en/docs/build-with-claude/streaming, /en/api/messages, /en/api/errors |
+| `…/responses` | `openai-responses` | `"stream": true` | platform.openai.com/docs/api-reference/responses-streaming, /responses/object |
+| `…/models/<m>:streamGenerateContent?alt=sse` (`:generateContent` whole; no `alt=sse`: a JSON array) | `gemini` | the path | ai.google.dev/api/generate-content, /gemini-api/docs/thought-signatures, /gemini-api/docs/troubleshooting |
+| anything else (`…/chat/completions`) | `openai-chat` | `"stream": true` | platform.openai.com/docs/api-reference/chat-streaming, /docs/guides/error-codes; `reasoning_content`: api-docs.deepseek.com/guides/reasoning_model; mid-stream error: openrouter.ai/docs/api-reference/errors |
+
+- Point the harness at it with a custom provider (BISE-141/142): in the
+  models file (`BISE_MODELS_FILE`) or config.toml,
+  `[providers.fake] api = "anthropic" base_url = "http://127.0.0.1:PORT/v1" key_env = ""`
+  and `model = "fake/any"`; the URL is base_url + the family's
+  endpoint. `BEND_PROVIDER_URL` still wins (the old tests: e2e, tmux).
+- Not streamed = the whole JSON reply; the old openai-chat reply is
+  unchanged (e2e and the tmux tests run on it).
+- Streams are chunked HTTP/1.1 with one event per chunk. What each
+  family's stream carries: Anthropic `message_start` / `ping` /
+  `content_block_*` (thinking + `signature_delta`, text, `tool_use` with
+  an empty first `input_json_delta`) / `message_delta` (stop_reason,
+  usage) / `message_stop`. OpenAI Chat `chat.completion.chunk`: role
+  first, `reasoning_content` deltas, content deltas, `tool_calls`
+  deltas by `index` (id + name first, then argument pieces),
+  finish_reason, then with `stream_options.include_usage` a `choices: []`
+  usage chunk (and `usage: null` on the others), `data: [DONE]`.
+  Responses: `response.created` / `in_progress`, per output item
+  `output_item.added` … `.done` (reasoning summary deltas,
+  `output_text.delta`, `function_call_arguments.delta`), every event with
+  `sequence_number`, `response.completed` with usage;
+  `encrypted_content` on the reasoning item when the request `include`s
+  it. Gemini: `data:` chunks ended by CRLF CRLF, thought parts
+  (`thought: true`), text parts, whole `functionCall` parts (the first
+  with `thoughtSignature`), `finishReason` + `usageMetadata` last.
+- The script is in the last real user message: `[[bash: CMD]]` (one call
+  per request, as before), `[[think: TEXT]]` (reasoning on every reply),
+  `[[error: 429|500|overloaded|stream [xN] [retry=S]]]` (the first N
+  requests fail with the family's error body and Retry-After; `stream` =
+  a 200 stream that breaks with the family's error event), `[[fixture:
+  NAME]]` (the first request gets `tests/providers/<family>/NAME.sse`,
+  `NAME.json` or `NAME.<status>.json` byte for byte). Requests of every
+  family are read back into one neutral conversation (tool results in
+  Anthropic user blocks, `function_call_output`, `functionResponse`),
+  so the same script runs on all four.
+- `$FAKE_LOG` lines keep `agent, last_user, user, reply, images` and add
+  `family, path, stream, status, error, fixture`.
+- In-process: `fake_provider.serve()` → `(server, port)`.
+
+### 8.2 The fixtures (`tests/providers/<family>/`)
+
+One folder per family (`anthropic`, `openai-chat`, `openai-responses`,
+`gemini`), files named by what they are:
+
+- `NAME.sse`: a streamed reply body, raw bytes as the API sent them;
+- `NAME.json`: a whole reply body (Gemini: an object or the array);
+- `NAME.<status>.json`: an error body with its HTTP status;
+- `index.json`: per file, `source` (recorded: provider/model, date,
+  how; or `fake_provider.py fixtures`) and `expect`: what the reply
+  says, any of `text`, `reasoning`, `calls` (`[{name, args}]`), `error`
+  (a string, or `true` = any error).
+
+`tests/provider_families.py` (in run_all, ~5 s) folds every file with
+`tests/provider_folds.py` (one reference fold per family, written from
+the docs, independent of the renderers) and checks its `expect`; a file
+missing from the index fails. It also checks the renderers against the
+folds, the server's paths, markers and errors in each family's request
+shape, and a real repl-live on the fake through `[providers.fake]`
+(anthropic streamed with thinking and a retried 529; a config.toml model
+switch to openai-chat; a gemini model fails cleanly until BISE-148).
+
+Today: `fake-*` for every family (`fake_provider.py fixtures` writes
+them: tool call streamed and whole, mid-stream error, 429, overloaded,
+500; the test fails when one is stale); recorded:
+`anthropic/foundry-tool-call.sse` (the foundry proxy),
+`openai-chat/mistral-tool-call.sse` (Mistral sends the whole tool call
+in one delta, in the same chunk as finish_reason and usage, plus a `p`
+padding field) and `openai-chat/mistral-bad-key.401.json`
+(`{"detail": …}`, not OpenAI's `{"error": …}`). No OpenAI, Anthropic
+direct or Gemini key here: their folders hold only `fake-*` until
+someone with a key runs `--record`.
+
+### 8.3 How a family plugs in (BISE-144, 146, 147, 148)
+
+1. Record real replies: `python3 projects/switchboard/tests/live_providers.py --record <row>`
+   (rows: anthropic, foundry, openai, openai-responses, google, gemini,
+   mistral, openrouter, groq, xai, deepseek, together, fireworks,
+   cerebras) writes `<family>/<row>-tool-call.sse` and
+   `<row>-bad-key.<status>.json` with their index entries. Add by hand
+   the cases you need (reasoning, several calls, a refusal), each with
+   its `expect`.
+2. LAWS fixtures: `python3 projects/switchboard/tests/fake_provider.py bend <file>`
+   prints the file as a Bend string literal; the law asserts the
+   family's fold (`core/<family>-stream.bend`) gives the OK/CALL/END
+   lines matching the file's `expect` (the same claim the Python fold
+   checks). Prefer recorded files; a `fake-*` file only until one exists.
+3. If the family streams something the fake does not send yet (a new
+   event, a quirk), change its renderer in fake_provider.py, then
+   `fake_provider.py fixtures`, and extend its reference fold in
+   provider_folds.py when the docs say the fold must read it.
+4. The harness test: in `provider_families.py` part D, the gemini (148)
+   / responses (147) check turns from "fails cleanly" into a two-call
+   bash turn like the anthropic one (add `[providers.fakeresp]`); 144
+   makes the openai-chat turn streamed (the check prints `stream=`).
+5. Live: `live_providers.py <row>` runs one real bash turn through
+   repl-live on each row whose key is set (skipped otherwise; never in
+   run_all), with the row's provider in a models file.
