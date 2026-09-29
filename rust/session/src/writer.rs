@@ -63,7 +63,12 @@ pub struct Writer {
 }
 
 fn now_iso() -> String {
-    let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    iso(std::time::SystemTime::now())
+}
+
+/// An instant as `2026-10-01T09:14:03.120Z` (UTC, ms).
+pub fn iso(t: std::time::SystemTime) -> String {
+    let d = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
     let (secs, ms) = (d.as_secs() as i64, d.subsec_millis());
     let (days, rem) = (secs.div_euclid(86400), secs.rem_euclid(86400));
     // civil from days (Howard Hinnant)
@@ -86,7 +91,12 @@ fn now_iso() -> String {
 
 /// `s-<utc yyyymmdd-hhmmss>-<6 hex>` (§12 decision 2).
 pub fn new_session_id() -> String {
-    let t = now_iso();
+    session_id_at(std::time::SystemTime::now())
+}
+
+/// The session id of a session started at `t`.
+pub fn session_id_at(t: std::time::SystemTime) -> String {
+    let t = iso(t);
     let mut rnd = [0u8; 3];
     if let Ok(mut f) = File::open("/dev/urandom") {
         use std::io::Read;
