@@ -72,7 +72,10 @@ pub(crate) struct App {
     /// popup stays closed until the text changes.
     pub(crate) popup_dismissed: Option<String>,
     pub(crate) history: Vec<String>,
+    /// the tick pulses' tick (BISE-204): set by the draw loop from `anim`
     pub(crate) tick: u32,
+    /// the animation clock: the frames of the gust and the pulses
+    pub(crate) anim: crate::anim::Clock,
     /// the working gust's motion (BISE-107): set by the draw loop, still
     /// until then (and in tests)
     pub(crate) motion: crate::gust::Motion,
@@ -206,6 +209,7 @@ impl App {
             popup_dismissed: None,
             history: Vec::new(),
             tick: 0,
+            anim: crate::anim::Clock::default(),
             motion: crate::gust::Motion::Still,
             motion_away: crate::gust::Motion::Still,
             focus_lost: false,

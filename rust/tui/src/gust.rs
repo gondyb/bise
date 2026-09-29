@@ -8,7 +8,7 @@
 //! - the panel's status cell: always the breath.
 //!
 //! The draw loop keeps the [`Motion`] in `App::motion`: a frame number
-//! from the clock ([`clock`]), or [`Motion::Still`] (the terminal lost the
+//! from the clock ([`crate::anim::Clock::gust`]), or [`Motion::Still`] (the terminal lost the
 //! focus, a draw took longer than the budget, `BISE_REDUCE_MOTION` is set;
 //! and in tests): then every form is one static `∿` in the text color.
 //! While you type (zen, BISE-121) it is [`Motion::Calm`]: half the speed,
@@ -116,12 +116,6 @@ pub(crate) fn frame(elapsed: Duration) -> u64 {
     elapsed.as_millis() as u64 / MOTIF.frame_ms.max(1)
 }
 
-/// The frame number now (the clock starts at the first call).
-pub(crate) fn clock() -> u64 {
-    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-    frame(START.get_or_init(std::time::Instant::now).elapsed())
-}
-
 /// A draw longer than this stops the motion (the redraw budget).
 pub(crate) const DRAW_BUDGET: Duration = Duration::from_millis(60);
 
@@ -132,14 +126,15 @@ pub(crate) fn reduce_motion() -> bool {
 
 /// The motion for the next frame: moving unless the terminal lost the
 /// focus, the last draw took longer than [`DRAW_BUDGET`] or the user
-/// asked for less motion; calm while you type (`zen`).
-pub(crate) fn motion(focus_lost: bool, last_draw: Duration, reduce: bool, zen: bool) -> Motion {
+/// asked for less motion; calm while you type (`zen`). `now` is the
+/// clock's frame ([`crate::anim::Clock::gust`]).
+pub(crate) fn motion(focus_lost: bool, last_draw: Duration, reduce: bool, zen: bool, now: u64) -> Motion {
     if focus_lost || reduce || last_draw > DRAW_BUDGET {
         Motion::Still
     } else if zen {
-        Motion::Calm(clock() / 2)
+        Motion::Calm(now / 2)
     } else {
-        Motion::Frame(clock())
+        Motion::Frame(now)
     }
 }
 
@@ -294,13 +289,13 @@ mod tests {
     #[test]
     fn motion_stops_on_focus_loss_slow_draws_and_the_env() {
         let fast = Duration::from_millis(5);
-        assert!(matches!(motion(false, fast, false, false), Motion::Frame(_)));
-        assert_eq!(motion(true, fast, false, false), Motion::Still);
-        assert_eq!(motion(false, fast, true, false), Motion::Still);
-        assert_eq!(motion(false, DRAW_BUDGET + Duration::from_millis(1), false, false), Motion::Still);
+        assert!(matches!(motion(false, fast, false, false, 40), Motion::Frame(_)));
+        assert_eq!(motion(true, fast, false, false, 40), Motion::Still);
+        assert_eq!(motion(false, fast, true, false, 40), Motion::Still);
+        assert_eq!(motion(false, DRAW_BUDGET + Duration::from_millis(1), false, false, 40), Motion::Still);
         // zen (BISE-121): calm, and still wins over it
-        assert!(matches!(motion(false, fast, false, true), Motion::Calm(_)));
-        assert_eq!(motion(false, fast, true, true), Motion::Still);
+        assert!(matches!(motion(false, fast, false, true, 40), Motion::Calm(_)));
+        assert_eq!(motion(false, fast, true, true, 40), Motion::Still);
     }
 
     #[test]

@@ -356,11 +356,17 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
             continue;
         }
         pump_voice(app);
-        let zen = app.zen.active(std::time::Instant::now());
-        app.motion = crate::gust::motion(app.focus_lost, last_draw, reduce_motion, zen);
+        // BISE-204: every animation reads the clock, never the turns
+        let now = std::time::Instant::now();
+        let zen = app.zen.active(now);
+        let frame = app.anim.gust(now);
+        // the tick pulses (`∿` of a running tool, `·` starting) hold
+        // still while you type (zen, BISE-121)
+        app.tick = app.anim.pulse(now, zen, app.zen.end());
+        app.motion = crate::gust::motion(app.focus_lost, last_draw, reduce_motion, zen, frame);
         // zen (BISE-132): the other agents' gusts stand still, their `∿`
         // pulsing slowly in color (a hush: it still works)
-        app.motion_away = crate::gust::away(app.motion, zen, app.zen.no_color, crate::gust::clock());
+        app.motion_away = crate::gust::away(app.motion, zen, app.zen.no_color, frame);
         let t_draw = std::time::Instant::now();
         let drawn = crash::guarded(|| {
             // BISE-92: the terminal's own background follows the theme
@@ -443,11 +449,6 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
         }
         // BISE-120a: the drafts on disk, once they stop moving
         sb::drafts::tick(app);
-        // the tick pulses (`∿` of a running tool, `·` starting) hold
-        // still while you type (zen, BISE-121)
-        if !app.zen.active(std::time::Instant::now()) {
-            app.tick = app.tick.wrapping_add(1);
-        }
     }
     Ok(())
 }

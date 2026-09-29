@@ -146,6 +146,12 @@ impl Zen {
         self.start.is_some() && self.broken.is_none() && self.last.is_some_and(|t| now < t + HOLD)
     }
 
+    /// When the last zen ends (or ended): a break, else [`HOLD`] after
+    /// the last key; the pulses' hold stops there (anim.rs, BISE-204).
+    pub(crate) fn end(&self) -> Option<Instant> {
+        self.last.map(|l| self.broken.unwrap_or(l + HOLD))
+    }
+
     /// The fade at `now`, 0 (none) to 1 (all the way), before steps.
     fn raw(&self, now: Instant) -> f32 {
         let (Some(start), Some(last)) = (self.start, self.last) else { return 0.0 };

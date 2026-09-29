@@ -83,6 +83,7 @@ mod queue;
 mod layout;
 mod chrome;
 mod gust;
+mod anim;
 mod zen;
 mod voice;
 #[cfg(test)]
