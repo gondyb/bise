@@ -1951,11 +1951,10 @@ Index:
 
 ### BISE-100 · done is a pink check, not a heart
 
-- **status:** done · **owner:** bise-k-keys · **commits:** 92f12aa + 756c491 (code; 92f12aa's tree came from a stale base and undid f138fc3, fd88a3a, e71ec74, 7bca11e, b62d391: 756c491 restores them, its tree = f138fc3 + the seven BISE-100 files), QA shots cfbdbf1 (dark, light, ascii and the onboarding ones)
+- **status:** todo · **owner:** bise-k-keys · **commits:** —
 - **track:** K · **owns:** `theme.rs` (the done glyph), its uses in `sb/panel.rs`, `render.rs`, `feed.rs`, `sb/cards.rs`, the tests that read `♡`
 - **spec:** book §6 (agent status table), §8, §9, §11, §17 (user decision, Gabriel 2026-09-29: the `♡` was not clear).
 - **what:** every "done" in the product shows `✓` in accent (pink) instead of `♡`: the panel rows, the header / frame counts (`✓ 4 done`), reports (`✓ bench is done …`), `✓ turn done` when built. ASCII stays `*`. Your read marks (`✓` faint, `✓✓` accent, at the end of your lines) are unchanged: the place tells them apart. `♡` stays only outside the product (site, landing).
-- **notes (bise-k-keys):** `theme::G_DONE` is `✓`, drawn through `theme::done_glyph()`: `*` under `BISE_ASCII=1`, because `glyph("✓")` gives `v`, the ASCII form of your read mark (same Unicode glyph, the place tells them apart). `♡ → *` moves to the replaced glyphs of the ASCII table, and a theme test checks that no other glyph reads `*`. The check is accent in: the panel rows (`sb/panel.rs` glyph), the header / frame counts (check accent, `4 done` dim), reports (`report_lines`), done cards in the feed, the card box title (accent check, plain title; the border stays faint) and the `/close` list, the onboarding theme preview. Tests: `♡` → `✓` in feed_render_tests / panel / cards, and the done card's glyph color is accent. No tmux test read `♡`. Gates: build, `cargo test -p bend-tui` 317, clippy `--all-targets -D warnings`; `run_all.sh` green on 4e050e8 (18 PASS, 317 + 100 Rust tests). `✓ turn done` is not built yet (§17).
 
 ### BISE-101 · a wider reading column (+15%)
 
@@ -1979,3 +1978,10 @@ Index:
 - **track:** K · **owns:** `keybar.rs` (modes of an agent's view), tests
 - **spec:** book §13 "The composer pane" (key bar in an agent's view). User request 2026-09-29.
 - **what:** in an agent's view, `esc back to main` is the first pair of every key set, never dropped (pairs drop from the right, `/ commands` first); the tip is hidden there.
+
+### BISE-104 · the tip changes every 5 minutes
+
+- **status:** todo · **owner:** bise-k-keys · **commits:** —
+- **track:** K · **owns:** `keybar.rs`, `help.rs` TIPS, the timer (in the app state, redraw on change only)
+- **spec:** book §8 "The frame" (key bar line). User request 2026-09-29.
+- **what:** the tip on the right of the key bar changes every 5 minutes (was: one per session), going through `help::TIPS` in order (start where the last session stopped, saved with the hints if cheap, else start at a random one); never changes while you type; still hidden in an agent's view and when there is no room. No extra redraws beyond the change.
