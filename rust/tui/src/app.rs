@@ -78,6 +78,10 @@ pub(crate) struct App {
     pub(crate) focus_lost: bool,
     /// zen while you type (BISE-121): fed by the loop, read by the draw
     pub(crate) zen: crate::zen::Zen,
+    /// the last key went to the composer's own arms (an edit, a move, a
+    /// newline), not to an app shortcut: set by `on_key`, read by zen
+    /// (BISE-128)
+    pub(crate) key_in_composer: bool,
     pub(crate) session_id: String,
     pub(crate) rx: Receiver<String>,
     pub(crate) should_quit: bool,
@@ -199,6 +203,7 @@ impl App {
             motion: crate::gust::Motion::Still,
             focus_lost: false,
             zen: crate::zen::Zen::default(),
+            key_in_composer: false,
             session_id,
             rx,
             should_quit: false,

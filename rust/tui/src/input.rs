@@ -337,6 +337,8 @@ fn flash(app: &mut App, note: String) {
 
 /// A key event; true when it quits the UI.
 pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
+    // zen (BISE-128): only the composer's own arms below set it
+    app.key_in_composer = false;
     if help::on_key(app, k) {
         return false;
     }
@@ -431,6 +433,7 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         | (KeyCode::Char('j'), KeyModifiers::CONTROL)
         | (KeyCode::Enter, KeyModifiers::ALT) => {
             app.ed.insert("\n");
+            app.key_in_composer = true;
         }
         (KeyCode::Enter, _) => {
             if let Some(c) = sel {
@@ -473,6 +476,7 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         // message (the history comes after the queue)
         (KeyCode::Up, KeyModifiers::NONE) if !popup_open && app.ed.text.is_empty() && !app.queued.is_empty() => {
             crate::queue::pop_last(app);
+            app.key_in_composer = true;
         }
         // the popup takes the plain arrows
         (KeyCode::Up, KeyModifiers::NONE) if popup_open => {
@@ -481,7 +485,10 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         (KeyCode::Down, KeyModifiers::NONE) if popup_open => {
             app.popup_sel = popup_step(app.popup_sel, matches.len(), true);
         }
-        _ => composer_key(app, k),
+        _ => {
+            composer_key(app, k);
+            app.key_in_composer = true;
+        }
     }
     false
 }

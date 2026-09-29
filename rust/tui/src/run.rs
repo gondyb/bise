@@ -260,25 +260,25 @@ impl Before {
     }
 }
 
-/// What an input event is for zen (BISE-121, BISE-124), from the state
-/// before it and after it. A key reached the composer when nothing
-/// outside it changed (⏎ send may bring the feed to its end).
+/// What an input event is for zen (BISE-121, BISE-124, BISE-128), from
+/// the state before it and after it. A key reached the composer when
+/// `on_key` gave it to the composer's own arms (no app shortcut took it)
+/// and nothing outside the composer changed.
 fn zen_input(app: &App, ev: &Event, before: &Before) -> crate::zen::Input {
     use crate::zen::Input;
     let changed = app.ed.text != before.text || app.ed.pending_dead() != before.dead;
     let popup = before.popup || !crate::commands::popup_items(app).is_empty();
-    let enter = matches!(ev, Event::Key(k) if k.code == crossterm::event::KeyCode::Enter);
-    let composer = !before.front
-        && !app.help.is_some()
-        && !app.term.shown()
-        && sb::scene(app) == before.scene
-        && app.feed_sel == before.feed_sel
-        && (enter || (app.follow, app.scroll) == before.view)
-        && app.show_thinking == before.show_thinking
-        && app.voice.state() == before.voice;
+    let outside = before.front
+        || app.help.is_some()
+        || app.term.shown()
+        || sb::scene(app) != before.scene
+        || app.feed_sel != before.feed_sel
+        || (app.follow, app.scroll) != before.view
+        || app.show_thinking != before.show_thinking
+        || app.voice.state() != before.voice;
     match ev {
-        Event::Key(k) => crate::zen::key_input(k, composer, changed, popup),
-        Event::Paste(_) if composer && !popup => {
+        Event::Key(k) => crate::zen::key_input(k, app.key_in_composer && !outside, changed, popup),
+        Event::Paste(_) if !outside && !popup => {
             if changed {
                 Input::Typing
             } else {
@@ -544,19 +544,20 @@ mod zen_tests {
             assert!(i == Input::Hold || i == Input::Typing, "{k:?} {m:?}: {i:?}");
             assert!(app.zen.active(t), "{k:?} {m:?}");
         }
-        // the edits: word delete, shift+enter, ⏎ send
+        // the edits: word delete, the new lines (shift/alt+⏎, ctrl+j)
         event(&mut app, key(KeyCode::End), t);
         assert_eq!(event(&mut app, with(KeyCode::Backspace, a), t), Input::Typing);
         event(&mut app, key(KeyCode::Char('x')), t);
         assert_eq!(event(&mut app, with(KeyCode::Enter, s), t), Input::Typing);
-        event(&mut app, key(KeyCode::Char('y')), t);
-        assert_eq!(event(&mut app, key(KeyCode::Enter), t), Input::Typing, "⏎ send");
-        assert!(app.ed.text.is_empty());
+        assert_eq!(event(&mut app, with(KeyCode::Enter, a), t), Input::Typing);
+        assert_eq!(event(&mut app, with(KeyCode::Char('j'), c), t), Input::Typing);
+        assert!(app.ed.text.ends_with("x\n\n\n"));
         assert!(app.zen.active(t));
-        // a move 7 s later starts the 8 s again
-        let later = t + std::time::Duration::from_secs(7);
+        // a move 4 s later starts the 5 s again (BISE-128: was 8 s)
+        let later = t + std::time::Duration::from_secs(4);
         assert_eq!(event(&mut app, key(KeyCode::Left), later), Input::Hold);
-        assert!(app.zen.active(later + std::time::Duration::from_secs(7)));
+        assert!(app.zen.active(later + std::time::Duration::from_millis(4999)));
+        assert!(!app.zen.active(later + std::time::Duration::from_secs(5)));
         // an arrow alone never starts zen
         let mut app = app_with_agents();
         app.ed.insert("abc");
@@ -580,6 +581,105 @@ mod zen_tests {
         event(&mut app, key(KeyCode::Backspace), t);
         assert!(app.zen.active(t));
         assert_eq!(event(&mut app, with(KeyCode::Char('k'), KeyModifiers::CONTROL), t), Input::Other);
+        assert!(!app.zen.active(t));
+    }
+
+    /// BISE-128 (user: « Quand je fais enter ça devrait enlever le zen
+    /// mode direct. pareil si je lance un shortcut pour switcher ou
+    /// naviguer dans la UI »): ⏎ send and every shortcut of help::ROWS
+    /// that switches or moves the UI leave zen at once, each in a state
+    /// where it does its job.
+    #[test]
+    fn enter_and_every_ui_shortcut_leave_zen() {
+        let t = Instant::now();
+        let (n, s, a, c) = (KeyModifiers::NONE, KeyModifiers::SHIFT, KeyModifiers::ALT, KeyModifiers::CONTROL);
+        let card = json!({"ev": "state", "agents": [
+            {"name": "main", "main": true, "status": "idle"},
+            {"name": "docs", "status": "working", "objective": "write the docs"},
+        ], "cards": [
+            {"id": 7, "kind": "question", "agent": "docs", "text": "v1 or v2?", "age_ms": 0},
+            {"id": 8, "kind": "question", "agent": "docs", "text": "ship?", "age_ms": 0},
+        ]});
+        // (what, the key, set up the app once in zen, composer empty or not)
+        type Setup = fn(&mut App);
+        let none: Setup = |_| {};
+        // ctrl+k on an empty composer selects an agent in the panel
+        let select: Setup = |app| {
+            on_key(app, &KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL));
+        };
+        let scrolled: Setup = |app| {
+            app.follow = false;
+            app.scroll = -10;
+        };
+        let in_docs: Setup = |app| crate::sb::focus(app, "docs");
+        let pending: Setup = |app| app.pending = true;
+        let cases: Vec<(&str, KeyCode, KeyModifiers, bool, bool, Setup)> = vec![
+            // (name, code, mods, with cards, text in the composer, setup)
+            ("⏎ send", KeyCode::Enter, n, false, true, none),
+            ("⏎ on an empty composer", KeyCode::Enter, n, false, false, none),
+            ("⌥1 to an agent", KeyCode::Char('1'), a, false, true, none),
+            ("⌥0 back to main", KeyCode::Char('0'), a, false, true, in_docs),
+            ("ctrl+k next agent", KeyCode::Char('k'), c, false, false, none),
+            ("alt+↓ next agent", KeyCode::Down, a, false, false, none),
+            ("ctrl+j previous agent", KeyCode::Char('j'), c, false, false, none),
+            ("alt+↑ previous agent", KeyCode::Up, a, false, false, none),
+            ("⏎ enter the selected agent", KeyCode::Enter, n, false, false, select),
+            ("space preview", KeyCode::Char(' '), n, false, false, select),
+            ("D drop", KeyCode::Char('D'), s, false, false, select),
+            ("A archived", KeyCode::Char('A'), s, false, false, select),
+            ("esc close the selection", KeyCode::Esc, n, false, false, select),
+            ("esc back to main", KeyCode::Esc, n, false, false, in_docs),
+            ("esc draft away", KeyCode::Esc, n, false, true, none),
+            ("ctrl+g card box", KeyCode::Char('g'), c, true, true, none),
+            ("ctrl+a card box", KeyCode::Char('a'), c, true, false, none),
+            ("ctrl+n next card", KeyCode::Char('n'), c, true, true, none),
+            ("ctrl+p previous card", KeyCode::Char('p'), c, true, true, none),
+            ("alt+r answer the card", KeyCode::Char('r'), a, true, true, none),
+            ("ctrl+f card full screen", KeyCode::Char('f'), c, true, true, none),
+            ("ctrl+x close the card", KeyCode::Char('x'), c, true, true, none),
+            ("pgup the card", KeyCode::PageUp, n, true, true, none),
+            ("ctrl+o open everything", KeyCode::Char('o'), c, false, true, none),
+            ("pgup the feed", KeyCode::PageUp, n, false, true, none),
+            ("pgdn the feed", KeyCode::PageDown, n, false, true, scrolled),
+            ("end back to the bottom", KeyCode::End, n, false, true, scrolled),
+            ("ctrl+l clear", KeyCode::Char('l'), c, false, true, none),
+            ("ctrl+c interrupt", KeyCode::Char('c'), c, false, true, pending),
+            ("ctrl+r voice", KeyCode::Char('r'), c, false, true, none),
+            ("ctrl+v attach", KeyCode::Char('v'), c, false, true, none),
+            ("cmd+c copy", KeyCode::Char('c'), KeyModifiers::SUPER, false, true, none),
+            ("tab", KeyCode::Tab, n, false, true, none),
+            ("/ popup", KeyCode::Char('/'), n, false, false, none),
+            ("$ popup", KeyCode::Char('$'), n, false, false, none),
+        ];
+        for (what, code, m, cards, text, setup) in cases {
+            let mut app = app_with_agents();
+            if cards {
+                sb::dispatch(&mut app, &card.to_string());
+                let calls = app.sb.calls();
+                app.zen.calls(calls, t);
+                let area = ratatui::layout::Rect::new(0, 0, 120, 36);
+                if crate::sb::card_box_height(&app, area, 20) == 0 {
+                    on_key(&mut app, &KeyEvent::new(KeyCode::Char('g'), c));
+                }
+                assert!(crate::sb::card_box_height(&app, area, 20) > 0, "{what}: the card box is up");
+            }
+            setup(&mut app);
+            event(&mut app, key(KeyCode::Char('h')), t);
+            if !text {
+                event(&mut app, key(KeyCode::Backspace), t);
+            }
+            assert!(app.zen.active(t), "{what}: in zen first");
+            assert_eq!(app.ed.text.is_empty(), !text, "{what}");
+            assert_eq!(event(&mut app, with(code, m), t), Input::Other, "{what}");
+            assert!(!app.zen.active(t), "{what}");
+        }
+        // the help overlay comes up by ⏎ (/help): out; a key typed in it
+        // (its filter) does not start zen
+        let mut app = app_with_agents();
+        app.ed.insert("/help");
+        assert_eq!(event(&mut app, key(KeyCode::Enter), t), Input::Other);
+        assert!(app.help.is_some());
+        assert_eq!(event(&mut app, key(KeyCode::Char('z')), t), Input::Other);
         assert!(!app.zen.active(t));
     }
 

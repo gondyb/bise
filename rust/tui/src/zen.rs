@@ -3,18 +3,20 @@
 //!
 //! - Enters on a composer key that changes the composer (its text or a
 //!   pending dead key: a character, with any modifier, that types; an
-//!   Option accent; backspace, delete, shift+enter, ⏎ send; a paste),
-//!   with no popup open.
+//!   Option accent; backspace, delete, a new line (shift/alt+⏎,
+//!   ctrl+j); a paste), with no popup open.
 //! - Holds (the timer starts again) on every key that edits or moves
 //!   inside the composer (BISE-124): the above, and the arrows,
 //!   home/end, the word moves (⌥/ctrl+arrows), undo, select all. A key
 //!   the app has no use for (a lone modifier, caps lock) changes nothing.
-//! - Leaves [`HOLD`] (8 s) after the last composer key, or at once on:
-//!   a mouse move, click or scroll, the terminal losing the focus, esc,
-//!   tab, page up/down, a key taken outside the composer (⌥0-9 and the
-//!   panel keys, ctrl+o and the other app shortcuts, a key while the
-//!   help or the terminal pane is up), a `/` `@` `$` popup, and anything
-//!   that needs you (a card, a message to you, a confirm, an error).
+//! - Leaves [`HOLD`] (5 s, BISE-128) after the last typing key, or at
+//!   once on: ⏎ send (BISE-128), a mouse move, click or scroll, the
+//!   terminal losing the focus, esc, tab, page up/down, every key an app
+//!   shortcut takes before the composer (⌥0-9 and the panel keys, the
+//!   card keys, ctrl+g, ctrl+o and the other app shortcuts, end back to
+//!   the bottom, a key while the help or the terminal pane is up), a
+//!   `/` `@` `$` popup, and anything that needs you (a card, a message
+//!   to you, a confirm, an error).
 //! - In zen, every cell's text is mixed [`DEPTH`] (45 %) toward its own
 //!   background, over [`FADE`] (250 ms) in [`STEPS`] steps, out the same
 //!   way. Kept as they are: the composer's text and cursor, the
@@ -35,8 +37,8 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};
 use std::time::{Duration, Instant};
 
-/// Zen lasts this long after the last composer key.
-pub(crate) const HOLD: Duration = Duration::from_secs(8);
+/// Zen lasts this long after the last composer key (BISE-128: was 8 s).
+pub(crate) const HOLD: Duration = Duration::from_secs(5);
 /// The fade in (and out).
 pub(crate) const FADE: Duration = Duration::from_millis(250);
 /// The fade's steps: at most this many repaints each way.
@@ -86,14 +88,16 @@ pub(crate) enum Input {
 /// A key the composer takes (BISE-124): every key the editor maps to an
 /// edit or a move (a character with any modifier that types, an Option
 /// accent or dead key, backspace/delete and their word forms, the
-/// arrows, home/end, ctrl+a/e/…, undo, select all, cut), ⏎ and its
-/// newline forms (shift/alt+⏎, ctrl+j). Not: copy, ⌥0-9 (switches
-/// agents), esc, tab, page up/down, ctrl+o and the other app shortcuts.
-/// Whether it really reached the composer is the caller's to say.
+/// arrows, home/end, ctrl+a/e/…, undo, select all, cut), the newline
+/// keys (shift/alt+⏎, ctrl+j). Not: ⏎ send (BISE-128), copy, ⌥0-9
+/// (switches agents), esc, tab, page up/down, ctrl+o and the other app
+/// shortcuts. Whether it really reached the composer is the caller's to
+/// say (`App::key_in_composer`).
 pub(crate) fn composer_key(k: &KeyEvent) -> bool {
     use crate::editor::Action;
     match (k.code, k.modifiers) {
-        (KeyCode::Enter, _) | (KeyCode::Char('j'), KeyModifiers::CONTROL) => true,
+        (KeyCode::Enter, KeyModifiers::SHIFT | KeyModifiers::ALT) | (KeyCode::Char('j'), KeyModifiers::CONTROL) => true,
+        (KeyCode::Enter, _) => false,
         (KeyCode::Char(c), KeyModifiers::ALT) if c.is_ascii_digit() => false,
         _ => crate::editor::action(k).is_some_and(|a| !matches!(a, Action::Copy)),
     }
@@ -271,7 +275,7 @@ mod tests {
             key(Char('e'), a),
             key(Char('c'), a),
             key(Char('E'), sa),
-            // edits and newlines, ⏎ send
+            // edits and newlines
             key(Backspace, n),
             key(Backspace, a),
             key(Backspace, cmd),
@@ -279,7 +283,6 @@ mod tests {
             key(Delete, c),
             key(Char('w'), c),
             key(Char('u'), c),
-            key(Enter, n),
             key(Enter, s),
             key(Enter, a),
             key(Char('j'), c),
@@ -304,6 +307,10 @@ mod tests {
             assert!(composer_key(&k), "{k:?}");
         }
         for k in [
+            // ⏎ sends (BISE-128)
+            key(Enter, n),
+            key(Enter, c),
+            key(Enter, cmd),
             key(Char('1'), a),
             key(Char('0'), a),
             key(Up, a),
@@ -357,24 +364,24 @@ mod tests {
         z.input(Input::Hold, t);
         assert!(!z.active(t), "an arrow alone is not typing");
         z.input(Input::Typing, t);
-        z.input(Input::Hold, ms(t, 7000));
-        assert!(z.active(ms(t, 14_999)), "the timer starts again");
-        assert!(!z.active(ms(t, 15_000)));
+        z.input(Input::Hold, ms(t, 4000));
+        assert!(z.active(ms(t, 8_999)), "the timer starts again");
+        assert!(!z.active(ms(t, 9_000)));
         // after the time-out, a move does not bring it back
-        z.input(Input::Hold, ms(t, 16_000));
-        assert!(!z.active(ms(t, 16_000)));
+        z.input(Input::Hold, ms(t, 10_000));
+        assert!(!z.active(ms(t, 10_000)));
     }
 
     #[test]
-    fn zen_enters_on_typing_and_leaves_8s_after_the_last_key() {
+    fn zen_enters_on_typing_and_leaves_5s_after_the_last_key() {
         let t = Instant::now();
         let mut z = Zen::default();
         assert!(!z.active(t));
         z.input(Input::Typing, t);
         assert!(z.active(t));
-        z.input(Input::Typing, ms(t, 5000));
-        assert!(z.active(ms(t, 12_999)), "8 s after the LAST key");
-        assert!(!z.active(ms(t, 13_000)));
+        z.input(Input::Typing, ms(t, 3000));
+        assert!(z.active(ms(t, 7_999)), "5 s after the LAST key");
+        assert!(!z.active(ms(t, 8_000)));
         // neutral input changes nothing
         z.input(Input::Neutral, ms(t, 6000));
         assert!(z.active(ms(t, 6000)));
@@ -414,10 +421,10 @@ mod tests {
         assert_eq!(lv, vec![1.0, 0.75, 0.5, 0.25, 0.0, 0.0]);
         // the time-out fades out the same way
         z.input(Input::Typing, ms(t, 3000));
-        assert_eq!(z.level(ms(t, 3000 + 8000 - 1)), 1.0);
-        assert_eq!(z.level(ms(t, 3000 + 8000 + 125)), 0.5);
-        assert_eq!(z.level(ms(t, 3000 + 8000 + 250)), 0.0);
-        assert!((z.depth(ms(t, 3000 + 7000)) - DEPTH).abs() < 1e-6);
+        assert_eq!(z.level(ms(t, 3000 + 5000 - 1)), 1.0);
+        assert_eq!(z.level(ms(t, 3000 + 5000 + 125)), 0.5);
+        assert_eq!(z.level(ms(t, 3000 + 5000 + 250)), 0.0);
+        assert!((z.depth(ms(t, 3000 + 4000)) - DEPTH).abs() < 1e-6);
     }
 
     #[test]
