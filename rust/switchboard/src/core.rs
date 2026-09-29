@@ -14,7 +14,7 @@ use crate::router::{self, UserCmd};
 use crate::util::{clip, clip_tail, one_line, wire_escape};
 use crate::wire::{self, Wire};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::process::{Child, ChildStdout, Command, Stdio};
@@ -732,8 +732,19 @@ impl Hub {
             agent.place = self.place_of(&agent);
             agents.insert(name, agent);
         }
-        self.st.agents = agents;
         self.st.order = parse(&v["order"]).unwrap_or_default();
+        // hub-lag: a step's view leaves out the archived agents it did
+        // not change (view.bend `changed`): keep them as they are, minus
+        // the ones gone from the order (a rename)
+        if v["all_agents"].as_bool() == Some(false) {
+            let order: BTreeSet<&String> = self.st.order.iter().collect();
+            for (name, a) in std::mem::take(&mut self.st.agents) {
+                if order.contains(&name) && !agents.contains_key(&name) {
+                    agents.insert(name, a);
+                }
+            }
+        }
+        self.st.agents = agents;
         if v["all_msgs"].as_bool() == Some(true) {
             self.st.msgs.clear();
             self.st.msg_state.clear();

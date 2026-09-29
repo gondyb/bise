@@ -86,6 +86,9 @@ pub fn stop(paths: &Paths, keep_agents: bool) -> std::io::Result<bool> {
     }
 }
 
+/// The start of `request`'s error when the hub did not answer in time.
+pub const NO_ANSWER: &str = "the hub did not answer (busy) in";
+
 /// One request, one JSON answer (the `sb` CLI).
 pub fn request(socket: &Path, req: &Value, timeout: Duration) -> Result<Value, String> {
     let mut s = UnixStream::connect(socket)
@@ -97,8 +100,14 @@ pub fn request(socket: &Path, req: &Value, timeout: Duration) -> Result<Value, S
     s.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
     let mut r = BufReader::new(s);
     let mut answer = String::new();
-    r.read_line(&mut answer)
-        .map_err(|e| format!("no answer from the hub: {}", e))?;
+    r.read_line(&mut answer).map_err(|e| match e.kind() {
+        // a read timeout is EAGAIN on macOS ("Resource temporarily
+        // unavailable"): say what it means
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut => {
+            format!("{} {} s", NO_ANSWER, timeout.as_secs())
+        }
+        _ => format!("no answer from the hub: {}", e),
+    })?;
     serde_json::from_str(answer.trim())
         .map_err(|e| format!("unreadable answer: {} ({})", e, answer.trim()))
 }

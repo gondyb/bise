@@ -56,17 +56,19 @@ def fxs_json(xs: List<&2, X.Fx>) -> List<&2, J.Json>:
     case Con{+h, +t}:
       fx_json(h) <> fxs_json(t)
 
-def answer.go(need: Maybe<&2, J.Json>, +h: H.Hub, +fx: List<&2, X.Fx>) -> H.Hub & String:
+# `before`: the agents live before the step (V.changed)
+def answer.go(need: Maybe<&2, J.Json>, +h: H.Hub, +fx: List<&2, X.Fx>, +before: List<&2, String>) -> H.Hub & String:
   match need:
     case Some{+q}:
       (h, J.stringify(J.obj([J.kv("need", q)])))
     case None{}:
       (h, J.stringify(J.obj([J.kv("fx", J.JArr{fxs_json(fx)}), J.kv("dirty", J.JBool{X.R.dirty(H.Hub.r(h))}),
-        J.kv("view", V.view(H.Hub.d(h), X.R.rts(H.Hub.r(h)), X.R.waiters(H.Hub.r(h)), False{}, V.touched(X.journal(fx))))])))
+        J.kv("view", V.view(H.Hub.d(h), X.R.rts(H.Hub.r(h)), X.R.waiters(H.Hub.r(h)), False{}, V.touched(X.journal(fx)),
+          V.changed(X.journal(fx), before, X.R.rts(H.Hub.r(h)), X.R.waiters(H.Hub.r(h)))))])))
 
 # the answer line of a committed step (H.commit, the law run_replays)
-def answer(+o: H.Out) -> H.Hub & String:
-  answer.go(H.Out.need(o), H.Out.hub(o), H.Out.fx(o))
+def answer(+before: List<&2, String>, +o: H.Out) -> H.Hub & String:
+  answer.go(H.Out.need(o), H.Out.hub(o), H.Out.fx(o), before)
 
 # an event this hub does not know (written by a newer hub, before a
 # /version rollback) is not applied: the answer says so, the Rust side logs it
@@ -92,9 +94,9 @@ def handle.tag(tag: Tag, +h: H.Hub, +i: J.Json) -> H.Hub & String:
     case TPing{}:
       (h, "{}")
     case TView{}:
-      (h, J.stringify(J.obj([J.kv("view", V.view(H.Hub.d(h), X.R.rts(H.Hub.r(h)), X.R.waiters(H.Hub.r(h)), True{}, Nil{}))])))
+      (h, J.stringify(J.obj([J.kv("view", V.view(H.Hub.d(h), X.R.rts(H.Hub.r(h)), X.R.waiters(H.Hub.r(h)), True{}, Nil{}, Nil{}))])))
     case TStep{}:
-      answer(H.commit(h, i))
+      answer(V.live(X.R.rts(H.Hub.r(h)), X.R.waiters(H.Hub.r(h))), H.commit(h, i))
 
 def handle.parsed(r: Result<&2, &2, String, J.Json>, +h: H.Hub) -> H.Hub & String:
   match r:

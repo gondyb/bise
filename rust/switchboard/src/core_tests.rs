@@ -1937,3 +1937,84 @@ fn model_and_reasoning_choose_for_the_agent_in_view() {
     );
     assert!(!fx.iter().any(|e| matches!(e, Effect::Passthrough { .. } | Effect::Say { .. })));
 }
+
+/// BENCH (hub-lag): the cost of one step on a real journal.
+/// SB_BENCH_JOURNAL=<journal.jsonl> cargo test -p switchboard bench_step -- --ignored --nocapture
+#[test]
+#[ignore]
+fn bench_step() {
+    let Ok(path) = std::env::var("SB_BENCH_JOURNAL") else { return };
+    let events: Vec<Value> = std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let mut h = Hub::new("/w");
+    let t0 = std::time::Instant::now();
+    h.replay(&events);
+    eprintln!("replay {} events: {:?}", events.len(), t0.elapsed());
+    let mut env = FakeEnv::new();
+    env.now = 1_790_722_300_000;
+    h.handle(Input::Tick, &mut env);
+    let active: Vec<String> = h.st.agents.values().filter(|a| a.lifecycle == Lifecycle::Active).map(|a| a.name.clone()).collect();
+    eprintln!("agents {} active {}", h.st.agents.len(), active.len());
+    let time = |what: &str, h: &mut Hub, env: &mut FakeEnv, mk: &dyn Fn() -> Input| {
+        let mut ts = Vec::new();
+        for _ in 0..10 {
+            env.now += 500;
+            let t0 = std::time::Instant::now();
+            h.handle(mk(), env);
+            ts.push(t0.elapsed());
+        }
+        ts.sort();
+        eprintln!("{}: median {:?} min {:?}", what, ts[5], ts[0]);
+    };
+    time("tick", &mut h, &mut env, &|| Input::Tick);
+    h.handle(Input::ClientHello { client: 1 }, &mut env);
+    time("user line to main", &mut h, &mut env, &|| Input::ClientInput {
+        client: 1,
+        focus: MAIN.into(),
+        text: "hello".into(),
+    });
+    let t0 = std::time::Instant::now();
+    for _ in 0..10 {
+        for n in &active {
+            let _ = if n == MAIN { board::main_context(&h.st, env.now) } else { board::task_context(&h.st, n, env.now) };
+        }
+    }
+    eprintln!("refresh_contexts alone: {:?}", t0.elapsed() / 10);
+    let t0 = std::time::Instant::now();
+    for _ in 0..10 {
+        let _ = h.snapshot(env.now);
+    }
+    eprintln!("snapshot alone: {:?}", t0.elapsed() / 10);
+}
+
+/// hub-lag: a step's view carries the archived agents only when the step
+/// changes them (sb-core view.bend `changed`); the mirror keeps the
+/// others as they were, and forgets a name a rename took away.
+#[test]
+fn a_step_keeps_the_archived_agents_it_does_not_send() {
+    let mut t = T::new();
+    t.spawn_task("a");
+    t.spawn_task("b");
+    t.go(Input::ReplIdle { agent: "b".into(), leftover: false });
+    t.user(MAIN, "/drop b --force");
+    t.go(Input::ReplExited { agent: "b".into(), crashed: false, reason: String::new() });
+    assert_eq!(t.status("b"), Status::Archived);
+    let out = t.hub.link.call(&json!({"t": "tick", "now": 1_000_000, "git": true, "ans": []}));
+    let sent: Vec<&str> = out["view"]["agents"].as_array().unwrap().iter().map(|a| a["name"].as_str().unwrap()).collect();
+    assert!(!sent.contains(&"b"), "an archived agent at rest is not sent again: {:?}", sent);
+    assert_eq!(out["view"]["all_agents"], false);
+    let (tok, fx) = t.req(MAIN, AgentReq::Rename { agent: "a".into(), new_name: "alpha".into() });
+    assert_eq!(reply(&fx, tok).unwrap()["name"], "alpha");
+    t.go(Input::Tick);
+    assert_eq!(t.status("b"), Status::Archived);
+    assert_eq!(t.hub.st.agents["b"].brief.objective, "objective of b");
+    assert!(t.hub.st.agents.contains_key("alpha"));
+    assert!(!t.hub.st.agents.contains_key("a"), "the old name is gone");
+    // a restore changes it: sent again, active
+    t.req(MAIN, AgentReq::Restore { agent: "b".into() });
+    assert_eq!(t.hub.st.agents["b"].lifecycle, Lifecycle::Active);
+}

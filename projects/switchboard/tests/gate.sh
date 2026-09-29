@@ -181,7 +181,8 @@ fi
 # ---- quick
 t0=$SECONDS
 cache="${CARGO_TARGET_DIR:-$root/rust/target}/gate-cache"
-out="$(mktemp -d -t sb-gate)"
+# no dot in its path (mktemp -t adds one): the PROOF shards import from it
+out="$(mktemp -d "${TMPDIR:-/tmp}/sbgateXXXXXX")"
 mkdir -p "$cache"
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$out"' EXIT
 fail() {  # <name> <log>: the failures, the log kept

@@ -52,12 +52,30 @@ def agent_json(+a: M.Agent, +x: X.Rt, +wo: J.Json) -> J.Json:
     J.kv("waiting_on", wo),
     J.kv("turn_ms", H.jturn(X.Rt.turn(x)))])
 
-def agents_json(xs: List<&2, M.Agent>, +rts: List<&2, X.Rt>, +ws: List<&2, X.Waiter>, +s: M.St) -> List<&2, J.Json>:
+def is_archived(l: M.Life) -> Bool:
+  match l:
+    case M.LArchived{}:
+      True{}
+    case _:
+      False{}
+
+# a match, not Bool.pick: pick would encode every agent, kept or not
+def agents_json.keep(keep: Bool, +a: M.Agent, +rts: List<&2, X.Rt>, +ws: List<&2, X.Waiter>, +s: M.St, +rest: List<&2, J.Json>) -> List<&2, J.Json>:
+  match keep:
+    case True{}:
+      agent_json(a, H.rt_find(rts, M.Agent.name(a)), waits_on(ws, s, M.Agent.name(a))) <> rest
+    case False{}:
+      rest
+
+# every agent (`all`), else the ones not archived and the archived ones
+# in `names` (the only ones a step can change, see `changed`)
+def agents_json(xs: List<&2, M.Agent>, +rts: List<&2, X.Rt>, +ws: List<&2, X.Waiter>, +s: M.St, +all: Bool, +names: List<&2, String>) -> List<&2, J.Json>:
   match xs:
     case Nil{}:
       Nil{}
     case Con{+a, +t}:
-      agent_json(a, H.rt_find(rts, M.Agent.name(a)), waits_on(ws, s, M.Agent.name(a))) <> agents_json(t, rts, ws, s)
+      agents_json.keep(all || Bool.not(is_archived(M.Agent.life(a))) || M.str_in(names, M.Agent.name(a)),
+        a, rts, ws, s, agents_json(t, rts, ws, s, all, names))
 
 def rec_json(+r: M.MRec) -> J.Json:
   J.obj([J.kv("msg", C.msg_json(M.MRec.msg(r))), J.kv("state", J.obj(C.mst_kvs(M.MRec.st(r)))),
@@ -111,9 +129,82 @@ def touched(evs: List<&2, M.Ev>) -> List<&2, Nat>:
     case Con{+e, +t}:
       List.append(&2, Nat, ev_ids(e), touched(t))
 
-# the view: every agent, card and note; the messages in `ids` (or all)
-def view(+s: M.St, +rts: List<&2, X.Rt>, +ws: List<&2, X.Waiter>, +all: Bool, +ids: List<&2, Nat>) -> J.Json:
-  J.obj([J.kv("agents", J.JArr{agents_json(M.St.agents(s), rts, ws, s)}),
+# the agents an event changes (a rename: both names)
+def ev_names(e: M.Ev) -> List<&2, String>:
+  match e:
+    case M.ETaskCreated{+name, _, _, _, _}:
+      [name]
+    case M.ELifecycle{+name, _, _}:
+      [name]
+    case M.EWorkspace{+name, _}:
+      [name]
+    case M.ESnapshot{+name, _}:
+      [name]
+    case M.EDeclared{+name, _, _}:
+      [name]
+    case M.EReported{+name, _}:
+      [name]
+    case M.EFileTouched{+name, _}:
+      [name]
+    case M.ERenamed{+name, +nn}:
+      [name, nn]
+    case _:
+      Nil{}
+
+def names_of(evs: List<&2, M.Ev>) -> List<&2, String>:
+  match evs:
+    case Nil{}:
+      Nil{}
+    case Con{+e, +t}:
+      List.append(&2, String, ev_names(e), names_of(t))
+
+# a runtime at rest: no REPL, no wait, no turn (what rt_find answers
+# for an agent it does not know)
+def rt_rest(turn: Maybe<&2, Nat>, down: Bool, waiting: Bool) -> Bool:
+  match turn:
+    case None{}:
+      down && Bool.not(waiting)
+    case Some{_}:
+      False{}
+
+def hot.keep(rest: Bool, +n: String, +acc: List<&2, String>) -> List<&2, String>:
+  match rest:
+    case True{}:
+      acc
+    case False{}:
+      n <> acc
+
+def hot(rts: List<&2, X.Rt>) -> List<&2, String>:
+  match rts:
+    case Nil{}:
+      Nil{}
+    case Con{+x, +t}:
+      hot.keep(rt_rest(X.Rt.turn(x), H.is_down(X.Rt.run(x)), X.Rt.waiting(x)), X.Rt.name(x), hot(t))
+
+def waiter_names(ws: List<&2, X.Waiter>) -> List<&2, String>:
+  match ws:
+    case Nil{}:
+      Nil{}
+    case Con{+w, +t}:
+      X.Waiter.agent(w) <> waiter_names(t)
+
+# the agents whose runtime or wait may change: not at rest, or waiting
+def live(+rts: List<&2, X.Rt>, +ws: List<&2, X.Waiter>) -> List<&2, String>:
+  List.append(&2, String, hot(rts), waiter_names(ws))
+
+# the archived agents a step may change (hub-lag): the ones its events
+# name (a durable change is an event, model.bend `apply`) and the ones
+# live before or after it (a runtime at rest is one value: a change goes
+# through a state that is not). Every other archived agent is as the
+# last view left it: the daemon keeps it.
+def changed(+evs: List<&2, M.Ev>, +before: List<&2, String>, +rts: List<&2, X.Rt>, +ws: List<&2, X.Waiter>) -> List<&2, String>:
+  List.append(&2, String, names_of(evs), List.append(&2, String, before, live(rts, ws)))
+
+# the view: every agent not archived, the archived ones in `names` (or
+# all), every card and note; the messages in `ids` (or all)
+def view(+s: M.St, +rts: List<&2, X.Rt>, +ws: List<&2, X.Waiter>, +all: Bool, +ids: List<&2, Nat>, +names: List<&2, String>) -> J.Json:
+  J.obj([J.kv("agents", J.JArr{agents_json(M.St.agents(s), rts, ws, s, all, names)}),
+    J.kv("all_agents", J.JBool{all}),
     J.kv("order", J.JArr{H.jstrs(M.St.order(s))}),
     J.kv("msgs", J.JArr{recs_json(M.St.msgs(s), all, ids)}),
     J.kv("all_msgs", J.JBool{all}),

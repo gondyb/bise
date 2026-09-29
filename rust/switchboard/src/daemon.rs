@@ -1543,10 +1543,18 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         let tx = tx.clone();
         std::thread::spawn(move || accept_loop(listener, tx));
     }
+    // hub-lag: one tick in the queue at most. A loop slower than the
+    // clock (a big state, a loaded machine) queued a tick every 500 ms
+    // anyway, and the user's lines waited behind the backlog.
+    let tick_queued = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     {
         let tx = tx.clone();
+        let queued = tick_queued.clone();
         std::thread::spawn(move || loop {
             std::thread::sleep(Duration::from_millis(500));
+            if queued.swap(true, std::sync::atomic::Ordering::AcqRel) {
+                continue;
+            }
             if tx.send(Msg::In(Input::Tick)).is_err() {
                 break;
             }
@@ -1578,6 +1586,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
             Msg::In(i) => {
                 let tick = matches!(i, Input::Tick);
                 if tick {
+                    tick_queued.store(false, std::sync::atomic::Ordering::Release);
                     sh.flush_offsets();
                 }
                 sh.step(i);
