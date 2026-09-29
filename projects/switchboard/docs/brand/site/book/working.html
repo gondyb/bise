@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bise — working indicators, variations</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#141211; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --acc:#f4a6b0; --line:#2a2623; --raised:#1f1c1a; }
+  [data-theme="light"] { --bg:#fdfbf7; --text:#1b1917; --dim:#6b645a; --faint:#cfc8bd; --acc:#b8416b; --line:#e2dcd2; --raised:#f4f0e8; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:#0b0a09; color:#ece6da; font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:13px; line-height:1.55; padding:28px; }
+  body.light { background:#e9e4dc; color:#1b1917; }
+  h1 { font-size:15px; } .lead { color:#8a8378; max-width:112ch; margin:6px 0 10px; }
+  .top { display:flex; gap:3ch; margin-bottom:26px; } .top a, .top button { color:#8a8378; font:inherit; background:none; border:0; cursor:pointer; text-decoration:none; }
+  .top a:hover, .top button:hover { color:#f4a6b0; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(64ch, 1fr)); gap:34px 36px; }
+  figcaption { margin-bottom:8px; } figcaption b { font-weight:700; } figcaption .n { color:#f4a6b0; margin-right:1ch; }
+  figcaption p { color:#8a8378; margin-top:2px; } figcaption .pick { color:#f4a6b0; }
+  .term { background:var(--bg); color:var(--text); border-radius:8px; padding:.8lh 2ch 0; box-shadow:0 12px 40px rgba(0,0,0,.35); overflow:hidden; }
+  .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)} .tx{color:var(--text)} b { font-weight:700; }
+  .ind { white-space:pre; display:inline-block; }
+  .ind span, .ind { font-variant-ligatures:none; }
+  .ind > span { display:inline-block; width:1ch; text-align:center; }
+  .hdr { display:flex; justify-content:space-between; }
+  .panel { margin:.6lh 0 .8lh; width:34ch; }
+  .row { display:flex; justify-content:space-between; white-space:nowrap; }
+  .pane { background:var(--raised); margin:0 -2ch; padding:0 2ch .6lh; border-top:1px solid var(--faint); position:relative; }
+  .lbl { position:relative; top:-.8lh; display:flex; justify-content:space-between; }
+  .lbl > span { background:var(--bg); padding:0 1ch; }
+  .cmp { border-left:1px solid var(--faint); padding-left:calc(2ch - 1px); color:var(--dim); margin-top:-.4lh; }
+  .sweep { position:absolute; top:-1px; height:1px; width:10ch; background:linear-gradient(90deg, transparent, var(--text), transparent); }
+  .ctx { color:#6f685e; font-size:11px; margin-top:.4lh; }
+  .spec { color:#8a8378; font-size:12px; margin-top:6px; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<h1>bise :* — "working" indicators, variations</h1>
+<p class="lead">today: one ∿ that fades in and out. too subtle, and it's missing next to "you → marketing" when the agent you're talking to works. each variant below runs in the three places it lives: the header count, the panel row, and the divider above your composer (new: that's where you look most). frames are plain characters, so the terminal draws them; each lists its speed and its ASCII form (BISE_ASCII=1).</p>
+<div class="top"><a href="screens.html">← every screen</a><a href="messages.html">messages between agents</a><button id="theme">light / dark</button></div>
+<div class="grid" id="v"></div>
+<script>
+const c = (cls, ch) => `<span class="${cls}">${ch === " " ? "&nbsp;" : ch}</span>`;
+// each variant: [key, name, what, ms per frame, frames(i) → cells html, ascii form, pick?]
+const V = [
+  ["A", "gust", "a little wind blowing through 5 cells: the landing page's ASCII wind, shrunk to fit. unmistakably 'something is moving', and it's the brand.", 110,
+    (i) => { const ramp = [" ", "·", "~", "∿", "≈", "∿", "~", "·", " ", " "]; const col = { "≈": "tx", "∿": "tx", "~": "dim", "·": "faint", " ": "faint" };
+      return [0, 1, 2, 3, 4].map((k) => { const ch = ramp[((i - k) % ramp.length + ramp.length) % ramp.length]; return c(col[ch], ch); }).join(""); },
+    "  .-~=~-.  (same ramp in ASCII)", true],
+  ["B", "typing dots", "the message-app 'is typing…': three dots, one lit at a time. everyone reads it instantly; it matches the messages between agents.", 260,
+    (i) => [0, 1, 2].map((k) => (i % 4) === k ? c("tx", "•") : c("faint", "·")).join(""), ".oo  o.o  oo.", true],
+  ["C", "blowing a kiss", "main's own indicator: :* blows a breeze that drifts away. for main only (in the header and main's panel row); the agents use A or B.", 140,
+    (i) => { const trail = ["", "·", "~", "~∿", " ∿~", "  ~·", "   ·", ""]; const t = trail[i % trail.length].padEnd(4, " ");
+      return c("acc", ":") + c("acc", "*") + [...t].map((ch) => c(ch === "∿" ? "tx" : ch === "~" ? "dim" : "faint", ch)).join(""); },
+    ":* ~ -> ':*  ~-'", false],
+  ["D", "tide", "three ∿ with the light running through them, left to right. the current glyph, only readable: brightness moves instead of blinking.", 180,
+    (i) => [0, 1, 2].map((k) => c(["tx", "dim", "faint"][((k - i) % 3 + 3) % 3], "∿")).join(""), "~~~ (the bright one moves: bold)", false],
+  ["E", "shimmer", "the word itself: 'working' with a soft light passing over it, then a pause. the clearest, needs no legend; it's what Claude Code does.", 90,
+    (i) => { const w = "working", p = (i % 16) - 3; return [...w].map((ch, k) => c(k === p ? "tx" : Math.abs(k - p) === 1 ? "dim" : "faint", ch)).join("") ; },
+    "WOrking (one capital runs through)", false],
+  ["F", "equalizer", "four bars breathing, like the voice meter. lively, reads as 'busy', but it's more 'sound' than 'wind'.", 120,
+    (i) => [0, 1, 2, 3].map((k) => c("tx", "▁▂▃▄▅▆▇"[Math.round(3 + 3 * Math.sin(i / 2 + k * 1.3))])).join(""), ".:|: (4 cells)", false],
+  ["G", "braille spinner", "the classic ⠋⠙⠹. clear to every developer, but generic: not bise.", 80,
+    (i) => c("tx", "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"[i % 10]), "| / - \\", false],
+  ["H", "orbit", "a quarter circle turning. calm and round, one cell.", 120,
+    (i) => c("tx", "◜◠◝◞◡◟"[i % 6]), "( - ) turning", false],
+];
+const els = [];
+document.getElementById("v").innerHTML = V.map(([k, name, what, ms, f, ascii, pick], n) => `<figure><figcaption><b><span class="n">${k}</span>${name}</b>${pick ? ' <span class="pick">· my pick</span>' : ""}<p>${what}</p></figcaption>
+<div class="term">
+  <div class="hdr"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim"><span class="ind" data-v="${n}"></span> 3 working · <span class="acc">? 1 needs you</span></span></div>
+  <div class="panel">
+    <div class="row"><span><span class="faint">0</span> <span class="acc">:*</span> main</span><span></span></div>
+    <div class="row"><span><span class="faint">1</span> <span class="ind" data-v="${n}"></span> auth-fix</span><span class="dim">12m · 21%</span></div>
+    <div class="row"><span><span class="faint">2</span> <span class="ind" data-v="${n}"></span> marketing</span><span class="dim">3m · 8%</span></div>
+    <div class="row"><span><span class="faint">3</span> <span class="acc">?</span> docs</span><span class="acc">you</span></div>
+  </div>
+  <div class="pane"><div class="lbl"><span><span class="dim">you →</span> <span class="acc">marketing</span> <span class="ind" data-v="${n}"></span> <span class="dim">working · <span class="sec">42</span>s</span></span><span class="dim">ctrl+c interrupt</span></div>
+    <div class="cmp">tell marketing…</div></div>
+</div>
+<div class="spec">${ms} ms a frame · ASCII: ${ascii}</div></figure>`).join("");
+let i = 0, t0 = Date.now();
+const inds = [...document.querySelectorAll(".ind")];
+function tick() {
+  const now = Date.now();
+  inds.forEach((el) => { const [, , , ms, f] = V[+el.dataset.v]; el.innerHTML = f(Math.floor(now / ms)); });
+  document.querySelectorAll(".sec").forEach((s) => s.textContent = 42 + Math.floor((now - t0) / 1000));
+  requestAnimationFrame(tick);
+}
+tick();
+document.getElementById("theme").onclick = () => { const l = document.body.classList.toggle("light"); document.querySelectorAll(".term").forEach((t) => t.dataset.theme = l ? "light" : "dark"); };
+</script>
+</body>
+</html>
