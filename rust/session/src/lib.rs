@@ -17,3 +17,4 @@ pub mod redact;
 pub use redact::Redactor;
 pub mod legacy;
 pub mod migrate;
+pub mod show;

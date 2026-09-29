@@ -33,6 +33,7 @@ use std::time::{Duration, Instant};
 mod approot;
 mod debuglog;
 mod doctor;
+mod session_cli;
 mod info;
 mod update;
 mod version;
@@ -399,6 +400,7 @@ usage:
   {cmd} auth list               each provider's key source (never the key)
   {cmd} plugins [list|enable|disable]  agent plugins
   {cmd} doctor                  check this Mac, the install, keys, model, hubs
+  {cmd} session show [<id>]     a session log: the transcript, --context, --raw
   {cmd} update [--check]        install the latest release (an installed bise)
   {cmd} uninstall [--purge]     remove the installed bise (--purge: your data too)
   {cmd} --version               this version
@@ -504,6 +506,8 @@ fn main() -> std::io::Result<()> {
             }
             // read-only checks, one line each (BISE-167)
             Some("doctor") => std::process::exit(doctor::main()),
+            // the session logs (BISE-199)
+            Some("session") => std::process::exit(session_cli::main(&args[1..])),
             // an installed bise (install.sh, BISE-170/171)
             Some("update") => std::process::exit(update::main(&args[1..])),
             Some("uninstall") => std::process::exit(update::uninstall(&args[1..])),

@@ -207,6 +207,11 @@ impl Home {
         self.or("BEND_SESSIONS_DIR", self.root.join("sessions"))
     }
 
+    /// The session logs' shared blob store (BISE-192): `<root>/blobs`.
+    pub fn blobs_dir(&self) -> PathBuf {
+        self.root.join("blobs")
+    }
+
     /// The folder of every hub: `<root>/hubs`, legacy `~/.local/state/switchboard`.
     pub fn hubs_dir(&self) -> PathBuf {
         if self.is_bise() {
