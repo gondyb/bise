@@ -902,6 +902,7 @@ impl Shell {
         self.ports.insert(dir.clone(), port);
         let tx = self.tx.clone();
         let paths = self.opts.paths.clone();
+        let workdir = std::path::PathBuf::from(&a.ws.path);
         std::thread::spawn(move || {
             // sb, the hub's PATH, the user's login-shell PATH, the
             // standard dirs; the model is told once whether rg and git
@@ -910,6 +911,16 @@ impl Shell {
             let agent_path = crate::tools_env::hub_agent_path(&paths.bin_dir());
             cmd.env("BEND_TOOLS_NOTE", crate::tools_env::tools_note_for(&agent_path))
                 .env("PATH", agent_path);
+            // the AGENTS.md files of its working folder (a task: its
+            // worktree's), read again at each start and /reload (BISE-232)
+            cmd.env(
+                crate::agents_md::ENV,
+                crate::agents_md::write_for(
+                    &workdir,
+                    &bise_home::Home::from_env(),
+                    &adir.join("agents-md.md"),
+                ),
+            );
             supervise(cmd, dir, gen, adir, port, tx, paths)
         });
     }

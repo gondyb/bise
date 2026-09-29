@@ -81,6 +81,16 @@ def msg(role, text="", calls=0, images=None):
     return {"role": role, "text": text, "calls": calls, "images": images or []}
 
 
+def agents_md_of(conv):
+    """the AGENTS.md block of the system prompt (BISE-232), or """""
+    sysm = "\n".join(m["text"] for m in conv if m["role"] == "system")
+    i = sysm.find("# AGENTS.md instructions")
+    if i < 0:
+        return ""
+    j = sysm.find("</INSTRUCTIONS>", i)
+    return sysm[i:j + len("</INSTRUCTIONS>")] if j >= 0 else sysm[i:]
+
+
 def conv_openai_chat(body):
     out = []
     for m in body.get("messages", []):
@@ -660,7 +670,9 @@ class H(http.server.BaseHTTPRequestHandler):
                                 "family": family, "path": self.path, "stream": stream, "status": status,
                                 "error": turn["error"], "fixture": turn["fixture"],
                                 # BISE-135: the model and effort the call asked for
-                                "model": model, "effort": effort_of(body)}) + "\n")
+                                "model": model, "effort": effort_of(body),
+                                # BISE-232: the AGENTS.md block of the system prompt
+                                "agents_md": agents_md_of(conv)}) + "\n")
 
 
 def effort_of(body):

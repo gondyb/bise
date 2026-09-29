@@ -11,12 +11,14 @@
 //! - `worktree`: the git operations of RFC 0002;
 //! - `sweep`: where task worktrees live, and their cleanup;
 //! - `tools_env`: the agents' PATH, git and rg (BISE-166);
+//! - `agents_md`: the AGENTS.md files an agent's prompt carries (BISE-232);
 //! - `daemon`: the imperative shell (sockets, journal, feeds), with
 //!   `daemon/repl` (REPL processes) and `daemon/versions` (`/version`);
 //! - `transcript`: reading a thread (positions, cursors, origin);
 //! - `cli`: the `sb` command the agents call through their bash tool;
 //! - `client`: how a client (TUI, headless test) reaches the hub.
 
+pub mod agents_md;
 pub mod board;
 pub mod cli;
 pub mod client;

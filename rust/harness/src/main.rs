@@ -929,10 +929,12 @@ fn main() -> std::io::Result<()> {
 /// The harness's own REPL never inherits them from the shell that
 /// started it (BISE-122); it sets BEND_SESSION_FILE and BEND_REPL_PORT
 /// itself (and BEND_CONTINUE, from its own --continue: not in this list).
-const HUB_ONLY_VARS: [&str; 8] = [
+const HUB_ONLY_VARS: [&str; 9] = [
     "BEND_WIRE_LOG",
     "BEND_CONTEXT_FILE",
     "BEND_EXTRA_PROMPT",
+    // the AGENTS.md section of that agent's folder (BISE-232)
+    "BEND_AGENTS_MD",
     "BEND_WORKDIR",
     "SB_SOCKET",
     "SB_AGENT",

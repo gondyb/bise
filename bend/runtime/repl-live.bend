@@ -69,9 +69,19 @@ def extra_prompt() -> IO(String):
     +path : String <- IO.pure(String, P.env_or(er, ""))
     extra_prompt.read(String.is_empty(path), path)
 
+# BEND_AGENTS_MD: a file with the AGENTS.md section of the agent's
+# working folder (BISE-232, written by the hub at each start:
+# rust/switchboard/src/agents_md.rs); unset, missing or empty: nothing
+def agents_md() -> IO(String):
+  do IO<String>:
+    ar : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_AGENTS_MD")
+    +path : String <- IO.pure(String, P.env_or(ar, ""))
+    extra_prompt.read(String.is_empty(path), path)
+
 # BEND_TOOLS_NOTE: whether rg and git are on this machine (BISE-166,
 # written by bend-harness / the hub), after the current-time section;
-# unset or blank: nothing is added
+# unset or blank: nothing is added. The AGENTS.md section comes after
+# the skills, before the role (the role stays last)
 def live_prompt() -> IO(String):
   do IO<String>:
     +tu : String <- prompt_read("prompts/prompt-tool-use.txt")
@@ -81,7 +91,8 @@ def live_prompt() -> IO(String):
     +note : String <- IO.pure(String, P.env_or(tn, ""))
     +content : String <- Sk.prompt_content()
     +extra : String <- extra_prompt()
-    IO.pure(String, Rcp.prompt_extra(live_prompt.go(prompt_join(Rcp.solo_tone(extra, tone), tu, Rcp.prompt_extra(ct, note)), content), extra))
+    +amd : String <- agents_md()
+    IO.pure(String, Rcp.prompt_extra(Rcp.prompt_extra(live_prompt.go(prompt_join(Rcp.solo_tone(extra, tone), tu, Rcp.prompt_extra(ct, note)), content), amd), extra))
 
 def live_cfg(+threshold: Nat) -> IO(T.Cfg):
   do IO<T.Cfg>:

@@ -2764,6 +2764,14 @@ Index:
 - **what:** `ctrlhint::DELAY` 250 ms → 80 ms. Unchanged: any other key, a click, a paste or the focus spoils the hold, so a ctrl+x combo never shows the hints, whatever its timing.
 - **notes:** the unit test checks 79/80 ms, the timer's `due`, and a ctrl+o pressed 30 ms in and released 60 ms in (never shown). The tmux test sends a combo in one write and waits for the hints with a 5 s timeout: no timing to change.
 
+### BISE-232 · AGENTS.md in every agent's prompt, the way Codex reads them
+
+- **status:** done · **owner:** agents-md · **commits:** `git log --grep BISE-232`
+- **owns:** `rust/switchboard/src/agents_md.rs`, the spawn in `rust/switchboard/src/daemon.rs`, `agents_md()` in `bend/runtime/repl-live.bend`, `HUB_ONLY_VARS` in `rust/harness/src/main.rs`; `projects/switchboard/docs/agents-md.md`
+- **spec:** user: « Il faut absolument qu'on supporte les AGENTS.md. Regarde comment ça marche dans Codex et fais la même chose. Et dans Vibe aussi. Pull les latest. »
+- **what:** at each REPL start and /reload, the hub reads the AGENTS.md files of the agent's working folder (main: the workspace; a task: its worktree) and the REPL puts them in the system prompt, after the skills and before the role. Codex's rules: `$BISE_HOME/AGENTS.override.md` else `AGENTS.md` (global, first); from the nearest `.git` folder down to the working folder, per folder the first of `AGENTS.override.md`, `AGENTS.md`, `project_doc_fallback_filenames`; root first; 32 KiB for the project files (`project_doc_max_bytes`); config.toml keys `project_doc_max_bytes`, `project_doc_fallback_filenames`, `project_root_markers`. Codex's block (`# AGENTS.md instructions for <cwd>`, `<INSTRUCTIONS>`, `--- project-doc ---`) with Vibe's `Contents of <path>:` over each file and the scope/precedence rules in a few lines. The comparison with Codex and Vibe: docs/agents-md.md.
+- **notes:** tests `agents_md::tests::*` (8), `projects/switchboard/tests/agents_md_e2e.py` (in run_all: a hub in `repo/sub`; main and a shared task get global + root + sub; a worktree task its worktree's committed root file). The fake provider logs the block (`agents_md`). Not done: Vibe's lazy load of deeper AGENTS.md on a file read, a trust gate, per-turn refresh, the headless session. A worktree task starts at the repo root, so a hub's subfolder AGENTS.md does not reach it.
+
 ### BISE-233 · agents search every thread: `sb history`, `sb show`
 
 - **status:** done · **owner:** history-search · **commits:** `git log --grep BISE-233`
