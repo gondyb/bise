@@ -253,7 +253,7 @@ const RAIL: &str = " │ ";
 
 /// A notice with no §6 glyph (an info line). Not in the book: see the
 /// BISE-13 notes.
-const G_NOTE: &str = "·";
+pub(crate) const G_NOTE: &str = "·";
 
 /// One line in the feed's glyph column: the glyph at column 1, the text
 /// from column 3 (under the names of the tool lines).

@@ -311,6 +311,127 @@ pub(crate) const G_BUILDING: &str = "Δ"; // a version building or on trial (was
 pub(crate) const G_CLOSED: &str = "▸"; // progressive disclosure: closed
 pub(crate) const G_OPEN: &str = "▾"; // progressive disclosure: open
 
+// ---- the legend (the symbols section of /help, book §6) ----
+
+/// The color a legend glyph is drawn in: its color on screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Tone {
+    Text,
+    Dim,
+    Faint,
+    Accent,
+    Error,
+}
+
+impl Tone {
+    pub(crate) fn color(self) -> Color {
+        match self {
+            Tone::Text => text(),
+            Tone::Dim => dim(),
+            Tone::Faint => faint(),
+            Tone::Accent => accent(),
+            Tone::Error => error(),
+        }
+    }
+}
+
+/// One row of the legend: a glyph (or a short sample of what is drawn,
+/// space-separated), its color, its ASCII form when [`ASCII`] does not
+/// give it ("" = from the table, like [`asciify`]), and a few words.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Symbol {
+    pub group: &'static str,
+    pub glyph: &'static str,
+    pub tone: Tone,
+    pub ascii: &'static str,
+    pub meaning: &'static str,
+}
+
+const fn sym(group: &'static str, glyph: &'static str, tone: Tone, meaning: &'static str) -> Symbol {
+    Symbol { group, glyph, tone, ascii: "", meaning }
+}
+
+impl Symbol {
+    /// The glyph as drawn in the current mode.
+    pub(crate) fn shown(&self) -> String {
+        match (ascii_mode(), self.ascii) {
+            (false, _) => self.glyph.to_string(),
+            (true, "") => ascii_text(self.glyph),
+            (true, a) => a.to_string(),
+        }
+    }
+}
+
+const AGENTS: &str = "agents";
+const MESSAGES: &str = "messages";
+const HISTORY: &str = "history";
+
+/// Every glyph the TUI shows, one row each, in display order (groups
+/// in first-row order). A new `G_*` constant needs its row: the test
+/// `every_glyph_constant_has_a_legend_row` reads the declarations.
+/// Lowercase, one line, no "X, not Y" (designer, BISE-137).
+#[rustfmt::skip]
+pub(crate) const LEGEND: &[Symbol] = &[
+    sym(AGENTS, G_MAIN, Tone::Accent, "main, the agent you talk to"),
+    sym(AGENTS, G_WORKING, Tone::Text, "working (it moves)"),
+    sym(AGENTS, G_STARTING, Tone::Dim, "starting"),
+    sym(AGENTS, G_WAITING, Tone::Text, "waiting on another agent"),
+    sym(AGENTS, G_NEEDS_YOU, Tone::Accent, "needs you: a question, a blocker, a card"),
+    Symbol { group: AGENTS, glyph: G_DONE, tone: Tone::Accent, ascii: "*", meaning: "done" },
+    sym(AGENTS, G_FAILED, Tone::Error, "failed"),
+    sym(AGENTS, G_IDLE, Tone::Dim, "idle"),
+    sym(AGENTS, G_STOPPED, Tone::Dim, "stopped"),
+    sym(AGENTS, G_UNREAD, Tone::Accent, "unread activity in that agent"),
+    sym(AGENTS, G_WORKTREE, Tone::Dim, "has its own worktree (its own copy of the files)"),
+    sym(AGENTS, "opus·hi", Tone::Dim, "model · reasoning (dim: not the same as main's)"),
+    sym(AGENTS, G_OVERLAP, Tone::Text, "two agents changed the same file"),
+    sym(AGENTS, G_RESTART_FAILED, Tone::Error, "a restart failed"),
+    sym(AGENTS, G_BUILDING, Tone::Text, "a version is building or on trial"),
+    sym(AGENTS, "# 3", Tone::Dim, "open cards: ctrl+g shows them"),
+    sym(AGENTS, "+ 2 more", Tone::Dim, "rows that do not fit"),
+    sym(MESSAGES, G_YOU, Tone::Text, "the composer, and your queued messages"),
+    sym(MESSAGES, "│", Tone::Accent, "your message"),
+    sym(MESSAGES, "· ✓ ✓✓", Tone::Dim, "at its end: sending, the agent got it, the model read it"),
+    sym(MESSAGES, "┃", Tone::Accent, "something that needs you"),
+    sym(MESSAGES, G_MSG, Tone::Text, "an agent writes to you"),
+    Symbol { group: MESSAGES, glyph: "\u{2709}\u{FE0E} a → b", tone: Tone::Dim, ascii: "@ a > b", meaning: "a message between two agents" },
+    sym(MESSAGES, G_IMAGE, Tone::Accent, "an image"),
+    sym(MESSAGES, G_QUOTE, Tone::Accent, "a quote of the history"),
+    sym(MESSAGES, "●", Tone::Accent, "recording your voice"),
+    sym(HISTORY, G_BRIEF, Tone::Text, "an agent's brief"),
+    sym(HISTORY, G_THINK, Tone::Dim, "thinking"),
+    sym(HISTORY, G_BASH, Tone::Text, "a bash call"),
+    sym(HISTORY, G_TS, Tone::Text, "a TypeScript call"),
+    sym(HISTORY, G_SUBCALL, Tone::Text, "a call inside a TypeScript run"),
+    sym(HISTORY, G_PATCH, Tone::Text, "a file edit"),
+    sym(HISTORY, "·", Tone::Dim, "a note from the app"),
+    sym(HISTORY, G_COMPACTING, Tone::Dim, "compaction: it pulses while running, then its summary"),
+    sym(HISTORY, G_INTERRUPTED, Tone::Dim, "turn interrupted"),
+    sym(HISTORY, G_WRAP, Tone::Faint, "a long code row goes on"),
+    sym(HISTORY, "▸ ▾", Tone::Text, "folded / open: click or space"),
+    sym(HISTORY, "▸ 3 more lines", Tone::Dim, "folded lines: click, space or ctrl+o"),
+];
+
+/// `s` as `BISE_ASCII=1` draws it: each glyph of [`ASCII`] to its
+/// form, the longest match first (`✓✓` before `✓`).
+pub(crate) fn ascii_text(s: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(c) = rest.chars().next() {
+        match ASCII.iter().filter(|(u, _)| rest.starts_with(u)).max_by_key(|(u, _)| u.len()) {
+            Some((u, a)) => {
+                out.push_str(a);
+                rest = &rest[u.len()..];
+            }
+            None => {
+                out.push(c);
+                rest = &rest[c.len_utf8()..];
+            }
+        }
+    }
+    out
+}
+
 /// Every `G_*` glyph with its ASCII form, then the other glyphs the TUI
 /// draws today (chrome, hints, old feed glyphs, the braille spinner): the
 /// table [`glyph`] and [`asciify`] read. One cell each, except `✓✓`.
@@ -754,6 +875,74 @@ mod tests {
         ascii_cell::set(false);
         assert_eq!(done_glyph(), "✓");
         assert_eq!(ellipsis(), "…");
+    }
+
+    /// Every `G_*` glyph constant of the crate (the declarations, read
+    /// from the sources: a new one cannot be forgotten) is on a legend
+    /// row, and the legend's ASCII forms are ASCII (box drawing aside).
+    #[test]
+    fn every_glyph_constant_has_a_legend_row() {
+        let named: &[(&str, &str)] = &[
+            ("G_YOU", G_YOU), ("G_MAIN", G_MAIN), ("G_BRIEF", G_BRIEF), ("G_THINK", G_THINK),
+            ("G_BASH", G_BASH), ("G_TS", G_TS), ("G_SUBCALL", G_SUBCALL), ("G_PATCH", G_PATCH),
+            ("G_MSG", G_MSG), ("G_IMAGE", G_IMAGE), ("G_QUOTE", G_QUOTE), ("G_CARD", G_CARD),
+            ("G_COMPACTING", G_COMPACTING), ("G_SUMMARY", G_SUMMARY), ("G_INTERRUPTED", G_INTERRUPTED),
+            ("G_WRAP", G_WRAP), ("G_STARTING", G_STARTING), ("G_WORKING", G_WORKING),
+            ("G_WAITING", G_WAITING), ("G_NEEDS_YOU", G_NEEDS_YOU), ("G_DONE", G_DONE),
+            ("G_FAILED", G_FAILED), ("G_IDLE", G_IDLE), ("G_STOPPED", G_STOPPED),
+            ("G_SENDING", G_SENDING), ("G_RECEIVED", G_RECEIVED), ("G_READ", G_READ),
+            ("G_UNREAD", G_UNREAD), ("G_WORKTREE", G_WORKTREE), ("G_OVERLAP", G_OVERLAP),
+            ("G_RESTART_FAILED", G_RESTART_FAILED), ("G_BUILDING", G_BUILDING),
+            ("G_CLOSED", G_CLOSED), ("G_OPEN", G_OPEN),
+            ("G_ENVELOPE", crate::render::G_ENVELOPE), ("G_NOTE", crate::render::G_NOTE),
+        ];
+        // the declared ones: a `G_…` constant of type `&str` in any source file
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
+        let mut declared = std::collections::BTreeSet::new();
+        let mut stack = vec![std::path::PathBuf::from(dir)];
+        while let Some(d) = stack.pop() {
+            for e in std::fs::read_dir(&d).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    let src = std::fs::read_to_string(&p).unwrap();
+                    for l in src.lines() {
+                        let Some(at) = l.find("const G_") else { continue };
+                        let rest = &l[at + 6..];
+                        let name: String = rest.chars().take_while(|c| c.is_ascii_uppercase() || *c == '_').collect();
+                        if rest[name.len()..].starts_with(": &str") {
+                            declared.insert(name);
+                        }
+                    }
+                }
+            }
+        }
+        let listed: std::collections::BTreeSet<String> = named.iter().map(|(n, _)| n.to_string()).collect();
+        assert_eq!(declared, listed, "a G_* glyph constant is missing from this test's list");
+        for (name, g) in named {
+            assert!(
+                LEGEND.iter().any(|s| s.glyph.split(' ').any(|t| t == *g)),
+                "{name} ({g:?}) has no row in the legend (theme::LEGEND)"
+            );
+        }
+        for ascii in [false, true] {
+            ascii_cell::set(ascii);
+            for s in LEGEND {
+                let shown = s.shown();
+                if ascii {
+                    let odd: String = shown.chars().filter(|c| !c.is_ascii() && !('\u{2500}'..='\u{257f}').contains(c)).collect();
+                    assert!(odd.is_empty(), "{:?} → {shown:?} under BISE_ASCII", s.glyph);
+                } else {
+                    assert_eq!(shown, s.glyph);
+                }
+            }
+        }
+        ascii_cell::set(true);
+        let of = |g: &str| LEGEND.iter().find(|s| s.glyph == g).unwrap().shown();
+        assert_eq!((of(G_WORKTREE).as_str(), of(G_DONE).as_str(), of("· ✓ ✓✓").as_str()), ("Y", "*", ". v vv"));
+        assert_eq!(of("opus·hi"), "opus.hi");
+        ascii_cell::set(false);
     }
 
     #[test]

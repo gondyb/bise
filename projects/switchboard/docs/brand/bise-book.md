@@ -232,6 +232,19 @@ the help keys say `alt + number` instead of `⌥ + number`. Chrome glyphs
 outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their table forms through
 `theme::asciify`. Box drawing stays (it is drawn by every font).
 
+**The legend** (BISE-137, user: ψ was unclear): /help and /shortcuts end
+with a `symbols` section, one row per glyph: the glyph in its screen
+color (its ASCII form under `BISE_ASCII=1`), then a few plain words, in
+three groups with a faint title: **agents** (`:*` `∿` `·` `…` `?` `✓` `✗`
+`○` `–` `•` `ψ` `opus·hi` `⇄` `↻` `Δ` `# 3` `+ 2 more`), **messages** (`›`
+`│` `· ✓ ✓✓` `┃` `@` `✉︎ a → b` `▣` `❝` `●`) and **history** (`◇` `∴` `$`
+`λ` `↳` `±` `·` `≡` `▲` `»` `▸ ▾` `▸ 3 more lines`). The filter finds a
+row by its glyph, its ASCII form or its words (`worktree` → `ψ`). The
+rows are one table next to the glyphs (`theme::LEGEND`); a test reads
+every `G_*` glyph constant declared in the sources and fails when one has
+no row. Zen is a behavior, not a glyph: it has a key row (`typing`), not
+a symbol row (designer).
+
 ---
 
 # Part II — Product spec (the terminal UI)
@@ -650,6 +663,8 @@ replays it (**⚠** proposed command).
 | ``ctrl+` `` | terminal panel | — |
 | `ctrl+v` | paste an image | from the images work |
 | `ctrl+z` | ~~cancel the last route~~ | **removed** |
+| `typing` (composer) | zen: the edges fade while you type, back 5 s after your last key (or at once on ⏎, esc, a shortcut) | a row in /shortcuts (BISE-137) |
+| `/help`, `/shortcuts` | both end with the `symbols` legend (§6): every glyph, its ASCII form under `BISE_ASCII=1`, a few words | new (BISE-137) |
 
 ## 17. Copy deck
 

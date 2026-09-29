@@ -2,8 +2,9 @@
 //! (section, keys, action) rows. A new feature adds one row to `ROWS`.
 //!
 //! /help shows the commands and the essential keys (rows marked `top`);
-//! /shortcuts shows every row. Typing filters, Tab switches the page,
-//! Esc clears the filter, then closes.
+//! /shortcuts shows every row. Both end with the symbols, from
+//! [`theme::LEGEND`]. Typing filters, Tab switches the page, Esc clears
+//! the filter, then closes.
 
 use crate::{theme, App};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -109,6 +110,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(EDIT, "esc", "put the draft away in the history (↑ brings it back)"),
     r(EDIT, "tab|⏎", "pick from the /, @ or $ popup (esc closes it)"),
     r(EDIT, ":name:", "typed, becomes its emoji (:tada: → 🎉)").top(),
+    r(EDIT, "typing", "zen: the edges fade while you type, back 5 s after your last key (or at once on ⏎, esc, a shortcut)"),
     r(ACCENTS, "option+` then e", "è (grave)"),
     r(ACCENTS, "option+e then e", "é (acute)"),
     r(ACCENTS, "option+i then o", "ô (circumflex)"),
@@ -389,8 +391,48 @@ pub(crate) fn table_lines(rows: &[&Row], width: usize) -> Vec<Line<'static>> {
     out
 }
 
+/// The symbols section (book §6): one row per [`theme::LEGEND`] entry,
+/// the glyph in its screen color (its ASCII form under `BISE_ASCII=1`),
+/// then its meaning; a faint title per group. Filtered like the keys.
+pub(crate) fn symbol_lines(filter: &str, width: usize) -> Vec<Line<'static>> {
+    let f = filter.to_lowercase();
+    let rows: Vec<_> = theme::LEGEND
+        .iter()
+        .filter(|s| {
+            f.is_empty()
+                || ["symbols", s.group, s.glyph, &s.shown(), s.meaning]
+                    .iter()
+                    .any(|t| t.to_lowercase().contains(&f))
+        })
+        .collect();
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    // one column for every row, filtered or not: the width of the longest + 2
+    let glyph_w = theme::LEGEND.iter().map(|s| s.shown().width()).max().unwrap_or(1) + 2;
+    let mean_w = width.saturating_sub(2 + glyph_w).max(8);
+    let mut out = vec![header("symbols")];
+    let mut group = "";
+    for s in rows {
+        if s.group != group {
+            out.push(Line::from(Span::styled(format!("  {}", s.group), Style::default().fg(theme::faint()))));
+            group = s.group;
+        }
+        let shown = s.shown();
+        for (i, l) in wrap(s.meaning, mean_w).into_iter().enumerate() {
+            let g = if i == 0 { shown.as_str() } else { "" };
+            out.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(format!("{:<w$}", g, w = glyph_w), Style::default().fg(s.tone.color())),
+                Span::raw(l),
+            ]));
+        }
+    }
+    out
+}
+
 /// The whole text of a page: /help = the commands + the essential keys,
-/// /shortcuts = the full table.
+/// /shortcuts = the full table; both end with the symbols.
 pub(crate) fn page_lines(
     page: Page,
     filter: &str,
@@ -408,10 +450,10 @@ pub(crate) fn page_lines(
         // where every key is, first: the list below outgrows a small
         // screen (BISE-135 added /model and /reasoning)
         if !rows.is_empty() {
-            out.push(Line::from(Span::styled(
-                "essential keys · every key: /shortcuts (tab here)",
-                Style::default().fg(theme::dim()).add_modifier(Modifier::ITALIC),
-            )));
+            let hint = Style::default().fg(theme::dim()).add_modifier(Modifier::ITALIC);
+            for l in wrap("essential keys · every key: /shortcuts (tab here) · symbols at the end", width) {
+                out.push(Line::from(Span::styled(l, hint)));
+            }
         }
         if !cmds.is_empty() {
             out.push(header("commands"));
@@ -430,6 +472,11 @@ pub(crate) fn page_lines(
         }
     }
     out.extend(table_lines(&rows, width));
+    let symbols = symbol_lines(filter, width);
+    if !symbols.is_empty() && !out.is_empty() {
+        out.push(Line::default());
+    }
+    out.extend(symbols);
     if out.is_empty() {
         out.push(Line::from(Span::styled(
             format!("nothing matches “{}” · backspace or esc", filter),
@@ -579,6 +626,40 @@ mod tests {
         assert_eq!(o.len(), 1, "ctrl+o is only the folds (no shell)");
         assert_eq!(o[0].action, "open or close everything folded");
         assert!(!ROWS.iter().any(|r| r.keys.split('|').any(|k| k == "ctrl+t")), "ctrl+t is gone");
+    }
+
+    /// The symbols end both pages, one row per legend entry, the ψ row
+    /// says worktree, in both modes; nothing overflows.
+    #[test]
+    fn both_pages_end_with_the_symbols() {
+        for ascii in [false, true] {
+            theme::set_ascii_for_tests(ascii);
+            for page in [Page::Help, Page::Shortcuts] {
+                for width in [40usize, 106] {
+                    let lines = page_lines(page, "", &[], width);
+                    for l in &lines {
+                        assert!(spans_width(&l.spans) <= width, "overflow at {width}: {l:?}");
+                    }
+                    let all = text(&lines);
+                    let at = all.find("\nsymbols\n").expect("a symbols section");
+                    let sym = &all[at..];
+                    for s in theme::LEGEND {
+                        assert!(sym.contains(&format!("  {}  ", s.shown())) || sym.contains(&format!("  {} ", s.shown())), "{:?}", s.glyph);
+                    }
+                    let psi = if ascii { "Y" } else { "ψ" };
+                    let row = sym.lines().find(|l| l.trim_start().starts_with(psi)).unwrap();
+                    assert!(row.contains("worktree"), "{row}");
+                    for g in ["agents", "messages", "history"] {
+                        assert!(sym.contains(&format!("\n  {g}\n")), "group {g}");
+                    }
+                }
+            }
+        }
+        theme::set_ascii_for_tests(false);
+        // the filter finds a symbol by its meaning, its glyph or its ASCII form
+        let only = text(&page_lines(Page::Help, "worktree", &[], 80));
+        assert!(only.contains("symbols") && only.contains("ψ"), "{only}");
+        assert!(text(&page_lines(Page::Shortcuts, "symbols", &[], 80)).contains("✓✓"));
     }
 
     #[test]

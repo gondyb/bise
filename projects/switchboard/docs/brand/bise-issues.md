@@ -2181,6 +2181,14 @@ Index:
 - **notes:** tests `run::zen_tests::zen_fades_the_chrome_but_the_history_the_typed_text_the_label_and_the_accent` (every feed-area cell as it was, `ship it` in it; a panel agent row, the header, the key bar faded), `sb::panel::tests::main_status_sits_in_the_glyph_column` (zen: the panel's gust still, the divider's calm).
 
 
+### BISE-137 · a symbols legend in /help
+
+- **status:** done · **owner:** help-legend · **commits:** `git log --grep BISE-137`
+- **track:** K · **owns:** `theme.rs` (`LEGEND`, `Symbol`, `Tone`, `ascii_text`), `help.rs` (`symbol_lines`, the zen row, the hint), `render.rs` (`G_NOTE` visible to the test), book §6 (the legend) and §16
+- **spec:** the user found `ψ` unclear: /help explains every glyph and mark the TUI shows, each with its ASCII form when ASCII mode is on.
+- **what:** /help and /shortcuts end with `symbols`: one row per glyph, the glyph in its screen color (ASCII form under `BISE_ASCII=1`: the table's, like `asciify`, or its own: `✓` done `*`, the envelope chip `@ a > b`), then a few words; three groups with a faint title (agents, messages, history; designer's wording and order). The filter matches the glyph, its ASCII form, the words, the group. The /help hint says `· symbols at the end` and wraps on a narrow screen. Zen (a behavior, designer) is a key row: `typing`.
+- **notes:** the rows are `theme::LEGEND`, next to the `G_*` constants. Tests: `theme::tests::every_glyph_constant_has_a_legend_row` (reads every `const G_…: &str` declared under `rust/tui/src`, requires the same list in the test and a legend row for each value; the ASCII forms are ASCII, box drawing aside), `help::tests::both_pages_end_with_the_symbols` (both pages, both modes, 40 and 106 columns, no overflow, ψ says worktree, the filter). `│` and `┃` stay box drawing in ASCII mode until the table maps them (bug E): the legend follows the table.
+
 ### BISE-136 · where each agent works: the shared checkout or a worktree
 
 - **status:** done · **owner:** bise-wt-badge · **commits:** `git log --grep BISE-136`
