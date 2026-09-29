@@ -973,6 +973,18 @@ pub(crate) fn is_l3(ev: &Ev) -> bool {
     matches!(ev, Ev::AgentMsg { level: 3, text, .. } if !is_brief(text) && report_parts(text).is_none())
 }
 
+/// A history event written for you (BISE-234, zen): your messages, level
+/// 2 (replies, main answering for you, an agent writing to you, the
+/// reports), cards, warnings and errors. The rest (calls and their boxes,
+/// thinking, level 3 and its folds, briefs, hub notices and activity)
+/// fades with the chrome while you type.
+pub(crate) fn for_you(ev: &Ev) -> bool {
+    match ev {
+        Ev::You(..) | Ev::Card { .. } | Ev::Warn(_) | Ev::Err(_) => true,
+        _ => is_l2(ev),
+    }
+}
+
 /// The two agents of a level-3 message, either way round (`auth-fix →
 /// release` and `release → auth-fix` are one pair).
 fn l3_pair(ev: &Ev) -> Option<(String, String)> {

@@ -29,6 +29,12 @@
 //!   header) stand still (BISE-132); the gust of the agent in view (the
 //!   divider's label) slows to half speed, each tone one step down; the
 //!   tick pulses hold still.
+//! - In the history, the rows not written for you fade too, the same
+//!   depth and ramp as the chrome (BISE-234, `feed::for_you`): the calls
+//!   and their boxes, thinking, the messages between agents and their
+//!   folds, briefs, the hub's notices and activity. Your messages, the
+//!   replies and reports for you, cards and errors stay as they are. A
+//!   row that comes during zen comes faded.
 //! - `BISE_REDUCE_MOTION`: no ramp (one step in, one out). `NO_COLOR`: no
 //!   mixed colors: the terminal's dim attribute on the faded cells.
 //!   `BISE_ASCII` changes nothing here.
@@ -68,11 +74,24 @@ pub(crate) struct Zen {
     /// what the last frame keeps as is (the history, composer text,
     /// divider label, card box); set by the draw
     pub(crate) keep: Vec<Rect>,
+    /// the history rows of the last frame not written for you (inside
+    /// the kept history): they fade all the same (BISE-234); set by the
+    /// draw
+    pub(crate) aside: Vec<Rect>,
 }
 
 impl Default for Zen {
     fn default() -> Zen {
-        Zen { start: None, last: None, broken: None, fade: FADE, no_color: false, calls: 0, keep: Vec::new() }
+        Zen {
+            start: None,
+            last: None,
+            broken: None,
+            fade: FADE,
+            no_color: false,
+            calls: 0,
+            keep: Vec::new(),
+            aside: Vec::new(),
+        }
     }
 }
 
@@ -234,15 +253,17 @@ pub(crate) fn toward(fg: Color, bg: Color, t: f32) -> Option<Color> {
 /// The zen pass (after the theme's paint): every cell's text mixed
 /// `depth` toward its background, except the cells in `keep` and the
 /// ones that need you (text or background in `attention`: the accent,
-/// the error color). `no_color`: the dim attribute instead. Free at 0.
-pub(crate) fn fade(buf: &mut Buffer, depth: f32, keep: &[Rect], attention: &[Color], no_color: bool) {
+/// the error color); the cells in `aside` fade even inside `keep` (each
+/// once). `no_color`: the dim attribute instead. Free at 0.
+pub(crate) fn fade(buf: &mut Buffer, depth: f32, keep: &[Rect], aside: &[Rect], attention: &[Color], no_color: bool) {
     if depth <= 0.0 {
         return;
     }
     let area = buf.area;
+    let within = |rs: &[Rect], x: u16, y: u16| rs.iter().any(|r| x >= r.x && x < r.right() && y >= r.y && y < r.bottom());
     for y in area.top()..area.bottom() {
         for x in area.left()..area.right() {
-            if keep.iter().any(|r| x >= r.x && x < r.right() && y >= r.y && y < r.bottom()) {
+            if within(keep, x, y) && !within(aside, x, y) {
                 continue;
             }
             let cell = &mut buf[(x, y)];
@@ -476,9 +497,9 @@ mod tests {
         buf[(1, 0)].fg = accent;
         buf[(2, 0)].fg = Color::Gray;
         let keep = [Rect::new(0, 1, 2, 1)];
-        fade(&mut buf, 0.0, &keep, &[accent], false);
+        fade(&mut buf, 0.0, &keep, &[], &[accent], false);
         assert!(buf.content.iter().all(|c| c.fg != Color::Rgb(0x8a, 0x84, 0x7c)), "free at 0");
-        fade(&mut buf, DEPTH, &keep, &[accent], false);
+        fade(&mut buf, DEPTH, &keep, &[], &[accent], false);
         // #ece6da 45 % toward #141211: #8b8780
         let faded = Color::Rgb(0x8b, 0x87, 0x80);
         assert_eq!(toward(ink, ground, DEPTH), Some(faded));
@@ -493,7 +514,7 @@ mod tests {
         let mut buf = Buffer::empty(Rect::new(0, 0, 1, 1));
         buf[(0, 0)].fg = ink;
         buf[(0, 0)].bg = ground;
-        fade(&mut buf, DEPTH, &[], &[], true);
+        fade(&mut buf, DEPTH, &[], &[], &[], true);
         assert_eq!(buf[(0, 0)].fg, ink);
         assert!(buf[(0, 0)].modifier.contains(Modifier::DIM));
     }

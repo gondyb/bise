@@ -235,6 +235,7 @@ impl Startup {
 /// you type (BISE-121), `BISE_ASCII`.
 pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
     crate::links::begin_frame(); // the feed says where its links are
+    app.zen.aside.clear(); // the feed says what fades in the history
     sb::draw_sb(app, f);
     crate::hints::draw(f); // BISE-61: one-time hints
     crate::ctrlhint::draw(app, f.buffer_mut()); // ctrl held: the key hints
@@ -243,7 +244,7 @@ pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
     let depth = app.zen.depth(std::time::Instant::now());
     if depth > 0.0 {
         let attention = [crate::theme::accent(), crate::theme::error()];
-        crate::zen::fade(f.buffer_mut(), depth, &app.zen.keep, &attention, app.zen.no_color);
+        crate::zen::fade(f.buffer_mut(), depth, &app.zen.keep, &app.zen.aside, &attention, app.zen.no_color);
     }
     crate::theme::asciify(f.buffer_mut()); // BISE-84: BISE_ASCII=1
 }
@@ -769,6 +770,12 @@ mod zen_tests {
     #[test]
     fn zen_fades_the_chrome_but_the_history_the_typed_text_the_label_and_the_accent() {
         let mut app = app_with_agents();
+        // BISE-234: a message between agents, main's reply, a call
+        sb::dispatch(&mut app, &json!({"ev": "line", "agent": "main", "line": "sb msg : docs → main : found it"}).to_string());
+        crate::feed::push_event(&mut app.events, &mut app.cache, crate::wire::Ev::Assistant("all set".into()));
+        let mut call = crate::wire::ToolData::bare(1, crate::wire::ToolState::Ok);
+        call.name = Some("bash".into());
+        crate::feed::push_event(&mut app.events, &mut app.cache, crate::wire::Ev::Tool(call));
         let calm = screen(&mut app);
         let t = Instant::now() - std::time::Duration::from_secs(1);
         for c in "hello".chars() {
@@ -790,15 +797,29 @@ mod zen_tests {
         let lx = (0..120).find(|&x| zen[(x, label_y)].symbol() == "y").unwrap();
         let row = |b: &Buffer| (lx - 1..lx + 11).map(|x| b[(x, label_y)].clone()).collect::<Vec<_>>();
         assert_eq!(row(&zen), row(&plain));
-        // BISE-132: the history you read, as it was: every cell of the
-        // feed area, from the history's first row to the divider
+        // BISE-132, BISE-234: in the history, what's for you as it was
+        // (your message, main's reply); the call and the message between
+        // agents fade with the chrome
         let cols = crate::layout::cols(120, 36);
         let rows = crate::layout::rows(120, 36);
-        let feed = |b: &Buffer| {
-            (rows.body..label_y).flat_map(|y| (cols.feed_x..cols.feed_x + cols.feed_w).map(move |x| (x, y))).map(|p| b[p].clone()).collect::<Vec<_>>()
+        let feed_row = |s: &str| {
+            (rows.body..label_y)
+                .find(|&y| (cols.feed_x..cols.feed_x + cols.feed_w).map(|x| plain[(x, y)].symbol()).collect::<String>().contains(s))
+                .unwrap_or_else(|| panic!("no feed row with {s:?}"))
         };
-        assert_eq!(feed(&zen), feed(&plain));
-        assert!(feed(&plain).iter().map(|c| c.symbol()).collect::<String>().contains("ship it"));
+        let cells = |b: &Buffer, y: u16| (cols.feed_x..cols.feed_x + cols.feed_w).map(|x| b[(x, y)].clone()).collect::<Vec<_>>();
+        for s in ["ship it", "all set"] {
+            let y = feed_row(s);
+            assert_eq!(cells(&zen, y), cells(&plain, y), "for you: {s}");
+        }
+        let faded_row = |y: u16| {
+            (cols.feed_x..cols.feed_x + cols.feed_w).all(|x| {
+                let (p, z) = (&plain[(x, y)], &zen[(x, y)]);
+                p.fg == crate::theme::accent() || crate::zen::toward(p.fg, p.bg, depth) == Some(z.fg)
+            }) && (cols.feed_x..cols.feed_x + cols.feed_w).any(|x| plain[(x, y)].symbol() != " " && plain[(x, y)].fg != zen[(x, y)].fg)
+        };
+        assert!(faded_row(feed_row("found it")), "between agents");
+        assert!(faded_row(feed_row("bash")), "a call");
         // the chrome: 45 % toward its ground (the panel's rows, the header,
         // the key bar)
         let fades = |x: u16, y: u16| zen[(x, y)].fg == crate::zen::toward(plain[(x, y)].fg, plain[(x, y)].bg, depth).unwrap() && zen[(x, y)].fg != plain[(x, y)].fg;

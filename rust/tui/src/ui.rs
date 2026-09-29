@@ -216,9 +216,12 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     if card_h > 0 {
         sb::draw_card(app, frame, col(card));
         app.zen.keep.push(col(card).intersection(area));
+        let c = col(card);
+        app.zen.aside.retain(|r| r.intersection(c).is_empty());
     } else if sb::card_full(app) {
         sb::draw_card(app, frame, body);
         app.zen.keep.push(body.intersection(area));
+        app.zen.aside.clear();
     }
     draw_popup(app, frame, text);
     // the key bar, from x0 to the right margin (from 60 columns, from
@@ -366,6 +369,23 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect, bar: Option<Rect>) {
         app.unseen = 0;
     }
     frame.render_widget(Paragraph::new(Text::from(vis)), text_area);
+    // zen (BISE-234): the runs of rows not written for you fade with the
+    // chrome; one rect per run, from the visible slice only
+    app.zen.aside.clear();
+    let mut y = 0;
+    while y < vis_events.len() {
+        let aside = |y: usize| app.events.get(vis_events[y]).is_some_and(|ev| !crate::feed::for_you(ev));
+        if !aside(y) {
+            y += 1;
+            continue;
+        }
+        let from = y;
+        while y < vis_events.len() && aside(y) {
+            y += 1;
+        }
+        let r = Rect { y: text_area.y + from as u16, height: (y - from) as u16, ..text_area };
+        app.zen.aside.push(r.intersection(text_area));
+    }
     // the visible links, for the OSC 8 of the backend (links.rs)
     for (y, (&i, &ri)) in vis_events.iter().zip(&vis_rows).enumerate() {
         let Some(er) = app.cache.get(i).and_then(|c| c.as_ref()) else { continue };
