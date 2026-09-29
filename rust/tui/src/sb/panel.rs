@@ -585,6 +585,17 @@ pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bo
 }
 
 /// The state of the agent you talk to (book §8 "The frame": the right of
+/// The agent you view, when it works (book §8, BISE-105): its working
+/// mark (the panel's pulse) and the current turn's age, for the
+/// divider's label.
+pub(crate) fn viewed_working(app: &App) -> Option<crate::chrome::Working> {
+    let sb = app.sb.as_ref()?;
+    let a = sb.agent(&sb.focus).filter(|a| a.status == "working")?;
+    let (g, color) = glyph(&a.status, app.tick);
+    Some(crate::chrome::Working { mark: vec![Span::styled(g, Style::default().fg(color))], age: a.turn_age_ms().map(short_age) })
+}
+
+/// The state of the agent you talk to (book §8 "The frame": the right of
 /// the divider; it was the status row), dim: its state, the turn's
 /// duration, its context, `shared folder` or `⎇ branch`, then the notes
 /// (preview, read-only, cards, the hub's version); or the `D` question,

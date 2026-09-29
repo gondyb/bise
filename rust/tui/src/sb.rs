@@ -21,7 +21,7 @@ mod cards;
 pub(super) use cards::{card_box_height, card_full, card_mouse, close_items, draw_card};
 use cards::{answer_card, Card, CardView};
 mod panel;
-pub(super) use panel::{draw_panel, key_mode, panel_mouse, placeholder, split, status_state, workspace};
+pub(super) use panel::{draw_panel, key_mode, panel_mouse, placeholder, split, status_state, viewed_working, workspace};
 #[cfg(test)]
 pub(super) use panel::status_text;
 use panel::glyph;
@@ -52,6 +52,8 @@ pub(super) struct Agent {
     note: String,
     queued: u64,
     turn_ms: Option<u64>,
+    /// When `turn_ms` came: the turn's age moves on between two states.
+    turn_seen: Option<std::time::Instant>,
     /// The last report, one line, and when it came (for an archived
     /// task: what it did, and about when it stopped).
     report: String,
@@ -69,6 +71,13 @@ impl Agent {
     /// When it was last heard of: its last report, else its creation.
     fn last_ms(&self) -> u64 {
         self.report_ms.unwrap_or(self.created_ms)
+    }
+
+    /// The current turn's age now: the hub's `turn_ms` plus the time
+    /// since it came.
+    fn turn_age_ms(&self) -> Option<u64> {
+        let since = self.turn_seen.map_or(0, |t| t.elapsed().as_millis() as u64);
+        self.turn_ms.map(|ms| ms.saturating_add(since))
     }
 
     /// In a turn (its feed shows the spinner).
@@ -517,6 +526,7 @@ fn apply_state(app: &mut App, v: &Value) {
                     note: s(x, "note"),
                     queued: x.get("queued").and_then(|q| q.as_u64()).unwrap_or(0),
                     turn_ms: x.get("turn_ms").and_then(|q| q.as_u64()),
+                    turn_seen: Some(std::time::Instant::now()),
                     report: s(x, "report"),
                     report_ms: x.get("report_ms").and_then(|q| q.as_u64()),
                     created_ms: x.get("created_ms").and_then(|q| q.as_u64()).unwrap_or(0),

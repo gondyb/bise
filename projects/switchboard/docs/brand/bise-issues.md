@@ -1993,10 +1993,11 @@ Index:
 
 ### BISE-105 · the divider shows that the agent you view works
 
-- **status:** todo · **owner:** bise-divider · **commits:** —
+- **status:** done · **owner:** bise-divider · **commits:** the commit that marks it done (`git log --grep BISE-105`)
 - **track:** F · **owns:** `chrome.rs` (the divider label), the turn start time from the feed/app state, tests
 - **spec:** book §8 "The frame" (divider line). User request via marketing (m_1285, 2026-09-29).
 - **what:** when the viewed agent (main or another) is working, the divider label reads `you → name ∿ working · 42s`: the indicator 1 space after the name (today's `∿`, pulsing as in the panel), `working · 42s` dim, seconds of the current turn, updated each second; idle: nothing after the name. Right side unchanged. The indicator glyph will change once the user picks among site/book/working.html (5f68a5c): keep it one constant.
+- **notes:** `chrome::Working { mark, age }` passed to `draw_divider`; `sb::viewed_working` gives it for the focused agent when its status is `working` (mark = the panel's glyph for the tick, age = `short_age` of the hub's `turn_ms` + the time since that state came, `Agent::turn_age_ms`, so it moves each second on the existing 80 ms redraw loop). The working part only takes the room the state leaves (the right side is drawn exactly as before): full, then the mark alone, then nothing. Tests: `chrome::tests` (working with age, no age, idle, narrow widths 20-119). Gate: quick green (12 s). The mark becomes the gust in BISE-107.
 
 ### BISE-106 · level 3 is an envelope chip
 

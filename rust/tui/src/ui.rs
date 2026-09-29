@@ -255,7 +255,8 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     } else {
         state
     };
-    let state_rect = chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, state);
+    let working = sb::viewed_working(app);
+    let state_rect = chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, working.as_ref(), state);
     app.bottom_bar_rect = (!app.tail_visible && !rows.keys_in_divider).then_some(state_rect);
     // the queued messages: ` › text`, the `›` under the composer's bar
     let queue = pane(chunks[7]);
