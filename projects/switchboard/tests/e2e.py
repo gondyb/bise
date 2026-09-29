@@ -288,7 +288,7 @@ def t_worktree_drop_restore(E, c):
     check(a["mode"] == "worktree" and a["branch"] == "sb/t4", "worktree mode: %r" % a)
     wt = a["path"]
     # BISE-230: the task's folder <worktrees>/<task>/<repo> (SB_STATE_DIR: in it)
-    check(wt == os.path.join(os.path.realpath(E.state), "worktrees", "t4", "ws"), "the worktree's place: " + wt)
+    check(wt == os.path.join(E.state, "worktrees", "t4", "ws"), "the worktree's place: " + wt)
     check(open(os.path.join(os.path.dirname(wt), "owner")).read().strip() == "t4", "the folder names its task")
     c.wait_line("t4", "done: tool bash ok: committed", 90)
     c.wait_idle("t4")
