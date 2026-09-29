@@ -66,6 +66,9 @@ pub(super) struct Agent {
     created_ms: u64,
     /// Who it waits on (`sb wait` / `sb ask`), "" when no one.
     waiting_on: String,
+    /// BISE-136: the private git worktree it works in (`gate.sh new`),
+    /// "" when it works in its own workspace.
+    place: String,
 }
 
 impl Agent {
@@ -487,6 +490,7 @@ fn apply_state(app: &mut App, v: &Value) {
                     report_ms: x.get("report_ms").and_then(|q| q.as_u64()),
                     created_ms: x.get("created_ms").and_then(|q| q.as_u64()).unwrap_or(0),
                     waiting_on: s(x, "waiting_on"),
+                    place: s(x, "place"),
                 })
                 .collect()
         })

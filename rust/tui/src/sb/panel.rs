@@ -171,6 +171,22 @@ fn fit(s: &str, max: usize) -> String {
     out
 }
 
+/// BISE-136: where `a` works when it is not the shared checkout, for
+/// `ψ {label}`: its hub worktree's branch (`sb spawn --worktree`,
+/// `/isolate`), else the name of the private worktree it told the hub
+/// about (`gate.sh new`: `/tmp/<task>-wt`). None: the shared checkout,
+/// which shows nothing (quiet is normal).
+pub(crate) fn place_label(a: &Agent) -> Option<String> {
+    let base = |p: &str| p.trim_end_matches('/').rsplit('/').next().unwrap_or(p).to_string();
+    if let Some(b) = &a.branch {
+        return Some(b.clone());
+    }
+    if a.mode == "worktree" {
+        return Some(base(&a.path));
+    }
+    (!a.place.is_empty()).then(|| base(&a.place))
+}
+
 /// The row of live agent `a`, entry `i` of the panel, number `num`
 /// (0 main; blank after 9).
 fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usize) -> Line<'static> {
@@ -195,7 +211,7 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usi
     if sb.activity.contains(&a.name) && !focused {
         marks.push(Span::styled(format!(" {}", G_UNREAD), Style::default().fg(accent())));
     }
-    if a.branch.is_some() || a.mode == "worktree" {
+    if place_label(a).is_some() {
         marks.push(Span::styled(format!(" {}", G_WORKTREE), Style::default().fg(dim())));
     }
     if a.queued > 0 {
@@ -706,7 +722,8 @@ pub(crate) fn viewed_working(app: &App) -> Option<crate::chrome::Working> {
 
 /// The state of the agent you talk to (book §8 "The frame": the right of
 /// the divider; it was the status row), dim: its state, the turn's
-/// duration, its context, `shared folder` or `⎇ branch`, then the notes
+/// duration, its context, `ψ branch` or `ψ worktree` when it does not
+/// work in the shared checkout (BISE-136: nothing then), then the notes
 /// (preview, read-only, cards, the hub's version); or the `D` question,
 /// in accent. `idle · 210k / 1M tokens · 21%`.
 pub(crate) fn status_state(app: &App) -> Option<Line<'static>> {
@@ -726,10 +743,8 @@ pub(crate) fn status_state(app: &App) -> Option<Line<'static>> {
     if let Some(u) = crate::usage::current(&app.events) {
         spans.push(d(u.label()));
     }
-    if let Some(b) = &a.branch {
-        spans.push(d(format!("{} {}", G_WORKTREE, b)));
-    } else if !a.main && !a.path.is_empty() && a.mode == "shared" {
-        spans.push(d("shared folder".into()));
+    if let Some(l) = place_label(&a) {
+        spans.push(d(format!("{} {}", G_WORKTREE, l)));
     }
     if a.archived() {
         spans.push(d("read-only history · /restore brings it back".into()));
@@ -1055,6 +1070,30 @@ mod tests {
         // with room, the whole name: no fixed cap (BISE-109)
         let t = trimmed(&panel_rows(&app, 40, 16));
         assert!(t.iter().any(|r| r.contains(&format!("big-refactor-of-auth {}", G_WORKTREE))), "{}", t.join("\n"));
+    }
+
+    /// BISE-136: ψ marks an agent out of the shared checkout (a hub
+    /// worktree or a private one), with its branch or worktree name in
+    /// the divider; the shared checkout shows nothing.
+    #[test]
+    fn where_an_agent_works() {
+        let hub = Agent { branch: Some("sb/big".into()), mode: "worktree".into(), ..agent("big", "working") };
+        let private = Agent { mode: "shared".into(), place: "/tmp/fix-wt/".into(), ..agent("fix", "working") };
+        let shared = Agent { mode: "shared".into(), path: "/ws".into(), ..agent("docs", "idle") };
+        assert_eq!(place_label(&hub).as_deref(), Some("sb/big"));
+        assert_eq!(place_label(&private).as_deref(), Some("fix-wt"));
+        assert_eq!(place_label(&shared), None);
+        let mut app = bench::test_app_drained();
+        app.sb.agents = vec![Agent { main: true, ..agent("main", "idle") }, private, shared];
+        let t = trimmed(&panel_rows(&app, 40, 8));
+        assert!(t.iter().any(|r| r.contains(&format!("fix {}", G_WORKTREE))), "{t:?}");
+        assert!(!t.iter().any(|r| r.contains("docs") && r.contains(G_WORKTREE)), "{t:?}");
+        app.sb.focus = "fix".into();
+        let state: String = status_state(&app).unwrap().spans.iter().map(|s| s.content.to_string()).collect();
+        assert!(state.contains(&format!("{} fix-wt", G_WORKTREE)), "{state:?}");
+        app.sb.focus = "docs".into();
+        let state: String = status_state(&app).unwrap().spans.iter().map(|s| s.content.to_string()).collect();
+        assert!(!state.contains(G_WORKTREE) && !state.contains("shared"), "{state:?}");
     }
 
     /// Colors: the number faint, the agent in view in accent, "needs
@@ -1622,7 +1661,8 @@ mod chrome_tests {
 
     /// Inside an agent (mockup "inside an agent"): the pinned line of the
     /// copy deck on top of the feed, the status row starts with the
-    /// agent's name in accent, then dim; `shared folder`.
+    /// agent's name in accent, then dim; the shared checkout shows no
+    /// place (BISE-136).
     #[test]
     fn inside_an_agent_screen() {
         let mut app = with_main();
@@ -1650,11 +1690,11 @@ mod chrome_tests {
         assert!(format!("{} {}", left(&rows[2]), left(&rows[3])).trim().contains(line), "{}", all);
         // the divider: `you →` dim, the name in accent, the state dim
         let y = rows.iter().position(|r| r.starts_with("├─ you → auth-fix ─")).unwrap_or_else(|| panic!("{}", all));
-        assert!(rows[y].ends_with(" idle · shared folder ─┤"), "{:?}", rows[y]);
+        assert!(rows[y].ends_with(" idle ─┤"), "{:?}", rows[y]);
         let cell = |x: usize| buf.cell((x as u16, y as u16)).unwrap().fg;
         assert_eq!(cell(3), dim(), "you → dim");
         assert_eq!(cell(9), accent(), "the name in accent");
-        let idle = rows[y].chars().count() - " idle · shared folder ─┤".chars().count() + 1;
+        let idle = rows[y].chars().count() - " idle ─┤".chars().count() + 1;
         assert_eq!(cell(idle), dim(), "the state dim");
         assert!(!all.contains("task"), "no \"task\" in the chrome:\n{}", all);
     }

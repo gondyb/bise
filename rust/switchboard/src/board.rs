@@ -12,7 +12,7 @@ fn ws_label(a: &Agent) -> String {
     match a.ws.mode {
         Mode::Worktree if a.ws.dropped => " [worktree dropped]".to_string(),
         Mode::Worktree => format!(" [worktree {}]", a.ws.branch.clone().unwrap_or_default()),
-        Mode::Shared => String::new(),
+        Mode::Shared => a.place.as_ref().map(|p| format!(" [private worktree {}]", p)).unwrap_or_default(),
     }
 }
 
@@ -193,6 +193,9 @@ pub fn status_block(st: &State, now: u64) -> String {
             {
                 l.push_str(&format!(" [{}]", b));
             }
+            if let Some(p) = &a.place {
+                l.push_str(&format!(" [worktree {}]", p));
+            }
             match a.status() {
                 Status::Working | Status::Waiting => {
                     if let Some((t, what)) = &a.activity {
@@ -238,7 +241,10 @@ pub fn tasks_detail(st: &State, now: u64) -> String {
                     a.ws.path,
                     a.ws.branch.clone().unwrap_or_default()
                 ),
-                Mode::Shared => " — shared workspace".to_string(),
+                Mode::Shared => match &a.place {
+                    Some(p) => format!(" — private worktree {} (commits to the shared branch)", p),
+                    None => " — shared workspace".to_string(),
+                },
             },
             age(a.created_ms, now),
             a.parent.clone().unwrap_or_default()

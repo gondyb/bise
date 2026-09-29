@@ -198,7 +198,7 @@ One glyph per entity and per status. Color only for attention.
 |---|---|
 | `·` → `✓` → `✓✓` | your message: sending → the agent got it → the model read it (`✓✓` in accent) |
 | `•` (accent) | unread activity in an agent |
-| `ψ` (picked in BISE-84: width 1, in every installed audited font) | the agent has its own worktree (no mark: the shared folder); was `⎇`, in almost no font |
+| `ψ` (picked in BISE-84: width 1, in every installed audited font) | the agent works in its own worktree: a hub one (its branch) or a private one (`gate.sh new`, BISE-136); no mark: the shared checkout; was `⎇`, in almost no font |
 | `⇄` | overlap: two agents changed the same file |
 | `↻` (error) | a restart failed |
 | `Δ` | a version is building or on trial (was `⧗`: in no font) |
@@ -284,7 +284,9 @@ outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their ta
   row per agent: its number (faint; 0 main, 1–9 the first nine agents, blank
   after), status glyph, name, and on the right the age and context fill
   (`12m · 21%`), or `you` (accent) / `done` / `waits docs` / `starting`.
-  Marks `•` unread and `⎇` worktree after the name. Numbers never change
+  Marks `•` unread and `ψ` worktree after the name (BISE-136: a hub
+  worktree, `sb spawn --worktree` / `/isolate`, or a private one the
+  agent told the hub about, `gate.sh new`; the shared checkout: no mark). Numbers never change
   while an agent lives (creation order). With more agents than rows, it
   scrolls and ends with `+ 21 more`. Archived agents: keep what landed in
   85160ab (a dim folded `▸ {n} archived` row at the bottom, click / `A` /
@@ -292,8 +294,10 @@ outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their ta
 - **Cards section** (BISE-125, user request: main says `card #153`, you find it): under the live agents, above the archived row, while a card is open: a blank row, `cards · ctrl+g` (the keys faint), then one row per open card, newest first: ` #153 ✓ debt-solo  the debt list is cl…` = number (dim), the kind's glyph in its color (`?` needs you / blocked, `✓` done, `✗` failed), the agent, 2 spaces, the first line of the card (dim), cut with `…` at the panel's edge (the agent is cut only when fewer than 7 columns are left for the text). The card in the box is on the selection color. Click a row: the box shows that card (ctrl+g on it; again: hides it); click the title: ctrl+g. It shares the panel's `+ n more`. The header counts them last, `# 3 cards` (short `# 3`), kept right after needs you when room runs out, so under 90 columns (no panel) the count stays and ctrl+g opens them. (BISE-20 had removed the pre-bise list, `◆ cards (n) · Ctrl+G`.)
 - **Card box** above the status row when a card is open (§12).
 - **Status row:** the name of the agent you talk to **in accent** (`main`,
-  `auth-fix`), then dim: state, context (`210k / 1M tokens · 21%`), `shared
-  folder` or `⎇ branch`, and transient notes (`preview of auth-fix`).
+  `auth-fix`), then dim: state, context (`210k / 1M tokens · 21%`), `ψ
+  branch` (a hub worktree) or `ψ fix-wt` (a private worktree's folder
+  name) when it does not work in the shared checkout (nothing then:
+  quiet is normal, BISE-136), and transient notes (`preview of auth-fix`).
 - **Composer:** `› ` prompt; key hints on the right, dim, lowercase.
 - **First run** (no agents yet), in the feed, dim:
   ```

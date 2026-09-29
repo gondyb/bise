@@ -299,6 +299,11 @@ pub fn build(args: &[String]) -> Result<Value, String> {
             );
             req.insert("note".into(), json!(str_of(&o, "note")));
         }
+        "worktree" => {
+            // BISE-136: gate.sh new/done tell the hub where the agent works
+            let (pos, _) = parse_args(rest, &[], &[])?;
+            req.insert("path".into(), json!(pos.first().ok_or("usage: sb worktree <path>|none")?));
+        }
         "report" => {
             let (pos, o) = parse_args(rest, &["decision"], &[])?;
             req.insert(
@@ -456,6 +461,8 @@ pub fn render(cmd: &str, v: &Value) -> (bool, String) {
         "rename" => format!("renamed: now @{} (the old name still works)", s("name")),
         "restore" => format!("@{} restored", s("name")),
         "isolate" => format!("@{} now works in its own git worktree", s("name")),
+        "worktree" if s("path").is_empty() => "the hub knows you work in your own workspace again".to_string(),
+        "worktree" => format!("the hub knows you work in {}", s("path")),
         _ => "ok".to_string(),
     };
     (true, text)

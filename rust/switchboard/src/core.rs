@@ -89,6 +89,12 @@ pub enum AgentReq {
         status: Declared,
         note: String,
     },
+    /// `sb worktree <path>|none` (BISE-136): the agent works in a private
+    /// git worktree of its own (`gate.sh new`), or no longer ("" = none).
+    /// A view-only fact: never sent to sb-core, never journaled.
+    Worktree {
+        path: String,
+    },
     Report {
         kind: String,
         summary: String,
@@ -196,6 +202,13 @@ impl AgentReq {
                     s => return Err(format!("unknown status: {} (working|done|blocked)", s)),
                 },
                 note: jstr(v, "note"),
+            },
+            "worktree" => AgentReq::Worktree {
+                path: match jstr(v, "path").trim() {
+                    "" | "none" => String::new(),
+                    p if p.starts_with('/') => p.trim_end_matches('/').to_string(),
+                    p => return Err(format!("sb worktree: an absolute path or none, not {}", p)),
+                },
             },
             "report" => {
                 let kind = jstr(v, "kind");
@@ -517,11 +530,38 @@ pub struct Hub {
     activity: BTreeMap<String, (u64, String)>,
     /// The role line of each task, by dir (BISE-126).
     roles: BTreeMap<String, Role>,
+    /// BISE-136: the private worktree each agent works in, by dir (a
+    /// rename keeps it); runtime only, like `activity`.
+    places: BTreeMap<String, Place>,
     dirty: bool,
     link: CoreLink,
 }
 
 type Fx = Vec<Effect>;
+
+/// Where an agent said it works (BISE-136), or where its bash went.
+#[derive(Clone, Debug, Default)]
+struct Place {
+    /// The private worktree; "" = the agent's own workspace.
+    path: String,
+    /// It came from `sb worktree` (gate.sh): the bash fallback no
+    /// longer guesses for this agent.
+    told: bool,
+}
+
+/// BISE-136 fallback: the linked git worktree a bash call starts in
+/// (`cd /tmp/x-wt && …`), when it is not `own` (the agent's workspace).
+/// A linked worktree has a `.git` file (the main checkout a directory).
+fn bash_worktree(args: &str, own: &str) -> Option<String> {
+    let cmd = serde_json::from_str::<Value>(args).ok()?["arg"].as_str()?.to_string();
+    let rest = cmd.trim_start().strip_prefix("cd ")?;
+    let path = rest.split(|c: char| c.is_whitespace() || c == ';' || c == '&' || c == '|').next()?;
+    let path = path.trim_matches(|c| c == '"' || c == '\'').trim_end_matches('/');
+    if !path.starts_with('/') || path == own.trim_end_matches('/') {
+        return None;
+    }
+    std::path::Path::new(path).join(".git").is_file().then(|| path.to_string())
+}
 
 /// A task's role line (BISE-126) and its calls.
 #[derive(Clone, Debug, Default)]
@@ -600,6 +640,7 @@ impl Hub {
             contexts: BTreeMap::new(),
             activity: BTreeMap::new(),
             roles: BTreeMap::new(),
+            places: BTreeMap::new(),
             dirty: false,
             link,
         };
@@ -670,7 +711,10 @@ impl Hub {
                 waiting_on: a["waiting_on"].as_str().map(|x| x.to_string()),
                 turn_started_ms: a["turn_ms"].as_u64(),
                 activity: self.activity.get(&name).cloned(),
+                place: None,
             };
+            let mut agent = agent;
+            agent.place = self.place_of(&agent);
             agents.insert(name, agent);
         }
         self.st.agents = agents;
@@ -711,6 +755,32 @@ impl Hub {
             self.activity.insert(agent.to_string(), (now, what));
         }
     }
+    /// BISE-136: the private worktree `a` works in (None: its own
+    /// workspace, shared checkout or hub worktree).
+    fn place_of(&self, a: &Agent) -> Option<String> {
+        let p = &self.places.get(&a.dir)?.path;
+        (!p.is_empty() && *p != a.ws.path).then(|| p.clone())
+    }
+
+    /// Record where `agent` works; `told`: from `sb worktree` (else the
+    /// bash fallback, ignored once the agent told).
+    fn set_place(&mut self, agent: &str, path: String, told: bool) {
+        let Some(dir) = self.st.agents.get(agent).map(|a| a.dir.clone()) else {
+            return;
+        };
+        if !told && self.places.get(&dir).is_some_and(|p| p.told || p.path == path) {
+            return;
+        }
+        self.places.insert(dir, Place { path, told });
+        if let Some(a) = self.st.agents.get(agent).cloned() {
+            let place = self.place_of(&a);
+            if let Some(a) = self.st.agents.get_mut(agent) {
+                a.place = place;
+            }
+        }
+        self.dirty = true;
+    }
+
     /// The client snapshot (agents, cards) for the views.
     pub fn snapshot(&self, now: u64) -> Value {
         let agents: Vec<Value> = self
@@ -731,6 +801,8 @@ impl Hub {
                     "path": a.ws.path,
                     "branch": a.ws.branch,
                     "dropped": a.ws.dropped,
+                    // BISE-136: a private worktree (gate.sh new), else null
+                    "place": a.place,
                     "created_ms": a.created_ms,
                     "note": a.declared.as_ref().map(|(_, n)| n.clone()).unwrap_or_default(),
                     "report": a.last_report.as_ref().map(|r| clip(&one_line(&r.summary), 200)),
@@ -1139,9 +1211,12 @@ impl Hub {
                 );
             }
             Wire::Tool { name, args } if name != "apply_patch" => {
-                if self.st.agents.contains_key(agent) {
+                if let Some(own) = self.st.agents.get(agent).map(|a| a.ws.path.clone()) {
                     self.set_activity(agent, now, format!("{} `{}`", name, clip(&one_line(&args), 120)));
                     self.dirty = true;
+                    if let Some(p) = (name == "bash").then(|| bash_worktree(&args, &own)).flatten() {
+                        self.set_place(agent, p, false);
+                    }
                 }
             }
             Wire::Tool { args, .. } => {
@@ -1388,6 +1463,15 @@ impl Hub {
             } => json!({"cmd": "ask", "to": to, "text": text, "timeout_s": timeout_s}),
             AgentReq::Status { status, note } => {
                 json!({"cmd": "status", "status": status, "note": note})
+            }
+            AgentReq::Worktree { path } => {
+                let Some(name) = self.st.resolve(from) else {
+                    reply(fx, json!({"ok": false, "error": format!("unknown agent: {}", from)}));
+                    return;
+                };
+                self.set_place(&name, path.clone(), true);
+                reply(fx, json!({"ok": true, "path": path}));
+                return;
             }
             AgentReq::Report {
                 kind,

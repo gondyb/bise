@@ -26,6 +26,8 @@
 #   gate.sh done <name>
 #                     end a task: remove its worktree (refused when it has
 #                     uncommitted changes) and its target.
+#                     Inside an agent, new/done/quick/full tell the hub where
+#                     it works (sb worktree <path>|none: the TUI's ψ, BISE-136).
 #   gate.sh wait <bg .out file | pid>
 #                     the bash tool put a gate in the background: block until
 #                     it ends (at most 25 s), then show its end and exit code.
@@ -34,6 +36,10 @@
 # the bend results are cached in $CARGO_TARGET_DIR/gate-cache.
 set -uo pipefail
 mode="${1:-quick}"
+# BISE-136: inside an agent, tell the hub where it works (the TUI's ψ):
+# new/quick/full in a private worktree say its path, done says none.
+# Best effort and silent (outside an agent, or an older hub).
+sb_place() { [ -n "${SB_AGENT:-}" ] && command -v sb >/dev/null 2>&1 && sb worktree "$1" >/dev/null 2>&1; return 0; }
 if [ "$mode" = wait ]; then
   arg="${2:?usage: gate.sh wait <bg .out file | pid>}"
   if [ -f "$arg" ]; then pid="$(cat "${arg%.out}.pid" 2>/dev/null)"; rcf="${arg%.out}.rc"; else pid="$arg"; rcf=; fi
@@ -51,7 +57,7 @@ if [ "$mode" = new ] || [ "$mode" = done ]; then
       echo "$wt has uncommitted changes: commit them, or git -C $wt stash / checkout, then again"; exit 1
     fi
     [ -d "$wt" ] && git -C "$wt" worktree remove --force "$wt"
-    rm -rf "$tgt"; echo "removed $wt and $tgt"; exit 0
+    rm -rf "$tgt"; sb_place none; echo "removed $wt and $tgt"; exit 0
   fi
   { [ -e "$wt" ] || [ -e "$tgt" ]; } && { echo "$wt or $tgt exists: another name, or gate.sh done $name"; exit 1; }
   # the repo of the cwd (gate.sh may run from a copy: bash <(git show HEAD:...)),
@@ -60,6 +66,7 @@ if [ "$mode" = new ] || [ "$mode" = done ]; then
   # HEAD of the main worktree (the shared tree), even from a task's detached one
   git worktree add -q --detach "$wt" "$(git -C "$(git worktree list --porcelain | sed -n '1s/^worktree //p')" rev-parse HEAD)" || exit 1
   cd "$wt" || exit 1
+  sb_place "$wt"
   export PATH="$HOME/.cargo/bin:$PATH"
   # the seed: a warm target (tests + clippy of every crate) for exactly
   # these deps; the workspace crates recompile in the task anyway (a new
@@ -91,6 +98,8 @@ fi
 case "$mode" in quick|full) ;; *) echo "usage: gate.sh [quick|full|new <name>|done <name>|wait <file|pid>]" >&2; exit 2 ;; esac
 cd "$(dirname "$0")/../../.."
 root="$PWD"
+# a linked worktree has a .git file (the shared checkout a directory)
+[ -f "$root/.git" ] && sb_place "$root"
 export PATH="$HOME/.bend/bin:$HOME/.cargo/bin:$PATH"
 unset SB_CORE_BIN
 # the oldest macOS the binaries run on (rust/.cargo/config.toml, BISE-164):

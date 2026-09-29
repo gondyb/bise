@@ -143,6 +143,9 @@ pub struct Agent {
     pub turn_started_ms: Option<u64>,
     /// The last thing it did: (time, "bash `cargo test`", "wrote: ...").
     pub activity: Option<(u64, String)>,
+    /// BISE-136: the private git worktree it works in (`gate.sh new`,
+    /// `sb worktree`), when not its own workspace.
+    pub place: Option<String>,
 }
 
 impl Agent {
@@ -292,6 +295,7 @@ impl State {
                 waiting_on: None,
                 turn_started_ms: None,
                 activity: None,
+                place: None,
             },
         );
         st.order.push(MAIN.to_string());
