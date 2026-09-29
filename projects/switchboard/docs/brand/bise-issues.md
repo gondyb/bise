@@ -1940,3 +1940,17 @@ Index:
 - **track:** F · **owns:** `layout.rs` (COLUMN, CENTER_FROM), `render.rs` PROSE_MAX, the composer wrap width, tests
 - **spec:** book §8 "The reading column", §11 "Measure" (user request, Gabriel 2026-09-29: the text in the history ~15% wider).
 - **what:** the reading column goes from 79 (3 + 76) to 91 (3 + 88); it centers when the feed area is ≥ 95; prose wraps at min(width − margins, 88); your message in the composer wraps at the same width as in the history (as today, so it follows). Code and tables keep their widths (up to 100 / 103). Narrow tiers unchanged (column = min(91, width − 4)). Bench not slower.
+
+### BISE-102 · the raised composer (tint + padding)
+
+- **status:** todo · **owner:** bise-f-feed · **commits:** —
+- **track:** F · **owns:** `theme.rs` (new palette role `raised`, its fallbacks), `layout.rs` / `chrome.rs` / `ui.rs` (the composer pane rows and tiers, the tinted block)
+- **spec:** book §5 (raised), §13 "The composer pane" (exact); mockups screens.html / live.html (marketing e71ec74, 7bca11e). User request 2026-09-29.
+- **what:** the composer is a raised block (tint `#1f1c1a` / `#f4f0e8`) with a tinted row above and below the text, bar at x0, 1 tinted column, text, 2 tinted columns; 1 blank row under the divider; key bar right under the block; 8 rows at rest, the tiers by height/width; contrast tests on `raised`; after BISE-101.
+
+### BISE-103 · `esc back to main` in an agent's view
+
+- **status:** todo · **owner:** bise-k-keys · **commits:** —
+- **track:** K · **owns:** `keybar.rs` (modes of an agent's view), tests
+- **spec:** book §13 "The composer pane" (key bar in an agent's view). User request 2026-09-29.
+- **what:** in an agent's view, `esc back to main` is the first pair of every key set, never dropped (pairs drop from the right, `/ commands` first); the tip is hidden there.
