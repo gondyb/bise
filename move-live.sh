@@ -34,7 +34,7 @@
 #  8. open the TUI there.
 # The old folder is only removed by --remove-old (git worktree remove).
 #
-# For tests on throwaway workspaces: XDG_STATE_HOME, SB_VERSION_DIR (use
+# For tests on throwaway workspaces: BISE_HOME, SB_VERSION_DIR (use
 # this version dir instead of building one), SB_MOVE_GATES (the gate
 # command run in the merge worktree).
 set -euo pipefail

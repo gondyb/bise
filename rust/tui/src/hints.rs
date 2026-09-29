@@ -8,9 +8,9 @@
 //! after the next user message.
 //!
 //! `hints::once(app, Hint::X)` asks for one (the event handling in
-//! `sb.rs` calls it); it is marked seen in `hints.json` (`{ "first_agent":
-//! true, … }`, next to the onboarding's flag in the Switchboard state
-//! root) the first time it is really drawn. `SB_ONBOARDING=off` turns the
+//! `sb.rs` calls it); it is marked seen in the `hints` preference
+//! (`{ "first_agent": true, … }`: `bise_home` keeps it in `prefs.json`, or
+//! the old `hints.json`) the first time it is really drawn. `SB_ONBOARDING=off` turns the
 //! hints off too (the tmux tests). Under `cargo test` they are off unless
 //! a test gives a store ([`use_store`]).
 //!
@@ -28,6 +28,8 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph};
 use ratatui::Frame;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use bise_home::Slot;
+#[cfg(test)]
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
@@ -66,8 +68,8 @@ impl Hint {
 
 // ---- the store ----
 
-/// `hints.json` next to the onboarding flag.
-pub(crate) fn store_path() -> Option<PathBuf> {
+/// The store: the `hints` preference (none with `SB_ONBOARDING=off`).
+pub(crate) fn store() -> Option<Slot> {
     #[cfg(test)]
     {
         STORE.with(|s| s.borrow().clone())
@@ -78,25 +80,28 @@ pub(crate) fn store_path() -> Option<PathBuf> {
         if env(crate::onboarding::ENV).is_some_and(|v| matches!(v.trim(), "off" | "0" | "no")) {
             return None;
         }
-        Some(crate::onboarding::state_path(&env, "hints.json"))
+        Some(crate::onboarding::home_of(&env).pref(bise_home::Pref::Hints))
     }
 }
 
-/// The keys marked in a store text.
-pub(crate) fn seen_in(text: &str) -> BTreeMap<String, bool> {
-    serde_json::from_str::<BTreeMap<String, serde_json::Value>>(text)
+/// The keys marked in a store value.
+pub(crate) fn seen_of(v: Option<serde_json::Value>) -> BTreeMap<String, bool> {
+    v.and_then(|v| serde_json::from_value::<BTreeMap<String, serde_json::Value>>(v).ok())
         .map(|m| m.into_iter().map(|(k, v)| (k, v.as_bool().unwrap_or(false))).collect())
         .unwrap_or_default()
 }
 
-/// Mark `key` in the store file (other keys kept).
-pub(crate) fn mark_in(path: &std::path::Path, key: &str) -> std::io::Result<()> {
-    let mut m = std::fs::read_to_string(path).map(|t| seen_in(&t)).unwrap_or_default();
+/// The keys marked in a store text.
+#[cfg(test)]
+pub(crate) fn seen_in(text: &str) -> BTreeMap<String, bool> {
+    seen_of(serde_json::from_str(text).ok())
+}
+
+/// Mark `key` in the store (other keys kept).
+pub(crate) fn mark_in(store: &Slot, key: &str) -> std::io::Result<()> {
+    let mut m = seen_of(store.get());
     m.insert(key.to_string(), true);
-    if let Some(d) = path.parent() {
-        std::fs::create_dir_all(d)?;
-    }
-    std::fs::write(path, serde_json::to_string_pretty(&m).unwrap_or_default() + "\n")
+    store.set(serde_json::to_value(m).unwrap_or_default())
 }
 
 // ---- the live hints (UI thread only) ----
@@ -114,20 +119,18 @@ struct State {
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
     #[cfg(test)]
-    static STORE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+    static STORE: RefCell<Option<Slot>> = const { RefCell::new(None) };
 }
 
 /// Tests: hints on, with this store (per thread).
 #[cfg(test)]
 pub(crate) fn use_store(p: Option<PathBuf>) {
-    STORE.with(|s| *s.borrow_mut() = p);
+    STORE.with(|s| *s.borrow_mut() = p.map(Slot::file));
     STATE.with(|s| *s.borrow_mut() = State::default());
 }
 
-fn is_seen(st: &mut State, path: &std::path::Path, h: Hint) -> bool {
-    let seen = st
-        .seen
-        .get_or_insert_with(|| std::fs::read_to_string(path).map(|t| seen_in(&t)).unwrap_or_default());
+fn is_seen(st: &mut State, store: &Slot, h: Hint) -> bool {
+    let seen = st.seen.get_or_insert_with(|| seen_of(store.get()));
     seen.get(h.key()).copied().unwrap_or(false)
 }
 
@@ -139,7 +142,7 @@ pub(crate) fn once(_app: &App, h: Hint) -> bool {
 }
 
 fn request(h: Hint) -> bool {
-    let Some(path) = store_path() else { return false };
+    let Some(path) = store() else { return false };
     STATE.with(|s| {
         let mut st = s.borrow_mut();
         if st.active == Some(h) || st.pending.contains(&h) {
@@ -177,7 +180,7 @@ pub(crate) fn user_message() {
 
 /// `h` comes up: out of the queue, marked seen in the store.
 fn bring_up(h: Hint) {
-    let Some(path) = store_path() else { return };
+    let Some(path) = store() else { return };
     STATE.with(|s| {
         let mut st = s.borrow_mut();
         st.pending.retain(|p| *p != h);
@@ -340,7 +343,7 @@ mod tests {
         let p = tmp("store");
         assert!(seen_in("junk").is_empty());
         std::fs::write(&p, "{\"other\": true}").unwrap();
-        mark_in(&p, "first_card").unwrap();
+        mark_in(&Slot::file(&p), "first_card").unwrap();
         let m = seen_in(&std::fs::read_to_string(&p).unwrap());
         assert_eq!(m.get("other"), Some(&true));
         assert_eq!(m.get("first_card"), Some(&true));

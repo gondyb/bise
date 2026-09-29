@@ -6,9 +6,9 @@
 //! then the normal UI (step 6: the real first run; its one-time hints are
 //! BISE-61).
 //!
-//! It runs once per user: the flag is `onboarded` in the Switchboard state
-//! root (`$XDG_STATE_HOME/switchboard`, else `~/.local/state/switchboard`,
-//! the root `switchboard::paths` uses). `esc` / `ctrl+c` skip it and mark
+//! It runs once per user: the flag is the `onboarded` preference
+//! (`bise_home`: a key of `~/.bise/prefs.json`, or the old
+//! `~/.local/state/switchboard/onboarded` file). `esc` / `ctrl+c` skip it and mark
 //! it seen too. `SB_ONBOARDING=off` never shows it, `on` always does (the
 //! tmux tests set `off`). `/welcome` (BISE-41) calls [`run`] to replay it.
 //!
@@ -16,9 +16,10 @@
 //! providers (`runtime/provider-pure.bend`): claude through
 //! `ANTHROPIC_FOUNDRY_API_KEY` and mistral (any non-claude model, the
 //! OpenAI-style API) through `MISTRAL_API_KEY`. A key is found in the
-//! environment, else in `~/.bend-harness/.env`, else `~/.vibe/.env` (the
-//! order `load_env_files` loads them in). A pasted key is masked, never
-//! logged, and goes in `~/.bend-harness/.env` (created 600, an existing
+//! environment, else in bise's `.env` (`~/.bend-harness/.env`), else
+//! `~/.vibe/.env` (`Home::env_files`, the order `load_env_files` loads
+//! them in). A pasted key is masked, never logged, and goes in bise's
+//! `.env` (`Home::key_file`; created 600, an existing
 //! mode is kept; an existing line is replaced only after a confirm). The
 //! model itself is not changed here.
 
@@ -48,21 +49,16 @@ fn real_env(k: &str) -> Option<String> {
 
 // ---- the flag ----
 
-/// `$XDG_STATE_HOME/switchboard/onboarded`, else
-/// `~/.local/state/switchboard/onboarded`.
-pub(crate) fn flag_path(env: Env) -> PathBuf {
-    let root = match env("XDG_STATE_HOME") {
-        Some(d) => PathBuf::from(d),
-        None => PathBuf::from(env("HOME").unwrap_or_else(|| "/tmp".into())).join(".local/state"),
-    };
-    root.join("switchboard").join("onboarded")
+/// bise's state for an environment (`bise_home`: `~/.bise`, `$BISE_HOME`,
+/// or the old places).
+pub(crate) fn home_of(env: Env) -> bise_home::Home {
+    bise_home::Home::from_lookup(env)
 }
 
-/// A file of the TUI's own state, next to the flag (`hints.json`, the
-/// drafts): the one place to change when the state root moves (~/.bise).
-#[cfg_attr(test, allow(dead_code))] // its callers read a test folder under cargo test
-pub(crate) fn state_path(env: Env, name: &str) -> PathBuf {
-    flag_path(env).with_file_name(name)
+/// Where the flag is kept: `onboarded` in `prefs.json`, or the old
+/// `~/.local/state/switchboard/onboarded` file.
+pub(crate) fn flag(env: Env) -> bise_home::Slot {
+    home_of(env).pref(bise_home::Pref::Onboarded)
 }
 
 /// Show it at this launch: `SB_ONBOARDING` decides, else the flag.
@@ -70,17 +66,13 @@ pub(crate) fn due(env: Env) -> bool {
     match env(ENV).map(|v| v.trim().to_ascii_lowercase()).as_deref() {
         Some("off" | "0" | "no") => false,
         Some("on" | "1" | "yes") => true,
-        _ => !flag_path(env).exists(),
+        _ => flag(env).get().is_none(),
     }
 }
 
 /// Seen: the flag goes on disk.
 pub(crate) fn mark_seen(env: Env) -> io::Result<()> {
-    let p = flag_path(env);
-    if let Some(d) = p.parent() {
-        std::fs::create_dir_all(d)?;
-    }
-    std::fs::write(p, "1\n")
+    flag(env).set(true.into())
 }
 
 static REQUESTED: AtomicBool = AtomicBool::new(false);
@@ -153,22 +145,11 @@ pub(crate) fn env_file_value(text: &str, key: &str) -> Option<String> {
     })
 }
 
-/// `~/.bend-harness/.env`, where a pasted key goes.
-pub(crate) fn key_file(home: &Path) -> PathBuf {
-    home.join(".bend-harness/.env")
-}
-
-/// The providers whose key is set: the environment, then the two env
-/// files the harness loads.
-pub(crate) fn find_keys(env: Env, home: Option<&Path>) -> Vec<Provider> {
-    let files: Vec<String> = home
-        .map(|h| {
-            [key_file(h), h.join(".vibe/.env")]
-                .iter()
-                .filter_map(|p| std::fs::read_to_string(p).ok())
-                .collect()
-        })
-        .unwrap_or_default();
+/// The providers whose key is set: the environment, then the env files
+/// the harness loads (`Home::env_files`).
+pub(crate) fn find_keys(env: Env, home: &bise_home::Home) -> Vec<Provider> {
+    let files: Vec<String> =
+        home.env_files().iter().filter_map(|p| std::fs::read_to_string(p).ok()).collect();
     Provider::ALL
         .into_iter()
         .filter(|p| {
@@ -179,16 +160,11 @@ pub(crate) fn find_keys(env: Env, home: Option<&Path>) -> Vec<Provider> {
 
 /// The model the harness uses (`resolved_model`, alias unresolved):
 /// `BEND_MODEL` > `model` in config.toml > the default.
-pub(crate) fn current_model(env: Env, home: Option<&Path>) -> String {
+pub(crate) fn current_model(env: Env, home: &bise_home::Home) -> String {
     if let Some(m) = env("BEND_MODEL") {
         return m;
     }
-    let cfg = match (env("BEND_CONFIG"), home) {
-        (Some(c), _) => PathBuf::from(c),
-        (None, Some(h)) => h.join(".bend-harness/config.toml"),
-        (None, None) => PathBuf::from("/tmp/bend-harness-config.toml"),
-    };
-    std::fs::read_to_string(cfg)
+    std::fs::read_to_string(home.config_file())
         .ok()
         .and_then(|t| {
             t.lines().find_map(|l| {
@@ -315,7 +291,8 @@ pub(crate) struct Onb {
     /// the mode at start (a saved choice kept as is is not written again)
     pub start: Mode,
     pub pick: Mode,
-    pub home: Option<PathBuf>,
+    /// bise's state (keys, config, the saved theme)
+    pub home: bise_home::Home,
     pub model: String,
     pub found: Vec<Provider>,
     pub sel: usize,
@@ -340,12 +317,12 @@ pub(crate) enum ThemeFrom {
 }
 
 /// `BISE_THEME` first, then the saved choice, like `theme_detect::init`.
-pub(crate) fn theme_from(env: Env, home: Option<&Path>) -> ThemeFrom {
+pub(crate) fn theme_from(env: Env, home: &bise_home::Home) -> ThemeFrom {
     use crate::theme_detect::{load_in, Choice};
     match env(crate::theme_detect::ENV).and_then(|v| Choice::parse(&v)) {
         Some(Choice::Light | Choice::Dark) => ThemeFrom::Env,
         Some(Choice::Auto) => ThemeFrom::Terminal,
-        None => match home.and_then(load_in) {
+        None => match load_in(home) {
             Some(Choice::Light | Choice::Dark) => ThemeFrom::Saved,
             _ => ThemeFrom::Terminal,
         },
@@ -369,20 +346,20 @@ pub(crate) fn in_git(dir: &Path) -> bool {
 
 impl Onb {
     pub(crate) fn new(workspace: &str, env: Env) -> Onb {
-        let home = env("HOME").map(PathBuf::from);
+        let home = home_of(env);
         let mut o = Onb {
             step: Step::Welcome,
             since: 0,
             detected: crate::theme_detect::detected(),
-            theme_from: theme_from(env, home.as_deref()),
+            theme_from: theme_from(env, &home),
             start: theme::mode(),
             pick: theme::mode(),
-            model: current_model(env, home.as_deref()),
+            model: current_model(env, &home),
             found: Vec::new(),
             sel: 0,
             sub: Sub::List,
             note: None,
-            folder: tilde(workspace, home.as_deref()),
+            folder: tilde(workspace, env("HOME").map(PathBuf::from).as_deref()),
             git: in_git(Path::new(workspace)),
             other_folder: false,
             home,
@@ -392,7 +369,7 @@ impl Onb {
     }
 
     fn refresh_keys(&mut self, env: Env) {
-        let mut found = find_keys(env, self.home.as_deref());
+        let mut found = find_keys(env, &self.home);
         // the key of the model in use first
         let mine = Provider::of_model(&self.model);
         found.sort_by_key(|p| *p != mine);
@@ -457,8 +434,8 @@ impl Onb {
             (Step::Theme, KeyCode::Enter) => {
                 // BISE-62: kept for the next launches; the terminal's own
                 // mode stays "auto" (it follows the terminal)
-                if let (Some(h), Some(c)) = (&self.home, self.theme_choice()) {
-                    let _ = crate::theme_detect::save_in(h, c);
+                if let Some(c) = self.theme_choice() {
+                    let _ = crate::theme_detect::save_in(&self.home, c);
                 }
                 self.advance(now)
             }
@@ -508,7 +485,7 @@ impl Onb {
                     self.note = Some(Note::NotAKey);
                     Sub::Paste(p, String::new())
                 }
-                (Some(key), Some(h)) if has_key_line(&key_file(h), p.key_env()) => Sub::Confirm(p, key),
+                (Some(key), h) if has_key_line(&h.key_file(), p.key_env()) => Sub::Confirm(p, key),
                 (Some(key), _) => self.save(p, &key, env),
             },
             (Sub::Confirm(p, key), KeyCode::Enter) => self.save(p, &key, env),
@@ -518,10 +495,7 @@ impl Onb {
     }
 
     fn save(&mut self, p: Provider, key: &str, env: Env) -> Sub {
-        let r = match &self.home {
-            Some(h) => save_key(&key_file(h), p.key_env(), key),
-            None => Err(io::Error::other("no HOME")),
-        };
+        let r = save_key(&self.home.key_file(), p.key_env(), key);
         self.note = Some(match r {
             Ok(()) => Note::Saved,
             Err(e) => Note::Failed(e.to_string()),
@@ -1101,6 +1075,12 @@ mod tests {
             .join("\n")
     }
 
+    /// The old-layout home of a test HOME.
+    fn hm(home: &Path) -> bise_home::Home {
+        let h = home.to_string_lossy().to_string();
+        bise_home::Home::from_lookup(&move |k: &str| (k == "HOME").then(|| h.clone()))
+    }
+
     fn onb(home: &Path, ws: &str) -> Onb {
         let e = env_of(HashMap::from([("HOME", home.to_string_lossy().to_string())]));
         Onb::new(ws, &e)
@@ -1109,43 +1089,51 @@ mod tests {
     #[test]
     fn the_flag_follows_the_state_root_and_the_env_var() {
         let d = tmp("flag");
-        let e = env_of(HashMap::from([("XDG_STATE_HOME", d.to_string_lossy().to_string())]));
-        assert_eq!(flag_path(&e), d.join("switchboard/onboarded"));
+        let ds = d.to_string_lossy().to_string();
+        // the old layout: the flag file an older version reads
+        let e = env_of(HashMap::from([("HOME", ds.clone())]));
+        assert_eq!(flag(&e).file, d.join(".local/state/switchboard/onboarded"));
         assert!(due(&e));
         mark_seen(&e).unwrap();
         assert!(!due(&e));
-        let on = env_of(HashMap::from([("XDG_STATE_HOME", d.to_string_lossy().to_string()), (ENV, "on".into())]));
+        assert!(d.join(".local/state/switchboard/onboarded").exists());
+        let on = env_of(HashMap::from([("HOME", ds.clone()), (ENV, "on".into())]));
         assert!(due(&on));
         let home = env_of(HashMap::from([("HOME", "/h".into()), (ENV, "off".into())]));
-        assert_eq!(flag_path(&home), PathBuf::from("/h/.local/state/switchboard/onboarded"));
         assert!(!due(&home));
+        // BISE_HOME: a key of prefs.json
+        let b = env_of(HashMap::from([("HOME", ds.clone()), ("BISE_HOME", format!("{ds}/b"))]));
+        assert!(due(&b));
+        mark_seen(&b).unwrap();
+        assert!(!due(&b));
+        assert!(d.join("b/prefs.json").exists());
     }
 
     #[test]
     fn keys_come_from_the_env_then_the_two_files() {
         let h = tmp("keys");
         let none = env_of(HashMap::new());
-        assert_eq!(find_keys(&none, Some(&h)), vec![]);
+        assert_eq!(find_keys(&none, &hm(&h)), vec![]);
         std::fs::create_dir_all(h.join(".vibe")).unwrap();
         std::fs::write(h.join(".vibe/.env"), "# x\nexport MISTRAL_API_KEY=\"abc\"\n").unwrap();
-        assert_eq!(find_keys(&none, Some(&h)), vec![Provider::Mistral]);
+        assert_eq!(find_keys(&none, &hm(&h)), vec![Provider::Mistral]);
         let e = env_of(HashMap::from([("ANTHROPIC_FOUNDRY_API_KEY", "k".to_string())]));
-        assert_eq!(find_keys(&e, Some(&h)), vec![Provider::Claude, Provider::Mistral]);
+        assert_eq!(find_keys(&e, &hm(&h)), vec![Provider::Claude, Provider::Mistral]);
         // an empty value is no key
         std::fs::write(h.join(".vibe/.env"), "MISTRAL_API_KEY=\n").unwrap();
-        assert_eq!(find_keys(&none, Some(&h)), vec![]);
+        assert_eq!(find_keys(&none, &hm(&h)), vec![]);
     }
 
     #[test]
     fn the_model_and_its_provider() {
         let h = tmp("model");
         let none = env_of(HashMap::new());
-        assert_eq!(current_model(&none, Some(&h)), "opus-5.5");
+        assert_eq!(current_model(&none, &hm(&h)), "opus-5.5");
         std::fs::create_dir_all(h.join(".bend-harness")).unwrap();
         std::fs::write(h.join(".bend-harness/config.toml"), "# c\nmodel = \"zai-glm-5-3\" # glm\n").unwrap();
-        assert_eq!(current_model(&none, Some(&h)), "zai-glm-5-3");
+        assert_eq!(current_model(&none, &hm(&h)), "zai-glm-5-3");
         let e = env_of(HashMap::from([("BEND_MODEL", "claude-x".to_string())]));
-        assert_eq!(current_model(&e, Some(&h)), "claude-x");
+        assert_eq!(current_model(&e, &hm(&h)), "claude-x");
         assert_eq!(Provider::of_model("opus-5.5"), Provider::Claude);
         assert_eq!(Provider::of_model("claude-opus-5-5"), Provider::Claude);
         assert_eq!(Provider::of_model("zai-glm-5-3"), Provider::Mistral);
@@ -1155,7 +1143,7 @@ mod tests {
     fn a_saved_key_is_600_replaces_its_line_and_keeps_the_rest() {
         use std::os::unix::fs::PermissionsExt;
         let h = tmp("save");
-        let f = key_file(&h);
+        let f = hm(&h).key_file();
         save_key(&f, "MISTRAL_API_KEY", "one").unwrap();
         assert_eq!(std::fs::metadata(&f).unwrap().permissions().mode() & 0o777, 0o600);
         assert_eq!(std::fs::read_to_string(&f).unwrap(), "MISTRAL_API_KEY=one\n");
@@ -1232,7 +1220,7 @@ mod tests {
         o.on_key(key(KeyCode::Right), 50, &none);
         assert_eq!(o.theme_choice(), Some(Choice::Light));
         o.on_key(key(KeyCode::Enter), 60, &none);
-        assert_eq!((o.step, load_in(&h)), (Step::Model, Some(Choice::Light)));
+        assert_eq!((o.step, load_in(&hm(&h))), (Step::Model, Some(Choice::Light)));
     }
 
     #[test]
@@ -1279,7 +1267,7 @@ mod tests {
         o.on_key(key(KeyCode::Enter), 1, &e);
         o.on_paste("secret-xyz");
         o.on_key(key(KeyCode::Enter), 1, &e);
-        assert_eq!(std::fs::read_to_string(key_file(&h)).unwrap(), "MISTRAL_API_KEY=secret-xyz\n");
+        assert_eq!(std::fs::read_to_string(hm(&h).key_file()).unwrap(), "MISTRAL_API_KEY=secret-xyz\n");
         assert_eq!(o.found, vec![Provider::Claude, Provider::Mistral]);
         assert_eq!(o.opts()[o.sel], Opt::Use(Provider::Mistral));
         let sc = screen(&o, 10, 110, 30);
@@ -1295,7 +1283,7 @@ mod tests {
         assert!(matches!(o.sub, Sub::Confirm(Provider::Mistral, _)));
         assert!(screen(&o, 10, 110, 30).contains("MISTRAL_API_KEY is already in ~/.bend-harness/.env."));
         o.on_key(key(KeyCode::Esc), 1, &e);
-        assert_eq!(std::fs::read_to_string(key_file(&h)).unwrap(), "MISTRAL_API_KEY=secret-xyz\n");
+        assert_eq!(std::fs::read_to_string(hm(&h).key_file()).unwrap(), "MISTRAL_API_KEY=secret-xyz\n");
         // enter on a found key goes on
         o.sel = 0;
         o.on_key(key(KeyCode::Enter), 5, &e);
@@ -1317,7 +1305,7 @@ mod tests {
         assert!(sc.contains("BISE_THEME is set to light, so i picked it."), "{}", sc);
         assert!(!sc.contains("couldn't read"), "{}", sc);
         // a saved choice: it was picked before
-        save_in(&h, Choice::Light).unwrap();
+        save_in(&hm(&h), Choice::Light).unwrap();
         let e = env_of(HashMap::from([("HOME", home.clone())]));
         let mut o = Onb::new("/w", &e);
         assert_eq!(o.theme_from, ThemeFrom::Saved);
@@ -1335,7 +1323,7 @@ mod tests {
 
     #[test]
     fn bise_theme_is_never_saved() {
-        use crate::theme_detect::{load_in, save_in, settings_path, Choice};
+        use crate::theme_detect::{load_in, save_in, settings, Choice};
         let h = tmp("s2env");
         let home = h.to_string_lossy().to_string();
         let e = env_of(HashMap::from([("HOME", home), ("BISE_THEME", "light".to_string())]));
@@ -1350,14 +1338,14 @@ mod tests {
             assert_eq!(o.theme_choice(), None);
             o.on_key(key(KeyCode::Enter), 2, &e);
             assert_eq!(o.step, Step::Model);
-            assert!(!settings_path(&h).exists(), "BISE_THEME was saved ({} toggles)", toggles);
+            assert!(settings(&hm(&h)).get().is_none(), "BISE_THEME was saved ({} toggles)", toggles);
         }
         // a real saved choice stays what it was
-        save_in(&h, Choice::Dark).unwrap();
+        save_in(&hm(&h), Choice::Dark).unwrap();
         let mut o = Onb::new("/w", &e);
         o.go(Step::Theme, 0);
         o.on_key(key(KeyCode::Enter), 2, &e);
-        assert_eq!(load_in(&h), Some(Choice::Dark));
+        assert_eq!(load_in(&hm(&h)), Some(Choice::Dark));
         theme::set_mode(Mode::Dark);
     }
 

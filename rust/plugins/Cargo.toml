@@ -5,4 +5,5 @@ edition = "2021"
 description = "Agent Plugins 1.0 for the Bend harness: resolver, diagnostics, stdio MCP bridge."
 
 [dependencies]
+bise-home = { path = "../home" }
 serde_json = "1"

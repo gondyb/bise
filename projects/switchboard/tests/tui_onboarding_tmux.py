@@ -1,6 +1,6 @@
 """The first launch (BISE-60, book §15, mockup tui-onboarding.html) in a
 real terminal (tmux), on a throwaway hub with the fake provider and an
-empty state root (XDG_STATE_HOME) and HOME in a temp dir:
+empty bise home (BISE_HOME) and HOME in a temp dir:
 
 - a first launch plays the five steps, enter by enter; the screens are
   saved in $SB_ONBOARDING_SHOTS (default: the temp dir) for the mockup
@@ -9,7 +9,7 @@ empty state root (XDG_STATE_HOME) and HOME in a temp dir:
 - esc on a fresh state root skips it and marks it seen;
 - the one-time hints (BISE-61) of the first run: the first agent, the
   first card, the first message between agents; each one goes away when
-  used or after the next message, and is marked in hints.json.
+  used or after the next message, and is marked in prefs.json.
 
 python3 -u projects/switchboard/tests/tui_onboarding_tmux.py
 """
@@ -32,7 +32,16 @@ def flat(sc):
 
 
 def env(state_root, home):
-    return "XDG_STATE_HOME=%s HOME=%s ANTHROPIC_FOUNDRY_API_KEY=" % (state_root, home)
+    return "BISE_HOME=%s HOME=%s ANTHROPIC_FOUNDRY_API_KEY=" % (state_root, home)
+
+
+def prefs(root):
+    """The prefs.json of a bise home (BISE-160), {} before any."""
+    try:
+        with open(os.path.join(root, "prefs.json")) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
 
 
 def main():
@@ -43,7 +52,6 @@ def main():
     home = os.path.join(E.tmp, "home")
     os.makedirs(home)
     root = os.path.join(E.tmp, "state-root")
-    flag = os.path.join(root, "switchboard", "onboarded")
 
     def shot(name, sc):
         with open(os.path.join(shots, name + ".txt"), "w") as f:
@@ -103,9 +111,8 @@ def main():
         # no OSC 11 answer): the capture with colors holds the ground
         colors = t.screen(colors=True)
         assert "48;2;20;18;17" in colors, colors[:2000]
-        assert os.path.exists(flag), flag
+        assert prefs(root).get("onboarded"), prefs(root)
         # BISE-61: the one-time hints of the first run, one at a time
-        hints = os.path.join(root, "switchboard", "hints.json")
         t.typed('[[bash: sb spawn t1 --objective "{{bash: sb report blocked pick-one}}"]]')
         t.keys("Enter")
         sc = t.wait("new: your agents.", 60)
@@ -123,8 +130,7 @@ def main():
         t.keys("Enter")
         sc = t.wait("agents talk to each other.", 60)
         shot("9-hint-first-level3", sc)
-        with open(hints) as f:
-            seen = json.load(f)
+        seen = prefs(root).get("hints")
         assert seen == {"first_agent": True, "first_card": True, "first_level3": True}, seen
         # the second launch: no onboarding
         t.start(120, 34, env(root, home))
@@ -138,7 +144,7 @@ def main():
         t.wait("hi, i'm")
         t.keys("Escape")
         t.wait(NORMAL)
-        assert os.path.exists(os.path.join(root2, "switchboard", "onboarded"))
+        assert prefs(root2).get("onboarded"), prefs(root2)
         print("PASS tui onboarding")
 
 

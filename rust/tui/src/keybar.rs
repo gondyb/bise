@@ -169,18 +169,19 @@ thread_local! {
     static CLOCK: std::cell::Cell<Option<TipClock>> = const { std::cell::Cell::new(None) };
 }
 
-/// Where the last tip shown is kept: `tip`, next to the one-time hints'
-/// store (none with `SB_ONBOARDING=off`, and under `cargo test`).
-fn tip_path() -> Option<std::path::PathBuf> {
-    crate::hints::store_path().map(|p| p.with_file_name("tip"))
+/// Where the last tip shown is kept: the `tip` preference, when the
+/// one-time hints have a store (none with `SB_ONBOARDING=off`, and under
+/// `cargo test`; a test store keeps it in a `tip` file next to it).
+fn tip_slot() -> Option<bise_home::Slot> {
+    crate::hints::store().map(|s| match s.key {
+        Some(_) => bise_home::Slot { key: Some(bise_home::Pref::Tip.key()), ..s },
+        None => bise_home::Slot::file(s.file.with_file_name("tip")),
+    })
 }
 
 fn save_tip(i: usize) {
-    if let Some(p) = tip_path() {
-        if let Some(d) = p.parent() {
-            let _ = std::fs::create_dir_all(d);
-        }
-        let _ = std::fs::write(p, format!("{i}\n"));
+    if let Some(s) = tip_slot() {
+        let _ = s.set(i.into());
     }
 }
 
@@ -190,7 +191,7 @@ fn save_tip(i: usize) {
 fn current_tip(typing: bool) -> &'static str {
     let now = Instant::now();
     let mut clock = CLOCK.with(|c| c.get()).unwrap_or_else(|| {
-        let saved = tip_path().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| t.trim().parse().ok());
+        let saved = tip_slot().and_then(|s| s.get()).and_then(|v| v.as_u64()).map(|i| i as usize);
         // no saved tip: a random one (the clock's nanoseconds), 0 in tests
         let seed = if cfg!(test) {
             0

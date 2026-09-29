@@ -26,13 +26,13 @@ def main():
     head = git("log", "-1", "--format=%h")
     second = git("log", "-2", "--format=%h").splitlines()[-1]
     second_subject = git("log", "-1", "--format=%s", second)
-    # a state root of its own: the marks do not depend on the versions
-    # built in ~/.local/state, and its build dir is a file, so the build
+    # a bise home of its own: the marks do not depend on the versions
+    # built in the real one, and its build dir is a file, so the build
     # Enter starts fails at once (versions.sh: mkdir) and builds nothing
-    xdg = os.path.join(E.tmp, "xdg")
-    os.makedirs(os.path.join(xdg, "switchboard"))
-    open(os.path.join(xdg, "switchboard", "build"), "w").close()
-    with tui_session(160, 42, "XDG_STATE_HOME=%s" % xdg, E=E) as t:
+    bise = os.path.join(E.tmp, "bise")
+    os.makedirs(os.path.join(bise, "dev"))
+    open(os.path.join(bise, "dev", "build"), "w").close()
+    with tui_session(160, 42, "BISE_HOME=%s" % bise, E=E) as t:
         t.wait("bise :*")
         t.wait(" idle")
         # the popup: tree and the commits, with the current one marked

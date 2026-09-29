@@ -73,7 +73,7 @@ def run_session(env, codes):
 
 def main():
     home = tempfile.mkdtemp(prefix="sb-scripted-ts-")
-    env = dict(os.environ, HOME=home, XDG_STATE_HOME=os.path.join(home, "state"),
+    env = dict(os.environ, HOME=home, BISE_HOME=os.path.join(home, "bise"),
                BEND_SESSIONS_DIR=os.path.join(home, "sessions"), **jsrt_env())
     # run from an agent's shell, the env names that agent's live session
     # (its context, wire log, steer/interrupt files, hub): never touch it

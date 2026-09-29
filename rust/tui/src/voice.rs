@@ -273,50 +273,39 @@ pub fn realtime_url(api_base: &str, model: &str) -> String {
     )
 }
 
-// ---- settings (~/.bend-harness/tui.json) ----
+// ---- settings (the `voice` preference: bise_home, prefs.json or ~/.bend-harness/tui.json) ----
 
-fn settings_path() -> Option<std::path::PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    Some(std::path::Path::new(&home).join(".bend-harness").join("tui.json"))
+fn settings() -> bise_home::Slot {
+    bise_home::Home::from_env().pref(bise_home::Pref::Voice)
 }
 
-/// Voice mode from the settings text and the SB_VOICE override
+/// Voice mode from the saved choice and the SB_VOICE override
 /// (1/on/true forces on, 0/off/false forces off).
-pub fn voice_enabled_from(settings: Option<&str>, env: Option<&str>) -> bool {
+pub fn voice_enabled(saved: Option<bool>, env: Option<&str>) -> bool {
     match env.map(|s| s.trim().to_lowercase()) {
         Some(s) if matches!(s.as_str(), "1" | "on" | "true" | "yes") => return true,
         Some(s) if matches!(s.as_str(), "0" | "off" | "false" | "no") => return false,
         _ => {}
     }
-    settings
+    saved.unwrap_or(false)
+}
+
+/// [`voice_enabled`] from a settings text (`{"voice_mode_enabled": …}`).
+#[cfg(test)]
+pub fn voice_enabled_from(settings: Option<&str>, env: Option<&str>) -> bool {
+    let saved = settings
         .and_then(|t| serde_json::from_str::<Value>(t).ok())
-        .and_then(|v| v.get("voice_mode_enabled").and_then(|b| b.as_bool()))
-        .unwrap_or(false)
+        .and_then(|v| v.get("voice_mode_enabled").and_then(|b| b.as_bool()));
+    voice_enabled(saved, env)
 }
 
 pub fn load_voice_enabled() -> bool {
-    let text = settings_path().and_then(|p| std::fs::read_to_string(p).ok());
     let env = std::env::var("SB_VOICE").ok();
-    voice_enabled_from(text.as_deref(), env.as_deref())
-}
-
-/// The settings text with voice_mode_enabled set, other keys kept.
-pub fn with_voice_enabled(settings: Option<&str>, enabled: bool) -> String {
-    let mut v = settings
-        .and_then(|t| serde_json::from_str::<Value>(t).ok())
-        .filter(|v| v.is_object())
-        .unwrap_or_else(|| json!({}));
-    v["voice_mode_enabled"] = Value::Bool(enabled);
-    serde_json::to_string_pretty(&v).unwrap_or_default() + "\n"
+    voice_enabled(settings().get().and_then(|v| v.as_bool()), env.as_deref())
 }
 
 pub fn save_voice_enabled(enabled: bool) -> Result<(), String> {
-    let path = settings_path().ok_or("HOME is not set")?;
-    let old = std::fs::read_to_string(&path).ok();
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&path, with_voice_enabled(old.as_deref(), enabled)).map_err(|e| e.to_string())
+    settings().set(Value::Bool(enabled)).map_err(|e| e.to_string())
 }
 
 /// KEY=VALUE lines of a .env text (the harness's load_env_files rules).
@@ -330,16 +319,15 @@ pub fn env_file_value(text: &str, key: &str) -> Option<String> {
     })
 }
 
-/// MISTRAL_API_KEY from the environment, else ~/.bend-harness/.env then
-/// ~/.vibe/.env: the keys the harness already uses (the switchboard
-/// client does not load the .env files itself).
+/// MISTRAL_API_KEY from the environment, else the env files the harness
+/// loads (`bise_home::Home::env_files`: bise's .env, then ~/.vibe/.env;
+/// the switchboard client does not load them itself).
 pub fn resolve_api_key() -> Option<String> {
     if let Some(v) = std::env::var(API_KEY_ENV).ok().filter(|v| !v.trim().is_empty()) {
         return Some(v);
     }
-    let home = std::env::var("HOME").ok()?;
-    [".bend-harness/.env", ".vibe/.env"].iter().find_map(|f| {
-        let text = std::fs::read_to_string(format!("{}/{}", home, f)).ok()?;
+    bise_home::Home::from_env().env_files().iter().find_map(|f| {
+        let text = std::fs::read_to_string(f).ok()?;
         env_file_value(&text, API_KEY_ENV)
     })
 }

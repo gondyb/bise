@@ -78,14 +78,14 @@ def shot(name, note=""):
 
 
 def start(E, cols, rows, extra=""):
-    # never the real home: the TUI saves its theme (~/.bend-harness/tui.json),
-    # the onboarding flag and hints ($XDG_STATE_HOME/switchboard), crash
-    # reports under HOME; every capture gets its own temp HOME and state root
+    # never the real home: the TUI saves its theme, the onboarding flag
+    # and hints (prefs), crash reports in bise's home; every capture gets
+    # its own temp HOME and bise home (BISE_HOME)
     home = os.path.join(E.tmp, "home")
     state_root = os.path.join(E.tmp, "state-root")
     os.makedirs(home, exist_ok=True)
     os.makedirs(state_root, exist_ok=True)
-    env = "HOME=%s XDG_STATE_HOME=%s BISE_THEME=%s COLORTERM=truecolor%s %s" % (
+    env = "HOME=%s BISE_HOME=%s BISE_THEME=%s COLORTERM=truecolor%s %s" % (
         home, state_root, MODE, " BISE_ASCII=1" if PASS == "ascii" else "", extra)
     envs = " ".join("%s=%s" % (k, subprocess.list2cmdline([v])) for k, v in E.env.items()
                     if k.startswith(("SB_", "BEND_", "MISTRAL_")))

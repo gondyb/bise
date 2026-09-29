@@ -216,8 +216,13 @@ impl Shell {
                     to
                 );
                 std::thread::spawn(move || {
+                    // the build goes where version_ctx looks (bise_home), not
+                    // where the script's own default would put it
+                    let home = bise_home::Home::from_env();
                     let out = Command::new(&script)
                         .args(["build", &rev])
+                        .env("SB_VERSIONS_DIR", &versions_dir)
+                        .env("SB_BUILD_DIR", home.build_dir())
                         .current_dir(&repo)
                         .stdin(Stdio::null())
                         .output();
@@ -268,16 +273,7 @@ impl Shell {
         } else {
             None
         }
-        .unwrap_or_else(|| {
-            let base = std::env::var("XDG_STATE_HOME")
-                .ok()
-                .filter(|d| !d.is_empty())
-                .map(PathBuf::from)
-                .unwrap_or_else(|| {
-                    PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local/state")
-                });
-            base.join("switchboard/versions")
-        });
+        .unwrap_or_else(|| bise_home::Home::from_env().versions_dir());
         (repo, versions_dir)
     }
 

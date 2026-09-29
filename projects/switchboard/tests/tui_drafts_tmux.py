@@ -22,13 +22,13 @@ def composer(sc):
 
 def main():
     E = e2e.Env()
-    # a state root of its own: the drafts go there, not in ~/.local/state
-    xdg = os.path.join(E.tmp, "xdg")
-    os.makedirs(xdg)
-    env = "XDG_STATE_HOME=%s" % xdg
+    # a bise home of its own: the drafts go there, not in the real one
+    bise = os.path.join(E.tmp, "bise")
+    os.makedirs(bise)
+    env = "BISE_HOME=%s" % bise
 
     def files():
-        return glob.glob(os.path.join(xdg, "switchboard", "drafts", "*.json"))
+        return glob.glob(os.path.join(bise, "drafts", "*.json"))
 
     def on_disk():
         f = files()

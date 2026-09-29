@@ -11,8 +11,9 @@
 //! `BISE_THEME=light|dark|auto` forces a mode (auto, or anything else,
 //! detects). `/theme` calls [`choose`]: it applies and saves.
 //!
-//! BISE-62: the choice is saved in `~/.bend-harness/tui.json` (`"theme":
-//! "light" | "dark" | "auto"`, next to `/voice`'s key) and reused at the
+//! BISE-62: the choice is saved in the `theme` preference (`"light" |
+//! "dark" | "auto"`; bise_home keeps it in `prefs.json`, or the old
+//! `~/.bend-harness/tui.json` next to `/voice`'s key) and reused at the
 //! next launch. Precedence: `BISE_THEME` > the saved choice > detection.
 
 use crate::theme::{self, Mode};
@@ -84,54 +85,37 @@ impl Choice {
     }
 }
 
-/// `~/.bend-harness/tui.json` under `home` (the file `/voice` saves in).
-pub(crate) fn settings_path(home: &std::path::Path) -> std::path::PathBuf {
-    home.join(".bend-harness").join("tui.json")
+/// Where the choice is kept under `home` (next to `/voice`'s).
+pub(crate) fn settings(home: &bise_home::Home) -> bise_home::Slot {
+    home.pref(bise_home::Pref::Theme)
 }
 
 /// The `theme` of a settings text, if any.
+#[cfg(test)]
 pub(crate) fn saved_from(settings: &str) -> Option<Choice> {
     let v: serde_json::Value = serde_json::from_str(settings).ok()?;
     Choice::parse(v.get("theme")?.as_str()?)
 }
 
-/// The settings text with `theme` set, the other keys kept.
-pub(crate) fn with_theme(settings: Option<&str>, choice: Choice) -> String {
-    let mut v = settings
-        .and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok())
-        .filter(|v| v.is_object())
-        .unwrap_or_else(|| serde_json::json!({}));
-    v["theme"] = serde_json::Value::String(choice.word().into());
-    serde_json::to_string_pretty(&v).unwrap_or_default() + "\n"
-}
-
 /// The choice saved under `home`, if any.
-pub(crate) fn load_in(home: &std::path::Path) -> Option<Choice> {
-    saved_from(&std::fs::read_to_string(settings_path(home)).ok()?)
+pub(crate) fn load_in(home: &bise_home::Home) -> Option<Choice> {
+    Choice::parse(settings(home).get()?.as_str()?)
 }
 
 /// Save `choice` under `home`.
-pub(crate) fn save_in(home: &std::path::Path, choice: Choice) -> Result<(), String> {
-    let path = settings_path(home);
-    let old = std::fs::read_to_string(&path).ok();
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&path, with_theme(old.as_deref(), choice)).map_err(|e| e.to_string())
+pub(crate) fn save_in(home: &bise_home::Home, choice: Choice) -> Result<(), String> {
+    settings(home).set(choice.word().into()).map_err(|e| e.to_string())
 }
 
-fn home() -> Option<std::path::PathBuf> {
-    std::env::var_os("HOME").filter(|h| !h.is_empty()).map(std::path::PathBuf::from)
+fn home() -> bise_home::Home {
+    bise_home::Home::from_env()
 }
 
 /// `/theme light|dark|auto`: switch now and save it for the next launches.
 /// The mode is switched even when the save fails (the error says why).
 pub(crate) fn choose(choice: Choice) -> (Mode, Result<(), String>) {
     let m = apply(choice);
-    let saved = match home() {
-        Some(h) => save_in(&h, choice),
-        None => Err("HOME is not set".into()),
-    };
+    let saved = save_in(&home(), choice);
     (m, saved)
 }
 
@@ -149,7 +133,7 @@ pub(crate) fn init() {
     ONCE.call_once(|| {
         let choice = startup_choice(
             std::env::var(ENV).ok().as_deref(),
-            home().and_then(|h| load_in(&h)),
+            load_in(&home()),
         );
         if choice == Choice::Auto {
             if let Some(rgb) = tty::query_background(TIMEOUT) {
@@ -456,21 +440,29 @@ mod tests {
 
     #[test]
     fn the_choice_is_saved_next_to_the_other_settings() {
-        let h = std::env::temp_dir().join(format!("bise-theme-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&h);
+        let d = std::env::temp_dir().join(format!("bise-theme-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        // the old layout: ~/.bend-harness/tui.json, /voice's key kept
+        let hs = d.to_string_lossy().to_string();
+        let h = bise_home::Home::from_lookup(&|k: &str| (k == "HOME").then(|| hs.clone()));
         assert_eq!(load_in(&h), None);
-        std::fs::create_dir_all(h.join(".bend-harness")).unwrap();
-        std::fs::write(settings_path(&h), "{\"voice_mode_enabled\": true}").unwrap();
+        let tui = d.join(".bend-harness/tui.json");
+        std::fs::create_dir_all(tui.parent().unwrap()).unwrap();
+        std::fs::write(&tui, "{\"voice_mode_enabled\": true}").unwrap();
         save_in(&h, Choice::Light).unwrap();
         assert_eq!(load_in(&h), Some(Choice::Light));
-        let v: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(settings_path(&h)).unwrap()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&tui).unwrap()).unwrap();
         assert_eq!(v["voice_mode_enabled"], serde_json::Value::Bool(true));
         save_in(&h, Choice::Auto).unwrap();
         assert_eq!(load_in(&h), Some(Choice::Auto));
+        // the bise layout: prefs.json
+        let b = bise_home::Home::at(d.join("bise"));
+        save_in(&b, Choice::Dark).unwrap();
+        assert_eq!(load_in(&b), Some(Choice::Dark));
+        assert!(d.join("bise/prefs.json").exists());
         assert_eq!(saved_from("{\"theme\": \"pink\"}"), None);
         assert_eq!(saved_from("not json"), None);
-        let _ = std::fs::remove_dir_all(&h);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

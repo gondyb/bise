@@ -9,8 +9,8 @@
 //!
 //! The REPL turns it into an image content block when it builds the
 //! provider request (core/api.bend + runtime/provider.bend). The `b64`
-//! file lives in the image store: `$BEND_IMAGE_DIR`, else
-//! `~/.bend-harness/images`. Nothing here panics on any input.
+//! file lives in the image store: `$BEND_IMAGE_DIR`, else bise's
+//! `images/` (`bise_home`). Nothing here panics on any input.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -200,13 +200,9 @@ pub fn base64_decode(s: &str) -> Option<Vec<u8>> {
 
 // ---- the store ----
 
-/// The image store: `$BEND_IMAGE_DIR`, else `~/.bend-harness/images`.
+/// The image store: `$BEND_IMAGE_DIR`, else bise's `images/` (`bise_home`).
 pub fn store_dir() -> Option<PathBuf> {
-    if let Some(d) = std::env::var_os("BEND_IMAGE_DIR").filter(|d| !d.is_empty()) {
-        return Some(PathBuf::from(d));
-    }
-    let home = std::env::var_os("HOME").filter(|h| !h.is_empty())?;
-    Some(PathBuf::from(home).join(".bend-harness").join("images"))
+    Some(bise_home::Home::from_env().images_dir())
 }
 
 /// Two FNV-1a 64 hashes with different seeds: a file name, not security.

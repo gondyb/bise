@@ -70,17 +70,22 @@ dependencies = [
  "bend-plugins",
  "bend-tui",
  "bise-catalog",
+ "bise-home",
  "switchboard",
 ]
 
 [[package]]
 name = "bend-images"
 version = "0.1.0"
+dependencies = [
+ "bise-home",
+]
 
 [[package]]
 name = "bend-plugins"
 version = "0.1.0"
 dependencies = [
+ "bise-home",
  "serde_json",
 ]
 
@@ -91,6 +96,7 @@ dependencies = [
  "base64",
  "bend-images",
  "bend-plugins",
+ "bise-home",
  "cpal",
  "crossterm",
  "ignore",
@@ -130,6 +136,13 @@ name = "bise-catalog"
 version = "0.1.0"
 dependencies = [
  "toml",
+]
+
+[[package]]
+name = "bise-home"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -1436,6 +1449,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 name = "switchboard"
 version = "0.1.0"
 dependencies = [
+ "bise-home",
  "serde",
  "serde_json",
 ]

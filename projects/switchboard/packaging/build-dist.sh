@@ -33,7 +33,11 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE" && git rev-parse --show-toplevel)"
-STATE="${XDG_STATE_HOME:-$HOME/.local/state}/switchboard"
+# the same dirs as bise_home (rust/home): $BISE_HOME/dev, ~/.bise/dev once
+# migrated, else today's ~/.local/state/switchboard (XDG_STATE_HOME unread)
+if [ -n "${BISE_HOME:-}" ]; then STATE="$BISE_HOME/dev"
+elif [ -e "$HOME/.bise/migrated.json" ]; then STATE="$HOME/.bise/dev"
+else STATE="$HOME/.local/state/switchboard"; fi
 BUILD="${SB_BUILD_DIR:-$STATE/build}"
 export PATH="$HOME/.cargo/bin:$HOME/.bend/bin:$PATH"
 

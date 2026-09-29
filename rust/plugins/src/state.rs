@@ -6,13 +6,9 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
+/// `$BEND_PLUGINS_STATE`, else bise's `plugins.json` (`bise_home`).
 pub fn state_path() -> PathBuf {
-    if let Ok(p) = std::env::var("BEND_PLUGINS_STATE") {
-        if !p.is_empty() {
-            return PathBuf::from(p);
-        }
-    }
-    crate::resolve::home().join(".bend-harness").join("plugins.json")
+    bise_home::Home::from_env().plugins_state()
 }
 
 pub fn disabled(path: &Path) -> Vec<String> {

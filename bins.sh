@@ -15,7 +15,8 @@
 #
 # A hit is a copy (~0.3 s); a miss is a bend compile (sb-core ~15 s,
 # the REPLs 1-2 min). Cache: $SB_BUILD_DIR/cache/<name>-<key> (default
-# SB_BUILD_DIR=${XDG_STATE_HOME:-~/.local/state}/switchboard/build), the
+# SB_BUILD_DIR=<bise dev dir>/build: ~/.local/state/switchboard/build
+# until the state moves to ~/.bise, BISE-160), the
 # 12 newest of each name are kept. A failed compile keeps an existing
 # <dir>/<name> (no toolchain: still runnable). A binary the EDR ate is
 # rebuilt the same way: run the script again. MACOSX_DEPLOYMENT_TARGET
@@ -23,7 +24,11 @@
 # exported for the compile (bend -o calls cc) and part of the key.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")" && pwd)"
-STATE="${XDG_STATE_HOME:-$HOME/.local/state}/switchboard"
+# the same dirs as bise_home (rust/home): $BISE_HOME/dev, ~/.bise/dev once
+# migrated, else today's ~/.local/state/switchboard (XDG_STATE_HOME unread)
+if [ -n "${BISE_HOME:-}" ]; then STATE="$BISE_HOME/dev"
+elif [ -e "$HOME/.bise/migrated.json" ]; then STATE="$HOME/.bise/dev"
+else STATE="$HOME/.local/state/switchboard"; fi
 CACHE="${SB_BUILD_DIR:-$STATE/build}/cache"
 export PATH="$HOME/.bend/bin:$PATH"
 

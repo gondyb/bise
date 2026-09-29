@@ -7,3 +7,4 @@ description = "Image attachments: sniffing, the image store, the text marker (do
 # no dependencies on purpose: bend-jsrt (its own workspace) and the TUI
 # both use it
 [dependencies]
+bise-home = { path = "../home" }

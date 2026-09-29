@@ -1,6 +1,6 @@
 //! Where a workspace's hub keeps its state (RFC 0001 §5):
-//! `$SB_STATE_DIR`, else `$XDG_STATE_HOME/switchboard/<name>-<hash>`,
-//! else `~/.local/state/switchboard/<name>-<hash>`.
+//! `$SB_STATE_DIR`, else `<hubs dir>/<name>-<hash>` (`bise_home::Home::hub_dir`:
+//! `~/.bise/hubs/`, or `~/.local/state/switchboard/` in the old layout).
 
 use std::path::{Path, PathBuf};
 
@@ -50,14 +50,7 @@ impl Paths {
             .unwrap_or_else(|_| workspace.to_path_buf());
         let state = match std::env::var("SB_STATE_DIR") {
             Ok(d) if !d.is_empty() => PathBuf::from(d),
-            _ => {
-                let root = match std::env::var("XDG_STATE_HOME") {
-                    Ok(d) if !d.is_empty() => PathBuf::from(d),
-                    _ => PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()))
-                        .join(".local/state"),
-                };
-                root.join("switchboard").join(workspace_id(&workspace))
-            }
+            _ => bise_home::Home::from_env().hub_dir(&workspace_id(&workspace)),
         };
         Paths { workspace, state }
     }

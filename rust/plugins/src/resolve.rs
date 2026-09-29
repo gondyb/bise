@@ -10,8 +10,9 @@ pub const PLUGIN_SCHEMA: &str = "https://agent-plugins.org/schemas/1.0.0/plugin.
 pub const MCP_SCHEMA: &str = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
 pub const RESERVED: [&str; 6] = ["file_system", "process", "self", "skill", "subagent", "vibe"];
 
+/// The user's home (`~/.agents/plugins` is under it).
 pub fn home() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()))
+    bise_home::Home::from_env().user_home().to_path_buf()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -142,10 +143,7 @@ impl Roots {
             Ok(p) if !p.is_empty() => PathBuf::from(p),
             _ => home().join(".agents").join("plugins"),
         };
-        let data = match std::env::var("BEND_PLUGINS_DATA") {
-            Ok(p) if !p.is_empty() => PathBuf::from(p),
-            _ => home().join(".bend-harness").join("plugin-data"),
-        };
+        let data = bise_home::Home::from_env().plugin_data_dir();
         Roots {
             user: Some(user),
             workspace: workspace.map(|w| w.join(".agents").join("plugins")),

@@ -2,7 +2,7 @@
 //!
 //! The list is the skills index the Bend REPL writes at startup
 //! (runtime/skills.bend: `name<TAB>description<TAB>path` per line, at
-//! `$BEND_SKILLS_INDEX`, else `~/.bend-harness/skills-index.txt`). The
+//! `$BEND_SKILLS_INDEX`, else bise's (`bise_home::Home::skills_index`)). The
 //! file is shared by every REPL, so it is close to, not exactly, what the
 //! agent in focus sees. Picking inserts `$name ` in the text; the model
 //! reads the mention (nothing loads the skill on the client side).
@@ -50,13 +50,7 @@ fn short(desc: &str) -> String {
 }
 
 fn index_path() -> Option<PathBuf> {
-    match std::env::var("BEND_SKILLS_INDEX") {
-        Ok(p) if !p.is_empty() => Some(PathBuf::from(p)),
-        _ => std::env::var("HOME")
-            .ok()
-            .filter(|h| !h.is_empty())
-            .map(|h| PathBuf::from(h).join(".bend-harness/skills-index.txt")),
-    }
+    Some(bise_home::Home::from_env().skills_index())
 }
 
 type Cache = Option<(PathBuf, Option<SystemTime>, Vec<Skill>)>;

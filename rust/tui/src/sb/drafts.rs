@@ -2,8 +2,8 @@
 //!
 //! The composer drafts (one per agent view), the image attachments they
 //! name and the sent prompts (Up/Down, the newest 50) go to one file per
-//! workspace, `drafts/<folder>-<hash>.json` next to `hints.json`
-//! (`onboarding::state_path`). It is written:
+//! workspace, `drafts/<folder>-<hash>.json` in bise's state
+//! (`bise_home::Home::drafts_dir`). It is written:
 //! - [`DEBOUNCE`] after the last change, from the UI loop ([`tick`]):
 //!   never on each keystroke of a burst;
 //! - at once when a prompt is sent ([`save_now`]): the sent draft is gone
@@ -81,7 +81,8 @@ pub(crate) fn use_dir(d: Option<PathBuf>) {
     STATE.with(|s| *s.borrow_mut() = State::default());
 }
 
-/// The drafts folder: `<state root>/drafts`.
+/// The drafts folder: `bise_home::Home::drafts_dir` (`~/.bise/drafts`, or
+/// the old `~/.local/state/switchboard/drafts`).
 fn dir() -> Option<PathBuf> {
     #[cfg(test)]
     {
@@ -89,8 +90,7 @@ fn dir() -> Option<PathBuf> {
     }
     #[cfg(not(test))]
     {
-        let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
-        Some(crate::onboarding::state_path(&env, "drafts"))
+        Some(bise_home::Home::from_env().drafts_dir())
     }
 }
 

@@ -2,9 +2,8 @@
 //!
 //! [`install`] sets a panic hook (once per process) that:
 //! - writes the panic (thread, message, location, backtrace) to a log
-//!   file: `$BEND_DEBUG_DIR` (the harness session), else
-//!   `~/.bend-harness/crashes`, else the temp dir (unit tests: always
-//!   the temp dir);
+//!   file: `$BEND_DEBUG_DIR` (the harness session), else bise's
+//!   `crashes/` (`bise_home`; unit tests: always the temp dir);
 //! - on the UI thread, outside a [`guarded`] handler: restores the
 //!   terminal (kitty keyboard flags, bracketed paste, mouse capture,
 //!   alternate screen, cursor, raw mode) BEFORE the report is printed,
@@ -84,10 +83,7 @@ fn log_dir() -> PathBuf {
     if let Some(d) = std::env::var_os("BEND_DEBUG_DIR").filter(|d| !d.is_empty()) {
         return PathBuf::from(d);
     }
-    if let Some(h) = std::env::var_os("HOME").filter(|h| !h.is_empty()) {
-        return PathBuf::from(h).join(".bend-harness").join("crashes");
-    }
-    std::env::temp_dir()
+    bise_home::Home::from_env().crashes_dir()
 }
 
 /// The text of a log file.

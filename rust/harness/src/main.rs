@@ -154,14 +154,15 @@ fn list_sessions(sessions_dir: &str) {
     }
 }
 
-// API keys the vibe way: KEY=VALUE lines from ~/.bend-harness/.env,
-// then ~/.vibe/.env (where the vibe CLI keeps ANTHROPIC_FOUNDRY_API_KEY
-// and friends). A variable already set in the real environment always
-// wins; an earlier file wins over a later one. Loaded here, in the one
-// entry point, so the TUI and --headless (bend_client) see the same keys.
+// API keys the vibe way: KEY=VALUE lines from bise's .env
+// (~/.bend-harness/.env; ~/.bise/.env then it in the new layout), then
+// ~/.vibe/.env (where the vibe CLI keeps ANTHROPIC_FOUNDRY_API_KEY and
+// friends): bise_home::Home::env_files. A variable already set in the
+// real environment always wins; an earlier file wins over a later one.
+// Loaded here, in the one entry point, so the TUI and --headless
+// (bend_client) see the same keys.
 fn load_env_files() {
-    let Ok(home) = std::env::var("HOME") else { return };
-    for path in [format!("{}/.bend-harness/.env", home), format!("{}/.vibe/.env", home)] {
+    for path in bise_home::Home::from_env().env_files() {
         let Ok(text) = std::fs::read_to_string(&path) else { continue };
         for line in text.lines() {
             let line = line.trim();
@@ -181,19 +182,15 @@ fn load_env_files() {
 }
 
 // ---- the model catalog (BISE-142, rust/catalog) ----
-// TODO(BISE-160): bise_home::Home::from_env().config_file() / .cache_dir()
 
-/// config.toml: $BEND_CONFIG, else ~/.bend-harness/config.toml (the file
-/// runtime/settings.bend reads).
+/// config.toml (`$BEND_CONFIG`, else bise's; the file runtime/settings.bend
+/// reads) and the cache dir: bise_home.
 fn config_file() -> std::path::PathBuf {
-    match std::env::var_os("BEND_CONFIG").filter(|v| !v.is_empty()) {
-        Some(p) => p.into(),
-        None => home_path(".bend-harness/config.toml", "/tmp/bend-harness-config.toml").into(),
-    }
+    bise_home::Home::from_env().config_file()
 }
 
 fn cache_dir() -> std::path::PathBuf {
-    home_path(".bend-harness/cache", "/tmp/bend-harness-cache").into()
+    bise_home::Home::from_env().cache_dir()
 }
 
 /// The merged catalog for the REPLs this process starts: BISE_MODELS_FILE
@@ -251,13 +248,6 @@ fn export_jsrt_bin(root: &std::path::Path) {
     }
 }
 
-/// `$HOME/<rel>`, or `fallback` (relative to the cwd) without a HOME.
-fn home_path(rel: &str, fallback: &str) -> String {
-    std::env::var("HOME")
-        .map(|h| format!("{}/{}", h, rel))
-        .unwrap_or_else(|_| fallback.to_string())
-}
-
 /// The workspace a switchboard command is about: --workspace, else the
 /// directory the user launched from (run.sh exports it before its cd).
 fn sb_workspace(args: &[String]) -> std::path::PathBuf {
@@ -290,12 +280,8 @@ fn run_sbd(args: &[String]) -> std::io::Result<()> {
         std::env::set_var("SB_CORE_BIN", root.join("sb-core"));
     }
     export_jsrt_bin(&root);
-    // the agents' REPLs load their MCP index like a normal session
-    if std::env::var_os("BEND_MCP_INDEX").is_none() {
-        if let Ok(h) = std::env::var("HOME") {
-            std::env::set_var("BEND_MCP_INDEX", format!("{}/.bend-harness/mcp-index.txt", h));
-        }
-    }
+    // the agents' REPLs load their MCP index like a normal session: its
+    // path came with bise_home's exports (main)
     switchboard::daemon::run(switchboard::daemon::Opts {
         paths,
         repl_bin: root.join("repl-live"),
@@ -356,6 +342,10 @@ fn main() -> std::io::Result<()> {
     // every mode (TUI, hub daemon, sb CLI): a panic leaves a log with its
     // backtrace, and a TUI gives the terminal back before it reports
     bend_tui::install_crash_hook();
+    // every state path, decided once (bise_home) and exported before any
+    // thread or child: the Bend runtime, the hub, the agents and older
+    // versions read these variables instead of computing their own
+    bise_home::Home::from_env().export();
     {
         let args: Vec<String> = std::env::args().skip(1).collect();
         match args.first().map(|s| s.as_str()) {
@@ -493,15 +483,14 @@ fn main() -> std::io::Result<()> {
     // session (a unique id prefix is accepted). The single fixed file
     // of the old scheme is the fallback when no per-session file exists
     // yet (back-compat with the pre-sessions checkpoint).
-    let sessions_dir = std::env::var("BEND_SESSIONS_DIR")
-        .ok()
-        .filter(|d| !d.is_empty())
-        .unwrap_or_else(|| home_path(".bend-harness/sessions", ".bend-sessions"));
+    let home = bise_home::Home::from_env();
+    let sessions_dir = home.sessions_dir().to_string_lossy().into_owned();
     let _ = std::fs::create_dir_all(&sessions_dir);
-    let legacy_file = home_path(
-        &format!(".bend-harness/session-{}.txt", repl_name),
-        &format!(".bend-session-{}.txt", repl_name),
-    );
+    let legacy_file = home
+        .root()
+        .join(format!("session-{}.txt", repl_name))
+        .to_string_lossy()
+        .into_owned();
     let session_file = if let Some(id) = &resume_id {
         match resolve_session(&sessions_dir, id) {
             Ok(path) => path,
@@ -562,8 +551,8 @@ fn main() -> std::io::Result<()> {
 
     // MCP connector index: the live REPL bootstraps the connector catalog
     // here at startup; search_mcp_tools/call_mcp_tool read it
-    let mcp_index = home_path(".bend-harness/mcp-index.txt", ".bend-mcp-index.txt");
-    if let Some(dir) = std::path::Path::new(&mcp_index).parent() {
+    let mcp_index = home.mcp_index();
+    if let Some(dir) = mcp_index.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
     std::env::set_var("BEND_MCP_INDEX", &mcp_index);

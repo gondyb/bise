@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 bise-catalog = { path = "../catalog" }
+bise-home = { path = "../home" }
 bend-plugins = { path = "../plugins" }
 bend-tui = { path = "../tui" }
 switchboard = { path = "../switchboard" }
