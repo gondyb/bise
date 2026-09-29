@@ -81,12 +81,21 @@ fn add(app: &mut App, source: &str, shown: &str, original: u64, stored: &bend_im
     let marker = bend_images::marker(&l, source, stored);
     let info = info_of(shown, original, stored);
     app.attachments.push(Attachment { label: l.clone(), marker, info });
-    // a space before the label when it would touch a word
-    let before = app.ed.text.chars().nth(app.ed.cursor.wrapping_sub(1));
-    let pad = if app.ed.cursor > 0 && before.is_some_and(|c| !c.is_whitespace()) { " " } else { "" };
-    app.ed.paste(&format!("{pad}{l} "));
+    insert_chip(&mut app.ed, &l);
     // the flash names the chip
     chip_name(&l)
+}
+
+/// Puts the chip `label` at the cursor, like a paste (it replaces the
+/// selection; one undo step): a space before it when it would touch a
+/// word or another chip, one after it; the cursor lands past that space,
+/// so a key typed next goes right after the chip (BISE-207). Images and
+/// quotes (quote.rs) alike.
+pub(crate) fn insert_chip(ed: &mut crate::editor::Editor, label: &str) {
+    let at = ed.selection().map_or(ed.cursor, |(a, _)| a);
+    let before = ed.text.chars().nth(at.wrapping_sub(1));
+    let pad = if at > 0 && before.is_some_and(|c| !c.is_whitespace()) { " " } else { "" };
+    ed.paste(&format!("{pad}{label} "));
 }
 
 /// The clipboard image. Unit tests (the fuzzers press Ctrl+V and paste

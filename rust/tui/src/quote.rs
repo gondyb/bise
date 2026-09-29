@@ -3,8 +3,8 @@
 //!
 //! Select text in the history (the release copies it, as before), then
 //! type: the first typed key puts the selection in the composer as a
-//! quote chip `❝ 1` (at the start, before your words) and ends the
-//! selection; the key then types. The strip above the composer lists
+//! quote chip `❝ 1` at the composer's cursor, like an image (BISE-207),
+//! and ends the selection; the key then types right after the chip. The strip above the composer lists
 //! it: `❝ 1 “first words of the selection…”  main · 3 lines`; a
 //! backspace on the chip removes it, like an image. Several selections,
 //! several quotes: at most [`MAX`].
@@ -141,16 +141,15 @@ pub(crate) fn chips(text: &str) -> Vec<(usize, usize, usize)> {
     crate::attach::find_labels(text, OPEN)
 }
 
-/// The selected text as a quote in the composer: its chip at the start
-/// (after the quotes already there), one undo step. `Err`: why not (a
+/// The selected text as a quote in the composer: its chip at the cursor
+/// ([`crate::attach::insert_chip`]), one undo step. `Err`: why not (a
 /// flash). The text is trimmed and cut to [`MAX_CHARS`].
 pub(crate) fn add(app: &mut App, from: &str, text: &str) -> Result<String, String> {
     let text = text.trim_matches('\n').trim_end();
     if text.trim().is_empty() {
         return Err("nothing selected".into());
     }
-    let present = chips(&app.ed.text);
-    if present.len() >= MAX {
+    if chips(&app.ed.text).len() >= MAX {
         return Err(format!("{MAX} quotes at most: backspace on one to make room"));
     }
     let text: String = match text.char_indices().nth(MAX_CHARS) {
@@ -163,24 +162,7 @@ pub(crate) fn add(app: &mut App, from: &str, text: &str) -> Result<String, Strin
     let n = (1..).find(|n| !app.attachments.iter().any(|a| a.label == label(*n))).unwrap_or(1);
     let l = label(n);
     app.attachments.push(Attachment { label: l.clone(), marker: tag(from, &text), info: Default::default() });
-    // after the chips (and their spaces) that open the text
-    let chars: Vec<char> = t.chars().collect();
-    let mut at = 0usize;
-    for &(a, b, _) in &present {
-        if a != at {
-            break;
-        }
-        at = b;
-        while chars.get(at) == Some(&' ') {
-            at += 1;
-        }
-    }
-    let head: String = chars[..at].iter().collect();
-    let tail: String = chars[at..].iter().collect();
-    let ins = format!("{l} ");
-    let cursor = app.ed.cursor + if app.ed.cursor >= at { ins.chars().count() } else { 0 };
-    let pad = if at > 0 && !head.ends_with(' ') { " " } else { "" };
-    app.ed.set(&format!("{head}{pad}{ins}{tail}"), cursor + pad.len());
+    crate::attach::insert_chip(&mut app.ed, &l);
     Ok(crate::attach::chip_name(&l))
 }
 
@@ -275,15 +257,43 @@ mod tests {
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect();
         assert!(rows[1].starts_with(" ❝ 1  “") && rows[1].ends_with("main · 1 line"), "{rows:?}");
-        // the next key just types; a second selection is quote 2, after 1
+        // the next key just types; a second selection is quote 2, at the
+        // cursor
         press(&mut app, KeyCode::Char('h'));
         assert_eq!(app.ed.text, "[Quote #1] wh");
         app.feed_sel = Some(crate::feedsel::FeedSel { anchor: (0, 0, 0), head: (0, 0, 200) });
         press(&mut app, KeyCode::Char('y'));
-        assert_eq!(app.ed.text, "[Quote #1] [Quote #2] why");
+        assert_eq!(app.ed.text, "[Quote #1] wh [Quote #2] y");
         assert_eq!(app.ed.cursor, app.ed.text.chars().count());
         // no selection: no quote mode
         assert_ne!(crate::keybar::mode(&app), crate::keybar::Mode::Quote);
+    }
+
+    /// BISE-207: the chip goes at the cursor (a space before it when it
+    /// would touch a word or a chip, one after), the key right after it;
+    /// one undo step takes the key, the next the chip.
+    #[test]
+    fn the_quote_goes_at_the_cursor() {
+        let cases = [
+            ("hello", 0, "[Quote #1] whello", 11),
+            ("hello", 2, "he [Quote #1] wllo", 14),
+            ("hello", 5, "hello [Quote #1] w", 17),
+            ("see [Quote #1]", 14, "see [Quote #1] [Quote #2] w", 26),
+            ("a [Image #1] b", 12, "a [Image #1] [Quote #1] w b", 24),
+        ];
+        for (text, cursor, want, at) in cases {
+            let mut app = selected();
+            if text.contains("[Quote #1]") {
+                app.attachments.push(Attachment { label: label(1), marker: tag("you", "q"), info: Default::default() });
+            }
+            app.ed.set(text, cursor);
+            press(&mut app, KeyCode::Char('w'));
+            assert_eq!(app.ed.text, want, "{text:?} at {cursor}");
+            assert_eq!(app.ed.cursor, at + 1, "{text:?} at {cursor}: the key lands after the chip");
+            app.ed.undo();
+            app.ed.undo();
+            assert_eq!(app.ed.text, text, "{text:?}: two undo steps");
+        }
     }
 
     /// A backspace on the chip removes the quote; at most MAX.
