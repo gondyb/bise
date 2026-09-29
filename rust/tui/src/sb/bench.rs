@@ -55,6 +55,15 @@ pub(crate) fn set_model(app: &mut App, name: &str, model: &str, effort: &str) {
     }
 }
 
+/// Test setup: whether the hub runs in bise's source tree (its
+/// `versions` event), with one commit in its list.
+pub(crate) fn set_versions_dev(app: &mut App, dev: bool) {
+    let mut v = versions::VersionItem::default();
+    v.rev = "abc1234".into();
+    app.sb.versions = vec![v];
+    app.sb.versions_dev = Some(dev);
+}
+
 /// Test setup: the status of an agent (`archived`, `idle`…).
 pub(crate) fn set_status(app: &mut App, name: &str, status: &str) {
     for a in app.sb.agents.iter_mut().filter(|a| a.name == name) {

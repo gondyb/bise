@@ -382,7 +382,10 @@ impl Shell {
             }
             items.push(json!({"rev": h, "subject": subject, "marks": marks}));
         }
-        json!({"ev": "versions", "current": cur_id, "items": items})
+        // dev: bise's source tree, where /restart <commit> builds and
+        // switches; elsewhere it only reloads (the TUI offers no commit)
+        let dev = switch::dev_workspace(&self.opts.paths.workspace);
+        json!({"ev": "versions", "current": cur_id, "dev": dev, "items": items})
     }
 
     pub(super) fn broadcast_versions(&mut self) {

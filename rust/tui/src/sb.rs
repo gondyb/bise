@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::os::unix::net::UnixStream;
 
 mod versions;
-pub(super) use versions::version_choices;
+pub(super) use versions::{version_choices, versions_dev};
 use versions::{parse_versions, VersionItem};
 mod mention;
 pub(super) use mention::mentions;
@@ -125,6 +125,9 @@ pub(super) struct Sb {
     /// The `/version` picker (the hub's `versions` event), and when it
     /// was last asked for.
     versions: Vec<VersionItem>,
+    /// The hub's workspace is bise's source tree (its `versions` event;
+    /// None before the first one, or from an older hub).
+    versions_dev: Option<bool>,
     versions_asked: std::cell::Cell<Option<std::time::Instant>>,
     /// The reload id of the first hub this TUI met (None before its
     /// first hello): a hub with another one was started by a reload
@@ -399,6 +402,7 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
         "versions" => {
             let sb = &mut app.sb;
             sb.versions = parse_versions(&v);
+            sb.versions_dev = v.get("dev").and_then(|x| x.as_bool());
         }
         "hello" => {
             let sb = &mut app.sb;

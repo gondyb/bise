@@ -29,6 +29,9 @@ pub(crate) enum Arg {
     /// a version of switchboard (the hub's list: the commits, tree,
     /// back), after these words
     Version(&'static [(&'static str, &'static str)]),
+    /// the same, the versions only in bise's source tree (`/restart`:
+    /// elsewhere it only reloads, a commit is refused)
+    DevVersion(&'static [(&'static str, &'static str)]),
     /// a plugin of the workspace
     Plugin,
     /// a model of the catalog, or an alias (BISE-135)
@@ -49,8 +52,8 @@ pub(crate) const COMMANDS: &[Cmd] = &[
     Cmd { name: "/voice", desc: "turn voice mode (ctrl+r speech-to-text) on or off", args: &[] },
     Cmd {
         name: "/restart",
-        desc: "reload bise, nothing lost (bise's own sources: build HEAD, switch): /restart [current|<commit>]",
-        args: &[Arg::Version(&[("current", "the version running now, nothing built")])],
+        desc: "reload bise, nothing lost (a <commit>: bise's own sources only, built then switched): /restart [current|<commit>]",
+        args: &[Arg::DevVersion(&[("current", "the version running now, nothing built")])],
     },
     Cmd {
         name: "/version",
@@ -213,6 +216,15 @@ fn choices(app: &App, arg: Arg, q: &str) -> Vec<Choice> {
         Arg::Version(ws) => {
             let mut out = words(ws);
             out.extend(sb::version_choices(app, q));
+            out
+        }
+        Arg::DevVersion(ws) => {
+            let mut out = words(ws);
+            // asked in any workspace: the hub's answer says whether it is dev
+            let vs = sb::version_choices(app, q);
+            if sb::versions_dev(app) != Some(false) {
+                out.extend(vs);
+            }
             out
         }
         Arg::Task => sb::agent_choices(app, false, q),
@@ -533,7 +545,7 @@ mod popup_tests {
 #[cfg(test)]
 mod arg_tests {
     use super::*;
-    use crate::sb::bench::{add_agent, set_model, set_status, test_app};
+    use crate::sb::bench::{add_agent, set_model, set_status, set_versions_dev, test_app};
 
     /// The usage after `: /name ` in a command's description, as words.
     fn usage(c: &Cmd) -> Vec<&'static str> {
@@ -608,6 +620,13 @@ mod arg_tests {
         let v = items(&mut app, "/restart ");
         assert_eq!(v[0].label, "current");
         assert!(v.iter().any(|i| i.label == "…" && i.run.is_none()), "the versions load");
+        // qa-explore H: outside bise's sources /restart refuses a commit,
+        // so it offers none; /version still lists them
+        set_versions_dev(&mut app, false);
+        assert_eq!(labels(&items(&mut app, "/restart ")), ["current"]);
+        assert_eq!(labels(&items(&mut app, "/version ")), ["abc1234"]);
+        set_versions_dev(&mut app, true);
+        assert_eq!(labels(&items(&mut app, "/restart ")), ["current", "abc1234"]);
         assert!(items(&mut app, "/agents ").is_empty(), "no argument, no popup");
         // BISE-135: /model and /reasoning, for the agent in view
         app.sb.focus = "auth-fix".into();

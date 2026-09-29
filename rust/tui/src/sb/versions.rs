@@ -73,6 +73,11 @@ fn version_marks(marks: &[String]) -> (String, (&'static str, Color)) {
     (words.join(", "), glyph)
 }
 
+/// Whether the hub runs in bise's source tree (None: not known yet).
+pub(crate) fn versions_dev(app: &App) -> Option<bool> {
+    app.sb.versions_dev
+}
+
 /// The versions matching `q` (the `/version` and `/restart` arguments):
 /// a note while the list loads. Asks the hub for a fresh list (at most
 /// every 3 s while a popup shows them).

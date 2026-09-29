@@ -111,6 +111,7 @@ pub(super) fn new_sb(writer: std::sync::Arc<std::sync::Mutex<UnixStream>>, works
         ready: false,
         version: String::new(),
         versions: Vec::new(),
+        versions_dev: None,
         versions_asked: std::cell::Cell::new(None),
         reload_seen: None,
         panel_hits: Default::default(),
