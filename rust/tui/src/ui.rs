@@ -27,13 +27,14 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
 /// is one), the agents panel on its right behind the rule; the card box;
 /// 1 blank row; the divider `you → main … state`; the queued messages
 /// (1 blank row above them from 20 rows),
-/// the images strip; the composer (bar at the margin, text 2 columns
-/// after it, 1 blank bar row above and under the text from 20 rows); the key bar; the frame's
+/// the images strip; the composer (bar at the margin, text 3 columns
+/// after it from 60 columns, else 2, 1 blank bar row above and under the text from 20 rows); the key bar; the frame's
 /// bottom edge.
 fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::Cols, rows: crate::layout::Rows) {
-    // the composer's text wraps like your message in the history: the
-    // column less its 3 lead columns
-    let inner_w = (cols.col_w as usize).saturating_sub(3).min((cols.pane_w as usize).saturating_sub(3)).max(1);
+    // the composer's text: the column less its lead columns and its
+    // right margin (BISE-228: more room from 60 columns)
+    let (lead, right) = composer_pad(area.width);
+    let inner_w = (cols.col_w.min(cols.pane_w) as usize).saturating_sub((lead + right) as usize).max(1);
     // the voice chip is in the text (BISE-222): no columns of its own
     let text_w = inner_w;
     let composer_rows = {
@@ -190,19 +191,21 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         let r = Rect { x: queue.x.saturating_sub(1), width: queue.width + 1, ..queue }.intersection(area);
         frame.render_widget(Paragraph::new(crate::queue::lines(app, r.width as usize)), r);
     }
-    // the attachments box: from the bar's column, its rows at the
-    // composer's text (x0 + 3), at most the composer's width; no bar:
+    // the attachments box: from the bar's column (from 60 columns, the
+    // composer's text column), at most the composer's width; no bar:
     // the bar marks your message
+    let shift = if lead > TEXT_AT { lead } else { 0 };
     let strip = pane(chunks[9]);
     if strip.height > 0 {
-        let r = Rect { width: (inner_w as u16 + TEXT_AT).min(strip.width), ..strip };
+        let strip = Rect { x: strip.x + shift, width: strip.width.saturating_sub(shift), ..strip };
+        let r = Rect { width: (inner_w as u16 + lead - shift).min(strip.width), ..strip };
         frame.render_widget(Paragraph::new(attach::strip_lines(app, r.width as usize)), r);
     }
     // the composer: its bar at x0 on every row (the blank bar rows
-    // around the text too), the text from x0 + 3 like the history's
+    // around the text too), the text from x0 + `lead`
     let body_rect = pane(chunks[10]);
-    let composer = Rect { width: (inner_w as u16 + TEXT_AT).min(body_rect.width), ..body_rect };
-    draw_composer(app, frame, composer, inner_w, pad_top.min(composer_h), rows.pad_bottom);
+    let composer = Rect { width: (inner_w as u16 + lead).min(body_rect.width), ..body_rect };
+    draw_composer(app, frame, composer, inner_w, lead, pad_top.min(composer_h), rows.pad_bottom);
     let text = Rect { y: app.composer.y, height: app.composer.h as u16, ..body_rect };
     // zen (BISE-121) keeps the composer's text, the divider's label and
     // the card box as they are, and the history you read (BISE-132): the
@@ -218,8 +221,10 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         app.zen.keep.push(body.intersection(area));
     }
     draw_popup(app, frame, text);
-    // the key bar, from x0 to the right margin
+    // the key bar, from x0 to the right margin (from 60 columns, from
+    // the composer's text column)
     let kb = pane(chunks[11]);
+    let kb = Rect { x: kb.x + shift, width: kb.width.saturating_sub(shift), ..kb };
     if kb.height > 0 {
         frame.render_widget(Paragraph::new(crate::keybar::line(app, kb.width)), kb);
     }
@@ -532,21 +537,39 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
     out
 }
 
-/// Where the composer's text starts from its bar: x0 + 3, the history's
-/// text column (BISE-108, user request: more room after the bar).
+/// Where the composer's text starts from its bar under 60 columns:
+/// x0 + 3, the history's text column (BISE-108, user request: more room
+/// after the bar).
 const TEXT_AT: u16 = 3;
+
+/// From this width the composer pane gets its padding (BISE-228).
+const ROOMY_FROM: u16 = 60;
+
+/// The composer's lead (from its bar to its text) and right margin (from
+/// the wrap to the pane's edge) on a `width`-column screen (book §13,
+/// BISE-228, user request: ~8 px more room each side of what you type;
+/// designer: the text, the attachments box and the key bar at x0 + 4,
+/// 2 columns before the wrap). Under 60 columns, 3 and 0 as before:
+/// every column counts there.
+pub(crate) fn composer_pad(width: u16) -> (u16, u16) {
+    if width >= ROOMY_FROM {
+        (TEXT_AT + 1, 2)
+    } else {
+        (TEXT_AT, 0)
+    }
+}
 
 /// The Switchboard composer (book §8 "The frame", §13): a bar `│` at
 /// the area's column 0 on every row (faint while empty, accent with text
 /// or while recording), `pad_top` / `pad_bottom` blank bar rows around
-/// the text, the text from the area's column 3 wrapped at `inner` columns and scrolled with the cursor row
-/// in view. Empty: the cursor at column 3 and the dim placeholder.
+/// the text, the text from the area's column `lead` wrapped at `inner` columns and scrolled with the cursor row
+/// in view. Empty: the cursor at column `lead` and the dim placeholder.
 /// Recording or transcribing: the voice chip in the text (BISE-222).
-fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, pad_top: u16, pad_bottom: u16) {
+fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, lead: u16, pad_top: u16, pad_bottom: u16) {
     let text_y = area.y + pad_top.min(area.height.saturating_sub(1));
     let text_rows = (area.height.saturating_sub(pad_top + pad_bottom) as usize).max(1);
     let text_w = inner.max(1);
-    app.composer = ComposerArea { x: area.x + TEXT_AT, y: text_y, w: text_w, h: text_rows, top: 0 };
+    app.composer = ComposerArea { x: area.x + lead, y: text_y, w: text_w, h: text_rows, top: 0 };
     let empty = app.ed.is_empty();
     let rows = if empty {
         let note = sb::placeholder(app).unwrap_or_default();
@@ -559,7 +582,7 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, pad
         typed_lines(app, text_w, text_rows)
     };
     let bar_st = Style::default().fg(composer_bar_color(app));
-    let bar = Span::styled("│  ", bar_st);
+    let bar = Span::styled(format!("│{}", " ".repeat(lead.saturating_sub(1) as usize)), bar_st);
     let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
     for _ in 0..pad_top.min(area.height) {
         lines.push(Line::from(bar.clone()));

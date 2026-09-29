@@ -1816,15 +1816,16 @@ mod chrome_tests {
         assert!(rows[at].contains('┴'), "the panel's rule joins it: {:?}", rows[at]);
         // then the raised pane (book §13): the composer, its bar at x0
         // (column 3 here) on a blank row, the text row, a blank row
-        // (BISE-219), then the key bar from x0, the frame's bottom edge
+        // (BISE-219), then the key bar from the text's column, the
+        // frame's bottom edge
         assert_eq!(rows.len() - at, 6, "6 rows at rest: {}", all);
         assert!(rows[at + 1..at + 4].iter().all(|r| r.starts_with("│  │")), "{}", all);
         assert_eq!(rows[at + 1].trim_end_matches(['│', ' ']), "", "{:?}", rows[at + 1]);
         assert_eq!(rows[at + 3].trim_end_matches(['│', ' ']), "", "{:?}", rows[at + 3]);
-        // empty, the composer asks; the text at x0 + 3 (the history's)
-        assert!(rows[at + 2].starts_with(&format!("│  │    {}", PLACEHOLDER_MAIN)), "{:?}", rows[at + 2]);
+        // empty, the composer asks; the text at x0 + 4 (BISE-XPAD)
+        assert!(rows[at + 2].starts_with(&format!("│  │     {}", PLACEHOLDER_MAIN)), "{:?}", rows[at + 2]);
         let keys = &rows[rows.len() - 2];
-        assert!(keys.starts_with("│  ⏎ send   @ agent"), "{:?}", keys);
+        assert!(keys.starts_with("│      ⏎ send   @ agent"), "{:?}", keys);
         assert!(rows.last().unwrap().starts_with("╰─"), "{}", all);
         // a panel with main only
         assert!(rows.iter().any(|r| r.contains(&format!("│  0 {} main {}", G_IDLE, G_MAIN))), "{}", all);

@@ -237,10 +237,12 @@ fn draw(app: &mut App, width: u16, height: u16) -> ratatui::buffer::Buffer {
 fn two_sections_the_attachments_then_the_body_behind_its_bar() {
     // BISE-108 and the user's feedback on it, then the attachments box
     // (the user's pick "d"): 1 blank tinted row under the divider, the
-    // box (a dim rounded frame, its rows at x0 + 3, no bar), then the
+    // box (a dim rounded frame at the text's column, no bar), then the
     // body right under it: the bar at x0 on every row of it (a blank bar
     // row under the text from 20 rows, and above it when there is no box),
-    // in accent with text or images, faint when empty; the text at x0 + 3
+    // in accent with text or images, faint when empty; the text at x0 + 4
+    // and 2 blank columns after its wrap (BISE-XPAD), the key bar at the
+    // text's column
     for (width, height) in [(200u16, 50u16), (120, 40), (120, 29), (80, 30), (80, 22), (80, 18)] {
         for (n, text, empty) in [(0, "", true), (0, "hello", false), (1, "one line", false), (2, &"word ".repeat(60)[..], false)] {
             let mut app = sb::bench::test_app();
@@ -254,7 +256,9 @@ fn two_sections_the_attachments_then_the_body_behind_its_bar() {
             let what = format!("{width}x{height} {n} images {text:?}");
             let divider = (0..height).rev().find(|&y| matches!(buf[(0, y)].symbol(), "├" | "─")).unwrap();
             let a = app.composer;
-            assert_eq!(a.x, x0 + 3, "{what}");
+            assert_eq!(a.x, x0 + 4, "{what}");
+            assert_eq!(a.w, cols.col_w.min(cols.pane_w) as usize - 4 - 2, "{what}");
+            let off = " ".repeat(4);
             let pad_top = if n > 0 { 0 } else { rows.pad_top };
             let (top, bottom) = (a.y - pad_top, a.y + a.h as u16 + rows.pad_bottom);
             assert_eq!(bottom, rows.keybar, "{what}");
@@ -277,17 +281,23 @@ fn two_sections_the_attachments_then_the_body_behind_its_bar() {
                 if height >= 20 {
                     assert_eq!(row(divider + 1), "", "{what}: the blank row above the box");
                 }
-                assert!(row(first).starts_with("╭─ attached ─"), "{what}: {:?}", row(first));
+                assert!(row(first).starts_with(&format!("{off}╭─ attached ─")), "{what}: {:?}", row(first));
                 let img = row(first + 1);
-                assert!(img.starts_with("│   ▣ 1  Screenshot 1.png") && !img.contains('/'), "{what}: {img:?}");
+                assert!(img.starts_with(&format!("{off}│   ▣ 1  Screenshot 1.png")) && !img.contains('/'), "{what}: {img:?}");
                 assert!(img.ends_with("  │"), "{what}: {img:?}");
+                // the box ends at the text's wrap at the latest
+                assert!(img.width() <= 4 + a.w, "{what}: {img:?}");
                 // no blank row between the box and your message
-                assert!(row(top - 1).starts_with('╰'), "{what}: {:?}", row(top - 1));
+                assert!(row(top - 1).starts_with(&format!("{off}╰")), "{what}: {:?}", row(top - 1));
                 let keys = row(rows.keybar);
                 assert!(keys.contains("ctrl+v paste image"), "{what}: {keys:?}");
             }
+            // the text never runs into its right margin
+            for y in a.y..a.y + a.h as u16 {
+                assert!(row(y).width() <= 4 + a.w, "{what}: row {y} {:?}", row(y));
+            }
             // the key bar keeps ⏎ send first
-            assert!(row(rows.keybar).starts_with("⏎ send"), "{what}: {:?}", row(rows.keybar));
+            assert!(row(rows.keybar).starts_with(&format!("{off}⏎ send")), "{what}: {:?}", row(rows.keybar));
         }
     }
 }
@@ -425,34 +435,34 @@ fn the_typing_area_has_a_blank_bar_row_above_and_under_its_text() {
     assert_eq!(rest.len(), 6, "{rest:#?}");
     assert!(rest[0].starts_with("├─ you → main"), "{rest:#?}");
     assert_eq!(rest[1], bar);
-    assert!(rest[2].starts_with("│  │    what's on your mind?"), "{rest:#?}");
+    assert!(rest[2].starts_with("│  │     what's on your mind?"), "{rest:#?}");
     assert_eq!(rest[3], bar);
-    assert!(rest[4].starts_with("│  ⏎ send"), "{rest:#?}");
+    assert!(rest[4].starts_with("│      ⏎ send"), "{rest:#?}");
     assert!(rest[5].starts_with("╰─"), "{rest:#?}");
     let boxed = pane_rows(120, 40, 1, "hi");
     assert_eq!(boxed.len(), 9, "{boxed:#?}");
     assert_eq!(boxed[1], "│");
-    assert!(boxed[2].starts_with("│  ╭─ attached"), "{boxed:#?}");
-    assert!(boxed[4].starts_with("│  ╰─"), "{boxed:#?}");
-    assert!(boxed[5].starts_with("│  │   ▣ 1  hi"), "{boxed:#?}");
+    assert!(boxed[2].starts_with("│      ╭─ attached"), "{boxed:#?}");
+    assert!(boxed[4].starts_with("│      ╰─"), "{boxed:#?}");
+    assert!(boxed[5].starts_with("│  │    ▣ 1  hi"), "{boxed:#?}");
     assert_eq!(boxed[6], bar);
-    assert!(boxed[7].starts_with("│  ⏎ send"), "{boxed:#?}");
+    assert!(boxed[7].starts_with("│      ⏎ send"), "{boxed:#?}");
     let small = pane_rows(120, 18, 0, "");
     assert_eq!(small.len(), 4, "{small:#?}");
-    assert!(small[1].starts_with("│  │    what's on your mind?"), "{small:#?}");
-    assert!(small[2].starts_with("│  ⏎ send"), "{small:#?}");
+    assert!(small[1].starts_with("│  │     what's on your mind?"), "{small:#?}");
+    assert!(small[2].starts_with("│      ⏎ send"), "{small:#?}");
     let small_boxed = pane_rows(120, 18, 1, "hi");
-    assert!(small_boxed[1].starts_with("│  ╭─ attached"), "{small_boxed:#?}");
-    assert!(small_boxed[4].starts_with("│  │   ▣ 1  hi"), "{small_boxed:#?}");
-    assert!(small_boxed[5].starts_with("│  ⏎ send"), "{small_boxed:#?}");
+    assert!(small_boxed[1].starts_with("│      ╭─ attached"), "{small_boxed:#?}");
+    assert!(small_boxed[4].starts_with("│  │    ▣ 1  hi"), "{small_boxed:#?}");
+    assert!(small_boxed[5].starts_with("│      ⏎ send"), "{small_boxed:#?}");
     // long text: 12 text rows at most, the pads still there
     let long = pane_rows(120, 40, 0, &"word ".repeat(400));
     assert_eq!(long.len(), 1 + 1 + 12 + 1 + 2, "{long:#?}");
     assert_eq!(long[1], bar);
-    assert!(long[2].starts_with("│  │  word"), "{long:#?}");
-    assert!(long[13].starts_with("│  │  word"), "{long:#?}");
+    assert!(long[2].starts_with("│  │   word"), "{long:#?}");
+    assert!(long[13].starts_with("│  │   word"), "{long:#?}");
     assert_eq!(long[14], bar);
-    assert!(long[15].starts_with("│  ⏎ send"), "{long:#?}");
+    assert!(long[15].starts_with("│      ⏎ send"), "{long:#?}");
 }
 
 /// `pane_rows` with `queued` messages waiting for the turn's end.
@@ -477,16 +487,38 @@ fn the_queued_messages_have_a_blank_row_above_them() {
     assert!(rows[2].starts_with("│  › ouvre les screens"), "{rows:#?}");
     assert!(rows[3].starts_with("│    queued"), "{rows:#?}");
     assert_eq!(rows[4], "│  │", "{rows:#?}");
-    assert!(rows[5].starts_with("│  │    what's on your mind?"), "{rows:#?}");
+    assert!(rows[5].starts_with("│  │     what's on your mind?"), "{rows:#?}");
     let boxed = pane_rows_queued(40, 1, &["ouvre les screens"]);
     assert_eq!(boxed[1], "│", "{boxed:#?}");
     assert!(boxed[2].starts_with("│  › ouvre les screens"), "{boxed:#?}");
     assert!(boxed[3].starts_with("│    queued"), "{boxed:#?}");
     assert_eq!(boxed[4], "│", "{boxed:#?}");
-    assert!(boxed[5].starts_with("│  ╭─ attached"), "{boxed:#?}");
-    assert!(boxed[8].starts_with("│  │   ▣ 1  hi"), "{boxed:#?}");
+    assert!(boxed[5].starts_with("│      ╭─ attached"), "{boxed:#?}");
+    assert!(boxed[6].starts_with("│      │   ▣ 1  Screenshot 1.png"), "{boxed:#?}");
+    assert!(boxed[8].starts_with("│  │    ▣ 1  hi"), "{boxed:#?}");
     let small = pane_rows_queued(18, 0, &["ouvre les screens"]);
     assert!(small[1].starts_with("│  › ouvre les screens"), "{small:#?}");
     assert!(small[2].starts_with("│    queued"), "{small:#?}");
-    assert!(small[3].starts_with("│  │    what's on your mind?"), "{small:#?}");
+    assert!(small[3].starts_with("│  │     what's on your mind?"), "{small:#?}");
+}
+
+#[test]
+fn the_padding_goes_under_60_columns_and_clicks_follow_the_text() {
+    // BISE-228 (user request: ~8 px more room each side of what you
+    // type): from 60 columns the text at x0 + 4 and 2 blank columns after
+    // its wrap; under 60 the text at x0 + 3 and no right margin, as
+    // before. A click lands on the char under it either way
+    for (width, lead, right) in [(59u16, 3u16, 0usize), (50, 3, 0), (60, 4, 2), (80, 4, 2), (200, 4, 2)] {
+        let mut app = sb::bench::test_app();
+        app.ed.insert("hello world");
+        draw(&mut app, width, 30);
+        let cols = crate::layout::cols(width, 30);
+        let a = app.composer;
+        assert_eq!(crate::ui::composer_pad(width), (lead, right as u16), "{width}");
+        assert_eq!(a.x, cols.x0 + lead, "{width}");
+        assert_eq!(a.w, cols.col_w.min(cols.pane_w) as usize - lead as usize - right, "{width}");
+        assert_eq!(a.hit(&app.ed.text, a.x + 2, a.y, false), Some(2), "{width}");
+        assert_eq!(a.hit(&app.ed.text, a.x - 1, a.y, false), Some(0), "{width}");
+        assert_eq!(a.hit(&app.ed.text, a.x + a.w as u16, a.y, false), None, "{width}");
+    }
 }
