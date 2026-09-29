@@ -7,9 +7,9 @@
 
 <p align="center">
   <b>bise</b> /beez/ · french, n.<br>
-  1. a quick kiss on the cheek. :*<br>
-  2. a brisk north wind.<br>
-  3. a terminal where your agents ship while you think.
+  1. a quick kiss on the cheek :*<br>
+  2. a brisk north wind<br>
+  3. a terminal where your agents ship while you think
 </p>
 
 <p align="center">
@@ -37,7 +37,7 @@ at 6pm you'd shipped more than ever, and you felt like you did nothing.
 
 **you can build a whole product on your own now. you just need your head back.**
 
-## one thread. a whole team
+## one thread. a whole team.
 
 bise is a terminal app. you talk to **main**, bise's main agent. main splits your ideas into jobs and runs the other agents for you.
 
