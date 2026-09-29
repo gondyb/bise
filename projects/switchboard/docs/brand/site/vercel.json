@@ -29,5 +29,12 @@
       "source": "/install",
       "destination": "/install.sh"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/screens",
+      "destination": "/book/screens",
+      "permanent": false
+    }
   ]
 }
