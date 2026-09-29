@@ -313,20 +313,6 @@ fn card_lines(c: &Card, width: usize) -> Vec<Line<'static>> {
     out
 }
 
-/// The panel's age of a report (`12 s`, `3 min`, `2 h`); the panel
-/// stops using it with BISE-20 (its own `short_age`).
-#[allow(dead_code)]
-pub(super) fn ago(ms: u64) -> String {
-    let s = ms / 1000;
-    if s < 60 {
-        format!("{} s", s)
-    } else if s < 3600 {
-        format!("{} min", s / 60)
-    } else {
-        format!("{} h", s / 3600)
-    }
-}
-
 /// A card's age, short (`12s`, `2m`, `3h`, `2d`).
 fn short_age(ms: u64) -> String {
     let s = ms / 1000;

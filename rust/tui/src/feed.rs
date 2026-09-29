@@ -796,29 +796,6 @@ pub(crate) fn toggle_selected(app: &mut crate::app::App) -> bool {
     toggle_event(&mut app.events, &mut app.cache, i)
 }
 
-/// Open every tool output and edit diff when one is closed, else close
-/// them all. Returns whether they are open now.
-#[cfg_attr(not(test), allow(dead_code))] // bound by BISE-42
-pub(crate) fn toggle_all_outputs(app: &mut crate::app::App) -> bool {
-    set_all_outputs(&mut app.events, &mut app.cache)
-}
-
-#[cfg_attr(not(test), allow(dead_code))] // bound by BISE-42
-pub(crate) fn set_all_outputs(events: &mut [Ev], cache: &mut [Option<EventRows>]) -> bool {
-    let open = events.iter().any(|e| matches!(e, Ev::Tool(td) if tool_discloses(td) && !td.expanded));
-    for (i, e) in events.iter_mut().enumerate() {
-        if let Ev::Tool(td) = e {
-            if tool_discloses(td) && td.expanded != open {
-                td.expanded = open;
-                if let Some(c) = cache.get_mut(i) {
-                    *c = None;
-                }
-            }
-        }
-    }
-    open
-}
-
 // ---- the history: runs of level 3, folds, time marks (book §10, BISE-14) ----
 
 /// A run of level-3 lines longer than this folds into one line.

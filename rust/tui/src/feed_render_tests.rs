@@ -608,7 +608,7 @@ fn the_brief_is_one_line_until_opened() {
 }
 
 #[test]
-fn toggles_one_item_and_all_outputs() {
+fn toggles_one_item() {
     let mut app = crate::sb::bench::test_app();
     // one-line tools (a bash box folds only past 15 output rows)
     let out = tool_with(1, "search", None, Some((true, "a b c")), true);
@@ -640,11 +640,6 @@ fn toggles_one_item_and_all_outputs() {
     app.feed_sel = Some(crate::feedsel::FeedSel { anchor: (4, 0, 0), head: (4, 0, 0) });
     assert!(!toggle_selected(&mut app));
     assert!(!toggle_event(&mut app.events, &mut app.cache, 3));
-    // all outputs: one is closed, so all open; again, all close
-    assert!(toggle_all_outputs(&mut app));
-    assert_eq!(expanded(&app), vec![true, true, false]);
-    assert!(!toggle_all_outputs(&mut app));
-    assert_eq!(expanded(&app), vec![false, false, false]);
     // thinking is ctrl+o's, untouched
     assert!(matches!(app.events[1], Ev::Thinking { open: true, .. }));
 }

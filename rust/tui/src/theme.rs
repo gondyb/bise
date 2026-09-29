@@ -14,10 +14,6 @@
 //! The old OpenCode constants (`BRAND`, `DIM`, …) were `#[deprecated]`
 //! aliases of the dark palette until BISE-83; new code calls the roles.
 
-// the roles and §6 glyphs land before their users (wave 1 migrates the
-// feed, the panel, the cards): no dead-code noise until then
-#![allow(dead_code)]
-
 use ratatui::style::Color;
 use ratatui::symbols::border;
 
@@ -459,12 +455,6 @@ pub(crate) fn working_frame(tick: u32) -> (&'static str, Color) {
 pub(crate) fn starting_frame(tick: u32) -> (&'static str, Color) {
     let color = if (tick / 4).is_multiple_of(2) { dim() } else { faint() };
     (glyph(G_STARTING), color)
-}
-
-/// The compaction pulse: `≡`, dim then faint, same rhythm.
-pub(crate) fn compacting_frame(tick: u32) -> (&'static str, Color) {
-    let color = if (tick / 4).is_multiple_of(2) { dim() } else { faint() };
-    (glyph(G_COMPACTING), color)
 }
 
 // the prompt/autocomplete borders: only a vertical bar
