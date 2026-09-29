@@ -27,19 +27,19 @@
 |---|---|---|
 | A | medium | A message that arrives while the agent is busy shows twice in its feed (**fixed in 3c3cd47**) |
 | I | medium | `skill` with an unknown name says "skills index unreadable" (**fixed in 6586f6d**) |
-| J | medium | The runtime writes the session's skills/plugins index under `~/.bend-harness/run/<port>` in the bise layout (ignores `BEND_RUN_DIR`) |
-| H | low | `/restart ` offers bise commits outside bise's source tree, then refuses them |
-| B | low | `sb worktree` accepts a path that does not exist, and main can mark itself ψ |
-| C | low | `bise doctor` on a fresh HOME says "old layout" and "migration not done" |
-| G | low | `bise doctor` ignores the `[voice]` config (unknown provider, config warnings) |
-| L | low | `sb spawn --help`/`-h` gives an error, and `sb` usage does not list `sb worktree` |
-| P | low | `ctrl+r` does nothing, with no hint, when voice mode is off |
+| J | medium | The runtime writes the session's skills/plugins index under `~/.bend-harness/run/<port>` in the bise layout (ignores `BEND_RUN_DIR`) (**fixed in 9206e91**) |
+| H | low | `/restart ` offers bise commits outside bise's source tree, then refuses them (**fixed in 516acae**) |
+| B | low | `sb worktree` accepts a path that does not exist, and main can mark itself ψ (**fixed in 5f9ad27**) |
+| C | low | `bise doctor` on a fresh HOME says "old layout" and "migration not done" (**fixed in 0ecf0b0**) |
+| G | low | `bise doctor` ignores the `[voice]` config (unknown provider, config warnings) (**fixed in 6e4f65b**) |
+| L | low | `sb spawn --help`/`-h` gives an error, and `sb` usage does not list `sb worktree` (**fixed in d95d8ba**) |
+| P | low | `ctrl+r` does nothing, with no hint, when voice mode is off (**not reproduced**: the hint shows for 2 s, test in 114fb69) |
 | E | cosmetic | `BISE_ASCII=1`: the card box, the card bar and the composer rail stay Unicode (**fixed in 10784fc**) |
 | F | cosmetic | The header ends with a lone ` · ` when the count segment is empty (**fixed in ff6e20f**) |
 | K | cosmetic | The `✉︎` chip row is 1 column off in tmux (the right frame moves) (**not a bise bug**: tmux's grid is right, see K) |
 | M | cosmetic | The panel gives a dropped agent's number to the next agent, listed last (3,5,6,7,4) (**fixed in 6265aad**) |
 | N | cosmetic | In an agent's view the divider shows two "working" timers that disagree (**fixed in e13e7ff**) |
-| D | cosmetic | `bise models <no match>` prints nothing to say that no model matches |
+| D | cosmetic | `bise models <no match>` prints nothing to say that no model matches (**fixed in b218f2f**) |
 
 Not a bise bug, noted for the prompts: in the live pass, main wrote
 ``sb spawn probe --objective "run `ls` in the workspace…"``. bash ran the
@@ -110,7 +110,7 @@ relevant parts).
   was never called. `6586f6d` fixes this ("a name the index lacks is not an
   unreadable index").
 
-## J · The session's skills/plugins index goes to `~/.bend-harness/run/<port>` in the bise layout
+## J · The session's skills/plugins index goes to `~/.bend-harness/run/<port>` in the bise layout (fixed in 9206e91)
 
 - **Severity:** medium. A fresh install gets a legacy `~/.bend-harness/`
   again next to `~/.bise/`. `BEND_RUN_DIR` (which the harness exports:
@@ -130,7 +130,7 @@ relevant parts).
   `$HOME/.bend-harness/run/<BEND_REPL_PORT>` and never reads `BEND_RUN_DIR`.
   It is still the same at `6586f6d`.
 
-## H · `/restart ` offers bise commits outside bise's source tree, then refuses them
+## H · `/restart ` offers bise commits outside bise's source tree, then refuses them (fixed in 516acae)
 
 - **Severity:** low.
 - **Repro:** start bise in a workspace that is not bise's sources (any
@@ -150,7 +150,7 @@ relevant parts).
   uses the `versions` list whatever the hub's `restart_plan`
   (`rust/switchboard/src/daemon/versions.rs:49`, dev=false → `Refuse`).
 
-## B · `sb worktree` accepts a path that does not exist, and main can mark itself
+## B · `sb worktree` accepts a path that does not exist, and main can mark itself (fixed in 5f9ad27)
 
 - **Severity:** low.
 - **Repro:** in main: `[[bash: sb worktree /does/not/exist; echo rc=$?]]`.
@@ -163,7 +163,7 @@ relevant parts).
 - **Suspect:** the `sb worktree` handler (hub, BISE-136): it checks only for an
   absolute path.
 
-## C · `bise doctor` on a fresh HOME reports an "old layout" that does not exist
+## C · `bise doctor` on a fresh HOME reports an "old layout" that does not exist (fixed in 0ecf0b0)
 
 - **Severity:** low. This is the first command of a new user.
 - **Repro:** `HOME=$(mktemp -d) bise doctor` (the folder is empty).
@@ -182,7 +182,7 @@ relevant parts).
   even with no legacy files) and `rust/harness/src/doctor.rs home_check` /
   `migration`.
 
-## G · `bise doctor` ignores the `[voice]` config
+## G · `bise doctor` ignores the `[voice]` config (fixed in 6e4f65b)
 
 - **Severity:** low.
 - **Repro:** config.toml with
@@ -194,7 +194,7 @@ relevant parts).
   config warnings.
 - **Suspect:** `rust/harness/src/doctor.rs` (no voice/config check).
 
-## L · `sb` help gaps
+## L · `sb` help gaps (fixed in d95d8ba)
 
 - **Severity:** low.
 - `sb spawn --help` → `unknown option: --help`. `sb spawn -h` →
@@ -202,7 +202,7 @@ relevant parts).
 - The `sb` usage (the text printed by `sb` alone) does not list `sb worktree <path>|none` (BISE-136).
 - **Suspect:** `rust/switchboard/src/cli.rs`.
 
-## P · `ctrl+r` does nothing, with no hint, when voice mode is off
+## P · `ctrl+r` does nothing, with no hint, when voice mode is off (not reproduced, 114fb69)
 
 - **Severity:** low.
 - **Repro:** a fresh TUI, press `ctrl+r`.
@@ -210,6 +210,10 @@ relevant parts).
   "(ctrl+r speech-to-text)". After `/voice`, ctrl+r records (`▁` meter).
 - **Expected:** a one-line hint ("voice mode is off: /voice turns it on").
 - **Suspect:** `rust/tui/src/voice*`.
+- **Not reproduced (114fb69):** in tmux at HEAD, ctrl+r puts
+  `● voice mode is off: /voice turns it on` on the divider for 2 s, like
+  every divider note; the capture most likely came after it faded. A test
+  now checks the hint is drawn.
 
 ## E · ASCII mode: the card box and the rails stay Unicode (fixed in 10784fc)
 
@@ -292,7 +296,7 @@ relevant parts).
 - **Suspect:** the divider label and right side in `rust/tui/src/ui.rs`: the
   task status timer vs the REPL turn timer.
 
-## D · `bise models <filter>` with no match is silent
+## D · `bise models <filter>` with no match is silent (fixed in b218f2f)
 
 - **Severity:** cosmetic.
 - `bise models zzz` prints the model/agent/voice summary and the config path,
