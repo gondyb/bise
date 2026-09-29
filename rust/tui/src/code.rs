@@ -60,6 +60,8 @@ pub(crate) fn push_tok(lines: &mut Vec<Vec<Span<'static>>>, text: &str, style: S
 // char: keywords, strings and template literals, comments (line and
 // block, block may span lines), numbers, call sites, capitalized types
 pub(crate) fn highlight_ts(src: &str) -> Vec<Vec<Span<'static>>> {
+    let src = crate::sanitize::clean(src, crate::sanitize::TAB_CODE);
+    let src: &str = &src;
     let cs: Vec<char> = src.chars().collect();
     let n = cs.len();
     let comment = Style::default().fg(syntax_comment()).add_modifier(Modifier::ITALIC);
@@ -212,6 +214,8 @@ pub(crate) fn bash_var(cs: &[char], i: usize) -> Option<(String, usize)> {
 // keywords, the command word of each simple command, options, numbers
 // and operators (pipes, lists, redirections)
 pub(crate) fn highlight_bash(src: &str) -> Vec<Vec<Span<'static>>> {
+    let src = crate::sanitize::clean(src, crate::sanitize::TAB_CODE);
+    let src: &str = &src;
     let cs: Vec<char> = src.chars().collect();
     let n = cs.len();
     let comment = Style::default().fg(syntax_comment()).add_modifier(Modifier::ITALIC);
@@ -403,6 +407,8 @@ pub(crate) fn highlight_bash(src: &str) -> Vec<Vec<Span<'static>>> {
 // background is never painted), context dimmed. The
 // Begin/End Patch envelope is noise and never shows.
 pub(crate) fn highlight_patch(src: &str) -> Vec<Vec<Span<'static>>> {
+    let src = crate::sanitize::clean(src, crate::sanitize::TAB_CODE);
+    let src: &str = &src;
     let file = |glyph: &str, path: &str, color: Color, note: &str| {
         let mut v = vec![
             Span::styled(format!("{} ", glyph), Style::default().fg(color).add_modifier(Modifier::BOLD)),

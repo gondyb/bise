@@ -43,6 +43,7 @@ use wire::*;
 mod markdown;
 use markdown::*;
 mod code;
+mod sanitize;
 mod render;
 mod toolbox;
 mod toolrow;

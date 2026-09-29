@@ -238,6 +238,7 @@ pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
     sb::draw_sb(app, f);
     crate::hints::draw(f); // BISE-61: one-time hints
     crate::ctrlhint::draw(app, f.buffer_mut()); // ctrl held: the key hints
+    crate::sanitize::cells(f.buffer_mut()); // no TAB/CR/ESC in a cell: no ghosts
     crate::theme::paint(f.buffer_mut()); // BISE-92: bise paints its ground
     let depth = app.zen.depth(std::time::Instant::now());
     if depth > 0.0 {

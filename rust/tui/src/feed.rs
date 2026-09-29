@@ -472,7 +472,8 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
         }
         Ev::ToolResult { id, ok, preview } => {
             if let Some((i, td)) = last_tool_mut(events, |td| td.id == *id) {
-                td.result = Some((*ok, preview.clone()));
+                // tabs expanded, escapes dropped: the columns the terminal shows
+                td.result = Some((*ok, crate::sanitize::clean(preview, crate::sanitize::TAB_OUTPUT).into_owned()));
                 cache[i] = None;
                 settle_quiet(events, cache, i);
                 forget_work_run(events, cache, i);

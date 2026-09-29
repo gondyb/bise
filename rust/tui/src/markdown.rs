@@ -182,6 +182,8 @@ fn spans_of(s: &str, base: Style, links: bool) -> Vec<Span<'static>> {
 /// as wide as it needs up to `wide` (the code measure), laid out here so
 /// no later wrap cuts its rows.
 pub(crate) fn md_lines(text: &str, prose: usize, wide: usize) -> Vec<Line<'static>> {
+    let text = crate::sanitize::clean(text, crate::sanitize::TAB_CODE);
+    let text: &str = &text;
     let mut done: Vec<Line<'static>> = Vec::new();
     let mut out: Vec<Line<'static>> = Vec::new();
     let mut in_code = false;
