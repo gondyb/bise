@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>landing · content · round 3</title>
+<style>
+:root{--bg:#141211;--soft:#1a1715;--text:#ece6da;--dim:#8f887d;--faint:#3d3935;--acc:#f4a6b0;--raised:#221e1c;--chip:#262220}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.75 "JetBrains Mono",ui-monospace,Menlo,monospace}
+main{max-width:820px;margin:0 auto;padding:56px 28px 160px}
+h1{font-size:28px;line-height:1.3;margin:0 0 6px}
+h2{font-size:20px;margin:72px 0 6px;padding-top:24px;border-top:1px solid var(--faint)}
+h3{font-size:16px;margin:28px 0 4px}
+p{margin:8px 0}
+.dim{color:var(--dim)}.acc{color:var(--acc)}.faint{color:var(--faint)}
+.lede{color:var(--dim);max-width:68ch}
+nav{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(6px);border-bottom:1px solid var(--faint);font-size:13px;padding:8px 28px;display:flex;gap:18px;justify-content:center;flex-wrap:wrap}
+nav a{color:var(--dim);text-decoration:none}nav a:hover{color:var(--acc)}
+.how{background:var(--raised);border-radius:10px;padding:14px 18px;font-size:13px;color:var(--dim);margin:22px 0}
+.how b{color:var(--text)}
+.idea{display:grid;grid-template-columns:34px 1fr;gap:0 10px;margin:22px 0}
+.idea .n{color:var(--acc);font-weight:700}
+.idea .proof{color:var(--dim);font-size:13px}
+.map{counter-reset:s;list-style:none;padding:0;margin:14px 0 24px;border-left:1px solid var(--faint)}
+.map li{counter-increment:s;padding:3px 0 3px 18px;position:relative;color:var(--dim)}
+.map li::before{content:counter(s);position:absolute;left:-26px;width:18px;text-align:right;color:var(--faint)}
+.map li b{color:var(--text);font-weight:600}
+.sec{background:var(--soft);border:1px solid var(--faint);border-radius:12px;padding:18px 22px;margin:14px 0}
+.sec .k{font-size:12px;color:var(--acc);letter-spacing:.04em}
+.sec h3{margin:4px 0 8px;font-size:19px;line-height:1.35}
+.sec .demo{font-size:12.5px;color:var(--dim);border-top:1px dashed var(--faint);margin-top:12px;padding-top:8px}
+.sec .demo::before{content:"demo · "}
+.big{font-size:30px;line-height:1.25;font-weight:700;margin:6px 0}
+.flag{color:var(--acc);font-size:12px}
+table{border-collapse:collapse;width:100%;font-size:13.5px;margin:14px 0}
+td,th{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--faint)}
+th{color:var(--dim);font-weight:500}
+td:first-child{color:var(--dim);width:22%}
+.tl{border-left:2px solid var(--faint);margin:12px 0 12px 6px;padding-left:18px}
+.tl p{margin:10px 0}.tl .t{color:var(--faint);display:inline-block;width:6ch}
+.tag{font-size:11px;color:var(--bg);background:var(--acc);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:2px}
+.pick{border:1px solid var(--acc);border-radius:12px;padding:16px 20px;margin:18px 0}
+
+.opt{margin:6px 0 6px 0;padding-left:14px;border-left:1px solid var(--faint)}
+.opt .me{color:var(--acc);font-size:12px;margin-left:8px}
+.chart{background:var(--soft);border:1px solid var(--faint);border-radius:12px;padding:16px 22px;white-space:pre;font-size:14px;line-height:1.6;overflow-x:auto}
+.chg{color:var(--dim);font-size:13px}
+.chg li{margin:3px 0}
+</style></head>
+<body data-page="landing-v4">
+<nav><a href="#changes">what changed</a><a href="#words">words</a><a href="#hero">hero + picture</a><a href="#pain">your day</a><a href="#lines">one-liners</a><a href="#tokens">tokens</a><a href="#harness">the harness</a><a href="#me">made by</a></nav>
+<main>
+
+<h1 data-a="title">landing, content · round 3</h1>
+<p class="lede">your notes on round 2, applied. only the parts that changed are here. the rest of round 2 (the tuesday, the faq) stays as it was.</p>
+
+<section data-sec="changes" id="changes">
+<h2>what changed</h2>
+<ul class="chg">
+<li>on the landing, the agent you talk to is called <b>bise</b>, and it's always listening. "main" is gone from the copy.</li>
+<li>repo vs project: new rule, see "words".</li>
+<li>the pain section is back to "babysit". engineers became product builders, and the tools didn't follow.</li>
+<li>the picture shows one idea split into related but independent jobs.</li>
+<li>no more "X, not Y" lines. i checked the whole page. i also added it to the voice rules.</li>
+<li>the harness says MCP and skills in plain words.</li>
+<li>made by: "shipped with bise" under the title, and two versions of your bio.</li>
+</ul>
+</section>
+
+<section data-sec="words" id="words">
+<h2>words: repo vs project</h2>
+<p class="lede">you used "project" for two things: the repo, and the pieces of work inside it. on the site, one word for each.</p>
+<div class="sec" data-a="w-rule"><div class="k">the rule</div>
+<p><b>repo</b> = the folder. one repo, one thread.</p>
+<p><b>work</b> (or "things", when it's casual) = what happens inside it: tasks, fixes, features, the agent that did each one. never "project" or "session".</p>
+<p>so the line is: <span class="acc">one thread per repo. bise knows everything going on in it.</span></p>
+<p class="dim">"project" stays out of the copy. it's the word everyone uses for both, so it's the one that confuses.</p></div>
+<p class="flag" data-a="w-q">one question: the TUI panel still says "0 :* main". if the site says "bise", should the product say "bise" too? i think yes (one name for one thing), but it's a product change, so it's your call and main's.</p>
+</section>
+
+<section data-sec="hero" id="hero">
+<h2>hero + the picture</h2>
+<p class="big" data-a="hero">multi-agent coding, made human.</p>
+<p class="dim" data-a="sub">ramble. interrupt. change your mind.<br>i run the agents. you stay in flow.</p>
+<p class="lede">the picture: you say one idea, bise splits it into jobs that touch the same feature but never the same thing. so they can run side by side.</p>
+<div class="chart" data-a="chart">  <b>you</b>   "add dark mode. and the api client moves to v3."
+   │
+   ▼
+  <span class="acc">:*</span> <b>bise</b>   always listening. knows everything going on in the repo.
+   │
+   ├── ∿ theme       the dark colors, in one place
+   ├── ∿ toggle      the switch in settings, remembered per user
+   ├── ∿ docs        new screenshots, a changelog line
+   └── ∿ api-v3      the client upgrade. unrelated, so it runs too.
+
+  they tell each other what they touch. you hear about it when it matters.</div>
+<p class="flag" data-a="chart-q">variant if it's too long: drop api-v3 and keep only the dark mode jobs. i kept it because "unrelated work runs too" is a point on its own.</p>
+</section>
+
+<section data-sec="pain" id="pain">
+<h2>you know this day</h2>
+<p class="lede">title options, then the text.</p>
+<div class="opt" data-a="p-t1">you didn't become an engineer to babysit agents. <span class="me">my pick</span></div>
+<div class="opt" data-a="p-t2">you didn't learn to code to babysit robots.</div>
+<div class="opt" data-a="p-t3">you're an engineer. why are you a babysitter now?</div>
+<div class="sec" data-a="pain"><div class="k">you know this day</div><h3>you didn't become an engineer to babysit agents.</h3>
+<p>you became one to build things. and today you can build way more than before: whole products, on your own, in a week.</p>
+<p>but look at your day. tab 1 wants a yes. tab 2 forgot what tab 1 did. you paste context from one to the other and check they didn't break each other's work. no time to think. no flow. it's boring.</p>
+<p>you could be shipping like a team. the tools keep you on babysitting duty.</p></div>
+</section>
+
+<section data-sec="lines" id="lines">
+<h2>one-liners, round 3</h2>
+<p class="lede">3 and 4 are kept. 1 and 2 are new.</p>
+
+<div class="idea" data-a="l1"><span class="n">1</span><div><b>one thread per repo.</b>
+<div class="opt" data-a="l1a">no tabs. no "wait, which session was that?" <span class="me">my pick (yours)</span></div>
+<div class="opt" data-a="l1b">no tabs. no "wait, which session was that?" three months later, bise still knows.</div>
+<div class="opt" data-a="l1c">ask about something from march. bise was there.</div>
+<p class="dim">the idea behind "monday / june" was: the thread never ends. l1b and l1c try to say it with an example instead.</p></div></div>
+
+<div class="idea" data-a="l2"><span class="n">2</span><div><b>bise is always listening.</b>
+<div class="opt" data-a="l2a">bise is always listening. talk whenever. <span class="me">my pick</span></div>
+<div class="opt" data-a="l2b">interrupt all you want. bise likes that.</div>
+<div class="opt" data-a="l2c">the team is busy. bise never is.</div></div></div>
+
+<div class="idea" data-a="l3"><span class="n">3</span><div><b>a team that runs itself.</b>
+<div class="opt" data-a="l3a">they talk behind your back. in a good way. <span class="me">kept</span></div></div></div>
+
+<div class="idea" data-a="l4"><span class="n">4</span><div><b>forget there are agents.</b>
+<div class="opt" data-a="l4a">no yaml was harmed. <span class="me">kept</span></div></div></div>
+</section>
+
+<section data-sec="tokens" id="tokens">
+<h2>tokens + see everything</h2>
+<p class="lede">rewritten without "X, not Y".</p>
+<div class="opt" data-a="tok-l1">your token bill can relax. <span class="me">my pick</span></div>
+<div class="opt" data-a="tok-l2">one agent per job. then it stops.</div>
+<div class="opt" data-a="tok-l3">no agent parties on your dime.</div>
+<div class="sec" data-a="tok"><div class="k">tokens</div><h3>your token bill can relax.</h3>
+<p>bise starts an agent when a job needs one. that's the whole rule. there's no committee of agents reviewing each other in circles. a question to bise costs one answer.</p>
+<p>more agents was never the point. the point is a thread that's always free, and one place for all the context.</p></div>
+<div class="sec" data-a="see"><div class="k">see everything</div><h3>it's quiet. open it up whenever.</h3>
+<p>the history shows what matters to you. the rest is folded, never deleted: every message between agents, every tool call, every script. ctrl+o opens it all. ⌥ + a number jumps into any agent's thread.</p></div>
+</section>
+
+<section data-sec="harness" id="harness">
+<h2>the harness itself</h2>
+<div class="opt" data-a="h-t1">all your MCPs. all your skills. always on. <span class="me">my pick</span></div>
+<div class="opt" data-a="h-t2">plug in every MCP you've got. yes, all of them.</div>
+<div class="opt" data-a="h-t3">every MCP. every skill. no menu.</div>
+<div class="sec" data-a="harn"><div class="k">the harness</div><h3>all your MCPs. all your skills. always on.</h3>
+<p><b>MCP servers:</b> connect as many as you want, and never pick which ones to turn on. bise calls tools through code, so a hundred servers don't fill its context.</p>
+<p><b>skills and plugins:</b> the same. all of them, always there. the ones you already use elsewhere load as they are.</p>
+<p><b>images and voice:</b> paste a screenshot. or just talk to it.</p></div>
+<p class="flag" data-a="h-flag">still to check before it ships: the voice key, and which plugin formats load as-is.</p>
+</section>
+
+<section data-sec="me" id="me">
+<h2>made by a human</h2>
+<div class="opt" data-a="me-s1">made by a human. shipped with bise. <span class="me">my pick</span></div>
+<div class="opt" data-a="me-s2">one human. a lot of agents.</div>
+<div class="opt" data-a="me-s3">made by Gabriel (and bise).</div>
+<div class="sec" data-a="me-a"><div class="k">version a · with the Vibe line</div><h3>hi, i'm Gabriel.</h3>
+<p class="dim">made by a human. shipped with bise.</p>
+<p>i build coding agents for a living. i'm one of the people behind Mistral's agent tools, like Vibe.</p>
+<p>agents made me faster. they also made my days feel empty. i was switching tabs, answering "should i continue?", pasting context around. i shipped more than ever and i didn't enjoy it.</p>
+<p>so i built the tool i wanted: one thread, a team behind it, and me in flow. most of bise was built with bise.</p>
+<p>i want everyone to ship like a team of a hundred, and to love building again. bise is open source and indie. i read every issue.</p>
+<p class="dim">— Gabriel Vergnaud · GitHub · X</p></div>
+<div class="sec" data-a="me-b"><div class="k">version b · no employer</div><h3>hi, i'm Gabriel.</h3>
+<p class="dim">made by a human. shipped with bise.</p>
+<p>i build developer tools for a living, and i've spent the last years building coding agents.</p>
+<p class="dim">(the rest is the same as version a.)</p></div>
+<p class="dim" data-a="me-note">my view: version a is the stronger argument ("this person knows agents"). the risk: people read bise as a Mistral product. version b is safe and loses little. i'd go with b and put Vibe in your GitHub bio.</p>
+<p class="flag" data-a="me-q">to check: "most of bise was built with bise", is that true? and which links?</p>
+</section>
+
+</main>
+<script src="annotate.js"></script>
+</body></html>
