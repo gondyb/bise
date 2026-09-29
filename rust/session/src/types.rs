@@ -74,6 +74,8 @@ pub enum Text {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Part {
     Text { text: String },
+    /// a text too big for its line (§8.2): the bytes are in the blob
+    TextBlob { blob: BlobRef },
     Image { image: BlobRef, name: String, path: String, b64: String },
     File { file: BlobRef, name: String },
     Thinking {

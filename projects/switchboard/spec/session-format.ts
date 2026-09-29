@@ -15,6 +15,7 @@
 //   `injected` flag when it is not their default, and context_injected
 //   a system `role`: both exist in today's sessions;
 // - turn_ended carries the Core's `inputs` / `actions` counters;
+// - a `text_blob` part: a text part moved to a blob by the 256 KiB rule;
 // - context_injected kind "summary": a compaction summary migrated from
 //   a .txt (the replaced messages were never on disk).
 
@@ -45,6 +46,7 @@ export type Text = { text: string } | { blob: BlobRef };   // big text goes to a
 
 export type Part =
   | { kind: "text"; text: string }
+  | { kind: "text_blob"; blob: BlobRef }   // a text too big for its line (§8.2)
   | { kind: "image"; image: BlobRef;                  // the bytes the model got
       name: string;               // "[Image #1]"
       path: string;               // where it came from ("shot.png")

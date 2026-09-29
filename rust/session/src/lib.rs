@@ -6,3 +6,6 @@ pub mod types;
 
 pub use reader::{read_bytes, read_dir, Event, Loc, Log, Open};
 pub use types::Payload;
+pub mod blob;
+pub mod writer;
+pub use writer::{new_session_id, OpenError, Writer};
