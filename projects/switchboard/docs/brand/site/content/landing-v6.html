@@ -247,8 +247,10 @@
   .win.nag .ask { animation:nag 1.1s ease-in-out infinite; }
   @keyframes nag { 0%,100% { transform:none } 20% { transform:translateX(-2px) rotate(-1deg) } 40% { transform:translateX(2px) rotate(1deg) } 60% { transform:none } }
   .win:hover { z-index:30 !important; }
-  .you { position:absolute; z-index:40; pointer-events:none; padding:1px 9px 1px 8px; border-left:2px solid var(--acc); background:var(--raised); border-radius:0 6px 6px 0; font-size:12px; font-weight:700; color:var(--text); box-shadow:0 6px 18px rgba(0,0,0,.3); transition:left .45s cubic-bezier(.34,1.56,.64,1), top .45s cubic-bezier(.34,1.56,.64,1), opacity .4s; }
-  .you.tap { animation:tap .35s ease; } @keyframes tap { 40% { transform:scale(.9) } }
+  .you { position:absolute; z-index:40; width:0; height:0; pointer-events:none; transition:left .45s cubic-bezier(.34,1.56,.64,1), top .45s cubic-bezier(.34,1.56,.64,1), opacity .4s; }
+  .you svg { position:absolute; left:-2px; top:-2px; filter:drop-shadow(0 3px 6px rgba(0,0,0,.35)); transform-origin:2px 2px; }
+  .you .lb { position:absolute; left:13px; top:17px; white-space:nowrap; padding:1px 9px 1px 8px; border-left:2px solid var(--acc); background:var(--raised); border-radius:0 6px 6px 0; font-size:12px; font-weight:700; color:var(--text); box-shadow:0 6px 18px rgba(0,0,0,.3); }
+  .you.tap svg { animation:tap .35s ease; } @keyframes tap { 40% { transform:scale(.8) } }
   .bub { position:absolute; z-index:41; padding:4px 10px; border-radius:10px; background:var(--raised); border:1px solid var(--faint); font-size:12.5px; color:var(--text); opacity:0; transform:scale(.6); transition:opacity .3s, transform .45s cubic-bezier(.34,1.56,.64,1); pointer-events:none; }
   .bub.on { opacity:1; transform:none; }
   .one { position:absolute; left:50%; top:50%; width:min(760px, 92%); transform:translate(-50%,-50%) scale(.9); opacity:0; transition:opacity .5s .35s, transform .8s .35s cubic-bezier(.34,1.4,.64,1); background:var(--bg); border:1px solid var(--faint); border-radius:10px; font-size:13px; line-height:1.65; box-shadow:0 14px 40px rgba(0,0,0,.3); }
@@ -324,7 +326,7 @@
     <div class="flip" id="flip"><span class="knob" id="knob"></span><button data-s="today" class="on">today</button><button data-s="bise">with bise <span class="acc">:*</span></button></div>
   </div>
   <div class="stage" id="stage" aria-label="today: many agent sessions waiting for you. with bise: one thread.">
-    <div class="you" id="you" style="left:46%;top:86%">you</div>
+    <div class="you" id="you" style="left:46%;top:80%"><svg width="16" height="20" viewBox="0 0 16 20" aria-hidden="true"><path d="M2 2 L2 16 L5.8 12.6 L8.4 18.4 L11 17.2 L8.5 11.6 L13.6 11.6 Z" fill="var(--acc)" stroke="var(--bg)" stroke-width="1.4" stroke-linejoin="round"/></svg><span class="lb">you</span></div>
     <div class="bub" id="bub"></div>
     <div class="one" id="one">
       <div class="bar"><span>bise <span class="acc">:*</span></span><span class="faint">~/acme</span></div>
@@ -364,8 +366,6 @@
   <div class="inner blow">
     <div class="kicker">why</div>
     <h2 class="punch">you didn't become an engineer<br>to babysit robots.</h2>
-    <p class="soft">today you started five things. you watched output scroll. you answered "should i continue?" eleven times.</p>
-    <p class="soft">two agents edited the same file. the red tests told you. you had a great idea at 2pm, and let it go: one more tab was one too many.</p>
     <p class="soft">at 6pm you'd shipped more than ever, and you felt like you did nothing.</p>
     <p class="soft">that feeling has a name: context switching. forty times a day. it makes the best job in the world feel miserable.</p>
     <p class="turn">bise does the switching for you.<br>you stay in flow.</p>
@@ -957,7 +957,7 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
   }
   async function visit(d, id) {
     const r = d.getBoundingClientRect(), s = stage.getBoundingClientRect();
-    you.style.left = (r.left - s.left + 24) + "px"; you.style.top = (r.top - s.top + r.height - 22) + "px";
+    you.style.left = (r.left - s.left + 40) + "px"; you.style.top = (r.top - s.top + r.height - 16) + "px";
     await sleep(520); if (id !== run) return;
     you.classList.remove("tap"); void you.offsetWidth; you.classList.add("tap");
     d.classList.remove("nag"); switches++; waiting = Math.max(0, waiting - 1); setStats();
