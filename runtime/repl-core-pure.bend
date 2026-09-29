@@ -6,6 +6,7 @@ import ../core/wire.bend as W
 import ./model.bend as M
 import ../core/types.bend as T
 import ../core/text.bend as Tx
+import ../vendor/json.bend as J
 
 # ---- what one input line asks for ----
 
@@ -38,6 +39,78 @@ def script_for(is_tools: Bool, is_prog: Bool, +text: String)
 def script_for_entry(+text: String) -> List<&2, M.Reply>:
   script_for(String.starts_with(text, "tools"),
     String.starts_with(text, "prog:"), text)
+
+# ---- a script file (BEND_SCRIPT_FILE, scripted REPL only) ----
+# A JSON object: user text -> the replies of its turn, in order:
+#   {"<text>": [{"text": "...", "calls": [{"name": "bash", "args": "ls"}]},
+#               {"fail": true}]}
+# A text the file does not name keeps script_for_entry's replies. The
+# session-log fixture scenarios replay through it (BISE-195).
+
+def json_str(j: J.Json) -> String:
+  match j:
+    case J.JStr{+s}:
+      s
+    case _:
+      ""
+
+def json_true(j: J.Json) -> Bool:
+  match j:
+    case J.JBool{+b}:
+      b
+    case _:
+      False{}
+
+def script.calls(xs: List<&2, J.Json>, +n: U32) -> List<&2, T.Call>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+x, rest}:
+      Con{T.Call{n, json_str(W.field_or(x, "name", J.JNull{})),
+          json_str(W.field_or(x, "args", J.JNull{}))},
+        script.calls(rest, U32.add(n, 1))}
+
+def script.calls_of(j: J.Json) -> List<&2, T.Call>:
+  match j:
+    case J.JArr{+xs}:
+      script.calls(xs, 1)
+    case _:
+      Nil{}
+
+def script.reply(fail: Bool, +x: J.Json) -> M.Reply:
+  match fail:
+    case True{}:
+      M.RFail{}
+    case False{}:
+      M.ROk{json_str(W.field_or(x, "text", J.JNull{})),
+        script.calls_of(W.field_or(x, "calls", J.JNull{}))}
+
+def script.replies(xs: List<&2, J.Json>) -> List<&2, M.Reply>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+x, rest}:
+      Con{script.reply(json_true(W.field_or(x, "fail", J.JNull{})), x),
+        script.replies(rest)}
+
+def script.pick(j: J.Json, +dflt: List<&2, M.Reply>) -> List<&2, M.Reply>:
+  match j:
+    case J.JArr{+xs}:
+      script.replies(xs)
+    case _:
+      dflt
+
+def script_key(cmds: List<&2, T.Cmd>) -> String:
+  match cmds:
+    case Con{T.UserMsg{_, +t}, _}:
+      t
+    case _:
+      ""
+
+# the replies the file gives the plan's first user text, else `dflt`
+def script_lookup(+body: String, +key: String, +dflt: List<&2, M.Reply>)
+    -> List<&2, M.Reply>:
+  script.pick(W.field_or(W.parse_json(body), key, J.JNull{}), dflt)
 
 def plan_reload(eq: Bool, +op: String) -> Plan:
   match eq:

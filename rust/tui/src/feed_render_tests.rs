@@ -1400,3 +1400,9 @@ fn mains_reply_wraps_once_under_its_text() {
     }
     crate::render::set_main_feed(false);
 }
+
+#[test]
+fn session_log_facts_are_not_in_the_feed() {
+    // BISE-195: the REPL's `ev:` lines go to the hub's session writer
+    assert!(parse_line(r#"  ev: {"type":"turn_started","v":1,"data":{"cause":"user"}}"#).is_none());
+}

@@ -690,6 +690,8 @@ def run(fuel: Nat, out: Pv.Out, +rt: Rtp.Rt, +job: Rtp.Job, tr: Rtp.Trans) -> IO
                   match effect:
                     case Rtp.ENone{}:
                       run(k, out, rt2, job2, Rtp.transition(rt2, job2))
+                    case Rtp.EDequeue{}:
+                      run(k, out, rt2, job2, Rtp.transition_queued(rt2, job2))
                     case Rtp.EPrints{lines}:
                       do IO<RtEnd>:
                         out2 : Pv.Out <- emit(out, lines)
@@ -702,8 +704,8 @@ def run(fuel: Nat, out: Pv.Out, +rt: Rtp.Rt, +job: Rtp.Job, tr: Rtp.Trans) -> IO
                       do IO<RtEnd>:
                         sv : Unit <- save_rt(rt2)
                         +ctx : String <- context_now()
-                        nr : Pv.Out & Rem.RemoteRes <- Pv.model_call(
-                          out, Rem.with_context(ctx, request))
+                        nr : Pv.Out & Rem.RemoteRes <- Pv.model_call.req(
+                          out, Rem.with_context(ctx, request), action)
                         model_back(nr, rt2, k, action, after,
                           k2 => o3 => +r3 => +c =>
                             run(k2, o3, r3, Rtp.JCmd{c, after},

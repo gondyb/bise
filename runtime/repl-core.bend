@@ -44,6 +44,7 @@ import ../runtime/provider.bend as Pv
 import ../runtime/selftools.bend as Sf
 import ../runtime/selftools-pure.bend as Sfp
 import ./repl-core-pure.bend as Rcp
+import ../core/ev.bend as Ev
 
 # what the loops return: keep serving, or stop. The reload path
 # unwinds to main so the process exits 0 — the parent then recompiles
@@ -254,6 +255,29 @@ def repl_end_stalled(+live: Bool, e: R.RtEnd,
     case R.REnd{+sess2, _}:
       repl_end_stalled.stalled(live, turn_active(sess2), e, next)
 
+# the scripted REPL's replies from BEND_SCRIPT_FILE (Rcp.script_lookup),
+# when set; live: the plan's own (unused) script
+def script_file.read(none: Bool, +path: String, +key: String,
+    +dflt: List<&2, M.Reply>) -> IO(List<&2, M.Reply>):
+  match none:
+    case True{}:
+      IO.pure(List<&2, M.Reply>, dflt)
+    case False{}:
+      do IO<List<&2, M.Reply>>:
+        +body : String <- P.read_or(path, "")
+        IO.pure(List<&2, M.Reply>, Rcp.script_lookup(body, key, dflt))
+
+def script_file(live: Bool, +cmds: List<&2, T.Cmd>, +dflt: List<&2, M.Reply>)
+    -> IO(List<&2, M.Reply>):
+  match live:
+    case True{}:
+      IO.pure(List<&2, M.Reply>, dflt)
+    case False{}:
+      do IO<List<&2, M.Reply>>:
+        r : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_SCRIPT_FILE")
+        +path : String <- IO.pure(String, P.env_or(r, ""))
+        script_file.read(String.is_empty(path), path, Rcp.script_key(cmds), dflt)
+
 def repl_plan(+live: Bool, s: Socket, plan: Rcp.Plan, +sess: T.Session,
     next: Socket -> T.Session -> IO(Flow)) -> IO(Flow):
   match plan:
@@ -270,8 +294,9 @@ def repl_plan(+live: Bool, s: Socket, plan: Rcp.Plan, +sess: T.Session,
         +ok : Bool <- IO.pure(Bool, S.reload_allowed(sess))
         f : Flow <- repl_reload(Pv.ONet{s}, ok, sess, next)
         IO.pure(Flow, f)
-    case Rcp.PRun{+cmds, +script}:
+    case Rcp.PRun{+cmds, +script0}:
       do IO<Flow>:
+        +script : List<&2, M.Reply> <- script_file(live, cmds, script0)
         e : R.RtEnd <- repl_run(live, Pv.ONet{s}, sess, script, cmds)
         repl_end_stalled(live, e, next)
 
@@ -357,18 +382,29 @@ def crash_lines(empty: Bool, +note: String) -> List<&2, String>:
     case False{}:
       Con{String.append("  obs: harness_restarted: ", note), Nil{}}
 
-def greet_out(greet: Maybe<&2, Nat>, s: Socket, +sess: T.Session)
-    -> IO(Pv.Out):
+# `pre`: the session-log configuration facts (core/ev.bend), first on
+# every connection (the writer skips a fact equal to its state)
+def greet_out(greet: Maybe<&2, Nat>, s: Socket, +sess: T.Session,
+    +pre: List<&2, String>) -> IO(Pv.Out):
   match greet:
     case Some{+n}:
       do IO<Pv.Out>:
         cr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_CRASH_NOTE")
         +note : String <- IO.pure(String, P.env_or(cr, ""))
-        R.emit(Pv.ONet{s}, List.append(&2, String,
+        R.emit(Pv.ONet{s}, List.concat(&2, String, [pre,
           greet_lines(n, P.history_of(sess)),
-          crash_lines(String.is_empty(note), note)))
+          crash_lines(String.is_empty(note), note)]))
     case None{}:
-      IO.pure(Pv.Out, Pv.ONet{s})
+      R.emit(Pv.ONet{s}, pre)
+
+# the model the session-log facts name: the resolved one (live), or
+# "scripted"
+def ev_model(live: Bool) -> IO(String):
+  match live:
+    case True{}:
+      Pv.resolved_model()
+    case False{}:
+      IO.pure(String, "scripted")
 
 # the restored queue restarts the turn chain by itself (checkpoint v2):
 # the runtime idle boundary pops the queued head into a fresh turn,
@@ -425,7 +461,9 @@ def serve_after(+live: Bool, am: Listener & Result<&1, &1, U32 & String, Socket>
         IO.pure(Flow, Stop{})
     case (l2, Done{s}):
       do IO<Flow>:
-        out2 : Pv.Out <- greet_out(greet, s, sess)
+        +model : String <- ev_model(live)
+        out2 : Pv.Out <- greet_out(greet, s, sess,
+          Ev.sess_evs(sess, model, "config"))
         f : Flow <- greet_conn(live, out2, sess)
         serve_after.cont(f, l2, next)
 

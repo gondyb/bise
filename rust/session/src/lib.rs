@@ -16,4 +16,3 @@ pub use state::State;
 pub mod redact;
 pub use redact::Redactor;
 pub mod legacy;
-pub mod migrate;

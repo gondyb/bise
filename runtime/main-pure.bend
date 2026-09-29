@@ -7,6 +7,7 @@ import ../core/compaction.bend as C
 import ../vendor/json.bend as J
 import ./model.bend as M
 import ../core/obs.bend as O
+import ../core/ev.bend as Ev
 import ./remote.bend as Rem
 import ../core/session.bend as S
 import ../core/types.bend as T
@@ -35,6 +36,9 @@ type Effect is Data:
   # The live flag keeps scripted scenarios hermetic: no MCP index reads.
   EExec{call: T.Call, after: List<&2, T.Act>, live: Bool}
   ENone{}
+  # the next job is a queued input popped at the idle boundary: the
+  # loop applies it with Rtp.transition_queued (its ev lines say so)
+  EDequeue{}
 
 type Trans is Data:
   Tr{effect: Effect, rt: Rt, job: Job}
@@ -170,7 +174,7 @@ def trans.idle.queued(q: List<&2, String>, +sess: T.Session,
     case Nil{}:
       Tr{EPrints{Con{"--- idle", Nil{}}}, Rt{sess, script, Nil{}, live}, JDone{}}
     case Con{+text, +rest}:
-      Tr{ENone{}, Rt{S.set_queued(sess, rest), script, Nil{}, live},
+      Tr{EDequeue{}, Rt{S.set_queued(sess, rest), script, Nil{}, live},
         JCmd{T.UserMsg{T.Queue{}, text}, Nil{}}}
 
 def trans.idle(+rt: Rt) -> Trans:
@@ -189,25 +193,34 @@ def trans.acts(+rt: Rt, +acts: List<&2, T.Act>) -> Trans:
     case Con{a, rest}:
       trans.act(rt, rest, a)
 
+# the obs lines of an apply, then its session-log facts (core/ev.bend)
 def trans.res.accepted(+rt: Rt, +after: List<&2, T.Act>, +obs: List<&2, T.Obs>,
-    +acts: List<&2, T.Act>, +next: T.Session) -> Trans:
+    +acts: List<&2, T.Act>, +next: T.Session, +evs: List<&2, String>) -> Trans:
   match rt:
     case Rt{_, +script, +cmds, +live}:
-      Tr{EPrints{obs_lines(obs)}, Rt{next, script, cmds, live},
+      Tr{EPrints{List.append(&2, String, obs_lines(obs), evs)},
+        Rt{next, script, cmds, live},
         JActs{List.append(&2, T.Act, acts, after)}}
 
-def trans.res(+rt: Rt, +after: List<&2, T.Act>, res: T.Res) -> Trans:
+def trans.res(+rt: Rt, +after: List<&2, T.Act>, res: T.Res,
+    +evs: List<&2, String>) -> Trans:
   match res:
     case T.Rejected{reason}:
       Tr{EPrints{Con{String.append("core rejected: ", reason), Nil{}}},
         rt, JActs{after}}
     case T.Accepted{obs, acts, next}:
-      trans.res.accepted(rt, after, obs, acts, next)
+      trans.res.accepted(rt, after, obs, acts, next, evs)
 
-def trans.cmd(+rt: Rt, +after: List<&2, T.Act>, +cmd: T.Cmd) -> Trans:
+# `fromq`: the command is a queued input popped at the idle boundary
+def trans.cmd.src(+fromq: Bool, +rt: Rt, +after: List<&2, T.Act>,
+    +cmd: T.Cmd) -> Trans:
   match rt:
     case Rt{+sess, _, _, _}:
-      trans.res(rt, after, S.apply(sess, cmd))
+      +res = S.apply(sess, cmd)
+      trans.res(rt, after, res, Ev.evs(fromq, sess, cmd, res))
+
+def trans.cmd(+rt: Rt, +after: List<&2, T.Act>, +cmd: T.Cmd) -> Trans:
+  trans.cmd.src(False{}, rt, after, cmd)
 
 def merge_acts(+acts: List<&2, T.Act>, +cont: Job) -> Job:
   match cont:
@@ -221,10 +234,12 @@ def merge_acts(+acts: List<&2, T.Act>, +cont: Job) -> Job:
       JActs{acts}
 
 def trans.drain.ok(+rt: Rt, +cont: Job, +rest_cmds: List<&2, T.Cmd>,
-    +obs: List<&2, T.Obs>, +acts: List<&2, T.Act>, +next: T.Session) -> Trans:
+    +obs: List<&2, T.Obs>, +acts: List<&2, T.Act>, +next: T.Session,
+    +evs: List<&2, String>) -> Trans:
   match rt:
     case Rt{_, +script, _, +live}:
-      Tr{EPrints{obs_lines(obs)}, Rt{next, script, rest_cmds, live},
+      Tr{EPrints{List.append(&2, String, obs_lines(obs), evs)},
+        Rt{next, script, rest_cmds, live},
         merge_acts(acts, cont)}
 
 def trans.drain.rejected(+rt: Rt, +cont: Job, +rest_cmds: List<&2, T.Cmd>,
@@ -235,13 +250,18 @@ def trans.drain.rejected(+rt: Rt, +cont: Job, +rest_cmds: List<&2, T.Cmd>,
         Rt{sess, script, rest_cmds, live}, cont}
 
 def trans.drain.res(+rt: Rt, +cont: Job, +rest_cmds: List<&2, T.Cmd>,
-    res: T.Res) -> Trans:
+    res: T.Res, +evs: List<&2, String>) -> Trans:
   match res:
     case T.Rejected{reason}:
       # consumed with a rejection line; the pending work continues
       trans.drain.rejected(rt, cont, rest_cmds, reason)
     case T.Accepted{obs, acts, next}:
-      trans.drain.ok(rt, cont, rest_cmds, obs, acts, next)
+      trans.drain.ok(rt, cont, rest_cmds, obs, acts, next, evs)
+
+def trans.drain.cmd(+rt: Rt, +cont: Job, +rest_cmds: List<&2, T.Cmd>,
+    +sess: T.Session, +c: T.Cmd) -> Trans:
+  +res = S.apply(sess, c)
+  trans.drain.res(rt, cont, rest_cmds, res, Ev.evs(False{}, sess, c, res))
 
 def trans.job(+rt: Rt, +cont: Job) -> Trans:
   match cont:
@@ -267,11 +287,11 @@ def trans.drain(+rt: Rt, +cont: Job) -> Trans:
           # client contract sends them between turns)
           match c:
             case T.UserMsg{T.Steer{}, _}:
-              trans.drain.res(rt, cont, rest, S.apply(sess, c))
+              trans.drain.cmd(rt, cont, rest, sess, c)
             case T.Notify{_}:
-              trans.drain.res(rt, cont, rest, S.apply(sess, c))
+              trans.drain.cmd(rt, cont, rest, sess, c)
             case T.Interrupt{}:
-              trans.drain.res(rt, cont, rest, S.apply(sess, c))
+              trans.drain.cmd(rt, cont, rest, sess, c)
             case _:
               trans.job(rt, cont)
 
@@ -285,6 +305,15 @@ def transition(rt: Rt, job: Job) -> Trans:
       trans.idle(rt)
     case JDone{}:
       Tr{ENone{}, rt, JDone{}}
+
+# the transition after an EDequeue: the popped input is applied as a
+# queued one (turn_started cause "queue", from_queue)
+def transition_queued(rt: Rt, job: Job) -> Trans:
+  match job:
+    case JCmd{cmd, after}:
+      trans.cmd.src(True{}, rt, after, cmd)
+    case _:
+      transition(rt, job)
 
 # ---- feed annotations for the TUI (live only) ----
 # The Core's obs carry ids and outcomes; the runtime adds what the

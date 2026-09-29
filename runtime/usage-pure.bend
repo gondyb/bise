@@ -10,6 +10,7 @@ import Base
 import ../core/api.bend as Api
 import ../core/wire.bend as W
 import ../vendor/json.bend as J
+import ../core/ev.bend as Ev
 
 def usage_line.fields(+inp: Nat, +out: Nat, +cr: Nat, +cw: Nat,
     +model: String) -> String:
@@ -52,3 +53,32 @@ def usage_line.ok(ok: Bool, +st: Api.Style, +model: String, +body: String)
 def usage_line(st: Api.Style, +model: String, +status: U32, +body: String)
     -> String:
   usage_line.ok(U32.is_eq(status, 200), st, model, body)
+
+# the same usage as a session-log fact (core/ev.bend): req is the
+# Core's action id of the request; no usage: ""
+def usage_ev.of(u: Api.Usage, +model: String, +req: U32) -> String:
+  match u:
+    case Api.Usage{+inp, +out, +cr, +cw}:
+      Ev.usage(req, model, inp, out, cr, cw)
+
+def usage_ev.usage(u: J.Json, st: Api.Style, +model: String, +req: U32)
+    -> String:
+  match u:
+    case J.JObj{+kvs}:
+      usage_ev.of(Api.usage_of(st, J.JObj{kvs}), model, req)
+    case _:
+      ""
+
+def usage_ev.ok(ok: Bool, +st: Api.Style, +model: String, +body: String,
+    +req: U32) -> String:
+  match ok:
+    case True{}:
+      usage_ev.usage(
+        usage_line.body(String.starts_with(String.trim(body), "{"), st, body),
+        st, model, req)
+    case False{}:
+      ""
+
+def usage_ev(st: Api.Style, +model: String, +status: U32, +body: String,
+    +req: U32) -> String:
+  usage_ev.ok(U32.is_eq(status, 200), st, model, body, req)

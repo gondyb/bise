@@ -19,6 +19,7 @@ import ../core/image.bend as Im
 import ./debug.bend as Dbg
 import ./usage-pure.bend as Us
 import ./oneshot-pure.bend as Osp
+import ../core/ev.bend as Ev
 # ---- the live provider call, fully in Bend (hub HTTP client) ----
 # The wire request (MODEL/TOOL/MSG/CALL lines) becomes the provider
 # JSON in core/api.bend, is POSTed by the hub HTTP client, and the reply
@@ -186,11 +187,15 @@ def usage_note.pick(empty: Bool, n: Out, +line: String) -> IO(Out):
 
 # the attempt's body: a whole JSON reply, or the Anthropic stream's
 # events (Us.usage_line reads both); no response (status 0) prints nothing
-def usage_note(g: Got, n: Out, st: Api.Style, +model: String) -> IO(Out):
+def usage_note(g: Got, n: Out, +st: Api.Style, +model: String, +req: U32)
+    -> IO(Out):
   match g:
     case Got{_, +status, +raw}:
       +line = Us.usage_line(st, model, status, raw)
-      usage_note.pick(String.is_empty(line), n, line)
+      +ev = Us.usage_ev(st, model, status, raw, req)
+      do IO<Out>:
+        n2 : Out <- usage_note.pick(String.is_empty(line), n, line)
+        usage_note.pick(String.is_empty(ev), n2, ev)
 
 def interrupt_path() -> IO(String):
   do IO<String>:
@@ -230,12 +235,13 @@ def model_call.step.retry.go(stop: Bool, n: Out, +ipath: String, +k: Nat,
       next(k)(n)
 
 def model_call.step.retry(can: Bool, n: Out, +k: Nat, +tries: Nat,
-    +delay_ms: U32, +why: String,
+    +delay_ms: U32, +why: String, +req: U32,
     next: Nat -> Out -> IO(Out & Rem.RemoteRes)) -> IO(Out & Rem.RemoteRes):
   match can:
     case True{}:
       do IO<Out & Rem.RemoteRes>:
-        n2 : Out <- note(n, Pvp.retry_line(tries, why, delay_ms))
+        n1 : Out <- note(n, Pvp.retry_line(tries, why, delay_ms))
+        n2 : Out <- note(n1, Ev.retry(req, Nat.add(tries, 1n), why, delay_ms))
         +ipath : String <- interrupt_path()
         stop : Bool <- model_call.wait(Pvp.wait_slices(delay_ms), ipath,
           delay_ms)
@@ -244,7 +250,7 @@ def model_call.step.retry(can: Bool, n: Out, +k: Nat, +tries: Nat,
       IO.pure(Out & Rem.RemoteRes,
         (n, Rem.RRErr{Pvp.exhausted_text(Nat.add(tries, 1n), why)}))
 
-def model_call.step(a: Pvp.Attempt, n: Out, +k: Nat, +tries: Nat,
+def model_call.step(a: Pvp.Attempt, n: Out, +k: Nat, +tries: Nat, +req: U32,
     next: Nat -> Out -> IO(Out & Rem.RemoteRes)) -> IO(Out & Rem.RemoteRes):
   match a:
     case Pvp.AOk{+reply}:
@@ -253,7 +259,7 @@ def model_call.step(a: Pvp.Attempt, n: Out, +k: Nat, +tries: Nat,
       IO.pure(Out & Rem.RemoteRes, (n, Rem.RRErr{why}))
     case Pvp.ARetry{+after_ms, +why}:
       model_call.step.retry(Nat.is_lt(0n, k), n, k, tries,
-        Pvp.retry_delay_ms(after_ms, tries), why, next)
+        Pvp.retry_delay_ms(after_ms, tries), why, req, next)
 
 # ---- the streamed call (every family): Server-Sent Events ----
 # The body arrives in pieces (raw bytes; decoded once, whole). Between
@@ -551,7 +557,7 @@ def img_req(+request: String) -> IO(ImgReq):
 @unsafe
 def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
     +key: String, +pv: Pvp.Prov, +call: Nat,
-    +imgs: List<&2, Im.ILoaded>)
+    +imgs: List<&2, Im.ILoaded>, +req: U32)
     -> IO(Out & Rem.RemoteRes):
   match fuel:
     case 0n:
@@ -576,37 +582,37 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
             +g : Got <- call.by_style(st, url, hdrs, body)
             lg : Unit <- model_call.log(call, tries, model, url, json, g)
             # the usage line names the full id (the TUI's catalog key)
-            nu : Out <- usage_note(g, n, st, String.concat([prov, "/", model]))
-            model_call.step(got_attempt(g), nu, k, tries,
+            nu : Out <- usage_note(g, n, st, String.concat([prov, "/", model]), req)
+            model_call.step(got_attempt(g), nu, k, tries, req,
               k2 => n2 => model_call.try(k2, Nat.add(tries, 1n), n2, request,
-                key, pv, call, imgs))
+                key, pv, call, imgs, req))
 
 def model_call.img(ir: ImgReq, n: Out, +key: String, +pv: Pvp.Prov,
-    +call: Nat) -> IO(Out & Rem.RemoteRes):
+    +call: Nat, +req: U32) -> IO(Out & Rem.RemoteRes):
   match ir:
     case ImgReq{+request, +imgs}:
       model_call.try(Pvp.max_attempts(), 0n, n, request, key, pv, call,
-        imgs)
+        imgs, req)
 
-def model_call.go(n: Out, +request: String, +key: String, +pv: Pvp.Prov)
-    -> IO(Out & Rem.RemoteRes):
+def model_call.go(n: Out, +request: String, +key: String, +pv: Pvp.Prov,
+    +req: U32) -> IO(Out & Rem.RemoteRes):
   do IO<Out & Rem.RemoteRes>:
     +call : Nat <- IO.now()
     ir : ImgReq <- img_req(request)
-    model_call.img(ir, n, key, pv, call)
+    model_call.img(ir, n, key, pv, call, req)
 
 # a provider with a key_env needs that variable set; one with
 # key_env = "" (a local server) calls without a key
 def model_call.key(missing: Bool, n: Out, +request: String, +key: String,
-    +pv: Pvp.Prov, +key_env: String) -> IO(Out & Rem.RemoteRes):
+    +pv: Pvp.Prov, +key_env: String, +req: U32) -> IO(Out & Rem.RemoteRes):
   match missing:
     case True{}:
       IO.pure(Out & Rem.RemoteRes,
         (n, Rem.RRErr{String.append(key_env, " is not set")}))
     case False{}:
-      model_call.go(n, request, key, pv)
+      model_call.go(n, request, key, pv, req)
 
-def model_call.env(n: Out, +request: String, +pv: Pvp.Prov)
+def model_call.env(n: Out, +request: String, +pv: Pvp.Prov, +req: U32)
     -> IO(Out & Rem.RemoteRes):
   match pv:
     case Pvp.Prov{_, _, _, _, +key_env, _}:
@@ -614,13 +620,13 @@ def model_call.env(n: Out, +request: String, +pv: Pvp.Prov)
         kr : Result<&1, &1, U32 & String, String> <- IO.get_env(key_env)
         +key : String <- IO.pure(String, P.env_or(kr, ""))
         model_call.key(Bool.and(Bool.not(String.is_empty(key_env)),
-          String.is_empty(key)), n, request, key, pv, key_env)
+          String.is_empty(key)), n, request, key, pv, key_env, req)
 
-def model_call.resolved(r: Pvp.Resolved, n: Out, +request: String)
-    -> IO(Out & Rem.RemoteRes):
+def model_call.resolved(r: Pvp.Resolved, n: Out, +request: String,
+    +req: U32) -> IO(Out & Rem.RemoteRes):
   match r:
     case Pvp.ROk{+pv}:
-      model_call.env(n, request, pv)
+      model_call.env(n, request, pv, req)
     case Pvp.RErr{_, +msg}:
       IO.pure(Out & Rem.RemoteRes, (n, Rem.RRErr{msg}))
 
@@ -696,7 +702,13 @@ def resolved_window() -> IO(U32):
       P.env_or(mr, ""), P.env_or(ar, ""), P.env_or(rr, ""), cfgt, file))
 
 @unsafe
-def model_call(n: Out, +request: String) -> IO(Out & Rem.RemoteRes):
+# req: the Core's action id of the request (the session log's req,
+# core/ev.bend); a call outside a session (one-shot) passes 0
+def model_call.req(n: Out, +request: String, +req: U32)
+    -> IO(Out & Rem.RemoteRes):
   do IO<Out & Rem.RemoteRes>:
     r : Pvp.Resolved <- resolution()
-    model_call.resolved(r, n, request)
+    model_call.resolved(r, n, request, req)
+
+def model_call(n: Out, +request: String) -> IO(Out & Rem.RemoteRes):
+  model_call.req(n, request, 0)

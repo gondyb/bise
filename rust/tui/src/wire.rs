@@ -291,6 +291,10 @@ pub(crate) fn parse_line(line: &str) -> Option<Ev> {
     if line == "--- idle" {
         return Some(Ev::Idle);
     }
+    // the session-log facts (BISE-195): for the hub's writer, not the feed
+    if line.starts_with("  ev: ") {
+        return None;
+    }
     // runtime annotations: tool #<id> <name> : <args>
     if let Some(r) = line.strip_prefix("tool #") {
         let (id_s, rest) = r.split_once(' ')?;
