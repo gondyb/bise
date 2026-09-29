@@ -128,8 +128,7 @@
   .chart b { color:var(--text); }
   .how .line { display:block; color:var(--acc); margin-bottom:4px; }
   .me p { max-width:62ch; }
-  .me h2.hi { display:flex; align-items:center; justify-content:space-between; gap:24px; max-width:62ch; }
-  .me .face { width:72px; height:72px; border-radius:50%; object-fit:cover; flex:none; box-shadow:0 0 0 1px var(--faint), 0 0 0 5px var(--bg), 0 0 0 6px var(--acc); }
+    .me .face { display:block; margin:0 0 22px 6px; width:72px; height:72px; border-radius:50%; object-fit:cover; flex:none; box-shadow:0 0 0 1px var(--faint), 0 0 0 5px var(--bg), 0 0 0 6px var(--acc); }
   .how li { list-style:none; margin-bottom:34px; display:grid; grid-template-columns:4ch 1fr; }
   .how .n { color:var(--acc); }
   .how b { display:block; margin-bottom:4px; }
@@ -396,8 +395,9 @@ changelog  <span class="acc">∿</span> working  1m</div><p><b>tables that fit</
 <!-- made by -->
 <section id="me">
   <div class="inner blow me">
+    <img class="face" src="/gabriel.jpg" width="120" height="120" alt="Gabriel Vergnaud, smiling, by the water at sunset">
     <div class="kicker">made by a human. shipped with bise</div>
-    <h2 class="hi"><span>hi, i'm Gabriel</span><img class="face" src="/gabriel.jpg" width="120" height="120" alt="Gabriel Vergnaud, smiling, by the water at sunset"></h2>
+    <h2>hi, i'm Gabriel</h2>
     <p>i build coding agents for a living. i'm one of the people behind Mistral's agent tools, like Vibe.</p>
     <p class="soft">agents made me faster. they also made my days feel empty. i was switching tabs, answering "should i continue?", pasting context around. i shipped more than ever and i didn't enjoy it.</p>
     <p class="soft">so i built the tool i wanted: one thread, a team behind it, and me in flow. most of bise was built with bise.</p>
