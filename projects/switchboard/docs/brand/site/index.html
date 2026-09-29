@@ -136,7 +136,8 @@
   .mcomp .cur { background:var(--acc); }
   .mini .err { color:var(--err); } .mini .ok { color:#b9d99a; } [data-theme="light"] .mini .ok { color:#3f7a2a; }
   .mini .row { display:flex; justify-content:space-between; }
-  .mini .l3 { margin-left:0; }
+  .mini .l3 { margin-left:0; padding-left:0; }
+  .l3 > .dim { display:block; padding-left:2ch; }  /* BISE-127: text under the chip */
   .chip { background:var(--chip); padding:0 1ch; color:var(--dim); } .chip .s { color:var(--text); font-weight:700; } .chip .ar { color:var(--faint); }
   @media (max-width: 900px) { .fgrid { grid-template-columns:1fr; } }
 
@@ -481,9 +482,9 @@ const plays = {
   },
   async router(m) {
     m.line(`<span class="dim"><span class="pulse acc">∿</span> 4 working</span>`); await m.wait(900);
-    m.line(`<span class="chip">✉ <span class="s">auth-fix</span> <span class="ar">→</span> main</span> <span class="dim">retry the test 3 times?</span>`, "l3"); await m.wait(1200);
+    m.line(`<span class="chip">✉ <span class="s">auth-fix</span> <span class="ar">→</span> main</span><span class="dim">retry the test 3 times?</span>`, "l3"); await m.wait(1200);
     m.line(`<span class="acc">:*</span> i answered auth-fix for you: no retries, fix the cause. <span class="faint">(you said so last week)</span>`, "b"); await m.wait(1800);
-    m.line(`<span class="chip">✉ <span class="s">release</span> <span class="ar">→</span> main</span> <span class="dim">tag it on main or on a branch?</span>`, "l3"); await m.wait(1200);
+    m.line(`<span class="chip">✉ <span class="s">release</span> <span class="ar">→</span> main</span><span class="dim">tag it on main or on a branch?</span>`, "l3"); await m.wait(1200);
     m.line(`<span class="acc">:*</span> i told release: on main, like every release. <span class="faint">(it's in CONTRIBUTING.md)</span>`, "b"); await m.wait(3200);
   },
   async direct(m) {
@@ -505,7 +506,7 @@ const plays = {
       ["docs", "release", "done, docs/migrate.md"],
     ];
     const els = [];
-    for (const [f, t, x] of ls) { els.push(m.line(`<span class="chip">✉ <span class="s">${f}</span> <span class="ar">→</span> ${t}</span> <span class="dim">${x}</span>`, "l3")); await m.wait(1000); }
+    for (const [i, [f, t, x]] of ls.entries()) { els.push(m.line(`<span class="chip">✉ <span class="s">${f}</span> <span class="ar">→</span> ${t}</span><span class="dim">${x}</span>`, i === 2 ? "l3 b" : "l3")); await m.wait(1000); }
     await m.wait(500);
     els.slice(1).forEach((e) => e.remove());
     els[0].className = ""; els[0].innerHTML = `<span class="dim">▸ 4 messages between 3 agents</span>`;

@@ -32,10 +32,14 @@
   .b { margin-top:1.6em; margin-top:1lh; } .who { display:inline-block; width:3ch; }
   /* your message: a thin accent bar on the left (│), on every wrapped line; text at column 3 */
   .you { border-left:1px solid var(--acc); padding-left:calc(3ch - 1px); }
-  .l3 { color:var(--dim); margin-left:0; display:grid; grid-template-columns:auto 1fr; gap:0 1ch; max-width:89ch; }
-  .l3 .chip { background:var(--chip); padding:0 1ch; white-space:nowrap; align-self:start; }
+  /* level 3 (BISE-127): the chip ' ✉ sender → receiver ' alone on its row at x0, the dim text under it at x0+2,
+     at most 2 rows. same pair again: one shared chip. the reply the other way: its own chip, no blank row. a new pair: a blank row. */
+  .l3 { color:var(--dim); margin-left:0; display:block; max-width:89ch; }
+  .l3 .chip { display:inline-block; background:var(--chip); padding:0 1ch; white-space:nowrap; }
+  .l3 > span:not(.chip) { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; padding-left:2ch; max-width:89ch; }
+  .l3.same .chip { display:none; }
+  .l3.gap { margin-top:1.6em; margin-top:1lh; }
   .l3 .chip .s { color:var(--text); font-weight:700; } .l3 .chip .ar { color:var(--faint); }
-  .l3.fold, .l3:not(:has(.chip)) { display:block; }
   .l3.fold { cursor:pointer; } .l3.fold:hover { color:var(--text); }
   .l1 { border-left:2px solid var(--acc); padding-left:2ch; }
   .l1 .t { color:var(--acc); font-weight:700; }
@@ -89,6 +93,18 @@
 <div class="legend"><span class="acc">▮</span> needs you · <span>▮</span> for you · <span class="faint">▮</span> between agents — click to jump</div>
 
 <script>
+
+// BISE-127 grouping of level-3 messages: same pair shares one chip; a new pair gets a blank row
+function groupL3(root) {
+  const pair = (el) => { const c = el.querySelector(":scope > .chip"); return c ? c.textContent.replace("✉", "").split("→").map((s) => s.trim()) : null; };
+  root.querySelectorAll(".l3").forEach((el) => {
+    let p = el.previousElementSibling;
+    if (!p && el.parentElement.childElementCount === 1) p = el.parentElement.previousElementSibling?.lastElementChild;
+    const k = pair(el), pk = p && p.classList.contains("l3") ? pair(p) : null;
+    const same = !!(k && pk && pk[0] === k[0] && pk[1] === k[1]), rev = !!(k && pk && pk[0] === k[1] && pk[1] === k[0]);
+    el.classList.toggle("same", same); el.classList.toggle("gap", !!(k && pk && !same && !rev));
+  });
+}
 // ---------- the scenario: every event at a time t (seconds at 1×) ----------
 const EV = [];
 const at = (t, e) => EV.push({ t, ...e });
@@ -247,6 +263,7 @@ function render(now, force = false) {
       const n = document.createElement("div"); n.innerHTML = h; if (!force && playing) n.className = "enter"; box.append(n); feedKeys.push(h);
     }
   });
+  groupL3(box);
   if (atBottom || force) feed.scrollTop = feed.scrollHeight;
   // panel: creation order, stable numbers
   const rows = [{ name: "main", g: '<span class="acc">:*</span>', r: "" }, ...st.agents.map((a) => ({
@@ -414,6 +431,7 @@ new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes)
   if (n.nodeType === 1 && !n.classList.contains("gc")) cellify(n);
   else if (n.nodeType === 3 && GLYPH_RE.test(n.data) && n.parentElement && !n.parentElement.closest(".gc")) cellify(n.parentElement);
 } }).observe(document.body, { childList: true, subtree: true, characterData: false });
+groupL3(document);
 </script>
 </body>
 </html>

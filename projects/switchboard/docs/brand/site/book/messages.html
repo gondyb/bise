@@ -41,10 +41,10 @@
   .B.r > div { background:var(--bub2); }
   .B .h { color:var(--dim); } .B .h .s { color:var(--text); font-weight:700; } .B .t { color:var(--dim); }
   .B + .B { margin-top:1px; }
-  /* C · chip: a tinted envelope chip with the names, the text after it */
-  .C { margin-left:0; display:grid; grid-template-columns:auto 1fr; gap:0 1ch; max-width:80ch; }
-  .C .chip { background:var(--bub2); padding:0 1ch; white-space:nowrap; color:var(--dim); align-self:start; }
-  .C .chip .s { color:var(--text); font-weight:700; } .C .t { color:var(--dim); }
+  /* C · chip (picked; BISE-127): the chip alone on its row at x0, the text dim under it at x0+2, at most 2 rows */
+  .C { margin-left:0; display:block; max-width:80ch; }
+  .C .chip { display:inline-block; background:var(--bub2); padding:0 1ch; white-space:nowrap; color:var(--dim); }
+  .C .chip .s { color:var(--text); font-weight:700; } .C .t { color:var(--dim); display:block; padding-left:2ch; }
   /* D · thread: one tinted block per pair while it's the last thing in the history */
   .D { background:var(--bub); padding:0 2ch; margin-left:2ch; max-width:76ch; }
   .D .h { color:var(--dim); border-bottom:1px solid var(--line); margin:0 -2ch 2px; padding:0 2ch; }
@@ -100,9 +100,9 @@ const V = [
     "terminal: right bubbles end at the reading column's right edge; max 56 wide. with 3+ agents talking at once, left/right only means 'who opened this pair'.", false,
     () => { const opener = {}; return groups((f, t, m, o) => { const k = [f, t].sort().join("|"); opener[k] ??= f; const r = opener[k] !== f;
       return `<div class="B${r ? " r" : ""}${o.first ? " b" : ""}"><div><div class="h">${hdr(f, t)}</div><div class="t">${m}</div></div></div>`; }); }],
-  ["C", "envelope chip", "one line per message: a small tinted chip with ✉ sender → receiver, then the text, which wraps under itself. the most compact; a long run stays easy to scan.",
+  ["C", "envelope chip", "the pick (BISE-127): a small tinted chip ✉ sender → receiver alone on its row, the text dim under it at x0+2, at most 2 rows then … ▸. the same sender to the same receiver again shares one chip; the reply the other way gets its own chip, no blank row; a new pair starts after a blank row.",
     "terminal: chip = tinted cells around the names, 1 column of padding; names cut at 12 with …", false,
-    () => groups((f, t, m, o) => `<div class="C${o.first ? " b" : ""}"><span class="chip">${hdr(f, t)}</span><span class="t">${m}</span></div>`)],
+    () => groups((f, t, m, o) => `<div class="C${o.first ? " b" : ""}">${o.sameSender ? "" : `<span class="chip">${hdr(f, t)}</span>`}<span class="t">${m}</span></div>`)],
   ["D", "thread", "a pair talking back and forth becomes one small thread: a header ✉ auth-fix ⇄ release with a faint rule, then one line per message with the speaker's name in a column. it only grows while it's the last thing in the history; anything else in between starts a new thread (the history stays in arrival order).",
     "terminal: names column 10 wide; the header uses ⇄ (both ways). same tint as A.", true,
     () => { let out = "", cur = null;

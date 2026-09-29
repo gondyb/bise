@@ -83,10 +83,14 @@
   .legend span:first-child { display:inline-block; width:3ch; }
   /* level 3, the envelope chip (user pick, messages.html C): at x0+2, a tinted chip " ✉ sender → receiver "
      (sender bold text, arrow faint, receiver dim), 1 space, the text dim, wrapping under itself */
-  .l3 { color:var(--dim); margin-left:0; display:grid; grid-template-columns:auto 1fr; gap:0 1ch; max-width:89ch; }
-  .l3 .chip { background:var(--chip); padding:0 1ch; white-space:nowrap; align-self:start; }
+  /* level 3 (BISE-127): the chip ' ✉ sender → receiver ' alone on its row at x0, the dim text under it at x0+2,
+     at most 2 rows. same pair again: one shared chip. the reply the other way: its own chip, no blank row. a new pair: a blank row. */
+  .l3 { color:var(--dim); margin-left:0; display:block; max-width:89ch; }
+  .l3 .chip { display:inline-block; background:var(--chip); padding:0 1ch; white-space:nowrap; }
+  .l3 > span:not(.chip) { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; padding-left:2ch; max-width:89ch; }
+  .l3.same .chip { display:none; }
+  .l3.gap { margin-top:1.6em; margin-top:1lh; }
   .l3 .chip .s { color:var(--text); font-weight:700; } .l3 .chip .ar { color:var(--faint); }
-  .l3.fold, .l3:not(:has(.chip)) { display:block; }
   .l1 { border-left:2px solid var(--acc); padding-left:2ch; margin-left:0; }
   .l1 .t { color:var(--acc); font-weight:700; }
   .lv { display:grid; grid-template-columns:18ch 1fr; gap:6px 3ch; max-width:112ch; margin-top:8px; }
@@ -113,6 +117,18 @@
 <div id="screens"></div>
 
 <script>
+
+// BISE-127 grouping of level-3 messages: same pair shares one chip; a new pair gets a blank row
+function groupL3(root) {
+  const pair = (el) => { const c = el.querySelector(":scope > .chip"); return c ? c.textContent.replace("✉", "").split("→").map((s) => s.trim()) : null; };
+  root.querySelectorAll(".l3").forEach((el) => {
+    let p = el.previousElementSibling;
+    if (!p && el.parentElement.childElementCount === 1) p = el.parentElement.previousElementSibling?.lastElementChild;
+    const k = pair(el), pk = p && p.classList.contains("l3") ? pair(p) : null;
+    const same = !!(k && pk && pk[0] === k[0] && pk[1] === k[1]), rev = !!(k && pk && pk[0] === k[1] && pk[1] === k[0]);
+    el.classList.toggle("same", same); el.classList.toggle("gap", !!(k && pk && !same && !rev));
+  });
+}
 // ---------- helpers ----------
 const S = {
   work: '<span class="pulse">∿</span>', wait: '…', need: '<span class="acc">?</span>', done: '<span class="acc">✓</span>',
@@ -584,6 +600,7 @@ new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes)
   if (n.nodeType === 1 && !n.classList.contains("gc")) cellify(n);
   else if (n.nodeType === 3 && GLYPH_RE.test(n.data) && n.parentElement && !n.parentElement.closest(".gc")) cellify(n.parentElement);
 } }).observe(document.body, { childList: true, subtree: true, characterData: false });
+groupL3(document);
 </script>
 </body>
 </html>
