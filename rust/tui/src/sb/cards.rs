@@ -109,6 +109,23 @@ impl Sb {
         }
     }
 
+    /// A click on card `id` in the panel (BISE-125): that card in the
+    /// box, like ctrl+g on it; a click on the card already shown hides
+    /// the box again.
+    pub(super) fn open_card(&mut self, id: u64) {
+        if !self.cards.iter().any(|c| c.id == id) {
+            return;
+        }
+        if self.card.shown && self.current_card().map(|c| c.id) == Some(id) {
+            self.card.shown = false;
+            return;
+        }
+        self.card.sel = Some(id);
+        self.card.shown = true;
+        self.card.full = false;
+        self.card.scroll = 0;
+    }
+
     /// Ctrl+N / Ctrl+P: the next or previous card, shown.
     pub(super) fn step_card(&mut self, d: isize) {
         let ids: Vec<u64> = self.sorted_cards().iter().map(|c| c.id).collect();
@@ -128,7 +145,7 @@ impl Sb {
 /// A card kind: its rank in reading order (what blocks an agent first),
 /// its glyph and its color. Color means attention (book §5): needs you
 /// in accent, failures in error, the rest plain text.
-fn kind_look(kind: &str) -> (u8, &'static str, Color) {
+pub(super) fn kind_look(kind: &str) -> (u8, &'static str, Color) {
     match kind {
         "question" => (0, theme::G_NEEDS_YOU, theme::accent()),
         "blocked" => (1, theme::G_NEEDS_YOU, theme::accent()),
@@ -143,7 +160,7 @@ fn kind_look(kind: &str) -> (u8, &'static str, Color) {
 
 /// The color of a card kind's glyph: its hue, except done's check, in
 /// accent on a plain title (BISE-100, book §6).
-fn glyph_color(kind: &str) -> Color {
+pub(super) fn glyph_color(kind: &str) -> Color {
     match kind {
         "done" => theme::accent(),
         k => kind_look(k).2,

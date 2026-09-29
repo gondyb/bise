@@ -208,13 +208,14 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usi
 }
 
 /// The live agents (main and the archived left out) by what the header
-/// counts: working, waiting, needs you, done.
-fn counts(sb: &Sb) -> Option<[usize; 4]> {
+/// counts: working, waiting, needs you, done; then the open cards
+/// (BISE-125). None: no agent and no card.
+fn counts(sb: &Sb) -> Option<[usize; 5]> {
     let live: Vec<&Agent> = sb.agents.iter().filter(|a| !a.main && !a.archived()).collect();
-    if live.is_empty() {
+    if live.is_empty() && sb.cards.is_empty() {
         return None;
     }
-    let mut n = [0; 4];
+    let mut n = [0, 0, 0, 0, sb.cards.len()];
     for a in live {
         let k = if needs_you(sb, a) {
             2
@@ -234,9 +235,11 @@ fn counts(sb: &Sb) -> Option<[usize; 4]> {
 /// The header counts that fit in `room` columns (QA 14): all of them with
 /// their words when they fit (not `short`), else the numbers only; still
 /// too wide, the least important counts go first ("needs you" stays, then
-/// working, waiting, done), shown in the §8 order. `gust` leads the
-/// working count (BISE-107).
-fn fit_counts(n: [usize; 4], short: bool, room: usize, gust: &[Span<'static>]) -> Vec<Span<'static>> {
+/// cards, working, waiting, done), shown in the §8 order. `gust` leads the
+/// working count (BISE-107). The open cards (`# 3 cards`, dim) come last,
+/// so the number main says (`card #153`) is found in the panel or with
+/// ctrl+g even when the panel is hidden (BISE-125).
+fn fit_counts(n: [usize; 5], short: bool, room: usize, gust: &[Span<'static>]) -> Vec<Span<'static>> {
     // (glyph, word, glyph color, text color): done's check is accent on
     // dim words (BISE-100)
     let parts = [
@@ -244,10 +247,11 @@ fn fit_counts(n: [usize; 4], short: bool, room: usize, gust: &[Span<'static>]) -
         (G_WAITING, "waiting", dim(), dim()),
         (G_NEEDS_YOU, "needs you", accent(), accent()),
         (crate::theme::done_glyph(), "done", accent(), dim()),
+        ("#", if n[4] == 1 { "card" } else { "cards" }, dim(), dim()),
     ];
     let spans = |keep: &[usize], words: bool| -> Vec<Span<'static>> {
         let mut out: Vec<Span<'static>> = Vec::new();
-        for k in (0..4).filter(|k| keep.contains(k)) {
+        for k in (0..5).filter(|k| keep.contains(k)) {
             if !out.is_empty() {
                 out.push(Span::styled(" · ", Style::default().fg(dim())));
             }
@@ -262,7 +266,7 @@ fn fit_counts(n: [usize; 4], short: bool, room: usize, gust: &[Span<'static>]) -
         }
         out
     };
-    let by_importance: Vec<usize> = [2, 0, 1, 3].into_iter().filter(|&k| n[k] > 0).collect();
+    let by_importance: Vec<usize> = [2, 4, 0, 1, 3].into_iter().filter(|&k| n[k] > 0).collect();
     let fits = |out: &Vec<Span<'static>>| out.iter().map(|s| s.content.width()).sum::<usize>() <= room;
     if !short {
         let out = spans(&by_importance, true);
@@ -373,6 +377,7 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
             }
         }
     }
+    cards_lines(sb, w, &mut lines, &mut owners, &mut sel_row);
     archived_lines(sb, live, w, &mut lines, &mut owners, &mut sel_row);
     // the body under the title: scrolled to keep the selection in view;
     // what does not fit below ends in `+ {n} more`
@@ -428,7 +433,8 @@ fn window(
     let n = below
         .iter()
         .map(|h| match h {
-            Hit::Agent(_) => 1,
+            Hit::Agent(_) | Hit::Card(_) => 1,
+            Hit::Cards => 0,
             Hit::Archived if !archived_open => archived,
             Hit::Archived => 0,
         })
@@ -437,6 +443,73 @@ fn window(
         return (lines.len() - h, None);
     }
     (top, Some(n))
+}
+
+/// The cards section, under the live agents (BISE-125): a title row
+/// `cards · ctrl+g`, then one row per open card, newest first: `#153 ✓
+/// debt-solo  its first line…` (the number main says, the kind's glyph
+/// in its color, the agent, the text cut to the row). The card in the
+/// box is on the selection color; with no agent selected, the panel
+/// scrolls to it. Nothing while no card is open.
+fn cards_lines(
+    sb: &Sb,
+    w: usize,
+    lines: &mut Vec<Line<'static>>,
+    owners: &mut Vec<(usize, Hit)>,
+    sel_row: &mut Option<usize>,
+) {
+    if sb.cards.is_empty() {
+        return;
+    }
+    let mut cards: Vec<&Card> = sb.cards.iter().collect();
+    cards.sort_by_key(|c| std::cmp::Reverse(c.id));
+    let shown = sb.card.shown.then(|| sb.current_card().map(|c| c.id)).flatten();
+    lines.push(Line::from(""));
+    owners.push((lines.len(), Hit::Cards));
+    lines.push(Line::from(vec![
+        Span::styled(" cards", Style::default().fg(text())),
+        Span::styled(" · ctrl+g", Style::default().fg(faint())),
+    ]));
+    for c in cards {
+        if shown == Some(c.id) && sel_row.is_none() {
+            *sel_row = Some(lines.len());
+        }
+        owners.push((lines.len(), Hit::Card(c.id)));
+        lines.push(card_row(c, w, (shown == Some(c.id)).then(selection_bg)));
+    }
+}
+
+/// One card's row, `w` columns: ` #153 ✓ debt-solo  first line…`, 1
+/// column of margin on the right. The agent keeps its whole name while
+/// 6 columns are left for the text, then it is cut too.
+fn card_row(c: &Card, w: usize, bg: Option<Color>) -> Line<'static> {
+    let num = format!(" #{} ", c.id);
+    let g = super::cards::kind_look(&c.kind).1;
+    let lead = num.width() + g.width() + 1;
+    let room = w.saturating_sub(lead + 1);
+    let first = c.text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    let agent = if first.is_empty() || room < 12 {
+        fit(&c.agent, room)
+    } else {
+        fit(&c.agent, room.saturating_sub(7).max(room / 2))
+    };
+    let rest = room.saturating_sub(agent.width() + 2);
+    let title = if rest >= 3 { fit(first, rest) } else { String::new() };
+    let mut spans = vec![
+        Span::styled(num, Style::default().fg(dim())),
+        Span::styled(g.to_string(), Style::default().fg(super::cards::glyph_color(&c.kind))),
+        Span::raw(" "),
+        Span::styled(agent, Style::default().fg(text())),
+    ];
+    if !title.is_empty() {
+        spans.push(Span::styled(format!("  {}", title), Style::default().fg(dim())));
+    }
+    let used: usize = spans.iter().map(|s| s.content.width()).sum();
+    spans.push(Span::raw(" ".repeat(w.saturating_sub(used))));
+    if let Some(bg) = bg {
+        spans = spans.into_iter().map(|s| { let st = s.style.bg(bg); s.style(st) }).collect();
+    }
+    Line::from(spans)
 }
 
 /// The archived section, at the bottom: a dim folded row `▸ {n}
@@ -499,6 +572,10 @@ pub(crate) enum Hit {
     Agent(String),
     /// The header of the archived section: expand / collapse.
     Archived,
+    /// An open card: shown in the card box (BISE-125).
+    Card(u64),
+    /// The title of the cards section: ctrl+g.
+    Cards,
 }
 
 /// Where the last frame drew the panel, and what each of its rows leads
@@ -588,6 +665,8 @@ pub(crate) fn panel_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bo
             let sb = &mut app.sb;
             sb.toggle_archived();
         }
+        Some(Hit::Card(id)) => app.sb.open_card(id),
+        Some(Hit::Cards) => app.sb.toggle_card(),
         _ => {}
     }
     true
@@ -1315,7 +1394,7 @@ mod chrome_tests {
     /// the §8 order; the words go before the counts do.
     #[test]
     fn a_narrow_header_keeps_needs_you_first() {
-        let n = [3, 1, 1, 2];
+        let n = [3, 1, 1, 2, 0];
         let text = |room| fit_counts(n, false, room, &super::still_gust()).iter().map(|s| s.content.to_string()).collect::<String>();
         let all = text(200);
         assert!(all.contains("working") && all.contains("needs you"), "{all}");
@@ -1549,5 +1628,163 @@ mod chrome_tests {
         sb.preview = true;
         let text = status_text(&app);
         assert!(text.ends_with("preview of auth-fix"), "{:?}", text);
+    }
+}
+
+#[cfg(test)]
+mod cards_tests {
+    //! BISE-125: the open cards in the panel, under the agents.
+    use super::super::bench;
+    use super::*;
+    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    fn card(id: u64, kind: &str, agent: &str, text: &str) -> Card {
+        Card { id, kind: kind.into(), agent: agent.into(), text: text.into(), ..Card::default() }
+    }
+
+    /// main, two agents, three open cards (ids 12, 153, 40).
+    fn app() -> App {
+        let mut app = bench::test_app_drained();
+        let sb = &mut app.sb;
+        sb.agents.push(Agent { name: "main".into(), main: true, status: "idle".into(), ..Agent::default() });
+        sb.agents.push(Agent { name: "debt-solo".into(), status: "done".into(), ..Agent::default() });
+        sb.agents.push(Agent { name: "docs".into(), status: "working".into(), ..Agent::default() });
+        sb.cards.push(card(12, "question", "docs", "\nv1 or v2?\n1. v1\n2. v2"));
+        sb.cards.push(card(153, "done", "debt-solo", "the debt list is cleared, 14 items closed and two left for later"));
+        sb.cards.push(card(40, "blocked", "docs", "no access to the wiki"));
+        app
+    }
+
+    fn rows(app: &App, w: u16, h: u16) -> Vec<String> {
+        let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+        term.draw(|f| draw_panel(app, f, f.area())).unwrap();
+        let buf = term.backend().buffer();
+        buf.content
+            .chunks(w as usize)
+            .map(|r| r.iter().map(|c| c.symbol()).collect::<String>().trim_end().to_string())
+            .collect()
+    }
+
+    /// Under the agents: a blank row, `cards · ctrl+g`, then one row per
+    /// card, newest first, `#N glyph agent  first line`; the text cut to
+    /// the panel with `…`, never past its width.
+    #[test]
+    fn the_open_cards_list_under_the_agents() {
+        let app = app();
+        let t = rows(&app, 40, 14);
+        let at = |s: &str| t.iter().position(|r| r.contains(s)).unwrap_or_else(|| panic!("{s} missing:\n{}", t.join("\n")));
+        assert!(at("docs") < at(" cards · ctrl+g"), "{}", t.join("\n"));
+        assert_eq!(t[at(" cards · ctrl+g") - 1], "");
+        let first = at(" cards · ctrl+g") + 1;
+        assert_eq!(t[first], format!(" #153 {} debt-solo  the debt list is cl…", crate::theme::done_glyph()));
+        assert_eq!(t[first + 1], format!(" #40 {} docs  no access to the wiki", G_NEEDS_YOU));
+        // the first line of the text, not the blank one before it
+        assert_eq!(t[first + 2], format!(" #12 {} docs  v1 or v2?", G_NEEDS_YOU));
+        // 28 columns: still one row each, cut at the width
+        for w in [28u16, 24] {
+            let t = rows(&app, w, 14);
+            let r = t.iter().find(|r| r.contains("#153")).unwrap();
+            assert!(r.chars().count() < w as usize, "{r:?} at {w}");
+            assert!(r.contains(if w == 28 { "debt-solo" } else { "debt-so…" }) && r.ends_with('…'), "{r:?} at {w}");
+        }
+        // a long agent name is cut too, a few columns of text kept
+        let mut app = app;
+        app.sb.cards.push(card(200, "question", "a-very-long-agent-name-indeed", "which one?"));
+        let t = rows(&app, 28, 14);
+        let r = t.iter().find(|r| r.contains("#200")).unwrap();
+        assert!(r.contains("…  wh"), "{r:?}");
+        assert!(r.chars().count() < 28);
+        // colors: the number dim, the glyph in its kind's color, the text dim
+        let mut term = Terminal::new(TestBackend::new(40, 14)).unwrap();
+        term.draw(|f| draw_panel(&app, f, f.area())).unwrap();
+        let t = rows(&app, 40, 14);
+        let y = t.iter().position(|r| r.contains("#40")).unwrap() as u16;
+        let buf = term.backend().buffer();
+        assert_eq!(buf.cell((1, y)).unwrap().fg, dim());
+        assert_eq!(buf.cell((5, y)).unwrap().fg, accent(), "blocked: needs you, accent");
+        assert_eq!(buf.cell((7, y)).unwrap().fg, text());
+        assert_eq!(buf.cell((13, y)).unwrap().fg, dim());
+        // no card: no section
+        app.sb.cards.clear();
+        assert!(!rows(&app, 40, 14).iter().any(|r| r.contains("cards")));
+    }
+
+    /// Many cards: the panel ends with `+ n more`; the card in the box
+    /// is on the selection color and scrolled into view.
+    #[test]
+    fn many_cards_end_with_more_and_the_shown_one_stays_in_view() {
+        let mut app = app();
+        for i in 0..30 {
+            app.sb.cards.push(card(1000 + i, "done", "debt-solo", &format!("report {i}")));
+        }
+        let t = rows(&app, 28, 14);
+        assert!(t[13].starts_with(" + ") && t[13].ends_with(" more"), "{}", t.join("\n"));
+        // 33 cards; title, blank, 3 agents, blank, cards title, 6 cards: 27 below
+        assert_eq!(t[13], " + 27 more", "{}", t.join("\n"));
+        assert!(t.iter().any(|r| r.contains("#1029")), "newest first");
+        // the oldest card shown in the box: the panel scrolls to it
+        app.sb.open_card(12);
+        let t = rows(&app, 28, 14);
+        assert!(t.iter().any(|r| r.contains("#12 ")), "{}", t.join("\n"));
+        let mut term = Terminal::new(TestBackend::new(28, 14)).unwrap();
+        term.draw(|f| draw_panel(&app, f, f.area())).unwrap();
+        let y = t.iter().position(|r| r.contains("#12 ")).unwrap() as u16;
+        assert_eq!(term.backend().buffer().cell((20, y)).unwrap().bg, selection_bg());
+    }
+
+    fn click(app: &mut App, column: u16, row: u16) -> bool {
+        let m = MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column, row, modifiers: KeyModifiers::NONE };
+        panel_mouse(app, &m)
+    }
+
+    /// A click on a card row shows that card in the box (like ctrl+g on
+    /// it); again on it hides the box; the title toggles like ctrl+g.
+    #[test]
+    fn a_click_on_a_card_opens_it() {
+        let mut app = app();
+        let mut term = Terminal::new(TestBackend::new(120, 30)).unwrap();
+        let mut draw = |app: &mut App| {
+            term.draw(|f| super::super::draw_sb(app, f)).unwrap();
+            let buf = term.backend().buffer();
+            buf.content.chunks(120).map(|r| r.iter().map(|c| c.symbol()).collect::<String>()).collect::<Vec<_>>()
+        };
+        let screen = draw(&mut app);
+        let x = app.sb.panel_hits.borrow().area.x;
+        let y_of = |s: &[String], l: &str| s.iter().position(|r| r.chars().skip(x as usize).collect::<String>().contains(l)).unwrap() as u16;
+        assert!(!app.sb.card.shown);
+        assert!(click(&mut app, x + 3, y_of(&screen, "#40")));
+        assert!(app.sb.card.shown);
+        assert_eq!(app.sb.current_card().map(|c| c.id), Some(40));
+        let screen = draw(&mut app);
+        assert!(screen.iter().any(|r| r.contains("docs is blocked")), "the box shows #40:\n{}", screen.join("\n"));
+        // another card: the box follows
+        click(&mut app, x + 3, y_of(&screen, "#153"));
+        assert_eq!((app.sb.card.shown, app.sb.current_card().map(|c| c.id)), (true, Some(153)));
+        // the same one again: hidden
+        let screen = draw(&mut app);
+        click(&mut app, x + 3, y_of(&screen, "#153"));
+        assert!(!app.sb.card.shown);
+        // the section title: ctrl+g
+        let screen = draw(&mut app);
+        click(&mut app, x + 3, y_of(&screen, " cards · ctrl+g"));
+        assert!(app.sb.card.shown);
+        assert_eq!(app.sb.focus, "main", "a card click does not change the view");
+    }
+
+    /// The header counts the open cards, last (`# 3 cards`), and keeps
+    /// them when the panel is hidden (`# 3`), right after needs you.
+    #[test]
+    fn the_header_counts_the_cards() {
+        let app = app();
+        let text = |room: usize, short: bool| app.sb.summary(room, short, &super::still_gust()).iter().map(|s| s.content.to_string()).collect::<String>();
+        let t = text(200, false);
+        assert!(t.ends_with(&format!("{} 1 done · # 3 cards", crate::theme::done_glyph())), "{t:?}");
+        assert!(text(200, true).ends_with("· # 3"), "{:?}", text(200, true));
+        // short on room: needs you, then the cards, before the rest
+        assert_eq!(text(14, true), format!("{} 1 · # 3", G_NEEDS_YOU));
+        let one = [0, 0, 0, 0, 1];
+        let s: String = fit_counts(one, false, 100, &[]).iter().map(|s| s.content.to_string()).collect();
+        assert_eq!(s, "# 1 card");
     }
 }

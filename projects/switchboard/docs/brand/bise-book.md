@@ -264,14 +264,16 @@ outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their ta
   :* docs asked v1 or v2; the brief says v2,        │ 4 … api-v2     waits docs
      so i answered. ▸ why                           │ 5 ✓ bench            done
   ┃ ? docs needs you                                │
-  ┃ the brief says "keep old clients working"…      │
+  ┃ the brief says "keep old clients working"…      │ cards · ctrl+g
+                                                    │ #153 ✓ bench  p95 down 1…
+                                                    │ #152 ? docs  keep old cl…
  ┌ card box (when a card is open) ──────────────────┐
  main · idle · 210k / 1M tokens · 21%                                             ← status row
  › _                                          ⏎ send · @ agent · / commands       ← composer
 ```
 
 - **Header:** `bise :*` on the left; live counts on the right, only the
-  non-zero ones: `∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done`.
+  non-zero ones: `∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done · # 2 cards`.
   **⚠** No cost in $ until the usage work lands.
 - **Feed** on the left, prose ≤ 88 columns; extra width goes to the margin
   and the panel, never to longer lines.
@@ -287,6 +289,7 @@ outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their ta
   scrolls and ends with `+ 21 more`. Archived agents: keep what landed in
   85160ab (a dim folded `▸ {n} archived` row at the bottom, click / `A` /
   `/archived` to open, read-only history, `/restore`); restyle only.
+- **Cards section** (BISE-125, user request: main says `card #153`, you find it): under the live agents, above the archived row, while a card is open: a blank row, `cards · ctrl+g` (the keys faint), then one row per open card, newest first: ` #153 ✓ debt-solo  the debt list is cl…` = number (dim), the kind's glyph in its color (`?` needs you / blocked, `✓` done, `✗` failed), the agent, 2 spaces, the first line of the card (dim), cut with `…` at the panel's edge (the agent is cut only when fewer than 7 columns are left for the text). The card in the box is on the selection color. Click a row: the box shows that card (ctrl+g on it; again: hides it); click the title: ctrl+g. It shares the panel's `+ n more`. The header counts them last, `# 3 cards` (short `# 3`), kept right after needs you when room runs out, so under 90 columns (no panel) the count stays and ctrl+g opens them. (BISE-20 had removed the pre-bise list, `◆ cards (n) · Ctrl+G`.)
 - **Card box** above the status row when a card is open (§12).
 - **Status row:** the name of the agent you talk to **in accent** (`main`,
   `auth-fix`), then dim: state, context (`210k / 1M tokens · 21%`), `shared

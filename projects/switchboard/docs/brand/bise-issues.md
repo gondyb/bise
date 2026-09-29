@@ -2143,6 +2143,16 @@ Index:
 - **cost:** a closed box wraps only the rows it counts (up to 16 per part) and shows; the rest of a long output is never wrapped (`Wrapped`, lazy). A running box still redraws only its top border.
 - **notes:** tests `toolbox::tests` (long output, long script alone, long script + short output, both long, running and failed tail, the 15-row edge and wrapped rows incl. `box_folds` before/after a draw and at a wide width, opened, ASCII); `feed_render_tests::a_long_script_renders_whole_once_opened` replaces BISE-11's "a script always shows whole". The site mockups (`site/book/screens.html` "bash and typescript: a box") still show the BISE-96 layout.
 
+### BISE-125 · the open cards in the panel again
+
+- **status:** done · **owner:** bise-panel-cards · **commits:** `git log --grep BISE-125`
+- **track:** K · **owns:** `sb/panel.rs` (`cards_lines`, `card_row`, `Hit::Card`/`Hit::Cards`, the 5th header count), `sb/cards.rs` (`Sb::open_card`)
+- **spec:** book §8 "Cards section". User, verbatim: « je vois plus les cards qui sont pas terminées dans la sidebar aussi, du coup quand tu me parles de cartes terminées je ne les vois pas. Est ce qu'on pourrait re-ajouter cette feature? »
+- **what went:** the pre-bise panel listed the cards (`◆ cards (n) · Ctrl+G`, then `#id kind @agent` and the text on a second row). BISE-20 (6159bb4, the chrome) removed it on purpose ("no cards list" in the panel mockup); only the divider's `? n cards · ctrl+g` stayed, with no numbers, so `card #153` from main could not be found.
+- **what:** under the live agents (above the archived section), when a card is open: a blank row, `cards · ctrl+g` (`cards` text, the keys faint), then one row per open card, newest first: ` #153 ✓ debt-solo  the debt list is cl…` = the number (dim), the kind's glyph in its color (`?` question / blocked accent, `✓` done accent, `✗` failed error, `–` drop, `⇄` overlap), the agent (text), 2 spaces, the first non-blank line of its text (dim), cut with `…` to the panel's width; the agent's name is cut only when fewer than 7 columns are left for the text. The card in the box is on the selection color, and with no agent selected the panel scrolls to it. Too many rows: the panel's `+ n more` counts the cards below like agents. Click a card: the box shows it (`Sb::open_card`, like ctrl+g on it; again on the same card hides it); click the title: ctrl+g. The header summary gets a last count `# 3 cards` (`# 1 card`; short form `# 3`), kept right after `needs you` when room runs out, so with the panel hidden (< 90 columns) the count stays and ctrl+g opens them.
+- **cost:** no new redraw: the rows are drawn with the panel in the same frame, no age or motion in them (a gust frame still rewrites one cell).
+- **notes:** tests `panel::cards_tests` (the list, order, cut titles at 40/28/24, a long agent name, colors, no section without cards, 33 cards with `+ 27 more` and the shown card scrolled into view on the selection color, clicks on a row / the same row / the title, header counts long, short and narrow).
+
 ### BISE-140 · split core/api.bend by provider family
 
 - **status:** done · **owner:** prov-split · **commits:** `git log --grep BISE-140`
