@@ -300,3 +300,39 @@ fn every_key_on_every_row_never_panics() {
         }
     }
 }
+
+/// Rows once the outside folder is read (a background read).
+fn rows_read(app: &App) -> Vec<String> {
+    for _ in 0..200 {
+        let r = rows(app);
+        if r.iter().any(|l| !l.ends_with("/")) {
+            return r;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    rows(app)
+}
+
+#[test]
+fn dot_dot_browses_outside_the_workspace() {
+    // BISE-206: `@../` lists the folder typed so far, not the index
+    let mut app = app();
+    let me = std::path::Path::new(ws()).file_name().unwrap().to_string_lossy().into_owned();
+    typed(&mut app, &format!("@../{me}/"));
+    let r = rows_read(&app);
+    assert_eq!(r.last().map(String::as_str), Some(format!("../{me}/").as_str()));
+    assert!(r.contains(&format!("../{me}/rust/")) && r.contains(&format!("../{me}/README.md")), "{r:?}");
+    // tab browses into a folder, ⏎ on a file inserts it as typed
+    select(&mut app, &format!("../{me}/rust/"));
+    key(&mut app, KeyCode::Tab);
+    assert_eq!(app.ed.text, format!("@../{me}/rust/"));
+    typed(&mut app, "tui/Ca");
+    select(&mut app, &format!("../{me}/rust/tui/Cargo.toml"));
+    key(&mut app, KeyCode::Enter);
+    assert_eq!(app.ed.text, format!("../{me}/rust/tui/Cargo.toml "));
+    // ← goes one folder up, back to the workspace from `@../`
+    app.ed.clear();
+    typed(&mut app, "@../");
+    key(&mut app, KeyCode::Left);
+    assert_eq!(text(&app), ("@", 1));
+}

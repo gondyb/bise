@@ -370,10 +370,9 @@ const DIR_MARK: &str = theme::G_CLOSED; // a folder opens: the disclosure mark
 /// the files and folders of the workspace (files.rs). A file inserts its
 /// relative path, an agent `@name`.
 pub(crate) fn at_items(app: &App) -> Vec<PopItem> {
-    if !popup_open(app) {
-        return Vec::new();
-    }
-    let Some((start, q)) = files::token(&app.ed.text, app.ed.cursor) else {
+    let token = popup_open(app).then(|| files::token(&app.ed.text, app.ed.cursor)).flatten();
+    let Some((start, q)) = token else {
+        files::forget_dirs(); // the popup closed: its folder listings go
         return Vec::new();
     };
     let fill = |ins: &str| files::complete(&app.ed.text, start, app.ed.cursor, ins);
@@ -400,47 +399,63 @@ pub(crate) fn at_items(app: &App) -> Vec<PopItem> {
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::current_dir().ok())
         .unwrap_or_default();
-    let mut hits = files::search(&root, &q, FILE_ROWS);
+    // `@../`, `@~/`, `@/`: the typed folder's own listing, no index
+    let outside = files::outside(&q);
+    let (mut hits, locked) = if outside {
+        let o = files::search_outside(&root, &q, FILE_ROWS);
+        (o.hits, o.locked)
+    } else {
+        (files::search(&root, &q, FILE_ROWS), false)
+    };
     // browsing a folder: the folder itself last (↑ from the first row),
     // so ⏎ can still insert a folder reference
-    let this = files::parent_query(&q)
-        .and_then(|_| hits.first())
-        .and_then(|h| h.path.rsplit_once('/'))
-        .map(|(parent, _)| parent)
-        .filter(|parent| parent.to_lowercase() == q.trim_end_matches('/').to_lowercase())
-        .map(|parent| files::Hit { path: parent.to_string(), dir: true });
+    let this = if outside {
+        // even an empty or locked one: it is what the user typed
+        files::parent_query(&q).map(|_| q.strip_suffix('/').filter(|p| !p.is_empty()).unwrap_or("/"))
+    } else {
+        files::parent_query(&q)
+            .and_then(|_| hits.first())
+            .and_then(|h| h.path.rsplit_once('/'))
+            .map(|(parent, _)| parent)
+            .filter(|parent| parent.to_lowercase() == q.trim_end_matches('/').to_lowercase())
+    }
+    .map(|parent| parent.to_string());
     if this.is_some() {
         hits.truncate(FILE_ROWS - 1);
     }
+    // an outside path is sent in a form the tools read (`~/` expanded)
+    let sent = |p: &str| if outside { files::sent_path(p) } else { p.to_string() };
     let files = hits.into_iter().map(|h| {
         let (fill, fill_cursor) = if h.dir {
             files::replace_token(&app.ed.text, start, app.ed.cursor, &files::browse(&h.path))
         } else {
-            fill(&files::reference(&h.path, false))
+            fill(&files::reference(&sent(&h.path), false))
         };
         PopItem {
             label: format!("{}{}", h.path, if h.dir { "/" } else { "" }),
-            desc: String::new(),
+            // macOS asks for this folder once it is entered
+            desc: if h.protected { "protected".into() } else { String::new() },
             mark: Some(if h.dir { (theme::glyph(DIR_MARK), theme::accent()) } else { (FILE_MARK, theme::dim()) }),
             fill,
             fill_cursor,
             run: None,
             closable: true,
-            path: Some(h.path),
+            path: Some(if h.dir { h.path } else { sent(&h.path) }),
             folder: h.dir,
         }
     });
-    let this = this.map(|h| {
-        let (fill, fill_cursor) = fill(&files::reference(&h.path, true));
+    let this = this.map(|path| {
+        let sent = sent(&path);
+        let (fill, fill_cursor) = if sent == "/" { fill("/") } else { fill(&files::reference(&sent, true)) };
         PopItem {
-            label: format!("{}/", h.path),
-            desc: "this folder".into(),
+            label: if path == "/" { path.clone() } else { format!("{path}/") },
+            desc: if locked { "this folder · no access".into() } else { "this folder".into() },
             mark: Some((theme::glyph(DIR_MARK), theme::accent())),
             fill,
             fill_cursor,
             run: None,
             closable: true,
-            path: Some(h.path),
+            path: Some(sent),
             folder: false,
         }
     });

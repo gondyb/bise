@@ -147,6 +147,32 @@ subsequence of the path is the last tier (`tu/sr` finds `rust/tui/src/`).
   `before.get(start..)`; the key handler reads the selection with `get`
   and steps it with `input::popup_step` (total on an empty or stale list).
 
+### Outside the workspace: `@../`, `@~/`, `@/` (BISE-206)
+
+A query that starts with `../`, `~/` or `/` does not use the index:
+the popup reads the one folder typed up to the last `/` (`read_dir`,
+at most 500 entries) and ranks its entries against the rest like the
+index does (folders first when the rest is empty, dot files only when
+it starts with `.`). Nothing else is read: no prefetch, no recursion.
+So macOS asks for a guarded folder (« Ghostty would like to access
+files in your Desktop folder ») only when the user enters it: `tab`,
+`⏎`, `→` on its row, or typing the `/` after its name. `~/Desktop`,
+`~/Documents`, `~/Downloads`, `~/Library/Mobile Documents` (iCloud),
+`~/Library/CloudStorage` and `/Volumes/*` show `protected` on their
+row; a link is not followed into them. A folder that cannot be read
+(EPERM, e.g. `~/Library/Mail`) lists nothing and its "this folder" row
+says `no access`. The read runs in a thread; a keystroke waits for it
+at most 20 ms (a slow volume fills the popup a frame later), and each
+folder is read once while the popup stays open (`files::forget_dirs`
+when it closes). `←` from `@/usr/` goes to `@/`; from `@~/`, `@../`
+or `@/`, back to the workspace.
+
+What a pick inserts: `~/…` is expanded to the home folder
+(`/Users/me/Documents/a.md`): the agent's tools do not all run a shell,
+and a literal `~` is not a path to them. `../…` stays as typed: the
+agent's working directory is the workspace, so it reads. `/…` is
+already absolute. An image is attached like a workspace one.
+
 ## Latency (prototype, release build, Apple M-series)
 
 `/tmp/at-files-proto` (same algorithm), per keystroke, whole index:

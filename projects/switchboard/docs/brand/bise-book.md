@@ -486,6 +486,12 @@ The same three levels everywhere, in main and inside an agent.
 - **To an agent directly from main:** `@name text` (popup with the agents).
   Main is not in the loop; the agent's reply to you is level 2:
   `@ auth-fix to you: got it, i'll check logout after the login fix.`
+- **Files outside the workspace** (BISE-206). `@../`, `@~/`, `@/`: the
+  popup lists the folder typed so far, only it (no index, nothing read
+  ahead), so macOS asks for Desktop, Documents, Downloads, iCloud or a
+  volume only once you enter it (their rows say `protected`). A folder
+  you cannot read lists nothing (`this folder · no access`). A pick
+  inserts `~/` expanded to the home folder; `../` and `/` as typed.
 - **Inside an agent:** `⏎` on a selected agent or `⌥ + number`. One dim line
   says: `you're talking to auth-fix directly. main isn't in the loop. esc back
   to main.` `@main` goes back up.

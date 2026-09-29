@@ -251,21 +251,26 @@ pub(crate) fn token(input: &str, cursor: usize) -> Option<(usize, String)> {
 /// The token text that browses folder `path`: `@path/`, `@"path/` when
 /// the path holds a space (the popup lists the folder's entries).
 pub(crate) fn browse(path: &str) -> String {
+    let slash = if path.ends_with('/') { "" } else { "/" }; // `/`: the root
     if path.is_empty() {
         "@".to_string()
     } else if path.contains(char::is_whitespace) {
-        format!("@\"{path}/")
+        format!("@\"{path}{slash}")
     } else {
-        format!("@{path}/")
+        format!("@{path}{slash}")
     }
 }
 
 /// One folder up from a query that browses a folder (`rust/tui/` →
-/// `rust`, `rust/` → the root `""`); None when the query does not end
-/// with `/`.
+/// `rust`, `rust/` → the root `""`, `/usr/` → `/`, `~/` and `/` → the
+/// workspace `""`); None when the query does not end with `/`.
 pub(crate) fn parent_query(query: &str) -> Option<&str> {
     let q = query.strip_suffix('/')?;
-    Some(q.rfind('/').map_or("", |i| &q[..i]))
+    Some(match q.rfind('/') {
+        Some(0) => "/", // `/usr/` → the root
+        Some(i) => &q[..i],
+        None => "",
+    })
 }
 
 /// What a picked entry inserts: the relative path (a folder with a
@@ -354,11 +359,13 @@ pub(crate) fn refresh() {
     });
 }
 
-/// A search hit: the relative path and whether it is a folder.
+/// A search hit: the relative path and whether it is a folder
+/// (`protected`: a folder macOS guards, see [`protected`]).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Hit {
     pub(crate) path: String,
     pub(crate) dir: bool,
+    pub(crate) protected: bool,
 }
 
 /// The best `limit` entries of `root` for `query` (refreshes a stale
@@ -375,8 +382,160 @@ pub(crate) fn search(root: &Path, query: &str, limit: usize) -> Vec<Hit> {
     };
     rank(&entries, query, &recent, limit)
         .into_iter()
-        .map(|i| Hit { path: entries[i].path.clone(), dir: entries[i].dir })
+        .map(|i| Hit { path: entries[i].path.clone(), dir: entries[i].dir, protected: false })
         .collect()
+}
+
+// ---- outside the workspace: `@../`, `@~/`, `@/` (BISE-206) ----
+//
+// No index: the popup lists the one folder typed up to the last `/`
+// (read_dir, never recursive, never ahead of the user), so macOS asks
+// for a guarded folder (Desktop, Documents...) only once the user
+// enters it. The listings are cached while the popup stays open.
+
+/// Entries read from one folder, at most.
+const MAX_DIR_ENTRIES: usize = 500;
+/// How long a keystroke waits for a folder being read (a slow volume
+/// goes on in the background; the popup fills a frame later).
+const LIST_WAIT: Duration = Duration::from_millis(20);
+
+/// `query` names a path outside the workspace index: `../`, `~/`, `/`.
+pub(crate) fn outside(query: &str) -> bool {
+    query.starts_with('/') || query.starts_with("~/") || query.starts_with("../")
+}
+
+fn home() -> Option<PathBuf> {
+    std::env::var_os("HOME").filter(|h| !h.is_empty()).map(PathBuf::from)
+}
+
+/// The file an outside path names: `~/` from `home`, `/` as is, the
+/// rest from `root` (the workspace, the agent's working directory).
+fn resolve_in(root: &Path, home: Option<&Path>, path: &str) -> PathBuf {
+    match (path.strip_prefix("~/").or((path == "~").then_some("")), home) {
+        (Some(rest), Some(h)) => h.join(rest),
+        _ => root.join(path),
+    }
+}
+
+/// What a picked outside path inserts, so the tools read it with no
+/// shell: `~/` becomes the home folder; `../` stays relative to the
+/// workspace (the agent's working directory), `/` stays absolute.
+pub(crate) fn sent_path(path: &str) -> String {
+    sent_path_in(home().as_deref(), path)
+}
+
+fn sent_path_in(home: Option<&Path>, path: &str) -> String {
+    match (path.strip_prefix("~/"), home.and_then(|h| h.to_str())) {
+        (Some(rest), Some(h)) => format!("{}/{rest}", h.trim_end_matches('/')),
+        _ => path.to_string(),
+    }
+}
+
+/// A folder macOS guards (TCC: « would like to access files in your
+/// Desktop folder »): shown as an entry, read only once entered.
+pub(crate) fn protected(home: Option<&Path>, path: &Path) -> bool {
+    let guarded = ["Desktop", "Documents", "Downloads", "Library/Mobile Documents", "Library/CloudStorage"];
+    let in_home = home.is_some_and(|h| guarded.iter().any(|g| path == h.join(g)));
+    let volume = path.parent() == Some(Path::new("/Volumes"));
+    in_home || volume
+}
+
+/// One folder read: its entries (not sorted), or None when it cannot
+/// be read (EPERM, gone, not a folder). A link is a folder when its
+/// target is, unless the target is guarded (no stat inside it).
+fn list_dir(dir: &Path, home: Option<&Path>, cap: usize) -> Option<Vec<Entry>> {
+    #[cfg(test)]
+    tests::LISTED.lock().unwrap_or_else(|e| e.into_inner()).push(dir.to_path_buf());
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(dir).ok()?.flatten().take(cap) {
+        let Some(name) = e.file_name().to_str().map(str::to_string) else { continue };
+        let Ok(t) = e.file_type() else { continue };
+        let dir = if t.is_symlink() {
+            let target = std::fs::read_link(e.path()).map(|t| dir.join(t));
+            let guarded = target.as_ref().map_or(true, |t| {
+                protected(home, t) || t.ancestors().any(|a| protected(home, a))
+            });
+            !guarded && std::fs::metadata(e.path()).is_ok_and(|m| m.is_dir())
+        } else {
+            t.is_dir()
+        };
+        out.push(Entry::new(name, dir));
+    }
+    Some(out)
+}
+
+/// A folder's listing: its entries, or None (cannot be read: locked).
+type Listing = Option<Arc<Vec<Entry>>>;
+
+/// The folders read while the popup is open (None: being read).
+static DIRS: Mutex<Option<std::collections::HashMap<PathBuf, Option<Listing>>>> = Mutex::new(None);
+
+fn dirs() -> std::sync::MutexGuard<'static, Option<std::collections::HashMap<PathBuf, Option<Listing>>>> {
+    DIRS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The popup closed: the next one reads its folders again.
+pub(crate) fn forget_dirs() {
+    if let Some(m) = dirs().as_mut() {
+        m.retain(|_, l| l.is_none()); // a read in flight fills in later
+    }
+}
+
+/// The listing of `dir`, read in the background once per popup; waits
+/// at most [`LIST_WAIT`] for it. None: not read yet.
+fn listing(dir: &Path, home: Option<&Path>) -> Option<Listing> {
+    if let Some(l) = dirs().get_or_insert_with(Default::default).get(dir) {
+        return l.clone();
+    }
+    dirs().get_or_insert_with(Default::default).insert(dir.to_path_buf(), None);
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (d, h) = (dir.to_path_buf(), home.map(Path::to_path_buf));
+    let spawned = std::thread::Builder::new().name("at-list".into()).spawn(move || {
+        let l: Listing = list_dir(&d, h.as_deref(), MAX_DIR_ENTRIES).map(Arc::new);
+        dirs().get_or_insert_with(Default::default).insert(d, Some(l.clone()));
+        let _ = tx.send(l);
+    });
+    if spawned.is_err() {
+        dirs().get_or_insert_with(Default::default).remove(dir);
+        return None;
+    }
+    rx.recv_timeout(LIST_WAIT).ok()
+}
+
+/// The popup rows for an outside query.
+#[derive(Debug, Default, PartialEq)]
+pub(crate) struct Outside {
+    /// the entries of the typed folder matching the name part, as typed
+    /// (`~/Documents`, `../other/a.md`), folders first when browsing
+    pub(crate) hits: Vec<Hit>,
+    /// the typed folder cannot be read (EPERM...)
+    pub(crate) locked: bool,
+    /// the typed folder is still being read
+    pub(crate) loading: bool,
+}
+
+/// The entries of the folder `query` names up to its last `/` that
+/// match the rest (ranked like the index; dot files only when the rest
+/// starts with `.`). Reads that one folder, nothing else.
+pub(crate) fn search_outside(root: &Path, query: &str, limit: usize) -> Outside {
+    search_outside_in(root, home().as_deref(), query, limit)
+}
+
+fn search_outside_in(root: &Path, home: Option<&Path>, query: &str, limit: usize) -> Outside {
+    let Some(cut) = query.rfind('/') else { return Outside::default() };
+    let (typed, name) = query.split_at(cut + 1);
+    let dir = resolve_in(root, home, typed);
+    let Some(l) = listing(&dir, home) else { return Outside { loading: true, ..Outside::default() } };
+    let Some(entries) = l else { return Outside { locked: true, ..Outside::default() } };
+    let hits = rank(&entries, name, &[], limit)
+        .into_iter()
+        .map(|i| {
+            let e = &entries[i];
+            let protected = e.dir && protected(home, &dir.join(&e.path));
+            Hit { path: format!("{typed}{}", e.path), dir: e.dir, protected }
+        })
+        .collect();
+    Outside { hits, locked: false, loading: false }
 }
 
 /// Remember a picked path (boosted in the next searches).
@@ -391,6 +550,9 @@ pub(crate) fn picked(path: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every folder `list_dir` read (the protected-folder tests).
+    pub(super) static LISTED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
     fn index(paths: &[&str]) -> Vec<Entry> {
         paths
@@ -592,5 +754,133 @@ mod tests {
             println!("{:>12} {:>9.2?}", format!("{q:?}"), d);
         }
         println!("worst {worst:.2?}");
+    }
+
+    // ---- outside the workspace (BISE-206) ----
+
+    fn tmp(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("at-out-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// The outside search once its folder is read (the first keystroke
+    /// may return before the background read ends).
+    fn outside_rows(root: &Path, home: Option<&Path>, q: &str) -> Outside {
+        for _ in 0..500 {
+            let o = search_outside_in(root, home, q, 50);
+            if !o.loading {
+                return o;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("{q} never read")
+    }
+
+    fn paths(o: &Outside) -> Vec<&str> {
+        o.hits.iter().map(|h| h.path.as_str()).collect()
+    }
+
+    fn listed(dir: &Path) -> bool {
+        LISTED.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|d| d == dir)
+    }
+
+    #[test]
+    fn outside_lists_the_typed_folder_only() {
+        let up = tmp("up");
+        for d in ["ws/src", "other/deep", "zeta"] {
+            std::fs::create_dir_all(up.join(d)).unwrap();
+        }
+        for f in ["b.md", "a.txt", ".env", "other/o.rs"] {
+            std::fs::write(up.join(f), "").unwrap();
+        }
+        let ws = up.join("ws");
+        assert!(outside("../") && outside("~/") && outside("/") && !outside("src/") && !outside(".."));
+        // `../`: the parent's entries, folders first, dot files hidden
+        let o = outside_rows(&ws, None, "../");
+        assert_eq!(paths(&o), ["../other", "../ws", "../zeta", "../a.txt", "../b.md"]);
+        assert!(o.hits[..3].iter().all(|h| h.dir && !h.protected));
+        // the name part narrows; dot files once it starts with `.`
+        assert_eq!(paths(&outside_rows(&ws, None, "../b")), ["../b.md"]);
+        assert_eq!(paths(&outside_rows(&ws, None, "../.e")), ["../.env"]);
+        // a folder not entered is not read; entered, only it
+        assert!(!listed(&up.join("other")) && !listed(&up.join("other/deep")));
+        assert_eq!(paths(&outside_rows(&ws, None, "../other/")), ["../other/deep", "../other/o.rs"]);
+        assert!(listed(&ws.join("../other/")) && !listed(&up.join("other/deep")));
+        // `/`: absolute, typed as is
+        let abs = format!("{}/", up.join("other").display());
+        assert_eq!(paths(&outside_rows(&ws, None, &abs)), [format!("{abs}deep"), format!("{abs}o.rs")]);
+        let _ = std::fs::remove_dir_all(&up);
+    }
+
+    #[test]
+    fn protected_folders_are_read_only_once_entered() {
+        let home = tmp("home");
+        for d in ["Desktop", "Documents", "Downloads", "Library/Mobile Documents", "code"] {
+            std::fs::create_dir_all(home.join(d)).unwrap();
+        }
+        std::fs::write(home.join("Desktop/secret.txt"), "").unwrap();
+        let ws = home.join("code");
+        let h = Some(home.as_path());
+        let o = outside_rows(&ws, h, "~/");
+        let prot: Vec<&str> = o.hits.iter().filter(|x| x.protected).map(|x| x.path.as_str()).collect();
+        assert_eq!(prot, ["~/Desktop", "~/Documents", "~/Downloads"]);
+        assert!(!o.hits.iter().any(|x| x.path == "~/code" && x.protected));
+        // typing its name, even whole, reads nothing inside
+        for q in ["~/Desk", "~/Desktop", "~/Library/", "~/Library/Mob"] {
+            let o = outside_rows(&ws, h, q);
+            assert!(!listed(&home.join("Desktop")), "{q} read Desktop");
+            if q == "~/Library/" {
+                assert!(o.hits[0].protected && o.hits[0].path == "~/Library/Mobile Documents");
+            }
+        }
+        assert!(!listed(&home.join("Library/Mobile Documents")));
+        // the `/` after it enters it: read now
+        assert_eq!(paths(&outside_rows(&ws, h, "~/Desktop/")), ["~/Desktop/secret.txt"]);
+        assert!(listed(&home.join("Desktop/")));
+        assert!(protected(None, Path::new("/Volumes/Backup")));
+        assert!(!protected(None, Path::new("/Volumes")) && !protected(h, &home.join("code")));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_folder_that_cannot_be_read_is_locked_and_empty() {
+        use std::os::unix::fs::PermissionsExt;
+        let up = tmp("eperm");
+        let lock = up.join("Mail");
+        std::fs::create_dir_all(lock.join("inbox")).unwrap();
+        std::fs::set_permissions(&lock, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read_dir(&lock).is_ok() {
+            // root reads anything: nothing to test
+            let _ = std::fs::set_permissions(&lock, std::fs::Permissions::from_mode(0o755));
+            return;
+        }
+        let q = format!("{}/", lock.display());
+        let o = outside_rows(&up, None, &q);
+        assert!(o.locked && o.hits.is_empty());
+        assert!(outside_rows(&up, None, "/no/such/folder/").locked);
+        let _ = std::fs::set_permissions(&lock, std::fs::Permissions::from_mode(0o755));
+        let _ = std::fs::remove_dir_all(&up);
+    }
+
+    #[test]
+    fn the_sent_path_expands_home_and_keeps_the_rest() {
+        let h = Some(Path::new("/Users/me"));
+        assert_eq!(sent_path_in(h, "~/Documents/a b.md"), "/Users/me/Documents/a b.md");
+        assert_eq!(sent_path_in(Some(Path::new("/Users/me/")), "~/x"), "/Users/me/x");
+        assert_eq!(sent_path_in(h, "../other/o.rs"), "../other/o.rs");
+        assert_eq!(sent_path_in(h, "/etc/hosts"), "/etc/hosts");
+        assert_eq!(sent_path_in(None, "~/x"), "~/x");
+        assert_eq!(resolve_in(Path::new("/ws"), h, "~/Desktop/"), Path::new("/Users/me/Desktop/"));
+        assert_eq!(resolve_in(Path::new("/ws"), h, "../o/"), Path::new("/ws/../o/"));
+        assert_eq!(resolve_in(Path::new("/ws"), h, "/usr/"), Path::new("/usr/"));
+        // browsing: `/` is the root, one folder up from `/usr/` is `/`
+        assert_eq!(browse("/"), "@/");
+        assert_eq!(browse("~/Documents"), "@~/Documents/");
+        assert_eq!(parent_query("/usr/"), Some("/"));
+        assert_eq!(parent_query("/usr/lib/"), Some("/usr"));
+        assert_eq!(parent_query("~/Documents/"), Some("~"));
+        assert_eq!(parent_query("../../"), Some(".."));
     }
 }
