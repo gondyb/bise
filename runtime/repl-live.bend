@@ -36,13 +36,15 @@ def thr_of_cfg(+envv: String, +cfgt: String, +window: U32) -> Nat:
   U32.to_nat(Pvp.threshold(envv, cfgt, window))
 
 # the live system prompt = identity + the exact vibe_sdk sections
-# (tool_use_prompt + current_time_prompt), loaded from prompt-*.txt
+# (tool_use_prompt + current_time_prompt), loaded from prompt-*.txt;
+# a solo session also gets the tone block (prompt-tone.txt, Rcp.solo_tone)
+# right after the identity
 def prompt_read(+path: String) -> IO(String):
   P.read_or(path, "")
 
-def prompt_join(+tu: String, +ct: String) -> String:
+def prompt_join(+tone: String, +tu: String, +ct: String) -> String:
   String.append(
-    "You are a precise assistant running on the Bend Unified Harness. Discover additional tools with `search_tool_functions`, and call them using `run_typescript`.",
+    Rcp.prompt_extra("You are a precise assistant running on the Bend Unified Harness. Discover additional tools with `search_tool_functions`, and call them using `run_typescript`.", tone),
     String.append("\n\n", String.append(tu, String.append("\n\n", ct))))
 
 # the live system prompt = identity + the exact vibe_sdk sections
@@ -74,11 +76,12 @@ def live_prompt() -> IO(String):
   do IO<String>:
     +tu : String <- prompt_read("prompt-tool-use.txt")
     +ct : String <- prompt_read("prompt-current-time.txt")
+    +tone : String <- prompt_read("prompt-tone.txt")
     tn : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_TOOLS_NOTE")
     +note : String <- IO.pure(String, P.env_or(tn, ""))
     +content : String <- Sk.prompt_content()
     +extra : String <- extra_prompt()
-    IO.pure(String, Rcp.prompt_extra(live_prompt.go(prompt_join(tu, Rcp.prompt_extra(ct, note)), content), extra))
+    IO.pure(String, Rcp.prompt_extra(live_prompt.go(prompt_join(Rcp.solo_tone(extra, tone), tu, Rcp.prompt_extra(ct, note)), content), extra))
 
 def live_cfg(+threshold: Nat) -> IO(T.Cfg):
   do IO<T.Cfg>:

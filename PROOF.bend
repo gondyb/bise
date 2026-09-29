@@ -1172,6 +1172,12 @@ def Laws.extra_prompt_appends():
 def Laws.extra_prompt_empty_keeps():
   {==}
 
+def Laws.solo_tone_without_role():
+  {==}
+
+def Laws.solo_tone_not_with_role():
+  {==}
+
 def Laws.steer_line_unescapes():
   {==}
 

@@ -139,7 +139,7 @@ fi
 #    (wait a moment: a quarantine by security software is not instant)
 sleep 2
 for f in bise bend-harness sb repl-live repl-scripted sb-core "$jsrt_at" \
-         tool-desc-bash.txt prompt-tool-use.txt VERSION; do
+         tool-desc-bash.txt prompt-tool-use.txt prompt-tone.txt VERSION; do
   [ -e "$app/$f" ] || { say "INCOMPLETE: app/$f missing"; exit 1; }
 done
 # ... and no binary needs a macOS newer than the target (a version dir

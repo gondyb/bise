@@ -202,3 +202,18 @@ def prompt_extra.pick(empty: Bool, +base: String, +extra: String)
 
 def prompt_extra(+base: String, +extra: String) -> String:
   prompt_extra.pick(String.is_empty(String.trim(extra)), base, extra)
+
+# ---- the voice (prompt-tone.txt, shared with the switchboard roles) ----
+# A session without a role (no BEND_EXTRA_PROMPT: a solo session) gets
+# the tone block after its identity; an agent with a role does not: the
+# role already carries the same block (rust/switchboard/src/prompts.rs
+# includes the same file), so it is never there twice.
+def solo_tone.pick(empty: Bool, +tone: String) -> String:
+  match empty:
+    case True{}:
+      tone
+    case False{}:
+      ""
+
+def solo_tone(+extra: String, +tone: String) -> String:
+  solo_tone.pick(String.is_empty(String.trim(extra)), tone)

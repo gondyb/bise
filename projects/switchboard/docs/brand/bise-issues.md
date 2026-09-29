@@ -2567,3 +2567,11 @@ Index:
 
 - **status:** dropped · **owner:** session-log
 - **why:** both files are inputs, not human logs: `context.txt` is the ephemeral context the hub rewrites (`core.rs` "Rewrite the agent's BEND_CONTEXT_FILE") and the REPL re-reads before each request (`runtime/main.bend`), `transcript.log` is the feed the hub pages to the TUI (`transcript_page`, `history`). Removing them would break the agents' `<switchboard_state>` and the TUI's scroll-back. The human view of a session is `bise session show` (BISE-199). session-format.md §13.2 row 11 says the same.
+
+### BISE-208 · one voice: the tone block in every prompt
+
+- **status:** done · **owner:** prompt-tone · **commits:** `git log --grep BISE-208`
+- **owns:** `prompt-tone.txt`, `rust/switchboard/src/prompts.rs` (`TONE`, `main_role`, `task_role`), `runtime/repl-live.bend` (`prompt_join`, `live_prompt`), `runtime/repl-core-pure.bend` (`solo_tone`)
+- **spec:** user (via main), text by designer (/tmp/bise-tone-reco.txt): a shared "How you talk to the user" block for every agent (tasks, solo sessions, main), then a shorter main-only block.
+- **what:** one source, `prompt-tone.txt` at the repo root (shipped next to the binaries like the other `prompt-*.txt`: versions.sh, build-dist.sh, which now also checks it is there). Rust reads it at build time (`prompts::TONE`, `include_str!`): it ends a task's role (in place of "Reply in the user's language.") and opens main's talk section, followed by "As main, also:" (cards, routing line, one summary per burst, what shipped, and the answer-on-the-user's-behalf bullet word for word). The REPL reads it at run time and puts it right after the identity line only when it has no role (`BEND_EXTRA_PROMPT` empty: a solo session); an agent's role already carries it, so it is never there twice. `runtime/main.bend` `sys_prompt` is the scenario fixture, not a live prompt: unchanged.
+- **notes:** tests `prompts::tests::every_role_carries_the_shared_tone_once` (the block once in task and main, main's old duplicated lines gone), laws `solo_tone_without_role`, `solo_tone_not_with_role`.

@@ -2961,6 +2961,14 @@ law extra_prompt_appends:
 law extra_prompt_empty_keeps:
   {Rp.prompt_extra("base", "  ") == "base" : String}
 
+# LAW: a session without a role (solo) gets the tone block; one with a
+# role does not (the role carries the same block): never twice.
+law solo_tone_without_role:
+  {Rp.solo_tone("  ", "tone") == "tone" : String}
+
+law solo_tone_not_with_role:
+  {Rp.solo_tone("role", "tone") == "" : String}
+
 # LAW: a drained steering line carries escaped newlines back as real ones.
 law steer_line_unescapes:
   {Rt.steer_cmd("a\\nb") == T.UserMsg{T.Steer{}, "a\nb"} : T.Cmd}
