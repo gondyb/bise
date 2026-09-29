@@ -49,6 +49,10 @@ def index_path() -> IO(String):
 # Each index is written to a temp file then renamed: every REPL start
 # rescans, and a skill call or the TUI reading the shared index mid-scan
 # must see the old index or the new one, never a truncated file.
+# The group ends with `true`: its status is its last command's, and a
+# missing $3 (no plugins bridge, or one not ready within 15 s) or a last
+# SKILL.md without a description made it fail, so the rename never came
+# (no session index, a temp file left behind).
 # skill_ok keeps absolute paths only, so a relative one would drop
 # every local skill. Tabs and quotes are stripped from the fields so the
 # tab-separated line stays unambiguous; folded multi-line YAML
@@ -67,9 +71,9 @@ def scan_script() -> String:
   done
 }
 mkdir -p \"$(dirname \"$1\")\" \"$(dirname \"$2\")\"
-{ scan \"$HOME/.agents/skills\"; scan \"$HOME/.vibe/skills\"; } > \"$1.$$\" && mv -f \"$1.$$\" \"$1\"
+{ scan \"$HOME/.agents/skills\"; scan \"$HOME/.vibe/skills\"; true; } > \"$1.$$\" && mv -f \"$1.$$\" \"$1\"
 w=\"${BEND_WORKDIR:-$PWD}\"
-{ scan \"$w/.agents/skills\"; cat \"$3\" 2>/dev/null; } > \"$2.$$\" && mv -f \"$2.$$\" \"$2\""
+{ scan \"$w/.agents/skills\"; cat \"$3\" 2>/dev/null; true; } > \"$2.$$\" && mv -f \"$2.$$\" \"$2\""
 
 def scan_path(+port: String) -> String:
   String.append("/tmp/bend-skills-scan-", String.append(port, ".sh"))

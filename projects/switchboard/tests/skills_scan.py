@@ -12,6 +12,12 @@ temp HOME holding one skill:
    search went to the index's path instead of its content);
 4. the session's index goes to $BEND_RUN_DIR/<port> (qa-explore J: it
    went to ~/.bend-harness/run/<port> whatever BEND_RUN_DIR said).
+5. the session's index holds the workspace skill even with no plugins
+   bridge: the scan's group ended with `cat <plugin index>`, which
+   fails when no bridge wrote it, so the rename was skipped (no session
+   index, a temp file left). Without BEND_HARNESS_BIN and a bend-harness
+   in the tree (gate.sh full: the build is in $CARGO_TARGET_DIR) there
+   is no bridge.
 """
 import os, socket, subprocess, sys, tempfile, time
 
@@ -25,6 +31,13 @@ name: alpha
 description: The alpha test skill.
 ---
 Alpha body: say ALPHA-OK.
+"""
+
+WS_SKILL = """---
+name: beta
+description: The beta workspace skill.
+---
+Beta body.
 """
 
 
@@ -41,7 +54,8 @@ def main():
     port = free_port()
     session = os.path.join(tmp, "session.txt")
     ws = os.path.join(tmp, "ws")
-    os.makedirs(ws)
+    os.makedirs(os.path.join(ws, ".agents", "skills", "beta"))
+    open(os.path.join(ws, ".agents", "skills", "beta", "SKILL.md"), "w").write(WS_SKILL)
     env.update({
         "BEND_PROVIDER_URL": "http://127.0.0.1:%s/v1/chat/completions" % fake.stdout.readline().split()[1],
         "BEND_MODEL": "mistral-small-latest", "MISTRAL_API_KEY": "fake-key",
@@ -81,7 +95,14 @@ def main():
             time.sleep(0.1)  # the scan writes it after the shared index
         check("the session's index is under $BEND_RUN_DIR/<port>",
               os.path.exists(sidx) and not os.path.exists(os.path.join(tmp, ".bend-harness")),
-              repr(os.listdir(tmp)))
+              repr((os.listdir(tmp), os.listdir(os.path.dirname(sidx))
+                    if os.path.isdir(os.path.dirname(sidx)) else None)))
+        sdata = open(sidx).read() if os.path.exists(sidx) else ""
+        check("it holds the workspace skill", sdata.startswith("beta\tThe beta workspace skill.\t/"),
+              repr(sdata))
+        rundir = os.path.dirname(sidx)
+        left = [n for n in os.listdir(rundir) if n.startswith("skills-index.txt.")] if os.path.isdir(rundir) else []
+        check("no temp file is left next to it", not left, repr(left))
         sock = socket.create_connection(("127.0.0.1", port), timeout=120)
         sock.sendall(b"run [[skill: alpha]] [[skill: nope]]\n")
         f = sock.makefile("rb")
