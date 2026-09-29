@@ -157,6 +157,50 @@ fn an_inherited_legacy_default_is_not_an_override_in_the_bise_layout() {
 }
 
 #[test]
+fn another_homes_default_is_not_an_override() {
+    // an agent's shell (HOME=/u, bise layout, exports stamped for /u) ran a
+    // test with a temp HOME and BISE_EXPORTS_FOR unset: the test's REPL took
+    // BEND_SKILLS_INDEX=/u/.bise/cache/skills-index.txt as an override,
+    // scanned the temp HOME (no skills) and wrote an empty index over the
+    // user's one: the skill tool found no skill in main's session
+    let t = tmp("foreign-default");
+    let ts = t.to_string_lossy().to_string();
+    let inherited = [
+        ("BEND_CONFIG", "/u/.bise/config.toml"),
+        ("BEND_SESSIONS_DIR", "/u/.bise/sessions"),
+        ("BEND_IMAGE_DIR", "/u/.bise/images"),
+        ("BEND_MCP_INDEX", "/u/.bend-harness/mcp-index.txt"),
+        ("BEND_SKILLS_INDEX", "/u/.bise/cache/skills-index.txt"),
+        ("BEND_PLUGINS_STATE", "/u/.bise/plugins.json"),
+        ("BEND_PLUGINS_DATA", "/u/.bise/plugin-data"),
+        ("BEND_RUN_DIR", "/u/.bise/run"),
+        ("SB_VERSIONS_DIR", "/u/.bise/dev/versions"),
+        ("SB_BUILD_DIR", "/u/.local/state/switchboard/build"),
+    ];
+    let mut pairs = vec![("HOME", ts.as_str())];
+    pairs.extend(inherited);
+    let h = home_of(&pairs);
+    assert_eq!(h, home_of(&[("HOME", &ts)]), "every inherited path was /u's default");
+    assert_eq!(h.skills_index(), t.join(".bend-harness/skills-index.txt"));
+    // every exported variable is covered by the rule
+    assert_eq!(inherited.len(), PATH_VARS.len());
+    // this HOME's own defaults and any other path stay overrides
+    let own = t.join(".bend-harness/skills-index.txt").to_string_lossy().to_string();
+    let kept = home_of(&[("HOME", &ts), ("BEND_SKILLS_INDEX", &own), ("BEND_CONFIG", "/u/cfg/config.toml")]);
+    assert_eq!(kept.skills_index(), PathBuf::from(&own));
+    assert_eq!(kept.config_file(), PathBuf::from("/u/cfg/config.toml"));
+    // same in the bise layout: /u's defaults dropped, its own kept
+    std::fs::create_dir_all(t.join(".bise")).unwrap();
+    std::fs::write(t.join(".bise").join(MIGRATED), "{}").unwrap();
+    let bise_own = t.join(".bise/cache/skills-index.txt").to_string_lossy().to_string();
+    let b = home_of(&[("HOME", &ts), ("BEND_SKILLS_INDEX", "/u/.bise/cache/skills-index.txt")]);
+    assert_eq!(b.skills_index(), PathBuf::from(&bise_own));
+    let b_own = home_of(&[("HOME", &ts), ("BEND_SKILLS_INDEX", &bise_own), ("BEND_SESSIONS_DIR", "/u/.bise/sessions")]);
+    assert_eq!(b_own.skills_index(), PathBuf::from(&bise_own));
+    assert_eq!(b_own.sessions_dir(), t.join(".bise/sessions"));
+}
+
+#[test]
 fn the_run_dir_is_private() {
     use std::os::unix::fs::PermissionsExt;
     let d = tmp("run");

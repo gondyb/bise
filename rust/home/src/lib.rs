@@ -111,25 +111,35 @@ impl Home {
             PATH_VARS.iter().filter_map(|k| get(k).map(|v| (*k, PathBuf::from(v)))).collect()
         };
         let mut h = Home { layout, user, root, over, migrated };
-        h.drop_legacy_defaults();
+        h.drop_foreign_defaults();
         h
     }
 
-    /// In the bise layout, an inherited path equal to the legacy layout's
-    /// default for that variable is not an override: an older version
-    /// computed it (before BISE-160 no stamp came with it, e.g.
-    /// `BEND_MCP_INDEX=~/.bend-harness/mcp-index.txt`), and taking it would
-    /// re-export it with a valid stamp for good (the agents read an empty
-    /// connector index, not `<root>/cache/mcp-index.txt`).
-    fn drop_legacy_defaults(&mut self) {
-        if !self.is_bise() || self.over.is_empty() {
+    /// An inherited path that is some layout's default, computed for
+    /// another place than this home, is not an override:
+    ///
+    /// - in the bise layout, this HOME's legacy default: an older version
+    ///   computed it (before BISE-160 no stamp came with it, e.g.
+    ///   `BEND_MCP_INDEX=~/.bend-harness/mcp-index.txt`), and taking it
+    ///   would re-export it with a valid stamp for good (the agents read an
+    ///   empty connector index, not `<root>/cache/mcp-index.txt`);
+    /// - in any layout, another HOME's default (legacy or `~/.bise`): an
+    ///   agent's shell ran a test with a temp HOME and the stamp unset, and
+    ///   the test's REPL wrote its empty skills index over the user's one.
+    fn drop_foreign_defaults(&mut self) {
+        if self.over.is_empty() {
             return;
         }
-        for (k, v) in self.legacy().exports() {
-            if self.over.get(k).is_some_and(|o| o.as_os_str() == v.as_str()) {
-                self.over.remove(k);
-            }
-        }
+        let user = self.user.to_string_lossy().into_owned();
+        let bise = self.is_bise();
+        self.over.retain(|k, v| {
+            let v = v.to_string_lossy();
+            !default_suffixes(k).iter().any(|(suffix, legacy)| {
+                v.strip_suffix(suffix.as_str()).is_some_and(|home| {
+                    !home.is_empty() && (home != user || (bise && *legacy))
+                })
+            })
+        });
     }
 
     /// A bise-layout home at `root` (tests, tools).
@@ -382,6 +392,31 @@ impl Home {
 /// The stamp of an export: the HOME, BISE_HOME and root it was computed for.
 fn stamp_of(home: Option<&str>, bise: Option<&str>, root: &Path) -> String {
     format!("{}\n{}\n{}", home.unwrap_or(""), bise.unwrap_or(""), root.display())
+}
+
+/// The defaults of a [`PATH_VARS`] variable relative to a HOME, in the
+/// legacy layout (`true`) and in `~/.bise` (`false`): e.g.
+/// `/.bend-harness/skills-index.txt` and `/.bise/cache/skills-index.txt`.
+fn default_suffixes(var: &str) -> Vec<(String, bool)> {
+    const PROBE: &str = "/bise-probe-home";
+    let user = PathBuf::from(PROBE);
+    let legacy = Home {
+        layout: Layout::Legacy,
+        user: user.clone(),
+        root: user.join(".bend-harness"),
+        over: BTreeMap::new(),
+        migrated: false,
+    };
+    let bise = Home { layout: Layout::Bise, user: user.clone(), root: user.join(".bise"), over: BTreeMap::new(), migrated: true };
+    [(legacy, true), (bise, false)]
+        .into_iter()
+        .flat_map(|(h, is_legacy)| {
+            h.exports()
+                .into_iter()
+                .filter(|(k, _)| *k == var)
+                .filter_map(move |(_, v)| v.strip_prefix(PROBE).map(|s| (s.to_string(), is_legacy)))
+        })
+        .collect()
 }
 
 #[cfg(test)]

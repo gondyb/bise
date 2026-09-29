@@ -55,8 +55,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURES = os.path.join(HERE, "providers")
 LOG = os.environ.get("FAKE_LOG", "/tmp/sb-fake.log")
 FAMILIES = ("anthropic", "openai-chat", "openai-responses", "gemini")
-MARK = re.compile(r"\[\[bash: (.*?)\]\]", re.S)
-INNER = re.compile(r"\{\{bash: (.*?)\}\}", re.S)
+MARK = re.compile(r"\[\[(bash|skill): (.*?)\]\]", re.S)
+INNER = re.compile(r"\{\{(bash): (.*?)\}\}", re.S)
 THINK = re.compile(r"\[\[think: (.*?)\]\]", re.S)
 ERROR = re.compile(r"\[\[error: (\w+)(?: x(\d+))?(?: retry=(\d+))?\]\]")
 FIXTURE = re.compile(r"\[\[fixture: ([\w.-]+)\]\]")
@@ -244,8 +244,9 @@ def reply_for(conv, seen=0):
     calls_done = sum(m["calls"] for m in after if m["role"] == "assistant")
     marks = MARK.findall(user) or INNER.findall(user)
     if calls_done < len(marks):
-        turn["calls"] = [{"id": "call_%d_%d" % (idx, calls_done), "name": "bash",
-                          "args": {"arg": marks[calls_done].strip()}}]
+        tool, arg = marks[calls_done]
+        args = {"name": arg.strip()} if tool == "skill" else {"arg": arg.strip()}
+        turn["calls"] = [{"id": "call_%d_%d" % (idx, calls_done), "name": tool, "args": args}]
         return turn
     results = [m["text"] for m in after if m["role"] == "tool"]
     if results:

@@ -46,6 +46,9 @@ def index_path() -> IO(String):
 #      app root, so $PWD would miss the task's workspace - else
 #      $PWD/.agents/skills), then the plugin skills ($3, written by the
 #      plugins bridge, runtime/plugins.bend)
+# Each index is written to a temp file then renamed: every REPL start
+# rescans, and a skill call or the TUI reading the shared index mid-scan
+# must see the old index or the new one, never a truncated file.
 # skill_ok keeps absolute paths only, so a relative one would drop
 # every local skill. Tabs and quotes are stripped from the fields so the
 # tab-separated line stays unambiguous; folded multi-line YAML
@@ -63,10 +66,10 @@ def scan_script() -> String:
     [ -n \"$n\" ] && [ -n \"$s\" ] && printf '%s\\t%s\\t%s\\n' \"$n\" \"$s\" \"$f\"
   done
 }
-{ scan \"$HOME/.agents/skills\"; scan \"$HOME/.vibe/skills\"; } > \"$1\"
-mkdir -p \"$(dirname \"$2\")\"
+mkdir -p \"$(dirname \"$1\")\" \"$(dirname \"$2\")\"
+{ scan \"$HOME/.agents/skills\"; scan \"$HOME/.vibe/skills\"; } > \"$1.$$\" && mv -f \"$1.$$\" \"$1\"
 w=\"${BEND_WORKDIR:-$PWD}\"
-{ scan \"$w/.agents/skills\"; cat \"$3\" 2>/dev/null; } > \"$2\""
+{ scan \"$w/.agents/skills\"; cat \"$3\" 2>/dev/null; } > \"$2.$$\" && mv -f \"$2.$$\" \"$2\""
 
 def scan_path(+port: String) -> String:
   String.append("/tmp/bend-skills-scan-", String.append(port, ".sh"))
@@ -130,10 +133,14 @@ def read_skill(sk: Skp.Skill) -> IO(Mc.MR):
         m : Maybe<&2, String> <- P.read_file(path)
         IO.pure(Mc.MR, read_skill.go(m, sk))
 
-def exec_skill.live.found(fs: Maybe<&2, Skp.Skill>) -> IO(Mc.MR):
+# a name the index lacks is not an unreadable index (an empty index said
+# "unreadable" and sent the search to the wrong place)
+def exec_skill.live.found(fs: Maybe<&2, Skp.Skill>, +name: String) -> IO(Mc.MR):
   match fs:
     case None{}:
-      IO.pure(Mc.MR, Mc.MR{False{}, "skills index unreadable: no skills are available"})
+      IO.pure(Mc.MR, Mc.MR{False{},
+        String.append("unknown skill: ", String.append(name,
+          ": call it with an exact name from <available-skills>"))})
     case Some{+sk}:
       read_skill(sk)
 
@@ -143,7 +150,7 @@ def exec_skill.live.go(m: Maybe<&2, String>, +name: String) -> IO(Mc.MR):
       IO.pure(Mc.MR,
         Mc.MR{False{}, "skills index unreadable: no skills are available"})
     case Some{+content}:
-      exec_skill.live.found(Skp.find_skill(content, name))
+      exec_skill.live.found(Skp.find_skill(content, name), name)
 
 def exec_skill.live.pick(n: Maybe<&2, String>) -> IO(Mc.MR):
   match n:
