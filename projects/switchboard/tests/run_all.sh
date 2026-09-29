@@ -8,8 +8,20 @@ export PATH="$HOME/.bend/bin:$HOME/.cargo/bin:$PATH"
 echo "== Bend laws (PROOF.bend)"
 bend PROOF.bend | grep -E "PROOFS"
 echo "== Rust: build, unit and scenario tests, clippy"
-(cd rust && cargo build --offline -q && cargo test --offline -q -p switchboard 2>&1 | grep "test result" | head -1 \
-  && cargo clippy --offline -q -p switchboard -p bend-tui -p bend-harness -- -D warnings)
+# an agent's shell points SB_CORE_BIN at its hub's (older) sb-core: the
+# core tests must spawn this tree's
+unset SB_CORE_BIN
+log="$(mktemp -t sb-run-all)"
+(cd rust && cargo build --offline -q) || exit 1
+# every test binary's summary; a failure stops here with cargo's report
+if ! (cd rust && cargo test --offline -q -p switchboard -p bend-tui) >"$log" 2>&1; then
+  grep -E "^test .* FAILED|^failures:|panicked|test result" "$log" | head -40
+  echo "FAILED: cargo test (full log: $log)"
+  exit 1
+fi
+grep "test result" "$log"
+rm -f "$log"
+(cd rust && cargo clippy --offline -q --workspace --all-targets -- -D warnings)
 echo "== E2E (real hub, REPLs, git; scripted provider)"
 python3 -u projects/switchboard/tests/e2e.py
 echo "== TUI under tmux"
