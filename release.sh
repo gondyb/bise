@@ -27,7 +27,8 @@ echo "== cargo release (bend-harness)"
 # 2. the Bend REPLs, native binaries (self-contained, no bend needed at
 #    runtime): bins.sh's cache (compiled when the sources changed)
 echo "== bend native binaries"
-for b in repl-live repl-scripted harness-demo; do
+# sb-core: the Switchboard hub's decisions (`./bend-harness` opens Switchboard)
+for b in repl-live repl-scripted harness-demo sb-core; do
   cp "$(./bins.sh path "$b")" "$DIST/$b"
 done
 
@@ -51,21 +52,21 @@ cp LAWS.bend PROOF.bend tool-desc-*.txt prompt-*.txt "$DIST/"
 # 5. the parent binary itself, and strip everything shippable
 echo "== assemble + strip"
 cp rust/target/release/bend-harness "$DIST/bend-harness"
-strip "$DIST/bend-harness" "$DIST/repl-live" "$DIST/repl-scripted" "$DIST/harness-demo" 2>/dev/null || true
+strip "$DIST/bend-harness" "$DIST/repl-live" "$DIST/repl-scripted" "$DIST/harness-demo" "$DIST/sb-core" 2>/dev/null || true
 strip -x "$DIST/bend-jsrt" 2>/dev/null || true
 # a stable ad-hoc signature per artifact: EDR ML scoring is less
 # suspicious of signed binaries, and the identifier is allowlistable
 codesign -s - --force "$DIST/bend-harness" "$DIST/repl-live" \
-  "$DIST/repl-scripted" "$DIST/harness-demo" 2>/dev/null || true
+  "$DIST/repl-scripted" "$DIST/harness-demo" "$DIST/sb-core" 2>/dev/null || true
 
 # 6. a tiny README in the bundle
 cat > "$DIST/README.txt" <<EOF
 bend-harness ($OS-$ARCH)
 
 Launch from anywhere:
-  ./bend-harness            new session
-  ./bend-harness --continue     resume the latest session
-  ./bend-harness --resume <id>  resume by session id prefix
+  ./bend-harness                      Switchboard in the current folder
+  ./bend-harness switchboard --stop   stop the hub of the current folder
+  ./bend-harness --headless           one session for a program (prints READY)
 
 MISTRAL_API_KEY must be set in the environment.
 Sessions live in ~/.bend-harness/sessions/.
@@ -75,7 +76,7 @@ EOF
 #    concurrent build, a full disk) must FAIL LOUDLY, not ship a broken
 #    bundle that dies on "REPL Bend introuvable" at the user's machine.
 echo "== verify"
-for f in bend-harness repl-live repl-scripted harness-demo \
+for f in bend-harness repl-live repl-scripted harness-demo sb-core \
           bend-jsrt runtime/repl-live.bend LAWS.bend; do
   if [ ! -e "$DIST/$f" ]; then
     echo "RELEASE INCOMPLETE: $DIST/$f is missing (build step failed or the file was removed post-build)" >&2

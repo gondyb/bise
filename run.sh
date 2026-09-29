@@ -1,29 +1,23 @@
 #!/usr/bin/env bash
 # Convenience wrapper: everything starts from the single executable
-# rust/target/debug/bend-harness (child Bend REPL + TUI). The provider
-# (HTTPS to api.mistral.ai) and the bash tool run INSIDE the Bend REPL
-# (hub HTTP + snap packages) — no bridge anymore.
+# rust/target/<profile>/bend-harness. The TUI is Switchboard's (there is
+# no single-agent TUI any more, BISE-113).
 #
-#   ./run.sh                 # live session (opus-5.5 + bash)
-#   ./run.sh --scripted      # scripted session
-#   ./run.sh --model NAME    # provider model
-#   ./run.sh --port N        # force the REPL port
-#   ./run.sh --debug        # show the annotations (turns, idle)
-#   ./run.sh --continue     # resume the most recent session
-#                           # (by last activity, not a fixed file)
-#   ./run.sh switchboard    # Switchboard: main + tasks, in the current folder
+#   ./run.sh                     # Switchboard: main + tasks, in the current folder
+#   ./run.sh switchboard         # the same
 #   ./run.sh switchboard --stop  # stop the hub of the current folder
 #   ./run.sh switchboard --dev   # test Switchboard next to the live one: build
 #                                # isolated in /tmp/sb-dev, separate hub
 #                                # (see sb-dev.sh: --no-tui, --stop, --status, --reset)
-#   ./run.sh --resume ID    # resume a session by id
-#                           # (a unique prefix is enough); /status in
-#                           # the TUI shows the session id
-#
-# Several terminals = several ./run.sh: ports assigned automatically,
-# independent sessions, each REPL dies with its terminal.
+#   ./run.sh --headless [--scripted] [--model NAME] [--port N]
+#            [--continue | --resume ID]
+#                                # one session without a TUI, for a program
+#                                # (bend_client.py): prints READY, lives
+#                                # until its stdin closes
 
 set -euo pipefail
+# alone: Switchboard
+if [ $# -eq 0 ]; then set -- switchboard; fi
 # the dev switchboard builds elsewhere: never the live tree's binaries
 if [ "${1:-}" = "switchboard" ] && [[ " $* " == *" --dev "* ]]; then
   shift

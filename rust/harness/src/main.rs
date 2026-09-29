@@ -1,45 +1,39 @@
 //! bend-harness — the single-executable entry point.
 //!
-//! One process tree per terminal window:
-//!   - the Bend REPL (repl-live / repl-scripted) runs as a child process;
-//!     it does EVERYTHING in Bend: the provider call (hub HTTP client +
-//!     core/api.bend JSON mapping) and the bash tool (Base Process.run).
-//!     No bridge process anymore.
-//!   - the ratatui TUI runs in the main thread.
+//! The TUI is Switchboard's (`bend-harness` alone, or `bend-harness
+//! switchboard`): the hub (`sbd`) runs the agents' REPLs. There is no
+//! single-agent TUI any more (BISE-113).
 //!
-//! Ports are picked automatically, so several instances run side by side
-//! with fully independent sessions. The child REPL dies with this
-//! process: no orphaned listeners.
+//! `--headless` runs ONE session without a TUI, for programs
+//! (bend_client.py, the plugins tests): the Bend REPL (repl-live /
+//! repl-scripted) is a child process that does everything in Bend (the
+//! provider call, the bash tool); this parent prints one READY line on
+//! stdout and lives until its stdin closes. The port is picked
+//! automatically, so several sessions run side by side; the child REPL
+//! dies with this process.
 //!
 //! Usage:
-//!   bend-harness                # live session (real model + bash)
-//!   bend-harness --scripted     # scripted session (no API)
-//!   bend-harness --model NAME   # BEND_MODEL for the provider call
-//!   bend-harness --port N       # force the REPL port (default: pick free)
-//!   bend-harness --debug        # show turn separators and idle markers
-//!   bend-harness --continue     # resume the MOST RECENT session (by
+//!   bend-harness                # Switchboard in the current folder
+//!   bend-harness switchboard    # the same, with its flags (--stop, --workspace)
+//!   bend-harness --headless     # one session for a program, flags:
+//!     --scripted                # scripted session (no API)
+//!     --model NAME              # BEND_MODEL for the provider call
+//!     --port N                  # force the REPL port (default: pick free)
+//!     --debug                   # accepted, no effect without a TUI
+//!     --continue                # resume the MOST RECENT session (by
 //!                               # last activity — the file that got the
 //!                               # latest save, not a fixed path)
-//!   bend-harness --resume ID    # resume one session by id (a unique
+//!     --resume ID               # resume one session by id (a unique
 //!                               # prefix of the id is accepted)
-//!   bend-harness --headless     # EVERYTHING identical, minus the TUI:
-//!                               # prints one READY line on stdout and
-//!                               # lives until its stdin closes. This is
-//!                               # how bend_client.py drives a session -
-//!                               # the same script, the same binary, the
-//!                               # same env, sessions and reload loop as
-//!                               # the TUI; the client only speaks the
-//!                               # wire protocol.
 //!
 //! BEND_SESSIONS_DIR overrides the sessions directory (default
 //! ~/.bend-harness/sessions) - the ONLY thing the programmatic client
 //! changes, so its test sessions never become the user's --continue.
 //!
-//! /reload (typed in the TUI, between turns) exits the Bend REPL
-//! cleanly; this parent then recompiles the latest source, respawns
-//! the child on the same port and reconnects the TUI — the checkpoint
-//! restores the session, background commands keep running. This is
-//! the self-improvement loop: the harness runs its own next version.
+//! /reload (sent by the client, between turns) exits the Bend REPL
+//! cleanly; this parent then recompiles the latest source and respawns
+//! the child on the same port — the checkpoint restores the session,
+//! background commands keep running.
 
 use std::io::Write;
 use std::net::TcpListener;
@@ -48,6 +42,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 mod debuglog;
+mod info;
 
 // ---- session ids and resolution (codex-style) ----
 //
@@ -379,6 +374,9 @@ fn main() -> std::io::Result<()> {
                 let debug = args.iter().any(|a| a == "--debug");
                 return run_switchboard(&args[1..], debug);
             }
+            // the single-agent TUI is gone (BISE-113): alone, the
+            // command opens Switchboard
+            None => return run_switchboard(&[], false),
             _ => {}
         }
     }
@@ -387,7 +385,7 @@ fn main() -> std::io::Result<()> {
     let CliArgs {
         scripted,
         headless,
-        debug,
+        debug: _,
         resume,
         resume_id,
         model,
@@ -396,6 +394,10 @@ fn main() -> std::io::Result<()> {
         eprintln!("{}", msg);
         std::process::exit(1);
     });
+    if !headless {
+        eprintln!("the single-agent TUI is gone: `bend-harness` (or `./run.sh`) opens Switchboard; --headless runs one session for a program");
+        std::process::exit(2);
+    }
     if let Some(m) = model {
         std::env::set_var("BEND_MODEL", m);
     }
@@ -535,14 +537,14 @@ fn main() -> std::io::Result<()> {
     }
     std::env::set_var("BEND_MCP_INDEX", &mcp_index);
 
-    // child REPL log, out of the TUI's way. Recreated per spawn, so
+    // child REPL log, out of the client's way. Recreated per spawn, so
     // the reload-exit marker of one generation never leaks to the next.
     let log_dir = std::env::current_dir()?.join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
     let log_path = log_dir.join(format!("harness-{}.log", std::process::id()));
 
-    // the run loop: spawn → wait banner → TUI. When the TUI returns,
-    // WHY it returned decides what happens:
+    // the run loop: spawn → wait banner → READY, until the child exits
+    // or the client hangs up. WHY decides what happens:
     //   - child exited with the "reload-exit" marker: a /reload ran.
     //     Recompile the latest source, respawn with BEND_CONTINUE=1
     //     (same port, same session file), reconnect. This is the
@@ -551,11 +553,11 @@ fn main() -> std::io::Result<()> {
     //   - child died any other way (a crash): respawn it on the
     //     checkpointed session with BEND_CRASH_NOTE, which the new
     //     REPL shows the user after the replayed history.
-    //   - child alive: the user quit the TUI — die together.
-    // headless: the client's hang-up is our stdin closing (a crashed
-    // client closes it too) - the child never outlives its client
+    //   - child alive: the client hung up — die together.
+    // The client's hang-up is our stdin closing (a crashed client
+    // closes it too) - the child never outlives its client
     let stdin_closed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    if headless {
+    {
         let flag = stdin_closed.clone();
         std::thread::spawn(move || {
             let mut sink = Vec::new();
@@ -638,7 +640,7 @@ fn main() -> std::io::Result<()> {
         // what the REPL announced - the single source of truth for the
         // model, the threshold and the side-channel paths
         let log = std::fs::read_to_string(&log_path).unwrap_or_default();
-        let info = match bend_tui::HarnessInfo::from_log(&log) {
+        let info = match info::HarnessInfo::from_log(&log) {
             Some(i) => i,
             None => {
                 eprintln!("the Bend REPL did not announce its configuration (harness-info)");
@@ -657,9 +659,9 @@ fn main() -> std::io::Result<()> {
         );
 
         let _ = std::io::stderr().flush();
-        let result = if headless {
-            // the machine handshake: one line, the same facts the TUI
-            // displays, plus where the child logs
+        let result: std::io::Result<()> = {
+            // the machine handshake: one line, what the REPL
+            // announced, plus where the child logs
             println!(
                 "READY port={} session={} model={} threshold={} steer={} interrupt={} log={}",
                 repl_port,
@@ -683,18 +685,13 @@ fn main() -> std::io::Result<()> {
                 std::thread::sleep(Duration::from_millis(100));
             }
             Ok(())
-        } else {
-            bend_tui::run("127.0.0.1".to_string(), repl_port, info, debug, session_id.clone())
         };
 
-        // the connection closed — why did the child stop?
-        // A /reload closes the socket BEFORE exiting (it checkpoints
-        // after the close), so the TUI always disconnects while the
-        // child is still landing its exit status. Without a grace wait
-        // every reload raced into the user-closed-TUI branch and the
-        // parent killed the session (the manual --resume every time).
-        // Give the child up to 3s to exit on its own: a reload exits in
-        // milliseconds; only a user-closed TUI leaves it alive.
+        // why did we stop waiting? A /reload closes the socket BEFORE
+        // exiting (it checkpoints after the close): give the child up
+        // to 3s to land its exit status, or the reload would read as a
+        // client that hung up and the parent would kill the session.
+        // A reload exits in milliseconds; only a hang-up leaves it alive.
         let mut exited = child.try_wait().ok().flatten();
         if exited.is_none() {
             for _ in 0..60 {
@@ -768,7 +765,7 @@ fn main() -> std::io::Result<()> {
                 continue;
             }
             (None, _) => {
-                // child alive: the user closed the TUI — give the REPL a
+                // child alive: the client hung up — give the REPL a
                 // beat to checkpoint the session, then die with us
                 std::thread::sleep(Duration::from_millis(200));
                 let _ = child.kill();
@@ -852,11 +849,12 @@ fn which_lookup(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// The single-agent command line (`./run.sh [flags]`).
+/// The `--headless` command line (`./run.sh --headless [flags]`).
 #[derive(Debug, Default, PartialEq)]
 struct CliArgs {
     scripted: bool,
     headless: bool,
+    /// --debug: accepted (older clients pass it), no effect
     debug: bool,
     /// --continue: the most recent session
     resume: bool,

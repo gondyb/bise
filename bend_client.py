@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """bend_client — drive a live bend-harness session programmatically.
 
-The SAME entry point as the TUI: this client launches `./run.sh
---headless`, i.e. the same script (stale-binary rebuilds included),
-the same bend-harness executable, the same environment, config.toml,
-MCP index, session handling and reload loop the user gets from
-`./run.sh`. The only difference is that no TUI runs: the parent prints
-one READY line and the client speaks the wire protocol over TCP.
+This client launches `./run.sh --headless`: the same script
+(stale-binary rebuilds included), the same bend-harness executable, the
+same environment, config.toml, MCP index, session handling and reload
+loop as a Switchboard agent's REPL. No TUI runs: the parent prints one
+READY line and the client speaks the wire protocol over TCP.
 
 Nothing is recomputed here. The model, the threshold and the
 side-channel paths come from the READY line, which forwards what the
@@ -14,7 +13,7 @@ Bend REPL itself announced (its `harness-info` line).
 
 The one deliberate isolation: BEND_SESSIONS_DIR points the client's
 sessions at /tmp/bend-sessions, so test sessions never become the
-user's `./run.sh --continue`.
+user's `./run.sh --headless --continue`.
 
   from bend_client import BendSession
   s = BendSession.fresh(bg_after=3)      # or BendSession.resume(session_id)
