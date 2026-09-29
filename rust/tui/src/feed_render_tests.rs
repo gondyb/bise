@@ -111,6 +111,21 @@ fn merged_tool(wire_lines: &[String]) -> ToolData {
         .expect("the merged tool")
 }
 
+// BISE-223: the tool_intent annotation lands on its tool; an empty one
+// is no intent
+#[test]
+fn the_intent_annotation_merges_into_its_tool() {
+    let td = merged_tool(&[
+        "  obs: tool_started #4".to_string(),
+        "tool #4 bash : ls".to_string(),
+        "tool_code #4 : ls".to_string(),
+        "tool_intent #4 : je liste les fichiers".to_string(),
+    ]);
+    assert_eq!(td.intent.as_deref(), Some("je liste les fichiers"));
+    assert_eq!(td.code.as_deref(), Some("ls"));
+    assert!(parse_line("tool_intent #4 : ").is_none());
+}
+
 fn rows_text(rows: &[Line<'static>]) -> Vec<String> {
     rows.iter()
         .map(|r| r.spans.iter().map(|s| s.content.clone()).collect::<String>())

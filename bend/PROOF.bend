@@ -198,6 +198,51 @@ def Laws.call_code_extracts():
 def Laws.call_code_passthrough():
   {==}
 
+def Laws.flat_cmd_json():
+  {==}
+
+def Laws.flat_cmd_raw():
+  {==}
+
+def Laws.call_intent_reads():
+  {==}
+
+def Laws.call_intent_none():
+  {==}
+
+def Laws.call_intent_one_line():
+  {==}
+
+def Laws.arg_of_keeps_bash_intent():
+  {==}
+
+def Laws.arg_of_bash_plain():
+  {==}
+
+def Laws.arg_of_other_drops_intent():
+  {==}
+
+def Laws.args_json_passes_bash_intent():
+  {==}
+
+def Laws.input_json_bash_intent():
+  {==}
+
+def Laws.ann_bash_intent_shows_cmd():
+  {==}
+
+def Laws.intent_anns_bash():
+  {==}
+
+def Laws.intent_anns_ts():
+  {==}
+
+def Laws.intent_anns_none():
+  {==}
+
+def Laws.intent_anns_other_tool():
+  {==}
+
 def Laws.best_match_names_only():
   {==}
 

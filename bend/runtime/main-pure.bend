@@ -333,12 +333,23 @@ def ok_label(ok: Bool) -> String:
     case False{}:
       "fail"
 
+# a bash call shows its command, not the JSON of its description
+def call_ann.pick(is_bash: Bool, +args: String) -> String:
+  match is_bash:
+    case True{}:
+      W.flat_cmd(args)
+    case False{}:
+      args
+
+def call_ann.args(+name: String, +args: String) -> String:
+  call_ann.pick(String.eq(name, "bash"), args)
+
 def call_ann(+call: T.Call) -> String:
   match call:
     case T.Call{+id, +name, +args}:
       String.append("tool #", String.append(U32.show(id),
         String.append(" ", String.append(name,
-          String.append(" : ", ann_flat(args))))))
+          String.append(" : ", ann_flat(call_ann.args(name, args)))))))
 
 def res_ann(+id: U32, +r: Xp.ExecRes) -> String:
   match r:
@@ -471,9 +482,31 @@ def call_args(c: T.Call) -> String:
 # encoding the provider wire uses), never flattened or capped, so the
 # TUI renders the whole program or script; the tool # preview line
 # stays capped at 200
+# (a bash call with a description shows its command: W.flat_cmd)
 def code_ann(+call: T.Call) -> String:
   String.append("tool_code #", String.append(U32.show(call_id(call)),
-    String.append(" : ", W.wire_encode(call_args(call)))))
+    String.append(" : ", W.wire_encode(W.flat_cmd(call_args(call))))))
+
+# the intent line of a bash or run_typescript call (BISE-223): the
+# model's one-line description of the call, for the TUI to show in
+# place of the code; no line when the call has none
+def is_intent_call(+name: String) -> Bool:
+  Bool.or(String.eq(name, "run_typescript"), String.eq(name, "bash"))
+
+def intent_ann(+call: T.Call) -> String:
+  String.append("tool_intent #", String.append(U32.show(call_id(call)),
+    String.append(" : ", W.call_intent(call_args(call)))))
+
+def intent_anns.pick(has: Bool, +call: T.Call) -> List<&2, String>:
+  match has:
+    case True{}:
+      Con{intent_ann(call), Nil{}}
+    case False{}:
+      Nil{}
+
+def intent_anns(+call: T.Call) -> List<&2, String>:
+  intent_anns.pick(Bool.and(is_intent_call(call_name(call)),
+    Bool.not(String.is_empty(W.call_intent(call_args(call))))), call)
 
 def is_code_call(+name: String) -> Bool:
   Bool.or(String.eq(name, "run_typescript"),
@@ -523,9 +556,18 @@ def replay.code(is_code: Bool, +c: T.Call) -> List<&2, String>:
     case False{}:
       Nil{}
 
+def replay.intent(ls: List<&2, String>) -> List<&2, String>:
+  match ls:
+    case Nil{}:
+      Nil{}
+    case Con{+l, t}:
+      Con{hist(l), replay.intent(t)}
+
 def replay.call(+c: T.Call) -> List<&2, String>:
   Con{hist(String.append("  obs: tool_started #", U32.show(call_id(c)))),
-    Con{hist(call_ann(c)), replay.code(is_code_call(call_name(c)), c)}}
+    Con{hist(call_ann(c)),
+      List.append(&2, String, replay.code(is_code_call(call_name(c)), c),
+        replay.intent(intent_anns(c)))}}
 
 def replay.calls(cs: List<&2, T.Call>) -> List<&2, String>:
   match cs:

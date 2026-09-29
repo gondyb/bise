@@ -451,7 +451,7 @@ def exec_tool.run(t: Rtp.Tool, out: Pv.Out, +name: String, +args: String,
       exec_program(1000n, (out, (Sfp.def_none(), EpRun{})),
         W.call_code(args), Nil{}, live)
     case Rtp.TBash{}:
-      exec_tool.with(out, Sh.bash_exec(args))
+      exec_tool.with(out, Sh.bash_exec(W.flat_cmd(args)))
     case Rtp.TSearch{}:
       exec_tool.with(out, Sh.exec_search(args, live))
     case Rtp.TSelf{}:
@@ -471,7 +471,7 @@ def exec_tool(out: Pv.Out, +call: T.Call, +live: Bool) -> IO(Pv.Out & Xp.ExecRes
 def emit_code_ann.pick(is_code: Bool, out: Pv.Out, +call: T.Call) -> IO(Pv.Out):
   match is_code:
     case True{}:
-      emit(out, Con{Rtp.code_ann(call), Nil{}})
+      emit(out, Con{Rtp.code_ann(call), Rtp.intent_anns(call)})
     case False{}:
       IO.pure(Pv.Out, out)
 

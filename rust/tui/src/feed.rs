@@ -373,6 +373,7 @@ pub(crate) fn ev_visible(ev: &Ev, debug: bool) -> bool {
             | Ev::ToolInfo { .. }
             | Ev::ToolResult { .. }
             | Ev::ToolCode { .. }
+            | Ev::ToolIntent { .. }
     )
 }
 
@@ -444,6 +445,13 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
                 td.result = Some((*ok, preview.clone()));
                 cache[i] = None;
                 settle_quiet(events, cache, i);
+            }
+            return false;
+        }
+        Ev::ToolIntent { id, text } => {
+            if let Some((i, td)) = last_tool_mut(events, |td| td.id == *id) {
+                td.intent = Some(text.clone());
+                cache[i] = None;
             }
             return false;
         }

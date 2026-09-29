@@ -324,6 +324,22 @@ def arg_schema() -> J.Json:
         Nil{}})),
       Con{J.kv("required", J.arr(Con{J.str("arg"), Nil{}})), Nil{}}}})
 
+# the optional "description" of bash and run_typescript (BISE-223):
+# optional in the schema (old models keep working), asked for in the
+# tool texts; the TUI shows it in place of the code
+def intent_prop() -> Sigma<&2, &2, String, _ => J.Json>:
+  J.kv("description",
+    J.obj(Con{J.kv("type", J.str("string")),
+      Con{J.kv("description", J.str("One short line shown to the user while this runs: what you are doing, in the user's language. 8 words at most, starting lowercase, no final period. E.g. 'weighing the hero image', 'je lance les tests du signup'.")),
+        Nil{}}}))
+
+def bash_schema() -> J.Json:
+  J.obj(Con{J.kv("type", J.str("object")),
+    Con{J.kv("properties",
+      J.obj(Con{J.kv("arg", J.obj(Con{J.kv("type", J.str("string")), Nil{}})),
+        Con{intent_prop(), Nil{}}})),
+      Con{J.kv("required", J.arr(Con{J.str("arg"), Nil{}})), Nil{}}}})
+
 # ---- per-tool parameter schemas (exact vibe_sdk schemas) ----
 # run_typescript: {"code": string} (deny_unknown_fields)
 # search_tool_functions: the SearchRequest schema (mode/query/
@@ -342,7 +358,7 @@ def code_schema() -> J.Json:
                     Con{J.kv("type",
                         J.str("string")),
                       Nil{}})),
-                Nil{}})),
+                Con{intent_prop(), Nil{}}})),
           Con{J.kv("required",
               J.arr(
                 Con{
@@ -440,12 +456,19 @@ def search_schema() -> J.Json:
                         Nil{}}}}}})),
           Nil{}}}})
 
+def tool_schema.bash(is_bash: Bool) -> J.Json:
+  match is_bash:
+    case True{}:
+      bash_schema()
+    case False{}:
+      arg_schema()
+
 def tool_schema.rt(is_rt: Bool, +name: String) -> J.Json:
   match is_rt:
     case True{}:
       code_schema()
     case False{}:
-      arg_schema()
+      tool_schema.bash(String.eq(name, "bash"))
 
 def tool_schema.search(is_search: Bool, +name: String) -> J.Json:
   match is_search:
@@ -698,6 +721,68 @@ def call_code.res(r: Result<&2, &2, String, J.Json>, +raw: String) -> String:
 
 def call_code(+args: String) -> String:
   call_code.res(J.parse(args), args)
+
+# ---- the intent of a call (BISE-223) ----
+# bash and run_typescript take an optional "description": one line the
+# model writes for the user, shown in place of the code. run_typescript
+# args are JSON already; a bash call keeps its JSON args
+# {"arg": <cmd>, "description": <d>} only when it carries one, else its
+# args stay the bare command (old sessions, other models, scenarios).
+
+def json_field.res(r: Result<&2, &2, String, J.Json>, +key: String,
+    +dflt: String) -> String:
+  match r:
+    case Done{+j}:
+      J.get_str_or(j, key, dflt)
+    case Fail{_}:
+      dflt
+
+# the command of a flat call: the "arg" of JSON args, else the args
+def flat_cmd(+args: String) -> String:
+  json_field.res(J.parse(args), "arg", args)
+
+# one line, capped: what a model sent may hold newlines
+def intent_line(+s: String) -> String:
+  String.take(String.trim(Tx.flatten(s)), 200n)
+
+# the description of a call's JSON args, one line; "" when none
+def call_intent(+args: String) -> String:
+  intent_line(json_field.res(J.parse(args), "description", ""))
+
+def flat_in.pick(keep: Bool, +j: J.Json, +d: String, +dflt: String) -> String:
+  match keep:
+    case True{}:
+      J.stringify(J.obj(Con{J.kv("arg", J.str(J.get_str_or(j, "arg", ""))),
+        Con{J.kv("description", J.str(d)), Nil{}}}))
+    case False{}:
+      J.get_str_or(j, "arg", dflt)
+
+# a flat call's input as the adapters read it: the "arg" string (dflt
+# when it has none), or for a bash call with a description, the
+# canonical {"arg", "description"} JSON
+def flat_in(+name: String, +j: J.Json, +dflt: String) -> String:
+  +d = intent_line(J.get_str_or(j, "description", ""))
+  flat_in.pick(Bool.and(String.eq(name, "bash"),
+    Bool.not(String.is_empty(d))), j, d, dflt)
+
+def flat_out.found(m: Maybe<&2, String>, +j: J.Json, +args: String) -> J.Json:
+  match m:
+    case Some{_}:
+      j
+    case None{}:
+      J.obj(Con{J.kv("arg", J.str(args)), Nil{}})
+
+def flat_out.res(r: Result<&2, &2, String, J.Json>, +args: String) -> J.Json:
+  match r:
+    case Done{+j}:
+      flat_out.found(J.get_str(j, "arg"), j, args)
+    case Fail{_}:
+      J.obj(Con{J.kv("arg", J.str(args)), Nil{}})
+
+# a flat call's args back to a provider: JSON args with an "arg" ride
+# as they are, a bare command gets the {"arg": ...} wrapper
+def flat_out(+args: String) -> J.Json:
+  flat_out.res(J.parse(args), args)
 
 def join_lines(lines: List<&2, String>) -> String:
   match lines:

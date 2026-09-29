@@ -21,6 +21,9 @@ pub(crate) struct ToolData {
     // the source of a code tool (run_typescript args JSON, bash raw
     // command), wire-encoded (tool_code annotation); None otherwise
     pub(crate) code: Option<String>,
+    // the model's one-line description of a bash/ts call (tool_intent
+    // annotation, BISE-223); None: the call had none
+    pub(crate) intent: Option<String>,
     pub(crate) state: ToolState,
     pub(crate) result: Option<(bool, String)>,
     pub(crate) started: std::time::Instant,
@@ -53,6 +56,7 @@ impl ToolData {
             name: None,
             args: None,
             code: None,
+            intent: None,
             state,
             result: None,
             started,
@@ -112,6 +116,12 @@ pub(crate) enum Ev {
     ToolCode {
         id: u32,
         code: String,
+    },
+    // the description of a bash/ts call (tool_intent annotation,
+    // BISE-223), merged into the matching Tool by id
+    ToolIntent {
+        id: u32,
+        text: String,
     },
     Turn,
     TurnDone,
@@ -305,6 +315,16 @@ pub(crate) fn parse_line(line: &str) -> Option<Ev> {
             name: name.trim().to_string(),
             args: args.to_string(),
         });
+    }
+    // tool_intent #<id> : <one line> (bash, run_typescript: BISE-223)
+    if let Some(r) = line.strip_prefix("tool_intent #") {
+        let (id_s, rest) = r.split_once(" : ")?;
+        let id: u32 = id_s.trim().parse().ok()?;
+        let text = rest.trim();
+        if text.is_empty() {
+            return None;
+        }
+        return Some(Ev::ToolIntent { id, text: text.to_string() });
     }
     // tool_code #<id> : <full args, wire-encoded> (run_typescript only)
     if let Some(r) = line.strip_prefix("tool_code #") {

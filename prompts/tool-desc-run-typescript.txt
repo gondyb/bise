@@ -1,6 +1,10 @@
 
 Executes TypeScript code in a sandbox environment.
 
+## The description
+
+Always set `description`: one short line shown to the user while this runs (the code itself is hidden from them by default): what you are doing, in the user's language. 8 words at most, starting lowercase, no final period. E.g. 'weighing the hero image', 'je lance les tests du signup'.
+
 ## How to use run_typescript
 
 The `run_typescript` tool executes TypeScript code in a V8 isolate (types are stripped in-process; interfaces, type aliases and enums are supported). It is a replayable orchestration sandbox, not a Node.js runtime.

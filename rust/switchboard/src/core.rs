@@ -564,7 +564,11 @@ struct Place {
 /// (`cd /tmp/x-wt && …`), when it is not `own` (the agent's workspace).
 /// A linked worktree has a `.git` file (the main checkout a directory).
 fn bash_worktree(args: &str, own: &str) -> Option<String> {
-    let cmd = serde_json::from_str::<Value>(args).ok()?["arg"].as_str()?.to_string();
+    // the bare command, or the JSON of a call with a description (BISE-223)
+    let cmd = match serde_json::from_str::<Value>(args) {
+        Ok(v) => v["arg"].as_str()?.to_string(),
+        Err(_) => args.to_string(),
+    };
     let rest = cmd.trim_start().strip_prefix("cd ")?;
     let path = rest.split(|c: char| c.is_whitespace() || c == ';' || c == '&' || c == '|').next()?;
     let path = path.trim_matches(|c| c == '"' || c == '\'').trim_end_matches('/');
@@ -1228,6 +1232,12 @@ impl Hub {
                     if let Some(p) = (name == "bash").then(|| bash_worktree(&args, &own)).flatten() {
                         self.set_place(agent, p, false);
                     }
+                }
+            }
+            Wire::Intent(text) => {
+                if self.st.agents.contains_key(agent) {
+                    self.set_activity(agent, now, clip(&text, 120));
+                    self.dirty = true;
                 }
             }
             Wire::Tool { args, .. } => {

@@ -24,7 +24,7 @@ def input_json.pick(structured: Bool, +args: String) -> J.Json:
     case True{}:
       input_json.parsed(W.parsed_or(J.parse(args)))
     case False{}:
-      J.obj(Con{J.kv("arg", J.str(args)), Nil{}})
+      W.flat_out(args)
 
 # the tool_use "input" is a JSON object: structured tools pass their
 # JSON through, the flat tools keep the {"arg": ...} wrapper
@@ -666,15 +666,9 @@ def anth_blocks_text(blocks: List<&2, J.Json>) -> String:
 
 # the flat tools send {"arg": ...}; a structured input rides as its
 # JSON - what the wire args were before the adapter wrapped them
-def anth_arg.arg(m: Maybe<&2, String>, +j: J.Json) -> String:
-  match m:
-    case Some{+s}:
-      s
-    case None{}:
-      J.stringify(j)
-
-def anth_arg(+j: J.Json) -> String:
-  anth_arg.arg(J.get_str(j, "arg"), j)
+# (W.flat_in: a bash call with a description keeps its JSON)
+def anth_arg(+name: String, +j: J.Json) -> String:
+  W.flat_in(name, j, J.stringify(j))
 
 def anth_tc_line(idx: Nat, +b: J.Json) -> String:
   String.append("CALL ",
@@ -683,6 +677,7 @@ def anth_tc_line(idx: Nat, +b: J.Json) -> String:
         String.append(anth_tool_name_in(J.get_str_or(b, "name", "")),
           String.append(" : ",
             String.trim(W.wire_encode(anth_arg(
+              anth_tool_name_in(J.get_str_or(b, "name", "")),
               W.field_or(b, "input", J.JNull{})))))))))
 
 # the kind of the NEXT head (a leaf helper: the loop cannot match a

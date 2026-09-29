@@ -1008,6 +1008,83 @@ law call_code_extracts:
 law call_code_passthrough:
   {W.call_code("just text") == "just text" : String}
 
+# ---- the intent of a call (BISE-223) ----
+# bash and run_typescript take an optional one-line "description" the
+# TUI shows in place of the code. A bash call with one keeps its JSON
+# args; everything else about flat args stays as it was.
+
+# LAW: a bash call's command is the "arg" of its JSON args.
+law flat_cmd_json:
+  {W.flat_cmd("{\"arg\":\"ls\",\"description\":\"lister\"}") == "ls" : String}
+
+# LAW: bare bash args are the command itself.
+law flat_cmd_raw:
+  {W.flat_cmd("ls -la") == "ls -la" : String}
+
+# LAW: the intent is the description of the JSON args.
+law call_intent_reads:
+  {W.call_intent("{\"code\":\"x\",\"description\":\"je lance les tests\"}")
+    == "je lance les tests" : String}
+
+# LAW: args with no description have no intent.
+law call_intent_none:
+  {W.call_intent("ls -la") == "" : String}
+
+# LAW: the intent is one line.
+law call_intent_one_line:
+  {W.call_intent("{\"code\":\"x\",\"description\":\" a\\nb \"}") == "a b"
+    : String}
+
+# LAW: the OpenAI adapter keeps a bash call's description in its args.
+law arg_of_keeps_bash_intent:
+  {Oai.arg_of("bash", "{\"arg\":\"ls\",\"description\":\"lister\"}")
+    == "{\"arg\":\"ls\",\"description\":\"lister\"}" : String}
+
+# LAW: a bash call without a description stays the bare command.
+law arg_of_bash_plain:
+  {Oai.arg_of("bash", "{\"arg\":\"ls\"}") == "ls" : String}
+
+# LAW: other flat tools drop a stray description.
+law arg_of_other_drops_intent:
+  {Oai.arg_of("skill", "{\"arg\":\"x\",\"description\":\"d\"}") == "x"
+    : String}
+
+# LAW: bash JSON args go back to the provider as they are.
+law args_json_passes_bash_intent:
+  {Oai.args_json("bash", "{\"arg\":\"ls\",\"description\":\"lister\"}")
+    == "{\"arg\":\"ls\",\"description\":\"lister\"}" : String}
+
+# LAW: the Anthropic input of such a call is its JSON object.
+law input_json_bash_intent:
+  {Anth.input_json("bash", "{\"arg\":\"ls\",\"description\":\"lister\"}")
+    == J.obj(Con{J.kv("arg", J.str("ls")),
+      Con{J.kv("description", J.str("lister")), Nil{}}}) : J.Json}
+
+# LAW: the TUI gets the command, not the JSON, in the tool and code lines.
+law ann_bash_intent_shows_cmd:
+  {(Rt.call_ann(T.Call{3, "bash", "{\"arg\":\"ls\",\"description\":\"lister\"}"}),
+    Rt.code_ann(T.Call{3, "bash", "{\"arg\":\"ls\",\"description\":\"lister\"}"}))
+    == ("tool #3 bash : ls", "tool_code #3 : ls") : String & String}
+
+# LAW: a described bash call gets its intent line.
+law intent_anns_bash:
+  {Rt.intent_anns(T.Call{3, "bash", "{\"arg\":\"ls\",\"description\":\"lister\"}"})
+    == Con{"tool_intent #3 : lister", Nil{}} : List<&2, String>}
+
+# LAW: a run_typescript call gets its intent line.
+law intent_anns_ts:
+  {Rt.intent_anns(T.Call{4, "run_typescript", "{\"code\":\"x\",\"description\":\"je cherche\"}"})
+    == Con{"tool_intent #4 : je cherche", Nil{}} : List<&2, String>}
+
+# LAW: no description, no intent line (old sessions replay unchanged).
+law intent_anns_none:
+  {Rt.intent_anns(T.Call{5, "bash", "ls"}) == Nil{} : List<&2, String>}
+
+# LAW: another tool's "description" field is not an intent.
+law intent_anns_other_tool:
+  {Rt.intent_anns(T.Call{6, "mcp_x", "{\"description\":\"d\"}"}) == Nil{}
+    : List<&2, String>}
+
 # ---- the structured search (runtime/tools.bend) ----
 # best_match returns ranked names without declarations, details returns
 # declarations and NEVER a silent empty, the flat syntax stays for the
@@ -3185,7 +3262,7 @@ MSG assistant : x
 MSG tool : out1
 END
 "))
-    == "{\"system\":[{\"type\":\"text\",\"text\":\"S\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"go\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"x\"},{\"type\":\"tool_use\",\"id\":\"call_7\",\"name\":\"echo\",\"input\":{\"arg\":\"hi\"},\"cache_control\":{\"type\":\"ephemeral\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_7\",\"content\":\"out1\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"tools\":[{\"name\":\"bash\",\"description\":\"Runs.\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"}},\"required\":[\"arg\"]}},{\"name\":\"echo\",\"description\":\"Returns text.\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"}},\"required\":[\"arg\"]},\"cache_control\":{\"type\":\"ephemeral\"}}],\"tool_choice\":{\"type\":\"auto\"}}"
+    == "{\"system\":[{\"type\":\"text\",\"text\":\"S\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"go\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"x\"},{\"type\":\"tool_use\",\"id\":\"call_7\",\"name\":\"echo\",\"input\":{\"arg\":\"hi\"},\"cache_control\":{\"type\":\"ephemeral\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_7\",\"content\":\"out1\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"tools\":[{\"name\":\"bash\",\"description\":\"Runs.\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"},\"description\":{\"type\":\"string\",\"description\":\"One short line shown to the user while this runs: what you are doing, in the user's language. 8 words at most, starting lowercase, no final period. E.g. 'weighing the hero image', 'je lance les tests du signup'.\"}},\"required\":[\"arg\"]}},{\"name\":\"echo\",\"description\":\"Returns text.\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"}},\"required\":[\"arg\"]},\"cache_control\":{\"type\":\"ephemeral\"}}],\"tool_choice\":{\"type\":\"auto\"}}"
     : String}
 
 # LAW: a thinking block never carries a breakpoint (the API refuses

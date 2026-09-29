@@ -47,7 +47,7 @@ def args_json.structured(is_structured: Bool, +args: String) -> String:
     case True{}:
       args
     case False{}:
-      J.stringify(J.obj(Con{J.kv("arg", J.str(args)), Nil{}}))
+      J.stringify(W.flat_out(args))
 
 def args_json(+name: String, +args: String) -> String:
   args_json.structured(
@@ -315,15 +315,17 @@ def api_body(+model: String, +req: W.WReq) -> String:
 def fn_of(tc: J.Json) -> J.Json:
   W.field_or(tc, "function", J.JNull{})
 
-def arg_of.parsed(r: Result<&2, &2, String, J.Json>, +raw: String) -> String:
+def arg_of.parsed(r: Result<&2, &2, String, J.Json>, +name: String,
+    +raw: String) -> String:
   match r:
     case Done{+j}:
-      J.get_str_or(j, "arg", raw)
+      W.flat_in(name, j, raw)
     case Fail{_}:
       raw
 
-def arg_of(+raw: String) -> String:
-  arg_of.parsed(J.parse(raw), raw)
+# a bash call with a description keeps its JSON args (W.flat_in)
+def arg_of(+name: String, +raw: String) -> String:
+  arg_of.parsed(J.parse(raw), name, raw)
 
 def tc_line(idx: Nat, tc: J.Json) -> String:
   +fn = fn_of(tc)
@@ -332,7 +334,8 @@ def tc_line(idx: Nat, tc: J.Json) -> String:
       String.append(" ",
         String.append(J.get_str_or(fn, "name", ""),
           String.append(" : ",
-            String.trim(W.wire_encode(arg_of(J.get_str_or(fn, "arguments", "")))))))))
+            String.trim(W.wire_encode(arg_of(J.get_str_or(fn, "name", ""),
+              J.get_str_or(fn, "arguments", "")))))))))
 
 def tc_lines.go(tcs: List<&2, J.Json>, +i: Nat) -> List<&2, String>:
   match tcs:

@@ -20,6 +20,9 @@ pub enum Wire {
         name: String,
         args: String,
     },
+    /// `tool_intent #<id> : <text>` (BISE-223): the model's one-line
+    /// description of a bash or run_typescript call.
+    Intent(String),
     /// A line replayed from a restored session.
     History,
     Other,
@@ -47,6 +50,11 @@ pub fn parse(line: &str) -> Wire {
     }
     if let Some(rest) = t.strip_prefix("obs: turn_done: ") {
         return Wire::TurnDone(rest.trim().to_string());
+    }
+    if let Some(rest) = line.strip_prefix("tool_intent #") {
+        if let Some((_, text)) = rest.split_once(" : ") {
+            return Wire::Intent(text.trim().to_string());
+        }
     }
     if let Some(rest) = line.strip_prefix("tool #") {
         if let Some((_, rest)) = rest.split_once(' ') {
@@ -116,6 +124,12 @@ mod tests {
                 args: "{\"arg\":\"sb list\"}".into()
             }
         );
+    }
+
+    #[test]
+    fn intent_annotation() {
+        assert_eq!(parse("tool_intent #4 : je lance les tests"), Wire::Intent("je lance les tests".into()));
+        assert_eq!(parse("history tool_intent #4 : x"), Wire::History);
     }
 
     #[test]

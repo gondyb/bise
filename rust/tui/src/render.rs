@@ -344,7 +344,7 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             None => glyph_line(G_FAILED, err_st, t.clone(), err_st, width),
         },
         Ev::Info(t) => glyph_line(G_NOTE, Style::default().fg(faint()), bend_images::display(t), dim_st, width),
-        Ev::ToolInfo { .. } | Ev::ToolResult { .. } | Ev::ToolCode { .. } => vec![],
+        Ev::ToolInfo { .. } | Ev::ToolResult { .. } | Ev::ToolCode { .. } | Ev::ToolIntent { .. } => vec![],
         Ev::Usage(u) => vec![Line::from(Span::styled(u.line(), dim_st))],
         Ev::Raw(t) => vec![Line::from(Span::styled(format!("  {}", t), dim_st))],
         Ev::AgentMsg { text, open, .. } if is_brief(text) => brief_lines(text, *open, width),
