@@ -2001,10 +2001,11 @@ Index:
 
 ### BISE-106 · level 3 is an envelope chip
 
-- **status:** todo · **owner:** bise-chip · **commits:** —
+- **status:** done · **owner:** bise-chip · **commits:** 9a19579 (tui), the QA shots + this entry
 - **track:** F · **owns:** `render.rs` (level-3 lines and folds), `theme.rs` (new role `chip`, ASCII / 16-color forms), tests, QA shots of level 3
 - **spec:** book §5 (chip), §9 "Level 3 is an envelope chip" (user pick, marketing 346dacb, site/book/messages.html variant C).
 - **what:** each agent-to-agent message = chip ` ✉︎ sender → receiver ` on the `chip` tint, then the dim text with a hanging indent, 2 lines max then `… ▸`; same pair stacks, new pair after a blank row; fold line unchanged; fallbacks per §9. Replaces today's ` │ @ from → to text` line.
+- **notes:** `render::l3_lines` → `l3_lines_as(ChipForm, …)` (`Tinted` / `Bracketed`: NO_COLOR via `theme::chip_bg() == Reset`, or `BISE_ASCII=1`); `chip_spans`, `chip_names` (cap 12 / 8 / 6 by W = width − 2, then the receiver cut before the sender, envelope and arrow never), `l3_text_rows` (2 rows then `…` + ` ▸`; a word cut in its middle goes whole; open: every line, ` ▾` at the end), `G_ENVELOPE` = U+2709 U+FE0E (1 column, tested in the buffer), `envelope()` (`@` in ASCII). `l3_long` = several lines or wider than 2 × 30 columns (what may be cut at any W ≥ 34). `theme::Palette.chip` + `chip_bg()`; test `the_chip_reads_and_shows` (text 13.0 / dim 5.9 dark, dim 4.8 light, tint vs ground ≥ 1.08). Spacing: `feed::wants_gap_before` compares the pair (`l3_pair`, either way round, empty `to` = the feed's owner), also inside an open fold. Fold line: x0+2, no rail, cut from the right with `…`, the pulse kept (`fold_line(.., width)`). `hints` finds level 3 by its envelope + arrow. Tests: `render::chip_tests` (tint, bold sender, cut names, hanging indent, 2-row cap, the three widths + compact, receiver-first cut at every width 1-119, brackets for NO_COLOR and ASCII, same pair / new pair, no accent for main, fold line), the old level-3 tests moved to the chip. QA: dark/light/ascii shots showing level 3 recaptured (03, 04-09, 11, 15-18; PNGs of dark 03/04/15/17/18, light 15). Differences with the mockup: none in the layout; the ASCII chip is bracketed and untinted (the §9 ASCII form); no runtime check that the terminal draws ✉︎ 1 wide (the `@` fallback is ASCII mode). Gates: quick green (14 s) per commit, full at the end.
 
 ### BISE-107 · working = a gust blowing by
 
