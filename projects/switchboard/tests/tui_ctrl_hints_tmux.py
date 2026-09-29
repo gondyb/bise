@@ -2,7 +2,7 @@
 kitty keyboard protocol's bytes are written to the pane as a terminal with
 flags 1+2+8+16 sends them (tmux itself does not speak the protocol, so the
 TUI keeps flag 1 alone, but it reads what arrives). Ctrl held alone shows
-the ctrl keys in the key bar after ~80 ms, its release takes them away at
+the ctrl keys in the key bar after ~150 ms, its release takes them away at
 once, a ctrl+o combo never shows them, and the associated text types é
 (dead key), å (option) and A (caps lock).
 

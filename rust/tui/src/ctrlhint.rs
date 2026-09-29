@@ -26,9 +26,9 @@ use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
 
 /// How long ctrl is held alone before the hints show: a ctrl+x combo
-/// never flashes them (a combo's key comes well within 80 ms; BISE-231,
-/// was 250 ms).
-pub(crate) const DELAY: Duration = Duration::from_millis(80);
+/// never flashes them (a combo's key comes well within 150 ms; BISE-231,
+/// was 250 ms, then 80 ms).
+pub(crate) const DELAY: Duration = Duration::from_millis(150);
 
 /// The kitty keyboard flags for the hints: disambiguate, event types
 /// (press, repeat, release), all keys as escape codes (ctrl alone), and
@@ -355,8 +355,8 @@ mod tests {
         let ms = |n| t + Duration::from_millis(n);
         let mut h = Hold::default();
         h.event(&ctrl(KeyEventKind::Press), t);
-        assert!(!h.shown(ms(79)) && h.shown(ms(80)));
-        assert_eq!(h.due(ms(30)), Some(Duration::from_millis(50)));
+        assert!(!h.shown(ms(149)) && h.shown(ms(150)));
+        assert_eq!(h.due(ms(30)), Some(Duration::from_millis(120)));
         // the terminal repeats the held modifier: nothing changes
         h.event(&ctrl(KeyEventKind::Repeat), ms(300));
         assert!(h.shown(ms(301)));
@@ -371,7 +371,7 @@ mod tests {
         // a fast ctrl+o, all within the delay: never shown, before or after
         h.event(&ctrl(KeyEventKind::Press), ms(3000));
         h.event(&ev(KeyCode::Char('o'), KeyModifiers::CONTROL, KeyEventKind::Press), ms(3030));
-        assert!(!h.shown(ms(3079)) && !h.shown(ms(3080)));
+        assert!(!h.shown(ms(3149)) && !h.shown(ms(3150)));
         h.event(&ctrl(KeyEventKind::Release), ms(3060));
         assert!(!h.shown(ms(4000)) && h.due(ms(4000)).is_none());
         // ctrl+shift, a click, a paste: no hints
