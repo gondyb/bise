@@ -30,6 +30,18 @@ export PATH="$HOME/.cargo/bin:$HOME/.bend/bin:$PATH"
 
 say() { echo "versions: $*" >&2; }
 
+# what to remove when the script exits, built or failed: a RETURN trap
+# does not run when set -e exits, and the /tmp/sb-build-* worktrees leaked
+CLEAN_TMP="" CLEAN_WT=""
+cleanup() {
+  if [ -n "$CLEAN_TMP" ]; then rm -rf "$CLEAN_TMP"; fi
+  if [ -n "$CLEAN_WT" ]; then
+    git worktree remove --force "$CLEAN_WT" 2>/dev/null || true
+    git worktree prune 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
 # id of the working tree
 tree_id() {
   local head dirty
@@ -56,7 +68,7 @@ build_from() {
   mkdir -p "$BUILD/cache" "$VERSIONS"
   local tmp="$vdir.tmp.$$"
   rm -rf "$tmp"; mkdir -p "$tmp/rust/jsrt/target/debug"
-  trap "rm -rf '$tmp'" EXIT
+  CLEAN_TMP="$tmp"
 
   # release: the TUI draws ~10x faster than the debug build
   say "cargo build --release $id..."
@@ -110,7 +122,7 @@ build_from() {
     echo "repo=$REPO"
   } > "$tmp/VERSION"
   rm -rf "$vdir"; mv "$tmp" "$vdir"
-  trap - EXIT
+  CLEAN_TMP=""
   say "version $id built: $vdir"
 }
 
@@ -126,7 +138,7 @@ build() {
     if ! built "$id"; then
       local wt="/tmp/sb-build-$id-$$"
       git worktree add -q --detach "$wt" "$id"
-      trap "git worktree remove --force '$wt' 2>/dev/null || true" RETURN
+      CLEAN_WT="$wt"
       build_from "$wt" "$id" "$id"
     fi
   fi
