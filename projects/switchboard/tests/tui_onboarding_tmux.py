@@ -100,10 +100,10 @@ def main():
                   "↑↓ choose · enter ok"]:
             assert s in flat(sc), sc
         shot("3-model", sc)
-        # 4 folder and the honest line
+        # 4 folder and who handles worktrees
         t.keys("Enter")
         sc = t.wait("enter ok · o another folder")
-        for s in ["i'll work in ", "git repo ✓", "one honest thing: agents run commands here without asking you."]:
+        for s in ["i'll work in ", "git repo ✓", "worktrees and conflicts: i handle them for you."]:
             assert s in flat(sc), sc
         shot("4-folder", sc)
         t.keys("o")

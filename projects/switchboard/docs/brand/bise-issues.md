@@ -2633,3 +2633,11 @@ Index:
 - **spec:** user (via main): OAuth subscription login is not planned before launch (API keys only); remove `sign in with the browser` from the onboarding entirely.
 - **what:** the model step shows the keys found, then `paste a key` / `paste another key`; the greyed `3 · sign in with the browser` / `not built yet.` row and `Opt::Browser` are gone, so ↑↓ wrap over every row. Book §15 and tui-spec updated (also for BISE-213/214: the welcome's gloss and the full provider list).
 - **notes:** test `onboarding::tests::step_3_model_lists_found_keys_and_saves_a_pasted_one` (no `3 · `, no "browser", ↑↓ wrap); `tui_onboarding_tmux.py` no longer waits for the row.
+
+### BISE-216 · onboarding folder step: bise handles worktrees, no honest line
+
+- **status:** done · **owner:** onboard-gloss · **commits:** `git log --grep BISE-216`
+- **owns:** `rust/tui/src/onboarding.rs` (`folder_lines`, `FOLDER_NOTE`)
+- **spec:** user (via main): « I manage worktrees, conflicts, etc for you » ou un truc du genre, instead of `no worktrees to merge.`; remove the whole `one honest thing: …` line (approvals come before launch). Wording by designer.
+- **what:** under `i'll work in ~/lab/app · a git repo ✓`: `your agents share this folder and talk to each other.` / `worktrees and conflicts: i handle them for you.` (dim, one sentence a row). The honest line (and its no-git variant) is gone. Book §15 and tui-spec follow.
+- **notes:** test `onboarding::tests::step_4_folder_and_who_handles_worktrees` (both rows, no "honest", no "no worktrees to merge"); `tui_onboarding_tmux.py` waits for the new line.

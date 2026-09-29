@@ -662,13 +662,11 @@ Vibe's (`vibe/setup/onboarding`). Six steps, `enter` to go on:
    9 rows at a time). API keys only: no browser sign-in before launch.
    `↑↓` chooses. A pasted key goes in `auth.json` like `login`
    (asks before replacing one); the agents started from then on use it.
-4. **Folder, and one honest thing.** `i'll work in ~/lab/app · a git repo ✓`
-   / `all your agents share this folder and know about each other. no
-   worktrees to merge.` / `one honest thing: agents run commands here without
-   asking you. git is your safety net, so commit often.` When an approval
-   mode ships (probably before release), this becomes: `agents ask you before
-   risky commands (push, deleting outside this folder). change it in
-   /settings.` `o` picks another folder.
+4. **Folder.** `i'll work in ~/lab/app · a git repo ✓` / `your agents share
+   this folder and talk to each other.` / `worktrees and conflicts: i handle
+   them for you.` (true: a worktree only when one helps, cleaned up after).
+   No "one honest thing" line: approvals ship before launch. `o` picks
+   another folder.
 5. **How it works, in three lines,** appearing one by one:
    `› you talk to me. i start agents for the work, in the background.`
    `∿ they show up on the right. ⌥ + number to look inside, esc to come back.`

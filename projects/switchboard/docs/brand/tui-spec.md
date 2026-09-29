@@ -299,12 +299,10 @@ screen). Six steps, `enter` to go on:
    environment comes first ("use ANTHROPIC_API_KEY · found"), then "paste a
    key" with every provider that takes one. API keys only: no browser
    sign-in before launch.
-4. **Folder, and one honest thing.** "i'll work in ~/lab/app · a git repo ✓.
-   all your agents share this folder." Then: "agents run commands here without
-   asking you. git is your safety net." **⚠** No approval mode yet; it will
-   probably ship before release. Then the copy becomes: "agents ask you before
-   risky commands (push, deleting outside this folder). change it in
-   /settings."
+4. **Folder.** "i'll work in ~/lab/app · a git repo ✓" / "your agents
+   share this folder and talk to each other." / "worktrees and conflicts: i
+   handle them for you." No warning about commands: approvals ship before
+   launch.
 5. **How it works, in three lines.** `›` you talk, `∿` agents on the right
    (⌥ + number, esc), `?` a card when someone needs you.
 6. **The real first run, with just-in-time hints.** No tour: each hint shows

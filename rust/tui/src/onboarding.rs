@@ -2,7 +2,7 @@
 //!
 //! Six steps, `enter` to go on: the typed welcome and the `:*` pop, the
 //! theme with two live previews, the model (the API keys the harness
-//! reads), the folder and the honest line, how it works in three lines,
+//! reads), the folder and who handles worktrees, how it works in three lines,
 //! then the normal UI (step 6: the real first run; its one-time hints are
 //! BISE-61).
 //!
@@ -869,6 +869,10 @@ fn model_list(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
     v
 }
 
+/// What sharing the folder means, one sentence a row.
+const FOLDER_NOTE: [&str; 2] =
+    ["your agents share this folder and talk to each other.", "worktrees and conflicts: i handle them for you."];
+
 fn folder_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
     let repo = if o.git { "· a git repo ✓" } else { "· not a git repo" };
     let first = vec![bold("i'll work in ", theme::text()), bold(o.folder.clone(), theme::text())];
@@ -882,25 +886,9 @@ fn folder_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
         vec![Line::from(first), Line::from(s(repo, theme::dim()))]
     };
     blanks(&mut v, gap);
-    v.extend([
-        Line::from(s(
-            "all your agents share this folder and know about each other. no worktrees to merge.",
-            theme::dim(),
-        )),
-        Line::raw(""),
-        Line::from(vec![
-            s("one honest thing: ", theme::text()),
-            s("agents run commands here without asking you.", theme::accent()),
-            s(
-                if o.git {
-                    " git is your safety net, so commit often."
-                } else {
-                    " git would be your safety net: git init here, and commit often."
-                },
-                theme::dim(),
-            ),
-        ]),
-    ]);
+    // designer's wording (BISE-216); no "one honest thing" line: approvals
+    // come before launch
+    v.extend(FOLDER_NOTE.map(|l| Line::from(s(l, theme::dim()))));
     if o.other_folder {
         v.push(Line::raw(""));
         v.push(Line::from(s(
@@ -1509,7 +1497,7 @@ mod tests {
     }
 
     #[test]
-    fn step_4_folder_and_the_honest_line() {
+    fn step_4_folder_and_who_handles_worktrees() {
         let h = tmp("s4");
         let ws = h.join("lab/app");
         std::fs::create_dir_all(ws.join(".git")).unwrap();
@@ -1519,13 +1507,14 @@ mod tests {
         let sc = screen(&o, 10, 150, 30);
         for s in [
             "i'll work in ~/lab/app · a git repo ✓",
-            "all your agents share this folder and know about each other. no worktrees to merge.",
-            "one honest thing: agents run commands here without asking you. git is your safety net, so commit often.",
+            "your agents share this folder and talk to each other.",
+            "worktrees and conflicts: i handle them for you.",
             "enter ok · o another folder",
             "○ ○ ○ ● ○ ○",
         ] {
             assert!(flat(&sc).contains(s), "{}\n{}", s, sc);
         }
+        assert!(!sc.contains("honest") && !sc.contains("no worktrees to merge"), "{}", sc);
         o.on_key(key(KeyCode::Char('o')), 1, &none);
         assert!(screen(&o, 10, 120, 30).contains("another folder? start me there"));
     }
