@@ -8,7 +8,7 @@
 //! clipboard image). Nothing here panics on any input.
 
 use crate::app::App;
-use crate::theme::{accent, dim, error, text, G_FAILED, G_IMAGE};
+use crate::theme::{accent, dim, error, glyph, text, G_FAILED, G_IMAGE, G_QUOTE};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use std::cell::RefCell;
@@ -122,15 +122,36 @@ pub(crate) fn on_paste(app: &mut App, text: &str) -> Option<Result<Vec<String>, 
     Some(Ok(labels))
 }
 
-/// The text to send: each label still present becomes its marker; the
-/// attachments start over.
+/// The text to send: each image label still present becomes its
+/// marker; each quote label leaves the text and its tag goes in front,
+/// one per line, in text order (quote.rs); the attachments start over.
 pub(crate) fn expand(app: &mut App, text: &str) -> String {
     let atts = std::mem::take(&mut app.attachments);
     let mut out = text.to_string();
+    let mut quotes: Vec<(usize, &Attachment)> = Vec::new();
     for a in &atts {
-        out = out.replace(&a.label, &a.marker);
+        if crate::quote::is_quote(&a.label) {
+            if let Some(at) = text.find(&a.label) {
+                quotes.push((at, a));
+            }
+            // the label and one space after it (else before it) go
+            for pat in [format!("{} ", a.label), format!(" {}", a.label), a.label.clone()] {
+                out = out.replace(&pat, "");
+            }
+        } else {
+            out = out.replace(&a.label, &a.marker);
+        }
     }
-    out
+    if quotes.is_empty() {
+        return out;
+    }
+    quotes.sort_by_key(|(at, _)| *at);
+    let mut head: Vec<&str> = quotes.iter().map(|(_, a)| a.marker.as_str()).collect();
+    let rest = out.trim();
+    if !rest.is_empty() {
+        head.push(rest);
+    }
+    head.join("\n")
 }
 
 /// The picked `@` entry is an image file: attach it (the `@token` goes).
@@ -174,23 +195,36 @@ pub(crate) fn pick_image(app: &mut App, rel: &str) -> Option<Result<String, Stri
 /// What a clipboard image is called in the strip and the history.
 const CLIPBOARD: &str = "clipboard";
 
-/// The labels `[Image #N]` in `text`: (first char index, char index
-/// past it, N). The composer draws each as one chip, the cursor steps
-/// over it, a delete takes it whole.
+/// The labels `[Image #N]` and `[Quote #N]` (quote.rs) in `text`: (first
+/// char index, char index past it, N), in text order. The composer draws
+/// each as one chip, the cursor steps over it, a delete takes it whole.
 pub(crate) fn chips(text: &str) -> Vec<(usize, usize, usize)> {
-    const OPEN: &str = "[Image #";
+    let mut v = image_chips(text);
+    v.extend(crate::quote::chips(text));
+    v.sort_unstable();
+    v
+}
+
+/// The image labels `[Image #N]` in `text`.
+pub(crate) fn image_chips(text: &str) -> Vec<(usize, usize, usize)> {
+    find_labels(text, "[Image #")
+}
+
+/// The labels `{open}N]` in `text` (`open` ASCII): (first char index,
+/// char index past it, N).
+pub(crate) fn find_labels(text: &str, open: &str) -> Vec<(usize, usize, usize)> {
     let mut out = Vec::new();
     let mut from = 0usize; // bytes
     let mut ci = 0usize; // chars before `from`
-    while let Some(i) = text.get(from..).and_then(|t| t.find(OPEN)) {
+    while let Some(i) = text.get(from..).and_then(|t| t.find(open)) {
         let at = from + i;
         ci += text[from..at].chars().count();
-        let digits: String = text[at + OPEN.len()..].chars().take_while(char::is_ascii_digit).collect();
-        let close = at + OPEN.len() + digits.len();
+        let digits: String = text[at + open.len()..].chars().take_while(char::is_ascii_digit).collect();
+        let close = at + open.len() + digits.len();
         let n = digits.parse::<usize>().ok().filter(|_| digits.len() <= 6);
         match n {
             Some(n) if text[close..].starts_with(']') => {
-                let len = OPEN.len() + digits.len() + 1; // ASCII: bytes = chars
+                let len = open.len() + digits.len() + 1; // ASCII: bytes = chars
                 out.push((ci, ci + len, n));
                 from = at + len;
                 ci += len;
@@ -220,8 +254,12 @@ pub(crate) fn chip_widen(text: &str, a: usize, b: usize) -> (usize, usize) {
     })
 }
 
-/// How the composer draws the label `[Image #N]`.
+/// How the composer draws the label `[Image #N]` (`▣ N`) or `[Quote
+/// #N]` (`❝ N`).
 pub(crate) fn chip_text(label: &str) -> String {
+    if let Some(n) = label.strip_prefix(crate::quote::OPEN) {
+        return format!("{} {}", glyph(G_QUOTE), n.trim_end_matches(']'));
+    }
     let n = label.trim_start_matches("[Image #").trim_end_matches(']');
     format!("{G_IMAGE} {n}")
 }
@@ -451,9 +489,9 @@ pub(crate) fn strip_row(n: usize, info: &Info) -> (String, String) {
 /// The strip header (book §17).
 pub(crate) const STRIP_TITLE: &str = "attached · backspace on a chip removes it";
 
-/// The attachments still in the composer text, by number.
+/// The images still in the composer text, by number.
 fn shown(app: &App) -> Vec<(usize, &Attachment)> {
-    let mut v: Vec<(usize, &Attachment)> = chips(&app.ed.text)
+    let mut v: Vec<(usize, &Attachment)> = image_chips(&app.ed.text)
         .into_iter()
         .filter_map(|(_, _, n)| app.attachments.iter().find(|a| a.label == label(n)).map(|a| (n, a)))
         .collect();
@@ -462,9 +500,23 @@ fn shown(app: &App) -> Vec<(usize, &Attachment)> {
     v
 }
 
-/// How many rows the strip takes (0: no image attached).
+/// The quotes still in the composer text, by number.
+fn shown_quotes(app: &App) -> Vec<(usize, crate::quote::Quote)> {
+    let mut v: Vec<(usize, crate::quote::Quote)> = crate::quote::chips(&app.ed.text)
+        .into_iter()
+        .filter_map(|(_, _, n)| {
+            let l = crate::quote::label(n);
+            app.attachments.iter().find(|a| a.label == l).and_then(crate::quote::of).map(|q| (n, q))
+        })
+        .collect();
+    v.sort_by_key(|(n, _)| *n);
+    v.dedup_by_key(|(n, _)| *n);
+    v
+}
+
+/// How many rows the strip takes (0: nothing attached).
 pub(crate) fn strip_height(app: &App) -> u16 {
-    match shown(app).len() {
+    match shown_quotes(app).len() + shown(app).len() {
         0 => 0,
         n => n as u16 + 1,
     }
@@ -507,11 +559,27 @@ fn cut_end(s: &str, max: usize) -> String {
 pub(crate) fn strip_lines(app: &App, width: usize) -> Vec<Line<'static>> {
     use unicode_width::UnicodeWidthStr;
     let rows = shown(app);
-    if rows.is_empty() {
+    let quotes = shown_quotes(app);
+    if rows.is_empty() && quotes.is_empty() {
         return Vec::new();
     }
     let d = Style::default().fg(dim());
     let mut out = vec![Line::from(Span::styled(STRIP_TITLE.to_string(), d))];
+    // the quotes first (they go first in the message): `❝ 1 “words…”`
+    // and, dim on the right, `main · 3 lines`
+    for (n, q) in quotes {
+        let chip = chip_text(&crate::quote::label(n));
+        let right = crate::quote::about(&q);
+        let room = width.saturating_sub(chip.width() + 3 + right.width() + 2).max(1);
+        let words = format!(" “{}”", crate::quote::preview(&q.text, room));
+        let pad = width.saturating_sub(chip.width() + words.width() + right.width()).max(2);
+        out.push(Line::from(vec![
+            Span::styled(chip, chip_style()),
+            Span::styled(words, Style::default().fg(text())),
+            Span::styled(" ".repeat(pad), d),
+            Span::styled(right, d),
+        ]));
+    }
     for (n, a) in rows {
         let (_, right) = strip_row(n, &a.info);
         let chip = format!("{G_IMAGE} {n}");

@@ -484,6 +484,26 @@ The same three levels everywhere, in main and inside an agent.
   300 ms. At the next launch every draft is back in its composer and `↑`
   recalls the prompts sent before. Sending a draft takes it off the disk
   at once. No message about it: it just works.
+- **Ask about a selection** (BISE-134, after Vibe Work's "Ask about
+  this"; user: « si je sélectionne du texte dans le thread et que je me
+  mets à taper … ça met le texte que j'ai sélectionné en contexte pour
+  l'agent »). Select text in the history (the release still copies it);
+  the key bar says `type ask about it   cmd+c copy   esc drop`. The first
+  key you type puts the selection in the composer as a quote chip `❝ 1`,
+  at the start, before your words, and ends the selection; the key types
+  after it. Selecting alone adds nothing: a selection is often only a
+  copy, and a quote you did not ask for would ride along with your next
+  message. The attachments section lists it: `❝ 1 “the login breaks on
+  safari…”  main · 3 lines`; a backspace on the chip removes it, like an
+  image. Several selections, several quotes (4 at most, 8 000 characters
+  each). A `/` typed in an empty composer stays a command (no quote). The
+  draft keeps its quotes like its images. On send, each quote leaves the
+  text and goes in front as a tag, then your words:
+  `<selection from="main">` newline, the selected text, newline,
+  `</selection>`, newline, your text. `from` names who wrote the selected
+  lines (the agent in view, `you`, the sender of an agent message; several
+  joined with `, `). Your line in the history shows each quote as one dim
+  line above your words: `❝ the login breaks on safari… · main · 3 lines`.
 - **Queued messages** (BISE-89, after Codex). During a turn, `tab` keeps
   the composer text for after the turn instead of steering: it stays in
   the TUI, **nothing goes to the hub** until it leaves the queue. The queue
@@ -514,7 +534,7 @@ Bottom of the screen, top to bottom:
 
 1. the status row (1 row);
 2. the queued messages (BISE-89) and their faint hint, if any: they are the composer's pending texts, so they sit right above it;
-3. the images strip, if any (the composer's attachments, §14);
+3. the attachments strip, if any (the composer's quotes, §13 "Ask about a selection", then its images, §14);
 4. the composer: a bar `│` in column 1 on every row of the block, faint while the composer is empty, accent as soon as there is text (the same bar your message keeps in the history, so a sent message just moves up unchanged); 1 blank row (bar only) above the text and 1 below; the text from column 3, at least 2 rows, growing one row per wrapped row up to min(12, 40% of the terminal height), then scrolling with the cursor row in view; right margin 2 columns; the text wraps at the same width as your message in the history (§11), so the composer shows how it will read. Empty: the cursor at column 3 and the dim placeholder. Recording: the bar in accent, the meter glyph at column 3 of the first text row, the text after it. `›` leaves the composer (it stays for the queued lines).
 5. the key hints: their own last row, dim, flush right with 2 columns of margin (never on the text row).
 

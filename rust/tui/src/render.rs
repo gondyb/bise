@@ -761,6 +761,20 @@ pub(crate) fn closed_word(res: &str) -> String {
 // No bar, no background: the terminal's own shows through.
 pub(crate) fn user_block_lines(msg: &str, mark: Mark, width: usize) -> Vec<Line<'static>> {
     let style = Style::default().fg(text());
+    // BISE-134: the quotes in front (quote.rs), one dim line each:
+    // `❝ the selected words… · main · 3 lines`
+    let (quotes, body) = crate::quote::split(msg);
+    let d = Style::default().fg(dim());
+    let quote_lines: Vec<Line<'static>> = quotes
+        .iter()
+        .map(|q| {
+            let about = format!(" · {}", crate::quote::about(q));
+            let room = width.saturating_sub(3 + 2 + unicode_width::UnicodeWidthStr::width(about.as_str())).clamp(8, 60);
+            let g = crate::theme::glyph(crate::theme::G_QUOTE);
+            Line::from(Span::styled(format!("{g} {}{about}", crate::quote::preview(&q.text, room)), d))
+        })
+        .collect();
+    let msg = body;
     let mut lines: Vec<Line<'static>> = msg
         .split('\n')
         .map(|l| Line::from(crate::attach::chip_spans(l.trim_end_matches('\r'), style)))
@@ -773,7 +787,13 @@ pub(crate) fn user_block_lines(msg: &str, mark: Mark, width: usize) -> Vec<Line<
     // column 0 on every row of your message, the text from column 3 (`›`
     // stays the composer's prompt); the heavy `┃` is a card's
     let bar = Span::styled(format!("{}  ", user_bar()), Style::default().fg(accent()));
-    let mut rows = hung_rows(&bar, &bar, lines, width);
+    let mut rows = hung_rows(&bar, &bar, quote_lines, width);
+    if !(msg.is_empty() && !quotes.is_empty()) {
+        rows.extend(hung_rows(&bar, &bar, lines, width));
+    } else if let (Some(last), Some(m)) = (rows.last_mut(), mark_span(mark)) {
+        // only quotes: the mark after the last one
+        last.spans.push(m);
+    }
     // the sizes of its images, dim, under it (still behind the bar)
     if let Some(sizes) = crate::attach::sizes_line(msg) {
         rows.extend(hung_rows(&bar, &bar, [Line::from(Span::styled(sizes, Style::default().fg(dim())))], width));

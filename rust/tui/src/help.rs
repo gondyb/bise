@@ -120,6 +120,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(SELECT, "click|drag|shift+click", "composer: place the cursor, select, extend"),
     r(SELECT, "double click|triple click", "select a word / everything (feed: the word / the row)"),
     r(SELECT, "drag in the feed", "select; the release copies it"),
+    r(SELECT, "select, then type", "ask about it: the selection goes in as a quote ❝ (backspace on it removes it)"),
     r(SELECT, "ctrl+shift+c|cmd+c", "copy the composer selection, else the feed's").top(),
     r(SELECT, "ctrl+shift+x|cmd+x", "cut"),
     r(SELECT, "esc", "drop the selection"),

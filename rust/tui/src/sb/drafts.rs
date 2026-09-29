@@ -332,9 +332,11 @@ fn snapshot(app: &App) -> Saved {
     Saved { drafts, attachments, history, queues }
 }
 
-/// An attachment still usable: the image store still has its file.
+/// An attachment still usable: a quote (its text is its marker), an
+/// image whose file the image store still has.
 fn still_there(a: &crate::attach::Attachment) -> bool {
-    bend_images::markers(&a.marker).first().is_some_and(|m| Path::new(&m.b64).is_file())
+    crate::quote::is_quote(&a.label)
+        || bend_images::markers(&a.marker).first().is_some_and(|m| Path::new(&m.b64).is_file())
 }
 
 /// At start: the workspace's drafts and history back in the app, the
@@ -617,6 +619,24 @@ mod tests {
         assert_eq!(on_disk(&app)["attachments"].as_array().unwrap().len(), 2);
         let b = restarted(&app);
         assert_eq!(b.attachments, vec![att("[Image #1]", &b64)]);
+    }
+
+    /// BISE-134: a quote stays with its draft across a restart.
+    #[test]
+    fn a_quote_is_kept_in_the_draft() {
+        let (_d, mut app) = setup();
+        let q = crate::attach::Attachment {
+            label: crate::quote::label(1),
+            marker: crate::quote::tag("main", "the login\nbreaks"),
+            info: Default::default(),
+        };
+        app.attachments = vec![q.clone()];
+        typed(&mut app, "[Quote #1] why?");
+        flush(&app);
+        let b = restarted(&app);
+        assert_eq!(b.ed.text, "[Quote #1] why?");
+        assert_eq!(b.attachments, vec![q]);
+        assert_eq!(crate::attach::strip_height(&b), 2);
     }
 
     #[test]

@@ -282,6 +282,7 @@ pub(crate) const G_SUBCALL: &str = "↳"; // a sub-call inside a TypeScript run
 pub(crate) const G_PATCH: &str = "±"; // a file edit
 pub(crate) const G_MSG: &str = "@"; // a message between agents, or to you (was ✉)
 pub(crate) const G_IMAGE: &str = "▣"; // an image (accent chip)
+pub(crate) const G_QUOTE: &str = "❝"; // a quote of the history (accent chip, BISE-134)
 pub(crate) const G_CARD: &str = "?"; // a card: a decision that needs you (accent)
 pub(crate) const G_COMPACTING: &str = "≡"; // compaction running (dim, pulsing; was ⟳)
 pub(crate) const G_SUMMARY: &str = "≡"; // compaction summary (dim, still)
@@ -325,6 +326,7 @@ pub(crate) const ASCII: &[(&str, &str)] = &[
     ("↳", "L"),
     ("±", "%"),
     ("▣", "#"),
+    ("❝", "\""),
     ("≡", "="),
     ("▲", "^"),
     ("»", "}"),
@@ -678,7 +680,7 @@ mod tests {
     }
 
     const ALL_GLYPHS: &[&str] = &[
-        G_YOU, G_MAIN, G_BRIEF, G_THINK, G_BASH, G_TS, G_SUBCALL, G_PATCH, G_MSG, G_IMAGE,
+        G_YOU, G_MAIN, G_BRIEF, G_THINK, G_BASH, G_TS, G_SUBCALL, G_PATCH, G_MSG, G_IMAGE, G_QUOTE,
         G_CARD, G_COMPACTING, G_SUMMARY, G_INTERRUPTED, G_WRAP, G_STARTING, G_WORKING,
         G_WAITING, G_NEEDS_YOU, G_DONE, G_FAILED, G_IDLE, G_STOPPED, G_SENDING, G_RECEIVED,
         G_READ, G_UNREAD, G_WORKTREE, G_OVERLAP, G_RESTART_FAILED, G_BUILDING, G_CLOSED, G_OPEN,

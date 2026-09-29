@@ -28,6 +28,8 @@ pub(crate) enum Mode {
     FilePopup,
     /// images are attached to the draft (book §14)
     Images,
+    /// text is selected in the history: typing quotes it (BISE-134)
+    Quote,
     /// `D` asks before dropping an agent (BISE-43)
     DropAsk,
     /// a yes / no question in the status row
@@ -79,6 +81,7 @@ impl Mode {
                 ("/", "commands"),
                 ("?", "help"),
             ],
+            Mode::Quote => &[("type", "ask about it"), ("cmd+c", "copy"), ("esc", "drop")],
             Mode::DropAsk => &[("y", "drop"), ("n or esc", "keep")],
             Mode::Confirm => &[("y", "yes"), ("n", "no"), ("esc", "cancel")],
             Mode::CardFull => &[("alt+r", "answer"), ("pgup/pgdn", "scroll"), ("ctrl+f", "back")],
@@ -117,6 +120,8 @@ pub(crate) fn mode(app: &App) -> Mode {
         Mode::Transcribing
     } else if commands::popup_open(app) && files::token(&app.ed.text, app.ed.cursor).is_some() {
         Mode::FilePopup
+    } else if app.feed_sel.is_some() && app.mouse.drag.is_none() {
+        Mode::Quote
     } else if !app.pending && attach::strip_height(app) > 0 {
         Mode::Images
     } else {

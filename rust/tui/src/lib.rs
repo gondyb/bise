@@ -66,6 +66,7 @@ mod emoji;
 mod editor;
 mod clipboard;
 mod attach;
+mod quote;
 mod usage;
 mod models;
 mod term;

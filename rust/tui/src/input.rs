@@ -157,6 +157,15 @@ pub(crate) fn composer_key(app: &mut App, k: &crossterm::event::KeyEvent) {
             }
         }
         Action::Insert(t) => {
+            // BISE-134: typing with a selection in the history quotes it
+            // first (quote.rs); the key then types after the chip
+            // (not a `/` that starts a command)
+            let command = t == "/" && app.ed.text.is_empty();
+            match crate::quote::take_selection(app).filter(|_| !command) {
+                Some(Ok(chip)) => flash(app, format!("quoted {chip} · backspace on it removes it")),
+                Some(Err(e)) => flash(app, e),
+                None => {}
+            }
             app.ed.insert(&t);
             app.popup_sel = 0;
             // a typed (never a pasted) `:name:` becomes its emoji

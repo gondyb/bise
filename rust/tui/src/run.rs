@@ -268,11 +268,14 @@ fn zen_input(app: &App, ev: &Event, before: &Before) -> crate::zen::Input {
     use crate::zen::Input;
     let changed = app.ed.text != before.text || app.ed.pending_dead() != before.dead;
     let popup = before.popup || !crate::commands::popup_items(app).is_empty();
+    // BISE-134: a typed key that took the history's selection as a quote
+    // is typing (the selection is the composer's now)
+    let quoted = before.feed_sel.is_some() && app.feed_sel.is_none() && changed && app.key_in_composer;
     let outside = before.front
         || app.help.is_some()
         || app.term.shown()
         || sb::scene(app) != before.scene
-        || app.feed_sel != before.feed_sel
+        || (app.feed_sel != before.feed_sel && !quoted)
         || (app.follow, app.scroll) != before.view
         || app.show_thinking != before.show_thinking
         || app.voice.state() != before.voice;
@@ -508,6 +511,21 @@ mod zen_tests {
         // a popup (`/` in an empty composer) is not zen
         app.ed.clear();
         assert_eq!(event(&mut app, key(KeyCode::Char('/')), t), Input::Other);
+        assert!(!app.zen.active(t));
+    }
+
+    /// BISE-134: typing with a selection in the history quotes it and
+    /// enters zen like any typing; esc on the selection is still out.
+    #[test]
+    fn typing_that_quotes_the_selection_is_typing() {
+        let t = Instant::now();
+        let mut app = app_with_agents();
+        app.feed_sel = Some(crate::feedsel::FeedSel { anchor: (0, 0, 0), head: (0, 0, 200) });
+        assert_eq!(event(&mut app, key(KeyCode::Char('w')), t), Input::Typing);
+        assert!(app.ed.text.starts_with("[Quote #1] w"), "{}", app.ed.text);
+        assert!(app.zen.active(t));
+        app.feed_sel = Some(crate::feedsel::FeedSel { anchor: (0, 0, 0), head: (0, 0, 200) });
+        assert_eq!(event(&mut app, key(KeyCode::Esc), t), Input::Other);
         assert!(!app.zen.active(t));
     }
 
