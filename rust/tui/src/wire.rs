@@ -39,6 +39,14 @@ pub(crate) struct ToolData {
     // at the width it was last drawn (toolbox::box_lines sets it; the
     // feed's disclosure reads it through toolbox::box_folds)
     pub(crate) clips: std::cell::Cell<bool>,
+    // in memory only (BISE-223): in main's feed a bash/ts call is one
+    // row until opened (a click: its box; ctrl+o: every box, whole)
+    pub(crate) opened: bool,
+    // in memory only (BISE-223): the first call of a folded run of done
+    // calls in main (`▸ 6 commands`) keeps whether the fold is open
+    pub(crate) fold_open: bool,
+    // how long it took, frozen at finish (the fold's total)
+    pub(crate) took: Option<std::time::Duration>,
 }
 
 impl ToolData {
@@ -47,9 +55,9 @@ impl ToolData {
     /// a running tool keeps its elapsed live.
     pub(crate) fn bare(id: u32, state: ToolState) -> ToolData {
         let started = std::time::Instant::now();
-        let elapsed = match state {
-            ToolState::Run => None,
-            _ => Some(fmt_elapsed(started)),
+        let (elapsed, took) = match state {
+            ToolState::Run => (None, None),
+            _ => (Some(fmt_elapsed(started)), Some(started.elapsed())),
         };
         ToolData {
             id,
@@ -64,6 +72,9 @@ impl ToolData {
             expanded: false,
             quiet: false,
             clips: std::cell::Cell::new(false),
+            opened: false,
+            fold_open: false,
+            took,
         }
     }
 }

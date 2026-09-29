@@ -45,6 +45,7 @@ use markdown::*;
 mod code;
 mod render;
 mod toolbox;
+mod toolrow;
 use render::*;
 mod feed;
 use feed::*;

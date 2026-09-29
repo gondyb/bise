@@ -12,7 +12,12 @@ use ratatui::text::{Line, Span};
 // ---- tool-call rendering helpers ----
 
 pub(crate) fn fmt_elapsed(started: std::time::Instant) -> String {
-    let s = started.elapsed().as_secs_f64();
+    fmt_duration(started.elapsed())
+}
+
+/// A duration as the tools show it: `0.3s`, `12s`, `2m05s`.
+pub(crate) fn fmt_duration(d: std::time::Duration) -> String {
+    let s = d.as_secs_f64();
     if s < 10.0 {
         format!("{:.1}s", s)
     } else if s < 60.0 {
@@ -901,7 +906,7 @@ pub(crate) fn tool_head(td: &ToolData, tick: u32, name: &str, args: &str) -> Lin
             return edit_head(td, tick, &src);
         }
     }
-    // book §6: `$` bash, `λ` TypeScript; other tools keep an empty
+    // book §6: `$` bash, `ƒ` TypeScript; other tools keep an empty
     // glyph column
     let (glyph, label) = match name {
         "bash" => (G_BASH, "bash"),

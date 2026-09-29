@@ -81,10 +81,12 @@ pub(crate) fn box_folds(td: &ToolData) -> bool {
 pub(crate) fn box_top(td: &ToolData, tick: u32, width: usize) -> Line<'static> {
     let f = frame();
     let bst = Style::default().fg(border(td));
-    let (g, label) = if td.name.as_deref() == Some("bash") { (G_BASH, "bash") } else { (G_TS, "typescript") };
+    // BISE-223: the model's description is the title (`$ weighing the
+    // hero image`), cut before the state; else `$ bash` / `ƒ typescript`
+    let title = crate::toolrow::box_title(td);
     let mut spans = vec![
         Span::styled(format!("{}{} ", f.tl, f.h), bst),
-        Span::styled(format!("{} {}", glyph(g), label), Style::default().fg(text())),
+        Span::styled(title, Style::default().fg(text())),
     ];
     let dim_st = Style::default().fg(dim());
     match td.state {
@@ -98,11 +100,18 @@ pub(crate) fn box_top(td: &ToolData, tick: u32, width: usize) -> Line<'static> {
             spans.push(Span::styled(format!(" {}{}", ok, elapsed_label(&td.elapsed)), dim_st));
         }
         ToolState::Fail => {
-            spans.push(Span::styled(
-                format!(" {}{}", glyph(G_FAILED), elapsed_label(&td.elapsed)),
-                Style::default().fg(error()),
-            ));
+            // `✗ exit 1 · 0.8s` (BISE-223: the row's state)
+            spans.push(Span::raw(" "));
+            spans.extend(crate::toolrow::state_spans(td, tick));
         }
+    }
+    let used: usize = spans.iter().map(|s| s.content.width()).sum();
+    // a long title is cut with `…`: the state and one fill cell stay
+    if used + 3 > width {
+        let over = used + 3 - width;
+        let t = spans[1].content.to_string();
+        let room = t.width().saturating_sub(over);
+        spans[1].content = crate::render::fit_chars(&t, room).into();
     }
     let used: usize = spans.iter().map(|s| s.content.width()).sum();
     let fill = width.saturating_sub(used + 2);
@@ -633,7 +642,7 @@ mod tests {
         let td = tool("run_typescript", ToolState::Ok, 1);
         let subs = [SubCall { name: "github.search_issues", ok: true, preview: "" }];
         let rows = inner(&text(&td, &subs));
-        assert!(rows[0].starts_with("╭─ λ typescript"), "{rows:#?}");
+        assert!(rows[0].starts_with("╭─ ƒ typescript"), "{rows:#?}");
         let out: Vec<&String> = rows.iter().skip_while(|r| !r.starts_with('├')).skip(1).collect();
         assert_eq!(out[0], "↳ github.search_issues ✓");
         assert_eq!(out[1], "line 1");

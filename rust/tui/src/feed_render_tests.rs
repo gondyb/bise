@@ -87,8 +87,8 @@ async function main(): Promise<unknown> {
     for (i, l) in joined.iter().enumerate() {
         println!("{:2} | {}", i, l);
     }
-    // the tool line: λ, the tool's name, its state; the source only in the block
-    assert!(joined[0].starts_with("╭─ λ typescript ✓") && !joined[0].contains("orchestre"), "{}", joined[0]);
+    // the tool line: ƒ, the tool's name, its state; the source only in the block
+    assert!(joined[0].starts_with("╭─ ƒ typescript ✓") && !joined[0].contains("orchestre"), "{}", joined[0]);
     assert!(joined.iter().any(|l| l.starts_with("│ async function main")));
     assert!(joined.iter().any(|l| l.contains("une chaîne")));
     // one row per source line, inside the box (BISE-96)
@@ -727,7 +727,7 @@ fn inside_an_agent_matches_the_mockup() {
         " ∴ thought for 14s ▸",
         "╭─ $ bash ✓",
         "│ npx playwright test login --project=webkit --reporter=line",
-        "╭─ λ typescript ✓",
+        "╭─ ƒ typescript ✓",
         "│ async function main() {",
         "│ ↳ github.search_issues ✓",
         " ± edit web/src/auth/session.ts ✓ +2 −1 ▸",
@@ -1420,4 +1420,177 @@ fn mains_reply_wraps_once_under_its_text() {
 fn session_log_facts_are_not_in_the_feed() {
     // BISE-195: the REPL's `ev:` lines go to the hub's session writer
     assert!(parse_line(r#"  ev: {"type":"turn_started","v":1,"data":{"cause":"user"}}"#).is_none());
+}
+
+// ---- BISE-223: a call in main is one row (the model's description) ----
+
+/// The wire lines of one call: started, its code and intent, its result
+/// and its end (`ok`: None while it runs).
+fn call_lines(id: u32, name: &str, code: &str, intent: Option<&str>, done: Option<(bool, &str)>) -> Vec<String> {
+    let mut l = vec![format!("  obs: tool_started #{id}"), format!("tool #{id} {name} : x"), format!("tool_code #{id} : {}", wire_encode(code))];
+    if let Some(d) = intent {
+        l.push(format!("tool_intent #{id} : {d}"));
+    }
+    if let Some((ok, out)) = done {
+        l.push(format!("tool_result #{id} {} : {out}", if ok { "ok" } else { "fail" }));
+        l.push(format!("  obs: tool_finished #{id} {}", if ok { "ok" } else { "failed" }));
+    }
+    l
+}
+
+fn feed_of(lines: &[String]) -> (Vec<Ev>, Vec<Option<EventRows>>) {
+    let mut events: Vec<Ev> = Vec::new();
+    let mut cache: Vec<Option<EventRows>> = Vec::new();
+    for l in lines {
+        if let Some(ev) = parse_line(l) {
+            push_event(&mut events, &mut cache, ev);
+        }
+    }
+    (events, cache)
+}
+
+/// The rows of a feed, trimmed, the elapsed times masked (`0.0s` → `T`).
+fn main_text(events: &[Ev], width: usize) -> Vec<String> {
+    let re = |s: String| {
+        let mut out = String::new();
+        let mut rest = s.as_str();
+        while let Some(p) = rest.find(|c: char| c.is_ascii_digit()) {
+            let tail = &rest[p..];
+            let n = tail.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(tail.len());
+            if tail[n..].starts_with('s') && !rest[..p].ends_with("exit ") {
+                out.push_str(&rest[..p]);
+                out.push('T');
+                rest = &tail[n + 1..];
+            } else {
+                out.push_str(&rest[..p + n]);
+                rest = &tail[n..];
+            }
+        }
+        out.push_str(rest);
+        out
+    };
+    feed_text(events, width).into_iter().map(re).collect()
+}
+
+#[test]
+fn a_call_in_main_is_one_row_with_its_description() {
+    crate::render::set_main_feed(true);
+    let mut lines = call_lines(1, "bash", "git log --oneline -5", Some("checking what changed in signup"), Some((true, "a91c2e0 hero")));
+    lines.extend(call_lines(2, "run_typescript", "{\"code\":\"return 1\"}", Some("looking for timeouts in Sentry"), Some((true, "1"))));
+    lines.extend(call_lines(3, "bash", "python3 repro.py", Some("reproducing the crash"), Some((false, "exit 1: Traceback (most recent call last):   File x UnicodeDecodeError: 'latin-1' codec can't decode"))));
+    lines.extend(call_lines(4, "bash", "npm test", Some("running the export tests"), None));
+    let (events, _) = feed_of(&lines);
+    let rows = main_text(&events, 60);
+    crate::render::set_main_feed(false);
+    assert_eq!(
+        rows,
+        vec![
+            " $ checking what changed in signup                    ✓ T",
+            " ƒ looking for timeouts in Sentry                     ✓ T",
+            " $ reproducing the crash                     ✗ exit 1 · T",
+            "   UnicodeDecodeError: 'latin-1' codec can't decode",
+            " $ running the export tests                           ∿ T",
+        ]
+    );
+}
+
+#[test]
+fn a_row_without_description_shows_the_first_line_and_cuts_long_text() {
+    crate::render::set_main_feed(true);
+    let mut lines = call_lines(1, "bash", "\n  grep -rn latin api/\nls", None, Some((true, "x")));
+    let long = "checking whether any customer exports still expect latin-1 before we switch";
+    lines.extend(call_lines(2, "bash", "true", Some(long), Some((true, ""))));
+    let (events, _) = feed_of(&lines);
+    let rows = main_text(&events, 50);
+    crate::render::set_main_feed(false);
+    assert_eq!(rows[0], " $ grep -rn latin api/                      ✓ T");
+    assert!(rows[1].starts_with(" $ checking whether any customer exports s…"), "{rows:#?}");
+    assert!(rows[1].ends_with("✓ T"), "{rows:#?}");
+}
+
+#[test]
+fn four_done_calls_fold_and_the_failed_and_running_keep_their_rows() {
+    crate::render::set_main_feed(true);
+    let mut lines = Vec::new();
+    for id in 1..=3 {
+        lines.extend(call_lines(id, "bash", "ls", Some(&format!("step {id}")), Some((true, "ok"))));
+    }
+    lines.extend(call_lines(4, "bash", "make docs", Some("building the docs"), Some((false, "exit 2: broken link: docs/dark.png"))));
+    lines.extend(call_lines(5, "bash", "ls", Some("step 5"), Some((true, "ok"))));
+    lines.extend(call_lines(6, "run_typescript", "{\"code\":\"x\"}", Some("asking GitHub"), None));
+    let (mut events, mut cache) = feed_of(&lines);
+    let rows = main_text(&events, 60);
+    assert_eq!(
+        rows,
+        vec![
+            " $ ▸ 4 commands · step 1                              ✓ T",
+            " $ building the docs                         ✗ exit 2 · T",
+            "   broken link: docs/dark.png",
+            " ƒ asking GitHub                                      ∿ T",
+        ]
+    );
+    // a click on the fold: the rows come back, in place
+    assert!(toggle_event(&mut events, &mut cache, 0));
+    let open = main_text(&events, 60);
+    assert_eq!(open[0], " $ ▾ 4 commands · step 1                              ✓ T");
+    assert_eq!(open[1], " $ step 1                                             ✓ T");
+    assert_eq!(open.len(), 8, "{open:#?}");
+    crate::render::set_main_feed(false);
+}
+
+#[test]
+fn a_click_opens_one_box_and_ctrl_o_opens_every_box_then_back_to_rows() {
+    crate::render::set_main_feed(true);
+    let mut lines = call_lines(1, "bash", "du -h hero.png", Some("weighing the hero image"), Some((true, "4.2M  hero.png")));
+    lines.extend(call_lines(2, "bash", "ls", Some("listing"), Some((true, "a"))));
+    let (mut events, mut cache) = feed_of(&lines);
+    assert!(toggle_event(&mut events, &mut cache, 0));
+    let one = main_text(&events, 60);
+    assert!(one[0].starts_with("╭─ $ weighing the hero image ✓ T ─"), "{one:#?}");
+    assert!(one.iter().any(|r| r.starts_with("│ du -h hero.png")), "{one:#?}");
+    assert_eq!(one.last().unwrap(), " $ listing                                            ✓ T");
+    // ctrl+o: every box; again: every row
+    assert!(anything_closed(&events));
+    set_everything(&mut events, &mut cache, true);
+    let all = main_text(&events, 60);
+    assert_eq!(all.iter().filter(|r| r.starts_with("╭─ $ ")).count(), 2, "{all:#?}");
+    assert!(!anything_closed(&events));
+    set_everything(&mut events, &mut cache, false);
+    let rows = main_text(&events, 60);
+    assert_eq!(rows.len(), 2, "{rows:#?}");
+    crate::render::set_main_feed(false);
+}
+
+#[test]
+fn an_agent_view_keeps_the_boxes_with_the_description_as_title() {
+    crate::render::set_main_feed(false);
+    let lines = call_lines(1, "run_typescript", "{\"code\":\"return 1\"}", Some("looking for timeouts"), Some((true, "1")));
+    let (events, _) = feed_of(&lines);
+    let rows = main_text(&events, 60);
+    assert!(rows[0].starts_with("╭─ ƒ looking for timeouts ✓ T ─"), "{rows:#?}");
+    // no description: the kind's word, as before
+    let (events, _) = feed_of(&call_lines(2, "bash", "ls", None, Some((true, "a"))));
+    assert!(main_text(&events, 60)[0].starts_with("╭─ $ bash ✓ T ─"));
+}
+
+#[test]
+fn the_ascii_rows() {
+    crate::theme::set_ascii_for_tests(true);
+    crate::render::set_main_feed(true);
+    let mut lines = call_lines(1, "run_typescript", "{\"code\":\"x\"}", Some("looking"), Some((true, "1")));
+    lines.extend(call_lines(2, "bash", "false", Some("failing"), Some((false, "exit 1: Error: boom"))));
+    lines.extend(call_lines(3, "bash", "sleep 9", Some("waiting"), None));
+    let (events, _) = feed_of(&lines);
+    let rows = main_text(&events, 40);
+    crate::render::set_main_feed(false);
+    crate::theme::set_ascii_for_tests(false);
+    assert_eq!(
+        rows,
+        vec![
+            " f looking                       ok T",
+            " $ failing               x exit 1 · T",
+            "   Error: boom",
+            " $ waiting                        ~ T",
+        ]
+    );
 }

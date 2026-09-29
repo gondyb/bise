@@ -17,7 +17,8 @@ the injected <switchboard_state> block is not one):
 - `[[bash: CMD]]` markers make the agent call its bash tool with each
   CMD, in order, one call per model request; when there is no `[[...]]`
   marker, `{{bash: CMD}}` markers are used instead (so main's message can
-  carry the script of a task's brief);
+  carry the script of a task's brief); `[[bash: CMD @@ DESC]]` sends the
+  call's description too (BISE-223);
 - once every marker ran (or there is none), the agent answers
   "done: <last tool result>" or "ack: <the message>";
 - `[[think: TEXT]]`: every reply to that message starts with reasoning
@@ -246,6 +247,10 @@ def reply_for(conv, seen=0):
     if calls_done < len(marks):
         tool, arg = marks[calls_done]
         args = {"name": arg.strip()} if tool == "skill" else {"arg": arg.strip()}
+        # `[[bash: CMD @@ DESC]]`: the call carries a description (BISE-223)
+        if tool == "bash" and " @@ " in arg:
+            cmd, desc = arg.split(" @@ ", 1)
+            args = {"arg": cmd.strip(), "description": desc.strip()}
         turn["calls"] = [{"id": "call_%d_%d" % (idx, calls_done), "name": tool, "args": args}]
         return turn
     results = [m["text"] for m in after if m["role"] == "tool"]

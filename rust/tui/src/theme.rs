@@ -291,7 +291,7 @@ pub(crate) const G_MAIN: &str = ":*"; // main (accent)
 pub(crate) const G_BRIEF: &str = "◇"; // an agent's brief
 pub(crate) const G_THINK: &str = "∴"; // thinking (dim)
 pub(crate) const G_BASH: &str = "$"; // a bash call
-pub(crate) const G_TS: &str = "λ"; // a TypeScript call
+pub(crate) const G_TS: &str = "ƒ"; // a TypeScript call (BISE-223: the user's pick)
 pub(crate) const G_SUBCALL: &str = "↳"; // a sub-call inside a TypeScript run
 pub(crate) const G_PATCH: &str = "±"; // a file edit
 pub(crate) const G_MSG: &str = "@"; // a message between agents, or to you (was ✉)
@@ -457,7 +457,7 @@ pub(crate) const ASCII: &[(&str, &str)] = &[
     ("›", ">"),
     ("◇", "&"),
     ("∴", ":"),
-    ("λ", "\\"),
+    ("ƒ", "f"),
     ("↳", "L"),
     ("±", "%"),
     ("▣", "#"),
@@ -897,7 +897,7 @@ mod tests {
             assert!(seen.insert(*u), "{u:?} twice in the table");
             assert!(a.is_ascii() && !a.is_empty(), "{u:?} → {a:?}");
             assert_eq!(u.width(), a.width(), "{u:?} → {a:?} changes the width");
-            assert!(u.chars().all(|c| !c.is_alphanumeric() || c == 'λ' || c == 'ψ' || c == 'Δ'),
+            assert!(u.chars().all(|c| !c.is_alphanumeric() || c == 'ƒ' || c == 'ψ' || c == 'Δ'),
                 "{u:?}: letters are user text");
         }
         // every G_* glyph that is not ASCII has its form
