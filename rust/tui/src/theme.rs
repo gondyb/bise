@@ -435,8 +435,8 @@ pub(crate) fn ascii_text(s: &str) -> String {
 /// Every `G_*` glyph with its ASCII form, then the other glyphs the TUI
 /// draws today (chrome, hints, old feed glyphs, the braille spinner): the
 /// table [`glyph`] and [`asciify`] read. One cell each, except `✓✓`.
-/// Box drawing (`│ ┃ ─ ╮ …`) and block elements (`▁ █ ▏ …`) stay: they
-/// draw everywhere. User text is never in it (no letters, accents, CJK,
+/// Box drawing (`│ ┃ ─ ╮ …`) is not in it: [`asciify`] draws it `+ - |`
+/// like the frame (QA E). Block elements (`▁ █ ▏ …`) stay. User text is never in it (no letters, accents, CJK,
 /// emoji, quotes).
 pub(crate) const ASCII: &[(&str, &str)] = &[
     // §6 glyphs
@@ -577,7 +577,8 @@ pub(crate) fn ellipsis() -> &'static str {
 
 /// Under `BISE_ASCII=1`, rewrite every cell of `buf` holding a glyph of the
 /// table to its ASCII form (one cell to one cell, layout unchanged).
-/// Nothing else is touched: letters, accents, CJK, emoji, box drawing.
+/// Box drawing becomes `+ - |` ([`box_ascii`]). Nothing else is touched:
+/// letters, accents, CJK, emoji, block elements.
 /// Called after each draw; free when the mode is off.
 pub(crate) fn asciify(buf: &mut ratatui::buffer::Buffer) {
     if !ascii_mode() {
@@ -590,8 +591,31 @@ pub(crate) fn asciify(buf: &mut ratatui::buffer::Buffer) {
         }
         if let Some((_, a)) = ASCII.iter().find(|(u, a)| *u == sym && a.len() == 1) {
             cell.set_symbol(a);
+        } else if let Some(a) = box_ascii(sym) {
+            cell.set_symbol(a);
         }
     }
+}
+
+/// The ASCII form of a box-drawing cell (U+2500–U+257F), like the frame's
+/// `+ - |` (QA E): the card box, the card bar, the rails. Lines are `-` and
+/// `|`, corners and joins `+`, diagonals `/ \ x`. Block elements stay.
+fn box_ascii(sym: &str) -> Option<&'static str> {
+    let mut chars = sym.chars();
+    let (Some(c), None) = (chars.next(), chars.next()) else {
+        return None;
+    };
+    if !('\u{2500}'..='\u{257f}').contains(&c) {
+        return None;
+    }
+    Some(match c {
+        '─' | '━' | '┄' | '┅' | '┈' | '┉' | '╌' | '╍' | '═' | '╴' | '╶' | '╸' | '╺' | '╼' | '╾' => "-",
+        '│' | '┃' | '┆' | '┇' | '┊' | '┋' | '╎' | '╏' | '║' | '╵' | '╷' | '╹' | '╻' | '╽' | '╿' => "|",
+        '╱' => "/",
+        '╲' => "\\",
+        '╳' => "x",
+        _ => "+",
+    })
 }
 
 /// The working pulse: `∿` in text, then dim, then text… (one phase every
@@ -977,11 +1001,20 @@ mod tests {
         ascii_cell::set(false);
         let after = row(&buf);
         // (wide characters keep their continuation cell: compare buffers)
-        assert_eq!(after, row(&buffer_of("> ~ * v Y A ; . ─│┃ é ñ ü 漢字 👍 « } “q” * ~")));
-        let non_ascii: String = after
-            .chars()
-            .filter(|c| !c.is_ascii() && !('\u{2500}'..='\u{257f}').contains(c))
-            .collect();
-        assert_eq!(non_ascii, "éñü漢字👍«“”", "only user text and box drawing survive");
+        assert_eq!(after, row(&buffer_of("> ~ * v Y A ; . -|| é ñ ü 漢字 👍 « } “q” * ~")));
+        let non_ascii: String = after.chars().filter(|c| !c.is_ascii()).collect();
+        assert_eq!(non_ascii, "éñü漢字👍«“”", "only user text survives");
+    }
+
+    /// QA E: the card box (`┎ ┃ ┖ ─ ╮ │ ╯`), the card bar and the rails
+    /// turn to `+ - |` like the frame; block elements stay.
+    #[test]
+    fn asciify_draws_box_drawing_like_the_frame() {
+        let text = "┎─╮┃│┖─╯╭╰├┤┬┴┼═║╌╱╲╳▁█";
+        let mut buf = buffer_of(text);
+        ascii_cell::set(true);
+        asciify(&mut buf);
+        ascii_cell::set(false);
+        assert_eq!(row(&buf), "+-+||+-++++++++-|-/\\x▁█");
     }
 }

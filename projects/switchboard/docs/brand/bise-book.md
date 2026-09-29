@@ -230,7 +230,9 @@ cell each, and no two entities share one.
 A cut text ends with `...` (not the one-cell `;`), and the panel title and
 the help keys say `alt + number` instead of `⌥ + number`. Chrome glyphs
 outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their table forms through
-`theme::asciify`. Box drawing stays (it is drawn by every font).
+`theme::asciify`. Box drawing is drawn like the frame: `-` and `|` for the
+lines, `+` for corners and joins (the card box and bar, the rails; QA E).
+Block elements (`▁ █`) stay.
 
 **The legend** (BISE-137, user: ψ was unclear): /help and /shortcuts end
 with a `symbols` section, one row per glyph: the glyph in its screen
