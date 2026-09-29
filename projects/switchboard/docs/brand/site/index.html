@@ -110,6 +110,10 @@
   .caption { text-align:center; color:var(--faint); font-size:13px; margin-top:18px; }
 
   /* how: three lines, no boxes */
+  .chart { white-space:pre; font-size:14px; line-height:1.7; color:var(--dim); background:var(--soft); border:1px solid var(--faint); border-radius:12px; padding:18px 22px; margin:26px 0 40px; overflow-x:auto; }
+  .chart b { color:var(--text); }
+  .how .line { display:block; color:var(--acc); margin-bottom:4px; }
+  .me p { max-width:62ch; }
   .how li { list-style:none; margin-bottom:34px; display:grid; grid-template-columns:4ch 1fr; }
   .how .n { color:var(--acc); }
   .how b { display:block; margin-bottom:4px; }
@@ -235,11 +239,10 @@
   <div class="inner blow">
     <div class="kicker">why</div>
     <h2 class="punch">you didn't become an engineer<br>to babysit robots.</h2>
-    <p>yet here you are.</p>
-    <p class="soft">today you started five things. you watched output scroll. you answered "should i continue?" eleven times. at 6pm you'd shipped more than ever, and felt like you did nothing.</p>
-    <p class="soft">that's not you. every few minutes, something pulled you out. you never got to think.</p>
-    <p class="turn">you lost your flow. bise gives it back.</p>
-    <p>you talk, whenever, however. i run the agents in the background, answer the obvious questions myself, and only tap your shoulder when it matters.</p>
+    <p class="soft">today you started five things. you watched output scroll. you answered "should i continue?" eleven times.</p>
+    <p class="soft">two agents edited the same file, and you found out from the red tests. you pasted the same context into three tabs. you had a great idea at 2pm, and you let it go, because one more tab was one too many.</p>
+    <p class="soft">at 6pm you'd shipped more than ever, and you felt like you did nothing.</p>
+    <p class="turn">you can build a whole product on your own now.<br>you just need your head back.</p>
   </div>
 </section>
 
@@ -247,11 +250,22 @@
 <section id="how">
   <div class="inner blow">
     <div class="kicker">how</div>
-    <h2>you talk. bise runs the agents.<br>you stay in flow.</h2>
+    <h2>one thread. a whole team.</h2>
+    <p class="soft">you talk to <b>main</b>, bise's main agent. main splits your ideas into jobs and runs the other agents.</p>
+<div class="chart">  <b>you</b>   "add dark mode. and the api client moves to v3."
+   │
+   ▼
+  <span class="acc">:*</span> <b>main</b>   always listening. knows everything going on in the repo.
+   │
+   ├── ∿ theme       the dark colors, in one place
+   ├── ∿ toggle      the switch in settings, remembered per user
+   ├── ∿ docs        new screenshots, a changelog line
+   └── ∿ api-v3      the client upgrade. unrelated, so it runs too.</div>
     <ul class="how">
-      <li><span class="n">1</span><span><b>say it, and keep going.</b><span class="d">mid-thought, as often as you want. no prompt to craft, no workflow to design. bise is always listening.</span></span></li>
-      <li><span class="n">2</span><span><b>bise starts the agents.</b><span class="d">one per thing, in the background, in your folder. they know about each other and sort things out quietly.</span></span></li>
-      <li><span class="n">3</span><span><b>you only hear what matters.</b><span class="d">real decisions come to you as a card. when something ships, you get a <span class="acc">✓</span>.</span></span></li>
+      <li><span class="n">1</span><span><b>one thread per repo.</b><span class="line">one thread to talk to. peek into any agent when you feel like it.</span><span class="d">no tabs to juggle, no "wait, which session was that?". main knows everything going on in the repo, even what you did last month.</span></span></li>
+      <li><span class="n">2</span><span><b>main is always listening.</b><span class="line">the team is busy. main never is.</span><span class="d">ask, add a thing, change your mind while the agents work. main answers right away.</span></span></li>
+      <li><span class="n">3</span><span><b>a team that runs itself.</b><span class="line">they talk behind your back. in a good way.</span><span class="d">agents message each other before they collide. when one needs its own copy of the repo, it makes a worktree and cleans it up after. each one commits its own work.</span></span></li>
+      <li><span class="n">4</span><span><b>forget there are agents.</b><span class="line">no yaml was harmed.</span><span class="d">no roles, no graph, no config. bise has opinions, so you don't need any. you just dump your ideas in the thread.</span></span></li>
     </ul>
   </div>
 </section>
@@ -269,8 +283,8 @@
       <div class="feat blow"><div class="mini" data-play="card"></div><h3>only the real decisions reach you.</h3><p>one card, a couple of choices, one key. then back to what you were doing.</p></div>
       <div class="feat blow"><div class="mini" data-play="resume"></div><h3>nothing gets dropped.</h3><p>when an agent stops half-way, main picks the work back up from where it was.</p></div>
       <div class="feat blow"><div class="mini" data-play="worktree"></div><h3>worktrees, only when they help.</h3><p>agents share your folder. when one really needs isolation, it makes a worktree, and cleans it up after.</p></div>
-      <div class="feat blow"><div class="mini" data-play="mcp"></div><h3>plug in everything. leave it all on.</h3><p>GitHub, Linear, Sentry, Slack, your docs, your database: every tool and all your context, always on. you never pick what to enable. agents find the right tool when they need it and call it from code, so a hundred servers don't crowd their heads.</p></div>
-      <div class="feat blow"><div class="mini" data-play="plugins"></div><h3>bring your plugins.</h3><p class="tbd" title="⚠ which plugin and skill folders are picked up at launch: to confirm before release">your skills, plugins and MCP servers come with you. switching costs you an afternoon, not a month.</p></div>
+      <div class="feat blow"><div class="mini" data-play="mcp"></div><h3>all your MCPs. all your skills. always on.</h3><p>GitHub, Linear, Sentry, Slack, your docs, your database: connect as many MCP servers as you want, and never pick which ones to turn on. bise calls tools through code, so a hundred servers don't fill its context.</p></div>
+      <div class="feat blow"><div class="mini" data-play="plugins"></div><h3>bring your Agent Plugins.</h3><p>skills, MCP servers, hooks: plugins in the Agent Plugins format load as they are, from ~/.agents/plugins or your repo. Vibe plugins too.</p></div>
     </div>
   </div>
 </section>
@@ -280,8 +294,9 @@
   <div class="inner blow">
     <div class="kicker">and also</div>
     <ul class="facts">
-      <li><span class="gc">∿</span><span><b>as many agents as you have ideas.</b> no cap. your tokens are the limit.</span></li>
-            <li><span class="gc">✓</span><span><b>nothing hidden.</b> every script an agent runs is there, in full, in order.</span></li>
+      <li><span class="gc">∿</span><span><b>your token bill can relax.</b> bise starts an agent when a job needs one. that's the whole rule. there's no committee of agents reviewing each other in circles.</span></li>
+      <li><span class="gc">✓</span><span><b>it's quiet. open it up whenever.</b> what matters to you shows. the rest is folded, never deleted: every message between agents, every tool call, every script, in full. ctrl+o opens it all.</span></li>
+      <li><span class="gc">●</span><span><b>or just talk.</b> turn on /voice, press ctrl+r, say it.</span></li>
       <li><span class="gc">♡</span><span><b>your terminal.</b> your colors, light or dark, text at a reading width.</span></li>
     </ul>
   </div>
@@ -291,10 +306,25 @@
 <section id="faq">
   <div class="inner blow">
     <div class="kicker">questions</div>
+    <p><b>i already have Claude Code.</b><br><span class="dim">keep your models, MCP servers and skills. bise changes how you work with them: one thread, and a team behind it.</span></p>
+    <p><b>won't the agents step on each other?</b><br><span class="dim">they tell each other what they touch before they touch it. worktrees only when one needs its own copy, cleaned up after.</span></p>
     <p><b>how many agents can i run?</b><br><span class="dim">as many as you want. the real limits are your tokens, your budget and your provider.</span></p>
     <p><b>which models?</b><br><span class="dim tbd" title="⚠ not decided for the public release">bring your own key. the list is coming.</span></p>
-    <p><b>do i need to learn anything?</b><br><span class="dim">four words: you, main, agents, cards. main is the one you talk to.</span></p>
+    <p><b>do i need to learn anything?</b><br><span class="dim">four words: you, main, agents, cards. main is the one you talk to. the rest you pick up in the first hour.</span></p>
     <p><b>open source?</b><br><span class="dim">yes. read it, fork it, send a :*.</span><span class="tbd" title="⚠ license not decided (pitch §7.3)"></span></p>
+  </div>
+</section>
+
+<!-- made by -->
+<section id="me">
+  <div class="inner blow me">
+    <div class="kicker">made by a human. shipped with bise.</div>
+    <h2>hi, i'm Gabriel.</h2>
+    <p>i build coding agents for a living. i'm one of the people behind Mistral's agent tools, like Vibe.</p>
+    <p class="soft">agents made me faster. they also made my days feel empty. i was switching tabs, answering "should i continue?", pasting context around. i shipped more than ever and i didn't enjoy it.</p>
+    <p class="soft">so i built the tool i wanted: one thread, a team behind it, and me in flow. most of bise was built with bise.</p>
+    <p>i want everyone to ship like a team of a hundred, and to love building again. bise is open source and indie. i read every issue.</p>
+    <p class="dim">— Gabriel Vergnaud · <a class="tbd" title="⚠ links not decided" href="#">GitHub</a> · <a class="tbd" title="⚠ links not decided" href="#">X</a></p>
   </div>
 </section>
 
