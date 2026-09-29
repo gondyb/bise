@@ -879,8 +879,8 @@ mod hub_line_tests {
         .filter_map(|l| parse_hub_line(l))
         .collect();
         let text = draw(&evs);
-        // level 3: the names in their columns, the id in the receiver's
-        let (m3, to_you) = (format!("{G_MSG} docs        m_3"), format!("{G_MSG} docs to you"));
+        // level 3: a chip, the id as the receiver (BISE-106)
+        let (m3, to_you) = (format!("{} docs → m_3", crate::render::G_ENVELOPE), format!("{G_MSG} docs to you"));
         for want in [m3.as_str(), "done", to_you.as_str(), "la v2", "docs needs you", "→ you → @docs"] {
             assert!(text.contains(want), "{want:?} missing in:\n{text}");
         }
@@ -893,7 +893,7 @@ mod hub_line_tests {
             parse_hub_line("answered : docs : v1 or v2? : v2 : the brief").unwrap(),
         ];
         let text = draw(&evs);
-        let ab = format!("{G_MSG} a         → b");
+        let ab = format!("{} a → b", crate::render::G_ENVELOPE);
         let why = format!("{} why", crate::theme::G_CLOSED);
         for want in [ab.as_str(), "hello b", "docs asked: v1 or v2? i answered: v2", why.as_str()] {
             assert!(text.contains(want), "{want:?} missing in:\n{text}");

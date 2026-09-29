@@ -96,6 +96,8 @@ pub(crate) struct Palette {
     pub card_tint: Color,
     /// the composer pane, raised a little above the ground (BISE-102)
     pub raised: Color,
+    /// the level-3 message chip (BISE-106)
+    pub chip: Color,
     /// the ground every cell is painted with (BISE-92)
     pub bg: Color,
     pub syntax_keyword: Color,
@@ -118,6 +120,7 @@ pub(crate) const DARK: Palette = Palette {
     selection_bg: rgb(0x33292c),
     card_tint: rgb(0x211d1b),
     raised: rgb(0x1f1c1a),
+    chip: rgb(0x231f1d),
     bg: rgb(0x141211),
     syntax_keyword: rgb(0xd7a6f0),
     syntax_string: rgb(0xb9d99a),
@@ -143,6 +146,7 @@ pub(crate) const LIGHT: Palette = Palette {
     selection_bg: rgb(0xfdeef2),
     card_tint: rgb(0xf1eee6),
     raised: rgb(0xf4f0e8),
+    chip: rgb(0xefe9df),
     bg: rgb(0xfdfbf7),
     syntax_keyword: rgb(0x8a3fb0),
     syntax_string: rgb(0x44782a),
@@ -229,6 +233,15 @@ pub(crate) fn raised() -> Color {
         Color::Reset
     } else {
         palette().raised
+    }
+}
+/// The tint of a level-3 message chip (book §5 `chip`, §9; BISE-106).
+/// Under `NO_COLOR`, none (`Reset`): the chip is drawn in brackets.
+pub(crate) fn chip_bg() -> Color {
+    if std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()) {
+        Color::Reset
+    } else {
+        palette().chip
     }
 }
 pub(crate) fn syntax_keyword() -> Color {
@@ -579,6 +592,23 @@ mod tests {
             }
             assert!(contrast(p.selection_bg, p.card_tint) >= 1.03);
         }
+    }
+
+    #[test]
+    fn the_chip_reads_and_shows() {
+        // what sits on the chip: the sender (text), the envelope and the
+        // receiver (dim); its `→` is faint, never read alone (book §5)
+        for p in [&DARK, &LIGHT] {
+            for (name, fg) in [("text", p.text), ("dim", p.dim)] {
+                let r = contrast(fg, p.chip);
+                assert!(r >= 4.5, "{name} on the chip: {r:.2}");
+            }
+            let r = contrast(p.chip, p.bg);
+            assert!(r >= 1.08, "chip vs ground: {r:.3}");
+            assert!(contrast(p.faint, p.chip) < contrast(p.dim, p.chip), "faint stays quieter than dim on the chip");
+        }
+        assert!(contrast(DARK.text, DARK.chip) >= 12.0 && contrast(DARK.dim, DARK.chip) >= 5.5);
+        assert!(contrast(LIGHT.dim, LIGHT.chip) >= 4.7);
     }
 
     #[test]

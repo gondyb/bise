@@ -237,9 +237,11 @@ fn anchor(buf: &Buffer, h: Hint, feed: Rect, panel: Option<Rect>) -> Option<u16>
             rows(p).find_map(|(y, t)| t.trim_start_matches(['│', ' ']).starts_with("1 ").then_some(y))
         }
         Hint::FirstLevel3 => {
-            let msg = format!("│ {} ", theme::glyph(theme::G_MSG));
+            // a level-3 chip (BISE-106): its envelope then its arrow
+            let (env, arrow) = (crate::render::envelope(), theme::glyph("→"));
+            let chip = |t: &str| t.find(env).is_some_and(|at| t[at..].contains(arrow));
             rows(feed)
-                .filter(|(_, t)| t.contains("messages between") || (t.contains(&msg) && t.contains(" → ")))
+                .filter(|(_, t)| t.contains("messages between") || chip(t))
                 .map(|(y, _)| y)
                 .next_back()
         }
@@ -406,7 +408,7 @@ mod tests {
         // the card is gone: so is the hint; the level-3 one waits its turn
         t.draw(|f| draw(&app, f)).unwrap();
         assert_eq!(active(), None);
-        let l3 = format!("  │ {} t1         → t2        v1 or v2?", theme::glyph(theme::G_MSG));
+        let l3 = format!("   {} t1 → t2  v1 or v2?", crate::render::envelope());
         t.draw(|f| {
             f.render_widget(Paragraph::new(l3.as_str()), Rect::new(3, 5, 80, 1));
             draw(&app, f)

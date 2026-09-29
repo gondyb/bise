@@ -131,7 +131,7 @@ pub(crate) fn refresh_live(er: &mut EventRows, ev: &Ev, tick: u32) {
         (Live::Tool { name, args }, Ev::Tool(td)) => {
             wrap_line(tool_head(td, tick, name, args), code_width(er.width as usize))
         }
-        (Live::Fold { n, agents, open }, _) => vec![fold_line(*n, *agents, *open, true, tick)],
+        (Live::Fold { n, agents, open }, _) => vec![fold_line(*n, *agents, *open, true, tick, code_width(er.width as usize))],
         (Live::Compacting, _) => compacting_line(tick, true),
         _ => return,
     };
@@ -311,10 +311,11 @@ pub(crate) fn wants_gap_before(ev: &Ev, prev: Option<&Ev>) -> bool {
     let Some(p) = prev else {
         return false;
     };
-    // the lines of a run of level 3 sit together; a time mark stands
-    // apart from whatever came before
+    // the messages of one pair of agents stack; a new pair starts after
+    // a blank row (book §9, BISE-106); a time mark stands apart from
+    // whatever came before
     if is_l3(ev) && is_l3(p) {
-        return false;
+        return l3_pair(ev) != l3_pair(p);
     }
     if matches!(ev, Ev::TimeMark(_)) {
         return true;
@@ -819,6 +820,18 @@ pub(crate) fn is_l3(ev: &Ev) -> bool {
     matches!(ev, Ev::AgentMsg { level: 3, text, .. } if !is_brief(text) && report_parts(text).is_none())
 }
 
+/// The two agents of a level-3 message, either way round (`auth-fix →
+/// release` and `release → auth-fix` are one pair).
+fn l3_pair(ev: &Ev) -> Option<(String, String)> {
+    match ev {
+        Ev::AgentMsg { from, to, id, .. } => {
+            let to = crate::render::l3_receiver(to, id);
+            Some(if *from <= to { (from.clone(), to) } else { (to, from.clone()) })
+        }
+        _ => None,
+    }
+}
+
 /// The visible event before `i`.
 fn prev_visible(events: &[Ev], i: usize, debug: bool) -> Option<usize> {
     (0..i).rev().find(|&j| ev_visible(&events[j], debug))
@@ -916,6 +929,10 @@ fn l3_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> (Ve
     let open = fold_open(&events[start]);
     if i != start {
         if open {
+            let prev = prev_visible(events, i, debug).map(|p| &events[p]);
+            if wants_gap_before(ev, prev) {
+                rows.push(Line::from(""));
+            }
             rows.extend(ev_rows(ev, tick, width));
         }
         return (rows, None);
@@ -926,7 +943,7 @@ fn l3_rows(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) -> (Ve
     }
     let run = run_from(events, start, debug);
     let at = rows.len();
-    rows.push(fold_line(run.n, run.agents, open, run.live, tick));
+    rows.push(fold_line(run.n, run.agents, open, run.live, tick, code_width(width)));
     if open {
         rows.extend(ev_rows(ev, tick, width));
     }
