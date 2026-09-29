@@ -14,6 +14,7 @@ empty bise home (BISE_HOME) and HOME in a temp dir:
 python3 -u projects/switchboard/tests/tui_onboarding_tmux.py
 """
 import json
+import re
 import os
 import sys
 import time
@@ -31,8 +32,18 @@ def flat(sc):
     return " ".join(r.strip() for r in sc.splitlines() if r.strip())
 
 
+def key_envs():
+    """Every key variable of bise's catalog (+ the GOOGLE_API_KEY alias):
+    the model step lists each provider whose key it finds."""
+    with open(os.path.join(e2e.ROOT, "rust/catalog/models.toml")) as f:
+        names = set(re.findall(r'^key_env = "([A-Z0-9_]+)"', f.read(), re.M))
+    return sorted(names | {"GOOGLE_API_KEY"})
+
+
 def env(state_root, home):
-    return "BISE_HOME=%s HOME=%s ANTHROPIC_FOUNDRY_API_KEY=" % (state_root, home)
+    # the fake env's MISTRAL_API_KEY stays: the one key the step finds
+    blank = " ".join("%s=" % k for k in key_envs() if k != "MISTRAL_API_KEY")
+    return "BISE_HOME=%s HOME=%s %s" % (state_root, home, blank)
 
 
 def prefs(root):

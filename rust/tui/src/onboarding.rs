@@ -12,16 +12,16 @@
 //! it seen too. `SB_ONBOARDING=off` never shows it, `on` always does (the
 //! tmux tests set `off`). `/welcome` (BISE-41) calls [`run`] to replay it.
 //!
-//! The keys (book §15 step 3, decided with main): the harness knows two
-//! providers (`runtime/provider-pure.bend`): claude through
-//! `ANTHROPIC_FOUNDRY_API_KEY` and mistral (any non-claude model, the
-//! OpenAI-style API) through `MISTRAL_API_KEY`. A key is found in the
-//! environment, else in bise's `.env` (`~/.bend-harness/.env`), else
-//! `~/.vibe/.env` (`Home::env_files`, the order `load_env_files` loads
-//! them in). A pasted key is masked, never logged, and goes in bise's
-//! `.env` (`Home::key_file`; created 600, an existing
-//! mode is kept; an existing line is replaced only after a confirm). The
-//! model itself is not changed here.
+//! The keys (book §15 step 3; providers.md §7.4): the providers come from
+//! bise's catalog (`bise_catalog::Setup`: the built-in list merged with
+//! config.toml; the model in use and its provider too). A key is found
+//! where the harness finds it (`bise_catalog::auth::Keys`): the
+//! environment, then auth.json, then the old `.env` files. A pasted key is
+//! masked, never logged, and saved by `login`'s own code
+//! (`auth_cli::login`: auth.json, 0600; a stored key is replaced only
+//! after a confirm). The hub resolves the keys again at each REPL spawn,
+//! so the agents it starts next use it. The model itself is not changed
+//! here.
 
 use crate::theme::{self, Mode, Palette};
 use crate::App;
@@ -97,116 +97,62 @@ pub(crate) fn take_request() -> bool {
 
 // ---- the providers and their keys ----
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Provider {
-    Claude,
-    Mistral,
+/// A provider that takes an API key (bise's catalog, `rust/catalog`:
+/// the built-in list merged with config.toml; usable today, so not a
+/// `needs = "BISE-149"` one).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Provider {
+    pub id: String,
+    pub name: String,
+    pub key_env: String,
 }
 
-impl Provider {
-    pub(crate) const ALL: [Provider; 2] = [Provider::Claude, Provider::Mistral];
+/// The catalog and the model choice (`Setup`: `BISE_MODEL` >
+/// `BEND_MODEL` > `model` in config.toml > the default).
+pub(crate) fn setup_of(env: Env, home: &bise_home::Home) -> bise_catalog::Setup {
+    let text = std::fs::read_to_string(home.config_file()).ok();
+    bise_catalog::Setup::from_text(text.as_deref(), env)
+}
 
-    /// The env var the harness reads its key from (provider-pure.bend).
-    pub(crate) fn key_env(self) -> &'static str {
-        match self {
-            Provider::Claude => "ANTHROPIC_FOUNDRY_API_KEY",
-            Provider::Mistral => "MISTRAL_API_KEY",
-        }
-    }
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Provider::Claude => "claude",
-            Provider::Mistral => "mistral",
-        }
-    }
-    /// The provider of a model name, as `model_style` decides it.
-    pub(crate) fn of_model(model: &str) -> Provider {
-        let m = if model == "opus-5.5" { "claude-opus-5-5" } else { model };
-        if m.starts_with("claude") {
-            Provider::Claude
-        } else {
-            Provider::Mistral
-        }
+/// Where `login` keeps the keys (auth.json) and where the old ones are.
+pub(crate) fn auth_paths(home: &bise_home::Home) -> bise_catalog::auth_cli::Paths {
+    bise_catalog::auth_cli::Paths {
+        auth_file: home.auth_file(),
+        config: home.config_file(),
+        env_files: home.env_files(),
+        home: Some(home.user_home().to_path_buf()),
     }
 }
 
-/// The value of `key` in a `KEY=VALUE` env file (`load_env_files`'s
-/// reading: `#` comments, `export `, quotes).
-pub(crate) fn env_file_value(text: &str, key: &str) -> Option<String> {
-    text.lines().find_map(|line| {
-        let line = line.trim();
-        if line.starts_with('#') {
-            return None;
-        }
-        let line = line.strip_prefix("export ").unwrap_or(line);
-        let (k, v) = line.split_once('=')?;
-        let v = v.trim().trim_matches('"').trim_matches('\'');
-        (k.trim() == key && !v.is_empty()).then(|| v.to_string())
-    })
-}
-
-/// The providers whose key is set: the environment, then the env files
-/// the harness loads (`Home::env_files`).
-pub(crate) fn find_keys(env: Env, home: &bise_home::Home) -> Vec<Provider> {
-    let files: Vec<String> =
-        home.env_files().iter().filter_map(|p| std::fs::read_to_string(p).ok()).collect();
-    Provider::ALL
-        .into_iter()
-        .filter(|p| {
-            env(p.key_env()).is_some() || files.iter().any(|t| env_file_value(t, p.key_env()).is_some())
-        })
+/// Every provider a key can be pasted for, in catalog order.
+pub(crate) fn key_providers(setup: &bise_catalog::Setup) -> Vec<Provider> {
+    setup
+        .catalog
+        .providers
+        .iter()
+        .filter(|p| !p.key_env.is_empty() && p.needs.is_empty())
+        .map(|p| Provider { id: p.id.clone(), name: p.name.clone(), key_env: p.key_env.clone() })
         .collect()
 }
 
-/// The model the harness uses (`resolved_model`, alias unresolved):
-/// `BEND_MODEL` > `model` in config.toml > the default.
-pub(crate) fn current_model(env: Env, home: &bise_home::Home) -> String {
-    if let Some(m) = env("BEND_MODEL") {
-        return m;
-    }
-    std::fs::read_to_string(home.config_file())
-        .ok()
-        .and_then(|t| {
-            t.lines().find_map(|l| {
-                let (k, v) = l.split_once('=')?;
-                let v = v.split('#').next()?.trim().trim_matches('"');
-                (k.trim() == "model" && !v.is_empty()).then(|| v.to_string())
-            })
-        })
-        .unwrap_or_else(|| "opus-5.5".into())
+/// The providers whose key is set, found where the harness finds it
+/// (`bise_catalog::auth::Keys`): the environment, auth.json, the old
+/// `.env` files.
+pub(crate) fn find_keys(env: Env, home: &bise_home::Home, setup: &bise_catalog::Setup) -> Vec<Provider> {
+    use bise_catalog::auth::{EnvFile, Keys, Store};
+    let paths = auth_paths(home);
+    let store = Store::read(&paths.auth_file).unwrap_or_default();
+    let files = EnvFile::read_all(&paths.env_files);
+    let keys = Keys { env, store: &store, files: &files };
+    key_providers(setup)
+        .into_iter()
+        .filter(|p| keys.find(&p.id, &p.key_env).is_some())
+        .collect()
 }
 
-/// The file has a `KEY=` line already.
-pub(crate) fn has_key_line(path: &Path, key: &str) -> bool {
-    std::fs::read_to_string(path).is_ok_and(|t| env_file_value(&t, key).is_some())
-}
-
-/// Write `key=value` in the env file: the old `key=` lines go, the other
-/// lines stay. Created with mode 600; an existing file keeps its mode.
-pub(crate) fn save_key(path: &Path, key: &str, value: &str) -> io::Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let old = match std::fs::read_to_string(path) {
-        Ok(t) => Some(t),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
-        Err(e) => return Err(e),
-    };
-    let mut text: String = old
-        .as_deref()
-        .unwrap_or("")
-        .lines()
-        .filter(|l| env_file_value(l, key).is_none())
-        .map(|l| format!("{}\n", l))
-        .collect();
-    text.push_str(&format!("{}={}\n", key, value));
-    if let Some(d) = path.parent() {
-        std::fs::create_dir_all(d)?;
-    }
-    let mut f = match old {
-        None => std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(path)?,
-        Some(_) => std::fs::OpenOptions::new().write(true).truncate(true).open(path)?,
-    };
-    f.write_all(text.as_bytes())
+/// auth.json has a key for this provider already.
+pub(crate) fn stored(home: &bise_home::Home, id: &str) -> bool {
+    bise_catalog::auth::Store::read(&home.auth_file()).is_ok_and(|s| s.key(id).is_some())
 }
 
 /// A pasted key, cleaned: trimmed, quotes off; None when it can't be one
@@ -243,7 +189,7 @@ impl Step {
 }
 
 /// One row of the model step.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Opt {
     Use(Provider),
     Paste,
@@ -265,7 +211,8 @@ pub(crate) enum Sub {
 /// A note under the model options.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Note {
-    Saved,
+    /// in auth.json (as shown, `~/…`)
+    Saved(String),
     Failed(String),
     NotAKey,
 }
@@ -293,7 +240,13 @@ pub(crate) struct Onb {
     pub pick: Mode,
     /// bise's state (keys, config, the saved theme)
     pub home: bise_home::Home,
+    /// the catalog (built-in + config.toml) and the model choice
+    pub setup: bise_catalog::Setup,
+    /// the model in use ("provider/id") and its provider
     pub model: String,
+    pub mine: String,
+    /// every provider a key can be pasted for, and those with a key
+    pub providers: Vec<Provider>,
     pub found: Vec<Provider>,
     pub sel: usize,
     pub sub: Sub,
@@ -347,6 +300,9 @@ pub(crate) fn in_git(dir: &Path) -> bool {
 impl Onb {
     pub(crate) fn new(workspace: &str, env: Env) -> Onb {
         let home = home_of(env);
+        let setup = setup_of(env, &home);
+        let model = setup.model.clone();
+        let mine = setup.catalog.resolve(&model).provider;
         let mut o = Onb {
             step: Step::Welcome,
             since: 0,
@@ -354,7 +310,10 @@ impl Onb {
             theme_from: theme_from(env, &home),
             start: theme::mode(),
             pick: theme::mode(),
-            model: current_model(env, &home),
+            providers: key_providers(&setup),
+            setup,
+            model,
+            mine,
             found: Vec::new(),
             sel: 0,
             sub: Sub::List,
@@ -369,16 +328,15 @@ impl Onb {
     }
 
     fn refresh_keys(&mut self, env: Env) {
-        let mut found = find_keys(env, &self.home);
+        let mut found = find_keys(env, &self.home, &self.setup);
         // the key of the model in use first
-        let mine = Provider::of_model(&self.model);
-        found.sort_by_key(|p| *p != mine);
+        found.sort_by_key(|p| p.id != self.mine);
         self.found = found;
     }
 
     /// The rows of the model step.
     pub(crate) fn opts(&self) -> Vec<Opt> {
-        let mut v: Vec<Opt> = self.found.iter().map(|p| Opt::Use(*p)).collect();
+        let mut v: Vec<Opt> = self.found.iter().map(|p| Opt::Use(p.clone())).collect();
         v.push(Opt::Paste);
         v.push(Opt::Browser);
         v
@@ -447,8 +405,7 @@ impl Onb {
             (Step::Model, KeyCode::Enter) => match self.opts().get(self.sel) {
                 Some(Opt::Paste) => {
                     self.note = None;
-                    let mine = Provider::of_model(&self.model);
-                    self.sub = Sub::Which(Provider::ALL.iter().position(|p| *p == mine).unwrap_or(0));
+                    self.sub = Sub::Which(self.providers.iter().position(|p| p.id == self.mine).unwrap_or(0));
                     Out::Stay
                 }
                 _ => self.advance(now),
@@ -467,8 +424,14 @@ impl Onb {
         let sub = std::mem::replace(&mut self.sub, Sub::List);
         self.sub = match (sub, k.code) {
             (_, KeyCode::Esc) => Sub::List,
-            (Sub::Which(i), KeyCode::Up | KeyCode::Down) => Sub::Which(1 - i.min(1)),
-            (Sub::Which(i), KeyCode::Enter) => Sub::Paste(Provider::ALL[i.min(1)], String::new()),
+            (Sub::Which(i), KeyCode::Up | KeyCode::Down) => {
+                let n = self.providers.len().max(1);
+                Sub::Which(if k.code == KeyCode::Down { (i + 1) % n } else { (i + n - 1) % n })
+            }
+            (Sub::Which(i), KeyCode::Enter) => match self.providers.get(i) {
+                Some(p) => Sub::Paste(p.clone(), String::new()),
+                None => Sub::List,
+            },
             (Sub::Paste(p, mut b), KeyCode::Backspace) => {
                 b.pop();
                 Sub::Paste(p, b)
@@ -479,14 +442,14 @@ impl Onb {
                 b.push(c);
                 Sub::Paste(p, b)
             }
-            (Sub::Paste(p, b), KeyCode::Enter) => match (clean_key(&b), &self.home) {
-                (None, _) if b.trim().is_empty() => Sub::Paste(p, b),
-                (None, _) => {
+            (Sub::Paste(p, b), KeyCode::Enter) => match clean_key(&b) {
+                None if b.trim().is_empty() => Sub::Paste(p, b),
+                None => {
                     self.note = Some(Note::NotAKey);
                     Sub::Paste(p, String::new())
                 }
-                (Some(key), h) if has_key_line(&h.key_file(), p.key_env()) => Sub::Confirm(p, key),
-                (Some(key), _) => self.save(p, &key, env),
+                Some(key) if stored(&self.home, &p.id) => Sub::Confirm(p, key),
+                Some(key) => self.save(p, &key, env),
             },
             (Sub::Confirm(p, key), KeyCode::Enter) => self.save(p, &key, env),
             (s, _) => s,
@@ -494,11 +457,16 @@ impl Onb {
         Out::Stay
     }
 
+    /// `login`'s own code (bise_catalog::auth_cli): auth.json, 0600.
     fn save(&mut self, p: Provider, key: &str, env: Env) -> Sub {
-        let r = save_key(&self.home.key_file(), p.key_env(), key);
+        let paths = auth_paths(&self.home);
+        let r = match self.setup.catalog.provider(&p.id) {
+            Some(cp) => bise_catalog::auth_cli::login(&paths, cp, key, env).map(|_| ()),
+            None => Err(format!("unknown provider {}", p.id)),
+        };
         self.note = Some(match r {
-            Ok(()) => Note::Saved,
-            Err(e) => Note::Failed(e.to_string()),
+            Ok(()) => Note::Saved(bise_catalog::auth::tilde(&paths.auth_file, paths.home.as_deref())),
+            Err(e) => Note::Failed(e),
         });
         self.refresh_keys(env);
         // the cursor on the key just saved
@@ -716,7 +684,22 @@ fn option(v: &mut Vec<Line<'static>>, selected: bool, name: Vec<Span<'static>>, 
     }
 }
 
-const KEY_FILE_SHOWN: &str = "~/.bend-harness/.env";
+/// The rows of the provider list (the paste flow's first question).
+const WHICH_ROWS: usize = 9;
+
+/// auth.json as shown (`~/…`).
+fn auth_shown(o: &Onb) -> String {
+    bise_catalog::auth::tilde(&o.home.auth_file(), Some(o.home.user_home()))
+}
+
+/// "anthropic, openai, mistral and 10 more."
+fn paste_sub(ps: &[Provider]) -> String {
+    let first: Vec<&str> = ps.iter().take(3).map(|p| p.id.as_str()).collect();
+    match ps.len().saturating_sub(3) {
+        0 => format!("{}.", first.join(", ")),
+        more => format!("{} and {} more.", first.join(", "), more),
+    }
+}
 
 /// `text` in lines of at most `w` columns, cut at spaces.
 fn words_in(text: &str, w: usize) -> Vec<String> {
@@ -741,11 +724,17 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
         Sub::Which(i) => {
             let mut v = vec![title("which key do you want to paste?")];
             blanks(&mut v, gap);
-            for (k, p) in Provider::ALL.iter().enumerate() {
-                if k > 0 {
-                    v.push(Line::raw(""));
-                }
-                option(&mut v, k == *i, vec![s(format!("{} · {}  ", k + 1, p.name()), theme::text()), s(p.key_env(), theme::dim())], "", w);
+            // a window of WHICH_ROWS rows around the cursor
+            let n = o.providers.len();
+            let from = i.saturating_sub(WHICH_ROWS / 2).min(n.saturating_sub(WHICH_ROWS));
+            if from > 0 {
+                v.push(Line::from(s(format!("  ↑ {} more", from), theme::dim())));
+            }
+            for (k, p) in o.providers.iter().enumerate().skip(from).take(WHICH_ROWS) {
+                option(&mut v, k == *i, vec![s(format!("{} · {}  ", k + 1, p.name), theme::text()), s(p.key_env.clone(), theme::dim())], "", w);
+            }
+            if from + WHICH_ROWS < n {
+                v.push(Line::from(s(format!("  ↓ {} more", n - from - WHICH_ROWS), theme::dim())));
             }
             blanks(&mut v, gap);
             v.push(keyline("{↑↓} choose · {enter} ok · {esc} back"));
@@ -754,8 +743,8 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
         Sub::Paste(p, b) => {
             let dots: String = "•".repeat(b.chars().count().min(48));
             let mut v = vec![
-                title(format!("paste your {}:", p.key_env())),
-                Line::from(s(format!("it goes in {}, only you can read it.", KEY_FILE_SHOWN), theme::dim())),
+                title(format!("paste your {}:", p.key_env)),
+                Line::from(s(format!("it goes in {}, only you can read it.", auth_shown(o)), theme::dim())),
             ];
             blanks(&mut v, gap);
             v.push(Line::from(vec![s(format!("{} ", theme::glyph(theme::G_YOU)), theme::accent()), s(dots, theme::text()), s("█", theme::text())]));
@@ -768,7 +757,7 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
             v
         }
         Sub::Confirm(p, _) => {
-            let mut v = vec![title(format!("{} is already in {}.", p.key_env(), KEY_FILE_SHOWN))];
+            let mut v = vec![title(format!("{} has a key in {} already.", p.name, auth_shown(o)))];
             blanks(&mut v, gap);
             v.push(keyline("{enter} replaces it · {esc} keeps the old one"));
             v
@@ -784,7 +773,6 @@ fn model_list(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
     };
     let mut v = vec![title("which model should do the work?"), Line::from(s(found, theme::dim()))];
     blanks(&mut v, gap);
-    let mine = Provider::of_model(&o.model);
     for (i, opt) in o.opts().into_iter().enumerate() {
         if i > 0 {
             v.push(Line::raw(""));
@@ -792,11 +780,16 @@ fn model_list(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
         let n = i + 1;
         let (name, sub) = match opt {
             Opt::Use(p) => (
-                vec![s(format!("{} · use {} ", n, p.key_env()), theme::text()), s("found", theme::accent())],
-                if p == mine {
-                    format!("{}, already set up. nothing to paste.", p.name())
+                vec![s(format!("{} · use {} ", n, p.key_env), theme::text()), s("found", theme::accent())],
+                if p.id == o.mine {
+                    format!("{}, already set up. nothing to paste.", p.id)
                 } else {
-                    format!("{}. your model is {}: set model in ~/.bend-harness/config.toml.", p.name(), o.model)
+                    format!(
+                        "{}. your model is {}: set model in {}.",
+                        p.id,
+                        o.model,
+                        bise_catalog::auth::tilde(&o.home.config_file(), Some(o.home.user_home()))
+                    )
                 },
             ),
             Opt::Paste => (
@@ -804,19 +797,16 @@ fn model_list(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
                     format!("{} · {}", n, if o.found.is_empty() { "paste a key" } else { "paste another key" }),
                     theme::text(),
                 )],
-                "claude or mistral.".to_string(),
+                paste_sub(&o.providers),
             ),
             Opt::Browser => (vec![s(format!("{} · sign in with the browser", n), theme::dim())], "not built yet.".to_string()),
         };
         option(&mut v, i == o.sel, name, &sub, w);
     }
     match &o.note {
-        Some(Note::Saved) => {
+        Some(Note::Saved(file)) => {
             v.push(Line::raw(""));
-            v.push(Line::from(s(
-                format!("✓ saved in {}. i'll use it after a restart (switchboard --stop, then start me again).", KEY_FILE_SHOWN),
-                theme::dim(),
-            )));
+            v.push(Line::from(s(format!("✓ saved in {}. the agents i start from now on use it.", file), theme::dim())));
         }
         Some(Note::Failed(e)) => {
             v.push(Line::raw(""));
@@ -1109,51 +1099,50 @@ mod tests {
         assert!(d.join("b/prefs.json").exists());
     }
 
+    fn ids(ps: &[Provider]) -> Vec<&str> {
+        ps.iter().map(|p| p.id.as_str()).collect()
+    }
+
     #[test]
-    fn keys_come_from_the_env_then_the_two_files() {
+    fn keys_come_from_the_env_then_auth_json_then_the_old_files() {
         let h = tmp("keys");
-        let none = env_of(HashMap::new());
-        assert_eq!(find_keys(&none, &hm(&h)), vec![]);
+        let home = h.to_string_lossy().to_string();
+        let none = env_of(HashMap::from([("HOME", home.clone())]));
+        let st = setup_of(&none, &hm(&h));
+        assert_eq!(ids(&find_keys(&none, &hm(&h), &st)), Vec::<&str>::new());
         std::fs::create_dir_all(h.join(".vibe")).unwrap();
         std::fs::write(h.join(".vibe/.env"), "# x\nexport MISTRAL_API_KEY=\"abc\"\n").unwrap();
-        assert_eq!(find_keys(&none, &hm(&h)), vec![Provider::Mistral]);
-        let e = env_of(HashMap::from([("ANTHROPIC_FOUNDRY_API_KEY", "k".to_string())]));
-        assert_eq!(find_keys(&e, &hm(&h)), vec![Provider::Claude, Provider::Mistral]);
+        assert_eq!(ids(&find_keys(&none, &hm(&h), &st)), vec!["mistral"]);
+        let e = env_of(HashMap::from([("HOME", home.clone()), ("ANTHROPIC_FOUNDRY_API_KEY", "k".to_string())]));
+        assert_eq!(ids(&find_keys(&e, &hm(&h), &st)), vec!["foundry", "mistral"]);
+        // auth.json (what `login` writes)
+        let mut store = bise_catalog::auth::Store::default();
+        store.set("openai", "o");
+        store.write(&hm(&h).auth_file()).unwrap();
+        assert_eq!(ids(&find_keys(&none, &hm(&h), &st)), vec!["openai", "mistral"]);
         // an empty value is no key
         std::fs::write(h.join(".vibe/.env"), "MISTRAL_API_KEY=\n").unwrap();
-        assert_eq!(find_keys(&none, &hm(&h)), vec![]);
+        assert_eq!(ids(&find_keys(&none, &hm(&h), &st)), vec!["openai"]);
+        // every provider that takes a key and is usable, none that is not
+        let all = key_providers(&st);
+        assert!(ids(&all).contains(&"anthropic") && ids(&all).contains(&"groq"), "{:?}", ids(&all));
+        assert!(!ids(&all).contains(&"ollama") && !ids(&all).contains(&"bedrock"), "{:?}", ids(&all));
     }
 
     #[test]
-    fn the_model_and_its_provider() {
+    fn the_model_and_its_provider_come_from_the_catalog() {
         let h = tmp("model");
-        let none = env_of(HashMap::new());
-        assert_eq!(current_model(&none, &hm(&h)), "opus-5.5");
+        let home = h.to_string_lossy().to_string();
+        let none = env_of(HashMap::from([("HOME", home.clone())]));
+        let o = Onb::new("/w", &none);
+        assert_eq!((o.model.as_str(), o.mine.as_str()), ("foundry/claude-opus-5-5", "foundry"));
         std::fs::create_dir_all(h.join(".bend-harness")).unwrap();
         std::fs::write(h.join(".bend-harness/config.toml"), "# c\nmodel = \"zai-glm-5-3\" # glm\n").unwrap();
-        assert_eq!(current_model(&none, &hm(&h)), "zai-glm-5-3");
-        let e = env_of(HashMap::from([("BEND_MODEL", "claude-x".to_string())]));
-        assert_eq!(current_model(&e, &hm(&h)), "claude-x");
-        assert_eq!(Provider::of_model("opus-5.5"), Provider::Claude);
-        assert_eq!(Provider::of_model("claude-opus-5-5"), Provider::Claude);
-        assert_eq!(Provider::of_model("zai-glm-5-3"), Provider::Mistral);
-    }
-
-    #[test]
-    fn a_saved_key_is_600_replaces_its_line_and_keeps_the_rest() {
-        use std::os::unix::fs::PermissionsExt;
-        let h = tmp("save");
-        let f = hm(&h).key_file();
-        save_key(&f, "MISTRAL_API_KEY", "one").unwrap();
-        assert_eq!(std::fs::metadata(&f).unwrap().permissions().mode() & 0o777, 0o600);
-        assert_eq!(std::fs::read_to_string(&f).unwrap(), "MISTRAL_API_KEY=one\n");
-        // an existing mode is kept, other lines stay, no duplicate
-        std::fs::write(&f, "# mine\nOTHER=1\nMISTRAL_API_KEY=one\n").unwrap();
-        std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o640)).unwrap();
-        assert!(has_key_line(&f, "MISTRAL_API_KEY"));
-        save_key(&f, "MISTRAL_API_KEY", "two").unwrap();
-        assert_eq!(std::fs::read_to_string(&f).unwrap(), "# mine\nOTHER=1\nMISTRAL_API_KEY=two\n");
-        assert_eq!(std::fs::metadata(&f).unwrap().permissions().mode() & 0o777, 0o640);
+        let o = Onb::new("/w", &none);
+        assert_eq!((o.model.as_str(), o.mine.as_str()), ("mistral/zai-glm-5-3", "mistral"));
+        let e = env_of(HashMap::from([("HOME", home.clone()), ("BEND_MODEL", "anthropic/claude-haiku-4-5".to_string())]));
+        let o = Onb::new("/w", &e);
+        assert_eq!(o.mine, "anthropic");
         assert_eq!(clean_key("  'sk-1'\n"), Some("sk-1".into()));
         assert_eq!(clean_key("a b"), None);
         assert_eq!(clean_key(" "), None);
@@ -1237,8 +1226,9 @@ mod tests {
             "which model should do the work?",
             "i found a key in your environment.",
             "1 · use ANTHROPIC_FOUNDRY_API_KEY found",
-            "claude, already set up. nothing to paste.",
+            "foundry, already set up. nothing to paste.",
             "2 · paste another key",
+            "anthropic, foundry, openai and ",
             "3 · sign in with the browser",
             "not built yet.",
             "↑↓ choose · enter ok",
@@ -1250,40 +1240,59 @@ mod tests {
         assert_eq!(o.sel, 1);
         o.on_key(key(KeyCode::Down), 1, &e);
         assert_eq!(o.sel, 0);
-        // paste a mistral key: masked on screen, saved 600
+        // paste: the catalog's providers, the model's one under the cursor
         o.on_key(key(KeyCode::Up), 1, &e);
         o.on_key(key(KeyCode::Enter), 1, &e);
-        assert_eq!(o.sub, Sub::Which(0));
-        o.on_key(key(KeyCode::Down), 1, &e);
+        let foundry = o.providers.iter().position(|p| p.id == "foundry").unwrap();
+        let mistral = o.providers.iter().position(|p| p.id == "mistral").unwrap();
+        assert_eq!(o.sub, Sub::Which(foundry));
+        let sc = screen(&o, 10, 110, 30);
+        assert!(sc.contains("which key do you want to paste?") && sc.contains("OPENAI_API_KEY"), "{}", sc);
+        assert!(sc.contains("↓ ") && sc.contains(" more"), "a window over the list: {}", sc);
+        for _ in foundry..mistral {
+            o.on_key(key(KeyCode::Down), 1, &e);
+        }
+        assert_eq!(o.sub, Sub::Which(mistral));
         o.on_key(key(KeyCode::Enter), 1, &e);
         o.on_paste("secret-xyz\n");
         let sc = screen(&o, 10, 110, 30);
         assert!(sc.contains("paste your MISTRAL_API_KEY:") && sc.contains("••••••••••"), "{}", sc);
+        assert!(sc.contains("it goes in ~/.bend-harness/auth.json"), "{}", sc);
         assert!(!sc.contains("secret"), "{}", sc);
         o.on_key(key(KeyCode::Esc), 1, &e);
         assert_eq!((o.sub.clone(), o.step), (Sub::List, Step::Model));
         o.on_key(key(KeyCode::Enter), 1, &e);
-        o.on_key(key(KeyCode::Down), 1, &e);
+        for _ in foundry..mistral {
+            o.on_key(key(KeyCode::Down), 1, &e);
+        }
         o.on_key(key(KeyCode::Enter), 1, &e);
         o.on_paste("secret-xyz");
         o.on_key(key(KeyCode::Enter), 1, &e);
-        assert_eq!(std::fs::read_to_string(hm(&h).key_file()).unwrap(), "MISTRAL_API_KEY=secret-xyz\n");
-        assert_eq!(o.found, vec![Provider::Claude, Provider::Mistral]);
-        assert_eq!(o.opts()[o.sel], Opt::Use(Provider::Mistral));
+        // login's store: auth.json 0600, no .env written
+        use std::os::unix::fs::PermissionsExt;
+        let f = hm(&h).auth_file();
+        let store = bise_catalog::auth::Store::read(&f).unwrap();
+        assert_eq!(store.key("mistral"), Some("secret-xyz"));
+        assert_eq!(std::fs::metadata(&f).unwrap().permissions().mode() & 0o777, 0o600);
+        assert!(!hm(&h).key_file().exists());
+        assert_eq!(ids(&o.found), vec!["foundry", "mistral"]);
+        assert_eq!(o.opts()[o.sel], Opt::Use(o.found[1].clone()));
         let sc = screen(&o, 10, 110, 30);
-        assert!(sc.contains("i found 2 keys") && sc.contains("✓ saved in ~/.bend-harness/.env."), "{}", sc);
-        assert!(sc.contains("mistral. your model is opus-5.5"), "{}", sc);
+        assert!(sc.contains("i found 2 keys") && sc.contains("✓ saved in ~/.bend-harness/auth.json."), "{}", sc);
+        assert!(sc.contains("mistral. your model is foundry/claude-opus-5-5"), "{}", sc);
         // a second paste asks before replacing
         o.sel = 2;
         o.on_key(key(KeyCode::Enter), 1, &e);
-        o.on_key(key(KeyCode::Down), 1, &e);
+        for _ in foundry..mistral {
+            o.on_key(key(KeyCode::Down), 1, &e);
+        }
         o.on_key(key(KeyCode::Enter), 1, &e);
         o.on_paste("new");
         o.on_key(key(KeyCode::Enter), 1, &e);
-        assert!(matches!(o.sub, Sub::Confirm(Provider::Mistral, _)));
-        assert!(screen(&o, 10, 110, 30).contains("MISTRAL_API_KEY is already in ~/.bend-harness/.env."));
+        assert!(matches!(&o.sub, Sub::Confirm(p, _) if p.id == "mistral"));
+        assert!(screen(&o, 10, 110, 30).contains("Mistral has a key in ~/.bend-harness/auth.json already."));
         o.on_key(key(KeyCode::Esc), 1, &e);
-        assert_eq!(std::fs::read_to_string(hm(&h).key_file()).unwrap(), "MISTRAL_API_KEY=secret-xyz\n");
+        assert_eq!(bise_catalog::auth::Store::read(&f).unwrap().key("mistral"), Some("secret-xyz"));
         // enter on a found key goes on
         o.sel = 0;
         o.on_key(key(KeyCode::Enter), 5, &e);

@@ -605,6 +605,13 @@ new REPL; a key_env the hub set at start whose key is gone now
 (spawn, respawn, restart) without restarting the hub; a REPL already
 running keeps the env it started with.
 
+**Onboarding** (follow-up (b)): the model step
+(`rust/tui/src/onboarding.rs`) reads the catalog (`Setup`: the model in
+use and its provider; the providers that take a key and are usable),
+finds the keys with `auth::Keys` (env, auth.json, the old .env files),
+and saves a pasted key with `auth_cli::login` (auth.json, 0600; asks
+before replacing a stored one). It no longer writes `<root>/.env`.
+
 ## 8. BISE-153 as built: the fake provider, fixtures, live tests
 
 ### 8.1 The fake provider (`tests/fake_provider.py`)

@@ -563,10 +563,14 @@ Vibe's (`vibe/setup/onboarding`). Six steps, `enter` to go on:
    time, so i kept it.` (the saved choice); no answer from the terminal:
    `i couldn't read your terminal's background, so i picked dark.` Two live previews side by side (the same four
    lines of a bise feed); `←→` switches, `enter` keeps.
-3. **Model.** `which model should do the work?` A key found in the
-   environment first: `1 · use ANTHROPIC_API_KEY  found` / `claude, already
-   set up. nothing to paste.`; `2 · paste another key`; `3 · sign in with the
-   browser` (**⚠** not built). `↑↓` chooses.
+3. **Model.** `which model should do the work?` The keys bise finds
+   (environment, `auth.json`, the old `.env` files), the model's provider
+   first: `1 · use ANTHROPIC_FOUNDRY_API_KEY  found` / `foundry, already
+   set up. nothing to paste.`; `2 · paste another key` (`anthropic,
+   foundry, openai and 10 more.`: the catalog's providers that take a
+   key, 9 rows at a time); `3 · sign in with the browser` (**⚠** not
+   built). `↑↓` chooses. A pasted key goes in `auth.json` like `login`
+   (asks before replacing one); the agents started from then on use it.
 4. **Folder, and one honest thing.** `i'll work in ~/lab/app · a git repo ✓`
    / `all your agents share this folder and know about each other. no
    worktrees to merge.` / `one honest thing: agents run commands here without

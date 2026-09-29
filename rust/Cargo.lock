@@ -96,6 +96,7 @@ dependencies = [
  "base64",
  "bend-images",
  "bend-plugins",
+ "bise-catalog",
  "bise-home",
  "cpal",
  "crossterm",
