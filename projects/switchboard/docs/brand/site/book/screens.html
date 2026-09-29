@@ -6,7 +6,7 @@
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root { --bg:#141211; --text:#ece6da; --dim:#a39c90; --faint:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --ok:#b9d99a;
-          --kw:#d7a6f0; --str:#b9d99a; --com:#857e74; --num:#f0b27a; --fn:#8fc4f0; --line:#2a2623; }
+          --kw:#d7a6f0; --str:#b9d99a; --com:#857e74; --num:#f0b27a; --fn:#8fc4f0; --line:#2a2623; --raised:#1f1c1a; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background:#0b0a09; color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:13px; line-height:1.55; padding:28px; }
   h1 { font-size:15px; } .lead { color:#8a8378; max-width:100ch; margin:6px 0 18px; }
@@ -17,11 +17,11 @@
   figcaption b { font-weight:700; } figcaption .n { color:var(--acc); margin-right:1ch; }
   figcaption p { color:#8a8378; margin-top:2px; }
   figcaption .warn { color:#f0b27a; }
-  .term { background:var(--bg); border-radius:8px; width:112ch; max-width:100%; overflow:hidden; box-shadow:0 12px 40px rgba(0,0,0,.45); position:relative; }
+  .term { background:var(--bg); border-radius:8px; width:124ch; max-width:100%; overflow:hidden; box-shadow:0 12px 40px rgba(0,0,0,.45); position:relative; }
   .term.narrow { width:64ch; }
   .term.wide { width:150ch; }
-  .ccol { width:79ch; max-width:100%; margin:0 auto; }            /* the centered reading column (book §8) */
-  .tbox { border:1px solid var(--faint); border-radius:5px; padding:.45lh 1.5ch .35lh; margin-top:1.3lh; max-width:79ch; position:relative; }
+  .ccol { width:91ch; max-width:100%; margin:0 auto; }            /* the centered reading column (book §8) */
+  .tbox { border:1px solid var(--faint); border-radius:5px; padding:.45lh 1.5ch .35lh; margin-top:1.3lh; max-width:91ch; position:relative; }
   .tbox.run { border-color:var(--text); } .tbox.fail { border-color:var(--err); }
   .tbox .ttl { position:absolute; top:-.8lh; left:1ch; background:var(--bg); padding:0 1ch; }
   .tbox .sep { border-top:1px solid var(--faint); margin:.35lh -1.5ch; }
@@ -37,7 +37,7 @@
   .grid { display:grid; grid-template-columns:1fr 32ch; }
   .term.narrow .grid { grid-template-columns:1fr; }
   .feed { padding:1lh 2ch 1lh 2ch; min-height:120px; }
-  .feed > * { max-width:76ch; }
+  .feed > * { max-width:91ch; }
   .feed pre.code, .feed pre.out { max-width:100ch; }
   .panel { padding:1lh 2ch 1lh 2ch; border-left:1px solid var(--faint); }
   .row { display:flex; justify-content:space-between; white-space:nowrap; }
@@ -49,11 +49,13 @@
   .flabel > span { background:var(--bg); padding:0 1ch; }
   .status { display:none; }
   .composer { display:flex; justify-content:space-between; margin-top:4px; }
-  .cbox { border-left:1px solid var(--faint); padding:0 0 0 calc(2ch - 1px); }
+  /* the composer is raised: a tinted block (dark #1f1c1a, light #f4f0e8) from column 3 to F−4, the bar │ in
+     its first column, 2 tinted columns before the text and 2 after, 1 tinted row above and below the text */
+  .cbox { background:var(--raised); border-left:1px solid var(--faint); padding:1lh 2ch 1lh calc(2ch - 1px); max-width:91ch; box-sizing:border-box; }
   .cbox.typing { border-left-color:var(--acc); }
   .cbox .ctext { min-height:2lh; white-space:pre-wrap; }
   .ph { color:var(--dim); }
-  .hintrow { display:flex; justify-content:space-between; color:var(--dim); margin-top:1lh; min-height:1lh; }
+  .hintrow { display:flex; justify-content:space-between; color:var(--dim); margin-top:0; min-height:1lh; }
   .hintrow .k { color:var(--text); }
   .hintrow .ks span + span { margin-left:3ch; }
   .queue { margin-top:4px; }
@@ -65,7 +67,7 @@
   pre { font:inherit; white-space:pre-wrap; }
   pre.code { border-left:1px solid var(--line); padding-left:2ch; margin:3px 0 0 1ch; }
   pre.out { border-left:1px solid var(--line); padding-left:2ch; margin:3px 0 0 1ch; color:var(--dim); }
-  .card { border:1px solid var(--acc); border-radius:6px; padding:6px 2ch; margin:8px 2ch 0; max-width:80ch; }
+  .card { border:1px solid var(--acc); border-radius:6px; padding:6px 2ch; margin:8px 2ch 0; max-width:91ch; }
   .card.soft { border-color:var(--line); }
   .card .opts span { margin-right:3ch; } .card .opts b { color:var(--acc); font-weight:400; }
   .pop { border:1px solid var(--line); border-radius:6px; margin:0 2ch 4px; padding:4px 1ch; background:#1b1816; max-width:70ch; }
@@ -149,7 +151,10 @@ function foot(status, composer, hints, queue = "") {
   const left = m ? `<span class="dim">you →</span> <span class="acc">${m[1]}</span>` : who(st);
   const right = m ? `<span class="dim">${m[2]}</span>` : "";
   const dflt = hints === undefined || hints === "";
-  const h = dflt ? "⏎ send · @ agent · ⌥0-9 switch · / commands · ? help" : hints;
+  // in an agent's view, the way back to main always comes first
+  const agentView = m && m[1] !== "main";
+  let h = dflt ? "⏎ send · @ agent · ⌥0-9 switch · / commands · ? help" : hints;
+  if (agentView && !/esc/.test(h)) h = "esc back to main · " + h.replace(" · / commands", "");
   const tip = dflt && !typing ? '<span class="dim">tip · ctrl+o opens everything folded</span>' : "";
   return `<div class="foot"><div class="flabel"><span>${left}</span>${right ? `<span>${right}</span>` : ""}</div>
   ${queue ? `<div class="queue">${queue}</div>` : ""}
