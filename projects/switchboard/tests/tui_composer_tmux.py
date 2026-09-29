@@ -112,6 +112,7 @@ def main():
         keys("C-_")
         wait_composer("Ymy! draft")
         # the feed: drag over "first message" in the fake reply, release copies
+        wait_screen("ack: first message")   # the reply may come late under load
         x, y = find("ack: first message")
         mouse("press", x + 5, y)
         mouse("drag", x + 10, y)
