@@ -531,14 +531,7 @@ The same three levels everywhere, in main and inside an agent.
   l'agent »). Select text in the history (the release still copies it);
   the key bar says `type ask about it   cmd+c copy   esc drop`, `type ask
   about it` in the accent, `type` bold, so you notice you can just type
-  (the only accent of the bar; `NO_COLOR`: the pair bold). Once the
-  drag ends, a one-row pill says it where the eyes are too (BISE-229):
-  ` type ask about it · cmd+c copy ` on the pink pill, on the row right
-  above the selection, at its first column (pushed left to stay in the
-  history's column; never over the panel, the divider or the composer).
-  No room above: under the last row; no room either: none. Narrow: only
-  ` type ask about it `. A press, a scroll, typing or esc puts it away;
-  `NO_COLOR`: `[ type ask about it · cmd+c copy ]`, no tint. The first
+  (the only accent of the bar; `NO_COLOR`: the pair bold). The first
   key you type puts the selection in the composer as a quote chip `❝ 1`
   at the cursor (BISE-207), and ends the selection; the key types right
   after it. A chip, quote or image (paste, drop, `@`), always goes in at
@@ -719,7 +712,7 @@ replays it (**⚠** proposed command).
 | `ctrl+r` | voice: record, any key stops, then the clip is transcribed at once; the voice chip at the cursor meanwhile, you keep typing while it is transcribed (BISE-222) | batch, not live (BISE-130): the full Voxtral model, `[voice]` in config.toml |
 | ``ctrl+` `` | terminal panel | — |
 | `ctrl+v` | paste an image | from the images work |
-| hold `ctrl` alone (~250 ms) | the ctrl keys show where they act: a fold's `▸ 12 more lines` reads `▸ ctrl+o expand`, the panel title `agents · ctrl+k/j select`, the divider's state `ctrl+c interrupt` while the agent works, the card box's keys, the key bar every ctrl key of the moment; key in accent, what it does dim; over cells already drawn, nothing moves; released or any other key: gone at once. Only in a terminal that confirms the kitty keyboard protocol's flags 8 + 16 (Ghostty, kitty, WezTerm…); tmux and the others: off | new (BISE-203) |
+| hold `ctrl` alone (~80 ms, BISE-231) | the ctrl keys show where they act: a fold's `▸ 12 more lines` reads `▸ ctrl+o expand`, the panel title `agents · ctrl+k/j select`, the divider's state `ctrl+c interrupt` while the agent works, the card box's keys, the key bar every ctrl key of the moment; key in accent, what it does dim; over cells already drawn, nothing moves; released or any other key: gone at once. Only in a terminal that confirms the kitty keyboard protocol's flags 8 + 16 (Ghostty, kitty, WezTerm…); tmux and the others: off | new (BISE-203) |
 | `ctrl+z` | ~~cancel the last route~~ | **removed** |
 | `typing` (composer) | zen: the edges fade while you type, back 5 s after your last key (or at once on ⏎, esc, a shortcut) | a row in /shortcuts (BISE-137) |
 | `/help`, `/shortcuts` | both end with the `symbols` legend (§6): every glyph, its ASCII form under `BISE_ASCII=1`, a few words | new (BISE-137) |
