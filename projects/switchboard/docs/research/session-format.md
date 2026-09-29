@@ -1,7 +1,7 @@
 # Research — the bise session format (JSONL event log)
 
-Status: proposal, no code changed. To discuss with the user; the open
-decisions are in §12. Read at HEAD `6586f6d`.
+Status: design decided (§12). Implementation plan in §13. No code
+changed. Read at HEAD `6586f6d`.
 
 The goal, in the user's words: a JSONL file that is a log of structured
 events, typed by one precise discriminated union, so we can add new event
@@ -22,8 +22,9 @@ including what compaction removed from the context.
 - Each line is one event: an envelope (`seq`, `at`, `type`, `v`, optional
   `turn`, optional `must`) and a `data` payload. `type` + `v` select the
   payload shape (a TypeScript discriminated union, §4).
-- Lines are never rewritten. Undo, compaction, and edits are new events
-  that point back at older `seq` numbers.
+- Lines are never rewritten. The log is linear: no undo, no fork, no
+  branches. A compaction is a new event that points back at older `seq`
+  numbers.
 - A reader skips event types it does not know, **unless** the event has
   `"must": true`: then it opens the session read-only ("written by a newer
   bise"). A reader keeps unknown fields. A writer never touches old lines,
@@ -233,7 +234,6 @@ type SessionStart = Ev<"session_start", 1, {
     name: string;           // "session-format"
     parent?: string;        // "main"
   };
-  forked_from?: { session: string; seq: Seq };
   migrated_from?: { path: string; format: string; sha256: string };
 }>;
 
@@ -337,6 +337,7 @@ type Usage = Ev<"usage", 1, {
   cache_read?: number;
   cache_write?: number;
   reasoning?: number;
+  request_sha256?: string;  // sha256 of the request body sent (§7 step 8)
   cost?: { usd: number; prices: string };  // prices: price table id, "2026-10-01"
 }>;
 
@@ -395,12 +396,6 @@ type CompactionFailed = Ev<"compaction_failed", 1, {
   error: ErrorInfo;
 }>;
 
-// ---------- history edits ----------
-type Rewound = Ev<"rewound", 1, {               // must: true
-  to: Seq;                  // the context is what it was right after `to`
-  reason: "user_undo" | "user_edit" | "restore" | "other";
-}>;
-
 // ---------- full state, for fast resume ----------
 type Checkpoint = Ev<"checkpoint", 1, {         // must: true
   upto: Seq;                // state after this seq (usually seq - 1)
@@ -423,7 +418,7 @@ type Event =
   | Usage | RequestFailed | ResponseDiscarded | Interrupted | ToolStarted
   | InputQueued | InputDropped
   | CompactionStarted | CompactionDone | CompactionFailed
-  | Rewound | Checkpoint;
+  | Checkpoint;
 
 // what a reader holds for a line it cannot type (§6)
 type UnknownEvent = Envelope & { type: string; v: number; data: unknown };
@@ -455,7 +450,7 @@ wrong context.
 ```
 
 - Session id: `s-20261001-091403-7f3a9c` (UTC time + 6 random hex). It
-  sorts by time, it is short, and it is not a path. (Open decision 2.)
+  sorts by time, it is short, and it is not a path.
 - A hub agent points at its session by id. `/restart` and a worktree move do
   not move the log. The hub journal gets a `session_bound {name, session}`
   event when an agent gets a session, so the hub can list them.
@@ -547,17 +542,17 @@ copy them: it has what the agent's model saw (`agent_message`,
 logs. What an agent sends goes through its tool calls (`sb send …` in
 `bash`), so it is already in the log as a `tool_result`.
 
-### 5.9 Forks, undo, restores
+### 5.9 No undo, no fork (user decision)
 
-- **Fork**: a new session whose `session_start.forked_from` is
-  `{session, seq}`, followed by a `checkpoint` that copies the parent's
-  state at that `seq` (context events are copied too, so the fork is
-  self-contained). The parent file is not touched.
-- **Undo / edit a past message**: a `rewound {to}` event. The context is
-  again what it was after `to`; the events between stay in the file,
-  hidden. The log stays linear: no `parentUuid` tree to walk.
-- **Restore after a binary rollback** (`/version back`): nothing special;
-  §6 decides what the old binary may do with the file.
+The log is linear: the state after an event is everything above it in
+the file. bise has no undo today (`/undo` answers "no undo",
+`router.rs:256`) and the user does not want forks or branches, so there
+is no `rewound` event and no `forked_from`. If undo is ever wanted, it is
+a new `must` event type (§6.3 rule 4): old readers then open those
+sessions read-only, and no other session is affected.
+
+**Restore after a binary rollback** (`/version back`): nothing special;
+§6 decides what the old binary may do with the file.
 
 ---
 
@@ -598,7 +593,7 @@ change. A reader that does not know the major does not open the file
    would give the model a wrong context.
 5. Changing the meaning or the shape of a field: new `v` for that type.
    A writer may write both `v1` and `v2` of the same fact for a while if
-   old readers still matter (open decision 9).
+   old readers still matter.
 6. Type names are `snake_case`, never reused, never renamed. The union in
    §4 is the registry; a removed type stays listed as "retired".
 
@@ -633,15 +628,12 @@ plus the UI history.
    - `input_queued` / `input_dropped`: update the queue;
    - `compaction_done`: remove the `replaces` range except `kept`, insert
      the summary (as an injected message) at the start of the range;
-   - `rewound {to}`: set the context, queue, and config back to their
-     state after `to` (replay from the checkpoint up to `to`; if `to` is
-     before the checkpoint, read the older segment);
    - `usage`: add to the totals; `req`, `turn`, `compaction` counters:
      take the maximum seen;
    - unknown types: §6.2.
    A `checkpoint` lists context events by `seq`: load those lines (they
-   are in this segment or an older one; a segment keeps an index at its
-   end, open decision 7).
+   are in this segment or an older one, found by scanning; no offset
+   index for now).
 5. **Close what the crash left open.** If the last `turn_started` has no
    `turn_ended`:
    - for each `ToolCall` of the last `assistant_message` with no
@@ -657,10 +649,10 @@ plus the UI history.
    list (parts back to today's text with markers; thinking back to
    `<think>…BENDSIG::</think>`; tool results in call order); counters →
    `inputs`, `actions`; queue → `queued` and `notifs`.
-8. Check: the projected request (system + tools + messages) is byte-equal
-   to what the last request sent, when the log has it (a hash in `usage`,
-   open decision 8). A mismatch is logged: it means a lost cache, not a
-   broken session.
+8. Check: the sha256 of the rebuilt request (system + tools + messages,
+   the body bytes bise would send, before the new turn is added) equals
+   `usage.request_sha256` of the last request. A mismatch is logged: it
+   means a lost prompt cache, not a broken session.
 
 Cost: one checkpoint plus the events after it. A session is never read in
 full to resume, however long it is.
@@ -682,23 +674,23 @@ full to resume, however long it is.
   before the hub is told a message was delivered. Not after each tool
   result or usage line (the next fsync covers them; a crash loses at most
   the facts of the current step, which the repair in §7 step 5 closes).
-  (Open decision 4.)
 - Files `0600`, folders `0700`.
 
 ### 8.2 Line size
 
 A line stays under 256 KiB. Bigger text (a 2 MB `cat`, a long system
 prompt) goes to a blob and the event holds `{blob}`. Images always go to a
-blob. (Open decision 5 for the threshold.)
+blob.
 
 ### 8.3 Rotation
 
 When `events.jsonl` passes 32 MiB, at a turn boundary: rename it
 `events.<n>.jsonl`, start a new `events.jsonl` with `segment_start` (name,
 last `seq`, and sha256 of the previous segment) and a `checkpoint`. `seq`
-continues. A resume reads only the last segment, unless a `rewound` goes
-further back. Old segments can be gzipped later without changing the
-format. (Open decision 7.)
+continues. A resume reads only the last segment, plus older ones when a
+checkpoint lists context events that live there (found by scanning; no
+offset index for now). Old segments can be gzipped later without
+changing the format.
 
 ### 8.4 Secrets are never stored
 
@@ -710,8 +702,9 @@ format. (Open decision 7.)
   time, the writer replaces the values of the keys bise knows (from
   `auth.json`, `.env` files) and well-known key shapes with
   `«redacted:<name>»`. The model saw the secret; the disk does not keep
-  it. (Open decision 10: redact or not, and what the model sees on
-  resume.)
+  it. On resume the model sees `«redacted:<name>»` where it saw the key
+  (user decision 10). The prompt cache misses once for that request; the
+  request hash check (§7 step 8) logs it as an expected mismatch.
 
 ---
 
@@ -819,16 +812,16 @@ disk, so there is nothing to point at.
    `{sessions: {<txt path>: <session id>}}`. (Vibe deletes the old file;
    we do not.)
 4. **Rollback safety:** `/version back` can start a bise that only knows
-   `.txt`. During a transition period the writer also writes the `.txt`
-   checkpoint (tmp + rename, `0600`) after each turn. Old binaries keep
-   working; the new binary reads the JSONL first. (Open decision 6: how
-   long.)
+   `.txt`. Until the first packaged release (BISE-170, the installer),
+   bise also writes the `.txt` checkpoint (tmp + rename, `0600`) after
+   each connection. Old binaries keep working; the new binary reads the
+   JSONL first. At BISE-170 the dual-write stops.
 5. **Hub agents:** `agents/<name>/session.txt` → a session folder +
    `agents/<name>/session` (the id). The hub keeps passing
    `BEND_SESSION_FILE` to old REPLs during the transition.
-6. **Human logs:** `transcript.log`, `wire.log`, `context.txt` stay for
-   now; later they can be rendered from the JSONL on demand (open decision
-   11).
+6. **Human logs:** `wire.log` stays (it is the live channel the hub
+   reads). `transcript.log` and `context.txt` stop once `bise session
+   show` renders the same from the JSONL.
 
 ### 10.3 What must be checked in Bend before building
 
@@ -857,7 +850,7 @@ disk, so there is nothing to point at.
 | Interruptions | fake user text | `turn_aborted` | — | not stored | `interrupted` + `turn_ended` |
 | Errors / retries | — | `error` events | — | not stored | `request_failed`, `response_discarded` |
 | Usage | in each assistant line | `token_count`, very frequent | stats in metadata | `wire.log` only | one `usage` per request |
-| Undo / fork | `parentUuid` tree | `thread_rolled_back` | rewrite | — | `rewound`, `forked_from` |
+| Undo / fork | `parentUuid` tree | `thread_rolled_back` | rewrite | — | none (linear log, user decision) |
 | Unknown data | — | — | dropped on rewrite (`extra="ignore"`) | parse failure | skip + keep; `must` → read-only |
 | Crash safety | — | — | tmp + fsync + replace | none (`"w"`) | append, fsync at key points, tail repair |
 | Permissions | `0600` | dir `0755` | dir `0700` | `0644` | `0600` / `0700` |
@@ -889,40 +882,122 @@ disk, so there is nothing to point at.
 
 ---
 
-## 12. Open decisions
+## 12. Decisions (closed)
 
-1. **Where logs live.** `~/.bise/sessions/<id>/` for all sessions, with
-   hub agents pointing to them by id (proposed), or inside
-   `hubs/<hub>/agents/<name>/` so a hub folder holds everything?
-2. **Session id shape.** `s-<utc time>-<6 hex>` (proposed), a UUIDv7, or a
-   ULID?
-3. **Linear log + `rewound`** (proposed) or a `parent` pointer on each
-   event (Claude Code's tree, allows branches in one file)?
-4. **fsync policy.** At the key points of §8.1 (proposed), after every
-   event (simplest, slower on big tool outputs), or never (the hub
-   journal today)?
-5. **Blob threshold** for text: 256 KiB per line (proposed), or lower
-   (64 KiB) to keep files easy to read with `jq` and `less`?
-6. **Dual-write of the `.txt`** during the transition: how many releases,
-   or until a date? Or no dual-write, and `/version back` refuses to go
-   before the JSONL release?
-7. **Rotation size and index.** 32 MiB per segment (proposed)? Do we add a
-   small index (seq → byte offset) at segment end, or scan?
-8. **Request hash.** Store a hash of each provider request in `usage`, to
-   prove a resume rebuilds the same bytes (and see cache misses)?
-9. **Payload versions.** Keep a `v` per type (proposed), or only the file
-   `format` and additive changes forever?
-10. **Secret redaction** in tool output: redact known key values at write
-    time (proposed)? On resume, the model then sees `«redacted:…»` where
-    it saw the key — is that acceptable?
-11. **Human logs.** Keep writing `transcript.log` / `wire.log` /
-    `context.txt`, or render them from the JSONL with a `bise session
-    show` command and stop writing them?
-12. **Hub journal.** Move it to the same envelope (`seq`, `at`, `v`,
-    `must`, `format` header) now, later, or never?
-13. **Prompt history.** Add `~/.bise/history.jsonl` (the prompts typed,
-    for ↑ in the input box, like Claude Code and Codex), or keep drafts
-    only?
-14. **UI-only facts** (`tool_started`, `response_discarded.partial`,
-    stream timings): store them in the session log (proposed), or in a
-    separate debug file to keep the log smaller?
+Decided by main for the user, except 3 and 10, decided by the user.
+
+1. **Where logs live:** `~/.bise/sessions/<id>/` for every session; a hub
+   agent points to its session by id (`agents/<name>/session`).
+2. **Session id:** `s-<utc yyyymmdd-hhmmss>-<6 hex>`.
+3. **Linear log only** (user). No fork, no branches, no `rewound` event:
+   bise has no undo today. Removed from the union (§5.9).
+4. **fsync** at the key points of §8.1.
+5. **Blob threshold:** 256 KiB per line.
+6. **Dual-write of the `.txt`** until the first packaged release
+   (BISE-170, the installer), then stop. While it lasts, `/version back`
+   to a version before the JSONL release keeps working.
+7. **Rotation:** 32 MiB segments; scan, no offset index for now.
+8. **Request hash:** yes, `usage.request_sha256`.
+9. **Payload versions:** a `v` per type.
+10. **Secret redaction** (user): replace known key values at write time;
+    on resume the model sees the redacted text.
+11. **Human logs:** keep `wire.log` (the live channel). Add `bise session
+    show`; stop writing `transcript.log` and `context.txt` once it exists.
+12. **Hub journal:** same envelope later, as a separate issue.
+13. **Prompt history:** no global `history.jsonl`; keep BISE-120a's
+    per-workspace drafts history.
+14. **UI-only facts** (`tool_started`, `response_discarded.partial`): in
+    the session log.
+
+---
+
+## 13. Implementation plan
+
+Issue ids **BISE-190..BISE-202** (the highest id in use is BISE-173).
+Sizes are focused hours. Paths come from `rust/home` (BISE-160), never
+from a new home lookup.
+
+### 13.1 Where the code goes
+
+- **Rust writes and reads the log** (new crate `rust/session`). Rust has
+  JSON, fsync, `flock`, and sha256 already; the hub already tails each
+  agent's `wire.log` by offset (`daemon.rs:83`, `:296`).
+- **The Bend REPL emits facts, it does not write the log.** It prints one
+  `  ev: <json>` line per fact on its wire (next to today's `obs:` lines).
+  Rust adds `seq`, applies redaction and blobs, and appends.
+- **Resume reuses today's loader.** Rust rebuilds the state from the log
+  and writes it as `BEND-SESSION 2` text into `BEND_SESSION_FILE`; the
+  REPL starts with `BEND_CONTINUE=1` as today. No new reader in Bend.
+
+### 13.2 Issues
+
+| # | Issue | Size | Needs | Tests |
+|---|---|---|---|---|
+| 1 | **BISE-190** Spec and fixtures. `spec/session-format.ts` = the union of §4 (normative). `tests/fixtures/session/`: one `.jsonl` + one `.expect.json` (rebuilt state, or "read-only", or bad line numbers) per case of §13.3. | 3 h | — | the fixtures are the tests of 191, 192, 194, 195 |
+| 2 | **BISE-191** `rust/session`: types (serde, tagged by `type`, one variant per `(type, v)`, an `Unknown {raw}` fallback), line reader (bad lines counted, torn tail found, `format` check, unknown `must` → read-only, unknown fields kept, unknown enum → `other`). | 5 h | 190 | all reader fixtures |
+| 3 | **BISE-192** Writer + blobs + rotation: lock (`flock` + pid), `seq`, one `write` per line with `O_APPEND`, fsync points of §8.1, `0600`/`0700`, blob store (tmp + fsync + rename, before the event), 256 KiB rule, 32 MiB rotation at a turn boundary (`segment_start` + `checkpoint`). | 6 h | 191 | blob written before event; append keeps unknown lines byte for byte; rotation fixture; modes checked |
+| 4 | **BISE-193** Redaction: values from `auth.json` and the `.env` files bise reads, plus known key shapes, replaced in text parts before writing. | 3 h | 191 | a key in a tool result never reaches the file; a word that looks like a key but is not listed stays |
+| 5 | **BISE-194** Resume + projection: §7 steps 2-8 (tail repair to `events.torn-*`, checkpoint, compaction replay, queue, crash closing), checkpoint writing after compaction, and projection to `BEND-SESSION 2` (parts → markers, thinking → `BENDSIG::`, blobs → `.b64` files for the image markers). | 8 h | 192 | every fixture's `.expect.json`; projection of fixture sessions equals golden `.txt` files |
+| 6 | **BISE-195** REPL facts on the wire (Bend): an `ev:` line for each event of §4 that the REPL knows (messages with parts, calls, tool results with call ids, usage with `request_sha256`, errors and retries, interruptions, compaction, queue). Check first: sha256 in Bend or through `bend-jsrt`. | 10 h | 190 | scripted REPL (`repl-scripted`) runs produce `ev:` lines that parse with 191 and match golden files |
+| 7 | **BISE-196** Hub wiring: create the session (id, folder, `agents/<n>/session`), `session_bound` hub event, tail `ev:` lines into the writer (own offset file), resume path through 194, `RESUME_TEXT` as `context_injected {kind: "resume_note"}`. Solo sessions, if any remain after BISE-113, use the same path. | 6 h | 192, 194, 195 | hub test: an agent's turn gives the expected events; a hub restart resumes it |
+| 8 | **BISE-197** Migration `.txt` → JSONL (§10): lazy at first resume, `bise sessions migrate [--dry-run]`, round-trip check (projection byte-equal to the `.txt`), `migrated.json`, `.txt` kept. | 6 h | 194 | synthetic `.txt` fixtures (thinking, images, queue, notifs, tool calls); a local run over the real `~/.bise` sessions, reported, never committed |
+| 9 | **BISE-198** Dual-write hardening, now: `persist.bend` writes the `.txt` to a temp file then renames it, mode `0600`. Independent of the rest. | 2 h | — | kill during save leaves the old or the new file, never a half file |
+| 10 | **BISE-199** `bise session show [<id>] [--context] [--raw]`: the transcript, or what the model sees now. | 5 h | 194 | golden output for the fixtures |
+| 11 | **BISE-200** Stop writing `transcript.log` and `context.txt`; the TUI and docs point to `bise session show`. | 1 h | 199 | nothing reads the removed files (grep test) |
+| 12 | **BISE-201** End of dual-write: stop writing the `.txt`; keep the `.txt` reader for migration; `/version back` to a pre-JSONL version warns that newer sessions will not be seen. | 2 h | BISE-170, 196 | no `.txt` written after a turn; old `.txt` still migrate |
+| 13 | **BISE-202** End-to-end crash tests (`bend_client.py` / tmux): `kill -9` during a tool call, during a streamed answer, during a compaction; a torn last line; an unknown `must` event shown read-only in the TUI. | 5 h | 196 | this issue is tests |
+
+Total: about 62 h.
+
+### 13.3 Fixture cases (BISE-190)
+
+1. short session (§9.1): the rebuilt state.
+2. crash with an open tool call: repair writes `tool_result`,
+   `interrupted`, `turn_ended {crashed}`.
+3. torn last line (no `\n`, and half a JSON object): cut, saved to
+   `events.torn-*`, the rest resumes.
+4. bad line in the middle: skipped, reported by line number, the rest
+   resumes.
+5. unknown type without `must`: skipped, kept after an append.
+6. unknown type with `must`: read-only, the writer refuses to append.
+7. unknown field in a known payload: kept after an append, ignored.
+8. unknown enum value: read as `other`.
+9. unknown format major: not opened.
+10. `seq` going back: first kept, the rest reported.
+11. compaction with `kept`, then a checkpoint: the rebuilt context.
+12. two segments: `checkpoint` refers to a context event in the older
+    segment.
+13. queue: queued, consumed, dropped.
+14. redaction: a listed key value in a tool result.
+15. migrated session: `migrated_from` + a `.txt` that must project back
+    byte for byte.
+
+### 13.4 Order and parallel work
+
+```
+BISE-198 (now, alone)
+
+BISE-190 ─┬─ BISE-191 ─┬─ BISE-192 ── BISE-194 ─┬─ BISE-196 ── BISE-202
+          │            └─ BISE-193               ├─ BISE-197
+          │                                      └─ BISE-199 ── BISE-200
+          └─ BISE-195 (Bend, in parallel with 191-194) ──┘ (into 196)
+
+BISE-170 (installer) + BISE-196 ── BISE-201
+```
+
+- Two lanes can run at once after BISE-190: Rust (191 → 192 → 194) and
+  Bend (195). They meet at BISE-196.
+- BISE-193, 197 and 199 can run in parallel once their dependency lands.
+- BISE-195 edits `runtime/*.bend`: check what BISE-118 and BISE-162 still
+  change there before starting.
+
+### 13.5 Migration and dual-write steps
+
+1. BISE-198: the `.txt` becomes crash safe (nothing else changes).
+2. BISE-196 lands: every new turn is in the JSONL **and** the `.txt`
+   (the REPL keeps saving it). Resume reads the JSONL; the `.txt` is the
+   fallback when the JSONL is missing or read-only.
+3. BISE-197 lands: old `.txt`-only sessions move to JSONL at first
+   resume, checked byte for byte; `bise sessions migrate` does the rest.
+4. BISE-170 ships the installer: BISE-201 stops the `.txt` writes in the
+   same release.
