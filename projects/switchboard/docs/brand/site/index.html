@@ -73,7 +73,7 @@
   @keyframes breathe { 50% { opacity:.4; transform:translateY(3px) } }
 
   /* reveal: text arrives like a breeze */
-  .blow { opacity:0; transform:translateX(-14px); transition:opacity 1.1s ease, transform 1.4s ease; }
+  .blow { opacity:0; transform:translateY(18px); transition:opacity .9s ease, transform 1.1s cubic-bezier(.2,.7,.2,1); }
   .blow.in { opacity:1; transform:none; }
 
   section { padding:18vh 6vw; }
