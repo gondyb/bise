@@ -24,6 +24,6 @@ node_modules/
 *.pyc
 __pycache__/
 
-# Release bundle (regenerable via release.sh; the built binaries are
-# large and EDR-quarantine-prone - the script is the source of truth)
+# the old release.sh bundle (gone, BISE-164: packaging/build-dist.sh
+# makes the tarball, in /tmp/bise-dist)
 dist/

@@ -7,7 +7,8 @@
 #                           prompt-*.txt, sb-core (when hub/ exists),
 #                           bend-jsrt (+ a hard link at the old path
 #                           rust/jsrt/target/debug/bend-jsrt),
-#                           VERSION (id, commit, subject, built, bend_hash)
+#                           VERSION (id, commit, subject, built, bend_hash,
+#                           macos: the oldest macOS it runs on)
 # id = <short commit>, or <short commit>-dirty-<hash of the changes>.
 # A hub runs FROM a version dir: rebuilding the tree never changes a
 # running system, only an explicit switch does.
@@ -29,6 +30,10 @@ STATE="${XDG_STATE_HOME:-$HOME/.local/state}/switchboard"
 VERSIONS="${SB_VERSIONS_DIR:-$STATE/versions}"
 BUILD="${SB_BUILD_DIR:-$STATE/build}"
 export PATH="$HOME/.cargo/bin:$HOME/.bend/bin:$PATH"
+# the oldest macOS the binaries run on (BISE-164), this repo's value
+# (rust/.cargo/config.toml) for every commit: an old one has no
+# rust/.cargo/config.toml, cargo takes it from the environment
+export MACOSX_DEPLOYMENT_TARGET; MACOSX_DEPLOYMENT_TARGET="$("$REPO/bins.sh" macos-target)"
 
 say() { echo "versions: $*" >&2; }
 
@@ -108,6 +113,7 @@ build_from() {
     echo "subject=$(git log -1 --format=%s "$rev")"
     echo "built=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "bend_hash=$h"
+    echo "macos=$MACOSX_DEPLOYMENT_TARGET"
     echo "repo=$REPO"
   } > "$tmp/VERSION"
   rm -rf "$vdir"; mv "$tmp" "$vdir"

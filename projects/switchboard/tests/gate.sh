@@ -12,7 +12,9 @@
 #                     ./repl-scripted ./sb-core in place with bins.sh: a copy
 #                     from the cache, a compile when their sources changed;
 #                     never commit them) with FUZZ_RUNS=2000
-#                     (~60 s warm; e2e + tmux tests in parallel, SB_TEST_JOBS).
+#                     (~60 s warm; e2e + tmux tests in parallel, SB_TEST_JOBS),
+#                     then no binary built needs a macOS newer than the
+#                     target (./bins.sh minos, BISE-164).
 #   gate.sh wait <bg .out file | pid>
 #                     the bash tool put a gate in the background: block until
 #                     it ends (at most 25 s), then show its end and exit code.
@@ -35,6 +37,9 @@ cd "$(dirname "$0")/../../.."
 root="$PWD"
 export PATH="$HOME/.bend/bin:$HOME/.cargo/bin:$PATH"
 unset SB_CORE_BIN
+# the oldest macOS the binaries run on (rust/.cargo/config.toml, BISE-164):
+# for the quick sb-core's cc too
+export MACOSX_DEPLOYMENT_TARGET; MACOSX_DEPLOYMENT_TARGET="$(./bins.sh macos-target)"
 base="${GATE_BASE:-HEAD}"
 changed="$( { git diff --name-only "$base"; git ls-files --others --exclude-standard; } | sort -u)"
 hub_changed=0 bend_changed=0
@@ -51,6 +56,11 @@ if [ "$mode" = full ]; then
   s=$SECONDS
   export FUZZ_RUNS="${FUZZ_RUNS:-2000}"
   projects/switchboard/tests/run_all.sh; rc=$?
+  # every binary built runs on the macOS target (BISE-164): the Bend ones,
+  # bend-harness, and the engine when this tree has one
+  bins=(./repl-live ./repl-scripted ./sb-core "${CARGO_TARGET_DIR:-rust/target}/debug/bend-harness")
+  for f in ./harness-demo rust/jsrt/target/debug/bend-jsrt; do [ -e "$f" ] && bins+=("$f"); done
+  if [ $rc = 0 ]; then ./bins.sh minos "${bins[@]}" || rc=1; fi
   [ $rc = 0 ] && echo "GATE full GREEN ($((SECONDS - s))s)" || echo "GATE full FAILED"
   exit $rc
 fi
@@ -106,7 +116,7 @@ pkgs=""
 add() { case " $pkgs " in *" $1 "*) ;; *) pkgs="$pkgs $1" ;; esac; }
 for f in $changed; do
   case "$f" in
-    rust/Cargo.toml|rust/Cargo.lock) add bend-plugins; add bend-images; add bend-tui; add switchboard; add bend-harness ;;
+    rust/Cargo.toml|rust/Cargo.lock|rust/.cargo/*) add bend-plugins; add bend-images; add bend-tui; add switchboard; add bend-harness ;;
     rust/plugins/*) add bend-plugins; add bend-tui; add bend-harness ;;
     rust/images/*) add bend-images; add bend-tui; add bend-harness ;;
     rust/tui/*) add bend-tui; add bend-harness ;;

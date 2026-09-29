@@ -45,13 +45,14 @@ else
 fi
 
 # the V8 engine (its own cargo workspace): built when missing OR older
-# than its sources (rust/jsrt, rust/images). The harness hands its path
+# than its sources (rust/jsrt, rust/images) or than rust/.cargo/config.toml
+# (the macOS target, BISE-164). The harness hands its path
 # to the runtime (BEND_JSRT_BIN).
 JS=rust/jsrt/target/debug/bend-jsrt
 if [ ! -x "$JS" ]; then
   echo "bend-jsrt missing — building the V8 engine (first time: a few minutes)...">&2
   (cd rust/jsrt && CARGO_TARGET_DIR=target cargo build)
-elif [ -n "$(find rust/jsrt/src rust/jsrt/Cargo.toml rust/jsrt/Cargo.lock rust/images/src rust/images/Cargo.toml -newer "$JS" -print -quit 2>/dev/null)" ]; then
+elif [ -n "$(find rust/jsrt/src rust/jsrt/Cargo.toml rust/jsrt/Cargo.lock rust/images/src rust/images/Cargo.toml rust/.cargo/config.toml -newer "$JS" -print -quit 2>/dev/null)" ]; then
   echo "bend-jsrt outdated — cargo build (rust/jsrt)...">&2
   (cd rust/jsrt && CARGO_TARGET_DIR=target cargo build) \
     || echo "building bend-jsrt failed — the existing engine is kept" >&2

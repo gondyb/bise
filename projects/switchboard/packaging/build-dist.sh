@@ -20,7 +20,11 @@
 #       bend-jsrt            the V8 engine (RELEASE build; a commit before
 #                            BISE-114: at rust/jsrt/target/debug/bend-jsrt,
 #                            the path its runtime expects)
-#       VERSION              id, commit, subject, built, bend_hash, target
+#       VERSION              id, commit, subject, built, bend_hash, macos,
+#                            target
+#
+# Every binary must run on the macOS target (rust/.cargo/config.toml,
+# BISE-164): checked before packing (./bins.sh minos).
 #
 # It reuses versions.sh (its caches: cargo target dir, Bend compiles per
 # source hash), so a commit already built by /version costs seconds.
@@ -125,6 +129,12 @@ for f in bend-harness repl-live repl-scripted sb-core "$jsrt_at" \
          tool-desc-bash.txt prompt-tool-use.txt VERSION; do
   [ -e "$app/$f" ] || { say "INCOMPLETE: app/$f missing"; exit 1; }
 done
+# ... and no binary needs a macOS newer than the target (a version dir
+# built before BISE-164 has Bend binaries for the build machine's macOS:
+# remove it and run again)
+"$REPO/bins.sh" minos "$app/bend-harness" "$app/repl-live" "$app/repl-scripted" \
+  "$app/sb-core" "$app/$jsrt_at" >&2 \
+  || { say "a binary needs a newer macOS than $("$REPO/bins.sh" macos-target): rm -rf $vdir and run again"; exit 1; }
 
 # 7. pack
 mkdir -p "$out"

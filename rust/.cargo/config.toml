@@ -1,0 +1,11 @@
+# The oldest macOS the binaries run on (BISE-164; decision: macOS 14
+# Sonoma and newer, arm64 and x86_64). THE one place for this value:
+# cargo passes it to rustc, the linker and the cc of build scripts (for
+# rust/ and rust/jsrt/, whatever the cwd below rust/); bins.sh reads it
+# from here for the bend compiles (bend -o calls cc) and exports it, and
+# versions.sh, build-dist.sh and gate.sh take it from bins.sh (an old
+# commit built by versions.sh gets this tree's value). force: a value
+# inherited from the shell does not win. gate.sh full checks that no
+# built binary has a minos above it (./bins.sh minos).
+[env]
+MACOSX_DEPLOYMENT_TARGET = { value = "14.0", force = true }

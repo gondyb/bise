@@ -168,8 +168,8 @@ What happened during the prototype (2026-09-28, 16:24–16:27): a
 **stripped** `sb-core` (ad-hoc signed or not) was deleted within a second
 of being written, in every place (tarball extraction, a plain `cp` +
 `strip`); the unstripped one was left alone. The user got CrowdStrike
-alerts: files quarantined. The same class of problem already shows in
-`release.sh` ("an EDR quarantine … must FAIL LOUDLY"). Consequences:
+alerts: files quarantined. The same class of problem already showed in
+the old `release.sh` ("an EDR quarantine … must FAIL LOUDLY"). Consequences:
 
 - **Never strip** (the prototype does not): unstripped + ad-hoc signed
   binaries passed the full test without an alert. Revisit stripping only
@@ -296,8 +296,8 @@ the default paths.
   `pbcopy` (OSC 52 / `wl-copy`/`xclip`), ALSA for `cpal`.
 - **C11** the remaining French user-facing messages (`introuvable`,
   `argument inconnu`) → English.
-- **C12** `release.sh` strips every binary: stop (EDR, §6), or delete
-  `release.sh` in favour of C7.
+- **C12** ~~`release.sh` strips every binary~~: done, `release.sh` deleted
+  (BISE-164); `build-dist.sh` is the one packaging path.
 
 ## 10. Questions for the user
 
