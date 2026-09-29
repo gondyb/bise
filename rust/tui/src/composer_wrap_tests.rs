@@ -150,3 +150,125 @@ fn a_pending_accent_never_pushes_the_cursor_off_the_row() {
         }
     }
 }
+
+// ---- BISE-108: the composer with images and several rows ----
+
+/// The composer's rows as text (the cells, newlines as a blank).
+fn row_texts(text: &str, inner: usize) -> Vec<String> {
+    editor::layout_input(text, inner)
+        .iter()
+        .map(|r| r.iter().map(|c| if c.newline { " " } else { c.text }).collect::<String>().trim_end().to_string())
+        .collect()
+}
+
+#[test]
+fn the_composer_wraps_at_word_boundaries() {
+    // the user saw `le n` / `om complet`: a word moves whole to the next
+    // row, the space stays at the end of its row
+    let t = "je vois ça, le nom complet, ce qui fait trop";
+    assert_eq!(row_texts(t, 16), vec!["je vois ça, le", "nom complet, ce", "qui fait trop"]);
+    // every row fits, and no word is cut when it fits a row
+    for inner in 12..40 {
+        let text = "lorem ipsum dolor sit amet, consectetur adipiscing elit ".repeat(3);
+        let rows = row_texts(&text, inner);
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let got: Vec<&str> = rows.iter().flat_map(|r| r.split_whitespace()).collect();
+        assert_eq!(got, words, "at {inner}: {rows:?}");
+        for r in &rows {
+            assert!(r.width() <= inner, "at {inner}: {r:?}");
+        }
+    }
+    // a word longer than the row is cut (only then)
+    assert_eq!(row_texts("ab abcdefghij", 6), vec!["ab", "abcdef", "ghij"]);
+    // a space that doesn't fit takes the word before it along
+    assert_eq!(row_texts("abc def ", 7), vec!["abc", "def"]);
+    // chips are words too
+    // chips are words too (a chip `[Image #1]` is drawn `▣ 1`, 3 columns)
+    assert_eq!(row_texts("look [Image #1] here", 9), vec!["look [Image #1]", "here"]);
+    assert_eq!(row_texts("look [Image #1] here", 8), vec!["look", "[Image #1] here", ""]);
+}
+
+/// A composer with `n` images from deep folders and `text` after them.
+fn with_images(app: &mut App, n: usize, text: &str) {
+    let deep = "/var/folders/c5/kw86k5nx0zg2xnbzpnrwsk8h0000gn/T/TemporaryItems/NSIRD_x";
+    app.attachments = (1..=n)
+        .map(|i| attach::Attachment {
+            label: attach::label(i),
+            marker: format!("m{i}"),
+            info: attach::Info { source: format!("{deep}/Screenshot {i}.png"), width: 1788, height: 542, bytes: 83_000, resized: false },
+        })
+        .collect();
+    let chips: String = (1..=n).map(|i| format!("{} ", attach::label(i))).collect();
+    let t = format!("{chips}{text}");
+    let len = t.chars().count();
+    app.ed.set(&t, len);
+}
+
+fn draw(app: &mut App, width: u16, height: u16) -> ratatui::buffer::Buffer {
+    let mut term = Terminal::new(TestBackend::new(width, height)).unwrap();
+    term.draw(|f| sb::draw_sb(app, f)).unwrap();
+    term.backend().buffer().clone()
+}
+
+#[test]
+fn the_bar_runs_the_whole_block_in_accent_with_text_or_images() {
+    for (width, height) in [(200u16, 50u16), (120, 40), (80, 30), (80, 22)] {
+        for (n, text, empty) in [(0, "", true), (0, "hello", false), (1, "one line", false), (2, &"word ".repeat(60)[..], false)] {
+            let mut app = sb::bench::test_app();
+            if n > 0 || !text.is_empty() {
+                with_images(&mut app, n, text);
+            }
+            let buf = draw(&mut app, width, height);
+            let cols = crate::layout::cols(width, height);
+            let rows = crate::layout::rows(width, height);
+            let x0 = cols.x0;
+            // the divider: the row whose first cell is `├` (framed) or `─`
+            let divider = (0..height).rev().find(|&y| matches!(buf[(0, y)].symbol(), "├" | "─")).unwrap();
+            let what = format!("{width}x{height} {n} images {text:?}");
+            // every row from under the divider to above the key bar: the bar
+            for y in divider + 1..rows.keybar {
+                let c = &buf[(x0, y)];
+                assert_eq!(c.symbol(), "│", "{what}: row {y}");
+                let want = if empty { crate::theme::faint() } else { crate::theme::accent() };
+                assert_eq!(c.fg, want, "{what}: row {y}");
+            }
+            // the text, the strip at x0 + 2
+            let a = app.composer;
+            assert_eq!(a.x, x0 + 2, "{what}");
+            // the key bar keeps ⏎ send first
+            let kb: String = (x0..x0 + 6).map(|x| buf[(x, rows.keybar)].symbol().to_string()).collect();
+            assert!(kb.starts_with("⏎ send"), "{what}: {kb:?}");
+            if n > 0 {
+                let keys: String = (x0..width).map(|x| buf[(x, rows.keybar)].symbol().to_string()).collect();
+                assert!(keys.contains("ctrl+v paste image"), "{what}: {keys:?}");
+                // the strip names the file, not its path
+                let strip: String = (x0..width).map(|x| buf[(x, divider + 1 + rows.pad_top + 1)].symbol().to_string()).collect();
+                assert!(strip.contains("Screenshot 1.png") && !strip.contains('/'), "{what}: {strip:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn the_divider_state_never_runs_past_the_frame() {
+    for width in [60u16, 80, 95, 100, 133, 160, 200, 220, 260] {
+        let mut app = sb::bench::test_app();
+        with_images(&mut app, 2, "four rows of text ");
+        let height = 40;
+        let buf = draw(&mut app, width, height);
+        let divider = (0..height).rev().find(|&y| buf[(0, y)].symbol() == "├").unwrap();
+        let row: String = (0..width).map(|x| buf[(x, divider)].symbol().to_string()).collect();
+        // joined to the frame, the state ends at F − 4 then 1 space and 1 rule
+        assert!(row.ends_with("─┤") || row.ends_with(" ─┤"), "{width}: {row}");
+        let last_text = (0..width).rev().find(|&x| !matches!(buf[(x, divider)].symbol(), "─" | "┤" | " " | "┴")).unwrap();
+        assert!(last_text <= width - 4, "{width}: {row}");
+        // the frame's corners
+        assert_eq!(buf[(0, 0)].symbol(), "╭", "{width}");
+        assert_eq!(buf[(width - 1, 0)].symbol(), "╮", "{width}");
+        assert_eq!(buf[(0, height - 1)].symbol(), "╰", "{width}");
+        assert_eq!(buf[(width - 1, height - 1)].symbol(), "╯", "{width}");
+        for y in 1..height - 1 {
+            assert!(matches!(buf[(width - 1, y)].symbol(), "│" | "┤" | "┃"), "{width}: right side at {y}");
+        }
+    }
+}

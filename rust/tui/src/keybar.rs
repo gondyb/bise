@@ -73,7 +73,16 @@ impl Mode {
                 ("↑↓", "select"),
                 ("esc", "close"),
             ],
-            Mode::Images => &[("ctrl+v", "paste image"), ("@", "file")],
+            // the default keys stay, ⏎ send first; the image keys after
+            // it (BISE-108: the bar once lost ⏎ send with an image)
+            Mode::Images => &[
+                ("⏎", "send"),
+                ("ctrl+v", "paste image"),
+                ("@", "file"),
+                ("⌥0-9", "switch"),
+                ("/", "commands"),
+                ("?", "help"),
+            ],
             Mode::DropAsk => &[("y", "drop"), ("n or esc", "keep")],
             Mode::Confirm => &[("y", "yes"), ("n", "no"), ("esc", "cancel")],
             Mode::CardFull => &[("alt+r", "answer"), ("pgup/pgdn", "scroll"), ("ctrl+f", "back")],
@@ -109,7 +118,7 @@ impl Mode {
     /// `esc back to main   ⏎ steer   ctrl+c interrupt`.
     fn agent_pairs(self) -> Vec<Pair> {
         match self {
-            Mode::Default => std::iter::once(BACK).chain(self.pairs().iter().copied()).collect(),
+            Mode::Default | Mode::Images => std::iter::once(BACK).chain(self.pairs().iter().copied()).collect(),
             Mode::Steer => vec![BACK, ("⏎", "steer"), ("ctrl+c", "interrupt")],
             m => m.pairs().to_vec(),
         }

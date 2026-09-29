@@ -421,7 +421,7 @@ pub(crate) fn size_text(bytes: u64) -> String {
 /// One strip row: `▣ 1 shots/login-mobile.png` and, dim on the right,
 /// `1170×2532 · 310 kB` (` → resized to fit 2048` after a downscale).
 pub(crate) fn strip_row(n: usize, info: &Info) -> (String, String) {
-    let left = format!("{G_IMAGE} {n} {}", info.source);
+    let left = format!("{G_IMAGE} {n} {}", file_name(&info.source));
     let mut right = format!("{} · {}", wxh((info.width, info.height)), size_text(info.bytes));
     if info.resized {
         right.push_str(&format!(" → resized to fit {}", bend_images::MAX_DIMENSION));
@@ -451,9 +451,40 @@ pub(crate) fn strip_height(app: &App) -> u16 {
     }
 }
 
+/// What the strip names an image by: the file name of a dropped or
+/// picked path (never the whole path, user request on 6df3967),
+/// `clipboard` as is.
+pub(crate) fn file_name(source: &str) -> &str {
+    let s = source.trim_end_matches(['/', '\\']);
+    s.rsplit(['/', '\\']).next().filter(|n| !n.is_empty()).unwrap_or(source)
+}
+
+/// `s` in at most `max` columns: cut at its end with `…`.
+fn cut_end(s: &str, max: usize) -> String {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+    if s.width() <= max {
+        return s.to_string();
+    }
+    if max == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    let mut used = 1; // the `…`
+    for ch in s.chars() {
+        let cw = ch.width().unwrap_or(0);
+        if used + cw > max {
+            break;
+        }
+        used += cw;
+        out.push(ch);
+    }
+    out.push('…');
+    out
+}
+
 /// The strip rows at `width` columns: the dim title, then one row per
-/// image, its chip in accent, its size flush right (dim). A long path
-/// keeps its end (the file name).
+/// image, its chip in accent, its file name (cut at its end with `…`),
+/// its size flush right (dim).
 pub(crate) fn strip_lines(app: &App, width: usize) -> Vec<Line<'static>> {
     use unicode_width::UnicodeWidthStr;
     let rows = shown(app);
@@ -466,7 +497,7 @@ pub(crate) fn strip_lines(app: &App, width: usize) -> Vec<Line<'static>> {
         let (_, right) = strip_row(n, &a.info);
         let chip = format!("{G_IMAGE} {n}");
         let room = width.saturating_sub(chip.width() + 1 + right.width() + 2);
-        let src = crate::ui::truncate_left(&a.info.source, room);
+        let src = cut_end(file_name(&a.info.source), room);
         let pad = width.saturating_sub(chip.width() + 1 + src.width() + right.width()).max(2);
         out.push(Line::from(vec![
             Span::styled(chip, chip_style()),
@@ -521,7 +552,7 @@ mod tests {
         let shot = Info { source: "shots/login-mobile.png".into(), width: 1170, height: 2532, bytes: 310_000, resized: false };
         assert_eq!(
             strip_row(1, &shot),
-            ("▣ 1 shots/login-mobile.png".to_string(), "1170×2532 · 310 kB".to_string())
+            ("▣ 1 login-mobile.png".to_string(), "1170×2532 · 310 kB".to_string())
         );
         let clip = Info { source: "clipboard".into(), width: 2048, height: 1536, bytes: 1_100_000, resized: true };
         assert_eq!(
@@ -547,12 +578,34 @@ mod tests {
         assert_eq!(strip_height(&app), 3);
         let ls: Vec<String> = strip_lines(&app, 60).iter().map(line_text).collect();
         assert_eq!(ls[0], STRIP_TITLE);
-        assert!(ls[1].starts_with("▣ 1 shots/a.png") && ls[1].ends_with("10×20 · 300 B"), "{ls:?}");
+        assert!(ls[1].starts_with("▣ 1 a.png ") && ls[1].ends_with("10×20 · 300 B"), "{ls:?}");
         assert!(ls[2].starts_with("▣ 2 clipboard") && ls[2].ends_with("→ resized to fit 2048"), "{ls:?}");
-        // the size stays flush right; a narrow strip cuts the path's head
+        // the size stays flush right
         assert_eq!(unicode_width::UnicodeWidthStr::width(ls[1].as_str()), 60);
-        let narrow: Vec<String> = strip_lines(&app, 26).iter().map(line_text).collect();
-        assert!(narrow[1].contains('…') && narrow[1].ends_with("10×20 · 300 B"), "{narrow:?}");
+        app.ed.set("no images", 0);
+        assert_eq!(strip_height(&app), 0);
+        assert!(strip_lines(&app, 60).is_empty());
+    }
+
+    #[test]
+    fn strip_names_the_file_never_its_path() {
+        // BISE-108: a dropped file from a deep folder shows its file
+        // name only (the user saw `…ar/folders/…/Screenshot … .png`)
+        let mut app = crate::sb::bench::test_app();
+        let deep = "/var/folders/c5/kw86k5nx0zg2xnbzpnrwsk8h0000gn/T/TemporaryItems/NSIRD_screencaptureui_iClIqj/Screenshot 2026-09-29 at 09.56.06.png";
+        app.attachments = vec![Attachment { info: Info { source: deep.into(), width: 1788, height: 542, bytes: 83_000, resized: false }, ..att(1, "m1") }];
+        app.ed.set("look [Image #1] ", 0);
+        let ls: Vec<String> = strip_lines(&app, 88).iter().map(line_text).collect();
+        assert!(ls[1].starts_with("▣ 1 Screenshot 2026-09-29 at 09.56.06.png  "), "{ls:?}");
+        assert!(!ls[1].contains('/') && ls[1].ends_with("1788×542 · 83 kB"), "{ls:?}");
+        // short on room: the name is cut at its end, the size stays whole
+        let narrow: Vec<String> = strip_lines(&app, 40).iter().map(line_text).collect();
+        assert!(narrow[1].starts_with("▣ 1 Screenshot 2026") && narrow[1].contains('…'), "{narrow:?}");
+        assert!(narrow[1].ends_with("1788×542 · 83 kB") && !narrow[1].contains('/'), "{narrow:?}");
+        assert_eq!(unicode_width::UnicodeWidthStr::width(narrow[1].as_str()), 40);
+        assert_eq!(file_name("shots/a.png"), "a.png");
+        assert_eq!(file_name("C:\\shots\\a.png"), "a.png");
+        assert_eq!(file_name("clipboard"), "clipboard");
         app.ed.set("no images", 0);
         assert_eq!(strip_height(&app), 0);
         assert!(strip_lines(&app, 60).is_empty());

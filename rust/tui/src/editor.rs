@@ -221,14 +221,50 @@ pub(crate) struct InputCell<'a> {
     pub(crate) chip: bool,
 }
 
+/// `cell` onto the composer's last row: a cell that overflows moves,
+/// with the word it ends (the cells after the row's last space, `brk`),
+/// to a new row; a word alone on its row is cut.
+fn place<'a>(
+    inner: usize,
+    rows: &mut Vec<Vec<InputCell<'a>>>,
+    row: &mut Vec<InputCell<'a>>,
+    col: &mut usize,
+    brk: &mut Option<usize>,
+    cell: InputCell<'a>,
+    space: bool,
+) {
+    if !row.is_empty() && *col + cell.w > inner {
+        let tail = match *brk {
+            Some(b) if b < row.len() => row.split_off(b),
+            _ => Vec::new(),
+        };
+        rows.push(std::mem::replace(row, tail));
+        *col = row.iter().map(|c| c.w).sum();
+        *brk = None;
+        if !row.is_empty() && *col + cell.w > inner {
+            rows.push(std::mem::take(row));
+            *col = 0;
+        }
+    }
+    *col += cell.w;
+    row.push(cell);
+    if space {
+        *brk = Some(row.len());
+    }
+}
+
 /// The composer rows at `inner` columns: newlines break rows, long rows
-/// wrap by width (the widths ratatui uses, so a 2-column emoji never
-/// overflows the row), and the end of the text gets a 1-column cursor
-/// slot.
+/// wrap at word boundaries like your message in the history (a space
+/// stays at the end of its row; only a word longer than the row is cut),
+/// by width (the widths ratatui uses, so a 2-column emoji never overflows
+/// the row), and the end of the text gets a 1-column cursor slot.
 pub(crate) fn layout_input(input: &str, inner: usize) -> Vec<Vec<InputCell<'_>>> {
     let inner = inner.max(2);
-    let mut rows: Vec<Vec<InputCell>> = vec![Vec::new()];
+    let mut rows: Vec<Vec<InputCell>> = Vec::new();
+    let mut row: Vec<InputCell> = Vec::new();
     let mut col = 0usize;
+    // where the row may break: after its last space (a cell index)
+    let mut brk: Option<usize> = None;
     let mut ci = 0usize;
     // an image chip `[Image #N]` is one cell, drawn `▣ N` (attach.rs)
     let chips = crate::attach::chips(input);
@@ -246,42 +282,35 @@ pub(crate) fn layout_input(input: &str, inner: usize) -> Vec<Vec<InputCell<'_>>>
         if let Some(&(a, b, _)) = chips.get(chip_i).filter(|c| c.0 == ci) {
             let label = &input[bi..bi + (b - a)]; // ASCII: chars = bytes
             let w = crate::attach::chip_text(label).width();
-            if col > 0 && col + w > inner {
-                rows.push(Vec::new());
-                col = 0;
-            }
-            rows.last_mut().unwrap().push(InputCell { ci, text: label, w, newline: false, chip: true });
-            col += w;
-            if col >= inner {
-                rows.push(Vec::new());
-                col = 0;
-            }
+            place(inner, &mut rows, &mut row, &mut col, &mut brk, InputCell { ci, text: label, w, newline: false, chip: true }, false);
             skip_to = b;
             ci += n;
             continue;
         }
         if g == "\n" || g == "\r\n" {
-            rows.last_mut().unwrap().push(InputCell { ci, text: " ", w: 1, newline: true, chip: false });
-            rows.push(Vec::new());
+            // the newline's slot needs a free column, like the end slot
+            if col >= inner {
+                rows.push(std::mem::take(&mut row));
+            }
+            row.push(InputCell { ci, text: " ", w: 1, newline: true, chip: false });
+            rows.push(std::mem::take(&mut row));
             col = 0;
+            brk = None;
             ci += n;
             continue;
         }
         // a control char (a pasted tab) shows as one blank column
         let (text, w) = if g.chars().any(char::is_control) { (" ", 1) } else { (g, g.width().max(1)) };
-        if col > 0 && col + w > inner {
-            rows.push(Vec::new());
-            col = 0;
-        }
-        rows.last_mut().unwrap().push(InputCell { ci, text, w, newline: false, chip: false });
-        col += w;
-        if col >= inner {
-            rows.push(Vec::new());
-            col = 0;
-        }
+        let space = g == " " || g == "\t";
+        place(inner, &mut rows, &mut row, &mut col, &mut brk, InputCell { ci, text, w, newline: false, chip: false }, space);
         ci += n;
     }
-    rows.last_mut().unwrap().push(InputCell { ci, text: " ", w: 1, newline: true, chip: false });
+    // the end slot: on a new row when the last one is full
+    if col >= inner {
+        rows.push(std::mem::take(&mut row));
+    }
+    row.push(InputCell { ci, text: " ", w: 1, newline: true, chip: false });
+    rows.push(row);
     rows
 }
 

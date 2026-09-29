@@ -276,6 +276,19 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let text = pane(chunks[9]);
     let composer = Rect { x: text.x.saturating_sub(1), width: (inner_w as u16 + 3).min(text.width + 1), ..text };
     draw_composer(app, frame, composer, inner_w, 0, 0);
+    // the bar runs the whole block (book §13, BISE-108): the tinted row
+    // under the divider (the queue's `›` has that column when there is
+    // one), the strip, the text, the tinted row above the key bar
+    let bar_st = Style::default().fg(composer_bar_color(app));
+    let bar_x = area.x + cols.x0;
+    let block = [(chunks[6], queue_h == 0), (chunks[8], true), (chunks[10], true)];
+    for (r, on) in block {
+        for y in r.y..r.bottom() {
+            if on && bar_x < area.right() && y < area.bottom() {
+                frame.buffer_mut().set_string(bar_x, y, "│", bar_st);
+            }
+        }
+    }
     if card_h > 0 {
         sb::draw_card(app, frame, col(card));
     } else if sb::card_full(app) {
@@ -731,7 +744,7 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, pad
             *l = Line::from(spans);
         }
     }
-    let bar_st = Style::default().fg(if empty && !voice { faint() } else { accent() });
+    let bar_st = Style::default().fg(composer_bar_color(app));
     let bar = Span::styled(" │ ", bar_st);
     let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
     for _ in 0..pad_top.min(area.height) {
@@ -749,6 +762,16 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, pad
         lines.push(Line::from(bar.clone()));
     }
     frame.render_widget(Paragraph::new(lines), area);
+}
+
+/// The composer's bar: accent as soon as there is text, an image or a
+/// recording; faint only when the composer is empty.
+fn composer_bar_color(app: &App) -> ratatui::style::Color {
+    if app.ed.is_empty() && !app.voice.active() && attach::strip_height(app) == 0 {
+        faint()
+    } else {
+        accent()
+    }
 }
 
 fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
