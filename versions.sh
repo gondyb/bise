@@ -137,12 +137,15 @@ build_from() {
 # the ids of the versions the hubs name: their marks (versions.json:
 # current, good, previous, failed) and the root each one runs (hub.root),
 # in the legacy state dir and in ~/.bise/hubs; one per line (the last
-# component of every path in them)
+# component of every path in them). No `[ -f ] && ...` as the loop's last
+# command: with pipefail a missing last file (always $STATE/*/hub.root in
+# the bise layout) failed the pipe, set -e ended prune, and the build
+# exited 1 after "built": the hub did not switch (bug-restart)
 marks() {
   local h="${BISE_HOME:-$HOME/.bise}" f
   for f in "$HOME/.local/state/switchboard"/*/versions.json "$HOME/.local/state/switchboard"/*/hub.root \
            "$h"/hubs/*/versions.json "$h"/hubs/*/hub.root "$STATE"/*/versions.json "$STATE"/*/hub.root; do
-    [ -f "$f" ] && { cat "$f"; echo; }
+    if [ -f "$f" ]; then cat "$f"; echo; fi
   done | tr '",{}' '\n\n\n\n' | sed -n 's|^.*/\([^/]*\)/*$|\1|p'
 }
 
@@ -159,7 +162,10 @@ by_age() {
 
 # prune [<keep>]: keep the <keep> (default SB_KEEP_VERSIONS, 3) newest
 # versions (by built=), and any version a hub marks (marks) or a running
-# process runs from (its command line); remove the others (BISE-133)
+# process runs from (its command line); remove the others (BISE-133).
+# Here-strings, not `printf | grep -q`: grep -q quits at the first match,
+# printf gets SIGPIPE on a big ps output (80 KB here), pipefail fails the
+# test, and the version in use was removed
 prune() {
   local keep="${1:-${SB_KEEP_VERSIONS:-3}}" d n=0 in_use m real
   [ -d "$VERSIONS" ] || return 0
@@ -169,11 +175,18 @@ prune() {
   for d in $(by_age); do
     n=$((n + 1))
     [ "$n" -le "$keep" ] && continue
-    printf '%s\n' "$m" | grep -qxF -- "$d" && continue
-    printf '%s' "$in_use" | grep -qF -e "$VERSIONS/$d/" -e "$real/$d/" && continue
+    grep -qxF -- "$d" <<<"$m" && continue
+    grep -qF -e "$VERSIONS/$d/" -e "$real/$d/" <<<"$in_use" && continue
     say "prune: $d"
     rm -rf "${VERSIONS:?}/$d"
   done
+}
+
+# prune after a build: in its own process (set -e whole: inside a `||`
+# list it is off), and its failure does not fail the build: the version
+# is built, the hub must switch to it
+prune_after_build() {
+  "$REPO/versions.sh" prune || say "prune failed (every version kept)"
 }
 
 # (a version built before BISE-165 has bend-harness only: still valid)
@@ -183,7 +196,7 @@ build() {
   local what="${1:---tree}" id
   if [ "$what" = "--tree" ]; then
     id="$(tree_id)"
-    built "$id" || { build_from "$REPO" "$id" HEAD; prune; }
+    built "$id" || { build_from "$REPO" "$id" HEAD; prune_after_build; }
   else
     id="$(rev_id "$what")"
     if ! built "$id"; then
@@ -191,7 +204,7 @@ build() {
       git worktree add -q --detach "$wt" "$id"
       CLEAN_WT="$wt"
       build_from "$wt" "$id" "$id"
-      prune
+      prune_after_build
     fi
   fi
   echo "$VERSIONS/$id"
