@@ -1933,3 +1933,10 @@ Index:
 - **track:** K · **owns:** `theme.rs` (the done glyph), its uses in `sb/panel.rs`, `render.rs`, `feed.rs`, `sb/cards.rs`, the tests that read `♡`
 - **spec:** book §6 (agent status table), §8, §9, §11, §17 (user decision, Gabriel 2026-09-29: the `♡` was not clear).
 - **what:** every "done" in the product shows `✓` in accent (pink) instead of `♡`: the panel rows, the header / frame counts (`✓ 4 done`), reports (`✓ bench is done …`), `✓ turn done` when built. ASCII stays `*`. Your read marks (`✓` faint, `✓✓` accent, at the end of your lines) are unchanged: the place tells them apart. `♡` stays only outside the product (site, landing).
+
+### BISE-101 · a wider reading column (+15%)
+
+- **status:** todo · **owner:** bise-f-feed · **commits:** —
+- **track:** F · **owns:** `layout.rs` (COLUMN, CENTER_FROM), `render.rs` PROSE_MAX, the composer wrap width, tests
+- **spec:** book §8 "The reading column", §11 "Measure" (user request, Gabriel 2026-09-29: the text in the history ~15% wider).
+- **what:** the reading column goes from 79 (3 + 76) to 91 (3 + 88); it centers when the feed area is ≥ 95; prose wraps at min(width − margins, 88); your message in the composer wraps at the same width as in the history (as today, so it follows). Code and tables keep their widths (up to 100 / 103). Narrow tiers unchanged (column = min(91, width − 4)). Bench not slower.

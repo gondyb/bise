@@ -30,8 +30,14 @@ def main():
     head = git("log", "-1", "--format=%h")
     second = git("log", "-2", "--format=%h").splitlines()[-1]
     second_subject = git("log", "-1", "--format=%s", second)
+    # a state root of its own: the marks do not depend on the versions
+    # built in ~/.local/state, and its build dir is a file, so the build
+    # Enter starts fails at once (versions.sh: mkdir) and builds nothing
+    xdg = os.path.join(E.tmp, "xdg")
+    os.makedirs(os.path.join(xdg, "switchboard"))
+    open(os.path.join(xdg, "switchboard", "build"), "w").close()
     try:
-        tui_tmux.start_tui(E, 160, 42)
+        tui_tmux.start_tui(E, 160, 42, "XDG_STATE_HOME=%s" % xdg)
         wait_screen("bise :*")
         wait_screen(" idle")
         # the popup: tree and the commits, with the current one marked
@@ -41,6 +47,8 @@ def main():
         assert "◉" in sc and "[current]" in sc, sc   # the dev tree runs: tree is current
         # the text filters (on the revision or the subject)
         typed(second)
+        wait_screen("/version %s" % second)     # the keys are in (the subject is on screen before the filter)
+        tui_tmux.wait_gone("the working tree")
         sc = wait_screen(second_subject[:40])
         assert "the working tree" not in sc, sc
         assert head not in sc.split("/version")[-1] or head == second, sc
@@ -62,12 +70,13 @@ def main():
         keys("Enter")
         wait_screen("unknown commit zzzz999")
         # Enter on an entry builds, then switches: the build is announced
+        # (the working tree: a commit would first check out a worktree)
         typed("/version ")
         wait_screen("the working tree")
-        keys("Down")        # head
         time.sleep(0.3)
         keys("Enter")
-        wait_screen("version %s: building" % head, 20)
+        wait_screen("version tree: building", 20)
+        wait_screen("build of tree failed", 20)
         print("OK: /version picker (list, filter, arrows, Tab, unknown commit, Enter builds)")
         ok = True
     finally:

@@ -271,7 +271,7 @@ outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their ta
 - **Header:** `bise :*` on the left; live counts on the right, only the
   non-zero ones: `∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done`.
   **⚠** No cost in $ until the usage work lands.
-- **Feed** on the left, prose ≤ 76 columns; extra width goes to the margin
+- **Feed** on the left, prose ≤ 88 columns; extra width goes to the margin
   and the panel, never to longer lines.
 - **Scrollbar:** only while you are scrolled up from the bottom: faint, one
   column, no arrows. Never at the tail (BISE-90).
@@ -299,19 +299,19 @@ outside §6 (`⏎ ← → ↑ ↓ ⇧ ● ◉ ◆ ✚ ◀ ▪ ×`) keep their ta
   try: "fix the flaky login test, and draft the release note"
   ```
 
-**The reading column** (user request, marketing 82f1742). The history is a 79-column column (3 for the lead + 76 of text), centered in the space left of the panel: F = terminal width − panel (30) − 1; x0 = floor((F − 79) / 2) when F ≥ 83, else column 1. Tables and code start at x0 and may run to 103 columns (capped at F − 1), extending right, never re-centered. The status row, the queue, the images strip, the composer block and its hints use the same x0 and width (hints right-aligned to x0 + 79). The agents panel stays flush right. Under 70 columns the panel hides and F = width.
+**The reading column** (user request, marketing 82f1742). The history is a 91-column column (3 for the lead + 88 of text; widened from 79 by Gabriel, 2026-09-29: +15%), centered in the space left of the panel: F = terminal width − panel (30) − 1; x0 = floor((F − 91) / 2) when F ≥ 95, else column 1. Tables and code start at x0 and may run to 103 columns (capped at F − 1), extending right, never re-centered. The status row, the queue, the images strip, the composer block and its hints use the same x0 and width (hints right-aligned to x0 + 91). The agents panel stays flush right. Under 70 columns the panel hides and F = width.
 
 **Spacing, in cells** (user request, marketing 0e6e803). The rule is the landing demo, translated to whole cells.
 - **Outer margins:** 2 columns left and right, 1 row top and bottom; under 30 rows the top and bottom rows go.
 - **Header:** its own row: `bise :*` bold at the left margin, the summary (`∿ 3 working · ✓ 4 done`) flush right; then 1 blank row.
-- **History:** the reading column above (79 wide, centered in the feed area = everything left of the panel).
+- **History:** the reading column above (91 wide, centered in the feed area = everything left of the panel).
 - **Between feed and panel:** 3 blank columns. No vertical rule: whitespace and alignment do the job.
 - **Scrollbar:** no arrows, no track: only a faint `┃` thumb in the last column of the feed area, and only while you are away from the bottom (the status row says `↓ back to the bottom`).
 - **Agents panel:** 28 columns, flush right at the right margin, first row level with the history's first row; title `agents · ⌥ + number` dim, then 1 blank row; rows `N glyph name` with the age right-aligned; names cut at 16 with `…`.
 - **Between history blocks:** 1 blank row (§10), and 1 above and below level 2 (§9).
 - **Card box:** the reading column's x and width, 1 blank row above; heavy bar `┃` in the column's first cell, text from its 4th; title, body, 1 blank row, then the choices and keys row.
 - **Bottom stack:** 1 blank row under the history, then the status row, queue, strip, composer block (§13), hints row, 1 bottom margin row, all on the reading column's x and width (the hints end at its right edge).
-- **Narrow terminals:** ≥ 100 columns as above; 90–99: panel 24 wide (names cut at 12), gap 2; < 90: no panel (the header summary grows to `∿ 3 working · ⌥ + number`), margins 2, column = min(79, width − 4) (at 80: 76 wide, 73 of text); at 60: margins 1, column 58 (55 of text). The column is centered only when the feed area has at least 83 columns, else it starts at the left margin.
+- **Narrow terminals:** ≥ 100 columns as above; 90–99: panel 24 wide (names cut at 12), gap 2; < 90: no panel (the header summary grows to `∿ 3 working · ⌥ + number`), margins 2, column = min(91, width − 4) (at 80: 76 wide, 73 of text); at 60: margins 1, column 58 (55 of text). The column is centered only when the feed area has at least 95 columns, else it starts at the left margin.
 - **What the demo does that a terminal can't:** its own font (the terminal's is the user's), line height (1.2 vs 1.6), sub-cell gaps (the site's 10–18 px become 0 or 1 whole row: we take 1), 1 px rules (a terminal rule is a full cell), fade and slide motion. bise does paint its theme background (§5, BISE-92), but no rounded panels. The demo is the reference for rhythm and proportions, not for exact pixels.
 
 **The frame** (user request on 805e538, marketing 9f000c8; replaces, in "Spacing, in cells" above, the outer margins, the header row, "no vertical rule" and the bottom stack's status and hints rows; the reading column, the panel widths and the narrow tiers stay). bise draws itself like an app: a thin faint frame on the edge of the terminal, with "bise :*" and the summary in its top border. Inside, 2 blank columns on each side. The agents panel sits behind a faint rule that joins the frame. A full-width divider separates the history from the composer pane. The lines are faint so the text stays in front: the frame is a shape, not a decoration. Under 60 columns or 16 rows the frame goes, the divider stays.
@@ -377,7 +377,7 @@ The same three levels everywhere, in main and inside an agent.
 
 ## 11. Reading
 
-- **Measure.** Prose wraps at `min(width − margins, 76)`. Code (scripts,
+- **Measure.** Prose wraps at `min(width − margins, 88)`. Code (scripts,
   diffs, outputs) up to 100 columns; longer lines wrap with a hanging indent
   and a faint `↪`.
 - **Scripts in full.** bash and TypeScript scripts are always shown whole,
