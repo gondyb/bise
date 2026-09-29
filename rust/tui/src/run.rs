@@ -229,15 +229,62 @@ pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
     crate::theme::asciify(f.buffer_mut()); // BISE-84: BISE_ASCII=1
 }
 
-/// What an input event is for zen (BISE-121), from the composer's text
-/// before it and the state after it.
-fn zen_input(app: &App, ev: &Event, before: &str) -> crate::zen::Input {
+/// What an input event can change, taken before it (zen, BISE-121,
+/// BISE-124): the composer, and what is outside it.
+struct Before {
+    text: String,
+    dead: Option<char>,
+    popup: bool,
+    /// the help overlay or the terminal pane in front: they take the keys
+    front: bool,
+    scene: sb::Scene,
+    feed_sel: Option<crate::feedsel::FeedSel>,
+    view: (bool, isize),
+    show_thinking: bool,
+    voice: crate::voice::VoiceState,
+}
+
+impl Before {
+    fn of(app: &App) -> Before {
+        Before {
+            text: app.ed.text.clone(),
+            dead: app.ed.pending_dead(),
+            popup: !crate::commands::popup_items(app).is_empty(),
+            front: app.help.is_some() || app.term.shown(),
+            scene: sb::scene(app),
+            feed_sel: app.feed_sel,
+            view: (app.follow, app.scroll),
+            show_thinking: app.show_thinking,
+            voice: app.voice.state(),
+        }
+    }
+}
+
+/// What an input event is for zen (BISE-121, BISE-124), from the state
+/// before it and after it. A key reached the composer when nothing
+/// outside it changed (⏎ send may bring the feed to its end).
+fn zen_input(app: &App, ev: &Event, before: &Before) -> crate::zen::Input {
     use crate::zen::Input;
-    let changed = app.ed.text != before;
-    let popup = || !crate::commands::popup_items(app).is_empty();
+    let changed = app.ed.text != before.text || app.ed.pending_dead() != before.dead;
+    let popup = before.popup || !crate::commands::popup_items(app).is_empty();
+    let enter = matches!(ev, Event::Key(k) if k.code == crossterm::event::KeyCode::Enter);
+    let composer = !before.front
+        && !app.help.is_some()
+        && !app.term.shown()
+        && sb::scene(app) == before.scene
+        && app.feed_sel == before.feed_sel
+        && (enter || (app.follow, app.scroll) == before.view)
+        && app.show_thinking == before.show_thinking
+        && app.voice.state() == before.voice;
     match ev {
-        Event::Key(k) => crate::zen::key_input(k, changed, changed && popup()),
-        Event::Paste(_) if changed && !popup() => Input::Typing,
+        Event::Key(k) => crate::zen::key_input(k, composer, changed, popup),
+        Event::Paste(_) if composer && !popup => {
+            if changed {
+                Input::Typing
+            } else {
+                Input::Hold
+            }
+        }
         Event::Paste(_) | Event::Mouse(_) | Event::FocusLost => Input::Other,
         _ => Input::Neutral,
     }
@@ -331,7 +378,7 @@ fn ui_loop(app: &mut App, terminal: &mut ratatui::DefaultTerminal) -> io::Result
         if poll(wait)? {
             let ev = read()?;
             let term_h = terminal.size().map(|s| s.height).unwrap_or(24);
-            let before = app.ed.text.clone();
+            let before = Before::of(app);
             let zen_ev = ev.clone();
             let handled = crash::guarded(|| match ev {
                 Event::Mouse(m) => {
@@ -391,7 +438,7 @@ mod zen_tests {
 
     /// One event through the loop's handlers and zen, at `now`.
     fn event(app: &mut App, ev: Event, now: Instant) -> Input {
-        let before = app.ed.text.clone();
+        let before = Before::of(app);
         match &ev {
             Event::Key(k) => {
                 on_key(app, k);
@@ -427,6 +474,10 @@ mod zen_tests {
         app
     }
 
+    fn with(c: KeyCode, m: KeyModifiers) -> Event {
+        Event::Key(KeyEvent::new(c, m))
+    }
+
     #[test]
     fn typing_enters_and_every_other_input_leaves() {
         let t = Instant::now();
@@ -435,20 +486,17 @@ mod zen_tests {
         assert_eq!(event(&mut app, key(KeyCode::Char('i')), t), Input::Typing);
         assert!(app.zen.active(t));
         assert_eq!(event(&mut app, key(KeyCode::Backspace), t), Input::Typing);
-        // the cursor moves: out
-        assert_eq!(event(&mut app, key(KeyCode::Left), t), Input::Other);
-        assert!(!app.zen.active(t));
-        event(&mut app, key(KeyCode::Char('x')), t);
-        assert!(app.zen.active(t));
         // a mouse move, click or scroll: out
         let m = MouseEvent { kind: MouseEventKind::Moved, column: 3, row: 3, modifiers: KeyModifiers::NONE };
         assert_eq!(event(&mut app, Event::Mouse(m), t), Input::Other);
         assert!(!app.zen.active(t));
-        // ctrl+…, esc, tab: out
+        // ctrl+o, esc, tab: out
         event(&mut app, key(KeyCode::Char('y')), t);
-        assert_eq!(event(&mut app, Event::Key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL)), t), Input::Other);
+        assert_eq!(event(&mut app, with(KeyCode::Char('o'), KeyModifiers::CONTROL), t), Input::Other);
         event(&mut app, key(KeyCode::Char('y')), t);
         assert_eq!(event(&mut app, key(KeyCode::Esc), t), Input::Other);
+        event(&mut app, key(KeyCode::Char('y')), t);
+        assert_eq!(event(&mut app, key(KeyCode::Tab), t), Input::Other);
         // a paste types; the focus lost leaves; a resize is neutral
         assert_eq!(event(&mut app, Event::Paste("more".into()), t), Input::Typing);
         assert_eq!(event(&mut app, Event::Resize(80, 20), t), Input::Neutral);
@@ -457,6 +505,81 @@ mod zen_tests {
         // a popup (`/` in an empty composer) is not zen
         app.ed.clear();
         assert_eq!(event(&mut app, key(KeyCode::Char('/')), t), Input::Other);
+        assert!(!app.zen.active(t));
+    }
+
+    #[test]
+    fn keys_that_edit_or_move_in_the_composer_keep_zen() {
+        // BISE-124 (user: « quand je tape un accent genre ` ou les arrow
+        // keys, etc le zen mode s'enlève »)
+        let t = Instant::now();
+        let mut app = app_with_agents();
+        let (n, s, a, c) = (KeyModifiers::NONE, KeyModifiers::SHIFT, KeyModifiers::ALT, KeyModifiers::CONTROL);
+        event(&mut app, key(KeyCode::Char('d')), t);
+        // Ghostty on a U.S. layout: ⌥` is Char('`') + ALT, a dead key
+        // (the text does not change yet), then the letter
+        assert_eq!(event(&mut app, with(KeyCode::Char('`'), a), t), Input::Typing);
+        assert!(app.zen.active(t));
+        assert_eq!(event(&mut app, key(KeyCode::Char('e')), t), Input::Typing);
+        assert_eq!(app.ed.text, "dè");
+        // an Option character (⌥c = ç), an accent the terminal composed
+        assert_eq!(event(&mut app, with(KeyCode::Char('c'), a), t), Input::Typing);
+        assert_eq!(event(&mut app, key(KeyCode::Char('é')), t), Input::Typing);
+        assert_eq!(app.ed.text, "dèçé");
+        // the moves hold it: arrows, word moves, home/end, emacs keys
+        for (k, m) in [
+            (KeyCode::Left, n),
+            (KeyCode::Right, n),
+            (KeyCode::Left, a),
+            (KeyCode::Right, c),
+            (KeyCode::Left, s),
+            (KeyCode::Up, n),
+            (KeyCode::Down, n),
+            (KeyCode::Home, n),
+            (KeyCode::End, n),
+            (KeyCode::Char('a'), c),
+            (KeyCode::Char('b'), a),
+        ] {
+            let i = event(&mut app, with(k, m), t);
+            assert!(i == Input::Hold || i == Input::Typing, "{k:?} {m:?}: {i:?}");
+            assert!(app.zen.active(t), "{k:?} {m:?}");
+        }
+        // the edits: word delete, shift+enter, ⏎ send
+        event(&mut app, key(KeyCode::End), t);
+        assert_eq!(event(&mut app, with(KeyCode::Backspace, a), t), Input::Typing);
+        event(&mut app, key(KeyCode::Char('x')), t);
+        assert_eq!(event(&mut app, with(KeyCode::Enter, s), t), Input::Typing);
+        event(&mut app, key(KeyCode::Char('y')), t);
+        assert_eq!(event(&mut app, key(KeyCode::Enter), t), Input::Typing, "⏎ send");
+        assert!(app.ed.text.is_empty());
+        assert!(app.zen.active(t));
+        // a move 7 s later starts the 8 s again
+        let later = t + std::time::Duration::from_secs(7);
+        assert_eq!(event(&mut app, key(KeyCode::Left), later), Input::Hold);
+        assert!(app.zen.active(later + std::time::Duration::from_secs(7)));
+        // an arrow alone never starts zen
+        let mut app = app_with_agents();
+        app.ed.insert("abc");
+        assert_eq!(event(&mut app, key(KeyCode::Left), t), Input::Hold);
+        assert!(!app.zen.active(t));
+    }
+
+    #[test]
+    fn switching_agents_leaves_zen() {
+        let t = Instant::now();
+        let mut app = app_with_agents();
+        event(&mut app, key(KeyCode::Char('h')), t);
+        assert_eq!(app.sb.focus_name(), "main");
+        // ⌥1 goes to the agent numbered 1 (the composer keeps its draft)
+        assert_eq!(event(&mut app, with(KeyCode::Char('1'), KeyModifiers::ALT), t), Input::Other);
+        assert_eq!(app.sb.focus_name(), "docs");
+        assert!(!app.zen.active(t));
+        // on an empty composer, ctrl+k moves the panel's selection: out
+        let mut app = app_with_agents();
+        event(&mut app, key(KeyCode::Char('h')), t);
+        event(&mut app, key(KeyCode::Backspace), t);
+        assert!(app.zen.active(t));
+        assert_eq!(event(&mut app, with(KeyCode::Char('k'), KeyModifiers::CONTROL), t), Input::Other);
         assert!(!app.zen.active(t));
     }
 

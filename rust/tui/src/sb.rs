@@ -31,6 +31,7 @@ mod client;
 pub(crate) mod drafts;
 mod keys;
 pub(super) use keys::key;
+pub(crate) use keys::{scene, Scene};
 #[cfg(test)]
 use keys::{nav_key, Nav};
 pub use client::{run_switchboard, take_reexec};

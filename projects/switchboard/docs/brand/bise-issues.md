@@ -2153,6 +2153,15 @@ Index:
 - **cost:** no new redraw: the rows are drawn with the panel in the same frame, no age or motion in them (a gust frame still rewrites one cell).
 - **notes:** tests `panel::cards_tests` (the list, order, cut titles at 40/28/24, a long agent name, colors, no section without cards, 33 cards with `+ 27 more` and the shown card scrolled into view on the selection color, clicks on a row / the same row / the title, header counts long, short and narrow).
 
+### BISE-124 · zen: every composer key keeps it
+
+- **status:** done · **owner:** bise-zen-keys · **commits:** `git log --grep BISE-124`
+- **track:** F · **owns:** `zen.rs` (`composer_key`, `key_input`, `Input::Hold`), `run.rs` (`Before`, `zen_input`), `sb/keys.rs` (`scene`), tests
+- **spec:** book §9 "Zen while you type". User, verbatim: « petit bug sur le zen mode, quand je tape un accent genre ` ou les arrow keys, etc le zen mode s'enlève, c'est un peu bizarre. » The "cursor" of BISE-121's rule is the mouse cursor.
+- **cause:** BISE-121 counted as typing only a char with at most shift, backspace/delete with no modifier and shift+enter. Ghostty on a U.S. layout sends Option as Alt: `⌥`` arrives as `Char('`') + ALT` (the editor's dead key, the text does not change yet), `⌥c` as `Char('c') + ALT` (the editor types `ç`); both, the arrows and ⏎ left zen.
+- **what:** a key is a composer key when the editor maps it to an edit or a move (`editor::action`: chars with any modifier that type, Option characters and dead keys, backspace/delete and their word/line forms, arrows, word moves, home/end, ctrl+a/e/b/f/u/k/w/h/d, undo/redo, select all, cut) or it is ⏎ / shift+⏎ / alt+⏎ / ctrl+j; not copy, not `⌥0-9`. It reached the composer when nothing outside it changed (`run::Before`: the help or terminal pane not in front before or after, `sb::scene` = agent in view, panel selection/preview/archived/drop question, confirm, card box; the feed selection; follow/scroll, except ⏎ send; ctrl+o's open state; the voice state) and no popup was open before or after. Such a key that changes the composer's text or pending dead key is `Typing` (enters, holds); one that does not (an arrow) is `Hold` (restarts the 8 s, never starts zen). A paste the same way. Lone modifiers, caps/num/scroll lock, media keys: `Neutral`. Everything else leaves, as before (mouse, focus lost, esc, tab, page keys, app shortcuts, popups, calls).
+- **notes:** tests `zen::tests::composer_keys_are_every_edit_and_move_with_any_modifier`, `a_key_counts_by_where_it_went_and_what_it_did`, `a_move_holds_zen_but_never_starts_it`; `run::zen_tests::keys_that_edit_or_move_in_the_composer_keep_zen` (`⌥`` + `e` = `è`, `⌥c`, `é`, arrows, word moves, home/end, ctrl+a, `⌥b`, `⌥⌫`, shift+⏎, ⏎ send, a move 7 s later restarts the timer, an arrow alone does not start it), `switching_agents_leaves_zen` (`⌥1`, ctrl+k on an empty composer), `typing_enters_and_every_other_input_leaves` (tab added, arrows moved out).
+
 ### BISE-140 · split core/api.bend by provider family
 
 - **status:** done · **owner:** prov-split · **commits:** `git log --grep BISE-140`

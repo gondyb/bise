@@ -28,6 +28,34 @@ pub(super) fn nav_key(k: &crossterm::event::KeyEvent) -> Option<Nav> {
     }
 }
 
+/// What the switchboard keys change outside the composer: the agent in
+/// view, the panel's selection, preview, archived section and drop
+/// question, the confirm, the card box. A key that changes it went
+/// there, not to the composer (zen, BISE-124).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Scene {
+    focus: String,
+    selected: Option<usize>,
+    preview: bool,
+    archived_open: bool,
+    drop_ask: bool,
+    confirm: bool,
+    card: (bool, bool, Option<u64>, usize),
+}
+
+pub(crate) fn scene(app: &App) -> Scene {
+    let sb = &app.sb;
+    Scene {
+        focus: sb.focus.clone(),
+        selected: sb.selected,
+        preview: sb.preview,
+        archived_open: sb.archived_open,
+        drop_ask: sb.drop_ask.is_some(),
+        confirm: sb.confirm.is_some(),
+        card: (sb.card.shown, sb.card.full, sb.card.sel, sb.card.scroll),
+    }
+}
+
 /// Keys of the switchboard mode; `true` when handled.
 pub(crate) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: bool) -> bool {
     let empty = app.ed.text.is_empty();

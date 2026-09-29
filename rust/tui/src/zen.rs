@@ -1,14 +1,20 @@
 //! Zen while you type (BISE-121, book §9 "Zen while you type"): while
 //! you write in the composer, the rest of the screen steps back.
 //!
-//! - Enters on a typing key that changes the composer's text (a letter,
-//!   a space, backspace, delete, shift+enter; a paste), with no popup
-//!   open.
-//! - Leaves [`HOLD`] (8 s) after the last typing key, or at once on any
-//!   other input: a mouse move, click or scroll, a key that moves the
-//!   cursor or is not typing (arrows, esc, tab, enter, ctrl+…, alt+…),
-//!   a popup, the terminal losing the focus, and anything that needs
-//!   you (a card, a message to you, a confirm, an error).
+//! - Enters on a composer key that changes the composer (its text or a
+//!   pending dead key: a character, with any modifier, that types; an
+//!   Option accent; backspace, delete, shift+enter, ⏎ send; a paste),
+//!   with no popup open.
+//! - Holds (the timer starts again) on every key that edits or moves
+//!   inside the composer (BISE-124): the above, and the arrows,
+//!   home/end, the word moves (⌥/ctrl+arrows), undo, select all. A key
+//!   the app has no use for (a lone modifier, caps lock) changes nothing.
+//! - Leaves [`HOLD`] (8 s) after the last composer key, or at once on:
+//!   a mouse move, click or scroll, the terminal losing the focus, esc,
+//!   tab, page up/down, a key taken outside the composer (⌥0-9 and the
+//!   panel keys, ctrl+o and the other app shortcuts, a key while the
+//!   help or the terminal pane is up), a `/` `@` `$` popup, and anything
+//!   that needs you (a card, a message to you, a confirm, an error).
 //! - In zen, every cell's text is mixed [`DEPTH`] (45 %) toward its own
 //!   background, over [`FADE`] (250 ms) in [`STEPS`] steps, out the same
 //!   way. Kept as they are: the composer's text and cursor, the
@@ -29,7 +35,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};
 use std::time::{Duration, Instant};
 
-/// Zen lasts this long after the last typing key.
+/// Zen lasts this long after the last composer key.
 pub(crate) const HOLD: Duration = Duration::from_secs(8);
 /// The fade in (and out).
 pub(crate) const FADE: Duration = Duration::from_millis(250);
@@ -67,33 +73,60 @@ impl Default for Zen {
 pub(crate) enum Input {
     /// typing into the composer: enters (or holds) zen
     Typing,
+    /// a key that stays in the composer without changing it (an arrow, a
+    /// word move, home/end): holds zen, never starts it
+    Hold,
     /// anything else the user does: leaves zen
     Other,
-    /// not the user's doing (a key release, a resize, focus back)
+    /// not the user's doing (a key release, a resize, focus back), or a
+    /// key the app has no use for (a lone modifier, caps lock)
     Neutral,
 }
 
-/// A key that types (a char with no modifier but shift, backspace,
-/// delete, shift+enter): only these hold zen.
-pub(crate) fn typing_key(k: &KeyEvent) -> bool {
-    let only_shift = (k.modifiers - KeyModifiers::SHIFT).is_empty();
-    match k.code {
-        KeyCode::Char(_) => only_shift,
-        KeyCode::Backspace | KeyCode::Delete => k.modifiers.is_empty(),
-        KeyCode::Enter => k.modifiers == KeyModifiers::SHIFT,
-        _ => false,
+/// A key the composer takes (BISE-124): every key the editor maps to an
+/// edit or a move (a character with any modifier that types, an Option
+/// accent or dead key, backspace/delete and their word forms, the
+/// arrows, home/end, ctrl+a/e/…, undo, select all, cut), ⏎ and its
+/// newline forms (shift/alt+⏎, ctrl+j). Not: copy, ⌥0-9 (switches
+/// agents), esc, tab, page up/down, ctrl+o and the other app shortcuts.
+/// Whether it really reached the composer is the caller's to say.
+pub(crate) fn composer_key(k: &KeyEvent) -> bool {
+    use crate::editor::Action;
+    match (k.code, k.modifiers) {
+        (KeyCode::Enter, _) | (KeyCode::Char('j'), KeyModifiers::CONTROL) => true,
+        (KeyCode::Char(c), KeyModifiers::ALT) if c.is_ascii_digit() => false,
+        _ => crate::editor::action(k).is_some_and(|a| !matches!(a, Action::Copy)),
     }
 }
 
-/// A key event, told by what it did: `changed` the composer's text,
-/// with a popup `open` after it.
-pub(crate) fn key_input(k: &KeyEvent, changed: bool, popup_open: bool) -> Input {
-    if k.kind == KeyEventKind::Release {
+/// A key that does nothing in the app: no input at all for zen (a lone
+/// modifier or a lock key some terminals report).
+fn idle_key(k: &KeyEvent) -> bool {
+    matches!(
+        k.code,
+        KeyCode::Null
+            | KeyCode::Modifier(_)
+            | KeyCode::CapsLock
+            | KeyCode::NumLock
+            | KeyCode::ScrollLock
+            | KeyCode::Media(_)
+            | KeyCode::KeypadBegin
+    )
+}
+
+/// A key event, told by where it went and what it did: `composer` = it
+/// reached the composer (nothing outside it changed, no help or
+/// terminal pane in front), `changed` = the composer's text or pending
+/// dead key changed, `popup` = a popup was open before or after it.
+pub(crate) fn key_input(k: &KeyEvent, composer: bool, changed: bool, popup: bool) -> Input {
+    if k.kind == KeyEventKind::Release || idle_key(k) {
         Input::Neutral
-    } else if typing_key(k) && changed && !popup_open {
+    } else if !composer_key(k) || !composer || popup {
+        Input::Other
+    } else if changed {
         Input::Typing
     } else {
-        Input::Other
+        Input::Hold
     }
 }
 
@@ -142,6 +175,11 @@ impl Zen {
                     self.broken = None;
                 }
                 self.last = Some(now);
+            }
+            Input::Hold => {
+                if self.active(now) {
+                    self.last = Some(now);
+                }
             }
             Input::Other => self.leave(now),
             Input::Neutral => {}
@@ -217,44 +255,114 @@ mod tests {
     }
 
     #[test]
-    fn typing_keys_are_chars_backspace_delete_and_shift_enter() {
+    fn composer_keys_are_every_edit_and_move_with_any_modifier() {
         use KeyCode::*;
-        let (n, s, c, a) = (KeyModifiers::NONE, KeyModifiers::SHIFT, KeyModifiers::CONTROL, KeyModifiers::ALT);
-        for k in [key(Char('a'), n), key(Char('A'), s), key(Char(' '), n), key(Char('é'), n), key(Backspace, n), key(Delete, n), key(Enter, s)] {
-            assert!(typing_key(&k), "{k:?}");
-        }
+        let (n, s, c, a, cmd) =
+            (KeyModifiers::NONE, KeyModifiers::SHIFT, KeyModifiers::CONTROL, KeyModifiers::ALT, KeyModifiers::SUPER);
+        let (sa, ca) = (s | a, c | a);
         for k in [
+            // characters, and the ones the Option layer types (Ghostty on
+            // a U.S. layout sends Option as Alt: ⌥e is Char('e') + ALT)
+            key(Char('a'), n),
+            key(Char('A'), s),
+            key(Char(' '), n),
+            key(Char('é'), n),
+            key(Char('`'), a),
+            key(Char('e'), a),
+            key(Char('c'), a),
+            key(Char('E'), sa),
+            // edits and newlines, ⏎ send
+            key(Backspace, n),
+            key(Backspace, a),
+            key(Backspace, cmd),
+            key(Delete, n),
+            key(Delete, c),
             key(Char('w'), c),
-            key(Char('b'), a),
+            key(Char('u'), c),
+            key(Enter, n),
+            key(Enter, s),
+            key(Enter, a),
+            key(Char('j'), c),
+            // moves: arrows, word moves, home/end, emacs keys
             key(Left, n),
+            key(Right, s),
+            key(Left, a),
+            key(Right, c),
+            key(Left, ca),
+            key(Right, cmd),
             key(Up, n),
+            key(Down, s),
             key(Home, n),
             key(End, n),
+            key(Char('a'), c),
+            key(Char('e'), c),
+            key(Char('b'), a),
+            // undo, select all
+            key(Char('z'), cmd),
+            key(Char('a'), cmd),
+        ] {
+            assert!(composer_key(&k), "{k:?}");
+        }
+        for k in [
+            key(Char('1'), a),
+            key(Char('0'), a),
+            key(Up, a),
+            key(Down, a),
+            key(Char('o'), c),
+            key(Char('c'), c),
+            key(Char('l'), c),
+            key(Char('g'), c),
+            key(Char('v'), c),
+            key(Char('c'), cmd),
             key(Esc, n),
             key(Tab, n),
-            key(Enter, n),
-            key(Enter, a),
-            key(Backspace, a),
+            key(BackTab, s),
             key(PageUp, n),
+            key(PageDown, n),
             key(F(1), n),
         ] {
-            assert!(!typing_key(&k), "{k:?}");
+            assert!(!composer_key(&k), "{k:?}");
         }
     }
 
     #[test]
-    fn a_key_counts_by_what_it_did() {
+    fn a_key_counts_by_where_it_went_and_what_it_did() {
         let a = key(KeyCode::Char('a'), KeyModifiers::NONE);
-        assert_eq!(key_input(&a, true, false), Input::Typing);
-        // a space that toggled a section (text unchanged), a `/` that
-        // opened the popup: not typing
-        assert_eq!(key_input(&a, false, false), Input::Other);
-        assert_eq!(key_input(&a, true, true), Input::Other);
+        assert_eq!(key_input(&a, true, true, false), Input::Typing);
+        // taken outside the composer (a space that toggled a section, a
+        // panel key), a `/` that opened the popup: not typing
+        assert_eq!(key_input(&a, false, true, false), Input::Other);
+        assert_eq!(key_input(&a, true, true, true), Input::Other);
         let mut up = a;
         up.kind = KeyEventKind::Release;
         up.state = KeyEventState::NONE;
-        assert_eq!(key_input(&up, true, false), Input::Neutral);
-        assert_eq!(key_input(&key(KeyCode::Left, KeyModifiers::NONE), false, false), Input::Other);
+        assert_eq!(key_input(&up, true, true, false), Input::Neutral);
+        // a move holds; the dead key ⌥` changes the composer: typing
+        let left = key(KeyCode::Left, KeyModifiers::NONE);
+        assert_eq!(key_input(&left, true, false, false), Input::Hold);
+        assert_eq!(key_input(&key(KeyCode::Char('`'), KeyModifiers::ALT), true, true, false), Input::Typing);
+        // an app shortcut leaves, wherever it went
+        assert_eq!(key_input(&key(KeyCode::Char('o'), KeyModifiers::CONTROL), true, false, false), Input::Other);
+        assert_eq!(key_input(&key(KeyCode::Esc, KeyModifiers::NONE), true, false, false), Input::Other);
+        // a lone modifier, caps lock: nothing
+        let shift = KeyCode::Modifier(crossterm::event::ModifierKeyCode::LeftShift);
+        assert_eq!(key_input(&key(shift, KeyModifiers::SHIFT), false, false, false), Input::Neutral);
+        assert_eq!(key_input(&key(KeyCode::CapsLock, KeyModifiers::NONE), false, false, false), Input::Neutral);
+    }
+
+    #[test]
+    fn a_move_holds_zen_but_never_starts_it() {
+        let t = Instant::now();
+        let mut z = Zen::default();
+        z.input(Input::Hold, t);
+        assert!(!z.active(t), "an arrow alone is not typing");
+        z.input(Input::Typing, t);
+        z.input(Input::Hold, ms(t, 7000));
+        assert!(z.active(ms(t, 14_999)), "the timer starts again");
+        assert!(!z.active(ms(t, 15_000)));
+        // after the time-out, a move does not bring it back
+        z.input(Input::Hold, ms(t, 16_000));
+        assert!(!z.active(ms(t, 16_000)));
     }
 
     #[test]
