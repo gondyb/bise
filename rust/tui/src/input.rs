@@ -401,6 +401,9 @@ pub(crate) fn on_paste(app: &mut App, text: &str) {
     if app.term.paste(text) {
         return;
     }
+    if crate::find::on_paste(app, text) {
+        return;
+    }
     // normalize CRLF/CR so a terminal paste behaves like the
     // typed newline, then insert at the cursor
     let text = text.replace("\r\n", "\n").replace('\r', "\n");
@@ -447,6 +450,10 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         return false;
     }
     if voice_key(app, k, voice::resolve_job) {
+        return false;
+    }
+    // ctrl+f: the find field takes the keys while it is open (BISE-237)
+    if crate::find::on_key(app, k) {
         return false;
     }
     if app.popup_dismissed.as_deref() != Some(app.ed.text.as_str()) {

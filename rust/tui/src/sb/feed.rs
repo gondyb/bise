@@ -30,6 +30,14 @@ pub(crate) struct FeedWindow {
     pub(super) last_pos: Option<usize>,
 }
 
+impl FeedWindow {
+    /// The position of the oldest line taken in (find: a page of older
+    /// lines moved every index; more than 1: older lines are not loaded).
+    pub(crate) fn first_pos(&self) -> Option<usize> {
+        self.first_pos
+    }
+}
+
 /// Everything that belongs to one feed.
 pub(super) struct View {
     pub(super) events: Vec<Ev>,

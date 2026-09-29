@@ -1162,6 +1162,92 @@ fn forget(cache: &mut [Option<EventRows>], range: std::ops::RangeInclusive<usize
     }
 }
 
+// ---- find (BISE-237): open what hides a match, close it after ----
+
+/// What find opened to show its current match, to close it again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Undo {
+    /// event `i` itself (a report, a brief, a `▸ why`, an output)
+    Own(usize),
+    /// a call's row or box: how it was (opened, expanded)
+    Box(usize, bool, bool),
+    /// the `▸ n commands` fold whose first call is this one
+    ToolFold(usize),
+    /// the fold of level-3 lines that starts here
+    L3Fold(usize),
+}
+
+/// Open what hides event `i`'s text: the fold it is in, then the event
+/// itself (a call opens whole). Thinking stays closed. Returns what
+/// changed, for [`unreveal`].
+pub(crate) fn reveal(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize) -> Vec<Undo> {
+    let mut out = Vec::new();
+    if i >= events.len() || matches!(events[i], Ev::Thinking { .. }) {
+        return out;
+    }
+    if let Some(f) = tool_fold(events, i, false) {
+        if !f.open && (f.carrier..=f.last).contains(&i) {
+            toggle_tool_fold(events, cache, f.carrier);
+            out.push(Undo::ToolFold(f.carrier));
+        }
+    }
+    if is_l3(&events[i]) {
+        if let Some(s) = folded_run(events, i, false).filter(|&s| !fold_open(&events[s])) {
+            toggle_fold(events, cache, s);
+            out.push(Undo::L3Fold(s));
+        }
+    }
+    if own_open(&events[i]) == Some(false) {
+        if let Ev::Tool(td) = &mut events[i] {
+            if crate::toolbox::is_boxed(td) {
+                out.push(Undo::Box(i, td.opened, td.expanded));
+                (td.opened, td.expanded) = (true, true);
+                forget(cache, i..=i);
+                forget_work_run(events, cache, i);
+                return out;
+            }
+        }
+        if toggle_own(events, cache, i) {
+            out.push(Undo::Own(i));
+        }
+    }
+    out
+}
+
+/// Close again what [`reveal`] opened (last opened, first closed).
+pub(crate) fn unreveal(events: &mut [Ev], cache: &mut [Option<EventRows>], undo: Vec<Undo>) {
+    for u in undo.into_iter().rev() {
+        match u {
+            Undo::Own(i) if i < events.len() => {
+                toggle_own(events, cache, i);
+            }
+            Undo::Box(i, opened, expanded) if matches!(events.get(i), Some(Ev::Tool(_))) => {
+                if let Ev::Tool(td) = &mut events[i] {
+                    (td.opened, td.expanded) = (opened, expanded);
+                }
+                forget(cache, i..=i);
+                forget_work_run(events, cache, i);
+            }
+            Undo::ToolFold(c) if matches!(events.get(c), Some(Ev::Tool(td)) if td.fold_open) => {
+                toggle_tool_fold(events, cache, c);
+            }
+            Undo::L3Fold(s) if events.get(s).is_some_and(fold_open) => {
+                toggle_fold(events, cache, s);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Older lines came in front of the feed: every index moves by `d`.
+pub(crate) fn shift_undo(undo: &mut [Undo], d: usize) {
+    for u in undo.iter_mut() {
+        match u {
+            Undo::Own(i) | Undo::Box(i, _, _) | Undo::ToolFold(i) | Undo::L3Fold(i) => *i += d,
+        }
+    }
+}
+
 /// A line was appended: the run before it changes (its count, the lines
 /// that fold at the fourth, its pulse when it closes). Nothing else does.
 fn after_append(events: &[Ev], cache: &mut [Option<EventRows>]) {

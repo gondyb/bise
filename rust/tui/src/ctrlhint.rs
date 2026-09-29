@@ -144,6 +144,10 @@ pub(crate) fn pairs(app: &App) -> Vec<Pair> {
     if let Some(w) = fold_word(app) {
         p.push(("ctrl+o", w));
     }
+    // BISE-237: find in the history
+    if !app.events.is_empty() {
+        p.push(("ctrl+f", "find"));
+    }
     let v = crate::sb::ctrl_view(app);
     if v.cards > 0 {
         // from the thread only ctrl+g; the rest in the card view
@@ -523,7 +527,7 @@ mod frame_tests {
             let hinted = a[div] != b[div];
             assert!(!hinted || b[div].contains(" ctrl+c "), "{}", b[div]);
             let bar = a.len() - 2;
-            assert!(b[bar].contains("ctrl+c interrupt   ctrl+o expand   ctrl+g "), "{}", b[bar]);
+            assert!(b[bar].contains("ctrl+c interrupt   ctrl+o expand   ctrl+f find   ctrl+g "), "{}", b[bar]);
             let mut changed = vec![fold, title, bar];
             if hinted {
                 changed.push(div);

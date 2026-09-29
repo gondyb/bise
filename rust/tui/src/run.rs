@@ -402,7 +402,7 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
         }
         // the voice chip moves every 50 ms while recording or
         // transcribing (its meter, blink and wave; Vibe's poll)
-        let wait = if backlog {
+        let wait = if backlog || app.find.as_ref().is_some_and(|f| f.busy()) {
             Duration::ZERO
         } else if app.voice.active() {
             Duration::from_millis(50)

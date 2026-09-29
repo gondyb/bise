@@ -37,7 +37,9 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let inner_w = (cols.col_w.min(cols.pane_w) as usize).saturating_sub((lead + right) as usize).max(1);
     // the voice chip is in the text (BISE-222): no columns of its own
     let text_w = inner_w;
-    let composer_rows = {
+    let composer_rows = if app.find.is_some() {
+        1
+    } else {
         let r = editor::layout_input(&app.ed.text, text_w);
         editor::drawn_rows(&r, app.ed.cursor) as u16
     };
@@ -186,14 +188,14 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let working = sb::viewed_working(app);
     let who = sb::viewed_who(app);
     let state = if rows.keys_in_divider {
-        crate::keybar::line(app, chrome::divider_room(area.width, cols, &name, &who, working.as_ref())).spans
+        crate::keybar::line(app, chrome::divider_room(area.width, cols, &name, &who, working.as_ref(), app.find.is_some())).spans
     } else {
         state
     };
     let (state_rect, label_rect) = match sb::card_divider_label(app) {
         // the card view: `you → ? perf's card · your answer`
         Some(label) => chrome::draw_divider_label(frame.buffer_mut(), area, cols, divider_y, label),
-        None => chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, &who, working.as_ref(), state),
+        None => chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, &who, working.as_ref(), state, app.find.is_some()),
     };
     if !rows.keys_in_divider {
         crate::ctrlhint::divider(app, frame.buffer_mut(), state_rect);
@@ -219,7 +221,11 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // around the text too), the text from x0 + `lead`
     let body_rect = pane(chunks[10]);
     let composer = Rect { width: (inner_w as u16 + lead).min(body_rect.width), ..body_rect };
-    draw_composer(app, frame, composer, inner_w, lead, pad_top.min(composer_h), rows.pad_bottom);
+    if app.find.is_some() {
+        draw_find(app, frame, composer, inner_w, lead, pad_top.min(composer_h), rows.pad_bottom);
+    } else {
+        draw_composer(app, frame, composer, inner_w, lead, pad_top.min(composer_h), rows.pad_bottom);
+    }
     let text = Rect { y: app.composer.y, height: app.composer.h as u16, ..body_rect };
     // zen (BISE-121) keeps the composer's text, the divider's label and
     // the card box as they are, and the history you read (BISE-132): the
@@ -233,7 +239,9 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         let c = col(card);
         app.zen.aside.retain(|r| r.intersection(c).is_empty());
     }
-    draw_popup(app, frame, text);
+    if app.find.is_none() {
+        draw_popup(app, frame, text);
+    }
     // the key bar, from x0 to the right margin (from 60 columns, from
     // the composer's text column)
     let kb = pane(chunks[11]);
@@ -323,6 +331,8 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect, bar: Option<Rect>) {
             &mut |i: usize| ensure_rows(&app.events, &mut app.cache, i, debug, area_w, tick)
         };
     }
+    // find (BISE-237): its share of the scan, the view to its match
+    crate::find::step(app, area_w, crate::find::BUDGET);
     let down = app.scroll > 0;
     // a scroll puts the "type ask about it" popup away (quote.rs)
     if app.scroll != 0 {
@@ -354,9 +364,14 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect, bar: Option<Rect>) {
                     break;
                 }
                 // the feed selection on the selection background
-                match app.feed_sel.and_then(|s| s.cols(i, ri)) {
-                    Some((a, b)) => vis.push(feedsel::highlight(r, a, b, theme::selection_bg())),
-                    None => vis.push(r.clone()),
+                let line = match app.feed_sel.and_then(|s| s.cols(i, ri)) {
+                    Some((a, b)) => feedsel::highlight(r, a, b, theme::selection_bg()),
+                    None => r.clone(),
+                };
+                // the matches of the find field (BISE-237)
+                match app.find.as_ref().and_then(|f| f.marker()) {
+                    Some(m) => vis.push(m.paint(line, i, ri)),
+                    None => vis.push(line),
                 }
                 vis_events.push(i);
                 vis_rows.push(ri);
@@ -631,6 +646,26 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, lea
         }
         lines.push(Line::from(spans));
     }
+    while lines.len() < area.height as usize {
+        lines.push(Line::from(bar.clone()));
+    }
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
+/// The find field in the composer's place (BISE-237): the bar in
+/// accent, the query, the counter on the right; the draft waits.
+fn draw_find(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, lead: u16, pad_top: u16, pad_bottom: u16) {
+    let text_y = area.y + pad_top.min(area.height.saturating_sub(1));
+    app.composer = ComposerArea { x: area.x + lead, y: text_y, w: inner.max(1), h: 1, top: 0 };
+    let bar = Span::styled(format!("│{}", " ".repeat(lead.saturating_sub(1) as usize)), Style::default().fg(accent()));
+    let mut lines: Vec<Line> = Vec::with_capacity(area.height as usize);
+    for _ in 0..pad_top.min(area.height) {
+        lines.push(Line::from(bar.clone()));
+    }
+    let mut spans = vec![bar.clone()];
+    spans.extend(crate::find::row(app, inner.max(1)).spans);
+    lines.push(Line::from(spans));
+    let _ = pad_bottom;
     while lines.len() < area.height as usize {
         lines.push(Line::from(bar.clone()));
     }

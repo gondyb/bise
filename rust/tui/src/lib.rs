@@ -72,6 +72,7 @@ mod usage;
 mod models;
 mod term;
 mod feedsel;
+mod find;
 mod links;
 mod keyprobe;
 pub mod timing;

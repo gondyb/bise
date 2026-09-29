@@ -36,6 +36,8 @@ pub(crate) enum Mode {
     Confirm,
     /// the card view (ctrl+g): the composer answers the card
     Card,
+    /// ctrl+f: the find field (BISE-237)
+    Find,
     /// an agent is selected in the panel
     Selected,
     /// in an archived agent
@@ -89,6 +91,7 @@ impl Mode {
             Mode::Quote => &[ASK, ("cmd+c", "copy"), ("esc", "drop")],
             Mode::DropAsk => &[("y", "drop"), ("n or esc", "keep")],
             Mode::Confirm => &[("y", "yes"), ("n", "no"), ("esc", "cancel")],
+            Mode::Find => &[("⏎", "older"), ("↑↓", "move"), ("esc", "close")],
             // the view's own keys come from `sb::card_key_pairs` (`1-2 pick`…)
             Mode::Card => &[("⏎", "answer"), ("ctrl+x", "close"), ("esc", "back")],
             Mode::Selected => &[("⏎", "enter"), ("space", "preview"), ("D", "drop"), ("esc", "close")],
@@ -124,6 +127,8 @@ pub(crate) fn mode(app: &App) -> Mode {
         Mode::Recording
     } else if app.voice.state() == voice::VoiceState::Flushing {
         Mode::Transcribing
+    } else if app.find.is_some() {
+        Mode::Find
     } else if commands::popup_open(app) && files::token(&app.ed.text, app.ed.cursor).is_some() {
         Mode::FilePopup
     } else if app.feed_sel.is_some() && app.mouse.drag.is_none() {

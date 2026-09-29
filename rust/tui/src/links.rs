@@ -398,14 +398,16 @@ fn hit_of(hits: &[Hit], x: u16, y: u16, cell: &Cell) -> Option<usize> {
     hits.iter().position(|h| h.y == y && x >= h.x0 && x < h.x1 && h.tag == tag)
 }
 
-impl<W: Write> Backend for LinkBackend<W> {
-    fn draw<'a, I>(&mut self, content: I) -> io::Result<()>
+impl<W: Write> LinkBackend<W> {
+    /// The cells, each link inside its OSC 8.
+    fn draw_cells<'a, I>(&mut self, content: I) -> io::Result<()>
     where
         I: Iterator<Item = (u16, u16, &'a Cell)>,
     {
         if !osc8() {
             return self.inner.draw(content);
         }
+
         FRAME.with(|f| {
             let hits = f.borrow();
             if hits.is_empty() {
@@ -442,6 +444,29 @@ impl<W: Write> Backend for LinkBackend<W> {
             }
             Ok(())
         })
+    }
+}
+
+impl<W: Write> Backend for LinkBackend<W> {
+    fn draw<'a, I>(&mut self, content: I) -> io::Result<()>
+    where
+        I: Iterator<Item = (u16, u16, &'a Cell)>,
+    {
+        // NO_COLOR: crossterm writes every color change as `ESC[;m`, a
+        // reset that also drops the modifiers just set (a find match's
+        // underline, BISE-237). Colorless cells change no color.
+        if no_color() {
+            let plain: Vec<(u16, u16, Cell)> = content
+                .map(|(x, y, c)| {
+                    let mut c = c.clone();
+                    c.fg = Color::Reset;
+                    c.bg = Color::Reset;
+                    (x, y, c)
+                })
+                .collect();
+            return self.draw_cells(plain.iter().map(|(x, y, c)| (*x, *y, c)));
+        }
+        self.draw_cells(content)
     }
     fn append_lines(&mut self, n: u16) -> io::Result<()> {
         self.inner.append_lines(n)

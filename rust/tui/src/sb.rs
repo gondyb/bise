@@ -615,6 +615,9 @@ pub(super) fn focus(app: &mut App, name: &str) {
     if sb.focus == name {
         return;
     }
+    // find (BISE-237): what it opened closes with the feed we leave
+    crate::find::close(app);
+    let sb = &mut app.sb;
     let old = std::mem::replace(&mut sb.focus, name.to_string());
     sb.activity.remove(name);
     let mut incoming = sb.views.remove(name).unwrap_or_else(View::new);

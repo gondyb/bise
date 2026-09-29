@@ -93,6 +93,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(CARDS, "y|n|esc", "a confirmation: yes / no / not now"),
     r(FEED, "click ▸|space", "open or close one folded item: thinking, an output, a diff, a report (space: the item selected in the feed, composer empty)"),
     r(FEED, "ctrl+o", "open or close everything folded").top(),
+    r(FEED, "ctrl+f", "find in the history: ⏎ or ↑ older, shift+⏎ or ↓ newer, esc close (the view stays on the match)").top(),
     r(FEED, "pgup|pgdn|wheel", "scroll the feed"),
     r(FEED, "end", "back to the bottom"),
     r(FEED, "ctrl+l", "clear the display (/clear); scroll up to see the lines again"),
