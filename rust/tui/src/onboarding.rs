@@ -892,7 +892,7 @@ fn folder_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
     if o.other_folder {
         v.push(Line::raw(""));
         v.push(Line::from(s(
-            "another folder? start me there: cd into it, then run switchboard.",
+            "another folder? cd into it, then run bise.",
             theme::dim(),
         )));
     }
@@ -1516,7 +1516,7 @@ mod tests {
         }
         assert!(!sc.contains("honest") && !sc.contains("no worktrees to merge"), "{}", sc);
         o.on_key(key(KeyCode::Char('o')), 1, &none);
-        assert!(screen(&o, 10, 120, 30).contains("another folder? start me there"));
+        assert!(screen(&o, 10, 120, 30).contains("another folder? cd into it, then run bise."));
     }
 
     #[test]

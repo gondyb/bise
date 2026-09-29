@@ -107,7 +107,7 @@ def main():
             assert s in flat(sc), sc
         shot("4-folder", sc)
         t.keys("o")
-        t.wait("another folder? start me there")
+        t.wait("another folder? cd into it, then run bise.")
         # 5 the three lines, one by one
         t.keys("Enter")
         sc = t.wait("enter, and say what's on your mind.")
