@@ -1,7 +1,7 @@
 //! The attention cards: the hub's questions and alerts, answered from
 //! the card box above the composer (ctrl+g, alt+r). A card is level 1
 //! (bise book §9, §12): a bar on the left, `? {name} needs you`, the
-//! question wrapped at 76, the choices, the keys dim.
+//! question wrapped at 88, the choices, the keys dim.
 
 use super::*;
 use crate::commands::PopItem;
@@ -53,8 +53,9 @@ pub(super) struct CardView {
     pub(super) area: Rect,
 }
 
-/// The widest a card line gets: prose wraps at 76 (book §11).
-const READ_WIDTH: usize = 76;
+/// The widest a card line gets: prose wraps at 88, like the reading
+/// column's text (book §8, §11; 76 until BISE-101).
+const READ_WIDTH: usize = 88;
 
 /// The level-1 box: a heavy bar on the left (book §9 `┃`), light and
 /// rounded elsewhere.
@@ -260,7 +261,7 @@ pub(crate) fn card_box_height(app: &App, area: Rect, room: u16) -> u16 {
 }
 
 /// The wrap width of a card's text in a box `width` columns wide (the
-/// borders and the padding take 4), at most 76.
+/// borders and the padding take 4), at most 88.
 fn text_width(width: u16) -> usize {
     (width as usize).saturating_sub(4).clamp(1, READ_WIDTH)
 }
@@ -427,7 +428,7 @@ pub(crate) fn draw_card(app: &mut App, frame: &mut Frame, area: Rect) {
     let scroll = sb.card.scroll.min(max_scroll);
     // the keys first (copy deck), then where the text is if it fits
     // a scrolled card keeps room for its short scroll hint (` ▾ 12 `):
-    // in the reading column (≤ 79, BISE-97) all the keys would take it
+    // in the reading column (≤ 91, BISE-101) all the keys would take it
     let keep = {
         use unicode_width::UnicodeWidthStr;
         scroll_hint_short(scroll, max_scroll).width()
@@ -602,7 +603,7 @@ mod tests {
         let area = app.sb.as_ref().unwrap().card.area;
         assert!(area.height >= h * 6 / 10, "box height {} of {}", area.height, h);
         assert!(s.contains("line 01 of the card"));
-        // the box takes the reading column (≤ 79, book §8): with every key
+        // the box takes the reading column (≤ 91, book §8): with every key
         // shown, the scroll hint may be its short form (`▾ 58`)
         assert!(s.contains("more lines · pgdn") || s.contains(&format!(" {} ", crate::theme::G_OPEN)), "a scroll hint in
 {}", s);
@@ -679,7 +680,7 @@ mod tests {
         app.sb.as_mut().unwrap().cards = vec![card(1, "done", long_line)];
         app.sb.as_mut().unwrap().toggle_card();
         let h = card_box_height(&app, Rect::new(0, 0, 200, 50), 40);
-        // 300 chars wrapped at 76 columns: 4 rows, plus the borders
+        // 300 chars wrapped at 88 columns: 4 rows, plus the borders
         assert_eq!(h, 6, "height {}", h);
     }
 
@@ -729,10 +730,10 @@ mod tests {
             last
         );
         assert!(last.starts_with("┖"), "{}", last);
-        // every text row within 76 columns (the box is 100 wide)
+        // every text row within 88 columns (the box is 100 wide)
         for r in &rows[1..rows.len() - 1] {
             let text = r.trim_start_matches('┃').trim_end_matches('│').trim_end();
-            assert!(text.chars().count() <= 77, "{:?}", r);
+            assert!(text.chars().count() <= 89, "{:?}", r);
         }
         // colors: bar, glyph and title in accent; the keys dim; the choice number accent
         let buf = term.backend().buffer();
@@ -797,7 +798,7 @@ mod tests {
     }
 
     /// "a card, full screen": ctrl+f opens it over the feed (title
-    /// `full screen · ctrl+f back`, still wrapped at 76, pgdn scrolls);
+    /// `full screen · ctrl+f back`, still wrapped at 88, pgdn scrolls);
     /// ctrl+f or esc brings the box back.
     #[test]
     fn ctrl_f_opens_the_card_full_screen_and_back() {
@@ -835,7 +836,7 @@ mod tests {
         }
         // a done card keeps its whole summary (numbered lists included)
         let d = card(1, "done", "did:\n1. a\n2. b".into());
-        assert_eq!(card_lines(&d, 76).len(), 3);
+        assert_eq!(card_lines(&d, 88).len(), 3);
     }
 
     /// `/close ` lists the open cards; a query filters by id, kind, agent
