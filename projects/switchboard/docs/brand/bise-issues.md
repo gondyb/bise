@@ -2030,7 +2030,6 @@ Index:
 - **spec:** book §9 "Level 3 is an envelope chip" and "Short on room", §8 agents panel; user screenshots (chip tint 1 column right of x0, lines up with nothing) and user request « les noms des agents sont trop agressivement tronqués »; mockups marketing e567233.
 - **what:** (1) the chip at x0, flush with the text: tint at x0, `✉︎` at x0+1, the sender at x0+3; the text beside it unchanged (hung after the chip); under the chip when short on room at x0+2 (was x0+4); the compact form (W < 40) and its text at x0; the fold line `▸ n messages…` at x0 (was x0+2). (2) names cut only when the row lacks room: chip W ≥ 60 names up to 24 (was 12), 40–59 up to 16 (was 8), < 40 up to 10 (was 6), the receiver still cut before the sender; the panel's name takes all the room left of its marks and state (no fixed 16 / 12 cap: `layout::Panel::name_cut` removed); the divider's `you → name` cut only at the last steps, to 20 then 12 (was 12 then 8). Header, cards, reports: no fixed name cap found.
 - **notes:** tests: `render::chip_tests::{the_chip_is_tinted_with_a_bold_sender, names_are_cut_at_24_only_when_longer, the_text_hangs_and_stops_after_2_rows, short_on_room_the_text_goes_under_the_chip, no_tint_and_ascii_use_brackets, the_fold_line_sits_at_x0_and_is_cut_from_the_right}`, `render::multiline_tests::agent_message_opens_under_its_chip`, `feed_render_tests` (the mockups, the folds), `chrome::tests::short_on_room_the_divider_drops_in_the_book_order`, `sb::panel::tests::panel_rows_at_28_and_40`.
-<<<<<<< /tmp/skt-fix/bise-issues.md
 
 ### BISE-111 · the composer's padding: symmetric, half
 
@@ -2049,8 +2048,6 @@ Index:
 - **hub:** main's feed line is now `msg : from → to m_<n> : text` (the TUI reads both forms; an older TUI shows the receiver as `docs m_12`, nothing else breaks); an `ask`/`wait` reply carries `asked` and the CLI prints `reply from docs (m_13, answers m_12)`. sb-core rebuilt, PROOF: ALL PROOFS CHECK.
 - **cost:** `quiet` is decided when the tool's result/code/end or a message with an id arrives (a scan of the last 64 events; a tool's script is decoded only when its output is an sb one and names the id), stored on the tool; a frame only reads the flag (`ev_visible`). No per-frame work. Bench (`bench_long_feed`, main's transcript, 50 000 lines, release, load ~25): replay 96-103 ms after vs 93-101 ms before, steady frame 0.21-0.29 ms vs 0.21-0.22 ms. A first version that decoded every script in the window was 2-3× slower on replay (217-342 ms): fixed by the prefilter.
 - **notes:** tests: `quiet_send_tests::{a_lone_send_hides_its_box (line before or after the result), flags_and_one_cd_still_hide, anything_else_keeps_the_box (cd x; …, … | cat, echo &&, two cds, && sb list, $( ), >, &, newline, env prefix, open quote, backtick, sb spawn), a_failure_or_no_drawn_message_keeps_the_box (fail, no line, other id, extra output, sb list, message above the box), an_ask_hides_when_question_and_reply_show, a_report_in_a_tasks_feed_keeps_its_box, ctrl_o_shows_the_hidden_box, hidden_sends_stack}`, `sb::hub_line_tests` (the `msg` id), `cli::tests::rendering`, core `ask_waits_for_the_reply` (`asked`), core feed-line tests.
-||||||| /tmp/skt-fix/bise-issues.md.base
-=======
 
 ### BISE-112 · a tip for `$` skills
 
@@ -2059,7 +2056,6 @@ Index:
 - **spec:** book §8 "The frame" (key bar line, the tips). User request « ce serait bien d'ajouter le $ dans les tips en bas qui indique qu'on peut utiliser les skills comme ça ».
 - **what:** a key-bar tip `$ calls a skill, tab completes` (second in `help::TIPS`, after ctrl+o); the `?` help gets a `$` row in "talk to agents" (switchboard) and "conversation" (solo), shown on /help too: `a skill: the popup lists them, tab completes; the agent reads the $name mention` (as today: `$` at a word start opens the skills popup, tab or ⏎ inserts `$name `, the model reads the mention, nothing loads client side); the tab|⏎ row names the `$` popup.
 - **notes:** tests unchanged and green: `keybar::tests::every_tip_names_a_key_of_the_help` (needs the `$` row), `help::tests::every_row_renders`, `rows_read_lowercase_and_say_agent`.
->>>>>>> /tmp/skt-fix/bise-issues.md.mine
 
 ### BISE-116 · main working shows in the panel
 
