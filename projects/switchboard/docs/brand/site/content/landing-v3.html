@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>landing · content · round 2</title>
+<style>
+:root{--bg:#141211;--soft:#1a1715;--text:#ece6da;--dim:#8f887d;--faint:#3d3935;--acc:#f4a6b0;--raised:#221e1c;--chip:#262220}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.75 "JetBrains Mono",ui-monospace,Menlo,monospace}
+main{max-width:820px;margin:0 auto;padding:56px 28px 160px}
+h1{font-size:28px;line-height:1.3;margin:0 0 6px}
+h2{font-size:20px;margin:72px 0 6px;padding-top:24px;border-top:1px solid var(--faint)}
+h3{font-size:16px;margin:28px 0 4px}
+p{margin:8px 0}
+.dim{color:var(--dim)}.acc{color:var(--acc)}.faint{color:var(--faint)}
+.lede{color:var(--dim);max-width:68ch}
+nav{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(6px);border-bottom:1px solid var(--faint);font-size:13px;padding:8px 28px;display:flex;gap:18px;justify-content:center;flex-wrap:wrap}
+nav a{color:var(--dim);text-decoration:none}nav a:hover{color:var(--acc)}
+.how{background:var(--raised);border-radius:10px;padding:14px 18px;font-size:13px;color:var(--dim);margin:22px 0}
+.how b{color:var(--text)}
+.idea{display:grid;grid-template-columns:34px 1fr;gap:0 10px;margin:22px 0}
+.idea .n{color:var(--acc);font-weight:700}
+.idea .proof{color:var(--dim);font-size:13px}
+.map{counter-reset:s;list-style:none;padding:0;margin:14px 0 24px;border-left:1px solid var(--faint)}
+.map li{counter-increment:s;padding:3px 0 3px 18px;position:relative;color:var(--dim)}
+.map li::before{content:counter(s);position:absolute;left:-26px;width:18px;text-align:right;color:var(--faint)}
+.map li b{color:var(--text);font-weight:600}
+.sec{background:var(--soft);border:1px solid var(--faint);border-radius:12px;padding:18px 22px;margin:14px 0}
+.sec .k{font-size:12px;color:var(--acc);letter-spacing:.04em}
+.sec h3{margin:4px 0 8px;font-size:19px;line-height:1.35}
+.sec .demo{font-size:12.5px;color:var(--dim);border-top:1px dashed var(--faint);margin-top:12px;padding-top:8px}
+.sec .demo::before{content:"demo · "}
+.big{font-size:30px;line-height:1.25;font-weight:700;margin:6px 0}
+.flag{color:var(--acc);font-size:12px}
+table{border-collapse:collapse;width:100%;font-size:13.5px;margin:14px 0}
+td,th{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--faint)}
+th{color:var(--dim);font-weight:500}
+td:first-child{color:var(--dim);width:22%}
+.tl{border-left:2px solid var(--faint);margin:12px 0 12px 6px;padding-left:18px}
+.tl p{margin:10px 0}.tl .t{color:var(--faint);display:inline-block;width:6ch}
+.tag{font-size:11px;color:var(--bg);background:var(--acc);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:2px}
+.pick{border:1px solid var(--acc);border-radius:12px;padding:16px 20px;margin:18px 0}
+
+.opt{margin:6px 0 6px 0;padding-left:14px;border-left:1px solid var(--faint)}
+.opt .me{color:var(--acc);font-size:12px;margin-left:8px}
+.chart{background:var(--soft);border:1px solid var(--faint);border-radius:12px;padding:16px 22px;white-space:pre;font-size:14px;line-height:1.6;overflow-x:auto}
+.chg{color:var(--dim);font-size:13px}
+.chg li{margin:3px 0}
+</style></head>
+<body data-page="landing-v3">
+<nav><a href="#changes">what changed</a><a href="#plan">the plan</a><a href="#lines">one-liners</a><a href="#tokens">tokens</a><a href="#pain">your day</a><a href="#harness">the harness</a><a href="#day">a tuesday</a><a href="#faq">faq</a><a href="#me">made by</a></nav>
+<main>
+
+<h1 data-a="title">landing, content · round 2</h1>
+<p class="lede">your notes from round 1, applied. same tools: hover a block for ♡ ~ ✗ +, select words for ✎.</p>
+
+<section data-sec="changes" id="changes">
+<h2>what changed</h2>
+<ul class="chg">
+<li>headline stays <b>multi-agent coding, made human.</b> "one thread. a whole team." becomes the title of the first section.</li>
+<li>"main is always there" now comes before "a team that runs itself".</li>
+<li>each idea gets a one-liner (3 options each, my pick marked).</li>
+<li>new: tokens. not a swarm, and you can see everything if you want.</li>
+<li>new: the harness itself (every MCP, skills, plugins, images, voice).</li>
+<li>new: made by a human (you).</li>
+<li>the thread lives forever: the timeline is now "a tuesday", one page of a long thread.</li>
+<li>the vs table is gone. its points live in the faq.</li>
+<li>dropped: "stop managing sessions. start having ideas."</li>
+</ul>
+</section>
+
+<section data-sec="plan" id="plan">
+<h2>the plan</h2>
+<p class="lede">A as the spine. B's picture under the hero. C's day as the big demo. D's objections as the faq.</p>
+<ol class="map">
+<li><b>hero</b> · multi-agent coding, made human. · subline · install · gloss</li>
+<li><b>the picture</b> · you → main → the team</li>
+<li><b>you know this day</b> · the pain</li>
+<li><b>one thread. a whole team.</b> · idea 1</li>
+<li><b>main is always there</b> · idea 2</li>
+<li><b>a team that runs itself</b> · idea 3</li>
+<li><b>forget there are agents</b> · idea 4 + tokens + see everything</li>
+<li><b>plug in everything</b> · the harness</li>
+<li><b>a tuesday in the thread</b> · the big demo</li>
+<li><b>kiss your backlog goodbye.</b> · the animated features</li>
+<li><b>coming from Claude Code or Codex?</b> · faq</li>
+<li><b>made by a human</b> · you</li>
+<li><b>install</b></li>
+</ol>
+<div class="chart" data-a="chart">  <b>you</b>          ideas, whenever, however
+   │
+   ▼
+  <span class="acc">:*</span> <b>main</b>      your lead. one thread. all the context.
+   │
+   ├── ∿ auth-fix
+   ├── ∿ release      the team. they talk to each other,
+   └── ∿ api-bump     not to you, unless it matters.</div>
+</section>
+
+<section data-sec="lines" id="lines">
+<h2>one-liners for the 4 ideas</h2>
+<p class="lede">one line each, as a section title or next to its demo. short, a bit cheeky.</p>
+
+<div class="idea" data-a="l1"><span class="n">1</span><div><b>one thread. a whole team.</b>
+<div class="opt" data-a="l1a">same thread on monday. same thread in june. <span class="me">my pick</span></div>
+<div class="opt" data-a="l1b">no tabs. no "wait, which session was that?"</div>
+<div class="opt" data-a="l1c">one project, one chat, forever.</div></div></div>
+
+<div class="idea" data-a="l2"><span class="n">2</span><div><b>main is always there.</b>
+<div class="opt" data-a="l2a">main never says "hold on". <span class="me">my pick</span></div>
+<div class="opt" data-a="l2b">interrupt all you want. it likes that.</div>
+<div class="opt" data-a="l2c">the team is busy. main isn't.</div></div></div>
+
+<div class="idea" data-a="l3"><span class="n">3</span><div><b>a team that runs itself.</b>
+<div class="opt" data-a="l3a">they talk behind your back. in a good way. <span class="me">my pick</span></div>
+<div class="opt" data-a="l3b">the agents sort it out. you stay out of it.</div>
+<div class="opt" data-a="l3c">no traffic cop needed.</div></div></div>
+
+<div class="idea" data-a="l4"><span class="n">4</span><div><b>forget there are agents.</b>
+<div class="opt" data-a="l4a">no yaml was harmed. <span class="me">my pick</span></div>
+<div class="opt" data-a="l4b">strong opinions. zero config.</div>
+<div class="opt" data-a="l4c">just dump your ideas. bise does the rest.</div></div></div>
+</section>
+
+<section data-sec="pain" id="pain">
+<h2>you know this day</h2>
+<div class="sec" data-a="pain"><div class="k">you know this day</div><h3>tab 1 is fixing the test. tab 2 is waiting for a yes. tab 3 forgot what tab 1 did.</h3>
+<p>you're the router, the memory and the merge tool. you have no time to think: you're too busy managing agents. it's boring, and it's not flow.</p>
+<p>the agents aren't the problem. the tools around them are. you could ship way more.</p></div>
+<div class="sec" data-a="idea1"><div class="k">one thread. a whole team.</div><h3>forget there are agents.</h3>
+<p>dump your ideas in your project's thread. bise handles the rest.</p>
+<p class="dim">one thread per project, forever. it never fills up: old context gets compacted on its own, so main still knows what you did last month. nothing to find again, nothing to restart.</p></div>
+</section>
+
+<section data-sec="tokens" id="tokens">
+<h2>forget there are agents <span class="dim">(tokens + see everything)</span></h2>
+<p class="lede">answers the fear "a team of agents = a huge bill". the point is never more agents. it's main staying free and all the context in one place.</p>
+<div class="sec" data-a="tok"><div class="k">not a swarm</div><h3>a team, not a swarm.</h3>
+<p>main starts an agent when a job needs one. no agents checking each other in circles, no committee. one question for main costs one answer, not five agents.</p>
+<p>the point isn't more agents. it's a main thread that's always free, and one place where all the context lives.</p></div>
+<div class="opt" data-a="tok-l1">a team, not a swarm. <span class="me">my pick</span></div>
+<div class="opt" data-a="tok-l2">as many agents as the job needs. not one more.</div>
+<div class="opt" data-a="tok-l3">your token bill will be fine.</div>
+<div class="sec" data-a="see"><div class="k">quiet, not hidden</div><h3>quiet by default. see everything if you want.</h3>
+<p>the history shows what matters to you. the rest is folded, never deleted: every message between agents, every tool call, every script. ctrl+o opens it all. ⌥ + a number jumps into any agent's thread.</p></div>
+<p class="flag" data-a="tok-flag">to check: do we have a number to back "your bill will be fine" (tokens per task vs Claude Code)? without one, i'd keep "a team, not a swarm" and not promise costs.</p>
+</section>
+
+<section data-sec="harness" id="harness">
+<h2>the harness itself</h2>
+<p class="lede">the "is it a good agent at all?" section. your title idea was "most powerful agent harness". i'd rather show it than claim it, so the title says what you get.</p>
+<div class="opt" data-a="h-t1">plug in everything. it won't choke. <span class="me">my pick</span></div>
+<div class="opt" data-a="h-t2">every tool. always on. no menu.</div>
+<div class="opt" data-a="h-t3">bring every MCP you've got. yes, all of them.</div>
+<div class="sec" data-a="harn"><div class="k">the harness</div><h3>plug in everything. it won't choke.</h3>
+<p><b>every MCP server, always on.</b> connect as many as you want. you never pick what to enable: bise calls tools through code, so a hundred servers don't eat the context.</p>
+<p><b>your skills and plugins come with you.</b> the ones you already use elsewhere load as they are.</p>
+<p><b>images in, voice in.</b> paste a screenshot. or just talk to it.</p></div>
+<p class="flag" data-a="h-flag">to check before it ships: voice mode, is it in bise today, and what's the key? and which plugin formats load as-is (Claude Code plugins? Agent Plugins?)</p>
+</section>
+
+<section data-sec="day" id="day">
+<h2>a tuesday in the thread <span class="dim">(the big demo)</span></h2>
+<p class="lede">one page of a thread that's been running for months. the easter eggs are for people who read everything.</p>
+<div class="tl" data-a="day">
+<p class="dim">· · · day 214 of this thread · · ·</p>
+<p><span class="t">09:02</span> "the login test is flaky again. and write the 2.4 release note, but make it sound less like a lawyer." <span class="tag">one thread</span></p>
+<p><span class="t">09:03</span> main: on it. auth-fix takes the test, release takes the note.</p>
+<p><span class="t">09:20</span> "oh, and move the api client to v3 while you're there." <span class="tag">always there</span></p>
+<p><span class="t">09:41</span> auth-fix and api-bump both need <code>session.ts</code>. they agree who goes first. you don't see it. <span class="tag">runs itself</span></p>
+<p><span class="t">10:12</span> auth-fix: it was a race. it's always a race.</p>
+<p><span class="t">11:15</span> main: v3 changes two public types. 2.4 or 3.0? → you press 2. <span class="tag">only what matters</span></p>
+<p><span class="t">12:30</span> you go to lunch. the team doesn't.</p>
+<p><span class="t">14:05</span> api-bump found a TODO from 2019 signed "future me". it's done now.</p>
+<p><span class="t">16:48</span> "wait, what did we decide about the rate limiter in march?" main: 3 per second, you said "users are not a DDoS". still true?</p>
+<p><span class="t">18:40</span> ✓ 14 done. you wrote 23 messages. main: see you tomorrow. i'll be here. <span class="acc">:*</span></p>
+</div>
+<p class="dim" data-a="day-note">release note line, if we show it: "fixed a bug where the login test lied about you."</p>
+</section>
+
+<section data-sec="faq" id="faq">
+<h2>coming from Claude Code or Codex?</h2>
+<p class="lede">D's objections as the faq. the old vs table is folded in here.</p>
+<ol class="map">
+<li><b>"i already have Claude Code."</b> · keep your models, MCPs and plugins. bise changes how you work with them.</li>
+<li><b>"i can just open five tabs."</b> · then you're the router. one thread instead.</li>
+<li><b>"won't this burn my tokens?"</b> · a team, not a swarm.</li>
+<li><b>"won't the agents step on each other?"</b> · they talk first. worktrees only when needed, cleaned up after.</li>
+<li><b>"i'll be stuck waiting anyway."</b> · main is always free.</li>
+<li><b>"i don't want to design an agent pipeline."</b> · good. there isn't one.</li>
+<li><b>"what if i want to see what they do?"</b> · ctrl+o. everything is there.</li>
+</ol>
+</section>
+
+<section data-sec="me" id="me">
+<h2>made by a human</h2>
+<p class="lede">draft in your voice. signed by you, so "i" is you here, not bise. i need your facts, see the questions below.</p>
+<div class="sec" data-a="me-draft"><div class="k">made by a human</div><h3>hi, i'm Gabriel.</h3>
+<p>i build developer tools for a living. i've used coding agents every day since they got good.</p>
+<p>they made me faster. they also made my days feel empty. i was switching tabs, answering "should i continue?", pasting context around. i shipped more than ever and i didn't enjoy it.</p>
+<p>so i built the tool i wanted: one thread, a team behind it, and me in flow. i've built bise with bise since day one.</p>
+<p>i want everyone to ship 100x, and to love building again. bise is open source. it's not a company, it's me and a lot of agents. i read every issue.</p>
+<p class="dim">— Gabriel Vergnaud · GitHub · X</p></div>
+<p class="flag" data-a="me-q">questions: 1. can we say where you work (bise is its own brand, so i left Mistral out)? 2. something you shipped that devs know? 3. "since day one": true? 4. which links (GitHub, X, Bluesky, site)? 5. a photo, or an ascii portrait?</p>
+</section>
+
+<p data-a="q-projects" class="flag">still open from round 1: you said main has "the context of all your projects". today it's one thread per folder. is that what you mean, or several projects in one thread?</p>
+
+</main>
+<script src="annotate.js"></script>
+</body></html>
