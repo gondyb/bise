@@ -333,7 +333,14 @@ fn backup(paths: &Paths) -> Option<PathBuf> {
 /// `/restart` builds the latest commit, then switches to it; anywhere
 /// else it reloads the running version (nothing built).
 pub fn dev_workspace(ws: &Path) -> bool {
-    ws.join("versions.sh").is_file() && ws.join("rust/switchboard/Cargo.toml").is_file()
+    versions_script(ws).is_some() && ws.join("rust/switchboard/Cargo.toml").is_file()
+}
+
+/// The script that builds a version of the source tree `repo`:
+/// scripts/versions.sh, or versions.sh at the top of a tree from before
+/// the root cleanup.
+pub fn versions_script(repo: &Path) -> Option<PathBuf> {
+    ["scripts/versions.sh", "versions.sh"].iter().map(|p| repo.join(p)).find(|p| p.is_file())
 }
 
 /// Left by a reload's switcher for the hub it starts (BISE-131): that hub
@@ -510,10 +517,16 @@ mod state_tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("rust/switchboard")).unwrap();
         assert!(!super::dev_workspace(&d), "any workspace: a reload");
-        std::fs::write(d.join("versions.sh"), "").unwrap();
+        std::fs::create_dir_all(d.join("scripts")).unwrap();
+        std::fs::write(d.join("scripts/versions.sh"), "").unwrap();
         assert!(!super::dev_workspace(&d));
         std::fs::write(d.join("rust/switchboard/Cargo.toml"), "").unwrap();
         assert!(super::dev_workspace(&d), "bise's sources: build then switch");
+        // a tree from before the root cleanup: versions.sh at the top
+        std::fs::remove_dir_all(d.join("scripts")).unwrap();
+        assert!(!super::dev_workspace(&d));
+        std::fs::write(d.join("versions.sh"), "").unwrap();
+        assert!(super::dev_workspace(&d), "old layout");
         let _ = std::fs::remove_dir_all(&d);
     }
 

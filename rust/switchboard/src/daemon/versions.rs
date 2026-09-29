@@ -303,10 +303,9 @@ impl Shell {
                         to
                     );
                 }
-                let script = repo.join("versions.sh");
-                if !script.exists() {
-                    return format!("versions.sh not found in {}", repo.display());
-                }
+                let Some(script) = switch::versions_script(&repo) else {
+                    return format!("scripts/versions.sh not found in {}", repo.display());
+                };
                 let rev = if to == "tree" { "--tree".to_string() } else { to.clone() };
                 if to != "tree" {
                     let known = crate::tools_env::git_command()
