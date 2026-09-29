@@ -232,7 +232,11 @@
   /* the problem, then the switch (landing v6 draft) */
   .prob { padding:40px 5vw 110px; }
   .prob .inner { max-width:64ch; }
-  .stage { position:relative; max-width:980px; height:430px; margin:0 auto; border-radius:14px; background:var(--soft); overflow:hidden; }
+  .stage { position:relative; width:104ch; max-width:100%; font-size:13.5px; margin:0 auto; border-radius:12px; background:var(--soft); overflow:hidden; }
+  .stage > .term { opacity:0; transform:scale(.94); transition:opacity .5s .3s, transform .8s .3s cubic-bezier(.34,1.4,.64,1); }
+  .stage.calm > .term { opacity:1; transform:none; }
+  .stage .win, .stage .bub { font-size:12.5px; }
+  .swap { transition:opacity .35s, transform .45s cubic-bezier(.34,1.56,.64,1); } .swap.out { opacity:0; transform:translateY(-6px); }
   .win { position:absolute; width:300px; background:var(--bg); border:1px solid var(--faint); border-radius:10px; font-size:12.5px; line-height:1.6; box-shadow:0 10px 30px rgba(0,0,0,.28); transition:transform .7s cubic-bezier(.34,1.4,.64,1), opacity .5s, left .7s cubic-bezier(.34,1.3,.64,1), top .7s cubic-bezier(.34,1.3,.64,1); }
   .win .bar { display:flex; gap:6px; align-items:center; padding:6px 10px; border-bottom:1px solid var(--faint); color:var(--dim); font-size:11.5px; }
   .win .bar i { width:8px; height:8px; border-radius:50%; background:var(--faint); display:inline-block; }
@@ -249,19 +253,6 @@
   .me.tap svg { animation:metap .35s ease; } @keyframes metap { 40% { transform:scale(.8) } }
   .bub { position:absolute; z-index:41; padding:4px 10px; border-radius:10px; background:var(--raised); border:1px solid var(--faint); font-size:12.5px; color:var(--text); opacity:0; transform:scale(.6); transition:opacity .3s, transform .45s cubic-bezier(.34,1.56,.64,1); pointer-events:none; }
   .bub.on { opacity:1; transform:none; }
-  .one { position:absolute; left:50%; top:50%; width:min(760px, 92%); transform:translate(-50%,-50%) scale(.9); opacity:0; transition:opacity .5s .35s, transform .8s .35s cubic-bezier(.34,1.4,.64,1); background:var(--bg); border:1px solid var(--faint); border-radius:10px; font-size:13px; line-height:1.65; box-shadow:0 14px 40px rgba(0,0,0,.3); }
-  .stage.calm .one { opacity:1; transform:translate(-50%,-50%); }
-  .one .bar { display:flex; justify-content:space-between; padding:7px 14px; border-bottom:1px solid var(--faint); }
-  .one .body { display:grid; grid-template-columns:1fr 17ch; min-height:250px; }
-  .one .feed { padding:12px 16px; border-right:1px solid var(--faint); }
-  .one .feed .u { border-left:1px solid var(--acc); padding-left:calc(2ch - 1px); color:var(--text); font-weight:700; margin-top:8px; }
-  .one .feed .m { padding-left:2ch; color:var(--dim); }
-  .one .feed .m b { color:var(--acc); font-weight:400; }
-  .one .pan { padding:12px 14px; color:var(--dim); }
-  .one .pan div { white-space:nowrap; }
-  .one .comp { border-top:1px solid var(--faint); padding:8px 16px; color:var(--dim); background:var(--raised); border-radius:0 0 10px 10px; }
-  .one .l { opacity:0; transform:translateY(6px); transition:opacity .4s, transform .5s cubic-bezier(.34,1.56,.64,1); }
-  .one .l.in { opacity:1; transform:none; }
   .pulse2 { animation:pl 1.6s ease-in-out infinite; } @keyframes pl { 50% { opacity:.35 } }
   .stats { max-width:980px; margin:16px auto 0; display:flex; gap:3ch; flex-wrap:wrap; justify-content:center; font-size:14px; color:var(--dim); }
   .stats b { color:var(--text); font-weight:700; font-variant-numeric:tabular-nums; }
@@ -269,7 +260,7 @@
   .prob .cap { text-align:center; margin-top:22px; color:var(--dim); }
   .prob .cap b { color:var(--text); }
   .replay { all:unset; cursor:pointer; color:var(--dim); font-size:13px; margin-left:2ch; } .replay:hover { color:var(--acc); }
-  @media (max-width:700px) { .stage { height:520px; } .win { width:220px; font-size:11.5px; } .one .body { grid-template-columns:1fr; } .one .pan { display:none; } }
+  @media (max-width:700px) { .stage .win { width:220px; font-size:11.5px; } }
   @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } .blow { opacity:1; transform:none; } }
 </style>
 </head>
@@ -316,32 +307,16 @@
 <!-- the problem, then the switch -->
 <section class="prob" id="problem">
   <div class="inner blow" data-a="prob-head">
-    <div class="kicker">the problem</div>
-    <h2>five agents. five tabs.<br>one very tired you.</h2>
-    <p class="soft">every session waits for you. you're the router, the memory, and the merge tool. you ship a lot, but you never get to think.</p>
+    <div class="swap" id="swap">
+    <div class="kicker" id="pk">the problem</div>
+    <h2 id="ph2">five agents. five tabs.<br>one very tired you.</h2>
+    <p class="soft" id="pp">every session waits for you. you're the router, the memory, and the merge tool. you ship a lot, but you never get to think.</p>
+    </div>
   </div>
   <div class="stage" id="stage" aria-label="today: many agent sessions waiting for you. with bise: one thread.">
     <div class="me" id="ptr" style="left:46%;top:80%"><svg width="16" height="20" viewBox="0 0 16 20" aria-hidden="true"><path d="M2 2 L2 16 L5.8 12.6 L8.4 18.4 L11 17.2 L8.5 11.6 L13.6 11.6 Z" fill="var(--acc)" stroke="var(--bg)" stroke-width="1.4" stroke-linejoin="round"/></svg><span class="lb">you</span></div>
     <div class="bub" id="bub"></div>
-    <div class="one" id="one">
-      <div class="bar"><span>bise <span class="acc">:*</span></span><span class="faint">~/acme</span></div>
-      <div class="body">
-        <div class="feed" id="onefeed"></div>
-        <div class="pan"><div class="faint" style="margin-bottom:4px">agents</div><div id="onepan"></div></div>
-      </div>
-      <div class="comp"><span>you → <span class="acc">main</span></span>  <span id="onecomp" style="color:var(--text)"></span><span class="pulse2" style="color:var(--acc)">▏</span></div>
-    </div>
-  </div>
-  <div class="stats" id="stats"></div>
-  <p class="cap" id="cap"></p>
-  <p class="cap"><button class="replay" id="replay" style="visibility:hidden">↺ play it again</button></p>
-</section>
-
-<!-- demo -->
-<div class="demo blow">
-  <div>
-    <div class="dhead"><div class="kicker">watch</div><h2>this is what flow looks like</h2><p class="soft">five ideas in two minutes. one conversation with main. you never stop typing.</p></div>
-    <div class="term" aria-label="a bise session, animated">
+    <div class="term" id="term" aria-label="a bise session, animated">
       <div class="thead"><span>bise <span class="acc">:*</span></span><span class="faint">~/acme</span></div>
       <div class="screen">
         <div class="feed scrollbox" id="feed"></div>
@@ -353,9 +328,11 @@
         <div class="keys"><span><span class="k">⏎</span> send</span><span><span class="k">@</span> agent</span><span><span class="k">⌥0-9</span> switch</span><span><span class="k">?</span> help</span></div>
       </div>
     </div>
-    <div class="caption">a session, sped up.</div>
   </div>
-</div>
+  <div class="stats" id="stats"></div>
+  <p class="cap" id="cap"></p>
+  <p class="cap"><button class="replay" id="replay" style="visibility:hidden">↺ play it again</button></p>
+</section>
 
 <!-- why -->
 <section id="why">
@@ -697,7 +674,8 @@ async function run() {
   await sleep(4500);
   run();
 }
-run();
+let flowOn = false;
+window.startFlow = () => { if (!flowOn) { flowOn = true; run(); } };
 
 // ---- feature demos: tiny scripted terminals, played only while on screen ----
 const plays = {
@@ -916,7 +894,8 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
 (() => {
   const stage = document.getElementById("stage"), you = document.getElementById("ptr"), bub = document.getElementById("bub");
   const stats = document.getElementById("stats"), cap = document.getElementById("cap"), replay = document.getElementById("replay");
-  const onefeed = document.getElementById("onefeed"), onepan = document.getElementById("onepan"), onecomp = document.getElementById("onecomp");
+  const swap = document.getElementById("swap"), pk = document.getElementById("pk"), ph2 = document.getElementById("ph2"), pp = document.getElementById("pp");
+  const head = async (k, h, t) => { swap.classList.add("out"); await sleep(350); pk.textContent = k; ph2.innerHTML = h; pp.textContent = t; swap.classList.remove("out"); };
   const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const S = [
     ["perf", "profiling signup on a phone…", "should i continue? (y/n)"],
@@ -963,7 +942,7 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
   async function today() {
     const id = ++run; state = "today"; stage.classList.remove("calm"); setFlip();
     wins.forEach((w) => w.remove()); wins = []; switches = 0; waiting = 0; bub.classList.remove("on"); you.style.opacity = "1";
-    onefeed.innerHTML = ""; onepan.innerHTML = ""; onecomp.textContent = "";
+    if (id > 1) head("the problem", "five agents. five tabs.<br>one very tired you.", "every session waits for you. you're the router, the memory, and the merge tool. you ship a lot, but you never get to think.");
     cap.innerHTML = "you started five things. now you're the one they all wait for.";
     setStats();
     for (let i = 0; i < S.length; i++) {
@@ -981,27 +960,8 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
     wins.forEach((d, i) => { d.classList.remove("nag"); d.style.left = (w / 2 - 150) + "px"; d.style.top = (h / 2 - 60) + "px"; d.style.transform = "scale(.35) rotate(0deg)"; d.style.opacity = "0"; });
     stage.classList.add("calm"); waiting = 0; setStats();
     cap.innerHTML = "<b>one thread per repo.</b> you talk to main. main runs the agents, and only taps your shoulder when it matters.";
-    const lines = [
-      ["u", "signup is slow on mobile. and dark mode. and the 404 is sad"],
-      ["m", "<b>:*</b> on it: perf, dark-mode and sad-404 started."],
-      ["u", "oh and the csv export crashes on emoji 😭"],
-      ["m", "<b>:*</b> emoji-csv is on it. it's always unicode."],
-      ["m", "<b>:*</b> dark-mode asked which gray. i said tokens.css, like everywhere."],
-      ["m", "<b>✓</b> perf done · signup 4.1 s → 0.9 s"],
-    ];
-    const agents = ["perf", "dark-mode", "sad-404", "emoji-csv", "release"];
-    onepan.innerHTML = agents.map((a) => `<div><span class="acc pulse2">∿</span> ${a}</div>`).join("");
-    (async () => {
-      await sleep(900);
-      for (const [k, t] of lines) {
-        if (id !== run) return;
-        const d = document.createElement("div"); d.className = `l ${k}`; d.innerHTML = t; onefeed.appendChild(d);
-        requestAnimationFrame(() => requestAnimationFrame(() => d.classList.add("in")));
-        if (t.includes("perf done")) onepan.firstElementChild.innerHTML = `<span class="acc">✓</span> perf`;
-        await sleep(k === "u" ? 1100 : 800);
-      }
-      for (const ch of "and give the sad dog a hat") { if (id !== run) return; onecomp.textContent += ch; await sleep(45); }
-    })();
+    head("with bise", "this is what flow looks like", "one thread. five ideas in two minutes. you never stop typing.");
+    window.startFlow && window.startFlow();
   }
   let pinned = false;
   function setFlip() { replay.style.visibility = state === "bise" ? "visible" : "hidden"; }
