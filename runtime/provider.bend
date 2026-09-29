@@ -72,8 +72,9 @@ def headers_of(hs: List<&2, Api.Hdr>, m: Map<&2, List<&2, String>>)
     case Con{Api.Hdr{+name, +val}, +rest}:
       headers_of(rest, Http.set(m, name, val))
 
-def model_headers(st: Api.Style, +key: String) -> Map<&2, List<&2, String>>:
-  headers_of(Api.headers(st, key), Http.empty())
+def model_headers(st: Api.Style, +betas: String, +key: String)
+    -> Map<&2, List<&2, String>>:
+  headers_of(Api.headers(st, betas, key), Http.empty())
 
 # BEND_WIRE_DUMP also captures the raw provider response (suffix .reply):
 # the tool-call arguments exactly as the provider serialized them,
@@ -571,7 +572,7 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
             dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
             dump_dbg : Unit <- dump_wire(P.env_or(dr, ""), body)
             hdrs : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
-              model_headers(st, key))
+              model_headers(st, Api.facts_betas(facts), key))
             +g : Got <- call.by_style(st, url, hdrs, body)
             lg : Unit <- model_call.log(call, tries, model, url, json, g)
             nu : Out <- usage_note(g, n, st, model)

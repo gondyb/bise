@@ -95,7 +95,19 @@ def headers.auth(no_key: Bool, +h: Hdr, +rest: List<&2, Hdr>)
     case False{}:
       Con{h, rest}
 
-def headers(st: Style, +key: String) -> List<&2, Hdr>:
+# the anthropic-beta flags: the model's (catalog `betas`, BISE-146: the
+# direct API takes no 1M-context flag), else the foundry proxy's list
+def anth_betas.pick(empty: Bool, +betas: String) -> String:
+  match empty:
+    case True{}:
+      "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31,context-1m-2025-08-07"
+    case False{}:
+      betas
+
+def anth_betas(+betas: String) -> String:
+  anth_betas.pick(String.is_empty(betas), betas)
+
+def headers(st: Style, +betas: String, +key: String) -> List<&2, Hdr>:
   match st:
     case OpenAI{}:
       headers.auth(String.is_empty(key),
@@ -104,8 +116,7 @@ def headers(st: Style, +key: String) -> List<&2, Hdr>:
     case Anthropic{}:
       headers.auth(String.is_empty(key), Hdr{"x-api-key", key},
         [Hdr{"anthropic-version", "2023-06-01"},
-          Hdr{"anthropic-beta",
-            "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,prompt-caching-2024-07-31,context-1m-2025-08-07"},
+          Hdr{"anthropic-beta", anth_betas(betas)},
           Hdr{"Content-Type", "application/json"}])
 
 # ---- streaming: every family streams (Server-Sent Events) ----
@@ -136,6 +147,11 @@ type MFacts is Data:
   MFacts{reasoning: Bool, output: Nat, max_key: String, thinking: String,
     betas: String}
 
+def facts_betas(f: MFacts) -> String:
+  match f:
+    case MFacts{_, _, _, _, +betas}:
+      betas
+
 # no catalog entry: today's body (reasoning_effort on, no output cap)
 def facts0() -> MFacts:
   MFacts{True{}, 0n, "max_tokens", "", ""}
@@ -150,7 +166,9 @@ def api_body_for(st: Style, +model: String, +facts: MFacts, +req: W.WReq)
         case MFacts{+reasoning, +output, +max_key, _, _}:
           Oai.api_body_with(model, Oai.Opts{reasoning, output, max_key}, req)
     case Anthropic{}:
-      Anth.api_body_anth(model, req)
+      match facts:
+        case MFacts{+reasoning, +output, _, +thinking, _}:
+          Anth.api_body_anth_for(model, output, thinking, reasoning, req)
 
 def reply_of_for(st: Style, +status: U32, +body: String) -> String:
   match st:

@@ -631,6 +631,50 @@ before replacing a stored one). It no longer writes `<root>/.env`.
   only when `reasoning = true`; `max_output` as `max_completion_tokens`
   (provider `openai`) or `max_tokens`; no file = today's body.
 
+### 7.6 BISE-146 as built: Anthropic direct and per model
+
+- **Direct API.** `anthropic/<model>` calls `https://api.anthropic.com/v1/messages`
+  with `x-api-key: $ANTHROPIC_API_KEY` and `anthropic-version: 2023-06-01`
+  (the Anthropic family's headers, `core/api.bend`). The `foundry` proxy is
+  unchanged apart from the cache breakpoints.
+- **Catalog keys** (`rust/catalog`, Anthropic family only; model key over
+  provider key, config.toml too): `thinking = "adaptive" | "budget" | "none"`
+  (another word: a warning), `betas = "<anthropic-beta flags>"`. Built in:
+  provider `anthropic` has `thinking = "budget"` and
+  `betas = "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"`
+  (the 4.5 models refuse adaptive thinking; no 1M-context flag, it needs
+  its own tier); `foundry` sets neither. They reach Bend through the
+  models file and `Api.MFacts{…, thinking, betas}` (BISE-144's record).
+- **Body** (`core/anthropic.bend`, `api_body_anth_for(model, out,
+  thinking, reasoning, req)`):
+  - `max_tokens` = the model's `max_output` (0 / no models file: 32768,
+    the foundry proxy's);
+  - thinking: `adaptive` = `{"type":"adaptive","display":"summarized"}` +
+    `output_config: {"effort":"high"}` (today's opus-5.5 body); `budget` =
+    `{"type":"enabled","budget_tokens": min(16000, max_tokens / 2)}`, none
+    when that is under the API's 1024 minimum; `none` = no field. No word:
+    adaptive when `reasoning = true`, else none (the built-in foundry entry
+    of `runtime/provider-pure.bend` now says `reasoning = true`, so an old
+    binary without the models file keeps today's body);
+  - prompt caching, 4 `cache_control: {"type":"ephemeral"}` breakpoints
+    (the API's maximum): the system block, the last tool, the last block of
+    each of the two newest messages (a thinking block never gets one: the
+    API refuses it).
+- **Headers**: `Api.headers(st, betas, key)`: the model's `betas`, else the
+  foundry list (unchanged bytes).
+- **Checked live** (foundry, a bash round trip): opus-5.5, adaptive:
+  call 1 `cache_read=0 cache_write=6253`, call 2 `cache_read=6253
+  cache_write=73` (the usage line; the TUI reads `cache_read`); Haiku 4.5
+  with `thinking = "budget"` (it refuses adaptive): thinking blocks, signed,
+  replayed, cache read 5045 on call 2. The direct API itself: no key here;
+  the family path is the fake provider's (provider_families.py part D).
+- **Laws**: the Anthropic body laws carry the breakpoints; new:
+  `anth_cache_breakpoints`, `anth_thinking_none_and_no_cache_on_thinking`,
+  `anth_thinking_budget`, `anth_thinking_budget_too_small`,
+  `anth_thinking_default_follows_reasoning`,
+  `anth_thinking_default_reasons_adaptive`, `anth_thinking_words`,
+  `family_headers_anthropic_betas`, `api_body_anth_follows_facts`.
+
 ## 8. BISE-153 as built: the fake provider, fixtures, live tests
 
 ### 8.1 The fake provider (`tests/fake_provider.py`)

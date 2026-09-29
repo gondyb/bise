@@ -51,12 +51,15 @@ fn the_default_is_todays_setup() {
     assert_eq!(r.caps.context, 1_000_000);
 }
 
+/// the direct Anthropic API's beta flags (models.toml)
+const ANTH_BETAS: &str = "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14";
+
 #[test]
 fn a_listed_model_takes_its_own_fields_then_its_providers() {
     let c = Catalog::builtin();
     let r = c.resolve("anthropic/claude-sonnet-4-5");
     assert_eq!(r.known, Known::Listed);
-    assert_eq!(r.caps, Caps { context: 200_000, max_output: 64_000, vision: true, reasoning: true, tools: true });
+    assert_eq!(r.caps, Caps { context: 200_000, max_output: 64_000, vision: true, reasoning: true, tools: true, thinking: "budget".into(), betas: ANTH_BETAS.into() });
     let r = c.resolve("openai/gpt-4.1");
     assert_eq!((r.caps.context, r.caps.reasoning, r.caps.vision), (1_047_576, false, true));
 }
@@ -397,4 +400,30 @@ fn small_model_order() {
     let s = setup("model = \"acme/big\"\n[providers.acme]\nbase_url = \"http://x\"\nsmall_model = \"tiny\"\n");
     assert_eq!(s.small_model, "acme/tiny");
     assert!(s.catalog.warnings.is_empty(), "{:?}", s.catalog.warnings);
+}
+
+#[test]
+fn thinking_and_betas_per_model_reach_the_handoff() {
+    // built in: the direct API thinks with a budget, the foundry proxy
+    // keeps the family's defaults (nothing written: today's body/headers)
+    let c = Catalog::builtin();
+    let r = c.resolve("anthropic/claude-haiku-4-5");
+    assert_eq!((r.caps.thinking.as_str(), r.caps.betas.as_str(), r.caps.max_output), ("budget", ANTH_BETAS, 64_000));
+    let f = c.resolve("foundry/claude-opus-5-5");
+    assert_eq!((f.caps.thinking.as_str(), f.caps.betas.as_str(), f.caps.max_output), ("", "", 32_768));
+    // config: per model, inherited from the provider, bad values warned
+    let cfg = "[models.\"anthropic/claude-opus-4-6\"]\nthinking = \"adaptive\"\n[models.\"anthropic/x\"]\nthinking = \"high\"\nbetas = 3\n";
+    let s = Setup::from_text(Some(cfg), &|_| None);
+    assert_eq!(s.catalog.resolve("anthropic/claude-opus-4-6").caps.thinking, "adaptive");
+    assert_eq!(s.catalog.resolve("anthropic/x").caps.thinking, "budget", "a bad value keeps the provider's");
+    assert!(s.catalog.warnings.iter().any(|w| w.contains("thinking: one of adaptive, budget, none")), "{:?}", s.catalog.warnings);
+    assert!(s.catalog.warnings.iter().any(|w| w.contains("betas: a string")), "{:?}", s.catalog.warnings);
+    let h = s.handoff_toml();
+    let anth = &h[h.find("[providers.anthropic]").unwrap()..];
+    let anth = &anth[..anth[1..].find("\n[").unwrap()];
+    assert!(anth.contains("thinking = \"budget\"\n") && anth.contains(&format!("betas = \"{}\"", ANTH_BETAS)), "{anth}");
+    let foundry = &h[h.find("[providers.foundry]").unwrap()..];
+    let foundry = &foundry[..foundry[1..].find("\n[").unwrap()];
+    assert!(!foundry.contains("thinking") && !foundry.contains("betas"), "{foundry}");
+    assert!(h.contains("[models.\"anthropic/claude-opus-4-6\"]\nthinking = \"adaptive\"\n"), "{h}");
 }

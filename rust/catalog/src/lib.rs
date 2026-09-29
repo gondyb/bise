@@ -41,7 +41,16 @@ pub struct Caps {
     pub vision: bool,
     pub reasoning: bool,
     pub tools: bool,
+    /// Anthropic family (BISE-146): "adaptive" | "budget" | "none"; ""
+    /// = adaptive when the model reasons, else none (core/anthropic.bend)
+    pub thinking: String,
+    /// Anthropic family: the `anthropic-beta` header; "" = the family's
+    /// default list (the foundry proxy's)
+    pub betas: String,
 }
+
+/// The thinking modes of the Anthropic family.
+pub const THINKING: [&str; 3] = ["adaptive", "budget", "none"];
 
 /// The defaults of a model nothing describes.
 pub const DEFAULT_CAPS: Caps = Caps {
@@ -50,6 +59,8 @@ pub const DEFAULT_CAPS: Caps = Caps {
     vision: false,
     reasoning: false,
     tools: true,
+    thinking: String::new(),
+    betas: String::new(),
 };
 
 /// Caps as written in a table: a missing field comes from the level below
@@ -61,6 +72,8 @@ pub struct PartialCaps {
     pub vision: Option<bool>,
     pub reasoning: Option<bool>,
     pub tools: Option<bool>,
+    pub thinking: Option<String>,
+    pub betas: Option<String>,
 }
 
 impl PartialCaps {
@@ -71,6 +84,8 @@ impl PartialCaps {
             vision: self.vision.unwrap_or(base.vision),
             reasoning: self.reasoning.unwrap_or(base.reasoning),
             tools: self.tools.unwrap_or(base.tools),
+            thinking: self.thinking.clone().unwrap_or_else(|| base.thinking.clone()),
+            betas: self.betas.clone().unwrap_or_else(|| base.betas.clone()),
         }
     }
     fn merge(&mut self, o: &PartialCaps) {
@@ -79,6 +94,8 @@ impl PartialCaps {
         self.vision = o.vision.or(self.vision);
         self.reasoning = o.reasoning.or(self.reasoning);
         self.tools = o.tools.or(self.tools);
+        self.thinking = o.thinking.clone().or(self.thinking.take());
+        self.betas = o.betas.clone().or(self.betas.take());
     }
 }
 
@@ -470,6 +487,14 @@ fn cap_field(caps: &mut PartialCaps, k: &str, v: &toml::Value, where_: &str, war
             },
             None => warn(bad("true or false")),
         },
+        "thinking" => match v.as_str().map(str::trim) {
+            Some(t) if THINKING.contains(&t) => caps.thinking = Some(t.to_string()),
+            _ => warn(bad(&format!("one of {}", THINKING.join(", ")))),
+        },
+        "betas" => match v.as_str() {
+            Some(b) => caps.betas = Some(b.trim().to_string()),
+            None => warn(bad("a string (comma-separated anthropic-beta flags)")),
+        },
         _ => warn(format!("{}: unknown key {}", where_, k)),
     }
 }
@@ -659,6 +684,14 @@ impl Setup {
                     o.push_str(&format!("{} = {}\n", k, x));
                 }
             }
+            for (k, x, y) in [
+                ("thinking", a.thinking.clone(), b.thinking.clone()),
+                ("betas", a.betas.clone(), b.betas.clone()),
+            ] {
+                if x != y {
+                    o.push_str(&format!("{} = {}\n", k, q(&x)));
+                }
+            }
         }
         o
     }
@@ -681,6 +714,12 @@ fn caps_lines(o: &mut String, c: &Caps) {
         "context = {}\nmax_output = {}\nvision = {}\nreasoning = {}\ntools = {}\n",
         c.context, c.max_output, c.vision, c.reasoning, c.tools
     ));
+    if !c.thinking.is_empty() {
+        o.push_str(&format!("thinking = {}\n", q(&c.thinking)));
+    }
+    if !c.betas.is_empty() {
+        o.push_str(&format!("betas = {}\n", q(&c.betas)));
+    }
 }
 
 /// A TOML basic string.

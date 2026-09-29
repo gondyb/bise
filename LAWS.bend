@@ -2106,19 +2106,19 @@ law provider_default_is_foundry:
   {Pv.resolve("", "", "", "", "", "", "")
     == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
       "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
-      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{False{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
+      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
 
 law provider_resolves_alias:
   {Pv.resolve("", "", "", "", "model = \"opus-5.5\"", "", "")
     == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
       "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
-      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{False{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
+      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
 
 law provider_legacy_claude_is_foundry:
   {Pv.resolve("", "claude-opus-5-5", "", "", "", "", "")
     == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
       "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
-      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{False{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
+      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
 
 law provider_legacy_glm_is_mistral:
   {Pv.resolve("", "zai-glm-5-3", "", "", "", "", "")
@@ -2191,7 +2191,7 @@ law provider_file_over_builtin:
       "")
     == Pv.ROk{Pv.Prov{"foundry", "claude-x", Api.Anthropic{},
       "https://api.anthropic.com/v1/messages",
-      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{False{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
+      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", ""}}} : Pv.Resolved}
 
 # LAW: BEND_PROVIDER_URL (the tests' fake provider) wins over the URL.
 law provider_url_env_wins:
@@ -2233,7 +2233,7 @@ law family_name_roundtrip:
 # LAW: the headers of each family, in order (the bytes of today's
 # calls); no key, no auth header.
 law family_headers_anthropic:
-  {Api.headers(Api.Anthropic{}, "k")
+  {Api.headers(Api.Anthropic{}, "", "k")
     == [Api.Hdr{"x-api-key", "k"},
       Api.Hdr{"anthropic-version", "2023-06-01"},
       Api.Hdr{"anthropic-beta",
@@ -2241,12 +2241,12 @@ law family_headers_anthropic:
       Api.Hdr{"Content-Type", "application/json"}] : List<&2, Api.Hdr>}
 
 law family_headers_openai:
-  {Api.headers(Api.OpenAI{}, "k")
+  {Api.headers(Api.OpenAI{}, "", "k")
     == [Api.Hdr{"Authorization", "Bearer k"},
       Api.Hdr{"Content-Type", "application/json"}] : List<&2, Api.Hdr>}
 
 law family_headers_no_key:
-  {Api.headers(Api.OpenAI{}, "")
+  {Api.headers(Api.OpenAI{}, "", "")
     == [Api.Hdr{"Content-Type", "application/json"}] : List<&2, Api.Hdr>}
 
 # LAW: every family streams: the Messages API and OpenAI Chat (BISE-144).
@@ -2276,7 +2276,7 @@ law style_routes_reply:
 law api_body_anth_maps:
   {Api.api_body_for(Api.Anthropic{}, "claude-opus-5-5", Api.facts0(),
       W.parse_wire("MODEL default\nMSG system : You are precise.\nMSG user : bonjour\nEND\n"))
-    == "{\"system\":[{\"type\":\"text\",\"text\":\"You are precise.\"}],\"model\":\"claude-opus-5-5\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"bonjour\"}]}]}"
+    == "{\"system\":[{\"type\":\"text\",\"text\":\"You are precise.\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"model\":\"claude-opus-5-5\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"bonjour\",\"cache_control\":{\"type\":\"ephemeral\"}}]}]}"
     : String}
 
 # LAW: an Anthropic compaction call (no TOOL lines) omits tools and
@@ -2284,7 +2284,7 @@ law api_body_anth_maps:
 law api_body_anth_bare_omits_tools:
   {Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
       W.parse_wire("MODEL default\nMSG user : salut\nEND\n"))
-    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"salut\"}]}]}"
+    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"salut\",\"cache_control\":{\"type\":\"ephemeral\"}}]}]}"
     : String}
 
 # LAW: the Anthropic tools carry the {name, description, input_schema}
@@ -2292,7 +2292,7 @@ law api_body_anth_bare_omits_tools:
 law api_body_anth_tools_shape:
   {Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
       W.parse_wire("MODEL default\nTOOL echo : Returns text.\nMSG user : bonjour\nEND\n"))
-    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"bonjour\"}]}],\"tools\":[{\"name\":\"echo\",\"description\":\"Returns text.\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"}},\"required\":[\"arg\"]}}],\"tool_choice\":{\"type\":\"auto\"}}"
+    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"bonjour\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"tools\":[{\"name\":\"echo\",\"description\":\"Returns text.\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"}},\"required\":[\"arg\"]},\"cache_control\":{\"type\":\"ephemeral\"}}],\"tool_choice\":{\"type\":\"auto\"}}"
     : String}
 
 # LAW: an assistant call pairs with its tool result exactly as the
@@ -2301,7 +2301,7 @@ law api_body_anth_tools_shape:
 law anth_tool_result_pairs:
   {Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
       W.parse_wire("MODEL default\nMSG user : go\nMSG assistant : thinking\n  CALL 7 echo : hi\nMSG tool : tool echo ok: out\nEND\n"))
-    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"go\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"thinking\"},{\"type\":\"tool_use\",\"id\":\"call_7\",\"name\":\"echo\",\"input\":{\"arg\":\"hi\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_7\",\"content\":\"tool echo ok: out\"}]}]}"
+    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"go\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"thinking\"},{\"type\":\"tool_use\",\"id\":\"call_7\",\"name\":\"echo\",\"input\":{\"arg\":\"hi\"},\"cache_control\":{\"type\":\"ephemeral\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_7\",\"content\":\"tool echo ok: out\",\"cache_control\":{\"type\":\"ephemeral\"}}]}]}"
     : String}
 
 # LAW: consecutive tool results merge into ONE user message - the
@@ -2325,7 +2325,7 @@ law oai_parallel_results_pair_in_order:
 law anth_parallel_results_pair_in_order:
   {String.contains(Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
       W.parse_wire("MODEL default\nMSG user : go\nMSG assistant : x\n  CALL 7 echo : hi\n  CALL 8 bash : ls\nMSG tool : out1\nMSG tool : out2\nEND\n")),
-    "{\"type\":\"tool_result\",\"tool_use_id\":\"call_7\",\"content\":\"out1\"},{\"type\":\"tool_result\",\"tool_use_id\":\"call_8\",\"content\":\"out2\"}")
+    "{\"type\":\"tool_result\",\"tool_use_id\":\"call_7\",\"content\":\"out1\"},{\"type\":\"tool_result\",\"tool_use_id\":\"call_8\",\"content\":\"out2\"")
     == True{} : Bool}
 
 # LAW: the marked history reasoning is STRIPPED on the way back - a
@@ -2364,7 +2364,7 @@ law anth_multi_span_replays:
 MSG assistant : <think>a\\nBENDSIG::s1</think>\\n<think>b\\nBENDSIG::s2</think>\\nok
 END
 "))
-    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"a\",\"signature\":\"s1\"},{\"type\":\"thinking\",\"thinking\":\"b\",\"signature\":\"s2\"},{\"type\":\"text\",\"text\":\"ok\"}]}]}"
+    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"a\",\"signature\":\"s1\"},{\"type\":\"thinking\",\"thinking\":\"b\",\"signature\":\"s2\"},{\"type\":\"text\",\"text\":\"ok\",\"cache_control\":{\"type\":\"ephemeral\"}}]}]}"
     : String}
 
 # LAW: a long tool run keeps every message - 20 tool results still
@@ -3093,7 +3093,7 @@ MSG assistant :
 MSG tool : <image name=\"[Image #1]\" path=\"p.png\" mime=\"image/png\" b64=\"/s/x.b64\">
 END
 "))
-    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"go\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"call_1\",\"name\":\"run_typescript\",\"input\":{}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_1\",\"content\":[{\"type\":\"text\",\"text\":\"<image name=[Image #1] path=\\\"p.png\\\">\"},{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"@@BENDIMG:/s/x.b64@@\"}},{\"type\":\"text\",\"text\":\"</image>\"}]}]}]}"
+    == "{\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"go\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"call_1\",\"name\":\"run_typescript\",\"input\":{},\"cache_control\":{\"type\":\"ephemeral\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_1\",\"content\":[{\"type\":\"text\",\"text\":\"<image name=[Image #1] path=\\\"p.png\\\">\"},{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"@@BENDIMG:/s/x.b64@@\"}},{\"type\":\"text\",\"text\":\"</image>\"}],\"cache_control\":{\"type\":\"ephemeral\"}}]}]}"
     : String}
 
 # LAW: only the last `cap` loaded images are kept.
@@ -3115,3 +3115,100 @@ law image_splice_data:
   {Im.img_splice("{\"d\":\"@@BENDIMG:/s/1.b64@@\",\"e\":\"@@BENDIMG:/s/9.b64@@\"}",
       Con{Im.IL{"/s/1.b64", "QUJD"}, Nil{}})
     == "{\"d\":\"QUJD\",\"e\":\"\"}" : String}
+
+# ---- Anthropic per model: prompt caching, thinking, max_tokens (BISE-146) ----
+
+# LAW: prompt caching - four cache_control breakpoints, the API's
+# maximum: the system block, the last tool, and the last block of each
+# of the two newest messages; the older messages carry none.
+law anth_cache_breakpoints:
+  {Anth.api_body_anth_for("m", 0n, "", True{}, W.parse_wire("MODEL default
+MSG system : S
+TOOL echo : Returns text.
+TOOL bash : Runs.
+MSG user : go
+MSG assistant : x
+  CALL 7 echo : hi
+MSG tool : out1
+END
+"))
+    == "{\"system\":[{\"type\":\"text\",\"text\":\"S\",\"cache_control\":{\"type\":\"ephemeral\"}}],\"model\":\"m\",\"max_tokens\":32768,\"thinking\":{\"type\":\"adaptive\",\"display\":\"summarized\"},\"output_config\":{\"effort\":\"high\"},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"go\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"x\"},{\"type\":\"tool_use\",\"id\":\"call_7\",\"name\":\"echo\",\"input\":{\"arg\":\"hi\"},\"cache_control\":{\"type\":\"ephemeral\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_7\",\"content\":\"out1\",\"cache_control\":{\"type\":\"ephemeral\"}}]}],\"tools\":[{\"name\":\"bash\",\"description\":\"Runs.\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"}},\"required\":[\"arg\"]}},{\"name\":\"echo\",\"description\":\"Returns text.\",\"input_schema\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"}},\"required\":[\"arg\"]},\"cache_control\":{\"type\":\"ephemeral\"}}],\"tool_choice\":{\"type\":\"auto\"}}"
+    : String}
+
+# LAW: a thinking block never carries a breakpoint (the API refuses
+# it): a newest message ending in one gets none. And `thinking = none`
+# sends no thinking field, even for a model that reasons; max_tokens is
+# the catalog's max output.
+law anth_thinking_none_and_no_cache_on_thinking:
+  {Anth.api_body_anth_for("m", 64000n, "none", True{}, W.parse_wire("MODEL default
+MSG user : a
+MSG assistant : <think>t\\nBENDSIG::s1</think>
+MSG user : b
+END
+"))
+    == "{\"model\":\"m\",\"max_tokens\":64000,\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"a\"}]},{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"t\",\"signature\":\"s1\"}]},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"b\",\"cache_control\":{\"type\":\"ephemeral\"}}]}]}"
+    : String}
+
+# LAW: `thinking = budget` (Haiku 4.5 refuses adaptive thinking):
+# extended thinking with budget_tokens = half the max output, at most
+# 16000; no output_config.
+law anth_thinking_budget:
+  {Anth.api_body_anth_for("claude-haiku-4-5", 64000n, "budget", True{},
+      W.parse_wire("MODEL default
+MSG user : salut
+END
+"))
+    == "{\"model\":\"claude-haiku-4-5\",\"max_tokens\":64000,\"thinking\":{\"type\":\"enabled\",\"budget_tokens\":16000},\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"salut\",\"cache_control\":{\"type\":\"ephemeral\"}}]}]}"
+    : String}
+
+# LAW: a budget under the API's 1024 minimum: no thinking at all.
+law anth_thinking_budget_too_small:
+  {String.contains(Anth.api_body_anth_for("m", 1500n, "budget", True{},
+      W.parse_wire("MODEL default
+MSG user : salut
+END
+")), "thinking")
+    == False{} : Bool}
+
+# LAW: no thinking word: a model that does not reason thinks not; one
+# that reasons gets adaptive thinking (the foundry body).
+law anth_thinking_default_follows_reasoning:
+  {Anth.api_body_anth_for("m", 8192n, "", False{}, W.parse_wire("MODEL default
+MSG user : salut
+END
+"))
+    == "{\"model\":\"m\",\"max_tokens\":8192,\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"salut\",\"cache_control\":{\"type\":\"ephemeral\"}}]}]}"
+    : String}
+
+law anth_thinking_default_reasons_adaptive:
+  {Anth.thinking_mode("", True{}) == Anth.TAdaptive{} : Anth.TMode}
+
+law anth_thinking_words:
+  {[Anth.thinking_mode("adaptive", False{}), Anth.thinking_mode("budget", False{}),
+      Anth.thinking_mode("none", True{}), Anth.thinking_mode("high", False{})]
+    == [Anth.TAdaptive{}, Anth.TBudget{}, Anth.TNone{}, Anth.TNone{}]
+    : List<&2, Anth.TMode>}
+
+# LAW: a model's catalog `betas` is the anthropic-beta header (the
+# direct API: no 1M-context flag); unset, the foundry proxy's list
+# (family_headers_anthropic).
+law family_headers_anthropic_betas:
+  {Api.headers(Api.Anthropic{}, "interleaved-thinking-2025-05-14", "k")
+    == [Api.Hdr{"x-api-key", "k"},
+      Api.Hdr{"anthropic-version", "2023-06-01"},
+      Api.Hdr{"anthropic-beta", "interleaved-thinking-2025-05-14"},
+      Api.Hdr{"Content-Type", "application/json"}] : List<&2, Api.Hdr>}
+
+# LAW: the Anthropic family's body follows the model's catalog facts
+# (the dispatch passes max output, thinking word and reasoning through).
+law api_body_anth_follows_facts:
+  {Api.api_body_for(Api.Anthropic{}, "m",
+      Api.MFacts{False{}, 200n, "max_tokens", "", ""},
+      W.parse_wire("MODEL default
+MSG user : salut
+END
+"))
+    == Anth.api_body_anth_for("m", 200n, "", False{}, W.parse_wire("MODEL default
+MSG user : salut
+END
+")) : String}

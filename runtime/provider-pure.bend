@@ -41,6 +41,7 @@ def builtin() -> List<&2, Cf.KV>:
     Cf.KV{"providers.foundry.base_url",
       "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1"},
     Cf.KV{"providers.foundry.key_env", "ANTHROPIC_FOUNDRY_API_KEY"},
+    Cf.KV{"providers.foundry.reasoning", "true"},
     Cf.KV{"providers.mistral.api", "openai-chat"},
     Cf.KV{"providers.mistral.base_url", "https://api.mistral.ai/v1"},
     Cf.KV{"providers.mistral.key_env", "MISTRAL_API_KEY"},

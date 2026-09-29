@@ -3864,3 +3864,30 @@ def Laws.image_defang_unkept():
 
 def Laws.image_splice_data():
   {==}
+
+def Laws.anth_cache_breakpoints():
+  {==}
+
+def Laws.anth_thinking_none_and_no_cache_on_thinking():
+  {==}
+
+def Laws.anth_thinking_budget():
+  {==}
+
+def Laws.anth_thinking_budget_too_small():
+  {==}
+
+def Laws.anth_thinking_default_follows_reasoning():
+  {==}
+
+def Laws.anth_thinking_default_reasons_adaptive():
+  {==}
+
+def Laws.anth_thinking_words():
+  {==}
+
+def Laws.family_headers_anthropic_betas():
+  {==}
+
+def Laws.api_body_anth_follows_facts():
+  {==}

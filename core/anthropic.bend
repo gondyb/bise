@@ -183,9 +183,76 @@ def amsgs_json.go(acc: List<&2, AMsg>) -> List<&2, J.Json>:
     case Con{+a, +rest}:
       Con{amsg_json(a), amsgs_json.go(rest)}
 
+# ---- prompt caching (BISE-146) ----
+# Four cache_control breakpoints, the Messages API's maximum: the system
+# prompt, the last tool, and the last block of each of the two newest
+# messages (the newest one writes the cache, the one before reads what
+# the previous call wrote). A thinking block cannot carry one (the API
+# refuses it): such a message gets none.
+
+def cache_cc() -> J.Json:
+  J.obj(Con{J.kv("type", J.str("ephemeral")), Nil{}})
+
+def cache_block.pick(skip: Bool,
+    +kvs: List<&2, Sigma<&2, &2, String, _ => J.Json>>) -> J.Json:
+  match skip:
+    case True{}:
+      J.JObj{kvs}
+    case False{}:
+      J.JObj{List.append(&2, Sigma<&2, &2, String, _ => J.Json>, kvs,
+        Con{J.kv("cache_control", cache_cc()), Nil{}})}
+
+def cache_block.typed(+t: String,
+    +kvs: List<&2, Sigma<&2, &2, String, _ => J.Json>>) -> J.Json:
+  cache_block.pick(Bool.or(String.eq(t, "thinking"),
+    String.eq(t, "redacted_thinking")), kvs)
+
+# a block object with the breakpoint (a thinking block unchanged)
+def cache_block(+b: J.Json) -> J.Json:
+  match b:
+    case J.JObj{+kvs}:
+      cache_block.typed(J.get_str_or(J.JObj{kvs}, "type", ""), kvs)
+    case _:
+      b
+
+def cache_last.go(rest: List<&2, J.Json>, +b: J.Json) -> List<&2, J.Json>:
+  match rest:
+    case Nil{}:
+      Con{cache_block(b), Nil{}}
+    case Con{+b2, +r2}:
+      Con{b, cache_last.go(r2, b2)}
+
+# the last block of a list marked
+def cache_last(bs: List<&2, J.Json>) -> List<&2, J.Json>:
+  match bs:
+    case Nil{}:
+      Nil{}
+    case Con{+b, +rest}:
+      cache_last.go(rest, b)
+
+def amsg_cache(m: AMsg) -> AMsg:
+  match m:
+    case AU{+blocks}:
+      AU{cache_last(blocks)}
+    case AA{+blocks}:
+      AA{cache_last(blocks)}
+
+# the walk's accumulator is newest first: its two heads are the two
+# newest messages
+def cache_recent(acc: List<&2, AMsg>) -> List<&2, AMsg>:
+  match acc:
+    case Nil{}:
+      Nil{}
+    case Con{+a, +rest}:
+      match rest:
+        case Nil{}:
+          Con{amsg_cache(a), Nil{}}
+        case Con{+a2, +r2}:
+          Con{amsg_cache(a), Con{amsg_cache(a2), r2}}
+
 # the walk accumulates reversed; the final list is chronological
 def amsgs_json(acc: List<&2, AMsg>) -> List<&2, J.Json>:
-  amsgs_json.go(List.reverse(&2, AMsg, acc))
+  amsgs_json.go(List.reverse(&2, AMsg, cache_recent(acc)))
 
 type AWalk is Data:
   AN{todo: List<&2, W.WMsg>, ids: List<&2, String>, acc: List<&2, AMsg>}
@@ -306,19 +373,109 @@ def api_body_anth.with_sys(sys: Maybe<&2, String>,
   match sys:
     case Some{+s}:
       Con{J.kv("system", J.arr(Con{J.obj(Con{J.kv("type", J.str("text")),
-        Con{J.kv("text", J.str(s)), Nil{}}}), Nil{}})), rest}
+        Con{J.kv("text", J.str(s)),
+        Con{J.kv("cache_control", cache_cc()), Nil{}}}}), Nil{}})), rest}
     case None{}:
       rest
 
-# the thinking config the vibe CLI sends for opus-5.5 (thinking "high"):
-# adaptive thinking, summarized display, the effort in output_config,
-# and the adaptive max_tokens budget
 def anth_thinking_json() -> J.Json:
   J.obj(Con{J.kv("type", J.str("adaptive")),
     Con{J.kv("display", J.str("summarized")), Nil{}}})
 
 def anth_effort_json() -> J.Json:
   J.obj(Con{J.kv("effort", J.str("high")), Nil{}})
+
+# ---- thinking, per model (BISE-146) ----
+# The catalog's `thinking` key (rust/catalog, BISE_MODELS_FILE):
+#   adaptive  the config the vibe CLI sends for opus-5.5 (thinking
+#             "high"): adaptive thinking, summarized display, the effort
+#             in output_config
+#   budget    extended thinking with budget_tokens (the 4.5 models:
+#             Haiku 4.5 refuses adaptive thinking)
+#   none      no thinking field at all
+#   "" (unset, or an unknown word): adaptive when the model reasons,
+#             else none
+type TMode is Data:
+  TAdaptive{}
+  TBudget{}
+  TNone{}
+
+def thinking_mode.dflt(reasoning: Bool) -> TMode:
+  match reasoning:
+    case True{}:
+      TAdaptive{}
+    case False{}:
+      TNone{}
+
+def thinking_mode.none(is_none: Bool, reasoning: Bool) -> TMode:
+  match is_none:
+    case True{}:
+      TNone{}
+    case False{}:
+      thinking_mode.dflt(reasoning)
+
+def thinking_mode.budget(is_budget: Bool, +t: String, reasoning: Bool)
+    -> TMode:
+  match is_budget:
+    case True{}:
+      TBudget{}
+    case False{}:
+      thinking_mode.none(String.eq(t, "none"), reasoning)
+
+def thinking_mode.pick(is_adaptive: Bool, +t: String, reasoning: Bool)
+    -> TMode:
+  match is_adaptive:
+    case True{}:
+      TAdaptive{}
+    case False{}:
+      thinking_mode.budget(String.eq(t, "budget"), t, reasoning)
+
+def thinking_mode(+t: String, reasoning: Bool) -> TMode:
+  thinking_mode.pick(String.eq(t, "adaptive"), t, reasoning)
+
+# max_tokens: the model's max output from the catalog; unknown (0n, no
+# models file) = 32768, the foundry proxy's
+def max_tokens_of.pick(zero: Bool, +out: Nat) -> Nat:
+  match zero:
+    case True{}:
+      32768n
+    case False{}:
+      out
+
+def max_tokens_of(+out: Nat) -> Nat:
+  max_tokens_of.pick(Nat.is_eq(out, 0n), out)
+
+# budget_tokens: half the output cap, at most 16000 (the API wants
+# 1024 <= budget < max_tokens; below 1024 the call thinks not at all)
+def budget_of(+max: Nat) -> Nat:
+  Nat.min(16000n, Nat.div(max, 2n))
+
+def anth_budget_json(+budget: Nat) -> J.Json:
+  J.obj(Con{J.kv("type", J.str("enabled")),
+    Con{J.kv("budget_tokens", J.num(budget)), Nil{}}})
+
+def thinking_kvs.budget(too_small: Bool, +budget: Nat,
+    +rest: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
+    -> List<&2, Sigma<&2, &2, String, _ => J.Json>>:
+  match too_small:
+    case True{}:
+      rest
+    case False{}:
+      Con{J.kv("thinking", anth_budget_json(budget)), rest}
+
+# the thinking fields of the body, before `rest`
+def thinking_kvs(tm: TMode, +max: Nat,
+    +rest: List<&2, Sigma<&2, &2, String, _ => J.Json>>)
+    -> List<&2, Sigma<&2, &2, String, _ => J.Json>>:
+  match tm:
+    case TAdaptive{}:
+      Con{J.kv("thinking", anth_thinking_json()),
+        Con{J.kv("output_config", anth_effort_json()), rest}}
+    case TBudget{}:
+      thinking_kvs.budget(Nat.is_lt(budget_of(max), 1024n), budget_of(max),
+        rest)
+    case TNone{}:
+      rest
 
 # the Messages API tool-name pattern is ^[a-zA-Z0-9_-]{1,128}$ - the
 # self.* harness tools carry a dot and ride as self_* on the wire;
@@ -385,32 +542,45 @@ def tools_json_anth(ts: List<&2, W.WTool>) -> J.Json:
     case Con{+t, rest}:
       tools_json_anth.link(tools_json_anth(rest), t)
 
-def api_body_anth.pick(empty_tools: Bool, +model: String,
-    +tools: List<&2, W.WTool>, +msgs: List<&2, W.WMsg>) -> String:
+# the tools with the cache breakpoint on the last one
+def tools_json_cached(j: J.Json) -> J.Json:
+  match j:
+    case J.JArr{+vals}:
+      J.JArr{cache_last(vals)}
+    case _:
+      j
+
+def api_body_anth.tools(empty_tools: Bool, +tools: List<&2, W.WTool>)
+    -> List<&2, Sigma<&2, &2, String, _ => J.Json>>:
   match empty_tools:
     case True{}:
-      J.stringify(J.obj(api_body_anth.with_sys(wire_sys(msgs),
-        Con{J.kv("model", J.str(model)),
-        Con{J.kv("max_tokens", J.num(32768n)),
-        Con{J.kv("thinking", anth_thinking_json()),
-        Con{J.kv("output_config", anth_effort_json()),
-        Con{J.kv("messages", J.arr(amsgs(msgs))), Nil{}}}}}})))
+      Nil{}
     case False{}:
-      J.stringify(J.obj(api_body_anth.with_sys(wire_sys(msgs),
-        Con{J.kv("model", J.str(model)),
-        Con{J.kv("max_tokens", J.num(32768n)),
-        Con{J.kv("thinking", anth_thinking_json()),
-        Con{J.kv("output_config", anth_effort_json()),
-        Con{J.kv("messages", J.arr(amsgs(msgs))),
-        Con{J.kv("tools", tools_json_anth(tools)),
+      Con{J.kv("tools", tools_json_cached(tools_json_anth(tools))),
         Con{J.kv("tool_choice",
-          J.obj(Con{J.kv("type", J.str("auto")), Nil{}})),
-        Nil{}}}}}}}})))
+          J.obj(Con{J.kv("type", J.str("auto")), Nil{}})), Nil{}}}
 
-def api_body_anth(+model: String, +req: W.WReq) -> String:
+def api_body_anth.fields(+model: String, +max: Nat, tm: TMode,
+    +tools: List<&2, W.WTool>, +msgs: List<&2, W.WMsg>) -> String:
+  J.stringify(J.obj(api_body_anth.with_sys(wire_sys(msgs),
+    Con{J.kv("model", J.str(model)),
+    Con{J.kv("max_tokens", J.num(max)),
+    thinking_kvs(tm, max,
+      Con{J.kv("messages", J.arr(amsgs(msgs))),
+        api_body_anth.tools(W.is_empty_tools(tools), tools)})}})))
+
+# the body of a model: its max output (0n: unknown), its catalog
+# thinking word and whether it reasons (BISE-146)
+def api_body_anth_for(+model: String, +out: Nat, +thinking: String,
+    reasoning: Bool, +req: W.WReq) -> String:
   match req:
     case W.WReq{+tools, +msgs, _}:
-      api_body_anth.pick(W.is_empty_tools(tools), model, tools, msgs)
+      api_body_anth.fields(model, max_tokens_of(out),
+        thinking_mode(thinking, reasoning), tools, msgs)
+
+# a model the catalog does not describe: today's foundry body
+def api_body_anth(+model: String, +req: W.WReq) -> String:
+  api_body_anth_for(model, 0n, "", True{}, req)
 
 # ---- Anthropic: the reply ----
 # A Messages response carries content blocks: text blocks surface

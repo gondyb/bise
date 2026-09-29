@@ -18,6 +18,10 @@
 # A model field not set comes from its provider, then from the defaults:
 #   context 128000, max_output 16384, vision false, reasoning false,
 #   tools true.
+# Anthropic family only (BISE-146): thinking = "adaptive" | "budget" |
+#   "none" (unset: adaptive when the model reasons, none otherwise);
+#   betas = the anthropic-beta header (unset: the foundry proxy's list).
+#   max_output is the body's max_tokens.
 # Any "<provider>/<model>" works even when the model is not listed here:
 # it gets its provider's defaults. Model ids may hold '/': the provider
 # is the part before the FIRST '/'.
@@ -42,6 +46,11 @@ context = 200000
 max_output = 32000
 vision = true
 reasoning = true
+# extended thinking with a token budget (the 4.5 models reject adaptive
+# thinking: "adaptive thinking is not supported on this model"); the
+# beta flags these models take (no 1M context: it needs its own tier)
+thinking = "budget"
+betas = "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"
 
 [models."anthropic/claude-opus-4-5"]
 max_output = 64000
