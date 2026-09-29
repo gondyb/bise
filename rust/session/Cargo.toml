@@ -1,0 +1,11 @@
+[package]
+name = "bise-session"
+version = "0.1.0"
+edition = "2021"
+description = "The bise session log: typed events, reader, writer, resume (BISE-191..194)."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ring = "0.17"
+libc = "0.2"
