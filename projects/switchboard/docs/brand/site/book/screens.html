@@ -83,7 +83,7 @@
   .legend span:first-child { display:inline-block; width:3ch; }
   /* level 3, the envelope chip (user pick, messages.html C): at x0+2, a tinted chip " ✉ sender → receiver "
      (sender bold text, arrow faint, receiver dim), 1 space, the text dim, wrapping under itself */
-  .l3 { color:var(--dim); margin-left:2ch; display:grid; grid-template-columns:auto 1fr; gap:0 1ch; max-width:89ch; }
+  .l3 { color:var(--dim); margin-left:0; display:grid; grid-template-columns:auto 1fr; gap:0 1ch; max-width:89ch; }
   .l3 .chip { background:var(--chip); padding:0 1ch; white-space:nowrap; align-self:start; }
   .l3 .chip .s { color:var(--text); font-weight:700; } .l3 .chip .ar { color:var(--faint); }
   .l3.fold, .l3:not(:has(.chip)) { display:block; }
