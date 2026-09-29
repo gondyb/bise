@@ -67,7 +67,7 @@ impl Hint {
 // ---- the store ----
 
 /// `hints.json` next to the onboarding flag.
-fn store_path() -> Option<PathBuf> {
+pub(crate) fn store_path() -> Option<PathBuf> {
     #[cfg(test)]
     {
         STORE.with(|s| s.borrow().clone())

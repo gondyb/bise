@@ -5,11 +5,13 @@
 //! at the row's last column, a dim tip, one per session, only in the
 //! default mode while you don't type and when at least 3 columns separate
 //! it from the keys. Track F places the row (BISE-98) and calls [`line`];
-//! [`render`] is the pure part.
+//! [`render`] is the pure part. The tip changes every 5 minutes, in the
+//! order of [`help::TIPS`] (BISE-104, [`TipClock`]).
 
 use crate::{attach, commands, files, help, theme, voice, App};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
+use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
 
 /// What the key bar shows: one set of keys per mode (the sets of the old
@@ -136,29 +138,87 @@ pub(crate) fn mode(app: &App) -> Mode {
 }
 
 /// The key bar of `app` for a row `width` columns wide: the mode's keys,
-/// the session's tip (none in an agent's view).
+/// the tip of the moment (none in an agent's view).
 pub(crate) fn line(app: &App, width: u16) -> Line<'static> {
     let agent = app.sb.as_ref().is_some_and(|sb| !sb.is_main_focus());
-    render(mode(app), width, !app.ed.text.is_empty(), agent, Some(session_tip()))
+    let typing = !app.ed.text.is_empty();
+    render(mode(app), width, typing, agent, Some(current_tip(typing)))
 }
 
-/// The tip of this session: one of [`help::TIPS`], chosen at the first draw.
-fn session_tip() -> &'static str {
-    #[cfg(test)]
-    {
-        help::TIPS[0]
+// ---- the tip clock (BISE-104, book §8) ----
+
+/// How long a tip stays: 5 minutes.
+const TIP_EVERY: Duration = Duration::from_secs(5 * 60);
+
+/// Which tip shows, and since when. The tips go in the order of
+/// [`help::TIPS`], so you meet more of them over time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TipClock {
+    index: usize,
+    since: Instant,
+}
+
+impl TipClock {
+    /// A session's first tip: the one after where the last session
+    /// stopped (`saved`), else `seed`.
+    fn start(saved: Option<usize>, seed: usize, now: Instant) -> TipClock {
+        let index = saved.map_or(seed, |i| i + 1) % help::TIPS.len();
+        TipClock { index, since: now }
     }
-    #[cfg(not(test))]
-    {
-        use std::sync::OnceLock;
-        static TIP: OnceLock<&'static str> = OnceLock::new();
-        TIP.get_or_init(|| {
-            let t = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs() as usize);
-            help::TIPS[t % help::TIPS.len()]
-        })
+
+    /// At `now`: the next tip once 5 minutes are up, never while you type
+    /// (it waits for an empty composer). True when it changed.
+    fn tick(&mut self, now: Instant, typing: bool) -> bool {
+        if typing || now.saturating_duration_since(self.since) < TIP_EVERY {
+            return false;
+        }
+        self.index = (self.index + 1) % help::TIPS.len();
+        self.since = now;
+        true
     }
+}
+
+thread_local! {
+    static CLOCK: std::cell::Cell<Option<TipClock>> = const { std::cell::Cell::new(None) };
+}
+
+/// Where the last tip shown is kept: `tip`, next to the one-time hints'
+/// store (none with `SB_ONBOARDING=off`, and under `cargo test`).
+fn tip_path() -> Option<std::path::PathBuf> {
+    crate::hints::store_path().map(|p| p.with_file_name("tip"))
+}
+
+fn save_tip(i: usize) {
+    if let Some(p) = tip_path() {
+        if let Some(d) = p.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let _ = std::fs::write(p, format!("{i}\n"));
+    }
+}
+
+/// The tip of the moment. Read at each draw (the loop draws anyway): no
+/// timer and no redraw of its own; the file is written only when the tip
+/// changes (and once at the start).
+fn current_tip(typing: bool) -> &'static str {
+    let now = Instant::now();
+    let mut clock = CLOCK.with(|c| c.get()).unwrap_or_else(|| {
+        let saved = tip_path().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| t.trim().parse().ok());
+        // no saved tip: a random one (the clock's nanoseconds), 0 in tests
+        let seed = if cfg!(test) {
+            0
+        } else {
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos() as usize)
+        };
+        let c = TipClock::start(saved, seed, now);
+        save_tip(c.index);
+        c
+    });
+    if clock.tick(now, typing) {
+        save_tip(clock.index);
+    }
+    CLOCK.with(|c| c.set(Some(clock)));
+    help::TIPS[clock.index]
 }
 
 /// A key's ASCII form (book §6): `alt+` for `⌥`, words for the arrows
@@ -369,6 +429,32 @@ mod tests {
         // other modes keep their own keys (esc does something else there)
         let s = text(&render(Mode::Selected, 120, false, true, None));
         assert!(s.starts_with("⏎ enter"), "{s}");
+    }
+
+    #[test]
+    fn the_tip_changes_every_5_minutes_in_order() {
+        let t0 = Instant::now();
+        let mut c = TipClock::start(None, 0, t0);
+        assert_eq!(c.index, 0);
+        assert!(!c.tick(t0 + Duration::from_secs(299), false), "not before 5 minutes");
+        assert!(c.tick(t0 + TIP_EVERY, false));
+        assert_eq!(c.index, 1);
+        // the next change is 5 minutes after this one
+        assert!(!c.tick(t0 + TIP_EVERY + Duration::from_secs(60), false));
+        // never while you type: it waits for an empty composer
+        let later = t0 + 2 * TIP_EVERY + Duration::from_secs(30);
+        assert!(!c.tick(later, true));
+        assert_eq!(c.index, 1);
+        assert!(c.tick(later, false));
+        assert_eq!(c.index, 2);
+        // it goes round
+        let mut c = TipClock::start(Some(help::TIPS.len() - 2), 0, t0);
+        assert_eq!(c.index, help::TIPS.len() - 1, "starts after the last session's tip");
+        assert!(c.tick(t0 + TIP_EVERY, false));
+        assert_eq!(c.index, 0);
+        // a saved index out of range (fewer tips now) wraps
+        assert!(TipClock::start(Some(99), 0, t0).index < help::TIPS.len());
+        assert_eq!(TipClock::start(None, help::TIPS.len() + 3, t0).index, 3);
     }
 
     #[test]
