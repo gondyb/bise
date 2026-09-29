@@ -420,15 +420,23 @@ fn main() -> std::io::Result<()> {
         // the move to ~/.bise (BISE-161): by the commands that open a hub
         // or a session, before any path is computed; never by `sb` (an
         // agent's tool) nor the switcher (mid-switch)
-        if matches!(args.first().map(String::as_str), None | Some("switchboard" | "sbd"))
-            || args.iter().any(|a| a == "--headless")
-        {
+        let opens = matches!(args.first().map(String::as_str), None | Some("switchboard" | "sbd"))
+            || args.iter().any(|a| a == "--headless");
+        if opens {
             migrate_home();
         }
         // every state path, decided once (bise_home) and exported before any
         // thread or child: the Bend runtime, the hub, the agents and older
         // versions read these variables instead of computing their own
-        bise_home::Home::from_env().export();
+        let home = bise_home::Home::from_env();
+        home.export();
+        // the REPLs write their session files under $BEND_RUN_DIR/<port>
+        // (runtime/plugins.bend): created private before the first one
+        if opens {
+            if let Err(e) = home.ensure_run_dir() {
+                eprintln!("warning: {}: {}", home.run_dir().display(), e);
+            }
+        }
         match args.first().map(|s| s.as_str()) {
             Some("sb") => std::process::exit(switchboard::cli::main(&args[1..])),
             Some("sbd") => {

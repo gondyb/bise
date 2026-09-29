@@ -31,7 +31,7 @@ fails = []
 s = BendSession.fresh()
 try:
     port = s.ready["port"]
-    run = os.path.expanduser("~/.bend-harness/run/%s" % port)
+    run = os.path.join(os.environ.get("BEND_RUN_DIR") or os.path.expanduser("~/.bend-harness/run"), str(port))
     report = open(os.path.join(run, "plugins/report.txt")).read()
     print(report)
     if "hello-plugin v0.1.0 [loaded] workspace" not in report or "1 tool as tools.hello_plugin.*" not in report:

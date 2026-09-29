@@ -9,7 +9,9 @@ temp HOME holding one skill:
 2. the skill tool loads a skill of the index;
 3. a name the index lacks says "unknown skill", not "skills index
    unreadable" (an empty index said that in main's session, and the
-   search went to the index's path instead of its content).
+   search went to the index's path instead of its content);
+4. the session's index goes to $BEND_RUN_DIR/<port> (qa-explore J: it
+   went to ~/.bend-harness/run/<port> whatever BEND_RUN_DIR said).
 """
 import os, socket, subprocess, sys, tempfile, time
 
@@ -48,7 +50,7 @@ def main():
         "BEND_PLUGINS_DATA": os.path.join(tmp, "plugin-data"),
         "BEND_CONFIG": os.path.join(tmp, "config.toml"),
         "BEND_MCP_BOOTSTRAP_URL": "http://127.0.0.1:9/none",
-        "BEND_REPL_PORT": str(port), "BEND_WORKDIR": ws,
+        "BEND_REPL_PORT": str(port), "BEND_WORKDIR": ws, "BEND_RUN_DIR": os.path.join(tmp, "run"),
         "BEND_SESSION_FILE": session, "BEND_WIRE_LOG": os.path.join(tmp, "wire.log"),
     })
     log, err = os.path.join(tmp, "repl.log"), os.path.join(tmp, "repl.err")
@@ -74,6 +76,10 @@ def main():
               idx.startswith("alpha\tThe alpha test skill.\t/"), repr(idx))
         check("no temp file is left next to it", os.path.isdir(cache) and os.listdir(cache) == ["skills-index.txt"],
               repr(os.listdir(cache)))
+        sidx = os.path.join(tmp, "run", str(port), "skills-index.txt")
+        check("the session's index is under $BEND_RUN_DIR/<port>",
+              os.path.exists(sidx) and not os.path.exists(os.path.join(tmp, ".bend-harness")),
+              repr(os.listdir(tmp)))
         sock = socket.create_connection(("127.0.0.1", port), timeout=120)
         sock.sendall(b"run [[skill: alpha]] [[skill: nope]]\n")
         f = sock.makefile("rb")

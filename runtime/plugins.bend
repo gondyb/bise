@@ -17,16 +17,27 @@ import Base
 import ./persist.bend as P
 import ./proc.bend as Proc
 
-# ---- the session's files: $HOME/.bend-harness/run/<repl port>/ ----
+# ---- the session's files: $BEND_RUN_DIR/<repl port>/ ----
+# The harness exports BEND_RUN_DIR (bise_home: ~/.bise/run, private) and
+# creates it 0700; without it (an old harness, a bare REPL), the legacy
+# $HOME/.bend-harness/run.
 
-def run_dir.of(+home: String, +port: String) -> String:
-  String.append(home, String.append("/.bend-harness/run/", port))
+def run_dir.pick(e: Bool, +run: String, +home: String) -> String:
+  match e:
+    case True{}:
+      String.append(home, "/.bend-harness/run")
+    case False{}:
+      run
+
+def run_dir.of(+run: String, +home: String, +port: String) -> String:
+  String.append(run_dir.pick(String.is_empty(run), run, home), String.append("/", port))
 
 def run_dir() -> IO(String):
   do IO<String>:
+    rr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_RUN_DIR")
     hr : Result<&1, &1, U32 & String, String> <- IO.get_env("HOME")
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
-    IO.pure(String, run_dir.of(P.env_or(hr, "/tmp"), P.env_or(pr, "0")))
+    IO.pure(String, run_dir.of(P.env_or(rr, ""), P.env_or(hr, "/tmp"), P.env_or(pr, "0")))
 
 def dir() -> IO(String):
   do IO<String>:
