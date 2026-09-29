@@ -25,7 +25,8 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
 /// when bare) and 1 blank row; the history on the reading column (its
 /// first row pinned to the "inside an agent" / preview line when there
 /// is one), the agents panel on its right behind the rule; the card box;
-/// 1 blank row; the divider `you → main … state`; the queued messages,
+/// 1 blank row; the divider `you → main … state`; the queued messages
+/// (1 blank row above them from 20 rows),
 /// the images strip; the composer (bar at the margin, text 2 columns
 /// after it, 1 blank bar row above and under the text from 20 rows); the key bar; the frame's
 /// bottom edge.
@@ -51,13 +52,16 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // the attachments box (book §13) and 1 blank row between it and the
     // divider (from 20 rows; the composer's blank bar row moves there:
     // your message starts right under the box), then the queued
-    // messages (BISE-89)
+    // messages (BISE-89), with 1 blank tinted row between them and the
+    // divider (BISE-224, user request; from 20 rows like the other pads)
     let strip_h = attach::strip_height(app).min(left(text_rows));
     let strip_gap = if strip_h > 0 { rows.pad_top.min(left(text_rows + strip_h)) } else { 0 };
     let pad_top = if strip_h > 0 { 0 } else { rows.pad_top };
     let queue_h = crate::queue::height(app).min(left(text_rows + strip_h + strip_gap));
+    let queue_gap = if queue_h > 0 { rows.pad_top.min(left(text_rows + strip_h + strip_gap + queue_h)) } else { 0 };
+    let pane_h = text_rows + strip_h + strip_gap + queue_h + queue_gap;
     // the card box: what the rest leaves, with 1 blank row above it
-    let card_h = sb::card_box_height(app, area, left(text_rows + strip_h + strip_gap + queue_h + 1));
+    let card_h = sb::card_box_height(app, area, left(pane_h + 1));
     let card_gap = u16::from(card_h > 0);
     // the no-vision line names the model of the agent in view
     attach::set_model(&crate::sb::focus_model(app));
@@ -71,6 +75,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
             Constraint::Length(card_h),      // the card box (ctrl+g)
             Constraint::Length(1),           // a blank row above the divider
             Constraint::Length(1),           // the divider
+            Constraint::Length(queue_gap),   // a tinted row above the queue
             Constraint::Length(queue_h),     // the queued messages
             Constraint::Length(strip_gap),   // a tinted row above the box
             Constraint::Length(strip_h),     // the attachments box
@@ -180,7 +185,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     }
     app.bottom_bar_rect = (!app.tail_visible && !rows.keys_in_divider).then_some(state_rect);
     // the queued messages: ` › text`, the `›` under the composer's bar
-    let queue = pane(chunks[6]);
+    let queue = pane(chunks[7]);
     if queue.height > 0 {
         let r = Rect { x: queue.x.saturating_sub(1), width: queue.width + 1, ..queue }.intersection(area);
         frame.render_widget(Paragraph::new(crate::queue::lines(app, r.width as usize)), r);
@@ -188,14 +193,14 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // the attachments box: from the bar's column, its rows at the
     // composer's text (x0 + 3), at most the composer's width; no bar:
     // the bar marks your message
-    let strip = pane(chunks[8]);
+    let strip = pane(chunks[9]);
     if strip.height > 0 {
         let r = Rect { width: (inner_w as u16 + TEXT_AT).min(strip.width), ..strip };
         frame.render_widget(Paragraph::new(attach::strip_lines(app, r.width as usize)), r);
     }
     // the composer: its bar at x0 on every row (the blank bar rows
     // around the text too), the text from x0 + 3 like the history's
-    let body_rect = pane(chunks[9]);
+    let body_rect = pane(chunks[10]);
     let composer = Rect { width: (inner_w as u16 + TEXT_AT).min(body_rect.width), ..body_rect };
     draw_composer(app, frame, composer, inner_w, pad_top.min(composer_h), rows.pad_bottom);
     let text = Rect { y: app.composer.y, height: app.composer.h as u16, ..body_rect };
@@ -214,7 +219,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     }
     draw_popup(app, frame, text);
     // the key bar, from x0 to the right margin
-    let kb = pane(chunks[10]);
+    let kb = pane(chunks[11]);
     if kb.height > 0 {
         frame.render_widget(Paragraph::new(crate::keybar::line(app, kb.width)), kb);
     }

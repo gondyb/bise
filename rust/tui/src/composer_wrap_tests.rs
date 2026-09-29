@@ -454,3 +454,39 @@ fn the_typing_area_has_a_blank_bar_row_above_and_under_its_text() {
     assert_eq!(long[14], bar);
     assert!(long[15].starts_with("│  ⏎ send"), "{long:#?}");
 }
+
+/// `pane_rows` with `queued` messages waiting for the turn's end.
+fn pane_rows_queued(height: u16, images: usize, queued: &[&str]) -> Vec<String> {
+    let mut app = sb::bench::test_app();
+    app.queued = queued.iter().map(|t| crate::queue::Queued { text: t.to_string(), attachments: Vec::new() }).collect();
+    if images > 0 {
+        with_images(&mut app, images, "hi");
+    }
+    let buf = draw(&mut app, 120, height);
+    let divider = (0..height).rev().find(|&y| buf[(0, y)].symbol() == "├" || buf[(0, y)].symbol() == "─").unwrap();
+    (divider..height).map(|y| screen_row(&buf, 0, y, 60)).collect()
+}
+
+#[test]
+fn the_queued_messages_have_a_blank_row_above_them() {
+    // BISE-224 (user request): from 20 rows, divider · blank row · the
+    // queued lines and their hint · the body's blank bar row · text; with
+    // the box: queue · its blank row · the box · text; 16-19 rows, no pad
+    let rows = pane_rows_queued(40, 0, &["ouvre les screens"]);
+    assert_eq!(rows[1], "│", "{rows:#?}");
+    assert!(rows[2].starts_with("│  › ouvre les screens"), "{rows:#?}");
+    assert!(rows[3].starts_with("│    queued"), "{rows:#?}");
+    assert_eq!(rows[4], "│  │", "{rows:#?}");
+    assert!(rows[5].starts_with("│  │    what's on your mind?"), "{rows:#?}");
+    let boxed = pane_rows_queued(40, 1, &["ouvre les screens"]);
+    assert_eq!(boxed[1], "│", "{boxed:#?}");
+    assert!(boxed[2].starts_with("│  › ouvre les screens"), "{boxed:#?}");
+    assert!(boxed[3].starts_with("│    queued"), "{boxed:#?}");
+    assert_eq!(boxed[4], "│", "{boxed:#?}");
+    assert!(boxed[5].starts_with("│  ╭─ attached"), "{boxed:#?}");
+    assert!(boxed[8].starts_with("│  │   ▣ 1  hi"), "{boxed:#?}");
+    let small = pane_rows_queued(18, 0, &["ouvre les screens"]);
+    assert!(small[1].starts_with("│  › ouvre les screens"), "{small:#?}");
+    assert!(small[2].starts_with("│    queued"), "{small:#?}");
+    assert!(small[3].starts_with("│  │    what's on your mind?"), "{small:#?}");
+}
