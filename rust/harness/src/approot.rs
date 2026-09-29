@@ -56,6 +56,17 @@ pub(crate) enum Via {
     DevTree,
 }
 
+impl Via {
+    /// For `bise doctor`.
+    pub(crate) fn describe(self) -> &'static str {
+        match self {
+            Via::Env => "BISE_APP_ROOT",
+            Via::Bundle => "next to the executable",
+            Via::DevTree => "dev tree",
+        }
+    }
+}
+
 /// The app root holding `repl` (a file name: repl-live, repl-scripted), or
 /// why there is none. `has(dir, name)`: the file exists in dir.
 pub(crate) fn find(

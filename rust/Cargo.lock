@@ -71,6 +71,7 @@ dependencies = [
  "bend-tui",
  "bise-catalog",
  "bise-home",
+ "serde_json",
  "switchboard",
 ]
 

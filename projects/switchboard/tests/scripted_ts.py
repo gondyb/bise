@@ -79,6 +79,9 @@ def main():
     # (its context, wire log, steer/interrupt files, hub): never touch it
     for k in SESSION_VARS:
         env.pop(k, None)
+    # the stamp of the paths the hub exported for ITS home: with our HOME
+    # it would mark BEND_SESSIONS_DIR above as stale too (bise_home)
+    env.pop("BISE_EXPORTS_FOR", None)
     run_session(env, [code for code, _ in PROGRAMS])
     sessions = glob.glob(os.path.join(home, "sessions", "*.txt"))
     if len(sessions) != 1:

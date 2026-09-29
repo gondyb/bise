@@ -32,6 +32,7 @@ use std::time::{Duration, Instant};
 
 mod approot;
 mod debuglog;
+mod doctor;
 mod info;
 mod version;
 
@@ -392,6 +393,7 @@ usage:
   {cmd} login|logout [provider] store or remove a provider's key
   {cmd} auth list               each provider's key source (never the key)
   {cmd} plugins [list|enable|disable]  agent plugins
+  {cmd} doctor                  check this Mac, the install, keys, model, hubs
   {cmd} --version               this version
   {cmd} --headless              one session without a TUI, for a program:
       --scripted                  the scripted session (no API)
@@ -460,6 +462,8 @@ fn main() -> std::io::Result<()> {
                 version::print();
                 return Ok(());
             }
+            // read-only checks, one line each (BISE-167)
+            Some("doctor") => std::process::exit(doctor::main()),
             Some("--help" | "-h" | "help") => {
                 println!("{}", usage(&version::cmd_name()));
                 return Ok(());
