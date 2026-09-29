@@ -1,10 +1,10 @@
-//! A bash / TypeScript call in main's feed (BISE-223, designer's reco):
+//! A bash / TypeScript call in a feed (BISE-223, designer's reco):
 //! one row, `$` or `ƒ` in the lead column, the model's own description
 //! of the call, its state on the right (`∿ 12s`, `✓ 0.3s`, `✗ exit 1 ·
 //! 0.8s`). A failed call adds one row: its first error line. 4 or more
 //! done calls in a row fold into `▸ 6 commands · <first description>`.
-//! A click opens one call's box, ctrl+o every box; an agent's view keeps
-//! the boxes (the description is their title).
+//! A click opens one call's box, ctrl+o every box; main and the agents'
+//! views alike (an open box has the description as its title).
 
 use crate::render::{elapsed_label, fit_chars, fmt_duration, fmt_elapsed};
 use crate::theme::{self, *};
@@ -20,9 +20,9 @@ fn no_color() -> bool {
     std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty())
 }
 
-/// A call drawn as one row: a closed bash / TypeScript call in main's feed.
+/// A call drawn as one row: a closed bash / TypeScript call, in any view.
 pub(crate) fn row_mode(td: &ToolData) -> bool {
-    crate::render::main_feed() && crate::toolbox::is_boxed(td) && !td.opened
+    crate::toolbox::is_boxed(td) && !td.opened
 }
 
 /// The kind glyph: `$` bash, `ƒ` TypeScript (`f` in ASCII).

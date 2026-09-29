@@ -49,8 +49,9 @@ fn screen(events: &[Ev], cache: &mut [Option<EventRows>]) -> Vec<String> {
     out
 }
 
+/// The call shows: its row (BISE-223, every view) or its open box.
 fn has_box(rows: &[String]) -> bool {
-    rows.iter().any(|r| r.starts_with("╭─ $ bash"))
+    rows.iter().any(|r| r.starts_with(" $ ") || r.starts_with("╭─ $ bash"))
 }
 
 fn has_chip(rows: &[String], text: &str) -> bool {

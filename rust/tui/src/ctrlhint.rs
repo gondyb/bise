@@ -492,7 +492,7 @@ mod frame_tests {
         line(&mut app, "tool #4 bash : echo");
         line(&mut app, &format!("tool_code #4 : {}", cmd.replace('\\', "\\\\").replace('\n', "\\N")));
         line(&mut app, "  obs: tool_finished #4 ok");
-        // BISE-223: in main a call is one row; opened, its box (and its
+        // BISE-223: a call is one row; opened, its box (and its
         // `▸ n more lines`) is what the hints cover
         for e in app.events.iter_mut() {
             if let crate::wire::Ev::Tool(td) = e {

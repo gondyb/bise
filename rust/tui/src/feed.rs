@@ -54,7 +54,7 @@ pub(crate) struct LiveHead {
 pub(crate) enum Live {
     /// a running tool's line (its pulse, its elapsed)
     Tool { name: String, args: String },
-    /// a running call's row in main (BISE-223: its pulse, its elapsed)
+    /// a running call's row (BISE-223: its pulse, its elapsed)
     Row,
     /// the fold of the last run of level-3 lines (its pulse)
     Fold { n: usize, agents: usize, open: bool },
@@ -110,7 +110,7 @@ fn event_rows_of(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) 
     let cw = code_width(width);
     let at = rows.len();
     if crate::toolrow::row_mode(td) {
-        // BISE-223: a running call in main is one row (pulse, time)
+        // BISE-223: a running call is one row (pulse, time)
         rows.push(crate::toolrow::row_line(td, tick, cw));
         return EventRows {
             width: width as u16,
@@ -834,12 +834,8 @@ pub(crate) fn move_anchor(
 /// A tool has something behind its `▸`: an output, or an edit's diff.
 fn tool_discloses(td: &ToolData) -> bool {
     if crate::toolbox::is_boxed(td) {
-        // BISE-223: in main, a call's row opens into its box
-        if main_feed() {
-            return true;
-        }
-        // a hidden box (BISE-110) opens like a fold: ctrl+o shows it
-        return td.quiet || crate::toolbox::box_folds(td);
+        // BISE-223: a call's row opens into its box (every view)
+        return true;
     }
     td.result.as_ref().is_some_and(|(_, r)| !r.trim().is_empty())
         || (td.name.as_deref() == Some("apply_patch") && td.code.is_some())
@@ -916,7 +912,7 @@ fn toggle_own(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize) -> b
         | Ev::AgentMsg { open, .. }
         | Ev::Answered { open, .. }
         | Ev::Compacted { open, .. } => *open = !*open,
-        Ev::Tool(td) if main_feed() && crate::toolbox::is_boxed(td) => {
+        Ev::Tool(td) if crate::toolbox::is_boxed(td) => {
             // BISE-223: the row opens into its box (15 rows), a box that
             // hides lines opens whole, then back to the row
             if !td.opened {
@@ -1209,7 +1205,7 @@ fn own_open(ev: &Ev) -> Option<bool> {
         | Ev::Answered { open, .. }
         | Ev::Compacted { open, .. } => Some(*open),
         // a row, or an open box that still hides lines, is closed
-        Ev::Tool(td) if main_feed() && crate::toolbox::is_boxed(td) => {
+        Ev::Tool(td) if crate::toolbox::is_boxed(td) => {
             Some(td.opened && (td.expanded || !crate::toolbox::box_folds(td)))
         }
         Ev::Tool(td) => Some(td.expanded),
@@ -1239,21 +1235,19 @@ pub(crate) fn anything_closed(events: &[Ev]) -> bool {
 
 /// Open (or close) everything that discloses, folds included.
 pub(crate) fn set_everything(events: &mut [Ev], cache: &mut [Option<EventRows>], open: bool) {
-    // BISE-223: in main, every call opens whole (its fold too), or
-    // every call is a row again
-    if main_feed() {
-        let mut changed = false;
-        for e in events.iter_mut() {
-            if let Ev::Tool(td) = e {
-                if crate::toolbox::is_boxed(td) && (td.opened != open || td.expanded != open || td.fold_open != open) {
-                    (td.opened, td.expanded, td.fold_open) = (open, open, open);
-                    changed = true;
-                }
+    // BISE-223: every call opens whole (its fold too), or every call is
+    // a row again
+    let mut changed = false;
+    for e in events.iter_mut() {
+        if let Ev::Tool(td) = e {
+            if crate::toolbox::is_boxed(td) && (td.opened != open || td.expanded != open || td.fold_open != open) {
+                (td.opened, td.expanded, td.fold_open) = (open, open, open);
+                changed = true;
             }
         }
-        if changed {
-            forget(cache, 0..=cache.len().saturating_sub(1));
-        }
+    }
+    if changed {
+        forget(cache, 0..=cache.len().saturating_sub(1));
     }
     for i in 0..events.len() {
         if is_l3(&events[i]) && fold_open(&events[i]) != open && folded_run(events, i, false) == Some(i) {
@@ -1314,7 +1308,7 @@ pub(crate) fn mark_you(events: &mut [Ev], cache: &mut [Option<EventRows>], text:
     false
 }
 
-// ---- main's tool rows: the `▸ n commands` fold (BISE-223) ----
+// ---- tool rows: the `▸ n commands` fold (BISE-223) ----
 
 /// The work a fold of calls holds: the calls, their sub-calls, the
 /// thinking between them.
@@ -1369,11 +1363,11 @@ fn done_call(ev: &Ev) -> Option<&ToolData> {
     }
 }
 
-/// The fold of the run that holds `i`, in main, when it has
+/// The fold of the run that holds `i`, in any view, when it has
 /// [`crate::toolrow::FOLD_TOOLS`] done calls or more. Failed and running
 /// calls keep their own rows; nothing moves.
 pub(crate) fn tool_fold(events: &[Ev], i: usize, debug: bool) -> Option<ToolFold> {
-    if !main_feed() || !events.get(i).is_some_and(is_work) {
+    if !events.get(i).is_some_and(is_work) {
         return None;
     }
     let (a, b) = work_run(events, i, debug);

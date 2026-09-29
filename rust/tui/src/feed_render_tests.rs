@@ -474,6 +474,9 @@ fn measure_feed() -> Vec<Ev> {
         format!("tool_code #3 : {}", wire_encode(&format!("cd rust\n{}", long_line))),
         "  obs: tool_finished #3 ok".to_string(),
     ]);
+    // the script's measure: the call opened into its box
+    let mut tool = tool;
+    tool.opened = true;
     vec![
         Ev::You(prose.clone(), Mark::Read),
         Ev::Assistant(prose.clone()),
@@ -694,7 +697,8 @@ fn mockup_turn(open: bool) -> Vec<Ev> {
     let mut p = tool_with(3, "apply_patch", Some(patch), Some((true, "Done!")), true);
     for td in [&mut b, &mut t, &mut p] {
         td.elapsed = Some(String::new());
-        td.expanded = open;
+        // ctrl+o opens a call's row into its box (BISE-223)
+        (td.expanded, td.opened) = (open, open);
     }
     let brief = "# Task `auth-fix`\n\nthe login breaks on safari 18. reproduce with playwright, fix it,\nkeep the chrome path unchanged. report with the test output.";
     vec![
@@ -720,16 +724,23 @@ fn unbox(r: &str) -> String {
 
 #[test]
 fn inside_an_agent_matches_the_mockup() {
-    let rows: Vec<String> = feed_text(&mockup_turn(false), 100).iter().map(|r| unbox(r)).collect();
+    // a call's row pads its state to the right edge: one space here
+    let squash = |r: &str| {
+        let mut r = r.to_string();
+        while r.contains("  ") {
+            r = r.replace("  ", " ");
+        }
+        r
+    };
+    let rows: Vec<String> = feed_text(&mockup_turn(false), 100).iter().map(|r| squash(&unbox(r))).collect();
     println!("{}", rows.join("\n"));
     let want = [
         " ◇ brief ▸",
         " ∴ thought for 14s ▸",
-        "╭─ $ bash ✓",
-        "│ npx playwright test login --project=webkit --reporter=line",
-        "╭─ ƒ typescript ✓",
-        "│ async function main() {",
-        "│ ↳ github.search_issues ✓",
+        // BISE-223: an agent's calls are rows too (no description: the
+        // script's first line)
+        " $ cd web ✓",
+        " ƒ async function main() { ✓",
         " ± edit web/src/auth/session.ts ✓ +2 −1 ▸",
         " found it: safari drops SameSite=None cookies without Secure. added secure: true; the",
     ];
@@ -1562,15 +1573,47 @@ fn a_click_opens_one_box_and_ctrl_o_opens_every_box_then_back_to_rows() {
 }
 
 #[test]
-fn an_agent_view_keeps_the_boxes_with_the_description_as_title() {
+fn an_agent_view_shows_rows_and_ctrl_o_opens_the_boxes() {
+    // BISE-223: an agent's view draws its calls as rows, as main does
     crate::render::set_main_feed(false);
-    let lines = call_lines(1, "run_typescript", "{\"code\":\"return 1\"}", Some("looking for timeouts"), Some((true, "1")));
+    let mut lines = call_lines(1, "run_typescript", "{\"code\":\"return 1\"}", Some("looking for timeouts"), Some((true, "1")));
+    lines.extend(call_lines(2, "bash", "ls", None, Some((true, "a"))));
+    let (mut events, mut cache) = feed_of(&lines);
+    let rows = main_text(&events, 60);
+    assert_eq!(
+        rows,
+        vec![
+            " ƒ looking for timeouts                               ✓ T",
+            " $ ls                                                 ✓ T",
+        ]
+    );
+    // ctrl+o: every box, the description as title (no description: the
+    // kind's word); again: every row
+    assert!(anything_closed(&events));
+    set_everything(&mut events, &mut cache, true);
+    let all = main_text(&events, 60);
+    assert!(all[0].starts_with("╭─ ƒ looking for timeouts ✓ T ─"), "{all:#?}");
+    assert!(all.iter().any(|r| r.starts_with("╭─ $ bash ✓ T ─")), "{all:#?}");
+    assert!(!anything_closed(&events));
+    set_everything(&mut events, &mut cache, false);
+    assert_eq!(main_text(&events, 60), rows);
+    // a click (space) opens one
+    assert!(toggle_event(&mut events, &mut cache, 0));
+    let one = main_text(&events, 60);
+    assert!(one[0].starts_with("╭─ ƒ looking for timeouts ✓ T ─"), "{one:#?}");
+    assert_eq!(one.last().unwrap(), &rows[1]);
+}
+
+#[test]
+fn an_agent_view_folds_four_done_calls() {
+    crate::render::set_main_feed(false);
+    let mut lines = Vec::new();
+    for n in 1..=4 {
+        lines.extend(call_lines(n, "bash", "true", Some(&format!("step {n}")), Some((true, "ok"))));
+    }
     let (events, _) = feed_of(&lines);
     let rows = main_text(&events, 60);
-    assert!(rows[0].starts_with("╭─ ƒ looking for timeouts ✓ T ─"), "{rows:#?}");
-    // no description: the kind's word, as before
-    let (events, _) = feed_of(&call_lines(2, "bash", "ls", None, Some((true, "a"))));
-    assert!(main_text(&events, 60)[0].starts_with("╭─ $ bash ✓ T ─"));
+    assert_eq!(rows, vec![" $ ▸ 4 commands · step 1                              ✓ T"], "{rows:#?}");
 }
 
 #[test]
