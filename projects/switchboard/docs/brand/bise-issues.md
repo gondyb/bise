@@ -1842,11 +1842,11 @@ Index:
 
 ### BISE-99 · the key bar and the tip
 
-- **status:** code done, waiting for the row (BISE-98) · **owner:** bise-k-keys · **commits:** a8ffe09
+- **status:** done · **owner:** bise-k-keys · **commits:** a8ffe09, 16886fa
 - **track:** K · **owns:** a pure `keybar` function (keys + tip → styled line for a given width and mode), `hints.rs` / `help.rs` for the tip texts; F places the row (BISE-98).
 - **spec:** book §8 "The frame" (key bar line), §13 "The composer pane".
 - **what:** the key bar from column 3: keys in text color, what they do dim, 3 spaces between pairs; default `⏎ send   @ agent   ⌥0-9 switch   / commands   ? help`, per-mode sets as today; on the right, ending at F−4, a dim tip, one per session (`tip · ctrl+o opens everything folded`), hidden while you type or when fewer than 3 columns separate it from the keys. ASCII forms per §6.
-- **notes (K):** a8ffe09: new `rust/tui/src/keybar.rs`. Agreed with bise-f-feed: F calls `keybar::line(app, width) -> Line<'static>` on its row (width = the row, x = column 3, last column F−4); the pure part is `keybar::render(mode, width, typing, tip)`. `keybar::Mode` covers every set of the old hint row (terminal panel, voice, `@` file popup, images, drop ask, confirm, card full, selected, archived, steer, default, and the two sets without switchboard). `sb::key_mode` picks the switchboard modes in the order of `sb::hint`. Pairs that don't fit are dropped from the end. The tip shows in the default mode only, while the composer is empty, with 3 free columns. It is one of `help::TIPS`, chosen once per run; a test checks that each tip starts with a key of the help. ASCII: `enter`, `alt+0-9`, `left` / `right` / `up/down`, `...`, `tip: `. The module is `#[allow(dead_code)]` until BISE-98 calls it. **Left:** once F has switched the row (and deleted `ui::hint_text`), I delete `sb::hint`, drop the allow, run `run_all.sh` and recapture the qa/ shots.
+- **notes (K):** a8ffe09: new `rust/tui/src/keybar.rs`. Agreed with bise-f-feed: F calls `keybar::line(app, width) -> Line<'static>` on its row (width = the row, x = column 3, last column F−4); the pure part is `keybar::render(mode, width, typing, tip)`. `keybar::Mode` covers every set of the old hint row (terminal panel, voice, `@` file popup, images, drop ask, confirm, card full, selected, archived, steer, default, and the two sets without switchboard). `sb::key_mode` picks the switchboard modes in the order of `sb::hint`. Pairs that don't fit are dropped from the end. The tip shows in the default mode only, while the composer is empty, with 3 free columns. It is one of `help::TIPS`, chosen once per run; a test checks that each tip starts with a key of the help. ASCII: `enter`, `alt+0-9`, `left` / `right` / `up/down`, `...`, `tip: `. The module is `#[allow(dead_code)]` until BISE-98 calls it. 16886fa (after F's a455133 placed the row): `sb::hint`, `term::HINT` and `attach::STRIP_HINT` deleted, the allow dropped, the tests read `sb::key_mode`. Gates on 1daa2f7 + 16886fa: build, `test -p bend-tui` (317), clippy `-D warnings`; `run_all.sh` on d744bee + the same patch: PROOFS, e2e and every tmux test green but `tui_images_tmux`, a race of the test that is not from this patch (it reads the screen once `▣ red-blue.png` shows, and the fake provider's `ack:` echo with the raw `<image name=…>` marker may already be drawn); F's BISE-88 test patch covers it. QA: no capture of my own (16886fa draws nothing new): bise-c-cards' recapture on 1daa2f7 (dark, light, ascii) shows the key bar and the tip.
 
 ### BISE-97 · the global layout
 
@@ -1887,3 +1887,49 @@ Index:
   `tui_version_tmux` fails when HEAD is already built in the shared
   `~/.local/state/switchboard/versions` (it switches with no "building"
   line): run it with `XDG_STATE_HOME` set to a temp dir.
+
+### BISE-95 · level 2 reads bigger (emphasis)
+
+- **status:** done · **owner:** bise-c-cards · **commits:** 1daa2f7
+  (shots: a qa/ commit after this one)
+- **track:** C · **owns:** `render.rs` l2_lines, answered_lines,
+  report_lines, thinking_lines, the style of the `Ev::Assistant` arms
+  (their widths and wrapping are bise-f-feed's, BISE-97); `feed.rs`
+  wants_gap_before, new is_l2
+- **spec:** book §9 "Emphasis" (marketing 82f1742);
+  site/book/screens.html "what's for you reads bigger"
+- **notes:**
+  - The speaker of level 2 is bold: main's `:*` in accent bold (replies
+    in main's feed, `:* …` messages, `:* docs asked … i answered …`);
+    `@ name to you:` in text bold, the body plain text; a report's
+    `name:` bold when done, failed or blocked (a progress line stays dim
+    and not bold).
+  - A blank row above and below every level-2 block (reply, answered,
+    message to you, report), even between two of them and after the
+    reply's thinking `∴` (it used to stick to it). The lines of a
+    level-3 run still sit together.
+  - Already dim before this issue, now tested: thinking `∴`, level 3.
+    The one-line tool calls were made dim by bise-k-keys in BISE-96.
+    Cards (level 1) unchanged.
+  - Differs from the mockup: the book makes `@ name to you:` bold
+    including the `@`; the mockup leaves the `@` plain. The book wins
+    (text color either way). The mockup's `♡ auth-fix is done` line in
+    "a wide terminal" is not bold; the book's rule (the speaker of level
+    2 is bold) makes `auth-fix:` bold.
+  - **Tests:** `render::emphasis_tests` (the speaker bold, the agent's
+    own work dim, the blank rows around level 2).
+  - **Gates:** on 4b98b7c + the patch: build, `cargo test -p bend-tui`,
+    clippy `--workspace --all-targets -D warnings`, `run_all.sh` green
+    (`tui_term_tmux` failed once: the shell's printf output was not
+    there yet when it checked; it passed alone). Rebased cleanly on
+    d744bee (BISE-98): build, `cargo test -p bend-tui` (317), clippy
+    green on that exact tree.
+  - **Shots:** `qa/capture.py` dark, light, ascii on 1daa2f7 (the new
+    frame of BISE-98 and this emphasis), temp HOME and XDG_STATE_HOME.
+
+### BISE-100 · done is a pink check, not a heart
+
+- **status:** todo · **owner:** bise-k-keys · **commits:** —
+- **track:** K · **owns:** `theme.rs` (the done glyph), its uses in `sb/panel.rs`, `render.rs`, `feed.rs`, `sb/cards.rs`, the tests that read `♡`
+- **spec:** book §6 (agent status table), §8, §9, §11, §17 (user decision, Gabriel 2026-09-29: the `♡` was not clear).
+- **what:** every "done" in the product shows `✓` in accent (pink) instead of `♡`: the panel rows, the header / frame counts (`✓ 4 done`), reports (`✓ bench is done …`), `✓ turn done` when built. ASCII stays `*`. Your read marks (`✓` faint, `✓✓` accent, at the end of your lines) are unchanged: the place tells them apart. `♡` stays only outside the product (site, landing).
