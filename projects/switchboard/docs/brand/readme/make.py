@@ -161,13 +161,13 @@ def team(c):
     W, H, T = 960, 300, 10
     tl = TL(T); o = [f'<rect width="{W}" height="{H}" rx="14" fill="{c["bg"]}" stroke="{c["line"]}"/>']
     o.append(f'<text x="60" y="56" font-size="16" font-weight="700" fill="{c["text"]}">you</text>'
-             f'<text x="140" y="56" font-size="14" fill="{c["dim"]}">"add dark mode. and the api client moves to v3."</text>'
+             f'<text x="140" y="56" font-size="14" fill="{c["dim"]}">"dark mode please. also the csv export crashes on emoji 😭"</text>'
              f'<path d="M72 68 V104" stroke="{c["faint"]}"/>'
              f'<text x="60" y="126" font-size="16" font-weight="700" fill="{c["text"]}"><tspan fill="{c["acc"]}">:*</tspan> main</text>'
              f'<text x="190" y="126" font-size="14" fill="{c["dim"]}">always listening. knows everything going on in the repo.</text>'
              f'<path d="M72 138 V262 M72 166 H96 M72 196 H96 M72 226 H96 M72 256 H96" stroke="{c["faint"]}" fill="none"/>')
     jobs = [("theme", "the dark colors, in one place"), ("toggle", "the switch in settings, remembered per user"),
-            ("docs", "new screenshots, a changelog line"), ("api-v3", "the client upgrade. unrelated, so it runs too.")]
+            ("docs", "new screenshots, a changelog line"), ("emoji-csv", "the export fix. unrelated, so it runs too.")]
     o.append('<circle r="4" fill="%s"><animateMotion dur="%ss" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;.12;1" path="M72 70 V110"/></circle>' % (c["acc"], T))
     for i, (n, d) in enumerate(jobs):
         yy = 170 + i * 30; k = tl.show(1.4 + i * 0.5)
