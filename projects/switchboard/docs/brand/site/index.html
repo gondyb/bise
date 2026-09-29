@@ -95,14 +95,15 @@
   .panel .row { display:flex; justify-content:space-between; white-space:nowrap; animation:enter .5s ease-out; }
   /* the composer pane, like the product: a divider with "you → main" and the state, a blank row,
      a raised block (1 tinted row above and below the text, the bar on its left), the key bar under it */
-  .foot { border-top:1px solid var(--faint); position:relative; padding:1lh 3ch 10px; }
+  .foot { border-top:1px solid var(--faint); position:relative; padding:1lh 3ch 12px; background:var(--raised); }
   .status { position:absolute; top:-.8lh; left:2ch; right:2ch; display:flex; justify-content:space-between; color:var(--dim); }
-  .status > span { background:var(--soft); padding:0 1ch; }
-  .composer, .mcomp { background:var(--raised); border-left:1px solid var(--faint); padding:1lh 2ch 1lh calc(2ch - 1px); white-space:pre; overflow:hidden; max-width:91ch; }
+  .status > span { background:var(--soft); padding:0 1ch; } .status > span:empty { display:none; }
+  .composer, .mcomp { border-left:1px solid var(--faint); padding:0 2ch 0 calc(2ch - 1px); white-space:pre; overflow:hidden; max-width:91ch; min-height:2lh; }
+  .mcomp { background:var(--raised); padding:.6lh 2ch .6lh calc(2ch - 1px); min-height:0; }
   .composer.typing, .mcomp.typing { border-left-color:var(--acc); }
   .composer .cur { background:var(--acc); }
   .ph { color:var(--dim); }
-  .keys { color:var(--dim); font-size:.92em; margin-top:2px; white-space:nowrap; overflow:hidden; }
+  .keys { color:var(--dim); font-size:.92em; margin-top:1lh; white-space:nowrap; overflow:hidden; }
   .keys .k { color:var(--text); } .keys span + span { margin-left:3ch; }
   .pulse { display:inline-block; animation:pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity:.35 } }

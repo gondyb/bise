@@ -22,11 +22,11 @@
   .panel { padding:1lh 2ch 0 2ch; overflow:hidden; border-left:1px solid var(--faint); }
   .row { display:flex; justify-content:space-between; white-space:nowrap; transition:background .4s; }
   .row.new { background:#2e2926; }
-  .foot { border-top:1px solid var(--faint); position:relative; padding:1lh 2ch 0 2ch; }
+  .foot { border-top:1px solid var(--faint); position:relative; padding:1lh 2ch .15lh 2ch; background:#1f1c1a; border-radius:0 0 6px 6px; }
   .flabel { position:absolute; top:-.55lh; left:1ch; right:1ch; display:flex; justify-content:space-between; color:var(--dim); }
-  .composer { display:flex; background:#1f1c1a; border-left:1px solid var(--faint); padding:1lh 2ch 1lh calc(2ch - 1px); min-height:4lh; max-width:91ch; box-sizing:border-box; align-items:flex-start; }
+  .composer { display:flex; border-left:1px solid var(--faint); padding:0 2ch 0 calc(2ch - 1px); min-height:2lh; max-width:91ch; box-sizing:border-box; align-items:flex-start; }
   .composer.typing { border-left-color:var(--acc); }
-  .hintrow { display:flex; justify-content:space-between; color:var(--dim); margin:0 0 .1lh; }
+  .hintrow { display:flex; justify-content:space-between; color:var(--dim); margin:1lh 0 0; }
   .hintrow .k { color:var(--text); } .hintrow .ks > span + span { margin-left:3ch; }
   .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)} .err{color:var(--err)}
   .b { margin-top:1.6em; margin-top:1lh; } .who { display:inline-block; width:3ch; }

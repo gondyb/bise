@@ -113,12 +113,12 @@
   .spanel { border-left:1px solid var(--line); padding:0 2ch 12px; }
   .prow { display:flex; justify-content:space-between; white-space:nowrap; }
   /* the composer pane (§14): a divider with "you → main" and the state, a blank row, the raised block
-     (dark #1f1c1a, light #f4f0e8; 1 tinted row above and below the text, the bar on its left), the key bar */
-  .sfoot { border-top:1px solid var(--line); padding:1lh 2ch 10px; position:relative; }
+     the whole pane under the divider is raised (dark #1f1c1a, light #f4f0e8): 1 row, the text behind its bar, 1 row, the key bar */
+  .sfoot { border-top:1px solid var(--line); padding:1lh 2ch 6px; position:relative; background:var(--raised); border-radius:0 0 8px 8px; }
   .sfoot .lbl { position:absolute; top:-.8lh; left:1ch; right:1ch; display:flex; justify-content:space-between; }
   .sfoot .lbl > span { background:var(--bg2); padding:0 1ch; }
-  .scomp { background:var(--raised); border-left:1px solid var(--faint); padding:1lh 2ch 1lh calc(2ch - 1px); min-height:4lh; max-width:91ch; }
-  .skeys { color:var(--dim); } .skeys .k { color:var(--text); } .skeys span + span { margin-left:3ch; }
+  .scomp { border-left:1px solid var(--faint); padding:0 2ch 0 calc(2ch - 1px); min-height:2lh; max-width:91ch; }
+  .skeys { color:var(--dim); margin-top:1lh; } .skeys .k { color:var(--text); } .skeys span + span { margin-left:3ch; }
   .l3 .nm { display:inline-block; width:10ch; white-space:nowrap; }
   /* every symbol sits in one fixed cell: glyphs missing from the web font
      are drawn by a fallback font whose width is not 1ch */
@@ -344,7 +344,7 @@
     <tr><td class="dim">feed</td><td>the conversation. prose ≤ 88 columns, in a 91-column reading column; extra width goes to the margin.</td></tr>
     <tr><td class="dim">agents</td><td>one row each: number, status, name, age and context. <code>⌥ + number</code> jumps to it; numbers never change while an agent lives. hidden under 70 columns.</td></tr>
     <tr><td class="dim">divider</td><td>who you're talking to (<code>you → main</code>, the name in pink) and, on the right, what they're doing.</td></tr>
-    <tr><td class="dim">composer</td><td>a slightly raised block: one tinted row above your text, one below, the thin bar on its left (faint while empty, pink once you type). at least 2 rows; it grows with you.</td></tr>
+    <tr><td class="dim">composer</td><td>everything under the divider is slightly raised, like the bottom of an app. your text sits behind a thin bar (faint while empty, pink once you type), at least 2 rows; it grows with you.</td></tr>
     <tr><td class="dim">key bar</td><td>right under the composer: keys in the text color, what they do dim, a tip on the right when you're idle. in an agent's view it starts with <code>esc back to main</code>.</td></tr>
   </table>
   <h3>the first run</h3>

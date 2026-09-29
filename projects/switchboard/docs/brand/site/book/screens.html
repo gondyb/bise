@@ -44,18 +44,18 @@
   .row.sel { background:#262220; margin:0 -1ch; padding:0 1ch; }
   /* the composer pane: the divider, 1 blank row, the text (a bar │ at column 3, faint when empty,
      accent while you type; text at column 5; at least 2 rows), 1 blank row, the key bar, the frame */
-  .foot { border-top:1px solid var(--faint); position:relative; padding:1lh 2ch 0 2ch; }
+  .foot { border-top:1px solid var(--faint); position:relative; padding:1lh 2ch .15lh 2ch; background:var(--raised); border-radius:0 0 6px 6px; }
   .flabel { position:absolute; top:-.55lh; left:1ch; right:1ch; display:flex; justify-content:space-between; }
   .flabel > span { background:var(--bg); padding:0 1ch; }
   .status { display:none; }
   .composer { display:flex; justify-content:space-between; margin-top:4px; }
   /* the composer is raised: a tinted block (dark #1f1c1a, light #f4f0e8) from column 3 to F−4, the bar │ in
      its first column, 2 tinted columns before the text and 2 after, 1 tinted row above and below the text */
-  .cbox { background:var(--raised); border-left:1px solid var(--faint); padding:1lh 2ch 1lh calc(2ch - 1px); max-width:91ch; box-sizing:border-box; }
+  .cbox { border-left:1px solid var(--faint); padding:0 2ch 0 calc(2ch - 1px); max-width:91ch; box-sizing:border-box; }
   .cbox.typing { border-left-color:var(--acc); }
   .cbox .ctext { min-height:2lh; white-space:pre-wrap; }
   .ph { color:var(--dim); }
-  .hintrow { display:flex; justify-content:space-between; color:var(--dim); margin-top:0; min-height:1lh; }
+  .hintrow { display:flex; justify-content:space-between; color:var(--dim); margin-top:1lh; min-height:1lh; }
   .hintrow .k { color:var(--text); }
   .hintrow .ks span + span { margin-left:3ch; }
   .queue { margin-top:4px; }
