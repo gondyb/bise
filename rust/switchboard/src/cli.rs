@@ -133,11 +133,29 @@ pub fn usage() -> String {
             .join("\n")
     };
     format!(
-        "{}\ntasks only:\n{}\nmain only:\n{}\nA text argument `-` reads the text from stdin; <id> is a message id (m_<n>).",
+        "{}\ntasks only:\n{}\nmain only:\n{}\ntools:
+sb worktree <path>|none   (gate.sh new/done) tell the hub you work in that git worktree, or no longer
+A text argument `-` reads the text from stdin; <id> is a message id (m_<n>).",
         line(Who::Everyone),
         line(Who::Task),
         line(Who::Main)
     )
+}
+
+/// `sb <cmd> --help` (or `-h`): the lines of `usage` for that command,
+/// else the whole usage (qa-explore L: `--help` was an unknown option).
+pub fn help_for(cmd: &str) -> String {
+    let u = usage();
+    let pre = format!("sb {}", cmd);
+    let mine: Vec<&str> = u
+        .lines()
+        .filter(|l| l.split(" | ").any(|p| p == pre || p.starts_with(&format!("{} ", pre))))
+        .collect();
+    if mine.is_empty() {
+        u
+    } else {
+        mine.join("\n")
+    }
 }
 
 /// Split flags from positional words. `flags` take a value, `switches`
@@ -527,6 +545,14 @@ pub fn main(args: &[String]) -> i32 {
         a.extend(args.get(1).cloned());
         return version(&a);
     }
+    if let Some(c) = args.first().filter(|_| args.iter().any(|a| a == "--help" || a == "-h")) {
+        println!("{}", help_for(c));
+        return 0;
+    }
+    if matches!(args.first().map(String::as_str), Some("help")) {
+        println!("{}", usage());
+        return 0;
+    }
     let req = match build(args) {
         Ok(r) => r,
         Err(e) => {
@@ -649,6 +675,19 @@ mod tests {
         let q = build(&a(&["send", "docs", "later", "--mode", "queued"])).unwrap();
         assert_eq!(q["mode"], "queued");
         assert!(build(&a(&["send", "docs", "x", "--mode", "soon"])).is_err());
+    }
+
+    /// qa-explore L: `sb <cmd> --help` shows its usage; `sb` lists worktree.
+    #[test]
+    fn help_is_per_command_and_complete() {
+        assert!(usage().contains("sb worktree <path>|none"));
+        let h = help_for("spawn");
+        assert!(h.starts_with("sb spawn <name> --objective") && !h.contains("sb send"), "{h}");
+        assert!(help_for("restore").contains("sb isolate <task>"), "the shared line");
+        assert!(help_for("worktree").starts_with("sb worktree"));
+        assert_eq!(help_for("nosuch"), usage());
+        assert_eq!(main(&a(&["spawn", "--help"])), 0);
+        assert_eq!(main(&a(&["spawn", "-h"])), 0);
     }
 
     /// qa-explore B: `sb worktree` refused a relative path only.
