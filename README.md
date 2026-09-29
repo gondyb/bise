@@ -23,7 +23,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/demo-dark.svg">
-    <img src="projects/switchboard/docs/brand/readme/demo-light.svg" width="860" alt="a bise session: you talk to main, three agents work, two talk to each other, one asks you, two finish.">
+    <img src="projects/switchboard/docs/brand/readme/demo-light.svg" width="860" alt="a bise session: five ideas in a row to main, five agents start, they sync, you change your mind, one card asks you, everything ships.">
   </picture>
 </p>
 
