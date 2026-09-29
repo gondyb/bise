@@ -58,6 +58,8 @@ pub struct Writer {
     size: u64,
     /// rotation threshold (SEGMENT_MAX; smaller in tests)
     pub segment_max: u64,
+    /// secrets replaced in every event before it is written (BISE-193)
+    pub redactor: Option<crate::redact::Redactor>,
 }
 
 fn now_iso() -> String {
@@ -130,7 +132,7 @@ impl Writer {
                 let _ = d.sync_all();
             }
         }
-        let mut w = Writer { dir: dir.into(), blobs: blobs.into(), file, _lock: lock, seq: 0, size: 0, segment_max: SEGMENT_MAX };
+        let mut w = Writer { dir: dir.into(), blobs: blobs.into(), file, _lock: lock, seq: 0, size: 0, segment_max: SEGMENT_MAX, redactor: None };
         w.append("session_start", start, None)?;
         w.append("process_opened", json!({"writer": writer, "pid": std::process::id(), "resume": false}), None)?;
         Ok(w)
@@ -159,7 +161,7 @@ impl Writer {
         let file = open_append(&path)?;
         let size = file.metadata()?.len();
         let seq = log.last_seq();
-        Ok((Writer { dir: dir.into(), blobs: blobs.into(), file, _lock: lock, seq, size, segment_max: SEGMENT_MAX }, log))
+        Ok((Writer { dir: dir.into(), blobs: blobs.into(), file, _lock: lock, seq, size, segment_max: SEGMENT_MAX, redactor: None }, log))
     }
 
     pub fn dir(&self) -> &Path {
@@ -176,7 +178,10 @@ impl Writer {
     }
 
     /// Append one event; its seq. `must` comes from the type (§4).
-    pub fn append(&mut self, typ: &str, data: Value, turn: Option<u64>) -> std::io::Result<u64> {
+    pub fn append(&mut self, typ: &str, mut data: Value, turn: Option<u64>) -> std::io::Result<u64> {
+        if let Some(r) = &self.redactor {
+            r.value(&mut data);
+        }
         let data = self.fit(data)?;
         let seq = self.seq + 1;
         let mut o = Map::new();
