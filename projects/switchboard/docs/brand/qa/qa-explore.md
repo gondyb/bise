@@ -34,11 +34,11 @@
 | G | low | `bise doctor` ignores the `[voice]` config (unknown provider, config warnings) |
 | L | low | `sb spawn --help`/`-h` gives an error, and `sb` usage does not list `sb worktree` |
 | P | low | `ctrl+r` does nothing, with no hint, when voice mode is off |
-| E | cosmetic | `BISE_ASCII=1`: the card box, the card bar and the composer rail stay Unicode |
-| F | cosmetic | The header ends with a lone ` · ` when the count segment is empty |
-| K | cosmetic | The `✉︎` chip row is 1 column off in tmux (the right frame moves) |
-| M | cosmetic | The panel gives a dropped agent's number to the next agent, listed last (3,5,6,7,4) |
-| N | cosmetic | In an agent's view the divider shows two "working" timers that disagree |
+| E | cosmetic | `BISE_ASCII=1`: the card box, the card bar and the composer rail stay Unicode (**fixed in 10784fc**) |
+| F | cosmetic | The header ends with a lone ` · ` when the count segment is empty (**fixed in ff6e20f**) |
+| K | cosmetic | The `✉︎` chip row is 1 column off in tmux (the right frame moves) (**not a bise bug**: tmux's grid is right, see K) |
+| M | cosmetic | The panel gives a dropped agent's number to the next agent, listed last (3,5,6,7,4) (**fixed in 6265aad**) |
+| N | cosmetic | In an agent's view the divider shows two "working" timers that disagree (**fixed in e13e7ff**) |
 | D | cosmetic | `bise models <no match>` prints nothing to say that no model matches |
 
 Not a bise bug, noted for the prompts: in the live pass, main wrote
@@ -211,7 +211,11 @@ relevant parts).
 - **Expected:** a one-line hint ("voice mode is off: /voice turns it on").
 - **Suspect:** `rust/tui/src/voice*`.
 
-## E · ASCII mode: the card box and the rails stay Unicode
+## E · ASCII mode: the card box and the rails stay Unicode (fixed in 10784fc)
+
+- **Fix:** `theme::asciify` draws every box-drawing cell like the frame: `-`
+  and `|` for lines, `+` for corners and joins. Block elements stay. Book §6
+  updated.
 
 - **Severity:** cosmetic. Visual QA #12 is still partly open.
 - **Repro:** `BISE_ASCII=1 NO_COLOR=1`, `sb card "pick one\n1. alpha\n2. beta"`, ctrl+g.
@@ -228,7 +232,9 @@ relevant parts).
 - **Suspect:** the card box and composer rail drawing in `rust/tui/src`
   (render/cards/ui) do not go through the `theme.rs` ASCII table.
 
-## F · The header ends with a lone separator
+## F · The header ends with a lone separator (fixed in ff6e20f)
+
+- **Fix:** with only idle agents (no counts), the path ends the header.
 
 - **Severity:** cosmetic.
 - **Repro:** `/drop docs`, then `/restore docs` (only idle agents left).
@@ -238,7 +244,17 @@ relevant parts).
   agents yet"). The header does say "no agents yet" right after the drop.
 - **Suspect:** `chrome::share_room` / the header counts in `rust/tui/src/panel.rs` or `ui.rs`.
 
-## K · The `✉︎` chip row is 1 column off in tmux
+## K · The `✉︎` chip row is 1 column off in tmux (not a bise bug)
+
+- **Checked (bug-tui-polish):** same repro in tmux 3.5a at 120×40. The TUI
+  sends ` ✉︎ ` (U+2709 U+FE0E) and tmux puts it in 1 cell: the cursor
+  advances by 1 (`printf 'a✉︎' ; #{cursor_x}` = 2), and every row of
+  `capture-pane` is 120 cells when U+FE0E counts as 0 columns (the border is at
+  cell 119 on every row, the chip row included). But the chip row has 121
+  *code points*, so a reader that counts characters sees the border 1 to the
+  right. The rest of the row also moves in that view, the panel included. No change: the
+  TUI and tmux agree. Book §9 keeps its fallback (`@` if a terminal really
+  draws `✉︎` 2 wide).
 
 - **Severity:** cosmetic (it depends on the terminal).
 - **Repro:** any level-3 message (`sb send main hi` from a task), in tmux 120×40.
@@ -250,7 +266,10 @@ relevant parts).
   Use a glyph without a variation selector, or measure it the way the terminal
   does.
 
-## M · The panel reuses a dropped agent's number and lists it last
+## M · The panel reuses a dropped agent's number and lists it last (fixed in 6265aad)
+
+- **Fix:** the number stays the smallest free one (only 0-9 have keys), and
+  the rows go in number order, so `4` sits between `3` and `5`.
 
 - **Severity:** cosmetic.
 - **Repro:** agents 1–7, drop `wt1` (#4), spawn another.
@@ -260,7 +279,10 @@ relevant parts).
 - **Expected:** a new number (8), or rows kept in number order.
 - **Suspect:** the panel numbering (`rust/tui/src/panel.rs`).
 
-## N · In an agent's view, the divider shows two "working" timers
+## N · In an agent's view, the divider shows two "working" timers (fixed in e13e7ff)
+
+- **Fix:** while the agent works, the label alone says `working · 32s`; the
+  right side says the state and the moving turn age only for other states.
 
 - **Severity:** cosmetic.
 - **Repro:** a task that ran `sb status working --note …` and then a long
