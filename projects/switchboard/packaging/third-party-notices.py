@@ -85,7 +85,7 @@ MANUAL = [
              license="MIT-0", url="https://bend-lang.com (no LICENSE file: MIT-0 under the BendHub terms)", files=[]),
         dict(name="BendHub package 0x16458a2db4f36577294543ec2a6d420c (json)",
              license="MIT-0", url="https://bend-lang.com (no LICENSE file: MIT-0 under the BendHub terms)", files=[]),
-        dict(name="BendHub package 0x1f4d6c03caf955232d0b0dc6e6f36cf4 (json, vendored and patched as vendor/json.bend)",
+        dict(name="BendHub package 0x1f4d6c03caf955232d0b0dc6e6f36cf4 (json, vendored and patched as bend/vendor/json.bend)",
              license="MIT-0", url="https://bend-lang.com (no LICENSE file: MIT-0 under the BendHub terms)", files=[]),
     ]),
     ("bise: data built in", [

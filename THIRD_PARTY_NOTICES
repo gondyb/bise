@@ -590,7 +590,7 @@ Other components (section 3), by license:
       https://bend-lang.com (no LICENSE file: MIT-0 under the BendHub terms)
   BendHub package 0x16458a2db4f36577294543ec2a6d420c (json)  MIT-0
       https://bend-lang.com (no LICENSE file: MIT-0 under the BendHub terms)
-  BendHub package 0x1f4d6c03caf955232d0b0dc6e6f36cf4 (json, vendored and patched as vendor/json.bend)  MIT-0
+  BendHub package 0x1f4d6c03caf955232d0b0dc6e6f36cf4 (json, vendored and patched as bend/vendor/json.bend)  MIT-0
       https://bend-lang.com (no LICENSE file: MIT-0 under the BendHub terms)
 
    bise: data built in

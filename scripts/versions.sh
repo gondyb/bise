@@ -205,7 +205,7 @@ prune() {
 # list it is off), and its failure does not fail the build: the version
 # is built, the hub must switch to it
 prune_after_build() {
-  "$REPO/versions.sh" prune || say "prune failed (every version kept)"
+  "$REPO/scripts/versions.sh" prune || say "prune failed (every version kept)"
 }
 
 # (a version built before BISE-165 has bend-harness only: still valid)

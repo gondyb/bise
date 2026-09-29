@@ -22,9 +22,9 @@ user's `./run.sh --headless --continue`.
   s.close()
 
 CLI:
-  python3 bend_client.py --message "hello"
-  python3 bend_client.py --continue --message "go on"
-  python3 bend_client.py --message "..." --bg-after 3
+  python3 scripts/bend_client.py --message "hello"
+  python3 scripts/bend_client.py --continue --message "go on"
+  python3 scripts/bend_client.py --message "..." --bg-after 3
 
 The wire is single-line (newlines travel escaped as literal backslash-n
 in assistant text); last_assistant() unescapes them for reading.
