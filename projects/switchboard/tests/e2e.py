@@ -526,15 +526,18 @@ def t_origin_and_cursors(E, c):
     # a task reads the user message that led to its spawn, then searches
     # main's thread and gets positions
     c.wait_idle("main", "t1")
-    c.say('zorglub-origine [[bash: sb spawn orig --objective "{{bash: sb inspect main --origin > o.txt; sb inspect main --query zorglub-origine --limit 3 >> o.txt; echo done}}"]]')
+    c.say('zorglub-origine [[bash: sb spawn orig --objective "{{bash: sb inspect main --origin > o.txt; sb inspect main --query zorglub-origine --limit 3 >> o.txt; sb history zorglub-origine --role user >> o.txt; echo done}}"]]')
     c.wait_line("main", "new agent @orig")
     path = os.path.join(E.ws, "o.txt")
-    c.wait(lambda: os.path.exists(path) and "--around" in open(path).read(), 90, "orig wrote o.txt")
+    c.wait(lambda: os.path.exists(path) and "open a hit" in open(path).read(), 90, "orig wrote o.txt")
     out = open(path).read()
     check("origin of `orig` in main's thread" in out, "the origin header: " + out)
     check("user: zorglub-origine [[bash: sb spawn orig" in out, "the user message verbatim: " + out)
     check("new agent @orig" in out, "main's turn up to the spawn: " + out)
     check(re.search(r"^#\d+ \(", out, re.M) is not None, "entries carry positions: " + out)
+    # sb history finds it across the threads (BISE-233)
+    check(re.search(r"^1 hit for \"zorglub-origine\" --role user", out, re.M) is not None, "history header: " + out)
+    check(re.search(r"^main#\d+ · \d+s ago · user: zorglub-origine", out, re.M) is not None, "history hit: " + out)
     c.wait_idle("orig")
     os.remove(path)
 

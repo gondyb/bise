@@ -27,6 +27,7 @@ pub mod paths;
 pub mod prompts;
 pub mod role;
 pub mod router;
+pub mod search;
 pub mod sweep;
 pub mod switch;
 pub mod tools_env;

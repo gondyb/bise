@@ -1,4 +1,4 @@
-//! Reading an agent's thread from its transcript (`sb inspect`,
+//! Reading an agent's thread from its transcript (`sb inspect`;
 //! `sb history`): the conversation entries, stable positions, cursors
 //! and the origin of a task (RFC 0001 §7.5). Pure: the daemon reads the
 //! file, this module decides what to show.
@@ -290,30 +290,6 @@ pub fn render_page(agent: &str, query: &str, page: &Page, now: u64) -> String {
     out.join("\n")
 }
 
-/// `sb history "<query>"`: the last 30 lines of the caller's thread and
-/// of the journal holding every word of the query (case-insensitive; an
-/// empty query matches nothing).
-pub fn history(raw: &[Raw], journal: &str, query: &str) -> String {
-    let words = words_of(query);
-    let hit = |text: &str| !words.is_empty() && matches(text, &words);
-    let hits: Vec<String> = raw
-        .iter()
-        .filter_map(|(_, t, l)| readable(l).map(|r| (t, r)))
-        .filter(|(_, r)| hit(r))
-        .map(|(t, r)| format!("[{}] {}", t, clip(&r, 600)))
-        .chain(
-            journal
-                .lines()
-                .filter(|l| hit(l))
-                .map(|l| format!("[journal] {}", clip(l, 600))),
-        )
-        .collect();
-    if hits.is_empty() {
-        return "no match".to_string();
-    }
-    hits[hits.len().saturating_sub(30)..].join("\n")
-}
-
 /// The line where the hub recorded the spawn of `task` (by its first
 /// name), the one nearest `created_ms` when the name was reused.
 fn spawn_line(raw: &[Raw], task: &str, created_ms: u64) -> Option<(usize, bool)> {
@@ -590,13 +566,5 @@ mod tests {
                 spawn: 2
             })
         );
-    }
-
-    #[test]
-    fn history_matches_every_word_in_thread_and_journal() {
-        let raw = parse("1\tsb you : Fix the Login\n2\t  obs: assistant: login fixed\n3\tnoise login fix");
-        let h = history(&raw, "{\"fix\":\"login\"}\nother", "login FIX");
-        assert_eq!(h, "[1] user: Fix the Login\n[2] assistant: login fixed\n[journal] {\"fix\":\"login\"}");
-        assert_eq!(history(&raw, "", "   "), "no match");
     }
 }

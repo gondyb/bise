@@ -58,6 +58,16 @@ pub const COMMANDS: &[CmdDoc] = &[
         "read another agent's thread in bounded pages: each entry carries a position `#<n>`; a search returns positions, then page before/after/around one, or read one entry whole with `--at`.",
     ),
     cmd(
+        "sb history \"<words>\" [--agent <a>] [--role user|assistant|message|tool|hub] [--since 2w] [--until <date>] [--archived|--live] [--page <n>]",
+        Who::Everyone,
+        "search every agent's thread (main, tasks, archived tasks), from before any compaction too: ranked hits `<agent>#<pos>` with a one-line snippet, 10 per page. Use it when the user mentions past work (\"what you did last week on X\").",
+    ),
+    cmd(
+        "sb show <agent>#<pos> [--context <n>]",
+        Who::Everyone,
+        "open a hit: the entry with its neighbors, the commands to move earlier/later, and the agents, messages and commits it mentions.",
+    ),
+    cmd(
         "sb inspect main --origin",
         Who::Task,
         "the user message that led to your creation, verbatim, and main's turn up to the spawn.",
@@ -274,11 +284,65 @@ pub fn build(args: &[String]) -> Result<Value, String> {
     let mut req = Map::new();
     req.insert("cmd".into(), json!(cmd));
     match cmd.as_str() {
-        "list" | "tasks" | "history" => {
-            let (pos, _) = parse_args(rest, &[], &[])?;
-            if cmd == "history" {
-                req.insert("query".into(), json!(text_of(&pos)?));
+        "list" | "tasks" => {
+            parse_args(rest, &[], &[])?;
+        }
+        "history" => {
+            let (pos, o) = parse_args(
+                rest,
+                &["agent", "role", "since", "until", "limit", "page"],
+                &["archived", "live"],
+            )?;
+            req.insert("query".into(), json!(text_of(&pos)?));
+            let list = |k: &str| -> Vec<String> {
+                match o.get(k) {
+                    Some(Value::String(s)) => vec![s.clone()],
+                    Some(Value::Array(a)) => a.iter().filter_map(|x| x.as_str().map(String::from)).collect(),
+                    _ => Vec::new(),
+                }
+                .iter()
+                .flat_map(|s| s.split(',').map(|x| x.trim().trim_start_matches('@').to_string()))
+                .filter(|x| !x.is_empty())
+                .collect()
+            };
+            let roles = list("role");
+            if let Some(r) = roles.iter().find(|r| crate::search::Role::parse(r).is_none()) {
+                return Err(format!("unknown role: {} (user|assistant|message|tool|hub)", r));
             }
+            req.insert("agents".into(), json!(list("agent")));
+            req.insert("roles".into(), json!(roles));
+            let now = crate::util::now_ms();
+            for k in ["since", "until"] {
+                if o.contains_key(k) {
+                    req.insert(k.into(), json!(crate::search::parse_time(&str_of(&o, k), now)?));
+                }
+            }
+            if o.contains_key("archived") && o.contains_key("live") {
+                return Err("--archived and --live exclude each other".into());
+            }
+            let arch = if o.contains_key("archived") { "only" } else if o.contains_key("live") { "no" } else { "" };
+            req.insert("archived".into(), json!(arch));
+            for (k, d) in [("limit", crate::search::DEFAULT_HITS), ("page", 1)] {
+                let n = if o.contains_key(k) {
+                    str_of(&o, k).parse::<usize>().map_err(|_| format!("--{} expects a number", k))?
+                } else {
+                    d
+                };
+                req.insert(k.into(), json!(n));
+            }
+        }
+        "show" => {
+            let (pos, o) = parse_args(rest, &["context"], &[])?;
+            let usage = "usage: sb show <agent>#<pos> [--context <n>]";
+            let (agent, p) = crate::search::parse_ref(&pos).ok_or(usage)?;
+            req.insert("agent".into(), json!(agent));
+            req.insert("pos".into(), json!(p));
+            let n = if o.contains_key("context") {
+                str_of(&o, "context").parse::<usize>().map_err(|_| "--context expects a number".to_string())?
+            } else {
+                crate::search::DEFAULT_CONTEXT
+            };
+            req.insert("context".into(), json!(n));
         }
         "send" => {
             let (pos, o) = parse_args(rest, &["reply-to", "mode", "why"], &["expect-reply"])?;
@@ -452,7 +516,7 @@ pub fn render(cmd: &str, v: &Value) -> (bool, String) {
         return (false, e);
     }
     let text = match cmd {
-        "list" | "tasks" | "inspect" | "history" => s("text"),
+        "list" | "tasks" | "inspect" | "history" | "show" => s("text"),
         "send" => format!("sent {} to {} ({}, thread {})", s("message_id"), s("to"), s("delivery"), s("thread")),
         "ask" | "wait" => match s("type").as_str() {
             // `answers m_8`: the question's id (BISE-110: the TUI hides
@@ -575,7 +639,7 @@ pub fn main(args: &[String]) -> i32 {
     let timeout = req.get("timeout_s").and_then(|t| t.as_u64()).unwrap_or(0) + 30;
     let idempotent = matches!(
         cmd.as_str(),
-        "list" | "tasks" | "history" | "inspect" | "wait"
+        "list" | "tasks" | "history" | "show" | "inspect" | "wait"
     );
     match crate::client::request_retry(
         std::path::Path::new(&socket),

@@ -20,6 +20,7 @@ use crate::core::{AgentReq, ClientId, Effect, Hub, Input, Token};
 use crate::model::{Agent, Lifecycle, MAIN};
 use crate::paths::Paths;
 use crate::prompts;
+use crate::search;
 use crate::transcript::{self, Anchor};
 use crate::util::{now_ms, wire_escape};
 use crate::worktree::{Config, GitEnv};
@@ -156,6 +157,8 @@ struct Shell {
     buffers: BTreeMap<String, VecDeque<(usize, String)>>,
     /// The position of the last line of each feed's transcript.
     positions: BTreeMap<String, usize>,
+    /// Every thread, indexed for `sb history` (built at the first search).
+    search: search::Index,
     /// Wire-log offsets processed since the last flush to `wire.offset`.
     offsets: BTreeMap<String, u64>,
     /// True while `Input::Boot` runs: its spawns may adopt a REPL.
@@ -1115,6 +1118,61 @@ impl Shell {
         json!({"ok": true, "text": transcript::render_page(&name, &query, &page, now)})
     }
 
+    /// `sb history` and `sb show` (BISE-233): the index reads what the
+    /// transcripts got since the last search, then answers.
+    fn search(&mut self, cmd: &str, v: &Value) -> Value {
+        let t0 = std::time::Instant::now();
+        self.search.refresh(&self.opts.paths.state.join("agents"));
+        let who: Vec<search::Who> = self
+            .hub
+            .st
+            .agents
+            .values()
+            .map(|a| search::Who {
+                name: a.name.clone(),
+                dir: a.dir.clone(),
+                aliases: a.aliases.clone(),
+                archived: a.status() == crate::model::Status::Archived,
+            })
+            .collect();
+        let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let n = |k: &str, d: usize| v.get(k).and_then(|x| x.as_u64()).map_or(d, |x| x as usize);
+        let strs = |k: &str| -> Vec<String> {
+            v.get(k)
+                .and_then(|x| x.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .unwrap_or_default()
+        };
+        let r = if cmd == "show" {
+            self.search.show(&who, &s("agent"), n("pos", 0), n("context", search::DEFAULT_CONTEXT), now_ms())
+        } else {
+            let q = search::Query {
+                text: s("query"),
+                agents: strs("agents"),
+                roles: strs("roles").iter().filter_map(|r| search::Role::parse(r)).collect(),
+                since: v.get("since").and_then(|x| x.as_u64()),
+                until: v.get("until").and_then(|x| x.as_u64()),
+                archived: match s("archived").as_str() {
+                    "only" => search::Archived::Only,
+                    "no" => search::Archived::No,
+                    _ => search::Archived::Any,
+                },
+                limit: n("limit", search::DEFAULT_HITS),
+                page: n("page", 1),
+            };
+            self.search.search(&who, &q, now_ms())
+        };
+        let ms = t0.elapsed().as_millis();
+        if ms > 200 {
+            let st = self.search.stats();
+            eprintln!("sb {}: {} ms ({} threads, {} entries)", cmd, ms, st.threads, st.docs);
+        }
+        match r {
+            Ok(text) => json!({"ok": true, "text": text}),
+            Err(e) => json!({"ok": false, "error": e}),
+        }
+    }
+
     /// `sb inspect` and `sb history` read files; the rest goes to the core.
     fn agent_request(&mut self, token: Token, mut stream: UnixStream, v: Value) {
         let from = v
@@ -1128,13 +1186,9 @@ impl Shell {
                 let body = self.inspect(&from, &v);
                 write_json(&mut stream, &body);
             }
-            "history" => {
-                let query = v.get("query").and_then(|x| x.as_str()).unwrap_or("");
-                let dir = self.dir_of(&from).unwrap_or_else(|| MAIN.to_string());
-                let raw = transcript::read(&self.transcript(&dir));
-                let journal = std::fs::read_to_string(self.opts.paths.journal()).unwrap_or_default();
-                let text = transcript::history(&raw, &journal, query);
-                write_json(&mut stream, &json!({"ok": true, "text": text}));
+            "history" | "show" => {
+                let body = self.search(cmd, &v);
+                write_json(&mut stream, &body);
             }
             _ => match AgentReq::from_json(&v) {
                 Ok(req) => {
@@ -1419,6 +1473,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         replies: BTreeMap::new(),
         buffers: BTreeMap::new(),
         positions: BTreeMap::new(),
+        search: search::Index::default(),
         offsets: BTreeMap::new(),
         booting: false,
         bins: BTreeMap::new(),
