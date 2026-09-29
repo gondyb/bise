@@ -58,7 +58,8 @@ for t in "${tarballs[@]}"; do
   [ "$(cd "$(dirname "$t")" && pwd)" = "$out" ] || cp "$t" "$out/$f"
   sum="$(shasum -a 256 "$out/$f" | cut -d' ' -f1)"
   (cd "$out" && printf '%s  %s\n' "$sum" "$f" > "$f.sha256")
-  size="$(stat -f %z "$out/$f" 2>/dev/null || stat -c %s "$out/$f")"
+  # wc, not stat: GNU stat -f is another command (CI assembles on Linux)
+  size="$(wc -c < "$out/$f" | tr -d ' ')"
   entry="$(json_str "$target"): {\"url\": $(json_str "$f"), \"file\": $(json_str "$f"), \"sha256\": $(json_str "$sum"), \"size\": $size, \"macos\": $(json_str "$(get macos)"), \"id\": $(json_str "$id"), \"commit\": $(json_str "$commit"), \"built\": $(json_str "$built")}"
   targets="${targets:+$targets,
     }$entry"

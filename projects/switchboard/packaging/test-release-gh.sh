@@ -16,6 +16,17 @@
 # GH_TOKEN and no gh -> install and update through the API; a bad token
 # -> the error. The app is this tree's debug `bise` with stub REPLs and
 # engine (no hub runs here: test-release.sh covers the hub).
+#
+# CI is the one publisher (BISE-220): ci-release.sh (release.yml's release
+# job) on stub archives of both arches -> check-release.py passes, and
+# fails on a bad sha256, a missing arch, an unstamped install.sh, an extra
+# file; a draft rerun replaces the files, a published release is refused.
+# publish-release.sh against a stateful stub `gh` (releases, runs: `gh run
+# watch` runs ci-release.sh, the "CI") and a throwaway git repo whose
+# remote is github.com/o/r (push goes to a local bare repo): an unpushed
+# commit is refused, --dry-run changes nothing, then tag + push + watch +
+# draft, `--publish` flips it, the published files install and update;
+# a failed run says so; --local lays out and checks the release.
 
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -40,14 +51,17 @@ echo "== the app: this tree's bise, stub REPLs and engine"
 src="$PK/src"; mkdir -p "$src"
 cp "${CARGO_TARGET_DIR:-$REPO/rust/target}/debug/bise" "$src/bise"
 for b in repl-live repl-scripted sb-core bend-jsrt; do printf '#!/bin/sh\nexit 1\n' > "$src/$b"; chmod 755 "$src/$b"; done
-pack() {  # <id> <built>: a build-dist.sh-shaped archive of the app
-  local d="$PK/bise-$1-$target"
+pack() {  # <id> <built> [<target> <commit> <dir>]: a build-dist.sh-shaped archive of the app
+  local tg="${3:-$target}" cm="${4:-$(git -C "$REPO" rev-parse HEAD)}" o="${5:-$PK}"
+  local d="$o/bise-$1-$tg"
   rm -rf "$d"; mkdir -p "$d"; cp -cR "$src" "$d/app" 2>/dev/null || cp -R "$src" "$d/app"
   printf 'id=%s\ncommit=%s\nsubject=release %s\nbuilt=%s\nmacos=14.0\ntarget=%s\nchannel=test\n' \
-    "$1" "$(git -C "$REPO" rev-parse HEAD)" "$1" "$2" "$target" > "$d/app/VERSION"
+    "$1" "$cm" "$1" "$2" "$tg" > "$d/app/VERSION"
   cp "$HERE/install.sh" "$d/install.sh"
-  tar -C "$PK" -czf "$PK/bise-$1-$target.tar.gz" "bise-$1-$target"
-  echo "$PK/bise-$1-$target.tar.gz"
+  tar -C "$o" -czf "$o/bise-$1-$tg.tar.gz" "bise-$1-$tg"
+  (cd "$o" && shasum -a 256 "bise-$1-$tg.tar.gz" > "bise-$1-$tg.tar.gz.sha256")
+  rm -rf "$d"
+  echo "$o/bise-$1-$tg.tar.gz"
 }
 
 echo "== a stand-in GitHub"
@@ -173,6 +187,163 @@ echo "== public again: the private installs update with no auth"
 echo public > "$SRV/mode"
 H=$W/home-priv
 out="$(B update)"; check "the gh install updates to r4 by plain curl" test "$(cur)" = versions/r4
+
+echo "== CI makes the release (ci-release.sh, release.yml's release job)"
+CI=$W/ci; mkdir -p "$CI/dist"
+HEADC="$(git -C "$REPO" rev-parse HEAD)"
+pack r5 2026-01-05T00:00:00Z darwin-arm64 "$HEADC" "$CI/dist" >/dev/null
+pack r5 2026-01-05T00:00:00Z darwin-x86_64 "$HEADC" "$CI/dist" >/dev/null
+out="$("$HERE/ci-release.sh" v0.0.5 "$CI/dist" "$CI/out" --repo o/r --url "$CH" --commit "$HEADC" 2>"$CI/err")" \
+  && ok "ci-release.sh: both arches, checked" || { ko "ci-release.sh"; sed 's/^/     /' "$CI/err"; }
+check "the files install.sh and bise update read, and only them" test "$(ls "$CI/out" | tr '\n' ' ')" = \
+  "bise-r5-darwin-arm64.tar.gz bise-r5-darwin-arm64.tar.gz.sha256 bise-r5-darwin-x86_64.tar.gz bise-r5-darwin-x86_64.tar.gz.sha256 install.sh latest.json "
+check "latest.json: version 0.0.5, id r5, this commit" python3 -c "import json,sys; m=json.load(open('$CI/out/latest.json')); sys.exit(not (m['version'], m['id'], m['commit']) == ('0.0.5', 'r5', '$HEADC'))"
+chk() { "$HERE/check-release.py" "$1" --url "$CH" "${@:2}"; }
+cp -R "$CI/out" "$CI/bad"; sed -i '' 's/"sha256": "\(.\)/"sha256": "0\1/' "$CI/bad/latest.json" 2>/dev/null || sed -i 's/"sha256": "\(.\)/"sha256": "0\1/' "$CI/bad/latest.json"
+check "check-release: a bad sha256 fails" sh -c "! '$HERE/check-release.py' '$CI/bad' --url '$CH'"
+rm -rf "$CI/bad"; cp -R "$CI/out" "$CI/bad"; cp "$HERE/install.sh" "$CI/bad/install.sh"
+check "check-release: an unstamped install.sh fails" sh -c "! '$HERE/check-release.py' '$CI/bad' --url '$CH'"
+rm -rf "$CI/bad"; cp -R "$CI/out" "$CI/bad"; touch "$CI/bad/extra.txt"
+check "check-release: an extra file fails" sh -c "! '$HERE/check-release.py' '$CI/bad' --url '$CH'"
+check "check-release: another channel fails" sh -c "! '$HERE/check-release.py' '$CI/out' --url https://example.com/x"
+mkdir -p "$CI/one"; cp "$CI/dist"/bise-r5-darwin-arm64.* "$CI/one/"
+check "ci-release.sh: one arch only fails" sh -c "! '$HERE/ci-release.sh' v0.0.5 '$CI/one' '$CI/o1' --repo o/r --url '$CH' 2>/dev/null"
+echo 0 >> "$CI/one/bise-r5-darwin-arm64.tar.gz"
+check "ci-release.sh: an archive that is not its build's fails" sh -c "! '$HERE/ci-release.sh' v0.0.5 '$CI/one' '$CI/o1' --repo o/r --url '$CH' --targets darwin-arm64 2>/dev/null"
+
+echo "== publish-release.sh: tag, CI's draft, publish (stub gh, throwaway repo)"
+G=$W/git BARE=$W/bare.git GS=$W/ghs STUB2=$W/stub2
+mkdir -p "$G/projects/switchboard/packaging" "$GS/rel" "$STUB2"
+for f in publish-release.sh ci-release.sh check-release.py make-release.sh install.sh; do cp "$HERE/$f" "$G/projects/switchboard/packaging/"; done
+gitq() { git -C "$G" -c user.name=t -c user.email=t@t -c commit.gpgsign=false -c tag.gpgsign=false "$@" >/dev/null 2>&1; }
+gitq init -q -b main && gitq add -A && gitq commit -qm one
+git init -q --bare "$BARE"
+gitq remote add origin https://github.com/o/r.git && gitq remote set-url --push origin "$BARE" && gitq push origin main
+C1="$(git -C "$G" rev-parse HEAD)"
+gitq commit -q --allow-empty -m "not pushed"; C2="$(git -C "$G" rev-parse HEAD)"
+mkdir -p "$W/cidist"
+pack r6 2026-01-06T00:00:00Z darwin-arm64 "$C1" "$W/cidist" >/dev/null
+pack r6 2026-01-06T00:00:00Z darwin-x86_64 "$C1" "$W/cidist" >/dev/null
+# GitHub for o/r: releases in $GS/rel/<tag>/ (a `draft` flag file), tags
+# and commits from the bare repo; `run watch` is CI: it runs ci-release.sh
+cat > "$STUB2/gh" <<EOF
+#!/usr/bin/env python3
+import os, shutil, subprocess, sys
+GS, BARE, DIST, CH, PK = "$GS", "$BARE", "$W/cidist", "$CH", "$G/projects/switchboard/packaging"
+a = sys.argv[1:]
+open(GS + "/log", "a").write(" ".join(a) + "\n")
+def opt(k):
+    return a[a.index(k) + 1] if k in a else None
+def rel(t): return os.path.join(GS, "rel", t)
+def git(*x): return subprocess.run(["git", "-C", BARE, *x], capture_output=True, text=True)
+def files(t): return sorted(f for f in os.listdir(rel(t)) if f != "draft")
+def die(m, c=1): print(m, file=sys.stderr); sys.exit(c)
+def args_after(n):   # positionals after a[:n], until the first flag
+    out = []
+    for x in a[n:]:
+        if x.startswith("-"): break
+        out.append(x)
+    return out
+if a[:2] in (["auth", "status"], ["repo", "view"]): sys.exit(0)
+if a[0] == "api":
+    p = a[1].split("/")
+    if p[3] == "commits":
+        if git("cat-file", "-e", p[4] + "^{commit}").returncode: die("No commit found for SHA")
+        print(p[4]); sys.exit(0)
+    if p[3:6] == ["git", "ref", "tags"]:
+        r = git("rev-parse", "-q", "--verify", "refs/tags/" + p[6] + "^{commit}")
+        if r.returncode: die("Not Found")
+        print(r.stdout.strip()); sys.exit(0)
+    die("stub: api " + a[1], 2)
+if a[0] == "release":
+    t = a[2] if len(a) > 2 else ""
+    if a[1] == "create":
+        if os.path.exists(rel(t)): die("a release with the same tag name already exists")
+        if "--verify-tag" in a and git("rev-parse", "-q", "--verify", "refs/tags/" + t).returncode: die("tag not found")
+        os.makedirs(rel(t))
+        if "--draft" in a: open(rel(t) + "/draft", "w").close()
+        for f in args_after(3): shutil.copy(f, rel(t))
+        sys.exit(0)
+    if not os.path.isdir(rel(t)): die("release not found")
+    if a[1] == "view":
+        j = opt("--json")
+        if j == "isDraft": print("true" if os.path.exists(rel(t) + "/draft") else "false")
+        elif j == "assets": print("\n".join(files(t)))
+        else: print(("draft " if os.path.exists(rel(t) + "/draft") else "") + t + "\n" + "\n".join("asset: " + f for f in files(t)))
+        sys.exit(0)
+    if a[1] == "upload":
+        for f in args_after(3): shutil.copy(f, rel(t))
+        sys.exit(0)
+    if a[1] == "delete-asset": os.remove(os.path.join(rel(t), a[3])); sys.exit(0)
+    if a[1] == "download":
+        d = opt("-D")
+        os.makedirs(d, exist_ok=True)
+        for i, x in enumerate(a):
+            if x == "-p": shutil.copy(os.path.join(rel(t), a[i + 1]), d)
+        sys.exit(0)
+    if a[1] == "edit":
+        if "--draft=false" in a and os.path.exists(rel(t) + "/draft"): os.remove(rel(t) + "/draft")
+        sys.exit(0)
+if a[:2] == ["run", "list"]:
+    t = opt("--branch")
+    if git("rev-parse", "-q", "--verify", "refs/tags/" + t).returncode == 0:
+        open(GS + "/run-tag", "w").write(t); print(42)
+    sys.exit(0)
+if a[:2] == ["run", "watch"]:
+    if os.path.exists(GS + "/ci-fails"): die("run 42 failed")
+    t = open(GS + "/run-tag").read()
+    sha = git("rev-parse", "refs/tags/" + t + "^{commit}").stdout.strip()
+    r = subprocess.run([PK + "/ci-release.sh", t, DIST, GS + "/ci-out", "--repo", "o/r", "--url", CH, "--commit", sha, "--draft"], stdout=subprocess.DEVNULL, stderr=open(GS + "/ci.log", "a"))
+    sys.exit(r.returncode)
+die("stub: " + " ".join(a), 2)
+EOF
+chmod 755 "$STUB2/gh"
+P() { env -i HOME="$W/home-rel" PATH="$STUB2:/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="$W/tmp/" \
+  GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+  "$G/projects/switchboard/packaging/publish-release.sh" --repo o/r --url "$CH" "$@" 2>&1; }
+mkdir -p "$W/home-rel" "$W/tmp"
+tagged() { git -C "$BARE" rev-parse -q --verify "refs/tags/$1" >/dev/null 2>&1; }
+out="$(P v0.0.6)"; has "$out" "is not on GitHub" && ok "an unpushed commit: refused" || ko "unpushed: $out"
+check "... no tag pushed" sh -c "! git -C '$BARE' rev-parse -q --verify refs/tags/v0.0.6"
+out="$(P v0.0.6 --rev "$C1" --add x)"; has "$out" "go with --local" && ok "--add without --local: refused" || ko "--add: $out"
+out="$(P v0.0.6 --rev "$C1" --dry-run)"; has "$out" "would tag" && ok "--dry-run says what it would do" || ko "dry run: $out"
+check "... and pushes nothing" sh -c "! git -C '$BARE' rev-parse -q --verify refs/tags/v0.0.6"
+out="$(P v0.0.6 --rev "$C1")"; printf '%s\n' "$out" | tail -n 3 | sed 's/^/     /'
+check "the tag is pushed, on the commit" test "$(git -C "$BARE" rev-parse 'refs/tags/v0.0.6^{commit}' 2>/dev/null)" = "$C1"
+check "the run was watched" grep -q '^run watch 42 ' "$GS/log"
+check "CI made a draft of the release" test -f "$GS/rel/v0.0.6/draft"
+has "$out" "check-release: ok, 0.0.6 (r6): darwin-arm64 darwin-x86_64" && ok "the draft is checked (latest.json, install.sh, files)" || ko "draft check: $out"
+has "$out" "not published" && ok "not published without --publish" || ko "publish hint: $out"
+check "the draft's files" test "$(ls "$GS/rel/v0.0.6" | tr '\n' ' ')" = \
+  "bise-r6-darwin-arm64.tar.gz bise-r6-darwin-arm64.tar.gz.sha256 bise-r6-darwin-x86_64.tar.gz bise-r6-darwin-x86_64.tar.gz.sha256 draft install.sh latest.json "
+n="$(grep -c '^run watch' "$GS/log")"
+out="$(P v0.0.6 --publish)"; has "$out" "published v0.0.6" && ok "--publish: the draft is the latest release" || ko "publish: $out"
+check "... gh release edit --draft=false" sh -c "grep -q '^release edit v0.0.6 -R o/r --draft=false --latest' '$GS/log' && [ ! -e '$GS/rel/v0.0.6/draft' ]"
+check "... no second run watched" test "$(grep -c '^run watch' "$GS/log")" = "$n"
+out="$(P v0.0.6 --publish)"; has "$out" "published already" && ok "again: already published, nothing done" || ko "again: $out"
+touch "$GS/rel/v0.0.6/stale"
+out="$(PATH="$STUB2:$PATH" "$HERE/ci-release.sh" v0.0.6 "$W/cidist" "$W/ci2" --repo o/r --url "$CH" --draft 2>&1)"
+has "$out" "never rewrites" && ok "CI never rewrites a published release" || ko "rerun on published: $out"
+check "... its files unchanged" test -e "$GS/rel/v0.0.6/stale"
+rm "$GS/rel/v0.0.6/stale"
+# the published files are the channel: install and update from them
+cp "$GS/rel/v0.0.6"/* "$REL/"
+H=$W/home-pub
+out="$(B update)"; check "bise update from CI's release: current -> r6" test "$(cur)" = versions/r6
+H=$W/home-ci; mkdir -p "$H"
+out="$(install_line)"; check "curl .../install | sh from CI's install.sh installs r6" test "$(cur)" = versions/r6
+# a rerun of CI on a draft replaces its files, drops a stale one
+mkdir -p "$GS/rel/v0.0.6x"; touch "$GS/rel/v0.0.6x/draft" "$GS/rel/v0.0.6x/old.tar.gz"
+gitq tag v0.0.6x "$C1" && gitq push origin v0.0.6x
+out="$(PATH="$STUB2:$PATH" "$HERE/ci-release.sh" v0.0.6x "$W/cidist" "$W/ci3" --repo o/r --url "$CH" --draft 2>&1)" \
+  && ok "CI rerun on a draft: files replaced, checked" || ko "rerun on draft: $out"
+check "... the stale file is gone" test ! -e "$GS/rel/v0.0.6x/old.tar.gz"
+touch "$GS/ci-fails"
+out="$(P v0.0.7 --rev "$C1")"; has "$out" "the run failed" && ok "a failed CI run: said, nothing published" || ko "failed run: $out"
+check "... no release" test ! -e "$GS/rel/v0.0.7"
+rm "$GS/ci-fails"
+out="$(P --local v0.0.8 --from "$W/cidist/bise-r6-darwin-arm64.tar.gz" --add "$W/cidist/bise-r6-darwin-x86_64.tar.gz" --dry-run)"
+has "$out" "check-release: ok" && has "$out" "release create v0.0.8" && ok "--local: lays out, checks, prints the gh command" || ko "--local: $out"
 
 echo "== $pass passed, $fail failed"
 [ "$fail" = 0 ] && rm -rf "$W"

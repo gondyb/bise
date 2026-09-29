@@ -1,8 +1,11 @@
 # BISE-168: build the installable archive on both Mac arches, install it
 # in a clean fake HOME and run it (packaging/test-install.sh), and on a
-# v* tag publish a DRAFT GitHub Release with both archives + latest.json
-# (what `bise update`, BISE-171, will read). Same build path as /version
-# on a dev Mac: build-dist.sh -> versions.sh -> bins.sh.
+# v* tag publish a DRAFT GitHub Release (BISE-220: CI is the one
+# publisher; packaging/ci-release.sh): both archives + .sha256,
+# latest.json and the stamped install.sh, the files install.sh and
+# `bise update` read. The user publishes the draft (publish-release.sh
+# <tag> --publish). Same build path as /version on a dev Mac:
+# build-dist.sh -> versions.sh -> bins.sh.
 #
 # Signing: ad-hoc only (build-dist.sh; user decision, no Developer ID):
 # files fetched by curl or brew carry no quarantine flag, so Gatekeeper
@@ -199,6 +202,14 @@ jobs:
             ~/.bend/lib
           key: ${{ steps.bins-cache.outputs.cache-primary-key }}
 
+  # CI is the one publisher (BISE-220): make-release.sh lays out the
+  # release from both archives (install.sh stamped with the channel,
+  # latest.json, the tarballs + .sha256: the files install.sh and
+  # `bise update` read), check-release.py checks it, and it goes to a
+  # DRAFT release of the tag. A draft is not the latest release: nothing
+  # reads it until the user publishes it (publish-release.sh <tag>
+  # --publish, or gh release edit <tag> --draft=false). A published
+  # release is never rewritten (a rerun only replaces a draft's files).
   release:
     name: draft release
     if: startsWith(github.ref, 'refs/tags/v')
@@ -207,52 +218,19 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           pattern: dist-*
           merge-multiple: true
-          path: dist
+          path: ${{ runner.temp }}/dist
 
-      # latest.json: the manifest `bise update` reads (BISE-171). One entry
-      # per target, from the archive itself (its app/VERSION) and its
-      # .sha256; the URL is the release asset's once the draft is published.
-      - name: latest.json
-        env:
-          TAG: ${{ github.ref_name }}
-          BASE: ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          cd dist
-          targets='{}'
-          for f in *.tar.gz; do
-            v="$(tar -xzOf "$f" --wildcards '*/app/VERSION')"
-            get() { printf '%s\n' "$v" | sed -n "s/^$1=//p" | head -n 1; }
-            sum="$(cut -d' ' -f1 "$f.sha256")"
-            echo "$sum  $f" | sha256sum -c -
-            targets="$(jq -c --arg t "$(get target)" --arg url "$BASE/$f" --arg file "$f" \
-              --arg sha "$sum" --argjson size "$(stat -c %s "$f")" --arg macos "$(get macos)" \
-              --arg id "$(get id)" --arg commit "$(get commit)" --arg built "$(get built)" \
-              '. + {($t): {url: $url, file: $file, sha256: $sha, size: $size, macos: $macos, id: $id, commit: $commit, built: $built}}' \
-              <<< "$targets")"
-          done
-          jq -n --arg version "${TAG#v}" --arg tag "$TAG" --arg channel stable \
-            --arg published "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson targets "$targets" \
-            '{version: $version, tag: $tag, channel: $channel, published: $published,
-              id: ($targets | to_entries[0].value.id), commit: ($targets | to_entries[0].value.commit),
-              targets: $targets}' > latest.json
-          cat latest.json
-          # both arches, built from the same commit
-          jq -e '(.targets | length) == 2 and ([.targets[].commit] | unique | length) == 1' latest.json
-
-      - name: Draft release
+      - name: Draft release (make-release.sh, check-release.py)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
+          CHANNEL: ${{ github.server_url }}/${{ github.repository }}/releases/latest/download
         run: |
-          set -euo pipefail
-          notes="Draft built by CI from $GITHUB_SHA. Archives for macOS 14+ (arm64, x86_64), ad-hoc signed; latest.json is the update manifest."
-          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/* --clobber -R "$GITHUB_REPOSITORY"
-          else
-            gh release create "$TAG" dist/* --draft --verify-tag --title "$TAG" --notes "$notes" -R "$GITHUB_REPOSITORY"
-          fi
+          projects/switchboard/packaging/ci-release.sh "$TAG" "$RUNNER_TEMP/dist" "$RUNNER_TEMP/release" \
+            --repo "$GITHUB_REPOSITORY" --url "$CHANNEL" --commit "$GITHUB_SHA" --draft

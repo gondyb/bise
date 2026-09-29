@@ -214,8 +214,8 @@ the old `release.sh` ("an EDR quarantine … must FAIL LOUDLY"). Consequences:
 ## 7. Build matrix / CI (GitHub Actions)
 
 Done for macOS (BISE-168): `.github/workflows/release.yml`, `darwin-arm64`
-(macos-15) and `darwin-x86_64` (macos-15-intel), ad-hoc signed, draft
-release + `latest.json` on a `v*` tag; the plan below still holds for
+(macos-15) and `darwin-x86_64` (macos-15-intel), ad-hoc signed, a
+draft release made by make-release.sh on a `v*` tag (§11, BISE-220); the plan below still holds for
 Linux (`linux-x86_64` ubuntu-24.04, `linux-arm64` ubuntu-24.04-arm) and
 signing (BISE-169). Per job:
 
@@ -345,15 +345,25 @@ repo stays private for now (friends are collaborators), public later.
   `https://github.com/gvergnaud/bise/releases/latest/download` (the
   Rust const `release::DIST_URL`, stamped into install.sh by
   make-release.sh). A new release is what every install reads next.
-- **Publish** (the user; an agent's shell cannot write the bundle):
-  `projects/switchboard/packaging/publish-release.sh [vX.Y.Z]` builds
-  this Mac's archive (build-dist.sh), lays out the release
-  (make-release.sh: install.sh, latest.json, tarballs + .sha256) and runs
-  `gh release create <tag> --target <commit>` (the commit must be pushed).
-  `--add <tarball>` adds an archive of the same commit (the x86_64 one of
-  CI), `--dry-run` stops before publishing. The tag also starts
-  release.yml (if Actions run on the repo): it rebuilds both arches and
-  uploads them and a latest.json for both over the release's assets.
+- **Release cycle** (BISE-220: CI is the one publisher):
+  1. `projects/switchboard/packaging/publish-release.sh [vX.Y.Z]` (the
+     user): tags a pushed commit (`--rev`, default HEAD), pushes the tag,
+     watches the release.yml run (`gh run watch`), then shows the draft
+     and checks its latest.json and install.sh.
+  2. The tag's run of release.yml: builds darwin arm64 + x86_64,
+     test-install.sh on a clean HOME, then `packaging/ci-release.sh`:
+     make-release.sh (install.sh stamped with the channel, latest.json,
+     tarballs + .sha256: the files install.sh and `bise update` read),
+     `check-release.py`, a **draft** release. A rerun replaces a draft's
+     files; a published release is never touched.
+  3. `publish-release.sh vX.Y.Z --publish` (or `gh release edit vX.Y.Z
+     -R gvergnaud/bise --draft=false`): the draft becomes the latest
+     release. A draft is not "latest": no install or update sees it before.
+  Private repo: macOS minutes cost 10x, so the workflow runs on tags and
+  by hand, not on every push. `--local` is the emergency path (CI down):
+  today's local build (this Mac's arch only, `--add` another archive),
+  make-release.sh, check-release.py, `gh release create` (published, or
+  `--draft`).
 - **Private repo**: a plain download of an asset answers 404. install.sh
   and `bise update` (the daily check, `/restart latest`) then ask
   `gh release download` (the GitHub CLI, `gh auth login`), else the API
@@ -369,5 +379,9 @@ repo stays private for now (friends are collaborators), public later.
   first. Without the site: `gh release download -R gvergnaud/bise -p
   install.sh -O - | sh`.
 - **Test**: `packaging/test-release-gh.sh` (a python stand-in for GitHub
-  and a stub `gh`, fake HOMEs, ~9 s): public, private without auth,
-  with gh, with a token, a bad token.
+  and a stub `gh`, fake HOMEs, ~40 s): public, private without auth,
+  with gh, with a token, a bad token; ci-release.sh on stub archives of
+  both arches and check-release.py's failures; publish-release.sh
+  against a stateful stub `gh` whose `run watch` runs ci-release.sh
+  (tag, draft, `--publish`, a failed run, `--local`), then an install
+  and an update from the published files.
