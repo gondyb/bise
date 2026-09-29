@@ -103,6 +103,10 @@
   .att-a .lab { color:var(--faint); }
   .att-b { background:#2a2522; border-left:1px dashed var(--dim); padding:0 2ch 0 calc(2ch - 1px); max-width:91ch; box-sizing:border-box; }
   .optk { color:var(--acc); font-weight:700; }
+  .att-d { position:relative; display:inline-block; min-width:44ch; max-width:91ch; box-sizing:border-box; border:1px solid var(--dim); border-radius:4px; padding:.35lh 2ch .3lh; margin:0 0 .6lh 0; }
+  .att-d .row > span:first-child { margin-right:4ch; }
+  .att-d .bt { position:absolute; top:-.55lh; left:1.5ch; background:var(--raised); padding:0 1ch; color:var(--dim); }
+  .att-d .bb { position:absolute; bottom:-.55lh; right:1.5ch; background:var(--raised); padding:0 1ch; color:var(--faint); }
   .img { color:var(--acc); background:#2b1c21; border-radius:3px; padding:0 .5ch; }
   .thumb { margin:4px 0 0 3ch; width:34ch; height:9em; border:1px solid var(--line); border-radius:4px; background:
     linear-gradient(#e9e4dc 0 18%, transparent 18%), linear-gradient(90deg, #d8d2c8 0 22%, #f6f3ee 22%); position:relative; }
@@ -222,8 +226,9 @@ const ATT = {
 };
 const ATT_FEED = you("on passe le repo en public demain, il manque quoi?") +
   bise("deux choses : la licence du repo, et le README n'est pas prêt. le reste est bon.");
-const MSG1 = `${QP(1)} tu recommande quoi?<span class="cur"></span>`;
-const MSG3 = `${QP(1)} ${QP(2)} ${IP(3)} tu recommande quoi? et le README ressemble à ça pour l'instant<span class="cur"></span>`;
+// chips sit anywhere in your text, where you put them
+const MSG1 = `pour ${QP(1)} tu recommande quoi?<span class="cur"></span>`;
+const MSG3 = `pour ${QP(1)} tu recommande quoi? et pour ${QP(2)}, voilà à quoi il ressemble : ${IP(3)} c'est trop long non?<span class="cur"></span>`;
 const HINTS_A = "⏎ send · ctrl+v image · @ file · backspace on a chip removes it";
 const optA = (rows, msg, narrow) => term({ feed: ATT_FEED, narrow,
   above: `<div class="att-a">${rows.map((r, i) => `<span class="lab">${i ? "" : "attached"}</span>${r}`).join("")}</div>`,
@@ -233,8 +238,17 @@ const optB = (rows, msg, narrow) => term({ feed: ATT_FEED, narrow,
 const optC = (n, msg, preview, narrow) => term({ feed: ATT_FEED, narrow,
   f: foot(undefined, msg, preview ? `<span class="dim">${preview}</span>` : HINTS_A)
     .replace('<span class="acc">main</span></span>', `<span class="acc">main</span> <span class="faint">·</span> ${n}</span>`) });
+const HINTS_D = "⏎ send · ctrl+v image · @ file · / commands";
+const optD = (rows, msg, narrow) => term({ feed: ATT_FEED, narrow,
+  f: foot(undefined, msg, HINTS_D).replace('<div class="cbox', `<div class="att-d"><span class="bt">attached</span>${rows.join("")}<span class="bb">backspace on a chip removes it</span></div><div class="cbox`) });
 const ATT_SCREENS = [
-["attachments · a · above the divider", "<span class='optk'>(a) designer's pick.</span> under the divider is only your message; above it, on the history background, is what comes with it. \"attached\" faint on the first row, no blank row, the backspace tip moves to the key bar.",
+["attachments · d · a small box", "<span class='optk'>(d) the user's pick, designer's reco.</span> the attachments sit in their own small box under the divider: a thin rounded frame, \"attached\" in its top border, the backspace tip in its bottom border. the box is only as wide as its rows. your message is below it, with its pink bar, and the chips sit wherever you put them in your text: same number in the box and in the text.",
+ optD([ATT.q1], MSG1)],
+["attachments · d · 2 quotes + 1 image", "(d) one row per attachment, in the order of their numbers. the chips in the text keep their place: \"pour ❝ 1… et pour ❝ 2… ▣ 3…\".",
+ optD([ATT.q1, ATT.q2, ATT.i3], MSG3)],
+["attachments · d · narrow", "(d) at 60 columns the box takes the full width and the previews are cut with …; the source on the right goes first.",
+ optD([ATT.q1, ATT.q2, ATT.i3], MSG3, true)],
+["attachments · a · above the divider", "<span class='optk'>(a)</span> under the divider is only your message; above it, on the history background, is what comes with it. \"attached\" faint on the first row, no blank row, the backspace tip moves to the key bar.",
  optA([ATT.q1], MSG1)],
 ["attachments · a · 2 quotes + 1 image", "(a) the strip grows upward, one row per attachment. the composer doesn't move.",
  optA([ATT.q1, ATT.q2, ATT.i3], MSG3)],
