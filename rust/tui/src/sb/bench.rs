@@ -12,7 +12,7 @@ pub(crate) fn test_app() -> App {
     let (_tx, rx) = mpsc::channel::<String>();
     let sb = new_sb(std::sync::Arc::new(std::sync::Mutex::new(a)), "bench".into());
     std::mem::forget(_b);
-    sb_app(sb, rx, false, 100, crate::voice::Voice::live(false), "bench".into())
+    sb_app(sb, rx, false, 100, crate::voice::Voice::live(false))
 }
 
 /// A test app whose hub end is read and dropped by a thread: any number
@@ -25,7 +25,7 @@ pub(crate) fn test_app_drained() -> App {
     let (_tx, rx) = mpsc::channel::<String>();
     std::mem::forget(_tx);
     let sb = new_sb(std::sync::Arc::new(std::sync::Mutex::new(a)), "bench".into());
-    sb_app(sb, rx, false, 100, crate::voice::Voice::live(false), "bench".into())
+    sb_app(sb, rx, false, 100, crate::voice::Voice::live(false))
 }
 
 /// Test setup: the workspace of the `@` popup, and a live agent.

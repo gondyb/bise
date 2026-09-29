@@ -176,7 +176,7 @@ mod tests {
         let (tx, rx) = mpsc::channel::<String>();
         std::mem::forget(tx);
         let sb = new_sb(std::sync::Arc::new(std::sync::Mutex::new(a)), "bench".into());
-        (sb_app(sb, rx, false, 100, crate::voice::Voice::live(false), "bench".into()), b)
+        (sb_app(sb, rx, false, 100, crate::voice::Voice::live(false)), b)
     }
 
     /// What the TUI sent to the hub so far.

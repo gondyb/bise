@@ -164,7 +164,16 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
             }
             lines.extend(wrap_words(p, w).into_iter().map(|l| Line::from(Span::styled(l, Style::default().fg(dim())))));
         }
-        let r = Rect { x: feed.x + 3, width: cols.col_w.saturating_sub(3).min(feed.width.saturating_sub(3)), ..feed };
+        // the block at 2/5 of the free rows (the onboarding's optical
+        // center, designer); under 12 rows, on top after 1 blank row
+        let h = (lines.len() as u16).min(feed.height);
+        let y = if feed.height < 12 { 1.min(feed.height - h) } else { (feed.height - h) * 2 / 5 };
+        let r = Rect {
+            x: feed.x + 3,
+            y: feed.y + y,
+            width: cols.col_w.saturating_sub(3).min(feed.width.saturating_sub(3)),
+            height: feed.height - y,
+        };
         frame.render_widget(Paragraph::new(lines), r);
     }
     // the raised pane (book §13, BISE-212): the grey fills the inside of

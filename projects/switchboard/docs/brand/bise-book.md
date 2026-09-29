@@ -321,7 +321,7 @@ a symbol row (designer).
 
   say it and keep talking. the work runs in the background, i'm always here.
 
-  try: "fix the flaky login test, and draft the release note"
+  try: "signup is slow on mobile. can you look?"
   ```
 
 **The reading column** (user request, marketing 82f1742). The history is a 91-column column (3 for the lead + 88 of text; widened from 79 by Gabriel, 2026-09-29: +15%), centered in the space left of the panel: F = terminal width − panel (30) − 1; x0 = floor((F − 91) / 2) when F ≥ 95, else column 1. Tables and code start at x0 and may run to 103 columns (capped at F − 1), extending right, never re-centered. The status row, the queue, the images strip, the composer block and its hints use the same x0 and width (hints right-aligned to x0 + 91). The agents panel stays flush right. Under 70 columns the panel hides and F = width.
@@ -706,8 +706,11 @@ pasted), `ctrl+v` (clipboard image) and an image picked in the `@` popup.
 
 ## 15. Onboarding (first launch)
 
-Validated as is: [site/book/onboarding.html](site/book/onboarding.html). Inspired by
-Vibe's (`vibe/setup/onboarding`). Six steps, `enter` to go on:
+Onboarding v3 (screens `onboarding v3 · …`, the user's pick with one change:
+the theme and "how it works" stay). Before the thread, three or four short
+steps; no folder step (bise works where you typed `bise`, the header says
+where). Step dots: one per step shown (a key found: 3), faint, the current
+one in accent.
 
 1. **Welcome**, centered. Typed at ~70 ms per character: `hi, i'm bise`, then
    `:*` pops in accent (scale 0.4 → 1.5 → 1, 0.9 s), then, right under the
@@ -715,32 +718,37 @@ Vibe's (`vibe/setup/onboarding`). Six steps, `enter` to go on:
    apart: `bise /beez/ · french, n.` / `1. a quick kiss on the cheek :*` /
    `2. a brisk north wind` / `3. a terminal where your agents ship while you
    think`, then `ideas in. little kisses out. also pull requests.` is typed,
-   then `press enter ↵`. Any key but `enter` shows it all at once.
+   then `any key ↵`. Any key while it types shows it all at once; then any
+   key goes on (no wait for enter).
 2. **Theme.** `your terminal looks dark, so i picked dark.` / `you can change
    it any time with /theme.` When no detection was needed, it says why:
    `BISE_THEME is set to light, so i picked it.` or `you picked light last
    time, so i kept it.` (the saved choice); no answer from the terminal:
    `i couldn't read your terminal's background, so i picked dark.` Two live previews side by side (the same four
-   lines of a bise feed); `←→` switches, `enter` keeps.
-3. **Model.** `which model should do the work?` The keys bise finds
-   (environment, `auth.json`, the old `.env` files), the model's provider
-   first: `1 · use ANTHROPIC_FOUNDRY_API_KEY  found` / `foundry, already
-   set up. nothing to paste.`; `2 · paste another key` (its sub-line names
-   every provider that takes a key, `anthropic, foundry, openai, … and
-   cerebras`, so you know what you can paste; then the catalog's providers,
-   9 rows at a time). API keys only: no browser sign-in before launch.
-   `↑↓` chooses. A pasted key goes in `auth.json` like `login`
-   (asks before replacing one); the agents started from then on use it.
-4. **Folder.** `i'll work in ~/lab/app · a git repo ✓` / `your agents share
-   this folder and talk to each other.` / `worktrees and conflicts: i handle
-   them for you.` (true: a worktree only when one helps, cleaned up after).
-   No "one honest thing" line: approvals ship before launch. `o` picks
-   another folder.
-5. **How it works, in three lines,** appearing one by one:
-   `› you talk to me. i start agents for the work, in the background.`
-   `∿ they show up on the right. ⌥ + number to look inside, esc to come back.`
-   `? when someone needs you, you get a card. the rest can wait.`
-   `enter, and say what's on your mind.`
+   lines of a bise feed); `←→` switches, `enter` keeps. Right after the
+   welcome, so the next steps already wear the chosen colors. `esc`: the
+   thread with the theme the launch had (the terminal's, or the saved one).
+3. **A key, only if none is found.** A key found (environment, `auth.json`,
+   the old `.env` files): this step never shows. None: `which model should
+   do the work?` / `i found no key in your environment.` / `1 · paste a
+   key` (its sub-line names every provider that takes a key, `anthropic,
+   foundry, openai, … and cerebras`; then the catalog's providers, 9 rows at
+   a time). API keys only: no browser sign-in before launch. `↑↓`
+   chooses. A pasted key goes in `auth.json` like `login` (asks before
+   replacing one); the agents started from then on use it.
+4. **How it works**, the three lines appearing one by one, the numbers dim,
+   `me` and `i` (bise) in accent, no final periods:
+   `1  you talk to me. anything, any time, keep typing`
+   `2  i start an agent when a job needs one. they sync with each other`
+   `3  when something needs you, a card shows up · ctrl+g opens it`
+   then, faint, `ctrl+o opens everything folded · ⌥0-9 talk to an agent`,
+   and `any key ↵`: any key opens the thread.
+5. **The thread** opens on the empty state (§8, §17): `what's on your
+   mind?` / `say it and keep talking. the work runs in the background, i'm
+   always here.` / `try: "signup is slow on mobile. can you look?"`, dim,
+   at the feed's indent, at 2/5 of the history's free rows (under 12 rows:
+   on top, after one blank row); it goes with the first message. No
+   first-task suggestion.
 6. **The real first run, with one-time hints.** No tour. Each hint shows once,
    next to the thing, the first time it happens, and goes away when used:
    - first agent: `new: your agents. they work in the background. ⌥ 1 to look
@@ -753,7 +761,7 @@ Vibe's (`vibe/setup/onboarding`). Six steps, `enter` to go on:
 The onboarding runs once per user (a flag in the state directory); `/welcome`
 replays it (**⚠** proposed command).
 
-**Layout.** One content column for all steps: 64 columns (terminal width − 8 when narrower), horizontally centered. Welcome and theme center their lines inside it; model, folder and how-it-works are left-aligned inside it. Vertically, the block sits a bit above the middle: 2/5 of the free rows above it, 3/5 below; the step dots stay 2 rows above the bottom. **Emphasis** (a terminal has one font size, so "size" is weight, color and space): each step's first line is its title, bold, text color; then 2 blank rows; the body in text color, notes dim, 1 blank row between options or lines; then 2 blank rows and the key line. Key lines are read, so they are dim, never faint (§5), with the keys themselves in text color: `enter ok · o another folder`. Options: the selected one `›` accent + name bold, the others indented 2, their sub-line dim and indented 2 more. Welcome: `hi, i'm bise` bold + `:*` accent bold; 1 blank row; the gloss, a block centered as a whole with its lines left-aligned inside (a meaning too wide wraps with a 3-column hanging indent): `bise` bold, `/beez/ · french, n.` and meanings 1-2 dim (not faint: they are read), `:*` accent, meaning 3 (what bise is) in text color; 1 blank row; the tagline in text color; 2 blank rows; `press enter ↵` dim with `enter` in text. Where the terminal supports text sizing (kitty ≥ 0.40, OSC 66), `hi, i'm bise :*` is drawn at scale 2; elsewhere bold. Small terminals: height < 22 turns every 2 blank rows into 1; width < 50 makes the column width − 4.
+**Layout.** One content column for all steps: 64 columns (terminal width − 8 when narrower), horizontally centered. Welcome and theme center their lines inside it; the key and how-it-works are left-aligned inside it. Vertically, the block sits a bit above the middle: 2/5 of the free rows above it, 3/5 below; the step dots stay 2 rows above the bottom. **Emphasis** (a terminal has one font size, so "size" is weight, color and space): each step's first line is its title, bold, text color; then 2 blank rows; the body in text color, notes dim, 1 blank row between options or lines; then 2 blank rows and the key line. Key lines are read, so they are dim, never faint (§5), with the keys themselves in text color: `←→ switch · enter keep`. Options: the selected one `›` accent + name bold, the others indented 2, their sub-line dim and indented 2 more. Welcome: `hi, i'm bise` bold + `:*` accent bold; 1 blank row; the gloss, a block centered as a whole with its lines left-aligned inside (a meaning too wide wraps with a 3-column hanging indent): `bise` bold, `/beez/ · french, n.` and meanings 1-2 dim (not faint: they are read), `:*` accent, meaning 3 (what bise is) in text color; 1 blank row; the tagline in text color; 2 blank rows; `any key ↵` dim with `any key` in text. Where the terminal supports text sizing (kitty ≥ 0.40, OSC 66), `hi, i'm bise :*` is drawn at scale 2; elsewhere bold. Small terminals: height < 22 turns every 2 blank rows into 1; width < 50 makes the column width − 4.
 
 ## 16. Keys (final)
 
@@ -803,7 +811,7 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | panel title | `agents · ⌥ + number` |
 | panel, more rows | `+ {n} more` |
 | panel, archived | `▸ {n} archived` |
-| first run | `what's on your mind?` / `say it and keep talking. the work runs in the background, i'm always here.` / `try: "fix the flaky login test, and draft the release note"` |
+| first run | `what's on your mind?` / `say it and keep talking. the work runs in the background, i'm always here.` / `try: "signup is slow on mobile. can you look?"` |
 | inside an agent | `you're talking to {name} directly. main isn't in the loop. esc back to main.` |
 | composer hints, main | `⏎ send · @ agent · / commands` |
 | composer hints, during a turn | `tab queue · ⏎ steer · ctrl+c interrupt` |

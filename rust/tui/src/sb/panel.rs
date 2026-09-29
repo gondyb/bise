@@ -963,7 +963,7 @@ pub(crate) const PLACEHOLDER_MAIN: &str = "what's on your mind?";
 pub(crate) const FIRST_RUN: [&str; 3] = [
     "what's on your mind?",
     "say it and keep talking. the work runs in the background, i'm always here.",
-    "try: \"fix the flaky login test, and draft the release note\"",
+    "try: \"signup is slow on mobile. can you look?\"",
 ];
 
 impl Sb {
@@ -1815,7 +1815,7 @@ mod chrome_tests {
         }
         assert_eq!(FIRST_RUN[0], "what's on your mind?");
         assert_eq!(FIRST_RUN[1], "say it and keep talking. the work runs in the background, i'm always here.");
-        assert_eq!(FIRST_RUN[2], "try: \"fix the flaky login test, and draft the release note\"");
+        assert_eq!(FIRST_RUN[2], "try: \"signup is slow on mobile. can you look?\"");
         // the composer pane (book §8 "The frame"): the divider says who
         // you talk to and what it does
         let at = rows.iter().position(|r| r.starts_with("├─ you → main ─")).unwrap_or_else(|| panic!("{}", all));
@@ -1836,6 +1836,22 @@ mod chrome_tests {
         assert!(rows.last().unwrap().starts_with("╰─"), "{}", all);
         // a panel with main only
         assert!(rows.iter().any(|r| r.contains(&format!("│  0 {} main {}", G_IDLE, G_MAIN))), "{}", all);
+        // the block sits at 2/5 of the history's free rows (designer):
+        // blank rows above it, more below it; the text stays left, at
+        // the feed's indent
+        let big = draw(&mut app, 120, 48);
+        let at48 = big.iter().position(|r| r.starts_with("├─ you → main ─")).unwrap();
+        let top = big.iter().position(|r| r.contains(FIRST_RUN[0])).unwrap();
+        let bottom = big.iter().position(|r| r.contains(FIRST_RUN[2])).unwrap();
+        let (above, below) = (top - 1, at48 - bottom - 1);
+        assert!(above >= 8 && below > above && below - above <= above, "{above} above, {below} below:\n{}", big.join("\n"));
+        let t = rows.iter().position(|r| r.contains(FIRST_RUN[0])).unwrap();
+        assert_eq!(big[top].find(FIRST_RUN[0]), rows[t].find(FIRST_RUN[0]), "same column");
+        assert!(t > 4, "centered at 24 rows too: {}", all);
+        // a short history (under 12 rows): on top, after one blank row
+        let small = draw(&mut app, 120, 16);
+        let t = small.iter().position(|r| r.contains(FIRST_RUN[0])).unwrap();
+        assert!(t <= 3 && small[t - 1].chars().take(60).all(|c| c == '│' || c == ' '), "{}", small.join("\n"));
         // once there is an agent, the first-run text goes
         bench::add_agent(&mut app, "auth-fix", "the safari login");
         let rows = draw(&mut app, 120, 24);

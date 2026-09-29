@@ -1,10 +1,13 @@
-//! The first launch (BISE-60, book §15, mockup `tui-onboarding.html`).
+//! The first launch (BISE-60, onboarding v3, book §15, screens
+//! `onboarding v3 · …`).
 //!
-//! Six steps, `enter` to go on: the typed welcome and the `:*` pop, the
-//! theme with two live previews, the model (the API keys the harness
-//! reads), the folder and who handles worktrees, how it works in three lines,
-//! then the normal UI (step 6: the real first run; its one-time hints are
-//! BISE-61).
+//! Before the thread, three or four short steps: the typed welcome and the
+//! `:*` pop (any key goes on; a key while it types shows it all), the
+//! theme with two live previews (`←→`, `enter`), a key only when none is
+//! found (the API keys the harness reads), how it works in three lines
+//! (any key). No folder step: bise works where it was started (the header
+//! says where). Then the thread, where the quiet setup card waits
+//! (`setup.rs`).
 //!
 //! It runs once per user: the flag is the `onboarded` preference
 //! (`bise_home`: a key of `~/.bise/prefs.json`, or the old
@@ -32,7 +35,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph, Wrap};
 use ratatui::Frame;
 use std::io;
-use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
@@ -169,24 +171,9 @@ pub(crate) fn clean_key(s: &str) -> Option<String> {
 pub(crate) enum Step {
     Welcome,
     Theme,
+    /// a key: only when none was found at the start
     Model,
-    Folder,
     Lines,
-}
-
-impl Step {
-    fn index(self) -> usize {
-        self as usize
-    }
-    fn next(self) -> Option<Step> {
-        match self {
-            Step::Welcome => Some(Step::Theme),
-            Step::Theme => Some(Step::Model),
-            Step::Model => Some(Step::Folder),
-            Step::Folder => Some(Step::Lines),
-            Step::Lines => None,
-        }
-    }
 }
 
 /// One row of the model step.
@@ -252,11 +239,8 @@ pub(crate) struct Onb {
     pub sel: usize,
     pub sub: Sub,
     pub note: Option<Note>,
-    /// the folder as shown (`~/…`) and whether it is in a git repo
-    pub folder: String,
-    pub git: bool,
-    /// `o` pressed on the folder step
-    pub other_folder: bool,
+    /// no key was found at the start: the key step shows
+    pub ask_key: bool,
 }
 
 /// Where the mode at start came from (book §15 step 2 says which).
@@ -283,23 +267,8 @@ pub(crate) fn theme_from(env: Env, home: &bise_home::Home) -> ThemeFrom {
     }
 }
 
-/// `/Users/x/lab/app` → `~/lab/app` under that home.
-pub(crate) fn tilde(path: &str, home: Option<&Path>) -> String {
-    match home.map(|h| h.to_string_lossy().to_string()) {
-        Some(h) if !h.is_empty() && (path == h || path.starts_with(&format!("{}/", h))) => {
-            format!("~{}", &path[h.len()..])
-        }
-        _ => path.to_string(),
-    }
-}
-
-/// The folder or one of its parents holds `.git`.
-pub(crate) fn in_git(dir: &Path) -> bool {
-    dir.ancestors().any(|d| d.join(".git").exists())
-}
-
 impl Onb {
-    pub(crate) fn new(workspace: &str, env: Env) -> Onb {
+    pub(crate) fn new(env: Env) -> Onb {
         let home = home_of(env);
         let setup = setup_of(env, &home);
         let model = setup.model.clone();
@@ -320,13 +289,23 @@ impl Onb {
             sel: 0,
             sub: Sub::List,
             note: None,
-            folder: tilde(workspace, env("HOME").map(PathBuf::from).as_deref()),
-            git: in_git(Path::new(workspace)),
-            other_folder: false,
+            ask_key: false,
             home,
         };
         o.refresh_keys(env);
+        o.ask_key = o.found.is_empty();
         o
+    }
+
+    /// The steps shown, in order (book §15): the key only when none was
+    /// found.
+    pub(crate) fn steps(&self) -> Vec<Step> {
+        let mut v = vec![Step::Welcome, Step::Theme];
+        if self.ask_key {
+            v.push(Step::Model);
+        }
+        v.push(Step::Lines);
+        v
     }
 
     fn refresh_keys(&mut self, env: Env) {
@@ -367,13 +346,22 @@ impl Onb {
 
     /// Go on: the next step, or done after the last.
     fn advance(&mut self, now: u64) -> Out {
-        match self.step.next() {
+        // the steps in their order, the ones not shown skipped
+        let all = [Step::Welcome, Step::Theme, Step::Model, Step::Lines];
+        let shown = self.steps();
+        let next = all.iter().skip_while(|s| **s != self.step).skip(1).find(|s| shown.contains(s)).copied();
+        match next {
             Some(s) => {
                 self.go(s, now);
                 Out::Stay
             }
             None => Out::Done,
         }
+    }
+
+    /// The welcome is fully written at `now`.
+    fn welcome_done(&self, now: u64) -> bool {
+        self.rushed || now.saturating_sub(self.since) >= WELCOME_END
     }
 
     pub(crate) fn on_key(&mut self, k: KeyEvent, now: u64, env: Env) -> Out {
@@ -385,6 +373,13 @@ impl Onb {
             return self.on_model_sub(k, env);
         }
         match (self.step, k.code) {
+            // esc on the theme: the thread with the defaults (the theme
+            // the launch had: the terminal's, or the saved one)
+            (Step::Theme, KeyCode::Esc) => {
+                self.pick = self.start;
+                theme::set_mode(self.start);
+                Out::Skip
+            }
             (_, KeyCode::Esc) => Out::Skip,
             (Step::Theme, KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down) => {
                 self.pick = if self.pick == Mode::Dark { Mode::Light } else { Mode::Dark };
@@ -412,16 +407,12 @@ impl Onb {
                 }
                 _ => self.advance(now),
             },
-            // any other key: no waiting for the typing
-            (Step::Welcome, k) if k != KeyCode::Enter => {
+            // any key: all of it at once while it types, then on
+            (Step::Welcome, _) if !self.welcome_done(now) => {
                 self.rushed = true;
                 Out::Stay
             }
-            (Step::Folder, KeyCode::Char('o')) => {
-                self.other_folder = true;
-                Out::Stay
-            }
-            (_, KeyCode::Enter) => self.advance(now),
+            (Step::Welcome | Step::Lines, _) => self.advance(now),
             _ => Out::Stay,
         }
     }
@@ -506,7 +497,7 @@ pub(crate) fn typed(text: &str, start: u64, per: u64, t: u64) -> &str {
 // the welcome timeline (the mockup's): typing, the kiss, the tagline, the hint
 const HI: &str = "hi, i'm bise ";
 const TAGLINE: &str = "ideas in. little kisses out. also pull requests.";
-const PRESS: &str = "press enter ↵";
+const PRESS: &str = "any key ↵";
 const HI_AT: u64 = 300;
 const KISS_AT: u64 = HI_AT + 12 * 70 + 250;
 /// the name's definition, a blank row under the first line, just after the
@@ -516,8 +507,7 @@ const GLOSS_STEP: u64 = 300;
 const TAG_AT: u64 = GLOSS_AT + 3 * GLOSS_STEP + 1000;
 const PRESS_AT: u64 = TAG_AT + (TAGLINE.len() as u64 - 1) * 35 + 500;
 /// when the welcome is fully written
-#[cfg(test)]
-pub(crate) const WELCOME_END: u64 = PRESS_AT + 12 * 30;
+pub(crate) const WELCOME_END: u64 = PRESS_AT + 9 * 30;
 /// the three lines of step 5 and the last hint appear one by one
 #[cfg(test)]
 pub(crate) const LINES_END: u64 = 400 + 3 * 900;
@@ -624,12 +614,12 @@ fn gloss(t: u64, w: u16) -> Vec<Line<'static>> {
         .collect()
 }
 
-/// `press enter ↵` typed, dim, `enter` in text color.
+/// `any key ↵` typed, dim, `any key` in text color.
 fn press(t: u64) -> Line<'static> {
     let shown = typed(PRESS, PRESS_AT, 30, t).chars().count();
     let mut spans = Vec::new();
     let mut at = 0;
-    for (part, key) in [("press ", false), ("enter", true), (" ↵", false)] {
+    for (part, key) in [("any key", true), (" ↵", false)] {
         let n = part.chars().count().min(shown.saturating_sub(at));
         if n > 0 {
             let p: String = part.chars().take(n).collect();
@@ -869,76 +859,48 @@ fn model_list(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
     v
 }
 
-/// What sharing the folder means, one sentence a row.
-const FOLDER_NOTE: [&str; 2] =
-    ["your agents share this folder and talk to each other.", "worktrees and conflicts: i handle them for you."];
-
-fn folder_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
-    let repo = if o.git { "· a git repo ✓" } else { "· not a git repo" };
-    let first = vec![bold("i'll work in ", theme::text()), bold(o.folder.clone(), theme::text())];
-    // the repo note never breaks: on the same row, else on its own
-    let fits = "i'll work in ".width() + o.folder.width() + 1 + repo.width() <= w as usize;
-    let mut v = if fits {
-        let mut l = first;
-        l.push(s(format!(" {}", repo), theme::dim()));
-        vec![Line::from(l)]
-    } else {
-        vec![Line::from(first), Line::from(s(repo, theme::dim()))]
-    };
-    blanks(&mut v, gap);
-    // designer's wording (BISE-216); no "one honest thing" line: approvals
-    // come before launch
-    v.extend(FOLDER_NOTE.map(|l| Line::from(s(l, theme::dim()))));
-    if o.other_folder {
-        v.push(Line::raw(""));
-        v.push(Line::from(s(
-            "another folder? cd into it, then run bise.",
-            theme::dim(),
-        )));
-    }
-    blanks(&mut v, gap);
-    v.push(keyline("{enter} ok · {o} another folder"));
-    v
-}
+/// How it works (designer's v3 copy): the three numbered lines, `me` and
+/// `i` (bise) in accent, the numbers dim, no final periods.
+const HOW: [[&str; 3]; 3] = [
+    ["you talk to ", "me", ". anything, any time, keep typing"],
+    ["", "i", " start an agent when a job needs one. they sync with each other"],
+    ["when something needs you, a card shows up · ctrl+g opens it", "", ""],
+];
+/// The faint footer under the three lines.
+const HOW_FOOT: &str = "ctrl+o opens everything folded · ⌥0-9 talk to an agent";
 
 fn how_lines(t: u64, gap: usize) -> Vec<Line<'static>> {
-    let (wave, wave_c) = theme::working_frame((t / 80) as u32);
-    let rows: [Line<'static>; 3] = [
-        Line::from(vec![
-            s(who(theme::glyph(theme::G_YOU)), theme::dim()),
-            s("you talk to me. i start agents for the work, in the background.", theme::text()),
-        ]),
-        Line::from(vec![
-            s(who(wave), wave_c),
-            s("they show up on the right. ⌥ + number to look inside, esc to come back.", theme::text()),
-        ]),
-        Line::from(vec![
-            s(who(theme::glyph(theme::G_CARD)), theme::accent()),
-            s("when someone needs you, you get a card. the rest can wait.", theme::text()),
-        ]),
-    ];
     let shown = |i: u64| t >= 400 + i * 900;
-    let mut v = vec![title("how it works, in three lines:")];
+    let mut v = vec![title("how it works")];
     blanks(&mut v, gap);
-    for (i, l) in rows.into_iter().enumerate() {
+    for (i, [a, me, b]) in HOW.iter().enumerate() {
         if i > 0 {
             v.push(Line::raw(""));
         }
-        v.push(if shown(i as u64) { l } else { Line::raw("") });
+        let row = Line::from(vec![
+            s(format!("{}  ", i + 1), theme::dim()),
+            s(*a, theme::text()),
+            bold(*me, theme::accent()),
+            s(*b, theme::text()),
+        ]);
+        v.push(if shown(i as u64) { row } else { Line::raw("") });
     }
+    blanks(&mut v, 1);
+    v.push(if shown(3) { Line::from(s(HOW_FOOT, theme::faint())) } else { Line::raw("") });
     blanks(&mut v, gap);
-    v.push(if shown(3) { keyline("{enter}, and say what's on your mind.") } else { Line::raw("") });
+    v.push(if shown(3) { keyline("{any key} ↵") } else { Line::raw("") });
     v
 }
 
-/// The step dots: `○ ● ○ ○ ○ ○`, the current one in accent.
-fn dots(step: Step) -> Line<'static> {
+/// The step dots, one per step shown (`○ ● ○ ○`, a key found: 3), faint,
+/// the current one in accent.
+fn dots(o: &Onb) -> Line<'static> {
     let mut v = Vec::new();
-    for i in 0..6 {
+    for (i, st) in o.steps().into_iter().enumerate() {
         if i > 0 {
             v.push(Span::raw(" "));
         }
-        v.push(if i == step.index() { s("●", theme::accent()) } else { s("○", theme::faint()) });
+        v.push(if st == o.step { s("●", theme::accent()) } else { s("○", theme::faint()) });
     }
     Line::from(v)
 }
@@ -986,7 +948,6 @@ pub(crate) fn draw(f: &mut Frame, o: &Onb, now: u64) {
         // the previews (1 blank row above), then the key line after a gap
         Step::Theme => (theme_text(o), 1 + PREVIEW_H + gap as u16 + 1),
         Step::Model => (model_lines(o, col.width, gap), 0),
-        Step::Folder => (folder_lines(o, col.width, gap), 0),
         Step::Lines => (how_lines(t, gap), 0),
     };
     let text_h = height_of(&lines, col.width).min(body.height);
@@ -1011,7 +972,7 @@ pub(crate) fn draw(f: &mut Frame, o: &Onb, now: u64) {
     }
     if area.height >= 3 {
         let dy = area.bottom() - 2;
-        f.render_widget(Paragraph::new(dots(o.step)).alignment(Alignment::Center), Rect { y: dy, height: 1, ..area });
+        f.render_widget(Paragraph::new(dots(o)).alignment(Alignment::Center), Rect { y: dy, height: 1, ..area });
     }
 }
 
@@ -1026,7 +987,7 @@ pub(crate) fn show(
 ) -> io::Result<()> {
     let t0 = Instant::now();
     let mode_before = theme::mode();
-    let mut o = Onb::new(&app.session_id, &real_env);
+    let mut o = Onb::new(&real_env);
     let _ = terminal.clear();
     let r = (|| -> io::Result<()> {
         loop {
@@ -1073,6 +1034,7 @@ mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
     use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
 
     fn tmp(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("bise-onb-{}-{}-{:?}", tag, std::process::id(), std::thread::current().id()));
@@ -1110,9 +1072,9 @@ mod tests {
         bise_home::Home::from_lookup(&move |k: &str| (k == "HOME").then(|| h.clone()))
     }
 
-    fn onb(home: &Path, ws: &str) -> Onb {
+    fn onb(home: &Path, _ws: &str) -> Onb {
         let e = env_of(HashMap::from([("HOME", home.to_string_lossy().to_string())]));
-        Onb::new(ws, &e)
+        Onb::new(&e)
     }
 
     #[test]
@@ -1173,14 +1135,14 @@ mod tests {
         let h = tmp("model");
         let home = h.to_string_lossy().to_string();
         let none = env_of(HashMap::from([("HOME", home.clone())]));
-        let o = Onb::new("/w", &none);
+        let o = Onb::new(&none);
         assert_eq!((o.model.as_str(), o.mine.as_str()), ("foundry/claude-opus-5-5", "foundry"));
         std::fs::create_dir_all(h.join(".bend-harness")).unwrap();
         std::fs::write(h.join(".bend-harness/config.toml"), "# c\nmodel = \"zai-glm-5-3\" # glm\n").unwrap();
-        let o = Onb::new("/w", &none);
+        let o = Onb::new(&none);
         assert_eq!((o.model.as_str(), o.mine.as_str()), ("mistral/zai-glm-5-3", "mistral"));
         let e = env_of(HashMap::from([("HOME", home.clone()), ("BEND_MODEL", "anthropic/claude-haiku-4-5".to_string())]));
-        let o = Onb::new("/w", &e);
+        let o = Onb::new(&e);
         assert_eq!(o.mine, "anthropic");
         assert_eq!(clean_key("  'sk-1'\n"), Some("sk-1".into()));
         assert_eq!(clean_key("a b"), None);
@@ -1247,14 +1209,25 @@ mod tests {
         let x = rows[r3].find("3.").unwrap();
         assert_eq!(rows[r3 + 1].find(|c: char| c != ' '), Some(x + 3), "hanging indent: {}", sc);
         assert_eq!(rows[r3 - 1].find("2."), Some(x), "{}", sc);
-        // any key but enter shows it all at once
+        // any key while it types shows it all at once (enter too), then
+        // any key goes on
+        let none = env_of(HashMap::new());
+        for k in [KeyCode::Char('x'), KeyCode::Enter] {
+            let mut r = onb(&h, "/w");
+            assert_eq!(r.on_key(key(k), 5, &none), Out::Stay);
+            assert_eq!(r.step, Step::Welcome);
+            let sc = screen(&r, 10, 100, 30);
+            assert!(sc.contains(gloss[3]) && sc.contains("any key ↵"), "{}", sc);
+            assert_eq!(r.on_key(key(KeyCode::Char('y')), 20, &none), Out::Stay);
+            assert_eq!(r.step, Step::Theme);
+        }
         let mut r = onb(&h, "/w");
-        assert_eq!(r.on_key(key(KeyCode::Char('x')), 5, &env_of(HashMap::new())), Out::Stay);
-        assert_eq!(r.step, Step::Welcome);
-        let sc = screen(&r, 10, 100, 30);
-        assert!(sc.contains(gloss[3]) && sc.contains("press enter ↵"), "{}", sc);
+        assert_eq!(r.on_key(key(KeyCode::Char(' ')), WELCOME_END, &none), Out::Stay);
+        assert_eq!(r.step, Step::Theme, "written: any key goes on, no enter needed");
         let sc = screen(&o, WELCOME_END, 100, 30);
-        for s in ["hi, i'm bise :*", "ideas in. little kisses out. also pull requests.", "press enter ↵", "● ○ ○ ○ ○ ○"] {
+        assert!(!sc.contains("press enter"), "{}", sc);
+        // no key in this home: welcome, theme, the key, how it works
+        for s in ["hi, i'm bise :*", "ideas in. little kisses out. also pull requests.", "any key ↵", "● ○ ○ ○"] {
             assert!(sc.contains(s), "{}\n{}", s, sc);
         }
     }
@@ -1265,7 +1238,7 @@ mod tests {
         let mut o = onb(&h, "/w");
         o.detected = Some(Mode::Dark);
         let none = env_of(HashMap::new());
-        assert_eq!(o.on_key(key(KeyCode::Enter), 10, &none), Out::Stay);
+        assert_eq!(o.on_key(key(KeyCode::Enter), WELCOME_END, &none), Out::Stay);
         assert_eq!(o.step, Step::Theme);
         let sc = screen(&o, 20, 100, 30);
         for s in [
@@ -1275,7 +1248,7 @@ mod tests {
             "on it: auth-fix takes it.",
             "auth-fix is done.",
             "←→ switch · enter keep",
-            "○ ● ○ ○ ○ ○",
+            "○ ● ○ ○",
         ] {
             assert!(sc.contains(s), "{}\n{}", s, sc);
         }
@@ -1299,7 +1272,7 @@ mod tests {
             ("HOME", h.to_string_lossy().to_string()),
             ("ANTHROPIC_FOUNDRY_API_KEY", "k".to_string()),
         ]));
-        let mut o = Onb::new("/w", &e);
+        let mut o = Onb::new(&e);
         o.go(Step::Model, 0);
         let sc = screen(&o, 10, 110, 30);
         for s in [
@@ -1379,7 +1352,7 @@ mod tests {
         // enter on a found key goes on
         o.sel = 0;
         o.on_key(key(KeyCode::Enter), 5, &e);
-        assert_eq!(o.step, Step::Folder);
+        assert_eq!(o.step, Step::Lines);
     }
 
     #[test]
@@ -1390,7 +1363,7 @@ mod tests {
         // BISE_THEME: no detection, it says so
         let e = env_of(HashMap::from([("HOME", home.clone()), ("BISE_THEME", "light".to_string())]));
         theme::set_mode(Mode::Light);
-        let mut o = Onb::new("/w", &e);
+        let mut o = Onb::new(&e);
         assert_eq!(o.theme_from, ThemeFrom::Env);
         o.go(Step::Theme, 0);
         let sc = screen(&o, 10, 100, 30);
@@ -1399,7 +1372,7 @@ mod tests {
         // a saved choice: it was picked before
         save_in(&hm(&h), Choice::Light).unwrap();
         let e = env_of(HashMap::from([("HOME", home.clone())]));
-        let mut o = Onb::new("/w", &e);
+        let mut o = Onb::new(&e);
         assert_eq!(o.theme_from, ThemeFrom::Saved);
         o.go(Step::Theme, 0);
         assert!(screen(&o, 10, 100, 30).contains("you picked light last time, so i kept it."));
@@ -1409,7 +1382,7 @@ mod tests {
         assert_eq!(o.theme_choice(), Some(Choice::Dark));
         // BISE_THEME=auto: the terminal decides
         let e = env_of(HashMap::from([("HOME", home), ("BISE_THEME", "auto".to_string())]));
-        assert_eq!(Onb::new("/w", &e).theme_from, ThemeFrom::Terminal);
+        assert_eq!(Onb::new(&e).theme_from, ThemeFrom::Terminal);
         theme::set_mode(Mode::Dark);
     }
 
@@ -1422,7 +1395,7 @@ mod tests {
         theme::set_mode(Mode::Light);
         // kept, or switched away and back, or switched: enter writes nothing
         for toggles in [0, 2, 1] {
-            let mut o = Onb::new("/w", &e);
+            let mut o = Onb::new(&e);
             o.go(Step::Theme, 0);
             for _ in 0..toggles {
                 o.on_key(key(KeyCode::Right), 1, &e);
@@ -1434,7 +1407,7 @@ mod tests {
         }
         // a real saved choice stays what it was
         save_in(&hm(&h), Choice::Dark).unwrap();
-        let mut o = Onb::new("/w", &e);
+        let mut o = Onb::new(&e);
         o.go(Step::Theme, 0);
         o.on_key(key(KeyCode::Enter), 2, &e);
         assert_eq!(load_in(&hm(&h)), Some(Choice::Dark));
@@ -1442,13 +1415,13 @@ mod tests {
     }
 
     #[test]
-    fn wrapped_details_keep_their_indent_and_the_repo_note_never_breaks() {
+    fn wrapped_details_keep_their_indent() {
         let h = tmp("wrap");
         let e = env_of(HashMap::from([
             ("HOME", h.to_string_lossy().to_string()),
             ("MISTRAL_API_KEY", "k".to_string()),
         ]));
-        let mut o = Onb::new("/w", &e);
+        let mut o = Onb::new(&e);
         o.go(Step::Model, 0);
         let sc = screen(&o, 10, 70, 30);
         let rows: Vec<&str> = sc.lines().collect();
@@ -1459,32 +1432,6 @@ mod tests {
         let next: Vec<char> = rows[i + 1].chars().collect();
         assert!(next[start] != ' ' && next[start - 4..start].iter().all(|c| *c == ' '), "{}", sc);
         assert!(sc.contains("config.toml."), "{}", sc);
-        // a long path: the repo note goes on its own row, whole
-        let ws = h.join("a-rather-long-folder-name/and-another-one-that-goes-on/app");
-        std::fs::create_dir_all(ws.join(".git")).unwrap();
-        let mut o = onb(&h, &ws.to_string_lossy());
-        o.go(Step::Folder, 0);
-        let sc = screen(&o, 10, 80, 30);
-        assert!(sc.lines().any(|r| r.trim() == "· a git repo ✓"), "{}", sc);
-        // a short one: on the title row
-        let ws = h.join("lab/app");
-        std::fs::create_dir_all(ws.join(".git")).unwrap();
-        let mut o = onb(&h, &ws.to_string_lossy());
-        o.go(Step::Folder, 0);
-        assert!(screen(&o, 10, 200, 30).contains("i'll work in ~/lab/app · a git repo ✓"));
-    }
-
-    #[test]
-    fn the_key_line_is_never_cut_by_a_long_path() {
-        let h = tmp("cut");
-        let ws = h.join("a-rather-long-folder-name-that-goes-on-and-on/and-another-one-that-goes-on/app");
-        std::fs::create_dir_all(ws.join(".git")).unwrap();
-        let mut o = onb(&std::path::PathBuf::from("/nowhere"), &ws.to_string_lossy());
-        o.go(Step::Folder, 0);
-        for (w, hh) in [(120, 34), (80, 24), (60, 21)] {
-            let sc = screen(&o, 10, w, hh);
-            assert!(sc.contains("enter ok · o another folder"), "{w}x{hh}\n{sc}");
-        }
     }
 
     #[test]
@@ -1497,48 +1444,32 @@ mod tests {
     }
 
     #[test]
-    fn step_4_folder_and_who_handles_worktrees() {
-        let h = tmp("s4");
-        let ws = h.join("lab/app");
-        std::fs::create_dir_all(ws.join(".git")).unwrap();
-        let mut o = onb(&h, &ws.to_string_lossy());
-        o.go(Step::Folder, 0);
-        let none = env_of(HashMap::new());
-        let sc = screen(&o, 10, 150, 30);
-        for s in [
-            "i'll work in ~/lab/app · a git repo ✓",
-            "your agents share this folder and talk to each other.",
-            "worktrees and conflicts: i handle them for you.",
-            "enter ok · o another folder",
-            "○ ○ ○ ● ○ ○",
-        ] {
-            assert!(flat(&sc).contains(s), "{}\n{}", s, sc);
-        }
-        assert!(!sc.contains("honest") && !sc.contains("no worktrees to merge"), "{}", sc);
-        o.on_key(key(KeyCode::Char('o')), 1, &none);
-        assert!(screen(&o, 10, 120, 30).contains("another folder? cd into it, then run bise."));
-    }
-
-    #[test]
     fn step_5_three_lines_one_by_one_then_done() {
         let h = tmp("s5");
         let mut o = onb(&h, "/w");
         o.go(Step::Lines, 100);
         let none = env_of(HashMap::new());
         let sc = screen(&o, 100 + 500, 110, 30);
-        assert!(sc.contains("you talk to me.") && !sc.contains("they show up"), "{}", sc);
+        assert!(sc.contains("1  you talk to me.") && !sc.contains("i start an agent"), "{}", sc);
         let sc = screen(&o, 100 + LINES_END, 110, 30);
         for s in [
-            "how it works, in three lines:",
-            "›  you talk to me. i start agents for the work, in the background.",
-            "they show up on the right. ⌥ + number to look inside, esc to come back.",
-            "?  when someone needs you, you get a card. the rest can wait.",
-            "enter, and say what's on your mind.",
-            "○ ○ ○ ○ ● ○",
+            "how it works",
+            "1  you talk to me. anything, any time, keep typing",
+            "2  i start an agent when a job needs one. they sync with each other",
+            "3  when something needs you, a card shows up · ctrl+g opens it",
+            "ctrl+o opens everything folded · ⌥0-9 talk to an agent",
+            "any key ↵",
+            "○ ○ ○ ●",
         ] {
             assert!(flat(&sc).contains(s), "{}\n{}", s, sc);
         }
-        assert_eq!(o.on_key(key(KeyCode::Enter), 1, &none), Out::Done);
+        assert!(!sc.contains("how it works,") && !sc.contains("typing."), "no final periods: {}", sc);
+        // bise (me, i) in accent, the numbers dim
+        let l = how_lines(LINES_END, 2);
+        assert_eq!(l[3].spans[0].style.fg, Some(theme::dim()));
+        assert_eq!(l[3].spans[2].style.fg, Some(theme::accent()));
+        assert_eq!(l[5].spans[2].content, "i");
+        assert_eq!(o.on_key(key(KeyCode::Char('q')), 1, &none), Out::Done, "any key");
     }
 
     #[test]
@@ -1549,13 +1480,42 @@ mod tests {
         assert_eq!(o.on_key(key(KeyCode::Esc), 1, &none), Out::Skip);
         o.go(Step::Theme, 0);
         assert_eq!(o.on_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL), 1, &none), Out::Skip);
+        // esc on the theme: the theme the launch had
+        let start = theme::mode();
+        o.go(Step::Theme, 0);
+        o.on_key(key(KeyCode::Right), 1, &none);
+        assert_ne!(theme::mode(), start);
+        assert_eq!(o.on_key(key(KeyCode::Esc), 2, &none), Out::Skip);
+        assert_eq!(theme::mode(), start);
+        theme::set_mode(Mode::Dark);
+    }
+
+    #[test]
+    fn a_found_key_skips_the_key_step_and_its_dot() {
+        let h = tmp("found");
+        let e = env_of(HashMap::from([
+            ("HOME", h.to_string_lossy().to_string()),
+            ("MISTRAL_API_KEY", "k".to_string()),
+        ]));
+        let mut o = Onb::new(&e);
+        assert_eq!(o.steps(), vec![Step::Welcome, Step::Theme, Step::Lines]);
+        o.go(Step::Theme, 0);
+        assert!(screen(&o, 10, 100, 30).contains("○ ● ○"), "three dots");
+        assert!(!screen(&o, 10, 100, 30).contains("○ ● ○ ○"));
+        o.on_key(key(KeyCode::Enter), 5, &e);
+        assert_eq!(o.step, Step::Lines);
+        // saving a key on the key step does not take the step away
+        let mut o = onb(&h, "/w");
+        assert!(o.ask_key);
+        o.found = vec![o.providers[0].clone()];
+        assert!(o.steps().contains(&Step::Model));
     }
 
     #[test]
     fn narrow_screens_do_not_panic() {
         let h = tmp("narrow");
         let mut o = onb(&h, "/w");
-        for step in [Step::Welcome, Step::Theme, Step::Model, Step::Folder, Step::Lines] {
+        for step in [Step::Welcome, Step::Theme, Step::Model, Step::Lines] {
             o.go(step, 0);
             for (w, hh) in [(20, 5), (1, 1), (60, 12), (200, 60)] {
                 screen(&o, 99_999, w, hh);

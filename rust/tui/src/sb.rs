@@ -1057,7 +1057,7 @@ mod nav_key_tests {
         hub.set_nonblocking(true).unwrap();
         let (_tx, rx) = mpsc::channel::<String>();
         let sb = new_sb(std::sync::Arc::new(std::sync::Mutex::new(a)), "ws".into());
-        let mut app = sb_app(sb, rx, false, 100, crate::voice::Voice::live(false), "ws".into());
+        let mut app = sb_app(sb, rx, false, 100, crate::voice::Voice::live(false));
         let mut sent = move || {
             let mut buf = vec![0u8; 4096];
             match hub.read(&mut buf) {
@@ -1106,7 +1106,7 @@ mod nav_key_tests {
         hub.set_nonblocking(true).unwrap();
         let (_tx, rx) = mpsc::channel::<String>();
         let sb = new_sb(std::sync::Arc::new(std::sync::Mutex::new(a)), "ws".into());
-        let mut app = sb_app(sb, rx, false, 100, crate::voice::Voice::live(false), "ws".into());
+        let mut app = sb_app(sb, rx, false, 100, crate::voice::Voice::live(false));
         let mut sent = move || {
             let mut buf = vec![0u8; 4096];
             match hub.read(&mut buf) {

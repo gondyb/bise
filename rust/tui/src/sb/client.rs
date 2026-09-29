@@ -130,9 +130,8 @@ pub(super) fn sb_app(
     debug: bool,
     area_w: usize,
     voice: crate::voice::Voice,
-    session_id: String,
 ) -> App {
-    App::new(sb, rx, debug, area_w, voice, session_id)
+    App::new(sb, rx, debug, area_w, voice)
 }
 
 /// `bise switchboard`: the client of a workspace's hub.
@@ -155,7 +154,7 @@ pub fn run_switchboard(
         .unwrap_or(100)
         .max(40);
     let voice = super::voice::Voice::live(super::voice::load_voice_enabled());
-    let mut app = sb_app(sb, rx, debug, area_w, voice, workspace);
+    let mut app = sb_app(sb, rx, debug, area_w, voice);
     let interactive = io::stdout().is_terminal() && io::stdin().is_terminal();
     if interactive {
         // BISE-120a: the drafts and the sent prompts come back

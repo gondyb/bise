@@ -70,53 +70,43 @@ def main():
         print("---- %s ----\n%s" % (name, sc))
 
     with tui_session(120, 34, env(root, home), E=E) as t:
-        # 1 welcome: typed, then the :* pop
-        sc = t.wait("press enter ↵", 30)
+        # 1 welcome: typed, then the :* pop; any key goes on
+        sc = t.wait("any key ↵", 30)
         time.sleep(0.5)
         sc = t.screen()
+        # the fake env has MISTRAL_API_KEY: no key step, three dots
         for s in ["hi, i'm bise :*", "bise /beez/ · french, n.", "1. a quick kiss on the cheek :*",
                   "2. a brisk north wind", "3. a terminal where your agents ship while you think",
-                  "ideas in. little kisses out. also pull requests.", "● ○ ○ ○ ○ ○"]:
+                  "ideas in. little kisses out. also pull requests.", "● ○ ○"]:
             assert s in flat(sc), sc
+        assert "● ○ ○ ○" not in sc, sc
         rows = sc.splitlines()
         hi = next(i for i, r in enumerate(rows) if "hi, i'm bise :*" in r)
         assert "bise /beez/" in rows[hi + 2], sc      # the definition, a blank row under the name
         shot("1-welcome", sc)
         # 2 theme: two previews, ←→ switches live
-        t.keys("Enter")
+        t.keys("Space")
         sc = t.wait("←→ switch · enter keep")
         for s in ["so i picked dark.", "you can change it any time with /theme.", "fix the flaky login test",
-                  "on it: auth-fix takes it.", "auth-fix is done.", "○ ● ○ ○ ○ ○"]:
+                  "on it: auth-fix takes it.", "auth-fix is done.", "○ ● ○"]:
             assert s in flat(sc), sc
         shot("2-theme", sc)
         t.keys("Right")
         time.sleep(0.3)
         t.keys("Left")
-        # 3 model: the fake env has MISTRAL_API_KEY and a mistral model
+        # 3 how it works, one line at a time (a key was found: no key step,
+        # no folder step)
         t.keys("Enter")
-        sc = t.wait("which model should do the work?")
-        for s in ["i found a key in your environment.", "1 · use MISTRAL_API_KEY found",
-                  "mistral, already set up. nothing to paste.", "2 · paste another key",
-                  "↑↓ choose · enter ok"]:
+        sc = t.wait("any key ↵")
+        for s in ["how it works", "1  you talk to me. anything, any time, keep typing",
+                  "2  i start an agent when a job needs one. they sync with each other",
+                  "3  when something needs you, a card shows up · ctrl+g opens it",
+                  "ctrl+o opens everything folded", "○ ○ ●"]:
             assert s in flat(sc), sc
-        shot("3-model", sc)
-        # 4 folder and who handles worktrees
-        t.keys("Enter")
-        sc = t.wait("enter ok · o another folder")
-        for s in ["i'll work in ", "git repo ✓", "worktrees and conflicts: i handle them for you."]:
-            assert s in flat(sc), sc
-        shot("4-folder", sc)
-        t.keys("o")
-        t.wait("another folder? cd into it, then run bise.")
-        # 5 the three lines, one by one
-        t.keys("Enter")
-        sc = t.wait("enter, and say what's on your mind.")
-        for s in ["how it works, in three lines:", "you talk to me. i start agents for the work, in the background.",
-                  "they show up on the right.", "when someone needs you, you get a card. the rest can wait."]:
-            assert s in flat(sc), sc
-        shot("5-how-it-works", sc)
-        # 6 the normal UI, and the flag
-        t.keys("Enter")
+        assert "which model should do the work?" not in sc and "i'll work in" not in sc, sc
+        shot("3-how-it-works", sc)
+        # 4 the thread, and the flag
+        t.keys("x")
         sc = t.wait(NORMAL)
         shot("6-first-run", sc)
         # BISE-92: bise paints its ground on every cell (dark here: tmux gives
@@ -149,7 +139,7 @@ def main():
         sc = t.wait(NORMAL)
         time.sleep(0.5)
         sc = t.screen()
-        assert "press enter ↵" not in sc and "hi, i'm" not in sc, sc
+        assert "any key ↵" not in sc and "hi, i'm" not in sc, sc
         # esc skips on a fresh root, and marks it seen
         root2 = os.path.join(E.tmp, "state-root-2")
         t.start(120, 34, env(root2, home))

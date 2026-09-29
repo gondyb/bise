@@ -103,7 +103,6 @@ pub(crate) struct App {
     /// newline), not to an app shortcut: set by `on_key`, read by zen
     /// (BISE-128)
     pub(crate) key_in_composer: bool,
-    pub(crate) session_id: String,
     pub(crate) rx: Receiver<String>,
     pub(crate) should_quit: bool,
     /// Switchboard (projects/switchboard): the hub connection, the
@@ -184,7 +183,6 @@ impl App {
         debug: bool,
         area_w: usize,
         voice: crate::voice::Voice,
-        session_id: String,
     ) -> App {
         App {
             connected: true,
@@ -233,7 +231,6 @@ impl App {
             focus_lost: false,
             zen: crate::zen::Zen::default(),
             key_in_composer: false,
-            session_id,
             rx,
             should_quit: false,
             sb,
