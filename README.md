@@ -37,7 +37,7 @@ at 6pm you'd shipped more than ever, and you felt like you did nothing.
 
 **you can build a whole product on your own now. you just need your head back.**
 
-## one thread. a whole team.
+## one thread. a whole team
 
 bise is a terminal app. you talk to **main**, bise's main agent. main splits your ideas into jobs and runs the other agents for you.
 
@@ -50,36 +50,36 @@ bise is a terminal app. you talk to **main**, bise's main agent. main splits you
 
 | | |
 |---|---|
-| **one thread per repo.** | one thread to talk to. peek into any agent when you feel like it. main knows everything going on in the repo, even what you did last month. |
-| **main is always listening.** | the team is busy. main never is. ask, add a thing, change your mind while the agents work. |
-| **a team that runs itself.** | they talk behind your back. in a good way. agents tell each other what they touch, make a worktree only when they need their own copy, and clean it up after. |
-| **forget there are agents.** | no yaml was harmed. no roles, no graph, no config. you just dump your ideas in the thread. |
+| **one thread per repo** | one thread to talk to. peek into any agent when you feel like it. main knows everything going on in the repo, even what you did last month. |
+| **main is always listening** | the team is busy. main never is. ask, add a thing, change your mind while the agents work. |
+| **a team that runs itself** | they talk behind your back. in a good way. agents tell each other what they touch, make a worktree only when they need their own copy, and clean it up after. |
+| **forget there are agents** | no yaml was harmed. no roles, no graph, no config. you just dump your ideas in the thread. |
 
 ## kiss your backlog goodbye.
 
-- **talk whenever. you never wait.** say the next thing while the last one runs. the composer is never locked.
-- **agents sync on their own.** every agent can message every other one. it's folded out of your way.
-- **all your MCPs. all your skills. always on.** connect as many MCP servers as you want. bise calls tools through code, so a hundred servers don't fill its context.
-- **only the real decisions reach you.** one card, a couple of choices, one key.
-- **you're not the router.** main answers the obvious questions itself, the way you would, and tells you why.
-- **talk to any agent, anytime.** `⌥` + a number, or `@name`.
-- **change your mind mid-run.** a correction lands in the running agent. ✓ it got it, ✓✓ it read it.
-- **nothing gets dropped.** when an agent stops half-way, main picks the work back up.
-- **worktrees, only when they help.** made when needed, cleaned up after.
-- **bring your Agent Plugins.** skills, MCP servers and hooks in the [Agent Plugins](https://agent-plugins.org) format load as they are, from `~/.agents/plugins` or your repo.
+- **talk whenever. you never wait** · say the next thing while the last one runs. the composer is never locked.
+- **agents sync on their own** · every agent can message every other one. it's folded out of your way.
+- **all your MCPs. all your skills. always on** · connect as many MCP servers as you want. bise calls tools through code, so a hundred servers don't fill its context.
+- **only the real decisions reach you** · one card, a couple of choices, one key.
+- **you're not the router** · main answers the obvious questions itself, the way you would, and tells you why.
+- **talk to any agent, anytime** · `⌥` + a number, or `@name`.
+- **change your mind mid-run** · a correction lands in the running agent. ✓ it got it, ✓✓ it read it.
+- **nothing gets dropped** · when an agent stops half-way, main picks the work back up.
+- **worktrees, only when they help** · made when needed, cleaned up after.
+- **bring your Agent Plugins** · skills, MCP servers and hooks in the [Agent Plugins](https://agent-plugins.org) format load as they are, from `~/.agents/plugins` or your repo.
 
 <details>
 <summary><b>and so much more</b></summary>
 
-- **your token bill can relax.** bise starts an agent when a job needs one. that's the whole rule.
-- **it's quiet. open it up whenever.** the rest is folded, never deleted. `ctrl+o` opens it all, every script in full.
-- **or just talk.** `/voice`, then `ctrl+r`.
-- **show it a screenshot.** paste it with `ctrl+v` or drag it in.
-- **ask about anything on screen.** select lines in the history and start typing: they come along as a quote.
-- **a model per agent.** `/model` and `/reasoning`.
-- **a real shell, one key away.** `ctrl+\`` opens a terminal in your repo.
+- **your token bill can relax** · bise starts an agent when a job needs one. that's the whole rule.
+- **it's quiet. open it up whenever** · the rest is folded, never deleted. `ctrl+o` opens it all, every script in full.
+- **or just talk** · `/voice`, then `ctrl+r`.
+- **show it a screenshot** · paste it with `ctrl+v` or drag it in.
+- **ask about anything on screen** · select lines in the history and start typing: they come along as a quote.
+- **a model per agent** · `/model` and `/reasoning`.
+- **a real shell, one key away** · `ctrl+\`` opens a terminal in your repo.
 - **hold ctrl to see the shortcuts** (Ghostty, kitty).
-- **tables that fit** your terminal, light or dark, text at a reading width.
+- **tables that fit** · your terminal, light or dark, text at a reading width.
 
 </details>
 
@@ -117,7 +117,7 @@ bise doctor     # checks your install, keys and running hubs
 | [`projects/switchboard/`](projects/switchboard/) | design docs, packaging, tests |
 | [`projects/switchboard/docs/brand/`](projects/switchboard/docs/brand/) | the brand book, the site, these images |
 
-## made by a human. shipped with bise.
+## made by a human. shipped with bise
 
 hi, i'm [Gabriel](https://github.com/gvergnaud). i build coding agents for a living. i'm one of the people behind Mistral's agent tools, like Vibe.
 
