@@ -1976,10 +1976,11 @@ Index:
 
 ### BISE-103 · `esc back to main` in an agent's view
 
-- **status:** todo · **owner:** bise-k-keys · **commits:** —
+- **status:** done · **owner:** bise-k-keys · **commits:** 852dea4, QA shots 7f38785
 - **track:** K · **owns:** `keybar.rs` (modes of an agent's view), tests
 - **spec:** book §13 "The composer pane" (key bar in an agent's view). User request 2026-09-29.
 - **what:** in an agent's view, `esc back to main` is the first pair of every key set, never dropped (pairs drop from the right, `/ commands` first); the tip is hidden there.
+- **notes (bise-k-keys):** `keybar::render(mode, width, typing, agent, tip)` (new `agent` flag; `line()` sets it when switchboard runs and the focus isn't main). In an agent's view: idle `esc back to main   ⏎ send   @ agent   ⌥0-9 switch   / commands   ? help`; working the book's set `esc back to main   ⏎ steer   ctrl+c interrupt` (no `tab queue` there, as in §13); an archived agent puts `esc back to main` first too (before `/restore brings it back`). Narrow: `/ commands` drops first, then from the right; `esc back to main` stays (cut only when it alone doesn't fit). No tip in an agent's view. The other key sets (selection, `@` file popup, drop / confirm questions, card full screen, recording, terminal, images) keep their own keys: `esc` does something else there. Tests: `keybar` an_agents_view_starts_with_esc_back_to_main, in_an_agents_view_commands_drop_first_and_esc_never; no tmux test asserted an agent view's key bar. Gates: build, `cargo test -p bend-tui` 319, clippy `--all-targets -D warnings`; `run_all.sh` green on 852dea4 (18 PASS, 320 + 100 Rust tests).
 
 ### BISE-104 · the tip changes every 5 minutes
 
