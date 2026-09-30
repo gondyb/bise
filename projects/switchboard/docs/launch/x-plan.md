@@ -129,7 +129,7 @@ also works as a series: one "you can stop doing X" post a day at 10:00.
 
 ## 2b. series · "the models grew up"
 
-one belief per post: what people still do with agents, then what bise does, then a 10-20 s clip. tag each "the models grew up · 1/8". slot: 10:00, one a day, or the monday post.
+one belief per post: what people still do with agents, then what bise does, then a 10-20 s clip. tag each "the models grew up · 1/4". slot: 10:00, one a day, or the monday post.
 rule: quote the belief in "", never mock the people who do it (we all did).
 
 **1 · compaction**
@@ -153,34 +153,14 @@ rule: quote the belief in "", never mock the people who do it (we all did).
 >
 > [clip: the divider exchange (main#9362) under ctrl+o]
 
-**4 · memory**
-> "you need a memory system."
->
-> main's thread never ends, and agents can search every past thread, even the parts from before a compaction. ask about last week's work in your own words.
->
-> [clip: capsule 2's search]
-
-**5 · config**
-> "multi-agent means roles, a graph and a yaml file."
->
-> no yaml was harmed. you talk. main starts an agent when a job needs one.
-
-**6 · tokens**
-> "multi-agent burns tokens like crazy."
->
-> only when agents sit in committees reviewing each other. in bise an agent starts when a job needs one. that's the whole rule.
-
-**7 · conflicts**
+**4 · conflicts**
 > "parallel agents = merge conflicts."
 >
 > they message each other before they touch the same file. when one needs its own copy, it gets a worktree, removed once its work lands.
 >
 > [clip: ✉ "are you touching tokens.css?"]
 
-**8 · waiting**
-> "don't interrupt the agent mid-turn."
->
-> interrupt all you want. the composer is never locked.
+cut from the series (already in capsule 6 and the post bank): memory, config, tokens, waiting.
 
 to verify before posting #1: say nothing about model quality after compaction beyond what you've seen yourself.
 
