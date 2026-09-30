@@ -967,8 +967,8 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
       if (i >= 1) { await visit(wins[Math.floor(Math.random() * wins.length)], id); }
       if (i === 4) { say("wait, what was i doing?", stage.clientWidth * .52, stage.clientHeight * .78); }
     }
-    for (let k = 0; k < 5 && id === run; k++) { await visit(wins[Math.floor(Math.random() * wins.length)], id); await sleep(150); }
-    await sleep(1400); if (id === run && !pinned) calm();
+    for (let k = 0; k < 3 && id === run; k++) { await visit(wins[Math.floor(Math.random() * wins.length)], id); await sleep(150); }
+    await sleep(1200); if (id === run && !pinned) calm();
   }
   function calm() {
     const id = ++run; state = "bise"; setFlip(); bub.classList.remove("on"); you.style.opacity = "0";
