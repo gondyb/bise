@@ -30,7 +30,7 @@
 <body>
 <div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
 
-<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>the dandelion sky and one thread. agents branch off it and draw their arc (∿ name). when one is back on the thread with a ✓, its arc comes apart into seeds that float away.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>the dandelion sky and one thread. agents branch off it and draw a dotted arc (∿ name). when one is back on the thread with a ✓, its arc comes apart into seeds that float away.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
 <section class="v" data-v="seeds"><div class="tag"><b>7 · seeds</b> <span class="pick">new · mix of 5 and 6</span><br>the dandelion sky, plus one thread. now and then an agent lifts off the thread like a seed (∿ name), floats a while, and lands further along with a ✓. the thread's :* keeps walking.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
@@ -83,6 +83,13 @@ function arc(g, pts, cl = "") {
     const [x, y] = pts[i], yi = Math.round(y), n = pts[i + 1] ? Math.round(pts[i + 1][1]) : yi, d = n - yi;
     g.put(x, yi, d < 0 ? "/" : d > 0 ? "\\" : "~", cl);
     for (let k = 1; k < Math.abs(d); k++) g.put(x + (d < 0 ? 1 : 0), yi + Math.sign(d) * k, "|", cl);
+  }
+}
+// an arc as dots: sampled finely so steep parts stay continuous
+function dots(g, pts, cl = "") {
+  for (let i = 0; i < pts.length; i++) {
+    const [x, y] = pts[i], n = pts[i + 1] ? pts[i + 1][1] : y, steps = Math.max(1, Math.ceil(Math.abs(n - y)));
+    for (let k = 0; k < steps; k++) g.put(x + k / steps, y + (n - y) * k / steps, "·", cl);
   }
 }
 const V = {
@@ -216,7 +223,7 @@ const V = {
           s.land.push({ x: b.xs + b.L, name: b.name, n: 45 });
           return false;
         }
-        arc(g, pts);
+        dots(g, pts);
         if (b.p < b.L) { const [hx, hy] = pts[pts.length - 1]; g.put(hx, hy, "∿", "a"); g.str(hx + 2, hy, b.name, "d"); }
         else { g.put(b.xs + b.L, Y, "✓", "a"); g.str(b.xs + b.L + 2, Y - 1, b.name, "d"); }
         return true;
