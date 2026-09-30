@@ -515,6 +515,24 @@ The same three levels everywhere, in main and inside an agent.
   links.rs:42 in code` or `vim opens links.rs:42 in the terminal panel ·
   ctrl+` hides it`. The copy keeps a file link's label alone when it
   names the file.
+- **The mouse pointer** (BISE-272, user: « que les éléments qui ont une
+  interaction au hover changent le cursor? genre pointer sur les liens, drag
+  ou resize sur les parties resizable »): a hand (`pointer`) over what a
+  click does: links and file links, the history's rows a click opens or
+  closes (a thinking section, a tool row, `▸ n more lines` of your
+  message, a fold), `↓ back to the bottom`, the panel's rows, the inbox's
+  rows, tabs, choices and `×`, the palette's entries; the text cursor
+  (`text`) over the composer; `ns-resize` on the terminal panel's top
+  border (the one part a drag resizes: the panel's rule and zen have no
+  drag). The default elsewhere, under a popup, the help or a hint, over
+  the terminal panel's inside, and while the terminal is out of focus. A
+  drag keeps the shape it started with (the border's `ns-resize`, the
+  composer's `text`). Each frame says the shape of what it draws, the last
+  drawn wins; the terminal gets OSC 22 (`ESC ]22;pointer ESC \`, kitty's
+  CSS names) only on a change, and `default` on exit. Only in Ghostty and
+  kitty, outside tmux (it does not pass OSC 22); `BISE_POINTER=0` off,
+  `=1` on in another terminal that has it (WezTerm, iTerm2 and
+  Terminal.app do not: nothing is written there).
 
 ## 12. The inbox
 

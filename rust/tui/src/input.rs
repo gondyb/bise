@@ -254,6 +254,8 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
     // BISE-271: a move shows the time of the turn under the mouse; a
     // press, a drag, a scroll put it away
     app.hover = matches!(m.kind, MouseEventKind::Moved).then_some((m.column, m.row));
+    // BISE-272: the pointer's shape follows the mouse, pressed or not
+    app.pointer_at = Some((m.column, m.row));
     if help::mouse(app, m) {
         return;
     }

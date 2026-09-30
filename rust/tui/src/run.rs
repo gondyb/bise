@@ -184,6 +184,8 @@ pub(crate) fn run_tui(app: &mut App) -> io::Result<()> {
     crate::sb::setup::arm(app);
     let r = ui_loop(app, &mut terminal);
     crash::set_ui_thread(false);
+    // BISE-272: the terminal's own mouse pointer back
+    let _ = terminal.backend_mut().set_pointer(crate::pointer::Shape::Default);
     // no orphan shell
     app.term.shutdown();
     crash::restore_terminal();
@@ -256,6 +258,7 @@ impl Startup {
 /// you type (BISE-121), `BISE_ASCII`.
 pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
     crate::links::begin_frame(); // the feed says where its links are
+    crate::pointer::begin_frame(); // BISE-272: what has which pointer shape
     sb::draw_sb(app, f);
     crate::hints::draw(f); // BISE-61: one-time hints
     crate::ctrlhint::draw(app, f.buffer_mut()); // ctrl held: the key hints
@@ -411,6 +414,8 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
             Ok(r) => {
                 r?;
                 draw_crashes = 0;
+                // BISE-272: the pointer's shape under the mouse, on a change
+                terminal.backend_mut().set_pointer(crate::pointer::wanted(app))?;
             }
             Err(c) => {
                 draw_crashes += 1;

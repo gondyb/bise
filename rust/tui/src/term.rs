@@ -443,6 +443,23 @@ impl Term {
         self.shown
     }
 
+    /// The panel shown with no shell (tests: its frame and border).
+    #[cfg(test)]
+    pub(crate) fn show_bare(&mut self) {
+        self.shown = true;
+    }
+
+    /// Its top border is being dragged (BISE-272: `ns-resize`).
+    pub(crate) fn resizing(&self) -> bool {
+        self.shown && self.resizing
+    }
+
+    /// A press in the panel still holds the mouse: its selection, or a
+    /// program's press (BISE-272: the default shape until the release).
+    pub(crate) fn mouse_held(&self) -> bool {
+        self.shown && (self.selecting.is_some() || self.forwarding)
+    }
+
     /// BISE-264: run `argv` (a terminal editor on a file) in the panel,
     /// shown, with the keys; the shell waits behind it and comes back
     /// when it exits. One editor at a time.
@@ -721,6 +738,8 @@ impl Term {
         }
         let (top, panel) = split(full, self.pct);
         self.area = Some(panel);
+        // BISE-272: the top border drags to resize (`mouse`)
+        crate::pointer::region(Rect { height: 1, ..panel }, crate::pointer::Shape::NsResize);
         let inner = Block::default().borders(Borders::ALL).inner(panel);
         let mut title = " terminal · ctrl+` hide ".to_string();
         let border = Style::default().fg(Color::DarkGray);

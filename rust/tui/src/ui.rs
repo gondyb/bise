@@ -220,6 +220,9 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         crate::ctrlhint::divider(app, frame.buffer_mut(), state_rect);
     }
     app.bottom_bar_rect = (!app.tail_visible && !rows.keys_in_divider).then_some(state_rect);
+    if let Some(r) = app.bottom_bar_rect {
+        crate::pointer::region(r, crate::pointer::Shape::Pointer);
+    }
     // the queued messages: ` › text`, the `›` under the composer's bar
     let queue = pane(chunks[7]);
     if queue.height > 0 {
@@ -440,6 +443,14 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect, bar: Option<Rect>) {
                 url: er.urls[k].clone(),
                 id: format!("bise{}-{}", i, k),
             });
+        }
+    }
+
+    // BISE-272: the hand over the rows a click opens or closes
+    for (y, (&i, &ri)) in vis_events.iter().zip(vis_rows.iter()).enumerate() {
+        if crate::feed::toggles_at(&app.events, &app.cache, i, ri) {
+            let r = Rect { y: text_area.y + y as u16, height: 1, ..text_area };
+            crate::pointer::region(r.intersection(frame.area()), crate::pointer::Shape::Pointer);
         }
     }
 
@@ -664,6 +675,9 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, lea
     let text_rows = (area.height.saturating_sub(pad_top + pad_bottom) as usize).max(1);
     let text_w = inner.max(1);
     app.composer = ComposerArea { x: area.x + lead, y: text_y, w: text_w, h: text_rows, top: 0 };
+    // BISE-272: the text cursor where a click places yours (`ComposerArea::hit`)
+    let typed = Rect { x: app.composer.x.saturating_sub(1), y: text_y, width: text_w as u16 + 1, height: text_rows as u16 };
+    crate::pointer::region(typed.intersection(frame.area()), crate::pointer::Shape::Text);
     let empty = app.ed.is_empty();
     // the inbox selected (ctrl+g): the draft faint, no caret
     let waits = sb::inbox_selected(app);
@@ -775,6 +789,8 @@ fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
         // would hang below the screen (ratatui panics outside its buffer)
         .intersection(frame.area());
         frame.render_widget(Clear, area);
+        // BISE-272: over what it covers, no click does anything
+        crate::pointer::region(area, crate::pointer::Shape::Default);
         let lines: Vec<Line> = matches
             .iter()
             .enumerate()

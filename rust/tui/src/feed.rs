@@ -930,6 +930,43 @@ pub(crate) fn toggle_at(events: &mut [Ev], cache: &mut [Option<EventRows>], i: u
     toggle_event(events, cache, i)
 }
 
+/// A click on row `row` of event `i` opens or closes something
+/// ([`toggle_at`] without the change): the pointer's hand (BISE-272).
+pub(crate) fn toggles_at(events: &[Ev], cache: &[Option<EventRows>], i: usize, row: usize) -> bool {
+    let fold_row = || {
+        let prev = prev_visible(events, i, false).map(|p| &events[p]);
+        usize::from(wants_gap_before(&events[i], prev))
+    };
+    if tool_fold(events, i, false).is_some_and(|f| f.carrier == i && f.open) && row > fold_row() {
+        return own_toggles(&events[i]);
+    }
+    if events.get(i).is_some_and(|e| is_l3(e) && fold_open(e)) && folded_run(events, i, false) == Some(i) && row > fold_row() {
+        return own_toggles(&events[i]);
+    }
+    if let (Some(Ev::You(t, _, open)), Some(Some(c))) = (events.get(i), cache.get(i)) {
+        let sizes = usize::from(crate::attach::sizes_line(t).is_some());
+        let pastes = crate::render::you_paste_rows(t, *open, usize::from(c.width));
+        if row + 1 + sizes + pastes < c.rows.len() || row + sizes >= c.rows.len() {
+            return false;
+        }
+    }
+    if tool_fold(events, i, false).is_some_and(|f| f.carrier == i) {
+        return true;
+    }
+    if events.get(i).is_some_and(is_l3) && folded_run(events, i, false) == Some(i) {
+        return true;
+    }
+    events.get(i).is_some_and(own_toggles)
+}
+
+/// [`toggle_own`] would change `ev`.
+fn own_toggles(ev: &Ev) -> bool {
+    match ev {
+        Ev::Release(r) => discloses(ev) && r.clone().open_mut().is_some(),
+        _ => discloses(ev),
+    }
+}
+
 /// Open or close event `i` itself (not a fold).
 fn toggle_own(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize) -> bool {
     let Some(ev) = events.get_mut(i).filter(|e| discloses(e)) else {

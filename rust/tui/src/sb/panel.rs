@@ -530,6 +530,10 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
             .filter(|(r, _)| *r >= top && *r - top < shown)
             .map(|(r, hit)| (area.y.saturating_add(2 + (r - top) as u16), hit))
             .collect();
+        // BISE-272: the hand over the rows a click opens
+        for (y, _) in &hits.rows {
+            crate::pointer::region(Rect { y: *y, height: 1, ..area }.intersection(area), crate::pointer::Shape::Pointer);
+        }
     }
     // the title, then 1 blank row (book §8)
     let mut all = vec![title, Line::from("")];

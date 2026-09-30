@@ -363,6 +363,12 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, l
     while lines.len() < area.height as usize {
         lines.push(Line::from(bar.clone()));
     }
+    // BISE-272: the hand over the entries (a click there picks, see `on_mouse`)
+    let from = (area.x + lead).saturating_sub(3);
+    for (y, _) in &hits {
+        let r = Rect { x: from, y: *y, width: area.right().saturating_sub(from), height: 1 };
+        crate::pointer::region(r.intersection(frame.area()), crate::pointer::Shape::Pointer);
+    }
     if let Some(p) = app.palette.as_mut() {
         p.hits = hits;
     }

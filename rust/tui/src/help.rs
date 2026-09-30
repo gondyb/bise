@@ -521,6 +521,8 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame) {
     let cmd = app.cmd_keys;
     let Some(o) = app.help.as_mut() else { return };
     let full = frame.area();
+    // BISE-272: open, it takes the mouse (`mouse`): no click does anything
+    crate::pointer::region(full, crate::pointer::Shape::Default);
     if full.width < 24 || full.height < 6 {
         return;
     }

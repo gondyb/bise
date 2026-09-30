@@ -76,6 +76,7 @@ mod term;
 mod feedsel;
 mod find;
 mod links;
+mod pointer;
 mod file_links;
 mod keyprobe;
 pub mod timing;

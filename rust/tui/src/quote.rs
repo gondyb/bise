@@ -280,6 +280,7 @@ pub(crate) fn draw_hint(app: &App, frame: &mut ratatui::Frame) {
     let Some(line) = hint_line(area.width as usize, no_color) else { return };
     let vis: Vec<(usize, usize)> = app.vis_events.iter().copied().zip(app.vis_rows.iter().copied()).collect();
     let Some(r) = hint_rect(sel, &vis, area, line.width() as u16) else { return };
+    crate::pointer::region(r, crate::pointer::Shape::Default); // BISE-272: over what it covers
     frame.render_widget(ratatui::widgets::Paragraph::new(line), r);
 }
 

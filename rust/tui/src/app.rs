@@ -66,6 +66,9 @@ pub(crate) struct App {
     /// where the mouse is, while it moves over the screen (BISE-271:
     /// the time of the turn under it); None once it clicks or leaves
     pub(crate) hover: Option<(u16, u16)>,
+    /// where the mouse was last seen, moving, pressing or dragging
+    /// (BISE-272: the pointer's shape under it)
+    pub(crate) pointer_at: Option<(u16, u16)>,
     pub(crate) show_thinking: bool,
     // a Ctrl+C interrupt is in flight (until the dying turn's idle):
     // a second Ctrl+C quits instead of interrupting again
@@ -244,6 +247,7 @@ impl App {
             motion: crate::gust::Motion::Still,
             motion_away: crate::gust::Motion::Still,
             focus_lost: false,
+            pointer_at: None,
             zen: crate::zen::Zen::default(),
             key_in_composer: false,
             rx,

@@ -347,6 +347,10 @@ pub(crate) fn draw_strip(app: &mut App, frame: &mut Frame, area: Rect) {
     frame.render_widget(Paragraph::new(lines), area);
     let cv = &mut app.sb.card;
     cv.strip = area;
+    // BISE-272: the hand over what a click opens, picks or closes
+    for (r, _) in &hits {
+        crate::pointer::region(*r, crate::pointer::Shape::Pointer);
+    }
     cv.hits.borrow_mut().extend(hits);
 }
 
@@ -597,6 +601,10 @@ pub(crate) fn draw_view(app: &mut App, frame: &mut Frame, area: Rect) {
     cv.max_scroll = max_scroll;
     cv.page = visible.saturating_sub(1).max(1);
     cv.area = area;
+    // BISE-272: the hand over what a click opens, picks or closes
+    for (r, _) in &hits {
+        crate::pointer::region(*r, crate::pointer::Shape::Pointer);
+    }
     cv.hits.borrow_mut().extend(hits);
 }
 

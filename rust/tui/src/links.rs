@@ -333,6 +333,8 @@ pub(crate) fn begin_frame() {
 }
 
 pub(crate) fn push_hit(h: Hit) {
+    // BISE-272: the hand over it (the same frame's hit map)
+    crate::pointer::region(ratatui::layout::Rect::new(h.x0, h.y, h.x1.saturating_sub(h.x0), 1), crate::pointer::Shape::Pointer);
     FRAME.with(|f| f.borrow_mut().push(h));
 }
 
@@ -364,6 +366,8 @@ pub(crate) const OSC8_CLOSE: &str = "\x1b]8;;\x1b\\";
 pub(crate) struct LinkBackend<W: Write> {
     out: Rc<RefCell<W>>,
     inner: CrosstermBackend<Shared<W>>,
+    /// the pointer shape last written (BISE-272; the terminal's own at start)
+    pointer: crate::pointer::Shape,
 }
 
 /// The one writer, shared by the crossterm backend and the OSC 8 around
@@ -382,7 +386,21 @@ impl<W: Write> Write for Shared<W> {
 impl<W: Write> LinkBackend<W> {
     pub(crate) fn new(w: W) -> Self {
         let out = Rc::new(RefCell::new(w));
-        Self { inner: CrosstermBackend::new(Shared(out.clone())), out }
+        Self { inner: CrosstermBackend::new(Shared(out.clone())), out, pointer: crate::pointer::Shape::Default }
+    }
+
+    /// BISE-272: the mouse pointer takes the shape `s` (OSC 22), written
+    /// only when it changes and where the terminal has it.
+    pub(crate) fn set_pointer(&mut self, s: crate::pointer::Shape) -> io::Result<()> {
+        if s == self.pointer || !crate::pointer::enabled() {
+            return Ok(());
+        }
+        let mut out = self.out.borrow_mut();
+        out.write_all(crate::pointer::osc22(s).as_bytes())?;
+        out.flush()?;
+        self.pointer = s;
+        crate::pointer::wrote(s);
+        Ok(())
     }
     #[cfg(test)]
     pub(crate) fn take_output(&self) -> W

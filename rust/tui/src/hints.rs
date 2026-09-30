@@ -367,6 +367,7 @@ pub(crate) fn draw(f: &mut Frame) {
         .style(Style::default().bg(theme::card_tint()))
         .padding(Padding::horizontal(1));
     f.render_widget(Clear, r);
+    crate::pointer::region(r, crate::pointer::Shape::Default); // BISE-272: over what it covers
     f.render_widget(Paragraph::new(lines).block(block), r);
     if active.is_none() {
         bring_up(h);

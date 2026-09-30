@@ -130,6 +130,8 @@ pub(crate) fn restore_terminal() {
     // BISE-92: the terminal's own background back first
     crate::theme_detect::restore_terminal_bg();
     let mut out = std::io::stdout();
+    // BISE-272: the default mouse pointer, if bise changed it
+    crate::pointer::restore(&mut out);
     let _ = crossterm::execute!(out, PopKeyboardEnhancementFlags);
     let _ = crossterm::execute!(out, DisableBracketedPaste);
     let _ = crossterm::execute!(out, DisableMouseCapture);
