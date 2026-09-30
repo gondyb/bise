@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/hero-dark.svg">
-    <img src="projects/switchboard/docs/brand/readme/hero-light.svg" width="860" alt="bise :* · multi-agent coding, made human.">
+    <img src="projects/switchboard/docs/brand/readme/hero-light.svg" width="860" alt="bise :* · a multi-agent harness, made for humans.">
   </picture>
 </p>
 
