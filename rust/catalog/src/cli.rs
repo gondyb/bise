@@ -28,8 +28,8 @@ pub fn key_state(p: &Provider, keys: &Keys, home: Option<&Path>) -> String {
     if p.key_env.is_empty() {
         return "no key needed".into();
     }
-    match keys.for_provider(p) {
-        Some(f) => format!("key: {}", f.from.describe(home)),
+    match keys.source(p, home) {
+        Some(from) => format!("key: {}", from),
         None => format!("no key ({} or '{} login {}')", p.key_env, CLI, p.id),
     }
 }

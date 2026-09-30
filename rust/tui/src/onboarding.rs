@@ -335,6 +335,9 @@ pub(crate) struct Onb {
     /// the running check's answer
     pub pending: Option<std::sync::mpsc::Receiver<Result<(), crate::keycheck::Fail>>>,
     pub checker: Checker,
+    /// the key just saved replaces another key the environment holds
+    /// under this name (BISE-269: auth.json wins): said once, dim
+    pub shadows: Option<String>,
 }
 
 /// Where the mode at start came from (book §15 step 2 says which).
@@ -387,6 +390,7 @@ impl Onb {
             keys_only: false,
             pending: None,
             checker: real_check,
+            shadows: None,
             home,
         };
         o.refresh_keys(env);
@@ -672,10 +676,13 @@ impl Onb {
     /// A key that passed: saved by `login`'s own code (auth.json, 0600)
     /// when it was pasted, and its model written in config.toml.
     fn keep(&mut self, p: &Provider, model: &str, key: Option<&str>, env: Env) -> Result<(), String> {
+        self.shadows = None;
         if let Some(key) = key {
             let paths = auth_paths(&self.home);
             let cp = self.setup.catalog.provider(&p.id).ok_or_else(|| format!("unknown provider {}", p.id))?;
             bise_catalog::auth_cli::login(&paths, cp, key, env).map(|_| ())?;
+            let store = bise_catalog::auth::Store::read(&paths.auth_file).unwrap_or_default();
+            self.shadows = bise_catalog::auth::Keys { env, store: &store, files: &[] }.shadowed(&p.id, &p.key_env);
         }
         save_model(&self.home, model).map_err(|e| format!("couldn't write config.toml: {}", e))?;
         self.setup = setup_of(env, &self.home);
@@ -1082,6 +1089,9 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
         }
         Sub::Works(_, m) => {
             let mut v = vec![title(format!("it works: {} answered.", short_model(m))), dim(format!("main uses {}.", m))];
+            if let Some(n) = &o.shadows {
+                v.push(dim(format!("{} in your environment holds another key: i use this one.", n)));
+            }
             let extras = extras(o);
             if !extras.is_empty() {
                 blanks(&mut v, gap);

@@ -121,7 +121,7 @@ fn bad_keys_and_providers_are_refused_without_echoing_the_key() {
 }
 
 #[test]
-fn resolution_order_env_then_alias_then_auth_json_then_old_env_files() {
+fn resolution_order_auth_json_then_env_then_alias_then_old_env_files() {
     let c = Catalog::builtin();
     let mut store = Store::default();
     store.set("openai", "from-store");
@@ -139,11 +139,22 @@ fn resolution_order_env_then_alias_then_auth_json_then_old_env_files() {
     };
     let keys = Keys { env: &env, store: &store, files: &files };
     let f = |id: &str| keys.for_provider(c.provider(id).unwrap());
-    assert_eq!(f("openai").unwrap().from, From::Env("OPENAI_API_KEY".into()));
-    assert_eq!(f("openai").unwrap().key, "from-env");
-    // the alias is still the environment: it wins over auth.json
-    assert_eq!(f("google").unwrap().from, From::Env("GOOGLE_API_KEY".into()));
+    // BISE-269: what you give bise (auth.json) wins over the environment
+    assert_eq!(f("openai").unwrap().from, From::AuthFile);
+    assert_eq!(f("openai").unwrap().key, "from-store");
+    assert_eq!(keys.shadowed("openai", "OPENAI_API_KEY").as_deref(), Some("OPENAI_API_KEY"));
+    let home = Some(Path::new("/h"));
+    assert_eq!(
+        keys.source(c.provider("openai").unwrap(), home).unwrap(),
+        "auth.json · env OPENAI_API_KEY holds another key, unused"
+    );
+    // the alias too, and an alias holding another key is said
+    assert_eq!(f("google").unwrap().from, From::AuthFile);
+    assert_eq!(keys.shadowed("google", "GEMINI_API_KEY").as_deref(), Some("GOOGLE_API_KEY"));
     assert_eq!(f("groq").unwrap().from, From::AuthFile);
+    // an empty env var shadows nothing
+    assert_eq!(keys.shadowed("groq", "GROQ_API_KEY"), None);
+    assert_eq!(keys.source(c.provider("groq").unwrap(), home).unwrap(), "auth.json");
     assert_eq!(f("groq").unwrap().key, "q-store");
     // the first .env file wins; quotes and `export` are read
     let m = f("mistral").unwrap();
@@ -158,8 +169,8 @@ fn resolution_order_env_then_alias_then_auth_json_then_old_env_files() {
     // the exports: the runtime reads getenv(key_env) only
     let ex = keys.resolve(&c).exports();
     let get = |k: &str| ex.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
-    assert_eq!(get("OPENAI_API_KEY"), None, "already in the env under its name");
-    assert_eq!(get("GEMINI_API_KEY"), Some("g-env-alias"), "an alias is exported as key_env");
+    assert_eq!(get("OPENAI_API_KEY"), Some("from-store"), "auth.json replaces the env's key");
+    assert_eq!(get("GEMINI_API_KEY"), Some("g-store"));
     assert_eq!(get("GROQ_API_KEY"), Some("q-store"));
     assert_eq!(get("MISTRAL_API_KEY"), Some("m-file1"));
     assert_eq!(get("DEEPSEEK_API_KEY"), None);
@@ -197,7 +208,14 @@ fn logout_says_when_another_source_still_has_a_key() {
     auth_cli::login(&ps, c.provider("openai").unwrap(), SECRET, &no_env).unwrap();
     let env = |k: &str| (k == "OPENAI_API_KEY").then(|| "e".to_string());
     let out = auth_cli::login(&ps, c.provider("openai").unwrap(), SECRET, &env).unwrap();
-    assert!(out.iter().any(|l| l.contains("OPENAI_API_KEY is set in the environment and wins")), "{out:?}");
+    assert!(
+        out.iter().any(|l| l.contains("OPENAI_API_KEY in the environment holds another key: bise uses this one")),
+        "{out:?}"
+    );
+    // the same key in both: nothing to say
+    let same = |k: &str| (k == "OPENAI_API_KEY").then(|| SECRET.to_string());
+    let out = auth_cli::login(&ps, c.provider("openai").unwrap(), SECRET, &same).unwrap();
+    assert!(!out.iter().any(|l| l.contains("in the environment")), "{out:?}");
     let out = auth_cli::logout(&ps, "openai", &env, &c).unwrap();
     assert!(out.iter().any(|l| l == "openai still has a key: env OPENAI_API_KEY"), "{out:?}");
     let _ = std::fs::remove_dir_all(&dir);
@@ -207,10 +225,18 @@ fn logout_says_when_another_source_still_has_a_key() {
 fn a_spawn_sees_a_login_or_logout_made_after_the_hub_started() {
     let c = Catalog::builtin();
     // at start: OPENAI_API_KEY came from auth.json (set by load_keys, so
-    // "ours"), MISTRAL_API_KEY from the user's real environment
-    let ours = vec!["OPENAI_API_KEY".to_string(), "SOME_DOTENV_VAR".to_string()];
+    // "ours"; the environment had none), ANTHROPIC_API_KEY from auth.json
+    // over the environment's own (BISE-269), MISTRAL_API_KEY from the
+    // user's real environment
+    let ours = vec![
+        ("OPENAI_API_KEY".to_string(), None),
+        ("ANTHROPIC_API_KEY".to_string(), Some("a-env".to_string())),
+        ("SOME_DOTENV_VAR".to_string(), None),
+    ];
+    // the real environment, as keys_for_spawn reads it: ours read as before
     let real = |k: &str| match k {
         "MISTRAL_API_KEY" => Some("m-env".to_string()),
+        "ANTHROPIC_API_KEY" => Some("a-env".to_string()),
         _ => None,
     };
     // later: `login groq`, `logout openai`
@@ -221,6 +247,7 @@ fn a_spawn_sees_a_login_or_logout_made_after_the_hub_started() {
     let get = |k: &str| spawn.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
     assert_eq!(get("GROQ_API_KEY"), Some(Some("q-new".into())), "a login reaches the next REPL");
     assert_eq!(get("OPENAI_API_KEY"), Some(None), "a logout unsets what the hub set");
+    assert_eq!(get("ANTHROPIC_API_KEY"), Some(Some("a-env".into())), "a logout gives the env's key back");
     assert_eq!(get("MISTRAL_API_KEY"), None, "the real env is inherited, untouched");
     assert_eq!(get("SOME_DOTENV_VAR"), None, "not a provider key: left as it is");
     assert_eq!(get("DEEPSEEK_API_KEY"), None);
@@ -229,4 +256,9 @@ fn a_spawn_sees_a_login_or_logout_made_after_the_hub_started() {
     let keys = Keys { env: &real, store: &store, files: &[] };
     let spawn = keys.resolve(&c).spawn_env(&c, &ours);
     assert!(spawn.contains(&("OPENAI_API_KEY".into(), Some("o-new".into()))));
+    // a login over a key the environment holds: the saved one wins
+    store.set("mistral", "m-saved");
+    let keys = Keys { env: &real, store: &store, files: &[] };
+    let spawn = keys.resolve(&c).spawn_env(&c, &ours);
+    assert!(spawn.contains(&("MISTRAL_API_KEY".into(), Some("m-saved".into()))), "{spawn:?}");
 }

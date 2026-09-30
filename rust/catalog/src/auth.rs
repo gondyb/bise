@@ -2,8 +2,10 @@
 //! provider's key comes from.
 //!
 //! Resolution, per provider (its `key_env`, from the catalog):
-//!   1. the environment: `key_env`, then its aliases ([`ALIASES`]);
-//!   2. `auth.json` (`bise login <provider>`);
+//!   1. `auth.json` (`bise login <provider>`, the first run's key step):
+//!      what you give bise is what bise uses (BISE-269); `bise logout
+//!      <provider>` goes back to the environment;
+//!   2. the environment: `key_env`, then its aliases ([`ALIASES`]);
 //!   3. the old `.env` files (`~/.bend-harness/.env`, `~/.vibe/.env`),
 //!      `key_env` then its aliases, first file first.
 //!
@@ -286,13 +288,13 @@ impl Keys<'_> {
             return None;
         }
         let names = env_names(key_env);
+        if let Some(key) = non_empty(self.store.key(id).map(str::to_string)) {
+            return Some(Found { from: From::AuthFile, key });
+        }
         for n in &names {
             if let Some(key) = non_empty((self.env)(n)) {
                 return Some(Found { from: From::Env(n.to_string()), key });
             }
-        }
-        if let Some(key) = self.store.key(id) {
-            return Some(Found { from: From::AuthFile, key: key.trim().to_string() });
         }
         for f in self.files {
             for n in &names {
@@ -306,6 +308,29 @@ impl Keys<'_> {
 
     pub fn for_provider(&self, p: &Provider) -> Option<Found> {
         self.find(&p.id, &p.key_env)
+    }
+
+    /// The environment variable holding ANOTHER key for provider `id`
+    /// than the one auth.json gives it (BISE-269: auth.json wins, so that
+    /// one is unused; said once, so nobody wonders which key runs).
+    pub fn shadowed(&self, id: &str, key_env: &str) -> Option<String> {
+        let saved = non_empty(self.store.key(id).map(str::to_string))?;
+        env_names(key_env)
+            .into_iter()
+            .find(|n| non_empty((self.env)(n)).is_some_and(|v| v != saved))
+            .map(str::to_string)
+    }
+
+    /// Where `p`'s key comes from, for a list (never the key):
+    /// "env MISTRAL_API_KEY", "auth.json", "auth.json · env MISTRAL_API_KEY
+    /// holds another key, unused".
+    pub fn source(&self, p: &Provider, home: Option<&Path>) -> Option<String> {
+        let f = self.for_provider(p)?;
+        let from = f.from.describe(home);
+        Some(match self.shadowed(&p.id, &p.key_env) {
+            Some(n) => format!("{} · env {} holds another key, unused", from, n),
+            None => from,
+        })
     }
 
     /// Every provider's key, in catalog order.
@@ -345,19 +370,23 @@ impl Resolution {
 
     /// The env of a REPL the hub spawns now (a `login` / `logout` since the
     /// hub started reaches the next REPL, no hub restart): `ours` = the
-    /// names this process set itself at start (load_keys), so they do not
-    /// count as "the environment" in the resolution that made `self`.
-    /// Each export is set; a provider's key_env we set at start whose key
-    /// is gone now (logout) is removed. The real environment's keys are
-    /// inherited as they are.
-    pub fn spawn_env(&self, c: &Catalog, ours: &[String]) -> Vec<(String, Option<String>)> {
+    /// names this process set itself at start (load_keys), each with the
+    /// value the real environment had before (None: unset); the
+    /// resolution that made `self` saw those values as "the environment".
+    /// Each export is set; a provider's key_env we set at start and do not
+    /// export now (logout) gets its real value back, or is removed. The
+    /// real environment's other keys are inherited as they are.
+    pub fn spawn_env(&self, c: &Catalog, ours: &[(String, Option<String>)]) -> Vec<(String, Option<String>)> {
         let ex = self.exports();
         let mut out: Vec<(String, Option<String>)> =
             ex.iter().map(|(k, v)| (k.clone(), Some(v.clone()))).collect();
         for p in &c.providers {
             let k = &p.key_env;
-            if !k.is_empty() && ours.contains(k) && !out.iter().any(|(n, _)| n == k) {
-                out.push((k.clone(), None));
+            if k.is_empty() || out.iter().any(|(n, _)| n == k) {
+                continue;
+            }
+            if let Some((_, before)) = ours.iter().find(|(n, _)| n == k) {
+                out.push((k.clone(), before.clone()));
             }
         }
         out

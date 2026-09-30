@@ -123,7 +123,7 @@ pub fn login(paths: &Paths, p: &Provider, key: &str, env: &dyn Fn(&str) -> Optio
         p.name,
         tilde(&paths.auth_file, paths.home.as_deref())
     )];
-    out.extend(env_note(p, env));
+    out.extend(env_note(p, &key, env));
     if !p.needs.is_empty() {
         out.push(format!("note: {} is not usable yet ({})", p.id, p.needs));
     }
@@ -131,11 +131,15 @@ pub fn login(paths: &Paths, p: &Provider, key: &str, env: &dyn Fn(&str) -> Optio
     Ok(out)
 }
 
-/// "X is set in the environment and wins over auth.json".
-fn env_note(p: &Provider, env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+/// "X in the environment holds another key: bise uses this one" (BISE-269:
+/// auth.json wins).
+fn env_note(p: &Provider, key: &str, env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
     let names = crate::auth::env_names(&p.key_env);
-    let set = names.iter().find(|n| env(n).is_some_and(|v| !v.trim().is_empty()))?;
-    Some(format!("note: {} is set in the environment and wins over auth.json", set))
+    let set = names.iter().find(|n| env(n).is_some_and(|v| !v.trim().is_empty() && v.trim() != key.trim()))?;
+    Some(format!(
+        "note: {} in the environment holds another key: bise uses this one (`{} logout {}` goes back to it)",
+        set, CLI, p.id
+    ))
 }
 
 /// Remove provider `id`'s key from auth.json; the lines to print.
@@ -170,10 +174,7 @@ pub fn render_list(c: &Catalog, keys: &Keys, paths: &Paths) -> String {
     let w = ps.iter().map(|p| p.id.len()).max().unwrap_or(8);
     let we = ps.iter().map(|p| p.key_env.len()).max().unwrap_or(8);
     for p in &ps {
-        let from = match keys.for_provider(p) {
-            Some(f) => f.from.describe(home),
-            None => "-".into(),
-        };
+        let from = keys.source(p, home).unwrap_or_else(|| "-".into());
         o.push_str(&format!("{:<w$}  {:<we$}  {}\n", p.id, p.key_env, from, w = w, we = we));
     }
     for id in keys.store.providers() {

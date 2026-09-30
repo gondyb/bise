@@ -831,7 +831,12 @@ one in accent.
    uses <model>.` and the optional keys not set yet (`web search and
    other tools: a Mistral key · /setup`, `voice input (ctrl+r): a
    Mistral, OpenAI, Groq, ElevenLabs or Deepgram key · bise login`). A
-   found key is checked the same way (nothing to save). API keys only: no
+   found key is checked the same way (nothing to save). A saved key wins
+   over the environment's (BISE-269: what you paste is what runs;
+   `bise logout <provider>` goes back to the env); when the env holds
+   another key, one dim line says so (`MISTRAL_API_KEY in your
+   environment holds another key: i use this one.`), and `bise doctor`,
+   `bise auth list`, `bise models` show it. API keys only: no
    browser sign-in. The hub gives the new key to every agent before its
    next message: a REPL spawned with other keys relaunches at its next
    idle, same session.

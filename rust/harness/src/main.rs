@@ -180,30 +180,35 @@ fn load_keys() {
     let exports = Keys { env: &env, store: &store, files: &files }
         .resolve(&setup.catalog)
         .exports();
-    let mut ours: Vec<String> = Vec::new();
+    // (name, the real environment's value before): a key from auth.json
+    // replaces the environment's (BISE-269), and a logout gives it back
+    let before = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
+    let mut ours: Vec<(String, Option<String>)> = Vec::new();
     for (k, v) in exports {
+        ours.push((k.clone(), before(&k)));
         std::env::set_var(&k, v);
-        ours.push(k);
     }
     for f in &files {
         for (k, v) in &f.vars {
             if !std::env::var_os(k).is_some_and(|x| !x.is_empty()) {
                 std::env::set_var(k, v);
-                ours.push(k.clone());
+                ours.push((k.clone(), None));
             }
         }
     }
     let _ = KEYS_SET_AT_START.set(ours);
 }
 
-/// The variables load_keys set (not the user's environment).
-static KEYS_SET_AT_START: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+/// The variables load_keys set (not the user's environment), each with
+/// the value the environment had before (None: unset).
+static KEYS_SET_AT_START: std::sync::OnceLock<Vec<(String, Option<String>)>> = std::sync::OnceLock::new();
 
 /// The keys of a REPL the hub spawns now (BISE-146 follow-up of BISE-143):
 /// resolved again, so a `login` / `logout` since the hub started reaches
 /// the next REPL (spawn, respawn, restart) without restarting the hub.
-/// The environment the hub started with wins as before; what load_keys
-/// set itself does not count as the environment. (name, None) = unset.
+/// auth.json wins over the environment the hub started with (BISE-269);
+/// what load_keys set itself reads as the value it replaced. (name,
+/// None) = unset.
 fn keys_for_spawn() -> Vec<(String, Option<String>)> {
     use bise_catalog::auth::{EnvFile, Keys, Store};
     let ours = KEYS_SET_AT_START.get().cloned().unwrap_or_default();
@@ -214,12 +219,10 @@ fn keys_for_spawn() -> Vec<(String, Option<String>)> {
     };
     let files = EnvFile::read_all(&paths.env_files);
     let setup = bise_catalog::Setup::load(&paths.config);
-    let env = |k: &str| {
-        if ours.iter().any(|o| o == k) {
-            None
-        } else {
-            std::env::var(k).ok()
-        }
+    // the user's real environment: what load_keys replaced reads as before
+    let env = |k: &str| match ours.iter().find(|(o, _)| o == k) {
+        Some((_, before)) => before.clone(),
+        None => std::env::var(k).ok(),
     };
     Keys { env: &env, store: &store, files: &files }
         .resolve(&setup.catalog)

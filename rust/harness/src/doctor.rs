@@ -428,7 +428,7 @@ fn keys_and_model(home: &bise_home::Home) -> (Check, Check, Check) {
         .catalog
         .providers
         .iter()
-        .filter_map(|p| keys.for_provider(p).map(|f| (p.id.clone(), f.from.describe(user))))
+        .filter_map(|p| keys.source(p, user).map(|from| (p.id.clone(), from)))
         .collect();
     let keys_line = keys_check(&found);
     let model = |label: &str, name: &str, from: &str| -> Result<String, (String, String)> {
