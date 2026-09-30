@@ -131,6 +131,7 @@ dependencies = [
 name = "bise-catalog"
 version = "0.1.0"
 dependencies = [
+ "bise-home",
  "libc",
  "serde_json",
  "toml",
@@ -140,6 +141,7 @@ dependencies = [
 name = "bise-home"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "serde_json",
 ]
 

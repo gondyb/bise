@@ -22,6 +22,7 @@
 
 use bise_home::release::{self, Install, Release};
 use std::path::{Path, PathBuf};
+use bise_home::style::Style;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -287,14 +288,20 @@ pub(crate) fn main(args: &[String]) -> i32 {
         Mode::Install
     };
     if let Some(a) = args.iter().find(|a| !matches!(a.as_str(), "--background" | "--check")) {
-        eprintln!("usage: {} update [--check]   (unknown argument {})", crate::version::cmd_name(), a);
+        eprintln!("{}", Style::stderr().fail(&format!("unknown flag {}: {} update [--check]", a, crate::version::cmd_name())));
         return 2;
     }
+    let out = Style::stdout();
+    // the daily check writes a log: plain, stamped
     let say = |s: String| {
         if mode == Mode::Background {
             eprintln!("{} {}", now(), s);
+        } else if s.ends_with('…') {
+            println!("{}", out.dim(&s));
+        } else if s.contains("is available") {
+            println!("{}", out.ask(&s));
         } else {
-            println!("{}", s);
+            println!("{}", out.ok(&s));
         }
     };
     match run(mode, &say) {
@@ -303,7 +310,7 @@ pub(crate) fn main(args: &[String]) -> i32 {
             if mode == Mode::Background {
                 eprintln!("{} error: {}", now(), e);
             } else {
-                eprintln!("{} update: {}", crate::version::cmd_name(), e);
+                eprintln!("{}", Style::stderr().fail(&format!("{} update: {}", crate::version::cmd_name(), e)));
             }
             1
         }
@@ -340,7 +347,7 @@ fn run(mode: Mode, say: &dyn Fn(String)) -> Result<(), String> {
         return Ok(());
     }
     if mode == Mode::Check {
-        say(format!("{} {} is available (installed: {}): run '{} update'", rel.version, rel.id, cur_id, cmd));
+        say(format!("{} {} is available (installed: {}): {} update installs it", rel.version, rel.id, cur_id, cmd));
         return Ok(());
     }
     say(format!("downloading {} {} for {}…", rel.version, rel.id, target));
@@ -348,7 +355,7 @@ fn run(mode: Mode, say: &dyn Fn(String)) -> Result<(), String> {
     flip(&inst, &rel.id)?;
     prune(&inst);
     say(format!(
-        "{} updated to {} ({}): new sessions run it; a hub already running moves to it when you launch {} again in its folder, or type /restart in it (the agents keep running)",
+        "{} updated to {} ({}). a bise already running moves to it when you run {} again in its folder, or /restart in it (the agents keep running).",
         cmd, rel.id, rel.version, cmd
     ));
     Ok(())
@@ -397,7 +404,7 @@ pub(crate) fn uninstall(args: &[String]) -> i32 {
     let inst = match this_install() {
         Ok(i) => i,
         Err(e) => {
-            eprintln!("{} uninstall: {}", crate::version::cmd_name(), e);
+            eprintln!("{}", Style::stderr().fail(&format!("{} uninstall: {}", crate::version::cmd_name(), e)));
             return 1;
         }
     };
@@ -408,7 +415,7 @@ pub(crate) fn uninstall(args: &[String]) -> i32 {
         .arg(&inst.prefix)
         .args(args)
         .exec();
-    eprintln!("{} uninstall: {}: {}", crate::version::cmd_name(), inst.installer().display(), e);
+    eprintln!("{}", Style::stderr().fail(&format!("{} uninstall: {}: {}", crate::version::cmd_name(), inst.installer().display(), e)));
     1
 }
 

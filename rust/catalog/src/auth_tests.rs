@@ -209,7 +209,7 @@ fn logout_says_when_another_source_still_has_a_key() {
     let env = |k: &str| (k == "OPENAI_API_KEY").then(|| "e".to_string());
     let out = auth_cli::login(&ps, c.provider("openai").unwrap(), SECRET, &env).unwrap();
     assert!(
-        out.iter().any(|l| l.contains("OPENAI_API_KEY in the environment holds another key: bise uses this one")),
+        out.iter().any(|l| l.contains("OPENAI_API_KEY in your environment holds another key: bise uses this one")),
         "{out:?}"
     );
     // the same key in both: nothing to say
@@ -217,7 +217,7 @@ fn logout_says_when_another_source_still_has_a_key() {
     let out = auth_cli::login(&ps, c.provider("openai").unwrap(), SECRET, &same).unwrap();
     assert!(!out.iter().any(|l| l.contains("in the environment")), "{out:?}");
     let out = auth_cli::logout(&ps, "openai", &env, &c).unwrap();
-    assert!(out.iter().any(|l| l == "openai still has a key: env OPENAI_API_KEY"), "{out:?}");
+    assert!(out.iter().any(|l| l == "OpenAI still has a key: env OPENAI_API_KEY"), "{out:?}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -313,7 +313,11 @@ fn login_check_saves_only_a_key_that_answers() {
     let calls = std::cell::RefCell::new(Vec::new());
     let check = |_: &Setup, m: &str, k: &str| {
         calls.borrow_mut().push(m.to_string());
-        if k == SECRET { Ok(()) } else { Err("Anthropic says this key is wrong".to_string()) }
+        match k {
+            SECRET => Ok(()),
+            "sk-broke" => Err(auth_cli::CheckFail { kind: auth_cli::CheckKind::NoCredit, said: String::new() }),
+            _ => Err(auth_cli::CheckFail { kind: auth_cli::CheckKind::WrongKey, said: "invalid x-api-key".into() }),
+        }
     };
     let from = rc.to_string_lossy().to_string();
     std::fs::write(&rc, "ANTHROPIC_API_KEY=sk-bad\n").unwrap();
@@ -333,5 +337,50 @@ fn login_check_saves_only_a_key_that_answers() {
     assert_eq!(auth_cli::auth_main(&args(&["check", "anthropic"]), &ps, &check), 0);
     assert_eq!(auth_cli::auth_main(&args(&["check", "openai"]), &ps, &check), 1, "no openai key");
     assert_eq!(std::fs::read_to_string(&ps.auth_file).unwrap(), before);
+    // BISE-282: no credit is not a wrong key: the key is saved
+    std::fs::write(&rc, "ANTHROPIC_API_KEY=sk-broke\n").unwrap();
+    assert_eq!(auth_cli::login_main(&args(&["anthropic", "--check", "--from", &from]), &ps, &check), 0);
+    assert_eq!(Store::read(&ps.auth_file).unwrap().key("anthropic"), Some("sk-broke"));
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_failed_check_says_why_the_providers_words_and_the_fix() {
+    use auth_cli::{check_lines, CheckFail, CheckKind};
+    use bise_home::style::{strip, Style};
+    let c = Catalog::builtin();
+    let p = c.provider("mistral").unwrap();
+    let f = |kind: CheckKind, said: &str| CheckFail { kind, said: said.into() };
+    let plain = Style::PLAIN;
+    let l = check_lines(&plain, &f(CheckKind::WrongKey, "Unauthorized"), p, "mistral/m", None);
+    assert_eq!(l, vec![
+        "✗ Mistral says this key is wrong.".to_string(),
+        "  Mistral said: \"Unauthorized\"".into(),
+        format!("  get a key: {}", p.keys_url),
+    ]);
+    let l = check_lines(&plain, &f(CheckKind::WrongKey, ""), p, "mistral/m", Some("env MISTRAL_API_KEY"));
+    assert_eq!(l[0], "✗ the key from env MISTRAL_API_KEY doesn't work: Mistral says it's wrong.");
+    let a = c.provider("anthropic").unwrap();
+    let l = check_lines(&plain, &f(CheckKind::NoCredit, "Your credit balance is too low"), a, "anthropic/x", None);
+    assert_eq!(l[0], "? the key works, but your Anthropic account has no credit yet.");
+    assert_eq!(l[2], format!("  add credit: {}", a.billing_url));
+    assert_eq!(check_lines(&plain, &f(CheckKind::NoAccess, ""), a, "anthropic/claude-x", None)[0], "✗ this key can't use claude-x.");
+    assert!(check_lines(&plain, &f(CheckKind::Model, ""), a, "anthropic/nope", None)[1].contains("--model anthropic/<model>"));
+    assert_eq!(check_lines(&plain, &f(CheckKind::Unreachable("timed out".into()), ""), a, "anthropic/x", None)[0], "✗ i couldn't reach Anthropic: timed out.");
+    // a terminal: the same words, the link an OSC 8 link
+    let tty = Style { color: true, light: false, width: 0 };
+    let l = check_lines(&tty, &f(CheckKind::WrongKey, "Unauthorized"), p, "mistral/m", None);
+    assert!(l[2].contains(&format!("\x1b]8;;{}", p.keys_url)), "{:?}", l[2]);
+    assert_eq!(l.iter().map(|x| strip(x)).collect::<Vec<_>>(), check_lines(&plain, &f(CheckKind::WrongKey, "Unauthorized"), p, "mistral/m", None));
+}
+
+#[test]
+fn the_step_after_a_login() {
+    let s = Setup::from_text(None, &|_| None);
+    let m = Catalog::builtin();
+    let p = m.provider("mistral").unwrap();
+    assert_eq!(auth_cli::next_after_login(&s, p, Some("mistral/x"), false), "cd your-repo && bise");
+    assert_eq!(auth_cli::next_after_login(&s, p, Some("mistral/x"), true), "add credit, then bise auth check mistral");
+    let s = Setup::from_text(Some("model = \"anthropic/claude-x\"\n"), &|_| None);
+    assert!(auth_cli::next_after_login(&s, p, Some("mistral/x"), false).starts_with("bise config set model mistral/x"));
 }

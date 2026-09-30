@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use bise_home::style::Style;
+
 use crate::{bridge, report, resolve, state};
 
 pub const USAGE: &str = "usage:
@@ -58,18 +60,17 @@ pub fn main(args: &[String]) -> i32 {
                         .plugins
                         .iter()
                         .any(|p| &p.name == name);
-                    println!(
-                        "{} {}{}{}",
-                        name,
-                        if on { "enabled" } else { "disabled" },
-                        if changed { "" } else { " (unchanged)" },
-                        if known { "" } else { " — note: no such plugin in the roots right now" }
-                    );
-                    println!("applies at the next session start or /reload ({})", path.display());
+                    let out = Style::stdout();
+                    let what = format!("{} {}{}", name, if on { "enabled" } else { "disabled" }, if changed { "" } else { " already" });
+                    println!("{}", out.ok(&what));
+                    if !known {
+                        println!("{}", out.ask(&format!("no plugin named {} in the roots right now (bise plugins list)", name)));
+                    }
+                    println!("{}", out.dim("it applies at the next session start, or /reload in one."));
                     0
                 }
                 Err(e) => {
-                    eprintln!("{}: {}", path.display(), e);
+                    eprintln!("{}", Style::stderr().fail(&format!("{}: {}", path.display(), e)));
                     1
                 }
             }

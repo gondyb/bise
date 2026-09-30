@@ -4,6 +4,7 @@ use std::path::Path;
 
 use crate::auth::{EnvFile, Keys, Store};
 use crate::{Catalog, Known, Provider, Resolved, Setup, Source, CLI};
+use bise_home::style::Style;
 
 /// "128k", "1M", "1.04M"
 pub fn tokens(n: u64) -> String {
@@ -56,18 +57,23 @@ fn usd(micro: u64) -> String {
     t.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
-fn choice_line(label: &str, c: &Catalog, name: &str, from: &str) -> String {
+fn choice_line(st: &Style, label: &str, c: &Catalog, name: &str, from: &str) -> String {
+    let head = st.dim(&format!("{:<12}", label));
+    // BISE-266: no model until a key is checked
+    if name.trim().is_empty() {
+        return format!("{} {}\n", head, st.accent(&format!("none yet: run {} in a repo, or {} config set {} <provider/model>", CLI, CLI, label)));
+    }
     let r = c.resolve(name);
     let what = match r.known {
         Known::Listed => "listed".to_string(),
         Known::Unlisted => format!("not listed: {}'s defaults", r.provider),
         Known::NoProvider => format!("unknown provider '{}': add [providers.{}] to config.toml", r.provider, r.provider),
     };
-    format!("{:<12} {}  ({}; {})\n             {}\n", label, r.name, from, what, caps_text(&r))
+    format!("{} {}  {}\n             {}\n", head, r.name, st.dim(&format!("({}; {})", from, what)), st.faint(&caps_text(&r)))
 }
 
 /// The voice input's model (BISE-130), as the choice lines.
-fn voice_line(s: &Setup) -> String {
+fn voice_line(st: &Style, s: &Setup) -> String {
     let v = &s.voice;
     let r = s.catalog.resolve_stt(&v.model);
     let what = match (r.known, r.api.is_empty()) {
@@ -81,12 +87,22 @@ fn voice_line(s: &Setup) -> String {
     if !v.vocabulary.is_empty() {
         extra.push(format!("vocabulary: {}", v.vocabulary.len()));
     }
-    format!("{:<12} {}  ({}; {})\n             {}\n", "voice", r.name, v.from, what, extra.join(" · "))
+    format!("{} {}  {}\n             {}\n", st.dim(&format!("{:<12}", "voice")), r.name, st.dim(&format!("({}; {})", v.from, what)), st.faint(&extra.join(" · ")))
+}
+
+/// A provider's key state: found in text, else faint.
+fn key_state_styled(st: &Style, p: &Provider, keys: &Keys, home: Option<&Path>) -> String {
+    let state = key_state(p, keys, home);
+    if keys.source(p, home).is_some() {
+        state
+    } else {
+        st.faint(&state)
+    }
 }
 
 /// The providers that transcribe and their voice models.
 /// Whether it listed a provider.
-fn voice_list(o: &mut String, c: &Catalog, hit: &dyn Fn(&str) -> bool, keys: &Keys, home: Option<&Path>) -> bool {
+fn voice_list(st: &Style, o: &mut String, c: &Catalog, hit: &dyn Fn(&str) -> bool, keys: &Keys, home: Option<&Path>) -> bool {
     let mut block = String::new();
     for p in c.stt_providers() {
         let p_hit = hit(&p.id) || hit(&p.name) || hit("voice") || hit("stt");
@@ -98,14 +114,14 @@ fn voice_list(o: &mut String, c: &Catalog, hit: &dyn Fn(&str) -> bool, keys: &Ke
         if !p_hit && models.is_empty() {
             continue;
         }
-        block.push_str(&format!("  {}  {} · {} · {}\n", p.id, p.name, p.stt, key_state(p, keys, home)));
+        block.push_str(&format!("  {}  {} {}\n", st.title(&p.id), st.dim(&format!("{} · {} ·", p.name, p.stt)), key_state_styled(st, p, keys, home)));
         for m in models {
             let mark = if m.source == Source::Config { "  (config)" } else { "" };
-            block.push_str(&format!("    {}{}\n", m.name(), mark));
+            block.push_str(&format!("    {}{}\n", m.name(), st.faint(mark)));
         }
     }
     if !block.is_empty() {
-        o.push_str("\nvoice (speech to text, ctrl+r; [voice] in config.toml)\n");
+        o.push_str(&format!("\n{} {}\n", st.title("voice"), st.dim("(speech to text, ctrl+r; [voice] in config.toml)")));
         o.push_str(&block);
     }
     !block.is_empty()
@@ -113,20 +129,25 @@ fn voice_list(o: &mut String, c: &Catalog, hit: &dyn Fn(&str) -> bool, keys: &Ke
 
 /// The whole listing, pure (tests).
 pub fn render(s: &Setup, filter: Option<&str>, keys: &Keys, home: Option<&Path>) -> String {
+    render_styled(s, filter, keys, home, &Style::PLAIN)
+}
+
+/// The listing in a style (BISE-285: colors on a terminal).
+pub fn render_styled(s: &Setup, filter: Option<&str>, keys: &Keys, home: Option<&Path>, st: &Style) -> String {
     let c = &s.catalog;
     let f = filter.map(|f| f.to_ascii_lowercase());
     let hit = |x: &str| f.as_deref().is_none_or(|f| x.to_ascii_lowercase().contains(f));
     let mut o = String::new();
-    o.push_str(&choice_line("model", c, &s.model, s.model_from));
+    o.push_str(&choice_line(st, "model", c, &s.model, s.model_from));
     let agent_from = if s.agent_model_from == "model" { "same as model" } else { s.agent_model_from };
-    o.push_str(&choice_line("agent_model", c, &s.agent_model, agent_from));
+    o.push_str(&choice_line(st, "agent_model", c, &s.agent_model, agent_from));
     let small_from = match s.small_model_from {
         "provider" => "the provider's small model",
         "agent_model" => "same as agent_model",
         f => f,
     };
-    o.push_str(&choice_line("small_model", c, &s.small_model, small_from));
-    o.push_str(&voice_line(s));
+    o.push_str(&choice_line(st, "small_model", c, &s.small_model, small_from));
+    o.push_str(&voice_line(st, s));
     let mut listed = false;
     for p in c.providers.iter().filter(|p| !p.stt_only) {
         let models: Vec<_> = c.models.iter().filter(|m| m.provider == p.id && !m.stt).collect();
@@ -138,32 +159,31 @@ pub fn render(s: &Setup, filter: Option<&str>, keys: &Keys, home: Option<&Path>)
         listed = true;
         let custom = if p.source == Source::Config { ", from config.toml" } else { "" };
         o.push_str(&format!(
-            "\n{}  {} · {} · {}{}\n",
-            p.id,
-            p.name,
-            p.api,
-            key_state(p, keys, home),
-            custom
+            "\n{}  {} {}{}\n",
+            st.title(&p.id),
+            st.dim(&format!("{} · {} ·", p.name, p.api)),
+            key_state_styled(st, p, keys, home),
+            st.dim(custom)
         ));
         for m in shown {
             let r = c.resolve(&m.name());
             let mark = if m.source == Source::Config { "  (config)" } else { "" };
-            o.push_str(&format!("  {:<52} {}{}\n", m.name(), caps_text(&r), mark));
+            o.push_str(&format!("  {:<52} {}{}\n", m.name(), st.dim(&caps_text(&r)), st.faint(mark)));
         }
         let base = Resolved {
             caps: c.provider_caps(p),
             ..c.resolve(&format!("{}/-", p.id))
         };
-        o.push_str(&format!("  {:<52} {}\n", format!("{}/<any other>", p.id), caps_text(&base)));
+        o.push_str(&format!("  {} {}\n", st.faint(&format!("{:<52}", format!("{}/<any other>", p.id))), st.dim(&caps_text(&base))));
     }
-    listed |= voice_list(&mut o, c, &hit, keys, home);
+    listed |= voice_list(st, &mut o, c, &hit, keys, home);
     if let (Some(f), false) = (filter, listed) {
-        o.push_str(&format!("\nno provider or model matches '{}' (`{} models` lists them all)\n", f, CLI));
+        o.push_str(&format!("\n{}\n", st.ask(&format!("no provider or model matches '{}' ({} models lists them all)", f, CLI))));
     }
     if !c.warnings.is_empty() {
         o.push('\n');
         for w in &c.warnings {
-            o.push_str(&format!("warning: {}\n", w));
+            o.push_str(&format!("{}\n", st.ask(&format!("warning: {}", w))));
         }
     }
     o
@@ -171,14 +191,14 @@ pub fn render(s: &Setup, filter: Option<&str>, keys: &Keys, home: Option<&Path>)
 
 fn usage() -> String {
     format!(
-        "usage: {} models [filter]
-  Lists the providers and models bise knows (built in, plus config.toml's
-  [providers.<id>] and [models.\"<provider>/<model>\"]), where each
-  provider's key comes from (env, auth.json, an old .env file), and the
-  models in use (model, agent_model, small_model), and the voice input's
-  speech-to-text providers ('voice' as the filter lists only them).
-  Any \"<provider>/<model>\" works, listed or not.",
-        CLI
+        "{cli} models [filter]: the models bise knows
+
+lists the providers and models (built in, plus config.toml's
+[providers.<id>] and [models.\"<provider>/<model>\"]), where each
+provider's key comes from, the models in use (model, agent_model,
+small_model) and the voice input's providers ('voice' as the filter
+lists only them). any \"<provider>/<model>\" works, listed or not.",
+        cli = CLI
     )
 }
 
@@ -200,14 +220,15 @@ pub fn main(args: &[String], paths: &crate::auth_cli::Paths) -> i32 {
         }
     }
     let setup = Setup::load(&paths.config);
+    let st = Style::stdout();
     let store = Store::read(&paths.auth_file).unwrap_or_else(|e| {
-        eprintln!("warning: {} (its keys are ignored)", e);
+        eprintln!("{}", Style::stderr().ask(&format!("warning: {} (its keys are ignored)", e)));
         Store::default()
     });
     let files = EnvFile::read_all(&paths.env_files);
     let env = |k: &str| std::env::var(k).ok();
     let keys = Keys { env: &env, store: &store, files: &files };
-    print!("{}", render(&setup, filter.as_deref(), &keys, paths.home.as_deref()));
-    println!("\nconfig: {}", paths.config.display());
+    print!("{}", render_styled(&setup, filter.as_deref(), &keys, paths.home.as_deref(), &st));
+    println!("\n{} {}", st.dim("config:"), crate::auth::tilde(&paths.config, paths.home.as_deref()));
     0
 }
