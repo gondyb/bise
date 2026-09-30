@@ -356,6 +356,28 @@
   .replay { all:unset; cursor:pointer; color:var(--dim); font-size:13px; margin-left:2ch; } .replay:hover { color:var(--acc); }
   @media (max-width:700px) { .stage .win { width:220px; font-size:11.5px; } }
   @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } .blow { opacity:1; transform:none; } }
+
+  /* the hero: the product, live, right under the promise */
+  .hero.hx { min-height:auto; }
+  .hx .term { width:100%; box-shadow:0 0 0 1px var(--faint), 0 30px 80px rgba(0,0,0,.25); background:color-mix(in srgb, var(--soft) 80%, transparent); backdrop-filter:blur(.6px); -webkit-backdrop-filter:blur(.6px); }
+  .hx .foot { background:color-mix(in srgb, var(--raised) 82%, transparent); }
+  /* the terminal's grey labels (numbers, times, 'agents · ⌥ + number', ~/acme) read on the see-through ground: 4.4:1 dark */
+  .hx .term .faint, .hx .term .panel .h { color:#857d72; }
+  .gust i { display:inline-block; width:1ch; text-align:center; font-style:normal; } .gust .t { color:var(--text); } .gust .d { color:var(--dim); } .gust .f { color:var(--faint); }
+  /* the panel never lets a name run into its time: a gap, and a long name ends in … */
+  .hx .panel .row { gap:2ch; } .hx .panel .row > span:first-child { overflow:hidden; text-overflow:ellipsis; min-width:0; } .hx .panel .row > span:last-child { flex:none; }
+  [data-theme="light"] .hx .term .faint, [data-theme="light"] .hx .term .panel .h { color:#7d766c; }
+  .hx .hdemo { position:relative; z-index:1; width:100%; }
+  .hero.col { padding:120px 6vw 120px; }
+  .col .big { font-size:clamp(60px, 9vw, 128px); }
+  .col .t1 { margin-top:40px; font-size:clamp(22px, 2.6vw, 34px); }
+  .col .t2 { margin-top:96px; }  /* the promise belongs to the demo: air above it, close to the box */
+  .col .hdemo { margin-top:40px; max-width:104ch; }
+  .col .screen { height:400px; }
+  .col .hcta { margin-top:300px; display:flex; flex-direction:column; align-items:center; position:relative; z-index:1; }
+  .col .hcta .install { margin-top:0; }
+  .col .hcta .switch { margin-top:36px; }
+  .prob .stage { min-height:420px; }
 </style>
 </head>
 <body>
@@ -376,13 +398,30 @@
 <!-- hero, in the wind -->
 <div class="sky">
   <pre class="rail" aria-hidden="true"></pre>
-  <div class="hero">
+  <div class="hero hx col">
+    <div class="htext">
     <div class="big">bise <span class="kiss">:*</span></div>
     <div class="t1">a multi-agent harness, made for humans.</div>
     <div class="t2" data-a="t2">meet your team lead.<br>you stay in flow, i run the agents.</div>
+    </div>
+    <div class="hdemo hfloor">
+    <div class="term" id="term" aria-label="a bise session, animated">
+      <div class="thead"><span>bise <span class="acc">:*</span></span><span class="faint">~/acme</span></div>
+      <div class="screen">
+        <div class="feed scrollbox" id="feed"></div>
+        <div class="panel"><div class="h">agents · ⌥ + number</div><div id="agents"></div></div>
+      </div>
+      <div class="foot">
+        <div class="status"><span>you → <span class="acc">main</span></span><span id="working" class="dim"></span></div>
+        <div class="composer" id="comp"><span id="typed"></span><span class="cur"></span><span class="ph" id="ph">what's on your mind?</span></div>
+        <div class="keys"><span><span class="k">⏎</span> send</span><span><span class="k">@</span> agent</span><span><span class="k">⌥0-9</span> switch</span><span><span class="k">?</span> help</span></div>
+      </div>
+    </div>
+    </div>
+    <div class="hcta">
     <div class="install" id="install" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span id="cmd">curl -fsSL bise.dev/install | sh</span></span><span class="c" id="copied">copy</span></div>
     <div class="switch"><div>switching from <span class="cli" aria-label="Claude Code, Codex, Vibe, OpenCode or another agent"><span>Claude Code</span></span>?</div><div><button class="sp" title="read https://bise.dev/setup.md and set bise up for me">copy this prompt for your agent</button> · <a class="sf" href="/setup" target="_blank" rel="noopener">see the full prompt ↗</a></div></div>
-    <div class="scroll">↓</div>
+    </div>
   </div>
 </div>
 
@@ -423,18 +462,6 @@
   <div class="stage" id="stage" aria-label="today: many agent sessions waiting for you. with bise: one thread.">
     <div class="ptr" id="ptr" style="left:46%;top:80%"><svg width="16" height="20" viewBox="0 0 16 20" aria-hidden="true"><path d="M2 2 L2 16 L5.8 12.6 L8.4 18.4 L11 17.2 L8.5 11.6 L13.6 11.6 Z" fill="var(--acc)" stroke="var(--bg)" stroke-width="1.4" stroke-linejoin="round"/></svg><span class="lb">you</span></div>
     <div class="bub" id="bub"></div>
-    <div class="term" id="term" aria-label="a bise session, animated">
-      <div class="thead"><span>bise <span class="acc">:*</span></span><span class="faint">~/acme</span></div>
-      <div class="screen">
-        <div class="feed scrollbox" id="feed"></div>
-        <div class="panel"><div class="h">agents · ⌥ + number</div><div id="agents"></div></div>
-      </div>
-      <div class="foot">
-        <div class="status"><span>you → <span class="acc">main</span></span><span id="working" class="dim"></span></div>
-        <div class="composer" id="comp"><span id="typed"></span><span class="cur"></span><span class="ph" id="ph">what's on your mind?</span></div>
-        <div class="keys"><span><span class="k">⏎</span> send</span><span><span class="k">@</span> agent</span><span><span class="k">⌥0-9</span> switch</span><span><span class="k">?</span> help</span></div>
-      </div>
-    </div>
   </div>
   <div class="stats" id="stats"></div>
   <p class="cap" id="cap"></p>
@@ -809,7 +836,7 @@ function branch(s) {
     const verb = (m) => m.startsWith("fix") ? "fixed" : m.startsWith("feat") ? "implemented" : "done";
     return (g, t) => {
       // the thread sits low enough to leave the arcs room under the title, and keeps 4 rows under it for what bise says
-      const Y = Math.max(2, Math.min(g.rows - 5, Math.max(Math.round(g.rows * .8), g.ko.y1 + 10)));  // the grid has one hidden row at the bottom: keep 4 visible rows under the thread
+      const Y = Math.max(2, Math.min(g.rows - 5, (g.exact ? g.floor : Math.max(Math.round(g.rows * .8), g.ko.y1 + 10, g.floor || 0))));  // the grid has one hidden row at the bottom: keep 4 visible rows under the thread
       // a fuller dandelion sky: seeded at once over the whole hero, then fed from the bottom and the left edge
       const seed = (x, y) => s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: 1e9 });
       if (!s.sown) { s.sown = true; for (let k = 0; k < 150; k++) seed(rnd(0, g.cols), rnd(0, g.rows)); }
@@ -955,10 +982,10 @@ const sec = document.querySelector(".sky");
   const frame = () => {
     if (!visible || document.hidden) { running = false; return; }
     // nothing is drawn behind the hero text: a box around it, 2 cells of air
-    const pr = pre.getBoundingClientRect(), rs = [...sec.querySelectorAll(".hero > .big, .hero > .t1, .hero > .t2")].map(e => e.getBoundingClientRect());  // the install box may sit over a lane (user: overlap is fine)
+    const pr = pre.getBoundingClientRect(), rs = [...sec.querySelectorAll(".hero .big, .hero .t1, .hero .t2")].map(e => e.getBoundingClientRect());  // the install box may sit over a lane (user: overlap is fine)
     const ko = { x0: Math.floor((Math.min(...rs.map(r => r.left)) - pr.left) / cw) - 3, x1: Math.ceil((Math.max(...rs.map(r => r.right)) - pr.left) / cw) + 3,
                  y0: Math.floor((Math.min(...rs.map(r => r.top)) - pr.top) / lh) - 1, y1: Math.ceil((Math.max(...rs.map(r => r.bottom)) - pr.top) / lh) + 1 };
-    const g = Grid(Math.ceil(pre.clientWidth / cw) + 1, Math.ceil(pre.clientHeight / lh) + 1, ko); g.ko = ko;
+    const g = Grid(Math.ceil(pre.clientWidth / cw) + 1, Math.ceil(pre.clientHeight / lh) + 1, ko); g.ko = ko; const hf = sec.querySelector(".hfloor"); if (hf) { const r = hf.getBoundingClientRect(); g.floor = Math.ceil((r.bottom - pr.top) / lh) + 8; g.exact = true; }
     g.labels = GLIDE || NONAMES ? [] : null;
     step(g, t);
     glide(NONAMES ? [] : g.labels || []);
@@ -1003,87 +1030,129 @@ const rows = {};
 function agent(n, mark, name, info) {
   let r = rows[name];
   if (!r) { r = rows[name] = document.createElement("div"); r.className = "row"; agents.append(r); }
-  r.innerHTML = `<span><span class="faint">${n}</span> ${mark} ${name}</span><span class="faint">${info}</span>`;
+  r.innerHTML = `<span><span class="faint">${n < 0 ? -n : n ? n + SEED : 0}</span> ${mark === "∿" ? `<span class="gust" data-g="1"></span>` : mark} ${name}</span><span class="faint">${info}</span>`;
   r.dataset.busy = mark === "∿" ? "1" : "";
 }
-function count() { const n = Object.values(rows).filter((r) => r.dataset.busy).length; working.innerHTML = n ? `<span class="pulse acc">∿</span> ${n} working` : ""; }
+function count() { const n = Object.values(rows).filter((r) => r.dataset.busy).length; working.innerHTML = n ? `<span class="gust" data-g="5"></span> ${n} working` : ""; gustDraw(); }
 // the composer: the bar turns blush while there is text, the placeholder shows when it's empty
 const comp = document.getElementById("comp"), ph = document.getElementById("ph");
 function setTyped(t) { typed.textContent = t; comp.classList.toggle("typing", t !== ""); ph.style.display = t ? "none" : ""; }
-async function type(text, fast = 1) { for (const ch of text) { setTyped(typed.textContent + ch); await sleep(reduced ? 0 : (30 + Math.random() * 35) / fast); } await sleep(350 / fast); }
+const FLOW_SPEED = 1.25;  // a bit livelier than the original script
+// real life is never on the beat: every wait is stretched or squeezed (×0.55 to ×1.6),
+// and now and then a longer beat (someone thinks, an agent takes its time)
+const jitter = () => (Math.random() < .12 ? 1.5 + Math.random() * .8 : .55 + Math.random() * 1.05);
+const fsleep = (ms) => sleep(ms / FLOW_SPEED * jitter());
+// the session opens mid-day, never empty: one job done, two at work, agents talking
+const SEED = 3;
+function seed() {
+  feed.innerHTML = ""; agents.innerHTML = ""; for (const k in rows) delete rows[k]; working.innerHTML = "";
+  agent(0, `<span class="acc">:*</span>`, "main", "");
+  agent(-1, `<span class="acc">✓</span>`, "flaky-login", "12m");
+  agent(-2, "∿", "i18n", "8m");
+  agent(-3, "∿", "billing-retry", "5m");
+  count();
+  add(`the login test is flaky again 🙃<span class="tick read">✓✓</span>`, "you");
+  add(`<span class="who acc">:*</span>on it. flaky-login is chasing it.`, "b");
+  add(`add french to the checkout. and retry failed payments, twice max<span class="tick read">✓✓</span>`, "b you");
+  add(`<span class="who acc">:*</span>two jobs: i18n and billing-retry started.`, "b");
+  add(`<span class="chip">✉ <span class="s">i18n</span> <span class="ar">→</span> billing-retry</span><span class="dim">are you touching the checkout copy?</span>`, "l3 b");
+  add(`<span class="chip">✉ <span class="s">billing-retry</span> <span class="ar">→</span> i18n</span><span class="dim">only the error message. it's yours after 3pm</span>`, "l3");
+  add(`<span class="who acc">✓</span>flaky-login done · the test used the real clock. it uses a fake one now.`, "b");
+  gustDraw();
+  // the still frame appears as is: no enter animation, so nothing fades when the demo starts or loops
+  for (const el of [...feed.children, ...agents.children]) el.style.animation = "none";
+  feed.scrollTop = feed.scrollHeight;
+}
+async function type(text, fast = 1) { for (const ch of text) { setTyped(typed.textContent + ch); if (ch === " " && Math.random() < .18) await fsleep(160 + Math.random() * 260); await fsleep(reduced ? 0 : (30 + Math.random() * 35) / fast); } await fsleep(350 / fast); }
 async function send(text, fast = 1) {
   await type(text, fast); setTyped("");
   const d = add(`${text}<span class="tick">✓</span>`, "b you");
-  await sleep(550); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`;
+  await fsleep(550); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`;
 }
 const main = (t) => add(`<span class="who acc">:*</span>${t}`, "b");
 async function run() {
-  feed.innerHTML = ""; agents.innerHTML = ""; for (const k in rows) delete rows[k]; working.innerHTML = "";
-  agent(0, `<span class="acc">:*</span>`, "main", "");
-  await sleep(1200);
+  seed();
+  await fsleep(1200);
   // one idea...
   await send("signup is slow on mobile. can you look?");
-  await sleep(600);
+  await fsleep(600);
   main("on it. perf is profiling it on a mid-range phone.");
   agent(1, "∿", "perf", "0m"); count();
-  await sleep(900);
+  await fsleep(900);
   // ...then they come faster
   await send("oh and dark mode. people keep asking", 1.4);
-  await sleep(450);
+  await fsleep(450);
   main("dark-mode started. settings page first, then the rest.");
   agent(2, "∿", "dark-mode", "0m"); count();
-  await sleep(500);
+  await fsleep(500);
   await send("and the 404 page is so sad. make it less sad", 1.8);
-  await sleep(400);
+  await fsleep(400);
   main("cheering it up. sad-404 started.");
   agent(3, "∿", "sad-404", "0m"); count();
-  await sleep(300);
+  await fsleep(300);
   await send("wait also the csv export crashes on emoji 😭", 2.4);
-  await sleep(350);
+  await fsleep(350);
   main("emoji-csv is on it. it's always unicode.");
   agent(4, "∿", "emoji-csv", "0m"); count();
-  await sleep(250);
+  await fsleep(250);
   await send("OK LAST ONE. release notes for all of this", 3);
-  await sleep(500);
+  await fsleep(500);
   main("release waits for the others, then writes them. go get a coffee.");
   agent(5, "∿", "release", "0m"); count();
-  await sleep(1600);
+  await fsleep(1600);
   // the team sorts itself out
   add(`▸ 9 messages between 5 agents`, "l3 b");
   for (const [n, a] of [[1, "perf"], [2, "dark-mode"], [3, "sad-404"], [4, "emoji-csv"], [5, "release"]]) agent(n, "∿", a, "2m");
-  await sleep(1500);
+  await fsleep(1500);
   main("dark-mode asked which gray. i said the one in tokens.css, like everywhere else.");
-  await sleep(1800);
+  await fsleep(1800);
   // change your mind mid-run
   await send("actually keep the sad dog on the 404. just give it a hat");
-  await sleep(700);
+  await fsleep(700);
   main("told sad-404. the dog keeps its job. now with a hat.");
-  await sleep(1500);
+  await fsleep(1500);
   const card = add(`<div class="t">? perf needs you</div><div>the hero image is 4.2 MB. compress it, or lazy-load it?</div><div class="faint">1 · compress   2 · both   alt+r answer with text</div>`, "card b");
-  await sleep(1900);
+  await fsleep(1900);
   await type("2"); setTyped("");
   card.classList.add("answered"); card.querySelector(".t").textContent = "✓ perf · you said both";
-  await sleep(1300);
+  await fsleep(1300);
   // everything ships
   agent(4, `<span class="acc">✓</span>`, "emoji-csv", "3m"); count();
   add(`<span class="who acc">✓</span>emoji-csv done · 🦄 exports fine now. the file was read as latin-1.`, "b");
-  await sleep(1300);
+  await fsleep(1300);
   agent(1, `<span class="acc">✓</span>`, "perf", "4m"); count();
   add(`<span class="who acc">✓</span>perf done · signup: 4.1 s → 0.9 s on a mid-range phone.`, "b");
-  await sleep(1200);
+  await fsleep(1200);
   agent(3, `<span class="acc">✓</span>`, "sad-404", "4m"); agent(2, `<span class="acc">✓</span>`, "dark-mode", "5m"); count();
   add(`<span class="who acc">✓</span>sad-404 and dark-mode done · the dog has a hat. settings is dark.`, "b");
-  await sleep(1500);
+  await fsleep(1500);
   agent(5, `<span class="acc">✓</span>`, "release", "6m"); count();
   add(`<span class="who acc">✓</span>release done · 2.5 notes drafted. five things, zero tabs.`, "b");
-  await sleep(1300);
+  await fsleep(1300);
   await send("you're the best");
-  await sleep(500); main(":*");
-  await sleep(4500);
+  await fsleep(500); main(":*");
+  await fsleep(4500);
   run();
 }
+
+// ---- the working mark, as in the TUI (rust/tui/src/gust.rs, W1 "gust"): 110 ms a frame ----
+const GUST = { strip: ["≈    ", "∿≈   ", "~∿≈  ", "·~∿≈ ", " ·~∿≈", "  ·~∿", "   ·~", "    ·", "     "],
+  breath: ["·", "~", "∿", "≈", "∿", "~"], tone: { "≈": "t", "∿": "t", "~": "d", "·": "f" } };
+let gustF = 0;
+function gustDraw() {
+  document.querySelectorAll(".gust").forEach((el) => {
+    const five = el.dataset.g === "5";
+    const f = reduced ? (five ? "∿    " : "∿") : five ? GUST.strip[gustF % 9] : GUST.breath[gustF % 6];
+    el.innerHTML = [...f].map((c) => `<i class="${reduced ? "t" : GUST.tone[c] || ""}">${c === " " ? "&nbsp;" : c}</i>`).join("");
+  });
+}
+if (!reduced) setInterval(() => { if (!document.hidden) { gustF++; gustDraw(); } }, 110);
 let flowOn = false;
 window.startFlow = () => { if (!flowOn) { flowOn = true; run(); } };
+seed();  // the still frame, until the whole demo is on screen
+{ const t = document.getElementById("term");
+  const io = new IntersectionObserver(([e]) => { if (e.intersectionRatio >= Math.min(.97, innerHeight / t.offsetHeight * .97)) { io.disconnect(); setTimeout(() => window.startFlow(), 400); } }, { threshold: [0, .2, .4, .6, .8, .9, .97, 1] });
+  io.observe(t); }
 
 // ---- feature demos: tiny scripted terminals, played only while on screen ----
 const plays = {
@@ -1373,8 +1442,8 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
     const w = stage.clientWidth, h = stage.clientHeight;
     wins.forEach((d, i) => { d.classList.remove("nag"); d.style.left = (w / 2 - 150) + "px"; d.style.top = (h / 2 - 60) + "px"; d.style.transform = "scale(.35) rotate(0deg)"; d.style.opacity = "0"; });
     stage.classList.add("calm"); waiting = 0; setStats();
-    cap.innerHTML = "<b>one thread per repo.</b> you talk to main. main runs the agents, and only taps your shoulder when it matters.";
-    head("with bise", "this is what flow looks like", "five ideas in two minutes. you never stop typing.");
+    cap.innerHTML = "<b>↑ that's the session at the top.</b> you talk to main. main runs the agents, and only taps your shoulder when it matters.";
+    head("with bise", "one thread. that's it.", "the session at the top of the page is still running. you never stop typing.");
     window.startFlow && window.startFlow();
   }
   let pinned = false;
