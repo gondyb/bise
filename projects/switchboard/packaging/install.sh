@@ -401,6 +401,8 @@ PREFIX='$q_prefix'
 EOF
 cat >> "$PREFIX/bin/$CMD.tmp" <<'EOF'
 root="$(cd "$PREFIX/current" 2>/dev/null && pwd -P)" || { echo "$(basename "$0"): no version installed in $PREFIX" >&2; exit 1; }
+# the version it runs, for `bise doctor` (like the dev launcher's)
+[ "${1:-}" = --launcher-root ] && { echo "$root"; exit 0; }
 # the user's folder (never one inherited from an agent's shell)
 export SB_LAUNCH_DIR="$PWD"
 exec "$root/bise" "$@"

@@ -65,6 +65,11 @@ v="$(cd "$WORK" && E /bin/zsh -ic "$CMD --version" 2>&1 | tail -n 1)"
 echo "     $v"
 case "$v" in "$CMD "*"$os-$arch"*) ok "--version ($os-$arch)" ;; *) ko "--version: want '$CMD <id> ($os-$arch, ...)'" ;; esac
 
+echo "== doctor's PATH line (BISE-270: the launcher names the version it runs)"
+d="$(cd "$WORK" && E /bin/zsh -ic "$CMD doctor" 2>&1 | grep 'PATH' | head -n 1)"
+echo "     $d"
+case "$d" in *"is a launcher that runs this bise"*) ok "doctor: the launcher runs this bise" ;; *) ko "doctor's PATH line" ;; esac
+
 echo "== login (a key from stdin, BISE-170: no init in the launcher)"
 (cd "$WORK" && printf 'test-key-not-real\n' | E "$BIN" login mistral) 2>&1 | sed 's/^/     /'
 check "~/.bise/auth.json holds the key" grep -q 'test-key-not-real' "$T/.bise/auth.json"
