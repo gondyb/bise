@@ -271,9 +271,9 @@ fn find_is_fast_on_50k_events() {
 
 #[test]
 fn a_match_in_the_folded_part_of_your_message_opens_it() {
-    // BISE-239: your long message shows 12 rows; find opens it on a match
+    // BISE-239: your long message shows 20 rows (BISE-262); find opens it on a match
     // in the hidden lines, esc folds it back
-    let text = (1..=20).map(|n| if n == 17 { "the hidden zebra".to_string() } else { format!("line {n}") }).collect::<Vec<_>>().join("\n");
+    let text = (1..=30).map(|n| if n == 27 { "the hidden zebra".to_string() } else { format!("line {n}") }).collect::<Vec<_>>().join("\n");
     let mut app = app_with(vec![Ev::You(text, Mark::Sent, false)]);
     let s = screen(&draw(&mut app));
     assert!(!s.contains("zebra") && s.contains("more lines"), "{s}");

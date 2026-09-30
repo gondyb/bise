@@ -767,9 +767,10 @@ pub(crate) fn closed_word(res: &str) -> String {
 // from column 3, each of its lines (Shift+Enter, paste) on its own rows.
 // No bar, no background: the terminal's own shows through.
 /// A longer message of yours folds to this many rows in the history
-/// (BISE-239; 12 since BISE-261, user: 8 was too few), then `▸ n more
-/// lines`; ctrl+o, a click on that row or space opens it whole.
-pub(crate) const YOU_ROWS: usize = 12;
+/// (BISE-239; 12 since BISE-261, 20 since BISE-262: the user found
+/// 8 then 12 too few), then `▸ n more lines`; ctrl+o, a click on that
+/// row or space opens it whole.
+pub(crate) const YOU_ROWS: usize = 20;
 
 /// Whether your message folds: more than [`YOU_ROWS`] lines (a quote, a
 /// chip count one), or as many rows at 80 columns (one long paragraph).

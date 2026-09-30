@@ -2828,7 +2828,7 @@ Index:
 - **spec:** user: « Le user message devrait avoir un max line count dans l'historique avec ctrl+o pour l'afficher en entier. » Designer: 8 lines; the hint on its own row under the cut text, at the text column, dim, inside the message (the bar through it), `▸ n more lines` like the tool boxes (holding ctrl makes it `▸ ctrl+o expand`, BISE-203); a click or space on it opens just that message, ctrl+o stays global; every user message in every history; a chip counts as one line; a line cut to fit counts as hidden.
 - **what:** `Ev::You(text, mark, open)`. `you_folds` (width-free, so ctrl+o, the ctrl hints and find know it): more than 8 lines, quotes and chip lines one each, a line counted in rows of 77 columns. Closed, at the feed's width: the first 8 rows, then `│  ▸ n more lines ✓✓` (n = the lines, quotes included, not shown whole); a message that fits in 8 rows at that width shows whole. Open: every line, ` ▾` after the last one, the mark after it. It goes through the generic disclosure (`discloses`, `own_open`, `toggle_own`), so ctrl+o, `space` and find's reveal open it; a click (`toggle_at`) folds or opens it only on its last row (the image sizes row aside).
 - **notes:** tests `feed_render_tests::a_long_message_of_yours_folds_to_eight_rows_and_its_hint` (20 lines: 8 rows + `▸ 12 more lines ✓✓`; ctrl+o whole with `▾`; ctrl+o again folded), `a_line_cut_to_fit_counts_as_hidden`, `a_short_message_of_yours_stays_whole`, `a_click_on_the_hint_row_opens_just_that_message`. paste-chip hooks its paste rows onto the same `open` flag.
-- **later:** 8 → 12 rows (BISE-261).
+- **later:** 8 → 12 rows (BISE-261), then 20 (BISE-262).
 
 ### BISE-240 · a long paste is a chip and an attachment
 
@@ -3006,7 +3006,15 @@ Index:
 ### BISE-261 · a long message of yours folds to 12 rows, not 8
 
 - **status:** done (HEAD) · **owner:** user-fold-12 · **commits:** `git log --grep BISE-261`
-- **owns:** the value of `render::YOU_ROWS`
+- **owns:** the value of `render::YOU_ROWS` (until BISE-262: 20 now)
 - **spec:** user: « La limite du nombre de lignes du user message, je la trouve un peu trop limitée. Je pense qu'on devrait faire x 1.5 sur cette limite ». BISE-239's 8 × 1.5 = 12.
 - **what:** `YOU_ROWS` 8 → 12. One constant for `you_folds` and `user_block_lines`, so main's view, each agent's view and a replayed history (resume) all fold at 12: more than 12 lines (or as many rows at 77 columns) shows its first 12 rows, then `▸ n more lines`. A message of 9 to 12 lines now shows whole. Book §9 "Your messages" and the §11 table say 12.
 - **notes:** tests renamed/updated: `feed_render_tests::a_long_message_of_yours_folds_to_twelve_rows_and_its_hint` (20 lines: 12 rows + `▸ 8 more lines ✓✓`), `a_line_cut_to_fit_counts_as_hidden` (11 short lines + one cut), `a_short_message_of_yours_stays_whole` (12 lines), `a_click_on_the_hint_row_opens_just_that_message` (16 lines: `▸ 4 more lines`). Checked in tmux: a 20-line message shows 12 rows and `▸ 8 more lines`.
+
+### BISE-262 · a long message of yours folds to 20 rows, not 12
+
+- **status:** done (HEAD) · **owner:** user-fold-20 · **commits:** `git log --grep BISE-262`
+- **owns:** the value of `render::YOU_ROWS`
+- **spec:** user, right after BISE-261: « on peut faire 20 lignes? ».
+- **what:** `YOU_ROWS` 12 → 20, the same one constant (`you_folds`, `user_block_lines`): main's view, each agent's view and a replayed history fold at 20. More than 20 lines (or as many rows at 77 columns) shows its first 20 rows, then `▸ n more lines`; a message of 13 to 20 lines now shows whole. Book §9 "Your messages" and the §11 table say 20.
+- **notes:** tests renamed/updated: `feed_render_tests::a_long_message_of_yours_folds_to_twenty_rows_and_its_hint` (30 lines: 20 rows + `▸ 10 more lines ✓✓`), `a_line_cut_to_fit_counts_as_hidden` (19 short lines + one cut), `a_short_message_of_yours_stays_whole` (20 lines), `a_click_on_the_hint_row_opens_just_that_message` (24 lines: `▸ 4 more lines`), `find_tests::a_match_in_the_folded_part_of_your_message_opens_it` (30 lines, the match on line 27). `tui_find_tmux.py`'s filler (~32 rows) still folds. Checked in tmux: a 30-line message shows 20 rows and `▸ 10 more lines`.

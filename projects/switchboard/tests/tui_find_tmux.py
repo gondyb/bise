@@ -30,7 +30,7 @@ def main():
         send(t, "the needle one", "ack: the needle one")
         send(t, FILLER, "ack: filler filler")
         send(t, "the needle two", "ack: the needle two")
-        # a long message of yours folds to 12 rows (BISE-239, BISE-261): opened
+        # a long message of yours folds to 20 rows (BISE-239, BISE-262): opened
         # (ctrl+o), the filler pushes the first needle off the screen
         t.keys("C-o")
         t.wait("filler ▾")
