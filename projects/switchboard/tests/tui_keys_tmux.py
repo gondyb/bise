@@ -87,6 +87,8 @@ def one(pid, name, model, keys_url, family):
         t.keys("Enter")
         sc = t.wait("says this key is wrong.")
         assert "%s says this key is wrong." % name in sc and "enter try again" in sc, sc
+        # BISE-282: the provider's own words, dim, under bise's
+        assert '%s said: "invalid api key"' % name in sc, sc
         assert not os.path.exists(os.path.join(root, "auth.json")), "nothing saved"
         t.keys("Enter")
         t.wait("paste your %s key" % name)

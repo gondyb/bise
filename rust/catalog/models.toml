@@ -47,7 +47,9 @@
 #   keys_url (where a key is made), signup_url (only when not the keys
 #   page), model (the id a new user starts with), hidden = true (not
 #   offered: a private proxy). Checked 2026-09-30 against each provider's
-#   docs and keys page.
+#   docs and keys page. billing_url (BISE-282): where credit is added,
+#   linked when a key check says the account has none; only where the
+#   provider's docs name the page.
 # Checked by hand against the providers' docs; last update 2025-11.
 
 # no default_model (BISE-266): with no model in config.toml and no
@@ -68,6 +70,7 @@ default_voice_model = "mistral/voxtral-mini-latest"
 name = "Anthropic"
 hint = "Claude, by Anthropic"
 keys_url = "https://platform.claude.com/settings/keys"
+billing_url = "https://platform.claude.com/settings/billing"
 model = "claude-opus-5-5"
 api = "anthropic"
 base_url = "https://api.anthropic.com/v1"
@@ -155,6 +158,7 @@ name = "OpenAI"
 hint = "GPT, by OpenAI"
 keys_url = "https://platform.openai.com/api-keys"
 signup_url = "https://platform.openai.com/signup"
+billing_url = "https://platform.openai.com/settings/organization/billing"
 model = "gpt-5.5"
 api = "openai-chat"
 base_url = "https://api.openai.com/v1"
@@ -284,6 +288,7 @@ context = 200000
 name = "OpenRouter"
 hint = "one key for most models"
 keys_url = "https://openrouter.ai/settings/keys"
+billing_url = "https://openrouter.ai/settings/credits"
 model = "anthropic/claude-sonnet-5.5"
 api = "openai-chat"
 base_url = "https://openrouter.ai/api/v1"
@@ -338,6 +343,7 @@ reasoning = true
 name = "Groq"
 hint = "open models, very fast"
 keys_url = "https://console.groq.com/keys"
+billing_url = "https://console.groq.com/settings/billing"
 model = "openai/gpt-oss-120b"
 api = "openai-chat"
 base_url = "https://api.groq.com/openai/v1"
@@ -374,6 +380,7 @@ name = "xAI"
 hint = "Grok, by xAI"
 keys_url = "https://console.x.ai/team/default/api-keys"
 signup_url = "https://console.x.ai"
+billing_url = "https://console.x.ai/team/default/billing"
 model = "grok-4.7"
 api = "openai-chat"
 base_url = "https://api.x.ai/v1"
@@ -413,6 +420,7 @@ cache_read_price = 0.02
 name = "DeepSeek"
 hint = "low prices"
 keys_url = "https://platform.deepseek.com/api_keys"
+billing_url = "https://platform.deepseek.com/top_up"
 model = "deepseek-v4-pro"
 api = "openai-chat"
 base_url = "https://api.deepseek.com/v1"
@@ -443,6 +451,7 @@ cache_read_price = 0.028
 name = "Together AI"
 hint = "open models"
 keys_url = "https://api.together.ai/settings/api-keys"
+billing_url = "https://api.together.ai/settings/billing"
 model = "zai-org/GLM-5.3"
 api = "openai-chat"
 base_url = "https://api.together.xyz/v1"

@@ -238,6 +238,9 @@ pub struct Provider {
     pub keys_url: String,
     /// where a new account starts, when it is not the keys page; "" = none
     pub signup_url: String,
+    /// where credit is added (BISE-282: a key check that says "no
+    /// credit" links it); "" = none
+    pub billing_url: String,
     /// the model a new user starts with, its id without the provider;
     /// "" = none (the key step then asks for a name)
     pub model: String,
@@ -547,6 +550,7 @@ impl Catalog {
                                 hint: String::new(),
                                 keys_url: String::new(),
                                 signup_url: String::new(),
+                                billing_url: String::new(),
                                 model: String::new(),
                                 hidden: false,
                                 caps: PartialCaps::default(),
@@ -579,6 +583,7 @@ impl Catalog {
                                     "hint" => set_str(&mut p.hint, s(), &where_, fk, &mut warn),
                                     "keys_url" => set_str(&mut p.keys_url, s(), &where_, fk, &mut warn),
                                     "signup_url" => set_str(&mut p.signup_url, s(), &where_, fk, &mut warn),
+                                    "billing_url" => set_str(&mut p.billing_url, s(), &where_, fk, &mut warn),
                                     "model" => set_str(&mut p.model, s(), &where_, fk, &mut warn),
                                     "hidden" => match fv.as_bool() {
                                         Some(b) => p.hidden = b,

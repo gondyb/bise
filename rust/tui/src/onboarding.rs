@@ -26,6 +26,7 @@
 //! so the agents it starts next use it. The model itself is not changed
 //! here.
 
+use crate::keycheck::Why;
 use crate::theme::{self, Mode, Palette};
 use crate::App;
 use crossterm::event::{poll, read, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -132,6 +133,8 @@ pub(crate) struct Provider {
     pub hint: String,
     pub keys_url: String,
     pub signup_url: String,
+    /// where credit is added (BISE-282); "" = none
+    pub billing_url: String,
 }
 
 impl Provider {
@@ -144,6 +147,7 @@ impl Provider {
             hint: p.hint.clone(),
             keys_url: p.keys_url.clone(),
             signup_url: p.signup_url.clone(),
+            billing_url: p.billing_url.clone(),
         }
     }
 }
@@ -269,12 +273,42 @@ pub(crate) enum Sub {
     Paste(Provider, String, String),
     /// the file has this key already: enter replaces it
     Confirm(Provider, String, String),
-    /// the live check of (provider, model); the pasted key to save when it
-    /// passes (None: a key found where the harness finds it)
-    Checking(Provider, String, Option<String>),
-    Failed(Provider, String, crate::keycheck::Fail),
+    /// the live check of (provider, model) with that key
+    Checking(Provider, String, Tried),
+    /// the check said no: why, and the key it ran with
+    Failed(Provider, String, Tried, crate::keycheck::Fail),
     /// it answered: the model is saved; the optional extras
     Works(Provider, String),
+}
+
+/// The key a check runs with.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) enum Tried {
+    /// pasted: saved when it passes
+    Pasted(String),
+    /// found where the harness finds it (BISE-282: said, as "the key in
+    /// ANTHROPIC_API_KEY"): where
+    Found(String),
+}
+
+impl std::fmt::Debug for Tried {
+    // never the key
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Tried::Pasted(_) => write!(f, "Pasted"),
+            Tried::Found(w) => write!(f, "Found({})", w),
+        }
+    }
+}
+
+impl Tried {
+    /// The key to check again: the pasted one, or None (found again).
+    fn again(&self) -> Option<String> {
+        match self {
+            Tried::Pasted(k) => Some(k.clone()),
+            Tried::Found(_) => None,
+        }
+    }
 }
 
 /// How a key is checked (the real call; the tests put their own).
@@ -569,8 +603,11 @@ impl Onb {
                 b.pop();
                 Sub::Paste(p, m, b)
             }
+            // BISE-282: no cmd+v either (a terminal that sends it as a key)
             (Sub::Paste(p, m, mut b), KeyCode::Char(c))
-                if !k.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                if !k.modifiers.intersects(
+                    KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER | KeyModifiers::META | KeyModifiers::HYPER,
+                ) =>
             {
                 b.push(c);
                 Sub::Paste(p, m, b)
@@ -588,13 +625,17 @@ impl Onb {
                 }
             },
             (Sub::Confirm(p, m, key), KeyCode::Enter) => self.start_check(p, m, Some(key), env),
-            // a failed check: try again, or another provider
-            (Sub::Failed(p, m, crate::keycheck::Fail::Model), KeyCode::Enter) => {
-                let i = self.models_of(&p).iter().position(|x| *x == m).unwrap_or(0);
-                Sub::Model(p, i)
-            }
-            (Sub::Failed(p, m, _), KeyCode::Enter) => Sub::Paste(p, m, String::new()),
-            (Sub::Failed(p, _, _), KeyCode::Tab) => Sub::Which(self.providers.iter().position(|x| x.id == p.id).unwrap_or(0)),
+            // a failed check: another model, another key, or the same key
+            // again (no credit yet, no answer); or another provider
+            (Sub::Failed(p, m, t, f), KeyCode::Enter) => match f.why {
+                Why::Model | Why::NoAccess => {
+                    let i = self.models_of(&p).iter().position(|x| *x == m).unwrap_or(0);
+                    Sub::Model(p, i)
+                }
+                Why::WrongKey => Sub::Paste(p, m, String::new()),
+                Why::NoCredit | Why::Unreachable(_) => self.start_check(p, m, t.again(), env),
+            },
+            (Sub::Failed(p, ..), KeyCode::Tab) => Sub::Which(self.providers.iter().position(|x| x.id == p.id).unwrap_or(0)),
             (s, _) => s,
         };
         Out::Stay
@@ -616,10 +657,10 @@ impl Onb {
     /// Start the live check of `model` with `key` (None: the key found for
     /// the provider) on a thread; [`Onb::tick`] takes its answer.
     fn start_check(&mut self, p: Provider, model: String, key: Option<String>, env: Env) -> Sub {
-        let the_key = match &key {
-            Some(k) => k.clone(),
+        let (the_key, tried) = match key {
+            Some(k) => (k.clone(), Tried::Pasted(k)),
             None => match self.found_key(&p, env) {
-                Some(k) => k,
+                Some(f) => (f.key, Tried::Found(self.where_(&f.from))),
                 None => return Sub::Paste(p, model, String::new()),
             },
         };
@@ -637,17 +678,28 @@ impl Onb {
             let _ = tx.send(check(&call, url));
         });
         self.pending = Some(rx);
-        Sub::Checking(p, model, key)
+        Sub::Checking(p, model, tried)
+    }
+
+    /// Where a found key is, in the key step's words: "ANTHROPIC_API_KEY",
+    /// "~/.bise/auth.json", "~/.vibe/.env".
+    fn where_(&self, from: &bise_catalog::auth::From) -> String {
+        use bise_catalog::auth::From;
+        match from {
+            From::Env(n) => n.clone(),
+            From::AuthFile => auth_shown(self),
+            From::EnvFile(path, _) => bise_catalog::auth::tilde(path, Some(self.home.user_home())),
+        }
     }
 
     /// The key of `p` where the harness finds it (env, auth.json, .env).
-    fn found_key(&self, p: &Provider, env: Env) -> Option<String> {
+    fn found_key(&self, p: &Provider, env: Env) -> Option<bise_catalog::auth::Found> {
         use bise_catalog::auth::{EnvFile, Keys, Store};
         let paths = auth_paths(&self.home);
         let store = Store::read(&paths.auth_file).unwrap_or_default();
         let files = EnvFile::read_all(&paths.env_files);
         let keys = Keys { env, store: &store, files: &files };
-        keys.find(&p.id, &p.key_env).map(|k| k.key)
+        keys.find(&p.id, &p.key_env)
     }
 
     /// The check's answer, when it came: it works (the key saved when it
@@ -657,12 +709,22 @@ impl Onb {
         let answer = match rx.try_recv() {
             Ok(a) => a,
             Err(std::sync::mpsc::TryRecvError::Empty) => return,
-            Err(_) => Err(crate::keycheck::Fail::Unreachable("the check stopped".into())),
+            Err(_) => Err(crate::keycheck::Fail::of(Why::Unreachable("the check stopped".into()))),
         };
         self.pending = None;
-        let Sub::Checking(p, model, key) = std::mem::replace(&mut self.sub, Sub::List) else { return };
+        let Sub::Checking(p, model, tried) = std::mem::replace(&mut self.sub, Sub::List) else { return };
+        let key = tried.again();
         self.sub = match answer {
-            Err(f) => Sub::Failed(p, model, f),
+            // BISE-282: a good key with no credit yet is saved all the same
+            // (not the model: the key step comes back until it answers)
+            Err(f) if f.why == Why::NoCredit => match key.as_deref().map(|k| self.save_key(&p, k, env)) {
+                Some(Err(e)) => {
+                    self.note = Some(Note::Failed(e));
+                    Sub::List
+                }
+                _ => Sub::Failed(p, model, tried, f),
+            },
+            Err(f) => Sub::Failed(p, model, tried, f),
             Ok(()) => match self.keep(&p, &model, key.as_deref(), env) {
                 Ok(()) => Sub::Works(p, model),
                 Err(e) => {
@@ -678,16 +740,24 @@ impl Onb {
     fn keep(&mut self, p: &Provider, model: &str, key: Option<&str>, env: Env) -> Result<(), String> {
         self.shadows = None;
         if let Some(key) = key {
-            let paths = auth_paths(&self.home);
-            let cp = self.setup.catalog.provider(&p.id).ok_or_else(|| format!("unknown provider {}", p.id))?;
-            bise_catalog::auth_cli::login(&paths, cp, key, env).map(|_| ())?;
-            let store = bise_catalog::auth::Store::read(&paths.auth_file).unwrap_or_default();
-            self.shadows = bise_catalog::auth::Keys { env, store: &store, files: &[] }.shadowed(&p.id, &p.key_env);
+            self.save_key(p, key, env)?;
         }
         save_model(&self.home, model).map_err(|e| format!("couldn't write config.toml: {}", e))?;
         self.setup = setup_of(env, &self.home);
         self.model = self.setup.model.clone();
         self.mine = self.setup.catalog.resolve(&self.model).provider;
+        self.refresh_keys(env);
+        Ok(())
+    }
+
+    /// Save a pasted key (`login`'s own code: auth.json, 0600); note the
+    /// environment's key it replaces.
+    fn save_key(&mut self, p: &Provider, key: &str, env: Env) -> Result<(), String> {
+        let paths = auth_paths(&self.home);
+        let cp = self.setup.catalog.provider(&p.id).ok_or_else(|| format!("unknown provider {}", p.id))?;
+        bise_catalog::auth_cli::login(&paths, cp, key, env).map(|_| ())?;
+        let store = bise_catalog::auth::Store::read(&paths.auth_file).unwrap_or_default();
+        self.shadows = bise_catalog::auth::Keys { env, store: &store, files: &[] }.shadowed(&p.id, &p.key_env);
         self.refresh_keys(env);
         Ok(())
     }
@@ -980,7 +1050,6 @@ fn words_in(text: &str, w: usize) -> Vec<String> {
 }
 
 fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
-    use crate::keycheck::Fail;
     let dim = |t: String| Line::from(s(t, theme::dim()));
     match &o.sub {
         Sub::List => model_list(o, w, gap),
@@ -1056,34 +1125,61 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
             v.push(keyline("{esc} back"));
             v
         }
-        Sub::Failed(p, m, f) => {
-            let link = if p.keys_url.is_empty() { None } else { Some(p.keys_url.clone()) };
+        Sub::Failed(p, m, t, f) => {
             let err = |t: String| Line::from(s(format!("{} {}", theme::glyph(theme::G_FAILED), t), theme::error()));
+            let link = |words: &str, u: &str| Line::from(vec![s(words.to_string(), theme::dim()), s(u.to_string(), theme::text())]);
+            // "the key" (pasted) or "the key in ANTHROPIC_API_KEY" (found)
+            let the_key = match t {
+                Tried::Pasted(_) => "the key".to_string(),
+                Tried::Found(w) => format!("the key in {}", w),
+            };
             let mut v = Vec::new();
-            match f {
-                Fail::WrongKey => {
-                    v.push(err(format!("{} says this key is wrong.", p.name)));
-                    if let Some(u) = &link {
-                        v.push(Line::from(vec![s("copy it again from ", theme::dim()), s(u.clone(), theme::text())]));
-                    }
-                }
-                Fail::NoCredit => {
-                    v.push(err("the key works, but the account has no credit.".into()));
-                    if let Some(u) = &link {
-                        v.push(Line::from(vec![s("add some from ", theme::dim()), s(u.clone(), theme::text()), s(", then enter.", theme::dim())]));
-                    }
-                }
-                Fail::Model => v.push(err(format!("{} doesn't know {}. pick another model.", p.name, short_model(m)))),
-                Fail::Unreachable(e) => {
-                    v.push(err(format!("i couldn't reach {}: {}.", p.name, e.trim_end_matches('.'))));
-                    v.push(dim("check your network, then enter.".into()));
+            match &f.why {
+                Why::WrongKey => v.push(err(match t {
+                    Tried::Pasted(_) => format!("{} says this key is wrong.", p.name),
+                    Tried::Found(_) => format!("{} doesn't work. {} says it's wrong.", the_key, p.name),
+                })),
+                // BISE-282: not a failure of the key: it needs the user
+                Why::NoCredit => v.push(Line::from(vec![
+                    s(format!("{} ", theme::glyph(theme::G_NEEDS_YOU)), theme::accent()),
+                    s(format!("{} works, but your {} account has no credit yet.", the_key, p.name), theme::text()),
+                ])),
+                Why::Model => v.push(err(format!("{} doesn't know {}. pick another model.", p.name, short_model(m)))),
+                Why::NoAccess => v.push(err(format!("this key can't use {}.", short_model(m)))),
+                Why::Unreachable(e) => v.push(err(format!("i couldn't reach {}: {}.", p.name, e.trim_end_matches('.')))),
+            }
+            // BISE-282: the provider's own words, cut to the width
+            if !f.said.is_empty() {
+                for l in words_in(&format!("{} said: \"{}\"", p.name, f.said), w as usize) {
+                    v.push(dim(l));
                 }
             }
+            let keys = !p.keys_url.is_empty();
+            match (&f.why, t) {
+                (Why::WrongKey, Tried::Pasted(_)) if keys => v.push(link("copy it again from ", &p.keys_url)),
+                (Why::WrongKey, Tried::Found(_)) if keys => v.push(link("paste another one, or get a new key: ", &p.keys_url)),
+                (Why::WrongKey, Tried::Found(_)) => v.push(dim("paste another one.".into())),
+                (Why::NoCredit, _) => {
+                    if p.billing_url.is_empty() {
+                        v.push(dim(format!("add some on your {} account.", p.name)));
+                    } else {
+                        v.push(link("add some here: ", &p.billing_url));
+                    }
+                    v.push(dim(match t {
+                        Tried::Pasted(_) => "i saved the key. add credit, then enter checks again.".into(),
+                        Tried::Found(_) => "add credit, then enter checks again.".into(),
+                    }));
+                }
+                (Why::NoAccess, _) => v.push(dim("your account may not have access to this model yet. pick another one.".into())),
+                (Why::Unreachable(_), _) => v.push(dim("check your network, then enter.".into())),
+                _ => {}
+            }
             blanks(&mut v, gap);
-            v.push(keyline(if *f == Fail::Model {
-                "{enter} pick another model · {tab} another provider · {esc} back"
-            } else {
-                "{enter} try again · {tab} another provider · {esc} back"
+            v.push(keyline(match (&f.why, t) {
+                (Why::Model | Why::NoAccess, _) => "{enter} pick another model · {tab} another provider · {esc} back",
+                (Why::WrongKey, Tried::Found(_)) => "{enter} paste another key · {tab} another provider · {esc} back",
+                (Why::NoCredit, _) => "{enter} check again · {tab} another provider · {esc} back",
+                _ => "{enter} try again · {tab} another provider · {esc} back",
             }));
             v
         }
@@ -1888,8 +1984,9 @@ mod tests {
     fn fake_check(c: &crate::keycheck::Call, _: Option<String>) -> Result<(), crate::keycheck::Fail> {
         use crate::keycheck::Fail;
         match c.key.as_str() {
-            k if k.contains("bad") => Err(Fail::WrongKey),
-            k if k.contains("broke") => Err(Fail::NoCredit),
+            k if k.contains("bad") => Err(Fail { why: Why::WrongKey, said: "invalid x-api-key".into() }),
+            k if k.contains("broke") => Err(Fail::of(Why::NoCredit)),
+            k if k.contains("locked") => Err(Fail { why: Why::NoAccess, said: "not for you".into() }),
             _ => Ok(()),
         }
     }
@@ -1939,22 +2036,52 @@ mod tests {
         assert!(crate::links::frame_hits().iter().any(|h| h.url == "https://console.mistral.ai/api-keys"));
         // a wrong key: said plainly, nothing saved, enter tries again
         type_key(&mut o, &e, "bad-key");
-        assert!(matches!(&o.sub, Sub::Failed(p, _, crate::keycheck::Fail::WrongKey) if p.id == "mistral"));
+        assert!(matches!(&o.sub, Sub::Failed(p, _, Tried::Pasted(_), f) if p.id == "mistral" && f.why == Why::WrongKey));
         let sc = screen(&o, 10, 110, 30);
         assert!(sc.contains("Mistral says this key is wrong.") && sc.contains("copy it again from https://console.mistral.ai/api-keys"), "{}", sc);
+        // BISE-282: the provider's own words under bise's
+        assert!(sc.contains("Mistral said: \"invalid x-api-key\""), "{}", sc);
         assert!(sc.contains("enter try again · tab another provider · esc back"), "{}", sc);
         assert!(!hm(&h).auth_file().exists() && !hm(&h).config_file().exists());
         o.on_key(key(KeyCode::Enter), 1, &e);
         assert!(matches!(&o.sub, Sub::Paste(p, m, b) if p.id == "mistral" && m == "mistral/mistral-medium-latest" && b.is_empty()));
-        // no credit: its own words
+        // no credit: its own words; the key saved all the same (not the
+        // model), enter checks it again
         type_key(&mut o, &e, "broke-key");
-        assert!(screen(&o, 10, 110, 30).contains("the key works, but the account has no credit."));
-        // tab: another provider
+        let sc = screen(&o, 10, 110, 30);
+        assert!(sc.contains("? the key works, but your Mistral account has no credit yet."), "{}", sc);
+        assert!(sc.contains("i saved the key. add credit, then enter checks again.") && sc.contains("enter check again"), "{}", sc);
+        assert_eq!(bise_catalog::auth::Store::read(&hm(&h).auth_file()).unwrap().key("mistral"), Some("broke-key"));
+        assert!(!hm(&h).config_file().exists());
+        o.on_key(key(KeyCode::Enter), 1, &e);
+        assert!(matches!(&o.sub, Sub::Checking(_, _, Tried::Pasted(_))));
+        settle(&mut o, &e);
+        assert!(matches!(&o.sub, Sub::Failed(_, _, _, f) if f.why == Why::NoCredit));
+        // tab: another provider; the saved key is found now: checked
+        // at once, and said where it is
         o.on_key(key(KeyCode::Tab), 1, &e);
         assert_eq!(o.sub, Sub::Which(mistral));
         o.on_key(key(KeyCode::Enter), 1, &e);
         o.on_key(key(KeyCode::Enter), 1, &e);
-        type_key(&mut o, &e, "good-key");
+        settle(&mut o, &e);
+        let sc = screen(&o, 10, 110, 30);
+        assert!(sc.contains("? the key in ~/.bend-harness/auth.json works, but your Mistral") && sc.contains("account has no credit yet."), "{}", sc);
+        assert!(sc.contains("add credit, then enter checks again.") && !sc.contains("i saved the key"), "{}", sc);
+        // a key that can't use this model: pick another
+        let paste = |o: &mut Onb, k: &str| {
+            o.sub = Sub::Paste(o.providers[mistral].clone(), "mistral/mistral-medium-latest".into(), String::new());
+            type_key(o, &e, k);
+            // mistral has a key in auth.json: yes, replace it
+            o.on_key(key(KeyCode::Enter), 1, &e);
+            settle(o, &e);
+        };
+        paste(&mut o, "locked-key");
+        let sc = screen(&o, 10, 110, 30);
+        assert!(sc.contains("✗ this key can't use mistral-medium-latest.") && sc.contains("Mistral said: \"not for you\""), "{}", sc);
+        assert!(sc.contains("your account may not have access to this model yet.") && sc.contains("enter pick another model"), "{}", sc);
+        o.on_key(key(KeyCode::Enter), 1, &e);
+        assert!(matches!(&o.sub, Sub::Model(p, 0) if p.id == "mistral"));
+        paste(&mut o, "good-key");
         // it works: the key in auth.json (0600), the model in config.toml
         assert!(matches!(&o.sub, Sub::Works(_, m) if m == "mistral/mistral-medium-latest"));
         let sc = screen(&o, 10, 110, 30);

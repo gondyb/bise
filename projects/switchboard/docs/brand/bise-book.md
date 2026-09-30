@@ -853,10 +853,19 @@ one in accent.
    <sign-up page>` when it differs / the masked field / `saved in ~/.bise/auth.json. only you
    can read it.` → `checking your key with one tiny call…`: one real
    request to that model (16 output tokens). Failed: `Mistral says this
-   key is wrong. copy it again from <link>` · `the key works, but the
-   account has no credit.` · `Mistral doesn't know <model>. pick another
-   model.` · `i couldn't reach Mistral: <why>.`; `enter` tries again,
-   `tab` another provider, `esc` back; nothing is saved. Passed: the key
+   key is wrong. copy it again from <link>` (a found key: `the key in
+   MISTRAL_API_KEY doesn't work. Mistral says it's wrong.`, `enter`
+   pastes another) · `this key can't use <model>.` (a permission error:
+   `enter` picks another model) · `Mistral doesn't know <model>. pick
+   another model.` · `i couldn't reach Mistral: <why>.`; under it, dim,
+   the provider's own words (BISE-282: `Mistral said: "…"`, one line of
+   200 chars at most, the key masked as `sk-…abcd`). A refused key is
+   tried once more after 3 s, quietly (a new key may take a moment).
+   `enter` tries again, `tab` another provider, `esc` back; nothing is
+   saved. No credit is not a failure (`? the key works, but your
+   Anthropic account has no credit yet.` / `add some here: <billing
+   page>` / `i saved the key. add credit, then enter checks again.`):
+   the key is saved, not the model, and `enter` checks it again. Passed: the key
    in `auth.json` like `login` (asks before replacing one), the model as
    `model` in config.toml, then `it works: <model> answered.` / `main
    uses <model>.` and the optional keys not set yet (`web search and
