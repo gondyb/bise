@@ -188,13 +188,13 @@ mod tests {
     #[test]
     fn windows_come_from_the_catalog() {
         assert_eq!(context_window("foundry/claude-opus-5-5"), Some(1_000_000));
-        assert_eq!(context_window("anthropic/claude-sonnet-4-5"), Some(200_000));
-        assert_eq!(context_window("openai/gpt-4.1"), Some(1_047_576));
+        assert_eq!(context_window("anthropic/claude-haiku-4-5"), Some(200_000));
+        assert_eq!(context_window("openai/gpt-6-astra"), Some(1_050_000));
         // an unlisted model: its provider's default
         assert_eq!(context_window("groq/brand-new"), Some(131_072));
         // the old bare ids of the usage lines
         assert_eq!(context_window("claude-opus-5-5"), Some(1_000_000));
-        assert_eq!(context_window("zai-glm-5-3"), Some(200_000));
+        assert_eq!(context_window("zai-glm-5-3"), Some(1_048_576));
         // nothing knows it: no window, never a panic
         assert_eq!(context_window("nowhere/m"), None);
         assert_eq!(context_window(""), None);
@@ -202,12 +202,12 @@ mod tests {
 
     #[test]
     fn a_call_costs_its_prices() {
-        // sonnet 4.5: 3 in, 15 out, 0.30 cache read, 3.75 cache write
-        let c = cost("anthropic/claude-sonnet-4-5", 1_000_000, 100_000, 0, 0).unwrap();
-        assert!((c - 4.5).abs() < 1e-9, "{c}");
-        let c = cost("anthropic/claude-sonnet-4-5", 100_000, 0, 90_000, 10_000).unwrap();
-        assert!((c - (0.027 + 0.0375)).abs() < 1e-9, "{c}");
-        assert_eq!(cost("foundry/claude-opus-5-5", 10, 10, 0, 0), None);
+        // haiku 4.5: 1 in, 5 out, 0.10 cache read, 1.25 cache write
+        let c = cost("anthropic/claude-haiku-4-5", 1_000_000, 100_000, 0, 0).unwrap();
+        assert!((c - 1.5).abs() < 1e-9, "{c}");
+        let c = cost("anthropic/claude-haiku-4-5", 100_000, 0, 90_000, 10_000).unwrap();
+        assert!((c - (0.009 + 0.0125)).abs() < 1e-9, "{c}");
+        assert_eq!(cost("fireworks/accounts/fireworks/models/glm-5p3", 10, 10, 0, 0), None);
         assert_eq!(cost("nowhere/m", 10, 10, 0, 0), None);
         assert_eq!(fmt_cost(4.5), "$4.50");
         assert_eq!(fmt_cost(0.0042), "$0.0042");
@@ -241,14 +241,15 @@ mod tests {
         let p = picks();
         let has = |v: &str| p.iter().find(|x| x.value == v);
         assert!(has("foundry/claude-opus-5-5").unwrap().desc.starts_with("opus 5.5 · Anthropic (foundry proxy) · 1M"));
-        assert!(has("anthropic/claude-sonnet-4-5").is_some());
+        assert!(has("anthropic/claude-sonnet-5-5").is_some());
+        assert!(has("openai/gpt-6-astra").is_some());
         assert_eq!(has("opus-5.5").unwrap().desc, "= foundry/claude-opus-5-5");
         // no speech-to-text model, no provider that is not usable yet
         assert!(has("mistral/voxtral-mini-latest").is_none());
         assert!(!p.iter().any(|x| x.value.starts_with("bedrock/")));
         assert_eq!(efforts("foundry/claude-opus-5-5").1, "high");
         assert_eq!(efforts("mistral/zai-glm-5-3").0, ["none", "high"]);
-        assert!(efforts("openai/gpt-4.1").0.is_empty());
+        assert!(efforts("mistral/mistral-large-latest").0.is_empty());
     }
 
     #[test]

@@ -679,7 +679,7 @@ mod arg_tests {
         let r = items(&mut app, "/reasoning ");
         assert_eq!(labels(&r), ["reasoning for main", "none", "high"]);
         assert_eq!(r[1].mark.map(|x| x.0), Some("✓"));
-        set_model(&mut app, "main", "openai/gpt-4.1", "");
+        set_model(&mut app, "main", "mistral/mistral-large-latest", "");
         let r = items(&mut app, "/reasoning ");
         assert_eq!(labels(&r), ["reasoning for main", "this model has no reasoning setting."]);
         assert!(r.iter().all(|i| i.run.is_none()));

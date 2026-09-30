@@ -1827,9 +1827,10 @@ mod tests {
         // an empty value is no key
         std::fs::write(h.join(".vibe/.env"), "MISTRAL_API_KEY=\n").unwrap();
         assert_eq!(ids(&find_keys(&none, &hm(&h), &st)), vec!["openai"]);
-        // every provider that takes a key and is usable, none that is not
+        // every offered provider that takes a key and is usable, none that
+        // is not; a hidden one neither (the user's five, 2026-09-30)
         let all = key_providers(&st);
-        assert!(ids(&all).contains(&"anthropic") && ids(&all).contains(&"groq"), "{:?}", ids(&all));
+        assert_eq!(ids(&all), ["anthropic", "openai", "google", "mistral", "openrouter"]);
         assert!(!ids(&all).contains(&"ollama") && !ids(&all).contains(&"bedrock"), "{:?}", ids(&all));
     }
 
@@ -2001,14 +2002,15 @@ mod tests {
         assert_eq!(o.sel, 1);
         o.on_key(key(KeyCode::Down), 1, &e);
         assert_eq!(o.sel, 0);
-        // the providers: name and hint, 9 rows at a time
+        // the providers: name and hint, the five on one screen
         o.on_key(key(KeyCode::Up), 1, &e);
         o.on_key(key(KeyCode::Enter), 1, &e);
         assert_eq!(o.sub, Sub::Which(0));
         let sc = screen(&o, 10, 110, 30);
-        for s in ["which provider?", "1 · Anthropic  Claude, by Anthropic", "OpenRouter  one key for most models", "↓ 2 more"] {
+        for s in ["which provider?", "1 · Anthropic  Claude, by Anthropic", "5 · OpenRouter  one key for most models"] {
             assert!(sc.contains(s), "{}\n{}", s, sc);
         }
+        assert!(!sc.contains(" more") && !sc.contains("Groq"), "{}", sc);
         // enter on the model in use goes on
         o.on_key(key(KeyCode::Esc), 1, &e);
         o.sel = 0;
@@ -2145,16 +2147,16 @@ mod tests {
         assert!(o.ask_key);
         o.go(Step::Model, 0);
         let sc = screen(&o, 10, 110, 30);
-        assert!(sc.contains("1 · use OPENAI_API_KEY found") && sc.contains("OpenAI. i'll use gpt-5.5."), "{}", sc);
+        assert!(sc.contains("1 · use OPENAI_API_KEY found") && sc.contains("OpenAI. i'll use gpt-6-astra."), "{}", sc);
         o.on_key(key(KeyCode::Enter), 1, &e);
         assert!(matches!(&o.sub, Sub::Model(p, 0) if p.id == "openai"));
         o.on_key(key(KeyCode::Enter), 1, &e);
         settle(&mut o, &e);
-        assert!(matches!(&o.sub, Sub::Works(_, m) if m == "openai/gpt-5.5"));
+        assert!(matches!(&o.sub, Sub::Works(_, m) if m == "openai/gpt-6-astra"));
         // nothing pasted: nothing stored; the model written
         assert!(bise_catalog::auth::Store::read(&hm(&h).auth_file()).unwrap_or_default().key("openai").is_none());
         let cfg = std::fs::read_to_string(hm(&h).config_file()).unwrap();
-        assert!(cfg.starts_with("model = \"openai/gpt-5.5\""), "{}", cfg);
+        assert!(cfg.starts_with("model = \"openai/gpt-6-astra\""), "{}", cfg);
         // a key already in auth.json: enter replaces it only after a yes
         std::fs::create_dir_all(hm(&h).auth_file().parent().unwrap()).unwrap();
         let paths = auth_paths(&o.home);

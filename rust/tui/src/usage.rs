@@ -141,10 +141,10 @@ mod tests {
         assert_eq!(u.label(), "210k / 1M tokens · 21%");
         assert_eq!(u.short(), "21%");
         // the window is the model's, not a guess from its name
-        let s = Usage { model: "anthropic/claude-sonnet-4-5".into(), input: 42_000, ..Default::default() };
+        let s = Usage { model: "anthropic/claude-haiku-4-5".into(), input: 42_000, ..Default::default() };
         assert_eq!(s.label(), "42k / 200k tokens · 21%");
         let g = Usage { model: "mistral/zai-glm-5-3".into(), input: 42_000, output: 0, ..Default::default() };
-        assert_eq!(g.label(), "42k / 200k tokens · 21%");
+        assert_eq!(g.label(), "42k / 1M tokens · 4%");
         // an old bare id: the legacy rule
         let o = Usage { model: "claude-opus-5-5".into(), input: 209_500, output: 500, ..Default::default() };
         assert_eq!(o.short(), "21%");
@@ -160,7 +160,8 @@ mod tests {
     fn the_usage_line_shows_the_cost_when_prices_are_known() {
         let u = Usage { model: "anthropic/claude-haiku-4-5".into(), input: 10_000, output: 1_000, ..Default::default() };
         assert_eq!(u.line(), "  usage: 11k / 200k tokens · 6% (in 10000 · out 1000 · $0.0150)");
-        let f = Usage { model: "foundry/claude-opus-5-5".into(), input: 10_000, output: 1_000, ..Default::default() };
+        // no price listed: no cost
+        let f = Usage { model: "fireworks/accounts/fireworks/models/glm-5p3".into(), input: 10_000, output: 1_000, ..Default::default() };
         assert_eq!(f.line(), "  usage: 11k / 1M tokens · 1% (in 10000 · out 1000)");
     }
 

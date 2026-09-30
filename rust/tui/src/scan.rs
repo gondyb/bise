@@ -337,7 +337,7 @@ mod tests {
         let cj = serde_json::json!({"mcpServers": {"github": {"command": "npx", "env": {"T": "ghp_SECRET"}}, "linear": {"type": "http", "url": "u"}},
             "projects": {repo.to_string_lossy(): {}}, "oauthAccount": {"x": 1}});
         put(h.join(".claude.json"), &cj.to_string());
-        put(h.join(".codex/config.toml"), "model = \"gpt-5.5\" # mine\n[mcp_servers.fs]\ncommand = \"npx\"\n[mcp_servers.fs.env]\nTOKEN = \"tok-SECRET\"\n[mcp_servers.remote]\nurl = \"https://x\"\n");
+        put(h.join(".codex/config.toml"), "model = \"gpt-6-astra\" # mine\n[mcp_servers.fs]\ncommand = \"npx\"\n[mcp_servers.fs.env]\nTOKEN = \"tok-SECRET\"\n[mcp_servers.remote]\nurl = \"https://x\"\n");
         let vars = [("HOME", h.to_string_lossy().to_string()), ("BISE_HOME", h.join(".bise").to_string_lossy().to_string()), ("TERM_PROGRAM", "ghostty".into())];
         let env = move |k: &str| vars.iter().find(|(n, _)| *n == k).map(|(_, v)| v.clone());
         let bise = bise_home::Home::from_lookup(&env);
@@ -352,7 +352,7 @@ mod tests {
         }
         assert_eq!(out.matches("~/work/app  ").count(), 1, "the repo once: cwd and ~/.claude.json\n{out}");
         assert!(out.contains("model        opus → bise: anthropic/claude-opus"), "{out}");
-        assert!(out.contains("model        gpt-5.5 → bise: openai/gpt-5.5"), "{out}");
+        assert!(out.contains("model        gpt-6-astra → bise: openai/gpt-6-astra"), "{out}");
         let _ = std::fs::remove_dir_all(&h);
     }
 }

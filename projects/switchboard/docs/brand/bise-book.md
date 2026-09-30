@@ -843,12 +843,16 @@ one in accent.
    the first run and at any later launch (then alone: `keys only`).
    `which model should do the work?` / `i found no key in your
    environment.` (or `i found a key`) / the found keys (`use
-   OPENAI_API_KEY found`, sub-line `OpenAI. i'll use gpt-5.5.`) / `set up
+   OPENAI_API_KEY found`, sub-line `OpenAI. i'll use gpt-6-astra.`) / `set up
    a provider` (sub-line: every provider offered). Then `which provider?`
-   (`1 · Anthropic  Claude, by Anthropic`, 9 rows at a time; `hidden =
-   true` in the catalog, the foundry proxy, is never offered) → `which
-   model?` (`you can change it any time with /model.`, the catalog's pick
-   first, `recommended`) → `paste your Mistral key` / `get one:
+   (`1 · Anthropic  Claude, by Anthropic`; five providers, in this order:
+   Anthropic, OpenAI, Google AI Studio, Mistral, OpenRouter, the user's
+   pick of 2026-09-30, BISE-288; `hidden = true` in the catalog is never
+   offered: the foundry proxy, xAI, DeepSeek, Groq, Together, Fireworks,
+   Cerebras, whose keys in the env or auth.json and `bise login <id>`
+   still work) → `which model?` (`you can change it any time with
+   /model.`, the catalog's pick first, `recommended`, then the
+   provider's current models, newest first) → `paste your Mistral key` / `get one:
    <keys page>` (an OSC 8 link; as in the feed, a plain click opens it
    and says `opening <url>`, a drag or a double click copies it and says
    `copied N chars`, under the step dots, BISE-281) / `no account yet?

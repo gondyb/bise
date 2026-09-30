@@ -69,11 +69,13 @@ const ANTH_BETAS: &str = "interleaved-thinking-2025-05-14,fine-grained-tool-stre
 #[test]
 fn a_listed_model_takes_its_own_fields_then_its_providers() {
     let c = Catalog::builtin();
-    let r = c.resolve("anthropic/claude-sonnet-4-5");
+    let r = c.resolve("anthropic/claude-haiku-4-5");
     assert_eq!(r.known, Known::Listed);
     assert_eq!(r.caps, Caps { context: 200_000, max_output: 64_000, vision: true, reasoning: true, tools: true, thinking: "budget".into(), betas: ANTH_BETAS.into(), efforts: String::new(), effort: String::new(), cache_key: String::new(), cache_header: String::new() });
-    let r = c.resolve("openai/gpt-4.1");
-    assert_eq!((r.caps.context, r.caps.reasoning, r.caps.vision), (1_047_576, false, true));
+    let r = c.resolve("mistral/mistral-large-latest");
+    assert_eq!((r.caps.context, r.caps.reasoning, r.caps.vision), (262_144, false, true));
+    let r = c.resolve("openai/gpt-6-astra");
+    assert_eq!((r.caps.context, r.caps.max_output, r.caps.reasoning, r.caps.vision), (1_050_000, 128_000, true, true));
 }
 
 #[test]
@@ -83,11 +85,11 @@ fn an_unlisted_model_gets_its_providers_defaults() {
     assert_eq!(r.known, Known::Unlisted);
     assert_eq!((r.provider.as_str(), r.id.as_str()), ("anthropic", "claude-future-9"));
     assert_eq!(r.base_url, "https://api.anthropic.com/v1");
-    assert_eq!(r.caps.context, 200_000);
+    assert_eq!(r.caps.context, 1_000_000);
     // a provider with no model default: the global ones
-    let r = c.resolve("deepseek/deepseek-v9");
+    let r = c.resolve("openrouter/acme/model-9");
     assert_eq!(r.caps.context, DEFAULT_CAPS.context);
-    assert_eq!(r.key_env, "DEEPSEEK_API_KEY");
+    assert_eq!(r.key_env, "OPENROUTER_API_KEY");
     // local: any name
     let r = c.resolve("ollama/qwen3-coder:30b");
     assert_eq!((r.known, r.base_url.as_str(), r.key_env.as_str()), (Known::Unlisted, "http://localhost:11434/v1", ""));
@@ -109,8 +111,8 @@ fn an_unknown_provider_resolves_without_failing() {
 #[test]
 fn model_ids_may_hold_slashes() {
     let c = Catalog::builtin();
-    let r = c.resolve("openrouter/anthropic/claude-sonnet-4.5");
-    assert_eq!((r.provider.as_str(), r.id.as_str(), r.known), ("openrouter", "anthropic/claude-sonnet-4.5", Known::Listed));
+    let r = c.resolve("openrouter/anthropic/claude-sonnet-5.5");
+    assert_eq!((r.provider.as_str(), r.id.as_str(), r.known), ("openrouter", "anthropic/claude-sonnet-5.5", Known::Listed));
     let r = c.resolve("groq/some/new-model");
     assert_eq!((r.id.as_str(), r.known), ("some/new-model", Known::Unlisted));
 }
@@ -129,8 +131,8 @@ fn old_bare_names_keep_working() {
 fn the_config_overrides_a_model_key_by_key() {
     let s = setup(
         r#"
-model = "anthropic/claude-sonnet-4-5"
-[models."anthropic/claude-sonnet-4-5"]
+model = "anthropic/claude-haiku-4-5"
+[models."anthropic/claude-haiku-4-5"]
 context = 1000000
 "#,
     );
@@ -138,7 +140,7 @@ context = 1000000
     let r = s.model_for("main");
     assert_eq!(r.caps.context, 1_000_000);
     assert_eq!(r.caps.max_output, 64_000); // kept from the built-in entry
-    assert_eq!(s.catalog.model("anthropic/claude-sonnet-4-5").unwrap().source, Source::Config);
+    assert_eq!(s.catalog.model("anthropic/claude-haiku-4-5").unwrap().source, Source::Config);
 }
 
 #[test]
@@ -152,7 +154,7 @@ vision = true
     );
     let r = s.catalog.resolve("groq/new-model");
     assert_eq!(r.known, Known::Listed);
-    assert_eq!((r.caps.context, r.caps.vision, r.caps.max_output), (65_536, true, DEFAULT_CAPS.max_output));
+    assert_eq!((r.caps.context, r.caps.vision, r.caps.max_output), (65_536, true, 65_536)); // max_output: groq's
     assert_eq!(r.base_url, "https://api.groq.com/openai/v1");
 }
 
@@ -192,7 +194,7 @@ key_env = "MY_KEY"
     );
     let p = s.catalog.provider("anthropic").unwrap();
     assert_eq!((p.base_url.as_str(), p.key_env.as_str(), p.api.as_str()), ("https://proxy.example/anthropic/v1", "MY_KEY", "anthropic"));
-    assert_eq!(s.catalog.resolve("anthropic/claude-opus-4-5").caps.max_output, 64_000);
+    assert_eq!(s.catalog.resolve("anthropic/claude-haiku-4-5").caps.max_output, 64_000);
     // the order of the list is kept (models.toml's, not alphabetical)
     let ids: Vec<&str> = s.catalog.providers.iter().map(|p| p.id.as_str()).collect();
     assert_eq!(&ids[..4], ["anthropic", "foundry", "openai", "google"]);
@@ -321,7 +323,7 @@ fn the_handoff_is_small_and_flat_for_the_bend_reader() {
         assert!(!v.starts_with('{') && !v.starts_with('[') && !v.starts_with("\"\"\""), "{l}");
     }
     // a model section only carries what differs from its provider
-    assert!(text.contains("[models.\"anthropic/claude-sonnet-4-5\"]\nmax_output = 64000\n\n"));
+    assert!(text.contains("[models.\"fireworks/accounts/fireworks/models/kimi-k3\"]\nvision = true\n\n"), "{text}");
 }
 
 #[test]
@@ -348,13 +350,13 @@ fn write_handoff_is_atomic_and_export_falls_back() {
 
 #[test]
 fn the_listing_shows_keys_choices_and_warnings() {
-    let s = setup("model = \"anthropic/claude-sonnet-4-5\"\nagent_model = \"work/x\"\n[providers.work]\nbase_url = \"http://w\"\n[models.\"z\"]\n");
+    let s = setup("model = \"anthropic/claude-sonnet-5-5\"\nagent_model = \"work/x\"\n[providers.work]\nbase_url = \"http://w\"\n[models.\"z\"]\n");
     let env = |k: &str| (k == "ANTHROPIC_API_KEY").then(|| "sk".to_string());
     let mut store = crate::auth::Store::default();
     store.set("groq", "gsk-secret-1");
     let keys = crate::auth::Keys { env: &env, store: &store, files: &[] };
     let out = cli::render(&s, None, &keys, None);
-    assert!(out.contains("model        anthropic/claude-sonnet-4-5  (config; listed)"), "{out}");
+    assert!(out.contains("model        anthropic/claude-sonnet-5-5  (config; listed)"), "{out}");
     assert!(out.contains("agent_model  work/x  (config; not listed: work's defaults)"), "{out}");
     assert!(out.contains("key: env ANTHROPIC_API_KEY"), "{out}");
     assert!(out.contains("key: auth.json"), "{out}");
@@ -367,7 +369,7 @@ fn the_listing_shows_keys_choices_and_warnings() {
     // a filter keeps matching providers and models
     let out = cli::render(&s, Some("gpt-oss"), &keys, None);
     assert!(out.contains("groq/openai/gpt-oss-120b") && out.contains("cerebras/gpt-oss-120b"), "{out}");
-    assert!(!out.contains("anthropic/claude-opus-4-5"), "{out}");
+    assert!(!out.contains("anthropic/claude-opus-5-5"), "{out}");
     assert!(!out.contains("no provider or model matches"), "{out}");
     // qa-explore D: a filter with no match says so
     let out = cli::render(&s, Some("zzz"), &keys, None);
@@ -394,15 +396,15 @@ fn small_model_order() {
     assert_eq!(s.small_model, "anthropic/claude-haiku-4-5");
     assert_eq!(s.small_model_from, "provider");
     // it follows agent_model's provider, not model's
-    let s = setup("model = \"anthropic/claude-opus-4-5\"\nagent_model = \"openai/gpt-5\"\n");
-    assert_eq!(s.small_model, "openai/gpt-5-mini");
+    let s = setup("model = \"anthropic/claude-opus-4-5\"\nagent_model = \"openai/gpt-6.1-sol\"\n");
+    assert_eq!(s.small_model, "openai/gpt-6-luna");
     // foundry has one; no model: no small model either (BISE-266)
     let s = setup("model = \"opus-5.5\"\n");
     assert_eq!(s.small_model, "foundry/claude-haiku-4-5");
     assert_eq!(setup("").small_model, "");
     // a provider without one: agent_model
-    let s = setup("model = \"groq/openai/gpt-oss-120b\"\n");
-    assert_eq!(s.small_model, "groq/openai/gpt-oss-120b");
+    let s = setup("model = \"cerebras/gpt-oss-120b\"\n");
+    assert_eq!(s.small_model, "cerebras/gpt-oss-120b");
     assert_eq!(s.small_model_from, "agent_model");
     // config, then env, win
     let s = setup("small_model = \"openai/gpt-5-mini\"\n");
@@ -421,7 +423,7 @@ fn small_model_order() {
 
 #[test]
 fn thinking_and_betas_per_model_reach_the_handoff() {
-    // built in: the direct API thinks with a budget, the foundry proxy
+    // built in: the direct API's haiku thinks with a budget, the foundry proxy
     // keeps the family's defaults (nothing written: today's body/headers)
     let c = Catalog::builtin();
     let r = c.resolve("anthropic/claude-haiku-4-5");
@@ -429,29 +431,30 @@ fn thinking_and_betas_per_model_reach_the_handoff() {
     let f = c.resolve("foundry/claude-opus-5-5");
     assert_eq!((f.caps.thinking.as_str(), f.caps.betas.as_str(), f.caps.max_output), ("", "", 32_768));
     // config: per model, inherited from the provider, bad values warned
-    let cfg = "[models.\"anthropic/claude-opus-4-6\"]\nthinking = \"adaptive\"\n[models.\"anthropic/x\"]\nthinking = \"high\"\nbetas = 3\n";
+    let cfg = "[models.\"anthropic/claude-opus-4-6\"]\nthinking = \"none\"\n[models.\"anthropic/x\"]\nthinking = \"high\"\nbetas = 3\n";
     let s = Setup::from_text(Some(cfg), &|_| None);
-    assert_eq!(s.catalog.resolve("anthropic/claude-opus-4-6").caps.thinking, "adaptive");
-    assert_eq!(s.catalog.resolve("anthropic/x").caps.thinking, "budget", "a bad value keeps the provider's");
+    assert_eq!(s.catalog.resolve("anthropic/claude-opus-4-6").caps.thinking, "none");
+    assert_eq!(s.catalog.resolve("anthropic/x").caps.thinking, "adaptive", "a bad value keeps the provider's");
     assert!(s.catalog.warnings.iter().any(|w| w.contains("thinking: one of adaptive, budget, none")), "{:?}", s.catalog.warnings);
     assert!(s.catalog.warnings.iter().any(|w| w.contains("betas: a string")), "{:?}", s.catalog.warnings);
     let h = s.handoff_toml();
     let anth = &h[h.find("[providers.anthropic]").unwrap()..];
     let anth = &anth[..anth[1..].find("\n[").unwrap()];
-    assert!(anth.contains("thinking = \"budget\"\n") && anth.contains(&format!("betas = \"{}\"", ANTH_BETAS)), "{anth}");
+    assert!(anth.contains("thinking = \"adaptive\"\n") && anth.contains(&format!("betas = \"{}\"", ANTH_BETAS)), "{anth}");
     let foundry = &h[h.find("[providers.foundry]").unwrap()..];
     let foundry = &foundry[..foundry[1..].find("\n[").unwrap()];
     assert!(!foundry.contains("thinking") && !foundry.contains("betas"), "{foundry}");
-    assert!(h.contains("[models.\"anthropic/claude-opus-4-6\"]\nthinking = \"adaptive\"\n"), "{h}");
+    assert!(h.contains("[models.\"anthropic/claude-opus-4-6\"]\nthinking = \"none\"\n"), "{h}");
 }
 
 #[test]
 fn prices_come_from_the_model_then_its_provider() {
     let c = Catalog::builtin();
-    let p = c.resolve("anthropic/claude-sonnet-4-5").price;
-    assert_eq!(p, Price { input: Some(3_000_000), output: Some(15_000_000), cache_read: Some(300_000), cache_write: Some(3_750_000) });
+    let p = c.resolve("anthropic/claude-sonnet-5-5").price;
+    assert_eq!(p, Price { input: Some(2_000_000), output: Some(10_000_000), cache_read: Some(200_000), cache_write: Some(2_500_000) });
     // nothing listed: no price, no cost
-    assert_eq!(c.resolve("foundry/claude-opus-5-5").price, Price::default());
+    assert_eq!(c.resolve("fireworks/accounts/fireworks/models/glm-5p3").price, Price::default());
+    assert_eq!(c.resolve("anthropic/claude-future-9").price, Price::default());
     assert_eq!(c.resolve("nowhere/m").price.cost(10, 10, 0, 0), None);
     // a config provider's prices are its models' defaults; a model's win
     let s = setup(
@@ -475,7 +478,7 @@ fn prices_come_from_the_model_then_its_provider() {
 fn the_default_threshold_is_80_percent_of_the_window() {
     let c = Catalog::builtin();
     assert_eq!(c.default_threshold("foundry/claude-opus-5-5"), 800_000);
-    assert_eq!(c.default_threshold("anthropic/claude-sonnet-4-5"), 160_000);
+    assert_eq!(c.default_threshold("anthropic/claude-haiku-4-5"), 160_000);
     assert_eq!(c.default_threshold("nowhere/m"), 102_400);
     // the same rounding as runtime/provider-pure.bend threshold_of
     assert_eq!(threshold_of(131_072), 104_857);
@@ -595,14 +598,17 @@ fn efforts_follow_the_family_and_the_model() {
     let opus = c.resolve("foundry/claude-opus-5-5");
     assert_eq!(opus.efforts(), ANTHROPIC_EFFORTS.map(String::from).to_vec());
     assert_eq!(opus.default_effort(), "high");
-    assert_eq!(c.resolve("openai/gpt-5").efforts(), CHAT_EFFORTS.map(String::from).to_vec());
+    assert_eq!(c.resolve("groq/openai/gpt-oss-120b").efforts(), CHAT_EFFORTS.map(String::from).to_vec());
+    // OpenAI's GPT-6: its words, luna's with none
+    assert_eq!(c.resolve("openai/gpt-6-astra").efforts(), ["low", "medium", "high", "xhigh", "max"]);
+    assert_eq!(c.resolve("openai/gpt-6-luna").efforts()[0], "none");
     // the provider's own list
     let glm = c.resolve("mistral/zai-glm-5-3");
     assert_eq!(glm.efforts(), ["none", "high"]);
     assert_eq!(glm.effort_for("low"), "high", "a word it does not take: its default");
     assert_eq!(glm.effort_for("none"), "none");
     // no reasoning, no effort
-    let gpt41 = c.resolve("openai/gpt-4.1");
+    let gpt41 = c.resolve("mistral/mistral-large-latest");
     assert!(gpt41.efforts().is_empty());
     assert_eq!(gpt41.effort_for("high"), "");
     // config: a model's own list and default
@@ -713,6 +719,19 @@ fn every_offered_provider_has_a_keys_page_and_a_model() {
         assert!(!p.model.is_empty() && !p.hint.is_empty(), "{}: model and hint", p.id);
     }
     assert!(c.provider("foundry").unwrap().hidden);
+    // the user's pick (2026-09-30): five providers, in this order; the
+    // others stay usable, not offered
+    let offered: Vec<&str> = c
+        .providers
+        .iter()
+        .filter(|p| !p.key_env.is_empty() && p.needs.is_empty() && !p.stt_only && !p.hidden)
+        .map(|p| p.id.as_str())
+        .collect();
+    assert_eq!(offered, ["anthropic", "openai", "google", "mistral", "openrouter"]);
+    for id in ["xai", "deepseek", "groq", "together", "fireworks", "cerebras"] {
+        assert!(c.provider(id).unwrap().hidden, "{id}");
+        assert_eq!(c.resolve(&format!("{id}/x")).known, Known::Unlisted, "{id} still resolves");
+    }
 }
 
 #[test]

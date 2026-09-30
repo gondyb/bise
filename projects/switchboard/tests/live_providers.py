@@ -11,7 +11,11 @@ skipped. Keys come from the env, then ~/.bend-harness/.env and
                                     # tests/providers/<family>/<id>-tool-call.sse
                                     # (+ <id>-bad-key.<status>.json)
   live_providers.py mistral foundry # only these rows
-  LIVE_MODEL_<ROW>=name             # another model for a row (LIVE_MODEL_OPENAI=gpt-5)
+  live_providers.py --listed mistral
+                                    # every chat model models.toml lists for
+                                    # the row's provider, one turn each
+  LIVE_MODEL_<ROW>=name             # another model for a row (LIVE_MODEL_OPENAI=gpt-6-astra)
+  LIVE_BASE_<ROW>=url               # the base_url of a row that has none (foundry)
 
 The harness mode needs the family in Bend (BISE-144/146/147/148): a row
 whose family the harness does not speak yet fails with its "not
@@ -29,17 +33,17 @@ import provider_folds as P  # noqa: E402
 ROWS = {
     "anthropic": ("anthropic", "claude-haiku-4-5", None),
     "foundry": ("foundry", "claude-opus-5-5", None),
-    "openai": ("openai", "gpt-5-mini", None),
-    "openai-responses": ("openai", "gpt-5-mini", "openai-responses"),
-    "google": ("google", "gemini-2.5-flash", None),
-    "gemini": ("google", "gemini-2.5-flash", "gemini"),
+    "openai": ("openai", "gpt-6-luna", None),
+    "openai-responses": ("openai", "gpt-6-luna", "openai-responses"),
+    "google": ("google", "gemini-3.5-flash-lite", None),
+    "gemini": ("google", "gemini-3.5-flash-lite", "gemini"),
     "mistral": ("mistral", "mistral-small-latest", None),
     "openrouter": ("openrouter", "openai/gpt-oss-120b", None),
     "groq": ("groq", "openai/gpt-oss-120b", None),
-    "xai": ("xai", "grok-code-fast-1", None),
-    "deepseek": ("deepseek", "deepseek-chat", None),
+    "xai": ("xai", "grok-4.3", None),
+    "deepseek": ("deepseek", "deepseek-flash", None),
     "together": ("together", "openai/gpt-oss-120b", None),
-    "fireworks": ("fireworks", "accounts/fireworks/models/kimi-k2-instruct-0905", None),
+    "fireworks": ("fireworks", "accounts/fireworks/models/glm-5p3-flash", None),
     "cerebras": ("cerebras", "gpt-oss-120b", None),
 }
 # the native Gemini API; the catalog's google row is its OpenAI-compatible one
@@ -61,16 +65,38 @@ def keys_env():
     return env
 
 
-def rows(env, only):
-    cat = tomllib.load(open(os.path.join(ROOT, "rust", "catalog", "models.toml"), "rb"))["providers"]
+CATALOG = os.path.join(ROOT, "rust", "catalog", "models.toml")
+# the model facts the harness reads (core/config.bend), with the
+# catalog's defaults when neither the model nor its provider sets one
+FACTS = {"context": 128000, "max_output": 16384, "vision": False, "reasoning": False, "tools": True,
+         "thinking": None, "betas": None, "efforts": None, "effort": None}
+
+
+def facts(prov, model):
+    """the catalog's facts of prov/model: the model's fields, then its provider's"""
+    cat = tomllib.load(open(CATALOG, "rb"))
+    p, m = cat["providers"][prov], cat.get("models", {}).get("%s/%s" % (prov, model), {})
+    return {k: m.get(k, p.get(k, d)) for k, d in FACTS.items()}
+
+
+def listed(prov):
+    """the chat models models.toml lists for prov, in its order"""
+    ms = tomllib.load(open(CATALOG, "rb")).get("models", {})
+    return [k.split("/", 1)[1] for k, v in ms.items() if k.split("/", 1)[0] == prov and v.get("kind") != "stt"]
+
+
+def rows(env, only, every=False):
+    cat = tomllib.load(open(CATALOG, "rb"))["providers"]
     for row, (prov, model, fam) in ROWS.items():
         if only and row not in only:
             continue
         p = cat[prov]
         model = env.get("LIVE_MODEL_" + row.upper().replace("-", "_"), model)
         family = fam or p["api"]
-        base = GEMINI_BASE if family == "gemini" else p["base_url"]
-        yield row, prov, model, family, base, p["key_env"], env.get(p["key_env"], "")
+        # a private proxy has no base_url in models.toml (foundry): LIVE_BASE_<ROW>
+        base = GEMINI_BASE if family == "gemini" else env.get("LIVE_BASE_" + row.upper(), p.get("base_url", ""))
+        for m in (listed(prov) if every else [model]):
+            yield row, prov, m, family, base, p["key_env"], env.get(p["key_env"], "")
 
 
 # ---------------------------------------------------------------- --record
@@ -157,11 +183,16 @@ def harness_turn(row, prov, model, family, base, key_env, env):
     token = "live-ok-%d" % (time.time() % 100000)
     pid = prov if family == ({"google": "openai-chat"}.get(prov) or family) else row.replace("-", "_")
     # the catalog file sbd writes (docs/research/providers.md §7.3), only
-    # this row's provider
+    # this row's provider, with the catalog's facts of the model (its
+    # output cap, reasoning, efforts, thinking: what the real body carries)
+    f = facts(prov, model)
+    extra = "".join('%s = "%s"\n' % (k, f[k]) for k in ("thinking", "betas", "efforts", "effort") if f[k])
     open(os.path.join(tmp, "models.toml"), "w").write(
         'version = 1\ndefault_model = "%s/%s"\n\n[providers.%s]\nname = "%s"\napi = "%s"\n'
-        'base_url = "%s"\nkey_env = "%s"\nneeds = ""\ncontext = 128000\nmax_output = 16384\n'
-        'vision = false\nreasoning = false\ntools = true\n' % (pid, model, pid, row, family, base, key_env))
+        'base_url = "%s"\nkey_env = "%s"\nneeds = ""\ncontext = %d\nmax_output = %d\n'
+        'vision = %s\nreasoning = %s\ntools = true\n%s' % (
+            pid, model, pid, row, family, base, key_env, f["context"], f["max_output"],
+            str(f["vision"]).lower(), str(f["reasoning"]).lower(), extra))
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
@@ -212,7 +243,7 @@ def main():
     only = [a for a in args if not a.startswith("--")]
     env = keys_env()
     results = []
-    for row, prov, model, family, base, key_env, key in rows(env, only):
+    for row, prov, model, family, base, key_env, key in rows(env, only, "--listed" in args):
         if not key:
             print("skip %s: %s not set" % (row, key_env), flush=True)
             continue

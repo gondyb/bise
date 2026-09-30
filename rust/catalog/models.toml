@@ -46,11 +46,13 @@
 # The first run's key step (BISE-266), per provider: hint (a few words),
 #   keys_url (where a key is made), signup_url (only when not the keys
 #   page), model (the id a new user starts with), hidden = true (not
-#   offered: a private proxy). Checked 2026-09-30 against each provider's
+#   offered: a private proxy, or a provider the first run leaves out;
+#   its keys and `bise login <id>` still work). Checked 2026-09-30 against each provider's
 #   docs and keys page. billing_url (BISE-282): where credit is added,
 #   linked when a key check says the account has none; only where the
 #   provider's docs name the page.
-# Checked by hand against the providers' docs; last update 2025-11.
+# Checked by hand against the providers' docs and /models; last update
+# 2026-09-30 (each provider's section says where).
 
 # no default_model (BISE-266): with no model in config.toml and no
 # BISE_MODEL / BEND_MODEL, bise has no model and sends nothing; the first
@@ -65,6 +67,10 @@ default_voice_model = "mistral/voxtral-mini-latest"
 "opus-5.5" = "foundry/claude-opus-5-5"
 
 # ---- Anthropic ----
+# Checked 2026-09-30: platform.claude.com/docs/en/about-claude/models/overview
+# (ids, 1M context, 128K output, adaptive thinking), .../pricing (prices,
+# 5-minute cache writes), .../build-with-claude/context-windows (1M is the
+# default of the 5.x models, no beta header).
 
 [providers.anthropic]
 name = "Anthropic"
@@ -76,46 +82,39 @@ api = "anthropic"
 base_url = "https://api.anthropic.com/v1"
 key_env = "ANTHROPIC_API_KEY"
 small_model = "claude-haiku-4-5"
-context = 200000
-max_output = 32000
+context = 1000000
+max_output = 128000
 vision = true
 reasoning = true
-# extended thinking with a token budget (the 4.5 models reject adaptive
-# thinking: "adaptive thinking is not supported on this model"); the
-# beta flags these models take (no 1M context: it needs its own tier)
-thinking = "budget"
+thinking = "adaptive"
 betas = "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"
 
-# the 5.5 models think adaptively (checked 2026-09 on
-# platform.claude.com/docs/en/about-claude/models/overview); 1M context
-# needs its own tier: 200k here
+# "start with Claude Opus 5.5 for most workloads": long-running agentic
+# coding
 [models."anthropic/claude-opus-5-5"]
-thinking = "adaptive"
-max_output = 64000
 input_price = 4
 output_price = 20
+cache_read_price = 0.2
+cache_write_price = 5
+
+# demanding reasoning and long-horizon agentic work
+[models."anthropic/claude-fable-5-1"]
+input_price = 10
+output_price = 50
+cache_read_price = 0.25
+cache_write_price = 12.5
 
 [models."anthropic/claude-sonnet-5-5"]
-thinking = "adaptive"
-max_output = 64000
 input_price = 2
 output_price = 10
+cache_read_price = 0.2
+cache_write_price = 2.5
 
-[models."anthropic/claude-opus-4-5"]
-max_output = 64000
-input_price = 5
-output_price = 25
-cache_read_price = 0.5
-cache_write_price = 6.25
-
-[models."anthropic/claude-sonnet-4-5"]
-max_output = 64000
-input_price = 3
-output_price = 15
-cache_read_price = 0.3
-cache_write_price = 3.75
-
+# extended thinking with a token budget (it rejects adaptive thinking),
+# 200k context
 [models."anthropic/claude-haiku-4-5"]
+thinking = "budget"
+context = 200000
 max_output = 64000
 input_price = 1
 output_price = 5
@@ -124,7 +123,10 @@ cache_write_price = 1.25
 
 # an Anthropic proxy (the setup before BISE-142); the harness sends the
 # 1M-context beta header, so 1M. A private proxy: bise ships no URL, its
-# users set base_url under [providers.foundry] in ~/.bise/config.toml
+# users set base_url under [providers.foundry] in ~/.bise/config.toml.
+# Its models: the ones that answered a real tool call through it,
+# 2026-09-30 (claude-fable-5-1: a 403, the proxy's account has not
+# enabled it).
 [providers.foundry]
 name = "Anthropic (foundry proxy)"
 hidden = true
@@ -136,22 +138,35 @@ max_output = 32768
 vision = true
 reasoning = true
 
-[models."foundry/claude-opus-5-5"]
-
 # the proxy bills Anthropic's list prices
-[models."foundry/claude-sonnet-4-5"]
-input_price = 3
-output_price = 15
-cache_read_price = 0.3
-cache_write_price = 3.75
+[models."foundry/claude-opus-5-5"]
+input_price = 4
+output_price = 20
+cache_read_price = 0.2
+cache_write_price = 5
 
+[models."foundry/claude-sonnet-5-5"]
+input_price = 2
+output_price = 10
+cache_read_price = 0.2
+cache_write_price = 2.5
+
+# a budget, like the direct API's (adaptive: "adaptive thinking is not
+# supported on this model")
 [models."foundry/claude-haiku-4-5"]
+thinking = "budget"
+context = 200000
 input_price = 1
 output_price = 5
 cache_read_price = 0.1
 cache_write_price = 1.25
 
 # ---- OpenAI ----
+# Checked 2026-09-30: developers.openai.com/api/docs/models (the GPT-6
+# family: "if you're not sure where to start, use GPT-6 Astra") and each
+# model's page (Chat Completions + function calling supported, 1.05M
+# context, 128K output, reasoning low..max, prices; cache writes 1.25x
+# input). A prompt over 272K tokens costs 2x input, 1.5x output: not shown.
 
 [providers.openai]
 name = "OpenAI"
@@ -159,84 +174,83 @@ hint = "GPT, by OpenAI"
 keys_url = "https://platform.openai.com/api-keys"
 signup_url = "https://platform.openai.com/signup"
 billing_url = "https://platform.openai.com/settings/organization/billing"
-model = "gpt-5.5"
+model = "gpt-6-astra"
 api = "openai-chat"
 base_url = "https://api.openai.com/v1"
 key_env = "OPENAI_API_KEY"
 # the prompt cache's routing key (BISE-268; platform.openai.com/docs/guides/prompt-caching)
 cache_key = "prompt_cache_key"
 stt = "openai"
-small_model = "gpt-5-mini"
-context = 400000
+small_model = "gpt-6-luna"
+context = 1050000
 max_output = 128000
 vision = true
 reasoning = true
+efforts = "low,medium,high,xhigh,max"
 
-# chat completions with tools (checked 2026-09: gpt-6.1-sol takes tools
-# on the Responses API only)
-[models."openai/gpt-5.5"]
-context = 1050000
+# the flagship, for complex reasoning and coding
+[models."openai/gpt-6-astra"]
+input_price = 10
+output_price = 50
+cache_read_price = 1
+cache_write_price = 12.5
 
-[models."openai/gpt-5.1"]
-input_price = 1.25
-output_price = 10
-cache_read_price = 0.125
-
-[models."openai/gpt-5"]
-input_price = 1.25
-output_price = 10
-cache_read_price = 0.125
-
-[models."openai/gpt-5-mini"]
-input_price = 0.25
-output_price = 2
-cache_read_price = 0.025
-
-[models."openai/gpt-5-codex"]
-input_price = 1.25
-output_price = 10
-cache_read_price = 0.125
-
-[models."openai/gpt-4.1"]
-context = 1047576
-max_output = 32768
-reasoning = false
+# near-Astra for a fifth of the price
+[models."openai/gpt-6.1-sol"]
 input_price = 2
-output_price = 8
-cache_read_price = 0.5
+output_price = 10
+cache_read_price = 0.1
+cache_write_price = 2.5
+
+[models."openai/gpt-6-luna"]
+efforts = "none,low,medium,high,xhigh,max"
+input_price = 0.1
+output_price = 0.5
+cache_read_price = 0.01
+cache_write_price = 0.125
 
 # ---- Google (OpenAI-compatible endpoint until the gemini family, BISE-148) ----
+# Checked 2026-09-30: ai.google.dev/gemini-api/docs/models ("for any new
+# projects, use 3.5 Flash-Lite or 3.8 Flash"; 2.5 kept for past users
+# only) and .../pricing. Gemini 3.8 Flash's price doubles on 2027-01-01
+# (1.50 / 7.50).
 
 [providers.google]
 name = "Google AI Studio"
 hint = "Gemini. free tier to start"
 keys_url = "https://aistudio.google.com/app/apikey"
-model = "gemini-2.5-pro"
+model = "gemini-3.8-flash"
 api = "openai-chat"
 base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
 key_env = "GEMINI_API_KEY"
-small_model = "gemini-2.5-flash"
+small_model = "gemini-3.5-flash-lite"
 context = 1048576
 max_output = 65536
 vision = true
 reasoning = true
 
-[models."google/gemini-3-pro-preview"]
+# "our most intelligent Flash model, engineered for long-horizon software
+# engineering"
+[models."google/gemini-3.8-flash"]
+input_price = 0.75
+output_price = 3.75
+cache_read_price = 0.075
+
+[models."google/gemini-3.1-pro-preview"]
 input_price = 2
 output_price = 12
 cache_read_price = 0.2
 
-[models."google/gemini-2.5-pro"]
-input_price = 1.25
-output_price = 10
-cache_read_price = 0.125
-
-[models."google/gemini-2.5-flash"]
+[models."google/gemini-3.5-flash-lite"]
 input_price = 0.3
 output_price = 2.5
 cache_read_price = 0.03
 
 # ---- Mistral ----
+# Checked 2026-09-30: api.mistral.ai/v1/models with a key (ids, aliases,
+# context, capabilities), docs.mistral.ai models overview; prices from
+# openrouter.ai/api/v1/models (mistralai/*). devstral-* is gone from
+# /v1/models; magistral-*-latest are now aliases of medium / small.
 
 [providers.mistral]
 name = "Mistral"
@@ -250,39 +264,47 @@ key_env = "MISTRAL_API_KEY"
 cache_key = "prompt_cache_key"
 stt = "mistral"
 small_model = "mistral-small-latest"
-context = 128000
+context = 262144
 # the Mistral API's reasoning_effort takes these two (the vibe CLI maps
 # its thinking levels onto them)
 efforts = "none,high"
 
-[models."mistral/mistral-large-latest"]
-vision = true
-
+# Mistral Medium 3.5 (2604): "optimized for agentic and coding use cases"
 [models."mistral/mistral-medium-latest"]
 vision = true
-input_price = 0.4
-output_price = 2
+reasoning = true
+input_price = 1.5
+output_price = 7.5
 
-[models."mistral/devstral-medium-latest"]
-input_price = 0.4
-output_price = 2
+# Mistral Small 4 (2603): instruct, reasoning and coding in one
+[models."mistral/mistral-small-latest"]
+vision = true
+reasoning = true
+input_price = 0.15
+output_price = 0.6
+cache_read_price = 0.015
+
+# Mistral Large 3 (2512): no reasoning
+[models."mistral/mistral-large-latest"]
+vision = true
+input_price = 0.5
+output_price = 1.5
+cache_read_price = 0.05
 
 [models."mistral/codestral-latest"]
 context = 256000
 input_price = 0.3
 output_price = 0.9
-
-[models."mistral/magistral-medium-latest"]
-reasoning = true
-input_price = 2
-output_price = 5
+cache_read_price = 0.03
 
 # the vibe CLI's model: reasoning_effort "high" rides its calls (BISE-145)
 [models."mistral/zai-glm-5-3"]
 reasoning = true
-context = 200000
+context = 1048576
 
 # ---- OpenRouter (one key, many vendors) ----
+# Checked 2026-09-30: openrouter.ai/api/v1/models (ids, created dates,
+# context, max output, prices, input modalities, tools / reasoning).
 
 [providers.openrouter]
 name = "OpenRouter"
@@ -296,51 +318,88 @@ key_env = "OPENROUTER_API_KEY"
 # sticky routing to the provider that holds the cache (BISE-268;
 # openrouter.ai/blog/tutorials/prompt-caching-sticky-routing)
 cache_header = "x-session-id"
+reasoning = true
 
 [models."openrouter/anthropic/claude-sonnet-5.5"]
 context = 1000000
-max_output = 64000
-vision = true
-reasoning = true
-
-[models."openrouter/anthropic/claude-sonnet-4.5"]
-context = 1000000
-max_output = 64000
-vision = true
-reasoning = true
-input_price = 3
-output_price = 15
-
-[models."openrouter/openai/gpt-5"]
-context = 400000
 max_output = 128000
 vision = true
-reasoning = true
-input_price = 1.25
+input_price = 2
+output_price = 10
+cache_read_price = 0.2
+cache_write_price = 2.5
+
+[models."openrouter/anthropic/claude-opus-5.5"]
+context = 1000000
+max_output = 128000
+vision = true
+input_price = 4
+output_price = 20
+cache_read_price = 0.2
+cache_write_price = 5
+
+[models."openrouter/openai/gpt-6-astra"]
+context = 1050000
+max_output = 128000
+vision = true
+input_price = 10
+output_price = 50
+
+[models."openrouter/openai/gpt-6.1-sol"]
+context = 1050000
+max_output = 128000
+vision = true
+input_price = 2
 output_price = 10
 
-[models."openrouter/google/gemini-2.5-pro"]
+[models."openrouter/google/gemini-3.8-flash"]
 context = 1048576
 max_output = 65536
 vision = true
-reasoning = true
-input_price = 1.25
-output_price = 10
+input_price = 0.75
+output_price = 3.75
+cache_read_price = 0.075
 
-[models."openrouter/moonshotai/kimi-k2-0905"]
-context = 262144
+[models."openrouter/x-ai/grok-4.7"]
+context = 500000
+vision = true
+input_price = 2
+output_price = 6
+cache_read_price = 0.5
 
-[models."openrouter/qwen/qwen3-coder"]
-context = 262144
+[models."openrouter/moonshotai/kimi-k3"]
+context = 1048576
+vision = true
+input_price = 3
+output_price = 15
 
-[models."openrouter/z-ai/glm-4.6"]
-context = 202752
-reasoning = true
+[models."openrouter/z-ai/glm-5.3"]
+context = 1048576
+input_price = 1.4
+output_price = 4.4
+
+[models."openrouter/deepseek/deepseek-v4-pro-0813"]
+context = 1048576
+input_price = 0.66
+output_price = 1.98
+
+[models."openrouter/qwen/qwen3.8-max-prime"]
+context = 1000000
+max_output = 131072
+vision = true
+input_price = 4
+output_price = 12
 
 # ---- Groq ----
+# Checked 2026-09-30: console.groq.com/docs/models (production: gpt-oss;
+# Llama is Enterprise-only now; Qwen 3.8 27B is a preview). Kimi K2 is
+# gone.
 
 [providers.groq]
 name = "Groq"
+# not offered by the first run (the user, 2026-09-30); a key in env or
+# auth.json and `bise login groq` still work
+hidden = true
 hint = "open models, very fast"
 keys_url = "https://console.groq.com/keys"
 billing_url = "https://console.groq.com/settings/billing"
@@ -349,34 +408,37 @@ api = "openai-chat"
 base_url = "https://api.groq.com/openai/v1"
 key_env = "GROQ_API_KEY"
 stt = "openai"
+small_model = "openai/gpt-oss-20b"
 context = 131072
-
-[models."groq/moonshotai/kimi-k2-instruct-0905"]
-context = 262144
-input_price = 1
-output_price = 3
-
-[models."groq/openai/gpt-oss-120b"]
 max_output = 65536
 reasoning = true
+
+[models."groq/openai/gpt-oss-120b"]
 input_price = 0.15
-output_price = 0.75
+output_price = 0.6
 
-[models."groq/qwen/qwen3-32b"]
-max_output = 40960
-reasoning = true
-input_price = 0.29
-output_price = 0.59
+# a preview: "may be discontinued at short notice"
+[models."groq/qwen/qwen3.8-27b"]
+max_output = 16384
+vision = true
+input_price = 0.8
+output_price = 4
 
-[models."groq/llama-3.3-70b-versatile"]
-max_output = 32768
-input_price = 0.59
-output_price = 0.79
+[models."groq/openai/gpt-oss-20b"]
+input_price = 0.075
+output_price = 0.3
 
 # ---- xAI ----
+# Checked 2026-09-30: docs.x.ai/docs/models ("for everything else,
+# including code, use Grok 4.7"); the others from
+# openrouter.ai/api/v1/models (x-ai/*). grok-4, grok-4-fast and
+# grok-code-fast-1 are no longer listed.
 
 [providers.xai]
 name = "xAI"
+# not offered by the first run (the user, 2026-09-30); a key in env or
+# auth.json and `bise login xai` still work
+hidden = true
 hint = "Grok, by xAI"
 keys_url = "https://console.x.ai/team/default/api-keys"
 signup_url = "https://console.x.ai"
@@ -388,36 +450,40 @@ key_env = "XAI_API_KEY"
 # routes a conversation to the server holding its cache (BISE-268;
 # docs.x.ai/developers/advanced-api-usage/prompt-caching)
 cache_header = "x-grok-conv-id"
-small_model = "grok-4-fast"
-context = 256000
+small_model = "grok-4.3"
+context = 500000
+vision = true
 reasoning = true
 
 [models."xai/grok-4.7"]
-context = 500000
-vision = true
+input_price = 2
+output_price = 6
+cache_read_price = 0.5
 
-[models."xai/grok-4"]
-vision = true
-input_price = 3
-output_price = 15
-cache_read_price = 0.75
+# a fast coding model, for agentic software engineering
+[models."xai/grok-build-0.1"]
+context = 256000
+input_price = 1
+output_price = 2
+cache_read_price = 0.2
 
-[models."xai/grok-4-fast"]
-context = 2000000
-vision = true
-input_price = 0.2
-output_price = 0.5
-cache_read_price = 0.05
-
-[models."xai/grok-code-fast-1"]
-input_price = 0.2
-output_price = 1.5
-cache_read_price = 0.02
+[models."xai/grok-4.3"]
+context = 1000000
+input_price = 1.25
+output_price = 2.5
+cache_read_price = 0.2
 
 # ---- DeepSeek ----
+# Checked 2026-09-30: api-docs.deepseek.com/quick_start/pricing (two
+# models; deepseek-flash is V4.1 Flash, the old deepseek-v4-flash names
+# land on it). Prices: the peak rates (01:00-04:00 and 06:00-10:00 UTC on
+# weekdays); the rest of the time they are half.
 
 [providers.deepseek]
 name = "DeepSeek"
+# not offered by the first run (the user, 2026-09-30); a key in env or
+# auth.json and `bise login deepseek` still work
+hidden = true
 hint = "low prices"
 keys_url = "https://platform.deepseek.com/api_keys"
 billing_url = "https://platform.deepseek.com/top_up"
@@ -425,30 +491,32 @@ model = "deepseek-v4-pro"
 api = "openai-chat"
 base_url = "https://api.deepseek.com/v1"
 key_env = "DEEPSEEK_API_KEY"
-small_model = "deepseek-chat"
-
-[models."deepseek/deepseek-v4-pro"]
+small_model = "deepseek-flash"
 context = 1000000
-max_output = 65536
+max_output = 384000
 reasoning = true
 
-[models."deepseek/deepseek-chat"]
-max_output = 8192
-input_price = 0.28
-output_price = 0.42
-cache_read_price = 0.028
+# V4 Pro 0813
+[models."deepseek/deepseek-v4-pro"]
+input_price = 1.32
+output_price = 3.96
+cache_read_price = 0.044
 
-[models."deepseek/deepseek-reasoner"]
-max_output = 65536
-reasoning = true
-input_price = 0.28
-output_price = 0.42
-cache_read_price = 0.028
+[models."deepseek/deepseek-flash"]
+vision = true
+input_price = 0.3
+output_price = 1.2
+cache_read_price = 0.006
 
 # ---- Together ----
+# Checked 2026-09-30: docs.together.ai/docs/serverless-models (ids,
+# context, input / cached input / output prices).
 
 [providers.together]
 name = "Together AI"
+# not offered by the first run (the user, 2026-09-30); a key in env or
+# auth.json and `bise login together` still work
+hidden = true
 hint = "open models"
 keys_url = "https://api.together.ai/settings/api-keys"
 billing_url = "https://api.together.ai/settings/billing"
@@ -456,57 +524,90 @@ model = "zai-org/GLM-5.3"
 api = "openai-chat"
 base_url = "https://api.together.xyz/v1"
 key_env = "TOGETHER_API_KEY"
-context = 131072
+small_model = "zai-org/GLM-5.3-Flash"
+context = 1048576
+reasoning = true
 
 [models."together/zai-org/GLM-5.3"]
-reasoning = true
+input_price = 1.4
+output_price = 4.4
+cache_read_price = 0.26
 
-[models."together/Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8"]
-context = 262144
+[models."together/moonshotai/Kimi-K3"]
+vision = true
+input_price = 3
+output_price = 15
+cache_read_price = 0.3
 
-[models."together/moonshotai/Kimi-K2-Instruct-0905"]
-context = 262144
+[models."together/deepseek-ai/DeepSeek-V4-Pro-0813"]
+input_price = 1.32
+output_price = 3.96
+cache_read_price = 0.13
+
+[models."together/MiniMaxAI/MiniMax-M3"]
+context = 524288
+input_price = 0.3
+output_price = 1.2
+cache_read_price = 0.06
+
+[models."together/zai-org/GLM-5.3-Flash"]
+input_price = 0.15
+output_price = 0.5
+cache_read_price = 0.03
 
 [models."together/openai/gpt-oss-120b"]
-reasoning = true
-
-[models."together/deepseek-ai/DeepSeek-V3.1"]
+context = 131072
+input_price = 0.15
+output_price = 0.6
 
 # ---- Fireworks ----
+# Checked 2026-09-30: fireworks.ai/models and each model's page
+# fireworks.ai/models/fireworks/<name> (context, function calling, image
+# input). Prices not listed here: the pages don't give them as text.
 
 [providers.fireworks]
 name = "Fireworks AI"
+# not offered by the first run (the user, 2026-09-30); a key in env or
+# auth.json and `bise login fireworks` still work
+hidden = true
 hint = "open models"
 keys_url = "https://app.fireworks.ai/settings/users/api-keys"
-model = "accounts/fireworks/models/kimi-k2p6"
+model = "accounts/fireworks/models/glm-5p3"
 api = "openai-chat"
 base_url = "https://api.fireworks.ai/inference/v1"
 key_env = "FIREWORKS_API_KEY"
 # pins a session to a replica (BISE-268; docs.fireworks.ai/guides/prompt-caching)
 cache_header = "x-session-affinity"
-context = 131072
+small_model = "accounts/fireworks/models/glm-5p3-flash"
+context = 1048576
+reasoning = true
 
-[models."fireworks/accounts/fireworks/models/kimi-k2p6"]
+[models."fireworks/accounts/fireworks/models/glm-5p3"]
+
+[models."fireworks/accounts/fireworks/models/kimi-k3"]
+vision = true
+
+[models."fireworks/accounts/fireworks/models/kimi-k2p7-code"]
 context = 262144
 vision = true
 
-[models."fireworks/accounts/fireworks/models/kimi-k2-instruct-0905"]
-context = 262144
+[models."fireworks/accounts/fireworks/models/deepseek-v4-pro"]
 
-[models."fireworks/accounts/fireworks/models/qwen3-coder-480b-a35b-instruct"]
-context = 262144
+[models."fireworks/accounts/fireworks/models/minimax-m3"]
+vision = true
 
-[models."fireworks/accounts/fireworks/models/glm-4p6"]
-context = 202752
-reasoning = true
-
-[models."fireworks/accounts/fireworks/models/deepseek-v3p1"]
-context = 163840
+[models."fireworks/accounts/fireworks/models/glm-5p3-flash"]
+vision = true
 
 # ---- Cerebras ----
+# Checked 2026-09-30: inference-docs.cerebras.ai/models/overview (the two
+# shared-inference models; context on the paid tiers).
 
 [providers.cerebras]
 name = "Cerebras"
+# not offered by the first run (the user, 2026-09-30); a key in env or
+# auth.json and `bise login cerebras` still work
+hidden = true
 hint = "open models, very fast"
 keys_url = "https://cloud.cerebras.ai"
 model = "gpt-oss-120b"
@@ -516,14 +617,12 @@ key_env = "CEREBRAS_API_KEY"
 # inference-docs.cerebras.ai/capabilities/prompt-caching (BISE-268)
 cache_key = "prompt_cache_key"
 context = 131072
-
-[models."cerebras/qwen-3-coder-480b"]
+reasoning = true
 
 [models."cerebras/gpt-oss-120b"]
-reasoning = true
 
-[models."cerebras/zai-glm-4.6"]
-reasoning = true
+[models."cerebras/qwen-3.8-27b"]
+context = 128000
 
 # ---- local (no key): any model name the server has ----
 
