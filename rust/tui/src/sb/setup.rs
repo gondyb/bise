@@ -1,19 +1,22 @@
-//! The setup card (BISE-245, onboarding v3, book §15 "tune bise"): one
-//! quiet card in the strip, never opened for you, no timeout, no nudge:
-//! `? main · want me to tune bise for your terminal and repo? about a
-//! minute` · 1 yes · 2 not now. Once per user (`setup` in prefs.json),
-//! and once per new repo for its part only (AGENTS.md).
+//! The setup item (BISE-245, onboarding v3, book §15 "tune bise"; its
+//! words BISE-249, screens `setup, by the hand · 1-6`): one quiet item in
+//! the inbox, never opened for you, no timeout, no nudge: `? main · can i
+//! set bise up for your terminal and this repo?` · 1 yes, check · 2 not
+//! now; opened, it names and counts the checks before any yes. Once per
+//! user (`setup` in prefs.json), and once per new repo for its part only
+//! (AGENTS.md).
 //!
-//! Not now (2, `×`, ctrl+x): the card goes, `– not now · /setup any
-//! time`, never asked again. Yes: the checks (`tune.rs`) fold into one dim
-//! row, main says one line, and each change worth making comes back as its
-//! own card, the exact diff inside, 1 yes / 2 no; each answer leaves one
-//! dim row. `/setup` runs the checks and the offers again, any time.
+//! Not now (2, `×`, ctrl+x): the item goes, `– not now · type /setup
+//! whenever you want`, never asked again. Yes: the checks (`tune.rs`) fold
+//! into one dim row, main says one line, and each fix comes back as its
+//! own item (its [`Look`]: why, the exact change, how to undo), yes / no;
+//! each answer leaves one dim row. `/setup` runs it all again, any time.
 //!
 //! These cards are the TUI's own (ids from [`LOCAL`]): the hub never sees
 //! them; they sit in `Sb::cards` next to the hub's, put back after each
 //! snapshot.
 
+use super::cards::{Look, Para};
 use super::tune::{self, Found, Offer, Scope, Vars};
 use super::*;
 use crate::theme;
@@ -113,12 +116,52 @@ pub(crate) fn due(v: &Vars, repo: Option<&std::path::Path>) -> Option<Scope> {
 
 // ---- the cards ----
 
-fn ask_text(scope: Scope) -> String {
-    let q = match scope {
-        Scope::All => "want me to tune bise for your terminal and repo? about a minute",
-        Scope::Repo => "new repo: want me to tune bise for it? about a minute",
+/// A terminal's name in a sentence: `Ghostty`, `WezTerm`, `iTerm2`.
+fn term_title(t: &str) -> String {
+    match t {
+        "ghostty" => "Ghostty".into(),
+        "wezterm" => "WezTerm".into(),
+        "iterm2" => "iTerm2".into(),
+        "terminal.app" => "Terminal.app".into(),
+        t => t.into(),
+    }
+}
+
+/// `a, b, and c` (`a and b`, `a`).
+fn listed(v: &[&str]) -> String {
+    match v {
+        [] => String::new(),
+        [a] => a.to_string(),
+        [a, b] => format!("{a} and {b}"),
+        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
+    }
+}
+
+/// The ask: what `set up` does before any yes (screens `setup, by the
+/// hand · 2`). The count and the list are the checks that will run.
+fn ask_look(scope: Scope) -> Look {
+    let subjects = tune::subjects(scope, cfg!(target_os = "macos"));
+    let (q, first) = match scope {
+        Scope::All => (
+            "can i set bise up for your terminal and this repo?",
+            format!("i'll check {} things: {}.", subjects.len(), listed(&subjects)),
+        ),
+        Scope::Repo => ("new repo: can i set bise up for it?", format!("i'll check this repo: {}.", listed(&subjects))),
     };
-    format!("{q}\n1. yes\n2. not now")
+    Look {
+        row: q.into(),
+        row_note: "1 min · i ask before changing anything".into(),
+        title: q.into(),
+        meta: "about a minute".into(),
+        tab: "set up bise".into(),
+        body: vec![
+            Para::Text(first),
+            Para::Text("checking changes nothing. each fix i find comes back here as its own item, with the exact change, and you say yes or no to each one.".into()),
+            Para::Dim("your agents keep working meanwhile. not now? type /setup whenever you want.".into()),
+        ],
+        options: vec!["yes, check".into(), "not now".into()],
+        ..Look::default()
+    }
 }
 
 /// `~/…` for a path under the user's home.
@@ -131,44 +174,118 @@ fn lines_word(n: usize) -> String {
     format!("{n} line{}", if n == 1 { "" } else { "s" })
 }
 
-/// A card's text: its strip line, the diff, a note, the options.
-fn offer_text(v: &Vars, w: &What) -> String {
+/// Why each Ghostty line helps (the keys it lets through).
+fn keys_why(add: &[String]) -> String {
+    let why: Vec<&str> = add
+        .iter()
+        .map(|l| {
+            if l.contains("super+v") {
+                "cmd+v can paste a screenshot into your message (text still pastes as usual)"
+            } else {
+                "cmd+f searches your history"
+            }
+        })
+        .collect();
+    why.join(", and ")
+}
+
+/// The look of setup item `w` (screens `setup, by the hand · 2-5`).
+fn offer_look(v: &Vars, w: &What) -> Look {
     match w {
-        What::Ask(s) => ask_text(*s),
+        What::Ask(s) => ask_look(*s),
         What::Keys { terminal, file, add } => {
+            let term = term_title(terminal);
             let old = std::fs::read_to_string(file).ok();
             let n = old.as_deref().map_or(0, |t| t.lines().count());
+            let one = add.len() == 1;
             let keys = if add.len() == 2 { "cmd+v and cmd+f" } else if add[0].contains("super+v") { "cmd+v" } else { "cmd+f" };
-            let backup = tune::backup_of(file);
-            let note = match old {
-                Some(_) => format!(
-                    "i back it up first ({}). {terminal} reads it after a config reload (cmd+shift+,) or in a new window.",
-                    backup.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default()
-                ),
-                None => format!("a new file. {terminal} reads it after a config reload (cmd+shift+,) or in a new window."),
+            let path = shown(v, file);
+            let size = format!("{term} config · +{}", lines_word(add.len()));
+            let (these_keys, these_lines, them) =
+                if one { ("this key", "this line", "it") } else { ("these two keys", "these lines", "them") };
+            let what = if old.is_some() {
+                format!("i'd add {} to {path}:", lines_word(add.len()))
+            } else {
+                format!("i'd create {path} with {}:", lines_word(add.len()))
             };
-            format!(
-                "let {keys} reach me · {terminal} config · {}\n\n{}\n\n{note}\n1. yes\n2. no",
-                lines_word(add.len()),
-                tune::diff_add(&shown(v, file), n, add, n == 0 && !file.exists()),
-            )
+            let undo = if one { "delete the line".to_string() } else { format!("delete the {} lines", add.len()) };
+            let backup = match old {
+                Some(_) => format!(
+                    "i copy the file to {} first. ",
+                    tune::backup_of(file).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default()
+                ),
+                None => String::new(),
+            };
+            Look {
+                row: format!("let {keys} reach bise"),
+                row_note: size.clone(),
+                title: format!("let {keys} reach bise"),
+                meta: size,
+                tab: format!("{term} keys"),
+                body: vec![
+                    Para::Text(format!("right now {term} keeps {these_keys} for itself. with {these_lines}, {}.", keys_why(add))),
+                    Para::Text(what),
+                    Para::Diff(tune::diff_add(&path, n, add, n == 0 && !file.exists())),
+                    Para::Dim(format!("{backup}to undo: {undo}. {term} uses {them} after a reload (cmd+shift+,) or in a new window.")),
+                ],
+                options: vec![if one { "yes, add it" } else { "yes, add them" }.into(), "no".into()],
+                ..Look::default()
+            }
         }
         What::Agents { text, .. } => {
             let add: Vec<String> = text.lines().map(String::from).collect();
-            format!(
-                "a starter AGENTS.md · new file · {}\n\n{}\n\nyour agents read it from their next turn. edit it any time.\n1. yes\n2. no",
-                lines_word(add.len()),
-                tune::diff_add("AGENTS.md", 0, &add, true),
-            )
+            let size = format!("new file · {}", lines_word(add.len()));
+            Look {
+                row: "write a starter AGENTS.md".into(),
+                row_note: size.clone(),
+                title: "write a starter AGENTS.md for this repo".into(),
+                meta: size,
+                tab: "AGENTS.md".into(),
+                body: vec![
+                    Para::Text("AGENTS.md is a short note your agents read before they work here: how to build, how to test, what to leave alone. with it, they guess less and ask you less.".into()),
+                    Para::Text("i'd create it at the root of the repo. nothing else changes:".into()),
+                    Para::Diff(tune::diff_add("AGENTS.md", 0, &add, true)),
+                    Para::Dim("it's a plain file: edit it whenever, delete it to undo, commit it so your team's agents read it too.".into()),
+                ],
+                options: vec!["yes, write it".into(), "no".into()],
+                ..Look::default()
+            }
         }
-        What::Key { env, .. } => {
+        What::Key { provider, env } => {
             let home = crate::onboarding::home_of(&lookup(v));
-            format!(
-                "give your agents every tool · optional\n\nthe connectors (web search, documents, images) run on a {env}. paste it below: it goes in {}, only you can read it.\n\n⏎ saves it · ctrl+x no",
-                shown(v, &home.auth_file())
-            )
+            let name = provider.get(..1).map_or(String::new(), |f| f.to_uppercase() + &provider[1..]);
+            let console = if provider == "mistral" { "no key yet? console.mistral.ai. not now: ctrl+x." } else { "not now: ctrl+x." };
+            let title = "turn on web search and the other connectors";
+            Look {
+                row: title.into(),
+                row_note: format!("optional · needs a {name} key"),
+                title: title.into(),
+                meta: "optional".into(),
+                tab: "connectors".into(),
+                body: vec![
+                    Para::Text(format!("connectors are extra tools for your agents: web search, reading documents and images, and more. they run on a {env}, whatever model you chat with. without it everything else works; your agents just can't search the web.")),
+                    Para::Text(format!(
+                        "paste your key below and press ⏎. it goes in {}, and only you can read it. to remove it later, delete it from that file.",
+                        shown(v, &home.auth_file())
+                    )),
+                    Para::Dim(console.into()),
+                ],
+                right: Some(("⏎", "paste it")),
+                keys: vec![("", "paste your key"), ("⏎", "save"), ("ctrl+x", "not now"), ("esc", "back")],
+                ..Look::default()
+            }
         }
     }
+}
+
+/// An item's text, for `/answer` `/close` completion and find: its look
+/// in words.
+fn look_text(l: &Look) -> String {
+    let mut t = vec![l.row.clone()];
+    t.extend(l.body.iter().map(|p| match p {
+        Para::Text(s) | Para::Dim(s) | Para::Diff(s) => s.clone(),
+    }));
+    t.join("\n\n")
 }
 
 impl Setup {
@@ -179,8 +296,9 @@ impl Setup {
     fn add(&mut self, w: What) -> u64 {
         let id = LOCAL + self.next;
         self.next += 1;
-        let text = offer_text(&self.vars(), &w);
-        let card = Card { id, kind: "setup".into(), agent: "main".into(), text, ..Card::default() };
+        let look = offer_look(&self.vars(), &w);
+        let text = look_text(&look);
+        let card = Card { id, kind: "setup".into(), agent: "main".into(), text, look: Some(Box::new(look)), ..Card::default() };
         self.cards.push((card, w));
         id
     }
@@ -376,7 +494,8 @@ pub(super) fn valid(app: &mut App, id: u64, reply: &str) -> bool {
 
 /// An answer to setup card `id` (an option's text, or typed text).
 pub(super) fn answer(app: &mut App, id: u64, reply: &str) {
-    let yes = reply.trim().eq_ignore_ascii_case("yes");
+    // `yes, check`, `yes, add them`…: the option starts with yes
+    let yes = reply.trim().to_ascii_lowercase().starts_with("yes");
     let Some(w) = take(app, id) else { return };
     let v = app.sb.setup.vars();
     match w {
@@ -386,22 +505,24 @@ pub(super) fn answer(app: &mut App, id: u64, reply: &str) {
             if yes {
                 start(app, scope);
             } else {
-                row(app, false, "not now · /setup any time".into());
+                row(app, false, "not now · type /setup whenever you want".into());
             }
         }
         What::Keys { terminal, file, add } if yes => match tune::apply_keys(&file, &add) {
             Ok(b) => {
                 let backup = b.map(|b| format!(", the old one in {}", shown(&v, &b))).unwrap_or_default();
-                row(app, true, format!("{terminal} config · {} added{backup} · reload its config (cmd+shift+,) to use them", lines_word(add.len())));
+                let term = term_title(&terminal);
+                let them = if add.len() == 1 { "it" } else { "them" };
+                row(app, true, format!("{term} config · {} added{backup} · reload {term} (cmd+shift+,) to use {them}", lines_word(add.len())));
             }
             Err(e) => warn(app, Ev::Warn(format!("{terminal} config not changed: {e}"))),
         },
-        What::Keys { terminal, .. } => row(app, false, format!("{terminal} config unchanged · /setup any time")),
+        What::Keys { terminal, .. } => row(app, false, format!("{} config unchanged · type /setup whenever you want", term_title(&terminal))),
         What::Agents { file, text } if yes => match tune::write_agents(&file, &text) {
             Ok(()) => row(app, true, format!("AGENTS.md written · {} · your agents read it from their next turn", lines_word(text.lines().count()))),
             Err(e) => warn(app, Ev::Warn(format!("AGENTS.md not written: {e}"))),
         },
-        What::Agents { .. } => row(app, false, "no AGENTS.md · /setup any time".into()),
+        What::Agents { .. } => row(app, false, "no AGENTS.md · type /setup whenever you want".into()),
         What::Key { provider, env } => {
             let key = crate::onboarding::clean_key(reply).unwrap_or_default();
             let e = lookup(&v);
@@ -413,7 +534,7 @@ pub(super) fn answer(app: &mut App, id: u64, reply: &str) {
                 None => Err(format!("unknown provider {provider}")),
             };
             match r {
-                Ok(()) => row(app, true, format!("{env} saved in {} · the agents started from now on have every tool", shown(&v, &paths.auth_file))),
+                Ok(()) => row(app, true, format!("{env} saved · the agents you start from now on can search the web")),
                 Err(e) => warn(app, Ev::Warn(format!("{env} not saved: {e}"))),
             }
         }
@@ -423,8 +544,8 @@ pub(super) fn answer(app: &mut App, id: u64, reply: &str) {
 /// `×`, ctrl+x: not now (the ask), no (an offer, the key card too).
 pub(super) fn close(app: &mut App, id: u64) {
     let Some(w) = take(app, id) else { return };
-    if let What::Key { env, .. } = w {
-        row(app, false, format!("no {env} · /setup any time"));
+    if let What::Key { .. } = w {
+        row(app, false, "no connectors key · type /setup whenever you want".into());
         return;
     }
     app.sb.setup.cards.push((Card { id, ..Card::default() }, w));

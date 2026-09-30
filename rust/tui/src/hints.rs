@@ -22,7 +22,7 @@ use crate::theme;
 use crate::App;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph};
 use ratatui::Frame;
@@ -60,7 +60,7 @@ impl Hint {
                 "new: your agents. they work in the background. {⌥ 1} to look inside, {esc} to come back. →"
             }
             Hint::FirstLevel3 => "agents talk to each other. it stays dim: you can ignore it, or {▸} to read.",
-            Hint::FirstCard => "your inbox: someone needs you. {ctrl+g} selects it. ↓",
+            Hint::FirstCard => "[?] <this is your inbox.> when an agent needs you, it waits here instead of interrupting you. {ctrl+g} selects it, then {↑↓ ⏎}. ↓",
             Hint::FirstSteer => "{✓} the agent got it · {✓✓} it read it.",
         }
     }
@@ -195,35 +195,78 @@ fn bring_up(h: Hint) {
 /// Inner text width of a hint box (the mockup's 36ch).
 const TEXT_W: usize = 36;
 
-/// The words of `text`, `{…}` in accent (a key never splits), wrapped at
-/// `w` columns.
+/// The words of `text`, wrapped at `w` columns: `{…}` a key (it never
+/// splits), `[…]` a glyph in accent (never splits), `<…>` bold words;
+/// the rest plain. A mark right after a word (`{⏎}.`) sticks to it. The
+/// keys are in accent and the rest in the text color, except the first
+/// item's hint (BISE-248): the words dim, the keys in the text color.
 pub(crate) fn wrap(text: &str, w: usize) -> Vec<Line<'static>> {
-    let mut words: Vec<(String, bool)> = Vec::new();
-    for (i, part) in text.split(['{', '}']).enumerate() {
-        if i % 2 == 1 {
-            words.push((part.to_string(), true));
-        } else {
-            words.extend(part.split(' ').filter(|w| !w.is_empty()).map(|w| (w.to_string(), false)));
+    wrap_in(text, w, Style::default().fg(theme::text()), Style::default().fg(theme::accent()))
+}
+
+fn wrap_in(text: &str, w: usize, plain: Style, key: Style) -> Vec<Line<'static>> {
+    // (the word, its style, glued to the one before)
+    let mut words: Vec<(String, Style, bool)> = Vec::new();
+    let mut rest = text;
+    let mut glue = false;
+    while !rest.is_empty() {
+        let at = rest.find(['{', '[', '<']).unwrap_or(rest.len());
+        let (head, tail) = rest.split_at(at);
+        for (i, wd) in head.split(' ').enumerate() {
+            if !wd.is_empty() {
+                words.push((wd.to_string(), plain, glue && i == 0));
+            }
         }
+        glue = !head.is_empty() && !head.ends_with(' ') || head.is_empty() && glue;
+        if tail.is_empty() {
+            break;
+        }
+        let close = match tail.as_bytes()[0] {
+            b'{' => '}',
+            b'[' => ']',
+            _ => '>',
+        };
+        let end = tail.find(close).unwrap_or(tail.len());
+        let inner = &tail[1..end];
+        match close {
+            '}' => words.push((inner.to_string(), key, glue)),
+            ']' => words.push((inner.to_string(), Style::default().fg(theme::accent()), glue)),
+            _ => {
+                let bold = Style::default().fg(theme::text()).add_modifier(Modifier::BOLD);
+                for (i, wd) in inner.split(' ').filter(|x| !x.is_empty()).enumerate() {
+                    words.push((wd.to_string(), bold, glue && i == 0));
+                }
+            }
+        }
+        rest = tail.get(end + 1..).unwrap_or("");
+        glue = !rest.starts_with(' ');
     }
     let mut lines: Vec<Vec<Span<'static>>> = vec![Vec::new()];
     let mut col = 0usize;
-    for (wd, k) in words {
+    for (wd, st, glued) in words {
         let ww = wd.width();
-        if col > 0 && col + 1 + ww > w {
+        let gap = usize::from(col > 0 && !glued);
+        if col > 0 && col + gap + ww > w && !glued {
             lines.push(Vec::new());
             col = 0;
         }
         let line = lines.last_mut().expect("one line");
-        if col > 0 {
+        if col > 0 && !glued {
             line.push(Span::raw(" "));
             col += 1;
         }
-        let c = if k { theme::accent() } else { theme::text() };
-        line.push(Span::styled(wd, Style::default().fg(c)));
+        line.push(Span::styled(wd, st));
         col += ww;
     }
     lines.into_iter().map(Line::from).collect()
+}
+
+/// Hint `h`'s lines at `w` columns, in its styles.
+fn hint_lines(h: Hint, w: usize) -> Vec<Line<'static>> {
+    match h {
+        Hint::FirstCard => wrap_in(h.text(), w, Style::default().fg(theme::dim()), Style::default().fg(theme::text())),
+        _ => wrap(h.text(), w),
+    }
 }
 
 /// The text of row `y` of `buf` between columns `x0..x1`.
@@ -254,9 +297,10 @@ fn anchor(buf: &Buffer, h: Hint, feed: Rect, panel: Option<Rect>) -> Option<u16>
                 .filter(|(_, t)| t.contains(&title) && t.contains("needs you"))
                 .map(|(y, _)| y)
                 .next_back()
-                // a card with no row in the history (the setup card,
-                // BISE-245): the strip's label `1 card … ctrl+g open`
-                .or_else(|| rows(feed).filter(|(_, t)| t.contains("ctrl+g open")).map(|(y, _)| y).next_back())
+                // an item with no row in the history (the setup item,
+                // BISE-245): the inbox's label `inbox · 1 waiting for you
+                // … ctrl+g select`
+                .or_else(|| rows(feed).filter(|(_, t)| t.contains("ctrl+g select")).map(|(y, _)| y).next_back())
         }
         Hint::FirstSteer => {
             let read = theme::glyph(theme::G_READ);
@@ -314,7 +358,7 @@ pub(crate) fn draw(f: &mut Frame) {
         None => pending.into_iter().find_map(|h| anchor(f.buffer_mut(), h, feed, panel).map(|y| (h, y))),
     };
     let Some((h, y)) = found else { return };
-    let lines = wrap(h.text(), TEXT_W);
+    let lines = hint_lines(h, TEXT_W);
     let Some(r) = place(h, y, lines.len() as u16, area, feed, panel) else { return };
     let block = Block::default()
         .borders(Borders::ALL)
@@ -411,7 +455,7 @@ mod tests {
         .unwrap();
         assert_eq!(active(), Some(Hint::FirstCard));
         let sc = screen(&t);
-        assert!(sc.contains("your inbox: someone needs you."), "{sc}");
+        assert!(sc.contains("this is your inbox."), "{sc}");
         assert!(seen_in(&std::fs::read_to_string(&p).unwrap())["first_card"]);
         // the card is gone: so is the hint; the level-3 one waits its turn
         t.draw(draw).unwrap();
@@ -444,8 +488,21 @@ mod tests {
         assert_eq!(accent, vec!["⌥ 1", "esc"]);
         let l3: Vec<String> = wrap(Hint::FirstLevel3.text(), TEXT_W).iter().map(text_of).collect();
         assert_eq!(l3.join(" "), "agents talk to each other. it stays dim: you can ignore it, or ▸ to read.");
-        let card: Vec<String> = wrap(Hint::FirstCard.text(), TEXT_W).iter().map(text_of).collect();
-        assert_eq!(card.join(" "), "your inbox: someone needs you. ctrl+g selects it. ↓");
+        let card = hint_lines(Hint::FirstCard, TEXT_W);
+        let words: Vec<String> = card.iter().map(text_of).collect();
+        assert_eq!(
+            words.join(" "),
+            "? this is your inbox. when an agent needs you, it waits here instead of interrupting you. ctrl+g selects it, then ↑↓ ⏎. ↓"
+        );
+        assert!(words.iter().all(|l| l.width() <= TEXT_W), "{words:?}");
+        // the title bold, the keys in the text color, the rest dim
+        let spans: Vec<&Span> = card.iter().flat_map(|l| l.spans.iter()).collect();
+        let style_of = |w: &str| spans.iter().find(|s| s.content == w).map(|s| s.style).unwrap();
+        assert!(style_of("inbox.").add_modifier.contains(Modifier::BOLD));
+        assert_eq!(style_of("ctrl+g").fg, Some(theme::text()));
+        assert_eq!(style_of("↑↓ ⏎").fg, Some(theme::text()));
+        assert_eq!(style_of("?").fg, Some(theme::accent()));
+        assert_eq!(style_of("waits").fg, Some(theme::dim()));
     }
 
     #[test]

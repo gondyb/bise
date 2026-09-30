@@ -152,7 +152,7 @@ fn strip_right(e: &Entry, s: &Shape, extra: usize, max: usize) -> (Row, Vec<(usi
         if extra > 0 {
             r.push(format!("+ {}  ", extra), fg(theme::faint()));
         }
-        if one && opts == 2 {
+        if one && opts == 2 && !s.short.is_empty() {
             for (i, l) in s.short.iter().enumerate() {
                 if i > 0 {
                     r.push("  ", Style::default());
@@ -165,6 +165,11 @@ fn strip_right(e: &Entry, s: &Shape, extra: usize, max: usize) -> (Row, Vec<(usi
         } else if one && opts == 1 {
             r.push(format!("{} options", s.options.len()), fg(theme::accent()));
             r.push("  ", Style::default());
+        } else if let (true, 2, Some((k, l))) = (one, opts, s.right) {
+            let (a, _) = r.push(k, fg(theme::accent()));
+            let (_, b) = r.push(format!(" {l}"), fg(theme::dim()));
+            hits.push((a, b, CardHit::Row(id)));
+            r.push("  ", Style::default());
         }
         if one {
             let (a, b) = r.push(close, fg(theme::faint()));
@@ -173,7 +178,17 @@ fn strip_right(e: &Entry, s: &Shape, extra: usize, max: usize) -> (Row, Vec<(usi
         r.push(" ", Style::default());
         (r, hits)
     };
-    let full = if s.options.is_empty() { 0 } else if s.options.len() > STRIP_ROWS { 1 } else { 2 };
+    let full = if s.options.is_empty() {
+        if s.right.is_some() {
+            2
+        } else {
+            0
+        }
+    } else if s.options.len() > STRIP_ROWS {
+        1
+    } else {
+        2
+    };
     for opts in (0..=full).rev() {
         let (r, h) = build(opts);
         if r.w <= max || opts == 0 {
@@ -224,6 +239,11 @@ fn strip_row(
     if !s.summary.is_empty() && text_room >= 4 {
         left.push(" · ", fg(theme::dim()));
         left.push(cut(&s.summary, text_room), fg(theme::dim()));
+        // its faint end, when it fits whole (`new file · 14 lines`)
+        let note_room = room.saturating_sub(left.w + 1);
+        if !s.note.is_empty() && s.note.width() <= note_room {
+            left.push(format!(" {}", s.note), fg(theme::faint()));
+        }
     }
     let fill = w.saturating_sub(left.w + right.w);
     let mut spans = left.spans;
@@ -331,7 +351,7 @@ fn tabs_line(sb: &Sb, cur: u64, at: Rect, hits: &mut Vec<(Rect, CardHit)>) -> Li
     let w = at.width as usize;
     let no_color = crate::theme::raised() == Color::Reset;
     let labels: Vec<(u64, &'static str, Color, String)> =
-        cards.iter().map(|c| (c.id, kind_look(&c.kind).1, glyph_color(&c.kind), c.agent.clone())).collect();
+        cards.iter().map(|c| (c.id, kind_look(&c.kind).1, glyph_color(&c.kind), shape(c).tab.unwrap_or_else(|| c.agent.clone()))).collect();
     let tab_w = |l: &str| 2 + 1 + l.width() + 2;
     let hint = if theme::ascii_mode() { "left/right" } else { "←→" };
     let with_hint = labels.len() > 1;
@@ -471,7 +491,10 @@ pub(crate) fn draw_view(app: &mut App, frame: &mut Frame, area: Rect) {
     // the title row: glyph and title bold in the kind's color, meta dim
     let (_, glyph, color) = kind_look(&c.kind);
     let bold = fg(color).add_modifier(Modifier::BOLD);
-    let mut m = meta(sb, &c, pos, ids.len());
+    let mut m = match &s.meta {
+        Some(own) => vec![own.clone()],
+        None => meta(sb, &c, pos, ids.len()),
+    };
     let head_w = glyph.width() + 1 + s.title.width();
     let meta_s = loop {
         let t = m.join(" · ");
@@ -577,6 +600,11 @@ pub(crate) fn key_pairs(app: &App) -> Vec<(&'static str, String)> {
     let n = s.options.len();
     let more = sb.sorted_cards().len() > 1;
     let p = |k: &'static str, l: &str| (k, l.to_string());
+    // an item with its own keys (the connectors key: `paste your key ·
+    // ⏎ save · ctrl+x not now · esc back`)
+    if !s.keys.is_empty() {
+        return s.keys.iter().map(|(k, l)| p(k, l)).collect();
+    }
     let mut v = Vec::new();
     if !app.ed.text.is_empty() {
         v.push(p("⏎", if s.enter == Enter::Deny { "deny with your note" } else { "send as your answer" }));
@@ -601,7 +629,7 @@ pub(crate) fn key_pairs(app: &App) -> Vec<(&'static str, String)> {
     }
     let typed = match s.enter {
         Enter::Deny if sb.card.opt.is_none() => Some(p("type", "a note to deny")),
-        Enter::Answer if sb.card.opt.is_none() => Some(p("type", if n > 0 { "to answer in your words" } else { "to answer" })),
+        Enter::Answer if sb.card.opt.is_none() && s.words => Some(p("type", if n > 0 { "to answer in your words" } else { "to answer" })),
         _ => None,
     };
     // an approval says its note before the other cards

@@ -318,7 +318,7 @@ fn counts(sb: &Sb) -> Option<[usize; 5]> {
 /// their words when they fit (not `short`), else the numbers only; still
 /// too wide, the least important counts go first ("needs you" stays, then
 /// cards, working, waiting, done), shown in the §8 order. `gust` leads the
-/// working count (BISE-107). The open cards (`# 3 cards`, dim) come last,
+/// working count (BISE-107). The open cards (`# 3 in the inbox`, dim) come last,
 /// so the number main says (`card #153`) is found in the panel or with
 /// ctrl+g even when the panel is hidden (BISE-125).
 fn fit_counts(n: [usize; 5], short: bool, room: usize, gust: &[Span<'static>]) -> Vec<Span<'static>> {
@@ -1115,6 +1115,7 @@ mod tests {
             age_ms: 0,
             seen_at: std::time::Instant::now(),
             note: String::new(),
+            look: None,
         });
         sb.activity.insert("auth-fix".into());
         app

@@ -95,30 +95,33 @@ impl Found {
         self.checks.iter().filter(|c| c.mark == m).count()
     }
 
-    /// The folded row: `tuning · 7 checks · 5 fine, 2 things to offer`
-    /// (the notes last, when there are some).
+    /// The folded row: `checked 7 things · 4 fine · 3 i can fix`, `checked
+    /// 7 things · all fine` (the notes last, when there are some).
     pub(crate) fn summary(&self) -> String {
         let n = self.checks.len();
-        let mut parts = vec![format!("{} fine", self.count(Mark::Fine))];
-        match self.offers.len() {
-            0 => {}
-            1 => parts.push("1 thing to offer".into()),
-            k => parts.push(format!("{k} things to offer")),
+        let fine = self.count(Mark::Fine);
+        let head = format!("checked {n} thing{}", if n == 1 { "" } else { "s" });
+        if fine == n {
+            return format!("{head} · all fine");
+        }
+        let mut parts = vec![head, format!("{fine} fine")];
+        if !self.offers.is_empty() {
+            parts.push(format!("{} i can fix", self.offers.len()));
         }
         match self.count(Mark::Note) {
             0 => {}
             1 => parts.push("1 note".into()),
             k => parts.push(format!("{k} notes")),
         }
-        format!("tuning · {} check{} · {}", n, if n == 1 { "" } else { "s" }, parts.join(", "))
+        parts.join(" · ")
     }
 
     /// main's one line after the checks.
     pub(crate) fn line(&self) -> String {
         match self.offers.len() {
             0 => "all good here. nothing to change.".into(),
-            1 => "1 small change would help. it's in your cards, whenever you want.".into(),
-            k => format!("{k} small changes would help. they're in your cards, whenever you want."),
+            1 => "1 small fix would help. it waits in your inbox with the exact change. yes or no, whenever you want.".into(),
+            k => format!("{k} small fixes would help. each one waits in your inbox with the exact change. yes or no to each, whenever you want."),
         }
     }
 }
@@ -381,24 +384,36 @@ fn check_key(ctx: &Ctx) -> (Check, Option<Offer>) {
 type Outcome = Option<(Check, Option<Offer>)>;
 type Job = Box<dyn FnOnce(&Ctx) -> Outcome + Send>;
 
-fn jobs(scope: Scope, mac: bool) -> Vec<Job> {
+/// The checks of a scope, each with what the ask calls it (`your
+/// terminal`, `its keys`…): the ask counts and names these, so it never
+/// promises a check that does not run.
+fn jobs(scope: Scope, mac: bool) -> Vec<(&'static str, Job)> {
     let plain = |f: fn(&Ctx) -> Check| -> Job { Box::new(move |c: &Ctx| Some((f(c), None))) };
-    let mut v: Vec<Job> = Vec::new();
+    let mut v: Vec<(&'static str, Job)> = Vec::new();
     if scope == Scope::All {
-        v.push(plain(check_terminal));
-        v.push(plain(check_truecolor));
+        v.push(("your terminal", plain(check_terminal)));
         if mac {
-            v.push(Box::new(|c: &Ctx| Some(check_cmd_keys(c))));
+            v.push(("its keys", Box::new(|c: &Ctx| Some(check_cmd_keys(c)))));
         }
-        v.push(plain(check_glyphs));
+        v.push(("colors", plain(check_truecolor)));
+        v.push(("glyphs", plain(check_glyphs)));
     }
-    v.push(plain(check_git));
-    v.push(Box::new(check_agents));
+    v.push(("git", plain(check_git)));
     if scope == Scope::All {
-        v.push(plain(check_gh));
-        v.push(Box::new(|c: &Ctx| Some(check_key(c))));
+        v.push(("gh", plain(check_gh)));
+    }
+    v.push(("an AGENTS.md", Box::new(check_agents)));
+    if scope == Scope::All {
+        v.push(("the connectors key", Box::new(|c: &Ctx| Some(check_key(c)))));
     }
     v
+}
+
+/// What the checks of `scope` look at, in their order: `your terminal`,
+/// `its keys` (macOS), `colors`, `glyphs`, `git`, `gh`, `an AGENTS.md`,
+/// `the connectors key` (a new repo: `git`, `an AGENTS.md`).
+pub(crate) fn subjects(scope: Scope, mac: bool) -> Vec<&'static str> {
+    jobs(scope, mac).into_iter().map(|(n, _)| n).collect()
 }
 
 /// Run every check of the scope at once, `budget` for all of them; a
@@ -408,7 +423,7 @@ pub(crate) fn run(ctx: &Ctx, budget: Duration) -> Found {
     let (tx, rx) = mpsc::channel();
     let js = jobs(ctx.scope, ctx.mac);
     let n = js.len();
-    for (i, j) in js.into_iter().enumerate() {
+    for (i, (_, j)) in js.into_iter().enumerate() {
         let (tx, c) = (tx.clone(), ctx.clone());
         std::thread::spawn(move || {
             let _ = tx.send((i, j(&c)));

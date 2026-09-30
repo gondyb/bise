@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
 from tui_tmux import tui_session, run  # noqa: E402
 
-NORMAL = "⏎ send   @ agent"  # the key bar (BISE-98/99)
+NORMAL = "   @ agent   "  # the key bar (BISE-98/99; `ctrl+g inbox` may come before it, BISE-248)
 
 
 def flat(sc):
@@ -100,7 +100,7 @@ def main():
         sc = t.wait("any key ↵")
         for s in ["how it works", "1  you talk to me. anything, any time, keep typing",
                   "2  i start an agent when a job needs one. they sync with each other",
-                  "3  when something needs you, a card shows up · ctrl+g opens it",
+                  "3  when something needs you, it waits in your inbox · ctrl+g",
                   "ctrl+o opens everything folded", "○ ○ ●"]:
             assert s in flat(sc), sc
         assert "which model should do the work?" not in sc and "i'll work in" not in sc, sc
@@ -114,17 +114,20 @@ def main():
         colors = t.screen(colors=True)
         assert "48;2;20;18;17" in colors, colors[:2000]
         assert prefs(root).get("onboarded"), prefs(root)
-        # BISE-245: one quiet card in the strip, not opened; it is the
-        # first card, so the first-card hint teaches ctrl+g
-        sc = t.wait("want me to tune bise", 30)
-        sc = t.wait("a card: someone needs you.")
+        # BISE-245: one quiet item in the inbox, not opened; it is the
+        # first one, so the first-item hint teaches the inbox (BISE-248)
+        sc = t.wait("can i set bise up", 30)
+        sc = t.wait("this is your inbox.")
         assert "2 not now" in sc and "what's on your mind?" in sc, sc
         shot("7-setup-card", sc)
-        t.keys("C-g")
-        t.wait("⏎ answer")
+        t.keys("C-g")                       # the inbox selected, ⏎ opens it
+        t.wait("esc back to your message")
+        t.keys("Enter")
+        sc = t.wait("1-2 pick")
+        assert "checking changes nothing." in sc, sc
         t.keys("2")                         # not now: one dim row, never asked again
-        sc = t.wait("– not now · /setup any time")
-        assert "want me to tune bise" not in sc, sc
+        sc = t.wait("– not now · type /setup whenever you want")
+        assert "can i set bise up" not in sc, sc
         assert prefs(root).get("setup", {}).get("asked") is True, prefs(root)
         shot("8-not-now", sc)
         # BISE-61: the first agent's hint
@@ -147,7 +150,7 @@ def main():
         sc = t.wait(NORMAL)
         time.sleep(0.5)
         sc = t.screen()
-        assert "want me to tune bise" not in sc, sc   # asked once per user
+        assert "can i set bise up" not in sc, sc   # asked once per user
         assert "any key ↵" not in sc and "hi, i'm" not in sc, sc
         # esc skips on a fresh root, and marks it seen
         root2 = os.path.join(E.tmp, "state-root-2")

@@ -209,7 +209,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         state
     };
     let (state_rect, label_rect) = match sb::card_divider_label(app) {
-        // the card view: `you → ? perf's card · your answer`
+        // the card view: `you → ? perf · your answer`
         Some(label) => chrome::draw_divider_label(frame.buffer_mut(), area, cols, divider_y, label),
         None => chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, &who, working.as_ref(), state, app.find.is_some()),
     };

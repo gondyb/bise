@@ -49,6 +49,36 @@ pub(crate) struct Card {
     pub(super) seen_at: std::time::Instant,
     /// The hub's remark (the asker heard from main since...).
     pub(super) note: String,
+    /// How the TUI's own items (setup, BISE-245) read: their words are
+    /// the TUI's, not parsed from `text`.
+    pub(super) look: Option<Box<Look>>,
+}
+
+/// A paragraph of an item the TUI writes itself.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Para {
+    Text(String),
+    /// said on the side: dim
+    Dim(String),
+    /// a unified diff, in the code colors
+    Diff(String),
+}
+
+/// How an item of the TUI's own reads (the setup items): the strip's
+/// row and its faint end, the view's title, meta, tab and body, the
+/// options; a strip action and a key bar of its own when it has no
+/// options (the connectors key: `⏎ paste it`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Look {
+    pub(crate) row: String,
+    pub(crate) row_note: String,
+    pub(crate) title: String,
+    pub(crate) meta: String,
+    pub(crate) tab: String,
+    pub(crate) body: Vec<Para>,
+    pub(crate) options: Vec<String>,
+    pub(crate) right: Option<(&'static str, &'static str)>,
+    pub(crate) keys: Vec<(&'static str, &'static str)>,
 }
 
 impl Default for Card {
@@ -61,6 +91,7 @@ impl Default for Card {
             age_ms: 0,
             seen_at: std::time::Instant::now(),
             note: String::new(),
+            look: None,
         }
     }
 }
@@ -173,6 +204,39 @@ pub(super) struct Shape {
     pub(super) options: Vec<String>,
     pub(super) short: Vec<String>,
     pub(super) enter: Enter,
+    /// faint after the strip's text (`1 min · i ask before changing
+    /// anything`)
+    pub(super) note: String,
+    /// the view's meta instead of `2 of 3 · 6m · ⌥1 perf`, its tab's
+    /// label instead of the agent
+    pub(super) meta: Option<String>,
+    pub(super) tab: Option<String>,
+    /// the strip's action when there are no options (`⏎ paste it`)
+    pub(super) right: Option<(&'static str, &'static str)>,
+    /// typed words answer it (`type to answer in your words`)
+    pub(super) words: bool,
+    /// the view's key bar, when the item has its own
+    pub(super) keys: Vec<(&'static str, &'static str)>,
+}
+
+impl Shape {
+    fn plain(title: String, who: String, summary: String, parts: Vec<Part>, options: Vec<String>, short: Vec<String>, enter: Enter) -> Shape {
+        Shape {
+            title,
+            who,
+            summary,
+            parts,
+            options,
+            short,
+            enter,
+            note: String::new(),
+            meta: None,
+            tab: None,
+            right: None,
+            words: true,
+            keys: Vec::new(),
+        }
+    }
 }
 
 /// The options of an approval (approvals.md §7), whole and short.
@@ -193,15 +257,15 @@ pub(super) fn shape(c: &Card) -> Shape {
     if !c.note.is_empty() {
         parts.push(Part::Note(c.note.clone()));
     }
-    Shape {
-        title: kind_title(&c.kind, &c.agent),
-        who: if c.kind == "question" { c.agent.clone() } else { kind_title(&c.kind, &c.agent) },
+    Shape::plain(
+        kind_title(&c.kind, &c.agent),
+        if c.kind == "question" { c.agent.clone() } else { kind_title(&c.kind, &c.agent) },
         summary,
         parts,
-        short: short_labels(&options),
-        options,
-        enter: if no_words(&c.kind) { Enter::Ack } else { Enter::Answer },
-    }
+        options.clone(),
+        short_labels(&options),
+        if no_words(&c.kind) { Enter::Ack } else { Enter::Answer },
+    )
 }
 
 /// An approval: the command (or a patch) up to the first blank line,
@@ -243,41 +307,49 @@ fn approval_shape(c: &Card) -> Shape {
     if !c.note.is_empty() {
         parts.push(Part::Note(c.note.clone()));
     }
-    Shape {
+    Shape::plain(
         title,
         who,
         summary,
         parts,
-        options: ALLOW.iter().map(|s| s.to_string()).collect(),
-        short: ALLOW_SHORT.iter().map(|s| s.to_string()).collect(),
-        enter: Enter::Deny,
-    }
+        ALLOW.iter().map(|s| s.to_string()).collect(),
+        ALLOW_SHORT.iter().map(|s| s.to_string()).collect(),
+        Enter::Deny,
+    )
 }
 
-/// A setup card (BISE-245): its first line in the strip, the diff in
-/// code colors, the rest as text; the options as they are (`not now`).
+/// A setup item (BISE-245): its look, written by setup.rs; without one
+/// (never from setup.rs), its first line in the strip, a diff in code
+/// colors, the rest as text.
 fn setup_shape(c: &Card) -> Shape {
-    let (body, options) = split_choices(&c.text);
-    let summary = body.lines().next().unwrap_or("").trim().to_string();
-    let parts = body
-        .split("\n\n")
-        .map(|p| {
-            if p.starts_with("--- ") {
-                Part::Code(crate::code::highlight_patch(p))
-            } else {
-                Part::Text(p.to_string())
-            }
+    let Some(l) = c.look.as_deref() else {
+        let (body, options) = split_choices(&c.text);
+        let summary = body.lines().next().unwrap_or("").trim().to_string();
+        let parts = body
+            .split("\n\n")
+            .map(|p| if p.starts_with("--- ") { Part::Code(crate::code::highlight_patch(p)) } else { Part::Text(p.to_string()) })
+            .collect();
+        let mut s = Shape::plain(c.agent.clone(), c.agent.clone(), summary, parts, options.clone(), options, Enter::Answer);
+        s.words = false;
+        return s;
+    };
+    let parts = l
+        .body
+        .iter()
+        .map(|p| match p {
+            Para::Text(t) => Part::Text(t.clone()),
+            Para::Dim(t) => Part::Reason(t.clone()),
+            Para::Diff(t) => Part::Code(crate::code::highlight_patch(t)),
         })
         .collect();
-    Shape {
-        title: format!("{} · setup", c.agent),
-        who: c.agent.clone(),
-        summary,
-        parts,
-        short: options.clone(),
-        options,
-        enter: Enter::Answer,
-    }
+    let mut s = Shape::plain(l.title.clone(), c.agent.clone(), l.row.clone(), parts, l.options.clone(), l.options.clone(), Enter::Answer);
+    s.note = l.row_note.clone();
+    s.meta = Some(l.meta.clone()).filter(|m| !m.is_empty());
+    s.tab = Some(l.tab.clone()).filter(|t| !t.is_empty());
+    s.right = l.right;
+    s.words = false;
+    s.keys = l.keys.clone();
+    s
 }
 
 /// The strip's labels of `options`: their first words when those differ

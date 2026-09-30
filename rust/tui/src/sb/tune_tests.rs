@@ -111,8 +111,10 @@ fn the_repo_part_offers_a_starter_agents_md() {
     assert_eq!(f.checks.len(), 2, "{f:?}");
     let root = repo_root(&repo, Duration::from_secs(2)).unwrap();
     assert_eq!(f.offers, vec![Offer::Agents { file: root.join("AGENTS.md") }]);
-    assert_eq!(f.summary(), "tuning · 2 checks · 1 fine, 1 thing to offer");
-    assert_eq!(f.line(), "1 small change would help. it's in your cards, whenever you want.");
+    assert_eq!(f.summary(), "checked 2 things · 1 fine · 1 i can fix");
+    assert_eq!(f.line(), "1 small fix would help. it waits in your inbox with the exact change. yes or no, whenever you want.");
+    // the ask names these very checks
+    assert_eq!(subjects(Scope::Repo, true), ["git", "an AGENTS.md"]);
     let d = draft(&facts(&repo));
     for s in ["notes for the agents working on shop.", "- `npm run build`", "- `npm run test`", "- `make lint`", ".github/workflows/ci.yml", "\"cart: faster checkout\""] {
         assert!(d.contains(s), "{s}\n{d}");
@@ -141,8 +143,16 @@ fn the_summary_and_main_s_line() {
     let c = |m| Check { mark: m, text: String::new() };
     let mut f = Found { checks: vec![c(Mark::Fine), c(Mark::Fine), c(Mark::Offer), c(Mark::Offer), c(Mark::Note)], offers: Vec::new() };
     f.offers = vec![Offer::Key { provider: "m".into(), env: "E".into() }; 2];
-    assert_eq!(f.summary(), "tuning · 5 checks · 2 fine, 2 things to offer, 1 note");
-    assert_eq!(f.line(), "2 small changes would help. they're in your cards, whenever you want.");
+    assert_eq!(f.summary(), "checked 5 things · 2 fine · 2 i can fix · 1 note");
+    assert_eq!(f.line(), "2 small fixes would help. each one waits in your inbox with the exact change. yes or no to each, whenever you want.");
+    let fine = Found { checks: vec![c(Mark::Fine); 7], offers: Vec::new() };
+    assert_eq!(fine.summary(), "checked 7 things · all fine");
+    // the ask counts the checks that run: 8 on macOS, 7 elsewhere
+    assert_eq!(
+        subjects(Scope::All, true),
+        ["your terminal", "its keys", "colors", "glyphs", "git", "gh", "an AGENTS.md", "the connectors key"]
+    );
+    assert_eq!(subjects(Scope::All, false).len(), 7);
     f.offers.clear();
     assert_eq!(f.line(), "all good here. nothing to change.");
     assert_eq!(unfence("```markdown\n# A\n- b\n```"), "# A\n- b\n");

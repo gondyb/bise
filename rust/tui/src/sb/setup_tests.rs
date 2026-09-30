@@ -79,11 +79,11 @@ fn the_card_waits_in_the_strip_and_not_now_leaves_one_row() {
     let h = tmp("ask");
     let v = vars(&h, &[]);
     let mut app = launched(&h, v.clone());
-    assert_eq!(setup_cards(&app), vec!["want me to tune bise for your terminal and repo? about a minute"]);
+    assert_eq!(setup_cards(&app), vec!["can i set bise up for your terminal and this repo?"]);
     assert!(!app.sb.card.open, "never opened for you");
     let rows = draw(&mut app, 120, 30);
-    let strip = rows.iter().find(|r| r.contains("want me to tune bise")).unwrap_or_else(|| panic!("{}", rows.join("\n")));
-    assert!(strip.contains("? main") && strip.contains("1 yes") && strip.contains("2 not now"), "{strip}");
+    let strip = rows.iter().find(|r| r.contains("2 not now")).unwrap_or_else(|| panic!("{}", rows.join("\n")));
+    assert!(strip.contains("? main") && strip.contains("1 yes, check") && strip.contains("2 not now"), "{strip}");
     assert!(!rows.iter().any(|r| r.contains(&format!("#{LOCAL}"))), "no hub number");
     // the empty thread stays with the card waiting in the strip
     assert!(rows.iter().any(|r| r.contains(super::super::panel::FIRST_RUN[1])), "{}", rows.join("\n"));
@@ -91,17 +91,33 @@ fn the_card_waits_in_the_strip_and_not_now_leaves_one_row() {
     app.sb.cards.retain(|c| !is_local(c.id));
     put_back(&mut app.sb);
     assert_eq!(setup_cards(&app).len(), 1);
-    // 2 in the card view: not now
+    // opened: what set up does, the checks counted, nothing picked
     press(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL);
     press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    let rows = draw(&mut app, 140, 40).join("\n");
+    let n = tune::subjects(Scope::All, cfg!(target_os = "macos")).len();
+    for s in [
+        "? can i set bise up for your terminal and this repo?",
+        "about a minute",
+        "set up bise",
+        &format!("i'll check {n} things: your terminal, "),
+        "the connectors key.",
+        "checking changes nothing.",
+        "  1 yes, check",
+    ] {
+        assert!(rows.contains(s), "{s}: {rows}");
+    }
+    assert!(!rows.contains('▸'), "nothing picked: {rows}");
+    assert!(rows.contains("↑↓ choose   1-2 pick   esc back"), "{rows}");
+    // 2: not now
     press(&mut app, KeyCode::Char('2'), KeyModifiers::NONE);
     assert!(setup_cards(&app).is_empty());
-    assert_eq!(infos(&app), vec!["– not now · /setup any time"]);
+    assert_eq!(infos(&app), vec!["– not now · type /setup whenever you want"]);
     assert_eq!(due(&v, None), None, "never asked again");
     // one dim row, no note glyph; the empty thread stays under it
     let rows = draw(&mut app, 120, 30);
     let at = |n: &str| rows.iter().position(|r| r.contains(n));
-    let not_now = at("– not now · /setup any time").unwrap_or_else(|| panic!("{}", rows.join("\n")));
+    let not_now = at("– not now · type /setup whenever you want").unwrap_or_else(|| panic!("{}", rows.join("\n")));
     assert!(!rows[not_now].contains("· – not now"), "{}", rows[not_now]);
     assert!(at("what's on your mind?").is_some_and(|y| y > not_now + 1), "{}", rows.join("\n"));
     // the repo part only, for a user who answered, in a new repo
@@ -111,7 +127,7 @@ fn the_card_waits_in_the_strip_and_not_now_leaves_one_row() {
     c.arg("-C").arg(&repo).args(["init", "-q"]);
     tune::output(c, Duration::from_secs(5)).unwrap();
     let app = launched(&repo, v.clone());
-    assert_eq!(setup_cards(&app), vec!["new repo: want me to tune bise for it? about a minute"]);
+    assert_eq!(setup_cards(&app), vec!["new repo: can i set bise up for it?"]);
 }
 
 #[test]
@@ -122,7 +138,7 @@ fn close_is_not_now_and_nothing_runs() {
     let id = app.sb.cards.iter().find(|c| is_local(c.id)).unwrap().id;
     super::super::cards::open_view(&mut app, Some(id));
     press(&mut app, KeyCode::Char('x'), KeyModifiers::CONTROL);
-    assert_eq!(infos(&app), vec!["– not now · /setup any time"]);
+    assert_eq!(infos(&app), vec!["– not now · type /setup whenever you want"]);
 }
 
 /// The checks as a fake: a Ghostty config to change, the key, then the
@@ -163,40 +179,69 @@ fn yes_folds_the_checks_and_brings_one_card_per_change() {
     assert_eq!(
         infos(&app),
         vec![
-            "▸ tuning · 5 checks · 1 fine, 3 things to offer, 1 note",
-            "3 small changes would help. they're in your cards, whenever you want.",
+            "▸ checked 5 things · 1 fine · 3 i can fix · 1 note",
+            "3 small fixes would help. each one waits in your inbox with the exact change. yes or no to each, whenever you want.",
         ]
     );
     assert!(!app.sb.card.open, "the offers are not opened for you");
     assert_eq!(
         setup_cards(&app),
         vec![
-            "let cmd+v and cmd+f reach me · ghostty config · 2 lines",
-            "give your agents every tool · optional",
-            "a starter AGENTS.md · new file · 3 lines",
+            "let cmd+v and cmd+f reach bise",
+            "turn on web search and the other connectors",
+            "write a starter AGENTS.md",
         ]
     );
+    // the strip: each row, its faint end when it fits in the reading
+    // column (not the Ghostty one's), the key's action
+    let rows = draw(&mut app, 160, 40);
+    let keys = rows.iter().find(|r| r.contains("reach bise")).unwrap();
+    assert!(keys.contains("? main · let cmd+v and cmd+f reach bise") && keys.contains("1 yes, add them  2 no"), "{keys}");
+    let agents = rows.iter().find(|r| r.contains("write a starter") && r.contains("1 yes, write it")).unwrap();
+    assert!(agents.contains("? main · write a starter AGENTS.md new file · 3 lines"), "{agents}");
+    let key = rows.iter().find(|r| r.contains("turn on web search")).unwrap();
+    assert!(key.contains("⏎ paste it  ×"), "{key}");
     // the fold opens on every check
     let fold = app.events.iter().position(|e| matches!(e, Ev::Fold { .. })).unwrap();
     assert!(crate::feed::toggle_event(&mut app.events, &mut app.cache, fold));
     let rows = draw(&mut app, 120, 40).join("\n");
-    assert!(rows.contains("▾ tuning") && rows.contains("✓ ghostty 1.3.1") && rows.contains("– gh isn't logged in"), "{rows}");
+    assert!(rows.contains("▾ checked 5 things") && rows.contains("✓ ghostty 1.3.1") && rows.contains("– gh isn't logged in"), "{rows}");
     // the ghostty card: the exact diff inside; nothing written before a yes
     let ids: Vec<u64> = app.sb.cards.iter().filter(|c| is_local(c.id)).map(|c| c.id).collect();
     super::super::cards::open_view(&mut app, Some(ids[0]));
     let rows = draw(&mut app, 120, 40).join("\n");
     assert!(rows.contains("+keybind = performable:super+v=paste_from_clipboard") && rows.contains("config.bise-backup"), "{rows}");
+    for s in [
+        "? let cmd+v and cmd+f reach bise",
+        "Ghostty config · +2 lines",
+        "Ghostty keys",
+        "AGENTS.md",
+        "connectors",
+        "right now Ghostty keeps these two keys for itself.",
+        "i'd add 2 lines to ~/ghostty/config:",
+        "i copy the file to config.bise-backup first.",
+        "  1 yes, add them",
+    ] {
+        assert!(rows.contains(s), "{s}: {rows}");
+    }
+    press(&mut app, KeyCode::Down, KeyModifiers::NONE);
+    let bar: String = crate::keybar::line(&app, 200).spans.iter().map(|s| s.content.as_ref()).collect();
+    assert_eq!(bar, "↑↓ choose   ⏎ pick “yes, add them”   ←→ other items   esc back");
     assert_eq!(std::fs::read_to_string(h.join("ghostty/config")).unwrap(), "font-size = 14\n");
     press(&mut app, KeyCode::Char('1'), KeyModifiers::NONE);
     assert!(std::fs::read_to_string(h.join("ghostty/config")).unwrap().ends_with("keybind = super+f=unbind\n"));
     assert_eq!(std::fs::read_to_string(h.join("ghostty/config.bise-backup")).unwrap(), "font-size = 14\n");
     let last = infos(&app).pop().unwrap();
-    assert!(last.starts_with("✓ ghostty config · 2 lines added, the old one in ~/ghostty/config.bise-backup") && last.contains("reload"), "{last}");
+    assert_eq!(last, "✓ Ghostty config · 2 lines added, the old one in ~/ghostty/config.bise-backup · reload Ghostty (cmd+shift+,) to use them");
     // the view moved on to the key card: typed text is masked, never
     // in the history, saved in auth.json
     let key_id = ids[1];
     assert_eq!(app.sb.current_card().map(|c| c.id), Some(key_id));
     assert!(masked(&app));
+    let bar: String = crate::keybar::line(&app, 200).spans.iter().map(|s| s.content.as_ref()).collect();
+    assert_eq!(bar, "paste your key   ⏎ save   ctrl+x not now   esc back");
+    let rows = draw(&mut app, 120, 40).join("\n");
+    assert!(rows.contains("it goes in ~/.bise/auth.json") && rows.contains("no key yet? console.mistral.ai"), "{rows}");
     app.ed.insert("sk-test-123");
     let rows = draw(&mut app, 120, 40).join("\n");
     assert!(!rows.contains("sk-test-123") && rows.contains("•••••••••••"), "{rows}");
@@ -204,11 +249,11 @@ fn yes_folds_the_checks_and_brings_one_card_per_change() {
     assert!(!app.history.iter().any(|h| h.contains("sk-test")));
     let auth = std::fs::read_to_string(h.join(".bise/auth.json")).unwrap();
     assert!(auth.contains("sk-test-123"), "{auth}");
-    assert!(infos(&app).pop().unwrap().starts_with("✓ MISTRAL_API_KEY saved in ~/.bise/auth.json"));
+    assert_eq!(infos(&app).pop().unwrap(), "✓ MISTRAL_API_KEY saved · the agents you start from now on can search the web");
     // AGENTS.md: no
     press(&mut app, KeyCode::Char('2'), KeyModifiers::NONE);
     assert!(!h.join("AGENTS.md").exists());
-    assert_eq!(infos(&app).pop().unwrap(), "– no AGENTS.md · /setup any time");
+    assert_eq!(infos(&app).pop().unwrap(), "– no AGENTS.md · type /setup whenever you want");
     assert!(setup_cards(&app).is_empty() && !app.sb.card.open);
 }
 
@@ -225,7 +270,7 @@ fn a_paste_that_is_not_a_key_keeps_the_card() {
     assert!(!h.join(".bise/auth.json").exists());
     // ctrl+x: no, nothing saved
     press(&mut app, KeyCode::Char('x'), KeyModifiers::CONTROL);
-    assert_eq!(infos(&app).pop().unwrap(), "– no MISTRAL_API_KEY · /setup any time");
+    assert_eq!(infos(&app).pop().unwrap(), "– no connectors key · type /setup whenever you want");
 }
 
 #[test]
@@ -254,5 +299,5 @@ fn ascii_marks() {
     super::super::cards::open_view(&mut app, Some(id));
     press(&mut app, KeyCode::Char('2'), KeyModifiers::NONE);
     crate::theme::set_ascii_for_tests(false);
-    assert_eq!(infos(&app), vec!["- not now · /setup any time"]);
+    assert_eq!(infos(&app), vec!["- not now · type /setup whenever you want"]);
 }

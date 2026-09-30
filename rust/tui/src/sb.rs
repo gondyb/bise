@@ -566,6 +566,7 @@ fn apply_state(app: &mut App, v: &Value) {
                     age_ms: x.get("age_ms").and_then(|i| i.as_u64()).unwrap_or(0),
                     seen_at: std::time::Instant::now(),
                     note: s(x, "note"),
+                    look: None,
                 })
                 .collect()
         })

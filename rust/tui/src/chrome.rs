@@ -379,7 +379,7 @@ fn divider_rule(buf: &mut Buffer, area: Rect, cols: Cols, y: u16) -> bool {
 }
 
 /// The divider with a label of its own and no state (the card view:
-/// `you → ? perf's card · your answer`); returns (no state, the label).
+/// `you → ? perf · your answer`); returns (no state, the label).
 pub(crate) fn draw_divider_label(buf: &mut Buffer, area: Rect, cols: Cols, y: u16, label: Vec<Span<'static>>) -> (Rect, Rect) {
     let area = area.intersection(buf.area);
     if !divider_rule(buf, area, cols, y) {
