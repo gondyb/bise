@@ -2,7 +2,7 @@
 
 screen only (unless you decide to show your face 5 s at the start). no voice-over. captions burned in, lowercase. Ghostty, dark theme, big font (18-20 pt), window ~1600×1000.
 
-prep: a demo repo with a real mobile signup page, a sad 404 and a csv export (to verify: which repo; main can prepare one). a fresh bise thread. do 2-3 takes, keep the calmest.
+prep: a demo repo with a real mobile signup page, a sad 404 and a csv export (open: Gabriel picks a toy repo like 'acme' from the landing demos, or a real one). a fresh bise thread. do 2-3 takes, keep the calmest.
 
 | time | on screen | caption |
 |---|---|---|

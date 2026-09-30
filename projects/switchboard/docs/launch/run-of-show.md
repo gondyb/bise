@@ -13,6 +13,7 @@ latest release: v2026.9.30-4. repo gvergnaud/bise: private until Gabriel's click
 | 5 | X handle (site links x.com/GabrielVergnaud) | open |
 | 6 | who you actually know in outreach.md | open |
 | 7 | you on camera in the video? French posts beyond LinkedIn thu? | open |
+| 8 | demo repo for the video: a toy repo (like 'acme' from the landing demos) or a real one? none exists yet | open |
 
 ## timeline
 
@@ -43,7 +44,7 @@ every line must be yes. one no = we slip the posts, we don't post around it.
 - [ ] https://github.com/gvergnaud/bise loads logged out (no 404)
 - [ ] `curl -fsSL bise.dev/install | sh` works on a clean mac, no gh token, installs v2026.9.30-4 (or later)
 - [ ] onboarding with a real key → first message → main answers → one agent starts and finishes
-- [ ] `bise doctor` is clean on that machine (to verify: the command exists as named in the launch plan)
+- [ ] `bise doctor` on that machine: ✓ on macOS, bise, signature, home, git, config, keys, model, disk. no `!` line except known dev-only ones (on Gabriel's dev mac today: PATH and hubs warnings, both dev-tree only)
 - [ ] README renders on GitHub (animated SVGs load), install line is the same everywhere
 - [ ] README, site FAQ, HN comment all say: macOS only, no approvals yet, bring your own key, pre-release
 - [ ] bise.dev: no `X-Robots-Tag: noindex` (`curl -sI https://bise.dev | grep -i robots` prints nothing)
