@@ -256,7 +256,6 @@ const V = {
       s.kx += .3;
       if (s.kx > g.cols + 2 && !s.b.length) { s.kx = -2; s.last = -99; }
       const kx = Math.floor(s.kx);
-      THREAD(g, Y, t, s.kx);
       // it sends agents out from where it stands. a landing spot must not share its label's room with another one
       const lb = LABEL(NAMES[Math.floor(rnd(0, NAMES.length))]), [name, done] = Array.isArray(lb) ? lb : [lb, lb], ko = g.ko;
       if (s.b.length < 3 && s.kx - s.last > 14 && kx > 2 && Math.random() < .02) {
@@ -284,6 +283,9 @@ const V = {
         b.head = b.p < b.L ? pts[pts.length - 1] : null;
         return true;
       });
+      // the thread goes over the arcs' ends and the seeds, so it never shows holes
+      for (let x = 0; x < g.cols; x++) g.put(x, Y, " ");
+      THREAD(g, Y, t, s.kx);
       // marks, then names: a name tries right, left, above, below its mark, and stays hidden if all four are taken
       const used = [];
       const place = (x, y, name) => {
