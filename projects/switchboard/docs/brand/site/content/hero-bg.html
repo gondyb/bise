@@ -33,7 +33,7 @@
 <body>
 <div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
 
-<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.<div class="lbls">labels: <button data-l="verb" class="on">throwing confetti → ✓ confetti</button><button data-l="feat(x)">feat(confetti)</button><button data-l="feat/x">feat/confetti</button><button data-l="x">confetti</button></div><div class="lbls thr">thread: <button data-t="wake" class="on">wake</button><button data-t="pulses">pulses</button><button data-t="waves">waves</button><button data-t="tide">tide</button><button data-t="swell">swell</button><button data-t="ripple">ripple</button><button data-t="trail">trail</button><button data-t="shimmer">shimmer</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.<div class="lbls thr">thread: <button data-t="wake" class="on">wake</button><button data-t="pulses">pulses</button><button data-t="waves">waves</button><button data-t="tide">tide</button><button data-t="swell">swell</button><button data-t="ripple">ripple</button><button data-t="trail">trail</button><button data-t="shimmer">shimmer</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
 <section class="v" data-v="seeds"><div class="tag"><b>7 · seeds</b> <span class="pick">new · mix of 5 and 6</span><br>the dandelion sky, plus one thread. now and then an agent lifts off the thread like a seed (∿ name), floats a while, and lands further along with a ✓. the thread's :* keeps walking.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
@@ -55,7 +55,6 @@
 
 <script>
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-document.querySelectorAll(".lbls:not(.thr) button").forEach(b => b.onclick = () => { LABEL = LABELS[b.dataset.l]; document.querySelectorAll(".lbls:not(.thr) button").forEach(o => o.classList.toggle("on", o === b)); });
 document.querySelectorAll(".thr button").forEach(b => b.onclick = () => { THREAD = THREADS[b.dataset.t]; document.querySelectorAll(".thr button").forEach(o => o.classList.toggle("on", o === b)); });
 document.getElementById("th").onclick = e => { const h = document.documentElement, d = h.dataset.theme === "dark"; h.dataset.theme = d ? "light" : "dark"; e.target.textContent = d ? "dark" : "light"; };
 const hash = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
@@ -287,7 +286,9 @@ const V = {
   },
   branch(s) {
     s.p = []; s.b = []; s.kx = -2; s.flash = 0; s.last = -99;
-    const NAMES = ["dark-mode", "confetti", "reactions", "gif-picker", "drag-drop", "playlists", "stickers", "leaderboard", "konami-code", "typing-dots", "voice-notes", "party-mode"];
+    const NAMES = ["feat: throw confetti", "feat: dark mode", "feat: gif picker", "feat: drag & drop", "feat: party mode", "feat: hide a konami code",
+      "feat: typing dots", "feat: voice notes", "feat: emoji reactions", "fix: emoji in csv export", "fix: search crème brûlée", "fix: sad 404 page",
+      "fix: dark mode flash", "perf: faster signup", "style: rounder buttons", "feat: leaderboard"];
     return (g, t) => {
       const Y = Math.round(g.rows * .8);
       // a fuller dandelion sky: seeded at once over the whole hero, then fed from the bottom and the left edge
@@ -305,7 +306,7 @@ const V = {
       // it sends agents out from where it stands. a landing spot must not share its label's room with another one
       // never the same feature twice at once (out, or back and waiting for the kiss)
       const pool = NAMES.filter(n => !s.b.some(o => o.key === n)), key = pool[Math.floor(rnd(0, pool.length))];
-      const lb = LABEL(key), [name, done] = Array.isArray(lb) ? lb : [lb, lb], ko = g.ko;
+      const name = key, done = key, ko = g.ko;
       if (s.b.length < 6 && s.kx - s.last > (s.gap || 16) && kx > 2) {
         const free = (L) => { const a = kx + 1 + L, z = a + 2 + done.length; return a < g.cols - 3 && s.b.every(o => Math.abs(o.xs + o.L - a) > 7); };
         let L = 0; for (let k = 0; k < 12 && !L; k++) { const c = Math.floor(rnd(30 - 18 * q, 64 - 42 * q)); if (free(c)) L = c; }
@@ -341,10 +342,10 @@ const V = {
       // the thread goes over the arcs' ends and the seeds, so it never shows holes
       for (let x = 0; x < g.cols; x++) g.put(x, Y, " ");
       THREAD(g, Y, t, s.kx);
-      // marks, then names: a name tries right, left, above, below its mark, and stays hidden if all four are taken
+      // marks, then names: a name tries right, left, then the rows around its mark, and stays hidden only if all are taken
       const used = [];
       const place = (x, y, name) => {
-        for (const [cx, cy] of [[x + 2, y], [x - name.length - 1, y], [x + 1, y - 1], [x + 1, y + 1]]) {
+        for (const [cx, cy] of [[x + 2, y], [x - name.length - 1, y], [x + 1, y - 1], [x + 1, y + 1], [x - name.length, y - 1], [x - name.length, y + 1], [x + 1, y - 2], [x + 1, y + 2]]) {
           const a = Math.round(cx), z = a + name.length - 1, r = Math.round(cy);
           if (a < 0 || z >= g.cols || r < 0 || r >= g.rows || r === Y) continue;
           if (a <= g.ko.x1 + 1 && z >= g.ko.x0 - 1 && r >= g.ko.y0 && r <= g.ko.y1) continue;
