@@ -316,6 +316,14 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
             }
         }
         MouseEventKind::Down(MouseButton::Left) => {
+            // BISE-284: the first-run text's `show me what you can do`
+            // fills the composer (selected), it does not send
+            if let Some(r) = app.demo_rect {
+                if r.contains((m.column, m.row).into()) {
+                    sb::fill_demo(app);
+                    return;
+                }
+            }
             if let Some(r) = app.bottom_bar_rect {
                 let inside = m.column >= r.x
                     && m.column < r.x + r.width

@@ -323,6 +323,7 @@ a symbol row (designer).
 
   try: "show me what you can do"
   ```
+  The quoted sentence is a link (BISE-284): under the mouse, the hand and an accent underline; a click puts it in the composer, selected (typing replaces it, ⏎ sends it, an arrow or esc keeps it), and sends nothing. While the composer holds it, the last line says `⏎ try it · or just type your own` (`⏎` in the accent, bold; the rest dim).
 
 **The reading column** (user request, marketing 82f1742). The history is a 91-column column (3 for the lead + 88 of text; widened from 79 by Gabriel, 2026-09-29: +15%), centered in the space left of the panel: F = terminal width − panel (30) − 1; x0 = floor((F − 91) / 2) when F ≥ 95, else column 1. Tables and code start at x0 and may run to 103 columns (capped at F − 1), extending right, never re-centered. The status row, the queue, the images strip, the composer block and its hints use the same x0 and width (hints right-aligned to x0 + 91). The agents panel stays flush right. Under 70 columns the panel hides and F = width.
 
@@ -894,7 +895,9 @@ one in accent.
    always here.` / `try: "show me what you can do"`, dim,
    at the feed's indent, at 2/5 of the history's free rows (under 12 rows:
    on top, after one blank row); it goes with the first message. No
-   first-task suggestion.
+   first-task suggestion. The first open after the first run (not after
+   `/welcome`, not the key step alone) starts with `show me what you can
+   do` in the composer, selected: one ⏎ starts the demo (BISE-284).
    **Tune bise: one quiet item** (BISE-245; its words take you by the hand,
    BISE-249, designer's copy a2b7eea, screens `setup, by the hand · 1-6`,
    user: « les cards d'onboarding devraient plus expliquer le concept et

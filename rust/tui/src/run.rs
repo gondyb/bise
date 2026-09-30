@@ -179,6 +179,8 @@ pub(crate) fn run_tui(app: &mut App) -> io::Result<()> {
     let mut terminal = init_terminal()?;
     crash::set_ui_thread(true);
     // BISE-60: the first launch of the switchboard UI plays the onboarding
+    // (BISE-284: at its end, main's composer holds `show me what you can do`)
+    app.demo_after_onboarding = crate::onboarding::due(&|k| std::env::var(k).ok().filter(|v| !v.is_empty()));
     crate::onboarding::request_if_due(app);
     // BISE-245: the setup card, when due, at the first hello
     crate::sb::setup::arm(app);
@@ -397,6 +399,10 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
             match shown {
                 Ok(r) => r?,
                 Err(c) => report_crash(app, &c, "the onboarding"),
+            }
+            // BISE-284: the first open of the thread after the first run
+            if std::mem::take(&mut app.demo_after_onboarding) {
+                crate::sb::prefill_demo(app);
             }
             continue;
         }

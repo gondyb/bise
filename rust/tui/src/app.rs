@@ -47,6 +47,12 @@ pub(crate) struct App {
     pub(crate) unseen: usize,
     pub(crate) tail_visible: bool,
     pub(crate) bottom_bar_rect: Option<ratatui::layout::Rect>,
+    /// the first-run text's `show me what you can do`, where it was
+    /// drawn: a click fills the composer with it (BISE-284)
+    pub(crate) demo_rect: Option<ratatui::layout::Rect>,
+    /// this launch plays the first-run onboarding: at its end, main's
+    /// composer opens with `show me what you can do` (BISE-284)
+    pub(crate) demo_after_onboarding: bool,
     /// ctrl, option or cmd held alone: the key hints (ctrlhint.rs)
     pub(crate) hold: crate::ctrlhint::Hold,
     // wrapped rows per event, keyed by event index (the codex layout
@@ -220,6 +226,8 @@ impl App {
             unseen: 0,
             tail_visible: true,
             bottom_bar_rect: None,
+            demo_rect: None,
+            demo_after_onboarding: false,
             hold: Default::default(),
             cache: Vec::new(),
             win: Default::default(),

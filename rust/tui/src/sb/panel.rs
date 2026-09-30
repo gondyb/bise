@@ -996,6 +996,38 @@ pub(crate) const FIRST_RUN: [&str; 3] = [
     "try: \"show me what you can do\"",
 ];
 
+/// The first-run text's suggestion (BISE-284): a click on it fills the
+/// composer, and the first open after the onboarding starts with it.
+pub(crate) const DEMO: &str = "show me what you can do";
+
+/// What the first-run text's last line says while the composer holds
+/// [`DEMO`] (designer, BISE-284): the key, then the words.
+pub(crate) const DEMO_READY: (&str, &str) = ("⏎", " try it · or just type your own");
+
+/// The composer holds `show me what you can do`, selected: typing
+/// replaces it, enter sends it, an arrow or esc keeps it (BISE-284).
+pub(crate) fn fill_demo(app: &mut App) {
+    app.ed.set(DEMO, DEMO.chars().count());
+    app.ed.select_all();
+    app.feed_sel = None;
+}
+
+/// The first open of main's thread after the first-run onboarding: the
+/// composer starts with [`DEMO`] (BISE-284), when the first-run text
+/// shows and nothing is typed yet.
+pub(crate) fn prefill_demo(app: &mut App) {
+    let said = app.events.iter().any(|e| matches!(e, crate::Ev::You(..)));
+    if app.sb.first_run().is_some() && app.ed.is_empty() && !said {
+        fill_demo(app);
+    }
+}
+
+/// The composer holds [`DEMO`] as it came: the first-run text says
+/// `⏎ try it` (BISE-284).
+pub(crate) fn demo_ready(app: &App) -> bool {
+    app.ed.text == DEMO
+}
+
 impl Sb {
     /// No agents yet and main in view: the first-run text, which shows
     /// until your first message (the setup card may wait in the strip,
@@ -1889,6 +1921,113 @@ mod chrome_tests {
         bench::add_agent(&mut app, "auth-fix", "the safari login");
         let rows = draw(&mut app, 120, 24);
         assert!(!rows.iter().any(|r| r.contains(FIRST_RUN[1])));
+    }
+
+    /// The styled cells of a draw (the underline, the colors).
+    fn cells(app: &mut App, w: u16, h: u16) -> ratatui::buffer::Buffer {
+        let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+        term.draw(|f| super::super::draw_sb(app, f)).unwrap();
+        term.backend().buffer().clone()
+    }
+
+    fn mouse(app: &mut App, kind: crossterm::event::MouseEventKind, column: u16, row: u16) {
+        let m = crossterm::event::MouseEvent { kind, column, row, modifiers: crossterm::event::KeyModifiers::NONE };
+        crate::input::on_mouse(app, &m, 0);
+    }
+
+    fn type_key(app: &mut App, code: crossterm::event::KeyCode) {
+        crate::input::on_key(app, &crossterm::event::KeyEvent::new(code, crossterm::event::KeyModifiers::NONE));
+    }
+
+    /// BISE-284: the first-run text's `show me what you can do` is a
+    /// link: the hand and an accent underline under the mouse; a click
+    /// fills the composer with it, selected, and sends nothing; `try:`
+    /// is no link.
+    #[test]
+    fn a_click_on_the_suggestion_fills_the_composer() {
+        use crossterm::event::{MouseButton, MouseEventKind};
+        use crate::pointer::{at, Shape};
+        let mut app = with_main();
+        assert_eq!(FIRST_RUN[2], format!("try: \"{DEMO}\""));
+        let rows = draw(&mut app, 120, 24);
+        let y = rows.iter().position(|r| r.contains(FIRST_RUN[2])).unwrap() as u16;
+        let row = &rows[y as usize];
+        let x = row[..row.find(DEMO).unwrap()].chars().count() as u16;
+        let r = app.demo_rect.expect("the suggestion's place");
+        assert_eq!((r.x, r.y, r.width, r.height), (x, y, DEMO.len() as u16, 1));
+        assert_eq!(at(x, y), Shape::Pointer);
+        assert_eq!(at(x + DEMO.len() as u16 - 1, y), Shape::Pointer);
+        assert_eq!(at(x - 3, y), Shape::Default, "`try:` is no link");
+        assert_eq!(at(x + DEMO.len() as u16, y), Shape::Default, "the closing quote is no link");
+        // at rest: dim, no underline; under the mouse: accent, underlined
+        let b = cells(&mut app, 120, 24);
+        assert_eq!(b[(x, y)].fg, crate::theme::dim());
+        assert!(!b[(x, y)].modifier.contains(Modifier::UNDERLINED));
+        mouse(&mut app, MouseEventKind::Moved, x + 2, y);
+        let b = cells(&mut app, 120, 24);
+        assert_eq!(b[(x, y)].fg, crate::theme::accent());
+        assert!(b[(x, y)].modifier.contains(Modifier::UNDERLINED));
+        assert!(!b[(x - 3, y)].modifier.contains(Modifier::UNDERLINED), "only the sentence");
+        // a click on `try:`: nothing
+        mouse(&mut app, MouseEventKind::Down(MouseButton::Left), x - 4, y);
+        mouse(&mut app, MouseEventKind::Up(MouseButton::Left), x - 4, y);
+        assert_eq!(app.ed.text, "");
+        // a click on the sentence: the composer holds it, all selected
+        mouse(&mut app, MouseEventKind::Down(MouseButton::Left), x + 5, y);
+        mouse(&mut app, MouseEventKind::Up(MouseButton::Left), x + 5, y);
+        assert_eq!(app.ed.text, DEMO);
+        assert_eq!(app.ed.selection(), Some((0, DEMO.chars().count())));
+        assert!(!app.events.iter().any(|e| matches!(e, crate::Ev::You(..))), "not sent");
+        // the last line now says what enter does
+        let rows = draw(&mut app, 120, 24);
+        let ready = format!("{}{}", DEMO_READY.0, DEMO_READY.1);
+        assert_eq!(ready, "⏎ try it · or just type your own");
+        assert!(rows.iter().any(|r| r.contains(&ready)), "{}", rows.join("\n"));
+        assert!(!rows.iter().any(|r| r.contains(FIRST_RUN[2])));
+        assert!(app.demo_rect.is_none(), "no link while it says ⏎ try it");
+    }
+
+    /// BISE-284: the first open after the onboarding: the composer holds
+    /// the suggestion, selected, and the first-run text says `⏎ try it`;
+    /// a typed key replaces it and the text says `try:` again; esc keeps
+    /// it (unselected). Not in an agent, not over a draft, not once
+    /// there are agents.
+    #[test]
+    fn the_first_open_after_the_onboarding_holds_the_suggestion() {
+        use crossterm::event::KeyCode;
+        let mut app = with_main();
+        prefill_demo(&mut app);
+        assert_eq!(app.ed.text, DEMO);
+        assert_eq!(app.ed.selection(), Some((0, DEMO.chars().count())));
+        let rows = draw(&mut app, 120, 24);
+        let all = rows.join("\n");
+        let at = rows.iter().position(|r| r.contains("⏎ try it · or just type your own")).unwrap_or_else(|| panic!("{}", all));
+        assert!(rows[..at].iter().any(|r| r.contains(FIRST_RUN[0])), "{}", all);
+        assert!(rows.iter().any(|r| r.starts_with("│  │") && r.contains(DEMO)), "the composer holds it:\n{}", all);
+        let b = cells(&mut app, 120, 24);
+        let x = rows[at].find('⏎').map(|i| rows[at][..i].chars().count() as u16).unwrap();
+        assert_eq!(b[(x, at as u16)].fg, crate::theme::accent(), "the key in the accent");
+        assert_eq!(b[(x + 3, at as u16)].fg, crate::theme::dim());
+        // esc: kept, not selected
+        type_key(&mut app, KeyCode::Esc);
+        assert_eq!((app.ed.text.as_str(), app.ed.selection()), (DEMO, None));
+        // selected again, a key replaces it: back to `try:`
+        fill_demo(&mut app);
+        type_key(&mut app, KeyCode::Char('h'));
+        assert_eq!(app.ed.text, "h");
+        let rows = draw(&mut app, 120, 24);
+        assert!(rows.iter().any(|r| r.contains(FIRST_RUN[2])), "{}", rows.join("\n"));
+        // a draft stays as it is
+        prefill_demo(&mut app);
+        assert_eq!(app.ed.text, "h");
+        // not inside an agent, not once there are agents
+        let mut app = with_main();
+        bench::add_agent(&mut app, "auth-fix", "the safari login");
+        prefill_demo(&mut app);
+        assert_eq!(app.ed.text, "");
+        app.sb.focus = "auth-fix".into();
+        prefill_demo(&mut app);
+        assert_eq!(app.ed.text, "");
     }
 
     /// Inside an agent (mockup "inside an agent"): the pinned line of the

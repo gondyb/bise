@@ -160,12 +160,26 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let first_run = app.sb.first_run().filter(|_| !view);
     // it goes with your first message; rows before it (the setup's, a
     // note) stay above it
+    // the suggestion under the mouse: the place it had in the last frame
+    let demo_before = app.demo_rect.take();
+    let demo_hovered = demo_before.zip(app.pointer_at).is_some_and(|(r, (x, y))| r.contains((x, y).into()));
     if let Some(text) = first_run.filter(|_| !app.events.iter().any(|e| matches!(e, Ev::You(..)))) {
         let w = (cols.col_w as usize).saturating_sub(3).max(1);
         let mut lines: Vec<Line> = Vec::new();
-        for p in text {
+        // BISE-284: the last line on one row: its suggestion clickable
+        // (where in `lines`, from which column), or `⏎ try it` while the
+        // composer holds it
+        let mut demo_at: Option<(u16, u16)> = None;
+        for (i, p) in text.iter().enumerate() {
             if !lines.is_empty() {
                 lines.push(Line::from(""));
+            }
+            if i == text.len() - 1 {
+                if let Some((line, at)) = first_run_last(app, p, w, demo_hovered) {
+                    demo_at = at.map(|x| (lines.len() as u16, x));
+                    lines.push(line);
+                    continue;
+                }
             }
             lines.extend(wrap_words(p, w).into_iter().map(|l| Line::from(Span::styled(l, Style::default().fg(dim())))));
         }
@@ -185,6 +199,11 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         };
         if fits {
             frame.render_widget(Paragraph::new(lines), r);
+            if let Some((row, x)) = demo_at.filter(|&(row, _)| row < r.height) {
+                let demo = Rect { x: r.x + x, y: r.y + row, width: sb::DEMO.width() as u16, height: 1 }.intersection(r);
+                app.demo_rect = Some(demo);
+                crate::pointer::region(demo, crate::pointer::Shape::Pointer);
+            }
         }
     }
     // the raised pane (book §13, BISE-212): the grey fills the inside of
@@ -867,4 +886,37 @@ pub(crate) fn truncate_left(s: &str, max: usize) -> String {
         return String::new();
     }
     std::iter::once('…').chain(out.into_iter().rev()).collect()
+}
+
+/// The first-run text's last line, when it fits on one row of `w`
+/// columns (BISE-284): `try: "show me what you can do"`, the sentence
+/// underlined in the accent under the mouse, and the column where it
+/// starts; `⏎ try it · or just type your own` while the composer holds it.
+fn first_run_last(app: &App, text: &str, w: usize, hovered: bool) -> Option<(Line<'static>, Option<u16>)> {
+    let dim = Style::default().fg(dim());
+    if sb::demo_ready(app) {
+        let (key, words) = sb::DEMO_READY;
+        if key.width() + words.width() > w {
+            return None;
+        }
+        let key = Span::styled(key, Style::default().fg(accent()).add_modifier(Modifier::BOLD));
+        return Some((Line::from(vec![key, Span::styled(words, dim)]), None));
+    }
+    let at = text.find(sb::DEMO)?;
+    if text.width() > w {
+        return None;
+    }
+    let (head, tail) = (&text[..at], &text[at + sb::DEMO.len()..]);
+    let x = head.width() as u16;
+    let demo = if hovered {
+        Style::default().fg(accent()).add_modifier(Modifier::UNDERLINED)
+    } else {
+        dim
+    };
+    let line = Line::from(vec![
+        Span::styled(head.to_string(), dim),
+        Span::styled(sb::DEMO, demo),
+        Span::styled(tail.to_string(), dim),
+    ]);
+    Some((line, Some(x)))
 }

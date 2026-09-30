@@ -7,6 +7,10 @@ empty bise home (BISE_HOME) and HOME in a temp dir:
   comparison;
 - the second launch goes straight to the normal UI;
 - esc on a fresh state root skips it and marks it seen;
+- BISE-284: the thread opens with `show me what you can do` in the
+  composer and `⏎ try it · or just type your own` in the first-run text;
+  a key replaces it; a click on the suggestion puts it back (not sent);
+  the second launch opens an empty composer;
 - the one-time hints (BISE-61) of the first run: the first agent, the
   first card, the first message between agents; each one goes away when
   used or after the next message, and is marked in prefs.json.
@@ -21,7 +25,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
-from tui_tmux import tui_session, run  # noqa: E402
+from tui_tmux import tui_session, run, wait_until  # noqa: E402
 
 NORMAL = "   @ file   "  # the key bar (BISE-98/99; `ctrl+g inbox` may come before it, BISE-248)
 
@@ -44,6 +48,31 @@ def env(state_root, home):
     # the fake env's MISTRAL_API_KEY stays: the one key the step finds
     blank = " ".join("%s=" % k for k in key_envs() if k != "MISTRAL_API_KEY")
     return "BISE_HOME=%s HOME=%s %s" % (state_root, home, blank)
+
+
+DEMO = "show me what you can do"
+TRY = 'try: "%s"' % DEMO
+READY = "⏎ try it · or just type your own"
+
+
+def composer_holds(sc, text):
+    """The composer's text row (under the `you → ...` divider) is `text`."""
+    rows = sc.splitlines()
+    at_ = next(i for i, r in enumerate(rows) if "├─ you → " in r)
+    return any(r.strip("│ ") == text for r in rows[at_ + 1:at_ + 4])
+
+
+def sgr(b, x, y, end="M"):
+    """One SGR 1006 mouse report at the 0-based cell (x, y)."""
+    return "\x1b[<%d;%d;%d%s" % (b, x + 1, y + 1, end)
+
+
+def at(sc, text):
+    """The 0-based cell where `text` starts on the screen."""
+    for y, r in enumerate(sc.splitlines()):
+        if text in r:
+            return r.find(text), y
+    raise AssertionError("no %r on screen:\n%s" % (text, sc))
 
 
 def prefs(root):
@@ -109,6 +138,23 @@ def main():
         t.keys("x")
         sc = t.wait(NORMAL)
         shot("6-first-run", sc)
+        # BISE-284: the composer holds the suggestion, one enter away
+        sc = t.wait(READY)
+        assert composer_holds(sc, DEMO) and TRY not in sc, sc
+        # a key replaces it: the first-run text says `try:` again
+        t.typed("h")
+        sc = t.wait(TRY)
+        assert composer_holds(sc, "h") and READY not in sc, sc
+        t.keys("BSpace")
+        wait_until(lambda: composer_holds(t.screen(), "what's on your mind?"), 10,
+                   lambda: "the placeholder: empty\n" + t.screen())
+        sc = t.screen()
+        # a click on the suggestion fills the composer, sends nothing
+        x, y = at(sc, DEMO)
+        t.typed(sgr(0, x + 3, y) + sgr(0, x + 3, y, "m"))
+        sc = t.wait(READY)
+        assert composer_holds(sc, DEMO), sc
+        assert "you → main" in sc and "│ you " not in sc, sc
         # BISE-92: bise paints its ground on every cell (dark here: tmux gives
         # no OSC 11 answer): the capture with colors holds the ground
         colors = t.screen(colors=True)
@@ -150,6 +196,7 @@ def main():
         sc = t.screen()
         assert "can i set bise up" not in sc, sc   # asked once per user
         assert "any key ↵" not in sc and "hi, i'm" not in sc, sc
+        assert READY not in sc and not composer_holds(sc, DEMO), sc   # BISE-284: the first open only
         # esc skips on a fresh root, and marks it seen
         root2 = os.path.join(E.tmp, "state-root-2")
         t.start(120, 34, env(root2, home))

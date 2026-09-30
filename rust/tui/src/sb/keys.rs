@@ -160,6 +160,12 @@ pub(crate) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
                 sb.preview = false;
                 return true;
             }
+            if app.ed.selection().is_some() {
+                // a selection in the composer goes first, the text stays
+                // (BISE-284: the first run's `show me what you can do`)
+                app.ed.anchor = None;
+                return true;
+            }
             if !empty {
                 // the draft goes to the history (Up brings it back)
                 let d = app.ed.take();
