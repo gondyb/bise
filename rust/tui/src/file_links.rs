@@ -181,9 +181,8 @@ pub(crate) fn bare_at(cs: &[char], i: usize) -> Option<(usize, String)> {
     while end < cs.len() && !ends_path(cs[end]) {
         end += 1;
     }
-    while end > i && matches!(cs[end - 1], '.' | ':' | '!' | '?') {
-        end -= 1;
-    }
+    // trailing punctuation stays out, as after a url (BISE-287)
+    let end = crate::links::trim_end(cs, i, end);
     if end == i {
         return None;
     }

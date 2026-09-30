@@ -35,7 +35,8 @@ the injected <bise_state> block is not one):
   byte for byte.
 
 A key (Authorization, x-api-key) holding "bad" gets a 401, one holding
-"broke" a 402 (BISE-266: the first run's key check).
+"broke" a 402 (BISE-266: the first run's key check); "broke-url" says so
+with OpenAI's words, a url and `."` in them (BISE-287).
 
 Each request is logged to $FAKE_LOG (one JSON line: agent, last user
 message, reply as {content, tool_calls}, images, family, stream, status)
@@ -640,8 +641,12 @@ class H(http.server.BaseHTTPRequestHandler):
         auth = " ".join(self.headers.get(h, "") for h in ("authorization", "x-api-key", "x-goog-api-key"))
         if "bad" in auth or "broke" in auth:
             bad = "bad" in auth
-            err = {"error": {"type": "authentication_error" if bad else "billing_error",
-                             "message": "invalid api key" if bad else "insufficient credit balance"}}
+            said = "invalid api key" if bad else "insufficient credit balance"
+            if "broke-url" in auth:
+                # BISE-287: OpenAI's words, its billing page then `."`
+                said = ("You have no credits remaining. Add credits to continue using the API at "
+                        "https://platform.openai.com/settings/organization/billing/.\"")
+            err = {"error": {"type": "authentication_error" if bad else "billing_error", "message": said}}
             self.send(401 if bad else 402, json.dumps(err).encode())
             return
         conv = CONV[family](body)

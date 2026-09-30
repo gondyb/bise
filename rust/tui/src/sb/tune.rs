@@ -689,11 +689,7 @@ pub(crate) fn agents_text(ctx: &Ctx, root: &Path) -> (String, bool) {
 /// lines to Ghostty's config (a backup first) and says what it did.
 /// Run again, it finds nothing to add. Returns the exit code.
 pub fn setup_main(args: &[String]) -> i32 {
-    let usage = "bise setup: get this Mac ready for bise
-
-  bise setup scan               what this Mac has for bise
-  bise setup ghostty [--dry-run]  Ghostty's lines for cmd+v/f/k/a
-
+    let usage = "usage: bise setup scan | ghostty [--dry-run]
   scan: what this machine has for bise (keys' places, Claude Code's and
   Codex's model, instructions, skills, MCP servers, repos), never a key.
   ghostty: add the lines that give cmd+v, cmd+f, cmd+k and cmd+a to bise in Ghostty's
@@ -724,37 +720,10 @@ pub fn setup_main(args: &[String]) -> i32 {
     let home = bise_home::Home::from_lookup(&move |k: &str| look.get(k).cloned().filter(|v| !v.is_empty()));
     let ctx = Ctx { vars, home, dir: PathBuf::from("."), cmd_keys: false, scope: Scope::All, mac: cfg!(target_os = "macos") };
     let (code, lines) = setup_ghostty(&ctx, dry);
-    let st = bise_home::style::Style::stdout();
     for l in lines {
-        println!("{}", style_ghostty_line(&st, &l, code));
+        println!("{l}");
     }
     code
-}
-
-/// A line of `bise setup ghostty` in the shared style (BISE-285): the
-/// diff's added lines pink, its header dim, the result marked.
-fn style_ghostty_line(st: &bise_home::style::Style, l: &str, code: i32) -> String {
-    if code != 0 {
-        return st.fail(l);
-    }
-    if l.starts_with("+++") || l.starts_with("---") || l.starts_with("@@") {
-        return st.dim(l);
-    }
-    if l.starts_with('+') {
-        return l.lines().map(|x| if x.starts_with('+') { st.accent(x) } else { st.dim(x) }).collect::<Vec<_>>().join("\n");
-    }
-    if l.contains('\n') {
-        // the diff in one string: its header dim, its lines pink
-        return l
-            .lines()
-            .map(|x| if x.starts_with("+++") || x.starts_with("---") || x.starts_with("@@") { st.dim(x) } else if x.starts_with('+') { st.accent(x) } else { x.to_string() })
-            .collect::<Vec<_>>()
-            .join("\n");
-    }
-    if l.starts_with("added ") || l.contains("nothing to do") {
-        return st.ok(l);
-    }
-    st.dim(l)
 }
 
 /// `bise setup ghostty`, over a context: the exit code and the lines.

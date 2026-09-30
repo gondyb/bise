@@ -6,7 +6,6 @@
 use crate::auth::tilde;
 use crate::auth_cli::Paths;
 use crate::{toml_string, with_key, Known, Setup, CLI};
-use bise_home::style::Style;
 
 /// The keys `config` reads and writes, and what they hold.
 pub const KEYS: [(&str, &str); 4] = [
@@ -18,13 +17,17 @@ pub const KEYS: [(&str, &str); 4] = [
 
 fn usage() -> String {
     let mut s = format!(
-        "{cli} config: config.toml's top-level choices, without an editor\n\n  {cli} config get <key>\n  {cli} config set <key> <value>\n\nkeys\n",
+        "usage: {cli} config get <key>
+       {cli} config set <key> <value>
+  keys (config.toml, top level):
+",
         cli = CLI
     );
     for (k, what) in KEYS {
-        s.push_str(&format!("  {:<32} {}\n", k, what));
+        s.push_str(&format!("    {:<32} {}
+", k, what));
     }
-    s.push_str(&format!("\nsee also: {} models (the models)", CLI));
+    s.push_str(&format!("  '{} models' lists the models.", CLI));
     s
 }
 
@@ -45,11 +48,11 @@ pub fn value_of(setup: &Setup, key: &str, value: &str) -> Result<(String, Vec<St
                         r.provider, CLI, r.provider
                     ))
                 }
-                Known::Unlisted => notes.push(format!("{} is not in bise's list: {}'s defaults apply", v, r.provider)),
+                Known::Unlisted => notes.push(format!("note: {} is not in bise's list: {}'s defaults apply", v, r.provider)),
                 Known::Listed => {}
             }
             if !r.needs.is_empty() {
-                notes.push(format!("{} is not usable yet ({})", r.provider, r.needs));
+                notes.push(format!("note: {} is not usable yet ({})", r.provider, r.needs));
             }
             Ok((toml_string(v), notes))
         }
@@ -80,7 +83,6 @@ pub fn main(args: &[String], paths: &Paths) -> i32 {
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
     let text = std::fs::read_to_string(&paths.config).unwrap_or_default();
     let shown = tilde(&paths.config, paths.home.as_deref());
-    let (out, err) = (Style::stdout(), Style::stderr());
     match a.as_slice() {
         ["-h" | "--help" | "help"] | [] => {
             println!("{}", usage());
@@ -92,7 +94,7 @@ pub fn main(args: &[String], paths: &Paths) -> i32 {
                 0
             }
             None => {
-                eprintln!("{}", err.dim(&format!("{} is not set in {}", key, shown)));
+                eprintln!("{} is not set in {}", key, shown);
                 1
             }
         },
@@ -101,7 +103,7 @@ pub fn main(args: &[String], paths: &Paths) -> i32 {
             let (v, notes) = match value_of(&setup, key, value) {
                 Ok(x) => x,
                 Err(e) => {
-                    eprintln!("{}", err.fail(&e));
+                    eprintln!("{}", e);
                     return 1;
                 }
             };
@@ -109,24 +111,24 @@ pub fn main(args: &[String], paths: &Paths) -> i32 {
             if new != text {
                 if let Some(d) = paths.config.parent() {
                     if let Err(e) = std::fs::create_dir_all(d) {
-                        eprintln!("{}", err.fail(&format!("cannot create {}: {}", d.display(), e)));
+                        eprintln!("cannot create {}: {}", d.display(), e);
                         return 1;
                     }
                 }
                 if new.parse::<toml::Table>().is_err() && text.parse::<toml::Table>().is_ok() {
-                    eprintln!("{}", err.fail(&format!("the change would break {}: nothing written", shown)));
+                    eprintln!("the change would break {}: nothing written", shown);
                     return 1;
                 }
                 if let Err(e) = std::fs::write(&paths.config, &new) {
-                    eprintln!("{}", err.fail(&format!("cannot write {}: {}", shown, e)));
+                    eprintln!("cannot write {}: {}", shown, e);
                     return 1;
                 }
-                println!("{}", out.ok(&format!("{} = {} in {}", key, v, shown)));
+                println!("{} = {} in {}", key, v, shown);
             } else {
-                println!("{}", out.ok(&format!("{} = {} in {} already", key, v, shown)));
+                println!("{} = {} in {} already", key, v, shown);
             }
             for n in notes {
-                println!("{}", out.ask(&n));
+                println!("{}", n);
             }
             0
         }

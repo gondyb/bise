@@ -34,7 +34,6 @@ use std::path::{Path, PathBuf};
 pub mod migrate;
 pub mod prefs;
 pub mod release;
-pub mod style;
 pub use migrate::migrate;
 pub use prefs::{Pref, Slot};
 

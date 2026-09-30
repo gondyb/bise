@@ -810,6 +810,25 @@ fn bold(t: impl Into<String>, c: Color) -> Span<'static> {
     Span::styled(t.into(), Style::default().fg(c).add_modifier(Modifier::BOLD))
 }
 
+/// One of bise's own links (a keys, signup or billing page): underlined
+/// from the start, so [`linked`] knows it from a url inside the
+/// provider's words, which stays plain text (BISE-287).
+fn url(u: &str) -> Span<'static> {
+    Span::styled(u.to_string(), Style::default().fg(theme::text()).add_modifier(Modifier::UNDERLINED))
+}
+
+/// `words` (dim) then the link `u`: one row when both fit `w`, else the
+/// words, then the url on a row of its own (a url cut by the wrap is no
+/// link: [`linked`] finds only a url that starts where its row does, or
+/// after words on the same row).
+fn link_lines(words: &str, u: &str, w: u16) -> Vec<Line<'static>> {
+    if words.width() + u.width() <= w as usize {
+        vec![Line::from(vec![s(words.to_string(), theme::dim()), url(u)])]
+    } else {
+        vec![Line::from(s(words.trim_end().to_string(), theme::dim())), Line::from(url(u))]
+    }
+}
+
 // ---- layout (book §15 'Layout', BISE-94) ----
 
 /// The content column: 64 wide, centered; width − 8 when narrower, − 4
@@ -1096,10 +1115,10 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
             let mut v = vec![title(format!("paste your {} key", p.name))];
             blanks(&mut v, 1);
             if !p.keys_url.is_empty() {
-                v.push(Line::from(vec![s("get one: ", theme::dim()), s(p.keys_url.clone(), theme::text())]));
+                v.extend(link_lines("get one: ", &p.keys_url, w));
             }
             if !p.signup_url.is_empty() {
-                v.push(Line::from(vec![s("no account yet? ", theme::dim()), s(p.signup_url.clone(), theme::text())]));
+                v.extend(link_lines("no account yet? ", &p.signup_url, w));
             }
             blanks(&mut v, gap);
             v.push(Line::from(vec![s(format!("{} ", theme::glyph(theme::G_YOU)), theme::accent()), s(dots, theme::text()), s("█", theme::text())]));
@@ -1127,7 +1146,6 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
         }
         Sub::Failed(p, m, t, f) => {
             let err = |t: String| Line::from(s(format!("{} {}", theme::glyph(theme::G_FAILED), t), theme::error()));
-            let link = |words: &str, u: &str| Line::from(vec![s(words.to_string(), theme::dim()), s(u.to_string(), theme::text())]);
             // "the key" (pasted) or "the key in ANTHROPIC_API_KEY" (found)
             let the_key = match t {
                 Tried::Pasted(_) => "the key".to_string(),
@@ -1148,7 +1166,9 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
                 Why::NoAccess => v.push(err(format!("this key can't use {}.", short_model(m)))),
                 Why::Unreachable(e) => v.push(err(format!("i couldn't reach {}: {}.", p.name, e.trim_end_matches('.')))),
             }
-            // BISE-282: the provider's own words, cut to the width
+            // BISE-282: the provider's own words, cut to the width; a url
+            // in them stays plain: the one link is the line under them
+            // (BISE-287, the designer's call)
             if !f.said.is_empty() {
                 for l in words_in(&format!("{} said: \"{}\"", p.name, f.said), w as usize) {
                     v.push(dim(l));
@@ -1156,14 +1176,14 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
             }
             let keys = !p.keys_url.is_empty();
             match (&f.why, t) {
-                (Why::WrongKey, Tried::Pasted(_)) if keys => v.push(link("copy it again from ", &p.keys_url)),
-                (Why::WrongKey, Tried::Found(_)) if keys => v.push(link("paste another one, or get a new key: ", &p.keys_url)),
+                (Why::WrongKey, Tried::Pasted(_)) if keys => v.extend(link_lines("copy it again from ", &p.keys_url, w)),
+                (Why::WrongKey, Tried::Found(_)) if keys => v.extend(link_lines("paste another one, or get a new key: ", &p.keys_url, w)),
                 (Why::WrongKey, Tried::Found(_)) => v.push(dim("paste another one.".into())),
                 (Why::NoCredit, _) => {
                     if p.billing_url.is_empty() {
                         v.push(dim(format!("add some on your {} account.", p.name)));
                     } else {
-                        v.push(link("add some here: ", &p.billing_url));
+                        v.extend(link_lines("add some here: ", &p.billing_url, w));
                     }
                     v.push(dim(match t {
                         Tried::Pasted(_) => "i saved the key. add credit, then enter checks again.".into(),
@@ -1364,9 +1384,11 @@ fn height_of(lines: &[Line], width: u16) -> u16 {
     lines.iter().map(|l| rows(l) as u16).sum()
 }
 
-/// Each `https://` span of `lines` (the keys pages, a row of their own
-/// that fits the column) drawn as a link: the link look, and a hit where
-/// it lands, so the backend wraps its cells in OSC 8.
+/// Each of bise's own links in `lines` ([`url`]: the keys, signup and
+/// billing pages, on a row they fit) drawn as a link: the link look, and
+/// a hit where it lands, so the backend wraps its cells in OSC 8. A url
+/// in the provider's words is plain text; the extent of a link is
+/// [`crate::links::bare_at`]'s, as in the feed (BISE-287).
 fn linked(mut lines: Vec<Line<'static>>, col: Rect, y: u16) -> Vec<Line<'static>> {
     crate::links::begin_frame();
     let mut tag = 0u8;
@@ -1375,11 +1397,26 @@ fn linked(mut lines: Vec<Line<'static>>, col: Rect, y: u16) -> Vec<Line<'static>
         let mut x = col.x;
         for sp in lines[i].spans.iter_mut() {
             let w = sp.content.width() as u16;
-            if sp.content.starts_with("https://") && x + w <= col.right() {
+            let ours = sp.style.add_modifier.contains(Modifier::UNDERLINED) && crate::links::is_bare_url(&sp.content);
+            if ours && x + w <= col.right() {
                 tag += 1;
                 let url = sp.content.to_string();
                 sp.style = crate::links::link_style(sp.style, theme::text(), tag);
                 crate::links::push_hit(crate::links::Hit { y: row, x0: x, x1: x + w, tag, id: format!("onb{}", tag), url });
+            } else if ours && x == col.x && col.width > 0 {
+                // longer than the column, on a row of its own: the wrap
+                // cuts it every `col.width` cells (height_of's long
+                // word); one link, a hit on each of its rows
+                tag += 1;
+                let url = sp.content.to_string();
+                sp.style = crate::links::link_style(sp.style, theme::text(), tag);
+                let (mut left, mut r) = (w, row);
+                while left > 0 {
+                    let n = left.min(col.width);
+                    crate::links::push_hit(crate::links::Hit { y: r, x0: x, x1: x + n, tag, id: format!("onb{}", tag), url: url.clone() });
+                    left -= n;
+                    r += 1;
+                }
             }
             x += w;
         }
@@ -2337,6 +2374,55 @@ mod tests {
 
     fn mouse(kind: crossterm::event::MouseEventKind, x: u16, y: u16) -> crossterm::event::MouseEvent {
         crossterm::event::MouseEvent { kind, column: x, row: y, modifiers: KeyModifiers::NONE }
+    }
+
+    /// BISE-287: OpenAI's no-credit answer holds the billing url, then
+    /// `."`: the quote stays plain text, the one link is the line under
+    /// it, without the provider's punctuation, at every width.
+    #[test]
+    fn the_no_credit_screen_links_the_billing_page_once() {
+        let h = tmp("credit");
+        let e = env_of(HashMap::from([("HOME", h.to_string_lossy().to_string())]));
+        let mut o = Onb::new(&e);
+        o.go(Step::Model, 0);
+        let bill = "https://platform.openai.com/settings/organization/billing";
+        let said = format!("You have no credits remaining. Add credits to continue using the API at {}/.", bill);
+        for id in ["openai", "anthropic", "openrouter", "mistral"] {
+            let Some(p) = o.providers.iter().find(|p| p.id == id).cloned() else { continue };
+            let fail = crate::keycheck::Fail { why: Why::NoCredit, said: said.clone() };
+            o.sub = Sub::Failed(p.clone(), p.model.clone(), Tried::Pasted("k".into()), fail);
+            for (w, hh) in [(110, 30), (72, 30), (60, 24), (200, 50)] {
+                let sc = screen(&o, 10, w, hh);
+                let hits = crate::links::frame_hits();
+                assert!(hits.iter().all(|x| crate::links::is_bare_url(&x.url)), "{id} {w}: {hits:?}");
+                if p.billing_url.is_empty() {
+                    assert!(hits.is_empty() && sc.contains(&format!("add some on your {} account.", p.name)), "{id} {w}
+{sc}");
+                    continue;
+                }
+                // one link: the billing page, whole (on the rows it
+                // takes when it is wider than the column)
+                assert!(hits.iter().all(|x| x.url == p.billing_url && x.tag == hits[0].tag), "{id} {w}: {hits:?}
+{sc}");
+                assert_eq!(hits.iter().map(|x| x.x1 - x.x0).sum::<u16>(), p.billing_url.width() as u16, "{id} {w}");
+                let one_row = format!("add some here: {}", p.billing_url);
+                let col = column(Rect::new(0, 0, w, hh)).width as usize;
+                if one_row.width() <= col {
+                    assert!(sc.lines().any(|l| l.trim() == one_row), "{id} {w}
+{sc}");
+                } else {
+                    assert!(sc.lines().any(|l| l.trim() == "add some here:"), "{id} {w}
+{sc}");
+                    let at = sc.lines().position(|l| l.trim() == "add some here:").unwrap();
+                    let rest: String = sc.lines().skip(at + 1).take(hits.len()).map(str::trim).collect();
+                    assert_eq!(rest, p.billing_url, "{id} {w}
+{sc}");
+                }
+                // the provider's words are all there, the url in them plain
+                assert!(flat(&sc).contains("remaining. Add credits"), "{id} {w}
+{sc}");
+            }
+        }
     }
 
     /// Where `text` starts on the frame.

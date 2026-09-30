@@ -8,7 +8,9 @@ onboarding does what the feed does with it.
 - a drag over the url copies it (BEND_CLIPBOARD_FILE, never the real
   clipboard: `copied 41 chars`), a double click on it too;
 - a wrong key: the url of `copy it again from <url>` opens too;
-- OpenAI: the signup page (`no account yet? <url>`) opens too.
+- OpenAI: the signup page (`no account yet? <url>`) opens too;
+- OpenAI with no credit, its words holding the billing page then `."`
+  (BISE-287): only the line under them links it, without `."`.
 
 python3 -u projects/switchboard/tests/tui_onboarding_links_tmux.py
 """
@@ -141,6 +143,7 @@ def anthropic():
 
 def openai():
     signup = "https://platform.openai.com/signup"
+    billing = "https://platform.openai.com/settings/organization/billing"
     E = e2e.Env()
     env, log, _ = session(E, "o")
     with tui_session(110, 34, env, E=E) as t:
@@ -150,6 +153,28 @@ def openai():
         click(t, x + 2, y)
         wait_until(lambda: signup in read(log), 10, lambda: "the click opens the signup page: %r" % read(log))
         t.wait("opening " + signup)
+        # BISE-287: no credit, and OpenAI's words hold the billing page
+        # then `."`: the words stay plain text (a click there opens
+        # nothing), the one link is the line under them, without `."`
+        t.typed("broke-url-key")
+        t.keys("Enter")
+        sc = t.wait("i saved the key. add credit", 30)
+        print(sc)
+        assert 'billing/."' in sc and "add some here:" in sc, sc
+        osc = re.findall(r"\x1b\]8;[^;]*;([^\x1b\x07]*)", t.screen(colors=True))
+        urls = sorted(set(u for u in osc if u))
+        assert urls == [billing], urls
+        n = len(read(log).split())
+        qx, qy = at(sc, 'billing/."')
+        click(t, qx + 3, qy)
+        time.sleep(0.6)
+        assert len(read(log).split()) == n, "the provider's words opened: %r" % read(log)
+        lines = sc.split("\n")
+        ly = next(i for i, l in enumerate(lines) if l.strip() == billing)
+        click(t, lines[ly].index(billing) + 5, ly)
+        wait_until(lambda: len(read(log).split()) > n, 10, lambda: "the billing link opens: %r" % read(log))
+        assert read(log).split()[-1] == billing, read(log)
+        t.wait("opening " + billing)
     print("ok openai")
 
 

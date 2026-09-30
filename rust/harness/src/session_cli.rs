@@ -3,8 +3,7 @@
 use bise_session::{read_dir, show, State};
 use std::path::PathBuf;
 
-const USAGE: &str = "bise session show [<session id> | <folder>] [--context] [--raw]: a session log
-
+const USAGE: &str = "usage: bise session show [<session id> | <folder>] [--context] [--raw]
   the transcript of a session (every event), or with --context what the
   model sees now; --raw prints the log lines. No id: the newest session.";
 
@@ -40,19 +39,19 @@ pub fn main(args: &[String]) -> i32 {
     let dir = match find(target, &home.sessions_dir()) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("{}", bise_home::style::Style::stderr().fail(&format!("bise session: {e}")));
+            eprintln!("bise session: {e}");
             return 1;
         }
     };
     let log = match read_dir(&dir) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("{}", bise_home::style::Style::stderr().fail(&format!("bise session: {}: {e}", dir.display())));
+            eprintln!("bise session: {}: {e}", dir.display());
             return 1;
         }
     };
     if let bise_session::Open::Refused(why) = &log.open {
-        eprintln!("{}", bise_home::style::Style::stderr().fail(&format!("bise session: {why}")));
+        eprintln!("bise session: {why}");
         return 1;
     }
     let blobs = home.blobs_dir();

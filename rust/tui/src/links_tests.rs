@@ -288,3 +288,46 @@ fn a_redraw_of_the_same_screen_writes_no_link_again_and_a_scroll_rewrites_it() {
     let third = String::from_utf8(term.backend().take_output()).unwrap();
     assert!(third.contains("https://guide.example/start"), "{third:?}");
 }
+
+/// The url `bare_at` finds at the first `h` of `s`, if any.
+fn bare(s: &str) -> Option<String> {
+    let cs: Vec<char> = s.chars().collect();
+    let i = s.chars().position(|c| c == 'h')?;
+    links::bare_at(&cs, i).map(|n| cs[i..i + n].iter().collect())
+}
+
+#[test]
+fn trailing_punctuation_quotes_and_brackets_stay_out_of_a_url() {
+    let u = "https://platform.openai.com/settings/organization/billing/";
+    // BISE-287: the user's OpenAI no-credit answer
+    assert_eq!(bare(&format!("at {}.\"", u)).as_deref(), Some(u));
+    for end in [".", ",", ";", ":", "!", "?", "\"", "'", ")", "]", "}", ">", "”", "’", "»", ".\"", "\".", ").", "'.", "!)", "?\"", "...", "*", "_"] {
+        assert_eq!(bare(&format!("{}{}", u, end)).as_deref(), Some(u), "{u}{end}");
+    }
+    for (open, close) in [("(", ")"), ("[", "]"), ("\"", "\""), ("'", "'"), ("<", ">"), ("“", "”"), ("«", "»")] {
+        assert_eq!(bare(&format!("see {}{}{}.", open, u, close)).as_deref(), Some(u), "{open}{u}{close}");
+    }
+    // a bracket the url opened stays: Wikipedia, and nested
+    for w in ["https://en.wikipedia.org/wiki/Bend_(language)", "https://x.dev/a_(b_(c))", "https://x.dev/q[0]", "https://x.dev/{id}"] {
+        assert_eq!(bare(w).as_deref(), Some(w));
+        assert_eq!(bare(&format!("({}).", w)).as_deref(), Some(w), "({w}).");
+    }
+    // inside the url, punctuation is kept
+    for w in ["https://x.dev/a.b,c;d:e!f?g'h", "https://x.dev/p?q=1&r=2#s", "https://x.dev/a...b"] {
+        assert_eq!(bare(&format!("{}.", w)).as_deref(), Some(w));
+    }
+    // a scheme and punctuation alone are no url
+    assert_eq!(bare("https://."), None);
+    assert!(links::is_bare_url(u) && !links::is_bare_url(&format!("{}.\"", u)) && !links::is_bare_url(&format!("at {}", u)));
+}
+
+#[test]
+fn the_feed_links_a_url_without_its_trailing_quote() {
+    let (p, urls) = parts("OpenAI said: \"Add credits at https://platform.openai.com/settings/organization/billing/.\"");
+    assert_eq!(urls, vec!["https://platform.openai.com/settings/organization/billing/"]);
+    let joined: String = p.iter().map(|x| x.0.as_str()).collect();
+    assert!(joined.ends_with("billing/.\""), "{joined}");
+    let (p, urls) = parts("(see https://en.wikipedia.org/wiki/A_(b)), or 'https://y.dev/c'!");
+    assert_eq!(urls, vec!["https://en.wikipedia.org/wiki/A_(b)", "https://y.dev/c"]);
+    assert_eq!(p.iter().filter(|x| x.1.is_some()).count(), 2);
+}

@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use bise_catalog::auth::{EnvFile, Keys, Store};
-use bise_home::style::{hang, Style};
 use switchboard::tools_env;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,62 +37,22 @@ fn fail(name: &'static str, detail: impl Into<String>, fix: impl Into<String>) -
     Check { mark: Mark::Fail, name, detail: detail.into(), fix: Some(fix.into()) }
 }
 
-/// The report: one line per check, its fix on the next line under the
-/// detail (BISE-285: the shared style; `?` a warning, as in the TUI).
-/// Paths under `home` read `~/…`; on a terminal a long value wraps on
-/// its own column.
-pub(crate) fn render(checks: &[Check], st: &Style, home: Option<&Path>) -> String {
-    let tilde = |t: &str| match home.map(|h| format!("{}/", h.display())).filter(|h| h.len() > 2) {
-        Some(h) => tilde_paths(t, &h),
-        None => t.to_string(),
-    };
-    let w = checks.iter().map(|c| c.name.len()).max().unwrap_or(9);
-    let col = w + 4;
+/// The report: one line per check.
+pub(crate) fn render(checks: &[Check]) -> String {
     let mut o = String::new();
     for c in checks {
-        let name = format!("{:<w$}", c.name, w = w);
-        let detail = hang(&tilde(&c.detail), col, st.width);
-        let line = match c.mark {
-            Mark::Ok => st.ok(&format!("{}  {}", st.dim(&name), detail)),
-            Mark::Warn => st.ask(&format!("{}  {}", name, detail)),
-            Mark::Fail => st.fail(&format!("{}  {}", name, detail)),
+        let sym = match c.mark {
+            Mark::Ok => "✓",
+            Mark::Warn => "!",
+            Mark::Fail => "✗",
         };
-        o.push_str(&line);
-        o.push('\n');
+        o.push_str(&format!("{} {:<9} {}", sym, c.name, c.detail));
         if let Some(f) = &c.fix {
-            o.push_str(&format!("{}{} {}\n", " ".repeat(col), st.dim("fix:"), hang(&tilde(f), col + 5, st.width)));
+            o.push_str(&format!(" — fix: {}", f));
         }
+        o.push('\n');
     }
     o
-}
-
-/// `t` with each path that starts with `home` (a path's start: the text's
-/// start, or after a space, a paren or a quote) as `~/…`.
-fn tilde_paths(t: &str, home: &str) -> String {
-    let mut o = String::new();
-    let mut rest = t;
-    while let Some(i) = rest.find(home) {
-        let starts = i == 0 || rest[..i].ends_with([' ', '(', '`', '\'', '"']) || (i == 0 && o.is_empty());
-        o.push_str(&rest[..i]);
-        o.push_str(if starts { "~/" } else { home });
-        rest = &rest[i + home.len()..];
-    }
-    o.push_str(rest);
-    o
-}
-
-/// The last line: what is left to do, or all good.
-pub(crate) fn summary(checks: &[Check], st: &Style) -> String {
-    let n = |m: Mark| checks.iter().filter(|c| c.mark == m).count();
-    let plural = |n: usize, w: &str| format!("{} {}{}", n, w, if n == 1 { "" } else { "s" });
-    match (n(Mark::Fail), n(Mark::Warn)) {
-        (0, 0) => st.ok("all good."),
-        (0, 1) => st.ask("1 thing to check. it says how."),
-        (0, w) => st.ask(&format!("{} to check. each one says how.", plural(w, "thing"))),
-        (1, 0) => st.fail("1 thing to fix. it says how."),
-        (f, 0) => st.fail(&format!("{} to fix. each one says how.", plural(f, "thing"))),
-        (f, w) => st.fail(&format!("{} to fix, {} to check. each one says how.", plural(f, "thing"), w)),
-    }
 }
 
 // ---- the pure checks (tested) ----
@@ -227,7 +186,7 @@ fn root() -> Result<(PathBuf, crate::approot::Via), String> {
     crate::approot::locate("repl-live")
 }
 
-fn bise(verbose: bool) -> Check {
+fn bise() -> Check {
     let exe = std::env::current_exe().ok().map(|e| std::fs::canonicalize(&e).unwrap_or(e));
     let exe = exe.map(|e| e.display().to_string()).unwrap_or_else(|| "unknown".into());
     match root() {
@@ -241,8 +200,7 @@ fn bise(verbose: bool) -> Check {
             );
             ok("bise", format!("{} · {} · files: {} ({})", line, exe, r.display(), via.describe()))
         }
-        Err(e) if verbose => fail("bise", format!("{} · no app root: {}", exe, e), "reinstall bise, or set BISE_APP_ROOT"),
-        Err(_) => fail("bise", "no app root next to the executable (--verbose says more)", "reinstall bise, or set BISE_APP_ROOT"),
+        Err(e) => fail("bise", format!("{} · no app root: {}", exe, e), "reinstall bise, or set BISE_APP_ROOT"),
     }
 }
 
@@ -564,21 +522,13 @@ fn disk(home: &bise_home::Home) -> Check {
 }
 
 /// `bise doctor`: the report on stdout; 1 when a check failed.
-pub(crate) fn main(args: &[String]) -> i32 {
-    let verbose = match args {
-        [] => false,
-        [a] if a == "--verbose" || a == "-v" => true,
-        _ => {
-            eprintln!("{}", Style::stderr().fail(&format!("usage: {} doctor [--verbose]", bise_catalog::CLI)));
-            return 2;
-        }
-    };
+pub(crate) fn main() -> i32 {
     let home = bise_home::Home::from_env();
     let (keys, model, voice) = keys_and_model(&home);
     let config = config_check(&home.config_file(), &bise_catalog::Setup::load(&home.config_file()).catalog.warnings);
     let checks = vec![
         macos(),
-        bise(verbose),
+        bise(),
         signature(),
         on_path(),
         home_check(&home),
@@ -592,12 +542,7 @@ pub(crate) fn main(args: &[String]) -> i32 {
         hubs(&home),
         disk(&home),
     ];
-    let st = Style::stdout();
-    println!("{}", st.title("checking your setup"));
-    println!();
-    print!("{}", render(&checks, &st, Some(home.user_home())));
-    println!();
-    println!("{}", summary(&checks, &st));
+    print!("{}", render(&checks));
     if checks.iter().any(|c| c.mark == Mark::Fail) {
         1
     } else {
@@ -723,26 +668,7 @@ mod tests {
 
     #[test]
     fn one_line_per_check_with_its_fix() {
-        let checks = [ok("git", "git version 2.50"), fail("keys", "no provider key", "`bise login <provider>`")];
-        let out = render(&checks, &Style::PLAIN, None);
-        assert_eq!(out, "✓ git   git version 2.50\n✗ keys  no provider key\n        fix: `bise login <provider>`\n");
-        assert_eq!(summary(&checks, &Style::PLAIN), "✗ 1 thing to fix. it says how.");
-        // a warning is the TUI's '?'; paths under the home read ~/
-        let w = [warn("PATH", "/h/.local/bin/bise is another bise", "put /h/.local/bin first")];
-        assert_eq!(render(&w, &Style::PLAIN, Some(Path::new("/h"))), "? PATH  ~/.local/bin/bise is another bise\n        fix: put ~/.local/bin first\n");
-        assert_eq!(tilde_paths("/h/x (/h/y) /private/h/z", "/h/"), "~/x (~/y) /private/h/z");
-        // colors only on a terminal: the same words once stripped
-        let tty = Style { color: true, light: false, width: 0 };
-        assert_eq!(bise_home::style::strip(&render(&w, &tty, None)), render(&w, &Style::PLAIN, None));
-        // a terminal wraps a long value on its column, never at column 0
-        let long = [ok("hubs", "none for /a/very/long/workspace/path (`bise` starts one); 0 running in /h/.bise/hubs, 0 in the old place")];
-        let narrow = Style { color: false, light: false, width: 50 };
-        let out = render(&long, &narrow, None);
-        assert!(out.lines().count() > 1 && out.lines().all(|l| l.chars().count() <= 50), "{out}");
-        assert!(out.lines().skip(1).all(|l| l.starts_with("        ") && !l.starts_with("         ")), "{out}");
-        let all = [ok("git", "x"), warn("PATH", "y", "z"), warn("voice", "y", "z"), fail("keys", "n", "f")];
-        assert_eq!(summary(&all[..1], &Style::PLAIN), "✓ all good.");
-        assert_eq!(summary(&all[..3], &Style::PLAIN), "? 2 things to check. each one says how.");
-        assert_eq!(summary(&all, &Style::PLAIN), "✗ 1 thing to fix, 2 to check. each one says how.");
+        let out = render(&[ok("git", "git version 2.50"), fail("keys", "no provider key", "`bise login <provider>`")]);
+        assert_eq!(out, "✓ git       git version 2.50\n✗ keys      no provider key — fix: `bise login <provider>`\n");
     }
 }

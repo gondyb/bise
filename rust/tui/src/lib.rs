@@ -89,7 +89,6 @@ mod keycheck;
 pub(crate) mod scan;
 mod onboarding;
 mod hints;
-mod tour;
 mod ctrlhint;
 mod queue;
 mod layout;

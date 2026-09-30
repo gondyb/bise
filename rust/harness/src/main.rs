@@ -161,7 +161,7 @@ fn auth_paths() -> bise_catalog::auth_cli::Paths {
 
 /// The first run's live key check (BISE-266), for `login --check` and
 /// `auth check`: `BEND_PROVIDER_URL` points it at the tests' fake provider.
-fn key_check(setup: &bise_catalog::Setup, model: &str, key: &str) -> Result<(), bise_catalog::auth_cli::CheckFail> {
+fn key_check(setup: &bise_catalog::Setup, model: &str, key: &str) -> Result<(), String> {
     bend_tui::check_model(setup, model, key, &|k: &str| std::env::var(k).ok().filter(|v| !v.is_empty()))
 }
 
@@ -343,11 +343,9 @@ fn run_switchboard(args: &[String], debug: bool) -> std::io::Result<()> {
     }
     if args.iter().any(|a| a == "--stop") {
         let keep = args.iter().any(|a| a == "--keep-agents");
-        let st = bise_home::style::Style::stderr();
-        let shown = bise_catalog::auth::tilde(&paths.workspace, Some(bise_home::Home::from_env().user_home()));
         match switchboard::client::stop(&paths, keep)? {
-            true => eprintln!("{}", st.ok(&format!("bise stopped in {}", shown))),
-            false => eprintln!("{}", st.dim(&format!("bise is not running in {}", shown))),
+            true => eprintln!("hub stopped ({})", paths.workspace.display()),
+            false => eprintln!("no hub for {}", paths.workspace.display()),
         }
         return Ok(());
     }
@@ -410,66 +408,34 @@ fn migrate_home() {
     let _ = bise_home::migrate(&user, &switchboard::switch::hub_busy);
 }
 
-/// `bise help`: (section, [(command, what it does)]); `{cmd}` is the
-/// name it was called by.
-const HELP: &[(&str, &[(&str, &str)])] = &[
-    ("start", &[
-        ("{cmd}", "open bise in this folder: main and its agents"),
-        ("{cmd} switchboard --stop", "stop this folder's bise (--keep-agents: they go on)"),
-    ]),
-    ("keys and models", &[
-        ("{cmd} login [provider]", "add a provider's key: checked with one tiny call, then saved"),
-        ("{cmd} logout [provider]", "remove it"),
-        ("{cmd} auth list", "your keys: where each one comes from (never the key)"),
-        ("{cmd} auth check [provider]", "one tiny call with the key bise finds"),
-        ("{cmd} models [filter]", "the models bise knows, and which have a key"),
-        ("{cmd} config get|set KEY [V]", "model, agent_model, small_model, project_doc_fallback_filenames"),
-    ]),
-    ("setup", &[
-        ("{cmd} setup scan", "what this Mac has for bise: keys' places, tools, repos"),
-        ("{cmd} setup ghostty", "the Ghostty lines for cmd+v/f/k/a (--dry-run: show only)"),
-        ("{cmd} plugins [list]", "agent plugins; enable, disable, import-mcp"),
-        ("{cmd} doctor", "check this Mac, the install, keys, model, hubs"),
-    ]),
-    ("the install", &[
-        ("{cmd} update [--check]", "install the latest release"),
-        ("{cmd} uninstall [--purge]", "remove bise (--purge: your data too)"),
-        ("{cmd} --version", "this version"),
-        ("{cmd} session show [<id>]", "a session log: the transcript, --context, --raw"),
-    ]),
-    ("for programs", &[
-        ("{cmd} --headless", "one session without a TUI: --scripted, --model NAME, --port N,"),
-        ("", "--continue, --resume ID (an id prefix works)"),
-        ("{cmd} sb <command> ...", "the agents' tool; `sb` is a link to this binary (sb help)"),
-        ("internal:", "sbd, sbswitch, keyprobe"),
-    ]),
-];
+/// `bise help`; `{cmd}` is the name it was called by.
+const USAGE: &str = "\
+usage:
+  {cmd}                         Switchboard in the current folder: main + tasks
+  {cmd} switchboard [--stop]    the same, with its flags (--workspace DIR, --debug)
+  {cmd} models [filter]         the models bise knows, and which keys are set
+  {cmd} login|logout [provider] store or remove a provider's key
+  {cmd} auth list               each provider's key source (never the key)
+  {cmd} auth check [provider]   one tiny call with the key bise finds (login --check: before saving)
+  {cmd} config get|set KEY [V]  config.toml's model, agent_model, small_model, project_doc_fallback_filenames
+  {cmd} setup ghostty           add the Ghostty lines /setup offers (--dry-run: show only)
+  {cmd} plugins [list|enable|disable]  agent plugins
+  {cmd} doctor                  check this Mac, the install, keys, model, hubs
+  {cmd} session show [<id>]     a session log: the transcript, --context, --raw
+  {cmd} update [--check]        install the latest release (an installed bise)
+  {cmd} uninstall [--purge]     remove the installed bise (--purge: your data too)
+  {cmd} --version               this version
+  {cmd} --headless              one session without a TUI, for a program:
+      --scripted                  the scripted session (no API)
+      --model NAME                the model
+      --port N                    the REPL port (default: a free one)
+      --continue | --resume ID    the latest session | one session (an id prefix works)
+  {cmd} sb <command> ...         the agents' tool; `sb` is a link to this binary (sb help)
+  internal: sbd, sbswitch, keyprobe
+state: ~/.bise (BISE_HOME moves it); its files: BISE_APP_ROOT, else next to the executable";
 
-/// `bise help` in a style: the sections' titles bold, what each command
-/// does dim.
-fn usage_styled(cmd: &str, st: &bise_home::style::Style) -> String {
-    let w = HELP.iter().flat_map(|(_, rows)| rows.iter()).map(|(c, _)| c.replace("{cmd}", cmd).chars().count()).max().unwrap_or(20);
-    let mut o = format!("{}  {}\n", st.title(cmd), st.dim("a multi-agent harness, made for humans"));
-    for (section, rows) in HELP {
-        o.push_str(&format!("\n{}\n", st.title(section)));
-        for (c, what) in rows.iter() {
-            let c = c.replace("{cmd}", cmd);
-            o.push_str(&format!("  {}{}  {}\n", c, " ".repeat(w - c.chars().count()), st.dim(what)));
-        }
-    }
-    o.push_str(&format!(
-        "\n{} {}\n{} {}",
-        st.dim("state:"),
-        "~/.bise (BISE_HOME moves it); its files: BISE_APP_ROOT, else next to the executable",
-        st.dim("docs: "),
-        st.link("https://bise.dev")
-    ));
-    o
-}
-
-#[cfg(test)]
 fn usage(cmd: &str) -> String {
-    usage_styled(cmd, &bise_home::style::Style::PLAIN)
+    USAGE.replace("{cmd}", cmd)
 }
 
 /// The arguments after the command. Called as `sb` (the agents' link to
@@ -560,14 +526,14 @@ fn main() -> std::io::Result<()> {
                 return Ok(());
             }
             // read-only checks, one line each (BISE-167)
-            Some("doctor") => std::process::exit(doctor::main(&args[1..])),
+            Some("doctor") => std::process::exit(doctor::main()),
             // the session logs (BISE-199)
             Some("session") => std::process::exit(session_cli::main(&args[1..])),
             // an installed bise (install.sh, BISE-170/171)
             Some("update") => std::process::exit(update::main(&args[1..])),
             Some("uninstall") => std::process::exit(update::uninstall(&args[1..])),
             Some("--help" | "-h" | "help") => {
-                println!("{}", usage_styled(&version::cmd_name(), &bise_home::style::Style::stdout()));
+                println!("{}", usage(&version::cmd_name()));
                 return Ok(());
             }
             // the key/mouse events this terminal delivers (macOS shortcuts)
@@ -605,9 +571,7 @@ fn main() -> std::io::Result<()> {
         model,
         forced_port,
     } = parse_args(&args).unwrap_or_else(|msg| {
-        let err = bise_home::style::Style::stderr();
-        eprintln!("{}", err.fail(&msg));
-        eprintln!("{}", err.next(&format!("{} --help lists the commands", version::cmd_name())));
+        eprintln!("{}\n{}", msg, usage(&version::cmd_name()));
         std::process::exit(2);
     });
     if !headless {
@@ -1101,7 +1065,7 @@ fn parse_args(args: &[String]) -> Result<CliArgs, String> {
             "--resume" if has_value => out.resume_id = it.next().cloned(),
             "--model" if has_value => out.model = it.next().cloned(),
             "--port" if has_value => out.forced_port = it.next().and_then(|p| p.parse().ok()),
-            other => return Err(format!("unknown command or flag: {}", other)),
+            other => return Err(format!("unknown argument: {}", other)),
         }
     }
     if out.resume && out.resume_id.is_some() {

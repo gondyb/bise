@@ -92,8 +92,9 @@ pub(crate) fn linkable(url: &str) -> bool {
 }
 
 /// A bare url starting at `cs[i]` (`http://` or `https://`, not inside
-/// a word): its length in chars, the trailing punctuation and the
-/// unbalanced closing brackets left out.
+/// a word): its length in chars, what [`trim_end`] cuts left out. The
+/// one url finder of the TUI: the feed (markdown.rs) and the
+/// onboarding's links (onboarding.rs) both ask it.
 pub(crate) fn bare_at(cs: &[char], i: usize) -> Option<usize> {
     let starts = |p: &str| p.chars().enumerate().all(|(k, c)| cs.get(i + k).is_some_and(|x| x.eq_ignore_ascii_case(&c)));
     let head = if starts("https://") {
@@ -111,16 +112,31 @@ pub(crate) fn bare_at(cs: &[char], i: usize) -> Option<usize> {
     {
         end += 1;
     }
-    // trailing punctuation, and a `)` or `]` that closes nothing of the url
-    while let Some(&last) = cs[i..end].last() {
-        let opened = |o: char, c: char| {
-            let s = &cs[i..end];
-            s.iter().filter(|x| **x == o).count() >= s.iter().filter(|x| **x == c).count()
-        };
-        let cut = match last {
-            '.' | ',' | ';' | ':' | '!' | '?' | '\'' | '*' | '_' => true,
-            ')' => !opened('(', ')'),
-            ']' => !opened('[', ']'),
+    let end = trim_end(cs, i, end);
+    (end - i > head).then_some(end - i)
+}
+
+/// `s` is one bare url, whole: nothing before it, nothing [`trim_end`]
+/// cuts after it.
+pub(crate) fn is_bare_url(s: &str) -> bool {
+    let cs: Vec<char> = s.chars().collect();
+    bare_at(&cs, 0) == Some(cs.len())
+}
+
+/// Where a url or a path met in text ends (BISE-287), like GitHub and
+/// Slack: `cs[from..end]` less its trailing sentence punctuation
+/// (`. , ; : ! ?`), closing quotes (`" ' ” ’ »`), `>`, markdown's
+/// emphasis (`*`, `_`) and a `)` `]` `}` that closes nothing inside it;
+/// one that does stays (`https://en.wikipedia.org/wiki/A_(b)`).
+pub(crate) fn trim_end(cs: &[char], from: usize, mut end: usize) -> usize {
+    while end > from {
+        let s = &cs[from..end];
+        let closes_nothing = |o: char, c: char| s.iter().filter(|x| **x == c).count() > s.iter().filter(|x| **x == o).count();
+        let cut = match cs[end - 1] {
+            '.' | ',' | ';' | ':' | '!' | '?' | '"' | '\'' | '>' | '*' | '_' | '”' | '’' | '»' => true,
+            ')' => closes_nothing('(', ')'),
+            ']' => closes_nothing('[', ']'),
+            '}' => closes_nothing('{', '}'),
             _ => false,
         };
         if !cut {
@@ -128,7 +144,7 @@ pub(crate) fn bare_at(cs: &[char], i: usize) -> Option<usize> {
         }
         end -= 1;
     }
-    (end - i > head).then_some(end - i)
+    end
 }
 
 // ---- the urls of one event ----

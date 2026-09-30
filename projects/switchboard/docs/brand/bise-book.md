@@ -867,7 +867,10 @@ one in accent.
    saved. No credit is not a failure (`? the key works, but your
    Anthropic account has no credit yet.` / `add some here: <billing
    page>` / `i saved the key. add credit, then enter checks again.`):
-   the key is saved, not the model, and `enter` checks it again. Passed: the key
+   the key is saved, not the model, and `enter` checks it again. A url
+   in the provider's words stays plain text: the one link is bise's
+   line under them (BISE-287: `add some here:` and the url on one row
+   when both fit, else the url on a row of its own). Passed: the key
    in `auth.json` like `login` (asks before replacing one), the model as
    `model` in config.toml, then `it works: <model> answered.` / `main
    uses <model>.` and the optional keys not set yet (`web search and
