@@ -30,6 +30,8 @@
 <body>
 <div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
 
+<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>the dandelion sky and one thread. agents branch off it and draw their arc (∿ name). when one is back on the thread with a ✓, its arc comes apart into seeds that float away.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+
 <section class="v" data-v="seeds"><div class="tag"><b>7 · seeds</b> <span class="pick">new · mix of 5 and 6</span><br>the dandelion sky, plus one thread. now and then an agent lifts off the thread like a seed (∿ name), floats a while, and lands further along with a ✓. the thread's :* keeps walking.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
 <section class="v" data-v="ribbon"><div class="tag"><b>8 · ribbon</b> <span class="pick">new · mix of 5 and 6</span><br>the thread itself is made of drifting specks. agents peel off it and leave a trail of seeds that keeps floating up after them. softer, less diagram, more wind.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
@@ -75,6 +77,14 @@ function Grid(cols, rows) {
   };
 }
 
+// an arc as ascii: "/" going up, "\\" going down, "~" flat, "|" to fill steep steps
+function arc(g, pts, cl = "") {
+  for (let i = 0; i < pts.length; i++) {
+    const [x, y] = pts[i], yi = Math.round(y), n = pts[i + 1] ? Math.round(pts[i + 1][1]) : yi, d = n - yi;
+    g.put(x, yi, d < 0 ? "/" : d > 0 ? "\\" : "~", cl);
+    for (let k = 1; k < Math.abs(d); k++) g.put(x + (d < 0 ? 1 : 0), yi + Math.sign(d) * k, "|", cl);
+  }
+}
 const V = {
   now(s) {
     const RAMP = " .·-~∼≈";
@@ -171,22 +181,47 @@ const V = {
       for (let x = 0; x < g.cols; x++) g.put(x, Y, "─");
       const hx = (t * 6) % (g.cols + 20);
       g.str(hx, Y, ":*", "a");
-      if (s.b.length < 4 && Math.random() < .02) { const L = Math.floor(rnd(40, 80)), xs = Math.floor(rnd(4, g.cols - L - 4)); s.b.push({ xs, L, p: 0, dir: Math.random() < .7 ? -1 : 1, A: rnd(4, Y - 3), name: NAMES[Math.floor(rnd(0, NAMES.length))] }); }
+      if (s.b.length < 4 && Math.random() < .02) { const L = Math.floor(rnd(40, 80)), xs = Math.floor(rnd(4, g.cols - L - 4)); s.b.push({ xs, L, p: 0, dir: Math.random() < .7 ? -1 : 1, A: Math.min(rnd(4, Y - 3), L / 2.6), name: NAMES[Math.floor(rnd(0, NAMES.length))] }); }
       s.b = s.b.filter(b => b.p < b.L + 60);
       for (const b of s.b) {
         b.p += .5;
         const A = b.dir < 0 ? b.A : Math.min(b.A, g.rows - Y - 2), end = Math.min(b.p, b.L);
-        let prev = Y;
-        for (let i = 0; i <= end; i++) {
-          const y = Y + b.dir * A * Math.sin(Math.PI * i / b.L), x = b.xs + i, fade = b.p - b.L > 30;
-          if (fade && hash(x, b.xs) < (b.p - b.L - 30) / 30) continue;
-          g.put(x, y, Math.abs(Math.round(y) - prev) > 0 ? (b.dir * (Math.round(y) - prev) > 0 ? "\\" : "/") : "~");
-          prev = Math.round(y);
-        }
+        const fade = b.p - b.L > 30, pts = [];
+        for (let i = 0; i <= end; i++) { const x = b.xs + i; if (fade && hash(x, b.xs) < (b.p - b.L - 30) / 30) continue; pts.push([x, Y + b.dir * A * Math.sin(Math.PI * i / b.L)]); }
+        arc(g, pts);
         const hxb = b.xs + end, hy = Y + b.dir * A * Math.sin(Math.PI * end / b.L);
         if (b.p < b.L) { g.put(hxb, hy, "∿", "a"); g.str(hxb + 2, hy, b.name, "d"); }
         else if (b.p < b.L + 30) { g.put(b.xs + b.L, Y, "✓", "a"); g.str(b.xs + b.L + 2, Y - 1, b.name, "d"); }
       }
+    };
+  },
+  branch(s) {
+    s.p = []; s.b = []; s.land = [];
+    const NAMES = ["perf", "dark-mode", "emoji-csv", "release", "accents", "docs", "tests"];
+    return (g, t) => {
+      const Y = Math.round(g.rows * .8);
+      if (s.p.length < 70 && Math.random() < .25) s.p.push({ x: rnd(-10, g.cols), y: g.rows + 1, z: Math.random(), ph: rnd(0, 6), life: 1e9 });
+      s.p = s.p.filter(p => p.y > -2 && p.x < g.cols + 3 && --p.life > 0);
+      for (const p of s.p) { const sp = .06 + p.z * .18; p.y -= sp; p.x += sp * 1.6; p.ph += .04; g.put(p.x + Math.sin(p.ph) * 2, p.y, p.life < 25 ? "." : p.z > .8 ? "∗" : p.z > .45 ? "·" : ".", p.z > .8 ? "d" : ""); }
+      for (let x = 0; x < g.cols; x++) g.put(x, Y, "─");
+      g.str((t * 5) % (g.cols + 20) - 2, Y, ":*", "a");
+      if (s.b.length < 3 && Math.random() < .016) { const L = Math.floor(rnd(36, 80)), xs = Math.floor(rnd(4, g.cols - L - 12)); s.b.push({ xs, L, p: 0, A: Math.min(rnd(5, Y - 4), L / 2.6), name: NAMES[Math.floor(rnd(0, NAMES.length))] }); }
+      s.b = s.b.filter(b => {
+        b.p += .5;
+        const end = Math.min(b.p, b.L), pts = [];
+        for (let i = 0; i <= end; i++) pts.push([b.xs + i, Y - b.A * Math.sin(Math.PI * i / b.L)]);
+        if (b.p >= b.L + 12) {
+          // back in: the arc blows apart into seeds
+          for (const [x, y] of pts) if (Math.random() < .55) s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: rnd(50, 160) });
+          s.land.push({ x: b.xs + b.L, name: b.name, n: 45 });
+          return false;
+        }
+        arc(g, pts);
+        if (b.p < b.L) { const [hx, hy] = pts[pts.length - 1]; g.put(hx, hy, "∿", "a"); g.str(hx + 2, hy, b.name, "d"); }
+        else { g.put(b.xs + b.L, Y, "✓", "a"); g.str(b.xs + b.L + 2, Y - 1, b.name, "d"); }
+        return true;
+      });
+      s.land = s.land.filter(l => { g.put(l.x, Y, "✓", "a"); if (l.n > 15) g.str(l.x + 2, Y - 1, l.name, "d"); return --l.n > 0; });
     };
   },
   seeds(s) {
