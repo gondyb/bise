@@ -45,8 +45,14 @@ def bg_dir() -> IO(String):
     IO.pure(String, Shp.bg_dir_pick(P.env_or(dr, ""), P.env_or(root, ""),
       P.env_or(tr, ""), P.env_or(pr, "0")))
 
+# flags: the gate's allow flags ("sandbox", "sandbox net", or "" for a
+# plain run, Shp.sandbox_profile); the profiles sit in the side dir
 @unsafe
 def bash_exec(command: String) -> IO(Xp.ExecRes):
+  bash_exec_as(command, "")
+
+@unsafe
+def bash_exec_as(command: String, +flags: String) -> IO(Xp.ExecRes):
   do IO<Xp.ExecRes>:
     +secs : U32 <- bg_after()
     +bg : String <- bg_dir()
@@ -62,7 +68,7 @@ def bash_exec(command: String) -> IO(Xp.ExecRes):
     +side : String <- P.side_dir()
     +path : String <- IO.pure(String, Shp.bash_script_path(side, port, script))
     w : Unit <- P.write_file(path, script)
-    out : String <- Proc.run(Con{"/bin/sh", Con{path, Nil{}}})
+    out : String <- Proc.run(Shp.sh_argv(Shp.sandbox_profile(side, flags), path))
     IO.pure(Xp.ExecRes, Shp.exec_of(out))
 
 # boot cleanup: the wrappers of a previous process on this port cannot be

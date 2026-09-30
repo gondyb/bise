@@ -432,3 +432,73 @@ def bg_wrap(+command: String, +bg: String, +after: U32) -> String:
   bg_wrap.seg("rmdir $BG/$i.slot 2>/dev/null",
   bg_wrap.seg("rm -f \"$0\"",
   "exit $s"))))))))))))))))))))))))))))))))))))))))))
+
+# ---- the sandbox (approvals-sandbox, approvals-design.md §6) ----
+# In auto on macOS the hub's allow line carries flags: "sandbox" runs the
+# wrapper under <side>/sandbox.sb (writes only in the roots, network on
+# loopback and unix sockets), "sandbox net" under <side>/sandbox-net.sb
+# (the same writes, the network open: a part names a network program).
+# No flag: plain /bin/sh (yolo, the parser path, an allowed rerun). The
+# hub writes both profiles next to the gate file; a missing one makes
+# sandbox-exec fail, so the command does not run (fails closed).
+
+def SANDBOX_EXEC() -> String:
+  "/usr/bin/sandbox-exec"
+
+def sandbox_profile.net(net: Bool, +side: String) -> String:
+  match net:
+    case True{}:
+      String.append(side, "/sandbox-net.sb")
+    case False{}:
+      String.append(side, "/sandbox.sb")
+
+def sandbox_profile.on(on: Bool, +side: String, +flags: String) -> String:
+  match on:
+    case True{}:
+      sandbox_profile.net(String.contains(flags, "net"), side)
+    case False{}:
+      ""
+
+# side: the agent's run/ folder (side_dir_of), flags: the allow line's
+# words after "allow" ("" for none); "" = no sandbox
+def sandbox_profile(+side: String, +flags: String) -> String:
+  sandbox_profile.on(String.contains(flags, "sandbox"), side, flags)
+
+def sh_argv.pick(plain: Bool, +profile: String, +path: String)
+    -> List<&2, String>:
+  match plain:
+    case True{}:
+      Con{"/bin/sh", Con{path, Nil{}}}
+    case False{}:
+      Con{SANDBOX_EXEC(), Con{"-f", Con{profile,
+        Con{"/bin/sh", Con{path, Nil{}}}}}}
+
+# the wrapper's argv: /bin/sh <path>, under sandbox-exec with a profile
+def sh_argv(+profile: String, +path: String) -> List<&2, String>:
+  sh_argv.pick(String.is_empty(profile), profile, path)
+
+# Codex's heuristic (sandboxing/src/denial.rs): no sure way to tell, so a
+# failed run whose output shows a refused write or a failed network call
+# was stopped by the sandbox. The hub reads the path from the output.
+def sandbox_stopped.text(+low: String) -> Bool:
+  Bool.or(String.contains(low, "operation not permitted"),
+  Bool.or(String.contains(low, "could not resolve host"),
+  Bool.or(String.contains(low, "couldn't connect to server"),
+  Bool.or(String.contains(low, "nodename nor servname provided"),
+  Bool.or(String.contains(low, "temporary failure in name resolution"),
+  Bool.or(String.contains(low, "failed to lookup address"),
+    String.contains(low, "network is unreachable")))))))
+
+def sandbox_stopped.go(ok: Bool, +out: String) -> Bool:
+  match ok:
+    case True{}:
+      False{}
+    case False{}:
+      sandbox_stopped.text(String.to_lower(out))
+
+# a sandboxed run's result: stopped by the sandbox? (a success, a
+# background handoff included, never is)
+def sandbox_stopped(+r: Xp.ExecRes) -> Bool:
+  match r:
+    case Xp.Ex{+ok, +out}:
+      sandbox_stopped.go(ok, out)

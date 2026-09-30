@@ -1838,6 +1838,49 @@ law bash_script_path_in_side_dir:
   {String.starts_with(Sh.bash_script_path("/h/agents/a/run", "7", "ls"),
      "/h/agents/a/run/bend-sh-7-") == True{} : Bool}
 
+# ---- the sandbox (approvals-sandbox, approvals-design.md §6) ----
+
+# LAW: the allow line's flags pick the profile in the agent's run/
+# folder: none, the closed one, or the network-open one.
+law sandbox_profile_none_without_the_flag:
+  {Sh.sandbox_profile("/h/agents/a/run", "") == "" : String}
+
+law sandbox_profile_closed:
+  {Sh.sandbox_profile("/h/agents/a/run", "sandbox")
+    == "/h/agents/a/run/sandbox.sb" : String}
+
+law sandbox_profile_net:
+  {Sh.sandbox_profile("/h/agents/a/run", "sandbox net")
+    == "/h/agents/a/run/sandbox-net.sb" : String}
+
+# LAW: with no profile the wrapper runs as before; with one, under
+# sandbox-exec (background jobs inherit it: they are the wrapper's
+# children).
+law sh_argv_plain:
+  {Sh.sh_argv("", "/r/bend-sh-7-1.sh") == Con{"/bin/sh", Con{"/r/bend-sh-7-1.sh", Nil{}}}
+    : List<&2, String>}
+
+law sh_argv_sandboxed:
+  {Sh.sh_argv("/r/sandbox.sb", "/r/bend-sh-7-1.sh")
+    == Con{"/usr/bin/sandbox-exec", Con{"-f", Con{"/r/sandbox.sb",
+         Con{"/bin/sh", Con{"/r/bend-sh-7-1.sh", Nil{}}}}}} : List<&2, String>}
+
+# LAW: a failed run that shows a refused write or a failed network call
+# was stopped by the sandbox; a success never was, nor another failure.
+law sandbox_stopped_write:
+  {Sh.sandbox_stopped(Xt.Ex{False{},
+     "exit 1: /bin/sh: /Users/u/Desktop/x.txt: Operation not permitted"}) == True{} : Bool}
+
+law sandbox_stopped_network:
+  {Sh.sandbox_stopped(Xt.Ex{False{},
+     "exit 6: curl: (6) Could not resolve host: example.com"}) == True{} : Bool}
+
+law sandbox_stopped_not_on_success:
+  {Sh.sandbox_stopped(Xt.Ex{True{}, "Operation not permitted"}) == False{} : Bool}
+
+law sandbox_stopped_not_on_a_test_failure:
+  {Sh.sandbox_stopped(Xt.Ex{False{}, "exit 101: test result: FAILED"}) == False{} : Bool}
+
 # ---- exec_of: the tool result the model actually reads ----
 
 # LAW: exit 0 is a success carrying the output.

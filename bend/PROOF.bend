@@ -523,6 +523,33 @@ def Laws.bash_script_path_per_command():
 def Laws.bash_script_path_in_side_dir():
   {==}
 
+def Laws.sandbox_profile_none_without_the_flag():
+  {==}
+
+def Laws.sandbox_profile_closed():
+  {==}
+
+def Laws.sandbox_profile_net():
+  {==}
+
+def Laws.sh_argv_plain():
+  {==}
+
+def Laws.sh_argv_sandboxed():
+  {==}
+
+def Laws.sandbox_stopped_write():
+  {==}
+
+def Laws.sandbox_stopped_network():
+  {==}
+
+def Laws.sandbox_stopped_not_on_success():
+  {==}
+
+def Laws.sandbox_stopped_not_on_a_test_failure():
+  {==}
+
 def Laws.self_reload_acks():
   {==}
 
