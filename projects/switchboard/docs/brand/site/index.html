@@ -25,7 +25,7 @@
 <meta name="twitter:creator" content="@GabrielVergnaud">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"bise","url":"https://bise.dev","applicationCategory":"DeveloperApplication","operatingSystem":"macOS","description":"bise is an open-source terminal app for multi-agent coding. you talk to one agent, it runs a whole team of coding agents for you, and you stay in flow.","author":{"@type":"Person","name":"Gabriel Vergnaud"},"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#c4bcaf; --faint:#3d3935; --kick:#6f685f; --wind:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --raised:#221e1c; --chip:#262220; }
   [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#4a443e; --faint:#d6cfc4; --kick:#9d958a; --wind:#cbc3b6; --acc:#b8416b; --err:#b3261e; --raised:#fbf8f3; --chip:#e8e2d8; }
@@ -111,10 +111,6 @@
   #try .fine b { color:var(--text); font-weight:700; }
   #try .switch { margin-top:0; font-size:inherit; text-shadow:none; }
   p { margin-bottom:20px; }
-  /* type: bise's voice (titles, the product, the marks) in mono; the explaining text in Inter, easier to read */
-  body { font-family:"Inter",-apple-system,system-ui,sans-serif; font-size:18px; line-height:1.5; }
-  h2, .t1, .punch, .hi, .how b, .feat h3, #faq b, .turn { font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; }
-  .big, .kiss, .term, .term *, .mini, .mini *, .install, .install *, code, pre, .keys, .chip, .stage, .stage *, .stats, .org .agent, .org .boss, .org .msg, .gc, .gust, .mv, .mv *, header, .kicker, .n, .def, .cli, .tick, .k { font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; }
   p.soft { color:var(--dim); }
   .turn { color:var(--acc); font-weight:700; }
 
@@ -298,7 +294,7 @@
   .dwin .ph { display:block; height:7px; border-radius:4px; background:color-mix(in srgb, var(--text) 8%, transparent); }  /* placeholders: the preview stays calm (scoped: .ph is also the composers' placeholder) */
   .dwin { position:relative; z-index:1; display:block; height:360px; border-radius:14px; overflow:hidden; text-align:left; color:var(--text);
     background:var(--bg);
-    box-shadow:0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent), 0 16px 40px rgba(0,0,0,.25); font-family:"Inter",-apple-system,system-ui,sans-serif; font-size:12.5px; line-height:1.5;
+    box-shadow:0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent), 0 16px 40px rgba(0,0,0,.25); font-family:"Geist",-apple-system,system-ui,sans-serif; font-size:12.5px; line-height:1.5;
     }
   .dwin .m, .dwin .g, .dwin .k { font-family:"JetBrains Mono",ui-monospace,monospace; }
   .dwin .tb { height:34px; display:flex; align-items:center; gap:7px; padding:0 12px; border-bottom:1px solid color-mix(in srgb, var(--text) 8%, transparent); color:var(--dim); font-size:11.5px; }
@@ -325,7 +321,7 @@
   .dwin .ag .a .x { grid-column:2; font-family:"JetBrains Mono",monospace; font-size:9.5px; color:var(--dim); }
   .dnote { position:absolute; z-index:2; right:-26px; top:46px; width:250px; display:grid; grid-template-columns:30px 1fr; gap:0 10px; text-align:left; padding:10px 12px; border-radius:13px;
     background:color-mix(in srgb, var(--raised) 88%, transparent); box-shadow:0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent), 0 8px 20px rgba(0,0,0,.2);
-    font-family:"Inter",-apple-system,system-ui,sans-serif; font-size:11.5px; line-height:1.4; opacity:0; transform:translateX(24px); transition:opacity .5s, transform .6s cubic-bezier(.2,.9,.3,1.2); }
+    font-family:"Geist",-apple-system,system-ui,sans-serif; font-size:11.5px; line-height:1.4; opacity:0; transform:translateX(24px); transition:opacity .5s, transform .6s cubic-bezier(.2,.9,.3,1.2); }
   .dnote.on { opacity:1; transform:none; } .dnote .ic { width:30px; height:30px; border-radius:8px; background:#141211; color:var(--acc); font-family:"JetBrains Mono",monospace; font-weight:700; display:flex; align-items:center; justify-content:center; font-size:11px; }
   .dnote b { display:block; } .dnote span { color:var(--dim); }
   @media (max-width: 760px) { .dwin .sd, .dwin .ag { display:none; } .dnote { right:8px; } }
