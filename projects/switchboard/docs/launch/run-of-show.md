@@ -10,7 +10,7 @@ latest release: v2026.9.30-4. repo gvergnaud/bise: private until Gabriel's click
 | 2 | macOS only, Linux later | **decided** |
 | 3 | LGPL glibc bit in the prebuilt V8 | open · main's pick: accept for launch, rebuild later |
 | 4 | Mistral: no employer name in any post, site or README (**decided**). heads-up to the manager before 16:00: Gabriel's call (launch pick: yes) | open |
-| 5 | X handle (site links x.com/GabrielVergnaud) | open |
+| 5 | X handle: @GabrielVergnaud (site link is right) | **decided** |
 | 6 | who you actually know in outreach.md | open |
 | 7 | you on camera in the video? French posts beyond LinkedIn thu? | open |
 | 8 | demo repo for the video: a toy repo (like 'acme' from the landing demos) or a real one? none exists yet | open |
@@ -59,7 +59,7 @@ every line must be yes. one no = we slip the posts, we don't post around it.
 - [ ] README, site FAQ, HN comment all say: macOS only, no approvals yet, bring your own key, pre-release
 - [ ] bise.dev: no `X-Robots-Tag: noindex` (`curl -sI https://bise.dev | grep -i robots` prints nothing)
 - [ ] OG image shows on a link preview (paste bise.dev in an X draft)
-- [ ] the desktop CTA link points to the right X handle
+- [x] the desktop CTA link points to the right X handle (x.com/GabrielVergnaud)
 - [ ] the video is exported, captions burned in, < 2:20 and < 512 MB for X
 - [ ] the "built with bise" number, if used, comes from a real count (to verify: 919 commits on this repo's HEAD today; the public repo may differ)
 
