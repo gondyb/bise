@@ -150,10 +150,12 @@ Product Hunt: not on day 0. in week 2 or 3, with the desktop app as a second mom
 
 the warmest list you have: people who already trust you, and who write TypeScript all day. send it on launch day at 16:15, right after the X thread. ask them to try it and to reply. never ask for HN upvotes (HN buries posts that get vote rings).
 
-subject ideas:
-- i built something new: bise :*
-- a terminal where multi-agent coding is painless
-- i stopped babysitting my agents
+subject: **i built something new: bise :***
+
+preview text (Kit shows it after the subject; keep it under ~90 characters):
+- a terminal where multi-agent coding is painless. open source, out today. ← pick
+- one thread per repo. it runs the agents, you stay in flow.
+- i stopped babysitting my agents. here's what i built instead.
 
 > hi! it's Gabriel, from Type-Level TypeScript.
 >
