@@ -45,13 +45,30 @@ def prompt_read(+path: String) -> IO(String):
 
 # the identity names the product (bise), not the runtime under it
 def identity() -> String:
-  "You are a precise assistant in bise, a terminal app where the user codes with AI agents. Discover additional tools with `search_tool_functions`, and call them using `run_typescript`."
+  "You are a precise assistant in bise. Discover additional tools with `search_tool_functions`, and call them using `run_typescript`."
 
-# gs: the tool groups subsection (Mcpp.groups_section), right after the
-# tool-use section it belongs to ("" adds nothing)
-def prompt_join(+tone: String, +tu: String, +gs: String, +ct: String) -> String:
+# what bise is and what it is for, right after the identity: every
+# agent (main, tasks) reads the same paragraph; a solo session (no role)
+# is also told it works alone
+def about() -> String:
+  "## What bise is\n\nbise is a terminal app for multi-agent coding, made human: one thread per repo. The user talks to `main`; main turns their ideas into tasks and runs one agent per task, in parallel; the agents coordinate with the `sb` command. What the user gets: they stay in flow, they are interrupted only when a decision needs them, and no work gets lost."
+
+def about.pick(solo: Bool) -> String:
+  match solo:
+    case True{}:
+      String.append(about(), "\n\nThis session is a solo one: you work alone with the user, without main or other agents.")
+    case False{}:
+      about()
+
+def about_for(+extra: String) -> String:
+  about.pick(String.is_empty(String.trim(extra)))
+
+# ab: the bise paragraph (about_for); gs: the tool groups subsection
+# (Mcpp.groups_section), right after the tool-use section it belongs to
+# ("" adds nothing)
+def prompt_join(+ab: String, +tone: String, +tu: String, +gs: String, +ct: String) -> String:
   String.append(
-    Rcp.prompt_extra(identity(), tone),
+    Rcp.prompt_extra(Rcp.prompt_extra(identity(), ab), tone),
     String.append("\n\n", String.append(Rcp.prompt_extra(tu, gs), String.append("\n\n", ct))))
 
 # the live system prompt = identity + the exact vibe_sdk sections
@@ -101,7 +118,7 @@ def live_prompt(+cat: List<&2, T.ToolDef>) -> IO(String):
     +amd : String <- agents_md()
     mi : Maybe<&2, String> <- Mcp.index_content()
     +gs : String <- IO.pure(String, Mcpp.groups_section(Mcpp.merged_tools.live(cat, mi)))
-    IO.pure(String, Rcp.prompt_extra(Rcp.prompt_extra(live_prompt.go(prompt_join(Rcp.solo_tone(extra, tone), tu, gs, Rcp.prompt_extra(ct, note)), content), amd), extra))
+    IO.pure(String, Rcp.prompt_extra(Rcp.prompt_extra(live_prompt.go(prompt_join(about_for(extra), Rcp.solo_tone(extra, tone), tu, gs, Rcp.prompt_extra(ct, note)), content), amd), extra))
 
 def live_cfg(+threshold: Nat) -> IO(T.Cfg):
   do IO<T.Cfg>:
