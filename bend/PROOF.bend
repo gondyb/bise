@@ -556,15 +556,6 @@ def Laws.deferred_resets_at_user():
 def Laws.deferred_empty_history():
   {==}
 
-def Laws.live_catalog_has_five_tools():
-  {==}
-
-def Laws.parity_catalog_keeps_three():
-  {==}
-
-def Laws.live_catalog_skill_and_patch_names():
-  {==}
-
 def Laws.def_acks_suffix_empty_when_none():
   {==}
 
@@ -740,9 +731,6 @@ def Laws.ser_msg_escapes_newlines():
   {==}
 
 def Laws.checkpoint_multiline_roundtrip():
-  {==}
-
-def Laws.apply_patch_desc_names_the_format():
   {==}
 
 def Laws.patch_parse_add():
@@ -4294,4 +4282,115 @@ def Laws.compact_retry_is_bare():
   {==}
 
 def Laws.context_skips_compaction_with_tools():
+  {==}
+
+def Laws.live_catalog_edit_toolset_has_six_tools():
+  {==}
+
+def Laws.live_catalog_patch_toolset_has_five_tools():
+  {==}
+
+def Laws.parity_catalog_keeps_three():
+  {==}
+
+def Laws.live_catalog_edit_names():
+  {==}
+
+def Laws.live_catalog_patch_names():
+  {==}
+
+def Laws.apply_patch_desc_names_the_format():
+  {==}
+
+def Laws.edit_tools_carry_vibe_descriptions():
+  {==}
+
+def Laws.bash_desc_names_the_edit_tool():
+  {==}
+
+def Laws.catalog_toolset_read_back():
+  {==}
+
+def Laws.patch_provider_is_openai_only():
+  {==}
+
+def Laws.edit_steering_lines():
+  {==}
+
+def Laws.retool_swaps_tools_and_line():
+  {==}
+
+def Laws.edit_err_empty_path():
+  {==}
+
+def Laws.edit_err_empty_old():
+  {==}
+
+def Laws.edit_err_same():
+  {==}
+
+def Laws.edit_err_missing():
+  {==}
+
+def Laws.edit_err_not_file():
+  {==}
+
+def Laws.edit_err_not_found():
+  {==}
+
+def Laws.edit_err_many():
+  {==}
+
+def Laws.edit_err_not_text():
+  {==}
+
+def Laws.edit_err_permission():
+  {==}
+
+def Laws.edit_ok_messages():
+  {==}
+
+def Laws.edit_result_text():
+  {==}
+
+def Laws.write_err_empty_path():
+  {==}
+
+def Laws.write_err_too_big():
+  {==}
+
+def Laws.write_err_exists():
+  {==}
+
+def Laws.write_result_text():
+  {==}
+
+def Laws.edit_check_args_order():
+  {==}
+
+def Laws.write_check_order():
+  {==}
+
+def Laws.edit_apply_cases():
+  {==}
+
+def Laws.edit_keeps_crlf():
+  {==}
+
+def Laws.utf8_bad_offsets():
+  {==}
+
+def Laws.edit_path_resolves():
+  {==}
+
+def Laws.edit_gate_args():
+  {==}
+
+def Laws.edit_views_are_patches():
+  {==}
+
+def Laws.edit_schemas():
+  {==}
+
+def Laws.edit_calls_ride_structured():
   {==}

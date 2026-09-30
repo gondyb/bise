@@ -993,7 +993,7 @@ pub(crate) fn tool_meta(td: &ToolData) -> (String, String, Option<(CodeLang, Str
 // the tool line itself: the only part of a running tool that changes
 // from one frame to the next (spinner, elapsed)
 pub(crate) fn tool_head(td: &ToolData, tick: u32, name: &str, args: &str) -> Line<'static> {
-    if name == "apply_patch" {
+    if matches!(name, "apply_patch" | "edit" | "write_file") {
         if let Some(src) = td.code.as_deref().map(|raw| tool_source(CodeLang::Patch, wire_decode(raw))) {
             return edit_head(td, tick, &src);
         }
@@ -1148,7 +1148,10 @@ pub(crate) fn edit_head(td: &ToolData, tick: u32, src: &str) -> Line<'static> {
     let dim_st = Style::default().fg(dim());
     let mut row = vec![
         Span::styled(format!(" {} ", G_PATCH), Style::default().fg(text())),
-        Span::styled("edit ".to_string(), Style::default().fg(text())),
+        Span::styled(
+            if td.name.as_deref() == Some("write_file") { "write " } else { "edit " }.to_string(),
+            Style::default().fg(text()),
+        ),
     ];
     // one file edited: its path is a link once done (BISE-264)
     if files.len() == 1 && !matches!(td.state, ToolState::Run) {

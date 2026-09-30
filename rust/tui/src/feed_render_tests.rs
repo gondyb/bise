@@ -596,6 +596,20 @@ fn an_edit_is_one_line_its_diff_when_opened() {
     );
 }
 
+// approvals-edit: Vibe's edit and write_file come as the V4A patch they
+// amount to (bend/core/edit.bend edit_view / write_view): the same diff
+#[test]
+fn vibe_edit_and_write_file_show_as_diffs() {
+    let patch = "*** Begin Patch\n*** Update File: src/a.rs\n@@\n-old\n+new\n+more\n*** End Patch";
+    let mut td = tool_with(9, "edit", Some(patch), Some((true, "file: /w/src/a.rs")), true);
+    assert_eq!(text_of(&Ev::Tool(td.clone()), 100), vec![" ± edit src/a.rs ✓ +2 −1 ▸".to_string()]);
+    td.expanded = true;
+    assert!(text_of(&Ev::Tool(td), 100).iter().any(|r| r == " │ +more"));
+    let add = "*** Begin Patch\n*** Add File: notes/n.md\n+one\n+two\n*** End Patch";
+    let td = tool_with(10, "write_file", Some(add), Some((true, "file_path: /w/notes/n.md")), true);
+    assert_eq!(text_of(&Ev::Tool(td), 100), vec![" ± write notes/n.md ✓ +2 ▸".to_string()]);
+}
+
 fn agent_msg(from: &str, text: &str) -> Ev {
     Ev::AgentMsg { from: from.into(), to: String::new(), text: text.into(), level: 3, id: "m_3".into(), open: false, fold: false }
 }

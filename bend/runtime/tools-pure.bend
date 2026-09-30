@@ -5,6 +5,7 @@ import Base
 import ../core/discovery.bend as D
 import ../vendor/json.bend as J
 import ../core/types.bend as T
+import ../core/edit.bend as Ed
 
 def patch_desc.read(m: Maybe<&2, String>) -> String:
   Maybe.default(&2, String, m, "Create, update or delete files with a patch in the Codex V4A format. The whole patch is validated before anything is written; every failure is loud.")
@@ -61,13 +62,57 @@ def tool_desc_at(n: Nat, tools: List<&2, T.ToolDef>) -> String:
         case Con{_, +rest}:
           tool_desc_at(k, rest)
 
-# the live catalog: the parity tools, the skill loader and the patch
-# editor (catalog_short keeps the scripted scenarios byte-identical)
+# the live catalog: the three parity tools, the skill loader, then ONE
+# edit toolset (the user's decision, design §2.2: the OpenAI provider
+# gets apply_patch, every other one Vibe's edit and write_file, never
+# both). The wire reverses the catalog (core/wire.bend add_tool pushes
+# each TOOL line on the front), so a request lists the edit tools
+# FIRST, before bash (steering): edit, write_file, skill,
+# run_typescript, bash, search_tool_functions. The OpenAI catalog is
+# today's, byte for byte (the prompt cache). bash's description names
+# the edit tool that is on (its {edit_line}). catalog_short keeps the
+# scripted scenarios byte-identical.
+def edit_tools(patch: Bool, +pd: String) -> List<&2, T.ToolDef>:
+  match patch:
+    case True{}:
+      Con{T.ToolDef{"apply_patch", pd}, Nil{}}
+    case False{}:
+      Con{T.ToolDef{"write_file", Ed.write_desc()},
+        Con{T.ToolDef{"edit", Ed.edit_desc()}, Nil{}}}
+
+def bash_for(+bd: String, +patch: Bool) -> String:
+  Ed.replace(bd, "{edit_line}", Ed.bash_line(patch), False{})
+
 def catalog_live(+sd: String, +rd: String, +bd: String, +kd: String,
-    +pd: String) -> List<&2, T.ToolDef>:
-  List.append(&2, T.ToolDef, catalog_pure(sd, rd, bd),
-    Con{T.ToolDef{"skill", kd},
-     Con{T.ToolDef{"apply_patch", pd}, Nil{}}})
+    +pd: String, +patch: Bool) -> List<&2, T.ToolDef>:
+  List.append(&2, T.ToolDef, catalog_pure(sd, rd, bash_for(bd, patch)),
+    Con{T.ToolDef{"skill", kd}, edit_tools(patch, pd)})
+
+# which edit toolset a catalog carries: Some(True) apply_patch,
+# Some(False) edit + write_file, None: none (the scripted catalog)
+def has_tool(tools: List<&2, T.ToolDef>, +name: String) -> Bool:
+  match tools:
+    case Nil{}:
+      False{}
+    case Con{T.ToolDef{+n, _}, rest}:
+      Bool.or(String.eq(n, name), has_tool(rest, name))
+
+def toolset.edit(has_edit: Bool) -> Maybe<&2, Bool>:
+  match has_edit:
+    case True{}:
+      Some{False{}}
+    case False{}:
+      None{}
+
+def toolset.pick(has_patch: Bool, +tools: List<&2, T.ToolDef>) -> Maybe<&2, Bool>:
+  match has_patch:
+    case True{}:
+      Some{True{}}
+    case False{}:
+      toolset.edit(has_tool(tools, "edit"))
+
+def toolset(+tools: List<&2, T.ToolDef>) -> Maybe<&2, Bool>:
+  toolset.pick(has_tool(tools, "apply_patch"), tools)
 
 # ---- the unified search: the vibe_sdk SearchRequest schema ----
 # The live model sends {"mode": ..., "query": ...} (the exact vibe_sdk

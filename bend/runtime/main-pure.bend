@@ -13,6 +13,7 @@ import ../core/session.bend as S
 import ../core/types.bend as T
 import ../core/text.bend as Tx
 import ./tools-pure.bend as Xp
+import ../core/edit.bend as Ed
 import ./selftools-pure.bend as Sfp
 
 # ---- runtime state and loop vocabulary ----
@@ -342,6 +343,32 @@ def transition_queued(rt: Rt, job: Job) -> Trans:
     case _:
       transition(rt, job)
 
+# ---- one edit toolset per request, after a provider switch ----
+# The catalog and the prompt line are built at start for the provider
+# of that start (repl-live.bend live_cfg). The model is re-resolved
+# before each call (/model), so a request whose provider wants the
+# other toolset is re-tooled here: its tool lines (the whole catalog,
+# bash's description names the edit tool too) and the system prompt's
+# edit line are swapped. The session keeps its history: past
+# apply_patch, edit or write_file calls replay as they are.
+def rt_tools(+rt: Rt) -> List<&2, T.ToolDef>:
+  match rt:
+    case Rt{+sess, _, _, _}:
+      match sess:
+        case T.Sess{+cfg, _, _, _, _, _, _, _}:
+          match cfg:
+            case T.Cfg{_, _, _, _, +tools}:
+              tools
+
+def retool(+request: String, +old: List<&2, T.ToolDef>,
+    +new: List<&2, T.ToolDef>, +old_line: String, +new_line: String) -> String:
+  Ed.replace(Ed.replace(request, Rem.ser_tools(old), Rem.ser_tools(new), False{}),
+    old_line, new_line, False{})
+
+# Vibe's edit tools (core/edit.bend)
+def is_edit_tool(+name: String) -> Bool:
+  Bool.or(String.eq(name, "edit"), String.eq(name, "write_file"))
+
 # ---- feed annotations for the TUI (live only) ----
 # The Core's obs carry ids and outcomes; the runtime adds what the
 # engineer actually needs: the tool name, the args, and a result
@@ -360,16 +387,24 @@ def ok_label(ok: Bool) -> String:
     case False{}:
       "fail"
 
-# a bash call shows its command, not the JSON of its description
-def call_ann.pick(is_bash: Bool, +args: String) -> String:
+# a bash call shows its command, not the JSON of its description; an
+# edit or write_file call its path first (the hub's activity line)
+def call_ann.edit(is_edit: Bool, +name: String, +args: String) -> String:
+  match is_edit:
+    case True{}:
+      Ed.ann_args(name, args)
+    case False{}:
+      args
+
+def call_ann.pick(is_bash: Bool, +name: String, +args: String) -> String:
   match is_bash:
     case True{}:
       W.flat_cmd(args)
     case False{}:
-      args
+      call_ann.edit(is_edit_tool(name), name, args)
 
 def call_ann.args(+name: String, +args: String) -> String:
-  call_ann.pick(String.eq(name, "bash"), args)
+  call_ann.pick(String.eq(name, "bash"), name, args)
 
 def call_ann(+call: T.Call) -> String:
   match call:
@@ -479,6 +514,8 @@ type Tool is Data:
   TSearch{}
   TSkill{}
   TPatch{}
+  TEdit{}
+  TWrite{}
   TMcp{}
 
 def tool_of(+name: String) -> Tool:
@@ -486,7 +523,9 @@ def tool_of(+name: String) -> Tool:
   Bool.pick(Tool, String.eq(name, "bash"), TBash{},
   Bool.pick(Tool, String.eq(name, "search_tool_functions"), TSearch{},
   Bool.pick(Tool, String.eq(name, "skill"), TSkill{},
-  Bool.pick(Tool, String.eq(name, "apply_patch"), TPatch{}, TMcp{})))))
+  Bool.pick(Tool, String.eq(name, "apply_patch"), TPatch{},
+  Bool.pick(Tool, String.eq(name, "edit"), TEdit{},
+  Bool.pick(Tool, String.eq(name, "write_file"), TWrite{}, TMcp{})))))))
 
 def call_name(c: T.Call) -> String:
   match c:
@@ -510,9 +549,28 @@ def call_args(c: T.Call) -> String:
 # TUI renders the whole program or script; the tool # preview line
 # stays capped at 200
 # (a bash call with a description shows its command: W.flat_cmd)
+# edit and write_file show as the V4A patch they amount to (the TUI
+# draws it as a diff, like apply_patch's)
+def code_src.write(is_write: Bool, +args: String) -> String:
+  match is_write:
+    case True{}:
+      Ed.write_view(args)
+    case False{}:
+      W.flat_cmd(args)
+
+def code_src.edit(is_edit: Bool, +name: String, +args: String) -> String:
+  match is_edit:
+    case True{}:
+      Ed.edit_view(args)
+    case False{}:
+      code_src.write(String.eq(name, "write_file"), args)
+
+def code_src(+name: String, +args: String) -> String:
+  code_src.edit(String.eq(name, "edit"), name, args)
+
 def code_ann(+call: T.Call) -> String:
   String.append("tool_code #", String.append(U32.show(call_id(call)),
-    String.append(" : ", W.wire_encode(W.flat_cmd(call_args(call))))))
+    String.append(" : ", W.wire_encode(code_src(call_name(call), call_args(call))))))
 
 # the intent line of a bash or run_typescript call (BISE-223): the
 # model's one-line description of the call, for the TUI to show in
@@ -537,7 +595,8 @@ def intent_anns(+call: T.Call) -> List<&2, String>:
 
 def is_code_call(+name: String) -> Bool:
   Bool.or(String.eq(name, "run_typescript"),
-    Bool.or(String.eq(name, "bash"), String.eq(name, "apply_patch")))
+    Bool.or(String.eq(name, "bash"),
+      Bool.or(String.eq(name, "apply_patch"), is_edit_tool(name))))
 
 # ---- --resume / --continue: replay the restored history to the client ----
 # A client's feed starts empty: a fresh TUI after --resume, and after a

@@ -14,6 +14,7 @@ import ./compaction.bend as C
 import ./text.bend as Tx
 import ./image.bend as Im
 import ../vendor/json.bend as J
+import ./edit.bend as Ed
 
 # ---- single-line flattening (every reply line is one line) ----
 
@@ -476,19 +477,35 @@ def search_schema() -> J.Json:
                         Nil{}}}}}})),
           Nil{}}}})
 
-def tool_schema.bash(is_bash: Bool) -> J.Json:
+# Vibe's edit and write_file (core/edit.bend); every other flat tool
+# (apply_patch) takes {"arg": string}
+def tool_schema.write(is_write: Bool) -> J.Json:
+  match is_write:
+    case True{}:
+      Ed.write_schema()
+    case False{}:
+      arg_schema()
+
+def tool_schema.edit(is_edit: Bool, +name: String) -> J.Json:
+  match is_edit:
+    case True{}:
+      Ed.edit_schema()
+    case False{}:
+      tool_schema.write(String.eq(name, "write_file"))
+
+def tool_schema.bash(is_bash: Bool, +name: String) -> J.Json:
   match is_bash:
     case True{}:
       bash_schema()
     case False{}:
-      arg_schema()
+      tool_schema.edit(String.eq(name, "edit"), name)
 
 def tool_schema.rt(is_rt: Bool, +name: String) -> J.Json:
   match is_rt:
     case True{}:
       code_schema()
     case False{}:
-      tool_schema.bash(String.eq(name, "bash"))
+      tool_schema.bash(String.eq(name, "bash"), name)
 
 def tool_schema.search(is_search: Bool, +name: String) -> J.Json:
   match is_search:
@@ -997,7 +1014,8 @@ def reply_err(+status: U32, +body: String) -> String:
 
 def is_structured(+name: String) -> Bool:
   Bool.or(String.eq(name, "run_typescript"),
-    String.eq(name, "search_tool_functions"))
+    Bool.or(String.eq(name, "search_tool_functions"),
+      Bool.or(String.eq(name, "edit"), String.eq(name, "write_file"))))
 # ---- the last guard before a provider request (BISE-242) ----
 # Every family (core/api.bend) builds its body from this WReq: a call
 # with no tool message right after its assistant message gets a failed

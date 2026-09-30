@@ -32,14 +32,20 @@ def patch_desc() -> IO(String):
     m : Maybe<&2, String> <- P.read_file("prompts/tool-desc-apply-patch.txt")
     IO.pure(String, Xtp.patch_desc.read(m))
 
-def catalog() -> IO(List<&2, T.ToolDef>):
+# the catalog of one provider's requests: `patch` = the OpenAI provider
+# (apply_patch), else Vibe's edit and write_file (tools-pure.bend)
+def catalog_for(+patch: Bool) -> IO(List<&2, T.ToolDef>):
   do IO<List<&2, T.ToolDef>>:
     +sd : String <- search_desc()
     +rd : String <- rt_desc()
     +bd : String <- bash_desc()
     +kd : String <- skill_desc()
     +pd : String <- patch_desc()
-    IO.pure(List<&2, T.ToolDef>, Xtp.catalog_live(sd, rd, bd, kd, pd))
+    IO.pure(List<&2, T.ToolDef>, Xtp.catalog_live(sd, rd, bd, kd, pd, patch))
+
+# the tool names only matter here (the MCP groups section)
+def catalog() -> IO(List<&2, T.ToolDef>):
+  catalog_for(False{})
 
 # short fallback for pure contexts (laws, scenarios that don't need
 # the full vibe_sdk description text)

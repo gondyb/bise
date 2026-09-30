@@ -14,7 +14,8 @@ JSON reply (the old tests: openai-chat, not streamed, unchanged).
 
 The script lives in the conversation itself (the last real user message:
 the injected <bise_state> block is not one):
-- `[[bash: CMD]]` markers make the agent call its bash tool with each
+- `[[bash: CMD]]` markers (also `[[edit: JSON]]`, `[[write_file: JSON]]`:
+  JSON args) make the agent call its bash tool with each
   CMD, in order, one call per model request; when there is no `[[...]]`
   marker, `{{bash: CMD}}` markers are used instead (so main's message can
   carry the script of a task's brief); `[[bash: CMD @@ DESC]]` sends the
@@ -71,7 +72,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURES = os.path.join(HERE, "providers")
 LOG = os.environ.get("FAKE_LOG", "/tmp/sb-fake.log")
 FAMILIES = ("anthropic", "openai-chat", "openai-responses", "gemini")
-MARK = re.compile(r"\[\[(bash|skill): (.*?)\]\]", re.S)
+MARK = re.compile(r"\[\[(bash|skill|edit|write_file|apply_patch): (.*?)\]\]", re.S)
 INNER = re.compile(r"\{\{(bash): (.*?)\}\}", re.S)
 THINK = re.compile(r"\[\[think: (.*?)\]\]", re.S)
 ERROR = re.compile(r"\[\[error: (\w+)(?: x(\d+))?(?: retry=(\d+))?\]\]")
@@ -279,6 +280,10 @@ def reply_for(conv, seen=0):
     if calls_done < len(marks):
         tool, arg = marks[calls_done]
         args = {"name": arg.strip()} if tool == "skill" else {"arg": arg.strip()}
+        # `[[edit: JSON]]`, `[[write_file: JSON]]`: Vibe's edit tools
+        # take JSON args (approvals-edit)
+        if tool in ("edit", "write_file"):
+            args = json.loads(arg, strict=False)
         # `[[bash: CMD @@ DESC]]`: the call carries a description (BISE-223)
         if tool == "bash" and " @@ " in arg:
             cmd, desc = arg.split(" @@ ", 1)
@@ -750,7 +755,12 @@ class H(http.server.BaseHTTPRequestHandler):
                                 # BISE-135: the model and effort the call asked for
                                 "model": model, "effort": effort_of(body),
                                 # BISE-232: the AGENTS.md block of the system prompt
-                                "agents_md": agents_md_of(conv)}) + "\n")
+                                "agents_md": agents_md_of(conv),
+                                # approvals-edit: the request's tools, each
+                                # with its description, and the system text
+                                "tools": tool_list(family, body),
+                                "tool_texts": [m["text"] for m in conv if m["role"] == "tool"],
+                                "system": "\n".join(m["text"] for m in conv if m["role"] == "system")}) + "\n")
 
 
 # ---------------------------------------------------------------- tool names
@@ -760,6 +770,20 @@ class H(http.server.BaseHTTPRequestHandler):
 # the API's own 400.
 NAME_OK = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 ANTH_NAME_OK = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
+
+
+def tool_list(family, body):
+    """[name, description] of the request's tools, in order"""
+    out = []
+    for t in body.get("tools") or []:
+        if family == "openai-chat":
+            f = t.get("function") or {}
+            out.append([f.get("name", ""), f.get("description", "")])
+        elif family == "gemini":
+            out += [[d.get("name", ""), d.get("description", "")] for d in t.get("functionDeclarations") or []]
+        else:
+            out.append([t.get("name", ""), t.get("description", "")])
+    return out
 
 
 def tool_names(family, body):

@@ -867,7 +867,7 @@ fn tool_discloses(td: &ToolData) -> bool {
         return true;
     }
     td.result.as_ref().is_some_and(|(_, r)| !r.trim().is_empty())
-        || (td.name.as_deref() == Some("apply_patch") && td.code.is_some())
+        || (matches!(td.name.as_deref(), Some("apply_patch" | "edit" | "write_file")) && td.code.is_some())
 }
 
 /// Whether event `ev` opens and closes: a thinking section, a tool with

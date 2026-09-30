@@ -1384,6 +1384,19 @@ impl Hub {
                     json!({"t": "assistant", "agent": agent, "text": text}),
                 );
             }
+            Wire::Tool { name, args } if name == "edit" || name == "write_file" => {
+                // Vibe's edit tools: the runtime's feed line carries
+                // {"file_path": …} (bend/core/edit.bend ann_args)
+                let path = wire::edit_file(&args);
+                if self.st.agents.contains_key(agent) {
+                    let verb = if name == "edit" { "edit" } else { "write" };
+                    self.set_activity(agent, now, format!("{} {}", verb, path.as_deref().unwrap_or("")));
+                    self.dirty = true;
+                }
+                if let Some(path) = path {
+                    self.core(fx, env, None, json!({"t": "touch", "agent": agent, "path": path}));
+                }
+            }
             Wire::Tool { name, args } if name != "apply_patch" => {
                 if let Some(own) = self.st.agents.get(agent).map(|a| a.ws.path.clone()) {
                     self.set_activity(agent, now, format!("{} `{}`", name, clip(&one_line(&args), 120)));

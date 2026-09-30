@@ -8,6 +8,7 @@ import ./core/compaction.bend as C
 import ./core/checkpoint.bend as K
 import ./core/session.bend as S
 import ./core/patch.bend as Pa
+import ./core/edit.bend as Ed
 import ./core/config.bend as Cf
 import ./core/commands.bend as Cm
 import ./core/api.bend as Api
@@ -758,35 +759,224 @@ law def_acks_suffix_carries_both:
      String.contains(Sf.def_acks.suffix(Sf.Def{True{}, True{}}),
        "reload: scheduled")) == True{} : Bool}
 
-# LAW: the live catalog carries the skill loader and the apply_patch
-# editor after the three parity tools, and nothing after them: the
-# self.* requests are programmatic only (BISE-293: await
-# self.compact() inside a run_typescript program); catalog_short (the
-# scripted scenarios) stays untouched. self.sleep left the catalog
-# before them.
-law live_catalog_has_five_tools:
-  {Xt.catalog_len(Xt.catalog_live("s", "r", "b", "k", "p")) == 5n : Nat}
+# LAW: the live catalog carries ONE edit toolset (design §2.2, the
+# user's decision): Vibe's edit and write_file for every provider but
+# OpenAI, apply_patch for OpenAI, never both. They come last in the
+# catalog: the wire reverses it, so a request lists them first, before
+# bash (steering). Nothing after them: the self.* requests are
+# programmatic only (BISE-293). catalog_short (the scripted scenarios)
+# stays untouched.
+law live_catalog_edit_toolset_has_six_tools:
+  {Xt.catalog_len(Xt.catalog_live("s", "r", "b", "k", "p", False{})) == 6n : Nat}
+
+law live_catalog_patch_toolset_has_five_tools:
+  {Xt.catalog_len(Xt.catalog_live("s", "r", "b", "k", "p", True{})) == 5n : Nat}
 
 law parity_catalog_keeps_three:
   {Xt.catalog_len(Xt.catalog_pure("s", "r", "b")) == 3n : Nat}
 
-law live_catalog_skill_and_patch_names:
-  {Bool.and(String.eq(Xt.tool_name_at(3n, Xt.catalog_live("s", "r", "b", "k", "p")),
-      "skill"),
-    Bool.and(String.eq(Xt.tool_name_at(4n, Xt.catalog_live("s", "r", "b", "k", "p")),
-      "apply_patch"),
-     String.eq(Xt.tool_name_at(5n, Xt.catalog_live("s", "r", "b", "k", "p")),
-      ""))) == True{} : Bool}
+law live_catalog_edit_names:
+  {String.join([Xt.tool_name_at(0n, Xt.catalog_live("s", "r", "b", "k", "p", False{})),
+     Xt.tool_name_at(1n, Xt.catalog_live("s", "r", "b", "k", "p", False{})),
+     Xt.tool_name_at(2n, Xt.catalog_live("s", "r", "b", "k", "p", False{})),
+     Xt.tool_name_at(3n, Xt.catalog_live("s", "r", "b", "k", "p", False{})),
+     Xt.tool_name_at(4n, Xt.catalog_live("s", "r", "b", "k", "p", False{})),
+     Xt.tool_name_at(5n, Xt.catalog_live("s", "r", "b", "k", "p", False{})),
+     Xt.tool_name_at(6n, Xt.catalog_live("s", "r", "b", "k", "p", False{}))], ",")
+    == "search_tool_functions,bash,run_typescript,skill,write_file,edit," : String}
 
-# LAW: apply_patch rides at position 4 with its description argument,
-# and the fallback description names the format and the atomicity.
+law live_catalog_patch_names:
+  {String.join([Xt.tool_name_at(0n, Xt.catalog_live("s", "r", "b", "k", "p", True{})),
+     Xt.tool_name_at(1n, Xt.catalog_live("s", "r", "b", "k", "p", True{})),
+     Xt.tool_name_at(2n, Xt.catalog_live("s", "r", "b", "k", "p", True{})),
+     Xt.tool_name_at(3n, Xt.catalog_live("s", "r", "b", "k", "p", True{})),
+     Xt.tool_name_at(4n, Xt.catalog_live("s", "r", "b", "k", "p", True{})),
+     Xt.tool_name_at(5n, Xt.catalog_live("s", "r", "b", "k", "p", True{}))], ",")
+    == "search_tool_functions,bash,run_typescript,skill,apply_patch," : String}
+
+# LAW: apply_patch rides with its description argument, and the
+# fallback description names the format and the atomicity.
 law apply_patch_desc_names_the_format:
   {Bool.and(
-     String.eq(Xt.tool_desc_at(4n, Xt.catalog_live("s", "r", "b", "k", "p")), "p"),
+     String.eq(Xt.tool_desc_at(4n, Xt.catalog_live("s", "r", "b", "k", "p", True{})), "p"),
      Bool.and(
        String.contains(Xt.patch_desc.read(None{}), "Codex V4A"),
        String.contains(Xt.patch_desc.read(None{}),
          "validated before anything is written"))) == True{} : Bool}
+
+# LAW: edit and write_file carry Vibe 2.25.8's descriptions verbatim
+# (prompts/edit.md, prompts/write_file.md).
+law edit_tools_carry_vibe_descriptions:
+  {String.join([Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b", "k", "p", False{})),
+     Xt.tool_desc_at(4n, Xt.catalog_live("s", "r", "b", "k", "p", False{}))], "|")
+    == "Exact string replacement in a file. You must `read_file` first. When editing text from `read_file` output, never include any part of the line-number prefix in `old_string` or `new_string`. If `old_string` is not found or matches multiple locations, provide more context to make it unique, or use `replace_all`. If an edit fails, re-read the file before retrying.|Create a new file. Errors if the file already exists — use `edit` to modify existing files. Prefer editing existing files over creating new ones. Do not proactively create documentation or README files." : String}
+
+# LAW: bash's description names the edit tool that is on, in place of
+# its {edit_line} marker (and nothing when the text has none).
+law bash_desc_names_the_edit_tool:
+  {String.join([Xt.tool_desc_at(1n, Xt.catalog_live("s", "r", "x {edit_line} y", "k", "p", False{})),
+     Xt.tool_desc_at(1n, Xt.catalog_live("s", "r", "x {edit_line} y", "k", "p", True{})),
+     Xt.bash_for("plain", False{})], "|")
+    == "x Not for editing files: use `edit`. y|x Not for editing files: use `apply_patch`. y|plain" : String}
+
+# LAW: which toolset a catalog carries; the scripted one carries none.
+law catalog_toolset_read_back:
+  {(Xt.toolset(Xt.catalog_live("s", "r", "b", "k", "p", True{})),
+    (Xt.toolset(Xt.catalog_live("s", "r", "b", "k", "p", False{})),
+     Xt.toolset(Xt.catalog_pure("s", "r", "b"))))
+    == (Some{True{}}, (Some{False{}}, None{}))
+    : Maybe<&2, Bool> & (Maybe<&2, Bool> & Maybe<&2, Bool>)}
+
+# LAW: the OpenAI provider (the id before the model id's first '/')
+# is the only one that gets apply_patch; OpenRouter's openai/ models
+# ride OpenRouter, so they get edit.
+law patch_provider_is_openai_only:
+  {(Ed.is_patch_provider(Ed.provider_of("openai/gpt-5")),
+    (Ed.is_patch_provider(Ed.provider_of("openrouter/openai/gpt-5")),
+     (Ed.is_patch_provider(Ed.provider_of("anthropic/claude-x")),
+      (Ed.is_patch_provider(Ed.provider_of("mistral/devstral")),
+       Ed.is_patch_provider(Ed.provider_of(""))))))
+    == (True{}, (False{}, (False{}, (False{}, False{}))))
+    : Bool & (Bool & (Bool & (Bool & Bool)))}
+
+# LAW: the prompt line, the bash line and auto's deny-once hint name the
+# tool that is on, never the other one (design §2.2).
+law edit_steering_lines:
+  {String.join([Ed.prompt_line(False{}), Ed.prompt_line(True{}),
+     Ed.deny_once_hint(False{}), Ed.deny_once_hint(True{})], "|")
+    == "Edit files with `edit`, create them with `write_file`. Don't edit files through bash scripts (python or perl, `sed` on many files): in auto they need the user, and tool edits show as diffs.|Edit and create files with `apply_patch`. Don't edit files through bash scripts (python or perl, `sed` on many files): in auto they need the user, and tool edits show as diffs.|auto: this bash call needs the user. Use `edit`: it runs without asking. If bash is really needed, repeat the call and the user will be asked.|auto: this bash call needs the user. Use `apply_patch`: it runs without asking. If bash is really needed, repeat the call and the user will be asked." : String}
+
+# LAW: a provider switch re-tools the request: the tool lines and the
+# prompt's edit line swapped, the history untouched.
+law retool_swaps_tools_and_line:
+  {Rt.retool("MODEL default\nTOOL a : x\nTOOL apply_patch : p\n\nMSG system : hi L1 end\nMSG assistant : L1\nEND\n",
+      [T.ToolDef{"a", "x"}, T.ToolDef{"apply_patch", "p"}],
+      [T.ToolDef{"a", "x"}, T.ToolDef{"edit", "e"}, T.ToolDef{"write_file", "w"}],
+      "L1", "L2")
+    == "MODEL default\nTOOL a : x\nTOOL edit : e\nTOOL write_file : w\n\nMSG system : hi L2 end\nMSG assistant : L1\nEND\n" : String}
+
+# ---- Vibe's edit and write_file (core/edit.bend) ----
+
+# LAW: every error and result string is Vibe 2.25.8's, byte for byte
+# (vibe/core/tools/builtins/edit.py, write_file.py).
+law edit_err_empty_path:
+  {Ed.err_empty_path() == "File path cannot be empty" : String}
+
+law edit_err_empty_old:
+  {Ed.err_empty_old() == "old_string cannot be empty. Use write_file to create new files." : String}
+
+law edit_err_same:
+  {Ed.err_same() == "No changes to make — old_string and new_string are identical" : String}
+
+law edit_err_missing:
+  {Ed.err_missing("/w/a.txt") == "File does not exist: /w/a.txt" : String}
+
+law edit_err_not_file:
+  {Ed.err_not_file("/w") == "Path is not a file: /w" : String}
+
+law edit_err_not_found:
+  {Ed.err_not_found("foo") == "String to replace not found in file.\nString: foo" : String}
+
+law edit_err_many:
+  {Ed.err_many(3n, "x") == "Found 3 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: x" : String}
+
+law edit_err_not_text:
+  {Ed.err_not_text("/w/b.bin", 2n) == "Cannot edit /w/b.bin: file is not valid text (utf-8, byte 2)" : String}
+
+law edit_err_permission:
+  {Ed.err_permission("/w/a") == "Permission denied accessing file: /w/a" : String}
+
+law edit_ok_messages:
+  {String.join([Ed.ok_msg(False{}), Ed.ok_msg(True{})], "|")
+    == "The file has been updated successfully.|The file has been updated. All occurrences were successfully replaced" : String}
+
+law edit_result_text:
+  {Ed.edit_result("/w/a", Ed.ok_one(), "x", "y")
+    == "file: /w/a\nmessage: The file has been updated successfully.\nold_string: x\nnew_string: y" : String}
+
+law write_err_empty_path:
+  {Ed.werr_empty_path() == "Path cannot be empty" : String}
+
+law write_err_too_big:
+  {Ed.werr_too_big() == "Content exceeds 64000 bytes limit" : String}
+
+law write_err_exists:
+  {Ed.werr_exists("/w/a") == "File '/w/a' already exists. Use edit to modify it." : String}
+
+law write_result_text:
+  {Ed.write_result("/w/n.txt", Ed.utf8_len("hé\n"), "hé\n")
+    == "file_path: /w/n.txt\nbytes_written: 4\ncontent: hé\n" : String}
+
+# LAW: the argument checks run in Vibe's order: the path, an empty
+# old_string, then identical strings; a fine call passes.
+law edit_check_args_order:
+  {(Ed.check_args("  ", "", "a"),
+    (Ed.check_args("/a", "", "a"),
+     (Ed.check_args("/a", "x", "x"), Ed.check_args("/a", "x", "y"))))
+    == (Some{"File path cannot be empty"},
+        (Some{"old_string cannot be empty. Use write_file to create new files."},
+         (Some{"No changes to make — old_string and new_string are identical"}, None{})))
+    : Maybe<&2, String> & (Maybe<&2, String> & (Maybe<&2, String> & Maybe<&2, String>))}
+
+law write_check_order:
+  {(Ed.check_write(" ", "x"), Ed.check_write("/a", "x"))
+    == (Some{"Path cannot be empty"}, None{}) : Maybe<&2, String> & Maybe<&2, String>}
+
+# LAW: the replacement: not found, several matches without replace_all,
+# the first match only, or all of them (Python's str.replace).
+law edit_apply_cases:
+  {(Ed.apply("a b a", "c", "d", False{}),
+    (Ed.apply("a b a", "a", "z", False{}),
+     (Ed.apply("a b c", "b", "zz", False{}),
+      Ed.apply("aaa b aa", "aa", "x", True{}))))
+    == (Ed.EdFail{"String to replace not found in file.\nString: c"},
+        (Ed.EdFail{"Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: a"},
+         (Ed.EdOk{"a zz c", "The file has been updated successfully."},
+          Ed.EdOk{"xa b x", "The file has been updated. All occurrences were successfully replaced"})))
+    : Ed.Edited & (Ed.Edited & (Ed.Edited & Ed.Edited))}
+
+# LAW: a CRLF file is edited as "\n" text and written back in CRLF; an
+# LF file stays LF.
+law edit_keeps_crlf:
+  {(Ed.nl_style("a\r\nb\r\n"), (Ed.nl_style("a\nb"),
+    (Ed.normalize("a\r\nb\r\n"), Ed.restore("x\ny\n", Ed.nl_style("a\r\nb\r\n")))))
+    == ("\r\n", ("\n", ("a\nb\n", "x\r\ny\r\n"))) : String & (String & (String & String))}
+
+# LAW: the first byte that is not UTF-8 (Python's start offset).
+law utf8_bad_offsets:
+  {(Ed.utf8_bad([97, 98, 255, 99]), (Ed.utf8_bad([97, 226, 130]),
+    (Ed.utf8_bad([104, 195, 169, 226, 130, 172]), Ed.utf8_bad([226, 40, 161]))))
+    == (Some{2n}, (Some{1n}, (None{}, Some{0n})))
+    : Maybe<&2, Nat> & (Maybe<&2, Nat> & (Maybe<&2, Nat> & Maybe<&2, Nat>))}
+
+# LAW: a path resolves like Vibe's: relative in the working folder,
+# `~/` in the home folder, "." and ".." gone.
+law edit_path_resolves:
+  {String.join([Ed.resolve("/w", "/h", "a/../b.txt"), Ed.resolve("/w", "/h", "~/x"),
+     Ed.resolve("/w", "/h", "/abs/./y"), Ed.resolve("/w/sub", "", " ../z ")], "|")
+    == "/w/b.txt|/h/x|/abs/y|/w/z" : String}
+
+# LAW: the gate (1a/1b) reads {"file_path": <absolute>}.
+law edit_gate_args:
+  {Ed.gate_args("/w", "/h", Ed.gate_path("edit", "{\"old_string\":\"a\",\"file_path\":\"src/x.rs\",\"new_string\":\"b\"}"))
+    == "{\"file_path\":\"/w/src/x.rs\"}" : String}
+
+# LAW: the TUI sees an edit as the V4A patch it amounts to, and a
+# write_file as an Add File.
+law edit_views_are_patches:
+  {(Rt.code_src("edit", "{\"file_path\":\"a.txt\",\"old_string\":\"x\\ny\",\"new_string\":\"z\"}"),
+    Rt.code_src("write_file", "{\"file_path\":\"n.txt\",\"content\":\"one\\ntwo\"}"))
+    == ("*** Begin Patch\n*** Update File: a.txt\n@@\n-x\n-y\n+z\n*** End Patch",
+        "*** Begin Patch\n*** Add File: n.txt\n+one\n+two\n*** End Patch") : String & String}
+
+# LAW: the schemas the providers get are Vibe's.
+law edit_schemas:
+  {(W.tool_schema("edit"), (W.tool_schema("write_file"), W.tool_schema("apply_patch")))
+    == (Ed.edit_schema(), (Ed.write_schema(), W.arg_schema())) : J.Json & (J.Json & J.Json)}
+
+law edit_calls_ride_structured:
+  {(W.is_structured("edit"), (W.is_structured("write_file"), W.is_structured("apply_patch")))
+    == (True{}, (True{}, False{})) : Bool & (Bool & Bool)}
 
 # ---- the provider API mapping (core/api.bend, formerly the Rust bridge) ----
 

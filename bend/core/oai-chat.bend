@@ -50,10 +50,7 @@ def args_json.structured(is_structured: Bool, +args: String) -> String:
       J.stringify(W.flat_out(args))
 
 def args_json(+name: String, +args: String) -> String:
-  args_json.structured(
-    Bool.or(String.eq(name, "run_typescript"),
-      String.eq(name, "search_tool_functions")),
-    args)
+  args_json.structured(W.is_structured(name), args)
 
 def call_json(c: W.WCall) -> J.Json:
   match c:

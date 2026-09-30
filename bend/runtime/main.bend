@@ -34,11 +34,13 @@ import ./skills.bend as Sk
 import ./provider.bend as Pv
 import ./bash.bend as Sh
 import ./patch-tool.bend as Ptl
+import ./edit-tool.bend as Edt
 import ./selftools.bend as Sf
 import ./selftools-pure.bend as Sfp
 import ./proc.bend as Proc
 import ../vendor/json.bend as J
 import ./main-pure.bend as Rtp
+import ../core/edit.bend as Ed
 import ./debug.bend as Dbg
 
 # where the loop's output goes (stdout, or a REPL socket): Pv.Out
@@ -314,14 +316,30 @@ def exec_program.call.search(is_search: Bool, +name: String, +args: String,
     case False{}:
       exec_program.call.skill(String.eq(name, "skill"), name, args, live)
 
+def exec_program.call.write(is_write: Bool, +name: String, +args: String,
+    +live: Bool) -> IO(Xp.ExecRes):
+  match is_write:
+    case True{}:
+      Edt.exec_write(args, live)
+    case False{}:
+      exec_program.call.search(String.eq(name, "search_tool_functions"),
+        name, args, live)
+
+def exec_program.call.edit(is_edit: Bool, +name: String, +args: String,
+    +live: Bool) -> IO(Xp.ExecRes):
+  match is_edit:
+    case True{}:
+      Edt.exec_edit(args, live)
+    case False{}:
+      exec_program.call.write(String.eq(name, "write_file"), name, args, live)
+
 def exec_program.call.patch(is_patch: Bool, +name: String, +args: String,
     +live: Bool) -> IO(Xp.ExecRes):
   match is_patch:
     case True{}:
       Ptl.exec_patch(args, live)
     case False{}:
-      exec_program.call.search(String.eq(name, "search_tool_functions"),
-        name, args, live)
+      exec_program.call.edit(String.eq(name, "edit"), name, args, live)
 
 def exec_program.call.bash(is_bash: Bool, +name: String, +args: String,
     +live: Bool) -> IO(Xp.ExecRes):
@@ -460,6 +478,10 @@ def exec_tool.run(t: Rtp.Tool, out: Pv.Out, +name: String, +args: String,
       exec_tool.with(out, exec_tool.skill(args, live))
     case Rtp.TPatch{}:
       exec_tool.with(out, Ptl.exec_patch(args, live))
+    case Rtp.TEdit{}:
+      exec_tool.with(out, Edt.exec_edit(args, live))
+    case Rtp.TWrite{}:
+      exec_tool.with(out, Edt.exec_write(args, live))
     case Rtp.TMcp{}:
       exec_tool.with(out, Sh.exec_mcp(name, args, live))
 
@@ -665,6 +687,34 @@ def model_back(nr: Pv.Out & Rem.RemoteRes, +rt2: Rtp.Rt, k: Nat, +action: U32,
         pd : Pv.Out & Rtp.Rt <- drain_steer(n, rt2)
         model_done(pd, k, res, action, after, next)
 
+# one edit toolset per request (main-pure.bend retool): the provider
+# this call goes to picks it; a catalog with no edit tool (scripted
+# scenarios) is left alone
+def retool_now.want(same: Bool, +was: Bool, +tools: List<&2, T.ToolDef>,
+    +request: String) -> IO(String):
+  match same:
+    case True{}:
+      IO.pure(String, request)
+    case False{}:
+      do IO<String>:
+        +cat : List<&2, T.ToolDef> <- X.catalog_for(Bool.not(was))
+        IO.pure(String, Rtp.retool(request, tools, cat, Ed.prompt_line(was),
+          Ed.prompt_line(Bool.not(was))))
+
+def retool_now.set(m: Maybe<&2, Bool>, +tools: List<&2, T.ToolDef>,
+    +request: String) -> IO(String):
+  match m:
+    case None{}:
+      IO.pure(String, request)
+    case Some{+was}:
+      do IO<String>:
+        +model : String <- Pv.resolved_model()
+        retool_now.want(Bool.not(Bool.xor(was, Ed.is_patch_provider(Ed.provider_of(model)))),
+          was, tools, request)
+
+def retool_now(+tools: List<&2, T.ToolDef>, +request: String) -> IO(String):
+  retool_now.set(Xp.toolset(tools), tools, request)
+
 # The IO loop. The pure transition is computed as an argument and matched
 # as a parameter, so `run` is a single self-recursive def; every hop burns
 # one unit of fuel, so the Runtime terminates like the Core. The loop
@@ -705,8 +755,9 @@ def run(fuel: Nat, out: Pv.Out, +rt: Rtp.Rt, +job: Rtp.Job, tr: Rtp.Trans) -> IO
                       do IO<RtEnd>:
                         sv : Unit <- save_rt(rt2)
                         +ctx : String <- context_now()
+                        +req2 : String <- retool_now(Rtp.rt_tools(rt2), request)
                         nr : Pv.Out & Rem.RemoteRes <- Pv.model_call.req(
-                          out, Rem.with_context(ctx, request), action)
+                          out, Rem.with_context(ctx, req2), action)
                         model_back(nr, rt2, k, action, after,
                           k2 => o3 => +r3 => +c =>
                             run(k2, o3, r3, Rtp.JCmd{c, after},

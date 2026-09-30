@@ -18,6 +18,7 @@ import ./plugins.bend as Pl
 import ./skills-pure.bend as Skp
 import ./tools.bend as X
 import ./tools-pure.bend as Xp
+import ../core/edit.bend as Ed
 import ./main.bend as R
 import ../runtime/bash.bend as Sh
 import ../runtime/provider.bend as Pv
@@ -108,9 +109,11 @@ def agents_md() -> IO(String):
 # written by bend-harness / the hub), after the current-time section;
 # unset or blank: nothing is added. The AGENTS.md section comes after
 # the skills, before the role (the role stays last)
-def live_prompt(+cat: List<&2, T.ToolDef>) -> IO(String):
+def live_prompt(+cat: List<&2, T.ToolDef>, +patch: Bool) -> IO(String):
   do IO<String>:
-    +tu : String <- prompt_read("prompts/prompt-tool-use.txt")
+    +tu0 : String <- prompt_read("prompts/prompt-tool-use.txt")
+    # the line naming the edit tools that are on (core/edit.bend)
+    +tu : String <- IO.pure(String, Rcp.prompt_extra(tu0, Ed.prompt_line(patch)))
     +ct : String <- prompt_read("prompts/prompt-current-time.txt")
     +tone : String <- prompt_read("prompts/prompt-tone.txt")
     tn : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_TOOLS_NOTE")
@@ -124,8 +127,12 @@ def live_prompt(+cat: List<&2, T.ToolDef>) -> IO(String):
 
 def live_cfg(+threshold: Nat) -> IO(T.Cfg):
   do IO<T.Cfg>:
-    +cat : List<&2, T.ToolDef> <- X.catalog()
-    +p : String <- live_prompt(cat)
+    # one edit toolset, by the provider of the model this start runs
+    # (a later /model switch re-tools each request: main.bend retool)
+    +model : String <- Pv.resolved_model()
+    +patch : Bool <- IO.pure(Bool, Ed.is_patch_provider(Ed.provider_of(model)))
+    +cat : List<&2, T.ToolDef> <- X.catalog_for(patch)
+    +p : String <- live_prompt(cat, patch)
     IO.pure(T.Cfg, T.Cfg{threshold, 20000n, 3n, p, cat})
 
 def live_main() -> IO(Unit):

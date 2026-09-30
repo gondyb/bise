@@ -521,7 +521,9 @@ pub(crate) fn code_lang(tool: &str) -> Option<CodeLang> {
     match tool {
         "run_typescript" => Some(CodeLang::TypeScript),
         "bash" => Some(CodeLang::Bash),
-        "apply_patch" => Some(CodeLang::Patch),
+        // Vibe's edit and write_file: the runtime sends them as the V4A
+        // patch they amount to (bend/core/edit.bend edit_view / write_view)
+        "apply_patch" | "edit" | "write_file" => Some(CodeLang::Patch),
         _ => None,
     }
 }

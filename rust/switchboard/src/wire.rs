@@ -68,6 +68,19 @@ pub fn parse(line: &str) -> Wire {
     Wire::Other
 }
 
+/// The file an `edit` or `write_file` call acts on: the `file_path` of
+/// its feed line's JSON (the runtime puts it first, so a line cut at
+/// 200 chars still holds it when the path is shorter).
+pub fn edit_file(args: &str) -> Option<String> {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(args) {
+        return v.get("file_path").and_then(|p| p.as_str()).map(str::to_string).filter(|p| !p.is_empty());
+    }
+    let rest = &args[args.find("\"file_path\"")? + 11..];
+    let rest = rest.trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+    let end = rest.find('"').unwrap_or(rest.len());
+    Some(rest[..end].to_string()).filter(|p| !p.is_empty())
+}
+
 /// The files an `apply_patch` call touches (its V4A headers). The
 /// annotation carries the JSON args with escaped newlines.
 pub fn patch_files(args: &str) -> Vec<String> {
@@ -95,6 +108,14 @@ pub fn patch_files(args: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn edit_file_reads_the_path_of_a_whole_or_cut_line() {
+        assert_eq!(edit_file("{\"file_path\":\"src/a.rs\"}").as_deref(), Some("src/a.rs"));
+        assert_eq!(edit_file("{\"file_path\": \"/w/b.md\", \"content\": \"cut her").as_deref(), Some("/w/b.md"));
+        assert_eq!(edit_file("{\"content\":\"x\"}"), None);
+        assert_eq!(edit_file("garbage"), None);
+    }
 
     #[test]
     fn turn_markers() {
