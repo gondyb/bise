@@ -22,7 +22,7 @@
   .v .bub.on { opacity:1; } .v .lay .bub span { position:static; transform:none; transition:none; } .v .bub .acc { color:var(--acc); margin-right:1ch; }
   .v .bub.pop { animation:bin .7s ease-out; } @keyframes bin { from { opacity:0; translate:0 5px; } to { opacity:1; translate:0 0; } }
   .v .lay span { position:absolute; left:0; top:0; white-space:pre; color:var(--dim); transition:transform .5s cubic-bezier(.25,.8,.3,1), opacity .45s; will-change:transform; }
-  .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .f { color:var(--faint); } .v pre .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } .v pre .d { color:var(--dim); } .v pre .w { color:var(--wind); } .v pre .t { color:var(--text); }
+  .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .f { color:var(--faint); } .v pre .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } .v pre .d { color:var(--dim); } .v pre .w { color:var(--wind); } .v pre .g { display:inline-block; width:1ch; text-align:center; } .v pre .t { color:var(--text); }
   .hero { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; pointer-events:none; }
   .big { font-size:clamp(64px, 11vw, 150px); font-weight:700; letter-spacing:-.045em; line-height:1; }
   .big span { color:var(--acc); }
@@ -79,7 +79,7 @@ function Grid(cols, rows, ko) {
       let out = "";
       for (let y = 0; y < rows; y++) {
         let cur = "", buf = "";
-        const flush = () => { if (buf) out += cur === "s" ? [...buf].map(c => `<span class="s">${c}</span>`).join("") : cur ? `<span class="${cur}">${buf}</span>` : buf; buf = ""; };
+        const flush = () => { if (buf) out += cur === "s" ? [...buf].map(c => `<span class="s">${c}</span>`).join("") : cur[0] === "g" ? [...buf].map(c => `<span class="g ${cur.slice(1)}">${c}</span>`).join("") : cur ? `<span class="${cur}">${buf}</span>` : buf; buf = ""; };
         for (let x = 0; x < cols; x++) { if (k[y][x] !== cur) { flush(); cur = k[y][x]; } const ch = c[y][x]; buf += ch === "<" ? "&lt;" : ch === "&" ? "&amp;" : ch; }
         flush(); out += "\n";
       }
@@ -124,7 +124,9 @@ function arcWake(g, b, Y, t, d0 = 0) {
     // grey, so the pink ∿ at its head stays what you look at: dim right behind it, wind-grey further back
     const cl = d < 10 ? "d" : "w";
     const r0 = Math.round(Math.min(ya, yb)), r1 = Math.round(Math.max(ya, yb));
-    const onLane = i > b.R + 1 && i < b.L - b.R - 1;
+    const onLane = i > b.R + 1 && i < b.L - b.R - 1, dy = yb - ya;
+    // where it forks up or merges down, dots that lean with it (⋰ ⋱), so the slope reads as one trail
+    if (Math.abs(dy) > .3 || r0 !== r1) { for (let r = r0; r <= r1; r++) g.put(x, r, dy < 0 ? "⋰" : "⋱", "g" + cl); continue; }
     if (r0 === r1 && d < 12 && v > .16) g.put(x, r0, v > .75 ? "≈" : v > .42 ? "∼" : "~", cl);
     else if (onLane && (i - b.R) % 8 === 4) g.put(x, r0, "•", "d");
     else for (let r = r0; r <= r1; r++) g.put(x, r, "·", cl);
