@@ -107,9 +107,18 @@ turn() {
   d="$(mktemp -d /tmp/pk-turn.XXXXXX)"
   FAKE_LOG="$d/fake.log" python3 -u "$HERE/../tests/fake_provider.py" > "$d/fake.out" 2> "$d/fake.err" &
   fpid=$!
-  i=0; while [ $i -lt 100 ] && ! grep -q '^PORT ' "$d/fake.out" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
+  # 30 s: a cold runner is slow; it exits early when python dies
+  i=0; while [ $i -lt 300 ] && ! grep -q '^PORT ' "$d/fake.out" 2>/dev/null; do
+    kill -0 $fpid 2>/dev/null || break; sleep 0.1; i=$((i + 1)); done
   port="$(sed -n 's/^PORT //p' "$d/fake.out")"
-  [ -n "$port" ] || { ko "fake provider did not start"; tail -n 3 "$d/fake.err"; kill $fpid 2>/dev/null; rm -rf "$d"; return; }
+  if [ -z "$port" ]; then
+    # the failure explains itself: which python, alive or not, its output
+    kill -0 $fpid 2>/dev/null && state="still running after $((i / 10)) s" || state="exited"
+    ko "fake provider did not start ($state; $(command -v python3): $(python3 --version 2>&1))"
+    echo "     stdout:"; sed 's/^/       /' "$d/fake.out"
+    echo "     stderr:"; sed 's/^/       /' "$d/fake.err"
+    kill $fpid 2>/dev/null; wait $fpid 2>/dev/null; rm -rf "$d"; return
+  fi
   mkfifo "$d/in"
   (cd "$WORK" && E BEND_PROVIDER_URL="http://127.0.0.1:$port/v1/chat/completions" \
      MISTRAL_API_KEY=fake-key "$BIN" --headless --model mistral-small-latest \
@@ -133,7 +142,7 @@ turn() {
   fi
   exec 3>&-
   i=0; while kill -0 $pid 2>/dev/null && [ $i -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
-  kill $pid $fpid 2>/dev/null
+  kill $pid $fpid 2>/dev/null; wait $pid $fpid 2>/dev/null
   rm -rf "$d"
 }
 turn

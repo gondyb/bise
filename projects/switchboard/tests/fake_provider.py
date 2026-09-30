@@ -48,6 +48,7 @@ import http.server
 import json
 import os
 import re
+import socketserver
 import sys
 import threading
 import time
@@ -692,10 +693,21 @@ def effort_of(body):
     return ""
 
 
+class Server(http.server.ThreadingHTTPServer):
+    """HTTPServer.server_bind asks socket.getfqdn("127.0.0.1"): a reverse
+    DNS lookup that hangs 10 s and more on the GitHub macOS runners, so
+    PORT came too late for test-install.sh (release v2026.9.30). The
+    name only fills SERVER_NAME for CGI: skip the lookup."""
+    daemon_threads = True
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 def serve(port=0):
     """a server in this process (a thread): (server, port)"""
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
-    srv.daemon_threads = True
+    srv = Server(("127.0.0.1", port), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, srv.server_address[1]
 
@@ -771,8 +783,7 @@ def main(argv):
         sys.stdout.write(bend_literal(open(argv[1]).read()) + "\n")
         return
     port = int(argv[0]) if argv else 0
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
-    srv.daemon_threads = True
+    srv = Server(("127.0.0.1", port), H)
     print("PORT", srv.server_address[1], flush=True)
     srv.serve_forever()
 
