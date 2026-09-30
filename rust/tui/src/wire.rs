@@ -449,6 +449,10 @@ pub(crate) fn parse_line(line: &str) -> Option<Ev> {
         )));
     }
     if let Some(t) = o.strip_prefix("candidate_discarded: ") {
+        // no key: the turn's end says it, once (BISE-294)
+        if no_key(t).is_some() {
+            return None;
+        }
         return Some(Ev::Warn(format!("candidate discarded: {}", t)));
     }
     if o.starts_with("compaction_started #") {
@@ -481,6 +485,9 @@ pub(crate) fn parse_line(line: &str) -> Option<Ev> {
             return Some(Ev::TurnDone);
         }
         if let Some(why) = t.strip_prefix("failed: ") {
+            if let Some(line) = no_key(why) {
+                return Some(Ev::Err(line));
+            }
             return Some(Ev::Err(format!("turn failed: {}", why)));
         }
         if t == "interrupted" {
@@ -570,4 +577,21 @@ pub(crate) fn parse_history(v: &serde_json::Value) -> Vec<HistLine> {
             })
         })
         .collect()
+}
+
+/// The runtime's words for a model whose provider has no key (BISE-294,
+/// runtime/provider.bend model_call.key: `no openrouter key yet
+/// (OPENROUTER_API_KEY is not set): /provider sets it up`), and the older
+/// runtime's bare `OPENROUTER_API_KEY is not set`, as the designer's line:
+/// `turn stopped: no OpenRouter key yet. /provider sets it up.`
+pub(crate) fn no_key(why: &str) -> Option<String> {
+    let why = why.trim();
+    let name = if let Some(rest) = why.strip_prefix("no ") {
+        let (id, _) = rest.split_once(" key yet (")?;
+        why.contains(" is not set)").then(|| crate::models::provider_name(id, ""))?
+    } else {
+        let var = why.strip_suffix(" is not set")?;
+        (var.ends_with("_KEY") && !var.contains(' ')).then(|| crate::models::provider_name("", var))?
+    };
+    Some(format!("turn stopped: no {} key yet. /provider sets it up.", name))
 }

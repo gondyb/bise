@@ -40,6 +40,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
 
+mod provider;
+#[cfg(test)]
+mod provider_tests;
+pub(crate) use provider::{request as provider_request, take_line as provider_line, Ask};
+
 /// The env var: `off` never shows the onboarding, `on` always does.
 pub(crate) const ENV: &str = "SB_ONBOARDING";
 
@@ -280,6 +285,10 @@ pub(crate) enum Sub {
     Failed(Provider, String, Tried, crate::keycheck::Fail),
     /// it answered: the model is saved; the optional extras
     Works(Provider, String),
+    /// `/provider` (BISE-294): a provider's menu, its row
+    Menu(Provider, usize),
+    /// `/provider`: remove its saved key?
+    Remove(Provider),
 }
 
 /// A row of `which model?`: a model of the catalog, or the id typed.
@@ -388,6 +397,10 @@ pub(crate) struct Onb {
     /// the key just saved replaces another key the environment holds
     /// under this name (BISE-269: auth.json wins): said once, dim
     pub shadows: Option<String>,
+    /// `/provider` (BISE-294); None: the first run
+    pub panel: Option<provider::Panel>,
+    /// every provider's key state (where, never the key)
+    pub keys: Vec<provider::KeyState>,
 }
 
 /// Where the mode at start came from (book §15 step 2 says which).
@@ -441,6 +454,8 @@ impl Onb {
             pending: None,
             checker: real_check,
             shadows: None,
+            panel: None,
+            keys: Vec::new(),
             home,
         };
         o.refresh_keys(env);
@@ -467,6 +482,7 @@ impl Onb {
         // the key of the model in use first
         found.sort_by_key(|p| p.id != self.mine);
         self.found = found;
+        self.keys = provider::key_states(env, &self.home, &self.setup);
     }
 
     /// The rows of the model step.
@@ -522,6 +538,9 @@ impl Onb {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         if ctrl && matches!(k.code, KeyCode::Char('c')) {
             return Out::Skip;
+        }
+        if self.panel.is_some() {
+            return self.on_panel_key(k, now, env);
         }
         if self.step == Step::Model && self.sub != Sub::List {
             return self.on_model_sub(k, now, env);
@@ -650,7 +669,8 @@ impl Onb {
                     self.note = Some(Note::NotAKey);
                     Sub::Paste(p, m, String::new())
                 }
-                Some(key) if stored(&self.home, &p.id) => Sub::Confirm(p, m, key),
+                // /provider: `paste a new key` said it already
+                Some(key) if stored(&self.home, &p.id) && self.panel.is_none() => Sub::Confirm(p, m, key),
                 Some(key) => {
                     self.note = None;
                     self.start_check(p, m, Some(key), env)
@@ -792,7 +812,10 @@ impl Onb {
         if let Some(key) = key {
             self.save_key(p, key, env)?;
         }
-        save_model(&self.home, model).map_err(|e| format!("couldn't write config.toml: {}", e))?;
+        // /provider: a new key keeps main's model; its `default model` saves it
+        if self.panel.as_ref().is_none_or(|pn| pn.save_model) {
+            save_model(&self.home, model).map_err(|e| format!("couldn't write config.toml: {}", e))?;
+        }
         self.setup = setup_of(env, &self.home);
         self.model = self.setup.model.clone();
         self.mine = self.setup.catalog.resolve(&self.model).provider;
@@ -1119,9 +1142,12 @@ fn words_in(text: &str, w: usize) -> Vec<String> {
 }
 
 fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
+    if let Some(v) = provider::lines(o, w, gap) {
+        return v;
+    }
     let dim = |t: String| Line::from(s(t, theme::dim()));
     match &o.sub {
-        Sub::List => model_list(o, w, gap),
+        Sub::List | Sub::Menu(..) | Sub::Remove(_) => model_list(o, w, gap),
         Sub::Which(i) => {
             let mut v = vec![title("which provider?")];
             blanks(&mut v, gap);
@@ -1535,7 +1561,8 @@ fn draw_page(f: &mut Frame, o: &Onb, now: u64) {
             );
         }
     }
-    if area.height >= 3 {
+    // /provider: one screen, no steps
+    if area.height >= 3 && o.panel.is_none() {
         let dy = area.bottom() - 2;
         f.render_widget(Paragraph::new(dots(o)).alignment(Alignment::Center), Rect { y: dy, height: 1, ..area });
     }
@@ -1621,8 +1648,13 @@ pub(crate) fn show(
 ) -> io::Result<()> {
     let t0 = Instant::now();
     let mode_before = theme::mode();
-    let mut o = Onb::new(&real_env);
-    if KEYS_ONLY.swap(false, Ordering::SeqCst) && o.ask_key {
+    let ask = provider::take_ask();
+    let panel = ask.is_some();
+    let mut o = match ask {
+        Some(a) => Onb::provider_panel(&real_env, a),
+        None => Onb::new(&real_env),
+    };
+    if !panel && KEYS_ONLY.swap(false, Ordering::SeqCst) && o.ask_key {
         o.keys_only = true;
         o.go(Step::Model, 0);
     }
@@ -1674,7 +1706,9 @@ pub(crate) fn show(
         }
     })();
     let _ = terminal.backend_mut().set_pointer(crate::pointer::Shape::Default);
-    let _ = mark_seen(&real_env);
+    if !panel {
+        let _ = mark_seen(&real_env);
+    }
     // the feed's rows carry their colors: a new theme builds them again
     if theme::mode() != mode_before {
         app.cache.clear();

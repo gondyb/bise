@@ -189,12 +189,21 @@ fn auth_list_says_where_each_key_comes_from_and_never_the_key() {
     let keys = Keys { env: &env, store: &store, files: &files };
     let out = auth_cli::render_list(&c, &keys, &ps);
     assert!(!out.contains(SECRET), "{out}");
-    let line = |id: &str| out.lines().find(|l| l.starts_with(&format!("{} ", id))).unwrap_or("").to_string();
-    assert!(line("openai").ends_with("env OPENAI_API_KEY"), "{out}");
-    assert!(line("groq").ends_with("auth.json"), "{out}");
-    assert!(line("mistral").ends_with("~/.vibe/.env (MISTRAL_API_KEY)"), "{out}");
-    assert!(line("deepseek").ends_with(" -"), "{out}");
-    assert!(line("ollama").is_empty(), "no key needed: not listed\n{out}");
+    // BISE-294: /provider's list, by name
+    let line = |n: &str| out.lines().find(|l| l.starts_with(&format!("  {} ", n))).unwrap_or("").to_string();
+    assert!(out.starts_with("your providers"), "{out}");
+    assert!(line("OpenAI").ends_with("✓ ready · from OPENAI_API_KEY"), "{out}");
+    assert!(line("Groq").ends_with("✓ ready · saved in bise"), "a hidden one with a key is listed\n{out}");
+    assert!(line("Mistral").ends_with("✓ ready · from ~/.vibe/.env"), "{out}");
+    assert!(line("OpenRouter").ends_with("not set up"), "{out}");
+    assert!(line("DeepSeek").is_empty() && line("more providers").contains("DeepSeek"), "{out}");
+    assert!(!out.contains("foundry"), "a private proxy is never offered\n{out}");
+    assert!(!out.contains("Ollama"), "no key needed: not listed\n{out}");
+    let main = auth_cli::render_providers(&c, &keys, &ps, "openai", &bise_home::style::Style::PLAIN);
+    assert!(main.contains("✓ ready · from OPENAI_API_KEY · main uses it"), "{main}");
+    let none = Keys { env: &no_env, store: &Store::default(), files: &[] };
+    let empty = auth_cli::render_list(&c, &none, &ps);
+    assert!(empty.contains("login <provider>") && !empty.contains("ready"), "{empty}");
     assert!(out.contains("auth.json has 'mystery', a provider bise does not know"), "{out}");
     assert!(out.contains("keys: ~/.bise/auth.json"), "{out}");
     let _ = std::fs::remove_dir_all(&dir);

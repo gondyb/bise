@@ -75,6 +75,21 @@ pub fn get(text: &str, key: &str) -> Option<String> {
     })
 }
 
+/// The note for a model whose provider has no key yet (the environment,
+/// auth.json, the old .env files): how to set it up. None when it has
+/// one or needs none.
+pub fn no_key_note(setup: &Setup, model: &str, paths: &Paths) -> Option<String> {
+    use crate::auth::{EnvFile, Keys, Store};
+    let r = setup.catalog.resolve(model.trim());
+    let p = setup.catalog.provider(&r.provider)?;
+    let store = Store::read(&paths.auth_file).unwrap_or_default();
+    let files = EnvFile::read_all(&paths.env_files);
+    let env = |k: &str| std::env::var(k).ok();
+    let keys = Keys { env: &env, store: &store, files: &files };
+    (p.needs.is_empty() && !keys.ready(p))
+        .then(|| format!("no {} key yet: '{} login {}' sets it up (in bise: /provider)", p.name, CLI, p.id))
+}
+
 /// `bise config …`; returns the exit code.
 pub fn main(args: &[String], paths: &Paths) -> i32 {
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -98,13 +113,19 @@ pub fn main(args: &[String], paths: &Paths) -> i32 {
         },
         ["set", key, value] => {
             let setup = Setup::from_text(Some(&text), &|_| None);
-            let (v, notes) = match value_of(&setup, key, value) {
+            let (v, mut notes) = match value_of(&setup, key, value) {
                 Ok(x) => x,
                 Err(e) => {
                     eprintln!("{}", err.fail(&e));
                     return 1;
                 }
             };
+            // BISE-294: a model whose provider has no key can't run yet
+            if key.ends_with("model") {
+                if let Some(n) = no_key_note(&setup, value, paths) {
+                    notes.push(n);
+                }
+            }
             let new = with_key(&text, key, &v);
             if new != text {
                 if let Some(d) = paths.config.parent() {

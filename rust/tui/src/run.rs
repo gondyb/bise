@@ -410,6 +410,13 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
             if std::mem::take(&mut app.demo_after_onboarding) {
                 crate::sb::prefill_demo(app);
             }
+            // BISE-294: /provider may have changed the keys; the /model
+            // that sent it there runs now its provider is set up
+            crate::models::forget_keys();
+            if let Some(line) = crate::onboarding::provider_line() {
+                let evs = crate::sb::handle_input(app, &line);
+                let _ = evs;
+            }
             continue;
         }
         pump_voice(app);

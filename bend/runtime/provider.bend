@@ -640,25 +640,29 @@ def model_call.go(n: Out, +request: String, +key: String, +pv: Pvp.Prov,
     model_call.img(ir, n, key, pv, call, req)
 
 # a provider with a key_env needs that variable set; one with
-# key_env = "" (a local server) calls without a key
+# key_env = "" (a local server) calls without a key. No key: one line
+# that says what to do (BISE-294: the TUI names the provider and points
+# at /provider; main's thread reads it as is)
 def model_call.key(missing: Bool, n: Out, +request: String, +key: String,
-    +pv: Pvp.Prov, +key_env: String, +req: U32) -> IO(Out & Rem.RemoteRes):
+    +pv: Pvp.Prov, +prov: String, +key_env: String, +req: U32)
+    -> IO(Out & Rem.RemoteRes):
   match missing:
     case True{}:
       IO.pure(Out & Rem.RemoteRes,
-        (n, Rem.RRErr{String.append(key_env, " is not set")}))
+        (n, Rem.RRErr{String.concat(["no ", prov, " key yet (", key_env,
+          " is not set): /provider sets it up"])}))
     case False{}:
       model_call.go(n, request, key, pv, req)
 
 def model_call.env(n: Out, +request: String, +pv: Pvp.Prov, +req: U32)
     -> IO(Out & Rem.RemoteRes):
   match pv:
-    case Pvp.Prov{_, _, _, _, +key_env, _}:
+    case Pvp.Prov{+prov, _, _, _, +key_env, _}:
       do IO<Out & Rem.RemoteRes>:
         kr : Result<&1, &1, U32 & String, String> <- IO.get_env(key_env)
         +key : String <- IO.pure(String, P.env_or(kr, ""))
         model_call.key(Bool.and(Bool.not(String.is_empty(key_env)),
-          String.is_empty(key)), n, request, key, pv, key_env, req)
+          String.is_empty(key)), n, request, key, pv, prov, key_env, req)
 
 def model_call.resolved(r: Pvp.Resolved, n: Out, +request: String,
     +req: U32) -> IO(Out & Rem.RemoteRes):

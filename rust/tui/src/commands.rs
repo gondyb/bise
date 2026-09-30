@@ -92,6 +92,7 @@ pub(crate) const COMMANDS: &[Cmd] = &[
             Arg::Words(&[("default", "also for new sessions (config.toml: model for main, agent_model for an agent)")]),
         ],
     },
+    Cmd { name: "/provider", desc: "set up a provider's key, or change it", args: &[] },
     Cmd { name: "/reasoning", desc: "its reasoning effort: /reasoning [<effort>]", args: &[Arg::Effort] },
     Cmd { name: "/interrupt", desc: "interrupt the turn of the agent in view", args: &[] },
     Cmd { name: "/compact", desc: "compact the conversation of the agent in view", args: &[] },
@@ -278,12 +279,32 @@ fn model_choices(app: &App, q: &str) -> Vec<Choice> {
         if out.len() == 1 {
             out.push(Choice { value: String::new(), label: "no listed model matches.".into(), desc: String::new(), mark: None });
         }
-        out.push(Choice {
-            label: format!("+ use {}", id),
-            value: id,
-            desc: "not in my list: its provider decides at the next call".into(),
-            mark: None,
+        // BISE-294: a provider with no key yet is set up first (/provider)
+        out.push(match crate::models::keyless(&id) {
+            Some((_, name)) => Choice {
+                label: format!("+ set up {} for {}", name, id),
+                value: id,
+                desc: "no key yet: i'll ask for one".into(),
+                mark: None,
+            },
+            None => Choice {
+                label: format!("+ use {}", id),
+                value: id,
+                desc: "not in my list: its provider decides at the next call".into(),
+                mark: None,
+            },
         });
+    }
+    // BISE-294: the models listed are those of the providers set up; the
+    // others are one row away
+    let names = crate::models::not_ready_names();
+    if q.trim().is_empty() || matches(q, &["another provider"]) {
+        let desc = match names.len() {
+            0 => "your keys, their models".to_string(),
+            1..=3 => names.join(", "),
+            _ => format!("{}…", names[..3].join(", ")),
+        };
+        out.push(Choice { value: "/provider".into(), label: "+ another provider…".into(), desc, mark: None });
     }
     out
 }
@@ -357,6 +378,9 @@ pub(crate) fn arg_items(app: &App) -> Vec<PopItem> {
             let line = format!("{head}{}", c.value);
             let (fill, run) = if c.value.is_empty() {
                 (app.ed.text.clone(), None)
+            } else if c.value.starts_with('/') {
+                // a command of its own (`/model`'s `+ another provider…`)
+                (c.value.clone(), Some(c.value.clone()))
             } else if next.is_none() {
                 (line.clone(), Some(line))
             } else {
@@ -691,6 +715,19 @@ mod arg_tests {
         assert!(!labels(&f).iter().any(|l| l == "no listed model matches."));
         // a listed id: no extra row
         assert!(!labels(&items(&mut app, "/model openai/gpt-6-astra")).iter().any(|l| l.starts_with("+ use")));
+        // BISE-294: the providers set up only; the others one row away
+        let last = |m: &[PopItem]| (m.last().unwrap().label.clone(), m.last().unwrap().run.clone());
+        assert_eq!(last(&items(&mut app, "/model ")), ("+ another provider…".to_string(), Some("/provider".to_string())));
+        crate::models::TEST_READY.with(|r| *r.borrow_mut() = Some(vec!["foundry".into()]));
+        let m = items(&mut app, "/model ");
+        assert!(m.iter().any(|i| i.label == "foundry/claude-opus-5-5"));
+        assert!(!m.iter().any(|i| i.label.starts_with("openai/") || i.label.starts_with("openrouter/")), "{:?}", labels(&m));
+        let more = m.last().unwrap();
+        assert_eq!((more.label.as_str(), more.run.as_deref(), more.fill.as_str()), ("+ another provider…", Some("/provider"), "/provider"));
+        assert!(more.desc.starts_with("Anthropic, OpenAI, Google AI Studio"), "{}", more.desc);
+        let f = items(&mut app, "/model openrouter/x-ai/grok-9");
+        assert!(f.iter().any(|i| i.label == "+ set up OpenRouter for openrouter/x-ai/grok-9" && i.desc == "no key yet: i'll ask for one"), "{:?}", labels(&f));
+        crate::models::TEST_READY.with(|r| *r.borrow_mut() = None);
         let r = items(&mut app, "/reasoning ");
         assert_eq!(labels(&r), ["reasoning for auth-fix", "none", "low", "medium", "high", "max"]);
         let high = r.iter().find(|i| i.label == "high").unwrap();

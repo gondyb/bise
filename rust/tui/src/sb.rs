@@ -668,6 +668,14 @@ pub(super) fn focus(app: &mut App, name: &str) {
     app.unseen = 0;
 }
 
+/// `/model <model> [default]` of a provider without a key: its provider
+/// id and the full model id.
+fn model_needs_key(typed: &str) -> Option<(String, String)> {
+    let arg = typed.split_whitespace().nth(1)?;
+    let full = crate::models::full_name(arg)?;
+    crate::models::keyless(&full).map(|(id, _)| (id, full))
+}
+
 /// One line typed by the user: the client's own commands (/voice,
 /// /quit, /clear, /help, /theme…) here, the rest goes to the hub.
 pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
@@ -745,6 +753,21 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         }
         "/theme" => out.push(theme_command(typed.split_whitespace().nth(1), crate::theme_detect::choose)),
         "/welcome" => crate::onboarding::run(app),
+        // BISE-294: set up a provider's key, or change it
+        "/provider" | "/providers" => {
+            let id = typed.split_whitespace().nth(1).map(|s| s.trim().to_lowercase());
+            crate::onboarding::provider_request(crate::onboarding::Ask { provider: id, model: None, line: None });
+        }
+        // a model whose provider has no key: set it up first, then the
+        // line runs (never saved blindly, BISE-294)
+        "/model" if model_needs_key(&typed).is_some() => {
+            let (id, model) = model_needs_key(&typed).unwrap_or_default();
+            crate::onboarding::provider_request(crate::onboarding::Ask {
+                provider: Some(id),
+                model: Some(model),
+                line: Some(typed.clone()),
+            });
+        }
         "/setup" => setup::command(app),
         "/cancel" => out.push(Ev::Info(NO_UNDO.into())),
         // an archived task reads nothing: its feed is history only

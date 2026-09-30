@@ -310,6 +310,13 @@ impl Keys<'_> {
         self.find(&p.id, &p.key_env)
     }
 
+    /// `p` can run a turn now (BISE-294): usable, and its key is found
+    /// or it needs none (a local server). The model pickers list only
+    /// these providers' models.
+    pub fn ready(&self, p: &Provider) -> bool {
+        p.needs.is_empty() && !p.stt_only && (p.key_env.is_empty() || self.for_provider(p).is_some())
+    }
+
     /// The environment variable holding ANOTHER key for provider `id`
     /// than the one auth.json gives it (BISE-269: auth.json wins, so that
     /// one is unused; said once, so nobody wonders which key runs).

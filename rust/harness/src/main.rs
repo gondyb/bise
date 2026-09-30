@@ -420,7 +420,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
     ("keys and models", &[
         ("{cmd} login [provider]", "add a provider's key: checked with one tiny call, then saved"),
         ("{cmd} logout [provider]", "remove it"),
-        ("{cmd} auth list", "your keys: where each one comes from (never the key)"),
+        ("{cmd} providers", "your providers: which are set up, where each key comes from (also auth list)"),
         ("{cmd} auth check [provider]", "one tiny call with the key bise finds"),
         ("{cmd} models [filter]", "the models bise knows, and which have a key"),
         ("{cmd} config get|set KEY [V]", "model, agent_model, small_model, project_doc_fallback_filenames"),
@@ -580,6 +580,8 @@ fn main() -> std::io::Result<()> {
             Some("login") => std::process::exit(bise_catalog::auth_cli::login_main(&args[1..], &auth_paths(), &key_check)),
             Some("logout") => std::process::exit(bise_catalog::auth_cli::logout_main(&args[1..], &auth_paths())),
             Some("auth") => std::process::exit(bise_catalog::auth_cli::auth_main(&args[1..], &auth_paths(), &key_check)),
+            // BISE-294: /provider's list in the terminal (= auth list)
+            Some("providers" | "provider") => std::process::exit(bise_catalog::auth_cli::providers_main(&args[1..], &auth_paths())),
             // config.toml's top-level choices and the /setup changes, for
             // a script or the install prompt (BISE-273)
             Some("config") => std::process::exit(bise_catalog::config_cli::main(&args[1..], &auth_paths())),

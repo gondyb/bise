@@ -7,7 +7,7 @@
 use std::io::{BufRead, IsTerminal, Read, Write};
 use std::path::PathBuf;
 
-use crate::auth::{loose_mode, tilde, EnvFile, Keys, Store};
+use crate::auth::{loose_mode, tilde, EnvFile, From, Keys, Store};
 use crate::{Catalog, Provider, Setup, CLI};
 use bise_home::style::Style;
 
@@ -332,20 +332,51 @@ pub fn render_list(c: &Catalog, keys: &Keys, paths: &Paths) -> String {
 }
 
 pub fn render_list_styled(c: &Catalog, keys: &Keys, paths: &Paths, st: &Style) -> String {
+    render_providers(c, keys, paths, "", st)
+}
+
+/// `bise providers` (BISE-294, `bise auth list` too): /provider's list
+/// in the terminal. The providers the first run offers and those with a
+/// key, each with its state (`✓ ready · saved in bise`, `✓ ready · from
+/// OPENAI_API_KEY`, `not set up`; ` · main uses it` for `main`'s), the
+/// others named on one line; never a key.
+pub fn render_providers(c: &Catalog, keys: &Keys, paths: &Paths, main: &str, st: &Style) -> String {
     let home = paths.home.as_deref();
-    let mut o = format!("{}\n\n", st.title("your keys"));
-    let ps = keyed(c);
-    let w = ps.iter().map(|p| p.id.len()).max().unwrap_or(8);
-    let we = ps.iter().map(|p| p.key_env.len()).max().unwrap_or(8);
-    for p in &ps {
-        let (from, has) = match keys.source(p, home) {
-            Some(f) => (f, true),
-            None => ("-".to_string(), false),
+    let mut o = format!("{}\n\n", st.title("your providers"));
+    let chat = |p: &&Provider| !p.key_env.is_empty() && p.needs.is_empty() && !p.stt_only;
+    let (shown, rest): (Vec<&Provider>, Vec<&Provider>) =
+        c.providers.iter().filter(chat).partition(|p| !p.hidden || keys.for_provider(p).is_some() || p.id == main);
+    let w = shown.iter().map(|p| p.name.chars().count()).max().unwrap_or(8).max(16) + 2;
+    for p in &shown {
+        let name = format!("{:<w$}", p.name, w = w);
+        let mut state = match keys.for_provider(p) {
+            Some(f) => {
+                let from = match &f.from {
+                    From::AuthFile => "saved in bise".to_string(),
+                    From::Env(n) => format!("from {}", n),
+                    From::EnvFile(path, _) => format!("from {}", tilde(path, home)),
+                };
+                let mut s = format!("{} {}", st.accent(bise_home::style::OK), st.dim(&format!("ready · {}", from)));
+                if let Some(n) = keys.shadowed(&p.id, &p.key_env) {
+                    s.push_str(&st.dim(&format!(" · {} holds another key, unused", n)));
+                }
+                s
+            }
+            None => st.dim("not set up"),
         };
-        let id = format!("{:<w$}", p.id, w = w);
-        let env = st.dim(&format!("{:<we$}", p.key_env, we = we));
-        let from = if has { from } else { st.faint(&from) };
-        o.push_str(&format!("{}  {}  {}\n", if has { id } else { st.dim(&id) }, env, from));
+        if p.id == main {
+            state.push_str(&st.dim(" · main uses it"));
+        }
+        o.push_str(&format!("  {}{}\n", name, state));
+    }
+    // a private proxy (no keys page) is never offered
+    let more: Vec<&str> = rest.iter().filter(|p| !p.keys_url.is_empty()).map(|p| p.name.as_str()).collect();
+    if !more.is_empty() {
+        let names = match more.len() {
+            0..=3 => more.join(", "),
+            n => format!("{} and {} more", more[..3].join(", "), n - 3),
+        };
+        o.push_str(&format!("  {:<w$}{}\n", "more providers", st.dim(&names), w = w));
     }
     for id in keys.store.providers() {
         match c.provider(id) {
@@ -363,8 +394,10 @@ pub fn render_list_styled(c: &Catalog, keys: &Keys, paths: &Paths, st: &Style) -
             st.ask(&format!("{} is readable by others (mode {:o}): chmod 600 it", tilde(&paths.auth_file, home), m))
         ));
     }
-    if !ps.iter().any(|p| keys.source(p, home).is_some()) {
+    if !shown.iter().any(|p| keys.for_provider(p).is_some()) {
         o.push_str(&format!("{}\n", st.next(&format!("{} login <provider>", CLI))));
+    } else {
+        o.push_str(&format!("{}\n", st.dim(&format!("{} login <provider> sets one up or changes it; in bise: /provider", CLI))));
     }
     o
 }
@@ -377,8 +410,20 @@ fn list_main(paths: &Paths) -> i32 {
     };
     let files = EnvFile::read_all(&paths.env_files);
     let keys = Keys { env: &real_env, store: &store, files: &files };
-    print!("{}", render_list_styled(&setup.catalog, &keys, paths, &Style::stdout()));
+    let main = setup.catalog.resolve(&setup.model).provider;
+    print!("{}", render_providers(&setup.catalog, &keys, paths, &main, &Style::stdout()));
     0
+}
+
+/// `bise providers` (`bise provider`): the same list as `bise auth list`.
+pub fn providers_main(args: &[String], paths: &Paths) -> i32 {
+    match args.first().map(String::as_str) {
+        None | Some("list") | Some("ls") => list_main(paths),
+        _ => {
+            println!("{} providers: your providers and their keys (the same list as '{} auth list'); '{} login <provider>' sets one up", CLI, CLI, CLI);
+            i32::from(!matches!(args.first().map(String::as_str), Some("-h" | "--help"))) * 2
+        }
+    }
 }
 
 /// How many times a terminal login asks again after a wrong key.

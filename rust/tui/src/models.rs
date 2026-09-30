@@ -149,13 +149,20 @@ pub(crate) struct Pick {
     pub(crate) desc: String,
 }
 
-/// The chat models of the catalog (built in and config.toml's, usable
-/// ones), then its aliases: `/model`'s list (BISE-117 completion).
+/// The chat models of the catalog (built in and config.toml's) whose
+/// provider can run a turn now (BISE-294: a key found, or none needed),
+/// then the aliases to them: `/model`'s list (BISE-117 completion).
 pub(crate) fn picks() -> Vec<Pick> {
+    let ready = ready_ids();
+    picks_with(&|id| ready.iter().any(|r| r == id))
+}
+
+/// [`picks`] for the providers `ready` says yes to.
+pub(crate) fn picks_with(ready: &dyn Fn(&str) -> bool) -> Vec<Pick> {
     let c = &setup().catalog;
     let mut out = Vec::new();
     for m in c.models.iter().filter(|m| !m.stt) {
-        let Some(p) = c.provider(&m.provider).filter(|p| !p.stt_only && p.needs.is_empty()) else {
+        let Some(p) = c.provider(&m.provider).filter(|p| !p.stt_only && p.needs.is_empty() && ready(&p.id)) else {
             continue;
         };
         let r = c.resolve(&m.name());
@@ -166,10 +173,102 @@ pub(crate) fn picks() -> Vec<Pick> {
         let mine = if m.source == bise_catalog::Source::Config { " · config.toml" } else { "" };
         out.push(Pick { value: m.name(), desc: format!("{} · {} · {}{}", long_name(&m.name()), p.name, ctx, mine) });
     }
-    for (a, to) in &c.aliases {
+    for (a, to) in c.aliases.iter().filter(|(_, to)| ready(&c.resolve(to).provider)) {
         out.push(Pick { value: a.clone(), desc: format!("= {}", to) });
     }
     out
+}
+
+/// The providers that can run a turn now: a key found where the
+/// harness finds it (`bise_catalog::auth::Keys`: the environment,
+/// auth.json, the old .env files) or none needed. Read again at most
+/// once a second (the popup asks at each frame), and at once after
+/// `/provider` ([`forget_keys`]).
+pub(crate) fn ready_ids() -> Vec<String> {
+    #[cfg(test)]
+    if let Some(ids) = TEST_READY.with(|r| r.borrow().clone()) {
+        return ids;
+    }
+    #[cfg(test)]
+    return setup().catalog.providers.iter().map(|p| p.id.clone()).collect();
+    #[cfg(not(test))]
+    {
+        use std::sync::Mutex;
+        use std::time::{Duration, Instant};
+        static CACHE: Mutex<Option<(Instant, Vec<String>)>> = Mutex::new(None);
+        let mut c = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        let forgot = FORGOT.swap(false, std::sync::atomic::Ordering::SeqCst);
+        if let Some((_, ids)) = c.as_ref().filter(|(at, _)| at.elapsed() < Duration::from_secs(1) && !forgot) {
+            return ids.clone();
+        }
+        let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+        let ids = ready_in(&env, &bise_home::Home::from_env());
+        *c = Some((Instant::now(), ids.clone()));
+        ids
+    }
+}
+
+// tests: the providers ready on this thread (None: all of them)
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TEST_READY: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
+
+static FORGOT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The keys changed (`/provider`): the next list reads them again.
+pub(crate) fn forget_keys() {
+    FORGOT.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// The ready providers for an environment and a bise home.
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn ready_in(env: &dyn Fn(&str) -> Option<String>, home: &bise_home::Home) -> Vec<String> {
+    use bise_catalog::auth::{EnvFile, Keys, Store};
+    let store = Store::read(&home.auth_file()).unwrap_or_default();
+    let files = EnvFile::read_all(&home.env_files());
+    let keys = Keys { env, store: &store, files: &files };
+    setup().catalog.providers.iter().filter(|p| keys.ready(p)).map(|p| p.id.clone()).collect()
+}
+
+/// A model `/model` may not switch to yet: its provider is known and
+/// usable but has no key. Its provider's id and name.
+pub(crate) fn keyless(model: &str) -> Option<(String, String)> {
+    let r = resolve(model)?;
+    let c = &setup().catalog;
+    let p = c.provider(&r.provider)?;
+    let ok = r.known == Known::NoProvider || !p.needs.is_empty() || p.stt_only || ready_ids().contains(&p.id);
+    (!ok).then(|| (p.id.clone(), p.name.clone()))
+}
+
+/// A model as `/model` takes it (a full id, a bare one, an alias) as its
+/// full `provider/model` id; None for a provider nobody knows.
+pub(crate) fn full_name(model: &str) -> Option<String> {
+    resolve(model).filter(|r| r.known != Known::NoProvider).map(|r| r.name)
+}
+
+/// A provider's name for people, by its id or its key variable
+/// (`OPENROUTER_API_KEY` -> OpenRouter); the id or the variable itself
+/// when the catalog has none.
+pub(crate) fn provider_name(id: &str, key_env: &str) -> String {
+    let c = &setup().catalog;
+    let p = if id.is_empty() {
+        c.providers.iter().find(|p| !p.key_env.is_empty() && p.key_env == key_env && !p.stt_only)
+    } else {
+        c.provider(id)
+    };
+    p.map(|p| p.name.clone()).unwrap_or_else(|| if id.is_empty() { key_env.to_string() } else { id.to_string() })
+}
+
+/// The providers not ready, the offered ones first: `/model`'s last
+/// row names them (`OpenRouter, Groq, xAI…`).
+pub(crate) fn not_ready_names() -> Vec<String> {
+    let ready = ready_ids();
+    let c = &setup().catalog;
+    let usable = |p: &&bise_catalog::Provider| p.needs.is_empty() && !p.stt_only && !p.key_env.is_empty() && !ready.contains(&p.id);
+    let mut v: Vec<&bise_catalog::Provider> = c.providers.iter().filter(usable).collect();
+    v.sort_by_key(|p| p.hidden);
+    v.into_iter().map(|p| p.name.clone()).collect()
 }
 
 /// A typed model id the pickers may use as is (BISE-289), with its
@@ -280,6 +379,16 @@ mod tests {
         assert_eq!(efforts("foundry/claude-opus-5-5").1, "high");
         assert_eq!(efforts("mistral/zai-glm-5-3").0, ["none", "high"]);
         assert!(efforts("mistral/mistral-large-latest").0.is_empty());
+        // BISE-294: only the providers set up, their aliases too
+        TEST_READY.with(|r| *r.borrow_mut() = Some(vec!["anthropic".into(), "ollama".into()]));
+        let p = picks();
+        assert!(p.iter().any(|x| x.value == "anthropic/claude-sonnet-5-5"));
+        assert!(!p.iter().any(|x| x.value.starts_with("foundry/") || x.value.starts_with("openai/")));
+        assert!(!p.iter().any(|x| x.value == "opus-5.5"), "its alias goes with it");
+        assert!(not_ready_names().starts_with(&["OpenAI".to_string()]), "{:?}", not_ready_names());
+        assert_eq!(keyless("openai/gpt-6-astra"), Some(("openai".into(), "OpenAI".into())));
+        assert_eq!(keyless("ollama/anything"), None);
+        TEST_READY.with(|r| *r.borrow_mut() = None);
     }
 
     #[test]
