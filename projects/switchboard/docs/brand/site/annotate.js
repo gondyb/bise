@@ -161,8 +161,14 @@
   // panel
   const pn = document.createElement('div'); pn.className = 'an-panel'; document.body.appendChild(pn);
   function panel() {
-    pn.innerHTML = `<span><b>${notes.length}</b> note${notes.length === 1 ? '' : 's'} · ${server ? '<span class="ok">saved for designer ✓</span>' : 'local only · copy &amp; paste'}</span><button data-k="g">+ general</button><button data-k="c">copy all</button><button data-k="h">${showNotes ? 'hide' : 'show'}</button>`;
+    pn.innerHTML = `<span><b>${notes.length}</b> note${notes.length === 1 ? '' : 's'} · ${server ? '<span class="ok">saved for designer ✓</span>' : 'local only · copy &amp; paste'}</span><button data-k="g">+ general</button><button data-k="c">copy all</button><button data-k="h">${showNotes ? 'hide' : 'show'}</button>${notes.length ? '<button data-k="d">discard all</button>' : ''}`;
     pn.querySelector('[data-k=g]').onclick = () => editor(null);
+    // discard every note of this page: a first click asks, a second one within 4 s discards
+    const d = pn.querySelector('[data-k=d]');
+    if (d) d.onclick = async () => {
+      if (!d.dataset.sure) { d.dataset.sure = '1'; d.textContent = `discard ${notes.length}? click again`; d.style.color = 'var(--acc)'; setTimeout(() => { if (d.isConnected) panel(); }, 4000); return; }
+      notes = []; render(); await save();
+    };
     pn.querySelector('[data-k=h]').onclick = () => { showNotes = !showNotes; document.body.classList.toggle('an-hide', !showNotes); panel(); };
     pn.querySelector('[data-k=c]').onclick = async e => {
       const md = notes.map(n => `- ${n.verdict ? MARK[n.verdict] : '·'} [${n.key}] "${n.quote.slice(0, 140)}"${n.text ? `\n  → ${n.text}` : ''}`).join('\n');
