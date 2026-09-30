@@ -314,7 +314,7 @@ const V = {
           const under = kx + 1 + L + name.length + 3 >= ko.x0 && kx + 1 <= ko.x1;
           const top = under ? Math.max(2, Y - ko.y1 - 2) : Y - 4;
           s.b.push({ xs: kx + 1, L, p: 0, A: Math.min(rnd(Math.min(3, top), top), L / 2.6), name, done, key });
-          s.last = s.kx; s.flash = 8; s.gap = rnd(.75, 1.25) * (30 - 24 * q); PULSES.push({ x: kx, t0: t });
+          s.last = s.kx; s.flash = 8; s.gap = rnd(.75, 1.25) * (16 - 11 * q); PULSES.push({ x: kx, t0: t });
         }
       }
       s.b = s.b.filter(b => {
