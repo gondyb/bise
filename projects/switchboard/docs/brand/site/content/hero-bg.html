@@ -378,11 +378,11 @@ const V = {
         if (L) {
           if (EVENTS) say(g, Y, kx + 1, `starting an agent · ${name}`);
           if (BUBBLE) s.q.push(`spawning · ${name}`);
-          s.last = s.kx; s.flash = 8; s.gap = rnd(.8, 1.2) * (21 - 13 * q) * .6;  // more agents in parallel (user, several times): often 2, often 3
+          s.last = s.kx; s.flash = 8; s.gap = rnd(.8, 1.2) * (21 - 13 * q) * .4;  // user: 2+ agents in flight ~80 % of the time, 3+ ~50 %
         }
       }
       s.b = s.b.filter(b => {
-        const was = b.p; b.p = Math.min(b.L, b.p + (.45 + .15 * q) * .7);
+        const was = b.p; b.p = Math.min(b.L, b.p + (.45 + .15 * q) * .62);
         if (EVENTS && was < b.L && b.p >= b.L) say(g, Y, b.xs + b.L, `${b.name} · ${verb(b.name)}`);
         const pts = [];
         for (let i = 0; i <= b.p; i++) pts.push([b.xs + i, railY(b, Y, i)]);
