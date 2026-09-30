@@ -98,6 +98,25 @@ fn samples_clip_and_peak_is_normalized() {
     assert_eq!(peak_glyph(0.5), '▅');
 }
 
+/// BISE-246: the meter is in decibels: a quiet room stays on the lowest
+/// bar, speech (peaks 0.02-0.3 of full scale on a laptop mic) fills the
+/// bars; linear, it all sat on `▁`/`▂` and the chip looked dead.
+#[test]
+fn the_meter_reads_speech_in_decibels() {
+    let bar = |p: f32| peak_glyph(loudness(p));
+    assert_eq!(loudness(0.0), 0.0);
+    assert_eq!(loudness(1.0), 1.0);
+    assert_eq!(loudness(2.0), 1.0);
+    // a room's hiss (measured: 0.001-0.0036): flat
+    assert_eq!(bar(0.001), '▁');
+    assert_eq!(bar(0.0036), '▁');
+    // quiet, normal, loud speech
+    assert_eq!(bar(0.02), '▃');
+    assert_eq!(bar(0.1), '▅');
+    assert_eq!(bar(0.3), '▇');
+    assert!(loudness(0.05) < loudness(0.06), "it grows with the peak");
+}
+
 // ---- settings ----
 
 #[test]
@@ -157,7 +176,12 @@ fn deltas_are_inserted_live_then_stop_flushes_and_done_ends() {
     let t0 = Instant::now();
     v.start(key(), t0).unwrap();
     assert_eq!(v.state(), VoiceState::Recording);
-    assert_eq!(v.levels(), [0.5; chip::BARS]);
+    // no audio yet: a flat meter; a block of speech rises on the right
+    assert_eq!(v.levels(), [0.0; chip::BARS]);
+    rec.speak(0.1, 1);
+    assert!((v.levels()[chip::BARS - 1] - loudness(0.1)).abs() < 1e-3);
+    // the block went on to the transcriber too
+    assert!(matches!(tr.audio().as_slice(), [AudioMsg::Chunk(c)] if c.len() == chip::METER_BLOCK));
     assert_eq!(tr.session.lock().unwrap().as_ref().unwrap().3, job());
     tr.send(TranscribeEvent::Delta("Hello".into()));
     tr.send(TranscribeEvent::Delta(" world".into()));

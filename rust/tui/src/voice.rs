@@ -21,7 +21,7 @@
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use serde_json::Value;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -45,6 +45,22 @@ pub const PEAK_BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '�
 pub fn peak_glyph(peak: f32) -> char {
     let i = (peak.clamp(0.0, 1.0) * PEAK_BLOCKS.len() as f32) as usize;
     PEAK_BLOCKS[i.min(PEAK_BLOCKS.len() - 1)]
+}
+
+/// The quietest peak the meter shows above its floor, in dBFS: a room's
+/// hiss (~-55 dBFS on a laptop mic) stays flat, speech (~-35 to -10)
+/// fills the bars.
+pub const METER_FLOOR_DB: f32 = -50.0;
+
+/// A peak (0..1 of full scale) as a meter level (0..1) on a decibel
+/// scale: [`METER_FLOOR_DB`] and below → 0, full scale → 1. Linear,
+/// speech peaks (0.02-0.2) all sat on the lowest bar (BISE-246).
+pub fn loudness(peak: f32) -> f32 {
+    if peak <= 0.0 {
+        return 0.0;
+    }
+    let db = 20.0 * peak.min(1.0).log10();
+    ((db - METER_FLOOR_DB) / -METER_FLOOR_DB).clamp(0.0, 1.0)
 }
 
 fn mic_access_hint() -> &'static str {
@@ -285,12 +301,9 @@ pub enum StartError {
 
 /// A running capture; dropping it stops the microphone.
 pub trait Capture {
-    fn peak(&self) -> f32;
     fn has_signal(&self) -> bool;
     /// The last live levels, oldest first ([`chip::Meter`]).
-    fn levels(&self) -> [f32; chip::BARS] {
-        [self.peak(); chip::BARS]
-    }
+    fn levels(&self) -> [f32; chip::BARS];
 }
 
 pub trait Recorder {
@@ -498,22 +511,30 @@ fn stop_capture(run: &mut Run, now: Instant) {
 
 /// The capture level, shared with the audio callback.
 #[derive(Default)]
-struct Level {
-    peak_bits: AtomicU32,
+pub(crate) struct Level {
     signal: AtomicBool,
     meter: std::sync::Mutex<chip::Meter>,
 }
 
 impl Level {
+    /// One block of audio from the microphone (the audio thread): the
+    /// level and the meter, then the block to the transcriber.
+    pub(crate) fn block(&self, samples: Vec<i16>, audio: &Sender<AudioMsg>) {
+        self.record(&samples);
+        let _ = audio.send(AudioMsg::Chunk(samples));
+    }
+
     fn record(&self, samples: &[i16]) {
-        let p = peak(samples);
-        self.peak_bits.store(p.to_bits(), Ordering::Relaxed);
-        if p > SILENCE_PEAK {
+        if peak(samples) > SILENCE_PEAK {
             self.signal.store(true, Ordering::Relaxed);
         }
         if let Ok(mut m) = self.meter.lock() {
             m.push(samples);
         }
+    }
+
+    pub(crate) fn levels(&self) -> [f32; chip::BARS] {
+        self.meter.lock().map(|m| m.levels()).unwrap_or_default()
     }
 }
 
@@ -523,14 +544,11 @@ struct CpalCapture {
 }
 
 impl Capture for CpalCapture {
-    fn peak(&self) -> f32 {
-        f32::from_bits(self.level.peak_bits.load(Ordering::Relaxed))
-    }
     fn has_signal(&self) -> bool {
         self.level.signal.load(Ordering::Relaxed)
     }
     fn levels(&self) -> [f32; chip::BARS] {
-        self.level.meter.lock().map(|m| m.levels()).unwrap_or_default()
+        self.level.levels()
     }
 }
 
@@ -581,9 +599,7 @@ where
             config,
             move |data: &[T], _: &cpal::InputCallbackInfo| {
                 let floats: Vec<f32> = data.iter().map(|s| cpal::Sample::to_sample::<f32>(*s)).collect();
-                let out = resampler.process(&to_mono(&floats, channels));
-                level.record(&out);
-                let _ = audio.send(AudioMsg::Chunk(out));
+                level.block(resampler.process(&to_mono(&floats, channels)), &audio);
             },
             |_err| {},
             None,

@@ -314,6 +314,25 @@ fn zen_input(app: &App, ev: &Event, before: &Before) -> crate::zen::Input {
     }
 }
 
+/// The frame's clock at `now`, before each draw (BISE-204: every
+/// animation reads the clock, never the turns): the pulses' time (the
+/// voice chip's blink and wave), the gust's motion, the frame's time
+/// (the voice chip's timer). No input needed: the loop wakes every
+/// 50 ms while the voice is at work.
+pub(crate) fn frame_clock(app: &mut App, now: std::time::Instant, last_draw: Duration, reduce_motion: bool) {
+    let zen = app.zen.active(now);
+    let frame = app.anim.gust(now);
+    // the tick pulses (`∿` of a running tool, `·` starting) hold
+    // still while you type (zen, BISE-121)
+    app.pulse_ms = app.anim.pulse_ms(now, zen, app.zen.end());
+    app.tick = (app.pulse_ms / crate::anim::PULSE_MS) as u32;
+    app.motion = crate::gust::motion(app.focus_lost, last_draw, reduce_motion, zen, frame);
+    // zen (BISE-132): the other agents' gusts stand still, their `∿`
+    // pulsing slowly in color (a hush: it still works)
+    app.motion_away = crate::gust::away(app.motion, zen, app.zen.no_color, frame);
+    app.frame_at = now;
+}
+
 fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
     let mut draw_crashes = 0u32;
     // the gust's motion (BISE-107): the last draw's time, the env once
@@ -360,18 +379,7 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
             continue;
         }
         pump_voice(app);
-        // BISE-204: every animation reads the clock, never the turns
-        let now = std::time::Instant::now();
-        let zen = app.zen.active(now);
-        let frame = app.anim.gust(now);
-        // the tick pulses (`∿` of a running tool, `·` starting) hold
-        // still while you type (zen, BISE-121)
-        app.pulse_ms = app.anim.pulse_ms(now, zen, app.zen.end());
-        app.tick = (app.pulse_ms / crate::anim::PULSE_MS) as u32;
-        app.motion = crate::gust::motion(app.focus_lost, last_draw, reduce_motion, zen, frame);
-        // zen (BISE-132): the other agents' gusts stand still, their `∿`
-        // pulsing slowly in color (a hush: it still works)
-        app.motion_away = crate::gust::away(app.motion, zen, app.zen.no_color, frame);
+        frame_clock(app, std::time::Instant::now(), last_draw, reduce_motion);
         let t_draw = std::time::Instant::now();
         let drawn = crash::guarded(|| {
             // BISE-92: the terminal's own background follows the theme

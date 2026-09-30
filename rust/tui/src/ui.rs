@@ -474,7 +474,8 @@ fn fresh_note(note: &Option<(String, std::time::Instant)>) -> Option<String> {
 /// sets `app.composer.top`).
 /// The voice chip's frame at `now` (BISE-222): the phase, the live
 /// levels, the timer, the clock's pulse time (held in zen); still when
-/// the gust is (`BISE_REDUCE_MOTION`, a slow draw, no focus).
+/// the gust is (`BISE_REDUCE_MOTION`, a slow draw, no focus). The draw
+/// passes the frame's time (`app.frame_at`, run::frame_clock).
 pub(crate) fn voice_look(app: &App, now: std::time::Instant) -> voice::chip::Look {
     voice::chip::Look {
         phase: if app.voice.state() == voice::VoiceState::Flushing {
@@ -504,7 +505,7 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
     app.composer.top = top;
     let text_style = Style::default().fg(theme::text());
     let sel_style = Style::default().fg(theme::text()).bg(theme::selection_bg());
-    let voice_look = voice_look(app, std::time::Instant::now());
+    let voice_look = voice_look(app, app.frame_at);
     let voice_form = voice::chip::Form::now();
     for row in rows.iter().take(drawn).skip(top) {
         let mut spans: Vec<Span> = Vec::new();

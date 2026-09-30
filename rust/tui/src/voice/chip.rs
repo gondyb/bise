@@ -19,7 +19,7 @@
 //! BISE-204): they hold while you type (zen) and stand still under
 //! `BISE_REDUCE_MOTION`. The chip's text in the composer is [`LABEL`].
 
-use super::{peak_glyph, PEAK_BLOCKS, SAMPLE_RATE};
+use super::{loudness, peak_glyph, PEAK_BLOCKS, SAMPLE_RATE};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
@@ -218,9 +218,10 @@ pub(crate) fn text(look: &Look, fit: Fit, form: Form) -> String {
     spans(look, fit, form, Style::default()).iter().map(|s| s.content.as_ref()).collect()
 }
 
-/// The live levels: the loudest sample of each [`METER_BLOCK`] of audio,
-/// the last [`BARS`] of them (oldest first); they scroll left one cell
-/// per block.
+/// The live levels: the loudest sample of each [`METER_BLOCK`] of audio
+/// on a decibel scale ([`loudness`]: speech fills the bars, a quiet room
+/// stays flat), the last [`BARS`] of them (oldest first); they scroll
+/// left one cell per block.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub(crate) struct Meter {
     levels: [f32; BARS],
@@ -235,7 +236,7 @@ impl Meter {
             self.block_n += 1;
             if self.block_n >= METER_BLOCK {
                 self.levels.rotate_left(1);
-                self.levels[BARS - 1] = self.block_max.min(1.0);
+                self.levels[BARS - 1] = loudness(self.block_max);
                 self.block_max = 0.0;
                 self.block_n = 0;
             }

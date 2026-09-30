@@ -87,6 +87,9 @@ pub(crate) struct App {
     pub(crate) tick: u32,
     /// the pulses' time in ms (BISE-204; the voice chip's blink and wave)
     pub(crate) pulse_ms: u64,
+    /// the frame's time: set by the draw loop with the pulses (the voice
+    /// chip's timer, run::frame_clock)
+    pub(crate) frame_at: std::time::Instant,
     /// the animation clock: the frames of the gust and the pulses
     pub(crate) anim: crate::anim::Clock,
     /// the working gust's motion (BISE-107): set by the draw loop, still
@@ -225,6 +228,7 @@ impl App {
             history: Vec::new(),
             tick: 0,
             pulse_ms: 0,
+            frame_at: std::time::Instant::now(),
             anim: crate::anim::Clock::default(),
             motion: crate::gust::Motion::Still,
             motion_away: crate::gust::Motion::Still,

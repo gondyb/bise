@@ -6,17 +6,18 @@ use std::rc::Rc;
 use std::sync::Mutex;
 
 pub(crate) struct FakeCapture {
-    pub(crate) peak: f32,
+    /// the real level and meter, fed by [`FakeRecorder::speak`]
+    pub(crate) level: Arc<Level>,
     pub(crate) signal: bool,
     pub(crate) stopped: Rc<RefCell<bool>>,
 }
 
 impl Capture for FakeCapture {
-    fn peak(&self) -> f32 {
-        self.peak
-    }
     fn has_signal(&self) -> bool {
         self.signal
+    }
+    fn levels(&self) -> [f32; chip::BARS] {
+        self.level.levels()
     }
 }
 
@@ -32,6 +33,8 @@ pub(crate) struct FakeRecorder {
     pub(crate) signal: bool,
     pub(crate) stopped: Rc<RefCell<bool>>,
     pub(crate) audio: Rc<RefCell<Option<Sender<AudioMsg>>>>,
+    /// the running capture's level (the audio thread's side)
+    pub(crate) level: Rc<RefCell<Option<Arc<Level>>>>,
 }
 
 impl FakeRecorder {
@@ -41,6 +44,18 @@ impl FakeRecorder {
             signal,
             stopped: Rc::new(RefCell::new(false)),
             audio: Rc::new(RefCell::new(None)),
+            level: Rc::new(RefCell::new(None)),
+        }
+    }
+
+    /// The microphone hears `blocks` meter blocks at `amp` (0..1 of full
+    /// scale): what the audio thread does with each one (level, meter,
+    /// then the transcriber), from outside the UI loop.
+    pub(crate) fn speak(&self, amp: f32, blocks: usize) {
+        let level = self.level.borrow().clone().expect("recording");
+        let audio = self.audio.borrow().clone().expect("recording");
+        for _ in 0..blocks {
+            level.block(vec![to_i16(amp); chip::METER_BLOCK], &audio);
         }
     }
 }
@@ -51,7 +66,9 @@ impl Recorder for FakeRecorder {
         self.result.clone()?;
         *self.audio.borrow_mut() = Some(audio);
         *self.stopped.borrow_mut() = false;
-        Ok(Box::new(FakeCapture { peak: 0.5, signal: self.signal, stopped: self.stopped.clone() }))
+        let level = Arc::new(Level::default());
+        *self.level.borrow_mut() = Some(level.clone());
+        Ok(Box::new(FakeCapture { level, signal: self.signal, stopped: self.stopped.clone() }))
     }
 }
 

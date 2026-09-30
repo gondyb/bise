@@ -273,7 +273,7 @@ fn render_w(app: &mut App, w: u16) -> ratatui::buffer::Buffer {
     term.backend().buffer().clone()
 }
 
-/// The chip in the composer: recording ` ● ▅▅▅▅▅▅ 0:00 ` on the pill,
+/// The chip in the composer: recording ` ● ▁▁▁▁▁▁ 0:00 ` (no audio yet) on the pill,
 /// the text around it; transcribing ` ∿ ▂▃▅▆▅▃ 0:00 ` at the same place
 /// and width; the key bar; narrow forms; ASCII.
 #[test]
@@ -281,7 +281,7 @@ fn the_chip_is_drawn_in_the_text() {
     let (mut app, _rec, _tr) = app_at("say  now", 4);
     ctrl_r(&mut app);
     let buf = render(&mut app);
-    let (x, y) = find(&buf, "say  ● ▅▅▅▅▅▅ 0:00  now").expect("the chip in the text");
+    let (x, y) = find(&buf, "say  ● ▁▁▁▁▁▁ 0:00  now").expect("the chip in the text");
     assert_eq!(buf[(x + 4, y)].bg, theme::pill_bg(), "the pill's padding cell");
     assert_eq!(buf[(x + 5, y)].fg, theme::accent(), "the dot");
     assert_eq!(buf[(x + 7, y)].fg, theme::accent(), "the live bars");
@@ -305,4 +305,42 @@ fn the_chip_is_drawn_in_the_text() {
     let buf = render(&mut app);
     theme::set_ascii_for_tests(false);
     assert!(find(&buf, "say [~ .-=#=- 0:00] now").is_some());
+}
+
+/// BISE-246: while recording, the chip moves by itself, no key between
+/// the frames: the loop's clock (run::frame_clock) blinks the dot and
+/// runs the timer, the audio thread's blocks scroll the meter, and
+/// speech rises above the lowest bar (the meter was linear: a voice sat
+/// on `▁` and the chip looked like a dead pink bar until the wave of
+/// the transcription).
+#[test]
+fn the_recording_chip_moves_between_frames_without_a_key() {
+    use std::time::Duration;
+    let (mut app, rec, _tr) = app_at("say  now", 4);
+    ctrl_r(&mut app);
+    let t0 = std::time::Instant::now();
+    // one turn of the loop at t0 + `ms`: pump, clock, draw
+    let frame = |app: &mut App, ms: u64| {
+        pump_voice(app);
+        frame_clock(app, t0 + Duration::from_millis(ms), Duration::ZERO, false);
+        let buf = render(app);
+        let (x, y) = find(&buf, "say  ").expect("the text before the chip");
+        let chip: String = (x + 4..x + 19).map(|i| buf[(i, y)].symbol().to_string()).collect();
+        (chip, buf[(x + 5, y)].fg)
+    };
+    let (a, dot_a) = frame(&mut app, 0);
+    assert_eq!(a, " ● ▁▁▁▁▁▁ 0:00 ", "silence: flat");
+    assert_eq!(dot_a, theme::accent());
+    // a word: two blocks, normal then quieter speech
+    rec.speak(0.1, 1);
+    rec.speak(0.02, 1);
+    let (b, dot_b) = frame(&mut app, 700);
+    assert_eq!(b, " ● ▁▁▁▁▅▃ 0:00 ", "the meter: the newest on the right");
+    assert_eq!(dot_b, theme::dim(), "the dot blinks off");
+    // silence again: the word scrolls left, the timer runs, the dot is back
+    rec.speak(0.0, 2);
+    let (c, dot_c) = frame(&mut app, 1300);
+    assert_eq!(c, " ● ▁▁▅▃▁▁ 0:01 ");
+    assert_eq!(dot_c, theme::accent());
+    assert_eq!(app.voice.state(), VoiceState::Recording, "no key: still recording");
 }
