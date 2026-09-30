@@ -230,7 +230,7 @@ function foot(status, composer, hints, queue = "") {
 // the agent palette (cmd+k): in the composer pane, the list grows upward; ▸ + bold for the selected row, ⌥n on the right
 function palette(q, rows, earlier = [], none = false) {
   const r = ([sel, g, name, note, key]) => `<div class="prow${sel ? " psel" : ""}"><span class="pm">${sel ? '<span class="acc">▸</span>' : " "}</span><span class="pg">${g}</span><span class="pn">${sel ? `<b>${name}</b>` : name}</span><span class="pd">${note}</span><span class="pk">${key}</span></div>`;
-  const e = earlier.length ? `<div class="pearly">earlier</div>` + earlier.map(([n, d]) => `<div class="prow parch"><span class="pm"> </span><span class="pg">·</span><span class="pn">${n}</span><span class="pd">${d}</span><span class="pk"></span></div>`).join("") : "";
+  const e = earlier.length ? `<div class="pearly">earlier · read-only</div>` + earlier.map(([n, d]) => `<div class="prow parch"><span class="pm"> </span><span class="pg">·</span><span class="pn">${n}</span><span class="pd">${d}</span><span class="pk"></span></div>`).join("") : "";
   const body = none ? `<div class="prow"><span class="pm"> </span><span class="dim">no agent called "${q}". esc to close</span></div>` : rows.map(r).join("") + e;
   return `<div class="foot"><div class="flabel"><span><span class="dim">you →</span> <span class="acc">find an agent</span></span><span class="dim"><span class="pulse">∿</span> 3 working</span></div>
   <div class="plist">${body}</div>
@@ -1026,7 +1026,7 @@ feed      ctrl+o open / close everything · pgup/pgdn scroll · end bottom
 voice     ctrl+r record
 shell     ctrl+\` show / hide</pre></div>` })],
 
-["find an agent · the palette", "cmd+k (ctrl+k where the terminal can't send cmd): type part of a name, ↑↓ choose, ⏎ opens that agent's view, esc closes and gives your draft back. it lives in the composer pane, like ctrl+f find; the list grows upward over the bottom of the feed. the ⌥n on the right teaches the direct key.",
+["find an agent · the palette", "cmd+k (ctrl+s or /switch where the terminal can't send cmd): type part of a name, ↑↓ choose, ⏎ opens that agent's view, esc closes and gives your draft back. it lives in the composer pane, like ctrl+f find; the list grows upward over the bottom of the feed. the ⌥n on the right teaches the direct key.",
  term({ feed: you("where are we?") + bise("3 agents working. sad-404 needs you: keep the dog?") + `<div class="b"><span class="who acc">✓</span>perf is done · signup 4.1 s → 0.9 s</div>`,
    f: palette("", [
      [true, '<span class="acc">:*</span>', "main", "your team lead", "⌥0"],
@@ -1035,12 +1035,12 @@ shell     ctrl+\` show / hide</pre></div>` })],
      [false, S.work, "emoji-csv", "the export crashes on emoji", "⌥4"],
      [false, S.done, "perf", "signup 4.1 s → 0.9 s", "⌥1"]]) })],
 
-["the palette, typing", "the typed letters light up in the names (bold, accent). agents that are over show under a faint 'earlier', read-only, only when the query matches.",
+["the palette, typing", "the typed letters light up in the names (bold, accent). agents that are over show under a faint 'earlier · read-only', with their last report, only when the query matches. more than 12 rows: the list scrolls.",
  term({ feed: you("where are we?") + bise("3 agents working. sad-404 needs you: keep the dog?"),
    f: palette("da", [
      [true, S.work, '<b class="acc">da</b>rk-mode', "dark colors, settings first", "⌥2"],
      [false, S.done, 'up<b class="acc">da</b>te-deps', "bumped 12 packages", "⌥5"]],
-     [['<b class="acc">da</b>ta-export', "archived · read-only"]]) })],
+     [['<b class="acc">da</b>ta-export', "exported 40k rows as CSV, emoji included"]]) })],
 
 ["the palette, no match", "nothing matches: one line says so. esc closes, your draft comes back.",
  term({ feed: you("where are we?") + bise("3 agents working. sad-404 needs you: keep the dog?"),
