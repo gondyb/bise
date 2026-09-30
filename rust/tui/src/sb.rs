@@ -398,7 +398,8 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
     match s("ev").as_str() {
         "line" => {
             let pos = v.get("pos").and_then(|x| x.as_u64()).map(|p| p as usize);
-            ingest_for(app, &s("agent"), s("line"), pos)
+            let ts = v.get("ts").and_then(|x| x.as_u64());
+            ingest_for(app, &s("agent"), s("line"), pos, ts)
         }
         "history" => {
             let before = v.get("before").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
@@ -476,7 +477,7 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
     }
 }
 
-fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>) {
+fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>, ts: Option<u64>) {
     let sb = &mut app.sb;
     // BISE-61: the first live message between agents in view
     let level3 = sb.ready
@@ -496,7 +497,7 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>) {
     }
     let mut queued = None;
     with_feed(app, agent, |app| {
-        ingest_at(app, line, pos);
+        ingest_at(app, line, pos, ts);
         trim_window(app);
         // BISE-89: its turn ended, the oldest queued message goes (and
         // the next one waits for the turn it starts)
@@ -969,6 +970,8 @@ mod hub_line_tests {
 
 #[cfg(test)]
 pub(crate) mod bench;
+#[cfg(test)]
+mod when_tests;
 
 #[cfg(test)]
 mod nav_key_tests {

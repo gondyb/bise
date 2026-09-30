@@ -51,6 +51,7 @@ pub(super) struct View {
     pub(super) pending: bool,
     pub(super) interrupt_requested: bool,
     pub(super) last_line_at: Option<std::time::Instant>,
+    pub(super) last_ts: Option<u64>,
     /// the agent's composer draft, kept while another is in focus
     pub(super) ed: crate::editor::Editor,
     /// its queued messages (BISE-89)
@@ -71,6 +72,7 @@ impl View {
             pending: false,
             interrupt_requested: false,
             last_line_at: None,
+            last_ts: None,
             ed: crate::editor::Editor::default(),
             queued: Vec::new(),
         }
@@ -89,6 +91,7 @@ pub(super) fn swap_feed(app: &mut App, v: &mut View) {
     std::mem::swap(&mut app.pending, &mut v.pending);
     std::mem::swap(&mut app.interrupt_requested, &mut v.interrupt_requested);
     std::mem::swap(&mut app.last_line_at, &mut v.last_line_at);
+    std::mem::swap(&mut app.last_ts, &mut v.last_ts);
     std::mem::swap(&mut app.queued, &mut v.queued);
 }
 
@@ -112,10 +115,11 @@ pub(super) fn with_feed(app: &mut App, agent: &str, f: impl FnOnce(&mut App)) {
     sb.views.insert(agent.to_string(), view);
 }
 
-/// One line of the feed, at transcript position `pos`.
-pub(super) fn ingest_at(app: &mut App, line: String, pos: Option<usize>) {
+/// One line of the feed, at transcript position `pos`, written at `ts`
+/// (ms since the epoch; None: a hub that does not say).
+pub(super) fn ingest_at(app: &mut App, line: String, pos: Option<usize>, ts: Option<u64>) {
     let n0 = app.events.len();
-    ingest_line(app, line);
+    ingest_line(app, line, ts);
     if let Some(p) = pos {
         app.win.first_pos.get_or_insert(p);
         app.win.last_pos = Some(app.win.last_pos.map_or(p, |l| l.max(p)));
@@ -193,26 +197,6 @@ pub(super) fn want_older(app: &mut App) {
     app.win.loading = true;
 }
 
-/// The local time of `ms` (ms since the epoch), `14:31`: std has no time
-/// zone, `date` has (`-r` on macOS, `-d @` on GNU); UTC when it fails.
-pub(super) fn hhmm_at(ms: u64) -> String {
-    let secs = ms / 1000;
-    let at = |args: &[String]| {
-        std::process::Command::new("date")
-            .args(args)
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-            .filter(|s| s.len() == 5)
-    };
-    let fmt = "+%H:%M".to_string();
-    at(&["-r".into(), secs.to_string(), fmt.clone()])
-        .or_else(|| at(&["-d".into(), format!("@{}", secs), fmt]))
-        .unwrap_or_else(|| format!("{:02}:{:02}", (secs / 3600) % 24, (secs / 60) % 60))
-}
-
 /// A page of older lines arrived: its events go in front of the feed,
 /// the view stays on the rows it shows.
 pub(super) fn prepend_page(app: &mut App, before: usize, lines: Vec<crate::wire::HistLine>) {
@@ -233,19 +217,15 @@ pub(super) fn prepend_page(app: &mut App, before: usize, lines: Vec<crate::wire:
         app.pending,
         app.interrupt_requested,
         app.last_line_at,
+        app.last_ts,
     );
     app.follow = true;
     // a pause of 5 minutes between two replayed lines gets its time
-    // mark, as live (the first line of a page gets none: the gap with
-    // the older page is not known here)
-    let mut last_ts: Option<u64> = None;
+    // mark, as live (ingest_line; the first line of a page gets none:
+    // the gap with the older page is not known here)
+    app.last_ts = None;
     for l in lines {
-        if let (Some(prev), Some(ts)) = (last_ts, l.ts) {
-            let gap = u128::from(ts.saturating_sub(prev));
-            crate::feed::pause_mark(&mut app.events, &mut app.cache, gap, || hhmm_at(ts));
-        }
-        last_ts = l.ts.or(last_ts);
-        ingest_at(app, l.line, Some(l.pos));
+        ingest_at(app, l.line, Some(l.pos), l.ts);
     }
     let k = app.events.len();
     app.cache.resize_with(k, || None);
@@ -266,6 +246,7 @@ pub(super) fn prepend_page(app: &mut App, before: usize, lines: Vec<crate::wire:
         app.pending,
         app.interrupt_requested,
         app.last_line_at,
+        app.last_ts,
     ) = kept;
     if app.anchor.0 == 0 {
         app.anchor.1 += shift;

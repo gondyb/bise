@@ -251,6 +251,9 @@ pub(crate) fn composer_key(app: &mut App, k: &crossterm::event::KeyEvent) {
 /// pane, then the feed (scroll, selection, section toggles) and the
 /// composer (cursor, selection).
 pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: u16) {
+    // BISE-271: a move shows the time of the turn under the mouse; a
+    // press, a drag, a scroll put it away
+    app.hover = matches!(m.kind, MouseEventKind::Moved).then_some((m.column, m.row));
     if help::mouse(app, m) {
         return;
     }

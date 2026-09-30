@@ -60,6 +60,12 @@ pub(crate) struct App {
     // when the last wire line arrived (thinking duration = the delta to
     // the assistant line) and the ctrl+o state of new thinking sections
     pub(crate) last_line_at: Option<std::time::Instant>,
+    /// the hub's time of the last live line of the feed (ms since the
+    /// epoch; BISE-271: the pause marks of a replayed feed)
+    pub(crate) last_ts: Option<u64>,
+    /// where the mouse is, while it moves over the screen (BISE-271:
+    /// the time of the turn under it); None once it clicks or leaves
+    pub(crate) hover: Option<(u16, u16)>,
     pub(crate) show_thinking: bool,
     // a Ctrl+C interrupt is in flight (until the dying turn's idle):
     // a second Ctrl+C quits instead of interrupting again
@@ -216,6 +222,8 @@ impl App {
             area_h: 24,
             events: Vec::new(),
             last_line_at: None,
+            last_ts: None,
+            hover: None,
             show_thinking: false,
             interrupt_requested: false,
             pending: false,

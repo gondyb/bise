@@ -363,7 +363,7 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         Ev::Answered { agent, question, answer, why, open } => answered_lines(agent, question, answer, why, *open, width),
         Ev::TimeMark(t) => vec![Line::from(Span::styled(format!(" {} {} {}", G_NOTE, t, G_NOTE), Style::default().fg(faint())))],
         Ev::Card { text, closed } => card_lines(text, closed, width),
-        Ev::CardClosed { .. } => vec![],
+        Ev::CardClosed { .. } | Ev::Ended(_) => vec![],
         Ev::Release(r) => crate::release_row::lines(r, width),
     }
 }

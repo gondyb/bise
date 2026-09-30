@@ -159,8 +159,9 @@ struct Shell {
     pids: BTreeMap<String, (u64, u32)>,
     clients: BTreeMap<ClientId, UnixStream>,
     replies: BTreeMap<Token, UnixStream>,
-    /// The last lines of each feed, with their transcript positions.
-    buffers: BTreeMap<String, VecDeque<(usize, String)>>,
+    /// The last lines of each feed, with their transcript positions and
+    /// the time the transcript wrote them (ms since the epoch).
+    buffers: BTreeMap<String, VecDeque<(usize, u64, String)>>,
     /// The position of the last line of each feed's transcript.
     positions: BTreeMap<String, usize>,
     /// Every thread, indexed for `sb history` (built at the first search).
@@ -306,6 +307,17 @@ fn transcript_page(path: &Path, before: usize, count: usize) -> Vec<(usize, Opti
 fn history_line(pos: usize, ts: Option<u64>, line: &str) -> Value {
     let mut v = json!({"pos": pos, "line": line});
     if let Some(ts) = ts {
+        v["ts"] = json!(ts);
+    }
+    v
+}
+
+/// A live line of a feed (C2 `line`): `ts`, the time the transcript
+/// wrote it (ms since the epoch), is left out when unknown (0, a stamp
+/// that did not parse); a client reads a line without it as before.
+fn line_event(agent: &str, pos: usize, ts: u64, line: &str) -> Value {
+    let mut v = json!({"ev": "line", "agent": agent, "line": line, "pos": pos});
+    if ts > 0 {
         v["ts"] = json!(ts);
     }
     v
@@ -487,8 +499,9 @@ impl Shell {
             None => transcript_len(&path) + 1,
         };
         self.positions.insert(name.to_string(), pos);
+        let ts = now_ms();
         let b = self.buffers.entry(name.to_string()).or_default();
-        b.push_back((pos, line.to_string()));
+        b.push_back((pos, ts, line.to_string()));
         while b.len() > BUFFER_LINES {
             b.pop_front();
         }
@@ -497,9 +510,9 @@ impl Shell {
             .append(true)
             .open(&path)
         {
-            let _ = writeln!(f, "{}\t{}", now_ms(), line);
+            let _ = writeln!(f, "{}\t{}", ts, line);
         }
-        self.broadcast(&json!({"ev": "line", "agent": name, "line": line, "pos": pos}));
+        self.broadcast(&line_event(name, pos, ts, line));
     }
 
     /// One event to every client (serialized once).
@@ -1108,8 +1121,8 @@ impl Shell {
         }));
         push(&self.snapshot());
         for name in &self.hub.st.order {
-            for (pos, l) in self.buffers.get(name).into_iter().flatten() {
-                push(&json!({"ev": "line", "agent": name, "line": l, "pos": pos}));
+            for (pos, ts, l) in self.buffers.get(name).into_iter().flatten() {
+                push(&line_event(name, *pos, *ts, l));
             }
         }
         push(&json!({"ev": "ready"}));
@@ -1652,8 +1665,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         let all = transcript::read(&sh.transcript(&a.dir));
         sh.positions.insert(a.name.clone(), all.last().map_or(0, |r| r.0));
         let skip = all.len().saturating_sub(BUFFER_LINES);
-        let tail: VecDeque<(usize, String)> =
-            all.into_iter().skip(skip).map(|(p, _, l)| (p, l)).collect();
+        let tail: VecDeque<(usize, u64, String)> = all.into_iter().skip(skip).collect();
         if !tail.is_empty() {
             sh.buffers.insert(a.name.clone(), tail);
         }
@@ -1992,5 +2004,17 @@ mod tests {
         assert_eq!(page[0], json!({"pos": 1, "line": "you : hi", "ts": 1700000000000u64}));
         assert_eq!(page[1], json!({"pos": 2, "line": "obs: turn_started"}));
         assert_eq!(page[2]["ts"], 1700000400000u64);
+    }
+
+    /// A live `line` carries its transcript time as `ts` too (BISE-271:
+    /// the turns' end times, the pause marks of a replayed feed); an
+    /// unknown time (0) is left out.
+    #[test]
+    fn live_lines_carry_their_time() {
+        assert_eq!(
+            line_event("main", 3, 1700000000000, "  obs: turn_done: completed"),
+            json!({"ev": "line", "agent": "main", "line": "  obs: turn_done: completed", "pos": 3, "ts": 1700000000000u64})
+        );
+        assert_eq!(line_event("t1", 1, 0, "x"), json!({"ev": "line", "agent": "t1", "line": "x", "pos": 1}));
     }
 }

@@ -387,6 +387,10 @@ pub(crate) fn wants_gap_before(ev: &Ev, prev: Option<&Ev>) -> bool {
 // structural annotations (turn separators, idle markers) are debug-only;
 // messages, tool activity, compaction and errors always show
 pub(crate) fn ev_visible(ev: &Ev, debug: bool) -> bool {
+    // BISE-271: a time, never a row (its hover draws it)
+    if matches!(ev, Ev::Ended(_)) {
+        return false;
+    }
     if debug {
         return true;
     }
@@ -1288,6 +1292,28 @@ pub(crate) fn pause_mark(
         None | Some(Ev::TimeMark(_)) => false,
         Some(_) => push_event(events, cache, Ev::TimeMark(now())),
     }
+}
+
+/// BISE-271: when the turn that event `i` belongs to ended (ms since
+/// the epoch), for a reply of the turn (its thinking included) or the
+/// row that ends it; None for anything else, a turn still running, a
+/// turn whose end has no time (a hub that does not say, a replay).
+pub(crate) fn turn_end_of(events: &[Ev], i: usize) -> Option<u64> {
+    let ends_turn = |e: &Ev| match e {
+        Ev::TurnDone => true,
+        Ev::Warn(t) => t == "turn interrupted",
+        Ev::Err(t) => t.starts_with("turn failed: ") || t.starts_with("turn stopped: "),
+        _ => false,
+    };
+    let e = events.get(i)?;
+    if !matches!(e, Ev::Assistant(_) | Ev::Thinking { .. }) && !ends_turn(e) {
+        return None;
+    }
+    events[i + 1..].iter().find_map(|e| match e {
+        Ev::Ended(t) => Some(Some(*t)),
+        Ev::Turn => Some(None),
+        _ => None,
+    })?
 }
 
 /// The local time, `14:31` (`date` knows the zone; the standard library

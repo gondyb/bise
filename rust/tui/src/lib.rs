@@ -36,6 +36,7 @@ use std::time::Duration;
 mod theme;
 use theme::*;
 mod theme_detect;
+mod when;
 mod wire;
 use wire::*;
 mod markdown;

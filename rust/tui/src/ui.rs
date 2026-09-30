@@ -443,6 +443,10 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect, bar: Option<Rect>) {
         }
     }
 
+    if let Some((x, y)) = app.hover {
+        hover_time(app, frame.buffer_mut(), text_area, &vis_events, (x, y));
+    }
+
     // the scrollbar (BISE-90, main's call): only while scrolled up from
     // the bottom, faint, one column, no arrows; never at the tail
     if !tail_visible && n > 0 {
@@ -472,6 +476,35 @@ fn draw_feed(app: &mut App, frame: &mut Frame, area: Rect, bar: Option<Rect>) {
     app.area_w = area_w;
     app.area_h = area_h;
     app.tail_visible = tail_visible;
+}
+
+/// BISE-271: the mouse over a turn (its reply, the row that ends it):
+/// when it ended, dim, right-aligned in the history's column, on the
+/// hovered row, else on the nearest row of the same event whose end is
+/// blank. Drawn over the frame: nothing moves; no blank room, nothing.
+fn hover_time(app: &App, buf: &mut ratatui::buffer::Buffer, area: Rect, vis_events: &[usize], (x, y): (u16, u16)) {
+    if x < area.x || x >= area.right() || y < area.y {
+        return;
+    }
+    let row = (y - area.y) as usize;
+    let Some(&i) = vis_events.get(row) else { return };
+    let Some(ts) = crate::feed::turn_end_of(&app.events, i) else { return };
+    let label = crate::when::ended_now(ts);
+    let w = label.width() as u16;
+    // one blank column before the label
+    if w + 1 >= area.width {
+        return;
+    }
+    let x0 = area.right() - w;
+    let blank = |buf: &ratatui::buffer::Buffer, r: usize| {
+        (x0 - 1..area.right()).all(|cx| buf.cell((cx, area.y + r as u16)).is_none_or(|c| c.symbol() == " "))
+    };
+    // the rows of this event on screen, the hovered one first, then
+    // the nearest
+    let mut rows: Vec<usize> = (0..vis_events.len()).filter(|&r| vis_events[r] == i).collect();
+    rows.sort_by_key(|&r| r.abs_diff(row));
+    let Some(r) = rows.into_iter().find(|&r| blank(buf, r)) else { return };
+    buf.set_string(x0, area.y + r as u16, &label, Style::default().fg(dim()));
 }
 
 /// A status note (flash, voice) still worth showing: younger than 2 s.

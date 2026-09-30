@@ -450,12 +450,11 @@ fn replayed_history_gets_its_time_marks() {
         })
         .collect();
     assert_eq!(marks.len(), 1);
-    assert_eq!(marks[0].1, super::feed::hhmm_at(t0 + 360_000));
+    assert_eq!(marks[0].1, crate::when::mark_now(t0 + 360_000));
     // the mark sits right before the line after the pause
     assert!(matches!(&app.events[marks[0].0 + 1], Ev::Assistant(t) if t.contains("three")));
     assert_eq!(app.win.first_pos, Some(1));
     // an old page (no `ts` at all) reads as before, without marks
     let old = json!({"lines": [{"pos": 1, "line": "x"}, {"pos": 2, "line": "y"}]});
     assert_eq!(parse_history(&old).iter().map(|l| l.ts).collect::<Vec<_>>(), vec![None, None]);
-    assert!(super::feed::hhmm_at(t0).as_bytes()[2] == b':');
 }

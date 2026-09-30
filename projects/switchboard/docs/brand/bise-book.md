@@ -425,7 +425,18 @@ The same three levels everywhere, in main and inside an agent.
   `∿` shows it's live). As soon as a level-1 or level-2 line is appended, the
   run is closed and frozen.
 - **Time marks** after a pause: a faint `· 14:31 ·` after 5 minutes without a
-  line (**⚠** threshold to tune).
+  line (**⚠** threshold to tune). The pause is the hub's time of the lines,
+  so a replayed feed (the TUI opened later, a page of older history) has its
+  marks too; another day says it: `· yesterday 18:02 ·`, `· sep 28 18:02 ·`
+  (BISE-271).
+- **When a turn ended**, on hover (BISE-271): the mouse over a reply (or the
+  row that ends its turn) shows the time, dim, right-aligned in the column on
+  that row (else the nearest row of the reply with room): `12:41 · 1h ago`
+  (`12:41 · now` under a minute, `5m ago`, `23h ago`), then from a day on
+  `yesterday 18:02`, `sep 28 18:02`. Drawn over the frame: no text moves; no
+  blank room at the row's end, nothing. Gone on a click, a key, a move away.
+  Dim, not faint: you asked to read it (designer). No separator between
+  turns: the pause marks do that.
 - Views are filters of the same stream (entering an agent shows its thread),
   never a regrouping.
 
@@ -1163,6 +1174,13 @@ and adds structured kinds; the TUI maps each to one level:
   (`wire::parse_history`) and puts `Ev::TimeMark("hh:mm")` (local time)
   before a replayed line that comes 5 minutes or more after the one before
   it, as for live lines (§10).
+- C2 amendment: line timestamp (BISE-271). A live `line` event carries
+  `ts` too (the transcript's time of the line, ms since the epoch;
+  optional, absent from an older hub): the lines a new TUI gets at hello
+  are replayed at once, their pauses are in `ts`. The TUI marks pauses by
+  `ts` (else by arrival) and keeps the end of each turn (`turn_done`) as
+  `Ev::Ended(ts)`, never drawn: the hover of §10. A line the REPL replays
+  (`history …`) has the replay's time: no mark, no end.
 - C2 amendment: `undelivered` (BISE-86, accepted by main). When a message
   from the user cannot reach its agent (stopped, dropped, archived: the
   send fails with `recipient_unavailable`, or it was still queued when the

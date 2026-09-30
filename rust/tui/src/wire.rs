@@ -190,6 +190,10 @@ pub(crate) enum Ev {
         // in memory only: its `▸ why` is disclosed (BISE-14)
         open: bool,
     },
+    // in memory only (BISE-271): the turn before it ended at this time
+    // (ms since the epoch, the hub's `ts` of its `turn_done` line); no
+    // row, not even in debug: a hover on the turn's reply shows it
+    Ended(u64),
     // in memory only (BISE-14, book §10): a faint `· 14:31 ·` after a
     // pause of 5 minutes without a line; the text is the time
     TimeMark(String),

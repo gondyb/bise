@@ -10,7 +10,7 @@ use std::io;
 use std::time::Duration;
 
 // one wire line into the feed of the app (the focused view)
-pub(crate) fn ingest_line(app: &mut App, line: String) {
+pub(crate) fn ingest_line(app: &mut App, line: String, ts: Option<u64>) {
     if line == "--- idle" {
         app.pending = false;
         app.interrupt_requested = false;
@@ -23,10 +23,26 @@ pub(crate) fn ingest_line(app: &mut App, line: String) {
         .map_or(0, |t| now.duration_since(t).as_millis());
     app.last_line_at = Some(now);
     let (line, replayed) = strip_history(&line);
-    // a live line after a pause: a time mark first (BISE-14, book §10)
-    if !replayed {
-        crate::feed::pause_mark(&mut app.events, &mut app.cache, ms, crate::feed::local_hhmm);
+    // a line after a pause: a time mark first (BISE-14, book §10). The
+    // hub's time says the pause, replayed feeds included (BISE-271); a
+    // hub without it, the time the line arrived. A line the REPL
+    // replays (`history `) has the time of the replay: no mark, no end
+    let ts = if replayed { None } else { ts };
+    match ts {
+        Some(t) => {
+            if let Some(prev) = app.last_ts {
+                let gap = u128::from(t.saturating_sub(prev));
+                crate::feed::pause_mark(&mut app.events, &mut app.cache, gap, || crate::when::mark_now(t));
+            }
+            app.last_ts = Some(t);
+        }
+        None if !replayed => {
+            crate::feed::pause_mark(&mut app.events, &mut app.cache, ms, crate::feed::local_hhmm);
+        }
+        None => {}
     }
+    // the end of a turn keeps its time (BISE-271: its hover)
+    let ended = (line.starts_with("  obs: turn_done: ") && !replayed).then(|| ts.unwrap_or_else(crate::when::now_ms));
     // a replayed reasoning section has no duration
     let ms = if replayed { 0 } else { ms };
     let parsed = if replayed {
@@ -73,6 +89,9 @@ pub(crate) fn ingest_line(app: &mut App, line: String) {
                 hide_replayed_elapsed(&mut app.events, &mut app.cache, id);
             }
         }
+    }
+    if let Some(t) = ended {
+        push_event(&mut app.events, &mut app.cache, Ev::Ended(t));
     }
 }
 
@@ -438,9 +457,13 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
                     on_paste(app, &text);
                     false
                 }
-                Event::Key(k) => on_key(app, &k),
+                Event::Key(k) => {
+                    app.hover = None;
+                    on_key(app, &k)
+                }
                 Event::FocusLost => {
                     app.focus_lost = true;
+                    app.hover = None;
                     false
                 }
                 Event::FocusGained => {
