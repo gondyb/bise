@@ -243,3 +243,90 @@ def merged_tools.live(cat: List<&2, T.ToolDef>, m: Maybe<&2, String>)
       cat
     case Some{+content}:
       List.append(&2, T.ToolDef, cat, index_of(content))
+
+# ---- the tool groups of a session, listed in the system prompt ----
+# (vibe's "Searchable connector groups"): each `tools.<group>` namespace
+# of the catalog plus the MCP index, in catalog order, with its number
+# of functions. A top-level tool (bash, run_typescript...) has no group.
+
+# a tool's group: its name before the first "." ("" for a top-level tool)
+def group_of.pick(m: Maybe<&2, Nat>, +name: String) -> String:
+  match m:
+    case None{}:
+      ""
+    case Some{+p}:
+      String.take(name, p)
+
+def group_of(+name: String) -> String:
+  group_of.pick(Tx.find(name, ".", 0n), name)
+
+def tool_group(+td: T.ToolDef) -> String:
+  T.ToolDef{+name, _} = td
+  group_of(name)
+
+def groups.put(skip: Bool, +g: String, +acc: List<&2, String>)
+    -> List<&2, String>:
+  match skip:
+    case True{}:
+      acc
+    case False{}:
+      Con{g, acc}
+
+def groups.go(tools: List<&2, T.ToolDef>, +acc: List<&2, String>)
+    -> List<&2, String>:
+  match tools:
+    case Nil{}:
+      List.reverse(&2, String, acc)
+    case Con{+t, rest}:
+      groups.go(rest, groups.put(
+        Bool.or(String.is_empty(tool_group(t)), seen_has(acc, tool_group(t))),
+        tool_group(t), acc))
+
+# the distinct groups, in catalog order
+def groups_of(tools: List<&2, T.ToolDef>) -> List<&2, String>:
+  groups.go(tools, Nil{})
+
+def group_count.add(hit: Bool, +n: Nat) -> Nat:
+  match hit:
+    case True{}:
+      1n+n
+    case False{}:
+      n
+
+def group_count(tools: List<&2, T.ToolDef>, +g: String) -> Nat:
+  match tools:
+    case Nil{}:
+      0n
+    case Con{+t, rest}:
+      group_count.add(String.eq(tool_group(t), g), group_count(rest, g))
+
+def group_line.unit(one: Bool) -> String:
+  match one:
+    case True{}:
+      " function)"
+    case False{}:
+      " functions)"
+
+def group_line(+g: String, +n: Nat) -> String:
+  String.append("- `", String.append(g, String.append("` (",
+    String.append(Nat.show(n), group_line.unit(Nat.is_eq(n, 1n))))))
+
+def group_lines(gs: List<&2, String>, +tools: List<&2, T.ToolDef>) -> String:
+  match gs:
+    case Nil{}:
+      ""
+    case Con{+g, rest}:
+      String.append("\n", String.append(group_line(g, group_count(tools, g)),
+        group_lines(rest, tools)))
+
+def groups_section.pick(empty: Bool, +lines: String) -> String:
+  match empty:
+    case True{}:
+      ""
+    case False{}:
+      String.append("### Tool groups\n\nThe `tools.<group>` namespaces of this session. To search one group, pass its name in the `connectors` argument of `search_tool_functions`.\n", lines)
+
+# the prompt subsection ("" when no tool has a group)
+def groups_section(+tools: List<&2, T.ToolDef>) -> String:
+  groups_section.pick(String.is_empty(group_lines(groups_of(tools), tools)),
+    group_lines(groups_of(tools), tools))

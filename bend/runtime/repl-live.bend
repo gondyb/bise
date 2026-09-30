@@ -12,6 +12,7 @@ import Base
 import ../core/types.bend as T
 import ./persist.bend as P
 import ./mcp.bend as Mcp
+import ./mcp-pure.bend as Mcpp
 import ./skills.bend as Sk
 import ./plugins.bend as Pl
 import ./skills-pure.bend as Skp
@@ -42,10 +43,16 @@ def thr_of_cfg(+envv: String, +cfgt: String, +window: U32) -> Nat:
 def prompt_read(+path: String) -> IO(String):
   P.read_or(path, "")
 
-def prompt_join(+tone: String, +tu: String, +ct: String) -> String:
+# the identity names the product (bise), not the runtime under it
+def identity() -> String:
+  "You are a precise assistant in bise, a terminal app where the user codes with AI agents. Discover additional tools with `search_tool_functions`, and call them using `run_typescript`."
+
+# gs: the tool groups subsection (Mcpp.groups_section), right after the
+# tool-use section it belongs to ("" adds nothing)
+def prompt_join(+tone: String, +tu: String, +gs: String, +ct: String) -> String:
   String.append(
-    Rcp.prompt_extra("You are a precise assistant running on the Bend Unified Harness. Discover additional tools with `search_tool_functions`, and call them using `run_typescript`.", tone),
-    String.append("\n\n", String.append(tu, String.append("\n\n", ct))))
+    Rcp.prompt_extra(identity(), tone),
+    String.append("\n\n", String.append(Rcp.prompt_extra(tu, gs), String.append("\n\n", ct))))
 
 # the live system prompt = identity + the exact vibe_sdk sections
 # (tool_use_prompt + current_time_prompt), then the skills sections
@@ -82,7 +89,7 @@ def agents_md() -> IO(String):
 # written by bend-harness / the hub), after the current-time section;
 # unset or blank: nothing is added. The AGENTS.md section comes after
 # the skills, before the role (the role stays last)
-def live_prompt() -> IO(String):
+def live_prompt(+cat: List<&2, T.ToolDef>) -> IO(String):
   do IO<String>:
     +tu : String <- prompt_read("prompts/prompt-tool-use.txt")
     +ct : String <- prompt_read("prompts/prompt-current-time.txt")
@@ -92,12 +99,14 @@ def live_prompt() -> IO(String):
     +content : String <- Sk.prompt_content()
     +extra : String <- extra_prompt()
     +amd : String <- agents_md()
-    IO.pure(String, Rcp.prompt_extra(Rcp.prompt_extra(live_prompt.go(prompt_join(Rcp.solo_tone(extra, tone), tu, Rcp.prompt_extra(ct, note)), content), amd), extra))
+    mi : Maybe<&2, String> <- Mcp.index_content()
+    +gs : String <- IO.pure(String, Mcpp.groups_section(Mcpp.merged_tools.live(cat, mi)))
+    IO.pure(String, Rcp.prompt_extra(Rcp.prompt_extra(live_prompt.go(prompt_join(Rcp.solo_tone(extra, tone), tu, gs, Rcp.prompt_extra(ct, note)), content), amd), extra))
 
 def live_cfg(+threshold: Nat) -> IO(T.Cfg):
   do IO<T.Cfg>:
-    +p : String <- live_prompt()
     +cat : List<&2, T.ToolDef> <- X.catalog()
+    +p : String <- live_prompt(cat)
     IO.pure(T.Cfg, T.Cfg{threshold, 20000n, 3n, p, cat})
 
 def live_main() -> IO(Unit):
