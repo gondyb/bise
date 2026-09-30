@@ -35,7 +35,7 @@
 <body>
 <div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
 
-<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.<div class="lbls nm">names: <button data-n="glide" class="on">glide</button><button data-n="jump">jump (before)</button></div><div class="lbls thr">thread: <button data-t="wake" class="on">wake</button><button data-t="pulses">pulses</button><button data-t="waves">waves</button><button data-t="tide">tide</button><button data-t="swell">swell</button><button data-t="ripple">ripple</button><button data-t="trail">trail</button><button data-t="shimmer">shimmer</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.<div class="lbls nm">names: <button data-n="glide" class="on">glide</button><button data-n="jump">jump (before)</button><button data-n="none">no names</button><button id="notitle">hide the title too</button></div><div class="lbls thr">thread: <button data-t="wake" class="on">wake</button><button data-t="pulses">pulses</button><button data-t="waves">waves</button><button data-t="tide">tide</button><button data-t="swell">swell</button><button data-t="ripple">ripple</button><button data-t="trail">trail</button><button data-t="shimmer">shimmer</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
 <section class="v" data-v="seeds"><div class="tag"><b>7 · seeds</b> <span class="pick">new · mix of 5 and 6</span><br>the dandelion sky, plus one thread. now and then an agent lifts off the thread like a seed (∿ name), floats a while, and lands further along with a ✓. the thread's :* keeps walking.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
@@ -57,8 +57,9 @@
 
 <script>
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-document.querySelectorAll(".nm button").forEach(b => b.onclick = () => { GLIDE = b.dataset.n === "glide"; document.querySelectorAll(".nm button").forEach(o => o.classList.toggle("on", o === b)); });
+document.querySelectorAll(".nm button[data-n]").forEach(b => b.onclick = () => { GLIDE = b.dataset.n === "glide"; NONAMES = b.dataset.n === "none"; document.querySelectorAll(".nm button[data-n]").forEach(o => o.classList.toggle("on", o === b)); });
 document.querySelectorAll(".thr button").forEach(b => b.onclick = () => { THREAD = THREADS[b.dataset.t]; document.querySelectorAll(".thr button").forEach(o => o.classList.toggle("on", o === b)); });
+document.getElementById("notitle").onclick = (e) => { const sec = e.target.closest(".v"), h = sec.querySelector(".hero"), off = h.style.visibility !== "hidden"; h.style.visibility = off ? "hidden" : ""; e.target.classList.toggle("on", off); };
 document.getElementById("th").onclick = e => { const h = document.documentElement, d = h.dataset.theme === "dark"; h.dataset.theme = d ? "light" : "dark"; e.target.textContent = d ? "dark" : "light"; };
 const hash = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -178,7 +179,7 @@ const THREADS = {
 const PULSES = [];
 let THREAD = THREADS.wake;
 // names glide from spot to spot (a layer over the ascii, moved with css) or jump cell by cell
-let GLIDE = true;
+let GLIDE = true, NONAMES = false;
 const V = {
   now(s) {
     const RAMP = " .·-~∼≈";
@@ -464,9 +465,9 @@ for (const sec of document.querySelectorAll(".v")) {
     const ko = { x0: Math.floor((Math.min(...rs.map(r => r.left)) - pr.left) / cw) - 3, x1: Math.ceil((Math.max(...rs.map(r => r.right)) - pr.left) / cw) + 3,
                  y0: Math.floor((Math.min(...rs.map(r => r.top)) - pr.top) / lh) - 1, y1: Math.ceil((Math.max(...rs.map(r => r.bottom)) - pr.top) / lh) + 1 };
     const g = Grid(Math.ceil(pre.clientWidth / cw) + 1, Math.ceil(pre.clientHeight / lh) + 1, ko); g.ko = ko;
-    g.labels = GLIDE ? [] : null;
+    g.labels = GLIDE || NONAMES ? [] : null;
     step(g, t);
-    glide(g.labels || []); pre.innerHTML = g.html(); t += .045;
+    glide(NONAMES ? [] : g.labels || []); pre.innerHTML = g.html(); t += .045;
     if (reduced) { running = false; return; }
     setTimeout(() => requestAnimationFrame(frame), 70);
   };
