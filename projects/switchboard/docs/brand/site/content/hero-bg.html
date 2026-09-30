@@ -33,7 +33,7 @@
 <body>
 <div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
 
-<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.<div class="lbls">labels: <button data-l="feat(x)" class="on">feat(confetti)</button><button data-l="feat/x">feat/confetti</button><button data-l="adding x">adding confetti</button><button data-l="x">confetti</button></div><div class="lbls thr">thread: <button data-t="trail" class="on">trail</button><button data-t="shimmer">shimmer</button><button data-t="ripple">ripple</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.<div class="lbls">labels: <button data-l="verb" class="on">throwing confetti → ✓ confetti</button><button data-l="feat(x)">feat(confetti)</button><button data-l="feat/x">feat/confetti</button><button data-l="x">confetti</button></div><div class="lbls thr">thread: <button data-t="trail" class="on">trail</button><button data-t="shimmer">shimmer</button><button data-t="ripple">ripple</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
 <section class="v" data-v="seeds"><div class="tag"><b>7 · seeds</b> <span class="pick">new · mix of 5 and 6</span><br>the dandelion sky, plus one thread. now and then an agent lifts off the thread like a seed (∿ name), floats a while, and lands further along with a ✓. the thread's :* keeps walking.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
@@ -98,8 +98,12 @@ function dots(g, pts, cl = "") {
   }
 }
 // how an agent is labelled on the branch (switch on section 9)
-const LABELS = { "feat(x)": x => `feat(${x})`, "feat/x": x => `feat/${x}`, "adding x": x => `adding ${x}`, "x": x => x };
-let LABEL = LABELS["feat(x)"];
+// with a verb while it works, just the thing once it's back with its ✓
+const VERBS = { "dark-mode": "adding dark mode", "confetti": "throwing confetti", "reactions": "adding reactions", "gif-picker": "building a gif picker",
+  "drag-drop": "wiring drag & drop", "playlists": "making playlists", "stickers": "drawing stickers", "leaderboard": "adding a leaderboard",
+  "konami-code": "hiding a konami code", "typing-dots": "animating typing dots", "voice-notes": "adding voice notes", "party-mode": "turning on party mode" };
+const LABELS = { "verb": x => [VERBS[x], x.replace("-", " ").replace("drag drop", "drag & drop")], "feat(x)": x => `feat(${x})`, "feat/x": x => `feat/${x}`, "x": x => x };
+let LABEL = LABELS["verb"];
 // how the main thread is drawn (switch on section 9). k = where the kiss stands
 const THREADS = {
   // walked: a solid line with a pink glow right behind the kiss. ahead: a dotted path, still to walk
@@ -254,7 +258,7 @@ const V = {
       const kx = Math.floor(s.kx);
       THREAD(g, Y, t, s.kx);
       // it sends agents out from where it stands. a landing spot must not share its label's room with another one
-      const name = LABEL(NAMES[Math.floor(rnd(0, NAMES.length))]), ko = g.ko;
+      const lb = LABEL(NAMES[Math.floor(rnd(0, NAMES.length))]), [name, done] = Array.isArray(lb) ? lb : [lb, lb], ko = g.ko;
       if (s.b.length < 3 && s.kx - s.last > 14 && kx > 2 && Math.random() < .02) {
         const free = (L) => { const a = kx + 1 + L, z = a + 2 + name.length; return z < g.cols - 4 && s.b.every(o => { const oa = o.xs + o.L, oz = oa + 2 + o.name.length; return z + 3 < oa || oz + 3 < a; }); };
         let L = 0; for (let k = 0; k < 12 && !L; k++) { const c = Math.floor(rnd(36, 80)); if (free(c)) L = c; }
@@ -262,7 +266,7 @@ const V = {
           // an arc that crosses the text's columns stays under it (name included)
           const under = kx + 1 + L + name.length + 3 >= ko.x0 && kx + 1 <= ko.x1;
           const top = under ? Math.max(2, Y - ko.y1 - 2) : Y - 4;
-          s.b.push({ xs: kx + 1, L, p: 0, A: Math.min(rnd(Math.min(3, top), top), L / 2.6), name });
+          s.b.push({ xs: kx + 1, L, p: 0, A: Math.min(rnd(Math.min(3, top), top), L / 2.6), name, done });
           s.last = s.kx; s.flash = 8;
         }
       }
@@ -293,7 +297,7 @@ const V = {
         }
       };
       for (const o of s.b) { const [mx, my] = o.head || [o.xs + o.L, Y]; used.push({ a: Math.round(mx), z: Math.round(mx), r: Math.round(my), m: true }); g.put(mx, my, o.head ? "∿" : "✓", "a"); }
-      for (const o of s.b.filter(o => !o.head)) place(o.xs + o.L, Y, o.name);
+      for (const o of s.b.filter(o => !o.head)) place(o.xs + o.L, Y, o.done);
       for (const o of s.b.filter(o => o.head)) place(o.head[0], o.head[1], o.name);
       g.str(kx, Y, ":*", "a");
       if (s.flash > 0) { s.flash--; if (s.flash > 3) { g.put(kx - 1, Y - 1, "·", "a"); g.put(kx + 2, Y - 1, "·", "a"); g.put(kx + 1, Y - 2, "·", "a"); } }
