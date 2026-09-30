@@ -38,7 +38,7 @@
 <body>
 <div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
 
-<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a line of little dots with no holes, with main's ripples right behind its ∿, which breathes like a working agent in the app's side panel (· ~ ∿ ≈ ∿ ~), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into little grey seeds, from the kiss back to where it started. what bise says fades in under the thread.<div class="lbls nm">names: <button data-n="bubble" class="on">bise says it (under)</button><button data-n="events">events only</button><button data-n="glide">glide</button><button data-n="jump">jump (before)</button><button data-n="none">no names</button><button id="notitle">hide the title too</button></div><div class="lbls thr">thread: <button data-t="wake" class="on">wake</button><button data-t="pulses">pulses</button><button data-t="waves">waves</button><button data-t="tide">tide</button><button data-t="swell">swell</button><button data-t="ripple">ripple</button><button data-t="trail">trail</button><button data-t="shimmer">shimmer</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one runs like a branch in a git history: it forks up off the thread, runs along its own lane (a commit • now and then), and merges back down. little dots, main's ripples right behind its ∿, which breathes like a working agent in the app's side panel (· ~ ∿ ≈ ∿ ~), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into little grey seeds, from the kiss back to where it started. what bise says fades in under the thread.<div class="lbls nm">names: <button data-n="bubble" class="on">bise says it (under)</button><button data-n="events">events only</button><button data-n="glide">glide</button><button data-n="jump">jump (before)</button><button data-n="none">no names</button><button id="notitle">hide the title too</button></div><div class="lbls thr">thread: <button data-t="wake" class="on">wake</button><button data-t="pulses">pulses</button><button data-t="waves">waves</button><button data-t="tide">tide</button><button data-t="swell">swell</button><button data-t="ripple">ripple</button><button data-t="trail">trail</button><button data-t="shimmer">shimmer</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
 <section class="v" data-v="seeds"><div class="tag"><b>7 · seeds</b> <span class="pick">new · mix of 5 and 6</span><br>the dandelion sky, plus one thread. now and then an agent lifts off the thread like a seed (∿ name), floats a while, and lands further along with a ✓. the thread's :* keeps walking.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
@@ -105,10 +105,17 @@ function dots(g, pts, cl = "") {
 }
 // an agent's arc wears main's wake: ripples right behind its head that calm down with distance, tiny dots further back.
 // once it has landed, the wake keeps calming as if the head went on walking (d0 grows), so a waiting arc settles into dots
+// an agent's branch is laid out like a git history railway: it forks up off the thread in a soft S,
+// runs flat along its own lane, and merges back down onto the thread where it lands
+function railY(b, Y, u) {
+  const e = (v) => { v = Math.max(0, Math.min(1, v)); return v * v * (3 - 2 * v); };
+  u = Math.max(0, Math.min(b.L, u));
+  return Y + b.dir * b.A * (u < b.R ? e(u / b.R) : u > b.L - b.R ? e((b.L - u) / b.R) : 1);
+}
 function arcWake(g, b, Y, t, d0 = 0) {
-  // the arc is a line of little dots with no holes: in each column, a dot on every row the curve crosses.
-  // main's ripples (≈∼~) only right behind the head, where the arc is flat
-  const f = (u) => Y + b.dir * b.A * Math.sin(Math.PI * Math.max(0, Math.min(b.L, u)) / b.L);
+  // a line of little dots with no holes: in each column, a dot on every row the rail crosses.
+  // main's ripples (≈∼~) only right behind the head, where the rail is flat; a commit • every few cells along the lane
+  const f = (u) => railY(b, Y, u);
   const n = Math.floor(b.p);
   // the last cells before the head (∿ or ✓) stay empty, so the mark never gets lost in its own wake
   for (let i = 0; i <= n - 3; i++) {
@@ -117,7 +124,9 @@ function arcWake(g, b, Y, t, d0 = 0) {
     // grey, so the pink ∿ at its head stays what you look at: dim right behind it, wind-grey further back
     const cl = d < 10 ? "d" : "w";
     const r0 = Math.round(Math.min(ya, yb)), r1 = Math.round(Math.max(ya, yb));
+    const onLane = i > b.R + 1 && i < b.L - b.R - 1;
     if (r0 === r1 && d < 12 && v > .16) g.put(x, r0, v > .75 ? "≈" : v > .42 ? "∼" : "~", cl);
+    else if (onLane && (i - b.R) % 8 === 4) g.put(x, r0, "•", "d");
     else for (let r = r0; r <= r1; r++) g.put(x, r, "·", cl);
   }
 }
@@ -349,21 +358,20 @@ const V = {
         let L = 0; for (let k = 0; k < 12 && !L; k++) { const c = Math.floor(rnd(30 - 18 * q, 64 - 42 * q)); if (free(c)) L = c; }
         if (L) {
           // always above the thread (the user liked it better)
-          const xs = kx + 1, over = (o) => o.xs < xs + L && xs < o.xs + o.L;
-          // never behind the title: over the title's columns the arc must pass under it (2 rows of air).
-          // the cap uses the arc's real height over those columns, so an arc that only grazes them at its ends can still fly high
-          let hi = 0; for (let i = 0; i <= L; i++) if (xs + i >= ko.x0 && xs + i <= ko.x1) hi = Math.max(hi, Math.sin(Math.PI * i / L));
-          const room = { [-1]: Math.max(1, Math.min(Y - 3, hi > 0 ? (Y - ko.y1 - 2) / hi : 99)), [1]: g.rows - Y - 2 };
-          const busy = (d) => s.b.filter(o => o.dir === d && over(o)).length;
-          const dir = -1;
-          // at a height as far as possible from the arcs already over those columns
-          // a bit higher on average (user): taller ceiling, and never a flat little bump
-          const top = Math.min(room[dir], L / 1.8) * .7,  // 30 % lower at most than the previous take (user)
-                low = Math.min(top, Math.max(3, top * .45)), near = s.b.filter(o => o.dir === dir && over(o)).map(o => o.A);
-          let A = rnd(low, top), best = -1;
-          for (let k = 0; k < 8; k++) { const c = rnd(low, top), d = near.length ? Math.min(...near.map(a => Math.abs(a - c))) : 99; if (d > best) { best = d; A = c; } }
-          s.b.push({ xs, L, p: 0, A, dir, name, done, key });
-          if (EVENTS) say(g, Y, xs, `starting an agent · ${name}`);
+          const xs = kx + 1, over = (o) => o.xs < xs + L && xs < o.xs + o.L, dir = -1;
+          // lanes like a git graph: the lowest one not taken by a branch over the same columns, 2 rows apart
+          const taken = s.b.filter(over).map(o => o.lane);
+          let lane = 0; while (taken.includes(lane)) lane++;
+          const A = 3 + 2 * lane, R = Math.max(4, Math.round(A * 1.6));
+          // never behind the title (2 rows of air under it), never out of the sky, and room for the fork, the lane and the merge
+          const b0 = { xs, L, A, R, dir };
+          let fits = lane < 6 && A <= Y - 3 && L >= 2 * R + 6;
+          for (let i = 0; fits && i <= L; i++) if (xs + i >= ko.x0 && xs + i <= ko.x1 && Y - railY(b0, Y, i) > Y - ko.y1 - 2) fits = false;
+          if (!fits) L = 0;
+          else s.b.push({ xs, L, p: 0, A, R, lane, dir, name, done, key });
+        }
+        if (L) {
+          if (EVENTS) say(g, Y, kx + 1, `starting an agent · ${name}`);
           if (BUBBLE) s.q.push(`spawning · ${name}`);
           s.last = s.kx; s.flash = 8; s.gap = rnd(.8, 1.2) * (21 - 13 * q); PULSES.push({ x: kx, t0: t });
         }
@@ -372,7 +380,7 @@ const V = {
         const was = b.p; b.p = Math.min(b.L, b.p + .45 + .15 * q);
         if (EVENTS && was < b.L && b.p >= b.L) say(g, Y, b.xs + b.L, `${b.name} · ${verb(b.name)}`);
         const pts = [];
-        for (let i = 0; i <= b.p; i++) pts.push([b.xs + i, Y + b.dir * b.A * Math.sin(Math.PI * i / b.L)]);
+        for (let i = 0; i <= b.p; i++) pts.push([b.xs + i, railY(b, Y, i)]);
         // back on the thread, it waits for the kiss to pick it up
         if (b.p >= b.L && s.kx >= b.xs + b.L - 1) {
           // the arc comes apart from the kiss back to where it started: each dot puffs out a little grey seed
