@@ -672,3 +672,32 @@ fn efforts_reach_the_handoff() {
     let o9 = h.split("[models.\"openai/o9\"]").nth(1).unwrap();
     assert!(o9.contains("efforts = \"low,high\"\neffort = \"low\"\n"), "{o9}");
 }
+
+#[test]
+fn with_model_sets_the_top_level_line_only() {
+    use crate::with_model;
+    assert_eq!(with_model("", "openai/gpt-5.5"), "model = \"openai/gpt-5.5\"\n");
+    // replaced in place, the rest kept
+    let t = "# mine\nmodel = \"foundry/x\"\nsmall_model = \"a/b\"\n\n[voice]\nmodel = \"mistral/v\"\n";
+    assert_eq!(
+        with_model(t, "mistral/m"),
+        "# mine\nmodel = \"mistral/m\"\nsmall_model = \"a/b\"\n\n[voice]\nmodel = \"mistral/v\"\n"
+    );
+    // none yet: before the first table ([voice] model untouched)
+    let t = "[voice]\nmodel = \"mistral/v\"\n";
+    let out = with_model(t, "anthropic/claude-opus-5-5");
+    assert!(out.starts_with("model = \"anthropic/claude-opus-5-5\"\n\n[voice]\nmodel = \"mistral/v\""), "{}", out);
+    let s = crate::Setup::from_text(Some(&out), &|_| None);
+    assert_eq!(s.model, "anthropic/claude-opus-5-5");
+    assert_eq!(s.voice.model, "mistral/v");
+}
+
+#[test]
+fn every_offered_provider_has_a_keys_page_and_a_model() {
+    let c = crate::Catalog::builtin();
+    for p in c.providers.iter().filter(|p| !p.key_env.is_empty() && p.needs.is_empty() && !p.stt_only && !p.hidden) {
+        assert!(p.keys_url.starts_with("https://"), "{}: keys_url", p.id);
+        assert!(!p.model.is_empty() && !p.hint.is_empty(), "{}: model and hint", p.id);
+    }
+    assert!(c.provider("foundry").unwrap().hidden);
+}

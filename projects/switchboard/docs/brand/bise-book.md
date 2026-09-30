@@ -806,14 +806,22 @@ one in accent.
    lines of a bise feed); `←→` switches, `enter` keeps. Right after the
    welcome, so the next steps already wear the chosen colors. `esc`: the
    thread with the theme the launch had (the terminal's, or the saved one).
-3. **A key, only if none is found.** A key found (environment, `auth.json`,
-   the old `.env` files): this step never shows. None: `which model should
-   do the work?` / `i found no key in your environment.` / `1 · paste a
-   key` (its sub-line names every provider that takes a key, `anthropic,
-   foundry, openai, … and cerebras`; then the catalog's providers, 9 rows at
-   a time). API keys only: no browser sign-in before launch. `↑↓`
-   chooses. A pasted key goes in `auth.json` like `login` (asks before
-   replacing one); the agents started from then on use it.
+3. **A key, when the model in use can't run** (BISE-266). The step shows
+   when the model's provider has no key (environment, `auth.json`, the old
+   `.env` files), is unknown, or is not usable yet: a key of another
+   provider does not make the first message work. `which model should do
+   the work?` / `i found no key in your environment.` (or `i found a key`)
+   / the found keys (`use OPENAI_API_KEY found`, sub-line `openai. i'll
+   use openai/gpt-5.5.`) / `paste a key` (its sub-line names every
+   provider offered, `anthropic, openai, … and cerebras`; then the
+   catalog's providers, 9 rows at a time). A provider with `hidden = true`
+   in the catalog (the foundry proxy) is never offered. API keys only: no
+   browser sign-in before launch. A pasted key goes in `auth.json` like
+   `login` (asks before replacing one); the agents started from then on
+   use it. Picking a found key of another provider, or saving a key while
+   the model can't run, writes that provider's `model` (the catalog's
+   pick, e.g. `mistral/mistral-medium-latest`) as `model` in
+   `config.toml`, the rest of the file kept; a working model stays.
 4. **How it works**, the three lines appearing one by one, the numbers dim,
    `me` and `i` (bise) in accent, no final periods:
    `1  you talk to me: main, your team lead. any time, keep typing`

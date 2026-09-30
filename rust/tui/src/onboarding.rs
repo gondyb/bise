@@ -107,6 +107,9 @@ pub(crate) struct Provider {
     pub id: String,
     pub name: String,
     pub key_env: String,
+    /// the model a new user starts with (the catalog's `model`), its id
+    /// without the provider; "" = none
+    pub model: String,
 }
 
 /// The catalog and the model choice (`Setup`: `BISE_MODEL` >
@@ -133,8 +136,9 @@ pub(crate) fn key_providers(setup: &bise_catalog::Setup) -> Vec<Provider> {
         .providers
         .iter()
         // the voice-only ones (BISE-130: elevenlabs, deepgram) run no agent
-        .filter(|p| !p.key_env.is_empty() && p.needs.is_empty() && !p.stt_only)
-        .map(|p| Provider { id: p.id.clone(), name: p.name.clone(), key_env: p.key_env.clone() })
+        // hidden: a private proxy (BISE-266), never offered
+        .filter(|p| !p.key_env.is_empty() && p.needs.is_empty() && !p.stt_only && !p.hidden)
+        .map(|p| Provider { id: p.id.clone(), name: p.name.clone(), key_env: p.key_env.clone(), model: p.model.clone() })
         .collect()
 }
 
@@ -147,10 +151,44 @@ pub(crate) fn find_keys(env: Env, home: &bise_home::Home, setup: &bise_catalog::
     let store = Store::read(&paths.auth_file).unwrap_or_default();
     let files = EnvFile::read_all(&paths.env_files);
     let keys = Keys { env, store: &store, files: &files };
-    key_providers(setup)
-        .into_iter()
+    setup
+        .catalog
+        .providers
+        .iter()
+        .filter(|p| !p.key_env.is_empty() && p.needs.is_empty() && !p.stt_only)
         .filter(|p| keys.find(&p.id, &p.key_env).is_some())
+        .map(|p| Provider { id: p.id.clone(), name: p.name.clone(), key_env: p.key_env.clone(), model: p.model.clone() })
         .collect()
+}
+
+/// The model in use can't run (BISE-266): its provider is unknown, not
+/// usable yet, or has no key. The first run then asks for one, whatever
+/// other keys are set: a key of another provider does not make the
+/// first message work.
+pub(crate) fn model_blocked(setup: &bise_catalog::Setup, found: &[Provider]) -> bool {
+    let r = setup.catalog.resolve(&setup.model);
+    r.known == bise_catalog::Known::NoProvider
+        || !r.needs.is_empty()
+        || (!r.key_env.is_empty() && !found.iter().any(|p| p.id == r.provider))
+}
+
+/// `provider/model`: the provider's pick (its catalog `model`), else the
+/// model in use when it is of that provider; None when neither.
+pub(crate) fn pick_of(p: &Provider, current: &str) -> Option<String> {
+    if !p.model.is_empty() {
+        return Some(format!("{}/{}", p.id, p.model));
+    }
+    bise_catalog::split_name(current).filter(|(pid, _)| *pid == p.id).map(|_| current.to_string())
+}
+
+/// Write `model` as config.toml's `model` (the rest of the file kept).
+pub(crate) fn save_model(home: &bise_home::Home, model: &str) -> io::Result<()> {
+    let file = home.config_file();
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(&file, bise_catalog::with_model(&text, model))
 }
 
 /// auth.json has a key for this provider already.
@@ -293,7 +331,7 @@ impl Onb {
             home,
         };
         o.refresh_keys(env);
-        o.ask_key = o.found.is_empty();
+        o.ask_key = model_blocked(&o.setup, &o.found);
         o
     }
 
@@ -405,7 +443,17 @@ impl Onb {
                     self.sub = Sub::Which(self.providers.iter().position(|p| p.id == self.mine).unwrap_or(0));
                     Out::Stay
                 }
-                _ => self.advance(now),
+                // BISE-266: the model follows the key picked
+                Some(Opt::Use(p)) => {
+                    if p.id != self.mine {
+                        if let Err(e) = self.use_provider(p, env) {
+                            self.note = Some(Note::Failed(e));
+                            return Out::Stay;
+                        }
+                    }
+                    self.advance(now)
+                }
+                None => self.advance(now),
             },
             // any key: all of it at once while it types, then on
             (Step::Welcome, _) if !self.welcome_done(now) => {
@@ -467,9 +515,28 @@ impl Onb {
             Err(e) => Note::Failed(e),
         });
         self.refresh_keys(env);
+        // BISE-266: the model in use can't run: it moves to this key's
+        // provider (a working model stays)
+        if matches!(self.note, Some(Note::Saved(_))) && model_blocked(&self.setup, &self.found) {
+            if let Err(e) = self.use_provider(&p, env) {
+                self.note = Some(Note::Failed(e));
+            }
+        }
         // the cursor on the key just saved
         self.sel = self.found.iter().position(|f| *f == p).unwrap_or(0);
         Sub::List
+    }
+
+    /// The model moves to `p`'s pick (config.toml's `model`), the catalog
+    /// read again.
+    fn use_provider(&mut self, p: &Provider, env: Env) -> Result<(), String> {
+        let model = pick_of(p, &self.model).ok_or_else(|| format!("{} has no default model: set model in config.toml", p.id))?;
+        save_model(&self.home, &model).map_err(|e| format!("couldn't write config.toml: {}", e))?;
+        self.setup = setup_of(env, &self.home);
+        self.model = self.setup.model.clone();
+        self.mine = self.setup.catalog.resolve(&self.model).provider;
+        self.refresh_keys(env);
+        Ok(())
     }
 
     /// A bracketed paste: into the key field only.
@@ -825,12 +892,11 @@ fn model_list(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
                 if p.id == o.mine {
                     format!("{}, already set up. nothing to paste.", p.id)
                 } else {
-                    format!(
-                        "{}. your model is {}: set model in {}.",
-                        p.id,
-                        o.model,
-                        bise_catalog::auth::tilde(&o.home.config_file(), Some(o.home.user_home()))
-                    )
+                    // BISE-266: enter moves the model to this provider
+                    match pick_of(&p, &o.model) {
+                        Some(m) => format!("{}. i'll use {}.", p.id, m),
+                        None => format!("{}. set model in {}.", p.id, bise_catalog::auth::tilde(&o.home.config_file(), Some(o.home.user_home()))),
+                    }
                 },
             ),
             Opt::Paste => (
@@ -1309,7 +1375,8 @@ mod tests {
         }
         // every provider you can paste a key for, by name, no "and 9 more"
         let all = paste_sub(&o.providers);
-        assert!(all.starts_with("anthropic, foundry, openai, ") && !all.ends_with('.'), "{}", all);
+        // the private proxy is never offered (BISE-266)
+        assert!(all.starts_with("anthropic, openai, ") && !all.contains("foundry") && !all.ends_with('.'), "{}", all);
         assert!(o.providers.iter().all(|p| all.contains(p.id.as_str())), "{}", all);
         assert!(flat(&sc).contains(&all) && !sc.contains(" more"), "{}", sc);
         // API keys only: no browser sign-in row (BISE-215); ↑↓ wrap
@@ -1321,7 +1388,8 @@ mod tests {
         // paste: the catalog's providers, the model's one under the cursor
         o.on_key(key(KeyCode::Up), 1, &e);
         o.on_key(key(KeyCode::Enter), 1, &e);
-        let foundry = o.providers.iter().position(|p| p.id == "foundry").unwrap();
+        // (the model's provider is hidden: the first row)
+        let foundry = 0;
         let mistral = o.providers.iter().position(|p| p.id == "mistral").unwrap();
         assert_eq!(o.sub, Sub::Which(foundry));
         let sc = screen(&o, 10, 110, 30);
@@ -1357,7 +1425,9 @@ mod tests {
         assert_eq!(o.opts()[o.sel], Opt::Use(o.found[1].clone()));
         let sc = screen(&o, 10, 110, 30);
         assert!(sc.contains("i found 2 keys") && sc.contains("✓ saved in ~/.bend-harness/auth.json."), "{}", sc);
-        assert!(sc.contains("mistral. your model is foundry/claude-opus-5-5"), "{}", sc);
+        // a working model stays; the row says what enter would pick
+        assert_eq!(o.model, "foundry/claude-opus-5-5");
+        assert!(sc.contains("mistral. i'll use mistral/mistral-medium-latest."), "{}", sc);
         // a second paste asks before replacing
         o.sel = 2;
         o.on_key(key(KeyCode::Enter), 1, &e);
@@ -1371,10 +1441,33 @@ mod tests {
         assert!(screen(&o, 10, 110, 30).contains("Mistral has a key in ~/.bend-harness/auth.json already."));
         o.on_key(key(KeyCode::Esc), 1, &e);
         assert_eq!(bise_catalog::auth::Store::read(&f).unwrap().key("mistral"), Some("secret-xyz"));
-        // enter on a found key goes on
-        o.sel = 0;
+        // enter on another provider's key moves the model there, in
+        // config.toml (BISE-266), and goes on
+        o.sel = 1;
         o.on_key(key(KeyCode::Enter), 5, &e);
         assert_eq!(o.step, Step::Lines);
+        assert_eq!(o.model, "mistral/mistral-medium-latest");
+        let cfg = std::fs::read_to_string(hm(&h).config_file()).unwrap();
+        assert!(cfg.contains("model = \"mistral/mistral-medium-latest\""), "{}", cfg);
+    }
+
+    #[test]
+    fn a_pasted_key_moves_a_blocked_model_to_its_provider() {
+        let h = tmp("blocked");
+        let e = env_of(HashMap::from([("HOME", h.to_string_lossy().to_string())]));
+        let mut o = Onb::new(&e);
+        assert!(o.ask_key && o.found.is_empty());
+        o.go(Step::Model, 0);
+        o.on_key(key(KeyCode::Enter), 1, &e);
+        let openai = o.providers.iter().position(|p| p.id == "openai").unwrap();
+        o.sub = Sub::Which(openai);
+        o.on_key(key(KeyCode::Enter), 1, &e);
+        o.on_paste("sk-test");
+        o.on_key(key(KeyCode::Enter), 1, &e);
+        assert_eq!(o.model, "openai/gpt-5.5");
+        assert!(!model_blocked(&o.setup, &o.found));
+        let cfg = std::fs::read_to_string(hm(&h).config_file()).unwrap();
+        assert!(cfg.starts_with("model = \"openai/gpt-5.5\""), "{}", cfg);
     }
 
     #[test]
@@ -1445,15 +1538,15 @@ mod tests {
         ]));
         let mut o = Onb::new(&e);
         o.go(Step::Model, 0);
-        let sc = screen(&o, 10, 70, 30);
+        let sc = screen(&o, 10, 52, 30);
         let rows: Vec<&str> = sc.lines().collect();
-        let i = rows.iter().position(|r| r.contains("mistral. your model is")).expect("the detail");
+        let i = rows.iter().position(|r| r.contains("mistral. i'll use")).expect("the detail");
         // the wrapped row starts where the detail starts (same column)
         let col = |r: &str, pat: &str| r.chars().collect::<String>().find(pat).map(|b| r[..b].chars().count());
         let start = col(rows[i], "mistral").unwrap();
         let next: Vec<char> = rows[i + 1].chars().collect();
         assert!(next[start] != ' ' && next[start - 4..start].iter().all(|c| *c == ' '), "{}", sc);
-        assert!(sc.contains("config.toml."), "{}", sc);
+        assert!(sc.contains("mistral-medium-latest."), "{}", sc);
     }
 
     #[test]
@@ -1527,9 +1620,17 @@ mod tests {
     #[test]
     fn a_found_key_skips_the_key_step_and_its_dot() {
         let h = tmp("found");
+        // BISE-266: a key of another provider than the model's does not
+        // make the first message work: the step shows
+        let other = env_of(HashMap::from([
+            ("HOME", h.to_string_lossy().to_string()),
+            ("MISTRAL_API_KEY", "k".to_string()),
+        ]));
+        assert!(Onb::new(&other).ask_key);
         let e = env_of(HashMap::from([
             ("HOME", h.to_string_lossy().to_string()),
             ("MISTRAL_API_KEY", "k".to_string()),
+            ("BISE_MODEL", "mistral/mistral-medium-latest".to_string()),
         ]));
         let mut o = Onb::new(&e);
         assert_eq!(o.steps(), vec![Step::Welcome, Step::Theme, Step::Lines]);

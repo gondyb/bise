@@ -390,6 +390,26 @@ fn config_check(path: &Path, warnings: &[String]) -> Check {
     }
 }
 
+/// The fix of a model whose provider has no key (BISE-266): a provider
+/// with a key and a default model → that model; a hidden provider (a
+/// private proxy: nobody else can log in to it) → pick one from the
+/// start; else its login.
+fn no_key_fix(setup: &bise_catalog::Setup, r: &bise_catalog::Resolved, found: &[(String, String)]) -> String {
+    let cli = bise_catalog::CLI;
+    let keyed = setup
+        .catalog
+        .providers
+        .iter()
+        .find(|p| !p.model.is_empty() && !p.stt_only && p.needs.is_empty() && found.iter().any(|(id, _)| *id == p.id));
+    if let Some(p) = keyed {
+        return format!("you have a {} key: set model = \"{}/{}\" in config.toml", p.id, p.id, p.model);
+    }
+    if setup.catalog.provider(&r.provider).is_some_and(|p| p.hidden) {
+        return format!("run `{cli}` and pick a provider, or `{cli} login anthropic` (any provider: `{cli} models`) and set model in config.toml");
+    }
+    format!("`{} login {}` (or set {})", cli, r.provider, r.key_env)
+}
+
 /// The keys, model and voice lines.
 fn keys_and_model(home: &bise_home::Home) -> (Check, Check, Check) {
     let store = match Store::read(&home.auth_file()) {
@@ -424,10 +444,7 @@ fn keys_and_model(home: &bise_home::Home) -> (Check, Check, Check) {
             return Err((format!("{}: not usable yet ({})", what, r.needs), format!("pick another model (`{} models`)", bise_catalog::CLI)));
         }
         if !r.key_env.is_empty() && keys.find(&r.provider, &r.key_env).is_none() {
-            return Err((
-                format!("{}: no {} key", what, r.provider),
-                format!("`{} login {}` (or set {})", bise_catalog::CLI, r.provider, r.key_env),
-            ));
+            return Err((format!("{}: no {} key", what, r.provider), no_key_fix(&setup, &r, &found)));
         }
         Ok(what)
     };

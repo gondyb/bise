@@ -216,6 +216,19 @@ pub struct Provider {
     /// `kind = "stt"`: it only transcribes (no chat models: not in the
     /// chat list, not in the runtime's hand-off)
     pub stt_only: bool,
+    /// the first run's key step (BISE-266): what it is for, in a few
+    /// words ("claude, by the people who make it"); "" = none
+    pub hint: String,
+    /// the page where a key is created (a clickable link); "" = none
+    pub keys_url: String,
+    /// where a new account starts, when it is not the keys page; "" = none
+    pub signup_url: String,
+    /// the model a new user starts with, its id without the provider;
+    /// "" = none (the key step then asks for a name)
+    pub model: String,
+    /// `hidden = true`: not offered to a new user (a private proxy); it
+    /// still works when a config or a key picks it
+    pub hidden: bool,
     /// the defaults of its models
     pub caps: PartialCaps,
     pub source: Source,
@@ -512,6 +525,11 @@ impl Catalog {
                                 small_model: String::new(),
                                 stt: String::new(),
                                 stt_only: false,
+                                hint: String::new(),
+                                keys_url: String::new(),
+                                signup_url: String::new(),
+                                model: String::new(),
+                                hidden: false,
                                 caps: PartialCaps::default(),
                                 source: src,
                             });
@@ -539,6 +557,14 @@ impl Catalog {
                                     "key_env" => set_str(&mut p.key_env, s(), &where_, fk, &mut warn),
                                     "needs" => set_str(&mut p.needs, s(), &where_, fk, &mut warn),
                                     "small_model" => set_str(&mut p.small_model, s(), &where_, fk, &mut warn),
+                                    "hint" => set_str(&mut p.hint, s(), &where_, fk, &mut warn),
+                                    "keys_url" => set_str(&mut p.keys_url, s(), &where_, fk, &mut warn),
+                                    "signup_url" => set_str(&mut p.signup_url, s(), &where_, fk, &mut warn),
+                                    "model" => set_str(&mut p.model, s(), &where_, fk, &mut warn),
+                                    "hidden" => match fv.as_bool() {
+                                        Some(b) => p.hidden = b,
+                                        None => warn(format!("{}.hidden: true or false", where_)),
+                                    },
                                     "stt" => match s() {
                                         Some(a) if a.is_empty() || voice::STT_FAMILIES.contains(&a.as_str()) => p.stt = a,
                                         _ => warn(format!(
@@ -750,6 +776,43 @@ pub struct Setup {
     pub agent_effort: String,
     /// the voice input's choices (BISE-130): `[voice]` in config.toml
     pub voice: voice::VoiceSetup,
+}
+
+/// config.toml's text with its top-level `model` set to `model`
+/// (BISE-266: the first run's pick): the line replaced where it is, else
+/// added before the first table; the rest of the file as it was.
+pub fn with_model(config: &str, model: &str) -> String {
+    let line = format!("model = \"{}\"", model.replace('\\', "\\\\").replace('"', "\\\""));
+    let mut out: Vec<String> = Vec::new();
+    let (mut done, mut in_table) = (false, false);
+    for l in config.lines() {
+        let t = l.trim();
+        if t.starts_with('[') && !in_table {
+            in_table = true;
+            if !done {
+                out.push(line.clone());
+                if out.len() > 1 || !t.is_empty() {
+                    out.push(String::new());
+                }
+                done = true;
+            }
+        }
+        let is_model = !in_table && t.split_once('=').is_some_and(|(k, _)| k.trim() == "model");
+        if is_model {
+            if !done {
+                out.push(line.clone());
+                done = true;
+            }
+            continue;
+        }
+        out.push(l.to_string());
+    }
+    if !done {
+        out.push(line);
+    }
+    let mut text = out.join("\n");
+    text.push('\n');
+    text
 }
 
 /// A string key of the config, even when the file is not valid TOML (the
