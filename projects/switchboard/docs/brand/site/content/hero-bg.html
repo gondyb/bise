@@ -17,7 +17,7 @@
   .v pre { position:absolute; inset:0; margin:0; color:var(--wind); font:inherit; font-size:14px; line-height:1.4; white-space:pre; overflow:hidden; pointer-events:none; user-select:none;
     -webkit-mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); }
   .v.nomask pre { -webkit-mask-image:radial-gradient(ellipse 46% 30% at 50% 46%, transparent 20%, #000 80%); mask-image:radial-gradient(ellipse 46% 30% at 50% 46%, transparent 20%, #000 80%); }
-  .v pre .a { color:var(--acc); } .v pre .d { color:var(--dim); } .v pre .t { color:var(--text); }
+  .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .d { color:var(--dim); } .v pre .t { color:var(--text); }
   .hero { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; pointer-events:none; }
   .big { font-size:clamp(64px, 11vw, 150px); font-weight:700; letter-spacing:-.045em; line-height:1; }
   .big span { color:var(--acc); }
@@ -33,7 +33,7 @@
 <body>
 <div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
 
-<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.<div class="lbls">labels: <button data-l="feat(x)" class="on">feat(confetti)</button><button data-l="feat/x">feat/confetti</button><button data-l="adding x">adding confetti</button><button data-l="x">confetti</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.<div class="lbls">labels: <button data-l="feat(x)" class="on">feat(confetti)</button><button data-l="feat/x">feat/confetti</button><button data-l="adding x">adding confetti</button><button data-l="x">confetti</button></div><div class="lbls thr">thread: <button data-t="trail" class="on">trail</button><button data-t="shimmer">shimmer</button><button data-t="ripple">ripple</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
 <section class="v" data-v="seeds"><div class="tag"><b>7 · seeds</b> <span class="pick">new · mix of 5 and 6</span><br>the dandelion sky, plus one thread. now and then an agent lifts off the thread like a seed (∿ name), floats a while, and lands further along with a ✓. the thread's :* keeps walking.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
@@ -55,7 +55,8 @@
 
 <script>
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-document.querySelectorAll(".lbls button").forEach(b => b.onclick = () => { LABEL = LABELS[b.dataset.l]; document.querySelectorAll(".lbls button").forEach(o => o.classList.toggle("on", o === b)); });
+document.querySelectorAll(".lbls:not(.thr) button").forEach(b => b.onclick = () => { LABEL = LABELS[b.dataset.l]; document.querySelectorAll(".lbls:not(.thr) button").forEach(o => o.classList.toggle("on", o === b)); });
+document.querySelectorAll(".thr button").forEach(b => b.onclick = () => { THREAD = THREADS[b.dataset.t]; document.querySelectorAll(".thr button").forEach(o => o.classList.toggle("on", o === b)); });
 document.getElementById("th").onclick = e => { const h = document.documentElement, d = h.dataset.theme === "dark"; h.dataset.theme = d ? "light" : "dark"; e.target.textContent = d ? "dark" : "light"; };
 const hash = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -99,6 +100,33 @@ function dots(g, pts, cl = "") {
 // how an agent is labelled on the branch (switch on section 9)
 const LABELS = { "feat(x)": x => `feat(${x})`, "feat/x": x => `feat/${x}`, "adding x": x => `adding ${x}`, "x": x => x };
 let LABEL = LABELS["feat(x)"];
+// how the main thread is drawn (switch on section 9). k = where the kiss stands
+const THREADS = {
+  // walked: a solid line with a pink glow right behind the kiss. ahead: a dotted path, still to walk
+  trail(g, Y, t, k) {
+    for (let x = 0; x < g.cols; x++) {
+      const d = k - x;
+      if (d > 0) g.put(x, Y, "─", d < 4 ? "a" : d < 10 ? "a2" : d < 20 ? "a3" : "d");
+      else if ((x - Math.floor(k)) % 2 === 0) g.put(x, Y, "·");
+    }
+  },
+  // a quiet line with a light that runs along it now and then
+  shimmer(g, Y, t, k) {
+    const h = ((t * 22) % (g.cols * 2.2)) - 10;
+    for (let x = 0; x < g.cols; x++) { const d = Math.abs(x - h); g.put(x, Y, "─", d < 2 ? "t" : d < 7 ? "d" : ""); }
+  },
+  // water: the line ripples in place
+  ripple(g, Y, t, k) {
+    for (let x = 0; x < g.cols; x++) { const v = Math.sin(x * .32 - t * 2.4) + Math.sin(x * .11 + t * .8) * .6; g.put(x, Y, v > .7 ? "~" : v > -.5 ? "-" : "·", v > 1.2 ? "d" : ""); }
+  },
+  // the wind: dots carried along the thread, to the right
+  breeze(g, Y, t, k) {
+    const o = Math.floor(t * 9);
+    for (let x = 0; x < g.cols; x++) { const m = (x - o) % 4; if (m === 0) g.put(x, Y, "·", "d"); else if (m === 2 && hash(x - o, 1) < .5) g.put(x, Y, "."); }
+  },
+  flat(g, Y) { for (let x = 0; x < g.cols; x++) g.put(x, Y, "─"); },
+};
+let THREAD = THREADS.trail;
 const V = {
   now(s) {
     const RAMP = " .·-~∼≈";
@@ -220,11 +248,11 @@ const V = {
       for (let k = 0; k < 2; k++) if (s.p.length < 170 && Math.random() < .55) Math.random() < .7 ? seed(rnd(-20, g.cols), g.rows + 1) : seed(-2, rnd(0, g.rows));
       s.p = s.p.filter(p => p.y > -2 && p.x < g.cols + 3 && --p.life > 0);
       for (const p of s.p) { const sp = .06 + p.z * .18; p.y -= sp; p.x += sp * 1.1; p.ph += .04; g.put(p.x + Math.sin(p.ph) * 2, p.y, p.life < 25 ? "." : p.z > .8 ? "∗" : p.z > .45 ? "·" : ".", p.z > .8 ? "d" : ""); }
-      for (let x = 0; x < g.cols; x++) g.put(x, Y, "─");
       // the kiss walks the thread; it wraps around once every branch is back
       s.kx += .3;
       if (s.kx > g.cols + 2 && !s.b.length) { s.kx = -2; s.last = -99; }
       const kx = Math.floor(s.kx);
+      THREAD(g, Y, t, s.kx);
       // it sends agents out from where it stands. a landing spot must not share its label's room with another one
       const name = LABEL(NAMES[Math.floor(rnd(0, NAMES.length))]), ko = g.ko;
       if (s.b.length < 3 && s.kx - s.last > 14 && kx > 2 && Math.random() < .02) {
