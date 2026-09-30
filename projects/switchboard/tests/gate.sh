@@ -92,7 +92,8 @@ if [ "$mode" = new ] || [ "$mode" = done ]; then
   else home=""; fi
   wtroot="${home:-$HOME/.local/state/switchboard}/worktrees"
   seeds="${home:-$HOME/.bend-harness}/cache/gate-seed"
-  # the project's id, as the hub computes it (switchboard::paths::workspace_id)
+  # the project's id, as the hub computes it (switchboard::paths::workspace_id,
+  # pinned by its test ids_match_the_python_copies)
   pid="$(python3 - "$main" <<'PY'
 import os, sys
 p = os.path.realpath(sys.argv[1]); h = 0xcbf29ce484222325

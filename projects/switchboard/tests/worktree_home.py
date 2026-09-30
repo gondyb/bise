@@ -21,7 +21,8 @@ OLD = time.time() - 3600  # an orphan older than the hub's grace (10 min)
 
 
 def project_id(path):
-    """switchboard::paths::workspace_id, as gate.sh computes it."""
+    """switchboard::paths::workspace_id, as gate.sh computes it (pinned by
+    paths::tests::ids_match_the_python_copies)."""
     p = os.path.realpath(path)
     h = 0xcbf29ce484222325
     for b in p.encode():

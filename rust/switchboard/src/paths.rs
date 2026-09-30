@@ -98,6 +98,17 @@ impl Paths {
 mod tests {
     use super::*;
 
+    /// The Python copies of `workspace_id` (tests/gate.sh `new`/`done`,
+    /// tests/worktree_home.py, tests/proc_cleanup.py) give these values:
+    /// a change here must change them too, or `gate.sh new` puts a task's
+    /// worktree where the hub never looks (BISE-292).
+    #[test]
+    fn ids_match_the_python_copies() {
+        assert_eq!(workspace_id(Path::new("/Users/me/lab/harness")), "harness-af1b2326");
+        assert_eq!(workspace_id(Path::new("/tmp/my repo")), "my-repo-b50e38fe");
+        assert_eq!(workspace_id(Path::new("/")), "root-860189fe");
+    }
+
     #[test]
     fn ids_are_stable_and_readable() {
         let a = workspace_id(Path::new("/Users/me/my repo"));
