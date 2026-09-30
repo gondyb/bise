@@ -290,6 +290,22 @@ fn log_line(paths: &Paths, s: &str) {
     }
 }
 
+/// Write a file an agent depends on (its role, its wire log and offset):
+/// a failure (a full disk, a permission) goes to hub.log, not nowhere
+/// (BISE-292). True when written.
+fn write_logged(paths: &Paths, file: &Path, text: &str) -> bool {
+    std::fs::write(file, text)
+        .map_err(|e| log_line(paths, &format!("cannot write {}: {}", file.display(), e)))
+        .is_ok()
+}
+
+/// `rename`, its failure in hub.log (see `write_logged`).
+fn rename_logged(paths: &Paths, from: &Path, to: &Path) {
+    if let Err(e) = std::fs::rename(from, to) {
+        log_line(paths, &format!("cannot rename {} to {}: {}", from.display(), to.display(), e));
+    }
+}
+
 fn write_json(stream: &mut UnixStream, v: &Value) -> bool {
     write_line(stream, &v.to_string())
 }
@@ -365,8 +381,9 @@ impl Shell {
     fn flush_offsets(&mut self) {
         for (dir, off) in std::mem::take(&mut self.offsets) {
             let d = self.opts.paths.agent_dir(&dir);
-            let _ = std::fs::write(d.join("wire.offset.tmp"), off.to_string());
-            let _ = std::fs::rename(d.join("wire.offset.tmp"), d.join("wire.offset"));
+            if write_logged(&self.opts.paths, &d.join("wire.offset.tmp"), &off.to_string()) {
+                rename_logged(&self.opts.paths, &d.join("wire.offset.tmp"), &d.join("wire.offset"));
+            }
         }
     }
 
@@ -825,7 +842,7 @@ impl Shell {
             let _ = std::fs::remove_file(&req_file);
             let line = got.ok().and_then(|t| crate::role::clean(&t));
             if let Some(l) = &line {
-                write_role(&paths.agent_dir(&dir), l, &key);
+                write_role(&paths, &paths.agent_dir(&dir), l, &key);
             }
             let _ = tx.send(Msg::RoleLine { dir, key, line });
         });
@@ -934,7 +951,7 @@ impl Shell {
         } else {
             prompts::task_role(&a)
         };
-        let _ = std::fs::write(adir.join("role.md"), role);
+        write_logged(&self.opts.paths, &adir.join("role.md"), &role);
         if !adir.join("context.txt").exists() {
             let _ = std::fs::write(adir.join("context.txt"), "");
         }
@@ -974,8 +991,8 @@ impl Shell {
             }
         }
         // a fresh process: a fresh wire log
-        let _ = std::fs::write(adir.join("wire.log"), "");
-        let _ = std::fs::write(adir.join("wire.offset"), "0");
+        write_logged(&self.opts.paths, &adir.join("wire.log"), "");
+        write_logged(&self.opts.paths, &adir.join("wire.offset"), "0");
         let _ = std::fs::remove_file(adir.join("repl.json"));
         let port = match port.map(Ok).unwrap_or_else(free_port) {
             Ok(p) => p,
@@ -1518,10 +1535,10 @@ fn read_role(adir: &Path) -> Option<(String, String)> {
     Some((line, v["key"].as_str().unwrap_or("").to_string()))
 }
 
-fn write_role(adir: &Path, line: &str, key: &str) {
+fn write_role(paths: &Paths, adir: &Path, line: &str, key: &str) {
     let tmp = adir.join("role.json.tmp");
-    if std::fs::write(&tmp, json!({"line": line, "key": key}).to_string()).is_ok() {
-        let _ = std::fs::rename(&tmp, adir.join("role.json"));
+    if write_logged(paths, &tmp, &json!({"line": line, "key": key}).to_string()) {
+        rename_logged(paths, &tmp, &adir.join("role.json"));
     }
 }
 
@@ -1546,7 +1563,9 @@ fn kill_stale_repls(sh: &Shell) {
                 &sh.opts.paths,
                 &format!("killing a stale REPL of {} (pid {})", a.name, pid),
             );
-            let _ = Command::new("kill").arg(&pid).status();
+            if let Ok(pid) = pid.parse() {
+                crate::procs::terminate(pid);
+            }
         }
         let _ = std::fs::remove_file(&f);
     }
