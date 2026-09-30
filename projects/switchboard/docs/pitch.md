@@ -85,7 +85,7 @@ runs the agents for you, or flow).
 
 Name gloss, for English readers (site hero, README, launch posts):
 "bise /beez/ · french, n. 1. a quick kiss on the cheek. 2. a brisk north wind.
-3. a terminal where your agents ship while you think." One-line form: "bise
+3. a terminal where multi-agent coding is painless." One-line form: "bise
 (say: beez): french for a kiss. also a wind."
 Other candidates, human tone: "too many ideas? good."; "say it once. forget
 about it. it's done."; "finally, something that keeps up with my brain."

@@ -571,7 +571,7 @@ fn kiss(t: u64) -> Span<'static> {
 
 /// The meanings of the definition, the third (what bise is) in text color.
 const MEANINGS: [&str; 3] =
-    ["a quick kiss on the cheek :*", "a brisk north wind", "a terminal where your agents ship while you think"];
+    ["a quick kiss on the cheek :*", "a brisk north wind", "a terminal where multi-agent coding is painless"];
 
 /// The name's definition, as on the landing and the README: `bise` bold,
 /// `/beez/ · french, n.` dim (the `·` follows BISE_ASCII), then the three
@@ -1170,7 +1170,7 @@ mod tests {
             "bise /beez/ · french, n.",
             "1. a quick kiss on the cheek :*",
             "2. a brisk north wind",
-            "3. a terminal where your agents ship while you think",
+            "3. a terminal where multi-agent coding is painless",
         ];
         let sc = screen(&o, KISS_AT + 700, 100, 30);
         assert!(sc.contains("hi, i'm bise :*") && !sc.contains("bise /beez/"), "{}", sc);
@@ -1203,7 +1203,7 @@ mod tests {
         assert_eq!(fg(5, 0), Some(theme::text()), "what bise is: text");
         // narrow: the meanings wrap with a hanging indent, the block still aligned
         let sc = screen(&o, WELCOME_END, 36, 30);
-        assert!(flat(&sc).contains("3. a terminal where your agents ship while you think"), "{}", sc);
+        assert!(flat(&sc).contains("3. a terminal where multi-agent coding is painless"), "{}", sc);
         let r3 = sc.lines().position(|r| r.contains("3. a terminal")).unwrap();
         let rows: Vec<&str> = sc.lines().collect();
         let x = rows[r3].find("3.").unwrap();

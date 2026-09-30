@@ -9,7 +9,7 @@
   <b>bise</b> /beez/ · french, n.<br>
   1. a quick kiss on the cheek :*<br>
   2. a brisk north wind<br>
-  3. a terminal where your agents ship while you think
+  3. a terminal where multi-agent coding is painless
 </p>
 
 <p align="center">

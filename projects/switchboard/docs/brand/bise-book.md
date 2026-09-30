@@ -84,7 +84,7 @@ in the product, but tokens, cost and provider speed are the real limit.)
 screen of the TUI (§15, the meanings without final periods there):
 
 > **bise** /beez/ · french, n. 1. a quick kiss on the cheek. 2. a brisk north
-> wind. 3. a terminal where your agents ship while you think.
+> wind. 3. a terminal where multi-agent coding is painless.
 
 Rejected, don't bring them back: "all the agents. none of the overhead."
 ("overhead" is unclear), "all the agents. stay in flow.", "code like a team
@@ -766,8 +766,8 @@ one in accent.
    `:*` pops in accent (scale 0.4 → 1.5 → 1, 0.9 s), then, right under the
    name and a blank row, the name gloss (§1) comes line by line, 300 ms
    apart: `bise /beez/ · french, n.` / `1. a quick kiss on the cheek :*` /
-   `2. a brisk north wind` / `3. a terminal where your agents ship while you
-   think`, then `ideas in. little kisses out. also pull requests.` is typed,
+   `2. a brisk north wind` / `3. a terminal where multi-agent coding is
+   painless`, then `ideas in. little kisses out. also pull requests.` is typed,
    then `any key ↵`. Any key while it types shows it all at once; then any
    key goes on (no wait for enter).
 2. **Theme.** `your terminal looks dark, so i picked dark.` / `you can change

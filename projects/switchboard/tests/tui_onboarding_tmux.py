@@ -76,7 +76,7 @@ def main():
         sc = t.screen()
         # the fake env has MISTRAL_API_KEY: no key step, three dots
         for s in ["hi, i'm bise :*", "bise /beez/ · french, n.", "1. a quick kiss on the cheek :*",
-                  "2. a brisk north wind", "3. a terminal where your agents ship while you think",
+                  "2. a brisk north wind", "3. a terminal where multi-agent coding is painless",
                   "ideas in. little kisses out. also pull requests.", "● ○ ○"]:
             assert s in flat(sc), sc
         assert "● ○ ○ ○" not in sc, sc
