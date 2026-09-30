@@ -46,7 +46,8 @@ beats:
 5. worktrees: ψ shows up when an agent needs its own copy, and it's gone once the work is merged. you never think about it.
 6. nothing dropped: an agent stops half-way, main picks the work back up.
 
-to verify before recording: when exactly is a worktree removed (when the task ends, or after main merges it)? ask main.
+checked with main: the worktree goes when main drops the task, and main drops it once its work has landed on main. so in practice: after the merge, automatic, and the agent's processes stop at the same moment. unsaved work is saved first (or the drop is refused and you decide). leftover folders are swept at each start.
+say: "once the work lands, main drops the task and the worktree goes with it." don't say "a git hook cleans it on merge": it's main's routine.
 
 ### capsule 2 · "memory without a memory system"
 
