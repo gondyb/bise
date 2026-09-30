@@ -57,12 +57,12 @@ const hash = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 // grid helper: chars + a class per cell, rendered as html runs
-function Grid(cols, rows) {
+function Grid(cols, rows, ko) {
   const c = Array.from({ length: rows }, () => Array(cols).fill(" "));
   const k = Array.from({ length: rows }, () => Array(cols).fill(""));
   return {
     cols, rows,
-    put(x, y, ch, cl = "") { x = Math.round(x); y = Math.round(y); if (x < 0 || y < 0 || x >= cols || y >= rows) return; c[y][x] = ch; k[y][x] = cl; },
+    put(x, y, ch, cl = "") { x = Math.round(x); y = Math.round(y); if (x < 0 || y < 0 || x >= cols || y >= rows) return; if (ko && x >= ko.x0 && x <= ko.x1 && y >= ko.y0 && y <= ko.y1) return; c[y][x] = ch; k[y][x] = cl; },
     str(x, y, s, cl = "") { for (let i = 0; i < s.length; i++) this.put(x + i, y, s[i], cl); },
     html() {
       let out = "";
@@ -206,7 +206,7 @@ const V = {
     s.p = []; s.b = []; s.kx = -2; s.flash = 0; s.last = -99;
     const NAMES = ["perf", "dark-mode", "emoji-csv", "release", "accents", "docs", "tests"];
     return (g, t) => {
-      const Y = Math.round(g.rows * .8);
+      const Y = Math.round(g.rows * .86);
       if (s.p.length < 70 && Math.random() < .25) s.p.push({ x: rnd(-10, g.cols), y: g.rows + 1, z: Math.random(), ph: rnd(0, 6), life: 1e9 });
       s.p = s.p.filter(p => p.y > -2 && p.x < g.cols + 3 && --p.life > 0);
       for (const p of s.p) { const sp = .06 + p.z * .18; p.y -= sp; p.x += sp * 1.6; p.ph += .04; g.put(p.x + Math.sin(p.ph) * 2, p.y, p.life < 25 ? "." : p.z > .8 ? "∗" : p.z > .45 ? "·" : ".", p.z > .8 ? "d" : ""); }
@@ -218,7 +218,11 @@ const V = {
       // it sends agents out from where it stands
       const L = Math.floor(rnd(36, 80));
       if (s.b.length < 3 && s.kx - s.last > 14 && kx > 2 && kx + L < g.cols - 10 && Math.random() < .02) {
-        s.b.push({ xs: kx + 1, L, p: 0, A: Math.min(rnd(5, Y - 4), L / 2.6), name: NAMES[Math.floor(rnd(0, NAMES.length))] });
+        const name = NAMES[Math.floor(rnd(0, NAMES.length))], ko = g.ko;
+        // an arc that crosses the text's columns stays under it (name included)
+        const under = kx + 1 + L + name.length + 3 >= ko.x0 && kx + 1 <= ko.x1;
+        const top = under ? Math.max(2, Y - ko.y1 - 2) : Y - 4;
+        s.b.push({ xs: kx + 1, L, p: 0, A: Math.min(rnd(Math.min(3, top), top), L / 2.6), name });
         s.last = s.kx; s.flash = 8;
       }
       s.b = s.b.filter(b => {
@@ -315,7 +319,11 @@ for (const sec of document.querySelectorAll(".v")) {
   let visible = false, t = rnd(0, 50), running = false;
   const frame = () => {
     if (!visible || document.hidden) { running = false; return; }
-    const g = Grid(Math.ceil(pre.clientWidth / cw) + 1, Math.ceil(pre.clientHeight / lh) + 1);
+    // nothing is drawn behind the hero text: a box around it, 2 cells of air
+    const pr = pre.getBoundingClientRect(), rs = [...sec.querySelectorAll(".hero > *")].map(e => e.getBoundingClientRect());
+    const ko = { x0: Math.floor((Math.min(...rs.map(r => r.left)) - pr.left) / cw) - 3, x1: Math.ceil((Math.max(...rs.map(r => r.right)) - pr.left) / cw) + 3,
+                 y0: Math.floor((Math.min(...rs.map(r => r.top)) - pr.top) / lh) - 1, y1: Math.ceil((Math.max(...rs.map(r => r.bottom)) - pr.top) / lh) + 1 };
+    const g = Grid(Math.ceil(pre.clientWidth / cw) + 1, Math.ceil(pre.clientHeight / lh) + 1, ko); g.ko = ko;
     step(g, t); pre.innerHTML = g.html(); t += .045;
     if (reduced) { running = false; return; }
     setTimeout(() => requestAnimationFrame(frame), 70);
