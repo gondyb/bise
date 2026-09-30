@@ -46,6 +46,10 @@ bundle="$(ls -d "$DL"/*/)"
 CMD="${BISE_CMD:-}"
 if [ -z "$CMD" ]; then if [ -e "$bundle/app/bise" ]; then CMD=bise; else CMD=bend-harness; fi; fi
 arch="$(uname -m)"; [ "$arch" = aarch64 ] && arch=arm64
+os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+# a file's permission bits: BSD stat (macOS), GNU stat (Linux; its -f
+# means the file system and prints before it fails: no `||` fallback)
+mode_of() { if [ "$os" = darwin ]; then stat -f %Lp "$1"; else stat -c %a "$1"; fi; }
 # the installer's PATH line: "# added by the <name> installer"
 MARK='added by the [a-z-]* installer'
 E sh "$bundle/install.sh" 2>&1 | sed 's/^/     /'
@@ -59,12 +63,12 @@ found="$(E /bin/zsh -ic "command -v $CMD" 2>/dev/null | tail -n 1)"
 echo "== --version"
 v="$(cd "$WORK" && E /bin/zsh -ic "$CMD --version" 2>&1 | tail -n 1)"
 echo "     $v"
-case "$v" in "$CMD "*"darwin-$arch"*) ok "--version (darwin-$arch)" ;; *) ko "--version: want '$CMD <id> (darwin-$arch, ...)'" ;; esac
+case "$v" in "$CMD "*"$os-$arch"*) ok "--version ($os-$arch)" ;; *) ko "--version: want '$CMD <id> ($os-$arch, ...)'" ;; esac
 
 echo "== login (a key from stdin, BISE-170: no init in the launcher)"
 (cd "$WORK" && printf 'test-key-not-real\n' | E "$BIN" login mistral) 2>&1 | sed 's/^/     /'
 check "~/.bise/auth.json holds the key" grep -q 'test-key-not-real' "$T/.bise/auth.json"
-[ "$(stat -f %Lp "$T/.bise/auth.json")" = 600 ] && ok "auth.json is mode 600" || ko "auth.json is mode 600"
+[ "$(mode_of "$T/.bise/auth.json")" = 600 ] && ok "auth.json is mode 600" || ko "auth.json is mode 600"
 # Apache-2.0 4(a)/(d): the license and the notices go with the binaries
 cur="$T/.local/share/bise/current"
 check "LICENSE (Apache-2.0) installed" grep -q 'Apache License' "$cur/LICENSE"

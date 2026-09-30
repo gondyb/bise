@@ -63,6 +63,28 @@ OLD_MARK="# added by the $OLD_CMD installer"   # before BISE-165: same PATH line
 
 say() { printf '%s\n' "$CMD install: $*" >&2; }
 die() { say "error: $*"; exit 1; }
+# sha256 of a file: shasum (macOS, most Linux), else sha256sum (coreutils:
+# a minimal Linux has no perl, so no shasum)
+sha256_of() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -d' ' -f1
+  else sha256sum "$1" | cut -d' ' -f1; fi
+}
+# json_get <file> <a.b.c>: a string or number of a JSON file; plutil on
+# macOS, python3 elsewhere, else (a bare Linux) the flat form
+# make-release.sh writes for latest.json: one target per line
+json_get() {
+  if command -v plutil >/dev/null 2>&1; then plutil -extract "$2" raw -o - "$1" 2>/dev/null; return; fi
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys
+v=json.load(open(sys.argv[1]))
+for k in sys.argv[2].split("."): v=v[int(k)] if isinstance(v,list) else v[k]
+print(v)' "$1" "$2" 2>/dev/null; return; fi
+  case "$2" in
+    targets.*.*) t="${2#targets.}"; k="${t##*.}"; t="${t%.*}"
+      grep -F "\"$t\": {" "$1" | sed -n "s/.*\"$k\": *\"\{0,1\}\([^\",}]*\).*/\1/p" | head -n 1 ;;
+    *) return 1 ;;
+  esac
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -289,8 +311,8 @@ fetch() {
     hdr="header = \"Authorization: Bearer $token\""
     if curl_cfg "$hdr" "$rel" "$tmp/release.json" 2>"$tmp/err"; then
       i=0 asset=""
-      while n="$(plutil -extract "assets.$i.name" raw -o - "$tmp/release.json" 2>/dev/null)"; do
-        [ "$n" = "$name" ] && { asset="$(plutil -extract "assets.$i.url" raw -o - "$tmp/release.json")"; break; }
+      while n="$(json_get "$tmp/release.json" "assets.$i.name")"; do
+        [ "$n" = "$name" ] && { asset="$(json_get "$tmp/release.json" "assets.$i.url")"; break; }
         i=$((i + 1))
       done
       [ -n "$asset" ] && curl_cfg "$hdr
@@ -309,14 +331,14 @@ if [ -z "$FROM" ]; then
   elif [ -n "$DIST_URL" ]; then
     say "reading $DIST_URL/latest.json"
     fetch "$DIST_URL/latest.json" "$tmp/latest.json"
-    get() { plutil -extract "targets.$target.$1" raw -o - "$tmp/latest.json" 2>/dev/null || true; }
+    get() { json_get "$tmp/latest.json" "targets.$target.$1" || true; }
     url="$(get url)"; sum="$(get sha256)"
     [ -n "$url" ] || url="$(get file)"
     { [ -n "$url" ] && [ -n "$sum" ]; } || die "the release has no build for $target"
     case "$url" in *://*) ;; *) url="$DIST_URL/$url" ;; esac
     say "downloading $url"
     fetch "$url" "$tmp/dl.tar.gz"
-    [ "$(shasum -a 256 "$tmp/dl.tar.gz" | cut -d' ' -f1)" = "$sum" ] || die "checksum mismatch: $url"
+    [ "$(sha256_of "$tmp/dl.tar.gz")" = "$sum" ] || die "checksum mismatch: $url"
     FROM="$tmp/dl.tar.gz"
   else
     die "no bundle and no release channel: pass --from <tarball|dir>, or --dist-url <url> (or BISE_DIST_URL)"
@@ -324,7 +346,7 @@ if [ -z "$FROM" ]; then
 fi
 if [ -f "$FROM" ]; then
   if [ -f "$FROM.sha256" ]; then
-    [ "$(shasum -a 256 "$FROM" | cut -d' ' -f1)" = "$(cut -d' ' -f1 "$FROM.sha256")" ] || die "checksum mismatch: $FROM"
+    [ "$(sha256_of "$FROM")" = "$(cut -d' ' -f1 "$FROM.sha256")" ] || die "checksum mismatch: $FROM"
   fi
   mkdir -p "$tmp/x"
   tar -C "$tmp/x" -xzf "$FROM" || die "cannot extract $FROM"

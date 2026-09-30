@@ -164,7 +164,14 @@ fn fetch_text(url: &str) -> Result<String, String> {
 }
 
 fn sha256(file: &Path) -> Result<String, String> {
-    let o = Command::new("shasum").args(["-a", "256"]).arg(file).output().map_err(|e| format!("shasum: {}", e))?;
+    // shasum (macOS, most Linux), else sha256sum (a minimal Linux has no
+    // perl, so no shasum)
+    let o = Command::new("shasum")
+        .args(["-a", "256"])
+        .arg(file)
+        .output()
+        .or_else(|_| Command::new("sha256sum").arg(file).output())
+        .map_err(|e| format!("sha256sum: {}", e))?;
     let out = String::from_utf8_lossy(&o.stdout);
     out.split_whitespace()
         .next()

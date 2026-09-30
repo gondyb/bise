@@ -19,6 +19,10 @@
 //! then the real adapters (cpal; [`BatchTranscriber`] over `stt` and
 //! `http`). The audio stays in memory: it is never written to a file.
 
+// Linux has no microphone yet (MicRecorder): the capture side, the
+// meter and the resampler are only used by the tests there
+#![cfg_attr(all(target_os = "linux", not(test)), allow(dead_code))]
+
 use crossterm::event::{KeyCode, KeyModifiers};
 use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -364,7 +368,7 @@ impl Voice {
 
     /// The real microphone and the configured voice model.
     pub fn live(enabled: bool) -> Self {
-        Voice::new(enabled, Box::new(CpalRecorder), Box::new(BatchTranscriber))
+        Voice::new(enabled, Box::new(MicRecorder), Box::new(BatchTranscriber))
     }
 
     pub fn state(&self) -> VoiceState {
@@ -507,7 +511,7 @@ fn stop_capture(run: &mut Run, now: Instant) {
     }
 }
 
-// ---- the microphone (cpal: CoreAudio on macOS) ----
+// ---- the microphone (cpal: CoreAudio on macOS; none on Linux yet) ----
 
 /// The capture level, shared with the audio callback.
 #[derive(Default)]
@@ -538,11 +542,13 @@ impl Level {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 struct CpalCapture {
     _stream: cpal::Stream,
     level: Arc<Level>,
 }
 
+#[cfg(not(target_os = "linux"))]
 impl Capture for CpalCapture {
     fn has_signal(&self) -> bool {
         self.level.signal.load(Ordering::Relaxed)
@@ -552,9 +558,19 @@ impl Capture for CpalCapture {
     }
 }
 
-pub struct CpalRecorder;
+/// The system microphone: cpal where bise links it (not Linux: no ALSA
+/// dependency, tui/Cargo.toml), else a clear "not available".
+pub struct MicRecorder;
 
-impl Recorder for CpalRecorder {
+#[cfg(target_os = "linux")]
+impl Recorder for MicRecorder {
+    fn start(&mut self, _sample_rate: u32, _audio: Sender<AudioMsg>) -> Result<Box<dyn Capture>, StartError> {
+        Err(StartError::Backend("voice input is not available on Linux yet".into()))
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+impl Recorder for MicRecorder {
     fn start(&mut self, sample_rate: u32, audio: Sender<AudioMsg>) -> Result<Box<dyn Capture>, StartError> {
         use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
         use cpal::SampleFormat;
@@ -579,6 +595,7 @@ impl Recorder for CpalRecorder {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 fn build_stream<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,

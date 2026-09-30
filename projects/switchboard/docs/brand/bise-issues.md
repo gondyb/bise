@@ -2984,3 +2984,11 @@ Index:
 - **what:** no real secret in 908 commits (gitleaks + rg over `git log -p --all`: the key-shaped strings are the redaction tests' fakes). The real session log copied as the BISE-242 fixture (Slack DM links, colleagues' names and emails, the private skill list) is redacted: free text becomes `[redacted]`, the structure pairing.rs needs stays (2.2 MB → 454 KB). The BISE-255 quote loses two first names. `.gitignore`: `.env*`, `auth.json`, keys, stray `events.jsonl`; `content/`: the rendered `prompt-*.html`.
 - **notes:** `rust/session/tests/pairing.rs` 7/7 on the redacted fixture. The history still holds the original fixture (91a98f0, 76ebc2c): public-audit.md gives the git-filter-repo command (blob swap + replace-text + mailmap, optional binaries), proven on a mirror (6 s, 902 commits, pack 34 → 10 MB); it needs a force push and a re-clone by everyone.
 
+
+### BISE-259 · Linux: a tested build for x86_64 and arm64; Windows through WSL first
+
+- **status:** Linux proven (HEAD) · CI rows proposed on `sb/ports`, not released · **owner:** ports · **commits:** `git log --grep BISE-259`
+- **owns:** `projects/switchboard/docs/ports-plan.md`, the Linux paths of `install.sh`, `test-install.sh`, `bise update`'s sha256, the Linux microphone stub in `rust/tui/src/voice.rs`
+- **spec:** the user asks how bise could support Windows and Linux: a plan per component, then a Linux build that installs and runs a full turn.
+- **what:** ports-plan.md: per component what breaks on Linux and on Windows, the glibc floor (2.34: built on Ubuntu 22.04), Windows via WSL first (the Bend runtime is POSIX-only), the order. Fixes: cpal (ALSA, `libasound.so.2`) is no longer linked on Linux, voice says "not available on Linux yet" (bise did not start without ALSA); `install.sh` reads latest.json without `plutil` (python3, else sed) and checks sha256 without `shasum` (`sha256sum`); `bise update` too; `test-install.sh` runs on Linux (GNU `stat`, `<os>-<arch>`).
+- **notes:** test-install.sh 31/31 on linux-arm64 (Ubuntu 22.04 build, clean Debian 12 and Rocky 9) and linux-x86_64 (Rosetta container: Bend's x64 binary cannot run there, its C was emitted on arm64). clang ≥ 15 needed on arm64 (clang 14 crashes on sb-core). Windows compile check: `bise-home` and `bise-session` stop it (Unix file modes, `flock`).
