@@ -72,7 +72,7 @@
 </style>
 </head>
 <body>
-<p class="lead"><b>bise :* — onboarding v0.</b> the first launch, in 6 steps, inspired by Vibe's (typed welcome, live theme preview, one choice per screen). press <b>enter</b> to go on, <b>↑↓</b> to choose. the last step is the real first run, with hints that show up once, only when the thing they explain happens.</p>
+<p class="lead"><b>bise :* — onboarding v0.</b> the first launch, in 5 steps, inspired by Vibe's (typed welcome, live theme preview, one choice per screen). press <b>enter</b> to go on, <b>↑↓</b> to choose. the last step is the real first run, with hints that show up once, only when the thing they explain happens.</p>
 <div class="term" id="term">
 
   <!-- 1 welcome -->
@@ -113,17 +113,8 @@
     </div>
   </div>
 
-  <!-- 4 folder -->
+  <!-- 4 how it works -->
   <div class="screen" data-s="3">
-    <div class="col">
-    <div class="title">i'll work in ~/lab/app <span class="dim" style="font-weight:400">· a git repo ✓</span></div>
-    <div class="b dim">your agents share this folder and talk to each other. worktrees and conflicts: i handle them for you.</div>
-    <div class="hint"><span class="k">enter</span> ok · <span class="k">o</span> another folder</div>
-    </div>
-  </div>
-
-  <!-- 5 how it works -->
-  <div class="screen" data-s="4">
     <div class="col">
     <div class="title">how it works</div>
     <div class="line you" data-l>you talk to <b class="acc">me</b>: main, your team lead. any time, keep typing</div>
@@ -134,8 +125,8 @@
     </div>
   </div>
 
-  <!-- 6 first run with just-in-time hints -->
-  <div class="screen" data-s="5" style="padding:0">
+  <!-- 5 first run with just-in-time hints -->
+  <div class="screen" data-s="4" style="padding:0">
     <div class="app">
       <div class="head"><span><b>bise</b> <span class="acc">:*</span></span><span class="dim" id="fcount">no agents yet</span></div>
       <div class="feed" id="ffeed"><div class="b dim">what's on your mind?</div><div class="b dim">say it and keep talking. the work runs in the background, i'm always here.</div></div>
@@ -160,8 +151,8 @@ function dots() { document.getElementById("dots").innerHTML = screens.map((_, i)
 function show(i) {
   timers.forEach(clearTimeout); timers = [];
   cur = i; screens.forEach((s, k) => s.classList.toggle("on", k === i)); dots();
-  document.getElementById("where").textContent = ["welcome", "theme", "model", "folder", "how it works", "first run"][i];
-  ({ 0: welcome, 4: lines, 5: firstRun })[i]?.();
+  document.getElementById("where").textContent = ["welcome", "theme", "model", "how it works", "first run"][i];
+  ({ 0: welcome, 3: lines, 4: firstRun })[i]?.();
 }
 function welcome() {
   const w1 = document.getElementById("w1"), wk = document.getElementById("wk"), w2 = document.getElementById("w2"), w3 = document.getElementById("w3");
