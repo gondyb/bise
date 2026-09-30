@@ -11,6 +11,7 @@ python3 -u projects/switchboard/tests/tui_demo_tips_tmux.py
 """
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from tui_tmux import tui_session, run, panel_row, in_view  # noqa: E402
@@ -20,6 +21,22 @@ COLS, ROWS = 150, 42
 
 def spawn(name):
     return '[[bash: sb spawn %s --objective "bise demo (role-play, not real work): you are %s"]]' % (name, name)
+
+
+def main_quiet(t, secs=2):
+    """main idle `secs` in a row: the turns on `other`'s ack are over. A
+    message typed into such a turn is only acked by the fake: under
+    load the three spawns went there and dev-api never came (BISE-292)."""
+    since = [None]
+
+    def quiet(sc):
+        if "┴ idle · " not in sc:
+            since[0] = None
+            return False
+        since[0] = since[0] or time.time()
+        return time.time() - since[0] >= secs
+    quiet.__doc__ = "main idle for %d s" % secs
+    t.wait_any([quiet], 60)
 
 
 def settled(t):
@@ -40,6 +57,8 @@ def main():
         t.keys("Enter")
         t.wait_re(panel_row(1, "other"))
         assert "your team just started" not in t.screen(), t.screen()
+        t.wait("other → main")
+        main_quiet(t)
         t.typed(" ".join(spawn(n) for n in ("pm", "designer", "dev-api")))
         t.keys("Enter")
         t.wait_re(panel_row(4, "dev-api"), 30)

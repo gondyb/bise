@@ -185,4 +185,22 @@ Ranked by value: risk removed per hour spent.
 
 ## Progress
 
-Filled as the fixes land: sha, item, gates.
+Batch 1 (the cheap items), quick gate per commit, one full gate for the
+batch:
+
+| item | commit | what |
+|---|---|---|
+| 2 | ab29f65 | tui_keys_tmux waits for each Down to be drawn |
+| 3 | ab29f65 | at_popup_tests waits up to 30 s for the file index |
+| 5 | 9471f74 | `write_logged`/`rename_logged`: the hub logs a failed write of role.md, wire.log, wire.offset, role.json |
+| 7 | dce3875 | `procs::{alive, terminate, kill_now}` over kill(2) in daemon/repl.rs, switch.rs, `kill_stale_repls` (the `ps` reads stay) |
+| 8 | 408902e | `feed::local_hhmm` from `when::offset_at`; `update.rs`'s `date -u` stays (one call per update) |
+| 11 | 104eec8 | `paths::tests::ids_match_the_python_copies`; gate.sh and worktree_home.py name it |
+
+The user's decisions on the major items: 1 and 4 go (next); 6 no (not
+convinced, portability); 9 and 10 not now (kept here).
+
+A flake the batch's full gate found (2 runs of 2), not in the known list:
+`tui_demo_tips_tmux` typed the three spawns while main was still in a
+turn on `other`'s ack; the fake only acked them and dev-api never came.
+The test now waits for main idle 2 s in a row first (4 of 4 in parallel).
