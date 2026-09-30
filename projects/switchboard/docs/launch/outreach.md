@@ -13,7 +13,7 @@ rules: one personal DM each, no repost ask, no upvote ask. send only to people y
 | swyx | ? | X | [ ] |
 | Josh Comeau | ? | X / email | [ ] |
 | Grafikart, Underscore_, Korben | ? | X / email (FR) | [ ] |
-| Mistral colleagues | warm | Slack perso / DM, after the policy ok | [ ] |
+| Mistral colleagues | warm | Slack perso / DM, after the manager heads-up | [ ] |
 | ThePrimeagen, Theo | cold | nothing. only if it takes off | – |
 
 ---
@@ -47,5 +47,5 @@ rules: one personal DM each, no repost ask, no upvote ask. send only to people y
 **Grafikart / Underscore_ / Korben (FR)**
 > salut ! petit message avant que ce soit public : aujourd'hui à 16h je sors bise :* , un terminal open source pour coder avec plein d'agents IA depuis un seul fil par repo. fait à Paris, nom français, bien sûr. aucune demande, je voulais juste que tu l'apprennes de moi. si un jour ça t'intéresse d'en parler, avec plaisir. bise.dev
 
-**Mistral colleagues (after the policy ok)**
+**Mistral colleagues (after the manager heads-up)**
 > hey ! je sors mon projet perso aujourd'hui à 16h : bise, un terminal pour coder avec plein d'agents. rien à voir avec Mistral officiellement, c'est mon side project. si tu as 5 min pour l'essayer ce soir, ton retour m'aiderait beaucoup. bise.dev

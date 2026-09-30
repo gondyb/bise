@@ -95,7 +95,6 @@ tip: the link goes in the last post; X shows fewer people a first post with a li
 >
 > bise.dev
 
-note: a personal project, not a Mistral product. if the policy check asks for it, add one line: "a side project, built on my own time." (to verify with Mistral)
 
 ---
 
@@ -106,7 +105,7 @@ note: a personal project, not a Mistral product. if the policy check asks for it
 
 **first comment (post it right away):**
 
-> hi HN, i'm Gabriel. i build coding agents for a living (i work on Mistral's agent tools). bise is a personal side project, not a Mistral product.
+> hi HN, i'm Gabriel. i build coding agents for a living. bise is my personal side project.
 >
 > the problem: with four or five Claude Code / Codex sessions open, i became the router between them. which tab had the context, which one was waiting on me, which two were about to edit the same file. i shipped a lot and never got to think.
 >

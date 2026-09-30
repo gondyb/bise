@@ -9,7 +9,7 @@ latest release: v2026.9.30-4. repo gvergnaud/bise: private until Gabriel's click
 | 1 | launch without approvals, said plainly | **decided: yes** (site FAQ already says it) |
 | 2 | macOS only, Linux later | **decided** |
 | 3 | LGPL glibc bit in the prebuilt V8 | open · main's pick: accept for launch, rebuild later |
-| 4 | Mistral side-project green light (+ ok on the "behind Mistral's agent tools, like Vibe" line) | **open · blocks every public post** |
+| 4 | Mistral: no employer name in any post, site or README (**decided**). heads-up to the manager before 16:00: Gabriel's call (launch pick: yes) | open |
 | 5 | X handle (site links x.com/GabrielVergnaud) | open |
 | 6 | who you actually know in outreach.md | open |
 | 7 | you on camera in the video? French posts beyond LinkedIn thu? | open |
@@ -40,7 +40,7 @@ latest release: v2026.9.30-4. repo gvergnaud/bise: private until Gabriel's click
 
 every line must be yes. one no = we slip the posts, we don't post around it.
 
-- [ ] Mistral green light received
+- [ ] no "Mistral's agent tools" line left on the site, README or posts (Mistral as a model provider is fine)
 - [ ] https://github.com/gvergnaud/bise loads logged out (no 404)
 - [ ] `curl -fsSL bise.dev/install | sh` works on a clean mac, no gh token, installs v2026.9.30-4 (or later)
 - [ ] onboarding with a real key → first message → main answers → one agent starts and finishes
