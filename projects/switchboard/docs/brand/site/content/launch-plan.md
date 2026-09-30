@@ -57,7 +57,7 @@ the 8-week plan below still holds from tomorrow. today is the short version.
 | **the site can be found by Google** | **vercel.json sends `X-Robots-Tag: noindex` on every page** | remove that header the day before |
 | where it runs | macOS (Apple Silicon) first | say "macOS first" in every post. no surprise, no angry replies |
 | cost | open source (Apache-2.0), bring your own key | say it in the main post |
-| your employer | you work on Mistral's agent tools; the landing says "one of the people behind Mistral's agent tools, like Vibe" | check the side-project / open-source policy, and ok that line with Mistral comms. then say it once, plainly: a personal project, not a Mistral product |
+| your employer | decided: no employer name at launch. the line about Mistral's agent tools is gone from the site and README | done |
 | "built with bise" numbers | 872 commits in the repo today | pull the real numbers the day before: weeks, commits, agents started. never an estimate |
 
 ---

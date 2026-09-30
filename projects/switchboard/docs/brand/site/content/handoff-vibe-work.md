@@ -24,7 +24,7 @@ You are picking up from another agent (the "designer") who worked with me, Gabri
 
 The double meaning (a kiss, a wind) runs through the whole brand: the `:*` kiss emoticon, soft wind and ASCII animations.
 
-**Who made it:** Gabriel Vergnaud. He builds coding agents for a living. He's one of the people behind Mistral's agent tools, like Vibe. He's the author of Type-Level TypeScript (a course with a newsletter). bise is **its own indie brand, not a Mistral product**. Most of bise was built with bise.
+**Who made it:** Gabriel Vergnaud. He builds coding agents for a living. (No employer name anywhere: bise is its own indie brand.) He's the author of Type-Level TypeScript (a course with a newsletter). bise is **its own indie brand, not a Mistral product**. Most of bise was built with bise.
 
 **Links:**
 - site: https://bise.dev

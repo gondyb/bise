@@ -162,7 +162,7 @@ git clone https://github.com/gvergnaud/bise && cd bise
 
 ## made by a human. shipped with bise
 
-hi, i'm gabriel. i build coding agents for a living. i'm one of the people behind Mistral's agent tools, like Vibe.
+hi, i'm gabriel. i build coding agents for a living.
 
 agents made me faster. they also made my days feel empty. i was switching tabs, answering "should i continue?", pasting context around. i shipped more than ever and i didn't enjoy it.
 
