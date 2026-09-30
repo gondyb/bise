@@ -1337,6 +1337,192 @@ pub(crate) fn draw(f: &mut Frame, o: &Onb, now: u64) {
     }
 }
 
+// ---- the mouse (BISE-281) ----
+
+/// What a mouse gesture asks the loop to do.
+#[derive(Debug, PartialEq)]
+enum Act {
+    Open(String),
+    Copy(String),
+}
+
+/// How long the note under the dots stays, in ms.
+const NOTE_MS: u64 = 2500;
+
+/// The mouse over the onboarding. bise has the mouse (capture on, so the
+/// terminal's own click and selection never happen), so it does what a
+/// click and a drag do in the feed: a plain click on a link opens it
+/// (`links::open`: `BISE_OPEN`, `open`, `xdg-open`; cmd+click stays the
+/// terminal's own), a drag selects (highlighted) and the release copies,
+/// a double click selects the word (a whole url), a triple the row. The
+/// note under the dots says what happened, in the feed's words.
+#[derive(Default)]
+struct Mouse {
+    clicks: crate::app::MouseState,
+    /// the press and where the drag is now, (x, y) cells
+    sel: Option<((u16, u16), (u16, u16))>,
+    /// the press became a selection (a drag, a double or triple click)
+    moved: bool,
+    /// the button is down
+    held: bool,
+    /// where the mouse was last seen
+    at: Option<(u16, u16)>,
+    /// the note and when it goes (the onboarding's clock, ms)
+    note: Option<(String, u64)>,
+}
+
+/// Row `y` of `b` as text: one char per column (a wide grapheme's
+/// hidden cells skipped), so a column of the string is a cell.
+fn row_text(b: &ratatui::buffer::Buffer, y: u16) -> String {
+    let mut s = String::new();
+    let mut skip = 0usize;
+    for x in b.area.x..b.area.right() {
+        if skip > 0 {
+            skip -= 1;
+            continue;
+        }
+        let sym = b[(x, y)].symbol();
+        skip = sym.width().saturating_sub(1);
+        s.push_str(if sym.is_empty() { " " } else { sym });
+    }
+    s
+}
+
+/// The columns [from, to] of `s` that are text (not the margins).
+fn text_cols(s: &str) -> Option<(usize, usize)> {
+    let from = s.len() - s.trim_start().len();
+    let to = s.trim_end().width().checked_sub(1)?;
+    Some((s[..from].width(), to))
+}
+
+impl Mouse {
+    /// The selection, ordered, when there is one to show.
+    fn range(&self) -> Option<((u16, u16), (u16, u16))> {
+        let (a, b) = self.sel.filter(|_| self.moved)?;
+        Some(if (a.1, a.0) <= (b.1, b.0) { (a, b) } else { (b, a) })
+    }
+
+    /// The selected columns [from, to] of row `y` of `b`, text only.
+    fn cols(&self, b: &ratatui::buffer::Buffer, y: u16) -> Option<(u16, u16)> {
+        let (a, z) = self.range()?;
+        if y < a.1 || y > z.1 {
+            return None;
+        }
+        let (t0, t1) = text_cols(&row_text(b, y))?;
+        let from = if y == a.1 { (a.0 as usize).max(t0) } else { t0 };
+        let to = if y == z.1 { (z.0 as usize).min(t1) } else { t1 };
+        (from <= to).then_some((from as u16 + b.area.x, to as u16 + b.area.x))
+    }
+
+    /// The selected text of `b`: its rows trimmed, one per line.
+    fn text(&self, b: &ratatui::buffer::Buffer) -> String {
+        let Some((a, z)) = self.range() else { return String::new() };
+        let rows: Vec<String> = (a.1..=z.1)
+            .map(|y| match self.cols(b, y) {
+                Some((f, t)) => crate::feedsel::slice_cols(&row_text(b, y), (f - b.area.x) as usize, (t - b.area.x) as usize + 1),
+                None => String::new(),
+            })
+            .collect();
+        rows.join("\n").trim_matches('\n').to_string()
+    }
+
+    /// The selection on `b`: the feed's tint under it.
+    fn paint(&self, b: &mut ratatui::buffer::Buffer) {
+        let Some((a, z)) = self.range() else { return };
+        for y in a.1..=z.1.min(b.area.bottom().saturating_sub(1)) {
+            if let Some((f, t)) = self.cols(b, y) {
+                for x in f..=t.min(b.area.right().saturating_sub(1)) {
+                    b[(x, y)].bg = theme::selection_bg();
+                }
+            }
+        }
+    }
+
+    /// One mouse event over the last frame `b` and its links `hits`.
+    fn on(&mut self, m: &crossterm::event::MouseEvent, b: &ratatui::buffer::Buffer, hits: &[crate::links::Hit], at: Instant) -> Option<Act> {
+        use crossterm::event::{MouseButton, MouseEventKind};
+        let inside = b.area.contains((m.column, m.row).into());
+        let (x, y) = (
+            m.column.clamp(b.area.x, b.area.right().saturating_sub(1)),
+            m.row.clamp(b.area.y, b.area.bottom().saturating_sub(1)),
+        );
+        self.at = Some((m.column, m.row));
+        match m.kind {
+            MouseEventKind::Down(MouseButton::Left) if inside => {
+                let n = self.clicks.press(x, y, at);
+                let row = row_text(b, y);
+                let col = (x - b.area.x) as usize;
+                let span = match n {
+                    2 => Some(crate::feedsel::word_cols(&row, col)),
+                    3 => text_cols(&row),
+                    _ => None,
+                };
+                self.held = true;
+                match span {
+                    Some((f, t)) => {
+                        self.sel = Some(((f as u16 + b.area.x, y), (t as u16 + b.area.x, y)));
+                        self.moved = true;
+                    }
+                    None => {
+                        self.sel = Some(((x, y), (x, y)));
+                        self.moved = false;
+                    }
+                }
+                None
+            }
+            MouseEventKind::Drag(MouseButton::Left) if self.held => {
+                if let Some((a, h)) = self.sel.as_mut() {
+                    if *h != (x, y) {
+                        *h = (x, y);
+                        self.moved |= *a != (x, y);
+                    }
+                }
+                None
+            }
+            MouseEventKind::Up(MouseButton::Left) if self.held => {
+                self.held = false;
+                if self.moved {
+                    return Some(self.text(b)).filter(|t| !t.is_empty()).map(Act::Copy);
+                }
+                let (px, py) = self.sel.take()?.0;
+                hits.iter().find(|h| h.y == py && px >= h.x0 && px < h.x1).map(|h| Act::Open(h.url.clone()))
+            }
+            _ => None,
+        }
+    }
+
+    /// Does `act` (opens the url, copies the text) and keeps its note.
+    fn act(&mut self, act: Act, now: u64) {
+        let note = match act {
+            Act::Open(url) if crate::links::open(&url) => format!("opening {}", url),
+            Act::Open(url) => format!("could not open {}", url),
+            Act::Copy(t) if crate::clipboard::copy(&t) => {
+                let n = t.chars().count();
+                format!("copied {} char{}", n, if n == 1 { "" } else { "s" })
+            }
+            Act::Copy(_) => "copy failed (no pbcopy, and the terminal refused OSC 52)".to_string(),
+        };
+        self.note = Some((note, now + NOTE_MS));
+    }
+
+    /// The pointer's shape: a hand over a link, none while it drags.
+    fn shape(&self) -> crate::pointer::Shape {
+        match self.at {
+            Some((x, y)) if !self.held => crate::pointer::at(x, y),
+            _ => crate::pointer::Shape::Default,
+        }
+    }
+
+    /// The note on the last row, under the dots, while it lasts.
+    fn draw_note(&self, f: &mut Frame, now: u64) {
+        let area = f.area();
+        if let Some((n, _)) = self.note.as_ref().filter(|(_, until)| now < *until && area.height >= 4) {
+            let r = Rect { y: area.bottom() - 1, height: 1, ..area };
+            f.render_widget(Paragraph::new(Line::from(s(n.clone(), theme::dim()))).alignment(Alignment::Center), r);
+        }
+    }
+}
+
 // ---- the loop ----
 
 /// Play the onboarding over the whole screen until it ends or is
@@ -1354,6 +1540,8 @@ pub(crate) fn show(
         o.go(Step::Model, 0);
     }
     let _ = terminal.clear();
+    let mut mouse = Mouse::default();
+    let mut last = ratatui::buffer::Buffer::empty(Rect::default());
     let r = (|| -> io::Result<()> {
         loop {
             pump(app);
@@ -1366,10 +1554,16 @@ pub(crate) fn show(
             // BISE-92: the switch repaints the terminal's background too
             crate::theme_detect::sync_terminal_bg();
             terminal.draw(|f| {
+                crate::pointer::begin_frame(); // BISE-272: the hand over the links
                 draw(f, &o, now);
+                mouse.draw_note(f, now);
                 theme::paint(f.buffer_mut()); // BISE-92: bise paints its ground
                 theme::asciify(f.buffer_mut()); // BISE-84: BISE_ASCII=1
+                // BISE-281: what the mouse selects is read from this frame
+                last = f.buffer_mut().clone();
+                mouse.paint(f.buffer_mut());
             })?;
+            terminal.backend_mut().set_pointer(mouse.shape())?;
             if !poll(Duration::from_millis(33))? {
                 continue;
             }
@@ -1377,15 +1571,24 @@ pub(crate) fn show(
             // the ctrl hints' flags: a modifier alone or a release is no key
             match crate::ctrlhint::for_handlers(read()?) {
                 Some(Event::Key(k)) if k.kind == KeyEventKind::Press => {
+                    // the screen changes: the selection goes
+                    mouse.sel = None;
                     if o.on_key(k, now, &real_env) != Out::Stay {
                         return Ok(());
                     }
                 }
                 Some(Event::Paste(p)) => o.on_paste(&p),
+                // BISE-281: a click on a link opens it, a drag copies
+                Some(Event::Mouse(m)) => {
+                    if let Some(act) = mouse.on(&m, &last, &crate::links::frame_hits(), Instant::now()) {
+                        mouse.act(act, now);
+                    }
+                }
                 _ => {}
             }
         }
     })();
+    let _ = terminal.backend_mut().set_pointer(crate::pointer::Shape::Default);
     let _ = mark_seen(&real_env);
     // the feed's rows carry their colors: a new theme builds them again
     if theme::mode() != mode_before {
@@ -1987,5 +2190,90 @@ mod tests {
                 screen(&o, 99_999, w, hh);
             }
         }
+    }
+
+    /// The paste step of Mistral drawn at 110x30: the frame and its links.
+    fn paste_frame() -> (ratatui::buffer::Buffer, Vec<crate::links::Hit>) {
+        let h = tmp("mouse");
+        let e = env_of(HashMap::from([("HOME", h.to_string_lossy().to_string())]));
+        let mut o = Onb::new(&e);
+        o.go(Step::Model, 0);
+        let mistral = o.providers.iter().position(|p| p.id == "mistral").unwrap();
+        o.sub = Sub::Which(mistral);
+        o.on_key(key(KeyCode::Enter), 1, &e);
+        o.on_key(key(KeyCode::Enter), 1, &e);
+        assert!(matches!(&o.sub, Sub::Paste(..)));
+        let mut t = Terminal::new(TestBackend::new(110, 30)).unwrap();
+        t.draw(|f| draw(f, &o, 10)).unwrap();
+        (t.backend().buffer().clone(), crate::links::frame_hits())
+    }
+
+    fn mouse(kind: crossterm::event::MouseEventKind, x: u16, y: u16) -> crossterm::event::MouseEvent {
+        crossterm::event::MouseEvent { kind, column: x, row: y, modifiers: KeyModifiers::NONE }
+    }
+
+    /// Where `text` starts on the frame.
+    fn cell_of(b: &ratatui::buffer::Buffer, text: &str) -> (u16, u16) {
+        (0..b.area.height)
+            .find_map(|y| row_text(b, y).find(text).map(|x| (row_text(b, y)[..x].width() as u16, y)))
+            .unwrap_or_else(|| panic!("no {:?} on screen", text))
+    }
+
+    #[test]
+    fn a_click_on_the_keys_page_opens_it() {
+        use crossterm::event::{MouseButton::Left, MouseEventKind::*};
+        let (b, hits) = paste_frame();
+        let url = "https://console.mistral.ai/api-keys";
+        let (x, y) = cell_of(&b, url);
+        let mut m = Mouse::default();
+        let t = Instant::now();
+        assert_eq!(m.on(&mouse(Down(Left), x + 5, y), &b, &hits, t), None);
+        assert_eq!(m.on(&mouse(Up(Left), x + 5, y), &b, &hits, t), Some(Act::Open(url.into())));
+        // the words before it are no link
+        let (gx, gy) = cell_of(&b, "get one:");
+        let t = t + Duration::from_secs(1);
+        m.on(&mouse(Down(Left), gx + 1, gy), &b, &hits, t);
+        assert_eq!(m.on(&mouse(Up(Left), gx + 1, gy), &b, &hits, t), None);
+        // the loop does it: the opener gets the url, the note says so
+        m.act(Act::Open(url.into()), 100);
+        assert_eq!(crate::links::OPENED.with(|o| o.borrow().last().cloned()), Some(url.to_string()));
+        assert_eq!(m.note, Some((format!("opening {}", url), 100 + NOTE_MS)));
+    }
+
+    #[test]
+    fn a_drag_or_a_double_click_copies_the_keys_page() {
+        use crossterm::event::{MouseButton::Left, MouseEventKind::*};
+        let (b, hits) = paste_frame();
+        let url = "https://console.mistral.ai/api-keys";
+        let (x, y) = cell_of(&b, url);
+        let end = x + url.len() as u16 - 1;
+        // a drag over the url, past its end: the url, highlighted, copied
+        let mut m = Mouse::default();
+        let t = Instant::now();
+        m.on(&mouse(Down(Left), x, y), &b, &hits, t);
+        m.on(&mouse(Drag(Left), end + 20, y), &b, &hits, t);
+        let mut shown = b.clone();
+        m.paint(&mut shown);
+        assert_eq!(shown[(x, y)].bg, theme::selection_bg());
+        assert_eq!(shown[(end, y)].bg, theme::selection_bg());
+        assert_ne!(shown[(end + 1, y)].bg, theme::selection_bg());
+        assert_eq!(m.on(&mouse(Up(Left), end + 20, y), &b, &hits, t), Some(Act::Copy(url.into())));
+        m.act(Act::Copy(url.into()), 5);
+        assert_eq!(crate::clipboard::test_clipboard().as_deref(), Some(url));
+        assert_eq!(m.note.as_ref().map(|n| n.0.as_str()), Some("copied 35 chars"));
+        // a double click on it: the whole url, nothing opened
+        let mut m = Mouse::default();
+        let t = t + Duration::from_secs(1);
+        m.on(&mouse(Down(Left), x + 9, y), &b, &hits, t);
+        assert_eq!(m.on(&mouse(Up(Left), x + 9, y), &b, &hits, t), Some(Act::Open(url.into())));
+        m.on(&mouse(Down(Left), x + 9, y), &b, &hits, t + Duration::from_millis(100));
+        assert_eq!(m.on(&mouse(Up(Left), x + 9, y), &b, &hits, t), Some(Act::Copy(url.into())));
+        // a drag over two rows: their text, not the margins
+        let (tx, ty) = cell_of(&b, "paste your Mistral key");
+        let mut m = Mouse::default();
+        m.on(&mouse(Down(Left), tx, ty), &b, &hits, t);
+        m.on(&mouse(Drag(Left), end, y), &b, &hits, t);
+        let Some(Act::Copy(two)) = m.on(&mouse(Up(Left), end, y), &b, &hits, t) else { panic!("no copy") };
+        assert_eq!(two, format!("paste your Mistral key\n\nget one: {}", url));
     }
 }

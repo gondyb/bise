@@ -847,8 +847,10 @@ one in accent.
    true` in the catalog, the foundry proxy, is never offered) → `which
    model?` (`you can change it any time with /model.`, the catalog's pick
    first, `recommended`) → `paste your Mistral key` / `get one:
-   <keys page>` (an OSC 8 link) / `no account yet? <sign-up page>` when
-   it differs / the masked field / `saved in ~/.bise/auth.json. only you
+   <keys page>` (an OSC 8 link; as in the feed, a plain click opens it
+   and says `opening <url>`, a drag or a double click copies it and says
+   `copied N chars`, under the step dots, BISE-281) / `no account yet?
+   <sign-up page>` when it differs / the masked field / `saved in ~/.bise/auth.json. only you
    can read it.` → `checking your key with one tiny call…`: one real
    request to that model (16 output tokens). Failed: `Mistral says this
    key is wrong. copy it again from <link>` · `the key works, but the

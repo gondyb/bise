@@ -338,7 +338,6 @@ pub(crate) fn push_hit(h: Hit) {
     FRAME.with(|f| f.borrow_mut().push(h));
 }
 
-#[cfg(test)]
 pub(crate) fn frame_hits() -> Vec<Hit> {
     FRAME.with(|f| f.borrow().clone())
 }
