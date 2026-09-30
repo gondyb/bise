@@ -312,6 +312,80 @@ pub fn with_role(text: &str, id: &str, model: &str) -> String {
     }
 }
 
+/// config.toml's text with role `id` set (BISE-298): `model` None = unset
+/// (it follows its fallback again), `effort` None = the model's default.
+/// A role with an effort is written as its table (`[roles.<id>]` model,
+/// effort), else as its line of `[roles]` (or its table's model when the
+/// table is there). The old keys it replaces go; its other settings
+/// (the voice's language) stay.
+pub fn set_role(text: &str, id: &str, model: Option<&str>, effort: Option<&str>) -> String {
+    let mut t = text.to_string();
+    if let Some(r) = role(id) {
+        for old in [r.old_key, r.old_effort] {
+            match old.split_once('.') {
+                Some((table, key)) => t = without_key(&t, table, key),
+                None if !old.is_empty() => t = without_key(&t, "", old),
+                None => {}
+            }
+        }
+    }
+    let own = format!("roles.{}", id);
+    t = without_key(&t, "roles", id);
+    t = without_key(&t, &own, "model");
+    t = without_key(&t, &own, "effort");
+    let has_table = t.lines().any(|l| header(l).as_deref() == Some(own.as_str()));
+    let Some(model) = model else {
+        // an empty [roles.<id>] goes too
+        return if has_table && table_is_empty(&t, &own) { without_table(&t, &own) } else { t };
+    };
+    let value = crate::toml_string(model);
+    match effort {
+        Some(e) => {
+            let t = with_table_key(&t, &own, "model", &value);
+            with_table_key(&t, &own, "effort", &crate::toml_string(e))
+        }
+        None if has_table => with_table_key(&t, &own, "model", &value),
+        None => with_table_key(&t, "roles", id, &value),
+    }
+}
+
+fn table_is_empty(text: &str, table: &str) -> bool {
+    let mut cur = String::new();
+    let mut empty = true;
+    for l in text.lines() {
+        if let Some(h) = header(l) {
+            cur = h;
+        } else if cur == table && !l.trim().is_empty() && !l.trim().starts_with('#') {
+            empty = false;
+        }
+    }
+    empty
+}
+
+fn without_table(text: &str, table: &str) -> String {
+    let mut cur = String::new();
+    let mut out: Vec<&str> = Vec::new();
+    for l in text.lines() {
+        if let Some(h) = header(l) {
+            cur = h;
+            if cur == table {
+                continue;
+            }
+        }
+        if cur != table {
+            out.push(l);
+        }
+    }
+    while out.last().is_some_and(|l| l.trim().is_empty()) {
+        out.pop();
+    }
+    let mut s = out.join("\n");
+    if !s.is_empty() {
+        s.push('\n');
+    }
+    s
+}
+
 /// Where a role's model comes from, in the user's words, for the
 /// screens: picked (in config.toml or an env var) or following another.
 #[derive(Clone, Debug, PartialEq, Eq)]

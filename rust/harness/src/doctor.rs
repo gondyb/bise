@@ -403,8 +403,13 @@ pub(crate) fn path_check(found: &Path, real: Option<&Path>, me: Option<&Path>, l
 /// is a warning (ctrl+r fails, nothing else does). `key`: its provider's
 /// key is set (None: the provider needs none).
 fn voice_check(v: &bise_catalog::voice::VoiceSetup, r: &bise_catalog::voice::SttResolved, key: Option<bool>) -> Check {
-    let what = format!("{} ({})", r.name, v.from);
-    let fix_model = format!("set [voice] model to a listed one (`{} models voice`)", bise_catalog::CLI);
+    // BISE-298: the origin only when not config.toml
+    let what = match v.from {
+        "config" => r.name.clone(),
+        "default" => format!("auto · {}", r.name),
+        env => format!("{} ({})", r.name, env),
+    };
+    let fix_model = format!("pick one with /voice setup in bise, or `{} config set voice <provider/model>` (`{} models voice` lists them)", bise_catalog::CLI, bise_catalog::CLI);
     if r.known == bise_catalog::Known::NoProvider {
         return warn("voice", format!("{}: unknown provider '{}'", what, r.provider), fix_model);
     }
@@ -421,7 +426,7 @@ fn voice_check(v: &bise_catalog::voice::VoiceSetup, r: &bise_catalog::voice::Stt
             format!("`{} login {}` (or set {})", bise_catalog::CLI, r.provider, r.key_env),
         );
     }
-    ok("voice", format!("{} · language {}", what, v.language.as_deref().unwrap_or("auto")))
+    ok("voice", format!("{} · language {} · listens when you talk", what, v.language.as_deref().unwrap_or("auto")))
 }
 
 /// config.toml's warnings (what `bise models` prints under its list).
@@ -453,12 +458,12 @@ fn no_key_fix(setup: &bise_catalog::Setup, r: &bise_catalog::Resolved, found: &[
 }
 
 /// The keys, model and voice lines.
-fn keys_and_model(home: &bise_home::Home) -> (Check, Check, Check) {
+fn keys_and_model(home: &bise_home::Home) -> (Check, Vec<Check>, Check) {
     let store = match Store::read(&home.auth_file()) {
         Ok(s) => s,
         Err(e) => {
             let f = fail("keys", format!("auth.json unreadable: {}", e), format!("fix or remove {}", home.auth_file().display()));
-            return (f.clone(), fail("model", "keys unknown", "fix auth.json first"), warn("voice", "keys unknown", "fix auth.json first"));
+            return (f.clone(), vec![fail("main", "keys unknown", "fix auth.json first")], warn("voice", "keys unknown", "fix auth.json first"));
         }
     };
     let files = EnvFile::read_all(&home.env_files());
@@ -497,19 +502,46 @@ fn keys_and_model(home: &bise_home::Home) -> (Check, Check, Check) {
         }
         Ok(what)
     };
-    let agent_from = if setup.agent_model_from == "model" { "same as model" } else { setup.agent_model_from };
-    let lines = [
-        model("main", &setup.model, setup.model_from),
-        model("agents", &setup.agent_model, agent_from),
+    // BISE-298: one line per role, by its name: what runs (a fallback:
+    // its rule word), its effort, what it is for; the origin only when
+    // not config.toml
+    let roles: [(&'static str, &str, &'static str, &str); 3] = [
+        ("main", &setup.model, setup.model_from, ""),
+        ("agents", &setup.agent_model, setup.agent_model_from, ""),
+        ("small jobs", &setup.small_model, setup.small_model_from, "titles, summaries"),
     ];
-    let mut bad = lines.iter().filter_map(|l| l.as_ref().err());
-    let model_line = match bad.next() {
-        Some((detail, fix)) => fail("model", detail.clone(), fix.clone()),
-        None => ok("model", lines.iter().filter_map(|l| l.as_ref().ok().cloned()).collect::<Vec<_>>().join(" · ")),
-    };
+    let model_lines: Vec<Check> = roles
+        .iter()
+        .map(|(name, m, from, about)| match model(name, m, from) {
+            Err((detail, fix)) => fail(name, detail, fix),
+            Ok(_) => {
+                let r = setup.catalog.resolve(m);
+                let mut parts = vec![match *from {
+                    "model" => "same as main".to_string(),
+                    "agent_model" => "same as agents".to_string(),
+                    "provider" | "default" => format!("auto · {}", r.name),
+                    "config" => r.name.clone(),
+                    env => format!("{} ({})", r.name, env),
+                }];
+                let asked = match *name {
+                    "main" => setup.effort.as_str(),
+                    "agents" if *from != "model" => setup.agent_effort.as_str(),
+                    _ => "",
+                };
+                let e = r.effort_for(asked);
+                if (*name == "main" || (*name == "agents" && *from != "model")) && !e.is_empty() {
+                    parts.push(e);
+                }
+                if !about.is_empty() {
+                    parts.push(about.to_string());
+                }
+                ok(name, parts.join(" · "))
+            }
+        })
+        .collect();
     let stt = setup.catalog.resolve_stt(&setup.voice.model);
     let stt_key = (!stt.key_env.is_empty()).then(|| keys.find(&stt.provider, &stt.key_env).is_some());
-    (keys_line, model_line, voice_check(&setup.voice, &stt, stt_key))
+    (keys_line, model_lines, voice_check(&setup.voice, &stt, stt_key))
 }
 
 fn hubs(home: &bise_home::Home) -> Check {
@@ -580,7 +612,7 @@ pub(crate) fn main(args: &[String]) -> i32 {
         }
     };
     let home = bise_home::Home::from_env();
-    let (keys, model, voice) = keys_and_model(&home);
+    let (keys, models, voice) = keys_and_model(&home);
     let config = config_check(&home.config_file(), &bise_catalog::Setup::load(&home.config_file()).catalog.warnings);
     let checks = vec![
         macos(),
@@ -593,11 +625,10 @@ pub(crate) fn main(args: &[String]) -> i32 {
         rg(),
         config,
         keys,
-        model,
-        voice,
-        hubs(&home),
-        disk(&home),
     ];
+    let mut checks = checks;
+    checks.extend(models);
+    checks.extend([voice, hubs(&home), disk(&home)]);
     let st = Style::stdout();
     println!("{}", st.title("checking your setup"));
     println!();

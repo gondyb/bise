@@ -43,7 +43,11 @@ use unicode_width::UnicodeWidthStr;
 mod provider;
 #[cfg(test)]
 mod provider_tests;
+mod roles;
+#[cfg(test)]
+mod roles_tests;
 pub(crate) use provider::{request as provider_request, take_line as provider_line, Ask};
+pub(crate) use roles::{take_voice_out, Open, VoiceOut};
 
 /// The env var: `off` never shows the onboarding, `on` always does.
 pub(crate) const ENV: &str = "SB_ONBOARDING";
@@ -289,6 +293,10 @@ pub(crate) enum Sub {
     Works(Provider, String),
     /// `/provider` (BISE-294): a provider's menu, its row
     Menu(Provider, usize),
+    /// `/provider`: `use it for…`, the roles it can run (BISE-298)
+    UseFor(Provider, usize),
+    /// a role's picker: `how hard should it think?` for that model
+    Effort(String, usize),
     /// `/provider`: remove its saved key?
     Remove(Provider),
 }
@@ -635,8 +643,11 @@ impl Onb {
             // the live check runs with it, listed or not: a model the
             // provider doesn't know says so there (BISE-282)
             (Sub::Model(p, i, f), KeyCode::Enter) => match self.model_rows(&p, &f).get(i).map(|r| r.id().to_string()) {
-                // a key found for it: straight to the check
-                Some(m) if self.found.iter().any(|x| x.id == p.id) => self.start_check(p, m, None, env),
+                // a key found for it: straight to the check (a voice-only
+                // provider is not in `found`: its key state says)
+                Some(m) if self.found.iter().any(|x| x.id == p.id) || (self.panel.is_some() && !p.key_env.is_empty() && self.ready(&p)) => {
+                    self.start_check(p, m, None, env)
+                }
                 Some(m) => Sub::Paste(p, m, String::new()),
                 None => Sub::Model(p, i, f),
             },
@@ -703,6 +714,10 @@ impl Onb {
     /// The models offered for `p`: its pick first, then the catalog's chat
     /// models of that provider.
     pub(crate) fn models_of(&self, p: &Provider) -> Vec<String> {
+        // the voice picker (BISE-298): its voice models, its pick first
+        if self.voice_pick() {
+            return self.voice_models(p);
+        }
         let mut v: Vec<String> = pick_of(p, &self.model).into_iter().collect();
         for m in self.setup.catalog.models.iter().filter(|m| m.provider == p.id && !m.stt) {
             let full = format!("{}/{}", m.provider, m.id);
@@ -736,15 +751,16 @@ impl Onb {
                 None => return Sub::Paste(p, model, String::new()),
             },
         };
-        let r = self.setup.catalog.resolve(&model);
-        let call = crate::keycheck::Call {
-            provider: p.id.clone(),
-            api: r.api.clone(),
-            base_url: r.base_url.clone(),
-            model: r.id.clone(),
-            key: the_key,
-            voice: false,
+        // BISE-298: a voice model is checked by a transcription
+        let voice = self.voice_pick();
+        let (api, base_url, id) = if voice {
+            let r = self.setup.catalog.resolve_stt(&model);
+            (r.api, r.base_url, r.id)
+        } else {
+            let r = self.setup.catalog.resolve(&model);
+            (r.api, r.base_url, r.id)
         };
+        let call = crate::keycheck::Call { provider: p.id.clone(), api, base_url, model: id, key: the_key, voice };
         let (tx, rx) = std::sync::mpsc::channel();
         let (check, url) = (self.checker, env("BEND_PROVIDER_URL"));
         std::thread::spawn(move || {
@@ -799,6 +815,8 @@ impl Onb {
             },
             Err(f) => Sub::Failed(p, model, tried, f),
             Ok(()) => match self.keep(&p, &model, key.as_deref(), env) {
+                // a role's picker (BISE-298): on to its effort, or saved
+                Ok(()) if self.picking().is_some() => self.after_check(model, env),
                 Ok(()) => Sub::Works(p, model),
                 Err(e) => {
                     self.note = Some(Note::Failed(e));
@@ -1150,9 +1168,19 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
     }
     let dim = |t: String| Line::from(s(t, theme::dim()));
     match &o.sub {
-        Sub::List | Sub::Menu(..) | Sub::Remove(_) => model_list(o, w, gap),
+        Sub::List | Sub::Menu(..) | Sub::Remove(_) | Sub::UseFor(..) | Sub::Effort(..) => model_list(o, w, gap),
         Sub::Which(i) => {
             let mut v = vec![title("which provider?")];
+            // BISE-298: opened from a role's picker: for which role
+            if let Some(id) = o.picking() {
+                let who = match id {
+                    bise_catalog::roles::MAIN => "main",
+                    bise_catalog::roles::AGENTS => "the agents",
+                    bise_catalog::roles::SMALL => "small jobs",
+                    _ => "voice",
+                };
+                v.push(dim(format!("for {}.", who)));
+            }
             blanks(&mut v, gap);
             // a window of WHICH_ROWS rows around the cursor
             let n = o.providers.len();
@@ -1160,8 +1188,12 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
             if from > 0 {
                 v.push(Line::from(s(format!("  ↑ {} more", from), theme::dim())));
             }
+            // the hints in one column (designer, BISE-298)
+            let nw = o.providers.iter().map(|p| format!("{} · {}", o.providers.len(), p.name).width()).max().unwrap_or(0) + 2;
             for (k, p) in o.providers.iter().enumerate().skip(from).take(WHICH_ROWS) {
-                option(&mut v, k == *i, vec![s(format!("{} · {}  ", k + 1, p.name), theme::text()), s(p.hint.clone(), theme::dim())], "", w);
+                let head = format!("{} · {}", k + 1, p.name);
+                let pad = " ".repeat(nw.saturating_sub(head.width()));
+                option(&mut v, k == *i, vec![s(format!("{}{}", head, pad), theme::text()), s(p.hint.clone(), theme::dim())], "", w);
             }
             if from + WHICH_ROWS < n {
                 v.push(Line::from(s(format!("  ↓ {} more", n - from - WHICH_ROWS), theme::dim())));
@@ -1319,6 +1351,11 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
                     v.push(Line::from(s(format!("  {}", e), theme::text())));
                 }
             }
+            // BISE-298: the first run picks main's model only
+            if o.panel.is_none() {
+                blanks(&mut v, 1);
+                v.push(dim("agents, voice and the rest: /models".into()));
+            }
             blanks(&mut v, gap);
             v.push(keyline("{enter} go on"));
             v
@@ -1340,9 +1377,10 @@ fn extras(o: &Onb) -> Vec<String> {
     if !has("mistral") {
         v.push("web search and other tools: a Mistral key · /setup".to_string());
     }
-    let voice = ["mistral", "openai", "groq"].iter().any(|id| has(id));
+    // BISE-298: the voice screen's providers
+    let voice = ["mistral", "openai", "elevenlabs"].iter().any(|id| has(id));
     if !voice {
-        v.push("voice input (ctrl+r): a Mistral, OpenAI, Groq, ElevenLabs or Deepgram key · bise login".to_string());
+        v.push("voice input (ctrl+r): a Mistral, OpenAI or ElevenLabs key · /voice setup".to_string());
     }
     v
 }
@@ -1533,7 +1571,13 @@ fn draw_page(f: &mut Frame, o: &Onb, now: u64) {
     let gap = gap_of(area);
     // the rows above the dots
     let body = Rect { height: area.height.saturating_sub(3), ..area };
-    let col = column(body);
+    // BISE-298: /provider and /models get 80 columns on a wide terminal
+    let col = if o.panel.is_some() && area.width >= 90 {
+        let w = 80;
+        Rect { x: body.x + (body.width - w) / 2, width: w, ..body }
+    } else {
+        column(body)
+    };
     let centered = matches!(o.step, Step::Welcome | Step::Theme);
     let (lines, extra) = match o.step {
         Step::Welcome => (welcome(if o.rushed { u64::MAX } else { t }, gap, col.width), 0),
@@ -1671,6 +1715,10 @@ pub(crate) fn show(
             }
             // BISE-266: the key check's answer, when it came
             o.tick(&real_env);
+            // BISE-298: a picker opened from the feed closed itself
+            if o.panel.as_ref().is_some_and(|p| p.closed) {
+                return Ok(());
+            }
             let now = t0.elapsed().as_millis() as u64;
             // BISE-92: the switch repaints the terminal's background too
             crate::theme_detect::sync_terminal_bg();
@@ -1996,7 +2044,8 @@ mod tests {
         o.on_key(key(KeyCode::Enter), 1, &e);
         assert_eq!(o.sub, Sub::Which(0));
         let sc = screen(&o, 10, 110, 30);
-        for s in ["which provider?", "1 · Anthropic  Claude, by Anthropic", "5 · OpenRouter  one key for most models"] {
+        // the hints in one column (BISE-298)
+        for s in ["which provider?", "1 · Anthropic         Claude, by Anthropic", "5 · OpenRouter        one key for most models"] {
             assert!(sc.contains(s), "{}\n{}", s, sc);
         }
         assert!(!sc.contains(" more") && !sc.contains("Groq"), "{}", sc);

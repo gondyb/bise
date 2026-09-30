@@ -94,7 +94,11 @@ pub(crate) fn voice_key(
             end_chip(app, None);
         }
         KeyAction::Swallow => {}
-        KeyAction::OffHint => app.voice_note = Some((voice::OFF_HINT.into(), now)),
+        // BISE-298: voice off and no setup that works: its picker
+        KeyAction::OffHint => match job() {
+            Ok(_) => app.voice_note = Some((voice::OFF_HINT.into(), now)),
+            Err(_) => open_voice_setup(app, true),
+        },
     }
     true
 }
@@ -173,21 +177,61 @@ fn end_chip(app: &mut App, transcript: Option<&str>) {
     app.popup_sel = 0;
 }
 
-/// /voice: voice mode on or off, saved in ~/.bend-harness/tui.json.
-pub(crate) fn toggle_voice(app: &mut App) -> Ev {
-    let on = !app.voice.enabled;
-    app.voice.enabled = on;
-    if !on {
+/// /voice: voice mode off, or on when its model and key work (BISE-298:
+/// `voice is on: <model>`); with no setup that works, the voice picker
+/// opens (None: nothing for the feed yet). Saved in bise's prefs.
+pub(crate) fn toggle_voice(app: &mut App, job: impl FnOnce() -> Result<voice::VoiceJob, String>) -> Option<Ev> {
+    if app.voice.enabled {
+        app.voice.enabled = false;
         app.voice.cancel();
         app.voice.drop_kept();
+        return Some(saved(voice::save_voice_enabled(false), voice::DISABLED_MESSAGE.into()));
     }
-    match voice::save_voice_enabled(on) {
-        Err(e) => Ev::Warn(format!(
-            "{} (not saved: {})",
-            if on { voice::ENABLED_MESSAGE } else { voice::DISABLED_MESSAGE },
-            e
-        )),
-        Ok(()) => Ev::Info(if on { voice::ENABLED_MESSAGE } else { voice::DISABLED_MESSAGE }.into()),
+    match job() {
+        Ok(j) => {
+            app.voice.enabled = true;
+            Some(saved(voice::save_voice_enabled(true), format!("{}{}", voice::ENABLED_MESSAGE, j.name)))
+        }
+        Err(_) => {
+            open_voice_setup(app, true);
+            None
+        }
+    }
+}
+
+fn saved(r: Result<(), String>, line: String) -> Ev {
+    match r {
+        Ok(()) => Ev::Info(line),
+        Err(e) => Ev::Warn(format!("{} (not saved: {})", line, e)),
+    }
+}
+
+/// The voice picker over the screen (BISE-298); `turning_on`: esc says
+/// voice stays off.
+pub(crate) fn open_voice_setup(_app: &mut App, turning_on: bool) {
+    crate::onboarding::provider_request(crate::onboarding::Ask {
+        open: crate::onboarding::Open::Pick(bise_catalog::roles::VOICE),
+        voice_on: turning_on,
+        ..Default::default()
+    });
+}
+
+/// What the voice picker did, in the feed: on (`✓ voice is on: …` and how
+/// to talk), or still off.
+pub(crate) fn voice_out(app: &mut App, out: crate::onboarding::VoiceOut) {
+    match out {
+        crate::onboarding::VoiceOut::On(m) => {
+            app.voice.enabled = true;
+            let head = format!("voice is on: {}.", m);
+            let ev = match voice::save_voice_enabled(true) {
+                Ok(()) => Ev::Said { glyph: "✓", head, dim: vec![voice::ON_HOW.into()] },
+                Err(e) => Ev::Warn(format!("{} (not saved: {})", head, e)),
+            };
+            push_event(&mut app.events, &mut app.cache, ev);
+        }
+        crate::onboarding::VoiceOut::Off => {
+            push_event(&mut app.events, &mut app.cache, Ev::Info(voice::STAYS_OFF.into()));
+        }
     }
 }
 

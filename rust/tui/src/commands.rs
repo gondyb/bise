@@ -38,6 +38,8 @@ pub(crate) enum Arg {
     Model,
     /// an effort the model of the agent in view takes (BISE-135)
     Effort,
+    /// `/voice`'s own: on or off (runs the bare `/voice`), then setup
+    Voice,
     /// free text, required: the rest of the line (nothing to complete)
     Text,
     /// free text, optional: the value before it can already run
@@ -49,7 +51,11 @@ const THEMES: &[(&str, &str)] =
 
 /// The slash commands the popup offers and `/help` lists.
 pub(crate) const COMMANDS: &[Cmd] = &[
-    Cmd { name: "/voice", desc: "turn voice mode (ctrl+r speech-to-text) on or off", args: &[] },
+    Cmd {
+        name: "/voice",
+        desc: "turn voice (ctrl+r: you talk, it types) on or off: /voice [setup]",
+        args: &[Arg::Voice],
+    },
     Cmd {
         name: "/restart",
         desc: "reload bise, nothing lost (a <commit>: bise's own sources only, built then switched): /restart [current|<commit>]",
@@ -89,9 +95,10 @@ pub(crate) const COMMANDS: &[Cmd] = &[
         desc: "the model of the agent in view: /model [<model>] [default]",
         args: &[
             Arg::Model,
-            Arg::Words(&[("default", "also for new sessions (config.toml: model for main, agent_model for an agent)")]),
+            Arg::Words(&[("default", "also for new sessions (config.toml [roles]: main, or agents for an agent)")]),
         ],
     },
+    Cmd { name: "/models", desc: "which model does what: main, agents, small jobs (titles, summaries), voice", args: &[] },
     Cmd { name: "/provider", desc: "set up a provider's key, or change it", args: &[] },
     Cmd { name: "/reasoning", desc: "its reasoning effort: /reasoning [<effort>]", args: &[Arg::Effort] },
     Cmd { name: "/interrupt", desc: "interrupt the turn of the agent in view", args: &[] },
@@ -241,8 +248,26 @@ fn choices(app: &App, arg: Arg, q: &str) -> Vec<Choice> {
         Arg::Plugin => crate::plugins::choices(std::path::Path::new(&sb::workspace(app).unwrap_or_default()), q),
         Arg::Model => model_choices(app, q),
         Arg::Effort => effort_choices(app, q),
+        Arg::Voice => voice_choices(app.voice.enabled, q),
         Arg::Text | Arg::Note => Vec::new(),
     }
+}
+
+/// `/voice`'s rows: the toggle first (⏎ on it runs the bare `/voice`:
+/// its usual use), then `setup`.
+fn voice_choices(on: bool, q: &str) -> Vec<Choice> {
+    let toggle = if on {
+        ("off", "turn voice off")
+    } else {
+        ("on", "turn voice on (ctrl+r: you talk, it types)")
+    };
+    [
+        Choice { value: "/voice".into(), label: toggle.0.into(), desc: toggle.1.into(), mark: None },
+        Choice::word("setup", "pick the model that listens to you"),
+    ]
+    .into_iter()
+    .filter(|c| matches(q, &[&c.label]))
+    .collect()
 }
 
 /// The note that heads `/model` and `/reasoning`: which agent they are
@@ -306,11 +331,20 @@ fn model_choices(app: &App, q: &str) -> Vec<Choice> {
         };
         out.push(Choice { value: "/provider".into(), label: "+ another provider…".into(), desc, mark: None });
     }
+    // BISE-298: every role's model, one row away
+    if q.trim().is_empty() || matches(q, &["every role", "roles"]) {
+        out.push(Choice {
+            value: "/models".into(),
+            label: "every role…".into(),
+            desc: "main, agents, voice, small jobs (titles, summaries)".into(),
+            mark: None,
+        });
+    }
     out
 }
 
 /// What each effort does, on its row of `/reasoning`.
-fn effort_hint(e: &str) -> &'static str {
+pub(crate) fn effort_hint(e: &str) -> &'static str {
     match e {
         "none" => "no reasoning, the fastest",
         "minimal" => "barely any reasoning",
@@ -690,6 +724,16 @@ mod arg_tests {
         set_versions_dev(&mut app, true);
         assert_eq!(labels(&items(&mut app, "/restart ")), ["current", "abc1234"]);
         assert!(items(&mut app, "/agents ").is_empty(), "no argument, no popup");
+        // BISE-298: /voice's toggle row runs the bare /voice (its usual
+        // use), setup follows; the row says what ⏎ does now
+        let v = items(&mut app, "/voice ");
+        assert_eq!(labels(&v), ["on", "setup"]);
+        assert_eq!(v[0].run.as_deref(), Some("/voice"));
+        assert_eq!(v[1].run.as_deref(), Some("/voice setup"));
+        app.voice.enabled = true;
+        assert_eq!(labels(&items(&mut app, "/voice ")), ["off", "setup"]);
+        assert_eq!(labels(&items(&mut app, "/voice se")), ["setup"]);
+        app.voice.enabled = false;
         // BISE-135: /model and /reasoning, for the agent in view
         app.sb.focus = "auth-fix".into();
         set_model(&mut app, "auth-fix", "foundry/claude-opus-5-5", "high");
@@ -717,12 +761,15 @@ mod arg_tests {
         assert!(!labels(&items(&mut app, "/model openai/gpt-6-astra")).iter().any(|l| l.starts_with("+ use")));
         // BISE-294: the providers set up only; the others one row away
         let last = |m: &[PopItem]| (m.last().unwrap().label.clone(), m.last().unwrap().run.clone());
-        assert_eq!(last(&items(&mut app, "/model ")), ("+ another provider…".to_string(), Some("/provider".to_string())));
+        // BISE-298: then every role's model
+        let all = items(&mut app, "/model ");
+        assert_eq!(last(&all), ("every role…".to_string(), Some("/models".to_string())));
+        assert_eq!(last(&all[..all.len() - 1]), ("+ another provider…".to_string(), Some("/provider".to_string())));
         crate::models::TEST_READY.with(|r| *r.borrow_mut() = Some(vec!["foundry".into()]));
         let m = items(&mut app, "/model ");
         assert!(m.iter().any(|i| i.label == "foundry/claude-opus-5-5"));
         assert!(!m.iter().any(|i| i.label.starts_with("openai/") || i.label.starts_with("openrouter/")), "{:?}", labels(&m));
-        let more = m.last().unwrap();
+        let more = &m[m.len() - 2];
         assert_eq!((more.label.as_str(), more.run.as_deref(), more.fill.as_str()), ("+ another provider…", Some("/provider"), "/provider"));
         assert!(more.desc.starts_with("Anthropic, OpenAI, Google AI Studio"), "{}", more.desc);
         let f = items(&mut app, "/model openrouter/x-ai/grok-9");

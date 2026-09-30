@@ -91,9 +91,14 @@ fn no_audio_detected_message() -> String {
 /// needs an API key: …").
 pub const NEEDS_KEY: &str = "voice needs a key. /voice setup picks one.";
 
-pub const ENABLED_MESSAGE: &str = "voice mode on. press ctrl+r to start recording.";
-pub const DISABLED_MESSAGE: &str = "voice mode off.";
-pub const OFF_HINT: &str = "voice mode is off: /voice turns it on";
+/// `/voice` with a setup that works (BISE-298): `voice is on: <model>`
+pub const ENABLED_MESSAGE: &str = "voice is on: ";
+pub const DISABLED_MESSAGE: &str = "voice is off. /voice turns it back on.";
+pub const OFF_HINT: &str = "voice is off: /voice turns it on";
+/// under `✓ voice is on: <model>.` once the voice picker checked it
+pub const ON_HOW: &str = "press ctrl+r and talk, any key stops. /voice turns it off.";
+/// esc on the voice picker while turning voice on
+pub const STAYS_OFF: &str = "voice is off. /voice when you want it.";
 
 // ---- keys ----
 
@@ -471,6 +476,10 @@ impl Voice {
 
     /// The real microphone and the configured voice model.
     pub fn live(enabled: bool) -> Self {
+        // the tmux tests' microphone (BISE-298): a tone, no device
+        if std::env::var("SB_VOICE_FAKE_MIC").is_ok_and(|v| !v.is_empty()) {
+            return Voice::new(enabled, Box::new(ToneRecorder), Box::new(BatchTranscriber));
+        }
         Voice::new(enabled, Box::new(MicRecorder), Box::new(BatchTranscriber))
     }
 
@@ -685,6 +694,55 @@ impl Capture for CpalCapture {
     }
     fn levels(&self) -> [f32; chip::BARS] {
         self.level.levels()
+    }
+}
+
+/// The tmux tests' microphone (`SB_VOICE_FAKE_MIC=1`, BISE-298): a
+/// 440 Hz tone in 100 ms blocks until the capture is dropped, so a
+/// recording reaches the transcription without a device.
+pub struct ToneRecorder;
+
+struct ToneCapture {
+    stop: Arc<AtomicBool>,
+    level: Arc<Level>,
+}
+
+impl Drop for ToneCapture {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+    }
+}
+
+impl Capture for ToneCapture {
+    fn has_signal(&self) -> bool {
+        true
+    }
+    fn levels(&self) -> [f32; chip::BARS] {
+        self.level.levels()
+    }
+}
+
+impl Recorder for ToneRecorder {
+    fn start(&mut self, sample_rate: u32, audio: Sender<AudioMsg>) -> Result<Box<dyn Capture>, StartError> {
+        let stop = Arc::new(AtomicBool::new(false));
+        let level = Arc::new(Level::default());
+        let (s, l) = (stop.clone(), level.clone());
+        std::thread::spawn(move || {
+            let n = (sample_rate / 10) as usize;
+            let mut t = 0usize;
+            while !s.load(Ordering::SeqCst) {
+                let block: Vec<i16> = (0..n)
+                    .map(|i| {
+                        let x = ((t + i) as f32 * 440.0 * std::f32::consts::TAU / sample_rate as f32).sin();
+                        (x * 8000.0) as i16
+                    })
+                    .collect();
+                t += n;
+                l.block(block, &audio);
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        });
+        Ok(Box::new(ToneCapture { stop, level }))
     }
 }
 

@@ -423,7 +423,7 @@ const HELP: &[(&str, &[(&str, &str)])] = &[
         ("{cmd} providers", "your providers: which are set up, where each key comes from (also auth list)"),
         ("{cmd} auth check [provider]", "one tiny call with the key bise finds"),
         ("{cmd} models [filter]", "the models bise knows, and which have a key"),
-        ("{cmd} config get|set KEY [V]", "model, agent_model, small_model, project_doc_fallback_filenames"),
+        ("{cmd} config get|set KEY [V]", "main, agents, small (small jobs: titles, summaries), voice, project_doc_fallback_filenames"),
     ]),
     ("setup", &[
         ("{cmd} setup scan", "what this Mac has for bise: keys' places, tools, repos"),

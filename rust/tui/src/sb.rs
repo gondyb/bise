@@ -672,6 +672,20 @@ pub(super) fn focus(app: &mut App, name: &str) {
     app.unseen = 0;
 }
 
+/// The agents that run their own model (`/model` in that agent), for
+/// `/models`' line under agents (BISE-298): (agent, model).
+fn model_overrides(app: &App) -> Vec<(String, String)> {
+    let (main_m, agent_m) = (crate::models::model_for(true), crate::models::model_for(false));
+    app.sb
+        .agents
+        .iter()
+        // main's own choice shows on main's row, not under agents
+        .filter(|a| a.name != "main" && !a.model.is_empty() && !a.archived())
+        .filter(|a| a.model != if a.name == "main" { main_m.as_str() } else { agent_m.as_str() })
+        .map(|a| (a.name.clone(), a.model.clone()))
+        .collect()
+}
+
 /// `/model <model> [default]` of a provider without a key: its provider
 /// id and the full model id.
 fn model_needs_key(typed: &str) -> Option<(String, String)> {
@@ -683,10 +697,20 @@ fn model_needs_key(typed: &str) -> Option<(String, String)> {
 /// One line typed by the user: the client's own commands (/voice,
 /// /quit, /clear, /help, /theme…) here, the rest goes to the hub.
 pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
+    // BISE-298: /voice turns voice on (its setup first when it has
+    // none that works) or off; /voice setup opens the voice picker
     if v.trim() == "/voice" {
-        let ev = crate::input::toggle_voice(app);
-        push_event(&mut app.events, &mut app.cache, ev.clone());
-        return vec![ev];
+        return match crate::input::toggle_voice(app, crate::voice::resolve_job) {
+            Some(ev) => {
+                push_event(&mut app.events, &mut app.cache, ev.clone());
+                vec![ev]
+            }
+            None => Vec::new(),
+        };
+    }
+    if v.trim() == "/voice setup" {
+        crate::input::open_voice_setup(app, !app.voice.enabled);
+        return Vec::new();
     }
     let typed = v
         .strip_prefix("steer ")
@@ -757,10 +781,18 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         }
         "/theme" => out.push(theme_command(typed.split_whitespace().nth(1), crate::theme_detect::choose)),
         "/welcome" => crate::onboarding::run(app),
+        // BISE-298: which model does what
+        "/models" | "/roles" => {
+            crate::onboarding::provider_request(crate::onboarding::Ask {
+                open: crate::onboarding::Open::Roles,
+                overrides: model_overrides(app),
+                ..Default::default()
+            });
+        }
         // BISE-294: set up a provider's key, or change it
         "/provider" | "/providers" => {
             let id = typed.split_whitespace().nth(1).map(|s| s.trim().to_lowercase());
-            crate::onboarding::provider_request(crate::onboarding::Ask { provider: id, model: None, line: None });
+            crate::onboarding::provider_request(crate::onboarding::Ask { provider: id, ..Default::default() });
         }
         // a model whose provider has no key: set it up first, then the
         // line runs (never saved blindly, BISE-294)
@@ -770,6 +802,7 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
                 provider: Some(id),
                 model: Some(model),
                 line: Some(typed.clone()),
+                ..Default::default()
             });
         }
         "/setup" => setup::command(app),

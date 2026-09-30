@@ -223,7 +223,7 @@ cache_write_price = 0.125
 
 [providers.google]
 name = "Google AI Studio"
-hint = "Gemini. free tier to start"
+hint = "Gemini, a free tier to start"
 keys_url = "https://aistudio.google.com/app/apikey"
 model = "gemini-3.8-flash"
 api = "openai-chat"
@@ -260,7 +260,7 @@ cache_read_price = 0.03
 
 [providers.mistral]
 name = "Mistral"
-hint = "free tier to start"
+hint = "Mistral's models, a free tier to start"
 keys_url = "https://console.mistral.ai/api-keys"
 model = "mistral-medium-latest"
 api = "openai-chat"

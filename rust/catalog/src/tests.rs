@@ -839,3 +839,26 @@ fn every_role_has_its_words() {
     assert_eq!(roles::role("small").map(|r| r.label()), Some("small jobs (titles, summaries)".to_string()));
     assert!(!roles::role("classify").unwrap().shown);
 }
+
+#[test]
+fn a_role_is_set_with_its_effort_or_unset() {
+    use roles::set_role;
+    // an effort: the table form; the old keys go
+    let t = "model = \"a/b\"\nreasoning_effort = \"low\"\n";
+    let out = set_role(t, "main", Some("mistral/m"), Some("high"));
+    assert_eq!(out, "\n[roles.main]\nmodel = \"mistral/m\"\neffort = \"high\"\n".trim_start());
+    let s = setup(&out);
+    assert_eq!((s.model.as_str(), s.effort.as_str()), ("mistral/m", "high"));
+    // no effort: the line again, the table's effort gone
+    let out = set_role(&out, "main", Some("mistral/n"), None);
+    assert_eq!(out, "[roles.main]\nmodel = \"mistral/n\"\n");
+    let out = set_role("[roles]\nmain = \"a/b\"\n", "main", Some("mistral/n"), None);
+    assert_eq!(out, "[roles]\nmain = \"mistral/n\"\n");
+    // unset: the line goes, main's fallback again
+    let t = "agent_model = \"x/y\"\n[roles]\nmain = \"a/b\"\nagents = \"c/d\"\n";
+    let out = set_role(t, "agents", None, None);
+    assert_eq!(out, "[roles]\nmain = \"a/b\"\n");
+    assert_eq!(setup(&out).agent_model, "a/b");
+    let out = set_role("[roles.agents]\nmodel = \"c/d\"\neffort = \"low\"\n\n[x]\ny = 1\n", "agents", None, None);
+    assert_eq!(out, "[x]\ny = 1\n");
+}

@@ -25,6 +25,12 @@ pub(crate) struct Ask {
     pub provider: Option<String>,
     pub model: Option<String>,
     pub line: Option<String>,
+    /// BISE-298: `/models` or a role's picker instead of the list
+    pub open: super::roles::Open,
+    /// the voice picker opens to turn voice on (esc: it stays off)
+    pub voice_on: bool,
+    /// the agents running their own model (`/model` in that agent)
+    pub overrides: Vec<(String, String)>,
 }
 
 static ASKED: Mutex<Option<Ask>> = Mutex::new(None);
@@ -60,6 +66,16 @@ pub(crate) struct Panel {
     pub save_model: bool,
     /// how a page opens (the tests put their own)
     pub opener: fn(&str) -> bool,
+    /// BISE-298: `/models`, a role's picker, or this list
+    pub screen: super::roles::Screen,
+    /// the voice picker turns voice on (esc says it stays off)
+    pub voice_on: bool,
+    /// the agents running their own model: (agent, model)
+    pub overrides: Vec<(String, String)>,
+    /// the `/models` row just changed, and since when
+    pub flash: Option<(&'static str, Instant)>,
+    /// a picker opened from the feed is done: the screen closes
+    pub closed: bool,
 }
 
 /// Where a provider's key is, for the list and the menu.
@@ -109,7 +125,8 @@ pub(crate) fn all_providers(setup: &bise_catalog::Setup, ready: &dyn Fn(&bise_ca
         .catalog
         .providers
         .iter()
-        .filter(|p| p.needs.is_empty() && !p.stt_only && !offered.iter().any(|o| o.id == p.id))
+        // voice-only ones (ElevenLabs) once they have a key (BISE-298)
+        .filter(|p| p.needs.is_empty() && (!p.stt_only || ready(p)) && !offered.iter().any(|o| o.id == p.id))
         // a private proxy (no keys page: foundry) only once it has a key
         .filter(|p| p.key_env.is_empty() || !p.keys_url.is_empty() || ready(p))
         .map(Provider::of)
@@ -129,7 +146,8 @@ pub(crate) enum Row {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Item {
     Paste,
-    Model,
+    /// BISE-298: the roles it can run (was `default model`)
+    UseFor,
     Keys,
     Billing,
     Remove,
@@ -148,7 +166,25 @@ impl Onb {
             said: None,
             save_model: false,
             opener: crate::links::open,
+            screen: super::roles::Screen::Providers,
+            voice_on: ask.voice_on,
+            overrides: ask.overrides.clone(),
+            flash: None,
+            closed: false,
         });
+        match ask.open {
+            super::roles::Open::Providers => {}
+            super::roles::Open::Roles => {
+                if let Some(pn) = &mut o.panel {
+                    pn.screen = super::roles::Screen::Roles;
+                }
+                return o;
+            }
+            super::roles::Open::Pick(id) => {
+                o.sub = o.open_pick(id, super::roles::Back::Close);
+                return o;
+            }
+        }
         let p = ask.provider.as_deref().and_then(|id| o.every().into_iter().find(|p| p.id == id));
         if let Some(p) = p {
             if let Some(i) = o.rows().iter().position(|r| *r == Row::P(p.clone())) {
@@ -157,6 +193,11 @@ impl Onb {
             o.sub = o.open(p, ask.model);
         }
         o
+    }
+
+    #[cfg(test)]
+    pub(crate) fn every_of(&self, id: &str) -> Provider {
+        self.every().into_iter().find(|p| p.id == id).expect("provider")
     }
 
     fn every(&self) -> Vec<Provider> {
@@ -203,9 +244,9 @@ impl Onb {
     /// A provider's menu rows: a keyless one has only its model.
     pub(crate) fn items(&self, p: &Provider) -> Vec<Item> {
         if p.key_env.is_empty() {
-            return vec![Item::Model];
+            return vec![Item::UseFor];
         }
-        let mut v = vec![Item::Paste, Item::Model];
+        let mut v = vec![Item::Paste, Item::UseFor];
         if !p.keys_url.is_empty() {
             v.push(Item::Keys);
         }
@@ -236,7 +277,7 @@ impl Onb {
 
     /// The key step of `p`: its model (none known: asked first), then the
     /// field.
-    fn paste_for(&mut self, p: Provider, asked: Option<String>) -> Sub {
+    pub(super) fn paste_for(&mut self, p: Provider, asked: Option<String>) -> Sub {
         if let Some(pn) = &mut self.panel {
             pn.save_model = false;
         }
@@ -276,8 +317,23 @@ impl Onb {
         }
     }
 
+    /// The roles `p` can run: the chat ones when it chats, voice when it
+    /// transcribes (BISE-298: `use it for…`).
+    pub(crate) fn uses_of(&self, p: &Provider) -> Vec<&'static bise_catalog::roles::Role> {
+        let c = self.setup.catalog.provider(&p.id);
+        let chats = c.is_some_and(|c| !c.stt_only);
+        let voice = c.is_some_and(|c| !c.stt.is_empty());
+        super::roles::shown()
+            .into_iter()
+            .filter(|r| if r.kind == bise_catalog::roles::Kind::Voice { voice } else { chats })
+            .collect()
+    }
+
     /// A key on `/provider`.
     pub(super) fn on_panel_key(&mut self, k: KeyEvent, now: u64, env: Env) -> Out {
+        if self.panel.as_ref().is_some_and(|pn| pn.screen != super::roles::Screen::Providers) {
+            return self.on_roles_key(k, now, env);
+        }
         let plain = !k.modifiers.intersects(
             KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER | KeyModifiers::META | KeyModifiers::HYPER,
         );
@@ -334,6 +390,26 @@ impl Onb {
                 }
             }
             (Sub::Menu(p, i), KeyCode::Enter) => self.pick(p, i, env),
+            (Sub::UseFor(p, _), KeyCode::Esc) => {
+                let i = self.items(&p).iter().position(|x| *x == Item::UseFor).unwrap_or(0);
+                Sub::Menu(p, i)
+            }
+            (Sub::UseFor(p, i), KeyCode::Up | KeyCode::Down) => {
+                let n = self.uses_of(&p).len();
+                Sub::UseFor(p, updown(i, n))
+            }
+            (Sub::UseFor(p, i), KeyCode::Enter) => match self.uses_of(&p).get(i).map(|r| r.id) {
+                Some(id) => {
+                    let sub = self.open_pick(id, super::roles::Back::Menu(Box::new(p.clone())));
+                    // the picker filtered to this provider
+                    if let Some(pn) = &mut self.panel {
+                        pn.filter = format!("{}/", p.id);
+                    }
+                    self.sel = self.pick_rows(id).iter().position(|r| matches!(r, super::roles::PRow::Model(m) if *m == self.role_model(id).0)).unwrap_or(0);
+                    sub
+                }
+                None => Sub::UseFor(p, i),
+            },
             (Sub::Remove(p), KeyCode::Enter) => self.remove(&p, env),
             (Sub::Remove(p), KeyCode::Esc) => {
                 let i = self.items(&p).iter().position(|x| *x == Item::Remove).unwrap_or(0);
@@ -347,7 +423,7 @@ impl Onb {
                         return Out::Done;
                     }
                 }
-                let i = self.items(&p).iter().position(|x| *x == Item::Model).unwrap_or(0);
+                let i = self.items(&p).iter().position(|x| *x == Item::UseFor).unwrap_or(0);
                 Sub::Menu(p, i)
             }
             // a keyless provider's model: nothing to check, saved
@@ -393,14 +469,7 @@ impl Onb {
         let _ = env;
         match self.items(&p).get(i).copied() {
             Some(Item::Paste) => self.paste_for(p, None),
-            Some(Item::Model) => {
-                if let Some(pn) = &mut self.panel {
-                    pn.save_model = true;
-                }
-                self.note = None;
-                let at = self.models_of(&p).iter().position(|m| *m == self.model).unwrap_or(0);
-                Sub::Model(p, at, String::new())
-            }
+            Some(Item::UseFor) => Sub::UseFor(p, 0),
             Some(Item::Keys) | Some(Item::Billing) => {
                 let url = if self.items(&p)[i] == Item::Keys { p.keys_url.clone() } else { p.billing_url.clone() };
                 let open = self.panel.as_ref().map_or(crate::links::open as fn(&str) -> bool, |pn| pn.opener);
@@ -423,8 +492,9 @@ fn sub_provider(s: &Sub) -> Option<Provider> {
         | Sub::Failed(p, ..)
         | Sub::Works(p, ..)
         | Sub::Menu(p, _)
+        | Sub::UseFor(p, _)
         | Sub::Remove(p) => Some(p.clone()),
-        Sub::List | Sub::Which(_) => None,
+        Sub::List | Sub::Which(_) | Sub::Effort(..) => None,
     }
 }
 
@@ -445,18 +515,24 @@ fn from_words(o: &Onb, f: &From) -> String {
     }
 }
 
-/// A provider's state: `✓ ready · saved in bise`, `✓ no key needed`,
-/// `not set up`; ` · main uses it` for main's.
+/// A provider's state: `✓ saved in bise`, `✓ from OPENAI_API_KEY`, `✓ no key needed`,
+/// `not set up` (the roles it runs follow: [`role_tags`]).
 fn state_spans(o: &Onb, p: &Provider) -> Vec<Span<'static>> {
-    let mut v = match o.key_state(&p.id).and_then(|k| k.from.clone()) {
+    let v = match o.key_state(&p.id).and_then(|k| k.from.clone()) {
         _ if p.key_env.is_empty() => vec![s("✓ ", theme::accent()), s("no key needed", theme::text())],
-        Some(f) => vec![s("✓ ", theme::accent()), s("ready", theme::text()), s(format!(" · {}", from_words(o, &f)), theme::dim())],
+        // the ✓ says ready (designer, BISE-298)
+        Some(f) => vec![s("✓ ", theme::accent()), s(from_words(o, &f), theme::text())],
         None => vec![s("not set up", theme::dim())],
     };
-    if p.id == o.mine {
-        v.push(s(" · main uses it", theme::dim()));
-    }
     v
+}
+
+/// BISE-298: the roles `p` runs, by their names (small jobs with what it
+/// does): `main · agents · small jobs (titles, summaries)`; "" = none.
+fn role_tags(o: &Onb, p: &Provider) -> String {
+    let tags: Vec<String> =
+        o.roles_of(&p.id).iter().map(|r| if r.id == bise_catalog::roles::SMALL { r.label() } else { r.name.to_string() }).collect();
+    tags.join(" · ")
 }
 
 fn pad(t: &str, w: usize) -> String {
@@ -480,6 +556,9 @@ fn more_words(names: &[String]) -> String {
 /// (drawn as on the first run).
 pub(super) fn lines(o: &Onb, w: u16, gap: usize) -> Option<Vec<Line<'static>>> {
     let pn = o.panel.as_ref()?;
+    if pn.screen != super::roles::Screen::Providers {
+        return super::roles::lines(o, w, gap);
+    }
     let dim = |t: String| Line::from(s(t, theme::dim()));
     let said = |v: &mut Vec<Line<'static>>| {
         if let Some(t) = &pn.said {
@@ -513,11 +592,29 @@ pub(super) fn lines(o: &Onb, w: u16, gap: usize) -> Option<Vec<Line<'static>>> {
                     Row::P(p) => vec![s(pad(&p.name, NAME_W), theme::text())],
                     Row::More(_) => vec![s(pad("more providers…", NAME_W), theme::text())],
                 };
+                let mut under = String::new();
                 match r {
-                    Row::P(p) => name.extend(state_spans(o, p)),
+                    Row::P(p) => {
+                        name.extend(state_spans(o, p));
+                        // the roles on the right, or under it when they don't fit
+                        let tags = role_tags(o, p);
+                        let used: usize = 2 + name.iter().map(|x| x.content.width()).sum::<usize>();
+                        if !tags.is_empty() && used + 3 + tags.width() <= w as usize {
+                            name.push(s(format!("   {}", tags), theme::dim()));
+                        } else {
+                            under = tags;
+                        }
+                    }
                     Row::More(names) => name.push(s(more_words(names), theme::dim())),
                 }
                 option(&mut v, k == o.sel, name, "", w);
+                if !under.is_empty() {
+                    // under the state, else under the name when too long
+                    let at = if 2 + NAME_W + under.width() <= w as usize { 2 + NAME_W } else { 4 };
+                    for l in words_in(&under, (w as usize).saturating_sub(at)) {
+                        v.push(dim(format!("{}{}", " ".repeat(at), l)));
+                    }
+                }
             }
             if from + LIST_ROWS < rows.len() {
                 v.push(dim(format!("  ↓ {} more", rows.len() - from - LIST_ROWS)));
@@ -532,14 +629,16 @@ pub(super) fn lines(o: &Onb, w: u16, gap: usize) -> Option<Vec<Line<'static>>> {
             let mut v = vec![title(p.name.clone())];
             let head = match ks.and_then(|k| k.from.clone()) {
                 _ if p.key_env.is_empty() => "✓ no key needed".to_string(),
-                Some(From::AuthFile) => format!("✓ ready · key saved in bise ({})", auth_shown(o)),
-                Some(f) => format!("✓ ready · key {}", from_words(o, &f)),
+                Some(From::AuthFile) => format!("✓ ready · saved in bise ({})", auth_shown(o)),
+                Some(f) => format!("✓ ready · {}", from_words(o, &f)),
                 None => "not set up".to_string(),
             };
             v.push(dim(head));
             if let Some(k) = ks.filter(|k| !k.saved && k.from.is_some()) {
                 if let Some(n) = &k.other {
-                    v.push(dim(format!("this key comes from {}. change it where you set it, or paste one here.", n)));
+                    // the origin is on the line above (designer)
+                    let _ = n;
+                    v.push(dim("change it where you set it, or paste one here.".into()));
                 }
             }
             blanks(&mut v, gap);
@@ -552,7 +651,7 @@ pub(super) fn lines(o: &Onb, w: u16, gap: usize) -> Option<Vec<Line<'static>>> {
                         n,
                         match it {
                             Item::Paste => "paste a new key",
-                            Item::Model => "default model",
+                            Item::UseFor => "use it for…",
                             Item::Keys => "open the keys page",
                             Item::Billing => "open billing",
                             Item::Remove => "remove the saved key",
@@ -560,8 +659,13 @@ pub(super) fn lines(o: &Onb, w: u16, gap: usize) -> Option<Vec<Line<'static>>> {
                     ),
                     theme::text(),
                 )];
-                if let (Item::Model, Some(m)) = (it, &current) {
-                    name.push(s(format!("   {}", m), theme::dim()));
+                if it == Item::UseFor {
+                    let tags: Vec<&str> = o.roles_of(&p.id).iter().map(|r| r.name).collect();
+                    if !tags.is_empty() {
+                        name.push(s(format!("   {}", tags.join(" · ")), theme::dim()));
+                    } else if let Some(m) = &current {
+                        name.push(s(format!("   {}", m), theme::dim()));
+                    }
                 }
                 option(&mut v, k == *i, name, "", w);
             }
@@ -570,11 +674,31 @@ pub(super) fn lines(o: &Onb, w: u16, gap: usize) -> Option<Vec<Line<'static>>> {
             v.push(keyline("{↑↓} choose · {enter} ok · {esc} back"));
             v
         }
+        Sub::UseFor(p, i) => {
+            let mut v = vec![title(format!("use {} for…", p.name)), dim("each role runs one model. enter picks it.".into())];
+            blanks(&mut v, gap);
+            let w_ = super::roles::shown().iter().map(|r| r.name.width()).max().unwrap_or(0) + 3;
+            for (k, r) in o.uses_of(p).into_iter().enumerate() {
+                let (m, _) = o.role_model(r.id);
+                let mut name = vec![s(pad(r.name, w_), theme::text()), s(r.about.to_string(), theme::dim())];
+                if bise_catalog::split_name(&m).is_some_and(|(pid, _)| pid == p.id) && o.roles_of(&p.id).iter().any(|x| x.id == r.id) {
+                    name.push(s(format!("   {} {}", theme::glyph(theme::G_DONE), short_model(&m)), theme::accent()));
+                }
+                option(&mut v, k == *i, name, "", w);
+            }
+            blanks(&mut v, gap);
+            v.push(keyline("{↑↓} choose · {enter} ok · {esc} back"));
+            v
+        }
         Sub::Remove(p) => {
-            let mut v = vec![
-                title(format!("remove the {} key saved in bise?", p.name)),
-                dim(format!("agents on {} models stop until you add one again.", p.name)),
-            ];
+            // BISE-298: the roles that stop without it, by name
+            let roles: Vec<&str> = o.roles_of(&p.id).iter().map(|r| r.name).collect();
+            let stop = match roles.as_slice() {
+                [] => format!("agents on {} models stop until you add one again.", p.name),
+                [one] => format!("{} uses {}. without the key it stops.", one, p.name),
+                [rest @ .., last] => format!("{} and {} use {}. without the key they stop.", rest.join(", "), last, p.name),
+            };
+            let mut v = vec![title(format!("remove the {} key saved in bise?", p.name)), dim(stop)];
             if let Some(n) = o.key_state(&p.id).and_then(|k| k.other.clone()) {
                 v.push(dim(format!("{} still gives me a key.", n)));
             }

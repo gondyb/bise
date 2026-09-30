@@ -71,8 +71,9 @@ def main():
         t.typed("/provider")
         t.keys("Enter")
         sc = t.wait("the keys i can use. enter sets one up or changes it.")
-        assert re.search(r"Anthropic +✓ ready · from ANTHROPIC_API_KEY", sc), sc
-        assert re.search(r"OpenRouter +not set up · main uses it", sc), sc
+        assert re.search(r"Anthropic +✓ from ANTHROPIC_API_KEY", sc), sc
+        # BISE-298: the roles it runs, by name
+        assert re.search(r"OpenRouter +not set up +main · agents · small jobs", sc), sc
         assert "more providers…" in sc, sc
         for _ in range(12):
             if re.search(r"› OpenRouter ", t.screen()):
@@ -99,7 +100,7 @@ def main():
         # esc: it has a key now, its menu; a new key that works
         t.keys("Escape")
         sc = t.wait("1 · paste a new key")
-        assert "✓ ready · key saved in bise" in sc and "remove the saved key" in sc, sc
+        assert "✓ ready · saved in bise" in sc and "remove the saved key" in sc, sc
         t.keys("1")
         t.wait("paste your OpenRouter key")
         t.typed("good-key-123")
@@ -110,10 +111,10 @@ def main():
         cfg = open(os.path.join(root, "config.toml")).read()
         assert '[roles]\nmain = "%s"' % PICK in cfg, cfg
         t.keys("Enter")
-        t.wait("2 · default model")
+        t.wait("2 · use it for…")
         t.keys("Escape")
         sc = t.wait("the keys i can use.")
-        assert re.search(r"OpenRouter +✓ ready · saved in bise", sc), sc
+        assert re.search(r"OpenRouter +✓ saved in bise", sc), sc
         t.keys("Escape")
         t.wait(NORMAL)
         # /model: OpenRouter's models now

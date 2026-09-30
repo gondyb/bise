@@ -413,6 +413,10 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
             // BISE-294: /provider may have changed the keys; the /model
             // that sent it there runs now its provider is set up
             crate::models::forget_keys();
+            // BISE-298: the voice picker turned voice on, or left it off
+            if let Some(out) = crate::onboarding::take_voice_out() {
+                crate::input::voice_out(app, out);
+            }
             if let Some(line) = crate::onboarding::provider_line() {
                 let evs = crate::sb::handle_input(app, &line);
                 let _ = evs;

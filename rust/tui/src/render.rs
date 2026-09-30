@@ -363,8 +363,11 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         },
         Ev::Info(t) => glyph_line(G_NOTE, Style::default().fg(faint()), bend_images::display(t), dim_st, width),
         Ev::Said { glyph, head, dim } => {
-            let st = if *glyph == "?" { Style::default().fg(accent()) } else { err_st };
-            let mut l = glyph_line(glyph, st, head.clone(), if *glyph == "?" { text_st } else { err_st }, width);
+            // ✗ a failure (error); ? it needs you, ✓ it worked (accent)
+            let calm = *glyph != "✗";
+            let st = if calm { Style::default().fg(accent()) } else { err_st };
+            let shown = if *glyph == "✓" { crate::theme::glyph(crate::theme::G_DONE) } else { glyph };
+            let mut l = glyph_line(shown, st, head.clone(), if calm { text_st } else { err_st }, width);
             for d in dim {
                 l.extend(glyph_line(" ", dim_st, d.clone(), dim_st, width));
             }
