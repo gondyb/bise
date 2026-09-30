@@ -1272,17 +1272,17 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
     d.innerHTML = `<div class="bar"><i></i><i></i><i></i><span>agent · ${name}</span></div><div class="bd">$ ${line}<br><span class="ask${err ? " err" : ""}">${ask}</span></div>`;
     stage.appendChild(d); wins.push(d);
     requestAnimationFrame(() => requestAnimationFrame(() => { d.style.opacity = "1"; d.style.transform = `rotate(${rot}deg)`; }));
-    setTimeout(() => { d.classList.add("nag"); waiting++; setStats(); }, 700);
+    setTimeout(() => { d.classList.add("nag"); waiting++; setStats(); }, 450);
     return d;
   }
   async function visit(d, id) {
     const r = d.getBoundingClientRect(), s = stage.getBoundingClientRect();
     you.style.left = (r.left - s.left + 40) + "px"; you.style.top = (r.top - s.top + r.height - 16) + "px";
-    await sleep(520); if (id !== run) return;
+    await sleep(380); if (id !== run) return;
     you.classList.remove("tap"); void you.offsetWidth; you.classList.add("tap");
     d.classList.remove("nag"); switches++; waiting = Math.max(0, waiting - 1); setStats();
-    d.querySelector(".ask").textContent = "…"; await sleep(260);
-    setTimeout(() => { if (id === run && state === "today") { d.querySelector(".ask").textContent = "waiting for you"; d.classList.add("nag"); waiting++; setStats(); } }, 2600);
+    d.querySelector(".ask").textContent = "…"; await sleep(160);
+    setTimeout(() => { if (id === run && state === "today") { d.querySelector(".ask").textContent = "waiting for you"; d.classList.add("nag"); waiting++; setStats(); } }, 1700);
   }
   async function today() {
     const id = ++run; state = "today"; stage.classList.remove("calm"); setFlip();
@@ -1292,12 +1292,12 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
     setStats();
     for (let i = 0; i < S.length; i++) {
       if (id !== run) return;
-      const d = spawn(i); await sleep(i < 5 ? 900 : 700);
+      const d = spawn(i); await sleep(i < 5 ? 520 : 420);
       if (i >= 1) { await visit(wins[Math.floor(Math.random() * wins.length)], id); }
       if (i === 4) { say("wait, what was i doing?", stage.clientWidth * .52, stage.clientHeight * .78); }
     }
-    for (let k = 0; k < 3 && id === run; k++) { await visit(wins[Math.floor(Math.random() * wins.length)], id); await sleep(150); }
-    await sleep(1200); if (id === run && !pinned) calm();
+    for (let k = 0; k < 2 && id === run; k++) { await visit(wins[Math.floor(Math.random() * wins.length)], id); await sleep(100); }
+    await sleep(800); if (id === run && !pinned) calm();
   }
   function calm() {
     const id = ++run; state = "bise"; setFlip(); bub.classList.remove("on"); you.style.opacity = "0";
