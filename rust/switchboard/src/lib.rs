@@ -19,6 +19,7 @@
 //! - `client`: how a client (TUI, headless test) reaches the hub.
 
 pub mod agents_md;
+pub mod approvals;
 pub mod board;
 pub mod cli;
 pub mod client;
