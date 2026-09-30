@@ -18,10 +18,14 @@ rules: one personal DM each, no repost ask, no upvote ask. send only to people y
 
 ---
 
-**Matt Pocock**
-> hey Matt! quick heads-up: today at 16:00 paris i'm putting out bise, a terminal app i built for coding with lots of agents from one thread. it runs the agents, you stay in flow. fun bit for you: the agents call tools by writing TypeScript. no ask, just wanted you to hear it from me first. bise.dev :*
+**Matt Pocock** (cold-ish, informal, before 14:30: an early look)
+> hey Matt! how's it going?
 >
-> (later, if he replies warmly: "would you be up for a live session some day? i'd show how i built it with itself.")
+> i've been working on a side project. multi-agent coding always drove me nuts (juggling sessions, being the router between them), so i built my own thing: bise.dev
+>
+> honestly it's the first setup that feels natural to me. it goes public this afternoon. want to give it a spin and tell me what you think?
+
+note: before 14:30 the repo is private, so the install won't work for him (to verify with main). if he says yes early: add him to the repo, or send the install line after 14:30.
 
 **Simon Willison**
 > hi Simon, heads-up: i'm open-sourcing bise today at 16:00 paris. it's a terminal app for running many coding agents from one thread per repo. two details you might like: tools are called by writing TypeScript (every MCP becomes functions), and it's honest about its limits (no approval mode yet, macOS only). no ask. bise.dev
