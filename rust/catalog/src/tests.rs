@@ -827,7 +827,7 @@ fn roles_come_from_the_roles_table_then_the_old_keys() {
     let s = setup("[roles]\nmain = \"mistral/mistral-medium-latest\"\n");
     assert_eq!(s.role_model(roles::AGENTS), ("mistral/mistral-medium-latest".to_string(), roles::Source::SameAs(roles::MAIN)));
     assert_eq!(s.role_model(roles::SMALL), ("mistral/mistral-small-latest".to_string(), roles::Source::Auto));
-    assert_eq!(s.role_model(roles::CLASSIFY).1, roles::Source::SameAs(roles::SMALL));
+    assert_eq!(s.role_model(roles::CLASSIFY).1, roles::Source::Auto);
     assert_eq!(s.role_model(roles::VOICE), ("mistral/voxtral-mini-latest".to_string(), roles::Source::Auto));
 }
 
@@ -875,7 +875,26 @@ fn every_role_has_its_words() {
         assert!(!r.name.is_empty() && !r.about.is_empty() && !r.env.is_empty(), "{:?}", r);
     }
     assert_eq!(roles::role("small").map(|r| r.label()), Some("small jobs (titles, summaries)".to_string()));
-    assert!(!roles::role("classify").unwrap().shown);
+    // approvals (design §4.2): the checker, designer's words
+    let c = roles::role("classify").unwrap();
+    assert!(c.shown);
+    assert_eq!(c.label(), "checker (in auto, decides which commands run and which ask you)");
+}
+
+#[test]
+fn the_checker_is_jev_first_then_the_small_model() {
+    let small = "mistral/mistral-small-latest";
+    assert_eq!(roles::checker_default(small, &|_| true), roles::JEV_TYPESAFE);
+    assert_eq!(roles::checker_default(small, &|p| p == "openrouter"), roles::JEV_OPENROUTER);
+    assert_eq!(roles::checker_default(small, &|_| false), small);
+    assert_eq!(roles::jev_of("typesafe/jev-1.13"), Some(("typesafe", "jev-1.13.0".to_string())));
+    assert_eq!(roles::jev_of("openrouter/typesafe/jev-1.13"), Some(("openrouter", "typesafe/jev-1.13".to_string())));
+    assert_eq!(roles::jev_of("openrouter/anthropic/claude-sonnet-5.5"), None);
+    // off stays off; TypeSafe answers questions, it does not chat
+    let s = crate::Setup::from_text(Some("[roles]\nclassify = \"off\"\n"), &|_| None);
+    assert_eq!(s.role_model(roles::CLASSIFY), ("off".to_string(), roles::Source::Picked));
+    let t = s.catalog.provider("typesafe").unwrap();
+    assert!(t.decides && !t.chats() && t.key_env == "TYPESAFE_API_KEY");
 }
 
 #[test]

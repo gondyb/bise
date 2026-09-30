@@ -123,8 +123,107 @@ fn models_lists_each_role_with_its_provider_then_its_model() {
     // what the role under the cursor is for, once, under the list
     assert!(sc.contains("main: talks with you and starts the agents."), "{sc}");
     assert!(sc.contains("↑↓ choose · enter change · esc back"), "{sc}");
-    // auto-confirm waits for its feature
-    assert!(!sc.contains("auto-confirm"), "{sc}");
+    // the checker (approvals): no Jev key, the small jobs model
+    assert!(line_of(&sc, "checker ").contains("auto · Mistral · mistral-small-latest"), "{sc}");
+}
+
+/// The checker's row, `design §4.2` and designer's words: Jev first,
+/// then a chat model, or off.
+#[test]
+fn the_checker_row_and_its_picker() {
+    let _s = serial();
+    let (e, hm) = home("checker", "[roles]\nmain = \"mistral/mistral-medium-latest\"\n", &["MISTRAL_API_KEY", "TYPESAFE_API_KEY"]);
+    let mut o = open(&e, Open::Roles);
+    let sc = screen(&o);
+    // unset, TypeSafe's key ready: Jev, dim like small jobs
+    assert!(line_of(&sc, "checker ").contains("auto · TypeSafe · jev-1.13"), "{sc}");
+    while shown().get(o.sel).map(|r| r.id) != Some("classify") {
+        o.on_key(key(KeyCode::Down), 1, &e);
+    }
+    let sc = screen(&o);
+    assert!(sc.split_whitespace().collect::<Vec<_>>().join(" ").contains("checker: in auto, decides which commands run and which ask you."), "{sc}");
+    o.on_key(key(KeyCode::Enter), 1, &e);
+    let sc = screen(&o);
+    assert!(sc.contains("checker: which provider?") && sc.contains("now: auto · TypeSafe · jev-1.13"), "{sc}");
+    assert!(sc.contains("the checker sees the command, the script it runs, and your request."), "{sc}");
+    assert!(line_of(&sc, "auto ").contains("TypeSafe · jev-1.13 · now"), "{sc}");
+    assert!(line_of(&sc, "TypeSafe ").contains("✓ ready · recommended"), "{sc}");
+    assert!(line_of(&sc, "OpenRouter ").contains("not set up · jev through OpenRouter"), "{sc}");
+    assert!(sc.contains("  ── or a chat model checks ──"), "{sc}");
+    assert!(line_of(&sc, "Mistral ").contains("✓ ready · main, agents, small jobs use it"), "{sc}");
+    assert_eq!(sc.lines().filter(|l| l.trim_start().starts_with("OpenRouter")).count(), 1, "OpenRouter is Jev's row only: {sc}");
+    assert!(sc.lines().any(|l| l.trim_start().trim_start_matches("› ") == "off · every command asks you"), "{sc}");
+    // the separator is stepped over
+    let rows = o.pick_rows("classify");
+    let sep = rows.iter().position(|r| *r == PRow::Sep).unwrap();
+    o.sel = sep - 1;
+    o.on_key(key(KeyCode::Down), 1, &e);
+    assert_eq!(o.sel, sep + 1);
+    o.on_key(key(KeyCode::Up), 1, &e);
+    assert_eq!(o.sel, sep - 1);
+    // TypeSafe: Jev at once, no model and no effort step
+    o.sel = rows.iter().position(|r| matches!(r, PRow::Jev(p, _) if p.id == "typesafe")).unwrap();
+    o.on_key(key(KeyCode::Enter), 1, &e);
+    assert!(cfg(&hm).contains("classify = \"typesafe/jev-1.13\""), "{}", cfg(&hm));
+    let sc = screen(&o);
+    assert!(sc.contains("which model does what?"), "back to /models: {sc}");
+    assert!(line_of(&sc, "checker ").contains("TypeSafe") && line_of(&sc, "checker ").contains("jev-1.13"), "{sc}");
+    // off: the row says so
+    o.on_key(key(KeyCode::Enter), 1, &e);
+    assert!(line_of(&screen(&o), "TypeSafe ").contains("✓ ready · now · recommended"), "{}", screen(&o));
+    o.sel = o.pick_rows("classify").iter().position(|r| *r == PRow::Off).unwrap();
+    o.on_key(key(KeyCode::Enter), 1, &e);
+    assert!(cfg(&hm).contains("classify = \"off\""), "{}", cfg(&hm));
+    assert!(line_of(&screen(&o), "checker ").contains("off · every command asks you"), "{}", screen(&o));
+    o.on_key(key(KeyCode::Enter), 1, &e);
+    let sc = screen(&o);
+    assert!(sc.contains("now: off · every command asks you"), "{sc}");
+    // one now: the off row's, not auto's
+    assert_eq!(sc.matches("· now").count(), 1, "{sc}");
+    assert!(sc.contains("off · every command asks you · now"), "{sc}");
+    assert_eq!(o.pick_rows("classify").get(o.sel), Some(&PRow::Off), "the cursor on off");
+}
+
+/// designer: the checker counts in the other roles' "use it" only when
+/// it checks (the mode is auto and it is not off), like voice when on.
+#[test]
+fn the_checker_is_named_on_its_provider_only_in_auto() {
+    let (e, hm) = home("checker-tags", "[roles]\nmain = \"mistral/mistral-medium-latest\"\n", &["MISTRAL_API_KEY"]);
+    let o = open(&e, Open::Pick("agents"));
+    assert!(line_of(&screen(&o), "Mistral ").contains("main, small jobs use it"), "{}", screen(&o));
+    std::fs::write(hm.config_file(), "approvals = \"auto\"\n[roles]\nmain = \"mistral/mistral-medium-latest\"\n").unwrap();
+    let o = open(&e, Open::Pick("agents"));
+    assert!(line_of(&screen(&o), "Mistral ").contains("main, small jobs, checker use it"), "{}", screen(&o));
+    std::fs::write(hm.config_file(), "approvals = \"auto\"\n[roles]\nmain = \"mistral/mistral-medium-latest\"\nclassify = \"off\"\n").unwrap();
+    let o = open(&e, Open::Pick("agents"));
+    assert!(line_of(&screen(&o), "Mistral ").contains("main, small jobs use it"), "{}", screen(&o));
+}
+
+#[test]
+fn a_chat_model_checks_and_openrouter_s_key_goes_first() {
+    let _s = serial();
+    let (e, hm) = home("checker-chat", "[roles]\nmain = \"mistral/mistral-medium-latest\"\n", &["MISTRAL_API_KEY"]);
+    let mut o = open(&e, Open::Pick("classify"));
+    // a chat provider: its models, the small one recommended, no effort
+    o.sel = o.pick_rows("classify").iter().position(|r| matches!(r, PRow::Provider(p) if p.id == "mistral")).unwrap();
+    o.on_key(key(KeyCode::Enter), 1, &e);
+    let sc = screen(&o);
+    assert!(sc.contains("checker · Mistral: which model?"), "{sc}");
+    assert!(line_of(&sc, "mistral-small-latest").contains("recommended"), "{sc}");
+    o.on_key(key(KeyCode::Enter), 1, &e);
+    assert!(cfg(&hm).contains("classify = \"mistral/mistral-small-latest\""), "{}", cfg(&hm));
+    // OpenRouter not set up: its key, checked on Jev, then saved
+    let mut o = open(&e, Open::Pick("classify"));
+    o.sel = o.pick_rows("classify").iter().position(|r| matches!(r, PRow::Jev(p, _) if p.id == "openrouter")).unwrap();
+    o.on_key(key(KeyCode::Enter), 1, &e);
+    assert!(matches!(&o.sub, Sub::Paste(p, m, _) if p.id == "openrouter" && m == "openrouter/typesafe/jev-1.13"), "{:?}", o.sub);
+    CALLS.lock().unwrap_or_else(|x| x.into_inner()).clear();
+    typed(&mut o, &e, "sk-or-good");
+    o.on_key(key(KeyCode::Enter), 1, &e);
+    settle(&mut o, &e);
+    let calls = CALLS.lock().unwrap_or_else(|x| x.into_inner()).clone();
+    assert_eq!(calls, vec![("openrouter/typesafe/jev-1.13 systemone".to_string(), false)]);
+    assert!(cfg(&hm).contains("classify = \"openrouter/typesafe/jev-1.13\""), "{}", cfg(&hm));
 }
 
 #[test]

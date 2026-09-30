@@ -18,16 +18,15 @@
 
 use std::path::{Path, PathBuf};
 
+use bise_catalog::roles;
 use serde_json::{json, Value};
 
 use super::{tiers, Call, CacheKey, Part};
 
 // ---- the route: which checker runs (design §4.2) ----
 
-/// Jev's catalog id (`typesafe/jev-1.13`).
-pub const JEV: &str = "jev-1.13";
 /// The `checker` role set to off (`[roles] classify = "off"`).
-pub const OFF: &str = "off";
+pub const OFF: &str = roles::CHECKER_OFF;
 
 /// Where Jev is reached. Both speak TypeSafe's System One API
 /// (`POST <base>/v1/systemone`), with their own key and model id.
@@ -49,31 +48,22 @@ pub enum Route {
 
 impl Route {
     /// The role's model as `Setup::role_model` gives it ("" = unset),
-    /// with `ready(provider id)` = its key is there. Unset: Jev through
-    /// TypeSafe when its key is ready, else through OpenRouter when that
-    /// key is, else `small` (the small jobs model).
+    /// with `ready(provider id)` = its key is there. Unset:
+    /// `roles::checker_default` (Jev through TypeSafe, else OpenRouter,
+    /// else `small`, the small jobs model).
     pub fn of(model: &str, small: &str, ready: &dyn Fn(&str) -> bool) -> Route {
         let m = model.trim();
         if m == OFF {
             return Route::Off;
         }
-        if let Some(id) = m.strip_prefix("typesafe/") {
-            return Route::Jev { via: Via::TypeSafe, model: typesafe_wire_id(id) };
+        if m.is_empty() {
+            let d = roles::checker_default(small, ready);
+            return if d.is_empty() { Route::Off } else { Route::of(&d, small, ready) };
         }
-        if let Some(id) = m.strip_prefix("openrouter/typesafe/") {
-            return Route::Jev { via: Via::OpenRouter, model: format!("typesafe/{}", id) };
-        }
-        if !m.is_empty() {
-            return Route::Chat { model: m.to_string() };
-        }
-        if ready("typesafe") {
-            Route::of(&format!("typesafe/{}", JEV), small, ready)
-        } else if ready("openrouter") {
-            Route::of(&format!("openrouter/typesafe/{}", JEV), small, ready)
-        } else if small.is_empty() {
-            Route::Off
-        } else {
-            Route::Chat { model: small.to_string() }
+        match roles::jev_of(m) {
+            Some(("typesafe", model)) => Route::Jev { via: Via::TypeSafe, model },
+            Some((_, model)) => Route::Jev { via: Via::OpenRouter, model },
+            None => Route::Chat { model: m.to_string() },
         }
     }
 
@@ -95,16 +85,6 @@ impl Route {
             Route::Chat { model } => model.clone(),
             Route::Off => String::new(),
         }
-    }
-}
-
-/// TypeSafe's API names its versions `jev-1.13.0` (OpenRouter takes
-/// `typesafe/jev-1.13`).
-fn typesafe_wire_id(id: &str) -> String {
-    if id.matches('.').count() == 1 && id.starts_with("jev-") {
-        format!("{}.0", id)
-    } else {
-        id.to_string()
     }
 }
 

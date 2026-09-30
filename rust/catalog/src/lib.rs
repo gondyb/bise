@@ -873,8 +873,9 @@ pub struct Setup {
     pub agent_effort: String,
     /// the voice input's choices (BISE-130): `[voice]` in config.toml
     pub voice: voice::VoiceSetup,
-    /// the auto-confirm role's model (BISE-298: declared, no feature
-    /// yet): BISE_CLASSIFY_MODEL > `[roles] classify` > small_model
+    /// the checker's model (approvals, design §4.2): BISE_CLASSIFY_MODEL,
+    /// else `[roles] classify` ("off" included), else small_model with
+    /// "default": with the keys, [`roles::checker_default`] picks Jev first
     pub classify_model: String,
     pub classify_model_from: &'static str,
     /// config `compaction_threshold` as written (BISE-300): "450000" or
@@ -1072,7 +1073,9 @@ impl Setup {
         } else if let Some(m) = classify_cfg {
             (checker(m), "config")
         } else {
-            (small_model.clone(), "small_model")
+            // unset: TypeSafe, OpenRouter, the small jobs model, by the
+            // keys (roles::checker_default); the last one here
+            (small_model.clone(), "default")
         };
         let effort = effort_cfg.unwrap_or_default();
         let agent_effort = agent_effort_cfg.unwrap_or_else(|| effort.clone());

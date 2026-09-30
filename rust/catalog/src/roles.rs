@@ -62,6 +62,34 @@ pub const VOICE: &str = "voice";
 pub const CLASSIFY: &str = "classify";
 /// The checker's model when it is off (`[roles] classify = "off"`).
 pub const CHECKER_OFF: &str = "off";
+/// Jev through TypeSafe's API, and through OpenRouter (design §4.2).
+pub const JEV_TYPESAFE: &str = "typesafe/jev-1.13";
+pub const JEV_OPENROUTER: &str = "openrouter/typesafe/jev-1.13";
+
+/// A Jev model (`typesafe/<id>`, `openrouter/typesafe/<id>`): the
+/// provider that serves it and its id on that provider's System One API
+/// (TypeSafe names its versions `jev-1.13.0`, OpenRouter
+/// `typesafe/jev-1.13`). None: not Jev.
+pub fn jev_of(model: &str) -> Option<(&'static str, String)> {
+    if let Some(id) = model.strip_prefix("typesafe/") {
+        let wire = if id.starts_with("jev-") && id.matches('.').count() == 1 { format!("{}.0", id) } else { id.to_string() };
+        return Some(("typesafe", wire));
+    }
+    model.strip_prefix("openrouter/typesafe/").map(|id| ("openrouter", format!("typesafe/{}", id)))
+}
+
+/// The checker's model when the role is unset: Jev through TypeSafe when
+/// its key is ready, else through OpenRouter when that key is, else the
+/// small jobs model (`ready`: a provider id has its key).
+pub fn checker_default(small: &str, ready: &dyn Fn(&str) -> bool) -> String {
+    if ready("typesafe") {
+        JEV_TYPESAFE.into()
+    } else if ready("openrouter") {
+        JEV_OPENROUTER.into()
+    } else {
+        small.into()
+    }
+}
 
 /// Every role, in the order the screens list them.
 pub const ROLES: &[Role] = &[
@@ -105,16 +133,16 @@ pub const ROLES: &[Role] = &[
         old_effort: "",
         shown: true,
     },
-    // the auto-confirm of tool calls: declared, no feature yet
+    // approvals (design §4.2): Jev, a chat model, or off
     Role {
         id: CLASSIFY,
-        name: "auto-confirm",
-        about: "sorts tool calls",
+        name: "checker",
+        about: "in auto, decides which commands run and which ask you",
         kind: Kind::Chat,
         env: &["BISE_CLASSIFY_MODEL"],
         old_key: "",
         old_effort: "",
-        shown: false,
+        shown: true,
     },
 ];
 

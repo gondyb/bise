@@ -756,6 +756,10 @@ impl Onb {
         let (api, base_url, id) = if voice {
             let r = self.setup.catalog.resolve_stt(&model);
             (r.api, r.base_url, r.id)
+        } else if let Some((_, wire)) = bise_catalog::roles::jev_of(&model) {
+            // the checker's Jev (approvals): one tiny System One question
+            let r = self.setup.catalog.resolve(&model);
+            (crate::keycheck::SYSTEM_ONE.to_string(), r.base_url, wire)
         } else {
             let r = self.setup.catalog.resolve(&model);
             (r.api, r.base_url, r.id)

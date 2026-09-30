@@ -78,13 +78,29 @@ const SAID_MAX: usize = 200;
 /// seconds ago may not have reached every server yet).
 const RETRY_AFTER: Duration = Duration::from_secs(3);
 
+/// The key check's family for a Jev model (the checker): not a chat
+/// family, TypeSafe's System One API.
+pub(crate) const SYSTEM_ONE: &str = "systemone";
+
 /// The request of a call (its url, headers and body).
 pub(crate) fn request(c: &Call, env: &dyn Fn(&str) -> Option<String>) -> crate::voice::http::Request {
     if c.voice {
         return voice_request(c);
     }
     let base = c.base_url.trim_end_matches('/');
-    let (endpoint, mut headers, body) = if c.api == "anthropic" {
+    let (endpoint, mut headers, body) = if c.api == SYSTEM_ONE {
+        // TypeSafe's Jev, directly or through OpenRouter (approvals):
+        // one yes/no question on a word
+        (
+            format!("{base}/systemone"),
+            vec![("Authorization".to_string(), format!("Bearer {}", c.key))],
+            serde_json::json!({
+                "model": c.model,
+                "state": "hi",
+                "questions": { "ok": { "type": "noul", "instructions": "The state is a greeting." } },
+            }),
+        )
+    } else if c.api == "anthropic" {
         (
             format!("{base}/messages"),
             vec![("x-api-key".to_string(), c.key.clone()), ("anthropic-version".to_string(), "2023-06-01".to_string())],
@@ -353,6 +369,19 @@ mod tests {
         assert_eq!(request(&call("openai-chat", "mistral"), &fake).url, "http://127.0.0.1:9/v1/chat/completions");
         // the key never shows in the debug form
         assert!(!format!("{:?} {:?}", call("anthropic", "a"), r).contains("k-secret"));
+    }
+
+    /// approvals: Jev's key is checked with one System One question,
+    /// on TypeSafe's API or OpenRouter's
+    #[test]
+    fn a_jev_key_is_checked_with_one_question() {
+        let none = |_: &str| None;
+        let r = request(&call(SYSTEM_ONE, "typesafe"), &none);
+        assert_eq!(r.url, "https://x.test/v1/systemone");
+        assert!(r.headers.iter().any(|(k, v)| k == "Authorization" && v == "Bearer k-secret"));
+        let b: serde_json::Value = serde_json::from_slice(&r.body).unwrap();
+        assert_eq!(b["model"], "m1");
+        assert_eq!(b["questions"]["ok"]["type"], "noul");
     }
 
     /// BISE-298: a voice model's check transcribes half a second of

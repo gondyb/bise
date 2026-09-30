@@ -82,6 +82,13 @@ pub(crate) enum PRow {
     Provider(Provider),
     /// `more providers…`: the hidden ones not set up (their names)
     More(Vec<String>),
+    /// the checker (approvals): Jev through this provider (its model);
+    /// no model or effort step
+    Jev(Provider, String),
+    /// the checker: "or a chat model checks", dim, not selectable
+    Sep,
+    /// the checker: `off · every command asks you`
+    Off,
 }
 
 /// The roles `/models` lists.
@@ -95,6 +102,7 @@ pub(super) fn who(id: &str) -> &'static str {
         r::MAIN => "main",
         r::AGENTS => "the agents",
         r::SMALL => "small jobs",
+        r::CLASSIFY => "the checker",
         _ => "voice",
     }
 }
@@ -195,7 +203,18 @@ impl Onb {
 
     /// The model a role runs and where it comes from.
     pub(crate) fn role_model(&self, id: &str) -> (String, Source) {
-        self.setup.role_model(id)
+        let (m, src) = self.setup.role_model(id);
+        if id == r::CLASSIFY && src == Source::Auto {
+            return (self.checker_auto(), src);
+        }
+        (m, src)
+    }
+
+    /// The checker's model when unset: Jev by the keys ready, else the
+    /// small jobs model (`roles::checker_default`).
+    fn checker_auto(&self) -> String {
+        let ready = |pid: &str| self.setup.catalog.provider(pid).is_some_and(|p| self.ready(&Provider::of(p)));
+        r::checker_default(&self.setup.small_model, &ready)
     }
 
     /// The role runs a model of its own (picked, or an env var's).
@@ -217,9 +236,13 @@ impl Onb {
     /// menu, the remove confirm, the steps' notes). Voice only while it
     /// is on.
     pub(crate) fn roles_of(&self, p: &str) -> Vec<&'static r::Role> {
+        // voice only while it is on, the checker only while it checks
+        // (designer): the mode is auto and it is not off
+        let checks = || auto_mode(self) && self.role_model(r::CLASSIFY).0 != r::CHECKER_OFF;
         shown()
             .into_iter()
             .filter(|x| x.id != r::VOICE || self.voice_enabled())
+            .filter(|x| x.id != r::CLASSIFY || checks())
             .filter(|x| {
                 let (m, src) = self.role_model(x.id);
                 src != Source::None && bise_catalog::split_name(&m).is_some_and(|(pid, _)| pid == p)
@@ -232,6 +255,7 @@ impl Onb {
         match id {
             r::AGENTS => Some(self.setup.model.clone()),
             r::SMALL => Some(self.setup.catalog.small_of(&self.setup.agent_model).unwrap_or_else(|| self.setup.agent_model.clone())),
+            r::CLASSIFY => Some(self.checker_auto()),
             _ => None,
         }
     }
@@ -240,6 +264,17 @@ impl Onb {
     /// the others, then `more providers…` until it is opened.
     pub(crate) fn pick_rows(&self, id: &str) -> Vec<PRow> {
         let mut v: Vec<PRow> = self.fallback_of(id).into_iter().map(PRow::Fallback).collect();
+        // the checker (design §4.2): Jev's two routes, then the chat
+        // providers but OpenRouter (it is Jev's row), then off
+        let checker = id == r::CLASSIFY;
+        if checker {
+            for (pid, m) in [("typesafe", r::JEV_TYPESAFE), ("openrouter", r::JEV_OPENROUTER)] {
+                if let Some(p) = self.setup.catalog.provider(pid) {
+                    v.push(PRow::Jev(Provider::of(p), m.to_string()));
+                }
+            }
+            v.push(PRow::Sep);
+        }
         let (list, rest): (Vec<Provider>, Vec<Provider>) = if id == r::VOICE {
             let mut l = self.voice_providers();
             // a voice model picked on a hidden provider stays in view
@@ -252,16 +287,30 @@ impl Onb {
             let ready = |p: &bise_catalog::Provider| self.ready(&Provider::of(p));
             let (offered, others) = provider::all_providers(&self.setup, &ready);
             let more = self.pn().more;
+            let chat = |p: &Provider| self.chats(p) && !(checker && p.id == "openrouter");
             let (shown, rest): (Vec<Provider>, Vec<Provider>) =
-                others.into_iter().filter(|p| self.chats(p)).partition(|p| more || self.ready(p));
-            (offered.into_iter().filter(|p| self.chats(p)).chain(shown).collect(), rest)
+                others.into_iter().filter(|p| chat(p)).partition(|p| more || self.ready(p));
+            (offered.into_iter().filter(|p| chat(p)).chain(shown).collect(), rest)
         };
         let (ready, not): (Vec<Provider>, Vec<Provider>) = list.into_iter().partition(|p| self.ready(p));
         v.extend(ready.into_iter().chain(not).map(PRow::Provider));
         if !rest.is_empty() {
             v.push(PRow::More(rest.into_iter().map(|p| p.name).collect()));
         }
+        if checker {
+            v.push(PRow::Off);
+        }
         v
+    }
+
+    /// The row of `which provider?` that shows `model` for the checker:
+    /// off, a Jev route, else its provider's.
+    fn checker_row(&self, rows: &[PRow], model: &str) -> Option<usize> {
+        rows.iter().position(|x| match x {
+            PRow::Off => model == r::CHECKER_OFF,
+            PRow::Jev(_, m) => m == model,
+            _ => false,
+        })
     }
 
     /// The row `which provider?` opens on: the role's own provider, else
@@ -271,6 +320,11 @@ impl Onb {
         let rows = self.pick_rows(id);
         let at = |pid: &str| rows.iter().position(|x| matches!(x, PRow::Provider(p) if p.id == pid));
         let (m, _) = self.role_model(id);
+        if id == r::CLASSIFY && self.own(id) {
+            if let Some(i) = self.checker_row(&rows, &m) {
+                return i;
+            }
+        }
         if self.own(id) || id == r::MAIN {
             if let Some(i) = bise_catalog::split_name(&m).and_then(|(pid, _)| at(pid)) {
                 return i;
@@ -295,7 +349,8 @@ impl Onb {
         let c = self.setup.catalog.provider(&p.id)?;
         let m = match id {
             r::VOICE => &c.voice_model,
-            r::SMALL => &c.small_model,
+            // the checker: a small fast model is enough (design §4.2)
+            r::SMALL | r::CLASSIFY => &c.small_model,
             _ => &c.model,
         };
         (!m.is_empty()).then(|| format!("{}/{}", p.id, m))
@@ -320,7 +375,7 @@ impl Onb {
         self.pn_mut().key_first = false;
         let rows = self.pick_rows(id);
         self.sel = p
-            .and_then(|p| rows.iter().position(|x| matches!(x, PRow::Provider(q) if q.id == p.id)))
+            .and_then(|p| rows.iter().position(|x| matches!(x, PRow::Provider(q) | PRow::Jev(q, _) if q.id == p.id)))
             .unwrap_or_else(|| self.preselect(id));
         Sub::List
     }
@@ -495,14 +550,27 @@ impl Onb {
             // ---- 1. which provider? ----
             (Screen::Pick(..), Sub::List, KeyCode::Esc) => self.back(None),
             (Screen::Pick(id, _), Sub::List, KeyCode::Up | KeyCode::Down) => {
-                self.sel = updown(self.sel, self.pick_rows(id).len());
+                let rows = self.pick_rows(id);
+                self.sel = updown(self.sel, rows.len());
+                // the checker's separator picks nothing: stepped over
+                if rows.get(self.sel) == Some(&PRow::Sep) {
+                    self.sel = updown(self.sel, rows.len());
+                }
                 Sub::List
             }
             (Screen::Pick(id, _), Sub::List, KeyCode::Enter) => {
                 let id: &'static str = id;
                 match self.pick_rows(id).get(self.sel).cloned() {
-                    None => Sub::List,
+                    None | Some(PRow::Sep) => Sub::List,
                     Some(PRow::Fallback(_)) => self.picked(id, None, None, env),
+                    Some(PRow::Off) => self.picked(id, Some(r::CHECKER_OFF), None, env),
+                    // Jev: one model, no effort; not set up: its key first
+                    Some(PRow::Jev(p, m)) if self.ready(&p) => self.picked(id, Some(&m), None, env),
+                    Some(PRow::Jev(p, m)) => {
+                        self.pn_mut().key_first = false;
+                        self.note = None;
+                        Sub::Paste(p, m, String::new())
+                    }
                     // the hidden ones take its row: the cursor is on the first
                     Some(PRow::More(_)) => {
                         self.pn_mut().more = true;
@@ -691,6 +759,8 @@ fn role_row(o: &Onb, role: &r::Role, selected: bool, flash: bool, w: usize, pw: 
     let extra = if extra.is_empty() { extra } else { format!(" {} {}", d, extra) };
     let voice_off = role.id == r::VOICE && !o.voice_enabled();
     let voice_none = role.id == r::VOICE && src == Source::Auto && !o.provider_of(&m).is_some_and(|p| o.ready(&p));
+    // the checker off (designer): the row says so, dim
+    let checker_off = role.id == r::CLASSIFY && (m == r::CHECKER_OFF || m.is_empty());
     let mut pieces: Vec<Span<'static>> = Vec::new();
     // the provider in its column, then the model id
     let what = |pieces: &mut Vec<Span<'static>>| {
@@ -709,6 +779,7 @@ fn role_row(o: &Onb, role: &r::Role, selected: bool, flash: bool, w: usize, pw: 
     } else {
         match src {
             _ if voice_none || (voice_off && src != Source::Picked) => pieces.push(s(format!("off {} enter sets it up", d), theme::dim())),
+            _ if checker_off => pieces.push(s(format!("off {} every command asks you", d), theme::dim())),
             Source::None => pieces.push(s(format!("none yet {} enter picks one", d), theme::dim())),
             Source::Picked | Source::Env(_) => {
                 what(&mut pieces);
@@ -751,9 +822,30 @@ fn role_hint(id: &str) -> &'static str {
         r::MAIN => "talks with you and starts the agents.",
         r::AGENTS => "the ones main starts, for the work it hands out.",
         r::SMALL => "titles and summaries. a small fast model is enough.",
+        r::CLASSIFY => "in auto, decides which commands run and which ask you.",
         _ => "you talk, it types in the composer.",
     }
 }
+
+/// The approvals mode is `auto` (`BISE_APPROVALS` for this session, else
+/// config.toml's `approvals`; unset: `yolo`, design §8): the checker is
+/// used only then.
+fn auto_mode(o: &Onb) -> bool {
+    let from_env = std::env::var("BISE_APPROVALS").ok().filter(|v| !v.trim().is_empty());
+    let mode = from_env.or_else(|| {
+        // a top-level key: the lines before the first table
+        let text = std::fs::read_to_string(o.home.config_file()).ok()?;
+        text.lines().take_while(|l| !l.trim_start().starts_with('[')).find_map(|l| {
+            let (k, v) = l.split_once('=')?;
+            (k.trim() == "approvals").then(|| v.split('#').next().unwrap_or("").trim().trim_matches('"').to_string())
+        })
+    });
+    mode.is_some_and(|m| m.trim() == "auto")
+}
+
+/// What leaves the machine with the checker (design §4.7, the tip's
+/// words).
+const CHECKER_SEES: &str = "the checker sees the command, the script it runs, and your request.";
 
 /// The dim line under `which provider?`: what the role runs now
 /// (`now: OpenAI · gpt-6-luna · medium`); voice: what the list holds.
@@ -763,6 +855,9 @@ fn now_words(o: &Onb, id: &str) -> String {
     }
     let (m, src) = o.role_model(id);
     let d = dot();
+    if id == r::CLASSIFY && m == r::CHECKER_OFF {
+        return format!("now: off {} every command asks you", d);
+    }
     let extra = role_extra(o, id);
     let extra = if extra.is_empty() { extra } else { format!(" {} {}", d, extra) };
     let what = if o.provider_name(&m).is_empty() { m.clone() } else { format!("{} {} {}", o.provider_name(&m), d, short_model(&m)) };
@@ -781,6 +876,9 @@ fn provider_lines(o: &Onb, id: &'static str, w: u16, gap: usize, said: &dyn Fn(&
     let pn = o.panel.as_ref().expect("panel");
     let role = r::role(id).expect("role");
     let mut v = vec![title(format!("{}: which provider?", role.name)), Line::from(s(now_words(o, id), theme::dim()))];
+    if id == r::CLASSIFY {
+        v.push(Line::from(s(CHECKER_SEES, theme::dim())));
+    }
     blanks(&mut v, gap);
     let rows = o.pick_rows(id);
     let d = dot();
@@ -788,8 +886,9 @@ fn provider_lines(o: &Onb, id: &'static str, w: u16, gap: usize, said: &dyn Fn(&
         .iter()
         .map(|x| match x {
             PRow::Fallback(_) => fallback_word(id).width(),
-            PRow::Provider(p) => p.name.width(),
+            PRow::Provider(p) | PRow::Jev(p, _) => p.name.width(),
             PRow::More(_) => "more providers…".width(),
+            PRow::Sep | PRow::Off => 0,
         })
         .max()
         .unwrap_or(0)
@@ -807,10 +906,44 @@ fn provider_lines(o: &Onb, id: &'static str, w: u16, gap: usize, said: &dyn Fn(&
     for (k, row) in rows.iter().enumerate().skip(from).take(LIST_ROWS) {
         let mut name: Vec<Span<'static>> = Vec::new();
         match row {
+            // a divider, not a row (designer)
+            PRow::Sep => {
+                v.push(Line::from(s("  ── or a chat model checks ──", theme::faint())));
+                continue;
+            }
+            PRow::Off => {
+                name.push(s("off", theme::text()));
+                let mut t = format!(" {} every command asks you", d);
+                if o.own(id) && current == r::CHECKER_OFF {
+                    t.push_str(&format!(" {} now", d));
+                }
+                name.push(s(t, theme::dim()));
+            }
+            PRow::Jev(p, m) => {
+                name.push(s(pad(&p.name, nw), theme::text()));
+                if o.ready(p) {
+                    name.push(s("✓ ", theme::accent()));
+                    name.push(s("ready", theme::text()));
+                } else {
+                    name.push(s("not set up", theme::dim()));
+                }
+                if o.own(id) && current == *m {
+                    name.push(s(format!(" {} now", d), theme::dim()));
+                }
+                // designer: TypeSafe recommended (accent), OpenRouter says
+                // it serves Jev
+                if p.id == "typesafe" {
+                    name.push(s(format!(" {} ", d), theme::dim()));
+                    name.push(s("recommended", theme::accent()));
+                } else {
+                    name.push(s(format!(" {} jev through {}", d, p.name), theme::dim()));
+                }
+            }
             PRow::Fallback(m) => {
                 name.push(s(pad(fallback_word(id), nw), theme::text()));
                 let mut t = format!("{} {} {}", o.provider_name(m), d, short_model(m));
-                if now_pid.is_none() {
+                // unset: the fallback runs (the checker off is its own row)
+                if !o.own(id) {
                     t.push_str(&format!(" {} now", d));
                 }
                 name.push(s(t, theme::dim()));
