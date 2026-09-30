@@ -18,10 +18,9 @@
     -webkit-mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); }
   .v.nomask pre { -webkit-mask-image:radial-gradient(ellipse 46% 30% at 50% 46%, transparent 20%, #000 80%); mask-image:radial-gradient(ellipse 46% 30% at 50% 46%, transparent 20%, #000 80%); }
   .v .lay { position:absolute; inset:0; pointer-events:none; overflow:hidden; font-size:14px; line-height:1.4; }
-  .v .bub { position:absolute; left:0; top:0; padding:3px 10px 4px; background:var(--raised); border:1px solid var(--faint); border-radius:10px 10px 10px 3px; color:var(--text); font-size:13px; white-space:nowrap; opacity:0; transition:transform .5s cubic-bezier(.25,.8,.3,1), opacity .35s; z-index:2; }
+  .v .bub { position:absolute; left:0; top:0; color:var(--dim); font-size:13px; white-space:nowrap; opacity:0; transition:opacity .6s ease; z-index:2; text-shadow:0 0 6px var(--bg), 0 0 2px var(--bg); }
   .v .bub.on { opacity:1; } .v .bub .acc { color:var(--acc); }
-  .v .bub::after { content:""; position:absolute; left:8px; bottom:-5px; width:8px; height:8px; background:var(--raised); border-right:1px solid var(--faint); border-bottom:1px solid var(--faint); transform:rotate(45deg); }
-  .v .bub.pop { animation:bpop .35s cubic-bezier(.3,1.6,.5,1); } @keyframes bpop { 0% { scale:.85; } 100% { scale:1; } }
+  .v .bub.pop { animation:bin .7s ease-out; } @keyframes bin { from { opacity:0; translate:0 5px; } to { opacity:1; translate:0 0; } }
   .v .lay span { position:absolute; left:0; top:0; white-space:pre; color:var(--dim); transition:transform .5s cubic-bezier(.25,.8,.3,1), opacity .45s; will-change:transform; }
   .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .f { color:var(--faint); } .v pre .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } .v pre .d { color:var(--dim); } .v pre .t { color:var(--text); }
   .hero { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; pointer-events:none; }
@@ -39,7 +38,7 @@
 <body>
 <div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
 
-<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.<div class="lbls nm">names: <button data-n="bubble" class="on">bise says it</button><button data-n="events">events only</button><button data-n="glide">glide</button><button data-n="jump">jump (before)</button><button data-n="none">no names</button><button id="notitle">hide the title too</button></div><div class="lbls thr">thread: <button data-t="wake" class="on">wake</button><button data-t="pulses">pulses</button><button data-t="waves">waves</button><button data-t="tide">tide</button><button data-t="swell">swell</button><button data-t="ripple">ripple</button><button data-t="trail">trail</button><button data-t="shimmer">shimmer</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into little grey seeds, from the kiss back to where it started. what bise says fades in under the thread.<div class="lbls nm">names: <button data-n="bubble" class="on">bise says it (under)</button><button data-n="events">events only</button><button data-n="glide">glide</button><button data-n="jump">jump (before)</button><button data-n="none">no names</button><button id="notitle">hide the title too</button></div><div class="lbls thr">thread: <button data-t="wake" class="on">wake</button><button data-t="pulses">pulses</button><button data-t="waves">waves</button><button data-t="tide">tide</button><button data-t="swell">swell</button><button data-t="ripple">ripple</button><button data-t="trail">trail</button><button data-t="shimmer">shimmer</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
 <section class="v" data-v="seeds"><div class="tag"><b>7 · seeds</b> <span class="pick">new · mix of 5 and 6</span><br>the dandelion sky, plus one thread. now and then an agent lifts off the thread like a seed (∿ name), floats a while, and lands further along with a ✓. the thread's :* keeps walking.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
@@ -295,7 +294,7 @@ const V = {
     };
   },
   branch(s) {
-    s.p = []; s.b = []; s.ev = []; s.evn = 0; s.q = []; s.cur = null; s.kx = -2; s.flash = 0; s.last = -99;
+    s.p = []; s.puff = []; s.b = []; s.ev = []; s.evn = 0; s.q = []; s.cur = null; s.kx = -2; s.flash = 0; s.last = -99;
     const NAMES = ["feat: throw confetti", "feat: dark mode", "feat: gif picker", "feat: drag & drop", "feat: party mode", "feat: hide a konami code",
       "feat: typing dots", "feat: voice notes", "feat: emoji reactions", "fix: emoji in csv export", "fix: search crème brûlée", "fix: sad 404 page",
       "fix: dark mode flash", "perf: faster signup", "style: rounder buttons", "feat: leaderboard"];
@@ -309,7 +308,7 @@ const V = {
     };
     const verb = (m) => m.startsWith("fix") ? "fixed" : m.startsWith("feat") ? "implemented" : "done";
     return (g, t) => {
-      const Y = Math.round(g.rows * .86);
+      const Y = Math.round(g.rows * .8);
       // a fuller dandelion sky: seeded at once over the whole hero, then fed from the bottom and the left edge
       const seed = (x, y) => s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: 1e9 });
       if (!s.sown) { s.sown = true; for (let k = 0; k < 150; k++) seed(rnd(0, g.cols), rnd(0, g.rows)); }
@@ -353,7 +352,8 @@ const V = {
         for (let i = 0; i <= b.p; i++) pts.push([b.xs + i, Y + b.dir * b.A * Math.sin(Math.PI * i / b.L)]);
         // back on the thread, it waits for the kiss to pick it up
         if (b.p >= b.L && s.kx >= b.xs + b.L - 1) {
-          for (const [x, y] of pts) if (Math.random() < .55) s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: rnd(50, 160) });
+          // the arc comes apart from the kiss back to where it started: each dot puffs out a little grey seed
+          pts.forEach(([x, y], i) => { if (Math.random() < .8) s.puff.push({ x, y, vx: rnd(-.1, .45), vy: rnd(-.45, .05), life: rnd(22, 48), wait: Math.floor((pts.length - 1 - i) * .3) }); });
           s.flash = 10; PULSES.push({ x: kx, t0: t });
           if (BUBBLE) s.q.push(`shipped · ${b.name} <span class="acc">✓</span>`);
           return false;
@@ -361,6 +361,12 @@ const V = {
         dots(g, pts);
         b.head = b.p < b.L ? pts[pts.length - 1] : null;
         return true;
+      });
+      s.puff = s.puff.filter(p => {
+        if (p.wait > 0) { p.wait--; g.put(p.x, p.y, "·"); return true; }
+        p.x += p.vx + .05; p.y += p.vy - .015; p.vx *= .92; p.vy *= .92;
+        g.put(p.x, p.y, p.life > 34 ? "∗" : p.life > 14 ? "·" : ".", p.life > 14 ? "d" : "");
+        return --p.life > 0;
       });
       // the thread goes over the arcs' ends and the seeds, so it never shows holes
       for (let x = 0; x < g.cols; x++) g.put(x, Y, " ");
@@ -387,8 +393,8 @@ const V = {
       if (BUBBLE) {
         // one line at a time, ~2.5 s each; if bise has more to say, only the newest waits
         if (s.q.length > 1) s.q = s.q.slice(-1);
-        if ((!s.cur || s.cur.n <= 0) && s.q.length) s.cur = { text: s.q.shift(), n: 34 };
-        if (s.cur && s.cur.n-- > -8) g.bubble = { text: s.cur.n > 0 ? s.cur.text : "", x: kx, y: Y };
+        if ((!s.cur || s.cur.n <= 0) && s.q.length) s.cur = { text: s.q.shift(), n: 34, x: kx };
+        if (s.cur && s.cur.n-- > -8) g.bubble = { text: s.cur.n > 0 ? s.cur.text : "", x: s.cur.x, y: Math.min(g.rows - 2, Y + 2) };
       } else if (EVENTS) {
         s.ev = s.ev.filter(e => --e.n > 0);
         for (const e of s.ev) if (g.labels) g.labels.push({ id: e.id, text: e.text, a: e.a, r: e.r }); else g.str(e.a, e.r, e.text, "d");
@@ -473,12 +479,14 @@ for (const sec of document.querySelectorAll(".v")) {
   const step = V[sec.dataset.v](s, sec);
   const lay = document.createElement("div"); lay.className = "lay"; lay.setAttribute("aria-hidden", "true"); sec.insertBefore(lay, sec.querySelector(".hero"));
   const shown = new Map();
-  // bise's bubble: rides over the kiss, pops when it says something new
+  // what bise says: a small line under the thread, where the kiss was when it said it. it fades in and out, and never covers an arc
   const bub = document.createElement("div"); bub.className = "bub"; lay.append(bub); let said = "";
   const talk = (m) => {
     if (!m || !m.text) { bub.classList.remove("on"); return; }
-    bub.style.transform = `translate(${m.x * cw - 10}px, ${(m.y - 1) * lh}px) translateY(-100%)`;
-    if (m.text !== said) { said = m.text; bub.innerHTML = m.text; bub.classList.remove("pop"); void bub.offsetWidth; bub.classList.add("pop"); }
+    if (m.text !== said) {
+      said = m.text; bub.innerHTML = m.text; bub.classList.remove("pop"); void bub.offsetWidth; bub.classList.add("pop");
+      bub.style.transform = `translate(${Math.max(8, Math.min(m.x * cw - 4, pre.clientWidth - bub.offsetWidth - 16))}px, ${m.y * lh}px)`;
+    }
     bub.classList.add("on");
   };
   const glide = (ls) => {
