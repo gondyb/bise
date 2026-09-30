@@ -743,8 +743,8 @@ def replay(+history: List<&2, T.Msg>) -> List<&2, String>:
 # then applied on a session that already holds the steering, and
 # dispatch injects it into the next model input.
 
-def steer_path_of(+port: String) -> String:
-  String.append("/tmp/bend-steer-", String.append(port, ".txt"))
+def steer_path_of(+dir: String, +port: String) -> String:
+  String.append(dir, String.append("/bend-steer-", String.append(port, ".txt")))
 
 # ---- the harness-info line: what every client must know ----
 # The REPL is the single source of truth. Both clients (the TUI via

@@ -128,6 +128,59 @@ def bg_after.clamp(+secs: U32) -> U32:
 def bg_dir_of(+root: String, +port: String) -> String:
   String.append(root, String.append("/bend-bg-", port))
 
+# ---- the agent's own folders (approvals-tmp, approvals-design.md §7.1) ----
+# The harness writes nothing in /tmp. Its own files (the bash wrappers,
+# steer, interrupt, the run_typescript files, the plugins and skills
+# scripts) go to the "side dir": BEND_AGENT_RUN (the hub sets it to
+# ~/.bise/hubs/<hub>/agents/<agent>/run), else $TMPDIR (a headless run:
+# tests, bench, a bare repl-live), else /tmp. The names keep the port, so
+# two headless runs sharing a TMPDIR never share a file.
+
+# a folder path without its trailing "/" ($TMPDIR ends with one on macOS)
+def dir_trim.go(+s: String, e: Bool) -> String:
+  match e:
+    case True{}:
+      String.take(s, Nat.sub(String.length(s), 1n))
+    case False{}:
+      s
+
+def dir_trim(+s: String) -> String:
+  dir_trim.go(s, Bool.and(String.ends_with(s, "/"),
+    Bool.not(String.eq(s, "/"))))
+
+def side_dir_of.tmp(e: Bool, +tmp: String) -> String:
+  match e:
+    case True{}:
+      "/tmp"
+    case False{}:
+      dir_trim(tmp)
+
+def side_dir_of.pick(e: Bool, +run: String, +tmp: String) -> String:
+  match e:
+    case True{}:
+      side_dir_of.tmp(String.is_empty(tmp), tmp)
+    case False{}:
+      dir_trim(run)
+
+# run: BEND_AGENT_RUN, tmp: TMPDIR ("" when unset)
+def side_dir_of(+run: String, +tmp: String) -> String:
+  side_dir_of.pick(String.is_empty(run), run, tmp)
+
+# the bg dir: BEND_BG_DIR as is (the hub: the agent's tmp/bg, where the
+# agent may read its jobs' output), else <BEND_BG_ROOT or TMPDIR or
+# /tmp>/bend-bg-<port>
+def bg_dir_pick.go(e: Bool, +dir: String, +root: String, +tmp: String,
+    +port: String) -> String:
+  match e:
+    case True{}:
+      bg_dir_of(side_dir_of(root, tmp), port)
+    case False{}:
+      dir_trim(dir)
+
+def bg_dir_pick(+dir: String, +root: String, +tmp: String, +port: String)
+    -> String:
+  bg_dir_pick.go(String.is_empty(dir), dir, root, tmp, port)
+
 # ---- the agent-facing contract, pure ----
 # Every driving line below is a COMPLETE shell command on a CONCRETE
 # path: the agent copy-pastes it verbatim, no variables to resolve.
@@ -241,9 +294,16 @@ def bg_sentinel(+command: String) -> String:
   String.append("XQ-", String.append(U32.show(bg_script_hash(command)),
     "-EOF"))
 
-def bash_script_path(+port: String, +script: String) -> String:
-  String.append("/tmp/bend-sh-", String.append(port,
-    String.append("-", String.append(U32.show(bg_script_hash(script)), ".sh"))))
+def bash_script_path(+dir: String, +port: String, +script: String)
+    -> String:
+  String.append(dir, String.append("/bend-sh-", String.append(port,
+    String.append("-", String.append(U32.show(bg_script_hash(script)), ".sh")))))
+
+# the boot cleanup of a previous process's wrappers on this port (the
+# folder quoted: it may hold a space)
+def bash_cleanup_cmd(+dir: String, +port: String) -> String:
+  String.append("rm -f ", String.append(Tx.sh_quote(dir),
+    String.append("/bend-sh-", String.append(port, "-*.sh"))))
 
 # ---- BEND_WORKDIR: where the command runs ----
 # A switchboard agent runs its REPL from the app root (the runtime's

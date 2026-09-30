@@ -430,6 +430,27 @@ def Laws.bg_dir_default_root():
 def Laws.bg_dir_custom_root():
   {==}
 
+def Laws.side_dir_is_the_agent_run():
+  {==}
+
+def Laws.side_dir_falls_back_to_tmpdir():
+  {==}
+
+def Laws.side_dir_last_resort_tmp():
+  {==}
+
+def Laws.dir_trim_keeps_root():
+  {==}
+
+def Laws.bg_dir_is_the_agent_tmp_bg():
+  {==}
+
+def Laws.bg_dir_root_then_tmpdir():
+  {==}
+
+def Laws.bash_cleanup_cmd_quotes_the_dir():
+  {==}
+
 def Laws.bg_slot_paths():
   {==}
 
@@ -497,6 +518,9 @@ def Laws.bg_script_hash_distinguishes():
   {==}
 
 def Laws.bash_script_path_per_command():
+  {==}
+
+def Laws.bash_script_path_in_side_dir():
   {==}
 
 def Laws.self_reload_acks():

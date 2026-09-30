@@ -84,6 +84,17 @@ impl Paths {
     pub fn agent_dir(&self, name: &str) -> PathBuf {
         self.state.join("agents").join(name)
     }
+    /// The agent's temp folder (approvals-design.md §7.1): its `TMPDIR`,
+    /// created at spawn, deleted at its /drop.
+    pub fn agent_tmp(&self, name: &str) -> PathBuf {
+        self.agent_dir(name).join("tmp")
+    }
+    /// The harness's own files of the agent (bash wrappers, steer,
+    /// interrupt, run_typescript files): `BEND_AGENT_RUN`, never deleted
+    /// while the agent lives.
+    pub fn agent_run(&self, name: &str) -> PathBuf {
+        self.agent_dir(name).join("run")
+    }
     /// Where the hub put task worktrees before BISE-230 (`<state>/worktrees/<task>`):
     /// moved to [`Paths::worktrees`] at the hub's start (`sweep::migrate`).
     pub fn legacy_worktrees(&self) -> PathBuf {

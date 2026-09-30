@@ -202,7 +202,8 @@ def interrupt_path() -> IO(String):
   do IO<String>:
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
     +p : String <- IO.pure(String, P.env_or(pr, "0"))
-    IO.pure(String, Pvp.interrupt_path_of(p))
+    +d : String <- P.side_dir()
+    IO.pure(String, Pvp.interrupt_path_of(d, p))
 
 # BR-005: a Ctrl+C landing during a failed attempt must not wait for
 # the remaining retries: the pause before a retry is slept in 1 s

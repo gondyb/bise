@@ -7,6 +7,7 @@
 import Base
 import ../core/types.bend as T
 import ../core/checkpoint.bend as K
+import ./bash-pure.bend as Shp
 
 # what loading gives back: the session to serve, and the greeting to
 # send on the first connection (None = fresh session)
@@ -19,6 +20,15 @@ def env_or(r: Result<&1, &1, U32 & String, String>, +dflt: String) -> String:
       s
     case Fail{_}:
       dflt
+
+# the harness's own files go here, never to /tmp: BEND_AGENT_RUN (the
+# hub: the agent's run/ folder), else $TMPDIR, else /tmp
+# (Shp.side_dir_of, approvals-design.md §7.1)
+def side_dir() -> IO(String):
+  do IO<String>:
+    rr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_AGENT_RUN")
+    tr : Result<&1, &1, U32 & String, String> <- IO.get_env("TMPDIR")
+    IO.pure(String, Shp.side_dir_of(env_or(rr, ""), env_or(tr, "")))
 
 def history_of(+sess: T.Session) -> List<&2, T.Msg>:
   match sess:

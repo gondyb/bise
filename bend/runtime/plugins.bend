@@ -75,13 +75,14 @@ nohup \"$bin\" plugins serve --dir \"$d\" --parent \"$PPID\" > \"$d/bridge.log\"
 i=0
 while [ ! -f \"$d/ready\" ] && [ \"$i\" -lt 300 ]; do sleep 0.05; i=$((i+1)); done"
 
-def script_path(+port: String) -> String:
-  String.append("/tmp/bend-plugins-start-", String.append(port, ".sh"))
+def script_path(+dir: String, +port: String) -> String:
+  String.append(dir, String.append("/bend-plugins-start-", String.append(port, ".sh")))
 
 def start() -> IO(Unit):
   do IO<Unit>:
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
-    +path : String <- IO.pure(String, script_path(P.env_or(pr, "0")))
+    +side : String <- P.side_dir()
+    +path : String <- IO.pure(String, script_path(side, P.env_or(pr, "0")))
     +d : String <- dir()
     u : Unit <- P.write_file(path, start_script())
     out : String <- Proc.run(Con{"/bin/sh", Con{path, Con{d, Nil{}}}})

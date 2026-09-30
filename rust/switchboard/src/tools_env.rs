@@ -286,10 +286,127 @@ pub fn tools_note_for(path: &str) -> String {
     }
 }
 
+/// The agent's folders in its tool env (approvals-design.md §7.1):
+/// `TMPDIR`, `TMP`, `TEMP` and `TMUX_TMPDIR` are its `tmp/` (mktemp,
+/// python tempfile, tmux sockets land there, never in /tmp); its
+/// background jobs write in `tmp/bg`; the harness's own files go to
+/// `run/` (`BEND_AGENT_RUN`, bend/runtime/persist.bend `side_dir`).
+pub fn temp_env(tmp: &Path, run: &Path) -> Vec<(&'static str, PathBuf)> {
+    let mut v: Vec<(&'static str, PathBuf)> =
+        ["TMPDIR", "TMP", "TEMP", "TMUX_TMPDIR"].into_iter().map(|k| (k, tmp.to_path_buf())).collect();
+    v.push(("BEND_BG_DIR", tmp.join("bg")));
+    v.push(("BEND_AGENT_RUN", run.to_path_buf()));
+    v
+}
+
+/// macOS's `/usr/bin/mktemp` ignores `TMPDIR` (it uses the user's
+/// `/var/folders/…/T`, `_CS_DARWIN_USER_TEMP_DIR`) unless given `-p`: this
+/// shim, first on the agents' PATH (the hub's `bin/`, next to `sb`), adds
+/// `-p "$TMPDIR"` when the call names no folder and no template, so an
+/// agent's `mktemp` lands in its temp folder like python's tempfile.
+pub const MKTEMP_SHIM: &str = r#"#!/bin/sh
+# bise (approvals-design.md 7.1): macOS mktemp ignores TMPDIR; an agent's
+# lands in its temp folder. A folder or a template given: as written.
+skip=
+for a in "$@"; do
+  if [ -n "$skip" ]; then skip=; continue; fi
+  case "$a" in
+    -p*|--tmpdir*) exec /usr/bin/mktemp "$@" ;;
+    -t|-*t) skip=1 ;;
+    -*) ;;
+    *) exec /usr/bin/mktemp "$@" ;;
+  esac
+done
+if [ -n "${TMPDIR:-}" ] && [ -d "$TMPDIR" ]; then exec /usr/bin/mktemp -p "$TMPDIR" "$@"; fi
+exec /usr/bin/mktemp "$@"
+"#;
+
+/// Write the mktemp shim in `bin_dir` (macOS only: GNU mktemp reads
+/// TMPDIR), in one rename.
+pub fn write_mktemp_shim(bin_dir: &Path) -> std::io::Result<()> {
+    if !cfg!(target_os = "macos") || !Path::new("/usr/bin/mktemp").exists() {
+        return Ok(());
+    }
+    use std::os::unix::fs::PermissionsExt;
+    let dst = bin_dir.join("mktemp");
+    if std::fs::read_to_string(&dst).is_ok_and(|s| s == MKTEMP_SHIM) {
+        return Ok(());
+    }
+    std::fs::create_dir_all(bin_dir)?;
+    let tmp = bin_dir.join(format!(".mktemp.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, MKTEMP_SHIM)?;
+    std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))?;
+    std::fs::rename(&tmp, dst).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
+}
+
+/// Create the agent's `tmp/` and `run/` (private: 0700).
+pub fn make_agent_dirs(tmp: &Path, run: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    for d in [tmp, run] {
+        std::fs::DirBuilder::new().recursive(true).mode(0o700).create(d)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
+
+    /// mktemp, python's tempfile and tmux read TMPDIR/TMP/TEMP and
+    /// TMUX_TMPDIR: all four name the agent's tmp/; the runtime gets
+    /// run/ and tmp/bg.
+    #[test]
+    fn the_temp_env_points_to_the_agent_folders() {
+        let env = temp_env(Path::new("/h/agents/a/tmp"), Path::new("/h/agents/a/run"));
+        let get = |k: &str| env.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string_lossy().into_owned());
+        for k in ["TMPDIR", "TMP", "TEMP", "TMUX_TMPDIR"] {
+            assert_eq!(get(k).as_deref(), Some("/h/agents/a/tmp"), "{}", k);
+        }
+        assert_eq!(get("BEND_BG_DIR").as_deref(), Some("/h/agents/a/tmp/bg"));
+        assert_eq!(get("BEND_AGENT_RUN").as_deref(), Some("/h/agents/a/run"));
+    }
+
+    /// The shim: no folder, no template: in $TMPDIR (`-t` too); a
+    /// template or `-p`: as written.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mktemp_lands_in_tmpdir() {
+        let d = tmp("mktemp");
+        let (bin, t, cwd) = (d.join("bin"), d.join("t"), d.join("cwd"));
+        std::fs::create_dir_all(&t).unwrap();
+        std::fs::create_dir_all(&cwd).unwrap();
+        write_mktemp_shim(&bin).unwrap();
+        write_mktemp_shim(&bin).unwrap();
+        let run = |args: &[&str]| {
+            let o = Command::new(bin.join("mktemp")).args(args).env("TMPDIR", &t).current_dir(&cwd).output().unwrap();
+            assert!(o.status.success(), "{:?}", args);
+            PathBuf::from(String::from_utf8_lossy(&o.stdout).trim())
+        };
+        for args in [&[][..], &["-d"], &["-t", "foo"], &["-dt", "foo"], &["-q"]] {
+            assert_eq!(run(args).parent().unwrap(), t.as_path(), "{:?}", args);
+        }
+        let other = d.join("other");
+        std::fs::create_dir_all(&other).unwrap();
+        assert_eq!(run(&["-p", other.to_str().unwrap()]).parent().unwrap(), other.as_path());
+        let own = run(&["x.XXXX"]);
+        assert!(own.is_relative() && cwd.join(&own).exists(), "a template stays in the cwd: {:?}", own);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn the_agent_dirs_are_private() {
+        let d = tmp("agent-dirs");
+        let (t, r) = (d.join("a/tmp"), d.join("a/run"));
+        make_agent_dirs(&t, &r).unwrap();
+        make_agent_dirs(&t, &r).unwrap();
+        for p in [&t, &r] {
+            assert_eq!(std::fs::metadata(p).unwrap().permissions().mode() & 0o777, 0o700);
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     fn tmp(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("sb-tools-env-{}-{}", name, std::process::id()));

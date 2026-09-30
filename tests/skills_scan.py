@@ -48,6 +48,7 @@ def main():
     tmp = tempfile.mkdtemp(prefix="sb-skills-scan-")
     os.makedirs(os.path.join(tmp, ".agents", "skills", "alpha"))
     open(os.path.join(tmp, ".agents", "skills", "alpha", "SKILL.md"), "w").write(SKILL)
+    os.makedirs(os.path.join(tmp, "agent-run"))
     cache = os.path.join(tmp, "cache")
     index = os.path.join(cache, "skills-index.txt")
     env = clean_env(tmp)
@@ -68,6 +69,7 @@ def main():
         "BEND_CONFIG": os.path.join(tmp, "config.toml"),
         "BEND_MCP_BOOTSTRAP_URL": "http://127.0.0.1:9/none",
         "BEND_REPL_PORT": str(port), "BEND_WORKDIR": ws, "BEND_RUN_DIR": os.path.join(tmp, "run"),
+        "BEND_AGENT_RUN": os.path.join(tmp, "agent-run"),
         "BEND_SESSION_FILE": session, "BEND_WIRE_LOG": os.path.join(tmp, "wire.log"),
         "BISE_ROLE": "main",
     })
@@ -111,7 +113,8 @@ def main():
         check("main's index ends with the built-in skills (bise-demo)",
               ("\nbise-demo\t" in sdata) and ("\t%s\n" % demo) in sdata, repr(sdata))
         # the same scan as a task: no built-in skill
-        script = "/tmp/bend-skills-scan-%s.sh" % port
+        # the harness's own files: the agent's run/ folder, never /tmp
+        script = os.path.join(tmp, "agent-run", "bend-skills-scan-%s.sh" % port)
         a1, a2 = os.path.join(tmp, "a-shared.txt"), os.path.join(tmp, "a-session.txt")
         subprocess.run(["/bin/sh", script, a1, a2, os.path.join(tmp, "none.txt")], cwd=ROOT,
                        env={**env, "BISE_ROLE": "agent"}, check=True)

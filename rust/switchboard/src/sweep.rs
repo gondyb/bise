@@ -290,6 +290,34 @@ pub fn follow_moves(events: &mut [Value], root: &Path) -> usize {
     n
 }
 
+/// Delete an agent's temp folder (`<agent>/tmp`, approvals-design.md
+/// §7.1) at its /drop. Only a folder named `tmp`: never its `run/` or
+/// its session.
+pub fn remove_agent_tmp(tmp: &Path) {
+    if tmp.file_name().is_some_and(|n| n == "tmp") && tmp.symlink_metadata().is_ok_and(|m| m.is_dir()) {
+        let _ = std::fs::remove_dir_all(tmp);
+    }
+}
+
+/// At the hub's start: delete the `tmp/` of every agent folder under
+/// `agents` whose dir is not in `live` (dropped, or unknown); `run/`
+/// and the rest are kept. The folders removed.
+pub fn sweep_agent_tmps(agents: &Path, live: &BTreeSet<String>) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for d in children(agents) {
+        let name = d.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let tmp = d.join("tmp");
+        if live.contains(&name) || !tmp.is_dir() {
+            continue;
+        }
+        remove_agent_tmp(&tmp);
+        if !tmp.exists() {
+            out.push(tmp);
+        }
+    }
+    out
+}
+
 /// After a sweep: the old place, once empty, goes.
 pub fn drop_empty(dir: &Path) {
     let _ = std::fs::remove_dir(dir);
@@ -373,6 +401,30 @@ mod tests {
     }
 
     /// A /drop: only the dropped task's folders, found by its owner file.
+    /// approvals-design.md §7.1: the hub's start deletes the tmp/ of the
+    /// agents that are gone, never a live agent's, never a run/.
+    #[test]
+    fn the_start_sweeps_the_tmp_of_gone_agents_only() {
+        let root = std::env::temp_dir().join(format!("sb-sweep-tmp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for a in ["live", "gone"] {
+            for sub in ["tmp/bg", "run"] {
+                std::fs::create_dir_all(root.join(a).join(sub)).unwrap();
+            }
+            std::fs::write(root.join(a).join("tmp/x"), "x").unwrap();
+        }
+        let live: BTreeSet<String> = ["live".to_string()].into();
+        assert_eq!(sweep_agent_tmps(&root, &live), vec![root.join("gone/tmp")]);
+        assert!(root.join("live/tmp/x").exists() && root.join("live/run").is_dir());
+        assert!(!root.join("gone/tmp").exists() && root.join("gone/run").is_dir());
+        assert!(sweep_agent_tmps(&root, &live).is_empty());
+        remove_agent_tmp(&root.join("live/run"));
+        assert!(root.join("live/run").is_dir(), "only a tmp folder is ever removed");
+        remove_agent_tmp(&root.join("live/tmp"));
+        assert!(!root.join("live/tmp").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn a_drop_sweeps_its_own_folders() {
         let (t, repo, root) = setup("drop");

@@ -166,9 +166,11 @@ say b")
 law chunk_lines_empty:
   {Rp.cmd_lines("\n\n") == Nil{} : List<&2, String>}
 
-# LAW: the interrupt flag file is per-process (the Ctrl+C path).
+# LAW: the interrupt flag file is per-process (the Ctrl+C path), in the
+# side dir (the agent's run/ folder, approvals-design.md §7.1).
 law interrupt_path_is_per_port:
-  {Pv.interrupt_path_of("7702") == "/tmp/bend-interrupt-7702.txt" : String}
+  {Pv.interrupt_path_of("/h/agents/a/run", "7702")
+    == "/h/agents/a/run/bend-interrupt-7702.txt" : String}
 
 # ---- multi-line tool args on the wire ----
 
@@ -411,7 +413,8 @@ law steering_arrival_order:
 # LAW: the side-channel path is per-process (the REPL port), so two
 # parallel terminals never read each other's steering.
 law steer_path_is_per_port:
-  {Rt.steer_path_of("7702") == "/tmp/bend-steer-7702.txt" : String}
+  {Rt.steer_path_of("/h/agents/a/run", "7702")
+    == "/h/agents/a/run/bend-steer-7702.txt" : String}
 
 # LAW: blank lines in the side-channel never steer.
 law steer_channel_skips_blank_lines:
@@ -1357,6 +1360,42 @@ law bg_dir_default_root:
 law bg_dir_custom_root:
   {Sh.bg_dir_of("/var/bg", "3") == "/var/bg/bend-bg-3" : String}
 
+# ---- the agent's own folders (approvals-tmp, approvals-design.md §7.1) ----
+
+# LAW: the harness's own files go to the agent's run/ folder when the hub
+# names it (BEND_AGENT_RUN), else to $TMPDIR (a headless run), and only
+# with neither to /tmp; the trailing "/" of a macOS $TMPDIR is dropped.
+law side_dir_is_the_agent_run:
+  {Sh.side_dir_of("/h/agents/a/run", "/var/T/") == "/h/agents/a/run" : String}
+
+law side_dir_falls_back_to_tmpdir:
+  {Sh.side_dir_of("", "/var/folders/x/T/") == "/var/folders/x/T" : String}
+
+law side_dir_last_resort_tmp:
+  {Sh.side_dir_of("", "") == "/tmp" : String}
+
+law dir_trim_keeps_root:
+  {Sh.dir_trim("/") == "/" : String}
+
+# LAW: the bg dir is the one the hub names (the agent's tmp/bg, so the
+# agent reads its jobs' output in its own temp folder), else per port
+# under BEND_BG_ROOT, else under $TMPDIR, else under /tmp.
+law bg_dir_is_the_agent_tmp_bg:
+  {Sh.bg_dir_pick("/h/agents/a/tmp/bg", "/r", "/var/T/", "7")
+    == "/h/agents/a/tmp/bg" : String}
+
+law bg_dir_root_then_tmpdir:
+  {Bool.and(String.eq(Sh.bg_dir_pick("", "/r", "/var/T/", "7"), "/r/bend-bg-7"),
+     Bool.and(String.eq(Sh.bg_dir_pick("", "", "/var/T/", "7"), "/var/T/bend-bg-7"),
+       String.eq(Sh.bg_dir_pick("", "", "", "7"), "/tmp/bend-bg-7")))
+    == True{} : Bool}
+
+# LAW: the boot cleanup removes this port's wrappers in the side dir,
+# the folder quoted as one shell word.
+law bash_cleanup_cmd_quotes_the_dir:
+  {Sh.bash_cleanup_cmd("/a b/run", "7") == "rm -f '/a b/run'/bend-sh-7-*.sh"
+    : String}
+
 # LAW: one slot = five files in one dir under one id.
 law bg_slot_paths:
   {Bool.and(String.eq(Sh.bg_slot("/d", "4", ".out"), "/d/4.out"),
@@ -1599,10 +1638,15 @@ law bg_script_hash_distinguishes:
     == True{} : Bool}
 
 law bash_script_path_per_command:
-  {Bool.and(String.eq(Sh.bash_script_path("7702", "a b"),
-      Sh.bash_script_path("7702", "a b")),
-     Bool.not(String.eq(Sh.bash_script_path("7702", "a b"),
-       Sh.bash_script_path("7702", "a c")))) == True{} : Bool}
+  {Bool.and(String.eq(Sh.bash_script_path("/r", "7702", "a b"),
+      Sh.bash_script_path("/r", "7702", "a b")),
+     Bool.not(String.eq(Sh.bash_script_path("/r", "7702", "a b"),
+       Sh.bash_script_path("/r", "7702", "a c")))) == True{} : Bool}
+
+# LAW: the wrapper scripts live in the side dir.
+law bash_script_path_in_side_dir:
+  {String.starts_with(Sh.bash_script_path("/h/agents/a/run", "7", "ls"),
+     "/h/agents/a/run/bend-sh-7-") == True{} : Bool}
 
 # ---- exec_of: the tool result the model actually reads ----
 
@@ -2902,8 +2946,8 @@ law info_line_format:
 # LAW: the announced side-channel paths are the ones the runtime
 # drains - the same builders, per port.
 law info_paths_are_the_drained_ones:
-  {Bool.and(String.eq(Rt.steer_path_of("7"), "/tmp/bend-steer-7.txt"),
-     String.eq(Pv.interrupt_path_of("7"), "/tmp/bend-interrupt-7.txt"))
+  {Bool.and(String.eq(Rt.steer_path_of("/r", "7"), "/r/bend-steer-7.txt"),
+     String.eq(Pv.interrupt_path_of("/r", "7"), "/r/bend-interrupt-7.txt"))
     == True{} : Bool}
 
 # ---- --resume: the restored history replays as live wire lines ----

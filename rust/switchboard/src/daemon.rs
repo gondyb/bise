@@ -588,6 +588,11 @@ impl Shell {
                 .filter(|a| now.contains(&a.dir) && !self.archived.contains(&a.dir))
                 .flat_map(|a| [a.name.clone(), a.dir.clone()].into_iter().chain(a.aliases.iter().cloned()))
                 .collect();
+            // their temp folders (approvals-design.md §7.1); run/ stays
+            // with the rest of the agent's folder
+            for d in now.difference(&self.archived) {
+                crate::sweep::remove_agent_tmp(&self.opts.paths.agent_tmp(d));
+            }
             self.archived = now;
             self.sweep_worktrees(Some(names));
         }
@@ -947,10 +952,17 @@ impl Shell {
         let dir = a.dir.clone();
         let adir = self.opts.paths.agent_dir(&dir);
         let _ = std::fs::create_dir_all(&adir);
+        // its temp folder and the harness's own files (approvals-design.md
+        // §7.1): nothing in /tmp
+        let (tmp, run) = (self.opts.paths.agent_tmp(&dir), self.opts.paths.agent_run(&dir));
+        if let Err(e) = crate::tools_env::make_agent_dirs(&tmp, &run) {
+            log_line(&self.opts.paths, &format!("{}: cannot create {}: {}", a.name, tmp.display(), e));
+        }
+        let tmp_s = tmp.to_string_lossy().into_owned();
         let role = if a.is_main {
-            prompts::main_role(&self.hub.workspace)
+            prompts::main_role(&self.hub.workspace, &tmp_s)
         } else {
-            prompts::task_role(&a)
+            prompts::task_role(&a, &tmp_s)
         };
         write_logged(&self.opts.paths, &adir.join("role.md"), &role);
         if !adir.join("context.txt").exists() {
@@ -1053,6 +1065,9 @@ impl Shell {
             .env_remove("SB_CORE_BIN")
             // nor its app root: a harness an agent runs finds its own
             .env_remove("BISE_APP_ROOT");
+        for (k, v) in crate::tools_env::temp_env(&tmp, &run) {
+            cmd.env(k, v);
+        }
         let keys = self.opts.spawn_env.map(|f| f()).unwrap_or_default();
         self.spawn_keys.insert(dir.clone(), hash_keys(&keys));
         for (k, v) in keys {
@@ -1615,6 +1630,10 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         std::env::set_var(crate::procs::ENV, crate::procs::without_hub(&l, &proc_hub));
     }
     write_sb_link(&paths.bin_dir(), &opts.exe)?;
+    // the agents' mktemp reads their TMPDIR (macOS's does not)
+    if let Err(e) = crate::tools_env::write_mktemp_shim(&paths.bin_dir()) {
+        log_line(&paths, &format!("mktemp shim not written: {}", e));
+    }
     // the switcher reads where this hub runs from (to come back to it)
     let _ = std::fs::write(paths.state.join("hub.root"), opts.app_root.to_string_lossy().as_bytes());
     log_line(
@@ -1796,6 +1815,19 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     sh.migrate_the_rest();
     sh.archived = sh.archived_dirs();
     sh.sweep_worktrees(None);
+    // the temp folders of agents that are gone (dropped while no hub ran,
+    // or unknown): never a live agent's
+    let live: BTreeSet<String> = sh
+        .hub
+        .st
+        .agents
+        .values()
+        .filter(|a| a.lifecycle != Lifecycle::Archived)
+        .map(|a| a.dir.clone())
+        .collect();
+    for d in crate::sweep::sweep_agent_tmps(&paths.state.join("agents"), &live) {
+        log_line(&paths, &format!("temp folder removed: {}", d.display()));
+    }
     sh.down = sh.down_dirs();
     sh.reap_procs(None);
     crate::util::timing("boot done (REPLs spawned)");

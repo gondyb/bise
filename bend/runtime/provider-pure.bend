@@ -635,8 +635,8 @@ def threshold.pick(empty: Bool, +envv: String, +cfgt: String,
 def threshold(+envv: String, +cfgt: String, +window: U32) -> U32:
   threshold.pick(String.is_empty(envv), envv, cfgt, window)
 
-def interrupt_path_of(+port: String) -> String:
-  String.append("/tmp/bend-interrupt-", String.append(port, ".txt"))
+def interrupt_path_of(+dir: String, +port: String) -> String:
+  String.append(dir, String.append("/bend-interrupt-", String.append(port, ".txt")))
 
 # the interrupt flag file: the TUI writes "1" on Ctrl+C, the runtime
 # clears it to "" at every turn end. Only a non-empty flag is a request

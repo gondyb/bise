@@ -1,0 +1,1 @@
+Your temp folder is `{tmp}` (`$TMPDIR`): use it for scratch files, never `/tmp`. It is deleted when you are dropped.

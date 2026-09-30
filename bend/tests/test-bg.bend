@@ -212,9 +212,9 @@ def main() -> IO(Unit):
       "s17 capped output still completes (ulimit)")
 
     # ---- s18 the wrapper script deletes itself (QA bug 3.6) ----
-    +c18a : Xp.ExecRes <- Sh.bash_exec("ls /tmp/bend-sh-*.sh 2>/dev/null | wc -l")
+    +c18a : Xp.ExecRes <- Sh.bash_exec("ls \"${BEND_AGENT_RUN:-${TMPDIR:-/tmp}}\"/bend-sh-*.sh 2>/dev/null | wc -l")
     +r18 : Xp.ExecRes <- Sh.bash_exec("echo self-clean-probe")
-    +c18b : Xp.ExecRes <- Sh.bash_exec("ls /tmp/bend-sh-*.sh 2>/dev/null | wc -l")
+    +c18b : Xp.ExecRes <- Sh.bash_exec("ls \"${BEND_AGENT_RUN:-${TMPDIR:-/tmp}}\"/bend-sh-*.sh 2>/dev/null | wc -l")
     u18 : Unit <- check(Bool.and(res_ok(c18a), Bool.and(res_ok(c18b),
         Bool.not(String.eq(String.trim(res_out(c18b)),
           String.append(String.trim(res_out(c18a)), "1"))))),

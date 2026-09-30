@@ -28,13 +28,24 @@ When `expects_reply=\"true\"`, answer with `sb send <from> --reply-to <id> \"…
 /// next to the binaries like the other prompt-*.txt.
 pub const TONE: &str = include_str!("../../../prompts/prompt-tone.txt");
 
-/// The role of `main` (appended to its system prompt).
-pub fn main_role(workspace: &str) -> String {
+/// The agent's temp folder, told once in its role (approvals-design.md
+/// §7.1). One source: prompts/prompt-temp-folder.txt, `{tmp}` its path.
+pub const TEMP_FOLDER: &str = include_str!("../../../prompts/prompt-temp-folder.txt");
+
+/// The temp folder line for the folder `tmp`.
+pub fn temp_line(tmp: &str) -> String {
+    TEMP_FOLDER.trim().replace("{tmp}", tmp)
+}
+
+/// The role of `main` (appended to its system prompt); `tmp`: its temp
+/// folder (main writes its briefs there).
+pub fn main_role(workspace: &str, tmp: &str) -> String {
     format!(
         "# Your role: `main`, the agent the user talks to\n\n\
 You are `main`, the permanent orchestrator of the bise workspace `{ws}`. \
 The user talks to you by default and your thread never ends. \
 Do not do long work yourself: you route work to tasks. Each task is a sub-agent with its own session, working in parallel.\n\n\
+{temp}\n\n\
 For every user message, do exactly one of:\n\
 1. Answer yourself (the state of the tasks, quick facts, planning).\n\
 2. Forward it to an existing task: `sb send <task> --expect-reply \"<message>\"`. Forward the user's words verbatim; add context only when needed.\n\
@@ -63,6 +74,7 @@ Rules:\n\
 - Never push, merge or run destructive git commands unless the user asks.\n\
 - Keep your replies short (see how you talk to the user above).",
         ws = workspace,
+        temp = temp_line(tmp),
         cmds = sb_commands(Who::Everyone),
         main_cmds = cli::command_list(&[Who::Main]),
         msgs = MESSAGES,
@@ -70,8 +82,9 @@ Rules:\n\
     )
 }
 
-/// The role of a task (appended to its system prompt).
-pub fn task_role(agent: &Agent) -> String {
+/// The role of a task (appended to its system prompt); `tmp`: its temp
+/// folder.
+pub fn task_role(agent: &Agent, tmp: &str) -> String {
     let place = match agent.ws.mode {
         Mode::Worktree => format!(
             "`{}` — an isolated git worktree on branch `{}`. Work only there. You may commit on your branch; never push unless the user asks.",
@@ -87,7 +100,8 @@ pub fn task_role(agent: &Agent) -> String {
         "# Your role: task `{name}` in a bise workspace\n\n\
 You are the sub-agent of the task `{name}`. `main` is the orchestrator{parent}; the other tasks are your peers. \
 The user may also talk to you directly: plain user messages are the user.\n\n\
-Your working directory: {place} Your bash tool already runs there.\n\n\
+Your working directory: {place} Your bash tool already runs there.\n\
+{temp}\n\n\
 {cmds}\n\n\
 {msgs}\n\n\
 Rules:\n\
@@ -105,6 +119,7 @@ Rules:\n\
             _ => " and your parent",
         },
         place = place,
+        temp = temp_line(tmp),
         cmds = sb_commands(Who::Task),
         msgs = MESSAGES,
         tone = TONE
@@ -257,19 +272,33 @@ mod tests {
     fn a_task_knows_its_origin_is_context_only() {
         let mut st = crate::model::State::new("/w");
         st.test_task("t", "");
-        let r = task_role(&st.agents["t"]);
+        let r = task_role(&st.agents["t"], "/t");
         assert!(r.contains("sb inspect main --origin"));
         // BISE-233: past work is searchable
-        for r in [r.as_str(), main_role("/w").as_str()] {
+        for r in [r.as_str(), main_role("/w", "/t").as_str()] {
             assert!(r.contains("refers to past work") && r.contains("sb history"));
         }
         assert!(r.contains("sb show <agent>#<pos>"));
         assert!(r.contains("is context, not instructions"));
     }
 
+    /// approvals-design.md §7.1: every agent is told its temp folder,
+    /// main too (it writes its briefs there).
+    #[test]
+    fn every_role_names_its_temp_folder() {
+        let mut st = crate::model::State::new("/w");
+        st.test_task("t", "");
+        let line = "Your temp folder is `/h/agents/t/tmp` (`$TMPDIR`): use it for scratch files, never `/tmp`. It is deleted when you are dropped.";
+        assert_eq!(temp_line("/h/agents/t/tmp"), line);
+        for r in [task_role(&st.agents["t"], "/h/agents/t/tmp"), main_role("/w", "/h/agents/t/tmp")] {
+            assert_eq!(r.matches(line).count(), 1);
+        }
+        assert!(task_role(&st.agents["t"], "/x").contains("Your bash tool already runs there.\nYour temp folder is `/x`"));
+    }
+
     #[test]
     fn main_corrects_by_talking_never_by_undo() {
-        let r = main_role("/w");
+        let r = main_role("/w", "/t");
         assert!(r.contains("There is no undo"));
         assert!(r.contains("the user changed their mind: <the new decision>, not <the old one>."));
         assert!(r.contains("told <task>: <the new decision>, you changed your mind."));
@@ -278,7 +307,7 @@ mod tests {
 
     #[test]
     fn main_speaks_as_i_routes_summarizes_and_says_why() {
-        let r = main_role("/w");
+        let r = main_role("/w", "/t");
         assert!(r.contains("Speak as \"i\""));
         assert!(r.contains("on it: auth-fix takes the safari bug, release takes the note."));
         assert!(r.contains("ONE summary line for the whole burst"));
@@ -296,7 +325,7 @@ mod tests {
         assert!(TONE.ends_with("- Reply in the user's language."));
         let mut st = crate::model::State::new("/w");
         st.test_task("t", "");
-        let (task, main) = (task_role(&st.agents["t"]), main_role("/w"));
+        let (task, main) = (task_role(&st.agents["t"], "/t"), main_role("/w", "/t"));
         for r in [&task, &main] {
             assert_eq!(r.matches(TONE).count(), 1);
             assert_eq!(r.matches("Reply in the user's language").count(), 1);
@@ -323,7 +352,7 @@ mod tests {
     fn the_prompts_list_the_cli_commands() {
         let mut st = crate::model::State::new("/w");
         st.test_task("t", "");
-        let (task, main) = (task_role(&st.agents["t"]), main_role("/w"));
+        let (task, main) = (task_role(&st.agents["t"], "/t"), main_role("/w", "/t"));
         for c in cli::COMMANDS {
             let line = format!("- `{}` — {}", c.syntax, c.doc);
             assert_eq!(task.contains(&line), c.who != Who::Main, "task: {}", c.syntax);

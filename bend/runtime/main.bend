@@ -223,10 +223,12 @@ def node_run.go(+prog: String, +results: List<&2, String>, +path: String,
 
 def node_run(+prog: String, +results: List<&2, String>, +port: String)
     -> IO(NR):
-  node_run.go(prog, results,
-    String.append("/tmp/bend-prog-", String.append(port, ".ts")),
-    String.append("/tmp/bend-res-", String.append(port, ".json")),
-    String.append("/tmp/bend-prog-", String.append(port, ".err")))
+  do IO<NR>:
+    +d : String <- P.side_dir()
+    node_run.go(prog, results,
+      String.append(d, String.append("/bend-prog-", String.append(port, ".ts"))),
+      String.append(d, String.append("/bend-res-", String.append(port, ".json"))),
+      String.append(d, String.append("/bend-prog-", String.append(port, ".err"))))
 
 # run the program to completion: request -> execute -> record -> re-run
 # (one machine, bottom-up; pending decisions ride action constructors)
@@ -484,7 +486,8 @@ def steer_path() -> IO(String):
   do IO<String>:
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
     +p : String <- IO.pure(String, P.env_or(pr, "0"))
-    IO.pure(String, Rtp.steer_path_of(p))
+    +d : String <- P.side_dir()
+    IO.pure(String, Rtp.steer_path_of(d, p))
 
 def harness_info(+model: String, +threshold: String) -> IO(String):
   do IO<String>:

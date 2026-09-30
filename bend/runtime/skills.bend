@@ -79,8 +79,8 @@ w=\"${BEND_WORKDIR:-$PWD}\"
 b=\"\"; [ \"${BISE_ROLE:-}\" = main ] && b=\"$PWD/prompts/skills\"
 { scan \"$w/.agents/skills\"; cat \"$3\" 2>/dev/null; [ -n \"$b\" ] && scan \"$b\"; true; } > \"$2.$$\" && mv -f \"$2.$$\" \"$2\""
 
-def scan_path(+port: String) -> String:
-  String.append("/tmp/bend-skills-scan-", String.append(port, ".sh"))
+def scan_path(+dir: String, +port: String) -> String:
+  String.append(dir, String.append("/bend-skills-scan-", String.append(port, ".sh")))
 
 def session_index_path() -> IO(String):
   do IO<String>:
@@ -94,7 +94,8 @@ def skills_scan() -> IO(Unit):
     +psk : String <- Pl.skills_index_path()
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
     +port : String <- IO.pure(String, P.env_or(pr, "0"))
-    +path : String <- IO.pure(String, scan_path(port))
+    +side : String <- P.side_dir()
+    +path : String <- IO.pure(String, scan_path(side, port))
     u : Unit <- P.write_file(path, scan_script())
     out : String <- Proc.run(Con{"/bin/sh", Con{path, Con{idx, Con{sidx, Con{psk, Nil{}}}}}})
     IO.pure(Unit, Unit{})

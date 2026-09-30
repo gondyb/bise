@@ -34,13 +34,16 @@ def bg_after() -> IO(U32):
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
     bg_after.pick(String.is_empty(P.env_or(pr, "")), P.env_or(r, ""))
 
+# BEND_BG_DIR (the hub: the agent's tmp/bg), else <BEND_BG_ROOT or
+# $TMPDIR or /tmp>/bend-bg-<port> (Shp.bg_dir_pick)
 def bg_dir() -> IO(String):
   do IO<String>:
+    dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_BG_DIR")
     root : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_BG_ROOT")
+    tr : Result<&1, &1, U32 & String, String> <- IO.get_env("TMPDIR")
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
-    +r : String <- IO.pure(String, P.env_or(root, "/tmp"))
-    +p : String <- IO.pure(String, P.env_or(pr, "0"))
-    IO.pure(String, Shp.bg_dir_of(r, p))
+    IO.pure(String, Shp.bg_dir_pick(P.env_or(dr, ""), P.env_or(root, ""),
+      P.env_or(tr, ""), P.env_or(pr, "0")))
 
 @unsafe
 def bash_exec(command: String) -> IO(Xp.ExecRes):
@@ -56,20 +59,21 @@ def bash_exec(command: String) -> IO(Xp.ExecRes):
     +script : String <- IO.pure(String,
       Shp.bg_wrap(Shp.with_workdir(P.env_or(wr, ""), String.trim(command)),
         bg, secs))
-    +path : String <- IO.pure(String, Shp.bash_script_path(port, script))
+    +side : String <- P.side_dir()
+    +path : String <- IO.pure(String, Shp.bash_script_path(side, port, script))
     w : Unit <- P.write_file(path, script)
     out : String <- Proc.run(Con{"/bin/sh", Con{path, Nil{}}})
     IO.pure(Xp.ExecRes, Shp.exec_of(out))
 
 # boot cleanup: the wrappers of a previous process on this port cannot be
 # running (the parent waits for the old REPL to die before respawning), so
-# stale /tmp/bend-sh-<port>-*.sh files are safe to remove - the wrapper
-# leak (one file per bash call) would otherwise grow without bound.
+# stale <side dir>/bend-sh-<port>-*.sh files are safe to remove - the
+# wrapper leak (one file per bash call) would otherwise grow without bound.
 def bash_cleanup(+port: String) -> IO(Unit):
   do IO<Unit>:
+    +side : String <- P.side_dir()
     out : String <- Proc.run(Con{"/bin/sh", Con{"-c",
-      Con{String.append("rm -f /tmp/bend-sh-",
-        String.append(port, "-*.sh")), Nil{}}}})
+      Con{Shp.bash_cleanup_cmd(side, port), Nil{}}}})
     IO.pure(Unit, Unit{})
 
 def exec_mr(m: Mcp.MR) -> Xp.ExecRes:
