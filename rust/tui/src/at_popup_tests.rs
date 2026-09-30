@@ -39,12 +39,13 @@ fn app() -> App {
     let mut app = sb::bench::test_app();
     sb::bench::set_workspace(&mut app, ws());
     sb::bench::add_agent(&mut app, "notes-👍-agent", "an objective with émojis 🎉 and a long tail ".repeat(5).as_str());
-    // the index is walked in the background: wait for it
+    // the index is walked in the background: wait for it (up to 30 s: a
+    // loaded machine took more than the 2 s this waited, and the test then
+    // failed on an empty index, BISE-292)
     app.ed.set("@", 1);
-    for _ in 0..200 {
-        if rows(&app).iter().any(|r| r == "rust/") {
-            break;
-        }
+    let t0 = std::time::Instant::now();
+    while !rows(&app).iter().any(|r| r == "rust/") {
+        assert!(t0.elapsed().as_secs() < 30, "the file index of {} is not ready after 30 s", ws());
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     app.ed.clear();

@@ -19,7 +19,6 @@ import json
 import os
 import re
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
@@ -69,12 +68,17 @@ def one(pid, name, model, keys_url, family):
         assert "1 · set up a provider" in sc, sc
         t.keys("Enter")
         t.wait("which provider?")
+        cur = re.compile(r"› (\d+) · ")
         for _ in range(20):
             sc = t.screen()
             if re.search(r"› \d+ · %s " % re.escape(name), sc):
                 break
+            was = cur.search(sc)
             t.keys("Down")
-            time.sleep(0.15)
+            # wait until the TUI drew the move: a blind 0.15 s read the
+            # screen too early under load, and the next Down overshot the
+            # row (BISE-292)
+            t.wait_any([lambda s, was=was: (m := cur.search(s)) and (not was or m.group(1) != was.group(1))], 10)
         else:
             raise AssertionError("no row for %s:\n%s" % (name, sc))
         t.keys("Enter")
