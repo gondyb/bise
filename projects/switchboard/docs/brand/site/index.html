@@ -100,7 +100,7 @@
   .thead { display:flex; justify-content:space-between; padding:14px 3ch 12px; font-weight:700; border-bottom:1px solid var(--faint); }
   .thead .faint { font-weight:400; }
   .term { width:104ch; max-width:100%; margin:0 auto; background:var(--soft); border-radius:12px; font-size:13.5px; line-height:1.6; overflow:hidden; text-align:left; }
-  .screen { display:grid; grid-template-columns:minmax(0,1fr) 28ch; height:420px; }
+  .screen { display:grid; grid-template-columns:minmax(0,1fr) 28ch; height:340px; }  /* the whole demo fits a MacBook screen */
   .feed { padding:18px 3ch 2.2lh; overflow-y:auto; scroll-padding-bottom:2.2lh; scrollbar-width:none;
           -webkit-mask-image:linear-gradient(to bottom, transparent 0, #000 18px); mask-image:linear-gradient(to bottom, transparent 0, #000 18px); }
   .feed::-webkit-scrollbar { display:none; }  /* room under the last line: the divider label "you → main" overlaps the frame edge */
@@ -124,7 +124,7 @@
   .foot { border-top:1px solid var(--faint); position:relative; padding:0 3ch 12px; background:var(--raised); }
   .status { position:absolute; top:-.8lh; left:2ch; right:2ch; display:flex; justify-content:space-between; color:var(--dim); }
   .status > span { background:var(--soft); padding:0 1ch; } .status > span:empty { display:none; }
-  .composer, .mcomp { border-left:1px solid var(--faint); padding:1lh 2ch 1lh calc(2ch - 1px); white-space:pre; overflow:hidden; max-width:91ch; min-height:4lh; }
+  .composer, .mcomp { border-left:1px solid var(--faint); padding:.8lh 2ch .8lh calc(2ch - 1px); white-space:pre; overflow:hidden; max-width:91ch; min-height:2.6lh; }
   .mcomp { background:var(--raised); padding:.6lh 2ch .6lh calc(2ch - 1px); min-height:0; }
   .composer.typing, .mcomp.typing { border-left-color:var(--acc); }
   .composer .cur { background:var(--acc); }
@@ -263,7 +263,7 @@
   #desktop .ctas a.main { color:#141211; background:var(--acc); border-radius:999px; padding:10px 22px; font-weight:700; transition:transform .3s cubic-bezier(.3,1.6,.5,1), box-shadow .3s; }
   #desktop .ctas a.main:hover { transform:translateY(-1px); color:#141211; }
   .dstage { position:relative; margin:56px auto 0; width:min(780px, 100%); perspective:1400px; }
-  .ph { display:block; height:7px; border-radius:4px; background:color-mix(in srgb, var(--text) 8%, transparent); }  /* placeholders: the preview stays calm */
+  .dwin .ph { display:block; height:7px; border-radius:4px; background:color-mix(in srgb, var(--text) 8%, transparent); }  /* placeholders: the preview stays calm (scoped: .ph is also the composers' placeholder) */
   .dwin { position:relative; z-index:1; display:block; height:360px; border-radius:14px; overflow:hidden; text-align:left; color:var(--text);
     background:var(--bg);
     box-shadow:0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent), 0 16px 40px rgba(0,0,0,.25); font-family:"Geist",-apple-system,system-ui,sans-serif; font-size:12.5px; line-height:1.5;
@@ -302,7 +302,7 @@
 
   @media (max-width: 900px) { .screen { grid-template-columns:1fr; } .panel { display:none; } header nav a.opt { display:none; } }
   /* the problem, then the switch (landing v6 draft) */
-  .prob { padding:40px 5vw 110px; }
+  .prob { padding:24px 5vw 110px; }
   .prob .inner { max-width:64ch; }
   .stage { position:relative; width:104ch; max-width:100%; font-size:13.5px; margin:0 auto; border-radius:12px; background:var(--soft); overflow:hidden; }
   .stage > .term { opacity:0; transform:scale(.94); transition:opacity .5s .3s, transform .8s .3s cubic-bezier(.34,1.4,.64,1); }
@@ -508,7 +508,7 @@
 <span class="acc">✓</span> none delivered twice
 <span class="acc">✓</span> a restart = the same state
 <span class="acc">✓</span> nothing waits forever
-<span class="faint">ALL PROOFS CHECK</span></div><p><b>proven, not just tested</b>a test tries a few cases. a proof covers every case. the part of bise that passes messages between your agents is written in Bend and proven on every change: no message lost or sent twice, a restart gets back the exact same state. the proofs found 5 bugs our tests never saw.</p></div>
+<span class="faint">ALL PROOFS CHECK</span></div><p><b>proven, not just tested</b>a test tries a few cases. a proof covers every case. the part of bise that passes messages between your agents is written in <a href="https://bend-lang.com" target="_blank" rel="noopener" style="color:var(--text);text-decoration:underline;text-decoration-color:var(--faint);text-underline-offset:3px">Bend</a> and proven on every change: no message lost or sent twice, a restart gets back the exact same state. the proofs found 5 bugs our tests never saw.</p></div>
       <div class="mini"><div class="mv two"><div class="dk"><span class="t">bise</span> <span class="acc">:*</span>
 
 <span class="acc">∿</span> <span class="t">dark-mode</span>
@@ -1229,6 +1229,9 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
   const stats = document.getElementById("stats"), cap = document.getElementById("cap"), replay = document.getElementById("replay");
   const swap = document.getElementById("swap"), pk = document.getElementById("pk"), ph2 = document.getElementById("ph2"), pp = document.getElementById("pp");
   const head = async (k, h, t) => { swap.classList.add("out"); await sleep(350); pk.textContent = k; ph2.innerHTML = h; pp.textContent = t; swap.classList.remove("out"); };
+  // the heading block keeps the height of its tallest state (the problem), so the switch never moves the demo
+  const lockSwap = () => { if (state !== "today") return; swap.style.minHeight = ""; swap.style.minHeight = swap.offsetHeight + "px"; };
+  addEventListener("resize", lockSwap); requestAnimationFrame(lockSwap); document.fonts && document.fonts.ready.then(lockSwap);
   const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const S = [
     ["perf", "profiling signup on a phone…", "should i continue? (y/n)"],
