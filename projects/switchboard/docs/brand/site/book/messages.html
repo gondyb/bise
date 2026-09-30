@@ -132,12 +132,14 @@ for (const n of nodes) { const f = document.createDocumentFragment();
   for (const ch of n.data) { if (GLYPH_RE.test(ch)) { const s = document.createElement("span"); s.className = "gc"; s.textContent = ch; f.append(s); } else f.append(ch); }
   n.replaceWith(f); }
 </script>
-<script>/* notes: ⌥⇧A turns the annotation layer on or off (remembered); ?annotate works too */
-(() => { const K = "bise-annotate", load = () => document.head.append(Object.assign(document.createElement("script"), { src: "/annotate.js" }));
-  if (/[?&]annotate\b/.test(location.search)) localStorage.setItem(K, "on");
-  if (localStorage.getItem(K) === "on") load();
+<script>/* notes: ⌥⇧A turns the annotation layer on or off; ?annotate works too. remembered on localhost only; on bise.dev it lasts one tab */
+(() => { const K = "bise-annotate", local = /^(localhost|127\.0\.0\.1)$/.test(location.hostname), st = local ? localStorage : sessionStorage,
+    load = () => document.head.append(Object.assign(document.createElement("script"), { src: "/annotate.js" }));
+  if (!local) localStorage.removeItem(K);
+  if (/[?&]annotate\b/.test(location.search)) st.setItem(K, "on");
+  if (st.getItem(K) === "on") load();
   addEventListener("keydown", (e) => { if (!(e.altKey && e.shiftKey && e.code === "KeyA")) return; e.preventDefault();
-    if (localStorage.getItem(K) === "on") { localStorage.removeItem(K); location.reload(); } else { localStorage.setItem(K, "on"); load(); } });
+    if (st.getItem(K) === "on") { st.removeItem(K); location.reload(); } else { st.setItem(K, "on"); load(); } });
 })();</script>
 </body>
 </html>
