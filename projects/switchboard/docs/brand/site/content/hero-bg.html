@@ -356,21 +356,24 @@ const V = {
       const pool = NAMES.filter(n => !s.b.some(o => o.key === n)), key = pool[Math.floor(rnd(0, pool.length))];
       const name = key, done = key, ko = g.ko;
       if (s.b.length < 6 && s.kx - s.last > (s.gap || 16) && kx > 2) {
-        const free = (L) => { const a = kx + 1 + L, z = a + 2 + done.length; return a < g.cols - 3 && s.b.every(o => Math.abs(o.xs + o.L - a) > 7); };
-        let L = 0; for (let k = 0; k < 12 && !L; k++) { const c = Math.floor(rnd(30 - 18 * q, 64 - 42 * q)); if (free(c)) L = c; }
-        if (L) {
-          // always above the thread (the user liked it better)
-          const xs = kx + 1, over = (o) => o.xs < xs + L && xs < o.xs + o.L, dir = -1;
-          // lanes like a git graph: the lowest one not taken by a branch over the same columns, 2 rows apart
-          const taken = s.b.filter(over).map(o => o.lane);
-          let lane = 0; while (taken.includes(lane)) lane++;
-          const A = 3 + 2 * lane, R = Math.max(4, Math.round(A * 1.6));
+        const free = (L) => { const a = kx + 1 + L; return a < g.cols - 3 && s.b.every(o => Math.abs(o.xs + o.L - a) > 7); };
+        // a few tries: a length, then its lane (like a git graph: the lowest one not taken by a branch over the same columns, 2 rows apart).
+        // a higher lane needs a longer branch, so the length grows to fit its fork and merge: that's how 3 can fly at once
+        const xs = kx + 1, dir = -1;
+        let L = 0;
+        for (let k = 0; k < 12 && !L; k++) {
+          let c = Math.floor(rnd(30 - 18 * q, 64 - 42 * q)), lane = 0, A = 3, R = 4;
+          for (let pass = 0; pass < 2; pass++) {
+            const taken = s.b.filter(o => o.xs < xs + c && xs < o.xs + o.L).map(o => o.lane);
+            lane = 0; while (taken.includes(lane)) lane++;
+            A = 3 + 2 * lane; R = Math.max(4, Math.round(A * 1.3));
+            if (c < 2 * R + 6) c = 2 * R + 6 + Math.floor(rnd(0, 6)); else break;
+          }
           // never behind the title (2 rows of air under it), never out of the sky, and room for the fork, the lane and the merge
-          const b0 = { xs, L, A, R, dir };
-          let fits = lane < 6 && A <= Y - 3 && L >= 2 * R + 6;
-          for (let i = 0; fits && i <= L; i++) if (xs + i >= ko.x0 && xs + i <= ko.x1 && Y - railY(b0, Y, i) > Y - ko.y1 - 2) fits = false;
-          if (!fits) L = 0;
-          else s.b.push({ xs, L, p: 0, A, R, lane, dir, name, done, key });
+          const b0 = { xs, L: c, A, R, dir };
+          let fits = lane < 5 && A <= Y - 3 && c >= 2 * R + 6 && free(c);
+          for (let i = 0; fits && i <= c; i++) if (xs + i >= ko.x0 && xs + i <= ko.x1 && Y - railY(b0, Y, i) > Y - ko.y1 - 2) fits = false;
+          if (fits) { L = c; s.b.push({ xs, L, p: 0, A, R, lane, dir, name, done, key }); }
         }
         if (L) {
           if (EVENTS) say(g, Y, kx + 1, `starting an agent · ${name}`);
@@ -379,7 +382,7 @@ const V = {
         }
       }
       s.b = s.b.filter(b => {
-        const was = b.p; b.p = Math.min(b.L, b.p + .45 + .15 * q);
+        const was = b.p; b.p = Math.min(b.L, b.p + (.45 + .15 * q) * .8);
         if (EVENTS && was < b.L && b.p >= b.L) say(g, Y, b.xs + b.L, `${b.name} · ${verb(b.name)}`);
         const pts = [];
         for (let i = 0; i <= b.p; i++) pts.push([b.xs + i, railY(b, Y, i)]);

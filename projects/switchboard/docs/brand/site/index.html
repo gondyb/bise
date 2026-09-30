@@ -55,6 +55,13 @@
   .cur { display:inline-block; width:.6em; height:1.05em; background:currentColor; vertical-align:-.18em; animation:blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity:0 } }
 
+  .sky .lay { position:absolute; inset:0; pointer-events:none; overflow:hidden; font-size:14px; line-height:1.4; }
+  .sky .bub { position:absolute; left:0; top:0; color:var(--dim); font-size:13px; white-space:nowrap; opacity:0; transition:opacity .6s ease; z-index:2; text-shadow:0 0 6px var(--bg), 0 0 2px var(--bg); }
+  .sky .bub.on { opacity:1; } .sky .lay .bub span { position:static; transform:none; transition:none; } .sky .bub .acc { color:var(--acc); margin-right:1ch; }
+  .sky .bub.pop { animation:bin .7s ease-out; } @keyframes bin { from { opacity:0; translate:0 5px; } to { opacity:1; translate:0 0; } }
+  .sky .lay span { position:absolute; left:0; top:0; white-space:pre; color:var(--dim); transition:transform .5s cubic-bezier(.25,.8,.3,1), opacity .45s; will-change:transform; }
+  pre.rail .a { color:var(--acc); } pre.rail .a2 { color:var(--acc); opacity:.55; } pre.rail .a3 { color:var(--acc); opacity:.28; } pre.rail .f { color:var(--faint); } pre.rail .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } pre.rail .d { color:var(--dim); } pre.rail .w { color:var(--wind); } pre.rail .g { display:inline-block; width:1ch; text-align:center; } pre.rail .t { color:var(--text); }
+  pre.rail { position:absolute; inset:0; margin:0; color:var(--wind); font:inherit; font-size:14px; line-height:1.4; white-space:pre; overflow:hidden; pointer-events:none; user-select:none; }
   .hero { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:0 6vw; position:relative; }
   .big { font-size:clamp(76px, 13vw, 170px); font-weight:700; letter-spacing:-.045em; line-height:1; }
   .kiss { display:inline-block; color:var(--acc); animation:kiss 1s .6s ease-out both; }
@@ -302,9 +309,7 @@
 
 <!-- hero, in the wind -->
 <div class="sky">
-  <pre class="wind" id="wind" aria-hidden="true"></pre>
-  <div class="kisses" id="kisses" aria-hidden="true"></div>
-  <div class="cursors" id="cursors" aria-hidden="true"></div>
+  <pre class="rail" aria-hidden="true"></pre>
   <div class="hero">
     <div class="big">bise <span class="kiss">:*</span></div>
     <div class="t1">multi-agent coding, made human.</div>
@@ -565,40 +570,241 @@ function wind(pre, density) {
   };
   frame();
 }
-wind(document.getElementById("wind"), .52);
 wind(document.getElementById("wind2"), .58);
 
-// ---- little kisses carried by the wind ----
-const kisses = document.getElementById("kisses");
-function kiss() {
-  if (document.hidden || reduced || kisses.children.length > 2) return;
-  const k = document.createElement("span"); k.textContent = ":*";
-  const y0 = 10 + Math.random() * 80, amp = 1.5 + Math.random() * 3, speed = .018 + Math.random() * .02;
-  let x = -3, ph = Math.random() * 6; k.style.opacity = 0; kisses.append(k);
-  requestAnimationFrame(() => k.style.opacity = .8);
-  const step = () => {
-    x += speed * 3; ph += .03;
-    k.style.left = x + "%"; k.style.top = (y0 + Math.sin(ph) * amp) + "%";
-    k.style.transform = `rotate(${Math.sin(ph * .7) * 14}deg)`;
-    if (x > 60 && k.style.opacity !== "0") k.style.opacity = 0;
-    if (x < 70) requestAnimationFrame(step); else k.remove();
+// ---- the hero's sky: one thread, the kiss walks it and sends agents out like git branches (content/hero-bg.html · 9) ----
+(() => {
+const rnd = (a, b) => a + Math.random() * (b - a);
+const PULSES = { push() {} }, EVENTS = false, BUBBLE = true, NONAMES = false, GLIDE = true;
+function Grid(cols, rows, ko) {
+  const c = Array.from({ length: rows }, () => Array(cols).fill(" "));
+  const k = Array.from({ length: rows }, () => Array(cols).fill(""));
+  return {
+    cols, rows,
+    put(x, y, ch, cl = "") { x = Math.round(x); y = Math.round(y); if (x < 0 || y < 0 || x >= cols || y >= rows) return; if (ko && x >= ko.x0 && x <= ko.x1 && y >= ko.y0 && y <= ko.y1) return; c[y][x] = ch; k[y][x] = cl; },
+    str(x, y, s, cl = "") { for (let i = 0; i < s.length; i++) this.put(x + i, y, s[i], cl); },
+    html() {
+      let out = "";
+      for (let y = 0; y < rows; y++) {
+        let cur = "", buf = "";
+        const flush = () => { if (buf) out += cur === "s" ? [...buf].map(c => `<span class="s">${c}</span>`).join("") : cur[0] === "g" ? [...buf].map(c => `<span class="g ${cur.slice(1)}">${c}</span>`).join("") : cur ? `<span class="${cur}">${buf}</span>` : buf; buf = ""; };
+        for (let x = 0; x < cols; x++) { if (k[y][x] !== cur) { flush(); cur = k[y][x]; } const ch = c[y][x]; buf += ch === "<" ? "&lt;" : ch === "&" ? "&amp;" : ch; }
+        flush(); out += "\n";
+      }
+      return out;
+    },
   };
-  step();
 }
-setTimeout(kiss, 1800); setInterval(kiss, 5200);
 
-// ---- agents typing, here and there (from the brand book) ----
-const tasks = ["profiling signup on a mid-range phone", "giving the 404 dog a hat", "reading the csv as utf-8", "making settings dark", "asking main which gray", "drafting the 2.5 notes", "running the tests", "shrinking the 4.2 MB hero image"];
-const box = document.getElementById("cursors");
-setInterval(() => {
-  if (document.hidden || reduced || box.children.length > 2 || scrollY > innerHeight) return;
-  const el = document.createElement("div");
-  const side = Math.random() < .5; el.style.left = (side ? 4 + Math.random() * 18 : 66 + Math.random() * 18) + "%"; el.style.top = (12 + Math.random() * 74) + "%";
-  const txt = document.createElement("span"), cur = document.createElement("span"); cur.className = "cur";
-  el.append(txt, cur); box.append(el);
-  const s = tasks[Math.floor(Math.random() * tasks.length)]; let i = 0;
-  const t = setInterval(() => { txt.textContent = s.slice(0, ++i); if (i >= s.length) { clearInterval(t); setTimeout(() => { el.style.opacity = 0; setTimeout(() => el.remove(), 1000); }, 1800); } }, 60 + Math.random() * 50);
-}, 2600);
+function WAKE(g, Y, t, k) {
+    for (let x = 0; x < g.cols; x++) {
+      const d = k - x;
+      if (d <= 0) { g.put(x, Y, "·", "s"); continue; }
+      const amp = Math.exp(-d / 45), v = Math.abs(Math.sin(d * .38 - t * 3.2) * amp + Math.sin(d * .13 + t * .9) * amp * .4);
+      g.put(x, Y, v > .75 ? "≈" : v > .42 ? "∼" : v > .16 ? "~" : "─", d < 6 ? "a" : d < 18 ? "a2" : v > .42 ? "d" : "");
+    }
+}
+const THREAD = WAKE;
+function railY(b, Y, u) {
+  const e = (v) => { v = Math.max(0, Math.min(1, v)); return v * v * (3 - 2 * v); };
+  u = Math.max(0, Math.min(b.L, u));
+  return Y + b.dir * b.A * (u < b.R ? e(u / b.R) : u > b.L - b.R ? e((b.L - u) / b.R) : 1);
+}
+function arcWake(g, b, Y, t, d0 = 0) {
+  // a line of little dots with no holes: in each column, a dot on every row the rail crosses.
+  // main's ripples (≈∼~) only right behind the head, where the rail is flat; a commit • every few cells along the lane
+  const f = (u) => railY(b, Y, u);
+  const n = Math.floor(b.p);
+  // the last cells before the head (∿ or ✓) stay empty, so the mark never gets lost in its own wake
+  for (let i = 0; i <= n - 3; i++) {
+    const ya = f(i - .5), yb = f(i + .5), x = b.xs + i;
+    const d = n - i + d0, amp = Math.exp(-d / 14), v = Math.abs(Math.sin(d * .38 - t * 3.2) * amp + Math.sin(d * .13 + t * .9) * amp * .4);
+    // grey, so the pink ∿ at its head stays what you look at: dim right behind it, wind-grey further back
+    const cl = d < 10 ? "d" : "w";
+    const r0 = Math.round(Math.min(ya, yb)), r1 = Math.round(Math.max(ya, yb));
+    const onLane = i > b.R + 1 && i < b.L - b.R - 1, dy = yb - ya;
+    // where it forks up or merges down, dots that lean with it (⋰ ⋱), so the slope reads as one trail
+    if (Math.abs(dy) > .3 || r0 !== r1) { for (let r = r0; r <= r1; r++) g.put(x, r, dy < 0 ? "⋰" : "⋱", "g" + cl); continue; }
+    if (r0 === r1 && d < 12 && v > .16) g.put(x, r0, v > .75 ? "≈" : v > .42 ? "∼" : "~", cl);
+    else if (onLane && (i - b.R) % 8 === 4) g.put(x, r0, "•", "d");
+    else for (let r = r0; r <= r1; r++) g.put(x, r, "·", cl);
+  }
+}
+function branch(s) {
+    s.p = []; s.puff = []; s.b = []; s.ev = []; s.evn = 0; s.q = []; s.cur = null; s.kx = -2; s.flash = 0; s.last = -99;
+    const NAMES = ["feat: throw confetti", "feat: dark mode", "feat: gif picker", "feat: drag & drop", "feat: party mode", "feat: hide a konami code",
+      "feat: typing dots", "feat: voice notes", "feat: emoji reactions", "fix: emoji in csv export", "fix: search crème brûlée", "fix: sad 404 page",
+      "fix: dark mode flash", "perf: faster signup", "style: rounder buttons", "feat: leaderboard"];
+    const say = (g, Y, x, text) => {
+      for (const row of [Y + 2, Y + 3, Y + 4, Y + 1, Y + 5]) {
+        if (row >= g.rows) continue;
+        const a = Math.max(1, Math.min(g.cols - text.length - 2, Math.round(x - 1))), z = a + text.length;
+        if (s.ev.some(e => e.r === row && a <= e.z + 3 && z >= e.a - 3)) continue;
+        s.ev.push({ id: "ev" + s.evn++, text, a, z, r: row, n: 60 }); return;
+      }
+    };
+    const verb = (m) => m.startsWith("fix") ? "fixed" : m.startsWith("feat") ? "implemented" : "done";
+    return (g, t) => {
+      // the thread sits low enough to leave the arcs room under the title, and keeps 4 rows under it for what bise says
+      const Y = Math.max(2, Math.min(g.rows - 5, Math.max(Math.round(g.rows * .8), g.ko.y1 + 10)));
+      // a fuller dandelion sky: seeded at once over the whole hero, then fed from the bottom and the left edge
+      const seed = (x, y) => s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: 1e9 });
+      if (!s.sown) { s.sown = true; for (let k = 0; k < 150; k++) seed(rnd(0, g.cols), rnd(0, g.rows)); }
+      for (let k = 0; k < 2; k++) if (s.p.length < 170 && Math.random() < .55) Math.random() < .7 ? seed(rnd(-20, g.cols), g.rows + 1) : seed(-2, rnd(0, g.rows));
+      s.p = s.p.filter(p => p.y > -2 && p.x < g.cols + 3 && --p.life > 0);
+      for (const p of s.p) { const sp = .06 + p.z * .18; p.y -= sp; p.x += sp * 1.1; p.ph += .04; g.put(p.x + Math.sin(p.ph) * 2, p.y, p.life < 25 ? "." : p.z > .8 ? "∗" : p.z > .45 ? "·" : ".", p.z > .8 ? "d" : ""); }
+      // the kiss walks the thread; it wraps around once every branch is back
+      // it picks up speed as it goes: more agents, closer together, a bit faster, then a calm restart on the left
+      const q = Math.max(0, Math.min(1, s.kx / g.cols));
+      s.kx += .26 + .08 * q;
+      if (s.kx > g.cols + 2 && !s.b.length) { s.kx = -2; s.last = -99; }
+      const kx = Math.floor(s.kx);
+      // it sends agents out from where it stands. a landing spot must not share its label's room with another one
+      // never the same feature twice at once (out, or back and waiting for the kiss)
+      const pool = NAMES.filter(n => !s.b.some(o => o.key === n)), key = pool[Math.floor(rnd(0, pool.length))];
+      const name = key, done = key, ko = g.ko;
+      if (s.b.length < 6 && s.kx - s.last > (s.gap || 16) && kx > 2) {
+        const free = (L) => { const a = kx + 1 + L; return a < g.cols - 3 && s.b.every(o => Math.abs(o.xs + o.L - a) > 7); };
+        // a few tries: a length, then its lane (like a git graph: the lowest one not taken by a branch over the same columns, 2 rows apart).
+        // a higher lane needs a longer branch, so the length grows to fit its fork and merge: that's how 3 can fly at once
+        const xs = kx + 1, dir = -1;
+        let L = 0;
+        for (let k = 0; k < 12 && !L; k++) {
+          let c = Math.floor(rnd(30 - 18 * q, 64 - 42 * q)), lane = 0, A = 3, R = 4;
+          for (let pass = 0; pass < 2; pass++) {
+            const taken = s.b.filter(o => o.xs < xs + c && xs < o.xs + o.L).map(o => o.lane);
+            lane = 0; while (taken.includes(lane)) lane++;
+            A = 3 + 2 * lane; R = Math.max(4, Math.round(A * 1.3));
+            if (c < 2 * R + 6) c = 2 * R + 6 + Math.floor(rnd(0, 6)); else break;
+          }
+          // never behind the title (2 rows of air under it), never out of the sky, and room for the fork, the lane and the merge
+          const b0 = { xs, L: c, A, R, dir };
+          let fits = lane < 5 && A <= Y - 3 && c >= 2 * R + 6 && free(c);
+          for (let i = 0; fits && i <= c; i++) if (xs + i >= ko.x0 && xs + i <= ko.x1 && Y - railY(b0, Y, i) > Y - ko.y1 - 2) fits = false;
+          if (fits) { L = c; s.b.push({ xs, L, p: 0, A, R, lane, dir, name, done, key }); }
+        }
+        if (L) {
+          if (EVENTS) say(g, Y, kx + 1, `starting an agent · ${name}`);
+          if (BUBBLE) s.q.push(`spawning · ${name}`);
+          s.last = s.kx; s.flash = 8; s.gap = rnd(.8, 1.2) * (21 - 13 * q) * .65;  // ~20 % more agents than the calm take (user, twice)
+        }
+      }
+      s.b = s.b.filter(b => {
+        const was = b.p; b.p = Math.min(b.L, b.p + (.45 + .15 * q) * .8);
+        if (EVENTS && was < b.L && b.p >= b.L) say(g, Y, b.xs + b.L, `${b.name} · ${verb(b.name)}`);
+        const pts = [];
+        for (let i = 0; i <= b.p; i++) pts.push([b.xs + i, railY(b, Y, i)]);
+        // back on the thread, it waits for the kiss to pick it up
+        if (b.p >= b.L && s.kx >= b.xs + b.L - 1) {
+          // the arc comes apart from the kiss back to where it started: each dot puffs out a little grey seed
+          pts.forEach(([x, y], i) => { if (Math.random() < .8) s.puff.push({ x, y, vx: rnd(-.1, .45), vy: rnd(-.45, .05), life: rnd(22, 48), wait: Math.floor((pts.length - 1 - i) * .3) }); });
+          s.flash = 10; PULSES.push({ x: kx, t0: t });
+          if (BUBBLE) s.q.push(`<span class="acc">✓</span>shipped · ${b.name}`);
+          return false;
+        }
+        if (b.p >= b.L) b.rest = (b.rest || 0) + .6;
+        arcWake(g, b, Y, t, b.rest || 0);
+        b.head = b.p < b.L ? pts[pts.length - 1] : null;
+        return true;
+      });
+      s.puff = s.puff.filter(p => {
+        if (p.wait > 0) { p.wait--; g.put(p.x, p.y, "·", "s"); return true; }
+        p.x += p.vx + .05; p.y += p.vy - .015; p.vx *= .92; p.vy *= .92;
+        g.put(p.x, p.y, p.life > 34 ? "∗" : p.life > 14 ? "·" : ".", p.life > 14 ? "d" : "");
+        return --p.life > 0;
+      });
+      // the thread goes over the arcs' ends and the seeds, so it never shows holes
+      for (let x = 0; x < g.cols; x++) g.put(x, Y, " ");
+      THREAD(g, Y, t, s.kx);
+      // marks, then names: a name tries right, left, then the rows around its mark, and stays hidden only if all are taken
+      const used = [];
+      // a name keeps the spot it had last frame while it's free, so it doesn't hop around
+      const place = (x, y, name, o) => {
+        const spots = [[x + 2, y], [x - name.length - 1, y], [x + 1, y - 1], [x + 1, y + 1], [x - name.length, y - 1], [x - name.length, y + 1], [x + 1, y - 2], [x + 1, y + 2]];
+        const order = o.slot != null ? [o.slot, ...spots.keys()].filter((v, k, a) => a.indexOf(v) === k) : [...spots.keys()];
+        for (const n of order) {
+          const [cx, cy] = spots[n];
+          const a = Math.round(cx), z = a + name.length - 1, r = Math.round(cy);
+          if (a < 0 || z >= g.cols || r < 0 || r >= g.rows || r === Y) continue;
+          if (a <= g.ko.x1 + 1 && z >= g.ko.x0 - 1 && r >= g.ko.y0 && r <= g.ko.y1) continue;
+          if (used.some(u => u.r === r && a <= u.z + 2 && z >= u.a - 2)) continue;
+          if (used.some(u => u.m && Math.abs(u.r - r) === 0 && u.a >= a - 1 && u.a <= z + 1)) continue;
+          used.push({ a, z, r }); o.slot = n;
+          if (g.labels) g.labels.push({ id: o.key, text: name, a, r }); else g.str(a, r, name, "d");
+          return;
+        }
+      };
+      for (const o of s.b) { const [mx, my] = o.head || [o.xs + o.L, Y]; used.push({ a: Math.round(mx), z: Math.round(mx), r: Math.round(my), m: true }); 
+        // a working agent breathes like its row in the app's side panel (gust W1, 1 cell): · ~ ∿ ≈ ∿ ~, 110 ms a frame
+        if (o.head) { o.ph ??= Math.floor(rnd(0, 6)); const k = (Math.floor(Date.now() / 110) + o.ph) % 6, ch = "·~∿≈∿~"[k]; g.put(mx, my, ch, ch === "·" ? "a3" : ch === "~" ? "a2" : "a"); }
+        else g.put(mx, my, "✓", "a"); }
+      if (BUBBLE) {
+        // one line at a time, ~2.5 s each; if bise has more to say, only the newest waits
+        if (s.q.length > 1) s.q = s.q.slice(-1);
+        if ((!s.cur || s.cur.n <= 0) && s.q.length) s.cur = { text: s.q.shift(), n: 34, x: kx };
+        if (s.cur && s.cur.n-- > -8) g.bubble = { text: s.cur.n > 0 ? s.cur.text : "", x: s.cur.x, y: Math.min(g.rows - 2, Y + 2) };
+      } else if (EVENTS) {
+        s.ev = s.ev.filter(e => --e.n > 0);
+        for (const e of s.ev) if (g.labels) g.labels.push({ id: e.id, text: e.text, a: e.a, r: e.r }); else g.str(e.a, e.r, e.text, "d");
+      } else {
+        for (const o of s.b.filter(o => !o.head)) place(o.xs + o.L, Y, o.done, o);
+        for (const o of s.b.filter(o => o.head)) place(o.head[0], o.head[1], o.name, o);
+      }
+      // a little air around the kiss on the thread: 2 cells behind, 1 ahead
+      g.put(kx - 2, Y, " "); g.put(kx - 1, Y, " "); g.put(kx + 2, Y, " ");
+      g.str(kx, Y, ":*", "a");
+      if (s.flash > 0) { s.flash--; if (s.flash > 3) { g.put(kx - 1, Y - 1, "·", "a"); g.put(kx + 2, Y - 1, "·", "a"); g.put(kx + 1, Y - 2, "·", "a"); } }
+    };
+  }
+
+const sec = document.querySelector(".sky");
+{
+  const pre = sec.querySelector("pre"), s = {};
+  const probe = document.createElement("span"); probe.textContent = "M"; pre.append(probe);
+  const cw = probe.getBoundingClientRect().width || 8.4, lh = parseFloat(getComputedStyle(pre).lineHeight) || 19.6; probe.remove();
+  const step = branch(s);
+  const lay = document.createElement("div"); lay.className = "lay"; lay.setAttribute("aria-hidden", "true"); sec.insertBefore(lay, sec.querySelector(".hero"));
+  const shown = new Map();
+  // what bise says: a small line under the thread, where the kiss was when it said it. it fades in and out, and never covers an arc
+  const bub = document.createElement("div"); bub.className = "bub"; lay.append(bub); let said = "";
+  const talk = (m) => {
+    if (!m || !m.text) { bub.classList.remove("on"); return; }
+    if (m.text !== said) {
+      said = m.text; bub.innerHTML = m.text; bub.classList.remove("pop"); void bub.offsetWidth; bub.classList.add("pop");
+      bub.style.transform = `translate(${Math.max(8, Math.min(m.x * cw - 4, pre.clientWidth - bub.offsetWidth - 16))}px, ${m.y * lh}px)`;
+    }
+    bub.classList.add("on");
+  };
+  const glide = (ls) => {
+    const now = new Set();
+    for (const l of ls) {
+      now.add(l.id);
+      let e = shown.get(l.id);
+      if (!e) { e = document.createElement("span"); e.style.opacity = "0"; e.style.transition = "none"; lay.append(e); shown.set(l.id, e); e.style.transform = `translate(${l.a * cw}px, ${l.r * lh}px)`; void e.offsetWidth; e.style.transition = ""; e.style.opacity = "1"; }
+      e.textContent = l.text; e.style.transform = `translate(${l.a * cw}px, ${l.r * lh}px)`;
+    }
+    for (const [id, e] of shown) if (!now.has(id)) { shown.delete(id); e.style.opacity = "0"; setTimeout(() => e.remove(), 500); }
+  };
+  sec.addEventListener("pointermove", e => { const r = sec.getBoundingClientRect(); s.mouse = { x: (e.clientX - r.left) / cw, y: (e.clientY - r.top) / lh, p: 1 }; });
+  let visible = false, t = rnd(0, 50), running = false;
+  const frame = () => {
+    if (!visible || document.hidden) { running = false; return; }
+    // nothing is drawn behind the hero text: a box around it, 2 cells of air
+    const pr = pre.getBoundingClientRect(), rs = [...sec.querySelectorAll(".hero > .big, .hero > .t1, .hero > .t2, .hero > .install")].map(e => e.getBoundingClientRect());
+    const ko = { x0: Math.floor((Math.min(...rs.map(r => r.left)) - pr.left) / cw) - 3, x1: Math.ceil((Math.max(...rs.map(r => r.right)) - pr.left) / cw) + 3,
+                 y0: Math.floor((Math.min(...rs.map(r => r.top)) - pr.top) / lh) - 1, y1: Math.ceil((Math.max(...rs.map(r => r.bottom)) - pr.top) / lh) + 1 };
+    const g = Grid(Math.ceil(pre.clientWidth / cw) + 1, Math.ceil(pre.clientHeight / lh) + 1, ko); g.ko = ko;
+    g.labels = GLIDE || NONAMES ? [] : null;
+    step(g, t);
+    glide(NONAMES ? [] : g.labels || []);
+    talk(g.bubble); pre.innerHTML = g.html(); t += .045;
+    if (reduced) { running = false; return; }
+    setTimeout(() => requestAnimationFrame(frame), 70);
+  };
+  new IntersectionObserver(([e]) => { visible = e.isIntersecting; if (visible && !running) { running = true; frame(); } }, { threshold: .05 }).observe(sec);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && visible && !running) { running = true; frame(); } });
+}
+})();
 
 // ---- the demo: a scripted session that loops ----
 const feed = document.getElementById("feed"), agents = document.getElementById("agents"), typed = document.getElementById("typed"), working = document.getElementById("working");
