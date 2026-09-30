@@ -11,6 +11,43 @@ rule for every post: pain → promise → proof. never the tech first ("multi-ag
 
 ---
 
+## launch today · wed sep 30 (paris time)
+
+the 8-week plan below still holds from tomorrow. today is the short version.
+
+### decisions only you can make (before 13:00)
+
+1. **approvals are not built.** agents run commands without asking. my pick: launch and say it plainly (site faq, README, HN comment): "agents run commands without asking today. commit often. approvals are next." devs know yolo modes.
+2. **the LGPL glibc bit in the prebuilt V8** (main's note): main's pick is accept for launch, rebuild later.
+3. **Mistral's side-project policy**: a quick yes from your manager, today, before any public post.
+4. **your X handle** (the site says x.com/GabrielVergnaud).
+5. **who you know** on the list in §2: today it's a heads-up, not early access.
+
+### timeline
+
+| time | what | who |
+|---|---|---|
+| 10:30-12:00 | decisions above. honesty pass on site + README (macOS only, no approvals yet) | you, designer |
+| 11:00-13:00 | record the 60 s video (script below). fallback: a screen capture of the landing's flow demo | you |
+| 12:00-13:00 | heads-up DMs: Matt Pocock + the people you know. "launching today at 16:00, here's the link, no ask" | you (designer writes each DM) |
+| 14:30 | repo public (your click) | you |
+| 14:30-15:30 | clean-machine install, no gh token: curl → onboarding with a real key → first message | main |
+| 15:30 | go / no-go. site indexable (noindex removed), deploy | designer |
+| 16:00 | X thread with the video, then Bluesky, LinkedIn (EN) | you |
+| 16:05 | Show HN + your first comment | you |
+| 16:30 | r/ClaudeAI, r/commandline: a short story + the video | you |
+| 16:00-22:00 | answer every reply within the hour. bugs go to main, live | you, main |
+| 22:00 | thank-you post with the first numbers | you |
+| thu | LinkedIn in French. first "feature" post (the inbox) | you |
+
+### the 60 s video
+
+0-5 s: `cd ~/app && bise`. the gloss appears.
+5-25 s: three ideas typed one after the other, without waiting ("signup is slow on mobile", "the 404 page is sad", "csv export breaks on emoji"). three agents start in the panel.
+25-40 s: ⌥2 into one agent, one question, ⌥0 back. main answers a question for you in the history.
+40-55 s: ✓ done lines come in. one card in the inbox, answered with one key.
+55-60 s: "bise.dev". no voice-over needed, captions only.
+
 ## 0. must be true before launch day
 
 | what | today | to do |
@@ -103,9 +140,9 @@ Product Hunt: not on day 0. in week 2 or 3, with the desktop app as a second mom
 
 > 5/ what needs you waits in an inbox above your message. never a popup in the middle of your sentence.
 
-> 6/ every MCP and every skill, always on (programmatic tool calling keeps the context small). bring your own key. open source, Apache-2.0. macOS first.
+> 6/ every MCP and every skill, always on (programmatic tool calling keeps the context small). bring your own key. open source, Apache-2.0. macOS only for now. no approval mode yet: agents run commands without asking, so commit often.
 
-> 7/ most of bise was built with bise: [N] commits in [N] weeks.
+> 7/ most of bise was built with bise.
 > curl -fsSL bise.dev/install | sh
 > bise.dev
 
