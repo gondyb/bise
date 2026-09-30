@@ -148,7 +148,7 @@ def asst_content.split(tm: W.ThinkMark, +content: String, +n0: Nat,
     +n1: Nat) -> J.Json:
   match tm:
     case W.TM{+reason, +sig}:
-      asst_content.pick_signed(String.is_empty(sig),
+      asst_content.pick_signed(String.is_empty(W.bare_sig(sig)),
         W.TM{reason, sig},
         W.asst_think.reasoning(content, n0, n1),
         W.asst_think.visible(W.asst_think.raw_visible(content, n1)))

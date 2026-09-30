@@ -9,8 +9,9 @@
 #   [models."<id>/<model>"]  context, max_output, vision, reasoning, tools
 #
 # api (the wire family): openai-chat | anthropic | openai-responses |
-#   gemini | bedrock-converse. Today the Bend runtime speaks openai-chat
-#   and anthropic; the others come with BISE-147/148/149.
+#   gemini | bedrock-converse. Today the Bend runtime speaks openai-chat,
+#   anthropic and openai-responses (BISE-147); the others come with
+#   BISE-148/149.
 # key_env = "" : no key needed (local servers).
 # needs = "BISE-149" : listed, not usable yet (cloud auth).
 # small_model = "<id>" : a cheap model of the provider for short labels
@@ -175,7 +176,9 @@ keys_url = "https://platform.openai.com/api-keys"
 signup_url = "https://platform.openai.com/signup"
 billing_url = "https://platform.openai.com/settings/organization/billing"
 model = "gpt-6-astra"
-api = "openai-chat"
+# the Responses API (BISE-147): the gpt-6 family takes tools with
+# reasoning there only (Chat Completions refuses tools + reasoning_effort)
+api = "openai-responses"
 base_url = "https://api.openai.com/v1"
 key_env = "OPENAI_API_KEY"
 # the prompt cache's routing key (BISE-268; platform.openai.com/docs/guides/prompt-caching)

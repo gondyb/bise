@@ -120,7 +120,8 @@ def asst_seg_think.pick(is_replay: Bool, +reason: String, +sig: String)
 def asst_seg_think(tm: W.ThinkMark) -> List<&2, J.Json>:
   match tm:
     case W.TM{+reason, +sig}:
-      asst_seg_think.pick(Bool.and(Bool.not(String.is_empty(sig)),
+      # an OpenAI Responses span (BISE-147) is not signed for Anthropic
+      asst_seg_think.pick(Bool.and(Bool.not(String.is_empty(W.bare_sig(sig))),
           Bool.not(String.is_empty(reason))), reason, sig)
 
 # the plain text between two spans: a whitespace-only gap (the LF the

@@ -202,9 +202,9 @@ key_env = "MY_KEY"
 
 #[test]
 fn a_model_may_speak_another_family_than_its_provider() {
-    let s = setup("[models.\"openai/gpt-5-pro\"]\napi = \"openai-responses\"\n");
-    assert_eq!(s.catalog.resolve("openai/gpt-5-pro").api, "openai-responses");
-    assert_eq!(s.catalog.resolve("openai/gpt-5").api, "openai-chat");
+    let s = setup("[models.\"openai/gpt-5-pro\"]\napi = \"openai-chat\"\n");
+    assert_eq!(s.catalog.resolve("openai/gpt-5-pro").api, "openai-chat");
+    assert_eq!(s.catalog.resolve("openai/gpt-5").api, "openai-responses");
 }
 
 #[test]

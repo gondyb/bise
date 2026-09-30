@@ -976,6 +976,8 @@ def Laws.family_name_roundtrip(st):
       {==}
     case Api.Anthropic{}:
       {==}
+    case Api.OpenAIResp{}:
+      {==}
 
 def Laws.style_routes_body():
   {==}
@@ -1059,6 +1061,36 @@ def Laws.openai_body_sends_wire_names():
   {==}
 
 def Laws.anthropic_body_sends_wire_names():
+  {==}
+
+def Laws.resp_family_name_and_endpoint():
+  {==}
+
+def Laws.resp_style_of_api():
+  {==}
+
+def Laws.resp_body_maps():
+  {==}
+
+def Laws.resp_body_plain_model():
+  {==}
+
+def Laws.anthropic_drops_resp_reasoning():
+  {==}
+
+def Laws.resp_reply_maps():
+  {==}
+
+def Laws.resp_stream_reads_completed():
+  {==}
+
+def Laws.resp_stream_error():
+  {==}
+
+def Laws.resp_status_error():
+  {==}
+
+def Laws.resp_usage():
   {==}
 
 def Laws.refusal_quotes_the_provider():

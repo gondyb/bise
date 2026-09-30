@@ -83,6 +83,13 @@ pub(crate) fn request(c: &Call, env: &dyn Fn(&str) -> Option<String>) -> crate::
                 "messages": [{ "role": "user", "content": "hi" }],
             }),
         )
+    } else if c.api == "openai-responses" {
+        // BISE-147: OpenAI's Responses API (16: its smallest output cap)
+        (
+            format!("{base}/responses"),
+            vec![("Authorization".to_string(), format!("Bearer {}", c.key))],
+            serde_json::json!({ "model": c.model, "input": "hi", "max_output_tokens": 16, "store": false }),
+        )
     } else {
         // OpenAI's reasoning models take max_completion_tokens only
         let cap = if c.provider == "openai" { "max_completion_tokens" } else { "max_tokens" };
@@ -306,6 +313,10 @@ mod tests {
         assert_eq!(b["max_tokens"].as_u64(), Some(16));
         let b: serde_json::Value = serde_json::from_slice(&request(&call("openai-chat", "openai"), &none).body).unwrap();
         assert_eq!((b["max_completion_tokens"].as_u64(), b.get("max_tokens")), (Some(16), None));
+        let r = request(&call("openai-responses", "openai"), &none);
+        assert_eq!(r.url, "https://x.test/v1/responses");
+        let b: serde_json::Value = serde_json::from_slice(&r.body).unwrap();
+        assert_eq!((b["input"].as_str(), b["max_output_tokens"].as_u64(), b["store"].as_bool()), (Some("hi"), Some(16), Some(false)));
         // the tests' fake provider
         let fake = |k: &str| (k == "BEND_PROVIDER_URL").then(|| "http://127.0.0.1:9/v1/chat/completions".to_string());
         assert_eq!(request(&call("openai-chat", "mistral"), &fake).url, "http://127.0.0.1:9/v1/chat/completions");

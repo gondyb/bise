@@ -664,7 +664,7 @@ class H(http.server.BaseHTTPRequestHandler):
             return
         # BISE-293: the real APIs refuse a tool name off their pattern
         # (OpenAI refused "self.compact" on the user's first message)
-        bad_name = name_error(family, body)
+        bad_name = name_error(family, body) or request_error(family, body)
         if bad_name:
             with open(LOG, "a") as f:
                 f.write(json.dumps({"agent": "", "family": family, "path": self.path,
@@ -738,6 +738,10 @@ def tool_names(family, body):
                 out.append(("tools[%d].functionDeclarations[%d].name" % (i, j), d.get("name", "")))
         else:
             out.append(("tools.%d.name" % i if family == "anthropic" else "tools[%d].name" % i, t.get("name", "")))
+    inp = body.get("input")
+    for i, it in enumerate(inp if isinstance(inp, list) else []):
+        if isinstance(it, dict) and it.get("type") == "function_call":
+            out.append(("input[%d].name" % i, it.get("name", "")))
     for i, m in enumerate(body.get("messages") or []):
         for c in m.get("tool_calls") or []:
             out.append(("messages[%d].tool_calls.function.name" % i, (c.get("function") or {}).get("name", "")))
@@ -746,6 +750,46 @@ def tool_names(family, body):
                 if isinstance(b, dict) and b.get("type") == "tool_use":
                     out.append(("messages.%d.content.tool_use.name" % i, b.get("name", "")))
     return out
+
+
+def oai_error(where, message, code="invalid_value"):
+    return {"error": {"message": message, "type": "invalid_request_error", "param": where, "code": code}}
+
+
+def request_error(family, body):
+    """BISE-147: what the real OpenAI APIs refuse beyond the names, None
+    when the request is fine. Chat Completions: function tools with
+    reasoning_effort on a gpt-6 model. Responses (store false): a
+    reasoning item without its encrypted_content or with an id (OpenAI
+    looks the id up and finds nothing stored), a function_call_output
+    whose call_id no function_call before it has, a function tool
+    without a name."""
+    if family == "openai-chat":
+        if str(body.get("model", "")).startswith("gpt-6") and body.get("tools") and body.get("reasoning_effort") \
+                and body.get("reasoning_effort") != "none":
+            return oai_error("reasoning_effort", "Function tools with reasoning_effort are not supported for %s in "
+                             "/v1/chat/completions. To use function tools, use /v1/responses or set "
+                             "reasoning_effort to 'none'." % body["model"], "unsupported_parameter")
+        return None
+    if family != "openai-responses":
+        return None
+    inp = body.get("input")
+    calls = set()
+    for i, it in enumerate(inp if isinstance(inp, list) else []):
+        kind = it.get("type", "message")
+        if kind == "reasoning":
+            if it.get("id") and body.get("store") is False:
+                return oai_error("input[%d].id" % i, "Item with id '%s' not found. Items are not persisted when "
+                                 "`store` is set to false." % it["id"], "item_not_found")
+            if not it.get("encrypted_content"):
+                return oai_error("input[%d].encrypted_content" % i, "Reasoning items without encrypted_content "
+                                 "can not be replayed when `store` is set to false.")
+        elif kind == "function_call":
+            calls.add(it.get("call_id"))
+        elif kind == "function_call_output" and it.get("call_id") not in calls:
+            return oai_error("input", "No tool call found for function call output with call_id %s." %
+                             it.get("call_id"))
+    return None
 
 
 def name_error(family, body):

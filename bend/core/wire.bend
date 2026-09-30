@@ -667,6 +667,28 @@ def think_marked.pick(is_sig: Bool, +text: String, +sig: String) -> String:
 def think_marked(+text: String, +sig: String) -> String:
   think_marked.pick(Bool.not(String.is_empty(sig)), text, sig)
 
+# ---- whose signature is it (BISE-147) ----
+# A think span's signature is the provider's opaque proof of its
+# reasoning, and only that provider takes it back. Anthropic's
+# signature rides bare (its format before BISE-147); OpenAI Responses'
+# encrypted_content rides as "oair:<encrypted_content>". Each family
+# replays only its own: another family's span is unsigned to it.
+def resp_sig(+enc: String) -> String:
+  String.append("oair:", enc)
+
+def is_resp_sig(+sig: String) -> Bool:
+  String.starts_with(sig, "oair:")
+
+def resp_enc(+sig: String) -> String:
+  String.drop(sig, 5n)
+
+# the signature a family other than OpenAI Responses may replay
+def own_sig.pick(foreign: Bool, +sig: String) -> String:
+  Bool.pick(String, foreign, "", sig)
+
+def bare_sig(+sig: String) -> String:
+  own_sig.pick(is_resp_sig(sig), sig)
+
 def asst_think.visible.strip(is_nl: Bool, +rest: String) -> String:
   match is_nl:
     case True{}:

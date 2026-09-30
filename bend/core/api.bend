@@ -24,7 +24,7 @@
 #   reply_of_for              a whole reply -> OK/CALL/END
 #   stream_reply              a streamed reply -> OK/CALL/END
 #   usage_of / stream_usage   the token usage of a reply
-# A new family (BISE-147 Responses, 148 Gemini) is one more constructor,
+# A new family (BISE-147 Responses: done; 148 Gemini) is one more constructor,
 # one more case in each function below, and its wire module.
 
 import Base
@@ -33,15 +33,25 @@ import ./oai-chat.bend as Oai
 import ./anthropic.bend as Anth
 import ./anth-stream.bend as As
 import ./oai-stream.bend as Os
+import ./oai-resp.bend as Rs
 import ../vendor/json.bend as J
 
 type Style is Data:
   OpenAI{}
   Anthropic{}
+  OpenAIResp{}
 
 # ---- the family's name (`api = ...` in a provider table) ----
 
-def style_of_api.chat(is_chat: Bool, is_anth: Bool) -> Maybe<&2, Style>:
+def style_of_api.resp(is_resp: Bool) -> Maybe<&2, Style>:
+  match is_resp:
+    case True{}:
+      Some{OpenAIResp{}}
+    case False{}:
+      None{}
+
+def style_of_api.chat(is_chat: Bool, is_anth: Bool, is_resp: Bool)
+    -> Maybe<&2, Style>:
   match is_chat:
     case True{}:
       Some{OpenAI{}}
@@ -50,12 +60,13 @@ def style_of_api.chat(is_chat: Bool, is_anth: Bool) -> Maybe<&2, Style>:
         case True{}:
           Some{Anthropic{}}
         case False{}:
-          None{}
+          style_of_api.resp(is_resp)
 
-# None: a family bise does not speak (yet): openai-responses, gemini,
-# bedrock-converse, a typo
+# None: a family bise does not speak (yet): gemini, bedrock-converse,
+# a typo (openai-responses: BISE-147)
 def style_of_api(+api: String) -> Maybe<&2, Style>:
-  style_of_api.chat(String.eq(api, "openai-chat"), String.eq(api, "anthropic"))
+  style_of_api.chat(String.eq(api, "openai-chat"), String.eq(api, "anthropic"),
+    String.eq(api, "openai-responses"))
 
 def api_name(st: Style) -> String:
   match st:
@@ -63,6 +74,8 @@ def api_name(st: Style) -> String:
       "openai-chat"
     case Anthropic{}:
       "anthropic"
+    case OpenAIResp{}:
+      "openai-responses"
 
 def is_anthropic(st: Style) -> Bool:
   match st:
@@ -70,6 +83,8 @@ def is_anthropic(st: Style) -> Bool:
       False{}
     case Anthropic{}:
       True{}
+    case OpenAIResp{}:
+      False{}
 
 # ---- the endpoint: base_url + this path ----
 
@@ -79,6 +94,8 @@ def endpoint(st: Style) -> String:
       "/chat/completions"
     case Anthropic{}:
       "/messages"
+    case OpenAIResp{}:
+      "/responses"
 
 # ---- the headers, in the order they are set ----
 # No key (a provider with key_env = "": a local server) sends no auth
@@ -113,6 +130,10 @@ def headers(st: Style, +betas: String, +key: String) -> List<&2, Hdr>:
       headers.auth(String.is_empty(key),
         Hdr{"Authorization", String.append("Bearer ", key)},
         [Hdr{"Content-Type", "application/json"}])
+    case OpenAIResp{}:
+      headers.auth(String.is_empty(key),
+        Hdr{"Authorization", String.append("Bearer ", key)},
+        [Hdr{"Content-Type", "application/json"}])
     case Anthropic{}:
       headers.auth(String.is_empty(key), Hdr{"x-api-key", key},
         [Hdr{"anthropic-version", "2023-06-01"},
@@ -127,6 +148,8 @@ def streams(st: Style) -> Bool:
       True{}
     case Anthropic{}:
       True{}
+    case OpenAIResp{}:
+      True{}
 
 def wire_body(st: Style, +body: String) -> String:
   match st:
@@ -134,6 +157,8 @@ def wire_body(st: Style, +body: String) -> String:
       Os.stream_body(body)
     case Anthropic{}:
       As.stream_body(body)
+    case OpenAIResp{}:
+      Rs.stream_body(body)
 
 # ---- what the catalog says of the model ----
 # runtime/provider-pure.bend fills it from the models file (a key of
@@ -251,6 +276,10 @@ def api_body_for(st: Style, +model: String, +facts: MFacts, +req: W.WReq)
         case MFacts{+reasoning, +output, _, +thinking, _, +effort}:
           Anth.api_body_anth_for(model, output, thinking, reasoning, effort,
             req)
+    case OpenAIResp{}:
+      match facts:
+        case MFacts{+reasoning, +output, _, _, _, +effort}:
+          Rs.api_body(model, Rs.Opts{reasoning, output, effort}, req)
 
 def reply_of_for(st: Style, +status: U32, +body: String) -> String:
   match st:
@@ -258,6 +287,8 @@ def reply_of_for(st: Style, +status: U32, +body: String) -> String:
       Oai.reply_of(status, body)
     case Anthropic{}:
       Anth.reply_anth_of(status, body)
+    case OpenAIResp{}:
+      Rs.reply_of(status, body)
 
 # a 200 of a streaming family (its events, or a whole JSON error body)
 def stream_reply(st: Style, +text: String) -> String:
@@ -266,6 +297,8 @@ def stream_reply(st: Style, +text: String) -> String:
       Os.reply_any(text)
     case Anthropic{}:
       As.reply_any(text)
+    case OpenAIResp{}:
+      Rs.reply_any(text)
 
 # ---- the token usage ----
 # in: every input token of the call (cached ones included); out: the
@@ -289,6 +322,13 @@ def usage_of(st: Style, +u: J.Json) -> Usage:
       +cw = J.get_num_or(u, "cache_creation_input_tokens", 0n)
       Usage{Nat.add(J.get_num_or(u, "input_tokens", 0n), Nat.add(cr, cw)),
         J.get_num_or(u, "output_tokens", 0n), cr, cw}
+    # Responses: input_tokens counts the cached part too (BISE-147)
+    case OpenAIResp{}:
+      Usage{J.get_num_or(u, "input_tokens", 0n),
+        J.get_num_or(u, "output_tokens", 0n),
+        J.get_num_or(W.field_or(u, "input_tokens_details", J.JNull{}),
+          "cached_tokens", 0n),
+        0n}
 
 # the "usage" object a streamed body spreads over its events
 def stream_usage(st: Style, +text: String) -> J.Json:
@@ -297,3 +337,5 @@ def stream_usage(st: Style, +text: String) -> J.Json:
       Os.usage(text)
     case Anthropic{}:
       As.usage(text)
+    case OpenAIResp{}:
+      Rs.usage(text)

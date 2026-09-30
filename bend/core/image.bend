@@ -329,6 +329,22 @@ def anth_image_json(+mime: String, +b64: String) -> J.Json:
 type IStyle is Data:
   IOai{}
   IAnth{}
+  IResp{}
+
+# the OpenAI Responses input parts (BISE-147): input_text, and
+# input_image with its data URL as a plain string
+def resp_image_json(+mime: String, +b64: String) -> J.Json:
+  J.obj(Con{J.kv("type", J.str("input_image")),
+    Con{J.kv("image_url",
+      J.str(String.append("data:", String.append(mime,
+        String.append(";base64,", img_placeholder(b64)))))), Nil{}}})
+
+def text_json_st(+st: IStyle, +t: String) -> J.Json:
+  match st:
+    case IResp{}:
+      J.obj(Con{J.kv("type", J.str("input_text")), Con{J.kv("text", J.str(t)), Nil{}}})
+    case _:
+      text_json(t)
 
 def image_json(+st: IStyle, +mime: String, +b64: String) -> J.Json:
   match st:
@@ -336,6 +352,8 @@ def image_json(+st: IStyle, +mime: String, +b64: String) -> J.Json:
       oai_image_json(mime, b64)
     case IAnth{}:
       anth_image_json(mime, b64)
+    case IResp{}:
+      resp_image_json(mime, b64)
 
 def parts_blocks(+st: IStyle, parts: List<&2, IPart>) -> List<&2, J.Json>:
   match parts:
@@ -344,11 +362,11 @@ def parts_blocks(+st: IStyle, parts: List<&2, IPart>) -> List<&2, J.Json>:
     case Con{+p, +rest}:
       match p:
         case IText{+s}:
-          Con{text_json(s), parts_blocks(st, rest)}
+          Con{text_json_st(st, s), parts_blocks(st, rest)}
         case IImg{+name, +path, +mime, +b64}:
-          Con{text_json(img_open_text(name, path)),
+          Con{text_json_st(st, img_open_text(name, path)),
             Con{image_json(st, mime, b64),
-              Con{text_json("</image>"), parts_blocks(st, rest)}}}
+              Con{text_json_st(st, "</image>"), parts_blocks(st, rest)}}}
 
 # the content blocks of a text (markers split out)
 def content_blocks(+st: IStyle, +s: String) -> List<&2, J.Json>:

@@ -13,6 +13,7 @@ import ./core/commands.bend as Cm
 import ./core/api.bend as Api
 import ./core/wire.bend as W
 import ./core/oai-chat.bend as Oai
+import ./core/oai-resp.bend as Rs
 import ./core/anthropic.bend as Anth
 import ./core/image.bend as Im
 import ./core/text.bend as Tx
@@ -2621,6 +2622,80 @@ law anthropic_body_sends_wire_names:
         W.parse_wire("MODEL default\nTOOL github.search_issues : Search.\nMSG user : hi\nMSG assistant : x\n  CALL 1 self.compact : \nMSG tool : ok\nEND\n")),
       "\"name\":\"self_compact\""))
     == True{} : Bool}
+
+# ---- the OpenAI Responses family (BISE-147) ----
+# OpenAI's gpt-6 models take tools with reasoning on /v1/responses only.
+# Stateless like OpenCode and Codex: store false, the encrypted
+# reasoning back (include), the whole conversation replayed with this
+# family's own reasoning items; reasoning {effort, summary auto}.
+
+law resp_family_name_and_endpoint:
+  {Bool.and(String.eq(Api.api_name(Api.OpenAIResp{}), "openai-responses"),
+    Bool.and(String.eq(Api.endpoint(Api.OpenAIResp{}), "/responses"),
+      Api.streams(Api.OpenAIResp{}))) == True{} : Bool}
+
+law resp_style_of_api:
+  {Api.style_of_api("openai-responses") == Some{Api.OpenAIResp{}}
+    : Maybe<&2, Api.Style>}
+
+# LAW: the body: stateless, reasoning at the call's effort with its
+# summary, the encrypted reasoning asked back; the system prompt is a
+# developer message; the history's own reasoning replays (ENC1) as a
+# reasoning item before its text and call, the call and its output
+# pair on call_1; Anthropic's signed span is dropped (not replayed as
+# text either); the tools are functions, strict off.
+law resp_body_maps:
+  {Api.api_body_for(Api.OpenAIResp{}, "gpt-6.1-sol", Api.MFacts{True{}, 0n, "max_tokens", "", "", "medium"},
+      W.parse_wire("MODEL default\nTOOL bash : Run a command.\nMSG system : Be brief.\nMSG user : hi\nMSG assistant : <think>plan\\nBENDSIG::oair:ENC1</think>\\nok\n  CALL 1 bash : ls\nMSG tool : a.txt\nMSG assistant : <think>old\\nBENDSIG::anthsig</think>\\nbye\nMSG user : again\nEND\n"))
+    == "{\"model\":\"gpt-6.1-sol\",\"store\":false,\"reasoning\":{\"effort\":\"medium\",\"summary\":\"auto\"},\"include\":[\"reasoning.encrypted_content\"],\"input\":[{\"role\":\"developer\",\"content\":\"Be brief.\"},{\"role\":\"user\",\"content\":\"hi\"},{\"type\":\"reasoning\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"plan\"}],\"encrypted_content\":\"ENC1\"},{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\"}]},{\"type\":\"function_call\",\"call_id\":\"call_1\",\"name\":\"bash\",\"arguments\":\"{\\\"arg\\\":\\\"ls\\\"}\"},{\"type\":\"function_call_output\",\"call_id\":\"call_1\",\"output\":\"a.txt\"},{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"bye\"}]},{\"role\":\"user\",\"content\":\"again\"}],\"tools\":[{\"type\":\"function\",\"name\":\"bash\",\"description\":\"Run a command.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"arg\":{\"type\":\"string\"},\"description\":{\"type\":\"string\",\"description\":\"One short line shown to the user while this runs: what you are doing, in the user's language. 8 words at most, starting lowercase, no final period. E.g. 'weighing the hero image', 'je lance les tests du signup'.\"}},\"required\":[\"arg\"]},\"strict\":false}],\"tool_choice\":\"auto\"}"
+    : String}
+
+# LAW: a model the catalog does not mark as reasoning sends no
+# reasoning, no include; an output cap rides as max_output_tokens.
+law resp_body_plain_model:
+  {Api.api_body_for(Api.OpenAIResp{}, "m", Api.MFacts{False{}, 64n, "max_tokens", "", "", ""},
+      W.parse_wire("MODEL default\nMSG user : hi\nEND\n"))
+    == "{\"model\":\"m\",\"store\":false,\"max_output_tokens\":64,\"input\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+    : String}
+
+# LAW: the Anthropic family never replays an OpenAI reasoning span
+# (its signature is not Anthropic's).
+law anthropic_drops_resp_reasoning:
+  {String.contains(Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
+      W.parse_wire("MODEL default\nTOOL bash : Run a command.\nMSG system : Be brief.\nMSG user : hi\nMSG assistant : <think>plan\\nBENDSIG::oair:ENC1</think>\\nok\n  CALL 1 bash : ls\nMSG tool : a.txt\nMSG assistant : <think>old\\nBENDSIG::anthsig</think>\\nbye\nMSG user : again\nEND\n")), "oair:")
+    == False{} : Bool}
+
+# LAW: a whole response: the reasoning item is a think span signed
+# "oair:<encrypted_content>", the message text follows, a
+# function_call is a CALL line (its args flattened as for Chat).
+law resp_reply_maps:
+  {Rs.reply_of(200, "{\"id\":\"resp_1\",\"status\":\"completed\",\"error\":null,\"output\":[{\"type\":\"reasoning\",\"id\":\"rs_1\",\"encrypted_content\":\"ENC2\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"think\"}]},{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"hello\"}]},{\"type\":\"function_call\",\"call_id\":\"call_x\",\"name\":\"bash\",\"arguments\":\"{\\\"arg\\\":\\\"pwd\\\"}\"}]}")
+    == "OK <think>think\\nBENDSIG::oair:ENC2</think>\\nhello\nCALL 1 bash : pwd\nEND\n" : String}
+
+# LAW: a stream is read from its terminal event (the whole response
+# rides in response.completed); the deltas before it are not needed.
+law resp_stream_reads_completed:
+  {Rs.reply_any("event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"hel\"}\n\nevent: response.completed\ndata: {\"type\":\"response.completed\",\"sequence_number\":9,\"response\":{\"error\":null,\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"hello\"}]}],\"usage\":{\"input_tokens\":12,\"input_tokens_details\":{\"cached_tokens\":8},\"output_tokens\":3}}}\n\n")
+    == "OK hello\nEND\n" : String}
+
+# LAW: an error event, or a stream cut before its end, is an error
+# reply (the retry policy retries a 200 error).
+law resp_stream_error:
+  {Bool.and(String.eq(Rs.reply_any("event: error\ndata: {\"type\":\"error\",\"code\":\"server_error\",\"message\":\"boom\"}\n\n"),
+      "ERROR provider 200: boom\nEND\n"),
+    String.starts_with(Rs.reply_any("event: response.created\ndata: {\"type\":\"response.created\"}\n\n"),
+      "ERROR provider 200: the stream ended")) == True{} : Bool}
+
+# LAW: a refused request keeps OpenAI's own words (BISE-293).
+law resp_status_error:
+  {Rs.reply_of(400, "{\"error\":{\"message\":\"Invalid value.\",\"type\":\"invalid_request_error\"}}")
+    == "ERROR provider 400: Invalid value.\nEND\n" : String}
+
+# LAW: the usage: input_tokens counts the cached part already.
+law resp_usage:
+  {Api.usage_of(Api.OpenAIResp{},
+      Rs.usage("data: {\"type\":\"response.completed\",\"response\":{\"output\":[],\"usage\":{\"input_tokens\":12,\"input_tokens_details\":{\"cached_tokens\":8},\"output_tokens\":3}}}\n"))
+    == Api.Usage{12n, 3n, 8n, 0n} : Api.Usage}
 
 # ---- a refused request, in bise's words and the provider's (BISE-293) ----
 # The feed showed the provider's raw JSON twice; now one line: who
