@@ -82,6 +82,7 @@ check "THIRD_PARTY_NOTICES installed" grep -q 'third-party notices' "$cur/THIRD_
 check "the launcher only execs current (no logic left in it)" sh -c "[ \$(grep -vc '^#' '$T/.local/share/bise/bin/$CMD') -le 5 ]"
 
 # a headless session: READY on stdout, then close stdin to end it
+# (NOMODEL_TURN=1: first one turn, which must say "no model yet")
 session() {
   local label="$1"; shift
   local d; d="$(mktemp -d /tmp/pk-sess.XXXXXX)"
@@ -95,6 +96,7 @@ session() {
   done
   if grep -q '^READY' "$d/out"; then
     ok "$label: $(grep '^READY' "$d/out" | cut -c1-90)…"
+    [ -n "${NOMODEL_TURN:-}" ] && nomodel_turn "$label" "$(sed -n 's/^READY port=\([0-9]*\).*/\1/p' "$d/out")"
   else
     ko "$label: no READY"; sed 's/^/     /' "$d/err" | tail -n 5
   fi
@@ -103,9 +105,22 @@ session() {
   kill -0 $pid 2>/dev/null && { ko "$label: still running after stdin closed"; kill $pid; } || ok "$label: exits when stdin closes"
   rm -rf "$d"
 }
+# a fresh install has no model (BISE-266): the session starts, and a
+# turn answers with how to pick one, no provider call (BISE-280)
+nomodel_turn() {
+  local label="$1" port="$2" line got=""
+  if [ -n "$port" ] && exec 4<>"/dev/tcp/127.0.0.1/$port"; then
+    printf '%s\n' "hello" >&4
+    while IFS= read -r -t 30 line <&4; do
+      case "$line" in *"no model yet"*) got=1 ;; "--- idle"*) break ;; esac
+    done
+    exec 4<&-
+  fi
+  [ -n "$got" ] && ok "$label: a turn says 'no model yet'" || ko "$label: a turn did not say 'no model yet'"
+}
 echo "== single-agent session"
 session "scripted session" --scripted
-session "live session (default model)"
+NOMODEL_TURN=1 session "live session (no model yet)"
 check "sessions dir created in ~/.bise (BISE-161: a fresh HOME starts there)" test -d "$T/.bise/sessions"
 
 # one turn through the installed REPL: the provider is the tests' fake

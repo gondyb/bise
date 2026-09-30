@@ -810,6 +810,11 @@ fn main() -> std::io::Result<()> {
                 std::process::exit(1);
             }
         };
+        // no model yet (BISE-266/280): the session starts anyway, like
+        // the hub's; its turns answer with how to pick one
+        if info.model.is_empty() && generation == 1 {
+            eprintln!("no model yet: run bise and pick a provider (it checks your key), or set model in ~/.bise/config.toml");
+        }
 
         dbg.event(
             "repl_ready",

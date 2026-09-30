@@ -6,6 +6,8 @@
 /// the model, the threshold or the side-channel paths.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct HarnessInfo {
+    /// "" = no model yet (BISE-266: none built in); the REPL still
+    /// starts, its first turn says how to pick one (BISE-280)
     pub(crate) model: String,
     pub(crate) threshold: String,
     pub(crate) steer_path: String,
@@ -13,7 +15,8 @@ pub(crate) struct HarnessInfo {
 }
 
 impl HarnessInfo {
-    /// Parse `harness-info model=M threshold=N steer=P interrupt=Q`.
+    /// Parse `harness-info model=M threshold=N steer=P interrupt=Q`;
+    /// M may be empty (no model yet), the two paths may not.
     pub(crate) fn parse(line: &str) -> Option<HarnessInfo> {
         let rest = line.trim().strip_prefix("harness-info ")?;
         let mut info = HarnessInfo::default();
@@ -27,7 +30,7 @@ impl HarnessInfo {
                 _ => {}
             }
         }
-        if info.model.is_empty() || info.steer_path.is_empty() || info.interrupt_path.is_empty() {
+        if info.steer_path.is_empty() || info.interrupt_path.is_empty() {
             return None;
         }
         Some(info)
@@ -66,6 +69,18 @@ mod harness_info_tests {
     fn rejects_an_incomplete_line() {
         assert!(HarnessInfo::parse("harness-info model=m threshold=1").is_none());
         assert!(HarnessInfo::parse("bend-harness LIVE REPL on 127.0.0.1:7").is_none());
+    }
+
+    // BISE-280: a fresh install has no model (BISE-266); the REPL
+    // announces `model=` and must still start
+    #[test]
+    fn accepts_no_model_yet() {
+        let info = HarnessInfo::parse(
+            "harness-info model= threshold=102400 steer=/tmp/bend-steer-7.txt interrupt=/tmp/bend-interrupt-7.txt",
+        )
+        .expect("parses");
+        assert_eq!(info.model, "");
+        assert_eq!(info.steer_path, "/tmp/bend-steer-7.txt");
     }
 }
 
