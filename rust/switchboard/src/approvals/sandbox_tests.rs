@@ -12,6 +12,7 @@ fn spec() -> Spec {
         tmp: "/h/.bise/hubs/hx/agents/a/tmp".into(),
         home: "/h".into(),
         user_tmp: Some("/private/var/folders/x/y/T".into()),
+        run: Some("/h/.bise/hubs/hx/agents/a/run".into()),
     }
 }
 
@@ -36,10 +37,12 @@ fn the_profile_denies_writes_then_allows_the_roots_in_order() {
         "(subpath \"/h/Library/pnpm\")",
         "(subpath \"/h/.cache\")",
         "(subpath \"/h/Library/Caches\")",
-        "(subpath \"/private/var/folders/x/y/T\")",
+        "(regex #\"^/private/var/folders/x/y/T/[^/]+\\.[A-Za-z0-9]",
         "(literal \"/dev/null\")",
+        "(regex #\"^/private/tmp/sh-thd-[0-9]+$\")",
         "(subpath \"/dev/fd\")",
         "(regex #\"^/dev/tty\")",
+        "(allow file-write-unlink (regex #\"^/h/\\.bise/hubs/hx/agents/a/run/bend-sh-[0-9]+-[0-9]+\\.sh$\"))",
         "(deny network*)",
         "(remote unix-socket)",
         "(remote ip \"localhost:*\")",
@@ -294,6 +297,7 @@ mod live {
                 tmp,
                 home,
                 user_tmp: darwin_user_temp(),
+                run: Some(run.clone()),
             };
             ensure(&run, &s).unwrap();
             Some(Box_ { base, s, run })
@@ -363,8 +367,27 @@ mod live {
             let o = b.sh(&format!("mkdir -p '{}' 2>/dev/null; echo x > '{}'", p.parent().unwrap().display(), p.display()));
             assert!(!ok(&o), "{} was written", p.display());
         }
-        let o = b.sh("echo x > \"$TMPDIR/y\" && d=$(mktemp -d) && echo x > \"$d/z\"");
+        // a here-document under macOS's /bin/sh, from a folder it cannot
+        // write; the rest of /tmp stays closed
+        let o = b.sh_in(Path::new("/"), false, "cat <<X\nhere\nX\n");
+        assert!(ok(&o) && text(&o).contains("here"), "{}", text(&o));
+        let o = b.sh(&format!("echo x > /tmp/sbx-probe-{}", std::process::id()));
+        assert!(!ok(&o), "{}", text(&o));
+        // the wrapper deletes its own script in run/; the gate file stays closed
+        let script = b.run.join("bend-sh-7-123.sh");
+        std::fs::write(&script, "x").unwrap();
+        let o = b.sh(&format!("rm -f '{}'", script.display()));
+        assert!(ok(&o) && !script.exists(), "{}", text(&o));
+        let gate = b.run.join("bend-gate-7.txt");
+        let o = b.sh(&format!("echo '1 n allow' >> '{}'", gate.display()));
+        assert!(!ok(&o) && !gate.exists(), "{}", text(&o));
+        let o = b.sh("echo x > \"$TMPDIR/y\" && d=$(mktemp -d) && echo x > \"$d/z\" && f=$(mktemp) && echo x > \"$f\" && g=$(mktemp -t bise) && rm -rf \"$d\" \"$f\" \"$g\"");
         assert!(ok(&o), "{}", text(&o));
+        // the rest of macOS's user temp folder stays closed
+        if let Some(t) = &b.s.user_tmp {
+            let o = b.sh(&format!("echo x > '{}/sbx-probe-{}'", t.display(), std::process::id()));
+            assert!(!ok(&o), "{}", text(&o));
+        }
         assert!(ok(&b.sh("python3 -c 'import tempfile; f=tempfile.NamedTemporaryFile(delete=False); f.write(b\"x\"); print(f.name)'")));
     }
 

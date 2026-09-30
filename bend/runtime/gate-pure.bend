@@ -32,10 +32,31 @@ def mode_path(+dir: String) -> String:
 def gate_path(+dir: String, +port: String) -> String:
   String.append(dir, String.append("/bend-gate-", String.append(port, ".txt")))
 
+# the line the hub reads, with more JSON fields (`extra` starts with a
+# comma, or is "")
+def ask_line_x(+n: String, +tool: String, +args: String, +nonce: String,
+    +extra: String) -> String:
+  String.concat(["gate ", n, " {\"tool\":", J.quote_string(tool), ",\"args\":",
+    J.quote_string(args), ",\"nonce\":", J.quote_string(nonce), extra, "}"])
+
 # the line the hub reads (the arguments as the model wrote them)
 def ask_line(+n: String, +tool: String, +args: String, +nonce: String) -> String:
-  String.concat(["gate ", n, " {\"tool\":", J.quote_string(tool), ",\"args\":",
-    J.quote_string(args), ",\"nonce\":", J.quote_string(nonce), "}"])
+  ask_line_x(n, tool, args, nonce, "")
+
+# ---- the sandbox's rerun (approvals-sandbox, approvals-design.md §6.3) ----
+# A bash call the sandbox stopped asks the gate a second time, with the
+# first run's output (its last 4000 chars: the hub reads the path the
+# sandbox refused); an allow runs it again without the sandbox, a no keeps
+# the first output and adds why.
+
+def denied_tail(+out: String) -> String:
+  String.drop(out, Nat.sub(String.length(out), 4000n))
+
+def denied_extra(+out: String) -> String:
+  String.append(",\"denied\":", J.quote_string(denied_tail(out)))
+
+def stopped_result(+out: String, +why: String) -> String:
+  String.concat([String.trim(out), "\n\n", why])
 
 def done_line(+n: String, +how: String) -> String:
   String.concat(["gate-done ", n, " ", how])

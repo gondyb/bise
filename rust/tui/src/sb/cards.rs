@@ -366,7 +366,9 @@ fn confirm_shape(c: &Card) -> Shape {
     } else {
         format!("{} {}", c.agent, head)
     };
-    let bash = head == "wants to run";
+    // `wants to run it outside the sandbox`: a sandbox card (brief 1e)
+    let bash = head.starts_with("wants to run");
+    let rerun = head.ends_with("outside the sandbox");
     let edit = head.starts_with("wants to edit");
     // an edit or a connector: its first 3 lines (after the path), the rest counted
     let (shown, more) = if bash {
@@ -400,8 +402,8 @@ fn confirm_shape(c: &Card) -> Shape {
     }
     let first = body.first().map_or("", |l| l.trim());
     let summary = if body.len() > 1 && bash { format!("{first} · {} lines", body.len()) } else { first.to_string() };
-    let mut options = vec!["allow".to_string()];
-    let mut short = vec!["allow".to_string()];
+    let mut options = vec![if rerun { "run it again without the sandbox" } else { "allow" }.to_string()];
+    let mut short = vec![if rerun { "run again" } else { "allow" }.to_string()];
     if !always.is_empty() {
         options.push(format!("always allow {} here", always.join(", ")));
         short.push("always".into());

@@ -63,6 +63,9 @@ def main():
         f.write('[roles]\nclassify = "off"\n')
     E.env.update(HOME=home, BISE_HOME=bise, XDG_STATE_HOME=os.path.join(home, "state"))
     E.env.pop("BISE_APPROVALS", None)
+    # the parser path's cards (checker off): the sandbox (brief 1e, its own
+    # test approvals_sandbox_e2e) would contain `npm run build` with no card
+    E.env["BISE_SANDBOX"] = "0"
     ok = False
     try:
         c = E.start_hub()

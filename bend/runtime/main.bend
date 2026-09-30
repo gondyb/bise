@@ -33,6 +33,7 @@ import ./mcp.bend as Mcp
 import ./skills.bend as Sk
 import ./provider.bend as Pv
 import ./bash.bend as Sh
+import ./bash-pure.bend as Shp
 import ./patch-tool.bend as Ptl
 import ./edit-tool.bend as Edt
 import ./selftools.bend as Sf
@@ -131,6 +132,12 @@ def gate.wait(+k: Nat, +gpath: String, +ipath: String, +n: String, +nonce: Strin
 @unsafe
 def gate.ask(out: Pv.Out, +name: String, +args: String, +dir: String)
     -> IO(Pv.Out & Gp.Verdict):
+  gate.ask_x(out, name, args, dir, "")
+
+# extra: more fields for the gate line's JSON (Gp.ask_line_x)
+@unsafe
+def gate.ask_x(out: Pv.Out, +name: String, +args: String, +dir: String, +extra: String)
+    -> IO(Pv.Out & Gp.Verdict):
   do IO<Pv.Out & Gp.Verdict>:
     pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
     +port : String <- IO.pure(String, P.env_or(pr, "0"))
@@ -142,7 +149,7 @@ def gate.ask(out: Pv.Out, +name: String, +args: String, +dir: String)
     +nonce : String <- IO.pure(String, Gp.nonce_of(gate.rnd(ra), gate.rnd(rb)))
     +n : String <- IO.pure(String, Nat.show(now))
     u : Unit <- P.write_file(gpath, "")
-    out2 : Pv.Out <- emit(out, [Gp.ask_line(n, name, args, nonce)])
+    out2 : Pv.Out <- emit(out, [Gp.ask_line_x(n, name, args, nonce, extra)])
     +v : Gp.Verdict <- gate.wait(0n, gpath, ipath, n, nonce)
     out3 : Pv.Out <- emit(out2, [Gp.done_line(n, Gp.how_of(v))])
     IO.pure(Pv.Out & Gp.Verdict, (out3, v))
@@ -168,6 +175,57 @@ def gate(out: Pv.Out, +name: String, +args: String, live: Bool)
         +dir : String <- P.side_dir()
         m : Maybe<&2, String> <- P.read_file(Gp.mode_path(dir))
         gate.if(Gp.gated(name) && Gp.mode_asks(m), out, name, args, dir)
+
+# ---- bash under the sandbox (approvals-sandbox, approvals-design.md §6) ----
+# An allowed bash call runs under the sandbox its allow names (flags ""
+# when none: yolo, the parser path). A run the sandbox stopped asks the
+# gate again with its output (the hub: the checker, then a card); an allow
+# runs it a second time, without the sandbox; a no keeps the first output
+# and adds why.
+
+def bash_gated.after(m: Maybe<&2, String>, out: Pv.Out, +cmd: String,
+    +first: String) -> IO(Pv.Out & Xp.ExecRes):
+  match m:
+    case None{}:
+      do IO<Pv.Out & Xp.ExecRes>:
+        r : Xp.ExecRes <- Sh.bash_exec_as(cmd, "")
+        IO.pure(Pv.Out & Xp.ExecRes, (out, r))
+    case Some{+why}:
+      IO.pure(Pv.Out & Xp.ExecRes, (out, Xp.Ex{False{}, Gp.stopped_result(first, why)}))
+
+def bash_gated.rerun(pv: Pv.Out & Gp.Verdict, +cmd: String, +first: String)
+    -> IO(Pv.Out & Xp.ExecRes):
+  match pv:
+    case (out, +v):
+      bash_gated.after(Gp.denial(v), out, cmd, first)
+
+def bash_gated.out(+r: Xp.ExecRes) -> String:
+  match r:
+    case Xp.Ex{_, +o}:
+      o
+
+@unsafe
+def bash_gated.stopped(stop: Bool, out: Pv.Out, +args: String, +cmd: String,
+    +r: Xp.ExecRes) -> IO(Pv.Out & Xp.ExecRes):
+  match stop:
+    case False{}:
+      IO.pure(Pv.Out & Xp.ExecRes, (out, r))
+    case True{}:
+      do IO<Pv.Out & Xp.ExecRes>:
+        +dir : String <- P.side_dir()
+        pv : Pv.Out & Gp.Verdict <- gate.ask_x(out, "bash", args, dir,
+          Gp.denied_extra(bash_gated.out(r)))
+        bash_gated.rerun(pv, cmd, bash_gated.out(r))
+
+# args: the call's arguments as the gate line carried them; cmd: the
+# command; flags: the allow's (Gp.flags)
+@unsafe
+def bash_gated(out: Pv.Out, +args: String, +cmd: String, +flags: String)
+    -> IO(Pv.Out & Xp.ExecRes):
+  do IO<Pv.Out & Xp.ExecRes>:
+    +r : Xp.ExecRes <- Sh.bash_exec_as(cmd, flags)
+    bash_gated.stopped(Bool.and(Bool.not(String.is_empty(flags)), Shp.sandbox_stopped(r)),
+      out, args, cmd, r)
 
 # ---- bend-jsrt: run_typescript in a V8 isolate (the Vibe SDK core pattern) ----
 # The model writes real TypeScript/JavaScript; rust/jsrt (deno_core v8 +
@@ -443,25 +501,44 @@ def exec_program.call.self_req(is_self: Bool, +name: String, +d: Sfp.Def)
     case False{}:
       d
 
-# a program's call past its gate: run, or its denial as the result
-def exec_program.call.after(m: Maybe<&2, String>, +name: String, +args: String,
-    +live: Bool) -> IO(Xp.ExecRes):
+# a program's call past its gate: run (bash under the sandbox its allow
+# names), or its denial as the result
+def exec_program.call.run(is_bash: Bool, out: Pv.Out, +name: String, +args: String,
+    +flags: String, +live: Bool) -> IO(Pv.Out & Xp.ExecRes):
+  match is_bash:
+    case True{}:
+      bash_gated(out, args, args, flags)
+    case False{}:
+      do IO<Pv.Out & Xp.ExecRes>:
+        r : Xp.ExecRes <- exec_program.call.bash(False{}, name, args, live)
+        IO.pure(Pv.Out & Xp.ExecRes, (out, r))
+
+def exec_program.call.after(m: Maybe<&2, String>, out: Pv.Out, +name: String,
+    +args: String, +flags: String, +live: Bool) -> IO(Pv.Out & Xp.ExecRes):
   match m:
     case None{}:
-      exec_program.call.bash(String.eq(name, "bash"), name, args, live)
+      exec_program.call.run(String.eq(name, "bash"), out, name, args, flags, live)
     case Some{+why}:
-      IO.pure(Xp.ExecRes, Xp.Ex{False{}, why})
+      IO.pure(Pv.Out & Xp.ExecRes, (out, Xp.Ex{False{}, why}))
 
-def exec_program.call.gated(pv: Pv.Out & Gp.Verdict, +name: String, +args: String,
-    +live: Bool, +d: Sfp.Def) -> IO(Pv.Out & (Sfp.Def & Xp.ExecRes)):
-  match pv:
-    case (out, +v):
+def exec_program.call.gated.emit(ro: Pv.Out & Xp.ExecRes, +name: String, +live: Bool,
+    +d: Sfp.Def) -> IO(Pv.Out & (Sfp.Def & Xp.ExecRes)):
+  match ro:
+    case (out, +r):
       do IO<Pv.Out & (Sfp.Def & Xp.ExecRes)>:
-        +r : Xp.ExecRes <- exec_program.call.after(Gp.denial(v), name, args, live)
         +d2 : Sfp.Def <- IO.pure(Sfp.Def,
           exec_program.call.self_req(Sfp.is_self_tool(name), name, d))
         out2 : Pv.Out <- emit_sub(out, name, r, live)
         IO.pure(Pv.Out & (Sfp.Def & Xp.ExecRes), (out2, (d2, r)))
+
+def exec_program.call.gated(pv: Pv.Out & Gp.Verdict, +name: String, +args: String,
+    +live: Bool, +d: Sfp.Def) -> IO(Pv.Out & (Sfp.Def & Xp.ExecRes)):
+  match pv:
+    case (out0, +v):
+      do IO<Pv.Out & (Sfp.Def & Xp.ExecRes)>:
+        ro : Pv.Out & Xp.ExecRes <- exec_program.call.after(Gp.denial(v), out0, name, args,
+          Gp.flags(v), live)
+        exec_program.call.gated.emit(ro, name, live, d)
 
 @unsafe
 def exec_program.call(out: Pv.Out, +name: String, +args: String, +live: Bool,
@@ -587,12 +664,21 @@ def exec_tool.run(t: Rtp.Tool, out: Pv.Out, +name: String, +args: String,
     case Rtp.TMcp{}:
       exec_tool.with(out, Sh.exec_mcp(name, args, live))
 
-# a call past its gate: run, or its denial as a failed result
+# a call past its gate: run (bash under the sandbox its allow names), or
+# its denial as a failed result
+def exec_tool.go(is_bash: Bool, out: Pv.Out, +name: String, +args: String,
+    +flags: String, +live: Bool) -> IO(Pv.Out & Xp.ExecRes):
+  match is_bash:
+    case True{}:
+      bash_gated(out, args, W.flat_cmd(args), flags)
+    case False{}:
+      exec_tool.run(Rtp.tool_of(name), out, name, args, live)
+
 def exec_tool.after(m: Maybe<&2, String>, out: Pv.Out, +name: String, +args: String,
-    +live: Bool) -> IO(Pv.Out & Xp.ExecRes):
+    +flags: String, +live: Bool) -> IO(Pv.Out & Xp.ExecRes):
   match m:
     case None{}:
-      exec_tool.run(Rtp.tool_of(name), out, name, args, live)
+      exec_tool.go(String.eq(name, "bash"), out, name, args, flags, live)
     case Some{+why}:
       IO.pure(Pv.Out & Xp.ExecRes, (out, Xp.Ex{False{}, why}))
 
@@ -600,7 +686,7 @@ def exec_tool.gated(pv: Pv.Out & Gp.Verdict, +name: String, +args: String,
     +live: Bool) -> IO(Pv.Out & Xp.ExecRes):
   match pv:
     case (out, +v):
-      exec_tool.after(Gp.denial(v), out, name, args, live)
+      exec_tool.after(Gp.denial(v), out, name, args, Gp.flags(v), live)
 
 @unsafe
 def exec_tool(out: Pv.Out, +call: T.Call, +live: Bool) -> IO(Pv.Out & Xp.ExecRes):

@@ -1001,6 +1001,18 @@ law gate_results_and_lines:
         20, 100)
     : Maybe<&2, String> & Maybe<&2, String> & Maybe<&2, String> & String & String & U32 & U32}
 
+# LAW: a bash call the sandbox stopped asks again with its output (the
+# last 4000 chars) as "denied"; a no keeps the first output, then why.
+law gate_sandbox_rerun_line:
+  {(Gt.ask_line_x("8", "bash", "cp a ~/x", "b", Gt.denied_extra("cp: /h/x: Operation not permitted")),
+    Gt.stopped_result("cp: /h/x: Operation not permitted\n", "stopped by the sandbox."))
+    == ("gate 8 {\"tool\":\"bash\",\"args\":\"cp a ~/x\",\"nonce\":\"b\",\"denied\":\"cp: /h/x: Operation not permitted\"}",
+        "cp: /h/x: Operation not permitted\n\nstopped by the sandbox.")
+    : String & String}
+
+law gate_sandbox_denied_tail:
+  {String.length(Gt.denied_tail(String.concat(["a", "b"]))) == 2n : Nat}
+
 # LAW: the gate (1a/1b) reads {"file_path": <absolute>}.
 law edit_gate_args:
   {Ed.gate_args("/w", "/h", Ed.gate_path("edit", "{\"old_string\":\"a\",\"file_path\":\"src/x.rs\",\"new_string\":\"b\"}"))

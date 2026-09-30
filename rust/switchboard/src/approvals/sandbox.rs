@@ -68,15 +68,20 @@ pub struct Spec {
     pub tmp: PathBuf,
     pub home: PathBuf,
     /// macOS's per-user temp folder (`getconf DARWIN_USER_TEMP_DIR`):
-    /// `mktemp` writes there whatever `$TMPDIR` says (macOS 26), so it is
-    /// allowed like a cache; `None` elsewhere.
+    /// `mktemp` writes there whatever `$TMPDIR` says (macOS 26), so the
+    /// names it makes there are allowed (`tmp.XXXXXXXXXX`), not the whole
+    /// folder; `None` elsewhere.
     pub user_tmp: Option<PathBuf>,
+    /// The agent's `run/` folder (under the protected `hubs/`): the bash
+    /// wrapper deletes its own script there (`bend-sh-<port>-<hash>.sh`),
+    /// nothing else in it is writable (the gate file stays the hub's).
+    pub run: Option<PathBuf>,
 }
 
 impl Spec {
     /// The spec of a gated call's agent, its paths resolved by `fs`, the
     /// git common dir found from its folder.
-    pub fn of(call: &Call, fs: &dyn Fs) -> Spec {
+    pub fn of(call: &Call, run: &Path, fs: &dyn Fs) -> Spec {
         let cwd = fs.real(&call.cwd);
         Spec {
             git: git_common_dir(&cwd).map(|g| fs.real(&g)),
@@ -85,6 +90,7 @@ impl Spec {
             tmp: fs.real(&call.tmp),
             home: fs.real(&call.home),
             user_tmp: darwin_user_temp().map(|t| fs.real(&t)),
+            run: Some(fs.real(run)),
         }
     }
 }
@@ -114,6 +120,22 @@ fn lit(p: &Path) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
+/// A path as a literal inside an SBPL regex.
+fn regex_escape(p: &Path) -> String {
+    p.to_string_lossy()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '/' || c == '_' || c == '-' {
+                c.to_string()
+            } else if c == '"' {
+                "\\\"".to_string()
+            } else {
+                format!("\\{c}")
+            }
+        })
+        .collect()
+}
+
 /// The profile text (pure). In SBPL the last matching rule wins: deny
 /// every write, allow the roots, deny the protected paths inside them,
 /// allow the agent's `tmp/` again.
@@ -128,10 +150,17 @@ pub fn profile(s: &Spec, net: bool) -> String {
     roots.extend(s.git.clone());
     roots.push(s.bise.clone());
     roots.extend(CACHES.iter().map(|c| s.home.join(c)));
-    roots.extend(s.user_tmp.clone());
     for r in &roots {
         o.push_str(&format!("  (subpath {})\n", lit(r)));
     }
+    if let Some(t) = &s.user_tmp {
+        // only what mktemp names there (`tmp.XXXXXXXXXX`, `<prefix>.XXXXXXXX`)
+        o.push_str(&format!("  (regex #\"^{}/[^/]+\\.{}[A-Za-z0-9]*(/|$)\")\n", regex_escape(t), "[A-Za-z0-9]".repeat(8)));
+    }
+    // macOS's /bin/sh (bash 3.2) writes a here-document to /tmp/sh-thd-N,
+    // whatever $TMPDIR says (it checks the folder is writable first,
+    // else falls back to the current folder): those files only
+    o.push_str("  (literal \"/private/tmp\") (regex #\"^/private/tmp/sh-thd-[0-9]+$\")\n");
     o.push_str("  (literal \"/dev/null\") (literal \"/dev/zero\") (literal \"/dev/stdout\") (literal \"/dev/stderr\")\n");
     o.push_str("  (literal \"/dev/dtracehelper\") (literal \"/dev/ptmx\") (subpath \"/dev/fd\") (regex #\"^/dev/tty\"))\n");
     o.push_str("(deny file-write*\n");
@@ -152,6 +181,12 @@ pub fn profile(s: &Spec, net: bool) -> String {
     }
     o.push_str(")\n");
     o.push_str(&format!("(allow file-write* (subpath {}))\n", lit(&s.tmp)));
+    if let Some(r) = &s.run {
+        o.push_str(&format!(
+            "(allow file-write-unlink (regex #\"^{}/bend-sh-[0-9]+-[0-9]+\\.sh$\"))\n",
+            regex_escape(r)
+        ));
+    }
     if !net {
         o.push_str("(deny network*)\n");
         o.push_str("(allow network* (local unix-socket) (remote unix-socket))\n");
@@ -243,7 +278,7 @@ pub fn availability(macos: bool, exists: bool, env: Option<&str>) -> Availabilit
 /// Main's feed, once per hub, when `auto` is on and `sandbox-exec` is
 /// missing.
 pub const MISSING_NOTICE: &str =
-    "sandbox-exec isn't on this Mac, so auto reads each command instead of sandboxing it.";
+    "no sandbox on this Mac (sandbox-exec is missing), so auto checks each command instead.";
 
 /// How an allowed bash call runs under the sandbox: with the network
 /// open when one of its parts names a network program (design §6.3: the
@@ -386,6 +421,9 @@ impl Denial {
 pub fn card_title(agent: &str) -> String {
     format!("{agent} wants to run it outside the sandbox")
 }
+
+/// The card's first line (the TUI puts the agent's name before it).
+pub const CARD_HEAD: &str = "wants to run it outside the sandbox";
 
 /// The card's yes key (designer): its "always" key is the usual one, a
 /// rule saved with `sandbox = false`.

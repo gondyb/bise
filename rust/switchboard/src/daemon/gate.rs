@@ -17,6 +17,7 @@
 
 use super::{log_line, Msg, Shell};
 use crate::approvals::check::{CheckOut, CheckReq, Runner};
+use crate::approvals::sandbox::{self, Denial, Rerun};
 use crate::approvals::{self, mode, rules, Cache, CacheKey, Call, Checker, Mode, Part, Verdict};
 use crate::core::Input;
 use crate::model::MAIN;
@@ -41,6 +42,8 @@ pub(super) struct Gates {
     waiting: BTreeMap<String, Waiting>,
     /// The open cards of the gate, by card id.
     cards: BTreeMap<u64, GateCard>,
+    /// "no sandbox-exec" was said in main's feed (once per hub).
+    sandbox_said: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -50,6 +53,10 @@ struct Waiting {
     file: PathBuf,
     agent: String,
     card: Option<u64>,
+    /// What an allow runs under (brief 1e): "", "sandbox", "sandbox net".
+    flags: String,
+    /// The rerun of a command the sandbox stopped: what it stopped.
+    rerun: Option<Denial>,
 }
 
 #[derive(Clone, Debug)]
@@ -65,6 +72,9 @@ struct GateCard {
     repo: PathBuf,
     /// One line: what the fold says.
     summary: String,
+    /// A sandbox card: "always" saves `sandbox = false`, a no says what
+    /// the sandbox stopped.
+    rerun: Option<Denial>,
 }
 
 impl Gates {
@@ -79,6 +89,7 @@ impl Gates {
             rules: None,
             waiting: BTreeMap::new(),
             cards: BTreeMap::new(),
+            sandbox_said: false,
         }
     }
 
@@ -115,10 +126,13 @@ pub(super) fn parse_gate(rest: &str) -> Option<(String, Value)> {
 }
 
 /// The verdict line for the gate file (one line: a reason's newlines are
-/// spaces).
+/// spaces). An allow carries its flags (`sandbox`, `sandbox net`) in
+/// `reason`'s place.
 pub(super) fn verdict_line(n: &str, nonce: &str, allow: bool, reason: &str) -> String {
-    if allow {
+    if allow && reason.trim().is_empty() {
         format!("{n} {nonce} allow\n")
+    } else if allow {
+        format!("{n} {nonce} allow {}\n", reason.trim())
     } else {
         let r: String = reason.split_whitespace().collect::<Vec<_>>().join(" ");
         format!("{n} {nonce} deny {r}\n")
@@ -283,13 +297,15 @@ fn summary_of(call: &Call) -> String {
     }
 }
 
-/// The rule "always" saves for this card, as the rules file holds it.
-fn rule_of(tool: &str, repo: &Path, text: &str) -> rules::Rule {
+/// The rule "always" saves for this card, as the rules file holds it; a
+/// sandbox card's runs outside the sandbox (`sandbox = false`).
+fn rule_of(tool: &str, repo: &Path, text: &str, outside: bool) -> rules::Rule {
     let mut r = rules::Rule {
         project: Some(repo.to_path_buf()),
         tool: tool.to_string(),
         added: Some(crate::util::now_ms().to_string()),
         from: Some("card".into()),
+        sandbox: outside.then_some(false),
         ..Default::default()
     };
     if tool == "bash" {
@@ -364,7 +380,7 @@ impl Shell {
     /// forget it; the runtime goes on (its `gate-done` follows).
     fn resolve(&mut self, dir: &str, allow: bool, reason: &str) {
         let Some(w) = self.gates.waiting.remove(dir) else { return };
-        let line = verdict_line(&w.n, &w.nonce, allow, reason);
+        let line = verdict_line(&w.n, &w.nonce, allow, if allow { &w.flags } else { reason });
         use std::io::Write;
         let ok = std::fs::OpenOptions::new()
             .create(true)
@@ -390,7 +406,10 @@ impl Shell {
         let nonce = v.get("nonce").and_then(|x| x.as_str()).unwrap_or("").to_string();
         let Some(port) = self.ports.get(dir).copied() else { return };
         let file = mode::gate_file(&self.opts.paths.agent_run(dir), port);
-        self.gates.waiting.insert(dir.to_string(), Waiting { n: n.clone(), nonce, file, agent: name.to_string(), card: None });
+        self.gates.waiting.insert(
+            dir.to_string(),
+            Waiting { n: n.clone(), nonce, file, agent: name.to_string(), card: None, flags: String::new(), rerun: None },
+        );
         // the runtime read a mode file older than a switch: yolo asks nothing
         if self.gates.mode == Mode::Yolo {
             return self.resolve(dir, true, "");
@@ -404,9 +423,82 @@ impl Shell {
             }
         }
         let rules = self.rules_now();
+        let sandboxed = call.tool == "bash" && self.sandbox_on();
+        if sandboxed {
+            if let Some(rerun) = Rerun::of(&call, &v) {
+                return self.on_rerun(dir, call, rerun);
+            }
+            self.sandbox_ready(dir, &call);
+        }
         let cache = self.gates.caches.entry(call.repo.clone()).or_default();
-        let verdict = approvals::judge(&call, &rules, cache, false);
+        if sandboxed {
+            let flags = sandbox::allow_flags(&call, &rules, cache, &approvals::RealFs);
+            if let Some(w) = self.gates.waiting.get_mut(dir) {
+                w.flags = flags;
+            }
+        }
+        let verdict = approvals::judge(&call, &rules, cache, sandboxed);
         self.on_verdict(dir, call, verdict);
+    }
+
+    /// The sandbox is on (brief 1e): macOS with `sandbox-exec`, unless
+    /// `BISE_SANDBOX=0`. Missing: the parser path, said once in main's feed.
+    fn sandbox_on(&mut self) -> bool {
+        match sandbox::available() {
+            sandbox::Availability::On => true,
+            sandbox::Availability::Off => false,
+            sandbox::Availability::Missing => {
+                if !std::mem::replace(&mut self.gates.sandbox_said, true) {
+                    let _ = self.tx.send(Msg::Notice { kind: "approvals".into(), text: sandbox::MISSING_NOTICE.into() });
+                }
+                false
+            }
+        }
+    }
+
+    /// The agent's two profiles next to its gate file, rewritten when a
+    /// root moved. A write that fails leaves the old ones, or none: then
+    /// sandbox-exec fails and the command does not run.
+    fn sandbox_ready(&self, dir: &str, call: &Call) {
+        let run = self.opts.paths.agent_run(dir);
+        let spec = sandbox::Spec::of(call, &run, &approvals::RealFs);
+        if let Err(e) = sandbox::ensure(&run, &spec) {
+            log_line(&self.opts.paths, &format!("{}: sandbox profile: {e}", call.agent));
+        }
+    }
+
+    /// The runtime's second gate line: the sandbox stopped the command;
+    /// its rerun without the sandbox goes to the checker, then a card
+    /// (brief 1e §3). An allow runs it plain.
+    fn on_rerun(&mut self, dir: &str, call: Call, rerun: Rerun) {
+        let Some(w) = self.gates.waiting.get_mut(dir) else { return };
+        w.rerun = Some(rerun.denial.clone());
+        let cache = self.gates.caches.entry(call.repo.clone()).or_default();
+        if cache.allows(&rerun.key) {
+            return self.resolve(dir, true, "");
+        }
+        let always = Some(rerun.always());
+        let reason = rerun.denial.reason(&call.roots());
+        if self.gates.runner.checker() == Checker::Off {
+            return self.open_gate_card(dir, &call, &[], &reason, always, vec![rerun.key]);
+        }
+        let Some(w) = self.gates.waiting.get(dir) else { return };
+        let (agent, n) = (w.agent.clone(), w.n.clone());
+        self.feed(&agent, &gate_line("check", &n, None));
+        let task = self.hub.st.agents.get(&agent).map(|a| a.brief.objective.clone()).unwrap_or_default();
+        let req = CheckReq {
+            call,
+            parts: rerun.parts,
+            keys: vec![rerun.key],
+            task,
+            script: None,
+            denied: Some(rerun.denial.state()),
+        };
+        let (runner, tx, dir) = (self.gates.runner.clone(), self.tx.clone(), dir.to_string());
+        std::thread::spawn(move || {
+            let out = runner.check(&req);
+            let _ = tx.send(Msg::GateChecked { dir, n, req: Box::new(req), out });
+        });
     }
 
     fn on_verdict(&mut self, dir: &str, call: Call, verdict: Verdict) {
@@ -467,6 +559,12 @@ impl Shell {
             }
             CheckOut::Card { reason, detail } => {
                 log_line(&self.opts.paths, &format!("approvals: checker card for {}: {}", req.call.agent, detail));
+                // a sandbox rerun: the card says what the sandbox stopped (designer)
+                if let Some(d) = self.gates.waiting.get(dir).and_then(|w| w.rerun.clone()) {
+                    let always = Some(approvals::always_rules(&req.parts));
+                    let reason = d.reason(&req.call.roots());
+                    return self.open_gate_card(dir, &req.call, &[], &reason, always, req.keys);
+                }
                 let always = Some(approvals::always_rules(&req.parts)).filter(|a| !a.is_empty()).or_else(|| {
                     req.parts.is_empty().then(|| vec![req.call.tool.clone()]).filter(|_| req.call.tool != "bash")
                 });
@@ -521,8 +619,8 @@ impl Shell {
         always: Option<Vec<String>>,
         keys: Vec<CacheKey>,
     ) {
-        let same = format!("{}\u{0}{}\u{0}{}", call.tool, call.args, call.repo.display());
         let Some(w) = self.gates.waiting.get(dir).cloned() else { return };
+        let same = format!("{}\u{0}{}\u{0}{}\u{0}{}", call.tool, call.args, call.repo.display(), w.rerun.is_some());
         let id = match self.gates.cards.iter().find(|(_, c)| c.same == same).map(|(id, _)| *id) {
             Some(id) => {
                 if let Some(c) = self.gates.cards.get_mut(&id) {
@@ -531,7 +629,10 @@ impl Shell {
                 id
             }
             None => {
-                let text = card_text(call, needs, reason, always.as_deref());
+                let mut text = card_text(call, needs, reason, always.as_deref());
+                if w.rerun.is_some() {
+                    text = text.replacen("wants to run", sandbox::CARD_HEAD, 1);
+                }
                 let before: Vec<u64> = self.hub.st.open_cards().map(|c| c.id).collect();
                 self.step(Input::ConfirmOpen { agent: w.agent.clone(), text });
                 let Some(id) = self
@@ -554,6 +655,7 @@ impl Shell {
                         tool: call.tool.clone(),
                         repo: call.repo.clone(),
                         summary: summary_of(call),
+                        rerun: w.rerun.clone(),
                     },
                 );
                 id
@@ -580,7 +682,7 @@ impl Shell {
             Answer::Always => {
                 let bise = self.bise_root();
                 for r in c.always.iter().flatten() {
-                    if let Err(e) = rules::save(&rules::file(&bise), &rule_of(&c.tool, &c.repo, r)) {
+                    if let Err(e) = rules::save(&rules::file(&bise), &rule_of(&c.tool, &c.repo, r, c.rerun.is_some())) {
                         log_line(&self.opts.paths, &format!("approvals: {e}"));
                     }
                 }
@@ -594,8 +696,19 @@ impl Shell {
                 (false, note.clone())
             }
         };
+        if allow && c.rerun.is_some() {
+            // this exact command skips the sandbox for the rest of the session
+            let cache = self.gates.caches.entry(c.repo.clone()).or_default();
+            for k in &c.keys {
+                cache.allow(k.clone());
+            }
+        }
+        let why = match &c.rerun {
+            Some(d) => d.result("", &no_reason(&note)),
+            None => no_reason(&note),
+        };
         for d in &c.dirs {
-            self.resolve(d, allow, &no_reason(&note));
+            self.resolve(d, allow, &why);
         }
         let fold = fold_line(allow, &names, &c.summary, &note);
         let mut feeds: Vec<String> = names.clone();
@@ -702,6 +815,8 @@ mod tests {
         assert_eq!(args_of("bash", Some(&json!("\"ls\""))), json!({"arg": "ls"}));
         assert_eq!(args_of("gmail.send", Some(&json!("{\"to\":1}"))), json!({"to": 1}));
         assert_eq!(verdict_line("7", "x1", true, ""), "7 x1 allow\n");
+        // brief 1e: an allow carries the sandbox's flags
+        assert_eq!(verdict_line("7", "x1", true, "sandbox net"), "7 x1 allow sandbox net\n");
         assert_eq!(verdict_line("7", "x1", false, "the user\nsaid no."), "7 x1 deny the user said no.\n");
         assert_eq!(gate_line("card", "7", Some(12)), "sb gate : card 7 12");
         assert_eq!(
@@ -742,5 +857,13 @@ mod tests {
             card_text(&c, &[], "r", None),
             "wants to edit a file outside the repo\n| /u/Desktop/x.txt\n| +hi\n| +there\nreason: r"
         );
+    }
+
+    /// brief 1e: "always" on a sandbox card saves `sandbox = false`.
+    #[test]
+    fn a_sandbox_card_saves_a_rule_outside_the_sandbox() {
+        let r = rule_of("bash", Path::new("/w/repo"), "cp *", true);
+        assert_eq!((r.pattern.as_deref(), r.sandbox), (Some("cp *"), Some(false)));
+        assert_eq!(rule_of("bash", Path::new("/w/repo"), "cp *", false).sandbox, None);
     }
 }

@@ -4425,6 +4425,12 @@ def Laws.gate_poll_order():
 def Laws.gate_results_and_lines():
   {==}
 
+def Laws.gate_sandbox_rerun_line():
+  {==}
+
+def Laws.gate_sandbox_denied_tail():
+  {==}
+
 def Laws.edit_gate_args():
   {==}
 
