@@ -4,7 +4,7 @@ rules for every post: pain first, then the promise, then the proof. lowercase. u
 
 ---
 
-## 1. the launch thread (wed 16:00)
+## 1. the launch thread (launch time)
 
 ### the hook (post 1). pick one
 
@@ -120,7 +120,7 @@ facts from docs/bend-laws-report.md. say "proofs checked by Bend", never "formal
 
 | day | main post (15:30) |
 |---|---|
-| wed | launch thread (16:00) |
+| launch day | launch thread |
 | thu | capsule 1 · the thread that runs itself |
 | fri | capsule 3 · every MCP, always on |
 | sat, sun | 1-2 light posts a day (weekend) |

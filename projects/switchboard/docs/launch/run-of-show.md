@@ -15,6 +15,16 @@ latest release: v2026.9.30-4. repo gvergnaud/bise: private until Gabriel's click
 | 7 | you on camera in the video? French posts beyond LinkedIn thu? | open |
 | 8 | demo repo for the video: a toy repo (like 'acme' from the landing demos) or a real one? none exists yet | open |
 
+## ⚠ new timing (Gabriel away 13:00-15:30)
+
+all copy is now time-free ("very soon", "launch +5 min"). pick one:
+
+- **A · my pick.** before 13:00: manager message, repo public (your click). main runs the clean install test while you're away. designer removes noindex once main says go. 15:30: you're back, go / no-go, record the video (or use designer's clips). **posts ~17:00-17:30 paris** (11:00 new york, 8:00 san francisco: still a good HN window).
+- **B.** repo public at 15:30 when you're back, main tests 15:30-16:30, posts ~17:30-18:00.
+- **C.** tomorrow, same plan at 16:00. only if something breaks.
+
+the table below is the old plan: shift every line after 14:30 by the delay.
+
 ## timeline
 
 | time | what | who | done |

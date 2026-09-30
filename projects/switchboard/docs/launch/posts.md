@@ -5,7 +5,7 @@ character counts are approximate: X caps a post at 280.
 
 ---
 
-## 16:00 · X thread (7 posts, video on post 1, link on post 7)
+## launch · X thread (7 posts, video on post 1, link on post 7)
 
 tip: the link goes in the last post; X shows fewer people a first post with a link.
 
@@ -65,7 +65,7 @@ tip: the link goes in the last post; X shows fewer people a first post with a li
 
 ---
 
-## 16:00 · Bluesky (one post + the video)
+## launch · Bluesky (one post + the video)
 
 > i built the terminal app i wanted for coding with agents: bise :*
 >
@@ -77,7 +77,7 @@ tip: the link goes in the last post; X shows fewer people a first post with a li
 
 ---
 
-## 16:00 · LinkedIn (EN)
+## launch · LinkedIn (EN)
 
 > at 6pm last month i looked at my day. i'd shipped more than ever. i felt like i did nothing.
 >
@@ -98,7 +98,7 @@ tip: the link goes in the last post; X shows fewer people a first post with a li
 
 ---
 
-## 16:05 · Show HN
+## launch +5 min · Show HN
 
 **title:** `Show HN: bise – one thread per repo, it runs the coding agents for you`
 **url:** https://github.com/gvergnaud/bise (HN prefers the repo for open source; bise.dev in the comment)
@@ -131,7 +131,7 @@ left out on purpose: the Bend proofs (the full Lean check has never run; say it 
 
 ---
 
-## 16:15 · newsletter (Kit)
+## launch +15 min · newsletter (Kit)
 
 **subject:** i built something new: bise :*
 **preview:** a terminal where multi-agent coding is painless. open source, out today.
@@ -164,7 +164,7 @@ to verify: "a hundred servers" is the landing's wording (copy, not a benchmark).
 
 ---
 
-## 16:30 · Reddit
+## launch +30 min · Reddit
 
 check each sub's self-promo rules first (to verify). post as a story, video attached, link in the text.
 
@@ -190,9 +190,9 @@ check each sub's self-promo rules first (to verify). post as a story, video atta
 
 ---
 
-## 22:00 · thank-you post (fill with real numbers only)
+## evening · thank-you post (fill with real numbers only)
 
-> six hours ago i put bise out.
+> a few hours ago i put bise out.
 >
 > [N] stars, [N] installs, [N] issues, and a lot of :* in my replies.
 >
@@ -206,7 +206,7 @@ check each sub's self-promo rules first (to verify). post as a story, video atta
 
 > "on dit bise, pas bees."
 >
-> hier j'ai sorti bise :* , un terminal pour coder avec plein d'agents IA en même temps.
+> je viens de sortir bise :* , un terminal pour coder avec plein d'agents IA en même temps.
 >
 > le problème : les agents m'ont rendu plus rapide, et mes journées plus vides. cinq onglets, "should i continue?" toute la journée, le même contexte collé trois fois. à 18h j'avais livré plus que jamais et l'impression de n'avoir rien fait.
 >
