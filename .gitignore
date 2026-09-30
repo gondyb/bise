@@ -27,3 +27,14 @@ __pycache__/
 # the old release.sh bundle (gone, BISE-164: packaging/build-dist.sh
 # makes the tarball, in /tmp/bise-dist)
 dist/
+
+# Secrets and local session data, never committed (BISE-258,
+# projects/switchboard/docs/public-audit.md)
+.env
+.env.*
+auth.json
+*.pem
+*.key
+*.p12
+events.jsonl
+!projects/switchboard/tests/fixtures/**/events.jsonl
