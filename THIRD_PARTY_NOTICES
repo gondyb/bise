@@ -586,7 +586,7 @@ Other components (section 3), by license:
   Bend (the compiler's C runtime, compiled into the three binaries)  Apache-2.0
       https://github.com/bendlang/bend
       Copyright 2026 HigherOrderCO
-  BendHub package 0xbf477e663cf4acb1369a68e0f0fa713b (http, dns, url, encoding, zlib, json, wire)  MIT-0
+  BendHub package 0xbf477e663cf4acb1369a68e0f0fa713b (http, dns, url, encoding, zlib, json, wire; vendored and patched as bend/vendor/http/)  MIT-0
       https://bend-lang.com (no LICENSE file: MIT-0 under the BendHub terms)
   BendHub package 0x16458a2db4f36577294543ec2a6d420c (json)  MIT-0
       https://bend-lang.com (no LICENSE file: MIT-0 under the BendHub terms)

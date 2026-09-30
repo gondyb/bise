@@ -94,12 +94,21 @@ state() {
   [ "$d" = true ] && echo draft || echo published
 }
 
+# the sha of tag <tag> on GitHub, empty when GitHub has no such tag: on
+# a 404, gh api exits 1 but prints GitHub's error body on stdout
+# ({"message":"Not Found",...}), so only a successful call's hex counts
+remote_tag() {  # <tag>
+  local s
+  s="$(gh api "repos/$repo/git/ref/tags/$1" --jq .object.sha 2>/dev/null)" || return 0
+  case "$s" in *[!0-9a-f]* | "") ;; *) echo "$s" ;; esac
+}
+
 # the tag: given, else today's (the first one free)
 if [ -z "$tag" ]; then
   [ "$publish" = 0 ] || [ "$local" = 1 ] || [ "$next" = 1 ] || die "--publish needs the tag"
   base="v$(date -u +%Y.%-m.%-d)" tag="$base" n=1
   while gh release view "$tag" -R "$repo" >/dev/null 2>&1 \
-     || gh api "repos/$repo/git/ref/tags/$tag" >/dev/null 2>&1; do
+     || [ -n "$(remote_tag "$tag")" ]; do
     n=$((n + 1)); tag="$base-$n"
   done
 fi
@@ -157,7 +166,7 @@ if [ "$st" = published ]; then
 fi
 
 # 1. the tag, on a pushed commit (skipped when GitHub has it)
-remote_sha="$(gh api "repos/$repo/git/ref/tags/$tag" --jq .object.sha 2>/dev/null || true)"
+remote_sha="$(remote_tag "$tag")"
 if [ -z "$remote_sha" ]; then
   commit="$(cd "$REPO_DIR" && git rev-parse --verify "$rev^{commit}")" || die "no commit $rev"
   gh api "repos/$repo/commits/$commit" --jq .sha >/dev/null 2>&1 \

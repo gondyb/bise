@@ -11,8 +11,8 @@ import ../core/wire.bend as W
 import ./persist.bend as P
 import ./remote.bend as Rem
 import ../core/config.bend as Cf
-import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
-import 0xbf477e663cf4acb1369a68e0f0fa713b/encoding/encoding.bend as Enc
+import ../vendor/http/http.bend as Http
+import ../vendor/http/encoding/encoding.bend as Enc
 import ./settings.bend as St
 import ./provider-pure.bend as Pvp
 import ../core/image.bend as Im

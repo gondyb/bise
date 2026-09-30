@@ -92,7 +92,8 @@ recipe() {
   esac
 }
 
-# the key: every .bend file under the source dirs, by content (never a
+# the key: every .bend file under the source dirs and the .c/.js of
+# their foreign effects (bend/vendor/http/effs), by content (never a
 # date: a fresh checkout has fresh mtimes), and the macOS target (a
 # binary built for another one is another binary). Packages (0x…) are
 # immutable.
@@ -102,7 +103,7 @@ key() {  # <src> <name>
   set -- "$1" $r
   # only the dirs <src> has (find exits 1 on a missing one: pipefail)
   local d dirs=(); for d in "${@:3}"; do if [ -e "$1/$d" ]; then dirs+=("$d"); fi; done
-  (cd "$1" && { find "${dirs[@]}" -type f -name '*.bend' -print0 | sort -z | xargs -0 cat
+  (cd "$1" && { find "${dirs[@]}" -type f \( -name '*.bend' -o -name '*.c' -o -name '*.js' \) -print0 | sort -z | xargs -0 cat
                 echo "MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET"; } | shasum | cut -c1-12)
 }
 

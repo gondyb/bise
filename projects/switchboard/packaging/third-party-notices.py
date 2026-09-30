@@ -81,7 +81,7 @@ MANUAL = [
         dict(name="Bend (the compiler's C runtime, compiled into the three binaries)",
              license="Apache-2.0", url="https://github.com/bendlang/bend",
              notice="Copyright 2026 HigherOrderCO", files=[]),
-        dict(name="BendHub package 0xbf477e663cf4acb1369a68e0f0fa713b (http, dns, url, encoding, zlib, json, wire)",
+        dict(name="BendHub package 0xbf477e663cf4acb1369a68e0f0fa713b (http, dns, url, encoding, zlib, json, wire; vendored and patched as bend/vendor/http/)",
              license="MIT-0", url="https://bend-lang.com (no LICENSE file: MIT-0 under the BendHub terms)", files=[]),
         dict(name="BendHub package 0x16458a2db4f36577294543ec2a6d420c (json)",
              license="MIT-0", url="https://bend-lang.com (no LICENSE file: MIT-0 under the BendHub terms)", files=[]),

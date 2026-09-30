@@ -141,7 +141,7 @@ jobs:
           path: |
             ~/sb-build/cache
             ~/.bend/lib
-          key: bins-${{ matrix.target }}-bend${{ env.BEND_VERSION }}-${{ hashFiles('bend/runtime/**/*.bend', 'bend/core/**/*.bend', 'bend/vendor/**/*.bend', 'bend/hub/**/*.bend', 'rust/.cargo/config.toml') }}
+          key: bins-${{ matrix.target }}-bend${{ env.BEND_VERSION }}-${{ hashFiles('bend/runtime/**/*.bend', 'bend/core/**/*.bend', 'bend/vendor/**', 'bend/hub/**/*.bend', 'rust/.cargo/config.toml') }}
           restore-keys: bins-${{ matrix.target }}-bend${{ env.BEND_VERSION }}-
 
       - name: Build the V8 engine (release)

@@ -252,7 +252,9 @@ if a[0] == "api":
         print(p[4]); sys.exit(0)
     if p[3:6] == ["git", "ref", "tags"]:
         r = git("rev-parse", "-q", "--verify", "refs/tags/" + p[6] + "^{commit}")
-        if r.returncode: die("Not Found")
+        if r.returncode:   # as gh does: GitHub's 404 body on stdout, exit 1
+            print('{"message":"Not Found","documentation_url":"https://docs.github.com/rest/git/refs#get-a-reference","status":"404"}', end="")
+            die("gh: Not Found (HTTP 404)")
         print(r.stdout.strip()); sys.exit(0)
     die("stub: api " + a[1], 2)
 if a[0] == "release":
@@ -307,6 +309,7 @@ out="$(P v0.0.6)"; has "$out" "is not on GitHub" && ok "an unpushed commit: refu
 check "... no tag pushed" sh -c "! git -C '$BARE' rev-parse -q --verify refs/tags/v0.0.6"
 out="$(P v0.0.6 --rev "$C1" --add x)"; has "$out" "go with --local" && ok "--add without --local: refused" || ko "--add: $out"
 out="$(P v0.0.6 --rev "$C1" --dry-run)"; has "$out" "would tag" && ok "--dry-run says what it would do" || ko "dry run: $out"
+has "$out" "is on GitHub" && ko "... a 404 read as a tag on GitHub: $out" || ok "... a tag GitHub answers 404 for is not on GitHub"
 check "... and pushes nothing" sh -c "! git -C '$BARE' rev-parse -q --verify refs/tags/v0.0.6"
 out="$(P v0.0.6 --rev "$C1")"; printf '%s\n' "$out" | tail -n 3 | sed 's/^/     /'
 check "the tag is pushed, on the commit" test "$(git -C "$BARE" rev-parse 'refs/tags/v0.0.6^{commit}' 2>/dev/null)" = "$C1"

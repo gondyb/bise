@@ -25,7 +25,7 @@ import ../core/text.bend as Tx
 import ./persist.bend as P
 import ./tools.bend as X
 import ./tools-pure.bend as Xp
-import 0xbf477e663cf4acb1369a68e0f0fa713b/http.bend as Http
+import ../vendor/http/http.bend as Http
 # request bodies are built with J; every PARSE goes through Jv, which keeps
 # numbers as text: Bend's Nat is 48-bit, and the connector bootstrap
 # carries 2^53-1 JSON-schema maximums that would fail to parse otherwise
