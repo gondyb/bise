@@ -21,7 +21,7 @@ mod cards;
 pub(super) use cards::{card_choices, card_mouse, inbox_key, leave_inbox};
 use cards::{Card, CardView};
 mod card_draw;
-pub(super) use card_draw::{card_frame, card_view_open, divider_label as card_divider_label, draw_strip, draw_view as draw_card_view, fit_pairs as fit_card_pairs, inbox_selected, key_pairs as card_key_pairs, strip_height};
+pub(super) use card_draw::{card_frame, card_view_open, divider_label as card_divider_label, draw_strip, draw_view as draw_card_view, fit_pairs as fit_card_pairs, inbox_pairs, inbox_selected, key_pairs as card_key_pairs, strip_height};
 mod panel;
 pub(super) use panel::PANEL_TITLE;
 pub(super) use panel::{draw_panel, focus_model, key_mode, panel_mouse, placeholder, split, status_state, viewed_model, viewed_who, viewed_working, workspace};

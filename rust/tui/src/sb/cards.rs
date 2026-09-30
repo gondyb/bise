@@ -12,9 +12,9 @@
 //!    A click on an option answers, on a row opens the card view, on the
 //!    `×` closes.
 //! 2. The inbox selected (ctrl+g, [`CardView::inbox`]): a `▸` on a strip
-//!    row, the composer faint; ↑↓ choose, ⏎ or → opens the row, esc,
-//!    ctrl+g or ↓ past the last row go back to the composer, any other
-//!    key goes back to it and does its job there (no keystroke lost).
+//!    row, the composer faint; ↑↓ choose and loop (the last ↓ the first),
+//!    ⏎ or → opens the row, esc or ctrl+g go back to the composer, any
+//!    other key goes back to it and does its job there (no keystroke lost).
 //! 3. The card view (⏎ on a row, a row click): it takes the history's
 //!    place; the cards are tabs. On an empty composer ↑↓ highlight an
 //!    option (none on open: a reflex ⏎ never answers), ⏎ picks it, 1-9
@@ -108,6 +108,9 @@ impl Card {
 pub(super) enum CardHit {
     /// open the card view on this card
     Row(u64),
+    /// a strip row: select it (the inbox selected on it); the row
+    /// already selected: open it
+    Select(u64),
     /// answer this card with its option `i` at once
     Pick(u64, usize),
     /// close this card without answering
@@ -675,9 +678,11 @@ pub(crate) fn leave_inbox(app: &mut App) {
 }
 
 /// The keys while the inbox is selected; `true` when handled. ↑↓ choose
-/// (no wrap; ↓ past the last row: back to the composer), ⏎ or → opens
-/// the row, esc or ctrl+g back to the composer. Any other key goes back
-/// to the composer and does its job there (a letter is typed): `false`.
+/// and loop (↓ on the last row: the first, ↑ on the first: the last; the
+/// strip scrolls to it), 1-9 answer the selected row with that option at
+/// once (a digit past its options: nothing), ⏎ or → opens the row, esc
+/// or ctrl+g back to the composer. Any other key goes back to the
+/// composer and does its job there (a letter is typed): `false`.
 pub(crate) fn inbox_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
     let Some(sel) = app.sb.card.inbox else { return false };
     let rows = super::card_draw::strip_ids(&app.sb);
@@ -691,9 +696,17 @@ pub(crate) fn inbox_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         // shift or ⌥ alone (kitty's protocol): not a key yet
         (KeyCode::Modifier(_), _) => return false,
         (KeyCode::Char('g'), KeyModifiers::CONTROL) | (KeyCode::Esc, _) => cv.inbox = None,
-        (KeyCode::Up, KeyModifiers::NONE) => cv.inbox = Some(i.saturating_sub(1)),
-        (KeyCode::Down, KeyModifiers::NONE) => cv.inbox = (i + 1 < rows.len()).then_some(i + 1),
+        (KeyCode::Up, KeyModifiers::NONE) => cv.inbox = Some((i + rows.len() - 1) % rows.len()),
+        (KeyCode::Down, KeyModifiers::NONE) => cv.inbox = Some((i + 1) % rows.len()),
         (KeyCode::Enter | KeyCode::Right, KeyModifiers::NONE) => open_view(app, Some(rows[i])),
+        // a group of approvals has no options in the strip: nothing
+        (KeyCode::Char(c @ '1'..='9'), KeyModifiers::NONE) => {
+            if super::card_draw::strip_row_is_one(&app.sb, rows[i]) && pick(app, rows[i], c as usize - '1' as usize) {
+                // the next row takes its place (the last: the one above)
+                let left = super::card_draw::strip_ids(&app.sb).len();
+                app.sb.card.inbox = (left > 0).then(|| i.min(left - 1));
+            }
+        }
         _ => {
             cv.inbox = None;
             return false;
@@ -782,8 +795,10 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
 /// The mouse on the strip or the card view; `true` when handled.
 pub(crate) fn card_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bool {
     use crossterm::event::{MouseButton, MouseEventKind};
-    // a click goes back from the inbox selected (a row click opens it)
-    if matches!(m.kind, MouseEventKind::Down(_)) {
+    // a click goes back from the inbox selected (a click on a strip row
+    // selects it, see `CardHit::Select`)
+    let on_row = matches!(app.sb.card.hit(m.column, m.row), Some(CardHit::Select(_)));
+    if matches!(m.kind, MouseEventKind::Down(_)) && !on_row {
         leave_inbox(app);
     }
     let cv = &app.sb.card;
@@ -799,6 +814,16 @@ pub(crate) fn card_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> boo
             let Some(hit) = cv.hit(m.column, m.row) else { return false };
             match hit {
                 CardHit::Row(id) => open_view(app, Some(id)),
+                CardHit::Select(id) => {
+                    let rows = super::card_draw::strip_ids(&app.sb);
+                    let at = rows.iter().position(|r| *r == id);
+                    let sel = app.sb.card.inbox.map(|i| i.min(rows.len().saturating_sub(1)));
+                    if at.is_some() && at == sel {
+                        open_view(app, Some(id));
+                    } else {
+                        app.sb.card.inbox = at;
+                    }
+                }
                 CardHit::Open => open_view(app, None),
                 CardHit::Tab(id) => show(app, id),
                 CardHit::Pick(id, i) => {

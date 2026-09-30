@@ -100,6 +100,7 @@ impl Mode {
             Mode::Confirm => &[("y", "yes"), ("n", "no"), ("esc", "cancel")],
             Mode::Find => &[("⏎", "older"), ("↑↓", "move"), ("esc", "close")],
             // the view's own keys come from `sb::card_key_pairs` (`1-2 pick`…)
+            // the selected row's keys come from `sb::inbox_pairs` (`1-2 answer`…)
             Mode::Inbox => &[("↑↓", "choose"), ("⏎", "open"), ("esc", "back to your message")],
             Mode::Card => &[("⏎", "answer"), ("ctrl+x", "close"), ("esc", "back")],
             Mode::Selected => &[("⏎", "enter"), ("space", "preview"), ("D", "drop"), ("esc", "close")],
@@ -159,8 +160,9 @@ pub(crate) fn line(app: &App, width: u16) -> Line<'static> {
     if crate::ctrlhint::on(app) && matches!(mode(app), Mode::Default | Mode::Steer | Mode::Selected | Mode::Archived | Mode::Images | Mode::Quote | Mode::Card) {
         return pairs_line(&crate::ctrlhint::pairs(app), usize::from(width)).0;
     }
-    if mode(app) == Mode::Card {
-        let pairs = crate::sb::fit_card_pairs(crate::sb::card_key_pairs(app), usize::from(width));
+    if matches!(mode(app), Mode::Card | Mode::Inbox) {
+        let pairs = if mode(app) == Mode::Card { crate::sb::card_key_pairs(app) } else { crate::sb::inbox_pairs(app) };
+        let pairs = crate::sb::fit_card_pairs(pairs, usize::from(width));
         let pairs: Vec<(&str, &str)> = pairs.iter().map(|(k, l)| (*k, l.as_str())).collect();
         return pairs_line(&pairs, usize::from(width)).0;
     }

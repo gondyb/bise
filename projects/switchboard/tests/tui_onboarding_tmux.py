@@ -118,10 +118,11 @@ def main():
         # first one, so the first-item hint teaches the inbox (BISE-248)
         sc = t.wait("can i set bise up", 30)
         sc = t.wait("this is your inbox.")
-        assert "2 not now" in sc and "what's on your mind?" in sc, sc
+        assert "2 not now" not in sc and "what's on your mind?" in sc, sc
         shot("7-setup-card", sc)
-        t.keys("C-g")                       # the inbox selected, ⏎ opens it
-        t.wait("esc back to your message")
+        t.keys("C-g")                       # the inbox selected: its keys on the row, ⏎ opens it
+        t.wait("2 not now   ⏎ open")
+        t.wait("esc back")
         t.keys("Enter")
         sc = t.wait("1-2 pick")
         assert "checking changes nothing." in sc, sc

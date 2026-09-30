@@ -493,26 +493,36 @@ the thread they never touch the inbox until `ctrl+g`. Three levels:
   `inbox · 3 waiting for you`, `ctrl+g select` on the right (the key in
   text color, the label dim), then one row per item, most blocking first
   (approvals, questions, the rest):
-  `? perf · the hero image is 4.2 MB…   1 compress  2 both  ×` (the digits
-  in accent, the short labels dim, `×` faint; the top row on the raised
-  tint). A command shows its first line and `n lines`; a patch its first
-  file and `+2 files · +42 −7`; more than 3 options: `n options`; more
-  than 3 items: `+ n more`; approvals that open together (5 s): one row,
-  `? 3 agents want to run`. Under 24 rows: one row, the top item and
-  `+ n`. Mouse: an option answers at once, a row opens it in the view,
-  `×` closes. The thread's key bar says `ctrl+g inbox` right after
+  `? perf · the hero image is 4.2 MB…` and its faint end, no keys on
+  the row (BISE-253: nothing but `ctrl+g` acts on the inbox, so no row
+  shows a key you cannot press yet; the top row on the raised tint). A
+  command shows its first line and `n lines`; a patch its first file and
+  `+2 files · +42 −7`; more than 3 items: `+ n more`; approvals that open
+  together (5 s): one row, `? 3 agents want to run`. Under 24 rows: one
+  row, the top item and `+ n`. Mouse: a row click selects it (its keys
+  show), a click on the row selected opens it in the view. The thread's key bar says `ctrl+g inbox` right after
   `⏎ send`; `↑` on an empty composer still recalls your history.
 - **The inbox selected** (`ctrl+g`, only while the strip has rows): the
   selected row raised with an accent `▸ ` before its glyph (ASCII `> `,
   NO_COLOR reverse video), the other rows 2 spaces in to align; it starts
   on row 1 (the most blocking). The composer's draft goes faint, no caret
-  (empty: `your message waits here`). `↑↓` move (no wrap; past 3 rows the
-  strip scrolls to keep the row shown); `↓` past the last row goes back
-  to the composer; `⏎` or `→` opens the row in the view; `esc` or
-  `ctrl+g` back to the composer. Any other key goes back to the composer
+  (empty: `your message waits here`). The selected row alone shows its
+  keys on the right: its options with their digits
+  `1 compress  2 both   ⏎ open  ×` (the digits in accent, the short
+  labels dim, `⏎` in text color, `×` faint), more than 3 options
+  `1-9 answer   ⏎ open  ×`, no option `⏎ open  ×` (or the item's own
+  action, `⏎ paste it`); a narrow row drops the labels, then the digits.
+  `1-9` answer the selected row with that option at once (a digit past
+  its options: nothing; the next row takes its place). `↑↓` move and loop (`↓` on the last
+  row goes to the first, `↑` on the first to the last, one row stays;
+  past 3 rows the strip scrolls to keep the row shown); `⏎` or `→` opens
+  the row in the view; `esc` or `ctrl+g` back to the composer (`↓` never
+  leaves, BISE-252). Any other key goes back to the composer
   and does its job there: a letter is typed, a paste pasted (no keystroke
-  lost). Key bar `↑↓ choose · ⏎ open · esc back to your message`. The
-  mouse is unchanged (a click leaves the selection).
+  lost). Key bar `↑↓ choose · 1-2 answer · ⏎ open · esc back` (a row
+  with no option: `↑↓ choose · ⏎ open · esc back to your message`).
+  Mouse: an option or `×` of the selected row answers or closes it,
+  another row selects it, a click anywhere else leaves the selection.
 - **The item view** (`⏎` on a row, a row click, a click in the panel's
   inbox section, `/inbox`): it takes the history's place; the panel, the
   divider and the composer stay. The tabs on top (`? release  ? perf
@@ -908,7 +918,7 @@ replays it (**⚠** proposed command).
 | `D` | drop the selected agent (asks first) | — |
 | `esc` | close selection; in an agent, back to main | — |
 | `ctrl+g` | select the inbox (the strip); again, or `esc`: back to your message; in an item: back to the thread (§12) | the only inbox key from the thread; no longer opens an item (BISE-248) |
-| `↑↓`, `⏎` / `→`, `esc`, typing | the inbox selected: choose a row, open it, back; a key or a paste goes back to the composer and lands there (§12) | new (BISE-248) |
+| `↑↓`, `1-9`, `⏎` / `→`, `esc`, typing | the inbox selected: choose a row (they loop: the last `↓` goes to the first), answer it with an option, open it, back; a key or a paste goes back to the composer and lands there (§12) | new (BISE-248); `↓` past the last row no longer leaves (BISE-252); `1-9` new, the options only on the selected row (BISE-253) |
 | `↑↓`, `⏎`, `1-9`, `←→`, `ctrl+n` / `ctrl+p`, `ctrl+x`, `esc`, `pgup` / `pgdn` | an item open: choose an option (empty composer), pick it, pick at once, previous / next item, close, back, scroll (§12) | `↑↓` chose to scroll before (BISE-248); `alt+r`, `ctrl+f` full screen, `ctrl+a` on an empty composer: removed (BISE-236) |
 | `ctrl+o` | open or close everything folded (thinking, outputs, diffs, reports, runs, `▸ why`, your long messages) | was `ctrl+t` (removed, no alias); the `ctrl+o` shell is gone: the terminal panel is the one shell |
 | `ctrl+f`, `cmd+f` | find in the history (main or the agent in view): the field takes the composer's place (the draft waits), the divider reads `find in {agent}`, `find in the history` dim when empty, the counter right-aligned and dim (`3 of 12`, `12+` while older lines are not loaded, `no match`); every edit searches again and goes to the newest match (your messages and the replies first, then the calls), 3 rows of context above it; `⏎` / `↑` / `ctrl+f` older, `shift+⏎` / `↓` newer, wrapping with `back to the newest` / `back to the oldest` for 1.5 s; matches on the pill tint, the current one on the accent, bold (NO_COLOR: underlined / reversed); smart-case; a match hidden in a call's box, a `▸ n commands` fold, a report opens it while current, closes it after; thinking is not searched; `esc` closes, the view stays on the match; key bar `⏎ older   ↑↓ move   esc close`. `cmd+f` does what `ctrl+f` does when the terminal passes it (the terminal's own find takes it by default, see "cmd+f" below); once any cmd key has reached the app in the session, the ctrl hints say `cmd+f find` and the help `cmd+f ctrl+f` | new (BISE-237); was the emacs forward char (`→` does it) and the card full screen; cmd+f: BISE-241 |
@@ -952,7 +962,7 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | turn done (inside an agent) | `✓ turn done · {duration}` |
 | card title | `? {name} needs you` |
 | strip label | `inbox · 3 waiting for you · ctrl+g select` |
-| inbox selected keys | `↑↓ choose · ⏎ open · esc back to your message` · empty composer `your message waits here` |
+| inbox selected keys | `↑↓ choose · 1-2 answer · ⏎ open · esc back` · no option `↑↓ choose · ⏎ open · esc back to your message` · the selected row `1 compress  2 both   ⏎ open  ×` · `1-9 answer   ⏎ open  ×` · empty composer `your message waits here` |
 | item view keys | `↑↓ choose · 1-2 pick · ←→ other items · type to answer in your words · esc back` · `↑↓ choose · ⏎ pick “{option}” · ←→ other items · esc back` · approval `… 1-3 pick · type a note to deny …` · typing `⏎ send as your answer · ctrl+n next item · esc back, draft kept` (§12) |
 | item view divider | `you → ? {name} · your answer` |
 | panel section, header | `inbox · ctrl+g` · `# 3 in the inbox` |

@@ -1,7 +1,9 @@
 """The inbox (cards v2) in a real terminal (tmux) against the fake
 provider: three items in the strip above the divider, typing to main
 goes on; ctrl+g selects the inbox (a letter goes back to the composer
-and lands in it), ↓ ↑ ⏎ opens a row with no option highlighted, ↓ ⏎
+and lands in it; only the row selected shows its keys), ↓ loops over
+the rows (never leaves; esc does),
+↓ ↑ ⏎ opens a row with no option highlighted, ↓ ⏎
 picks one, ← → switch items, text + ⏎ answers another, ctrl+x closes
 the last and the thread's draft comes back.
 
@@ -31,28 +33,44 @@ def main():
             card("third: never mind"),
         ]))
         t.keys("Enter")
-        # the strip: 3 rows, the label row, the options on the first
+        # the strip: 3 rows, the label row, no keys on the rows (BISE-253)
         t.wait("inbox · 3 waiting for you")
         t.wait("ctrl+g select")
-        sc = t.wait("1 alpha  2 beta")
-        assert "? main · first: pick one" in sc, sc
+        sc = t.wait("? main · first: pick one")
+        assert "1 alpha" not in sc and "×" not in sc, sc
         assert "? main · second: say something" in sc, sc
         # typing still goes to main: the digit is text in the thread
         t.typed("hello main 1")
         t.wait("hello main 1")
         t.wait_re(in_view("main"))
         t.wait("ctrl+g inbox")
-        # ctrl+g selects the inbox: the ▸ on the first row, its key bar
+        # ctrl+g selects the inbox: the ▸ on the first row, its keys on
+        # it alone, the key bar
         t.keys("C-g")
-        sc = t.wait("esc back to your message")
+        sc = t.wait("↑↓ choose   1-2 answer   ⏎ open   esc back")
         assert "▸ ? main · first: pick one" in sc, sc
+        assert "1 alpha  2 beta   ⏎ open  ×" in sc, sc
         # a letter goes back to the composer and lands in it
         t.typed("!")
         t.wait("hello main 1!")
-        t.wait_gone("esc back to your message")
+        t.wait_gone("esc back")
+        # ↓ ×4 loops over the 3 rows (the last goes to the first) and
+        # never leaves; ↑ on the first: the last; esc leaves
+        t.keys("C-g")
+        t.wait("esc back")
+        for want in ("second", "third", "first", "second"):
+            t.keys("Down")
+            t.wait("▸ ? main · " + want)
+        t.keys("Up")
+        t.wait("▸ ? main · first")
+        t.keys("Up")
+        sc = t.wait("▸ ? main · third")
+        assert "esc back to your message" in sc, sc  # third has no options
+        t.keys("Escape")
+        t.wait_gone("esc back")
         # ctrl+g ↓ ↑ ⏎: the first row opens, nothing highlighted
         t.keys("C-g")
-        t.wait("esc back to your message")
+        t.wait("esc back")
         t.keys("Down")
         t.wait("▸ ? main · second")
         t.keys("Up")

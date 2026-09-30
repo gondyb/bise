@@ -103,7 +103,9 @@ fn col_of(row: &str, needle: &str) -> u16 {
 }
 
 /// Screen 1: the strip above the divider, most blocking first, the label
-/// row, the options on the right, `9 options`, the `×`.
+/// row; no keys on the rows until ctrl+g: then the selected row alone
+/// shows its options with their digits (`1-9 answer` past 3), `⏎ open`,
+/// the `×` (BISE-253).
 #[test]
 fn the_strip_shows_every_card_most_blocking_first() {
     let (mut app, _hub) = app_with_hub();
@@ -116,10 +118,24 @@ fn the_strip_shows_every_card_most_blocking_first() {
     let dark = row_of(&rows, "? dark-mode · ");
     assert_eq!((rel, perf, dark), (lab + 1, lab + 2, lab + 3), "{}", rows.join("\n"));
     assert!(rows[rel].contains("npm publish --tag next"), "{}", rows[rel]);
-    assert!(rows[rel].contains("1 allow  2 always  3 deny  ×"), "{}", rows[rel]);
-    assert!(rows[perf].contains("1 compress  2 both  ×"), "{}", rows[perf]);
-    assert!(rows[dark].contains("9 options  ×"), "{}", rows[dark]);
+    for r in [rel, perf, dark] {
+        assert!(!rows[r].contains("1 ") && !rows[r].contains('×') && !rows[r].contains("⏎"), "no keys: {}", rows[r]);
+    }
+    // ctrl+g: the selected row alone shows its keys
+    ctrl(&mut app, 'g');
+    let rows = draw(&mut app, 140, 40);
+    assert!(rows[rel].contains("1 allow  2 always  3 deny   ⏎ open  ×"), "{}", rows[rel]);
+    assert!(!rows[perf].contains("1 compress") && !rows[perf].contains('×'), "{}", rows[perf]);
+    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+    let rows = draw(&mut app, 140, 40);
+    assert!(rows[perf].contains("1 compress  2 both   ⏎ open  ×"), "{}", rows[perf]);
+    assert!(!rows[rel].contains("1 allow"), "{}", rows[rel]);
+    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+    let rows = draw(&mut app, 140, 40);
+    assert!(rows[dark].contains("1-9 answer   ⏎ open  ×"), "{}", rows[dark]);
     assert!(rows[dark].contains("…"), "cut: {}", rows[dark]);
+    assert_eq!(bar(&app), "↑↓ choose   1-9 answer   ⏎ open   esc back");
+    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
     // right above the blank row and the divider
     assert!(rows[dark + 2].contains("you → main"), "{}", rows[dark + 2]);
     // the history is still there, the composer still talks to main
@@ -127,7 +143,7 @@ fn the_strip_shows_every_card_most_blocking_first() {
 }
 
 /// More than 3 cards: `+ n more`; under 24 rows, one row: the top card
-/// and `+ n`.
+/// and `+ n` (its keys once selected).
 #[test]
 fn many_cards_and_small_screens() {
     let (mut app, _hub) = app_with_hub();
@@ -140,7 +156,55 @@ fn many_cards_and_small_screens() {
     let rows = draw(&mut app, 140, 20);
     assert!(!rows.iter().any(|r| r.contains("ctrl+g select")), "{}", rows.join("\n"));
     let top = row_of(&rows, "release wants to run");
-    assert!(rows[top].contains("+ 4  1 allow"), "{}", rows[top]);
+    assert!(rows[top].contains("+ 4  ") && !rows[top].contains("1 allow"), "{}", rows[top]);
+    ctrl(&mut app, 'g');
+    let rows = draw(&mut app, 140, 20);
+    let top = row_of(&rows, "release wants to run");
+    assert!(rows[top].contains("+ 4  1 allow  2 always  3 deny   ⏎ open  ×"), "{}", rows[top]);
+}
+
+/// The inbox selected with `+ n more`: the loop covers every row, the
+/// strip scrolls to the one selected; one row: ↑↓ stay on it.
+#[test]
+fn the_inbox_loop_covers_the_rows_past_the_strip() {
+    let (mut app, _hub) = app_with_hub();
+    let mut cs = cast();
+    cs.push(card(20, "done", "sad-404", "the dog has a hat"));
+    cs.push(card(21, "failed", "t9", "the build broke"));
+    app.sb.cards = cs;
+    let ids = super::super::card_draw::strip_ids(&app.sb);
+    let n = ids.len();
+    assert_eq!(n, 5);
+    let agent = |app: &App, id: u64| app.sb.cards.iter().find(|c| c.id == id).unwrap().agent.clone();
+    let marked = |rows: &[String]| rows.iter().filter(|r| r.contains('▸')).cloned().collect::<Vec<_>>();
+    ctrl(&mut app, 'g');
+    // ↑ on the first: the last, shown (the strip scrolled)
+    key(&mut app, KeyCode::Up, KeyModifiers::NONE);
+    assert_eq!(app.sb.card.inbox, Some(n - 1));
+    let rows = draw(&mut app, 140, 40);
+    let m = marked(&rows);
+    assert!(m.len() == 1 && m[0].contains(&agent(&app, ids[n - 1])), "{}", rows.join("\n"));
+    // ↓ on the last: the first, the strip back on top with `+ 2 more`
+    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+    assert_eq!(app.sb.card.inbox, Some(0));
+    let rows = draw(&mut app, 140, 40);
+    let m = marked(&rows);
+    assert!(m.len() == 1 && m[0].contains(&agent(&app, ids[0])), "{}", rows.join("\n"));
+    assert!(rows.iter().any(|r| r.contains("  + 2 more  ")), "{}", rows.join("\n"));
+    // ↓ ×n: every row once, back on the first
+    for k in 1..=n {
+        key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.sb.card.inbox, Some(k % n));
+        let rows = draw(&mut app, 140, 40);
+        let m = marked(&rows);
+        assert!(m.len() == 1 && m[0].contains(&agent(&app, ids[k % n])), "{}", rows.join("\n"));
+    }
+    // one row: ↑↓ stay on it
+    app.sb.cards = vec![card(12, "question", "perf", PERF)];
+    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+    assert_eq!(app.sb.card.inbox, Some(0));
+    key(&mut app, KeyCode::Up, KeyModifiers::NONE);
+    assert_eq!(app.sb.card.inbox, Some(0));
 }
 
 /// From the thread only ctrl+g acts on the inbox: the old card keys
@@ -172,8 +236,8 @@ fn from_the_thread_only_ctrl_g() {
 }
 
 /// Screen 2: the inbox selected: `▸` on the row, the others 2 spaces in,
-/// the draft faint, the key bar; ↑↓ choose without wrapping, ↓ past the
-/// last row and esc go back to the composer; ⏎ or → opens the row.
+/// the draft faint, the key bar; ↑↓ choose and loop (↓ never leaves),
+/// esc goes back to the composer; ⏎ or → opens the row.
 #[test]
 fn the_inbox_selected_chooses_with_the_arrows() {
     let (mut app, _hub) = app_with_hub();
@@ -181,7 +245,9 @@ fn the_inbox_selected_chooses_with_the_arrows() {
     app.ed.insert("my draft");
     ctrl(&mut app, 'g');
     key(&mut app, KeyCode::Up, KeyModifiers::NONE);
-    assert_eq!(app.sb.card.inbox, Some(0), "no wrap");
+    assert_eq!(app.sb.card.inbox, Some(2), "↑ on the first: the last");
+    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+    assert_eq!(app.sb.card.inbox, Some(0), "↓ on the last: the first");
     key(&mut app, KeyCode::Down, KeyModifiers::NONE);
     assert_eq!(app.sb.card.inbox, Some(1));
     let rows = draw(&mut app, 140, 40);
@@ -189,17 +255,21 @@ fn the_inbox_selected_chooses_with_the_arrows() {
     let rel = &rows[row_of(&rows, "release wants to run")];
     assert!(rel.contains("   ? release") && !rel.contains('▸'), "{}", rows.join("\n"));
     assert!(rows.iter().any(|r| r.contains("my draft")), "the draft stays");
-    assert_eq!(bar(&app), "↑↓ choose   ⏎ open   esc back to your message");
+    assert_eq!(bar(&app), "↑↓ choose   1-2 answer   ⏎ open   esc back");
     // esc: back to the composer, the draft as it was
     key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
     assert_eq!(app.sb.card.inbox, None);
     assert_eq!(app.ed.text, "my draft");
     assert!(bar(&app).starts_with("⏎ send   ctrl+g inbox   "), "{}", bar(&app));
-    // ↓ past the last row: back to the composer
+    // ↓ ×n loops over the 3 rows and never leaves; esc does
     ctrl(&mut app, 'g');
-    for _ in 0..3 {
+    for n in 1..=7 {
         key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(app.sb.card.inbox, Some(n % 3), "↓ ×{n}");
+        assert!(bar(&app).starts_with("↑↓ choose"), "{}", bar(&app));
     }
+    assert_eq!(app.ed.text, "my draft");
+    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
     assert_eq!(app.sb.card.inbox, None);
     // → opens the row selected: the thread's draft waits
     ctrl(&mut app, 'g');
@@ -214,6 +284,38 @@ fn the_inbox_selected_chooses_with_the_arrows() {
     assert!(!app.sb.card.open);
     assert_eq!(app.sb.card.inbox, None);
     assert_eq!(app.ed.text, "my draft");
+}
+
+/// The inbox selected: 1-9 answer the selected row at once (BISE-253),
+/// the next row takes its place; a digit past its options does nothing;
+/// out of the inbox a digit is text (nothing but ctrl+g acts on it).
+#[test]
+fn a_digit_answers_the_row_selected() {
+    let (mut app, mut hub) = app_with_hub();
+    app.sb.cards = cast();
+    press(&mut app, KeyCode::Char('2'));
+    assert_eq!(app.ed.text, "2", "out of the inbox: text");
+    assert!(sent(&mut hub).is_empty());
+    app.ed = crate::editor::Editor::default();
+    ctrl(&mut app, 'g');
+    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+    press(&mut app, KeyCode::Char('3'));
+    assert!(sent(&mut hub).is_empty(), "perf has 2 options");
+    assert_eq!((app.sb.card.inbox, app.ed.text.as_str()), (Some(1), ""));
+    press(&mut app, KeyCode::Char('2'));
+    assert_eq!(sent(&mut hub), vec!["/answer 12 both: compress, and lazy-load below the fold"]);
+    assert_eq!(app.ed.text, "");
+    // perf is gone: dark-mode takes its row, still selected
+    let rows = draw(&mut app, 140, 40);
+    assert!(rows[row_of(&rows, "? dark-mode · ")].contains("▸ ? dark-mode"), "{}", rows.join("\n"));
+    assert_eq!(bar(&app), "↑↓ choose   1-9 answer   ⏎ open   esc back");
+    press(&mut app, KeyCode::Char('9'));
+    assert_eq!(sent(&mut hub), vec!["/answer 13 option 9"]);
+    // the last row answered: the one above
+    assert_eq!(app.sb.card.inbox, Some(0));
+    press(&mut app, KeyCode::Char('1'));
+    assert_eq!(sent(&mut hub), vec!["/answer 14 allow once"]);
+    assert_eq!(app.sb.card.inbox, None, "nothing left");
 }
 
 /// The inbox selected, a letter or a paste goes back to the composer
@@ -423,8 +525,9 @@ fn the_card_key_bar_keeps_choose_and_enter() {
     assert_eq!(keys(10), ["↑↓"]);
 }
 
-/// The mouse on the strip: an option answers at once, `×` closes, a row
-/// opens the card view on it; a tab switches cards.
+/// The mouse on the strip: a row click selects it (its keys show), a
+/// click on the row selected opens it; an option answers at once, `×`
+/// closes; a tab switches cards.
 #[test]
 fn the_mouse_on_the_strip_and_the_tabs() {
     let (mut app, mut hub) = app_with_hub();
@@ -432,17 +535,28 @@ fn the_mouse_on_the_strip_and_the_tabs() {
     app.ed.insert("draft to main");
     let rows = draw(&mut app, 140, 40);
     let perf = row_of(&rows, "? perf · ");
+    assert!(click(&mut app, col_of(&rows[perf], "perf"), perf as u16));
+    assert_eq!(app.sb.card.inbox, Some(1), "a row click selects it");
+    assert!(!app.sb.card.open);
+    let rows = draw(&mut app, 140, 40);
     assert!(click(&mut app, col_of(&rows[perf], "2 both"), perf as u16));
     assert_eq!(sent(&mut hub), vec!["/answer 12 both: compress, and lazy-load below the fold"]);
     assert_eq!(app.ed.text, "draft to main", "you never left your message");
+    assert_eq!(app.sb.card.inbox, None);
     let rows = draw(&mut app, 140, 40);
     let rel = row_of(&rows, "release wants to run");
+    assert!(!rows[rel].contains('×'), "{}", rows[rel]);
+    assert!(click(&mut app, col_of(&rows[rel], "release"), rel as u16));
+    let rows = draw(&mut app, 140, 40);
     assert!(click(&mut app, col_of(&rows[rel], "×"), rel as u16));
     assert_eq!(sent(&mut hub), vec!["/close 14"]);
     let rows = draw(&mut app, 140, 40);
     let dark = row_of(&rows, "? dark-mode · ");
     assert!(click(&mut app, col_of(&rows[dark], "dark-mode"), dark as u16));
-    assert!(app.sb.card.open);
+    assert!(!app.sb.card.open);
+    let rows = draw(&mut app, 140, 40);
+    assert!(click(&mut app, col_of(&rows[dark], "dark-mode"), dark as u16));
+    assert!(app.sb.card.open, "a click on the row selected opens it");
     assert_eq!(app.sb.current_card().map(|c| c.id), Some(13));
     // a new card only adds a tab
     app.sb.cards.push(card(30, "question", "api", "v1 or v2?"));
