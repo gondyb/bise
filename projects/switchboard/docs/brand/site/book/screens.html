@@ -393,19 +393,19 @@ const CARD2_SCREENS = [
  term({ feed: C2FEED, above: focusStrip(`<div class="cstrip">${C2_LAB(3)}${C2_REL(false)}${C2_PERF(true)}${C2_DARK(false)}</div>`), f: foot(`<span class="dim">you → main</span>`, `<span class="faint">your message waits here</span>`, "↑↓ choose · ⏎ open · esc back to your message") })],
 ["inbox · 3 · ⏎: open, nothing picked yet", "the card takes the history's place. its options are listed, and none is picked yet, so a reflex ⏎ does nothing. the first ↓ lands on option 1 (↑ on the last). ←→ go to the other cards. 1-9 still pick at once. esc: back to your thread, draft kept.",
  term({ feed: cview(1, "perf needs you", "2 of 3 · 6m · ⌥1 perf", PERF_Q, optl(PERF_O)),
-   f: cvFoot("perf", CUR, "↑↓ choose · 1-2 pick · ←→ other cards · type to answer in your words · esc back") })],
+   f: cvFoot("perf", CUR, "↑↓ choose · 1-2 pick · ←→ other items · type to answer in your words · esc back") })],
 ["inbox · 4 · ↓ ↓ ⏎: picked", "the selected option is raised with a pink ▸, and the key bar says what ⏎ will do, in the option's own words. the view scrolls to keep it in sight. once you answer, the next card opens; after the last one, you're back in your thread.",
  term({ feed: cview(1, "perf needs you", "2 of 3 · 6m · ⌥1 perf", PERF_Q, optl(PERF_O, 1)),
-   f: cvFoot("perf", CUR, "↑↓ choose · ⏎ pick “both” · ←→ other cards · esc back") })],
+   f: cvFoot("perf", CUR, "↑↓ choose · ⏎ pick “both” · ←→ other items · esc back") })],
 ["inbox · 5 · a long card, 9 options", "same keys. ↑↓ walk the options and the text scrolls up to show them; to read the text itself, the wheel or pgup/pgdn.",
  term({ feed: cview(2, "dark-mode needs you", "3 of 3 · 2m · ⌥2 dark-mode", C2_DARK_BODY, C2_DARK_OPTS.replace('<div class=""><span class="pt"></span><b>4</b>', '<div class="hi"><span class="pt">▸</span><b>4</b>')),
-   f: cvFoot("dark-mode", CUR, "↑↓ choose · ⏎ pick “new tokens, light mode unchanged” · ←→ other cards · esc back") })],
-["inbox · 6 · an approval", "a command to approve works the same way: nothing is picked when it opens, you choose allow once / always here / deny with ↑↓ and ⏎ (or 1-3). type something instead, and ⏎ denies with your text as a note for the agent.",
+   f: cvFoot("dark-mode", CUR, "↑↓ choose · ⏎ pick “new tokens, light mode unchanged” · ←→ other items · esc back") })],
+["inbox · 6 · an approval", "a command to approve works the same way: nothing is picked when it opens, you choose allow once / always here / deny with ↑↓ and ⏎ (or 1-3). type something instead, and the key bar says <b>⏎ deny with your note</b>: your text goes to the agent with the no.",
  term({ feed: cview(0, "release wants to run", "1 of 3 · now · ⌥5 release", C2_CMD, optl(["allow once", "always here", "deny"])),
-   f: cvFoot("release", CUR, "↑↓ choose · 1-3 pick · type a note to deny · ←→ other cards · esc back") })],
+   f: cvFoot("release", CUR, "↑↓ choose · 1-3 pick · type a note to deny · ←→ other items · esc back") })],
 ["inbox · 7 · typing an answer", "as soon as you type, the arrows are your text's again (move in a long draft), the options dim, and ⏎ sends your words as the answer. the divider says who reads it. empty the composer and the arrows go back to the options.",
  term({ feed: cview(1, "perf needs you", "2 of 3 · 7m · ⌥1 perf", PERF_Q, optl(PERF_O)).replace('<div class="cview">', '<div class="cview typing">'),
-   f: cvFoot("perf", `both, and keep the png for retina screens${CUR}`, "⏎ send as your answer · ctrl+n next card · esc back, draft kept") })],
+   f: cvFoot("perf", `both, and keep the png for retina screens${CUR}`, "⏎ send as your answer · ctrl+n next item · esc back, draft kept") })],
 ["inbox · the keys, checked", "one rule: <b>empty composer, the arrows belong to the inbox. text in the composer, they belong to your text.</b> in your thread the arrows never touch the inbox until you press ctrl+g.",
  `<pre class="code" style="margin-left:0">key          your thread          inbox selected (ctrl+g)   a card open                         clash check
 ctrl+g       select the inbox     back to your message      back to your thread                 free
@@ -571,28 +571,28 @@ const OB3_SCREENS = [
 ["onboarding v3 · not now", "2 or ×: the card goes, one dim row stays. never asked again; /setup runs it any time.",
  term({ h: head(), pan: OB_PANEL.replace("setup", ""), feed: OB_EMPTY + `<div class="b dim" style="padding-left:3ch">– not now · type /setup whenever you want</div>`, f: foot("main · idle", CUR) })],
 ["setup, by the hand · 1 · the first item teaches the inbox", "<span class='optk'>round 2 (the user: « prendre l'utilisateur par la main »).</span> the first time anything lands in the inbox, a one-time note above it says what the inbox is and the keys. the item itself says what 'set up' means and promises nothing changes without a yes.",
- term({ h: head(`<span class="acc">? 1 waiting</span>`), pan: OB_PANEL.replace("setup", ""), feed: OB_EMPTY,
+ term({ h: head(`<span class="acc"># 1 in the inbox</span>`), pan: OB_PANEL.replace("setup", ""), feed: OB_EMPTY,
    above: OB_HINT + `<div class="cstrip">${C2_LAB(1)}${TUNE(true)}</div>`, f: foot("main · idle", CUR, "⏎ send · ctrl+g inbox · @ agent · / commands") })],
 ["setup, by the hand · 2 · opened: what 'set up' does", "before any yes, the list of what gets checked and the promise: each fix comes back as its own item, with the exact change, yes or no each. nothing is picked when it opens.",
- term({ h: head(`<span class="acc">? 1 waiting</span>`), pan: OB_PANEL.replace("setup", ""),
+ term({ h: head(`<span class="acc"># 1 in the inbox</span>`), pan: OB_PANEL.replace("setup", ""),
    feed: sview(["set up bise"], 0, "can i set bise up for your terminal and this repo?", "about a minute", `<div>i'll check 7 things: your terminal and its keys, colors, glyphs, git, gh, an AGENTS.md, and the connectors key.</div>
 <div style="margin-top:.4lh">checking changes nothing. each fix i find comes back here as its own item, with the exact change, and you say yes or no to each one.</div>
 <div style="margin-top:.4lh" class="dim">your agents keep working meanwhile. not now? type /setup whenever you want.</div>`, optl(["yes, check", "not now"])),
    f: sFoot("↑↓ choose · 1-2 pick · esc back") })],
 ["setup, by the hand · 3 · the Ghostty keys", "what it is, why it helps you, the exact lines, the backup, how to undo. the option says the action ('yes, add them'), so ⏎ reads well in the key bar.",
- term({ h: head(`<span class="acc">? 3 waiting</span>`), pan: OB_PANEL.replace("setup", ""),
+ term({ h: head(`<span class="acc"># 3 in the inbox</span>`), pan: OB_PANEL.replace("setup", ""),
    feed: sview(SETUP_TABS, 0, "let cmd+v and cmd+f reach bise", "Ghostty config · +2 lines", `<div>right now Ghostty keeps these two keys for itself. with these lines, cmd+v can paste a screenshot into your message (text still pastes as usual), and cmd+f searches your history.</div>
 <div style="margin-top:.4lh">i'd add 2 lines to ~/Library/Application Support/com.mitchellh.ghostty/config:</div>${plus(["keybind = performable:super+v=paste_from_clipboard", "keybind = super+f=unbind"])}
 <div class="dim">i copy the file to config.bise-backup first. to undo: delete the 2 lines. Ghostty uses them after a reload (cmd+shift+,) or in a new window.</div>`, optl(["yes, add them", "no"], 0)),
    f: sFoot("↑↓ choose · ⏎ pick “yes, add them” · ←→ other items · esc back") })],
 ["setup, by the hand · 4 · a starter AGENTS.md", "what the file is for, the whole file before it exists, and that it's just a file: edit it, delete it, commit it for your team.",
- term({ h: head(`<span class="acc">? 2 waiting</span>`), pan: OB_PANEL.replace("setup", ""),
+ term({ h: head(`<span class="acc"># 2 in the inbox</span>`), pan: OB_PANEL.replace("setup", ""),
    feed: sview(SETUP_TABS, 1, "write a starter AGENTS.md for this repo", "new file · 14 lines", `<div>AGENTS.md is a short note your agents read before they work here: how to build, how to test, what to leave alone. with it, they guess less and ask you less.</div>
 <div style="margin-top:.4lh">i'd create it at the root of the repo. nothing else changes:</div>${plus(["# AGENTS.md", "notes for the agents working on acme.", "build: npm run build · test: npm test", "<span class='faint'>… 11 more lines</span>"])}
 <div class="dim">it's a plain file: edit it whenever, delete it to undo, commit it so your team's agents read it too.</div>`, optl(["yes, write it", "no"])),
    f: sFoot("↑↓ choose · 1-2 pick · ←→ other items · esc back") })],
 ["setup, by the hand · 5 · the connectors key (optional)", "no options here: the answer is the key itself. the text says what you get, that it's optional, where the key goes, and how to say no.",
- term({ h: head(`<span class="acc">? 1 waiting</span>`), pan: OB_PANEL.replace("setup", ""),
+ term({ h: head(`<span class="acc"># 1 in the inbox</span>`), pan: OB_PANEL.replace("setup", ""),
    feed: sview(SETUP_TABS, 2, "turn on web search and the other connectors", "optional", `<div>connectors are extra tools for your agents: web search, reading documents and images, and more. they run on a MISTRAL_API_KEY, whatever model you chat with. without it everything else works; your agents just can't search the web.</div>
 <div style="margin-top:.4lh">paste your key below and press ⏎. it goes in ~/.bise/auth.json, and only you can read it. to remove it later, delete it from that file.</div>
 <div class="dim" style="margin-top:.4lh">no key yet? console.mistral.ai. not now: ctrl+x.</div>`, ""),
