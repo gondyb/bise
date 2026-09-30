@@ -100,25 +100,119 @@ fn the_denial_reads_the_path_the_output_names() {
     assert_eq!(Denial::of("error: test failed, 3 passed; 1 failed"), None);
 }
 
-#[test]
-fn the_card_says_where_and_that_it_runs_twice() {
-    let roots = Roots {
+fn roots() -> Roots {
+    Roots {
         cwd: "/w/repo".into(),
         home: "/h".into(),
         bise: "/h/.bise".into(),
         tmp: "/h/.bise/hubs/hx/agents/a/tmp".into(),
-    };
+    }
+}
+
+#[test]
+fn the_card_says_what_the_sandbox_stopped() {
+    let r = roots();
     assert_eq!(
-        Denial::Write(Some("/h/Desktop/x.txt".into())).reason(&roots),
-        "it needs to write outside the repo: ~/Desktop/x.txt. yes runs it a second time, outside the sandbox."
+        Denial::Write(Some("/h/Desktop/x.txt".into())).reason(&r),
+        "the sandbox stopped a write outside the repo: ~/Desktop/x.txt."
     );
-    assert!(Denial::Network.reason(&roots).starts_with("it needs the network."));
+    assert_eq!(Denial::Write(None).reason(&r), "the sandbox stopped a write outside the repo.");
+    assert_eq!(Denial::Network.reason(&r), "the sandbox stopped it from using the network.");
+    assert_eq!(
+        Denial::Both(None).reason(&r),
+        "the sandbox stopped a write outside the repo and the network."
+    );
+    assert_eq!(card_title("api-v2"), "api-v2 wants to run it outside the sandbox");
     let s = Denial::Write(Some("/h/Desktop/x.txt".into())).state();
     assert!(s.contains("/h/Desktop/x.txt") && s.contains("without the sandbox"), "{s}");
     assert_eq!(
-        Denial::Network.result("no network here"),
-        "stopped by the sandbox: it needs the network, which is closed for this command. not run again: no network here"
+        Denial::Network.result("curl: (6) Could not resolve host: x", "no network here"),
+        "curl: (6) Could not resolve host: x\n\nstopped by the sandbox: it needs the network, which is closed for this command. not run again: no network here"
     );
+    assert_eq!(
+        Denial::of("sh: /h/x: Operation not permitted\ncurl: (6) Could not resolve host: x"),
+        Some(Denial::Both(Some("/h/x".into())))
+    );
+}
+
+fn call(cmd: &str) -> Call {
+    Call {
+        tool: "bash".into(),
+        args: serde_json::json!({ "arg": cmd }),
+        agent: "a".into(),
+        cwd: "/w/repo".into(),
+        repo: "/w/repo".into(),
+        tmp: "/h/.bise/hubs/hx/agents/a/tmp".into(),
+        home: "/h".into(),
+        bise: "/h/.bise".into(),
+        edit_tool: "edit".into(),
+    }
+}
+
+#[test]
+fn an_allowed_rerun_or_a_sandbox_rule_runs_outside_the_sandbox() {
+    use super::super::{Cache, LexicalFs, Rule, Rules};
+    let none = Rules::default();
+    let mut cache = Cache::default();
+    let flags = |c: &str, rules: &Rules, cache: &Cache| allow_flags(&call(c), rules, cache, &LexicalFs);
+    assert_eq!(flags("cp r.pdf ~/Desktop/", &none, &cache), FLAG_SANDBOX);
+    assert_eq!(flags("curl -s https://x", &none, &cache), FLAG_SANDBOX_NET);
+    // the checker or the user allowed this exact rerun: no sandbox again
+    cache.allow(rerun_key("cp r.pdf ~/Desktop/"));
+    assert_eq!(flags("cp r.pdf ~/Desktop/", &none, &cache), "");
+    assert_eq!(flags("cp r.pdf ~/Desktop/y", &none, &cache), FLAG_SANDBOX);
+    // "always allow cp * here" on a sandbox card: sandbox = false
+    let rules = Rules {
+        rules: vec![Rule {
+            project: Some("/w/repo".into()),
+            tool: "bash".into(),
+            pattern: Some("cp *".into()),
+            sandbox: Some(false),
+            ..Rule::default()
+        }],
+    };
+    let cache = Cache::default();
+    assert_eq!(flags("cp a ~/Desktop/", &rules, &cache), "");
+    assert_eq!(flags("ls && cp a ~/Desktop/", &rules, &cache), "");
+    // another part that is not a plain read keeps the sandbox
+    assert_eq!(flags("cp a ~/Desktop/ && python3 x.py", &rules, &cache), FLAG_SANDBOX);
+    // an ordinary saved rule keeps the sandbox
+    let plain = Rules {
+        rules: vec![Rule { sandbox: None, ..rules.rules[0].clone() }],
+    };
+    assert_eq!(flags("cp a ~/Desktop/", &plain, &cache), FLAG_SANDBOX);
+}
+
+#[test]
+fn the_rerun_gate_line_carries_the_first_output() {
+    let c = call("cp r.pdf ~/Desktop/x.txt");
+    assert_eq!(Rerun::of(&c, &serde_json::json!({"tool": "bash"})), None);
+    let r = Rerun::of(
+        &c,
+        &serde_json::json!({"denied": "cp: /h/Desktop/x.txt: Operation not permitted"}),
+    )
+    .unwrap();
+    assert_eq!(r.denial, Denial::Write(Some("/h/Desktop/x.txt".into())));
+    assert_eq!(r.key, rerun_key("cp r.pdf ~/Desktop/x.txt"));
+    assert_eq!(r.always(), super::super::always_rules(&r.parts));
+    assert_eq!(r.always().len(), 1);
+    let r = Rerun::of(&c, &serde_json::json!({"denied": "exit 1: ???"})).unwrap();
+    assert_eq!(r.denial, Denial::Write(None));
+}
+
+#[test]
+fn a_sandbox_rule_round_trips_in_approvals_toml() {
+    use super::super::{rules, Rule};
+    let rule = Rule {
+        project: Some("/w/repo".into()),
+        tool: "bash".into(),
+        pattern: Some("cp *".into()),
+        sandbox: Some(false),
+        ..Rule::default()
+    };
+    let text = rules::append("", &rule);
+    assert!(text.contains("sandbox = false"), "{text}");
+    assert_eq!(rules::parse(&text).unwrap().rules, vec![rule]);
 }
 
 #[test]
@@ -192,7 +286,7 @@ mod live {
                 assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
             };
             git(&["init", "-q", "-b", "main"]);
-            git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "0"]);
+            git(&["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "0"]);
             let s = Spec {
                 cwd: repo.clone(),
                 git: git_common_dir(&repo),
@@ -286,7 +380,7 @@ mod live {
             .output()
             .unwrap();
         assert!(o.status.success(), "{}", text(&o));
-        let o = b.sh_in(&wt, false, "echo x > f && git add f && git -c user.name=t -c user.email=t@t commit -qm wt && git log --oneline | wc -l");
+        let o = b.sh_in(&wt, false, "echo x > f && git add f && git -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -qm wt && git log --oneline | wc -l");
         assert!(ok(&o), "{}", text(&o));
         assert_eq!(String::from_utf8_lossy(&o.stdout).trim(), "2");
     }

@@ -11,6 +11,11 @@
 //! from = "card #12, api-v2"
 //!
 //! [[allow]]
+//! tool = "bash"
+//! pattern = "cp *"
+//! sandbox = false                 # runs outside the sandbox (a sandbox card's "always")
+//!
+//! [[allow]]
 //! tool = "apply_patch"             # the edit tools share their rules
 //! path = "/Users/me/notes/"        # a folder outside the roots
 //! ```
@@ -30,6 +35,9 @@ pub struct Rule {
     pub path: Option<PathBuf>,
     pub added: Option<String>,
     pub from: Option<String>,
+    /// `Some(false)`: a bash rule saved on a sandbox card: its parts run
+    /// outside the sandbox (brief 1e). `None`: the sandbox applies.
+    pub sandbox: Option<bool>,
 }
 
 /// Every saved rule (the whole file; `judge` keeps the call's project's).
@@ -64,6 +72,20 @@ impl Rules {
                     p == text || p == exact
                 }
             })
+    }
+
+    /// A bash part matches a rule saved on a sandbox card (`sandbox =
+    /// false`): it runs outside the sandbox.
+    pub fn outside_sandbox(&self, repo: &Path, text: &str, exact: &str, readable: bool) -> bool {
+        let only = Rules {
+            rules: self
+                .rules
+                .iter()
+                .filter(|r| r.sandbox == Some(false))
+                .cloned()
+                .collect(),
+        };
+        only.allows_bash(repo, text, exact, readable)
     }
 
     /// An edit tool may write this path (a `path` rule of this repo).
@@ -125,6 +147,7 @@ pub fn parse(text: &str) -> Result<Rules, RulesErr> {
                 path: s(t, "path").map(PathBuf::from),
                 added: s(t, "added"),
                 from: s(t, "from"),
+                sandbox: t.get("sandbox").and_then(|v| v.as_bool()),
             })
         })
         .collect();
@@ -162,6 +185,9 @@ pub fn append(text: &str, rule: &Rule) -> String {
         if let Some(v) = v {
             out.push_str(&format!("{k} = {}\n", q(&v)));
         }
+    }
+    if let Some(b) = rule.sandbox {
+        out.push_str(&format!("sandbox = {b}\n"));
     }
     out
 }

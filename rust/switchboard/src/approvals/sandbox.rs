@@ -16,7 +16,7 @@
 use std::path::{Path, PathBuf};
 
 use super::paths::{fold, Fs, Roots};
-use super::{parse, tiers, Call, CacheKey};
+use super::{parse, tiers, CacheKey, Call};
 
 /// The profile with the network closed (loopback and unix sockets kept).
 pub const PROFILE: &str = "sandbox.sb";
@@ -276,6 +276,8 @@ pub enum Denial {
     Write(Option<String>),
     /// The network (closed for this command).
     Network,
+    /// Both.
+    Both(Option<String>),
 }
 
 /// Output that says a write was refused by the OS.
@@ -298,61 +300,171 @@ impl Denial {
     /// The denial a failed sandboxed run's output shows, if any.
     pub fn of(output: &str) -> Option<Denial> {
         let lower = output.to_lowercase();
-        if WRITE_SIGNS.iter().any(|s| lower.contains(s)) {
-            return Some(Denial::Write(denied_path(output)));
+        let write = WRITE_SIGNS.iter().any(|s| lower.contains(s));
+        let net = NETWORK_SIGNS.iter().any(|s| lower.contains(s));
+        match (write, net) {
+            (true, true) => Some(Denial::Both(denied_path(output))),
+            (true, false) => Some(Denial::Write(denied_path(output))),
+            (false, true) => Some(Denial::Network),
+            (false, false) => None,
         }
-        if NETWORK_SIGNS.iter().any(|s| lower.contains(s)) {
-            return Some(Denial::Network);
-        }
-        None
     }
 
-    /// The card's reason (design §6.3, brief 1e: the rerun runs the
-    /// command a second time).
+    fn path(&self) -> Option<&str> {
+        match self {
+            Denial::Write(p) | Denial::Both(p) => p.as_deref(),
+            Denial::Network => None,
+        }
+    }
+
+    /// The card's reason line (designer): what the sandbox stopped; the
+    /// keys say what yes does.
     pub fn reason(&self, roots: &Roots) -> String {
-        let what = match self {
-            Denial::Write(Some(p)) => {
-                let shown = roots
-                    .resolve(Some(&roots.cwd), p, &super::LexicalFs)
-                    .map(|a| roots.show(&a))
-                    .unwrap_or_else(|| p.clone());
-                format!("it needs to write outside the repo: {shown}.")
+        let shown = self.path().map(|p| {
+            roots
+                .resolve(Some(&roots.cwd), p, &super::LexicalFs)
+                .map(|a| roots.show(&a))
+                .unwrap_or_else(|| p.to_string())
+        });
+        match (self, shown) {
+            (Denial::Network, _) => "the sandbox stopped it from using the network.".into(),
+            (Denial::Both(_), _) => {
+                "the sandbox stopped a write outside the repo and the network.".into()
             }
-            Denial::Write(None) => "it needs to write outside the repo.".to_string(),
-            Denial::Network => "it needs the network.".to_string(),
-        };
-        format!("{what} yes runs it a second time, outside the sandbox.")
+            (Denial::Write(_), Some(p)) => {
+                format!("the sandbox stopped a write outside the repo: {p}.")
+            }
+            (Denial::Write(_), None) => "the sandbox stopped a write outside the repo.".into(),
+        }
     }
 
-    /// What the checker is told on top of the command.
+    /// What the checker is told on top of the command (a path, never a
+    /// file's content).
     pub fn state(&self) -> String {
+        let write = match self.path() {
+            Some(p) => format!("a write to {p}, outside the repo"),
+            None => "a write outside the repo".to_string(),
+        };
         let what = match self {
-            Denial::Write(Some(p)) => format!("a write to {p}, outside the repo"),
-            Denial::Write(None) => "a write outside the repo".to_string(),
+            Denial::Write(_) => write,
             Denial::Network => "a network call".to_string(),
+            Denial::Both(_) => format!("{write}, and a network call"),
         };
         format!(
             "the sandbox stopped this command: {what}. if allowed, it runs again, without the sandbox."
         )
     }
 
-    /// The agent's result when the rerun is refused.
-    pub fn result(&self, why: &str) -> String {
+    /// The agent's result when the rerun is refused: the first run's
+    /// output, then why it stopped.
+    pub fn result(&self, output: &str, why: &str) -> String {
+        let write = match self.path() {
+            Some(p) => format!("it tried to write to {p}, outside the repo, ~/.bise and $TMPDIR"),
+            None => "it tried to write outside the repo, ~/.bise and $TMPDIR".to_string(),
+        };
         let what = match self {
-            Denial::Write(Some(p)) => {
-                format!("it tried to write to {p}, outside the repo, ~/.bise and $TMPDIR")
-            }
-            Denial::Write(None) => {
-                "it tried to write outside the repo, ~/.bise and $TMPDIR".to_string()
-            }
-            Denial::Network => "it needs the network, which is closed for this command".to_string(),
+            Denial::Write(_) => write,
+            Denial::Network => "it needs the network, which is closed for this command".into(),
+            Denial::Both(_) => format!("{write}, and it needs the network"),
         };
         let why = why.trim();
-        if why.is_empty() {
+        let tail = if why.is_empty() {
             format!("stopped by the sandbox: {what}. not run again.")
         } else {
             format!("stopped by the sandbox: {what}. not run again: {why}")
+        };
+        let output = output.trim_end();
+        if output.is_empty() {
+            tail
+        } else {
+            format!("{output}\n\n{tail}")
         }
+    }
+}
+
+/// The card's title (designer).
+pub fn card_title(agent: &str) -> String {
+    format!("{agent} wants to run it outside the sandbox")
+}
+
+/// The card's yes key (designer): its "always" key is the usual one, a
+/// rule saved with `sandbox = false`.
+pub const CARD_YES: &str = "run it again without the sandbox";
+
+/// How the hub runs one allowed bash call in auto with the sandbox on:
+/// the flags of its allow line. "" (outside the sandbox) when the user or
+/// the checker allowed this exact command's rerun this session, or when
+/// every part is a plain read or matches a rule saved on a sandbox card;
+/// else [`run_flags`].
+pub fn allow_flags(call: &Call, rules: &super::Rules, cache: &super::Cache, fs: &dyn Fs) -> String {
+    let cmd = bash_cmd(&call.args);
+    if cache.allows(&rerun_key(cmd)) {
+        return String::new();
+    }
+    let parsed = parse::parse(cmd);
+    let roots = call.roots();
+    let mut w = tiers::Walk {
+        roots: &roots,
+        fs,
+        base: Some(roots.cwd.clone()),
+        fetched: false,
+        known: tiers::Walk::known_vars(&roots, &parsed.assigned),
+    };
+    let mut saved = false;
+    let mut all = true;
+    for p in &parsed.parts {
+        let class = tiers::classify(p, &mut w);
+        let readable = tiers::pattern_ok(p) && !p.stdin_args;
+        if rules.outside_sandbox(&call.repo, &p.text(), &p.exact(), readable) {
+            saved = true;
+        } else if class != tiers::Class::Allowed {
+            all = false;
+        }
+    }
+    if saved && all {
+        return String::new();
+    }
+    run_flags(cmd).to_string()
+}
+
+/// A bash call's command (`{"arg"}` or `{"command"}`).
+pub fn bash_cmd(args: &serde_json::Value) -> &str {
+    args.get("arg")
+        .or_else(|| args.get("command"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+}
+
+/// The rerun of a command the sandbox stopped: the runtime's second gate
+/// line carries `"denied": <the first run's output>`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Rerun {
+    pub denial: Denial,
+    /// The command's parts: the checker's `commands`, the card's
+    /// "always" rules (saved with `sandbox = false`).
+    pub parts: Vec<super::Part>,
+    /// Cached on a yes: the same command then skips the sandbox.
+    pub key: CacheKey,
+}
+
+impl Rerun {
+    /// `None` when the gate line is not a rerun (no `denied`). An output
+    /// the heuristic cannot read is still a write denial with no path: the
+    /// runtime saw one.
+    pub fn of(call: &Call, gate: &serde_json::Value) -> Option<Rerun> {
+        let out = gate.get("denied")?.as_str()?;
+        let cmd = bash_cmd(&call.args);
+        Some(Rerun {
+            denial: Denial::of(out).unwrap_or(Denial::Write(None)),
+            parts: parse::parse(cmd).parts,
+            key: rerun_key(cmd),
+        })
+    }
+
+    /// The card's "always" rules, one per part, saved with `sandbox =
+    /// false`.
+    pub fn always(&self) -> Vec<String> {
+        super::always_rules(&self.parts)
     }
 }
 
