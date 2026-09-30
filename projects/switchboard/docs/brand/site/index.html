@@ -642,7 +642,7 @@ function branch(s) {
     const verb = (m) => m.startsWith("fix") ? "fixed" : m.startsWith("feat") ? "implemented" : "done";
     return (g, t) => {
       // the thread sits low enough to leave the arcs room under the title, and keeps 4 rows under it for what bise says
-      const Y = Math.max(2, Math.min(g.rows - 5, Math.max(Math.round(g.rows * .8), g.ko.y1 + 10)));
+      const Y = Math.max(2, Math.min(g.rows - 3, Math.max(Math.round(g.rows * .8), g.ko.y1 + 10)));  // low enough on a laptop for 3 lanes under the title
       // a fuller dandelion sky: seeded at once over the whole hero, then fed from the bottom and the left edge
       const seed = (x, y) => s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: 1e9 });
       if (!s.sown) { s.sown = true; for (let k = 0; k < 150; k++) seed(rnd(0, g.cols), rnd(0, g.rows)); }
@@ -659,7 +659,7 @@ function branch(s) {
       // never the same feature twice at once (out, or back and waiting for the kiss)
       const pool = NAMES.filter(n => !s.b.some(o => o.key === n)), key = pool[Math.floor(rnd(0, pool.length))];
       const name = key, done = key, ko = g.ko;
-      if (s.b.length < 6 && s.kx - s.last > (s.gap || 16) && kx > 2) {
+      if (s.b.length < 6 && s.b.filter(o => o.p < o.L).length < 3 && s.kx - s.last > (s.gap || 16) && kx > 2) {
         const free = (L) => { const a = kx + 1 + L; return a < g.cols - 3 && s.b.every(o => Math.abs(o.xs + o.L - a) > 7); };
         // a few tries: a length, then its lane (like a git graph: the lowest one not taken by a branch over the same columns, 2 rows apart).
         // a higher lane needs a longer branch, so the length grows to fit its fork and merge: that's how 3 can fly at once
@@ -670,13 +670,13 @@ function branch(s) {
           for (let pass = 0; pass < 2; pass++) {
             const taken = s.b.filter(o => o.xs < xs + c && xs < o.xs + o.L).map(o => o.lane);
             lane = 0; while (taken.includes(lane)) lane++;
-            A = 3 + 2 * lane; R = Math.max(4, Math.round(A * 1.3));
+            A = 2 + 2 * lane; R = Math.max(4, Math.round(A * 1.3));
             if (c < 2 * R + 6) c = 2 * R + 6 + Math.floor(rnd(0, 6)); else break;
           }
           // never behind the title (2 rows of air under it), never out of the sky, and room for the fork, the lane and the merge
           const b0 = { xs, L: c, A, R, dir };
           let fits = lane < 5 && A <= Y - 3 && c >= 2 * R + 6 && free(c);
-          for (let i = 0; fits && i <= c; i++) if (xs + i >= ko.x0 && xs + i <= ko.x1 && Y - railY(b0, Y, i) > Y - ko.y1 - 2) fits = false;
+          for (let i = 0; fits && i <= c; i++) if (xs + i >= ko.x0 && xs + i <= ko.x1 && Y - railY(b0, Y, i) > Y - ko.y1) fits = false;
           if (fits) { L = c; s.b.push({ xs, L, p: 0, A, R, lane, dir, name, done, key }); }
         }
         if (L) {
@@ -736,9 +736,11 @@ function branch(s) {
         else g.put(mx, my, "✓", "a"); }
       if (BUBBLE) {
         // one line at a time, ~2.5 s each; if bise has more to say, only the newest waits
-        if (s.q.length > 1) s.q = s.q.slice(-1);
-        if ((!s.cur || s.cur.n <= 0) && s.q.length) s.cur = { text: s.q.shift(), n: 34, x: kx };
-        if (s.cur && s.cur.n-- > -8) g.bubble = { text: s.cur.n > 0 ? s.cur.text : "", x: s.cur.x, y: Math.min(g.rows - 2, Y + 2) };
+        // lines that arrive together take turns: the one showing is cut short, fades out, then the next fades in (at most 3 wait)
+        if (s.q.length > 3) s.q = s.q.slice(-3);
+        if ((!s.cur || s.cur.n <= -8) && s.q.length) s.cur = { text: s.q.shift(), n: 34, x: kx };
+        if (s.cur && s.q.length && s.cur.n > 20) s.cur.n = 20;
+        if (s.cur && s.cur.n-- > -8) g.bubble = { text: s.cur.n > 0 ? s.cur.text : "", x: s.cur.x, y: Math.min(g.rows - 1, Y + 2) };
       } else if (EVENTS) {
         s.ev = s.ev.filter(e => --e.n > 0);
         for (const e of s.ev) if (g.labels) g.labels.push({ id: e.id, text: e.text, a: e.a, r: e.r }); else g.str(e.a, e.r, e.text, "d");
