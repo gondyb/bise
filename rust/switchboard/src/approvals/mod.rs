@@ -11,6 +11,9 @@
 
 pub mod arity;
 pub mod check;
+pub mod checker;
+#[cfg(test)]
+mod checker_tests;
 pub mod parse;
 pub mod paths;
 pub mod rules;

@@ -447,7 +447,7 @@ fn no_key_fix(setup: &bise_catalog::Setup, r: &bise_catalog::Resolved, found: &[
         .catalog
         .providers
         .iter()
-        .find(|p| !p.model.is_empty() && !p.stt_only && p.needs.is_empty() && found.iter().any(|(id, _)| *id == p.id));
+        .find(|p| !p.model.is_empty() && p.chats() && p.needs.is_empty() && found.iter().any(|(id, _)| *id == p.id));
     if let Some(p) = keyed {
         return format!("you have a {} key: set model = \"{}/{}\" in config.toml", p.id, p.id, p.model);
     }

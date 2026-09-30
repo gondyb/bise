@@ -149,7 +149,7 @@ pub fn render_styled(s: &Setup, filter: Option<&str>, keys: &Keys, home: Option<
     o.push_str(&choice_line(st, "small_model", c, &s.small_model, small_from));
     o.push_str(&voice_line(st, s));
     let mut listed = false;
-    for p in c.providers.iter().filter(|p| !p.stt_only) {
+    for p in c.providers.iter().filter(|p| p.chats()) {
         let models: Vec<_> = c.models.iter().filter(|m| m.provider == p.id && !m.stt).collect();
         let p_hit = hit(&p.id) || hit(&p.name);
         let shown: Vec<_> = models.iter().filter(|m| p_hit || hit(&m.name())).collect();

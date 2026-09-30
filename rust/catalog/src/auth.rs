@@ -314,7 +314,7 @@ impl Keys<'_> {
     /// or it needs none (a local server). The model pickers list only
     /// these providers' models.
     pub fn ready(&self, p: &Provider) -> bool {
-        p.needs.is_empty() && !p.stt_only && (p.key_env.is_empty() || self.for_provider(p).is_some())
+        p.needs.is_empty() && p.chats() && (p.key_env.is_empty() || self.for_provider(p).is_some())
     }
 
     /// The environment variable holding ANOTHER key for provider `id`

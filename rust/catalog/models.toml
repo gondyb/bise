@@ -731,6 +731,19 @@ kind = "stt"
 [models."groq/whisper-large-v3"]
 kind = "stt"
 
+# TypeSafe's Jev (approvals, design §4): the checker of auto mode. It
+# answers typed questions (POST <base_url>/systemone), it does not chat:
+# not in the chat lists, only in the checker's picker and /provider.
+# OpenRouter serves it too (typesafe/jev-1.13, same API, its own key).
+[providers.typesafe]
+name = "TypeSafe"
+kind = "decisions"
+hint = "for the checker: it looks at commands in auto mode."
+keys_url = "https://typesafe.ai"
+base_url = "https://api.typesafe.ai/v1"
+key_env = "TYPESAFE_API_KEY"
+model = "jev-1.13"
+
 [providers.elevenlabs]
 name = "ElevenLabs"
 kind = "stt"

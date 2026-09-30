@@ -752,7 +752,7 @@ fn with_model_sets_the_top_level_line_only() {
 #[test]
 fn every_offered_provider_has_a_keys_page_and_a_model() {
     let c = crate::Catalog::builtin();
-    for p in c.providers.iter().filter(|p| !p.key_env.is_empty() && p.needs.is_empty() && !p.stt_only && !p.hidden) {
+    for p in c.providers.iter().filter(|p| !p.key_env.is_empty() && p.needs.is_empty() && p.chats() && !p.hidden) {
         assert!(p.keys_url.starts_with("https://"), "{}: keys_url", p.id);
         assert!(!p.model.is_empty() && !p.hint.is_empty(), "{}: model and hint", p.id);
     }
@@ -762,7 +762,7 @@ fn every_offered_provider_has_a_keys_page_and_a_model() {
     let offered: Vec<&str> = c
         .providers
         .iter()
-        .filter(|p| !p.key_env.is_empty() && p.needs.is_empty() && !p.stt_only && !p.hidden)
+        .filter(|p| !p.key_env.is_empty() && p.needs.is_empty() && p.chats() && !p.hidden)
         .map(|p| p.id.as_str())
         .collect();
     assert_eq!(offered, ["anthropic", "openai", "google", "mistral", "openrouter"]);

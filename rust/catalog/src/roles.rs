@@ -60,6 +60,8 @@ pub const AGENTS: &str = "agents";
 pub const SMALL: &str = "small";
 pub const VOICE: &str = "voice";
 pub const CLASSIFY: &str = "classify";
+/// The checker's model when it is off (`[roles] classify = "off"`).
+pub const CHECKER_OFF: &str = "off";
 
 /// Every role, in the order the screens list them.
 pub const ROLES: &[Role] = &[

@@ -168,7 +168,7 @@ pub(crate) fn picks_with(ready: &dyn Fn(&str) -> bool) -> Vec<Pick> {
     let c = &setup().catalog;
     let mut out = Vec::new();
     for m in c.models.iter().filter(|m| !m.stt) {
-        let Some(p) = c.provider(&m.provider).filter(|p| !p.stt_only && p.needs.is_empty() && ready(&p.id)) else {
+        let Some(p) = c.provider(&m.provider).filter(|p| p.chats() && p.needs.is_empty() && ready(&p.id)) else {
             continue;
         };
         let r = c.resolve(&m.name());
@@ -248,7 +248,7 @@ pub(crate) fn keyless(model: &str) -> Option<(String, String)> {
     let r = resolve(model)?;
     let c = &setup().catalog;
     let p = c.provider(&r.provider)?;
-    let ok = r.known == Known::NoProvider || !p.needs.is_empty() || p.stt_only || ready_ids().contains(&p.id);
+    let ok = r.known == Known::NoProvider || !p.needs.is_empty() || !p.chats() || ready_ids().contains(&p.id);
     (!ok).then(|| (p.id.clone(), p.name.clone()))
 }
 
@@ -264,7 +264,7 @@ pub(crate) fn full_name(model: &str) -> Option<String> {
 pub(crate) fn provider_name(id: &str, key_env: &str) -> String {
     let c = &setup().catalog;
     let p = if id.is_empty() {
-        c.providers.iter().find(|p| !p.key_env.is_empty() && p.key_env == key_env && !p.stt_only)
+        c.providers.iter().find(|p| !p.key_env.is_empty() && p.key_env == key_env && p.chats())
     } else {
         c.provider(id)
     };
@@ -276,7 +276,7 @@ pub(crate) fn provider_name(id: &str, key_env: &str) -> String {
 pub(crate) fn not_ready_names() -> Vec<String> {
     let ready = ready_ids();
     let c = &setup().catalog;
-    let usable = |p: &&bise_catalog::Provider| p.needs.is_empty() && !p.stt_only && !p.key_env.is_empty() && !ready.contains(&p.id);
+    let usable = |p: &&bise_catalog::Provider| p.needs.is_empty() && p.chats() && !p.key_env.is_empty() && !ready.contains(&p.id);
     let mut v: Vec<&bise_catalog::Provider> = c.providers.iter().filter(usable).collect();
     v.sort_by_key(|p| p.hidden);
     v.into_iter().map(|p| p.name.clone()).collect()

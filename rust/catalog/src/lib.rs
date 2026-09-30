@@ -232,6 +232,9 @@ pub struct Provider {
     /// `kind = "stt"`: it only transcribes (no chat models: not in the
     /// chat list, not in the runtime's hand-off)
     pub stt_only: bool,
+    /// `kind = "decisions"`: it only answers typed questions (TypeSafe's
+    /// Jev, the checker of auto mode): no chat models either
+    pub decides: bool,
     /// the first run's key step (BISE-266): what it is for, in a few
     /// words ("claude, by the people who make it"); "" = none
     pub hint: String,
@@ -254,6 +257,13 @@ pub struct Provider {
     /// the defaults of its models
     pub caps: PartialCaps,
     pub source: Source,
+}
+
+impl Provider {
+    /// It runs chats: not voice only (`stt`), not decisions only.
+    pub fn chats(&self) -> bool {
+        !self.stt_only && !self.decides
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -552,6 +562,7 @@ impl Catalog {
                                 small_model: String::new(),
                                 stt: String::new(),
                                 stt_only: false,
+                                decides: false,
                                 hint: String::new(),
                                 keys_url: String::new(),
                                 signup_url: String::new(),
@@ -605,8 +616,11 @@ impl Catalog {
                                         )),
                                     },
                                     "kind" => match kind_of(fv) {
-                                        Some(stt) => p.stt_only = stt,
-                                        None => warn(format!("{}.kind: \"chat\" or \"stt\"", where_)),
+                                        Some(k) => {
+                                            p.stt_only = k == Kind::Stt;
+                                            p.decides = k == Kind::Decisions;
+                                        }
+                                        None => warn(format!("{}.kind: \"chat\", \"stt\" or \"decisions\"", where_)),
                                     },
                                     _ => cap_field(&mut caps, fk, fv, &where_, &mut warn),
                                 }
@@ -643,8 +657,8 @@ impl Catalog {
                                     }
                                 } else if fk == "kind" {
                                     match kind_of(fv) {
-                                        Some(k) => stt = Some(k),
-                                        None => warn(format!("{}.kind: \"chat\" or \"stt\"", where_)),
+                                        Some(k @ (Kind::Chat | Kind::Stt)) => stt = Some(k == Kind::Stt),
+                                        _ => warn(format!("{}.kind: \"chat\" or \"stt\"", where_)),
                                     }
                                 } else {
                                     cap_field(&mut caps, fk, fv, &where_, &mut warn);
@@ -705,10 +719,19 @@ impl Catalog {
 }
 
 /// `kind = "chat" | "stt"` → Some(is stt).
-fn kind_of(v: &toml::Value) -> Option<bool> {
+/// What a provider or a model does (`kind = …`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    Chat,
+    Stt,
+    Decisions,
+}
+
+fn kind_of(v: &toml::Value) -> Option<Kind> {
     match v.as_str().map(str::trim) {
-        Some("stt") => Some(true),
-        Some("chat") => Some(false),
+        Some("stt") => Some(Kind::Stt),
+        Some("chat") => Some(Kind::Chat),
+        Some("decisions") => Some(Kind::Decisions),
         _ => None,
     }
 }
@@ -1042,10 +1065,12 @@ impl Setup {
             }
         };
         let voice = voice::VoiceSetup::of(&catalog, voice_cfg, &envv);
+        // the checker (approvals): "off" is a choice, not a model name
+        let checker = |m: String| if m == roles::CHECKER_OFF { m } else { catalog.canonical(&m) };
         let (classify_model, classify_model_from) = if let Some(m) = envv("BISE_CLASSIFY_MODEL") {
-            (catalog.canonical(&m), "BISE_CLASSIFY_MODEL")
+            (checker(m), "BISE_CLASSIFY_MODEL")
         } else if let Some(m) = classify_cfg {
-            (catalog.canonical(&m), "config")
+            (checker(m), "config")
         } else {
             (small_model.clone(), "small_model")
         };
@@ -1152,7 +1177,7 @@ impl Setup {
         }
         // the runtime only calls chat models: the speech-to-text entries
         // (BISE-130) stay out, the file is the same as before them
-        for p in c.providers.iter().filter(|p| !p.stt_only) {
+        for p in c.providers.iter().filter(|p| p.chats()) {
             o.push_str(&format!("\n[providers.{}]\n", key(&p.id)));
             o.push_str(&format!("name = {}\n", q(&p.name)));
             o.push_str(&format!("api = {}\n", q(&p.api)));

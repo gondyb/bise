@@ -190,7 +190,7 @@ impl Onb {
 
     /// `p` runs chats (not voice only, usable).
     fn chats(&self, p: &Provider) -> bool {
-        self.setup.catalog.provider(&p.id).is_some_and(|c| !c.stt_only && c.needs.is_empty())
+        self.setup.catalog.provider(&p.id).is_some_and(|c| c.chats() && c.needs.is_empty())
     }
 
     /// The model a role runs and where it comes from.

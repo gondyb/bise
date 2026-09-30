@@ -186,7 +186,7 @@ pub(crate) fn key_providers(setup: &bise_catalog::Setup) -> Vec<Provider> {
         .iter()
         // the voice-only ones (BISE-130: elevenlabs, deepgram) run no agent
         // hidden: a private proxy (BISE-266), never offered
-        .filter(|p| !p.key_env.is_empty() && p.needs.is_empty() && !p.stt_only && !p.hidden)
+        .filter(|p| !p.key_env.is_empty() && p.needs.is_empty() && p.chats() && !p.hidden)
         .map(Provider::of)
         .collect()
 }
@@ -204,7 +204,7 @@ pub(crate) fn find_keys(env: Env, home: &bise_home::Home, setup: &bise_catalog::
         .catalog
         .providers
         .iter()
-        .filter(|p| !p.key_env.is_empty() && p.needs.is_empty() && !p.stt_only)
+        .filter(|p| !p.key_env.is_empty() && p.needs.is_empty() && p.chats())
         .filter(|p| keys.find(&p.id, &p.key_env).is_some())
         .map(Provider::of)
         .collect()

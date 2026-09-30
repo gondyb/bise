@@ -343,7 +343,7 @@ pub fn render_list_styled(c: &Catalog, keys: &Keys, paths: &Paths, st: &Style) -
 pub fn render_providers(c: &Catalog, keys: &Keys, paths: &Paths, main: &str, st: &Style) -> String {
     let home = paths.home.as_deref();
     let mut o = format!("{}\n\n", st.title("your providers"));
-    let chat = |p: &&Provider| !p.key_env.is_empty() && p.needs.is_empty() && !p.stt_only;
+    let chat = |p: &&Provider| !p.key_env.is_empty() && p.needs.is_empty() && p.chats();
     let (shown, rest): (Vec<&Provider>, Vec<&Provider>) =
         c.providers.iter().filter(chat).partition(|p| !p.hidden || keys.for_provider(p).is_some() || p.id == main);
     let w = shown.iter().map(|p| p.name.chars().count()).max().unwrap_or(8).max(16) + 2;
@@ -737,7 +737,7 @@ pub fn logout_main(args: &[String], paths: &Paths) -> i32 {
 
 /// Ask which provider (a number or an id); None = cancelled.
 fn choose_provider(c: &Catalog, st: &Style) -> Option<String> {
-    let ps: Vec<&Provider> = keyed(c).into_iter().filter(|p| !p.hidden && !p.stt_only).collect();
+    let ps: Vec<&Provider> = keyed(c).into_iter().filter(|p| !p.hidden && p.chats()).collect();
     let store = Store::default();
     let keys = Keys { env: &real_env, store: &store, files: &[] };
     let mut err = std::io::stderr();
