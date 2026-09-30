@@ -2992,3 +2992,12 @@ Index:
 - **spec:** the user asks how bise could support Windows and Linux: a plan per component, then a Linux build that installs and runs a full turn.
 - **what:** ports-plan.md: per component what breaks on Linux and on Windows, the glibc floor (2.34: built on Ubuntu 22.04), Windows via WSL first (the Bend runtime is POSIX-only), the order. Fixes: cpal (ALSA, `libasound.so.2`) is no longer linked on Linux, voice says "not available on Linux yet" (bise did not start without ALSA); `install.sh` reads latest.json without `plutil` (python3, else sed) and checks sha256 without `shasum` (`sha256sum`); `bise update` too; `test-install.sh` runs on Linux (GNU `stat`, `<os>-<arch>`).
 - **notes:** test-install.sh 31/31 on linux-arm64 (Ubuntu 22.04 build, clean Debian 12 and Rocky 9) and linux-x86_64 (Rosetta container: Bend's x64 binary cannot run there, its C was emitted on arm64). clang ≥ 15 needed on arm64 (clang 14 crashes on sb-core). Windows compile check: `bise-home` and `bise-session` stop it (Unix file modes, `flock`).
+
+
+### BISE-260 · the agents panel grows a little on wide screens
+
+- **status:** done (HEAD) · **owner:** sidebar-wide · **commits:** `git log --grep BISE-260`
+- **owns:** `panel_w` in `rust/tui/src/layout.rs`
+- **spec:** user: « je pense sur les grands écrans quand il y a de la place on pourrait rendre la sidebar un poil plus large ».
+- **what:** up to 164 columns the panel keeps its widths (24 at 90-99, 28 from 100). From 160 it takes 1 column for every 5 more, the feed area the other 4, up to 44 (reached at 240, where the model tags show): 180 → 32, 200 → 36, 240 → 44. The feed area never shrinks as the screen grows (framed: 122 at 160, 138 at 180, 186 at 240); the 91-column reading column stays centered in it.
+- **notes:** checked in tmux at 100, 140, 180, 240 columns (panel text 28, 28, 32, 44). The tmux tests hang with a blank screen when the calling shell exports `BEND_TOOLS_NOTE`: `start_tui` quotes it with `list2cmdline`, so its backticks (`` `rg` ``, `` `node` ``) run as command substitutions in zsh; run the gate with `env -u BEND_TOOLS_NOTE`.
