@@ -297,26 +297,28 @@ const V = {
       s.p = s.p.filter(p => p.y > -2 && p.x < g.cols + 3 && --p.life > 0);
       for (const p of s.p) { const sp = .06 + p.z * .18; p.y -= sp; p.x += sp * 1.1; p.ph += .04; g.put(p.x + Math.sin(p.ph) * 2, p.y, p.life < 25 ? "." : p.z > .8 ? "∗" : p.z > .45 ? "·" : ".", p.z > .8 ? "d" : ""); }
       // the kiss walks the thread; it wraps around once every branch is back
-      s.kx += .3;
+      // it picks up speed as it goes: more agents, closer together, a bit faster, then a calm restart on the left
+      const q = Math.max(0, Math.min(1, s.kx / g.cols));
+      s.kx += .3 + .12 * q;
       if (s.kx > g.cols + 2 && !s.b.length) { s.kx = -2; s.last = -99; }
       const kx = Math.floor(s.kx);
       // it sends agents out from where it stands. a landing spot must not share its label's room with another one
       // never the same feature twice at once (out, or back and waiting for the kiss)
       const pool = NAMES.filter(n => !s.b.some(o => o.key === n)), key = pool[Math.floor(rnd(0, pool.length))];
       const lb = LABEL(key), [name, done] = Array.isArray(lb) ? lb : [lb, lb], ko = g.ko;
-      if (s.b.length < 4 && s.kx - s.last > 11 && kx > 2 && Math.random() < .035) {
-        const free = (L) => { const a = kx + 1 + L, z = a + 2 + name.length; return z < g.cols - 4 && s.b.every(o => { const oa = o.xs + o.L, oz = oa + 2 + o.name.length; return z + 3 < oa || oz + 3 < a; }); };
-        let L = 0; for (let k = 0; k < 12 && !L; k++) { const c = Math.floor(rnd(30, 64)); if (free(c)) L = c; }
+      if (s.b.length < 6 && s.kx - s.last > (s.gap || 16) && kx > 2) {
+        const free = (L) => { const a = kx + 1 + L, z = a + 2 + done.length; return a < g.cols - 3 && s.b.every(o => Math.abs(o.xs + o.L - a) > 7); };
+        let L = 0; for (let k = 0; k < 12 && !L; k++) { const c = Math.floor(rnd(30 - 18 * q, 64 - 42 * q)); if (free(c)) L = c; }
         if (L) {
           // an arc that crosses the text's columns stays under it (name included)
           const under = kx + 1 + L + name.length + 3 >= ko.x0 && kx + 1 <= ko.x1;
           const top = under ? Math.max(2, Y - ko.y1 - 2) : Y - 4;
           s.b.push({ xs: kx + 1, L, p: 0, A: Math.min(rnd(Math.min(3, top), top), L / 2.6), name, done, key });
-          s.last = s.kx; s.flash = 8; PULSES.push({ x: kx, t0: t });
+          s.last = s.kx; s.flash = 8; s.gap = rnd(.75, 1.25) * (30 - 24 * q); PULSES.push({ x: kx, t0: t });
         }
       }
       s.b = s.b.filter(b => {
-        b.p = Math.min(b.L, b.p + .6);
+        b.p = Math.min(b.L, b.p + .6 + .25 * q);
         const pts = [];
         for (let i = 0; i <= b.p; i++) pts.push([b.xs + i, Y - b.A * Math.sin(Math.PI * i / b.L)]);
         // back on the thread, it waits for the kiss to pick it up
