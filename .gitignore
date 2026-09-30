@@ -38,3 +38,6 @@ auth.json
 *.p12
 events.jsonl
 !projects/switchboard/tests/fixtures/**/events.jsonl
+
+# private notes (launch plans, DMs): never committed
+/private/
