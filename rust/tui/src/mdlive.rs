@@ -343,6 +343,28 @@ fn outdent_line(lines: &mut [String], k: usize) -> Option<()> {
     Some(())
 }
 
+/// Backspace at the start of a list item's text (approvals-design.md
+/// §8.1: shift+tab switches the approvals mode): one level out; at the top
+/// level the bullet goes (Notes, Notion, Google Docs). None: elsewhere
+/// (the editor deletes a char).
+pub(crate) fn outdent_at_start(text: &str, cursor: usize) -> Option<Edit> {
+    let (k, at, line, kind) = line_at(text, cursor);
+    if !matches!(kind, Kind::Prose) {
+        return None;
+    }
+    let it = item(line).filter(|it| cursor - at == it.content)?;
+    let mut lines: Vec<String> = text.split('\n').map(str::to_string).collect();
+    if it.indent > 0 {
+        let content: String = lines[k].chars().skip(it.content).collect();
+        outdent_line(&mut lines, k)?;
+        let col = lines[k].chars().count() - content.chars().count();
+        return Some(Edit { cursor: ci_of(&lines, k, col), text: join(&lines), anchor: None });
+    }
+    lines[k] = line.chars().skip(it.content).collect();
+    renumber(&mut lines, k.saturating_sub(1), &[]);
+    Some(Edit { cursor: ci_of(&lines, k, 0), text: join(&lines), anchor: None })
+}
+
 /// Tab (`out`: Shift+Tab) on the list items of the lines from `a` to `b`
 /// (the cursor and the selection's other end): one level in (under the
 /// item above: its marker's width) or out. None when the cursor's line
@@ -681,6 +703,20 @@ mod tests {
         // an indented empty item steps out one level (and renumbers)
         assert_eq!(nl("1. a\n   - |"), "1. a\n- |");
         assert_eq!(nl("1. a\n   1. b\n   2. |"), "1. a\n   1. b\n2. |");
+    }
+
+    #[test]
+    fn backspace_at_an_items_start_outdents_then_drops_the_bullet() {
+        let t = "- a\n  - b";
+        let at = t.find("b").unwrap();
+        let e = outdent_at_start(t, at).unwrap();
+        assert_eq!((e.text.as_str(), e.cursor), ("- a\n- b", 6));
+        let e = outdent_at_start(&e.text, e.cursor).unwrap();
+        assert_eq!((e.text.as_str(), e.cursor), ("- a\nb", 4));
+        assert!(outdent_at_start("- ab", 3).is_none(), "inside the text: a plain backspace");
+        assert!(outdent_at_start("plain", 0).is_none());
+        let e = outdent_at_start("1. a\n2. b\n3. c", 8).unwrap();
+        assert_eq!(e.text, "1. a\nb\n2. c");
     }
 
     #[test]

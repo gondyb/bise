@@ -251,6 +251,9 @@ pub(super) fn shape(c: &Card) -> Shape {
     if c.kind == "approval" {
         return approval_shape(c);
     }
+    if c.kind == "confirm" {
+        return confirm_shape(c);
+    }
     if c.kind == "setup" {
         return setup_shape(c);
     }
@@ -319,6 +322,75 @@ fn approval_shape(c: &Card) -> Shape {
         ALLOW_SHORT.iter().map(|s| s.to_string()).collect(),
         Enter::Deny,
     )
+}
+
+/// A gate's card (approvals-design.md §9), as the hub writes it: the
+/// title (`wants to run`), `= ` the parts already allowed (dim, above),
+/// `| ` what needs you, `reason: `, one `always: ` per rule it saves (none:
+/// a hard rule, no option 2). Options: allow, always allow … here, no;
+/// typed words say no, with the words as the note.
+fn confirm_shape(c: &Card) -> Shape {
+    let (mut head, mut done, mut body, mut reason, mut always) = (String::new(), vec![], vec![], String::new(), vec![]);
+    for (i, l) in c.text.lines().enumerate() {
+        if i == 0 {
+            head = l.to_string();
+        } else if let Some(x) = l.strip_prefix("= ") {
+            done.push(x.to_string());
+        } else if let Some(x) = l.strip_prefix("| ").or(l.strip_prefix("|")) {
+            body.push(x.to_string());
+        } else if let Some(x) = l.strip_prefix("reason: ") {
+            reason = x.to_string();
+        } else if let Some(x) = l.strip_prefix("always: ") {
+            always.push(x.to_string());
+        }
+    }
+    let n = c.agent.split(", ").count();
+    let title = if n > 1 {
+        format!("{} agents {}", n, head.replacen("wants", "want", 1))
+    } else {
+        format!("{} {}", c.agent, head)
+    };
+    let bash = head == "wants to run";
+    let edit = head.starts_with("wants to edit");
+    // an edit or a connector: its first 3 lines (after the path), the rest counted
+    let (shown, more) = if bash {
+        (body.clone(), 0)
+    } else {
+        let keep = if edit { 4 } else { 3 };
+        (body.iter().take(keep).cloned().collect::<Vec<_>>(), body.len().saturating_sub(keep))
+    };
+    let mut parts: Vec<Part> = done.iter().map(|d| Part::Reason(format!("$ {d}"))).collect();
+    let text = shown.join("\n");
+    parts.push(Part::Code(if bash {
+        crate::code::highlight_bash(&text)
+    } else if edit {
+        crate::code::highlight_patch(&text)
+    } else {
+        text.lines().map(|l| vec![Span::raw(l.to_string())]).collect()
+    }));
+    if more > 0 {
+        parts.push(Part::Reason(format!("{} {} more line{}", theme::glyph("▸"), more, if more == 1 { "" } else { "s" })));
+    }
+    if !reason.is_empty() {
+        parts.push(Part::Reason(reason));
+    }
+    if !c.note.is_empty() {
+        parts.push(Part::Note(c.note.clone()));
+    }
+    let first = body.first().map_or("", |l| l.trim());
+    let summary = if body.len() > 1 && bash { format!("{first} · {} lines", body.len()) } else { first.to_string() };
+    let mut options = vec!["allow".to_string()];
+    let mut short = vec!["allow".to_string()];
+    if !always.is_empty() {
+        options.push(format!("always allow {} here", always.join(", ")));
+        short.push("always".into());
+    }
+    options.push("no".into());
+    short.push("no".into());
+    let who = title.clone();
+    let mut s = Shape::plain(title, who, summary, parts, options, short, Enter::Deny);
+    s.note = String::new();
+    s
 }
 
 /// A setup item (BISE-245): its look, written by setup.rs; without one

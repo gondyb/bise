@@ -120,6 +120,7 @@ pub(super) fn new_sb(writer: std::sync::Arc<std::sync::Mutex<UnixStream>>, works
         archived_open: false,
         calls: 0,
         setup: Default::default(),
+        approvals: Default::default(),
     }
 }
 

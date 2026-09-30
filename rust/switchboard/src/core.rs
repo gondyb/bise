@@ -343,6 +343,17 @@ pub enum Input {
         req: AgentReq,
     },
     Tick,
+    /// The approvals gate (approvals-design.md §9): a `confirm` card for
+    /// `agent`'s waiting call, in the user's inbox.
+    ConfirmOpen {
+        agent: String,
+        text: String,
+    },
+    /// Its calls are gone (interrupted): the card closes unanswered.
+    ConfirmClose {
+        card: u64,
+        res: String,
+    },
     /// The end of a role-line call (BISE-126) for the task in `dir`,
     /// asked with `key`: the new line, or None (failed: the old one stays).
     RoleLine {
@@ -416,6 +427,13 @@ pub enum Effect {
         dir: String,
         key: String,
         request: String,
+    },
+    /// The user answered a `confirm` card (approvals-design.md §9): the
+    /// daemon writes the verdict to the waiting calls' gates.
+    Confirm {
+        card: u64,
+        agent: String,
+        text: String,
     },
     /// `/model`, `/reasoning` (BISE-135): the daemon checks the words
     /// against the catalog, writes the agent's choice (and config.toml
@@ -571,6 +589,9 @@ pub struct Hub {
     /// BISE-136: the private worktree each agent works in, by dir (a
     /// rename keeps it); runtime only, like `activity`.
     places: BTreeMap<String, Place>,
+    /// Agents whose call waits on a `confirm` card (approvals-design.md
+    /// §10): shown `waiting` on `you`; runtime only, like `activity`.
+    on_you: BTreeSet<String>,
     dirty: bool,
     link: CoreLink,
     /// How to bring sb-core back when it dies (the daemon's; none: a
@@ -709,6 +730,7 @@ impl Hub {
             activity: BTreeMap::new(),
             roles: BTreeMap::new(),
             places: BTreeMap::new(),
+            on_you: BTreeSet::new(),
             dirty: false,
             link,
             revive: None,
@@ -871,6 +893,10 @@ impl Hub {
             };
             let mut agent = agent;
             agent.place = self.place_of(&agent);
+            if self.on_you.contains(&agent.name) {
+                agent.waiting = true;
+                agent.waiting_on = Some("you".into());
+            }
             agents.insert(name, agent);
         }
         self.st.order = parse(&v["order"]).unwrap_or_default();
@@ -922,6 +948,16 @@ impl Hub {
             self.activity.insert(agent.to_string(), (now, what));
         }
     }
+    /// The approvals gate (approvals-design.md §10): `agent`'s call waits
+    /// on the user (a card), or no longer does. The views say it at once.
+    pub fn set_on_you(&mut self, agent: &str, on: bool) {
+        let changed = if on { self.on_you.insert(agent.to_string()) } else { self.on_you.remove(agent) };
+        if let Some(a) = self.st.agents.get_mut(agent).filter(|_| changed) {
+            a.waiting = on;
+            a.waiting_on = on.then(|| "you".to_string());
+        }
+    }
+
     /// BISE-136: the private worktree `a` works in (None: its own
     /// workspace, shared checkout or hub worktree).
     fn place_of(&self, a: &Agent) -> Option<String> {
@@ -1153,6 +1189,12 @@ impl Hub {
             ),
             Input::Agent { token, from, req } => self.agent_req(&mut fx, env, token, &from, req),
             Input::Tick => self.core(&mut fx, env, None, json!({"t": "tick"})),
+            Input::ConfirmOpen { agent, text } => {
+                self.core(&mut fx, env, None, json!({"t": "confirm_open", "agent": agent, "text": text}))
+            }
+            Input::ConfirmClose { card, res } => {
+                self.core(&mut fx, env, None, json!({"t": "confirm_close", "card": card, "res": res}))
+            }
         }
         self.refresh_contexts(&mut fx, env.now());
         if self.dirty {
@@ -1274,6 +1316,12 @@ impl Hub {
                 body: f["body"].clone(),
             }),
             "deliver" => self.deliver(fx, env, f),
+            // not the client's `confirm` (a yes/no in the status row): a card's
+            "confirm" if f.get("card").is_some() => fx.push(Effect::Confirm {
+                card: f["card"].as_u64().unwrap_or(0),
+                agent,
+                text: jstr(f, "text"),
+            }),
             other => self.client_effect(fx, client, other, f),
         }
     }

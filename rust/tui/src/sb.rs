@@ -180,6 +180,30 @@ pub(super) struct Sb {
     calls: u64,
     /// The setup card and its offers (BISE-245), the TUI's own cards.
     setup: setup::Setup,
+    /// The approvals mode, its checker and saved rules (the hub's
+    /// `approvals` event, approvals-design.md §8).
+    pub(crate) approvals: Approvals,
+}
+
+/// What the hub says of approvals: the global mode (`yolo` / `auto`),
+/// whether `BISE_APPROVALS` set it, which checker, the saved rules.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Approvals {
+    pub(crate) mode: String,
+    pub(crate) env: bool,
+    /// `jev`, `model` or `off`
+    pub(crate) checker: String,
+    /// each rule, one line: `bash · cargo test * · <repo>`
+    pub(crate) rules: Vec<String>,
+    /// a switch: the key bar's 3-second flash since then
+    pub(crate) flash: Option<std::time::Instant>,
+}
+
+impl Approvals {
+    /// The mode word, `yolo` until the hub said.
+    pub(crate) fn word(&self) -> &str {
+        if self.mode.is_empty() { "yolo" } else { &self.mode }
+    }
 }
 
 /// The string field `k` of `v` ("" when absent).
@@ -433,6 +457,7 @@ pub(super) fn dispatch(app: &mut App, raw: &str) {
             sb.calls += 1;
         }
         "release" => release::event(app, &v),
+        "approvals" => approvals_event(app, &v),
         "focus" => focus(app, &s("focus")),
         "renamed" => {
             let (old, new) = (s("old"), s("new"));
@@ -522,6 +547,90 @@ fn ingest_for(app: &mut App, agent: &str, line: String, pos: Option<usize>, ts: 
     if steered {
         crate::hints::once(app, crate::hints::Hint::FirstSteer);
     }
+}
+
+/// The hub's `approvals` event (approvals-design.md §8): the mode for the
+/// key bar; `flash`: a switch (the 3-second flash, the first switch to
+/// auto's tip); `show`: `/approvals` asked (its lines in the feed).
+fn approvals_event(app: &mut App, v: &Value) {
+    let rules: Vec<String> = v
+        .get("rules")
+        .and_then(|r| r.as_array())
+        .map(|a| {
+            a.iter()
+                .map(|r| {
+                    let what = str_of(r, "pattern");
+                    let what = if what.is_empty() { str_of(r, "path") } else { what };
+                    let tool = str_of(r, "tool");
+                    let head = if tool == "bash" || what.is_empty() { what.clone() } else { format!("{tool} {what}") };
+                    let head = if head.is_empty() { tool } else { head };
+                    match str_of(r, "project") {
+                        p if p.is_empty() => format!("{head} · every project"),
+                        p => format!("{head} · {}", home_tilde(&p)),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let a = &mut app.sb.approvals;
+    let was = a.mode.clone();
+    if was.is_empty() && str_of(v, "mode") == "yolo" {
+        crate::hints::once(app, crate::hints::Hint::FirstYolo);
+    }
+    let a = &mut app.sb.approvals;
+    a.mode = str_of(v, "mode");
+    a.env = v.get("env").and_then(|x| x.as_bool()).unwrap_or(false);
+    a.checker = str_of(v, "checker");
+    a.rules = rules;
+    if v.get("flash").and_then(|x| x.as_bool()) == Some(true) {
+        a.flash = Some(std::time::Instant::now());
+        if a.mode == "auto" && was != "auto" && a.checker != "off" {
+            crate::hints::set_auto_text(&a.checker, &str_of(v, "checker_who"));
+            crate::hints::once(app, crate::hints::Hint::FirstAuto);
+        }
+    }
+    if v.get("show").and_then(|x| x.as_bool()) == Some(true) {
+        for l in approvals_lines(&app.sb.approvals) {
+            push_event(&mut app.events, &mut app.cache, Ev::Info(l));
+        }
+    }
+}
+
+/// shift+tab (approvals-design.md §8): the hub switches the mode for
+/// every agent and says so to every TUI (its `approvals` event flashes).
+pub(crate) fn toggle_approvals(app: &mut App) {
+    // an older hub never said a mode: it has no switch
+    if !app.sb.approvals.mode.is_empty() {
+        app.sb.send(serde_json::json!({"op": "approvals", "mode": "toggle"}));
+    }
+}
+
+/// `/approvals`: the mode, the checker (changed in /models) and the
+/// saved rules (approvals-design.md §8).
+pub(crate) fn approvals_lines(a: &Approvals) -> Vec<String> {
+    let mode = match a.word() {
+        "auto" if a.checker == "off" => "auto · edits run, commands ask you",
+        "auto" => "auto · safe calls run, risky ones ask you",
+        _ => "yolo · everything runs, nothing asks",
+    };
+    let env = if a.env { " (BISE_APPROVALS, this session only)" } else { "" };
+    let checker = match a.checker.as_str() {
+        "jev" => "Jev by TypeSafe",
+        "model" => "a chat model",
+        "off" => "off: every command asks you",
+        _ => "none yet",
+    };
+    let mut out = vec![
+        format!("approvals: {mode}{env}. shift+tab or /approvals yolo|auto switches."),
+        format!("checker: {checker}. /models changes it."),
+    ];
+    if a.rules.is_empty() {
+        out.push("always allowed: nothing yet (a card's \"always\" adds a rule)".into());
+    } else {
+        out.push("always allowed (~/.bise/approvals.toml):".into());
+        out.extend(a.rules.iter().map(|r| format!("  {r}")));
+    }
+    out
 }
 
 fn apply_state(app: &mut App, v: &Value) {
@@ -780,6 +889,12 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             }
         }
         "/theme" => out.push(theme_command(typed.split_whitespace().nth(1), crate::theme_detect::choose)),
+        // approvals-design.md §8: the mode, the checker, the rules; or a switch
+        "/approvals" => match typed.split_whitespace().nth(1).map(str::to_lowercase).as_deref() {
+            Some(m @ ("yolo" | "auto")) => sb.send(serde_json::json!({"op": "approvals", "mode": m})),
+            Some(other) => out.push(Ev::Warn(format!("/approvals {other}: yolo or auto"))),
+            None => sb.send(serde_json::json!({"op": "approvals", "mode": ""})),
+        },
         "/welcome" => crate::onboarding::run(app),
         // BISE-298: which model does what
         "/models" | "/roles" => {
@@ -1371,5 +1486,13 @@ mod nav_key_tests {
         for c in ['g', 'f', 'n', 'p', 'r', 'x', 'a', 'c', 'o', 'z'] {
             assert_eq!(nav(KeyCode::Char(c), KeyModifiers::CONTROL), None);
         }
+    }
+}
+
+/// `p` with the user's home as `~`.
+fn home_tilde(p: &str) -> String {
+    match std::env::var("HOME") {
+        Ok(h) if !h.is_empty() && p.starts_with(&h) => format!("~{}", &p[h.len()..]),
+        _ => p.to_string(),
     }
 }

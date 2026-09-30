@@ -168,9 +168,88 @@ pub(crate) fn mode(app: &App) -> Mode {
     }
 }
 
+/// The approvals mode's key (approvals-design.md §8); ASCII `shift+tab`.
+pub(crate) const MODE_KEY: &str = "⇧⇥";
+
+/// How long the key bar says a switch of mode.
+const FLASH: Duration = Duration::from_secs(3);
+
+/// The mode at the right end of the key bar: `⇧⇥ yolo`, dim, always on.
+pub(crate) fn mode_tag(mode: &str) -> String {
+    let key = if theme::ascii_mode() { "shift+tab" } else { MODE_KEY };
+    format!("{key} {mode}")
+}
+
+/// The flash of a switch (designer, §8): the mode word, then its sentence.
+pub(crate) fn flash_words(mode: &str, checker: &str, env: bool) -> (String, String) {
+    let what = match mode {
+        "auto" if checker == "off" => "edits run, commands ask you",
+        "auto" => "safe calls run, risky ones ask you",
+        _ => "everything runs, nothing asks",
+    };
+    let only = if env { " (this session only: BISE_APPROVALS)" } else { "" };
+    (mode.to_string(), format!(" · {what}{only}"))
+}
+
 /// The key bar of `app` for a row `width` columns wide: the mode's keys,
-/// the tip of the moment (none in an agent's view).
+/// the tip of the moment (none in an agent's view), and the approvals
+/// mode at the right end; for 3 s after a switch, the switch's line.
 pub(crate) fn line(app: &App, width: u16) -> Line<'static> {
+    let a = &app.sb.approvals;
+    let dim = Style::default().fg(theme::dim());
+    if a.flash.is_some_and(|t| t.elapsed() < FLASH) {
+        let (word, rest) = flash_words(a.word(), &a.checker, a.env);
+        let w = usize::from(width);
+        let rest = cut(&rest, w.saturating_sub(word.width()));
+        return Line::from(vec![Span::styled(word, Style::default().fg(theme::accent())), Span::styled(rest, dim)]);
+    }
+    // the hub says the mode in its hello: nothing to show before
+    if a.mode.is_empty() {
+        return keys_line(app, width);
+    }
+    let tag = mode_tag(a.word());
+    // the keys drop their pairs first (§8: on a narrow screen)
+    let room = usize::from(width).saturating_sub(tag.width() + 3);
+    if room < 8 {
+        return keys_line(app, width);
+    }
+    with_mode(keys_line(app, room as u16), usize::from(width), &tag)
+}
+
+/// `keys` with the mode tag at the row's right end; on a narrow row the
+/// keys give way first (the tag stays while it fits).
+fn with_mode(keys: Line<'static>, width: usize, tag: &str) -> Line<'static> {
+    let tw = tag.width();
+    if tw + 1 > width {
+        return keys;
+    }
+    let room = width - tw - 3.min(width - tw);
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut used = 0;
+    for sp in keys.spans {
+        let w = sp.content.width();
+        if used + w > room {
+            let left = room - used;
+            if left > 0 {
+                spans.push(Span::styled(cut(&sp.content, left), sp.style));
+                used += left.min(w);
+            }
+            break;
+        }
+        used += w;
+        spans.push(sp);
+    }
+    // a key bar ends with its padding: drop the trailing blank
+    while spans.last().is_some_and(|s| s.content.trim().is_empty()) {
+        let s = spans.pop().expect("just seen");
+        used -= s.content.width();
+    }
+    spans.push(Span::raw(" ".repeat(width - used - tw)));
+    spans.push(Span::styled(tag.to_string(), Style::default().fg(theme::dim())));
+    Line::from(spans)
+}
+
+fn keys_line(app: &App, width: u16) -> Line<'static> {
     let agent = !app.sb.is_main_focus();
     let typing = !app.ed.text.is_empty();
     // ctrl, option or cmd held (ctrlhint.rs): every key of that modifier

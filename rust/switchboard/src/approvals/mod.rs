@@ -14,6 +14,7 @@ pub mod check;
 pub mod checker;
 #[cfg(test)]
 mod checker_tests;
+pub mod mode;
 pub mod parse;
 pub mod paths;
 pub mod rules;

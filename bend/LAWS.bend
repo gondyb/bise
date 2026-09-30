@@ -34,6 +34,7 @@ import ./runtime/repl-core-pure.bend as Rp
 import ./vendor/json.bend as J
 import ./runtime/debug-pure.bend as Dg
 import ./runtime/usage-pure.bend as Us
+import ./runtime/gate-pure.bend as Gt
 import ./hub/model.bend as HM
 import ./hub/cx.bend as HX
 import ./hub/core.bend as HC
@@ -955,6 +956,50 @@ law edit_path_resolves:
   {String.join([Ed.resolve("/w", "/h", "a/../b.txt"), Ed.resolve("/w", "/h", "~/x"),
      Ed.resolve("/w", "/h", "/abs/./y"), Ed.resolve("/w/sub", "", " ../z ")], "|")
     == "/w/b.txt|/h/x|/abs/y|/w/z" : String}
+
+# LAW: the approvals gate (approvals-design.md §3, §10): the wrappers are
+# never gated (run_typescript's own calls are, one by one); every other
+# tool is: bash, the edit tools, a connector.
+law gate_what_is_gated:
+  {(Gt.gated("run_typescript"), Gt.gated("search_tool_functions"), Gt.gated("skill"),
+    Gt.gated("self.sleep"), Gt.gated("bash"), Gt.gated("edit"), Gt.gated("gmail.send_email"))
+    == (False{}, False{}, False{}, False{}, True{}, True{}, True{})
+    : Bool & Bool & Bool & Bool & Bool & Bool & Bool}
+
+# LAW: only `auto` in the mode file asks; `yolo`, no file (no hub) or
+# anything else never does (yolo costs no round trip).
+law gate_only_auto_asks:
+  {(Gt.mode_asks(Some{"auto\n"}), Gt.mode_asks(Some{"yolo\n"}), Gt.mode_asks(None{}), Gt.mode_asks(Some{""}))
+    == (True{}, False{}, False{}, False{}) : Bool & Bool & Bool & Bool}
+
+# LAW: the runtime takes the hub's line for its call only: its number and
+# its nonce; `allow` may carry flags (the sandbox's `net`), `deny` a reason.
+law gate_reads_its_own_verdict:
+  {(Gt.verdict("6 x allow\n7 b allow\n", "7", "a"), Gt.verdict("7 a allow\n", "7", "a"),
+    Gt.verdict("7 a allow sandbox net\n", "7", "a"), Gt.verdict("7 a deny the user said no: use a branch\n", "7", "a"),
+    Gt.verdict("7 a deny\n", "7", "a"))
+    == (None{}, Some{Gt.VAllow{""}}, Some{Gt.VAllow{"sandbox net"}}, Some{Gt.VDeny{"the user said no: use a branch"}},
+        Some{Gt.VDeny{"the user said no."}})
+    : Maybe<&2, Gt.Verdict> & Maybe<&2, Gt.Verdict> & Maybe<&2, Gt.Verdict> & Maybe<&2, Gt.Verdict> & Maybe<&2, Gt.Verdict>}
+
+# LAW: a poll finds the verdict first, else an interrupt (a flag with
+# content: the cleared flag is empty), else nothing yet.
+law gate_poll_order:
+  {(Gt.found(Some{"7 a allow"}, Some{"1"}, "7", "a"), Gt.found(Some{""}, Some{"1"}, "7", "a"),
+    Gt.found(None{}, Some{""}, "7", "a"))
+    == (Some{Gt.VAllow{""}}, Some{Gt.VStop{}}, None{})
+    : Maybe<&2, Gt.Verdict> & Maybe<&2, Gt.Verdict> & Maybe<&2, Gt.Verdict>}
+
+# LAW: what the call returns: an allow runs, a denial is its reason, an
+# interrupt says so; the wire lines.
+law gate_results_and_lines:
+  {(Gt.denial(Gt.VAllow{"net"}), Gt.denial(Gt.VDeny{"no"}), Gt.denial(Gt.VStop{}),
+    Gt.ask_line("7", "bash", "ls \"x\"", "a"), Gt.done_line("7", Gt.how_of(Gt.VStop{})),
+    Gt.poll_ms(0n), Gt.poll_ms(10n))
+    == (None{}, Some{"no"}, Some{"interrupted by the user"},
+        "gate 7 {\"tool\":\"bash\",\"args\":\"ls \\\"x\\\"\",\"nonce\":\"a\"}", "gate-done 7 interrupted",
+        20, 100)
+    : Maybe<&2, String> & Maybe<&2, String> & Maybe<&2, String> & String & String & U32 & U32}
 
 # LAW: the gate (1a/1b) reads {"file_path": <absolute>}.
 law edit_gate_args:

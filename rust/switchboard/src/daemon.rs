@@ -10,6 +10,7 @@
 //!   every line of each feed, for the views, `sb inspect` and
 //!   `sb history`.
 
+mod gate;
 mod repl;
 mod release;
 mod session_log;
@@ -132,6 +133,13 @@ enum Msg {
         key: String,
         line: Option<String>,
     },
+    /// The checker answered a gated call (approvals-design.md §4).
+    GateChecked {
+        dir: String,
+        n: String,
+        req: Box<crate::approvals::check::CheckReq>,
+        out: crate::approvals::check::CheckOut,
+    },
     /// `keep`: leave the REPLs running for the next hub to adopt.
     Shutdown {
         keep: bool,
@@ -228,6 +236,8 @@ struct Shell {
     /// The stopped and archived agents (dirs): one more gets its
     /// processes killed (BISE-243).
     down: BTreeSet<String>,
+    /// The approvals mode and gate (approvals-design.md §8-§10).
+    gates: gate::Gates,
 }
 
 /// What an agent whose turn was cut by a restart receives.
@@ -577,6 +587,8 @@ impl Shell {
         for e in fx {
             self.run(e);
         }
+        // a gate card closed without an answer is a no
+        self.gate_sweep();
         // a /drop: the dropped task's worktree folders (gate.sh's too)
         if !self.booting && self.hub.st.agents.values().any(|a| a.lifecycle == Lifecycle::Archived && !self.archived.contains(&a.dir)) {
             let now = self.archived_dirs();
@@ -800,6 +812,7 @@ impl Shell {
                 self.broadcast(&snap);
             }
             Effect::AskRole { dir, key, request } => self.ask_role(dir, key, request),
+            Effect::Confirm { card, agent: _, text } => self.on_confirm(card, &text),
             Effect::Choose { client, agent, model, effort, default } => {
                 let text = self.choose(&agent, model, effort, default);
                 if let Some(s) = self.clients.get_mut(&client) {
@@ -958,6 +971,8 @@ impl Shell {
         if let Err(e) = crate::tools_env::make_agent_dirs(&tmp, &run) {
             log_line(&self.opts.paths, &format!("{}: cannot create {}: {}", a.name, tmp.display(), e));
         }
+        // the approvals mode, read by the runtime before each gated call
+        self.write_mode_file(&dir);
         let tmp_s = tmp.to_string_lossy().into_owned();
         let role = if a.is_main {
             prompts::main_role(&self.hub.workspace, &tmp_s)
@@ -1153,6 +1168,13 @@ impl Shell {
             }
             self.restored.remove(dir);
         }
+        // the approvals gate (spec §3): the hub's, not the feed's
+        if let Some(rest) = line.strip_prefix("gate ") {
+            return self.on_gate(dir, &name, rest);
+        }
+        if let Some(rest) = line.strip_prefix("gate-done ") {
+            return self.on_gate_done(dir, &name, rest);
+        }
         if line.starts_with("history ") && self.buffers.get(&name).is_some_and(|b| !b.is_empty()) {
             // a restored session replays its history: the feed has it
             return;
@@ -1206,6 +1228,7 @@ impl Shell {
                 push(&line_event(name, *pos, *ts, l));
             }
         }
+        push(&self.approvals_ev(false));
         push(&json!({"ev": "ready"}));
         push(&self.version_items());
         if let Some(r) = self.release_hello() {
@@ -1273,6 +1296,27 @@ impl Shell {
                 focus: s("focus"),
             }),
             "release" => self.release_op(id, &v),
+            // shift+tab, `/approvals [yolo|auto]` (approvals-design.md §8)
+            "approvals" => {
+                let m = match s("mode").as_str() {
+                    "toggle" => Some(self.gates.mode.other()),
+                    w => crate::approvals::Mode::parse(w),
+                };
+                if let Some(m) = m {
+                    self.set_mode(m);
+                    let ev = self.approvals_ev(true);
+                    self.broadcast(&ev);
+                } else if let Some(c) = self.clients.get_mut(&id) {
+                    let ev = {
+                        let mut v = self.gates.info(bise_home::Home::from_env().root());
+                        v["ev"] = json!("approvals");
+                        v["flash"] = json!(false);
+                        v["show"] = json!(true);
+                        v
+                    };
+                    write_json(c, &ev);
+                }
+            }
             "confirm" => self.step(Input::ClientConfirm {
                 client: id,
                 id: v.get("id").and_then(|x| x.as_u64()).unwrap_or(0),
@@ -1716,6 +1760,10 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         config: Config::load(&paths),
         log: Box::new(move |s| log_line(&log_paths, s)),
     };
+    // the checker (approvals-design.md §4): a chat model in the role runs
+    // through repl-live's one-shot, like the role lines
+    let runner = crate::approvals::check::Runner::new(&bise_home::Home::from_env())
+        .with_oneshot(opts.repl_bin.clone(), opts.app_root.clone());
     let mut sh = Shell {
         opts,
         hub,
@@ -1753,6 +1801,11 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         archived: BTreeSet::new(),
         proc_hub,
         down: BTreeSet::new(),
+        gates: gate::Gates::new(
+            &std::fs::read_to_string(bise_home::Home::from_env().config_file()).unwrap_or_default(),
+            std::env::var(crate::approvals::mode::ENV).ok().as_deref(),
+            runner,
+        ),
     };
     // the role lines of an earlier hub (BISE-126)
     let dirs: Vec<String> = sh.hub.st.agents.values().map(|a| a.dir.clone()).collect();
@@ -1959,6 +2012,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 sh.starts.remove(&dir);
                 sh.gens.remove(&dir);
                 sh.repls.remove(&dir);
+                sh.gate_forget(&dir);
                 sh.pids.remove(&dir);
                 // its writer's lock goes with it (a respawn resumes the log)
                 sh.recorders.remove(&dir);
@@ -2019,6 +2073,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
             }
             Msg::Release { client, v } => sh.release_event(client, v),
             Msg::RoleLine { dir, key, line } => sh.step(Input::RoleLine { dir, key, line }),
+            Msg::GateChecked { dir, n, req, out } => sh.on_checked(&dir, &n, *req, out),
             Msg::BuildEnded { rev } => {
                 sh.building.remove(&rev);
                 sh.broadcast_versions();

@@ -42,6 +42,7 @@ import ../vendor/json.bend as J
 import ./main-pure.bend as Rtp
 import ../core/edit.bend as Ed
 import ./debug.bend as Dbg
+import ./gate-pure.bend as Gp
 
 # where the loop's output goes (stdout, or a REPL socket): Pv.Out
 # what the loop hands back when it stops
@@ -93,6 +94,80 @@ def emit_res_ann(out: Pv.Out, +id: U32, +r: Xp.ExecRes, live: Bool) -> IO(Pv.Out
       emit(out, Con{Rtp.res_ann(id, r), Nil{}})
     case False{}:
       IO.pure(Pv.Out, out)
+
+# ---- the approvals gate (approvals-design.md §10, approvals.md §3) ----
+# In `auto` (the mode file the hub writes in the agent's run/ folder), a
+# gated call asks the hub first: `gate <n> <json>`, then the runtime polls
+# the gate file for the hub's verdict and the interrupt file (ctrl+c,
+# `sb interrupt`: the call does not run; the flag stays for
+# drain_interrupt, which ends the turn). No time limit. In `yolo`, or with
+# no hub (no mode file), nothing asks: one small file read per call.
+
+def gate.rnd(r: Result<&1, &1, U32 & String, U32>) -> U32:
+  match r:
+    case Done{+x}:
+      x
+    case Fail{_}:
+      0
+
+def gate.step(m: Maybe<&2, Gp.Verdict>, +k: Nat, next: IO(Gp.Verdict)) -> IO(Gp.Verdict):
+  match m:
+    case Some{+v}:
+      IO.pure(Gp.Verdict, v)
+    case None{}:
+      do IO<Gp.Verdict>:
+        IO.sleep(Gp.poll_ms(k))
+        next
+
+# @unsafe: waits as long as the user needs (no fuel: no time limit)
+@unsafe
+def gate.wait(+k: Nat, +gpath: String, +ipath: String, +n: String, +nonce: String)
+    -> IO(Gp.Verdict):
+  do IO<Gp.Verdict>:
+    g : Maybe<&2, String> <- P.read_file(gpath)
+    i : Maybe<&2, String> <- P.read_file(ipath)
+    gate.step(Gp.found(g, i, n, nonce), k, gate.wait(1n+k, gpath, ipath, n, nonce))
+
+@unsafe
+def gate.ask(out: Pv.Out, +name: String, +args: String, +dir: String)
+    -> IO(Pv.Out & Gp.Verdict):
+  do IO<Pv.Out & Gp.Verdict>:
+    pr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_REPL_PORT")
+    +port : String <- IO.pure(String, P.env_or(pr, "0"))
+    +gpath : String <- IO.pure(String, Gp.gate_path(dir, port))
+    +ipath : String <- Pv.interrupt_path()
+    +now : Nat <- IO.now()
+    ra : Result<&1, &1, U32 & String, U32> <- IO.random_u32()
+    rb : Result<&1, &1, U32 & String, U32> <- IO.random_u32()
+    +nonce : String <- IO.pure(String, Gp.nonce_of(gate.rnd(ra), gate.rnd(rb)))
+    +n : String <- IO.pure(String, Nat.show(now))
+    u : Unit <- P.write_file(gpath, "")
+    out2 : Pv.Out <- emit(out, [Gp.ask_line(n, name, args, nonce)])
+    +v : Gp.Verdict <- gate.wait(0n, gpath, ipath, n, nonce)
+    out3 : Pv.Out <- emit(out2, [Gp.done_line(n, Gp.how_of(v))])
+    IO.pure(Pv.Out & Gp.Verdict, (out3, v))
+
+@unsafe
+def gate.if(asks: Bool, out: Pv.Out, +name: String, +args: String, +dir: String)
+    -> IO(Pv.Out & Gp.Verdict):
+  match asks:
+    case True{}:
+      gate.ask(out, name, args, dir)
+    case False{}:
+      IO.pure(Pv.Out & Gp.Verdict, (out, Gp.VAllow{""}))
+
+# the gate of one call (scripted runs never ask)
+@unsafe
+def gate(out: Pv.Out, +name: String, +args: String, live: Bool)
+    -> IO(Pv.Out & Gp.Verdict):
+  match live:
+    case False{}:
+      IO.pure(Pv.Out & Gp.Verdict, (out, Gp.VAllow{""}))
+    case True{}:
+      do IO<Pv.Out & Gp.Verdict>:
+        +dir : String <- P.side_dir()
+        m : Maybe<&2, String> <- P.read_file(Gp.mode_path(dir))
+        gate.if(Gp.gated(name) && Gp.mode_asks(m), out, name, args, dir)
 
 # ---- bend-jsrt: run_typescript in a V8 isolate (the Vibe SDK core pattern) ----
 # The model writes real TypeScript/JavaScript; rust/jsrt (deno_core v8 +
@@ -368,7 +443,34 @@ def exec_program.call.self_req(is_self: Bool, +name: String, +d: Sfp.Def)
     case False{}:
       d
 
+# a program's call past its gate: run, or its denial as the result
+def exec_program.call.after(m: Maybe<&2, String>, +name: String, +args: String,
+    +live: Bool) -> IO(Xp.ExecRes):
+  match m:
+    case None{}:
+      exec_program.call.bash(String.eq(name, "bash"), name, args, live)
+    case Some{+why}:
+      IO.pure(Xp.ExecRes, Xp.Ex{False{}, why})
+
+def exec_program.call.gated(pv: Pv.Out & Gp.Verdict, +name: String, +args: String,
+    +live: Bool, +d: Sfp.Def) -> IO(Pv.Out & (Sfp.Def & Xp.ExecRes)):
+  match pv:
+    case (out, +v):
+      do IO<Pv.Out & (Sfp.Def & Xp.ExecRes)>:
+        +r : Xp.ExecRes <- exec_program.call.after(Gp.denial(v), name, args, live)
+        +d2 : Sfp.Def <- IO.pure(Sfp.Def,
+          exec_program.call.self_req(Sfp.is_self_tool(name), name, d))
+        out2 : Pv.Out <- emit_sub(out, name, r, live)
+        IO.pure(Pv.Out & (Sfp.Def & Xp.ExecRes), (out2, (d2, r)))
+
+@unsafe
 def exec_program.call(out: Pv.Out, +name: String, +args: String, +live: Bool,
+    +d: Sfp.Def) -> IO(Pv.Out & (Sfp.Def & Xp.ExecRes)):
+  do IO<Pv.Out & (Sfp.Def & Xp.ExecRes)>:
+    pv : Pv.Out & Gp.Verdict <- gate(out, name, args, live)
+    exec_program.call.gated(pv, name, args, live, d)
+
+def exec_program.call.ungated(out: Pv.Out, +name: String, +args: String, +live: Bool,
     +d: Sfp.Def) -> IO(Pv.Out & (Sfp.Def & Xp.ExecRes)):
   do IO<Pv.Out & (Sfp.Def & Xp.ExecRes)>:
     +r : Xp.ExecRes <- exec_program.call.bash(String.eq(name, "bash"),
@@ -485,10 +587,28 @@ def exec_tool.run(t: Rtp.Tool, out: Pv.Out, +name: String, +args: String,
     case Rtp.TMcp{}:
       exec_tool.with(out, Sh.exec_mcp(name, args, live))
 
+# a call past its gate: run, or its denial as a failed result
+def exec_tool.after(m: Maybe<&2, String>, out: Pv.Out, +name: String, +args: String,
+    +live: Bool) -> IO(Pv.Out & Xp.ExecRes):
+  match m:
+    case None{}:
+      exec_tool.run(Rtp.tool_of(name), out, name, args, live)
+    case Some{+why}:
+      IO.pure(Pv.Out & Xp.ExecRes, (out, Xp.Ex{False{}, why}))
+
+def exec_tool.gated(pv: Pv.Out & Gp.Verdict, +name: String, +args: String,
+    +live: Bool) -> IO(Pv.Out & Xp.ExecRes):
+  match pv:
+    case (out, +v):
+      exec_tool.after(Gp.denial(v), out, name, args, live)
+
+@unsafe
 def exec_tool(out: Pv.Out, +call: T.Call, +live: Bool) -> IO(Pv.Out & Xp.ExecRes):
   match call:
     case T.Call{_, +name, +args}:
-      exec_tool.run(Rtp.tool_of(name), out, name, args, live)
+      do IO<Pv.Out & Xp.ExecRes>:
+        pv : Pv.Out & Gp.Verdict <- gate(out, name, args, live)
+        exec_tool.gated(pv, name, args, live)
 
 def emit_code_ann.pick(is_code: Bool, out: Pv.Out, +call: T.Call) -> IO(Pv.Out):
   match is_code:

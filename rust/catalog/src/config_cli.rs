@@ -10,7 +10,7 @@ use bise_home::style::Style;
 
 /// The keys `config` reads and writes, and what they hold. The model
 /// roles (BISE-298) live in `[roles]`; their UI word comes first.
-pub const KEYS: [(&str, &str); 6] = [
+pub const KEYS: [(&str, &str); 7] = [
     ("main", "your team lead"),
     ("agents", "the agents main starts. unset: same as main"),
     ("small", "small jobs: titles and summaries. unset: auto"),
@@ -20,6 +20,8 @@ pub const KEYS: [(&str, &str); 6] = [
         "compaction_threshold",
         "when a conversation compacts: tokens (450000) or a share of the model's window (45%). at most 80% of the window. unset: 80%",
     ),
+    // approvals-design.md §8: the global mode, shift+tab writes it too
+    ("approvals", "yolo: every call runs, nothing asks. auto: safe calls run, risky ones ask you. unset: yolo"),
 ];
 
 /// The keys before roles (BISE-298): still taken, they read and write
@@ -107,6 +109,10 @@ pub fn value_of(setup: &Setup, key: &str, value: &str) -> Result<(String, Vec<St
             let toml = if v.ends_with('%') { toml_string(&v) } else { v.trim_start_matches('0').to_string() };
             Ok((toml, notes))
         }
+        "approvals" => match v.to_lowercase().as_str() {
+            m @ ("yolo" | "auto") => Ok((toml_string(m), Vec::new())),
+            _ => Err(format!("'{}' is not a mode: yolo or auto", v)),
+        },
         k => Err(format!("unknown key '{}'\n{}", k, usage())),
     }
 }

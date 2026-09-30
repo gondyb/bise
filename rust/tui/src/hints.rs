@@ -40,6 +40,27 @@ pub(crate) enum Hint {
     FirstCard,
     /// book §15 (⚠ proposed): for the steering marks (BISE-15, track F)
     FirstSteer,
+    /// approvals-design.md §8: the first launch, in yolo
+    FirstYolo,
+    /// the first switch to auto with a checker that sends data out: what
+    /// leaves the machine ([`set_auto_text`])
+    FirstAuto,
+}
+
+thread_local! {
+    static AUTO_TEXT: std::cell::Cell<&'static str> = const { std::cell::Cell::new("") };
+}
+
+/// The words of [`Hint::FirstAuto`] for the checker on (designer, §8):
+/// Jev by TypeSafe, or the chat model in the role. Set once before the
+/// hint is asked for (it shows once per user).
+pub(crate) fn set_auto_text(checker: &str, who: &str) {
+    let t = if checker == "jev" {
+        "in auto, commands that aren't clearly safe go to Jev by TypeSafe for a check (the command, the script it runs, and your request). /models changes it.".to_string()
+    } else {
+        format!("in auto, {who} checks the commands that aren't clearly safe. /models changes it.")
+    };
+    AUTO_TEXT.with(|c| c.set(Box::leak(t.into_boxed_str())));
 }
 
 impl Hint {
@@ -50,6 +71,8 @@ impl Hint {
             Hint::FirstLevel3 => "first_level3",
             Hint::FirstCard => "first_card",
             Hint::FirstSteer => "first_steer",
+            Hint::FirstYolo => "first_yolo",
+            Hint::FirstAuto => "first_auto",
         }
     }
 
@@ -62,6 +85,8 @@ impl Hint {
             Hint::FirstLevel3 => "agents talk to each other. it stays dim: you can ignore it, or {▸} to read.",
             Hint::FirstCard => "[?] <this is your inbox.> when an agent needs you, it waits here instead of interrupting you. {ctrl+g} selects it, then {↑↓ ⏎}. ↓",
             Hint::FirstSteer => "{✓} the agent got it · {✓✓} it read it.",
+            Hint::FirstYolo => "you're in yolo: agents run commands without asking. {⇧⇥} changes it.",
+            Hint::FirstAuto => AUTO_TEXT.with(|c| c.get()),
         }
     }
 }
@@ -295,6 +320,14 @@ fn anchor(buf: &Buffer, h: Hint, feed: Rect, panel: Option<Rect>) -> Option<u16>
             let read = theme::glyph(theme::G_READ);
             rows(feed).filter(|(_, t)| t.trim_start().starts_with(theme::glyph(theme::G_YOU)) && t.contains(read)).map(|(y, _)| y).next_back()
         }
+        // the key bar's mode, at the bottom (approvals-design.md §8)
+        Hint::FirstYolo | Hint::FirstAuto => {
+            let area = buf.area;
+            (area.y..area.bottom()).rev().find(|&y| {
+                let t = row_text(buf, y, area.x, area.right());
+                t.contains(crate::keybar::MODE_KEY) || t.contains("shift+tab")
+            })
+        }
     }
 }
 
@@ -339,6 +372,8 @@ pub(crate) fn place(h: Hint, y: u16, lines: u16, area: Rect, feed: Rect, panel: 
         }
         // above the card, the arrow pointing down at it
         Hint::FirstCard => (feed.x + 4, y.checked_sub(bh)?.max(area.y)),
+        // above the key bar's mode, at the right end
+        Hint::FirstYolo | Hint::FirstAuto => (area.right().checked_sub(bw + 1)?, y.checked_sub(bh)?.max(area.y)),
     };
     Some(Rect { x, y, width: bw, height: bh }.intersection(area))
 }

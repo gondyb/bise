@@ -4410,6 +4410,21 @@ def Laws.utf8_bad_offsets():
 def Laws.edit_path_resolves():
   {==}
 
+def Laws.gate_what_is_gated():
+  {==}
+
+def Laws.gate_only_auto_asks():
+  {==}
+
+def Laws.gate_reads_its_own_verdict():
+  {==}
+
+def Laws.gate_poll_order():
+  {==}
+
+def Laws.gate_results_and_lines():
+  {==}
+
 def Laws.edit_gate_args():
   {==}
 

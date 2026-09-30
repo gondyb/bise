@@ -64,6 +64,8 @@ type In is Data:
   IFocus{}
   IClose{}
   IForceRun{}
+  IConfirmOpen{}
+  IConfirmClose{}
   INone{}
 
 type CardK is Data:
@@ -476,8 +478,8 @@ def open_card(-o: M.St, +cx: X.Cx<o>, +kind: String, +agent: String, +text: Stri
 
 # BISE-299, the hook for tool-call confirmations: a tool call that needs
 # the user opens a `confirm` card for `agent` straight in the user's
-# inbox, whoever runs it; the user's answer goes to `agent` (answer.kind).
-# Nothing calls it yet: the confirmation gate is not built.
+# inbox, whoever runs it (the approvals gate, approvals-design.md §9);
+# the user's answer goes to the gate (answer.kind: a `confirm` effect).
 def open_confirm(-o: M.St, +cx: X.Cx<o>, +agent: String, +text: String) -> X.Cx<o>:
   open_card(o, cx, "confirm", agent, text, None{})
 
@@ -1359,9 +1361,12 @@ def answer.kind(-o: M.St, k: CardK, +cx: X.Cx<o>, +c: M.Card, +text: String) -> 
     case KDrop{}:
       answer.drop(o, is_yes(text), cx, c)
     case KConfirm{}:
-      # the confirmation hook (BISE-299): the user's answer goes to the
-      # agent that ran the tool
-      answer.plain.sent(o, send(o, cx, msg(M.USER(), M.Card.agent(c), text, False{}, None{}, True{}, False{})), M.Card.id(c))
+      # the approvals gate (approvals-design.md §9): the answer is the
+      # verdict of the waiting call, written to its gate by the hub's
+      # Rust side (the `confirm` effect), never a message to the agent
+      +cx2 = out(o, cx, [J.kv("fx", J.JStr{"confirm"}), J.kv("card", J.JNum{M.Card.id(c)}),
+        J.kv("agent", J.JStr{M.Card.agent(c)}), J.kv("text", J.JStr{text})])
+      close_card(o, cx2, M.Card.id(c), "answered")
     case KOther{}:
       close_card(o, cx, M.Card.id(c), "vue")
 
@@ -2311,7 +2316,12 @@ def in_tag(+t: String) -> In:
   # force_run: the tests (core_tests.rs, Hub::force_run), and the hub when it
   # restarts a dead sb-core: the REPL states of the old one (BISE-292)
   Bool.pick(In, String.eq(t, "force_run"), IForceRun{},
-  INone{})))))))))))))))))))))))))
+  # the approvals gate (approvals-design.md §9): the hub's Rust side
+  # judges a gated call; a card opens, and closes when every call it
+  # holds is gone (the agents interrupted)
+  Bool.pick(In, String.eq(t, "confirm_open"), IConfirmOpen{},
+  Bool.pick(In, String.eq(t, "confirm_close"), IConfirmClose{},
+  INone{})))))))))))))))))))))))))))
 
 # `/close N`: the user files a card without answering it
 def close_by_user(-o: M.St, m: Maybe<&2, M.Card>, +cx: X.Cx<o>, +id: Nat) -> X.Cx<o>:
@@ -2320,6 +2330,15 @@ def close_by_user(-o: M.St, m: Maybe<&2, M.Card>, +cx: X.Cx<o>, +id: Nat) -> X.C
       notice(o, cx, String.append("no open card #", ns(id)))
     case Some{+c}:
       note_main(o, close_card(o, cx, id, "closed"), cat(["the user closed card #", ns(id), " (", M.Card.kind(c), " @", M.Card.agent(c), ": \"", M.one_line(M.Card.text(c)), "\") without answering"]))
+
+# the gate's card closes without an answer (its agents were
+# interrupted): no card, nothing to do
+def confirm_close(-o: M.St, m: Maybe<&2, M.Card>, +cx: X.Cx<o>, +id: Nat, +res: String) -> X.Cx<o>:
+  match m:
+    case None{}:
+      cx
+    case Some{_}:
+      close_card(o, cx, id, res)
 
 def force_run_of(+r: String) -> M.Run:
   Bool.pick(M.Run, String.eq(r, "starting"), M.RStarting{},
@@ -2380,6 +2399,10 @@ def dispatch.go(-o: M.St, tag: In, +cx: X.Cx<o>, +i: J.Json) -> X.Cx<o>:
       # tests only: put an agent's REPL in a given state (then deliver, like
       # any change of run: law L4)
       pump(o, set_run(o, cx, C.get_s(i, "agent"), force_run_of(C.get_s(i, "run"))), C.get_s(i, "agent"))
+    case IConfirmOpen{}:
+      open_confirm(o, cx, C.get_s(i, "agent"), C.get_s(i, "text"))
+    case IConfirmClose{}:
+      confirm_close(o, M.card_of(M.St.cards(st(o, cx)), C.get_nat(i, "card")), cx, C.get_nat(i, "card"), C.get_s(i, "res"))
     case INone{}:
       cx
 

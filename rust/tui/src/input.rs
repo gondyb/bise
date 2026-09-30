@@ -648,16 +648,29 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
             app.follow = true;
             app.unseen = 0;
         }
+        // approvals-design.md §8.1: backspace at the start of a list
+        // item's text outdents it (shift+tab switches the mode)
+        (KeyCode::Backspace, KeyModifiers::NONE)
+            if sel.is_none() && app.ed.anchor.is_none() && crate::mdlive::outdent_at_start(&app.ed.text, app.ed.cursor).is_some() =>
+        {
+            if let Some(e) = crate::mdlive::outdent_at_start(&app.ed.text, app.ed.cursor) {
+                apply_md(app, e);
+                app.key_in_composer = true;
+            }
+        }
         (KeyCode::Tab, _) | (KeyCode::BackTab, _) => {
             let out = k.code == KeyCode::BackTab || k.modifiers.contains(KeyModifiers::SHIFT);
             if let Some(c) = sel {
                 // popup completion
                 pick(app, c);
-            } else if let Some(e) = crate::mdlive::indent(&app.ed.text, app.ed.cursor, app.ed.anchor, out) {
-                // BISE-276: Tab / Shift+Tab on a list item: in / out
+            } else if out {
+                // approvals-design.md §8.1: in the composer shift+tab always
+                // switches yolo ↔ auto (a list item outdents with backspace)
+                crate::sb::toggle_approvals(app);
+            } else if let Some(e) = crate::mdlive::indent(&app.ed.text, app.ed.cursor, app.ed.anchor, false) {
+                // BISE-276: Tab on a list item: one level in
                 apply_md(app, e);
                 app.key_in_composer = true;
-            } else if out {
             } else if app.pending {
                 // BISE-89 (after Codex): the draft waits in the TUI for
                 // the end of the turn, shown above the composer; nothing
