@@ -1734,3 +1734,60 @@ fn a_long_paste_in_your_message_is_a_chip_and_opens_like_a_fold() {
     assert!(toggle_at(&mut events, &mut cache, 0, n - 1));
     assert!(matches!(events[0], Ev::You(_, _, false)));
 }
+
+/// A skill call as the wire brings it: `{"name":"<skill>"}`, then its
+/// result (`None`: still running).
+fn skill_call(id: u32, skill: &str, result: Option<(bool, &str)>) -> Ev {
+    let mut lines = vec![format!("  obs: tool_started #{id}"), format!("tool #{id} skill : {{\"name\":\"{skill}\"}}")];
+    if let Some((ok, r)) = result {
+        lines.push(format!("tool_result #{id} {} : {r}", if ok { "ok" } else { "fail" }));
+        lines.push(format!("  obs: tool_finished #{id} {}", if ok { "ok" } else { "failed" }));
+    }
+    Ev::Tool(merged_tool(&lines))
+}
+
+/// BISE-283 (the user's onboarding test, designer's rows): a skill call
+/// is a sentence, `reading skill <name>` then `read skill <name>`, never
+/// `skill ✓ 0.0s · {"name":…}` and `▸ output`; a failed one says why on
+/// the right; a click (or ctrl+o) opens its SKILL.md in a box.
+#[test]
+fn a_skill_call_reads_as_a_sentence() {
+    let body = "# bise demo
+
+Show what bise can do.";
+    let run = skill_call(1, "bise-demo", None);
+    let rows = rows_text(&build_rows(std::slice::from_ref(&run), 0, false, 60, 0));
+    assert!(rows[0].starts_with("   reading skill bise-demo "), "{rows:#?}");
+    assert_eq!(rows.len(), 1, "{rows:#?}");
+    // the verb dim, the name in the text color while it runs
+    let spans = &build_rows(std::slice::from_ref(&run), 0, false, 60, 0)[0].spans;
+    let name = spans.iter().find(|s| s.content == "bise-demo").unwrap();
+    assert_eq!(name.style.fg, Some(crate::theme::text()));
+    let verb = spans.iter().find(|s| s.content.starts_with("reading")).unwrap();
+    assert_eq!(verb.style.fg, Some(crate::theme::dim()));
+
+    let done = skill_call(2, "bise-demo", Some((true, body)));
+    let (mut events, mut cache) = arrive(vec![done]);
+    let rows = cached_text(&events, &mut cache, 60);
+    assert_eq!(rows, vec!["   read skill bise-demo".to_string()], "{rows:#?}");
+    assert!(crate::feed::anything_closed(&events));
+    // ctrl+o: the SKILL.md in a box titled with the sentence, no JSON
+    crate::feed::set_everything(&mut events, &mut cache, true);
+    let rows = cached_text(&events, &mut cache, 60);
+    assert!(rows[0].starts_with("╭─ read skill bise-demo ✓"), "{rows:#?}");
+    assert!(rows.iter().any(|r| r.starts_with("│ Show what bise can do.")), "{rows:#?}");
+    assert!(!rows.iter().any(|r| r.contains('{') || r.starts_with('├')), "{rows:#?}");
+    crate::feed::set_everything(&mut events, &mut cache, false);
+    assert_eq!(cached_text(&events, &mut cache, 60), vec!["   read skill bise-demo".to_string()]);
+
+    let why = "unknown skill: bise-dmeo: call it with an exact name from <available-skills>";
+    let failed = skill_call(3, "bise-dmeo", Some((false, why)));
+    let (events, mut cache) = arrive(vec![failed]);
+    let rows = cached_text(&events, &mut cache, 60);
+    assert_eq!(rows.len(), 1, "{rows:#?}");
+    assert!(rows[0].starts_with("   read skill bise-dmeo ") && rows[0].ends_with("✗ unknown skill"), "{rows:#?}");
+    // the other views draw the same row
+    let other = text_of(&events[0], 60);
+    assert_eq!(other.len(), 1, "{other:#?}");
+    assert!(other[0].trim_end().ends_with("✗ unknown skill"), "{other:#?}");
+}

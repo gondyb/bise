@@ -20,9 +20,61 @@ fn no_color() -> bool {
     std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty())
 }
 
-/// A call drawn as one row: a closed bash / TypeScript call, in any view.
+/// A call drawn as one row: a closed bash / TypeScript / skill call, in
+/// any view.
 pub(crate) fn row_mode(td: &ToolData) -> bool {
-    crate::toolbox::is_boxed(td) && !td.opened
+    crate::toolbox::opens_as_box(td) && !td.opened
+}
+
+/// A skill call (BISE-283): a sentence, never the tool's JSON.
+pub(crate) fn is_skill(td: &ToolData) -> bool {
+    td.name.as_deref() == Some("skill")
+}
+
+/// The skill a call reads: its `name` (the `arg` of an older schema).
+fn skill_name(td: &ToolData) -> Option<String> {
+    let a = td.args.as_deref()?;
+    crate::render::json_str_field(a, "name")
+        .or_else(|| crate::render::json_str_field(a, "arg"))
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty())
+}
+
+/// What a skill row says: `reading skill <name>` while it runs (the
+/// verb dim, the name in the text color), `read skill <name>` once done
+/// or failed, all dim (designer, BISE-283).
+fn skill_spans(td: &ToolData) -> Vec<Span<'static>> {
+    let run = matches!(td.state, ToolState::Run);
+    let dim_st = Style::default().fg(dim());
+    let verb = if run { "reading skill" } else { "read skill" };
+    match skill_name(td) {
+        Some(n) => vec![
+            Span::styled(format!("{} ", verb), dim_st),
+            Span::styled(n, Style::default().fg(if run { text() } else { dim() })),
+        ],
+        None => vec![Span::styled(verb.to_string(), dim_st)],
+    }
+}
+
+/// Why a skill call failed, short: the runtime's reason up to its first
+/// `:` (`unknown skill: x: call it with…` → `unknown skill`).
+fn skill_reason(td: &ToolData) -> String {
+    let r = td.result.as_ref().map(|(_, r)| r.trim()).unwrap_or("");
+    let head = r.split(':').next().unwrap_or("").trim();
+    // the usage error starts `skill: call exactly with…`
+    let head = if head == "skill" || head.is_empty() { "failed" } else { head };
+    fit_chars(head, 40)
+}
+
+/// The state on the right of a skill row: the pulse and time while it
+/// runs, nothing once read (it takes no time worth a `✓ 0.0s`), `✗
+/// <reason>` in the error color when it failed.
+fn skill_state(td: &ToolData, tick: u32) -> Vec<Span<'static>> {
+    match td.state {
+        ToolState::Run => state_spans(td, tick),
+        ToolState::Ok => Vec::new(),
+        ToolState::Fail => vec![Span::styled(format!("{} {}", glyph(G_FAILED), skill_reason(td)), Style::default().fg(error()))],
+    }
 }
 
 /// The kind glyph: `$` bash, `ƒ` TypeScript (`f` in ASCII).
@@ -155,6 +207,10 @@ fn lead_span(td: &ToolData) -> Span<'static> {
 
 /// The row of one call.
 pub(crate) fn row_line(td: &ToolData, tick: u32, width: usize) -> Line<'static> {
+    if is_skill(td) {
+        // no glyph: a skill read is quiet plumbing (designer, BISE-283)
+        return row_of(Span::raw("   "), skill_spans(td), skill_state(td, tick), width);
+    }
     row_of(lead_span(td), desc_spans(td), state_spans(td, tick), width)
 }
 
@@ -187,6 +243,10 @@ pub(crate) fn error_line(td: &ToolData) -> Option<String> {
 /// The row under a failed call: its first error line, in the error
 /// color, from column 3, cut with `…` (NO_COLOR: `✗ ` leads it).
 pub(crate) fn error_row(td: &ToolData, width: usize) -> Option<Line<'static>> {
+    // a skill's reason is on its row
+    if is_skill(td) {
+        return None;
+    }
     let line = error_line(td)?;
     let lead = if no_color() { format!("{} ", glyph(G_FAILED)) } else { String::new() };
     let room = width.saturating_sub(3 + lead.width());
@@ -224,6 +284,9 @@ pub(crate) fn fold_row(first: &ToolData, n: usize, total: std::time::Duration, o
 /// The title of a box: the kind and the description (`$ weighing the
 /// hero image`); without one, the kind's word (`$ bash`, `ƒ typescript`).
 pub(crate) fn box_title(td: &ToolData) -> String {
+    if is_skill(td) {
+        return skill_spans(td).into_iter().map(|s| s.content.into_owned()).collect();
+    }
     match td.intent.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
         Some(d) => format!("{} {}", kind_glyph(td), d),
         None => {

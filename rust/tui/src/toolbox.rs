@@ -23,6 +23,14 @@ pub(crate) fn is_boxed(td: &ToolData) -> bool {
     matches!(td.name.as_deref(), Some("bash") | Some("run_typescript"))
 }
 
+/// A tool drawn as a row that opens into a box (click, ctrl+o): the
+/// boxed calls, and a skill call (BISE-283: `read skill <name>`, its
+/// SKILL.md in the box). Only bash and TypeScript fold into `▸ n
+/// commands` and carry sub-calls.
+pub(crate) fn opens_as_box(td: &ToolData) -> bool {
+    is_boxed(td) || crate::toolrow::is_skill(td)
+}
+
 /// A sub-call of a TypeScript run, as the box shows it.
 pub(crate) struct SubCall<'a> {
     pub(crate) name: &'a str,
@@ -243,6 +251,8 @@ pub(crate) fn box_lines(
     let script: Vec<Vec<Span<'static>>> = match code {
         Some((CodeLang::Bash, src)) => highlight_bash(src),
         Some((CodeLang::TypeScript, src)) => highlight_ts(src),
+        // a skill's args are its name, already in the title
+        _ if crate::toolrow::is_skill(td) => Vec::new(),
         _ => td
             .args
             .as_deref()
@@ -278,7 +288,10 @@ pub(crate) fn box_lines(
     if td.expanded || whole <= BOX_ROWS {
         out.extend(sw.all());
         if !shown.is_empty() {
-            out.push(rule());
+            // no script (a skill), no rule under the title
+            if !script.is_empty() {
+                out.push(rule());
+            }
             out.extend(ow.all());
         }
     } else {
@@ -291,7 +304,9 @@ pub(crate) fn box_lines(
             // done: from the top, the rest is below; running or failed:
             // the latest lines, where the news (or the error) is
             let (o_part, o_whole) = ow.pick(b, !matches!(td.state, ToolState::Ok));
-            out.push(rule());
+            if !script.is_empty() {
+                out.push(rule());
+            }
             out.extend(o_part);
             hidden += shown.len() - o_whole;
         }

@@ -1,8 +1,11 @@
 """BISE-223: in main, a bash call is one row with the model's description
 (`$ je dis bonjour … ✓ 0.1s`), a failed one adds its error line; ctrl+o
 opens every call into its box (the description is its title), ctrl+o
-again brings the rows back. Through the real binaries (tmux, fake
-provider: `[[bash: CMD @@ DESC]]`).
+again brings the rows back. BISE-283: a skill call is a sentence,
+`read skill bise-demo` (no JSON, no `▸ output`), a failed one
+`read skill bise-dmeo … ✗ unknown skill`; ctrl+o opens its SKILL.md in a
+box. Through the real binaries (tmux, fake provider: `[[bash: CMD @@
+DESC]]`, `[[skill: NAME]]`).
 
 python3 -u projects/switchboard/tests/tui_tool_rows_tmux.py
 """
@@ -38,6 +41,22 @@ def main():
         t.keys("C-o")
         t.wait_gone("╭─ $ je dis bonjour")
         t.wait_re(r"\$ je dis bonjour +✓")
+        # BISE-283: skill calls read as sentences
+        t.typed("[[skill: bise-demo]] [[skill: bise-dmeo]]")
+        t.keys("Enter")
+        t.wait_re(r"read skill bise-dmeo +✗ unknown skill", 60)
+        t.wait("unknown skill: bise-dmeo", 30)   # the fake's `done: <result>`
+        sc = t.screen()
+        print("---- skill rows ----\n%s" % sc)
+        assert "read skill bise-demo" in sc, sc
+        assert '{"name"' not in sc and "skill ✓" not in sc and "▸ output" not in sc, sc
+        # ctrl+o: the SKILL.md in a box titled with the sentence
+        t.keys("C-o")
+        t.wait("╭─ read skill bise-demo ✓")
+        t.wait("# bise demo")
+        print("---- skill ctrl+o ----\n%s" % t.screen())
+        t.keys("C-o")
+        t.wait_gone("╭─ read skill bise-demo")
         print("PASS tui tool rows")
 
 

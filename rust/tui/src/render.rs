@@ -1167,7 +1167,11 @@ pub(crate) fn edit_head(td: &ToolData, tick: u32, src: &str) -> Line<'static> {
 
 pub(crate) fn tool_lines(td: &ToolData, tick: u32, width: usize) -> Vec<Line<'static>> {
     let (name, args, code) = tool_meta(td);
-    if crate::toolbox::is_boxed(td) {
+    // a closed skill call is its sentence, in every view (BISE-283)
+    if crate::toolrow::is_skill(td) && crate::toolrow::row_mode(td) {
+        return crate::toolrow::rows(td, tick, code_width(width));
+    }
+    if crate::toolbox::opens_as_box(td) {
         return crate::toolbox::box_lines(td, &code, &[], tick, code_width(width));
     }
     let mut ls = vec![tool_head(td, tick, &name, &args)];

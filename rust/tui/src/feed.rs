@@ -120,7 +120,7 @@ fn event_rows_of(events: &[Ev], i: usize, debug: bool, width: usize, tick: u32) 
             urls: Vec::new(),
         };
     }
-    if crate::toolbox::is_boxed(td) {
+    if crate::toolbox::opens_as_box(td) {
         // a running box redraws its top border only (title, pulse, time)
         rows.extend(crate::toolbox::box_lines(td, &code, &subs_of(events, i), tick, cw));
         return EventRows {
@@ -151,7 +151,7 @@ pub(crate) fn refresh_live(er: &mut EventRows, ev: &Ev, tick: u32) {
     let Some(lh) = er.live.as_mut() else { return };
     let head = match (&lh.what, ev) {
         (Live::Row, Ev::Tool(td)) => vec![crate::toolrow::row_line(td, tick, code_width(er.width as usize))],
-        (Live::Tool { .. }, Ev::Tool(td)) if crate::toolbox::is_boxed(td) => {
+        (Live::Tool { .. }, Ev::Tool(td)) if crate::toolbox::opens_as_box(td) => {
             vec![crate::toolbox::box_top(td, tick, code_width(er.width as usize))]
         }
         (Live::Tool { name, args }, Ev::Tool(td)) => {
@@ -303,7 +303,7 @@ pub(crate) fn build_rows(events: &[Ev], i: usize, debug: bool, width: usize, tic
         rows.push(Line::from(""));
     }
     match ev {
-        Ev::Tool(td) if crate::toolbox::is_boxed(td) => {
+        Ev::Tool(td) if crate::toolbox::opens_as_box(td) => {
             let cw = code_width(width);
             if let Some(f) = tool_fold(events, i, debug).filter(|f| f.carrier == i) {
                 rows.push(crate::toolrow::fold_row(td, f.n, f.total, f.open, cw));
@@ -847,7 +847,7 @@ pub(crate) fn move_anchor(
 
 /// A tool has something behind its `▸`: an output, or an edit's diff.
 fn tool_discloses(td: &ToolData) -> bool {
-    if crate::toolbox::is_boxed(td) {
+    if crate::toolbox::opens_as_box(td) {
         // BISE-223: a call's row opens into its box (every view)
         return true;
     }
@@ -979,7 +979,7 @@ fn toggle_own(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize) -> b
         | Ev::Compacted { open, .. }
         | Ev::Fold { open, .. }
         | Ev::You(_, _, open) => *open = !*open,
-        Ev::Tool(td) if crate::toolbox::is_boxed(td) => {
+        Ev::Tool(td) if crate::toolbox::opens_as_box(td) => {
             // BISE-223: the row opens into its box (15 rows), a box that
             // hides lines opens whole, then back to the row
             if !td.opened {
@@ -1244,7 +1244,7 @@ pub(crate) fn reveal(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usiz
     }
     if own_open(&events[i]) == Some(false) {
         if let Ev::Tool(td) = &mut events[i] {
-            if crate::toolbox::is_boxed(td) {
+            if crate::toolbox::opens_as_box(td) {
                 out.push(Undo::Box(i, td.opened, td.expanded));
                 (td.opened, td.expanded) = (true, true);
                 forget(cache, i..=i);
@@ -1387,7 +1387,7 @@ fn own_open(ev: &Ev) -> Option<bool> {
         | Ev::Fold { open, .. }
         | Ev::You(_, _, open) => Some(*open),
         // a row, or an open box that still hides lines, is closed
-        Ev::Tool(td) if crate::toolbox::is_boxed(td) => {
+        Ev::Tool(td) if crate::toolbox::opens_as_box(td) => {
             Some(td.opened && (td.expanded || !crate::toolbox::box_folds(td)))
         }
         Ev::Tool(td) => Some(td.expanded),
@@ -1423,7 +1423,7 @@ pub(crate) fn set_everything(events: &mut [Ev], cache: &mut [Option<EventRows>],
     let mut changed = false;
     for e in events.iter_mut() {
         if let Ev::Tool(td) = e {
-            if crate::toolbox::is_boxed(td) && (td.opened != open || td.expanded != open || td.fold_open != open) {
+            if crate::toolbox::opens_as_box(td) && (td.opened != open || td.expanded != open || td.fold_open != open) {
                 (td.opened, td.expanded, td.fold_open) = (open, open, open);
                 changed = true;
             }
