@@ -834,7 +834,7 @@ const sec = document.querySelector(".sky");
   const frame = () => {
     if (!visible || document.hidden) { running = false; return; }
     // nothing is drawn behind the hero text: a box around it, 2 cells of air
-    const pr = pre.getBoundingClientRect(), rs = [...sec.querySelectorAll(".hero > .big, .hero > .t1, .hero > .t2")]  // the install box may sit over a lane (user: overlap is fine).map(e => e.getBoundingClientRect());
+    const pr = pre.getBoundingClientRect(), rs = [...sec.querySelectorAll(".hero > .big, .hero > .t1, .hero > .t2")].map(e => e.getBoundingClientRect());  // the install box may sit over a lane (user: overlap is fine)
     const ko = { x0: Math.floor((Math.min(...rs.map(r => r.left)) - pr.left) / cw) - 3, x1: Math.ceil((Math.max(...rs.map(r => r.right)) - pr.left) / cw) + 3,
                  y0: Math.floor((Math.min(...rs.map(r => r.top)) - pr.top) / lh) - 1, y1: Math.ceil((Math.max(...rs.map(r => r.bottom)) - pr.top) / lh) + 1 };
     const g = Grid(Math.ceil(pre.clientWidth / cw) + 1, Math.ceil(pre.clientHeight / lh) + 1, ko); g.ko = ko;
