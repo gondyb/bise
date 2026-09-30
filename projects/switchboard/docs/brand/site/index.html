@@ -1108,6 +1108,7 @@ const plays = {
 // each demo is a tiny terminal. only one plays at a time (the director
 // below picks it); the others rest on their last frame, dimmed.
 let active = null, pinned = null;
+const MINI_SPEED = 1.4;  // the small demos play 1.4× faster than written (user)
 function mini(el, i) {
   el.innerHTML = `<div class="mfeed scrollbox"></div><div class="mcomp"><span class="ty"></span><span class="cur"></span><span class="ph">what's on your mind?</span></div>`;
   const feedEl = el.querySelector(".mfeed"), ty = el.querySelector(".ty"), comp = el.querySelector(".mcomp"), mph = el.querySelector(".ph");
@@ -1116,7 +1117,7 @@ function mini(el, i) {
   let fast = false;
   const turn = () => new Promise((r) => { const t = () => active === self && !document.hidden ? r() : setTimeout(t, 120); t(); });
   const m = {
-    wait: async (ms) => { if (fast) return; await turn(); await sleep(reduced ? Math.min(ms, 400) : ms); await turn(); },
+    wait: async (ms) => { if (fast) return; await turn(); await sleep(reduced ? Math.min(ms, 400) : ms / MINI_SPEED); await turn(); },
     line(html, cls) {
       const stuck = fast || atBottom(feedEl);
       const d = document.createElement("div"); if (cls) d.className = cls; if (cls && cls.includes("b")) d.style.marginTop = "1lh";
@@ -1124,8 +1125,8 @@ function mini(el, i) {
     },
     async type(t) {
       if (fast) { ty.textContent += t; mark(); return; }
-      for (const ch of t) { await turn(); ty.textContent += ch; mark(); comp.scrollLeft = comp.scrollWidth; await sleep(reduced ? 0 : 28 + Math.random() * 30); }
-      await sleep(300);
+      for (const ch of t) { await turn(); ty.textContent += ch; mark(); comp.scrollLeft = comp.scrollWidth; await sleep(reduced ? 0 : (28 + Math.random() * 30) / MINI_SPEED); }
+      await sleep(300 / MINI_SPEED);
     },
     clear() { ty.textContent = ""; mark(); comp.scrollLeft = 0; },
     async send(t, keep) { await m.type(t); m.clear(); const d = m.line(`${t}<span class="tick">✓</span>`, "b you"); if (!keep) { await m.wait(450); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`; } await m.wait(400); return d; },
@@ -1138,9 +1139,9 @@ function mini(el, i) {
     fast = true; feedEl.classList.add("still"); await play(); m.clear(); feedEl.classList.remove("still"); fast = false;
     for (;;) {
       await turn();
-      feedEl.innerHTML = ""; m.clear(); await sleep(350);
+      feedEl.innerHTML = ""; m.clear(); await sleep(350 / MINI_SPEED);
       await play();
-      await sleep(900);
+      await sleep(900 / MINI_SPEED);
       finished(self);
     }
   })();
