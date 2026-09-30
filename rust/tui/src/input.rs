@@ -732,11 +732,19 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
             app.key_in_composer = true;
         }
         // the popup takes the plain arrows
-        (KeyCode::Up, KeyModifiers::NONE) if popup_open => {
-            app.popup_sel = popup_step(app.popup_sel, matches.len(), false);
-        }
-        (KeyCode::Down, KeyModifiers::NONE) if popup_open => {
-            app.popup_sel = popup_step(app.popup_sel, matches.len(), true);
+        (KeyCode::Up | KeyCode::Down, KeyModifiers::NONE) if popup_open => {
+            // BISE-301: past the rows that pick nothing (`/model`'s
+            // provider headers, a note)
+            let down = k.code == KeyCode::Down;
+            let inert = |i: usize| matches.get(i).is_some_and(|c| c.run.is_none() && c.fill == app.ed.text && !c.folder);
+            let mut sel = popup_step(app.popup_sel, matches.len(), down);
+            for _ in 0..matches.len() {
+                if !inert(sel) {
+                    break;
+                }
+                sel = popup_step(sel, matches.len(), down);
+            }
+            app.popup_sel = sel;
         }
         _ => {
             composer_key(app, k);

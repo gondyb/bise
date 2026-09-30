@@ -860,6 +860,10 @@ fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
                             .add_modifier(Modifier::BOLD),
                         Style::default().bg(theme::accent()).fg(theme::on_accent()),
                     )
+                } else if c.run.is_none() && c.fill == app.ed.text && !c.folder && c.desc.is_empty() {
+                    // a row that picks nothing (`/model`'s provider headers,
+                    // BISE-301): dim, so the rows you pick stay what you read
+                    (Style::default().fg(theme::dim()), Style::default().fg(theme::dim()))
                 } else {
                     (Style::default().fg(theme::text()), Style::default().fg(theme::dim()))
                 };

@@ -281,8 +281,10 @@ fn for_note(what: &str, agent: &str) -> Choice {
     }
 }
 
-/// `/model`: the catalog's chat models (built in and config.toml's),
-/// then its aliases; the one the agent in view runs is marked ✓. A
+/// `/model`: the catalog's chat models (built in and config.toml's)
+/// under their provider's name (BISE-301: a header row that picks
+/// nothing), then its aliases; the one the agent in view runs is marked
+/// ✓. A
 /// typed id the list does not have is offered last, as is (BISE-289):
 /// `+ use <provider>/<id>` (no provider typed: the current model's).
 fn model_choices(app: &App, q: &str) -> Vec<Choice> {
@@ -291,12 +293,31 @@ fn model_choices(app: &App, q: &str) -> Vec<Choice> {
     let picks = crate::models::picks();
     let free = crate::models::free_id(q, current.split_once('/').map(|(p, _)| p).unwrap_or(""));
     let listed = |id: &str| picks.iter().any(|p| p.value == id);
-    for p in picks.iter().filter(|p| matches(q, &[&p.value, &p.desc])) {
+    let mut group: Option<&str> = None;
+    let shown: Vec<&crate::models::Pick> = picks.iter().filter(|p| matches(q, &[&p.value, &p.desc])).collect();
+    // the id without its provider (the header says it)
+    let id_of = |p: &crate::models::Pick| -> String {
+        match p.value.split_once('/') {
+            Some((_, id)) if !p.provider.is_empty() => id.to_string(),
+            _ => p.value.clone(),
+        }
+    };
+    // the descriptions in one column (designer's mock)
+    let col = shown.iter().map(|p| unicode_width::UnicodeWidthStr::width(id_of(p).as_str())).max().unwrap_or(0) + 2;
+    for p in shown {
+        let head = if p.provider.is_empty() { "aliases" } else { p.provider.as_str() };
+        if group != Some(head) {
+            out.push(Choice { value: String::new(), label: head.into(), desc: String::new(), mark: None });
+            group = Some(head);
+        }
         let on = p.value == current;
+        // the ✓ takes the indent's place, so the ids line up
+        let id = id_of(p);
+        let id = format!("{}{}", id, " ".repeat(col - unicode_width::UnicodeWidthStr::width(id.as_str())));
         out.push(Choice {
-            label: p.value.clone(),
+            label: if on { id } else { format!("  {}", id) },
             value: p.value.clone(),
-            desc: p.desc.clone(),
+            desc: p.short.clone(),
             mark: on.then(|| ("✓", theme::accent())),
         });
     }
@@ -336,7 +357,7 @@ fn model_choices(app: &App, q: &str) -> Vec<Choice> {
         out.push(Choice {
             value: "/models".into(),
             label: "every role…".into(),
-            desc: "main, agents, voice, small jobs (titles, summaries)".into(),
+            desc: "main, agents, small jobs, voice".into(),
             mark: None,
         });
     }
@@ -739,13 +760,20 @@ mod arg_tests {
         set_model(&mut app, "auth-fix", "foundry/claude-opus-5-5", "high");
         let m = items(&mut app, "/model ");
         assert_eq!((m[0].label.as_str(), m[0].run.as_deref()), ("model for auth-fix", None), "a note: which agent");
-        let opus = m.iter().find(|i| i.label == "foundry/claude-opus-5-5").unwrap();
+        // BISE-301: grouped under their provider's name (a row that picks
+        // nothing), the ids without it; the current one's ✓ in the indent
+        let opus = m.iter().find(|i| i.label.trim_end() == "claude-opus-5-5" && i.fill.contains("foundry/")).unwrap();
         assert_eq!(opus.mark.map(|x| x.0), Some("✓"), "the current one");
+        let head = m.iter().position(|i| i.label == "Anthropic").unwrap();
+        assert!(m[head].run.is_none() && m[head].fill == "/model ", "a header picks nothing");
+        assert!(m[head + 1].label.starts_with("  claude-"), "{:?}", labels(&m));
+        assert!(m.iter().any(|i| i.label == "aliases"));
         assert_eq!(opus.fill, "/model foundry/claude-opus-5-5 ");
         assert_eq!(opus.run.as_deref(), Some("/model foundry/claude-opus-5-5"), "default is optional: ⏎ runs");
-        assert!(m.iter().any(|i| i.label == "opus-5.5"), "the aliases");
+        assert!(m.iter().any(|i| i.label.trim_end() == "  opus-5.5"), "the aliases");
         let s = items(&mut app, "/model sonnet");
-        assert!(s.len() > 1 && s[1..].iter().all(|i| i.label.contains("sonnet")), "{:?}", labels(&s));
+        let models: Vec<&PopItem> = s[1..].iter().filter(|i| i.run.is_some()).collect();
+        assert!(!models.is_empty() && models.iter().all(|i| i.label.contains("sonnet")), "{:?}", labels(&s));
         assert!(s[1..].iter().all(|i| i.mark.is_none()));
         assert_eq!(labels(&items(&mut app, "/model anthropic/claude-sonnet-4-5 ")), ["default"]);
         // BISE-289: an id the list does not have, last, as is; no
@@ -755,7 +783,7 @@ mod arg_tests {
         assert_eq!((f[1].run.as_deref(), f[2].run.as_deref()), (None, Some("/model foundry/claude-mythos-9")));
         let f = items(&mut app, "/model openai/gpt-6");
         assert_eq!(f.last().unwrap().label, "+ use openai/gpt-6");
-        assert!(f.iter().any(|i| i.label == "openai/gpt-6-astra"), "the listed ones that match stay");
+        assert!(f.iter().any(|i| i.label.trim_end() == "  gpt-6-astra"), "the listed ones that match stay");
         assert!(!labels(&f).iter().any(|l| l == "no listed model matches."));
         // a listed id: no extra row
         assert!(!labels(&items(&mut app, "/model openai/gpt-6-astra")).iter().any(|l| l.starts_with("+ use")));
@@ -767,8 +795,8 @@ mod arg_tests {
         assert_eq!(last(&all[..all.len() - 1]), ("+ another provider…".to_string(), Some("/provider".to_string())));
         crate::models::TEST_READY.with(|r| *r.borrow_mut() = Some(vec!["foundry".into()]));
         let m = items(&mut app, "/model ");
-        assert!(m.iter().any(|i| i.label == "foundry/claude-opus-5-5"));
-        assert!(!m.iter().any(|i| i.label.starts_with("openai/") || i.label.starts_with("openrouter/")), "{:?}", labels(&m));
+        assert!(m.iter().any(|i| i.fill == "/model foundry/claude-opus-5-5 "));
+        assert!(!m.iter().any(|i| i.fill.starts_with("/model openai/") || i.fill.starts_with("/model openrouter/")), "{:?}", labels(&m));
         let more = &m[m.len() - 2];
         assert_eq!((more.label.as_str(), more.run.as_deref(), more.fill.as_str()), ("+ another provider…", Some("/provider"), "/provider"));
         assert!(more.desc.starts_with("Anthropic, OpenAI, Google AI Studio"), "{}", more.desc);

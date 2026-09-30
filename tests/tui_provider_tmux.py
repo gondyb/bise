@@ -63,8 +63,10 @@ def main():
         # /model: Anthropic's models only, then another provider
         t.typed("/model ")
         sc = t.wait("+ another provider…")
-        assert "anthropic/claude-" in sc, sc
-        assert "openai/" not in sc and "openrouter/" not in sc, sc
+        # BISE-301: grouped under the provider's name, the ids without it
+        assert "claude-" in sc and "Anthropic" in sc, sc
+        rows = sc[sc.index("model for main"):sc.index("+ another provider…")]
+        assert "OpenAI" not in rows and "OpenRouter" not in rows, sc
         t.keys("C-u")
         t.wait(NORMAL)
         # /provider: the list and its states
@@ -100,7 +102,9 @@ def main():
         # esc: it has a key now, its menu; a new key that works
         t.keys("Escape")
         sc = t.wait("1 · paste a new key")
-        assert "✓ ready · saved in bise" in sc and "remove the saved key" in sc, sc
+        assert "✓ ready · saved in bise" in sc and "remove the key" in sc, sc
+        # BISE-301: keys and accounts only; the roles are picked on /models
+        assert "use it for" not in sc and "main, agents and small jobs use it. /models changes that." in sc, sc
         t.keys("1")
         t.wait("paste your OpenRouter key")
         t.typed("good-key-123")
@@ -112,7 +116,7 @@ def main():
         # a new key keeps main's model: config.toml untouched
         assert 'model = "%s"' % PICK in cfg and "[roles]" not in cfg, cfg
         t.keys("Enter")
-        t.wait("2 · use it for…")
+        t.wait("2 · open the keys page")
         t.keys("Escape")
         sc = t.wait("the keys i can use.")
         assert re.search(r"OpenRouter +✓ saved in bise", sc), sc
@@ -120,7 +124,8 @@ def main():
         t.wait(NORMAL)
         # /model: OpenRouter's models now
         t.typed("/model openrouter/")
-        t.wait(PICK)
+        # under its provider's name, the id without it
+        t.wait_re(r"✓ " + re.escape(PICK.split("/", 1)[1]))
         t.keys("C-u")
         t.wait(NORMAL)
         # the next message: main's REPL got the key, the turn answers

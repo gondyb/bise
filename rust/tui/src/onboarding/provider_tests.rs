@@ -107,7 +107,10 @@ fn the_list_says_which_providers_are_set_up_and_from_where() {
     let openai = line_of(&sc, "OpenAI ");
     // BISE-298: the roles it runs, by their names
     // (under its row when the column is too narrow for them)
-    assert!(openai.contains("✓ from OPENAI_API_KEY") && sc.contains("main · agents · small jobs (titles, summaries)"), "{sc}");
+    assert!(openai.contains("✓ from OPENAI_API_KEY") && sc.contains("main · agents · small jobs"), "{sc}");
+    // in one column, after the widest state (designer, BISE-301)
+    let at = |l: &str, w: &str| l[..l.find(w).unwrap()].chars().count();
+    assert_eq!(at(openai, "main"), at(openai, "✓") + "✓ from OPENAI_API_KEY".chars().count() + 3, "{sc}");
     // the private proxy is never offered
     assert!(!sc.contains("foundry"), "{sc}");
     assert!(line_of(&sc, "OpenRouter").contains("not set up"), "{sc}");
@@ -201,7 +204,7 @@ fn setting_up_a_provider_runs_every_state_of_the_first_run() {
     assert!(!hm.config_file().exists(), "a key alone keeps the model");
     assert!(!sc.contains("good-key"));
     o.on_key(key(KeyCode::Enter), 1, &e);
-    assert!(matches!(&o.sub, Sub::Menu(p, 1) if p.id == "openrouter"), "{:?}", o.sub);
+    assert!(matches!(&o.sub, Sub::Menu(p, 0) if p.id == "openrouter"), "{:?}", o.sub);
     // the list says so
     o.on_key(key(KeyCode::Esc), 1, &e);
     assert!(line_of(&screen(&o), "OpenRouter").contains("✓ saved in bise"));
@@ -218,26 +221,18 @@ fn a_set_up_provider_has_its_menu() {
     let sc = screen(&o);
     assert!(sc.contains("✓ ready · from OPENAI_API_KEY"), "{sc}");
     assert!(sc.contains("change it where you set it, or paste one here."), "{sc}");
-    assert!(sc.contains("1 · paste a new key") && sc.contains("2 · use it for…") && sc.contains("3 · open the keys page"), "{sc}");
-    assert!(sc.contains("4 · open billing") && !sc.contains("remove the saved key"), "{sc}");
+    // BISE-301: keys and accounts only; the roles on it, picked on /models
+    assert!(sc.contains("1 · paste a new key") && sc.contains("2 · open the keys page") && sc.contains("3 · open billing"), "{sc}");
+    assert!(!sc.contains("use it for") && !sc.contains("remove the key"), "{sc}");
+    assert!(sc.contains("no role uses it yet. /models picks one."), "{sc}");
     // a page: opened, said
-    o.on_key(key(KeyCode::Char('3')), 1, &e);
-    assert!(screen(&o).contains("opening https://platform.openai.com/api-keys"));
-    // BISE-298: use it for… the roles it can run (voice too: it transcribes)
     o.on_key(key(KeyCode::Char('2')), 1, &e);
-    assert!(matches!(o.sub, Sub::UseFor(..)));
-    let sc = screen(&o);
-    assert!(sc.contains("use OpenAI for…") && sc.contains("main") && sc.contains("small jobs") && sc.contains("voice"), "{sc}");
-    // main: its picker filtered to OpenAI, then how hard it thinks, saved
-    o.on_key(key(KeyCode::Enter), 1, &e);
-    let sc = screen(&o);
-    assert!(sc.contains("which model is your team lead?") && sc.contains("› openai/▏"), "{sc}");
-    o.on_key(key(KeyCode::Enter), 1, &e);
-    assert!(matches!(o.sub, Sub::Effort(..)), "{:?}", o.sub);
-    assert!(screen(&o).contains("how hard should it think?"));
-    o.on_key(key(KeyCode::Enter), 1, &e);
-    assert!(matches!(&o.sub, Sub::Menu(p, 1) if p.id == "openai"), "{:?}", o.sub);
-    assert!(std::fs::read_to_string(hm.config_file()).unwrap().contains("main = \"openai/"));
+    assert!(screen(&o).contains("opening https://platform.openai.com/api-keys"));
+    // main on OpenAI (/models): the menu says so
+    std::fs::create_dir_all(hm.config_file().parent().unwrap()).unwrap();
+    std::fs::write(hm.config_file(), "[roles]\nmain = \"openai/gpt-6-astra\"\n").unwrap();
+    o.setup = setup_of(&e, &hm);
+    assert!(screen(&o).contains("main, agents and small jobs use it. /models changes that."), "{}", screen(&o));
     // a pasted key over the environment's: saved, said, removable
     o.on_key(key(KeyCode::Char('1')), 1, &e);
     paste(&mut o, &e, "good-key");
@@ -245,15 +240,15 @@ fn a_set_up_provider_has_its_menu() {
     assert!(sc.contains("OPENAI_API_KEY in your environment holds another key: i use this one."), "{sc}");
     o.on_key(key(KeyCode::Enter), 1, &e);
     let sc = screen(&o);
-    assert!(sc.contains("✓ ready · saved in bise (") && sc.contains("5 · remove the saved key"), "{sc}");
-    o.on_key(key(KeyCode::Char('5')), 1, &e);
+    assert!(sc.contains("✓ ready · saved in bise") && sc.contains("4 · remove the key"), "{sc}");
+    o.on_key(key(KeyCode::Char('4')), 1, &e);
     let sc = screen(&o);
     // BISE-298: the roles that stop, by name
     let fl = flat(&sc);
     assert!(sc.contains("remove the OpenAI key saved in bise?") && fl.contains("main, agents and small jobs use OpenAI. without the key they stop."), "{sc}");
     assert!(sc.contains("enter remove · esc keep it"), "{sc}");
     o.on_key(key(KeyCode::Esc), 1, &e);
-    assert!(matches!(&o.sub, Sub::Menu(_, 4)));
+    assert!(matches!(&o.sub, Sub::Menu(_, 3)));
     o.on_key(key(KeyCode::Enter), 1, &e);
     o.on_key(key(KeyCode::Enter), 1, &e);
     // the environment's key stays: still ready, said
@@ -310,17 +305,13 @@ fn a_local_provider_needs_no_key() {
     let hm = home_of(&e);
     let mut o = panel(&e, Ask { provider: Some("ollama".into()), ..Ask::default() });
     assert!(matches!(&o.sub, Sub::Menu(p, 0) if p.id == "ollama"), "{:?}", o.sub);
-    assert!(screen(&o).contains("✓ no key needed"));
-    // use it for… main: a typed model, no key to check, saved
+    // BISE-301: no key, so nothing to do here: its models are on /models
+    let sc = screen(&o);
+    assert!(sc.contains("✓ no key needed") && sc.contains("no role uses it yet. /models picks one."), "{sc}");
+    assert!(sc.contains("esc back") && !sc.contains("1 ·"), "{sc}");
     o.on_key(key(KeyCode::Enter), 1, &e);
-    o.on_key(key(KeyCode::Enter), 1, &e);
-    for c in "llama9".chars() {
-        o.on_key(key(KeyCode::Char(c)), 1, &e);
-    }
-    assert!(screen(&o).contains("+ use ollama/llama9"), "{}", screen(&o));
-    o.on_key(key(KeyCode::Enter), 1, &e);
-    assert!(matches!(&o.sub, Sub::Menu(p, _) if p.id == "ollama"), "{:?}", o.sub);
-    assert!(std::fs::read_to_string(hm.config_file()).unwrap().contains("main = \"ollama/llama9\""));
+    assert!(matches!(&o.sub, Sub::Menu(p, 0) if p.id == "ollama"), "{:?}", o.sub);
+    assert!(!hm.config_file().exists());
 }
 
 #[test]

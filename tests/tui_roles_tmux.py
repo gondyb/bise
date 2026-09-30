@@ -3,14 +3,17 @@ in a clean bise home and HOME, main on Anthropic, no voice key, the fake
 provider behind each provider's base_url (config.toml), the tests' tone
 microphone (SB_VOICE_FAKE_MIC):
 
-- ctrl+r with voice off and no voice key opens the voice screen (`which
-  model should listen to you?`, Mistral preselected); Mistral → its voice
-  models → its key step: a wrong key (the provider's words), a key with
-  no credit (saved, then credit added: enter tries again), then it works:
-  `✓ voice is on: mistral/voxtral-mini-latest.` and config.toml's
-  `[roles] voice`;
-- /models shows the voice row; /model's last row opens every role;
-  /provider tags Mistral `voice`;
+- ctrl+r with voice off and no voice key opens voice's providers
+  (BISE-301: `voice: which provider?`, Mistral preselected); Mistral → its
+  key step: a wrong key (the provider's words), a key with no credit
+  (saved, then credit added: enter tries again), then its voice models;
+  the one just checked is taken with no second call: `✓ voice is on:
+  mistral/voxtral-mini-latest.` and config.toml's `[roles] voice`;
+- /models: provider then model; main moves to Mistral too (ready: the
+  key voice uses), a typed id, the effort; Mistral shows on both rows;
+  agents' `same as main` first; /model grouped by provider, its last row
+  every role; /provider tags Mistral `main · agents · voice`, its menu
+  names them (no `use it for…`), the remove confirm too;
 - the lines while talking: a wrong key, no credit, the provider down
   (each keeps the clip: ctrl+r sends it again), the key gone, then the
   kept clip transcribed into the composer.
@@ -70,14 +73,23 @@ def main():
     with tui_session(120, 40, env, E=E) as t:
         t.wait(NORMAL, 60)
         time.sleep(1)
-        # voice off, no voice key: ctrl+r opens the voice screen
+        dump = os.environ.get("SB_DUMP")
+
+        def cap(name):
+            """designer's review: the screen as the user sees it (SB_DUMP=dir)"""
+            if dump:
+                with open(os.path.join(dump, name + ".txt"), "w") as f:
+                    f.write(t.screen())
+
+        # voice off, no voice key: ctrl+r opens voice's providers (BISE-301)
         t.keys("C-r")
-        sc = t.wait("which model should listen to you?")
-        assert "you talk, it types in the composer." in sc, sc
-        assert "ready" not in sc and "another provider" in sc, sc
-        assert re.search(r"› Mistral +voxtral-mini-latest · the key also works for chat", sc), sc
-        assert re.search(r"ElevenLabs +scribe_v2 · voice only", sc), sc
-        assert "Groq" not in sc and "Deepgram" not in sc, sc
+        sc = t.wait("voice: which provider?")
+        cap("01-voice-providers-none-ready")
+        assert "only the providers that can listen. ctrl+r starts, any key stops." in sc, sc
+        assert re.search(r"› Mistral +not set up · recommended", sc), sc
+        assert re.search(r"ElevenLabs +not set up · voice only", sc), sc
+        assert "Groq" not in sc and "Deepgram" not in sc and "Anthropic" not in sc, sc
+        assert "esc not now" in sc, sc
         # esc: voice stays off, said once
         t.keys("Escape")
         t.wait("voice is off. /voice when you want it.")
@@ -87,16 +99,18 @@ def main():
         t.keys("Enter")
         t.wait("turn voice on (ctrl+r: you talk, it types)")
         t.keys("Enter")
-        t.wait("which model should listen to you?")
+        t.wait("voice: which provider?")
+        # Mistral: its key first, then its voice models
         t.keys("Enter")
-        sc = t.wait("which model?")
-        assert "voxtral-transcribe-3" in sc and "mistral-medium-latest" not in sc, sc
-        t.keys("Enter")
-        t.wait("paste your Mistral key")
+        sc = t.wait("paste your Mistral key")
+        assert "for voice. then you pick the model." in sc and "esc back to the providers" in sc, sc
+        assert "only you can read it." in sc and "/var/" not in sc and "/tmp" not in sc, sc
+        cap("02-voice-key-step")
         # a wrong key: the provider's words, nothing saved
         t.typed("bad-key-1")
         t.keys("Enter")
         sc = t.wait("Mistral says this key is wrong.", 30)
+        cap("03-voice-wrong-key")
         assert "Invalid API Key" in sc, sc
         assert not os.path.exists(auth), "nothing saved"
         t.keys("Enter")
@@ -105,34 +119,119 @@ def main():
         t.typed("broke-key-1")
         t.keys("Enter")
         t.wait("has no credit yet", 30)
+        cap("04-voice-no-credit")
         assert "broke-key-1" in open(auth).read(), "a normal provider key"
         open(credit, "w").close()
         t.keys("Enter")
+        sc = t.wait("voice · Mistral: which model?", 30)
+        cap("05-voice-models")
+        assert "voxtral-transcribe-3" in sc and "mistral-medium-latest" not in sc, sc
+        assert re.search(r"› voxtral-mini-latest +recommended", sc), sc
+        # the model just checked: no second call
+        n = len([r for r in E.fake_requests() if r.get("family") == "stt"])
+        t.keys("Enter")
         sc = t.wait("voice is on: mistral/voxtral-mini-latest.", 30)
         assert "press ctrl+r and talk, any key stops. /voice turns it off." in sc, sc
+        assert len([r for r in E.fake_requests() if r.get("family") == "stt"]) == n, "checked once"
         cfg = open(os.path.join(root, "config.toml")).read()
         assert 'voice = "mistral/voxtral-mini-latest"' in cfg, cfg
         stt = [r for r in E.fake_requests() if r.get("family") == "stt"]
         assert stt and all(r["model"] == "voxtral-mini-latest" for r in stt), stt
-        # /models: the voice row; /model: every role; /provider: the tag
+        # /models: provider then model, one column
         t.typed("/models")
         t.keys("Enter")
         sc = t.wait("which model does what?")
-        assert re.search(r"voice +mistral/voxtral-mini-latest", sc), sc
-        assert re.search(r"main +anthropic/claude-opus-5-5", sc), sc
-        assert re.search(r"agents +same as main", sc), sc
+        cap("06-models")
+        assert "each role picks a provider, then a model. one provider can serve several." in sc, sc
+        assert re.search(r"voice +Mistral +voxtral-mini-latest", sc), sc
+        assert re.search(r"main +Anthropic +claude-opus-5-5", sc), sc
+        assert re.search(r"agents +same as main · Anthropic · claude-opus-5-5", sc), sc
+        # main on Mistral too: the key voice uses, ready
+        t.keys("Enter")
+        sc = t.wait("main: which provider?")
+        cap("07-main-providers")
+        assert re.search(r"› Anthropic +✓ ready · now", sc), sc
+        assert re.search(r"Mistral +✓ ready · voice uses it", sc), sc
+        t.keys("Down")
+        t.wait("› Mistral")
+        t.keys("Enter")
+        sc = t.wait("main · Mistral: which model?")
+        assert re.search(r"› mistral-medium-latest +recommended", sc), sc
+        # an id it doesn't list
+        t.typed("mistral-nova-1")
+        sc = t.wait("+ use mistral/mistral-nova-1")
+        cap("08-main-models-typed-id")
+        assert "no listed model matches." in sc and "not in my list: i'll try it with one tiny call" in sc, sc
+        t.keys("Escape")
+        t.wait_gone("mistral-nova-1")
+        cap("09-main-models")
+        t.keys("Enter")
+        sc = t.wait("how hard should it think?")
+        cap("10-main-effort")
+        assert "mistral-medium-latest for main" in sc, sc
+        t.keys("Enter")
+        sc = t.wait_re(r"main +Mistral +mistral-medium-latest")
+        cap("11-models-mistral-twice")
+        assert re.search(r"voice +Mistral +voxtral-mini-latest", sc), sc
+        assert re.search(r"agents +same as main · Mistral · mistral-medium-latest", sc), sc
+        cfg = open(os.path.join(root, "config.toml")).read()
+        assert 'main = "mistral/mistral-medium-latest"' in cfg, cfg
+        # agents: same as main first
+        t.keys("Down")
+        t.keys("Enter")
+        sc = t.wait("agents: which provider?")
+        cap("12-agents-providers")
+        assert re.search(r"› same as main +Mistral · mistral-medium-latest · now", sc), sc
+        assert re.search(r"Mistral +✓ ready · main, small jobs, voice use it", sc), sc
+        assert re.search(r"OpenAI +not set up", sc) and "more providers…" in sc, sc
+        t.keys("Escape")
+        t.wait("which model does what?")
         t.keys("Escape")
         t.wait(NORMAL)
         time.sleep(0.5)
-        t.typed("/model ro")
-        t.wait("every role…")
+        t.typed("/model ")
+        sc = t.wait("model for main")
+        cap("13-model-popup")
+        # grouped: a header row per provider, the ids under it
+        bare = [re.sub(r"[^\w .-]", "", l).strip() for l in sc.splitlines()]
+        assert "Anthropic" in bare and "Mistral" in bare, sc
+        # its end: ↑ from the top wraps to the last row
+        t.keys("Up")
+        sc = t.wait("every role…")
+        cap("13b-model-popup-end")
+        assert "+ another provider…" in sc, sc
+        t.keys("C-u")
+        t.typed("/model every")
+        sc = t.wait("every role…")
+        assert "main, agents, small jobs, voice" in sc, sc
         t.keys("C-u")
         t.typed("/provider")
         t.keys("Enter")
         sc = t.wait("the keys i can use.")
-        assert re.search(r"Mistral +✓ saved in bise +voice", sc), sc
-        # too wide for the row: the tags go under it
-        assert re.search(r"Anthropic +✓ from ANTHROPIC_API_KEY *\n +main · agents · small jobs \(titles, summaries\)", sc), sc
+        cap("14-provider-list")
+        assert re.search(r"Mistral +✓ saved in bise +main · agents · small jobs · voice", sc), sc
+        assert re.search(r"Anthropic +✓ from ANTHROPIC_API_KEY *$", sc, re.M), sc
+        # Mistral's menu: keys and accounts; who uses it
+        for _ in range(12):
+            if re.search(r"› Mistral ", t.screen()):
+                break
+            t.keys("Down")
+            time.sleep(0.2)
+        t.keys("Enter")
+        sc = t.wait("1 · paste a new key")
+        cap("15-provider-menu")
+        assert "main, agents, small jobs and voice use it. /models changes that." in sc, sc
+        assert "use it for" not in sc and "open billing" not in sc, sc
+        rm = re.search(r"(\d) · remove the key", sc)
+        assert rm, sc
+        t.keys(rm.group(1))
+        sc = t.wait("remove the Mistral key saved in bise?")
+        cap("16-provider-remove")
+        assert "main, agents, small jobs and voice use Mistral. without the key they stop." in " ".join(sc.split()), sc
+        t.keys("Escape")
+        t.wait("1 · paste a new key")
+        t.keys("Escape")
+        t.wait("the keys i can use.")
         t.keys("Escape")
         t.wait(NORMAL)
         time.sleep(0.5)

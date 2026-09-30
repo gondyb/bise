@@ -293,8 +293,6 @@ pub(crate) enum Sub {
     Works(Provider, String),
     /// `/provider` (BISE-294): a provider's menu, its row
     Menu(Provider, usize),
-    /// `/provider`: `use it for…`, the roles it can run (BISE-298)
-    UseFor(Provider, usize),
     /// a role's picker: `how hard should it think?` for that model
     Effort(String, usize),
     /// `/provider`: remove its saved key?
@@ -718,7 +716,9 @@ impl Onb {
         if self.voice_pick() {
             return self.voice_models(p);
         }
-        let mut v: Vec<String> = pick_of(p, &self.model).into_iter().collect();
+        // a role's steps (BISE-301): the one recommended for the role first
+        let first = self.picking().and_then(|id| self.recommended(id, p)).or_else(|| pick_of(p, &self.model));
+        let mut v: Vec<String> = first.into_iter().collect();
         for m in self.setup.catalog.models.iter().filter(|m| m.provider == p.id && !m.stt) {
             let full = format!("{}/{}", m.provider, m.id);
             if !v.contains(&full) {
@@ -816,7 +816,7 @@ impl Onb {
             Err(f) => Sub::Failed(p, model, tried, f),
             Ok(()) => match self.keep(&p, &model, key.as_deref(), env) {
                 // a role's picker (BISE-298): on to its effort, or saved
-                Ok(()) if self.picking().is_some() => self.after_check(model, env),
+                Ok(()) if self.picking().is_some() => self.after_check(p, model, env),
                 Ok(()) => Sub::Works(p, model),
                 Err(e) => {
                     self.note = Some(Note::Failed(e));
@@ -1168,19 +1168,9 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
     }
     let dim = |t: String| Line::from(s(t, theme::dim()));
     match &o.sub {
-        Sub::List | Sub::Menu(..) | Sub::Remove(_) | Sub::UseFor(..) | Sub::Effort(..) => model_list(o, w, gap),
+        Sub::List | Sub::Menu(..) | Sub::Remove(_) | Sub::Effort(..) => model_list(o, w, gap),
         Sub::Which(i) => {
             let mut v = vec![title("which provider?")];
-            // BISE-298: opened from a role's picker: for which role
-            if let Some(id) = o.picking() {
-                let who = match id {
-                    bise_catalog::roles::MAIN => "main",
-                    bise_catalog::roles::AGENTS => "the agents",
-                    bise_catalog::roles::SMALL => "small jobs",
-                    _ => "voice",
-                };
-                v.push(dim(format!("for {}.", who)));
-            }
             blanks(&mut v, gap);
             // a window of WHICH_ROWS rows around the cursor
             let n = o.providers.len();
@@ -1248,6 +1238,11 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
         Sub::Paste(p, _, b) => {
             let dots: String = "•".repeat(b.chars().count().min(48));
             let mut v = vec![title(format!("paste your {} key", p.name))];
+            // BISE-301: a role's steps: for which role, what comes next
+            let steps = o.picking().filter(|_| o.panel.as_ref().is_some_and(|pn| pn.key_first));
+            if let Some(id) = steps {
+                v.push(dim(format!("for {}. then you pick the model.", roles::who(id))));
+            }
             blanks(&mut v, 1);
             if !p.keys_url.is_empty() {
                 v.extend(link_lines("get one: ", &p.keys_url, w));
@@ -1262,9 +1257,12 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
                 v.push(Line::from(s(format!("{} that doesn't look like a key: no spaces inside.", theme::glyph(theme::G_FAILED)), theme::error())));
             }
             blanks(&mut v, 1);
-            v.push(dim(format!("saved in {}. only you can read it.", auth_shown(o))));
+            // one line, the path under ~ (designer, BISE-301)
+            let at = auth_shown(o);
+            let line = format!("it goes in {}, only you can read it.", at);
+            v.push(dim(if at.starts_with('~') && line.width() <= w as usize { line } else { "it goes in bise's auth.json, only you can read it.".into() }));
             blanks(&mut v, gap);
-            v.push(keyline("{enter} check · {esc} back"));
+            v.push(keyline(if o.picking().is_some() { "{enter} check it · {esc} back to the providers" } else { "{enter} check · {esc} back" }));
             v
         }
         Sub::Confirm(p, _, _) => {
@@ -2152,7 +2150,7 @@ mod tests {
         o.on_key(key(KeyCode::Enter), 1, &e);
         // the keys page, the field, where it goes
         let sc = screen(&o, 10, 110, 30);
-        for s in ["paste your Mistral key", "get one: https://console.mistral.ai/api-keys", "saved in ~/.bend-harness/auth.json. only you can read it.", "enter check · esc back"] {
+        for s in ["paste your Mistral key", "get one: https://console.mistral.ai/api-keys", "it goes in ~/.bend-harness/auth.json, only you can read it.", "enter check · esc back"] {
             assert!(sc.contains(s), "{}\n{}", s, sc);
         }
         // the link is a hit for the OSC 8 backend

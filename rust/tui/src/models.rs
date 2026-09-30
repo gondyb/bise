@@ -147,6 +147,12 @@ pub(crate) struct Pick {
     /// what `/model` takes: a full id, or an alias
     pub(crate) value: String,
     pub(crate) desc: String,
+    /// BISE-301: its provider's name, the header `/model` groups it
+    /// under ("" for an alias)
+    pub(crate) provider: String,
+    /// what its row says under that header: `1M`, `128k · config.toml`,
+    /// `= anthropic/claude-opus-5-5`
+    pub(crate) short: String,
 }
 
 /// The chat models of the catalog (built in and config.toml's) whose
@@ -171,10 +177,15 @@ pub(crate) fn picks_with(ready: &dyn Fn(&str) -> bool) -> Vec<Pick> {
             n => format!("{}k", n / 1000),
         };
         let mine = if m.source == bise_catalog::Source::Config { " · config.toml" } else { "" };
-        out.push(Pick { value: m.name(), desc: format!("{} · {} · {}{}", long_name(&m.name()), p.name, ctx, mine) });
+        out.push(Pick {
+            value: m.name(),
+            desc: format!("{} · {} · {}{}", long_name(&m.name()), p.name, ctx, mine),
+            provider: p.name.clone(),
+            short: format!("{}{}", ctx, mine),
+        });
     }
     for (a, to) in c.aliases.iter().filter(|(_, to)| ready(&c.resolve(to).provider)) {
-        out.push(Pick { value: a.clone(), desc: format!("= {}", to) });
+        out.push(Pick { value: a.clone(), desc: format!("= {}", to), provider: String::new(), short: format!("= {}", to) });
     }
     out
 }

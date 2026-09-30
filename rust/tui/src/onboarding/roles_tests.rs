@@ -1,7 +1,8 @@
-//! `/models` and the role pickers (BISE-298): the rows and their words,
-//! a pick per role (the fallback row, a model and its effort, a typed id,
-//! a provider set up on the way), the voice picker (ready / another
-//! provider, the transcription check), `/provider`'s `use it for…`.
+//! `/models` and the role steps (BISE-298, roles first BISE-301): the
+//! rows and their words (provider then model), a role's steps (which
+//! provider, which model, the effort; the fallback row, a typed id, a
+//! provider set up on the way), voice (the providers that listen, the
+//! transcription check), `/provider`'s menu naming the roles.
 
 use super::provider::*;
 use super::roles::*;
@@ -107,22 +108,42 @@ fn typed(o: &mut Onb, e: Env, t: &str) {
 }
 
 #[test]
-fn models_lists_each_role_with_what_runs_and_why() {
+fn models_lists_each_role_with_its_provider_then_its_model() {
     let (e, _hm) = home("list", "[roles]\nmain = \"mistral/mistral-medium-latest\"\n", &["MISTRAL_API_KEY"]);
     let o = open(&e, Open::Roles);
     let sc = screen(&o);
-    assert!(sc.contains("which model does what?") && sc.contains("main uses one model, the rest follow it unless you pick."), "{sc}");
-    // picked: the id; a fallback: its rule, then the id it runs
-    assert!(line_of(&sc, "main  ").contains("mistral/mistral-medium-latest · high"), "{sc}");
-    assert!(line_of(&sc, "agents ").contains("same as main · mistral/mistral-medium-latest"), "{sc}");
-    assert!(line_of(&sc, "small jobs ").contains("auto · mistral/mistral-small-latest"), "{sc}");
+    assert!(sc.contains("which model does what?"), "{sc}");
+    assert!(sc.contains("each role picks a provider, then a model. one provider can serve several."), "{sc}");
+    // picked: the provider, then the id; a fallback: its rule, the provider, the id
+    assert!(line_of(&sc, "main  ").contains("Mistral  mistral-medium-latest · high"), "{sc}");
+    assert!(line_of(&sc, "agents ").contains("same as main · Mistral · mistral-medium-latest · high"), "{sc}");
+    assert!(line_of(&sc, "small jobs ").contains("auto · Mistral · mistral-small-latest"), "{sc}");
     // voice mode off: off, and how to set it up
     assert!(line_of(&sc, "voice ").trim_end().ends_with("off · enter sets it up"), "{sc}");
     // what the role under the cursor is for, once, under the list
-    assert!(sc.contains("main: talks with you and starts the agents.") && !sc.contains("your team lead"), "{sc}");
+    assert!(sc.contains("main: talks with you and starts the agents."), "{sc}");
     assert!(sc.contains("↑↓ choose · enter change · esc back"), "{sc}");
     // auto-confirm waits for its feature
     assert!(!sc.contains("auto-confirm"), "{sc}");
+}
+
+#[test]
+fn the_providers_line_up_in_one_column() {
+    let (e, _hm) = home(
+        "column",
+        "[roles]\nmain = \"mistral/mistral-medium-latest\"\nagents = \"openai/gpt-6-luna\"\nvoice = \"mistral/voxtral-mini-latest\"\n",
+        &["MISTRAL_API_KEY", "OPENAI_API_KEY"],
+    );
+    let o = open(&e, Open::Roles);
+    let sc = screen(&o);
+    let col = |row: &str, what: &str| {
+        let l = line_of(&sc, row);
+        l[..l.find(what).unwrap_or_else(|| panic!("{what}: {sc}"))].chars().count()
+    };
+    assert_eq!(col("main  ", "Mistral"), col("agents ", "OpenAI"), "{sc}");
+    assert_eq!(col("main  ", "mistral-medium"), col("agents ", "gpt-6-luna"), "{sc}");
+    assert_eq!(col("main  ", "Mistral"), col("voice ", "Mistral"), "{sc}");
+    assert!(line_of(&sc, "voice ").contains("voxtral-mini-latest · off"), "{sc}");
 }
 
 #[test]
@@ -130,34 +151,59 @@ fn a_role_whose_provider_has_no_key_says_so_and_enter_fixes_it() {
     let (e, _hm) = home("broken", "[roles]\nmain = \"anthropic/claude-opus-5-5\"\n", &["MISTRAL_API_KEY"]);
     let mut o = open(&e, Open::Roles);
     let sc = screen(&o);
-    // the id stays on screen
-    assert!(line_of(&sc, "main  ").contains("anthropic/claude-opus-5-5  ✗ no key · enter fixes it"), "{sc}");
+    // what runs stays on screen
+    assert!(line_of(&sc, "main  ").contains("Anthropic  claude-opus-5-5  ✗ no key · enter fixes it"), "{sc}");
     o.on_key(key(KeyCode::Enter), 1, &e);
     assert!(matches!(&o.sub, Sub::Paste(p, m, _) if p.id == "anthropic" && m == "anthropic/claude-opus-5-5"), "{:?}", o.sub);
 }
 
 #[test]
-fn the_agents_picker_offers_same_as_main_first_then_saves_a_model_and_its_effort() {
-    let (e, hm) = home("agents", "model = \"mistral/mistral-medium-latest\"\nagent_model = \"mistral/mistral-small-latest\"\n", &["MISTRAL_API_KEY"]);
+fn agents_pick_a_provider_then_a_model_then_its_effort() {
+    let (e, hm) = home(
+        "agents",
+        "model = \"mistral/mistral-medium-latest\"\nagent_model = \"mistral/mistral-small-latest\"\n",
+        &["MISTRAL_API_KEY"],
+    );
     let mut o = open(&e, Open::Roles);
     o.on_key(key(KeyCode::Down), 1, &e);
     o.on_key(key(KeyCode::Enter), 1, &e);
+    // 1. which provider? same as main first, the ready ones, then the others
     let sc = screen(&o);
-    assert!(sc.contains("which model do the agents use?"), "{sc}");
-    assert!(o.pick_rows("agents")[0] == PRow::Fallback("mistral/mistral-medium-latest".into()), "{:?}", o.pick_rows("agents"));
-    assert!(line_of(&sc, "same as main").contains("same as main · mistral/mistral-medium-latest"), "{sc}");
-    // picked today: its row is selected and marked
-    assert!(line_of(&sc, "mistral/mistral-small-latest").contains("✓ now"), "{sc}");
-    assert!(line_of(&sc, "mistral/mistral-small-latest").contains("›"), "{sc}");
-    assert!(sc.contains("+ another provider…"), "{sc}");
+    assert!(sc.contains("agents: which provider?") && sc.contains("now: Mistral · mistral-small-latest"), "{sc}");
+    let rows = o.pick_rows("agents");
+    assert_eq!(rows[0], PRow::Fallback("mistral/mistral-medium-latest".into()), "{rows:?}");
+    assert!(matches!(&rows[1], PRow::Provider(p) if p.id == "mistral"), "the ready one first: {rows:?}");
+    assert!(matches!(rows.last(), Some(PRow::More(_))), "{rows:?}");
+    assert!(line_of(&sc, "same as main").contains("Mistral · mistral-medium-latest"), "{sc}");
+    assert!(!line_of(&sc, "same as main").contains("now"), "{sc}");
+    // one provider, several roles: the others on it say so
+    let m = line_of(&sc, "Mistral ");
+    assert!(m.contains("›") && m.contains("✓ ready · now · main, small jobs use it"), "{sc}");
+    assert!(line_of(&sc, "OpenAI ").contains("not set up"), "{sc}");
+    assert!(sc.contains("more providers…"), "{sc}");
+    // 2. which model? Mistral's, short ids, the role's marked
+    o.on_key(key(KeyCode::Enter), 1, &e);
+    let sc = screen(&o);
+    assert!(sc.contains("agents · Mistral: which model?") && sc.contains("type to filter, or a model id that isn't listed."), "{sc}");
+    let now = line_of(&sc, "mistral-small-latest");
+    assert!(now.contains("›") && now.contains("✓ now") && !now.contains("mistral/"), "{sc}");
+    assert!(line_of(&sc, "mistral-medium-latest").contains("recommended"), "{sc}");
+    // esc: back to the providers, on Mistral
+    o.on_key(key(KeyCode::Esc), 1, &e);
+    assert!(matches!(o.pick_rows("agents").get(o.sel), Some(PRow::Provider(p)) if p.id == "mistral"));
+    o.on_key(key(KeyCode::Enter), 1, &e);
     // the medium one: how hard should it think? (Mistral: none, high)
-    while o.pick_rows("agents").get(o.sel) != Some(&PRow::Model("mistral/mistral-medium-latest".into())) {
+    while !matches!(&o.sub, Sub::Model(p, i, f) if o.model_rows(p, f)[*i] == ModelRow::Listed("mistral/mistral-medium-latest".into())) {
         o.on_key(key(KeyCode::Down), 1, &e);
     }
     o.on_key(key(KeyCode::Enter), 1, &e);
     let sc = screen(&o);
-    assert!(sc.contains("how hard should it think?") && sc.contains("mistral/mistral-medium-latest for agents"), "{sc}");
+    assert!(sc.contains("how hard should it think?") && sc.contains("mistral-medium-latest for the agents"), "{sc}");
     assert!(line_of(&sc, "high").contains("default"), "{sc}");
+    // esc: back to the models, on it
+    o.on_key(key(KeyCode::Esc), 1, &e);
+    assert!(matches!(&o.sub, Sub::Model(p, i, f) if o.model_rows(p, f)[*i] == ModelRow::Listed("mistral/mistral-medium-latest".into())), "{:?}", o.sub);
+    o.on_key(key(KeyCode::Enter), 1, &e);
     // none: written with the model, the old key gone
     o.on_key(key(KeyCode::Up), 1, &e);
     o.on_key(key(KeyCode::Enter), 1, &e);
@@ -166,7 +212,8 @@ fn the_agents_picker_offers_same_as_main_first_then_saves_a_model_and_its_effort
     // back on /models, the row flashing ✓
     let sc = screen(&o);
     assert!(sc.contains("which model does what?"), "{sc}");
-    assert!(line_of(&sc, "agents ").contains("✓") && line_of(&sc, "agents ").contains("mistral/mistral-medium-latest · none"), "{sc}");
+    let a = line_of(&sc, "agents ");
+    assert!(a.contains("✓") && a.contains("Mistral  mistral-medium-latest · none"), "{sc}");
     // same as main again (its first row): the role leaves config.toml
     o.on_key(key(KeyCode::Enter), 1, &e);
     while o.sel != 0 {
@@ -179,26 +226,26 @@ fn the_agents_picker_offers_same_as_main_first_then_saves_a_model_and_its_effort
 }
 
 #[test]
-fn a_typed_id_of_a_provider_without_a_key_goes_through_its_key_step() {
-    let (e, hm) = home("typed", "[roles]\nmain = \"mistral/mistral-medium-latest\"\n", &["MISTRAL_API_KEY"]);
+fn a_provider_not_set_up_goes_through_its_key_step_then_its_models() {
+    let _one = serial();
+    let (e, hm) = home("keyfirst", "[roles]\nmain = \"mistral/mistral-medium-latest\"\n", &["MISTRAL_API_KEY"]);
     let mut o = open(&e, Open::Roles);
     o.on_key(key(KeyCode::Enter), 1, &e);
-    assert!(screen(&o).contains("which model is your team lead?"));
-    typed(&mut o, &e, "mistral-large-9");
-    assert!(screen(&o).contains("+ use mistral/mistral-large-9"), "{}", screen(&o));
-    for _ in 0.."mistral-large-9".len() {
-        o.on_key(key(KeyCode::Backspace), 1, &e);
-    }
-    typed(&mut o, &e, "openai/gpt-6-luna");
     let sc = screen(&o);
-    assert!(sc.contains("+ set up OpenAI for openai/gpt-6-luna") && line_of(&sc, "+ set up").contains("no key yet"), "{sc}");
-    let last = o.pick_rows("main").len() - 1;
-    while o.sel != last {
+    assert!(sc.contains("main: which provider?") && !sc.contains("same as main"), "main has no fallback: {sc}");
+    while !matches!(o.pick_rows("main").get(o.sel), Some(PRow::Provider(p)) if p.id == "openai") {
         o.on_key(key(KeyCode::Down), 1, &e);
     }
     o.on_key(key(KeyCode::Enter), 1, &e);
-    assert!(matches!(&o.sub, Sub::Paste(p, m, _) if p.id == "openai" && m == "openai/gpt-6-luna"), "{:?}", o.sub);
-    // a wrong key: the first run's words; a good one: its effort, saved
+    assert!(matches!(&o.sub, Sub::Paste(p, m, _) if p.id == "openai" && m == "openai/gpt-6-astra"), "{:?}", o.sub);
+    let sc = screen(&o);
+    assert!(sc.contains("paste your OpenAI key") && sc.contains("for main. then you pick the model."), "{sc}");
+    assert!(sc.contains("enter check it · esc back to the providers"), "{sc}");
+    // esc: back to the providers, on OpenAI
+    o.on_key(key(KeyCode::Esc), 1, &e);
+    assert!(matches!(o.pick_rows("main").get(o.sel), Some(PRow::Provider(p)) if p.id == "openai"));
+    o.on_key(key(KeyCode::Enter), 1, &e);
+    // a wrong key: the first run's words; a good one: OpenAI's models
     o.on_paste("sk-bad");
     o.on_key(key(KeyCode::Enter), 1, &e);
     settle(&mut o, &e);
@@ -207,34 +254,50 @@ fn a_typed_id_of_a_provider_without_a_key_goes_through_its_key_step() {
     o.on_paste("sk-good-openai");
     o.on_key(key(KeyCode::Enter), 1, &e);
     settle(&mut o, &e);
-    assert!(matches!(&o.sub, Sub::Effort(m, _) if m == "openai/gpt-6-luna"), "{:?}", o.sub);
-    o.on_key(key(KeyCode::Enter), 1, &e);
-    assert!(cfg(&hm).contains("main = \"openai/gpt-6-luna\""), "{}", cfg(&hm));
+    assert!(matches!(&o.sub, Sub::Model(p, 0, f) if p.id == "openai" && f.is_empty()), "{:?}", o.sub);
     assert!(stored(&hm, "openai"), "a normal provider key");
+    let sc = screen(&o);
+    assert!(sc.contains("main · OpenAI: which model?") && line_of(&sc, "gpt-6-astra").contains("recommended"), "{sc}");
+    // an id it doesn't list: checked with one tiny call
+    CALLS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    typed(&mut o, &e, "gpt-6-nova");
+    let sc = screen(&o);
+    assert!(sc.contains("no listed model matches.") && sc.contains("+ use openai/gpt-6-nova   not in my list: i'll try it with one tiny call"), "{sc}");
+    o.on_key(key(KeyCode::Enter), 1, &e);
+    settle(&mut o, &e);
+    let calls = CALLS.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    assert!(calls.iter().any(|(c, _)| c.starts_with("openai/gpt-6-nova")), "{calls:?}");
+    // its effort (or saved when it has none), then main runs it
+    if matches!(o.sub, Sub::Effort(..)) {
+        o.on_key(key(KeyCode::Enter), 1, &e);
+    }
+    assert!(cfg(&hm).contains("openai/gpt-6-nova"), "{}", cfg(&hm));
+    assert!(line_of(&screen(&o), "main  ").contains("OpenAI"), "{}", screen(&o));
 }
 
 #[test]
-fn the_voice_picker_lists_the_ready_models_then_the_other_providers() {
+fn voice_lists_only_the_providers_that_listen() {
     let (e, _hm) = home("voice", "", &["OPENAI_API_KEY"]);
-    let o = open(&e, Open::Pick("voice"));
+    let mut o = open(&e, Open::Pick("voice"));
     let sc = screen(&o);
-    assert!(sc.contains("which model should listen to you?") && sc.contains("you talk, it types in the composer. ctrl+r starts, any key stops."), "{sc}");
-    assert!(sc.contains("› type to filter"), "{sc}");
-    // ready: OpenAI's voice models, its pick first and recommended
-    let ready = sc.find("ready").expect("ready");
-    let another = sc.find("another provider").expect("another provider");
-    assert!(ready < another, "{sc}");
-    // under their provider's line
-    assert!(sc.contains("  OpenAI · your key"), "{sc}");
-    // the ids without their provider under it
+    assert!(sc.contains("voice: which provider?") && sc.contains("only the providers that can listen. ctrl+r starts, any key stops."), "{sc}");
+    // the ready one first and preselected, then the others
+    let open_ai = line_of(&sc, "OpenAI ");
+    assert!(open_ai.contains("›") && open_ai.contains("✓ ready"), "{sc}");
+    assert!(sc.find("OpenAI ").unwrap() < sc.find("Mistral ").unwrap(), "{sc}");
+    assert!(line_of(&sc, "Mistral ").contains("not set up"), "{sc}");
+    assert!(line_of(&sc, "ElevenLabs ").contains("not set up · voice only"), "{sc}");
+    // Groq and Deepgram: not offered; no chat-only provider
+    assert!(!sc.contains("Groq") && !sc.contains("Deepgram") && !sc.contains("Anthropic") && !sc.contains("more providers"), "{sc}");
+    assert!(sc.contains("esc not now"), "{sc}");
+    // its voice models, short, its pick first
+    o.on_key(key(KeyCode::Enter), 1, &e);
+    let sc = screen(&o);
+    assert!(sc.contains("voice · OpenAI: which model?") && sc.contains("you talk, it types in the composer."), "{sc}");
     let first = line_of(&sc, "gpt-transcribe ");
     assert!(first.contains("›") && first.contains("recommended") && !first.contains("openai/"), "{sc}");
     assert!(line_of(&sc, "whisper-1").trim() == "whisper-1", "{sc}");
-    assert!(line_of(&sc, "Mistral ").contains("voxtral-mini-latest · the key also works for chat"), "{sc}");
-    assert!(line_of(&sc, "ElevenLabs ").contains("scribe_v2 · voice only"), "{sc}");
-    // Groq and Deepgram: not offered
-    assert!(!sc.contains("Groq") && !sc.contains("Deepgram") && !sc.contains("groq/"), "{sc}");
-    assert!(sc.contains("esc not now"), "{sc}");
+    assert!(!sc.contains("gpt-6"), "voice models only: {sc}");
 }
 
 #[test]
@@ -243,7 +306,7 @@ fn no_key_at_all_preselects_mistral_and_esc_leaves_voice_off() {
     let mut o = Onb::provider_panel(&e, Ask { open: Open::Pick("voice"), voice_on: true, ..Ask::default() });
     o.checker = fake_check;
     let sc = screen(&o);
-    assert!(!sc.contains("ready"), "no ready group: {sc}");
+    assert!(!sc.contains("✓ ready"), "{sc}");
     assert!(line_of(&sc, "Mistral ").contains("›"), "{sc}");
     let _ = take_voice_out();
     assert_eq!(o.on_key(key(KeyCode::Esc), 1, &e), Out::Done);
@@ -251,22 +314,18 @@ fn no_key_at_all_preselects_mistral_and_esc_leaves_voice_off() {
 }
 
 #[test]
-fn a_voice_provider_is_set_up_its_models_picked_and_checked_by_a_transcription() {
+fn a_voice_provider_is_set_up_then_its_model_picked_without_a_second_check() {
     let _one = serial();
     let (e, hm) = home("voicekey", "", &[]);
     let mut o = Onb::provider_panel(&e, Ask { open: Open::Pick("voice"), voice_on: true, ..Ask::default() });
     o.checker = fake_check;
     CALLS.lock().unwrap_or_else(|e| e.into_inner()).clear();
     let _ = take_voice_out();
-    // Mistral: its voice models (three), its pick first
-    o.on_key(key(KeyCode::Enter), 1, &e);
-    let sc = screen(&o);
-    assert!(matches!(&o.sub, Sub::Model(p, 0, _) if p.id == "mistral"), "{:?}", o.sub);
-    assert!(sc.contains("voxtral-mini-latest") && sc.contains("voxtral-transcribe-3"), "{sc}");
-    assert!(!sc.contains("mistral-medium-latest"), "voice models only: {sc}");
+    // Mistral: its key first, checked with its voice pick
     o.on_key(key(KeyCode::Enter), 1, &e);
     assert!(matches!(&o.sub, Sub::Paste(p, m, _) if p.id == "mistral" && m == "mistral/voxtral-mini-latest"), "{:?}", o.sub);
-    assert!(screen(&o).contains("paste your Mistral key"));
+    let sc = screen(&o);
+    assert!(sc.contains("paste your Mistral key") && sc.contains("for voice. then you pick the model."), "{sc}");
     // wrong key, then a good one: checked by a transcription
     o.on_paste("sk-bad");
     o.on_key(key(KeyCode::Enter), 1, &e);
@@ -275,9 +334,13 @@ fn a_voice_provider_is_set_up_its_models_picked_and_checked_by_a_transcription()
     assert!(screen(&o).contains("Invalid API Key"), "{}", screen(&o));
     o.on_key(key(KeyCode::Enter), 1, &e);
     o.on_paste("sk-good-mistral");
-    assert_eq!(o.on_key(key(KeyCode::Enter), 1, &e), Out::Stay);
+    o.on_key(key(KeyCode::Enter), 1, &e);
     settle(&mut o, &e);
-    assert!(o.panel.as_ref().unwrap().closed, "done: back to the feed");
+    // then its voice models, on the one just checked
+    assert!(matches!(&o.sub, Sub::Model(p, 0, _) if p.id == "mistral"), "{:?}", o.sub);
+    let sc = screen(&o);
+    assert!(sc.contains("voxtral-mini-latest") && sc.contains("voxtral-transcribe-3") && !sc.contains("mistral-medium-latest"), "{sc}");
+    assert_eq!(o.on_key(key(KeyCode::Enter), 1, &e), Out::Done);
     // (the chat checks of the other tests run alongside: the voice ones)
     let calls: Vec<_> = CALLS.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|(_, v)| *v).cloned().collect();
     assert!(calls.len() == 2 && calls.iter().all(|(c, _)| c == "mistral/voxtral-mini-latest mistral"), "{calls:?}");
@@ -287,12 +350,13 @@ fn a_voice_provider_is_set_up_its_models_picked_and_checked_by_a_transcription()
 }
 
 #[test]
-fn a_ready_voice_model_is_one_enter_and_one_check() {
+fn a_ready_voice_provider_is_two_enters_and_one_check() {
     let _one = serial();
     let (e, hm) = home("voiceready", "", &["OPENAI_API_KEY"]);
     let mut o = open(&e, Open::Pick("voice"));
     CALLS.lock().unwrap_or_else(|e| e.into_inner()).clear();
     let _ = take_voice_out();
+    o.on_key(key(KeyCode::Enter), 1, &e);
     o.on_key(key(KeyCode::Enter), 1, &e);
     settle(&mut o, &e);
     assert!(o.panel.as_ref().unwrap().closed);
@@ -303,54 +367,60 @@ fn a_ready_voice_model_is_one_enter_and_one_check() {
 }
 
 #[test]
-fn provider_use_it_for_lists_the_roles_it_can_run() {
+fn mistral_serves_main_and_voice() {
     let _one = serial();
-    let (e, hm) = home("usefor", "[roles]\nmain = \"mistral/mistral-medium-latest\"\n", &["MISTRAL_API_KEY", "ELEVENLABS_API_KEY"]);
-    let mut o = Onb::provider_panel(&e, Ask { provider: Some("mistral".into()), ..Ask::default() });
-    o.checker = fake_check;
-    let sc = screen(&o);
-    assert!(line_of(&sc, "2 · use it for…").contains("main · agents · small jobs"), "{sc}");
-    o.on_key(key(KeyCode::Char('2')), 1, &e);
-    let sc = screen(&o);
-    assert!(sc.contains("use Mistral for…"), "{sc}");
-    for r in ["main", "agents", "small jobs", "voice"] {
-        assert!(sc.contains(r), "{r}: {sc}");
-    }
-    assert!(line_of(&sc, "main  ").contains("✓ mistral-medium-latest"), "{sc}");
-    // voice: its picker filtered to Mistral, checked, back to the menu
-    while o.uses_of(&o.every_of("mistral")).get(match o.sub { Sub::UseFor(_, i) => i, _ => 0 }).map(|r| r.id) != Some("voice") {
+    let (e, hm) = home("both", "[roles]\nmain = \"mistral/mistral-medium-latest\"\n", &["MISTRAL_API_KEY"]);
+    let mut o = open(&e, Open::Roles);
+    let _ = take_voice_out();
+    while shown()[o.sel].id != "voice" {
         o.on_key(key(KeyCode::Down), 1, &e);
     }
     o.on_key(key(KeyCode::Enter), 1, &e);
     let sc = screen(&o);
-    assert!(sc.contains("which model should listen to you?") && sc.contains("› mistral/▏"), "{sc}");
+    // the key main uses: ready, nothing to set up
+    assert!(line_of(&sc, "Mistral ").contains("› ") && line_of(&sc, "Mistral ").contains("✓ ready · main, agents, small jobs use it"), "{sc}");
+    o.on_key(key(KeyCode::Enter), 1, &e);
     o.on_key(key(KeyCode::Enter), 1, &e);
     settle(&mut o, &e);
-    assert!(matches!(&o.sub, Sub::Menu(p, 1) if p.id == "mistral"), "{:?}", o.sub);
     assert!(cfg(&hm).contains("voice = \"mistral/voxtral-mini-latest\""), "{}", cfg(&hm));
-    // a voice-only provider with a key shows in the list: its menu has
-    // no chat role
-    o.on_key(key(KeyCode::Esc), 1, &e);
     let sc = screen(&o);
-    assert!(sc.contains("ElevenLabs"), "{sc}");
-    let el = o.every_of("elevenlabs");
-    assert_eq!(o.uses_of(&el).iter().map(|r| r.id).collect::<Vec<_>>(), vec!["voice"]);
+    assert!(line_of(&sc, "main  ").contains("Mistral") && line_of(&sc, "voice ").contains("Mistral  voxtral-mini-latest"), "{sc}");
 }
 
 #[test]
-fn models_fits_narrow_screens_by_cutting_the_descriptions_first() {
+fn provider_menu_names_the_roles_and_sends_to_models() {
+    let (e, _hm) = home("menu", "[roles]\nmain = \"mistral/mistral-medium-latest\"\n", &["MISTRAL_API_KEY", "ELEVENLABS_API_KEY"]);
+    let mut o = Onb::provider_panel(&e, Ask { provider: Some("mistral".into()), ..Ask::default() });
+    let sc = screen(&o);
+    assert!(sc.contains("main, agents and small jobs use it. /models changes that."), "{sc}");
+    assert!(!sc.contains("use it for") && !sc.contains("use Mistral for"), "{sc}");
+    assert!(line_of(&sc, "1 · paste a new key").contains("›"), "{sc}");
+    // the list: the roles each provider runs, in one column
+    o.on_key(key(KeyCode::Esc), 1, &e);
+    let sc = screen(&o);
+    assert!(line_of(&sc, "Mistral ").contains("main · agents · small jobs"), "{sc}");
+    // a voice-only provider with a key shows; nothing uses it yet
+    assert!(sc.contains("ElevenLabs"), "{sc}");
+    let el = o.every_of("elevenlabs");
+    o.sel = o.rows().iter().position(|r| *r == Row::P(el.clone())).unwrap();
+    o.on_key(key(KeyCode::Enter), 1, &e);
+    assert!(screen(&o).contains("no role uses it yet. /models picks one."), "{}", screen(&o));
+}
+
+#[test]
+fn models_fits_narrow_screens_by_cutting_the_fallbacks_id_first() {
     let (e, _hm) = home("narrow", "[roles.main]\nmodel = \"anthropic/claude-opus-5-5\"\neffort = \"high\"\n", &["ANTHROPIC_API_KEY"]);
     let o = open(&e, Open::Roles);
     let wide = screen_w(&o, 110);
     let narrow = screen_w(&o, 50);
-    assert!(line_of(&wide, "main  ").contains("anthropic/claude-opus-5-5 · high"), "{wide}");
-    // a row never wraps: the fallback's id loses its provider, then goes;
-    // the picked id stays
-    let n = line_of(&narrow, "main  ");
-    assert!(n.contains("anthropic/claude-opus-5-5"), "{narrow}");
+    assert!(line_of(&wide, "main  ").contains("Anthropic  claude-opus-5-5 · high"), "{wide}");
+    assert!(line_of(&wide, "agents  ").contains("same as main · Anthropic · claude-opus-5-5 · high"), "{wide}");
+    // a row never wraps: the fallback's id goes, never its provider; the
+    // picked id stays
+    assert!(line_of(&narrow, "main  ").contains("Anthropic  claude-opus-5-5"), "{narrow}");
     let a = line_of(&narrow, "agents  ");
-    assert!(a.contains("same as main") && !a.contains("anthropic/"), "{narrow}");
-    assert!(!narrow.lines().any(|l| l.trim_start().starts_with("anthropic") || l.trim_start().starts_with("claude")), "{narrow}");
+    assert!(a.contains("same as main · Anthropic") && !a.contains("claude"), "{narrow}");
+    assert!(!narrow.lines().any(|l| l.trim_start().starts_with("claude")), "{narrow}");
 }
 
 #[test]
@@ -360,8 +430,4 @@ fn an_agent_with_its_own_model_shows_under_agents() {
     let sc = screen(&o);
     let i = sc.lines().position(|l| l.contains("agents   ")).expect("agents row");
     assert!(sc.lines().nth(i + 1).unwrap().contains("1 agent uses its own model: perf · openai/gpt-6-sol"), "{sc}");
-    // designer's review: the screen as the user sees it (SB_DUMP=dir)
-    if let Ok(d) = std::env::var("SB_DUMP") {
-        std::fs::write(format!("{}/models-3-agent-own-model.txt", d), screen_w(&o, 120)).unwrap();
-    }
 }
