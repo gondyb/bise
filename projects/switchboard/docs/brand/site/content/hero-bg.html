@@ -22,7 +22,7 @@
   .v .bub.on { opacity:1; } .v .lay .bub span { position:static; transform:none; transition:none; } .v .bub .acc { color:var(--acc); margin-right:1ch; }
   .v .bub.pop { animation:bin .7s ease-out; } @keyframes bin { from { opacity:0; translate:0 5px; } to { opacity:1; translate:0 0; } }
   .v .lay span { position:absolute; left:0; top:0; white-space:pre; color:var(--dim); transition:transform .5s cubic-bezier(.25,.8,.3,1), opacity .45s; will-change:transform; }
-  .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .f { color:var(--faint); } .v pre .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } .v pre .d { color:var(--dim); } .v pre .w { color:var(--wind); } .v pre .g { display:inline-block; width:1ch; text-align:center; } .v pre .t { color:var(--text); }
+  .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .f { color:var(--faint); } .v pre .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } .v pre .d { color:var(--dim); } .v pre .sf { color:var(--faint); opacity:.7; } .v pre .w { color:var(--wind); } .v pre .g { display:inline-block; width:1ch; text-align:center; } .v pre .t { color:var(--text); }
   .hero { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; pointer-events:none; }
   .big { font-size:clamp(64px, 11vw, 150px); font-weight:700; letter-spacing:-.045em; line-height:1; }
   .big span { color:var(--acc); }
@@ -168,7 +168,7 @@ const THREADS = {
   wake(g, Y, t, k) {
     for (let x = 0; x < g.cols; x++) {
       const d = k - x;
-      if (d <= 0) { g.put(x, Y, "·", "s"); continue; }
+      if (d <= 0) { if (d % 2 === 0) g.put(x, Y, "·", "sf"); continue; }  // the way still to go: barely there (user)
       const amp = Math.exp(-d / 45), v = Math.abs(Math.sin(d * .38 - t * 3.2) * amp + Math.sin(d * .13 + t * .9) * amp * .4);
       g.put(x, Y, v > .75 ? "≈" : v > .42 ? "∼" : v > .16 ? "~" : "─", d < 6 ? "a" : d < 18 ? "a2" : v > .42 ? "d" : "");
     }
