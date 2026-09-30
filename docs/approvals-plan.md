@@ -18,7 +18,10 @@ built until the user says go.
      bash writes;
   2. in `accept edits`, a bash edit the parser cannot read is denied once
      with the "use `edit` / `apply_patch`" hint; a card only on repeat;
-  3. a simple `edit` tool (exact string replace) in phase 1, with steering;
+  3. exactly one edit tool per request, never both, chosen by the
+     provider: OpenAI → `apply_patch` only; every other provider → Vibe's
+     `edit` only, copied as is (name, schema, description); the prompts and
+     the deny-once hint name the one that is on;
   4. no time limit: an agent waits as long as needed;
   5. roots: the current folder and below, `~/.bise` from anywhere, a
      per-agent temp dir `~/.bise/tmp/<agent-id>` (`TMPDIR`), no `/tmp`;
@@ -30,7 +33,7 @@ built until the user says go.
 
 | option | 1 line | cost |
 |---|---|---|
-| (a) edit tools | `edit` + `apply_patch` count as edits: exact | `edit` ~1.5 days, steering ~0.5 day |
+| (a) edit tools | the request's edit tool (`apply_patch` for OpenAI, Vibe's `edit` for the rest) counts as an edit: exact | `edit` ~1.5 days, steering ~0.5 day |
 | (b) bash parser | reads each simple command: safe reads, saved rules, plain writes; opaque commands stay opaque | ~3 days |
 | (c) classifier | handles scripts, but slow, can be fooled, makes the mode a guess | only in `auto` |
 | (e) OS sandbox | real containment, changes the mode's meaning | later, 1–2 weeks |
@@ -52,11 +55,16 @@ scripts); a small change costs more in V4A than `sed -i`. Not failures:
 2. In `accept edits`, plain bash writes the parser can read (`sed -i`,
    `cat > f <<EOF`, `mkdir`, `rm` inside the roots) run like edits.
    That is how i read "spot the obvious bash writes". OK?
-3. `edit` and `apply_patch` shown to every model (reco), or one per family
-   (Anthropic `edit`, OpenAI `apply_patch`)?
-4. The parser is tree-sitter-bash from Rust: a C grammar compiled into the
+3. The parser is tree-sitter-bash from Rust: a C grammar compiled into the
    hub (Vibe uses the same one). OK, or a hand-written parser (smaller,
    wrong on some heredoc and quoting cases)?
+4. Vibe's `edit` as is has no way to create a file (an empty `old_string`
+   is refused: "Use write_file to create new files"), and non-OpenAI
+   models lose `apply_patch`. Copy Vibe's `write_file` as is too (reco: it
+   closes the gap and makes `edit`'s own error true), or let them create
+   files with bash (`cat > f <<EOF`, a plain write)? `edit`'s description
+   also says "You must `read_file` first": bise has no `read_file`, the
+   models read with bash; kept as is, per the decision.
 
 ## 4. Phases
 
@@ -66,7 +74,7 @@ Ids from HEAD's tracker at launch (next free today: BISE-301).
 |---|---|---|---|
 | 1a. modes + gate | mode in the hub, `approvals` key in config.toml, `shift+tab` cycle + outdent on backspace, the key-bar indicator, flash, first-run tip, `/approvals`; runtime gate (wire, gate file, pause, interrupt, mode file so `yolo` costs nothing); `confirm` answers go to the gate; the waiting-agent signals | `bend/runtime/main.bend` + pure laws, `bend/hub/core.bend`, `rust/switchboard`, `rust/tui` (`input.rs`, `mdlive.rs`, key bar, cards), `rust/catalog` | ~3 days |
 | 1b. parser + rules | tree-sitter-bash analysis (parts, wrappers, unreadable parts, redirections), safe reads with option guards, plain writes, roots and protected paths, the arity table, saved rules per repo in `~/.bise/approvals.toml` and "always allow … here" on the card; table tests with Vibe's cases | `rust/switchboard/src/approvals/` | ~3 days |
-| 1c. `edit` + steering | the `edit` tool (pure core + laws, TUI diff), tool order, the prompt line, the bash description, the deny-once hint | `bend/core/edit.bend`, `bend/runtime`, `prompts/`, `rust/tui` | ~2 days |
+| 1c. `edit` + steering | Vibe's `edit` copied as is (pure core + laws, TUI diff), one edit tool per request by provider in `catalog_live`, tool order, the prompt line and the bash description naming the tool that is on, the deny-once hint | `bend/core/edit.bend`, `bend/runtime`, `prompts/`, `rust/tui` | ~2 days |
 | 1d. temp dir | `~/.bise/tmp/<agent-id>`, `TMPDIR`/`TMP`/`TEMP` in the tool env, delete on drop and on hub start | `rust/switchboard` (`tools_env.rs`, drop, sweep) | ~0.5 day |
 | 2. auto | hard rules H1–H10, the classifier on the `classify` role (one-shot path, 6 s, strict JSON), deny-and-continue, failure mode + notice, the "auto-confirm" row in `/setup` roles, its cost in `/usage` | `rust/switchboard`, `rust/tui/src/onboarding` | ~4 days |
 | 3. comfort | grouped cards, terminal notification when unfocused, `bise approvals` CLI | `rust/switchboard`, `rust/tui`, `rust/harness` | ~1.5 days |

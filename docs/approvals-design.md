@@ -32,10 +32,13 @@ The user's answers to the 8 decisions (second round):
    `npm run *`), and spots the plain bash writes. A command no rule allows
    is a card, and the card offers "always allow this here" (§2.3).
 2. Settled: in `accept edits`, a bash edit the parser cannot read is
-   denied once with the "use `edit` / `apply_patch`" hint; a card only if
+   denied once with the "use `edit`" hint (or `apply_patch`: the one tool
+   that is on); a card only if
    the agent repeats it.
-3. Find why agents avoid `apply_patch`, and add a simple `edit` tool (exact
-   string replace) in phase 1, with steering (§2.4, §2.5).
+3. Find why agents avoid `apply_patch` (§2.4). Settled (third round): one
+   edit tool per request, never both, chosen by the provider: OpenAI →
+   `apply_patch` only; every other provider → Vibe's `edit` only, as is
+   (§2.5). The prompts and the hint name the one that is on.
 4. **No time limit.** An agent waits as long as needed. No
    `approvals_timeout` option.
 5. Writable roots in `accept edits`: the current folder and everything
@@ -64,14 +67,14 @@ something else.
 
 | option | how `accept edits` decides | pros | cons | cost |
 |---|---|---|---|---|
-| (a) edit tools | only `apply_patch` (or a new `edit`) counts as an edit | exact: the paths are in the arguments; predictable | models drift to bash | steering ~0.5 day; `edit` tool ~1.5 days |
+| (a) edit tools | only an edit tool call counts as an edit | exact: the paths are in the arguments; predictable | models drift to bash | steering ~0.5 day; `edit` tool ~1.5 days |
 | (b) parse bash | read each simple command: safe reads, saved rules, plain writes | no model call, fast; what Vibe and Claude Code do for their rules | opaque commands (scripts, `python -c`, build tools) stay opaque | ~3 days with tree-sitter |
 | (c) classifier | the `classify` model says "only an in-repo edit?" | handles python scripts | 0.6–0.7 s per call; can be fooled; the mode becomes a guess | ~3 days, shared with `auto` |
 | (e) OS sandbox (what Codex relies on) | bash runs in Seatbelt / Landlock, writes only in the repo | real containment | changes the mode's meaning; breaks caches and worktrees; per-OS | 1–2 weeks |
 
 ### 2.2 The choice: (a) + (b), the classifier only in `auto`
 
-The user chose (a) + (b): an `edit` tool the models like, and a real bash
+The user chose (a) + (b): an edit tool each provider's models know (one per request), and a real bash
 parser. The classifier stays out of `accept edits`, so that mode stays a
 rule the user can predict. Codex, for the record, does not parse bash to
 find edits: it parses only to allowlist safe commands and relies on its
@@ -173,40 +176,88 @@ What the code and the threads show:
 5. **Not failures.** Only 7 "chunk not found" errors show against ~358
    patches (~2 %): the tool works when used.
 
-### 2.5 The `edit` tool and the steering
+### 2.5 One edit tool per request (settled) and the steering
 
-`edit` (phase 1), the format both families know (Claude Code's `Edit`,
-Vibe's `edit`, Anthropic's `str_replace`):
+The user's decision: **exactly one edit tool per request, never both,
+chosen by the provider.**
 
-- Args: `path`, `old_string`, `new_string`, `replace_all` (default false).
-- `old_string` must be found exactly once (or at least once with
-  `replace_all`); else it fails loudly: "not found" or "found N times: add
-  context or set replace_all". No fuzzy match. It does not require a read
-  first (we have no read tool).
-- `old_string` empty and the file absent: creates the file with
-  `new_string` (one tool for small edits and new files).
-- The result: the changed lines with line numbers, like a diff.
-- Pure core in Bend with laws (`bend/core/edit.bend`), next to
-  `core/patch.bend`; the TUI shows it as a diff, like `apply_patch`.
-- `apply_patch` stays for changes over many places or files.
+- **The OpenAI provider** → `apply_patch` only (V4A, the format OpenAI
+  models are trained on).
+- **Every other provider** (Anthropic, Mistral, OpenRouter, Google, the
+  rest) → Vibe's `edit` only, **as is**: same name, schema, description and
+  behavior, copied exactly from Vibe 2.25.8
+  (`vibe/core/tools/builtins/edit.py`, `prompts/edit.md`).
+- The prompts, the bash description and the deny-once hint name the one
+  tool that is on in that request, never the other.
+
+Vibe's `edit`, copied exactly:
+
+- Name: `edit`.
+- Parameters:
+  - `file_path` (string, required): "The absolute path to the file to modify"
+  - `old_string` (string, required): "The text to replace"
+  - `new_string` (string, required): "The text to replace it with (must be
+    different from old_string)"
+  - `replace_all` (boolean, default false): "Replace all occurrences of
+    old_string (default false)"
+- Description (verbatim): "Exact string replacement in a file. You must
+  `read_file` first. When editing text from `read_file` output, never
+  include any part of the line-number prefix in `old_string` or
+  `new_string`. If `old_string` is not found or matches multiple
+  locations, provide more context to make it unique, or use `replace_all`.
+  If an edit fails, re-read the file before retrying."
+- Behavior and errors (Vibe's words): an empty path → "File path cannot be
+  empty"; empty `old_string` → "old_string cannot be empty. Use write_file
+  to create new files."; same strings → "No changes to make — old_string
+  and new_string are identical"; missing file → "File does not exist:
+  <path>"; not found → "String to replace not found in file.\nString:
+  <old_string>"; several matches without `replace_all` → "Found N matches of
+  the string to replace, but replace_all is false. To replace all
+  occurrences, set replace_all to true. To replace only one occurrence,
+  please provide more context to uniquely identify the instance.\nString:
+  <old_string>"; not text → "Cannot edit <path>: file is not valid text
+  (…)". Success → "The file has been updated successfully." (or "… All
+  occurrences were successfully replaced"). The write is atomic.
+- Ours around it: a pure core in Bend with laws (`bend/core/edit.bend`), the
+  TUI shows it as a diff like `apply_patch`, the gate reads `file_path`
+  (§4). The hub's activity line reads "edit <file>".
+
+**Two gaps in "as is"** (said plainly, not changed): the description names
+`read_file` and `write_file`, and bise has neither. The models will read
+with `cat`/`rg` in bash, which is fine (a safe read). But a non-OpenAI model
+has **no tool to create a file**: `edit` refuses an empty `old_string`, and
+`apply_patch` is gone for it. It will create files with bash
+(`cat > f <<EOF`): a plain write the parser reads, so it runs in `accept
+edits` if open question 2 is yes, else a card. Open question 5 in the plan:
+copy Vibe's `write_file` as is too (name `write_file`, `file_path` +
+`content`, "Create a new file. Errors if the file already exists — use
+`edit` to modify existing files. Prefer editing existing files over
+creating new ones. Do not proactively create documentation or README
+files."). That would close the gap and make `edit`'s own error message
+true.
+
+The tool is picked when the tool catalog is built (`catalog_live` in
+`bend/runtime/tools-pure.bend`), from the agent's provider; a provider
+switch (`/model`, a reload) rebuilds the catalog and the prompt lines. An old session replays its past
+`apply_patch` or `edit` calls as history; only the new catalog changes.
 
 Steering (phase 1):
 
-- Tool list order: `edit` and `apply_patch` before `bash`.
-- System prompt, one line: "Edit files with `edit` (one change) or
-  `apply_patch` (many changes). Don't edit files through bash (`sed -i`,
-  redirections, heredocs, python or perl scripts): those need the user in
-  `accept edits`, and tool edits show as diffs."
+- Tool list order: the edit tool before `bash`.
+- System prompt, one line naming the tool that is on: "Edit files with
+  `edit`." (or "with `apply_patch`."). "Don't edit files through bash (`sed -i`, redirections,
+  heredocs, python or perl scripts): those need the user in `accept
+  edits`, and tool edits show as diffs."
 - Bash description: drop the heredocs invitation; add "not for editing
-  files: use `edit` or `apply_patch`".
+  files: use `edit`." (or `apply_patch`: the one that is on).
 - In `accept edits`, an opaque bash command that looks like an edit (an
   interpreter fed inline code that writes, `perl -pi`) is denied once with
-  the hint: "accept edits: this bash call needs the user. Use `edit` or
-  `apply_patch`: they run without asking. If bash is really needed, repeat
-  the call and the user will be asked." Plain writes the parser can read
-  do not need this: they run.
-- Measured in phase 4: the share of edits made by `edit`/`apply_patch`,
-  before and after, per model.
+  the hint (settled), naming the tool that is on: "accept edits: this bash
+  call needs the user. Use `edit`: it runs without asking. If bash is really
+  needed, repeat the call and the user will be asked." Plain writes the
+  parser can read do not need this (open question 2).
+- Measured in phase 4: the share of edits made by the edit tool, before and
+  after, per model.
 
 ## 3. What each mode does
 
@@ -220,10 +271,10 @@ gated one by one).
 |---|---|---|---|
 | `sb …` | runs | runs | runs |
 | safe read inside the roots (§2.3) | runs | runs | runs |
-| `edit` / `apply_patch`, every path inside the roots (§4) | runs | runs | runs |
+| the edit tool (`edit` or `apply_patch`, one per request), every path inside the roots (§4) | runs | runs | runs |
 | plain bash write (`sed -i`, `>`, `tee`, `mkdir`, `rm`…), every target inside the roots | runs | runs | runs |
 | a saved rule of this repo ("always allow cargo test here") | runs | runs | runs (hard rules still ask) |
-| `edit` / `apply_patch` / plain write outside the roots or on a protected path | runs | card | card |
+| the edit tool or a plain write outside the roots or on a protected path | runs | card | card |
 | opaque bash that looks like an edit (`python3 - <<EOF`, `perl -pi`) | runs | denied once with the `edit` hint, card on repeat | classifier |
 | any other bash (`cargo test`, `git commit`, `curl`…) | runs | card, with "always allow … here" | classifier |
 | connector call | runs | card, with "always allow this tool here" | classifier |
@@ -258,7 +309,7 @@ provider sees the data. Measured on `mistral-small-latest`: 0.6–0.7 s,
 
 ## 4. What counts as an edit
 
-An edit is an `edit` or `apply_patch` call, or a plain bash write the parser
+An edit is a call of the request's edit tool (`edit` or `apply_patch`), or a plain bash write the parser
 can read (§2.3), when **every** path it writes (after `..`, `~`, and
 symlinks of the parent directory):
 
@@ -473,7 +524,7 @@ and fold the card.
 | "always" stores program + subcommand words | Vibe's arity table + `*`; exact text for guarded or unreadable commands |
 | writable roots: the workspace/worktree, `/tmp`, `$TMPDIR` | the current folder and below, `~/.bise` (except hub state, saved rules, keys), a per-agent temp dir `~/.bise/tmp/<agent-id>`; no `/tmp` |
 | `approvals_timeout` option | no time limit, no option |
-| tools: `bash`, `apply_patch` | + `edit` (exact string replace), steering toward it |
+| tools: `bash`, `apply_patch` for every model | one edit tool per request, by provider: OpenAI → `apply_patch`; every other provider → Vibe's `edit` as is; the prompts name only that one |
 | opaque bash edits | `accept edits`: denied once with the `edit` hint, then a card |
 | paths `runtime/`, `hub/`, `LAWS.bend` | `bend/runtime/`, `bend/hub/`, `bend/LAWS.bend` |
 | ids BISE-230..239 | taken at launch from HEAD's tracker (next free today: BISE-301) |
