@@ -10,6 +10,7 @@
 //! - `rules`: `~/.bise/approvals.toml`.
 
 pub mod arity;
+pub mod check;
 pub mod parse;
 pub mod paths;
 pub mod rules;
