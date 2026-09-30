@@ -2,19 +2,24 @@
 
 Main spawns these as written (`sb spawn <name> --objective … `, the brief
 as the first message). Design: [approvals-design.md](approvals-design.md);
-plan and branches: [approvals-plan.md](approvals-plan.md) §4–5.
+plan and the one branch: [approvals-plan.md](approvals-plan.md) §4–5.
 
 ## Rules for every agent (paste into each brief)
 
 - Read first: the design sections named in your brief, `docs/loop-speed.md`
   §0, and your part's contracts below.
-- Work in your own worktree: `tests/gate.sh new <your name>`, then create
-  your branch there from `sb/approvals` (phase 0: from main):
-  `git switch -c sb/approvals-<part> sb/approvals`. Commit only on that
-  branch. **Never commit to main or to `sb/approvals`, never push, never
-  reset/amend/rebase a branch someone else uses.** main merges your branch
-  into `sb/approvals` when you report done; rebase your own branch on
-  `sb/approvals` when main tells you it moved.
+- One branch for everything: the local branch `approvals` (plan §5).
+  Work in your own worktree (`tests/gate.sh new <your name>`, then
+  `git checkout --detach approvals`) and commit **onto
+  `refs/heads/approvals`** with a private index built from the branch's
+  current tip, then a compare-and-swap:
+  `old=$(git rev-parse refs/heads/approvals); GIT_INDEX_FILE=$TMPDIR/approvals.idx git read-tree $old;`
+  add your files only; `new=$(git commit-tree $(git write-tree) -p $old -F msg.txt)`;
+  `git update-ref refs/heads/approvals $new $old`. If it fails, someone
+  committed first: rebuild from the new tip and retry. Then
+  `git checkout --detach approvals` to build on everyone's work.
+  **Never commit to main, never push, never reset/amend/rebase, no other
+  branch.**
 - `tests/gate.sh` (quick) per commit, `gate.sh full` once on the last
   commit, in the foreground. End with `gate.sh done <name>`.
 - Before running a hub or a REPL for tests: unset `BEND_SESSION_FILE
@@ -26,7 +31,7 @@ plan and branches: [approvals-plan.md](approvals-plan.md) §4–5.
 - Take the tracker ids at launch from HEAD's `docs/brand/bise-issues.md`
   (or the current tracker), one per part.
 - Done = the brief's "done when" list, the gate green, a report with the
-  branch, the commits, what you did not do, and a 3-line "how to try it".
+  commits on `approvals`, what you did not do, and a 3-line "how to try it".
 
 ## Contracts between the parts (fixed now so the parts can run in parallel)
 
@@ -56,13 +61,12 @@ pub async fn check(state: &CheckerState, how: Checker) -> Result<Decision, Check
 
 ---
 
-## Phase 0 · `approvals-tmp`: the agent's temp folder (ships first, alone)
+## Phase 0 · `approvals-tmp`: the agent's temp folder (done first)
 
 Objective: every agent gets a temp folder in its session folder, is told
 its path, and the harness stops writing to `/tmp`. Useful now in `yolo`.
 
-Read: design §7.1, §6.2 (tmux), plan §5 (phase 0 is reviewed and merged on
-its own, from main).
+Read: design §7.1, §6.2 (tmux), plan §5 (the one branch).
 
 Do:
 1. At spawn the hub creates `~/.bise/hubs/<hub>/agents/<agent>/tmp/` and
@@ -87,7 +91,7 @@ Do:
 Done when: a new agent's `echo $TMPDIR` is its `tmp/`; `mktemp`, python
 `tempfile`, `tmux -L x` land there; `ls /tmp/bend-*` stays empty through a
 session with a background job, a steer and an interrupt; drop removes
-`tmp/`; laws and e2e green. ~1 day. Branch `sb/approvals-tmp` from main.
+`tmp/`; laws and e2e green. ~1 day. On `approvals`, like every part.
 
 ---
 

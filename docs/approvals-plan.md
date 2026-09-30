@@ -29,8 +29,9 @@ his review (§5).
   (`~/.bise/hubs/<hub>/agents/<agent>/tmp`, told in its prompt), the
   harness's own `/tmp` files move there too, and this ships first
   (design §7.1).
-- New: the build lands on a feature branch; main merges after the user's
-  test and go (§5).
+- New: the build lands on **one local branch, `approvals`** (from main,
+  never pushed unless the user asks), every agent committing onto it;
+  main merges it after the user's test and go (§5).
 
 ## 2. The picks
 
@@ -68,19 +69,19 @@ his review (§5).
 
 Ids from HEAD's tracker at launch (the last used today: BISE-301).
 
-| phase | what | where | cost | branch |
-|---|---|---|---|---|
-| 0. temp folder | `tmp/` and `run/` in the agent's session folder; `TMPDIR`/`TMP`/`TEMP`/`TMUX_TMPDIR`; the harness's `/tmp` files moved (bg slots, sh wrappers, steer, interrupt, `run_typescript` files, plugins script); the prompt line; delete on drop and on hub start | `rust/switchboard` (`tools_env.rs`, `paths.rs`, drop, sweep), `bend/runtime` (`bash*.bend`, `main.bend`, `plugins.bend`), `bend/LAWS.bend`, `prompts/` | ~1 day | `sb/approvals-tmp`, reviewed and merged on its own, **before** the modes |
-| 1a. modes + gate | the mode in the hub, `approvals` in config.toml, `shift+tab` toggle + outdent on backspace, key-bar indicator, flash, tips, `/approvals`; the runtime gate (wire, gate file, pause, interrupt, mode file so `yolo` costs nothing); `confirm` answers to the gate; the waiting-agent signals; `checking…` after 250 ms | `bend/runtime/main.bend` + laws, `bend/hub/core.bend`, `rust/switchboard`, `rust/tui`, `rust/catalog` | ~3 days | `sb/approvals-modes` |
-| 1b. parser + tiers + rules | `brush-parser` behind `approvals/parse.rs`; the analysis (parts, wrappers, unreadable parts, redirections); tiers 0–3; roots and protected paths (with the `tmp/` carve-out); the arity table; saved rules in `~/.bise/approvals.toml` and "always allow … here"; the risk classes of §6.3; the corpus test | `rust/switchboard/src/approvals/` | ~3 days | `sb/approvals-parser` |
-| 1c. edit tools + steering | Vibe's `edit` and `write_file` as is (pure core + laws, TUI diff); one toolset per request by provider in `catalog_live`; tool order; prompt lines; the bash description; the deny-once hint text | `bend/core/edit.bend`, `bend/runtime`, `prompts/`, `rust/tui` | ~2.5 days | `sb/approvals-edit` |
-| 1d. checker | Jev client (OpenRouter route and TypeSafe route), the state builder, the 3 questions and thresholds, the `classify`-role fallback, the per-repo cache, fail-closed + the 3-errors notice, `approvals_classifier`, the reason words, `/usage` cost, the "auto-confirm" row in `/setup` roles | `rust/switchboard/src/approvals/checker*.rs`, `rust/catalog`, `rust/tui/src/onboarding` | ~3 days | `sb/approvals-checker` |
-| 1e. sandbox (macOS) — if Q1 is yes | the per-agent Seatbelt profile, `sandbox-exec` around the bash call in `auto`, the git common dir, the cache allowlist, network rule, denial detection and the rerun flow | `rust/switchboard/src/approvals/sandbox.rs`, `bend/runtime/bash.bend` | ~3.5 days | `sb/approvals-sandbox` |
-| 2. integration + proof | merge the parts into `sb/approvals`; e2e with the fake provider (card in main's view and another, allow / always / no / ctrl+c, `yolo` costs nothing); the checker eval (~150 labeled calls: Jev vs the `classify` role: share reaching the user, dangerous allowed, latency, cost); the edit-tool share per model, before/after; the call rate re-measured | `tests`, `docs/approvals-eval/` | ~2 days | `sb/approvals` |
-| 3. the user's review | a local build from `sb/approvals`, the test script (§5), fixes, then main merges on his go | — | ~0.5 day + fixes | `sb/approvals` → main |
-| later | grouped cards, terminal notification when unfocused, `bise approvals` CLI; the Linux sandbox in `sb/ports` (~4 days) | | ~1.5 + 4 days | |
+| phase | what | where | cost |
+|---|---|---|---|
+| 0. temp folder | `tmp/` and `run/` in the agent's session folder; `TMPDIR`/`TMP`/`TEMP`/`TMUX_TMPDIR`; the harness's `/tmp` files moved (bg slots, sh wrappers, steer, interrupt, `run_typescript` files, plugins script); the prompt line; delete on drop and on hub start | `rust/switchboard` (`tools_env.rs`, `paths.rs`, drop, sweep), `bend/runtime` (`bash*.bend`, `main.bend`, `plugins.bend`), `bend/LAWS.bend`, `prompts/` | ~1 day |
+| 1a. modes + gate | the mode in the hub, `approvals` in config.toml, `shift+tab` toggle + outdent on backspace, key-bar indicator, flash, tips, `/approvals`; the runtime gate (wire, gate file, pause, interrupt, mode file so `yolo` costs nothing); `confirm` answers to the gate; the waiting-agent signals; `checking…` after 250 ms | `bend/runtime/main.bend` + laws, `bend/hub/core.bend`, `rust/switchboard`, `rust/tui`, `rust/catalog` | ~3 days |
+| 1b. parser + tiers + rules | `brush-parser` behind `approvals/parse.rs`; the analysis (parts, wrappers, unreadable parts, redirections); tiers 0–3; roots and protected paths (with the `tmp/` carve-out); the arity table; saved rules in `~/.bise/approvals.toml` and "always allow … here"; the risk classes of §6.3; the corpus test | `rust/switchboard/src/approvals/` | ~3 days |
+| 1c. edit tools + steering | Vibe's `edit` and `write_file` as is (pure core + laws, TUI diff); one toolset per request by provider in `catalog_live`; tool order; prompt lines; the bash description; the deny-once hint text | `bend/core/edit.bend`, `bend/runtime`, `prompts/`, `rust/tui` | ~2.5 days |
+| 1d. checker | Jev client (OpenRouter route and TypeSafe route), the state builder, the 3 questions and thresholds, the `classify`-role fallback, the per-repo cache, fail-closed + the 3-errors notice, `approvals_classifier`, the reason words, `/usage` cost, the "auto-confirm" row in `/setup` roles | `rust/switchboard/src/approvals/checker*.rs`, `rust/catalog`, `rust/tui/src/onboarding` | ~3 days |
+| 1e. sandbox (macOS) — if Q1 is yes | the per-agent Seatbelt profile, `sandbox-exec` around the bash call in `auto`, the git common dir, the cache allowlist, network rule, denial detection and the rerun flow | `rust/switchboard/src/approvals/sandbox.rs`, `bend/runtime/bash.bend` | ~3.5 days |
+| 2. integration + proof | e2e with the fake provider (card in main's view and another, allow / always / no / ctrl+c, `yolo` costs nothing); the checker eval (~150 labeled calls: Jev vs the `classify` role: share reaching the user, dangerous allowed, latency, cost); the edit-tool share per model, before/after; the call rate re-measured | `tests`, `docs/approvals-eval/` | ~2 days |
+| 3. the user's review | a local build from `approvals`, the test script (§5), fixes, then main merges `approvals` into main on his go | — | ~0.5 day + fixes |
+| later | grouped cards, terminal notification when unfocused, `bise approvals` CLI; the Linux sandbox in `sb/ports` (~4 days) | | ~1.5 + 4 days |
 
-Phase 0: ~1 day, ships alone. Phase 1 (1a–1e, ~15 agent-days, 5 agents in
+Phase 0: ~1 day, done first (it helps the rest). Phase 1 (1a–1e, ~15 agent-days, 5 agents in
 parallel): about 3.5 days of wall time. The parts meet on contracts
 written in the briefs (the `Verdict` type, the checker's `check(state)`,
 the gate wire), with stubs until the real part lands. Launch criterion
@@ -88,19 +89,29 @@ for `auto`: phase 2 green, 0 dangerous commands allowed on the eval, and on
 our own threads fewer than 1 call in 50 reaches the user. Total ~21
 agent-days with the sandbox, ~17 without.
 
-## 5. Branches, review and merge (the user: "a complex feature that needs review")
+## 5. One branch, review and merge (the user: "one branch with everything in it, even if it is huge and several agents work on it; it can be my local branch")
 
-- `sb/approvals` is created from main when phase 1 starts. Each phase-1
-  agent works in its own worktree (`tests/gate.sh new <name>`) on its own
-  branch `sb/approvals-<part>` from `sb/approvals`, commits there, and
-  reports. **No phase agent commits to main or to `sb/approvals`, and none
-  pushes.**
-- main merges each finished part into `sb/approvals` (one at a time,
-  `gate.sh full` after each merge) and tells the other agents to rebase on
-  it.
-- Phase 0 is its own branch, `sb/approvals-tmp`, from main; same review
-  (a build, the 4 checks of its brief), merged by main on the user's go.
-- Review of `sb/approvals`: main builds it (`versions.sh` on the branch's
+- One local branch, **`approvals`**, created from main when phase 0
+  starts. Never pushed unless the user asks. Everything lands there:
+  phase 0, the 5 phase-1 parts, phase 2.
+- Each agent works in its own worktree (`tests/gate.sh new <name>`,
+  detached on the tip of `approvals`) and commits **onto
+  `refs/heads/approvals`** without checking it out:
+  ```sh
+  old=$(git rev-parse refs/heads/approvals)
+  export GIT_INDEX_FILE=$TMPDIR/approvals.idx
+  git read-tree $old                      # the branch's CURRENT tip
+  git add <your files>                    # your hunks only
+  new=$(git commit-tree $(git write-tree) -p $old -F msg.txt)
+  git update-ref refs/heads/approvals $new $old   # compare-and-swap
+  ```
+  If `update-ref` fails, another agent committed first: rebuild the index
+  from the new tip (`read-tree`), add your files again, retry. Then move
+  your worktree to the new tip (`git checkout --detach approvals`) to keep
+  building on everyone's work.
+- **No agent commits to main, pushes, resets, amends or rebases.** No
+  per-part branches, no per-part merges.
+- Review of `approvals`: main builds it (`versions.sh` on the branch's
   head) so the user can run it next to his daily bise on a real repo, and
   gives him the test script:
   1. start in `yolo`: nothing asks, the key bar says `⇧⇥ yolo`;
@@ -119,7 +130,7 @@ agent-days with the sandbox, ~17 without.
   9. `/approvals checker off`: a command asks; `/approvals checker model`:
      the checker uses your `classify` model;
   10. two agents at once, one waiting on a card: the other keeps working.
-- main merges `sb/approvals` into main only after the user says go.
+- main merges `approvals` into main only after the user says go.
 
 ## 6. When it lands
 

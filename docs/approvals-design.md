@@ -45,9 +45,10 @@ the hard rules and the wire; §14 says what changed.
   8. network in `auto`: judged by the checker;
   9. switching to `yolo` leaves the waiting cards open;
   10. the phases run in parallel.
-- **The build lands on a feature branch, never on main** (the user: "a
-  complex feature that needs review"). The user tests a local build from
-  that branch on a real repo; main merges only after his go (plan §5).
+- **The build lands on one local branch, `approvals`, never on main**
+  (the user: "a complex feature that needs review"; "one branch with
+  everything in it"). The user tests a local build from it on a real repo;
+  main merges only after his go (plan §5).
 
 ## 2. The problem: editing through bash
 
@@ -845,12 +846,12 @@ and fold the card.
 
 ## 13. How the build lands (summary; details in the plan §5)
 
-All code goes to the integration branch `sb/approvals`, never to main.
-Each phase-1 agent works on its own branch `sb/approvals-<part>` in its
-own worktree, from `sb/approvals`, and main merges each finished part into
-`sb/approvals`. When the parts are in: a local build from `sb/approvals`
-the user runs on a real repo, a short script of what to try, and main
-merges `sb/approvals` into main only after the user's go.
+All code goes to one local branch, `approvals` (from main, not pushed).
+Every agent works in its own worktree and commits onto that branch with a
+private index built from its current tip and a compare-and-swap
+`update-ref`. When the parts are in: a local build from `approvals` the
+user runs on a real repo, a short script of what to try, and main merges
+`approvals` into main only after the user's go.
 
 ## 14. Changes from approvals.md (d22c024) and from the 3-mode design
 
@@ -870,7 +871,7 @@ merges `sb/approvals` into main only after the user's go.
 | local git (`add`, `commit`, plumbing) was "any other bash" | tier 1 (the private-index commits agents make all day) |
 | `edit` alone for non-OpenAI providers, `write_file` an open question | `edit` + `write_file`, as is (settled) |
 | a card in `accept edits` for most commands | the checker in `auto`, a card when it is off |
-| the build lands on main phase by phase | on `sb/approvals`, merged to main after the user's review (§13) |
+| the build lands on main phase by phase | on one local branch `approvals`, merged to main after the user's review (§13) |
 | card kind `approval`, keys `alt+1/2/3`, `~/.bend-harness/approvals.toml`, `approvals_timeout`, `/tmp` a root | as in the 3-mode design: `confirm` card in the user inbox, `1/2/3`, `~/.bise/approvals.toml`, no time limit; the temp folder moves from `~/.bise/tmp/<agent-id>` to the agent's session folder, and the harness's own `/tmp` files move there too (§7.1) |
 
 Unchanged: the gate wire (spec §3), the hard rules H1–H10 (spec §4.1),
