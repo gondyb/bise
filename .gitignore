@@ -54,3 +54,8 @@ events.jsonl
 /projects/switchboard/docs/brand/site/content/og-variants.html
 /projects/switchboard/docs/brand/site/content/og/
 /projects/switchboard/docs/brand/site/content/hero-bg.html
+# designer's local drafts and raw videos (not used by the site or README)
+/projects/switchboard/docs/brand/site/content/hero-*.html
+/projects/switchboard/docs/brand/site/content/type-*.html
+/projects/switchboard/docs/brand/readme/preview.html
+/projects/switchboard/docs/brand/video/
