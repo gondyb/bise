@@ -357,7 +357,8 @@ const V = {
           const dir = -1;
           // at a height as far as possible from the arcs already over those columns
           // a bit higher on average (user): taller ceiling, and never a flat little bump
-          const top = Math.min(room[dir], L / 1.8), low = Math.min(top, Math.max(3, top * .45)), near = s.b.filter(o => o.dir === dir && over(o)).map(o => o.A);
+          const top = Math.min(room[dir], L / 1.8) * .7,  // 30 % lower at most than the previous take (user)
+                low = Math.min(top, Math.max(3, top * .45)), near = s.b.filter(o => o.dir === dir && over(o)).map(o => o.A);
           let A = rnd(low, top), best = -1;
           for (let k = 0; k < 8; k++) { const c = rnd(low, top), d = near.length ? Math.min(...near.map(a => Math.abs(a - c))) : 99; if (d > best) { best = d; A = c; } }
           s.b.push({ xs, L, p: 0, A, dir, name, done, key });
