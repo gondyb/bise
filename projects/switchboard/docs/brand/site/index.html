@@ -104,8 +104,8 @@
   #try .steps { list-style:none; margin:0; padding:0; }
   #try .steps li { display:grid; grid-template-columns:3ch 1fr; margin:0 0 26px; }
   #try .steps .n { color:var(--acc); font-weight:700; }
-  #try .steps .install { margin-top:14px; }
-  #try code { color:var(--text); background:var(--chip); padding:2px 8px; border-radius:5px; }
+  #try .steps .install { display:flex; width:fit-content; max-width:100%; margin-top:14px; }
+  #try code { color:var(--text); background:var(--chip); padding:2px 8px; border-radius:5px;; white-space:nowrap; }
   #try .fine { margin-top:44px; border-top:1px solid var(--faint); padding-top:28px; color:var(--dim); font-size:14.5px; }
   #try .fine p { margin:0 0 14px; }
   #try .fine b { color:var(--text); font-weight:700; }
