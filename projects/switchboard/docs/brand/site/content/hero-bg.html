@@ -336,9 +336,10 @@ const V = {
           const busy = (d) => s.b.filter(o => o.dir === d && over(o)).length;
           const dir = -1;
           // at a height as far as possible from the arcs already over those columns
-          const top = Math.min(room[dir], L / 2.6), near = s.b.filter(o => o.dir === dir && over(o)).map(o => o.A);
-          let A = rnd(Math.min(2, top), top), best = -1;
-          for (let k = 0; k < 8; k++) { const c = rnd(Math.min(2, top), top), d = near.length ? Math.min(...near.map(a => Math.abs(a - c))) : 99; if (d > best) { best = d; A = c; } }
+          // a bit higher on average (user): taller ceiling, and never a flat little bump
+          const top = Math.min(room[dir], L / 1.8), low = Math.min(top, Math.max(3, top * .45)), near = s.b.filter(o => o.dir === dir && over(o)).map(o => o.A);
+          let A = rnd(low, top), best = -1;
+          for (let k = 0; k < 8; k++) { const c = rnd(low, top), d = near.length ? Math.min(...near.map(a => Math.abs(a - c))) : 99; if (d > best) { best = d; A = c; } }
           s.b.push({ xs, L, p: 0, A, dir, name, done, key });
           if (EVENTS) say(g, Y, xs, `starting an agent · ${name}`);
           if (BUBBLE) s.q.push(`on it · ${name}`);
