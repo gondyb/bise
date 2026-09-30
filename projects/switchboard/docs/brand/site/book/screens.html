@@ -149,6 +149,8 @@
   .tbl b { font-weight:700; }
   .tlabel { color:var(--faint); margin:14px 0 0 3ch; }
   hr { border:0; border-top:1px solid var(--line); margin:40px 0; max-width:112ch; }
+  .plist { padding:6px 0 2px; } .prow { display:grid; grid-template-columns:2ch 3ch 16ch 1fr 4ch; white-space:nowrap; } .prow > span { overflow:hidden; text-overflow:ellipsis; }
+  .prow .pd { color:var(--dim); } .prow .pk { color:var(--faint); text-align:right; } .parch { color:var(--dim); } .parch .pg { color:var(--faint); } .pearly { color:var(--faint); margin:8px 0 2px 5ch; }
   .gc { display:inline-block; width:1ch; text-align:center; }
 </style>
 </head>
@@ -224,6 +226,16 @@ function foot(status, composer, hints, queue = "") {
   ${queue ? `<div class="queue">${queue}</div>` : ""}
   <div class="cbox${typing ? " typing" : ""}"><div class="ctext">${c || '<span class="cur"></span><span class="ph">what\'s on your mind?</span>'}</div></div>
   <div class="hintrow">${/<span/.test(h) ? h : keybar(h)}${tip}</div></div>`;
+}
+// the agent palette (cmd+k): in the composer pane, the list grows upward; ▸ + bold for the selected row, ⌥n on the right
+function palette(q, rows, earlier = [], none = false) {
+  const r = ([sel, g, name, note, key]) => `<div class="prow${sel ? " psel" : ""}"><span class="pm">${sel ? '<span class="acc">▸</span>' : " "}</span><span class="pg">${g}</span><span class="pn">${sel ? `<b>${name}</b>` : name}</span><span class="pd">${note}</span><span class="pk">${key}</span></div>`;
+  const e = earlier.length ? `<div class="pearly">earlier</div>` + earlier.map(([n, d]) => `<div class="prow parch"><span class="pm"> </span><span class="pg">·</span><span class="pn">${n}</span><span class="pd">${d}</span><span class="pk"></span></div>`).join("") : "";
+  const body = none ? `<div class="prow"><span class="pm"> </span><span class="dim">no agent called "${q}". esc to close</span></div>` : rows.map(r).join("") + e;
+  return `<div class="foot"><div class="flabel"><span><span class="dim">you →</span> <span class="acc">find an agent</span></span><span class="dim"><span class="pulse">∿</span> 3 working</span></div>
+  <div class="plist">${body}</div>
+  <div class="cbox typing"><div class="ctext">${q}<span class="cur"></span></div></div>
+  <div class="hintrow">${keybar("↑↓ choose · ⏎ open · esc close")}</div></div>`;
 }
 function term({ h, feed, pan, above = "", f, narrow, overlay = "" }) {
   return `<div class="term${narrow ? " narrow" : ""}"><div class="app">${h ?? head()}<div class="grid"><div class="feed">${feed}</div>${narrow ? "" : (pan ?? PANEL())}</div>${above}${f ?? foot()}</div>${overlay}</div>`;
@@ -1013,6 +1025,26 @@ cards     ctrl+g show · ctrl+n next · alt+r answer · ctrl+x later
 feed      ctrl+o open / close everything · pgup/pgdn scroll · end bottom
 voice     ctrl+r record
 shell     ctrl+\` show / hide</pre></div>` })],
+
+["find an agent · the palette", "cmd+k (ctrl+k where the terminal can't send cmd): type part of a name, ↑↓ choose, ⏎ opens that agent's view, esc closes and gives your draft back. it lives in the composer pane, like ctrl+f find; the list grows upward over the bottom of the feed. the ⌥n on the right teaches the direct key.",
+ term({ feed: you("where are we?") + bise("3 agents working. sad-404 needs you: keep the dog?") + `<div class="b"><span class="who acc">✓</span>perf is done · signup 4.1 s → 0.9 s</div>`,
+   f: palette("", [
+     [true, '<span class="acc">:*</span>', "main", "your team lead", "⌥0"],
+     [false, S.work, "dark-mode", "dark colors, settings first", "⌥2"],
+     [false, S.need, "sad-404", "needs you · keep the dog?", "⌥3"],
+     [false, S.work, "emoji-csv", "the export crashes on emoji", "⌥4"],
+     [false, S.done, "perf", "signup 4.1 s → 0.9 s", "⌥1"]]) })],
+
+["the palette, typing", "the typed letters light up in the names (bold, accent). agents that are over show under a faint 'earlier', read-only, only when the query matches.",
+ term({ feed: you("where are we?") + bise("3 agents working. sad-404 needs you: keep the dog?"),
+   f: palette("da", [
+     [true, S.work, '<b class="acc">da</b>rk-mode', "dark colors, settings first", "⌥2"],
+     [false, S.done, 'up<b class="acc">da</b>te-deps', "bumped 12 packages", "⌥5"]],
+     [['<b class="acc">da</b>ta-export', "archived · read-only"]]) })],
+
+["the palette, no match", "nothing matches: one line says so. esc closes, your draft comes back.",
+ term({ feed: you("where are we?") + bise("3 agents working. sad-404 needs you: keep the dog?"),
+   f: palette("zz", [], [], true) })],
 
 ["drop an agent", "D on a selected agent asks first when it has work in progress.",
  term({ feed: "", pan: PANEL("deploy"), above: `<div class="card"><span class="acc">–</span> drop deploy? its last report failed; nothing uncommitted. <span class="opts"><span><b>y</b> drop</span><span><b>n</b> keep</span></span></div>`,
