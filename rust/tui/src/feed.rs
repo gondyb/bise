@@ -1353,22 +1353,14 @@ pub(crate) fn turn_end_of(events: &[Ev], i: usize) -> Option<u64> {
     })?
 }
 
-/// The local time, `14:31` (`date` knows the zone; the standard library
-/// does not). UTC when `date` fails.
+/// The local time, `14:31`: the zone from `when::offset_at` (one `date`
+/// per hour, cached; UTC when it fails), not a `date` process per call
+/// (BISE-292).
 pub(crate) fn local_hhmm() -> String {
-    let local = std::process::Command::new("date")
-        .arg("+%H:%M")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| s.len() == 5);
-    local.unwrap_or_else(|| {
-        let s = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
-        format!("{:02}:{:02}", (s / 3600) % 24, (s / 60) % 60)
-    })
+    let ms = crate::when::now_ms();
+    let s = (ms / 1000) as i64 + i64::from(crate::when::offset_at(ms));
+    let s = s.rem_euclid(86_400);
+    format!("{:02}:{:02}", s / 3600, (s / 60) % 60)
 }
 
 // ---- everything at once (ctrl+o, input.rs) ----
