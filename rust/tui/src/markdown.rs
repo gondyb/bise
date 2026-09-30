@@ -211,6 +211,9 @@ pub(crate) fn md_lines(text: &str, prose: usize, wide: usize) -> Vec<Line<'stati
     let mut done: Vec<Line<'static>> = Vec::new();
     let mut out: Vec<Line<'static>> = Vec::new();
     let mut in_code = false;
+    // BISE-276: a fence's language colors its lines (syntax.rs)
+    let mut lang: Option<&'static crate::syntax::Lang> = None;
+    let mut state = crate::syntax::State::Normal;
     let raws: Vec<&str> = text.split('\n').collect();
     let mut k = 0;
     while k < raws.len() {
@@ -228,13 +231,28 @@ pub(crate) fn md_lines(text: &str, prose: usize, wide: usize) -> Vec<Line<'stati
         if line.starts_with("```") {
             out.push(Line::from(Span::styled("  ", Style::default().bg(Color::Reset))));
             in_code = !in_code;
+            lang = if in_code { crate::syntax::lang_of(line.trim_start_matches('`').trim()) } else { None };
+            state = crate::syntax::State::Normal;
             continue;
         }
         if in_code {
-            out.push(Line::from(Span::styled(
-                format!("  {}", line),
-                Style::default().fg(theme::text()).bg(Color::Reset),
-            )));
+            let Some(l) = lang else {
+                out.push(Line::from(Span::styled(
+                    format!("  {}", line),
+                    Style::default().fg(theme::text()).bg(Color::Reset),
+                )));
+                continue;
+            };
+            let (runs, next) = crate::syntax::line(l, state, line);
+            state = next;
+            let mut spans = vec![Span::styled("  ", Style::default().bg(Color::Reset))];
+            let mut rest = line;
+            for (n, t) in runs {
+                let b = rest.char_indices().nth(n).map(|(b, _)| b).unwrap_or(rest.len());
+                spans.push(Span::styled(rest[..b].to_string(), crate::syntax::style(t).bg(Color::Reset)));
+                rest = &rest[b..];
+            }
+            out.push(Line::from(spans));
             continue;
         }
         if line.is_empty() {
@@ -751,6 +769,19 @@ mod table_tests {
         // a row cut halfway gets empty cells
         let rows = texts("| a | b | c |\n|---|---|---|\n| 1 | 2", 76);
         assert_eq!(rows[2], "1  2");
+    }
+
+    #[test]
+    fn code_fences_with_a_language_are_colored() {
+        let ls = md_lines("```ts\nconst x = 1 // c\n```\n```\nconst y\n```", 80, 80);
+        let fg = |row: usize, w: &str| ls[row].spans.iter().find(|s| s.content.contains(w)).and_then(|s| s.style.fg);
+        assert_eq!(fg(1, "const"), Some(theme::syntax_keyword()));
+        assert_eq!(fg(1, "1"), Some(theme::syntax_number()));
+        assert_eq!(fg(1, "// c"), Some(theme::syntax_comment()));
+        // no tag: plain text, as before
+        assert_eq!(fg(4, "const y"), Some(theme::text()));
+        let text: String = ls[1].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "  const x = 1 // c");
     }
 
     #[test]
