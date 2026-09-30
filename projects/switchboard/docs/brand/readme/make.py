@@ -51,7 +51,7 @@ def hero(c):
             f'<rect x="250" y="92" width="460" height="160" rx="14" fill="{c["bg"]}" opacity=".82"/>'
             f'<text x="480" y="170" text-anchor="middle" font-size="76" font-weight="700" fill="{c["text"]}" xml:space="preserve">bise <tspan class="kiss" fill="{c["acc"]}">:*</tspan></text>'
             f'<text x="480" y="212" text-anchor="middle" font-size="22" fill="{c["text"]}">multi-agent coding, made human.</text>'
-            f'<text x="480" y="242" text-anchor="middle" font-size="14" fill="{c["dim"]}">ramble. interrupt. change your mind. i run the agents. you stay in flow.</text>')
+            f'<text x="480" y="242" text-anchor="middle" font-size="14" fill="{c["dim"]}">meet your team lead. you stay in flow, i run the agents.</text>')
     return svg(W, H, body, "".join(css), "bise :* multi-agent coding, made human.")
 
 # ---------- demo ----------

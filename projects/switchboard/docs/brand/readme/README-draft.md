@@ -21,9 +21,9 @@
 
 <br>
 
-**you talk to one team lead. it runs the agents. you stay in flow.**
+**meet your team lead. you stay in flow, it runs the agents.**
 
-bise is a terminal app for multi-agent coding. there's one thread per repo, and in it you talk to **main**, the team lead. main splits your ideas into jobs, starts an agent for each one, keeps them in sync, and only comes back to you when a decision is yours.
+bise is a terminal app for multi-agent coding. there's one thread per repo, and in it you talk to **main**, your team lead. main splits your ideas into jobs, starts an agent when a job needs one, keeps them in sync, and only comes back to you when a decision is yours.
 
 you stop micromanaging agents. no sessions to juggle, no workflow to design, nothing to configure. the multi-agent part is built in, and it has opinions.
 
@@ -59,7 +59,7 @@ the first run walks you through a theme, a model key and the folder. `bise docto
 - **one thread per repo.** you always talk to the same thread. it never ends: when it gets long, bise compacts it and keeps going.
 - **main is the team lead.** it answers what it can, starts an agent when a job needs one, follows up, and picks up work that stopped half-way.
 - **agents work in the background,** in your checkout. they message each other before they touch the same files. one makes a git worktree only when it needs its own copy, and cleans it up after.
-- **cards are the decisions that need you.** they wait in an inbox above your message, never in the middle of your sentence.
+- **cards are the decisions that need you.** only the real ones reach you. they wait in an inbox above your message (`ctrl+g`), never in the middle of your sentence.
 
 four words to learn: you, main, agents, cards.
 
