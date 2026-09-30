@@ -166,3 +166,26 @@ fn a_slow_check_is_cut_at_its_timeout() {
     assert_eq!(output(c, Duration::from_millis(200)), None);
     assert!(t.elapsed() < Duration::from_secs(2));
 }
+
+#[test]
+fn setup_ghostty_adds_the_lines_once_with_a_backup() {
+    // BISE-273: `bise setup ghostty`, the card's change without the card
+    let h = tmp("setup-ghostty");
+    let c = ctx(&h, &h, &[("XDG_CONFIG_HOME", &h.join("xdg").to_string_lossy())]);
+    let (code, out) = setup_ghostty(&c, true);
+    assert_eq!(code, 0);
+    assert!(out.join("\n").contains("+keybind = super+f=unbind") && out.last().unwrap().contains("dry run"), "{out:?}");
+    let mac = h.join("Library/Application Support/com.mitchellh.ghostty/config");
+    assert!(!mac.exists(), "a dry run writes nothing");
+    std::fs::create_dir_all(mac.parent().unwrap()).unwrap();
+    std::fs::write(&mac, "font-size = 14\nkeybind = super+k=unbind").unwrap();
+    let (code, out) = setup_ghostty(&c, false);
+    assert_eq!(code, 0, "{out:?}");
+    let text = std::fs::read_to_string(&mac).unwrap();
+    assert!(text.starts_with("font-size = 14\nkeybind = super+k=unbind\n"), "{text}");
+    assert!(ghostty_missing(&text).is_empty(), "{text}");
+    assert_eq!(text.matches("super+k").count(), 1);
+    assert_eq!(std::fs::read_to_string(backup_of(&mac)).unwrap(), "font-size = 14\nkeybind = super+k=unbind");
+    let (code, out) = setup_ghostty(&c, false);
+    assert_eq!((code, out[0].contains("nothing to do")), (0, true), "{out:?}");
+}

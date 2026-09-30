@@ -159,6 +159,12 @@ fn auth_paths() -> bise_catalog::auth_cli::Paths {
     }
 }
 
+/// The first run's live key check (BISE-266), for `login --check` and
+/// `auth check`: `BEND_PROVIDER_URL` points it at the tests' fake provider.
+fn key_check(setup: &bise_catalog::Setup, model: &str, key: &str) -> Result<(), String> {
+    bend_tui::check_model(setup, model, key, &|k: &str| std::env::var(k).ok().filter(|v| !v.is_empty()))
+}
+
 /// Every provider's key where the Bend runtime reads it: getenv(key_env)
 /// (the REPLs inherit this process's env). Per provider: the env var
 /// (and its aliases), then auth.json, then the old .env files
@@ -410,6 +416,9 @@ usage:
   {cmd} models [filter]         the models bise knows, and which keys are set
   {cmd} login|logout [provider] store or remove a provider's key
   {cmd} auth list               each provider's key source (never the key)
+  {cmd} auth check [provider]   one tiny call with the key bise finds (login --check: before saving)
+  {cmd} config get|set KEY [V]  config.toml's model, agent_model, small_model, project_doc_fallback_filenames
+  {cmd} setup ghostty           add the Ghostty lines /setup offers (--dry-run: show only)
   {cmd} plugins [list|enable|disable]  agent plugins
   {cmd} doctor                  check this Mac, the install, keys, model, hubs
   {cmd} session show [<id>]     a session log: the transcript, --context, --raw
@@ -534,9 +543,13 @@ fn main() -> std::io::Result<()> {
             Some("plugins") => std::process::exit(bend_plugins::cli::main(&args[1..])),
             // no load_keys(): the listings tell each key's source
             Some("models") => std::process::exit(bise_catalog::cli::main(&args[1..], &auth_paths())),
-            Some("login") => std::process::exit(bise_catalog::auth_cli::login_main(&args[1..], &auth_paths())),
+            Some("login") => std::process::exit(bise_catalog::auth_cli::login_main(&args[1..], &auth_paths(), &key_check)),
             Some("logout") => std::process::exit(bise_catalog::auth_cli::logout_main(&args[1..], &auth_paths())),
-            Some("auth") => std::process::exit(bise_catalog::auth_cli::auth_main(&args[1..], &auth_paths())),
+            Some("auth") => std::process::exit(bise_catalog::auth_cli::auth_main(&args[1..], &auth_paths(), &key_check)),
+            // config.toml's top-level choices and the /setup changes, for
+            // a script or the install prompt (BISE-273)
+            Some("config") => std::process::exit(bise_catalog::config_cli::main(&args[1..], &auth_paths())),
+            Some("setup") => std::process::exit(bend_tui::setup_main(&args[1..])),
             Some("switchboard") => {
                 let debug = args.iter().any(|a| a == "--debug");
                 return run_switchboard(&args[1..], debug);

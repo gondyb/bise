@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 pub mod auth;
 pub mod auth_cli;
 pub mod cli;
+pub mod config_cli;
 pub mod voice;
 
 /// The command's name in messages and usages (BISE-165: was `bend-harness`).
@@ -811,7 +812,19 @@ pub struct Setup {
 /// (BISE-266: the first run's pick): the line replaced where it is, else
 /// added before the first table; the rest of the file as it was.
 pub fn with_model(config: &str, model: &str) -> String {
-    let line = format!("model = \"{}\"", model.replace('\\', "\\\\").replace('"', "\\\""));
+    with_key(config, "model", &toml_string(model))
+}
+
+/// A TOML basic string: `"…"`, `\` and `"` escaped.
+pub fn toml_string(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// config.toml's text with its top-level `key` set to `value` (a TOML
+/// value as written: `"x"`, `["a", "b"]`), like [`with_model`]
+/// (`bise config set`, BISE-273).
+pub fn with_key(config: &str, key: &str, value: &str) -> String {
+    let line = format!("{} = {}", key, value);
     let mut out: Vec<String> = Vec::new();
     let (mut done, mut in_table) = (false, false);
     for l in config.lines() {
@@ -826,7 +839,7 @@ pub fn with_model(config: &str, model: &str) -> String {
                 done = true;
             }
         }
-        let is_model = !in_table && t.split_once('=').is_some_and(|(k, _)| k.trim() == "model");
+        let is_model = !in_table && t.split_once('=').is_some_and(|(k, _)| k.trim() == key);
         if is_model {
             if !done {
                 out.push(line.clone());

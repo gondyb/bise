@@ -103,6 +103,35 @@ pub(crate) fn check(c: &Call, env: &dyn Fn(&str) -> Option<String>) -> Result<()
     }
 }
 
+/// The same check for the command line (`bise login --check`, `bise auth
+/// check`, BISE-273): `model` ("provider/id") resolved in `setup`'s
+/// catalog, called with `key`; Err = the reason in the key step's words
+/// (never the key).
+pub fn check_model(
+    setup: &bise_catalog::Setup,
+    model: &str,
+    key: &str,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Result<(), String> {
+    let r = setup.catalog.resolve(model);
+    if r.known == bise_catalog::Known::NoProvider {
+        return Err(format!("unknown provider '{}' in {}", r.provider, model));
+    }
+    let name = setup.catalog.provider(&r.provider).map(|p| p.name.clone()).unwrap_or_else(|| r.provider.clone());
+    let call = Call { provider: r.provider.clone(), api: r.api.clone(), base_url: r.base_url.clone(), model: r.id.clone(), key: key.to_string() };
+    check(&call, env).map_err(|f| say(&f, &name, &r.name))
+}
+
+/// Why a key did not pass, in the key step's words.
+pub(crate) fn say(f: &Fail, provider: &str, model: &str) -> String {
+    match f {
+        Fail::WrongKey => format!("{} says this key is wrong", provider),
+        Fail::NoCredit => "the key works, but the account has no credit".into(),
+        Fail::Model => format!("{} doesn't know {}: pick another model (--model)", provider, model),
+        Fail::Unreachable(e) => format!("i couldn't reach {}: {}", provider, e.trim_end_matches('.')),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

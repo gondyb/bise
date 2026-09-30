@@ -262,3 +262,76 @@ fn a_spawn_sees_a_login_or_logout_made_after_the_hub_started() {
     let spawn = keys.resolve(&c).spawn_env(&c, &ours);
     assert!(spawn.contains(&("MISTRAL_API_KEY".into(), Some("m-saved".into()))), "{spawn:?}");
 }
+
+// ---- BISE-273: login --check / --from / --model, auth check ----
+
+fn args(a: &[&str]) -> Vec<String> {
+    a.iter().map(|s| s.to_string()).collect()
+}
+
+#[test]
+fn login_options_parse_and_pick_the_model_to_check() {
+    let o = auth_cli::parse_opts(&args(&["anthropic", "--check", "--from", "/x/.env"])).unwrap();
+    assert_eq!((o.provider.as_deref(), o.check, o.from.as_deref()), (Some("anthropic"), true, Some(Path::new("/x/.env"))));
+    let o = auth_cli::parse_opts(&args(&["--model", "openai/gpt-5.5", "openai"])).unwrap();
+    assert_eq!((o.provider.as_deref(), o.model.as_deref(), o.check), (Some("openai"), Some("openai/gpt-5.5"), false));
+    assert_eq!(auth_cli::parse_opts(&args(&["--model"])), Err(2));
+    assert_eq!(auth_cli::parse_opts(&args(&["a", "b"])), Err(2));
+    let s = Setup::from_text(Some("model = \"anthropic/claude-x\"\n"), &no_env);
+    let ant = s.catalog.provider("anthropic").unwrap();
+    let oai = s.catalog.provider("openai").unwrap();
+    // the model in use when it is the provider's, else the provider's pick
+    assert_eq!(auth_cli::check_model_for(&s, ant, None).unwrap(), "anthropic/claude-x");
+    assert_eq!(auth_cli::check_model_for(&s, oai, None).unwrap(), format!("openai/{}", oai.model));
+    assert_eq!(auth_cli::check_model_for(&s, oai, Some("openai/o9")).unwrap(), "openai/o9");
+    assert!(auth_cli::check_model_for(&s, oai, Some("anthropic/claude-x")).is_err());
+}
+
+#[test]
+fn a_key_is_read_from_a_dotenv_or_shell_file_without_showing_it() {
+    let dir = tmp("from");
+    std::fs::create_dir_all(&dir).unwrap();
+    let c = Catalog::builtin();
+    let p = c.provider("anthropic").unwrap();
+    let rc = dir.join(".zshrc");
+    std::fs::write(&rc, format!("alias ll='ls -l'\nexport ANTHROPIC_API_KEY=\"{}\"\n", SECRET)).unwrap();
+    assert_eq!(auth_cli::key_from_file(&rc, p, None).unwrap(), SECRET);
+    let e = auth_cli::key_from_file(&rc, c.provider("openai").unwrap(), None).unwrap_err();
+    assert!(e.contains("OPENAI_API_KEY") && !e.contains(SECRET), "{e}");
+    assert!(auth_cli::key_from_file(&dir.join("nope"), p, None).is_err());
+    // a quoted paste is a key too
+    assert_eq!(auth_cli::clean_key(&format!("'{}'\n", SECRET)).unwrap(), SECRET);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn login_check_saves_only_a_key_that_answers() {
+    let dir = tmp("check");
+    let ps = paths(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let rc = dir.join(".env");
+    let calls = std::cell::RefCell::new(Vec::new());
+    let check = |_: &Setup, m: &str, k: &str| {
+        calls.borrow_mut().push(m.to_string());
+        if k == SECRET { Ok(()) } else { Err("Anthropic says this key is wrong".to_string()) }
+    };
+    let from = rc.to_string_lossy().to_string();
+    std::fs::write(&rc, "ANTHROPIC_API_KEY=sk-bad\n").unwrap();
+    assert_eq!(auth_cli::login_main(&args(&["anthropic", "--check", "--from", &from]), &ps, &check), 1);
+    assert!(!ps.auth_file.exists(), "a refused key is not saved");
+    std::fs::write(&rc, format!("ANTHROPIC_API_KEY={}\n", SECRET)).unwrap();
+    assert_eq!(auth_cli::login_main(&args(&["anthropic", "--check", "--from", &from]), &ps, &check), 0);
+    let store = Store::read(&ps.auth_file).unwrap();
+    assert_eq!(store.key("anthropic"), Some(SECRET));
+    let pick = Catalog::builtin().provider("anthropic").unwrap().model.clone();
+    assert_eq!(calls.borrow().as_slice(), [format!("anthropic/{pick}"), format!("anthropic/{pick}")]);
+    // without --check nor --model: no call
+    assert_eq!(auth_cli::login_main(&args(&["anthropic", "--from", &from]), &ps, &check), 0);
+    assert_eq!(calls.borrow().len(), 2);
+    // auth check: the key bise finds (auth.json here), nothing written
+    let before = std::fs::read_to_string(&ps.auth_file).unwrap();
+    assert_eq!(auth_cli::auth_main(&args(&["check", "anthropic"]), &ps, &check), 0);
+    assert_eq!(auth_cli::auth_main(&args(&["check", "openai"]), &ps, &check), 1, "no openai key");
+    assert_eq!(std::fs::read_to_string(&ps.auth_file).unwrap(), before);
+    let _ = std::fs::remove_dir_all(&dir);
+}

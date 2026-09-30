@@ -42,6 +42,7 @@ pub(crate) use keys::{scene, Scene};
 #[cfg(test)]
 use keys::{nav_key, Nav};
 pub use client::{run_switchboard, take_reexec};
+pub use tune::setup_main;
 use client::{follow_hub_exe, follow_reload, HUB_DOWN, HUB_UP};
 #[cfg(test)]
 use client::{new_sb, sb_app};

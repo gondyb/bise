@@ -7,10 +7,13 @@
 //! - `report`: the human and JSON listings;
 //! - `stdio`: a stdio MCP client (one child process, JSON-RPC lines);
 //! - `bridge`: the per-session loopback HTTP bridge the Bend REPL calls;
-//! - `cli`: the `bise plugins ...` subcommand.
+//! - `cli`: the `bise plugins ...` subcommand;
+//! - `import`: `bise plugins import-mcp`, another agent's MCP servers as
+//!   one plugin (BISE-273).
 
 pub mod bridge;
 pub mod cli;
+pub mod import;
 pub mod report;
 pub mod resolve;
 pub mod state;

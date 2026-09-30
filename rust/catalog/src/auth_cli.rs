@@ -26,8 +26,13 @@ pub struct Paths {
 fn usage() -> String {
     format!(
         "usage: {cli} login [provider]    store a provider's API key (asked with the input hidden)
+         --check                   first one tiny call to the model with it: saved only if it answers
+         --model provider/model    the model of that call (default: the one in use, else the provider's pick)
+         --from FILE               read the key from FILE's PROVIDER_API_KEY=... line (.env, shell rc)
        {cli} logout [provider]   remove it
        {cli} auth list           which providers have a key, and from where
+       {cli} auth check [provider] [--model provider/model]
+                                 one tiny call with the key bise finds; saves nothing
   A key is looked up in the environment first (the provider's variable,
   e.g. OPENAI_API_KEY), then in auth.json, then in the old .env files.
   Without a terminal, login reads the key from stdin.
@@ -37,10 +42,11 @@ fn usage() -> String {
 }
 
 /// `bise auth <list|login|logout>`; returns the exit code.
-pub fn auth_main(args: &[String], paths: &Paths) -> i32 {
+pub fn auth_main(args: &[String], paths: &Paths, check: Checker) -> i32 {
     match args.first().map(|s| s.as_str()) {
         None | Some("list") | Some("ls") => list_main(paths),
-        Some("login") => login_main(&args[1..], paths),
+        Some("login") => login_main(&args[1..], paths, check),
+        Some("check") => check_main(&args[1..], paths, check),
         Some("logout") => logout_main(&args[1..], paths),
         Some("-h") | Some("--help") => {
             println!("{}", usage());
@@ -51,6 +57,83 @@ pub fn auth_main(args: &[String], paths: &Paths) -> i32 {
             2
         }
     }
+}
+
+/// The live key check (BISE-266's, the TUI's code): `(setup, model, key)`,
+/// Err = why in plain words (never the key).
+pub type Checker<'a> = &'a dyn Fn(&Setup, &str, &str) -> Result<(), String>;
+
+/// `login`'s and `auth check`'s arguments.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Opts {
+    pub provider: Option<String>,
+    pub check: bool,
+    pub model: Option<String>,
+    pub from: Option<PathBuf>,
+}
+
+/// Parse `[provider] [--check] [--model M] [--from FILE]`; Err = exit code.
+pub fn parse_opts(args: &[String]) -> Result<Opts, i32> {
+    let mut o = Opts::default();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "-h" | "--help" => {
+                println!("{}", usage());
+                return Err(0);
+            }
+            "--check" => o.check = true,
+            "--model" | "--from" => {
+                let Some(v) = it.next().filter(|v| !v.starts_with('-')) else {
+                    eprintln!("{} needs a value\n{}", a, usage());
+                    return Err(2);
+                };
+                if a == "--model" {
+                    o.model = Some(v.clone());
+                } else {
+                    o.from = Some(PathBuf::from(v));
+                }
+            }
+            s if !s.starts_with('-') && o.provider.is_none() => o.provider = Some(s.to_string()),
+            _ => {
+                eprintln!("{}", usage());
+                return Err(2);
+            }
+        }
+    }
+    Ok(o)
+}
+
+/// The model a check calls for provider `p`: `--model` (of that
+/// provider), else the model in use when it is `p`'s, else `p`'s pick.
+pub fn check_model_for(setup: &Setup, p: &Provider, asked: Option<&str>) -> Result<String, String> {
+    if let Some(m) = asked {
+        let r = setup.catalog.resolve(m);
+        if r.provider != p.id {
+            return Err(format!("{} is not a {} model", m, p.id));
+        }
+        return Ok(m.to_string());
+    }
+    let r = setup.catalog.resolve(&setup.model);
+    if r.provider == p.id {
+        return Ok(setup.model.clone());
+    }
+    if !p.model.is_empty() {
+        return Ok(format!("{}/{}", p.id, p.model));
+    }
+    Err(format!("which {} model should the check call? give --model {}/<model>", p.id, p.id))
+}
+
+/// The key in `file` under `p`'s variable (or one of its aliases):
+/// `.env` or shell lines (`export X=...`, quotes off). Err never holds
+/// the key.
+pub fn key_from_file(file: &std::path::Path, p: &Provider, home: Option<&std::path::Path>) -> Result<String, String> {
+    let text = std::fs::read_to_string(file).map_err(|e| format!("cannot read {}: {}", tilde(file, home), e))?;
+    let f = EnvFile::parse(file.to_path_buf(), &text);
+    crate::auth::env_names(&p.key_env)
+        .iter()
+        .find_map(|n| f.vars.get(*n).filter(|v| !v.trim().is_empty()).cloned())
+        .ok_or_else(|| format!("{} has no {} line", tilde(file, home), p.key_env))
 }
 
 /// The provider argument, or None; Err = exit code.
@@ -100,7 +183,7 @@ pub fn check_provider<'a>(c: &'a Catalog, id: &str) -> Result<&'a Provider, Stri
 /// A key as typed or pasted: trimmed; Err (without the key) when it is
 /// empty or holds a space or a control character.
 pub fn clean_key(raw: &str) -> Result<String, String> {
-    let k = raw.trim();
+    let k = raw.trim().trim_matches('"').trim_matches('\'');
     if k.is_empty() {
         return Err("no key given: nothing saved".into());
     }
@@ -210,11 +293,12 @@ fn list_main(paths: &Paths) -> i32 {
 }
 
 /// `bise login [provider]`; returns the exit code.
-pub fn login_main(args: &[String], paths: &Paths) -> i32 {
-    let arg = match one_arg(args) {
-        Ok(a) => a,
+pub fn login_main(args: &[String], paths: &Paths, check: Checker) -> i32 {
+    let opts = match parse_opts(args) {
+        Ok(o) => o,
         Err(code) => return code,
     };
+    let arg = opts.provider.clone();
     let setup = Setup::load(&paths.config);
     let c = &setup.catalog;
     if let Err(code) = read_store(paths) {
@@ -239,7 +323,23 @@ pub fn login_main(args: &[String], paths: &Paths) -> i32 {
             return 1;
         }
     };
-    let raw = if tty {
+    let model = match (opts.check || opts.model.is_some()).then(|| check_model_for(&setup, p, opts.model.as_deref())) {
+        Some(Err(e)) => {
+            eprintln!("{}", e);
+            return 2;
+        }
+        Some(Ok(m)) => Some(m),
+        None => None,
+    };
+    let raw = if let Some(file) = &opts.from {
+        match key_from_file(file, p, paths.home.as_deref()) {
+            Ok(k) => k,
+            Err(e) => {
+                eprintln!("{}", e);
+                return 1;
+            }
+        }
+    } else if tty {
         match read_hidden(&format!("API key for {} ({}, input hidden): ", p.name, p.key_env)) {
             Ok(Some(k)) => k,
             Ok(None) => {
@@ -259,6 +359,20 @@ pub fn login_main(args: &[String], paths: &Paths) -> i32 {
         }
         s
     };
+    if let Some(m) = &model {
+        let key = match clean_key(&raw) {
+            Ok(k) => k,
+            Err(e) => {
+                eprintln!("{}", e);
+                return 1;
+            }
+        };
+        if let Err(e) = check(&setup, m, &key) {
+            eprintln!("{}: nothing saved", e);
+            return 1;
+        }
+        println!("{} answered with this key", m);
+    }
     match login(paths, p, &raw, &real_env) {
         Ok(lines) => {
             for l in lines {
@@ -268,6 +382,62 @@ pub fn login_main(args: &[String], paths: &Paths) -> i32 {
         }
         Err(e) => {
             eprintln!("{}", e);
+            1
+        }
+    }
+}
+
+/// `bise auth check [provider] [--model M]`: the live check with the key
+/// bise finds (env, auth.json, an old .env file), nothing saved; the exit
+/// code (0: it answered).
+pub fn check_main(args: &[String], paths: &Paths, check: Checker) -> i32 {
+    let opts = match parse_opts(args) {
+        Ok(o) => o,
+        Err(code) => return code,
+    };
+    if opts.from.is_some() {
+        eprintln!("{}", usage());
+        return 2;
+    }
+    let setup = Setup::load(&paths.config);
+    let c = &setup.catalog;
+    let id = match (&opts.provider, &opts.model) {
+        (Some(id), _) => id.clone(),
+        (None, Some(m)) => c.resolve(m).provider,
+        (None, None) => c.resolve(&setup.model).provider,
+    };
+    let p = match check_provider(c, &id) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("{}", e);
+            return 1;
+        }
+    };
+    let model = match check_model_for(&setup, p, opts.model.as_deref()) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("{}", e);
+            return 2;
+        }
+    };
+    let store = match read_store(paths) {
+        Ok(s) => s,
+        Err(code) => return code,
+    };
+    let files = EnvFile::read_all(&paths.env_files);
+    let keys = Keys { env: &real_env, store: &store, files: &files };
+    let Some(found) = keys.for_provider(p) else {
+        eprintln!("no {} key: {} or '{} login {}'", p.id, p.key_env, CLI, p.id);
+        return 1;
+    };
+    let from = found.from.describe(paths.home.as_deref());
+    match check(&setup, &model, &found.key) {
+        Ok(()) => {
+            println!("{} answered with the key from {}", model, from);
+            0
+        }
+        Err(e) => {
+            eprintln!("{} (the key from {})", e, from);
             1
         }
     }

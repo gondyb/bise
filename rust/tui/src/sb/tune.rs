@@ -682,6 +682,77 @@ pub(crate) fn agents_text(ctx: &Ctx, root: &Path) -> (String, bool) {
     }
 }
 
+// ---- `bise setup ghostty` (BISE-273) ----
+
+/// The setup card's Ghostty change without the card, for an install
+/// prompt or a script: `bise setup ghostty [--dry-run]` adds the missing
+/// lines to Ghostty's config (a backup first) and says what it did.
+/// Run again, it finds nothing to add. Returns the exit code.
+pub fn setup_main(args: &[String]) -> i32 {
+    let usage = "usage: bise setup scan | ghostty [--dry-run]
+  scan: what this machine has for bise (keys' places, Claude Code's and
+  Codex's model, instructions, skills, MCP servers, repos), never a key.
+  ghostty: add the lines that give cmd+v, cmd+f, cmd+k and cmd+a to bise in Ghostty's
+  config (the same lines /setup offers); a copy of the file goes to
+  <config>.bise-backup first. --dry-run shows the change and writes nothing.";
+    let (what, dry) = match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+        ["ghostty"] => ("ghostty", false),
+        ["ghostty", "--dry-run"] | ["--dry-run", "ghostty"] => ("ghostty", true),
+        ["scan"] => {
+            let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+            let home = bise_home::Home::from_lookup(&env);
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            print!("{}", crate::scan::render(&env, home.user_home(), &home, &cwd));
+            return 0;
+        }
+        ["-h" | "--help" | "help"] => {
+            println!("{usage}");
+            return 0;
+        }
+        _ => {
+            eprintln!("{usage}");
+            return 2;
+        }
+    };
+    debug_assert_eq!(what, "ghostty");
+    let vars: Vars = std::env::vars().collect();
+    let look = vars.clone();
+    let home = bise_home::Home::from_lookup(&move |k: &str| look.get(k).cloned().filter(|v| !v.is_empty()));
+    let ctx = Ctx { vars, home, dir: PathBuf::from("."), cmd_keys: false, scope: Scope::All, mac: cfg!(target_os = "macos") };
+    let (code, lines) = setup_ghostty(&ctx, dry);
+    for l in lines {
+        println!("{l}");
+    }
+    code
+}
+
+/// `bise setup ghostty`, over a context: the exit code and the lines.
+pub(crate) fn setup_ghostty(ctx: &Ctx, dry: bool) -> (i32, Vec<String>) {
+    let file = ghostty_config(ctx);
+    let shown = bise_catalog::auth::tilde(&file, Some(ctx.home.user_home()));
+    let old = std::fs::read_to_string(&file).ok();
+    let add = ghostty_missing(old.as_deref().unwrap_or(""));
+    if add.is_empty() {
+        return (0, vec![format!("{shown} has the lines already: nothing to do")]);
+    }
+    let old_n = old.as_deref().map(|t| t.lines().count()).unwrap_or(0);
+    let mut out = vec![diff_add(&shown, old_n, &add, old.is_none())];
+    if dry {
+        out.push("dry run: nothing written".into());
+        return (0, out);
+    }
+    match apply_keys(&file, &add) {
+        Ok(backup) => {
+            out.push(format!("added {} line(s) to {shown}: {} reach bise now", add.len(), keys_of(&add)));
+            if let Some(b) = backup {
+                out.push(format!("backup: {} · Ghostty reloads its config with cmd+shift+,", bise_catalog::auth::tilde(&b, Some(ctx.home.user_home()))));
+            }
+            (0, out)
+        }
+        Err(e) => (1, vec![format!("cannot write {shown}: {e}")]),
+    }
+}
+
 #[cfg(test)]
 #[path = "tune_tests.rs"]
 mod tests;

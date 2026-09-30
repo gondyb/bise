@@ -84,6 +84,7 @@ mod crash;
 mod help;
 mod keybar;
 mod keycheck;
+pub(crate) mod scan;
 mod onboarding;
 mod hints;
 mod ctrlhint;
@@ -103,7 +104,8 @@ mod feed_render_tests;
 #[cfg(test)]
 mod quiet_send_tests;
 pub use keyprobe::keyprobe;
-pub use sb::{run_switchboard, take_reexec};
+pub use sb::{run_switchboard, setup_main, take_reexec};
+pub use keycheck::check_model;
 pub use crash::install as install_crash_hook;
 
 #[cfg(test)]

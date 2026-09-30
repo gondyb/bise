@@ -7,6 +7,7 @@ use crate::{bridge, report, resolve, state};
 pub const USAGE: &str = "usage:
   bise plugins [list] [--workspace DIR] [--json]
   bise plugins enable|disable NAME
+  bise plugins import-mcp NAME [--dry-run] < servers.json   (Claude Code's / Codex's MCP servers as one plugin)
   bise plugins serve --dir DIR [--workspace DIR] [--parent PID]   (internal: the session bridge)
 
 Roots: ~/.agents/plugins (or $BEND_PLUGINS_HOME) and <workspace>/.agents/plugins.
@@ -72,6 +73,10 @@ pub fn main(args: &[String]) -> i32 {
                     1
                 }
             }
+        }
+        "import-mcp" => {
+            let root = resolve::Roots::standard(None).user.unwrap_or_else(|| resolve::home().join(".agents/plugins"));
+            crate::import::main(&args[1..], &root)
         }
         "serve" => {
             let Some(dir) = val(args, "--dir") else {
