@@ -24,13 +24,16 @@
   .t1 { font-size:clamp(22px, 2.8vw, 34px); font-weight:700; margin-top:34px; letter-spacing:-.02em; }
   .t2 { color:var(--dim); margin-top:12px; font-size:15px; }
   .tag { position:absolute; left:4vw; top:22px; z-index:3; max-width:46ch; font-size:13px; line-height:1.6; color:var(--dim); }
+  .lbls { margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .lbls button { font:inherit; font-size:12px; background:none; border:1px solid var(--faint); color:var(--dim); border-radius:6px; padding:2px 8px; cursor:pointer; }
+  .lbls button.on { color:var(--acc); border-color:var(--acc); }
   .tag b { color:var(--text); font-size:15px; } .tag .pick { color:var(--acc); }
 </style>
 </head>
 <body>
 <div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
 
-<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.<div class="lbls">labels: <button data-l="feat(x)" class="on">feat(confetti)</button><button data-l="feat/x">feat/confetti</button><button data-l="adding x">adding confetti</button><button data-l="x">confetti</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
 <section class="v" data-v="seeds"><div class="tag"><b>7 · seeds</b> <span class="pick">new · mix of 5 and 6</span><br>the dandelion sky, plus one thread. now and then an agent lifts off the thread like a seed (∿ name), floats a while, and lands further along with a ✓. the thread's :* keeps walking.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
@@ -52,6 +55,7 @@
 
 <script>
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+document.querySelectorAll(".lbls button").forEach(b => b.onclick = () => { LABEL = LABELS[b.dataset.l]; document.querySelectorAll(".lbls button").forEach(o => o.classList.toggle("on", o === b)); });
 document.getElementById("th").onclick = e => { const h = document.documentElement, d = h.dataset.theme === "dark"; h.dataset.theme = d ? "light" : "dark"; e.target.textContent = d ? "dark" : "light"; };
 const hash = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -92,6 +96,9 @@ function dots(g, pts, cl = "") {
     for (let k = 0; k < steps; k++) g.put(x + k / steps, y + (n - y) * k / steps, "·", cl);
   }
 }
+// how an agent is labelled on the branch (switch on section 9)
+const LABELS = { "feat(x)": x => `feat(${x})`, "feat/x": x => `feat/${x}`, "adding x": x => `adding ${x}`, "x": x => x };
+let LABEL = LABELS["feat(x)"];
 const V = {
   now(s) {
     const RAMP = " .·-~∼≈";
@@ -219,7 +226,7 @@ const V = {
       if (s.kx > g.cols + 2 && !s.b.length) { s.kx = -2; s.last = -99; }
       const kx = Math.floor(s.kx);
       // it sends agents out from where it stands. a landing spot must not share its label's room with another one
-      const name = NAMES[Math.floor(rnd(0, NAMES.length))], ko = g.ko;
+      const name = LABEL(NAMES[Math.floor(rnd(0, NAMES.length))]), ko = g.ko;
       if (s.b.length < 3 && s.kx - s.last > 14 && kx > 2 && Math.random() < .02) {
         const free = (L) => { const a = kx + 1 + L, z = a + 2 + name.length; return z < g.cols - 4 && s.b.every(o => { const oa = o.xs + o.L, oz = oa + 2 + o.name.length; return z + 3 < oa || oz + 3 < a; }); };
         let L = 0; for (let k = 0; k < 12 && !L; k++) { const c = Math.floor(rnd(36, 80)); if (free(c)) L = c; }
