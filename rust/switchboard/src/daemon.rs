@@ -1671,6 +1671,19 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         );
     }
     crate::util::timing("journal replayed");
+    // sb-core dies (an OOM, a runtime error, killed): the hub restarts it
+    // on the journal instead of dying with it (BISE-292)
+    {
+        let (jp, lp) = (paths.clone(), paths.clone());
+        hub.set_revive(crate::core::Revive::new(
+            Box::new(move || {
+                let (mut events, _) = read_journal(&std::fs::read_to_string(jp.journal()).unwrap_or_default());
+                crate::sweep::follow_moves(&mut events, &jp.worktrees);
+                events
+            }),
+            Box::new(move |s| log_line(&lp, s)),
+        ));
+    }
     let journal = std::fs::OpenOptions::new()
         .create(true)
         .append(true)

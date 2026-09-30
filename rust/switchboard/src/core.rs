@@ -501,15 +501,25 @@ impl CoreLink {
         })
     }
 
-    /// One input line, one answer line.
-    pub fn call(&mut self, v: &Value) -> Value {
+    /// One input line, one answer line; an error when sb-core is gone
+    /// (or answers something that is not JSON).
+    pub fn call(&mut self, v: &Value) -> std::io::Result<Value> {
         let mut line = v.to_string();
         line.push('\n');
-        self.w.write_all(line.as_bytes()).expect("sb-core: write");
+        self.w.write_all(line.as_bytes())?;
         let mut back = String::new();
-        self.r.read_line(&mut back).expect("sb-core: read");
+        if self.r.read_line(&mut back)? == 0 {
+            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "its connection closed"));
+        }
         serde_json::from_str(&back)
-            .unwrap_or_else(|e| panic!("sb-core: bad answer {:?}: {}", back, e))
+            .map_err(|e| std::io::Error::other(format!("a bad answer {:?}: {}", clip(&back, 200), e)))
+    }
+
+    /// Tests only: kill sb-core under the hub.
+    #[cfg(test)]
+    pub fn kill(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -549,7 +559,32 @@ pub struct Hub {
     places: BTreeMap<String, Place>,
     dirty: bool,
     link: CoreLink,
+    /// How to bring sb-core back when it dies (the daemon's; none: a
+    /// death panics, as at boot and in most tests).
+    revive: Option<Revive>,
+    /// Lines for main's feed from a revival, out at the next input.
+    revived: Vec<String>,
 }
+
+/// What the hub needs to restart a dead sb-core (BISE-292): the journal
+/// (the durable state, replayed into the new one) and hub.log.
+pub struct Revive {
+    pub journal: Box<dyn FnMut() -> Vec<Value>>,
+    pub log: Box<dyn Fn(&str)>,
+    /// When the last restarts happened (ms): a crash loop gives up.
+    times: Vec<u64>,
+}
+
+impl Revive {
+    pub fn new(journal: Box<dyn FnMut() -> Vec<Value>>, log: Box<dyn Fn(&str)>) -> Revive {
+        Revive { journal, log, times: Vec::new() }
+    }
+}
+
+/// More restarts than this in `REVIVE_WINDOW_MS`: sb-core dies on its
+/// state, not by accident; the hub stops (as before BISE-292).
+const REVIVE_LIMIT: usize = 3;
+const REVIVE_WINDOW_MS: u64 = 60_000;
 
 type Fx = Vec<Effect>;
 
@@ -647,7 +682,8 @@ impl Hub {
         let mut link = CoreLink::start().unwrap_or_else(|e| {
             panic!("sb-core not found ({}): {}", core_bin().display(), e)
         });
-        link.call(&json!({"t": "init", "workspace": workspace}));
+        link.call(&json!({"t": "init", "workspace": workspace}))
+            .unwrap_or_else(|e| panic!("sb-core: {}", e));
         let mut hub = Hub {
             st: State::new(workspace),
             workspace: workspace.to_string(),
@@ -661,6 +697,8 @@ impl Hub {
             places: BTreeMap::new(),
             dirty: false,
             link,
+            revive: None,
+            revived: Vec::new(),
         };
         hub.view_all();
         hub
@@ -676,8 +714,9 @@ impl Hub {
             Run::Idle => "idle",
             Run::Busy => "busy",
         };
-        let out = self.link.call(&json!({"t": "force_run", "agent": agent, "run": r}));
-        self.load_view(&out["view"]);
+        if let Some(out) = self.call(&json!({"t": "force_run", "agent": agent, "run": r})) {
+            self.load_view(&out["view"]);
+        }
     }
 
     /// Rebuild the durable state from the journal: sb-core replays it,
@@ -687,7 +726,7 @@ impl Hub {
     pub fn replay(&mut self, events: &[Value]) -> Vec<Value> {
         let mut skipped = Vec::new();
         for ev in events {
-            let out = self.link.call(&json!({"t": "replay", "ev": ev}));
+            let out = self.raw(&json!({"t": "replay", "ev": ev}));
             if out["skipped"].as_bool() == Some(true) {
                 skipped.push(ev.clone());
             }
@@ -697,8 +736,93 @@ impl Hub {
     }
 
     fn view_all(&mut self) {
-        let out = self.link.call(&json!({"t": "view_all"}));
+        if let Some(out) = self.call(&json!({"t": "view_all"})) {
+            self.load_view(&out["view"]);
+        }
+    }
+
+    /// Restart sb-core when it dies (see `Revive`); the daemon sets it
+    /// once the journal is replayed.
+    pub fn set_revive(&mut self, r: Revive) {
+        self.revive = Some(r);
+    }
+
+    /// Tests only: kill sb-core under the hub.
+    #[cfg(test)]
+    pub fn kill_core(&mut self) {
+        self.link.kill();
+    }
+
+    /// One call to sb-core, with no revival: its death panics.
+    fn raw(&mut self, v: &Value) -> Value {
+        self.link.call(v).unwrap_or_else(|e| panic!("sb-core: {}", e))
+    }
+
+    /// One call to sb-core. It died: restart it on the journal and run
+    /// the input again, once; dead again on it, the input is dropped
+    /// (None) and sb-core restarted once more (BISE-292).
+    fn call(&mut self, v: &Value) -> Option<Value> {
+        let e = match self.link.call(v) {
+            Ok(out) => return Some(out),
+            Err(e) => e,
+        };
+        self.restart_core(&e.to_string());
+        match self.link.call(v) {
+            Ok(out) => Some(out),
+            Err(e) => {
+                let what = v["t"].as_str().unwrap_or("?").to_string();
+                self.restart_core(&e.to_string());
+                self.revived.push(format!("sb-core stopped twice on the same input ({}): that input was dropped", what));
+                None
+            }
+        }
+    }
+
+    /// A new sb-core with the durable state of the journal and the REPL
+    /// states of the old one (the REPLs themselves never stopped).
+    fn restart_core(&mut self, why: &str) {
+        let Some(r) = self.revive.as_mut() else {
+            panic!("sb-core: {}", why);
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis() as u64);
+        r.times.retain(|t| now.saturating_sub(*t) < REVIVE_WINDOW_MS);
+        if r.times.len() >= REVIVE_LIMIT {
+            (r.log)(&format!("sb-core stopped ({}): {} restarts in {} s, the hub stops", why, REVIVE_LIMIT, REVIVE_WINDOW_MS / 1000));
+            panic!("sb-core: {} ({} restarts in {} s)", why, REVIVE_LIMIT, REVIVE_WINDOW_MS / 1000);
+        }
+        r.times.push(now);
+        (r.log)(&format!("sb-core stopped ({}): restarting it on the journal", why));
+        let events = (r.journal)();
+        self.link = CoreLink::start().unwrap_or_else(|e| panic!("sb-core: {} (and it cannot restart: {})", why, e));
+        let runs: Vec<(String, Run)> = self
+            .st
+            .agents
+            .values()
+            .filter(|a| a.run != Run::Down)
+            .map(|a| (a.name.clone(), a.run))
+            .collect();
+        self.raw(&json!({"t": "init", "workspace": self.workspace}));
+        let skipped = self.replay(&events).len();
+        for (agent, run) in runs {
+            let r = match run {
+                Run::Down => "down",
+                Run::Starting => "starting",
+                Run::Idle => "idle",
+                Run::Busy => "busy",
+            };
+            self.raw(&json!({"t": "force_run", "agent": agent, "run": r}));
+        }
+        let out = self.raw(&json!({"t": "view_all"}));
         self.load_view(&out["view"]);
+        if let Some(r) = self.revive.as_ref() {
+            (r.log)(&format!("sb-core restarted: {} journal events replayed ({} skipped)", events.len(), skipped));
+        }
+        self.revived.push(format!(
+            "sb-core, the hub's state machine, stopped ({}): restarted, its state rebuilt from the journal. the agents kept running",
+            why
+        ));
     }
 
     /// Store the state sb-core sent (it is the only source of truth).
@@ -1030,7 +1154,11 @@ impl Hub {
         let mut ans: Vec<Value> = Vec::new();
         loop {
             input["ans"] = Value::Array(ans.clone());
-            let out = self.link.call(&input);
+            let out = self.call(&input);
+            for l in std::mem::take(&mut self.revived) {
+                fx.push(line(MAIN, "warn", &l));
+            }
+            let Some(out) = out else { return };
             if let Some(q) = out.get("need") {
                 let a = self.query(env, q);
                 ans.push(a);

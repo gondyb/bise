@@ -68,6 +68,8 @@ struct T {
     hub: Hub,
     env: FakeEnv,
     token: u64,
+    /// Every journal event so far (what the daemon writes to disk).
+    journal: std::rc::Rc<std::cell::RefCell<Vec<Value>>>,
 }
 
 impl T {
@@ -76,6 +78,7 @@ impl T {
             hub: Hub::new("/w"),
             env: FakeEnv::new(),
             token: 0,
+            journal: Default::default(),
         };
         let fx = t.go(Input::Boot);
         assert!(fx.contains(&Effect::Spawn {
@@ -89,7 +92,13 @@ impl T {
     }
 
     fn go(&mut self, input: Input) -> Vec<Effect> {
-        self.hub.handle(input, &mut self.env)
+        let fx = self.hub.handle(input, &mut self.env);
+        for e in &fx {
+            if let Effect::Journal(ev) = e {
+                self.journal.borrow_mut().push(ev.clone());
+            }
+        }
+        fx
     }
 
     fn req(&mut self, from: &str, req: AgentReq) -> (u64, Vec<Effect>) {
@@ -2003,7 +2012,7 @@ fn a_step_keeps_the_archived_agents_it_does_not_send() {
     t.user(MAIN, "/drop b --force");
     t.go(Input::ReplExited { agent: "b".into(), crashed: false, reason: String::new() });
     assert_eq!(t.status("b"), Status::Archived);
-    let out = t.hub.link.call(&json!({"t": "tick", "now": 1_000_000, "git": true, "ans": []}));
+    let out = t.hub.link.call(&json!({"t": "tick", "now": 1_000_000, "git": true, "ans": []})).unwrap();
     let sent: Vec<&str> = out["view"]["agents"].as_array().unwrap().iter().map(|a| a["name"].as_str().unwrap()).collect();
     assert!(!sent.contains(&"b"), "an archived agent at rest is not sent again: {:?}", sent);
     assert_eq!(out["view"]["all_agents"], false);
@@ -2017,4 +2026,52 @@ fn a_step_keeps_the_archived_agents_it_does_not_send() {
     // a restore changes it: sent again, active
     t.req(MAIN, AgentReq::Restore { agent: "b".into() });
     assert_eq!(t.hub.st.agents["b"].lifecycle, Lifecycle::Active);
+}
+
+/// BISE-292: sb-core dies under the hub: the next input restarts it on
+/// the journal, the state and the REPL states are back, the input runs,
+/// and main's feed says what happened. No panic.
+#[test]
+fn a_dead_sb_core_is_restarted_on_the_journal() {
+    let mut t = T::new();
+    t.spawn_task("t1");
+    let journal = t.journal.clone();
+    let logged = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+    let log = logged.clone();
+    t.hub.set_revive(Revive::new(
+        Box::new(move || journal.borrow().clone()),
+        Box::new(move |s| log.borrow_mut().push(s.to_string())),
+    ));
+    let before = t.hub.st.agents.get("t1").map(|a| (a.run, a.brief.objective.clone()));
+    t.hub.kill_core();
+    let fx = t.user(MAIN, "hello");
+    // the input ran on the new sb-core: main gets the message
+    assert!(say_to(&fx, MAIN).is_some(), "{:?}", fx);
+    let warn = fx.iter().find_map(|e| match e {
+        Effect::Line { agent, line } if agent == MAIN && line.contains("sb-core") => Some(line.clone()),
+        _ => None,
+    });
+    let warn = warn.unwrap_or_else(|| panic!("no line in main's feed: {:?}", fx));
+    assert!(warn.starts_with("sb warn : ") && warn.contains("restarted"), "{}", warn);
+    assert_eq!(t.hub.st.agents.get("t1").map(|a| (a.run, a.brief.objective.clone())), before);
+    let logged = logged.borrow();
+    assert!(logged.iter().any(|l| l.contains("sb-core stopped")), "{:?}", logged);
+    assert!(logged.iter().any(|l| l.contains("sb-core restarted")), "{:?}", logged);
+    // and it keeps working
+    t.spawn_task("t2");
+    assert!(t.hub.st.agents.contains_key("t2"));
+}
+
+/// BISE-292: sb-core dying again and again is not an accident: after
+/// REVIVE_LIMIT restarts in a minute the hub stops, as before.
+#[test]
+#[should_panic(expected = "restarts in 60 s")]
+fn a_crash_loop_of_sb_core_stops_the_hub() {
+    let mut t = T::new();
+    let journal = t.journal.clone();
+    t.hub.set_revive(Revive::new(Box::new(move || journal.borrow().clone()), Box::new(|_| {})));
+    for _ in 0..5 {
+        t.hub.kill_core();
+        t.user(MAIN, "hello");
+    }
 }

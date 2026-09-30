@@ -200,6 +200,17 @@ batch:
 The user's decisions on the major items: 1 and 4 go (next); 6 no (not
 convinced, portability); 9 and 10 not now (kept here).
 
+Batch 2 (the major items the user said go for):
+
+| item | commit | what |
+|---|---|---|
+| 1 | a76aa6b | `e2e.load_factor()`: `Env.wait`, `tui_tmux.wait_until` and home_migrate's loops scale their timeout by the load |
+| 4 | (this batch) | `Hub::call`: a dead sb-core is restarted on the journal (`Revive`, set by the daemon), the REPL states put back (`force_run`), the input run again once (dropped if it kills sb-core twice), `sb warn` in main's feed, hub.log; more than 3 restarts in 60 s stop the hub as before. Tests: `core_tests::{a_dead_sb_core_is_restarted_on_the_journal, a_crash_loop_of_sb_core_stops_the_hub}`, e2e `core_restart.py` (sb-core killed -9 under a live hub) |
+
+What a restart loses (runtime only, not in the journal): the `sb ask`
+waits in flight (their callers time out), the steer counters, a turn's
+start time. The durable state and the REPLs are untouched.
+
 A flake the batch's full gate found (2 runs of 2), not in the known list:
 `tui_demo_tips_tmux` typed the three spawns while main was still in a
 turn on `other`'s ack; the fake only acked them and dev-api never came.

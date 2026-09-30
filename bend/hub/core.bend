@@ -2265,7 +2265,8 @@ def in_tag(+t: String) -> In:
   Bool.pick(In, String.eq(t, "passthrough"), IPassthrough{},
   Bool.pick(In, String.eq(t, "focus"), IFocus{},
   Bool.pick(In, String.eq(t, "close"), IClose{},
-  # force_run: tests only (core_tests.rs, Hub::force_run), never sent by the daemon
+  # force_run: the tests (core_tests.rs, Hub::force_run), and the hub when it
+  # restarts a dead sb-core: the REPL states of the old one (BISE-292)
   Bool.pick(In, String.eq(t, "force_run"), IForceRun{},
   INone{})))))))))))))))))))))))))
 
