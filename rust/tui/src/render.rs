@@ -198,7 +198,7 @@ pub(crate) fn thinking_lines(ms: u128, text: &str, open: bool, width: usize) -> 
         .split('\n')
         .filter(|l| !l.starts_with("BENDSIG::"))
         .map(|l| Line::from(Span::styled(l.to_string(), dim_st)));
-    let bar = Span::styled(RAIL, Style::default().fg(faint()));
+    let bar = Span::styled(RAIL, Style::default().fg(rule()));
     rows.extend(barred_rows(&bar, lines, width));
     rows
 }
@@ -324,10 +324,10 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         ])],
         Ev::Turn => vec![Line::from(vec![
             Span::styled(" ── turn ", Style::default().fg(faint())),
-            Span::styled("─".repeat(24), Style::default().fg(faint())),
+            Span::styled("─".repeat(24), Style::default().fg(rule())),
         ])],
         Ev::TurnDone => vec![Line::from(vec![
-            Span::styled(" └─ ", Style::default().fg(faint())),
+            Span::styled(" └─ ", Style::default().fg(rule())),
             Span::styled(G_RECEIVED, dim_st),
         ])],
         // book §6, §17 (BISE-90): `≡ compacting` (the glyph pulses while
@@ -668,7 +668,7 @@ fn answered_lines(agent: &str, question: &str, answer: &str, why: &str, open: bo
     let mark = Span::styled(format!(" {} ", G_MAIN), main_mark_st());
     let mut ls = hung_rows(&mark, &Span::raw("   "), [Line::from(line)], width);
     if open && !why.trim().is_empty() {
-        let bar = Span::styled(RAIL, Style::default().fg(faint()));
+        let bar = Span::styled(RAIL, Style::default().fg(rule()));
         ls.extend(barred_rows(&bar, md_lines(why.trim(), width.saturating_sub(3), width.saturating_sub(3)), width));
     }
     ls
@@ -1200,7 +1200,7 @@ fn summary_lines(summary: &str, open: bool, width: usize) -> Vec<Line<'static>> 
     }
     let mut ls = vec![Line::from(head)];
     if open && has {
-        let bar = Span::styled(RAIL, Style::default().fg(faint()));
+        let bar = Span::styled(RAIL, Style::default().fg(rule()));
         ls.extend(barred_rows(&bar, md_lines(&body, width.saturating_sub(3), width.saturating_sub(3)), width));
     }
     ls
@@ -1217,7 +1217,7 @@ fn fold_lines(head: &str, text: &str, open: bool, width: usize) -> Vec<Line<'sta
     let g = crate::theme::glyph(if open { G_OPEN } else { G_CLOSED });
     let mut ls = vec![Line::from(vec![Span::styled(format!("{g} "), dim_st), Span::styled(head.to_string(), dim_st)])];
     if open {
-        let bar = Span::styled(RAIL, Style::default().fg(faint()));
+        let bar = Span::styled(RAIL, Style::default().fg(rule()));
         let rows: Vec<Line<'static>> =
             text.lines().map(|l| Line::from(Span::styled(l.to_string(), dim_st))).collect();
         ls.extend(barred_rows(&bar, rows, width));
@@ -1272,7 +1272,7 @@ fn report_lines(from: &str, kind: &str, body: &str, open: bool, width: usize) ->
     let mark = Span::styled(format!(" {} ", glyph), Style::default().fg(color));
     let mut ls = hung_rows(&mark, &Span::raw("   "), [Line::from(row)], width);
     if open && !rest.trim().is_empty() {
-        let bar = Span::styled(" │ ", Style::default().fg(faint()));
+        let bar = Span::styled(" │ ", Style::default().fg(rule()));
         ls.extend(barred_rows(&bar, md_lines(rest, width.saturating_sub(3), width.saturating_sub(3)), width));
     }
     ls
@@ -1288,7 +1288,7 @@ fn brief_lines(brief: &str, open: bool, width: usize) -> Vec<Line<'static>> {
     ])];
     if open {
         let body = brief.split_once('\n').map(|(_, r)| r.trim_matches('\n')).unwrap_or("");
-        let bar = Span::styled(" │ ", Style::default().fg(faint()));
+        let bar = Span::styled(" │ ", Style::default().fg(rule()));
         ls.extend(barred_rows(&bar, md_lines(body, width.saturating_sub(3), width.saturating_sub(3)), width));
     }
     ls

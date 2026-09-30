@@ -333,7 +333,7 @@ fn table_at(rows: &[&str]) -> Option<usize> {
 
 mod table {
     use super::inline_spans;
-    use crate::theme::{ascii_mode, dim, faint, text};
+    use crate::theme::{ascii_mode, dim, text};
     use super::wrap_line;
     use ratatui::style::{Modifier, Style};
     use ratatui::text::{Line, Span};
@@ -521,7 +521,7 @@ mod table {
         let mut out = row_lines(&head_spans, &ws, &aligns);
         let rule = if ascii_mode() { "-" } else { "─" };
         let segs: Vec<String> = ws.iter().map(|&w| rule.repeat(w)).collect();
-        out.push(Line::from(Span::styled(segs.join(&" ".repeat(GAP)), Style::default().fg(faint()))));
+        out.push(Line::from(Span::styled(segs.join(&" ".repeat(GAP)), Style::default().fg(crate::theme::rule()))));
         let rows: Vec<Vec<Line<'static>>> = body_spans.iter().map(|r| row_lines(r, &ws, &aligns)).collect();
         // a wrapped row: a blank line between rows keeps them apart
         let spaced = rows.iter().any(|r| r.len() > 1);
@@ -663,10 +663,10 @@ mod table_tests {
             .collect::<Vec<_>>(),
             "{rows:#?}"
         );
-        // the header is bold, the rule faint
+        // the header is bold, the rule a quiet line
         let ls = md_lines(T, 76, 100);
         assert!(ls[0].spans.iter().filter(|s| !s.content.trim().is_empty()).all(|s| s.style.add_modifier.contains(Modifier::BOLD)));
-        assert_eq!(ls[1].spans[0].style.fg, Some(crate::theme::faint()));
+        assert_eq!(ls[1].spans[0].style.fg, Some(crate::theme::rule()));
     }
 
     #[test]

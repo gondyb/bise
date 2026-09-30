@@ -47,7 +47,7 @@ fn pieces() -> Pieces {
 }
 
 fn line_style() -> Style {
-    Style::default().fg(faint())
+    Style::default().fg(crate::theme::rule())
 }
 
 /// Write `spans` from `x` on row `y`, never past `end` (exclusive).

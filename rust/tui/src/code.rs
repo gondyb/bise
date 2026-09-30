@@ -624,7 +624,7 @@ pub(crate) fn code_block_lines(
 /// included); a line too long wraps with a hanging indent and a faint
 /// wrap mark, its continuation rows marked soft (the copy joins them).
 pub(crate) fn rail_rows(hl: &[Vec<Span<'static>>], width: usize) -> Vec<Line<'static>> {
-    let rail = Span::styled(CODE_RAIL, Style::default().fg(faint()));
+    let rail = Span::styled(CODE_RAIL, Style::default().fg(crate::theme::rule()));
     let hang = Span::styled(format!("{} ", G_WRAP), Style::default().fg(faint()));
     let first = width.saturating_sub(CODE_RAIL.width()).max(8);
     let rest = first.saturating_sub(hang.content.width()).max(6);

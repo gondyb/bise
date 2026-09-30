@@ -1704,9 +1704,9 @@ mod chrome_tests {
             // the panel's rule stops at the divider: nothing under its join
             let join = row(&b, div).chars().position(|c| c == '┴').unwrap_or_else(|| panic!("{h}: no join"));
             assert!((div + 1..h - 1).all(|y| !["│", "┃"].contains(&b[(join as u16, y)].symbol())), "{h} rows: under the join");
-            // the text keeps its colors on the tint: the bar faint, the placeholder dim
+            // the text keeps its colors on the tint: the bar a quiet line, the placeholder dim
             let t = (div + 1..h).find(|&y| row(&b, y).contains(PLACEHOLDER_MAIN)).unwrap();
-            assert_eq!((b[(3, t)].symbol(), b[(3, t)].fg), ("│", faint()));
+            assert_eq!((b[(3, t)].symbol(), b[(3, t)].fg), ("│", crate::theme::rule()));
         }
         // bare (under 16 rows): the full width under the divider, down
         // to the last row

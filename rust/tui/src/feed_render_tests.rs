@@ -331,10 +331,9 @@ fn long_code_lines_wrap_with_a_hanging_indent() {
         .collect::<Vec<_>>()
         .join("");
     assert_eq!(body.replace(' ', ""), cmd.replace(['\n', ' '], ""));
-    // the rail and the wrap mark are faint
-    let faint = Some(crate::theme::faint());
-    assert_eq!(lines[1].spans[0].style.fg, faint);
-    assert_eq!(lines[1].spans[1].style.fg, faint);
+    // the rail is a quiet line, the wrap mark faint
+    assert_eq!(lines[1].spans[0].style.fg, Some(crate::theme::rule()));
+    assert_eq!(lines[1].spans[1].style.fg, Some(crate::theme::faint()));
 }
 
 // a token longer than the row breaks hard, never overflows

@@ -9,8 +9,9 @@
 //! composer pane, BISE-102).
 //!
 //! Color means attention: only "needs you" (accent) and errors get a hue;
-//! everything else is text, dim or faint. `faint` is never for text you
-//! must read.
+//! everything else is text, dim or faint. `faint` is the quietest text
+//! (hints, keys, timestamps), still ~4.5:1 on the ground (BISE-279);
+//! the lines (rails, borders, rules) are [`rule`], quieter still.
 //!
 //! The old OpenCode constants (`BRAND`, `DIM`, …) were `#[deprecated]`
 //! aliases of the dark palette until BISE-83; new code calls the roles.
@@ -87,6 +88,8 @@ pub(crate) struct Palette {
     pub text: Color,
     pub dim: Color,
     pub faint: Color,
+    /// rails, borders, rules: the lines, never text (BISE-279)
+    pub rule: Color,
     pub accent: Color,
     pub error: Color,
     pub ok: Color,
@@ -114,7 +117,11 @@ pub(crate) struct Palette {
 pub(crate) const DARK: Palette = Palette {
     text: rgb(0xece6da),
     dim: rgb(0xa39c90),
-    faint: rgb(0x4a4540),
+    // BISE-279 (user: faint text was hard to read): was #4a4540 (1.97:1),
+    // now the site's gray, 4.6:1 on the ground, 4.2:1 on raised; the old
+    // value is `rule`
+    faint: rgb(0x857d72),
+    rule: rgb(0x4a4540),
     accent: rgb(0xf4a6b0), // pale pink
     error: rgb(0xff5a52),
     ok: rgb(0xb9d99a),
@@ -138,7 +145,10 @@ pub(crate) const DARK: Palette = Palette {
 pub(crate) const LIGHT: Palette = Palette {
     text: rgb(0x1b1917),
     dim: rgb(0x6b645a),
-    faint: rgb(0xcfc8bd),
+    // BISE-279: was #cfc8bd (1.61:1), now the landing demo's light gray,
+    // 4.3:1 on the ground, 3.9:1 on raised; the old value is `rule`
+    faint: rgb(0x7d766c),
+    rule: rgb(0xcfc8bd),
     accent: rgb(0xb8416b), // raspberry
     error: rgb(0xb3261e),
     ok: rgb(0x3f7a2a),
@@ -183,9 +193,15 @@ pub(crate) fn text() -> Color {
 pub(crate) fn dim() -> Color {
     palette().dim
 }
-/// Rails, borders, numbers. Never for text you must read.
+/// The quietest text: hints, keys, timestamps, numbers (4.3-4.6:1 on the
+/// ground, BISE-279). Not for lines: [`rule`].
 pub(crate) fn faint() -> Color {
     palette().faint
+}
+/// Rails, borders, rules: the lines, quieter than any text (the old
+/// `faint`, BISE-279). Never for text.
+pub(crate) fn rule() -> Color {
+    palette().rule
 }
 /// The `:*`, "needs you", the agent you talk to, `✓✓` read.
 pub(crate) fn accent() -> Color {
@@ -805,11 +821,19 @@ mod tests {
 
     #[test]
     fn faint_is_quieter_than_dim() {
-        // faint sits between dim and the background, in both modes
-        let dark_bg = rgb(0x141211);
-        assert!(contrast(DARK.faint, dark_bg) < contrast(DARK.dim, dark_bg));
-        let light_bg = rgb(0xf7f4ee);
-        assert!(contrast(LIGHT.faint, light_bg) < contrast(LIGHT.dim, light_bg));
+        // text > dim > faint > rule on the ground, in both modes, each a
+        // visible step; faint still reads (BISE-279: >= 4.3:1 on the
+        // ground, >= 3.9 on the composer's raised pane, where the queued
+        // hint sits)
+        for p in [&DARK, &LIGHT] {
+            let on = |c| contrast(c, p.bg);
+            let (t, d, f, r) = (on(p.text), on(p.dim), on(p.faint), on(p.rule));
+            assert!(t > d * 1.8 && d > f * 1.3 && f > r * 2.0, "steps: {t:.2} {d:.2} {f:.2} {r:.2}");
+            assert!(f >= 4.3, "faint on the ground: {f:.2}");
+            let fr = contrast(p.faint, p.raised);
+            assert!(fr >= 3.9, "faint on raised: {fr:.2}");
+            assert!(r >= 1.5, "a rule still shows: {r:.2}");
+        }
     }
 
     fn roles() -> Vec<Color> {

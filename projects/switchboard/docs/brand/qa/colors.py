@@ -10,10 +10,10 @@ import re
 import sys
 
 ROLES = {
-    "dark": {"text": "ece6da", "dim": "a39c90", "faint": "4a4540", "accent": "f4a6b0", "error": "ff5a52", "ok": "b9d99a",
+    "dark": {"text": "ece6da", "dim": "a39c90", "faint": "857d72", "rule": "4a4540", "accent": "f4a6b0", "error": "ff5a52", "ok": "b9d99a",
              "kw": "d7a6f0", "str": "b9d99a", "comment": "857e74", "num": "f0b27a", "call": "8fc4f0", "type": "e8cf9a",
              "on_accent": "1b1917"},
-    "light": {"text": "1b1917", "dim": "6b645a", "faint": "cfc8bd", "accent": "b8416b", "error": "b3261e", "ok": "3f7a2a",
+    "light": {"text": "1b1917", "dim": "6b645a", "faint": "7d766c", "rule": "cfc8bd", "accent": "b8416b", "error": "b3261e", "ok": "3f7a2a",
               "kw": "8a3fb0", "str": "44782a", "comment": "726b60", "num": "9a4a0c", "call": "1f63a8", "type": "7a5c00",
               "on_accent": "ffffff"},
 }

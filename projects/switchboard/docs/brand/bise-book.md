@@ -136,7 +136,8 @@ is ≥ 4.5:1 (WCAG AA) on white, our cream, black and a typical dark grey
 |---|---|---|---|
 | text | `#ece6da` (15:1) | `#1b1917` (17.5:1) | everything you read |
 | dim | `#a39c90` (6.9:1) | `#6b645a` (5.8:1) | secondary text, level 3, durations |
-| faint | `#4a4540` | `#cfc8bd` | rails, borders, numbers; **never** for text you must read |
+| faint | `#857d72` (4.6:1; 4.2 on raised) | `#7d766c` (4.3:1; 3.9 on raised) | the quietest text: hints, keys, timestamps, numbers, ` · ` between them (BISE-279, user: « le text super muted … est un peu trop muted ça le rend difficile à lire »; was `#4a4540` 1.97:1 / `#cfc8bd` 1.61:1, now the site's grays) |
+| rule | `#4a4540` (1.97:1) | `#cfc8bd` (1.61:1) | the lines: the frame, the panel's rule, rails, borders, table rules, the empty composer's bar; **never** text (BISE-279: the old faint, so the lines stay quiet) |
 | accent | `#f4a6b0` pale pink (9.7:1) | `#b8416b` raspberry (5.2:1) | the `:*`, "needs you", the agent you talk to, `✓✓` read, the bar on your messages |
 | error | `#ff5a52` | `#b3261e` | failures only |
 | ok | `#b9d99a` | `#3f7a2a` | diff additions only |
@@ -146,7 +147,7 @@ is ≥ 4.5:1 (WCAG AA) on white, our cream, black and a typical dark grey
 | pill | `#3a2530` (text 11.4:1, accent 7.3:1; 1.20:1 on raised) | `#f0d3dc` (text 12.6:1, accent 3.8:1, a glyph: ≥ 3:1; 1.23:1 on raised) | a quote or image chip in the composer and the strip: ` ❝ 1 ` (BISE-205). 16 colors / `NO_COLOR`: no tint, `[❝ 1]` |
 
 - **Color means attention.** Only "needs you" and errors get a hue. Everything
-  else is text, dim or faint. The accent is pink, not red, so "needs you"
+  else is text, dim or faint (lines: rule). The accent is pink, not red, so "needs you"
   never looks like an error.
 - **Syntax colors** (scripts, diffs): soft versions of the usual palette. Dark:
   keyword `#d7a6f0`, string `#b9d99a`, comment `#857e74`, number `#f0b27a`,

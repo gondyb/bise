@@ -918,7 +918,7 @@ fn draw_previews(f: &mut Frame, area: Rect, pick: Mode) {
     for (i, m) in [Mode::Dark, Mode::Light].into_iter().enumerate() {
         let p = theme::palette_of(m);
         let bg = p.bg;
-        let border = if m == pick { theme::accent() } else { theme::faint() };
+        let border = if m == pick { theme::accent() } else { theme::rule() };
         let r = Rect { x: x0 + i as u16 * (bw + 3), y: area.y, width: bw, height: PREVIEW_H.min(area.height) };
         let block = Block::default()
             .borders(Borders::ALL)

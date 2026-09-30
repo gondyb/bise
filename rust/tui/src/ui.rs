@@ -761,10 +761,10 @@ fn draw_find(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, lead: u
 }
 
 /// The composer's bar: accent as soon as there is text, an image or a
-/// recording; faint only when the composer is empty.
+/// recording; a quiet line (`rule`) only when the composer is empty.
 fn composer_bar_color(app: &App) -> ratatui::style::Color {
     if app.ed.is_empty() && !app.voice.active() && attach::strip_height(app) == 0 {
-        faint()
+        crate::theme::rule()
     } else {
         accent()
     }
@@ -840,7 +840,7 @@ fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
                 Block::default()
                     .borders(Borders::LEFT | Borders::RIGHT)
                     .border_set(SPLIT)
-                    .border_style(Style::default().fg(theme::faint()))
+                    .border_style(Style::default().fg(theme::rule()))
                     .style(Style::default().bg(Color::Reset)),
             ),
             area,

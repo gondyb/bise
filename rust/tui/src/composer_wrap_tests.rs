@@ -264,7 +264,7 @@ fn two_sections_the_attachments_then_the_body_behind_its_bar() {
             assert_eq!(bottom, rows.keybar, "{what}");
             // a blank bar row under the text from 20 rows (BISE-219)
             assert_eq!(rows.pad_bottom, u16::from(height >= 20), "{what}");
-            let want = if empty { crate::theme::faint() } else { crate::theme::accent() };
+            let want = if empty { crate::theme::rule() } else { crate::theme::accent() };
             for y in top..bottom {
                 let c = &buf[(x0, y)];
                 assert_eq!((c.symbol(), c.fg), ("│", want), "{what}: row {y}");
