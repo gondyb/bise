@@ -209,6 +209,28 @@
   /* features: small animated terminals */
   .features { max-width:1200px; margin:0 auto; }
   .fgrid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:80px 48px; margin-top:20px; }
+  .grp { grid-column:1/-1; display:flex; align-items:center; gap:2ch; color:var(--acc); font-size:13px; letter-spacing:.02em; margin:40px 0 -44px; }
+  .grp::after { content:""; flex:1; height:1px; background:var(--faint); opacity:.7; }
+  .grp:first-child { margin-top:0; }
+  /* the zen demo: a tiny bise with its header, agents panel and key bar. typing fades all of it but the composer */
+  .qwrap { display:grid; grid-template-columns:minmax(0,1fr) 15ch; grid-template-rows:minmax(0,1fr); gap:0 2ch; flex:1; min-height:0; }
+  .qwrap .mfeed { height:auto; min-height:0; }
+  /* every demo box has the same height: the feed takes what the chrome leaves */
+  .fgrid .mini { display:flex; flex-direction:column; height:calc(13.5px * 1.6 * 12.2 + 40px); box-sizing:border-box; }
+  .fgrid .mini > .mfeed { flex:1; height:auto; min-height:0; }
+  .fgrid .mini > .mcomp, .fgrid .mini > .mtop, .fgrid .mini > .mkeys { flex:none; }
+  .mtop, .mkeys, .mpanel { color:var(--faint); white-space:pre; overflow:hidden; }
+  .mtop { margin-bottom:6px; display:flex; justify-content:space-between; } .mkeys { margin-top:6px; }
+  .mtop .t, .mpanel .t { color:var(--text); } .mtop .acc, .mpanel .acc { color:var(--acc); } .mkeys .k { color:var(--dim); }
+  .mpanel { border-left:1px solid var(--faint); padding-left:1.5ch; color:var(--dim); }
+  .mpanel div { transition:color .4s ease; }
+  .mtop, .mkeys, .mpanel, .mini[data-play="quiet"] .mfeed { transition:opacity .45s ease; }
+  .mini.zen .mtop, .mini.zen .mkeys, .mini.zen .mpanel, .mini.zen[data-play="quiet"] .mfeed { opacity:.16; }
+  /* the zen demo's composer wraps (2 rows max) instead of scrolling sideways; the zen tag sits in its corner */
+  .mini[data-play="quiet"] .mcomp { white-space:pre-wrap; overflow-wrap:anywhere; position:relative; padding-right:7ch; overflow:hidden; }
+  .zt { color:var(--acc); opacity:0; transition:opacity .45s ease; position:absolute; right:2ch; top:.6lh; }
+  .mini.zen .zt { opacity:1; }
+  @media (max-width:700px) { .qwrap { grid-template-columns:minmax(0,1fr) 11ch; } }
   .feat h3 { font-size:17px; margin:20px 0 6px; }
   .feat p { color:var(--dim); font-size:15px; margin:0; max-width:52ch; }
   .mini { background:var(--soft); border-radius:10px; font-size:13.5px; line-height:1.6; padding:18px 2.5ch 14px; }
@@ -507,16 +529,21 @@
   <div class="features">
     <div class="inner blow" style="margin-bottom:10px"><div class="kicker">kiss your backlog goodbye</div><h2>the models grew up. you can stop babysitting</h2><p class="soft">ten things you'll notice in the first hour</p></div>
     <div class="fgrid">
+      <div class="grp">the team runs itself</div>
+      <div class="feat blow"><div class="mini" data-play="resume"></div><h3>hand it something huge</h3><p>give main a big goal. it splits it into jobs, runs the agents, restarts the ones that stop half-way, and keeps going until it's done.</p></div>
+      <div class="feat blow"><div class="mini" data-play="worktree"></div><h3>worktrees? don't think about it</h3><p>agents share your folder. when one needs its own copy, it makes a worktree, works there and cleans it up after. no branch to name, no folder to delete, nothing to keep in your head.</p></div>
+      <div class="grp">your head stays yours</div>
       <div class="feat blow"><div class="mini" data-play="talk"></div><h3>talk whenever. you never wait</h3><p>say the next thing while the last one runs. your composer is never locked.</p></div>
+      <div class="feat blow"><div class="mini" data-play="quiet"></div><h3>zen mode while you type</h3><p>start typing and everything else fades: the agents, the counts, the chatter. just you and your words. send it and it all comes back. what the agents said to each other stays folded, ctrl+o opens it.</p></div>
+      <div class="grp">no more "yes, continue"</div>
+      <div class="feat blow"><div class="mini" data-play="card"></div><h3>you're not the router</h3><p>main answers for you: the obvious questions, the way you would, and it tells you why. only the real decisions reach you, as one card: a couple of choices, one key.</p></div>
       <div class="feat blow"><div class="mini" data-play="sync"></div><h3>agents sync on their own</h3><p>every agent can talk to every other one. they ask, share and hand off quietly, folded out of your way.</p></div>
+      <div class="grp">every tool you have</div>
       <div class="feat blow"><div class="mini" data-play="mcp"></div><h3>all your MCPs. all your skills. always on</h3><p>GitHub, Linear, Sentry, Slack, your docs, your database: connect as many MCP servers as you want, and never pick which ones to turn on. bise calls tools through code, so a hundred servers don't fill its context.</p></div>
-      <div class="feat blow"><div class="mini" data-play="card"></div><h3>only the real decisions reach you</h3><p>one card, a couple of choices, one key. then back to what you were doing.</p></div>
-      <div class="feat blow"><div class="mini" data-play="router"></div><h3>you're not the router</h3><p>main answers the obvious questions itself, the way you would, and tells you why.</p></div>
+      <div class="feat blow"><div class="mini" data-play="plugins"></div><h3>bring your Agent Plugins</h3><p>skills, MCP servers, hooks: plugins in the Agent Plugins format load as they are, from ~/.agents/plugins or your repo. Vibe plugins too.</p></div>
+      <div class="grp">you're still the boss</div>
       <div class="feat blow"><div class="mini" data-play="direct"></div><h3>talk to any agent, anytime</h3><p>⌥ + a number, or @name. ask it why, push it, then go back to main. nobody has to stop.</p></div>
       <div class="feat blow"><div class="mini" data-play="steer"></div><h3>change your mind mid-run</h3><p>a correction lands in the running agent. ✓ it got it, <span class="acc">✓✓</span> it read it.</p></div>
-      <div class="feat blow"><div class="mini" data-play="resume"></div><h3>nothing gets dropped</h3><p>when an agent stops half-way, main picks the work back up from where it was.</p></div>
-      <div class="feat blow"><div class="mini" data-play="worktree"></div><h3>worktrees, only when they help</h3><p>agents share your folder. when one really needs isolation, it makes a worktree, and cleans it up after.</p></div>
-      <div class="feat blow"><div class="mini" data-play="plugins"></div><h3>bring your Agent Plugins</h3><p>skills, MCP servers, hooks: plugins in the Agent Plugins format load as they are, from ~/.agents/plugins or your repo. Vibe plugins too.</p></div>
     </div>
   </div>
 </section>
@@ -532,18 +559,14 @@
 <span class="acc">:*</span>   done, i did it myself.
      too small for an agent.
 <span class="faint">     0 agents started</span></div><p><b>your token bill can relax</b>bise starts an agent when a job needs one. that's the whole rule. there's no committee of agents reviewing each other in circles.</p></div>
-      <div class="mini"><div class="mv"><span class="acc">:*</span> ▸ 14 messages between 3 agents
-   ▸ ran 6 tools · 2 scripts
-<span class="acc">✓</span> <span class="t">sad-404 is done</span> · the dog has a hat
-<span class="faint">                  ctrl+o opens it all</span></div><p><b>it's quiet. open it up whenever</b>what matters to you shows. the rest is one key away: every message between agents, every tool call, every script, in full.</p></div>
-      <div class="mini"><div class="mv"><span class="acc">●</span> <span class="t">listening</span>  <span class="wave"><span>▂</span><span>▅</span><span>▃</span><span>▆</span><span>▂</span></span>
-
-<span class="bar"><span class="t">and make the button pink</span><span class="cur"></span></span>
-<span class="faint">ctrl+r to stop</span></div><p><b>or just talk</b>turn on /voice, press ctrl+r, say it.</p></div>
       <div class="mini"><div class="mv"><span class="faint">╭ attached ─────────────────────╮</span>
 <span class="faint">│</span> <span class="pill">▣ 1</span> 404.png    <span class="faint">1440×900</span>      <span class="faint">│</span>
 <span class="faint">╰───────────────────────────────╯</span>
 <span class="bar"><span class="t">the hat is cut off </span><span class="pill">▣ 1</span><span class="cur"></span></span></div><p><b>show it a screenshot</b>paste it with ctrl+v or drag it in. an image is one chip in your text.</p></div>
+      <div class="mini"><div class="mv"><span class="acc">●</span> <span class="t">listening</span>  <span class="wave"><span>▂</span><span>▅</span><span>▃</span><span>▆</span><span>▂</span></span>
+
+<span class="bar"><span class="t">and make the button pink</span><span class="cur"></span></span>
+<span class="faint">ctrl+r to stop</span></div><p><b>or just talk</b>turn on /voice, press ctrl+r, say it.</p></div>
       <div class="mini"><div class="mv"><span class="acc">:*</span> perf is done. signup went from
    <span class="hl">4.1 s to 0.9 s</span> on a phone
 
@@ -556,10 +579,6 @@
 <span class="acc">✓</span> 142 passed <span class="faint">(3.1 s)</span>
 <span class="acc">$</span> <span class="cur"></span>
 <span class="faint">ctrl+` hides it. it keeps running</span></div><p><b>a real shell, one key away</b>ctrl+` opens a terminal in your repo. it keeps running while hidden.</p></div>
-      <div class="mini"><div class="mv"><span class="faint">you hold ctrl…</span>
-▸ 12 more lines  <span class="faint">→</span>  ▸ <span class="acc">ctrl+o</span> expand
-<span class="acc">:*</span> main          <span class="faint">→</span>  <span class="acc">ctrl+g</span> cards
-<span class="faint">let go: it all goes back</span></div><p><b>hold ctrl to see the shortcuts</b>each one shows up where it works. in Ghostty and kitty.</p></div>
       <div class="mini"><div class="mv"><span class="dim">you</span> /restart
 <span class="faint">bise v2026.10.3 → v2026.10.4</span>
 <span class="acc">∿</span> perf  <span class="acc">∿</span> dark-mode  <span class="acc">∿</span> sad-404
@@ -596,7 +615,6 @@
       <p><b>runs on</b> macOS, Apple silicon and Intel. linux soon. windows later.</p>
       <p><b>you need</b> git, and an API key: Anthropic, OpenAI, Mistral and more. a Claude or ChatGPT subscription isn't a key.</p>
       <p class="switch"><b>coming from <span class="cli" aria-label="Claude Code, Codex, Vibe, OpenCode or another agent"><span>Claude Code</span></span>?</b> <button class="sp" title="read https://bise.dev/setup.md and set bise up for me">copy this prompt for your agent</button>. it installs bise and brings over your key, model, skills and MCP servers · <a class="sf" href="/setup" target="_blank" rel="noopener">see the full prompt ↗</a></p>
-      <p><b>heads up</b> there's no approval mode yet: agents run commands in your repo without asking. commit often.</p>
       <p><b>later</b> <code>bise update</code> to stay current, <code>bise doctor</code> if something feels off, <code>bise uninstall</code> to leave.</p>
     </div>
   </div>
@@ -626,7 +644,7 @@
     <div class="kicker">made by a human. shipped with bise</div>
     <h2 class="hi"><span>hi, i'm gabriel</span><img class="face" src="/gabriel.jpg" width="120" height="120" alt="Gabriel Vergnaud, smiling, by the water at sunset"></h2>
     <p>i build coding agents for a living.</p>
-    <p class="soft">agents made me faster. they also made my days feel empty. i was switching tabs, answering "should i continue?", pasting context around. i shipped more than ever and i didn't enjoy it.</p>
+    <p class="soft">agents made me faster. they also sometimes made my days feel empty. i was switching tabs, answering "should i continue?", pasting context around. i shipped more than ever and yet, i didn't enjoy it.</p>
     <p class="soft">so i built the tool i wanted: a team lead to talk to, and me in flow. most of bise was built with bise.</p>
     <p>i want everyone to ship like a team of a hundred, and to love building again. bise is open source and indie. i read every issue.</p>
     <p class="dim">— Gabriel Vergnaud · <a href="https://github.com/gvergnaud">@gvergnaud</a> on GitHub · <a href="https://x.com/GabrielVergnaud">@GabrielVergnaud</a> on X</p>
@@ -1179,13 +1197,6 @@ const plays = {
     m.line(`<span class="dim">@ sad-404 to you:</span> got it. the dog keeps its job. hat on.`, "b"); await m.wait(2200);
     m.line(`<span class="acc">✓</span> sad-404 done · 3m 40s`, "b"); await m.wait(3200);
   },
-  async router(m) {
-    m.line(`<span class="dim"><span class="pulse acc">∿</span> 4 working</span>`); await m.wait(900);
-    m.line(`<span class="chip">✉ <span class="s">dark-mode</span> <span class="ar">→</span> main</span><span class="dim">which gray for the borders?</span>`, "l3"); await m.wait(1200);
-    m.line(`<span class="acc">:*</span> i answered dark-mode: the one in tokens.css. <span class="faint">(like everywhere else)</span>`, "b"); await m.wait(1800);
-    m.line(`<span class="chip">✉ <span class="s">release</span> <span class="ar">→</span> main</span><span class="dim">tag it on main or on a branch?</span>`, "l3"); await m.wait(1200);
-    m.line(`<span class="acc">:*</span> i told release: on main, like every release. <span class="faint">(it's in CONTRIBUTING.md)</span>`, "b"); await m.wait(3200);
-  },
   async direct(m) {
     m.line(`<span class="faint">you → </span><span class="acc">main</span>`); await m.wait(1000);
     await m.type("⌥1"); m.clear();
@@ -1232,8 +1243,39 @@ const plays = {
     await m.wait(600);
     m.line(`<span class="acc">:*</span> everything you had works here. nothing to port.`, "b"); await m.wait(3400);
   },
+  async quiet(m) {
+    const first = m.line(`<span class="acc">:*</span> on it: perf, dark-mode and sad-404 started.`);
+    const feed = first.parentElement, box = feed.closest(".mini");
+    if (!box.querySelector(".qwrap")) {
+      const w = document.createElement("div"); w.className = "qwrap"; feed.before(w); w.append(feed);
+      w.insertAdjacentHTML("beforeend", `<div class="mpanel"></div>`);
+      w.insertAdjacentHTML("beforebegin", `<div class="mtop"><span><span class="t">bise</span> <span class="acc">:*</span></span><span class="cnt"></span></div>`);
+      box.querySelector(".mcomp").insertAdjacentHTML("beforeend", `<span class="zt">zen</span>`);
+      box.insertAdjacentHTML("beforeend", `<div class="mkeys"><span class="k">⏎</span> send  <span class="k">ctrl+o</span> open  <span class="k">⌥1-4</span> agents</div>`);
+    }
+    const panel = box.querySelector(".mpanel"), cnt = box.querySelector(".cnt");
+    const agents = [["main", ":*"], ["perf", "∿"], ["dark-mode", "∿"], ["sad-404", "∿"]];
+    const draw = () => {
+      panel.innerHTML = agents.map(([n, s]) => `<div><span class="acc${s === "∿" ? " pulse" : ""}">${s}</span> <span class="t">${n}</span></div>`).join("");
+      const w = agents.filter(([, s]) => s === "∿").length, d = agents.filter(([, s]) => s === "✓").length;
+      cnt.innerHTML = `<span class="acc">∿</span> ${w} working${d ? ` · <span class="acc">✓</span> ${d} done` : ""}`;
+    };
+    const set = (n, s) => { const a = agents.find(([x]) => x === n); if (a) a[1] = s; else agents.push([n, s]); draw(); };
+    box.classList.remove("zen"); draw();
+    m.line(`<span class="dim">▸ 9 messages between 3 agents</span>`); await m.wait(1300);
+    box.classList.add("zen");
+    const typing = m.type("pricing page: three tiers and a yearly toggle");
+    await m.wait(1100); set("perf", "✓"); m.line(`<span class="acc">✓</span> perf is done · signup 4.1 s → 0.9 s`, "b");
+    await m.wait(1300); m.line(`<span class="dim">▸ 4 more messages</span>`);
+    await m.wait(900); set("dark-mode", "✓");
+    await typing; await m.wait(800);
+    m.clear(); box.classList.remove("zen");
+    m.line(`pricing page: three tiers and a yearly toggle<span class="tick read">✓✓</span>`, "b you"); await m.wait(700);
+    set("pricing", "∿"); m.line(`<span class="acc">:*</span> on it: pricing started.`, "b"); await m.wait(3000);
+  },
   async card(m) {
-    m.line(`<span class="dim">▸ 12 messages between 4 agents</span>`); await m.wait(900);
+    m.line(`<span class="chip">✉ <span class="s">dark-mode</span> <span class="ar">→</span> main</span><span class="dim">which gray for the borders?</span>`, "l3"); await m.wait(1200);
+    m.line(`<span class="acc">:*</span> i answered dark-mode: the one in tokens.css. <span class="faint">(like everywhere else)</span>`, "b"); await m.wait(1800);
     const c = m.line(`<div class="t acc" style="font-weight:700">? release needs you</div><div>dark mode changes the default colors. call it 2.5 or 3.0?</div><div class="faint">1 · 2.5   2 · 3.0   alt+r answer with text</div>`, "card b");
     c.style.borderLeft = "2px solid var(--acc)"; c.style.paddingLeft = "2ch";
     await m.wait(2200); await m.type("1"); m.clear();
@@ -1241,11 +1283,13 @@ const plays = {
     await m.wait(1400); m.line(`<span class="acc">:*</span> release is tagging 2.5. back to you.`, "b"); await m.wait(3200);
   },
   async resume(m) {
-    m.line(`<span class="dim"><span class="pulse acc">∿</span> dark-mode · 6 of 11 pages dark</span>`); await m.wait(1500);
-    m.line(`<span class="err">✗</span> dark-mode stopped: the provider answered 503.`, "b"); await m.wait(1600);
-    m.line(`<span class="acc">:*</span> dark-mode stopped half-way. i started it again, from page 7.`, "b"); await m.wait(1400);
-    m.line(`<span class="dim"><span class="pulse acc">∿</span> dark-mode · 7 of 11 pages…</span>`); await m.wait(1800);
-    m.line(`<span class="acc">✓</span> dark-mode done · 11 pages dark, tests green.`, "b"); await m.wait(3200);
+    await m.send("move every page to the new design system");
+    m.line(`<span class="acc">:*</span> 12 pages. i'll run 3 agents at a time and keep going till it's done.`, "b"); await m.wait(1500);
+    m.line(`<span class="dim"><span class="pulse acc">∿</span> pages-1 · <span class="pulse acc">∿</span> pages-2 · <span class="pulse acc">∿</span> pages-3</span>`); await m.wait(1400);
+    m.line(`<span class="err">✗</span> pages-2 stopped: the provider answered 503.`, "b"); await m.wait(1400);
+    m.line(`<span class="acc">:*</span> started pages-2 again, from page 7.`); await m.wait(1600);
+    m.line(`<span class="dim">▸ 9 agents over 40 minutes</span>`, "b"); await m.wait(1000);
+    m.line(`<span class="acc">✓</span> 12 of 12 pages on the new system, tests green.`, "b"); await m.wait(3200);
   },
   async worktree(m) {
     const r = [`<span class="faint">0</span> <span class="acc">:*</span> main`, `<span class="faint">1</span> <span class="pulse acc">∿</span> dark-mode`, `<span class="faint">2</span> <span class="pulse acc">∿</span> sad-404`];

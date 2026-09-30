@@ -59,7 +59,6 @@ your agent installs bise and brings over what you already have: your API key, yo
 
 > [!NOTE]
 > bise is pre-release. **macOS only for now** (Apple silicon and Intel). linux is next.
-> there's **no approval mode yet**: agents run shell commands in your repo without asking. use it on repos you trust, and commit often. approvals are next.
 > bring your own key: Anthropic, OpenAI, Mistral and more.
 
 ## how it works
