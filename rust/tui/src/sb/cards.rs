@@ -220,6 +220,21 @@ pub(super) struct Shape {
     pub(super) words: bool,
     /// the view's key bar, when the item has its own
     pub(super) keys: Vec<(&'static str, &'static str)>,
+    /// each option's digit when not 1, 2, 3… (a gate's card: `no` is
+    /// always 3, designer: a thumb that learned 3 = no never allows)
+    pub(super) nums: Vec<usize>,
+}
+
+impl Shape {
+    /// The digit of option `i`.
+    pub(super) fn num(&self, i: usize) -> usize {
+        self.nums.get(i).copied().unwrap_or(i + 1)
+    }
+
+    /// The option digit `d` picks.
+    pub(super) fn by_digit(&self, d: usize) -> Option<usize> {
+        (0..self.options.len()).find(|&i| self.num(i) == d)
+    }
 }
 
 impl Shape {
@@ -238,6 +253,7 @@ impl Shape {
             right: None,
             words: true,
             keys: Vec::new(),
+            nums: Vec::new(),
         }
     }
 }
@@ -362,7 +378,12 @@ fn confirm_shape(c: &Card) -> Shape {
     let mut parts: Vec<Part> = done.iter().map(|d| Part::Reason(format!("$ {d}"))).collect();
     let text = shown.join("\n");
     parts.push(Part::Code(if bash {
-        crate::code::highlight_bash(&text)
+        // the bash mark in accent before the command (designer)
+        let mut rows = crate::code::highlight_bash(&text);
+        if let Some(first) = rows.first_mut() {
+            first.insert(0, Span::styled("$ ", Style::default().fg(theme::accent())));
+        }
+        rows
     } else if edit {
         crate::code::highlight_patch(&text)
     } else {
@@ -388,8 +409,13 @@ fn confirm_shape(c: &Card) -> Shape {
     options.push("no".into());
     short.push("no".into());
     let who = title.clone();
+    let hard = always.is_empty();
     let mut s = Shape::plain(title, who, summary, parts, options, short, Enter::Deny);
     s.note = String::new();
+    // `no` is always 3 (designer): a hard rule has no 2
+    if hard {
+        s.nums = vec![1, 3];
+    }
     s
 }
 
@@ -626,10 +652,13 @@ fn answer(app: &mut App, id: u64, reply: &str, said: &str) {
         }
         return;
     }
-    let Some(agent) = app.sb.card_by_id(id).map(|c| c.agent.clone()) else { return };
+    let Some((agent, kind)) = app.sb.card_by_id(id).map(|c| (c.agent.clone(), c.kind.clone())) else { return };
     app.sb.send_input(format!("/answer {} {}", id, reply));
-    let line = format!("{} {} · you said {}", theme::done_glyph(), agent, said);
-    push_event(&mut app.events, &mut app.cache, Ev::Info(line));
+    // a gate's card folds with the hub's own line (`✓ you allowed …`)
+    if kind != "confirm" {
+        let line = format!("{} {} · you said {}", theme::done_glyph(), agent, said);
+        push_event(&mut app.events, &mut app.cache, Ev::Info(line));
+    }
     retire(app, id);
 }
 
@@ -655,6 +684,14 @@ fn retire(app: &mut App, id: u64) {
 }
 
 /// Option `i` of card `id` answers it (a digit, a click).
+/// The option of card `id` whose digit is `d`.
+fn pick_digit(app: &mut App, id: u64, d: usize) -> bool {
+    match app.sb.card_by_id(id).map(shape).and_then(|s| s.by_digit(d)) {
+        Some(i) => pick(app, id, i),
+        None => false,
+    }
+}
+
 fn pick(app: &mut App, id: u64, i: usize) -> bool {
     let Some(s) = app.sb.card_by_id(id).map(shape) else { return false };
     let (Some(reply), Some(said)) = (s.options.get(i), s.short.get(i)) else { return false };
@@ -776,7 +813,7 @@ pub(crate) fn inbox_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         (KeyCode::Enter | KeyCode::Right, KeyModifiers::NONE) => open_view(app, Some(rows[i])),
         // a group of approvals has no options in the strip: nothing
         (KeyCode::Char(c @ '1'..='9'), KeyModifiers::NONE) => {
-            if super::card_draw::strip_row_is_one(&app.sb, rows[i]) && pick(app, rows[i], c as usize - '1' as usize) {
+            if super::card_draw::strip_row_is_one(&app.sb, rows[i]) && pick_digit(app, rows[i], c as usize - '0' as usize) {
                 // the next row takes its place (the last: the one above)
                 let left = super::card_draw::strip_ids(&app.sb).len();
                 app.sb.card.inbox = (left > 0).then(|| i.min(left - 1));
@@ -830,8 +867,7 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
         },
         // 1-9 picks on an empty composer; once you typed, digits are text
         (KeyCode::Char(c @ '1'..='9'), KeyModifiers::NONE) if empty => {
-            let i = c as usize - '1' as usize;
-            return sel.is_some_and(|id| pick(app, id, i));
+            return sel.is_some_and(|id| pick_digit(app, id, c as usize - '0' as usize));
         }
         (KeyCode::PageUp, _) if !popup_open => {
             let page = app.sb.card.page.max(1) as isize;

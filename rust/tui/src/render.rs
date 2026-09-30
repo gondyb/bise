@@ -362,6 +362,13 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             },
         },
         Ev::Info(t) => glyph_line(G_NOTE, Style::default().fg(faint()), bend_images::display(t), dim_st, width),
+        // a gate's card, folded (approvals-design.md §9, designer): the
+        // mark, the line, the note in double quotes; all dim
+        Ev::Approval { ok, text, note } => {
+            let mark = if *ok { glyph(G_RECEIVED) } else { glyph(G_FAILED) };
+            let t = if note.is_empty() { text.clone() } else { format!("{text} · \"{note}\"") };
+            glyph_line(mark, dim_st, t, dim_st, width)
+        }
         Ev::Said { glyph, head, dim } => {
             // ✗ a failure (error); ? it needs you, ✓ it worked (accent)
             let calm = *glyph != "✗";
@@ -373,7 +380,7 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             }
             l
         }
-        Ev::ToolInfo { .. } | Ev::ToolResult { .. } | Ev::ToolCode { .. } | Ev::ToolIntent { .. } => vec![],
+        Ev::ToolInfo { .. } | Ev::ToolResult { .. } | Ev::ToolCode { .. } | Ev::ToolIntent { .. } | Ev::Gate(_) => vec![],
         Ev::Usage(u) => vec![Line::from(Span::styled(u.line(), dim_st))],
         Ev::Raw(t) => vec![Line::from(Span::styled(format!("  {}", t), dim_st))],
         Ev::AgentMsg { text, open, .. } if is_brief(text) => brief_lines(text, *open, width),

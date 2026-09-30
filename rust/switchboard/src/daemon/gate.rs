@@ -439,7 +439,7 @@ impl Shell {
                     .get(&agent)
                     .map(|a| a.brief.objective.clone())
                     .unwrap_or_default();
-                let req = CheckReq { call, parts, keys, task, script: None };
+                let req = CheckReq { call, parts, keys, task, script: None, denied: None };
                 let (runner, tx, dir) = (self.gates.runner.clone(), self.tx.clone(), dir.to_string());
                 std::thread::spawn(move || {
                     let out = runner.check(&req);
@@ -632,6 +632,18 @@ impl Shell {
         }
         let _ = how;
         self.feed(name, &gate_line("done", &n, None));
+    }
+
+    /// The snapshot's gate cards held by several agents: `agent` lists
+    /// them (`t10a, t10b`: the TUI's "2 agents want to run").
+    pub(super) fn gate_card_agents(&self, snap: &mut Value) {
+        for c in snap["cards"].as_array_mut().into_iter().flatten() {
+            let Some(g) = c["id"].as_u64().and_then(|id| self.gates.cards.get(&id)) else { continue };
+            let names: Vec<String> = g.dirs.iter().filter_map(|d| self.gates.waiting.get(d).map(|w| w.agent.clone())).collect();
+            if names.len() > 1 {
+                c["agent"] = json!(names.join(", "));
+            }
+        }
     }
 
     /// After a step: a gate card the user closed without answering

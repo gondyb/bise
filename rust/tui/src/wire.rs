@@ -16,6 +16,9 @@ pub(crate) enum ToolState {
 #[derive(Clone)]
 pub(crate) struct ToolData {
     pub(crate) id: u32,
+    // in memory only (approvals-design.md §3.1, §10): the approvals gate
+    // holds the call: the checker runs, or a card waits on you; since when
+    pub(crate) gate: Option<(Gate, std::time::Instant)>,
     pub(crate) name: Option<String>,
     pub(crate) args: Option<String>,
     // the source of a code tool (run_typescript args JSON, bash raw
@@ -74,6 +77,7 @@ impl ToolData {
             clips: std::cell::Cell::new(false),
             opened: false,
             fold_open: false,
+            gate: None,
             took,
         }
     }
@@ -91,10 +95,26 @@ pub(crate) enum Mark {
     Failed,
 }
 
+/// Where a call waits in the approvals gate (the hub's `sb gate` lines).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Gate {
+    /// the checker judges it: `checking…` after 250 ms
+    Check,
+    /// a card waits on you: `? waiting for you`
+    Card,
+    /// it goes on
+    Done,
+}
+
 #[derive(Clone)]
 pub(crate) enum Ev {
     // your message; the bool: opened whole (a long one folds, BISE-239)
     You(String, Mark, bool),
+    // the approvals gate of the running call (`sb gate : check|card|done <n>`)
+    Gate(Gate),
+    // a gate's card answered (`sb approval`): allowed or not, the line,
+    // the user's note
+    Approval { ok: bool, text: String, note: String },
     Assistant(String),
     // the model's reasoning for the message that follows: rendered
     // collapsed as "thought for Ns"; ctrl+o expands every section, a

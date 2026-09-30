@@ -188,7 +188,7 @@ fn strip_right(e: &Entry, s: &Shape, extra: usize, max: usize, sel: bool) -> (Ro
                 if i > 0 {
                     r.push("  ", Style::default());
                 }
-                let (a, _) = r.push(format!("{}", i + 1), fg(theme::accent()));
+                let (a, _) = r.push(format!("{}", s.num(i)), fg(theme::accent()));
                 let (_, b) = r.push(format!(" {}", l), fg(theme::dim()));
                 hits.push((a, b, CardHit::Pick(id, i)));
             }
@@ -479,7 +479,7 @@ fn body_lines(s: &Shape, id: u64, w: usize, hi: Option<usize>, typing: bool) -> 
             let rows = wrap_line(Line::from(Span::styled(label.clone(), fg(text))), w.saturating_sub(4).max(1));
             for (j, row) in rows.into_iter().enumerate() {
                 let gutter = if on && j == 0 { format!("{} ", pointer()) } else { "  ".to_string() };
-                let lead = if j == 0 { Span::styled(format!("{:<2}", i + 1), fg(num)) } else { Span::raw("  ") };
+                let lead = if j == 0 { Span::styled(format!("{:<2}", s.num(i)), fg(num)) } else { Span::raw("  ") };
                 let mut v = vec![Span::styled(gutter, fg(theme::accent())), lead];
                 v.extend(row.spans);
                 let mut line = Line::from(v);
@@ -650,7 +650,7 @@ pub(crate) fn key_pairs(app: &App) -> Vec<(&'static str, String)> {
     }
     let mut v = Vec::new();
     if !app.ed.text.is_empty() {
-        v.push(p("⏎", if s.enter == Enter::Deny { "deny with your note" } else { "send as your answer" }));
+        v.push(p("⏎", if s.enter == Enter::Deny { "says no, with your words" } else { "send as your answer" }));
         if more {
             let last = sb.sorted_cards().last().map(|l| l.id) == Some(c.id);
             v.push(if last { p("ctrl+p", "previous item") } else { p("ctrl+n", "next item") });
@@ -666,12 +666,14 @@ pub(crate) fn key_pairs(app: &App) -> Vec<(&'static str, String)> {
             let (l, r) = if theme::ascii_mode() { ("\"", "\"") } else { ("“", "”") };
             v.push(("⏎", format!("pick {l}{}{r}", cut(&s.options[i], 32))));
         }
+        // a hard rule's card: 1 allow, 3 no (designer)
+        None if n > 0 && s.nums == [1, 3] => v.push(p("1 or 3", "pick")),
         None if n > 0 => v.push(p(digits(n), "pick")),
         None if s.enter == Enter::Ack => v.push(p("⏎", "got it")),
         None => {}
     }
     let typed = match s.enter {
-        Enter::Deny if sb.card.opt.is_none() => Some(p("type", "a note to deny")),
+        Enter::Deny if sb.card.opt.is_none() => Some(p("type", "why not, ⏎ says no")),
         Enter::Answer if sb.card.opt.is_none() && s.words => Some(p("type", if n > 0 { "to answer in your words" } else { "to answer" })),
         _ => None,
     };

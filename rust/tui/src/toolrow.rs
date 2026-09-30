@@ -98,6 +98,13 @@ fn exit_code(td: &ToolData) -> Option<String> {
 pub(crate) fn state_spans(td: &ToolData, tick: u32) -> Vec<Span<'static>> {
     let dim_st = Style::default().fg(dim());
     match td.state {
+        // approvals-design.md §3.1, §10: the gate holds it
+        ToolState::Run if matches!(td.gate, Some((crate::wire::Gate::Card, _))) => {
+            vec![Span::styled("? ", Style::default().fg(accent())), Span::styled("waiting for you", dim_st)]
+        }
+        ToolState::Run if td.gate.is_some_and(|(g, t)| g == crate::wire::Gate::Check && t.elapsed().as_millis() >= 250) => {
+            vec![Span::styled(format!("checking{}", theme::ellipsis()), dim_st)]
+        }
         ToolState::Run => {
             let (g, c) = working_frame(tick);
             let c = if no_color() { text() } else { c };

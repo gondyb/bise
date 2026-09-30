@@ -500,6 +500,14 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
             }
             return false;
         }
+        // the approvals gate holds the running call (approvals-design.md §3.1)
+        Ev::Gate(g) => {
+            if let Some((i, td)) = last_tool_mut(events, |td| matches!(td.state, ToolState::Run)) {
+                td.gate = (*g != crate::wire::Gate::Done).then(|| (*g, std::time::Instant::now()));
+                cache[i] = None;
+            }
+            return false;
+        }
         Ev::ToolIntent { id, text } => {
             if let Some((i, td)) = last_tool_mut(events, |td| td.id == *id) {
                 td.intent = Some(text.clone());

@@ -436,6 +436,8 @@ impl Shell {
     /// takes (the `/reasoning` list).
     fn snapshot(&mut self) -> Value {
         let mut snap = self.hub.snapshot(now_ms());
+        // one gate card for several agents' identical calls: it names them all
+        self.gate_card_agents(&mut snap);
         let who: Vec<(String, String, bool)> =
             self.hub.st.agents.values().map(|a| (a.name.clone(), a.dir.clone(), a.is_main)).collect();
         if let Some(list) = snap["agents"].as_array_mut() {

@@ -617,7 +617,7 @@ pub(crate) fn approvals_lines(a: &Approvals) -> Vec<String> {
     let checker = match a.checker.as_str() {
         "jev" => "Jev by TypeSafe",
         "model" => "a chat model",
-        "off" => "off: every command asks you",
+        "off" => "off · every command asks you",
         _ => "none yet",
     };
     let mut out = vec![
@@ -1057,7 +1057,28 @@ pub(super) fn parse_hub_line(rest: &str) -> Option<Ev> {
                 open: false,
             }
         }
+        // a gate's card (approvals-design.md §9): the tool row says it waits
+        // and the inbox holds it; its fold comes with the answer
+        "card" if is_confirm_card(&text) => return None,
         "card" => Ev::Card { text, closed: String::new() },
+        // the approvals gate (approvals-design.md §3.1, §10)
+        "gate" => match text.split_whitespace().next() {
+            Some("check") => Ev::Gate(crate::wire::Gate::Check),
+            Some("card") => Ev::Gate(crate::wire::Gate::Card),
+            _ => Ev::Gate(crate::wire::Gate::Done),
+        },
+        // a gate's card answered, folded (§9): `allowed : who : what` or
+        // `no : who : what : note`
+        "approval" => {
+            let f: Vec<String> = raw.split(" : ").map(field).collect();
+            let get = |i: usize| f.get(i).cloned().unwrap_or_default();
+            let (who, what) = (get(1), clip_chars(&get(2), 60));
+            if get(0) == "allowed" {
+                Ev::Approval { ok: true, text: format!("you allowed {}: {}", who, what), note: String::new() }
+            } else {
+                Ev::Approval { ok: false, text: format!("you said no to {}: {}", who, what), note: get(3) }
+            }
+        }
         "card-closed" => match text.strip_prefix('#').and_then(|t| t.split_once(' ')) {
             Some((id, res)) if id.parse::<u64>().is_ok() => Ev::CardClosed {
                 id: id.parse().unwrap_or(0),
@@ -1495,4 +1516,21 @@ fn home_tilde(p: &str) -> String {
         Ok(h) if !h.is_empty() && p.starts_with(&h) => format!("~{}", &p[h.len()..]),
         _ => p.to_string(),
     }
+}
+
+/// `s` cut to `n` chars, with `…` when cut.
+fn clip_chars(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        return s.to_string();
+    }
+    let mut t: String = s.chars().take(n.saturating_sub(1)).collect();
+    t.push_str(crate::theme::ellipsis());
+    t
+}
+
+/// `#12 confirm @api-v2 : …`: a gate's card line.
+fn is_confirm_card(text: &str) -> bool {
+    text.strip_prefix('#')
+        .and_then(|t| t.split_once(' '))
+        .is_some_and(|(id, rest)| id.parse::<u64>().is_ok() && rest.starts_with("confirm @"))
 }

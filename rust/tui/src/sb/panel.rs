@@ -84,10 +84,11 @@ fn panel_title_keys() -> &'static str {
 /// question, a confirmation) needs you; a blocked task is main's.
 pub(super) fn needs_you(sb: &Sb, a: &Agent) -> bool {
     !matches!(a.status.as_str(), "failed" | "stopped" | "archived")
-        && sb
-            .cards
-            .iter()
-            .any(|c| c.agent == a.name && matches!(c.kind.as_str(), "question" | "confirm" | "approval"))
+        && (a.waiting_on == "you"
+            || sb
+                .cards
+                .iter()
+                .any(|c| c.agent == a.name && matches!(c.kind.as_str(), "question" | "confirm" | "approval")))
 }
 
 /// A duration in the panel: `40s`, `12m`, `3h`, `2d`.

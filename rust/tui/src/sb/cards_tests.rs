@@ -408,12 +408,12 @@ fn an_approval_plugs_in() {
     for o in ["1 allow once", "2 always here", "3 deny"] {
         row_of(&rows, o);
     }
-    assert_eq!(bar(&app), "↑↓ choose   1-3 pick   type a note to deny   ←→ other items   esc back");
+    assert_eq!(bar(&app), "↑↓ choose   1-3 pick   type why not, ⏎ says no   ←→ other items   esc back");
     // a reflex ⏎ approves nothing
     key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
     assert!(sent(&mut hub).is_empty());
     app.ed.insert("not on friday");
-    assert_eq!(bar(&app), "⏎ deny with your note   ctrl+n next item   esc back, draft kept");
+    assert_eq!(bar(&app), "⏎ says no, with your words   ctrl+n next item   esc back, draft kept");
     key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
     assert_eq!(sent(&mut hub), vec!["/answer 14 deny: not on friday"]);
     // on to the next card
