@@ -536,7 +536,7 @@ const OB_EMPTY = `<div style="padding:3lh 0 0 3ch"><div><b>what's on your mind?<
 const TUNE = (on) => crow(on, "main", "can i set bise up for your terminal and this repo? <span class=\"faint\">1 min · i ask before changing anything</span>", [["1", "yes, check"], ["2", "not now"]]);
 // setup, taken by the hand: the first-item hint, each item opened, the result rows
 const OB_HINT = `<div class="obhint"><span class="acc">?</span> <b>this is your inbox.</b> <span class="dim">when an agent needs you, it waits here instead of interrupting you.</span> <span style="color:var(--text)">ctrl+g</span> <span class="dim">selects it, then</span> <span style="color:var(--text)">↑↓ ⏎</span><span class="dim">.</span> <span class="faint">↓</span></div>`;
-const OB_KEYS_ROW = crow(false, "main", `let cmd+v and cmd+f reach bise <span class="faint">Ghostty config · +2 lines</span>`, [["1", "yes, add them"], ["2", "no"]]);
+const OB_KEYS_ROW = crow(false, "main", `let cmd+v and cmd+f reach bise`, [["1", "yes, add them"], ["2", "no"]]);
 const OB_AGENTS_ROW = crow(false, "main", `write a starter AGENTS.md <span class="faint">new file · 14 lines</span>`, [["1", "yes, write it"], ["2", "no"]]);
 const OB_KEY_ROW = crow(false, "main", `turn on web search and the other connectors <span class="faint">optional · needs a Mistral key</span>`, [["⏎", "paste it"]]);
 const sview = (tabs, cur, title, meta, body, opts) => otabs(tabs, cur) + `<div class="cview"><div class="cvh"><b class="acc">? ${title}</b><span class="dim">${meta}</span></div><div class="cvb">${body}</div>${opts ? `<div class="ol">${opts}</div>` : ""}</div>`;
@@ -575,7 +575,7 @@ const OB3_SCREENS = [
    above: OB_HINT + `<div class="cstrip">${C2_LAB(1)}${TUNE(true)}</div>`, f: foot("main · idle", CUR, "⏎ send · ctrl+g inbox · @ agent · / commands") })],
 ["setup, by the hand · 2 · opened: what 'set up' does", "before any yes, the list of what gets checked and the promise: each fix comes back as its own item, with the exact change, yes or no each. nothing is picked when it opens.",
  term({ h: head(`<span class="acc"># 1 in the inbox</span>`), pan: OB_PANEL.replace("setup", ""),
-   feed: sview(["set up bise"], 0, "can i set bise up for your terminal and this repo?", "about a minute", `<div>i'll check 7 things: your terminal and its keys, colors, glyphs, git, gh, an AGENTS.md, and the connectors key.</div>
+   feed: sview(["set up bise"], 0, "can i set bise up for your terminal and this repo?", "about a minute", `<div>i'll check 8 things: your terminal, its keys, colors, glyphs, git, gh, an AGENTS.md, and the connectors key.</div>
 <div style="margin-top:.4lh">checking changes nothing. each fix i find comes back here as its own item, with the exact change, and you say yes or no to each one.</div>
 <div style="margin-top:.4lh" class="dim">your agents keep working meanwhile. not now? type /setup whenever you want.</div>`, optl(["yes, check", "not now"])),
    f: sFoot("↑↓ choose · 1-2 pick · esc back") })],
