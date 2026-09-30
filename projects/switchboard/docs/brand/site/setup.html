@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bise :* · the setup prompt</title>
+<meta name="description" content="paste this into Claude Code, Codex or any coding agent: it installs bise and brings over your key, model, skills and MCP servers.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --mark:#6f685f; --acc:#f4a6b0; --chip:#262220; }
+  [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --mark:#9d958a; --acc:#b8416b; --chip:#e8e2d8; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:15px; line-height:1.75; }
+  .top { max-width:78ch; margin:0 auto; padding:28px 24px 0; display:flex; align-items:center; gap:2ch; font-size:13px; color:var(--dim); }
+  .top a { color:var(--dim); text-decoration:none; } .top a:hover { color:var(--text); }
+  .top .kiss { color:var(--acc); }
+  .top .sp { flex:1; }
+  .copy { font:inherit; font-size:13px; color:var(--text); background:var(--soft); border:1px solid var(--faint); border-radius:8px; padding:6px 14px; cursor:pointer; transition:border-color .3s, color .3s; }
+  .copy:hover { border-color:var(--acc); } .copy.done { color:var(--acc); border-color:var(--acc); }
+  .lead { max-width:78ch; margin:28px auto 0; padding:0 24px; color:var(--dim); font-size:13.5px; }
+  .lead code { color:var(--text); }
+  main { max-width:78ch; margin:24px auto 80px; padding:28px 24px; border-top:1px solid var(--faint); }
+  .m { color:var(--mark); font-weight:400; }
+  h1, h2, h3 { line-height:1.35; letter-spacing:-.01em; margin:1.6em 0 .6em; }
+  h1 { font-size:26px; margin-top:0; } h2 { font-size:19px; } h3 { font-size:16px; }
+  h1 .m, h2 .m, h3 .m { color:var(--acc); opacity:.55; }
+  p { margin:0 0 1em; }
+  ul, ol { list-style:none; margin:0 0 1em; padding:0; }
+  li { display:grid; grid-template-columns:auto 1fr; gap:0 1ch; margin:.35em 0; }
+  li > .m { color:var(--acc); opacity:.7; }
+  b { font-weight:700; }
+  code { background:var(--chip); border-radius:4px; padding:1px 3px; font-size:.94em; overflow-wrap:anywhere; }
+  code .m { color:var(--mark); }
+  pre { background:var(--soft); border:1px solid var(--faint); border-radius:10px; padding:14px 18px; overflow-x:auto; font-size:13.5px; line-height:1.6; margin:0 0 1.2em; }
+  a { color:var(--acc); text-underline-offset:3px; }
+  .err { color:var(--dim); }
+</style>
+</head>
+<body>
+<div class="top">
+  <a href="/">bise <span class="kiss">:*</span></a><span>· the setup prompt</span><span class="sp"></span>
+  <a href="/setup.md">raw</a>
+  <button class="copy" id="copy">copy the whole prompt</button>
+</div>
+<p class="lead">coming from Claude Code or Codex? paste <code>read https://bise.dev/setup.md and set bise up for me</code> into it. if your agent can't open links, copy this whole prompt instead. it shows you a plan and waits for your yes.</p>
+<main id="doc"><p class="err">loading…</p></main>
+<script>
+const root = document.documentElement;
+root.dataset.theme = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const mk = (s) => `<span class="m">${esc(s)}</span>`;
+// inline markdown, the marks stay visible: `code`, **bold**, [text](url)
+const inline = (s) => s.split(/(`[^`]*`)/).map((part) => {
+  if (/^`[^`]*`$/.test(part)) return `<code>${mk("`")}${esc(part.slice(1, -1))}${mk("`")}</code>`;
+  return esc(part)
+    .replace(/\*\*(.+?)\*\*/g, (_, t) => `<b>${mk("**")}${t}${mk("**")}</b>`)
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, (_, t, u) => `${mk("[")}<a href="${u}">${t}</a>${mk("](" + u + ")")}`)
+    .replace(/(^|[\s(])(https?:\/\/[^\s)<]+)/g, (_, a, u) => `${a}<a href="${u}">${u}</a>`);
+}).join("");
+function render(md) {
+  const lines = md.replace(/\r/g, "").split("\n"), out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (!l.trim()) { i++; continue; }
+    let m;
+    if ((m = l.match(/^(#{1,6}) (.*)$/))) { const n = Math.min(m[1].length, 3); out.push(`<h${n}>${mk(m[1] + " ")}${inline(m[2])}</h${n}>`); i++; continue; }
+    if (/^```/.test(l)) { const buf = [l]; i++; while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]); if (i < lines.length) buf.push(lines[i++]);
+      out.push(`<pre>${mk(buf[0])}\n${esc(buf.slice(1, -1).join("\n"))}\n${mk(buf[buf.length - 1])}</pre>`); continue; }
+    if (/^ {4}/.test(l)) { const buf = []; while (i < lines.length && (/^ {4}/.test(lines[i]) || (!lines[i].trim() && /^ {4}/.test(lines[i + 1] || "")))) buf.push(lines[i++].slice(4)); out.push(`<pre>${esc(buf.join("\n"))}</pre>`); continue; }
+    if ((m = l.match(/^(- |\d+\. )/))) {
+      const ordered = /\d/.test(m[1]), items = [];
+      while (i < lines.length && (m = lines[i].match(/^(- |\d+\. )(.*)$/))) {
+        let text = m[2]; const mark = m[1]; i++;
+        while (i < lines.length && /^ {2,}\S/.test(lines[i]) && !/^ {4}/.test(lines[i]) || (i < lines.length && /^ {2,3}\S/.test(lines[i]))) text += "\n" + lines[i++].trim();
+        items.push(`<li>${mk(mark.trim())}<span>${text.split("\n").map(inline).join("<br>")}</span></li>`);
+      }
+      out.push(ordered ? `<ol>${items.join("")}</ol>` : `<ul>${items.join("")}</ul>`); continue;
+    }
+    const buf = [];
+    while (i < lines.length && lines[i].trim() && !/^(#{1,6} |```|- |\d+\. | {4})/.test(lines[i])) buf.push(lines[i++]);
+    out.push(`<p>${inline(buf.join(" "))}</p>`);
+  }
+  return out.join("\n");
+}
+let text = "";
+fetch("/setup.md", { cache: "no-cache" }).then((r) => r.ok ? r.text() : Promise.reject(r.status)).then((t) => { text = t; document.getElementById("doc").innerHTML = render(t); })
+  .catch(() => { document.getElementById("doc").innerHTML = `<p class="err">couldn't load the prompt. <a href="/setup.md">open it raw</a>.</p>`; });
+document.getElementById("copy").onclick = async (e) => {
+  const b = e.currentTarget; try { await navigator.clipboard.writeText(text); b.textContent = "copied :*"; b.classList.add("done"); setTimeout(() => { b.textContent = "copy the whole prompt"; b.classList.remove("done"); }, 1800); } catch { location.href = "/setup.md"; }
+};
+</script>
+</body>
+</html>

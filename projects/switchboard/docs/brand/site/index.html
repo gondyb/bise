@@ -80,7 +80,7 @@
   .install.done .c { color:var(--acc); border-color:var(--acc); }
   .switch { margin-top:6px; color:var(--dim); font-size:13px; text-shadow:0 0 6px var(--bg), 0 0 2px var(--bg); position:relative; z-index:1; }
   .switch button { font:inherit; color:var(--text); background:none; border:0; padding:0; cursor:pointer; text-decoration:underline; text-decoration-color:var(--acc); text-underline-offset:3px; }
-  .switch button:hover, .switch button.done { color:var(--acc); }
+  .switch button:hover, .switch button.done { color:var(--acc); } .switch a { color:var(--dim); text-decoration:underline; text-decoration-color:var(--faint); text-underline-offset:3px; } .switch a:hover { color:var(--text); }
   .scroll { position:absolute; bottom:30px; color:var(--faint); font-size:13px; animation:breathe 3s ease-in-out infinite; }
   @keyframes breathe { 50% { opacity:.4; transform:translateY(3px) } }
 
@@ -364,7 +364,7 @@
     <div class="t2" data-a="t2">meet your team lead.<br>you stay in flow, i run the agents.</div>
     <div class="install" id="install" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span id="cmd">curl -fsSL bise.dev/install | sh</span></span><span class="c" id="copied">copy</span></div>
     <div class="req">macOS only for now</div>
-    <div class="switch">switching from Claude Code or Codex? <button class="sp" title="read https://bise.dev/setup.md and set bise up for me">copy this for your agent</button> · <button class="sf" title="for agents that can't open links">full prompt</button></div>
+    <div class="switch">switching from Claude Code or Codex? <button class="sp" title="read https://bise.dev/setup.md and set bise up for me">copy this prompt for your agent</button> · <a class="sf" href="/setup" target="_blank" rel="noopener">see the full prompt ↗</a></div>
     <div class="scroll">↓</div>
   </div>
 </div>
@@ -567,7 +567,7 @@
       <p class="dim" style="margin-top:28px">ideas in. little kisses out. also pull requests.</p>
       <div class="install" id="install2" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span>curl -fsSL bise.dev/install | sh</span></span><span class="c">copy</span></div>
       <div class="req">macOS only for now</div>
-    <div class="switch">switching from Claude Code or Codex? <button class="sp" title="read https://bise.dev/setup.md and set bise up for me">copy this for your agent</button> · <button class="sf" title="for agents that can't open links">full prompt</button></div>
+    <div class="switch">switching from Claude Code or Codex? <button class="sp" title="read https://bise.dev/setup.md and set bise up for me">copy this prompt for your agent</button> · <a class="sf" href="/setup" target="_blank" rel="noopener">see the full prompt ↗</a></div>
     </div>
   </section>
 </div>
@@ -629,14 +629,10 @@ for (const id of ["install", "install2"]) document.getElementById(id).onclick = 
   const box = e.currentTarget, c = box.querySelector(".c"); c.textContent = "copied :*"; box.classList.add("done"); setTimeout(() => { c.textContent = "copy"; box.classList.remove("done"); }, 1600);
 };
 
-// switching from Claude Code or Codex: copy the setup prompt (the one-liner, or the whole file)
+// switching from Claude Code or Codex: copy the one-liner (the full prompt has its own page, /setup)
 const SETUP = "read https://bise.dev/setup.md and set bise up for me";
 const flash = (b, t) => { const was = b.textContent; b.textContent = t; b.classList.add("done"); setTimeout(() => { b.textContent = was; b.classList.remove("done"); }, 2200); };
 document.querySelectorAll(".switch .sp").forEach((b) => b.onclick = () => { navigator.clipboard?.writeText(SETUP); flash(b, "copied :* paste it in your agent"); });
-document.querySelectorAll(".switch .sf").forEach((b) => b.onclick = async () => {
-  try { const t = await (await fetch("/setup.md", { cache: "no-cache" })).text(); await navigator.clipboard.writeText(t); flash(b, "copied the whole prompt :*"); }
-  catch { location.href = "/setup.md"; }
-});
 
 // ---- reveal: blow in when seen ----
 const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { threshold: .15 });
