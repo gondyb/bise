@@ -1,6 +1,6 @@
 # Approvals: one brief per parallel agent (phases 0 and 1)
 
-Main spawns these as written (`sb spawn <name> --objective … `, the brief
+Main spawns these as written, in the waves of plan §6, (`sb spawn <name> --objective … `, the brief
 as the first message). Design: [approvals-design.md](approvals-design.md);
 plan and the one branch: [approvals-plan.md](approvals-plan.md) §4–5.
 
@@ -13,11 +13,16 @@ plan and the one branch: [approvals-plan.md](approvals-plan.md) §4–5.
   `git checkout --detach approvals`) and commit **onto
   `refs/heads/approvals`** with a private index built from the branch's
   current tip, then a compare-and-swap:
-  `old=$(git rev-parse refs/heads/approvals); GIT_INDEX_FILE=$TMPDIR/approvals.idx git read-tree $old;`
-  add your files only; `new=$(git commit-tree $(git write-tree) -p $old -F msg.txt)`;
-  `git update-ref refs/heads/approvals $new $old`. If it fails, someone
-  committed first: rebuild from the new tip and retry. Then
-  `git checkout --detach approvals` to build on everyone's work.
+  `git diff $base -- <your files> > $TMPDIR/mine.patch` ($base = the tip
+  your worktree is on); `old=$(git rev-parse refs/heads/approvals)`;
+  `GIT_INDEX_FILE=$TMPDIR/approvals.idx`: `git read-tree $old`,
+  `git apply --cached $TMPDIR/mine.patch`,
+  `new=$(git commit-tree $(git write-tree) -p $old -F msg.txt)`;
+  `git update-ref refs/heads/approvals $new $old`. A patch, never `git
+  add` of whole files (it would drop another agent's hunks). `update-ref`
+  fails: someone committed first, redo from `old=`. `apply --cached`
+  fails: bring your worktree to the tip (plan §5), fix, retry. After each
+  commit: `git checkout --detach approvals`.
   **Never commit to main, never push, never reset/amend/rebase, no other
   branch.**
 - `tests/gate.sh` (quick) per commit, `gate.sh full` once on the last
@@ -99,7 +104,8 @@ session with a background job, a steer and an interrupt; drop removes
 
 Objective: `yolo`/`auto` as a global mode with `shift+tab`, and the gate
 that pauses a call until a verdict, with the `confirm` card in the user
-inbox.
+inbox. Start with the TUI and the hub; the runtime gate after
+`approvals-tmp`'s commit (its gate and interrupt files live in `run/`).
 
 Read: design §3.1, §8, §9, §10, §11; approvals.md §3 (the wire).
 
@@ -107,7 +113,8 @@ Do:
 1. The mode in the hub, `approvals = "yolo" | "auto"` in config.toml
    (same writer as `bise config set`), `BISE_APPROVALS` for one session;
    `/approvals` (mode, checker, rules; `/approvals yolo|auto`,
-   `/approvals checker jev|model|off`).
+   the checker is changed in `/models` only: `/approvals` shows it and
+   points there).
 2. TUI: `shift+tab` toggles in the composer; list outdent moves to
    backspace at the start of an item's text (BISE-276 code in `input.rs`,
    `mdlive.rs`); the key-bar indicator `⇧⇥ yolo`; the 3-second flash
@@ -196,47 +203,59 @@ tasks per provider. ~2.5 days.
 
 ---
 
-## 1d · `approvals-checker`: Jev, the fallback, the cache
+## 1d · `approvals-checker`: the `checker` role, Jev, the fallback, the cache
 
-Objective: `check()` of the contracts: Jev when a route exists, the
-`classify` role otherwise, off on request; allow verdicts cached per repo;
-fails closed.
+Objective: `check()` of the contracts, and the `checker` role row in
+`/models`: Jev by default (settled by the user), a chat model can take
+the role, or off; allow verdicts cached per repo; fails closed.
 
-Read: design §4 (all), §9 (reason words), §12; the sources listed in §4.1.
+Read: design §4 (all), §9 (reason words), §12; roles-menu's option A as
+landed (`site/content/roles-menu.html`, `rust/catalog/src/roles.rs`: the
+`classify` role, declared with no UI until this feature); the sources in
+design §4.1.
 
 Do:
-1. Routes: OpenRouter (`typesafe/jev-1.13`, the user's OpenRouter key)
-   and TypeSafe's API (`TYPESAFE_API_KEY` or `bise login typesafe`, stored
-   in `auth.json`). Request = state + the 3 `noul` questions of §4.3; allow
-   at `contained` ≥ 0.9, `serves_task` ≥ 0.8, `secrets` ≤ 0.1. Timeout 5 s.
-2. The state builder (pure): the parts, the script run (cut 4 000
+1. The role: in roles-menu's role table, the `classify` role shown, name
+   `checker`, about "in auto, decides which commands run and which ask
+   you" (designer's words, design §4.2). Its picker: TypeSafe (recommended)
+   and OpenRouter for Jev, a dim separator "or a chat model checks", the
+   chat providers, and a last `off · every command asks you` row; a dim
+   line on what leaves the machine; Jev skips the model and effort steps.
+   TypeSafe as a provider in `/provider` (key, `TYPESAFE_API_KEY`,
+   `auth.json`). config.toml `[roles] classify = …` (design §4.2), the
+   default chain when unset (TypeSafe key → OpenRouter key → small jobs
+   model).
+2. Jev routes: OpenRouter (`typesafe/jev-1.13`) and TypeSafe's API.
+   Request = state + the 3 `noul` questions of design §4.3; allow at
+   `contained` ≥ 0.9, `serves_task` ≥ 0.8, `secrets` ≤ 0.1. Timeout 5 s.
+3. The state builder (pure): the parts, the script run (cut 4 000
    chars), the user's words behind the task (cut 2 000), paths; nothing
    else. A unit test that no tool result or file content can enter it.
-3. The fallback on the `classify` role (BISE-298): approvals.md §4.3's
-   prompt, strict JSON, the same rule. A checker error is a card, never
-   the other checker.
-4. The cache (design §4.4): per repo, per hub session, allow only;
+4. A chat model in the role: approvals.md §4.3's prompt, strict JSON, the
+   same rule. A checker error is a card, never another checker.
+5. The cache (design §4.4): per repo, per hub session, allow only;
    pattern keys for plain parts, exact text for the rest and for network
-   and publish tools; cleared on "no", on a checker change, on restart.
-5. The reason words from the scores (design §9), scores to the debug log;
-   the 3-errors notice and the 2-minute cool-down; `approvals_classifier`
-   in config.toml; the cost in `/usage`; the "auto-confirm" row in
-   `/setup` roles.
-6. A small eval (`docs/approvals-eval/`): 40 labeled commands from our
+   and publish tools; cleared on "no", on a role change, on restart.
+6. The reason words from the scores (design §9), scores to the debug log;
+   the 3-errors notice and the 2-minute cool-down; the cost in `/usage`.
+7. A small eval (`docs/approvals-eval/`): 40 labeled commands from our
    threads (20 fine, 20 risky), Jev vs `mistral-small-latest`: dangerous
    allowed, share to the user, latency, cost. Phase 2 grows it to ~150.
 
-Done when: both routes and the fallback work against a fake server in
+Done when: the row and its picker match designer's words (tmux capture to
+designer); both Jev routes and a chat model work against a fake server in
 tests and once against the real ones (no key printed); the eval table is
-in the report. ~3 days.
+in the report. ~3.5 days.
 
 ---
 
-## 1e · `approvals-sandbox`: Seatbelt on macOS (only if the user says yes to plan Q1)
+## 1e · `approvals-sandbox`: Seatbelt on macOS (settled: the user said yes)
 
 Objective: in `auto` on macOS, every bash call runs under a per-agent
 Seatbelt profile: writes only in the roots, network only when allowed;
 a denial becomes a rerun decision.
+
+Starts after `approvals-tmp` reports done (plan §6).
 
 Read: design §6 (all), §7, §7.1; Codex `sandboxing/src/seatbelt.rs`,
 `seatbelt_base_policy.sbpl`, `denial.rs`, `core/src/tools/orchestrator.rs`.

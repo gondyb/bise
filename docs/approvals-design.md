@@ -20,8 +20,19 @@ the hard rules and the wire; §14 says what changed.
 - What needs the user is a `confirm` card in the **user inbox** (BISE-299).
 - The checker is called **rarely**, to save tokens and time: cheap tiers
   first (§3), the checker only for the rest, its verdicts cached (§4.4).
-- The checker is **Jev** (TypeSafe's System One model) when a Jev route
-  exists, else the `classify` role (BISE-298) (§4).
+- The checker is a **role, `checker`, in `/models`** (the `classify` role
+  of BISE-298, shown with this feature), **Jev by default** (TypeSafe's
+  System One model); a chat model can take the role instead, or it can be
+  off (§4.2). Settled by the user (Q2).
+- **The sandbox on macOS now** (Seatbelt: writes only in the roots,
+  network only when allowed), the parser path where there is none (§6).
+  Settled (Q1).
+- In `auto`, **reads run anywhere** but the secret paths (Q3), and **local
+  git runs at once** (`add`, `commit`, `apply`, the private-index
+  plumbing; `checkout`, `reset`, `clean`, `restore` go to the checker)
+  (Q4). Settled.
+- It builds on roles-menu (option A: role → provider → model → effort):
+  the `approvals` branch starts from main after roles-menu lands.
 - The bash parser is **pure Rust**: `brush-parser` (§5). No C.
 - Kept from the rounds before (all settled):
   1. a real bash parser for safe reads, saved "always allow" rules per repo
@@ -30,7 +41,8 @@ the hard rules and the wire; §14 says what changed.
      `mkdir`, `rm` inside the roots) run like edits;
   3. a bash edit the parser cannot read (`python3 - <<EOF` that writes,
      `perl -pi`) is denied once with the hint naming the edit tool, then a
-     card;
+     card — only where there is no sandbox (with the sandbox it just runs,
+     contained, §6);
   4. exactly one edit toolset per request, by provider: OpenAI →
      `apply_patch` only; every other provider → Vibe's `edit` and
      `write_file`, copied as is (§2.2);
@@ -269,21 +281,43 @@ argument for simple commands, exact text for compounds); Crush PR #3874
 (native auto mode, the small-model slot by default, fails closed, an
 "evaluating…" state).
 
-### 4.2 Which checker runs
+### 4.2 Which checker runs: the `checker` role (settled)
 
-`approvals_classifier` in `~/.bise/config.toml`:
+The checker is a role row in `/models`, built on roles-menu's option A
+(role → provider → model → effort) and its role table
+(`rust/catalog/src/roles.rs`: the `classify` role, declared with no UI
+until this feature). Designer's words:
 
-- `"jev"` (default when a Jev route exists): through the user's OpenRouter
-  key (`typesafe/jev-1.13`, nothing new to set up), or a TypeSafe key
-  (`TYPESAFE_API_KEY`, or `bise login typesafe`; stored in `auth.json`).
-- `"model"`: the `classify` role (BISE-298; unset = the `small` role), with
-  approvals.md §4.3's prompt, strict JSON. The default when no Jev route
-  exists. Nothing leaves the user's existing providers.
-- `"off"`: no checker. Tier 5 becomes a card (= the old `accept edits`).
-  For strict users, and for a user who does not want commands sent out.
+- Row: `checker      TypeSafe   jev-1.13`; hint line "checker: in auto,
+  decides which commands run and which ask you." (+ " only used in auto."
+  when the mode is `yolo`). Off: the row says `off · commands ask you`,
+  dim; enter sets it up.
+- Picker, step 1 "checker: which provider?", `now: TypeSafe · jev-1.13`:
+  - `TypeSafe` (`✓ ready · now · recommended`, recommended in accent);
+  - `OpenRouter` (`✓ ready · jev through OpenRouter`);
+  - a dim separator row "or a chat model checks" (not selectable), then the
+    chat providers as in the other roles (`Anthropic ✓ ready`, `Mistral ✓
+    ready · main, voice use it`…);
+  - last row `off · every command asks you` (dim), for strict users:
+    `/models` is the one place to change it.
+  A dim line under the title says what leaves the machine, the same words
+  as the tip (§8): "the checker sees the command, the script it runs, and
+  your request."
+- Jev has one model and no effort: steps 2 and 3 are skipped. A chat
+  provider: its models (the small ones marked recommended), then its effort
+  step, as usual; that chat model checks with approvals.md §4.3's prompt,
+  strict JSON.
+- Keys: a TypeSafe key goes through `/provider` like any key
+  (`TYPESAFE_API_KEY` too). OpenRouter's key already works for Jev.
+- config.toml: `[roles] classify = "typesafe/jev-1.13"` (or
+  `"openrouter/typesafe/jev-1.13"`, a chat `provider/model`, or `"off"`);
+  `BISE_CLASSIFY_MODEL` for one session. Unset: Jev through TypeSafe if its
+  key is ready, else through OpenRouter if that key is ready, else the
+  small jobs model.
+- `/approvals` shows which checker runs and points to `/models`.
 
-`/approvals` shows which one runs and switches it. A checker error falls
-back to a card, never to the other checker (no surprise data flow).
+A checker error falls back to a card, never to another checker (no
+surprise data flow).
 
 ### 4.3 What the checker sees (the state) and asks
 
@@ -354,12 +388,12 @@ own tokens do not change: the checker never enters their context.
 
 ### 4.7 What leaves the machine (privacy, plainly)
 
-With `"jev"`: the command text, the script it runs (cut), the user's
+With Jev: the command text, the script it runs (cut), the user's
 request that started the task (cut), and the paths, to TypeSafe (through
 OpenRouter or directly). TypeSafe says it does not train on requests; it
 keeps them under its DPA; zero retention only for enterprise customers.
-With `"model"`: the same state to the user's own `classify` provider. With
-`"off"`: nothing. The one-time tip says exactly that (§8).
+With a chat model in the role: the same state to that provider. Off:
+nothing. The one-time tip says exactly that (§8).
 
 ## 5. The bash parser: `brush-parser` (pure Rust)
 
@@ -577,7 +611,7 @@ On the corpus of §3.2 (same repo pattern cache):
   server cannot write outside, which is right); a rerun without the
   sandbox runs the command twice (Codex accepts it; the card says so).
 
-### 6.5 Recommendation
+### 6.5 Recommendation (settled: the user said yes, Q1)
 
 Take the sandbox **on macOS in phase 1**, as one more parallel agent, and
 keep the parser path of §3 as the fallback where no sandbox exists (Linux
@@ -587,8 +621,7 @@ nothing of §5 is wasted; the deny-once rule stays only on the fallback. It
 cuts checker calls from ~7 % to ~1–2 % of bash calls, removes the cards
 for bash edits, and contains what no text check can see (`cargo test`,
 `make`, scripts). The cost is ~3.5 days now, ~4 on Linux later, and an
-allowlist of cache dirs to keep right. This is open question 1 in the
-plan; the rest of the design holds either way.
+allowlist of cache dirs to keep right.
 
 ## 7. What counts as an edit (the roots)
 
@@ -684,12 +717,12 @@ by an edit is lost (said in `/help`). A recursive delete of a root itself
   tip that says exactly what leaves the machine (designer):
   - Jev: "in auto, commands that aren't clearly safe go to Jev by TypeSafe
     for a check (the command, the script it runs, and your request).
-    /approvals turns that off."
-  - the `classify` role: "in auto, your small jobs model checks the
-    commands that aren't clearly safe. /approvals changes it."
-- `/approvals`: the mode, the checker (Jev, the `classify` role, off) and
-  the saved rules; `/approvals yolo|auto` switches the mode, `/approvals
-  checker jev|model|off` the checker (for a user without `shift+tab`).
+    /models changes it."
+  - a chat model in the role: "in auto, <model> checks the commands that
+    aren't clearly safe. /models changes it."
+- `/approvals`: the mode, the checker (it points to `/models` to change
+  it) and the saved rules; `/approvals yolo|auto` switches the mode (for a
+  user without `shift+tab`).
 
 ### 8.1 The `shift+tab` clash (settled with designer)
 
@@ -818,8 +851,9 @@ and fold the card.
   test -p y` run unchecked in that repo for the hub session. That is the
   point (6.9 % instead of 14.4 %); it is limited to plain parts, network and
   publish tools use exact text, and a "no" on a card removes the key.
-- **Jev is a third party.** With `"jev"`, commands and the user's request
-  go to TypeSafe (§4.7). `"model"` or `"off"` keep them home.
+- **Jev is a third party.** With Jev in the `checker` role, commands and
+  the user's request go to TypeSafe (§4.7). A chat model of the user's own
+  providers, or off, keeps them home.
 - **The parser reads text, not effects.** A saved `cargo test *` runs
   whatever the tests do; `make *` runs whatever the Makefile says. An
   unreadable part (`$(…)`, a variable as a path) is never matched by a
@@ -861,7 +895,7 @@ user runs on a real repo, a short script of what to try, and main merges
 | default `auto` (spec) | default `yolo`, the last pick remembered |
 | `shift+tab` cycles 3 modes | `shift+tab` toggles 2 |
 | the classifier judged every call past a small fast path | tiers 0–4 decide ~93 % of bash calls without a model (§3.2) |
-| `approvals_model`, then the `classify` role | Jev when a route exists (OpenRouter key or TypeSafe key), else the `classify` role; `approvals_classifier = "jev" \| "model" \| "off"` |
+| `approvals_model`, then the `classify` role | the `checker` role in `/models` (the `classify` role shown), Jev by default (TypeSafe or OpenRouter), a chat model instead, or off |
 | classifier verdicts: allow / deny-and-continue / card | allow or card; the only denial is the deny-once for a bash edit the parser cannot read (no model call) |
 | a turn cache | a per-repo, per-hub-session cache of allow verdicts, keyed by pattern for plain parts (§4.4) |
 | reason line: the classifier's words | words picked from the scores (designer); scores in the debug log and behind ctrl+o |
@@ -871,6 +905,7 @@ user runs on a real repo, a short script of what to try, and main merges
 | local git (`add`, `commit`, plumbing) was "any other bash" | tier 1 (the private-index commits agents make all day) |
 | `edit` alone for non-OpenAI providers, `write_file` an open question | `edit` + `write_file`, as is (settled) |
 | a card in `accept edits` for most commands | the checker in `auto`, a card when it is off |
+| no sandbox (option (e), "later") | Seatbelt on macOS in phase 1; the parser path where there is none |
 | the build lands on main phase by phase | on one local branch `approvals`, merged to main after the user's review (§13) |
 | card kind `approval`, keys `alt+1/2/3`, `~/.bend-harness/approvals.toml`, `approvals_timeout`, `/tmp` a root | as in the 3-mode design: `confirm` card in the user inbox, `1/2/3`, `~/.bise/approvals.toml`, no time limit; the temp folder moves from `~/.bise/tmp/<agent-id>` to the agent's session folder, and the harness's own `/tmp` files move there too (§7.1) |
 
