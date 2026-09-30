@@ -10,12 +10,16 @@ use bise_home::style::Style;
 
 /// The keys `config` reads and writes, and what they hold. The model
 /// roles (BISE-298) live in `[roles]`; their UI word comes first.
-pub const KEYS: [(&str, &str); 5] = [
+pub const KEYS: [(&str, &str); 6] = [
     ("main", "your team lead"),
     ("agents", "the agents main starts. unset: same as main"),
     ("small", "small jobs: titles and summaries. unset: auto"),
     ("voice", "listens when you talk (ctrl+r)"),
     ("project_doc_fallback_filenames", "files read when a folder has no AGENTS.md, comma-separated (e.g. CLAUDE.md)"),
+    (
+        "compaction_threshold",
+        "when a conversation compacts: tokens (450000) or a share of the model's window (45%). at most 80% of the window. unset: 80%",
+    ),
 ];
 
 /// The keys before roles (BISE-298): still taken, they read and write
@@ -85,6 +89,23 @@ pub fn value_of(setup: &Setup, key: &str, value: &str) -> Result<(String, Vec<St
             }
             let list: Vec<String> = names.iter().map(|n| toml_string(n)).collect();
             Ok((format!("[{}]", list.join(", ")), Vec::new()))
+        }
+        // BISE-300: tokens (a TOML number) or a share (a string "45%")
+        "compaction_threshold" => {
+            let v: String = v.chars().filter(|c| !c.is_whitespace()).collect();
+            if crate::threshold_written(&v, 1_000_000).is_none() {
+                return Err(format!("'{}' is not a threshold: a number of tokens (450000) or a share of the model's window (45%)", v));
+            }
+            let w = setup.catalog.context_window(&setup.model);
+            let t = crate::compaction_threshold(Some(&v), w);
+            let notes = match crate::threshold_written(&v, w) {
+                Some(n) if n > t && !setup.model.is_empty() => {
+                    vec![format!("{} compacts at {} tokens: at most 80% of its {} window", setup.model, t, w)]
+                }
+                _ => Vec::new(),
+            };
+            let toml = if v.ends_with('%') { toml_string(&v) } else { v.trim_start_matches('0').to_string() };
+            Ok((toml, notes))
         }
         k => Err(format!("unknown key '{}'\n{}", k, usage())),
     }
@@ -279,5 +300,25 @@ mod tests {
         assert_eq!(get(&t, "agents").as_deref(), Some("openai/gpt-6-luna"));
         assert_eq!(get(&t, "voice").as_deref(), Some("openai/gpt-transcribe"));
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// BISE-300: compaction_threshold takes tokens or a share; a number
+    /// stays a TOML number, a share a string; bise writes the new key.
+    #[test]
+    fn compaction_threshold_is_tokens_or_a_share() {
+        let s = Setup::from_text(Some("[roles]\nmain = \"anthropic/claude-haiku-4-5\"\n"), &|_| None);
+        assert_eq!(value_of(&s, "compaction_threshold", "450000").unwrap().0, "450000");
+        assert_eq!(value_of(&s, "compaction_threshold", " 45 % ").unwrap().0, "\"45%\"");
+        let (_, notes) = value_of(&s, "compaction_threshold", "450000").unwrap();
+        assert_eq!(notes, ["anthropic/claude-haiku-4-5 compacts at 160000 tokens: at most 80% of its 200000 window"]);
+        assert!(value_of(&s, "compaction_threshold", "70%").unwrap().1.is_empty());
+        for bad in ["0", "lots", "4.5%", "%", "-1"] {
+            assert!(value_of(&s, "compaction_threshold", bad).unwrap_err().contains("not a threshold"), "{bad}");
+        }
+        let t = with_key("threshold = 450000\n", "compaction_threshold", "\"45%\"");
+        assert_eq!(get(&t, "compaction_threshold").as_deref(), Some("45%"));
+        let t = with_key("", "compaction_threshold", "450000");
+        assert_eq!(t, "compaction_threshold = 450000\n");
+        assert_eq!(get(&t, "compaction_threshold").as_deref(), Some("450000"));
     }
 }

@@ -544,6 +544,52 @@ fn keys_and_model(home: &bise_home::Home) -> (Check, Vec<Check>, Check) {
     (keys_line, model_lines, voice_check(&setup.voice, &stt, stt_key))
 }
 
+/// When the conversations compact (BISE-300): BEND_THRESHOLD (`env`),
+/// else config `compaction_threshold`, else 80 % of the window; tokens
+/// or a share of the window, never above 80 % of it. One figure per
+/// model that runs (main, the agents when theirs differs).
+pub(crate) fn compaction_check(setup: &bise_catalog::Setup, env: Option<&str>) -> Check {
+    let env = env.map(str::trim).filter(|v| !v.is_empty());
+    let (written, from) = match env {
+        Some(v) => (Some(v), "BEND_THRESHOLD"),
+        None => (setup.compaction_threshold.as_deref(), "compaction_threshold"),
+    };
+    let short = |n: u64| {
+        if n >= 1_000_000 && n.is_multiple_of(1_000_000) {
+            format!("{}M", n / 1_000_000)
+        } else if n.is_multiple_of(1000) {
+            format!("{}k", n / 1000)
+        } else {
+            n.to_string()
+        }
+    };
+    let mut who: Vec<(&str, &str)> = vec![("main", &setup.model)];
+    if !setup.agent_model.is_empty() && setup.agent_model != setup.model {
+        who.push(("agents", &setup.agent_model));
+    }
+    let figures: Vec<String> = who
+        .iter()
+        .filter(|(_, m)| !m.trim().is_empty())
+        .map(|(name, m)| {
+            let w = setup.catalog.context_window(m);
+            let t = bise_catalog::compaction_threshold(written, w);
+            let capped = written.and_then(|v| bise_catalog::threshold_written(v, w)).is_some_and(|n| n > t);
+            let note = if capped { format!(" (capped: 80% of its {} window)", short(w)) } else { String::new() };
+            format!("{} {} tokens{}", name, t, note)
+        })
+        .collect();
+    let figures = if figures.is_empty() { String::new() } else { format!(" · {}", figures.join(" · ")) };
+    match written {
+        None => ok("compaction", format!("at 80% of the model's window{}", figures)),
+        Some(v) if bise_catalog::threshold_written(v, 1_000_000).is_none() => warn(
+            "compaction",
+            format!("{} = {} is not a threshold: 80% of the window applies{}", from, v, figures),
+            "set compaction_threshold = 450000 (tokens) or \"45%\" (of the window) in config.toml",
+        ),
+        Some(v) => ok("compaction", format!("{} = {}{}", from, v, figures)),
+    }
+}
+
 fn hubs(home: &bise_home::Home) -> Check {
     let ws = crate::sb_workspace(&[]);
     let paths = switchboard::paths::Paths::for_workspace(&ws);
@@ -613,7 +659,9 @@ pub(crate) fn main(args: &[String]) -> i32 {
     };
     let home = bise_home::Home::from_env();
     let (keys, models, voice) = keys_and_model(&home);
-    let config = config_check(&home.config_file(), &bise_catalog::Setup::load(&home.config_file()).catalog.warnings);
+    let setup = bise_catalog::Setup::load(&home.config_file());
+    let config = config_check(&home.config_file(), &setup.catalog.warnings);
+    let compaction = compaction_check(&setup, std::env::var("BEND_THRESHOLD").ok().as_deref());
     let checks = vec![
         macos(),
         bise(verbose),
@@ -628,7 +676,7 @@ pub(crate) fn main(args: &[String]) -> i32 {
     ];
     let mut checks = checks;
     checks.extend(models);
-    checks.extend([voice, hubs(&home), disk(&home)]);
+    checks.extend([compaction, voice, hubs(&home), disk(&home)]);
     let st = Style::stdout();
     println!("{}", st.title("checking your setup"));
     println!();
@@ -708,6 +756,34 @@ mod tests {
         assert_eq!(voice_check(&s.voice, &r, Some(false)).mark, Mark::Warn, "no key");
         assert_eq!(config_check(&cfg, &s.catalog.warnings).mark, Mark::Ok);
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// BISE-300: the compaction line: the default, a number capped on a
+    /// smaller agent model, a share, a bad value, BEND_THRESHOLD first.
+    #[test]
+    fn compaction_line() {
+        let cfg = |extra: &str| {
+            bise_catalog::Setup::from_text(
+                Some(&format!("{}[roles]\nmain = \"foundry/claude-opus-5-5\"\nagents = \"anthropic/claude-haiku-4-5\"\n", extra)),
+                &|_| None,
+            )
+        };
+        let c = compaction_check(&cfg(""), None);
+        assert_eq!(c.mark, Mark::Ok);
+        assert_eq!(c.detail, "at 80% of the model's window · main 800000 tokens · agents 160000 tokens");
+        let c = compaction_check(&cfg("compaction_threshold = 450000\n"), None);
+        assert_eq!(c.detail, "compaction_threshold = 450000 · main 450000 tokens · agents 160000 tokens (capped: 80% of its 200k window)");
+        let c = compaction_check(&cfg("compaction_threshold = \"45%\"\n"), None);
+        assert_eq!(c.detail, "compaction_threshold = 45% · main 450000 tokens · agents 90000 tokens");
+        let c = compaction_check(&cfg("compaction_threshold = \"lots\"\n"), None);
+        assert_eq!(c.mark, Mark::Warn);
+        assert!(c.detail.starts_with("compaction_threshold = lots is not a threshold"), "{c:?}");
+        let c = compaction_check(&cfg("compaction_threshold = 450000\n"), Some("10%"));
+        assert_eq!(c.detail, "BEND_THRESHOLD = 10% · main 100000 tokens · agents 20000 tokens");
+        // the old key: not read, the config line says so
+        let s = cfg("threshold = 450000\n");
+        assert_eq!(compaction_check(&s, None).detail, "at 80% of the model's window · main 800000 tokens · agents 160000 tokens");
+        assert!(s.catalog.warnings.iter().any(|w| w.contains("rename it compaction_threshold")), "{:?}", s.catalog.warnings);
     }
 
     /// qa C: a fresh HOME is not an "old layout".

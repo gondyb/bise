@@ -2283,7 +2283,8 @@ base_url = \"https://foundry.example.net/anthropic/v1\"", "")))
 # model's context window: its `context` in the models file, else its
 # provider's; nothing says (an unknown provider, no models file for a
 # provider the built-in table lacks): 128000, as rust/catalog's
-# DEFAULT_CAPS. BEND_THRESHOLD > config threshold > that default.
+# DEFAULT_CAPS. BEND_THRESHOLD > config compaction_threshold > that
+# default (BISE-300: never above it either).
 law threshold_is_80_percent_of_the_window:
   {(Pv.threshold_of(1000000), Pv.threshold_of(200000), Pv.threshold_of(128000),
       Pv.threshold_of(131072), Pv.threshold_of(0))
@@ -2313,15 +2314,52 @@ law window_unknown_model_default:
     == (128000, 128000) : U32 & U32}
 
 law threshold_precedence:
-  {(Pv.threshold("5000", "threshold = 7000", 1000000),
-      Pv.threshold("", "threshold = 7000", 1000000),
+  {(Pv.threshold("5000", "compaction_threshold = 7000", 1000000),
+      Pv.threshold("", "compaction_threshold = 7000", 1000000),
       Pv.threshold("", "model = \"x\"", 200000),
-      Pv.threshold("oops", "threshold = 7000", 200000))
+      Pv.threshold("oops", "compaction_threshold = 7000", 200000))
     == (5000, 7000, 160000, 160000) : U32 & U32 & U32 & U32}
+
+# LAW (BISE-300): config `compaction_threshold` is a number of tokens or
+# a share of the model's window ("45%", spaces allowed around it);
+# BEND_THRESHOLD reads the same way.
+law threshold_tokens_or_percent:
+  {(Pv.threshold("", "compaction_threshold = 450000", 1000000),
+      Pv.threshold("", "compaction_threshold = \"45%\"", 1000000),
+      Pv.threshold("", "compaction_threshold = \"45%\"", 200000),
+      Pv.threshold("", "compaction_threshold = \" 45 % \"", 128000),
+      Pv.threshold("10%", "compaction_threshold = 7000", 200000))
+    == (450000, 450000, 90000, 57600, 20000)
+    : U32 & U32 & U32 & U32 & U32}
+
+# LAW (BISE-300): the threshold never goes above 80 % of the model's
+# window, whoever sets it: a number written for a 1M model on a 200k
+# one, a share above 80 %, the environment.
+law threshold_capped_at_80_percent:
+  {(Pv.threshold("", "compaction_threshold = 450000", 200000),
+      Pv.threshold("", "compaction_threshold = \"95%\"", 1000000),
+      Pv.threshold("", "compaction_threshold = \"250%\"", 200000),
+      Pv.threshold("900000", "", 200000),
+      Pv.threshold("", "compaction_threshold = 160000", 200000))
+    == (160000, 800000, 160000, 160000, 160000)
+    : U32 & U32 & U32 & U32 & U32}
+
+# LAW (BISE-300): a value that is no threshold (0, 0 %, a word, a
+# decimal share, a lone %) leaves the default; the old key `threshold`
+# is not read any more.
+law threshold_bad_values_default:
+  {(Pv.threshold("", "compaction_threshold = 0", 200000),
+      Pv.threshold("", "compaction_threshold = \"0%\"", 200000),
+      Pv.threshold("", "compaction_threshold = \"lots\"", 200000),
+      Pv.threshold("", "compaction_threshold = \"4.5%\"", 200000),
+      Pv.threshold("", "compaction_threshold = \"%\"", 200000),
+      Pv.threshold("", "threshold = 7000", 200000))
+    == (160000, 160000, 160000, 160000, 160000, 160000)
+    : U32 & U32 & U32 & U32 & U32 & U32}
 
 # LAW (BISE-150): the config template leaves the threshold to the model
 law config_template_threshold_unset:
-  {Cf.cfg_get(St.CONFIG_TEMPLATE(), "threshold") == None{}
+  {Cf.cfg_get(St.CONFIG_TEMPLATE(), "compaction_threshold") == None{}
     : Maybe<&2, String>}
 
 # LAW: a provider of the models file: its family, base_url (a trailing
@@ -2786,8 +2824,9 @@ law attempt_for_keeps_a_transport_failure:
 
 # LAW: flat keys parse byte-for-byte - strings quoted, numbers bare.
 law config_parse_flat:
-  {Cf.parse_toml("model = \"opus-5.5\"\nthreshold = 800000\n")
-    == Con{Cf.KV{"model", "opus-5.5"}, Con{Cf.KV{"threshold", "800000"},
+  {Cf.parse_toml("model = \"opus-5.5\"\ncompaction_threshold = 800000\n")
+    == Con{Cf.KV{"model", "opus-5.5"},
+      Con{Cf.KV{"compaction_threshold", "800000"},
       Nil{}}} : List<&2, Cf.KV>}
 
 # LAW: comments and blank lines never reach the pairs.
@@ -2813,7 +2852,7 @@ law config_lookup_found:
     : Maybe<&2, String>}
 
 law config_lookup_missing:
-  {Cf.cfg_or(Cf.cfg_get("model = \"m\"\n", "threshold"), "800000")
+  {Cf.cfg_or(Cf.cfg_get("model = \"m\"\n", "compaction_threshold"), "800000")
     == "800000" : String}
 
 # LAW: numbers ride as U32.
@@ -2846,7 +2885,8 @@ law config_template_parses:
     : Maybe<&2, String>}
 
 law config_template_threshold:
-  {Cf.cfg_u32(St.CONFIG_TEMPLATE(), "threshold", 800000) == 800000
+  {Cf.cfg_u32(St.CONFIG_TEMPLATE(), "compaction_threshold",
+      800000) == 800000
     : U32}
 
 # ---- the harness-info line: the single source of truth for clients ----

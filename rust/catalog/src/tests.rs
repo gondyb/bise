@@ -485,6 +485,44 @@ fn the_default_threshold_is_80_percent_of_the_window() {
     assert_eq!(threshold_of(0), 0);
 }
 
+/// BISE-300: config `compaction_threshold` is tokens or a share of the
+/// window, never above 80 % of it; the old `threshold` key is not read
+/// (a warning says to rename it). The same cases as the Bend laws
+/// `threshold_tokens_or_percent` / `threshold_capped_at_80_percent` /
+/// `threshold_bad_values_default`.
+#[test]
+fn the_compaction_threshold_is_tokens_or_a_share_capped_at_80_percent() {
+    assert_eq!(compaction_threshold(Some("450000"), 1_000_000), 450_000);
+    assert_eq!(compaction_threshold(Some("45%"), 1_000_000), 450_000);
+    assert_eq!(compaction_threshold(Some("45%"), 200_000), 90_000);
+    assert_eq!(compaction_threshold(Some(" 45 % "), 128_000), 57_600);
+    // the cap: a 1M number on a 200k model, a share above 80 %
+    assert_eq!(compaction_threshold(Some("450000"), 200_000), 160_000);
+    assert_eq!(compaction_threshold(Some("95%"), 1_000_000), 800_000);
+    assert_eq!(compaction_threshold(Some("250%"), 200_000), 160_000);
+    assert_eq!(compaction_threshold(Some("99999999999999999999"), 200_000), 160_000);
+    // no threshold: the default
+    for bad in ["0", "0%", "lots", "4.5%", "%", "", "-5", "+5"] {
+        assert_eq!(compaction_threshold(Some(bad), 200_000), 160_000, "{bad}");
+    }
+    assert_eq!(compaction_threshold(None, 200_000), 160_000);
+
+    let s = Setup::from_text(Some("compaction_threshold = 450000\n"), &|_| None);
+    assert_eq!(s.compaction_threshold.as_deref(), Some("450000"));
+    assert!(s.catalog.warnings.is_empty(), "{:?}", s.catalog.warnings);
+    let s = Setup::from_text(Some("compaction_threshold = \"45%\"\n"), &|_| None);
+    assert_eq!(s.compaction_threshold.as_deref(), Some("45%"));
+    assert!(s.catalog.warnings.is_empty(), "{:?}", s.catalog.warnings);
+    let s = Setup::from_text(Some("threshold = 450000\n"), &|_| None);
+    assert_eq!(s.compaction_threshold, None);
+    assert_eq!(s.catalog.warnings, ["config.toml: threshold is no longer read: rename it compaction_threshold"]);
+    let s = Setup::from_text(Some("compaction_threshold = \"lots\"\n"), &|_| None);
+    assert!(s.catalog.warnings[0].starts_with("config.toml: compaction_threshold: a number of tokens"), "{:?}", s.catalog.warnings);
+    let s = Setup::from_text(Some("compaction_threshold = 4.5\n"), &|_| None);
+    assert_eq!(s.compaction_threshold, None);
+    assert_eq!(s.catalog.warnings.len(), 1);
+}
+
 // ---- voice (BISE-130) ----
 
 #[test]

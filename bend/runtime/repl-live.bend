@@ -31,8 +31,10 @@ import ./oneshot.bend as Os
 # the compaction threshold for real conversations, in approximate
 # tokens, with the ADR 0011 selection budget (20000) for preserved user
 # messages. The same precedence as everything else: BEND_THRESHOLD env
-# > config.toml threshold > 80 % of the model's context window (from
-# bise's catalog, BISE-150: runtime/provider-pure.bend `threshold`)
+# > config.toml compaction_threshold (tokens or "45%" of the window,
+# BISE-300) > 80 % of the model's context window (from bise's catalog,
+# BISE-150), never above that 80 %: runtime/provider-pure.bend
+# `threshold`
 def thr_of_cfg(+envv: String, +cfgt: String, +window: U32) -> Nat:
   U32.to_nat(Pvp.threshold(envv, cfgt, window))
 
@@ -147,7 +149,7 @@ def live_main() -> IO(Unit):
     IO.print(String.append("bend-harness LIVE REPL on 127.0.0.1:",
       String.append(U32.show(p),
         String.append(" (real model, FS tools, bash) — compaction threshold: ",
-          String.append(Nat.show(threshold), " tokens (80% of the model's context; BEND_THRESHOLD or config.toml threshold to change)")))))
+          String.append(Nat.show(threshold), " tokens (at most 80% of the model's context; BEND_THRESHOLD or config.toml compaction_threshold to change)")))))
     # the plugins bridge, then the skills scan (it reads the plugin
     # skills), then the prompt (it lists the skills)
     u5 : Unit <- Pl.start()

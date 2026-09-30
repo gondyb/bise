@@ -937,6 +937,15 @@ def Laws.window_unknown_model_default():
 def Laws.threshold_precedence():
   {==}
 
+def Laws.threshold_tokens_or_percent():
+  {==}
+
+def Laws.threshold_capped_at_80_percent():
+  {==}
+
+def Laws.threshold_bad_values_default():
+  {==}
+
 def Laws.config_template_threshold_unset():
   {==}
 

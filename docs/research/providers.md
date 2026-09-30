@@ -677,12 +677,16 @@ before replacing a stored one). It no longer writes `<root>/.env`.
 
 ### 7.6 BISE-150 as built: the model's limits and prices
 
-- Threshold: `BEND_THRESHOLD` > config `threshold` > 80 % of the
-  context window of the model the REPL starts with (the models file:
-  the model's `context`, else its provider's; nothing: 128000).
-  `runtime/provider-pure.bend` `window` / `threshold`, laws
-  `threshold_*` / `window_*`; Rust mirror `Catalog::default_threshold`.
-  The config template no longer writes `threshold = 800000`.
+- Threshold: `BEND_THRESHOLD` > config `compaction_threshold` (was
+  `threshold` until BISE-300, no longer read) > 80 % of the context
+  window of the model the REPL starts with (the models file: the
+  model's `context`, else its provider's; nothing: 128000). BISE-300:
+  a value is tokens (`450000`) or a share of the window (`"45%"`), and
+  never goes above that 80 % (a number set for a 1M model stays safe
+  on a 200k agent model). `runtime/provider-pure.bend` `window` /
+  `threshold` / `thr_value`, laws `threshold_*` / `window_*`; Rust
+  mirror `Catalog::default_threshold`, `compaction_threshold`.
+  The config template no longer writes a threshold.
 - harness-info and the usage line carry the full `provider/model` id.
 - Prices: `input_price`, `output_price`, `cache_read_price`,
   `cache_write_price` (USD per 1M tokens) on models or providers;

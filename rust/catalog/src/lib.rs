@@ -494,9 +494,10 @@ impl Catalog {
     }
 
     /// The compaction threshold a model gets when neither
-    /// BEND_THRESHOLD nor config `threshold` says (BISE-150): 80 % of
-    /// its context window. The Bend runtime computes the same
-    /// (runtime/provider-pure.bend, `default_threshold`).
+    /// BEND_THRESHOLD nor config `compaction_threshold` says (BISE-150):
+    /// 80 % of its context window, also the most any value gets
+    /// (BISE-300, [`compaction_threshold`]). The Bend runtime computes
+    /// the same (runtime/provider-pure.bend, `threshold_of`).
     pub fn default_threshold(&self, name: &str) -> u64 {
         threshold_of(self.context_window(name))
     }
@@ -670,7 +671,7 @@ impl Catalog {
                     warn("[provider.<id>] is not read: write [providers.<id>]".into())
                 }
                 "model" if src == Source::Builtin => {}
-                _ => {} // the config's other keys (threshold, bg_after, [voice], ...)
+                _ => {} // the config's other keys (compaction_threshold, bg_after, [voice], ...)
             }
         }
         for (id, p) in providers {
@@ -715,6 +716,38 @@ fn kind_of(v: &toml::Value) -> Option<bool> {
 /// 80 % of a context window, in tokens.
 pub fn threshold_of(context: u64) -> u64 {
     context / 5 * 4 + context % 5 * 4 / 5
+}
+
+/// A compaction threshold as written (BISE-300), in tokens for a model
+/// with this window: a number of tokens ("450000") or a share of the
+/// window ("45%", above 100 counts as 100). None when it is no threshold
+/// (0, empty, a word, a decimal share): the default applies. The Bend
+/// runtime reads the same (runtime/provider-pure.bend `thr_value`).
+pub fn threshold_written(v: &str, context: u64) -> Option<u64> {
+    fn digits(s: &str) -> Option<u64> {
+        if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        Some(s.parse::<u64>().unwrap_or(u64::MAX))
+    }
+    let v = v.trim();
+    let n = match v.strip_suffix('%') {
+        Some(p) => {
+            let p = digits(p.trim())?.min(100);
+            context / 100 * p + context % 100 * p / 100
+        }
+        None => digits(v)?,
+    };
+    (n > 0).then_some(n)
+}
+
+/// The compaction threshold of a model with this window (BISE-300): the
+/// value written (BEND_THRESHOLD, else config `compaction_threshold`),
+/// never above 80 % of the window; none or no threshold: that 80 %. A
+/// number written for a 1M model stays safe on a 200k one.
+pub fn compaction_threshold(written: Option<&str>, context: u64) -> u64 {
+    let cap = threshold_of(context);
+    written.and_then(|v| threshold_written(v, context)).map_or(cap, |n| n.min(cap))
 }
 
 fn set_str(slot: &mut String, v: Option<String>, where_: &str, k: &str, warn: &mut dyn FnMut(String)) {
@@ -821,6 +854,9 @@ pub struct Setup {
     /// yet): BISE_CLASSIFY_MODEL > `[roles] classify` > small_model
     pub classify_model: String,
     pub classify_model_from: &'static str,
+    /// config `compaction_threshold` as written (BISE-300): "450000" or
+    /// "45%"; None when unset. [`compaction_threshold`] resolves it.
+    pub compaction_threshold: Option<String>,
 }
 
 /// config.toml's text with its top-level `model` set to `model`
@@ -872,6 +908,28 @@ pub fn with_key(config: &str, key: &str, value: &str) -> String {
     text
 }
 
+/// config `compaction_threshold` as written (BISE-300), and what is wrong
+/// with it: not a number nor a share, or the old key `threshold` (no
+/// longer read).
+fn read_threshold(t: &toml::Table, warnings: &mut Vec<String>) -> Option<String> {
+    const WHAT: &str = "a number of tokens (450000) or a share of the model's window (\"45%\")";
+    if t.contains_key("threshold") {
+        warnings.push("config.toml: threshold is no longer read: rename it compaction_threshold".into());
+    }
+    let v = match t.get("compaction_threshold")? {
+        toml::Value::Integer(n) => n.to_string(),
+        toml::Value::String(s) => s.trim().to_string(),
+        _ => {
+            warnings.push(format!("config.toml: compaction_threshold: {}", WHAT));
+            return None;
+        }
+    };
+    if threshold_written(&v, 1_000_000).is_none() {
+        warnings.push(format!("config.toml: compaction_threshold: {} (80% of the window applies)", WHAT));
+    }
+    Some(v)
+}
+
 /// A string key of the config, even when the file is not valid TOML (the
 /// Bend reader accepts bare words): `key = value # comment`.
 fn loose_key(text: &str, key: &str) -> Option<String> {
@@ -907,6 +965,7 @@ impl Setup {
         let (mut effort_cfg, mut agent_effort_cfg) = (None, None);
         let mut voice_cfg = voice::VoiceConfig::default();
         let mut classify_cfg: Option<String> = None;
+        let mut threshold_cfg: Option<String> = None;
         if let Some(text) = config {
             match text.parse::<toml::Table>() {
                 Ok(t) => {
@@ -927,6 +986,7 @@ impl Setup {
                     effort_cfg = main.effort.or_else(|| s("reasoning_effort"));
                     agent_effort_cfg = agents.effort.or_else(|| s("agent_reasoning_effort"));
                     classify_cfg = r.get(roles::CLASSIFY).model;
+                    threshold_cfg = read_threshold(&t, &mut catalog.warnings);
                     if let Some(v) = r.voice {
                         voice_cfg = voice::VoiceConfig {
                             model: v.model.or(voice_cfg.model),
@@ -946,6 +1006,7 @@ impl Setup {
                     small_cfg = loose_key(text, "small_model");
                     effort_cfg = loose_key(text, "reasoning_effort");
                     agent_effort_cfg = loose_key(text, "agent_reasoning_effort");
+                    threshold_cfg = loose_key(text, "compaction_threshold");
                 }
             }
         }
@@ -1003,6 +1064,7 @@ impl Setup {
             voice,
             classify_model,
             classify_model_from,
+            compaction_threshold: threshold_cfg,
         }
     }
 
