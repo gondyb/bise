@@ -69,6 +69,7 @@
   .t1 { font-size:clamp(24px, 3.2vw, 38px); font-weight:700; margin-top:42px; letter-spacing:-.02em; }
   .t2 { color:var(--dim); margin-top:12px; font-size:clamp(15px, 1.4vw, 17px); max-width:none; }
   .then { margin:14px 0 0; font-size:13px; color:var(--dim); } .then code { color:var(--text); background:var(--chip); padding:1px 6px; border-radius:4px; }
+  .req { margin-top:14px; color:var(--dim); font-size:13px; text-shadow:0 0 6px var(--bg), 0 0 2px var(--bg); position:relative; z-index:1; } .req a { color:var(--dim); text-decoration:underline; text-decoration-color:var(--faint); text-underline-offset:3px; }
   .install { margin-top:44px; color:var(--text); font-size:15px; cursor:pointer; display:inline-flex; align-items:center; gap:2.5ch;
     background:var(--soft); border:1px solid var(--faint); border-radius:10px; padding:11px 12px 11px 20px; transition:border-color .3s, background .3s; }
   .install:hover { border-color:var(--acc); }
@@ -358,6 +359,7 @@
     <div class="t1">multi-agent coding, made human.</div>
     <div class="t2" data-a="t2">one thread per repo. you talk, i run the agents.<br>no tabs. no babysitting. you stay in flow.</div>
     <div class="install" id="install" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span id="cmd">curl -fsSL bise.dev/install | sh</span></span><span class="c" id="copied">copy</span></div>
+    <div class="req">macOS for now, Apple silicon and Intel · linux soon · <a href="#faq">the fine print</a></div>
     <div class="scroll">↓</div>
   </div>
 </div>
@@ -530,7 +532,9 @@
     <p><b>won't my context overflow? i don't want to live in the dumb zone</b><br><span class="dim">no need to overthink it. when a thread gets long, bise compacts it. the latest models are trained for that and they keep their trajectory. your thread just keeps going.</span></p>
     <p><b>do i need a memory system?</b><br><span class="dim">nope. compaction carries the thread, and any agent can go back and read the full history: every message, every tool call. nothing gets lost.</span></p>
     <p><b>how many agents can i run?</b><br><span class="dim">as many as you want. the real limits are your tokens, your budget and your provider.</span></p>
-    <p><b>which models?</b><br><span class="dim">bring your own key.</span></p>
+    <p><b>what does it run on?</b><br><span class="dim">macOS for now, Apple silicon and Intel. linux is next. windows later, maybe through WSL first. you need git, and that's about it.</span></p>
+    <p><b>which models?</b><br><span class="dim">bring your own key: Anthropic, OpenAI, Mistral and more. the first run lists every provider.</span></p>
+    <p><b>does it ask before running a command?</b><br><span class="dim">not yet. agents run shell commands in your repo without asking. use it on repos you trust, and commit often: git is your safety net. approvals are next.</span></p>
     <p><b>do i need to learn anything?</b><br><span class="dim">four words: you, main, agents, cards. main is the one you talk to. the rest you pick up in the first hour.</span></p>
     <p><b>open source?</b><br><span class="dim">yes, under <a href="https://github.com/gvergnaud/bise/blob/main/LICENSE">Apache-2.0</a>. read it, fork it, send a :*.</span></p>
   </div>
@@ -557,6 +561,7 @@
       <div class="big acc">:*</div>
       <p class="dim" style="margin-top:28px">ideas in. little kisses out. also pull requests.</p>
       <div class="install" id="install2" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span>curl -fsSL bise.dev/install | sh</span></span><span class="c">copy</span></div>
+      <div class="req">macOS for now, Apple silicon and Intel · linux soon · <a href="#faq">the fine print</a></div>
     </div>
   </section>
 </div>
