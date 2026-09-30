@@ -30,7 +30,7 @@
 <body>
 <div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
 
-<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>the dandelion sky and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
 <section class="v" data-v="seeds"><div class="tag"><b>7 · seeds</b> <span class="pick">new · mix of 5 and 6</span><br>the dandelion sky, plus one thread. now and then an agent lifts off the thread like a seed (∿ name), floats a while, and lands further along with a ✓. the thread's :* keeps walking.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
@@ -207,23 +207,29 @@ const V = {
     const NAMES = ["perf", "dark-mode", "emoji-csv", "release", "accents", "docs", "tests"];
     return (g, t) => {
       const Y = Math.round(g.rows * .86);
-      if (s.p.length < 70 && Math.random() < .25) s.p.push({ x: rnd(-10, g.cols), y: g.rows + 1, z: Math.random(), ph: rnd(0, 6), life: 1e9 });
+      // a fuller dandelion sky: seeded at once over the whole hero, then fed from the bottom and the left edge
+      const seed = (x, y) => s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: 1e9 });
+      if (!s.sown) { s.sown = true; for (let k = 0; k < 150; k++) seed(rnd(0, g.cols), rnd(0, g.rows)); }
+      for (let k = 0; k < 2; k++) if (s.p.length < 170 && Math.random() < .55) Math.random() < .7 ? seed(rnd(-20, g.cols), g.rows + 1) : seed(-2, rnd(0, g.rows));
       s.p = s.p.filter(p => p.y > -2 && p.x < g.cols + 3 && --p.life > 0);
-      for (const p of s.p) { const sp = .06 + p.z * .18; p.y -= sp; p.x += sp * 1.6; p.ph += .04; g.put(p.x + Math.sin(p.ph) * 2, p.y, p.life < 25 ? "." : p.z > .8 ? "∗" : p.z > .45 ? "·" : ".", p.z > .8 ? "d" : ""); }
+      for (const p of s.p) { const sp = .06 + p.z * .18; p.y -= sp; p.x += sp * 1.1; p.ph += .04; g.put(p.x + Math.sin(p.ph) * 2, p.y, p.life < 25 ? "." : p.z > .8 ? "∗" : p.z > .45 ? "·" : ".", p.z > .8 ? "d" : ""); }
       for (let x = 0; x < g.cols; x++) g.put(x, Y, "─");
       // the kiss walks the thread; it wraps around once every branch is back
       s.kx += .3;
       if (s.kx > g.cols + 2 && !s.b.length) { s.kx = -2; s.last = -99; }
       const kx = Math.floor(s.kx);
-      // it sends agents out from where it stands
-      const L = Math.floor(rnd(36, 80));
-      if (s.b.length < 3 && s.kx - s.last > 14 && kx > 2 && kx + L < g.cols - 10 && Math.random() < .02) {
-        const name = NAMES[Math.floor(rnd(0, NAMES.length))], ko = g.ko;
-        // an arc that crosses the text's columns stays under it (name included)
-        const under = kx + 1 + L + name.length + 3 >= ko.x0 && kx + 1 <= ko.x1;
-        const top = under ? Math.max(2, Y - ko.y1 - 2) : Y - 4;
-        s.b.push({ xs: kx + 1, L, p: 0, A: Math.min(rnd(Math.min(3, top), top), L / 2.6), name });
-        s.last = s.kx; s.flash = 8;
+      // it sends agents out from where it stands. a landing spot must not share its label's room with another one
+      const name = NAMES[Math.floor(rnd(0, NAMES.length))], ko = g.ko;
+      if (s.b.length < 3 && s.kx - s.last > 14 && kx > 2 && Math.random() < .02) {
+        const free = (L) => { const a = kx + 1 + L, z = a + 2 + name.length; return z < g.cols - 4 && s.b.every(o => { const oa = o.xs + o.L, oz = oa + 2 + o.name.length; return z + 3 < oa || oz + 3 < a; }); };
+        let L = 0; for (let k = 0; k < 12 && !L; k++) { const c = Math.floor(rnd(36, 80)); if (free(c)) L = c; }
+        if (L) {
+          // an arc that crosses the text's columns stays under it (name included)
+          const under = kx + 1 + L + name.length + 3 >= ko.x0 && kx + 1 <= ko.x1;
+          const top = under ? Math.max(2, Y - ko.y1 - 2) : Y - 4;
+          s.b.push({ xs: kx + 1, L, p: 0, A: Math.min(rnd(Math.min(3, top), top), L / 2.6), name });
+          s.last = s.kx; s.flash = 8;
+        }
       }
       s.b = s.b.filter(b => {
         b.p = Math.min(b.L, b.p + .6);
@@ -236,10 +242,24 @@ const V = {
           return false;
         }
         dots(g, pts);
-        if (b.p < b.L) { const [hx, hy] = pts[pts.length - 1]; g.put(hx, hy, "∿", "a"); g.str(hx + 2, hy, b.name, "d"); }
-        else { g.put(b.xs + b.L, Y, "✓", "a"); g.str(b.xs + b.L + 2, Y - 1, b.name, "d"); }
+        b.head = b.p < b.L ? pts[pts.length - 1] : null;
         return true;
       });
+      // marks, then names: a name tries right, left, above, below its mark, and stays hidden if all four are taken
+      const used = [];
+      const place = (x, y, name) => {
+        for (const [cx, cy] of [[x + 2, y], [x - name.length - 1, y], [x + 1, y - 1], [x + 1, y + 1]]) {
+          const a = Math.round(cx), z = a + name.length - 1, r = Math.round(cy);
+          if (a < 0 || z >= g.cols || r < 0 || r >= g.rows || r === Y) continue;
+          if (a <= g.ko.x1 + 1 && z >= g.ko.x0 - 1 && r >= g.ko.y0 && r <= g.ko.y1) continue;
+          if (used.some(u => u.r === r && a <= u.z + 2 && z >= u.a - 2)) continue;
+          if (used.some(u => u.m && Math.abs(u.r - r) === 0 && u.a >= a - 1 && u.a <= z + 1)) continue;
+          used.push({ a, z, r }); g.str(a, r, name, "d"); return;
+        }
+      };
+      for (const o of s.b) { const [mx, my] = o.head || [o.xs + o.L, Y]; used.push({ a: Math.round(mx), z: Math.round(mx), r: Math.round(my), m: true }); g.put(mx, my, o.head ? "∿" : "✓", "a"); }
+      for (const o of s.b.filter(o => !o.head)) place(o.xs + o.L, Y, o.name);
+      for (const o of s.b.filter(o => o.head)) place(o.head[0], o.head[1], o.name);
       g.str(kx, Y, ":*", "a");
       if (s.flash > 0) { s.flash--; if (s.flash > 3) { g.put(kx - 1, Y - 1, "·", "a"); g.put(kx + 2, Y - 1, "·", "a"); g.put(kx + 1, Y - 2, "·", "a"); } }
     };
