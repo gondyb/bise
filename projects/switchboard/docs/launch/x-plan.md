@@ -26,7 +26,9 @@ posts 2-7: as in [posts.md](posts.md). post 2 changes if you pick A (the five ta
 - 12-50 s · **the calm:** a real screen recording ([video.md](video.md)): one thread, three ideas typed, three agents start, a card answered with one key, ✓ lines.
 - 50-60 s · `one thread per repo. you stay in flow.` + bise.dev
 
-(to verify with designer: can the landing's before/after and flow demos be exported as video for today?)
+clips from designer (1920x1080, H.264, no audio, not in git):
+- `docs/brand/video/before-five-tabs.mp4` · 10.5 s · ends as the heading flips to "this is what flow looks like" (9.3 s): a good cut into the real screen
+- `docs/brand/video/flow.mp4` · 15.0 s · the calm demo. fallback if the real recording isn't ready: before (10.5 s) + flow (15 s) + end card
 
 ---
 
