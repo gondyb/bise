@@ -304,6 +304,13 @@ const ATT_SCREENS = [
 const CFEED = you("signup is slow on mobile, and ship the next tag when it's green") + bise("perf is on signup. deploy waits for green, then publishes.") +
   `<div class="b"><span class="acc">✓</span> api-v3 done <span class="dim">· the client is on v3.</span></div>`;
 const crow = (on, who, q, opts) => `<div class="cr${on ? " on" : ""}"><span class="q"><span class="acc">?</span> <span>${who}</span> <span class="dim">· ${q}</span></span><span class="o">${opts.map(([k, l]) => `<span><b>${k}</b> <span class="dim">${l}</span></span>`).join("")}<span class="x">×</span></span></div>`;
+// the inbox strip since BISE-251/253: no keys on the rows; after ctrl+g the selected row alone ("sel") shows its keys
+const crow2 = (on, who, q, opts) => {
+  const K = (k, l, c = "") => `<span><b${c}>${k}</b> <span class="dim">${l}</span></span>`, T = ' style="color:var(--text)"';
+  const digits = opts.filter(([k]) => /^\d$/.test(k)), many = digits.length > 3 || opts.some(([k]) => /options/.test(k));
+  const keys = opts.length === 1 && opts[0][0] === "⏎" ? K("⏎", opts[0][1], T) : (many ? K("1-9", "answer") : digits.map(([k, l]) => K(k, l)).join("")) + K("⏎", "open", T);
+  return `<div class="cr${on ? " on" : ""}"><span class="q"><span class="acc">?</span> <span>${who}</span> <span class="dim">· ${q}</span></span><span class="o">${on === "sel" ? keys + '<span class="x">×</span>' : ""}</span></div>`;
+};
 const STRIP3 = `<div class="cstrip">` +
   crow(true, "deploy wants to run", `<span style="color:var(--text)">npm publish --tag next</span>`, [["1", "allow"], ["2", "always"], ["3", "deny"]]) +
   crow(false, "perf", "the hero image is 4.2 MB. compress it, or lazy-load it?", [["1", "compress"], ["2", "both"]]) +
@@ -359,11 +366,11 @@ const STRIP_AFTER = `<div class="cstrip">${ROW_PERF(true)}${ROW_DOCS}</div>`;
 const C2FEED = you('signup is slow on mobile. and ship the next tag when it\'s green<span class="tick read">✓✓</span>') +
   bise("perf is on signup. release waits for green, then publishes.") +
   `<div class="b"><span class="who acc">✓</span>sad-404 done <span class="dim">· the dog has a hat.</span></div>`;
-const C2_LAB = (n) => `<div class="cr lab"><span class="faint">inbox · ${n} waiting for you</span><span><span style="color:var(--text)">ctrl+g</span> <span class="dim">select</span></span></div>`;
-const C2_REL = (on) => crow(on, "release wants to run", `<span style="color:var(--text)">npm publish --tag next</span>`, [["1", "allow"], ["2", "always"], ["3", "deny"]]);
-const C2_PERF = (on) => crow(on, "perf", "the hero image is 4.2 MB. compress it, or lazy-load it?", [["1", "compress"], ["2", "both"]]);
-const C2_DARK = (on) => crow(on, "dark-mode", "the settings page has 3 grays in tokens.css and 2 hardcoded ones. i found them because…", [["9 options", ""]]);
-const C2_STRIP = `<div class="cstrip">${C2_LAB(3)}${C2_REL(true)}${C2_PERF(false)}${C2_DARK(false)}</div>`;
+const C2_LAB = (n) => `<div class="cr lab"><span class="faint">inbox · ${n} waiting for you</span><span><span style="color:var(--text)">ctrl+g</span> <span class="dim">${n > 1 ? "select" : "open"}</span></span></div>`;  // one item: ctrl+g opens it (BISE-254)
+const C2_REL = (on) => crow2(on, "release wants to run", `<span style="color:var(--text)">npm publish --tag next</span>`, [["1", "allow"], ["2", "always"], ["3", "deny"]]);
+const C2_PERF = (on) => crow2(on, "perf", "the hero image is 4.2 MB. compress it, or lazy-load it?", [["1", "compress"], ["2", "both"]]);
+const C2_DARK = (on) => crow2(on, "dark-mode", "the settings page has 3 grays in tokens.css and 2 hardcoded ones. i found them because…", [["9 options", ""]]);
+const C2_STRIP = `<div class="cstrip">${C2_LAB(3)}${C2_REL(false)}${C2_PERF(false)}${C2_DARK(false)}</div>`;
 const C2_KEYS_THREAD = "⏎ send · ctrl+g inbox · @ agent · / commands";
 // ctrl+g puts the focus on the strip: a ▸ on the selected row, the others indented to match
 const focusStrip = (html) => html.replace(/<div class="cr on"><span class="q">/g, '<div class="cr on"><span class="q"><span class="acc">▸</span> ').replace(/<div class="cr"><span class="q">/g, '<div class="cr"><span class="q">&nbsp;&nbsp;');
@@ -387,10 +394,10 @@ git tag v2.5.0 &amp;&amp; git push origin v2.5.0</pre><div class="dim">publishes
 const PERF_Q = `<div>the hero image is 4.2 MB. on a mid-range phone that's 3 s before anything shows. compress it, or lazy-load it?</div>`;
 const PERF_O = ["compress it (webp, ~300 kB)", "both: compress, and lazy-load below the fold"];
 const CARD2_SCREENS = [
-["inbox · 1 · the quick look", "<span class='optk'>round 3: arrows and ⏎.</span> what's waiting for you sits right above the divider, one row each, the most blocking first. the top row says <b>inbox · 3 waiting for you</b> and <b>ctrl+g select</b>. a simple one? click its option and you never left your message. the arrows stay yours here: ↑ still brings back your last message.",
+["inbox · 1 · the quick look", "<span class='optk'>round 3: arrows and ⏎.</span> what's waiting for you sits right above the divider, one row each, the most blocking first. the top row says <b>inbox · 3 waiting for you</b> and <b>ctrl+g select</b>. the rows show no keys, so nothing gets answered by accident. ctrl+g selects, and only the selected row shows its keys. just one item? ctrl+g opens it straight away (esc back to the thread). the arrows stay yours here: ↑ still brings back your last message.",
  term({ feed: C2FEED, above: C2_STRIP, f: cfoot("3 working", C2_KEYS_THREAD) })],
 ["inbox · 2 · ctrl+g: choose with the arrows", "ctrl+g moves the focus from your message to the inbox: a pink ▸ on the selected row, your message dims. ↑↓ choose (they loop: ↓ on the last row goes to the first); the selected row alone shows its options, 1-9 answer it at once, ⏎ (or →) opens it. esc gives you back your message. start typing and you're back in your message too, with what you typed: no keystroke is lost.",
- term({ feed: C2FEED, above: focusStrip(`<div class="cstrip">${C2_LAB(3)}${C2_REL(false)}${C2_PERF(true)}${C2_DARK(false)}</div>`), f: foot(`<span class="dim">you → main</span>`, `<span class="faint">your message waits here</span>`, "↑↓ choose · ⏎ open · esc back to your message") })],
+ term({ feed: C2FEED, above: focusStrip(`<div class="cstrip">${C2_LAB(3)}${C2_REL(false)}${C2_PERF("sel")}${C2_DARK(false)}</div>`), f: foot(`<span class="dim">you → main</span>`, `<span class="faint">your message waits here</span>`, "↑↓ choose · 1-2 answer · ⏎ open · esc back") })],
 ["inbox · 3 · ⏎: open, nothing picked yet", "the card takes the history's place. its options are listed, and none is picked yet, so a reflex ⏎ does nothing. the first ↓ lands on option 1 (↑ on the last). ←→ go to the other cards. 1-9 still pick at once. esc: back to your thread, draft kept.",
  term({ feed: cview(1, "perf needs you", "2 of 3 · 6m · ⌥1 perf", PERF_Q, optl(PERF_O)),
    f: cvFoot("perf", CUR, "↑↓ choose · 1-2 pick · ←→ other items · type to answer in your words · esc back") })],
@@ -533,12 +540,12 @@ const AGENTSMD = `<pre class="cmdb"><span class="dim">AGENTS.md · new file · 1
 const CONNECT = `<div>with a Mistral API key, your agents can use about 500 tools: web search, GitHub, Slack, Linear, Gmail, Notion… one key, all of them on, all the time.</div><div class="dim" style="margin-top:.4lh">free to skip. /connect adds it later.</div>`;
 
 const OB_EMPTY = `<div style="padding:3lh 0 0 3ch"><div><b>what's on your mind?</b></div><div class="b dim">say it and keep talking. the work runs in the background, i'm always here.</div><div class="b faint">try: "signup is slow on mobile. can you look?"</div></div>`;
-const TUNE = (on) => crow(on, "main", "can i set bise up for your terminal and this repo? <span class=\"faint\">1 min · i ask before changing anything</span>", [["1", "yes, check"], ["2", "not now"]]);
+const TUNE = (on) => crow2(on, "main", "can i set bise up for your terminal and this repo? <span class=\"faint\">1 min · i ask before changing anything</span>", [["1", "yes, check"], ["2", "not now"]]);
 // setup, taken by the hand: the first-item hint, each item opened, the result rows
 const OB_HINT = `<div class="obhint"><span class="acc">?</span> <b>this is your inbox.</b> <span class="dim">when an agent needs you, it waits here instead of interrupting you.</span> <span style="color:var(--text)">ctrl+g</span> <span class="dim">selects it, then</span> <span style="color:var(--text)">↑↓ ⏎</span><span class="dim">.</span> <span class="faint">↓</span></div>`;
-const OB_KEYS_ROW = crow(false, "main", `let cmd+v and cmd+f reach bise`, [["1", "yes, add them"], ["2", "no"]]);
-const OB_AGENTS_ROW = crow(false, "main", `write a starter AGENTS.md <span class="faint">new file · 14 lines</span>`, [["1", "yes, write it"], ["2", "no"]]);
-const OB_KEY_ROW = crow(false, "main", `turn on web search and the other connectors <span class="faint">optional · needs a Mistral key</span>`, [["⏎", "paste it"]]);
+const OB_KEYS_ROW = crow2(false, "main", `let cmd+v and cmd+f reach bise`, [["1", "yes, add them"], ["2", "no"]]);
+const OB_AGENTS_ROW = crow2(false, "main", `write a starter AGENTS.md <span class="faint">new file · 14 lines</span>`, [["1", "yes, write it"], ["2", "no"]]);
+const OB_KEY_ROW = crow2(false, "main", `turn on web search and the other connectors <span class="faint">optional · needs a Mistral key</span>`, [["⏎", "paste it"]]);
 const sview = (tabs, cur, title, meta, body, opts) => otabs(tabs, cur) + `<div class="cview"><div class="cvh"><b class="acc">? ${title}</b><span class="dim">${meta}</span></div><div class="cvb">${body}</div>${opts ? `<div class="ol">${opts}</div>` : ""}</div>`;
 const plus = (lines) => `<pre class="cmdb">${lines.map((l) => `<span class="acc">+</span> ${l}`).join("\n")}</pre>`;
 const SETUP_TABS = ["Ghostty keys", "AGENTS.md", "connectors"];
