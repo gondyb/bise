@@ -90,6 +90,9 @@ pub(crate) struct App {
     pub(crate) flash: Option<(String, std::time::Instant)>,
     /// the mouse gesture in progress (selection drags, multi-clicks)
     pub(crate) mouse: MouseState,
+    /// the selection on the text layer (BISE-290, textlayer.rs): cards,
+    /// popups, help, the panel, the key bar…
+    pub(crate) text: crate::textlayer::TextMouse,
     /// speech-to-text (Ctrl+R, /voice)
     pub(crate) voice: voice::Voice,
     /// a voice notice in the status row ("no speech detected") and when
@@ -248,6 +251,7 @@ impl App {
             voice_note: None,
             voice_text: String::new(),
             mouse: MouseState::default(),
+            text: Default::default(),
             popup_sel: 0,
             popup_dismissed: None,
             history: Vec::new(),

@@ -98,7 +98,8 @@ pub(crate) fn wanted(app: &App) -> Shape {
         Some(DragIn::Feed { .. }) => return Shape::Default,
         None => {}
     }
-    if app.term.mouse_held() {
+    // BISE-290: a selection on the text layer
+    if app.term.mouse_held() || app.text.held() {
         return Shape::Default;
     }
     app.pointer_at.map_or(Shape::Default, |(x, y)| at(x, y))

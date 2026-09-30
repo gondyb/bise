@@ -385,7 +385,9 @@ pub(crate) fn draw_box(f: &mut Frame, r: Rect, lines: Vec<Line<'static>>) {
         .padding(Padding::horizontal(1));
     f.render_widget(Clear, r);
     crate::pointer::region(r, crate::pointer::Shape::Default); // BISE-272: over what it covers
+    let inner = block.inner(r);
     f.render_widget(Paragraph::new(lines).block(block), r);
+    crate::textlayer::text(inner); // BISE-290: its text selects, copies and has links
 }
 
 /// The demo's tour shows `h`'s lesson its own way (tour.rs): the

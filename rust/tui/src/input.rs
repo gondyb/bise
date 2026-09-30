@@ -56,12 +56,7 @@ pub(crate) fn feed_link_at(app: &App, i: usize, row: usize, col: usize) -> Optio
 
 /// Copies to the system clipboard and says so in the status row.
 pub(crate) fn copy_text(app: &mut App, text: &str) {
-    let n = text.chars().count();
-    let note = if clipboard::copy(text) {
-        format!("copied {} char{}", n, if n == 1 { "" } else { "s" })
-    } else {
-        "copy failed (no pbcopy, and the terminal refused OSC 52)".to_string()
-    };
+    let note = textlayer::copy_note(text);
     app.flash = Some((note, std::time::Instant::now()));
 }
 
@@ -256,6 +251,31 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
     app.hover = matches!(m.kind, MouseEventKind::Moved).then_some((m.column, m.row));
     // BISE-272: the pointer's shape follows the mouse, pressed or not
     app.pointer_at = Some((m.column, m.row));
+    // BISE-290: on any text but the feed's, the composer's and the
+    // terminal's, a drag selects and copies, a click on a link opens it;
+    // any other click is the screen's own, at the release
+    match app.text.on(m, std::time::Instant::now()) {
+        textlayer::Out::Pass => on_screen_mouse(app, m, term_h),
+        textlayer::Out::Took => {
+            app.feed_sel = None;
+            app.quote_hint = false;
+        }
+        textlayer::Out::Copy(t) => copy_text(app, &t),
+        textlayer::Out::Open(url) => {
+            let note = textlayer::open(app, &url);
+            flash(app, note);
+        }
+        textlayer::Out::Click(press) => {
+            on_screen_mouse(app, &press, term_h);
+            on_screen_mouse(app, m, term_h);
+        }
+    }
+}
+
+/// A mouse event on the screen's own: help overlay, terminal pane, then
+/// the feed (scroll, selection, section toggles) and the composer
+/// (cursor, selection).
+fn on_screen_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: u16) {
     if help::mouse(app, m) {
         return;
     }
@@ -392,13 +412,7 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
             let Some((i, row, col)) = app.feed_sel.take().map(|s| s.anchor) else { return };
             if let Some(url) = feed_link_at(app, i, row, col) {
                 // a local file opens in your editor (BISE-264)
-                let note = if let Some(t) = crate::file_links::target_of_url(&url) {
-                    crate::file_links::open(app, &t)
-                } else if crate::links::open(&url) {
-                    format!("opening {}", url)
-                } else {
-                    format!("could not open {}", url)
-                };
+                let note = textlayer::open(app, &url);
                 flash(app, note);
                 return;
             }
@@ -488,6 +502,8 @@ fn flash(app: &mut App, note: String) {
 pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
     // zen (BISE-128): only the composer's own arms below set it
     app.key_in_composer = false;
+    // BISE-290: a key changes the screen: the text's selection goes
+    app.text.clear();
     // a cmd+key reached us: the hints say cmd+f from now on (find.rs)
     if k.modifiers.contains(KeyModifiers::SUPER) && !matches!(k.code, KeyCode::Modifier(_)) {
         app.cmd_keys = true;

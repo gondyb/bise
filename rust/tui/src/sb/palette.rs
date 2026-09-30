@@ -369,6 +369,8 @@ pub(crate) fn draw(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, l
     while lines.len() < area.height as usize {
         lines.push(Line::from(bar.clone()));
     }
+    // BISE-290: its text selects, copies and has links
+    crate::textlayer::text(area);
     // BISE-272: the hand over the entries (a click there picks, see `on_mouse`)
     let from = (area.x + lead).saturating_sub(3);
     for (y, _) in &hits {

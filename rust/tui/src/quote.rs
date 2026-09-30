@@ -282,6 +282,7 @@ pub(crate) fn draw_hint(app: &App, frame: &mut ratatui::Frame) {
     let Some(r) = hint_rect(sel, &vis, area, line.width() as u16) else { return };
     crate::pointer::region(r, crate::pointer::Shape::Default); // BISE-272: over what it covers
     frame.render_widget(ratatui::widgets::Paragraph::new(line), r);
+    crate::textlayer::text(r); // BISE-290: its text selects and copies
 }
 
 #[cfg(test)]

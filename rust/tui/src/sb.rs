@@ -996,6 +996,20 @@ mod hub_line_tests {
 
 #[cfg(test)]
 pub(crate) mod bench;
+
+/// The inbox for the tests outside `sb` (textlayer_tests.rs): cards
+/// (id, kind, agent, text), and whether the card view is open.
+#[cfg(test)]
+pub(crate) fn set_cards_for_tests(app: &mut App, cards: &[(u64, &str, &str, &str)]) {
+    app.sb.cards = cards
+        .iter()
+        .map(|(id, kind, agent, text)| cards::Card { id: *id, kind: kind.to_string(), agent: agent.to_string(), text: text.to_string(), age_ms: 60_000, ..Default::default() })
+        .collect();
+}
+#[cfg(test)]
+pub(crate) fn card_open_for_tests(app: &App) -> bool {
+    app.sb.card.open
+}
 #[cfg(test)]
 mod when_tests;
 

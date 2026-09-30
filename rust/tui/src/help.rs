@@ -590,7 +590,10 @@ pub(crate) fn scroll_box(
         .title_bottom(Line::from(Span::styled(foot, Style::default().fg(theme::dim()))).right_aligned())
         .padding(Padding::horizontal(1));
     frame.render_widget(Clear, area);
+    let inner = block.inner(area);
     frame.render_widget(Paragraph::new(lines).block(block).scroll((scroll as u16, 0)), area);
+    // BISE-290: its text selects, copies and has links
+    crate::textlayer::text(inner);
 }
 
 #[cfg(test)]

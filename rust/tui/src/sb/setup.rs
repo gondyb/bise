@@ -261,7 +261,7 @@ fn offer_look(v: &Vars, w: &What) -> Look {
         What::Key { provider, env } => {
             let home = crate::onboarding::home_of(&lookup(v));
             let name = provider.get(..1).map_or(String::new(), |f| f.to_uppercase() + &provider[1..]);
-            let console = if provider == "mistral" { "no key yet? console.mistral.ai. not now: ctrl+x." } else { "not now: ctrl+x." };
+            let console = if provider == "mistral" { "no key yet? [console.mistral.ai](https://console.mistral.ai/api-keys). not now: ctrl+x." } else { "not now: ctrl+x." };
             let title = "turn on web search and the other connectors";
             Look {
                 row: title.into(),
@@ -290,7 +290,9 @@ fn offer_look(v: &Vars, w: &What) -> Look {
 fn look_text(l: &Look) -> String {
     let mut t = vec![l.row.clone()];
     t.extend(l.body.iter().map(|p| match p {
-        Para::Text(s) | Para::Dim(s) | Para::Diff(s) => s.clone(),
+        // BISE-290: a `[label](url)` of the copy reads as its label
+        Para::Text(s) | Para::Dim(s) => crate::textlayer::copy_plain(s),
+        Para::Diff(s) => s.clone(),
     }));
     t.join("\n\n")
 }

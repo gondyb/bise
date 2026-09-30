@@ -544,6 +544,8 @@ pub(crate) fn draw_panel(app: &App, frame: &mut Frame, area: Rect) {
     let mut all = vec![title, Line::from("")];
     all.extend(body);
     frame.render_widget(Paragraph::new(all), area);
+    // BISE-290: its text selects, copies and has links
+    crate::textlayer::text(area);
 }
 
 /// The first body row shown in `h` rows, and the `+ {n} more` count

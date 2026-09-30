@@ -41,8 +41,13 @@ pub(crate) fn tag_of(m: Modifier) -> u8 {
 /// `st` tagged as the link `tag` (1..=127).
 fn tagged(st: Style, tag: u8) -> Style {
     let mut st = st;
-    st.add_modifier = Modifier::from_bits_retain((st.add_modifier.bits() & !MASK) | ((tag as u16 & 0x7f) << SHIFT));
+    st.add_modifier = with_tag(st.add_modifier, tag);
     st
+}
+
+/// `m` with the link tag `tag` (a cell of the text layer, textlayer.rs).
+pub(crate) fn with_tag(m: Modifier, tag: u8) -> Modifier {
+    Modifier::from_bits_retain((m.bits() & !MASK) | ((tag as u16 & 0x7f) << SHIFT))
 }
 
 /// The look of a link (the designer's call): its label in `fg`,
@@ -354,8 +359,14 @@ pub(crate) fn push_hit(h: Hit) {
     FRAME.with(|f| f.borrow_mut().push(h));
 }
 
+#[cfg(test)]
 pub(crate) fn frame_hits() -> Vec<Hit> {
     FRAME.with(|f| f.borrow().clone())
+}
+
+/// The frame's links that `gone` says a later text covered (textlayer.rs).
+pub(crate) fn drop_hits(gone: impl Fn(&Hit) -> bool) {
+    FRAME.with(|f| f.borrow_mut().retain(|h| !gone(h)));
 }
 
 /// The OSC 8 opening of `url`: its bytes outside printable ASCII

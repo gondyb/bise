@@ -261,6 +261,7 @@ impl Startup {
 pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
     crate::links::begin_frame(); // the feed says where its links are
     crate::pointer::begin_frame(); // BISE-272: what has which pointer shape
+    crate::textlayer::begin_frame(); // BISE-290: where the text is
     sb::draw_sb(app, f);
     // the demo's guided tips (tour.rs), else the one-time hints (BISE-61)
     if !crate::tour::draw(app, f) {
@@ -268,6 +269,8 @@ pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
     }
     crate::ctrlhint::draw(app, f.buffer_mut()); // ctrl held: the key hints
     crate::sanitize::cells(f.buffer_mut()); // no TAB/CR/ESC in a cell: no ghosts
+    // BISE-290: the text's links and selection, the frame kept for the mouse
+    crate::textlayer::finish(f.buffer_mut(), &app.text);
     crate::theme::paint(f.buffer_mut()); // BISE-92: bise paints its ground
     let depth = app.zen.depth(std::time::Instant::now());
     if depth > 0.0 {

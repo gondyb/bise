@@ -345,6 +345,8 @@ pub(crate) fn draw_strip(app: &mut App, frame: &mut Frame, area: Rect) {
         }
     }
     frame.render_widget(Paragraph::new(lines), area);
+    // BISE-290: its text selects, copies and has links
+    crate::textlayer::text(area);
     let cv = &mut app.sb.card;
     cv.strip = area;
     // BISE-272: the hand over what a click opens, picks or closes
@@ -441,7 +443,8 @@ fn body_lines(s: &Shape, id: u64, w: usize, hi: Option<usize>, typing: bool) -> 
     let mut out: Vec<(Line<'static>, Option<CardHit>)> = Vec::new();
     let plain = |out: &mut Vec<(Line<'static>, Option<CardHit>)>, text: &str, st: Style| {
         for l in text.lines() {
-            for row in wrap_line(Line::from(Span::styled(l.to_string(), st)), w) {
+            // BISE-290: bise's own `[label](url)` is a link
+            for row in wrap_line(Line::from(crate::textlayer::copy_spans(l, st)), w) {
                 out.push((row, None));
             }
         }
@@ -595,6 +598,8 @@ pub(crate) fn draw_view(app: &mut App, frame: &mut Frame, area: Rect) {
     for y in card.y..bar_bottom {
         buf[(card.x, y)].set_symbol("┃").set_style(fg(theme::accent()));
     }
+    // BISE-290: its text selects, copies and has links
+    crate::textlayer::text(area);
     let cv = &mut app.sb.card;
     cv.reveal = false;
     cv.scroll = scroll;

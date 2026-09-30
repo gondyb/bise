@@ -78,6 +78,7 @@ mod term;
 mod feedsel;
 mod find;
 mod links;
+mod textlayer;
 mod pointer;
 mod file_links;
 mod keyprobe;

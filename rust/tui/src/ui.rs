@@ -106,9 +106,11 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         let title = sb.title();
         let role = sb.role_spans();
         chrome::draw_frame(frame.buffer_mut(), area, cols, title, role, |room| sb.summary(room, short, &gust), divider_y);
+        crate::textlayer::text(Rect { height: 1, ..area }); // BISE-290: the title row
     } else if chunks[0].height > 0 {
         let r = Rect { height: 1, ..chunks[0] };
         frame.render_widget(Paragraph::new(sb.header(r.width, short, &gust)), r);
+        crate::textlayer::text(r); // BISE-290
     }
     // the panel: from the history's first row down to the blank row
     // above the divider
@@ -131,6 +133,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         let n = rows.len() as u16;
         if feed.height > n + 2 {
             frame.render_widget(Paragraph::new(rows), Rect { height: n, ..feed });
+            crate::textlayer::text(Rect { height: n, ..feed }); // BISE-290
             feed = Rect { y: feed.y + n + 1, height: feed.height - n - 1, ..feed };
         }
     }
@@ -199,6 +202,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         };
         if fits {
             frame.render_widget(Paragraph::new(lines), r);
+            crate::textlayer::text(Rect { height: h, ..r }); // BISE-290
             if let Some((row, x)) = demo_at.filter(|&(row, _)| row < r.height) {
                 let demo = Rect { x: r.x + x, y: r.y + row, width: sb::DEMO.width() as u16, height: 1 }.intersection(r);
                 app.demo_rect = Some(demo);
@@ -238,6 +242,8 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     if !rows.keys_in_divider {
         crate::ctrlhint::divider(app, frame.buffer_mut(), state_rect);
     }
+    // BISE-290: the divider's words (who, the notes) select and copy
+    crate::textlayer::text(Rect { y: divider_y, height: 1, ..area }.intersection(area));
     app.bottom_bar_rect = (!app.tail_visible && !rows.keys_in_divider).then_some(state_rect);
     if let Some(r) = app.bottom_bar_rect {
         crate::pointer::region(r, crate::pointer::Shape::Pointer);
@@ -247,6 +253,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     if queue.height > 0 {
         let r = Rect { x: queue.x.saturating_sub(1), width: queue.width + 1, ..queue }.intersection(area);
         frame.render_widget(Paragraph::new(crate::queue::lines(app, r.width as usize)), r);
+        crate::textlayer::text(r); // BISE-290
     }
     // the attachments box: from the bar's column (from 60 columns, the
     // composer's text column), at most the composer's width; no bar:
@@ -257,6 +264,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         let strip = Rect { x: strip.x + shift, width: strip.width.saturating_sub(shift), ..strip };
         let r = Rect { width: (inner_w as u16 + lead - shift).min(strip.width), ..strip };
         frame.render_widget(Paragraph::new(attach::strip_lines(app, r.width as usize)), r);
+        crate::textlayer::text(r); // BISE-290
     }
     // the composer: its bar at x0 on every row (the blank bar rows
     // around the text too), the text from x0 + `lead`
@@ -296,6 +304,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     let kb = Rect { x: kb.x + shift, width: kb.width.saturating_sub(shift), ..kb };
     if kb.height > 0 {
         frame.render_widget(Paragraph::new(crate::keybar::line(app, kb.width)), kb);
+        crate::textlayer::text(kb); // BISE-290
     }
     // last: the "type ask about it" popup over a selection in the history
     crate::quote::draw_hint(app, frame);
@@ -864,6 +873,8 @@ fn draw_popup(app: &App, frame: &mut Frame, prompt: Rect) {
             ),
             area,
         );
+        // BISE-290: its text selects, copies and has links (between the rules)
+        crate::textlayer::text(Rect { x: area.x + 1, width: area.width.saturating_sub(2), ..area });
     }
 }
 

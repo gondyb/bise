@@ -277,7 +277,8 @@ pub(crate) fn box_lines(
     if let Some(chip) = images {
         shown.push(chip);
     }
-    shown.extend(lines.iter().map(|t| vec![Span::styled(t.clone(), dim_st)]));
+    // BISE-290: its urls and file paths are links
+    shown.extend(lines.iter().map(|t| crate::textlayer::spans(t, dim_st)));
     let rule = || Line::from(Span::styled(format!("{}{}{}", f.lj, f.h.repeat(width - 2), f.rj), faint_st));
     let mut sw = Wrapped::new(&script, inner, bst);
     let mut ow = Wrapped::new(&shown, inner, bst);
