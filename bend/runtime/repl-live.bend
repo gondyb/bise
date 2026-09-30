@@ -51,7 +51,7 @@ def identity() -> String:
 # agent (main, tasks) reads the same paragraph; a solo session (no role)
 # is also told it works alone
 def about() -> String:
-  "## What bise is\n\nbise is a terminal app for multi-agent coding, made human: one thread per repo. The user talks to `main`; main turns their ideas into tasks and runs one agent per task, in parallel; the agents coordinate with the `sb` command. What the user gets: they stay in flow, they are interrupted only when a decision needs them, and no work gets lost."
+  "## What bise is\n\nbise is a multi-agent harness, made for humans: a terminal app with one thread per repo. The user talks to `main`; main turns their ideas into tasks and runs one agent per task, in parallel; the agents coordinate with the `sb` command. What the user gets: they stay in flow, they are interrupted only when a decision needs them, and no work gets lost."
 
 def about.pick(solo: Bool) -> String:
   match solo:
