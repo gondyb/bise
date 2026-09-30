@@ -106,7 +106,8 @@ function dots(g, pts, cl = "") {
 // an agent's arc wears main's wake: ripples right behind its head that calm down with distance, tiny dots further back.
 // once it has landed, the wake keeps calming as if the head went on walking (d0 grows), so a waiting arc settles into dots
 function arcWake(g, pts, t, d0 = 0) {
-  for (let i = 0; i < pts.length; i++) {
+  // the last cells before the head (∿ or ✓) stay empty, so the mark never gets lost in its own wake
+  for (let i = 0; i < pts.length - 3; i++) {
     const [x, y] = pts[i], n = pts[i + 1] ? pts[i + 1][1] : y, steps = Math.max(1, Math.ceil(Math.abs(n - y)));
     for (let k = 1; k < steps; k++) g.put(x + k / steps, y + (n - y) * k / steps, "·", "s");
     const d = pts.length - 1 - i + d0, amp = Math.exp(-d / 14), v = Math.abs(Math.sin(d * .38 - t * 3.2) * amp + Math.sin(d * .13 + t * .9) * amp * .4);
@@ -319,7 +320,8 @@ const V = {
     };
     const verb = (m) => m.startsWith("fix") ? "fixed" : m.startsWith("feat") ? "implemented" : "done";
     return (g, t) => {
-      const Y = Math.round(g.rows * .8);
+      // the thread sits low enough to leave the arcs room under the title, and keeps 4 rows under it for what bise says
+      const Y = Math.max(2, Math.min(g.rows - 5, Math.max(Math.round(g.rows * .8), g.ko.y1 + 10)));
       // a fuller dandelion sky: seeded at once over the whole hero, then fed from the bottom and the left edge
       const seed = (x, y) => s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: 1e9 });
       if (!s.sown) { s.sown = true; for (let k = 0; k < 150; k++) seed(rnd(0, g.cols), rnd(0, g.rows)); }
@@ -342,8 +344,10 @@ const V = {
         if (L) {
           // always above the thread (the user liked it better)
           const xs = kx + 1, over = (o) => o.xs < xs + L && xs < o.xs + o.L;
-          const under = xs + L + name.length + 3 >= ko.x0 && xs <= ko.x1;
-          const room = { [-1]: under ? Math.max(2, Y - ko.y1 - 2) : Y - 4, [1]: g.rows - Y - 2 };
+          // never behind the title: over the title's columns the arc must pass under it (2 rows of air).
+          // the cap uses the arc's real height over those columns, so an arc that only grazes them at its ends can still fly high
+          let hi = 0; for (let i = 0; i <= L; i++) if (xs + i >= ko.x0 && xs + i <= ko.x1) hi = Math.max(hi, Math.sin(Math.PI * i / L));
+          const room = { [-1]: Math.max(1, Math.min(Y - 3, hi > 0 ? (Y - ko.y1 - 2) / hi : 99)), [1]: g.rows - Y - 2 };
           const busy = (d) => s.b.filter(o => o.dir === d && over(o)).length;
           const dir = -1;
           // at a height as far as possible from the arcs already over those columns
@@ -415,6 +419,8 @@ const V = {
         for (const o of s.b.filter(o => !o.head)) place(o.xs + o.L, Y, o.done, o);
         for (const o of s.b.filter(o => o.head)) place(o.head[0], o.head[1], o.name, o);
       }
+      // a little air around the kiss on the thread: 2 cells behind, 1 ahead
+      g.put(kx - 2, Y, " "); g.put(kx - 1, Y, " "); g.put(kx + 2, Y, " ");
       g.str(kx, Y, ":*", "a");
       if (s.flash > 0) { s.flash--; if (s.flash > 3) { g.put(kx - 1, Y - 1, "·", "a"); g.put(kx + 2, Y - 1, "·", "a"); g.put(kx + 1, Y - 2, "·", "a"); } }
     };
