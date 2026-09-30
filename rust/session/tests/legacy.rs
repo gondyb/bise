@@ -3,7 +3,7 @@ use bise_session::legacy::{parse, to_text};
 use std::path::PathBuf;
 
 fn fx(f: &str) -> String {
-    std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../projects/switchboard/tests/fixtures/session").join(f)).unwrap()
+    std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/session").join(f)).unwrap()
 }
 
 #[test]

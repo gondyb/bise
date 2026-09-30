@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
 fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../projects/switchboard/tests/fixtures/session")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/session")
 }
 
 fn copy(from: &Path, to: &Path) {

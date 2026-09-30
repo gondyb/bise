@@ -1,4 +1,4 @@
-//! Image attachments in the composer (projects/switchboard/docs/images.md).
+//! Image attachments in the composer (docs/images.md).
 //!
 //! The composer shows `[Image #N]`; the app keeps what each label
 //! stands for. On send, every label still in the text becomes its

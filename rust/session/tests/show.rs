@@ -3,7 +3,7 @@ use bise_session::{read_dir, show, State};
 use std::path::{Path, PathBuf};
 
 fn fx(n: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../projects/switchboard/tests/fixtures/session").join(n)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/session").join(n)
 }
 
 #[test]

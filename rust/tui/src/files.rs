@@ -1,7 +1,7 @@
 //! The workspace file index behind the `@` popup: every file and folder
 //! under the working directory that `.gitignore` keeps, walked in a
 //! background thread, ranked per keystroke (file name before path).
-//! Design: projects/switchboard/docs/at-mentions.md.
+//! Design: docs/at-mentions.md.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};

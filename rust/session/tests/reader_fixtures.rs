@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 
 pub fn fixtures() -> Vec<(String, PathBuf, Value)> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../projects/switchboard/tests/fixtures/session");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/session");
     let mut out: Vec<_> = std::fs::read_dir(&root)
         .unwrap()
         .flatten()

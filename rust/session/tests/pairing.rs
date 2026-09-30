@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
 fn real_log() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../projects/switchboard/tests/fixtures/session-real/orphan-call-4346/events.jsonl")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/session-real/orphan-call-4346/events.jsonl")
 }
 
 fn tmp(name: &str) -> PathBuf {

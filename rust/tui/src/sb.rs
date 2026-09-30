@@ -1,4 +1,4 @@
-//! Switchboard mode of the TUI (projects/switchboard, RFC 0001 §6 and
+//! Switchboard mode of the TUI (docs/, RFC 0001 §6 and
 //! ux-notes.md): one feed per agent, main in focus by default, a task
 //! panel on the right, checkout / Esc, preview, attention cards.
 //!

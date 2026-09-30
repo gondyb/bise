@@ -2,7 +2,7 @@
 //! stdio MCP servers of the enabled plugins, writes the index files the
 //! Bend REPL reads, then serves each server over loopback HTTP (the
 //! JSON-response subset of MCP Streamable HTTP) until the REPL is gone.
-//! Design: projects/switchboard/docs/plugins.md.
+//! Design: docs/plugins.md.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};

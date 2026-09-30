@@ -130,7 +130,7 @@ pub(crate) struct App {
     pub(crate) key_in_composer: bool,
     pub(crate) rx: Receiver<String>,
     pub(crate) should_quit: bool,
-    /// Switchboard (projects/switchboard): the hub connection, the
+    /// Switchboard (docs/): the hub connection, the
     /// agents, the cards and the feeds out of focus.
     pub(crate) sb: sb::Sb,
     /// the images attached in the composer (`[Image #N]`, attach.rs)

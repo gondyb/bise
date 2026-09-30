@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build from source and run (a worktree, a test). To USE bise, run `bise`
 # (BISE-129; installed once with packaging/install.sh --dev, see
-# projects/switchboard/IMPLEMENTATION.md § Lancer).
+# docs/IMPLEMENTATION.md § Lancer).
 #
 # Convenience wrapper: everything starts from the single executable
 # rust/target/<profile>/bise (BISE-165: was bend-harness). The TUI is Switchboard's (there is

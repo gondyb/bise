@@ -255,7 +255,7 @@ fn export_models_file() {
     }
 }
 
-// ---- switchboard (projects/switchboard): one main agent, task agents ----
+// ---- switchboard (docs/): one main agent, task agents ----
 
 /// The app root of the live REPL (approot.rs: BISE_APP_ROOT, the version
 /// dir of the executable, the dev tree; never the cwd), or exit with how
@@ -573,7 +573,7 @@ fn main() -> std::io::Result<()> {
             // the key/mouse events this terminal delivers (macOS shortcuts)
             Some("keyprobe") => return bend_tui::keyprobe(),
             // agent plugins: list, enable/disable, and the per-session
-            // bridge the REPL starts (projects/switchboard/docs/plugins.md)
+            // bridge the REPL starts (docs/plugins.md)
             Some("plugins") => std::process::exit(bend_plugins::cli::main(&args[1..])),
             // no load_keys(): the listings tell each key's source
             Some("models") => std::process::exit(bise_catalog::cli::main(&args[1..], &auth_paths())),

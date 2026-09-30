@@ -29,7 +29,7 @@ __pycache__/
 dist/
 
 # Secrets and local session data, never committed (BISE-258,
-# projects/switchboard/docs/public-audit.md)
+# docs/public-audit.md)
 .env
 .env.*
 auth.json
@@ -37,25 +37,25 @@ auth.json
 *.key
 *.p12
 events.jsonl
-!projects/switchboard/tests/fixtures/**/events.jsonl
+!tests/fixtures/**/events.jsonl
 
 # private notes (launch plans, DMs): never committed
 /private/
 # moved to /private/ (BISE-275): launch drafts, pitches, the landing
 # review rounds, the history-rewrite runbook; never tracked again
-/projects/switchboard/docs/pitch.md
-/projects/switchboard/docs/pitch-fr.md
-/projects/switchboard/docs/history-rewrite.md
-/projects/switchboard/docs/launch/
-/projects/switchboard/docs/brand/site/content/launch-plan.md
-/projects/switchboard/docs/brand/site/content/launch.html
-/projects/switchboard/docs/brand/site/content/handoff-*.md
-/projects/switchboard/docs/brand/site/content/landing-v*.html
-/projects/switchboard/docs/brand/site/content/og-variants.html
-/projects/switchboard/docs/brand/site/content/og/
-/projects/switchboard/docs/brand/site/content/hero-bg.html
+/docs/pitch.md
+/docs/pitch-fr.md
+/docs/history-rewrite.md
+/docs/launch/
+/site/content/launch-plan.md
+/site/content/launch.html
+/site/content/handoff-*.md
+/site/content/landing-v*.html
+/site/content/og-variants.html
+/site/content/og/
+/site/content/hero-bg.html
 # designer's local drafts and raw videos (not used by the site or README)
-/projects/switchboard/docs/brand/site/content/hero-*.html
-/projects/switchboard/docs/brand/site/content/type-*.html
-/projects/switchboard/docs/brand/readme/preview.html
-/projects/switchboard/docs/brand/video/
+/site/content/hero-*.html
+/site/content/type-*.html
+/docs/brand/readme/preview.html
+/docs/brand/video/

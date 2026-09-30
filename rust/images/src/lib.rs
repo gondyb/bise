@@ -1,5 +1,5 @@
 //! Image attachments, shared by the TUI and bend-jsrt
-//! (projects/switchboard/docs/images.md).
+//! (docs/images.md).
 //!
 //! An image travels as a one-line text marker:
 //!

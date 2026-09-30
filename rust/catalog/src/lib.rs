@@ -10,7 +10,7 @@
 //!
 //! The Bend runtime gets the merged catalog as one file
 //! ([`Setup::handoff_toml`], the path in `BISE_MODELS_FILE`); the format
-//! and the per-call rule are in projects/switchboard/docs/research/providers.md §7.
+//! and the per-call rule are in docs/research/providers.md §7.
 
 use std::path::{Path, PathBuf};
 

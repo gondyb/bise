@@ -1,7 +1,7 @@
 //! Switchboard: one main agent that routes the user's messages to task
 //! sub-agents (RFC 0001), optional git worktrees per task (RFC 0002), and
 //! agent-to-agent messaging (RFC 0003). The design docs live in
-//! `projects/switchboard/docs/`.
+//! `docs/`.
 //!
 //! Layout (functional core, imperative shell):
 //! - `model`, `router`, `wire`, `board`, `prompts`: pure data and parsing;

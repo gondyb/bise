@@ -12,7 +12,7 @@ fn tmp(name: &str) -> PathBuf {
 }
 
 fn fixture(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../projects/switchboard/tests/fixtures/session").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/session").join(name)
 }
 
 fn copy(from: &Path, to: &Path) {

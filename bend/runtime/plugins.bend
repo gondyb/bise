@@ -1,5 +1,5 @@
 # runtime/plugins.bend — agent plugins (Agent Plugins 1.0, the portable
-# base). Design: projects/switchboard/docs/plugins.md.
+# base). Design: docs/plugins.md.
 #
 # The REPL cannot hold a stdio MCP server open (Process.run waits for
 # the exit), so the Rust side does the work: at live startup this file

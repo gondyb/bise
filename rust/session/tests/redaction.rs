@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 
 fn fixture() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../projects/switchboard/tests/fixtures/session/14-redaction")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/session/14-redaction")
 }
 
 fn tmp(name: &str) -> PathBuf {

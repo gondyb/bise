@@ -1,5 +1,5 @@
 //! bend-plugins: Agent Plugins 1.0 (the portable base) for the Bend
-//! harness. Design: projects/switchboard/docs/plugins.md.
+//! harness. Design: docs/plugins.md.
 //!
 //! - `resolve`: discovery, manifest validation, precedence, components,
 //!   diagnostics (pure over the file system, no process started);

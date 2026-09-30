@@ -1,4 +1,4 @@
-//! `/plugins` in the TUI (projects/switchboard/docs/plugins.md).
+//! `/plugins` in the TUI (docs/plugins.md).
 //!
 //! - `/plugins`: the plugins of the workspace (the static listing).
 //! - `/plugins enable|disable NAME`: edits `~/.bend-harness/plugins.json`;

@@ -1,4 +1,4 @@
-//! The typed payloads of spec/session-format.ts, one per (type, v).
+//! The typed payloads of docs/spec/session-format.ts, one per (type, v).
 //! Unknown fields are ignored here (the raw line keeps them); an unknown
 //! enum value reads as `Other` (§6.2 rule 5).
 use serde::{Deserialize, Serialize};

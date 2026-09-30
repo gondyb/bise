@@ -1,7 +1,7 @@
 # core/ev.bend — the session-log facts on the wire (BISE-195), pure.
 #
 # The REPL prints one "  ev: <json>" line per fact of the session log
-# (spec/session-format.ts, docs/research/session-format.md §13.1): an
+# (docs/spec/session-format.ts, docs/research/session-format.md §13.1): an
 # Event of the union WITHOUT seq, at and turn (the Rust writer stamps
 # them). Seq-valued fields the REPL cannot know follow the writer
 # contract (BISE-195/192, agreed with session-log):

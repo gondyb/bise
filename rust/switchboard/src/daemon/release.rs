@@ -46,7 +46,7 @@ const NOT_HERE: &str =
 pub(super) fn script(repo: &Path) -> PathBuf {
     match std::env::var("BISE_RELEASE_SCRIPT") {
         Ok(s) if !s.is_empty() => PathBuf::from(s),
-        _ => repo.join("projects/switchboard/packaging/publish-release.sh"),
+        _ => repo.join("packaging/publish-release.sh"),
     }
 }
 

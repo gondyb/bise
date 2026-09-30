@@ -156,13 +156,13 @@ jobs:
       - name: build-dist.sh
         id: dist
         run: |
-          tarball="$(projects/switchboard/packaging/build-dist.sh HEAD --out "$RUNNER_TEMP/dist")"
+          tarball="$(packaging/build-dist.sh HEAD --out "$RUNNER_TEMP/dist")"
           echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
           ls -la "$RUNNER_TEMP/dist"
           cat "$tarball.sha256"
 
       - name: test-install.sh
-        run: projects/switchboard/packaging/test-install.sh "${{ steps.dist.outputs.tarball }}"
+        run: packaging/test-install.sh "${{ steps.dist.outputs.tarball }}"
 
       - name: Upload the archive
         uses: actions/upload-artifact@v4
@@ -232,5 +232,5 @@ jobs:
           TAG: ${{ github.ref_name }}
           CHANNEL: ${{ github.server_url }}/${{ github.repository }}/releases/latest/download
         run: |
-          projects/switchboard/packaging/ci-release.sh "$TAG" "$RUNNER_TEMP/dist" "$RUNNER_TEMP/release" \
+          packaging/ci-release.sh "$TAG" "$RUNNER_TEMP/dist" "$RUNNER_TEMP/release" \
             --repo "$GITHUB_REPOSITORY" --url "$CHANNEL" --commit "$GITHUB_SHA" --draft

@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/hero-dark.svg">
-    <img src="projects/switchboard/docs/brand/readme/hero-light.svg" width="860" alt="bise :* · a multi-agent harness, made for humans.">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/hero-dark.svg">
+    <img src="docs/brand/readme/hero-light.svg" width="860" alt="bise :* · a multi-agent harness, made for humans.">
   </picture>
 </p>
 
@@ -29,8 +29,8 @@ you stop micromanaging agents. no sessions to juggle, no workflow to design, not
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/demo-b-dark.svg">
-    <img src="projects/switchboard/docs/brand/readme/demo-b-light.svg" width="860" alt="a bise session in the terminal: you send ideas one after the other, main starts an agent for each, they ship.">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/demo-b-dark.svg">
+    <img src="docs/brand/readme/demo-b-light.svg" width="860" alt="a bise session in the terminal: you send ideas one after the other, main starts an agent for each, they ship.">
   </picture>
 </p>
 
@@ -77,55 +77,55 @@ four words to learn: you, main, agents, cards.
 
 send the next idea while the last one runs. the composer is never locked.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/feat/talk-dark.svg"><img src="projects/switchboard/docs/brand/readme/feat/talk-light.svg" width="680" alt="you send a second idea while the first agent works."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/talk-dark.svg"><img src="docs/brand/readme/feat/talk-light.svg" width="680" alt="you send a second idea while the first agent works."></picture>
 
 ### agents sync on their own
 
 every agent can message every other one. they ask, share and hand off, folded out of your way.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/feat/sync-dark.svg"><img src="projects/switchboard/docs/brand/readme/feat/sync-light.svg" width="680" alt="two agents agree on who edits a shared file."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/sync-dark.svg"><img src="docs/brand/readme/feat/sync-light.svg" width="680" alt="two agents agree on who edits a shared file."></picture>
 
 ### every MCP server, always on
 
 connect as many MCP servers and skills as you want, and never pick which ones to turn on. agents call tools by writing small TypeScript scripts, so a hundred servers don't fill the context.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/feat/tools-dark.svg"><img src="projects/switchboard/docs/brand/readme/feat/tools-light.svg" width="680" alt="an agent calls Sentry, Linear and GitHub tools, one row each."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/tools-dark.svg"><img src="docs/brand/readme/feat/tools-light.svg" width="680" alt="an agent calls Sentry, Linear and GitHub tools, one row each."></picture>
 
 ### only the real decisions reach you
 
 one card, a couple of choices, one key. `ctrl+g` opens the inbox.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/feat/card-dark.svg"><img src="projects/switchboard/docs/brand/readme/feat/card-light.svg" width="680" alt="a card asks one question and you answer with one key."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/card-dark.svg"><img src="docs/brand/readme/feat/card-light.svg" width="680" alt="a card asks one question and you answer with one key."></picture>
 
 ### quiet by default
 
 what matters to you shows. tool calls and messages between agents fold into one line. `ctrl+o` opens them all, in full, and folds them back.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/feat/quiet-dark.svg"><img src="projects/switchboard/docs/brand/readme/feat/quiet-light.svg" width="680" alt="the work between agents stays folded; ctrl+o opens every tool call and message."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/quiet-dark.svg"><img src="docs/brand/readme/feat/quiet-light.svg" width="680" alt="the work between agents stays folded; ctrl+o opens every tool call and message."></picture>
 
 ### talk to any agent, anytime
 
 `⌥` + a number, or `@name`. ask it why, push it, then go back to main. nobody has to stop.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/feat/direct-dark.svg"><img src="projects/switchboard/docs/brand/readme/feat/direct-light.svg" width="680" alt="you switch to one agent, ask it a question, and go back to main."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/direct-dark.svg"><img src="docs/brand/readme/feat/direct-light.svg" width="680" alt="you switch to one agent, ask it a question, and go back to main."></picture>
 
 ### change your mind mid-run
 
 a correction lands in the running agent. ✓ it got it, ✓✓ it read it.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/feat/steer-dark.svg"><img src="projects/switchboard/docs/brand/readme/feat/steer-light.svg" width="680" alt="you correct a running agent and it changes course."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/steer-dark.svg"><img src="docs/brand/readme/feat/steer-light.svg" width="680" alt="you correct a running agent and it changes course."></picture>
 
 ### nothing gets dropped
 
 when an agent stops half-way, main starts it again from where it was. quit bise, update it, come back tomorrow: your agents, your thread and your draft come back.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/feat/resume-dark.svg"><img src="projects/switchboard/docs/brand/readme/feat/resume-light.svg" width="680" alt="an agent stops on a provider error and main restarts it."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/resume-dark.svg"><img src="docs/brand/readme/feat/resume-light.svg" width="680" alt="an agent stops on a provider error and main restarts it."></picture>
 
 ### worktrees, only when they help
 
 agents share your folder. when one really needs isolation, it makes a worktree and cleans it up after.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/feat/worktree-dark.svg"><img src="projects/switchboard/docs/brand/readme/feat/worktree-light.svg" width="680" alt="one agent gets its own worktree; the others share the folder."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/worktree-dark.svg"><img src="docs/brand/readme/feat/worktree-light.svg" width="680" alt="one agent gets its own worktree; the others share the folder."></picture>
 
 ### and also
 
@@ -152,8 +152,11 @@ git clone https://github.com/gvergnaud/bise && cd bise
 - [`bend/`](bend/) · the agent runtime and the Switchboard hub, written in [Bend](https://github.com/HigherOrderCO/Bend), and their laws (`LAWS.bend`, `PROOF.bend`)
 - [`prompts/`](prompts/) · the system prompts and tool descriptions the agents read
 - [`scripts/`](scripts/) · dev scripts: build the Bend binaries, build and switch versions
-- [`projects/switchboard/`](projects/switchboard/) · design docs, packaging, tests
-- [`projects/switchboard/docs/brand/`](projects/switchboard/docs/brand/) · the brand book, the site, these images
+- [`docs/`](docs/) · design docs, RFCs, the implementation notes
+- [`site/`](site/) · [bise.dev](https://bise.dev), a static site (the installer too)
+- [`tests/`](tests/) · the gate (`gate.sh`), e2e and TUI tests
+- [`packaging/`](packaging/) · build, install and release scripts
+- [`docs/brand/`](docs/brand/) · the brand book, the issue list, these images
 
 ## license
 
