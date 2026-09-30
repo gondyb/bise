@@ -23,7 +23,7 @@
   .v .bub.pop { animation:bin .7s ease-out; } @keyframes bin { from { opacity:0; translate:0 5px; } to { opacity:1; translate:0 0; } }
   .v .lay span { position:absolute; left:0; top:0; white-space:pre; color:var(--dim); transition:transform .5s cubic-bezier(.25,.8,.3,1), opacity .45s; will-change:transform; }
   .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .f { color:var(--faint); } .v pre .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } .v pre .d { color:var(--dim); } .v pre .sf { color:var(--faint); opacity:.7; } .v pre .w { color:var(--wind); } .v pre .g { display:inline-block; width:1ch; text-align:center; } .v pre .t { color:var(--text); }
-  .hero { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; pointer-events:none; }
+  .hero { padding-bottom:16vh; box-sizing:border-box; position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; pointer-events:none; }
   .big { font-size:clamp(64px, 11vw, 150px); font-weight:700; letter-spacing:-.045em; line-height:1; }
   .big span { color:var(--acc); }
   .t1 { font-size:clamp(22px, 2.8vw, 34px); font-weight:700; margin-top:34px; letter-spacing:-.02em; }
@@ -338,7 +338,7 @@ const V = {
     const verb = (m) => m.startsWith("fix") ? "fixed" : m.startsWith("feat") ? "implemented" : "done";
     return (g, t) => {
       // the thread sits low enough to leave the arcs room under the title, and keeps 4 rows under it for what bise says
-      const Y = Math.max(2, Math.min(g.rows - 3, Math.max(Math.round(g.rows * .8), g.ko.y1 + 10)));  // low enough on a laptop for 3 lanes under the title
+      const Y = Math.max(2, Math.min(g.rows - 5, Math.max(Math.round(g.rows * .8), g.ko.y1 + 10)));  // the grid has one hidden row at the bottom: keep 4 visible rows under the thread
       // a fuller dandelion sky: seeded at once over the whole hero, then fed from the bottom and the left edge
       const seed = (x, y) => s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: 1e9 });
       if (!s.sown) { s.sown = true; for (let k = 0; k < 150; k++) seed(rnd(0, g.cols), rnd(0, g.rows)); }
@@ -436,7 +436,7 @@ const V = {
         if (s.q.length > 3) s.q = s.q.slice(-3);
         if ((!s.cur || s.cur.n <= -8) && s.q.length) s.cur = { text: s.q.shift(), n: 34, x: kx };
         if (s.cur && s.q.length && s.cur.n > 20) s.cur.n = 20;
-        if (s.cur && s.cur.n-- > -8) g.bubble = { text: s.cur.n > 0 ? s.cur.text : "", x: s.cur.x, y: Math.min(g.rows - 1, Y + 2) };
+        if (s.cur && s.cur.n-- > -8) g.bubble = { text: s.cur.n > 0 ? s.cur.text : "", x: s.cur.x, y: Math.min(g.rows - 3, Y + 2) };
       } else if (EVENTS) {
         s.ev = s.ev.filter(e => --e.n > 0);
         for (const e of s.ev) if (g.labels) g.labels.push({ id: e.id, text: e.text, a: e.a, r: e.r }); else g.str(e.a, e.r, e.text, "d");

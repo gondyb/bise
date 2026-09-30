@@ -62,6 +62,7 @@
   .sky .lay span { position:absolute; left:0; top:0; white-space:pre; color:var(--dim); transition:transform .5s cubic-bezier(.25,.8,.3,1), opacity .45s; will-change:transform; }
   pre.rail .a { color:var(--acc); } pre.rail .a2 { color:var(--acc); opacity:.55; } pre.rail .a3 { color:var(--acc); opacity:.28; } pre.rail .f { color:var(--faint); } pre.rail .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } pre.rail .d { color:var(--dim); } pre.rail .sf { color:var(--faint); opacity:.7; } pre.rail .w { color:var(--wind); } pre.rail .g { display:inline-block; width:1ch; text-align:center; } pre.rail .t { color:var(--text); }
   pre.rail { position:absolute; inset:0; margin:0; color:var(--wind); font:inherit; font-size:14px; line-height:1.4; white-space:pre; overflow:hidden; pointer-events:none; user-select:none; }
+  .sky .hero { padding-bottom:16vh; }  /* the title block sits a bit higher: the sky under it gets room for 3 lanes of agents */
   .hero { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:0 6vw; position:relative; }
   .big { font-size:clamp(76px, 13vw, 170px); font-weight:700; letter-spacing:-.045em; line-height:1; }
   .kiss { display:inline-block; color:var(--acc); animation:kiss 1s .6s ease-out both; }
@@ -642,7 +643,7 @@ function branch(s) {
     const verb = (m) => m.startsWith("fix") ? "fixed" : m.startsWith("feat") ? "implemented" : "done";
     return (g, t) => {
       // the thread sits low enough to leave the arcs room under the title, and keeps 4 rows under it for what bise says
-      const Y = Math.max(2, Math.min(g.rows - 3, Math.max(Math.round(g.rows * .8), g.ko.y1 + 10)));  // low enough on a laptop for 3 lanes under the title
+      const Y = Math.max(2, Math.min(g.rows - 5, Math.max(Math.round(g.rows * .8), g.ko.y1 + 10)));  // the grid has one hidden row at the bottom: keep 4 visible rows under the thread
       // a fuller dandelion sky: seeded at once over the whole hero, then fed from the bottom and the left edge
       const seed = (x, y) => s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: 1e9 });
       if (!s.sown) { s.sown = true; for (let k = 0; k < 150; k++) seed(rnd(0, g.cols), rnd(0, g.rows)); }
@@ -740,7 +741,7 @@ function branch(s) {
         if (s.q.length > 3) s.q = s.q.slice(-3);
         if ((!s.cur || s.cur.n <= -8) && s.q.length) s.cur = { text: s.q.shift(), n: 34, x: kx };
         if (s.cur && s.q.length && s.cur.n > 20) s.cur.n = 20;
-        if (s.cur && s.cur.n-- > -8) g.bubble = { text: s.cur.n > 0 ? s.cur.text : "", x: s.cur.x, y: Math.min(g.rows - 1, Y + 2) };
+        if (s.cur && s.cur.n-- > -8) g.bubble = { text: s.cur.n > 0 ? s.cur.text : "", x: s.cur.x, y: Math.min(g.rows - 3, Y + 2) };
       } else if (EVENTS) {
         s.ev = s.ev.filter(e => --e.n > 0);
         for (const e of s.ev) if (g.labels) g.labels.push({ id: e.id, text: e.text, a: e.a, r: e.r }); else g.str(e.a, e.r, e.text, "d");
