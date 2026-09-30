@@ -50,10 +50,10 @@ fn ghostty_gets_an_offer_for_the_lines_it_misses() {
     std::fs::create_dir_all(xdg.parent().unwrap()).unwrap();
     std::fs::write(&xdg, "font-size = 14\nkeybind = super+f = unbind\n").unwrap();
     let (chk, o) = check_cmd_keys(&c);
-    assert_eq!(chk.text, "ghostty keeps cmd+v for itself");
-    assert_eq!(o, Some(Offer::Keys { terminal: "ghostty".into(), file: xdg.clone(), add: vec![GHOSTTY_LINES[0].to_string()] }));
+    assert_eq!(chk.text, "ghostty keeps cmd+v and cmd+k for itself");
+    assert_eq!(o, Some(Offer::Keys { terminal: "ghostty".into(), file: xdg.clone(), add: vec![GHOSTTY_LINES[0].to_string(), GHOSTTY_LINES[2].to_string()] }));
     std::fs::write(&xdg, GHOSTTY_LINES.join("\n")).unwrap();
-    assert_eq!(check_cmd_keys(&c), (Check { mark: Mark::Fine, text: "cmd+v and cmd+f reach me".into() }, None));
+    assert_eq!(check_cmd_keys(&c), (Check { mark: Mark::Fine, text: "cmd+v, cmd+f and cmd+k reach me".into() }, None));
     // the others: a note, no file touched; a cmd key seen: fine
     let (chk, o) = check_cmd_keys(&ctx(&h, &h, &[("TERM_PROGRAM", "Apple_Terminal")]));
     assert_eq!((chk.mark, o), (Mark::Note, None));

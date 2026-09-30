@@ -83,6 +83,7 @@ pub(crate) const COMMANDS: &[Cmd] = &[
     },
     Cmd { name: "/inbox", desc: "open what waits for you, the most blocking first (also /cards)", args: &[] },
     Cmd { name: "/agents", desc: "list the agents and what they do", args: &[] },
+    Cmd { name: "/switch", desc: "find an agent by name, archived ones too, and open it (also cmd+k, ctrl+s)", args: &[] },
     Cmd {
         name: "/model",
         desc: "the model of the agent in view: /model [<model>] [default]",

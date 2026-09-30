@@ -52,6 +52,9 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // what is left keeps a 3-row history
     let left = |used: u16| area.height.saturating_sub(fixed + used + 3);
     let text_rows = composer_rows.clamp(rows.min_text, rows.max_text).min(left(0).max(1));
+    // the agent palette (BISE-265): its list grows the pane upward, past
+    // the composer's cap, the history keeps its 3 rows
+    let text_rows = if sb::palette::is_open(app) { sb::palette::rows_wanted(app).min(left(0).max(1)) } else { text_rows };
     // the attachments box (book §13) and 1 blank row between it and the
     // divider (from 20 rows; the composer's blank bar row moves there:
     // your message starts right under the box), then the queued
@@ -208,7 +211,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     } else {
         state
     };
-    let (state_rect, label_rect) = match sb::card_divider_label(app) {
+    let (state_rect, label_rect) = match sb::card_divider_label(app).or_else(|| sb::palette::divider_label(app)) {
         // the card view: `you → ? perf · your answer`
         Some(label) => chrome::draw_divider_label(frame.buffer_mut(), area, cols, divider_y, label),
         None => chrome::draw_divider(frame.buffer_mut(), area, cols, divider_y, &name, &who, working.as_ref(), state, app.find.is_some()),
@@ -237,7 +240,16 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     // around the text too), the text from x0 + `lead`
     let body_rect = pane(chunks[10]);
     let composer = Rect { width: (inner_w as u16 + lead).min(body_rect.width), ..body_rect };
-    if app.find.is_some() {
+    if sb::palette::is_open(app) {
+        sb::palette::draw(app, frame, Rect { height: composer_h.saturating_sub(rows.pad_bottom), ..composer }, inner_w, lead, pad_top.min(composer_h));
+        let bar = Span::styled("│", Style::default().fg(accent()));
+        for y in composer.y + composer_h.saturating_sub(rows.pad_bottom)..composer.y + composer_h {
+            let r = Rect { y, height: 1, ..composer }.intersection(frame.area());
+            if !r.is_empty() {
+                frame.render_widget(Paragraph::new(Line::from(bar.clone())), r);
+            }
+        }
+    } else if app.find.is_some() {
         draw_find(app, frame, composer, inner_w, lead, pad_top.min(composer_h), rows.pad_bottom);
     } else {
         draw_composer(app, frame, composer, inner_w, lead, pad_top.min(composer_h), rows.pad_bottom);
@@ -253,7 +265,7 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         sb::draw_strip(app, frame, col(card));
         app.zen.keep.push(col(card).intersection(area));
     }
-    if app.find.is_none() {
+    if app.find.is_none() && !sb::palette::is_open(app) {
         draw_popup(app, frame, text);
     }
     // the key bar, from x0 to the right margin (from 60 columns, from

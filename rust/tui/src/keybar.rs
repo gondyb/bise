@@ -40,6 +40,8 @@ pub(crate) enum Mode {
     Card,
     /// ctrl+f: the find field (BISE-237)
     Find,
+    /// cmd+k / ctrl+s: the agent palette (BISE-265)
+    Palette,
     /// an agent is selected in the panel
     Selected,
     /// in an archived agent
@@ -99,6 +101,7 @@ impl Mode {
             Mode::DropAsk => &[("y", "drop"), ("n or esc", "keep")],
             Mode::Confirm => &[("y", "yes"), ("n", "no"), ("esc", "cancel")],
             Mode::Find => &[("⏎", "older"), ("↑↓", "move"), ("esc", "close")],
+            Mode::Palette => &[("↑↓", "choose"), ("⏎", "open"), ("esc", "close")],
             // the view's own keys come from `sb::card_key_pairs` (`1-2 pick`…)
             // the selected row's keys come from `sb::inbox_pairs` (`1-2 answer`…)
             Mode::Inbox => &[("↑↓", "choose"), ("⏎", "open"), ("esc", "back to your message")],
@@ -136,6 +139,8 @@ pub(crate) fn mode(app: &App) -> Mode {
         Mode::Recording
     } else if app.voice.state() == voice::VoiceState::Flushing {
         Mode::Transcribing
+    } else if crate::sb::palette::is_open(app) {
+        Mode::Palette
     } else if app.find.is_some() {
         Mode::Find
     } else if crate::sb::inbox_selected(app) {

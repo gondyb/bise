@@ -38,6 +38,8 @@ pub(crate) struct App {
     pub(crate) quote_hint: bool,
     /// ctrl+f: the find field, open (find.rs)
     pub(crate) find: Option<crate::find::Find>,
+    /// cmd+k / ctrl+s: the agent palette, open (sb/palette.rs, BISE-265)
+    pub(crate) palette: Option<crate::sb::palette::Palette>,
     /// a cmd key (SUPER, not cmd alone) reached us this session: the
     /// terminal passes cmd keys, the key bar and the help say cmd+f
     pub(crate) cmd_keys: bool,
@@ -202,6 +204,7 @@ impl App {
             feed_sel: None,
             quote_hint: false,
             find: None,
+            palette: None,
             cmd_keys: false,
             unseen: 0,
             tail_visible: true,

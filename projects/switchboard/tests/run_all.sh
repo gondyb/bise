@@ -40,7 +40,7 @@ clippy_dir="${CARGO_TARGET_DIR:-$PWD/rust/target}/clippy"
 (cd rust && cargo clippy --offline -q --workspace --all-targets --target-dir "$clippy_dir" -- -D warnings)
 TESTS="e2e agents_md_e2e PROOF worktree_home proc_cleanup scripted_ts session_ev repl_bash_env mcp_bootstrap skills_scan provider_families home_migrate versions_prune bins_path repo_paths tui_tmux tui_help_tmux tui_ctrl_hints_tmux tui_composer_tmux tui_version_tmux tui_at_files_tmux
 tui_images_tmux tui_paste_tmux tui_clear_tmux tui_archived_tmux tui_waits_tmux tui_undelivered_tmux tui_queue_tmux
-tui_onboarding_tmux tui_panel_click_tmux tui_drafts_tmux tui_reload_tmux tui_links_tmux tui_tool_rows_tmux tui_tabs_tmux tui_select_popup_tmux tui_release_tmux tui_cards_tmux tui_find_tmux tui_term_select_tmux"
+tui_onboarding_tmux tui_panel_click_tmux tui_drafts_tmux tui_reload_tmux tui_links_tmux tui_tool_rows_tmux tui_tabs_tmux tui_select_popup_tmux tui_release_tmux tui_cards_tmux tui_find_tmux tui_term_select_tmux tui_palette_tmux"
 # alone, after the others: under parallel load its Ctrl+U sometimes leaves
 # the composer text (failed 2 runs out of 5 in parallel, 0 alone)
 ALONE="tui_term_tmux"

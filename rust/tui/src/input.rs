@@ -259,6 +259,9 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
         term::MouseDone::Took => return,
         term::MouseDone::Copy(t) => return copy_text(app, &t),
     }
+    if sb::palette::on_mouse(app, m) {
+        return;
+    }
     if sb::card_mouse(app, m) {
         return;
     }
@@ -405,6 +408,9 @@ pub(crate) fn on_paste(app: &mut App, text: &str) {
     }
     // a paste goes back from the inbox selected to your message
     sb::leave_inbox(app);
+    if sb::palette::on_paste(app, text) {
+        return;
+    }
     if crate::find::on_paste(app, text) {
         return;
     }
@@ -469,6 +475,11 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         return false;
     }
     if voice_key(app, k, voice::resolve_job) {
+        return false;
+    }
+    // cmd+k / ctrl+s: the agent palette takes the keys while it is open
+    // (BISE-265)
+    if sb::palette::on_key(app, k) {
         return false;
     }
     // ctrl+f: the find field takes the keys while it is open (BISE-237)

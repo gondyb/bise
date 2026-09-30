@@ -63,7 +63,7 @@ fn panel_title_keys() -> &'static str {
 
 /// The agent waits on you: it is blocked, or one of its cards asks you
 /// something.
-fn needs_you(sb: &Sb, a: &Agent) -> bool {
+pub(super) fn needs_you(sb: &Sb, a: &Agent) -> bool {
     a.status == "blocked"
         || (!matches!(a.status.as_str(), "failed" | "stopped" | "archived")
             && sb

@@ -57,6 +57,7 @@ pub(crate) const TIPS: &[&str] = &[
     "$ calls a skill, tab completes",
     "ctrl+` opens a terminal in the workspace",
     "ctrl+g selects the inbox, ↑↓ ⏎ open what waits for you",
+    "ctrl+s finds an agent by name, ⏎ opens it",
     "esc puts your draft away, ↑ brings it back",
     "shift+⏎ adds a new line",
     "ctrl+r speaks into the composer (turn it on with /voice)",
@@ -68,6 +69,11 @@ pub(crate) const TIPS: &[&str] = &[
 const FIND: Row = r(FEED, "ctrl+f", FIND_WHAT).top();
 const FIND_CMD: Row = r(FEED, "cmd+f|ctrl+f", FIND_WHAT).top();
 const FIND_WHAT: &str = "find in the history: ⏎ or ↑ older, shift+⏎ or ↓ newer, esc close (the view stays on the match)";
+/// ctrl+s (any terminal) and /switch; cmd+k first once a cmd key reached
+/// us, like [`FIND_CMD`] (BISE-265).
+const SWITCH: Row = r(AGENTS, "ctrl+s|/switch", SWITCH_WHAT).top();
+const SWITCH_CMD: Row = r(AGENTS, "cmd+k|ctrl+s|/switch", SWITCH_WHAT).top();
+const SWITCH_WHAT: &str = "find an agent by name (archived ones too) and open it: type part of its name, ↑↓ choose, ⏎ open, esc close";
 
 /// Every shortcut, in display order (sections appear in first-row order).
 /// Lowercase, "agent" never "task" (book §4, §16).
@@ -79,6 +85,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(TALK, "/", "the commands, then their arguments (agents, inbox items, versions…): tab completes, ⏎ runs").top(),
     r(TALK, "$", "a skill: the popup lists them, tab completes; the agent reads the $name mention").top(),
     r(AGENTS, "⌥ + 0…9", "go to main (0) or to the agent with that number in the panel").top(),
+    SWITCH,
     r(AGENTS, "ctrl+k|alt+↓", "select the next agent").top(),
     r(AGENTS, "ctrl+j|alt+↑", "select the previous agent"),
     r(AGENTS, "⏎", "enter the selected agent").top(),
@@ -155,6 +162,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(GHOSTTY, "", "keybind = super+shift+z=unbind"),
     r(GHOSTTY, "", "keybind = super+c=performable:copy_to_clipboard (cmd+c copies Ghostty's selection if any, else the app's)"),
     r(GHOSTTY, "", "keybind = super+f=unbind (cmd+f finds in the history; Ghostty's own find keeps its menu item, not cmd+f)"),
+    r(GHOSTTY, "", "keybind = super+k=unbind (cmd+k finds an agent by name; Ghostty's cmd+k clears the screen)"),
     r(GHOSTTY, "", "check what reaches the app: bise keyprobe"),
 ];
 
@@ -264,7 +272,7 @@ fn code() -> Style {
 pub(crate) fn rows(page: Page, filter: &str, cmd: bool) -> Vec<&'static Row> {
     let f = filter.to_lowercase();
     ROWS.iter()
-        .map(|r| if cmd && r.keys == FIND.keys { &FIND_CMD } else { r })
+        .map(|r| if cmd && r.keys == FIND.keys { &FIND_CMD } else if cmd && r.keys == SWITCH.keys { &SWITCH_CMD } else { r })
         .filter(|r| page == Page::Shortcuts || r.top)
         .filter(|r| {
             f.is_empty()

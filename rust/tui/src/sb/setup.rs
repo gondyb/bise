@@ -181,12 +181,17 @@ fn keys_why(add: &[String]) -> String {
         .map(|l| {
             if l.contains("super+v") {
                 "cmd+v can paste a screenshot into your message (text still pastes as usual)"
+            } else if l.contains("super+k") {
+                "cmd+k finds an agent by name"
             } else {
                 "cmd+f searches your history"
             }
         })
         .collect();
-    why.join(", and ")
+    match why.split_last() {
+        Some((last, rest)) if !rest.is_empty() => format!("{}, and {}", rest.join(", "), last),
+        _ => why.join(""),
+    }
 }
 
 /// The look of setup item `w` (screens `setup, by the hand · 2-5`).
@@ -198,11 +203,11 @@ fn offer_look(v: &Vars, w: &What) -> Look {
             let old = std::fs::read_to_string(file).ok();
             let n = old.as_deref().map_or(0, |t| t.lines().count());
             let one = add.len() == 1;
-            let keys = if add.len() == 2 { "cmd+v and cmd+f" } else if add[0].contains("super+v") { "cmd+v" } else { "cmd+f" };
+            let keys = tune::keys_of(add);
             let path = shown(v, file);
             let size = format!("{term} config · +{}", lines_word(add.len()));
             let (these_keys, these_lines, them) =
-                if one { ("this key", "this line", "it") } else { ("these two keys", "these lines", "them") };
+                if one { ("this key", "this line", "it") } else if add.len() == 2 { ("these two keys", "these lines", "them") } else { ("these keys", "these lines", "them") };
             let what = if old.is_some() {
                 format!("i'd add {} to {path}:", lines_word(add.len()))
             } else {

@@ -844,14 +844,17 @@ one in accent.
      would help. it waits in your inbox with the exact change. yes or no,
      whenever you want.`; none: `all good here. nothing to change.`).
    - **the fixes**, one item each, in the inbox, not opened, three at most:
-     - `let cmd+v and cmd+f reach bise` · faint `Ghostty config · +2
-       lines`: `right now Ghostty keeps these two keys for itself. with these
+     - `let cmd+v, cmd+f and cmd+k reach bise` · faint `Ghostty config · +3
+       lines`: `right now Ghostty keeps these keys for itself. with these
        lines, cmd+v can paste a screenshot into your message (text still
-       pastes as usual), and cmd+f searches your history.` / `i'd add 2 lines
-       to {path}:` (a new file: `i'd create {path} with 2 lines:`), the diff
+       pastes as usual), cmd+f searches your history, and cmd+k finds an
+       agent by name.` (two lines: `these two keys`, the two reasons joined
+       by `, and`) / `i'd add 3 lines
+       to {path}:` (a new file: `i'd create {path} with 3 lines:`), the diff
        (`keybind = performable:super+v=paste_from_clipboard`, `keybind =
-       super+f=unbind`, only the missing ones), dim `i copy the file to
-       config.bise-backup first. to undo: delete the 2 lines. Ghostty uses
+       super+f=unbind`, `keybind = super+k=unbind` (BISE-265), only the
+       missing ones; the title names only their keys), dim `i copy the file to
+       config.bise-backup first. to undo: delete the 3 lines. Ghostty uses
        them after a reload (cmd+shift+,) or in a new window.` Options `yes,
        add them` (one line: `yes, add it`) / `no`.
      - `write a starter AGENTS.md` · faint `new file · 14 lines`, titled
@@ -918,6 +921,7 @@ replays it (**⚠** proposed command).
 | `ctrl+c` | interrupt; again (or idle) quit, agents keep running | — |
 | `⌥ + 0…9` | go to main / agent N | now shown in the panel |
 | `ctrl+k` / `ctrl+j`, `alt+↓` / `alt+↑` | select next / previous agent | — |
+| `cmd+k`, `ctrl+s`, `/switch [name]` | find an agent by name and open it (see "Switch agents" below) | new (BISE-265) |
 | `⏎` on a selected agent | enter it | — |
 | `space` | preview the selected agent; in the feed, toggle the selected item | feed toggle new |
 | `D` | drop the selected agent (asks first) | — |
@@ -942,6 +946,8 @@ replays it (**⚠** proposed command).
 - **WezTerm**: `enable_kitty_keyboard = true` and, in `config.keys`, `{ key = 'f', mods = 'SUPER', action = wezterm.action.DisableDefaultAssignment }`; WezTerm's search stays on ctrl+shift+f. Not tried.
 - **iTerm2**: its Find menu owns cmd+f. Settings › Keys › Key Bindings, `+`: shortcut cmd+f, action "Send Escape Sequence", `[102;9u` (SUPER+f in the kitty encoding). It is sent in every session, a shell included (it shows as junk there); iTerm2's find stays in the menu. Not tried.
 - **Terminal.app**: never sends cmd keys to the app: ctrl+f only.
+
+**Switch agents** (BISE-265, user: « ce serait cool d'avoir un moyen de switcher en tapant le nom de l'agent, un genre de commande K […] qui me permet de chercher mes agents, tous mes agents? Et quand je sélectionne, ça m'ouvre l'agent. Ce serait en plus du option 1, 2, 3, 4 qu'on a déjà. »; designer's look). `cmd+k` where the terminal passes it (Ghostty: `keybind = super+k=unbind`, its own cmd+k clears the screen; the setup offers the line with the cmd+v and cmd+f ones), `ctrl+s` in any terminal (ctrl+k is taken: kill to the line end, next agent), `/switch [name]` (the rest of the line is the query). The palette takes the composer pane like find: the divider reads `you → find an agent`, the query row sits where the composer's text sits (`type part of a name` dim when empty, `3 agents` dim on the right), the list grows the pane upward above it (1 blank row between), at most 12 rows, then it scrolls with the selection; the history keeps its 3 rows. The draft waits and comes back on esc. Rows: `▸` (accent) on the selected one, its name bold; the status mark (`:*` main, the gust while it works, `?` needs you, `✓` done…), `ψ` when it has its own worktree, the name (the matched chars bold in accent; NO_COLOR bold underlined), what it does now (else its objective; main: `your team lead`) dim and cut with `…`, its `⌥n` faint on the right (`alt+n` in ASCII; the palette teaches the direct key). Order: an empty query lists the live agents in the panel's order (main first) and no archived ones; a query lists the live ones it names, best first (the name's start, a word of it, anywhere in it, its initials `ap` agent-palette, its letters in order `dkmd` from 2 letters; then the query in its objective, note or last report, no highlight), an agent waiting on you first on a tie, then the panel's order; then a blank row, faint `earlier · read-only` and the archived ones it names (dim, their last report or objective, the most recent first within a rank). No match: `no agent called “zz” · esc closes`. Keys: typing, backspace, ctrl+w / option+backspace, ctrl+u edit the query (the selection back on the first row); `↑↓` (ctrl+p / ctrl+n, tab / shift+tab) choose, looping; `⏎` opens the agent's view as `⌥n` does (an archived one: its read-only history); `esc`, ctrl+c or the opening key again close; a click on a row opens it, a click elsewhere closes and does its job; pgup/pgdn still scroll the feed. Key bar `↑↓ choose   ⏎ open   esc close`. Help: `ctrl+s /switch` (`cmd+k ctrl+s /switch` once a cmd key reached the app), a tip `ctrl+s finds an agent by name, ⏎ opens it`; the ctrl hints show `ctrl+s find an agent` (`cmd+k` once seen) when there is more than one agent.
 
 ## 17. Copy deck
 

@@ -163,6 +163,10 @@ pub(crate) fn pairs(app: &App) -> Vec<Pair> {
     if app.ed.text.is_empty() && v.agents > 1 {
         p.push(("ctrl+k/j", "agents"));
     }
+    // BISE-265: the agent palette (cmd+k once the terminal passes cmd keys)
+    if v.agents > 1 {
+        p.push((if app.cmd_keys { "cmd+k" } else { "ctrl+s" }, "find an agent"));
+    }
     if app.voice.enabled {
         p.push(("ctrl+r", "talk"));
     }

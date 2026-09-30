@@ -16,6 +16,7 @@ mod versions;
 pub(super) use versions::{version_choices, versions_dev};
 use versions::{parse_versions, VersionItem};
 mod mention;
+pub(crate) mod palette;
 pub(super) use mention::mentions;
 mod cards;
 pub(super) use cards::{card_choices, card_mouse, inbox_key, leave_inbox};
@@ -706,6 +707,8 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             app.help = crate::help::page_of(first).map(crate::help::Overlay::new);
         }
         "/archived" => sb.toggle_archived(),
+        // the agent palette (BISE-265), on the rest of the line
+        "/switch" => palette::open(app, typed.strip_prefix("/switch").unwrap_or("")),
         // the inbox: its first item in the view (`/cards`: its old name)
         "/inbox" | "/cards" => {
             if sb.sorted_cards().is_empty() {
