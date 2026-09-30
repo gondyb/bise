@@ -30,6 +30,10 @@
 <body>
 <div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
 
+<section class="v" data-v="seeds"><div class="tag"><b>7 · seeds</b> <span class="pick">new · mix of 5 and 6</span><br>the dandelion sky, plus one thread. now and then an agent lifts off the thread like a seed (∿ name), floats a while, and lands further along with a ✓. the thread's :* keeps walking.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+
+<section class="v" data-v="ribbon"><div class="tag"><b>8 · ribbon</b> <span class="pick">new · mix of 5 and 6</span><br>the thread itself is made of drifting specks. agents peel off it and leave a trail of seeds that keeps floating up after them. softer, less diagram, more wind.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+
 <section class="v" data-v="now"><div class="tag"><b>0 · today</b><br>the flow field: slow wind crests, a :* carried across now and then.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
 <section class="v" data-v="gusts"><div class="tag"><b>1 · gusts</b><br>almost empty sky. thin streaks pass in 3 depths (far ones slow and dotted, near ones fast). calmer than today, reads more "wind".</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
@@ -183,6 +187,57 @@ const V = {
         if (b.p < b.L) { g.put(hxb, hy, "∿", "a"); g.str(hxb + 2, hy, b.name, "d"); }
         else if (b.p < b.L + 30) { g.put(b.xs + b.L, Y, "✓", "a"); g.str(b.xs + b.L + 2, Y - 1, b.name, "d"); }
       }
+    };
+  },
+  seeds(s) {
+    s.p = []; s.a = []; s.land = [];
+    const NAMES = ["perf", "dark-mode", "emoji-csv", "release", "accents", "docs", "tests"];
+    return (g, t) => {
+      const Y = Math.round(g.rows * .8);
+      // ambient seeds, fewer than dandelion
+      if (s.p.length < 34 && Math.random() < .3) s.p.push({ x: rnd(-10, g.cols), y: g.rows + 1, z: Math.random(), ph: rnd(0, 6) });
+      s.p = s.p.filter(p => p.y > -2 && p.x < g.cols + 3);
+      for (const p of s.p) { const sp = .06 + p.z * .18; p.y -= sp; p.x += sp * 1.6; p.ph += .04; g.put(p.x + Math.sin(p.ph) * 2, p.y, p.z > .8 ? "∗" : p.z > .45 ? "·" : ".", p.z > .8 ? "d" : ""); }
+      // the thread
+      for (let x = 0; x < g.cols; x++) g.put(x, Y, hash(x, 3) < .12 ? "·" : "─");
+      g.str((t * 5) % (g.cols + 20) - 2, Y, ":*", "a");
+      // agents lift off like seeds
+      if (s.a.length < 4 && Math.random() < .014) { const L = rnd(30, 70), x0 = rnd(4, g.cols - L - 12); s.a.push({ x0, L, A: rnd(5, Y - 4), p: 0, sp: rnd(.004, .007), ph: rnd(0, 6), trail: [], name: NAMES[Math.floor(rnd(0, NAMES.length))] }); }
+      s.a = s.a.filter(a => {
+        a.p += a.sp; a.ph += .05;
+        const e = a.p < .5 ? a.p : a.p, x = a.x0 + a.L * e, y = Y - a.A * Math.sin(Math.PI * Math.min(1, a.p)) + Math.sin(a.ph) * 1.2 * Math.sin(Math.PI * Math.min(1, a.p));
+        a.trail.push({ x, y }); if (a.trail.length > 18) a.trail.shift();
+        a.trail.forEach((q, i) => { if (i % 3 === 0 && i < a.trail.length - 2) g.put(q.x - (a.trail.length - i) * .15, q.y + (a.trail.length - i) * .05, i < 6 ? "." : "·"); });
+        if (a.p >= 1) { s.land.push({ x: a.x0 + a.L, name: a.name, n: 55 }); return false; }
+        g.put(x, y, "∿", "a"); g.str(x + 2, y, a.name, "d");
+        return true;
+      });
+      s.land = s.land.filter(l => { g.put(l.x, Y, "✓", "a"); if (l.n > 20) g.str(l.x + 2, Y - 1, l.name, "d"); return --l.n > 0; });
+    };
+  },
+  ribbon(s) {
+    s.a = []; s.seeds = []; s.land = [];
+    const NAMES = ["perf", "dark-mode", "emoji-csv", "release", "accents", "docs", "tests"];
+    const ry = (g, x, t) => g.rows * .78 + Math.sin(x * .035 + t * .35) * 1.4;
+    return (g, t) => {
+      // a ribbon of specks flowing right
+      for (let x = 0; x < g.cols; x++) {
+        const v = Math.sin(x * .21 - t * 3.2) + Math.sin(x * .07 - t * 1.3);
+        if (v > -.6) g.put(x, ry(g, x, t) + (v > 1.2 ? 0 : 0), v > 1.3 ? "~" : v > .3 ? "·" : ".", v > 1.3 ? "d" : "");
+      }
+      const kx = (t * 5) % (g.cols + 20) - 2; g.str(kx, ry(g, kx, t), ":*", "a");
+      // agents peel off and shed seeds
+      if (s.a.length < 3 && Math.random() < .012) { const L = rnd(30, 70), x0 = rnd(4, g.cols - L - 12); s.a.push({ x0, L, A: rnd(6, g.rows * .78 - 4), p: 0, sp: rnd(.004, .006), name: NAMES[Math.floor(rnd(0, NAMES.length))] }); }
+      s.a = s.a.filter(a => {
+        a.p += a.sp;
+        const x = a.x0 + a.L * a.p, y = ry(g, x, t) - a.A * Math.sin(Math.PI * Math.min(1, a.p));
+        if (Math.random() < .5) s.seeds.push({ x, y, life: rnd(60, 140), ph: rnd(0, 6), z: Math.random() });
+        if (a.p >= 1) { s.land.push({ x: a.x0 + a.L, name: a.name, n: 55 }); return false; }
+        g.put(x, y, "∿", "a"); g.str(x + 2, y, a.name, "d");
+        return true;
+      });
+      s.seeds = s.seeds.filter(q => { q.life--; q.ph += .05; q.y -= .04 + q.z * .06; q.x += .05 + q.z * .1; g.put(q.x + Math.sin(q.ph), q.y, q.life < 30 ? "." : q.z > .85 ? "∗" : "·"); return q.life > 0; });
+      s.land = s.land.filter(l => { const y = ry(g, l.x, t); g.put(l.x, y, "✓", "a"); if (l.n > 20) g.str(l.x + 2, y - 1, l.name, "d"); return --l.n > 0; });
     };
   },
   drift(s) {
