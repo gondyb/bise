@@ -254,27 +254,50 @@
   .last { text-align:center; padding-bottom:10vh; }
   .last .big { font-size:clamp(56px, 8vw, 110px); }
 
-  /* want a desktop app? a small window, drawn in HTML (book/desktop.html is the full set) */
-  #desktop { padding:4vh 6vw 14vh; } #desktop .inner { max-width:76ch; text-align:center; }
+  /* want a desktop app? a small, living window (book/desktop.html is the full set) */
+  #desktop { padding:4vh 6vw 16vh; } #desktop .inner { max-width:84ch; text-align:center; }
   #desktop h2 { font-size:clamp(26px, 3.4vw, 40px); letter-spacing:-.02em; }
-  #desktop p { color:var(--dim); margin:16px auto 0; max-width:58ch; }
-  #desktop .ctas { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:28px; }
-  #desktop .ctas a { border:1px solid var(--faint); border-radius:10px; padding:9px 18px; background:var(--soft); transition:border-color .3s; }
-  #desktop .ctas a:hover { border-color:var(--acc); } #desktop .ctas a.main { color:var(--text); } #desktop .ctas a:not(.main) { color:var(--dim); }
-  .dwin { display:block; margin:44px auto 0; width:min(640px, 100%); height:300px; border-radius:12px; overflow:hidden; background:var(--bg); text-align:left;
-    box-shadow:0 0 0 1px var(--faint), 0 30px 70px rgba(0,0,0,.45); font-family:"Geist",-apple-system,system-ui,sans-serif; font-size:11.5px; line-height:1.5; transition:transform .5s cubic-bezier(.25,.8,.3,1); }
-  .dwin:hover { transform:translateY(-4px); }
+  #desktop p { color:var(--dim); margin:16px auto 0; max-width:56ch; }
+  #desktop .ctas { display:flex; gap:26px; justify-content:center; align-items:center; flex-wrap:wrap; margin-top:34px; font-size:14px; }
+  #desktop .ctas a { color:var(--dim); transition:color .3s; } #desktop .ctas a:hover { color:var(--text); }
+  #desktop .ctas a.main { color:#141211; background:var(--acc); border-radius:999px; padding:10px 22px; font-weight:700; transition:transform .3s cubic-bezier(.3,1.6,.5,1), box-shadow .3s; }
+  #desktop .ctas a.main:hover { transform:translateY(-2px) scale(1.03); box-shadow:0 10px 30px color-mix(in srgb, var(--acc) 35%, transparent); color:#141211; }
+  .dstage { position:relative; margin:56px auto 0; width:min(780px, 100%); perspective:1400px; }
+  .dstage::before { content:""; position:absolute; inset:12% 8% -6%; background:radial-gradient(ellipse at 50% 60%, color-mix(in srgb, var(--acc) 26%, transparent), transparent 70%); filter:blur(40px); z-index:0; }
+  .dwin { position:relative; z-index:1; display:block; height:390px; border-radius:14px; overflow:hidden; text-align:left; color:var(--text);
+    background:linear-gradient(180deg, color-mix(in srgb, var(--bg) 92%, #fff 8%) 0, var(--bg) 60px);
+    box-shadow:0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent), 0 40px 90px rgba(0,0,0,.55); font-family:"Geist",-apple-system,system-ui,sans-serif; font-size:12.5px; line-height:1.5;
+    transform:rotateX(9deg) scale(.97); transform-origin:50% 100%; transition:transform .9s cubic-bezier(.2,.8,.2,1); }
+  .dstage:hover .dwin, .dstage.in .dwin { transform:none; }
   .dwin .m, .dwin .g, .dwin .k { font-family:"JetBrains Mono",ui-monospace,monospace; }
-  .dwin .tb { height:28px; display:flex; align-items:center; gap:6px; padding:0 10px; background:var(--soft); border-bottom:1px solid var(--faint); color:var(--dim); font-size:10.5px; }
-  .dwin .tb i { width:9px; height:9px; border-radius:50%; background:var(--faint); display:block; } .dwin .tb span { flex:1; text-align:center; margin-right:40px; }
-  .dwin .bd { display:flex; height:calc(100% - 28px); }
-  .dwin .sd { width:118px; background:var(--soft); border-right:1px solid var(--faint); padding:8px 6px; }
-  .dwin .sd div { padding:4px 8px; border-radius:6px; display:flex; justify-content:space-between; color:var(--dim); } .dwin .sd div.on { background:var(--raised); color:var(--text); font-weight:600; }
-  .dwin .ct { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:flex-end; padding:12px 18px; gap:7px; }
-  .dwin .you { border-left:2px solid var(--acc); padding-left:8px; font-weight:600; color:var(--text); } .dwin .bs { color:var(--text); } .dwin .bs .g { color:var(--acc); margin-right:1ch; }
-  .dwin .m { color:var(--dim); font-size:10.5px; } .dwin .row { color:var(--dim); font-size:10.5px; background:var(--raised); border-radius:6px; padding:3px 8px; }
-  .dwin .cp { background:var(--raised); border-radius:9px; padding:7px 10px; color:var(--dim); font-size:10.5px; } .dwin .cp .acc { font-weight:600; }
-  .dwin .ag { width:132px; border-left:1px solid var(--faint); padding:10px 8px; color:var(--text); } .dwin .ag div { padding:3px 6px; display:flex; gap:8px; } .dwin .ag .g { width:1.2em; text-align:center; } .dwin .ag .h { color:var(--dim); font-size:10px; }
+  .dwin .tb { height:34px; display:flex; align-items:center; gap:7px; padding:0 12px; border-bottom:1px solid color-mix(in srgb, var(--text) 8%, transparent); color:var(--dim); font-size:11.5px; }
+  .dwin .tb i { width:10px; height:10px; border-radius:50%; display:block; } .dwin .tb span { flex:1; text-align:center; margin-right:44px; } .dwin .tb b { color:var(--text); font-weight:600; }
+  .dwin .bd { display:flex; height:calc(100% - 34px); }
+  .dwin .sd { width:136px; background:color-mix(in srgb, var(--soft) 70%, transparent); border-right:1px solid color-mix(in srgb, var(--text) 7%, transparent); padding:10px 8px; display:flex; flex-direction:column; gap:2px; }
+  .dwin .sd .h, .dwin .ag .h { color:var(--dim); font-size:10.5px; padding:0 8px 6px; }
+  .dwin .sd .r { padding:6px 9px; border-radius:8px; display:grid; grid-template-columns:1fr auto; color:var(--dim); }
+  .dwin .sd .r.on { background:var(--raised); color:var(--text); } .dwin .sd .r b { font-weight:600; } .dwin .sd .r .l { grid-column:1/3; font-size:10.5px; color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dwin .ct { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:flex-end; padding:14px 22px 14px; gap:9px; }
+  .dwin .you { border-left:2px solid var(--acc); padding-left:10px; font-weight:600; }
+  .dwin .bs { display:grid; grid-template-columns:2.2em 1fr; } .dwin .bs .g { color:var(--acc); }
+  .dwin .tool { font-family:"JetBrains Mono",monospace; font-size:10.5px; color:var(--dim); display:grid; grid-template-columns:2.2em 1fr auto; }
+  .dwin .env { font-family:"JetBrains Mono",monospace; font-size:10.5px; color:var(--dim); } .dwin .env .c { background:var(--raised); border-radius:5px; padding:0 6px; margin-right:6px; }
+  .dwin .shot { margin-left:2.2em; width:150px; height:64px; border-radius:8px; background:linear-gradient(135deg,#4a3530,#1f1a18 55%,#3b2f2c); position:relative; box-shadow:0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent); }
+  .dwin .shot::after { content:"0.9 s"; position:absolute; right:8px; bottom:6px; font-family:"JetBrains Mono",monospace; font-size:18px; font-weight:700; color:var(--acc); }
+  .dwin .shot::before { content:"signup, before → after"; position:absolute; left:8px; top:5px; font-size:9.5px; color:#d8cfc2; }
+  .dwin .inbox { background:var(--raised); border-radius:9px; padding:6px 10px; display:flex; justify-content:space-between; gap:10px; font-size:11.5px; box-shadow:inset 2px 0 0 var(--acc); }
+  .dwin .inbox .o { color:var(--dim); white-space:nowrap; font-size:10.5px; } .dwin .inbox .o b { color:var(--acc); font-family:"JetBrains Mono",monospace; font-weight:400; }
+  .dwin .cp { background:var(--raised); border-radius:11px; padding:8px 12px 9px; } .dwin .cp .to { color:var(--dim); font-size:10.5px; display:flex; justify-content:space-between; }
+  .dwin .cp .to b { color:var(--acc); } .dwin .cp .tx { margin-top:3px; min-height:1.5em; } .dwin .cp .cu { display:inline-block; width:.5em; height:1.05em; background:var(--text); vertical-align:-.18em; animation:blink 1s steps(1) infinite; }
+  .dwin .ag { width:156px; border-left:1px solid color-mix(in srgb, var(--text) 7%, transparent); padding:10px 8px; display:flex; flex-direction:column; gap:1px; }
+  .dwin .ag .a { padding:5px 8px; border-radius:8px; display:grid; grid-template-columns:1.6em 1fr; } .dwin .ag .a .g { color:var(--acc); text-align:center; }
+  .dwin .ag .a .x { grid-column:2; font-family:"JetBrains Mono",monospace; font-size:9.5px; color:var(--dim); }
+  .dnote { position:absolute; z-index:2; right:-26px; top:46px; width:250px; display:grid; grid-template-columns:30px 1fr; gap:0 10px; text-align:left; padding:10px 12px; border-radius:13px;
+    background:color-mix(in srgb, var(--raised) 88%, transparent); backdrop-filter:blur(12px); box-shadow:0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent), 0 18px 40px rgba(0,0,0,.45);
+    font-family:"Geist",-apple-system,system-ui,sans-serif; font-size:11.5px; line-height:1.4; opacity:0; transform:translateX(24px); transition:opacity .5s, transform .6s cubic-bezier(.2,.9,.3,1.2); }
+  .dnote.on { opacity:1; transform:none; } .dnote .ic { width:30px; height:30px; border-radius:8px; background:#141211; color:var(--acc); font-family:"JetBrains Mono",monospace; font-weight:700; display:flex; align-items:center; justify-content:center; font-size:11px; }
+  .dnote b { display:block; } .dnote span { color:var(--dim); }
+  @media (max-width: 760px) { .dwin .sd, .dwin .ag { display:none; } .dnote { right:8px; } }
   footer { padding:6vh 6vw 8vh; display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px; color:var(--faint); font-size:13px; }
   footer a:hover { color:var(--text); }
 
@@ -480,7 +503,7 @@
       <div class="mini"><div class="mv"><span class="dim">you</span> /restart
 <span class="faint">bise v2026.10.3 → v2026.10.4</span>
 <span class="acc">∿</span> perf  <span class="acc">∿</span> dark-mode  <span class="acc">∿</span> sad-404
-<span class="faint">never stopped. your draft is back</span></div><p><b>restart whenever you like</b>update to the latest version mid-work, or quit and come back tomorrow: your agents keep working in the background. the thread, your draft and your queue come back right where you left them.</p></div>
+<span class="faint">back to work at once. your draft too</span></div><p><b>restart whenever you like</b>update to the latest version mid-work, or quit and come back tomorrow: your agents resume right away, where they were. the thread, your draft and your queue come back too.</p></div>
       <div class="mini"><div class="mv two"><div class="dk"><span class="t">bise</span> <span class="acc">:*</span>
 
 <span class="acc">∿</span> <span class="t">dark-mode</span>
@@ -538,22 +561,36 @@
     <div class="kicker">next, maybe</div>
     <h2>want a desktop app?</h2>
     <p>the same bise, in a window. your repos in a sidebar, one thread each. the agents on the right. a notification only when something needs you. i drew the screens. if enough of you want it, i'll build it.</p>
-    <a class="dwin" href="book/desktop.html" aria-label="see the desktop app screens">
-      <div class="tb"><i style="background:#ec6a5e"></i><i style="background:#f4bf4f"></i><i style="background:#61c554"></i><span><b style="color:var(--text)">acme</b> · one thread</span></div>
-      <div class="bd">
-        <div class="sd"><div class="on">acme <span class="m acc">∿ 3</span></div><div>blog <span class="m acc">? 1</span></div><div>bise <span class="m acc">✓</span></div><div>dotfiles</div></div>
-        <div class="ct">
-          <div class="you">signup is slow on mobile. can you look?</div>
-          <div class="bs"><span class="g">:*</span>on it. perf is profiling signup on a mid-range phone.</div>
-          <div class="m">✉ perf → dark-mode · no, tokens.css is yours</div>
-          <div class="bs"><span class="g">✓</span>perf is done · signup 4.1 s → 0.9 s</div>
-          <div class="row"><span class="acc">?</span> dark-mode · which gray wins?</div>
-          <div class="cp">you → <span class="acc">main</span></div>
+    <div class="dstage blow" id="dstage">
+      <a class="dwin" href="book/desktop.html" aria-label="see the desktop app screens">
+        <div class="tb"><i style="background:#ec6a5e"></i><i style="background:#f4bf4f"></i><i style="background:#61c554"></i><span><b>acme</b> · one thread</span></div>
+        <div class="bd">
+          <div class="sd"><div class="h">repos</div>
+            <div class="r on"><b>acme</b><span class="m acc"><span class="dbr">∿</span> 3</span><span class="l">signup 4.1 s → 0.9 s</span></div>
+            <div class="r"><span>blog</span><span class="m acc">? 1</span><span class="l">which gray wins?</span></div>
+            <div class="r"><span>bise</span><span class="m acc">✓</span><span class="l">released today</span></div>
+            <div class="r"><span>dotfiles</span><span></span><span class="l">idle since monday</span></div></div>
+          <div class="ct">
+            <div class="you">signup is slow on mobile. can you look?</div>
+            <div class="bs"><span class="g">:*</span><span>on it. perf is profiling signup on a mid-range phone.</span></div>
+            <div class="tool"><span>$</span><span>convert hero.png to webp at 82 %</span><span>✓ 0.9 s</span></div>
+            <div class="env"><span class="c">✉ dark-mode → perf</span>are you touching tokens.css?</div>
+            <div class="bs"><span class="g">✓</span><span>perf is done. signup went from 4.1 s to 0.9 s</span></div>
+            <div class="shot"></div>
+            <div class="inbox"><span><span class="acc">?</span> dark-mode · which gray wins?</span><span class="o"><b>1</b> tokens · <b>2</b> new ones</span></div>
+            <div class="cp"><div class="to"><span>you → <b>main</b></span><span><span class="dbr acc">∿</span> 3 working</span></div><div class="tx"><span id="dtype"></span><span class="cu"></span></div></div>
+          </div>
+          <div class="ag"><div class="h">agents</div>
+            <div class="a"><span class="g">:*</span><span>main</span><span class="x">opus · high</span></div>
+            <div class="a"><span class="g">✓</span><span>perf</span><span class="x">done · 6m</span></div>
+            <div class="a"><span class="g">?</span><span>dark-mode</span><span class="x">ψ its own worktree</span></div>
+            <div class="a"><span class="g dbr">∿</span><span>sad-404</span><span class="x">2m · 9 %</span></div>
+            <div class="a"><span class="g dbr">∿</span><span>emoji-csv</span><span class="x">1m · 4 %</span></div></div>
         </div>
-        <div class="ag"><div class="h">agents</div><div><span class="g acc">:*</span>main</div><div><span class="g acc">∿</span>perf</div><div><span class="g acc">?</span>dark-mode</div><div><span class="g acc">∿</span>sad-404</div><div><span class="g acc">✓</span>emoji-csv</div></div>
-      </div>
-    </a>
-    <div class="ctas"><a class="main" href="https://x.com/GabrielVergnaud" target="_blank" rel="noopener">tell me on X ↗</a><a href="https://github.com/gvergnaud/bise/issues" target="_blank" rel="noopener">or on GitHub ↗</a><a href="book/desktop.html">see the screens →</a></div>
+      </a>
+      <div class="dnote" id="dnote"><span class="ic">:*</span><div><b>dark-mode needs you</b><span>which gray wins? tokens, or new ones</span></div></div>
+    </div>
+    <div class="ctas"><a class="main" href="https://x.com/GabrielVergnaud" target="_blank" rel="noopener">i want it · tell me on X ↗</a><a href="https://github.com/gvergnaud/bise/issues" target="_blank" rel="noopener">or on GitHub ↗</a><a href="book/desktop.html">see every screen →</a></div>
   </div>
 </section>
 
@@ -852,6 +889,27 @@ const sec = document.querySelector(".sky");
   new IntersectionObserver(([e]) => { visible = e.isIntersecting; if (visible && !running) { running = true; frame(); } }, { threshold: .05 }).observe(sec);
   document.addEventListener("visibilitychange", () => { if (!document.hidden && visible && !running) { running = true; frame(); } });
 }
+})();
+
+// ---- the desktop preview: ∿ breathes, you type, a notification slides in ----
+(() => {
+  const stage = document.getElementById("dstage"); if (!stage) return;
+  const typed = document.getElementById("dtype"), note = document.getElementById("dnote");
+  const lines = ["and give the sad dog a hat", "also the csv export crashes on emoji 😭", "ship it when it's green"];
+  let on = false, f = 0;
+  new IntersectionObserver(([e]) => { on = e.isIntersecting; if (on) stage.classList.add("in"); }, { threshold: .3 }).observe(stage);
+  setInterval(() => { if (!on || document.hidden) return; f++; stage.querySelectorAll(".dbr").forEach((e, i) => e.textContent = "·~∿≈∿~"[(f + i * 2) % 6]); }, 110);
+  if (reduced) { typed.textContent = lines[0]; note.classList.add("on"); return; }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  (async () => {
+    for (let k = 0; ; k++) {
+      while (!on) await sleep(400);
+      const t = lines[k % lines.length];
+      for (let i = 1; i <= t.length; i++) { typed.textContent = t.slice(0, i); await sleep(45 + Math.random() * 50); }
+      await sleep(900); if (k % 2 === 0) note.classList.add("on");
+      await sleep(3200); note.classList.remove("on"); typed.textContent = ""; await sleep(900);
+    }
+  })();
 })();
 
 // ---- the demo: a scripted session that loops ----
