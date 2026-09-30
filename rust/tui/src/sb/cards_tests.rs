@@ -62,10 +62,13 @@ fn ctrl(app: &mut App, c: char) -> bool {
     key(app, KeyCode::Char(c), KeyModifiers::CONTROL)
 }
 
-/// ctrl+g then ⏎: the card view on the inbox's first row.
+/// ctrl+g then ⏎: the card view on the inbox's first row (one item:
+/// ctrl+g opens it at once).
 fn open(app: &mut App) {
     assert!(ctrl(app, 'g'), "ctrl+g selects the inbox");
-    assert!(key(app, KeyCode::Enter, KeyModifiers::NONE));
+    if !app.sb.card.open {
+        assert!(key(app, KeyCode::Enter, KeyModifiers::NONE));
+    }
     assert!(app.sb.card.open);
 }
 
@@ -284,6 +287,34 @@ fn the_inbox_selected_chooses_with_the_arrows() {
     assert!(!app.sb.card.open);
     assert_eq!(app.sb.card.inbox, None);
     assert_eq!(app.ed.text, "my draft");
+}
+
+/// One item: ctrl+g opens it in the view at once (nothing to choose,
+/// BISE-254); esc goes back to the thread, the draft as it was; two
+/// items: ctrl+g selects the strip.
+#[test]
+fn ctrl_g_opens_the_only_item() {
+    let (mut app, _hub) = app_with_hub();
+    app.sb.cards = vec![card(12, "question", "perf", PERF)];
+    app.ed.insert("my draft");
+    assert!(ctrl(&mut app, 'g'));
+    assert!(app.sb.card.open, "straight to the view");
+    assert_eq!((app.sb.card.inbox, app.sb.current_card().map(|c| c.id)), (None, Some(12)));
+    assert_eq!(app.ed.text, "");
+    assert!(bar(&app).contains("1-2 pick"), "{}", bar(&app));
+    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(!app.sb.card.open);
+    assert_eq!(app.sb.card.inbox, None, "the thread, not the strip");
+    assert_eq!(app.ed.text, "my draft");
+    // ctrl+g in the view closes it too
+    ctrl(&mut app, 'g');
+    assert!(ctrl(&mut app, 'g'));
+    assert!(!app.sb.card.open);
+    // two items: the strip selected, nothing opened
+    app.sb.cards.push(card(13, "question", "api", "v1 or v2?"));
+    ctrl(&mut app, 'g');
+    assert!(!app.sb.card.open);
+    assert_eq!(app.sb.card.inbox, Some(0));
 }
 
 /// The inbox selected: 1-9 answer the selected row at once (BISE-253),

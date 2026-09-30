@@ -28,11 +28,12 @@ fn draw(app: &mut App, w: u16, h: u16) -> Vec<String> {
     buf.content.chunks(w as usize).map(|r| r.iter().map(|c| c.symbol()).collect::<String>()).collect()
 }
 
-/// The strip row holding `needle`, selected (ctrl+g, then ↓ until its
-/// `▸`): only the selected row shows its keys.
+/// The strip row holding `needle`, selected (the first row, as a click
+/// or ctrl+g with 2+ rows selects it; then ↓ until its `▸`): only the
+/// selected row shows its keys.
 fn selected_row(app: &mut App, w: u16, h: u16, needle: &str) -> String {
     if app.sb.card.inbox.is_none() {
-        press(app, KeyCode::Char('g'), KeyModifiers::CONTROL);
+        app.sb.card.inbox = Some(0);
     }
     for _ in 0..8 {
         let rows = draw(app, w, h);

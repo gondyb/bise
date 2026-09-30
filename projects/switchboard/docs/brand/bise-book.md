@@ -502,7 +502,9 @@ the thread they never touch the inbox until `ctrl+g`. Three levels:
   row, the top item and `+ n`. Mouse: a row click selects it (its keys
   show), a click on the row selected opens it in the view. The thread's key bar says `ctrl+g inbox` right after
   `⏎ send`; `↑` on an empty composer still recalls your history.
-- **The inbox selected** (`ctrl+g`, only while the strip has rows): the
+- **The inbox selected** (`ctrl+g`, only while the strip has 2 rows or
+  more; a single row has nothing to choose: `ctrl+g` opens it in the item
+  view at once, `esc` back to the thread, BISE-254): the
   selected row raised with an accent `▸ ` before its glyph (ASCII `> `,
   NO_COLOR reverse video), the other rows 2 spaces in to align; it starts
   on row 1 (the most blocking). The composer's draft goes faint, no caret
@@ -523,7 +525,8 @@ the thread they never touch the inbox until `ctrl+g`. Three levels:
   with no option: `↑↓ choose · ⏎ open · esc back to your message`).
   Mouse: an option or `×` of the selected row answers or closes it,
   another row selects it, a click anywhere else leaves the selection.
-- **The item view** (`⏎` on a row, a row click, a click in the panel's
+- **The item view** (`⏎` on a row, `ctrl+g` with one item, a click on
+  the row selected, a click in the panel's
   inbox section, `/inbox`): it takes the history's place; the panel, the
   divider and the composer stay. The tabs on top (`? release  ? perf
   ? dark-mode`, the current one on the raised tint, `[ ]` under NO_COLOR;
@@ -917,7 +920,7 @@ replays it (**⚠** proposed command).
 | `space` | preview the selected agent; in the feed, toggle the selected item | feed toggle new |
 | `D` | drop the selected agent (asks first) | — |
 | `esc` | close selection; in an agent, back to main | — |
-| `ctrl+g` | select the inbox (the strip); again, or `esc`: back to your message; in an item: back to the thread (§12) | the only inbox key from the thread; no longer opens an item (BISE-248) |
+| `ctrl+g` | select the inbox (the strip); one item: open it in the view at once; again, or `esc`: back to your message; in an item: back to the thread (§12) | the only inbox key from the thread; no longer opens an item (BISE-248), except the only one (BISE-254) |
 | `↑↓`, `1-9`, `⏎` / `→`, `esc`, typing | the inbox selected: choose a row (they loop: the last `↓` goes to the first), answer it with an option, open it, back; a key or a paste goes back to the composer and lands there (§12) | new (BISE-248); `↓` past the last row no longer leaves (BISE-252); `1-9` new, the options only on the selected row (BISE-253) |
 | `↑↓`, `⏎`, `1-9`, `←→`, `ctrl+n` / `ctrl+p`, `ctrl+x`, `esc`, `pgup` / `pgdn` | an item open: choose an option (empty composer), pick it, pick at once, previous / next item, close, back, scroll (§12) | `↑↓` chose to scroll before (BISE-248); `alt+r`, `ctrl+f` full screen, `ctrl+a` on an empty composer: removed (BISE-236) |
 | `ctrl+o` | open or close everything folded (thinking, outputs, diffs, reports, runs, `▸ why`, your long messages) | was `ctrl+t` (removed, no alias); the `ctrl+o` shell is gone: the terminal panel is the one shell |

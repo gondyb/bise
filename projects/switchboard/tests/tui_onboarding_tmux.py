@@ -120,10 +120,7 @@ def main():
         sc = t.wait("this is your inbox.")
         assert "2 not now" not in sc and "what's on your mind?" in sc, sc
         shot("7-setup-card", sc)
-        t.keys("C-g")                       # the inbox selected: its keys on the row, ⏎ opens it
-        t.wait("2 not now   ⏎ open")
-        t.wait("esc back")
-        t.keys("Enter")
+        t.keys("C-g")                       # the only item: ctrl+g opens it at once (BISE-254)
         sc = t.wait("1-2 pick")
         assert "checking changes nothing." in sc, sc
         t.keys("2")                         # not now: one dim row, never asked again

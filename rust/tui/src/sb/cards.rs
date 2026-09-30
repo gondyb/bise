@@ -662,12 +662,15 @@ pub(super) fn sync(app: &mut App) {
 }
 
 /// Select the inbox (ctrl+g from the thread): the `▸` on its first row,
-/// the most blocking. False when the strip has no row.
+/// the most blocking; a single row has nothing to choose: it opens in
+/// the view at once (BISE-254; esc back to the thread). False when the
+/// strip has no row.
 fn select_inbox(app: &mut App) -> bool {
-    if super::card_draw::strip_ids(&app.sb).is_empty() {
-        return false;
+    match super::card_draw::strip_ids(&app.sb)[..] {
+        [] => return false,
+        [id] => open_view(app, Some(id)),
+        _ => app.sb.card.inbox = Some(0),
     }
-    app.sb.card.inbox = Some(0);
     true
 }
 
