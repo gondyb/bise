@@ -36,7 +36,7 @@ def tool_use_json(c: W.WCall) -> J.Json:
     case W.WCall{+id, +name, +args}:
       J.obj(Con{J.kv("type", J.str("tool_use")),
         Con{J.kv("id", J.str(W.call_id_of(id))),
-        Con{J.kv("name", J.str(name)),
+        Con{J.kv("name", J.str(W.wire_name(name))),
         Con{J.kv("input", input_json(name, args)), Nil{}}}}})
 
 def tool_result_json(+id: String, +content: String) -> J.Json:
@@ -561,54 +561,12 @@ def thinking_kvs(tm: TMode, +max: Nat, +effort: String,
     case TNone{}:
       rest
 
-# the Messages API tool-name pattern is ^[a-zA-Z0-9_-]{1,128}$ - the
-# self.* harness tools carry a dot and ride as self_* on the wire;
-# the reply side restores the harness names (probed: the proxy
-# rejects "self.reload" with invalid_request_error)
-def anth_tool_name_out.pick2(is_compact: Bool, +name: String) -> String:
-  match is_compact:
-    case True{}:
-      "self_compact"
-    case False{}:
-      name
-
-def anth_tool_name_out.pick(is_reload: Bool, is_compact: Bool,
-    +name: String) -> String:
-  match is_reload:
-    case True{}:
-      "self_reload"
-    case False{}:
-      anth_tool_name_out.pick2(is_compact, name)
-
-def anth_tool_name_out(+name: String) -> String:
-  anth_tool_name_out.pick(String.eq(name, "self.reload"),
-    String.eq(name, "self.compact"), name)
-
-def anth_tool_name_in.pick2(is_compact: Bool, +name: String) -> String:
-  match is_compact:
-    case True{}:
-      "self.compact"
-    case False{}:
-      name
-
-def anth_tool_name_in.pick(is_reload: Bool, is_compact: Bool,
-    +name: String) -> String:
-  match is_reload:
-    case True{}:
-      "self.reload"
-    case False{}:
-      anth_tool_name_in.pick2(is_compact, name)
-
-def anth_tool_name_in(+name: String) -> String:
-  anth_tool_name_in.pick(String.eq(name, "self_reload"),
-    String.eq(name, "self_compact"), name)
-
 # the Anthropic tool shape: {name, description, input_schema} - no
 # function wrapper, the schema rides as input_schema
 def tool_json_anth(t: W.WTool) -> J.Json:
   match t:
     case W.WTool{+name, +desc}:
-      J.obj(Con{J.kv("name", J.str(anth_tool_name_out(name))),
+      J.obj(Con{J.kv("name", J.str(W.wire_name(name))),
         Con{J.kv("description", J.str(desc)),
         Con{J.kv("input_schema", W.tool_schema(name)), Nil{}}}})
 
@@ -722,10 +680,10 @@ def anth_tc_line(idx: Nat, +b: J.Json) -> String:
   String.append("CALL ",
     String.append(Nat.show(Nat.add(idx, 1n)),
       String.append(" ",
-        String.append(anth_tool_name_in(J.get_str_or(b, "name", "")),
+        String.append(J.get_str_or(b, "name", ""),
           String.append(" : ",
             String.trim(W.wire_encode(anth_arg(
-              anth_tool_name_in(J.get_str_or(b, "name", "")),
+              J.get_str_or(b, "name", ""),
               W.field_or(b, "input", J.JNull{})))))))))
 
 # the kind of the NEXT head (a leaf helper: the loop cannot match a

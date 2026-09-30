@@ -19,18 +19,13 @@ def catalog_pure(+sd: String, +rd: String, +bd: String) -> List<&2, T.ToolDef>:
     Con{T.ToolDef{"run_typescript", rd},
      Nil{}}}}
 
-# ---- self.* harness tools (live catalog only) ----
-# The agent drives its own harness from inside a turn: request a
-# compaction of the conversation, or a restart of the process on the
-# latest code. Both take no arguments; both only take effect at the
-# END of the current turn (see deferred_of in runtime/selftools.bend), so
-# the model can keep working and read the ack as the tool result.
-def self_tool_defs() -> List<&2, T.ToolDef>:
-  Con{T.ToolDef{"self.reload",
-    "Restart the harness process with the latest code. Use it after editing the harness source: the session, the model context and background commands are preserved; the restart happens at the end of the current turn. Takes no arguments."},
-   Con{T.ToolDef{"self.compact",
-    "Compact the conversation history into a summary. Use it when the context grows large: protected recent user messages are preserved, the compaction runs at the end of the current turn. Takes no arguments."},
-    Nil{}}}
+# ---- self.* harness requests: programmatic only (BISE-293) ----
+# self.compact and self.reload are no top-level tools: a run_typescript
+# program files them (await self.compact()), see
+# exec_program.call.self_req in runtime/main.bend and the deferred scan
+# in runtime/selftools.bend. They left the catalog on the user's call:
+# they are harness controls, not model tools, and their dotted names
+# were refused by OpenAI's tool-name pattern.
 
 # pure helpers the laws pin: catalog size and positional extraction
 def catalog_len(tools: List<&2, T.ToolDef>) -> Nat:
@@ -66,16 +61,13 @@ def tool_desc_at(n: Nat, tools: List<&2, T.ToolDef>) -> String:
         case Con{_, +rest}:
           tool_desc_at(k, rest)
 
-# the live catalog: the four vibe-parity tools, the skill loader, and
-# the self.* harness tools (catalog_short keeps the scripted scenarios
-# byte-identical)
+# the live catalog: the parity tools, the skill loader and the patch
+# editor (catalog_short keeps the scripted scenarios byte-identical)
 def catalog_live(+sd: String, +rd: String, +bd: String, +kd: String,
     +pd: String) -> List<&2, T.ToolDef>:
-  List.append(&2, T.ToolDef,
-    List.append(&2, T.ToolDef, catalog_pure(sd, rd, bd),
-      Con{T.ToolDef{"skill", kd},
-       Con{T.ToolDef{"apply_patch", pd}, Nil{}}}),
-    self_tool_defs())
+  List.append(&2, T.ToolDef, catalog_pure(sd, rd, bd),
+    Con{T.ToolDef{"skill", kd},
+     Con{T.ToolDef{"apply_patch", pd}, Nil{}}})
 
 # ---- the unified search: the vibe_sdk SearchRequest schema ----
 # The live model sends {"mode": ..., "query": ...} (the exact vibe_sdk

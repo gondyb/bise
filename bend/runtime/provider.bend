@@ -433,6 +433,13 @@ def model_call.log(+call: Nat, +tries: Nat, +model: String, +url: String,
     case Got{+a, +status, +raw}:
       Dbg.attempt(call, tries, model, url, status, json, raw, a)
 
+# the attempt the Core reads (Pvp.attempt_for, BISE-293)
+def got_for(+tools: List<&2, W.WTool>, +name: String, +key: String, g: Got)
+    -> Pvp.Attempt:
+  match g:
+    case Got{+a, +status, +raw}:
+      Pvp.attempt_for(tools, name, key, status, raw, a)
+
 def got_attempt(g: Got) -> Pvp.Attempt:
   match g:
     case Got{+a, _, _}:
@@ -611,7 +618,10 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
             lg : Unit <- model_call.log(call, tries, model, url, json, g)
             # the usage line names the full id (the TUI's catalog key)
             nu : Out <- usage_note(g, n, st, String.concat([prov, "/", model]), req)
-            model_call.step(got_attempt(g), nu, k, tries, req,
+            # BISE-293: the calls named back through the request's
+            # tools, a refusal in bise's words and the provider's
+            model_call.step(got_for(W.req_tools(wreq),
+                Pvp.prov_display(mfile, prov), key, g), nu, k, tries, req,
               k2 => n2 => model_call.try(k2, Nat.add(tries, 1n), n2, request,
                 key, pv, call, imgs, req))
 

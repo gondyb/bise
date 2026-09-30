@@ -454,8 +454,6 @@ def exec_tool.run(t: Rtp.Tool, out: Pv.Out, +name: String, +args: String,
       exec_tool.with(out, Sh.bash_exec(W.flat_cmd(args)))
     case Rtp.TSearch{}:
       exec_tool.with(out, Sh.exec_search(args, live))
-    case Rtp.TSelf{}:
-      IO.pure(Pv.Out & Xp.ExecRes, (out, Sfp.self_exec(name)))
     case Rtp.TSkill{}:
       exec_tool.with(out, exec_tool.skill(args, live))
     case Rtp.TPatch{}:

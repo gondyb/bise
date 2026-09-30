@@ -465,6 +465,21 @@ pub(crate) fn push_event(events: &mut Vec<Ev>, cache: &mut Vec<Option<EventRows>
     if let Some(appended) = merge_report_and_card(events, cache, &ev) {
         return appended;
     }
+    // BISE-293: a turn that fails for the reason its candidate was
+    // discarded says it once: the failure takes the warning's place
+    if let Ev::Err(t) = &ev {
+        let why = t.strip_prefix("turn failed: ");
+        if let (Some(why), Some(Ev::Warn(w))) = (why, events.last()) {
+            if w.strip_prefix("candidate discarded: ") == Some(why) {
+                let i = events.len() - 1;
+                events[i] = ev;
+                if let Some(c) = cache.get_mut(i) {
+                    *c = None;
+                }
+                return false;
+            }
+        }
+    }
     // annotations enrich the matching tool event instead of stacking
     match &ev {
         Ev::ToolInfo { id, name, args } => {

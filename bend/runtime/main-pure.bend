@@ -468,14 +468,15 @@ def sub_ann(+name: String, +r: Xp.ExecRes) -> String:
           String.append(" : ", ann_flat(out))))))
 
 # tool dispatch: which executor a call's name selects (checked in this
-# order; anything unknown is an MCP connector tool). run_typescript runs
+# order; anything unknown is an MCP connector tool). self.compact and
+# self.reload are no top-level tools (BISE-293): only a run_typescript
+# program files them (runtime/main.bend exec_program.call.self). run_typescript runs
 # in V8 (bend-jsrt), live and scripted alike (BISE-118). The comparisons
 # are a handful of short String.eq: evaluating them all is cheap.
 type Tool is Data:
   TNode{}
   TBash{}
   TSearch{}
-  TSelf{}
   TSkill{}
   TPatch{}
   TMcp{}
@@ -484,9 +485,8 @@ def tool_of(+name: String) -> Tool:
   Bool.pick(Tool, String.eq(name, "run_typescript"), TNode{},
   Bool.pick(Tool, String.eq(name, "bash"), TBash{},
   Bool.pick(Tool, String.eq(name, "search_tool_functions"), TSearch{},
-  Bool.pick(Tool, Sfp.is_self_tool(name), TSelf{},
   Bool.pick(Tool, String.eq(name, "skill"), TSkill{},
-  Bool.pick(Tool, String.eq(name, "apply_patch"), TPatch{}, TMcp{}))))))
+  Bool.pick(Tool, String.eq(name, "apply_patch"), TPatch{}, TMcp{})))))
 
 def call_name(c: T.Call) -> String:
   match c:

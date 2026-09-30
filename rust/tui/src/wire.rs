@@ -495,6 +495,23 @@ pub(crate) fn parse_line(line: &str) -> Option<Ev> {
     Some(Ev::Raw(o.to_string()))
 }
 
+/// BISE-293: a turn failed on a refused request, as the runtime words
+/// it (`provider-pure.bend` refusal): `turn failed: OpenAI refused the
+/// request (400). OpenAI said: "..."`. Bise's part (up to its last
+/// sentence end before the quote) and the provider's (`OpenAI said:
+/// "..."`, "" when it said nothing); None for any other error.
+pub(crate) fn refusal_parts(t: &str) -> Option<(&str, &str)> {
+    let t = t.strip_prefix("turn failed: ")?;
+    let refused = t.find(" refused the ")?;
+    match t[refused..].find(" said: \"") {
+        Some(j) => {
+            let k = refused + t[refused..refused + j].rfind(". ")?;
+            Some((&t[..=k], &t[k + 2..]))
+        }
+        None => t.ends_with('.').then_some((t, "")),
+    }
+}
+
 // decode the tool_code wire encoding: "\N" newline, "\R" CR, backslash
 // doubled (the same reversible encoding the provider wire uses)
 pub(crate) fn wire_decode(s: &str) -> String {

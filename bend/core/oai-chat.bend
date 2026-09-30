@@ -18,7 +18,7 @@ import ../vendor/json.bend as J
 # ---- wire request -> OpenAI Chat JSON body ----
 
 def tool_fn_json(+name: String, +desc: String) -> J.Json:
-  J.obj(Con{J.kv("name", J.str(name)),
+  J.obj(Con{J.kv("name", J.str(W.wire_name(name))),
     Con{J.kv("description", J.str(desc)),
       Con{J.kv("parameters", W.tool_schema(name)), Nil{}}}})
 
@@ -61,7 +61,7 @@ def call_json(c: W.WCall) -> J.Json:
       J.obj(Con{J.kv("id", J.str(W.call_id_of(id))),
         Con{J.kv("type", J.str("function")),
           Con{J.kv("function",
-            J.obj(Con{J.kv("name", J.str(name)),
+            J.obj(Con{J.kv("name", J.str(W.wire_name(name))),
               Con{J.kv("arguments", J.str(args_json(name, args))), Nil{}}})),
             Nil{}}}})
 

@@ -532,19 +532,13 @@ def Laws.deferred_resets_at_user():
 def Laws.deferred_empty_history():
   {==}
 
-def Laws.live_catalog_has_seven_tools():
+def Laws.live_catalog_has_five_tools():
   {==}
 
 def Laws.parity_catalog_keeps_three():
   {==}
 
-def Laws.live_catalog_skill_patch_and_self_names():
-  {==}
-
-def Laws.self_reload_desc_says_when():
-  {==}
-
-def Laws.self_compact_desc_says_when():
+def Laws.live_catalog_skill_and_patch_names():
   {==}
 
 def Laws.def_acks_suffix_empty_when_none():
@@ -1049,7 +1043,43 @@ def Laws.anth_error_body_maps():
 def Laws.anth_status_error_maps():
   {==}
 
-def Laws.anth_tool_name_roundtrip():
+def Laws.wire_name_keeps_the_catalog():
+  {==}
+
+def Laws.wire_name_sanitizes():
+  {==}
+
+def Laws.wire_name_matches_the_pattern():
+  {==}
+
+def Laws.wire_names_round_trip():
+  {==}
+
+def Laws.openai_body_sends_wire_names():
+  {==}
+
+def Laws.anthropic_body_sends_wire_names():
+  {==}
+
+def Laws.refusal_quotes_the_provider():
+  {==}
+
+def Laws.refusal_of_a_key_masks_it():
+  {==}
+
+def Laws.refusal_without_a_name_or_json():
+  {==}
+
+def Laws.refusal_without_words():
+  {==}
+
+def Laws.attempt_for_names_the_calls():
+  {==}
+
+def Laws.attempt_for_words_a_refusal():
+  {==}
+
+def Laws.attempt_for_keeps_a_transport_failure():
   {==}
 
 def Laws.config_parse_flat():

@@ -322,6 +322,13 @@ def parse_go(lines: List<&2, String>, +req: WReq) -> WReq:
     case Con{+line, rest}:
       parse_go(rest, step(req, line))
 
+# the tools a request offers (BISE-293: the reply's names map back
+# through them)
+def req_tools(+r: WReq) -> List<&2, WTool>:
+  match r:
+    case WReq{+tools, _, _}:
+      tools
+
 def parse_wire(+request: String) -> WReq:
   parse_go(String.split(request, Tx.newline()), WReq{Nil{}, Nil{}, None{}})
 
@@ -804,11 +811,164 @@ def join_lines(lines: List<&2, String>) -> String:
     case Con{+l, rest}:
       String.append(l, String.append("\n", join_lines(rest)))
 
+# ---- tool names on the wire (BISE-293) ----
+# Every family bise speaks takes a tool name matching
+# ^[a-zA-Z0-9_-]{1,64}$ (OpenAI: ^[a-zA-Z0-9_-]+$ and 64 chars;
+# Anthropic: 128), the strictest wins. A harness name that does not
+# (a dotted MCP-style "group.fn", a space, a non-ASCII char) rides
+# with each other char as "_", cut to 64 chars; an empty one as "_".
+# The request carries the wire name, in tools[] AND in the history's
+# calls (an old session's top-level "self.compact" call replays as
+# self_compact, never a 400). The reply side maps a returned name
+# back through the request's own tools (name_in): the first tool
+# whose wire name it is, else the name unchanged.
+
+def name_char_ok(+c: U32) -> Bool:
+  Bool.or(Bool.and(U32.is_ge(c, 97), U32.is_le(c, 122)),
+    Bool.or(Bool.and(U32.is_ge(c, 65), U32.is_le(c, 90)),
+      Bool.or(Bool.and(U32.is_ge(c, 48), U32.is_le(c, 57)),
+        Bool.or(U32.is_eq(c, 95), U32.is_eq(c, 45)))))
+
+def name_char(ok: Bool, c: U32) -> U32:
+  match ok:
+    case True{}:
+      c
+    case False{}:
+      95
+
+def name_chars(s: String) -> String:
+  match s:
+    case SNil{}:
+      SNil{}
+    case SCon{Chr{+c}, t}:
+      SCon{Chr{name_char(name_char_ok(c), c)}, name_chars(t)}
+
+def wire_name.pick(empty: Bool, +s: String) -> String:
+  match empty:
+    case True{}:
+      "_"
+    case False{}:
+      s
+
+def wire_name(+name: String) -> String:
+  wire_name.pick(String.is_empty(name), String.take(name_chars(name), 64n))
+
+# the pattern itself, the laws' check: 1 to 64 chars, each allowed
+def name_ok.chars(s: String) -> Bool:
+  match s:
+    case SNil{}:
+      True{}
+    case SCon{Chr{+c}, t}:
+      Bool.and(name_char_ok(c), name_ok.chars(t))
+
+def name_ok(+s: String) -> Bool:
+  Bool.and(Bool.not(String.is_empty(s)),
+    Bool.and(Nat.is_le(String.length(s), 64n), name_ok.chars(s)))
+
+def wtool_name(+t: WTool) -> String:
+  match t:
+    case WTool{+name, _}:
+      name
+
+# a name the provider sent back, as the harness knows it
+def name_in(tools: List<&2, WTool>, +wire: String) -> String:
+  match tools:
+    case Nil{}:
+      wire
+    case Con{+t, rest}:
+      Bool.pick(String, String.eq(wire_name(wtool_name(t)), wire),
+        wtool_name(t), name_in(rest, wire))
+
+# one reply line: a "CALL <id> <name> : <args>" line gets its name
+# back; any other line stays
+def call_line_in.name(sp: Maybe<&2, Nat>, +tools: List<&2, WTool>,
+    +head: String, +tail: String) -> String:
+  match sp:
+    case Some{+q}:
+      String.append(head, String.append(name_in(tools, String.take(tail, q)),
+        String.drop(tail, q)))
+    case None{}:
+      String.append(head, name_in(tools, tail))
+
+def call_line_in.id(sp: Maybe<&2, Nat>, +tools: List<&2, WTool>,
+    +rest: String) -> String:
+  match sp:
+    case Some{+p}:
+      call_line_in.name(Tx.find(String.drop(rest, Nat.add(p, 1n)), " : ", 0n),
+        tools, String.append("CALL ", String.take(rest, Nat.add(p, 1n))),
+        String.drop(rest, Nat.add(p, 1n)))
+    case None{}:
+      String.append("CALL ", rest)
+
+def call_line_in(is_call: Bool, +tools: List<&2, WTool>, +line: String)
+    -> String:
+  match is_call:
+    case True{}:
+      call_line_in.id(Tx.find(String.drop(line, 5n), " ", 0n), tools,
+        String.drop(line, 5n))
+    case False{}:
+      line
+
+def reply_lines_in(+tools: List<&2, WTool>, lines: List<&2, String>)
+    -> List<&2, String>:
+  match lines:
+    case Nil{}:
+      Nil{}
+    case Con{+l, rest}:
+      Con{call_line_in(String.starts_with(l, "CALL "), tools, l),
+        reply_lines_in(tools, rest)}
+
+# a whole OK/CALL/END reply, every call named as the harness knows it
+def reply_names_in(+tools: List<&2, WTool>, +reply: String) -> String:
+  String.join(reply_lines_in(tools, String.split(reply, Tx.newline())),
+    "\n")
+
+# ---- a provider's error body, in its own words (BISE-293) ----
+# The message of its JSON (OpenAI / Anthropic error.message, Mistral
+# message, a bare error string, a FastAPI detail), else the body
+# itself; on one line, runs of spaces as one. The full body stays in
+# the debug log.
+def err_text.first(+a: String, +b: String) -> String:
+  Bool.pick(String, String.is_empty(String.trim(a)), b, a)
+
+def err_text(+body: String) -> String:
+  +j = parse_json(body)
+  err_text.first(J.get_str_or(field_or(j, "error", J.JNull{}), "message", ""),
+    err_text.first(J.get_str_or(j, "message", ""),
+      err_text.first(J.get_str_or(j, "error", ""),
+        err_text.first(J.get_str_or(j, "detail", ""), body))))
+
+def is_space(+c: U32) -> Bool:
+  Bool.or(U32.is_eq(c, 32), Bool.or(U32.is_eq(c, 9),
+    Bool.or(U32.is_eq(c, 10), U32.is_eq(c, 13))))
+
+def squeeze.pick(is_sp: Bool, prev_sp: Bool, c: U32, +rest: String)
+    -> String:
+  match is_sp:
+    case True{}:
+      Bool.pick(String, prev_sp, rest, SCon{Chr{32}, rest})
+    case False{}:
+      SCon{Chr{c}, rest}
+
+def squeeze.go(s: String, sp: Bool) -> String:
+  match s:
+    case SNil{}:
+      SNil{}
+    case SCon{Chr{+c}, t}:
+      squeeze.pick(is_space(c), sp, c, squeeze.go(t, is_space(c)))
+
+# whitespace runs (newlines included) become one space, trimmed
+def squeeze(+s: String) -> String:
+  String.trim(squeeze.go(s, True{}))
+
+def err_said(+body: String) -> String:
+  squeeze(err_text(body))
+
 def reply_err(+status: U32, +body: String) -> String:
   String.append("ERROR provider ",
     String.append(U32.show(status),
       String.append(": ",
-        String.append(String.take(String.trim(Tx.flatten(body)), 300n), "\nEND\n"))))
+        String.append(String.take(err_said(body), 300n), "\nEND\n"))))
 
 # the structured tools: their args ride as JSON (OpenAI arguments string,
 # Anthropic input object); the others wrap a flat {"arg": ...}

@@ -1791,3 +1791,39 @@ Show what bise can do.";
     assert_eq!(other.len(), 1, "{other:#?}");
     assert!(other[0].trim_end().ends_with("✗ unknown skill"), "{other:#?}");
 }
+
+// BISE-293: a refused request says it once, in two lines: bise's, then
+// the provider's own words dim under it (never the raw JSON twice)
+#[test]
+fn refused_request_reads_once_in_two_lines() {
+    let why = "OpenAI refused the request (400). OpenAI said: \"Invalid 'tools[0].function.name': string does not match pattern.\"";
+    let mut events: Vec<Ev> = Vec::new();
+    let mut cache: Vec<Option<EventRows>> = Vec::new();
+    for l in [format!("  obs: candidate_discarded: {}", why), format!("  obs: turn_done: failed: {}", why)] {
+        push_event(&mut events, &mut cache, parse_line(&l).expect("parse"));
+    }
+    assert_eq!(events.len(), 1, "the warning gives its place to the failure");
+    let rows = rows_text(&ev_lines(&events[0], 200));
+    assert_eq!(rows.len(), 2, "{:?}", rows);
+    assert_eq!(rows[0].trim_end(), " ✗ the turn stopped: OpenAI refused the request (400).");
+    assert_eq!(rows[1].trim(), "OpenAI said: \"Invalid 'tools[0].function.name': string does not match pattern.\"");
+    // a warning for another cause stays
+    let mut events = vec![Ev::Warn("candidate discarded: interrupt".into())];
+    let mut cache = vec![None];
+    push_event(&mut events, &mut cache, Ev::Err(format!("turn failed: {}", why)));
+    assert_eq!(events.len(), 2);
+}
+
+#[test]
+fn refusal_parts_split_bise_and_the_provider() {
+    assert_eq!(
+        refusal_parts("turn failed: OpenAI refused the key (401). check it with /setup. OpenAI said: \"Incorrect key. See docs.\""),
+        Some(("OpenAI refused the key (401). check it with /setup.", "OpenAI said: \"Incorrect key. See docs.\""))
+    );
+    assert_eq!(
+        refusal_parts("turn failed: Mistral refused the request (400)."),
+        Some(("Mistral refused the request (400).", ""))
+    );
+    assert_eq!(refusal_parts("turn failed: provider unreachable: retries exhausted"), None);
+    assert_eq!(refusal_parts("compaction failed: x refused the y. z said: \"w\""), None);
+}

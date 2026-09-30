@@ -27,12 +27,17 @@ the injected <bise_state> block is not one):
 - `[[error: KIND]]` / `[[error: KIND xN]]`: the first N requests for
   that message fail (N = 1), then the script goes on. KIND: 429, 500,
   overloaded (Anthropic 529, the others 503), stream (a 200 stream that
-  breaks with the family's error event; a whole reply gets a 500).
+  breaks with the family's error event; a whole reply gets a 500),
+  badname (a final 400: the API refusing a tool name, BISE-293).
   Several markers fail in their order. `retry=S` sets Retry-After (1);
 - `[[fixture: NAME]]`: the first request for that message is answered
   with the recorded file tests/providers/<family>/NAME.sse (streamed) or
   NAME.json (whole), or NAME.<status>.json (an error with that status),
   byte for byte.
+
+A request whose tools or history calls carry a tool name off the API's
+pattern (OpenAI ^[a-zA-Z0-9_-]+$, 64 chars; Anthropic 128) gets the
+API's own 400, as the real ones do (BISE-293).
 
 A key (Authorization, x-api-key) holding "bad" gets a 401, one holding
 "broke" a 402 (BISE-266: the first run's key check), until the file
@@ -294,6 +299,9 @@ def pieces(s, n=3):
 
 def error_reply(family, err):
     kind = err["kind"]
+    if kind == "badname":
+        # BISE-293: a final 400, the API's words for a tool name off its pattern
+        return 400, {}, name_error(family, {"tools": [{"name": "self.compact", "function": {"name": "self.compact"}}]}) or {}
     status = {"429": 429, "500": 500, "stream": 500}.get(kind, 529 if family == "anthropic" else 503)
     hdr = {"retry-after": str(err.get("retry", 1))} if status in (429, 503, 529) else {}
     if family == "anthropic":
@@ -654,6 +662,15 @@ class H(http.server.BaseHTTPRequestHandler):
             err = {"error": {"type": "authentication_error" if bad else "billing_error", "message": said}}
             self.send(401 if bad else 402, json.dumps(err).encode())
             return
+        # BISE-293: the real APIs refuse a tool name off their pattern
+        # (OpenAI refused "self.compact" on the user's first message)
+        bad_name = name_error(family, body)
+        if bad_name:
+            with open(LOG, "a") as f:
+                f.write(json.dumps({"agent": "", "family": family, "path": self.path,
+                                    "status": 400, "name_error": bad_name}) + "\n")
+            self.send(400, json.dumps(bad_name).encode())
+            return
         conv = CONV[family](body)
         agent = agent_of(conv)
         idx = last_user(conv)
@@ -698,6 +715,52 @@ class H(http.server.BaseHTTPRequestHandler):
                                 "model": model, "effort": effort_of(body),
                                 # BISE-232: the AGENTS.md block of the system prompt
                                 "agents_md": agents_md_of(conv)}) + "\n")
+
+
+# ---------------------------------------------------------------- tool names
+# BISE-293: each API's tool-name pattern, enforced like the real ones
+# (the strictest, OpenAI's, is ^[a-zA-Z0-9_-]+$ with 64 chars at most):
+# a tool of the request or a call of its history off the pattern gets
+# the API's own 400.
+NAME_OK = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+ANTH_NAME_OK = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
+
+
+def tool_names(family, body):
+    """(where, name) of every tool name a request carries: its tools and
+    its history's calls"""
+    out = []
+    for i, t in enumerate(body.get("tools") or []):
+        if family == "openai-chat":
+            out.append(("tools[%d].function.name" % i, (t.get("function") or {}).get("name", "")))
+        elif family == "gemini":
+            for j, d in enumerate(t.get("functionDeclarations") or []):
+                out.append(("tools[%d].functionDeclarations[%d].name" % (i, j), d.get("name", "")))
+        else:
+            out.append(("tools.%d.name" % i if family == "anthropic" else "tools[%d].name" % i, t.get("name", "")))
+    for i, m in enumerate(body.get("messages") or []):
+        for c in m.get("tool_calls") or []:
+            out.append(("messages[%d].tool_calls.function.name" % i, (c.get("function") or {}).get("name", "")))
+        if isinstance(m.get("content"), list):
+            for b in m["content"]:
+                if isinstance(b, dict) and b.get("type") == "tool_use":
+                    out.append(("messages.%d.content.tool_use.name" % i, b.get("name", "")))
+    return out
+
+
+def name_error(family, body):
+    """the API's 400 body for the first tool name off its pattern, None
+    when every name is fine"""
+    ok = ANTH_NAME_OK if family == "anthropic" else NAME_OK
+    for where, name in tool_names(family, body):
+        if not ok.match(name or ""):
+            if family == "anthropic":
+                return {"type": "error", "error": {"type": "invalid_request_error",
+                        "message": "%s: String should match pattern '^[a-zA-Z0-9_-]{1,128}$'" % where}}
+            return {"error": {"message": "Invalid '%s': string does not match pattern. Expected a string "
+                              "that matches the pattern '^[a-zA-Z0-9_-]+$'." % where,
+                              "type": "invalid_request_error", "param": where, "code": "invalid_value"}}
+    return None
 
 
 def effort_of(body):

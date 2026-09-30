@@ -6,6 +6,7 @@
 # (status, Retry-After, mapped reply) before asking for a verdict.
 import Base
 import ../core/api.bend as Api
+import ../core/wire.bend as W
 import ../core/text.bend as Tx
 import ../core/config.bend as Cf
 
@@ -837,6 +838,102 @@ def attempt_status(+status: U32, +retry_after: String, +reply: String)
     -> Attempt:
   attempt_status.pick(retryable_status(status), status,
     retry_after_ms(retry_after), reply)
+
+# ---- the attempt as the Core and the user read it (BISE-293) ----
+# The provider's display name (providers.<p>.name of the catalog),
+# "" when it has none.
+def prov_display(+file: String, +prov: String) -> String:
+  Cf.cfg_or(Cf.cfg_find(registry(file),
+    String.concat(["providers.", prov, ".name"])), "")
+
+def refusal.who(+name: String) -> String:
+  Bool.pick(String, String.is_empty(name), "the provider", name)
+
+# bise's line of a refused request: who refused, the status, what to
+# check (the designer's words, BISE-282's pattern)
+def refusal.head(+who: String, +status: U32) -> String:
+  +s = U32.show(status)
+  Bool.pick(String, Bool.or(U32.is_eq(status, 401), U32.is_eq(status, 403)),
+    String.concat([who, " refused the key (", s, "). check it with /setup."]),
+    Bool.pick(String, U32.is_eq(status, 404),
+      String.concat([who, " refused the request (", s,
+        "). check the model name and the provider URL."]),
+      Bool.pick(String, U32.is_eq(status, 413),
+        String.concat([who, " refused the request (", s,
+          "). the request is too large."]),
+        String.concat([who, " refused the request (", s, ")."]))))
+
+# the key, if the provider echoed it, as ...<last 4>
+def mask.at(fuel: Nat, m: Maybe<&2, Nat>, +s: String, +key: String)
+    -> String:
+  match fuel:
+    case 0n:
+      s
+    case 1n+k:
+      match m:
+        case None{}:
+          s
+        case Some{+p}:
+          String.concat([String.take(s, p), "…",
+            String.drop(key, Nat.sub(String.length(key), 4n)),
+            mask.at(k,
+              Tx.find(String.drop(s, Nat.add(p, String.length(key))), key, 0n),
+              String.drop(s, Nat.add(p, String.length(key))), key)])
+
+def mask.pick(short: Bool, +s: String, +key: String) -> String:
+  match short:
+    case True{}:
+      s
+    case False{}:
+      mask.at(8n, Tx.find(s, key, 0n), s, key)
+
+def mask(+s: String, +key: String) -> String:
+  mask.pick(Nat.is_lt(String.length(key), 12n), s, key)
+
+# the provider's words, ~200 chars at most
+def said_cut(+s: String) -> String:
+  Bool.pick(String, Nat.is_gt(String.length(s), 200n),
+    String.append(String.trim(String.take(s, 200n)), "…"), s)
+
+def refusal.said(empty: Bool, +who: String, +said: String) -> String:
+  match empty:
+    case True{}:
+      ""
+    case False{}:
+      String.concat([" ", who, " said: \"", said, "\""])
+
+# a final HTTP error on one line: bise's words, then the provider's
+# quoted ("OpenAI refused the request (400). OpenAI said: "...""); the
+# TUI shows the quote dim under bise's line, the whole body stays in
+# the debug log
+def refusal(+name: String, +status: U32, +body: String, +key: String)
+    -> String:
+  +who = refusal.who(name)
+  +said = said_cut(mask(W.err_said(body), key))
+  String.append(refusal.head(who, status),
+    refusal.said(String.is_empty(said), who, said))
+
+def attempt_for.fail(refused: Bool, +why: String, +name: String,
+    +status: U32, +body: String, +key: String) -> Attempt:
+  match refused:
+    case True{}:
+      AFail{refusal(name, status, body, key)}
+    case False{}:
+      AFail{why}
+
+# a reply's calls get their harness names back through the request's
+# tools; a refusal (an HTTP status, not 200) reads as bise's line and
+# the provider's words; a transport failure and a retry stay
+def attempt_for(+tools: List<&2, W.WTool>, +name: String, +key: String,
+    +status: U32, +body: String, a: Attempt) -> Attempt:
+  match a:
+    case AOk{+reply}:
+      AOk{W.reply_names_in(tools, reply)}
+    case AFail{+why}:
+      attempt_for.fail(Bool.and(Bool.not(U32.is_eq(status, 0)),
+          Bool.not(U32.is_eq(status, 200))), why, name, status, body, key)
+    case ARetry{+ms, +why}:
+      ARetry{ms, why}
 
 def attempt_err.pick(retryable: Bool, +host: String, +e: NetErr) -> Attempt:
   match retryable:

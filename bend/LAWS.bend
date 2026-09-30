@@ -506,7 +506,7 @@ law skills_miss_lists_available:
        "Available skills: \"one\".")) == True{} : Bool}
 
 # LAW: the live search surface carries the live catalog itself when
-# the MCP index is absent (skill and self.* stay discoverable).
+# the MCP index is absent (skill stays discoverable).
 law merged_surface_carries_live_catalog:
   {Mc.merged_tools.live(Con{T.ToolDef{"skill", "d"}, Nil{}}, None{})
     == Con{T.ToolDef{"skill", "d"}, Nil{}} : List<&2, T.ToolDef>}
@@ -666,8 +666,9 @@ law reload_allows_with_notif:
     == True{} : Bool}
 
 # ---- self.reload / self.compact: the agent files requests mid-turn ----
-# Callable as tools (top-level or inside a run_typescript program),
-# answered with an ack, executed at the turn boundary by the REPL.
+# Called inside a run_typescript program (no top-level tools since
+# BISE-293), answered with an ack, executed at the turn boundary by
+# the REPL.
 
 # LAW: self.reload answers with the reload ack — visible to the model.
 law self_reload_acks:
@@ -753,26 +754,25 @@ law def_acks_suffix_carries_both:
      String.contains(Sf.def_acks.suffix(Sf.Def{True{}, True{}}),
        "reload: scheduled")) == True{} : Bool}
 
-# LAW: the live catalog carries the skill loader, the apply_patch
-# editor and the two self tools after the four parity tools;
-# catalog_short (the scripted scenarios) stays untouched.
-# self.sleep left the catalog: it is a programmatic tool now
-# (await self.sleep(n) inside a run_typescript program).
-law live_catalog_has_seven_tools:
-  {Xt.catalog_len(Xt.catalog_live("s", "r", "b", "k", "p")) == 7n : Nat}
+# LAW: the live catalog carries the skill loader and the apply_patch
+# editor after the three parity tools, and nothing after them: the
+# self.* requests are programmatic only (BISE-293: await
+# self.compact() inside a run_typescript program); catalog_short (the
+# scripted scenarios) stays untouched. self.sleep left the catalog
+# before them.
+law live_catalog_has_five_tools:
+  {Xt.catalog_len(Xt.catalog_live("s", "r", "b", "k", "p")) == 5n : Nat}
 
 law parity_catalog_keeps_three:
   {Xt.catalog_len(Xt.catalog_pure("s", "r", "b")) == 3n : Nat}
 
-law live_catalog_skill_patch_and_self_names:
+law live_catalog_skill_and_patch_names:
   {Bool.and(String.eq(Xt.tool_name_at(3n, Xt.catalog_live("s", "r", "b", "k", "p")),
       "skill"),
     Bool.and(String.eq(Xt.tool_name_at(4n, Xt.catalog_live("s", "r", "b", "k", "p")),
       "apply_patch"),
-     Bool.and(String.eq(Xt.tool_name_at(5n, Xt.catalog_live("s", "r", "b", "k", "p")),
-      "self.reload"),
-      String.eq(Xt.tool_name_at(6n, Xt.catalog_live("s", "r", "b", "k", "p")),
-       "self.compact")))) == True{} : Bool}
+     String.eq(Xt.tool_name_at(5n, Xt.catalog_live("s", "r", "b", "k", "p")),
+      ""))) == True{} : Bool}
 
 # LAW: apply_patch rides at position 4 with its description argument,
 # and the fallback description names the format and the atomicity.
@@ -783,20 +783,6 @@ law apply_patch_desc_names_the_format:
        String.contains(Xt.patch_desc.read(None{}), "Codex V4A"),
        String.contains(Xt.patch_desc.read(None{}),
          "validated before anything is written"))) == True{} : Bool}
-
-law self_reload_desc_says_when:
-  {Bool.and(
-     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b", "k", "p")),
-       "Restart the harness process with the latest code"),
-     String.contains(Xt.tool_desc_at(5n, Xt.catalog_live("s", "r", "b", "k", "p")),
-       "end of the current turn")) == True{} : Bool}
-
-law self_compact_desc_says_when:
-  {Bool.and(
-     String.contains(Xt.tool_desc_at(6n, Xt.catalog_live("s", "r", "b", "k", "p")),
-       "Compact the conversation history"),
-     String.contains(Xt.tool_desc_at(6n, Xt.catalog_live("s", "r", "b", "k", "p")),
-       "end of the current turn")) == True{} : Bool}
 
 # ---- the provider API mapping (core/api.bend, formerly the Rust bridge) ----
 
@@ -904,7 +890,7 @@ law api_tool_calls_map:
 # capped at 300 chars, with the status.
 law api_error_maps:
   {Oai.reply_of(401, "{\"error\":\"bad key\"}")
-    == "ERROR provider 401: {\"error\":\"bad key\"}\nEND\n" : String}
+    == "ERROR provider 401: bad key\nEND\n" : String}
 
 # ---- permissive compaction + newline transport ----
 
@@ -2559,18 +2545,126 @@ law anth_error_body_maps:
 # LAW: a non-200 still maps to the flattened ERROR line with the status.
 law anth_status_error_maps:
   {Api.reply_of_for(Api.Anthropic{}, 401, "{\"error\":\"bad key\"}")
-    == "ERROR provider 401: {\"error\":\"bad key\"}\nEND\n" : String}
+    == "ERROR provider 401: bad key\nEND\n" : String}
 
-# LAW: the Messages API tool-name pattern has no dot - the self.*
-# tools ride as self_* on the way out and come back as their harness
-# names (the proxy rejects "self.reload" with invalid_request_error).
-law anth_tool_name_roundtrip:
-  {Bool.and(
-     String.eq(Anth.anth_tool_name_out("self.reload"), "self_reload"),
-     Bool.and(
-       String.eq(Anth.anth_tool_name_in("self_reload"), "self.reload"),
-       String.eq(Anth.anth_tool_name_out("bash"), "bash")))
+# ---- tool names on the wire (BISE-293) ----
+# Every family bise speaks (openai-chat: OpenAI, Mistral, OpenRouter...;
+# anthropic) takes tool names matching ^[a-zA-Z0-9_-]{1,64}$ (OpenAI
+# refused "self.compact" with a 400 on the user's first message). A
+# name rides through W.wire_name on the way out (tools[] and the
+# history's calls) and comes back through the request's own tools
+# (W.name_in); the names bise sends today are already valid, so they
+# ride unchanged.
+
+# LAW: the live catalog's names are their own wire names.
+law wire_name_keeps_the_catalog:
+  {Bool.and(String.eq(W.wire_name("search_tool_functions"), "search_tool_functions"),
+    Bool.and(String.eq(W.wire_name("bash"), "bash"),
+     Bool.and(String.eq(W.wire_name("run_typescript"), "run_typescript"),
+      Bool.and(String.eq(W.wire_name("skill"), "skill"),
+       String.eq(W.wire_name("apply_patch"), "apply_patch"))))) == True{} : Bool}
+
+# LAW: any other name is made valid: a dot (an MCP connector's
+# "group.fn", the old self.* tools), a slash, a space, a non-ASCII char
+# become "_", a long name is cut to 64 chars, an empty one is "_".
+law wire_name_sanitizes:
+  {Bool.and(String.eq(W.wire_name("self.compact"), "self_compact"),
+    Bool.and(String.eq(W.wire_name("github.search_issues"), "github_search_issues"),
+     Bool.and(String.eq(W.wire_name("my tool/v2"), "my_tool_v2"),
+      Bool.and(String.eq(W.wire_name("café"), "caf_"),
+       Bool.and(String.eq(W.wire_name(""), "_"),
+        String.eq(W.wire_name("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))))) == True{} : Bool}
+
+# LAW: what comes out matches the pattern, and the pattern check
+# refuses what the providers refuse.
+law wire_name_matches_the_pattern:
+  {Bool.and(W.name_ok(W.wire_name("self.reload")),
+    Bool.and(W.name_ok(W.wire_name("linear.list-issues")),
+     Bool.and(W.name_ok(W.wire_name("")),
+      Bool.and(W.name_ok(W.wire_name("mcp.server.tool with spaces and ünicode.and.a.name.longer.than.sixty.four.chars")),
+       Bool.and(Bool.not(W.name_ok("self.compact")),
+        Bool.and(Bool.not(W.name_ok("")),
+         Bool.not(W.name_ok("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))))))))
     == True{} : Bool}
+
+# LAW: the round trip: a call coming back under its wire name is named
+# as the harness knows it; a valid name stays; a name no tool of the
+# request has passes unchanged (the Core answers it "unknown tool").
+law wire_names_round_trip:
+  {W.reply_names_in(
+      [W.WTool{"bash", ""}, W.WTool{"github.search_issues", ""}],
+      "OK hi\nCALL 1 github_search_issues : {\"q\":\"a b\"}\nCALL 2 bash : ls\nCALL 3 self_compact : \nEND\n")
+    == "OK hi\nCALL 1 github.search_issues : {\"q\":\"a b\"}\nCALL 2 bash : ls\nCALL 3 self_compact : \nEND\n"
+    : String}
+
+# LAW: both families send the wire names, in tools[] and in the
+# history's calls: an old session's top-level self.compact call
+# replays as self_compact.
+law openai_body_sends_wire_names:
+  {Bool.and(String.contains(Api.api_body_for(Api.OpenAI{}, "m", Api.facts0(),
+        W.parse_wire("MODEL default\nTOOL github.search_issues : Search.\nMSG user : hi\nMSG assistant : x\n  CALL 1 self.compact : \nMSG tool : ok\nEND\n")),
+      "\"name\":\"github_search_issues\""),
+    Bool.and(String.contains(Api.api_body_for(Api.OpenAI{}, "m", Api.facts0(),
+        W.parse_wire("MODEL default\nTOOL github.search_issues : Search.\nMSG user : hi\nMSG assistant : x\n  CALL 1 self.compact : \nMSG tool : ok\nEND\n")),
+      "\"name\":\"self_compact\""),
+     Bool.not(String.contains(Api.api_body_for(Api.OpenAI{}, "m", Api.facts0(),
+        W.parse_wire("MODEL default\nTOOL github.search_issues : Search.\nMSG user : hi\nMSG assistant : x\n  CALL 1 self.compact : \nMSG tool : ok\nEND\n")),
+      "self.compact"))))
+    == True{} : Bool}
+
+law anthropic_body_sends_wire_names:
+  {Bool.and(String.contains(Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
+        W.parse_wire("MODEL default\nTOOL github.search_issues : Search.\nMSG user : hi\nMSG assistant : x\n  CALL 1 self.compact : \nMSG tool : ok\nEND\n")),
+      "\"name\":\"github_search_issues\""),
+     String.contains(Api.api_body_for(Api.Anthropic{}, "m", Api.facts0(),
+        W.parse_wire("MODEL default\nTOOL github.search_issues : Search.\nMSG user : hi\nMSG assistant : x\n  CALL 1 self.compact : \nMSG tool : ok\nEND\n")),
+      "\"name\":\"self_compact\""))
+    == True{} : Bool}
+
+# ---- a refused request, in bise's words and the provider's (BISE-293) ----
+# The feed showed the provider's raw JSON twice; now one line: who
+# refused, the status, what to check, then the provider's own message
+# (its error.message), one line, ~200 chars, the key masked.
+
+law refusal_quotes_the_provider:
+  {Pv.refusal("OpenAI", 400,
+      "{\n  \"error\": {\n    \"message\": \"Invalid 'tools[0].function.name': string does not match pattern.\",\n    \"type\": \"invalid_request_error\"\n  }\n}", "")
+    == "OpenAI refused the request (400). OpenAI said: \"Invalid 'tools[0].function.name': string does not match pattern.\""
+    : String}
+
+law refusal_of_a_key_masks_it:
+  {Pv.refusal("OpenAI", 401,
+      "{\"error\":{\"message\":\"Incorrect API key provided: sk-abcdefghijklmnop.\"}}",
+      "sk-abcdefghijklmnop")
+    == "OpenAI refused the key (401). check it with /setup. OpenAI said: \"Incorrect API key provided: …mnop.\""
+    : String}
+
+law refusal_without_a_name_or_json:
+  {Pv.refusal("", 404, "no  such\n model", "")
+    == "the provider refused the request (404). check the model name and the provider URL. the provider said: \"no such model\""
+    : String}
+
+law refusal_without_words:
+  {Pv.refusal("Mistral", 400, "", "")
+    == "Mistral refused the request (400)." : String}
+
+# LAW: the attempt the Core reads: a refusal in those words, a reply's
+# calls named back, a transport failure (status 0) as it was.
+law attempt_for_names_the_calls:
+  {Pv.attempt_for([W.WTool{"a.b", ""}], "OpenAI", "", 200, "",
+      Pv.AOk{"OK \nCALL 1 a_b : x\nEND\n"})
+    == Pv.AOk{"OK \nCALL 1 a.b : x\nEND\n"} : Pv.Attempt}
+
+law attempt_for_words_a_refusal:
+  {Pv.attempt_for(Nil{}, "OpenAI", "", 400, "{\"error\":{\"message\":\"bad\"}}",
+      Pv.AFail{"provider 400: bad"})
+    == Pv.AFail{"OpenAI refused the request (400). OpenAI said: \"bad\""}
+    : Pv.Attempt}
+
+law attempt_for_keeps_a_transport_failure:
+  {Pv.attempt_for(Nil{}, "OpenAI", "", 0, "", Pv.AFail{"no route to api.openai.com"})
+    == Pv.AFail{"no route to api.openai.com"} : Pv.Attempt}
 
 # ---- the config file (core/config.bend) ----
 # A pragmatic TOML subset: key = value lines, [section] headers, #
@@ -2897,14 +2991,14 @@ data: [DONE]
     == Oai.reply_of(200, "{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":[{\"type\":\"text\",\"text\":\"2+2 = 4\"}]},{\"type\":\"text\",\"text\":\"4!\"}]},\"finish_reason\":\"stop\"}]}") : String}
 
 # LAW: an error chunk mid-stream (OpenRouter) is the reply: a 200 error
-# body, which the retry policy retries.
+# body, which the retry policy retries (its message only, BISE-293).
 law oai_stream_error_chunk:
   {Os.reply("data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}],\"usage\":null}
 
 data: {\"object\":\"chat.completion.chunk\",\"error\":{\"code\":\"server_error\",\"message\":\"Internal server error\"},\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\"},\"finish_reason\":\"error\"}]}
 
 ")
-    == "ERROR provider 200: {\"error\":{\"code\":\"server_error\",\"message\":\"Internal server error\"}}
+    == "ERROR provider 200: Internal server error
 END
 " : String}
 

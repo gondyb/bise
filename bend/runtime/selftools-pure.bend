@@ -7,9 +7,9 @@ import ../core/types.bend as T
 import ./tools-pure.bend as Xp
 
 # ---- self.* harness tools: requests the agent files mid-turn ----
-# self.reload and self.compact are callable like any tool (top-level,
-# or from inside a run_typescript program: free identifiers become
-# tool requests). Both only make sense BETWEEN turns, so the tool
+# self.reload and self.compact are programmatic: a run_typescript
+# program calls them (free identifiers become tool requests); they are
+# no top-level tools (BISE-293). Both only make sense BETWEEN turns, so the tool
 # result is an ACK; the deferred scan below finds it in the history
 # at the end of the turn and the REPL executes the request (compact
 # first, then reload — the checkpoint then carries the compacted
