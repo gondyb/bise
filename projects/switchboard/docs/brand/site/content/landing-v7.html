@@ -1,0 +1,1320 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head><base href="/">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bise :* · multi-agent coding, made human.</title>
+<meta name="description" content="bise is an open-source terminal app for multi-agent coding. you talk to one agent, it runs a whole team of coding agents for you, and you stay in flow.">
+<link rel="canonical" href="https://bise.dev/">
+<meta name="theme-color" content="#141211">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="bise">
+<meta property="og:url" content="https://bise.dev/">
+<meta property="og:title" content="bise :* · multi-agent coding, made human.">
+<meta property="og:description" content="bise is an open-source terminal app for multi-agent coding. you talk to one agent, it runs a whole team of coding agents for you, and you stay in flow.">
+<meta property="og:image" content="https://bise.dev/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="bise :* · multi-agent coding, made human. talk to one agent. it runs the team. you stay in flow.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="bise :* · multi-agent coding, made human.">
+<meta name="twitter:description" content="bise is an open-source terminal app for multi-agent coding. you talk to one agent, it runs a whole team of coding agents for you, and you stay in flow.">
+<meta name="twitter:image" content="https://bise.dev/og.png">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"bise","url":"https://bise.dev","applicationCategory":"DeveloperApplication","operatingSystem":"macOS","description":"bise is an open-source terminal app for multi-agent coding. you talk to one agent, it runs a whole team of coding agents for you, and you stay in flow.","author":{"@type":"Person","name":"Gabriel Vergnaud"},"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --kick:#6f685f; --wind:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --raised:#221e1c; --chip:#262220; }
+  [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --kick:#9d958a; --wind:#cbc3b6; --acc:#b8416b; --err:#b3261e; --raised:#fbf8f3; --chip:#e8e2d8; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html { scroll-behavior:smooth; }
+  body { background:var(--bg); color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:16px; line-height:1.75; transition:background .4s, color .4s; }
+  a { color:inherit; text-decoration:none; }
+  .dim{color:var(--dim)} .faint{color:var(--faint)} .acc{color:var(--acc)}
+  .gc { display:inline-block; width:1ch; text-align:center; }
+
+
+  /* top: almost nothing */
+  header { position:fixed; top:0; left:0; right:0; z-index:5; display:flex; justify-content:space-between; align-items:center; padding:22px 5vw; font-size:14px; color:var(--dim); }
+  header .logo { color:var(--text); font-weight:700; opacity:0; transition:opacity .5s; }
+  header.scrolled .logo { opacity:1; }
+  header nav { display:flex; gap:3ch; align-items:center; }
+  header nav a:hover, header button:hover { color:var(--text); }
+  header button { font:inherit; background:none; border:0; color:inherit; cursor:pointer; }
+
+  /* the wind: an ASCII field that drifts behind the hero */
+  .sky { position:relative; overflow:hidden; }
+  pre.wind { position:absolute; inset:0; color:var(--wind); font:inherit; font-size:14px; line-height:1.4; pointer-events:none; user-select:none; white-space:pre; overflow:hidden;
+    -webkit-mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); }
+  .kisses { position:absolute; inset:0; pointer-events:none; font-size:14px; }
+  .kisses span { position:absolute; color:var(--acc); white-space:nowrap; transition:opacity 1.2s; }
+  .cursors { position:absolute; inset:0; pointer-events:none; color:var(--dim); font-size:13px; }
+  .cursors div { position:absolute; white-space:nowrap; opacity:.55; transition:opacity 1s; }
+  .cur { display:inline-block; width:.6em; height:1.05em; background:currentColor; vertical-align:-.18em; animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0 } }
+
+  .sky .lay { position:absolute; inset:0; pointer-events:none; overflow:hidden; font-size:14px; line-height:1.4; }
+  .sky .say { position:absolute; left:0; top:0; color:var(--dim); font-size:13px; white-space:nowrap; opacity:0; transition:opacity .6s ease; z-index:2; text-shadow:0 0 6px var(--bg), 0 0 2px var(--bg); }
+  .sky .say.on { opacity:1; } .sky .lay .say span { position:static; transform:none; transition:none; } .sky .say .acc { color:var(--acc); margin-right:1ch; }
+  .sky .say.pop { animation:sayin .7s ease-out; } @keyframes sayin { from { opacity:0; translate:0 5px; } to { opacity:1; translate:0 0; } }
+  .sky .lay span { position:absolute; left:0; top:0; white-space:pre; color:var(--dim); transition:transform .5s cubic-bezier(.25,.8,.3,1), opacity .45s; will-change:transform; }
+  pre.rail .a { color:var(--acc); } pre.rail .a2 { color:var(--acc); opacity:.55; } pre.rail .a3 { color:var(--acc); opacity:.28; } pre.rail .f { color:var(--faint); } pre.rail .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } pre.rail .d { color:var(--dim); } pre.rail .sf { color:var(--faint); opacity:.7; } pre.rail .w { color:var(--wind); } pre.rail .g { display:inline-block; width:1ch; text-align:center; } pre.rail .t { color:var(--text); }
+  pre.rail { position:absolute; inset:0; margin:0; color:var(--wind); font:inherit; font-size:14px; line-height:1.4; white-space:pre; overflow:hidden; pointer-events:none; user-select:none; }
+  .hero { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:0 6vw; position:relative; }
+  .big { font-size:clamp(76px, 13vw, 170px); font-weight:700; letter-spacing:-.045em; line-height:1; }
+  .kiss { display:inline-block; color:var(--acc); animation:kiss 1s .6s ease-out both; }
+  @keyframes kiss { 0% { opacity:0; transform:scale(.4) } 55% { opacity:1; transform:scale(1.35) rotate(-10deg) } 100% { opacity:1; transform:none } }
+  .t1 { font-size:clamp(24px, 3.2vw, 38px); font-weight:700; margin-top:42px; letter-spacing:-.02em; }
+  .t2 { color:var(--dim); margin-top:12px; font-size:clamp(15px, 1.4vw, 17px); max-width:none; }
+  .then { margin:14px 0 0; font-size:13px; color:var(--dim); } .then code { color:var(--text); background:var(--chip); padding:1px 6px; border-radius:4px; }
+  .req { margin-top:14px; color:var(--dim); font-size:13px; text-shadow:0 0 6px var(--bg), 0 0 2px var(--bg); position:relative; z-index:1; } .req a { color:var(--dim); text-decoration:underline; text-decoration-color:var(--faint); text-underline-offset:3px; }
+  .install { margin-top:44px; color:var(--text); font-size:15px; cursor:pointer; display:inline-flex; align-items:center; gap:2.5ch;
+    background:var(--soft); border:1px solid var(--faint); border-radius:10px; padding:11px 12px 11px 20px; transition:border-color .3s, background .3s; }
+  .install:hover { border-color:var(--acc); }
+  .install .p { color:var(--acc); }
+  .install .c { font-size:12px; color:var(--dim); border:1px solid var(--faint); border-radius:6px; padding:2px 10px; transition:color .3s, border-color .3s; }
+  .install:hover .c { color:var(--text); border-color:var(--dim); }
+  .install.done .c { color:var(--acc); border-color:var(--acc); }
+  .scroll { position:absolute; bottom:30px; color:var(--faint); font-size:13px; animation:breathe 3s ease-in-out infinite; }
+  @keyframes breathe { 50% { opacity:.4; transform:translateY(3px) } }
+
+  /* reveal: text arrives like a breeze */
+  .blow { opacity:0; transform:translateY(18px); transition:opacity .9s ease, transform 1.1s cubic-bezier(.2,.7,.2,1); }
+  .blow.in { opacity:1; transform:none; }
+
+  section { padding:18vh 6vw; }
+  .inner { max-width:64ch; margin:0 auto; }
+  .kicker { color:var(--kick); font-size:13px; margin-bottom:18px; }
+  h2 { font-size:clamp(24px, 2.8vw, 34px); line-height:1.25; letter-spacing:-.02em; margin-bottom:28px; font-weight:700; }
+  p { margin-bottom:20px; }
+  p.soft { color:var(--dim); }
+  .turn { color:var(--acc); font-weight:700; }
+
+
+  /* the demo */
+  .demo { padding:12vh 5vw 10vh; display:flex; justify-content:center; }
+  .demo > div { width:100%; max-width:104ch; min-width:0; }
+  .dhead { text-align:center; margin:0 auto 44px; max-width:64ch; }
+  .dhead p { margin:0 auto; }
+  .thead { display:flex; justify-content:space-between; padding:14px 3ch 12px; font-weight:700; border-bottom:1px solid var(--faint); }
+  .thead .faint { font-weight:400; }
+  .term { width:104ch; max-width:100%; margin:0 auto; background:var(--soft); border-radius:12px; font-size:13.5px; line-height:1.6; overflow:hidden; text-align:left; }
+  .screen { display:grid; grid-template-columns:minmax(0,1fr) 28ch; height:340px; }  /* the whole demo fits a MacBook screen */
+  .feed { padding:18px 3ch 2.2lh; overflow-y:auto; scroll-padding-bottom:2.2lh; scrollbar-width:none;
+          -webkit-mask-image:linear-gradient(to bottom, transparent 0, #000 18px); mask-image:linear-gradient(to bottom, transparent 0, #000 18px); }
+  .feed::-webkit-scrollbar { display:none; }  /* room under the last line: the divider label "you → main" overlaps the frame edge */
+  .feed > div { max-width:91ch; animation:enter .5s ease-out; }
+  @keyframes enter { from { opacity:0; transform:translateY(5px) } }
+  .feed .b { margin-top:1.6em; margin-top:1lh; padding-left:3ch; }  /* one blank line between blocks, like the terminal */
+  /* the text column is 3ch in for everyone: your text after the bar, main's after ':* ', a done line after '✓ ' */
+  .feed .who { display:inline-block; width:3ch; margin-left:-3ch; }
+  /* your message: a thin accent bar on the left, like in the product */
+  .you, .feed .you { border-left:1px solid var(--acc); padding-left:calc(3ch - 1px); }
+  .tick { color:var(--faint); margin-left:1ch; } .tick.read { color:var(--acc); }
+  .l3, .feed .l3 { color:var(--dim); opacity:.6; padding-left:3ch; }
+  .card, .feed .card { border-left:2px solid var(--acc); padding-left:calc(3ch - 2px); }
+  .card .t { color:var(--acc); font-weight:700; }
+  .card.answered { border-left-color:var(--faint); } .card.answered .t { color:var(--dim); font-weight:400; }
+  .panel { padding:18px 2ch; }
+  .panel .h { color:var(--faint); margin-bottom:8px; white-space:nowrap; }
+  .panel .row { display:flex; justify-content:space-between; white-space:nowrap; animation:enter .5s ease-out; }
+  /* the composer pane, like the product: a divider with "you → main" and the state, the typing area
+     (1 blank row above and below the text, the bar on its left all along), the key bar under it */
+  .foot { border-top:1px solid var(--faint); position:relative; padding:0 3ch 12px; background:var(--raised); }
+  .status { position:absolute; top:-.8lh; left:2ch; right:2ch; display:flex; justify-content:space-between; color:var(--dim); }
+  .status > span { background:var(--soft); padding:0 1ch; } .status > span:empty { display:none; }
+  .composer, .mcomp { border-left:1px solid var(--faint); padding:.8lh 2ch .8lh calc(2ch - 1px); white-space:pre; overflow:hidden; max-width:91ch; min-height:2.6lh; }
+  .mcomp { background:var(--raised); padding:.6lh 2ch .6lh calc(2ch - 1px); min-height:0; }
+  .composer.typing, .mcomp.typing { border-left-color:var(--acc); }
+  .composer .cur { background:var(--acc); }
+  .ph { color:var(--dim); }
+  .keys { color:var(--dim); font-size:.92em; margin-top:0; white-space:nowrap; overflow:hidden; }
+  .keys .k { color:var(--text); } .keys span + span { margin-left:3ch; }
+  .pulse { display:inline-block; animation:pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity:.35 } }
+  .caption { text-align:center; color:var(--faint); font-size:13px; margin-top:18px; }
+
+  /* how: the org chart. you → main → the team */
+  .org { display:flex; flex-direction:column; align-items:center; margin:30px 0 44px; font-size:14px; }
+  .org .msg { background:var(--raised); border-left:2px solid var(--acc); border-radius:0 10px 10px 0; padding:10px 16px; color:var(--text); max-width:100%; }
+  .org .who { display:block; color:var(--dim); font-size:12px; margin-bottom:4px; }
+  .org .wire { position:relative; width:1px; height:30px; background:var(--faint); overflow:hidden; }
+  .org .wire.w2 { height:16px; }
+  .org .wire::after { content:""; position:absolute; left:0; top:-10px; width:1px; height:10px; background:var(--acc); opacity:0; }
+  .org.go .wire::after { animation:drop .7s ease-in .3s both; } .org.go .wire.w2::after { animation-delay:1.1s; }
+  @keyframes drop { from { top:-10px; opacity:1 } to { top:100%; opacity:1 } }
+  .org .boss { display:flex; flex-direction:column; align-items:center; gap:2px; border:1px solid var(--faint); background:var(--soft); border-radius:12px; padding:10px 22px; }
+  .org .boss .acc { display:inline-block; }
+  .org.go .boss .acc { animation:kiss .6s ease .8s both; }
+  .org .boss .dim { font-size:13px; }
+  .org .team { position:relative; display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; width:100%; padding-top:16px; }
+  .org .team::before { content:""; position:absolute; top:0; left:calc((100% - 36px) / 8); right:calc((100% - 36px) / 8); height:1px; background:var(--faint); }
+  .org .agent { position:relative; display:flex; flex-direction:column; gap:4px; border:1px solid var(--faint); background:var(--soft); border-radius:10px; padding:10px 12px; color:var(--dim); font-size:13px; opacity:0; transform:translateY(8px); transition:opacity .5s ease, transform .6s cubic-bezier(.2,.7,.2,1), border-color .4s; }
+  .org .agent::before { content:""; position:absolute; top:-17px; left:50%; width:1px; height:16px; background:var(--faint); }
+  .org .agent b { color:var(--text); font-weight:600; }
+  .org .agent .st { display:inline-block; width:1ch; color:var(--dim); animation:pl 1.6s ease-in-out infinite; }
+  .org .agent.done .st { color:var(--acc); animation:kiss .5s ease both; }
+  .org.go .agent { opacity:1; transform:none; }
+  .org.go .agent:nth-child(1) { transition-delay:1.5s } .org.go .agent:nth-child(2) { transition-delay:1.62s } .org.go .agent:nth-child(3) { transition-delay:1.74s } .org.go .agent:nth-child(4) { transition-delay:1.86s }
+  @media (max-width: 640px) {
+    .org .team { grid-template-columns:1fr 1fr; padding-top:0; } .org .team::before, .org .agent::before { display:none; }
+    .org .msg { font-size:13px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .org .agent { opacity:1; transform:none; } }
+  /* phones: the demo's composer wraps */
+  @media (max-width: 640px) {
+    .fgrid > * { min-width:0; }
+    .term { font-size:12px; }
+    .composer { white-space:pre-wrap; }
+  }
+  @media (max-width: 400px) { .mfeed { font-size:11px; } .keys span:nth-child(n+4) { display:none; } }
+  .how .line { display:block; color:var(--acc); margin-bottom:4px; }
+  .me p { max-width:62ch; }
+    .me h2.hi { display:flex; align-items:center; gap:28px; }
+  .me .face { display:block; width:72px; height:72px; border-radius:50%; object-fit:cover; flex:none; box-shadow:0 0 0 1px var(--faint), 0 0 0 5px var(--bg), 0 0 0 6px var(--acc); }
+  .how li { list-style:none; margin-bottom:34px; display:grid; grid-template-columns:4ch 1fr; }
+  .how .n { color:var(--acc); }
+  .how b { display:block; margin-bottom:4px; }
+  .how span.d { color:var(--dim); }
+
+  /* features: small animated terminals */
+  .features { max-width:1200px; margin:0 auto; }
+  .fgrid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:80px 48px; margin-top:20px; }
+  .feat h3 { font-size:17px; margin:20px 0 6px; }
+  .feat p { color:var(--dim); font-size:15px; margin:0; max-width:52ch; }
+  .mini { background:var(--soft); border-radius:10px; font-size:13.5px; line-height:1.6; padding:18px 2.5ch 14px; }
+  /* no overscroll-behavior: contain here. it makes the box swallow the wheel even
+     when there is nothing to scroll; at its ends the page scrolls on */
+  .mfeed { height:calc(13.5px * 1.6 * 10); overflow-y:auto; overflow-x:hidden; padding-right:1ch; }  /* no sideways scrollbar over the composer */
+  .mfeed > div { animation:enter .45s ease-out; white-space:pre-wrap; }
+  .mfeed.still > div { animation:none; }
+  .mcomp { margin-top:8px; color:var(--text); }
+  /* one demo plays at a time: the others rest on their last frame */
+  .mini { transition:opacity .6s ease; }
+  .fgrid.directed .mini:not(.active) { opacity:.42; }
+  .mini:not(.active) .cur, .mini:not(.active) .pulse { animation:none; }
+  .mini:not(.active) .cur { opacity:0; }
+  .feat { cursor:default; }
+  /* the card under the mouse gets a thin line and a little kiss in its corner; the other texts step back a bit */
+  .mini { position:relative; transition:opacity .6s ease, box-shadow .4s ease; }
+  .feat h3, .feat p { transition:opacity .4s ease; }
+  @media (hover: hover) {
+    .feat:hover .mini { box-shadow:0 0 0 1px var(--faint); }
+    .feat:hover .mini::after { content:":*"; position:absolute; top:6px; right:1.5ch; font-size:12px; color:var(--acc); animation:kiss .6s ease-out both; }
+    .fgrid:has(.feat:hover) .feat:not(:hover) h3, .fgrid:has(.feat:hover) .feat:not(:hover) p { opacity:.7; }
+  }
+  .mcomp .cur { background:var(--acc); }
+  .mini .err { color:var(--err); } .mini .ok { color:#b9d99a; } [data-theme="light"] .mini .ok { color:#3f7a2a; }
+  .mini .row { display:flex; justify-content:space-between; }
+  .mini .l3 { margin-left:0; padding-left:0; }
+  .l3 > .dim { display:block; padding-left:2ch; }  /* BISE-127: text under the chip */
+  .chip { background:var(--chip); padding:0 1ch; color:var(--dim); } .chip .s { color:var(--text); font-weight:700; } .chip .ar { color:var(--faint); }
+  @media (max-width: 900px) { .fgrid { grid-template-columns:1fr; } }
+
+  /* quiet scrollbars, everywhere (Firefox, Chrome, Safari, Edge on Windows) */
+  .scrollbox { scrollbar-width:thin; scrollbar-color:var(--faint) transparent; }
+  .scrollbox::-webkit-scrollbar { width:6px; height:6px; }
+  .scrollbox::-webkit-scrollbar-track { background:transparent; }
+  .scrollbox::-webkit-scrollbar-thumb { background:var(--faint); border-radius:3px; }
+  .scrollbox::-webkit-scrollbar-thumb:hover { background:var(--dim); }
+
+  /* the little facts */
+  #more .inner { max-width:112ch; }
+  .facts li { list-style:none; margin-bottom:12px; display:grid; grid-template-columns:4ch 1fr; color:var(--dim); }
+  .facts li .gc { color:var(--acc); }
+  .facts li b { color:var(--text); font-weight:400; }
+  /* the small things: a card each, a tiny static screen on top (4 rows max), the line under it */
+  .minis { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap:44px 36px; margin-top:40px; }
+  .mini p { color:var(--dim); font-size:14px; line-height:1.65; margin-top:24px; }
+  .mini p b { display:block; color:var(--text); font-weight:700; font-size:15px; margin-bottom:10px; }
+  .mv { background:var(--soft); border:1px solid var(--faint); border-radius:10px; padding:22px 3ch; font-size:12.5px; line-height:1.7;
+        height:calc(4 * 1.7em + 46px); white-space:pre; overflow:hidden; color:var(--dim); }
+  .mv .t { color:var(--text); } .mv .k { color:var(--text); } .mv .hl { background:#3a2530; color:var(--text); }
+  [data-theme="light"] .mv .hl { background:#f0d3dc; }
+  .mv .bar { border-left:1px solid var(--acc); padding-left:1.5ch; }
+  .mv .pill { background:#3a2530; color:var(--acc); padding:0 .6ch; border-radius:3px; }
+  [data-theme="light"] .mv .pill { background:#f0d3dc; }
+  .mv .cur { display:inline-block; width:1ch; height:1.2em; vertical-align:-.2em; background:var(--acc); animation:blink 1.1s steps(1) infinite; }
+  .mv .wave span { display:inline-block; color:var(--acc); animation:pulse 1.2s ease-in-out infinite; }
+  .mv .wave span:nth-child(2) { animation-delay:.15s } .mv .wave span:nth-child(3) { animation-delay:.3s }
+  .mv .wave span:nth-child(4) { animation-delay:.45s } .mv .wave span:nth-child(5) { animation-delay:.6s }
+  .mv.two { display:grid; grid-template-columns:1fr 1fr; padding:0; white-space:normal; }
+  .mv.two > div { padding:22px 3ch; white-space:pre; }
+  .mv.two > .lt { background:#f7f4ee; color:#77706a; border-radius:0 5px 5px 0; } .mv.two > .lt .t { color:#1b1917; } .mv.two > .lt .acc { color:#b8416b; }
+  .mv.two > .dk { background:#141211; color:#8f887d; border-radius:5px 0 0 5px; } .mv.two > .dk .t { color:#ece6da; } .mv.two > .dk .acc { color:#f4a6b0; }
+
+  .word { text-align:center; }
+  .word .def { display:inline-block; text-align:left; color:var(--dim); line-height:2; }
+  .word .def b { color:var(--text); font-size:20px; }
+  .word { padding-top:calc(8vh + 70px); padding-bottom:calc(18vh + 40px); }  /* air between the hero's thread and the gloss */
+  .word .three { color:var(--text); font-weight:700; font-size:clamp(17px, 1.7vw, 21px); }
+  .word .three::before { content:""; }
+
+  .last { text-align:center; padding-bottom:10vh; }
+  .last .big { font-size:clamp(56px, 8vw, 110px); }
+
+  /* want a desktop app? a small, living window (book/desktop.html is the full set) */
+  #desktop { padding:4vh 6vw 16vh; } #desktop .inner { max-width:84ch; text-align:center; }
+  #desktop h2 { font-size:clamp(26px, 3.4vw, 40px); letter-spacing:-.02em; }
+  #desktop p { color:var(--dim); margin:16px auto 0; max-width:56ch; }
+  #desktop .ctas { display:flex; gap:26px; justify-content:center; align-items:center; flex-wrap:wrap; margin-top:34px; font-size:14px; }
+  #desktop .ctas a { color:var(--dim); transition:color .3s; } #desktop .ctas a:hover { color:var(--text); }
+  #desktop .ctas a.main { color:#141211; background:var(--acc); border-radius:999px; padding:10px 22px; font-weight:700; transition:transform .3s cubic-bezier(.3,1.6,.5,1), box-shadow .3s; }
+  #desktop .ctas a.main:hover { transform:translateY(-1px); color:#141211; }
+  .dstage { position:relative; margin:56px auto 0; width:min(780px, 100%); perspective:1400px; }
+  .dwin .ph { display:block; height:7px; border-radius:4px; background:color-mix(in srgb, var(--text) 8%, transparent); }  /* placeholders: the preview stays calm (scoped: .ph is also the composers' placeholder) */
+  .dwin { position:relative; z-index:1; display:block; height:360px; border-radius:14px; overflow:hidden; text-align:left; color:var(--text);
+    background:var(--bg);
+    box-shadow:0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent), 0 16px 40px rgba(0,0,0,.25); font-family:"Geist",-apple-system,system-ui,sans-serif; font-size:12.5px; line-height:1.5;
+    }
+  .dwin .m, .dwin .g, .dwin .k { font-family:"JetBrains Mono",ui-monospace,monospace; }
+  .dwin .tb { height:34px; display:flex; align-items:center; gap:7px; padding:0 12px; border-bottom:1px solid color-mix(in srgb, var(--text) 8%, transparent); color:var(--dim); font-size:11.5px; }
+  .dwin .tb i { width:10px; height:10px; border-radius:50%; display:block; } .dwin .tb span { flex:1; text-align:center; margin-right:44px; } .dwin .tb b { color:var(--text); font-weight:600; }
+  .dwin .bd { display:flex; height:calc(100% - 34px); }
+  .dwin .sd { width:136px; background:color-mix(in srgb, var(--soft) 70%, transparent); border-right:1px solid color-mix(in srgb, var(--text) 7%, transparent); padding:10px 8px; display:flex; flex-direction:column; gap:2px; }
+  .dwin .sd .h, .dwin .ag .h { color:var(--dim); font-size:10.5px; padding:0 8px 6px; }
+  .dwin .sd .r { padding:6px 9px; border-radius:8px; display:grid; grid-template-columns:1fr auto; color:var(--dim); }
+  .dwin .sd .r.on { background:var(--raised); color:var(--text); } .dwin .sd .r b { font-weight:600; } .dwin .sd .r .l { grid-column:1/3; font-size:10.5px; color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dwin .ct { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:flex-end; padding:14px 22px 14px; gap:9px; }
+  .dwin .you { border-left:2px solid var(--acc); padding-left:10px; font-weight:600; }
+  .dwin .bs { display:grid; grid-template-columns:2.2em 1fr; } .dwin .bs .g { color:var(--acc); }
+  .dwin .tool { font-family:"JetBrains Mono",monospace; font-size:10.5px; color:var(--dim); display:grid; grid-template-columns:2.2em 1fr auto; }
+  .dwin .env { font-family:"JetBrains Mono",monospace; font-size:10.5px; color:var(--dim); } .dwin .env .c { background:var(--raised); border-radius:5px; padding:0 6px; margin-right:6px; }
+  .dwin .shot { margin-left:2.2em; width:150px; height:64px; border-radius:8px; background:linear-gradient(135deg,#4a3530,#1f1a18 55%,#3b2f2c); position:relative; box-shadow:0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent); }
+  .dwin .shot::after { content:"0.9 s"; position:absolute; right:8px; bottom:6px; font-family:"JetBrains Mono",monospace; font-size:18px; font-weight:700; color:var(--acc); }
+  .dwin .shot::before { content:"signup, before → after"; position:absolute; left:8px; top:5px; font-size:9.5px; color:#d8cfc2; }
+  .dwin .inbox { background:var(--raised); border-radius:9px; padding:6px 10px; display:flex; justify-content:space-between; gap:10px; font-size:11.5px; box-shadow:inset 2px 0 0 var(--acc); }
+  .dwin .inbox .o { color:var(--dim); white-space:nowrap; font-size:10.5px; } .dwin .inbox .o b { color:var(--acc); font-family:"JetBrains Mono",monospace; font-weight:400; }
+  .dwin .cp { background:var(--raised); border-radius:11px; padding:8px 12px 9px; } .dwin .cp .to { color:var(--dim); font-size:10.5px; display:flex; justify-content:space-between; }
+  .dwin .cp .to b { color:var(--acc); } .dwin .cp .tx { margin-top:3px; min-height:1.5em; } .dwin .cp .cu { display:inline-block; width:.5em; height:1.05em; background:var(--text); vertical-align:-.18em; animation:blink 1s steps(1) infinite; }
+  .dwin .ag { width:156px; border-left:1px solid color-mix(in srgb, var(--text) 7%, transparent); padding:10px 8px; display:flex; flex-direction:column; gap:1px; }
+  .dwin .ag .a { padding:5px 8px; border-radius:8px; display:grid; grid-template-columns:1.6em 1fr; } .dwin .ag .a .g { color:var(--acc); text-align:center; }
+  .dwin .ag .a .x { grid-column:2; font-family:"JetBrains Mono",monospace; font-size:9.5px; color:var(--dim); }
+  .dnote { position:absolute; z-index:2; right:-26px; top:46px; width:250px; display:grid; grid-template-columns:30px 1fr; gap:0 10px; text-align:left; padding:10px 12px; border-radius:13px;
+    background:color-mix(in srgb, var(--raised) 88%, transparent); box-shadow:0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent), 0 8px 20px rgba(0,0,0,.2);
+    font-family:"Geist",-apple-system,system-ui,sans-serif; font-size:11.5px; line-height:1.4; opacity:0; transform:translateX(24px); transition:opacity .5s, transform .6s cubic-bezier(.2,.9,.3,1.2); }
+  .dnote.on { opacity:1; transform:none; } .dnote .ic { width:30px; height:30px; border-radius:8px; background:#141211; color:var(--acc); font-family:"JetBrains Mono",monospace; font-weight:700; display:flex; align-items:center; justify-content:center; font-size:11px; }
+  .dnote b { display:block; } .dnote span { color:var(--dim); }
+  @media (max-width: 760px) { .dwin .sd, .dwin .ag { display:none; } .dnote { right:8px; } }
+  footer { padding:6vh 6vw 8vh; display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px; color:var(--faint); font-size:13px; }
+  footer a:hover { color:var(--text); }
+
+  @media (max-width: 900px) { .screen { grid-template-columns:1fr; } .panel { display:none; } header nav a.opt { display:none; } }
+  /* the problem, then the switch (landing v6 draft) */
+  .prob { padding:24px 5vw 110px; }
+  .prob .inner { max-width:64ch; }
+  .stage { position:relative; width:104ch; max-width:100%; font-size:13.5px; margin:0 auto; border-radius:12px; background:var(--soft); overflow:hidden; }
+  .stage > .term { opacity:0; transform:scale(.94); transition:opacity .5s .3s, transform .8s .3s cubic-bezier(.34,1.4,.64,1); }
+  .stage.calm > .term { opacity:1; transform:none; }
+  .stage .win, .stage .bub { font-size:12.5px; }
+  .swap { transition:opacity .35s, transform .45s cubic-bezier(.34,1.56,.64,1); } .swap.out { opacity:0; transform:translateY(-6px); }
+  .win { position:absolute; width:300px; background:var(--bg); border:1px solid var(--faint); border-radius:10px; font-size:12.5px; line-height:1.6; box-shadow:0 10px 30px rgba(0,0,0,.28); transition:transform .7s cubic-bezier(.34,1.4,.64,1), opacity .5s, left .7s cubic-bezier(.34,1.3,.64,1), top .7s cubic-bezier(.34,1.3,.64,1); }
+  .win .bar { display:flex; gap:6px; align-items:center; padding:6px 10px; border-bottom:1px solid var(--faint); color:var(--dim); font-size:11.5px; }
+  .win .bar i { width:8px; height:8px; border-radius:50%; background:var(--faint); display:inline-block; }
+  .win .bar span { margin-left:6px; }
+  .win .bd { padding:8px 12px 10px; color:var(--dim); min-height:74px; }
+  .win .ask { display:inline-block; margin-top:4px; padding:0 8px; border-radius:6px; background:var(--chip); color:var(--text); }
+  .win .ask.err { color:var(--err); }
+  .win.nag .ask { animation:nag 1.1s ease-in-out infinite; }
+  @keyframes nag { 0%,100% { transform:none } 20% { transform:translateX(-2px) rotate(-1deg) } 40% { transform:translateX(2px) rotate(1deg) } 60% { transform:none } }
+  .win:hover { z-index:30 !important; }
+  .ptr { position:absolute; z-index:40; width:0; height:0; pointer-events:none; transition:left .45s cubic-bezier(.34,1.56,.64,1), top .45s cubic-bezier(.34,1.56,.64,1), opacity .4s; }
+  .ptr svg { position:absolute; left:-2px; top:-2px; filter:drop-shadow(0 3px 6px rgba(0,0,0,.35)); transform-origin:2px 2px; }
+  .ptr .lb { position:absolute; left:13px; top:17px; white-space:nowrap; padding:1px 9px 1px 8px; border-left:2px solid var(--acc); background:var(--raised); border-radius:0 6px 6px 0; font-size:12px; font-weight:700; color:var(--text); box-shadow:0 6px 18px rgba(0,0,0,.3); }
+  .ptr.tap svg { animation:metap .35s ease; } @keyframes metap { 40% { transform:scale(.8) } }
+  .bub { position:absolute; z-index:41; padding:4px 10px; border-radius:10px; background:var(--raised); border:1px solid var(--faint); font-size:12.5px; color:var(--text); opacity:0; transform:scale(.6); transition:opacity .3s, transform .45s cubic-bezier(.34,1.56,.64,1); pointer-events:none; }
+  .bub.on { opacity:1; transform:none; }
+  .pulse2 { animation:pl 1.6s ease-in-out infinite; } @keyframes pl { 50% { opacity:.35 } }
+  .stats { max-width:980px; margin:16px auto 0; display:flex; gap:3ch; flex-wrap:wrap; justify-content:center; font-size:14px; color:var(--dim); }
+  .stats b { color:var(--text); font-weight:700; font-variant-numeric:tabular-nums; }
+  .stats .hot b { color:var(--err); } .stats .good b { color:var(--acc); }
+  .prob .cap { text-align:center; margin-top:22px; color:var(--dim); }
+  .prob .cap b { color:var(--text); }
+  .replay { all:unset; cursor:pointer; color:var(--dim); font-size:13px; margin-left:2ch; } .replay:hover { color:var(--acc); }
+  @media (max-width:700px) { .stage .win { width:220px; font-size:11.5px; } }
+  @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } .blow { opacity:1; transform:none; } }
+</style>
+</head>
+<body data-page="landing-v7">
+
+<header id="top">
+  <a class="logo" href="#">bise <span class="acc">:*</span></a>
+  <nav>
+    <a class="opt" href="#why">why</a>
+    <a class="opt" href="#how">how</a>
+    <a class="opt" href="#faq">faq</a>
+    <a class="opt" href="book/index.html">brand book</a>
+    <button id="theme" title="light / dark">◐</button>
+    <a href="https://github.com/gvergnaud/bise">GitHub</a>
+  </nav>
+</header>
+
+<!-- hero, in the wind -->
+<div class="sky">
+  <pre class="rail" aria-hidden="true"></pre>
+  <div class="hero">
+    <div class="big">bise <span class="kiss">:*</span></div>
+    <div class="t1">multi-agent coding, made human.</div>
+    <div class="t2" data-a="t2">meet your team lead.<br>you stay in flow, i run the agents.</div>
+    <div class="install" id="install" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span id="cmd">curl -fsSL bise.dev/install | sh</span></span><span class="c" id="copied">copy</span></div>
+    <div class="req">macOS only for now</div>
+    <div class="scroll">↓</div>
+  </div>
+</div>
+
+<!-- the word -->
+<section class="word">
+  <div class="blow">
+    <div class="def">
+      <b>bise</b> <span class="faint">/beez/ · french, n.</span><br>
+      1. a quick kiss on the cheek <span class="acc">:*</span><br>
+      2. a brisk north wind<br>
+      <span class="three">3. a terminal where multi-agent coding is painless</span>
+    </div>
+  </div>
+</section>
+
+<!-- why -->
+<section id="why">
+  <div class="inner blow">
+    <div class="kicker">why</div>
+    <h2 class="punch">you didn't become an engineer<br>to babysit robots.</h2>
+    <p class="soft">at 6pm you'd shipped more than ever, and you felt like you did nothing.</p>
+    <p class="soft">it's not you. it's agent fatigue. you jump between tabs a hundred times a day. every agent talks to you, about everything, all the time.</p>
+    <p class="turn">it doesn't have to be like this.</p>
+  </div>
+</section>
+
+<!-- the problem, then the switch -->
+<section class="prob" id="problem">
+  <div class="inner blow" data-a="prob-head">
+    <div class="swap" id="swap">
+    <div class="kicker" id="pk">the problem</div>
+    <h2 id="ph2">five agents. five tabs.<br>one very tired you.</h2>
+    <p class="soft" id="pp">every session waits for you. you're the router, the memory, and the merge tool. you ship a lot, but you never get to think.</p>
+    </div>
+  </div>
+  <div class="stage" id="stage" aria-label="today: many agent sessions waiting for you. with bise: one thread.">
+    <div class="ptr" id="ptr" style="left:46%;top:80%"><svg width="16" height="20" viewBox="0 0 16 20" aria-hidden="true"><path d="M2 2 L2 16 L5.8 12.6 L8.4 18.4 L11 17.2 L8.5 11.6 L13.6 11.6 Z" fill="var(--acc)" stroke="var(--bg)" stroke-width="1.4" stroke-linejoin="round"/></svg><span class="lb">you</span></div>
+    <div class="bub" id="bub"></div>
+    <div class="term" id="term" aria-label="a bise session, animated">
+      <div class="thead"><span>bise <span class="acc">:*</span></span><span class="faint">~/acme</span></div>
+      <div class="screen">
+        <div class="feed scrollbox" id="feed"></div>
+        <div class="panel"><div class="h">agents · ⌥ + number</div><div id="agents"></div></div>
+      </div>
+      <div class="foot">
+        <div class="status"><span>you → <span class="acc">main</span></span><span id="working" class="dim"></span></div>
+        <div class="composer" id="comp"><span id="typed"></span><span class="cur"></span><span class="ph" id="ph">what's on your mind?</span></div>
+        <div class="keys"><span><span class="k">⏎</span> send</span><span><span class="k">@</span> agent</span><span><span class="k">⌥0-9</span> switch</span><span><span class="k">?</span> help</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="stats" id="stats"></div>
+  <p class="cap" id="cap"></p>
+  <p class="cap"><button class="replay" id="replay" style="visibility:hidden">↺ play it again</button></p>
+</section>
+
+<!-- how -->
+<section id="how">
+  <div class="inner blow">
+    <div class="kicker">how</div>
+    <h2>one thread. a whole team.</h2>
+    <p class="soft"><b>main</b> is your team lead. it splits your ideas into jobs and runs the other agents.</p>
+<div class="org" id="org" aria-label="you talk to main, main runs four agents">
+  <div class="msg"><span class="who">you → <span class="acc">main</span></span>dark mode please. also the csv export crashes on emoji 😭</div>
+  <div class="wire"></div>
+  <div class="boss"><b><span class="acc">:*</span> main</b><span class="dim">always listening · knows the whole repo</span></div>
+  <div class="wire w2"></div>
+  <div class="team">
+    <div class="agent" data-a="theme"><b><span class="st">∿</span> theme</b><span>dark colors, in one place</span></div>
+    <div class="agent" data-a="toggle"><b><span class="st">∿</span> toggle</b><span>a switch in settings</span></div>
+    <div class="agent" data-a="docs"><b><span class="st">∿</span> docs</b><span>fresh screenshots</span></div>
+    <div class="agent" data-a="emoji-csv"><b><span class="st">∿</span> emoji-csv</b><span>unrelated, so it runs too</span></div>
+  </div>
+</div>
+    <ul class="how">
+      <li><span class="n">1</span><span><b>no sessions to find again</b><span class="line">peek into any agent when you feel like it</span><span class="d">no tabs to juggle, no "wait, which session was that?". main knows everything going on in the repo, even what you did last month.</span></span></li>
+      <li><span class="n">2</span><span><b>main is always listening</b><span class="line">the team is busy. main never is</span><span class="d">ask, add a thing, change your mind while the agents work. main answers right away.</span></span></li>
+      <li><span class="n">3</span><span><b>a team that runs itself</b><span class="line">they talk behind your back. in a good way</span><span class="d">agents message each other before they collide. when one needs its own copy of the repo, it makes a worktree and cleans it up after. each one commits its own work.</span></span></li>
+      <li><span class="n">4</span><span><b>forget there are agents</b><span class="line">no yaml was harmed.</span><span class="d">no roles, no graph, no config. bise has opinions, so you don't need any. you just dump your ideas in the thread.</span></span></li>
+    </ul>
+  </div>
+</section>
+
+<!-- features, animated -->
+<section id="features">
+  <div class="features">
+    <div class="inner blow" style="margin-bottom:10px"><div class="kicker">kiss your backlog goodbye</div><h2>the models grew up. you can stop babysitting</h2><p class="soft">ten things you'll notice in the first hour</p></div>
+    <div class="fgrid">
+      <div class="feat blow"><div class="mini" data-play="talk"></div><h3>talk whenever. you never wait</h3><p>say the next thing while the last one runs. your composer is never locked.</p></div>
+      <div class="feat blow"><div class="mini" data-play="sync"></div><h3>agents sync on their own</h3><p>every agent can talk to every other one. they ask, share and hand off quietly, folded out of your way.</p></div>
+      <div class="feat blow"><div class="mini" data-play="mcp"></div><h3>all your MCPs. all your skills. always on</h3><p>GitHub, Linear, Sentry, Slack, your docs, your database: connect as many MCP servers as you want, and never pick which ones to turn on. bise calls tools through code, so a hundred servers don't fill its context.</p></div>
+      <div class="feat blow"><div class="mini" data-play="card"></div><h3>only the real decisions reach you</h3><p>one card, a couple of choices, one key. then back to what you were doing.</p></div>
+      <div class="feat blow"><div class="mini" data-play="router"></div><h3>you're not the router</h3><p>main answers the obvious questions itself, the way you would, and tells you why.</p></div>
+      <div class="feat blow"><div class="mini" data-play="direct"></div><h3>talk to any agent, anytime</h3><p>⌥ + a number, or @name. ask it why, push it, then go back to main. nobody has to stop.</p></div>
+      <div class="feat blow"><div class="mini" data-play="steer"></div><h3>change your mind mid-run</h3><p>a correction lands in the running agent. ✓ it got it, <span class="acc">✓✓</span> it read it.</p></div>
+      <div class="feat blow"><div class="mini" data-play="resume"></div><h3>nothing gets dropped</h3><p>when an agent stops half-way, main picks the work back up from where it was.</p></div>
+      <div class="feat blow"><div class="mini" data-play="worktree"></div><h3>worktrees, only when they help</h3><p>agents share your folder. when one really needs isolation, it makes a worktree, and cleans it up after.</p></div>
+      <div class="feat blow"><div class="mini" data-play="plugins"></div><h3>bring your Agent Plugins</h3><p>skills, MCP servers, hooks: plugins in the Agent Plugins format load as they are, from ~/.agents/plugins or your repo. Vibe plugins too.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- so much more -->
+<section id="more">
+  <div class="inner blow">
+    <div class="kicker">and so much more</div>
+    <h2>polished down to the last character</h2>
+    <p class="soft">hundreds of tiny details. you'll feel them before you see them.</p>
+    <div class="minis">
+      <div class="mini"><div class="mv"><span class="t">you</span>  fix the typo in the footer
+<span class="acc">:*</span>   done, i did it myself.
+     too small for an agent.
+<span class="faint">     0 agents started</span></div><p><b>your token bill can relax</b>bise starts an agent when a job needs one. that's the whole rule. there's no committee of agents reviewing each other in circles.</p></div>
+      <div class="mini"><div class="mv"><span class="acc">:*</span> ▸ 14 messages between 3 agents
+   ▸ ran 6 tools · 2 scripts
+<span class="acc">✓</span> <span class="t">sad-404 is done</span> · the dog has a hat
+<span class="faint">                  ctrl+o opens it all</span></div><p><b>it's quiet. open it up whenever</b>what matters to you shows. the rest is one key away: every message between agents, every tool call, every script, in full.</p></div>
+      <div class="mini"><div class="mv"><span class="acc">●</span> <span class="t">listening</span>  <span class="wave"><span>▂</span><span>▅</span><span>▃</span><span>▆</span><span>▂</span></span>
+
+<span class="bar"><span class="t">and make the button pink</span><span class="cur"></span></span>
+<span class="faint">ctrl+r to stop</span></div><p><b>or just talk</b>turn on /voice, press ctrl+r, say it.</p></div>
+      <div class="mini"><div class="mv"><span class="faint">╭ attached ─────────────────────╮</span>
+<span class="faint">│</span> <span class="pill">▣ 1</span> 404.png    <span class="faint">1440×900</span>      <span class="faint">│</span>
+<span class="faint">╰───────────────────────────────╯</span>
+<span class="bar"><span class="t">the hat is cut off </span><span class="pill">▣ 1</span><span class="cur"></span></span></div><p><b>show it a screenshot</b>paste it with ctrl+v or drag it in. an image is one chip in your text.</p></div>
+      <div class="mini"><div class="mv"><span class="acc">:*</span> perf is done. signup went from
+   <span class="hl">4.1 s to 0.9 s</span> on a phone
+
+<span class="bar"><span class="pill">❝ 1</span><span class="t"> what made the difference?</span><span class="cur"></span></span></div><p><b>ask about anything on screen</b>select a few lines in the history and start typing: they come along as a quote.</p></div>
+      <div class="mini"><div class="mv"><span class="acc">:*</span> <span class="t">main</span>         <span class="faint">opus·hi</span>
+<span class="acc">∿</span> <span class="t">perf</span>         <span class="faint">opus·hi</span>
+<span class="acc">∿</span> <span class="t">sad-404</span>      <span class="faint">haiku·lo</span>
+<span class="acc">∿</span> <span class="t">release</span>      <span class="faint">haiku·lo</span></div><p><b>a model per agent</b>the big one for the hard job, a fast one for the chores. /model and /reasoning.</p></div>
+      <div class="mini"><div class="mv"><span class="acc">$</span> <span class="t">npm test</span>
+<span class="acc">✓</span> 142 passed <span class="faint">(3.1 s)</span>
+<span class="acc">$</span> <span class="cur"></span>
+<span class="faint">ctrl+` hides it. it keeps running</span></div><p><b>a real shell, one key away</b>ctrl+` opens a terminal in your repo. it keeps running while hidden.</p></div>
+      <div class="mini"><div class="mv"><span class="faint">you hold ctrl…</span>
+▸ 12 more lines  <span class="faint">→</span>  ▸ <span class="acc">ctrl+o</span> expand
+<span class="acc">:*</span> main          <span class="faint">→</span>  <span class="acc">ctrl+g</span> cards
+<span class="faint">let go: it all goes back</span></div><p><b>hold ctrl to see the shortcuts</b>each one shows up where it works. in Ghostty and kitty.</p></div>
+      <div class="mini"><div class="mv"><span class="dim">you</span> /restart
+<span class="faint">bise v2026.10.3 → v2026.10.4</span>
+<span class="acc">∿</span> perf  <span class="acc">∿</span> dark-mode  <span class="acc">∿</span> sad-404
+<span class="faint">back to work at once</span></div><p><b>restart whenever you like</b>update to the latest version mid-work, or quit and come back tomorrow. no work is ever lost: your agents resume right away, and your thread, your draft and your queue come back too.</p></div>
+      <div class="mini"><div class="mv"><span class="acc">$</span> bend PROOF.bend
+<span class="acc">✓</span> no message lost
+<span class="acc">✓</span> none delivered twice
+<span class="acc">✓</span> a restart = the same state
+<span class="acc">✓</span> nothing waits forever
+<span class="faint">ALL PROOFS CHECK</span></div><p><b>agent communication is proven correct</b>we have the proof, thanks to <a href="https://bend-lang.com" target="_blank" rel="noopener" style="color:var(--text);text-decoration:underline;text-decoration-color:var(--faint);text-underline-offset:3px">Bend</a>, a language built for the LLM era. no message lost, none sent twice.</p></div>
+      <div class="mini"><div class="mv two"><div class="dk"><span class="t">bise</span> <span class="acc">:*</span>
+
+<span class="acc">∿</span> <span class="t">dark-mode</span>
+<span class="acc">✓</span> sad-404</div><div class="lt"><span class="t">bise</span> <span class="acc">:*</span>
+
+<span class="acc">∿</span> <span class="t">dark-mode</span>
+<span class="acc">✓</span> sad-404</div></div><p><b>your terminal</b>your colors, light or dark, text at a reading width.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- faq -->
+<section id="faq">
+  <div class="inner blow">
+    <div class="kicker">questions</div>
+    <p><b>but i already have Claude Code / Codex / Vibe</b><br><span class="dim">keep your models, MCP servers and skills. bise changes how you work with them: you talk to a team lead instead of juggling sessions.</span></p>
+    <p><b>won't the agents step on each other?</b><br><span class="dim">they tell each other what they touch before they touch it. worktrees only when one needs its own copy, cleaned up after.</span></p>
+    <p><b>won't my context overflow? i don't want to live in the dumb zone</b><br><span class="dim">no need to overthink it. when a thread gets long, bise compacts it. the latest models are trained for that and they keep their trajectory. your thread just keeps going.</span></p>
+    <p><b>do i need a memory system?</b><br><span class="dim">nope. compaction carries the thread, and any agent can go back and read the full history: every message, every tool call. nothing gets lost.</span></p>
+    <p><b>how many agents can i run?</b><br><span class="dim">as many as you want. the real limits are your tokens, your budget and your provider.</span></p>
+    <p><b>what does it run on?</b><br><span class="dim">macOS for now, Apple silicon and Intel. linux is next. windows later, maybe through WSL first. you need git, and that's about it.</span></p>
+    <p><b>which models?</b><br><span class="dim">bring your own key: Anthropic, OpenAI, Mistral and more. the first run lists every provider.</span></p>
+    <p><b>does it ask before running a command?</b><br><span class="dim">not yet. agents run shell commands in your repo without asking. use it on repos you trust, and commit often: git is your safety net. approvals are next.</span></p>
+    <p><b>do i need to learn anything?</b><br><span class="dim">four words: you, main, agents, cards. main is the one you talk to. the rest you pick up in the first hour.</span></p>
+    <p><b>open source?</b><br><span class="dim">yes, under <a href="https://github.com/gvergnaud/bise/blob/main/LICENSE">Apache-2.0</a>. read it, fork it, send a :*.</span></p>
+  </div>
+</section>
+
+<!-- made by -->
+<section id="me">
+  <div class="inner blow me">
+    <div class="kicker">made by a human. shipped with bise</div>
+    <h2 class="hi"><span>hi, i'm gabriel</span><img class="face" src="/gabriel.jpg" width="120" height="120" alt="Gabriel Vergnaud, smiling, by the water at sunset"></h2>
+    <p>i build coding agents for a living.</p>
+    <p class="soft">agents made me faster. they also made my days feel empty. i was switching tabs, answering "should i continue?", pasting context around. i shipped more than ever and i didn't enjoy it.</p>
+    <p class="soft">so i built the tool i wanted: a team lead to talk to, and me in flow. most of bise was built with bise.</p>
+    <p>i want everyone to ship like a team of a hundred, and to love building again. bise is open source and indie. i read every issue.</p>
+    <p class="dim">— Gabriel Vergnaud · <a href="https://github.com/gvergnaud">GitHub</a></p>
+  </div>
+</section>
+
+<!-- last breath -->
+<div class="sky">
+  <pre class="wind" id="wind2" aria-hidden="true"></pre>
+  <section class="last">
+    <div class="blow">
+      <div class="big acc">:*</div>
+      <p class="dim" style="margin-top:28px">ideas in. little kisses out. also pull requests.</p>
+      <div class="install" id="install2" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span>curl -fsSL bise.dev/install | sh</span></span><span class="c">copy</span></div>
+      <div class="req">macOS only for now</div>
+    </div>
+  </section>
+</div>
+
+<!-- want a desktop app? -->
+<section id="desktop">
+  <div class="inner blow">
+    <div class="kicker">next, maybe</div>
+    <h2>want a desktop app?</h2>
+    <p>the same bise, in a window. your repos in a sidebar, one thread each. the agents on the right. a notification only when something needs you. i drew the screens. if enough of you want it, i'll build it.</p>
+    <div class="dstage blow" id="dstage">
+      <a class="dwin" href="book/desktop.html" aria-label="see the desktop app screens">
+        <div class="tb"><i style="background:#ec6a5e"></i><i style="background:#f4bf4f"></i><i style="background:#61c554"></i><span><b>acme</b> · one thread</span></div>
+        <div class="bd">
+          <div class="sd"><div class="h">repos</div>
+            <div class="r on"><b>acme</b><span class="m acc"><span class="dbr">∿</span> 3</span><span class="l"><i class="ph" style="width:80%;margin-top:5px"></i></span></div>
+            <div class="r"><span>blog</span><span class="m acc">? 1</span><span class="l"><i class="ph" style="width:64%;margin-top:5px"></i></span></div>
+            <div class="r"><span>bise</span><span class="m acc">✓</span><span class="l"><i class="ph" style="width:72%;margin-top:5px"></i></span></div>
+            <div class="r"><span>dotfiles</span><span></span><span class="l"><i class="ph" style="width:50%;margin-top:5px"></i></span></div></div>
+          <div class="ct">
+            <i class="ph" style="width:46%"></i><i class="ph" style="width:70%"></i>
+            <div class="you" style="margin-top:6px">signup is slow on mobile. can you look?</div>
+            <div class="bs"><span class="g">:*</span><span>on it. perf is profiling signup on a mid-range phone.</span></div>
+            <div class="tool"><span>$</span><i class="ph" style="width:58%;align-self:center"></i><span></span></div>
+            <div class="tool"><span>✉</span><i class="ph" style="width:40%;align-self:center"></i><span></span></div>
+            <div class="bs"><span class="g">✓</span><span>perf is done. signup went from 4.1 s to 0.9 s</span></div>
+            <div class="inbox"><span><span class="acc">?</span> dark-mode · which gray wins?</span><span class="o"><b>1</b> tokens · <b>2</b> new ones</span></div>
+            <div class="cp"><div class="to"><span>you → <b>main</b></span><span><span class="dbr acc">∿</span> 3 working</span></div><div class="tx"><span id="dtype"></span><span class="cu"></span></div></div>
+          </div>
+          <div class="ag"><div class="h">agents</div>
+            <div class="a"><span class="g">:*</span><span>main</span><i class="x ph" style="width:70%;margin-top:4px"></i></div>
+            <div class="a"><span class="g">✓</span><span>perf</span><i class="x ph" style="width:50%;margin-top:4px"></i></div>
+            <div class="a"><span class="g">?</span><span>dark-mode</span><i class="x ph" style="width:80%;margin-top:4px"></i></div>
+            <div class="a"><span class="g dbr">∿</span><span>sad-404</span><i class="x ph" style="width:44%;margin-top:4px"></i></div>
+            <div class="a"><span class="g dbr">∿</span><span>emoji-csv</span><i class="x ph" style="width:56%;margin-top:4px"></i></div></div>
+        </div>
+      </a>
+      <div class="dnote" id="dnote"><span class="ic">:*</span><div><b>dark-mode needs you</b><span>which gray wins? tokens, or new ones</span></div></div>
+    </div>
+    <div class="ctas"><a class="main" href="https://x.com/GabrielVergnaud" target="_blank" rel="noopener">i want it · tell me on X ↗</a><a href="https://github.com/gvergnaud/bise/issues" target="_blank" rel="noopener">or on GitHub ↗</a><a href="book/desktop.html">see every screen →</a></div>
+  </div>
+</section>
+
+<footer>
+  <span>bise <span class="acc">:*</span> · open source under <a href="https://github.com/gvergnaud/bise/blob/main/LICENSE">Apache-2.0</a></span>
+  <span><a href="https://github.com/gvergnaud/bise">GitHub</a> · <a href="book/index.html">brand book</a></span>
+</footer>
+
+
+<script>
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const root = document.documentElement;
+root.dataset.theme = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+document.getElementById("theme").onclick = () => root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+const hdr = document.getElementById("top");
+addEventListener("scroll", () => hdr.classList.toggle("scrolled", scrollY > innerHeight * .6));
+for (const id of ["install", "install2"]) document.getElementById(id).onclick = (e) => {
+  navigator.clipboard?.writeText(document.getElementById("cmd").textContent);
+  const box = e.currentTarget, c = box.querySelector(".c"); c.textContent = "copied :*"; box.classList.add("done"); setTimeout(() => { c.textContent = "copy"; box.classList.remove("done"); }, 1600);
+};
+
+// ---- reveal: blow in when seen ----
+const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { threshold: .15 });
+document.querySelectorAll(".blow").forEach((b) => io.observe(b));
+
+// ---- how: the org chart plays once, when seen ----
+const org = document.getElementById("org");
+if (org) new IntersectionObserver((es, o) => { if (!es[0].isIntersecting) return; o.disconnect(); org.classList.add("go"); if (reduced) return;
+  for (const [n, t] of [["theme", 4200], ["emoji-csv", 5400], ["docs", 7000], ["toggle", 8600]]) setTimeout(() => { const a = org.querySelector(`[data-a="${n}"]`); a.classList.add("done"); a.querySelector(".st").textContent = "✓"; }, t);
+}, { threshold: .4 }).observe(org);
+
+// ---- the wind: soft streams of ASCII drifting to the right ----
+// a slow flow field; only its crests show, so most of the sky stays empty.
+const RAMP = " .·-~∼≈";
+function wind(pre, density) {
+  const probe = document.createElement("span"); probe.textContent = "M"; pre.append(probe);
+  const cw = probe.getBoundingClientRect().width || 8.4, lh = parseFloat(getComputedStyle(pre).lineHeight) || 19.6; probe.remove();
+  let cols = 0, rows = 0;
+  const size = () => { cols = Math.ceil(pre.clientWidth / cw) + 1; rows = Math.ceil(pre.clientHeight / lh) + 1; };
+  size(); addEventListener("resize", size);
+  let t = Math.random() * 100, visible = true;
+  new IntersectionObserver(([e]) => visible = e.isIntersecting).observe(pre);
+  const frame = () => {
+    if (visible && !document.hidden) {
+      let out = "";
+      for (let y = 0; y < rows; y++) {
+        const wy = Math.sin(y * .23 + t * .21) * 3.2;
+        for (let x = 0; x < cols; x++) {
+          const a = Math.sin(x * .045 - t * .9 + wy + Math.sin(y * .09 - t * .15) * 2.4);
+          const b = Math.sin(x * .013 + y * .19 - t * .33);
+          const v = a * .65 + b * .35 - density;
+          out += v <= 0 ? " " : RAMP[Math.min(RAMP.length - 1, 1 + Math.floor(v * 14))];
+        }
+        out += "\n";
+      }
+      pre.textContent = out;
+      t += .045;
+    }
+    if (!reduced) setTimeout(() => requestAnimationFrame(frame), 70);
+  };
+  frame();
+}
+wind(document.getElementById("wind2"), .58);
+
+// ---- the hero's sky: one thread, the kiss walks it and sends agents out like git branches (content/hero-bg.html · 9) ----
+(() => {
+const rnd = (a, b) => a + Math.random() * (b - a);
+const PULSES = { push() {} }, EVENTS = false, BUBBLE = true, NONAMES = false, GLIDE = true;
+function Grid(cols, rows, ko) {
+  const c = Array.from({ length: rows }, () => Array(cols).fill(" "));
+  const k = Array.from({ length: rows }, () => Array(cols).fill(""));
+  return {
+    cols, rows,
+    put(x, y, ch, cl = "") { x = Math.round(x); y = Math.round(y); if (x < 0 || y < 0 || x >= cols || y >= rows) return; if (ko && x >= ko.x0 && x <= ko.x1 && y >= ko.y0 && y <= ko.y1) return; c[y][x] = ch; k[y][x] = cl; },
+    str(x, y, s, cl = "") { for (let i = 0; i < s.length; i++) this.put(x + i, y, s[i], cl); },
+    html() {
+      let out = "";
+      for (let y = 0; y < rows; y++) {
+        let cur = "", buf = "";
+        const flush = () => { if (buf) out += cur === "s" ? [...buf].map(c => `<span class="s">${c}</span>`).join("") : cur[0] === "g" ? [...buf].map(c => `<span class="g ${cur.slice(1)}">${c}</span>`).join("") : cur ? `<span class="${cur}">${buf}</span>` : buf; buf = ""; };
+        for (let x = 0; x < cols; x++) { if (k[y][x] !== cur) { flush(); cur = k[y][x]; } const ch = c[y][x]; buf += ch === "<" ? "&lt;" : ch === "&" ? "&amp;" : ch; }
+        flush(); out += "\n";
+      }
+      return out;
+    },
+  };
+}
+
+function WAKE(g, Y, t, k) {
+    for (let x = 0; x < g.cols; x++) {
+      const d = k - x;
+      if (d <= 0) { if (d % 2 === 0) g.put(x, Y, "·", "sf"); continue; }  // the way still to go: barely there (user)
+      const amp = Math.exp(-d / 45), v = Math.abs(Math.sin(d * .38 - t * 3.2) * amp + Math.sin(d * .13 + t * .9) * amp * .4);
+      g.put(x, Y, v > .75 ? "≈" : v > .42 ? "∼" : v > .16 ? "~" : "─", d < 6 ? "a" : d < 18 ? "a2" : v > .42 ? "d" : "");
+    }
+}
+const THREAD = WAKE;
+function railY(b, Y, u) {
+  const e = (v) => { v = Math.max(0, Math.min(1, v)); return v * v * (3 - 2 * v); };
+  u = Math.max(0, Math.min(b.L, u));
+  return Y + b.dir * b.A * (u < b.R ? e(u / b.R) : u > b.L - b.R ? e((b.L - u) / b.R) : 1);
+}
+function arcWake(g, b, Y, t, d0 = 0) {
+  // a line of little dots with no holes: in each column, a dot on every row the rail crosses.
+  // main's ripples (≈∼~) only right behind the head, where the rail is flat; a commit • every few cells along the lane
+  const f = (u) => railY(b, Y, u);
+  const n = Math.floor(b.p);
+  // the last cells before the head (∿ or ✓) stay empty, so the mark never gets lost in its own wake
+  for (let i = 0; i <= n - 3; i++) {
+    const ya = f(i - .5), yb = f(i + .5), x = b.xs + i;
+    const d = n - i + d0, amp = Math.exp(-d / 14), v = Math.abs(Math.sin(d * .38 - t * 3.2) * amp + Math.sin(d * .13 + t * .9) * amp * .4);
+    // grey, so the pink ∿ at its head stays what you look at: dim right behind it, wind-grey further back
+    const cl = d < 10 ? "d" : "w";
+    const r0 = Math.round(Math.min(ya, yb)), r1 = Math.round(Math.max(ya, yb));
+    const onLane = i > b.R + 1 && i < b.L - b.R - 1, dy = yb - ya;
+    // where it forks up or merges down, dots that lean with it (⋰ ⋱), so the slope reads as one trail
+    if (Math.abs(dy) > .3 || r0 !== r1) { for (let r = r0; r <= r1; r++) g.put(x, r, dy < 0 ? "⋰" : "⋱", "g" + cl); continue; }
+    if (r0 === r1 && d < 12 && v > .16) g.put(x, r0, v > .75 ? "≈" : v > .42 ? "∼" : "~", cl);
+    else if (onLane && (i - b.R) % 8 === 4) g.put(x, r0, "•", "d");
+    else for (let r = r0; r <= r1; r++) g.put(x, r, "·", cl);
+  }
+}
+function branch(s) {
+    s.p = []; s.puff = []; s.b = []; s.ev = []; s.evn = 0; s.q = []; s.cur = null; s.kx = -2; s.flash = 0; s.last = -99;
+    const NAMES = ["feat: throw confetti", "feat: dark mode", "feat: gif picker", "feat: drag & drop", "feat: party mode", "feat: hide a konami code",
+      "feat: typing dots", "feat: voice notes", "feat: emoji reactions", "fix: emoji in csv export", "fix: search crème brûlée", "fix: sad 404 page",
+      "fix: dark mode flash", "perf: faster signup", "style: rounder buttons", "feat: leaderboard"];
+    const say = (g, Y, x, text) => {
+      for (const row of [Y + 2, Y + 3, Y + 4, Y + 1, Y + 5]) {
+        if (row >= g.rows) continue;
+        const a = Math.max(1, Math.min(g.cols - text.length - 2, Math.round(x - 1))), z = a + text.length;
+        if (s.ev.some(e => e.r === row && a <= e.z + 3 && z >= e.a - 3)) continue;
+        s.ev.push({ id: "ev" + s.evn++, text, a, z, r: row, n: 60 }); return;
+      }
+    };
+    const verb = (m) => m.startsWith("fix") ? "fixed" : m.startsWith("feat") ? "implemented" : "done";
+    return (g, t) => {
+      // the thread sits low enough to leave the arcs room under the title, and keeps 4 rows under it for what bise says
+      const Y = Math.max(2, Math.min(g.rows - 5, Math.max(Math.round(g.rows * .8), g.ko.y1 + 10)));  // the grid has one hidden row at the bottom: keep 4 visible rows under the thread
+      // a fuller dandelion sky: seeded at once over the whole hero, then fed from the bottom and the left edge
+      const seed = (x, y) => s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: 1e9 });
+      if (!s.sown) { s.sown = true; for (let k = 0; k < 150; k++) seed(rnd(0, g.cols), rnd(0, g.rows)); }
+      for (let k = 0; k < 2; k++) if (s.p.length < 170 && Math.random() < .55) Math.random() < .7 ? seed(rnd(-20, g.cols), g.rows + 1) : seed(-2, rnd(0, g.rows));
+      s.p = s.p.filter(p => p.y > -2 && p.x < g.cols + 3 && --p.life > 0);
+      for (const p of s.p) { const sp = .06 + p.z * .18; p.y -= sp; p.x += sp * 1.1; p.ph += .04; g.put(p.x + Math.sin(p.ph) * 2, p.y, p.life < 25 ? "." : p.z > .8 ? "∗" : p.z > .45 ? "·" : ".", p.z > .8 ? "d" : ""); }
+      // the kiss walks the thread; it wraps around once every branch is back
+      // it picks up speed as it goes: more agents, closer together, a bit faster, then a calm restart on the left
+      const q = Math.max(0, Math.min(1, s.kx / g.cols));
+      s.kx += .26 + .08 * q;
+      if (s.kx > g.cols + 2 && !s.b.length) { s.kx = -2; s.last = -99; }
+      const kx = Math.floor(s.kx);
+      // it sends agents out from where it stands. a landing spot must not share its label's room with another one
+      // never the same feature twice at once (out, or back and waiting for the kiss)
+      const pool = NAMES.filter(n => !s.b.some(o => o.key === n)), key = pool[Math.floor(rnd(0, pool.length))];
+      const name = key, done = key, ko = g.ko;
+      if (s.b.length < 6 && s.b.filter(o => o.p < o.L).length < 3 && s.kx - s.last > (s.gap || 16) && kx > 2) {
+        const free = (L) => { const a = kx + 1 + L; return a < g.cols - 3 && s.b.every(o => Math.abs(o.xs + o.L - a) > 7); };
+        // a few tries: a length, then its lane (like a git graph: the lowest one not taken by a branch over the same columns, 2 rows apart).
+        // a higher lane needs a longer branch, so the length grows to fit its fork and merge: that's how 3 can fly at once
+        const xs = kx + 1, dir = -1;
+        let L = 0;
+        for (let k = 0; k < 12 && !L; k++) {
+          let c = Math.floor(rnd(30 - 18 * q, 64 - 42 * q)), lane = 0, A = 3, R = 4;
+          for (let pass = 0; pass < 2; pass++) {
+            const taken = s.b.filter(o => o.xs < xs + c && xs < o.xs + o.L).map(o => o.lane);
+            lane = 0; while (taken.includes(lane)) lane++;
+            A = 2 + 2 * lane; R = Math.max(4, Math.round(A * 1.3));
+            if (c < 2 * R + 6) c = 2 * R + 6 + Math.floor(rnd(0, 6)); else break;
+          }
+          // never behind the title (2 rows of air under it), never out of the sky, and room for the fork, the lane and the merge
+          const b0 = { xs, L: c, A, R, dir };
+          let fits = lane < 5 && A <= Y - 3 && c >= 2 * R + 6 && free(c);
+          for (let i = 0; fits && i <= c; i++) if (xs + i >= ko.x0 && xs + i <= ko.x1 && Y - railY(b0, Y, i) > Y - ko.y1) fits = false;
+          if (fits) { L = c; s.b.push({ xs, L, p: 0, A, R, lane, dir, name, done, key }); }
+        }
+        if (L) {
+          if (EVENTS) say(g, Y, kx + 1, `starting an agent · ${name}`);
+          if (BUBBLE) s.q.push(`spawning · ${name}`);
+          s.last = s.kx; s.flash = 8; s.gap = rnd(.8, 1.2) * (21 - 13 * q) * .4;  // user: 2+ agents in flight ~80 % of the time, 3+ ~50 %
+        }
+      }
+      s.b = s.b.filter(b => {
+        const was = b.p; b.p = Math.min(b.L, b.p + (.45 + .15 * q) * .62);
+        if (EVENTS && was < b.L && b.p >= b.L) say(g, Y, b.xs + b.L, `${b.name} · ${verb(b.name)}`);
+        const pts = [];
+        for (let i = 0; i <= b.p; i++) pts.push([b.xs + i, railY(b, Y, i)]);
+        // back on the thread, it waits for the kiss to pick it up
+        if (b.p >= b.L && s.kx >= b.xs + b.L - 1) {
+          // the arc comes apart from the kiss back to where it started: each dot puffs out a little grey seed
+          pts.forEach(([x, y], i) => { if (Math.random() < .8) s.puff.push({ x, y, vx: rnd(-.1, .45), vy: rnd(-.45, .05), life: rnd(22, 48), wait: Math.floor((pts.length - 1 - i) * .3) }); });
+          s.flash = 10; PULSES.push({ x: kx, t0: t });
+          if (BUBBLE) s.q.push(`<span class="acc">✓</span>shipped · ${b.name}`);
+          return false;
+        }
+        if (b.p >= b.L) b.rest = (b.rest || 0) + .6;
+        arcWake(g, b, Y, t, b.rest || 0);
+        b.head = b.p < b.L ? pts[pts.length - 1] : null;
+        return true;
+      });
+      s.puff = s.puff.filter(p => {
+        if (p.wait > 0) { p.wait--; g.put(p.x, p.y, "·", "s"); return true; }
+        p.x += p.vx + .05; p.y += p.vy - .015; p.vx *= .92; p.vy *= .92;
+        g.put(p.x, p.y, p.life > 34 ? "∗" : p.life > 14 ? "·" : ".", p.life > 14 ? "d" : "");
+        return --p.life > 0;
+      });
+      // the thread goes over the arcs' ends and the seeds, so it never shows holes
+      for (let x = 0; x < g.cols; x++) g.put(x, Y, " ");
+      THREAD(g, Y, t, s.kx);
+      // marks, then names: a name tries right, left, then the rows around its mark, and stays hidden only if all are taken
+      const used = [];
+      // a name keeps the spot it had last frame while it's free, so it doesn't hop around
+      const place = (x, y, name, o) => {
+        const spots = [[x + 2, y], [x - name.length - 1, y], [x + 1, y - 1], [x + 1, y + 1], [x - name.length, y - 1], [x - name.length, y + 1], [x + 1, y - 2], [x + 1, y + 2]];
+        const order = o.slot != null ? [o.slot, ...spots.keys()].filter((v, k, a) => a.indexOf(v) === k) : [...spots.keys()];
+        for (const n of order) {
+          const [cx, cy] = spots[n];
+          const a = Math.round(cx), z = a + name.length - 1, r = Math.round(cy);
+          if (a < 0 || z >= g.cols || r < 0 || r >= g.rows || r === Y) continue;
+          if (a <= g.ko.x1 + 1 && z >= g.ko.x0 - 1 && r >= g.ko.y0 && r <= g.ko.y1) continue;
+          if (used.some(u => u.r === r && a <= u.z + 2 && z >= u.a - 2)) continue;
+          if (used.some(u => u.m && Math.abs(u.r - r) === 0 && u.a >= a - 1 && u.a <= z + 1)) continue;
+          used.push({ a, z, r }); o.slot = n;
+          if (g.labels) g.labels.push({ id: o.key, text: name, a, r }); else g.str(a, r, name, "d");
+          return;
+        }
+      };
+      for (const o of s.b) { const [mx, my] = o.head || [o.xs + o.L, Y]; used.push({ a: Math.round(mx), z: Math.round(mx), r: Math.round(my), m: true }); 
+        // a working agent breathes like its row in the app's side panel (gust W1, 1 cell): · ~ ∿ ≈ ∿ ~, 110 ms a frame
+        if (o.head) { o.ph ??= Math.floor(rnd(0, 6)); const k = (Math.floor(Date.now() / 110) + o.ph) % 6, ch = "·~∿≈∿~"[k]; g.put(mx, my, ch, ch === "·" ? "a3" : ch === "~" ? "a2" : "a"); }
+        else g.put(mx, my, "✓", "a"); }
+      if (BUBBLE) {
+        // one line at a time, ~2.5 s each; if bise has more to say, only the newest waits
+        // lines that arrive together take turns: the one showing is cut short, fades out, then the next fades in (at most 3 wait)
+        if (s.q.length > 3) s.q = s.q.slice(-3);
+        if ((!s.cur || s.cur.n <= -8) && s.q.length) s.cur = { text: s.q.shift(), n: 34, x: kx };
+        if (s.cur && s.q.length && s.cur.n > 20) s.cur.n = 20;
+        if (s.cur && s.cur.n-- > -8) g.bubble = { text: s.cur.n > 0 ? s.cur.text : "", x: s.cur.x, y: Math.min(g.rows - 3, Y + 2) };
+      } else if (EVENTS) {
+        s.ev = s.ev.filter(e => --e.n > 0);
+        for (const e of s.ev) if (g.labels) g.labels.push({ id: e.id, text: e.text, a: e.a, r: e.r }); else g.str(e.a, e.r, e.text, "d");
+      } else {
+        for (const o of s.b.filter(o => !o.head)) place(o.xs + o.L, Y, o.done, o);
+        for (const o of s.b.filter(o => o.head)) place(o.head[0], o.head[1], o.name, o);
+      }
+      // a little air around the kiss on the thread: 2 cells behind, 1 ahead
+      g.put(kx - 2, Y, " "); g.put(kx - 1, Y, " "); g.put(kx + 2, Y, " ");
+      g.str(kx, Y, ":*", "a");
+      if (s.flash > 0) { s.flash--; if (s.flash > 3) { g.put(kx - 1, Y - 1, "·", "a"); g.put(kx + 2, Y - 1, "·", "a"); g.put(kx + 1, Y - 2, "·", "a"); } }
+    };
+  }
+
+const sec = document.querySelector(".sky");
+{
+  const pre = sec.querySelector("pre"), s = {};
+  const probe = document.createElement("span"); probe.textContent = "M"; pre.append(probe);
+  const cw = probe.getBoundingClientRect().width || 8.4, lh = parseFloat(getComputedStyle(pre).lineHeight) || 19.6; probe.remove();
+  const step = branch(s);
+  const lay = document.createElement("div"); lay.className = "lay"; lay.setAttribute("aria-hidden", "true"); sec.insertBefore(lay, sec.querySelector(".hero"));
+  const shown = new Map();
+  // what bise says: a small line under the thread, where the kiss was when it said it. it fades in and out, and never covers an arc
+  const bub = document.createElement("div"); bub.className = "say"; lay.append(bub); let said = "";
+  const talk = (m) => {
+    if (!m || !m.text) { bub.classList.remove("on"); return; }
+    if (m.text !== said) {
+      said = m.text; bub.innerHTML = m.text; bub.classList.remove("pop"); void bub.offsetWidth; bub.classList.add("pop");
+      bub.style.transform = `translate(${Math.max(8, Math.min(m.x * cw - 4, pre.clientWidth - bub.offsetWidth - 16))}px, ${m.y * lh}px)`;
+    }
+    bub.classList.add("on");
+  };
+  const glide = (ls) => {
+    const now = new Set();
+    for (const l of ls) {
+      now.add(l.id);
+      let e = shown.get(l.id);
+      if (!e) { e = document.createElement("span"); e.style.opacity = "0"; e.style.transition = "none"; lay.append(e); shown.set(l.id, e); e.style.transform = `translate(${l.a * cw}px, ${l.r * lh}px)`; void e.offsetWidth; e.style.transition = ""; e.style.opacity = "1"; }
+      e.textContent = l.text; e.style.transform = `translate(${l.a * cw}px, ${l.r * lh}px)`;
+    }
+    for (const [id, e] of shown) if (!now.has(id)) { shown.delete(id); e.style.opacity = "0"; setTimeout(() => e.remove(), 500); }
+  };
+  sec.addEventListener("pointermove", e => { const r = sec.getBoundingClientRect(); s.mouse = { x: (e.clientX - r.left) / cw, y: (e.clientY - r.top) / lh, p: 1 }; });
+  let visible = false, t = rnd(0, 50), running = false;
+  const frame = () => {
+    if (!visible || document.hidden) { running = false; return; }
+    // nothing is drawn behind the hero text: a box around it, 2 cells of air
+    const pr = pre.getBoundingClientRect(), rs = [...sec.querySelectorAll(".hero > .big, .hero > .t1, .hero > .t2")].map(e => e.getBoundingClientRect());  // the install box may sit over a lane (user: overlap is fine)
+    const ko = { x0: Math.floor((Math.min(...rs.map(r => r.left)) - pr.left) / cw) - 3, x1: Math.ceil((Math.max(...rs.map(r => r.right)) - pr.left) / cw) + 3,
+                 y0: Math.floor((Math.min(...rs.map(r => r.top)) - pr.top) / lh) - 1, y1: Math.ceil((Math.max(...rs.map(r => r.bottom)) - pr.top) / lh) + 1 };
+    const g = Grid(Math.ceil(pre.clientWidth / cw) + 1, Math.ceil(pre.clientHeight / lh) + 1, ko); g.ko = ko;
+    g.labels = GLIDE || NONAMES ? [] : null;
+    step(g, t);
+    glide(NONAMES ? [] : g.labels || []);
+    talk(g.bubble); pre.innerHTML = g.html(); t += .045;
+    if (reduced) { running = false; return; }
+    setTimeout(() => requestAnimationFrame(frame), 70);
+  };
+  new IntersectionObserver(([e]) => { visible = e.isIntersecting; if (visible && !running) { running = true; frame(); } }, { threshold: .05 }).observe(sec);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && visible && !running) { running = true; frame(); } });
+}
+})();
+
+// ---- the desktop preview: ∿ breathes, you type, a notification slides in ----
+(() => {
+  const stage = document.getElementById("dstage"); if (!stage) return;
+  const typed = document.getElementById("dtype"), note = document.getElementById("dnote");
+  const lines = ["and give the sad dog a hat", "also the csv export crashes on emoji 😭", "ship it when it's green"];
+  let on = false, f = 0;
+  new IntersectionObserver(([e]) => { on = e.isIntersecting; if (on) stage.classList.add("in"); }, { threshold: .3 }).observe(stage);
+  setInterval(() => { if (!on || document.hidden) return; f++; stage.querySelectorAll(".dbr").forEach((e, i) => e.textContent = "·~∿≈∿~"[(f + i * 2) % 6]); }, 110);
+  if (reduced) { typed.textContent = lines[0]; note.classList.add("on"); return; }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  (async () => {
+    for (let k = 0; ; k++) {
+      while (!on) await sleep(400);
+      const t = lines[k % lines.length];
+      for (let i = 1; i <= t.length; i++) { typed.textContent = t.slice(0, i); await sleep(45 + Math.random() * 50); }
+      await sleep(900); if (k % 2 === 0) note.classList.add("on");
+      await sleep(3200); note.classList.remove("on"); typed.textContent = ""; await sleep(900);
+    }
+  })();
+})();
+
+// ---- the demo: a scripted session that loops ----
+const feed = document.getElementById("feed"), agents = document.getElementById("agents"), typed = document.getElementById("typed"), working = document.getElementById("working");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// a feed follows its bottom, unless the reader scrolled up to read
+const follow = (box, stuck, instant) => { if (stuck) box.scrollTo({ top: box.scrollHeight, behavior: instant || reduced ? "auto" : "smooth" }); };
+const atBottom = (box) => box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+const add = (html, cls) => { const stuck = atBottom(feed); const d = document.createElement("div"); if (cls) d.className = cls; d.innerHTML = html; feed.append(d); follow(feed, stuck); return d; };
+const rows = {};
+function agent(n, mark, name, info) {
+  let r = rows[name];
+  if (!r) { r = rows[name] = document.createElement("div"); r.className = "row"; agents.append(r); }
+  r.innerHTML = `<span><span class="faint">${n}</span> ${mark} ${name}</span><span class="faint">${info}</span>`;
+  r.dataset.busy = mark === "∿" ? "1" : "";
+}
+function count() { const n = Object.values(rows).filter((r) => r.dataset.busy).length; working.innerHTML = n ? `<span class="pulse acc">∿</span> ${n} working` : ""; }
+// the composer: the bar turns blush while there is text, the placeholder shows when it's empty
+const comp = document.getElementById("comp"), ph = document.getElementById("ph");
+function setTyped(t) { typed.textContent = t; comp.classList.toggle("typing", t !== ""); ph.style.display = t ? "none" : ""; }
+async function type(text, fast = 1) { for (const ch of text) { setTyped(typed.textContent + ch); await sleep(reduced ? 0 : (30 + Math.random() * 35) / fast); } await sleep(350 / fast); }
+async function send(text, fast = 1) {
+  await type(text, fast); setTyped("");
+  const d = add(`${text}<span class="tick">✓</span>`, "b you");
+  await sleep(550); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`;
+}
+const main = (t) => add(`<span class="who acc">:*</span>${t}`, "b");
+async function run() {
+  feed.innerHTML = ""; agents.innerHTML = ""; for (const k in rows) delete rows[k]; working.innerHTML = "";
+  agent(0, `<span class="acc">:*</span>`, "main", "");
+  await sleep(1200);
+  // one idea...
+  await send("signup is slow on mobile. can you look?");
+  await sleep(600);
+  main("on it. perf is profiling it on a mid-range phone.");
+  agent(1, "∿", "perf", "0m"); count();
+  await sleep(900);
+  // ...then they come faster
+  await send("oh and dark mode. people keep asking", 1.4);
+  await sleep(450);
+  main("dark-mode started. settings page first, then the rest.");
+  agent(2, "∿", "dark-mode", "0m"); count();
+  await sleep(500);
+  await send("and the 404 page is so sad. make it less sad", 1.8);
+  await sleep(400);
+  main("cheering it up. sad-404 started.");
+  agent(3, "∿", "sad-404", "0m"); count();
+  await sleep(300);
+  await send("wait also the csv export crashes on emoji 😭", 2.4);
+  await sleep(350);
+  main("emoji-csv is on it. it's always unicode.");
+  agent(4, "∿", "emoji-csv", "0m"); count();
+  await sleep(250);
+  await send("OK LAST ONE. release notes for all of this", 3);
+  await sleep(500);
+  main("release waits for the others, then writes them. go get a coffee.");
+  agent(5, "∿", "release", "0m"); count();
+  await sleep(1600);
+  // the team sorts itself out
+  add(`▸ 9 messages between 5 agents`, "l3 b");
+  for (const [n, a] of [[1, "perf"], [2, "dark-mode"], [3, "sad-404"], [4, "emoji-csv"], [5, "release"]]) agent(n, "∿", a, "2m");
+  await sleep(1500);
+  main("dark-mode asked which gray. i said the one in tokens.css, like everywhere else.");
+  await sleep(1800);
+  // change your mind mid-run
+  await send("actually keep the sad dog on the 404. just give it a hat");
+  await sleep(700);
+  main("told sad-404. the dog keeps its job. now with a hat.");
+  await sleep(1500);
+  const card = add(`<div class="t">? perf needs you</div><div>the hero image is 4.2 MB. compress it, or lazy-load it?</div><div class="faint">1 · compress   2 · both   alt+r answer with text</div>`, "card b");
+  await sleep(1900);
+  await type("2"); setTyped("");
+  card.classList.add("answered"); card.querySelector(".t").textContent = "✓ perf · you said both";
+  await sleep(1300);
+  // everything ships
+  agent(4, `<span class="acc">✓</span>`, "emoji-csv", "3m"); count();
+  add(`<span class="who acc">✓</span>emoji-csv done · 🦄 exports fine now. the file was read as latin-1.`, "b");
+  await sleep(1300);
+  agent(1, `<span class="acc">✓</span>`, "perf", "4m"); count();
+  add(`<span class="who acc">✓</span>perf done · signup: 4.1 s → 0.9 s on a mid-range phone.`, "b");
+  await sleep(1200);
+  agent(3, `<span class="acc">✓</span>`, "sad-404", "4m"); agent(2, `<span class="acc">✓</span>`, "dark-mode", "5m"); count();
+  add(`<span class="who acc">✓</span>sad-404 and dark-mode done · the dog has a hat. settings is dark.`, "b");
+  await sleep(1500);
+  agent(5, `<span class="acc">✓</span>`, "release", "6m"); count();
+  add(`<span class="who acc">✓</span>release done · 2.5 notes drafted. five things, zero tabs.`, "b");
+  await sleep(1300);
+  await send("you're the best");
+  await sleep(500); main(":*");
+  await sleep(4500);
+  run();
+}
+let flowOn = false;
+window.startFlow = () => { if (!flowOn) { flowOn = true; run(); } };
+
+// ---- feature demos: tiny scripted terminals, played only while on screen ----
+const plays = {
+  async talk(m) {
+    await m.send("signup is slow on mobile");
+    await m.main("on it. perf started."); await m.wait(500);
+    await m.send("and the csv export crashes on emoji 😭");
+    await m.main("emoji-csv started. it's always unicode."); await m.wait(400);
+    await m.send("oh, the 404 page is so sad");
+    await m.main("sad-404 started. 3 agents working, you're free."); await m.wait(600);
+    m.line(`<span class="pulse acc">∿</span> <span class="dim">3 working</span>`); await m.wait(3000);
+  },
+  async steer(m) {
+    m.line(`<span class="dim"><span class="pulse acc">∿</span> sad-404 · swapping the sad dog for a sun…</span>`); await m.wait(1400);
+    const d = await m.send("@sad-404 keep the dog. just give it a hat", true);
+    await m.wait(1200); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`; await m.wait(700);
+    m.line(`<span class="dim">@ sad-404 to you:</span> got it. the dog keeps its job. hat on.`, "b"); await m.wait(2200);
+    m.line(`<span class="acc">✓</span> sad-404 done · 3m 40s`, "b"); await m.wait(3200);
+  },
+  async router(m) {
+    m.line(`<span class="dim"><span class="pulse acc">∿</span> 4 working</span>`); await m.wait(900);
+    m.line(`<span class="chip">✉ <span class="s">dark-mode</span> <span class="ar">→</span> main</span><span class="dim">which gray for the borders?</span>`, "l3"); await m.wait(1200);
+    m.line(`<span class="acc">:*</span> i answered dark-mode: the one in tokens.css. <span class="faint">(like everywhere else)</span>`, "b"); await m.wait(1800);
+    m.line(`<span class="chip">✉ <span class="s">release</span> <span class="ar">→</span> main</span><span class="dim">tag it on main or on a branch?</span>`, "l3"); await m.wait(1200);
+    m.line(`<span class="acc">:*</span> i told release: on main, like every release. <span class="faint">(it's in CONTRIBUTING.md)</span>`, "b"); await m.wait(3200);
+  },
+  async direct(m) {
+    m.line(`<span class="faint">you → </span><span class="acc">main</span>`); await m.wait(1000);
+    await m.type("⌥1"); m.clear();
+    m.line(`<span class="faint">you → </span><span class="acc">perf</span>`, "b"); await m.wait(600);
+    await m.send("so why is signup slow?");
+    m.line(`<span class="dim">@ perf to you:</span> the hero image is 4.2 MB. on a mid-range phone, that's 3 s.`, "b"); await m.wait(1800);
+    await m.send("ouch. add a check so it can't come back");
+    m.line(`<span class="dim">@ perf to you:</span> on it.`, "b"); await m.wait(900);
+    await m.type("⌥0"); m.clear();
+    m.line(`<span class="faint">you → </span><span class="acc">main</span>`, "b"); await m.wait(3000);
+  },
+  async sync(m) {
+    const ls = [
+      ["release", "emoji-csv", "did the export format change?"],
+      ["emoji-csv", "release", "no. same columns, now in utf-8."],
+      ["release", "dark-mode", "a screenshot for the notes?"],
+      ["dark-mode", "release", "done, docs/dark.png"],
+    ];
+    const els = [];
+    for (const [i, [f, t, x]] of ls.entries()) { els.push(m.line(`<span class="chip">✉ <span class="s">${f}</span> <span class="ar">→</span> ${t}</span><span class="dim">${x}</span>`, i === 2 ? "l3 b" : "l3")); await m.wait(1000); }
+    await m.wait(500);
+    els.slice(1).forEach((e) => e.remove());
+    els[0].className = ""; els[0].innerHTML = `<span class="dim">▸ 4 messages between 3 agents</span>`;
+    await m.wait(1100);
+    m.line(`<span class="acc">:*</span> release has what it needs. nothing for you.`, "b"); await m.wait(3200);
+  },
+  async mcp(m) {
+    m.line(`<span class="acc">:*</span> 42 MCP servers on. all of them, all the time.`); await m.wait(700);
+    m.line(`<span class="faint">github · linear · sentry · slack · notion · postgres · datadog · +35</span>`); await m.wait(1000);
+    await m.send("why did signups drop yesterday?");
+    m.line(`<span class="dim">$ typescript · signups</span>`, "b"); await m.wait(400);
+    for (const l of [
+      `drop = <span class="acc">await</span> tools.datadog.query(<span class="ok">"signups"</span>)`,
+      `deploy = <span class="acc">await</span> tools.github.deployAt(drop.start)`,
+      `talk = <span class="acc">await</span> tools.slack.search(<span class="ok">"signup"</span>)`,
+    ]) { m.line(`<span class="dim">│</span> ${l}`); await m.wait(450); }
+    await m.wait(800);
+    m.line(`<span class="acc">:*</span> a deploy at 14:02 broke the email check. #support saw it at 14:30. want a fix?`, "b"); await m.wait(3600);
+  },
+  async plugins(m) {
+    await m.type("bise"); m.clear();
+    m.line(`<span class="acc">:*</span> hi. i found your setup:`, "b"); await m.wait(800);
+    for (const l of ["  ✓ 14 skills", "  ✓ 3 plugins", "  ✓ 6 MCP servers"]) { m.line(`<span class="dim">${l}</span>`); await m.wait(500); }
+    await m.wait(600);
+    m.line(`<span class="acc">:*</span> everything you had works here. nothing to port.`, "b"); await m.wait(3400);
+  },
+  async card(m) {
+    m.line(`<span class="dim">▸ 12 messages between 4 agents</span>`); await m.wait(900);
+    const c = m.line(`<div class="t acc" style="font-weight:700">? release needs you</div><div>dark mode changes the default colors. call it 2.5 or 3.0?</div><div class="faint">1 · 2.5   2 · 3.0   alt+r answer with text</div>`, "card b");
+    c.style.borderLeft = "2px solid var(--acc)"; c.style.paddingLeft = "2ch";
+    await m.wait(2200); await m.type("1"); m.clear();
+    c.style.borderLeftColor = "var(--faint)"; c.querySelector(".t").outerHTML = `<div class="t dim">✓ release · you said 2.5</div>`;
+    await m.wait(1400); m.line(`<span class="acc">:*</span> release is tagging 2.5. back to you.`, "b"); await m.wait(3200);
+  },
+  async resume(m) {
+    m.line(`<span class="dim"><span class="pulse acc">∿</span> dark-mode · 6 of 11 pages dark</span>`); await m.wait(1500);
+    m.line(`<span class="err">✗</span> dark-mode stopped: the provider answered 503.`, "b"); await m.wait(1600);
+    m.line(`<span class="acc">:*</span> dark-mode stopped half-way. i started it again, from page 7.`, "b"); await m.wait(1400);
+    m.line(`<span class="dim"><span class="pulse acc">∿</span> dark-mode · 7 of 11 pages…</span>`); await m.wait(1800);
+    m.line(`<span class="acc">✓</span> dark-mode done · 11 pages dark, tests green.`, "b"); await m.wait(3200);
+  },
+  async worktree(m) {
+    const r = [`<span class="faint">0</span> <span class="acc">:*</span> main`, `<span class="faint">1</span> <span class="pulse acc">∿</span> dark-mode`, `<span class="faint">2</span> <span class="pulse acc">∿</span> sad-404`];
+    const rows = r.map((h) => m.line(h)); await m.wait(1200);
+    m.line(`<span class="acc">:*</span> perf needs a clean build to time signup. it gets its own worktree.`, "b"); await m.wait(900);
+    const p = m.line(`<span class="faint">3</span> <span class="pulse acc">∿</span> perf <span class="acc">ψ</span>`); await m.wait(2600);
+    p.innerHTML = `<span class="faint">3</span> <span class="acc">✓</span> perf`;
+    m.line(`<span class="acc">✓</span> perf done · signup 4.1 s → 0.9 s. worktree cleaned up.`, "b"); await m.wait(3400);
+  },
+};
+// each demo is a tiny terminal. only one plays at a time (the director
+// below picks it); the others rest on their last frame, dimmed.
+let active = null, pinned = null;
+const MINI_SPEED = 1.4;  // the small demos play 1.4× faster than written (user)
+function mini(el, i) {
+  el.innerHTML = `<div class="mfeed scrollbox"></div><div class="mcomp"><span class="ty"></span><span class="cur"></span><span class="ph">what's on your mind?</span></div>`;
+  const feedEl = el.querySelector(".mfeed"), ty = el.querySelector(".ty"), comp = el.querySelector(".mcomp"), mph = el.querySelector(".ph");
+  const mark = () => { comp.classList.toggle("typing", ty.textContent !== ""); mph.style.display = ty.textContent ? "none" : ""; };
+  const self = { el, feat: el.closest(".feat"), i, done: null };
+  let fast = false;
+  const turn = () => new Promise((r) => { const t = () => active === self && !document.hidden ? r() : setTimeout(t, 120); t(); });
+  const m = {
+    wait: async (ms) => { if (fast) return; await turn(); await sleep(reduced ? Math.min(ms, 400) : ms / MINI_SPEED); await turn(); },
+    line(html, cls) {
+      const stuck = fast || atBottom(feedEl);
+      const d = document.createElement("div"); if (cls) d.className = cls; if (cls && cls.includes("b")) d.style.marginTop = "1lh";
+      d.innerHTML = html; feedEl.append(d); cellify(d); follow(feedEl, stuck, fast); return d;
+    },
+    async type(t) {
+      if (fast) { ty.textContent += t; mark(); return; }
+      for (const ch of t) { await turn(); ty.textContent += ch; mark(); comp.scrollLeft = comp.scrollWidth; await sleep(reduced ? 0 : (28 + Math.random() * 30) / MINI_SPEED); }
+      await sleep(300 / MINI_SPEED);
+    },
+    clear() { ty.textContent = ""; mark(); comp.scrollLeft = 0; },
+    async send(t, keep) { await m.type(t); m.clear(); const d = m.line(`${t}<span class="tick">✓</span>`, "b you"); if (!keep) { await m.wait(450); d.querySelector(".tick").outerHTML = `<span class="tick read">✓✓</span>`; } await m.wait(400); return d; },
+    async main(t) { m.line(`<span class="acc">:*</span> ${t}`); await m.wait(300); },
+  };
+  const play = () => plays[el.dataset.play](m);
+  // first, a still: the last frame, drawn at once
+  (async () => {
+    await sleep(0);   // let the whole script load first (cellify's regexp is defined below)
+    fast = true; feedEl.classList.add("still"); await play(); m.clear(); feedEl.classList.remove("still"); fast = false;
+    for (;;) {
+      await turn();
+      feedEl.innerHTML = ""; m.clear(); await sleep(350 / MINI_SPEED);
+      await play();
+      await sleep(900 / MINI_SPEED);
+      finished(self);
+    }
+  })();
+  return self;
+}
+
+// ---- the director: play the most relevant demo, one at a time ----
+// 1. the one under the pointer (or tapped) wins, and loops while it's there;
+// 2. otherwise the one nearest the middle of the screen;
+// 3. when a demo ends, the next visible one in reading order takes over,
+//    so a row plays left then right, like reading.
+const grid = document.querySelector(".fgrid");
+const minis = [...document.querySelectorAll("[data-play]")].map(mini);
+const seen = (el) => { const r = el.getBoundingClientRect(); const h = Math.min(r.bottom, innerHeight) - Math.max(r.top, 0); return Math.max(0, h) / r.height; };
+const off = (el) => { const r = el.getBoundingClientRect(); return Math.abs((r.top + r.bottom) / 2 - innerHeight / 2); };
+const rowOf = (m) => Math.round(m.el.getBoundingClientRect().top);
+function best() {
+  const vis = minis.filter((m) => seen(m.el) >= .6);
+  return vis.length ? vis.sort((a, b) => off(a.el) - off(b.el) || a.i - b.i)[0] : null;
+}
+function setActive(m) {
+  if (m === active) return;
+  active?.el.classList.remove("active");
+  active = m; m?.el.classList.add("active");
+  grid.classList.toggle("directed", !!m);
+}
+function finished(m) {
+  if (active !== m) return;
+  if (pinned === m) return;               // still under the pointer: play it again
+  const vis = minis.filter((x) => seen(x.el) >= .6);
+  if (!vis.includes(m)) return setActive(best());
+  const next = vis[(vis.indexOf(m) + 1) % vis.length];
+  setActive(next === m ? m : next);
+}
+function onView() {
+  if (pinned) return;
+  const b = best();
+  if (!b) return setActive(null);
+  if (!active || seen(active.el) < .6) return setActive(b);
+  // the reader moved on to another row: follow them, don't finish the old one
+  if (rowOf(b) !== rowOf(active) && off(active.el) - off(b.el) > 140) setActive(b);
+}
+let ticking = false;
+addEventListener("scroll", () => { if (!ticking) { ticking = true; requestAnimationFrame(() => { ticking = false; onView(); }); } }, { passive: true });
+addEventListener("resize", onView);
+for (const m of minis) {
+  m.feat.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") { pinned = m; setActive(m); } });
+  m.feat.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse" && pinned === m) pinned = null; });
+  m.feat.addEventListener("click", () => { pinned = null; setActive(m); });   // touch: tap to play
+}
+setTimeout(onView, 300);
+
+// ---- one fixed cell per symbol in the demo (fallback glyphs are not 1ch) ----
+const GLYPH_RE = /[\u2010-\u2BFF\u2E00-\u2E7F]/;
+function cellify(r) {
+  const w = document.createTreeWalker(r, NodeFilter.SHOW_TEXT, { acceptNode: (n) =>
+    GLYPH_RE.test(n.data) && !n.parentElement.closest(".gc, script, style, button, pre") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+  const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
+  for (const n of nodes) {
+    const f = document.createDocumentFragment();
+    for (const ch of n.data) {
+      if (GLYPH_RE.test(ch)) { const s = document.createElement("span"); s.className = "gc"; s.textContent = ch; f.append(s); }
+      else if (f.lastChild && f.lastChild.nodeType === 3) f.lastChild.data += ch;
+      else f.append(document.createTextNode(ch));
+    }
+    n.replaceWith(f);
+  }
+}
+const term = document.querySelector(".term");
+cellify(term);
+new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && !n.classList.contains("gc")) cellify(n); })
+  .observe(term, { childList: true, subtree: true });
+document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
+</script>
+<script>/* notes: ⌥⇧A turns the annotation layer on or off; ?annotate works too. remembered on localhost only; on bise.dev it lasts one tab */
+(() => { const K = "bise-annotate", local = /^(localhost|127\.0\.0\.1)$/.test(location.hostname), st = local ? localStorage : sessionStorage,
+    load = () => document.head.append(Object.assign(document.createElement("script"), { src: "/annotate.js" }));
+  if (!local) localStorage.removeItem(K);
+  if (/[?&]annotate\b/.test(location.search)) st.setItem(K, "on");
+  if (st.getItem(K) === "on") load();
+  addEventListener("keydown", (e) => { if (!(e.altKey && e.shiftKey && e.code === "KeyA")) return; e.preventDefault();
+    if (st.getItem(K) === "on") { st.removeItem(K); location.reload(); } else { st.setItem(K, "on"); load(); } });
+})();</script>
+<script>
+// ---- the problem (today: sessions pile up) → the switch (with bise: one thread) ----
+(() => {
+  const stage = document.getElementById("stage"), you = document.getElementById("ptr"), bub = document.getElementById("bub");
+  const stats = document.getElementById("stats"), cap = document.getElementById("cap"), replay = document.getElementById("replay");
+  const swap = document.getElementById("swap"), pk = document.getElementById("pk"), ph2 = document.getElementById("ph2"), pp = document.getElementById("pp");
+  const head = async (k, h, t) => { swap.classList.add("out"); await sleep(350); pk.textContent = k; ph2.innerHTML = h; pp.textContent = t; swap.classList.remove("out"); };
+  // the heading block keeps the height of its tallest state (the problem), so the switch never moves the demo
+  const lockSwap = () => { if (state !== "today") return; swap.style.minHeight = ""; swap.style.minHeight = swap.offsetHeight + "px"; };
+  addEventListener("resize", lockSwap); requestAnimationFrame(lockSwap); document.fonts && document.fonts.ready.then(lockSwap);
+  const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const S = [
+    ["perf", "profiling signup on a phone…", "should i continue? (y/n)"],
+    ["dark-mode", "edited 14 files in settings/", "which gray? (again)"],
+    ["sad-404", "drew a new 404 page", "waiting for your review"],
+    ["emoji-csv", "npm test", "✗ 3 tests failed", true],
+    ["release", "drafting notes for 2.5", "what did perf change?"],
+    ["perf (2)", "wait, which session was it?", "context lost. paste it again?"],
+    ["dark-mode (2)", "conflict in tokens.css", "✗ merge conflict", true],
+  ];
+  let wins = [], run = 0, state = "today", switches = 0, waiting = 0;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, RM ? Math.min(ms, 60) : ms));
+  const pos = (i) => {
+    const w = stage.clientWidth, h = stage.clientHeight, ww = w < 700 ? 220 : 300, cols = w < 700 ? 1 : 3;
+    const c = i % cols, r = Math.floor(i / cols);
+    return { x: (w - ww) * (cols === 1 ? .15 + (i % 3) * .2 : .04 + c * .45) + (r % 2) * 26 + Math.random() * 16, y: 18 + r * (w < 700 ? 64 : 118) + Math.random() * 14 };
+  };
+  const setStats = () => {
+    stats.innerHTML = state === "today"
+      ? `<span><b>${wins.length}</b> sessions</span><span class="hot"><b>${waiting}</b> waiting for you</span><span><b>${switches}</b> context switches</span><span><b>0</b> minutes of flow</span>`
+      : `<span><b>1</b> thread</span><span><b>5</b> agents working</span><span class="good"><b>0</b> waiting for you</span><span class="good"><b>∞</b> flow</span>`;
+  };
+  const say = (t, x, y) => { bub.textContent = t; bub.style.left = x + "px"; bub.style.top = y + "px"; bub.classList.add("on"); };
+  function spawn(i) {
+    const [name, line, ask, err] = S[i], p = pos(i), d = document.createElement("div");
+    d.className = "win"; d.style.left = p.x + "px"; d.style.top = p.y + "px"; d.style.zIndex = 10 + i;
+    const rot = (Math.random() * 3 - 1.5).toFixed(2);
+    d.style.transform = `scale(.6) rotate(${rot}deg)`; d.style.opacity = "0";
+    d.innerHTML = `<div class="bar"><i></i><i></i><i></i><span>agent · ${name}</span></div><div class="bd">$ ${line}<br><span class="ask${err ? " err" : ""}">${ask}</span></div>`;
+    stage.appendChild(d); wins.push(d);
+    requestAnimationFrame(() => requestAnimationFrame(() => { d.style.opacity = "1"; d.style.transform = `rotate(${rot}deg)`; }));
+    setTimeout(() => { d.classList.add("nag"); waiting++; setStats(); }, 450);
+    return d;
+  }
+  async function visit(d, id) {
+    const r = d.getBoundingClientRect(), s = stage.getBoundingClientRect();
+    you.style.left = (r.left - s.left + 40) + "px"; you.style.top = (r.top - s.top + r.height - 16) + "px";
+    await sleep(380); if (id !== run) return;
+    you.classList.remove("tap"); void you.offsetWidth; you.classList.add("tap");
+    d.classList.remove("nag"); switches++; waiting = Math.max(0, waiting - 1); setStats();
+    d.querySelector(".ask").textContent = "…"; await sleep(160);
+    setTimeout(() => { if (id === run && state === "today") { d.querySelector(".ask").textContent = "waiting for you"; d.classList.add("nag"); waiting++; setStats(); } }, 1700);
+  }
+  async function today() {
+    const id = ++run; state = "today"; stage.classList.remove("calm"); setFlip();
+    wins.forEach((w) => w.remove()); wins = []; switches = 0; waiting = 0; bub.classList.remove("on"); you.style.opacity = "1";
+    if (id > 1) head("the problem", "five agents. five tabs.<br>one very tired you.", "every session waits for you. you're the router, the memory, and the merge tool. you ship a lot, but you never get to think.");
+    cap.innerHTML = "you started five things. now you're the one they all wait for.";
+    setStats();
+    for (let i = 0; i < S.length; i++) {
+      if (id !== run) return;
+      const d = spawn(i); await sleep(i < 5 ? 520 : 420);
+      if (i >= 1) { await visit(wins[Math.floor(Math.random() * wins.length)], id); }
+      if (i === 4) { say("wait, what was i doing?", stage.clientWidth * .52, stage.clientHeight * .78); }
+    }
+    for (let k = 0; k < 2 && id === run; k++) { await visit(wins[Math.floor(Math.random() * wins.length)], id); await sleep(100); }
+    await sleep(800); if (id === run && !pinned) calm();
+  }
+  function calm() {
+    const id = ++run; state = "bise"; setFlip(); bub.classList.remove("on"); you.style.opacity = "0";
+    const w = stage.clientWidth, h = stage.clientHeight;
+    wins.forEach((d, i) => { d.classList.remove("nag"); d.style.left = (w / 2 - 150) + "px"; d.style.top = (h / 2 - 60) + "px"; d.style.transform = "scale(.35) rotate(0deg)"; d.style.opacity = "0"; });
+    stage.classList.add("calm"); waiting = 0; setStats();
+    cap.innerHTML = "<b>one thread per repo.</b> you talk to main. main runs the agents, and only taps your shoulder when it matters.";
+    head("with bise", "this is what flow looks like", "five ideas in two minutes. you never stop typing.");
+    window.startFlow && window.startFlow();
+  }
+  let pinned = false;
+  function setFlip() { replay.style.visibility = state === "bise" ? "visible" : "hidden"; }
+  replay.addEventListener("click", () => today());
+  let started = false;
+  new IntersectionObserver((es) => { if (es[0].isIntersecting && !started) { started = true; today(); } }, { threshold: .35 }).observe(stage);
+  setStats();
+})();
+</script>
+<script src="/annotate.js"></script></body>
+</html>
