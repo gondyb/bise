@@ -4,9 +4,18 @@
 //! the keys back. The shell is spawned on the first show, respawned on a
 //! show after it exited, and killed when the TUI exits.
 //!
-//! Pure parts (tested): `is_toggle`, `key_bytes`, `split`. The rest is
-//! the PTY plumbing: a reader thread feeds a vt100 parser that the
-//! `tui-term` widget draws.
+//! The mouse (BISE-250): a drag in the panel selects (highlighted, the
+//! history's tint), the release copies it, like the history; a double
+//! click selects the word, a triple the row; cmd+c or ctrl+shift+c copy
+//! the selection again. A program that asked for the mouse (vim, less
+//! --mouse, htop) gets it instead, and shift+drag still selects, as in
+//! any terminal. No quote into the composer: while the panel is shown
+//! the keys go to the shell, so "select, then type" has nothing to type
+//! into.
+//!
+//! Pure parts (tested): `is_toggle`, `key_bytes`, `mouse_bytes`,
+//! `split`, `Sel`. The rest is the PTY plumbing: a reader thread feeds a
+//! vt100 parser that the `tui-term` widget draws.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -18,6 +27,7 @@ use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tui_term::widget::PseudoTerminal;
+use vt100::{MouseProtocolEncoding, MouseProtocolMode};
 
 const SCROLLBACK: usize = 5000;
 const MIN_ROWS: u16 = 5;
@@ -35,6 +45,11 @@ pub(crate) fn is_toggle(k: &KeyEvent) -> bool {
 /// program asked for the application cursor keys (ESC O A…).
 pub(crate) fn key_bytes(k: &KeyEvent, app_cursor: bool) -> Option<Vec<u8>> {
     let m = k.modifiers;
+    // cmd+key is the app's (copy) or the terminal's, never the shell's:
+    // a terminal sends nothing for it
+    if m.contains(KeyModifiers::SUPER) {
+        return None;
+    }
     let alt = m.contains(KeyModifiers::ALT);
     let ctrl = m.contains(KeyModifiers::CONTROL);
     let shift = m.contains(KeyModifiers::SHIFT);
@@ -108,6 +123,162 @@ pub(crate) fn key_bytes(k: &KeyEvent, app_cursor: bool) -> Option<Vec<u8>> {
         KeyCode::F(n @ 5..=12) => tilde([15, 17, 18, 19, 20, 21, 23, 24][(n - 5) as usize]),
         _ => return None,
     })
+}
+
+/// cmd+c, or ctrl+shift+c (the Linux terminals' copy): copies the
+/// panel's selection when there is one.
+pub(crate) fn is_copy(k: &KeyEvent) -> bool {
+    let m = k.modifiers;
+    let c = matches!(k.code, KeyCode::Char('c') | KeyCode::Char('C'));
+    c && (m == KeyModifiers::SUPER
+        || m == KeyModifiers::SUPER | KeyModifiers::SHIFT
+        || m == KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+}
+
+/// The bytes that report a mouse event to a program that asked for the
+/// mouse (`mode`, in `enc`), at the 0-based cell (x, y) of the panel;
+/// none when the mode does not report this kind of event.
+pub(crate) fn mouse_bytes(
+    kind: MouseEventKind,
+    mods: KeyModifiers,
+    x: u16,
+    y: u16,
+    mode: MouseProtocolMode,
+    enc: MouseProtocolEncoding,
+) -> Option<Vec<u8>> {
+    use MouseProtocolMode as M;
+    let button = |b: MouseButton| match b {
+        MouseButton::Left => 0u16,
+        MouseButton::Middle => 1,
+        MouseButton::Right => 2,
+    };
+    // (button code, a release)
+    let (code, release) = match kind {
+        _ if mode == M::None => return None,
+        MouseEventKind::Down(b) => (button(b), false),
+        MouseEventKind::ScrollUp => (64, false),
+        MouseEventKind::ScrollDown => (65, false),
+        MouseEventKind::Up(b) if mode != M::Press => (button(b), true),
+        MouseEventKind::Drag(b) if matches!(mode, M::ButtonMotion | M::AnyMotion) => (button(b) + 32, false),
+        // motion with no button: code 3 + motion
+        MouseEventKind::Moved if mode == M::AnyMotion => (35, false),
+        _ => return None,
+    };
+    let mut code = code;
+    if mods.contains(KeyModifiers::SHIFT) {
+        code += 4;
+    }
+    if mods.contains(KeyModifiers::ALT) {
+        code += 8;
+    }
+    if mods.contains(KeyModifiers::CONTROL) {
+        code += 16;
+    }
+    let (cx, cy) = (x as u32 + 1, y as u32 + 1);
+    Some(match enc {
+        MouseProtocolEncoding::Sgr => format!("\x1b[<{};{};{}{}", code, cx, cy, if release { 'm' } else { 'M' }).into_bytes(),
+        legacy => {
+            // X10: a release is button 3 (which one is not said); each
+            // number + 32 as one byte (UTF-8 mode: one char), 223 at most
+            // in the byte form
+            let code = if release { (code & !3) | 3 } else { code } as u32;
+            let mut out = b"\x1b[M".to_vec();
+            for n in [code + 32, cx + 32, cy + 32] {
+                if legacy == MouseProtocolEncoding::Utf8 {
+                    let mut b = [0u8; 4];
+                    out.extend(char::from_u32(n.min(2047))?.encode_utf8(&mut b).as_bytes());
+                } else {
+                    out.push(n.min(255) as u8);
+                }
+            }
+            out
+        }
+    })
+}
+
+/// A cell of the shell's whole text: the row counted from the oldest row
+/// kept in the history (so a selection stays on its text when the view
+/// scrolls), the column.
+pub(crate) type Cell = (usize, u16);
+
+/// A selection in the panel: where the press was and where the pointer
+/// is, both cells included.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Sel {
+    pub(crate) anchor: Cell,
+    pub(crate) head: Cell,
+}
+
+impl Sel {
+    /// (first, last), in text order.
+    pub(crate) fn range(&self) -> (Cell, Cell) {
+        if self.anchor <= self.head {
+            (self.anchor, self.head)
+        } else {
+            (self.head, self.anchor)
+        }
+    }
+
+    /// The columns [from, to) selected on the row, if any.
+    pub(crate) fn cols(&self, row: usize, width: u16) -> Option<(u16, u16)> {
+        let (a, b) = self.range();
+        if row < a.0 || row > b.0 {
+            return None;
+        }
+        let from = if row == a.0 { a.1 } else { 0 };
+        let to = if row == b.0 { b.1.saturating_add(1) } else { width };
+        Some((from.min(width), to.min(width)))
+    }
+}
+
+/// The rows of the history (scrollback) the parser keeps now.
+fn history_len(p: &mut vt100::Parser) -> usize {
+    let at = p.screen().scrollback();
+    p.set_scrollback(usize::MAX);
+    let n = p.screen().scrollback();
+    p.set_scrollback(at);
+    n
+}
+
+/// The text of the columns [from, to) of the row `row` (see [`Cell`]),
+/// and whether the row goes on in the next one (a soft wrap). Moves the
+/// parser's view: the caller puts it back.
+fn row_text(p: &mut vt100::Parser, row: usize, from: u16, to: u16) -> (String, bool) {
+    let hist = history_len(p);
+    let r = if row < hist {
+        p.set_scrollback(hist - row);
+        0
+    } else {
+        p.set_scrollback(0);
+        row - hist
+    };
+    let Ok(r) = u16::try_from(r) else { return (String::new(), false) };
+    let s = p.screen();
+    if r >= s.size().0 || from >= to {
+        return (String::new(), s.row_wrapped(r));
+    }
+    (s.contents_between(r, from, r, to), s.row_wrapped(r))
+}
+
+/// The selected text: soft-wrapped rows joined, a newline between the
+/// others, trailing blanks of each line dropped.
+fn sel_text(p: &mut vt100::Parser, sel: &Sel) -> String {
+    let at = p.screen().scrollback();
+    let cols = p.screen().size().1;
+    let (a, b) = sel.range();
+    let mut out = String::new();
+    for row in a.0..=b.0 {
+        let Some((from, to)) = sel.cols(row, cols) else { continue };
+        let (text, wrapped) = row_text(p, row, from, to);
+        out.push_str(&text);
+        if row < b.0 && !(wrapped && to >= cols) {
+            let kept = out.trim_end_matches(' ').len();
+            out.truncate(kept);
+            out.push('\n');
+        }
+    }
+    p.set_scrollback(at);
+    out.trim_end_matches(' ').to_string()
 }
 
 /// The screen split: the area left for the app above, the panel below
@@ -211,17 +382,52 @@ pub(crate) struct Term {
     pct: u16,
     /// where the panel was drawn (mouse hits)
     area: Option<Rect>,
+    /// where the shell's cells were drawn, and the row (see [`Cell`]) of
+    /// the first one
+    inner: Option<Rect>,
+    top: usize,
     /// dragging the top border
     resizing: bool,
     /// rows scrolled back into the history
     scroll: usize,
     error: Option<String>,
+    sel: Option<Sel>,
+    /// a press made the selection and the button is still down: Some(it
+    /// selects: a drag, a double or triple click)
+    selecting: Option<bool>,
+    /// a press went to the program: its drag and release go too
+    forwarding: bool,
+    clicks: crate::app::MouseState,
 }
 
 impl Default for Term {
     fn default() -> Self {
-        Term { shown: false, pty: None, pct: 30, area: None, resizing: false, scroll: 0, error: None }
+        Term {
+            shown: false,
+            pty: None,
+            pct: 30,
+            area: None,
+            inner: None,
+            top: 0,
+            resizing: false,
+            scroll: 0,
+            error: None,
+            sel: None,
+            selecting: None,
+            forwarding: false,
+            clicks: Default::default(),
+        }
     }
+}
+
+/// What the panel did with a mouse event.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum MouseDone {
+    /// not the panel's: the app takes it
+    Pass,
+    Took,
+    /// a selection was made: copy this text
+    Copy(String),
 }
 
 impl Term {
@@ -243,6 +449,7 @@ impl Term {
             if let Some(mut p) = self.pty.take() {
                 p.kill();
             }
+            self.sel = None;
             // the real size comes with the first draw
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
             match Pty::spawn(&shell, cwd, 10, 80) {
@@ -275,9 +482,18 @@ impl Term {
         let app_cursor = pty.parser.lock().map(|p| p.screen().application_cursor()).unwrap_or(false);
         if let Some(b) = key_bytes(k, app_cursor) {
             self.scroll = 0;
+            self.sel = None;
             pty.send(&b);
         }
         true
+    }
+
+    /// The selected text, if any (cmd+c).
+    pub(crate) fn selection_text(&mut self) -> Option<String> {
+        let sel = self.sel?;
+        let pty = self.pty.as_mut()?;
+        let mut p = pty.parser.lock().ok()?;
+        Some(sel_text(&mut p, &sel)).filter(|t| !t.is_empty())
     }
 
     /// A paste while shown goes to the shell (bracketed when it asked).
@@ -299,10 +515,11 @@ impl Term {
     }
 
     /// The mouse over the panel: the wheel scrolls the history, the top
-    /// border drags to resize. True when the panel took the event.
-    pub(crate) fn mouse(&mut self, m: &MouseEvent, screen_h: u16) -> bool {
+    /// border drags to resize, a drag selects (a program that asked for
+    /// the mouse gets it instead, unless shift is held).
+    pub(crate) fn mouse(&mut self, m: &MouseEvent, screen_h: u16) -> MouseDone {
         if !self.shown {
-            return false;
+            return MouseDone::Pass;
         }
         if self.resizing {
             match m.kind {
@@ -313,20 +530,136 @@ impl Term {
                 MouseEventKind::Up(_) => self.resizing = false,
                 _ => {}
             }
-            return true;
+            return MouseDone::Took;
         }
-        let Some(r) = self.area else { return false };
+        // a selection or a forwarded press goes on outside the panel too
+        if self.selecting.is_some() {
+            return self.select_mouse(m);
+        }
+        if self.forwarding {
+            if matches!(m.kind, MouseEventKind::Up(_)) {
+                self.forwarding = false;
+            }
+            self.forward(m);
+            return MouseDone::Took;
+        }
+        let Some(r) = self.area else { return MouseDone::Pass };
         let inside = m.column >= r.x && m.column < r.x + r.width && m.row >= r.y && m.row < r.y + r.height;
         if !inside {
-            return false;
+            return MouseDone::Pass;
+        }
+        if m.kind == MouseEventKind::Down(MouseButton::Left) && m.row == r.y {
+            self.resizing = true;
+            return MouseDone::Took;
+        }
+        let in_cells = self.inner.is_some_and(|i| m.row >= i.y && m.row < i.y + i.height);
+        let shift = m.modifiers.contains(KeyModifiers::SHIFT);
+        if in_cells && !shift && self.program_mouse() != MouseProtocolMode::None {
+            if matches!(m.kind, MouseEventKind::Down(_)) {
+                self.forwarding = true;
+            }
+            self.forward(m);
+            return MouseDone::Took;
         }
         match m.kind {
             MouseEventKind::ScrollUp => self.scroll += 3,
             MouseEventKind::ScrollDown => self.scroll = self.scroll.saturating_sub(3),
-            MouseEventKind::Down(MouseButton::Left) if m.row == r.y => self.resizing = true,
+            MouseEventKind::Down(MouseButton::Left) if in_cells => return self.select_mouse(m),
+            MouseEventKind::Down(_) => self.sel = None,
             _ => {}
         }
-        true
+        MouseDone::Took
+    }
+
+    /// The mode of the mouse reports the program asked for.
+    fn program_mouse(&self) -> MouseProtocolMode {
+        let Some(pty) = self.pty.as_ref() else { return MouseProtocolMode::None };
+        pty.parser.lock().map(|p| p.screen().mouse_protocol_mode()).unwrap_or(MouseProtocolMode::None)
+    }
+
+    /// Reports the event to the program, at its cell in the panel.
+    fn forward(&mut self, m: &MouseEvent) {
+        let (Some(i), Some(pty)) = (self.inner, self.pty.as_mut()) else { return };
+        let x = m.column.saturating_sub(i.x).min(i.width.saturating_sub(1));
+        let y = m.row.saturating_sub(i.y).min(i.height.saturating_sub(1));
+        let (mode, enc) = pty
+            .parser
+            .lock()
+            .map(|p| (p.screen().mouse_protocol_mode(), p.screen().mouse_protocol_encoding()))
+            .unwrap_or((MouseProtocolMode::None, MouseProtocolEncoding::Default));
+        if let Some(b) = mouse_bytes(m.kind, m.modifiers, x, y, mode, enc) {
+            pty.send(&b);
+        }
+    }
+
+    /// The cell under the pointer, clamped into the panel's cells.
+    fn cell_at(&self, x: u16, y: u16) -> Option<Cell> {
+        let i = self.inner?;
+        if i.width == 0 || i.height == 0 {
+            return None;
+        }
+        let col = x.clamp(i.x, i.x + i.width - 1) - i.x;
+        let row = y.clamp(i.y, i.y + i.height - 1) - i.y;
+        Some((self.top + row as usize, col))
+    }
+
+    /// A press, drag or release that selects (like the history: a double
+    /// click the word, a triple the row; the release copies).
+    fn select_mouse(&mut self, m: &MouseEvent) -> MouseDone {
+        let Some(i) = self.inner else { return MouseDone::Took };
+        match m.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let Some(at) = self.cell_at(m.column, m.row) else { return MouseDone::Took };
+                let clicks = self.clicks.press(m.column, m.row, std::time::Instant::now());
+                let (a, b) = match clicks {
+                    2 => self.word_at(at),
+                    3 => (0, i.width.saturating_sub(1)),
+                    _ => (at.1, at.1),
+                };
+                self.sel = Some(Sel { anchor: (at.0, a), head: (at.0, b) });
+                self.selecting = Some(clicks > 1);
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
+                // past the top or the bottom row: the view scrolls
+                if m.row < i.y {
+                    self.scroll += 1;
+                    self.top = self.top.saturating_sub(1);
+                } else if m.row >= i.y + i.height && self.scroll > 0 {
+                    self.scroll -= 1;
+                    self.top += 1;
+                }
+                if let (Some(at), Some(sel)) = (self.cell_at(m.column, m.row), self.sel.as_mut()) {
+                    if sel.head != at {
+                        sel.head = at;
+                        self.selecting = Some(true);
+                    }
+                }
+            }
+            MouseEventKind::Up(_) => {
+                let selected = self.selecting.take() == Some(true);
+                if !selected {
+                    // a plain click drops the selection
+                    self.sel = None;
+                    return MouseDone::Took;
+                }
+                if let Some(t) = self.selection_text() {
+                    return MouseDone::Copy(t);
+                }
+            }
+            _ => {}
+        }
+        MouseDone::Took
+    }
+
+    /// The columns of the word at the cell (a double click).
+    fn word_at(&mut self, at: Cell) -> (u16, u16) {
+        let Some(pty) = self.pty.as_mut() else { return (at.1, at.1) };
+        let Ok(mut p) = pty.parser.lock() else { return (at.1, at.1) };
+        let back = p.screen().scrollback();
+        let (text, _) = row_text(&mut p, at.0, 0, u16::MAX);
+        p.set_scrollback(back);
+        let (a, b) = crate::feedsel::word_cols(&text, at.1 as usize);
+        (a.min(u16::MAX as usize) as u16, b.min(u16::MAX as usize) as u16)
     }
 
     /// Draw the panel when shown; returns the area left for the app.
@@ -352,9 +685,12 @@ impl Term {
         pty.resize(inner.height, inner.width);
         let alive = pty.alive();
         let Ok(mut parser) = pty.parser.lock() else { return top };
+        let hist = history_len(&mut parser);
         parser.set_scrollback(self.scroll);
         // the clamped offset: the history may be shorter than asked
         self.scroll = parser.screen().scrollback();
+        self.inner = Some(inner);
+        self.top = hist - self.scroll;
         if self.scroll > 0 {
             title = format!(" terminal · ↑ {} lines · ctrl+` hide ", self.scroll);
         }
@@ -368,6 +704,18 @@ impl Term {
         }
         frame.render_widget(w, panel);
         parser.set_scrollback(0);
+        // the selection: the history's tint under its cells
+        if let Some(sel) = self.sel {
+            let buf = frame.buffer_mut();
+            for y in 0..inner.height {
+                let Some((a, b)) = sel.cols(self.top + y as usize, inner.width) else { continue };
+                for x in a..b {
+                    if let Some(c) = buf.cell_mut((inner.x + x, inner.y + y)) {
+                        c.set_bg(crate::theme::selection_bg());
+                    }
+                }
+            }
+        }
         top
     }
 
@@ -404,6 +752,14 @@ pub(crate) fn on_key(app: &mut crate::App, k: &KeyEvent) -> bool {
         let dir = cwd(app);
         app.term.toggle(&dir);
         return true;
+    }
+    // cmd+c / ctrl+shift+c with a selection: copy it (without one,
+    // ctrl+shift+c is the shell's ctrl+c)
+    if app.term.shown() && is_copy(k) {
+        if let Some(t) = app.term.selection_text() {
+            crate::input::copy_text(app, &t);
+            return true;
+        }
     }
     app.term.key(k)
 }
@@ -465,6 +821,72 @@ mod tests {
         assert_eq!(b(KeyCode::F(1), KeyModifiers::NONE), b"\x1bOP");
         assert_eq!(b(KeyCode::F(5), KeyModifiers::NONE), b"\x1b[15~");
         assert_eq!(b(KeyCode::F(12), KeyModifiers::NONE), b"\x1b[24~");
+    }
+
+    #[test]
+    fn cmd_keys_never_reach_the_shell_and_copy_is_cmd_c_or_ctrl_shift_c() {
+        assert!(key_bytes(&k(KeyCode::Char('c'), KeyModifiers::SUPER), false).is_none());
+        assert!(key_bytes(&k(KeyCode::Char('k'), KeyModifiers::SUPER | KeyModifiers::SHIFT), false).is_none());
+        assert!(is_copy(&k(KeyCode::Char('c'), KeyModifiers::SUPER)));
+        assert!(is_copy(&k(KeyCode::Char('C'), KeyModifiers::CONTROL | KeyModifiers::SHIFT)));
+        assert!(!is_copy(&k(KeyCode::Char('c'), KeyModifiers::CONTROL)));
+        assert!(!is_copy(&k(KeyCode::Char('c'), KeyModifiers::NONE)));
+    }
+
+    #[test]
+    fn mouse_reports_follow_the_mode_and_the_encoding() {
+        use MouseProtocolEncoding as E;
+        use MouseProtocolMode as M;
+        let down = MouseEventKind::Down(MouseButton::Left);
+        let up = MouseEventKind::Up(MouseButton::Left);
+        let drag = MouseEventKind::Drag(MouseButton::Left);
+        let none = KeyModifiers::NONE;
+        let mb = |kind, mods, mode, enc| mouse_bytes(kind, mods, 4, 1, mode, enc);
+        assert_eq!(mb(down, none, M::None, E::Sgr), None);
+        assert_eq!(mb(down, none, M::PressRelease, E::Sgr).unwrap(), b"\x1b[<0;5;2M");
+        assert_eq!(mb(up, none, M::PressRelease, E::Sgr).unwrap(), b"\x1b[<0;5;2m");
+        assert_eq!(mb(up, none, M::Press, E::Sgr), None);
+        assert_eq!(mb(drag, none, M::PressRelease, E::Sgr), None);
+        assert_eq!(mb(drag, none, M::ButtonMotion, E::Sgr).unwrap(), b"\x1b[<32;5;2M");
+        assert_eq!(mb(MouseEventKind::Moved, none, M::ButtonMotion, E::Sgr), None);
+        assert_eq!(mb(MouseEventKind::Moved, none, M::AnyMotion, E::Sgr).unwrap(), b"\x1b[<35;5;2M");
+        assert_eq!(mb(MouseEventKind::ScrollUp, none, M::Press, E::Sgr).unwrap(), b"\x1b[<64;5;2M");
+        assert_eq!(mb(down, KeyModifiers::CONTROL, M::Press, E::Sgr).unwrap(), b"\x1b[<16;5;2M");
+        // X10 bytes: code, x, y + 32; a release is button 3
+        assert_eq!(mb(down, none, M::PressRelease, E::Default).unwrap(), vec![0x1b, b'[', b'M', 32, 37, 34]);
+        assert_eq!(mb(up, none, M::PressRelease, E::Default).unwrap(), vec![0x1b, b'[', b'M', 35, 37, 34]);
+        let far = mouse_bytes(down, none, 300, 0, M::Press, E::Utf8).unwrap();
+        assert_eq!(&far[3..], "\u{20}\u{14d}\u{21}".as_bytes());
+    }
+
+    #[test]
+    fn a_selection_spans_rows_in_text_order() {
+        let s = Sel { anchor: (7, 3), head: (5, 2) };
+        assert_eq!(s.range(), ((5, 2), (7, 3)));
+        assert_eq!(s.cols(4, 80), None);
+        assert_eq!(s.cols(5, 80), Some((2, 80)));
+        assert_eq!(s.cols(6, 80), Some((0, 80)));
+        assert_eq!(s.cols(7, 80), Some((0, 4)));
+        assert_eq!(s.cols(8, 80), None);
+        assert_eq!(Sel { anchor: (0, 99), head: (0, 99) }.cols(0, 10), Some((10, 10)));
+    }
+
+    #[test]
+    fn the_copied_text_joins_soft_wraps_and_reaches_the_history() {
+        // 4 rows of 10 columns: a wrapped line, then enough to push rows
+        // into the history
+        let mut p = vt100::Parser::new(4, 10, 100);
+        p.process(b"0123456789abcde\r\nsecond  \r\nthird\r\nfourth\r\nfifth\r\nsixth");
+        let hist = history_len(&mut p);
+        assert_eq!(hist, 3, "{:?}", p.screen().contents());
+        // rows: 0 "0123456789" (wrapped) 1 "abcde" 2 "second" 3 "third" ...
+        let all = Sel { anchor: (0, 2), head: (3, 2) };
+        assert_eq!(sel_text(&mut p, &all), "23456789abcde\nsecond\nthi");
+        assert_eq!(p.screen().scrollback(), 0, "the view is put back");
+        // trailing blanks go, inside a row too
+        assert_eq!(sel_text(&mut p, &Sel { anchor: (2, 0), head: (2, 9) }), "second");
+        // the last rows, on the screen
+        assert_eq!(sel_text(&mut p, &Sel { anchor: (5, 1), head: (hist + 3, 9) }), "ifth\nsixth");
     }
 
     #[test]

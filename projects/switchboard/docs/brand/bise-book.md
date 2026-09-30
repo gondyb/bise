@@ -972,7 +972,7 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | /theme | `theme: {mode}.` / `theme: {mode}. /theme auto, light or dark to change it.` / `theme: {mode}, for now: i couldn't save it ({err}).` / `/theme takes auto, light or dark.` |
 | /clear, ctrl+l | `display cleared — scroll up to see the earlier lines again` |
 | interrupt | `… · ctrl+c again to quit` |
-| terminal panel | title ``terminal · ctrl+` hide`` · hint ``terminal: keys go to the shell · ctrl+` hide · wheel/shift+pgup scroll · drag the border to resize`` |
+| terminal panel | title ``terminal · ctrl+` hide`` · hint ``terminal: keys go to the shell · ctrl+` hide · wheel/shift+pgup scroll · drag select · drag the border resize`` · a drag selects (the history's tint), the release copies; cmd+c / ctrl+shift+c copy; a program that takes the mouse gets it, shift+drag selects |
 | help footer | `type to filter · tab switch · esc close` |
 | steer with nothing | `nothing to steer with: type the text after steer` |
 | queued messages | ` › {text}…` (one per line, dim) · hint `queued · sent when this turn ends · ↑ edit` · panel row `· {n} queued` |

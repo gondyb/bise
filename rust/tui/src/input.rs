@@ -254,8 +254,10 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
     if help::mouse(app, m) {
         return;
     }
-    if app.term.mouse(m, term_h) {
-        return;
+    match app.term.mouse(m, term_h) {
+        term::MouseDone::Pass => {}
+        term::MouseDone::Took => return,
+        term::MouseDone::Copy(t) => return copy_text(app, &t),
     }
     if sb::card_mouse(app, m) {
         return;

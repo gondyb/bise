@@ -72,7 +72,8 @@ impl Mode {
                 ("", "terminal: keys go to the shell"),
                 ("ctrl+`", "hide"),
                 ("wheel/shift+pgup", "scroll"),
-                ("drag", "the border to resize"),
+                ("drag", "select"),
+                ("drag the border", "resize"),
             ],
             // BISE-222: the chip in the text says recording / transcribing
             Mode::Recording => &[("any key", "stop"), ("esc", "cancel")],
