@@ -432,6 +432,13 @@ fn keys_and_model(home: &bise_home::Home) -> (Check, Check, Check) {
         .collect();
     let keys_line = keys_check(&found);
     let model = |label: &str, name: &str, from: &str| -> Result<String, (String, String)> {
+        // BISE-266: no built-in model: none until a key is checked
+        if name.trim().is_empty() {
+            return Err((
+                format!("{}: no model yet", label),
+                format!("run `{}` and pick a provider (it checks the key), or set model in config.toml", bise_catalog::CLI),
+            ));
+        }
         let r = setup.catalog.resolve(name);
         let what = format!("{} {} ({})", label, r.name, from);
         if r.known == bise_catalog::Known::NoProvider {

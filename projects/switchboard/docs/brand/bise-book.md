@@ -806,22 +806,35 @@ one in accent.
    lines of a bise feed); `←→` switches, `enter` keeps. Right after the
    welcome, so the next steps already wear the chosen colors. `esc`: the
    thread with the theme the launch had (the terminal's, or the saved one).
-3. **A key, when the model in use can't run** (BISE-266). The step shows
-   when the model's provider has no key (environment, `auth.json`, the old
-   `.env` files), is unknown, or is not usable yet: a key of another
-   provider does not make the first message work. `which model should do
-   the work?` / `i found no key in your environment.` (or `i found a key`)
-   / the found keys (`use OPENAI_API_KEY found`, sub-line `openai. i'll
-   use openai/gpt-5.5.`) / `paste a key` (its sub-line names every
-   provider offered, `anthropic, openai, … and cerebras`; then the
-   catalog's providers, 9 rows at a time). A provider with `hidden = true`
-   in the catalog (the foundry proxy) is never offered. API keys only: no
-   browser sign-in before launch. A pasted key goes in `auth.json` like
-   `login` (asks before replacing one); the agents started from then on
-   use it. Picking a found key of another provider, or saving a key while
-   the model can't run, writes that provider's `model` (the catalog's
-   pick, e.g. `mistral/mistral-medium-latest`) as `model` in
-   `config.toml`, the rest of the file kept; a working model stays.
+3. **A key, when the model in use can't run** (BISE-266). bise has no
+   built-in model: with no `model` (config.toml, `BISE_MODEL`) or a model
+   whose provider has no key, it sends nothing, and this step shows, at
+   the first run and at any later launch (then alone: `keys only`).
+   `which model should do the work?` / `i found no key in your
+   environment.` (or `i found a key`) / the found keys (`use
+   OPENAI_API_KEY found`, sub-line `OpenAI. i'll use gpt-5.5.`) / `set up
+   a provider` (sub-line: every provider offered). Then `which provider?`
+   (`1 · Anthropic  Claude, by Anthropic`, 9 rows at a time; `hidden =
+   true` in the catalog, the foundry proxy, is never offered) → `which
+   model?` (`you can change it any time with /model.`, the catalog's pick
+   first, `recommended`) → `paste your Mistral key` / `get one:
+   <keys page>` (an OSC 8 link) / `no account yet? <sign-up page>` when
+   it differs / the masked field / `saved in ~/.bise/auth.json. only you
+   can read it.` → `checking your key with one tiny call…`: one real
+   request to that model (16 output tokens). Failed: `Mistral says this
+   key is wrong. copy it again from <link>` · `the key works, but the
+   account has no credit.` · `Mistral doesn't know <model>. pick another
+   model.` · `i couldn't reach Mistral: <why>.`; `enter` tries again,
+   `tab` another provider, `esc` back; nothing is saved. Passed: the key
+   in `auth.json` like `login` (asks before replacing one), the model as
+   `model` in config.toml, then `it works: <model> answered.` / `main
+   uses <model>.` and the optional keys not set yet (`web search and
+   other tools: a Mistral key · /setup`, `voice input (ctrl+r): a
+   Mistral, OpenAI, Groq, ElevenLabs or Deepgram key · bise login`). A
+   found key is checked the same way (nothing to save). API keys only: no
+   browser sign-in. The hub gives the new key to every agent before its
+   next message: a REPL spawned with other keys relaunches at its next
+   idle, same session.
 4. **How it works**, the three lines appearing one by one, the numbers dim,
    `me` and `i` (bise) in accent, no final periods:
    `1  you talk to me: main, your team lead. any time, keep typing`

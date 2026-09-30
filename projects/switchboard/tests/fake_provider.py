@@ -34,6 +34,9 @@ the injected <bise_state> block is not one):
   NAME.json (whole), or NAME.<status>.json (an error with that status),
   byte for byte.
 
+A key (Authorization, x-api-key) holding "bad" gets a 401, one holding
+"broke" a 402 (BISE-266: the first run's key check).
+
 Each request is logged to $FAKE_LOG (one JSON line: agent, last user
 message, reply as {content, tool_calls}, images, family, stream, status)
 for the assertions.
@@ -632,6 +635,15 @@ class H(http.server.BaseHTTPRequestHandler):
         family = family_of(self.path)
         stream = (":streamGenerateContent" in self.path) if family == "gemini" else body.get("stream") is True
         sse = stream and (family != "gemini" or "alt=sse" in self.path)
+        # BISE-266: a key holding "bad" is refused (401), one holding
+        # "broke" has no credit (402): the first run's key check
+        auth = " ".join(self.headers.get(h, "") for h in ("authorization", "x-api-key", "x-goog-api-key"))
+        if "bad" in auth or "broke" in auth:
+            bad = "bad" in auth
+            err = {"error": {"type": "authentication_error" if bad else "billing_error",
+                             "message": "invalid api key" if bad else "insufficient credit balance"}}
+            self.send(401 if bad else 402, json.dumps(err).encode())
+            return
         conv = CONV[family](body)
         agent = agent_of(conv)
         idx = last_user(conv)

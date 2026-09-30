@@ -877,7 +877,7 @@ def Laws.deferred_reads_prefixed_ack():
 def Laws.deferred_reads_program_acked_result():
   {==}
 
-def Laws.provider_default_is_foundry():
+def Laws.provider_no_default_model():
   {==}
 
 def Laws.provider_resolves_alias():

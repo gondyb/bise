@@ -201,6 +201,11 @@ struct Shell {
     /// Adopted REPLs a reload relaunches at their next idle (same
     /// session, same port), like a switch to their own binary.
     reload_repls: BTreeSet<String>,
+    /// The keys each live REPL was spawned with (a hash of `spawn_env`'s
+    /// answer, by agent dir): a key saved since (the first run's key
+    /// step, `bise login`) relaunches it at its next idle, same session
+    /// (BISE-266).
+    spawn_keys: BTreeMap<String, u64>,
     /// The small model failed and agent_model answered: role lines use
     /// agent_model for the rest of this hub's life (BISE-126).
     small_broken: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -808,6 +813,29 @@ impl Shell {
         c(a) == c(b)
     }
 
+    /// The keys changed since a live REPL was spawned (a key saved in
+    /// auth.json, BISE-266): it relaunches at its next idle on the same
+    /// session and port, like a reload, and gets them; the writes meant
+    /// for it wait meanwhile. Busy ones wait for the end of their turn.
+    fn keys_changed(&mut self) {
+        let Some(f) = self.opts.spawn_env else { return };
+        let now = hash_keys(&f());
+        let stale: Vec<String> = self
+            .spawn_keys
+            .iter()
+            .filter(|(d, h)| **h != now && self.repls.contains_key(*d) && !self.switching.contains_key(*d))
+            .map(|(d, _)| d.clone())
+            .collect();
+        if stale.is_empty() {
+            return;
+        }
+        for d in stale {
+            log_line(&self.opts.paths, &format!("keys changed: the REPL of {} relaunches at its next idle", d));
+            self.reload_repls.insert(d);
+        }
+        self.switch_idle_repls();
+    }
+
     /// Every idle REPL still on another version's binary, or adopted by
     /// a reload (BISE-131), is asked to reload (a turn boundary: it
     /// checkpoints and exits); the hub then restarts it on its own
@@ -970,7 +998,9 @@ impl Shell {
             .env_remove("SB_CORE_BIN")
             // nor its app root: a harness an agent runs finds its own
             .env_remove("BISE_APP_ROOT");
-        for (k, v) in self.opts.spawn_env.map(|f| f()).unwrap_or_default() {
+        let keys = self.opts.spawn_env.map(|f| f()).unwrap_or_default();
+        self.spawn_keys.insert(dir.clone(), hash_keys(&keys));
+        for (k, v) in keys {
             match v {
                 Some(v) => cmd.env(k, v),
                 None => cmd.env_remove(k),
@@ -1050,6 +1080,7 @@ impl Shell {
                 agent: name,
                 leftover,
             });
+            self.keys_changed();
         } else {
             self.step(Input::ReplLine {
                 agent: name,
@@ -1110,11 +1141,16 @@ impl Shell {
                     write_json(c, &json!({"ev": "notice", "text": text}));
                 }
             }
-            "input" => self.step(Input::ClientInput {
-                client: id,
-                focus: s("focus"),
-                text: s("text"),
-            }),
+            "input" => {
+                // BISE-266: a key saved since a REPL started reaches it
+                // before this message does
+                self.keys_changed();
+                self.step(Input::ClientInput {
+                    client: id,
+                    focus: s("focus"),
+                    text: s("text"),
+                })
+            }
             // older lines of a feed, before a position (the TUI scrolled
             // to the top of what it holds)
             "history" => {
@@ -1597,6 +1633,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         recorders: BTreeMap::new(),
         reload_id: String::new(),
         reload_repls: BTreeSet::new(),
+        spawn_keys: BTreeMap::new(),
         small_broken: Default::default(),
         setup: None,
         archived: BTreeSet::new(),
@@ -1885,6 +1922,14 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
     let _ = std::fs::remove_file(paths.socket());
     let _ = std::fs::remove_file(paths.pid_file());
     Ok(())
+}
+
+/// A hash of a REPL's spawn keys (never the keys themselves, kept).
+fn hash_keys(keys: &[(String, Option<String>)]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    keys.hash(&mut h);
+    h.finish()
 }
 
 #[cfg(test)]

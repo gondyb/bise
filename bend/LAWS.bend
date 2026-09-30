@@ -2176,14 +2176,13 @@ law deferred_reads_program_acked_result:
 # guess (claude* -> foundry, else mistral). Pv.resolve(BISE_MODEL,
 # BEND_MODEL, BISE_ROLE, config.toml, models file, BEND_PROVIDER_URL).
 
-# LAW: today's two setups resolve as before, with no models file: the
-# default and the opus-5.5 alias go to the foundry proxy (Messages API,
-# its key), a bare non-claude name to Mistral (Chat, its key).
-law provider_default_is_foundry:
+# LAW: no model anywhere (no env var, no config, no models file): no
+# call, the error says to pick a provider (BISE-266: no built-in
+# default). The opus-5.5 alias still goes to the foundry proxy (Messages
+# API, its key), a bare non-claude name to Mistral (Chat, its key).
+law provider_no_default_model:
   {Pv.resolve("", "", "", "", "", "", "")
-    == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
-      "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
-      "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", "", "high"}}} : Pv.Resolved}
+    == Pv.RErr{"", Pv.NO_MODEL()} : Pv.Resolved}
 
 law provider_resolves_alias:
   {Pv.resolve("", "", "", "", "model = \"opus-5.5\"", "", "")
@@ -2251,7 +2250,7 @@ law threshold_is_80_percent_of_the_window:
     == (800000, 160000, 102400, 104857, 0) : U32 & U32 & U32 & U32 & U32}
 
 law window_builtin_setups:
-  {(Pv.window("", "", "", "", "", ""),
+  {(Pv.window("", "", "", "", "model = \"opus-5.5\"", ""),
       Pv.window("", "", "", "", "model = \"zai-glm-5-3\"", ""))
     == (1000000, 128000) : U32 & U32}
 
@@ -2621,7 +2620,7 @@ law config_env_empty_no_file:
 # LAW: the template the runtime writes parses - its own keys are
 # what the lookups find.
 law config_template_parses:
-  {Cf.cfg_get(St.CONFIG_TEMPLATE(), "model") == Some{"opus-5.5"}
+  {Cf.cfg_get(St.CONFIG_TEMPLATE(), "model") == None{}
     : Maybe<&2, String>}
 
 law config_template_threshold:
@@ -3375,15 +3374,18 @@ law choice_empty_keeps_the_role_order:
 # (high, today's).
 law effort_order:
   {(Pv.shown_effort(Pv.resolve_chosen("reasoning_effort = \"max\"", "", "",
-        "", "agent", "reasoning_effort = \"low\"
+        "", "agent", "model = \"opus-5.5\"
+reasoning_effort = \"low\"
 agent_reasoning_effort = \"medium\"", "", "")),
       Pv.shown_effort(Pv.resolve_chosen("", "", "", "", "agent",
-        "reasoning_effort = \"low\"
+        "model = \"opus-5.5\"
+reasoning_effort = \"low\"
 agent_reasoning_effort = \"medium\"", "", "")),
       Pv.shown_effort(Pv.resolve_chosen("", "", "", "", "main",
-        "reasoning_effort = \"low\"
+        "model = \"opus-5.5\"
+reasoning_effort = \"low\"
 agent_reasoning_effort = \"medium\"", "", "")),
-      Pv.shown_effort(Pv.resolve_chosen("", "", "", "", "main", "", "", "")))
+      Pv.shown_effort(Pv.resolve_chosen("", "", "", "", "main", "model = \"opus-5.5\"", "", "")))
     == ("max", "medium", "low", "high") : String & String & String & String}
 
 # LAW: an effort the model does not take falls to its default: max is

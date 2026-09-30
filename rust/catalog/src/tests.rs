@@ -39,10 +39,16 @@ fn the_builtin_list_parses_with_no_warning() {
 }
 
 #[test]
-fn the_default_is_todays_setup() {
+fn no_model_by_default_and_opus_alias_still_goes_to_foundry() {
+    // BISE-266: no built-in default model: none until a key is checked
     let s = Setup::from_text(None, &no_env);
+    assert_eq!((s.model.as_str(), s.model_from), ("", "none"));
+    assert_eq!((s.agent_model.as_str(), s.small_model.as_str()), ("", ""));
+    assert_eq!(s.model_for("main").known, Known::NoProvider);
+    // the old config line (Gabriel's, the old template's) keeps its setup
+    let s = Setup::from_text(Some("model = \"opus-5.5\"\n"), &no_env);
     assert_eq!(s.model, "foundry/claude-opus-5-5");
-    assert_eq!(s.model_from, "default");
+    assert_eq!(s.model_from, "config");
     let r = s.model_for("main");
     assert_eq!(r.known, Known::Listed);
     assert_eq!(r.api, "anthropic");
@@ -384,9 +390,10 @@ fn small_model_order() {
     // it follows agent_model's provider, not model's
     let s = setup("model = \"anthropic/claude-opus-4-5\"\nagent_model = \"openai/gpt-5\"\n");
     assert_eq!(s.small_model, "openai/gpt-5-mini");
-    // the default setup (foundry) has one
-    let s = setup("");
+    // foundry has one; no model: no small model either (BISE-266)
+    let s = setup("model = \"opus-5.5\"\n");
     assert_eq!(s.small_model, "foundry/claude-haiku-4-5");
+    assert_eq!(setup("").small_model, "");
     // a provider without one: agent_model
     let s = setup("model = \"groq/openai/gpt-oss-120b\"\n");
     assert_eq!(s.small_model, "groq/openai/gpt-oss-120b");
@@ -627,7 +634,7 @@ fn a_session_choice_wins_over_config_and_env() {
     let e = s.in_use("main", &Choice { model: String::new(), effort: "low".into() });
     assert_eq!((e.model.name.as_str(), e.effort.as_str()), ("openai/gpt-5", "low"));
     // agent_reasoning_effort for the sub-agents only
-    let s = setup("reasoning_effort = \"low\"\nagent_reasoning_effort = \"max\"\n");
+    let s = setup("model = \"opus-5.5\"\nreasoning_effort = \"low\"\nagent_reasoning_effort = \"max\"\n");
     assert_eq!(s.in_use("main", &none).effort, "low");
     assert_eq!(s.in_use("agent", &none).effort, "max");
 }

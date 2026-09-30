@@ -20,7 +20,7 @@ import ../core/config.bend as Cf
 # user's config.toml, rust/catalog, BISE-142), over the entries built
 # in below (so an old binary without the file keeps today's two
 # setups). The file's shape (core/config.bend paths, quotes kept):
-#   default_model = "foundry/claude-opus-5-5"
+#   default_model = "<p>/<id>"   (none built in, BISE-266)
 #   [aliases]            "opus-5.5" = "foundry/claude-opus-5-5"
 #   [providers.<p>]      api, base_url, key_env, needs (+ limits)
 #   [models."<p>/<id>"]  only the keys that differ from its provider
@@ -29,14 +29,14 @@ import ../core/config.bend as Cf
 # The model of a call (the same order as the Rust side, rust/catalog's
 # Setup; an empty env var counts as unset):
 #   main:  BISE_MODEL > BEND_MODEL > model (config.toml) > default_model
+#          > none: no call, the error says to pick a provider (BISE-266)
 #   agent: BISE_AGENT_MODEL > agent_model (config.toml) > the main order
 # (agent: BISE_ROLE=agent, the hub's sub-agent REPLs). A name without
 # '/' is an alias, else the legacy guess: claude* -> foundry/<name>,
 # anything else -> mistral/<name>.
 
 def builtin() -> List<&2, Cf.KV>:
-  [Cf.KV{"default_model", "foundry/claude-opus-5-5"},
-    Cf.KV{"aliases.\"opus-5.5\"", "foundry/claude-opus-5-5"},
+  [Cf.KV{"aliases.\"opus-5.5\"", "foundry/claude-opus-5-5"},
     Cf.KV{"providers.foundry.api", "anthropic"},
     Cf.KV{"providers.foundry.base_url",
       "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1"},
@@ -86,8 +86,7 @@ def model_name(+bise: String, +bend: String, +agent: String, +role: String,
   +is_agent = String.eq(role, "agent")
   first_set([agent_only(is_agent, agent),
     agent_only(is_agent, cfg_str(cfg, "agent_model")), bise, bend,
-    cfg_str(cfg, "model"), cfg_str(reg, "default_model"),
-    "foundry/claude-opus-5-5"])
+    cfg_str(cfg, "model"), cfg_str(reg, "default_model")])
 
 # ---- the full id: provider/model ----
 
@@ -400,6 +399,18 @@ def effort_asked(+choice: List<&2, Cf.KV>, +role: String,
       cfg_str(cfg, "agent_reasoning_effort")),
     cfg_str(cfg, "reasoning_effort")])
 
+# no model anywhere (BISE-266): what the turn says, no call made
+def NO_MODEL() -> String:
+  "no model yet: run bise and pick a provider (it checks your key), or set model in ~/.bise/config.toml"
+
+def resolve_named(empty: Bool, +name: String, +reg: List<&2, Cf.KV>,
+    +url_env: String, +asked: String) -> Resolved:
+  match empty:
+    case True{}:
+      RErr{"", NO_MODEL()}
+    case False{}:
+      resolve_id_effort(full_id(name, reg), reg, url_env, asked)
+
 # THE resolution with the session's choice (its file's text, "" when
 # none), pure
 def resolve_chosen(+choice: String, +bise: String, +bend: String,
@@ -408,8 +419,8 @@ def resolve_chosen(+choice: String, +bise: String, +bend: String,
   +reg = registry(file)
   +ch = Cf.parse_toml(choice)
   +ckv = Cf.parse_toml(cfg)
-  resolve_id_effort(full_id(chosen_name(ch,
-    model_name(bise, bend, agent, role, ckv, reg)), reg), reg, url_env,
+  +name = chosen_name(ch, model_name(bise, bend, agent, role, ckv, reg))
+  resolve_named(String.is_empty(name), name, reg, url_env,
     effort_asked(ch, role, ckv))
 
 # THE resolution, pure: the env values (BISE_MODEL, BEND_MODEL,

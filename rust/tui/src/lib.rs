@@ -81,6 +81,7 @@ pub mod timing;
 mod crash;
 mod help;
 mod keybar;
+mod keycheck;
 mod onboarding;
 mod hints;
 mod ctrlhint;

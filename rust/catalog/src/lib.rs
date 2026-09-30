@@ -393,6 +393,10 @@ impl Catalog {
     /// "provider/id", then the legacy rule for a bare name.
     pub fn canonical(&self, name: &str) -> String {
         let name = name.trim();
+        // no model at all (BISE-266): stays none, never a guess
+        if name.is_empty() {
+            return String::new();
+        }
         if let Some((_, to)) = self.aliases.iter().find(|(a, _)| a == name) {
             return to.clone();
         }
@@ -888,7 +892,10 @@ impl Setup {
         } else if let Some(m) = model_cfg {
             (m, "config")
         } else {
-            (catalog.default_model.clone(), "default")
+            let d = catalog.default_model.clone();
+            // BISE-266: no built-in default: "none" until a key is checked
+            let from = if d.is_empty() { "none" } else { "default" };
+            (d, from)
         };
         let model = catalog.canonical(&model);
         let (agent_model, agent_model_from) = if let Some(m) = envv("BISE_AGENT_MODEL") {
