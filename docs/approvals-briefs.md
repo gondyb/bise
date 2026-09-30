@@ -225,6 +225,16 @@ Do:
    `auth.json`). config.toml `[roles] classify = …` (design §4.2), the
    default chain when unset (TypeSafe key → OpenRouter key → small jobs
    model).
+   Where it plugs in (from roles-menu, d76e61d): the `classify` row of
+   `bise_catalog::roles::ROLES` (`rust/catalog/src/roles.rs`) with
+   `shown: true` and the checker's name and about; `Setup::role_model` /
+   `Setup::role_effort` in `rust/catalog/src/lib.rs` (Jev: no effort); in
+   `rust/tui/src/onboarding/roles.rs`, its own arm in `who()`,
+   `role_hint()`, `fallback_of()` (its `auto` row: the default chain above)
+   and `recommended()`. Today these fall back to voice's words, so each one
+   needs a checker arm. The TypeSafe/OpenRouter-then-chat list with the dim
+   separator and the `off` row is new in the provider step: follow how
+   voice filters its list there (`id == r::VOICE` branches).
 2. Jev routes: OpenRouter (`typesafe/jev-1.13`) and TypeSafe's API.
    Request = state + the 3 `noul` questions of design §4.3; allow at
    `contained` ≥ 0.9, `serves_task` ≥ 0.8, `secrets` ≤ 0.1. Timeout 5 s.
