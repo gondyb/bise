@@ -1,4 +1,4 @@
-//! Ctrl held: the key hints (book §8 "The frame", §16).
+//! Ctrl, option or cmd held: the key hints (book §8 "The frame", §16).
 //!
 //! While you hold ctrl alone for [`DELAY`], the places where a ctrl
 //! shortcut changes something show it: the folds (`▸ 12 more lines` →
@@ -9,8 +9,18 @@
 //! (text it replaces, padded with spaces, or the blank cells after a
 //! fold's mark): no row or column moves.
 //!
+//! Option (⌥) held alone the same way (BISE-277): the panel's numbers
+//! read `⌥1` (⌥0-9 go to that agent), the panel title `⌥↑↓ select` on an
+//! empty composer, the key bar every ⌥ key of the moment. When Option
+//! types characters (a layout, or `macos-option-as-alt = false`), ⌥c
+//! comes as `ç` without alt: the hints go at that key and it types.
+//! Cmd held alone: the panel title `cmd+k find`, the key bar every cmd
+//! key; only once a cmd key reached bise this session (`App::cmd_keys`,
+//! the terminal passes them), else nothing (cmd alone says nothing).
+//!
 //! Only a terminal speaking the kitty keyboard protocol reports ctrl
-//! alone (flag 8, "report all keys as escape codes"); with it, the typed
+//! (option, cmd) alone (flag 8, "report all keys as escape codes":
+//! Ghostty, kitty, WezTerm); with it, the typed
 //! text comes as the associated text (flag 16, parsed by our crossterm
 //! patch, rust/vendor/crossterm). [`FLAGS`] are pushed at start and kept
 //! only when the terminal's `CSI ? u` reply confirms them ([`confirmed`]);
@@ -74,51 +84,99 @@ fn lone(k: &KeyEvent) -> bool {
     matches!(k.code, KeyCode::Modifier(_) | KeyCode::CapsLock | KeyCode::NumLock | KeyCode::ScrollLock)
 }
 
-fn is_ctrl(k: &KeyEvent) -> bool {
-    matches!(k.code, KeyCode::Modifier(ModifierKeyCode::LeftControl | ModifierKeyCode::RightControl))
+/// The modifier whose hints show: ctrl, option (alt), cmd (super).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Held {
+    Ctrl,
+    Alt,
+    Cmd,
 }
 
-/// Ctrl held alone: since when, and whether another key came since.
+impl Held {
+    /// The modifier key `k` is, alone (left or right).
+    fn of(k: &KeyEvent) -> Option<Held> {
+        use ModifierKeyCode::*;
+        match k.code {
+            KeyCode::Modifier(LeftControl | RightControl) => Some(Held::Ctrl),
+            KeyCode::Modifier(LeftAlt | RightAlt) => Some(Held::Alt),
+            KeyCode::Modifier(LeftSuper | RightSuper) => Some(Held::Cmd),
+            _ => None,
+        }
+    }
+
+    fn bit(self) -> KeyModifiers {
+        match self {
+            Held::Ctrl => KeyModifiers::CONTROL,
+            Held::Alt => KeyModifiers::ALT,
+            Held::Cmd => KeyModifiers::SUPER,
+        }
+    }
+}
+
+/// A modifier held alone: which, since when, and whether another key
+/// came since.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Hold {
-    down: Option<Instant>,
+    down: Option<(Held, Instant)>,
     spoiled: bool,
 }
 
 impl Hold {
-    /// Held alone since `at` (tests).
+    /// Ctrl held alone since `at` (tests).
     #[cfg(test)]
     pub(crate) fn since(at: Instant) -> Hold {
-        Hold { down: Some(at), spoiled: false }
+        Hold::of(Held::Ctrl, at)
+    }
+
+    /// `h` held alone since `at` (tests).
+    #[cfg(test)]
+    pub(crate) fn of(h: Held, at: Instant) -> Hold {
+        Hold { down: Some((h, at)), spoiled: false }
     }
 
     /// Every input event, before the handlers.
     pub(crate) fn event(&mut self, ev: &Event, now: Instant) {
+        let held = self.down.map(|(h, _)| h);
         match ev {
-            Event::Key(k) if is_ctrl(k) => match k.kind {
-                KeyEventKind::Press if self.down.is_none() => {
-                    *self = Hold { down: Some(now), spoiled: k.modifiers.intersects(!KeyModifiers::CONTROL) };
+            Event::Key(k) => match (Held::of(k), k.kind) {
+                (Some(h), KeyEventKind::Press) if held.is_none() => {
+                    *self = Hold { down: Some((h, now)), spoiled: k.modifiers.intersects(!h.bit()) };
                 }
-                KeyEventKind::Release => *self = Hold::default(),
-                _ => {}
+                (Some(h), KeyEventKind::Release) if held == Some(h) => *self = Hold::default(),
+                // the held one again (the terminal repeats it, the other
+                // side's key), another one let go: nothing changes
+                (Some(h), _) if held == Some(h) => {}
+                (Some(_), KeyEventKind::Release) => {}
+                // another modifier with it (ctrl+shift, ⌥+cmd): no hints
+                (Some(_), _) => self.spoiled = true,
+                // a key whose modifiers say the held one is up: its
+                // release was lost; or Option typed a character (ç, no
+                // alt): the hints go, the key types
+                _ if held.is_none_or(|h| !k.modifiers.contains(h.bit())) && !lone(k) => *self = Hold::default(),
+                _ if k.kind == KeyEventKind::Release => {}
+                _ => self.spoiled = true,
             },
-            // a key whose modifiers say ctrl is up: its release was lost
-            Event::Key(k) if !k.modifiers.contains(KeyModifiers::CONTROL) && !lone(k) => *self = Hold::default(),
-            Event::Key(k) if k.kind == KeyEventKind::Release => {}
             Event::FocusLost | Event::FocusGained => *self = Hold::default(),
             Event::Resize(..) => {}
             _ => self.spoiled = true,
         }
     }
 
-    /// The hints show at `now`.
+    /// The hints show at `now` (tests).
+    #[cfg(test)]
     pub(crate) fn shown(&self, now: Instant) -> bool {
-        !self.spoiled && self.down.is_some_and(|t| now.saturating_duration_since(t) >= DELAY)
+        self.which(now).is_some()
+    }
+
+    /// Whose hints show at `now`.
+    pub(crate) fn which(&self, now: Instant) -> Option<Held> {
+        let (h, t) = self.down.filter(|_| !self.spoiled)?;
+        (now.saturating_duration_since(t) >= DELAY).then_some(h)
     }
 
     /// How long until they show (the loop wakes then), if they will.
     pub(crate) fn due(&self, now: Instant) -> Option<Duration> {
-        let t = self.down.filter(|_| !self.spoiled)?;
+        let (_, t) = self.down.filter(|_| !self.spoiled)?;
         Some((t + DELAY).saturating_duration_since(now)).filter(|d| !d.is_zero())
     }
 }
@@ -134,11 +192,28 @@ fn quiet(app: &App) -> bool {
 
 /// The hints show in `app` now.
 pub(crate) fn on(app: &App) -> bool {
-    app.ctrl.shown(Instant::now()) && !quiet(app)
+    held(app).is_some()
 }
 
-/// Every ctrl key that does something now, for the key bar.
+/// Whose hints show in `app` now: cmd's only once a cmd key reached us
+/// (the terminal passes them; cmd alone says nothing).
+pub(crate) fn held(app: &App) -> Option<Held> {
+    let h = app.hold.which(Instant::now())?;
+    (!quiet(app) && (h != Held::Cmd || app.cmd_keys)).then_some(h)
+}
+
+/// Every key of the held modifier that does something now, for the key
+/// bar.
 pub(crate) fn pairs(app: &App) -> Vec<Pair> {
+    match held(app) {
+        Some(Held::Alt) => alt_pairs(app),
+        Some(Held::Cmd) => cmd_pairs(app),
+        _ => ctrl_pairs(app),
+    }
+}
+
+/// The ctrl keys (ctrl+f, ctrl+s: cmd+f, cmd+k are cmd's hints).
+fn ctrl_pairs(app: &App) -> Vec<Pair> {
     let mut p: Vec<Pair> = Vec::new();
     p.push(if app.pending && !app.interrupt_requested { ("ctrl+c", "interrupt") } else { ("ctrl+c", "quit") });
     if let Some(w) = fold_word(app) {
@@ -146,13 +221,13 @@ pub(crate) fn pairs(app: &App) -> Vec<Pair> {
     }
     // BISE-237: find in the history
     if !app.events.is_empty() {
-        p.push((if app.cmd_keys { "cmd+f" } else { "ctrl+f" }, "find"));
+        p.push(("ctrl+f", "find"));
     }
     let v = crate::sb::ctrl_view(app);
     if v.cards > 0 {
         // from the thread only ctrl+g (select the inbox); the rest in
         // the card view
-        p.push(("ctrl+g", if v.card_open { "back" } else { "inbox" }));
+        p.push(("ctrl+g", if v.card_open || crate::sb::inbox_selected(app) { "back" } else { "inbox" }));
         if v.card_open {
             if v.cards > 1 {
                 p.push(("ctrl+n/p", "next item"));
@@ -163,9 +238,9 @@ pub(crate) fn pairs(app: &App) -> Vec<Pair> {
     if app.ed.text.is_empty() && v.agents > 1 {
         p.push(("ctrl+k/j", "agents"));
     }
-    // BISE-265: the agent palette (cmd+k once the terminal passes cmd keys)
+    // BISE-265: the agent palette
     if v.agents > 1 {
-        p.push((if app.cmd_keys { "cmd+k" } else { "ctrl+s" }, "find an agent"));
+        p.push(("ctrl+s", "find an agent"));
     }
     if app.voice.enabled {
         p.push(("ctrl+r", "talk"));
@@ -174,6 +249,52 @@ pub(crate) fn pairs(app: &App) -> Vec<Pair> {
     p.push(("ctrl+j", "newline"));
     p.push(("ctrl+`", "terminal"));
     p.push(("ctrl+l", "clear"));
+    p
+}
+
+/// The ⌥ keys (sb/keys.rs `nav_key`, the editor's word keys).
+fn alt_pairs(app: &App) -> Vec<Pair> {
+    let mut p: Vec<Pair> = Vec::new();
+    let v = crate::sb::ctrl_view(app);
+    let empty = app.ed.text.is_empty();
+    if v.agents > 1 {
+        p.push(("⌥0-9", "go to an agent"));
+        if empty {
+            p.push(("⌥↑↓", "select an agent"));
+        }
+    }
+    if !empty {
+        p.push(("⌥←→", "word"));
+        p.push(("⌥⌫", "delete a word"));
+    }
+    p.push(("⌥⏎", "newline"));
+    p
+}
+
+/// The cmd keys that reach bise (the ones Ghostty keeps by default,
+/// cmd+z and cmd+↑↓, only in the help).
+fn cmd_pairs(app: &App) -> Vec<Pair> {
+    let mut p: Vec<Pair> = Vec::new();
+    let v = crate::sb::ctrl_view(app);
+    let empty = app.ed.text.is_empty();
+    if v.agents > 1 {
+        p.push(("cmd+k", "find an agent"));
+    }
+    if !app.events.is_empty() {
+        p.push(("cmd+f", "find"));
+    }
+    if app.ed.anchor.is_some() && app.ed.selected_text().is_some() {
+        p.push(("cmd+c", "copy"));
+        p.push(("cmd+x", "cut"));
+    } else if app.feed_sel.is_some() {
+        p.push(("cmd+c", "copy"));
+    }
+    if !empty {
+        p.push(("cmd+a", "select all"));
+        p.push(("cmd+←→", "line start/end"));
+        p.push(("cmd+⌫", "delete to line start"));
+    }
+    p.push(("cmd+v", "paste"));
     p
 }
 
@@ -240,14 +361,21 @@ fn row(buf: &Buffer, y: u16, x0: u16, x1: u16) -> Vec<String> {
 }
 
 /// The hints over the drawn frame (after the one-time hints, before the
-/// frame passes): the folds, the panel title, the divider.
-/// The key bar draws its own ([`pairs`]).
+/// frame passes): the folds, the panel title, the divider. The key bar
+/// draws its own ([`pairs`]), the panel its numbers (`⌥1`, sb/panel.rs).
 pub(crate) fn draw(app: &App, buf: &mut Buffer) {
-    if !on(app) {
-        return;
+    let empty = app.ed.text.is_empty();
+    match held(app) {
+        Some(Held::Ctrl) => {
+            folds(app, buf);
+            if empty {
+                panel(app, buf, ("ctrl+k/j", "select"));
+            }
+        }
+        Some(Held::Alt) if empty => panel(app, buf, ("⌥↑↓", "select")),
+        Some(Held::Cmd) => panel(app, buf, ("cmd+k", "find")),
+        _ => {}
     }
-    folds(app, buf);
-    panel(app, buf);
 }
 
 /// Each fold in view: `▸ n more lines` becomes `▸ ctrl+o expand`; another
@@ -312,10 +440,11 @@ fn more_lines(s: &str) -> bool {
     matches!((w.next(), w.next(), w.next(), w.next()), (Some(n), Some("more"), Some("line" | "lines"), None) if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
 }
 
-/// The panel title's keys (` · ⌥ + number`) become ` · ctrl+k/j` while
-/// the composer is empty (ctrl+k/j move the selection then).
-fn panel(app: &App, buf: &mut Buffer) {
-    if !app.ed.text.is_empty() || crate::sb::ctrl_view(app).agents < 2 {
+/// The panel title's keys (` · ⌥ + number`) become ` · ctrl+k/j select`
+/// (ctrl+k/j, ⌥↑↓ move the selection while the composer is empty) or
+/// ` · cmd+k find`.
+fn panel(app: &App, buf: &mut Buffer, pair: Pair) {
+    if crate::sb::ctrl_view(app).agents < 2 {
         return;
     }
     let (_, Some(p)) = crate::sb::split(buf.area) else { return };
@@ -332,17 +461,23 @@ fn panel(app: &App, buf: &mut Buffer) {
         }
         let sep = " · ".width();
         let w = keys.width().saturating_sub(sep);
-        if let Some(s) = fit(("ctrl+k/j", "select"), w) {
-            put(buf, p.x + (start + sep) as u16, y, "ctrl+k/j", &s);
+        if let Some(s) = fit(pair, w) {
+            put(buf, p.x + (start + sep) as u16, y, pair.0, &s);
         }
         return;
     }
 }
 
+/// The panel's number `n` while option is held: `⌥1` over its ` 1`
+/// (⌥1 goes to that agent; ASCII mode: the number alone, in the accent).
+pub(crate) fn number(app: &App, n: usize) -> Option<String> {
+    (n <= 9 && held(app) == Some(Held::Alt)).then(|| if theme::ascii_mode() { format!(" {n}") } else { format!("⌥{n}") })
+}
+
 /// The divider's state while the agent works: `ctrl+c interrupt`, in the
 /// state's cells (`state` is where the divider drew it).
 pub(crate) fn divider(app: &App, buf: &mut Buffer, state: Rect) {
-    if !on(app) || !app.pending || app.interrupt_requested || state.width == 0 {
+    if held(app) != Some(Held::Ctrl) || !app.pending || app.interrupt_requested || state.width == 0 {
         return;
     }
     let pair = ("ctrl+c", "interrupt");
@@ -407,6 +542,61 @@ mod tests {
             h.event(&end, ms(10));
             assert_eq!(h, Hold::default());
         }
+    }
+
+    /// BISE-277: option and cmd alone, as ctrl: shown after the delay,
+    /// gone at release, at any other key, or with another modifier.
+    #[test]
+    fn option_and_cmd_held_alone_show_theirs() {
+        let t = Instant::now();
+        let ms = |n| t + Duration::from_millis(n);
+        let m = |c, b, kind| ev(KeyCode::Modifier(c), b, kind);
+        let (alt, sup) = (KeyModifiers::ALT, KeyModifiers::SUPER);
+        for (code, bit, held) in [
+            (ModifierKeyCode::LeftAlt, alt, Held::Alt),
+            (ModifierKeyCode::RightAlt, alt, Held::Alt),
+            (ModifierKeyCode::LeftSuper, sup, Held::Cmd),
+            (ModifierKeyCode::RightSuper, sup, Held::Cmd),
+        ] {
+            let mut h = Hold::default();
+            h.event(&m(code, bit, KeyEventKind::Press), t);
+            assert_eq!((h.which(ms(149)), h.which(ms(150))), (None, Some(held)));
+            h.event(&m(code, bit, KeyEventKind::Repeat), ms(200));
+            assert_eq!(h.which(ms(201)), Some(held));
+            h.event(&m(code, KeyModifiers::NONE, KeyEventKind::Release), ms(300));
+            assert_eq!(h, Hold::default());
+        }
+        // option with cmd, ctrl with option: none
+        let mut h = Hold::default();
+        h.event(&m(ModifierKeyCode::LeftAlt, alt, KeyEventKind::Press), t);
+        h.event(&m(ModifierKeyCode::LeftSuper, alt | sup, KeyEventKind::Press), ms(10));
+        assert!(!h.shown(ms(1000)));
+        let mut h = Hold::default();
+        h.event(&ctrl(KeyEventKind::Press), t);
+        h.event(&m(ModifierKeyCode::LeftAlt, KeyModifiers::CONTROL | alt, KeyEventKind::Press), ms(10));
+        h.event(&m(ModifierKeyCode::LeftAlt, KeyModifiers::CONTROL, KeyEventKind::Release), ms(20));
+        assert!(!h.shown(ms(1000)));
+        // option as alt: ⌥1, ⌥c keep alt: the combo hides them
+        for k in [KeyCode::Char('1'), KeyCode::Char('c'), KeyCode::Down] {
+            let mut h = Hold::default();
+            h.event(&m(ModifierKeyCode::LeftAlt, alt, KeyEventKind::Press), t);
+            h.event(&ev(k, alt, KeyEventKind::Press), ms(500));
+            assert!(!h.shown(ms(501)), "{k:?}");
+        }
+        // option typing characters (the crossterm patch drops alt when
+        // the text is not the key): ç ends the hold at once
+        let mut h = Hold::default();
+        h.event(&m(ModifierKeyCode::LeftAlt, alt, KeyEventKind::Press), t);
+        assert!(h.shown(ms(500)));
+        h.event(&ev(KeyCode::Char('ç'), KeyModifiers::NONE, KeyEventKind::Press), ms(600));
+        assert_eq!(h, Hold::default());
+        h.event(&m(ModifierKeyCode::LeftAlt, KeyModifiers::NONE, KeyEventKind::Release), ms(700));
+        assert_eq!(h, Hold::default());
+        // cmd+tab: the window goes, the release never comes
+        let mut h = Hold::default();
+        h.event(&m(ModifierKeyCode::LeftSuper, sup, KeyEventKind::Press), t);
+        h.event(&Event::FocusLost, ms(400));
+        assert_eq!(h, Hold::default());
     }
 
     #[test]
@@ -522,10 +712,10 @@ mod frame_tests {
     fn the_hints_replace_cells_and_move_nothing() {
         let mut app = busy_app();
         {
-            app.ctrl = Hold::default();
+            app.hold = Hold::default();
             let off = screen(&mut app, 120, 40);
             let g_off = geometry(&app);
-            app.ctrl = Hold::since(Instant::now() - Duration::from_secs(1));
+            app.hold = Hold::since(Instant::now() - Duration::from_secs(1));
             let on = screen(&mut app, 120, 40);
             assert_eq!(geometry(&app), g_off, "the hints moved the layout");
             let (a, b) = (text(&off), text(&on));
@@ -557,7 +747,7 @@ mod frame_tests {
             assert_eq!(on[(x, fold as u16)].fg, theme::accent());
             assert_eq!(on[(x + 8, fold as u16)].fg, theme::dim());
             // released: the frame as before
-            app.ctrl = Hold::default();
+            app.hold = Hold::default();
             assert_eq!(text(&screen(&mut app, 120, 40)), a);
         }
     }
@@ -569,7 +759,7 @@ mod frame_tests {
         let mut app = crate::sb::bench::test_app();
         crate::feed::push_event(&mut app.events, &mut app.cache, crate::Ev::Thinking { ms: 3000, text: "hmm".into(), open: false });
         let a = text(&screen(&mut app, 100, 30));
-        app.ctrl = Hold::since(Instant::now() - Duration::from_secs(1));
+        app.hold = Hold::since(Instant::now() - Duration::from_secs(1));
         let b = text(&screen(&mut app, 100, 30));
         let y = row_of(&a, theme::G_CLOSED);
         let end = a[y].find(theme::G_CLOSED).unwrap() + theme::G_CLOSED.len();
@@ -589,14 +779,14 @@ mod frame_tests {
         let mut h = Hold::default();
         h.event(&Event::Key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL)), Instant::now());
         assert!(!h.shown(Instant::now() + Duration::from_secs(5)) && h.due(Instant::now()).is_none());
-        app.ctrl = h;
+        app.hold = h;
         assert_eq!(text(&screen(&mut app, 120, 40)), before);
     }
 
     /// The loop's path for one event: the hold, then the handlers.
     fn feed(app: &mut App, evs: &[Event]) {
         for ev in evs {
-            app.ctrl.event(ev, Instant::now());
+            app.hold.event(ev, Instant::now());
             if let Some(Event::Key(k)) = for_handlers(ev.clone()) {
                 crate::input::on_key(app, &k);
             }
@@ -642,6 +832,146 @@ mod frame_tests {
         let mut app = crate::sb::bench::test_app();
         feed(&mut app, &evs);
         assert_eq!(app.ed.text, ">Ét\u{e9}\u{e5}Axx");
-        assert_eq!(app.ctrl, Hold::default());
+        assert_eq!(app.hold, Hold::default());
+    }
+
+    /// Option, then cmd, held: the key bar lists their keys (`panel`
+    /// the panel's rows as drawn, the bar the row above the last).
+    fn held_screen(app: &mut App, h: Held) -> (Vec<String>, Vec<String>, String) {
+        app.hold = Hold::default();
+        let a = text(&screen(app, 120, 40));
+        let g = geometry(app);
+        app.hold = Hold::of(h, Instant::now() - Duration::from_secs(1));
+        let b = text(&screen(app, 120, 40));
+        assert_eq!(geometry(app), g, "the hints moved the layout");
+        app.hold = Hold::default();
+        let bar = b[b.len() - 2].clone();
+        (a, b, bar)
+    }
+
+    /// Two cards, ctrl+g: the inbox selected (one card opens its view).
+    fn inbox(app: &mut App) {
+        let state = serde_json::json!({"ev": "state", "agents": [
+            {"name": "main", "main": true, "status": "working"},
+            {"name": "docs", "status": "working", "objective": "write the docs"},
+        ], "cards": [
+            {"id": 7, "kind": "question", "agent": "docs", "text": "v1 or v2?", "age_ms": 0},
+            {"id": 8, "kind": "question", "agent": "docs", "text": "ship?", "age_ms": 0},
+        ]});
+        crate::sb::dispatch(app, &state.to_string());
+        crate::input::on_key(app, &KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL));
+        assert!(crate::sb::inbox_selected(app));
+    }
+
+    fn screen_held(app: &mut App, h: Held) -> Buffer {
+        app.hold = Hold::of(h, Instant::now() - Duration::from_secs(1));
+        let b = screen(app, 120, 40);
+        app.hold = Hold::default();
+        b
+    }
+
+    /// BISE-277: option held in the thread: `⌥0 main`, `⌥1 docs` in the
+    /// panel, the title `⌥↑↓ select`, the key bar the ⌥ keys; nothing
+    /// else changes, nothing moves.
+    #[test]
+    fn option_held_in_the_thread() {
+        let mut app = busy_app();
+        let (a, b, bar) = held_screen(&mut app, Held::Alt);
+        let main = row_of(&a, " 0 ");
+        assert!(b[main].contains("⌥0 "), "{}", b[main]);
+        let docs = row_of(&a, "docs");
+        assert!(b[docs].contains("⌥1 "), "{}", b[docs]);
+        let title = row_of(&a, "agents · ");
+        assert!(b[title].contains("agents · ⌥↑↓ select"), "{}", b[title]);
+        assert!(bar.contains("⌥0-9 go to an agent   ⌥↑↓ select an agent   ⌥⏎ newline"), "{bar}");
+        let mut changed = vec![main, docs, title, a.len() - 2];
+        changed.sort();
+        changed.dedup();
+        let diff: Vec<usize> = (0..a.len()).filter(|&y| a[y] != b[y]).collect();
+        assert_eq!(diff, changed, "\n{}\n---\n{}", a.join("\n"), b.join("\n"));
+        // the key in accent
+        let x = b[main].find("⌥0").map(|i| b[main][..i].chars().count()).unwrap() as u16;
+        let on = screen_held(&mut app, Held::Alt);
+        assert_eq!(on[(x, main as u16)].fg, theme::accent());
+        assert_eq!(on[(x + 1, main as u16)].fg, theme::accent());
+        // a draft: the word keys, the title keeps `⌥ + number`
+        app.ed.insert("ship it");
+        let (a, b, bar) = held_screen(&mut app, Held::Alt);
+        let title = row_of(&a, "agents · ");
+        assert_eq!(b[title], a[title]);
+        assert!(bar.contains("⌥0-9 go to an agent   ⌥←→ word   ⌥⌫ delete a word   ⌥⏎ newline"), "{bar}");
+        assert!(!bar.contains("⌥↑↓"), "{bar}");
+    }
+
+    /// Option held in an agent's view and in the inbox (ctrl+g): the key
+    /// bar the ⌥ keys, which still do their job there.
+    #[test]
+    fn option_held_in_an_agent_and_the_inbox() {
+        let mut app = busy_app();
+        crate::sb::focus(&mut app, "docs");
+        let (_, b, bar) = held_screen(&mut app, Held::Alt);
+        assert!(bar.contains("⌥0-9 go to an agent"), "{bar}");
+        assert!(b.iter().any(|r| r.contains("⌥0 ")), "{}", b.join("\n"));
+        crate::sb::focus(&mut app, "main");
+        inbox(&mut app);
+        let (_, _, bar) = held_screen(&mut app, Held::Alt);
+        assert!(bar.contains("⌥0-9 go to an agent   ⌥↑↓ select an agent"), "{bar}");
+        let (_, _, bar) = held_screen(&mut app, Held::Ctrl);
+        assert!(bar.contains("ctrl+g back"), "{bar}");
+        // ⌥1 from the inbox: to docs
+        crate::input::on_key(&mut app, &KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT));
+        assert_eq!(app.sb.focus_name(), "docs");
+    }
+
+    /// Cmd held: nothing until a cmd key reached us; then the title
+    /// `cmd+k find` and the cmd keys in the bar, in the thread, an
+    /// agent's view and the inbox.
+    #[test]
+    fn cmd_held_once_a_cmd_key_came() {
+        let mut app = busy_app();
+        let (a, b, _) = held_screen(&mut app, Held::Cmd);
+        assert_eq!(a, b, "no cmd key yet: nothing");
+        app.cmd_keys = true;
+        let (a, b, bar) = held_screen(&mut app, Held::Cmd);
+        let title = row_of(&a, "agents · ");
+        assert!(b[title].contains("agents · cmd+k find"), "{}", b[title]);
+        assert!(bar.contains("cmd+k find an agent   cmd+f find   cmd+v paste"), "{bar}");
+        let diff: Vec<usize> = (0..a.len()).filter(|&y| a[y] != b[y]).collect();
+        assert_eq!(diff, vec![title, a.len() - 2]);
+        app.ed.insert("ship it");
+        let (_, _, bar) = held_screen(&mut app, Held::Cmd);
+        assert!(bar.contains("cmd+a select all   cmd+←→ line start/end"), "{bar}");
+        crate::sb::focus(&mut app, "docs");
+        let (_, _, bar) = held_screen(&mut app, Held::Cmd);
+        assert!(bar.contains("cmd+k find an agent"), "{bar}");
+        crate::sb::focus(&mut app, "main");
+        inbox(&mut app);
+        let (_, _, bar) = held_screen(&mut app, Held::Cmd);
+        assert!(bar.contains("cmd+k find an agent"), "{bar}");
+    }
+
+    /// Option held, then a character: the hints go and it types, both
+    /// ways Ghostty sends Option (as alt: ⌥c with alt, the editor's
+    /// option layer; composing: `ç` itself, alt dropped by the crossterm
+    /// patch).
+    #[test]
+    fn an_option_character_hides_the_hints_and_types() {
+        use KeyEventKind::{Press, Release};
+        let (n, a) = (KeyModifiers::NONE, KeyModifiers::ALT);
+        let opt = |kind, m| k(KeyCode::Modifier(ModifierKeyCode::LeftAlt), m, kind);
+        for (typed, m) in [('c', a), ('ç', n)] {
+            let mut app = busy_app();
+            let before = text(&screen(&mut app, 120, 40));
+            feed(&mut app, &[opt(Press, a)]);
+            // held a while: the hints are up
+            app.hold = Hold::of(Held::Alt, Instant::now() - Duration::from_secs(1));
+            assert!(on(&app));
+            assert_ne!(text(&screen(&mut app, 120, 40)), before);
+            feed(&mut app, &[k(KeyCode::Char(typed), m, Press)]);
+            assert!(!on(&app), "{typed}");
+            feed(&mut app, &[k(KeyCode::Char(typed), m, Release), opt(Release, n)]);
+            assert_eq!(app.ed.text, "ç");
+            assert_eq!(app.hold, Hold::default());
+        }
     }
 }

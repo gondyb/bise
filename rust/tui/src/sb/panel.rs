@@ -259,7 +259,12 @@ fn agent_row(app: &App, sb: &Sb, a: &Agent, i: usize, num: Option<usize>, w: usi
     }
     // the name takes all the room left of the marks and the state; it is
     // cut only there (BISE-109: no fixed cap)
-    row(num, g, &a.name, name_style, marks, right, w, bg)
+    let mut l = row(num, g, &a.name, name_style, marks, right, w, bg);
+    // option held (ctrlhint.rs): ` 1 ` reads `⌥1 `, in the accent
+    if let (Some(k), Some(first)) = (num.and_then(|n| crate::ctrlhint::number(app, n)), l.spans.first_mut()) {
+        *first = Span::styled(format!("{k} "), first.style.fg(accent()));
+    }
+    l
 }
 
 /// The panel is at least this wide to show the tags (the designer's

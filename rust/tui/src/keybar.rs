@@ -161,8 +161,11 @@ pub(crate) fn mode(app: &App) -> Mode {
 pub(crate) fn line(app: &App, width: u16) -> Line<'static> {
     let agent = !app.sb.is_main_focus();
     let typing = !app.ed.text.is_empty();
-    // ctrl held (ctrlhint.rs): every ctrl key of the moment, same row
-    if crate::ctrlhint::on(app) && matches!(mode(app), Mode::Default | Mode::Steer | Mode::Selected | Mode::Archived | Mode::Images | Mode::Quote | Mode::Card) {
+    // ctrl, option or cmd held (ctrlhint.rs): every key of that modifier
+    // of the moment, same row
+    if crate::ctrlhint::on(app)
+        && matches!(mode(app), Mode::Default | Mode::Steer | Mode::Selected | Mode::Archived | Mode::Images | Mode::Quote | Mode::Card | Mode::Inbox)
+    {
         return pairs_line(&crate::ctrlhint::pairs(app), usize::from(width)).0;
     }
     if matches!(mode(app), Mode::Card | Mode::Inbox) {

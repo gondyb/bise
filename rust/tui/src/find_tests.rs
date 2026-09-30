@@ -306,22 +306,35 @@ fn cmd_f_opens_the_field_like_ctrl_f() {
     assert!(app.find.is_some(), "ctrl+f stays");
 }
 
-/// The key bar's ctrl hints and the help say ctrl+f until a cmd key
-/// arrives (the terminal passes them), then cmd+f.
+/// The help says ctrl+f until a cmd key arrives (the terminal passes
+/// them), then cmd+f; the ctrl hints always ctrl+f, the cmd hints
+/// (BISE-277) cmd+f once they show.
 #[test]
 fn the_hints_say_cmd_f_once_a_cmd_key_arrived() {
+    use crate::ctrlhint::{Held, Hold};
     let mut app = app_with(vec![Ev::You("ship the signup page".into(), Mark::Sent, false)]);
-    let find_key = |app: &App| crate::ctrlhint::pairs(app).into_iter().find(|p| p.1 == "find").map(|p| p.0);
+    let held_long = |h| Hold::of(h, std::time::Instant::now() - std::time::Duration::from_secs(1));
+    let find_key = |app: &mut App, h| {
+        app.hold = held_long(h);
+        let k = crate::ctrlhint::pairs(app).into_iter().find(|p| p.1 == "find").map(|p| p.0);
+        app.hold = Hold::default();
+        k
+    };
     let help_keys = |app: &App| {
         let r = crate::help::rows(crate::help::Page::Help, "find in the history", app.cmd_keys);
         r.iter().map(|r| r.keys).collect::<Vec<_>>()
     };
-    assert_eq!(find_key(&app), Some("ctrl+f"));
+    assert_eq!(find_key(&mut app, Held::Ctrl), Some("ctrl+f"));
+    // cmd held before any cmd key: no cmd hints at all
+    app.hold = held_long(Held::Cmd);
+    assert!(!crate::ctrlhint::on(&app));
+    app.hold = Hold::default();
     assert_eq!(help_keys(&app), ["ctrl+f"]);
     // any cmd key, e.g. cmd+c that Ghostty passes on without a selection
     press(&mut app, KeyCode::Char('c'), KeyModifiers::SUPER);
     assert!(app.cmd_keys);
-    assert_eq!(find_key(&app), Some("cmd+f"));
+    assert_eq!(find_key(&mut app, Held::Ctrl), Some("ctrl+f"));
+    assert_eq!(find_key(&mut app, Held::Cmd), Some("cmd+f"));
     assert_eq!(help_keys(&app), ["cmd+f|ctrl+f"]);
     let lines = crate::help::page_lines(crate::help::Page::Shortcuts, "find in", &[], 80, true);
     let all: String = lines.iter().flat_map(|l| l.spans.iter().map(|s| s.content.to_string())).collect();

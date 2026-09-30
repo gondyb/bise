@@ -136,7 +136,7 @@ agents share your folder. when one really needs isolation, it makes a worktree a
 - **images.** paste a screenshot with `ctrl+v`, or drag it in.
 - **quotes.** select lines in the history and start typing: they come along as a quote.
 - **a real shell.** ``ctrl+` `` opens a terminal in your repo.
-- **hold ctrl** to see the shortcuts, in Ghostty and kitty.
+- **hold ctrl, option or cmd** to see their shortcuts, in Ghostty and kitty.
 - **message passing, proven.** the hub that carries messages between agents is written in [Bend](https://github.com/HigherOrderCO/Bend), with proofs that no message is lost or sent twice (`bend/PROOF.bend`).
 
 ## from source

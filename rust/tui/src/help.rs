@@ -84,6 +84,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(TALK, "ctrl+c", "interrupt the turn of the agent in view; again (or at idle) quit, the agents keep running").top(),
     r(TALK, "/", "the commands, then their arguments (agents, inbox items, versions…): tab completes, ⏎ runs").top(),
     r(TALK, "$", "a skill: the popup lists them, tab completes; the agent reads the $name mention").top(),
+    r(TALK, "hold ctrl|hold ⌥|hold cmd", "show that key's shortcuts where they act (Ghostty, kitty; cmd once a cmd key reached bise; typing a ⌥ character hides them)").top(),
     r(AGENTS, "⌥ + 0…9", "go to main (0) or to the agent with that number in the panel").top(),
     SWITCH,
     r(AGENTS, "ctrl+k|alt+↓", "select the next agent").top(),

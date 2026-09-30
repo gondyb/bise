@@ -442,13 +442,13 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
         } else {
             Duration::from_millis(80)
         };
-        // ctrl held: wake when its hints are due
-        let wait = app.ctrl.due(std::time::Instant::now()).map_or(wait, |d| wait.min(d));
+        // ctrl, option or cmd held: wake when its hints are due
+        let wait = app.hold.due(std::time::Instant::now()).map_or(wait, |d| wait.min(d));
         if poll(wait)? {
             let ev = read()?;
-            // ctrl alone, releases and repeats (ctrlhint.rs): the hold
+            // ctrl, option, cmd alone, releases and repeats (ctrlhint.rs): the hold
             // sees them all, the handlers only presses
-            app.ctrl.event(&ev, std::time::Instant::now());
+            app.hold.event(&ev, std::time::Instant::now());
             let Some(ev) = crate::ctrlhint::for_handlers(ev) else { continue };
             let term_h = terminal.size().map(|s| s.height).unwrap_or(24);
             let before = Before::of(app);
