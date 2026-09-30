@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>bise for desktop · v0</title>
 <link rel="icon" href="../favicon.svg">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root { --page:#0b0a09; --bg:#141211; --soft:#1a1715; --raised:#221e1c; --hi:#2b2623; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --wind:#4a4540; --line:#2a2623; --acc:#f4a6b0; --err:#e8847a;
           --kw:#d7a6f0; --str:#b9d99a; --com:#857e74; --fn:#8fc4f0; }
@@ -24,6 +24,16 @@
   figcaption p { color:#9a9388; margin-top:3px; }
   h2.part { font-size:15px; margin:10px 0 26px; color:var(--dim); font-weight:400; } h2.part b { color:var(--text); }
 
+  /* ---------- type: a sans for everything you read, mono only where it means something ----------
+     sans (Inter): the thread, bise's answers, captions of calls, the sidebar, settings, notifications.
+     mono (JetBrains Mono): the wordmark, the marks (:* ∿ ✓ ? ψ ✉ $ ƒ), keys, code and outputs, paths, commands, the terminal panel. */
+  .win, .desk { --sans:"Inter",-apple-system,"SF Pro Text",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,Menlo,monospace; font-family:var(--sans); font-size:13.5px; letter-spacing:-.003em; }
+  .win pre, .win code, .win .box, .win .term, .win .g, .win .who, .win .brth, .win .k, .win .kb b, .win .o b, .win .opt b, .win .inl, .win .pill .acc, .win .chip,
+  .win .tick, .win .find .f, .win .pal .in, .win .icon, .desk .icon, .desk .me, .win .ob .big, .win .tb .title b.m, .win .mono, .desk .mono, .win .keyt td:first-child, .win .ob .gloss .faint { font-family:var(--mono); letter-spacing:0; }
+  .win .kb b, .win .o b, .win .opt b, .win .k { font-size:.92em; }
+  body.mono .win, body.mono .desk { font-family:var(--mono); letter-spacing:0; font-size:13px; }
+  .typebtn { font:inherit; background:none; border:1px solid #2a2623; color:#8a8378; border-radius:6px; padding:3px 10px; cursor:pointer; margin-top:16px; }
+  .typebtn b { color:var(--text); font-weight:400; }
   /* ---------- the window ---------- */
   .win { width:1180px; max-width:100%; height:720px; background:var(--bg); color:var(--text); border-radius:12px; overflow:hidden; position:relative;
          box-shadow:0 0 0 1px rgba(255,255,255,.07), 0 30px 80px rgba(0,0,0,.55); display:flex; flex-direction:column; }
@@ -37,12 +47,12 @@
   .side { width:220px; flex:none; background:var(--soft); border-right:1px solid var(--line); padding:12px 8px; display:flex; flex-direction:column; gap:2px; font-size:12.5px; }
   .side .h { color:var(--dim); padding:6px 10px 6px; font-size:11.5px; display:flex; justify-content:space-between; }
   .repo { padding:7px 10px; border-radius:7px; display:grid; grid-template-columns:1fr auto; gap:0 8px; }
-  .repo.on { background:var(--raised); } .repo .nm { font-weight:700; } .repo .st { color:var(--dim); font-size:11.5px; }
+  .repo.on { background:var(--raised); } .repo .nm { font-weight:600; } .repo .st { color:var(--dim); font-size:11.5px; }
   .repo .last { grid-column:1/3; color:var(--dim); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .side .foot { margin-top:auto; color:var(--dim); padding:8px 10px; display:flex; justify-content:space-between; font-size:11.5px; }
   .center { flex:1; min-width:0; display:flex; flex-direction:column; position:relative; }
   .feed { flex:1; min-height:0; overflow:hidden; padding:26px 0 10px; display:flex; flex-direction:column; justify-content:flex-end; }
-  .col { width:74ch; max-width:calc(100% - 64px); margin:0 auto; }
+  .col { width:min(74ch, 640px); max-width:calc(100% - 64px); margin:0 auto; }
   .crumb { color:var(--dim); font-size:12px; padding:10px 32px 0; } .crumb b { color:var(--text); }
   .agents { width:250px; flex:none; border-left:1px solid var(--line); padding:14px 10px; font-size:12.5px; display:flex; flex-direction:column; gap:2px; }
   .agents .h { color:var(--dim); font-size:11.5px; padding:0 8px 8px; display:flex; justify-content:space-between; }
@@ -55,7 +65,7 @@
 
   /* thread */
   .m { margin-top:18px; } .m:first-child { margin-top:0; }
-  .you { border-left:2px solid var(--acc); padding-left:14px; font-weight:700; }
+  .you { border-left:2px solid var(--acc); padding-left:14px; font-weight:600; }
   .you .tick { color:var(--acc); font-weight:400; margin-left:1ch; font-size:12px; }
   .bise { display:grid; grid-template-columns:3ch 1fr; } .bise .who { color:var(--acc); font-weight:700; }
   .tool { display:grid; grid-template-columns:3ch 1fr auto; color:var(--dim); margin-top:8px; padding:3px 8px 3px 0; border-radius:6px; }
@@ -75,12 +85,12 @@
 
   /* the inbox strip and the composer */
   .dock { flex:none; padding:0 0 14px; }
-  .strip { width:74ch; max-width:calc(100% - 64px); margin:0 auto 8px; font-size:12.5px; }
+  .strip { width:min(74ch, 640px); max-width:calc(100% - 64px); margin:0 auto 8px; font-size:12.5px; }
   .strip .lab { display:flex; justify-content:space-between; color:var(--dim); font-size:11.5px; padding:0 10px 4px; }
   .row { display:flex; justify-content:space-between; gap:2ch; padding:5px 10px; border-radius:7px; white-space:nowrap; }
   .row .q { overflow:hidden; text-overflow:ellipsis; } .row .q .acc { margin-right:1ch; } .row.sel { background:var(--raised); box-shadow:inset 2px 0 0 var(--acc); }
   .row .o { display:flex; gap:2ch; color:var(--dim); } .row .o b { color:var(--acc); font-weight:400; } .row .o .e { color:var(--text); } .row .o .x { color:var(--faint); }
-  .comp { width:74ch; max-width:calc(100% - 64px); margin:0 auto; background:var(--raised); border-radius:12px; padding:10px 14px 8px; border:1px solid transparent; }
+  .comp { width:min(74ch, 640px); max-width:calc(100% - 64px); margin:0 auto; background:var(--raised); border-radius:12px; padding:10px 14px 8px; border:1px solid transparent; }
   .comp.focus { border-color:var(--faint); } .comp.dimmed { opacity:.55; }
   .comp .to { color:var(--dim); font-size:12px; display:flex; justify-content:space-between; } .comp .to .acc { font-weight:700; }
   .comp .tx { min-height:1.55em; margin:6px 0 8px; } .cur { display:inline-block; width:.55em; height:1.1em; background:var(--text); vertical-align:-.2em; animation:blink 1s steps(1) infinite; }
@@ -165,11 +175,12 @@
   <ul>
     <li><b>one thread per repo.</b> the sidebar lists your repos like chats. picking one opens its thread with main. there's no "new chat": a repo is the thread, forever (compaction keeps it short).</li>
     <li><b>you still talk to main.</b> the agents live in the panel on the right. click one to talk to it directly, esc to come back.</li>
-    <li><b>mono stays the voice.</b> JetBrains Mono everywhere, the same palette, lowercase, :* for bise, ∿ working, ✓ done, ? needs you, ψ its own worktree, ✉ a message between agents, $ and ƒ for calls.</li>
+    <li><b>a sans to read, mono where it means something.</b> Inter for everything you read (the thread, the sidebar, settings). JetBrains Mono for the wordmark, the marks (:* ∿ ✓ ? ψ ✉ $ ƒ), keys, code, paths and commands. the same palette, lowercase. the button below switches to mono everywhere, to compare.</li>
     <li><b>quiet by default.</b> calls fold into one row, messages between agents stay small, what needs you waits in the inbox above the composer. ⌘E opens everything.</li>
     <li><b>keys feel like a mac app.</b> ⌘ where macOS expects it (find, palette, settings, agents), the rest unchanged. hold ⌘ to see them where they act.</li>
     <li><b>closing the window doesn't stop the work.</b> agents keep running; bise stays in the menu bar and tells you when something needs you.</li>
   </ul>
+  <button class="typebtn" id="typebtn">type: <b>sans + mono</b> · switch to mono everywhere</button>
   <nav class="toc" id="toc"></nav>
 </div>
 <div id="screens"></div>
@@ -341,6 +352,7 @@ SCREENS.forEach((s, i) => {
   root.insertAdjacentHTML("beforeend", `<figure id="${s.id}"><figcaption><b><span class="n">${String(i + 1).padStart(2, "0")}</span>${s.title}</b><p>${s.text}</p></figcaption>${s.html}</figure>`);
   toc.insertAdjacentHTML("beforeend", `<a href="#${s.id}">${String(i + 1).padStart(2, "0")} · ${s.title}</a>`);
 });
+document.getElementById("typebtn").onclick = (e) => { const m = document.body.classList.toggle("mono"); e.currentTarget.innerHTML = m ? "type: <b>mono everywhere</b> · switch to sans + mono" : "type: <b>sans + mono</b> · switch to mono everywhere"; };
 // ∿ breathes like the terminal's panel (gust W1, 1 cell): · ~ ∿ ≈ ∿ ~, 110 ms a frame
 const B = "·~∿≈∿~"; let f = 0;
 document.querySelectorAll(".brth").forEach((e, i) => e.dataset.o = i % 6);
@@ -382,7 +394,7 @@ setInterval(() => { f++; document.querySelectorAll(".brth").forEach((e) => e.tex
     <li>⌘I for the inbox and ⌘E for "open everything": ok? or keep ctrl+g / ctrl+o so the terminal and the desktop share their keys?</li>
     <li>notifications: only the inbox and ✓ done (my pick), or also each message you get from main?</li>
     <li>closing the window: agents keep running in the menu bar (my pick), or ⌘W asks?</li>
-    <li>mono everywhere (my pick: it's the brand), or a sans for the chrome (sidebar, settings) and mono for the thread?</li>
+    <li>Inter for reading, mono for the marks, keys and code (now the default)? other sans to try: Geist, IBM Plex Sans (a cousin of the mono), or the system font (SF Pro).</li>
     <li>the stack: the terminal app's Rust core behind a Tauri window would keep one engine for both. that's for main to weigh; the screens don't depend on it.</li>
   </ol>
 </div>
