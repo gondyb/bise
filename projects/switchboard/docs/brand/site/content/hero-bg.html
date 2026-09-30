@@ -19,7 +19,7 @@
   .v.nomask pre { -webkit-mask-image:radial-gradient(ellipse 46% 30% at 50% 46%, transparent 20%, #000 80%); mask-image:radial-gradient(ellipse 46% 30% at 50% 46%, transparent 20%, #000 80%); }
   .v .lay { position:absolute; inset:0; pointer-events:none; overflow:hidden; font-size:14px; line-height:1.4; }
   .v .bub { position:absolute; left:0; top:0; color:var(--dim); font-size:13px; white-space:nowrap; opacity:0; transition:opacity .6s ease; z-index:2; text-shadow:0 0 6px var(--bg), 0 0 2px var(--bg); }
-  .v .bub.on { opacity:1; } .v .bub .acc { color:var(--acc); }
+  .v .bub.on { opacity:1; } .v .lay .bub span { position:static; transform:none; transition:none; } .v .bub .acc { color:var(--acc); margin-right:1ch; }
   .v .bub.pop { animation:bin .7s ease-out; } @keyframes bin { from { opacity:0; translate:0 5px; } to { opacity:1; translate:0 0; } }
   .v .lay span { position:absolute; left:0; top:0; white-space:pre; color:var(--dim); transition:transform .5s cubic-bezier(.25,.8,.3,1), opacity .45s; will-change:transform; }
   .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .f { color:var(--faint); } .v pre .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } .v pre .d { color:var(--dim); } .v pre .t { color:var(--text); }
@@ -355,7 +355,7 @@ const V = {
           // the arc comes apart from the kiss back to where it started: each dot puffs out a little grey seed
           pts.forEach(([x, y], i) => { if (Math.random() < .8) s.puff.push({ x, y, vx: rnd(-.1, .45), vy: rnd(-.45, .05), life: rnd(22, 48), wait: Math.floor((pts.length - 1 - i) * .3) }); });
           s.flash = 10; PULSES.push({ x: kx, t0: t });
-          if (BUBBLE) s.q.push(`shipped · ${b.name} <span class="acc">✓</span>`);
+          if (BUBBLE) s.q.push(`<span class="acc">✓</span>shipped · ${b.name}`);
           return false;
         }
         dots(g, pts);
