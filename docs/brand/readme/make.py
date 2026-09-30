@@ -385,7 +385,7 @@ def f_tools(c):
         yy = m.y; m.y += 27
         m.row(t0, f'{m.dim(g)} {E(d)}', y=yy)
         m.swap(t0, t1, m.fx + int((len(d) + 3) * CW), yy, f'<tspan class="g" fill="{c["acc"]}">∿</tspan>', f'<tspan fill="{c["acc"]}">✓</tspan>')
-    m.row(6.6, f'{m.dim("every MCP server, always on. the agent calls them from code, so its context stays small.")}', size=13, gap=6)
+    m.row(6.6, f'{m.dim("every MCP server, always on. called from code: the context stays small.")}', size=13, gap=6)
     return m.svg("an agent calls Sentry, Linear and GitHub tools from code, one row each.")
 
 def f_card(c):
@@ -438,13 +438,13 @@ def f_resume(c):
 
 def f_worktree(c):
     m = Mini(c, 10, 230, "ψ = its own worktree")
-    m.row(0.5, f'{m.acc(":*")} migrate-db needs its own copy of the repo. the others keep the shared folder.')
+    m.row(0.5, f'{m.acc(":*")} migrate-db gets its own worktree. the others share the folder.')
     yy = m.y; m.y += 27
     m.swap(1.6, 5.0, m.fx, yy, f'<tspan class="g" fill="{c["acc"]}">∿</tspan> migrate-db <tspan fill="{c["dim"]}">ψ db-v2 · running the migration on a copy</tspan>',
            f'<tspan fill="{c["acc"]}">✓</tspan> migrate-db <tspan fill="{c["dim"]}">merged into main. worktree cleaned up.</tspan>')
     m.row(1.9, f'<tspan class="g" fill="{c["acc"]}">∿</tspan> dark-mode {m.dim("· shared folder")}')
     m.row(2.2, f'<tspan class="g" fill="{c["acc"]}">∿</tspan> emoji-csv {m.dim("· shared folder")}')
-    m.row(5.6, f'{m.dim("worktrees only when they help. no hundred branches to merge.")}', size=13, gap=6)
+    m.row(5.6, f'{m.dim("no branch to name, no folder to delete. nothing to think about.")}', size=13, gap=6)
     return m.svg("one agent gets its own worktree for a risky job; the others share the folder; the worktree is cleaned up after.")
 
 def f_quiet(c):

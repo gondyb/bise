@@ -120,9 +120,9 @@ when an agent stops half-way, main starts it again from where it was. quit bise,
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/resume-dark.svg"><img src="docs/brand/readme/feat/resume-light.svg" width="680" alt="an agent stops on a provider error and main restarts it."></picture>
 
-### worktrees, only when they help
+### worktrees? don't think about it
 
-agents share your folder. when one really needs isolation, it makes a worktree and cleans it up after.
+agents share your folder. when one needs its own copy, it makes a worktree, works there and cleans it up after. no branch to name, no folder to delete.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/worktree-dark.svg"><img src="docs/brand/readme/feat/worktree-light.svg" width="680" alt="one agent gets its own worktree; the others share the folder."></picture>
 
