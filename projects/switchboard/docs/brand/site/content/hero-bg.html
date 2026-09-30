@@ -304,9 +304,9 @@ const V = {
       // never the same feature twice at once (out, or back and waiting for the kiss)
       const pool = NAMES.filter(n => !s.b.some(o => o.key === n)), key = pool[Math.floor(rnd(0, pool.length))];
       const lb = LABEL(key), [name, done] = Array.isArray(lb) ? lb : [lb, lb], ko = g.ko;
-      if (s.b.length < 3 && s.kx - s.last > 14 && kx > 2 && Math.random() < .02) {
+      if (s.b.length < 4 && s.kx - s.last > 11 && kx > 2 && Math.random() < .035) {
         const free = (L) => { const a = kx + 1 + L, z = a + 2 + name.length; return z < g.cols - 4 && s.b.every(o => { const oa = o.xs + o.L, oz = oa + 2 + o.name.length; return z + 3 < oa || oz + 3 < a; }); };
-        let L = 0; for (let k = 0; k < 12 && !L; k++) { const c = Math.floor(rnd(36, 80)); if (free(c)) L = c; }
+        let L = 0; for (let k = 0; k < 12 && !L; k++) { const c = Math.floor(rnd(30, 64)); if (free(c)) L = c; }
         if (L) {
           // an arc that crosses the text's columns stays under it (name included)
           const under = kx + 1 + L + name.length + 3 >= ko.x0 && kx + 1 <= ko.x1;
