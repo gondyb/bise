@@ -127,6 +127,63 @@ also works as a series: one "you can stop doing X" post a day at 10:00.
 
 ---
 
+## 2b. series · "the models grew up"
+
+one belief per post: what people still do with agents, then what bise does, then a 10-20 s clip. tag each "the models grew up · 1/8". slot: 10:00, one a day, or the monday post.
+rule: quote the belief in "", never mock the people who do it (we all did).
+
+**1 · compaction**
+> "start a fresh session before the context rots."
+>
+> you shouldn't have to watch a context window. in bise the thread compacts itself when it gets long, and keeps going. one thread per repo. no /compact, no /clear, no /new.
+>
+> [clip: a long thread, the compaction line passes, main still knows what we did this morning]
+
+**2 · grilling**
+> "interview the model for ages before it writes a line."
+>
+> or ramble, let it start, and change your mind while it works. your correction lands in the running agent: ✓ got it, ✓✓ read it. and when a real question comes up, it waits in your inbox.
+>
+> [clip: a correction mid-run, ✓ then ✓✓]
+
+**3 · micromanaging**
+> "agents need a babysitter."
+>
+> the models grew up. what they need is someone who knows the whole repo. in bise that's main: it answers their questions, and only the real decisions reach you.
+>
+> [clip: the divider exchange (main#9362) under ctrl+o]
+
+**4 · memory**
+> "you need a memory system."
+>
+> main's thread never ends, and agents can search every past thread, even the parts from before a compaction. ask about last week's work in your own words.
+>
+> [clip: capsule 2's search]
+
+**5 · config**
+> "multi-agent means roles, a graph and a yaml file."
+>
+> no yaml was harmed. you talk. main starts an agent when a job needs one.
+
+**6 · tokens**
+> "multi-agent burns tokens like crazy."
+>
+> only when agents sit in committees reviewing each other. in bise an agent starts when a job needs one. that's the whole rule.
+
+**7 · conflicts**
+> "parallel agents = merge conflicts."
+>
+> they message each other before they touch the same file. when one needs its own copy, it gets a worktree, removed once its work lands.
+>
+> [clip: ✉ "are you touching tokens.css?"]
+
+**8 · waiting**
+> "don't interrupt the agent mid-turn."
+>
+> interrupt all you want. the composer is never locked.
+
+to verify before posting #1: say nothing about model quality after compaction beyond what you've seen yourself.
+
 ## 3. cadence
 
 4-5 posts a day works if they're different kinds of posts. five promo links a day, and people mute you. each day: one capsule or clip (the main post), and small posts around it.
