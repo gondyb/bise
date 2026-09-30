@@ -17,7 +17,7 @@
   .v pre { position:absolute; inset:0; margin:0; color:var(--wind); font:inherit; font-size:14px; line-height:1.4; white-space:pre; overflow:hidden; pointer-events:none; user-select:none;
     -webkit-mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); }
   .v.nomask pre { -webkit-mask-image:radial-gradient(ellipse 46% 30% at 50% 46%, transparent 20%, #000 80%); mask-image:radial-gradient(ellipse 46% 30% at 50% 46%, transparent 20%, #000 80%); }
-  .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .f { color:var(--faint); } .v pre .d { color:var(--dim); } .v pre .t { color:var(--text); }
+  .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .f { color:var(--faint); } .v pre .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } .v pre .d { color:var(--dim); } .v pre .t { color:var(--text); }
   .hero { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; pointer-events:none; }
   .big { font-size:clamp(64px, 11vw, 150px); font-weight:700; letter-spacing:-.045em; line-height:1; }
   .big span { color:var(--acc); }
@@ -73,7 +73,7 @@ function Grid(cols, rows, ko) {
       let out = "";
       for (let y = 0; y < rows; y++) {
         let cur = "", buf = "";
-        const flush = () => { if (buf) out += cur ? `<span class="${cur}">${buf}</span>` : buf; buf = ""; };
+        const flush = () => { if (buf) out += cur === "s" ? [...buf].map(c => `<span class="s">${c}</span>`).join("") : cur ? `<span class="${cur}">${buf}</span>` : buf; buf = ""; };
         for (let x = 0; x < cols; x++) { if (k[y][x] !== cur) { flush(); cur = k[y][x]; } const ch = c[y][x]; buf += ch === "<" ? "&lt;" : ch === "&" ? "&amp;" : ch; }
         flush(); out += "\n";
       }
@@ -133,7 +133,7 @@ const THREADS = {
   wake(g, Y, t, k) {
     for (let x = 0; x < g.cols; x++) {
       const d = k - x;
-      if (d <= 0) { if ((x - Math.floor(k)) % 2 === 0) g.put(x, Y, "·", "f"); continue; }
+      if (d <= 0) { g.put(x, Y, "·", "s"); continue; }
       const amp = Math.exp(-d / 45), v = Math.abs(Math.sin(d * .38 - t * 3.2) * amp + Math.sin(d * .13 + t * .9) * amp * .4);
       g.put(x, Y, v > .75 ? "≈" : v > .42 ? "∼" : v > .16 ? "~" : "─", d < 6 ? "a" : d < 18 ? "a2" : v > .42 ? "d" : "");
     }
