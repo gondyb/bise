@@ -174,6 +174,11 @@
   .org .team::before { content:""; position:absolute; top:0; left:calc((100% - 36px) / 8); right:calc((100% - 36px) / 8); height:1px; background:var(--faint); }
   .org .agent { position:relative; display:flex; flex-direction:column; gap:4px; border:1px solid var(--faint); background:var(--soft); border-radius:10px; padding:10px 12px; color:var(--dim); font-size:13px; opacity:0; transform:translateY(8px); transition:opacity .5s ease, transform .6s cubic-bezier(.2,.7,.2,1), border-color .4s; }
   .org .agent::before { content:""; position:absolute; top:-17px; left:50%; width:1px; height:16px; background:var(--faint); }
+  /* the wires draw themselves: main → the bus (grows down), the bus (opens from the middle), then each agent drops in with its own wire */
+  .org .wire.w2 { transform:scaleY(0); transform-origin:top; transition:transform .28s ease-out; }
+  .org.go .wire.w2 { transform:none; transition-delay:.95s; }
+  .org .team::before { transform:scaleX(0); transition:transform .45s cubic-bezier(.3,.7,.3,1); }
+  .org.go .team::before { transform:none; transition-delay:1.2s; }
   .org .agent b { color:var(--text); font-weight:600; }
   .org .agent .st { display:inline-block; width:1ch; color:var(--dim); animation:pl 1.6s ease-in-out infinite; }
   .org .agent.done .st { color:var(--acc); animation:kiss .5s ease both; }
@@ -183,7 +188,7 @@
     .org .team { grid-template-columns:1fr 1fr; padding-top:0; } .org .team::before, .org .agent::before { display:none; }
     .org .msg { font-size:13px; }
   }
-  @media (prefers-reduced-motion: reduce) { .org .agent { opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: reduce) { .org .agent, .org .wire.w2, .org .team::before { opacity:1; transform:none; transition:none; } }
   /* phones: the demo's composer wraps */
   @media (max-width: 640px) {
     .fgrid > * { min-width:0; }
