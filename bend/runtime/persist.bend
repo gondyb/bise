@@ -171,35 +171,37 @@ def load.greeted(+sess: T.Session) -> IO(Load):
     +n : Nat <- IO.pure(Nat, List.length(&2, T.Msg, history_of(sess)))
     IO.pure(Load, load.greeted.put(Nat.is_eq(n, 0n), sess, n))
 
-# a restored session keeps what it saved, but the compaction threshold
-# of this start (BISE-135: /model may have changed the model, so its
-# window, since the save: the fresh config's threshold follows it)
-def cfg_threshold(+c: T.Cfg) -> Nat:
-  match c:
-    case T.Cfg{+threshold, _, _, _, _}:
-      threshold
+# a restored session keeps what it saved, its system prompt included
+# (the start of its prompt cache), but takes the config of this start
+# for the rest: the compaction threshold (BISE-135: /model may have
+# changed the model, so its window, since the save) and the tools
+# (BISE-268: the checkpoint cuts each tool's text to its first line, so
+# a restored session sent other tool texts than the fresh one; tools
+# come first in the prompt cache, so every restart, a version switch or
+# a crash, missed the whole cache, and the model read the cut texts)
+def with_cfg.merge(+saved: T.Cfg, +c: T.Cfg) -> T.Cfg:
+  match saved:
+    case T.Cfg{_, _, _, +sys, _}:
+      match c:
+        case T.Cfg{+th, +sel, +nulls, _, +tools}:
+          T.Cfg{th, sel, nulls, sys, tools}
 
-def with_threshold.cfg(+c: T.Cfg, +n: Nat) -> T.Cfg:
-  match c:
-    case T.Cfg{_, +sel, +nulls, +sys, +tools}:
-      T.Cfg{n, sel, nulls, sys, tools}
-
-def with_threshold(+s: T.Session, +n: Nat) -> T.Session:
+def with_cfg(+s: T.Session, +c: T.Cfg) -> T.Session:
   match s:
-    case T.Sess{+cfg, +h, +i, +a, +t, +p, +q, +no}:
-      T.Sess{with_threshold.cfg(cfg, n), h, i, a, t, p, q, no}
+    case T.Sess{+saved, +h, +i, +a, +t, +p, +q, +no}:
+      T.Sess{with_cfg.merge(saved, c), h, i, a, t, p, q, no}
 
-def fresh_threshold(+fresh: T.Session) -> Nat:
+def fresh_cfg(+fresh: T.Session) -> T.Cfg:
   match fresh:
     case T.Sess{+cfg, _, _, _, _, _, _, _}:
-      cfg_threshold(cfg)
+      cfg
 
 def load.chk(c: Maybe<&2, K.Checkpoint>, +fresh: T.Session) -> IO(Load):
   match c:
     case None{}:
       IO.pure(Load, LD{fresh, None{}})
     case Some{+chk}:
-      load.greeted(with_threshold(K.restore(chk), fresh_threshold(fresh)))
+      load.greeted(with_cfg(K.restore(chk), fresh_cfg(fresh)))
 
 def load.content(m: Maybe<&2, String>, +fresh: T.Session) -> IO(Load):
   match m:

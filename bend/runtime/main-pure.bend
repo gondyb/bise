@@ -115,11 +115,38 @@ def script_of(+rt: Rt) -> List<&2, M.Reply>:
 # offered, so the summary cannot be malformed by one. Live mode sends the
 # bare request to the real provider; scripted mode pops the script like
 # every other model call, so the compaction scenarios stay deterministic.
+# BISE-268: the first attempt shares the agent calls' prefix (tools
+# included, Rem.build_request.compact); the retry goes bare
+def compact_first.pd(pd: T.Pending) -> Bool:
+  match pd:
+    case T.PComp{_, +attempt, _, _, _}:
+      Nat.is_le(attempt, 1n)
+    case T.PAgent{_}:
+      False{}
+    case T.PTools{_}:
+      False{}
+
+def compact_first(p: Maybe<&2, T.Pending>) -> Bool:
+  match p:
+    case Some{+pd}:
+      compact_first.pd(pd)
+    case None{}:
+      False{}
+
+def compact_request(first: Bool, +cfg: T.Cfg, +input: List<&2, T.Msg>)
+    -> String:
+  match first:
+    case True{}:
+      Rem.build_request.compact(cfg, input)
+    case False{}:
+      Rem.build_request.bare(cfg, input)
+
 def trans.model.compact.live(+sess: T.Session, +rt: Rt,
     +rest: List<&2, T.Act>, +action: U32, +input: List<&2, T.Msg>) -> Trans:
   match sess:
-    case T.Sess{+cfg, _, _, _, _, _, _, _}:
-      Tr{EModel{action, Rem.build_request.bare(cfg, input), rest}, rt, JIdle{}}
+    case T.Sess{+cfg, _, _, _, _, +pending, _, _}:
+      Tr{EModel{action, compact_request(compact_first(pending), cfg, input),
+        rest}, rt, JIdle{}}
 
 def trans.model.compact.script(+rt: Rt, +rest: List<&2, T.Act>,
     +action: U32) -> Trans:

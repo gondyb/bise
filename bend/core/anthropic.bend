@@ -64,9 +64,12 @@ def user_blocks(+content: String) -> List<&2, J.Json>:
 # ids FIFO pairs each result with its call exactly as the OpenAI
 # adapter does.
 
+# AC: the ephemeral context (the wire's `MSG context`, runtime/remote.bend
+# with_context): sent as a user message, never a cache breakpoint
 type AMsg is Data:
   AU{blocks: List<&2, J.Json>}
   AA{blocks: List<&2, J.Json>}
+  AC{blocks: List<&2, J.Json>}
 
 def user_head_of(acc: List<&2, AMsg>) -> Bool:
   match acc:
@@ -77,6 +80,8 @@ def user_head_of(acc: List<&2, AMsg>) -> Bool:
         case AU{_}:
           True{}
         case AA{_}:
+          False{}
+        case AC{_}:
           False{}
 
 def call_blocks(calls: List<&2, W.WCall>) -> List<&2, J.Json>:
@@ -167,6 +172,9 @@ def amsg_json(m: AMsg) -> J.Json:
     case AU{+blocks}:
       J.obj(Con{J.kv("role", J.str("user")),
         Con{J.kv("content", J.arr(blocks)), Nil{}}})
+    case AC{+blocks}:
+      J.obj(Con{J.kv("role", J.str("user")),
+        Con{J.kv("content", J.arr(blocks)), Nil{}}})
     case AA{+blocks}:
       match blocks:
         case Nil{}:
@@ -236,10 +244,12 @@ def amsg_cache(m: AMsg) -> AMsg:
       AU{cache_last(blocks)}
     case AA{+blocks}:
       AA{cache_last(blocks)}
+    case AC{+blocks}:
+      AC{blocks}
 
 # the walk's accumulator is newest first: its two heads are the two
 # newest messages
-def cache_recent(acc: List<&2, AMsg>) -> List<&2, AMsg>:
+def cache_recent.two(acc: List<&2, AMsg>) -> List<&2, AMsg>:
   match acc:
     case Nil{}:
       Nil{}
@@ -250,9 +260,44 @@ def cache_recent(acc: List<&2, AMsg>) -> List<&2, AMsg>:
         case Con{+a2, +r2}:
           Con{amsg_cache(a), Con{amsg_cache(a2), r2}}
 
+def cache_recent.ctx(is_ctx: Bool, +a: AMsg, +rest: List<&2, AMsg>)
+    -> List<&2, AMsg>:
+  match is_ctx:
+    case True{}:
+      Con{a, cache_recent.two(rest)}
+    case False{}:
+      cache_recent.two(Con{a, rest})
+
+def amsg_is_ctx(m: AMsg) -> Bool:
+  match m:
+    case AC{_}:
+      True{}
+    case AU{_}:
+      False{}
+    case AA{_}:
+      False{}
+
+# BISE-268: the ephemeral context (newest, dropped at the next call) is
+# skipped: a breakpoint there would write a cache entry no call ever
+# reads; the two breakpoints go on the two newest HISTORY messages (the
+# newest writes, the one before reads the previous call's write)
+def cache_recent(acc: List<&2, AMsg>) -> List<&2, AMsg>:
+  match acc:
+    case Nil{}:
+      Nil{}
+    case Con{+a, +rest}:
+      cache_recent.ctx(amsg_is_ctx(a), a, rest)
+
 # the walk accumulates reversed; the final list is chronological
 def amsgs_json(acc: List<&2, AMsg>) -> List<&2, J.Json>:
   amsgs_json.go(List.reverse(&2, AMsg, cache_recent(acc)))
+
+def amsg_user(is_ctx: Bool, +blocks: List<&2, J.Json>) -> AMsg:
+  match is_ctx:
+    case True{}:
+      AC{blocks}
+    case False{}:
+      AU{blocks}
 
 type AWalk is Data:
   AN{todo: List<&2, W.WMsg>, ids: List<&2, String>, acc: List<&2, AMsg>}
@@ -273,8 +318,8 @@ def awalk_go(fuel: Nat, w: AWalk) -> List<&2, J.Json>:
           match m:
             case W.WMsg{+role, +content, +calls}:
               awalk_go(k, AR{String.eq(role, "system"),
-                String.eq(role, "user"), String.eq(role, "assistant"),
-                m, rest, ids, acc})
+                Bool.or(String.eq(role, "user"), String.eq(role, "context")),
+                String.eq(role, "assistant"), m, rest, ids, acc})
         case AR{+is_sys, +is_user, +is_asst, +m, +todo, +ids, +acc}:
           match is_sys:
             case True{}:
@@ -283,9 +328,10 @@ def awalk_go(fuel: Nat, w: AWalk) -> List<&2, J.Json>:
               match is_user:
                 case True{}:
                   match m:
-                    case W.WMsg{_, +content, _}:
+                    case W.WMsg{+role, +content, _}:
                       awalk_go(k, AN{todo, ids,
-                        Con{AU{user_blocks(content)}, acc}})
+                        Con{amsg_user(String.eq(role, "context"),
+                          user_blocks(content)), acc}})
                 case False{}:
                   match is_asst:
                     case True{}:
@@ -320,8 +366,10 @@ def awalk_go(fuel: Nat, w: AWalk) -> List<&2, J.Json>:
                                 Con{AU{List.append(&2, J.Json, blocks,
                                   Con{tool_result_json("call_0", content2),
                                     Nil{}})}, arest}})
-                    # user_head_of guarantees AU; AA here is unreachable
+                    # user_head_of guarantees AU; AA, AC here are unreachable
                     case AA{_}:
+                      awalk_go(k, AN{todo, ids, acc})
+                    case AC{_}:
                       awalk_go(k, AN{todo, ids, acc})
                 case Nil{}:
                   awalk_go(k, AN{todo, ids, acc})

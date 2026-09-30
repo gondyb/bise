@@ -53,6 +53,12 @@ pub struct Caps {
     pub efforts: String,
     /// the effort it gets when nobody picks one; "" = high
     pub effort: String,
+    /// the prompt cache's routing key (BISE-268), sent with the session's
+    /// key: the body field that carries it (OpenAI `prompt_cache_key`);
+    /// "" = none
+    pub cache_key: String,
+    /// the same key as an HTTP header (xAI `x-grok-conv-id`); "" = none
+    pub cache_header: String,
 }
 
 /// The thinking modes of the Anthropic family.
@@ -98,6 +104,8 @@ pub const DEFAULT_CAPS: Caps = Caps {
     betas: String::new(),
     efforts: String::new(),
     effort: String::new(),
+    cache_key: String::new(),
+    cache_header: String::new(),
 };
 
 /// Caps as written in a table: a missing field comes from the level below
@@ -113,6 +121,8 @@ pub struct PartialCaps {
     pub betas: Option<String>,
     pub efforts: Option<String>,
     pub effort: Option<String>,
+    pub cache_key: Option<String>,
+    pub cache_header: Option<String>,
     /// prices (BISE-150), in [`Price`]'s unit
     pub input_price: Option<u64>,
     pub output_price: Option<u64>,
@@ -161,6 +171,8 @@ impl PartialCaps {
             betas: self.betas.clone().unwrap_or_else(|| base.betas.clone()),
             efforts: self.efforts.clone().unwrap_or_else(|| base.efforts.clone()),
             effort: self.effort.clone().unwrap_or_else(|| base.effort.clone()),
+            cache_key: self.cache_key.clone().unwrap_or_else(|| base.cache_key.clone()),
+            cache_header: self.cache_header.clone().unwrap_or_else(|| base.cache_header.clone()),
         }
     }
     fn price_over(&self, base: &Price) -> Price {
@@ -181,6 +193,8 @@ impl PartialCaps {
         self.betas = o.betas.clone().or(self.betas.take());
         self.efforts = o.efforts.clone().or(self.efforts.take());
         self.effort = o.effort.clone().or(self.effort.take());
+        self.cache_key = o.cache_key.clone().or(self.cache_key.take());
+        self.cache_header = o.cache_header.clone().or(self.cache_header.take());
         self.input_price = o.input_price.or(self.input_price);
         self.output_price = o.output_price.or(self.output_price);
         self.cache_read_price = o.cache_read_price.or(self.cache_read_price);
@@ -751,6 +765,17 @@ fn cap_field(caps: &mut PartialCaps, k: &str, v: &toml::Value, where_: &str, war
             Some(e) if is_effort_word(e) => caps.effort = Some(e.to_string()),
             _ => warn(bad("an effort word (low, medium, high, ...)")),
         },
+        // BISE-268: a field or header name (letters, digits, - and _)
+        "cache_key" | "cache_header" => match v.as_str().map(str::trim) {
+            Some(n) if n.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') => {
+                if k == "cache_key" {
+                    caps.cache_key = Some(n.to_string())
+                } else {
+                    caps.cache_header = Some(n.to_string())
+                }
+            }
+            _ => warn(bad("a field or header name (letters, digits, - and _)")),
+        },
         _ => warn(format!("{}: unknown key {}", where_, k)),
     }
 }
@@ -1034,6 +1059,8 @@ impl Setup {
                 ("betas", a.betas.clone(), b.betas.clone()),
                 ("efforts", a.efforts.clone(), b.efforts.clone()),
                 ("effort", a.effort.clone(), b.effort.clone()),
+                ("cache_key", a.cache_key.clone(), b.cache_key.clone()),
+                ("cache_header", a.cache_header.clone(), b.cache_header.clone()),
             ] {
                 if x != y {
                     o.push_str(&format!("{} = {}\n", k, q(&x)));
@@ -1167,6 +1194,12 @@ fn caps_lines(o: &mut String, c: &Caps) {
     }
     if !c.effort.is_empty() {
         o.push_str(&format!("effort = {}\n", q(&c.effort)));
+    }
+    if !c.cache_key.is_empty() {
+        o.push_str(&format!("cache_key = {}\n", q(&c.cache_key)));
+    }
+    if !c.cache_header.is_empty() {
+        o.push_str(&format!("cache_header = {}\n", q(&c.cache_header)));
     }
 }
 

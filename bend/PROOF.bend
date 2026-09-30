@@ -4135,3 +4135,53 @@ def Laws.pair_calls_keeps_paired(ms, p):
 
 def Laws.pair_wire_answers_the_cut():
   {==}
+
+# ---- the prompt cache (BISE-268): by computation ----
+
+def Laws.image_keep_stepped():
+  {==}
+
+def Laws.image_keep_stepped_same_drop():
+  {==}
+
+def Laws.image_keep_next_step():
+  {==}
+
+def Laws.prefix_stable_oai():
+  {==}
+
+def Laws.prefix_stable_anth():
+  {==}
+
+def Laws.anth_context_not_a_breakpoint():
+  {==}
+
+def Laws.oai_context_is_user():
+  {==}
+
+def Laws.session_key_stable():
+  {==}
+
+def Laws.session_key_is_a_hash():
+  {==}
+
+def Laws.cache_key_field():
+  {==}
+
+def Laws.cache_key_field_none():
+  {==}
+
+def Laws.cache_key_header():
+  {==}
+
+def Laws.cache_key_header_none():
+  {==}
+
+def Laws.compact_first_attempt_shares():
+  {==}
+
+def Laws.compact_retry_is_bare():
+  {==}
+
+def Laws.context_skips_compaction_with_tools():
+  {==}

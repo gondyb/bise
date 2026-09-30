@@ -65,7 +65,7 @@ fn a_listed_model_takes_its_own_fields_then_its_providers() {
     let c = Catalog::builtin();
     let r = c.resolve("anthropic/claude-sonnet-4-5");
     assert_eq!(r.known, Known::Listed);
-    assert_eq!(r.caps, Caps { context: 200_000, max_output: 64_000, vision: true, reasoning: true, tools: true, thinking: "budget".into(), betas: ANTH_BETAS.into(), efforts: String::new(), effort: String::new() });
+    assert_eq!(r.caps, Caps { context: 200_000, max_output: 64_000, vision: true, reasoning: true, tools: true, thinking: "budget".into(), betas: ANTH_BETAS.into(), efforts: String::new(), effort: String::new(), cache_key: String::new(), cache_header: String::new() });
     let r = c.resolve("openai/gpt-4.1");
     assert_eq!((r.caps.context, r.caps.reasoning, r.caps.vision), (1_047_576, false, true));
 }
@@ -707,4 +707,29 @@ fn every_offered_provider_has_a_keys_page_and_a_model() {
         assert!(!p.model.is_empty() && !p.hint.is_empty(), "{}: model and hint", p.id);
     }
     assert!(c.provider("foundry").unwrap().hidden);
+}
+
+#[test]
+fn cache_routing_keys_reach_the_handoff() {
+    // BISE-268: built in, only where the provider's docs name one
+    let c = Catalog::builtin();
+    let key = |id: &str| {
+        let r = c.resolve(id);
+        (r.caps.cache_key, r.caps.cache_header)
+    };
+    assert_eq!(key("openai/gpt-5.5"), ("prompt_cache_key".into(), String::new()));
+    assert_eq!(key("mistral/mistral-medium-latest"), ("prompt_cache_key".into(), String::new()));
+    assert_eq!(key("xai/grok-4.7"), (String::new(), "x-grok-conv-id".into()));
+    assert_eq!(key("foundry/claude-opus-5-5"), (String::new(), String::new()));
+    // config: a model overrides its provider, a bad name is warned
+    let cfg = "[models.\"openai/x\"]\ncache_key = \"user\"\n[models.\"openai/y\"]\ncache_header = \"a b\"\n";
+    let s = Setup::from_text(Some(cfg), &|_| None);
+    assert_eq!(s.catalog.resolve("openai/x").caps.cache_key, "user");
+    assert_eq!(s.catalog.resolve("openai/y").caps.cache_header, "", "a bad name sets nothing");
+    assert!(s.catalog.warnings.iter().any(|w| w.contains("cache_header: a field or header name")), "{:?}", s.catalog.warnings);
+    let h = s.handoff_toml();
+    let oai = &h[h.find("[providers.openai]").unwrap()..];
+    let oai = &oai[..oai[1..].find("\n[").unwrap()];
+    assert!(oai.contains("cache_key = \"prompt_cache_key\""), "{oai}");
+    assert!(h.contains("cache_key = \"user\"\n"), "{h}");
 }

@@ -108,6 +108,22 @@ def build_request.bare(cfg: T.Cfg, input: List<&2, T.Msg>) -> String:
         String.append(ser_msgs(input),
           String.append("\n", "END\n")))
 
+# BISE-268: the first attempt of a compaction shares the agent calls'
+# prefix (the prompt cache): the same tools, system and history, the
+# compaction prompt last. Without the tools, the provider's cache (tools
+# come first) missed and the whole history was written again, at 1.25x
+# on Anthropic. The COMPACT line (ignored by the wire parser) keeps the
+# ephemeral context out (with_context). The prompt asks for no tool
+# call; a reply that makes one anyway is malformed, and the retry
+# (attempt 2) goes bare, where no tool can be called at all.
+def build_request.compact(cfg: T.Cfg, input: List<&2, T.Msg>) -> String:
+  match cfg:
+    case T.Cfg{_, _, _, _, +tools}:
+      String.append("MODEL default\nCOMPACT\n",
+        String.append(ser_tools(tools),
+          String.append("\n", String.append(ser_msgs(input),
+            String.append("\n", "END\n")))))
+
 
 # ---- BEND_CONTEXT_FILE: an ephemeral context message ----
 # A switchboard hub rewrites a small context file (the task board for
@@ -118,7 +134,8 @@ def build_request.bare(cfg: T.Cfg, input: List<&2, T.Msg>) -> String:
 # requests (no TOOL lines) are left untouched: a summary must not
 # freeze a snapshot of the board.
 def is_agent_request(+request: String) -> Bool:
-  String.contains(request, "\nTOOL ")
+  Bool.and(String.contains(request, "\nTOOL "),
+    Bool.not(String.starts_with(request, "MODEL default\nCOMPACT\n")))
 
 # is `s` the "END" line that closes the request (its very last line)?
 # starts_with first: at almost every position the first char differs,
@@ -157,7 +174,7 @@ def with_context.put(inject: Bool, +ctx: String, +request: String)
       request
     case True{}:
       with_context.swap(request,
-        String.append("MSG user : ",
+        String.append("MSG context : ",
           String.append(W.escape_nl(ctx), "
 END
 ")),

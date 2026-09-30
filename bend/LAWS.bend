@@ -15,6 +15,7 @@ import ./core/wire.bend as W
 import ./core/oai-chat.bend as Oai
 import ./core/anthropic.bend as Anth
 import ./core/image.bend as Im
+import ./core/text.bend as Tx
 import ./core/anth-stream.bend as As
 import ./core/oai-stream.bend as Os
 import ./core/obs.bend as O
@@ -3019,16 +3020,23 @@ law context_empty_keeps_request:
   {Rm.with_context("", "MODEL default\nTOOL bash : run\n\nMSG user : hi\n\nEND\n")
     == "MODEL default\nTOOL bash : run\n\nMSG user : hi\n\nEND\n" : String}
 
-# LAW: a context becomes the LAST user message of an agent request,
-# newlines escaped like every wire message.
+# LAW: a context becomes the LAST message of an agent request (role
+# `context`: a user message on the wire's families, never a cache
+# breakpoint, BISE-268), newlines escaped like every wire message.
 law context_is_last_user_message:
   {Rm.with_context("board\nline 2", "MODEL default\nTOOL bash : run\n\nMSG user : hi\n\nEND\n")
-    == "MODEL default\nTOOL bash : run\n\nMSG user : hi\n\nMSG user : board\\nline 2\nEND\n" : String}
+    == "MODEL default\nTOOL bash : run\n\nMSG user : hi\n\nMSG context : board\\nline 2\nEND\n" : String}
 
 # LAW: a compaction request (no tool catalog) never carries the context.
 law context_skips_compaction:
   {Rm.with_context("board", "MODEL default\nMSG user : hi\n\nEND\n")
     == "MODEL default\nMSG user : hi\n\nEND\n" : String}
+
+# LAW: nor does the first attempt of a compaction, which carries the
+# tools to share the agent calls' prefix (BISE-268): its COMPACT line.
+law context_skips_compaction_with_tools:
+  {Rm.with_context("board", "MODEL default\nCOMPACT\nTOOL bash : run\n\nMSG user : hi\n\nEND\n")
+    == "MODEL default\nCOMPACT\nTOOL bash : run\n\nMSG user : hi\n\nEND\n" : String}
 
 # LAW: the extra prompt ends the system prompt; an empty one adds nothing.
 law extra_prompt_appends:
@@ -3492,3 +3500,128 @@ law pair_wire_answers_the_cut:
       W.WMsg{"assistant", "", [W.WCall{"call_7", "bash", "{}"}]},
       W.WMsg{"tool", "tool bash failed: no result: bise restarted while this ran", Nil{}},
       W.WMsg{"user", "next", Nil{}}], None{}} : W.WReq}
+
+# ---- the prompt cache (BISE-268): the start of every request stays
+# byte-identical from one call of a session to the next ----
+
+# LAW: past the cap, the oldest images go in steps of half the cap: the
+# dropped set stays the same while cap/2 new images come (a slide of
+# one would change the history at the oldest image on every call).
+law image_keep_stepped:
+  {Im.img_keep([True{}, True{}, True{}, True{}, True{}], 4n)
+    == [False{}, False{}, True{}, True{}, True{}] : List<&2, Bool>}
+
+law image_keep_stepped_same_drop:
+  {Im.img_keep([True{}, True{}, True{}, True{}, True{}, True{}], 4n)
+    == [False{}, False{}, True{}, True{}, True{}, True{}] : List<&2, Bool>}
+
+# LAW: the next step drops the next half at once (7 images, cap 4: 3 kept).
+law image_keep_next_step:
+  {Im.img_keep([True{}, True{}, True{}, True{}, True{}, True{}, True{}], 4n)
+    == [False{}, False{}, False{}, False{}, True{}, True{}, True{}]
+    : List<&2, Bool>}
+
+# three calls of one session, then its compaction: a tool round trip,
+# then a new user turn; each agent call ends with its own context
+def pc_req1() -> String:
+  "MODEL default\nTOOL bash : Runs.\n\nMSG system : S\nMSG user : go\n\nEND\n"
+
+def pc_req2() -> String:
+  "MODEL default\nTOOL bash : Runs.\n\nMSG system : S\nMSG user : go\nMSG assistant : x\n  CALL 7 bash : ls\nMSG tool : out1\n\nEND\n"
+
+def pc_req3() -> String:
+  "MODEL default\nTOOL bash : Runs.\n\nMSG system : S\nMSG user : go\nMSG assistant : x\n  CALL 7 bash : ls\nMSG tool : out1\nMSG assistant : done\nMSG user : next\n\nEND\n"
+
+def pc_compact() -> String:
+  "MODEL default\nCOMPACT\nTOOL bash : Runs.\n\nMSG system : S\nMSG user : go\nMSG assistant : x\n  CALL 7 bash : ls\nMSG tool : out1\nMSG assistant : done\nMSG user : next\nMSG user : Summarize.\n\nEND\n"
+
+# a request's body as the provider gets it, without the moving cache
+# marks (Anthropic's breakpoints follow the tail by design: they are not
+# part of the cached prefix)
+def pc_body(+st: Api.Style, +ctx: String, +req: String) -> String:
+  Tx.drop_all(Api.api_body_for(st, "m", Api.facts0(),
+      W.pair_wire(W.parse_wire(Rm.with_context(ctx, req)))),
+    ",\"cache_control\":{\"type\":\"ephemeral\"}")
+
+# `b1` up to its context message (found by `needle`; not found: False,
+# the law is never vacuous) starts `b2`
+def pc_stable.at(at: Maybe<&2, Nat>, +b1: String, +b2: String) -> Bool:
+  match at:
+    case None{}:
+      False{}
+    case Some{+n}:
+      Bool.and(Nat.is_gt(n, 100n), String.starts_with(b2, String.take(b1, n)))
+
+def pc_stable(+b1: String, +b2: String, +needle: String) -> Bool:
+  pc_stable.at(Tx.find(b1, needle, 0n), b1, b2)
+
+def pc_session(+st: Api.Style, +needle: String) -> Bool:
+  Bool.and(pc_stable(pc_body(st, "board v1", pc_req1()),
+      pc_body(st, "board v2", pc_req2()), needle),
+    Bool.and(pc_stable(pc_body(st, "board v2", pc_req2()),
+        pc_body(st, "board v3", pc_req3()), needle),
+      pc_stable(pc_body(st, "board v3", pc_req3()),
+        pc_body(st, "board v4", pc_compact()), needle)))
+
+# LAW: prefix stability, OpenAI Chat family: each request of a session
+# starts with the whole previous one up to its context message (the
+# only thing dropped), across a tool round trip, a new user turn and
+# the compaction call.
+law prefix_stable_oai:
+  {pc_session(Api.OpenAI{}, "{\"role\":\"user\",\"content\":\"board v") == True{} : Bool}
+
+# LAW: the same for the Anthropic family, its cache marks aside.
+law prefix_stable_anth:
+  {pc_session(Api.Anthropic{}, "{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"board v") == True{} : Bool}
+
+# LAW: the context never carries a cache breakpoint; the two newest
+# history messages do (the newest writes, the one before reads).
+law anth_context_not_a_breakpoint:
+  {String.contains(Anth.api_body_anth_for("m", 0n, "", True{}, "high",
+        W.parse_wire(Rm.with_context("board", pc_req2()))),
+      "\"input\":{\"arg\":\"ls\"},\"cache_control\":{\"type\":\"ephemeral\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"call_7\",\"content\":\"out1\",\"cache_control\":{\"type\":\"ephemeral\"}}]},{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"board\"}]}],")
+    == True{} : Bool}
+
+# LAW: on the OpenAI Chat family the context is a plain user message.
+law oai_context_is_user:
+  {String.contains(Oai.api_body_with("m", Oai.Opts{False{}, 0n, "max_tokens", ""},
+      W.parse_wire(Rm.with_context("board", pc_req1()))),
+    "{\"role\":\"user\",\"content\":\"board\"}]") == True{} : Bool}
+
+# LAW: the routing key of a session is the same on every call (its
+# first two messages do not change) and says nothing but a hash.
+law session_key_stable:
+  {Api.session_key(W.parse_wire(pc_req3()))
+    == Api.session_key(W.parse_wire(pc_req1())) : String}
+
+law session_key_is_a_hash:
+  {Api.session_key(W.parse_wire(pc_req1())) == "bise-2869019270" : String}
+
+# LAW: the key rides as the body field the catalog names, first; no
+# field named, the body is unchanged.
+law cache_key_field:
+  {Api.with_cache_key("prompt_cache_key", "bise-1", "{\"model\":\"m\"}")
+    == "{\"prompt_cache_key\":\"bise-1\",\"model\":\"m\"}" : String}
+
+law cache_key_field_none:
+  {Api.with_cache_key("", "bise-1", "{\"model\":\"m\"}")
+    == "{\"model\":\"m\"}" : String}
+
+# LAW: or as the header the catalog names, after the family's; none
+# named, the headers are unchanged.
+law cache_key_header:
+  {Api.with_cache_header("x-grok-conv-id", "bise-1", [Api.Hdr{"a", "b"}])
+    == [Api.Hdr{"a", "b"}, Api.Hdr{"x-grok-conv-id", "bise-1"}]
+    : List<&2, Api.Hdr>}
+
+law cache_key_header_none:
+  {Api.with_cache_header("", "bise-1", [Api.Hdr{"a", "b"}])
+    == [Api.Hdr{"a", "b"}] : List<&2, Api.Hdr>}
+
+# LAW: a compaction's first attempt shares the prefix (tools included,
+# the COMPACT line first); its retry goes bare (no tool to call).
+law compact_first_attempt_shares:
+  {Rt.compact_first(Some{T.PComp{1, 1n, 1, "", True{}}}) == True{} : Bool}
+
+law compact_retry_is_bare:
+  {Rt.compact_first(Some{T.PComp{1, 2n, 2, "", True{}}}) == False{} : Bool}

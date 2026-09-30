@@ -47,7 +47,8 @@ def builtin() -> List<&2, Cf.KV>:
     Cf.KV{"providers.mistral.base_url", "https://api.mistral.ai/v1"},
     Cf.KV{"providers.mistral.key_env", "MISTRAL_API_KEY"},
     Cf.KV{"providers.mistral.reasoning", "true"},
-    Cf.KV{"providers.mistral.context", "128000"}]
+    Cf.KV{"providers.mistral.context", "128000"},
+    Cf.KV{"providers.mistral.cache_key", "prompt_cache_key"}]
 
 # the models file's entries win over the built-in ones (first match)
 def registry(+file: String) -> List<&2, Cf.KV>:
@@ -154,6 +155,27 @@ def model_key(+reg: List<&2, Cf.KV>, +prov: String, +id: String,
   Maybe.or(&2, String,
     Cf.cfg_find(reg, String.concat(["models.\"", id, "\".", k])),
     Cf.cfg_find(reg, String.concat(["providers.", prov, ".", k])))
+
+# the prompt cache's routing key of a model (BISE-268, core/api.bend
+# session_key): (the body field, the header) the catalog names for it,
+# "" = none; `id` is the full "provider/model"
+type CNames is Data:
+  CN{field: String, header: String}
+
+def cache_names(+file: String, +prov: String, +id: String) -> CNames:
+  +reg = registry(file)
+  CN{Cf.cfg_or(model_key(reg, prov, id, "cache_key"), ""),
+    Cf.cfg_or(model_key(reg, prov, id, "cache_header"), "")}
+
+def cache_field(+c: CNames) -> String:
+  match c:
+    case CN{+f, _}:
+      f
+
+def cache_header(+c: CNames) -> String:
+  match c:
+    case CN{_, +h}:
+      h
 
 # ---- the resolution ----
 

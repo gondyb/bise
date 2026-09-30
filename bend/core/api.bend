@@ -165,6 +165,77 @@ def facts_effort(f: MFacts) -> String:
 def facts0() -> MFacts:
   MFacts{True{}, 0n, "max_tokens", "", "", "high"}
 
+# ---- the prompt cache's routing key (BISE-268) ----
+# Some providers route a request to the machine that holds its cached
+# prefix when it carries a key: a body field (OpenAI, Mistral, Cerebras
+# `prompt_cache_key`) or a header (xAI `x-grok-conv-id`, OpenRouter
+# `x-session-id`, Fireworks `x-session-affinity`); the catalog names it
+# per provider (cache_key / cache_header). The key is the session's:
+# "bise-" + an FNV-1a hash of the request's first two messages (the
+# system prompt and the first one after it), so every call of a session
+# carries the same key, a new session (or a compacted one, whose prefix
+# is new anyway) another; no secret or path goes out.
+
+def cache_hash.go(fuel: Nat, +s: String, +h: U32) -> U32:
+  match fuel:
+    case 0n:
+      h
+    case 1n+k:
+      match s:
+        case SNil{}:
+          h
+        case SCon{Chr{+c}, t}:
+          cache_hash.go(k, t, U32.mul(U32.xor(h, c), 16777619))
+
+def cache_hash(+s: String) -> U32:
+  cache_hash.go(Nat.add(String.length(s), 1n), s, 2166136261)
+
+def cache_seed(msgs: List<&2, W.WMsg>) -> String:
+  match msgs:
+    case Nil{}:
+      ""
+    case Con{+m, +rest}:
+      match m:
+        case W.WMsg{_, +c1, _}:
+          match rest:
+            case Nil{}:
+              c1
+            case Con{+m2, _}:
+              match m2:
+                case W.WMsg{_, +c2, _}:
+                  String.append(c1, String.append("\n", c2))
+
+def session_key(+req: W.WReq) -> String:
+  match req:
+    case W.WReq{_, +msgs, _}:
+      String.append("bise-", U32.show(cache_hash(cache_seed(msgs))))
+
+# the body with the key's field first ("" field: unchanged)
+def with_cache_key.pick(none: Bool, +field: String, +key: String,
+    +body: String) -> String:
+  match none:
+    case True{}:
+      body
+    case False{}:
+      String.concat(["{", J.stringify(J.str(field)), ":",
+        J.stringify(J.str(key)), ",", String.drop(body, 1n)])
+
+def with_cache_key(+field: String, +key: String, +body: String) -> String:
+  with_cache_key.pick(String.is_empty(field), field, key, body)
+
+# the headers with the key's header last ("" name: unchanged)
+def with_cache_header.pick(none: Bool, +name: String, +key: String,
+    +hs: List<&2, Hdr>) -> List<&2, Hdr>:
+  match none:
+    case True{}:
+      hs
+    case False{}:
+      List.append(&2, Hdr, hs, [Hdr{name, key}])
+
+def with_cache_header(+name: String, +key: String, +hs: List<&2, Hdr>)
+    -> List<&2, Hdr>:
+  with_cache_header.pick(String.is_empty(name), name, key, hs)
+
 # ---- the body and the reply ----
 
 def api_body_for(st: Style, +model: String, +facts: MFacts, +req: W.WReq)

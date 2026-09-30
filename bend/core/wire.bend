@@ -196,6 +196,19 @@ type WReq is Data:
 
 # ---- wire request parsing (the mirror of remote.bend's serialization) ----
 
+# the role a family sends: the ephemeral context (`MSG context`, runtime/
+# remote.bend with_context) is a user message on every API; a family
+# that caches by breakpoints (Anthropic) knows it by its wire role
+def role_out.pick(is_ctx: Bool, +role: String) -> String:
+  match is_ctx:
+    case True{}:
+      "user"
+    case False{}:
+      role
+
+def role_out(+role: String) -> String:
+  role_out.pick(String.eq(role, "context"), role)
+
 def parse_tool.cut(sp: Maybe<&2, Nat>, +rest: String) -> WTool:
   match sp:
     case Some{+p}:

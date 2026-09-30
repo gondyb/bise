@@ -27,6 +27,10 @@
 #   none,low,medium,high,max; the others none,low,medium,high);
 #   effort = the one it gets when nobody picks (unset: high). /reasoning
 #   and config.toml's reasoning_effort / agent_reasoning_effort pick.
+# Prompt cache (BISE-268): cache_key = the body field and cache_header =
+#   the HTTP header that carry the session's routing key ("bise-<hash>",
+#   core/api.bend session_key) to a provider that routes by it; unset:
+#   none sent. Only where the provider's docs name one.
 # Prices (BISE-150), USD per million tokens: input_price, output_price,
 #   cache_read_price, cache_write_price (the two cache ones default to
 #   input_price). Unset: the cost is not shown. The list prices, short
@@ -155,6 +159,8 @@ model = "gpt-5.5"
 api = "openai-chat"
 base_url = "https://api.openai.com/v1"
 key_env = "OPENAI_API_KEY"
+# the prompt cache's routing key (BISE-268; platform.openai.com/docs/guides/prompt-caching)
+cache_key = "prompt_cache_key"
 stt = "openai"
 small_model = "gpt-5-mini"
 context = 400000
@@ -236,6 +242,8 @@ model = "mistral-medium-latest"
 api = "openai-chat"
 base_url = "https://api.mistral.ai/v1"
 key_env = "MISTRAL_API_KEY"
+# docs.mistral.ai/studio/conversations/advanced/prompt-caching (BISE-268)
+cache_key = "prompt_cache_key"
 stt = "mistral"
 small_model = "mistral-small-latest"
 context = 128000
@@ -280,6 +288,9 @@ model = "anthropic/claude-sonnet-5.5"
 api = "openai-chat"
 base_url = "https://openrouter.ai/api/v1"
 key_env = "OPENROUTER_API_KEY"
+# sticky routing to the provider that holds the cache (BISE-268;
+# openrouter.ai/blog/tutorials/prompt-caching-sticky-routing)
+cache_header = "x-session-id"
 
 [models."openrouter/anthropic/claude-sonnet-5.5"]
 context = 1000000
@@ -367,6 +378,9 @@ model = "grok-4.7"
 api = "openai-chat"
 base_url = "https://api.x.ai/v1"
 key_env = "XAI_API_KEY"
+# routes a conversation to the server holding its cache (BISE-268;
+# docs.x.ai/developers/advanced-api-usage/prompt-caching)
+cache_header = "x-grok-conv-id"
 small_model = "grok-4-fast"
 context = 256000
 reasoning = true
@@ -459,6 +473,8 @@ model = "accounts/fireworks/models/kimi-k2p6"
 api = "openai-chat"
 base_url = "https://api.fireworks.ai/inference/v1"
 key_env = "FIREWORKS_API_KEY"
+# pins a session to a replica (BISE-268; docs.fireworks.ai/guides/prompt-caching)
+cache_header = "x-session-affinity"
 context = 131072
 
 [models."fireworks/accounts/fireworks/models/kimi-k2p6"]
@@ -488,6 +504,8 @@ model = "gpt-oss-120b"
 api = "openai-chat"
 base_url = "https://api.cerebras.ai/v1"
 key_env = "CEREBRAS_API_KEY"
+# inference-docs.cerebras.ai/capabilities/prompt-caching (BISE-268)
+cache_key = "prompt_cache_key"
 context = 131072
 
 [models."cerebras/qwen-3-coder-480b"]

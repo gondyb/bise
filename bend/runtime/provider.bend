@@ -591,15 +591,22 @@ def model_call.try(fuel: Nat, +tries: Nat, n: Out, +request: String,
             # when it had to answer one
             +wreq : W.WReq <- IO.pure(W.WReq, W.parse_wire(request))
             og : Unit <- unpaired_log(W.wire_unpaired(wreq), call, req)
+            # BISE-268: the prompt cache's routing key, as the catalog
+            # names it for this provider (a body field and/or a header)
+            +mfile : String <- models_file()
+            +names : Pvp.CNames <- IO.pure(Pvp.CNames,
+              Pvp.cache_names(mfile, prov, String.concat([prov, "/", model])))
+            +ckey : String <- IO.pure(String, Api.session_key(wreq))
             +json : String <- IO.pure(String,
               Osp.light_if(Bool.not(String.is_empty(P.env_or(osr, ""))),
-                Api.wire_body(st,
-                  Api.api_body_for(st, model, facts, W.pair_wire(wreq)))))
+                Api.wire_body(st, Api.with_cache_key(Pvp.cache_field(names), ckey,
+                  Api.api_body_for(st, model, facts, W.pair_wire(wreq))))))
             +body : String <- IO.pure(String, Enc.utf8.encode(Im.img_splice(json, imgs)))
             dr : Result<&1, &1, U32 & String, String> <- IO.get_env("BEND_WIRE_DUMP")
             dump_dbg : Unit <- dump_wire(P.env_or(dr, ""), body)
             hdrs : Map<&2, List<&2, String>> <- IO.pure(Map<&2, List<&2, String>>,
-              model_headers(st, Api.facts_betas(facts), key))
+              headers_of(Api.with_cache_header(Pvp.cache_header(names), ckey,
+                Api.headers(st, Api.facts_betas(facts), key)), Http.empty()))
             +g : Got <- call.by_style(st, url, hdrs, body)
             lg : Unit <- model_call.log(call, tries, model, url, json, g)
             # the usage line names the full id (the TUI's catalog key)

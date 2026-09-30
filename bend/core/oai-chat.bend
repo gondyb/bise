@@ -192,7 +192,7 @@ def msg_json.pick(is_tool: Bool, is_asst: Bool, +role: String,
         case True{}:
           msg_json.asst(content, calls, ids)
         case False{}:
-          (J.obj(Con{J.kv("role", J.str(role)),
+          (J.obj(Con{J.kv("role", J.str(W.role_out(role))),
             Con{J.kv("content", W.img_content(Im.IOai{}, content)), Nil{}}}), ids)
 
 def msg_json(m: W.WMsg, ids: List<&2, String>) -> J.Json & List<&2, String>:

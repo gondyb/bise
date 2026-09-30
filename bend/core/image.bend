@@ -190,9 +190,41 @@ def img_keep.go(flags: List<&2, Bool>, +left: Nat, +acc: List<&2, Bool>)
             case 1n+l:
               img_keep.go(rest, l, Con{True{}, acc})
 
+# how many loaded images are sent: all up to `cap`; past it, the oldest
+# go in steps of half the cap (the prompt cache, BISE-268): a slide of
+# one per new image would change the history at the oldest image on
+# every call, so every call past the cap missed the cache from there.
+# Stepped, the dropped set stays the same for cap/2 new images: n = 21
+# to 30 keep 11 to 20 (the 10 oldest dropped), n = 31 keeps 11 again.
+def img_kept.half(+cap: Nat) -> Nat:
+  Nat.max(Nat.div(cap, 2n), 1n)
+
+def img_kept.over(over: Bool, +n: Nat, +cap: Nat) -> Nat:
+  match over:
+    case False{}:
+      n
+    case True{}:
+      Nat.sub(n, Nat.mul(Nat.add(Nat.div(Nat.sub(Nat.sub(n, cap), 1n),
+        img_kept.half(cap)), 1n), img_kept.half(cap)))
+
+def img_kept(+n: Nat, +cap: Nat) -> Nat:
+  img_kept.over(Nat.is_gt(n, cap), n, cap)
+
+def img_count(+flags: List<&2, Bool>) -> Nat:
+  match flags:
+    case Nil{}:
+      0n
+    case Con{+f, +rest}:
+      match f:
+        case True{}:
+          1n+img_count(rest)
+        case False{}:
+          img_count(rest)
+
 # flags in marker order -> kept flags in marker order (walked from the end)
 def img_keep(+loaded: List<&2, Bool>, +cap: Nat) -> List<&2, Bool>:
-  img_keep.go(List.reverse(&2, Bool, loaded), cap, Nil{})
+  img_keep.go(List.reverse(&2, Bool, loaded),
+    img_kept(img_count(loaded), cap), Nil{})
 
 # ---- unusable markers become text (the `keep` flags, in order) ----
 
