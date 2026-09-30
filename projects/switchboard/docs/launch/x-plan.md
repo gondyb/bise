@@ -110,7 +110,11 @@ hook: **things i deleted from my agent workflow since i built bise:**
 
 each item = one before (the usual way) and one after (15-20 s of bise). pick 4-5, not all:
 1. **goal modes** (a /goal-style command that keeps one agent going; to verify which tools ship one, don't name them): main is the goal. it starts jobs, watches them, and when an agent stops half-way it picks the work back up.
-2. **being the router:** an agent asks something main already knows, main answers it and tells you why. you only see it if you open the thread. demo: an agent asks "which gray for the borders?", main answers "the one in tokens.css, like everywhere else".
+2. **being the router:** agents ask main, main answers with what it knows about the whole repo, and you're never pinged. real exchanges from bise's own history (main's thread, show them with ctrl+o):
+   - **pick · the divider (main#9362):** an agent building the loader asks "the designer says the user picked the 5-cell gust. want it in this task too?" main answers: yes, all of it, the header and the panel too, here's the spec and the commit. and another agent is working in theme.rs, so tell it before you touch that file. that answer mixes a design decision from another agent, the tracker, and who's editing what right now.
+   - **the duplicates (main#18620):** four agents woke up with the same brief after a restart. one asks "should i keep going or stop?" main: you're the one, the others are duplicates.
+   - **launch day itself (main#22828):** the marketing agent writing this very video asks when worktrees get removed. main answers from the code and the tickets. i never saw the question.
+
 3. **/new, /resume, /clear:** one thread per repo that never ends. compaction instead of sessions.
 4. **a memory system:** the thread remembers, and agents can search every past thread (capsule 2).
 5. **worktree cleanup:** made when needed, gone after the merge (capsule 1).
