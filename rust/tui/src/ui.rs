@@ -560,13 +560,22 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
     let top = (cur_row + 1).saturating_sub(text_rows);
     app.composer.top = top;
     let text_style = Style::default().fg(theme::text());
-    let sel_style = Style::default().fg(theme::text()).bg(theme::selection_bg());
     let voice_look = voice_look(app, app.frame_at);
     let voice_form = voice::chip::Form::now();
+    // BISE-276: the live markdown of the rows shown (mdlive.rs): one
+    // style per char, the selection's tint over it
+    let shown = || rows.iter().take(drawn).skip(top).flatten();
+    let lo = shown().map(|c| c.ci).min().unwrap_or(0);
+    let hi = shown().map(|c| c.ci + c.text.chars().count().max(1)).max().unwrap_or(lo);
+    let md = crate::mdlive::styles(&app.ed.text, lo, hi, &mut app.md_cache);
+    let style_at = |ci: usize, sel: bool| {
+        let st = ci.checked_sub(lo).and_then(|j| md.get(j)).copied().unwrap_or(text_style);
+        if sel { st.bg(theme::selection_bg()) } else { st }
+    };
     for row in rows.iter().take(drawn).skip(top) {
         let mut spans: Vec<Span> = Vec::new();
         let mut buf = String::new();
-        let mut buf_sel = false;
+        let mut buf_style = text_style;
         for cell in row {
             let n = cell.text.chars().count().max(1);
             let is_cursor = if cell.newline {
@@ -578,10 +587,8 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
             if cell.chip {
                 // a chip `▣ N` / `❝ N` (atomic): its own spans
                 if !buf.is_empty() {
-                    let st = if buf_sel { sel_style } else { text_style };
-                    spans.push(Span::styled(std::mem::take(&mut buf), st));
+                    spans.push(Span::styled(std::mem::take(&mut buf), buf_style));
                 }
-                buf_sel = in_sel;
                 // the pill ` ❝ 1 ` (BISE-205): selected or under the
                 // cursor, the whole pill shows it
                 let mut over = Style::default();
@@ -598,12 +605,12 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
                 }
                 continue;
             }
-            if is_cursor || buf_sel != in_sel {
+            let cell_style = style_at(cell.ci, in_sel);
+            if is_cursor || buf_style != cell_style {
                 if !buf.is_empty() {
-                    let st = if buf_sel { sel_style } else { text_style };
-                    spans.push(Span::styled(std::mem::take(&mut buf), st));
+                    spans.push(Span::styled(std::mem::take(&mut buf), buf_style));
                 }
-                buf_sel = in_sel;
+                buf_style = cell_style;
             }
             if is_cursor {
                 // a pending dead key (Option+e…): its accent, marked,
@@ -623,7 +630,7 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
                         }
                         spans.push(Span::styled(
                             cell.text.to_string(),
-                            text_style.add_modifier(Modifier::REVERSED),
+                            cell_style.add_modifier(Modifier::REVERSED),
                         ));
                     }
                 }
@@ -635,7 +642,7 @@ fn typed_lines(app: &mut App, inner: usize, text_rows: usize) -> Vec<Line<'stati
             }
         }
         if !buf.is_empty() {
-            spans.push(Span::styled(buf, if buf_sel { sel_style } else { text_style }));
+            spans.push(Span::styled(buf, buf_style));
         }
         out.push(Line::from(spans));
     }

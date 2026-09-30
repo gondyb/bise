@@ -456,6 +456,22 @@ pub(crate) fn on_paste(app: &mut App, text: &str) {
     app.popup_sel = 0;
 }
 
+/// A newline in the composer (BISE-276, mdlive.rs): it continues or
+/// ends a list, keeps a code line's indentation, else it is typed.
+fn newline(app: &mut App) {
+    let (a, b) = app.ed.selection().unwrap_or((app.ed.cursor, app.ed.cursor));
+    match crate::mdlive::newline(&app.ed.text, a, b) {
+        Some(e) => apply_md(app, e),
+        None => app.ed.insert("\n"),
+    }
+}
+
+/// A live-markdown edit: one undo step.
+fn apply_md(app: &mut App, e: crate::mdlive::Edit) {
+    app.ed.set(&e.text, e.cursor);
+    app.ed.anchor = e.anchor.filter(|&a| a != e.cursor);
+}
+
 fn flash(app: &mut App, note: String) {
     app.flash = Some((note, std::time::Instant::now()));
 }
@@ -552,10 +568,16 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
             app.follow = true;
             app.unseen = 0;
         }
-        (KeyCode::Tab, _) => {
+        (KeyCode::Tab, _) | (KeyCode::BackTab, _) => {
+            let out = k.code == KeyCode::BackTab || k.modifiers.contains(KeyModifiers::SHIFT);
             if let Some(c) = sel {
                 // popup completion
                 pick(app, c);
+            } else if let Some(e) = crate::mdlive::indent(&app.ed.text, app.ed.cursor, app.ed.anchor, out) {
+                // BISE-276: Tab / Shift+Tab on a list item: in / out
+                apply_md(app, e);
+                app.key_in_composer = true;
+            } else if out {
             } else if app.pending {
                 // BISE-89 (after Codex): the draft waits in the TUI for
                 // the end of the turn, shown above the composer; nothing
@@ -578,7 +600,7 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         (KeyCode::Enter, KeyModifiers::SHIFT)
         | (KeyCode::Char('j'), KeyModifiers::CONTROL)
         | (KeyCode::Enter, KeyModifiers::ALT) => {
-            app.ed.insert("\n");
+            newline(app);
             app.key_in_composer = true;
         }
         (KeyCode::Enter, _) => {
@@ -589,6 +611,11 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
                 } else {
                     pick(app, c);
                 }
+            } else if crate::mdlive::enter_makes_newline(&app.ed.text, app.ed.cursor) {
+                // BISE-276: in a code block ⏎ is a newline (you never
+                // send half a block): close it with ``` to send
+                newline(app);
+                app.key_in_composer = true;
             } else if let Some(model) = crate::attach::refused_images(app) {
                 // BISE-150: the catalog says this model reads no images:
                 // the no-vision line now, the message stays in the composer

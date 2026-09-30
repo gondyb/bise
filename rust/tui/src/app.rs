@@ -76,6 +76,8 @@ pub(crate) struct App {
     pub(crate) pending: bool,
     /// the composer: text, cursor, selection, undo, history recall
     pub(crate) ed: editor::Editor,
+    /// the composer's lexed code lines (BISE-276, mdlive.rs)
+    pub(crate) md_cache: crate::mdlive::Cache,
     /// where the last frame drew the composer's text (mouse, Up/Down rows)
     pub(crate) composer: ComposerArea,
     /// a short note in the status row ("copied 12 chars") and when
@@ -231,6 +233,7 @@ impl App {
             interrupt_requested: false,
             pending: false,
             ed: crate::editor::Editor::default(),
+            md_cache: Default::default(),
             composer: ComposerArea::default(),
             flash: None,
             voice,
