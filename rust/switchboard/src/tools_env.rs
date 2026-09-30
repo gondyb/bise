@@ -291,9 +291,16 @@ pub fn tools_note_for(path: &str) -> String {
 /// python tempfile, tmux sockets land there, never in /tmp); its
 /// background jobs write in `tmp/bg`; the harness's own files go to
 /// `run/` (`BEND_AGENT_RUN`, bend/runtime/persist.bend `side_dir`).
+///
+/// `TMUX_TMPDIR` only when a tmux socket fits there: tmux puts it at
+/// `<realpath>/tmux-<uid>/<name>` and a unix socket path is at most 103
+/// bytes on macOS; a folder too deep leaves tmux on /tmp, as before.
 pub fn temp_env(tmp: &Path, run: &Path) -> Vec<(&'static str, PathBuf)> {
-    let mut v: Vec<(&'static str, PathBuf)> =
-        ["TMPDIR", "TMP", "TEMP", "TMUX_TMPDIR"].into_iter().map(|k| (k, tmp.to_path_buf())).collect();
+    let mut keys = vec!["TMPDIR", "TMP", "TEMP"];
+    if tmux_fits(tmp) {
+        keys.push("TMUX_TMPDIR");
+    }
+    let mut v: Vec<(&'static str, PathBuf)> = keys.into_iter().map(|k| (k, tmp.to_path_buf())).collect();
     v.push(("BEND_BG_DIR", tmp.join("bg")));
     v.push(("BEND_AGENT_RUN", run.to_path_buf()));
     v
@@ -341,6 +348,24 @@ pub fn write_mktemp_shim(bin_dir: &Path) -> std::io::Result<()> {
     })
 }
 
+/// The longest unix socket path (macOS: `sun_path` is 104 bytes, NUL
+/// included).
+pub const SOCKET_PATH_MAX: usize = 103;
+
+/// Room left for a tmux socket name (`default`, a `-L` name).
+pub const TMUX_NAME_ROOM: usize = 16;
+
+/// Whether `<realpath of tmp>/tmux-<uid>/` + a 16-byte socket name fits
+/// in a unix socket path (the folder must exist: its realpath, its uid).
+pub fn tmux_fits(tmp: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let (Ok(real), Ok(meta)) = (std::fs::canonicalize(tmp), std::fs::metadata(tmp)) else {
+        return false;
+    };
+    let dir = format!("{}/tmux-{}/", real.to_string_lossy(), meta.uid());
+    dir.len() + TMUX_NAME_ROOM <= SOCKET_PATH_MAX
+}
+
 /// Create the agent's `tmp/` and `run/` (private: 0700).
 pub fn make_agent_dirs(tmp: &Path, run: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::DirBuilderExt;
@@ -360,13 +385,35 @@ mod tests {
     /// run/ and tmp/bg.
     #[test]
     fn the_temp_env_points_to_the_agent_folders() {
-        let env = temp_env(Path::new("/h/agents/a/tmp"), Path::new("/h/agents/a/run"));
-        let get = |k: &str| env.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string_lossy().into_owned());
-        for k in ["TMPDIR", "TMP", "TEMP", "TMUX_TMPDIR"] {
-            assert_eq!(get(k).as_deref(), Some("/h/agents/a/tmp"), "{}", k);
+        let d = tmp("temp-env");
+        let (t, r) = (d.join("a/tmp"), d.join("a/run"));
+        make_agent_dirs(&t, &r).unwrap();
+        let env = temp_env(&t, &r);
+        let get = |k: &str| env.iter().find(|(n, _)| *n == k).map(|(_, v)| v.clone());
+        for k in ["TMPDIR", "TMP", "TEMP"] {
+            assert_eq!(get(k).as_ref(), Some(&t), "{}", k);
         }
-        assert_eq!(get("BEND_BG_DIR").as_deref(), Some("/h/agents/a/tmp/bg"));
-        assert_eq!(get("BEND_AGENT_RUN").as_deref(), Some("/h/agents/a/run"));
+        assert_eq!(get("TMUX_TMPDIR"), tmux_fits(&t).then(|| t.clone()));
+        assert_eq!(get("BEND_BG_DIR"), Some(t.join("bg")));
+        assert_eq!(get("BEND_AGENT_RUN"), Some(r.clone()));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A tmux socket under a folder too deep would fail ("File name too
+    /// long"): TMUX_TMPDIR is then left out (tmux stays on /tmp).
+    #[test]
+    fn tmux_goes_to_tmp_only_when_its_socket_fits() {
+        let d = std::path::PathBuf::from(format!("/tmp/sbtx{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let short = d.join("a");
+        let deep = d.join("x".repeat(90));
+        std::fs::create_dir_all(&short).unwrap();
+        std::fs::create_dir_all(&deep).unwrap();
+        assert!(tmux_fits(&short));
+        assert!(!tmux_fits(&deep));
+        assert!(!tmux_fits(&d.join("missing")));
+        assert!(!temp_env(&deep, &d).iter().any(|(k, _)| *k == "TMUX_TMPDIR"));
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// The shim: no folder, no template: in $TMPDIR (`-t` too); a

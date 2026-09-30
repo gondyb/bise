@@ -63,7 +63,9 @@ def main():
         "env -u SB_SOCKET -u SB_AGENT -u SB_TASK SB_STATE_DIR=%s nohup %s sbd --workspace %s"
         " </dev/null >/dev/null 2>&1 &\n"
         "tmux -L %s new-session -d -s x 'sleep 902%s'\n"
-        "echo started\n" % (tag, child_st, EXE, child_ws, tsock, tag))
+        # where its tmux socket is (TMUX_TMPDIR: its temp folder, when it fits)
+        "echo \"${TMUX_TMPDIR:-}\" > %s\n"
+        "echo started\n" % (tag, child_st, EXE, child_ws, tsock, tag, os.path.join(E.tmp, "t1-tmux")))
     user = subprocess.Popen(["sleep", "909" + tag], env=e2e.host_env())
     ok = True
     try:
@@ -78,7 +80,13 @@ def main():
                60, "t1's hub and its REPL")
         for n in ("901", "902", "903", "904"):
             c.wait(lambda: alive("sleep " + n + tag), 20, "sleep " + n)
-        check(subprocess.run(["tmux", "-L", tsock, "has-session"]).returncode == 0, "t1's tmux")
+        # t1's tmux socket is in its temp folder when it fits (TMUX_TMPDIR,
+        # approvals-design.md §7.1), else in /tmp
+        t1_dir = open(os.path.join(E.tmp, "t1-tmux")).read().strip()
+        t1_tmux = {k: v for k, v in e2e.host_env().items() if k != "TMUX_TMPDIR"}
+        if t1_dir:
+            t1_tmux["TMUX_TMPDIR"] = t1_dir
+        check(subprocess.run(["tmux", "-L", tsock, "has-session"], env=t1_tmux).returncode == 0, "t1's tmux")
 
         c.say("/drop t1")
         c.wait_status("t1", "archived", 30)
@@ -86,7 +94,7 @@ def main():
         c.wait(lambda: not alive("sbd --workspace " + child_ws), 15, "t1's hub killed")
         c.wait(lambda: not alive("SB_SOCKET=%s/hub.sock" % child_st), 15, "t1's hub's REPL killed")
         c.wait(lambda: not alive("sleep 902" + tag), 15, "t1's tmux pane killed")
-        check(subprocess.run(["tmux", "-L", tsock, "has-session"], stderr=subprocess.DEVNULL).returncode != 0,
+        check(subprocess.run(["tmux", "-L", tsock, "has-session"], stderr=subprocess.DEVNULL, env=t1_tmux).returncode != 0,
               "t1's tmux server gone")
         check(alive("sleep 903" + tag) and alive("sleep 904" + tag), "t2's and t3's sleeps survive")
         check(user.poll() is None, "the user's sleep survives")

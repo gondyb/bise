@@ -66,10 +66,14 @@ def main():
         c.send({"op": "interrupt", "focus": "tt", "agent": "tt"})
         c.wait(lambda: glob.glob(os.path.join(run, "bend-interrupt-*.txt")), 30, "the interrupt file in run/")
         lines = open(probe).read().split("\n")
-        check(lines[0] == "T=%s|%s|%s|%s" % (tmp, tmp, tmp, tmp), "TMPDIR, TMP, TEMP, TMUX_TMPDIR: %r" % lines[0])
+        # TMUX_TMPDIR only when a socket fits under it (tools_env::tmux_fits)
+        real = os.path.realpath(tmp)
+        fits = len("%s/tmux-%d/" % (real, os.getuid())) + 16 <= 103
+        tm = tmp if fits else ""
+        check(lines[0] == "T=%s|%s|%s|%s" % (tmp, tmp, tmp, tm), "TMPDIR, TMP, TEMP, TMUX_TMPDIR: %r" % lines[0])
         check(lines[1].startswith(tmp + "/") and lines[2].startswith(tmp + "/"),
               "mktemp and tempfile land in tmp/: %r" % lines[1:3])
-        check(lines[3] == "x", "tmux's socket is in tmp/: %r" % lines[3:])
+        check(lines[3] == "x" if fits else True, "tmux's socket is in tmp/: %r" % lines[3:])
         c.wait(lambda: "bg-done" in open(os.path.join(tmp, "bg", "0.out")).read(), 30, "the job's output")
         ports = ports_in(run)
         check(ports, "run/ holds the REPL's files: %r" % os.listdir(run))
