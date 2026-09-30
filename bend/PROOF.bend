@@ -652,6 +652,9 @@ def Laws.skills_malformed_lines_skipped():
 def Laws.skills_args_name_json():
   {==}
 
+def Laws.skills_args_name_bare():
+  {==}
+
 def Laws.skills_args_name_rejects_empty():
   {==}
 

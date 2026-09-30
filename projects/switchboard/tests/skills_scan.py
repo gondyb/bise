@@ -18,6 +18,9 @@ temp HOME holding one skill:
    index, a temp file left). Without BEND_HARNESS_BIN and a bend-harness
    in the tree (gate.sh full: the build is in $CARGO_TARGET_DIR) there
    is no bridge.
+6. main (BISE_ROLE=main, the hub sets it) gets bise's built-in skills,
+   the app root's prompts/skills (bise-demo), after the others; a task
+   (BISE_ROLE=agent) or a solo session does not.
 """
 import os, socket, subprocess, sys, tempfile, time
 
@@ -66,6 +69,7 @@ def main():
         "BEND_MCP_BOOTSTRAP_URL": "http://127.0.0.1:9/none",
         "BEND_REPL_PORT": str(port), "BEND_WORKDIR": ws, "BEND_RUN_DIR": os.path.join(tmp, "run"),
         "BEND_SESSION_FILE": session, "BEND_WIRE_LOG": os.path.join(tmp, "wire.log"),
+        "BISE_ROLE": "main",
     })
     log, err = os.path.join(tmp, "repl.log"), os.path.join(tmp, "repl.err")
     repl = subprocess.Popen([os.path.join(ROOT, "repl-live")], cwd=ROOT, env=env,
@@ -103,8 +107,19 @@ def main():
         rundir = os.path.dirname(sidx)
         left = [n for n in os.listdir(rundir) if n.startswith("skills-index.txt.")] if os.path.isdir(rundir) else []
         check("no temp file is left next to it", not left, repr(left))
+        demo = os.path.join(ROOT, "prompts", "skills", "bise-demo", "SKILL.md")
+        check("main's index ends with the built-in skills (bise-demo)",
+              ("\nbise-demo\t" in sdata) and ("\t%s\n" % demo) in sdata, repr(sdata))
+        # the same scan as a task: no built-in skill
+        script = "/tmp/bend-skills-scan-%s.sh" % port
+        a1, a2 = os.path.join(tmp, "a-shared.txt"), os.path.join(tmp, "a-session.txt")
+        subprocess.run(["/bin/sh", script, a1, a2, os.path.join(tmp, "none.txt")], cwd=ROOT,
+                       env={**env, "BISE_ROLE": "agent"}, check=True)
+        adata = open(a2).read() if os.path.exists(a2) else "<none>"
+        check("a task's index has no built-in skill", adata.startswith("beta\t") and "bise-demo" not in adata,
+              repr(adata))
         sock = socket.create_connection(("127.0.0.1", port), timeout=120)
-        sock.sendall(b"run [[skill: alpha]] [[skill: nope]]\n")
+        sock.sendall(b"run [[skill: alpha]] [[skill: nope]] [[skill: bise-demo]]\n")
         f = sock.makefile("rb")
         while True:
             line = f.readline()
@@ -114,10 +129,12 @@ def main():
                 break
         sock.close()
         res = tool_results(session)
-        check("a skill of the index loads", len(res) == 2 and "Alpha body: say ALPHA-OK." in res[0]
+        check("a skill of the index loads", len(res) == 3 and "Alpha body: say ALPHA-OK." in res[0]
               and "name: alpha" not in res[0], repr(res))
         check("a name the index lacks is an unknown skill, not an unreadable index",
-              len(res) == 2 and "unknown skill: nope" in res[1] and "unreadable" not in res[1], repr(res))
+              len(res) == 3 and "unknown skill: nope" in res[1] and "unreadable" not in res[1], repr(res))
+        check("main loads the built-in bise-demo", len(res) == 3 and "quest-scout" in res[2]
+              and "name: bise-demo" not in res[2], repr(res)[-400:])
     finally:
         repl.kill()
         fake.kill()

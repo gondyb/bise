@@ -214,15 +214,19 @@ def args_name.w(+w: J.Json) -> Maybe<&2, String>:
   args_name.pick(String.is_empty(J.get_str_or(w, "name", "")),
     J.get_str_or(w, "name", ""))
 
-def args_name.parse(r: Result<&2, &2, String, J.Json>) -> Maybe<&2, String>:
+# not JSON: the bare name (a small model sends the tool's one string
+# argument as the name itself, `bise-demo`, and retried the same call
+# seven times against the usage error)
+def args_name.parse(r: Result<&2, &2, String, J.Json>, +args: String)
+    -> Maybe<&2, String>:
   match r:
     case Fail{_}:
-      None{}
+      args_name.pick(String.is_empty(String.trim(args)), String.trim(args))
     case Done{+w}:
       args_name.w(w)
 
 def args_name(+args: String) -> Maybe<&2, String>:
-  args_name.parse(J.parse(args))
+  args_name.parse(J.parse(args), args)
 
 # ---- the miss error (the vibe_sdk contract, suggestions omitted:
 # the available list is the operative part) ----

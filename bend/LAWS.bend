@@ -488,6 +488,10 @@ law skills_args_name_json:
   {Sk.args_name("{\"name\":\"code-quality\"}") == Some{"code-quality"}
     : Maybe<&2, String>}
 
+# LAW: a bare name (not JSON) is the name, trimmed.
+law skills_args_name_bare:
+  {Sk.args_name(" bise-demo ") == Some{"bise-demo"} : Maybe<&2, String>}
+
 # LAW: a missing or empty name is a usage error, never a lookup.
 law skills_args_name_rejects_empty:
   {Sk.args_name("{}") == None{} : Maybe<&2, String>}

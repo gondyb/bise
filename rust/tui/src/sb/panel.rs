@@ -988,7 +988,7 @@ pub(crate) const PLACEHOLDER_MAIN: &str = "what's on your mind?";
 pub(crate) const FIRST_RUN: [&str; 3] = [
     "what's on your mind?",
     "say it and keep talking. the work runs in the background, i'm always here.",
-    "try: \"signup is slow on mobile. can you look?\"",
+    "try: \"show me what you can do\"",
 ];
 
 impl Sb {
@@ -1843,7 +1843,7 @@ mod chrome_tests {
         }
         assert_eq!(FIRST_RUN[0], "what's on your mind?");
         assert_eq!(FIRST_RUN[1], "say it and keep talking. the work runs in the background, i'm always here.");
-        assert_eq!(FIRST_RUN[2], "try: \"signup is slow on mobile. can you look?\"");
+        assert_eq!(FIRST_RUN[2], "try: \"show me what you can do\"");
         // the composer pane (book §8 "The frame"): the divider says who
         // you talk to and what it does
         let at = rows.iter().position(|r| r.starts_with("├─ you → main ─")).unwrap_or_else(|| panic!("{}", all));

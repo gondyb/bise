@@ -322,7 +322,7 @@ a symbol row (designer).
 
   say it and keep talking. the work runs in the background, i'm always here.
 
-  try: "signup is slow on mobile. can you look?"
+  try: "show me what you can do"
   ```
 
 **The reading column** (user request, marketing 82f1742). The history is a 91-column column (3 for the lead + 88 of text; widened from 79 by Gabriel, 2026-09-29: +15%), centered in the space left of the panel: F = terminal width − panel (30) − 1; x0 = floor((F − 91) / 2) when F ≥ 95, else column 1. Tables and code start at x0 and may run to 103 columns (capped at F − 1), extending right, never re-centered. The status row, the queue, the images strip, the composer block and its hints use the same x0 and width (hints right-aligned to x0 + 91). The agents panel stays flush right. Under 70 columns the panel hides and F = width.
@@ -879,7 +879,7 @@ one in accent.
    and `any key ↵`: any key opens the thread.
 5. **The thread** opens on the empty state (§8, §17): `what's on your
    mind?` / `say it and keep talking. the work runs in the background, i'm
-   always here.` / `try: "signup is slow on mobile. can you look?"`, dim,
+   always here.` / `try: "show me what you can do"`, dim,
    at the feed's indent, at 2/5 of the history's free rows (under 12 rows:
    on top, after one blank row); it goes with the first message. No
    first-task suggestion.
@@ -1044,7 +1044,7 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | panel title | `agents · ⌥ + number` |
 | panel, more rows | `+ {n} more` |
 | panel, archived | `▸ {n} archived` |
-| first run | `what's on your mind?` / `say it and keep talking. the work runs in the background, i'm always here.` / `try: "signup is slow on mobile. can you look?"` |
+| first run | `what's on your mind?` / `say it and keep talking. the work runs in the background, i'm always here.` / `try: "show me what you can do"` |
 | inside an agent | `you're talking to {name} directly. main isn't in the loop. esc back to main.` |
 | composer hints, main | `⏎ send · @ agent · / commands` (something in the inbox: `⏎ send · ctrl+g inbox · @ agent · …`) |
 | composer hints, during a turn | `tab queue · ⏎ steer · ctrl+c interrupt` |

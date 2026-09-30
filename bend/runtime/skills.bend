@@ -45,7 +45,10 @@ def index_path() -> IO(String):
 #      ($BEND_WORKDIR/.agents/skills - the hub runs a task's REPL in the
 #      app root, so $PWD would miss the task's workspace - else
 #      $PWD/.agents/skills), then the plugin skills ($3, written by the
-#      plugins bridge, runtime/plugins.bend)
+#      plugins bridge, runtime/plugins.bend), then, for main only
+#      (BISE_ROLE=main, set by the hub), bise's built-in skills: the app
+#      root's prompts/skills (the hub runs the REPL in the app root, and
+#      versions.sh and build-dist.sh ship prompts/ whole), e.g. bise-demo
 # Each index is written to a temp file then renamed: every REPL start
 # rescans, and a skill call or the TUI reading the shared index mid-scan
 # must see the old index or the new one, never a truncated file.
@@ -73,7 +76,8 @@ def scan_script() -> String:
 mkdir -p \"$(dirname \"$1\")\" \"$(dirname \"$2\")\"
 { scan \"$HOME/.agents/skills\"; scan \"$HOME/.vibe/skills\"; true; } > \"$1.$$\" && mv -f \"$1.$$\" \"$1\"
 w=\"${BEND_WORKDIR:-$PWD}\"
-{ scan \"$w/.agents/skills\"; cat \"$3\" 2>/dev/null; true; } > \"$2.$$\" && mv -f \"$2.$$\" \"$2\""
+b=\"\"; [ \"${BISE_ROLE:-}\" = main ] && b=\"$PWD/prompts/skills\"
+{ scan \"$w/.agents/skills\"; cat \"$3\" 2>/dev/null; [ -n \"$b\" ] && scan \"$b\"; true; } > \"$2.$$\" && mv -f \"$2.$$\" \"$2\""
 
 def scan_path(+port: String) -> String:
   String.append("/tmp/bend-skills-scan-", String.append(port, ".sh"))
