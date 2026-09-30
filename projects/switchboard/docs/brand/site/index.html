@@ -414,7 +414,7 @@
       <div class="foot">
         <div class="status"><span>you → <span class="acc">main</span></span><span id="working" class="dim"></span></div>
         <div class="composer" id="comp"><span id="typed"></span><span class="cur"></span><span class="ph" id="ph">what's on your mind?</span></div>
-        <div class="keys"><span><span class="k">⏎</span> send</span><span><span class="k">@</span> agent</span><span><span class="k">⌥0-9</span> switch</span><span><span class="k">?</span> help</span></div>
+        <div class="keys"><span><span class="k">⏎</span> send</span><span><span class="k">@</span> file</span><span><span class="k">ctrl+s</span> find agent</span><span><span class="k">?</span> help</span></div>
       </div>
     </div>
     </div>
@@ -443,7 +443,7 @@
   <div class="inner blow" data-a="prob-head">
     <div class="swap" id="swap">
     <div class="kicker" id="pk">the problem</div>
-    <h2 id="ph2">five agents.<br>all of them need you.</h2>
+    <h2 id="ph2">seven agents.<br>all of them need you.</h2>
     <p class="soft" id="pp">every session waits for you. you're the router, the memory, and the merge tool. you ship a lot, but you never get to think.</p>
     </div>
   </div>
@@ -1425,7 +1425,7 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
   async function today() {
     const id = ++run; state = "today"; stage.classList.remove("calm"); setFlip();
     wins.forEach((w) => w.remove()); wins = []; switches = 0; waiting = 0; bub.classList.remove("on"); you.style.opacity = "1";
-    if (id > 1) head("the problem", "five agents.<br>all of them need you.", "every session waits for you. you're the router, the memory, and the merge tool. you ship a lot, but you never get to think.");
+    if (id > 1) head("the problem", "seven agents.<br>all of them need you.", "every session waits for you. you're the router, the memory, and the merge tool. you ship a lot, but you never get to think.");
     cap.innerHTML = "you started five things. now you're the one they all wait for.";
     setStats();
     for (let i = 0; i < S.length; i++) {

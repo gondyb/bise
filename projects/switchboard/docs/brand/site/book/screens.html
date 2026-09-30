@@ -219,7 +219,7 @@ function foot(status, composer, hints, queue = "") {
   const dflt = hints === undefined || hints === "";
   // in an agent's view, the way back to main always comes first
   const agentView = m && m[1] !== "main";
-  let h = dflt ? "⏎ send · @ agent · ⌥0-9 switch · / commands · ? help" : hints;
+  let h = dflt ? "⏎ send · @ file · ctrl+s find agent · / commands · ? help" : hints;
   if (agentView && !/esc/.test(h)) h = "esc back to main · " + h.replace(" · / commands", "");
   const tip = dflt && !typing ? '<span class="dim">tip · ctrl+o opens everything folded</span>' : "";
   return `<div class="foot"><div class="flabel"><span>${left}</span>${right ? `<span>${right}</span>` : ""}</div>
@@ -328,7 +328,7 @@ const STRIP3 = `<div class="cstrip">` +
   crow(false, "perf", "the hero image is 4.2 MB. compress it, or lazy-load it?", [["1", "compress"], ["2", "both"]]) +
   crow(false, "docs", "v1 or v2 for the api docs?", [["1", "v1"], ["2", "v2"]]) + `</div>`;
 const cfoot = (right, hints, text = "") => foot(`main · ${right}`, text, hints);
-const CKEYS = "⏎ send · ctrl+g open card · ctrl+n next card · @ agent · / commands";
+const CKEYS = "⏎ send · ctrl+g open card · ctrl+n next card · @ file · / commands";
 // an open card: the composer now answers it (the divider says so); keys in its bottom border
 const cardFoot = (who, text, hints) => foot(`<span class="dim">you →</span> <span class="acc">? ${who}</span> <span class="dim">· your answer</span>`, text, hints);
 const OPEN_KEYS = (n, agent, num) => [[`1-${n}`, "pick (empty composer)"], ["⏎", "send your text as the answer"], ["ctrl+x", "close"], ["ctrl+f", "full"], [`⌥${num}`, `open ${agent}`], ["esc", "back"]];
@@ -383,7 +383,7 @@ const C2_REL = (on) => crow2(on, "release wants to run", `<span style="color:var
 const C2_PERF = (on) => crow2(on, "perf", "the hero image is 4.2 MB. compress it, or lazy-load it?", [["1", "compress"], ["2", "both"]]);
 const C2_DARK = (on) => crow2(on, "dark-mode", "the settings page has 3 grays in tokens.css and 2 hardcoded ones. i found them because…", [["9 options", ""]]);
 const C2_STRIP = `<div class="cstrip">${C2_LAB(3)}${C2_REL(false)}${C2_PERF(false)}${C2_DARK(false)}</div>`;
-const C2_KEYS_THREAD = "⏎ send · ctrl+g inbox · @ agent · / commands";
+const C2_KEYS_THREAD = "⏎ send · ctrl+g inbox · @ file · / commands";
 // ctrl+g puts the focus on the strip: a ▸ on the selected row, the others indented to match
 const focusStrip = (html) => html.replace(/<div class="cr on"><span class="q">/g, '<div class="cr on"><span class="q"><span class="acc">▸</span> ').replace(/<div class="cr"><span class="q">/g, '<div class="cr"><span class="q">&nbsp;&nbsp;');
 const ctabs = (cur) => `<div class="ctabs">${[["release", "wants to run"], ["perf", ""], ["dark-mode", ""]].map(([a], i) =>
@@ -575,23 +575,23 @@ const OB3_SCREENS = [
 <div class="b faint">enter go</div>`), f: "" })],
 ["onboarding v3 · 3 · the thread, and one quiet card", "the thread opens on 'what's on your mind?', as today. the setup is one card in the strip, not opened, nothing checked yet: '? main · want me to tune bise for your terminal and repo?'. you can ignore it forever. 1 or a click: yes. 2: not now.",
  term({ h: head(`<span class="acc">? 1 card</span>`), pan: OB_PANEL.replace("setup", ""), feed: OB_EMPTY,
-   above: `<div class="cstrip">${C2_LAB(1)}${TUNE(true)}</div>`, f: foot("main · idle", CUR, "⏎ send · ctrl+g inbox · @ agent · / commands") })],
+   above: `<div class="cstrip">${C2_LAB(1)}${TUNE(true)}</div>`, f: foot("main · idle", CUR, "⏎ send · ctrl+g inbox · @ file · / commands") })],
 ["onboarding v3 · 4 · it never gets in the way", "you just start. the card waits in the strip while you work; your first agent runs as usual.",
  term({ h: head(`${S.work} 1 working · <span class="acc">? 1 card</span>`), pan: panel([{ g: '<span class="acc">:*</span>', name: "main" }, { g: S.work, name: "perf", r: "0m" }]),
    feed: you('signup is slow on mobile. can you look?<span class="tick read">✓✓</span>') + bise("on it. perf is profiling it on a mid-range phone."),
-   above: `<div class="cstrip">${C2_LAB(1)}${TUNE(true)}</div>`, f: foot("main · idle", CUR, "⏎ send · ctrl+g inbox · @ agent · / commands") })],
+   above: `<div class="cstrip">${C2_LAB(1)}${TUNE(true)}</div>`, f: foot("main · idle", CUR, "⏎ send · ctrl+g inbox · @ file · / commands") })],
 ["onboarding v3 · 5 · yes: the checks, then the offers", "only after a yes: the checks run in code (3 s at most) and fold into one dim row. what's worth changing comes back as cards in the strip, one per change, never opened for you: the exact diff inside, 1 yes / 2 no. nothing is written without a yes; dotfiles are backed up first.",
  term({ h: head(`${S.work} 1 working · <span class="acc">? 3 cards</span>`), pan: panel([{ g: '<span class="acc">:*</span>', name: "main" }, { g: S.work, name: "perf", r: "2m" }]),
    feed: you('signup is slow on mobile. can you look?<span class="tick read">✓✓</span>') + bise("on it. perf is profiling it on a mid-range phone.") +
    `<div class="b dim"><span class="who">▸</span>checked 7 things · 4 fine · 3 i can fix</div>` +
    bise("3 small fixes would help. each one waits in your inbox with the exact change. yes or no to each, whenever you want."),
    above: `<div class="cstrip">${C2_LAB(3)}${OB_KEYS_ROW.replace('class="cr"', 'class="cr on"')}${OB_AGENTS_ROW}${OB_KEY_ROW}</div>`,
-   f: foot("main · idle", CUR, "⏎ send · ctrl+g inbox · @ agent · / commands") })],
+   f: foot("main · idle", CUR, "⏎ send · ctrl+g inbox · @ file · / commands") })],
 ["onboarding v3 · not now", "2 or ×: the card goes, one dim row stays. never asked again; /setup runs it any time.",
  term({ h: head(), pan: OB_PANEL.replace("setup", ""), feed: OB_EMPTY + `<div class="b dim" style="padding-left:3ch">– not now · type /setup whenever you want</div>`, f: foot("main · idle", CUR) })],
 ["setup, by the hand · 1 · the first item teaches the inbox", "<span class='optk'>round 2 (the user: « prendre l'utilisateur par la main »).</span> the first time anything lands in the inbox, a one-time note above it says what the inbox is and the keys. the item itself says what 'set up' means and promises nothing changes without a yes.",
  term({ h: head(`<span class="acc"># 1 in the inbox</span>`), pan: OB_PANEL.replace("setup", ""), feed: OB_EMPTY,
-   above: OB_HINT + `<div class="cstrip">${C2_LAB(1)}${TUNE(true)}</div>`, f: foot("main · idle", CUR, "⏎ send · ctrl+g inbox · @ agent · / commands") })],
+   above: OB_HINT + `<div class="cstrip">${C2_LAB(1)}${TUNE(true)}</div>`, f: foot("main · idle", CUR, "⏎ send · ctrl+g inbox · @ file · / commands") })],
 ["setup, by the hand · 2 · opened: what 'set up' does", "before any yes, the list of what gets checked and the promise: each fix comes back as its own item, with the exact change, yes or no each. nothing is picked when it opens.",
  term({ h: head(`<span class="acc"># 1 in the inbox</span>`), pan: OB_PANEL.replace("setup", ""),
    feed: sview(["set up bise"], 0, "can i set bise up for your terminal and this repo?", "about a minute", `<div>i'll check 8 things: your terminal, its keys, colors, glyphs, git, gh, an AGENTS.md, and the connectors key.</div>
