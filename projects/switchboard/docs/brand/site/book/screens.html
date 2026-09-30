@@ -119,6 +119,7 @@
   .ctabs > span.on { color:var(--text); background:var(--raised); padding:0 1ch; margin:0 -1ch; } .ctabs > span:last-child { margin-left:auto; }
   .cview { border-left:2px solid var(--acc); padding:.2lh 0 .2lh 2ch; max-width:79ch; }
   .cview .cvh { display:flex; justify-content:space-between; gap:2ch; margin-bottom:.5lh; } .cview .cvb { max-width:76ch; }
+  .obhint { border-left:2px solid var(--acc); background:var(--raised); padding:.2lh 1.5ch; margin:0 2ch .4lh; max-width:91ch; }
   .cview .ol { margin-top:.6lh; } .cview .ol div { padding:0 1ch; margin:0 -1ch; } .cview .ol div.hi { background:var(--raised); color:var(--text); }
   .cview .ol .pt { color:var(--acc); display:inline-block; width:2ch; } .cview .ol div b { color:var(--acc); font-weight:400; display:inline-block; width:2ch; }
   .cview.typing .ol { color:var(--dim); }
@@ -532,7 +533,16 @@ const AGENTSMD = `<pre class="cmdb"><span class="dim">AGENTS.md · new file · 1
 const CONNECT = `<div>with a Mistral API key, your agents can use about 500 tools: web search, GitHub, Slack, Linear, Gmail, Notion… one key, all of them on, all the time.</div><div class="dim" style="margin-top:.4lh">free to skip. /connect adds it later.</div>`;
 
 const OB_EMPTY = `<div style="padding:3lh 0 0 3ch"><div><b>what's on your mind?</b></div><div class="b dim">say it and keep talking. the work runs in the background, i'm always here.</div><div class="b faint">try: "signup is slow on mobile. can you look?"</div></div>`;
-const TUNE = (on) => crow(on, "main", "want me to tune bise for your terminal and repo? about a minute", [["1", "yes"], ["2", "not now"]]);
+const TUNE = (on) => crow(on, "main", "can i set bise up for your terminal and this repo? <span class=\"faint\">1 min · i ask before changing anything</span>", [["1", "yes, check"], ["2", "not now"]]);
+// setup, taken by the hand: the first-item hint, each item opened, the result rows
+const OB_HINT = `<div class="obhint"><span class="acc">?</span> <b>this is your inbox.</b> <span class="dim">when an agent needs you, it waits here instead of interrupting you.</span> <span style="color:var(--text)">ctrl+g</span> <span class="dim">selects it, then</span> <span style="color:var(--text)">↑↓ ⏎</span><span class="dim">.</span> <span class="faint">↓</span></div>`;
+const OB_KEYS_ROW = crow(false, "main", `let cmd+v and cmd+f reach bise <span class="faint">Ghostty config · +2 lines</span>`, [["1", "yes, add them"], ["2", "no"]]);
+const OB_AGENTS_ROW = crow(false, "main", `write a starter AGENTS.md <span class="faint">new file · 14 lines</span>`, [["1", "yes, write it"], ["2", "no"]]);
+const OB_KEY_ROW = crow(false, "main", `turn on web search and the other connectors <span class="faint">optional · needs a Mistral key</span>`, [["⏎", "paste it"]]);
+const sview = (tabs, cur, title, meta, body, opts) => otabs(tabs, cur) + `<div class="cview"><div class="cvh"><b class="acc">? ${title}</b><span class="dim">${meta}</span></div><div class="cvb">${body}</div>${opts ? `<div class="ol">${opts}</div>` : ""}</div>`;
+const plus = (lines) => `<pre class="cmdb">${lines.map((l) => `<span class="acc">+</span> ${l}`).join("\n")}</pre>`;
+const SETUP_TABS = ["Ghostty keys", "AGENTS.md", "connectors"];
+const sFoot = (hints, text = CUR) => foot(`<span class="dim">you →</span> <span class="acc">? main</span> <span class="dim">· your answer</span>`, text, hints);
 const OB3_SCREENS = [
 ["onboarding v3 · 1 · hi", "<span class='optk'>v3, leaner.</span> before the thread, only this, and a key when none is found. the welcome keeps its gloss; any key goes on (no 'press enter' wait). no theme step, no folder step, no 'how it works' screen.",
  term({ h: "", pan: "", feed: obCenter(`<div style="text-align:center"><b style="font-size:1.4em">hi, i'm bise</b> <span class="acc" style="font-size:1.4em">:*</span></div>
@@ -554,12 +564,45 @@ const OB3_SCREENS = [
 ["onboarding v3 · 5 · yes: the checks, then the offers", "only after a yes: the checks run in code (3 s at most) and fold into one dim row. what's worth changing comes back as cards in the strip, one per change, never opened for you: the exact diff inside, 1 yes / 2 no. nothing is written without a yes; dotfiles are backed up first.",
  term({ h: head(`${S.work} 1 working · <span class="acc">? 3 cards</span>`), pan: panel([{ g: '<span class="acc">:*</span>', name: "main" }, { g: S.work, name: "perf", r: "2m" }]),
    feed: you('signup is slow on mobile. can you look?<span class="tick read">✓✓</span>') + bise("on it. perf is profiling it on a mid-range phone.") +
-   `<div class="b dim"><span class="who">▸</span>tuning · 7 checks · 5 fine, 2 things to offer</div>` +
-   bise("2 small changes would help. they're in your cards, whenever you want."),
-   above: `<div class="cstrip">${C2_LAB(2)}${crow(true, "main", `let cmd+v and cmd+f reach me <span class="faint">ghostty config · 2 lines</span>`, [["1", "yes"], ["2", "no"]])}${crow(false, "main", `a starter AGENTS.md <span class="faint">new file · 14 lines</span>`, [["1", "yes"], ["2", "no"]])}</div>`,
+   `<div class="b dim"><span class="who">▸</span>checked 7 things · 4 fine · 3 i can fix</div>` +
+   bise("3 small fixes would help. each one waits in your inbox with the exact change. yes or no to each, whenever you want."),
+   above: `<div class="cstrip">${C2_LAB(3)}${OB_KEYS_ROW.replace('class="cr"', 'class="cr on"')}${OB_AGENTS_ROW}${OB_KEY_ROW}</div>`,
    f: foot("main · idle", CUR, "⏎ send · ctrl+g inbox · @ agent · / commands") })],
 ["onboarding v3 · not now", "2 or ×: the card goes, one dim row stays. never asked again; /setup runs it any time.",
- term({ h: head(), pan: OB_PANEL.replace("setup", ""), feed: OB_EMPTY + `<div class="b dim" style="padding-left:3ch">– not now · /setup any time</div>`, f: foot("main · idle", CUR) })],
+ term({ h: head(), pan: OB_PANEL.replace("setup", ""), feed: OB_EMPTY + `<div class="b dim" style="padding-left:3ch">– not now · type /setup whenever you want</div>`, f: foot("main · idle", CUR) })],
+["setup, by the hand · 1 · the first item teaches the inbox", "<span class='optk'>round 2 (the user: « prendre l'utilisateur par la main »).</span> the first time anything lands in the inbox, a one-time note above it says what the inbox is and the keys. the item itself says what 'set up' means and promises nothing changes without a yes.",
+ term({ h: head(`<span class="acc">? 1 waiting</span>`), pan: OB_PANEL.replace("setup", ""), feed: OB_EMPTY,
+   above: OB_HINT + `<div class="cstrip">${C2_LAB(1)}${TUNE(true)}</div>`, f: foot("main · idle", CUR, "⏎ send · ctrl+g inbox · @ agent · / commands") })],
+["setup, by the hand · 2 · opened: what 'set up' does", "before any yes, the list of what gets checked and the promise: each fix comes back as its own item, with the exact change, yes or no each. nothing is picked when it opens.",
+ term({ h: head(`<span class="acc">? 1 waiting</span>`), pan: OB_PANEL.replace("setup", ""),
+   feed: sview(["set up bise"], 0, "can i set bise up for your terminal and this repo?", "about a minute", `<div>i'll check 7 things: your terminal and its keys, colors, glyphs, git, gh, an AGENTS.md, and the connectors key.</div>
+<div style="margin-top:.4lh">checking changes nothing. each fix i find comes back here as its own item, with the exact change, and you say yes or no to each one.</div>
+<div style="margin-top:.4lh" class="dim">your agents keep working meanwhile. not now? type /setup whenever you want.</div>`, optl(["yes, check", "not now"])),
+   f: sFoot("↑↓ choose · 1-2 pick · esc back") })],
+["setup, by the hand · 3 · the Ghostty keys", "what it is, why it helps you, the exact lines, the backup, how to undo. the option says the action ('yes, add them'), so ⏎ reads well in the key bar.",
+ term({ h: head(`<span class="acc">? 3 waiting</span>`), pan: OB_PANEL.replace("setup", ""),
+   feed: sview(SETUP_TABS, 0, "let cmd+v and cmd+f reach bise", "Ghostty config · +2 lines", `<div>right now Ghostty keeps these two keys for itself. with these lines, cmd+v can paste a screenshot into your message (text still pastes as usual), and cmd+f searches your history.</div>
+<div style="margin-top:.4lh">i'd add 2 lines to ~/Library/Application Support/com.mitchellh.ghostty/config:</div>${plus(["keybind = performable:super+v=paste_from_clipboard", "keybind = super+f=unbind"])}
+<div class="dim">i copy the file to config.bise-backup first. to undo: delete the 2 lines. Ghostty uses them after a reload (cmd+shift+,) or in a new window.</div>`, optl(["yes, add them", "no"], 0)),
+   f: sFoot("↑↓ choose · ⏎ pick “yes, add them” · ←→ other items · esc back") })],
+["setup, by the hand · 4 · a starter AGENTS.md", "what the file is for, the whole file before it exists, and that it's just a file: edit it, delete it, commit it for your team.",
+ term({ h: head(`<span class="acc">? 2 waiting</span>`), pan: OB_PANEL.replace("setup", ""),
+   feed: sview(SETUP_TABS, 1, "write a starter AGENTS.md for this repo", "new file · 14 lines", `<div>AGENTS.md is a short note your agents read before they work here: how to build, how to test, what to leave alone. with it, they guess less and ask you less.</div>
+<div style="margin-top:.4lh">i'd create it at the root of the repo. nothing else changes:</div>${plus(["# AGENTS.md", "notes for the agents working on acme.", "build: npm run build · test: npm test", "<span class='faint'>… 11 more lines</span>"])}
+<div class="dim">it's a plain file: edit it whenever, delete it to undo, commit it so your team's agents read it too.</div>`, optl(["yes, write it", "no"])),
+   f: sFoot("↑↓ choose · 1-2 pick · ←→ other items · esc back") })],
+["setup, by the hand · 5 · the connectors key (optional)", "no options here: the answer is the key itself. the text says what you get, that it's optional, where the key goes, and how to say no.",
+ term({ h: head(`<span class="acc">? 1 waiting</span>`), pan: OB_PANEL.replace("setup", ""),
+   feed: sview(SETUP_TABS, 2, "turn on web search and the other connectors", "optional", `<div>connectors are extra tools for your agents: web search, reading documents and images, and more. they run on a MISTRAL_API_KEY, whatever model you chat with. without it everything else works; your agents just can't search the web.</div>
+<div style="margin-top:.4lh">paste your key below and press ⏎. it goes in ~/.bise/auth.json, and only you can read it. to remove it later, delete it from that file.</div>
+<div class="dim" style="margin-top:.4lh">no key yet? console.mistral.ai. not now: ctrl+x.</div>`, ""),
+   f: sFoot("paste your key · ⏎ save · ctrl+x not now · esc back", `<span class="faint">••••••••••••••••</span>${CUR}`) })],
+["setup, by the hand · 6 · what stays in the thread", "one dim row per answer, saying what changed and where, or how to get it back later. a ✓ when something changed, a – when nothing did.",
+ term({ h: head(), pan: OB_PANEL.replace("setup", ""), feed: OB_EMPTY +
+   `<div class="b dim"><span class="who">▸</span>checked 7 things · 4 fine · 3 i can fix</div>` +
+   `<div class="dim" style="padding-left:3ch"><span class="acc">✓</span> Ghostty config · 2 lines added, the old one in config.bise-backup · reload Ghostty (cmd+shift+,) to use them</div>` +
+   `<div class="dim" style="padding-left:3ch">– no AGENTS.md · type /setup whenever you want</div>` +
+   `<div class="dim" style="padding-left:3ch"><span class="acc">✓</span> MISTRAL_API_KEY saved · the agents you start from now on can search the web</div>`, f: foot("main · idle", CUR) })],
 ];
 const TOOL_SCREENS = [
 ["tool calls · main · one line each (designer's pick)", "<span class='optk'>the user's idea, designer's reco.</span> in main, each bash or typescript call is one dim row: its kind in the lead column ($ bash, ƒ typescript), then what the model says it is doing (the new <b>description</b> parameter, written for you, in your language), then its state on the right. calls in a row stack with no blank row between them. ctrl+o, or a click on a row, shows the box.",
