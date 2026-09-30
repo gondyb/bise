@@ -165,7 +165,7 @@ subject ideas:
 >
 > with bise, you talk to one thread per repo. it runs the agents for you, and only taps your shoulder when it matters. you keep talking while they work. the agents talk to each other before they collide.
 >
-> a detail you'll like: bise's agents call their tools by writing TypeScript. every MCP server you connect becomes typed functions under `tools.*`, and the agent writes a small script to use them. that's how you can keep a hundred servers on without filling its context.
+> a detail you'll like: bise's agents call their tools by writing TypeScript. every MCP server you connect becomes functions under `tools.*`, and the agent writes a small script to use them. that's how you can keep a hundred servers on without filling its context.
 >
 > it's open source (Apache-2.0), macOS only for now, and early: there's no approval mode yet, so commit often.
 >
