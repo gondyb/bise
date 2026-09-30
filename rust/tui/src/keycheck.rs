@@ -255,40 +255,32 @@ fn check_once(c: &Call, env: &dyn Fn(&str) -> Option<String>) -> Result<(), Fail
     }
 }
 
-/// The same check for the command line (`bise login --check`, `bise auth
-/// check`, BISE-273): `model` ("provider/id") resolved in `setup`'s
-/// catalog, called with `key`; Err = the reason in the key step's words
-/// (never the key).
+/// The same check for the command line (`bise login`, `bise auth check`,
+/// BISE-273): `model` ("provider/id") resolved in `setup`'s catalog,
+/// called with `key`; Err = why, the provider's words kept (never the
+/// key). The command says it (bise_catalog::auth_cli::check_lines).
 pub fn check_model(
     setup: &bise_catalog::Setup,
     model: &str,
     key: &str,
     env: &dyn Fn(&str) -> Option<String>,
-) -> Result<(), String> {
+) -> Result<(), bise_catalog::auth_cli::CheckFail> {
+    use bise_catalog::auth_cli::{CheckFail, CheckKind};
     let r = setup.catalog.resolve(model);
     if r.known == bise_catalog::Known::NoProvider {
-        return Err(format!("unknown provider '{}' in {}", r.provider, model));
+        return Err(CheckFail { kind: CheckKind::Other(format!("unknown provider '{}' in {}", r.provider, model)), said: String::new() });
     }
-    let name = setup.catalog.provider(&r.provider).map(|p| p.name.clone()).unwrap_or_else(|| r.provider.clone());
     let call = Call { provider: r.provider.clone(), api: r.api.clone(), base_url: r.base_url.clone(), model: r.id.clone(), key: key.to_string() };
-    check(&call, env).map_err(|f| say(&f, &name, &r.name))
-}
-
-/// Why a key did not pass, in the key step's words, with the provider's
-/// own ("Anthropic said: \"…\"").
-pub(crate) fn say(f: &Fail, provider: &str, model: &str) -> String {
-    let base = match &f.why {
-        Why::WrongKey => format!("{} says this key is wrong", provider),
-        Why::NoCredit => format!("the key works, but your {} account has no credit yet", provider),
-        Why::Model => format!("{} doesn't know {}: pick another model (--model)", provider, model),
-        Why::NoAccess => format!("this key can't use {}: pick another model (--model)", model),
-        Why::Unreachable(e) => format!("i couldn't reach {}: {}", provider, e.trim_end_matches('.')),
-    };
-    if f.said.is_empty() {
-        base
-    } else {
-        format!("{}. {} said: \"{}\"", base, provider, f.said)
-    }
+    check(&call, env).map_err(|f| CheckFail {
+        kind: match f.why {
+            Why::WrongKey => CheckKind::WrongKey,
+            Why::NoCredit => CheckKind::NoCredit,
+            Why::Model => CheckKind::Model,
+            Why::NoAccess => CheckKind::NoAccess,
+            Why::Unreachable(e) => CheckKind::Unreachable(e),
+        },
+        said: f.said,
+    })
 }
 
 #[cfg(test)]
@@ -438,15 +430,5 @@ mod tests {
         let env = move |k: &str| (k == "BEND_PROVIDER_URL").then(|| url.clone());
         assert_eq!(check_with(&call("anthropic", "anthropic"), &env, Duration::from_millis(10)), Ok(()));
         assert_eq!(server.join().unwrap(), 2);
-    }
-
-    #[test]
-    fn the_command_line_says_it_with_the_providers_words() {
-        let f = verdict(400, ANTHROPIC_NO_CREDIT.as_bytes(), KEY).unwrap_err();
-        assert_eq!(
-            say(&f, "Anthropic", "claude-opus-5-5"),
-            "the key works, but your Anthropic account has no credit yet. Anthropic said: \"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.\""
-        );
-        assert_eq!(say(&Fail::of(Why::NoAccess), "Anthropic", "claude-opus-5-5"), "this key can't use claude-opus-5-5: pick another model (--model)");
     }
 }

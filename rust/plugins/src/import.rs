@@ -15,6 +15,7 @@
 
 use std::path::{Path, PathBuf};
 
+use bise_home::style::Style;
 use serde_json::{json, Map, Value};
 
 use crate::resolve::{valid_name, MCP_SCHEMA, PLUGIN_SCHEMA};
@@ -168,11 +169,12 @@ pub fn main(args: &[String], root: &Path) -> i32 {
   servers.json: {\"mcpServers\": {...}} (Claude Code's shape; Codex's mcp_servers as JSON works too).
   Writes ~/.agents/plugins/NAME/ (plugin.json, mcp.json 0600); stdio servers only.";
     let dry = args.iter().any(|a| a == "--dry-run");
+    let (out, err) = (Style::stdout(), Style::stderr());
     let rest: Vec<&String> = args.iter().filter(|a| *a != "--dry-run").collect();
     let name = match rest.as_slice() {
         [n] if valid_name(n) => n.as_str(),
         [n] if !n.starts_with('-') => {
-            eprintln!("{:?} is not a plugin name: [a-z0-9.-], 1-64 chars, alphanumeric at both ends", n);
+            eprintln!("{}", err.fail(&format!("{:?} is not a plugin name: [a-z0-9.-], 1-64 chars, alphanumeric at both ends", n)));
             return 2;
         }
         _ => {
@@ -182,41 +184,48 @@ pub fn main(args: &[String], root: &Path) -> i32 {
     };
     let mut text = String::new();
     if let Err(e) = std::io::Read::read_to_string(&mut std::io::stdin(), &mut text) {
-        eprintln!("cannot read stdin: {}", e);
+        eprintln!("{}", err.fail(&format!("cannot read stdin: {}", e)));
         return 1;
     }
     let v: Value = match serde_json::from_str(&text) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("stdin is not JSON ({}): nothing written", e.classify_name());
+            eprintln!("{}", err.fail(&format!("stdin is not JSON ({}): nothing written", e.classify_name())));
             return 1;
         }
     };
     let p = match plan(&v) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("{}", e);
+            eprintln!("{}", err.fail(&e));
             return 1;
         }
     };
     for l in &p.lines {
-        println!("{}", l);
+        println!("{}", out.dim(l));
     }
     if p.servers.is_empty() {
-        println!("no server bise can run: nothing written");
+        println!("{}", out.ask("no server bise can run: nothing written"));
         return 0;
     }
+    let home = crate::resolve::home();
+    let shown = |d: &Path| match d.strip_prefix(&home) {
+        Ok(r) => format!("~/{}", r.display()),
+        Err(_) => d.display().to_string(),
+    };
     if dry {
-        println!("dry run: would write {}", root.join(name).display());
+        println!("{}", out.dim(&format!("dry run: would write {}", shown(&root.join(name)))));
         return 0;
     }
     match write(root, name, &p) {
         Ok(dir) => {
-            println!("wrote {} ({} server(s)); they start with the next session or /reload", dir.display(), p.servers.len());
+            let n = p.servers.len();
+            println!("{}", out.ok(&format!("wrote {} ({} server{})", shown(&dir), n, if n == 1 { "" } else { "s" })));
+            println!("{}", out.dim("they start with the next session, or /reload in one."));
             0
         }
         Err(e) => {
-            eprintln!("{}", e);
+            eprintln!("{}", err.fail(&e));
             1
         }
     }
