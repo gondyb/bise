@@ -289,7 +289,7 @@ const V = {
     s.p = []; s.b = []; s.kx = -2; s.flash = 0; s.last = -99;
     const NAMES = ["dark-mode", "confetti", "reactions", "gif-picker", "drag-drop", "playlists", "stickers", "leaderboard", "konami-code", "typing-dots", "voice-notes", "party-mode"];
     return (g, t) => {
-      const Y = Math.round(g.rows * .86);
+      const Y = Math.round(g.rows * .8);
       // a fuller dandelion sky: seeded at once over the whole hero, then fed from the bottom and the left edge
       const seed = (x, y) => s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: 1e9 });
       if (!s.sown) { s.sown = true; for (let k = 0; k < 150; k++) seed(rnd(0, g.cols), rnd(0, g.rows)); }
@@ -310,17 +310,24 @@ const V = {
         const free = (L) => { const a = kx + 1 + L, z = a + 2 + done.length; return a < g.cols - 3 && s.b.every(o => Math.abs(o.xs + o.L - a) > 7); };
         let L = 0; for (let k = 0; k < 12 && !L; k++) { const c = Math.floor(rnd(30 - 18 * q, 64 - 42 * q)); if (free(c)) L = c; }
         if (L) {
-          // an arc that crosses the text's columns stays under it (name included)
-          const under = kx + 1 + L + name.length + 3 >= ko.x0 && kx + 1 <= ko.x1;
-          const top = under ? Math.max(2, Y - ko.y1 - 2) : Y - 4;
-          s.b.push({ xs: kx + 1, L, p: 0, A: Math.min(rnd(Math.min(3, top), top), L / 2.6), name, done, key });
+          // above or below the thread: the side with fewer arcs over the same columns (ties: above, mostly)
+          const xs = kx + 1, over = (o) => o.xs < xs + L && xs < o.xs + o.L;
+          const under = xs + L + name.length + 3 >= ko.x0 && xs <= ko.x1;
+          const room = { [-1]: under ? Math.max(2, Y - ko.y1 - 2) : Y - 4, [1]: g.rows - Y - 2 };
+          const busy = (d) => s.b.filter(o => o.dir === d && over(o)).length;
+          const dir = busy(-1) < busy(1) ? -1 : busy(1) < busy(-1) ? 1 : (Math.random() < .6 ? -1 : 1);
+          // and a height as far as possible from the arcs already on that side
+          const top = Math.min(room[dir], L / 2.6), near = s.b.filter(o => o.dir === dir && over(o)).map(o => o.A);
+          let A = rnd(Math.min(2, top), top), best = -1;
+          for (let k = 0; k < 8; k++) { const c = rnd(Math.min(2, top), top), d = near.length ? Math.min(...near.map(a => Math.abs(a - c))) : 99; if (d > best) { best = d; A = c; } }
+          s.b.push({ xs, L, p: 0, A, dir, name, done, key });
           s.last = s.kx; s.flash = 8; s.gap = rnd(.75, 1.25) * (16 - 11 * q); PULSES.push({ x: kx, t0: t });
         }
       }
       s.b = s.b.filter(b => {
         b.p = Math.min(b.L, b.p + .6 + .25 * q);
         const pts = [];
-        for (let i = 0; i <= b.p; i++) pts.push([b.xs + i, Y - b.A * Math.sin(Math.PI * i / b.L)]);
+        for (let i = 0; i <= b.p; i++) pts.push([b.xs + i, Y + b.dir * b.A * Math.sin(Math.PI * i / b.L)]);
         // back on the thread, it waits for the kiss to pick it up
         if (b.p >= b.L && s.kx >= b.xs + b.L - 1) {
           for (const [x, y] of pts) if (Math.random() < .55) s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: rnd(50, 160) });
