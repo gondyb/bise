@@ -95,6 +95,9 @@
   p { margin-bottom:20px; }
   p.soft { color:var(--dim); }
   .turn { color:var(--acc); font-weight:700; }
+  .fried { list-style:none; margin:0 0 1.2em; padding:0; color:var(--dim); }
+  .fried li { position:relative; padding-left:3ch; margin:.25em 0; }
+  .fried li::before { content:"·"; position:absolute; left:.8ch; color:var(--acc); }
 
 
   /* the demo */
@@ -386,8 +389,15 @@
   <div class="inner blow">
     <div class="kicker">why</div>
     <h2 class="punch">you didn't become an engineer<br>to babysit robots.</h2>
-    <p class="soft">at 6pm you'd shipped more than ever, and you felt like you did nothing.</p>
-    <p class="soft">it's not you. it's agent fatigue. you jump between tabs a hundred times a day. every agent talks to you, about everything, all the time.</p>
+    <p class="soft">you shipped more than ever today. your brain is fried.</p>
+    <ul class="fried">
+      <li>you typed "yes, continue" eleven times.</li>
+      <li>you pasted the same context into three tabs.</li>
+      <li>two agents edited the same file. the red tests told you.</li>
+      <li>you forgot what tab 3 was for.</li>
+      <li>a great idea showed up at 2pm. you let it go.</li>
+    </ul>
+    <p class="soft">that's agent fatigue.</p>
     <p class="turn">it doesn't have to be like this.</p>
   </div>
 </section>
