@@ -25,7 +25,7 @@
 <meta name="twitter:creator" content="@GabrielVergnaud">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"bise","url":"https://bise.dev","applicationCategory":"DeveloperApplication","operatingSystem":"macOS","description":"bise is an open-source terminal app for multi-agent coding. you talk to one agent, it runs a whole team of coding agents for you, and you stay in flow.","author":{"@type":"Person","name":"Gabriel Vergnaud"},"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#c4bcaf; --faint:#3d3935; --kick:#6f685f; --wind:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --raised:#221e1c; --chip:#262220; }
   [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#4a443e; --faint:#d6cfc4; --kick:#9d958a; --wind:#cbc3b6; --acc:#b8416b; --err:#b3261e; --raised:#fbf8f3; --chip:#e8e2d8; }
@@ -110,6 +110,10 @@
   #try .fine b { color:var(--text); font-weight:700; }
   #try .switch { margin-top:0; font-size:inherit; text-shadow:none; }
   p { margin-bottom:20px; }
+  /* type: bise's voice (titles, the product, the marks) in mono; the explaining text in Geist, easier to read */
+  body { font-family:"Geist",-apple-system,system-ui,sans-serif; font-size:17px; line-height:1.65; }
+  h2, .t1, .punch, .hi, .how b, .feat h3, #faq b, .turn { font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; }
+  .big, .kiss, .term, .term *, .mini, .mini *, .install, .install *, code, pre, .keys, .chip, .stage, .stage *, .stats, .org .agent, .org .boss, .org .msg, .gc, .gust, .mv, .mv *, header, .kicker, .n, .def, .cli, .tick, .k { font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; }
   p.soft { color:var(--dim); }
   .turn { color:var(--acc); font-weight:700; }
 
