@@ -1,6 +1,9 @@
 //! ctrl+f: find in the history (BISE-237, book §16 "Find").
 //!
-//! The field takes the composer's place; every edit searches again.
+//! The field is a small box over the top-right of the history
+//! (BISE-297, like an editor's or a browser's find): the composer stays
+//! with its draft, the box has the keys until esc; every edit searches
+//! again.
 //! Long histories stay fast: the search never renders the history. It
 //! reads an index of each event's raw text (lowered once, kept while
 //! the field is open) and scans it in time slices (a few ms per frame),
@@ -13,6 +16,7 @@
 use crate::app::App;
 use crate::wire::{Ev, ToolData};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::time::{Duration, Instant};
@@ -29,8 +33,14 @@ const FIELD_CAP: usize = 256 * 1024;
 const LIVE_TAIL: usize = 16;
 /// How long `back to the newest` / `back to the oldest` shows.
 const NOTE_FOR: Duration = Duration::from_millis(1500);
-/// Rows of context kept above a match the view moves to.
-const CONTEXT_ROWS: isize = 3;
+/// The box's size (designer): 40 columns, at least 24 when the feed
+/// has room, 3 rows (its border, the field, its border).
+const BOX_W: u16 = 40;
+const BOX_MIN_W: u16 = 24;
+pub(crate) const BOX_H: u16 = 3;
+/// Rows of context kept above a match the view moves to: the box's
+/// rows and 1 blank row, the match lands under the box (designer).
+const CONTEXT_ROWS: isize = BOX_H as isize + 1;
 
 /// Which scan an event belongs to: your messages and the replies are
 /// searched first.
@@ -355,7 +365,7 @@ impl Marker<'_> {
     }
 }
 
-fn no_color() -> bool {
+pub(crate) fn no_color() -> bool {
     std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty())
 }
 
@@ -613,8 +623,9 @@ pub(crate) fn step(app: &mut App, width: usize, budget: Duration) {
     if !jump {
         return;
     }
-    // already on screen (nothing opened above it): the view stays
-    let shown = app.vis_events.iter().zip(&app.vis_rows).any(|(&e, &r)| e == i && r == row);
+    // already on screen, below the box (nothing opened above it): the
+    // view stays
+    let shown = app.vis_events.iter().zip(&app.vis_rows).skip(BOX_H as usize).any(|(&e, &r)| e == i && r == row);
     if shown && !revealed {
         return;
     }
@@ -635,18 +646,53 @@ fn spots_of(app: &mut App, i: usize, width: usize, needle: &str, sensitive: bool
     out
 }
 
-/// The find row, in the composer's place: `signup▏` (a dim placeholder
-/// when empty), the counter right-aligned and dim, `w` columns.
+/// Where the box goes over the history `feed`: its top border on the
+/// feed's first row, its right border 1 column in from the feed's right
+/// edge. None when the feed has no room for it.
+pub(crate) fn box_rect(feed: Rect) -> Option<Rect> {
+    let room = feed.width.saturating_sub(2);
+    if room < 8 || feed.height < BOX_H {
+        return None;
+    }
+    let w = BOX_W.min(room).max(BOX_MIN_W.min(room));
+    Some(Rect { x: feed.right() - 1 - w, y: feed.y, width: w, height: BOX_H })
+}
+
+/// Where the box is drawn over the history `feed` this frame: top-right
+/// ([`box_rect`]); at the history's very top (nothing left to scroll)
+/// the current match can sit where the box goes: the box then goes to
+/// the bottom-right, the match stays seen.
+pub(crate) fn box_at(app: &App, feed: Rect) -> Option<Rect> {
+    let r = box_rect(feed)?;
+    let Some(l) = app.find.as_ref().and_then(|f| f.loc) else { return Some(r) };
+    let y = (0..app.vis_events.len()).find(|&y| app.vis_events[y] == l.ev && app.vis_rows.get(y) == Some(&l.row));
+    let under = y.is_some_and(|y| {
+        let (a, b) = (feed.x as usize + l.from, feed.x as usize + l.to);
+        y < BOX_H as usize && a < r.right() as usize && b > r.x as usize
+    });
+    if under && feed.height > 2 * BOX_H {
+        return Some(Rect { y: feed.bottom() - BOX_H, ..r });
+    }
+    Some(r)
+}
+
+/// The box's field row, `w` columns (its inside): ` ⌕ signup▏  3 of 12 `,
+/// the placeholder `find in main` dim when empty, the counter dim and
+/// right-aligned (`no match` in the error red).
 pub(crate) fn row(app: &App, w: usize) -> Line<'static> {
     let Some(f) = app.find.as_ref() else { return Line::default() };
     let d = Style::default().fg(crate::theme::dim());
     let cursor = Span::styled(" ", Style::default().fg(crate::theme::text()).add_modifier(Modifier::REVERSED));
     let count = f.counter(more_before(app), Instant::now());
-    let room = w.saturating_sub(count.width() + 2).max(1);
-    let mut spans: Vec<Span<'static>> = Vec::new();
+    let count_st = if count == "no match" { Style::default().fg(crate::theme::error()) } else { d };
+    let lens = format!("{} ", crate::theme::glyph("⌕"));
+    // 1 blank column each side, the glyph, 1 blank before the counter
+    let pad = 1 + lens.width();
+    let room = w.saturating_sub(pad + 1 + count.width() + usize::from(!count.is_empty())).max(1);
+    let mut spans: Vec<Span<'static>> = vec![Span::raw(" "), Span::styled(lens, d)];
     let used = if f.query.is_empty() {
         spans.push(cursor);
-        let p = " find in the history";
+        let p = format!(" find in {}", f.focus);
         let p: String = p.chars().take(room.saturating_sub(1)).collect();
         let n = 1 + p.width();
         spans.push(Span::styled(p, d));
@@ -669,9 +715,9 @@ pub(crate) fn row(app: &App, w: usize) -> Line<'static> {
         n
     };
     if !count.is_empty() {
-        let gap = w.saturating_sub(used + count.width()).max(1);
+        let gap = w.saturating_sub(pad + used + count.width() + 1).max(1);
         spans.push(Span::raw(" ".repeat(gap)));
-        spans.push(Span::styled(count, d));
+        spans.push(Span::styled(count, count_st));
     }
     Line::from(spans)
 }

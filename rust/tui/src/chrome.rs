@@ -308,7 +308,7 @@ const STEPS: [Step; 8] = {
 /// The divider's label: ` you → name `; while the agent works, the gust
 /// 1 space after the name, then `working · 42s` dim (as much of it as
 /// `step` keeps).
-fn label(name: &str, find: bool, tail: &[Span<'static>], working: Option<(&Working, Step)>) -> Vec<Span<'static>> {
+fn label(name: &str, tail: &[Span<'static>], working: Option<(&Working, Step)>) -> Vec<Span<'static>> {
     let arrow = if theme::ascii_mode() { "->" } else { "→" };
     let name = match working.and_then(|(_, s)| s.name_cut) {
         Some(n) => fit(vec![Span::raw(name.to_string())], n).into_iter().map(|s| s.content.into_owned()).collect(),
@@ -316,8 +316,7 @@ fn label(name: &str, find: bool, tail: &[Span<'static>], working: Option<(&Worki
     };
     let mut out = vec![
         Span::raw(" "),
-        // the find field is open (BISE-237): `find in main`
-        Span::styled(if find { "find in ".to_string() } else { format!("you {} ", arrow) }, Style::default().fg(dim())),
+        Span::styled(format!("you {} ", arrow), Style::default().fg(dim())),
         Span::styled(name, Style::default().fg(accent())),
     ];
     out.extend(tail.iter().cloned());
@@ -347,10 +346,10 @@ fn width_of(spans: &[Span]) -> u16 {
 /// While the agent works, the label is the whole one (its first step).
 /// With the key bar in the divider, the label keeps the short tail
 /// (`· opus·hi · ψ`).
-pub(crate) fn divider_room(width: u16, cols: Cols, name: &str, who: &Who, working: Option<&Working>, find: bool) -> u16 {
+pub(crate) fn divider_room(width: u16, cols: Cols, name: &str, who: &Who, working: Option<&Working>) -> u16 {
     let tails = who.tails();
     let tail = tails.get(2).or(tails.last()).cloned().unwrap_or_default();
-    let label_w = width_of(&label(name, find, &tail, working.map(|w| (w, STEPS[0]))));
+    let label_w = width_of(&label(name, &tail, working.map(|w| (w, STEPS[0]))));
     let start = cols.margin - 1 + label_w + 2;
     let end = width.saturating_sub(cols.margin);
     end.saturating_sub(start)
@@ -413,7 +412,6 @@ pub(crate) fn draw_divider(
     who: &Who,
     working: Option<&Working>,
     state: Vec<Span<'static>>,
-    find: bool,
 ) -> (Rect, Rect) {
     let area = area.intersection(buf.area);
     if !divider_rule(buf, area, cols, y) {
@@ -436,19 +434,19 @@ pub(crate) fn draw_divider(
     // first step), else the last one
     let tails = who.tails();
     let first = working.map(|w| (w, STEPS[0]));
-    let tail = tails.iter().find(|t| fits(&label(name, find, t, first), true)).or(tails.last()).cloned().unwrap_or_default();
+    let tail = tails.iter().find(|t| fits(&label(name, t, first), true)).or(tails.last()).cloned().unwrap_or_default();
     let (label, state) = match working {
         None => {
-            let lw = width_of(&label(name, find, &tail, None));
+            let lw = width_of(&label(name, &tail, None));
             let room = end.saturating_sub(lx + lw + 2);
-            (label(name, find, &tail, None), fit(state, room as usize))
+            (label(name, &tail, None), fit(state, room as usize))
         }
         Some(wk) => {
             let pick = STEPS
                 .iter()
-                .find(|s| fits(&label(name, find, &tail, Some((wk, **s))), s.state))
+                .find(|s| fits(&label(name, &tail, Some((wk, **s))), s.state))
                 .unwrap_or(&STEPS[STEPS.len() - 1]);
-            (label(name, find, &tail, Some((wk, *pick))), if pick.state { state } else { Vec::new() })
+            (label(name, &tail, Some((wk, *pick))), if pick.state { state } else { Vec::new() })
         }
     };
     put(buf, lx, y, &label, end + 1);
@@ -488,7 +486,7 @@ mod tests {
         let area = Rect::new(0, 0, width, 1);
         let mut buf = Buffer::empty(area);
         let cols = crate::layout::cols(width, 40);
-        draw_divider(&mut buf, area, cols, 0, name, who, working, vec![Span::raw(state.to_string())], false);
+        draw_divider(&mut buf, area, cols, 0, name, who, working, vec![Span::raw(state.to_string())]);
         (0..width).map(|x| buf[(x, 0)].symbol().to_string()).collect()
     }
 

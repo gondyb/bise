@@ -111,7 +111,7 @@ impl Mode {
             Mode::Quote => &[ASK, ("cmd+c", "copy"), ("esc", "drop")],
             Mode::DropAsk => &[("y", "drop"), ("n or esc", "keep")],
             Mode::Confirm => &[("y", "yes"), ("n", "no"), ("esc", "cancel")],
-            Mode::Find => &[("⏎", "older"), ("↑↓", "move"), ("esc", "close")],
+            Mode::Find => &[("⏎", "older"), ("shift+⏎", "newer"), ("esc", "close")],
             Mode::Palette => &[("↑↓", "choose"), ("⏎", "open"), ("esc", "close")],
             // the view's own keys come from `sb::card_key_pairs` (`1-2 pick`…)
             // the selected row's keys come from `sb::inbox_pairs` (`1-2 answer`…)

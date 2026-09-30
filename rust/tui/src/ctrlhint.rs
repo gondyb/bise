@@ -216,6 +216,11 @@ pub(crate) fn pairs(app: &App) -> Vec<Pair> {
 fn ctrl_pairs(app: &App) -> Vec<Pair> {
     let mut p: Vec<Pair> = Vec::new();
     p.push(if app.pending && !app.interrupt_requested { ("ctrl+c", "interrupt") } else { ("ctrl+c", "quit") });
+    // BISE-297: the find box has the keys (find.rs `on_key`)
+    if app.find.is_some() {
+        p.extend([("ctrl+f", "older"), ("ctrl+w", "delete a word"), ("ctrl+u", "clear")]);
+        return p;
+    }
     if let Some(w) = fold_word(app) {
         p.push(("ctrl+o", w));
     }
@@ -255,6 +260,10 @@ fn ctrl_pairs(app: &App) -> Vec<Pair> {
 /// The ⌥ keys (sb/keys.rs `nav_key`, the editor's word keys).
 fn alt_pairs(app: &App) -> Vec<Pair> {
     let mut p: Vec<Pair> = Vec::new();
+    if app.find.is_some() {
+        p.push(("⌥⌫", "delete a word"));
+        return p;
+    }
     let v = crate::sb::ctrl_view(app);
     let empty = app.ed.text.is_empty();
     if v.agents > 1 {
@@ -275,6 +284,10 @@ fn alt_pairs(app: &App) -> Vec<Pair> {
 /// cmd+z and cmd+↑↓, only in the help).
 fn cmd_pairs(app: &App) -> Vec<Pair> {
     let mut p: Vec<Pair> = Vec::new();
+    if app.find.is_some() {
+        p.push(("cmd+f", "older"));
+        return p;
+    }
     let empty = app.ed.text.is_empty();
     if crate::sb::palette::has_agents(app) {
         p.push(("cmd+k", "find agent"));
@@ -363,8 +376,10 @@ fn row(buf: &Buffer, y: u16, x0: u16, x1: u16) -> Vec<String> {
 /// frame passes): the folds, the panel title, the divider. The key bar
 /// draws its own ([`pairs`]), the panel its numbers (`⌥1`, sb/panel.rs).
 pub(crate) fn draw(app: &App, buf: &mut Buffer) {
-    let empty = app.ed.text.is_empty();
+    // the find box has the keys: ctrl+o, ctrl+k/j, ⌥↑↓ wait (BISE-297)
+    let empty = app.ed.text.is_empty() && app.find.is_none();
     match held(app) {
+        Some(Held::Ctrl) if app.find.is_some() => {}
         Some(Held::Ctrl) => {
             folds(app, buf);
             if empty {

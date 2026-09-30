@@ -70,10 +70,10 @@ fn ctrl_f_opens_the_field_and_esc_closes_it() {
     assert!(app.find.is_some());
     let t = draw(&mut app);
     let s = screen(&t);
-    assert!(s.contains("find in the history"), "{s}");
-    assert!(s.contains("find in main"), "the divider names the feed: {s}");
-    assert!(!s.contains("my draft"), "{s}");
-    assert!(s.contains("⏎ older"), "{s}");
+    assert!(s.contains("⌕   find in main"), "the box names the feed: {s}");
+    assert!(s.contains("you → main"), "the divider stays: {s}");
+    assert!(s.contains("my draft"), "the composer stays with its draft: {s}");
+    assert!(s.contains("⏎ older   shift+⏎ newer   esc close"), "{s}");
     typed(&mut app, "sign");
     assert_eq!(app.find.as_ref().unwrap().query, "sign");
     assert_eq!(app.ed.text, "my draft", "the draft waits");
@@ -141,6 +141,10 @@ fn the_matches_are_painted_the_current_one_on_the_accent() {
     assert_eq!(b[(x2, y)].bg, crate::theme::accent());
     assert_eq!(b[(x1, y)].bg, crate::theme::pill_bg());
     assert!(s.contains("2 of 2"), "{s}");
+    // the match is on the history's first row, the view cannot go up:
+    // the box goes to the bottom-right, off the match
+    let field = s.lines().position(|l| l.contains('⌕')).expect("the box");
+    assert!(field as u16 > y + 3, "the box under the match: {s}");
 }
 
 #[test]
@@ -339,4 +343,130 @@ fn the_hints_say_cmd_f_once_a_cmd_key_arrived() {
     let lines = crate::help::page_lines(crate::help::Page::Shortcuts, "find in", &[], 80, true);
     let all: String = lines.iter().flat_map(|l| l.spans.iter().map(|s| s.content.to_string())).collect();
     assert!(all.contains(" cmd+f ") && all.contains(" ctrl+f "), "{all}");
+}
+
+/// The box (BISE-297, designer): top-right of the history, its top
+/// border on the first history row, 1 column in from the feed's right
+/// edge, 40 columns, rounded dim border on the raised grey; the composer
+/// under it keeps its draft, no caret (the box has the keys).
+#[test]
+fn the_box_floats_top_right_and_the_composer_stays() {
+    let mut app = app_with(vec![Ev::You("ship the signup page".into(), Mark::Sent, false)]);
+    app.ed.insert("my draft");
+    draw(&mut app);
+    press(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL);
+    typed(&mut app, "signup");
+    let t = draw(&mut app);
+    let b = t.backend().buffer();
+    let s = screen(&t);
+    let lines: Vec<&str> = s.lines().collect();
+    let top = lines.iter().position(|l| l.contains('⌕')).expect("the box's field") - 1;
+    let field = lines[top + 1];
+    assert!(lines[top + 2].contains('╰'), "{s}");
+    assert!(field.contains("⌕ signup") && field.contains("1 of 1"), "{field}");
+    // 40 columns wide, top-right: the history's first row, right edge
+    let row: Vec<&str> = (0..b.area.width).map(|x| b[(x, top as u16)].symbol()).collect();
+    let x0 = row.iter().skip(1).position(|&c| c == "╭").unwrap() + 1;
+    let x1 = x0 + row[x0..].iter().position(|&c| c == "╮").unwrap();
+    assert_eq!(x1 - x0 + 1, 40, "{s}");
+    assert!(x1 as u16 > b.area.width / 2, "right half: {s}");
+    assert!(lines[..top].iter().any(|l| l.contains("bise")), "under the header: {s}");
+    let feed_right = app.feed_x + app.area_w as u16;
+    assert_eq!(x1 as u16, feed_right - 2, "1 column in from the feed's edge: {s}");
+    // the border dim, the inside on the raised grey
+    assert_eq!(b[(x0 as u16, top as u16)].fg, crate::theme::dim());
+    assert_eq!(b[(x0 as u16 + 3, top as u16 + 1)].bg, crate::theme::raised());
+    // the composer keeps its draft, without a caret
+    let dy = lines.iter().position(|l| l.contains("my draft")).expect("the draft") as u16;
+    assert!(dy as usize > top + 2, "the draft is the composer's: {s}");
+    let caret = (0..b.area.width).any(|x| b[(x, dy)].modifier.contains(Modifier::REVERSED));
+    assert!(!caret, "the box has the caret, not the composer");
+    assert_eq!(app.ed.text, "my draft");
+    // esc: the box closes, the composer has the keys again
+    press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    typed(&mut app, "!");
+    assert_eq!(app.ed.text, "my draft!");
+    let s = screen(&draw(&mut app));
+    assert!(!s.contains('⌕'), "{s}");
+}
+
+/// The box's placement on a narrow feed: at least 24 columns, and never
+/// wider than the feed less 2.
+#[test]
+fn the_box_fits_the_feed() {
+    let r = box_rect(Rect::new(3, 2, 90, 20)).unwrap();
+    assert_eq!((r.x, r.y, r.width, r.height), (3 + 90 - 1 - 40, 2, 40, 3));
+    assert_eq!(box_rect(Rect::new(0, 0, 30, 20)).unwrap().width, 28);
+    assert_eq!(box_rect(Rect::new(0, 0, 20, 20)).unwrap().width, 18);
+    assert!(box_rect(Rect::new(0, 0, 9, 20)).is_none());
+    assert!(box_rect(Rect::new(0, 0, 90, 2)).is_none());
+}
+
+/// `no match` in the error red; the empty field names the feed.
+#[test]
+fn no_match_is_red() {
+    let mut app = app_with(vec![Ev::You("hello".into(), Mark::Sent, false)]);
+    draw(&mut app);
+    press(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL);
+    typed(&mut app, "zz");
+    let t = draw(&mut app);
+    let b = t.backend().buffer();
+    let s = screen(&t);
+    let y = s.lines().position(|l| l.contains("no match")).expect("the counter") as u16;
+    let x = s.lines().nth(y as usize).unwrap().split("no match").next().unwrap().chars().count() as u16;
+    assert_eq!(b[(x, y)].fg, crate::theme::error());
+}
+
+/// A match under the box is not "on screen": the view moves so the
+/// current match lands under the box, 4 rows down (designer).
+#[test]
+fn the_current_match_is_never_under_the_box() {
+    let mut events: Vec<Ev> = (0..60).map(|i| Ev::Assistant(format!("filler reply {i}"))).collect();
+    events.push(Ev::Assistant("the target line".into()));
+    for i in 0..60 {
+        events.push(Ev::Assistant(format!("more filler {i}")));
+    }
+    let mut app = app_with(events);
+    draw(&mut app);
+    // the target on the history's first row, where the box goes
+    let at = app.vis_events.iter().position(|&e| e == 60);
+    assert!(at.is_none());
+    app.follow = false;
+    app.anchor = (60, 0);
+    app.scroll = 0;
+    draw(&mut app);
+    assert_eq!(app.vis_events.first(), Some(&60), "the target on the first row");
+    press(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL);
+    typed(&mut app, "target");
+    draw(&mut app);
+    let loc = app.find.as_ref().unwrap().loc.expect("the match is drawn");
+    let row = (0..app.vis_events.len()).position(|y| app.vis_events[y] == 60 && app.vis_rows[y] == loc.row).expect("on screen");
+    assert_eq!(row, BOX_H as usize + 1, "under the box, 1 blank row between");
+}
+
+/// A click in your message takes the keys back: the box closes.
+#[test]
+fn a_click_in_the_composer_closes_the_box() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    let mut app = app_with(vec![Ev::You("hello".into(), Mark::Sent, false)]);
+    app.ed.insert("my draft");
+    press(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL);
+    draw(&mut app);
+    let (x, y) = (app.composer.x + 2, app.composer.y);
+    let m = |kind| MouseEvent { kind, column: x, row: y, modifiers: KeyModifiers::NONE };
+    crate::input::on_mouse(&mut app, &m(MouseEventKind::Down(MouseButton::Left)), 30);
+    crate::input::on_mouse(&mut app, &m(MouseEventKind::Up(MouseButton::Left)), 30);
+    assert!(app.find.is_none());
+    assert_eq!(app.ed.text, "my draft");
+}
+
+/// The hold hints while the box is open (BISE-277): its own ctrl keys.
+#[test]
+fn the_ctrl_hints_are_the_boxs_keys() {
+    let mut app = app_with(vec![Ev::You("hello".into(), Mark::Sent, false)]);
+    press(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL);
+    app.hold = crate::ctrlhint::Hold::of(crate::ctrlhint::Held::Ctrl, Instant::now() - Duration::from_secs(2));
+    let p = crate::ctrlhint::pairs(&app);
+    assert!(p.contains(&("ctrl+f", "older")) && p.contains(&("ctrl+u", "clear")), "{p:?}");
+    assert!(!p.iter().any(|(k, _)| *k == "ctrl+o" || *k == "ctrl+l"), "{p:?}");
 }

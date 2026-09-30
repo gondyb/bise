@@ -313,6 +313,9 @@ fn on_screen_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: u16)
             if app.composer.hit(&app.ed.text, m.column, m.row, false).is_some() =>
         {
             let ci = app.composer.hit(&app.ed.text, m.column, m.row, false).unwrap_or(0);
+            // a click in your message takes the keys back from the find
+            // box (BISE-297): it closes, the view stays on the match
+            crate::find::close(app);
             let clicks = app.mouse.press(m.column, m.row, std::time::Instant::now());
             match clicks {
                 2 => {
