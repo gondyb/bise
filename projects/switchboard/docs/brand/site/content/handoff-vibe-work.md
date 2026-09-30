@@ -105,7 +105,7 @@ Its closing line: "with bise, you only talk to one thread. it runs the agents, a
 
 **Taglines:**
 - **main:** "multi-agent coding, made human."
-- **hero lines:** "one thread per repo. you talk, i run the agents. no tabs. no babysitting. you stay in flow."
+- **hero lines:** "one thread per repo. you talk, i run the agents. i'm the team lead. you stay in flow."
 - **section and secondary lines:**
   - "kiss your backlog goodbye"
   - "the models grew up. you can stop babysitting"
