@@ -23,9 +23,19 @@ rules: one personal DM each, no repost ask, no upvote ask. send only to people y
 >
 > i've been working on a side project. multi-agent coding always drove me nuts (juggling sessions, being the router between them), so i built my own thing: bise.dev
 >
-> honestly it's the first setup that feels natural to me. it goes public this afternoon. want to give it a spin and tell me what you think?
+> honestly it's the first setup that feels natural to me. I want to make it public pretty soon. want to give it a spin and tell me what you think?
 
-note: before 14:30 the repo is private, so the install won't work for him (to verify with main). if he says yes early: add him to the repo, or send the install line after 14:30.
+**Matt · second message, if he says yes** (add him first: github.com/gvergnaud/bise → settings → collaborators, his handle is likely `mattpocock` (to verify))
+> amazing! the repo is still private, so i just added you as a collaborator. accept the invite, then:
+>
+> gh auth login   (if you haven't already)
+> curl -fsSL bise.dev/install | sh
+>
+> then cd into any repo and run bise. you bring your own key (Anthropic, OpenAI, …).
+>
+> heads-up: there's no approval mode yet, agents run commands without asking. so pick a repo you trust :)
+
+why collaborator over a zip: the installer already handles a private repo through `gh` (install.sh, BISE-217), and he gets the updates. a zip downloaded in a browser gets the macOS quarantine flag, and an ad-hoc signed binary then gets blocked by Gatekeeper.
 
 **Simon Willison**
 > hi Simon, heads-up: i'm open-sourcing bise today at 16:00 paris. it's a terminal app for running many coding agents from one thread per repo. two details you might like: tools are called by writing TypeScript (every MCP becomes functions), and it's honest about its limits (no approval mode yet, macOS only). no ask. bise.dev
