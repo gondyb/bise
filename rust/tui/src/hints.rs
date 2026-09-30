@@ -279,8 +279,7 @@ fn anchor(buf: &Buffer, h: Hint, feed: Rect, panel: Option<Rect>) -> Option<u16>
     let rows = |r: Rect| (r.y..r.bottom()).map(move |y| (y, row_text(buf, y, r.x, r.right())));
     match h {
         Hint::FirstAgent => {
-            let p = panel?;
-            rows(p).find_map(|(y, t)| t.trim_start_matches(['│', ' ']).starts_with("1 ").then_some(y))
+            panel_row(buf, panel?, 1)
         }
         Hint::FirstLevel3 => {
             // a level-3 chip (BISE-106): its envelope then its arrow
@@ -291,22 +290,32 @@ fn anchor(buf: &Buffer, h: Hint, feed: Rect, panel: Option<Rect>) -> Option<u16>
                 .map(|(y, _)| y)
                 .next_back()
         }
-        Hint::FirstCard => {
-            let title = format!("┃ {} ", theme::glyph(theme::G_CARD));
-            rows(feed)
-                .filter(|(_, t)| t.contains(&title) && t.contains("needs you"))
-                .map(|(y, _)| y)
-                .next_back()
-                // an item with no row in the history (the setup item,
-                // BISE-245): the inbox's label `inbox · 1 waiting for you
-                // … ctrl+g select`
-                .or_else(|| rows(feed).filter(|(_, t)| t.contains("ctrl+g select")).map(|(y, _)| y).next_back())
-        }
+        Hint::FirstCard => card_row(buf, feed),
         Hint::FirstSteer => {
             let read = theme::glyph(theme::G_READ);
             rows(feed).filter(|(_, t)| t.trim_start().starts_with(theme::glyph(theme::G_YOU)) && t.contains(read)).map(|(y, _)| y).next_back()
         }
     }
+}
+
+/// The row of the last card title in `feed`, else the inbox's label.
+pub(crate) fn card_row(buf: &Buffer, feed: Rect) -> Option<u16> {
+    let rows = |r: Rect| (r.y..r.bottom()).map(move |y| (y, row_text(buf, y, r.x, r.right())));
+    let title = format!("┃ {} ", theme::glyph(theme::G_CARD));
+    rows(feed)
+        .filter(|(_, t)| t.contains(&title) && t.contains("needs you"))
+        .map(|(y, _)| y)
+        .next_back()
+        // an item with no row in the history (the setup item,
+        // BISE-245): the inbox's label `inbox · 1 waiting for you
+        // … ctrl+g select`
+        .or_else(|| rows(feed).filter(|(_, t)| t.contains("ctrl+g select")).map(|(y, _)| y).next_back())
+}
+
+/// The row of the panel's entry numbered `n` (`1 name`), if drawn.
+pub(crate) fn panel_row(buf: &Buffer, panel: Rect, n: usize) -> Option<u16> {
+    let head = format!("{n} ");
+    (panel.y..panel.bottom()).find(|&y| row_text(buf, y, panel.x, panel.right()).trim_start_matches(['│', ' ']).starts_with(&head))
 }
 
 /// The box of hint `h` next to its anchor row `y` (None: no room).
@@ -360,6 +369,14 @@ pub(crate) fn draw(f: &mut Frame) {
     let Some((h, y)) = found else { return };
     let lines = hint_lines(h, TEXT_W);
     let Some(r) = place(h, y, lines.len() as u16, area, feed, panel) else { return };
+    draw_box(f, r, lines);
+    if active.is_none() {
+        bring_up(h);
+    }
+}
+
+/// A hint's box at `r`: accent rounded border on the card tint.
+pub(crate) fn draw_box(f: &mut Frame, r: Rect, lines: Vec<Line<'static>>) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -369,9 +386,24 @@ pub(crate) fn draw(f: &mut Frame) {
     f.render_widget(Clear, r);
     crate::pointer::region(r, crate::pointer::Shape::Default); // BISE-272: over what it covers
     f.render_widget(Paragraph::new(lines).block(block), r);
-    if active.is_none() {
-        bring_up(h);
-    }
+}
+
+/// The demo's tour shows `h`'s lesson its own way (tour.rs): the
+/// one-time hint counts as seen and does not come up after it.
+pub(crate) fn covered(h: Hint) {
+    let Some(path) = store() else { return };
+    STATE.with(|s| {
+        let mut st = s.borrow_mut();
+        if is_seen(&mut st, &path, h) {
+            return;
+        }
+        st.pending.retain(|p| *p != h);
+        if st.active == Some(h) {
+            st.active = None;
+        }
+        st.seen.get_or_insert_with(BTreeMap::new).insert(h.key().to_string(), true);
+        let _ = mark_in(&path, h.key());
+    });
 }
 
 #[cfg(test)]

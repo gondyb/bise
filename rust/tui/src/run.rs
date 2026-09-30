@@ -262,7 +262,10 @@ pub(crate) fn draw_frame(app: &mut App, f: &mut ratatui::Frame) {
     crate::links::begin_frame(); // the feed says where its links are
     crate::pointer::begin_frame(); // BISE-272: what has which pointer shape
     sb::draw_sb(app, f);
-    crate::hints::draw(f); // BISE-61: one-time hints
+    // the demo's guided tips (tour.rs), else the one-time hints (BISE-61)
+    if !crate::tour::draw(app, f) {
+        crate::hints::draw(f);
+    }
     crate::ctrlhint::draw(app, f.buffer_mut()); // ctrl held: the key hints
     crate::sanitize::cells(f.buffer_mut()); // no TAB/CR/ESC in a cell: no ghosts
     crate::theme::paint(f.buffer_mut()); // BISE-92: bise paints its ground

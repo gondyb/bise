@@ -30,7 +30,7 @@ def main():
         c.say("show me what you can do [[skill: bise-demo]]")
         c.wait(lambda: any(r.startswith("done: ") for r in replies(E, "main")), 90, "main's skill call")
         m = next(r for r in replies(E, "main") if r.startswith("done: "))
-        check("# bise demo: a tiny quest" in m and "name: bise-demo" not in m, "main loads the built-in skill: " + m[:300])
+        check("# bise demo: a small team" in m and "name: bise-demo" not in m, "main loads the built-in skill: " + m[:300])
         c.say("/new t1: {{skill: bise-demo}} [[skill: bise-demo]]")
         c.wait(lambda: any(r.startswith("done: ") for r in replies(E, "t1")), 90, "t1's skill call")
         t = next(r for r in replies(E, "t1") if r.startswith("done: "))

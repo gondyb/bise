@@ -133,7 +133,7 @@ def main():
               and "name: alpha" not in res[0], repr(res))
         check("a name the index lacks is an unknown skill, not an unreadable index",
               len(res) == 3 and "unknown skill: nope" in res[1] and "unreadable" not in res[1], repr(res))
-        check("main loads the built-in bise-demo", len(res) == 3 and "quest-scout" in res[2]
+        check("main loads the built-in bise-demo", len(res) == 3 and "dev-api" in res[2]
               and "name: bise-demo" not in res[2], repr(res)[-400:])
     finally:
         repl.kill()

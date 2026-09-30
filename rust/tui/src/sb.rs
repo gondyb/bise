@@ -24,6 +24,8 @@ use cards::{Card, CardView};
 mod card_draw;
 pub(super) use card_draw::{card_frame, card_view_open, divider_label as card_divider_label, draw_strip, draw_view as draw_card_view, fit_pairs as fit_card_pairs, inbox_pairs, inbox_selected, key_pairs as card_key_pairs, strip_height};
 mod panel;
+#[cfg(test)]
+mod tour_tests;
 pub(super) use panel::PANEL_TITLE;
 pub(super) use panel::{draw_panel, focus_model, key_mode, panel_mouse, placeholder, split, status_state, viewed_model, viewed_who, viewed_working, workspace};
 #[cfg(test)]
@@ -610,6 +612,27 @@ fn apply_state(app: &mut App, v: &Value) {
     } else {
         crate::hints::used(crate::hints::Hint::FirstCard);
     }
+    // the demo's guided tips (tour.rs)
+    crate::tour::on_state(app);
+}
+
+/// What the demo's tour looks at (tour.rs): the demo agents with their
+/// numbers, the feed in view, a hub card waiting, the palette open.
+pub(crate) fn tour_snap(app: &App) -> crate::tour::Snap {
+    let sb = &app.sb;
+    let numbers = sb.numbers();
+    let members = sb
+        .agents
+        .iter()
+        .filter(|a| !a.main && crate::tour::is_demo(&a.objective))
+        .map(|a| crate::tour::Member {
+            name: a.name.clone(),
+            number: numbers.iter().find(|(n, _)| *n == a.name).map(|(_, k)| *k).filter(|k| *k <= 9),
+            archived: a.archived(),
+        })
+        .collect();
+    let card = sb.cards.iter().find(|c| !setup::is_local(c.id)).map(|c| c.agent.clone());
+    crate::tour::Snap { members, focus: sb.focus.clone(), card, palette: app.palette.is_some() }
 }
 
 /// Change the feed in focus (checkout / return).
@@ -735,6 +758,7 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             sb.send_input(typed);
             // BISE-61: a hint goes away after the next user message
             crate::hints::user_message();
+            crate::tour::on_sent(app);
         }
     }
     if recolor {
