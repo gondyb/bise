@@ -1641,16 +1641,18 @@ fn the_ascii_rows() {
 // ---- a long message of yours folds (BISE-239) ----
 
 #[test]
-fn a_long_message_of_yours_folds_to_eight_rows_and_its_hint() {
+fn a_long_message_of_yours_folds_to_twelve_rows_and_its_hint() {
     let text = (1..=20).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
     let (mut events, mut cache) = arrive(vec![Ev::You(text, Mark::Read, false)]);
     let rows = cached_text(&events, &mut cache, 60);
     let body: Vec<&String> = rows.iter().filter(|r| !r.trim().is_empty()).collect();
-    // 8 rows of text, then the hint on its own row, the bar through it
+    // 12 rows of text (BISE-261; 8 before), then the hint on its own
+    // row, the bar through it
+    assert_eq!(YOU_ROWS, 12);
     assert_eq!(body.len(), YOU_ROWS + 1, "{rows:#?}");
     assert_eq!(body[0].as_str(), "│  line 1", "{rows:#?}");
-    assert_eq!(body[7].as_str(), "│  line 8", "{rows:#?}");
-    assert_eq!(body[8].as_str(), "│  ▸ 12 more lines ✓✓", "{rows:#?}");
+    assert_eq!(body[11].as_str(), "│  line 12", "{rows:#?}");
+    assert_eq!(body[12].as_str(), "│  ▸ 8 more lines ✓✓", "{rows:#?}");
     assert!(crate::feed::is_closed_at(&events, 0) && crate::feed::anything_closed(&events));
     // ctrl+o opens it whole, `▾` after its last line; again folds it
     crate::feed::set_everything(&mut events, &mut cache, true);
@@ -1658,14 +1660,14 @@ fn a_long_message_of_yours_folds_to_eight_rows_and_its_hint() {
     assert!(open.iter().any(|r| r == "│  line 20 ▾ ✓✓") && !open.iter().any(|r| r.contains("more line")), "{open:#?}");
     assert_eq!(open.iter().filter(|r| r.starts_with("│  line")).count(), 20);
     crate::feed::set_everything(&mut events, &mut cache, false);
-    assert!(cached_text(&events, &mut cache, 60).iter().any(|r| r.contains("▸ 12 more lines")));
+    assert!(cached_text(&events, &mut cache, 60).iter().any(|r| r.contains("▸ 8 more lines")));
 }
 
 #[test]
 fn a_line_cut_to_fit_counts_as_hidden() {
-    // 7 short lines then one that wraps over rows 8-10: rows 1-8 show,
-    // the 8th line is cut, so 1 more line (and the 2 after it: 3)
-    let mut lines: Vec<String> = (1..=7).map(|n| format!("l{n}")).collect();
+    // 11 short lines then one that wraps over rows 12-14: rows 1-12
+    // show, the 12th line is cut, so 1 more line (and the 2 after it: 3)
+    let mut lines: Vec<String> = (1..=11).map(|n| format!("l{n}")).collect();
     lines.push("word ".repeat(30));
     lines.push("a".into());
     lines.push("b".into());
@@ -1673,23 +1675,23 @@ fn a_line_cut_to_fit_counts_as_hidden() {
     let rows = cached_text(&events, &mut cache, 60);
     let body: Vec<&String> = rows.iter().filter(|r| !r.trim().is_empty()).collect();
     assert_eq!(body.len(), YOU_ROWS + 1, "{rows:#?}");
-    assert!(body[7].starts_with("│  word"), "{rows:#?}");
-    assert_eq!(body[8].as_str(), "│  ▸ 3 more lines ✓✓", "{rows:#?}");
+    assert!(body[11].starts_with("│  word"), "{rows:#?}");
+    assert_eq!(body[12].as_str(), "│  ▸ 3 more lines ✓✓", "{rows:#?}");
 }
 
 #[test]
 fn a_short_message_of_yours_stays_whole() {
-    let text = (1..=8).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+    let text = (1..=12).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
     let (events, mut cache) = arrive(vec![Ev::You(text, Mark::Read, false)]);
     let rows = cached_text(&events, &mut cache, 60);
-    assert_eq!(rows.iter().filter(|r| r.starts_with("│  line")).count(), 8, "{rows:#?}");
-    assert!(rows.iter().any(|r| r == "│  line 8 ✓✓") && !rows.iter().any(|r| r.contains("more line") || r.contains('▾')), "{rows:#?}");
+    assert_eq!(rows.iter().filter(|r| r.starts_with("│  line")).count(), 12, "{rows:#?}");
+    assert!(rows.iter().any(|r| r == "│  line 12 ✓✓") && !rows.iter().any(|r| r.contains("more line") || r.contains('▾')), "{rows:#?}");
     assert!(!crate::feed::discloses(&events[0]) && !crate::feed::anything_closed(&events));
 }
 
 #[test]
 fn a_click_on_the_hint_row_opens_just_that_message() {
-    let long = (1..=12).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+    let long = (1..=16).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
     let (mut events, mut cache) = arrive(vec![Ev::You(long.clone(), Mark::Read, false), Ev::You(long, Mark::Read, false)]);
     let rows = cached_text(&events, &mut cache, 60);
     let n = cache[1].as_ref().unwrap().rows.len();
