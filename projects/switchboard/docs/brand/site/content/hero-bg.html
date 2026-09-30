@@ -129,11 +129,11 @@ const THREADS = {
     for (let x = 0; x < g.cols; x++) { const m = (x - o) % 4; if (m === 0) g.put(x, Y, "·", "d"); else if (m === 2 && hash(x - o, 1) < .5) g.put(x, Y, "."); }
   },
   flat(g, Y) { for (let x = 0; x < g.cols; x++) g.put(x, Y, "─"); },
-  // the kiss leaves a wake: ripples right behind it that calm down with distance. ahead, still water
+  // the kiss leaves a wake: ripples right behind it that calm down with distance. ahead, tiny dots: the way still to go
   wake(g, Y, t, k) {
     for (let x = 0; x < g.cols; x++) {
       const d = k - x;
-      if (d <= 0) { g.put(x, Y, "─", "f"); continue; }
+      if (d <= 0) { if ((x - Math.floor(k)) % 2 === 0) g.put(x, Y, "·", "f"); continue; }
       const amp = Math.exp(-d / 45), v = Math.abs(Math.sin(d * .38 - t * 3.2) * amp + Math.sin(d * .13 + t * .9) * amp * .4);
       g.put(x, Y, v > .75 ? "≈" : v > .42 ? "∼" : v > .16 ? "~" : "─", d < 6 ? "a" : d < 18 ? "a2" : v > .42 ? "d" : "");
     }
