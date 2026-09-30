@@ -22,7 +22,7 @@
   .v .bub.on { opacity:1; } .v .lay .bub span { position:static; transform:none; transition:none; } .v .bub .acc { color:var(--acc); margin-right:1ch; }
   .v .bub.pop { animation:bin .7s ease-out; } @keyframes bin { from { opacity:0; translate:0 5px; } to { opacity:1; translate:0 0; } }
   .v .lay span { position:absolute; left:0; top:0; white-space:pre; color:var(--dim); transition:transform .5s cubic-bezier(.25,.8,.3,1), opacity .45s; will-change:transform; }
-  .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .f { color:var(--faint); } .v pre .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } .v pre .d { color:var(--dim); } .v pre .t { color:var(--text); }
+  .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .f { color:var(--faint); } .v pre .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } .v pre .d { color:var(--dim); } .v pre .w { color:var(--wind); } .v pre .t { color:var(--text); }
   .hero { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; pointer-events:none; }
   .big { font-size:clamp(64px, 11vw, 150px); font-weight:700; letter-spacing:-.045em; line-height:1; }
   .big span { color:var(--acc); }
@@ -114,7 +114,8 @@ function arcWake(g, b, Y, t, d0 = 0) {
   for (let i = 0; i <= n - 3; i++) {
     const ya = f(i - .5), yb = f(i + .5), x = b.xs + i;
     const d = n - i + d0, amp = Math.exp(-d / 14), v = Math.abs(Math.sin(d * .38 - t * 3.2) * amp + Math.sin(d * .13 + t * .9) * amp * .4);
-    const cl = d < 4 ? "a" : d < 10 ? "a2" : "d";
+    // grey, so the pink ∿ at its head stays what you look at: dim right behind it, wind-grey further back
+    const cl = d < 10 ? "d" : "w";
     const r0 = Math.round(Math.min(ya, yb)), r1 = Math.round(Math.max(ya, yb));
     if (r0 === r1 && d < 12 && v > .16) g.put(x, r0, v > .75 ? "≈" : v > .42 ? "∼" : "~", cl);
     else for (let r = r0; r <= r1; r++) g.put(x, r, "·", cl);
