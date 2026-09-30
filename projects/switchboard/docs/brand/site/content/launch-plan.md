@@ -4,6 +4,7 @@ one main post, then a steady stream: a feature, the big idea told another way, a
 
 **the promise, in one line:** one thread per repo. you talk, bise runs the agents. you stay in flow.
 **the pain, in one line:** you didn't become an engineer to babysit robots.
+**its name:** agent fatigue. five sessions talking at once, logs you never asked for, "should i continue?" all day. most of it isn't for you, all of it lands in your head. use the name everywhere: people will say it back.
 **the proof:** the 60 s demo. one thread, three agents, one question waiting in the inbox.
 
 rule for every post: pain → promise → proof. never the tech first ("multi-agent orchestration harness" loses people in 3 words).
