@@ -2,3 +2,6 @@ notes/
 # the system prompts rendered from a local extract (prompts.py): they carry
 # the user's own skill list and paths, local only (BISE-258)
 prompt-*.html
+# local design mocks (localhost:4747 only)
+roles-menu.html
+features-order.html

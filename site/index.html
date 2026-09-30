@@ -482,7 +482,6 @@
     <div class="ptr" id="ptr" style="left:46%;top:80%"><svg width="16" height="20" viewBox="0 0 16 20" aria-hidden="true"><path d="M2 2 L2 16 L5.8 12.6 L8.4 18.4 L11 17.2 L8.5 11.6 L13.6 11.6 Z" fill="var(--acc)" stroke="var(--bg)" stroke-width="1.4" stroke-linejoin="round"/></svg><span class="lb">you</span></div>
     <div class="bub" id="bub"></div>
   </div>
-  <div class="stats" id="stats"></div>
   <p class="cap" id="cap"></p>
   <p class="cap"><button class="replay" id="replay" style="visibility:hidden">↺ play it again</button></p>
 </section>
@@ -1455,6 +1454,7 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
     return { x: (w - ww) * (cols === 1 ? .15 + (i % 3) * .2 : .04 + c * .45) + (r % 2) * 26 + Math.random() * 16, y: 18 + r * (w < 700 ? 64 : 118) + Math.random() * 14 };
   };
   const setStats = () => {
+    if (!stats) return;  // the stats line is gone (user): nothing to draw
     stats.innerHTML = state === "today"
       ? `<span><b>${wins.length}</b> sessions</span><span class="hot"><b>${waiting}</b> waiting for you</span><span><b>${switches}</b> context switches</span><span><b>0</b> minutes of flow</span>`
       : `<span><b>1</b> thread</span><span><b>5</b> agents working</span><span class="good"><b>0</b> waiting for you</span><span class="good"><b>∞</b> flow</span>`;
@@ -1484,7 +1484,7 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
     const id = ++run; state = "today"; stage.classList.remove("calm"); setFlip();
     wins.forEach((w) => w.remove()); wins = []; switches = 0; waiting = 0; bub.classList.remove("on"); you.style.opacity = "1";
     if (id > 1) head("the problem", "seven agents.<br>all of them need you.", "every session waits for you. you're the router, the memory, and the merge tool. you ship a lot, but you never get to think.");
-    cap.innerHTML = "you started five things. now you're the one they all wait for.";
+    cap.innerHTML = "you started seven things. now you're the one they all wait for.";
     setStats();
     for (let i = 0; i < S.length; i++) {
       if (id !== run) return;
