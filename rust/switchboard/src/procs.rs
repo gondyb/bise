@@ -349,6 +349,30 @@ pub fn add_sid(file: &Path, pid: u32) {
 const SIGTERM: i32 = 15;
 const SIGKILL: i32 = 9;
 
+/// kill(2) on a bare pid; pid 0 or a pid out of range does nothing (kill
+/// with 0 would signal our own process group).
+fn send(pid: u32, sig: i32) -> bool {
+    let Ok(pid) = i32::try_from(pid) else { return false };
+    // SAFETY: kill(2) on a positive pid; a stale one fails with ESRCH
+    pid > 0 && unsafe { kill(pid, sig) } == 0
+}
+
+/// Is `pid` a live process of ours (`kill -0`, without a `kill` process:
+/// every spawn from the hub is a window for the BISE-291 race, BISE-292)?
+pub fn alive(pid: u32) -> bool {
+    send(pid, 0)
+}
+
+/// SIGTERM to `pid` (`kill <pid>`).
+pub fn terminate(pid: u32) {
+    send(pid, SIGTERM);
+}
+
+/// SIGKILL to `pid` (`kill -9 <pid>`).
+pub fn kill_now(pid: u32) {
+    send(pid, SIGKILL);
+}
+
 fn signal(p: &Proc, sig: i32) {
     // SAFETY: kill(2) with a pid from the table; a stale pid fails
     unsafe {

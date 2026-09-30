@@ -101,14 +101,7 @@ fn hub_pid(paths: &Paths) -> Option<u32> {
         .and_then(|s| s.trim().parse().ok())
 }
 
-fn alive(pid: u32) -> bool {
-    std::process::Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
+use crate::procs::alive;
 
 fn ping(paths: &Paths) -> bool {
     client::request(
@@ -214,9 +207,7 @@ fn replace_hub(paths: &Paths, root: &Path, same: bool) -> Result<(), String> {
         }
         if alive(p) {
             // not answering: it cannot stop cleanly; its REPLs survive it
-            let _ = std::process::Command::new("kill")
-                .args(["-9", &p.to_string()])
-                .status();
+            crate::procs::kill_now(p);
             std::thread::sleep(Duration::from_millis(200));
         }
     }

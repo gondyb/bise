@@ -21,18 +21,8 @@ pub(super) struct ReplInfo {
     interrupt: String,
 }
 
-pub(super) fn kill_pid(pid: u32) {
-    let _ = Command::new("kill").arg(pid.to_string()).status();
-}
-
-fn pid_alive(pid: u32) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
+pub(super) use crate::procs::terminate as kill_pid;
+use crate::procs::alive as pid_alive;
 
 fn is_repl(pid: u32) -> bool {
     Command::new("ps")
