@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
 from tui_tmux import tui_session, run  # noqa: E402
 
-NORMAL = "   @ agent   "  # the key bar (BISE-98/99; `ctrl+g inbox` may come before it, BISE-248)
+NORMAL = "   @ file   "  # the key bar (BISE-98/99; `ctrl+g inbox` may come before it, BISE-248)
 
 
 def flat(sc):

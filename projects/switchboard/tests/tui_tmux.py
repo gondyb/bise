@@ -215,7 +215,7 @@ def main():
     with tui_session(150, 42) as t:
         sc = t.wait("bise :*")
         t.wait_re(in_view("main"))
-        assert "⏎ send   @ agent" in sc, sc
+        assert "⏎ send   @ file" in sc, sc
         t.wait(" idle")
         t.typed('crée [[bash: sb spawn t1 --objective "écris {{bash: echo hi-t1}}"]]')
         t.keys("Enter")

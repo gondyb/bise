@@ -1717,7 +1717,7 @@ mod chrome_tests {
         // under 14 rows the key bar is on the divider's right, no row of its own
         let b = screen(&mut app, 120, 13);
         let div = (0..13).find(|&y| row(&b, y).contains("you → main")).unwrap();
-        assert!(row(&b, div).contains("⏎ send   @ agent"), "{:?}", row(&b, div));
+        assert!(row(&b, div).contains("⏎ send   @ file"), "{:?}", row(&b, div));
         assert_eq!(13 - div, 2, "the divider and 1 text row");
     }
 
@@ -1865,7 +1865,7 @@ mod chrome_tests {
         // empty, the composer asks; the text at x0 + 4 (BISE-XPAD)
         assert!(rows[at + 2].starts_with(&format!("│  │     {}", PLACEHOLDER_MAIN)), "{:?}", rows[at + 2]);
         let keys = &rows[rows.len() - 2];
-        assert!(keys.starts_with("│      ⏎ send   @ agent"), "{:?}", keys);
+        assert!(keys.starts_with("│      ⏎ send   @ file"), "{:?}", keys);
         assert!(rows.last().unwrap().starts_with("╰─"), "{}", all);
         // a panel with main only
         assert!(rows.iter().any(|r| r.contains(&format!("│  0 {} main {}", G_IDLE, G_MAIN))), "{}", all);

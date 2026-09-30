@@ -129,6 +129,12 @@ pub(crate) fn is_open(app: &App) -> bool {
     app.palette.is_some()
 }
 
+/// Something to find: an agent besides main, live or archived. The key
+/// bar and the ctrl row show the palette's key only then (BISE-278).
+pub(crate) fn has_agents(app: &App) -> bool {
+    app.sb.agents.iter().any(|a| !a.main && !a.name.is_empty())
+}
+
 /// Open the palette on `query` (`/switch dark`); the find field closes.
 pub(crate) fn open(app: &mut App, query: &str) {
     crate::find::close(app);

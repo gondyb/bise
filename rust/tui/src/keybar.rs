@@ -67,6 +67,16 @@ const INBOX: Pair = ("ctrl+g", "inbox");
 /// bar in the accent, so you notice you can just type (book §13).
 const ASK: Pair = ("type", "ask about it");
 
+/// The agent palette (BISE-265), right after `@ file`: the way to reach
+/// an agent by name, easier to read than `⌥0-9` (BISE-278). Its key is
+/// [`PALETTE_CMD`] once a cmd key reached bise (`App::cmd_keys`).
+const PALETTE: Pair = ("ctrl+s", "find agent");
+const PALETTE_CMD: &str = "cmd+k";
+
+/// `⌥0-9 switch`: for who knows it; the first pair to go when the row is
+/// short (BISE-278).
+const SWITCH: Pair = ("⌥0-9", "switch");
+
 impl Mode {
     fn pairs(self) -> &'static [Pair] {
         match self {
@@ -93,7 +103,8 @@ impl Mode {
                 ("⏎", "send"),
                 ("ctrl+v", "paste image"),
                 ("@", "file"),
-                ("⌥0-9", "switch"),
+                PALETTE,
+                SWITCH,
                 ("/", "commands"),
                 ("?", "help"),
             ],
@@ -111,8 +122,9 @@ impl Mode {
             Mode::Steer => &[("tab", "queue"), ("⏎", "steer"), ("ctrl+c", "interrupt")],
             Mode::Default => &[
                 ("⏎", "send"),
-                ("@", "agent"),
-                ("⌥0-9", "switch"),
+                ("@", "file"),
+                PALETTE,
+                SWITCH,
                 ("/", "commands"),
                 ("?", "help"),
             ],
@@ -175,7 +187,9 @@ pub(crate) fn line(app: &App, width: u16) -> Line<'static> {
         return pairs_line(&pairs, usize::from(width)).0;
     }
     let inbox = crate::sb::ctrl_view(app).cards > 0;
-    render_with(mode(app), width, typing, agent, Some(current_tip(typing)), inbox)
+    let palette = crate::sb::palette::has_agents(app);
+    let bar = Bar { typing, agent, inbox, cmd: app.cmd_keys, palette };
+    render_with(mode(app), width, Some(current_tip(typing)), bar)
 }
 
 // ---- the tip clock (BISE-104, book §8) ----
@@ -280,34 +294,56 @@ fn pair_width((k, l): Pair) -> usize {
     k.width() + l.width() + usize::from(!k.is_empty() && !l.is_empty())
 }
 
-/// The pairs of an agent's view that fit in `width` (book §13): `esc back
-/// to main` stays; the others drop from the right, `/ commands` first.
-fn fit_agent(mut pairs: Vec<Pair>, width: usize) -> Vec<Pair> {
+/// The pairs that fit in `width` (book §13): `⌥0-9 switch` goes first
+/// (BISE-278); then, in an agent's view (`agent`), `/ commands` and the
+/// others from the right, `esc back to main` never; in the thread the
+/// rest from the right.
+fn fit(mut pairs: Vec<Pair>, width: usize, agent: bool) -> Vec<Pair> {
     let total = |p: &[Pair]| p.iter().map(|&x| pair_width(x)).sum::<usize>() + 3 * p.len().saturating_sub(1);
     while pairs.len() > 1 && total(&pairs) > width {
-        match pairs.iter().position(|&(k, _)| k == "/") {
+        let first = |k: &str| pairs.iter().position(|p| p.0 == k);
+        match first(SWITCH.0).or_else(|| first("/").filter(|_| agent)) {
             Some(i) => pairs.remove(i),
-            None => pairs.pop().unwrap_or(BACK),
+            None if agent => pairs.pop().unwrap_or(BACK),
+            // the thread: pairs_line drops from the end (and cuts the first)
+            None => break,
         };
     }
     pairs
 }
 
-/// The key bar for `mode` in a row `width` columns wide. Pairs that don't
-/// fit are dropped from the end (the first is cut if it alone doesn't
-/// fit). In an agent's view (`agent`), `esc back to main` comes first and
-/// stays, the others drop from the right, `/ commands` first. The tip
-/// shows only in [`Mode::Default`] out of an agent's view, while not
-/// `typing`, right-aligned, with at least 3 columns between it and the
-/// keys.
-#[cfg(test)]
-pub(crate) fn render(mode: Mode, width: u16, typing: bool, agent: bool, tip: Option<&str>) -> Line<'static> {
-    render_with(mode, width, typing, agent, tip, false)
+/// What the key bar depends on besides its mode.
+#[derive(Clone, Copy, Debug, Default)]
+struct Bar {
+    /// the composer holds text
+    typing: bool,
+    /// an agent's view, not main's
+    agent: bool,
+    /// the inbox holds something: `ctrl+g inbox` after `⏎ send` (or
+    /// first), in the thread's modes
+    inbox: bool,
+    /// a cmd key reached bise: the palette's key is `cmd+k`
+    cmd: bool,
+    /// an agent besides main, live or archived: the palette's pair
+    /// shows (nothing to find before)
+    palette: bool,
 }
 
-/// [`render`], with `ctrl+g inbox` after `⏎ send` (or first) while the
-/// inbox holds something (`inbox`), in the thread's modes.
-fn render_with(mode: Mode, width: u16, typing: bool, agent: bool, tip: Option<&str>, inbox: bool) -> Line<'static> {
+/// The key bar for `mode` in a row `width` columns wide. Pairs that don't
+/// fit are dropped, `⌥0-9 switch` first, then from the end (the first is
+/// cut if it alone doesn't fit). In an agent's view (`agent`), `esc back
+/// to main` comes first and stays, `/ commands` drops right after
+/// `⌥0-9`. The tip shows only in [`Mode::Default`] out of an agent's
+/// view, while not `typing`, right-aligned, with at least 3 columns
+/// between it and the keys.
+#[cfg(test)]
+pub(crate) fn render(mode: Mode, width: u16, typing: bool, agent: bool, tip: Option<&str>) -> Line<'static> {
+    render_with(mode, width, tip, Bar { typing, agent, palette: true, ..Bar::default() })
+}
+
+/// [`render`], with the inbox pair and the palette's cmd key ([`Bar`]).
+fn render_with(mode: Mode, width: u16, tip: Option<&str>, bar: Bar) -> Line<'static> {
+    let Bar { typing, agent, inbox, cmd, palette } = bar;
     let width = usize::from(width);
     let dim = Style::default().fg(theme::dim());
     let mut pairs = if agent { mode.agent_pairs() } else { mode.pairs().to_vec() };
@@ -315,7 +351,14 @@ fn render_with(mode: Mode, width: u16, typing: bool, agent: bool, tip: Option<&s
         let at = pairs.iter().position(|p| p.0 == "⏎").map_or(0, |i| i + 1);
         pairs.insert(at, INBOX);
     }
-    let pairs = if agent { fit_agent(pairs, width) } else { pairs };
+    if !palette {
+        pairs.retain(|p| *p != PALETTE);
+    } else if cmd {
+        for p in pairs.iter_mut().filter(|p| **p == PALETTE) {
+            p.0 = PALETTE_CMD;
+        }
+    }
+    let pairs = fit(pairs, width, agent);
     let (Line { mut spans, .. }, used) = pairs_line(&pairs, width);
     if let Some(t) = tip.filter(|_| mode == Mode::Default && !agent && !typing).map(key_text) {
         let t = if theme::ascii_mode() { format!("tip: {t}") } else { format!("tip · {t}") };
@@ -412,11 +455,11 @@ mod tests {
 
     #[test]
     fn default_bar_and_tip_at_the_right_edge() {
-        let l = render(Mode::Default, 100, false, false, Some(TIP));
+        let l = render(Mode::Default, 120, false, false, Some(TIP));
         let s = text(&l);
-        assert!(s.starts_with("⏎ send   @ agent   ⌥0-9 switch   / commands   ? help"), "{s}");
+        assert!(s.starts_with("⏎ send   @ file   ctrl+s find agent   ⌥0-9 switch   / commands   ? help"), "{s}");
         assert!(s.ends_with("tip · ctrl+o opens everything folded"), "{s}");
-        assert_eq!(s.width(), 100, "the tip ends at the row's last column");
+        assert_eq!(s.width(), 120, "the tip ends at the row's last column");
     }
 
     #[test]
@@ -471,20 +514,40 @@ mod tests {
 
     #[test]
     fn narrow_drops_pairs_from_the_end() {
-        let s = text(&render(Mode::Default, 30, false, false, Some(TIP)));
-        assert_eq!(s, "⏎ send   @ agent   ⌥0-9 switch");
+        let s = text(&render(Mode::Default, 40, false, false, Some(TIP)));
+        assert_eq!(s, "⏎ send   @ file   ctrl+s find agent");
+        // ⌥0-9 goes first, then from the end
+        let all = "⏎ send   @ file   ctrl+s find agent   ⌥0-9 switch   / commands   ? help".width();
+        let s = text(&render(Mode::Default, (all - 1) as u16, false, false, None));
+        assert_eq!(s, "⏎ send   @ file   ctrl+s find agent   / commands   ? help");
         let s = text(&render(Mode::Default, 4, false, false, None));
         assert!(s.width() <= 4 && s.ends_with('…'), "{s:?}");
+    }
+
+    /// BISE-278: the palette's pair, `cmd+k` once a cmd key reached
+    /// bise, none while main is the only agent; with images too.
+    #[test]
+    fn the_palette_pair_follows_the_cmd_key_and_the_agents() {
+        let bar = |cmd, palette| Bar { cmd, palette, ..Bar::default() };
+        let s = text(&render_with(Mode::Default, 100, None, bar(true, true)));
+        assert!(s.starts_with("⏎ send   @ file   cmd+k find agent   ⌥0-9 switch"), "{s}");
+        let s = text(&render_with(Mode::Default, 100, None, bar(true, false)));
+        assert!(s.starts_with("⏎ send   @ file   ⌥0-9 switch   / commands"), "{s}");
+        let s = text(&render_with(Mode::Images, 100, None, bar(false, true)));
+        assert!(s.starts_with("⏎ send   ctrl+v paste image   @ file   ctrl+s find agent"), "{s}");
+        let agent = Bar { agent: true, inbox: true, ..bar(true, true) };
+        let s = text(&render_with(Mode::Default, 120, None, agent));
+        assert_eq!(s, "esc back to main   ⏎ send   ctrl+g inbox   @ file   cmd+k find agent   ⌥0-9 switch   / commands   ? help");
     }
 
     #[test]
     fn ascii_forms() {
         theme::set_ascii_for_tests(true);
-        let s = text(&render(Mode::Default, 100, false, false, Some(TIP)));
+        let s = text(&render(Mode::Default, 120, false, false, Some(TIP)));
         let f = text(&render(Mode::FilePopup, 100, false, false, None));
         let t = text(&render(Mode::Transcribing, 100, false, false, None));
         theme::set_ascii_for_tests(false);
-        assert!(s.starts_with("enter send   @ agent   alt+0-9 switch"), "{s}");
+        assert!(s.starts_with("enter send   @ file   ctrl+s find agent   alt+0-9 switch"), "{s}");
         assert!(s.ends_with("tip: ctrl+o opens everything folded"), "{s}");
         assert!(f.contains("enter/tab/right open a folder   left up   up/down select"), "{f}");
         assert!(t.starts_with("esc cancel"), "{t}");
@@ -497,7 +560,7 @@ mod tests {
     fn an_agents_view_starts_with_esc_back_to_main() {
         let idle = render(Mode::Default, 120, false, true, Some(TIP));
         let s = text(&idle);
-        assert_eq!(s, "esc back to main   ⏎ send   @ agent   ⌥0-9 switch   / commands   ? help");
+        assert_eq!(s, "esc back to main   ⏎ send   @ file   ctrl+s find agent   ⌥0-9 switch   / commands   ? help");
         let esc = idle.spans.iter().find(|x| x.content == "esc").unwrap();
         assert_eq!(esc.style.fg, Some(theme::text()));
         let what = idle.spans.iter().find(|x| x.content == " back to main").unwrap();
@@ -511,11 +574,15 @@ mod tests {
 
     #[test]
     fn in_an_agents_view_commands_drop_first_and_esc_never() {
-        let all = "esc back to main   ⏎ send   @ agent   ⌥0-9 switch   / commands   ? help".width();
+        let all = "esc back to main   ⏎ send   @ file   ctrl+s find agent   ⌥0-9 switch   / commands   ? help".width();
         let s = text(&render(Mode::Default, (all - 1) as u16, false, true, None));
-        assert_eq!(s, "esc back to main   ⏎ send   @ agent   ⌥0-9 switch   ? help");
+        assert_eq!(s, "esc back to main   ⏎ send   @ file   ctrl+s find agent   / commands   ? help");
+        let s = text(&render(Mode::Default, (all - 15) as u16, false, true, None));
+        assert_eq!(s, "esc back to main   ⏎ send   @ file   ctrl+s find agent   ? help");
+        let s = text(&render(Mode::Default, 60, false, true, None));
+        assert_eq!(s, "esc back to main   ⏎ send   @ file   ctrl+s find agent");
         let s = text(&render(Mode::Default, 40, false, true, None));
-        assert_eq!(s, "esc back to main   ⏎ send   @ agent");
+        assert_eq!(s, "esc back to main   ⏎ send   @ file");
         let s = text(&render(Mode::Steer, 20, false, true, None));
         assert_eq!(s, "esc back to main");
         let s = text(&render(Mode::Default, 10, false, true, None));

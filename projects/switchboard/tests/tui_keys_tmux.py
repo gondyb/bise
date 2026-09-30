@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import e2e  # noqa: E402
 from tui_tmux import tui_session, run  # noqa: E402
 
-NORMAL = "   @ agent   "
+NORMAL = "   @ file   "
 CASES = [
     # (provider id, its name, its model, its keys page, the family's path)
     ("mistral", "Mistral", "mistral-medium-latest", "https://console.mistral.ai/api-keys", "openai-chat"),

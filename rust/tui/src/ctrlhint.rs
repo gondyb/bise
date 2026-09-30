@@ -239,8 +239,8 @@ fn ctrl_pairs(app: &App) -> Vec<Pair> {
         p.push(("ctrl+k/j", "agents"));
     }
     // BISE-265: the agent palette
-    if v.agents > 1 {
-        p.push(("ctrl+s", "find an agent"));
+    if crate::sb::palette::has_agents(app) {
+        p.push(("ctrl+s", "find agent"));
     }
     if app.voice.enabled {
         p.push(("ctrl+r", "talk"));
@@ -275,10 +275,9 @@ fn alt_pairs(app: &App) -> Vec<Pair> {
 /// cmd+z and cmd+↑↓, only in the help).
 fn cmd_pairs(app: &App) -> Vec<Pair> {
     let mut p: Vec<Pair> = Vec::new();
-    let v = crate::sb::ctrl_view(app);
     let empty = app.ed.text.is_empty();
-    if v.agents > 1 {
-        p.push(("cmd+k", "find an agent"));
+    if crate::sb::palette::has_agents(app) {
+        p.push(("cmd+k", "find agent"));
     }
     if !app.events.is_empty() {
         p.push(("cmd+f", "find"));
@@ -935,7 +934,7 @@ mod frame_tests {
         let (a, b, bar) = held_screen(&mut app, Held::Cmd);
         let title = row_of(&a, "agents · ");
         assert!(b[title].contains("agents · cmd+k find"), "{}", b[title]);
-        assert!(bar.contains("cmd+k find an agent   cmd+f find   cmd+v paste"), "{bar}");
+        assert!(bar.contains("cmd+k find agent   cmd+f find   cmd+v paste"), "{bar}");
         let diff: Vec<usize> = (0..a.len()).filter(|&y| a[y] != b[y]).collect();
         assert_eq!(diff, vec![title, a.len() - 2]);
         app.ed.insert("ship it");
@@ -943,11 +942,11 @@ mod frame_tests {
         assert!(bar.contains("cmd+a select all   cmd+←→ line start/end"), "{bar}");
         crate::sb::focus(&mut app, "docs");
         let (_, _, bar) = held_screen(&mut app, Held::Cmd);
-        assert!(bar.contains("cmd+k find an agent"), "{bar}");
+        assert!(bar.contains("cmd+k find agent"), "{bar}");
         crate::sb::focus(&mut app, "main");
         inbox(&mut app);
         let (_, _, bar) = held_screen(&mut app, Held::Cmd);
-        assert!(bar.contains("cmd+k find an agent"), "{bar}");
+        assert!(bar.contains("cmd+k find agent"), "{bar}");
     }
 
     /// Option held, then a character: the hints go and it types, both
