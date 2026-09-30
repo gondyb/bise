@@ -261,14 +261,13 @@
   #desktop .ctas { display:flex; gap:26px; justify-content:center; align-items:center; flex-wrap:wrap; margin-top:34px; font-size:14px; }
   #desktop .ctas a { color:var(--dim); transition:color .3s; } #desktop .ctas a:hover { color:var(--text); }
   #desktop .ctas a.main { color:#141211; background:var(--acc); border-radius:999px; padding:10px 22px; font-weight:700; transition:transform .3s cubic-bezier(.3,1.6,.5,1), box-shadow .3s; }
-  #desktop .ctas a.main:hover { transform:translateY(-2px) scale(1.03); box-shadow:0 10px 30px color-mix(in srgb, var(--acc) 35%, transparent); color:#141211; }
+  #desktop .ctas a.main:hover { transform:translateY(-1px); color:#141211; }
   .dstage { position:relative; margin:56px auto 0; width:min(780px, 100%); perspective:1400px; }
-  .dstage::before { content:""; position:absolute; inset:12% 8% -6%; background:radial-gradient(ellipse at 50% 60%, color-mix(in srgb, var(--acc) 26%, transparent), transparent 70%); filter:blur(40px); z-index:0; }
-  .dwin { position:relative; z-index:1; display:block; height:390px; border-radius:14px; overflow:hidden; text-align:left; color:var(--text);
-    background:linear-gradient(180deg, color-mix(in srgb, var(--bg) 92%, #fff 8%) 0, var(--bg) 60px);
-    box-shadow:0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent), 0 40px 90px rgba(0,0,0,.55); font-family:"Geist",-apple-system,system-ui,sans-serif; font-size:12.5px; line-height:1.5;
-    transform:rotateX(9deg) scale(.97); transform-origin:50% 100%; transition:transform .9s cubic-bezier(.2,.8,.2,1); }
-  .dstage:hover .dwin, .dstage.in .dwin { transform:none; }
+  .ph { display:block; height:7px; border-radius:4px; background:color-mix(in srgb, var(--text) 8%, transparent); }  /* placeholders: the preview stays calm */
+  .dwin { position:relative; z-index:1; display:block; height:360px; border-radius:14px; overflow:hidden; text-align:left; color:var(--text);
+    background:var(--bg);
+    box-shadow:0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent), 0 16px 40px rgba(0,0,0,.25); font-family:"Geist",-apple-system,system-ui,sans-serif; font-size:12.5px; line-height:1.5;
+    }
   .dwin .m, .dwin .g, .dwin .k { font-family:"JetBrains Mono",ui-monospace,monospace; }
   .dwin .tb { height:34px; display:flex; align-items:center; gap:7px; padding:0 12px; border-bottom:1px solid color-mix(in srgb, var(--text) 8%, transparent); color:var(--dim); font-size:11.5px; }
   .dwin .tb i { width:10px; height:10px; border-radius:50%; display:block; } .dwin .tb span { flex:1; text-align:center; margin-right:44px; } .dwin .tb b { color:var(--text); font-weight:600; }
@@ -293,7 +292,7 @@
   .dwin .ag .a { padding:5px 8px; border-radius:8px; display:grid; grid-template-columns:1.6em 1fr; } .dwin .ag .a .g { color:var(--acc); text-align:center; }
   .dwin .ag .a .x { grid-column:2; font-family:"JetBrains Mono",monospace; font-size:9.5px; color:var(--dim); }
   .dnote { position:absolute; z-index:2; right:-26px; top:46px; width:250px; display:grid; grid-template-columns:30px 1fr; gap:0 10px; text-align:left; padding:10px 12px; border-radius:13px;
-    background:color-mix(in srgb, var(--raised) 88%, transparent); backdrop-filter:blur(12px); box-shadow:0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent), 0 18px 40px rgba(0,0,0,.45);
+    background:color-mix(in srgb, var(--raised) 88%, transparent); box-shadow:0 0 0 1px color-mix(in srgb, var(--text) 12%, transparent), 0 8px 20px rgba(0,0,0,.2);
     font-family:"Geist",-apple-system,system-ui,sans-serif; font-size:11.5px; line-height:1.4; opacity:0; transform:translateX(24px); transition:opacity .5s, transform .6s cubic-bezier(.2,.9,.3,1.2); }
   .dnote.on { opacity:1; transform:none; } .dnote .ic { width:30px; height:30px; border-radius:8px; background:#141211; color:var(--acc); font-family:"JetBrains Mono",monospace; font-weight:700; display:flex; align-items:center; justify-content:center; font-size:11px; }
   .dnote b { display:block; } .dnote span { color:var(--dim); }
@@ -566,26 +565,26 @@
         <div class="tb"><i style="background:#ec6a5e"></i><i style="background:#f4bf4f"></i><i style="background:#61c554"></i><span><b>acme</b> · one thread</span></div>
         <div class="bd">
           <div class="sd"><div class="h">repos</div>
-            <div class="r on"><b>acme</b><span class="m acc"><span class="dbr">∿</span> 3</span><span class="l">signup 4.1 s → 0.9 s</span></div>
-            <div class="r"><span>blog</span><span class="m acc">? 1</span><span class="l">which gray wins?</span></div>
-            <div class="r"><span>bise</span><span class="m acc">✓</span><span class="l">released today</span></div>
-            <div class="r"><span>dotfiles</span><span></span><span class="l">idle since monday</span></div></div>
+            <div class="r on"><b>acme</b><span class="m acc"><span class="dbr">∿</span> 3</span><span class="l"><i class="ph" style="width:80%;margin-top:5px"></i></span></div>
+            <div class="r"><span>blog</span><span class="m acc">? 1</span><span class="l"><i class="ph" style="width:64%;margin-top:5px"></i></span></div>
+            <div class="r"><span>bise</span><span class="m acc">✓</span><span class="l"><i class="ph" style="width:72%;margin-top:5px"></i></span></div>
+            <div class="r"><span>dotfiles</span><span></span><span class="l"><i class="ph" style="width:50%;margin-top:5px"></i></span></div></div>
           <div class="ct">
-            <div class="you">signup is slow on mobile. can you look?</div>
+            <i class="ph" style="width:46%"></i><i class="ph" style="width:70%"></i>
+            <div class="you" style="margin-top:6px">signup is slow on mobile. can you look?</div>
             <div class="bs"><span class="g">:*</span><span>on it. perf is profiling signup on a mid-range phone.</span></div>
-            <div class="tool"><span>$</span><span>convert hero.png to webp at 82 %</span><span>✓ 0.9 s</span></div>
-            <div class="env"><span class="c">✉ dark-mode → perf</span>are you touching tokens.css?</div>
+            <div class="tool"><span>$</span><i class="ph" style="width:58%;align-self:center"></i><span></span></div>
+            <div class="tool"><span>✉</span><i class="ph" style="width:40%;align-self:center"></i><span></span></div>
             <div class="bs"><span class="g">✓</span><span>perf is done. signup went from 4.1 s to 0.9 s</span></div>
-            <div class="shot"></div>
             <div class="inbox"><span><span class="acc">?</span> dark-mode · which gray wins?</span><span class="o"><b>1</b> tokens · <b>2</b> new ones</span></div>
             <div class="cp"><div class="to"><span>you → <b>main</b></span><span><span class="dbr acc">∿</span> 3 working</span></div><div class="tx"><span id="dtype"></span><span class="cu"></span></div></div>
           </div>
           <div class="ag"><div class="h">agents</div>
-            <div class="a"><span class="g">:*</span><span>main</span><span class="x">opus · high</span></div>
-            <div class="a"><span class="g">✓</span><span>perf</span><span class="x">done · 6m</span></div>
-            <div class="a"><span class="g">?</span><span>dark-mode</span><span class="x">ψ its own worktree</span></div>
-            <div class="a"><span class="g dbr">∿</span><span>sad-404</span><span class="x">2m · 9 %</span></div>
-            <div class="a"><span class="g dbr">∿</span><span>emoji-csv</span><span class="x">1m · 4 %</span></div></div>
+            <div class="a"><span class="g">:*</span><span>main</span><i class="x ph" style="width:70%;margin-top:4px"></i></div>
+            <div class="a"><span class="g">✓</span><span>perf</span><i class="x ph" style="width:50%;margin-top:4px"></i></div>
+            <div class="a"><span class="g">?</span><span>dark-mode</span><i class="x ph" style="width:80%;margin-top:4px"></i></div>
+            <div class="a"><span class="g dbr">∿</span><span>sad-404</span><i class="x ph" style="width:44%;margin-top:4px"></i></div>
+            <div class="a"><span class="g dbr">∿</span><span>emoji-csv</span><i class="x ph" style="width:56%;margin-top:4px"></i></div></div>
         </div>
       </a>
       <div class="dnote" id="dnote"><span class="ic">:*</span><div><b>dark-mode needs you</b><span>which gray wins? tokens, or new ones</span></div></div>
