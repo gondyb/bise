@@ -27,7 +27,7 @@
   /* ---------- type: a sans for everything you read, mono only where it means something ----------
      sans (Inter): the thread, bise's answers, captions of calls, the sidebar, settings, notifications.
      mono (JetBrains Mono): the wordmark, the marks (:* ∿ ✓ ? ψ ✉ $ ƒ), keys, code and outputs, paths, commands, the terminal panel. */
-  body { --sans:"Recursive",-apple-system,system-ui,sans-serif; --casl:.5; }
+  body { --sans:"Geist",-apple-system,system-ui,sans-serif; --casl:0; }
   .win, .desk { font-variation-settings:"CASL" var(--casl); --mono:"JetBrains Mono",ui-monospace,Menlo,monospace; font-family:var(--sans); font-size:13.5px; letter-spacing:-.003em; }
   .win pre, .win code, .win .box *, .win .term *, .win .box, .win .term, .win .g, .win .who, .win .brth, .win .k, .win .kb b, .win .o b, .win .opt b, .win .inl, .win .pill .acc, .win .chip,
   .win .tick, .win .find .f, .win .pal .in, .win .icon, .desk .icon, .desk .me, .win .ob .big, .win .tb .title b.m, .win .mono, .desk .mono, .win .keyt td:first-child, .win .ob .gloss .faint { font-family:var(--mono); letter-spacing:0; font-variation-settings:normal; }
@@ -182,7 +182,7 @@
   <ul>
     <li><b>one thread per repo.</b> the sidebar lists your repos like chats. picking one opens its thread with main. there's no "new chat": a repo is the thread, forever (compaction keeps it short).</li>
     <li><b>you still talk to main.</b> the agents live in the panel on the right. click one to talk to it directly, esc to come back.</li>
-    <li><b>a sans to read, mono where it means something.</b> a sans for everything you read (the thread, the sidebar, settings): pick it with the buttons below, Recursive casual by default. JetBrains Mono for the wordmark, the marks (:* ∿ ✓ ? ψ ✉ $ ƒ), keys, code, paths and commands. in the history, the sans is someone talking to you (you, bise, a report) and the mono is the machine at work (calls, folds, messages between agents): it reads like a log, and you skip it without trying. the same palette, lowercase. "mono everywhere" is there to compare.</li>
+    <li><b>a sans to read, mono where it means something.</b> a sans for everything you read (the thread, the sidebar, settings): Geist (the user's pick); the buttons below swap it to compare. JetBrains Mono for the wordmark, the marks (:* ∿ ✓ ? ψ ✉ $ ƒ), keys, code, paths and commands. in the history, the sans is someone talking to you (you, bise, a report) and the mono is the machine at work (calls, folds, messages between agents): it reads like a log, and you skip it without trying. the same palette, lowercase. "mono everywhere" is there to compare.</li>
     <li><b>quiet by default.</b> calls fold into one row, messages between agents stay small, what needs you waits in the inbox above the composer. ⌘E opens everything.</li>
     <li><b>keys feel like a mac app.</b> every shortcut is a ⌘ key (the user: « utilisons commande pour plus de choses »): no ctrl, no ⌥ to learn. hold ⌘ to see them where they act.</li>
     <li><b>closing the window doesn't stop the work.</b> agents keep running; bise stays in the menu bar and tells you when something needs you.</li>
@@ -361,12 +361,12 @@ SCREENS.forEach((s, i) => {
 });
 // the reading font, to compare (mono stays JetBrains Mono for marks, keys and code)
 const FONTS = [
-  ["Recursive casual", '"Recursive"', .5, "my pick. a sans with a casual axis: the letters are a little rounder, a little hand-made. warm without being cute, and its mono twin is the same family."],
+  ["Geist", '"Geist"', 0, "the user's pick. clean and modern, a little more character than Inter (the a, the t), and its mono sibling exists if we ever want it."],
+  ["Recursive casual", '"Recursive"', .5, "my first pick. a sans with a casual axis: the letters are a little rounder, a little hand-made. warm without being cute, and its mono twin is the same family."],
   ["Recursive linear", '"Recursive"', 0, "the same family, straight. calmer, still less stock than Inter."],
   ["Instrument Sans", '"Instrument Sans"', 0, "contemporary, slightly condensed, sharp details. editorial."],
   ["Space Grotesk", '"Space Grotesk"', 0, "born from Space Mono: odd, techy letters (the g, the a). the most personality, a bit loud for long reading."],
   ["Bricolage Grotesque", '"Bricolage Grotesque"', 0, "quirky and friendly, ink traps. very indie; to try for the chrome only?"],
-  ["Geist", '"Geist"', 0, "Vercel's. clean and modern, close to Inter in mood."],
   ["IBM Plex Sans", '"IBM Plex Sans"', 0, "humanist and technical, a cousin of Plex Mono. serious."],
   ["DM Sans", '"DM Sans"', 0, "soft geometric, round and friendly."],
   ["Atkinson Hyperlegible", '"Atkinson Hyperlegible Next"', 0, "made for legibility, with odd little quirks. very readable at small sizes."],
@@ -421,7 +421,7 @@ setInterval(() => { f++; document.querySelectorAll(".brth").forEach((e) => e.tex
     <li><span class="acc">decided</span> · ⌘ for everything: ⌘I inbox, ⌘E open everything, ⌘J terminal, ⌘[ ⌘] agents, ⌘⌫ close an item.</li>
     <li><span class="acc">decided</span> · notifications for the inbox only.</li>
     <li><span class="acc">decided</span> · closing the window keeps the agents running, in the menu bar.</li>
-    <li><span class="acc">decided</span> · Inter to read, mono for the marks, keys and code. still open: which sans? the buttons at the top swap it on every screen.</li>
+    <li><span class="acc">decided</span> · Geist to read, JetBrains Mono for the marks, keys, code and the machine at work in the history.</li>
     <li>open · the stack: the terminal app's Rust core behind a Tauri window would keep one engine for both. main's call; the screens don't depend on it.</li>
   </ol>
 </div>
