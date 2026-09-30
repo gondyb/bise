@@ -164,6 +164,9 @@ pub(super) fn shape(c: &Card) -> Shape {
     if c.kind == "approval" {
         return approval_shape(c);
     }
+    if c.kind == "setup" {
+        return setup_shape(c);
+    }
     let (body, options) = if no_words(&c.kind) { (c.text.clone(), Vec::new()) } else { split_choices(&c.text) };
     let summary = body.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("").to_string();
     let mut parts = vec![Part::Text(body)];
@@ -228,6 +231,32 @@ fn approval_shape(c: &Card) -> Shape {
         options: ALLOW.iter().map(|s| s.to_string()).collect(),
         short: ALLOW_SHORT.iter().map(|s| s.to_string()).collect(),
         enter: Enter::Deny,
+    }
+}
+
+/// A setup card (BISE-245): its first line in the strip, the diff in
+/// code colors, the rest as text; the options as they are (`not now`).
+fn setup_shape(c: &Card) -> Shape {
+    let (body, options) = split_choices(&c.text);
+    let summary = body.lines().next().unwrap_or("").trim().to_string();
+    let parts = body
+        .split("\n\n")
+        .map(|p| {
+            if p.starts_with("--- ") {
+                Part::Code(crate::code::highlight_patch(p))
+            } else {
+                Part::Text(p.to_string())
+            }
+        })
+        .collect();
+    Shape {
+        title: format!("{} · setup", c.agent),
+        who: c.agent.clone(),
+        summary,
+        parts,
+        short: options.clone(),
+        options,
+        enter: Enter::Answer,
     }
 }
 
@@ -318,6 +347,8 @@ pub(super) fn kind_look(kind: &str) -> (u8, &'static str, Color) {
         "drop" => (4, theme::G_STOPPED, theme::text()),
         "overlap" => (5, theme::G_OVERLAP, theme::text()),
         "done" => (6, theme::done_glyph(), theme::text()),
+        // the setup card and its offers (BISE-245): they block nothing
+        "setup" => (7, theme::G_NEEDS_YOU, theme::accent()),
         _ => (6, theme::G_CARD, theme::accent()),
     }
 }
@@ -417,6 +448,14 @@ fn step(app: &mut App, d: isize) {
 /// Answer card `id` with `reply`; the history says `✓ agent · you said
 /// {said}`; the view moves on.
 fn answer(app: &mut App, id: u64, reply: &str, said: &str) {
+    // the TUI's own cards: answered here, their own result row
+    if super::setup::is_local(id) {
+        if super::setup::valid(app, id, reply) {
+            retire(app, id);
+            super::setup::answer(app, id, reply);
+        }
+        return;
+    }
     let Some(agent) = app.sb.card_by_id(id).map(|c| c.agent.clone()) else { return };
     app.sb.send_input(format!("/answer {} {}", id, reply));
     let line = format!("{} {} · you said {}", theme::done_glyph(), agent, said);
@@ -459,6 +498,13 @@ fn pick(app: &mut App, id: u64, i: usize) -> bool {
 fn submit(app: &mut App) {
     let Some((id, enter)) = app.sb.current_card().map(|c| (c.id, shape(c).enter)) else { return };
     let text = app.ed.text.trim().to_string();
+    // a setup card: never in the history (the key card's text is a key)
+    if super::setup::is_local(id) {
+        if !text.is_empty() {
+            answer(app, id, &text, "");
+        }
+        return;
+    }
     if text.is_empty() {
         if enter == Enter::Ack {
             answer(app, id, "seen", "seen");
@@ -476,6 +522,11 @@ fn submit(app: &mut App) {
 /// ctrl+x, a click on `×`: close card `id` without answering.
 fn close_card(app: &mut App, id: u64) {
     if app.sb.card_by_id(id).is_none() {
+        return;
+    }
+    if super::setup::is_local(id) {
+        retire(app, id);
+        super::setup::close(app, id);
         return;
     }
     app.sb.send_input(format!("/close {}", id));
@@ -637,7 +688,7 @@ pub(crate) fn card_choices(app: &App, q: &str) -> Vec<Choice> {
             let (_, icon, _) = kind_look(&c.kind);
             Choice {
                 value: c.id.to_string(),
-                label: format!("#{}", c.id),
+                label: if super::setup::is_local(c.id) { "setup".into() } else { format!("#{}", c.id) },
                 desc: format!("{} @{} · {}", c.kind, c.agent, truncate_chars(&one_line(&c.text), 80)),
                 mark: Some((icon, glyph_color(&c.kind))),
             }

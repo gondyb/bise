@@ -350,6 +350,7 @@ impl Home {
             Pref::Hints => Slot::file(self.legacy_state().join("hints.json")),
             Pref::Tip => Slot::file(self.legacy_state().join("tip")),
             Pref::Onboarded => Slot::file(self.legacy_state().join("onboarded")),
+            Pref::Setup => Slot::file(self.legacy_state().join("setup.json")),
         }
     }
 

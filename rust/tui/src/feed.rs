@@ -340,6 +340,7 @@ pub(crate) fn is_notice(ev: &Ev) -> bool {
             | Ev::Info(_)
             | Ev::Compact
             | Ev::Compacted { .. }
+            | Ev::Fold { .. }
             | Ev::TurnDone
             | Ev::TimeMark(_)
     ) || matches!(ev, Ev::Release(r) if !r.is_l2())
@@ -859,7 +860,7 @@ pub(crate) fn discloses(ev: &Ev) -> bool {
         Ev::AgentMsg { text, level: 3, .. } if !is_brief(text) && report_parts(text).is_none() => l3_long(text),
         Ev::AgentMsg { text, .. } => is_brief(text) || report_parts(text).is_some(),
         Ev::Answered { why, .. } => !why.trim().is_empty(),
-        Ev::Compacted { text, .. } => !text.trim().is_empty(),
+        Ev::Compacted { text, .. } | Ev::Fold { text, .. } => !text.trim().is_empty(),
         Ev::Release(r) => r.discloses(),
         // a long message of yours folds (BISE-239)
         Ev::You(t, ..) => crate::render::you_folds(t),
@@ -935,6 +936,7 @@ fn toggle_own(events: &mut [Ev], cache: &mut [Option<EventRows>], i: usize) -> b
         | Ev::AgentMsg { open, .. }
         | Ev::Answered { open, .. }
         | Ev::Compacted { open, .. }
+        | Ev::Fold { open, .. }
         | Ev::You(_, _, open) => *open = !*open,
         Ev::Tool(td) if crate::toolbox::is_boxed(td) => {
             // BISE-223: the row opens into its box (15 rows), a box that
@@ -1319,6 +1321,7 @@ fn own_open(ev: &Ev) -> Option<bool> {
         | Ev::AgentMsg { open, .. }
         | Ev::Answered { open, .. }
         | Ev::Compacted { open, .. }
+        | Ev::Fold { open, .. }
         | Ev::You(_, _, open) => Some(*open),
         // a row, or an open box that still hides lines, is closed
         Ev::Tool(td) if crate::toolbox::is_boxed(td) => {

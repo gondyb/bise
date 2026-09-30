@@ -99,6 +99,7 @@ pub(crate) const COMMANDS: &[Cmd] = &[
         args: &[Arg::Words(THEMES)],
     },
     Cmd { name: "/welcome", desc: "replay the welcome of the first launch", args: &[] },
+    Cmd { name: "/setup", desc: "check your terminal and repo again, and offer what would help", args: &[] },
     Cmd { name: "/help", desc: "the commands and the essential keys", args: &[] },
     Cmd { name: "/shortcuts", desc: "every keyboard shortcut (also /keys)", args: &[] },
     Cmd { name: "/quit", desc: "quit (the agents keep running)", args: &[] },

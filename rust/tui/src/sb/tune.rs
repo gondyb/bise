@@ -1,0 +1,665 @@
+//! The checks and the offers behind the setup card (BISE-245, book §15
+//! "tune bise").
+//!
+//! The checks run in code, off the UI thread, each with its own timeout,
+//! 3 s at most for all of them: the terminal, truecolor, whether cmd keys
+//! reach bise (book §16 "cmd+f", BISE-221 / BISE-241), the glyph widths,
+//! git, AGENTS.md (BISE-232), `gh auth status`, the connectors' key
+//! (MISTRAL_API_KEY). What is worth changing comes back as offers, at most
+//! three: two lines of Ghostty config, a starter AGENTS.md (written by the
+//! model from the repo's files and recent commits, the only model call;
+//! a plain draft when no model answers), the key. Nothing is written here
+//! without a yes: [`apply_keys`], [`write_agents`] and the key's `login`
+//! run on the answer, and only on these files (a terminal config, a new
+//! AGENTS.md, auth.json). A config edited gets `<file>.bise-backup` first.
+//!
+//! The glyph widths are not measured: a probe of the cursor would race the
+//! UI's own input reader. The check trusts the terminals bise is tried in
+//! (Ghostty, kitty, WezTerm, iTerm2, Terminal.app) and `BISE_ASCII`.
+
+use std::collections::HashMap;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
+/// A snapshot of the environment (the checks run on another thread).
+pub(crate) type Vars = HashMap<String, String>;
+
+/// The whole setup, or the repo part only (a new repo for a user who
+/// answered already).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Scope {
+    All,
+    Repo,
+}
+
+/// What the checks look at.
+#[derive(Clone, Debug)]
+pub(crate) struct Ctx {
+    pub vars: Vars,
+    /// bise's state (auth.json, config.toml) and the user's home
+    pub home: bise_home::Home,
+    /// where bise runs
+    pub dir: PathBuf,
+    /// a cmd key reached bise in this session (`App::cmd_keys`)
+    pub cmd_keys: bool,
+    pub scope: Scope,
+    /// the platform's cmd keys (macOS); off elsewhere
+    pub mac: bool,
+}
+
+impl Ctx {
+    fn var(&self, k: &str) -> Option<&str> {
+        self.vars.get(k).map(String::as_str).filter(|v| !v.is_empty())
+    }
+}
+
+/// How a check came out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Mark {
+    Fine,
+    /// a change would help: an offer follows
+    Offer,
+    /// worth knowing, nothing bise can change
+    Note,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Check {
+    pub mark: Mark,
+    /// one line: `ghostty 1.3.1`, `gh isn't logged in · gh auth login`
+    pub text: String,
+}
+
+/// A change bise offers; written only on a yes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Offer {
+    /// config lines a terminal needs so cmd+v / cmd+f reach bise
+    Keys { terminal: String, file: PathBuf, add: Vec<String> },
+    /// a new AGENTS.md at the repo's root (its text comes later)
+    Agents { file: PathBuf },
+    /// the connectors' key, pasted into auth.json
+    Key { provider: String, env: String },
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Found {
+    pub checks: Vec<Check>,
+    pub offers: Vec<Offer>,
+}
+
+impl Found {
+    pub(crate) fn count(&self, m: Mark) -> usize {
+        self.checks.iter().filter(|c| c.mark == m).count()
+    }
+
+    /// The folded row: `tuning · 7 checks · 5 fine, 2 things to offer`
+    /// (the notes last, when there are some).
+    pub(crate) fn summary(&self) -> String {
+        let n = self.checks.len();
+        let mut parts = vec![format!("{} fine", self.count(Mark::Fine))];
+        match self.offers.len() {
+            0 => {}
+            1 => parts.push("1 thing to offer".into()),
+            k => parts.push(format!("{k} things to offer")),
+        }
+        match self.count(Mark::Note) {
+            0 => {}
+            1 => parts.push("1 note".into()),
+            k => parts.push(format!("{k} notes")),
+        }
+        format!("tuning · {} check{} · {}", n, if n == 1 { "" } else { "s" }, parts.join(", "))
+    }
+
+    /// main's one line after the checks.
+    pub(crate) fn line(&self) -> String {
+        match self.offers.len() {
+            0 => "all good here. nothing to change.".into(),
+            1 => "1 small change would help. it's in your cards, whenever you want.".into(),
+            k => format!("{k} small changes would help. they're in your cards, whenever you want."),
+        }
+    }
+}
+
+// ---- running things with a timeout ----
+
+/// Run `cmd` for at most `t`: its success and its output (stdout, then
+/// stderr); None when it can't start or takes longer (it is killed).
+pub(crate) fn output(mut cmd: Command, t: Duration) -> Option<(bool, String)> {
+    let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().ok()?;
+    let end = Instant::now() + t;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) if Instant::now() < end => std::thread::sleep(Duration::from_millis(10)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    };
+    let mut out = String::new();
+    if let Some(mut o) = child.stdout.take() {
+        let _ = o.read_to_string(&mut out);
+    }
+    if let Some(mut e) = child.stderr.take() {
+        let _ = e.read_to_string(&mut out);
+    }
+    Some((status.success(), out))
+}
+
+// ---- the terminal ----
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Term {
+    Ghostty,
+    Kitty,
+    Wezterm,
+    Iterm,
+    Apple,
+    Tmux,
+    Other(String),
+    Unknown,
+}
+
+/// The terminal from its variables, and its version when it says it.
+pub(crate) fn terminal(ctx: &Ctx) -> (Term, String) {
+    let version = ctx.var("TERM_PROGRAM_VERSION").unwrap_or("").to_string();
+    if ctx.var("TMUX").is_some() {
+        return (Term::Tmux, String::new());
+    }
+    let t = match ctx.var("TERM_PROGRAM").map(|p| p.to_ascii_lowercase()) {
+        Some(p) if p == "ghostty" => Term::Ghostty,
+        Some(p) if p == "wezterm" => Term::Wezterm,
+        Some(p) if p == "iterm.app" => Term::Iterm,
+        Some(p) if p == "apple_terminal" => Term::Apple,
+        Some(p) if p == "tmux" => Term::Tmux,
+        _ if ctx.var("KITTY_WINDOW_ID").is_some() || ctx.var("TERM") == Some("xterm-kitty") => Term::Kitty,
+        _ if ctx.var("GHOSTTY_RESOURCES_DIR").is_some() => Term::Ghostty,
+        Some(p) => Term::Other(p),
+        None => Term::Unknown,
+    };
+    (t, version)
+}
+
+fn term_name(t: &Term) -> String {
+    match t {
+        Term::Ghostty => "ghostty".into(),
+        Term::Kitty => "kitty".into(),
+        Term::Wezterm => "wezterm".into(),
+        Term::Iterm => "iterm2".into(),
+        Term::Apple => "terminal.app".into(),
+        Term::Tmux => "tmux".into(),
+        Term::Other(p) => p.clone(),
+        Term::Unknown => "your terminal".into(),
+    }
+}
+
+fn check_terminal(ctx: &Ctx) -> Check {
+    match terminal(ctx) {
+        (Term::Unknown, _) => Check { mark: Mark::Note, text: "i can't tell which terminal this is".into() },
+        (t, v) if v.is_empty() => Check { mark: Mark::Fine, text: term_name(&t) },
+        (t, v) => Check { mark: Mark::Fine, text: format!("{} {}", term_name(&t), v) },
+    }
+}
+
+fn check_truecolor(ctx: &Ctx) -> Check {
+    match ctx.var("COLORTERM").map(|c| c.to_ascii_lowercase()) {
+        Some(c) if c == "truecolor" || c == "24bit" => Check { mark: Mark::Fine, text: "truecolor".into() },
+        _ => Check {
+            mark: Mark::Note,
+            text: "no truecolor (COLORTERM): the colors are close, not exact".into(),
+        },
+    }
+}
+
+/// Ghostty's config: the one that exists (XDG first, then the macOS
+/// place), else the macOS place on a Mac, the XDG one elsewhere.
+pub(crate) fn ghostty_config(ctx: &Ctx) -> PathBuf {
+    let home = ctx.home.user_home().to_path_buf();
+    let xdg = ctx.var("XDG_CONFIG_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".config"));
+    let xdg = xdg.join("ghostty/config");
+    let mac = home.join("Library/Application Support/com.mitchellh.ghostty/config");
+    match (xdg.exists(), mac.exists()) {
+        (true, _) => xdg,
+        (false, true) => mac,
+        _ if ctx.mac => mac,
+        _ => xdg,
+    }
+}
+
+/// The Ghostty lines (book §16): cmd+v on an image-only clipboard
+/// (BISE-221), cmd+f (BISE-241).
+pub(crate) const GHOSTTY_LINES: [&str; 2] =
+    ["keybind = performable:super+v=paste_from_clipboard", "keybind = super+f=unbind"];
+
+/// The Ghostty lines missing from `text` (spaces around `=` ignored).
+pub(crate) fn ghostty_missing(text: &str) -> Vec<String> {
+    let norm = |l: &str| l.split_whitespace().collect::<String>();
+    let have: Vec<String> = text.lines().map(|l| norm(l.trim())).collect();
+    GHOSTTY_LINES.iter().filter(|l| !have.contains(&norm(l))).map(|l| l.to_string()).collect()
+}
+
+fn check_cmd_keys(ctx: &Ctx) -> (Check, Option<Offer>) {
+    let fine = |t: &str| (Check { mark: Mark::Fine, text: t.to_string() }, None);
+    let note = |t: &str| (Check { mark: Mark::Note, text: t.to_string() }, None);
+    let (term, _) = terminal(ctx);
+    if term == Term::Ghostty {
+        let file = ghostty_config(ctx);
+        let add = ghostty_missing(&std::fs::read_to_string(&file).unwrap_or_default());
+        if add.is_empty() {
+            return fine("cmd+v and cmd+f reach me");
+        }
+        let text = format!("{} keeps {} for itself", term_name(&term), keys_of(&add));
+        return (Check { mark: Mark::Offer, text }, Some(Offer::Keys { terminal: term_name(&term), file, add }));
+    }
+    if ctx.cmd_keys {
+        return fine("cmd keys reach me");
+    }
+    match term {
+        Term::Kitty => fine("kitty passes cmd keys unless mapped"),
+        Term::Wezterm => note("wezterm keeps cmd+f: DisableDefaultAssignment on SUPER+f (book §16)"),
+        Term::Iterm => note("iterm2 keeps cmd+f: a key binding sending [102;9u (book §16)"),
+        Term::Apple => note("terminal.app keeps cmd keys: ctrl+v and ctrl+f do it"),
+        Term::Tmux => note("inside tmux, cmd keys stay with the terminal: ctrl+v and ctrl+f"),
+        _ => note("cmd keys may not reach me: ctrl+v and ctrl+f always do"),
+    }
+}
+
+/// `cmd+v and cmd+f`, `cmd+f`: what the missing lines give.
+fn keys_of(add: &[String]) -> String {
+    let v = add.iter().any(|l| l.contains("super+v"));
+    let f = add.iter().any(|l| l.contains("super+f"));
+    match (v, f) {
+        (true, true) => "cmd+v and cmd+f".into(),
+        (true, false) => "cmd+v".into(),
+        _ => "cmd+f".into(),
+    }
+}
+
+fn check_glyphs(ctx: &Ctx) -> Check {
+    if ctx.var("BISE_ASCII").is_some_and(|v| v != "0") {
+        return Check { mark: Mark::Fine, text: "plain glyphs (BISE_ASCII)".into() };
+    }
+    match (terminal(ctx).0, ctx.var("TERM")) {
+        (_, Some("linux" | "dumb")) => Check {
+            mark: Mark::Note,
+            text: "this console may draw some glyphs wide: BISE_ASCII=1 keeps them plain".into(),
+        },
+        (Term::Ghostty | Term::Kitty | Term::Wezterm | Term::Iterm | Term::Apple | Term::Tmux, _) => {
+            Check { mark: Mark::Fine, text: "glyphs one cell wide".into() }
+        }
+        _ => Check { mark: Mark::Note, text: "glyphs look off? BISE_ASCII=1 keeps them plain".into() },
+    }
+}
+
+// ---- the repo ----
+
+/// The repo's root: `git rev-parse --show-toplevel` in `dir`.
+pub(crate) fn repo_root(dir: &Path, t: Duration) -> Option<PathBuf> {
+    let mut c = Command::new("git");
+    c.arg("-C").arg(dir).args(["rev-parse", "--show-toplevel"]);
+    match output(c, t) {
+        Some((true, out)) => out.lines().next().map(|l| PathBuf::from(l.trim())).filter(|p| p.is_dir()),
+        _ => None,
+    }
+}
+
+fn check_git(ctx: &Ctx) -> Check {
+    let v = output(
+        {
+            let mut c = Command::new("git");
+            c.arg("--version");
+            c
+        },
+        Duration::from_millis(1500),
+    );
+    let Some((true, v)) = v else {
+        return Check { mark: Mark::Note, text: "no git: your agents can't use worktrees".into() };
+    };
+    let v = v.trim().trim_start_matches("git version ").split(' ').next().unwrap_or("").to_string();
+    match repo_root(&ctx.dir, Duration::from_millis(1500)) {
+        Some(_) => Check { mark: Mark::Fine, text: format!("git {v} · a repo here") },
+        None => Check { mark: Mark::Note, text: format!("git {v} · not a repo here: no worktrees") },
+    }
+}
+
+/// AGENTS.md at the repo's root (BISE-232 reads it into every agent's
+/// prompt); none: a starter is offered. Not a repo: no check.
+fn check_agents(ctx: &Ctx) -> Option<(Check, Option<Offer>)> {
+    let root = repo_root(&ctx.dir, Duration::from_millis(1500))?;
+    let file = root.join("AGENTS.md");
+    Some(if file.exists() {
+        (Check { mark: Mark::Fine, text: "AGENTS.md found".into() }, None)
+    } else {
+        (Check { mark: Mark::Offer, text: "no AGENTS.md in this repo".into() }, Some(Offer::Agents { file }))
+    })
+}
+
+fn check_gh(_: &Ctx) -> Check {
+    let mut c = Command::new("gh");
+    c.args(["auth", "status"]);
+    match output(c, Duration::from_millis(2500)) {
+        Some((true, _)) => Check { mark: Mark::Fine, text: "gh logged in".into() },
+        Some((false, _)) => Check { mark: Mark::Note, text: "gh isn't logged in · gh auth login".into() },
+        None => Check { mark: Mark::Note, text: "no gh: your agents can't open pull requests".into() },
+    }
+}
+
+/// The connectors run on this provider's key.
+pub(crate) const CONNECTORS: (&str, &str) = ("mistral", "MISTRAL_API_KEY");
+
+/// The key of `id` where the harness finds it: the environment,
+/// auth.json, the old `.env` files.
+pub(crate) fn find_key(ctx: &Ctx, id: &str, key_env: &str) -> Option<String> {
+    use bise_catalog::auth::{EnvFile, Keys, Store};
+    let paths = crate::onboarding::auth_paths(&ctx.home);
+    let store = Store::read(&paths.auth_file).unwrap_or_default();
+    let files = EnvFile::read_all(&paths.env_files);
+    let env = |k: &str| ctx.var(k).map(String::from);
+    let keys = Keys { env: &env, store: &store, files: &files };
+    keys.find(id, key_env).map(|k| k.key)
+}
+
+fn check_key(ctx: &Ctx) -> (Check, Option<Offer>) {
+    let (id, env) = CONNECTORS;
+    if find_key(ctx, id, env).is_some() {
+        return (Check { mark: Mark::Fine, text: format!("{env} set: every tool") }, None);
+    }
+    (
+        Check { mark: Mark::Offer, text: format!("no {env}: the connectors are off") },
+        Some(Offer::Key { provider: id.into(), env: env.into() }),
+    )
+}
+
+// ---- all of them ----
+
+/// A check's outcome: none when it does not apply (no repo: no AGENTS.md).
+type Outcome = Option<(Check, Option<Offer>)>;
+type Job = Box<dyn FnOnce(&Ctx) -> Outcome + Send>;
+
+fn jobs(scope: Scope, mac: bool) -> Vec<Job> {
+    let plain = |f: fn(&Ctx) -> Check| -> Job { Box::new(move |c: &Ctx| Some((f(c), None))) };
+    let mut v: Vec<Job> = Vec::new();
+    if scope == Scope::All {
+        v.push(plain(check_terminal));
+        v.push(plain(check_truecolor));
+        if mac {
+            v.push(Box::new(|c: &Ctx| Some(check_cmd_keys(c))));
+        }
+        v.push(plain(check_glyphs));
+    }
+    v.push(plain(check_git));
+    v.push(Box::new(check_agents));
+    if scope == Scope::All {
+        v.push(plain(check_gh));
+        v.push(Box::new(|c: &Ctx| Some(check_key(c))));
+    }
+    v
+}
+
+/// Run every check of the scope at once, `budget` for all of them; a
+/// check still running then counts as a note. The offers keep the
+/// checks' order, three at most.
+pub(crate) fn run(ctx: &Ctx, budget: Duration) -> Found {
+    let (tx, rx) = mpsc::channel();
+    let js = jobs(ctx.scope, ctx.mac);
+    let n = js.len();
+    for (i, j) in js.into_iter().enumerate() {
+        let (tx, c) = (tx.clone(), ctx.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send((i, j(&c)));
+        });
+    }
+    drop(tx);
+    let end = Instant::now() + budget;
+    let mut got: Vec<Option<Outcome>> = vec![None; n];
+    while got.iter().any(Option::is_none) {
+        let left = end.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(left) {
+            Ok((i, r)) => got[i] = Some(r),
+            Err(_) => break,
+        }
+    }
+    let mut f = Found::default();
+    for g in got {
+        match g {
+            None => f.checks.push(Check { mark: Mark::Note, text: "a check took too long: skipped".into() }),
+            Some(None) => {}
+            Some(Some((c, o))) => {
+                f.checks.push(c);
+                if let Some(o) = o.filter(|_| f.offers.len() < 3) {
+                    f.offers.push(o);
+                }
+            }
+        }
+    }
+    f
+}
+
+// ---- the changes, on a yes ----
+
+/// `<file>.bise-backup`
+pub(crate) fn backup_of(file: &Path) -> PathBuf {
+    let mut s = file.as_os_str().to_owned();
+    s.push(".bise-backup");
+    PathBuf::from(s)
+}
+
+/// Add `add` at the end of the terminal config `file`, a backup first
+/// (an older backup is kept: it holds the file before bise). Returns
+/// the backup made, if the file existed.
+pub(crate) fn apply_keys(file: &Path, add: &[String]) -> std::io::Result<Option<PathBuf>> {
+    let old = std::fs::read_to_string(file).ok();
+    let backup = match &old {
+        Some(text) => {
+            let b = backup_of(file);
+            if !b.exists() {
+                std::fs::write(&b, text)?;
+            }
+            Some(b)
+        }
+        None => {
+            if let Some(d) = file.parent() {
+                std::fs::create_dir_all(d)?;
+            }
+            None
+        }
+    };
+    let mut text = old.unwrap_or_default();
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    for l in add {
+        text.push_str(l);
+        text.push('\n');
+    }
+    std::fs::write(file, text)?;
+    Ok(backup)
+}
+
+/// Write a new AGENTS.md: never over an existing one.
+pub(crate) fn write_agents(file: &Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(file)?;
+    f.write_all(text.as_bytes())
+}
+
+/// The lines a diff of `add` at the end of `file` shows.
+pub(crate) fn diff_add(shown: &str, old_n: usize, add: &[String], new_file: bool) -> String {
+    let from = if new_file { "/dev/null".to_string() } else { shown.to_string() };
+    let mut s = format!("--- {from}\n+++ {shown}\n@@ -{},0 +{},{} @@\n", old_n, old_n + 1, add.len());
+    for l in add {
+        s.push('+');
+        s.push_str(l);
+        s.push('\n');
+    }
+    s.trim_end().to_string()
+}
+
+// ---- the starter AGENTS.md ----
+
+/// What the repo says about itself: its build files, CI, recent commits.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Facts {
+    pub name: String,
+    /// `npm run test`, `cargo test`, `make lint`…
+    pub commands: Vec<String>,
+    pub ci: Vec<String>,
+    pub commits: Vec<String>,
+    /// the files read, for the model
+    pub files: Vec<(String, String)>,
+}
+
+/// Read the repo's build files (package.json, Cargo.toml, Makefile,
+/// pyproject.toml, go.mod), its CI workflows and its last 12 commit
+/// subjects.
+pub(crate) fn facts(root: &Path) -> Facts {
+    let mut f = Facts { name: root.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), ..Facts::default() };
+    let read = |n: &str| std::fs::read_to_string(root.join(n)).ok();
+    let keep = |f: &mut Facts, n: &str, t: &str| f.files.push((n.to_string(), t.chars().take(3000).collect()));
+    if let Some(t) = read("package.json") {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) {
+            let pm = if root.join("pnpm-lock.yaml").exists() {
+                "pnpm"
+            } else if root.join("yarn.lock").exists() {
+                "yarn"
+            } else if root.join("bun.lockb").exists() || root.join("bun.lock").exists() {
+                "bun"
+            } else {
+                "npm"
+            };
+            if let Some(n) = v.get("name").and_then(|n| n.as_str()) {
+                f.name = n.to_string();
+            }
+            if let Some(s) = v.get("scripts").and_then(|s| s.as_object()) {
+                for k in ["dev", "build", "test", "lint", "typecheck", "format"] {
+                    if s.contains_key(k) {
+                        f.commands.push(format!("{pm} run {k}"));
+                    }
+                }
+            }
+        }
+        keep(&mut f, "package.json", &t);
+    }
+    if let Some(t) = read("Cargo.toml") {
+        f.commands.extend(["cargo build", "cargo test", "cargo clippy"].map(String::from));
+        keep(&mut f, "Cargo.toml", &t);
+    }
+    if let Some(t) = read("Makefile") {
+        let targets: Vec<String> = t
+            .lines()
+            .filter_map(|l| l.split_once(':').map(|(a, _)| a))
+            .filter(|a| !a.is_empty() && !a.starts_with(['.', '\t', '#', ' ']) && a.chars().all(|c| c.is_ascii_alphanumeric() || "-_".contains(c)))
+            .take(6)
+            .map(|a| format!("make {a}"))
+            .collect();
+        f.commands.extend(targets);
+        keep(&mut f, "Makefile", &t);
+    }
+    for n in ["pyproject.toml", "go.mod"] {
+        if let Some(t) = read(n) {
+            keep(&mut f, n, &t);
+        }
+    }
+    if let Ok(d) = std::fs::read_dir(root.join(".github/workflows")) {
+        let mut ci: Vec<String> = d.flatten().map(|e| format!(".github/workflows/{}", e.file_name().to_string_lossy())).collect();
+        ci.sort();
+        f.ci = ci;
+    }
+    let mut c = Command::new("git");
+    c.arg("-C").arg(root).args(["log", "-12", "--format=%s"]);
+    if let Some((true, out)) = output(c, Duration::from_millis(1500)) {
+        f.commits = out.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
+    }
+    f
+}
+
+/// A plain starter from the facts, when no model answers.
+pub(crate) fn draft(f: &Facts) -> String {
+    let mut v = vec!["# AGENTS.md".to_string(), String::new(), format!("notes for the agents working on {}.", f.name)];
+    v.push(String::new());
+    v.push("## build and test".into());
+    if f.commands.is_empty() {
+        v.push("- (say how to build and test here)".into());
+    }
+    v.extend(f.commands.iter().take(8).map(|c| format!("- `{c}`")));
+    if !f.ci.is_empty() {
+        v.push(String::new());
+        v.push("## ci".into());
+        v.extend(f.ci.iter().take(4).map(|c| format!("- {c}: keep it green")));
+    }
+    v.push(String::new());
+    v.push("## how we work".into());
+    if let Some(c) = f.commits.first() {
+        v.push(format!("- commit subjects look like: \"{c}\""));
+    }
+    v.push("- small changes, the tests run before each commit".into());
+    v.join("\n") + "\n"
+}
+
+/// The prompt of the one model call.
+fn prompt(f: &Facts) -> String {
+    let mut p = String::from(
+        "Write a short starter AGENTS.md for this repository: the notes coding agents read before working in it. \
+         At most 20 lines, markdown, lowercase headings: how to build, test and lint (exact commands), the layout if it is clear, \
+         the conventions the commits show. Only what the files below support; no filler. Reply with the file only.\n\n",
+    );
+    p.push_str(&format!("repo: {}\n", f.name));
+    for (n, t) in &f.files {
+        p.push_str(&format!("\n--- {n}\n{t}\n"));
+    }
+    if !f.ci.is_empty() {
+        p.push_str(&format!("\nci workflows: {}\n", f.ci.join(", ")));
+    }
+    if !f.commits.is_empty() {
+        p.push_str(&format!("\nrecent commits:\n{}\n", f.commits.join("\n")));
+    }
+    p
+}
+
+/// The model's text without a code fence around it.
+pub(crate) fn unfence(t: &str) -> String {
+    let t = t.trim();
+    let t = t.strip_prefix("```markdown").or_else(|| t.strip_prefix("```md")).or_else(|| t.strip_prefix("```")).unwrap_or(t);
+    let t = t.strip_suffix("```").unwrap_or(t);
+    t.trim().to_string() + "\n"
+}
+
+/// The starter AGENTS.md: the model's (Mistral, with the connectors' key,
+/// 20 s at most), else the plain draft. Returns the text and whether the
+/// model wrote it.
+pub(crate) fn agents_text(ctx: &Ctx, root: &Path) -> (String, bool) {
+    let f = facts(root);
+    let Some(key) = find_key(ctx, CONNECTORS.0, CONNECTORS.1) else { return (draft(&f), false) };
+    let body = serde_json::json!({
+        "model": "mistral-medium-latest",
+        "temperature": 0.2,
+        "messages": [{ "role": "user", "content": prompt(&f) }],
+    });
+    let req = crate::voice::http::Request {
+        url: "https://api.mistral.ai/v1/chat/completions".into(),
+        headers: vec![
+            ("Authorization".into(), format!("Bearer {key}")),
+            ("Content-Type".into(), "application/json".into()),
+        ],
+        body: body.to_string().into_bytes(),
+    };
+    let text = crate::voice::http::send(&req, Duration::from_secs(20))
+        .ok()
+        .filter(|r| r.status == 200)
+        .and_then(|r| serde_json::from_slice::<serde_json::Value>(&r.body).ok())
+        .and_then(|v| v.pointer("/choices/0/message/content").and_then(|c| c.as_str()).map(unfence))
+        .filter(|t| t.lines().count() >= 3 && t.lines().count() <= 40);
+    match text {
+        Some(t) => (t, true),
+        None => (draft(&f), false),
+    }
+}
+
+#[cfg(test)]
+#[path = "tune_tests.rs"]
+mod tests;

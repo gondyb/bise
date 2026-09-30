@@ -250,7 +250,13 @@ fn anchor(buf: &Buffer, h: Hint, feed: Rect, panel: Option<Rect>) -> Option<u16>
         }
         Hint::FirstCard => {
             let title = format!("┃ {} ", theme::glyph(theme::G_CARD));
-            rows(feed).filter(|(_, t)| t.contains(&title) && t.contains("needs you")).map(|(y, _)| y).next_back()
+            rows(feed)
+                .filter(|(_, t)| t.contains(&title) && t.contains("needs you"))
+                .map(|(y, _)| y)
+                .next_back()
+                // a card with no row in the history (the setup card,
+                // BISE-245): the strip's label `1 card … ctrl+g open`
+                .or_else(|| rows(feed).filter(|(_, t)| t.contains("ctrl+g open")).map(|(y, _)| y).next_back())
         }
         Hint::FirstSteer => {
             let read = theme::glyph(theme::G_READ);

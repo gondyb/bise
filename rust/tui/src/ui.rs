@@ -155,7 +155,9 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
     }
     // no agents yet, nothing said: the first-run text, dim, in the feed
     let first_run = app.sb.first_run().filter(|_| !view);
-    if let Some(text) = first_run.filter(|_| !app.events.iter().any(|e| ev_visible(e, app.debug))) {
+    // it goes with your first message; rows before it (the setup's, a
+    // note) stay above it
+    if let Some(text) = first_run.filter(|_| !app.events.iter().any(|e| matches!(e, Ev::You(..)))) {
         let w = (cols.col_w as usize).saturating_sub(3).max(1);
         let mut lines: Vec<Line> = Vec::new();
         for p in text {
@@ -168,13 +170,19 @@ fn draw_bise(app: &mut App, frame: &mut Frame, area: Rect, cols: crate::layout::
         // center, designer); under 12 rows, on top after 1 blank row
         let h = (lines.len() as u16).min(feed.height);
         let y = if feed.height < 12 { 1.min(feed.height - h) } else { (feed.height - h) * 2 / 5 };
+        // under the rows the feed drew, one blank row between
+        let used = app.vis_events.len() as u16;
+        let y = if used > 0 { y.max(used + 1) } else { y };
+        let fits = y + h <= feed.height;
         let r = Rect {
             x: feed.x + 3,
             y: feed.y + y,
             width: cols.col_w.saturating_sub(3).min(feed.width.saturating_sub(3)),
-            height: feed.height - y,
+            height: feed.height.saturating_sub(y),
         };
-        frame.render_widget(Paragraph::new(lines), r);
+        if fits {
+            frame.render_widget(Paragraph::new(lines), r);
+        }
     }
     // the raised pane (book §13, BISE-212): the grey fills the inside of
     // the frame, from the row under the divider to the row above the
@@ -618,6 +626,19 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, lea
             spans.push(Span::styled(format!(" {}", note), Style::default().fg(dim())));
         }
         vec![Line::from(spans)]
+    } else if sb::setup::masked(app) {
+        // the key card (BISE-245): a key is never shown
+        typed_lines(app, text_w, text_rows)
+            .into_iter()
+            .map(|l| {
+                Line::from(
+                    l.spans
+                        .into_iter()
+                        .map(|s| Span::styled(s.content.chars().map(|c| if c == ' ' { ' ' } else { '•' }).collect::<String>(), s.style))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect()
     } else {
         typed_lines(app, text_w, text_rows)
     };

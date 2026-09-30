@@ -151,6 +151,14 @@ pub(crate) enum Ev {
     Warn(String),
     Err(String),
     Info(String),
+    // in memory only (BISE-245): one dim row `▸ head` that opens on
+    // `text` (a click, ctrl+o); the setup's checks. No text: the dim
+    // row alone, no glyph (a setup answer's result)
+    Fold {
+        head: String,
+        text: String,
+        open: bool,
+    },
     Idle,
     Raw(String),
     // switchboard (hub line protocol v2, contract C2): a message between

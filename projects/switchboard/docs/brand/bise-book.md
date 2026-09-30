@@ -315,7 +315,7 @@ a symbol row (designer).
   name) when it does not work in the shared checkout (nothing then:
   quiet is normal, BISE-136), and transient notes (`preview of auth-fix`).
 - **Composer:** `› ` prompt; key hints on the right, dim, lowercase.
-- **First run** (no agents yet), in the feed, dim:
+- **First run** (no agents yet), in the feed, dim, at the feed's indent, at 2/5 of the history's free rows (under 12 rows: on top, after one blank row; BISE-245):
   ```
   what's on your mind?
 
@@ -749,6 +749,57 @@ one in accent.
    at the feed's indent, at 2/5 of the history's free rows (under 12 rows:
    on top, after one blank row); it goes with the first message. No
    first-task suggestion.
+   **Tune bise: one quiet card** (BISE-245). In the strip (cards v2, §12),
+   never opened for you, nothing checked yet: `? main · want me to tune bise
+   for your terminal and repo? about a minute` · `1 yes` · `2 not now`. It
+   waits: no timeout, no nudge; being the first card, the first-card hint
+   teaches ctrl+g. Once per user (`setup` in prefs.json); a user who
+   answered gets it again in a new repo, for the repo part only (`new
+   repo: want me to tune bise for it? about a minute`: git and AGENTS.md).
+   `SB_SETUP=off` or `SB_ONBOARDING=off`: never. These cards are the TUI's
+   own: the hub never sees them, they carry no `#` number.
+   - **not now** (`2`, `×`, ctrl+x): the card goes, one dim row `– not now ·
+     /setup any time`, never asked again.
+   - **yes**: the checks run in code, each with its own timeout, 3 s for
+     all: the terminal (name, version), truecolor (`COLORTERM`), whether
+     cmd keys reach bise (§16 "cmd+f": Ghostty's config is read; kitty
+     passes them; WezTerm, iTerm2, Terminal.app, tmux get a note), the
+     glyph widths (trusted for the terminals bise is tried in, and
+     `BISE_ASCII`; not measured: a cursor probe would race the input
+     reader), git and whether bise runs in a repo, AGENTS.md at the repo's
+     root (BISE-232), `gh auth status`, the connectors' key
+     (`MISTRAL_API_KEY`, found like the harness finds keys). They fold into
+     one dim row, `▸ tuning · 8 checks · 5 fine, 2 things to offer, 1 note`
+     (a click or ctrl+o opens it: `✓` fine, `?` an offer, `–` a note, one
+     line each). main says one line: `2 small changes would help. they're
+     in your cards, whenever you want.` (one: `1 small change would help.
+     it's in your cards, whenever you want.`; none: `all good here. nothing
+     to change.`).
+   - **the offers**, one card per change, in the strip, not opened, three at
+     most, the exact diff inside, `1 yes` / `2 no`: `let cmd+v and cmd+f
+     reach me · ghostty config · 2 lines` (`keybind =
+     performable:super+v=paste_from_clipboard`, `keybind = super+f=unbind`,
+     only the missing ones), `a starter AGENTS.md · new file · 14 lines`
+     (written by the model from package.json, Cargo.toml, the Makefile,
+     pyproject/go.mod, the CI workflows and the last 12 commit subjects: the
+     only model call, Mistral with the connectors' key, 20 s; without one, a
+     plain draft from the same facts; its card comes when the text is
+     ready), `give your agents every tool · optional` (the composer is a
+     masked paste field: `•` per character, never in the history; `⏎` saves
+     the key in auth.json like `login`; ctrl+x no). Nothing is written
+     without a yes, and only these files: the terminal's config (a backup
+     `<file>.bise-backup` first; an older backup is kept), a new AGENTS.md
+     (never over one), auth.json. Each answer leaves one dim row: `✓
+     ghostty config · 2 lines added, the old one in
+     ~/…/config.bise-backup · reload its config (cmd+shift+,) to use them`,
+     `✓ AGENTS.md written · 14 lines · your agents read it from their next
+     turn`, `✓ MISTRAL_API_KEY saved in ~/.bise/auth.json · the agents
+     started from now on have every tool`, `– ghostty config unchanged ·
+     /setup any time`, `– no AGENTS.md · /setup any time`.
+   - `/setup` runs the checks and the offers again, any time (the offers
+     still in the strip are replaced).
+   - NO_COLOR: the glyphs carry it (`✓ ? –`); `BISE_ASCII=1`: `ok ? -`.
+
 6. **The real first run, with one-time hints.** No tour. Each hint shows once,
    next to the thing, the first time it happens, and goes away when used:
    - first agent: `new: your agents. they work in the background. ⌥ 1 to look

@@ -20,6 +20,9 @@ pub enum Pref {
     Tip,
     /// `onboarded`: present once the onboarding was seen.
     Onboarded,
+    /// `setup`: `{"asked": true, "repos": [root, …]}`, the setup card's
+    /// answers (BISE-245: once per user, the repo part once per repo).
+    Setup,
 }
 
 impl Pref {
@@ -31,6 +34,7 @@ impl Pref {
             Pref::Hints => "hints",
             Pref::Tip => "tip",
             Pref::Onboarded => "onboarded",
+            Pref::Setup => "setup",
         }
     }
 }

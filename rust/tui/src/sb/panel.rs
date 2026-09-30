@@ -603,7 +603,8 @@ fn cards_lines(
 /// column of margin on the right. The agent keeps its whole name while
 /// 6 columns are left for the text, then it is cut too.
 fn card_row(c: &Card, w: usize, bg: Option<Color>) -> Line<'static> {
-    let num = format!(" #{} ", c.id);
+    // the TUI's own cards (setup) have no hub number
+    let num = if super::setup::is_local(c.id) { " ".to_string() } else { format!(" #{} ", c.id) };
     let g = super::cards::kind_look(&c.kind).1;
     let lead = num.width() + g.width() + 1;
     let room = w.saturating_sub(lead + 1);
@@ -968,9 +969,11 @@ pub(crate) const FIRST_RUN: [&str; 3] = [
 
 impl Sb {
     /// No agents yet and main in view: the first-run text, which shows
-    /// while main's feed is empty.
+    /// until your first message (the setup card may wait in the strip,
+    /// BISE-245).
     pub(crate) fn first_run(&self) -> Option<[&'static str; 3]> {
-        (self.focus == "main" && counts(self).is_none() && !self.preview).then_some(FIRST_RUN)
+        let live = self.agents.iter().any(|a| !a.main && !a.archived());
+        (self.focus == "main" && !live && !self.preview).then_some(FIRST_RUN)
     }
 
     /// The line pinned on top of the feed: the preview of the selected

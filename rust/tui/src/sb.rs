@@ -31,6 +31,8 @@ use panel::glyph;
 mod feed;
 pub(super) use feed::FeedWindow;
 mod client;
+pub(crate) mod setup;
+mod tune;
 pub(crate) mod drafts;
 mod keys;
 pub(crate) mod release;
@@ -168,6 +170,8 @@ pub(super) struct Sb {
     /// Things that asked for you since the start (a new card, a message
     /// to you, a confirm): a change leaves zen (BISE-121).
     calls: u64,
+    /// The setup card and its offers (BISE-245), the TUI's own cards.
+    setup: setup::Setup,
 }
 
 /// The string field `k` of `v` ("" when absent).
@@ -566,6 +570,8 @@ fn apply_state(app: &mut App, v: &Value) {
                 .collect()
         })
         .unwrap_or_default();
+    // the setup cards are the TUI's own: not in the hub's snapshot
+    setup::put_back(sb);
     // zen (BISE-121): a card that was not there
     if sb.cards.iter().any(|c| !known.contains(&c.id)) {
         sb.calls += 1;
@@ -700,6 +706,7 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
         "/archived" => sb.toggle_archived(),
         "/theme" => out.push(theme_command(typed.split_whitespace().nth(1), crate::theme_detect::choose)),
         "/welcome" => crate::onboarding::run(app),
+        "/setup" => setup::command(app),
         "/cancel" => out.push(Ev::Info(NO_UNDO.into())),
         // an archived task reads nothing: its feed is history only
         _ if sb.focus_archived() && !typed.starts_with('/') => {

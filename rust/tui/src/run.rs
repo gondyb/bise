@@ -161,6 +161,8 @@ pub(crate) fn run_tui(app: &mut App) -> io::Result<()> {
     crash::set_ui_thread(true);
     // BISE-60: the first launch of the switchboard UI plays the onboarding
     crate::onboarding::request_if_due(app);
+    // BISE-245: the setup card, when due, at the first hello
+    crate::sb::setup::arm(app);
     let r = ui_loop(app, &mut terminal);
     crash::set_ui_thread(false);
     // no orphan shell
@@ -453,6 +455,7 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
         }
         // BISE-120a: the drafts on disk, once they stop moving
         sb::drafts::tick(app);
+        sb::setup::pump(app);
     }
     Ok(())
 }

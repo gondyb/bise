@@ -335,6 +335,7 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
         // summary under the rail once opened
         Ev::Compact => compacting_line(0, true),
         Ev::Compacted { text, open } => summary_lines(text, *open, width),
+        Ev::Fold { head, text, open } => fold_lines(head, text, *open, width),
         // an interrupted turn is dim; any other warning reads as text
         Ev::Warn(t) if t == "turn interrupted" => glyph_line(G_INTERRUPTED, dim_st, t.clone(), dim_st, width),
         Ev::Warn(t) => glyph_line(G_INTERRUPTED, dim_st, t.clone(), text_st, width),
@@ -1187,6 +1188,25 @@ fn summary_lines(summary: &str, open: bool, width: usize) -> Vec<Line<'static>> 
     if open && has {
         let bar = Span::styled(RAIL, Style::default().fg(faint()));
         ls.extend(barred_rows(&bar, md_lines(&body, width.saturating_sub(3), width.saturating_sub(3)), width));
+    }
+    ls
+}
+
+/// A folded dim row (BISE-245): `▸ head`; open, `▾ head` and the text's
+/// lines under the rail, dim.
+fn fold_lines(head: &str, text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
+    let dim_st = Style::default().fg(dim());
+    // nothing folded: the dim row alone (a setup answer's result)
+    if text.trim().is_empty() {
+        return vec![Line::from(Span::styled(head.to_string(), dim_st))];
+    }
+    let g = crate::theme::glyph(if open { G_OPEN } else { G_CLOSED });
+    let mut ls = vec![Line::from(vec![Span::styled(format!("{g} "), dim_st), Span::styled(head.to_string(), dim_st)])];
+    if open {
+        let bar = Span::styled(RAIL, Style::default().fg(faint()));
+        let rows: Vec<Line<'static>> =
+            text.lines().map(|l| Line::from(Span::styled(l.to_string(), dim_st))).collect();
+        ls.extend(barred_rows(&bar, rows, width));
     }
     ls
 }

@@ -63,7 +63,7 @@ fn bise_home_moves_everything() {
     assert_eq!(h.drafts_dir(), p("/b/drafts"));
     assert_eq!(h.versions_dir(), p("/b/dev/versions"));
     assert_eq!(h.build_dir(), p("/b/dev/build"));
-    for pref in [Pref::Voice, Pref::Theme, Pref::Hints, Pref::Tip, Pref::Onboarded] {
+    for pref in [Pref::Voice, Pref::Theme, Pref::Hints, Pref::Tip, Pref::Onboarded, Pref::Setup] {
         assert_eq!(h.pref(pref), Slot::key("/b/prefs.json", pref.key()));
     }
 }

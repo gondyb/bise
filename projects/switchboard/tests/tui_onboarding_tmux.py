@@ -114,24 +114,32 @@ def main():
         colors = t.screen(colors=True)
         assert "48;2;20;18;17" in colors, colors[:2000]
         assert prefs(root).get("onboarded"), prefs(root)
-        # BISE-61: the one-time hints of the first run, one at a time
+        # BISE-245: one quiet card in the strip, not opened; it is the
+        # first card, so the first-card hint teaches ctrl+g
+        sc = t.wait("want me to tune bise", 30)
+        sc = t.wait("a card: someone needs you.")
+        assert "2 not now" in sc and "what's on your mind?" in sc, sc
+        shot("7-setup-card", sc)
+        t.keys("C-g")
+        t.wait("⏎ answer")
+        t.keys("2")                         # not now: one dim row, never asked again
+        sc = t.wait("– not now · /setup any time")
+        assert "want me to tune bise" not in sc, sc
+        assert prefs(root).get("setup", {}).get("asked") is True, prefs(root)
+        shot("8-not-now", sc)
+        # BISE-61: the first agent's hint
         t.typed('[[bash: sb spawn t1 --objective "{{bash: sb report blocked pick-one}}"]]')
         t.keys("Enter")
         sc = t.wait("new: your agents.", 60)
-        shot("7-hint-first-agent", sc)
+        shot("9-hint-first-agent", sc)
         t.keys("M-1")                       # used: it goes away
         t.wait_gone("new: your agents.")
         t.keys("Escape")
-        sc = t.wait("a card: someone needs you.", 60)
-        shot("8-hint-first-card", sc)
-        t.typed("ok")                       # the next user message: it goes away
-        t.keys("Enter")
-        t.wait_gone("a card: someone needs you.")
         t.typed('[[bash: sb spawn t2 --objective "{{bash: sleep 60}}"]] '
               '[[bash: sb spawn t3 --objective "{{bash: sb ask t2 v1-or-v2 --timeout 60}}"]]')
         t.keys("Enter")
         sc = t.wait("agents talk to each other.", 60)
-        shot("9-hint-first-level3", sc)
+        shot("10-hint-first-level3", sc)
         seen = prefs(root).get("hints")
         assert seen == {"first_agent": True, "first_card": True, "first_level3": True}, seen
         # the second launch: no onboarding
@@ -139,6 +147,7 @@ def main():
         sc = t.wait(NORMAL)
         time.sleep(0.5)
         sc = t.screen()
+        assert "want me to tune bise" not in sc, sc   # asked once per user
         assert "any key ↵" not in sc and "hi, i'm" not in sc, sc
         # esc skips on a fresh root, and marks it seen
         root2 = os.path.join(E.tmp, "state-root-2")
