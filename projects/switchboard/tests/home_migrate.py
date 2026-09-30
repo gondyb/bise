@@ -19,7 +19,7 @@ import json, os, socket, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from e2e import EXE, ROOT, host_env  # noqa: E402
+from e2e import EXE, ROOT, host_env, load_factor  # noqa: E402
 
 PRIVATE = ("BEND_SESSION_FILE", "BEND_CONTEXT_FILE", "BEND_WIRE_LOG", "BEND_REPL_PORT",
            "BEND_DEBUG_DIR", "BEND_EXTRA_PROMPT", "BEND_WORKDIR", "SB_STATE_DIR", "BISE_HOME",
@@ -64,7 +64,9 @@ def main():
         err = open(os.path.join(tmp, "hub.err"), "a")
         subprocess.Popen([EXE, "sbd", "--workspace", w], env=env, cwd=ROOT, stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=err, start_new_session=True)
-        for _ in range(150):
+        # 15 s on an idle machine, times load_factor() (BISE-292)
+        t0 = time.time()
+        while time.time() - t0 < 15 * load_factor():
             if os.path.exists(os.path.join(sd, "hub.sock")) and sb(env, sd, "list").returncode == 0:
                 return
             time.sleep(0.1)
@@ -91,7 +93,8 @@ def main():
                 return True
             except (OSError, ValueError):
                 return False
-        for _ in range(300):
+        t0 = time.time()
+        while time.time() - t0 < 30 * load_factor():
             if not busy():
                 return
             time.sleep(0.1)

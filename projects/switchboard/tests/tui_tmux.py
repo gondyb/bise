@@ -19,16 +19,6 @@ def tmux(*a):
     return subprocess.run(["tmux", *a], capture_output=True, text=True).stdout
 
 
-def load_factor():
-    """How much slower than an idle machine this one is now: the load
-    average per core, at least 1, at most 4 (5 agents building at once
-    reach 3-4)."""
-    try:
-        return max(1.0, min(4.0, os.getloadavg()[0] / (os.cpu_count() or 1)))
-    except OSError:
-        return 1.0
-
-
 def wait_until(fn, timeout, what, poll=0.2):
     """Call `fn` until it returns a truthy value, and return it; after
     `timeout` s: AssertionError(what()). The one poll loop of the tmux
@@ -41,7 +31,7 @@ def wait_until(fn, timeout, what, poll=0.2):
         got = fn()
         if got:
             return got
-        if time.time() - t0 >= timeout * load_factor():
+        if time.time() - t0 >= timeout * e2e.load_factor():
             raise AssertionError(what())
         time.sleep(poll)
 

@@ -32,6 +32,18 @@ AGENT_VARS = ("SB_CORE_BIN", "SB_SOCKET", "SB_AGENT", "SB_TASK", "SB_PORT_OFFSET
               "SB_BUILD_DIR", "SB_VERSIONS_DIR", "SB_LAUNCH_DIR", "BISE_ROLE", "BISE_EXPORTS_FOR")
 
 
+def load_factor():
+    """How much slower than an idle machine this one is now: the load
+    average per core, at least 1, at most 4 (5 agents building at once
+    reach 3-4). Every poll loop of the tests scales its timeout by it
+    (Env.wait, tui_tmux.wait_until): a test that passes returns as soon
+    as it would, only a broken one waits longer before failing."""
+    try:
+        return max(1.0, min(4.0, os.getloadavg()[0] / (os.cpu_count() or 1)))
+    except OSError:
+        return 1.0
+
+
 def host_env():
     """os.environ without the calling agent's SB_ variables."""
     return {k: v for k, v in os.environ.items() if k not in AGENT_VARS}
@@ -162,8 +174,10 @@ class Client:
             return list((self.state or {}).get("cards", []))
 
     def wait(self, pred, timeout=90, what="condition"):
+        """`timeout` is for an idle machine: times load_factor() (read at
+        each poll) on a loaded one (BISE-292)."""
         t0 = time.time()
-        while time.time() - t0 < timeout:
+        while time.time() - t0 < timeout * load_factor():
             try:
                 if pred():
                     return
