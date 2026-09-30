@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><title>README draft · preview</title><base href="/">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5/github-markdown.min.css">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>body{margin:0;background:#0d1117}body.light{background:#fff}.bar{position:sticky;top:0;z-index:9;display:flex;gap:10px;align-items:center;padding:10px 16px;background:#161b22;color:#8b949e;font:13px ui-monospace,Menlo,monospace;border-bottom:1px solid #30363d}
+.bar button{font:inherit;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:4px 10px;cursor:pointer}.bar button.on{border-color:#f4a6b0;color:#f4a6b0}
+.markdown-body{box-sizing:border-box;max-width:1012px;margin:24px auto;padding:32px 45px;border:1px solid #30363d;border-radius:6px}</style></head>
+<body><div class="bar">README draft · demo <button data-d="demo">A · current</button><button data-d="demo-b">B · richer</button> · theme <button data-t="dark">dark</button><button data-t="light">light</button> · a GitHub look-alike, the real render may differ a little</div>
+<article class="markdown-body" id="md"></article>
+<script>
+const q = new URLSearchParams(location.search); let D = q.get("demo") || "demo-b", T = q.get("theme") || "dark";
+async function draw() {
+  const md = (await (await fetch("projects/switchboard/docs/brand/readme/README-draft.md?" + Date.now())).text()).replaceAll("DEMO-", D + "-");
+  const el = document.getElementById("md"); el.innerHTML = marked.parse(md);
+  el.setAttribute("data-color-mode", T); el.setAttribute("data-dark-theme", "dark"); el.setAttribute("data-light-theme", "light");
+  document.body.className = T; el.className = "markdown-body"; el.style.colorScheme = T;
+  el.querySelectorAll("picture").forEach(p => { const s = p.querySelector("source"), i = p.querySelector("img"); if (T === "dark" && s) i.src = s.getAttribute("srcset"); s && s.remove(); });
+  document.querySelectorAll("[data-d]").forEach(b => b.classList.toggle("on", b.dataset.d === D));
+  document.querySelectorAll("[data-t]").forEach(b => b.classList.toggle("on", b.dataset.t === T));
+}
+document.querySelectorAll("[data-d]").forEach(b => b.onclick = () => { D = b.dataset.d; draw(); });
+document.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { T = b.dataset.t; draw(); });
+draw();
+</script></body></html>
