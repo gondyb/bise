@@ -879,17 +879,18 @@ one in accent.
      would help. it waits in your inbox with the exact change. yes or no,
      whenever you want.`; none: `all good here. nothing to change.`).
    - **the fixes**, one item each, in the inbox, not opened, three at most:
-     - `let cmd+v, cmd+f and cmd+k reach bise` · faint `Ghostty config · +3
+     - `let cmd+v, cmd+f, cmd+k and cmd+a reach bise` · faint `Ghostty config · +4
        lines`: `right now Ghostty keeps these keys for itself. with these
        lines, cmd+v can paste a screenshot into your message (text still
-       pastes as usual), cmd+f searches your history, and cmd+k finds an
-       agent by name.` (two lines: `these two keys`, the two reasons joined
-       by `, and`) / `i'd add 3 lines
-       to {path}:` (a new file: `i'd create {path} with 3 lines:`), the diff
+       pastes as usual), cmd+f searches your history, cmd+k finds an
+       agent by name, and cmd+a selects all your message.` (two lines: `these two keys`, the two reasons joined
+       by `, and`) / `i'd add 4 lines
+       to {path}:` (a new file: `i'd create {path} with 4 lines:`), the diff
        (`keybind = performable:super+v=paste_from_clipboard`, `keybind =
-       super+f=unbind`, `keybind = super+k=unbind` (BISE-265), only the
-       missing ones; the title names only their keys), dim `i copy the file to
-       config.bise-backup first. to undo: delete the 3 lines. Ghostty uses
+       super+f=unbind`, `keybind = super+k=unbind` (BISE-265), `keybind =
+       super+a=unbind` (BISE-267), only the
+       missing ones; the title names only their keys; in the strip the four-key title is cut with `…` before the options), dim `i copy the file to
+       config.bise-backup first. to undo: delete the 4 lines. Ghostty uses
        them after a reload (cmd+shift+,) or in a new window.` Options `yes,
        add them` (one line: `yes, add it`) / `no`.
      - `write a starter AGENTS.md` · faint `new file · 14 lines`, titled
@@ -957,6 +958,7 @@ replays it (**⚠** proposed command).
 | `⌥ + 0…9` | go to main / agent N | now shown in the panel |
 | `ctrl+k` / `ctrl+j`, `alt+↓` / `alt+↑` | select next / previous agent | — |
 | `cmd+k`, `ctrl+s`, `/switch [name]` | find an agent by name and open it (see "Switch agents" below) | new (BISE-265) |
+| `cmd+a` | select the whole composer text; typing or a paste replaces it, backspace clears it. Only the composer: in the help, find or the agent palette it does nothing (no `a` typed), in the terminal panel it goes nowhere. Ghostty keeps cmd+a (its screen's select all) unless `keybind = super+a=unbind`, which the setup offers with the cmd+v, cmd+f and cmd+k lines | reaches the composer (BISE-267, user: « j'aimerais bien que Command A dans le composer, ça sélectionne tout le texte du composer. Actuellement, ça ne fait rien du tout. ») |
 | `⏎` on a selected agent | enter it | — |
 | `space` | preview the selected agent; in the feed, toggle the selected item | feed toggle new |
 | `D` | drop the selected agent (asks first) | — |

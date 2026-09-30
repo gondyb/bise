@@ -156,6 +156,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(TERM, "shift+drag", "select when the program in it takes the mouse (vim, less, htop)"),
     r(TERM, "drag the top border", "resize it"),
     r(GHOSTTY, "", "Ghostty keeps cmd+↑/↓, cmd+a, cmd+c and cmd+z by default. to get them in the composer, add to ~/Library/Application Support/com.mitchellh.ghostty/config:"),
+    r(GHOSTTY, "", "keybind = super+a=unbind (cmd+a selects the whole composer text; Ghostty's selects the screen)"),
     r(GHOSTTY, "", "keybind = super+arrow_up=unbind"),
     r(GHOSTTY, "", "keybind = super+arrow_down=unbind"),
     r(GHOSTTY, "", "keybind = super+z=unbind"),
@@ -177,7 +178,7 @@ pub(crate) enum Page {
 #[derive(Debug)]
 pub(crate) struct Overlay {
     page: Page,
-    filter: String,
+    pub(crate) filter: String,
     scroll: usize,
     // set by the last draw
     max_scroll: usize,
@@ -207,6 +208,8 @@ pub(crate) fn on_key(app: &mut App, k: &KeyEvent) -> bool {
         return true;
     }
     let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+    // cmd+a, cmd+c…: never typed into the filter
+    let cmd = k.modifiers.contains(KeyModifiers::SUPER);
     let page = o.visible.saturating_sub(1).max(1);
     match k.code {
         KeyCode::Esc if !o.filter.is_empty() => {
@@ -232,7 +235,7 @@ pub(crate) fn on_key(app: &mut App, k: &KeyEvent) -> bool {
             o.filter.pop();
             o.scroll = 0;
         }
-        KeyCode::Char(c) if !ctrl => {
+        KeyCode::Char(c) if !ctrl && !cmd => {
             o.filter.push(c);
             o.scroll = 0;
         }

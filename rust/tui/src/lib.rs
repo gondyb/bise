@@ -111,3 +111,5 @@ mod fuzz_tests;
 mod links_tests;
 #[cfg(test)]
 mod file_links_tests;
+#[cfg(test)]
+mod cmd_a_tests;

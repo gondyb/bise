@@ -1444,6 +1444,7 @@ mod tests {
         assert_eq!(key(Up, sup), Some(Action::Move(Motion::TextStart, false)));
         assert_eq!(key(Char('z'), sup | s), Some(Action::Redo));
         assert_eq!(key(Char('c'), sup), Some(Action::Copy));
+        assert_eq!(key(Char('a'), sup), Some(Action::SelectAll));
         // selection
         assert_eq!(key(Right, s), Some(Action::Move(Motion::Right, true)));
         assert_eq!(key(Right, s | a), Some(Action::Move(Motion::WordRight, true)));

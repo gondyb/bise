@@ -6,7 +6,7 @@
 //! reach bise (book §16 "cmd+f", BISE-221 / BISE-241), the glyph widths,
 //! git, AGENTS.md (BISE-232), `gh auth status`, the connectors' key
 //! (MISTRAL_API_KEY). What is worth changing comes back as offers, at most
-//! three: three lines of Ghostty config, a starter AGENTS.md (written by the
+//! three: four lines of Ghostty config, a starter AGENTS.md (written by the
 //! model from the repo's files and recent commits, the only model call;
 //! a plain draft when no model answers), the key. Nothing is written here
 //! without a yes: [`apply_keys`], [`write_agents`] and the key's `login`
@@ -235,9 +235,14 @@ pub(crate) fn ghostty_config(ctx: &Ctx) -> PathBuf {
 }
 
 /// The Ghostty lines (book §16): cmd+v on an image-only clipboard
-/// (BISE-221), cmd+f (BISE-241).
-pub(crate) const GHOSTTY_LINES: [&str; 3] =
-    ["keybind = performable:super+v=paste_from_clipboard", "keybind = super+f=unbind", "keybind = super+k=unbind"];
+/// (BISE-221), cmd+f (BISE-241), cmd+k (BISE-265), cmd+a selects the
+/// composer's text, not Ghostty's screen (BISE-267).
+pub(crate) const GHOSTTY_LINES: [&str; 4] = [
+    "keybind = performable:super+v=paste_from_clipboard",
+    "keybind = super+f=unbind",
+    "keybind = super+k=unbind",
+    "keybind = super+a=unbind",
+];
 
 /// The Ghostty lines missing from `text` (spaces around `=` ignored).
 pub(crate) fn ghostty_missing(text: &str) -> Vec<String> {
@@ -254,7 +259,7 @@ fn check_cmd_keys(ctx: &Ctx) -> (Check, Option<Offer>) {
         let file = ghostty_config(ctx);
         let add = ghostty_missing(&std::fs::read_to_string(&file).unwrap_or_default());
         if add.is_empty() {
-            return fine("cmd+v, cmd+f and cmd+k reach me");
+            return fine("cmd+v, cmd+f, cmd+k and cmd+a reach me");
         }
         let text = format!("{} keeps {} for itself", term_name(&term), keys_of(&add));
         return (Check { mark: Mark::Offer, text }, Some(Offer::Keys { terminal: term_name(&term), file, add }));
@@ -272,7 +277,7 @@ fn check_cmd_keys(ctx: &Ctx) -> (Check, Option<Offer>) {
     }
 }
 
-/// `cmd+v, cmd+f and cmd+k`, `cmd+f`: what the missing lines give.
+/// `cmd+v, cmd+f, cmd+k and cmd+a`, `cmd+f`: what the missing lines give.
 pub(crate) fn keys_of(add: &[String]) -> String {
     let keys: Vec<String> = add
         .iter()

@@ -183,6 +183,8 @@ fn keys_why(add: &[String]) -> String {
                 "cmd+v can paste a screenshot into your message (text still pastes as usual)"
             } else if l.contains("super+k") {
                 "cmd+k finds an agent by name"
+            } else if l.contains("super+a") {
+                "cmd+a selects all your message"
             } else {
                 "cmd+f searches your history"
             }
