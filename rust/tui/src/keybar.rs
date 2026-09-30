@@ -34,7 +34,9 @@ pub(crate) enum Mode {
     DropAsk,
     /// a yes / no question in the status row
     Confirm,
-    /// the card view (ctrl+g): the composer answers the card
+    /// the inbox selected (ctrl+g): ↑↓ choose a row, ⏎ opens it
+    Inbox,
+    /// the card view (⏎ on an inbox row): the composer answers the card
     Card,
     /// ctrl+f: the find field (BISE-237)
     Find,
@@ -54,6 +56,10 @@ type Pair = (&'static str, &'static str);
 /// The way home from an agent's view (book §13, BISE-103): the first
 /// pair there, never dropped.
 const BACK: Pair = ("esc", "back to main");
+
+/// The inbox from the thread, right after `⏎ send` while it holds
+/// something (book §12).
+const INBOX: Pair = ("ctrl+g", "inbox");
 
 /// The first pair while text is selected (BISE-134): the one pair of the
 /// bar in the accent, so you notice you can just type (book §13).
@@ -93,6 +99,7 @@ impl Mode {
             Mode::Confirm => &[("y", "yes"), ("n", "no"), ("esc", "cancel")],
             Mode::Find => &[("⏎", "older"), ("↑↓", "move"), ("esc", "close")],
             // the view's own keys come from `sb::card_key_pairs` (`1-2 pick`…)
+            Mode::Inbox => &[("↑↓", "choose"), ("⏎", "open"), ("esc", "back to your message")],
             Mode::Card => &[("⏎", "answer"), ("ctrl+x", "close"), ("esc", "back")],
             Mode::Selected => &[("⏎", "enter"), ("space", "preview"), ("D", "drop"), ("esc", "close")],
             Mode::Archived => &[BACK, ("/restore", "brings it back")],
@@ -129,6 +136,8 @@ pub(crate) fn mode(app: &App) -> Mode {
         Mode::Transcribing
     } else if app.find.is_some() {
         Mode::Find
+    } else if crate::sb::inbox_selected(app) {
+        Mode::Inbox
     } else if commands::popup_open(app) && files::token(&app.ed.text, app.ed.cursor).is_some() {
         Mode::FilePopup
     } else if app.feed_sel.is_some() && app.mouse.drag.is_none() {
@@ -150,9 +159,12 @@ pub(crate) fn line(app: &App, width: u16) -> Line<'static> {
         return pairs_line(&crate::ctrlhint::pairs(app), usize::from(width)).0;
     }
     if mode(app) == Mode::Card {
-        return pairs_line(&crate::sb::card_key_pairs(app), usize::from(width)).0;
+        let pairs = crate::sb::fit_card_pairs(crate::sb::card_key_pairs(app), usize::from(width));
+        let pairs: Vec<(&str, &str)> = pairs.iter().map(|(k, l)| (*k, l.as_str())).collect();
+        return pairs_line(&pairs, usize::from(width)).0;
     }
-    render(mode(app), width, typing, agent, Some(current_tip(typing)))
+    let inbox = crate::sb::ctrl_view(app).cards > 0;
+    render_with(mode(app), width, typing, agent, Some(current_tip(typing)), inbox)
 }
 
 // ---- the tip clock (BISE-104, book §8) ----
@@ -277,10 +289,22 @@ fn fit_agent(mut pairs: Vec<Pair>, width: usize) -> Vec<Pair> {
 /// shows only in [`Mode::Default`] out of an agent's view, while not
 /// `typing`, right-aligned, with at least 3 columns between it and the
 /// keys.
+#[cfg(test)]
 pub(crate) fn render(mode: Mode, width: u16, typing: bool, agent: bool, tip: Option<&str>) -> Line<'static> {
+    render_with(mode, width, typing, agent, tip, false)
+}
+
+/// [`render`], with `ctrl+g inbox` after `⏎ send` (or first) while the
+/// inbox holds something (`inbox`), in the thread's modes.
+fn render_with(mode: Mode, width: u16, typing: bool, agent: bool, tip: Option<&str>, inbox: bool) -> Line<'static> {
     let width = usize::from(width);
     let dim = Style::default().fg(theme::dim());
-    let pairs = if agent { fit_agent(mode.agent_pairs(), width) } else { mode.pairs().to_vec() };
+    let mut pairs = if agent { mode.agent_pairs() } else { mode.pairs().to_vec() };
+    if inbox && matches!(mode, Mode::Default | Mode::Steer | Mode::Images) {
+        let at = pairs.iter().position(|p| p.0 == "⏎").map_or(0, |i| i + 1);
+        pairs.insert(at, INBOX);
+    }
+    let pairs = if agent { fit_agent(pairs, width) } else { pairs };
     let (Line { mut spans, .. }, used) = pairs_line(&pairs, width);
     if let Some(t) = tip.filter(|_| mode == Mode::Default && !agent && !typing).map(key_text) {
         let t = if theme::ascii_mode() { format!("tip: {t}") } else { format!("tip · {t}") };
@@ -311,7 +335,7 @@ fn ask_styles(no_color: bool) -> (Style, Style) {
 /// `pairs` in a row `width` columns wide, and the columns taken: the
 /// pairs that don't fit are dropped from the end (the first is cut).
 /// Keys in the text color, labels dim, [`ASK`] in the accent.
-fn pairs_line(pairs: &[Pair], width: usize) -> (Line<'static>, usize) {
+fn pairs_line(pairs: &[(&str, &str)], width: usize) -> (Line<'static>, usize) {
     let (text, dim) = (Style::default().fg(theme::text()), Style::default().fg(theme::dim()));
     let ask = ask_styles(no_color());
     let mut spans: Vec<Span<'static>> = Vec::new();

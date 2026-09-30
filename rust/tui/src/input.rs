@@ -401,6 +401,8 @@ pub(crate) fn on_paste(app: &mut App, text: &str) {
     if app.term.paste(text) {
         return;
     }
+    // a paste goes back from the inbox selected to your message
+    sb::leave_inbox(app);
     if crate::find::on_paste(app, text) {
         return;
     }
@@ -457,6 +459,11 @@ pub(crate) fn on_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
         return false;
     }
     if k.kind != KeyEventKind::Press {
+        return false;
+    }
+    // the inbox selected (ctrl+g): ↑↓ ⏎ → esc are its own; any other key
+    // goes back to the composer and does its job (cards.rs)
+    if sb::inbox_key(app, k) {
         return false;
     }
     if voice_key(app, k, voice::resolve_job) {

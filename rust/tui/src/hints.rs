@@ -60,7 +60,7 @@ impl Hint {
                 "new: your agents. they work in the background. {⌥ 1} to look inside, {esc} to come back. →"
             }
             Hint::FirstLevel3 => "agents talk to each other. it stays dim: you can ignore it, or {▸} to read.",
-            Hint::FirstCard => "a card: someone needs you. {ctrl+g} opens it. ↓",
+            Hint::FirstCard => "your inbox: someone needs you. {ctrl+g} selects it. ↓",
             Hint::FirstSteer => "{✓} the agent got it · {✓✓} it read it.",
         }
     }
@@ -411,7 +411,7 @@ mod tests {
         .unwrap();
         assert_eq!(active(), Some(Hint::FirstCard));
         let sc = screen(&t);
-        assert!(sc.contains("a card: someone needs you."), "{sc}");
+        assert!(sc.contains("your inbox: someone needs you."), "{sc}");
         assert!(seen_in(&std::fs::read_to_string(&p).unwrap())["first_card"]);
         // the card is gone: so is the hint; the level-3 one waits its turn
         t.draw(draw).unwrap();
@@ -445,7 +445,7 @@ mod tests {
         let l3: Vec<String> = wrap(Hint::FirstLevel3.text(), TEXT_W).iter().map(text_of).collect();
         assert_eq!(l3.join(" "), "agents talk to each other. it stays dim: you can ignore it, or ▸ to read.");
         let card: Vec<String> = wrap(Hint::FirstCard.text(), TEXT_W).iter().map(text_of).collect();
-        assert_eq!(card.join(" "), "a card: someone needs you. ctrl+g opens it. ↓");
+        assert_eq!(card.join(" "), "your inbox: someone needs you. ctrl+g selects it. ↓");
     }
 
     #[test]

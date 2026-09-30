@@ -864,7 +864,7 @@ fn model_list(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
 const HOW: [[&str; 3]; 3] = [
     ["you talk to ", "me", ". anything, any time, keep typing"],
     ["", "i", " start an agent when a job needs one. they sync with each other"],
-    ["when something needs you, a card shows up · ctrl+g opens it", "", ""],
+    ["when something needs you, it waits in your inbox · ctrl+g", "", ""],
 ];
 /// The faint footer under the three lines.
 const HOW_FOOT: &str = "ctrl+o opens everything folded · ⌥0-9 talk to an agent";
@@ -1456,7 +1456,7 @@ mod tests {
             "how it works",
             "1  you talk to me. anything, any time, keep typing",
             "2  i start an agent when a job needs one. they sync with each other",
-            "3  when something needs you, a card shows up · ctrl+g opens it",
+            "3  when something needs you, it waits in your inbox · ctrl+g",
             "ctrl+o opens everything folded · ⌥0-9 talk to an agent",
             "any key ↵",
             "○ ○ ○ ●",

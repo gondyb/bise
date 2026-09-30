@@ -150,13 +150,14 @@ pub(crate) fn pairs(app: &App) -> Vec<Pair> {
     }
     let v = crate::sb::ctrl_view(app);
     if v.cards > 0 {
-        // from the thread only ctrl+g; the rest in the card view
-        p.push(("ctrl+g", if v.card_open { "back" } else { "open cards" }));
+        // from the thread only ctrl+g (select the inbox); the rest in
+        // the card view
+        p.push(("ctrl+g", if v.card_open { "back" } else { "inbox" }));
         if v.card_open {
             if v.cards > 1 {
-                p.push(("ctrl+n/p", "next card"));
+                p.push(("ctrl+n/p", "next item"));
             }
-            p.push(("ctrl+x", "close card"));
+            p.push(("ctrl+x", "close without answering"));
         }
     }
     if app.ed.text.is_empty() && v.agents > 1 {

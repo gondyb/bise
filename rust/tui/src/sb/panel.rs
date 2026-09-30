@@ -329,7 +329,7 @@ fn fit_counts(n: [usize; 5], short: bool, room: usize, gust: &[Span<'static>]) -
         (G_WAITING, "waiting", dim(), dim()),
         (G_NEEDS_YOU, "needs you", accent(), accent()),
         (crate::theme::done_glyph(), "done", accent(), dim()),
-        ("#", if n[4] == 1 { "card" } else { "cards" }, dim(), dim()),
+        ("#", "in the inbox", dim(), dim()),
     ];
     let spans = |keep: &[usize], words: bool| -> Vec<Span<'static>> {
         let mut out: Vec<Span<'static>> = Vec::new();
@@ -587,7 +587,7 @@ fn cards_lines(
     lines.push(Line::from(""));
     owners.push((lines.len(), Hit::Cards));
     lines.push(Line::from(vec![
-        Span::styled(" cards", Style::default().fg(text())),
+        Span::styled(" inbox", Style::default().fg(text())),
         Span::styled(" · ctrl+g", Style::default().fg(faint())),
     ]));
     for c in cards {
@@ -931,6 +931,8 @@ pub(crate) fn key_mode(app: &App) -> crate::keybar::Mode {
         Mode::Confirm
     } else if sb.card.open {
         Mode::Card
+    } else if sb.card.inbox.is_some() {
+        Mode::Inbox
     } else if sb.selected.is_some() {
         Mode::Selected
     } else if sb.focus_archived() {
@@ -947,7 +949,10 @@ pub(crate) fn key_mode(app: &App) -> crate::keybar::Mode {
 /// inside an agent, a read-only note in an archived agent's history.
 pub(crate) fn placeholder(app: &App) -> Option<String> {
     let sb = &app.sb;
-    Some(if sb.focus_archived() {
+    Some(if sb.card.inbox.is_some() && !sb.card.open {
+        // the inbox selected (ctrl+g): the composer waits
+        "your message waits here".to_string()
+    } else if sb.focus_archived() {
         format!("{} is archived: read-only", sb.focus)
     } else if sb.is_main_focus() {
         PLACEHOLDER_MAIN.to_string()
@@ -2011,7 +2016,7 @@ mod cards_tests {
             .collect()
     }
 
-    /// Under the agents: a blank row, `cards · ctrl+g`, then one row per
+    /// Under the agents: a blank row, `inbox · ctrl+g`, then one row per
     /// card, newest first, `#N glyph agent  first line`; the text cut to
     /// the panel with `…`, never past its width.
     #[test]
@@ -2019,9 +2024,9 @@ mod cards_tests {
         let app = app();
         let t = rows(&app, 40, 14);
         let at = |s: &str| t.iter().position(|r| r.contains(s)).unwrap_or_else(|| panic!("{s} missing:\n{}", t.join("\n")));
-        assert!(at("docs") < at(" cards · ctrl+g"), "{}", t.join("\n"));
-        assert_eq!(t[at(" cards · ctrl+g") - 1], "");
-        let first = at(" cards · ctrl+g") + 1;
+        assert!(at("docs") < at(" inbox · ctrl+g"), "{}", t.join("\n"));
+        assert_eq!(t[at(" inbox · ctrl+g") - 1], "");
+        let first = at(" inbox · ctrl+g") + 1;
         assert_eq!(t[first], format!(" #153 {} debt-solo  the debt list is cl…", crate::theme::done_glyph()));
         assert_eq!(t[first + 1], format!(" #40 {} docs  no access to the wiki", G_NEEDS_YOU));
         // the first line of the text, not the blank one before it
@@ -2109,27 +2114,27 @@ mod cards_tests {
         assert_eq!((app.sb.card.open, app.sb.current_card().map(|c| c.id)), (true, Some(153)));
         // the section title: back to the thread, then the view again
         let screen = draw(&mut app);
-        click(&mut app, x + 3, y_of(&screen, " cards · ctrl+g"));
+        click(&mut app, x + 3, y_of(&screen, " inbox · ctrl+g"));
         assert!(!app.sb.card.open);
         let screen = draw(&mut app);
-        click(&mut app, x + 3, y_of(&screen, " cards · ctrl+g"));
+        click(&mut app, x + 3, y_of(&screen, " inbox · ctrl+g"));
         assert!(app.sb.card.open);
         assert_eq!(app.sb.focus, "main", "a card click does not change the view");
     }
 
-    /// The header counts the open cards, last (`# 3 cards`), and keeps
+    /// The header counts the open cards, last (`# 3 in the inbox`), and keeps
     /// them when the panel is hidden (`# 3`), right after needs you.
     #[test]
     fn the_header_counts_the_cards() {
         let app = app();
         let text = |room: usize, short: bool| app.sb.summary(room, short, &super::still_gust()).iter().map(|s| s.content.to_string()).collect::<String>();
         let t = text(200, false);
-        assert!(t.ends_with(&format!("{} 1 done · # 3 cards", crate::theme::done_glyph())), "{t:?}");
+        assert!(t.ends_with(&format!("{} 1 done · # 3 in the inbox", crate::theme::done_glyph())), "{t:?}");
         assert!(text(200, true).ends_with("· # 3"), "{:?}", text(200, true));
         // short on room: needs you, then the cards, before the rest
         assert_eq!(text(14, true), format!("{} 1 · # 3", G_NEEDS_YOU));
         let one = [0, 0, 0, 0, 1];
         let s: String = fit_counts(one, false, 100, &[]).iter().map(|s| s.content.to_string()).collect();
-        assert_eq!(s, "# 1 card");
+        assert_eq!(s, "# 1 in the inbox");
     }
 }

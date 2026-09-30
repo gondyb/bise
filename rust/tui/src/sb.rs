@@ -18,10 +18,10 @@ use versions::{parse_versions, VersionItem};
 mod mention;
 pub(super) use mention::mentions;
 mod cards;
-pub(super) use cards::{card_choices, card_mouse};
+pub(super) use cards::{card_choices, card_mouse, inbox_key, leave_inbox};
 use cards::{Card, CardView};
 mod card_draw;
-pub(super) use card_draw::{card_frame, card_view_open, divider_label as card_divider_label, draw_strip, draw_view as draw_card_view, key_pairs as card_key_pairs, strip_height};
+pub(super) use card_draw::{card_frame, card_view_open, divider_label as card_divider_label, draw_strip, draw_view as draw_card_view, fit_pairs as fit_card_pairs, inbox_selected, key_pairs as card_key_pairs, strip_height};
 mod panel;
 pub(super) use panel::PANEL_TITLE;
 pub(super) use panel::{draw_panel, focus_model, key_mode, panel_mouse, placeholder, split, status_state, viewed_model, viewed_who, viewed_working, workspace};
@@ -610,6 +610,7 @@ fn apply_state(app: &mut App, v: &Value) {
 /// Change the feed in focus (checkout / return).
 pub(super) fn focus(app: &mut App, name: &str) {
     // the card view goes: the thread you go to takes its place
+    cards::leave_inbox(app);
     cards::close_view(app);
     let sb = &mut app.sb;
     // BISE-61: looking inside an agent is what the first-agent hint asks
@@ -704,6 +705,14 @@ pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
             app.help = crate::help::page_of(first).map(crate::help::Overlay::new);
         }
         "/archived" => sb.toggle_archived(),
+        // the inbox: its first item in the view (`/cards`: its old name)
+        "/inbox" | "/cards" => {
+            if sb.sorted_cards().is_empty() {
+                out.push(Ev::Info("the inbox is empty: nothing waits for you".into()));
+            } else {
+                cards::open_view(app, None);
+            }
+        }
         "/theme" => out.push(theme_command(typed.split_whitespace().nth(1), crate::theme_detect::choose)),
         "/welcome" => crate::onboarding::run(app),
         "/setup" => setup::command(app),

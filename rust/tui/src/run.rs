@@ -720,6 +720,7 @@ mod zen_tests {
                 app.zen.calls(calls, t);
                 if !crate::sb::card_view_open(&app) {
                     on_key(&mut app, &KeyEvent::new(KeyCode::Char('g'), c));
+                    on_key(&mut app, &KeyEvent::new(KeyCode::Enter, n));
                 }
                 assert!(crate::sb::card_view_open(&app), "{what}: the card view is up");
             }
@@ -885,9 +886,11 @@ mod paint_tests {
             let mut app = crate::sb::bench::test_app();
             with_agents_and_a_card(&mut app);
             assert_eq!(resets(&mut app), vec![], "main, {mode:?}");
-            // the card box above the composer
+            // the inbox selected, then the card view
             let g = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL);
             sb::key(&mut app, &g, false);
+            assert_eq!(resets(&mut app), vec![], "inbox, {mode:?}");
+            sb::key(&mut app, &KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), false);
             assert_eq!(resets(&mut app), vec![], "card, {mode:?}");
             // the / popup
             app.ed.text = "/".into();

@@ -93,6 +93,7 @@ fn the_card_waits_in_the_strip_and_not_now_leaves_one_row() {
     assert_eq!(setup_cards(&app).len(), 1);
     // 2 in the card view: not now
     press(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL);
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
     press(&mut app, KeyCode::Char('2'), KeyModifiers::NONE);
     assert!(setup_cards(&app).is_empty());
     assert_eq!(infos(&app), vec!["– not now · /setup any time"]);
@@ -156,6 +157,7 @@ fn yes_folds_the_checks_and_brings_one_card_per_change() {
     let mut app = launched(&h, v.clone());
     set_runner(&mut app, fake, v.clone());
     press(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL);
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
     press(&mut app, KeyCode::Char('1'), KeyModifiers::NONE);
     pump(&mut app);
     assert_eq!(

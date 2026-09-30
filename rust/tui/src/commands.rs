@@ -71,8 +71,8 @@ pub(crate) const COMMANDS: &[Cmd] = &[
     Cmd { name: "/archived", desc: "show or hide the archived agents in the panel", args: &[] },
     Cmd { name: "/isolate", desc: "give an agent its own git worktree: /isolate <agent>", args: &[Arg::Task] },
     Cmd { name: "/rename", desc: "rename an agent: /rename <agent> <new-name>", args: &[Arg::Task, Arg::Text] },
-    Cmd { name: "/answer", desc: "answer a card: /answer N text", args: &[Arg::Card, Arg::Text] },
-    Cmd { name: "/close", desc: "close a card without answering: /close N [note]", args: &[Arg::Card, Arg::Note] },
+    Cmd { name: "/answer", desc: "answer an inbox item: /answer N text", args: &[Arg::Card, Arg::Text] },
+    Cmd { name: "/close", desc: "close an inbox item without answering: /close N [note]", args: &[Arg::Card, Arg::Note] },
     Cmd {
         name: "/plugins",
         desc: "the workspace's agent plugins: /plugins [list|enable|disable] [<name>]",
@@ -81,6 +81,7 @@ pub(crate) const COMMANDS: &[Cmd] = &[
             Arg::Plugin,
         ],
     },
+    Cmd { name: "/inbox", desc: "open what waits for you, the most blocking first (also /cards)", args: &[] },
     Cmd { name: "/agents", desc: "list the agents and what they do", args: &[] },
     Cmd {
         name: "/model",

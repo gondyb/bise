@@ -1,6 +1,7 @@
-//! The cards v2 drawn (cards.rs has the model and the keys): the strip
-//! above the divider (the quick look), the card view in the history's
-//! place (ctrl+g), the divider's label and the key bar of the view.
+//! The inbox drawn (cards.rs has the model and the keys): the strip
+//! above the divider (the quick look, the inbox selected with ctrl+g),
+//! the card view in the history's place (⏎ on a row), the divider's
+//! label and the key bar of the view.
 
 use super::cards::{cut, glyph_color, kind_look, shape, Card, CardHit, Part, Shape};
 use super::*;
@@ -53,6 +54,37 @@ fn entries(sb: &Sb) -> Vec<Entry<'_>> {
         out.push(Entry::One(c));
     }
     out
+}
+
+/// The strip's rows, by the first card of each (approvals that came
+/// together share a row): what ↑↓ walk while the inbox is selected.
+pub(super) fn strip_ids(sb: &Sb) -> Vec<u64> {
+    entries(sb).iter().map(|e| e.first().id).collect()
+}
+
+/// The inbox is selected (ctrl+g): the key bar and the composer know.
+pub(crate) fn inbox_selected(app: &App) -> bool {
+    app.sb.card.inbox.is_some() && !app.sb.card.open
+}
+
+/// NO_COLOR: no tint to raise a row, reverse video instead.
+fn no_color() -> bool {
+    theme::raised() == Color::Reset
+}
+
+/// The pointer before a selected row (`▸`, ASCII `>`).
+fn pointer() -> &'static str {
+    if theme::ascii_mode() {
+        ">"
+    } else {
+        "▸"
+    }
+}
+
+/// A selected row: raised, reversed under NO_COLOR.
+fn raise(line: Line<'static>) -> Line<'static> {
+    let st = if no_color() { Style::default().add_modifier(Modifier::REVERSED) } else { Style::default().bg(theme::raised()) };
+    line.patch_style(st)
 }
 
 /// A new frame: the hits of the last one go (the strip or the view adds
@@ -152,8 +184,18 @@ fn strip_right(e: &Entry, s: &Shape, extra: usize, max: usize) -> (Row, Vec<(usi
 }
 
 /// One strip row, `w` columns: ` ? perf · the hero image…   1 compress
-/// 2 both  × `; the top row on the raised tint.
-fn strip_row(e: &Entry, w: usize, top: bool, extra: usize, at: Rect, hits: &mut Vec<(Rect, CardHit)>) -> Line<'static> {
+/// 2 both  × `; `on`: raised (the top row, or the one selected). While
+/// the inbox is selected (`mark`), `▸ ` before the selected row's glyph
+/// and 2 spaces before the others'.
+fn strip_row(
+    e: &Entry,
+    w: usize,
+    on: bool,
+    mark: bool,
+    extra: usize,
+    at: Rect,
+    hits: &mut Vec<(Rect, CardHit)>,
+) -> Line<'static> {
     let c = e.first();
     let s = shape(c);
     let (_, glyph, _) = kind_look(&c.kind);
@@ -168,6 +210,11 @@ fn strip_row(e: &Entry, w: usize, top: bool, extra: usize, at: Rect, hits: &mut 
     let room = w.saturating_sub(right.w + 2);
     let mut left = Row::default();
     left.push(" ", Style::default());
+    if mark && on {
+        left.push(format!("{} ", pointer()), fg(theme::accent()));
+    } else if mark {
+        left.push("  ", Style::default());
+    }
     left.push(glyph, fg(glyph_color(&c.kind)));
     left.push(" ", Style::default());
     let who_room = room.saturating_sub(left.w);
@@ -191,15 +238,17 @@ fn strip_row(e: &Entry, w: usize, top: bool, extra: usize, at: Rect, hits: &mut 
         }
     }
     let line = Line::from(spans);
-    if top {
-        line.patch_style(Style::default().bg(theme::raised()))
-    } else {
-        line
+    match (on, mark) {
+        (true, true) => raise(line),
+        // the top row out of the inbox selected: the tint only
+        (true, false) => line.patch_style(Style::default().bg(theme::raised())),
+        _ => line,
     }
 }
 
-/// The strip: `3 cards … ctrl+g open`, a row per card, `+ n more`; one
-/// row (the top card, `+ n`) when it has one row.
+/// The strip: `inbox · 3 waiting for you … ctrl+g select`, a row per
+/// card, `+ n more`; one row (the top card, `+ n`) when it has one row.
+/// The inbox selected: the rows scroll to keep the selected one shown.
 pub(crate) fn draw_strip(app: &mut App, frame: &mut Frame, area: Rect) {
     let area = area.intersection(frame.area());
     if area.height == 0 || area.width < 10 {
@@ -214,27 +263,30 @@ pub(crate) fn draw_strip(app: &mut App, frame: &mut Frame, area: Rect) {
     let mut hits = Vec::new();
     let mut lines: Vec<Line<'static>> = Vec::new();
     let row_at = |i: u16| Rect { y: area.y + i, height: 1, ..area };
+    let sel = sb.card.inbox.filter(|_| !sb.card.open).map(|i| i.min(es.len() - 1));
+    let mark = sel.is_some();
     if area.height == 1 {
-        lines.push(strip_row(&es[0], w, true, es.len() - 1, row_at(0), &mut hits));
+        let i = sel.unwrap_or(0);
+        lines.push(strip_row(&es[i], w, true, mark, es.len() - 1, row_at(0), &mut hits));
     } else {
         let n = sb.sorted_cards().len();
         let mut lab = Row::default();
-        lab.push(format!(" {} card{}", n, if n > 1 { "s" } else { "" }), fg(theme::faint()));
-        let keys = "ctrl+g open ";
+        lab.push(format!(" inbox · {} waiting for you", n), fg(theme::faint()));
+        let keys = "ctrl+g select ";
         let fill = w.saturating_sub(lab.w + keys.width());
         lab.push(" ".repeat(fill), Style::default());
         lab.push("ctrl+g", fg(theme::text()));
-        lab.push(" open ", fg(theme::dim()));
+        lab.push(" select ", fg(theme::dim()));
         lines.push(Line::from(lab.spans));
         hits.push((row_at(0), CardHit::Open));
-        for (i, e) in es.iter().take(STRIP_ROWS).enumerate() {
-            let y = 1 + i as u16;
-            if y >= area.height {
-                break;
-            }
-            lines.push(strip_row(e, w, i == 0, 0, row_at(y), &mut hits));
+        let rows = (area.height as usize - 1).min(STRIP_ROWS);
+        let start = sel.map_or(0, |i| (i + 1).saturating_sub(rows));
+        for (i, e) in es.iter().enumerate().skip(start).take(rows) {
+            let y = 1 + (i - start) as u16;
+            let on = sel.map_or(i == 0, |s| s == i);
+            lines.push(strip_row(e, w, on, mark, 0, row_at(y), &mut hits));
         }
-        let more = es.len().saturating_sub(STRIP_ROWS);
+        let more = es.len().saturating_sub(start + STRIP_ROWS);
         let y = lines.len() as u16;
         if more > 0 && y < area.height {
             lines.push(Line::from(Span::styled(format!(" + {} more", more), fg(theme::faint()))));
@@ -273,8 +325,7 @@ fn short_age(ms: u64) -> String {
 }
 
 /// The tabs row: `? release  ? perf  ? dark-mode`, the current one on
-/// the raised tint (`[ ]` under NO_COLOR), `ctrl+n / ctrl+p` faint on
-/// the right.
+/// the raised tint (`[ ]` under NO_COLOR), `←→` faint on the right.
 fn tabs_line(sb: &Sb, cur: u64, at: Rect, hits: &mut Vec<(Rect, CardHit)>) -> Line<'static> {
     let cards = sb.sorted_cards();
     let w = at.width as usize;
@@ -282,7 +333,7 @@ fn tabs_line(sb: &Sb, cur: u64, at: Rect, hits: &mut Vec<(Rect, CardHit)>) -> Li
     let labels: Vec<(u64, &'static str, Color, String)> =
         cards.iter().map(|c| (c.id, kind_look(&c.kind).1, glyph_color(&c.kind), c.agent.clone())).collect();
     let tab_w = |l: &str| 2 + 1 + l.width() + 2;
-    let hint = "ctrl+n / ctrl+p";
+    let hint = if theme::ascii_mode() { "left/right" } else { "←→" };
     let with_hint = labels.len() > 1;
     let avail = |hint_on: bool| if hint_on { w.saturating_sub(hint.width() + 3) } else { w };
     let ci = labels.iter().position(|l| l.0 == cur).unwrap_or(0);
@@ -327,9 +378,11 @@ fn tabs_line(sb: &Sb, cur: u64, at: Rect, hits: &mut Vec<(Rect, CardHit)>) -> Li
 }
 
 /// A card's lines in the view, `w` columns: the text, the code on the
-/// raised tint, the reason dim, the options one per row; each with what
-/// a click on it does.
-fn body_lines(s: &Shape, id: u64, w: usize) -> Vec<(Line<'static>, Option<CardHit>)> {
+/// raised tint, the reason dim, the options one per row after a 2-column
+/// gutter (`▸` on the one highlighted, `hi`, raised); each with what a
+/// click on it does. `typing`: the composer answers, the options dim and
+/// no highlight.
+fn body_lines(s: &Shape, id: u64, w: usize, hi: Option<usize>, typing: bool) -> Vec<(Line<'static>, Option<CardHit>)> {
     let mut out: Vec<(Line<'static>, Option<CardHit>)> = Vec::new();
     let plain = |out: &mut Vec<(Line<'static>, Option<CardHit>)>, text: &str, st: Style| {
         for l in text.lines() {
@@ -362,13 +415,22 @@ fn body_lines(s: &Shape, id: u64, w: usize) -> Vec<(Line<'static>, Option<CardHi
     }
     if !s.options.is_empty() {
         out.push((Line::from(""), None));
+        let (num, text) = if typing { (theme::dim(), theme::dim()) } else { (theme::accent(), theme::text()) };
         for (i, label) in s.options.iter().enumerate() {
-            let rows = wrap_line(Line::from(Span::styled(label.clone(), fg(theme::text()))), w.saturating_sub(2).max(1));
+            let on = !typing && hi == Some(i);
+            let rows = wrap_line(Line::from(Span::styled(label.clone(), fg(text))), w.saturating_sub(4).max(1));
             for (j, row) in rows.into_iter().enumerate() {
-                let lead = if j == 0 { Span::styled(format!("{:<2}", i + 1), fg(theme::accent())) } else { Span::raw("  ") };
-                let mut v = vec![lead];
+                let gutter = if on && j == 0 { format!("{} ", pointer()) } else { "  ".to_string() };
+                let lead = if j == 0 { Span::styled(format!("{:<2}", i + 1), fg(num)) } else { Span::raw("  ") };
+                let mut v = vec![Span::styled(gutter, fg(theme::accent())), lead];
                 v.extend(row.spans);
-                out.push((Line::from(v), Some(CardHit::Pick(id, i))));
+                let mut line = Line::from(v);
+                if on {
+                    let used: usize = line.spans.iter().map(|s| s.content.width()).sum();
+                    line.spans.push(Span::raw(" ".repeat(w.saturating_sub(used))));
+                    line = raise(line);
+                }
+                out.push((line, Some(CardHit::Pick(id, i))));
             }
         }
     }
@@ -429,7 +491,8 @@ pub(crate) fn draw_view(app: &mut App, frame: &mut Frame, area: Rect) {
     ]);
     frame.render_widget(Paragraph::new(title_line), Rect { height: 1, ..inner });
     // the body: from 2 rows under the title, scrolled
-    let lines = body_lines(&s, c.id, tw);
+    let typing = !app.ed.text.is_empty();
+    let lines = body_lines(&s, c.id, tw, sb.card.opt, typing);
     let body_y = inner.y + 2.min(inner.height);
     let body_h = inner.bottom().saturating_sub(body_y) as usize;
     let (visible, max_scroll) = if lines.len() > body_h {
@@ -438,7 +501,20 @@ pub(crate) fn draw_view(app: &mut App, frame: &mut Frame, area: Rect) {
     } else {
         (body_h, 0)
     };
-    let scroll = app.sb.card.scroll.min(max_scroll);
+    let mut scroll = app.sb.card.scroll.min(max_scroll);
+    // ↑↓ moved the highlight: its rows come into view
+    if let (true, Some(i)) = (app.sb.card.reveal, app.sb.card.opt) {
+        let rows: Vec<usize> =
+            lines.iter().enumerate().filter(|(_, (_, h))| *h == Some(CardHit::Pick(c.id, i))).map(|(r, _)| r).collect();
+        if let (Some(&first), Some(&last)) = (rows.first(), rows.last()) {
+            if last >= scroll + visible {
+                scroll = (last + 1 - visible).min(max_scroll);
+            }
+            if first < scroll {
+                scroll = first;
+            }
+        }
+    }
     for (i, (line, hit)) in lines.iter().skip(scroll).take(visible).enumerate() {
         let r = Rect { y: body_y + i as u16, height: 1, ..inner };
         frame.render_widget(Paragraph::new(line.clone()), r);
@@ -462,6 +538,7 @@ pub(crate) fn draw_view(app: &mut App, frame: &mut Frame, area: Rect) {
         buf[(card.x, y)].set_symbol("┃").set_style(fg(theme::accent()));
     }
     let cv = &mut app.sb.card;
+    cv.reveal = false;
     cv.scroll = scroll;
     cv.max_scroll = max_scroll;
     cv.page = visible.saturating_sub(1).max(1);
@@ -469,8 +546,7 @@ pub(crate) fn draw_view(app: &mut App, frame: &mut Frame, area: Rect) {
     cv.hits.borrow_mut().extend(hits);
 }
 
-/// The divider's label in the card view: `you → ? perf's card · your
-/// answer`.
+/// The divider's label in the card view: `you → ? perf · your answer`.
 pub(crate) fn divider_label(app: &App) -> Option<Vec<Span<'static>>> {
     if !card_view_open(app) {
         return None;
@@ -480,36 +556,79 @@ pub(crate) fn divider_label(app: &App) -> Option<Vec<Span<'static>>> {
     Some(vec![
         Span::raw(" "),
         Span::styled(format!("you {} ", arrow), fg(theme::dim())),
-        Span::styled(format!("{} {}'s card", kind_look(&c.kind).1, c.agent), fg(theme::accent())),
+        Span::styled(format!("{} {}", kind_look(&c.kind).1, c.agent), fg(theme::accent())),
         Span::styled(" · your answer", fg(theme::dim())),
         Span::raw(" "),
     ])
 }
 
-/// The key bar of the card view: `1-2 pick · ⏎ answer · ctrl+x close ·
-/// ctrl+n next · esc back` (an approval: `⏎ deny with a note`); typing,
-/// no pick, and `esc back, draft kept`.
-pub(crate) fn key_pairs(app: &App) -> Vec<(&'static str, &'static str)> {
+/// The key bar of the card view (book §12): nothing highlighted `↑↓
+/// choose · 1-2 pick · ←→ other cards · type to answer in your words ·
+/// esc back` (an approval: `type a note to deny`); an option highlighted
+/// `↑↓ choose · ⏎ pick “both” · ←→ other cards · esc back`; text typed
+/// `⏎ send as your answer · ctrl+n next card · esc back, draft kept`.
+/// No options: `⏎ got it` (done, overlap) or `type to answer`.
+pub(crate) fn key_pairs(app: &App) -> Vec<(&'static str, String)> {
+    use super::cards::Enter;
     const PICK: [&str; 9] = ["1", "1-2", "1-3", "1-4", "1-5", "1-6", "1-7", "1-8", "1-9"];
     let sb = &app.sb;
     let Some(c) = sb.current_card() else { return Vec::new() };
     let s = shape(c);
-    let typing = !app.ed.text.is_empty();
-    let mut p = Vec::new();
-    if !typing && !s.options.is_empty() {
-        p.push((PICK[s.options.len().min(9) - 1], "pick"));
+    let n = s.options.len();
+    let more = sb.sorted_cards().len() > 1;
+    let p = |k: &'static str, l: &str| (k, l.to_string());
+    let mut v = Vec::new();
+    if !app.ed.text.is_empty() {
+        v.push(p("⏎", if s.enter == Enter::Deny { "deny with your note" } else { "send as your answer" }));
+        if more {
+            let last = sb.sorted_cards().last().map(|l| l.id) == Some(c.id);
+            v.push(if last { p("ctrl+p", "previous item") } else { p("ctrl+n", "next item") });
+        }
+        v.push(p("esc", "back, draft kept"));
+        return v;
     }
-    p.push(match s.enter {
-        super::cards::Enter::Deny => ("⏎", "deny with a note"),
-        super::cards::Enter::Ack if !typing => ("⏎", "got it"),
-        _ => ("⏎", "answer"),
-    });
-    p.push(("ctrl+x", "close"));
-    let ids: Vec<u64> = sb.sorted_cards().iter().map(|c| c.id).collect();
-    if ids.len() > 1 {
-        let last = ids.last() == Some(&c.id);
-        p.push(if last { ("ctrl+p", "previous") } else { ("ctrl+n", "next") });
+    if n > 0 {
+        v.push(p("↑↓", "choose"));
     }
-    p.push(("esc", if typing { "back, draft kept" } else { "back" }));
-    p
+    match sb.card.opt.filter(|i| *i < n) {
+        Some(i) => {
+            let (l, r) = if theme::ascii_mode() { ("\"", "\"") } else { ("“", "”") };
+            v.push(("⏎", format!("pick {l}{}{r}", cut(&s.options[i], 32))));
+        }
+        None if n > 0 => v.push(p(PICK[n.min(9) - 1], "pick")),
+        None if s.enter == Enter::Ack => v.push(p("⏎", "got it")),
+        None => {}
+    }
+    let typed = match s.enter {
+        Enter::Deny if sb.card.opt.is_none() => Some(p("type", "a note to deny")),
+        Enter::Answer if sb.card.opt.is_none() => Some(p("type", if n > 0 { "to answer in your words" } else { "to answer" })),
+        _ => None,
+    };
+    // an approval says its note before the other cards
+    if s.enter == Enter::Deny {
+        v.extend(typed.clone());
+    }
+    if more {
+        v.push(p("←→", "other items"));
+    }
+    if s.enter != Enter::Deny {
+        v.extend(typed);
+    }
+    v.push(p("esc", "back"));
+    v
+}
+
+/// The pairs of the card view's key bar that fit in `width`: the others
+/// drop from the right, `↑↓ choose` and `⏎ …` last.
+pub(crate) fn fit_pairs(mut v: Vec<(&'static str, String)>, width: usize) -> Vec<(&'static str, String)> {
+    let w = |v: &[(&'static str, String)]| {
+        v.iter().map(|(k, l)| k.width() + l.width() + 1).sum::<usize>() + 3 * v.len().saturating_sub(1)
+    };
+    while v.len() > 1 && w(&v) > width {
+        match v.iter().rposition(|(k, _)| *k != "↑↓" && *k != "⏎") {
+            Some(i) => v.remove(i),
+            None => v.pop().unwrap_or(("", String::new())),
+        };
+    }
+    v
 }

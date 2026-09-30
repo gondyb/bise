@@ -40,7 +40,7 @@ impl Row {
 
 const TALK: &str = "talk to agents";
 const AGENTS: &str = "agents (empty composer)";
-const CARDS: &str = "cards";
+const CARDS: &str = "inbox";
 const EDIT: &str = "composer editing";
 const ACCENTS: &str = "accents & symbols";
 const SELECT: &str = "selection & copy";
@@ -56,7 +56,7 @@ pub(crate) const TIPS: &[&str] = &[
     "ctrl+o opens everything folded",
     "$ calls a skill, tab completes",
     "ctrl+` opens a terminal in the workspace",
-    "ctrl+g opens the cards, and takes you back",
+    "ctrl+g selects the inbox, ↑↓ ⏎ open what waits for you",
     "esc puts your draft away, ↑ brings it back",
     "shift+⏎ adds a new line",
     "ctrl+r speaks into the composer (turn it on with /voice)",
@@ -76,7 +76,7 @@ pub(crate) const ROWS: &[Row] = &[
     r(TALK, "⏎", "send to the agent in view (main, or the agent you entered); while it works, steer its turn").top(),
     r(TALK, "@agent …", "a direct message to an agent without leaving main; @main … from inside an agent").top(),
     r(TALK, "ctrl+c", "interrupt the turn of the agent in view; again (or at idle) quit, the agents keep running").top(),
-    r(TALK, "/", "the commands, then their arguments (agents, cards, versions…): tab completes, ⏎ runs").top(),
+    r(TALK, "/", "the commands, then their arguments (agents, inbox items, versions…): tab completes, ⏎ runs").top(),
     r(TALK, "$", "a skill: the popup lists them, tab completes; the agent reads the $name mention").top(),
     r(AGENTS, "⌥ + 0…9", "go to main (0) or to the agent with that number in the panel").top(),
     r(AGENTS, "ctrl+k|alt+↓", "select the next agent").top(),
@@ -88,14 +88,16 @@ pub(crate) const ROWS: &[Row] = &[
     r(AGENTS, "esc", "close the selection; in an agent, back to main").top(),
     r(AGENTS, "click an agent", "in the right panel: go to that agent (main: back to main)").top(),
     r(AGENTS, "click ▸ archived", "in the right panel: show or hide the archived agents"),
-    r(CARDS, "ctrl+g", "open the card view (the top card); again to go back to your thread").top(),
-    r(CARDS, "click", "on the strip above the divider: an option answers at once, a row opens the card, × closes it"),
-    r(CARDS, "1-9", "in the card view, on an empty composer: pick an option (once you type, digits are text)").top(),
-    r(CARDS, "⏎", "in the card view: your text answers the card (an approval: denies, your text as a note)"),
-    r(CARDS, "ctrl+n|ctrl+p", "in the card view: next / previous card"),
-    r(CARDS, "ctrl+x", "in the card view: close the card without answering"),
-    r(CARDS, "esc", "in the card view: back to your thread; each card keeps its draft"),
-    r(CARDS, "↑|↓|pgup|pgdn|wheel", "in the card view: scroll the card (↑↓ on an empty composer)"),
+    r(CARDS, "ctrl+g", "select the inbox (the strip above the divider); again, or esc: back to your message").top(),
+    r(CARDS, "↑|↓|⏎|→", "the inbox selected: choose a row, ⏎ or → opens it; typing goes back to your message").top(),
+    r(CARDS, "click", "on the inbox: an option answers at once, a row opens it, × closes it"),
+    r(CARDS, "↑|↓|⏎", "an item open, empty composer: choose an option, ⏎ picks it (nothing chosen: ⏎ does nothing)").top(),
+    r(CARDS, "1-9", "an item open, empty composer: pick an option at once (once you type, digits are text)"),
+    r(CARDS, "←|→|ctrl+n|ctrl+p", "an item open: the previous / next one (←→ on an empty composer)"),
+    r(CARDS, "type|⏎", "an item open: your text answers it (an approval: denies, your text as a note)"),
+    r(CARDS, "ctrl+x", "an item open: close it without answering"),
+    r(CARDS, "esc", "an item open: back to your thread; each item keeps its draft"),
+    r(CARDS, "pgup|pgdn|wheel", "an item open: scroll a long one"),
     r(CARDS, "y|n|esc", "a confirmation: yes / no / not now"),
     r(FEED, "click ▸|space", "open or close one folded item: thinking, an output, a diff, a report (space: the item selected in the feed, composer empty)"),
     r(FEED, "ctrl+o", "open or close everything folded").top(),

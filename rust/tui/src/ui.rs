@@ -620,9 +620,12 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, lea
     let text_w = inner.max(1);
     app.composer = ComposerArea { x: area.x + lead, y: text_y, w: text_w, h: text_rows, top: 0 };
     let empty = app.ed.is_empty();
+    // the inbox selected (ctrl+g): the draft faint, no caret
+    let waits = sb::inbox_selected(app);
     let rows = if empty {
         let note = sb::placeholder(app).unwrap_or_default();
-        let mut spans = vec![Span::styled(" ", Style::default().fg(text()).add_modifier(Modifier::REVERSED))];
+        let caret = if waits { Style::default() } else { Style::default().fg(text()).add_modifier(Modifier::REVERSED) };
+        let mut spans = vec![Span::styled(" ", caret)];
         if !note.is_empty() {
             spans.push(Span::styled(format!(" {}", note), Style::default().fg(dim())));
         }
@@ -638,6 +641,14 @@ fn draw_composer(app: &mut App, frame: &mut Frame, area: Rect, inner: usize, lea
                         .map(|s| Span::styled(s.content.chars().map(|c| if c == ' ' { ' ' } else { '•' }).collect::<String>(), s.style))
                         .collect::<Vec<_>>(),
                 )
+            })
+            .collect()
+    } else if waits {
+        typed_lines(app, text_w, text_rows)
+            .into_iter()
+            .map(|l| {
+                let spans = l.spans.into_iter().map(|s| Span::styled(s.content, Style::default().fg(crate::theme::faint())));
+                Line::from(spans.collect::<Vec<_>>())
             })
             .collect()
     } else {

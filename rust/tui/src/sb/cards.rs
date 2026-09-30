@@ -1,15 +1,27 @@
-//! The attention cards, v2 (cards v2, book screens `cards v2 · …`):
-//! the hub's questions and alerts at two levels.
+//! The inbox (cards v2, BISE-236; its arrows and ⏎: book screens
+//! `inbox · 1-7`): the hub's questions and alerts at three levels. The
+//! UI says "inbox" and the items' own nouns (a question, an approval);
+//! the code keeps "card".
+//!
+//! One rule for the arrows: an empty composer, they belong to the inbox;
+//! text in the composer, they belong to your text. In the thread they
+//! never touch the inbox until ctrl+g.
 //!
 //! 1. The quick look: the strip right above the divider, one row per
 //!    open card, most blocking first (approvals, questions, the rest).
 //!    A click on an option answers, on a row opens the card view, on the
-//!    `×` closes. From the thread, only ctrl+g acts on the cards.
-//! 2. The card view (ctrl+g, a row click): it takes the history's place;
-//!    the cards are tabs, the composer answers the card in view (1-9 on
-//!    an empty composer picks an option, ⏎ sends the text), ctrl+n /
-//!    ctrl+p move, ctrl+x closes, esc goes back to the thread. Each card
-//!    keeps its own draft; the thread's draft waits for the way back.
+//!    `×` closes.
+//! 2. The inbox selected (ctrl+g, [`CardView::inbox`]): a `▸` on a strip
+//!    row, the composer faint; ↑↓ choose, ⏎ or → opens the row, esc,
+//!    ctrl+g or ↓ past the last row go back to the composer, any other
+//!    key goes back to it and does its job there (no keystroke lost).
+//! 3. The card view (⏎ on a row, a row click): it takes the history's
+//!    place; the cards are tabs. On an empty composer ↑↓ highlight an
+//!    option (none on open: a reflex ⏎ never answers), ⏎ picks it, 1-9
+//!    pick at once, ←→ move between the cards; with text the composer
+//!    answers (⏎ sends it). ctrl+n / ctrl+p move, ctrl+x closes, esc
+//!    goes back to the thread. Each card keeps its own draft; the
+//!    thread's draft waits for the way back.
 //!
 //! A new card never takes the focus: a strip row, or a tab. Answering
 //! moves to the next card, or back to the thread when none are left,
@@ -75,14 +87,22 @@ pub(super) enum CardHit {
     Open,
 }
 
-/// The cards as the user sees them: the card view open or not, the card
-/// in it, how far it is scrolled, the drafts.
+/// The cards as the user sees them: the inbox selected or not, the card
+/// view open or not, the card in it, its option highlighted, how far it
+/// is scrolled, the drafts.
 #[derive(Default)]
 pub(super) struct CardView {
+    /// The inbox is selected (ctrl+g from the thread): the strip row
+    /// under the `▸` (a row of the strip, see `card_draw::strip_ids`).
+    pub(super) inbox: Option<usize>,
     /// The card view is up (it takes the history's place).
     pub(super) open: bool,
     /// The card in the view; its draft is in the composer while open.
     pub(super) sel: Option<u64>,
+    /// The option highlighted in the view (none on open), and whether
+    /// the next draw scrolls it into view.
+    pub(super) opt: Option<usize>,
+    pub(super) reveal: bool,
     pub(super) scroll: usize,
     /// Set by the last draw: the last scroll offset and the page size.
     pub(super) max_scroll: usize,
@@ -388,6 +408,7 @@ fn no_words(kind: &str) -> bool {
 pub(super) fn open_view(app: &mut App, id: Option<u64>) {
     let ids = app.sb.card_ids();
     let Some(id) = id.filter(|i| ids.contains(i)).or_else(|| ids.first().copied()) else { return };
+    app.sb.card.inbox = None;
     if !app.sb.card.open {
         app.sb.card.thread = Some(std::mem::take(&mut app.ed));
         app.sb.card.open = true;
@@ -430,6 +451,8 @@ fn show(app: &mut App, id: u64) {
     let cv = &mut app.sb.card;
     app.ed = cv.drafts.remove(&id).unwrap_or_default();
     cv.sel = Some(id);
+    cv.opt = None;
+    cv.reveal = false;
     cv.scroll = 0;
     cv.max_scroll = 0;
 }
@@ -542,6 +565,9 @@ pub(super) fn sync(app: &mut App) {
     cv.answered.retain(|x| live.contains(x));
     cv.drafts.retain(|k, _| live.contains(k));
     if !cv.open {
+        let rows = super::card_draw::strip_ids(&app.sb).len();
+        let cv = &mut app.sb.card;
+        cv.inbox = cv.inbox.filter(|_| rows > 0).map(|i| i.min(rows - 1));
         return;
     }
     let ids = app.sb.card_ids();
@@ -560,25 +586,71 @@ pub(super) fn sync(app: &mut App) {
     }
 }
 
-/// The card keys; `true` when handled. From the thread only ctrl+g; the
-/// rest in the card view.
+/// Select the inbox (ctrl+g from the thread): the `▸` on its first row,
+/// the most blocking. False when the strip has no row.
+fn select_inbox(app: &mut App) -> bool {
+    if super::card_draw::strip_ids(&app.sb).is_empty() {
+        return false;
+    }
+    app.sb.card.inbox = Some(0);
+    true
+}
+
+/// Back to the composer from the inbox selected (a paste, a click, the
+/// agent in view changed).
+pub(crate) fn leave_inbox(app: &mut App) {
+    app.sb.card.inbox = None;
+}
+
+/// The keys while the inbox is selected; `true` when handled. ↑↓ choose
+/// (no wrap; ↓ past the last row: back to the composer), ⏎ or → opens
+/// the row, esc or ctrl+g back to the composer. Any other key goes back
+/// to the composer and does its job there (a letter is typed): `false`.
+pub(crate) fn inbox_key(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
+    let Some(sel) = app.sb.card.inbox else { return false };
+    let rows = super::card_draw::strip_ids(&app.sb);
+    if rows.is_empty() {
+        app.sb.card.inbox = None;
+        return false;
+    }
+    let i = sel.min(rows.len() - 1);
+    let cv = &mut app.sb.card;
+    match (k.code, k.modifiers) {
+        // shift or ⌥ alone (kitty's protocol): not a key yet
+        (KeyCode::Modifier(_), _) => return false,
+        (KeyCode::Char('g'), KeyModifiers::CONTROL) | (KeyCode::Esc, _) => cv.inbox = None,
+        (KeyCode::Up, KeyModifiers::NONE) => cv.inbox = Some(i.saturating_sub(1)),
+        (KeyCode::Down, KeyModifiers::NONE) => cv.inbox = (i + 1 < rows.len()).then_some(i + 1),
+        (KeyCode::Enter | KeyCode::Right, KeyModifiers::NONE) => open_view(app, Some(rows[i])),
+        _ => {
+            cv.inbox = None;
+            return false;
+        }
+    }
+    true
+}
+
+/// The card keys; `true` when handled. From the thread only ctrl+g (it
+/// selects the inbox); the rest in the card view.
 pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: bool) -> bool {
+    if inbox_key(app, k) {
+        return true;
+    }
     if (k.code, k.modifiers) == (KeyCode::Char('g'), KeyModifiers::CONTROL) {
         if app.sb.card.open {
             close_view(app);
             return true;
         }
-        if app.sb.sorted_cards().is_empty() {
-            return false;
-        }
-        open_view(app, None);
-        return true;
+        return select_inbox(app);
     }
     if !app.sb.card.open {
         return false;
     }
     let empty = app.ed.text.is_empty();
     let sel = app.sb.current_card().map(|c| c.id);
+    let n = app.sb.current_card().map_or(0, |c| shape(c).options.len());
+    // the arrows are the inbox's on an empty composer, else your text's
+    let arrows = empty && !popup_open;
     match (k.code, k.modifiers) {
         (KeyCode::Esc, _) if !popup_open => close_view(app),
         (KeyCode::Char('n'), KeyModifiers::CONTROL) => step(app, 1),
@@ -588,7 +660,14 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
                 close_card(app, id);
             }
         }
-        (KeyCode::Enter, KeyModifiers::NONE) if !popup_open => submit(app),
+        // an empty composer picks the option highlighted (none: nothing,
+        // a reflex ⏎ never answers); text answers
+        (KeyCode::Enter, KeyModifiers::NONE) if !popup_open => match (sel, app.sb.card.opt.filter(|_| empty)) {
+            (Some(id), Some(i)) if i < n => {
+                pick(app, id, i);
+            }
+            _ => submit(app),
+        },
         // 1-9 picks on an empty composer; once you typed, digits are text
         (KeyCode::Char(c @ '1'..='9'), KeyModifiers::NONE) if empty => {
             let i = c as usize - '1' as usize;
@@ -602,10 +681,25 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
             let page = app.sb.card.page.max(1) as isize;
             app.sb.card.scroll_by(page);
         }
-        // an empty composer: the arrows scroll the card (no history recall
-        // of the thread's prompts into a card)
-        (KeyCode::Up, KeyModifiers::NONE) if empty && !popup_open => app.sb.card.scroll_by(-1),
-        (KeyCode::Down, KeyModifiers::NONE) if empty && !popup_open => app.sb.card.scroll_by(1),
+        // ↑↓ choose an option, no wrap: the first ↓ lands on option 1,
+        // the first ↑ on the last (no option: nothing, never the thread's
+        // history recalled into a card)
+        (KeyCode::Up | KeyCode::Down, KeyModifiers::NONE) if arrows => {
+            if n > 0 {
+                let cv = &mut app.sb.card;
+                let down = k.code == KeyCode::Down;
+                cv.opt = Some(match cv.opt.map(|i| i.min(n - 1)) {
+                    None if down => 0,
+                    None => n - 1,
+                    Some(i) if down => (i + 1).min(n - 1),
+                    Some(i) => i.saturating_sub(1),
+                });
+                cv.reveal = true;
+            }
+        }
+        // ←→ the other cards
+        (KeyCode::Left, KeyModifiers::NONE) if arrows => step(app, -1),
+        (KeyCode::Right, KeyModifiers::NONE) if arrows => step(app, 1),
         // no queue for an answer
         (KeyCode::Tab, _) if !popup_open => {}
         _ => return false,
@@ -616,6 +710,10 @@ pub(super) fn key(app: &mut App, k: &crossterm::event::KeyEvent, popup_open: boo
 /// The mouse on the strip or the card view; `true` when handled.
 pub(crate) fn card_mouse(app: &mut App, m: &crossterm::event::MouseEvent) -> bool {
     use crossterm::event::{MouseButton, MouseEventKind};
+    // a click goes back from the inbox selected (a row click opens it)
+    if matches!(m.kind, MouseEventKind::Down(_)) {
+        leave_inbox(app);
+    }
     let cv = &app.sb.card;
     let a = cv.area;
     let over = |r: Rect| m.column >= r.x && m.column < r.right() && m.row >= r.y && m.row < r.bottom();

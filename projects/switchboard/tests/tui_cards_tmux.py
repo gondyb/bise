@@ -1,8 +1,9 @@
-"""Cards v2 in a real terminal (tmux) against the fake provider: three
-cards in the strip above the divider, typing to main goes on, ctrl+g
-opens the card view, a digit answers one, text + ⏎ another, ctrl+x
-closes the last; esc keeps the card's draft, and the thread's draft
-comes back.
+"""The inbox (cards v2) in a real terminal (tmux) against the fake
+provider: three items in the strip above the divider, typing to main
+goes on; ctrl+g selects the inbox (a letter goes back to the composer
+and lands in it), ↓ ↑ ⏎ opens a row with no option highlighted, ↓ ⏎
+picks one, ← → switch items, text + ⏎ answers another, ctrl+x closes
+the last and the thread's draft comes back.
 
 python3 -u projects/switchboard/tests/tui_cards_tmux.py
 """
@@ -31,8 +32,8 @@ def main():
         ]))
         t.keys("Enter")
         # the strip: 3 rows, the label row, the options on the first
-        sc = t.wait("3 cards")
-        t.wait("ctrl+g open")
+        t.wait("inbox · 3 waiting for you")
+        t.wait("ctrl+g select")
         sc = t.wait("1 alpha  2 beta")
         assert "? main · first: pick one" in sc, sc
         assert "? main · second: say something" in sc, sc
@@ -40,34 +41,54 @@ def main():
         t.typed("hello main 1")
         t.wait("hello main 1")
         t.wait_re(in_view("main"))
-        # ctrl+g: the card view on the top card, its own empty composer
+        t.wait("ctrl+g inbox")
+        # ctrl+g selects the inbox: the ▸ on the first row, its key bar
         t.keys("C-g")
-        sc = t.wait("main's card · your answer")
-        assert "hello main 1" not in sc, sc
-        t.wait("1-2 pick")
-        # a digit on the empty composer answers
-        t.typed("2")
-        sc = t.wait("? main needs you")
-        t.wait_gone("first: pick one", 20)
-        # the second card: type, esc keeps its draft, the thread's back
-        t.typed("draft for two")
-        t.wait("draft for two")
-        t.keys("Escape")
-        t.wait("hello main 1")
-        t.wait_gone("draft for two")
-        t.wait("2 cards")
-        # ctrl+g: the top card again, its draft kept; ⏎ answers with it
+        sc = t.wait("esc back to your message")
+        assert "▸ ? main · first: pick one" in sc, sc
+        # a letter goes back to the composer and lands in it
+        t.typed("!")
+        t.wait("hello main 1!")
+        t.wait_gone("esc back to your message")
+        # ctrl+g ↓ ↑ ⏎: the first row opens, nothing highlighted
         t.keys("C-g")
-        t.wait("draft for two")
+        t.wait("esc back to your message")
+        t.keys("Down")
+        t.wait("▸ ? main · second")
+        t.keys("Up")
+        t.wait("▸ ? main · first")
         t.keys("Enter")
+        sc = t.wait("you → ? main · your answer")
+        assert "hello main 1" not in sc, sc
+        sc = t.wait("1-2 pick")
+        assert "▸" not in sc, sc
+        # a reflex ⏎ does nothing; ↓ ⏎ picks option 1
+        t.keys("Enter")
+        t.keys("Down")
+        t.wait("pick “alpha”")
+        t.wait("▸ 1 alpha")
+        t.keys("Enter")
+        t.wait_gone("first: pick one", 20)
+        sc = t.wait("second: say something")
+        t.wait("1 of 2")
+        # → the next item, ← back
+        t.keys("Right")
+        t.wait("2 of 2")
         t.wait("third: never mind")
+        t.keys("Left")
+        t.wait("1 of 2")
+        # typing answers: ⏎ sends the text
+        t.typed("draft for two")
+        t.wait("⏎ send as your answer")
+        t.keys("Enter")
         t.wait_gone("draft for two")
+        t.wait("third: never mind")
         # ctrl+x: close without answering; none left: back to the thread
         t.keys("C-x")
-        sc = t.wait("hello main 1")
+        sc = t.wait("hello main 1!")
         t.wait_re(in_view("main"))
-        t.wait_gone("ctrl+g open", 20)
-        sc = t.wait("you said beta")
+        t.wait_gone("ctrl+g select", 20)
+        sc = t.wait("you said alpha")
         assert "you said draft for two" in sc, sc
         time.sleep(0.3)
         print("PASS tui cards")
