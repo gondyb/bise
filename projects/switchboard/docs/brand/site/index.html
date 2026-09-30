@@ -56,9 +56,9 @@
   @keyframes blink { 50% { opacity:0 } }
 
   .sky .lay { position:absolute; inset:0; pointer-events:none; overflow:hidden; font-size:14px; line-height:1.4; }
-  .sky .bub { position:absolute; left:0; top:0; color:var(--dim); font-size:13px; white-space:nowrap; opacity:0; transition:opacity .6s ease; z-index:2; text-shadow:0 0 6px var(--bg), 0 0 2px var(--bg); }
-  .sky .bub.on { opacity:1; } .sky .lay .bub span { position:static; transform:none; transition:none; } .sky .bub .acc { color:var(--acc); margin-right:1ch; }
-  .sky .bub.pop { animation:bin .7s ease-out; } @keyframes bin { from { opacity:0; translate:0 5px; } to { opacity:1; translate:0 0; } }
+  .sky .say { position:absolute; left:0; top:0; color:var(--dim); font-size:13px; white-space:nowrap; opacity:0; transition:opacity .6s ease; z-index:2; text-shadow:0 0 6px var(--bg), 0 0 2px var(--bg); }
+  .sky .say.on { opacity:1; } .sky .lay .say span { position:static; transform:none; transition:none; } .sky .say .acc { color:var(--acc); margin-right:1ch; }
+  .sky .say.pop { animation:sayin .7s ease-out; } @keyframes sayin { from { opacity:0; translate:0 5px; } to { opacity:1; translate:0 0; } }
   .sky .lay span { position:absolute; left:0; top:0; white-space:pre; color:var(--dim); transition:transform .5s cubic-bezier(.25,.8,.3,1), opacity .45s; will-change:transform; }
   pre.rail .a { color:var(--acc); } pre.rail .a2 { color:var(--acc); opacity:.55; } pre.rail .a3 { color:var(--acc); opacity:.28; } pre.rail .f { color:var(--faint); } pre.rail .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } pre.rail .d { color:var(--dim); } pre.rail .w { color:var(--wind); } pre.rail .g { display:inline-block; width:1ch; text-align:center; } pre.rail .t { color:var(--text); }
   pre.rail { position:absolute; inset:0; margin:0; color:var(--wind); font:inherit; font-size:14px; line-height:1.4; white-space:pre; overflow:hidden; pointer-events:none; user-select:none; }
@@ -766,7 +766,7 @@ const sec = document.querySelector(".sky");
   const lay = document.createElement("div"); lay.className = "lay"; lay.setAttribute("aria-hidden", "true"); sec.insertBefore(lay, sec.querySelector(".hero"));
   const shown = new Map();
   // what bise says: a small line under the thread, where the kiss was when it said it. it fades in and out, and never covers an arc
-  const bub = document.createElement("div"); bub.className = "bub"; lay.append(bub); let said = "";
+  const bub = document.createElement("div"); bub.className = "say"; lay.append(bub); let said = "";
   const talk = (m) => {
     if (!m || !m.text) { bub.classList.remove("on"); return; }
     if (m.text !== said) {
