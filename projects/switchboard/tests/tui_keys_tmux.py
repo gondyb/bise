@@ -30,7 +30,7 @@ CASES = [
     # (provider id, its name, its model, its keys page, the family's path)
     ("mistral", "Mistral", "mistral-medium-latest", "https://console.mistral.ai/api-keys", "openai-chat"),
     ("anthropic", "Anthropic", "claude-opus-5-5", "https://platform.claude.com/settings/keys", "anthropic"),
-    ("openai", "OpenAI", "gpt-5.5", "https://platform.openai.com/api-keys", "openai-chat"),
+    ("openai", "OpenAI", "gpt-6-astra", "https://platform.openai.com/api-keys", "openai-chat"),
     ("fake", "Fake Cloud", "fake-large", "https://fake.test/keys", "openai-chat"),
 ]
 

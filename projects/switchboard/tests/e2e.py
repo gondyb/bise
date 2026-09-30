@@ -320,7 +320,8 @@ def t_model_and_reasoning(E, c):
     the REPL at its next idle, on the same session)."""
     c.wait_idle("main", "t1")
     main = c.agent("main")
-    check(main["model"] == "mistral/mistral-small-latest" and main["effort"] == "", "main before: %r" % main)
+    # Mistral Small 4 reasons (BISE-288): its default effort
+    check(main["model"] == "mistral/mistral-small-latest" and main["effort"] == "high", "main before: %r" % main)
     n = len(c.notices())
     c.say("/model mistral/zai-glm-5-3")
     c.wait(lambda: c.agent("main")["model"] == "mistral/zai-glm-5-3", 30, "main on glm")
@@ -345,14 +346,14 @@ def t_model_and_reasoning(E, c):
     check((call["model"], call["effort"]) == ("zai-glm-5-3", "none"), "the call: %r" % call)
     # a sub-agent, from its own view
     c.wait_idle("main")
-    c.say("/model mistral/magistral-medium-latest", focus="t1")
-    c.wait(lambda: c.agent("t1")["model"] == "mistral/magistral-medium-latest", 30, "t1 on magistral")
+    c.say("/model mistral/mistral-medium-latest", focus="t1")
+    c.wait(lambda: c.agent("t1")["model"] == "mistral/mistral-medium-latest", 30, "t1 on magistral")
     check(c.agent("main")["model"] == "mistral/zai-glm-5-3", "main keeps its choice")
     c.say("@t1 bonjour magistral")
     c.wait(lambda: any(r["agent"] == "t1" and "bonjour magistral" in r["user"] for r in E.fake_requests()), 90,
            "t1's call")
     call = [r for r in E.fake_requests() if r["agent"] == "t1" and "bonjour magistral" in r["user"]][-1]
-    check((call["model"], call["effort"]) == ("magistral-medium-latest", "high"), "t1's call: %r" % call)
+    check((call["model"], call["effort"]) == ("mistral-medium-latest", "high"), "t1's call: %r" % call)
     c.wait_idle("main", "t1")
 
 
@@ -361,7 +362,7 @@ def t_choices_survive_a_restart(E, c):
     restart (t_restart_keeps_everything) keeps them."""
     c.wait(lambda: c.agent("main") is not None, 30, "state")
     check((c.agent("main")["model"], c.agent("main")["effort"]) == ("mistral/zai-glm-5-3", "none"), "%r" % c.agent("main"))
-    check(c.agent("t1")["model"] == "mistral/magistral-medium-latest", "%r" % c.agent("t1"))
+    check(c.agent("t1")["model"] == "mistral/mistral-medium-latest", "%r" % c.agent("t1"))
     c.wait_idle("main")
     c.say("après le redémarrage, glm ?")
     c.wait_line("main", "ack: après le redémarrage, glm ?", 90)
