@@ -186,7 +186,7 @@
   .mini { background:var(--soft); border-radius:10px; font-size:13.5px; line-height:1.6; padding:18px 2.5ch 14px; }
   /* no overscroll-behavior: contain here. it makes the box swallow the wheel even
      when there is nothing to scroll; at its ends the page scrolls on */
-  .mfeed { height:calc(13.5px * 1.6 * 10); overflow-y:auto; padding-right:1ch; }
+  .mfeed { height:calc(13.5px * 1.6 * 10); overflow-y:auto; overflow-x:hidden; padding-right:1ch; }  /* no sideways scrollbar over the composer */
   .mfeed > div { animation:enter .45s ease-out; white-space:pre-wrap; }
   .mfeed.still > div { animation:none; }
   .mcomp { margin-top:8px; color:var(--text); }
