@@ -237,6 +237,21 @@ pub fn git_command() -> Result<Command, String> {
     }
 }
 
+/// The other CLIs the note names when they are on PATH: the ones an
+/// agent otherwise probes with `which` (or guesses) before using them.
+/// Probed with `which` only (a PATH scan, no process started).
+pub const OTHER_CLIS: [&str; 13] = [
+    "gh", "node", "npm", "pnpm", "bun", "python3", "uv", "cargo", "go", "jq", "tmux", "docker", "make",
+];
+
+/// The note's last line: which of OTHER_CLIS are on PATH (None: none).
+pub fn other_clis_line(found: &[&str]) -> Option<String> {
+    (!found.is_empty()).then(|| {
+        let names: Vec<String> = found.iter().map(|n| format!("`{}`", n)).collect();
+        format!("- Also installed: {}.", names.join(", "))
+    })
+}
+
 /// What the model is told once per session (the end of its system
 /// prompt, through BEND_TOOLS_NOTE): whether `rg` is there, whether
 /// `git` works.
@@ -257,9 +272,15 @@ pub fn tools_note(rg: Option<&Path>, git: &Git) -> String {
     format!("## Shell tools on this machine\n\n{}\n{}", rg_line, git_line)
 }
 
-/// The note for a shell whose PATH is `path`.
+/// The note for a shell whose PATH is `path`: rg, git, then the other
+/// CLIs found on it.
 pub fn tools_note_for(path: &str) -> String {
-    tools_note(which("rg", path).as_deref(), &git())
+    let found: Vec<&str> = OTHER_CLIS.iter().copied().filter(|n| which(n, path).is_some()).collect();
+    let note = tools_note(which("rg", path).as_deref(), &git());
+    match other_clis_line(&found) {
+        Some(line) => format!("{}\n{}", note, line),
+        None => note,
+    }
 }
 
 #[cfg(test)]
@@ -348,6 +369,19 @@ mod tests {
         assert!(note.contains("`rg` (ripgrep) is installed: use it"), "{}", note);
         assert!(!note.contains("grep -rn"));
         assert_eq!(tools_note(Some(&rg), &works), note);
+    }
+
+    #[test]
+    fn the_other_clis_found_are_named_in_one_line() {
+        assert_eq!(other_clis_line(&[]), None);
+        assert_eq!(other_clis_line(&["gh", "jq"]).as_deref(), Some("- Also installed: `gh`, `jq`."));
+        let d = tmp("clis");
+        script(&d, "jq", "true");
+        script(&d, "rg", "true");
+        let note = tools_note_for(d.to_str().unwrap());
+        assert!(note.ends_with("\n- Also installed: `jq`."), "{}", note);
+        let empty = tmp("clis-none");
+        assert!(!tools_note_for(empty.to_str().unwrap()).contains("Also installed"));
     }
 
     #[test]
