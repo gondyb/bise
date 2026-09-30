@@ -98,9 +98,9 @@ def main():
         # no folder step)
         t.keys("Enter")
         sc = t.wait("any key ↵")
-        for s in ["how it works", "1  you talk to me. anything, any time, keep typing",
-                  "2  i start an agent when a job needs one. they sync with each other",
-                  "3  when something needs you, it waits in your inbox · ctrl+g",
+        for s in ["how it works", "1  you talk to me: main, your team lead. any time, keep typing",
+                  "2  i start an agent when a job needs one. they sync on their own",
+                  "3  only the real decisions reach you, in your inbox · ctrl+g",
                   "ctrl+o opens everything folded", "○ ○ ●"]:
             assert s in flat(sc), sc
         assert "which model should do the work?" not in sc and "i'll work in" not in sc, sc

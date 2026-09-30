@@ -3018,3 +3018,11 @@ Index:
 - **spec:** user, right after BISE-261: « on peut faire 20 lignes? ».
 - **what:** `YOU_ROWS` 12 → 20, the same one constant (`you_folds`, `user_block_lines`): main's view, each agent's view and a replayed history fold at 20. More than 20 lines (or as many rows at 77 columns) shows its first 20 rows, then `▸ n more lines`; a message of 13 to 20 lines now shows whole. Book §9 "Your messages" and the §11 table say 20.
 - **notes:** tests renamed/updated: `feed_render_tests::a_long_message_of_yours_folds_to_twenty_rows_and_its_hint` (30 lines: 20 rows + `▸ 10 more lines ✓✓`), `a_line_cut_to_fit_counts_as_hidden` (19 short lines + one cut), `a_short_message_of_yours_stays_whole` (20 lines), `a_click_on_the_hint_row_opens_just_that_message` (24 lines: `▸ 4 more lines`), `find_tests::a_match_in_the_folded_part_of_your_message_opens_it` (30 lines, the match on line 27). `tui_find_tmux.py`'s filler (~32 rows) still folds. Checked in tmux: a 30-line message shows 20 rows and `▸ 10 more lines`.
+
+### BISE-263 · how it works: "you talk to me: main, your team lead"
+
+- **status:** done (HEAD) · **owner:** onboard-lead · **commits:** `git log --grep BISE-263`
+- **owns:** `rust/tui/src/onboarding.rs` (`HOW`, `how_rows`, `how_lines`), the how-it-works lines in the book (§15)
+- **spec:** designer (after the landing's "main is your team lead"): the TUI's how-it-works says the same; the mock `site/book/onboarding.html` step 5 already does (b30aa2f).
+- **what:** the three lines read `1  you talk to me: main, your team lead. any time, keep typing` / `2  i start an agent when a job needs one. they sync on their own` / `3  only the real decisions reach you, in your inbox · ctrl+g`. `me`/`i` bold in accent, numbers dim, no final periods; the footer, welcome, gloss and tagline unchanged. Each line fits the 64-column column (62, 64, 60 columns): one row at 100 and 120 columns. Narrower, a line wraps at the words with a 3-column hanging indent, the accent kept (before: the paragraph's plain wrap, back to the number's column).
+- **notes:** test `onboarding::tests::step_5_three_lines_one_by_one_then_done` pins the lines at 110 columns, one row each at 64, the accent spans, and the hanging indent at 40 columns; `tui_onboarding_tmux.py` (120 columns) checks the three lines.

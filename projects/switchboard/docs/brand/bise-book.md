@@ -789,10 +789,11 @@ one in accent.
    replacing one); the agents started from then on use it.
 4. **How it works**, the three lines appearing one by one, the numbers dim,
    `me` and `i` (bise) in accent, no final periods:
-   `1  you talk to me. anything, any time, keep typing`
-   `2  i start an agent when a job needs one. they sync with each other`
-   `3  when something needs you, it waits in your inbox · ctrl+g`
-   then, faint, `ctrl+o opens everything folded · ⌥0-9 talk to an agent`,
+   `1  you talk to me: main, your team lead. any time, keep typing`
+   `2  i start an agent when a job needs one. they sync on their own`
+   `3  only the real decisions reach you, in your inbox · ctrl+g`
+   (each fits the 64-column column; narrower, a line wraps at the words
+   with a 3-column hanging indent), then, faint, `ctrl+o opens everything folded · ⌥0-9 talk to an agent`,
    and `any key ↵`: any key opens the thread.
 5. **The thread** opens on the empty state (§8, §17): `what's on your
    mind?` / `say it and keep talking. the work runs in the background, i'm

@@ -859,31 +859,53 @@ fn model_list(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
     v
 }
 
-/// How it works (designer's v3 copy): the three numbered lines, `me` and
-/// `i` (bise) in accent, the numbers dim, no final periods.
+/// How it works (designer's v4 copy, as the landing: main is your team
+/// lead): the three numbered lines, `me` and `i` (bise) in accent, the
+/// numbers dim, no final periods. Each fits the 64-column column.
 const HOW: [[&str; 3]; 3] = [
-    ["you talk to ", "me", ". anything, any time, keep typing"],
-    ["", "i", " start an agent when a job needs one. they sync with each other"],
-    ["when something needs you, it waits in your inbox · ctrl+g", "", ""],
+    ["you talk to ", "me", ": main, your team lead. any time, keep typing"],
+    ["", "i", " start an agent when a job needs one. they sync on their own"],
+    ["only the real decisions reach you, in your inbox · ctrl+g", "", ""],
 ];
 /// The faint footer under the three lines.
 const HOW_FOOT: &str = "ctrl+o opens everything folded · ⌥0-9 talk to an agent";
 
-fn how_lines(t: u64, gap: usize) -> Vec<Line<'static>> {
+/// One HOW line in a column `w` wide: the number dim, `me`/`i` bold in
+/// accent, the rest in text color; wider than `w`, it wraps at the words
+/// with a 3-column hanging indent (like the welcome's meanings).
+fn how_rows(i: usize, [a, me, b]: [&str; 3], w: u16) -> Vec<Line<'static>> {
+    let (a_end, me_end) = (a.chars().count(), a.chars().count() + me.chars().count());
+    let mut at = 0; // chars of the whole line already placed
+    let mut out = Vec::new();
+    for (k, row) in words_in(&format!("{}{}{}", a, me, b), (w as usize).saturating_sub(3)).into_iter().enumerate() {
+        let mut spans = vec![if k == 0 { s(format!("{}  ", i + 1), theme::dim()) } else { Span::raw("   ") }];
+        // cut the row where the accent starts and ends
+        let n = row.chars().count();
+        let cut = |x: usize| x.saturating_sub(at).min(n);
+        let part = |from: usize, to: usize| row.chars().skip(from).take(to - from).collect::<String>();
+        let (c1, c2) = (cut(a_end), cut(me_end));
+        for (text, accent) in [(part(0, c1), false), (part(c1, c2), true), (part(c2, n), false)] {
+            if !text.is_empty() {
+                spans.push(if accent { bold(text, theme::accent()) } else { s(text, theme::text()) });
+            }
+        }
+        out.push(Line::from(spans));
+        at += n + 1; // the space the wrap ate
+    }
+    out
+}
+
+fn how_lines(t: u64, gap: usize, w: u16) -> Vec<Line<'static>> {
     let shown = |i: u64| t >= 400 + i * 900;
     let mut v = vec![title("how it works")];
     blanks(&mut v, gap);
-    for (i, [a, me, b]) in HOW.iter().enumerate() {
+    for (i, line) in HOW.iter().enumerate() {
         if i > 0 {
             v.push(Line::raw(""));
         }
-        let row = Line::from(vec![
-            s(format!("{}  ", i + 1), theme::dim()),
-            s(*a, theme::text()),
-            bold(*me, theme::accent()),
-            s(*b, theme::text()),
-        ]);
-        v.push(if shown(i as u64) { row } else { Line::raw("") });
+        for row in how_rows(i, *line, w) {
+            v.push(if shown(i as u64) { row } else { Line::raw("") });
+        }
     }
     blanks(&mut v, 1);
     v.push(if shown(3) { Line::from(s(HOW_FOOT, theme::faint())) } else { Line::raw("") });
@@ -948,7 +970,7 @@ pub(crate) fn draw(f: &mut Frame, o: &Onb, now: u64) {
         // the previews (1 blank row above), then the key line after a gap
         Step::Theme => (theme_text(o), 1 + PREVIEW_H + gap as u16 + 1),
         Step::Model => (model_lines(o, col.width, gap), 0),
-        Step::Lines => (how_lines(t, gap), 0),
+        Step::Lines => (how_lines(t, gap, col.width), 0),
     };
     let text_h = height_of(&lines, col.width).min(body.height);
     let h = text_h + extra;
@@ -1450,13 +1472,13 @@ mod tests {
         o.go(Step::Lines, 100);
         let none = env_of(HashMap::new());
         let sc = screen(&o, 100 + 500, 110, 30);
-        assert!(sc.contains("1  you talk to me.") && !sc.contains("i start an agent"), "{}", sc);
+        assert!(sc.contains("1  you talk to me: main") && !sc.contains("i start an agent"), "{}", sc);
         let sc = screen(&o, 100 + LINES_END, 110, 30);
         for s in [
             "how it works",
-            "1  you talk to me. anything, any time, keep typing",
-            "2  i start an agent when a job needs one. they sync with each other",
-            "3  when something needs you, it waits in your inbox · ctrl+g",
+            "1  you talk to me: main, your team lead. any time, keep typing",
+            "2  i start an agent when a job needs one. they sync on their own",
+            "3  only the real decisions reach you, in your inbox · ctrl+g",
             "ctrl+o opens everything folded · ⌥0-9 talk to an agent",
             "any key ↵",
             "○ ○ ○ ●",
@@ -1465,10 +1487,22 @@ mod tests {
         }
         assert!(!sc.contains("how it works,") && !sc.contains("typing."), "no final periods: {}", sc);
         // bise (me, i) in accent, the numbers dim
-        let l = how_lines(LINES_END, 2);
+        let l = how_lines(LINES_END, 2, 64);
         assert_eq!(l[3].spans[0].style.fg, Some(theme::dim()));
+        assert_eq!(l[3].spans[2].content, "me");
         assert_eq!(l[3].spans[2].style.fg, Some(theme::accent()));
-        assert_eq!(l[5].spans[2].content, "i");
+        assert_eq!(l[5].spans[1].content, "i");
+        assert_eq!(l[5].spans[1].style.fg, Some(theme::accent()));
+        // each line fits the 64-column column (100 and 120 columns): one row
+        // each; title, gap, 3 lines and 2 blanks, blank, foot, gap, key
+        assert_eq!(l.len(), 1 + 2 + 5 + 1 + 1 + 2 + 1, "{:?}", l);
+        // narrow: a line wraps at the words with a 3-column hanging indent
+        let sc = screen(&o, 100 + LINES_END, 40, 30);
+        assert!(flat(&sc).contains("2  i start an agent when a job needs one. they sync on their own"), "{}", sc);
+        let rows: Vec<&str> = sc.lines().collect();
+        let r2 = rows.iter().position(|r| r.contains("2  i start")).unwrap();
+        let x = rows[r2].find("2  ").unwrap();
+        assert_eq!(rows[r2 + 1].find(|c: char| c != ' '), Some(x + 3), "hanging indent: {}", sc);
         assert_eq!(o.on_key(key(KeyCode::Char('q')), 1, &none), Out::Done, "any key");
     }
 
