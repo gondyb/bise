@@ -1,0 +1,346 @@
+//! The sandbox (brief 1e): the profile's text, the denial reader, the
+//! flags; on macOS, the table of design §6.2 under a real `sandbox-exec`.
+
+use super::*;
+use std::path::PathBuf;
+
+fn spec() -> Spec {
+    Spec {
+        cwd: "/w/repo".into(),
+        git: Some("/w/repo/.git".into()),
+        bise: "/h/.bise".into(),
+        tmp: "/h/.bise/hubs/hx/agents/a/tmp".into(),
+        home: "/h".into(),
+        user_tmp: Some("/private/var/folders/x/y/T".into()),
+    }
+}
+
+#[test]
+fn the_profile_denies_writes_then_allows_the_roots_in_order() {
+    let p = profile(&spec(), false);
+    let at = |s: &str| p.find(s).unwrap_or_else(|| panic!("missing {s} in\n{p}"));
+    // last match wins: deny all, allow roots, deny protected, allow tmp
+    assert!(at("(deny file-write*)") < at("(subpath \"/w/repo\")"));
+    assert!(at("(subpath \"/w/repo\")") < at("(subpath \"/w/repo/.git/hooks\")"));
+    assert!(at("(subpath \"/h/.bise/hubs\")") < at("(allow file-write* (subpath \"/h/.bise/hubs/hx/agents/a/tmp\"))"));
+    for s in [
+        "(subpath \"/w/repo/.git\")",
+        "(literal \"/w/repo/.git/config\")",
+        "(subpath \"/h/.bise\")",
+        "(literal \"/h/.bise/approvals.toml\")",
+        "(literal \"/h/.bise/auth.json\")",
+        "(literal \"/w/repo/.envrc\")",
+        "(subpath \"/h/.cargo/registry\")",
+        "(subpath \"/h/.cargo/git\")",
+        "(subpath \"/h/.npm\")",
+        "(subpath \"/h/Library/pnpm\")",
+        "(subpath \"/h/.cache\")",
+        "(subpath \"/h/Library/Caches\")",
+        "(subpath \"/private/var/folders/x/y/T\")",
+        "(literal \"/dev/null\")",
+        "(subpath \"/dev/fd\")",
+        "(regex #\"^/dev/tty\")",
+        "(deny network*)",
+        "(remote unix-socket)",
+        "(remote ip \"localhost:*\")",
+    ] {
+        at(s);
+    }
+}
+
+#[test]
+fn the_net_profile_is_the_same_writes_with_the_network_open() {
+    let (closed, open) = (profile(&spec(), false), profile(&spec(), true));
+    assert!(!open.contains("network"));
+    assert!(closed.starts_with(&open));
+}
+
+#[test]
+fn outside_a_repo_there_is_no_git_rule_and_quotes_are_escaped() {
+    let s = Spec {
+        git: None,
+        cwd: PathBuf::from("/w/a \"b\\"),
+        ..spec()
+    };
+    let p = profile(&s, false);
+    assert!(!p.contains("hooks"));
+    assert!(p.contains("(subpath \"/w/a \\\"b\\\\\")"), "{p}");
+}
+
+#[test]
+fn the_hub_sandboxes_on_macos_with_sandbox_exec_unless_turned_off() {
+    assert_eq!(availability(true, true, None), Availability::On);
+    assert_eq!(availability(true, true, Some("1")), Availability::On);
+    assert_eq!(availability(true, true, Some("0")), Availability::Off);
+    assert_eq!(availability(true, false, None), Availability::Missing);
+    assert_eq!(availability(false, true, Some("1")), Availability::Off);
+}
+
+#[test]
+fn a_part_that_names_a_network_program_opens_the_network() {
+    for c in ["curl -s https://x", "cargo test && git push origin feat", "npm install", "gh pr list"] {
+        assert_eq!(run_flags(c), FLAG_SANDBOX_NET, "{c}");
+    }
+    for c in ["cargo test", "git commit -m x", "python3 edit.py", "echo curl"] {
+        assert_eq!(run_flags(c), FLAG_SANDBOX, "{c}");
+    }
+}
+
+#[test]
+fn the_denial_reads_the_path_the_output_names() {
+    let w = |p: &str| Some(Denial::Write(Some(p.into())));
+    assert_eq!(Denial::of("/bin/sh: /Users/u/Desktop/x.txt: Operation not permitted\n"), w("/Users/u/Desktop/x.txt"));
+    assert_eq!(Denial::of("touch: /tmp/a b: Operation not permitted"), w("/tmp/a b"));
+    assert_eq!(
+        Denial::of("Traceback…\nPermissionError: [Errno 1] Operation not permitted: '/Users/u/x'"),
+        w("/Users/u/x")
+    );
+    assert_eq!(Denial::of("Error: Os { code: 1, message: \"Operation not permitted\" }"), Some(Denial::Write(None)));
+    assert_eq!(Denial::of("curl: (6) Could not resolve host: example.com"), Some(Denial::Network));
+    assert_eq!(Denial::of("error: test failed, 3 passed; 1 failed"), None);
+}
+
+#[test]
+fn the_card_says_where_and_that_it_runs_twice() {
+    let roots = Roots {
+        cwd: "/w/repo".into(),
+        home: "/h".into(),
+        bise: "/h/.bise".into(),
+        tmp: "/h/.bise/hubs/hx/agents/a/tmp".into(),
+    };
+    assert_eq!(
+        Denial::Write(Some("/h/Desktop/x.txt".into())).reason(&roots),
+        "it needs to write outside the repo: ~/Desktop/x.txt. yes runs it a second time, outside the sandbox."
+    );
+    assert!(Denial::Network.reason(&roots).starts_with("it needs the network."));
+    let s = Denial::Write(Some("/h/Desktop/x.txt".into())).state();
+    assert!(s.contains("/h/Desktop/x.txt") && s.contains("without the sandbox"), "{s}");
+    assert_eq!(
+        Denial::Network.result("no network here"),
+        "stopped by the sandbox: it needs the network, which is closed for this command. not run again: no network here"
+    );
+}
+
+#[test]
+fn the_git_common_dir_of_a_worktree_is_the_main_repos() {
+    let base = scratch("gitdir");
+    let repo = base.join("repo");
+    let wt = base.join("wt");
+    std::fs::create_dir_all(repo.join(".git/worktrees/wt")).unwrap();
+    std::fs::create_dir_all(wt.join("src")).unwrap();
+    std::fs::write(wt.join(".git"), format!("gitdir: {}\n", repo.join(".git/worktrees/wt").display())).unwrap();
+    std::fs::write(repo.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
+    assert_eq!(git_common_dir(&wt.join("src")), Some(repo.join(".git")));
+    assert_eq!(git_common_dir(&repo), Some(repo.join(".git")));
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
+fn ensure_writes_both_profiles_and_rewrites_them_when_a_root_moves() {
+    let base = scratch("ensure");
+    let run = base.join("run");
+    ensure(&run, &spec()).unwrap();
+    let p = run.join(PROFILE);
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), profile(&spec(), false));
+    assert_eq!(std::fs::read_to_string(run.join(PROFILE_NET)).unwrap(), profile(&spec(), true));
+    let moved = Spec { cwd: "/w/other".into(), ..spec() };
+    ensure(&run, &moved).unwrap();
+    assert!(std::fs::read_to_string(&p).unwrap().contains("(subpath \"/w/other\")"));
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// A fresh folder, canonical (Seatbelt matches real paths), short enough
+/// for a unix socket inside (104 bytes: the tmux and python tests).
+fn scratch(name: &str) -> PathBuf {
+    let t = std::env::temp_dir();
+    let root = if t.as_os_str().len() > 40 { PathBuf::from("/tmp") } else { t };
+    let d = root.join(format!("sbx-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    std::fs::canonicalize(&d).unwrap()
+}
+
+/// The table of design §6.2 under the real `sandbox-exec` (macOS).
+#[cfg(target_os = "macos")]
+mod live {
+    use super::*;
+    use std::process::{Command, Output};
+
+    struct Box_ {
+        base: PathBuf,
+        s: Spec,
+        run: PathBuf,
+    }
+
+    impl Box_ {
+        fn new(name: &str) -> Option<Box_> {
+            if !Path::new(SANDBOX_EXEC).exists() {
+                eprintln!("no sandbox-exec: skipped");
+                return None;
+            }
+            let base = scratch(name);
+            let home = base.join("home");
+            let bise = home.join(".bise");
+            let tmp = bise.join("hubs/hx/agents/a/tmp");
+            let run = bise.join("hubs/hx/agents/a/run");
+            let repo = base.join("repo");
+            for d in [&tmp, &run, &repo, &base.join("outside")] {
+                std::fs::create_dir_all(d).unwrap();
+            }
+            let git = |args: &[&str]| {
+                let o = Command::new("git").args(args).current_dir(&repo).output().unwrap();
+                assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+            };
+            git(&["init", "-q", "-b", "main"]);
+            git(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "0"]);
+            let s = Spec {
+                cwd: repo.clone(),
+                git: git_common_dir(&repo),
+                bise,
+                tmp,
+                home,
+                user_tmp: darwin_user_temp(),
+            };
+            ensure(&run, &s).unwrap();
+            Some(Box_ { base, s, run })
+        }
+
+        /// `sh -c cmd` in `cwd` under the profile, the agent's env.
+        fn sh_in(&self, cwd: &Path, net: bool, cmd: &str) -> Output {
+            let prof = self.run.join(if net { PROFILE_NET } else { PROFILE });
+            Command::new(SANDBOX_EXEC)
+                .arg("-f")
+                .arg(&prof)
+                .args(["/bin/sh", "-c", cmd])
+                .current_dir(cwd)
+                .env("TMPDIR", &self.s.tmp)
+                .env("TMUX_TMPDIR", &self.s.tmp)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .output()
+                .unwrap()
+        }
+
+        fn sh(&self, cmd: &str) -> Output {
+            self.sh_in(&self.s.cwd, false, cmd)
+        }
+    }
+
+    impl Drop for Box_ {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.base);
+        }
+    }
+
+    fn ok(o: &Output) -> bool {
+        o.status.success()
+    }
+    fn text(o: &Output) -> String {
+        format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))
+    }
+
+    #[test]
+    fn writes_inside_the_roots_pass_and_outside_are_stopped() {
+        let Some(b) = Box_::new("writes") else { return };
+        let out = b.base.join("outside/x.txt");
+        assert!(ok(&b.sh("echo 1 > a.txt && mkdir -p src/d && python3 -c \"open('src/d/b.py','w').write('x')\"")));
+        assert!(ok(&b.sh("echo 1 > \"$HOME_BISE/notes.md\"".replace("$HOME_BISE", &b.s.bise.display().to_string()).as_str())));
+        let o = b.sh(&format!("echo 1 > '{}'", out.display()));
+        assert!(!ok(&o) && !out.exists());
+        assert_eq!(Denial::of(&text(&o)), Some(Denial::Write(Some(out.display().to_string()))));
+        // a bash edit script inside the repo: contained, no card
+        assert!(ok(&b.sh("sed -i '' 's/1/2/' a.txt && perl -pi -e 's/2/3/' a.txt")));
+        assert_eq!(std::fs::read_to_string(b.s.cwd.join("a.txt")).unwrap().trim(), "3");
+    }
+
+    #[test]
+    fn the_protected_paths_stay_closed_and_tmp_is_carved_out() {
+        let Some(b) = Box_::new("protected") else { return };
+        let hubs = b.s.bise.join("hubs/hx");
+        for p in [
+            b.s.cwd.join(".git/hooks/pre-commit"),
+            b.s.cwd.join(".git/config"),
+            hubs.join("journal"),
+            hubs.join("agents/a/session"),
+            hubs.join("agents/other/tmp/x"),
+            b.s.bise.join("auth.json"),
+            b.s.bise.join("approvals.toml"),
+            b.s.cwd.join(".envrc"),
+        ] {
+            let o = b.sh(&format!("mkdir -p '{}' 2>/dev/null; echo x > '{}'", p.parent().unwrap().display(), p.display()));
+            assert!(!ok(&o), "{} was written", p.display());
+        }
+        let o = b.sh("echo x > \"$TMPDIR/y\" && d=$(mktemp -d) && echo x > \"$d/z\"");
+        assert!(ok(&o), "{}", text(&o));
+        assert!(ok(&b.sh("python3 -c 'import tempfile; f=tempfile.NamedTemporaryFile(delete=False); f.write(b\"x\"); print(f.name)'")));
+    }
+
+    #[test]
+    fn a_commit_in_a_worktree_writes_the_repos_git_dir() {
+        let Some(b) = Box_::new("worktree") else { return };
+        // the worktree sits under ~/.bise (gate.sh new): a root
+        let wt = b.s.bise.join("worktrees/p/t/repo");
+        let o = Command::new("git")
+            .args(["worktree", "add", "-q", "--detach"])
+            .arg(&wt)
+            .current_dir(&b.s.cwd)
+            .output()
+            .unwrap();
+        assert!(o.status.success(), "{}", text(&o));
+        let o = b.sh_in(&wt, false, "echo x > f && git add f && git -c user.name=t -c user.email=t@t commit -qm wt && git log --oneline | wc -l");
+        assert!(ok(&o), "{}", text(&o));
+        assert_eq!(String::from_utf8_lossy(&o.stdout).trim(), "2");
+    }
+
+    #[test]
+    fn the_network_is_closed_but_loopback_and_unix_sockets() {
+        let Some(b) = Box_::new("net") else { return };
+        let py = "import socket,os\ns=socket.socket();s.bind(('127.0.0.1',0));s.listen()\nc=socket.create_connection(s.getsockname());print('lo')\nu=socket.socket(socket.AF_UNIX);p=os.environ['TMPDIR']+'/s.sock';u.bind(p);u.listen()\nv=socket.socket(socket.AF_UNIX);v.connect(p);print('unix')";
+        let o = b.sh(&format!("python3 -c \"{py}\""));
+        assert!(ok(&o), "{}", text(&o));
+        // a public address: refused before any packet leaves (no DNS needed)
+        let conn = "python3 -c \"import socket; socket.create_connection(('1.1.1.1', 443), timeout=3); print('out')\"";
+        let o = b.sh(conn);
+        assert!(!ok(&o), "{}", text(&o));
+        assert!(Denial::of(&text(&o)).is_some(), "{}", text(&o));
+        let o = b.sh_in(&b.s.cwd, true, conn);
+        assert!(!text(&o).to_lowercase().contains("operation not permitted"), "{}", text(&o));
+    }
+
+    #[test]
+    fn tmux_with_its_tmpdir_and_a_cargo_build_run_contained() {
+        let Some(b) = Box_::new("tools") else { return };
+        if Command::new("tmux").arg("-V").output().is_ok() {
+            let o = b.sh("tmux -L sbx -f /dev/null new -d 'sleep 2' && tmux -L sbx kill-server");
+            assert!(ok(&o), "{}", text(&o));
+        }
+        let cargo_ok = Command::new("cargo").arg("-V").output().is_ok_and(|o| o.status.success());
+        if cargo_ok {
+            let o = b.sh("cargo new -q --vcs none --offline c && cd c && CARGO_TARGET_DIR=target cargo build -q --offline && ./target/debug/c");
+            assert!(ok(&o), "{}", text(&o));
+            assert!(String::from_utf8_lossy(&o.stdout).contains("Hello, world!"));
+        }
+    }
+
+    /// design §6.2: +12 ms per call. Printed, bounded loosely (a busy
+    /// machine).
+    #[test]
+    fn the_cost_per_call_is_a_few_milliseconds() {
+        let Some(b) = Box_::new("cost") else { return };
+        let time = |sandboxed: bool| {
+            let n = 10;
+            let t = std::time::Instant::now();
+            for _ in 0..n {
+                let o = if sandboxed {
+                    b.sh("true")
+                } else {
+                    Command::new("/bin/sh").args(["-c", "true"]).output().unwrap()
+                };
+                assert!(o.status.success());
+            }
+            t.elapsed().as_secs_f64() * 1000.0 / n as f64
+        };
+        let (plain, boxed) = (time(false), time(true));
+        eprintln!("sh -c true: {plain:.1} ms, under the sandbox: {boxed:.1} ms (+{:.1} ms)", boxed - plain);
+        assert!(boxed - plain < 200.0);
+    }
+}

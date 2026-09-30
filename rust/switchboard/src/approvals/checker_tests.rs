@@ -83,7 +83,7 @@ fn no_tool_result_or_file_content_enters_the_state() {
     assert_eq!(paths, vec![dir.join("build.sh")]);
     let scripts: Vec<Script> =
         paths.iter().map(|p| Script { path: p.clone(), content: std::fs::read_to_string(p).unwrap() }).collect();
-    let st = checker_state(&c, &ps, "  build it please ", &scripts);
+    let st = checker_state(&c, &ps, "  build it please ", &scripts, None);
     let text = state_json(&st).to_string();
     for absent in ["TOOL_RESULT", "AGENT_WORDS", "FILE_CONTENT_NOT_RUN"] {
         assert!(!text.contains(absent), "{absent} in {text}");
@@ -91,11 +91,11 @@ fn no_tool_result_or_file_content_enters_the_state() {
     assert!(text.contains("SCRIPT_RUN") && text.contains("build it please"), "{text}");
     let j = state_json(&st);
     for k in j.as_object().unwrap().keys() {
-        assert!(["commands", "scripts", "task", "folder", "roots", "repo", "tool"].contains(&k.as_str()), "{k}");
+        assert!(["commands", "scripts", "task", "folder", "roots", "repo", "tool", "sandbox"].contains(&k.as_str()), "{k}");
     }
     // a script outside the roots is not read into it
     let outside = vec![Script { path: "/etc/x.sh".into(), content: "OUTSIDE".into() }];
-    assert!(!state_json(&checker_state(&c, &ps, "", &outside)).to_string().contains("OUTSIDE"));
+    assert!(!state_json(&checker_state(&c, &ps, "", &outside, None)).to_string().contains("OUTSIDE"));
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -104,7 +104,7 @@ fn the_state_is_cut() {
     let long = "x".repeat(10_000);
     let ps = parts(&format!("echo {long} && echo {long}"));
     let script = vec![Script { path: format!("{CWD}/a.sh").into(), content: long.clone() }];
-    let st = checker_state(&call("bash", json!({})), &ps, &long, &script);
+    let st = checker_state(&call("bash", json!({})), &ps, &long, &script, None);
     let n = |v: &[String]| v.iter().map(|s| s.chars().count()).sum::<usize>();
     assert_eq!(n(&st.commands), COMMANDS_MAX);
     assert_eq!(st.commands.len(), 1, "the second part is dropped once the first fills it");
@@ -112,7 +112,7 @@ fn the_state_is_cut() {
     assert_eq!(st.task.as_ref().unwrap().chars().count(), TASK_MAX);
     assert!(st.task.as_ref().unwrap().ends_with('…'));
     // a connector: the tool and its arguments, no parts
-    let st = checker_state(&call("gmail.send_email", json!({"to": "x@y.z"})), &[], "", &[]);
+    let st = checker_state(&call("gmail.send_email", json!({"to": "x@y.z"})), &[], "", &[], None);
     assert_eq!(st.tool.as_deref(), Some("gmail.send_email"));
     assert_eq!(st.commands, vec![r#"gmail.send_email {"to":"x@y.z"}"#.to_string()]);
     assert_eq!(st.task, None);
@@ -121,7 +121,7 @@ fn the_state_is_cut() {
 #[test]
 fn jev_is_asked_three_nouls_and_two_without_a_task() {
     let ps = parts("cargo test -p x");
-    let with = checker_state(&call("bash", json!({})), &ps, "fix the tests", &[]);
+    let with = checker_state(&call("bash", json!({})), &ps, "fix the tests", &[], None);
     let r = jev_request(&with, "jev-1.13.0");
     assert_eq!(r["model"], "jev-1.13.0");
     let q = r["questions"].as_object().unwrap();
@@ -129,14 +129,14 @@ fn jev_is_asked_three_nouls_and_two_without_a_task() {
     assert_eq!(q["contained"]["type"], "noul");
     assert!(q["secrets"]["instructions"].as_str().unwrap().contains("credentials"));
     assert_eq!(r["state"]["commands"][0], "cargo test -p x");
-    let headless = checker_state(&call("bash", json!({})), &ps, "", &[]);
+    let headless = checker_state(&call("bash", json!({})), &ps, "", &[], None);
     let q = jev_request(&headless, "m")["questions"].as_object().unwrap().clone();
     assert!(!q.contains_key(SERVES_TASK) && q.len() == 2);
 }
 
 #[test]
 fn jev_answers_are_read_strictly() {
-    let st = checker_state(&call("bash", json!({})), &parts("ls"), "t", &[]);
+    let st = checker_state(&call("bash", json!({})), &parts("ls"), "t", &[], None);
     let ok = json!({"model": "jev-1.13.0", "answers": {
         "contained": {"type": "noul", "noul": 0.97},
         "serves_task": {"type": "noul", "noul": 0.9},
@@ -178,7 +178,7 @@ fn the_rule_and_its_reason_words() {
 
 #[test]
 fn a_chat_model_answers_strict_json() {
-    let st = checker_state(&call("bash", json!({})), &parts("ls"), "t", &[]);
+    let st = checker_state(&call("bash", json!({})), &parts("ls"), "t", &[], None);
     let r = chat_request(&st);
     assert!(r.starts_with("MODEL default\nMSG system : # bise checker\\n"), "{r}");
     assert_eq!(r.lines().filter(|l| l.starts_with("MSG ")).count(), 2);
@@ -251,7 +251,7 @@ static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::ne
 fn req(cmd: &str) -> CheckReq {
     let ps = parts(cmd);
     let keys = ps.iter().map(|p| CacheKey::Exact(p.exact())).collect();
-    CheckReq { call: call("bash", json!({"arg": cmd})), parts: ps, keys, task: "run the tests".into(), script: None }
+    CheckReq { call: call("bash", json!({"arg": cmd})), parts: ps, keys, task: "run the tests".into(), script: None, denied: None }
 }
 
 /// A System One server on 127.0.0.1: answers each request with
@@ -466,4 +466,20 @@ fn off_asks_and_a_role_change_is_seen() {
     assert_eq!(r.checker(), Checker::Model);
     assert!(!r.sync());
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// brief 1e: the rerun of a command the sandbox stopped carries what it
+/// tried (a path, cut), and the prompt names the field.
+#[test]
+fn a_sandbox_rerun_says_what_the_sandbox_stopped() {
+    let ps = parts("touch ~/Desktop/x.txt");
+    let line = "the sandbox stopped this command: a write to /h/Desktop/x.txt, outside the repo. if allowed, it runs again, without the sandbox.";
+    let st = checker_state(&call("bash", json!({})), &ps, "t", &[], Some(line));
+    assert_eq!(state_json(&st)["sandbox"], json!(line));
+    assert!(chat_system(&st).contains("`sandbox`"));
+    let long = "x".repeat(1000);
+    let st = checker_state(&call("bash", json!({})), &ps, "t", &[], Some(&long));
+    assert!(st.sandbox.unwrap().chars().count() <= SANDBOX_MAX);
+    let st = checker_state(&call("bash", json!({})), &ps, "t", &[], None);
+    assert!(state_json(&st).get("sandbox").is_none());
 }

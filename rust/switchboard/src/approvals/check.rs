@@ -32,6 +32,9 @@ pub struct CheckReq {
     pub task: String,
     /// Left `None` by the hub: the checker reads a script it runs itself.
     pub script: Option<String>,
+    /// The rerun of a command the sandbox stopped: what it tried
+    /// (`sandbox::Denial::state`). `None` for every other call.
+    pub denied: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -204,7 +207,7 @@ impl Runner {
             return failed(&CheckErr::Cooling);
         }
         let scripts = read_scripts(&ck::scripts_of(&req.parts, &req.call.cwd));
-        let state = ck::checker_state(&req.call, &req.parts, &req.task, &scripts);
+        let state = ck::checker_state(&req.call, &req.parts, &req.task, &scripts, req.denied.as_deref());
         let got = self.ask(&route, &state);
         let mut s = self.lock();
         s.usage.checks += 1;

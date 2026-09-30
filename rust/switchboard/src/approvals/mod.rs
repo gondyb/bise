@@ -17,6 +17,7 @@ mod checker_tests;
 pub mod parse;
 pub mod paths;
 pub mod rules;
+pub mod sandbox;
 #[cfg(test)]
 mod tests;
 pub mod tiers;
