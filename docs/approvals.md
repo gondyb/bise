@@ -2,6 +2,11 @@
 
 Status: spec, not built. Task `approvals-spec`. To build before launch.
 
+> 2026-10: the modes changed (`yolo` / `accept edits` / `auto`, default
+> `yolo`, `shift+tab`, `confirm` cards in the user inbox, the `classify`
+> role). [approvals-design.md](approvals-design.md) §10 lists what
+> changes here; the rest of this spec stands.
+
 ## Goal
 
 Today every agent runs every tool call without asking. We want the least
