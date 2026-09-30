@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bise for desktop · v0</title>
+<link rel="icon" href="../favicon.svg">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --page:#0b0a09; --bg:#141211; --soft:#1a1715; --raised:#221e1c; --hi:#2b2623; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --wind:#4a4540; --line:#2a2623; --acc:#f4a6b0; --err:#e8847a;
+          --kw:#d7a6f0; --str:#b9d99a; --com:#857e74; --fn:#8fc4f0; }
+  .light { --bg:#f7f4ee; --soft:#f0ebe3; --raised:#fbf8f3; --hi:#ebe4d8; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --wind:#cbc3b6; --line:#e4ddd1; --acc:#b8416b; --err:#b8412e;
+          --kw:#8a3fb0; --str:#4d7a2a; --com:#8a8378; --fn:#2f6ea8; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--page); color:var(--text); font-family:"JetBrains Mono",ui-monospace,Menlo,monospace; font-size:13px; line-height:1.55; padding:40px 4vw 120px; }
+  a { color:inherit; }
+  .top { max-width:112ch; margin-bottom:34px; }
+  .top h1 { font-size:22px; letter-spacing:-.01em; } .top h1 span { color:var(--acc); }
+  .top p { color:#9a9388; margin-top:10px; max-width:96ch; }
+  .top ul { margin:14px 0 0 0; color:#9a9388; max-width:96ch; } .top li { list-style:none; margin:6px 0; padding-left:3ch; text-indent:-3ch; } .top li b { color:var(--text); }
+  nav.toc { columns:3; max-width:112ch; margin:26px 0 40px; color:#8a8378; } nav.toc a { display:block; text-decoration:none; } nav.toc a:hover { color:var(--acc); }
+  figure { margin:0 0 70px; }
+  figcaption { max-width:100ch; margin-bottom:14px; } figcaption b { font-weight:700; } figcaption .n { color:var(--acc); margin-right:1ch; }
+  figcaption p { color:#9a9388; margin-top:3px; }
+  h2.part { font-size:15px; margin:10px 0 26px; color:var(--dim); font-weight:400; } h2.part b { color:var(--text); }
+
+  /* ---------- the window ---------- */
+  .win { width:1180px; max-width:100%; height:720px; background:var(--bg); color:var(--text); border-radius:12px; overflow:hidden; position:relative;
+         box-shadow:0 0 0 1px rgba(255,255,255,.07), 0 30px 80px rgba(0,0,0,.55); display:flex; flex-direction:column; }
+  .light.win { box-shadow:0 0 0 1px rgba(0,0,0,.12), 0 30px 80px rgba(0,0,0,.35); }
+  .win.small { width:720px; height:640px; } .win.short { height:560px; }
+  .tb { height:40px; flex:none; display:flex; align-items:center; gap:12px; padding:0 14px; border-bottom:1px solid var(--line); background:var(--soft); color:var(--dim); font-size:12.5px; }
+  .tb .lights { display:flex; gap:8px; width:64px; } .tb .lights i { width:12px; height:12px; border-radius:50%; background:var(--faint); display:block; }
+  .tb .lights i:nth-child(1) { background:#ec6a5e; } .tb .lights i:nth-child(2) { background:#f4bf4f; } .tb .lights i:nth-child(3) { background:#61c554; }
+  .tb .title { flex:1; text-align:center; } .tb .title b { color:var(--text); } .tb .rt { display:flex; gap:14px; }
+  .body { flex:1; min-height:0; display:flex; }
+  .side { width:220px; flex:none; background:var(--soft); border-right:1px solid var(--line); padding:12px 8px; display:flex; flex-direction:column; gap:2px; font-size:12.5px; }
+  .side .h { color:var(--dim); padding:6px 10px 6px; font-size:11.5px; display:flex; justify-content:space-between; }
+  .repo { padding:7px 10px; border-radius:7px; display:grid; grid-template-columns:1fr auto; gap:0 8px; }
+  .repo.on { background:var(--raised); } .repo .nm { font-weight:700; } .repo .st { color:var(--dim); font-size:11.5px; }
+  .repo .last { grid-column:1/3; color:var(--dim); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .side .foot { margin-top:auto; color:var(--dim); padding:8px 10px; display:flex; justify-content:space-between; font-size:11.5px; }
+  .center { flex:1; min-width:0; display:flex; flex-direction:column; position:relative; }
+  .feed { flex:1; min-height:0; overflow:hidden; padding:26px 0 10px; display:flex; flex-direction:column; justify-content:flex-end; }
+  .col { width:74ch; max-width:calc(100% - 64px); margin:0 auto; }
+  .crumb { color:var(--dim); font-size:12px; padding:10px 32px 0; } .crumb b { color:var(--text); }
+  .agents { width:250px; flex:none; border-left:1px solid var(--line); padding:14px 10px; font-size:12.5px; display:flex; flex-direction:column; gap:2px; }
+  .agents .h { color:var(--dim); font-size:11.5px; padding:0 8px 8px; display:flex; justify-content:space-between; }
+  .ag { display:grid; grid-template-columns:2ch 1fr auto; gap:0 8px; padding:6px 8px; border-radius:7px; align-items:baseline; }
+  .ag.on { background:var(--raised); } .ag .k { color:var(--faint); font-size:11px; text-align:right; }
+  .ag .meta { grid-column:2/4; color:var(--dim); font-size:11px; } .ag .r { color:var(--dim); font-size:11.5px; }
+  .ag .g { text-align:center; }
+  .agents .sep { border-top:1px solid var(--line); margin:10px 8px; }
+  .agents .files { color:var(--dim); padding:0 8px; font-size:11.5px; line-height:1.9; } .agents .files b { color:var(--text); font-weight:400; }
+
+  /* thread */
+  .m { margin-top:18px; } .m:first-child { margin-top:0; }
+  .you { border-left:2px solid var(--acc); padding-left:14px; font-weight:700; }
+  .you .tick { color:var(--acc); font-weight:400; margin-left:1ch; font-size:12px; }
+  .bise { display:grid; grid-template-columns:3ch 1fr; } .bise .who { color:var(--acc); font-weight:700; }
+  .tool { display:grid; grid-template-columns:3ch 1fr auto; color:var(--dim); margin-top:8px; padding:3px 8px 3px 0; border-radius:6px; }
+  .tool .g { color:var(--dim); } .tool.run .d { color:var(--text); } .tool .st { font-size:12px; } .tool.fail .st { color:var(--err); }
+  .tool:hover, .tool.hover { background:var(--soft); } .tool .open { color:var(--faint); margin-left:1ch; }
+  .fold { color:var(--dim); margin-top:8px; padding-left:3ch; } .fold b { color:var(--text); font-weight:400; }
+  .env { margin-top:14px; } .chip { display:inline-block; background:var(--raised); border-radius:6px; padding:1px 8px; color:var(--dim); font-size:12px; }
+  .chip b { color:var(--text); font-weight:400; } .env .t { color:var(--dim); padding-left:2ch; margin-top:3px; }
+  .done { margin-top:14px; } .done .acc { color:var(--acc); } .dim { color:var(--dim); } .faint { color:var(--faint); } .acc { color:var(--acc); }
+  .box { margin-top:10px; border:1px solid var(--faint); border-radius:8px; overflow:hidden; }
+  .box .bh { display:flex; justify-content:space-between; padding:6px 12px; background:var(--soft); color:var(--dim); font-size:12px; }
+  .box pre { font:inherit; font-size:12.5px; padding:10px 14px; white-space:pre-wrap; } .box .out { border-top:1px solid var(--line); color:var(--dim); }
+  .kw { color:var(--kw); } .str { color:var(--str); } .com { color:var(--com); } .fn { color:var(--fn); }
+  .img { display:inline-block; width:180px; height:112px; border-radius:8px; background:linear-gradient(135deg,#3b2f2c,#1f1a18 60%,#4a3530); position:relative; margin-top:8px; }
+  .img::after { content:"hero.png · 4.2 MB"; position:absolute; left:8px; bottom:6px; font-size:11px; color:#d8cfc2; }
+  mark { background:rgba(244,166,176,.18); color:inherit; border-radius:3px; } mark.cur { background:var(--acc); color:#141211; }
+
+  /* the inbox strip and the composer */
+  .dock { flex:none; padding:0 0 14px; }
+  .strip { width:74ch; max-width:calc(100% - 64px); margin:0 auto 8px; font-size:12.5px; }
+  .strip .lab { display:flex; justify-content:space-between; color:var(--dim); font-size:11.5px; padding:0 10px 4px; }
+  .row { display:flex; justify-content:space-between; gap:2ch; padding:5px 10px; border-radius:7px; white-space:nowrap; }
+  .row .q { overflow:hidden; text-overflow:ellipsis; } .row .q .acc { margin-right:1ch; } .row.sel { background:var(--raised); box-shadow:inset 2px 0 0 var(--acc); }
+  .row .o { display:flex; gap:2ch; color:var(--dim); } .row .o b { color:var(--acc); font-weight:400; } .row .o .e { color:var(--text); } .row .o .x { color:var(--faint); }
+  .comp { width:74ch; max-width:calc(100% - 64px); margin:0 auto; background:var(--raised); border-radius:12px; padding:10px 14px 8px; border:1px solid transparent; }
+  .comp.focus { border-color:var(--faint); } .comp.dimmed { opacity:.55; }
+  .comp .to { color:var(--dim); font-size:12px; display:flex; justify-content:space-between; } .comp .to .acc { font-weight:700; }
+  .comp .tx { min-height:1.55em; margin:6px 0 8px; } .cur { display:inline-block; width:.55em; height:1.1em; background:var(--text); vertical-align:-.2em; animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+  .comp .kb { color:var(--dim); font-size:11.5px; display:flex; gap:2.5ch; } .comp .kb b { color:var(--text); font-weight:400; }
+  .comp .att { display:flex; gap:8px; margin:8px 0 2px; padding:8px; border:1px solid var(--line); border-radius:8px; }
+  .pill { background:var(--hi); border-radius:6px; padding:2px 8px; font-size:12px; color:var(--dim); white-space:nowrap; } .pill .acc { margin-right:.6ch; }
+  .thumb { width:64px; height:44px; border-radius:6px; background:linear-gradient(135deg,#3b2f2c,#1f1a18 60%,#4a3530); position:relative; }
+  .thumb span { position:absolute; left:4px; top:2px; font-size:10.5px; color:var(--acc); }
+  .inl { color:var(--acc); background:var(--hi); border-radius:4px; padding:0 4px; font-size:12px; }
+
+  /* sheets, palette, find */
+  .scrim { position:absolute; inset:0; background:rgba(10,9,8,.45); }
+  .light .scrim { background:rgba(247,244,238,.5); }
+  .sheet { position:absolute; left:50%; transform:translateX(-50%); top:56px; width:78ch; max-width:calc(100% - 48px); background:var(--raised); border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.5); padding:18px 22px 14px; }
+  .sheet .t { display:flex; justify-content:space-between; color:var(--dim); font-size:12px; } .sheet .t b { color:var(--text); }
+  .sheet .q { margin:12px 0 14px; } .sheet .q p + p { margin-top:8px; }
+  .opt { padding:7px 10px; border-radius:7px; display:grid; grid-template-columns:3ch 1fr; } .opt b { color:var(--acc); font-weight:400; } .opt.hl { background:var(--hi); box-shadow:inset 2px 0 0 var(--acc); }
+  .sheet .kb { color:var(--dim); font-size:11.5px; margin-top:12px; display:flex; gap:2.5ch; flex-wrap:wrap; } .sheet .kb b { color:var(--text); font-weight:400; }
+  .tabs { display:flex; gap:6px; margin-bottom:12px; font-size:12px; } .tabs span { padding:3px 10px; border-radius:6px; color:var(--dim); } .tabs span.on { background:var(--hi); color:var(--text); }
+  .pal { position:absolute; left:50%; transform:translateX(-50%); top:70px; width:64ch; background:var(--raised); border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.55); overflow:hidden; }
+  .pal .in { padding:14px 18px; border-bottom:1px solid var(--line); font-size:14px; } .pal .grp { color:var(--dim); font-size:11px; padding:10px 18px 4px; }
+  .pal .it { display:flex; justify-content:space-between; padding:6px 18px; } .pal .it.hl { background:var(--hi); box-shadow:inset 2px 0 0 var(--acc); } .pal .it .dim { font-size:12px; }
+  .find { position:absolute; top:12px; right:20px; background:var(--raised); border-radius:9px; padding:6px 12px; display:flex; gap:14px; align-items:center; box-shadow:0 8px 30px rgba(0,0,0,.4); font-size:12.5px; }
+  .find .f { min-width:24ch; } .find .dim { font-size:12px; }
+  .term { flex:none; height:190px; border-top:1px solid var(--line); background:#100e0d; font-size:12.5px; }
+  .light .term { background:#efe9df; }
+  .term .th { display:flex; gap:16px; padding:6px 16px; color:var(--dim); font-size:11.5px; border-bottom:1px solid var(--line); } .term .th b { color:var(--text); font-weight:400; }
+  .term pre { font:inherit; padding:8px 16px; color:var(--text); }
+
+  /* desktop-only bits */
+  .desk { width:1180px; max-width:100%; height:560px; border-radius:12px; overflow:hidden; position:relative; background:radial-gradient(ellipse at 30% 20%, #3a2c2e, #171313 60%); box-shadow:0 0 0 1px rgba(255,255,255,.07); }
+  .menubar { height:28px; background:rgba(20,18,17,.72); backdrop-filter:blur(10px); display:flex; justify-content:flex-end; align-items:center; gap:18px; padding:0 16px; font-size:12.5px; color:#e8e1d6; }
+  .menubar .me { background:rgba(255,255,255,.14); border-radius:5px; padding:0 8px; color:var(--acc); font-weight:700; }
+  .drop { position:absolute; right:150px; top:34px; width:46ch; background:rgba(34,30,28,.96); border-radius:10px; box-shadow:0 20px 50px rgba(0,0,0,.5); padding:8px 0; font-size:12.5px; }
+  .drop .grp { color:var(--dim); font-size:11px; padding:6px 14px 2px; } .drop .it { padding:5px 14px; display:flex; justify-content:space-between; gap:2ch; } .drop .it.hl { background:var(--hi); }
+  .drop hr { border:0; border-top:1px solid var(--line); margin:6px 0; }
+  .notif { position:absolute; right:14px; top:40px; width:370px; background:rgba(40,35,33,.94); border-radius:14px; padding:12px 14px; box-shadow:0 14px 40px rgba(0,0,0,.5); display:grid; grid-template-columns:38px 1fr; gap:0 12px; font-size:12.5px; }
+  .notif .t { font-weight:700; } .notif .b { color:#cfc7ba; } .notif .btns { grid-column:2; display:flex; gap:8px; margin-top:8px; } .notif .btns span { background:rgba(255,255,255,.1); border-radius:6px; padding:3px 10px; }
+  .icon { width:38px; height:38px; border-radius:10px; background:#141211; display:flex; align-items:center; justify-content:center; color:var(--acc); font-weight:700; font-size:14px; box-shadow:inset 0 0 0 1px rgba(255,255,255,.08); }
+  .icon.big { width:132px; height:132px; border-radius:30px; font-size:52px; letter-spacing:-.04em; box-shadow:inset 0 0 0 1px rgba(255,255,255,.08), 0 20px 50px rgba(0,0,0,.5); }
+  .icon.big.lt { background:#f7f4ee; color:#b8416b; }
+  .icons { display:flex; gap:34px; align-items:flex-end; padding:30px; background:var(--soft); border-radius:12px; width:max-content; max-width:100%; }
+  .icons .c { text-align:center; color:var(--dim); font-size:11.5px; } .icons .c .icon { margin:0 auto 10px; }
+  .dock-bar { position:absolute; bottom:12px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,.12); border-radius:16px; padding:6px 10px; display:flex; gap:10px; }
+  .dock-bar .icon { width:46px; height:46px; border-radius:12px; position:relative; } .dock-bar .badge { position:absolute; right:-5px; top:-5px; background:var(--acc); color:#141211; border-radius:9px; font-size:11px; padding:0 6px; font-weight:700; }
+  .dock-bar .app { width:46px; height:46px; border-radius:12px; background:rgba(255,255,255,.18); }
+
+  /* onboarding */
+  .ob { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:10px; }
+  .ob .big { font-size:54px; font-weight:700; letter-spacing:-.04em; } .ob .big span { color:var(--acc); }
+  .ob .gloss { text-align:left; color:var(--dim); margin-top:10px; } .ob .gloss b { color:var(--text); }
+  .dz { margin-top:26px; width:56ch; border:1.5px dashed var(--faint); border-radius:14px; padding:26px; color:var(--dim); }
+  .dz b { color:var(--text); } .dz .btn { display:inline-block; margin-top:14px; background:var(--raised); border-radius:8px; padding:6px 14px; color:var(--text); }
+  .recent { width:56ch; text-align:left; margin-top:14px; color:var(--dim); font-size:12.5px; } .recent div { padding:4px 0; display:flex; justify-content:space-between; }
+
+  /* settings */
+  .set { display:flex; flex:1; min-height:0; } .set .nav { width:200px; background:var(--soft); border-right:1px solid var(--line); padding:14px 8px; font-size:12.5px; }
+  .set .nav div { padding:6px 12px; border-radius:7px; color:var(--dim); } .set .nav div.on { background:var(--raised); color:var(--text); }
+  .set .pane { flex:1; padding:22px 30px; overflow:hidden; } .set h3 { font-size:13px; margin:18px 0 8px; } .set h3:first-child { margin-top:0; }
+  .set .f { display:grid; grid-template-columns:24ch 1fr; gap:8px 16px; align-items:center; font-size:12.5px; } .set .f .dim { font-size:12px; }
+  .sel { background:var(--raised); border-radius:7px; padding:4px 10px; display:inline-block; } .sel::after { content:" ▾"; color:var(--dim); }
+  .tog { display:inline-block; width:30px; height:17px; border-radius:9px; background:var(--acc); position:relative; vertical-align:middle; } .tog::after { content:""; position:absolute; right:2px; top:2px; width:13px; height:13px; border-radius:50%; background:#141211; }
+  .tog.off { background:var(--faint); } .tog.off::after { right:auto; left:2px; background:var(--dim); }
+  .keyt { width:100%; border-collapse:collapse; font-size:12.5px; } .keyt td { padding:5px 0; border-bottom:1px solid var(--line); } .keyt td:first-child { width:18ch; color:var(--acc); }
+
+  /* zen: the edges fade while you type */
+  .zen .side, .zen .agents, .zen .tb, .zen .strip, .zen .comp .kb, .zen .tool, .zen .env, .zen .fold { opacity:.45; }
+
+  /* spec tables */
+  table.spec { border-collapse:collapse; max-width:112ch; width:100%; font-size:12.5px; margin-top:12px; }
+  table.spec th { text-align:left; color:var(--dim); font-weight:400; padding:6px 10px 6px 0; border-bottom:1px solid #2a2623; }
+  table.spec td { padding:7px 10px 7px 0; border-bottom:1px solid #1f1c1a; vertical-align:top; color:#b9b2a6; } table.spec td:first-child { color:var(--text); white-space:nowrap; }
+  table.spec td .acc { color:var(--acc); }
+  .q-list { max-width:100ch; color:#b9b2a6; } .q-list li { margin:8px 0 0 3ch; }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>bise for desktop <span>:*</span> <span class="dim" style="color:#8a8378;font-weight:400;font-size:14px">· v0 · a proposal for the user</span></h1>
+  <p>every feature of the terminal app, in a window of its own. same product, same words, same marks. the terminal taught us what matters; the window only adds what a terminal can't do well: real clicks, images inline, a palette, notifications, a place in the menu bar.</p>
+  <ul>
+    <li><b>one thread per repo.</b> the sidebar lists your repos like chats. picking one opens its thread with main. there's no "new chat": a repo is the thread, forever (compaction keeps it short).</li>
+    <li><b>you still talk to main.</b> the agents live in the panel on the right. click one to talk to it directly, esc to come back.</li>
+    <li><b>mono stays the voice.</b> JetBrains Mono everywhere, the same palette, lowercase, :* for bise, ∿ working, ✓ done, ? needs you, ψ its own worktree, ✉ a message between agents, $ and ƒ for calls.</li>
+    <li><b>quiet by default.</b> calls fold into one row, messages between agents stay small, what needs you waits in the inbox above the composer. ⌘E opens everything.</li>
+    <li><b>keys feel like a mac app.</b> ⌘ where macOS expects it (find, palette, settings, agents), the rest unchanged. hold ⌘ to see them where they act.</li>
+    <li><b>closing the window doesn't stop the work.</b> agents keep running; bise stays in the menu bar and tells you when something needs you.</li>
+  </ul>
+  <nav class="toc" id="toc"></nav>
+</div>
+<div id="screens"></div>
+
+<script>
+const $ = (h) => h;
+// ---------- building blocks ----------
+const repos = (on, extra = {}) => `<aside class="side"><div class="h"><span>repos</span><span class="faint">⌘O add</span></div>` +
+  [["acme", `<span class="brth acc">∿</span> 3`, "perf: signup 4.1 s → 0.9 s"], ["blog", `<span class="acc">?</span> 1`, "dark-mode asks which gray"], ["bise", "✓", "released v2026.10.3"], ["dotfiles", "", "idle since monday"]]
+    .map(([n, st, last]) => `<div class="repo${n === on ? " on" : ""}"><span class="nm">${n}</span><span class="st">${st}</span><span class="last">${extra[n] || last}</span></div>`).join("") +
+  `<div class="foot"><span>⚙ settings</span><span class="faint">⌘,</span></div></aside>`;
+const AG = {
+  main: { g: '<span class="acc">:*</span>', k: "⌘0", r: "", meta: "opus-5.5 · high" },
+  perf: { g: '<span class="brth acc">∿</span>', k: "⌘1", r: "6m · 31%", meta: "sonnet-5 · med" },
+  "dark-mode": { g: '<span class="acc">?</span>', k: "⌘2", r: "4m · 12%", meta: "sonnet-5 · med · <span class='acc'>ψ</span> dark-mode" },
+  "sad-404": { g: '<span class="brth acc">∿</span>', k: "⌘3", r: "2m · 9%", meta: "haiku-5 · low" },
+  "emoji-csv": { g: '<span class="acc">✓</span>', k: "⌘4", r: "done 1m ago", meta: "sonnet-5 · med" },
+};
+const agents = (on = "main", names = Object.keys(AG), extra = "") => `<aside class="agents"><div class="h"><span>agents</span><span class="faint">⌘0-9</span></div>` +
+  names.map((n) => { const a = AG[n]; return `<div class="ag${n === on ? " on" : ""}"><span class="g">${a.g}</span><span>${n}</span><span class="k">${a.k}</span><span class="meta">${a.meta}${a.r ? " · " + a.r : ""}</span></div>`; }).join("") +
+  `<div class="sep"></div><div class="files">changed in acme<br><b>src/signup.ts</b> +42 −7<br><b>public/hero.webp</b> new<br><b>tokens.css</b> +6 −2</div>${extra}</aside>`;
+const you = (t, tick = "✓✓") => `<div class="m you">${t}<span class="tick">${tick}</span></div>`;
+const bise = (t) => `<div class="m bise"><span class="who">:*</span><span>${t}</span></div>`;
+const tool = (g, d, st, cls = "") => `<div class="tool ${cls}"><span class="g">${g}</span><span class="d">${d}</span><span class="st">${st}</span></div>`;
+const env = (a, b, t) => `<div class="env"><span class="chip">✉ <b>${a}</b> → <b>${b}</b></span><div class="t">${t}</div></div>`;
+const done = (t) => `<div class="done"><span class="acc">✓</span> ${t}</div>`;
+const RUN = '<span class="brth acc">∿</span>';
+const strip = (rows, sel = -1, n = rows.length) => `<div class="strip"><div class="lab"><span>inbox · ${n} waiting for you</span><span><span style="color:var(--text)">⌘I</span> ${n > 1 ? "select" : "open"}</span></div>` +
+  rows.map(([who, q, keys], i) => `<div class="row${i === sel ? " sel" : ""}"><span class="q"><span class="acc">?</span>${who} <span class="dim">· ${q}</span></span><span class="o">${i === sel ? keys + '<span class="e">⏎ <span class="dim">open</span></span><span class="x">×</span>' : ""}</span></div>`).join("") + `</div>`;
+const R_DARK = ["dark-mode", "the settings page has 3 grays in tokens.css and 2 hardcoded ones. which one wins?", "<span><b>1-9</b> answer</span>"];
+const R_REL = ["release wants to run", `<span style="color:var(--text)">npm publish --tag next</span>`, "<span><b>1</b> allow</span><span><b>2</b> always</span><span><b>3</b> deny</span>"];
+const comp = (to = "main", tx = "", kb = [["⏎", "send"], ["⌘V", "image"], ["@", "file or agent"], ["/", "commands"], ["⌘K", "everything"]], cls = "", att = "") =>
+  `<div class="comp ${cls}"><div class="to"><span>you → <span class="acc">${to}</span></span><span>${to === "main" ? `${RUN} 3 working` : "perf · sonnet-5 · med"}</span></div>${att}<div class="tx">${tx}</div><div class="kb">${kb.map(([k, l]) => `<span><b>${k}</b> ${l}</span>`).join("")}</div></div>`;
+const win = ({ title = "<b>acme</b> · one thread", side = repos("acme"), center, right = agents(), cls = "", rt = "" }) =>
+  `<div class="win ${cls}"><div class="tb"><span class="lights"><i></i><i></i><i></i></span><span class="title">${title}</span><span class="rt">${rt || '<span>⌘K</span><span>⌘F</span>'}</span></div><div class="body">${side}${center}${right}</div></div>`;
+const center = (feed, dock, over = "", crumb = "", term = "") => `<div class="center">${crumb ? `<div class="crumb">${crumb}</div>` : ""}<div class="feed"><div class="col">${feed}</div></div><div class="dock">${dock}</div>${term}${over}</div>`;
+
+// the thread everyone knows (the landing's demo)
+const FEED = you("signup is slow on mobile. can you look?") +
+  bise("on it. perf is profiling signup on a mid-range phone.") +
+  you("oh and dark mode. people keep asking") +
+  bise("dark-mode started. it works in its own worktree, so it won't step on perf.") +
+  env("perf", "main", "the hero image is 4.2 MB. that's 3 s before anything shows on a phone.") +
+  env("dark-mode", "perf", "are you touching tokens.css? i need two new grays.") +
+  env("perf", "dark-mode", "no, it's yours. i'm only in src/signup.ts.") +
+  you("and the 404 page is sad. make it less sad") +
+  bise("sad-404 is on it. i gave it the brand book.") +
+  `<div class="fold">▸ <b>4 commands</b> · perf · profiled signup, found the image</div>` +
+  done("perf is done · signup 4.1 s → 0.9 s on a mid-range phone <span class='dim'>· ▸ why</span>");
+
+const SCREENS = [];
+const add = (id, title, text, html) => SCREENS.push({ id, title, text, html });
+
+// ---------- 1. the main window ----------
+add("main", "the main window", "three columns: your repos, the thread with main, the agents of this repo. the thread keeps the reading column of the terminal (74 characters), centered. the composer is a raised card at the bottom; the inbox sits right above it. hover a row and it lights up; click a ∿ call to open it.",
+  win({ center: center(FEED, strip([R_DARK, R_REL]) + comp("main", 'and give the sad dog a hat<span class="cur"></span>'), ""), right: agents() }));
+
+add("main-light", "the same, light", "the light theme is the book's light palette: paper background, ink text, the deeper rose for the accent. it follows the system (auto) unless you pick one in settings.",
+  win({ cls: "light", center: center(FEED, strip([R_DARK, R_REL]) + comp("main", '<span class="cur"></span>'), ""), right: agents() }));
+
+// ---------- 2. the inbox ----------
+add("inbox-select", "the inbox · ⌘I selects", "the rows show no keys until you ask. ⌘I selects the inbox (the same rule as ctrl+g in the terminal): the selected row shows its keys, 1-9 answer it at once, ⏎ opens it, ↑↓ loop, esc gives you back your message. one item only? ⌘I opens it straight away. a click selects a row; a click on the selected row opens it.",
+  win({ center: center(FEED, strip([R_REL, R_DARK], 0) + comp("main", "and give the sad dog a hat", [["↑↓", "choose"], ["1-3", "answer"], ["⏎", "open"], ["esc", "back"]], "dimmed")), right: agents() }));
+
+add("inbox-open", "an item, open", "the item opens as a sheet over the thread; the thread stays visible behind it, dimmed. nothing is picked at first, so a reflex ⏎ does nothing: the first ↓ lands on option 1. ←→ go to the other items. type and ⏎ answers in your words. esc: back to the thread, your draft kept.",
+  win({ center: center(FEED, strip([R_DARK, R_REL]) + comp("main"), `<div class="scrim"></div><div class="sheet"><div class="tabs"><span class="on">dark-mode</span><span>release wants to run</span></div>
+    <div class="t"><span><span class="acc">?</span> <b>dark-mode</b> needs you</span><span>1 of 2 · 4m · ⌘2 open dark-mode</span></div>
+    <div class="q"><p>the settings page has 3 grays in tokens.css and 2 hardcoded ones in settings.css. i found them because the toggle looked wrong in dark mode.</p><p class="dim">if i pick one, the other 4 go. the hardcoded ones are older, the tokens are what the rest of the app uses.</p></div>
+    <div class="opt"><b>1</b>keep tokens.css, drop the hardcoded ones</div><div class="opt hl"><b>2</b>new tokens, light mode unchanged</div><div class="opt"><b>3</b>show me the five side by side first</div>
+    <div class="kb"><span><b>↑↓</b> choose</span><span><b>⏎</b> pick “new tokens, light mode unchanged”</span><span><b>←→</b> other items</span><span><b>type</b> answer in your words</span><span><b>esc</b> back</span></div></div>`) }));
+
+// ---------- 3. talking to an agent ----------
+add("agent", "talking to an agent directly", "click perf in the panel (or ⌘1). the center becomes perf's own thread; a crumb says where you are. main isn't in the loop, and knows it. esc, or a click on main, takes you back. an agent's view shows its calls as rows too; ⌘E opens them all.",
+  win({ title: "<b>acme</b> · perf", center: center(
+    `<div class="dim" style="margin-bottom:14px">you're talking to perf directly. main isn't in the loop. esc back to main.</div>` +
+    `<div class="m bise"><span class="who acc">∿</span><span>profiling signup on a mid-range phone (Moto G, 4× CPU slowdown).</span></div>` +
+    tool("$", "throttle the cpu and record signup", "✓ 12 s") + tool("$", "list what loads before first paint", "✓ 1.8 s") + tool("ƒ", "rank the assets by the time they cost", "✓ 0.4 s") +
+    `<div class="m bise"><span class="who acc">∿</span><span>the hero image is 4.2 MB. it's 3 s of the 4.1 s. i'm converting it to webp and lazy-loading what's below the fold.</span></div>` +
+    tool("$", "convert hero.png to webp at 82 %", "✓ 0.9 s") + tool("$", "run the signup tests", `${RUN} 14 s`, "run") +
+    you("keep the png for retina screens", "✓✓"), comp("perf", '<span class="cur"></span>', [["⏎", "send to perf"], ["esc", "back to main"], ["⌘E", "open every call"]]), "", `<b>acme</b> › <span class="acc">perf</span> <span class="faint">· esc back to main</span>`),
+    right: agents("perf") }));
+
+// ---------- 4. calls ----------
+add("calls", "a call, opened", "a call is one row: $ bash or ƒ typescript, the model's own description, the state. click it (or space when it's selected) and it opens in place: the whole script, then its output. ⌘E opens every call and every fold of the thread at once, ⌘E again closes them.",
+  win({ title: "<b>acme</b> · perf", center: center(
+    tool("$", "throttle the cpu and record signup", "✓ 12 s") +
+    tool("$", "convert hero.png to webp at 82 %", "✓ 0.9 s <span class='open'>▾</span>", "hover") +
+    `<div class="box"><div class="bh"><span>$ bash · convert hero.png to webp at 82 %</span><span>✓ 0.9 s</span></div><pre><span class="com"># keep the png: retina screens still get it through srcset</span>
+<span class="fn">cwebp</span> -q <span class="str">82</span> public/hero.png -o public/hero.webp
+<span class="fn">ls</span> -lh public/hero.*</pre><pre class="out">-rw-r--r--  1 gabriel  staff   4.2M  public/hero.png
+-rw-r--r--  1 gabriel  staff   298K  public/hero.webp</pre></div>` +
+    tool("ƒ", "check every page still loads the hero", "✓ 2.2 s") +
+    tool("$", "run the signup tests", "✗ 1 failed", "fail") +
+    `<div class="fold" style="color:var(--err)">  expected hero.png in the html, got hero.webp · signup.test.ts:41</div>`, comp("perf", "", [["⏎", "send to perf"], ["esc", "back to main"], ["⌘E", "close every call"]]), "", `<b>acme</b> › <span class="acc">perf</span>`),
+    right: agents("perf") }));
+
+// ---------- 5. composer ----------
+add("attach", "images, quotes, files", "drop an image anywhere on the window, or ⌘V: it lands in the attachments box above your text, with a thumbnail. select words in the thread and start typing: they become a quote. @ finds a file or an agent. inline, each one is a small pill you can't break in half; backspace removes it whole.",
+  win({ center: center(FEED, comp("main", 'is <span class="inl">▣ 1</span> why <span class="inl">❝ 2</span> ? if so, fix it in <span class="inl">@ src/signup.ts</span><span class="cur"></span>', [["⏎", "send"], ["⌫", "on a pill removes it"], ["esc", "drop them all"]], "focus",
+    `<div class="att"><span class="thumb"><span>▣ 1</span></span><div style="display:flex;flex-direction:column;gap:6px"><span class="pill"><span class="acc">❝ 2</span>“the hero image is 4.2 MB”</span><span class="pill"><span class="acc">@</span>src/signup.ts</span></div></div>`)), right: agents() }));
+
+// ---------- 6. find, palette ----------
+add("find", "find · ⌘F", "⌘F opens a small find bar over the thread's corner; the composer keeps your draft. every match lights up faintly, the current one in the accent. ⏎ or ⌘G goes to the older one, ⇧⌘G to the newer. esc closes and leaves you where the match is.",
+  win({ center: center(
+    you("signup is slow on mobile. can you look?") + bise("on it. perf is profiling <mark>signup</mark> on a mid-range phone.") +
+    env("perf", "main", "the hero image is 4.2 MB. that's 3 s before anything shows on a phone.") +
+    `<div class="fold">▸ <b>4 commands</b> · perf · profiled <mark class="cur">signup</mark>, found the image</div>` +
+    done("perf is done · <mark>signup</mark> 4.1 s → 0.9 s on a mid-range phone"),
+    comp("main", "and give the sad dog a hat"), `<div class="find"><span class="f">signup<span class="cur"></span></span><span class="dim">2 of 3</span><span class="dim">⏎ older · ⇧⏎ newer · esc</span></div>`), right: agents() }));
+
+add("palette", "everything · ⌘K", "the palette is the / commands, the agents and the repos in one list. type to filter. it doesn't replace / in the composer (it still works as in the terminal); it's there for the mouse people and for the day you forget a name.",
+  win({ center: center(FEED, comp("main"), `<div class="scrim"></div><div class="pal"><div class="in">mod<span class="cur"></span></div>
+    <div class="grp">commands</div><div class="it hl"><span>/model <span class="dim">· the model of main or an agent</span></span><span class="dim">opus-5.5</span></div><div class="it"><span>/reasoning <span class="dim">· how hard it thinks</span></span><span class="dim">high</span></div>
+    <div class="grp">agents</div><div class="it"><span><span class="acc">∿</span> perf <span class="dim">· sonnet-5 · med</span></span><span class="dim">⌘1</span></div>
+    <div class="grp">repos</div><div class="it"><span>dotfiles <span class="dim">· idle since monday</span></span><span class="dim">⌘O</span></div></div>`), right: agents() }));
+
+// ---------- 7. terminal panel ----------
+add("terminal", "a real shell · ⌃`", "the terminal panel docks under the thread, in the repo's folder, and keeps running while hidden. drag its edge to resize. it's your shell: the agents don't type in it.",
+  win({ center: center(FEED, comp("main"), "", "", `<div class="term"><div class="th"><b>zsh</b><span>~/acme</span><span style="margin-left:auto">⌃\` hides it · it keeps running</span></div><pre><span class="acc">$</span> npm test
+<span class="acc">✓</span> 142 passed <span class="dim">(3.1 s)</span>
+<span class="acc">$</span> <span class="cur"></span></pre></div>`), right: agents() }));
+
+// ---------- 8. zen ----------
+add("zen", "zen, while you type", "the same rule as the terminal: while you type, the edges fade (sidebar, panel, title bar, calls, messages between agents). your messages and bise's answers stay. 5 s after your last key, or at once on ⏎, esc or a shortcut, it all comes back.",
+  win({ cls: "zen", center: center(FEED, strip([R_DARK]) + comp("main", 'also the csv export crashes on emoji 😭 no rush<span class="cur"></span>', [["⏎", "send"], ["⌘V", "image"], ["@", "file or agent"], ["/", "commands"]], "focus")), right: agents() }));
+
+// ---------- 9. first launch ----------
+add("first", "first launch", "the gloss, then one thing to do: give it a folder. drop one on the window or pick it. bise checks it's a git repo and opens its thread. a key is only asked for when none is found (same list as the terminal). the setup offers come later, quietly, in the inbox.",
+  `<div class="win small"><div class="tb"><span class="lights"><i></i><i></i><i></i></span><span class="title"><b>bise</b></span><span class="rt"></span></div><div class="ob">
+    <div class="big">hi, i'm bise <span>:*</span></div>
+    <div class="gloss"><div><b>bise</b> <span class="faint">/beez/ · french, n.</span></div><div>1. a quick kiss on the cheek <span class="acc">:*</span></div><div>2. a brisk north wind</div><div>3. a terminal where your agents ship while you think</div></div>
+    <div class="dz"><b>drop a project folder here</b><br>one folder, one thread. i'll run the agents in it.<br><span class="btn">choose a folder…</span></div>
+    <div class="recent"><div><span>~/lab/acme</span><span class="faint">a git repo · opened in the terminal yesterday</span></div><div><span>~/lab/blog</span><span class="faint">a git repo</span></div></div>
+  </div></div>`);
+
+// ---------- 10. menu bar, notifications, dock ----------
+add("away", "when the window is closed", "⌘W closes the window; the agents keep going. the :* in the menu bar lists what's running and what waits for you, per repo. when an agent needs you, a notification says it in bise's words, with the options as buttons when there are 3 or fewer. the dock badge counts what waits for you, nothing else.",
+  `<div class="desk"><div class="menubar"><span>🔋</span><span>wed 03:12</span><span class="me">:*</span></div>
+    <div class="drop"><div class="grp">acme</div><div class="it"><span><span class="acc">∿</span> perf · sad-404</span><span class="dim">2 working</span></div><div class="it hl"><span><span class="acc">?</span> dark-mode: which gray?</span><span class="dim">answer…</span></div>
+      <div class="grp">blog</div><div class="it"><span><span class="acc">✓</span> publish is done</span><span class="dim">3m</span></div><hr><div class="it"><span>open bise</span><span class="dim">⌘⇧B</span></div><div class="it"><span>pause every agent</span><span class="dim"></span></div><div class="it"><span>quit, agents stop</span><span class="dim">⌘Q</span></div></div>
+    <div class="notif" style="top:auto;bottom:90px"><div class="icon">:*</div><div><div class="t">perf needs you · acme</div><div class="b">the hero image is 4.2 MB. compress it, or lazy-load it?</div></div><div class="btns"><span>compress</span><span>both</span><span>open</span></div></div>
+    <div class="dock-bar"><span class="app"></span><span class="app"></span><span class="icon">:*<span class="badge">2</span></span><span class="app"></span></div></div>`);
+
+// ---------- 11. settings ----------
+add("settings", "settings · ⌘,", "what the terminal spreads over /model, /reasoning, /theme, /setup and the auth file, in one window. every field says what it changes and where it's saved; nothing here is needed to start.",
+  `<div class="win short"><div class="tb"><span class="lights"><i></i><i></i><i></i></span><span class="title"><b>settings</b></span><span class="rt"></span></div><div class="set">
+    <div class="nav"><div>general</div><div class="on">models</div><div>keys and connectors</div><div>shortcuts</div><div>appearance</div></div>
+    <div class="pane"><h3>who does the work</h3><div class="f">
+      <span>main</span><span><span class="sel">opus-5.5</span> <span class="sel">high</span> <span class="dim">· plans, splits, answers you</span></span>
+      <span>new agents</span><span><span class="sel">sonnet-5</span> <span class="sel">medium</span> <span class="dim">· main can pick a smaller one for small jobs</span></span>
+      <span>per repo</span><span class="dim">acme and blog use these. bise uses opus-5.5 for every agent.</span></div>
+      <h3>how many at once</h3><div class="f"><span>agents running</span><span><span class="sel">no limit</span> <span class="dim">· main starts one when a job needs one, no more</span></span>
+      <span>their own worktree</span><span><span class="tog"></span> <span class="dim">when it helps (ψ), cleaned up after</span></span></div>
+      <h3>keys</h3><div class="f"><span>anthropic</span><span class="dim">•••••••••••• 4f2a · from ~/.bise/auth.json</span><span>mistral <span class="dim">(connectors)</span></span><span><span class="dim">web search, GitHub, Slack, Gmail… ·</span> <span class="acc">paste a key</span></span></div></div></div></div>`);
+
+// ---------- 12. narrow ----------
+add("narrow", "a narrow window", "under ~900 px the sidebar folds into a repo menu in the title bar and the panel into a line above the composer (the terminal's narrow rule). drag the window wider and they come back.",
+  `<div class="win small"><div class="tb"><span class="lights"><i></i><i></i><i></i></span><span class="title"><b>acme</b> ▾</span><span class="rt"><span>⌘K</span></span></div><div class="body">` +
+  center(FEED, `<div class="strip"><div class="lab"><span><span class="acc">:*</span> main · <span class="brth acc">∿</span> perf · <span class="acc">?</span> dark-mode · <span class="brth acc">∿</span> sad-404 · <span class="acc">✓</span> 1</span><span>⌘0-9</span></div></div>` + strip([R_DARK]) + comp("main", '<span class="cur"></span>', [["⏎", "send"], ["⌘I", "inbox"], ["/", "commands"]])) + `</div></div>`);
+
+// ---------- 13. the icon ----------
+add("icon", "the app icon", "the mark, and nothing else: :* in the accent on the dark ground, a soft squircle. the light one is for the light dock. in the menu bar, :* alone in the text color; in the accent when something waits for you.",
+  `<div class="icons"><div class="c"><div class="icon big">:*</div>dark · the default</div><div class="c"><div class="icon big lt">:*</div>light</div><div class="c"><div class="icon" style="width:64px;height:64px;border-radius:15px;font-size:24px">:*</div>64 px</div><div class="c"><div class="icon">:*</div>38 px</div>
+  <div class="c"><div style="font-weight:700;color:#e8e1d6;margin-bottom:10px">:*</div>menu bar</div><div class="c"><div style="font-weight:700;color:var(--acc);margin-bottom:10px">:*</div>menu bar · waiting</div></div>`);
+
+// ---------- render ----------
+const root = document.getElementById("screens"), toc = document.getElementById("toc");
+SCREENS.forEach((s, i) => {
+  root.insertAdjacentHTML("beforeend", `<figure id="${s.id}"><figcaption><b><span class="n">${String(i + 1).padStart(2, "0")}</span>${s.title}</b><p>${s.text}</p></figcaption>${s.html}</figure>`);
+  toc.insertAdjacentHTML("beforeend", `<a href="#${s.id}">${String(i + 1).padStart(2, "0")} · ${s.title}</a>`);
+});
+// ∿ breathes like the terminal's panel (gust W1, 1 cell): · ~ ∿ ≈ ∿ ~, 110 ms a frame
+const B = "·~∿≈∿~"; let f = 0;
+document.querySelectorAll(".brth").forEach((e, i) => e.dataset.o = i % 6);
+setInterval(() => { f++; document.querySelectorAll(".brth").forEach((e) => e.textContent = B[(f + +e.dataset.o) % 6]); }, 110);
+</script>
+
+<div style="max-width:112ch;margin-top:20px">
+  <h2 class="part"><b>keys</b> · terminal → desktop</h2>
+  <table class="spec">
+    <tr><th>terminal</th><th>desktop</th><th>why</th></tr>
+    <tr><td>⏎ · tab · ↑</td><td>⏎ send · ⇧⏎ new line · tab queue · ↑ edit the last</td><td>unchanged</td></tr>
+    <tr><td>ctrl+g</td><td><span class="acc">⌘I</span> the inbox</td><td>⌘G is "find next" on a mac. I for inbox</td></tr>
+    <tr><td>ctrl+o</td><td><span class="acc">⌘E</span> open or close everything</td><td>⌘O opens a folder in every mac app</td></tr>
+    <tr><td>ctrl+f / cmd+f</td><td><span class="acc">⌘F</span> find · ⌘G older · ⇧⌘G newer</td><td>the mac habit, now without the terminal's config</td></tr>
+    <tr><td>⌥0-9 · ctrl+k/j</td><td><span class="acc">⌘0-9</span> main, agent N · ⌥↑↓ select</td><td>⌘ + number switches views in mac apps</td></tr>
+    <tr><td>ctrl+c</td><td><span class="acc">⌘.</span> interrupt · ⌘Q quit (asks: agents stop)</td><td>⌘. is the mac "stop"; ⌘W keeps them running</td></tr>
+    <tr><td>ctrl+r</td><td><span class="acc">⌘R</span> or the mic in the composer: record, any key stops</td><td>no reload in a desktop app, so ⌘R is free</td></tr>
+    <tr><td>ctrl+`</td><td>⌃` terminal panel</td><td>unchanged (the VS Code habit)</td></tr>
+    <tr><td>ctrl+v</td><td>⌘V, or drop a file anywhere</td><td>drag and drop is the desktop's gift</td></tr>
+    <tr><td>hold ctrl</td><td>hold ⌘ to see the keys where they act</td><td>same idea, the mac modifier</td></tr>
+    <tr><td>/ commands</td><td>/ in the composer, and ⌘K for everything</td><td>the palette adds agents and repos</td></tr>
+    <tr><td>(new)</td><td>⌘O add a repo · ⌘⇧[ ⌘⇧] previous / next repo · ⌘, settings · ⌘\ sidebar · ⌥⌘\ agents panel</td><td>a window with several repos</td></tr>
+  </table>
+
+  <h2 class="part" style="margin-top:44px"><b>what the desktop adds</b> · and what it keeps out</h2>
+  <table class="spec">
+    <tr><th>adds</th><th>because</th></tr>
+    <tr><td>a repos sidebar</td><td>one thread per repo is the rule; the window can hold them all, with their state (∿ n · ? n · ✓)</td></tr>
+    <tr><td>notifications, dock badge, menu bar</td><td>the whole point is that you look away. bise taps your shoulder only for the inbox and for ✓ done</td></tr>
+    <tr><td>clicks everywhere</td><td>a call opens in place, an agent opens its thread, a file in "changed" opens its diff, a ✓ opens the report</td></tr>
+    <tr><td>images inline</td><td>screenshots you paste and the ones agents make show as images in the thread</td></tr>
+    <tr><td>the ⌘K palette</td><td>a way in for people who don't know the commands yet</td></tr>
+    <tr><td>keeps out</td><td>no tabs, no split view of 4 agents, no "new chat". the thread stays the one place. more windows = more repos, never more threads</td></tr>
+  </table>
+
+  <h2 class="part" style="margin-top:44px"><b>questions for you</b></h2>
+  <ol class="q-list">
+    <li>one window with the repos sidebar (my pick), or one window per repo like the terminal (no sidebar, ⌘` between them)?</li>
+    <li>⌘I for the inbox and ⌘E for "open everything": ok? or keep ctrl+g / ctrl+o so the terminal and the desktop share their keys?</li>
+    <li>notifications: only the inbox and ✓ done (my pick), or also each message you get from main?</li>
+    <li>closing the window: agents keep running in the menu bar (my pick), or ⌘W asks?</li>
+    <li>mono everywhere (my pick: it's the brand), or a sans for the chrome (sidebar, settings) and mono for the thread?</li>
+    <li>the stack: the terminal app's Rust core behind a Tauri window would keep one engine for both. that's for main to weigh; the screens don't depend on it.</li>
+  </ol>
+</div>
+</body>
+</html>
