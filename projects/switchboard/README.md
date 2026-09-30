@@ -26,8 +26,6 @@ Distribution et produit :
 - [`docs/packaging.md`](docs/packaging.md) (EN) : packaging et
   installation ; les scripts sont dans [`packaging/`](packaging/)
   (`build-dist.sh`, `install.sh`, `test-install.sh`).
-- [`docs/pitch.md`](docs/pitch.md) (EN) / [`docs/pitch-fr.md`](docs/pitch-fr.md) :
-  pitch et go-to-market.
 
 Code et tests :
 

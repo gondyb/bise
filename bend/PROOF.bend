@@ -889,6 +889,9 @@ def Laws.provider_resolves_alias():
 def Laws.provider_legacy_claude_is_foundry():
   {==}
 
+def Laws.provider_foundry_needs_a_base_url():
+  {==}
+
 def Laws.provider_legacy_glm_is_mistral():
   {==}
 

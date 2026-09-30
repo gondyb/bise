@@ -43,7 +43,7 @@ The `~/.bise/` layout is agreed with `research-portable` (see §3.4).
 |---|---|---|
 | Alias | `runtime/provider-pure.bend:18-26` | `opus-5.5` → `claude-opus-5-5`, the only alias |
 | Wire family | `runtime/provider-pure.bend:28-36` | `model_style`: name starts with `claude` → `Anthropic`, else `OpenAI` |
-| URL | `runtime/provider-pure.bend:38-45` | Anthropic → `https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages`; OpenAI → `https://api.mistral.ai/v1/chat/completions` |
+| URL | `runtime/provider-pure.bend:38-45` | Anthropic → a private proxy (`foundry`), `…/anthropic/v1/messages`; OpenAI → `https://api.mistral.ai/v1/chat/completions` |
 | URL override | `runtime/provider-pure.bend:47-55` | `BEND_PROVIDER_URL` (used by the tests' fake provider) |
 | Key env var | `runtime/provider-pure.bend:57-62` | `ANTHROPIC_FOUNDRY_API_KEY` or `MISTRAL_API_KEY` |
 | The 2 families | `core/api.bend:1081-1083` | `type Style = OpenAI \| Anthropic` |
@@ -310,7 +310,7 @@ api = "openai-chat"                   # default; openai-responses | anthropic | 
 context = 128000                      # when the catalog does not know the model
 
 [provider.anthropic]                  # override a known provider
-base_url = "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1"
+base_url = "https://foundry-proxy.example.com/anthropic/v1"
 key_env = "ANTHROPIC_FOUNDRY_API_KEY"
 ```
 

@@ -49,10 +49,16 @@ fn no_model_by_default_and_opus_alias_still_goes_to_foundry() {
     let s = Setup::from_text(Some("model = \"opus-5.5\"\n"), &no_env);
     assert_eq!(s.model, "foundry/claude-opus-5-5");
     assert_eq!(s.model_from, "config");
+    // bise ships no URL for the proxy (a private one)
+    assert_eq!(s.model_for("main").base_url, "");
+    let s = Setup::from_text(
+        Some("model = \"opus-5.5\"\n[providers.foundry]\nbase_url = \"https://foundry.example.net/anthropic/v1\"\n"),
+        &no_env,
+    );
     let r = s.model_for("main");
     assert_eq!(r.known, Known::Listed);
     assert_eq!(r.api, "anthropic");
-    assert_eq!(r.base_url, "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1");
+    assert_eq!(r.base_url, "https://foundry.example.net/anthropic/v1");
     assert_eq!(r.key_env, "ANTHROPIC_FOUNDRY_API_KEY");
     assert_eq!(r.caps.context, 1_000_000);
 }

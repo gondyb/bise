@@ -15,7 +15,7 @@ dirs (see §8).
    version switch.
 2. **Sign with a Developer ID and notarize every macOS binary from day
    one.** This is a hard requirement, not polish: the prototype showed
-   that the endpoint security agent (CrowdStrike) on a Mistral Mac deletes
+   that the endpoint security agent (CrowdStrike) on a managed Mac deletes
    unsigned/ad-hoc binaries (§6).
 3. Add a **Homebrew tap** next (same tarballs); an npm wrapper only if we
    need that reach later. Build on GitHub Actions, 4 targets (macOS
@@ -70,10 +70,10 @@ installer warns when `git` is missing.
 
 ### Provider — blocker for a public release
 
-The default model is `claude-opus-5-5` through
-`https://foundry-proxy.cheetah-koi.ts.net/…` (a private tailnet) with
-`ANTHROPIC_FOUNDRY_API_KEY`. Outside Mistral nothing works by default.
-The Mistral path (`api.mistral.ai/v1/chat/completions`, OpenAI mapping,
+The default model is `claude-opus-5-5` through a private Anthropic
+proxy (`foundry`, on a private network) with
+`ANTHROPIC_FOUNDRY_API_KEY`. Outside that network nothing works by
+default. The Mistral path (`api.mistral.ai/v1/chat/completions`, OpenAI mapping,
 `MISTRAL_API_KEY`) is taken by any model name not starting with
 `claude`. The prototype's `init` writes `model = "mistral-medium-latest"`
 to `config.toml` and a live session announced that model (READY line).

@@ -38,8 +38,6 @@ import ../core/config.bend as Cf
 def builtin() -> List<&2, Cf.KV>:
   [Cf.KV{"aliases.\"opus-5.5\"", "foundry/claude-opus-5-5"},
     Cf.KV{"providers.foundry.api", "anthropic"},
-    Cf.KV{"providers.foundry.base_url",
-      "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1"},
     Cf.KV{"providers.foundry.key_env", "ANTHROPIC_FOUNDRY_API_KEY"},
     Cf.KV{"providers.foundry.reasoning", "true"},
     Cf.KV{"providers.foundry.context", "1000000"},
@@ -222,6 +220,20 @@ def unknown_provider(+prov: String, +id: String) -> Resolved:
     quoted(id), "): add a [providers.", prov,
     "] table (base_url, key_env, api) to config.toml"])}
 
+# a provider bise knows but ships without a URL (foundry: a private
+# proxy, its users set base_url in their config.toml)
+def no_base_url.pick(unknown: Bool, +prov: String, +id: String) -> Resolved:
+  match unknown:
+    case True{}:
+      unknown_provider(prov, id)
+    case False{}:
+      RErr{id, String.concat(["provider ", quoted(prov), " (model ",
+        quoted(id), ") has no base_url: add it under [providers.", prov,
+        "] in ~/.bise/config.toml"])}
+
+def no_base_url(+api: String, +prov: String, +id: String) -> Resolved:
+  no_base_url.pick(String.is_empty(api), prov, id)
+
 # ---- the model's facts (core/api.bend MFacts) ----
 
 def fact_nat.read(m: Maybe<&2, Nat>) -> Nat:
@@ -383,7 +395,7 @@ def resolve.base(m: Maybe<&2, String>, +reg: List<&2, Cf.KV>, +prov: String,
         model, id, base, Cf.cfg_or(model_key(reg, prov, id, "key_env"), ""),
         url_env, facts(reg, prov, id, asked))
     case None{}:
-      unknown_provider(prov, id)
+      no_base_url(Cf.cfg_or(model_key(reg, prov, id, "api"), ""), prov, id)
 
 def resolve.split(pm: String & String, +reg: List<&2, Cf.KV>, +id: String,
     +url_env: String, +asked: String) -> Resolved:

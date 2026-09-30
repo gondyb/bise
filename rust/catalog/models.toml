@@ -119,13 +119,13 @@ output_price = 5
 cache_read_price = 0.1
 cache_write_price = 1.25
 
-# the user's Anthropic proxy (the setup before BISE-142); the harness
-# sends the 1M-context beta header, so 1M
+# an Anthropic proxy (the setup before BISE-142); the harness sends the
+# 1M-context beta header, so 1M. A private proxy: bise ships no URL, its
+# users set base_url under [providers.foundry] in ~/.bise/config.toml
 [providers.foundry]
 name = "Anthropic (foundry proxy)"
 hidden = true
 api = "anthropic"
-base_url = "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1"
 key_env = "ANTHROPIC_FOUNDRY_API_KEY"
 small_model = "claude-haiku-4-5"
 context = 1000000

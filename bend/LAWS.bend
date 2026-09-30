@@ -2190,16 +2190,25 @@ law provider_no_default_model:
     == Pv.RErr{"", Pv.NO_MODEL()} : Pv.Resolved}
 
 law provider_resolves_alias:
-  {Pv.resolve("", "", "", "", "model = \"opus-5.5\"", "", "")
+  {Pv.resolve("", "", "", "", "model = \"opus-5.5\"",
+      "[providers.foundry]\nbase_url = \"https://foundry.example.net/anthropic/v1\"", "")
     == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
-      "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
+      "https://foundry.example.net/anthropic/v1/messages",
       "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", "", "high"}}} : Pv.Resolved}
 
 law provider_legacy_claude_is_foundry:
-  {Pv.resolve("", "claude-opus-5-5", "", "", "", "", "")
+  {Pv.resolve("", "claude-opus-5-5", "", "", "",
+      "[providers.foundry]\nbase_url = \"https://foundry.example.net/anthropic/v1\"", "")
     == Pv.ROk{Pv.Prov{"foundry", "claude-opus-5-5", Api.Anthropic{},
-      "https://foundry-proxy.cheetah-koi.ts.net/anthropic/v1/messages",
+      "https://foundry.example.net/anthropic/v1/messages",
       "ANTHROPIC_FOUNDRY_API_KEY", Api.MFacts{True{}, 0n, "max_tokens", "", "", "high"}}} : Pv.Resolved}
+
+# LAW: bise ships no URL for the foundry proxy (a private one): without
+# a base_url in config.toml (so in the models file), no call, the error
+# says where to set it.
+law provider_foundry_needs_a_base_url:
+  {Pv.resolve("", "", "", "", "model = \"opus-5.5\"", "", "")
+    == Pv.RErr{"foundry/claude-opus-5-5", "provider \"foundry\" (model \"foundry/claude-opus-5-5\") has no base_url: add it under [providers.foundry] in ~/.bise/config.toml"} : Pv.Resolved}
 
 law provider_legacy_glm_is_mistral:
   {Pv.resolve("", "zai-glm-5-3", "", "", "", "", "")
@@ -3388,16 +3397,20 @@ law effort_order:
   {(Pv.shown_effort(Pv.resolve_chosen("reasoning_effort = \"max\"", "", "",
         "", "agent", "model = \"opus-5.5\"
 reasoning_effort = \"low\"
-agent_reasoning_effort = \"medium\"", "", "")),
+agent_reasoning_effort = \"medium\"", "[providers.foundry]
+base_url = \"https://foundry.example.net/anthropic/v1\"", "")),
       Pv.shown_effort(Pv.resolve_chosen("", "", "", "", "agent",
         "model = \"opus-5.5\"
 reasoning_effort = \"low\"
-agent_reasoning_effort = \"medium\"", "", "")),
+agent_reasoning_effort = \"medium\"", "[providers.foundry]
+base_url = \"https://foundry.example.net/anthropic/v1\"", "")),
       Pv.shown_effort(Pv.resolve_chosen("", "", "", "", "main",
         "model = \"opus-5.5\"
 reasoning_effort = \"low\"
-agent_reasoning_effort = \"medium\"", "", "")),
-      Pv.shown_effort(Pv.resolve_chosen("", "", "", "", "main", "model = \"opus-5.5\"", "", "")))
+agent_reasoning_effort = \"medium\"", "[providers.foundry]
+base_url = \"https://foundry.example.net/anthropic/v1\"", "")),
+      Pv.shown_effort(Pv.resolve_chosen("", "", "", "", "main", "model = \"opus-5.5\"", "[providers.foundry]
+base_url = \"https://foundry.example.net/anthropic/v1\"", "")))
     == ("max", "medium", "low", "high") : String & String & String & String}
 
 # LAW: an effort the model does not take falls to its default: max is

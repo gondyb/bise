@@ -41,3 +41,16 @@ events.jsonl
 
 # private notes (launch plans, DMs): never committed
 /private/
+# moved to /private/ (BISE-275): launch drafts, pitches, the landing
+# review rounds, the history-rewrite runbook; never tracked again
+/projects/switchboard/docs/pitch.md
+/projects/switchboard/docs/pitch-fr.md
+/projects/switchboard/docs/history-rewrite.md
+/projects/switchboard/docs/launch/
+/projects/switchboard/docs/brand/site/content/launch-plan.md
+/projects/switchboard/docs/brand/site/content/launch.html
+/projects/switchboard/docs/brand/site/content/handoff-*.md
+/projects/switchboard/docs/brand/site/content/landing-v*.html
+/projects/switchboard/docs/brand/site/content/og-variants.html
+/projects/switchboard/docs/brand/site/content/og/
+/projects/switchboard/docs/brand/site/content/hero-bg.html

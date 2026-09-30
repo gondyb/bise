@@ -25,7 +25,6 @@ Visual references (open them in a browser):
 | [site/index.html](site/index.html) | the one static site: the landing page, and the book under `site/book/` (old `tui-*.html` paths redirect) |
 | [board.html](board.html) | the brand exploration (3 art directions + the chosen one) |
 | [tui-spec.md](tui-spec.md) | the design log (how we got here) |
-| [../pitch.md](../pitch.md) | positioning and go-to-market |
 
 ---
 
@@ -43,8 +42,7 @@ Visual references (open them in a browser):
   terminal and any font, and looks typed by a human.
 - **Standalone brand.** bise is its own brand, unrelated to Mistral: no
   Mistral colors, no Mistral mention in the copy. (The code runs on Mistral's
-  Unified Harness; what can ship under a separate brand is an open question,
-  see [../pitch.md](../pitch.md).)
+  Unified Harness.)
 
 ## 2. What we promise
 
