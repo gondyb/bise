@@ -146,6 +146,39 @@ Product Hunt: not on day 0. in week 2 or 3, with the desktop app as a second mom
 > curl -fsSL bise.dev/install | sh
 > bise.dev
 
+### the Type-Level TypeScript newsletter
+
+the warmest list you have: people who already trust you, and who write TypeScript all day. send it on launch day at 16:15, right after the X thread. ask them to try it and to reply. never ask for HN upvotes (HN buries posts that get vote rings).
+
+subject ideas:
+- i built something new: bise :*
+- a terminal where multi-agent coding is painless
+- i stopped babysitting my agents
+
+> hi! it's Gabriel, from Type-Level TypeScript.
+>
+> it's been a while. i've been building something, and it's out today.
+>
+> it's called bise :* (french for a quick kiss on the cheek). it's a terminal app for coding with agents.
+>
+> agents made me faster, and my days emptier. five tabs, "should i continue?" all day, the same context pasted three times. at 6pm i'd shipped more than ever and felt like i did nothing.
+>
+> with bise, you talk to one thread per repo. it runs the agents for you, and only taps your shoulder when it matters. you keep talking while they work. the agents talk to each other before they collide.
+>
+> a detail you'll like: bise's agents call their tools by writing TypeScript. every MCP server you connect becomes typed functions under `tools.*`, and the agent writes a small script to use them. that's how you can keep a hundred servers on without filling its context.
+>
+> it's open source (Apache-2.0), macOS only for now, and early: there's no approval mode yet, so commit often.
+>
+> curl -fsSL bise.dev/install | sh
+> then `cd` into a repo and run `bise`.
+>
+> if you try it, hit reply and tell me what felt good and what broke. i read every answer.
+>
+> :*
+> Gabriel
+>
+> p.s. most of bise was built with bise.
+
 ### Show HN
 
 title: **Show HN: bise – one thread per repo, it runs the coding agents for you**
