@@ -3258,4 +3258,4 @@ Index:
 - **owns:** `projects/switchboard/docs/tech-debt.md` (the list and its progress), the hunks of each cheap fix
 - **spec:** the user wants a tech-debt agent: read the whole codebase, rank what to improve, fix the obvious and cheap items, ask about the major ones.
 - **what:** the list (tech-debt.md, 12 items). Cheap: 2 tui_keys_tmux's blind Down loop, 3 at_popup_tests' 2 s index wait, 5 the hub's ignored errors on an agent's files, 7 `kill`/`ps` helpers over kill(2), 8 the local time without `date`, 11 the workspace id pinned by a test. Major (asked): 1 load-scaled waits in e2e.py, 4 the hub survives sb-core's death, 6 a commit helper for private indexes, 9 giant functions, 10 tui_term_tmux's parallel flake.
-- **notes:** progress per item in tech-debt.md.
+- **notes:** batch 1 (cheap): ab29f65, 9471f74, dce3875, 408902e, 104eec8, 52dbe84 (+ the tui_demo_tips_tmux flake it found). Batch 2 (the user's go): a76aa6b (item 1), 6b4cacc (item 4: `Hub::call`/`Revive`, tests `core_tests::a_dead_sb_core_*`, `a_crash_loop_of_sb_core_stops_the_hub`, e2e `core_restart.py`). The user's no: 6 (commit helper). Not now: 9, 10. Progress per item in tech-debt.md.
