@@ -1,6 +1,7 @@
 # Approvals: design (3 global modes)
 
-Status: design, not built. Task `approvals`, 2026-10. Plan and costs:
+Status: design, not built. Task `approvals`, 2026-10; updated with the
+user's answers to the 8 open decisions. Plan and costs:
 [approvals-plan.md](approvals-plan.md). The older spec
 [approvals.md](approvals.md) (d22c024) stays the reference for the
 classifier, the hard rules and the wire; this page says what changes.
@@ -23,86 +24,215 @@ classifier, the hard rules and the wire; this page says what changes.
   `BISE_CLASSIFY_MODEL`; unset = the `small` role). Its row in `/setup`
   roles ("auto-confirm") ships with this feature.
 
+The user's answers to the 8 decisions (second round):
+
+1. A real **bash parser**: it splits a command into its simple commands and
+   finds each one's program and arguments. It spots safe reads, matches the
+   saved "always allow" rules (per repo, prefix rules like `cargo test`,
+   `npm run *`), and spots the plain bash writes. A command no rule allows
+   is a card, and the card offers "always allow this here" (§2.3).
+2. Settled: in `accept edits`, a bash edit the parser cannot read is
+   denied once with the "use `edit` / `apply_patch`" hint; a card only if
+   the agent repeats it.
+3. Find why agents avoid `apply_patch`, and add a simple `edit` tool (exact
+   string replace) in phase 1, with steering (§2.4, §2.5).
+4. **No time limit.** An agent waits as long as needed. No
+   `approvals_timeout` option.
+5. Writable roots in `accept edits`: the current folder and everything
+   under it, plus `~/.bise` (from anywhere). No `/tmp`: each agent gets its
+   own temp dir `~/.bise/tmp/<agent-id>` (§4).
+6. "always allow" is per repo.
+7. Network in `auto`: judged by the model.
+8. Switching to `yolo` while cards wait: the cards stay until answered.
+
 ## 2. The problem: editing through bash
 
 The agents have `bash`, `run_typescript`, `apply_patch`, `skill` and
-`search_tool_functions`. `apply_patch` (V4A) exists, but the models edit
-mostly through bash: `sed -i`, `cat > f <<EOF`, `python3 - <<EOF` scripts
-(Opus's favorite), `perl -pi`. A rough count over every thread
-(`sb history --role tool`, hits include reads of these strings): `apply_patch`
-376, `sed -i` 956, `cat >` 2 397, `python3 - <<` 3 213. So most edits today
-are bash calls.
+`search_tool_functions`. `apply_patch` (V4A) exists since 2026-09-27
+(fdfedd9), but the models edit mostly through bash: `sed -i`,
+`cat > f <<EOF`, `python3 - <<EOF` scripts (Opus's favorite), `perl -pi`.
+A rough count over every thread (`sb history --role tool`, a word search
+that over-counts bash): `python3 - <<` 3 214 hits, `cat >` 2 403, `sed -i`
+957, against 358 `Begin Patch`.
 
-To say "this bash call only edits files in the repo" is not possible from the
-text: `python3 - <<EOF`, `make fmt`, `cargo run`, `git apply`, `npm run x`,
-a script written then run. Every one can edit, delete, or do something else.
+To say "this bash call only edits files in the repo" is not always possible
+from the text: `python3 - <<EOF`, `make fmt`, `cargo run`, `git apply`,
+`npm run x`, a script written then run. Each can edit, delete, or do
+something else.
 
-### 2.1 The options
+### 2.1 The options (first round)
 
 | option | how `accept edits` decides | pros | cons | cost |
 |---|---|---|---|---|
-| (a) edit tools | only `apply_patch` (or a new `edit`/`write_file`) counts as an edit; bash never does | exact: the paths are in the patch headers (`core/patch.bend`, `wire.rs` already read them); predictable | models drift to bash; a bash edit becomes a card | steering only: ~0.5 day. A new `edit` (str_replace) tool: +1.5 days |
-| (b) parse bash (Codex's allowlist) | recognize bash edits (`sed -i`, `>`, heredocs) | no model call, fast | recognizing *every* edit is impossible (scripts, `python -c`, build tools); only the conservative direction works: "this is a known safe read" | read allowlist + splitter: ~2 days |
-| (c) classifier | the `classify` model says "only an in-repo edit?" | handles python scripts and heredocs | 0.6–0.7 s and ~$0.0003 per call; can be fooled; down with its provider; the boundary is a guess, so `accept edits` is no longer predictable | ~3 days (spec BISE-231), shared with `auto` |
-| (e) OS sandbox (what Codex really does) | bash runs in Seatbelt (macOS) / Landlock (Linux), writes allowed only in the repo | the only real containment; any edit form is fine | changes the mode's meaning ("anything that stays in the repo"); breaks caches (`~/.cargo`, `~/.npm`), worktrees (writes to the main `.git`), the `sb` socket; per-OS work; `sandbox-exec` is deprecated | 1–2 weeks |
-| (d) mix | (a) + the conservative half of (b); (c) only in `auto` | see below | see below | the plan |
+| (a) edit tools | only `apply_patch` (or a new `edit`) counts as an edit | exact: the paths are in the arguments; predictable | models drift to bash | steering ~0.5 day; `edit` tool ~1.5 days |
+| (b) parse bash | read each simple command: safe reads, saved rules, plain writes | no model call, fast; what Vibe and Claude Code do for their rules | opaque commands (scripts, `python -c`, build tools) stay opaque | ~3 days with tree-sitter |
+| (c) classifier | the `classify` model says "only an in-repo edit?" | handles python scripts | 0.6–0.7 s per call; can be fooled; the mode becomes a guess | ~3 days, shared with `auto` |
+| (e) OS sandbox (what Codex relies on) | bash runs in Seatbelt / Landlock, writes only in the repo | real containment | changes the mode's meaning; breaks caches and worktrees; per-OS | 1–2 weeks |
 
-Codex does not parse bash to find edits: it parses only to allowlist known
-safe commands, and relies on its sandbox for the rest. Vibe's
-`accept-edits` does (a): its `edit`/`write_file` tools run, `bash` asks
-except for its read-only allowlist (it splits commands with tree-sitter,
-`_shell_permission_analysis.py`). Claude Code's `accept edits` is the same:
-Edit/Write run, Bash asks.
+### 2.2 The choice: (a) + (b), the classifier only in `auto`
 
-### 2.2 Recommendation: (d)
+The user chose (a) + (b): an `edit` tool the models like, and a real bash
+parser. The classifier stays out of `accept edits`, so that mode stays a
+rule the user can predict. Codex, for the record, does not parse bash to
+find edits: it parses only to allowlist safe commands and relies on its
+sandbox for the rest.
 
-1. **`apply_patch` is the edit path.** Only an `apply_patch` call counts as
-   an edit. We never try to recognize an edit inside bash.
-2. **A conservative static check** (the safe half of (b)): it recognizes
-   only calls that are clearly safe: `sb …`, read-only commands on paths in
-   the repo (`ls cat rg grep head tail wc git status/log/diff/show…`, the
-   spec's fast-path list §4.2). If it is not sure, the call is "not safe".
-   A wrong "not safe" costs a card, never a silent run.
-3. **Steering, so models use `apply_patch`:**
-   - the bash tool description: "edit files with `apply_patch`, not with
-     `sed -i`, redirections, heredocs or scripts";
-   - one line in the agent prompt;
-   - in `accept edits`, a bash call that *looks* like a write (`sed -i`,
-     `>`/`>>` to a file, `tee`, a heredoc into a file or into
-     `python`/`perl`/`node`) is **denied and continued** the first time,
-     with no card: "accept edits: bash edits ask the user. Use apply_patch:
-     it runs without asking. If bash is really needed, repeat the call and
-     the user will be asked." The model retries with `apply_patch` in the
-     same turn. This check can be loose: a mistake costs one retry.
-4. **The classifier is only for `auto`.** `accept edits` stays a fixed
-   rule the user can predict.
-5. Later, if the data shows Anthropic models keep writing python edits: add
-   an `edit` tool (exact string replace, the format they are trained on).
-   Not in the first build.
+### 2.3 The bash parser (copied from Vibe)
+
+Vibe's parts worth copying (`vibe/core/tools/builtins/_shell_permission_analysis.py`,
+`bash.py`, `vibe/core/tools/arity.py`, `_shell_command_policy.py`):
+
+- **A real grammar.** Vibe parses with tree-sitter-bash, not with regexes.
+  We use the same grammar from Rust (`tree-sitter` + `tree-sitter-bash`
+  crates, a small C build). A hand splitter gets heredocs, quotes and
+  subshells wrong.
+- **Output**: the list of simple commands, each with its program, its
+  arguments after quote removal, its env assignments and its redirections
+  (target, operator), found through `&&`, `||`, `;`, `|`, `( … )`,
+  `{ …; }`, `if`/`for`/`while` bodies, and the string of `bash -c` /
+  `sh -c` (parsed again). Wrappers are looked through: `env X=1`, `time`,
+  `nohup`, `timeout N`, `nice`; `sudo` is a hard rule. `cd <dir>` moves the
+  base directory for the paths of the parts after it.
+- **Unreadable parts** (Vibe's "dynamic nodes"): command substitution
+  `$(…)` and backticks, variable expansion in a program name or a path,
+  process substitution, `eval`, brace and arithmetic expansion. A part with
+  one of these is never allowed by the read list or by a rule's `*`; its
+  card offers "always allow" for the exact text only (Vibe's
+  `invalidates_scope`).
+- **Harmless redirections**: `2>&1` and `>/dev/null` touch no file (Vibe's
+  `_file_redirect_reason`); any other `>`/`>>` names a file.
+
+What the parser gives, per simple command:
+
+1. **Safe read**: the program is in Vibe's read-only list (`cat head tail
+   ls wc grep rg find stat file diff sort uniq cut tr jq pwd which date
+   basename dirname readlink du shasum tree echo`, `git status/log/diff/
+   show/branch/rev-parse/ls-files/blame`, `sb …`), no option guardrail hit
+   (Vibe's list: `find -exec/-delete/-fprint`, `sort -o`, `git diff
+   --output`, `git log --ext-diff`...), and every path argument inside the
+   roots (a read outside the roots asks, as in Vibe: `cat ~/.ssh/id_rsa`
+   is a read).
+2. **Saved rule match**: the command's text matches a rule of this repo
+   (below).
+3. **Plain write**: a known write whose every target is a static path:
+   `>`/`>>` redirection (`cat > f <<EOF`, `echo x >> f`, `printf`), `tee f`,
+   `sed -i`, `mkdir touch cp mv rm ln truncate`. Inside the roots it is an
+   edit (§4).
+4. **Opaque**: everything else, including an interpreter fed inline code
+   (`python3 - <<EOF`, `python -c`, `perl -e`, `node -e`), scripts, build
+   and test tools.
+
+A command runs without a card only when **every** part is a safe read, a
+saved-rule match, or (in `accept edits`) a plain write inside the roots.
+
+**Saved rules ("always allow … here")**, Vibe's and Claude Code's prefix
+rules:
+
+- The card proposes a pattern from the command's **arity** (Vibe's `ARITY`
+  table, copied: `cargo 2`, `cargo run 3`, `npm run 3`, `git 2`,
+  `git stash 3`, `docker compose 3`, `uv run 3`, `make 2`...): the first
+  N words, then `*`. `cargo test -p x` → `cargo test *`; `npm run build`
+  → `npm run build *`; an unknown program → its name + `*`. The user can
+  widen it by hand in the file (`npm run *`).
+- A command with an option guardrail, or an unreadable part, gets its exact
+  text as the rule (Vibe: `git log *` earned by `git log $REF` would cover
+  `git log --ext-diff`).
+- A chain with several unallowed parts: one card, and "always" stores one
+  rule per part ("always allow cargo test, git commit here").
+- Match: the part's text equals the pattern, or starts with the pattern's
+  words then a space (Vibe's `_matches_pattern`). Env assignments before
+  the program are ignored (`GIT_INDEX_FILE=x git commit` matches
+  `git commit *`).
+- Stored per repo (the git common root, so a repo's worktrees share them)
+  in `~/.bise/approvals.toml` (spec §5 format, `prefix` → `pattern`).
+- Hard rules win: `git push *` saved still asks for a push to main or a
+  force push.
+
+### 2.4 Why the agents avoid `apply_patch`
+
+What the code and the threads show:
+
+1. **It is new.** It landed on 2026-09-27. The long threads (designer,
+   bend-hub, main) built their habit before, and a model repeats the edit
+   method it already used in its own thread.
+2. **Nothing outside its own description asks for it.** The system prompt
+   (`prompts/prompt-tool-use.txt`) talks only about `run_typescript`. The
+   bash description invites the other way: "the command may span multiple
+   lines (scripts, heredocs, …)". "This is the preferred tool for file
+   edits" sits only inside `apply_patch`'s own description, last in the
+   tool list.
+3. **The format.** V4A is OpenAI's patch format (GPT-5 and Codex models
+   know it). Anthropic models are trained on an exact string-replace tool
+   (`str_replace`, Claude Code's `Edit`). With no such tool, Opus writes the
+   closest thing it knows: a python script with `s.replace(old, new)`.
+   This task did it too, once.
+4. **The cost of a small change.** A one-line change in V4A needs the
+   `*** Begin Patch` frame, an `@@` line, and context lines with an exact
+   leading space; `sed -i` or a replace is shorter. A new file needs a `+`
+   on every line, where `cat > f <<EOF` needs none.
+5. **Not failures.** Only 7 "chunk not found" errors show against ~358
+   patches (~2 %): the tool works when used.
+
+### 2.5 The `edit` tool and the steering
+
+`edit` (phase 1), the format both families know (Claude Code's `Edit`,
+Vibe's `edit`, Anthropic's `str_replace`):
+
+- Args: `path`, `old_string`, `new_string`, `replace_all` (default false).
+- `old_string` must be found exactly once (or at least once with
+  `replace_all`); else it fails loudly: "not found" or "found N times: add
+  context or set replace_all". No fuzzy match. It does not require a read
+  first (we have no read tool).
+- `old_string` empty and the file absent: creates the file with
+  `new_string` (one tool for small edits and new files).
+- The result: the changed lines with line numbers, like a diff.
+- Pure core in Bend with laws (`bend/core/edit.bend`), next to
+  `core/patch.bend`; the TUI shows it as a diff, like `apply_patch`.
+- `apply_patch` stays for changes over many places or files.
+
+Steering (phase 1):
+
+- Tool list order: `edit` and `apply_patch` before `bash`.
+- System prompt, one line: "Edit files with `edit` (one change) or
+  `apply_patch` (many changes). Don't edit files through bash (`sed -i`,
+  redirections, heredocs, python or perl scripts): those need the user in
+  `accept edits`, and tool edits show as diffs."
+- Bash description: drop the heredocs invitation; add "not for editing
+  files: use `edit` or `apply_patch`".
+- In `accept edits`, an opaque bash command that looks like an edit (an
+  interpreter fed inline code that writes, `perl -pi`) is denied once with
+  the hint: "accept edits: this bash call needs the user. Use `edit` or
+  `apply_patch`: they run without asking. If bash is really needed, repeat
+  the call and the user will be asked." Plain writes the parser can read
+  do not need this: they run.
+- Measured in phase 4: the share of edits made by `edit`/`apply_patch`,
+  before and after, per model.
 
 ## 3. What each mode does
 
-Gated calls: `bash` (top level and `bash()` in programs), `apply_patch`,
-every connector call (`tools.<group>.<fn>`, one gate per call). Never
+Gated calls: `bash` (top level and `bash()` in programs), `edit`,
+`apply_patch`, every connector call (`tools.<group>.<fn>`, one gate per call). Never
 gated: `search_tool_functions`, `skill`, `self.*`, the `run_typescript`
 wrapper (its isolate has no files and no network; its tool calls are
 gated one by one).
 
-| call | `yolo` | `accept edits` | `auto` |
+| call (every part of a bash chain, §2.3) | `yolo` | `accept edits` | `auto` |
 |---|---|---|---|
-| `sb …` (every part of the command) | runs | runs | runs |
-| safe read (fast path, spec §4.2) | runs | runs | runs |
-| `apply_patch`, every path an in-repo edit (§4) | runs | runs | runs |
-| `apply_patch` outside the repo or on a protected path | runs | card | card |
-| bash that looks like a write | runs | denied once with the `apply_patch` hint, card on repeat | classifier |
-| any other bash (`cargo test`, `git commit`, `curl`…) | runs | card | classifier |
-| connector call | runs | card | classifier |
+| `sb …` | runs | runs | runs |
+| safe read inside the roots (§2.3) | runs | runs | runs |
+| `edit` / `apply_patch`, every path inside the roots (§4) | runs | runs | runs |
+| plain bash write (`sed -i`, `>`, `tee`, `mkdir`, `rm`…), every target inside the roots | runs | runs | runs |
+| a saved rule of this repo ("always allow cargo test here") | runs | runs | runs (hard rules still ask) |
+| `edit` / `apply_patch` / plain write outside the roots or on a protected path | runs | card | card |
+| opaque bash that looks like an edit (`python3 - <<EOF`, `perl -pi`) | runs | denied once with the `edit` hint, card on repeat | classifier |
+| any other bash (`cargo test`, `git commit`, `curl`…) | runs | card, with "always allow … here" | classifier |
+| connector call | runs | card, with "always allow this tool here" | classifier |
 | hard-rule hit (spec §4.1: push to main, secrets, shared-tree wipes…) | runs | card, no "always" | card, no "always" |
-| a rule the user saved ("always allow … here") | runs | runs | runs (hard rules still ask) |
 
-Plain words: `accept edits` asks for every command that is not a read or
-`sb`. With 5 agents that is many cards; "always allow cargo test here"
-cuts it down. The user asked for this mode; the doc says the cost.
+Plain words: `accept edits` asks for every command that is not a read, an
+edit, `sb`, or a saved rule. The first hour in a repo gives many cards
+(`cargo test`, `git commit`…); each "always allow … here" removes one kind
+for good in that repo.
 
 ### 3.1 `auto` in detail
 
@@ -128,19 +258,37 @@ provider sees the data. Measured on `mistral-small-latest`: 0.6–0.7 s,
 
 ## 4. What counts as an edit
 
-An `apply_patch` call is an in-repo edit when **every** path in its headers
-(Add, Update, Delete, Move):
+An edit is an `edit` or `apply_patch` call, or a plain bash write the parser
+can read (§2.3), when **every** path it writes (after `..`, `~`, and
+symlinks of the parent directory):
 
-- resolves (after `..`, `~`, symlinks of the parent directory) inside the
-  **agent's own working tree**: the shared workspace for the agents that
-  work there, its private worktree for an agent in a worktree. Not another
-  agent's worktree, not another repo, not `/tmp` (open question 5);
-- is not a protected path: `.git/` (hooks, config, index), `.envrc`,
-  `.bise/` and `.bend-harness/` if present, and the spec's H2 list for
-  paths outside the repo.
+- is inside the **roots**:
+  - the agent's current folder and everything under it: the shared
+    workspace for the agents that work there, its private worktree for an
+    agent in a worktree;
+  - `~/.bise`, from any folder (the user's choice), except the protected
+    paths below;
+  - the agent's own temp dir `~/.bise/tmp/<agent-id>` (part of `~/.bise`);
+- and is not protected: `.git/` (hooks, config, index), `.envrc`, and in
+  `~/.bise`: the hub state (`~/.bise/hubs/`: journal, socket, gate files),
+  `approvals.toml` (the saved rules), `auth.json` (the keys). See open
+  question 1 in the plan: the user said "all of `~/.bise`", these three are
+  the exceptions i recommend.
 
-A delete is an edit. Git recovers a tracked file; an untracked file
-deleted by a patch is lost (said in `/help`).
+Not a root: `/tmp`, another agent's worktree, another repo, the rest of `~`.
+
+**The agent's temp dir.** Each agent gets `~/.bise/tmp/<agent-id>`: the hub
+creates it at spawn and sets `TMPDIR`, `TMP` and `TEMP` to it in the
+agent's tool env (`rust/switchboard/src/tools_env.rs`). Tools that honor
+`TMPDIR` (`mktemp`, cargo, python's `tempfile`) write there. A literal
+`/tmp/...` path is outside the roots: a card in `accept edits`; the prompt
+says "use `$TMPDIR`, not `/tmp`". The hub deletes the dir when the agent is
+dropped, and at start it deletes the dirs of agents that no longer exist.
+`<agent-id>` is the agent's unique id, not its name (names come back).
+
+A delete is an edit. Git recovers a tracked file; an untracked file deleted
+by an edit is lost (said in `/help`). A recursive delete of a root itself
+(`rm -rf .`, `rm -rf ~/.bise`) is a hard rule (H6).
 
 ## 5. The mode: switch, show, remember
 
@@ -202,6 +350,8 @@ cards, one at a time, with a counter. Designer's look:
 - Reason line: in `auto`, the classifier's own words, one sentence (~80
   chars). In `accept edits`: "accept edits: commands ask first." `yolo`
   never shows a card.
+- A chain shows only the parts that need you; the parts already allowed
+  (reads, `sb`, saved rules) stay dim above them.
 - Hard rule: no option 2; the reason says why it always asks: "it rewrites
   main. this one always asks."
 - Edit outside the repo: "? api-v2 wants to edit a file outside the repo",
@@ -211,10 +361,11 @@ cards, one at a time, with a counter. Designer's look:
 - Keys: `1`/`2`/`3` on an empty composer; typed text + ⏎ = no, with the text
   as the note to the agent. The box never opens by itself while you type
   (its row pulses once); it may open by itself on an empty, idle composer.
-- "always allow X here" stores the command prefix (`git push`, `cargo
-  test`: program + subcommand words, no flags) for this repo in
-  `~/.bise/approvals.toml` (spec §5, path moved from `~/.bend-harness`).
-  For a connector: the whole tool. The file is a protected path.
+- "always allow X here" stores the parser's pattern (§2.3: `cargo test *`,
+  `npm run build *`, or the exact text for a guarded or unreadable
+  command) for this repo in `~/.bise/approvals.toml` (spec §5 format, path
+  moved from `~/.bend-harness`). The card names the pattern it stores. For
+  a connector: the whole tool. The file is a protected path.
 - Identical calls from several agents (same tool, arguments, repo) are one
   card, "? 3 agents want to run"; one answer answers all.
 - Once answered, it folds to one line in the feed of the agent in view and
@@ -256,14 +407,13 @@ and fold the card.
   needs the user. In a chain (`sb report … && git push`), each part is
   judged; the chain runs only if every part may run.
 - **Background jobs** (`cmd &`, `nohup`, a dev server): judged once, when
-  launched. What the process does later is not seen by the gate. In
+  launched (the parser looks through `nohup` and `&`). What the process does later is not seen by the gate. In
   `accept edits` a background launch is a command, so it asks.
 - **`run_typescript` programs**: each tool call inside is gated on its own;
   a card pauses the program at that call.
-- **Timeouts**: none by default. A waiting agent costs nothing, and an
-  auto-deny teaches agents to work around the gate. `approvals_timeout = N`
-  (minutes) is an option: an unanswered card then denies with "the user
-  did not answer in N min; do something else or ask later".
+- **No time limit** (the user's decision). A card waits as long as needed:
+  a waiting agent costs nothing, and an auto-deny teaches agents to work
+  around the gate. There is no `approvals_timeout` option.
 - **You are away**: a terminal notification (OSC 9/777, else the bell) when a
   card opens and the terminal is not focused. TUI closed, hub running: the
   cards stay; the next `bise` shows them.
@@ -283,6 +433,15 @@ and fold the card.
   the user's own words, strict JSON, policy re-applied in code, hard rules
   first) reduce this; they do not remove it. `auto` stops mistakes and
   casual prompt injection, not a determined attacker.
+- **The parser reads text, not effects.** A saved `cargo test *` runs
+  whatever the tests do; `make *` runs whatever the Makefile says. An
+  unreadable part (`$(…)`, a variable as a path) is never matched by a
+  `*`, but a readable command can still do more than its name says.
+- **`~/.bise` as a root.** It holds the hub state, the saved rules and the
+  keys. If an agent could edit them without a card, it could forge a card's
+  answer, grant itself "always allow *", or read and send the keys. So
+  `hubs/`, `approvals.toml` and `auth.json` stay protected (§4), even though
+  the rest of `~/.bise` is a root.
 - **`accept edits` is predictable but not tight**: an in-repo edit can
   change a file that runs later (`Makefile`, `package.json` scripts, a test).
   The next command that runs it asks, but its card shows `make`, not what
@@ -309,8 +468,13 @@ and fold the card.
 | keys `1/2/3` + `alt+1/2/3`, `alt+r` note | `1/2/3` on an empty composer; type + ⏎ = no with a note (cards round 2) |
 | `approvals_model`, default `small_model` | the `classify` role (BISE-298), default the `small` role |
 | memory in `~/.bend-harness/approvals.toml` | `~/.bise/approvals.toml` |
-| in-project `apply_patch` skips the model (decision 4) | settled: it is what `accept edits` means |
-| bash edits: fast path does not know them | `accept edits`: denied once with the `apply_patch` hint, then a card |
+| in-project `apply_patch` skips the model (decision 4) | settled: it is what `accept edits` means, with `edit` and plain bash writes |
+| bash split on `&&`/`;`/`|` by hand, a small tokenizer | a real parser (tree-sitter-bash, Vibe's analysis), used for reads, saved rules and plain writes |
+| "always" stores program + subcommand words | Vibe's arity table + `*`; exact text for guarded or unreadable commands |
+| writable roots: the workspace/worktree, `/tmp`, `$TMPDIR` | the current folder and below, `~/.bise` (except hub state, saved rules, keys), a per-agent temp dir `~/.bise/tmp/<agent-id>`; no `/tmp` |
+| `approvals_timeout` option | no time limit, no option |
+| tools: `bash`, `apply_patch` | + `edit` (exact string replace), steering toward it |
+| opaque bash edits | `accept edits`: denied once with the `edit` hint, then a card |
 | paths `runtime/`, `hub/`, `LAWS.bend` | `bend/runtime/`, `bend/hub/`, `bend/LAWS.bend` |
 | ids BISE-230..239 | taken at launch from HEAD's tracker (next free today: BISE-301) |
 
