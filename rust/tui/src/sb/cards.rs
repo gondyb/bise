@@ -434,7 +434,7 @@ impl Sb {
 /// in accent, failures in error, the rest plain text.
 pub(super) fn kind_look(kind: &str) -> (u8, &'static str, Color) {
     match kind {
-        "approval" => (0, theme::G_NEEDS_YOU, theme::accent()),
+        "approval" | "confirm" => (0, theme::G_NEEDS_YOU, theme::accent()),
         "question" => (1, theme::G_NEEDS_YOU, theme::accent()),
         "blocked" => (2, theme::G_NEEDS_YOU, theme::accent()),
         "failed" => (3, theme::G_FAILED, theme::error()),

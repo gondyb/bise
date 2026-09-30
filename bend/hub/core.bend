@@ -69,7 +69,7 @@ type In is Data:
 type CardK is Data:
   KQuestion{}
   KDrop{}
-  KPlain{}
+  KConfirm{}
   KOther{}
 
 type Cmd is Data:
@@ -87,6 +87,7 @@ type Cmd is Data:
   CRename{}
   CRestore{}
   CIsolate{}
+  CWithdraw{}
 
 # the hub after an input: the new state and its effects, or, when a git
 # answer is missing, the hub unchanged and the query (the daemon replays
@@ -466,10 +467,19 @@ def note_main(-o: M.St, +cx: X.Cx<o>, +text: String) -> X.Cx<o>:
   emit(o, cx, M.EMainNote{text, now(o, cx)}, Unit{}, Unit{}, Unit{})
 
 # opens card number next_card (the caller reads it first when it needs it)
+# in the user's inbox: `kind` is a user kind (M.user_kind), never an
+# agent's traffic (BISE-299)
 def open_card(-o: M.St, +cx: X.Cx<o>, +kind: String, +agent: String, +text: String, +for_msg: Maybe<&2, Nat>) -> X.Cx<o>:
   +id = M.St.next_card(st(o, cx))
   +cx2 = emit(o, cx, M.ECardOpened{M.Card{id, kind, agent, text, for_msg, now(o, cx)}}, {==}, Unit{}, Unit{})
   line(o, cx2, M.MAIN(), "card", cat(["#", ns(id), " ", kind, " @", agent, " : ", text]))
+
+# BISE-299, the hook for tool-call confirmations: a tool call that needs
+# the user opens a `confirm` card for `agent` straight in the user's
+# inbox, whoever runs it; the user's answer goes to `agent` (answer.kind).
+# Nothing calls it yet: the confirmation gate is not built.
+def open_confirm(-o: M.St, +cx: X.Cx<o>, +agent: String, +text: String) -> X.Cx<o>:
+  open_card(o, cx, "confirm", agent, text, None{})
 
 def close_ids(-o: M.St, ids: List<&2, Nat>, +cx: X.Cx<o>, +res: String) -> X.Cx<o>:
   match ids:
@@ -690,21 +700,6 @@ def send.waiter(-o: M.St, mw: Maybe<&2, X.Waiter>, +cx: X.Cx<o>, +m: M.Msg) -> X
     case None{}:
       (pump(o, cx, M.Msg.to(m)), SOk{m})
 
-def question_for(cs: List<&2, M.Card>, +r: Nat) -> List<&2, Nat>:
-  match cs:
-    case Nil{}:
-      Nil{}
-    case Con{+c, +t}:
-      +rest = question_for(t, r)
-      Bool.pick(List<&2, Nat>, String.eq(M.Card.kind(c), "question") && M.maybe_nat_is(M.Card.for_msg(c), r), M.Card.id(c) <> rest, rest)
-
-def send.cards(-o: M.St, r: Maybe<&2, Nat>, +cx: X.Cx<o>, +from: String) -> X.Cx<o>:
-  match r:
-    case None{}:
-      cx
-    case Some{+id}:
-      close_ids(o, question_for(M.St.cards(st(o, cx)), id), cx, String.append("answered via @", from))
-
 def quiet_ok(a: Bool, e: Bool) -> {Bool.and(a, Bool.and(e, Bool.not(a))) == False{} : Bool}:
   match a e:
     case True{} True{}:
@@ -720,10 +715,9 @@ def send.emit(-o: M.St, +cx: X.Cx<o>, +s: Snd, +thread: Nat) -> X.Cx<o> & SendR:
       # an automatic reply never asks (law auto_never_asks); the id is the
       # next free one (law msg_ids_fresh)
       +m = {M.Msg{M.St.next_msg(st(o, cx)), thread, from, to, reply_to, Bool.and(expect, Bool.not(auto)), auto, text, now(o, cx), plain, queued, via} : M.Msg}
-      +cx1 = emit(o, cx, M.EMsgSent{m}, {==}, quiet_ok(auto, expect), Unit{})
-      # a reply to the message a question card stands for answers the
-      # card; the user's own answers close their card in answer_card
-      +cx2 = send.cards(o, Bool.pick(Maybe<&2, Nat>, String.eq(from, M.USER()), None{}, reply_to), cx1, from)
+      # a card is closed by the user's answer only (answer_card): no reply
+      # here touches the user's inbox (BISE-299)
+      +cx2 = emit(o, cx, M.EMsgSent{m}, {==}, quiet_ok(auto, expect), Unit{})
       +w = Bool.pick(Maybe<&2, X.Waiter>, queued, None{},
         waiter_pick(X.R.waiters(rr(o, cx2)), to, reply_to, expect && Bool.not(plain) && Bool.not(String.eq(from, M.USER()))))
       send.waiter(o, w, cx2, m)
@@ -1356,7 +1350,7 @@ def is_yes(+t: String) -> Bool:
 def card_kind(+k: String) -> CardK:
   Bool.pick(CardK, String.eq(k, "question"), KQuestion{},
     Bool.pick(CardK, String.eq(k, "drop"), KDrop{},
-      Bool.pick(CardK, String.eq(k, "blocked") || String.eq(k, "failed") || String.eq(k, "restart"), KPlain{}, KOther{})))
+      Bool.pick(CardK, String.eq(k, "confirm"), KConfirm{}, KOther{})))
 
 def answer.kind(-o: M.St, k: CardK, +cx: X.Cx<o>, +c: M.Card, +text: String) -> X.Cx<o>:
   match k:
@@ -1364,7 +1358,9 @@ def answer.kind(-o: M.St, k: CardK, +cx: X.Cx<o>, +c: M.Card, +text: String) -> 
       answer.q(o, for_msg_of(st(o, cx), M.Card.for_msg(c)), cx, c, text)
     case KDrop{}:
       answer.drop(o, is_yes(text), cx, c)
-    case KPlain{}:
+    case KConfirm{}:
+      # the confirmation hook (BISE-299): the user's answer goes to the
+      # agent that ran the tool
       answer.plain.sent(o, send(o, cx, msg(M.USER(), M.Card.agent(c), text, False{}, None{}, True{}, False{})), M.Card.id(c))
     case KOther{}:
       close_card(o, cx, M.Card.id(c), "vue")
@@ -1545,17 +1541,14 @@ def passthrough(-o: M.St, +cx: X.Cx<o>, +focus: String, +l: String) -> X.Cx<o>:
     u => out(o, dirty(o, set_run(o, cx, focus, M.RBusy{})), [J.kv("fx", J.JStr{"passthrough"}), J.kv("agent", J.JStr{focus}), J.kv("line", J.JStr{l})]),
     u => notice(o, cx, "the agent is not idle: retry at the end of its turn"))
 
-def focus.cards(-o: M.St, +cx: X.Cx<o>, +f: String) -> X.Cx<o>:
-  pick_lazy(X.Cx<o>, String.eq(f, M.MAIN()), u => cx, u => close_cards(o, cx, f, ["done"], "vue"))
-
 # the daemon computed what main learns about a direct exchange (RFC
-# 0001 §7.4); a task's view closes its done cards
+# 0001 §7.4)
 def focus(-o: M.St, +cx: X.Cx<o>, +f: String, note: Maybe<&2, String>, +direct: String) -> X.Cx<o>:
   match note:
     case Some{+n}:
-      focus.cards(o, line(o, note_main(o, cx, n), M.MAIN(), "direct", direct), f)
+      line(o, note_main(o, cx, n), M.MAIN(), "direct", direct)
     case None{}:
-      focus.cards(o, cx, f)
+      cx
 
 # ---- the agents' `sb` requests (RFC 0003 §4, RFC 0001 §7.2, §7.5) ----
 
@@ -1613,7 +1606,7 @@ def open_question.go(m: Maybe<&2, String>, +s: M.St, +me: String) -> Maybe<&2, N
 def open_question(+s: M.St, +asker: String, +me: String) -> Maybe<&2, Nat>:
   open_question.go(M.resolve(s, asker), s, me)
 
-def req_send(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) -> X.Cx<o>:
+def req_send.go(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) -> X.Cx<o>:
   +to = C.get_s(q, "to")
   +expect = C.get_b(q, "expect_reply")
   # a plain message to an agent that asked us something answers it
@@ -1621,6 +1614,27 @@ def req_send(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) -> 
     Bool.pick(Maybe<&2, Nat>, expect, None{}, open_question(st(o, cx), to, from)))
   req_send.res(o, send_why(o, cx, Snd{from, to, C.get_s(q, "text"), expect, reply_to, False{}, False{}, C.get_b(q, "queued"), None{}}, C.get_s(q, "why")), token)
 
+
+# BISE-299: a question main escalated (`sb card --for`) is in the user's
+# inbox: only the user answers it; an agent's reply to it is refused
+def req_send.held(-o: M.St, held: Maybe<&2, Nat>, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) -> X.Cx<o>:
+  match held:
+    case Some{+id}:
+      +r = C.get_nat(q, "reply_to")
+      reply_err(o, cx, token, cat([mid(r), " is in the user's inbox (card #", ns(id), "): only the user answers it",
+        Bool.pick(String, String.eq(from, M.MAIN()), cat([". It is moot? `sb card --withdraw ", ns(id), " \"why\"` takes it back first"]), "")]))
+    case None{}:
+      req_send.go(o, cx, token, from, q)
+
+def req_send.hold(+s: M.St, r: Maybe<&2, Nat>) -> Maybe<&2, Nat>:
+  match r:
+    case None{}:
+      None{}
+    case Some{+id}:
+      M.card_holding(M.St.cards(s), id)
+
+def req_send(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) -> X.Cx<o>:
+  req_send.held(o, req_send.hold(st(o, cx), C.opt_nat(J.get(q, "reply_to"))), cx, token, from, q)
 def wait.park(-o: M.St, +cx: X.Cx<o>, +w: X.Waiter) -> X.Cx<o>:
   +r = rr(o, cx)
   +cx2 = set_r(o, cx, X.R.with_waiters(r, M.snoc(X.Waiter, X.R.waiters(r), w)))
@@ -1681,6 +1695,18 @@ def req_ask.res(-o: M.St, p: X.Cx<o> & SendR, +token: Nat, +from: String, +timeo
     case (+cx, SOk{+m}):
       wait(o, cx, token, from, M.Msg.id(m), timeout)
 
+def fst(-o: M.St, p: X.Cx<o> & SendR) -> X.Cx<o>:
+  match p:
+    case (+cx, _):
+      cx
+
+# ---- the REPLs ----
+
+
+# a notification of the hub to main: it wakes main like any message
+def notify_main(-o: M.St, +cx: X.Cx<o>, +text: String) -> X.Cx<o>:
+  fst(o, send(o, cx, msg(M.HUB(), M.MAIN(), text, False{}, None{}, False{}, False{})))
+
 def decl_of(+s: String) -> M.Decl:
   Bool.pick(M.Decl, String.eq(s, "done"), M.DDone{}, Bool.pick(M.Decl, String.eq(s, "blocked"), M.DBlocked{}, M.DWorking{}))
 
@@ -1688,8 +1714,10 @@ def req_status(-o: M.St, +cx: X.Cx<o>, +token: Nat, +from: String, +is_main: Boo
   +status = C.get_s(q, "status")
   +note = C.get_s(q, "note")
   +cx2 = emit(o, cx, M.EDeclared{from, Some{decl_of(status)}, note}, Unit{}, Unit{}, Unit{})
+  # a blocked task is main's to handle (BISE-299): main escalates to the
+  # user with `sb card` when it needs them
   +cx3 = pick_lazy(X.Cx<o>, String.eq(status, "blocked") && Bool.not(is_main),
-    u => open_card(o, cx2, "blocked", from, Bool.pick(String, String.is_empty(note), "blocked", note), None{}), u => cx2)
+    u => notify_main(o, cx2, cat(["@", from, " is blocked: ", Bool.pick(String, String.is_empty(note), "(no note)", note)])), u => cx2)
   reply(o, cx3, token, ok_body(Nil{}))
 
 def report_lines(xs: List<&2, String>) -> List<&2, String>:
@@ -1713,11 +1741,11 @@ def req_report.sent(-o: M.St, p: X.Cx<o> & SendR, +token: Nat) -> X.Cx<o>:
 
 def req_report.kind(-o: M.St, +cx: X.Cx<o>, +from: String, +kind: String, +summary: String) -> X.Cx<o>:
   pick_lazy(X.Cx<o>, String.eq(kind, "done"),
-    u => open_card(o, emit(o, cx, M.EDeclared{from, Some{M.DDone{}}, ""}, Unit{}, Unit{}, Unit{}), "done", from, summary, None{}),
+    u => emit(o, cx, M.EDeclared{from, Some{M.DDone{}}, ""}, Unit{}, Unit{}, Unit{}),
     u => pick_lazy(X.Cx<o>, String.eq(kind, "blocked"),
-      u => open_card(o, emit(o, cx, M.EDeclared{from, Some{M.DBlocked{}}, summary}, Unit{}, Unit{}, Unit{}), "blocked", from, summary, None{}),
+      u => emit(o, cx, M.EDeclared{from, Some{M.DBlocked{}}, summary}, Unit{}, Unit{}, Unit{}),
       u => pick_lazy(X.Cx<o>, String.eq(kind, "failed"),
-        u => open_card(o, emit(o, cx, M.ELifecycle{from, M.LFailed{}, Some{summary}}, Unit{}, Unit{}, Unit{}), "failed", from, summary, None{}),
+        u => emit(o, cx, M.ELifecycle{from, M.LFailed{}, Some{summary}}, Unit{}, Unit{}, Unit{}),
         u => cx)))
 
 def req_report.go(-o: M.St, is_main: Bool, +cx: X.Cx<o>, +token: Nat, +from: String, +q: J.Json) -> X.Cx<o>:
@@ -1827,14 +1855,34 @@ def req_card(-o: M.St, for_msg: Maybe<&2, Nat>, +cx: X.Cx<o>, +token: Nat, +text
     case Some{+id}:
       req_card.msg(o, M.msg_of(st(o, cx), id), cx, token, text, id)
 
-# `sb close N ["note"]`: main files a card, with a short resolution
+# `sb close N ["note"]`: a card in the user's inbox is the user's to
+# answer or close (BISE-299): refused; an older journal's card of another
+# kind (closed at boot anyway) closes with a short resolution
 def req_close(-o: M.St, m: Maybe<&2, M.Card>, +cx: X.Cx<o>, +token: Nat, +id: Nat, +note: String) -> X.Cx<o>:
   match m:
     case None{}:
       reply_err(o, cx, token, String.append("no open card #", ns(id)))
-    case Some{_}:
+    case Some{+c}:
       +res = Bool.pick(String, String.is_empty(M.one_line(note)), "closed by main", String.append("main: ", M.one_line(note)))
-      reply(o, close_card(o, cx, id, res), token, ok_body([J.kv("card", J.JNum{id})]))
+      pick_lazy(X.Cx<o>, M.user_kind(M.Card.kind(c)),
+        u => reply_err(o, cx, token, cat(["card #", ns(id), " is in the user's inbox: only the user answers or closes it (your own question, now moot: sb card --withdraw ", ns(id), " \"why\")"])),
+        u => reply(o, close_card(o, cx, id, res), token, ok_body([J.kv("card", J.JNum{id})])))
+
+# `sb card --withdraw N "why"` (BISE-299): main takes back its own
+# escalation (a question or a drop, never a confirmation) when it is moot;
+# the user sees it withdrawn in main's feed, and the question it held is
+# main's again
+def req_withdraw(-o: M.St, m: Maybe<&2, M.Card>, +cx: X.Cx<o>, +token: Nat, +id: Nat, +why: String) -> X.Cx<o>:
+  match m:
+    case None{}:
+      reply_err(o, cx, token, String.append("no open card #", ns(id)))
+    case Some{+c}:
+      +k = M.Card.kind(c)
+      pick_lazy(X.Cx<o>, String.eq(k, "question") || String.eq(k, "drop"),
+        u => pick_lazy(X.Cx<o>, String.is_empty(M.one_line(why)),
+          u => reply_err(o, cx, token, "say why: sb card --withdraw N \"why\" (the user reads it)"),
+          u => reply(o, close_card(o, cx, id, String.append("withdrawn by main: ", M.one_line(why))), token, ok_body([J.kv("card", J.JNum{id})]))),
+        u => reply_err(o, cx, token, cat(["card #", ns(id), " is a ", k, ": only the user answers or closes it"])))
 
 # `sb rename <task> <new-name>`: the same rules as the user's /rename
 def req_rename.go(-o: M.St, ok: Bool, +cx: X.Cx<o>, +token: Nat, +old: String, +new: String) -> X.Cx<o>:
@@ -1876,7 +1924,8 @@ def cmd_tag(+c: String) -> Cmd:
   Bool.pick(Cmd, String.eq(c, "close"), CClose{},
   Bool.pick(Cmd, String.eq(c, "rename"), CRename{},
   Bool.pick(Cmd, String.eq(c, "restore"), CRestore{},
-  Bool.pick(Cmd, String.eq(c, "isolate"), CIsolate{}, CCard{})))))))))))))
+  Bool.pick(Cmd, String.eq(c, "isolate"), CIsolate{},
+  Bool.pick(Cmd, String.eq(c, "withdraw"), CWithdraw{}, CCard{}))))))))))))))
 
 def req.main.go(-o: M.St, c: Cmd, +cx: X.Cx<o>, +token: Nat, +q: J.Json) -> X.Cx<o>:
   match c:
@@ -1896,6 +1945,8 @@ def req.main.go(-o: M.St, c: Cmd, +cx: X.Cx<o>, +token: Nat, +q: J.Json) -> X.Cx
       req_task.res(o, restore_task(o, cx, C.get_s(q, "agent")), token)
     case CIsolate{}:
       req_task.res(o, isolate_task(o, cx, C.get_s(q, "agent")), token)
+    case CWithdraw{}:
+      req_withdraw(o, M.card_of(M.St.cards(st(o, cx)), C.get_nat(q, "card")), cx, token, C.get_nat(q, "card"), C.get_s(q, "why"))
     case _:
       req_card(o, C.opt_nat(J.get(q, "for")), cx, token, C.get_s(q, "text"))
 
@@ -1963,8 +2014,7 @@ def agent_decl(m: Maybe<&2, M.Agent>) -> Maybe<&2, M.Decl>:
 def turn.resume(-o: M.St, go: Bool, +cx: X.Cx<o>, +agent: String) -> X.Cx<o>:
   match go:
     case True{}:
-      +cx2 = emit(o, cx, M.EDeclared{agent, None{}, ""}, Unit{}, Unit{}, Unit{})
-      close_cards(o, cx2, agent, ["blocked", "done"], "reprise")
+      emit(o, cx, M.EDeclared{agent, None{}, ""}, Unit{}, Unit{}, Unit{})
     case False{}:
       cx
 
@@ -2000,7 +2050,7 @@ def touch.others(-o: M.St, others: List<&2, String>, +cx: X.Cx<o>, +agent: Strin
       cx
     case Con{+h, +t}:
       +text = cat([path, " is changed by @", agent, " and by @", String.join({h <> t : List<&2, String>}, ", @")])
-      note_main(o, open_card(o, cx, "overlap", agent, text, None{}), String.append("file overlap: ", text))
+      note_main(o, cx, String.append("file overlap: ", text))
 
 def overlap_hit(m: Maybe<&2, M.Agent>, +agent: String, +path: String) -> Bool:
   match m:
@@ -2049,17 +2099,6 @@ def repl_ready(-o: M.St, +cx: X.Cx<o>, +agent: String) -> X.Cx<o>:
   +cx2 = upd_rt(o, cx, X.Rt.with_waiting(X.Rt.with_run(rt(o, cx, agent), M.RIdle{}), False{}))
   pump(o, dirty(o, cx2), agent)
 
-def fst(-o: M.St, p: X.Cx<o> & SendR) -> X.Cx<o>:
-  match p:
-    case (+cx, _):
-      cx
-
-# a notification of the hub to main: it wakes main like any message
-def notify_main(-o: M.St, +cx: X.Cx<o>, +text: String) -> X.Cx<o>:
-  fst(o, send(o, cx, msg(M.HUB(), M.MAIN(), text, False{}, None{}, False{}, False{})))
-
-# ---- the REPLs ----
-
 def crash.restart(-o: M.St, +cx: X.Cx<o>, +agent: String, +n: Nat, +reason: String) -> X.Cx<o>:
   +cx2 = set_run(o, cx, agent, M.RStarting{})
   +cx3 = out(o, cx2, [J.kv("fx", J.JStr{"spawn"}), J.kv("agent", J.JStr{agent}),
@@ -2071,7 +2110,7 @@ def crash.restart(-o: M.St, +cx: X.Cx<o>, +agent: String, +n: Nat, +reason: Stri
 def crash.fail(-o: M.St, +cx: X.Cx<o>, +agent: String, +n: Nat, +reason: String) -> X.Cx<o>:
   +why = cat(["the REPL crashed ", ns(n), " times: ", reason])
   +cx2 = emit(o, cx, M.ELifecycle{agent, M.LFailed{}, Some{why}}, Unit{}, Unit{}, Unit{})
-  +cx3 = open_card(o, cx2, "failed", agent, why, None{})
+  +cx3 = line(o, cx2, M.MAIN(), "warn", cat(["@", agent, " failed: ", why]))
   pick_lazy(X.Cx<o>, String.eq(agent, M.MAIN()), u => cx3,
     u => notify_main(o, cx3, cat(["agent @", agent, " failed: ", why, ". It is not restarted anymore. A new message from you or the user restarts it; otherwise tell the user."])))
 
@@ -2129,9 +2168,13 @@ def boot.each(-o: M.St, names: List<&2, String>, +cx: X.Cx<o>) -> X.Cx<o>:
     case Con{+n, +rest}:
       boot.each(o, rest, boot.one(o, M.get_agent(st(o, cx), n), cx, n))
 
-# the daemon started: spawn every live agent
+# the daemon started: spawn every live agent. An older journal's cards
+# that are not the user's (done, blocked, failed, overlap: the agents'
+# traffic, main's since BISE-299) close first; their reports and notes
+# are in main's thread already
 def boot(-o: M.St, +cx: X.Cx<o>) -> X.Cx<o>:
-  boot.each(o, M.St.order(st(o, cx)), cx)
+  +cx2 = close_ids(o, M.legacy_cards(M.St.cards(st(o, cx))), cx, "moved to main's inbox")
+  boot.each(o, M.St.order(st(o, cx2)), cx2)
 
 def tick.each(-o: M.St, late: List<&2, X.Waiter>, +cx: X.Cx<o>) -> X.Cx<o>:
   match late:

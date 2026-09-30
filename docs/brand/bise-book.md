@@ -547,7 +547,28 @@ implémentons la proposal »). The place is the **inbox**; what waits in it
 keeps its own noun (a question, an approval), never "card" on screen (the
 code keeps `Card`). One rule for the arrows: **an empty composer, they
 belong to the inbox; text in the composer, they belong to your text.** In
-the thread they never touch the inbox until `ctrl+g`. Three levels:
+the thread they never touch the inbox until `ctrl+g`.
+
+**Whose inbox (BISE-299, the user: « il faut des inbox séparées pour les
+agents et pour l'utilisateur »).** The inbox is yours and holds only what
+needs you: main's escalations (`sb card`, `sb card --for <msg>`: your
+answer goes to the task that asked; main's `sb drop` of a task you must
+confirm) and, once the gate exists, tool-call confirmations (kind
+`confirm`, straight to you whoever runs the tool). An item's inbox is set
+by its kind when it opens, never by who answers first. **Only you answer
+or close it**: main's or a task's reply to an escalated question is
+refused, `sb close` too; main may take back its own question when it is
+moot (`sb card --withdraw N "why"`, a dim `#N withdrawn by main: why` in
+main's feed). The agents' traffic (their questions to main, reports,
+blocked, file overlaps, crashes) is **main's inbox**: it never opens an
+item here. You still see it, never asked: the `@`/report lines of main's
+feed, the agent views, a dim `@ 2` on main's row of the panel while two
+questions wait for main, a dim `?` on a blocked task's row (the accent
+`?` and "needs you" come only from an item in your inbox). An older
+journal's items of the other kinds (done, blocked, failed, overlap) close
+at the hub's start, "moved to main's inbox".
+
+Three levels:
 
 - **The quick look: the strip.** Right above the divider (1 blank row
   above it from 24 rows), while something waits: a faint top row

@@ -1270,7 +1270,8 @@ fn report_lines(from: &str, kind: &str, body: &str, open: bool, width: usize) ->
     let (glyph, color, st) = match kind {
         "done" => (done_glyph(), accent(), text()),
         k if k.contains("fail") => (G_FAILED, error(), text()),
-        "blocked" => (G_NEEDS_YOU, accent(), text()),
+        // BISE-299: main's to handle, not yours: dim
+        "blocked" => (G_NEEDS_YOU, dim(), text()),
         _ => (G_STARTING, dim(), dim()),
     };
     let first = body.lines().next().unwrap_or("").trim();

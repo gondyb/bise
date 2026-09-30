@@ -1,0 +1,58 @@
+"""The user's inbox holds only what needs the user (BISE-299), in a real
+terminal (tmux) against the fake provider: a task asks main and reports
+blocked, a second one asks main too; none of it shows in the inbox strip
+above the divider (it is main's traffic, in main's feed). Main escalates
+with `sb card`: one row in the strip; the user answers it and it leaves.
+
+python3 -u tests/tui_inbox_split_tmux.py
+"""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from tui_tmux import tui_session, run, in_view  # noqa: E402
+
+COLS, ROWS = 150, 42
+
+
+def main():
+    with tui_session(COLS, ROWS) as t:
+        t.wait("bise :*")
+        t.wait(" idle")
+        # two agents message main: questions, a blocked report
+        t.typed('/new ia: {{bash: sb send main --expect-reply "ia asks main" && sb report blocked "ia is stuck on a key"}}')
+        t.keys("Enter")
+        t.wait("ia is stuck on a key", 60)
+        t.typed('/new ib: {{bash: sb send main --expect-reply "ib asks main"}}')
+        t.keys("Enter")
+        sc = t.wait("ib asks main", 60)
+        t.wait_re(in_view("main"))
+        # a few frames later, still nothing for the user: no strip, no
+        # "needs you" in the header
+        time.sleep(1.5)
+        sc = t.screen()
+        for gone in ("waiting for you", "ctrl+g select", "needs you", "ia needs you"):
+            assert gone not in sc, (gone, sc)
+        # main escalates: one row in the user's inbox
+        t.typed('[[bash: sb card "ship the export on friday?"]]')
+        t.keys("Enter")
+        t.wait("waiting for you", 60)
+        sc = t.wait("? main · ship the export on friday?")
+        assert "ia asks main ·" not in sc and "? ia ·" not in sc, sc
+        # only the user answers it: open it, type, ⏎; it leaves the strip
+        t.keys("C-g")
+        t.wait("esc back")
+        t.keys("Enter")
+        t.wait("your answer")
+        t.typed("yes friday")
+        t.wait("⏎ send as your answer")
+        t.keys("Enter")
+        t.wait_gone("waiting for you", 20)
+        t.wait("you said yes friday")
+        time.sleep(0.3)
+        print("PASS tui inbox split")
+
+
+if __name__ == "__main__":
+    run(main)

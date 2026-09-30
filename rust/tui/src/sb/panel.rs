@@ -14,7 +14,9 @@ pub(super) fn glyph(status: &str, tick: u32, motion: crate::gust::Motion) -> (&'
         "working" => crate::gust::cell(motion),
         "starting" => starting_frame(tick),
         "waiting" => (G_WAITING, text()),
-        "blocked" => (G_NEEDS_YOU, accent()),
+        // BISE-299: a blocked task is main's to handle, not yours: the
+        // same `?`, dim; the accent comes from a card in your inbox
+        "blocked" => (G_NEEDS_YOU, dim()),
         "done" => (crate::theme::done_glyph(), accent()),
         "failed" => (G_FAILED, error()),
         "idle" => (G_IDLE, dim()),
@@ -78,13 +80,14 @@ fn panel_title_keys() -> &'static str {
 
 /// The agent waits on you: it is blocked, or one of its cards asks you
 /// something.
+/// BISE-299: only a card of your inbox about `a` (main escalated its
+/// question, a confirmation) needs you; a blocked task is main's.
 pub(super) fn needs_you(sb: &Sb, a: &Agent) -> bool {
-    a.status == "blocked"
-        || (!matches!(a.status.as_str(), "failed" | "stopped" | "archived")
-            && sb
-                .cards
-                .iter()
-                .any(|c| c.agent == a.name && matches!(c.kind.as_str(), "question" | "blocked")))
+    !matches!(a.status.as_str(), "failed" | "stopped" | "archived")
+        && sb
+            .cards
+            .iter()
+            .any(|c| c.agent == a.name && matches!(c.kind.as_str(), "question" | "confirm" | "approval"))
 }
 
 /// A duration in the panel: `40s`, `12m`, `3h`, `2d`.
@@ -118,6 +121,11 @@ fn right_of(app: &App, sb: &Sb, a: &Agent) -> (String, Color) {
         "idle" => fill().map_or_else(|| "idle".into(), |f| format!("idle · {}", f)),
         s => s.to_string(),
     };
+    // BISE-299: main's inbox, dim, only when something waits there
+    if a.main && a.inbox > 0 {
+        let n = format!("{} {}", crate::theme::glyph(G_MSG), a.inbox);
+        return (if s.is_empty() { n } else { format!("{} · {}", n, s) }, dim());
+    }
     (s, dim())
 }
 
@@ -1676,7 +1684,27 @@ mod chrome_tests {
         for (n, st) in [("auth-fix", "working"), ("release", "working"), ("big", "working"), ("api-v2", "waiting"), ("docs", "blocked"), ("bench", "done"), ("ideas", "idle")] {
             sb.agents.push(Agent { name: n.into(), status: st.into(), ..Agent::default() });
         }
+        // BISE-299: docs needs you through its card in your inbox (main
+        // escalated its question), not through its blocked status
+        sb.cards.push(Card { id: 7, kind: "question".into(), agent: "docs".into(), ..Card::default() });
         app
+    }
+
+    /// BISE-299: a blocked task without a card in your inbox is main's:
+    /// its `?` is dim, the header counts no "needs you"; main's inbox
+    /// shows as a dim `@ 2` on main's row.
+    #[test]
+    fn a_blocked_task_is_mains_not_yours() {
+        let mut app = busy();
+        app.sb.cards.clear();
+        let docs = app.sb.agents.iter().find(|a| a.name == "docs").unwrap();
+        assert!(!needs_you(&app.sb, docs));
+        assert_eq!(glyph("blocked", 0, crate::gust::Motion::Still), (G_NEEDS_YOU, dim()));
+        let main = app.sb.agents.iter_mut().find(|a| a.main).unwrap();
+        main.inbox = 2;
+        let main = app.sb.agents.iter().find(|a| a.main).unwrap().clone();
+        let (s, c) = right_of(&app, &app.sb, &main);
+        assert_eq!((s.as_str(), c), (format!("{} 2", crate::theme::glyph(G_MSG)).as_str(), dim()));
     }
 
     /// The header at 120 columns (panel shown): `bise :*` left, the long
@@ -1763,19 +1791,19 @@ mod chrome_tests {
         // top edge, the path and the counts ending at F - 4
         let head = &rows[0];
         assert!(head.starts_with("╭─ bise :* ─"), "{:?}", head);
-        let right = "bench · ∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done";
+        let right = "bench · ∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done · # 1 in the inbox";
         assert!(head.ends_with(&format!(" {} ─╮", right)), "{:?}", head);
         assert_eq!(head.chars().count(), 120, "{:?}", head);
         assert!(!rows.iter().any(|r| r.contains("Switchboard")));
         // 60 columns, no panel: the short counts
         let rows = draw(&mut app, 60, 20);
-        assert!(rows[0].ends_with(" bench · ∿ 3 · … 1 · ? 1 · ✓ 1 ─╮"), "{:?}", rows[0]);
+        assert!(rows[0].ends_with(" bench · ∿ 3 · … 1 · ? 1 · ✓ 1 · # 1 ─╮"), "{:?}", rows[0]);
         // too narrow for the path: it goes first
         let rows = draw(&mut app, 60, 20);
         assert!(rows[0].starts_with("╭─ bise :* ─"), "{:?}", rows[0]);
         // under 60 columns: no frame, the header row with margins of 1
         let rows = draw(&mut app, 59, 20);
-        let summary = "bench · ∿ 3 · … 1 · ? 1 · ✓ 1";
+        let summary = "bench · ∿ 3 · … 1 · ? 1 · ✓ 1 · # 1";
         assert_eq!(rows[0], format!(" bise :*{}{}", " ".repeat(59 - 8 - summary.chars().count() - 1), summary));
         // no agents: the words
         let mut app = with_main();
@@ -1812,11 +1840,11 @@ mod chrome_tests {
         let rows = draw(&mut app, 120, 20);
         assert!(!rows[0].contains("safari"), "main's view: {:?}", rows[0]);
         app.sb.focus = "auth-fix".into();
-        let rows = draw(&mut app, 120, 20);
-        let full = "∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done";
+        let rows = draw(&mut app, 136, 20);
+        let full = "∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done · # 1 in the inbox";
         assert!(rows[0].starts_with("╭─ bise :* · fixing the safari login redirect ─"), "{:?}", rows[0]);
         assert!(rows[0].ends_with(&format!(" {} ─╮", full)), "the path went first: {:?}", rows[0]);
-        assert_eq!(rows[0].chars().count(), 120);
+        assert_eq!(rows[0].chars().count(), 136);
         // dim, like the summary
         let line = app.sb.header(200, false, &super::still_gust());
         let role = line.spans.iter().find(|s| s.content.contains("safari")).unwrap();
@@ -1827,16 +1855,16 @@ mod chrome_tests {
         // narrow: the counts shorten, the line is cut with …
         let rows = draw(&mut app, 60, 20);
         assert!(rows[0].starts_with("╭─ bise :* · fixing"), "{:?}", rows[0]);
-        assert!(rows[0].contains('…') && rows[0].ends_with("∿ 3 · … 1 · ? 1 · ✓ 1 ─╮"), "{:?}", rows[0]);
+        assert!(rows[0].contains('…') && rows[0].ends_with("∿ 3 · … 1 · ? 1 · ✓ 1 · # 1 ─╮"), "{:?}", rows[0]);
         assert_eq!(rows[0].chars().count(), 60);
         // no frame: the header row, the same order
         let rows = draw(&mut app, 59, 20);
         assert!(rows[0].starts_with(" bise :* · fixing"), "{:?}", rows[0]);
-        assert!(rows[0].ends_with("∿ 3 · … 1 · ? 1 · ✓ 1"), "{:?}", rows[0]);
+        assert!(rows[0].ends_with("∿ 3 · … 1 · ? 1 · ✓ 1 · # 1"), "{:?}", rows[0]);
         // no room left: no line at all, never a lone "·"
-        let rows = draw(&mut app, 44, 20);
+        let rows = draw(&mut app, 50, 20);
         assert!(rows[0].starts_with(" bise :* · fixing t…  ∿ 3"), "at least 12 columns: {:?}", rows[0]);
-        let rows = draw(&mut app, 40, 20);
+        let rows = draw(&mut app, 46, 20);
         assert!(!rows[0].contains("fix") && !rows[0].contains(" · f"), "{:?}", rows[0]);
         // a task without a line yet (an old hub): nothing
         for a in app.sb.agents.iter_mut() {
@@ -1852,10 +1880,10 @@ mod chrome_tests {
         let app = busy();
         let sb = &app.sb;
         let text = |room: usize, short: bool| sb.summary(room, short, &super::still_gust()).iter().map(|s| s.content.to_string()).collect::<String>();
-        let full = "∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done";
+        let full = "∿ 3 working · … 1 waiting · ? 1 needs you · ✓ 1 done · # 1 in the inbox";
         assert_eq!(text(100, false), format!("bench · {}", full));
         assert_eq!(text(full.chars().count() + 7, false), full);
-        assert_eq!(text(full.chars().count() - 1, false), "∿ 3 · … 1 · ? 1 · ✓ 1");
+        assert_eq!(text(full.chars().count() - 1, false), "∿ 3 · … 1 · ? 1 · ✓ 1 · # 1");
     }
 
     /// Colors of the header: `:*` and "needs you" in accent, the rest dim.

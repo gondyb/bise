@@ -230,12 +230,14 @@ pub enum MsgState {
     Cancelled,
 }
 
-/// An attention card (RFC 0001 §11).
+/// A card of the user's inbox (RFC 0001 §11; BISE-299: only what needs
+/// the user, only the user resolves it).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Card {
     pub id: u64,
-    /// question | failed | blocked | overlap | done | restart |
-    /// drop
+    /// question | drop | confirm (the user's kinds, [`user_kind`]); an
+    /// older journal also has failed | blocked | overlap | done | restart,
+    /// closed at the hub's boot
     pub kind: String,
     pub agent: String,
     pub text: String,
@@ -243,6 +245,13 @@ pub struct Card {
     #[serde(default)]
     pub for_msg: Option<u64>,
     pub created_ms: u64,
+}
+
+/// BISE-299: the kinds of the user's inbox, set at the card's creation
+/// (hub/model.bend `user_kind`): main's escalations and the future
+/// tool-call confirmations. The agents' traffic is main's, never a card.
+pub fn user_kind(kind: &str) -> bool {
+    matches!(kind, "question" | "drop" | "confirm")
 }
 
 /// The durable state, as sb-core last sent it.
@@ -321,8 +330,10 @@ impl State {
             .filter(|a| !a.is_main)
     }
 
+    /// The user's inbox: an older journal's cards of other kinds are
+    /// hidden until the hub's boot closes them.
     pub fn open_cards(&self) -> impl Iterator<Item = &Card> {
-        self.cards.values()
+        self.cards.values().filter(|c| user_kind(&c.kind))
     }
 
     /// Tests only: a task as its creation leaves it (the real state

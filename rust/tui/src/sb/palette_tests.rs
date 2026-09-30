@@ -87,7 +87,9 @@ fn a_query_ranks_the_best_match_first_then_the_archived_ones() {
 #[test]
 fn a_tie_goes_to_the_agent_waiting_on_you() {
     let mut app = app();
-    app.sb.agents.push(agent("pa", "blocked", ""));
+    app.sb.agents.push(agent("pa", "working", ""));
+    // BISE-299: waiting on you = a card of your inbox about it
+    app.sb.cards.push(Card { id: 1, kind: "question".into(), agent: "pa".into(), ..Card::default() });
     // both start with `p`... `pa` exactly and `perf`: both rank 0 for `p`
     assert_eq!(names(&app, "p")[0], "pa");
 }

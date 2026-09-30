@@ -274,11 +274,20 @@ def t_ask_and_wait(E, c):
 
 def t_escalation_card(E, c):
     c.wait_idle("main")
-    # t3 asks main; main escalates to the user with a card; the user answers
+    # BISE-299: two agents message main (a question each, a blocked
+    # status, a report): all of it is main's, nothing reaches the user's inbox
+    seen = []
     c.say('/new t3: {{bash: sb send main --expect-reply "v1 ou v2 ?"}}')
-    c.wait(lambda: c.agent("t3") is not None, 60, "t3")
-    c.wait_line("main", "sb msg-in : t3", 90)
-    c.wait_idle("main", "t3")
+    c.say('/new t3b: {{bash: sb send main --expect-reply "t3b asks main" && sb status blocked --note "t3b needs a key" && sb report blocked "t3b is stuck"}}')
+    c.wait(lambda: c.agent("t3") is not None and c.agent("t3b") is not None, 60, "t3 and t3b")
+    c.wait(lambda: seen.append(len(c.cards())) or (any(l.startswith("sb msg-in : t3 ") for l in c.lines("main"))
+                   and any("[report: blocked] t3b is stuck" in l for l in c.lines("main"))), 90 * 2,
+           "both agents' messages in main's feed")
+    c.wait_idle("main", "t3", "t3b")
+    check(not c.cards() and not any(seen), "no card in the user's inbox: %r / %r" % (c.cards(), seen))
+    check(isinstance(c.agent("main").get("inbox"), int), "main's inbox count in the state: %r" % c.agent("main"))
+    check(any(r["agent"] == "main" and "@t3b is blocked: t3b needs a key" in r["user"] for r in E.fake_requests()),
+          "the blocked status went to main")
     msg_id = None
     for l in c.lines("main"):
         if l.startswith("sb msg-in : t3 m_") and "v1 ou v2" in l:
@@ -287,11 +296,21 @@ def t_escalation_card(E, c):
     c.say("[[bash: sb card --for %s \"v1 ou v2 ?\"]]" % msg_id)
     c.wait(lambda: any(cd["kind"] == "question" for cd in c.cards()), 60, "a question card")
     card = [cd for cd in c.cards() if cd["kind"] == "question"][0]
+    check(card["agent"] == "t3", "the card is t3's: %r" % card)
     c.wait_idle("main")
+    # escalated: main can neither answer nor close it
+    c.say('[[bash: sb send t3 --reply-to %s "v1"; sb close %d; echo rc=$?]]' % (msg_id, card["id"]))
+    c.wait_line("main", "is in the user's inbox (card #%d): only the user answers it" % card["id"], 60)
+    c.wait_line("main", "card #%d is in the user's inbox: only the user answers or closes it" % card["id"], 60)
+    c.wait_idle("main")
+    check([cd["id"] for cd in c.cards()] == [card["id"]], "the card stays: %r" % c.cards())
+    # only the user's answer resolves it, and it reaches t3
     c.say("/answer %d v2" % card["id"])
     c.wait_line("t3", 'from="user"', 60)
     c.wait(lambda: not c.cards(), 30, "card closed")
     c.wait_idle("t3")
+    tr = open(os.path.join(E.state, "agents", "t3", "transcript.log")).read()
+    check("v2" in tr and "v1\n" not in tr, "t3 got the user's answer, not main's")
 
 
 def t_worktree_drop_restore(E, c):
@@ -519,14 +538,15 @@ def t_main_controls(E, c):
     c.wait_line("t1", "sb version switch: reserved for main", 90)
     c.wait_line("t1", "current version:", 30)
     c.wait_idle("t1")
-    # main closes a card with a note
+    # BISE-299: main cannot close a card of the user's inbox; it withdraws
+    # its own, with a why the user reads
     c.say('[[bash: sb card "e2e question?"]]')
     c.wait(lambda: any(cd["kind"] == "question" for cd in c.cards()), 60, "a question card")
     card = [cd for cd in c.cards() if cd["kind"] == "question"][0]
     c.wait_idle("main")
-    c.say("[[bash: sb close %d handled]]" % card["id"])
-    c.wait(lambda: not c.cards(), 60, "card closed by main")
-    c.wait_line("main", "#%d main: handled" % card["id"], 30)
+    c.say('[[bash: sb card --withdraw %d "moot now"]]' % card["id"])
+    c.wait(lambda: not c.cards(), 60, "card withdrawn by main")
+    c.wait_line("main", "#%d withdrawn by main: moot now" % card["id"], 30)
     c.wait_idle("main")
     # main renames a task; the old name still works
     c.say("/new t5: {{bash: echo t5}}")

@@ -81,6 +81,9 @@ pub(super) struct Agent {
     path: String,
     note: String,
     queued: u64,
+    /// BISE-299: main's inbox, the agents' questions waiting for main (a
+    /// quiet count on main's row: the user is not asked)
+    inbox: u64,
     turn_ms: Option<u64>,
     /// When `turn_ms` came: the turn's age moves on between two states.
     turn_seen: Option<std::time::Instant>,
@@ -540,6 +543,7 @@ fn apply_state(app: &mut App, v: &Value) {
                     path: s(x, "path"),
                     note: s(x, "note"),
                     queued: x.get("queued").and_then(|q| q.as_u64()).unwrap_or(0),
+                    inbox: x.get("inbox").and_then(|q| q.as_u64()).unwrap_or(0),
                     turn_ms: x.get("turn_ms").and_then(|q| q.as_u64()),
                     turn_seen: Some(std::time::Instant::now()),
                     report: s(x, "report"),

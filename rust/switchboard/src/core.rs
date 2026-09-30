@@ -120,10 +120,17 @@ pub enum AgentReq {
         text: String,
         for_msg: Option<u64>,
     },
-    /// `sb close N ["note"]`: close attention card N with a short note.
+    /// `sb close N ["note"]`: refused on a card of the user's inbox
+    /// (BISE-299: only the user closes those).
     Close {
         card: u64,
         note: String,
+    },
+    /// `sb card --withdraw N "why"`: main takes back its own card
+    /// (BISE-299).
+    Withdraw {
+        card: u64,
+        why: String,
     },
     /// `sb rename <task> <new-name>`: the same rules as `/rename`.
     Rename {
@@ -259,6 +266,13 @@ impl AgentReq {
                     .and_then(|x| x.as_u64())
                     .ok_or("usage: sb close <card> [\"<note>\"]")?,
                 note: jstr(v, "note"),
+            },
+            "withdraw" => AgentReq::Withdraw {
+                card: v
+                    .get("card")
+                    .and_then(|x| x.as_u64())
+                    .ok_or("usage: sb card --withdraw <card> \"<why>\"")?,
+                why: jstr(v, "why"),
             },
             "rename" => AgentReq::Rename {
                 agent: jstr(v, "agent"),
@@ -962,6 +976,9 @@ impl Hub {
                     // when it last reported (an archived task: about when it stopped)
                     "report_ms": a.last_report.as_ref().map(|r| r.at_ms),
                     "queued": board::queued_count(&self.st, &a.name),
+                    // BISE-299: main's inbox, the agents' questions waiting
+                    // for main (the user sees a quiet count, never asked)
+                    "inbox": if a.is_main { self.st.unanswered_for(&a.name).len() } else { 0 },
                     "turn_ms": a.turn_started_ms.map(|t| now.saturating_sub(t)),
                     // who it waits on (`sb wait` / `sb ask`), for `waits {name}`
                     "waiting_on": a.waiting_on.as_ref().filter(|_| a.waiting),
@@ -1684,6 +1701,7 @@ impl Hub {
                 json!({"cmd": "card", "text": text, "for": for_msg})
             }
             AgentReq::Close { card, note } => json!({"cmd": "close", "card": card, "note": note}),
+            AgentReq::Withdraw { card, why } => json!({"cmd": "withdraw", "card": card, "why": why}),
             AgentReq::Rename { agent, new_name } => {
                 let valid = router::valid_name(&new_name);
                 json!({"cmd": "rename", "agent": agent, "new_name": new_name, "valid": valid})

@@ -756,7 +756,10 @@ fn a_crashing_repl_restarts_then_fails() {
     });
     assert!(!fx.iter().any(|e| matches!(e, Effect::Spawn { .. })));
     assert_eq!(t.status("a"), Status::Failed);
-    assert!(t.hub.st.cards.values().any(|c| c.kind == "failed"));
+    // BISE-299: a failure is main's to handle (a bise message), never a
+    // card in the user's inbox
+    assert!(t.hub.st.cards.is_empty());
+    assert!(t.hub.st.msgs.values().any(|m| m.to == MAIN && m.text.contains("agent @a failed")));
     // the user's message revives it
     let fx = t.user(MAIN, "@a réessaie");
     assert!(fx
@@ -805,7 +808,7 @@ fn worktrees_need_git() {
 }
 
 #[test]
-fn shared_tasks_touching_one_file_open_a_card() {
+fn shared_tasks_touching_one_file_tell_main() {
     let mut t = T::new();
     t.spawn_task("a");
     t.spawn_task("b");
@@ -821,12 +824,9 @@ fn shared_tasks_touching_one_file_open_a_card() {
         agent: "b".into(),
         line: patch("src/x.rs"),
     });
-    assert!(t
-        .hub
-        .st
-        .cards
-        .values()
-        .any(|c| c.kind == "overlap" && c.text.contains("src/x.rs")));
+    // BISE-299: main's to handle (a note), not the user's inbox
+    assert!(t.hub.st.cards.is_empty());
+    assert!(t.hub.st.main_notes.iter().any(|n| n.contains("file overlap") && n.contains("src/x.rs")));
     // a task that changed a file cannot be isolated anymore
     let fx = t.user(MAIN, "/isolate a");
     assert!(fx.iter().any(|e| matches!(e, Effect::ToClient { body, .. } if body["text"].as_str().unwrap_or("").contains("already changed files"))));
@@ -1333,8 +1333,11 @@ fn docs_question_card(t: &mut T) -> (u64, u64) {
     (id, card)
 }
 
+/// BISE-299: once main escalated a question, it is the user's: main's
+/// reply to it is refused, the card stays; only the user's answer
+/// resolves it, and it goes to the task that asked.
 #[test]
-fn main_replying_to_the_question_closes_its_card() {
+fn main_cannot_answer_an_escalated_question_only_the_user_can() {
     let mut t = T::new();
     let (id, card) = docs_question_card(&mut t);
     // a plain message from main does not close it: the view says so
@@ -1354,8 +1357,8 @@ fn main_replying_to_the_question_closes_its_card() {
     let snap = t.hub.snapshot(t.env.now);
     let note = snap["cards"][0]["note"].as_str().unwrap_or("");
     assert!(note.contains("@main wrote to @docs"), "{}", snap);
-    // the reply to the question closes it
-    let (_, fx) = t.req(
+    // main's reply to the question is refused: the card stays
+    let (tok, fx) = t.req(
         MAIN,
         AgentReq::Send {
             to: "docs".into(),
@@ -1366,12 +1369,97 @@ fn main_replying_to_the_question_closes_its_card() {
             why: String::new(),
         },
     );
-    assert!(t.hub.st.cards.is_empty());
-    assert!(
-        has_line(&fx, MAIN, &format!("#{} answered via @main", card)),
-        "{:?}",
-        fx
+    let e = err_of(&fx, tok);
+    assert!(e.contains("in the user's inbox") && e.contains("--withdraw"), "{e}");
+    assert!(t.hub.st.cards.contains_key(&card));
+    assert!(!t.hub.st.msgs.values().any(|m| m.text == "v2"));
+    // a peer's too (no withdraw hint: it is not its card)
+    t.spawn_task("peer");
+    let (tok, fx) = t.req(
+        "peer",
+        AgentReq::Send {
+            to: "docs".into(),
+            text: "v1".into(),
+            expect_reply: false,
+            reply_to: Some(id),
+            queued: false,
+            why: String::new(),
+        },
     );
+    let e = err_of(&fx, tok);
+    assert!(e.contains("only the user answers it") && !e.contains("--withdraw"), "{e}");
+    assert!(t.hub.st.cards.contains_key(&card));
+    // the user's answer resolves it and goes to docs, as a reply to its question
+    t.user(MAIN, &format!("/answer {} v2", card));
+    assert!(t.hub.st.cards.is_empty());
+    let a = t.hub.st.msgs.values().find(|m| m.text == "v2").expect("the user's answer");
+    assert_eq!((a.from.as_str(), a.to.as_str(), a.reply_to), (USER, "docs", Some(id)));
+}
+
+/// BISE-299: the agents' traffic never reaches the user's inbox: a
+/// question to main, a blocked status, done/blocked/failed reports.
+#[test]
+fn agent_traffic_never_reaches_the_user_inbox() {
+    let mut t = T::new();
+    t.spawn_task("a");
+    t.spawn_task("b");
+    let ask = |t: &mut T, from: &str, to: &str| {
+        t.req(
+            from,
+            AgentReq::Send {
+                to: to.into(),
+                text: format!("{} asks {}", from, to),
+                expect_reply: true,
+                reply_to: None,
+                queued: false,
+                why: String::new(),
+            },
+        )
+    };
+    ask(&mut t, "a", MAIN);
+    ask(&mut t, "b", MAIN);
+    ask(&mut t, "a", "b");
+    t.req("a", AgentReq::Status { status: Declared::Blocked, note: "need a key".into() });
+    for kind in ["blocked", "done", "failed"] {
+        t.req("b", AgentReq::Report { kind: kind.into(), summary: format!("{} summary", kind), decisions: vec![] });
+    }
+    assert!(t.hub.st.cards.is_empty(), "{:?}", t.hub.st.cards);
+    assert_eq!(t.hub.snapshot(t.env.now)["cards"].as_array().unwrap().len(), 0);
+    // they are main's: its inbox counts the two questions, a blocked task
+    // wakes main with a message
+    let snap = t.hub.snapshot(t.env.now);
+    let main = snap["agents"].as_array().unwrap().iter().find(|a| a["name"] == MAIN).unwrap().clone();
+    assert_eq!(main["inbox"], 2, "{main}");
+    assert!(t.hub.st.msgs.values().any(|m| m.to == MAIN && m.text.contains("@a is blocked: need a key")));
+}
+
+/// BISE-299: main withdraws its own card with a why (the user sees it);
+/// the question is main's again, and main may then answer it.
+#[test]
+fn main_withdraws_its_own_card_with_a_why() {
+    let mut t = T::new();
+    let (id, card) = docs_question_card(&mut t);
+    let (tok, fx) = t.req("docs", AgentReq::Withdraw { card, why: "moot".into() });
+    assert!(err_of(&fx, tok).contains("reserved for main"));
+    let (tok, fx) = t.req(MAIN, AgentReq::Withdraw { card, why: "  ".into() });
+    assert!(err_of(&fx, tok).contains("say why"));
+    assert!(t.hub.st.cards.contains_key(&card));
+    let (tok, fx) = t.req(MAIN, AgentReq::Withdraw { card, why: "the user answered in chat: v2".into() });
+    assert_eq!(reply(&fx, tok).unwrap()["ok"], true);
+    assert!(t.hub.st.cards.is_empty());
+    assert!(has_line(&fx, MAIN, &format!("#{} withdrawn by main: the user answered in chat: v2", card)), "{:?}", fx);
+    let (tok, fx) = t.req(
+        MAIN,
+        AgentReq::Send {
+            to: "docs".into(),
+            text: "v2".into(),
+            expect_reply: false,
+            reply_to: Some(id),
+            queued: false,
+            why: String::new(),
+        },
+    );
+    assert_eq!(reply(&fx, tok).unwrap()["ok"], true, "{:?}", fx);
 }
 
 #[test]
@@ -1458,20 +1546,23 @@ fn err_of(fx: &[Effect], tok: u64) -> String {
     reply(fx, tok).unwrap()["error"].as_str().unwrap_or("").to_string()
 }
 
+/// BISE-299: only the user closes a card of the user's inbox: `sb close`
+/// is refused to a task and to main alike.
 #[test]
-fn main_closes_a_card_with_a_note_and_tasks_cannot() {
+fn neither_main_nor_a_task_closes_a_user_card() {
     let mut t = T::new();
     let (_, card) = docs_question_card(&mut t);
     let (tok, fx) = t.req("docs", AgentReq::Close { card, note: "done".into() });
     assert!(err_of(&fx, tok).contains("reserved for main"));
-    assert!(t.hub.st.cards.contains_key(&card));
     let (tok, fx) = t.req(MAIN, AgentReq::Close { card: 99, note: String::new() });
     assert!(err_of(&fx, tok).contains("no open card #99"));
     let (tok, fx) = t.req(MAIN, AgentReq::Close { card, note: "handled".into() });
-    assert_eq!(reply(&fx, tok).unwrap()["ok"], true);
+    let e = err_of(&fx, tok);
+    assert!(e.contains("only the user answers or closes it"), "{e}");
+    assert!(t.hub.st.cards.contains_key(&card));
+    // the user can
+    t.user(MAIN, &format!("/close {}", card));
     assert!(t.hub.st.cards.is_empty());
-    assert!(say_to(&fx, "docs").is_none());
-    assert!(has_line(&fx, MAIN, &format!("#{} main: handled", card)), "{:?}", fx);
 }
 
 #[test]

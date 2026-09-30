@@ -92,12 +92,12 @@ pub const COMMANDS: &[CmdDoc] = &[
     cmd(
         "sb card \"<question for the user>\" [--for <id>]",
         Who::Main,
-        "ask the user; with `--for`, the user's answer goes straight to the task that asked.",
+        "escalate to the user's inbox (only you can); with `--for`, the user's answer goes straight to the task that asked. From then on only the user answers or closes it: a reply to that message is refused.",
     ),
     cmd(
-        "sb close <card> [\"<note>\"]",
+        "sb card --withdraw <card> \"<why>\"",
         Who::Main,
-        "close an attention card the user no longer needs to see, with a short resolution note (e.g. \"handled\").",
+        "take back your own card when it became moot (the task stopped, the user answered you in chat); the user sees it withdrawn with your why, and the question is yours again. Never to answer in the user's place.",
     ),
     cmd("sb rename <task> <new-name>", Who::Main, "rename a task (unique name; the old name still works)."),
     cmd(
@@ -467,6 +467,18 @@ pub fn build(args: &[String]) -> Result<Value, String> {
                 _ => return Err("usage: sb rename <agent> <new-name>".into()),
             }
         }
+        "card" if rest.iter().any(|a| a == "--withdraw" || a.starts_with("--withdraw=")) => {
+            // BISE-299: `sb card --withdraw N "why"`, the hub's own command
+            let (pos, o) = parse_args(rest, &["withdraw"], &[])?;
+            let card = o
+                .get("withdraw")
+                .and_then(|c| c.as_str())
+                .and_then(|c| c.trim_start_matches('#').parse::<u64>().ok())
+                .ok_or("usage: sb card --withdraw <card> \"<why>\"")?;
+            req.insert("cmd".into(), json!("withdraw"));
+            req.insert("card".into(), json!(card));
+            req.insert("why".into(), json!(pos.join(" ")));
+        }
         "card" => {
             let (pos, o) = parse_args(rest, &["for"], &[])?;
             req.insert("text".into(), json!(text_of(&pos)?));
@@ -553,6 +565,7 @@ pub fn render(cmd: &str, v: &Value) -> (bool, String) {
         "card" => format!("card #{} opened for the user", v.get("card").and_then(|c| c.as_u64()).unwrap_or(0)),
         "report" => format!("reported ({})", s("message_id")),
         "close" => format!("card #{} closed", v.get("card").and_then(|c| c.as_u64()).unwrap_or(0)),
+        "withdraw" => format!("card #{} withdrawn: the user sees why; the question is yours again", v.get("card").and_then(|c| c.as_u64()).unwrap_or(0)),
         "rename" => format!("renamed: now @{} (the old name still works)", s("name")),
         "restore" => format!("@{} restored", s("name")),
         "isolate" => format!("@{} now works in its own git worktree", s("name")),

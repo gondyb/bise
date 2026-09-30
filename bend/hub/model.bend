@@ -401,6 +401,31 @@ def drop_card(xs: List<&2, Card>, +id: Nat) -> List<&2, Card>:
 def put_card(xs: List<&2, Card>, +c: Card) -> List<&2, Card>:
   snoc(Card, drop_card(xs, Card.id(c)), c)
 
+# BISE-299: the user's inbox holds only what needs the user, by kind, set
+# at the card's creation: main's escalations (`question`: `sb card`,
+# `drop`: main's drop of a task with attention) and, later, tool-call
+# confirmations (`confirm`). Only the user answers or closes them. The
+# agents' traffic (reports, blocked, overlap, crashes) is main's, never a
+# card: an older journal's cards of other kinds close at boot.
+def user_kind(+k: String) -> Bool:
+  String.eq(k, "question") || String.eq(k, "drop") || String.eq(k, "confirm")
+
+# the ids of the open cards that are not the user's (an older journal's)
+def legacy_cards(xs: List<&2, Card>) -> List<&2, Nat>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{+h, +t}:
+      Bool.pick(List<&2, Nat>, user_kind(Card.kind(h)), legacy_cards(t), Card.id(h) <> legacy_cards(t))
+
+# the open card that holds message `id` (an escalated question)
+def card_holding(xs: List<&2, Card>, +id: Nat) -> Maybe<&2, Nat>:
+  match xs:
+    case Nil{}:
+      None{}
+    case Con{+h, +t}:
+      Bool.pick(Maybe<&2, Nat>, maybe_nat_is(Card.for_msg(h), id), Some{Card.id(h)}, card_holding(t, id))
+
 def apply.settle.if(ok: Bool, +msgs: List<&2, MRec>, +id: Nat) -> List<&2, MRec>:
   match ok:
     case True{}:
