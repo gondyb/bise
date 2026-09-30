@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bise :* · hero backgrounds</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --wind:#4a4540; --acc:#f4a6b0; }
+  [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --wind:#cbc3b6; --acc:#b8416b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:"JetBrains Mono", ui-monospace, monospace; }
+  .top { position:sticky; top:0; z-index:5; display:flex; gap:3ch; align-items:center; padding:14px 4vw; background:var(--bg); border-bottom:1px solid var(--faint); font-size:13px; color:var(--dim); }
+  .top b { color:var(--text); } .top a { color:var(--dim); } .top a:hover { color:var(--text); }
+  .top button { font:inherit; background:none; border:1px solid var(--faint); color:var(--dim); border-radius:6px; padding:3px 10px; cursor:pointer; margin-left:auto; }
+  .v { position:relative; height:86vh; min-height:520px; overflow:hidden; border-bottom:1px solid var(--faint); }
+  .v pre { position:absolute; inset:0; margin:0; color:var(--wind); font:inherit; font-size:14px; line-height:1.4; white-space:pre; overflow:hidden; pointer-events:none; user-select:none;
+    -webkit-mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); }
+  .v.nomask pre { -webkit-mask-image:radial-gradient(ellipse 46% 30% at 50% 46%, transparent 20%, #000 80%); mask-image:radial-gradient(ellipse 46% 30% at 50% 46%, transparent 20%, #000 80%); }
+  .v pre .a { color:var(--acc); } .v pre .d { color:var(--dim); } .v pre .t { color:var(--text); }
+  .hero { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; pointer-events:none; }
+  .big { font-size:clamp(64px, 11vw, 150px); font-weight:700; letter-spacing:-.045em; line-height:1; }
+  .big span { color:var(--acc); }
+  .t1 { font-size:clamp(22px, 2.8vw, 34px); font-weight:700; margin-top:34px; letter-spacing:-.02em; }
+  .t2 { color:var(--dim); margin-top:12px; font-size:15px; }
+  .tag { position:absolute; left:4vw; top:22px; z-index:3; max-width:46ch; font-size:13px; line-height:1.6; color:var(--dim); }
+  .tag b { color:var(--text); font-size:15px; } .tag .pick { color:var(--acc); }
+</style>
+</head>
+<body>
+<div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
+
+<section class="v" data-v="now"><div class="tag"><b>0 · today</b><br>the flow field: slow wind crests, a :* carried across now and then.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+
+<section class="v" data-v="gusts"><div class="tag"><b>1 · gusts</b><br>almost empty sky. thin streaks pass in 3 depths (far ones slow and dotted, near ones fast). calmer than today, reads more "wind".</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+
+<section class="v" data-v="grass"><div class="tag"><b>2 · the meadow</b><br>a field of little blades. gusts roll across and bend them. your mouse is a gust too. very Josh Comeau, very soft.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+
+<section class="v" data-v="breath"><div class="tag"><b>3 · you are the wind</b><br>a quiet grid of dots. your mouse blows through it and leaves a wake. with no mouse, a slow breeze wanders by itself.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+
+<section class="v" data-v="ideas"><div class="tag"><b>4 · ideas in, kisses out</b> <span class="pick">my pick</span><br>your half-sentences drift in from the left, blow apart in the middle, and come out as :* on the right. it tells the product in one loop.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+
+<section class="v" data-v="thread"><div class="tag"><b>5 · one thread, a whole team</b><br>one line crosses the screen. agents branch off it (∿), do their bit, rejoin it with a ✓. the message of the page, drawn.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+
+<section class="v" data-v="drift"><div class="tag"><b>6 · dandelion</b><br>sparse specks and a few :* float up and to the right, at 3 depths, swaying. the quietest one. good behind a busy page.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+
+<script>
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+document.getElementById("th").onclick = e => { const h = document.documentElement, d = h.dataset.theme === "dark"; h.dataset.theme = d ? "light" : "dark"; e.target.textContent = d ? "dark" : "light"; };
+const hash = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+// grid helper: chars + a class per cell, rendered as html runs
+function Grid(cols, rows) {
+  const c = Array.from({ length: rows }, () => Array(cols).fill(" "));
+  const k = Array.from({ length: rows }, () => Array(cols).fill(""));
+  return {
+    cols, rows,
+    put(x, y, ch, cl = "") { x = Math.round(x); y = Math.round(y); if (x < 0 || y < 0 || x >= cols || y >= rows) return; c[y][x] = ch; k[y][x] = cl; },
+    str(x, y, s, cl = "") { for (let i = 0; i < s.length; i++) this.put(x + i, y, s[i], cl); },
+    html() {
+      let out = "";
+      for (let y = 0; y < rows; y++) {
+        let cur = "", buf = "";
+        const flush = () => { if (buf) out += cur ? `<span class="${cur}">${buf}</span>` : buf; buf = ""; };
+        for (let x = 0; x < cols; x++) { if (k[y][x] !== cur) { flush(); cur = k[y][x]; } const ch = c[y][x]; buf += ch === "<" ? "&lt;" : ch === "&" ? "&amp;" : ch; }
+        flush(); out += "\n";
+      }
+      return out;
+    },
+  };
+}
+
+const V = {
+  now(s) {
+    const RAMP = " .·-~∼≈";
+    return (g, t) => {
+      for (let y = 0; y < g.rows; y++) {
+        const wy = Math.sin(y * .23 + t * .21) * 3.2;
+        for (let x = 0; x < g.cols; x++) {
+          const a = Math.sin(x * .045 - t * .9 + wy + Math.sin(y * .09 - t * .15) * 2.4), b = Math.sin(x * .013 + y * .19 - t * .33);
+          const v = a * .65 + b * .35 - .52;
+          if (v > 0) g.put(x, y, RAMP[Math.min(RAMP.length - 1, 1 + Math.floor(v * 14))]);
+        }
+      }
+      s.k = s.k || { x: -3, y: rnd(.2, .8), ph: 0 };
+      s.k.x += .35; s.k.ph += .05;
+      if (s.k.x < g.cols * .7) g.str(s.k.x, s.k.y * g.rows + Math.sin(s.k.ph) * 2, ":*", "a"); else if (Math.random() < .01) s.k = null;
+    };
+  },
+  gusts(s) {
+    s.g = [];
+    const layers = [{ sp: .25, len: [6, 14], body: "·", cl: "" }, { sp: .6, len: [10, 24], body: "-", cl: "" }, { sp: 1.3, len: [16, 34], body: "~", cl: "d" }];
+    return (g, t) => {
+      if (s.g.length < 14 && Math.random() < .18) { const L = Math.floor(Math.random() * Math.random() * 3), l = layers[L]; s.g.push({ l, x: -40, y: Math.floor(rnd(0, g.rows)), len: Math.floor(rnd(...l.len)), ph: rnd(0, 6) }); }
+      s.g = s.g.filter(q => q.x - q.len < g.cols);
+      for (const q of s.g) {
+        q.x += q.l.sp;
+        for (let i = 0; i < q.len; i++) {
+          const x = q.x - i, dy = Math.round(Math.sin((x * .08) + q.ph) * .6);
+          const ch = i === 0 ? (q.l.body === "~" ? "≈" : q.l.body === "-" ? "~" : "·") : i > q.len * .7 ? "·" : (q.l.body === "·" && i % 2) ? " " : q.l.body;
+          g.put(x, q.y + dy, ch, i === 0 ? q.l.cl : "");
+        }
+      }
+    };
+  },
+  grass(s, el) {
+    const B = ["|", "|", "/", "/", "⁄", "~", "~"];
+    return (g, t) => {
+      const m = s.mouse;
+      for (let y = 1; y < g.rows; y++) for (let x = 0; x < g.cols; x++) {
+        if (hash(x, y) > .3) continue;
+        const gust = Math.max(0, Math.sin(x * .05 - t * 1.1 + Math.sin(y * .15 + t * .2)) * .9 + Math.sin(x * .017 + y * .05 - t * .4) * .5);
+        let b = gust * .8 + (hash(y, x) - .5) * .25;
+        if (m) { const dx = x - m.x, dy = (y - m.y) * 2.1, d = Math.hypot(dx, dy); b += Math.max(0, 1 - d / 14) * 1.4 * m.p; }
+        b = Math.max(0, Math.min(.999, b));
+        g.put(x, y, hash(x + 9, y) < .12 && b < .2 ? "'" : B[Math.floor(b * B.length)], b > .75 ? "d" : "");
+      }
+      if (m) m.p *= .97;
+    };
+  },
+  breath(s) {
+    s.trail = [];
+    return (g, t) => {
+      let p = s.mouse && s.mouse.p > .05 ? s.mouse : { x: g.cols * (.5 + .45 * Math.sin(t * .13)), y: g.rows * (.5 + .4 * Math.sin(t * .21 + 1)), p: .6 };
+      s.trail.push({ x: p.x, y: p.y, w: p.p }); if (s.trail.length > 26) s.trail.shift();
+      if (s.mouse) s.mouse.p *= .985;
+      for (let y = 0; y < g.rows; y++) for (let x = 0; x < g.cols; x += 3) {
+        let fx = 0, fy = 0;
+        s.trail.forEach((q, i) => { const dx = x - q.x, dy = (y - q.y) * 2.1, d = Math.hypot(dx, dy) + .01, f = q.w * (i / s.trail.length) * Math.max(0, 1 - d / 16); fx += dx / d * f; fy += dy / d * f; });
+        const f = Math.hypot(fx, fy);
+        if (f < .12) { g.put(x, y, "·"); continue; }
+        const a = Math.atan2(fy, fx), o = ((Math.round(a / (Math.PI / 4)) % 4) + 4) % 4;
+        g.put(x + Math.round(fx * 1.2), y + Math.round(fy * .5), f > .9 ? "~" : "-\\|/"[o], f > .7 ? "d" : "");
+      }
+    };
+  },
+  ideas(s) {
+    const IDEAS = ["fix the flaky login test", "dark mode, but which gray?", "why is signup slow on mobile", "the csv shows ðŸ¦„", "draft the 2.5 notes", "oh and bump the api", "wait, also the search", "make the 404 less sad", "crème brûlée won't show up", "rename that thing"];
+    s.w = []; s.k = []; s.i = Math.floor(rnd(0, IDEAS.length));
+    return (g, t) => {
+      const mid = g.cols * .5;
+      if (s.w.length < 5 && Math.random() < .03) { const txt = IDEAS[s.i++ % IDEAS.length]; s.w.push({ txt, x: -txt.length, y: Math.floor(rnd(2, g.rows - 2)), sp: rnd(.25, .45), ph: rnd(0, 6), out: false }); }
+      s.w = s.w.filter(w => w.x < mid + 26);
+      for (const w of s.w) {
+        w.x += w.sp; w.ph += .04;
+        for (let i = 0; i < w.txt.length; i++) {
+          const x = w.x + i, past = x - (mid - 22);
+          let y = w.y + Math.sin(w.ph + i * .15) * .6;
+          if (past < 0) { g.put(x, y, w.txt[i], "d"); continue; }
+          const h = hash(i, w.y);
+          if (past > 14 + h * 16) continue;
+          y += (h - .5) * past * .35;
+          g.put(x + past * h * .6, y, past < 5 ? w.txt[i] : h < .5 ? "·" : "~", past < 5 ? "d" : "");
+        }
+        if (!w.out && w.x + w.txt.length > mid + 6) { w.out = true; s.k.push({ x: mid + 26, y: w.y, ph: 0, sp: w.sp * 1.4 }); }
+      }
+      s.k = s.k.filter(k => k.x < g.cols + 2);
+      for (const k of s.k) { k.x += k.sp; k.ph += .06; g.str(k.x, k.y + Math.sin(k.ph) * 1.5, ":*", "a"); }
+    };
+  },
+  thread(s) {
+    s.b = []; s.done = [];
+    const NAMES = ["perf", "dark-mode", "emoji-csv", "release", "accents", "docs", "tests"];
+    return (g, t) => {
+      const Y = Math.round(g.rows * .78);
+      for (let x = 0; x < g.cols; x++) g.put(x, Y, "─");
+      const hx = (t * 6) % (g.cols + 20);
+      g.str(hx, Y, ":*", "a");
+      if (s.b.length < 4 && Math.random() < .02) { const L = Math.floor(rnd(40, 80)), xs = Math.floor(rnd(4, g.cols - L - 4)); s.b.push({ xs, L, p: 0, dir: Math.random() < .7 ? -1 : 1, A: rnd(4, Y - 3), name: NAMES[Math.floor(rnd(0, NAMES.length))] }); }
+      s.b = s.b.filter(b => b.p < b.L + 60);
+      for (const b of s.b) {
+        b.p += .5;
+        const A = b.dir < 0 ? b.A : Math.min(b.A, g.rows - Y - 2), end = Math.min(b.p, b.L);
+        let prev = Y;
+        for (let i = 0; i <= end; i++) {
+          const y = Y + b.dir * A * Math.sin(Math.PI * i / b.L), x = b.xs + i, fade = b.p - b.L > 30;
+          if (fade && hash(x, b.xs) < (b.p - b.L - 30) / 30) continue;
+          g.put(x, y, Math.abs(Math.round(y) - prev) > 0 ? (b.dir * (Math.round(y) - prev) > 0 ? "\\" : "/") : "~");
+          prev = Math.round(y);
+        }
+        const hxb = b.xs + end, hy = Y + b.dir * A * Math.sin(Math.PI * end / b.L);
+        if (b.p < b.L) { g.put(hxb, hy, "∿", "a"); g.str(hxb + 2, hy, b.name, "d"); }
+        else if (b.p < b.L + 30) { g.put(b.xs + b.L, Y, "✓", "a"); g.str(b.xs + b.L + 2, Y - 1, b.name, "d"); }
+      }
+    };
+  },
+  drift(s) {
+    s.p = [];
+    return (g, t) => {
+      if (s.p.length < 60 && Math.random() < .5) { const z = Math.random(); s.p.push({ x: rnd(-10, g.cols), y: g.rows + 1, z, ph: rnd(0, 6), kiss: Math.random() < .05 }); }
+      s.p = s.p.filter(p => p.y > -2 && p.x < g.cols + 3);
+      for (const p of s.p) {
+        const sp = .08 + p.z * .22; p.y -= sp; p.x += sp * 1.6; p.ph += .04;
+        const x = p.x + Math.sin(p.ph) * 2;
+        if (p.kiss) g.str(x, p.y, ":*", p.z > .5 ? "a" : "");
+        else g.put(x, p.y, p.z > .8 ? "∗" : p.z > .45 ? "·" : ".", p.z > .8 ? "d" : "");
+      }
+    };
+  },
+};
+
+for (const sec of document.querySelectorAll(".v")) {
+  const pre = sec.querySelector("pre"), s = {};
+  const probe = document.createElement("span"); probe.textContent = "M"; pre.append(probe);
+  const cw = probe.getBoundingClientRect().width || 8.4, lh = parseFloat(getComputedStyle(pre).lineHeight) || 19.6; probe.remove();
+  const step = V[sec.dataset.v](s, sec);
+  sec.addEventListener("pointermove", e => { const r = sec.getBoundingClientRect(); s.mouse = { x: (e.clientX - r.left) / cw, y: (e.clientY - r.top) / lh, p: 1 }; });
+  let visible = false, t = rnd(0, 50), running = false;
+  const frame = () => {
+    if (!visible || document.hidden) { running = false; return; }
+    const g = Grid(Math.ceil(pre.clientWidth / cw) + 1, Math.ceil(pre.clientHeight / lh) + 1);
+    step(g, t); pre.innerHTML = g.html(); t += .045;
+    if (reduced) { running = false; return; }
+    setTimeout(() => requestAnimationFrame(frame), 70);
+  };
+  new IntersectionObserver(([e]) => { visible = e.isIntersecting; if (visible && !running) { running = true; frame(); } }, { threshold: .05 }).observe(sec);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && visible && !running) { running = true; frame(); } });
+}
+</script>
+</body>
+</html>
