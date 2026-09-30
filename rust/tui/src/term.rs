@@ -301,11 +301,14 @@ struct Pty {
 }
 
 impl Pty {
-    fn spawn(shell: &str, cwd: &str, rows: u16, cols: u16) -> Result<Pty, String> {
+    /// `argv` (a shell, or an editor on a file: BISE-264) in `cwd`.
+    fn spawn(argv: &[&str], cwd: &str, rows: u16, cols: u16) -> Result<Pty, String> {
         let pair = native_pty_system()
             .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| e.to_string())?;
-        let mut cmd = CommandBuilder::new(shell);
+        let Some(prog) = argv.first() else { return Err("nothing to run".into()) };
+        let mut cmd = CommandBuilder::new(prog);
+        cmd.args(&argv[1..]);
         if std::path::Path::new(cwd).is_dir() {
             cmd.cwd(cwd);
         }
@@ -398,6 +401,10 @@ pub(crate) struct Term {
     /// a press went to the program: its drag and release go too
     forwarding: bool,
     clicks: crate::app::MouseState,
+    /// BISE-264: an editor runs in the panel (a click on a file link):
+    /// the shell it replaced (if any), whether the panel was shown, and
+    /// the editor's name (the title). Back when the editor exits.
+    parked: Option<(Option<Pty>, bool, String)>,
 }
 
 impl Default for Term {
@@ -416,6 +423,7 @@ impl Default for Term {
             selecting: None,
             forwarding: false,
             clicks: Default::default(),
+            parked: None,
         }
     }
 }
@@ -435,8 +443,50 @@ impl Term {
         self.shown
     }
 
+    /// BISE-264: run `argv` (a terminal editor on a file) in the panel,
+    /// shown, with the keys; the shell waits behind it and comes back
+    /// when it exits. One editor at a time.
+    pub(crate) fn run(&mut self, cwd: &str, argv: &[String]) -> Result<(), String> {
+        self.restore();
+        if let Some((_, _, name)) = &self.parked {
+            let msg = format!("{} is already open in the terminal panel: quit it first", name);
+            self.shown = true;
+            return Err(msg);
+        }
+        let (rows, cols) = self.pty.as_ref().map_or((10, 80), |p| p.size);
+        let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+        let p = Pty::spawn(&args, cwd, rows, cols).map_err(|e| format!("cannot start {}: {}", argv[0], e))?;
+        let name = std::path::Path::new(&argv[0]).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let shell = self.pty.replace(p);
+        self.parked = Some((shell, self.shown, name));
+        self.shown = true;
+        self.scroll = 0;
+        self.sel = None;
+        self.error = None;
+        Ok(())
+    }
+
+    /// The editor exited: the shell back, the panel as it was.
+    fn restore(&mut self) {
+        if self.parked.is_none() || self.pty.as_mut().is_some_and(|p| p.alive()) {
+            return;
+        }
+        if let Some(mut p) = self.pty.take() {
+            p.kill();
+        }
+        if let Some((shell, shown, _)) = self.parked.take() {
+            self.pty = shell;
+            self.shown = shown;
+        }
+        self.scroll = 0;
+        self.sel = None;
+        self.selecting = None;
+        self.forwarding = false;
+    }
+
     /// Show (spawning the shell in `cwd` if none runs) or hide.
     pub(crate) fn toggle(&mut self, cwd: &str) {
+        self.restore();
         if self.shown {
             self.shown = false;
             self.resizing = false;
@@ -452,7 +502,7 @@ impl Term {
             self.sel = None;
             // the real size comes with the first draw
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-            match Pty::spawn(&shell, cwd, 10, 80) {
+            match Pty::spawn(&[&shell], cwd, 10, 80) {
                 Ok(p) => {
                     self.pty = Some(p);
                     self.error = None;
@@ -664,6 +714,7 @@ impl Term {
 
     /// Draw the panel when shown; returns the area left for the app.
     pub(crate) fn draw(&mut self, frame: &mut Frame, full: Rect) -> Rect {
+        self.restore();
         if !self.shown {
             self.area = None;
             return full;
@@ -694,7 +745,9 @@ impl Term {
         if self.scroll > 0 {
             title = format!(" terminal · ↑ {} lines · ctrl+` hide ", self.scroll);
         }
-        if !alive {
+        if let Some((_, _, name)) = &self.parked {
+            title = format!(" terminal · {} · ctrl+` hide ", name);
+        } else if !alive {
             title = " terminal · the shell exited · ctrl+` twice for a new one ".to_string();
         }
         let block = Block::default().borders(Borders::ALL).title(title).border_style(border);
@@ -724,6 +777,9 @@ impl Term {
         if let Some(mut p) = self.pty.take() {
             p.kill();
         }
+        if let Some((Some(mut p), _, _)) = self.parked.take() {
+            p.kill();
+        }
         self.shown = false;
     }
 }
@@ -736,7 +792,7 @@ impl Drop for Term {
 
 // ---- the App glue (called from the run loop in lib.rs) ----
 
-fn cwd(app: &crate::App) -> String {
+pub(crate) fn cwd(app: &crate::App) -> String {
     crate::sb::workspace(app)
         .or_else(|| std::env::current_dir().ok().map(|d| d.to_string_lossy().to_string()))
         .unwrap_or_else(|| ".".into())
@@ -909,11 +965,35 @@ mod tests {
     }
 
     #[test]
+    fn an_editor_takes_the_panel_and_gives_the_shell_back_when_it_exits() {
+        // BISE-264: a short program stands for the editor (never a real one)
+        let mut t = Term::default();
+        t.pty = Some(Pty::spawn(&["/bin/sh"], "/tmp", 10, 80).unwrap());
+        assert!(!t.shown());
+        let argv = vec!["/bin/sh".to_string(), "-c".to_string(), "sleep 0.3".to_string()];
+        t.run("/tmp", &argv).unwrap();
+        assert!(t.shown(), "the panel shows the editor");
+        assert!(t.parked.as_ref().is_some_and(|(shell, was, name)| shell.is_some() && !was && name == "sh"));
+        // one editor at a time
+        let e = t.run("/tmp", &argv).unwrap_err();
+        assert!(e.contains("already open"), "{e}");
+        let t0 = std::time::Instant::now();
+        while t.parked.is_some() && t0.elapsed().as_secs() < 30 {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            t.restore();
+        }
+        assert!(t.parked.is_none(), "the editor exited: the shell is back");
+        assert!(!t.shown(), "the panel as it was: hidden");
+        assert!(t.pty.as_mut().is_some_and(|p| p.alive()), "the same shell, still running");
+        t.shutdown();
+    }
+
+    #[test]
     fn shell_runs_and_keeps_state_while_hidden() {
         // a clean /bin/sh, not the user's $SHELL: rc files (zsh, prompts)
         // can take seconds under load and zle may drop or bracket input
         let mut t = Term::default();
-        t.pty = Some(Pty::spawn("/bin/sh", "/tmp", 10, 80).unwrap());
+        t.pty = Some(Pty::spawn(&["/bin/sh"], "/tmp", 10, 80).unwrap());
         t.toggle("/tmp");
         assert!(t.shown());
         let screen = |t: &Term| t.pty.as_ref().unwrap().parser.lock().unwrap().screen().contents();

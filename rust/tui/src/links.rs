@@ -254,7 +254,10 @@ pub(crate) fn with_urls(
         }
         let url = &events[e].3[u];
         let label = link_label(events[e].2, events[e].3, u);
-        if label.trim() != url.as_str() && label.trim() != url.trim_start_matches("mailto:") {
+        if label.trim() != url.as_str()
+            && label.trim() != url.trim_start_matches("mailto:")
+            && !crate::file_links::label_names_file(&label, url)
+        {
             inserts.push((i, t, format!(" ({})", url)));
         }
     }
@@ -341,6 +344,8 @@ pub(crate) fn frame_hits() -> Vec<Hit> {
 /// The OSC 8 opening of `url`: its bytes outside printable ASCII
 /// percent-encoded (the spec's 32-126), never an escape.
 pub(crate) fn osc8_open(id: &str, url: &str) -> String {
+    // a file link's line is the click's (file_links.rs), not the terminal's
+    let url = crate::file_links::without_line(url);
     let mut u = String::with_capacity(url.len());
     for b in url.bytes() {
         if (0x21..0x7f).contains(&b) {

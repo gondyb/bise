@@ -51,7 +51,12 @@ fn md_link_at(cs: &[char], i: usize) -> Option<(String, String, usize)> {
     let url = inner.split_whitespace().next().unwrap_or("");
     let url = url.strip_prefix('<').and_then(|u| u.strip_suffix('>')).unwrap_or(url);
     let label: String = cs[i + 1..close].iter().collect();
-    crate::links::linkable(url).then(|| (label, url.to_string(), end + 1))
+    if crate::links::linkable(url) {
+        return Some((label, url.to_string(), end + 1));
+    }
+    // a link to a local file (BISE-264): `[the guide](docs/guide.md#L12)`
+    let file = crate::file_links::target(url)?;
+    Some((label, crate::file_links::url_of(&file), end + 1))
 }
 
 /// An autolink `<https://…>` at `cs[i]` (`<`): the url and where it ends.
@@ -127,15 +132,34 @@ fn spans_of(s: &str, base: Style, links: bool) -> Vec<Span<'static>> {
                 continue;
             }
         }
+        // a bare path to a local file (BISE-264: file_links.rs)
+        if links {
+            if let Some((n, url)) = crate::file_links::bare_at(&cs, i) {
+                if !plain.is_empty() {
+                    spans.push(Span::styled(std::mem::take(&mut plain), base));
+                }
+                let tag = crate::links::add(&url);
+                spans.push(Span::styled(
+                    cs[i..i + n].iter().collect::<String>(),
+                    crate::links::link_style(base, theme::dim(), tag),
+                ));
+                i += n;
+                continue;
+            }
+        }
         if c == '`' {
             if let Some(j) = (i + 1..cs.len()).find(|k| cs[*k] == '`') {
                 if !plain.is_empty() {
                     spans.push(Span::styled(std::mem::take(&mut plain), base));
                 }
-                spans.push(Span::styled(
-                    cs[i + 1..j].iter().collect::<String>(),
-                    Style::default().fg(theme::ok()).add_modifier(Modifier::BOLD),
-                ));
+                let code: String = cs[i + 1..j].iter().collect();
+                let mut st = Style::default().fg(theme::ok()).add_modifier(Modifier::BOLD);
+                // a code span that is a local file is its link (BISE-264)
+                if let Some(file) = crate::file_links::target(code.trim()).filter(|_| links) {
+                    let tag = crate::links::add(&crate::file_links::url_of(&file));
+                    st = crate::links::link_style(st, theme::ok(), tag);
+                }
+                spans.push(Span::styled(code, st));
                 i = j + 1;
                 continue;
             }

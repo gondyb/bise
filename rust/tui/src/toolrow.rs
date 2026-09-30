@@ -89,7 +89,12 @@ fn first_code_line(td: &ToolData) -> Option<Vec<Span<'static>>> {
 fn desc_spans(td: &ToolData) -> Vec<Span<'static>> {
     let st = Style::default().fg(if matches!(td.state, ToolState::Run) { text() } else { dim() });
     if let Some(d) = td.intent.as_deref().filter(|d| !d.trim().is_empty()) {
-        return vec![Span::styled(d.trim().to_string(), st)];
+        // a done row's paths are links (BISE-264); a running row is
+        // redrawn each frame, outside its event's links
+        if matches!(td.state, ToolState::Run) {
+            return vec![Span::styled(d.trim().to_string(), st)];
+        }
+        return crate::file_links::plain_spans(d.trim(), st);
     }
     if let Some(l) = first_code_line(td) {
         return l;
@@ -185,10 +190,10 @@ pub(crate) fn error_row(td: &ToolData, width: usize) -> Option<Line<'static>> {
     let line = error_line(td)?;
     let lead = if no_color() { format!("{} ", glyph(G_FAILED)) } else { String::new() };
     let room = width.saturating_sub(3 + lead.width());
-    Some(Line::from(vec![
-        Span::raw("   "),
-        Span::styled(format!("{}{}", lead, fit_chars(&line, room)), Style::default().fg(error())),
-    ]))
+    // its paths are links (BISE-264): `src/x.rs:12:5` opens there
+    let mut spans = vec![Span::raw("   ")];
+    spans.extend(crate::file_links::plain_spans(&format!("{}{}", lead, fit_chars(&line, room)), Style::default().fg(error())));
+    Some(Line::from(spans))
 }
 
 /// The rows of one call: its row, and the error row of a failure.

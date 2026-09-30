@@ -477,6 +477,33 @@ The same three levels everywhere, in main and inside an agent.
   own cmd+click works too. The copy of a selection writes
   `label (url)`. `BISE_HYPERLINKS=0`: no OSC 8, and a label shows
   `label (url)`, the url dim.
+- **File links** (BISE-264, user: « que les liens dans l'historique vers
+  des fichiers locaux soient cliquables […] ça les ouvrirait dans ton
+  éditeur par défaut »): a local path is a link like a url, same look
+  (a bare path dim, a code span in its code color, underlined in the
+  accent), OSC 8 `file://…`. Which paths: a markdown link to a file
+  (`[the guide](docs/guide.md#L12)`), an inline code span that is a path
+  (`` `rust/tui/src/links.rs:42` ``), a bare path in prose and in a done
+  tool row (a call's description, its error row, a tool's args, the file
+  of a one-file edit). A path has a `/` (`./x`, `../x`, `/abs`, `~/x`) or
+  is a `name.ext`; `:line`, `:line:col`, `#L12` give the line. Only a
+  file that exists: a relative path resolves against the feed's agent
+  (its private worktree, its folder), then the workspace, then bise's
+  cwd; the stat is cached 5 s. A plain click opens it in the editor:
+  `BISE_EDITOR`, else `$VISUAL`, else `$EDITOR`, else the file's default
+  app (`open`, `xdg-open`, `BISE_OPEN`; no line). A GUI editor runs
+  detached, at the line in its own syntax: code, cursor, windsurf,
+  codium `-g file:line:col`; zed, subl `file:line:col`; idea, webstorm
+  and the other JetBrains `--line N --column C file`; mate `-l N`; gvim,
+  mvim `+N`. A terminal editor (vim, nvim, vi, nano `+N,C`, emacs, micro,
+  kak `+N:C`, hx `file:line:col`, and any editor bise does not know, given
+  the file alone) runs in the terminal panel, never by suspending the
+  TUI: the panel shows with the keys, titled `terminal · vim · ctrl+` hide`;
+  the shell waits behind it and the panel goes back as it was when the
+  editor exits; one editor at a time. The status row says `opening
+  links.rs:42 in code` or `vim opens links.rs:42 in the terminal panel ·
+  ctrl+` hides it`. The copy keeps a file link's label alone when it
+  names the file.
 
 ## 12. The inbox
 
@@ -993,7 +1020,7 @@ Every string the UI shows, lowercase. Issues must use these exact strings.
 | /theme | `theme: {mode}.` / `theme: {mode}. /theme auto, light or dark to change it.` / `theme: {mode}, for now: i couldn't save it ({err}).` / `/theme takes auto, light or dark.` |
 | /clear, ctrl+l | `display cleared — scroll up to see the earlier lines again` |
 | interrupt | `… · ctrl+c again to quit` |
-| terminal panel | title ``terminal · ctrl+` hide`` · hint ``terminal: keys go to the shell · ctrl+` hide · wheel/shift+pgup scroll · drag select · drag the border resize`` · a drag selects (the history's tint), the release copies; cmd+c / ctrl+shift+c copy; a program that takes the mouse gets it, shift+drag selects |
+| terminal panel | title ``terminal · ctrl+` hide`` (an editor opened by a file link, BISE-264: ``terminal · vim · ctrl+` hide``) · hint ``terminal: keys go to the shell · ctrl+` hide · wheel/shift+pgup scroll · drag select · drag the border resize`` · a drag selects (the history's tint), the release copies; cmd+c / ctrl+shift+c copy; a program that takes the mouse gets it, shift+drag selects |
 | help footer | `type to filter · tab switch · esc close` |
 | steer with nothing | `nothing to steer with: type the text after steer` |
 | queued messages | ` › {text}…` (one per line, dim) · hint `queued · sent when this turn ends · ↑ edit` · panel row `· {n} queued` |

@@ -752,6 +752,8 @@ pub(super) fn draw_sb(app: &mut App, frame: &mut Frame) {
         .filter(|_| sb.preview)
         .map(|a| a.name.clone())
         .filter(|n| *n != sb.focus);
+    // a path in the feed resolves against its agent's folders (BISE-264)
+    crate::file_links::set_dirs(panel::feed_dirs(app, target.as_deref().unwrap_or(&app.sb.focus)));
     match target {
         Some(name) => with_feed(app, &name, |app| draw(app, frame)),
         None => {

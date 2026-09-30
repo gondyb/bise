@@ -378,7 +378,10 @@ pub(crate) fn on_mouse(app: &mut App, m: &crossterm::event::MouseEvent, term_h: 
             // the terminal's own (Ghostty keeps the release)
             let Some((i, row, col)) = app.feed_sel.take().map(|s| s.anchor) else { return };
             if let Some(url) = feed_link_at(app, i, row, col) {
-                let note = if crate::links::open(&url) {
+                // a local file opens in your editor (BISE-264)
+                let note = if let Some(t) = crate::file_links::target_of_url(&url) {
+                    crate::file_links::open(app, &t)
+                } else if crate::links::open(&url) {
                     format!("opening {}", url)
                 } else {
                     format!("could not open {}", url)

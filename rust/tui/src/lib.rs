@@ -75,6 +75,7 @@ mod term;
 mod feedsel;
 mod find;
 mod links;
+mod file_links;
 mod keyprobe;
 pub mod timing;
 mod crash;
@@ -108,3 +109,5 @@ mod at_popup_tests;
 mod fuzz_tests;
 #[cfg(test)]
 mod links_tests;
+#[cfg(test)]
+mod file_links_tests;

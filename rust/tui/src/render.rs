@@ -1005,7 +1005,14 @@ pub(crate) fn tool_head(td: &ToolData, tick: u32, name: &str, args: &str) -> Lin
         }
     }
     if !args.is_empty() {
-        row.push(Span::styled(format!(" · {}", args), dim_st));
+        row.push(Span::styled(" · ".to_string(), dim_st));
+        // a done call's paths are links (BISE-264); a running one is
+        // redrawn each frame, outside its event's links
+        if matches!(td.state, ToolState::Run) {
+            row.push(Span::styled(args.to_string(), dim_st));
+        } else {
+            row.extend(crate::file_links::plain_spans(args, dim_st));
+        }
     }
     Line::from(row)
 }
@@ -1118,8 +1125,14 @@ pub(crate) fn edit_head(td: &ToolData, tick: u32, src: &str) -> Line<'static> {
     let dim_st = Style::default().fg(dim());
     let mut row = vec![
         Span::styled(format!(" {} ", G_PATCH), Style::default().fg(text())),
-        Span::styled(format!("edit {}", target), Style::default().fg(text())),
+        Span::styled("edit ".to_string(), Style::default().fg(text())),
     ];
+    // one file edited: its path is a link once done (BISE-264)
+    if files.len() == 1 && !matches!(td.state, ToolState::Run) {
+        row.extend(crate::file_links::plain_spans(&target, Style::default().fg(text())));
+    } else {
+        row.push(Span::styled(target, Style::default().fg(text())));
+    }
     let mark = format!(" {}", if td.expanded { G_OPEN } else { G_CLOSED });
     match td.state {
         ToolState::Run => {

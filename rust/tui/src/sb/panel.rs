@@ -33,6 +33,21 @@ pub(crate) fn workspace(app: &App) -> Option<String> {
     Some(app.sb.workspace.clone()).filter(|w| !w.is_empty())
 }
 
+/// BISE-264: the folders a relative path in `who`'s feed resolves
+/// against (file links): its private worktree, its own folder, then
+/// the workspace.
+pub(crate) fn feed_dirs(app: &App, who: &str) -> Vec<std::path::PathBuf> {
+    let sb = &app.sb;
+    let mut out: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(a) = sb.agent(who) {
+        out.extend([&a.place, &a.path].into_iter().filter(|p| !p.is_empty()).map(Into::into));
+    }
+    if !sb.workspace.is_empty() {
+        out.push(sb.workspace.clone().into());
+    }
+    out
+}
+
 /// The feed and composer area, and the panel on the right when it fits.
 pub(crate) fn split(full: Rect) -> (Rect, Option<Rect>) {
     // the screen's layout (book §8, layout.rs): under the header and its
