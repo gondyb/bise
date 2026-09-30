@@ -38,7 +38,7 @@
 <body>
 <div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
 
-<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws an arc with main's wake behind its ∿ (ripples that calm into tiny dots), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into little grey seeds, from the kiss back to where it started. what bise says fades in under the thread.<div class="lbls nm">names: <button data-n="bubble" class="on">bise says it (under)</button><button data-n="events">events only</button><button data-n="glide">glide</button><button data-n="jump">jump (before)</button><button data-n="none">no names</button><button id="notitle">hide the title too</button></div><div class="lbls thr">thread: <button data-t="wake" class="on">wake</button><button data-t="pulses">pulses</button><button data-t="waves">waves</button><button data-t="tide">tide</button><button data-t="swell">swell</button><button data-t="ripple">ripple</button><button data-t="trail">trail</button><button data-t="shimmer">shimmer</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a line that follows its own direction (─ ╱ ╲ │), with main's ripples right behind its ∿, which breathes like a working agent in the app's side panel (· ~ ∿ ≈ ∿ ~), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into little grey seeds, from the kiss back to where it started. what bise says fades in under the thread.<div class="lbls nm">names: <button data-n="bubble" class="on">bise says it (under)</button><button data-n="events">events only</button><button data-n="glide">glide</button><button data-n="jump">jump (before)</button><button data-n="none">no names</button><button id="notitle">hide the title too</button></div><div class="lbls thr">thread: <button data-t="wake" class="on">wake</button><button data-t="pulses">pulses</button><button data-t="waves">waves</button><button data-t="tide">tide</button><button data-t="swell">swell</button><button data-t="ripple">ripple</button><button data-t="trail">trail</button><button data-t="shimmer">shimmer</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
 <section class="v" data-v="seeds"><div class="tag"><b>7 · seeds</b> <span class="pick">new · mix of 5 and 6</span><br>the dandelion sky, plus one thread. now and then an agent lifts off the thread like a seed (∿ name), floats a while, and lands further along with a ✓. the thread's :* keeps walking.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
@@ -105,14 +105,24 @@ function dots(g, pts, cl = "") {
 }
 // an agent's arc wears main's wake: ripples right behind its head that calm down with distance, tiny dots further back.
 // once it has landed, the wake keeps calming as if the head went on walking (d0 grows), so a waiting arc settles into dots
-function arcWake(g, pts, t, d0 = 0) {
+function arcWake(g, b, Y, t, d0 = 0) {
+  // the arc is drawn as a line whose glyphs follow its direction, so it stays continuous when it climbs:
+  // flat ─ (ripples ≈∼~ right behind the head, like main's wake), sloped ╱ ╲, steep │ stacked
+  const f = (u) => Y + b.dir * b.A * Math.sin(Math.PI * Math.max(0, Math.min(b.L, u)) / b.L);
+  const n = Math.floor(b.p);
   // the last cells before the head (∿ or ✓) stay empty, so the mark never gets lost in its own wake
-  for (let i = 0; i < pts.length - 3; i++) {
-    const [x, y] = pts[i], n = pts[i + 1] ? pts[i + 1][1] : y, steps = Math.max(1, Math.ceil(Math.abs(n - y)));
-    for (let k = 1; k < steps; k++) g.put(x + k / steps, y + (n - y) * k / steps, "·", "s");
-    const d = pts.length - 1 - i + d0, amp = Math.exp(-d / 14), v = Math.abs(Math.sin(d * .38 - t * 3.2) * amp + Math.sin(d * .13 + t * .9) * amp * .4);
-    if (v > .16 && steps < 3) g.put(x, y, v > .75 ? "≈" : v > .42 ? "∼" : "~", d < 4 ? "a" : d < 10 ? "a2" : "d");
-    else g.put(x, y, "·", "s");
+  for (let i = 0; i <= n - 3; i++) {
+    const ya = f(i - .5), yb = f(i + .5), dy = yb - ya, x = b.xs + i;
+    const d = n - i + d0, amp = Math.exp(-d / 14), v = Math.abs(Math.sin(d * .38 - t * 3.2) * amp + Math.sin(d * .13 + t * .9) * amp * .4);
+    const cl = d < 4 ? "a" : d < 10 ? "a2" : v > .42 ? "d" : "";
+    const r0 = Math.round(Math.min(ya, yb)), r1 = Math.round(Math.max(ya, yb));
+    if (r0 === r1 || Math.abs(dy) < 1) {
+      const ch = r0 !== r1 ? (dy < 0 ? "╱" : "╲") : v > .75 ? "≈" : v > .42 ? "∼" : v > .16 ? "~" : "─";
+      g.put(x, Math.round(f(i)), ch, cl);
+    } else {
+      const ch = Math.abs(dy) > 1.8 ? "│" : dy < 0 ? "╱" : "╲";
+      for (let r = r0; r <= r1; r++) g.put(x, r, ch, cl);
+    }
   }
 }
 // how an agent is labelled on the branch (switch on section 9)
@@ -375,7 +385,7 @@ const V = {
           return false;
         }
         if (b.p >= b.L) b.rest = (b.rest || 0) + .6;
-        arcWake(g, pts, t, b.rest || 0);
+        arcWake(g, b, Y, t, b.rest || 0);
         b.head = b.p < b.L ? pts[pts.length - 1] : null;
         return true;
       });
@@ -406,7 +416,10 @@ const V = {
           return;
         }
       };
-      for (const o of s.b) { const [mx, my] = o.head || [o.xs + o.L, Y]; used.push({ a: Math.round(mx), z: Math.round(mx), r: Math.round(my), m: true }); g.put(mx, my, o.head ? "∿" : "✓", "a"); }
+      for (const o of s.b) { const [mx, my] = o.head || [o.xs + o.L, Y]; used.push({ a: Math.round(mx), z: Math.round(mx), r: Math.round(my), m: true }); 
+        // a working agent breathes like its row in the app's side panel (gust W1, 1 cell): · ~ ∿ ≈ ∿ ~, 110 ms a frame
+        if (o.head) { o.ph ??= Math.floor(rnd(0, 6)); const k = (Math.floor(Date.now() / 110) + o.ph) % 6, ch = "·~∿≈∿~"[k]; g.put(mx, my, ch, ch === "·" ? "a3" : ch === "~" ? "a2" : "a"); }
+        else g.put(mx, my, "✓", "a"); }
       if (BUBBLE) {
         // one line at a time, ~2.5 s each; if bise has more to say, only the newest waits
         if (s.q.length > 1) s.q = s.q.slice(-1);
