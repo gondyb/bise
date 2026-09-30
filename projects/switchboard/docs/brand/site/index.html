@@ -383,7 +383,7 @@
     <h2 class="punch">you didn't become an engineer<br>to babysit robots.</h2>
     <p class="soft">at 6pm you'd shipped more than ever, and you felt like you did nothing.</p>
     <p class="soft">it's not you. it's agent fatigue. you jump between tabs a hundred times a day. every agent talks to you, about everything, all the time.</p>
-    <p class="turn">with bise, you only talk to one thread.<br>it runs the agents, and taps your shoulder when it matters.</p>
+    <p class="turn">it doesn't have to be like this.</p>
   </div>
 </section>
 
@@ -422,7 +422,7 @@
   <div class="inner blow">
     <div class="kicker">how</div>
     <h2>one thread. a whole team.</h2>
-    <p class="soft">you talk to <b>main</b>, bise's main agent. main splits your ideas into jobs and runs the other agents.</p>
+    <p class="soft"><b>main</b> is your team lead. it splits your ideas into jobs and runs the other agents.</p>
 <div class="org" id="org" aria-label="you talk to main, main runs four agents">
   <div class="msg"><span class="who">you → <span class="acc">main</span></span>dark mode please. also the csv export crashes on emoji 😭</div>
   <div class="wire"></div>
@@ -436,7 +436,7 @@
   </div>
 </div>
     <ul class="how">
-      <li><span class="n">1</span><span><b>one thread per repo</b><span class="line">one thread to talk to. peek into any agent when you feel like it</span><span class="d">no tabs to juggle, no "wait, which session was that?". main knows everything going on in the repo, even what you did last month.</span></span></li>
+      <li><span class="n">1</span><span><b>no sessions to find again</b><span class="line">peek into any agent when you feel like it</span><span class="d">no tabs to juggle, no "wait, which session was that?". main knows everything going on in the repo, even what you did last month.</span></span></li>
       <li><span class="n">2</span><span><b>main is always listening</b><span class="line">the team is busy. main never is</span><span class="d">ask, add a thing, change your mind while the agents work. main answers right away.</span></span></li>
       <li><span class="n">3</span><span><b>a team that runs itself</b><span class="line">they talk behind your back. in a good way</span><span class="d">agents message each other before they collide. when one needs its own copy of the repo, it makes a worktree and cleans it up after. each one commits its own work.</span></span></li>
       <li><span class="n">4</span><span><b>forget there are agents</b><span class="line">no yaml was harmed.</span><span class="d">no roles, no graph, no config. bise has opinions, so you don't need any. you just dump your ideas in the thread.</span></span></li>
@@ -527,7 +527,7 @@
 <section id="faq">
   <div class="inner blow">
     <div class="kicker">questions</div>
-    <p><b>but i already have Claude Code / Codex / Vibe</b><br><span class="dim">keep your models, MCP servers and skills. bise changes how you work with them: one thread, and a team behind it.</span></p>
+    <p><b>but i already have Claude Code / Codex / Vibe</b><br><span class="dim">keep your models, MCP servers and skills. bise changes how you work with them: you talk to a team lead instead of juggling sessions.</span></p>
     <p><b>won't the agents step on each other?</b><br><span class="dim">they tell each other what they touch before they touch it. worktrees only when one needs its own copy, cleaned up after.</span></p>
     <p><b>won't my context overflow? i don't want to live in the dumb zone</b><br><span class="dim">no need to overthink it. when a thread gets long, bise compacts it. the latest models are trained for that and they keep their trajectory. your thread just keeps going.</span></p>
     <p><b>do i need a memory system?</b><br><span class="dim">nope. compaction carries the thread, and any agent can go back and read the full history: every message, every tool call. nothing gets lost.</span></p>
@@ -547,7 +547,7 @@
     <h2 class="hi"><span>hi, i'm gabriel</span><img class="face" src="/gabriel.jpg" width="120" height="120" alt="Gabriel Vergnaud, smiling, by the water at sunset"></h2>
     <p>i build coding agents for a living.</p>
     <p class="soft">agents made me faster. they also made my days feel empty. i was switching tabs, answering "should i continue?", pasting context around. i shipped more than ever and i didn't enjoy it.</p>
-    <p class="soft">so i built the tool i wanted: one thread, a team behind it, and me in flow. most of bise was built with bise.</p>
+    <p class="soft">so i built the tool i wanted: a team lead to talk to, and me in flow. most of bise was built with bise.</p>
     <p>i want everyone to ship like a team of a hundred, and to love building again. bise is open source and indie. i read every issue.</p>
     <p class="dim">— Gabriel Vergnaud · <a href="https://github.com/gvergnaud">GitHub</a></p>
   </div>
@@ -1305,7 +1305,7 @@ document.querySelectorAll(".feat p, .facts, .mv").forEach(cellify);
     wins.forEach((d, i) => { d.classList.remove("nag"); d.style.left = (w / 2 - 150) + "px"; d.style.top = (h / 2 - 60) + "px"; d.style.transform = "scale(.35) rotate(0deg)"; d.style.opacity = "0"; });
     stage.classList.add("calm"); waiting = 0; setStats();
     cap.innerHTML = "<b>one thread per repo.</b> you talk to main. main runs the agents, and only taps your shoulder when it matters.";
-    head("with bise", "this is what flow looks like", "one thread. five ideas in two minutes. you never stop typing.");
+    head("with bise", "this is what flow looks like", "five ideas in two minutes. you never stop typing.");
     window.startFlow && window.startFlow();
   }
   let pinned = false;
