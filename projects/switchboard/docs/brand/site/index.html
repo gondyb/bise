@@ -62,7 +62,6 @@
   .sky .lay span { position:absolute; left:0; top:0; white-space:pre; color:var(--dim); transition:transform .5s cubic-bezier(.25,.8,.3,1), opacity .45s; will-change:transform; }
   pre.rail .a { color:var(--acc); } pre.rail .a2 { color:var(--acc); opacity:.55; } pre.rail .a3 { color:var(--acc); opacity:.28; } pre.rail .f { color:var(--faint); } pre.rail .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } pre.rail .d { color:var(--dim); } pre.rail .sf { color:var(--faint); opacity:.7; } pre.rail .w { color:var(--wind); } pre.rail .g { display:inline-block; width:1ch; text-align:center; } pre.rail .t { color:var(--text); }
   pre.rail { position:absolute; inset:0; margin:0; color:var(--wind); font:inherit; font-size:14px; line-height:1.4; white-space:pre; overflow:hidden; pointer-events:none; user-select:none; }
-  .sky .hero { padding-bottom:16vh; }  /* the title block sits a bit higher: the sky under it gets room for 3 lanes of agents */
   .hero { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:0 6vw; position:relative; }
   .big { font-size:clamp(76px, 13vw, 170px); font-weight:700; letter-spacing:-.045em; line-height:1; }
   .kiss { display:inline-block; color:var(--acc); animation:kiss 1s .6s ease-out both; }
@@ -835,7 +834,7 @@ const sec = document.querySelector(".sky");
   const frame = () => {
     if (!visible || document.hidden) { running = false; return; }
     // nothing is drawn behind the hero text: a box around it, 2 cells of air
-    const pr = pre.getBoundingClientRect(), rs = [...sec.querySelectorAll(".hero > .big, .hero > .t1, .hero > .t2, .hero > .install")].map(e => e.getBoundingClientRect());
+    const pr = pre.getBoundingClientRect(), rs = [...sec.querySelectorAll(".hero > .big, .hero > .t1, .hero > .t2")]  // the install box may sit over a lane (user: overlap is fine).map(e => e.getBoundingClientRect());
     const ko = { x0: Math.floor((Math.min(...rs.map(r => r.left)) - pr.left) / cw) - 3, x1: Math.ceil((Math.max(...rs.map(r => r.right)) - pr.left) / cw) + 3,
                  y0: Math.floor((Math.min(...rs.map(r => r.top)) - pr.top) / lh) - 1, y1: Math.ceil((Math.max(...rs.map(r => r.bottom)) - pr.top) / lh) + 1 };
     const g = Grid(Math.ceil(pre.clientWidth / cw) + 1, Math.ceil(pre.clientHeight / lh) + 1, ko); g.ko = ko;
