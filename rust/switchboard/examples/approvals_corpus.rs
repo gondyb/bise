@@ -72,6 +72,7 @@ fn main() {
                             tmp,
                             home: home.clone(),
                             bise: bise.clone(),
+                        edit_tool: "edit".into(),
                         }),
                     ));
                 }

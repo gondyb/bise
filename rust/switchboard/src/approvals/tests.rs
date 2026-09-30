@@ -17,6 +17,7 @@ fn call(tool: &str, args: serde_json::Value) -> Call {
         tmp: TMP.into(),
         home: "/h".into(),
         bise: "/h/.bise".into(),
+        edit_tool: "edit".into(),
     }
 }
 
@@ -378,7 +379,7 @@ fn inline_code_that_writes_is_denied_once_then_a_card() {
         let Verdict::DenyOnce { exact, hint } = &v else {
             panic!("{cmd}: want DenyOnce, got {v:?}")
         };
-        assert!(hint.contains("edit"), "{hint}");
+        assert_eq!(hint, "auto: this bash call needs the user. Use `edit`: it runs without asking. If bash is really needed, repeat the call and the user will be asked.");
         let mut cache = Cache::default();
         exact.iter().for_each(|e| cache.note_denied_once(e));
         let again = judge_with(
@@ -399,6 +400,13 @@ fn inline_code_that_writes_is_denied_once_then_a_card() {
             "{cmd}: the repeat: {again:?}"
         );
     }
+}
+
+#[test]
+fn the_hint_names_the_edit_tool_on() {
+    let c = Call { edit_tool: "apply_patch".into(), ..call("bash", json!({"arg": "perl -pi -e 's/a/b/' f"})) };
+    let Verdict::DenyOnce { hint, .. } = judge_with(&c, &Rules::default(), &Cache::default(), false, &LexicalFs) else { panic!() };
+    assert!(hint.contains("Use `apply_patch`"), "{hint}");
 }
 
 #[test]

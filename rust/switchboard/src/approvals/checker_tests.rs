@@ -24,6 +24,7 @@ fn call(tool: &str, args: Value) -> Call {
         tmp: "/h/.bise/hubs/hx/agents/a/tmp".into(),
         home: "/h".into(),
         bise: "/h/.bise".into(),
+        edit_tool: "edit".into(),
     }
 }
 

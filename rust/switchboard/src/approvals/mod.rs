@@ -66,6 +66,9 @@ pub struct Call {
     /// bise's home (`~/.bise` or `$BISE_HOME`): a root, but its `hubs/`,
     /// `approvals.toml` and `auth.json`.
     pub bise: PathBuf,
+    /// The edit tool on in this agent's request (`edit` or `apply_patch`,
+    /// the gate JSON's `edit_tool`): the deny-once hint names it.
+    pub edit_tool: String,
 }
 
 impl Call {
@@ -161,11 +164,11 @@ pub enum Verdict {
 /// Tools that are never gated (design §3).
 pub const NEVER_GATED: &[&str] = &["search_tool_functions", "skill", "run_typescript", "sb"];
 
-/// What tier 3 says to the agent (the edit part words it per toolset:
-/// `hint_for`).
+/// What tier 3 says to the agent (approvals-edit's words, also the Bend
+/// `Xtp.deny_once_hint`).
 pub fn hint_for(edit_tool: &str) -> String {
     format!(
-        "not run: in auto, a script that edits files is not allowed, because its edits cannot be checked. use {edit_tool} to edit files. if the script is really needed, run the same command again: the user will be asked."
+        "auto: this bash call needs the user. Use `{edit_tool}`: it runs without asking. If bash is really needed, repeat the call and the user will be asked."
     )
 }
 
@@ -278,7 +281,7 @@ fn judge_bash(
             };
         }
         return Verdict::DenyOnce {
-            hint: hint_for("the edit tool"),
+            hint: hint_for(if call.edit_tool.is_empty() { "edit" } else { &call.edit_tool }),
             exact: deny.into_iter().map(|(p, _)| p.exact()).collect(),
         };
     }
