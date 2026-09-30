@@ -108,24 +108,27 @@ fn ctrl_r_with_voice_off_says_how_to_enable() {
 fn a_start_error_is_a_warning_in_the_feed() {
     let (mut app, _rec, _tr) = app_with_voice(true);
     assert!(voice_key(&mut app, &KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL), || {
-        Err("voice transcription needs an API key: set MISTRAL_API_KEY or run 'bise login mistral'".into())
+        Err("no audio input device found.".into())
     }));
     assert_eq!(app.voice.state(), VoiceState::Idle);
-    assert!(matches!(
-        app.events.last(),
-        Some(Ev::Warn(m)) if m == "voice transcription needs an API key: set MISTRAL_API_KEY or run 'bise login mistral'"
-    ));
+    assert!(matches!(app.events.last(), Some(Ev::Warn(m)) if m == "no audio input device found."));
+    // BISE-298: no key is an error with its way out
+    assert!(voice_key(&mut app, &KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL), || Err(voice::NEEDS_KEY.into())));
+    assert!(matches!(app.events.last(), Some(Ev::Err(m)) if m == "voice needs a key. /voice setup picks one."));
 }
 
 #[test]
 fn transcription_errors_and_notices_are_shown() {
     let (mut app, _rec, tr) = app_with_voice(true);
     ctrl_r(&mut app);
-    tr.send(TranscribeEvent::Error("HTTP 401 Unauthorized".into()));
+    let wrong = voice::Failure { kind: voice::FailKind::WrongKey, said: "Invalid API Key".into() };
+    tr.send(TranscribeEvent::Failed(wrong, vec![1; 16_000]));
     pump_voice(&mut app);
     assert!(matches!(
         app.events.last(),
-        Some(Ev::Err(m)) if m == "voice transcription failed: HTTP 401 Unauthorized"
+        Some(Ev::Said { glyph: "✗", head, dim })
+            if head == "Mistral says the voice key is wrong. /provider fixes it."
+            && *dim == vec!["Invalid API Key".to_string(), "your recording is kept: ctrl+r retry".to_string()]
     ));
     ctrl_r(&mut app);
     press(&mut app, KeyCode::Char(' '), KeyModifiers::NONE);
@@ -254,10 +257,11 @@ fn a_failure_takes_the_chip_away_and_keeps_the_text() {
     let (mut app, _rec, tr) = app_at("keep me", 4);
     ctrl_r(&mut app);
     press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE);
-    tr.send(TranscribeEvent::Error("HTTP 500".into()));
+    tr.send(TranscribeEvent::Failed(voice::Failure { kind: voice::FailKind::Down, said: "it answered 500".into() }, Vec::new()));
     pump_voice(&mut app);
     assert_eq!((app.ed.text.as_str(), app.ed.cursor), ("keep me", 4));
-    assert!(matches!(app.events.last(), Some(Ev::Err(m)) if m == "voice transcription failed: HTTP 500"));
+    assert!(matches!(app.events.last(), Some(Ev::Said { head, dim, .. })
+        if head.starts_with("i couldn't reach Mistral to transcribe.") && *dim == vec!["it answered 500".to_string()]));
     // no speech: the chip goes, the note in the status row
     ctrl_r(&mut app);
     press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE);

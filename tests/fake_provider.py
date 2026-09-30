@@ -44,6 +44,10 @@ A key (Authorization, x-api-key) holding "bad" gets a 401, one holding
 $FAKE_CREDIT exists (credit added, BISE-291); "broke-url" says so
 with OpenAI's words, a url and `."` in them (BISE-287).
 
+Speech to text (BISE-298): .../audio/transcriptions, .../speech-to-text
+and .../listen answer {"text": $FAKE_STT_TEXT} ("" by default); a key
+holding "bad" gets a 401, "broke" a 402, "down" a 503.
+
 Each request is logged to $FAKE_LOG (one JSON line: agent, last user
 message, reply as {content, tool_calls}, images, family, stream, status)
 for the assertions.
@@ -187,6 +191,13 @@ def conv_gemini(body):
 
 CONV = {"openai-chat": conv_openai_chat, "anthropic": conv_anthropic,
         "openai-responses": conv_responses, "gemini": conv_gemini}
+
+
+def is_stt(path):
+    """The speech-to-text endpoints (BISE-298): OpenAI's and Mistral's
+    /audio/transcriptions, ElevenLabs' /speech-to-text, Deepgram's /listen."""
+    p = path.split("?")[0].rstrip("/")
+    return p.endswith("/audio/transcriptions") or p.endswith("/speech-to-text") or p.endswith("/listen")
 
 
 def family_of(path):
@@ -639,9 +650,34 @@ class H(http.server.BaseHTTPRequestHandler):
         self.wfile.write(b"0\r\n\r\n")
         self.close_connection = True
 
+    def stt(self, raw):
+        """BISE-298: speech to text (a recording, the voice key check).
+        The key's word picks the answer: "bad" 401, "broke" 402 (until
+        $FAKE_CREDIT exists), "down" 503; else {"text": $FAKE_STT_TEXT}
+        ("" by default: the check's silence)."""
+        auth = " ".join(self.headers.get(h, "") for h in ("authorization", "x-api-key", "xi-api-key"))
+        credit = os.environ.get("FAKE_CREDIT")
+        broke = "broke" in auth and not (credit and os.path.exists(credit))
+        m = re.search(rb'name="model(?:_id)?"\r\n\r\n([^\r]*)', raw)
+        model = m.group(1).decode() if m else ""
+        with open(LOG, "a") as f:
+            f.write(json.dumps({"agent": "", "family": "stt", "path": self.path, "model": model,
+                                "bytes": len(raw)}) + "\n")
+        if "bad" in auth:
+            self.send(401, json.dumps({"detail": "Invalid API Key"}).encode())
+        elif broke:
+            self.send(402, json.dumps({"error": {"type": "billing_error", "message": "insufficient credit balance"}}).encode())
+        elif "down" in auth:
+            self.send(503, json.dumps({"error": {"message": "the service is overloaded"}}).encode())
+        else:
+            self.send(200, json.dumps({"model": model, "text": os.environ.get("FAKE_STT_TEXT", "")}).encode())
+
     def do_POST(self):
         n = int(self.headers.get("content-length", "0"))
-        body = json.loads(self.rfile.read(n) or b"{}")
+        raw = self.rfile.read(n)
+        if is_stt(self.path):
+            return self.stt(raw)
+        body = json.loads(raw or b"{}")
         family = family_of(self.path)
         stream = (":streamGenerateContent" in self.path) if family == "gemini" else body.get("stream") is True
         sse = stream and (family != "gemini" or "alt=sse" in self.path)

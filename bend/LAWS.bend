@@ -2240,6 +2240,45 @@ law provider_agent_model_not_for_main:
   {Pv.shown_model(Pv.resolve("", "", "mistral/e", "main", "model = \"mistral/c\"\nagent_model = \"mistral/d\"", "", ""))
     == "mistral/c" : String}
 
+# LAW (BISE-298): the model roles table. [roles] main / agents (a line,
+# or [roles.<r>] model = ...) come before the old model / agent_model;
+# the efforts too ([roles.<r>] effort before (agent_)reasoning_effort).
+law provider_roles_main_over_model:
+  {Pv.shown_model(Pv.resolve("", "", "", "main",
+      "model = \"mistral/c\"
+[roles]
+main = \"mistral/r\"", "", ""))
+    == "mistral/r" : String}
+
+law provider_roles_agents_table:
+  {(Pv.shown_model(Pv.resolve("", "", "", "agent",
+      "agent_model = \"mistral/d\"
+[roles.agents]
+model = \"mistral/t\"", "", "")),
+    Pv.shown_model(Pv.resolve("", "", "", "main",
+      "[roles]
+main = \"mistral/r\"
+agents = \"mistral/s\"", "", "")),
+    Pv.shown_model(Pv.resolve("", "", "", "agent",
+      "[roles]
+main = \"mistral/r\"", "", "")))
+    == ("mistral/t", "mistral/r", "mistral/r") : String & String & String}
+
+law effort_of_the_roles:
+  {(Pv.shown_effort(Pv.resolve_chosen("", "", "", "", "agent",
+        "model = \"opus-5.5\"
+agent_reasoning_effort = \"low\"
+[roles.agents]
+effort = \"medium\"", "[providers.foundry]
+base_url = \"https://foundry.example.net/anthropic/v1\"", "")),
+      Pv.shown_effort(Pv.resolve_chosen("", "", "", "", "main",
+        "model = \"opus-5.5\"
+reasoning_effort = \"high\"
+[roles.main]
+effort = \"low\"", "[providers.foundry]
+base_url = \"https://foundry.example.net/anthropic/v1\"", "")))
+    == ("medium", "low") : String & String}
+
 # LAW (BISE-150): the compaction threshold defaults to 80 % of the
 # model's context window: its `context` in the models file, else its
 # provider's; nothing says (an unknown provider, no models file for a

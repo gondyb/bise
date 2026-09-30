@@ -80,6 +80,8 @@ pub(crate) type Session = (Receiver<AudioMsg>, Sender<TranscribeEvent>, Arc<Atom
 pub(crate) fn job() -> VoiceJob {
     VoiceJob {
         name: "mistral/voxtral-mini-latest".into(),
+        provider_name: "Mistral".into(),
+        billing_url: String::new(),
         api: "mistral".into(),
         base_url: "https://api.mistral.ai/v1".into(),
         model: "voxtral-mini-latest".into(),

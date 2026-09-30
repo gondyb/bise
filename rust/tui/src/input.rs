@@ -80,6 +80,10 @@ pub(crate) fn voice_key(
                 app.voice_text.clear();
                 crate::attach::insert_live_chip(&mut app.ed);
             }
+            // BISE-298: no key is an error with its way out
+            Err(m) if m == voice::NEEDS_KEY => {
+                push_event(&mut app.events, &mut app.cache, Ev::Err(m));
+            }
             Err(m) => {
                 push_event(&mut app.events, &mut app.cache, Ev::Warn(m));
             }
@@ -140,6 +144,10 @@ pub(crate) fn apply_voice(app: &mut App, out: voice::VoiceOutput, now: std::time
             end_chip(app, None);
             push_event(&mut app.events, &mut app.cache, Ev::Err(m));
         }
+        voice::VoiceOutput::Failed(f) => {
+            end_chip(app, None);
+            push_event(&mut app.events, &mut app.cache, Ev::Said { glyph: f.glyph, head: f.head, dim: f.dim });
+        }
         voice::VoiceOutput::Notice(m) => {
             end_chip(app, None);
             app.voice_note = Some((m, now));
@@ -171,6 +179,7 @@ pub(crate) fn toggle_voice(app: &mut App) -> Ev {
     app.voice.enabled = on;
     if !on {
         app.voice.cancel();
+        app.voice.drop_kept();
     }
     match voice::save_voice_enabled(on) {
         Err(e) => Ev::Warn(format!(

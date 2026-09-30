@@ -18,6 +18,7 @@ pub mod auth;
 pub mod auth_cli;
 pub mod cli;
 pub mod config_cli;
+pub mod roles;
 pub mod voice;
 
 /// The command's name in messages and usages (BISE-165: was `bend-harness`).
@@ -247,6 +248,9 @@ pub struct Provider {
     /// `hidden = true`: not offered to a new user (a private proxy); it
     /// still works when a config or a key picks it
     pub hidden: bool,
+    /// its recommended voice model (the voice screen's pick, BISE-298),
+    /// its id without the provider; "" = its first listed one
+    pub voice_model: String,
     /// the defaults of its models
     pub caps: PartialCaps,
     pub source: Source,
@@ -551,6 +555,7 @@ impl Catalog {
                                 keys_url: String::new(),
                                 signup_url: String::new(),
                                 billing_url: String::new(),
+                                voice_model: String::new(),
                                 model: String::new(),
                                 hidden: false,
                                 caps: PartialCaps::default(),
@@ -585,6 +590,7 @@ impl Catalog {
                                     "signup_url" => set_str(&mut p.signup_url, s(), &where_, fk, &mut warn),
                                     "billing_url" => set_str(&mut p.billing_url, s(), &where_, fk, &mut warn),
                                     "model" => set_str(&mut p.model, s(), &where_, fk, &mut warn),
+                                    "voice_model" => set_str(&mut p.voice_model, s(), &where_, fk, &mut warn),
                                     "hidden" => match fv.as_bool() {
                                         Some(b) => p.hidden = b,
                                         None => warn(format!("{}.hidden: true or false", where_)),
@@ -811,6 +817,10 @@ pub struct Setup {
     pub agent_effort: String,
     /// the voice input's choices (BISE-130): `[voice]` in config.toml
     pub voice: voice::VoiceSetup,
+    /// the auto-confirm role's model (BISE-298: declared, no feature
+    /// yet): BISE_CLASSIFY_MODEL > `[roles] classify` > small_model
+    pub classify_model: String,
+    pub classify_model_from: &'static str,
 }
 
 /// config.toml's text with its top-level `model` set to `model`
@@ -896,6 +906,7 @@ impl Setup {
         let (mut model_cfg, mut agent_cfg, mut small_cfg) = (None, None, None);
         let (mut effort_cfg, mut agent_effort_cfg) = (None, None);
         let mut voice_cfg = voice::VoiceConfig::default();
+        let mut classify_cfg: Option<String> = None;
         if let Some(text) = config {
             match text.parse::<toml::Table>() {
                 Ok(t) => {
@@ -907,11 +918,22 @@ impl Setup {
                             .map(|s| s.trim().to_string())
                             .filter(|s| !s.is_empty())
                     };
-                    model_cfg = s("model");
-                    agent_cfg = s("agent_model");
-                    small_cfg = s("small_model");
-                    effort_cfg = s("reasoning_effort");
-                    agent_effort_cfg = s("agent_reasoning_effort");
+                    // BISE-298: [roles] first, then the keys it replaces
+                    let r = roles::RolesConfig::read(&t, &mut catalog.warnings);
+                    let (main, agents, small) = (r.get(roles::MAIN), r.get(roles::AGENTS), r.get(roles::SMALL));
+                    model_cfg = main.model.or_else(|| s("model"));
+                    agent_cfg = agents.model.or_else(|| s("agent_model"));
+                    small_cfg = small.model.or_else(|| s("small_model"));
+                    effort_cfg = main.effort.or_else(|| s("reasoning_effort"));
+                    agent_effort_cfg = agents.effort.or_else(|| s("agent_reasoning_effort"));
+                    classify_cfg = r.get(roles::CLASSIFY).model;
+                    if let Some(v) = r.voice {
+                        voice_cfg = voice::VoiceConfig {
+                            model: v.model.or(voice_cfg.model),
+                            language: v.language.or(voice_cfg.language),
+                            vocabulary: if v.vocabulary.is_empty() { voice_cfg.vocabulary } else { v.vocabulary },
+                        };
+                    }
                 }
                 Err(e) => {
                     let first = e.to_string().lines().next().unwrap_or("").to_string();
@@ -959,6 +981,13 @@ impl Setup {
             }
         };
         let voice = voice::VoiceSetup::of(&catalog, voice_cfg, &envv);
+        let (classify_model, classify_model_from) = if let Some(m) = envv("BISE_CLASSIFY_MODEL") {
+            (catalog.canonical(&m), "BISE_CLASSIFY_MODEL")
+        } else if let Some(m) = classify_cfg {
+            (catalog.canonical(&m), "config")
+        } else {
+            (small_model.clone(), "small_model")
+        };
         let effort = effort_cfg.unwrap_or_default();
         let agent_effort = agent_effort_cfg.unwrap_or_else(|| effort.clone());
         Setup {
@@ -972,6 +1001,31 @@ impl Setup {
             small_model,
             small_model_from,
             voice,
+            classify_model,
+            classify_model_from,
+        }
+    }
+
+    /// A role's model (canonical "provider/id") and where it came from
+    /// ([`roles::Source`]; BISE-298). Unknown role: main's.
+    pub fn role_model(&self, id: &str) -> (String, roles::Source) {
+        let (m, from) = match id {
+            roles::AGENTS => (&self.agent_model, self.agent_model_from),
+            roles::SMALL => (&self.small_model, self.small_model_from),
+            roles::VOICE => (&self.voice.model, self.voice.from),
+            roles::CLASSIFY => (&self.classify_model, self.classify_model_from),
+            _ => (&self.model, self.model_from),
+        };
+        (m.clone(), roles::Source::of(from))
+    }
+
+    /// A chat role's effort as config.toml sets it ("" = the model's
+    /// default).
+    pub fn role_effort(&self, id: &str) -> &str {
+        match id {
+            roles::MAIN => &self.effort,
+            roles::AGENTS => &self.agent_effort,
+            _ => "",
         }
     }
 

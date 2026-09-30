@@ -51,7 +51,9 @@
 #   its keys and `bise login <id>` still work). Checked 2026-09-30 against each provider's
 #   docs and keys page. billing_url (BISE-282): where credit is added,
 #   linked when a key check says the account has none; only where the
-#   provider's docs name the page.
+#   provider's docs name the page. voice_model (BISE-298): the voice
+#   screen's pick among its voice models (unset: its first listed one);
+#   hidden also keeps a provider off the voice screen.
 # Checked by hand against the providers' docs and /models; last update
 # 2026-09-30 (each provider's section says where).
 
@@ -184,6 +186,7 @@ key_env = "OPENAI_API_KEY"
 # the prompt cache's routing key (BISE-268; platform.openai.com/docs/guides/prompt-caching)
 cache_key = "prompt_cache_key"
 stt = "openai"
+voice_model = "gpt-transcribe"
 small_model = "gpt-6-luna"
 context = 1050000
 max_output = 128000
@@ -266,6 +269,7 @@ key_env = "MISTRAL_API_KEY"
 # docs.mistral.ai/studio/conversations/advanced/prompt-caching (BISE-268)
 cache_key = "prompt_cache_key"
 stt = "mistral"
+voice_model = "voxtral-mini-latest"
 small_model = "mistral-small-latest"
 context = 262144
 # the Mistral API's reasoning_effort takes these two (the vibe CLI maps
@@ -687,25 +691,40 @@ reasoning = true
 
 # ---- speech to text (BISE-130): the voice input, ctrl+r ----
 # The chat providers above that transcribe have stt = ...; their voice
-# models are here. Checked against the docs and /v1/models, 2026-09.
+# models are here, the voice screen's pick first (BISE-298). Checked
+# 2026-09-30: Mistral's and OpenAI's /v1/models (audio_transcription;
+# each one transcribed 0.5 s of silence with a real key, 200),
+# platform.openai.com/docs/guides/speech-to-text (gpt-transcribe: "the
+# recommended model for transcribing recorded speech"),
+# elevenlabs.io/docs/overview/models (scribe_v2; scribe_v1 "outclassed").
+# The realtime ones (voxtral-*-realtime-*, gpt-live-transcribe,
+# scribe_v2_realtime) stream: not this batch call.
 
-# Voxtral Mini Transcribe 2 (voxtral-mini-2602): the documented one
+# Voxtral Mini Transcribe 2 (voxtral-mini-2602): the documented one, the
+# default voice model
 [models."mistral/voxtral-mini-latest"]
 kind = "stt"
 
-# in Mistral's /v1/models (audio_transcription), not in the docs yet
 [models."mistral/voxtral-transcribe-3"]
 kind = "stt"
 
-[models."openai/gpt-4o-transcribe"]
+[models."mistral/voxtral-small-transcribe-3"]
+kind = "stt"
+
+[models."openai/gpt-transcribe"]
 kind = "stt"
 
 [models."openai/gpt-4o-mini-transcribe"]
 kind = "stt"
 
+[models."openai/gpt-4o-transcribe"]
+kind = "stt"
+
 [models."openai/whisper-1"]
 kind = "stt"
 
+# Groq and Deepgram: in the catalog (a key or a [voice] model still
+# works), not on the voice screen (hidden; the user, 2026-09-30)
 [models."groq/whisper-large-v3-turbo"]
 kind = "stt"
 
@@ -716,8 +735,12 @@ kind = "stt"
 name = "ElevenLabs"
 kind = "stt"
 stt = "elevenlabs"
+hint = "voice only"
+keys_url = "https://elevenlabs.io/app/settings/api-keys"
+signup_url = "https://elevenlabs.io/app/sign-up"
 base_url = "https://api.elevenlabs.io/v1"
 key_env = "ELEVENLABS_API_KEY"
+voice_model = "scribe_v2"
 
 [models."elevenlabs/scribe_v2"]
 kind = "stt"
@@ -728,6 +751,7 @@ kind = "stt"
 [providers.deepgram]
 name = "Deepgram"
 kind = "stt"
+hidden = true
 stt = "deepgram"
 base_url = "https://api.deepgram.com/v1"
 key_env = "DEEPGRAM_API_KEY"

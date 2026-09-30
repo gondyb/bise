@@ -100,7 +100,8 @@ def one(pid, name, model, keys_url, family):
         t.keys("Enter")
         sc = t.wait("it works: %s answered." % model)
         cfg = open(os.path.join(root, "config.toml")).read()
-        assert cfg.startswith('model = "%s/%s"' % (pid, model)), cfg
+        # BISE-298: main's role
+        assert '[roles]\nmain = "%s/%s"' % (pid, model) in cfg and not cfg.startswith("model ="), cfg
         auth = json.load(open(os.path.join(root, "auth.json")))
         assert "good-key-123" in json.dumps(auth), auth
         assert "good-key-123" not in t.screen()

@@ -226,14 +226,16 @@ pub(crate) fn pick_of(p: &Provider, current: &str) -> Option<String> {
     bise_catalog::split_name(current).filter(|(pid, _)| *pid == p.id).map(|_| current.to_string())
 }
 
-/// Write `model` as config.toml's `model` (the rest of the file kept).
+/// Write `model` as main's model in config.toml (`[roles] main`, BISE-298;
+/// the rest of the file kept, the old `model` key dropped).
 pub(crate) fn save_model(home: &bise_home::Home, model: &str) -> io::Result<()> {
     let file = home.config_file();
     let text = std::fs::read_to_string(&file).unwrap_or_default();
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    std::fs::write(&file, bise_catalog::with_model(&text, model))
+    // BISE-298: main's role, the old `model` key dropped
+    std::fs::write(&file, bise_catalog::roles::with_role(&text, bise_catalog::roles::MAIN, model))
 }
 
 /// auth.json has a key for this provider already.
@@ -741,6 +743,7 @@ impl Onb {
             base_url: r.base_url.clone(),
             model: r.id.clone(),
             key: the_key,
+            voice: false,
         };
         let (tx, rx) = std::sync::mpsc::channel();
         let (check, url) = (self.checker, env("BEND_PROVIDER_URL"));
@@ -2188,7 +2191,7 @@ mod tests {
         // nothing pasted: nothing stored; the model written
         assert!(bise_catalog::auth::Store::read(&hm(&h).auth_file()).unwrap_or_default().key("openai").is_none());
         let cfg = std::fs::read_to_string(hm(&h).config_file()).unwrap();
-        assert!(cfg.starts_with("model = \"openai/gpt-6-astra\""), "{}", cfg);
+        assert!(cfg.starts_with("[roles]\nmain = \"openai/gpt-6-astra\""), "{}", cfg);
         // a key already in auth.json: enter replaces it only after a yes
         std::fs::create_dir_all(hm(&h).auth_file().parent().unwrap()).unwrap();
         let paths = auth_paths(&o.home);

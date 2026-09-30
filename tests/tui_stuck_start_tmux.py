@@ -92,7 +92,7 @@ def main():
             time.sleep(0.5)
         t.wait(NORMAL, 30)
         with open(os.path.join(root, "config.toml")) as f:
-            assert 'model = "openai/' in f.read()
+            assert 'main = "openai/' in f.read()
         # main's start is stuck; the user writes anyway
         t.keys("C-u")
         t.typed("hello")
@@ -111,7 +111,7 @@ def main():
             raise AssertionError("main never answered 'hello':\n" + t.screen())
         # the model picked in the key step (the catalog's OpenAI pick)
         with open(os.path.join(root, "config.toml")) as f:
-            picked = re.search(r'^model = "openai/([^"]+)"', f.read(), re.M).group(1)
+            picked = re.search(r'^main = "openai/([^"]+)"', f.read(), re.M).group(1)
         assert reqs[-1]["model"] == picked, (picked, reqs[-1])
         t.wait("ack: hello", 30)
         print(t.screen())

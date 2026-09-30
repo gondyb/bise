@@ -77,12 +77,19 @@ fn mic_access_hint() -> &'static str {
     }
 }
 
+/// A muted or refused microphone (BISE-298: macOS gives silence when the
+/// terminal may not use it).
 fn no_audio_detected_message() -> String {
-    format!(
-        "no audio detected from the microphone — check your terminal has mic access.{}",
-        mic_access_hint()
-    )
+    if cfg!(target_os = "macos") {
+        "i can't hear you. allow the microphone for your terminal: System Settings › Privacy & Security › Microphone.".into()
+    } else {
+        format!("i can't hear you. check your terminal may use the microphone.{}", mic_access_hint())
+    }
 }
+
+/// The voice model has no key (BISE-298: replaces "voice transcription
+/// needs an API key: …").
+pub const NEEDS_KEY: &str = "voice needs a key. /voice setup picks one.";
 
 pub const ENABLED_MESSAGE: &str = "voice mode on. press ctrl+r to start recording.";
 pub const DISABLED_MESSAGE: &str = "voice mode off.";
@@ -235,7 +242,84 @@ pub enum TranscribeEvent {
     /// the text (a batch model sends it once)
     Delta(String),
     Done,
-    Error(String),
+    /// the provider said no or did not answer (BISE-298): why, and the
+    /// clip, kept for ctrl+r
+    Failed(Failure, Vec<i16>),
+}
+
+/// Why a transcription failed, in what the user can fix (BISE-298; the
+/// key check's kinds, `keycheck::Why`), and the provider's own words.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Failure {
+    pub kind: FailKind,
+    /// one line, the key masked; "" = it said nothing useful
+    pub said: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FailKind {
+    WrongKey,
+    NoCredit,
+    /// the model is unknown, or the key may not use it
+    Model,
+    /// no answer, or the provider's own trouble (5xx, rate limit)
+    Down,
+    /// an answer bise can't read
+    Other,
+}
+
+impl Failure {
+    /// An HTTP answer that is not a success (`keycheck::verdict`'s kinds).
+    pub fn of_answer(status: u16, body: &[u8], key: &str) -> Failure {
+        use crate::keycheck::Why;
+        match crate::keycheck::verdict(status, body, key) {
+            // a 400/422 about the request itself: the check calls it Ok
+            Ok(()) => Failure { kind: FailKind::Other, said: crate::keycheck::said(body, key) },
+            Err(f) => {
+                let kind = match f.why {
+                    Why::WrongKey => FailKind::WrongKey,
+                    Why::NoCredit => FailKind::NoCredit,
+                    Why::Model | Why::NoAccess => FailKind::Model,
+                    Why::Unreachable(_) => FailKind::Down,
+                };
+                let said = match (f.said.is_empty(), f.why) {
+                    (true, Why::Unreachable(s)) => s,
+                    _ => f.said,
+                };
+                Failure { kind, said }
+            }
+        }
+    }
+}
+
+/// A failed transcription as the feed says it (BISE-298, the turn
+/// errors' pattern, BISE-293): bise's line, then dim ones (the
+/// provider's words, the kept clip). `provider`: its name ("Mistral").
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FailLines {
+    /// ✗, or ? (no credit: nothing is broken, it needs you)
+    pub glyph: &'static str,
+    pub head: String,
+    pub dim: Vec<String>,
+}
+
+pub fn fail_lines(f: &Failure, provider: &str, model: &str, billing_url: &str, kept: bool) -> FailLines {
+    let (glyph, head) = match f.kind {
+        FailKind::WrongKey => ("✗", format!("{} says the voice key is wrong. /provider fixes it.", provider)),
+        FailKind::NoCredit if billing_url.is_empty() => ("?", format!("your {} account has no credit yet.", provider)),
+        FailKind::NoCredit => ("?", format!("your {} account has no credit yet. add some here: {}", provider, billing_url)),
+        FailKind::Model => ("✗", format!("{} can't transcribe with {}. /voice setup picks another model.", provider, model)),
+        FailKind::Down => ("✗", format!("i couldn't reach {} to transcribe. try again, or /voice setup for another provider.", provider)),
+        FailKind::Other => ("✗", format!("{} answered something i can't read. try again, or /voice setup for another provider.", provider)),
+    };
+    let mut dim = Vec::new();
+    if !f.said.is_empty() {
+        dim.push(f.said.clone());
+    }
+    if kept {
+        dim.push("your recording is kept: ctrl+r retry".into());
+    }
+    FailLines { glyph, head, dim }
 }
 
 // ---- settings (the `voice` preference: bise_home, prefs.json or ~/.bend-harness/tui.json) ----
@@ -283,7 +367,14 @@ pub fn resolve_job() -> Result<VoiceJob, String> {
     let store = Store::read(&home.auth_file()).unwrap_or_default();
     let files = EnvFile::read_all(&home.env_files());
     let env = |k: &str| std::env::var(k).ok();
-    setup.voice_job(&Keys { env: &env, store: &store, files: &files })
+    let keys = Keys { env: &env, store: &store, files: &files };
+    setup.voice_job(&keys).map_err(|e| if needs_key(&setup, &keys) { NEEDS_KEY.to_string() } else { e })
+}
+
+/// The voice model's provider takes a key and none is found.
+pub fn needs_key(setup: &bise_catalog::Setup, keys: &bise_catalog::auth::Keys) -> bool {
+    let r = setup.catalog.resolve_stt(&setup.voice.model);
+    r.known != bise_catalog::Known::NoProvider && !r.key_env.is_empty() && keys.find(&r.provider, &r.key_env).is_none()
 }
 
 // ---- ports ----
@@ -338,6 +429,8 @@ pub enum VoiceOutput {
     Utterance,
     /// a failure (Vibe's error toast)
     Error(String),
+    /// the provider said no (BISE-298): bise's line and the dim ones
+    Failed(FailLines),
     /// a short notice (Vibe's inline notice)
     Notice(String),
 }
@@ -351,6 +444,8 @@ struct Run {
     stopped: Option<Instant>,
     has_signal: bool,
     text_len: usize,
+    /// the job's names, for the lines of a failure
+    names: (String, String, String),
 }
 
 pub struct Voice {
@@ -359,11 +454,19 @@ pub struct Voice {
     transcriber: Box<dyn Transcriber>,
     state: VoiceState,
     run: Option<Run>,
+    /// the clip of a failed transcription (BISE-298): the next ctrl+r
+    /// sends it again instead of recording
+    kept: Option<Vec<i16>>,
 }
 
 impl Voice {
     pub fn new(enabled: bool, recorder: Box<dyn Recorder>, transcriber: Box<dyn Transcriber>) -> Self {
-        Voice { enabled, recorder, transcriber, state: VoiceState::Idle, run: None }
+        Voice { enabled, recorder, transcriber, state: VoiceState::Idle, run: None, kept: None }
+    }
+
+    /// Forget the kept clip (voice turned off).
+    pub fn drop_kept(&mut self) {
+        self.kept = None;
     }
 
     /// The real microphone and the configured voice model.
@@ -403,6 +506,29 @@ impl Voice {
             return Ok(());
         }
         let job = job?;
+        let names = (job.provider_name.clone(), job.name.clone(), job.billing_url.clone());
+        // a kept clip: sent again, no recording (BISE-298)
+        if let Some(clip) = self.kept.take() {
+            let (audio_tx, audio_rx) = mpsc::channel();
+            let _ = audio_tx.send(AudioMsg::Chunk(clip));
+            let _ = audio_tx.send(AudioMsg::End);
+            let (ev_tx, ev_rx) = mpsc::channel();
+            let cancel = Arc::new(AtomicBool::new(false));
+            self.transcriber.start(job, audio_rx, ev_tx, cancel.clone());
+            self.run = Some(Run {
+                capture: None,
+                audio: audio_tx,
+                events: ev_rx,
+                cancel,
+                started: now,
+                stopped: Some(now),
+                has_signal: true,
+                text_len: 0,
+                names,
+            });
+            self.state = VoiceState::Flushing;
+            return Ok(());
+        }
         let (audio_tx, audio_rx) = mpsc::channel();
         let capture = self.recorder.start(SAMPLE_RATE, audio_tx.clone()).map_err(|e| match e {
             StartError::NoInputDevice => format!("no audio input device found.{}", mic_access_hint()),
@@ -420,6 +546,7 @@ impl Voice {
             stopped: None,
             has_signal: false,
             text_len: 0,
+            names,
         });
         self.state = VoiceState::Recording;
         Ok(())
@@ -458,9 +585,12 @@ impl Voice {
                         out.push(VoiceOutput::Insert(t));
                     }
                 }
-                Ok(TranscribeEvent::Error(m)) => {
+                Ok(TranscribeEvent::Failed(f, clip)) => {
+                    let (provider, model, billing) = run.names.clone();
                     self.cancel();
-                    out.push(VoiceOutput::Error(format!("voice transcription failed: {}", m)));
+                    let kept = !clip.is_empty();
+                    self.kept = kept.then_some(clip);
+                    out.push(VoiceOutput::Failed(fail_lines(&f, &provider, &model, &billing, kept)));
                 }
                 Ok(TranscribeEvent::Done) | Err(TryRecvError::Disconnected) => {
                     out.extend(self.finish(now));
@@ -644,8 +774,8 @@ impl Transcriber for BatchTranscriber {
                     }
                     let _ = events.send(TranscribeEvent::Done);
                 }
-                Err(e) => {
-                    let _ = events.send(TranscribeEvent::Error(e));
+                Err(f) => {
+                    let _ = events.send(TranscribeEvent::Failed(f, samples));
                 }
             }
         });
@@ -672,19 +802,25 @@ pub fn collect_clip(audio: &Receiver<AudioMsg>, cancel: &AtomicBool) -> Option<V
 const MIN_CLIP: usize = SAMPLE_RATE as usize / 5;
 
 /// One clip → its text (trimmed; "" when there was nothing to send:
-/// too short, or pure silence). `send` is the HTTP call.
+/// too short, or pure silence). `send` is the HTTP call. Err: why, in
+/// the user's kinds (BISE-298).
 pub fn transcribe_clip(
     job: &VoiceJob,
     samples: &[i16],
     cancel: &AtomicBool,
     send: &dyn Fn(&http::Request) -> Result<http::Response, String>,
-) -> Result<String, String> {
+) -> Result<String, Failure> {
     if samples.len() < MIN_CLIP || peak(samples) <= SILENCE_PEAK || cancel.load(Ordering::SeqCst) {
         return Ok(String::new());
     }
     let req = stt::request(job, &wav_bytes(samples, SAMPLE_RATE));
-    let resp = send(&req)?;
-    stt::parse(&job.api, &resp).map(|t| t.trim().to_string())
+    let resp = send(&req).map_err(|e| Failure { kind: FailKind::Down, said: stt::one_line(&e) })?;
+    if !(200..300).contains(&resp.status) {
+        return Err(Failure::of_answer(resp.status, &resp.body, &job.key));
+    }
+    stt::parse(&job.api, &resp)
+        .map(|t| t.trim().to_string())
+        .map_err(|e| Failure { kind: FailKind::Other, said: e })
 }
 
 pub use bise_catalog::voice::VoiceJob;

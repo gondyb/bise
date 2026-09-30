@@ -362,6 +362,14 @@ pub(crate) fn ev_lines(ev: &Ev, width: usize) -> Vec<Line<'static>> {
             },
         },
         Ev::Info(t) => glyph_line(G_NOTE, Style::default().fg(faint()), bend_images::display(t), dim_st, width),
+        Ev::Said { glyph, head, dim } => {
+            let st = if *glyph == "?" { Style::default().fg(accent()) } else { err_st };
+            let mut l = glyph_line(glyph, st, head.clone(), if *glyph == "?" { text_st } else { err_st }, width);
+            for d in dim {
+                l.extend(glyph_line(" ", dim_st, d.clone(), dim_st, width));
+            }
+            l
+        }
         Ev::ToolInfo { .. } | Ev::ToolResult { .. } | Ev::ToolCode { .. } | Ev::ToolIntent { .. } => vec![],
         Ev::Usage(u) => vec![Line::from(Span::styled(u.line(), dim_st))],
         Ev::Raw(t) => vec![Line::from(Span::styled(format!("  {}", t), dim_st))],

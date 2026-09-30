@@ -910,6 +910,15 @@ def Laws.provider_agent_follows_main():
 def Laws.provider_agent_model_not_for_main():
   {==}
 
+def Laws.provider_roles_main_over_model():
+  {==}
+
+def Laws.provider_roles_agents_table():
+  {==}
+
+def Laws.effort_of_the_roles():
+  {==}
+
 def Laws.threshold_is_80_percent_of_the_window():
   {==}
 

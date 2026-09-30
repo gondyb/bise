@@ -16,11 +16,19 @@ use std::time::Duration;
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Call {
     pub provider: String,
+    /// the chat family, or with `voice` the speech-to-text one
+    /// (bise_catalog::voice::STT_FAMILIES)
     pub api: String,
     pub base_url: String,
     pub model: String,
     pub key: String,
+    /// a voice model (BISE-298): the call transcribes [`SILENCE_MS`] of
+    /// silence, which proves the key and the model at once
+    pub voice: bool,
 }
+
+/// The voice check's clip: half a second of silence (16 kB of WAV).
+pub(crate) const SILENCE_MS: u32 = 500;
 
 impl std::fmt::Debug for Call {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -72,6 +80,9 @@ const RETRY_AFTER: Duration = Duration::from_secs(3);
 
 /// The request of a call (its url, headers and body).
 pub(crate) fn request(c: &Call, env: &dyn Fn(&str) -> Option<String>) -> crate::voice::http::Request {
+    if c.voice {
+        return voice_request(c);
+    }
     let base = c.base_url.trim_end_matches('/');
     let (endpoint, mut headers, body) = if c.api == "anthropic" {
         (
@@ -103,6 +114,26 @@ pub(crate) fn request(c: &Call, env: &dyn Fn(&str) -> Option<String>) -> crate::
     headers.push(("Content-Type".into(), "application/json".into()));
     let url = env("BEND_PROVIDER_URL").filter(|u| !u.trim().is_empty()).unwrap_or(endpoint);
     crate::voice::http::Request { url, headers, body: body.to_string().into_bytes() }
+}
+
+/// A voice model's check: the transcription of [`SILENCE_MS`] of silence,
+/// the same request as a recording's (`voice::stt`). Its URL is the
+/// provider's own: `BEND_PROVIDER_URL` is a chat endpoint (the tests
+/// point a provider's base_url at their fake one instead).
+fn voice_request(c: &Call) -> crate::voice::http::Request {
+    let samples = vec![0i16; (crate::voice::SAMPLE_RATE * SILENCE_MS / 1000) as usize];
+    let job = crate::voice::VoiceJob {
+        name: format!("{}/{}", c.provider, c.model),
+        provider_name: c.provider.clone(),
+        billing_url: String::new(),
+        api: c.api.clone(),
+        base_url: c.base_url.trim_end_matches('/').to_string(),
+        model: c.model.clone(),
+        key: c.key.clone(),
+        language: None,
+        vocabulary: Vec::new(),
+    };
+    crate::voice::stt::request(&job, &crate::voice::wav_bytes(&samples, crate::voice::SAMPLE_RATE))
 }
 
 /// What an answer means: Ok when the provider accepted the key and the
@@ -277,7 +308,7 @@ pub fn check_model(
     if r.known == bise_catalog::Known::NoProvider {
         return Err(CheckFail { kind: CheckKind::Other(format!("unknown provider '{}' in {}", r.provider, model)), said: String::new() });
     }
-    let call = Call { provider: r.provider.clone(), api: r.api.clone(), base_url: r.base_url.clone(), model: r.id.clone(), key: key.to_string() };
+    let call = Call { provider: r.provider.clone(), api: r.api.clone(), base_url: r.base_url.clone(), model: r.id.clone(), key: key.to_string(), voice: false };
     check(&call, env).map_err(|f| CheckFail {
         kind: match f.why {
             Why::WrongKey => CheckKind::WrongKey,
@@ -295,7 +326,7 @@ mod tests {
     use super::*;
 
     fn call(api: &str, provider: &str) -> Call {
-        Call { provider: provider.into(), api: api.into(), base_url: "https://x.test/v1/".into(), model: "m1".into(), key: "k-secret".into() }
+        Call { provider: provider.into(), api: api.into(), base_url: "https://x.test/v1/".into(), model: "m1".into(), key: "k-secret".into(), voice: false }
     }
 
     #[test]
@@ -322,6 +353,30 @@ mod tests {
         assert_eq!(request(&call("openai-chat", "mistral"), &fake).url, "http://127.0.0.1:9/v1/chat/completions");
         // the key never shows in the debug form
         assert!(!format!("{:?} {:?}", call("anthropic", "a"), r).contains("k-secret"));
+    }
+
+    /// BISE-298: a voice model's check transcribes half a second of
+    /// silence, the recording's own request, at the provider's URL.
+    #[test]
+    fn a_voice_check_transcribes_half_a_second_of_silence() {
+        let fake = |k: &str| (k == "BEND_PROVIDER_URL").then(|| "http://127.0.0.1:9/v1/chat/completions".to_string());
+        let voice = |api: &str, provider: &str| Call { voice: true, ..call(api, provider) };
+        let r = request(&voice("mistral", "mistral"), &fake);
+        assert_eq!(r.url, "https://x.test/v1/audio/transcriptions");
+        assert!(r.headers.contains(&("Authorization".into(), "Bearer k-secret".into())));
+        let body = String::from_utf8_lossy(&r.body);
+        assert!(body.contains("name=\"model\"\r\n\r\nm1\r\n"), "{body}");
+        // 16 kHz, 16 bits, 0.5 s: 16000 bytes of samples, all zero
+        let riff = r.body.windows(4).position(|w| w == b"RIFF").unwrap();
+        let data = riff + r.body[riff..].windows(4).position(|w| w == b"data").unwrap() + 8;
+        let n = u32::from_le_bytes(r.body[data - 4..data].try_into().unwrap());
+        assert_eq!(n, 16_000);
+        assert!(r.body[data..data + 16_000].iter().all(|b| *b == 0), "silence");
+        assert_eq!(request(&voice("openai", "openai"), &fake).url, "https://x.test/v1/audio/transcriptions");
+        let r = request(&voice("elevenlabs", "elevenlabs"), &fake);
+        assert_eq!(r.url, "https://x.test/v1/speech-to-text");
+        assert!(r.headers.contains(&("xi-api-key".into(), "k-secret".into())));
+        assert!(!format!("{:?}", r).contains("k-secret"));
     }
 
     fn v(status: u16, body: &str) -> Result<(), Why> {

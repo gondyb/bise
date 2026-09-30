@@ -176,6 +176,10 @@ impl Catalog {
 pub struct VoiceJob {
     /// "provider/id", for messages
     pub name: String,
+    /// the provider's name ("Mistral") and where credit is added ("" =
+    /// none): the lines of a failed transcription (BISE-298)
+    pub provider_name: String,
+    pub billing_url: String,
     /// one of [`STT_FAMILIES`]
     pub api: String,
     /// no trailing '/'
@@ -191,8 +195,10 @@ impl std::fmt::Debug for VoiceJob {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "VoiceJob {{ name: {:?}, api: {:?}, base_url: {:?}, model: {:?}, key: <{} bytes>, language: {:?}, vocabulary: {:?} }}",
+            "VoiceJob {{ name: {:?}, provider_name: {:?}, billing_url: {:?}, api: {:?}, base_url: {:?}, model: {:?}, key: <{} bytes>, language: {:?}, vocabulary: {:?} }}",
             self.name,
+            self.provider_name,
+            self.billing_url,
             self.api,
             self.base_url,
             self.model,
@@ -240,8 +246,15 @@ impl Setup {
                 }
             }
         };
+        let (provider_name, billing_url) = self
+            .catalog
+            .provider(&r.provider)
+            .map(|p| (p.name.clone(), p.billing_url.clone()))
+            .unwrap_or_default();
         Ok(VoiceJob {
             name: r.name,
+            provider_name,
+            billing_url,
             api: r.api,
             base_url: r.base_url,
             model: r.id,

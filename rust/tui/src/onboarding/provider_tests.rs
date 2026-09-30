@@ -228,7 +228,7 @@ fn a_set_up_provider_has_its_menu() {
     settle(&mut o, &e);
     let sc = screen(&o);
     assert!(sc.contains("main's default model is now openai/"), "{sc}");
-    assert!(std::fs::read_to_string(hm.config_file()).unwrap().starts_with("model = \"openai/"));
+    assert!(std::fs::read_to_string(hm.config_file()).unwrap().starts_with("[roles]\nmain = \"openai/"));
     // a pasted key over the environment's: saved, said, removable
     o.on_key(key(KeyCode::Enter), 1, &e);
     o.on_key(key(KeyCode::Char('1')), 1, &e);

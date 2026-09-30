@@ -507,13 +507,14 @@ impl Shell {
         }
         let mut said = String::new();
         if default {
-            let key = if is_main { "model" } else { "agent_model" };
+            // BISE-298: the role's line of [roles], its old key dropped
+            let role = if is_main { bise_catalog::roles::MAIN } else { bise_catalog::roles::AGENTS };
             let cfg = bise_home::Home::from_env().config_file();
             let text = std::fs::read_to_string(&cfg).unwrap_or_default();
-            let new = bise_catalog::set_config_key(&text, key, &choice.model);
+            let new = bise_catalog::roles::with_role(&text, role, &choice.model);
             let tmp = cfg.with_extension("toml.tmp");
             match std::fs::write(&tmp, new).and_then(|_| std::fs::rename(&tmp, &cfg)) {
-                Ok(()) => said = format!(" · config.toml {} = {}", key, choice.model),
+                Ok(()) => said = format!(" · config.toml [roles] {} = {}", role, choice.model),
                 Err(e) => said = format!(" · config.toml not written: {}", e),
             }
         }

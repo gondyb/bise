@@ -29,9 +29,12 @@ import ../core/config.bend as Cf
 #
 # The model of a call (the same order as the Rust side, rust/catalog's
 # Setup; an empty env var counts as unset):
-#   main:  BISE_MODEL > BEND_MODEL > model (config.toml) > default_model
-#          > none: no call, the error says to pick a provider (BISE-266)
-#   agent: BISE_AGENT_MODEL > agent_model (config.toml) > the main order
+#   main:  BISE_MODEL > BEND_MODEL > [roles] main (config.toml) > model
+#          > default_model > none: no call, the error says to pick a
+#          provider (BISE-266)
+#   agent: BISE_AGENT_MODEL > [roles] agents > agent_model > the main
+#          order
+# ([roles] main = "p/m", or [roles.main] model = "p/m": BISE-298)
 # (agent: BISE_ROLE=agent, the hub's sub-agent REPLs). A name without
 # '/' is an alias, else the legacy guess: claude* -> foundry/<name>,
 # anything else -> mistral/<name>.
@@ -73,6 +76,19 @@ def first_set(xs: List<&2, String>) -> String:
 def cfg_str(kvs: List<&2, Cf.KV>, +key: String) -> String:
   Cf.cfg_or(Cf.cfg_find(kvs, key), "")
 
+def line_model(is_model: Bool, +v: String) -> String:
+  match is_model:
+    case True{}:
+      v
+    case False{}:
+      ""
+
+# a role's setting in config.toml (BISE-298): `[roles.<r>] <k> = ...`,
+# or for the model the line form `[roles] <r> = ...`
+def role_str(+cfg: List<&2, Cf.KV>, +r: String, +k: String) -> String:
+  +table = cfg_str(cfg, String.concat(["roles.", r, ".", k]))
+  first_set([table, line_model(String.eq(k, "model"), cfg_str(cfg, String.append("roles.", r)))])
+
 def agent_only(is_agent: Bool, +v: String) -> String:
   match is_agent:
     case True{}:
@@ -85,8 +101,10 @@ def model_name(+bise: String, +bend: String, +agent: String, +role: String,
     +cfg: List<&2, Cf.KV>, +reg: List<&2, Cf.KV>) -> String:
   +is_agent = String.eq(role, "agent")
   first_set([agent_only(is_agent, agent),
+    agent_only(is_agent, role_str(cfg, "agents", "model")),
     agent_only(is_agent, cfg_str(cfg, "agent_model")), bise, bend,
-    cfg_str(cfg, "model"), cfg_str(reg, "default_model")])
+    role_str(cfg, "main", "model"), cfg_str(cfg, "model"),
+    cfg_str(reg, "default_model")])
 
 # ---- the full id: provider/model ----
 
@@ -429,9 +447,11 @@ def chosen_name(+choice: List<&2, Cf.KV>, +role_name: String) -> String:
 
 def effort_asked(+choice: List<&2, Cf.KV>, +role: String,
     +cfg: List<&2, Cf.KV>) -> String:
+  +is_agent = String.eq(role, "agent")
   first_set([cfg_str(choice, "reasoning_effort"),
-    agent_only(String.eq(role, "agent"),
-      cfg_str(cfg, "agent_reasoning_effort")),
+    agent_only(is_agent, role_str(cfg, "agents", "effort")),
+    agent_only(is_agent, cfg_str(cfg, "agent_reasoning_effort")),
+    role_str(cfg, "main", "effort"),
     cfg_str(cfg, "reasoning_effort")])
 
 # no model anywhere (BISE-266): what the turn says, no call made

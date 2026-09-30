@@ -226,10 +226,14 @@ fn a_server_error_stops_the_recording() {
     let (rec, tr) = (FakeRecorder::ok(true), FakeTranscriber::default());
     let mut v = voice(&rec, &tr);
     v.start(key(), Instant::now()).unwrap();
-    tr.send(TranscribeEvent::Error("HTTP 401 Unauthorized".into()));
+    tr.send(TranscribeEvent::Failed(Failure { kind: FailKind::WrongKey, said: String::new() }, Vec::new()));
     assert_eq!(
         v.poll(Instant::now()),
-        vec![VoiceOutput::Error("voice transcription failed: HTTP 401 Unauthorized".into())]
+        vec![VoiceOutput::Failed(FailLines {
+            glyph: "✗",
+            head: "Mistral says the voice key is wrong. /provider fixes it.".into(),
+            dim: Vec::new()
+        })]
     );
     assert_eq!(v.state(), VoiceState::Idle);
     assert!(*rec.stopped.borrow());
@@ -248,7 +252,7 @@ fn no_text_and_silence_blames_the_microphone() {
     assert_eq!(out.len(), 1);
     match &out[0] {
         VoiceOutput::Error(m) => assert!(
-            m.starts_with("voice transcription failed: no audio detected from the microphone"),
+            m.starts_with("voice transcription failed: i can't hear you. "),
             "{}",
             m
         ),
@@ -372,7 +376,10 @@ fn one_request_per_clip_and_the_text_trimmed() {
     assert!(seen[0].body.windows(4).any(|w| w == b"RIFF"));
     assert!(seen[0].body.len() > 32_044);
     let fail = |_: &http::Request| Ok(http::Response { status: 401, body: br#"{"message":"Unauthorized"}"#.to_vec() });
-    assert_eq!(transcribe_clip(&job(), &speech(), &AtomicBool::new(false), &fail), Err("HTTP 401: Unauthorized".into()));
+    assert_eq!(
+        transcribe_clip(&job(), &speech(), &AtomicBool::new(false), &fail),
+        Err(Failure { kind: FailKind::WrongKey, said: "Unauthorized".into() })
+    );
 }
 
 /// The real thread end to end: BatchTranscriber against a local fake
@@ -404,7 +411,10 @@ fn the_batch_transcriber_talks_to_a_fake_server() {
     BatchTranscriber.start(job, arx, etx, Arc::new(AtomicBool::new(false)));
     atx.send(AudioMsg::Chunk(speech())).unwrap();
     atx.send(AudioMsg::End).unwrap();
-    assert_eq!(erx.recv_timeout(t), Ok(TranscribeEvent::Error("HTTP 400: invalid model: nope".into())));
+    assert_eq!(
+        erx.recv_timeout(t),
+        Ok(TranscribeEvent::Failed(Failure { kind: FailKind::Model, said: "invalid model: nope".into() }, speech()))
+    );
 }
 
 /// The real API, by hand only (network + key: the chat keys'
@@ -430,6 +440,8 @@ fn real_api_transcribes_a_wav() {
 fn job_for(api: &str, base: &str, model: &str) -> VoiceJob {
     VoiceJob {
         name: format!("x/{}", model),
+        provider_name: "X".into(),
+        billing_url: String::new(),
         api: api.into(),
         base_url: base.into(),
         model: model.into(),

@@ -108,7 +108,7 @@ def main():
         assert "good-key-123" not in sc
         assert "good-key-123" in open(auth).read()
         cfg = open(os.path.join(root, "config.toml")).read()
-        assert cfg.startswith('model = "%s"' % PICK), cfg
+        assert '[roles]\nmain = "%s"' % PICK in cfg, cfg
         t.keys("Enter")
         t.wait("2 · default model")
         t.keys("Escape")

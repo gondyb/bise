@@ -758,3 +758,84 @@ fn cache_routing_keys_reach_the_handoff() {
     assert!(oai.contains("cache_key = \"prompt_cache_key\""), "{oai}");
     assert!(h.contains("cache_key = \"user\"\n"), "{h}");
 }
+
+// ---- model roles (BISE-298) ----
+
+#[test]
+fn roles_come_from_the_roles_table_then_the_old_keys() {
+    // the line form
+    let s = setup("[roles]\nmain = \"mistral/a\"\nagents = \"openai/b\"\nsmall = \"mistral/c\"\nvoice = \"openai/gpt-transcribe\"\nclassify = \"mistral/d\"\n");
+    assert_eq!((s.model.as_str(), s.agent_model.as_str(), s.small_model.as_str()), ("mistral/a", "openai/b", "mistral/c"));
+    assert_eq!((s.voice.model.as_str(), s.voice.from), ("openai/gpt-transcribe", "config"));
+    assert_eq!((s.classify_model.as_str(), s.classify_model_from), ("mistral/d", "config"));
+    assert!(s.catalog.warnings.is_empty(), "{:?}", s.catalog.warnings);
+    // the table form, with the efforts and the voice settings
+    let s = setup(
+        "[roles.main]\nmodel = \"mistral/a\"\neffort = \"high\"\n[roles.agents]\nmodel = \"openai/b\"\neffort = \"low\"\n\
+         [roles.voice]\nmodel = \"mistral/voxtral-mini-latest\"\nlanguage = \"fr\"\nvocabulary = [\"bise\"]\n",
+    );
+    assert_eq!((s.model.as_str(), s.effort.as_str()), ("mistral/a", "high"));
+    assert_eq!((s.agent_model.as_str(), s.agent_effort.as_str()), ("openai/b", "low"));
+    assert_eq!((s.voice.language.as_deref(), s.voice.vocabulary.clone()), (Some("fr"), vec!["bise".to_string()]));
+    // [roles] wins over the old keys; the old keys still work alone
+    let s = setup("model = \"mistral/old\"\nagent_model = \"mistral/old2\"\n[roles]\nmain = \"mistral/new\"\n[voice]\nmodel = \"openai/whisper-1\"\nlanguage = \"en\"\n");
+    assert_eq!((s.model.as_str(), s.agent_model.as_str()), ("mistral/new", "mistral/old2"));
+    assert_eq!((s.voice.model.as_str(), s.voice.language.as_deref()), ("openai/whisper-1", Some("en")));
+    // the env wins over both
+    let env = |k: &str| (k == "BISE_AGENT_MODEL").then(|| "openai/env".to_string());
+    let s = Setup::from_text(Some("[roles]\nagents = \"openai/b\"\n"), &env);
+    assert_eq!((s.agent_model.as_str(), s.agent_model_from), ("openai/env", "BISE_AGENT_MODEL"));
+    // the fallbacks: agents = main, small = the agents' provider's, classify = small
+    let s = setup("[roles]\nmain = \"mistral/mistral-medium-latest\"\n");
+    assert_eq!(s.role_model(roles::AGENTS), ("mistral/mistral-medium-latest".to_string(), roles::Source::SameAs(roles::MAIN)));
+    assert_eq!(s.role_model(roles::SMALL), ("mistral/mistral-small-latest".to_string(), roles::Source::Auto));
+    assert_eq!(s.role_model(roles::CLASSIFY).1, roles::Source::SameAs(roles::SMALL));
+    assert_eq!(s.role_model(roles::VOICE), ("mistral/voxtral-mini-latest".to_string(), roles::Source::Auto));
+}
+
+#[test]
+fn a_wrong_roles_table_says_what_is_wrong() {
+    let w = |cfg: &str| setup(cfg).catalog.warnings;
+    assert_eq!(w("roles = 3\n"), vec!["config.toml: roles: not a table ([roles] then main = \"provider/model\")"]);
+    assert_eq!(w("[roles]\nboss = \"a/b\"\n"), vec!["config.toml: roles.boss: unknown role (main, agents, small, voice, classify)"]);
+    assert_eq!(w("[roles.main]\nmodle = \"a/b\"\n"), vec!["config.toml: roles.main.modle: unknown key (model, effort)"]);
+    assert_eq!(w("[roles]\nvoice = 3\n"), vec!["config.toml: roles.voice: not a table ([voice] then model = ...)"]);
+}
+
+#[test]
+fn a_role_is_written_in_roles_and_its_old_key_goes() {
+    use roles::with_role;
+    // a new file
+    assert_eq!(with_role("", "main", "mistral/a"), "[roles]\nmain = \"mistral/a\"\n");
+    // the old key goes, the rest stays; [roles] at the end
+    let t = "# mine\nmodel = \"mistral/old\"\nreasoning_effort = \"high\"\n\n[providers.x]\nname = \"X\"\n";
+    assert_eq!(
+        with_role(t, "main", "mistral/a"),
+        "# mine\nreasoning_effort = \"high\"\n\n[providers.x]\nname = \"X\"\n\n[roles]\nmain = \"mistral/a\"\n"
+    );
+    // an existing [roles]: the line replaced, or added at its end
+    let t = "[roles]\nmain = \"mistral/a\"\n\n[providers.x]\nname = \"X\"\n";
+    assert_eq!(with_role(t, "main", "mistral/b"), "[roles]\nmain = \"mistral/b\"\n\n[providers.x]\nname = \"X\"\n");
+    assert_eq!(with_role(t, "agents", "openai/c"), "[roles]\nmain = \"mistral/a\"\nagents = \"openai/c\"\n\n[providers.x]\nname = \"X\"\n");
+    // [roles.main]: its model line
+    let t = "[roles.main]\nmodel = \"mistral/a\"\neffort = \"high\"\n";
+    assert_eq!(with_role(t, "main", "mistral/b"), "[roles.main]\nmodel = \"mistral/b\"\neffort = \"high\"\n");
+    // voice: [voice] model goes, its language stays
+    let t = "[voice]\nmodel = \"openai/whisper-1\"\nlanguage = \"fr\"\n";
+    let out = with_role(t, "voice", "mistral/voxtral-mini-latest");
+    assert_eq!(out, "[voice]\nlanguage = \"fr\"\n\n[roles]\nvoice = \"mistral/voxtral-mini-latest\"\n");
+    let s = setup(&out);
+    assert_eq!((s.voice.model.as_str(), s.voice.language.as_deref()), ("mistral/voxtral-mini-latest", Some("fr")));
+    // agent_model and small_model go too
+    assert_eq!(with_role("agent_model = \"a/b\"\n", "agents", "c/d"), "\n[roles]\nagents = \"c/d\"\n".trim_start());
+    assert_eq!(with_role("small_model = \"a/b\"\nx = 1\n", "small", "c/d"), "x = 1\n\n[roles]\nsmall = \"c/d\"\n");
+}
+
+#[test]
+fn every_role_has_its_words() {
+    for r in roles::ROLES {
+        assert!(!r.name.is_empty() && !r.about.is_empty() && !r.env.is_empty(), "{:?}", r);
+    }
+    assert_eq!(roles::role("small").map(|r| r.label()), Some("small jobs (titles, summaries)".to_string()));
+    assert!(!roles::role("classify").unwrap().shown);
+}

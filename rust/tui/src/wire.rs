@@ -151,6 +151,14 @@ pub(crate) enum Ev {
     Warn(String),
     Err(String),
     Info(String),
+    // in memory only (BISE-298): a failure in the turn errors' two-line
+    // pattern (BISE-293): `glyph head` (✗ error, ? accent), then dim
+    // lines (the provider's words, what to do)
+    Said {
+        glyph: &'static str,
+        head: String,
+        dim: Vec<String>,
+    },
     // in memory only (BISE-245): one dim row `▸ head` that opens on
     // `text` (a click, ctrl+o); the setup's checks. No text: the dim
     // row alone, no glyph (a setup answer's result)
