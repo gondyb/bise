@@ -40,7 +40,7 @@ latest release: v2026.9.30-4. repo gvergnaud/bise: private until Gabriel's click
 
 every line must be yes. one no = we slip the posts, we don't post around it.
 
-- [ ] no "Mistral's agent tools" line left on the site, README or posts (Mistral as a model provider is fine)
+- [x] (designer, 7b7bef3) no "Mistral's agent tools" line left on the site, README or posts (Mistral as a model provider is fine)
 - [ ] https://github.com/gvergnaud/bise loads logged out (no 404)
 - [ ] `curl -fsSL bise.dev/install | sh` works on a clean mac, no gh token, installs v2026.9.30-4 (or later)
 - [ ] onboarding with a real key → first message → main answers → one agent starts and finishes
