@@ -172,6 +172,36 @@ pub(crate) fn picks() -> Vec<Pick> {
     out
 }
 
+/// A typed model id the pickers may use as is (BISE-289), with its
+/// provider: `gpt-6-astra` -> `openai/gpt-6-astra` (`provider`, the
+/// current model's), `openai/gpt-6-astra` as typed. None: nothing
+/// typed, blanks, or no provider to put in front.
+pub(crate) fn free_id(typed: &str, provider: &str) -> Option<String> {
+    let t = plain_id(typed)?;
+    match (t.contains('/'), provider.is_empty()) {
+        (true, _) => Some(t.to_string()),
+        (false, false) => Some(format!("{}/{}", provider, t)),
+        (false, true) => None,
+    }
+}
+
+/// The same for a picker of one provider (the first run's `which
+/// model?`): the id is always that provider's, so `openai/gpt-6-astra`
+/// under OpenRouter is `openrouter/openai/gpt-6-astra`.
+pub(crate) fn free_id_of(typed: &str, provider: &str) -> Option<String> {
+    let t = plain_id(typed)?;
+    match t.strip_prefix(provider).and_then(|r| r.strip_prefix('/')) {
+        Some(rest) if !rest.is_empty() => Some(t.to_string()),
+        _ => Some(format!("{}/{}", provider, t)),
+    }
+}
+
+fn plain_id(typed: &str) -> Option<&str> {
+    let t = typed.trim();
+    let ok = !t.is_empty() && !t.chars().any(char::is_whitespace) && !t.starts_with('/') && !t.ends_with('/');
+    ok.then_some(t)
+}
+
 /// `$0.0042`, `$0.13`, `$2.40`.
 pub(crate) fn fmt_cost(usd: f64) -> String {
     if usd >= 0.1 {
@@ -250,6 +280,21 @@ mod tests {
         assert_eq!(efforts("foundry/claude-opus-5-5").1, "high");
         assert_eq!(efforts("mistral/zai-glm-5-3").0, ["none", "high"]);
         assert!(efforts("mistral/mistral-large-latest").0.is_empty());
+    }
+
+    #[test]
+    fn a_typed_id_gets_its_provider() {
+        assert_eq!(free_id("gpt-6-astra", "openai").as_deref(), Some("openai/gpt-6-astra"));
+        assert_eq!(free_id(" openai/gpt-6-astra ", "foundry").as_deref(), Some("openai/gpt-6-astra"));
+        assert_eq!(free_id("x", ""), None);
+        for bad in ["", "  ", "a b", "/x", "x/"] {
+            assert_eq!(free_id(bad, "openai"), None, "{bad:?}");
+        }
+        assert_eq!(free_id_of("gpt-6-astra", "openai").as_deref(), Some("openai/gpt-6-astra"));
+        assert_eq!(free_id_of("openai/gpt-6-astra", "openai").as_deref(), Some("openai/gpt-6-astra"));
+        assert_eq!(free_id_of("openai/gpt-6-astra", "openrouter").as_deref(), Some("openrouter/openai/gpt-6-astra"));
+        assert_eq!(free_id_of("openrouter/x/y", "openrouter").as_deref(), Some("openrouter/x/y"));
+        assert_eq!(free_id_of("openai", "openai").as_deref(), Some("openai/openai"));
     }
 
     #[test]

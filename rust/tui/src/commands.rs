@@ -256,20 +256,33 @@ fn for_note(what: &str, agent: &str) -> Choice {
 }
 
 /// `/model`: the catalog's chat models (built in and config.toml's),
-/// then its aliases; the one the agent in view runs is marked ✓.
+/// then its aliases; the one the agent in view runs is marked ✓. A
+/// typed id the list does not have is offered last, as is (BISE-289):
+/// `+ use <provider>/<id>` (no provider typed: the current model's).
 fn model_choices(app: &App, q: &str) -> Vec<Choice> {
     let (agent, current, _, _) = sb::viewed_model(app);
     let mut out = vec![for_note("model", &agent)];
-    for p in crate::models::picks() {
-        if !matches(q, &[&p.value, &p.desc]) {
-            continue;
-        }
+    let picks = crate::models::picks();
+    let free = crate::models::free_id(q, current.split_once('/').map(|(p, _)| p).unwrap_or(""));
+    let listed = |id: &str| picks.iter().any(|p| p.value == id);
+    for p in picks.iter().filter(|p| matches(q, &[&p.value, &p.desc])) {
         let on = p.value == current;
         out.push(Choice {
             label: p.value.clone(),
-            value: p.value,
-            desc: p.desc,
+            value: p.value.clone(),
+            desc: p.desc.clone(),
             mark: on.then(|| ("✓", theme::accent())),
+        });
+    }
+    if let Some(id) = free.filter(|id| !listed(id) && !listed(q.trim())) {
+        if out.len() == 1 {
+            out.push(Choice { value: String::new(), label: "no listed model matches.".into(), desc: String::new(), mark: None });
+        }
+        out.push(Choice {
+            label: format!("+ use {}", id),
+            value: id,
+            desc: "not in my list: its provider decides at the next call".into(),
+            mark: None,
         });
     }
     out
@@ -667,6 +680,17 @@ mod arg_tests {
         assert!(s.len() > 1 && s[1..].iter().all(|i| i.label.contains("sonnet")), "{:?}", labels(&s));
         assert!(s[1..].iter().all(|i| i.mark.is_none()));
         assert_eq!(labels(&items(&mut app, "/model anthropic/claude-sonnet-4-5 ")), ["default"]);
+        // BISE-289: an id the list does not have, last, as is; no
+        // provider typed: the current model's
+        let f = items(&mut app, "/model claude-mythos-9");
+        assert_eq!(labels(&f), ["model for auth-fix", "no listed model matches.", "+ use foundry/claude-mythos-9"]);
+        assert_eq!((f[1].run.as_deref(), f[2].run.as_deref()), (None, Some("/model foundry/claude-mythos-9")));
+        let f = items(&mut app, "/model openai/gpt-6");
+        assert_eq!(f.last().unwrap().label, "+ use openai/gpt-6");
+        assert!(f.iter().any(|i| i.label == "openai/gpt-6-astra"), "the listed ones that match stay");
+        assert!(!labels(&f).iter().any(|l| l == "no listed model matches."));
+        // a listed id: no extra row
+        assert!(!labels(&items(&mut app, "/model openai/gpt-6-astra")).iter().any(|l| l.starts_with("+ use")));
         let r = items(&mut app, "/reasoning ");
         assert_eq!(labels(&r), ["reasoning for auth-fix", "none", "low", "medium", "high", "max"]);
         let high = r.iter().find(|i| i.label == "high").unwrap();

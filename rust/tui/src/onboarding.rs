@@ -267,8 +267,9 @@ pub(crate) enum Sub {
     List,
     /// which provider (BISE-266: its name and hint)
     Which(usize),
-    /// which of its models (the catalog's pick first)
-    Model(Provider, usize),
+    /// which of its models (the catalog's pick first), and the text typed
+    /// to filter them or to name one the list does not have (BISE-289)
+    Model(Provider, usize, String),
     /// the key for that model: its keys page, the field
     Paste(Provider, String, String),
     /// the file has this key already: enter replaces it
@@ -279,6 +280,21 @@ pub(crate) enum Sub {
     Failed(Provider, String, Tried, crate::keycheck::Fail),
     /// it answered: the model is saved; the optional extras
     Works(Provider, String),
+}
+
+/// A row of `which model?`: a model of the catalog, or the id typed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ModelRow {
+    Listed(String),
+    Typed(String),
+}
+
+impl ModelRow {
+    fn id(&self) -> &str {
+        match self {
+            ModelRow::Listed(m) | ModelRow::Typed(m) => m,
+        }
+    }
 }
 
 /// The key a check runs with.
@@ -548,7 +564,7 @@ impl Onb {
                 Some(Opt::Use(p)) if p.id == self.mine && !model_blocked(&self.setup, &self.found) => self.advance(now),
                 Some(Opt::Use(p)) => {
                     self.note = None;
-                    self.sub = Sub::Model(p.clone(), 0);
+                    self.sub = Sub::Model(p.clone(), 0, String::new());
                     Out::Stay
                 }
                 None => self.advance(now),
@@ -583,22 +599,38 @@ impl Onb {
                 return self.advance(now);
             }
             (s @ Sub::Works(..), _) => s,
+            // esc empties the filter first
+            (Sub::Model(p, _, f), KeyCode::Esc) if !f.is_empty() => Sub::Model(p, 0, String::new()),
             (_, KeyCode::Esc) => Sub::List,
             (Sub::Which(i), KeyCode::Up | KeyCode::Down) => Sub::Which(updown(i, self.providers.len())),
             (Sub::Which(i), KeyCode::Enter) => match self.providers.get(i) {
-                Some(p) => Sub::Model(p.clone(), 0),
+                Some(p) => Sub::Model(p.clone(), 0, String::new()),
                 None => Sub::List,
             },
-            (Sub::Model(p, i), KeyCode::Up | KeyCode::Down) => {
-                let n = self.models_of(&p).len();
-                Sub::Model(p, updown(i, n))
+            (Sub::Model(p, i, f), KeyCode::Up | KeyCode::Down) => {
+                let n = self.model_rows(&p, &f).len();
+                Sub::Model(p, updown(i, n), f)
             }
-            (Sub::Model(p, i), KeyCode::Enter) => match self.models_of(&p).get(i).cloned() {
+            // the live check runs with it, listed or not: a model the
+            // provider doesn't know says so there (BISE-282)
+            (Sub::Model(p, i, f), KeyCode::Enter) => match self.model_rows(&p, &f).get(i).map(|r| r.id().to_string()) {
                 // a key found for it: straight to the check
-                Some(m) if self.found.iter().any(|f| f.id == p.id) => self.start_check(p, m, None, env),
+                Some(m) if self.found.iter().any(|x| x.id == p.id) => self.start_check(p, m, None, env),
                 Some(m) => Sub::Paste(p, m, String::new()),
-                None => Sub::Model(p, i),
+                None => Sub::Model(p, i, f),
             },
+            (Sub::Model(p, _, mut f), KeyCode::Backspace) => {
+                f.pop();
+                Sub::Model(p, 0, f)
+            }
+            (Sub::Model(p, _, mut f), KeyCode::Char(c))
+                if !k.modifiers.intersects(
+                    KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER | KeyModifiers::META | KeyModifiers::HYPER,
+                ) && !c.is_whitespace() =>
+            {
+                f.push(c);
+                Sub::Model(p, 0, f)
+            }
             (Sub::Paste(p, m, mut b), KeyCode::Backspace) => {
                 b.pop();
                 Sub::Paste(p, m, b)
@@ -628,10 +660,15 @@ impl Onb {
             // a failed check: another model, another key, or the same key
             // again (no credit yet, no answer); or another provider
             (Sub::Failed(p, m, t, f), KeyCode::Enter) => match f.why {
-                Why::Model | Why::NoAccess => {
-                    let i = self.models_of(&p).iter().position(|x| *x == m).unwrap_or(0);
-                    Sub::Model(p, i)
-                }
+                // back on it: a typed one comes back typed, to fix it
+                Why::Model | Why::NoAccess => match self.models_of(&p).iter().position(|x| *x == m) {
+                    Some(i) => Sub::Model(p, i, String::new()),
+                    None => {
+                        let f = m.strip_prefix(&format!("{}/", p.id)).unwrap_or(&m).to_string();
+                        let i = self.model_rows(&p, &f).len().saturating_sub(1);
+                        Sub::Model(p, i, f)
+                    }
+                },
                 Why::WrongKey => Sub::Paste(p, m, String::new()),
                 Why::NoCredit | Why::Unreachable(_) => self.start_check(p, m, t.again(), env),
             },
@@ -650,6 +687,19 @@ impl Onb {
             if !v.contains(&full) {
                 v.push(full);
             }
+        }
+        v
+    }
+
+    /// The rows of `which model?` (BISE-289): the models of `p` whose id
+    /// holds `filter` (any case), then the typed id when it is not one of
+    /// them.
+    pub(crate) fn model_rows(&self, p: &Provider, filter: &str) -> Vec<ModelRow> {
+        let all = self.models_of(p);
+        let q = filter.trim().to_lowercase();
+        let mut v: Vec<ModelRow> = all.iter().filter(|m| m.to_lowercase().contains(&q)).cloned().map(ModelRow::Listed).collect();
+        if let Some(id) = crate::models::free_id_of(filter, &p.id).filter(|id| !all.contains(id)) {
+            v.push(ModelRow::Typed(id));
         }
         v
     }
@@ -1091,20 +1141,44 @@ fn model_lines(o: &Onb, w: u16, gap: usize) -> Vec<Line<'static>> {
             v.push(keyline("{↑↓} choose · {enter} ok · {esc} back"));
             v
         }
-        Sub::Model(p, i) => {
-            let ms = o.models_of(p);
+        Sub::Model(p, i, f) => {
+            let pick = o.models_of(p).into_iter().next().filter(|_| !p.model.is_empty());
+            let rows = o.model_rows(p, f);
             let mut v = vec![title("which model?"), dim("you can change it any time with /model.".into())];
             blanks(&mut v, gap);
-            let from = i.saturating_sub(WHICH_ROWS / 2).min(ms.len().saturating_sub(WHICH_ROWS));
-            for (k, m) in ms.iter().enumerate().skip(from).take(WHICH_ROWS) {
-                let mut name = vec![s(format!("{} · {}", k + 1, m), theme::text())];
-                if k == 0 && !p.model.is_empty() {
-                    name.push(s("  recommended", theme::accent()));
-                }
+            // the filter line (designer: like the ctrl+s palette)
+            let mut line = vec![s("› ", theme::accent())];
+            if f.is_empty() {
+                line.push(s("type to filter, or any model id", theme::faint()));
+            } else {
+                line.push(s(format!("{}▏", f), theme::text()));
+            }
+            v.push(Line::from(line));
+            blanks(&mut v, 1);
+            if !f.is_empty() && !rows.iter().any(|r| matches!(r, ModelRow::Listed(_))) {
+                v.push(dim("  no listed model matches.".into()));
+            }
+            let from = i.saturating_sub(WHICH_ROWS / 2).min(rows.len().saturating_sub(WHICH_ROWS));
+            for (k, r) in rows.iter().enumerate().skip(from).take(WHICH_ROWS) {
+                let name = match r {
+                    ModelRow::Listed(m) => {
+                        let mut n = vec![s(format!("{} · {}", k + 1, m), theme::text())];
+                        if pick.as_ref() == Some(m) {
+                            n.push(s("  recommended", theme::accent()));
+                        }
+                        n
+                    }
+                    // designer: no number (not in the list), '+' accent
+                    ModelRow::Typed(m) => vec![
+                        s("+ ", theme::accent()),
+                        s(format!("use {}", m), theme::text()),
+                        s("   not in my list: i'll try it with one tiny call", theme::dim()),
+                    ],
+                };
                 option(&mut v, k == *i, name, "", w);
             }
-            if ms.is_empty() {
-                v.push(dim(format!("{} has no model listed: set model in config.toml.", p.name)));
+            if rows.is_empty() {
+                v.push(dim(format!("{} has no model listed: type its id.", p.name)));
             }
             blanks(&mut v, gap);
             v.push(keyline("{↑↓} choose · {enter} ok · {esc} back"));
@@ -2026,6 +2100,7 @@ mod tests {
             k if k.contains("bad") => Err(Fail { why: Why::WrongKey, said: "invalid x-api-key".into() }),
             k if k.contains("broke") => Err(Fail::of(Why::NoCredit)),
             k if k.contains("locked") => Err(Fail { why: Why::NoAccess, said: "not for you".into() }),
+            _ if c.model.contains("nope") => Err(Fail { why: Why::Model, said: format!("Invalid model: {}", c.model) }),
             _ => Ok(()),
         }
     }
@@ -2046,6 +2121,51 @@ mod tests {
         o.on_paste(k);
         o.on_key(key(KeyCode::Enter), 1, e);
         settle(o, e);
+    }
+
+    #[test]
+    fn a_typed_model_id_is_offered_and_checked() {
+        // BISE-289: typing filters the list; an id it does not have is
+        // the last row, and the live check runs with it
+        let h = tmp("typed");
+        let e = env_of(HashMap::from([("HOME", h.to_string_lossy().to_string())]));
+        let mut o = Onb::new(&e);
+        o.checker = fake_check;
+        o.go(Step::Model, 0);
+        let p = o.providers.iter().find(|p| p.id == "mistral").cloned().unwrap();
+        o.sub = Sub::Model(p.clone(), 0, String::new());
+        let typed = |o: &mut Onb, t: &str| t.chars().for_each(|c| {
+            o.on_key(key(KeyCode::Char(c)), 1, &e);
+        });
+        assert!(screen(&o, 10, 110, 30).contains("› type to filter, or any model id"));
+        typed(&mut o, "small");
+        let sc = screen(&o, 10, 110, 30);
+        assert!(sc.contains("› small▏") && sc.contains("mistral/mistral-small-latest") && !sc.contains("medium"), "{}", sc);
+        assert!(sc.contains("+ use mistral/small") && !sc.contains("no listed model matches."), "{}", sc);
+        // esc empties the filter first, then leaves
+        o.on_key(key(KeyCode::Esc), 1, &e);
+        assert!(matches!(&o.sub, Sub::Model(_, 0, f) if f.is_empty()));
+        typed(&mut o, "ministral-8b-latest");
+        let sc = flat(&screen(&o, 10, 110, 30));
+        assert!(sc.contains("no listed model matches."), "{}", sc);
+        assert!(sc.contains("+ use mistral/ministral-8b-latest   not in my list: i'll try it with one tiny call"), "{}", sc);
+        o.on_key(key(KeyCode::Enter), 1, &e);
+        assert!(matches!(&o.sub, Sub::Paste(_, m, _) if m == "mistral/ministral-8b-latest"), "{:?}", o.sub);
+        // an id the provider doesn't know: its words, and enter brings it
+        // back typed, selected, to fix it
+        o.sub = Sub::Model(p, 0, String::new());
+        typed(&mut o, "mistral-nope");
+        o.on_key(key(KeyCode::Enter), 1, &e);
+        type_key(&mut o, &e, "good-key");
+        let sc = screen(&o, 10, 110, 30);
+        assert!(sc.contains("Mistral doesn't know mistral-nope.") && sc.contains("Invalid model: mistral-nope"), "{}", sc);
+        o.on_key(key(KeyCode::Enter), 1, &e);
+        let rows = match &o.sub {
+            Sub::Model(p, i, f) if f == "mistral-nope" => (o.model_rows(p, f), *i),
+            s => panic!("{:?}", s),
+        };
+        assert_eq!(rows.0.get(rows.1), Some(&ModelRow::Typed("mistral/mistral-nope".into())));
+        assert!(!hm(&h).config_file().exists(), "nothing saved blindly");
     }
 
     #[test]
@@ -2119,7 +2239,7 @@ mod tests {
         assert!(sc.contains("✗ this key can't use mistral-medium-latest.") && sc.contains("Mistral said: \"not for you\""), "{}", sc);
         assert!(sc.contains("your account may not have access to this model yet.") && sc.contains("enter pick another model"), "{}", sc);
         o.on_key(key(KeyCode::Enter), 1, &e);
-        assert!(matches!(&o.sub, Sub::Model(p, 0) if p.id == "mistral"));
+        assert!(matches!(&o.sub, Sub::Model(p, 0, _) if p.id == "mistral"));
         paste(&mut o, "good-key");
         // it works: the key in auth.json (0600), the model in config.toml
         assert!(matches!(&o.sub, Sub::Works(_, m) if m == "mistral/mistral-medium-latest"));
@@ -2149,7 +2269,7 @@ mod tests {
         let sc = screen(&o, 10, 110, 30);
         assert!(sc.contains("1 · use OPENAI_API_KEY found") && sc.contains("OpenAI. i'll use gpt-6-astra."), "{}", sc);
         o.on_key(key(KeyCode::Enter), 1, &e);
-        assert!(matches!(&o.sub, Sub::Model(p, 0) if p.id == "openai"));
+        assert!(matches!(&o.sub, Sub::Model(p, 0, _) if p.id == "openai"));
         o.on_key(key(KeyCode::Enter), 1, &e);
         settle(&mut o, &e);
         assert!(matches!(&o.sub, Sub::Works(_, m) if m == "openai/gpt-6-astra"));
