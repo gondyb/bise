@@ -17,7 +17,7 @@
   .v pre { position:absolute; inset:0; margin:0; color:var(--wind); font:inherit; font-size:14px; line-height:1.4; white-space:pre; overflow:hidden; pointer-events:none; user-select:none;
     -webkit-mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); }
   .v.nomask pre { -webkit-mask-image:radial-gradient(ellipse 46% 30% at 50% 46%, transparent 20%, #000 80%); mask-image:radial-gradient(ellipse 46% 30% at 50% 46%, transparent 20%, #000 80%); }
-  .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .d { color:var(--dim); } .v pre .t { color:var(--text); }
+  .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .f { color:var(--faint); } .v pre .d { color:var(--dim); } .v pre .t { color:var(--text); }
   .hero { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; pointer-events:none; }
   .big { font-size:clamp(64px, 11vw, 150px); font-weight:700; letter-spacing:-.045em; line-height:1; }
   .big span { color:var(--acc); }
@@ -33,7 +33,7 @@
 <body>
 <div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
 
-<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.<div class="lbls">labels: <button data-l="verb" class="on">throwing confetti → ✓ confetti</button><button data-l="feat(x)">feat(confetti)</button><button data-l="feat/x">feat/confetti</button><button data-l="x">confetti</button></div><div class="lbls thr">thread: <button data-t="trail" class="on">trail</button><button data-t="shimmer">shimmer</button><button data-t="ripple">ripple</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.<div class="lbls">labels: <button data-l="verb" class="on">throwing confetti → ✓ confetti</button><button data-l="feat(x)">feat(confetti)</button><button data-l="feat/x">feat/confetti</button><button data-l="x">confetti</button></div><div class="lbls thr">thread: <button data-t="wake" class="on">wake</button><button data-t="pulses">pulses</button><button data-t="waves">waves</button><button data-t="tide">tide</button><button data-t="swell">swell</button><button data-t="ripple">ripple</button><button data-t="trail">trail</button><button data-t="shimmer">shimmer</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
 <section class="v" data-v="seeds"><div class="tag"><b>7 · seeds</b> <span class="pick">new · mix of 5 and 6</span><br>the dandelion sky, plus one thread. now and then an agent lifts off the thread like a seed (∿ name), floats a while, and lands further along with a ✓. the thread's :* keeps walking.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
@@ -129,8 +129,52 @@ const THREADS = {
     for (let x = 0; x < g.cols; x++) { const m = (x - o) % 4; if (m === 0) g.put(x, Y, "·", "d"); else if (m === 2 && hash(x - o, 1) < .5) g.put(x, Y, "."); }
   },
   flat(g, Y) { for (let x = 0; x < g.cols; x++) g.put(x, Y, "─"); },
+  // the kiss leaves a wake: ripples right behind it that calm down with distance. ahead, still water
+  wake(g, Y, t, k) {
+    for (let x = 0; x < g.cols; x++) {
+      const d = k - x;
+      if (d <= 0) { g.put(x, Y, "─", "f"); continue; }
+      const amp = Math.exp(-d / 45), v = Math.abs(Math.sin(d * .38 - t * 3.2) * amp + Math.sin(d * .13 + t * .9) * amp * .4);
+      g.put(x, Y, v > .75 ? "≈" : v > .42 ? "∼" : v > .16 ? "~" : "─", d < 6 ? "a" : d < 18 ? "a2" : v > .42 ? "d" : "");
+    }
+  },
+  // a swell: the line itself rises and falls, top, middle, bottom of the cell
+  swell(g, Y, t, k) {
+    for (let x = 0; x < g.cols; x++) { const v = Math.sin(x * .16 - t * 1.4) * .65 + Math.sin(x * .047 + t * .45) * .35; g.put(x, Y, v > .38 ? "‾" : v < -.38 ? "_" : "─", Math.abs(x - k) < 10 ? "a2" : ""); }
+  },
+  // waves: round bumps roll along the thread when a gust passes, two rows tall
+  waves(g, Y, t, k) {
+    const up = (x) => Math.abs(x - k) > 3 && Math.sin(x * .26 - t * 1.1) > .15 && Math.sin(x * .021 + t * .3) > .25;
+    for (let x = 0; x < g.cols; x++) {
+      const cl = Math.abs(x - k) < 12 ? "a2" : "";
+      if (!up(x)) { g.put(x, Y, "─", cl); continue; }
+      const a = up(x - 1), b = up(x + 1);
+      if (!a && !b) { g.put(x, Y, "─", cl); continue; }
+      if (!a) { g.put(x, Y, "╯", cl); g.put(x, Y - 1, "╭", cl); }
+      else if (!b) { g.put(x, Y, "╰", cl); g.put(x, Y - 1, "╮", cl); }
+      else g.put(x, Y - 1, "─", cl);
+    }
+  },
+  // pulses: every time the kiss sends an agent out or picks one up, a ripple runs both ways along the thread
+  pulses(g, Y, t, k) {
+    if (!PULSES.idle || t - PULSES.idle > 4) { PULSES.idle = t; PULSES.push({ x: k, t0: t }); }
+    for (let i = PULSES.length - 1; i >= 0; i--) if (t - PULSES[i].t0 > 6) PULSES.splice(i, 1);
+    for (let x = 0; x < g.cols; x++) {
+      let v = 0;
+      for (const p of PULSES) { const age = t - p.t0; for (const dir of [-1, 1]) { const dist = Math.abs(x - (p.x + dir * age * 16)); if (dist < 5) v += (1 - dist / 5) * Math.max(0, 1 - age / 6); } }
+      g.put(x, Y, v > .6 ? "≈" : v > .3 ? "∼" : v > .1 ? "~" : "─", v > .45 ? "a2" : v > .1 ? "d" : "");
+    }
+  },
+  // tide: the ripple, slower, with three waves on top of each other
+  tide(g, Y, t, k) {
+    for (let x = 0; x < g.cols; x++) {
+      const v = Math.sin(x * .21 - t * 1.9) * .55 + Math.sin(x * .083 + t * .7) * .3 + Math.sin(x * .031 - t * .4) * .15;
+      g.put(x, Y, v < -.45 ? "_" : v < -.1 ? "-" : v < .25 ? "~" : v < .55 ? "∼" : "≈", Math.abs(x - k) < 10 ? "a2" : v > .55 ? "d" : "");
+    }
+  },
 };
-let THREAD = THREADS.trail;
+const PULSES = [];
+let THREAD = THREADS.wake;
 const V = {
   now(s) {
     const RAMP = " .·-~∼≈";
@@ -257,7 +301,9 @@ const V = {
       if (s.kx > g.cols + 2 && !s.b.length) { s.kx = -2; s.last = -99; }
       const kx = Math.floor(s.kx);
       // it sends agents out from where it stands. a landing spot must not share its label's room with another one
-      const lb = LABEL(NAMES[Math.floor(rnd(0, NAMES.length))]), [name, done] = Array.isArray(lb) ? lb : [lb, lb], ko = g.ko;
+      // never the same feature twice at once (out, or back and waiting for the kiss)
+      const pool = NAMES.filter(n => !s.b.some(o => o.key === n)), key = pool[Math.floor(rnd(0, pool.length))];
+      const lb = LABEL(key), [name, done] = Array.isArray(lb) ? lb : [lb, lb], ko = g.ko;
       if (s.b.length < 3 && s.kx - s.last > 14 && kx > 2 && Math.random() < .02) {
         const free = (L) => { const a = kx + 1 + L, z = a + 2 + name.length; return z < g.cols - 4 && s.b.every(o => { const oa = o.xs + o.L, oz = oa + 2 + o.name.length; return z + 3 < oa || oz + 3 < a; }); };
         let L = 0; for (let k = 0; k < 12 && !L; k++) { const c = Math.floor(rnd(36, 80)); if (free(c)) L = c; }
@@ -265,8 +311,8 @@ const V = {
           // an arc that crosses the text's columns stays under it (name included)
           const under = kx + 1 + L + name.length + 3 >= ko.x0 && kx + 1 <= ko.x1;
           const top = under ? Math.max(2, Y - ko.y1 - 2) : Y - 4;
-          s.b.push({ xs: kx + 1, L, p: 0, A: Math.min(rnd(Math.min(3, top), top), L / 2.6), name, done });
-          s.last = s.kx; s.flash = 8;
+          s.b.push({ xs: kx + 1, L, p: 0, A: Math.min(rnd(Math.min(3, top), top), L / 2.6), name, done, key });
+          s.last = s.kx; s.flash = 8; PULSES.push({ x: kx, t0: t });
         }
       }
       s.b = s.b.filter(b => {
@@ -276,7 +322,7 @@ const V = {
         // back on the thread, it waits for the kiss to pick it up
         if (b.p >= b.L && s.kx >= b.xs + b.L - 1) {
           for (const [x, y] of pts) if (Math.random() < .55) s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: rnd(50, 160) });
-          s.flash = 10;
+          s.flash = 10; PULSES.push({ x: kx, t0: t });
           return false;
         }
         dots(g, pts);
