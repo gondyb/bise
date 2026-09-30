@@ -509,8 +509,128 @@ fn run_locked(paths: &Paths, to: &Path, period: Duration, restart: bool, reload:
     }
 }
 
+/// A `bise` launch (BISE-255): the hub of the workspace runs `hub`, the
+/// launched bise is `me`. True when the hub should move to `me`: `me` is
+/// the installed `current` (what `bise update` or the daily check
+/// installed), `hub` an older build of the same install, and a switch to
+/// `me` did not fail in this workspace (its probation rolled back: the
+/// hub stays where it is, `/restart` tries again).
+pub fn should_follow_install(me: &Path, hub: &Path, failed: Option<&Path>) -> bool {
+    use bise_home::release::{read_version, Install};
+    let canon = |p: &Path| p.canonicalize().ok();
+    let (Some(me), Some(hub)) = (canon(me), canon(hub)) else { return false };
+    if me == hub || failed.and_then(canon).as_ref() == Some(&me) {
+        return false;
+    }
+    let (Some(mine), Some(theirs)) = (Install::of_root(&me), Install::of_root(&hub)) else {
+        return false;
+    };
+    if mine.prefix != theirs.prefix || mine.current().as_ref() != Some(&me) {
+        return false;
+    }
+    let built = |r: &Path| read_version(r).get("built").cloned().unwrap_or_default();
+    let (b_me, b_hub) = (built(&me), built(&hub));
+    !b_me.is_empty() && b_me > b_hub
+}
+
+/// Before a `bise` TUI attaches to the hub of its workspace (BISE-255):
+/// a hub on an older installed version moves to the launched one (the
+/// hub's own `/version <dir>`: the switcher, probation, agents kept, an
+/// agent in a turn moves at its next idle), and this waits for the new
+/// hub (<= 30 s) so the TUI attaches to it instead of following the old
+/// one. Every hub since BISE-131 takes the request. `say`: one line for
+/// the user each (the terminal is not the TUI's yet).
+pub fn follow_install(paths: &Paths, me: &Path, say: &dyn Fn(&str)) {
+    use std::io::{BufRead, BufReader};
+    if switch_running(paths) {
+        return;
+    }
+    let Some(hub) = running_root(paths) else { return };
+    let failed = read_state(paths)
+        .pointer("/failed/version")
+        .and_then(|x| x.as_str())
+        .map(PathBuf::from);
+    if !should_follow_install(me, &hub, failed.as_deref()) {
+        return;
+    }
+    let me = me.canonicalize().unwrap_or_else(|_| me.to_path_buf());
+    let (from_id, to_id) = (id_of(&hub), id_of(&me));
+    say(&format!("this folder's hub runs bise {}: moving it to {} (the agents keep running)…", from_id, to_id));
+    let answer = (|| -> std::io::Result<String> {
+        let mut s = UnixStream::connect(paths.socket())?;
+        let req = json!({"op": "version", "do": "switch", "to": me.to_string_lossy()});
+        s.write_all(format!("{{\"op\":\"hello\"}}\n{}\n", req).as_bytes())?;
+        s.set_read_timeout(Some(Duration::from_secs(5)))?;
+        // the hub's hello first (tens of KB), then the answer: a notice
+        for line in BufReader::new(s).lines() {
+            let v: Value = serde_json::from_str(&line?).unwrap_or(Value::Null);
+            if v.get("ev").and_then(|x| x.as_str()) == Some("notice") {
+                return Ok(v.get("text").and_then(|x| x.as_str()).unwrap_or("").to_string());
+            }
+        }
+        Ok(String::new())
+    })()
+    .unwrap_or_default();
+    if !answer.starts_with("switching to version") {
+        say(&format!("the hub did not switch ({}): /restart in it switches to {}", clip_answer(&answer), to_id));
+        return;
+    }
+    let t0 = Instant::now();
+    while t0.elapsed() < Duration::from_secs(30) {
+        std::thread::sleep(Duration::from_millis(200));
+        let there = running_root(paths).and_then(|r| r.canonicalize().ok()).as_ref() == Some(&me);
+        if there && ping(paths) {
+            say(&format!("the hub runs bise {} now", to_id));
+            return;
+        }
+    }
+    say(&format!("the hub is still switching to {} (probation): the TUI follows it once it is up", to_id));
+}
+
+fn clip_answer(a: &str) -> String {
+    if a.trim().is_empty() {
+        "no answer".into()
+    } else {
+        crate::util::clip(a.trim(), 160)
+    }
+}
+
 #[cfg(test)]
 mod state_tests {
+    #[test]
+    fn a_launch_moves_the_hub_to_a_newer_installed_current_only() {
+        use super::should_follow_install as follow;
+        use std::path::Path;
+        let t = std::env::temp_dir().join(format!("sb-follow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        let mk = |prefix: &Path, id: &str, extra: &str| {
+            let d = prefix.join("versions").join(id);
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join("VERSION"), format!("id={}\n{}", id, extra)).unwrap();
+            d
+        };
+        let p = t.join("prefix");
+        let old = mk(&p, "old", "built=2026-09-29T14:00:00Z\n");
+        let new = mk(&p, "new", "built=2026-09-30T01:00:00Z\n");
+        std::os::unix::fs::symlink("versions/new", p.join("current")).unwrap();
+        assert!(follow(&new, &old, None), "the installed current, newer: the hub moves");
+        assert!(!follow(&new, &new, None), "already there");
+        assert!(!follow(&old, &new, None), "an older bise launched never moves the hub back");
+        assert!(!follow(&new, &old, Some(&new)), "a switch to it failed here: stay");
+        assert!(follow(&new, &old, Some(&old)), "another version failed: no matter");
+        // not the installed current (a hand-run versions/<id>/bise): no move
+        let newer = mk(&p, "newer", "built=2026-10-01T00:00:00Z\n");
+        assert!(!follow(&newer, &old, None));
+        // a dev hub (repl=) or another install: never touched
+        let dev = mk(&p, "dev", "built=2026-01-01T00:00:00Z\nrepo=/src\n");
+        assert!(!follow(&new, &dev, None));
+        let q = t.join("other");
+        let elsewhere = mk(&q, "x", "built=2026-01-01T00:00:00Z\n");
+        std::os::unix::fs::symlink("versions/x", q.join("current")).unwrap();
+        assert!(!follow(&new, &elsewhere, None));
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
     #[test]
     fn dev_mode_is_bise_source_tree() {
         let d = std::env::temp_dir().join(format!("sb-devws-{}", std::process::id()));

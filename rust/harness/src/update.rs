@@ -5,8 +5,9 @@
 //! when it names another, newer build for this Mac: downloads the
 //! tarball (curl: https or file://), checks its sha256, unpacks its
 //! `app/` into `<prefix>/versions/<id>` (immutable) and flips `current`.
-//! Running hubs keep their version: the hub says an update is ready and
-//! `/restart latest` switches it (BISE-172). The last manifest read is
+//! Running hubs keep their version: the hub says an update is ready;
+//! `/restart` (or `/restart latest`) switches it (BISE-172), and so does
+//! launching `bise` again in its folder (BISE-255). The last manifest read is
 //! kept in `~/.bise/cache/latest.json` for the hub.
 //!
 //! The background check: at most once a day (`BISE_UPDATE_INTERVAL`
@@ -340,8 +341,8 @@ fn run(mode: Mode, say: &dyn Fn(String)) -> Result<(), String> {
     flip(&inst, &rel.id)?;
     prune(&inst);
     say(format!(
-        "{} updated to {} ({}): new sessions run it; a running Switchboard keeps its version until /restart latest",
-        cmd, rel.id, rel.version
+        "{} updated to {} ({}): new sessions run it; a hub already running moves to it when you launch {} again in its folder, or type /restart in it (the agents keep running)",
+        cmd, rel.id, rel.version, cmd
     ));
     Ok(())
 }

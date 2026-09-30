@@ -45,6 +45,10 @@ enum RestartPlan {
     Reload,
     /// any other workspace with a commit: refused, `/version` switches.
     Refuse,
+    /// an installed bise, no argument (BISE-255): the version `current`
+    /// points at when `bise update` installed another one (a switch,
+    /// probation, agents kept), else a reload of the running one.
+    InstalledCurrent,
     /// an installed bise, `latest` (BISE-172): `bise update`, then the
     /// hub switches to the version `current` points at (probation).
     InstalledLatest,
@@ -57,7 +61,8 @@ enum RestartPlan {
 /// version (`repo=`): as before BISE-172.
 fn restart_plan(dev: bool, installed: bool, arg: &str) -> RestartPlan {
     match (installed, dev, arg.trim()) {
-        (true, _, "" | "current") => RestartPlan::Reload,
+        (true, _, "") => RestartPlan::InstalledCurrent,
+        (true, _, "current") => RestartPlan::Reload,
         (true, _, "latest") => RestartPlan::InstalledLatest,
         (true, _, id) => RestartPlan::InstalledSwitch(id.to_string()),
         (false, true, a) => RestartPlan::Dev(restart_target(a)),
@@ -83,7 +88,7 @@ fn release_line(inst: &Install, running_id: &str) -> Option<String> {
     }
     let installed = inst.find(&id).is_some();
     Some(if installed {
-        format!("latest release: {} ({}), installed — /restart latest switches to it", name, id)
+        format!("latest release: {} ({}), installed — /restart switches to it", name, id)
     } else {
         format!("latest release: {} ({}) — /restart latest downloads it and switches", name, id)
     })
@@ -131,7 +136,7 @@ fn installed_lines(inst: &Install, root: &Path, running_id: &str) -> Vec<String>
     if let Some(l) = release_line(inst, running_id) {
         out.push(l);
     } else if current.is_some() && current != running {
-        out.push("a newer version is installed: /restart latest switches to it".into());
+        out.push("a newer version is installed: /restart switches to it".into());
     }
     out.push("/version <id>: switch to an installed version · /version back: roll back · /restart latest: the newest release".into());
     out
@@ -215,6 +220,20 @@ impl Shell {
                     &s("to"),
                 ) {
                     RestartPlan::Reload => return self.reload(),
+                    RestartPlan::InstalledCurrent => {
+                        let running = root.canonicalize().ok();
+                        return match installed.and_then(|i| i.current()).filter(|c| Some(c) != running.as_ref()) {
+                            Some(c) => {
+                                self.start_switch(&c);
+                                format!(
+                                    "switching to version {}, the one bise update installed — the agents keep running (/restart current reloads {} instead)",
+                                    switch::id_of(&c),
+                                    me.get("id").and_then(|x| x.as_str()).unwrap_or("this one")
+                                )
+                            }
+                            None => self.reload(),
+                        };
+                    }
                     RestartPlan::InstalledLatest => match installed {
                         Some(inst) => return self.restart_latest(inst),
                         None => return self.reload(),
@@ -544,7 +563,7 @@ impl Shell {
 
     /// An installed hub, on its tick (BISE-172): when `current` points at
     /// another version than this hub runs (`bise update`, the daily
-    /// check), tell main and the user once: `/restart latest` switches.
+    /// check), tell main and the user once: `/restart` switches.
     pub(super) fn announce_update(&mut self) {
         if self.update_checked.is_some_and(|t| t.elapsed() < UPDATE_LOOK) {
             return;
@@ -558,7 +577,7 @@ impl Shell {
         }
         self.update_told = Some(cur.clone());
         let text = format!(
-            "bise {} is installed and ready: /restart latest switches this hub to it (agents kept)",
+            "bise {} is installed and ready: /restart switches this hub to it, and so does launching bise again (agents kept)",
             crate::switch::id_of(&cur)
         );
         self.feed(MAIN, &format!("sb info : {}", wire_escape(&text)));
@@ -672,7 +691,8 @@ mod tests {
         // an installed bise (BISE-172), in any workspace (the dev repo too):
         // latest = the newest release; an id = an installed version
         for dev in [true, false] {
-            assert_eq!(restart_plan(dev, true, ""), Reload);
+            // no argument: the installed current (BISE-255), else a reload
+            assert_eq!(restart_plan(dev, true, ""), InstalledCurrent);
             assert_eq!(restart_plan(dev, true, "current"), Reload);
             assert_eq!(restart_plan(dev, true, "latest"), InstalledLatest);
             assert_eq!(restart_plan(dev, true, "abc1234"), InstalledSwitch("abc1234".into()));
