@@ -38,7 +38,7 @@ def host_env():
 
 
 class Env:
-    def __init__(self):
+    def __init__(self, fake_env=None):
         self.tmp = tempfile.mkdtemp(prefix="sb-e2e-")
         self.ws = os.path.join(self.tmp, "ws")
         self.state = os.path.join(self.tmp, "st")
@@ -47,7 +47,7 @@ class Env:
         self.fake_log = os.path.join(self.tmp, "fake.log")
         self.fake = subprocess.Popen(
             [sys.executable, "-u", os.path.join(HERE, "fake_provider.py")],
-            stdout=subprocess.PIPE, text=True, env={**host_env(), "FAKE_LOG": self.fake_log})
+            stdout=subprocess.PIPE, text=True, env={**host_env(), "FAKE_LOG": self.fake_log, **(fake_env or {})})
         port = self.fake.stdout.readline().split()[1]
         self.env = {
             **host_env(),

@@ -35,7 +35,8 @@ the injected <bise_state> block is not one):
   byte for byte.
 
 A key (Authorization, x-api-key) holding "bad" gets a 401, one holding
-"broke" a 402 (BISE-266: the first run's key check); "broke-url" says so
+"broke" a 402 (BISE-266: the first run's key check), until the file
+$FAKE_CREDIT exists (credit added, BISE-291); "broke-url" says so
 with OpenAI's words, a url and `."` in them (BISE-287).
 
 Each request is logged to $FAKE_LOG (one JSON line: agent, last user
@@ -639,7 +640,11 @@ class H(http.server.BaseHTTPRequestHandler):
         # BISE-266: a key holding "bad" is refused (401), one holding
         # "broke" has no credit (402): the first run's key check
         auth = " ".join(self.headers.get(h, "") for h in ("authorization", "x-api-key", "x-goog-api-key"))
-        if "bad" in auth or "broke" in auth:
+        # $FAKE_CREDIT: once that file exists, the "broke" account has
+        # credit (the user added some: tui_stuck_start_tmux.py)
+        credit = os.environ.get("FAKE_CREDIT")
+        broke = "broke" in auth and not (credit and os.path.exists(credit))
+        if "bad" in auth or broke:
             bad = "bad" in auth
             said = "invalid api key" if bad else "insufficient credit balance"
             if "broke-url" in auth:

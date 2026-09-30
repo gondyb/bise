@@ -516,7 +516,13 @@ fn hubs(home: &bise_home::Home) -> Check {
     let ws = crate::sb_workspace(&[]);
     let paths = switchboard::paths::Paths::for_workspace(&ws);
     let here = if switchboard::switch::hub_busy(&paths.state) {
-        format!("running for {} ({})", paths.workspace.display(), paths.state.display())
+        // where a hub says what went wrong: hub.log (its REPL starts and
+        // exits), hub.err, each agent's repl.err (BISE-291)
+        format!(
+            "running for {} ({}; logs: hub.log, hub.err, agents/*/repl.err)",
+            paths.workspace.display(),
+            paths.state.display()
+        )
     } else {
         format!("none for {} (`{}` starts one)", paths.workspace.display(), bise_catalog::CLI)
     };

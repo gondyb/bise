@@ -66,21 +66,30 @@ fn hub_tools_path() -> String {
 
 /// The user's login-shell PATH, asked once per process ($SHELL, else
 /// /bin/zsh; 3 s at most); None when the shell fails or is too slow.
+/// The whole ask is bounded, the start of the shell included: a spawn
+/// that never returned held every REPL start of the hub (BISE-291).
 pub fn login_path() -> Option<&'static str> {
     static LOGIN: OnceLock<Option<String>> = OnceLock::new();
     LOGIN
         .get_or_init(|| {
             let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty());
-            shell_path(shell.as_deref().unwrap_or("/bin/zsh"), Duration::from_secs(3))
+            let shell = shell.unwrap_or_else(|| "/bin/zsh".into());
+            bounded(Duration::from_secs(4), move || shell_path(&shell, Duration::from_secs(3))).flatten()
         })
         .as_deref()
 }
 
-const MARK: &str = "__BISE_PATH__";
-
-extern "C" {
-    fn setsid() -> i32;
+/// `f`'s value if it comes within `limit`, else None (`f` goes on alone,
+/// on its own thread).
+fn bounded<T: Send + 'static>(limit: Duration, f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(limit).ok()
 }
+
+const MARK: &str = "__BISE_PATH__";
 
 /// PATH as `shell -i -l` sets it (-l: .zprofile/.bash_profile, -i:
 /// .zshrc/.bashrc, where nvm & co add their dirs). The shell runs in
@@ -89,20 +98,14 @@ extern "C" {
 /// the line after a marker (rc files may print banners). Works for
 /// sh, bash, zsh and fish (printenv prints the joined form).
 pub fn shell_path(shell: &str, timeout: Duration) -> Option<String> {
-    use std::os::unix::process::CommandExt;
     let mut cmd = Command::new(shell);
     cmd.args(["-i", "-l", "-c", &format!("echo {}; /usr/bin/printenv PATH", MARK)])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    // SAFETY: setsid is async-signal-safe; nothing else runs between
-    // fork and exec
-    unsafe {
-        cmd.pre_exec(|| {
-            setsid();
-            Ok(())
-        });
-    }
+    // its own session, and no pipe of a concurrent spawn: a daemon its
+    // rc files start must not hold one open (BISE-291)
+    crate::procs::own_session(&mut cmd);
     let mut child = cmd.spawn().ok()?;
     let mut out = child.stdout.take()?;
     let (tx, rx) = std::sync::mpsc::channel();

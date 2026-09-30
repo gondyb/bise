@@ -157,6 +157,11 @@ struct Shell {
     next_gen: u64,
     /// Every REPL process alive, connected or not: (generation, pid).
     pids: BTreeMap<String, (u64, u32)>,
+    /// REPLs asked for whose process is not spawned yet: (generation,
+    /// since). One stuck there past START_LIMIT is a failed start, said
+    /// in main's feed and restarted (BISE-291: it stayed `starting`
+    /// forever, with no line anywhere).
+    starts: BTreeMap<String, (u64, std::time::Instant)>,
     clients: BTreeMap<ClientId, UnixStream>,
     replies: BTreeMap<Token, UnixStream>,
     /// The last lines of each feed, with their transcript positions and
@@ -226,6 +231,25 @@ struct Shell {
 }
 
 /// What an agent whose turn was cut by a restart receives.
+/// How long a REPL may wait for its process to be spawned (the login
+/// shell's PATH, its AGENTS.md: seconds at most) before its start counts
+/// as failed (BISE-291).
+const START_LIMIT: Duration = Duration::from_secs(20);
+
+/// Tests only (tui_stuck_start_tmux.py): `SB_STALL_START=<file>` holds
+/// the next REPL start before its spawn, forever, while that file
+/// exists; the file is removed, so only one start stalls.
+fn stall_for_tests() {
+    let Some(f) = std::env::var_os("SB_STALL_START") else {
+        return;
+    };
+    if std::fs::remove_file(&f).is_ok() {
+        loop {
+            std::thread::sleep(Duration::from_secs(3600));
+        }
+    }
+}
+
 const RESUME_TEXT: &str = "Your turn was interrupted by a restart of Switchboard; continue where you left off.";
 
 /// The journal's events, and the (1-based) numbers of the lines that are
@@ -1030,10 +1054,12 @@ impl Shell {
         }
         self.bins.insert(dir.clone(), self.opts.repl_bin.clone());
         self.ports.insert(dir.clone(), port);
+        self.starts.insert(dir.clone(), (gen, std::time::Instant::now()));
         let tx = self.tx.clone();
         let paths = self.opts.paths.clone();
         let workdir = std::path::PathBuf::from(&a.ws.path);
         std::thread::spawn(move || {
+            stall_for_tests();
             // sb, the hub's PATH, the user's login-shell PATH, the
             // standard dirs; the model is told once whether rg and git
             // are there (BISE-166). Here, off the hub's loop: the first
@@ -1053,6 +1079,28 @@ impl Shell {
             );
             supervise(cmd, dir, gen, adir, port, tx, paths)
         });
+    }
+
+    /// A REPL whose process is still not spawned START_LIMIT after it
+    /// was asked for: its start failed. It goes as a crash (a line in
+    /// main's feed, a restart, a card after MAX_CRASHES); what its stuck
+    /// thread sends later belongs to an old generation and is dropped.
+    fn check_starts(&mut self) {
+        let late: Vec<(String, u64)> = self
+            .starts
+            .iter()
+            .filter(|(_, (_, since))| since.elapsed() > START_LIMIT)
+            .map(|(dir, (gen, _))| (dir.clone(), *gen))
+            .collect();
+        for (dir, gen) in late {
+            self.starts.remove(&dir);
+            let reason = format!(
+                "its REPL did not start in {} s: the hub never got to run it; `bise doctor` shows where the hub's log is",
+                START_LIMIT.as_secs()
+            );
+            log_line(&self.opts.paths, &format!("repl {} not started: {}", dir, reason));
+            let _ = self.tx.send(Msg::ReplGone { dir, gen, reason });
+        }
     }
 
     fn on_repl_line(&mut self, dir: &str, line: &str) {
@@ -1626,6 +1674,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
         gens: BTreeMap::new(),
         next_gen: 1,
         pids: BTreeMap::new(),
+        starts: BTreeMap::new(),
         clients: BTreeMap::new(),
         replies: BTreeMap::new(),
         buffers: BTreeMap::new(),
@@ -1729,6 +1778,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 }
                 sh.step(i);
                 if tick {
+                    sh.check_starts();
                     sh.switch_idle_repls();
                     sh.announce_update();
                 }
@@ -1803,6 +1853,9 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 }
             }
             Msg::ReplSpawned { dir, gen, pid } => {
+                if sh.starts.get(&dir).is_some_and(|(g, _)| *g == gen) {
+                    sh.starts.remove(&dir);
+                }
                 let _ = std::fs::write(
                     sh.opts.paths.agent_dir(&dir).join("repl.pid"),
                     pid.to_string(),
@@ -1838,6 +1891,7 @@ pub fn run(opts: Opts) -> std::io::Result<()> {
                 if sh.gens.get(&dir) != Some(&gen) {
                     continue;
                 }
+                sh.starts.remove(&dir);
                 sh.gens.remove(&dir);
                 sh.repls.remove(&dir);
                 sh.pids.remove(&dir);

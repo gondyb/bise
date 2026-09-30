@@ -466,12 +466,15 @@ impl CoreLink {
         let port = std::net::TcpListener::bind("127.0.0.1:0")?
             .local_addr()?
             .port();
-        let mut child = Command::new(core_bin())
-            .env("SB_CORE_PORT", port.to_string())
+        let mut cmd = Command::new(core_bin());
+        cmd.env("SB_CORE_PORT", port.to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
+            .stderr(Stdio::null());
+        // it lives as long as the hub: a pipe of a concurrent spawn must
+        // not stay open in it (BISE-291)
+        crate::procs::no_leaked_fds(&mut cmd);
+        let mut child = cmd.spawn()?;
         let mut out = BufReader::new(child.stdout.take().expect("stdout"));
         let mut banner = String::new();
         out.read_line(&mut banner)?;

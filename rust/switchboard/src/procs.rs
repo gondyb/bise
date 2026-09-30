@@ -272,16 +272,59 @@ extern "C" {
     #[cfg(not(target_os = "linux"))]
     fn getsid(pid: i32) -> i32;
     fn setsid() -> i32;
+    fn fcntl(fd: i32, cmd: i32, ...) -> i32;
+    fn close(fd: i32) -> i32;
+    fn getdtablesize() -> i32;
 }
 
-/// Run `cmd` in a session of its own (a REPL: its session id is its pid).
+const F_GETFD: i32 = 1;
+const FD_CLOEXEC: i32 = 1;
+
+/// In a forked child, before exec: close every descriptor above stderr
+/// that is not close-on-exec. On macOS Rust makes its pipes with
+/// `pipe()` then sets close-on-exec: a process another thread spawns in
+/// between inherits both ends. A long-lived child (sb-core, a REPL) then
+/// holds the write end of that spawn's exec-status pipe open, and the
+/// spawn waits for its end forever: the hub's first REPL never started
+/// (BISE-291). Our own descriptors are all close-on-exec (Rust opens
+/// them so) and the child's stdio is already on 0-2.
+/// Async-signal-safe: fcntl and close only.
+fn close_leaked_fds() {
+    // SAFETY: plain syscalls on descriptor numbers
+    unsafe {
+        let max = getdtablesize().clamp(256, 65536);
+        for fd in 3..max {
+            let flags = fcntl(fd, F_GETFD);
+            if flags >= 0 && flags & FD_CLOEXEC == 0 {
+                close(fd);
+            }
+        }
+    }
+}
+
+/// Start `cmd` with no descriptor leaked from a concurrent spawn (see
+/// `close_leaked_fds`): every long-lived process the hub starts.
+pub fn no_leaked_fds(cmd: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: close_leaked_fds is async-signal-safe
+    unsafe {
+        cmd.pre_exec(|| {
+            close_leaked_fds();
+            Ok(())
+        });
+    }
+}
+
+/// Run `cmd` in a session of its own (a REPL: its session id is its
+/// pid), with no leaked descriptor.
 pub fn own_session(cmd: &mut std::process::Command) {
     use std::os::unix::process::CommandExt;
-    // SAFETY: setsid is async-signal-safe; nothing else runs between
-    // fork and exec
+    // SAFETY: setsid and close_leaked_fds are async-signal-safe; nothing
+    // else runs between fork and exec
     unsafe {
         cmd.pre_exec(|| {
             setsid();
+            close_leaked_fds();
             Ok(())
         });
     }
@@ -360,6 +403,58 @@ pub fn describe(hit: &[Proc]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    extern "C" {
+        fn pipe(fds: *mut i32) -> i32;
+    }
+
+    /// Does the read end see EOF (every write end closed) within 2 s?
+    fn eof_soon(read_fd: i32) -> bool {
+        use std::io::Read;
+        use std::os::fd::FromRawFd;
+        let mut f = unsafe { std::fs::File::from_raw_fd(read_fd) };
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut s = Vec::new();
+            let _ = f.read_to_end(&mut s);
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(Duration::from_secs(2)).is_ok()
+    }
+
+    /// BISE-291: a pipe another thread made (not yet close-on-exec, as
+    /// Rust's on macOS for a moment) does not stay open in a long-lived
+    /// child: its reader sees the end when the maker closes its side.
+    #[test]
+    fn a_long_lived_child_does_not_keep_a_leaked_pipe_open() {
+        for (name, fix) in [("no_leaked_fds", no_leaked_fds as fn(&mut std::process::Command)), ("own_session", own_session)] {
+            let mut fds = [0i32; 2];
+            assert_eq!(unsafe { pipe(fds.as_mut_ptr()) }, 0);
+            let mut cmd = std::process::Command::new("/bin/sleep");
+            cmd.arg("5");
+            fix(&mut cmd);
+            let mut child = cmd.spawn().unwrap();
+            unsafe { close(fds[1]) };
+            let eof = eof_soon(fds[0]);
+            let _ = child.kill();
+            let _ = child.wait();
+            assert!(eof, "{}: the child kept the write end open", name);
+        }
+    }
+
+    /// The control: without it, the child does keep the pipe (the test
+    /// above tests something).
+    #[test]
+    fn a_plain_child_inherits_a_pipe_that_is_not_close_on_exec() {
+        let mut fds = [0i32; 2];
+        assert_eq!(unsafe { pipe(fds.as_mut_ptr()) }, 0);
+        let mut child = std::process::Command::new("/bin/sleep").arg("5").spawn().unwrap();
+        unsafe { close(fds[1]) };
+        let eof = eof_soon(fds[0]);
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(!eof);
+    }
 
     fn p(pid: u32, ppid: u32, owners: Option<&str>) -> Proc {
         Proc {
