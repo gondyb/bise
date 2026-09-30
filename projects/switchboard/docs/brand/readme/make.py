@@ -447,7 +447,35 @@ def f_worktree(c):
     m.row(5.6, f'{m.dim("worktrees only when they help. no hundred branches to merge.")}', size=13, gap=6)
     return m.svg("one agent gets its own worktree for a risky job; the others share the folder; the worktree is cleaned up after.")
 
-FEATS = [("talk", f_talk), ("sync", f_sync), ("tools", f_tools), ("card", f_card), ("direct", f_direct),
+def f_quiet(c):
+    m = Mini(c, 12, 250, "ctrl+o opens it all · ctrl+o folds it back")
+    m.row(0.3, f'{m.acc(":*")} perf and theme are on it.', gap=0)
+    y0 = m.y
+    g = f'<tspan fill="{c["faint"]}">▸</tspan>'
+    for (t0, t1, n) in [(1.0, 2.0, 3), (2.0, 3.0, 7), (3.0, 4.2, 12)]:
+        m.row(t0, f'{g} {m.dim(f"{n} folded · tool calls and messages between agents")}', out=t1, y=y0)
+    # ctrl+o pressed
+    kp = m.tl.show(3.7, 4.2, dur=0.1)
+    m.o.append(f'<g class="{kp}"><rect x="{m.W-92}" y="{y0-15}" width="64" height="20" rx="3" fill="{c["chip"]}"/>'
+               f'<text x="{m.W-60}" y="{y0}" text-anchor="middle" font-size="12" fill="{c["text"]}">ctrl+o</text></g>')
+    rows = [(4.3, f'{m.acc("✉")} perf {m.dim("→")} theme {m.dim("· which file has the colors?")}', None),
+            (4.5, f'{m.dim("ƒ")} reading the Lighthouse report', "✓"),
+            (4.7, f'{m.acc("✉")} theme {m.dim("→")} perf {m.dim("· tokens.css. i’m on it, don’t touch it")}', None),
+            (4.9, f'{m.dim("$")} npm run build', "✓"),
+            (5.1, f'{m.dim("$")} running the signup test', "✓")]
+    for i, (t0, html, mark) in enumerate(rows):
+        yy = y0 + i * 27
+        if mark: html += f' <tspan fill="{c["acc"]}">{mark}</tspan>'
+        m.row(t0, html, size=13, out=8.2, y=yy)
+    kp2 = m.tl.show(7.9, 8.3, dur=0.1)
+    m.o.append(f'<g class="{kp2}"><rect x="{m.W-92}" y="{y0-15}" width="64" height="20" rx="3" fill="{c["chip"]}"/>'
+               f'<text x="{m.W-60}" y="{y0}" text-anchor="middle" font-size="12" fill="{c["text"]}">ctrl+o</text></g>')
+    m.row(8.5, f'{g} {m.dim("12 folded · tool calls and messages between agents")}', y=y0)
+    m.row(9.0, f'{m.acc("✓")} perf done {m.dim("· signup 4.1 s → 0.9 s")}', y=y0 + 27)
+    m.row(0.3, f'{m.dim("what matters to you shows. the rest is one key away, in full.")}', size=13, y=m.H - 22)
+    return m.svg("the work between agents stays folded into one line; ctrl+o opens every tool call and message, ctrl+o folds them back.")
+
+FEATS = [("talk", f_talk), ("sync", f_sync), ("tools", f_tools), ("card", f_card), ("quiet", f_quiet), ("direct", f_direct),
          ("steer", f_steer), ("resume", f_resume), ("worktree", f_worktree)]
 
 for mode, c in PAL.items():

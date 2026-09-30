@@ -89,6 +89,12 @@ one card, a couple of choices, one key. `ctrl+g` opens the inbox.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/feat/card-dark.svg"><img src="projects/switchboard/docs/brand/readme/feat/card-light.svg" width="680" alt="a card asks one question and you answer with one key."></picture>
 
+### quiet by default
+
+what matters to you shows. tool calls and messages between agents fold into one line. `ctrl+o` opens them all, in full, and folds them back.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="projects/switchboard/docs/brand/readme/feat/quiet-dark.svg"><img src="projects/switchboard/docs/brand/readme/feat/quiet-light.svg" width="680" alt="the work between agents stays folded; ctrl+o opens every tool call and message."></picture>
+
 ### talk to any agent, anytime
 
 `⌥` + a number, or `@name`. ask it why, push it, then go back to main. nobody has to stop.
@@ -116,7 +122,6 @@ agents share your folder. when one really needs isolation, it makes a worktree a
 ### and also
 
 - **your token bill can relax.** an agent starts when a job needs one. no committee of agents reviewing each other.
-- **quiet by default.** what matters to you shows. `ctrl+o` opens everything folded: every message between agents, every tool call, every script, in full.
 - **Agent Plugins.** skills, MCP servers and hooks in the [Agent Plugins](https://agent-plugins.org) format load as they are, from `~/.agents/plugins` or your repo. Vibe plugins too.
 - **a model per agent.** `/model` and `/reasoning`.
 - **voice.** `/voice`, then `ctrl+r`.
