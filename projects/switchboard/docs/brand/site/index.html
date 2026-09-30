@@ -24,7 +24,7 @@
 <meta name="twitter:image" content="https://bise.dev/og.png">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"bise","url":"https://bise.dev","applicationCategory":"DeveloperApplication","operatingSystem":"macOS","description":"bise is an open-source terminal app for multi-agent coding. you talk to one agent, it runs a whole team of coding agents for you, and you stay in flow.","author":{"@type":"Person","name":"Gabriel Vergnaud"},"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root, [data-theme="dark"] { --bg:#141211; --soft:#1a1715; --text:#ece6da; --dim:#8f887d; --faint:#3d3935; --kick:#6f685f; --wind:#4a4540; --acc:#f4a6b0; --err:#ff5a52; --raised:#221e1c; --chip:#262220; }
   [data-theme="light"] { --bg:#f7f4ee; --soft:#f0ebe3; --text:#1b1917; --dim:#77706a; --faint:#d6cfc4; --kick:#9d958a; --wind:#cbc3b6; --acc:#b8416b; --err:#b3261e; --raised:#fbf8f3; --chip:#e8e2d8; }
@@ -255,6 +255,27 @@
   .last { text-align:center; padding-bottom:10vh; }
   .last .big { font-size:clamp(56px, 8vw, 110px); }
 
+  /* want a desktop app? a small window, drawn in HTML (book/desktop.html is the full set) */
+  #desktop { padding:4vh 6vw 14vh; } #desktop .inner { max-width:76ch; text-align:center; }
+  #desktop h2 { font-size:clamp(26px, 3.4vw, 40px); letter-spacing:-.02em; }
+  #desktop p { color:var(--dim); margin:16px auto 0; max-width:58ch; }
+  #desktop .ctas { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:28px; }
+  #desktop .ctas a { border:1px solid var(--faint); border-radius:10px; padding:9px 18px; background:var(--soft); transition:border-color .3s; }
+  #desktop .ctas a:hover { border-color:var(--acc); } #desktop .ctas a.main { color:var(--text); } #desktop .ctas a:not(.main) { color:var(--dim); }
+  .dwin { display:block; margin:44px auto 0; width:min(640px, 100%); height:300px; border-radius:12px; overflow:hidden; background:var(--bg); text-align:left;
+    box-shadow:0 0 0 1px var(--faint), 0 30px 70px rgba(0,0,0,.45); font-family:"Geist",-apple-system,system-ui,sans-serif; font-size:11.5px; line-height:1.5; transition:transform .5s cubic-bezier(.25,.8,.3,1); }
+  .dwin:hover { transform:translateY(-4px); }
+  .dwin .m, .dwin .g, .dwin .k { font-family:"JetBrains Mono",ui-monospace,monospace; }
+  .dwin .tb { height:28px; display:flex; align-items:center; gap:6px; padding:0 10px; background:var(--soft); border-bottom:1px solid var(--faint); color:var(--dim); font-size:10.5px; }
+  .dwin .tb i { width:9px; height:9px; border-radius:50%; background:var(--faint); display:block; } .dwin .tb span { flex:1; text-align:center; margin-right:40px; }
+  .dwin .bd { display:flex; height:calc(100% - 28px); }
+  .dwin .sd { width:118px; background:var(--soft); border-right:1px solid var(--faint); padding:8px 6px; }
+  .dwin .sd div { padding:4px 8px; border-radius:6px; display:flex; justify-content:space-between; color:var(--dim); } .dwin .sd div.on { background:var(--raised); color:var(--text); font-weight:600; }
+  .dwin .ct { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:flex-end; padding:12px 18px; gap:7px; }
+  .dwin .you { border-left:2px solid var(--acc); padding-left:8px; font-weight:600; color:var(--text); } .dwin .bs { color:var(--text); } .dwin .bs .g { color:var(--acc); margin-right:1ch; }
+  .dwin .m { color:var(--dim); font-size:10.5px; } .dwin .row { color:var(--dim); font-size:10.5px; background:var(--raised); border-radius:6px; padding:3px 8px; }
+  .dwin .cp { background:var(--raised); border-radius:9px; padding:7px 10px; color:var(--dim); font-size:10.5px; } .dwin .cp .acc { font-weight:600; }
+  .dwin .ag { width:132px; border-left:1px solid var(--faint); padding:10px 8px; color:var(--text); } .dwin .ag div { padding:3px 6px; display:flex; gap:8px; } .dwin .ag .g { width:1.2em; text-align:center; } .dwin .ag .h { color:var(--dim); font-size:10px; }
   footer { padding:6vh 6vw 8vh; display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px; color:var(--faint); font-size:13px; }
   footer a:hover { color:var(--text); }
 
@@ -507,6 +528,31 @@
     </div>
   </section>
 </div>
+
+<!-- want a desktop app? -->
+<section id="desktop">
+  <div class="inner blow">
+    <div class="kicker">next, maybe</div>
+    <h2>want a desktop app?</h2>
+    <p>the same bise, in a window. your repos in a sidebar, one thread each. the agents on the right. a notification only when something needs you. i drew the screens. if enough of you want it, i'll build it.</p>
+    <a class="dwin" href="book/desktop.html" aria-label="see the desktop app screens">
+      <div class="tb"><i style="background:#ec6a5e"></i><i style="background:#f4bf4f"></i><i style="background:#61c554"></i><span><b style="color:var(--text)">acme</b> · one thread</span></div>
+      <div class="bd">
+        <div class="sd"><div class="on">acme <span class="m acc">∿ 3</span></div><div>blog <span class="m acc">? 1</span></div><div>bise <span class="m acc">✓</span></div><div>dotfiles</div></div>
+        <div class="ct">
+          <div class="you">signup is slow on mobile. can you look?</div>
+          <div class="bs"><span class="g">:*</span>on it. perf is profiling signup on a mid-range phone.</div>
+          <div class="m">✉ perf → dark-mode · no, tokens.css is yours</div>
+          <div class="bs"><span class="g">✓</span>perf is done · signup 4.1 s → 0.9 s</div>
+          <div class="row"><span class="acc">?</span> dark-mode · which gray wins?</div>
+          <div class="cp">you → <span class="acc">main</span></div>
+        </div>
+        <div class="ag"><div class="h">agents</div><div><span class="g acc">:*</span>main</div><div><span class="g acc">∿</span>perf</div><div><span class="g acc">?</span>dark-mode</div><div><span class="g acc">∿</span>sad-404</div><div><span class="g acc">✓</span>emoji-csv</div></div>
+      </div>
+    </a>
+    <div class="ctas"><a class="main" href="https://x.com/GabrielVergnaud" target="_blank" rel="noopener">tell me on X ↗</a><a href="https://github.com/gvergnaud/bise/issues" target="_blank" rel="noopener">or on GitHub ↗</a><a href="book/desktop.html">see the screens →</a></div>
+  </div>
+</section>
 
 <footer>
   <span>bise <span class="acc">:*</span> · open source under <a href="https://github.com/gvergnaud/bise/blob/main/LICENSE">Apache-2.0</a></span>
