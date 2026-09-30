@@ -2,10 +2,12 @@
 
 Status: spec, not built. Task `approvals-spec`. To build before launch.
 
-> 2026-10: the modes changed (`yolo` / `accept edits` / `auto`, default
-> `yolo`, `shift+tab`, `confirm` cards in the user inbox, the `classify`
-> role). [approvals-design.md](approvals-design.md) §10 lists what
-> changes here; the rest of this spec stands.
+> 2026-10: the modes changed again: `yolo` (default) and `auto` only
+> (`accept edits` = `auto` with the checker off), `shift+tab`, `confirm`
+> cards in the user inbox, cheap tiers before a checker (Jev, else the
+> `classify` role), `brush-parser`. [approvals-design.md](approvals-design.md)
+> §14 lists what changes here; the hard rules, the wire and the memory
+> format of this spec stand.
 
 ## Goal
 
