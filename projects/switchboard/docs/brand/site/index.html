@@ -92,6 +92,16 @@
   .inner { max-width:64ch; margin:0 auto; }
   .kicker { color:var(--kick); font-size:13px; margin-bottom:18px; }
   h2 { font-size:clamp(24px, 2.8vw, 34px); line-height:1.25; letter-spacing:-.02em; margin-bottom:28px; font-weight:700; }
+  /* give it a try */
+  #try .steps { list-style:none; margin:0; padding:0; }
+  #try .steps li { display:grid; grid-template-columns:3ch 1fr; margin:0 0 26px; }
+  #try .steps .n { color:var(--acc); font-weight:700; }
+  #try .steps .install { margin-top:14px; }
+  #try code { color:var(--text); background:var(--chip); padding:2px 8px; border-radius:5px; }
+  #try .fine { margin-top:44px; border-top:1px solid var(--faint); padding-top:28px; color:var(--dim); font-size:14.5px; }
+  #try .fine p { margin:0 0 14px; }
+  #try .fine b { color:var(--text); font-weight:700; }
+  #try .switch { margin-top:0; font-size:inherit; text-shadow:none; }
   p { margin-bottom:20px; }
   p.soft { color:var(--dim); }
   .turn { color:var(--acc); font-weight:700; }
@@ -348,6 +358,7 @@
   <nav>
     <a class="opt" href="#why">why</a>
     <a class="opt" href="#how">how</a>
+    <a class="opt" href="#try">install</a>
     <a class="opt" href="#faq">faq</a>
     <a class="opt" href="book/index.html">brand book</a>
     <button id="theme" title="light / dark">◐</button>
@@ -529,6 +540,27 @@
   </div>
 </section>
 
+<!-- give it a try -->
+<section id="try">
+  <div class="inner blow">
+    <div class="kicker">give it a try</div>
+    <h2>one line to install.<br>then just talk.</h2>
+    <ol class="steps">
+      <li><span class="n">1</span><span>install it
+        <div class="install" id="install3" title="click to copy" role="button" tabindex="0"><span><span class="p">$</span> <span>curl -fsSL bise.dev/install | sh</span></span><span class="c">copy</span></div></span></li>
+      <li><span class="n">2</span><span>start it in the repo you want to work on: <code>cd your-repo &amp;&amp; bise</code></span></li>
+      <li><span class="n">3</span><span>pick a theme, paste a key. then say what's on your mind.</span></li>
+    </ol>
+    <div class="fine">
+      <p><b>runs on</b> macOS, Apple silicon and Intel. linux soon. windows later.</p>
+      <p><b>you need</b> git, and an API key: Anthropic, OpenAI, Mistral and more. a Claude or ChatGPT subscription isn't a key.</p>
+      <p class="switch"><b>coming from Claude Code or Codex?</b> <button class="sp" title="read https://bise.dev/setup.md and set bise up for me">copy this prompt for your agent</button>. it installs bise and brings over your key, model, skills and MCP servers · <a class="sf" href="/setup" target="_blank" rel="noopener">see the full prompt ↗</a></p>
+      <p><b>heads up</b> there's no approval mode yet: agents run commands in your repo without asking. commit often.</p>
+      <p><b>later</b> <code>bise update</code> to stay current, <code>bise doctor</code> if something feels off, <code>bise uninstall</code> to leave.</p>
+    </div>
+  </div>
+</section>
+
 <!-- faq -->
 <section id="faq">
   <div class="inner blow">
@@ -625,7 +657,7 @@ root.dataset.theme = matchMedia("(prefers-color-scheme: light)").matches ? "ligh
 document.getElementById("theme").onclick = () => root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
 const hdr = document.getElementById("top");
 addEventListener("scroll", () => hdr.classList.toggle("scrolled", scrollY > innerHeight * .6));
-for (const id of ["install", "install2"]) document.getElementById(id).onclick = (e) => {
+for (const id of ["install", "install2", "install3"]) document.getElementById(id).onclick = (e) => {
   navigator.clipboard?.writeText(document.getElementById("cmd").textContent);
   const box = e.currentTarget, c = box.querySelector(".c"); c.textContent = "copied :*"; box.classList.add("done"); setTimeout(() => { c.textContent = "copy"; box.classList.remove("done"); }, 1600);
 };
