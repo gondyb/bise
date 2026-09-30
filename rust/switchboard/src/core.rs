@@ -1188,11 +1188,11 @@ impl Hub {
             .map(|a| a.iter().filter_map(|x| x.as_str().map(|x| x.to_string())).collect())
             .unwrap_or_default();
         if !notes.is_empty() {
-            let mut t = String::from("<switchboard_notes>\n");
+            let mut t = String::from("<bise_notes>\n");
             for n in &notes {
                 t.push_str(&format!("- {}\n", n));
             }
-            t.push_str("</switchboard_notes>");
+            t.push_str("</bise_notes>");
             parts.push(t);
         }
         if f["status"].as_bool() == Some(true) {

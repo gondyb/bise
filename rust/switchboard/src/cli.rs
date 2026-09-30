@@ -113,7 +113,7 @@ pub const COMMANDS: &[CmdDoc] = &[
     cmd(
         "sb version [list | switch <commit|id|tree> | rollback]",
         Who::Main,
-        "the versions of Switchboard itself. Switch or roll back ONLY when the user explicitly asks. Prefer a commit over `tree` when the working tree has work in progress. Before a switch, warn the user about the probation period: the new version is watched for about 2 minutes and rolled back automatically if it fails.",
+        "the versions of bise itself. Switch or roll back ONLY when the user explicitly asks. Prefer a commit over `tree` when the working tree has work in progress. Before a switch, warn the user about the probation period: the new version is watched for about 2 minutes and rolled back automatically if it fails.",
     ),
     cmd(
         "sb restart [current | <commit>]",
@@ -628,7 +628,7 @@ pub fn main(args: &[String]) -> i32 {
     let from = std::env::var("SB_AGENT").unwrap_or_default();
     if socket.is_empty() || from.is_empty() {
         eprintln!(
-            "sb: SB_SOCKET and SB_AGENT are missing (sb only runs inside a Switchboard agent)"
+            "sb: SB_SOCKET and SB_AGENT are missing (sb only runs inside a bise agent)"
         );
         return 2;
     }

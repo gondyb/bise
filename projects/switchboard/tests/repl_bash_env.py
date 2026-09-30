@@ -125,7 +125,7 @@ def part_b(tmp):
     agent = os.path.join(tmp, "agent")
     os.makedirs(agent)
     wire, ctx = os.path.join(agent, "wire.log"), os.path.join(agent, "context.txt")
-    open(ctx, "w").write("<switchboard_state>an agent's</switchboard_state>")
+    open(ctx, "w").write("<bise_state>an agent's</bise_state>")
     env.update(BEND_WIRE_LOG=wire, BEND_CONTEXT_FILE=ctx, SB_SOCKET=os.path.join(agent, "no.sock"),
                SB_AGENT="probe", SB_TASK="probe")
     scripted_ts.run_session(env, ["return 6 * 7"])

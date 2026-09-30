@@ -209,7 +209,7 @@ def t_spawn_and_auto_reply(E, c):
     # the board reaches main's model calls
     board = open(os.path.join(E.state, "agents", "main", "context.txt")).read()
     check("t1" in board and "<task_board>" in board, "main's context has the board: " + board)
-    check(any("<switchboard_state>" in r["last_user"] for r in reqs), "the board is injected as the last message")
+    check(any("<bise_state>" in r["last_user"] for r in reqs), "the board is injected as the last message")
     # BISE-126: after t1's turn, one one-shot call gives its role line
     # (the fake provider answers "Fake Role Line."; the hub cleans it)
     c.wait(lambda: c.agent("t1")["role"] == "fake role line", 60, "t1's role line (now %r)" % c.agent("t1").get("role"))
@@ -234,7 +234,7 @@ def t_direct_message_and_note(E, c):
     c.wait(lambda: any(r["agent"] == "main" and r["user"].endswith("et alors ?") for r in E.fake_requests()), 60,
            "main's request with the new message")
     last = [r for r in E.fake_requests() if r["agent"] == "main" and r["user"].endswith("et alors ?")][0]["user"]
-    check(last.startswith("<switchboard_notes>") and "parle-moi directement" in last and "ack: parle-moi" in last,
+    check(last.startswith("<bise_notes>") and "parle-moi directement" in last and "ack: parle-moi" in last,
           "main got the direct-exchange note with the next message: " + last)
     # explicit route, no main turn
     c.wait_idle("main")

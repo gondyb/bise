@@ -13,7 +13,7 @@ Server-Sent Events reply shaped like the real API's; otherwise the whole
 JSON reply (the old tests: openai-chat, not streamed, unchanged).
 
 The script lives in the conversation itself (the last real user message:
-the injected <switchboard_state> block is not one):
+the injected <bise_state> block is not one):
 - `[[bash: CMD]]` markers make the agent call its bash tool with each
   CMD, in order, one call per model request; when there is no `[[...]]`
   marker, `{{bash: CMD}}` markers are used instead (so main's message can
@@ -208,7 +208,7 @@ def last_user(conv):
     """index of the last real user message (the state block is not one)"""
     idx = None
     for i, m in enumerate(conv):
-        if m["role"] == "user" and not m["text"].lstrip().startswith("<switchboard_state>"):
+        if m["role"] == "user" and not m["text"].lstrip().startswith("<bise_state>"):
             idx = i
     return idx
 
@@ -217,7 +217,7 @@ def last_user(conv):
 
 def script_of(user):
     # the hub's notes about the past are not a script to run
-    user = re.sub(r"<switchboard_notes>.*?</switchboard_notes>", "", user, flags=re.S)
+    user = re.sub(r"<bise_notes>.*?</bise_notes>", "", user, flags=re.S)
     return re.sub(r"<task_status>.*?</task_status>", "", user, flags=re.S).strip()
 
 

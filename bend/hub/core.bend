@@ -1267,7 +1267,7 @@ def isolate.res(-o: M.St, r: Result<&2, &2, String, J.Json>, +cx: X.Cx<o>, +n: S
       # the REPL takes its new BEND_WORKDIR at the next spawn
       +cx3 = out(o, cx2, [J.kv("fx", J.JStr{"kill"}), J.kv("agent", J.JStr{n})])
       +cx4 = spawn(o, upd_rt(o, cx3, X.Rt.with_run(rt(o, cx3, n), M.RDown{})), n, True{})
-      +text = cat(["[switchboard] Your working directory is now the isolated git worktree `", path, "` (branch `", branch, "`). Work only there from now on."])
+      +text = cat(["[bise] Your working directory is now the isolated git worktree `", path, "` (branch `", branch, "`). Work only there from now on."])
       isolate.sent(o, send(o, cx4, msg(M.USER(), n, text, False{}, None{}, True{}, False{})), n, branch)
 
 def isolate.ans(-o: M.St, p: X.Cx<o> & Maybe<&2, J.Json>, +n: String) -> X.Cx<o> & TaskR:
@@ -2204,7 +2204,7 @@ def idle.nudge(-o: M.St, go: Bool, +cx: X.Cx<o>, +agent: String) -> X.Cx<o>:
     case True{}:
       +cx2 = upd_rt(o, cx, X.Rt.with_turn(X.Rt.with_run(rt(o, cx, agent), M.RBusy{}), Some{now(o, cx)}))
       out(o, cx2, [J.kv("fx", J.JStr{"say"}), J.kv("agent", J.JStr{agent}),
-        J.kv("text", J.JStr{"[switchboard] The message(s) just above arrived while you were writing your last answer: you have not answered them yet. Answer them now."})])
+        J.kv("text", J.JStr{"[bise] The message(s) just above arrived while you were writing your last answer: you have not answered them yet. Answer them now."})])
     case False{}:
       cx
 

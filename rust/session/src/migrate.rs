@@ -157,11 +157,11 @@ fn agent_attrs(t: &str) -> Option<serde_json::Map<String, Value>> {
 fn injected_kind(t: &str) -> &'static str {
     if t.starts_with("# Your role") {
         "preamble"
-    } else if t.starts_with("<switchboard_state>") {
+    } else if t.starts_with("<bise_state>") || t.starts_with("<switchboard_state>") {
         "hub_state"
     } else if t.starts_with("Summary of the earlier conversation") || t.starts_with("The earlier conversation") {
         "summary"
-    } else if t.starts_with("[switchboard]") {
+    } else if t.starts_with("[bise]") || t.starts_with("[switchboard]") {
         "resume_note"
     } else {
         "notification"

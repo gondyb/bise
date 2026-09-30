@@ -101,7 +101,7 @@ def body_for(fam, user, done=(), stream=True):
             m += [{"role": "assistant", "content": "", "tool_calls": [
                 {"id": "c%d" % i, "type": "function", "function": {"name": "bash", "arguments": json.dumps({"arg": cmd})}}]},
                   {"role": "tool", "tool_call_id": "c%d" % i, "content": res}]
-        m.append({"role": "user", "content": "<switchboard_state>x</switchboard_state>"})
+        m.append({"role": "user", "content": "<bise_state>x</bise_state>"})
         return {"model": "m", "stream": stream, "stream_options": {"include_usage": True}, "messages": m}
     if fam == "anthropic":
         m = [{"role": "user", "content": [{"type": "text", "text": user},

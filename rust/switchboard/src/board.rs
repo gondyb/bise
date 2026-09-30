@@ -124,7 +124,7 @@ fn parties_of<'a>(ms: &[&'a crate::model::Msg]) -> Vec<&'a str> {
 /// The block appended to every model request of main.
 pub fn main_context(st: &State, now: u64) -> String {
     let mut s = String::from(
-        "<switchboard_state>\nLive state injected by the Switchboard hub before this call (not a user message).\n<task_board>\n",
+        "<bise_state>\nLive state injected by bise before this call (not a user message).\n<task_board>\n",
     );
     let tasks: Vec<&Agent> = st
         .tasks()
@@ -169,7 +169,7 @@ pub fn main_context(st: &State, now: u64) -> String {
         .collect();
     push_block(&mut s, "open_cards", &cards);
     push_block(&mut s, "questions_for_you", &questions_for(st, MAIN));
-    s.push_str("</switchboard_state>");
+    s.push_str("</bise_state>");
     s
 }
 
@@ -389,7 +389,7 @@ pub fn roster(st: &State, viewer: &str, now: u64) -> Vec<String> {
 /// The block appended to every model request of a task.
 pub fn task_context(st: &State, name: &str, now: u64) -> String {
     let mut s = format!(
-        "<switchboard_state>\nLive state injected by the Switchboard hub before this call (not a user message). You are `{}`.\n<group>\n",
+        "<bise_state>\nLive state injected by bise before this call (not a user message). You are `{}`.\n<group>\n",
         name
     );
     for l in roster(st, name, now) {
@@ -398,7 +398,7 @@ pub fn task_context(st: &State, name: &str, now: u64) -> String {
     }
     s.push_str("</group>\n");
     push_block(&mut s, "questions_for_you", &questions_for(st, name));
-    s.push_str("</switchboard_state>");
+    s.push_str("</bise_state>");
     s
 }
 
@@ -456,7 +456,7 @@ mod tests {
         assert!(c.contains("auth-fix"), "{}", c);
         assert!(c.contains("\"Doc API v2\""), "{}", c);
         assert!(c.contains("12m"), "{}", c);
-        assert!(c.starts_with("<switchboard_state>") && c.ends_with("</switchboard_state>"));
+        assert!(c.starts_with("<bise_state>") && c.ends_with("</bise_state>"));
     }
 
     #[test]

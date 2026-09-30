@@ -454,7 +454,7 @@ fn main_learns_what_the_user_said_directly() {
     // the note rides with the next message to main
     let fx = t.user(MAIN, "où en est la doc ?");
     let s = say_to(&fx, MAIN).unwrap();
-    assert!(s.starts_with("<switchboard_notes>"), "{}", s);
+    assert!(s.starts_with("<bise_notes>"), "{}", s);
     assert!(s.contains("utilise la v2") && s.contains("ok, v2"), "{}", s);
     assert!(s.ends_with("où en est la doc ?"));
     assert!(t.hub.st.main_notes.is_empty());
@@ -1013,7 +1013,7 @@ fn main_hears_when_a_task_crashes_and_when_it_fails() {
         reason: "bend: out of memory".into(),
     });
     let s = say_to(&fx, MAIN).expect("main is woken");
-    assert!(s.contains("from=\"switchboard\" relation=\"hub\""), "{}", s);
+    assert!(s.contains("from=\"bise\" relation=\"hub\""), "{}", s);
     assert!(
         s.contains("agent @a crashed (bend: out of memory)") && s.contains("attempt 1/5"),
         "{}",
