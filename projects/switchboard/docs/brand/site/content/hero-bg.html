@@ -17,6 +17,8 @@
   .v pre { position:absolute; inset:0; margin:0; color:var(--wind); font:inherit; font-size:14px; line-height:1.4; white-space:pre; overflow:hidden; pointer-events:none; user-select:none;
     -webkit-mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); mask-image:radial-gradient(ellipse 60% 42% at 50% 48%, transparent 30%, #000 85%); }
   .v.nomask pre { -webkit-mask-image:radial-gradient(ellipse 46% 30% at 50% 46%, transparent 20%, #000 80%); mask-image:radial-gradient(ellipse 46% 30% at 50% 46%, transparent 20%, #000 80%); }
+  .v .lay { position:absolute; inset:0; pointer-events:none; overflow:hidden; font-size:14px; line-height:1.4; }
+  .v .lay span { position:absolute; left:0; top:0; white-space:pre; color:var(--dim); transition:transform .5s cubic-bezier(.25,.8,.3,1), opacity .45s; will-change:transform; }
   .v pre .a { color:var(--acc); } .v pre .a2 { color:var(--acc); opacity:.55; } .v pre .a3 { color:var(--acc); opacity:.28; } .v pre .f { color:var(--faint); } .v pre .s { display:inline-block; width:1ch; text-align:center; transform:scale(.6); color:var(--wind); } .v pre .d { color:var(--dim); } .v pre .t { color:var(--text); }
   .hero { position:relative; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; pointer-events:none; }
   .big { font-size:clamp(64px, 11vw, 150px); font-weight:700; letter-spacing:-.045em; line-height:1; }
@@ -33,7 +35,7 @@
 <body>
 <div class="top"><b>bise :* · hero background variations</b><span>move your mouse around. each one only runs while you see it.</span><button id="th">light</button></div>
 
-<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.<div class="lbls thr">thread: <button data-t="wake" class="on">wake</button><button data-t="pulses">pulses</button><button data-t="waves">waves</button><button data-t="tide">tide</button><button data-t="swell">swell</button><button data-t="ripple">ripple</button><button data-t="trail">trail</button><button data-t="shimmer">shimmer</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
+<section class="v" data-v="branch"><div class="tag"><b>9 · branch &amp; blow</b> <span class="pick">new · 5 + 6, take 2</span><br>a fuller dandelion sky, up to the top, and one thread. the :* walks the thread and sends agents out from where it stands: each one draws a dotted arc (∿ name), lands further along with a ✓, and waits. when the :* reaches it, it picks it up and the arc comes apart into seeds.<div class="lbls nm">names: <button data-n="glide" class="on">glide</button><button data-n="jump">jump (before)</button></div><div class="lbls thr">thread: <button data-t="wake" class="on">wake</button><button data-t="pulses">pulses</button><button data-t="waves">waves</button><button data-t="tide">tide</button><button data-t="swell">swell</button><button data-t="ripple">ripple</button><button data-t="trail">trail</button><button data-t="shimmer">shimmer</button><button data-t="breeze">breeze</button><button data-t="flat">gray line (before)</button></div></div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
 <section class="v" data-v="seeds"><div class="tag"><b>7 · seeds</b> <span class="pick">new · mix of 5 and 6</span><br>the dandelion sky, plus one thread. now and then an agent lifts off the thread like a seed (∿ name), floats a while, and lands further along with a ✓. the thread's :* keeps walking.</div><pre></pre><div class="hero"><div class="big">bise <span>:*</span></div><div class="t1">multi-agent coding, made human.</div><div class="t2">one thread per repo. you talk, i run the agents.</div></div></section>
 
@@ -55,6 +57,7 @@
 
 <script>
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+document.querySelectorAll(".nm button").forEach(b => b.onclick = () => { GLIDE = b.dataset.n === "glide"; document.querySelectorAll(".nm button").forEach(o => o.classList.toggle("on", o === b)); });
 document.querySelectorAll(".thr button").forEach(b => b.onclick = () => { THREAD = THREADS[b.dataset.t]; document.querySelectorAll(".thr button").forEach(o => o.classList.toggle("on", o === b)); });
 document.getElementById("th").onclick = e => { const h = document.documentElement, d = h.dataset.theme === "dark"; h.dataset.theme = d ? "light" : "dark"; e.target.textContent = d ? "dark" : "light"; };
 const hash = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
@@ -174,6 +177,8 @@ const THREADS = {
 };
 const PULSES = [];
 let THREAD = THREADS.wake;
+// names glide from spot to spot (a layer over the ascii, moved with css) or jump cell by cell
+let GLIDE = true;
 const V = {
   now(s) {
     const RAMP = " .·-~∼≈";
@@ -355,7 +360,9 @@ const V = {
           if (a <= g.ko.x1 + 1 && z >= g.ko.x0 - 1 && r >= g.ko.y0 && r <= g.ko.y1) continue;
           if (used.some(u => u.r === r && a <= u.z + 2 && z >= u.a - 2)) continue;
           if (used.some(u => u.m && Math.abs(u.r - r) === 0 && u.a >= a - 1 && u.a <= z + 1)) continue;
-          used.push({ a, z, r }); g.str(a, r, name, "d"); o.slot = n; return;
+          used.push({ a, z, r }); o.slot = n;
+          if (g.labels) g.labels.push({ id: o.key, text: name, a, r }); else g.str(a, r, name, "d");
+          return;
         }
       };
       for (const o of s.b) { const [mx, my] = o.head || [o.xs + o.L, Y]; used.push({ a: Math.round(mx), z: Math.round(mx), r: Math.round(my), m: true }); g.put(mx, my, o.head ? "∿" : "✓", "a"); }
@@ -436,6 +443,18 @@ for (const sec of document.querySelectorAll(".v")) {
   const probe = document.createElement("span"); probe.textContent = "M"; pre.append(probe);
   const cw = probe.getBoundingClientRect().width || 8.4, lh = parseFloat(getComputedStyle(pre).lineHeight) || 19.6; probe.remove();
   const step = V[sec.dataset.v](s, sec);
+  const lay = document.createElement("div"); lay.className = "lay"; lay.setAttribute("aria-hidden", "true"); sec.insertBefore(lay, sec.querySelector(".hero"));
+  const shown = new Map();
+  const glide = (ls) => {
+    const now = new Set();
+    for (const l of ls) {
+      now.add(l.id);
+      let e = shown.get(l.id);
+      if (!e) { e = document.createElement("span"); e.style.opacity = "0"; e.style.transition = "none"; lay.append(e); shown.set(l.id, e); e.style.transform = `translate(${l.a * cw}px, ${l.r * lh}px)`; void e.offsetWidth; e.style.transition = ""; e.style.opacity = "1"; }
+      e.textContent = l.text; e.style.transform = `translate(${l.a * cw}px, ${l.r * lh}px)`;
+    }
+    for (const [id, e] of shown) if (!now.has(id)) { shown.delete(id); e.style.opacity = "0"; setTimeout(() => e.remove(), 500); }
+  };
   sec.addEventListener("pointermove", e => { const r = sec.getBoundingClientRect(); s.mouse = { x: (e.clientX - r.left) / cw, y: (e.clientY - r.top) / lh, p: 1 }; });
   let visible = false, t = rnd(0, 50), running = false;
   const frame = () => {
@@ -445,7 +464,9 @@ for (const sec of document.querySelectorAll(".v")) {
     const ko = { x0: Math.floor((Math.min(...rs.map(r => r.left)) - pr.left) / cw) - 3, x1: Math.ceil((Math.max(...rs.map(r => r.right)) - pr.left) / cw) + 3,
                  y0: Math.floor((Math.min(...rs.map(r => r.top)) - pr.top) / lh) - 1, y1: Math.ceil((Math.max(...rs.map(r => r.bottom)) - pr.top) / lh) + 1 };
     const g = Grid(Math.ceil(pre.clientWidth / cw) + 1, Math.ceil(pre.clientHeight / lh) + 1, ko); g.ko = ko;
-    step(g, t); pre.innerHTML = g.html(); t += .045;
+    g.labels = GLIDE ? [] : null;
+    step(g, t);
+    glide(g.labels || []); pre.innerHTML = g.html(); t += .045;
     if (reduced) { running = false; return; }
     setTimeout(() => requestAnimationFrame(frame), 70);
   };
