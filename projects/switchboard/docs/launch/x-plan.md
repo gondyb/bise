@@ -104,6 +104,23 @@ beats:
 
 facts from docs/bend-laws-report.md. say "proofs checked by Bend", never "formally verified end to end".
 
+### capsule 6 · "stuff you can stop doing"
+
+hook: **things i deleted from my agent workflow since i built bise:**
+
+each item = one before (the usual way) and one after (15-20 s of bise). pick 4-5, not all:
+1. **goal modes** (a /goal-style command that keeps one agent going; to verify which tools ship one, don't name them): main is the goal. it starts jobs, watches them, and when an agent stops half-way it picks the work back up.
+2. **being the router:** an agent asks something main already knows, main answers it and tells you why. you only see it if you open the thread. demo: an agent asks "which gray for the borders?", main answers "the one in tokens.css, like everywhere else".
+3. **/new, /resume, /clear:** one thread per repo that never ends. compaction instead of sessions.
+4. **a memory system:** the thread remembers, and agents can search every past thread (capsule 2).
+5. **worktree cleanup:** made when needed, gone after the merge (capsule 1).
+6. **toggling MCP servers:** all on, always (capsule 3).
+7. **tabs and tmux panes:** ⌥ + a number, or @name.
+8. **"should i continue?"**: the inbox.
+
+why it spreads: everyone recognizes their own rituals in the "before", and the list invites "what about X?" replies.
+also works as a series: one "you can stop doing X" post a day at 10:00.
+
 ---
 
 ## 3. cadence
