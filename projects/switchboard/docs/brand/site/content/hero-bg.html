@@ -182,7 +182,7 @@ const V = {
   },
   thread(s) {
     s.b = []; s.done = [];
-    const NAMES = ["dark-mode", "magic-link", "csv-export", "comments", "share-link", "offline", "billing", "webhooks", "onboarding", "sso", "i18n", "search"];
+    const NAMES = ["dark-mode", "confetti", "reactions", "gif-picker", "drag-drop", "playlists", "stickers", "leaderboard", "konami-code", "typing-dots", "voice-notes", "party-mode"];
     return (g, t) => {
       const Y = Math.round(g.rows * .78);
       for (let x = 0; x < g.cols; x++) g.put(x, Y, "─");
@@ -204,7 +204,7 @@ const V = {
   },
   branch(s) {
     s.p = []; s.b = []; s.kx = -2; s.flash = 0; s.last = -99;
-    const NAMES = ["dark-mode", "magic-link", "csv-export", "comments", "share-link", "offline", "billing", "webhooks", "onboarding", "sso", "i18n", "search"];
+    const NAMES = ["dark-mode", "confetti", "reactions", "gif-picker", "drag-drop", "playlists", "stickers", "leaderboard", "konami-code", "typing-dots", "voice-notes", "party-mode"];
     return (g, t) => {
       const Y = Math.round(g.rows * .86);
       // a fuller dandelion sky: seeded at once over the whole hero, then fed from the bottom and the left edge
@@ -266,7 +266,7 @@ const V = {
   },
   seeds(s) {
     s.p = []; s.a = []; s.land = [];
-    const NAMES = ["dark-mode", "magic-link", "csv-export", "comments", "share-link", "offline", "billing", "webhooks", "onboarding", "sso", "i18n", "search"];
+    const NAMES = ["dark-mode", "confetti", "reactions", "gif-picker", "drag-drop", "playlists", "stickers", "leaderboard", "konami-code", "typing-dots", "voice-notes", "party-mode"];
     return (g, t) => {
       const Y = Math.round(g.rows * .8);
       // ambient seeds, fewer than dandelion
@@ -292,7 +292,7 @@ const V = {
   },
   ribbon(s) {
     s.a = []; s.seeds = []; s.land = [];
-    const NAMES = ["dark-mode", "magic-link", "csv-export", "comments", "share-link", "offline", "billing", "webhooks", "onboarding", "sso", "i18n", "search"];
+    const NAMES = ["dark-mode", "confetti", "reactions", "gif-picker", "drag-drop", "playlists", "stickers", "leaderboard", "konami-code", "typing-dots", "voice-notes", "party-mode"];
     const ry = (g, x, t) => g.rows * .78 + Math.sin(x * .035 + t * .35) * 1.4;
     return (g, t) => {
       // a ribbon of specks flowing right
