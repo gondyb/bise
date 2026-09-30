@@ -364,7 +364,7 @@ const V = {
           for (let k = 0; k < 8; k++) { const c = rnd(low, top), d = near.length ? Math.min(...near.map(a => Math.abs(a - c))) : 99; if (d > best) { best = d; A = c; } }
           s.b.push({ xs, L, p: 0, A, dir, name, done, key });
           if (EVENTS) say(g, Y, xs, `starting an agent · ${name}`);
-          if (BUBBLE) s.q.push(`on it · ${name}`);
+          if (BUBBLE) s.q.push(`spawning · ${name}`);
           s.last = s.kx; s.flash = 8; s.gap = rnd(.8, 1.2) * (21 - 13 * q); PULSES.push({ x: kx, t0: t });
         }
       }
