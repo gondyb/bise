@@ -66,9 +66,9 @@ your agent installs bise and brings over what you already have: your API key, yo
 - **one thread per repo.** you always talk to the same thread. it never ends: when it gets long, bise compacts it and keeps going.
 - **main is the team lead.** it answers what it can, starts an agent when a job needs one, follows up, and picks up work that stopped half-way.
 - **agents work in the background,** in your checkout. they message each other before they touch the same files. one makes a git worktree only when it needs its own copy, and cleans it up after.
-- **cards are the decisions that need you.** only the real ones reach you. they wait in an inbox above your message (`ctrl+g`), never in the middle of your sentence.
+- **the inbox holds the decisions that need you.** only the real ones reach you. they wait above your message (`ctrl+g`), never in the middle of your sentence.
 
-four words to learn: you, main, agents, cards.
+four words to learn: you, main, agents, inbox.
 
 ## features
 
@@ -92,9 +92,9 @@ connect as many MCP servers and skills as you want, and never pick which ones to
 
 ### only the real decisions reach you
 
-one card, a couple of choices, one key. `ctrl+g` opens the inbox.
+main answers the obvious questions itself. the real ones wait in your inbox: a couple of choices, one key. `ctrl+g` opens it.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/card-dark.svg"><img src="docs/brand/readme/feat/card-light.svg" width="680" alt="a card asks one question and you answer with one key."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/feat/card-dark.svg"><img src="docs/brand/readme/feat/card-light.svg" width="680" alt="a question waits in your inbox and you answer with one key."></picture>
 
 ### quiet by default
 

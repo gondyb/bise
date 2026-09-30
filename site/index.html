@@ -406,6 +406,8 @@
   .col .hcta { margin-top:300px; display:flex; flex-direction:column; align-items:center; position:relative; z-index:1; }
   .col .hcta .install { margin-top:0; }
   .col .hcta .switch { margin-top:36px; }
+  /* phones: no sky animation, no install box (nobody pipes curl on a phone): the demo, then "why" */
+  @media (max-width: 640px) { .sky .lay, .col .hcta { display:none; } .hero.col { padding-bottom:48px; } #why { padding-top:10vh; } }
   .prob .stage { min-height:420px; }
 </style>
 </head>
@@ -536,7 +538,7 @@
       <div class="feat blow"><div class="mini" data-play="talk"></div><h3>talk whenever. you never wait</h3><p>say the next thing while the last one runs. your composer is never locked.</p></div>
       <div class="feat blow"><div class="mini" data-play="quiet"></div><h3>zen mode while you type</h3><p>start typing and everything else fades: the agents, the counts, the chatter. just you and your words. send it and it all comes back. what the agents said to each other stays folded, ctrl+o opens it.</p></div>
       <div class="grp">no more "yes, continue"</div>
-      <div class="feat blow"><div class="mini" data-play="card"></div><h3>you're not the router</h3><p>main answers for you: the obvious questions, the way you would, and it tells you why. only the real decisions reach you, as one card: a couple of choices, one key.</p></div>
+      <div class="feat blow"><div class="mini" data-play="card"></div><h3>you're not the router</h3><p>main answers the agents for you: the obvious questions, the way you would, and it tells you why. only the real decisions reach you.</p></div>
       <div class="feat blow"><div class="mini" data-play="sync"></div><h3>agents sync on their own</h3><p>every agent can talk to every other one. they ask, share and hand off quietly, folded out of your way.</p></div>
       <div class="grp">every tool you have</div>
       <div class="feat blow"><div class="mini" data-play="mcp"></div><h3>all your MCPs. all your skills. always on</h3><p>GitHub, Linear, Sentry, Slack, your docs, your database: connect as many MCP servers as you want, and never pick which ones to turn on. bise calls tools through code, so a hundred servers don't fill its context.</p></div>
@@ -632,8 +634,7 @@
     <p><b>how many agents can i run?</b><br><span class="dim">as many as you want. the real limits are your tokens, your budget and your provider.</span></p>
     <p><b>what does it run on?</b><br><span class="dim">macOS for now, Apple silicon and Intel. linux is next. windows later, maybe through WSL first. you need git, and that's about it.</span></p>
     <p><b>which models?</b><br><span class="dim">bring your own key: Anthropic, OpenAI, Mistral and more. the first run lists every provider.</span></p>
-    <p><b>does it ask before running a command?</b><br><span class="dim">not yet. agents run shell commands in your repo without asking. use it on repos you trust, and commit often: git is your safety net. approvals are next.</span></p>
-    <p><b>do i need to learn anything?</b><br><span class="dim">four words: you, main, agents, cards. main is the one you talk to. the rest you pick up in the first hour.</span></p>
+    <p><b>do i need to learn anything?</b><br><span class="dim">four words: you, main, agents, inbox. main is the one you talk to. the rest you pick up in the first hour.</span></p>
     <p><b>open source?</b><br><span class="dim">yes, under <a href="https://github.com/gvergnaud/bise/blob/main/LICENSE">Apache-2.0</a>. read it, fork it, send a :*.</span></p>
   </div>
 </section>
@@ -812,9 +813,13 @@ function Grid(cols, rows, ko) {
 }
 
 function WAKE(g, Y, t, k) {
+    // the trail behind the kiss stops after ~300 px (g.tl cells) and fades out over its last cells (user)
+    const tl = g.tl ?? 1e9, fade = Math.min(12, tl);
     for (let x = 0; x < g.cols; x++) {
       const d = k - x;
       if (d <= 0) { if (d % 2 === 0) g.put(x, Y, "·", "sf"); continue; }  // the way still to go: barely there (user)
+      if (d > tl) continue;
+      if (d > tl - fade) { if (d % 2 === 0) g.put(x, Y, "·", d > tl - fade / 2 ? "sf" : "f"); continue; }
       const amp = Math.exp(-d / 45), v = Math.abs(Math.sin(d * .38 - t * 3.2) * amp + Math.sin(d * .13 + t * .9) * amp * .4);
       g.put(x, Y, v > .75 ? "≈" : v > .42 ? "∼" : v > .16 ? "~" : "─", d < 6 ? "a" : d < 18 ? "a2" : v > .42 ? "d" : "");
     }
@@ -872,7 +877,8 @@ function branch(s) {
       // it picks up speed as it goes: more agents, closer together, a bit faster, then a calm restart on the left
       const q = Math.max(0, Math.min(1, s.kx / g.cols));
       s.kx += .26 + .08 * q;
-      if (s.kx > g.cols + 2 && !s.b.length) { s.kx = -2; s.last = -99; }
+      g.tl = Math.max(0, (g.trail || 36) - Math.max(0, s.kx - g.cols) * 4);
+      if (s.kx > g.cols + 2 && !s.b.length && g.tl <= 0) { s.kx = -2; s.last = -99; g.tl = g.trail || 36; }
       const kx = Math.floor(s.kx);
       // it sends agents out from where it stands. a landing spot must not share its label's room with another one
       // never the same feature twice at once (out, or back and waiting for the kiss)
@@ -1010,7 +1016,7 @@ const sec = document.querySelector(".sky");
     const pr = pre.getBoundingClientRect(), rs = [...sec.querySelectorAll(".hero .big, .hero .t1, .hero .t2")].map(e => e.getBoundingClientRect());  // the install box may sit over a lane (user: overlap is fine)
     const ko = { x0: Math.floor((Math.min(...rs.map(r => r.left)) - pr.left) / cw) - 3, x1: Math.ceil((Math.max(...rs.map(r => r.right)) - pr.left) / cw) + 3,
                  y0: Math.floor((Math.min(...rs.map(r => r.top)) - pr.top) / lh) - 1, y1: Math.ceil((Math.max(...rs.map(r => r.bottom)) - pr.top) / lh) + 1 };
-    const g = Grid(Math.ceil(pre.clientWidth / cw) + 1, Math.ceil(pre.clientHeight / lh) + 1, ko); g.ko = ko; const hf = sec.querySelector(".hfloor"); if (hf) { const r = hf.getBoundingClientRect(); g.floor = Math.ceil((r.bottom - pr.top) / lh) + 8; g.exact = true; }
+    const g = Grid(Math.ceil(pre.clientWidth / cw) + 1, Math.ceil(pre.clientHeight / lh) + 1, ko); g.ko = ko; g.trail = Math.round(300 / cw); const hf = sec.querySelector(".hfloor"); if (hf) { const r = hf.getBoundingClientRect(); g.floor = Math.ceil((r.bottom - pr.top) / lh) + 8; g.exact = true; }
     g.labels = GLIDE || NONAMES ? [] : null;
     step(g, t);
     glide(NONAMES ? [] : g.labels || []);
@@ -1274,13 +1280,14 @@ const plays = {
     set("pricing", "∿"); m.line(`<span class="acc">:*</span> on it: pricing started.`, "b"); await m.wait(3000);
   },
   async card(m) {
-    m.line(`<span class="chip">✉ <span class="s">dark-mode</span> <span class="ar">→</span> main</span><span class="dim">which gray for the borders?</span>`, "l3"); await m.wait(1200);
-    m.line(`<span class="acc">:*</span> i answered dark-mode: the one in tokens.css. <span class="faint">(like everywhere else)</span>`, "b"); await m.wait(1800);
-    const c = m.line(`<div class="t acc" style="font-weight:700">? release needs you</div><div>dark mode changes the default colors. call it 2.5 or 3.0?</div><div class="faint">1 · 2.5   2 · 3.0   alt+r answer with text</div>`, "card b");
-    c.style.borderLeft = "2px solid var(--acc)"; c.style.paddingLeft = "2ch";
-    await m.wait(2200); await m.type("1"); m.clear();
-    c.style.borderLeftColor = "var(--faint)"; c.querySelector(".t").outerHTML = `<div class="t dim">✓ release · you said 2.5</div>`;
-    await m.wait(1400); m.line(`<span class="acc">:*</span> release is tagging 2.5. back to you.`, "b"); await m.wait(3200);
+    m.line(`<span class="chip">✉ <span class="s">dark-mode</span> <span class="ar">→</span> main</span><span class="dim">which gray for the borders?</span>`, "l3"); await m.wait(1100);
+    m.line(`<span class="acc">:*</span> i told dark-mode: the gray in tokens.css, like everywhere else.`, "b"); await m.wait(1500);
+    m.line(`<span class="chip">✉ <span class="s">api-docs</span> <span class="ar">→</span> main</span><span class="dim">keep /v1 in the examples?</span>`, "l3"); await m.wait(1100);
+    m.line(`<span class="acc">:*</span> i told api-docs: /v2 only, /v1 is gone since march.`, "b"); await m.wait(1500);
+    m.line(`<span class="chip">✉ <span class="s">release</span> <span class="ar">→</span> main</span><span class="dim">dark mode is big. 2.5 or 3.0?</span>`, "l3"); await m.wait(1100);
+    m.line(`<span class="acc">:*</span> that one's yours: release asks if dark mode makes it 2.5 or 3.0.`, "b"); await m.wait(1300);
+    await m.send("3.0. it's a big one");
+    m.line(`<span class="acc">:*</span> told release. it's tagging 3.0.`, "b"); await m.wait(3200);
   },
   async resume(m) {
     await m.send("move every page to the new design system");
