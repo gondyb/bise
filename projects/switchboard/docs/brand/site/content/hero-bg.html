@@ -290,7 +290,7 @@ const V = {
       "feat: typing dots", "feat: voice notes", "feat: emoji reactions", "fix: emoji in csv export", "fix: search crème brûlée", "fix: sad 404 page",
       "fix: dark mode flash", "perf: faster signup", "style: rounder buttons", "feat: leaderboard"];
     return (g, t) => {
-      const Y = Math.round(g.rows * .8);
+      const Y = Math.round(g.rows * .86);
       // a fuller dandelion sky: seeded at once over the whole hero, then fed from the bottom and the left edge
       const seed = (x, y) => s.p.push({ x, y, z: Math.random(), ph: rnd(0, 6), life: 1e9 });
       if (!s.sown) { s.sown = true; for (let k = 0; k < 150; k++) seed(rnd(0, g.cols), rnd(0, g.rows)); }
@@ -300,7 +300,7 @@ const V = {
       // the kiss walks the thread; it wraps around once every branch is back
       // it picks up speed as it goes: more agents, closer together, a bit faster, then a calm restart on the left
       const q = Math.max(0, Math.min(1, s.kx / g.cols));
-      s.kx += .3 + .12 * q;
+      s.kx += .26 + .08 * q;
       if (s.kx > g.cols + 2 && !s.b.length) { s.kx = -2; s.last = -99; }
       const kx = Math.floor(s.kx);
       // it sends agents out from where it stands. a landing spot must not share its label's room with another one
@@ -311,22 +311,22 @@ const V = {
         const free = (L) => { const a = kx + 1 + L, z = a + 2 + done.length; return a < g.cols - 3 && s.b.every(o => Math.abs(o.xs + o.L - a) > 7); };
         let L = 0; for (let k = 0; k < 12 && !L; k++) { const c = Math.floor(rnd(30 - 18 * q, 64 - 42 * q)); if (free(c)) L = c; }
         if (L) {
-          // above or below the thread: the side with fewer arcs over the same columns (ties: above, mostly)
+          // always above the thread (the user liked it better)
           const xs = kx + 1, over = (o) => o.xs < xs + L && xs < o.xs + o.L;
           const under = xs + L + name.length + 3 >= ko.x0 && xs <= ko.x1;
           const room = { [-1]: under ? Math.max(2, Y - ko.y1 - 2) : Y - 4, [1]: g.rows - Y - 2 };
           const busy = (d) => s.b.filter(o => o.dir === d && over(o)).length;
-          const dir = busy(-1) < busy(1) ? -1 : busy(1) < busy(-1) ? 1 : (Math.random() < .6 ? -1 : 1);
-          // and a height as far as possible from the arcs already on that side
+          const dir = -1;
+          // at a height as far as possible from the arcs already over those columns
           const top = Math.min(room[dir], L / 2.6), near = s.b.filter(o => o.dir === dir && over(o)).map(o => o.A);
           let A = rnd(Math.min(2, top), top), best = -1;
           for (let k = 0; k < 8; k++) { const c = rnd(Math.min(2, top), top), d = near.length ? Math.min(...near.map(a => Math.abs(a - c))) : 99; if (d > best) { best = d; A = c; } }
           s.b.push({ xs, L, p: 0, A, dir, name, done, key });
-          s.last = s.kx; s.flash = 8; s.gap = rnd(.75, 1.25) * (16 - 11 * q); PULSES.push({ x: kx, t0: t });
+          s.last = s.kx; s.flash = 8; s.gap = rnd(.8, 1.2) * (21 - 13 * q); PULSES.push({ x: kx, t0: t });
         }
       }
       s.b = s.b.filter(b => {
-        b.p = Math.min(b.L, b.p + .6 + .25 * q);
+        b.p = Math.min(b.L, b.p + .45 + .15 * q);
         const pts = [];
         for (let i = 0; i <= b.p; i++) pts.push([b.xs + i, Y + b.dir * b.A * Math.sin(Math.PI * i / b.L)]);
         // back on the thread, it waits for the kiss to pick it up
@@ -344,19 +344,23 @@ const V = {
       THREAD(g, Y, t, s.kx);
       // marks, then names: a name tries right, left, then the rows around its mark, and stays hidden only if all are taken
       const used = [];
-      const place = (x, y, name) => {
-        for (const [cx, cy] of [[x + 2, y], [x - name.length - 1, y], [x + 1, y - 1], [x + 1, y + 1], [x - name.length, y - 1], [x - name.length, y + 1], [x + 1, y - 2], [x + 1, y + 2]]) {
+      // a name keeps the spot it had last frame while it's free, so it doesn't hop around
+      const place = (x, y, name, o) => {
+        const spots = [[x + 2, y], [x - name.length - 1, y], [x + 1, y - 1], [x + 1, y + 1], [x - name.length, y - 1], [x - name.length, y + 1], [x + 1, y - 2], [x + 1, y + 2]];
+        const order = o.slot != null ? [o.slot, ...spots.keys()].filter((v, k, a) => a.indexOf(v) === k) : [...spots.keys()];
+        for (const n of order) {
+          const [cx, cy] = spots[n];
           const a = Math.round(cx), z = a + name.length - 1, r = Math.round(cy);
           if (a < 0 || z >= g.cols || r < 0 || r >= g.rows || r === Y) continue;
           if (a <= g.ko.x1 + 1 && z >= g.ko.x0 - 1 && r >= g.ko.y0 && r <= g.ko.y1) continue;
           if (used.some(u => u.r === r && a <= u.z + 2 && z >= u.a - 2)) continue;
           if (used.some(u => u.m && Math.abs(u.r - r) === 0 && u.a >= a - 1 && u.a <= z + 1)) continue;
-          used.push({ a, z, r }); g.str(a, r, name, "d"); return;
+          used.push({ a, z, r }); g.str(a, r, name, "d"); o.slot = n; return;
         }
       };
       for (const o of s.b) { const [mx, my] = o.head || [o.xs + o.L, Y]; used.push({ a: Math.round(mx), z: Math.round(mx), r: Math.round(my), m: true }); g.put(mx, my, o.head ? "∿" : "✓", "a"); }
-      for (const o of s.b.filter(o => !o.head)) place(o.xs + o.L, Y, o.done);
-      for (const o of s.b.filter(o => o.head)) place(o.head[0], o.head[1], o.name);
+      for (const o of s.b.filter(o => !o.head)) place(o.xs + o.L, Y, o.done, o);
+      for (const o of s.b.filter(o => o.head)) place(o.head[0], o.head[1], o.name, o);
       g.str(kx, Y, ":*", "a");
       if (s.flash > 0) { s.flash--; if (s.flash > 3) { g.put(kx - 1, Y - 1, "·", "a"); g.put(kx + 2, Y - 1, "·", "a"); g.put(kx + 1, Y - 2, "·", "a"); } }
     };
