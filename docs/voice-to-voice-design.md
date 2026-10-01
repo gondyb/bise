@@ -20,9 +20,12 @@ D's big kiss inside it, the thread above.
   the mouth opens with the level and up to 3 arcs `)))` open beside it; cut in: it shuts to a
   line). Right: who talks (`you` in accent, `:* main`), then the words as they're said
   (≤ 28 cells a line, so 80 columns fit), then a status row. The thread stays above.
-- **While main works:** the words give way to a minified history, 4 rows, newest at the bottom,
-  one per action, ticking every ~1.6 s: `✉ talking to designer`, `$ perf · running npm test`,
-  `⇄ reading Hero.tsx`, `✓ perf · done`. D keeps the same rows under its caption.
+- **While main works (round 3, the user):** no mini history in voice mode: the real thread is in
+  view, so main's tool lines and messages come in above as in text mode; the pane only turns
+  its `*` and says `main is on it`. (The mini history stays with D, which is dropped.)
+- **What main says is in the thread too (round 3, the user):** the message lands whole in the
+  thread at once; its spoken words light up there in step with the voice, the same words as
+  beside the kiss; the shown-only details sit under it as usual.
 - **Who talks when (the user's doubt):** the screen never guesses in silence. When you stop,
   `about to answer ●●●··` fills in ~1.2 s; talking again empties it; space sends at once;
   holding space keeps the floor while you think. Backchannels ("mm", "ok", "right") never cut
