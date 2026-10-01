@@ -164,7 +164,43 @@ pub(crate) fn enter(app: &mut App) {
 /// ctrl+r twice: voice mode, after the first-time "who hears you"
 /// screen when it was never shown (voice-settings' settings.rs).
 pub(crate) fn request(app: &mut App) {
+    if !config::load().seen_privacy && std::env::var("BISE_VOICE_FAKE").map_or(true, |v| v.is_empty()) {
+        super::settings::request(super::settings::Open::Privacy);
+        return;
+    }
     enter(app);
+}
+
+/// How the first-time screen closed: start (hands-free or hold-to-talk,
+/// both saved by the screen) or not now.
+pub(crate) fn after_settings(app: &mut App, open: super::settings::Open, out: super::settings::Out) {
+    use super::settings::{Open, Out};
+    if open == Open::Privacy && matches!(out, Out::Start | Out::HoldOnly) {
+        enter(app);
+    }
+}
+
+/// ▸ hear it on /voice (only on the user's press): the sample sentence
+/// in the chosen voice, on the default speaker, off the UI thread.
+pub(crate) fn hear(job: super::SayJob, text: String) {
+    std::thread::spawn(move || {
+        let Ok(mut speaker) = super::audio::open_speaker() else { return };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        use super::Synthesizer;
+        super::tts::VoxtralTts.start(job, text, tx, cancel);
+        while let Ok(ev) = rx.recv() {
+            match ev {
+                super::Synth::Audio(pcm) => speaker.push(1, &pcm),
+                _ => break,
+            }
+        }
+        speaker.end(1);
+        let until = Instant::now() + std::time::Duration::from_secs(30);
+        while !speaker.done(1) && Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    });
 }
 
 /// esc: voice mode ends (the mic closes when the controller drops).
@@ -194,13 +230,38 @@ fn apply(app: &mut App, acts: Vec<Act>) {
 }
 
 /// Your words as an answer to the open inbox item, when they are one
-/// ("allow", "the first one"); plan §4.4. False: send them as words.
-fn answer_by_voice(_app: &mut App, _text: &str) -> bool {
-    false
+/// ("allow", "the first one"); plan §4.4: the heard line shows on the
+/// item and in the pane for 1.5 s, the answer counts as the key would.
+/// False: send them as words. "yes", "ok", "mm" never allow.
+fn answer_by_voice(app: &mut App, text: &str) -> bool {
+    use super::answers;
+    let Some(q) = crate::sb::voice_question(app) else { return false };
+    let now = Instant::now();
+    let (i, line) = if q.approval {
+        if !answers::is_allow(text) {
+            return false;
+        }
+        // the first option is the item's "allow" (once)
+        let Some(label) = q.options.first() else { return false };
+        (0, answers::heard_allow(text, label))
+    } else {
+        let Some(i) = answers::pick(text, &q.options) else { return false };
+        (i, answers::heard_line(text, i + 1, &q.options[i]))
+    };
+    crate::sb::show_heard(q.id, line.clone(), now);
+    if let Some(vm) = app.voice_mode.as_mut() {
+        vm.show_heard(line, now);
+    }
+    crate::sb::answer_by_voice(app, q.id, i)
 }
 
-/// The run loop's tick: the agent in view, the controller's step.
+/// The run loop's tick: the dictation picker a lone ctrl+r asked for,
+/// the agent in view, the controller's step.
 pub(crate) fn pump(app: &mut App) {
+    if app.voice_setup_at.is_some_and(|t| Instant::now() >= t) {
+        app.voice_setup_at = None;
+        crate::input::open_voice_setup(app, true);
+    }
     let Some(vm) = app.voice_mode.as_mut() else { return };
     if vm.agent() != app.sb.focus {
         vm.set_agent(&app.sb.focus.clone());

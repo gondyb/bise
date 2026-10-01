@@ -20,6 +20,7 @@ pub(crate) mod palette;
 pub(super) use mention::mentions;
 mod cards;
 pub(super) use cards::{card_choices, card_mouse, proves_ctrl_digits};
+pub(crate) use cards::{answer_by_voice, show_heard, voice_question};
 use cards::{Card, CardView};
 mod card_draw;
 pub(super) use card_draw::{box_height, card_frame, BoxFit, card_view_open, divider_label as card_divider_label, draw_box, draw_view as draw_card_view, fit_pairs as fit_card_pairs, key_pairs as card_key_pairs};
@@ -978,14 +979,11 @@ fn model_needs_key(typed: &str) -> Option<(String, String)> {
 pub(crate) fn handle_input(app: &mut App, v: &str) -> Vec<Ev> {
     // BISE-298: /voice turns voice on (its setup first when it has
     // none that works) or off; /voice setup opens the voice picker
+    // voice mode: /voice is its settings screen (dictation's on/off is a
+    // row there)
     if v.trim() == "/voice" {
-        return match crate::input::toggle_voice(app, crate::voice::resolve_job) {
-            Some(ev) => {
-                push_event(&mut app.events, &mut app.cache, ev.clone());
-                vec![ev]
-            }
-            None => Vec::new(),
-        };
+        crate::voicemode::settings::request(crate::voicemode::settings::Open::Settings);
+        return Vec::new();
     }
     if v.trim() == "/voice setup" {
         crate::input::open_voice_setup(app, !app.voice.enabled);

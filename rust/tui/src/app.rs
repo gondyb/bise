@@ -112,6 +112,9 @@ pub(crate) struct App {
     pub(crate) voice_mode: Option<crate::voicemode::turn::VoiceMode>,
     /// the first ctrl+r of a possible double (voicemode::live::double_ctrl_r)
     pub(crate) ctrl_r_at: Option<std::time::Instant>,
+    /// ctrl+r with dictation off and no setup: its picker opens at this
+    /// time, unless a second ctrl+r asked for voice mode first
+    pub(crate) voice_setup_at: Option<std::time::Instant>,
     pub(crate) popup_sel: usize,
     /// The composer text the user closed the `@` popup on (Esc): the
     /// popup stays closed until the text changes.
@@ -267,6 +270,7 @@ impl App {
             voice_text: String::new(),
             voice_mode: None,
             ctrl_r_at: None,
+            voice_setup_at: None,
             mouse: MouseState::default(),
             text: Default::default(),
             popup_sel: 0,

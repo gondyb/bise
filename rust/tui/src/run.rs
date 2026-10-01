@@ -437,6 +437,27 @@ fn ui_loop(app: &mut App, terminal: &mut crate::links::Tui) -> io::Result<()> {
             }
             continue;
         }
+        // voice mode's settings (/voice) or its first-time screen
+        if let Some(open) = crate::voicemode::settings::take_request() {
+            let shown = crash::guarded(|| {
+                crate::voicemode::settings::show(
+                    app,
+                    terminal,
+                    open,
+                    &mut |app| {
+                        if let Err(c) = crash::guarded(|| drain_lines(app)) {
+                            report_crash(app, &c, "a hub line");
+                        }
+                    },
+                    &mut |job, text| crate::voicemode::live::hear(job, text),
+                )
+            });
+            match shown {
+                Ok(r) => crate::voicemode::live::after_settings(app, open, r?),
+                Err(c) => report_crash(app, &c, "the voice settings"),
+            }
+            continue;
+        }
         pump_voice(app);
         crate::voicemode::live::pump(app);
         frame_clock(app, std::time::Instant::now(), last_draw, reduce_motion);
